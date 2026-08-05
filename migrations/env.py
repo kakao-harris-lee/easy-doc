@@ -16,6 +16,9 @@ from alembic import context
 from sqlalchemy import Connection, pool
 from sqlalchemy.ext.asyncio import create_async_engine
 
+# import 부작용으로 모델이 Base.metadata에 등록된다. 이 줄이 없으면 autogenerate가
+# 빈 metadata를 기준으로 삼아 기존 테이블을 전부 삭제하는 리비전을 만들어낸다.
+import app.models  # noqa: F401  (등록이 목적이라 이름을 직접 쓰지 않는다)
 from app.config import Settings
 from app.db import Base
 

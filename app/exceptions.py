@@ -19,3 +19,7 @@ class LLMTruncatedError(LLMProviderError):
 
 class LLMEmptyResultError(LLMProviderError):
     """응답이 비었거나 후처리 후 본문이 남지 않았다."""
+
+
+class EmailAlreadyRegisteredError(EasyDocError):
+    """이미 가입된 이메일로 다시 가입을 시도했다."""
