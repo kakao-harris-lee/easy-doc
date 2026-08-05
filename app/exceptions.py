@@ -21,5 +21,28 @@ class LLMEmptyResultError(LLMProviderError):
     """응답이 비었거나 후처리 후 본문이 남지 않았다."""
 
 
+class InvalidInputError(EasyDocError):
+    """사용자 입력이 도메인 규칙을 위반했다 (형식·길이 등)."""
+
+
 class EmailAlreadyRegisteredError(EasyDocError):
     """이미 가입된 이메일로 다시 가입을 시도했다."""
+
+
+class InvalidCredentialsError(EasyDocError):
+    """인증 실패.
+
+    이메일 부재와 비밀번호 불일치, 토큰 만료와 위조를 구분하지 않는다 — 어느 쪽인지
+    알려주면 가입 여부가 새어 나가 계정 열거(enumeration) 공격의 단서가 된다.
+    """
+
+
+class NotFoundError(EasyDocError):
+    """요청한 리소스가 없다."""
+
+
+class ConfigurationError(EasyDocError):
+    """서버 설정이 비어 있어 기능을 제공할 수 없다 (예: JWT 비밀키 미설정).
+
+    사용자 잘못이 아니라 운영 설정 문제이므로 5xx로 매핑한다.
+    """

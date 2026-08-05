@@ -1,0 +1,80 @@
+"""도메인 예외 → HTTP 응답 매핑.
+
+응답 본문은 항상 `{"detail": ...}` 한 가지 모양이고, detail에는 도메인 예외가 스스로
+만든 메시지만 담는다. 예외 메시지에 입력값을 넣지 않는다는 규약(services 계층)과
+짝을 이뤄, 이메일·비밀번호·문서 본문이 응답이나 액세스 로그로 새지 않게 한다.
+"""
+
+from collections.abc import Awaitable, Callable
+
+from fastapi import FastAPI, Request, status
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
+
+from app.exceptions import (
+    ConfigurationError,
+    EasyDocError,
+    EmailAlreadyRegisteredError,
+    InvalidCredentialsError,
+    InvalidInputError,
+    LLMProviderError,
+    NotFoundError,
+)
+
+# (예외, 상태 코드, 추가 헤더).
+# Starlette가 예외의 MRO를 따라 핸들러를 찾으므로 상위 예외 하나만 등록하면 하위
+# 예외(LLMTruncatedError 등)도 같은 응답을 받는다. 등록 순서는 영향을 주지 않는다.
+_MAPPINGS: tuple[tuple[type[EasyDocError], int, dict[str, str]], ...] = (
+    (InvalidInputError, status.HTTP_422_UNPROCESSABLE_CONTENT, {}),
+    (EmailAlreadyRegisteredError, status.HTTP_409_CONFLICT, {}),
+    # WWW-Authenticate: 401에 요구되는 표준 헤더. 클라이언트가 재인증 방식을 안다.
+    (InvalidCredentialsError, status.HTTP_401_UNAUTHORIZED, {"WWW-Authenticate": "Bearer"}),
+    (NotFoundError, status.HTTP_404_NOT_FOUND, {}),
+    (LLMProviderError, status.HTTP_502_BAD_GATEWAY, {}),
+    (ConfigurationError, status.HTTP_503_SERVICE_UNAVAILABLE, {}),
+)
+
+
+def _make_handler(
+    status_code: int, headers: dict[str, str]
+) -> Callable[[Request, Exception], Awaitable[JSONResponse]]:
+    """상태 코드·헤더를 고정한 핸들러를 만든다."""
+
+    async def handler(request: Request, exc: Exception) -> JSONResponse:
+        return JSONResponse(
+            status_code=status_code,
+            content={"detail": str(exc)},
+            headers=headers or None,
+        )
+
+    return handler
+
+
+async def _handle_request_validation(request: Request, exc: Exception) -> JSONResponse:
+    """Pydantic 검증 실패(422)에서 입력값 에코를 걷어낸다.
+
+    FastAPI 기본 핸들러는 detail의 각 항목에 `input`(요청 본문 원본)과 `ctx`를 넣는다 —
+    비밀번호가 응답 본문과 액세스 로그에 그대로 남는 경로다. 어디가(loc) 왜(msg, type)
+    틀렸는지는 남기고 값만 버린다.
+    """
+    details: list[dict[str, object]] = []
+    if isinstance(exc, RequestValidationError):
+        details = [
+            {
+                "loc": [str(part) for part in error.get("loc", ())],
+                "msg": str(error.get("msg", "")),
+                "type": str(error.get("type", "")),
+            }
+            for error in exc.errors()
+        ]
+    return JSONResponse(
+        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        content={"detail": details},
+    )
+
+
+def register_exception_handlers(app: FastAPI) -> None:
+    """도메인 예외 핸들러와 검증 오류 핸들러를 앱에 등록한다."""
+    for exception_type, status_code, headers in _MAPPINGS:
+        app.add_exception_handler(exception_type, _make_handler(status_code, headers))
+    app.add_exception_handler(RequestValidationError, _handle_request_validation)
