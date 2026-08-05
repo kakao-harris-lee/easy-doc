@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+dist/
+
+# 환경 변수 (비밀키는 .env로만 관리 — 커밋 금지)
+.env
+
+# 에디터/OS
+.idea/
+.vscode/
+.DS_Store
+
+# OMC 상태
+.omc/
