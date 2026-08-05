@@ -10,6 +10,7 @@ judge_conversion()이 원문을 mask_text()에 통과시킨 뒤에만 provider�
 
 import re
 import secrets
+from collections.abc import Mapping
 
 from pydantic import BaseModel, Field, ValidationError
 
@@ -19,6 +20,8 @@ from app.privacy.masking import mask_text
 
 MIN_SCORE = 1
 MAX_SCORE = 5
+# 충실성 바닥 기준 기본값 — 평가 하네스(tests/golden)와 벤치마크가 같은 값을 쓴다.
+DEFAULT_FIDELITY_FLOOR = 2
 # 채점 응답은 JSON 한 덩어리라 짧다. 변환용 상한(4096)을 그대로 쓸 이유가 없다.
 JUDGE_MAX_TOKENS = 512
 
@@ -39,7 +42,7 @@ _ROLE = (
 # 다른 축이다. 두 축이 한 척도에 섞여 있으므로 평균만 보면 1점(날조)이 다수의 5점에
 # 희석된다 — 예: 15건 5점 + 5건 1점이면 평균 4.0이지만 25%가 날조다.
 # 평균은 참고값이고, fidelity<=2 문서를 개별로 막는 바닥 게이트가 실제 방어선이다
-# (tests/golden/test_golden_eval.py의 FIDELITY_FLOOR).
+# (아래 find_low_fidelity — 평가 하네스·벤치마크가 공유한다).
 _FIDELITY_CRITERIA: tuple[str, ...] = (
     "5점: 원문의 정보가 빠짐없이 남아 있고 왜곡이 없습니다.",
     "4점: 사소한 정보 하나가 빠졌지만 뜻이 달라지지는 않았습니다.",
@@ -79,6 +82,16 @@ class JudgeScore(BaseModel):
     fidelity: int = Field(ge=MIN_SCORE, le=MAX_SCORE)
     readability: int = Field(ge=MIN_SCORE, le=MAX_SCORE)
     comment: str
+
+
+def find_low_fidelity(scores: Mapping[str, JudgeScore], floor: int) -> list[str]:
+    """충실성이 바닥 기준 이하인 문서 ID 목록 (날조 방어선 — 평균 게이트보다 먼저 검사할 것).
+
+    평균만으로는 막을 수 없다: 15건 5점 + 5건 1점이면 평균이 정확히 4.0이라
+    평균 기준(>= 4.0)을 통과하지만 실제로는 25%가 날조다.
+    경계는 '이하'(<=)여야 한다 — '미만'으로 바꾸면 2점짜리 중요 정보 누락이 빠져나간다.
+    """
+    return sorted(document_id for document_id, score in scores.items() if score.fidelity <= floor)
 
 
 def build_judge_prompt(source: str, converted: str) -> tuple[str, str]:

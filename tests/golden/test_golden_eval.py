@@ -16,7 +16,12 @@ from pydantic import BaseModel
 
 from app.config import Settings
 from app.easyread.goldenset import GoldenDocument, load_documents
-from app.easyread.judge import JudgeScore, judge_conversion
+from app.easyread.judge import (
+    DEFAULT_FIDELITY_FLOOR,
+    JudgeScore,
+    find_low_fidelity,
+    judge_conversion,
+)
 from app.easyread.style_rules import check_style
 from app.exceptions import LLMProviderError
 from app.llm.factory import create_provider
@@ -40,7 +45,9 @@ JUDGE_COVERAGE_THRESHOLD = 0.9
 JUDGE_SCORE_THRESHOLD = 4.0
 # 바닥 게이트: fidelity 1~2는 중요 정보 누락·날조라 평균으로 상쇄할 수 없다.
 # 평균 게이트만 두면 15건 5점 + 5건 1점(날조 25%)이 평균 4.0으로 통과한다.
-FIDELITY_FLOOR = 2
+# 판정 자체는 judge.find_low_fidelity()에 있고 기본 스위트가 회귀 테스트로 고정한다
+# (이 파일은 -m llm이라 기본 실행에서 제외되므로 여기에만 두면 보호되지 않는다).
+FIDELITY_FLOOR = DEFAULT_FIDELITY_FLOOR
 
 DOCUMENTS: list[GoldenDocument] = load_documents(DOCUMENTS_DIR)
 
@@ -192,9 +199,7 @@ async def test_골든셋_judge_점수(
     report = format_judge_report(scores, failures, fidelity, readability)
 
     # 바닥 게이트를 평균보다 먼저 본다 — 날조가 섞였다면 평균이 높아도 실패여야 한다.
-    low_fidelity = sorted(
-        document_id for document_id, score in scores.items() if score.fidelity <= FIDELITY_FLOOR
-    )
+    low_fidelity = find_low_fidelity(scores, FIDELITY_FLOOR)
     assert not low_fidelity, f"충실성 {FIDELITY_FLOOR} 이하 문서: {low_fidelity}\n{report}"
     assert fidelity >= JUDGE_SCORE_THRESHOLD, report
     assert readability >= JUDGE_SCORE_THRESHOLD, report

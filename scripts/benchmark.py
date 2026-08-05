@@ -31,7 +31,12 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from app.config import Settings  # noqa: E402
 from app.easyread.goldenset import GoldenDocument, load_documents  # noqa: E402
-from app.easyread.judge import judge_conversion  # noqa: E402
+from app.easyread.judge import (  # noqa: E402
+    DEFAULT_FIDELITY_FLOOR,
+    JudgeScore,
+    find_low_fidelity,
+    judge_conversion,
+)
 from app.easyread.style_rules import check_style  # noqa: E402
 from app.exceptions import LLMProviderError  # noqa: E402
 from app.llm.factory import create_provider  # noqa: E402
@@ -41,9 +46,9 @@ from app.services.conversion import ConversionService  # noqa: E402
 DOCUMENTS_DIR = REPO_ROOT / "tests" / "golden" / "documents"
 DEFAULT_OUTPUT_DIR = REPO_ROOT / "docs" / "benchmarks"
 DEFAULT_PROVIDERS = "anthropic,openai"
-# 충실성 바닥 — 이하이면 중요 정보 누락·날조 의심이라 평균과 별도로 센다
-# (tests/golden/test_golden_eval.py의 FIDELITY_FLOOR와 같은 기준).
-FIDELITY_FLOOR = 2
+# 충실성 바닥 — 이하이면 중요 정보 누락·날조 의심이라 평균과 별도로 센다.
+# 판정은 judge.find_low_fidelity()를 재사용해 평가 하네스와 기준이 갈라지지 않게 한다.
+FIDELITY_FLOOR = DEFAULT_FIDELITY_FLOOR
 # 워밍업용 최소 입력. 결과는 버리고 측정에 넣지 않는다.
 WARMUP_TEXT = "안내문입니다."
 
@@ -199,8 +204,15 @@ def summarize(benchmark: ProviderBenchmark) -> ProviderSummary:
     measurements = benchmark.measurements
     successes = [m for m in measurements if m.succeeded]
     facts_total = sum(m.facts_total for m in measurements)
-    fidelities = [m.fidelity for m in successes if m.fidelity is not None]
-    readabilities = [m.readability for m in successes if m.readability is not None]
+    # 바닥 판정을 평가 하네스와 같은 함수로 하기 위해 점수만 JudgeScore로 되살린다.
+    # comment는 본문 인용 위험 때문에 측정값에 보관하지 않으며 판정에도 쓰이지 않는다.
+    judged_scores = {
+        m.document_id: JudgeScore(fidelity=m.fidelity, readability=m.readability, comment="")
+        for m in successes
+        if m.fidelity is not None and m.readability is not None
+    }
+    fidelities = [score.fidelity for score in judged_scores.values()]
+    readabilities = [score.readability for score in judged_scores.values()]
     latencies = [m.latency_seconds for m in successes]
     return ProviderSummary(
         provider_name=benchmark.provider_name,
@@ -215,10 +227,10 @@ def summarize(benchmark: ProviderBenchmark) -> ProviderSummary:
             sum(m.facts_kept for m in measurements) / facts_total if facts_total else 0.0
         ),
         placeholder_loss=sum(m.missing_placeholders for m in measurements),
-        judged=len(fidelities),
+        judged=len(judged_scores),
         fidelity_average=average_or_none([float(value) for value in fidelities]),
         readability_average=average_or_none([float(value) for value in readabilities]),
-        low_fidelity=sum(1 for value in fidelities if value <= FIDELITY_FLOOR),
+        low_fidelity=len(find_low_fidelity(judged_scores, FIDELITY_FLOOR)),
         # 지연·토큰은 성공한 호출만 집계한다(실패는 조기 종료라 분포가 다르다).
         # n=20 단일 실행이라 p95는 사실상 두 번째 큰 값이므로 중앙값·최대값만 낸다.
         latency_median=statistics.median(latencies) if latencies else None,

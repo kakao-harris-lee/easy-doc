@@ -1,10 +1,18 @@
-"""LLM-as-judge 채점기 테스트 — 파싱 견고성과 마스킹 선행 불변식이 핵심."""
+"""LLM-as-judge 채점기 테스트 — 파싱 견고성·마스킹 선행 불변식·바닥 게이트가 핵심.
+
+바닥 게이트(find_low_fidelity)는 골든셋 평가 하네스가 쓰지만 그 파일은 -m llm이라
+기본 실행에서 제외된다. 판정 로직 자체는 여기(기본 스위트)에서 고정한다.
+"""
+
+from statistics import fmean
 
 import pytest
 
 from app.easyread.judge import (
+    DEFAULT_FIDELITY_FLOOR,
     JudgeScore,
     build_judge_prompt,
+    find_low_fidelity,
     judge_conversion,
     parse_judge_response,
 )
@@ -122,3 +130,41 @@ async def test_판독_불가_응답은_LLMProviderError() -> None:
     provider = FakeProvider(responses=["채점 불가"])
     with pytest.raises(LLMProviderError):
         await judge_conversion(provider, source="원문", converted="변환문")
+
+
+def _score(fidelity: int) -> JudgeScore:
+    """바닥 게이트 판정에는 충실성만 쓰인다 — 나머지 필드는 고정한다."""
+    return JudgeScore(fidelity=fidelity, readability=5, comment="")
+
+
+def test_바닥_기준_이하_문서를_id_순으로_찾는다() -> None:
+    scores = {"003": _score(1), "001": _score(5), "002": _score(2)}
+    assert find_low_fidelity(scores, DEFAULT_FIDELITY_FLOOR) == ["002", "003"]
+
+
+def test_바닥_기준은_경계값을_포함한다() -> None:
+    """'이하'(<=)여야 한다 — '미만'으로 바뀌면 2점짜리 중요 정보 누락이 빠져나간다."""
+    assert find_low_fidelity({"001": _score(2)}, 2) == ["001"]
+    assert find_low_fidelity({"001": _score(3)}, 2) == []
+
+
+def test_바닥_기준_이하가_없으면_빈_목록() -> None:
+    assert find_low_fidelity({"001": _score(5), "002": _score(4)}, DEFAULT_FIDELITY_FLOOR) == []
+
+
+def test_평균_게이트를_통과하는_날조_섞임을_바닥_게이트가_잡는다() -> None:
+    """15건 5점 + 5건 1점 = 평균 정확히 4.0.
+
+    골든셋 평균 기준(>= 4.0)만 두면 통과하는 입력이다 — 실제로는 25%가 날조다.
+    이 회귀 테스트가 있어야 바닥 게이트를 지우거나 약화해도 기본 스위트가 잡아낸다.
+    """
+    scores = {f"{index:03d}": _score(5) for index in range(1, 16)}
+    scores.update({f"{index:03d}": _score(1) for index in range(16, 21)})
+    assert fmean(score.fidelity for score in scores.values()) == 4.0
+    assert find_low_fidelity(scores, DEFAULT_FIDELITY_FLOOR) == [
+        "016",
+        "017",
+        "018",
+        "019",
+        "020",
+    ]
