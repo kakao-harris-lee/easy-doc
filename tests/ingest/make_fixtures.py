@@ -45,6 +45,10 @@ RICH_FOOTER = "바닥글 문구"
 
 _WORD_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 _VML_NS = "urn:schemas-microsoft-com:vml"
+_MC_NS = "http://schemas.openxmlformats.org/markup-compatibility/2006"
+_WPS_NS = "http://schemas.microsoft.com/office/word/2010/wordprocessingShape"
+_WP_NS = "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"
+_A_NS = "http://schemas.openxmlformats.org/drawingml/2006/main"
 
 
 def _write_docx_paragraphs() -> None:
@@ -87,16 +91,26 @@ def _write_docx_rich() -> None:
 
     document.add_paragraph(RICH_TAIL)
 
-    # VML 텍스트박스. w:txbxContent 안의 문단은 본문 트리에 있지만 Document.paragraphs에는
-    # 잡히지 않는다 (run 하위에 들어 있기 때문). 조각은 add_paragraph()가 만든 문단 안에
-    # 넣는다 — body에 직접 append하면 끝의 sectPr 뒤로 밀려 형식이 깨진다.
+    # 텍스트박스. 워드 2010+는 같은 상자를 mc:AlternateContent 아래 두 벌로 저장한다 —
+    # mc:Choice(DrawingML, 최신 워드용)와 mc:Fallback(VML, 구버전 호환용)에 **같은 문구**가
+    # 들어간다. 실제 워드 산출물 구조를 그대로 재현해야 중복 추출을 잡아낼 수 있다.
+    # 조각은 add_paragraph()가 만든 문단 안에 넣는다 — body에 직접 append하면 끝의
+    # sectPr 뒤로 밀려 형식이 깨진다.
     document.add_paragraph()._p.append(
         parse_xml(
-            f'<w:r xmlns:w="{_WORD_NS}" xmlns:v="{_VML_NS}"><w:pict>'
-            '<v:shape style="width:200pt;height:50pt"><v:textbox><w:txbxContent>'
+            f'<w:r xmlns:w="{_WORD_NS}" xmlns:mc="{_MC_NS}" xmlns:wps="{_WPS_NS}"'
+            f' xmlns:wp="{_WP_NS}" xmlns:a="{_A_NS}" xmlns:v="{_VML_NS}">'
+            "<mc:AlternateContent>"
+            '<mc:Choice Requires="wps"><w:drawing><wp:inline><a:graphic><a:graphicData>'
+            "<wps:wsp><wps:txbx><w:txbxContent>"
             f"<w:p><w:r><w:t>{RICH_TEXTBOX}</w:t></w:r></w:p>"
-            "</w:txbxContent></v:textbox></v:shape>"
-            "</w:pict></w:r>"
+            "</w:txbxContent></wps:txbx></wps:wsp>"
+            "</a:graphicData></a:graphic></wp:inline></w:drawing></mc:Choice>"
+            '<mc:Fallback><w:pict><v:rect style="width:200pt;height:50pt"><v:textbox>'
+            "<w:txbxContent>"
+            f"<w:p><w:r><w:t>{RICH_TEXTBOX}</w:t></w:r></w:p>"
+            "</w:txbxContent></v:textbox></v:rect></w:pict></mc:Fallback>"
+            "</mc:AlternateContent></w:r>"
         )
     )
 

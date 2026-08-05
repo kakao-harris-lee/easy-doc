@@ -21,8 +21,11 @@ dependencies = [
     "pyjwt>=2.9",
     "cryptography>=43.0",
     "python-multipart>=0.0.9",
-    "python-docx>=1.1",
-    "pypdf>=5.0",
+    # 상한: app/ingest/extractors.py가 머리글·바닥글을 읽을 때 python-docx의 비공개
+    # 속성(_element)에 의존한다 — 공개 API로는 머리글 안 텍스트박스를 걷지 못한다.
+    # 메이저 업그레이드가 이 접근을 조용히 깨지 않도록 막는다.
+    "python-docx>=1.1,<2",
+    "pypdf>=5.0,<7",
 ]
 
 [dependency-groups]

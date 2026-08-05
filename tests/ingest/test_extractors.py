@@ -14,7 +14,7 @@ import zlib
 from pathlib import Path
 
 import pytest
-from pypdf import PdfWriter
+from pypdf import PdfReader, PdfWriter
 
 from app.exceptions import DocumentExtractionError, UnsupportedFormatError
 from app.ingest import extractors
@@ -129,6 +129,16 @@ def test_docx_중첩_표와_텍스트박스도_추출한다() -> None:
     assert "텍스트 상자 안 문장입니다." in text
 
 
+def test_docx_텍스트박스는_한_번만_추출된다() -> None:
+    """워드 2010+는 텍스트박스를 mc:Choice(DrawingML)와 mc:Fallback(VML) 두 벌로 저장한다.
+
+    양쪽을 다 걷으면 같은 문구가 정확히 두 번 나온다 — 크레딧이 두 배로 청구되고,
+    프롬프트와 마스킹 결과까지 오염된다. 픽스처는 실제 워드 구조를 그대로 재현한다.
+    """
+    text = extract_text("sample_rich.docx", _read("sample_rich.docx"))
+    assert text.count("텍스트 상자 안 문장입니다.") == 1
+
+
 def test_docx_머리글과_바닥글도_추출한다() -> None:
     text = extract_text("sample_rich.docx", _read("sample_rich.docx"))
     assert "머리글 문구" in text
@@ -179,14 +189,33 @@ def test_페이지가_없는_pdf는_스캔_안내와_구분된다() -> None:
     assert str(error.value) == "페이지가 없는 PDF입니다"
 
 
-def test_암호가_걸린_pdf는_암호_안내와_함께_실패한다() -> None:
+def _encrypted_pdf(*, user_password: str, owner_password: str | None = None) -> bytes:
+    """암호를 건 PDF를 만든다. 사용자 암호가 빈 문자열이면 열람은 자유롭다."""
     writer = PdfWriter(clone_from=io.BytesIO(_read("sample.pdf")))
-    writer.encrypt("비밀번호")
+    writer.encrypt(user_password=user_password, owner_password=owner_password)
     payload = io.BytesIO()
     writer.write(payload)
+    return payload.getvalue()
+
+
+def test_사용자_암호가_걸린_pdf는_암호_안내와_함께_실패한다() -> None:
+    """열람 자체가 막힌 파일 — 사용자가 암호를 풀어 다시 올려야 한다."""
     with pytest.raises(DocumentExtractionError) as error:
-        extract_text("암호.pdf", payload.getvalue())
+        extract_text("암호.pdf", _encrypted_pdf(user_password="비밀번호"))
     assert "암호가 설정된 파일입니다" in str(error.value)
+
+
+def test_소유자_암호만_걸린_pdf는_정상_추출된다() -> None:
+    """인쇄·복사만 제한한 PDF는 열람이 자유롭고 실제로 읽힌다.
+
+    `is_encrypted`는 이런 파일에도 True라, 그걸로 미리 거르면 사용자가 풀 암호가
+    존재하지도 않는 정상 파일을 거부하게 된다. 공공기관 배포 문서에 흔한 형태다.
+    """
+    data = _encrypted_pdf(user_password="", owner_password="소유자암호")
+    assert PdfReader(io.BytesIO(data)).is_encrypted, "이 파일도 is_encrypted는 True다"
+    text = extract_text("공고문.pdf", data)
+    assert "첫째 쪽 안내문입니다." in text
+    assert "둘째 쪽 안내문입니다." in text
 
 
 # --------------------------------------------------------------------------- hwpx
@@ -471,12 +500,34 @@ def test_빈_바이트도_추출_실패로_변환된다(fixture: str) -> None:
         extract_text(fixture, b"")
 
 
+def _ole2_with_stream(stream_name: str) -> bytes:
+    """지정한 스트림 이름을 담은 OLE2 복합 문서 흉내.
+
+    OLE2 디렉터리는 스트림 이름을 UTF-16LE로 저장한다.
+    """
+    return b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1" + bytes(64) + stream_name.encode("utf-16-le")
+
+
 def test_암호가_걸린_docx는_암호_안내와_함께_실패한다() -> None:
-    """암호가 걸린 OOXML은 zip이 아니라 OLE2 복합 문서로 저장된다."""
-    ole2 = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1" + bytes(512)
+    """암호가 걸린 OOXML은 zip이 아니라 OLE2 복합 문서이고, 본문이 EncryptedPackage에 들어간다."""
     with pytest.raises(DocumentExtractionError) as error:
-        extract_text("암호.docx", ole2)
+        extract_text("암호.docx", _ole2_with_stream("EncryptedPackage"))
     assert "암호가 설정된 파일입니다" in str(error.value)
+
+
+def test_구버전_doc를_docx로_개명한_파일은_형식_안내를_받는다() -> None:
+    """암호 안내를 하면 있지도 않은 암호를 찾아 헤매게 된다."""
+    with pytest.raises(DocumentExtractionError) as error:
+        extract_text("공고문.docx", _ole2_with_stream("WordDocument"))
+    message = str(error.value)
+    assert "구버전 doc 형식은 지원하지 않습니다" in message
+    assert "암호" not in message
+
+
+def test_정체를_알_수_없는_ole2는_단정하지_않고_안내한다() -> None:
+    with pytest.raises(DocumentExtractionError) as error:
+        extract_text("수수께끼.docx", b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1" + bytes(512))
+    assert str(error.value) == "암호가 설정되었거나 지원하지 않는 구형식 파일입니다"
 
 
 @pytest.mark.parametrize("fixture", ["sample.docx", "sample.pdf", "sample.hwpx"])

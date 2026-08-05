@@ -34,6 +34,7 @@ import docx
 from docx.document import Document
 from docx.oxml.xmlchemy import BaseOxmlElement
 from pypdf import PdfReader
+from pypdf.errors import FileNotDecryptedError
 
 from app.exceptions import DocumentExtractionError, UnsupportedFormatError
 
@@ -56,8 +57,12 @@ _MAX_UNCOMPRESSED_BYTES = 5 * MAX_UPLOAD_BYTES
 # OWPML 패키지에서 본문을 담는 항목. 번호가 구역 순서다.
 _SECTION_NAME = re.compile(r"Contents/section(\d+)\.xml")
 
-# OLE2 복합 문서 매직. 암호가 걸린 OOXML은 zip이 아니라 OLE2 컨테이너로 저장된다.
+# OLE2 복합 문서 매직. 암호가 걸린 OOXML도, 구버전 .doc도 zip이 아니라 OLE2다.
 _OLE2_MAGIC = b"\xd0\xcf\x11\xe0"
+
+# OLE2 디렉터리의 스트림 이름(UTF-16LE 저장). 둘 중 무엇이 있는지로 원인을 가른다.
+_OLE2_ENCRYPTED_STREAM = "EncryptedPackage".encode("utf-16-le")
+_OLE2_WORD_STREAM = "WordDocument".encode("utf-16-le")
 
 # expat 네임스페이스 구분자. XML 이름에 나올 수 없는 문자를 쓴다.
 _NS_SEP = "\x01"
@@ -86,14 +91,40 @@ def _log_failure(format_name: str, size: int, reason: str) -> None:
     _logger.warning("문서 추출 실패: format=%s bytes=%d reason=%s", format_name, size, reason)
 
 
-def _broken(format_name: str, data: bytes, cause: BaseException) -> DocumentExtractionError:
+def _broken(format_name: str, size: int, cause: BaseException) -> DocumentExtractionError:
     """손상 파일 예외를 만들고 예외 **타입**만 로깅한다.
+
+    `size`는 항상 업로드 파일 전체 길이다 — 로그의 bytes 필드가 자리마다 다른 것을
+    가리키면 집계할 수 없다.
 
     라이브러리 예외를 넓게 잡는 자리라 로그가 유일한 단서다 — 우리 코드 버그가 조용히
     "파일이 손상됐습니다"로 둔갑하는 것을 막으려면 타입이 기록에 남아야 한다.
     """
-    _log_failure(format_name, len(data), type(cause).__name__)
+    _log_failure(format_name, size, type(cause).__name__)
     return DocumentExtractionError(f"{format_name} 파일을 읽을 수 없습니다 (파일이 손상되었습니다)")
+
+
+def _diagnose_ole2(data: bytes, format_name: str) -> DocumentExtractionError:
+    """zip이어야 할 자리에 OLE2 복합 문서가 온 이유를 가려낸다.
+
+    두 가지가 섞여 들어온다: 암호가 걸린 OOXML(본문이 `EncryptedPackage` 스트림으로
+    들어간다)과, 구버전 `.doc`를 확장자만 바꿔 올린 경우(`WordDocument` 스트림).
+    안내가 같으면 후자의 사용자는 있지도 않은 암호를 찾아 헤맨다.
+
+    olefile 의존성을 더하지 않고 스트림 이름을 바이트로 찾는다 — OLE2 디렉터리는 이름을
+    UTF-16LE로 저장하므로 부분 문자열 검색으로 충분히 갈린다. 둘 다 못 찾으면 단정하지
+    않고 두 가능성을 함께 안내한다.
+    """
+    if _OLE2_ENCRYPTED_STREAM in data:
+        _log_failure(format_name, len(data), "encrypted_container")
+        return DocumentExtractionError(_ENCRYPTED_MESSAGE)
+    if _OLE2_WORD_STREAM in data:
+        _log_failure(format_name, len(data), "legacy_ole2_document")
+        return DocumentExtractionError(
+            "구버전 doc 형식은 지원하지 않습니다 (docx로 다시 저장해 올려주세요)"
+        )
+    _log_failure(format_name, len(data), "ole2_container")
+    return DocumentExtractionError("암호가 설정되었거나 지원하지 않는 구형식 파일입니다")
 
 
 def _join_blocks(blocks: Iterable[str]) -> str:
@@ -123,9 +154,8 @@ def _ensure_zip_within_budget(data: bytes, format_name: str) -> None:
     검사가 예산 크기(수십 MB)의 메모리를 스스로 쓰게 된다.
     """
     if data.startswith(_OLE2_MAGIC):
-        # 암호가 걸린 OOXML은 zip이 아니라 OLE2다. "손상" 안내보다 훨씬 도움이 된다.
-        _log_failure(format_name, len(data), "encrypted_container")
-        raise DocumentExtractionError(_ENCRYPTED_MESSAGE)
+        # zip이 아니라 OLE2다. "손상" 안내보다 원인을 짚어 주는 편이 훨씬 낫다.
+        raise _diagnose_ole2(data, format_name)
 
     budget = _MAX_UNCOMPRESSED_BYTES
     try:
@@ -141,7 +171,7 @@ def _ensure_zip_within_budget(data: bytes, format_name: str) -> None:
                 if budget < 0:
                     break
     except _ZIP_ERRORS as exc:
-        raise _broken(format_name, data, exc) from None
+        raise _broken(format_name, len(data), exc) from None
     if budget < 0:
         _log_failure(format_name, len(data), "uncompressed_too_large")
         raise DocumentExtractionError(f"{format_name} 파일이 너무 큽니다")
@@ -161,15 +191,28 @@ def _element_blocks(root: BaseOxmlElement) -> Iterator[str]:
 
     네임스페이스 URI가 아니라 로컬 이름으로 판별해 `a:t`(도형 텍스트)·`m:t`(수식)까지
     함께 걷는다. 주석·처리 명령의 tag는 문자열이 아니라 함수라 자연히 걸러진다.
+
+    `iter()`로 전부 훑지 않고 스택으로 내려가는 이유는 **`mc:Fallback`에서 하강을 멈추기**
+    위해서다. 워드 2010+는 텍스트박스 하나를 `mc:AlternateContent` 아래 `mc:Choice`
+    (DrawingML)와 `mc:Fallback`(VML) 두 벌로 저장한다. 양쪽을 다 걷으면 같은 문구가
+    정확히 두 번 나와 크레딧이 두 배로 청구되고 프롬프트와 마스킹 결과까지 오염된다.
+    OOXML 규격상 `mc:AlternateContent`에는 `mc:Choice`가 최소 하나 있으므로 Fallback을
+    버려도 내용이 사라지지 않는다.
     """
     current: list[str] = []
-    for element in root.iter():
+    stack: list[BaseOxmlElement] = [root]
+    while stack:
+        element = stack.pop()
         local_name = str(element.tag).rpartition("}")[2]
+        if local_name == "Fallback":
+            continue
         if local_name == "p":
             yield "".join(current)
             current = []
         elif local_name == "t":
             current.append(element.text or "")
+        # 자식을 역순으로 쌓아야 pop 순서가 문서 순서가 된다.
+        stack.extend(reversed(list(element)))
     yield "".join(current)
 
 
@@ -187,6 +230,9 @@ def _docx_blocks(document: Document) -> Iterator[str]:
         for part in (section.header, section.footer):
             if part.is_linked_to_previous:
                 continue
+            # `_element`는 비공개지만 대안이 없다. 공개 API(`paragraphs`/`tables`)로는
+            # 머리글 안의 텍스트박스·SDT를 걷지 못해 본문과 규칙이 갈린다. python-docx는
+            # 상한을 걸어 고정했으므로(pyproject) 업그레이드가 조용히 이 접근을 깨지 않는다.
             yield from _element_blocks(part._element)
 
 
@@ -197,7 +243,7 @@ def _extract_docx(data: bytes) -> str:
         # 지연 파싱 구간을 try 안에서 소진한다 — 밖에서 터지면 예외가 그대로 새어 나간다.
         blocks = list(_docx_blocks(document))
     except Exception as exc:
-        raise _broken("docx", data, exc) from None
+        raise _broken("docx", len(data), exc) from None
     return _join_blocks(blocks)
 
 
@@ -211,17 +257,20 @@ def _extract_pdf(data: bytes) -> str:
     """
     try:
         reader = PdfReader(io.BytesIO(data))
-        encrypted = reader.is_encrypted
     except Exception as exc:
-        raise _broken("pdf", data, exc) from None
-    if encrypted:
-        _log_failure("pdf", len(data), "encrypted")
-        raise DocumentExtractionError(_ENCRYPTED_MESSAGE)
+        raise _broken("pdf", len(data), exc) from None
 
+    # `is_encrypted`로 미리 거르지 않는다. 인쇄·복사만 제한한 소유자 암호 PDF도 True인데,
+    # 그런 파일은 열람이 자유롭고(사용자 암호가 빈 문자열) 실제로 잘 읽힌다. 공공기관
+    # 배포 문서에 흔한 형태라 미리 막으면 정상 파일을 거부하게 된다. pypdf는 읽을 때 빈
+    # 암호를 자동으로 시도하므로, 진짜로 암호가 필요한 파일만 여기서 걸린다.
     try:
         pages = [page.extract_text() for page in reader.pages]
+    except FileNotDecryptedError:
+        _log_failure("pdf", len(data), "encrypted")
+        raise DocumentExtractionError(_ENCRYPTED_MESSAGE) from None
     except Exception as exc:
-        raise _broken("pdf", data, exc) from None
+        raise _broken("pdf", len(data), exc) from None
     if not pages:
         _log_failure("pdf", len(data), "no_pages")
         raise DocumentExtractionError("페이지가 없는 PDF입니다")
@@ -258,14 +307,14 @@ def _read_hwpx_sections(data: bytes) -> list[bytes]:
                 if budget < 0:
                     break
     except _ZIP_ERRORS as exc:
-        raise _broken("hwpx", data, exc) from None
+        raise _broken("hwpx", len(data), exc) from None
     if budget < 0:
         _log_failure("hwpx", len(data), "uncompressed_too_large")
         raise DocumentExtractionError("hwpx 파일이 너무 큽니다")
     return sections
 
 
-def _hwpx_blocks(section: bytes) -> list[str]:
+def _hwpx_blocks(section: bytes, file_size: int) -> list[str]:
     """OWPML 구역 XML에서 문단 단위 텍스트를 뽑는다.
 
     구조(KS X 6101): 구역 `<hs:sec>` > 문단 `<hp:p>` > 글자 조각 `<hp:run>/<hp:t>`.
@@ -316,12 +365,12 @@ def _hwpx_blocks(section: bytes) -> list[str]:
     try:
         parser.Parse(section, True)
     except _DtdNotAllowed:
-        _log_failure("hwpx", len(section), "dtd_declaration")
+        _log_failure("hwpx", file_size, "dtd_declaration")
         raise DocumentExtractionError(
             "hwpx 파일을 읽을 수 없습니다 (DTD 선언은 허용하지 않습니다)"
         ) from None
     except expat.ExpatError as exc:
-        raise _broken("hwpx", section, exc) from None
+        raise _broken("hwpx", file_size, exc) from None
 
     blocks.append("".join(current))
     return blocks
@@ -334,7 +383,7 @@ def _extract_hwpx(data: bytes) -> str:
         # 구역이 하나도 없으면 hwpx 패키지가 아니거나 껍데기다.
         _log_failure("hwpx", len(data), "no_sections")
         raise DocumentExtractionError("hwpx 파일을 읽을 수 없습니다 (본문 구역이 없습니다)")
-    return _join_blocks(block for section in sections for block in _hwpx_blocks(section))
+    return _join_blocks(block for section in sections for block in _hwpx_blocks(section, len(data)))
 
 
 @dataclass(frozen=True)
