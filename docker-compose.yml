@@ -1,0 +1,38 @@
+# 로컬 개발용 인프라. 운영 배포용 정의가 아니다.
+# 사용법: docker compose up -d  →  uv run alembic upgrade head
+services:
+  # PostgreSQL + pgvector. 벡터 컬럼은 아직 없지만, 사전 RAG 도입 시
+  # DB 교체 없이 확장하려고 처음부터 pgvector 이미지를 쓴다.
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_DB: easydoc
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      # DB 준비 완료 후에만 마이그레이션·앱이 붙도록 한다.
+      test: ["CMD-SHELL", "pg_isready -U postgres -d easydoc"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # arq 작업 큐 브로커.
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  postgres_data:
+  redis_data:

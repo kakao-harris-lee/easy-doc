@@ -1,0 +1,1 @@
+# alembic 리비전 파일이 놓이는 디렉터리. 빈 상태에서도 alembic upgrade가 동작하도록 유지한다.
