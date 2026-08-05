@@ -8,7 +8,14 @@
 from anthropic import AnthropicError, APIStatusError, AsyncAnthropic
 
 from app.exceptions import LLMProviderError
-from app.llm.provider import LLMProvider, LLMResponse
+from app.llm.provider import (
+    DEFAULT_MAX_RETRIES,
+    DEFAULT_MAX_TOKENS,
+    DEFAULT_TEMPERATURE,
+    DEFAULT_TIMEOUT_SECONDS,
+    LLMProvider,
+    LLMResponse,
+)
 
 
 class AnthropicProvider(LLMProvider):
@@ -16,12 +23,25 @@ class AnthropicProvider(LLMProvider):
 
     name = "anthropic"
 
-    def __init__(self, api_key: str, model: str = "claude-sonnet-5") -> None:
+    def __init__(
+        self,
+        api_key: str,
+        model: str = "claude-sonnet-5",
+        timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
+    ) -> None:
         self.model = model
-        self._client = AsyncAnthropic(api_key=api_key)
+        # 타임아웃·재시도는 SDK 기본값에 맡기지 않고 명시한다 (provider.py 상수 참조).
+        self._client = AsyncAnthropic(
+            api_key=api_key, timeout=timeout_seconds, max_retries=DEFAULT_MAX_RETRIES
+        )
 
     async def complete(
-        self, *, system: str, user: str, max_tokens: int = 4096, temperature: float = 0.2
+        self,
+        *,
+        system: str,
+        user: str,
+        max_tokens: int = DEFAULT_MAX_TOKENS,
+        temperature: float = DEFAULT_TEMPERATURE,
     ) -> LLMResponse:
         """단일 완성 요청. 실패 시 LLMProviderError를 던진다.
 
@@ -38,14 +58,26 @@ class AnthropicProvider(LLMProvider):
                 messages=[{"role": "user", "content": user}],
             )
         # 예외 메시지에는 벤더명·상태코드/오류 유형까지만 남긴다 — 문서 본문 유출 금지.
+        # 원인 체인(from exc)은 유지한다. APM 도입 시 전송 범위를 다시 점검할 것.
         except APIStatusError as exc:
             raise LLMProviderError(f"anthropic 호출 실패 (HTTP {exc.status_code})") from exc
         except AnthropicError as exc:
             raise LLMProviderError(f"anthropic 호출 실패 ({type(exc).__name__})") from exc
 
+        text = "".join(block.text for block in message.content if block.type == "text")
+        if not text:
+            # 사고(thinking) 블록만 오거나 본문이 비는 경우 — 호출 측이 빈 문자열을
+            # 정상 변환 결과로 오인하지 않도록 실패로 처리한다.
+            raise LLMProviderError("anthropic 호출 실패 (빈 응답)")
+
         return LLMResponse(
-            text="".join(block.text for block in message.content if block.type == "text"),
+            text=text,
             model=message.model,
             input_tokens=message.usage.input_tokens,
             output_tokens=message.usage.output_tokens,
+            truncated=message.stop_reason == "max_tokens",
         )
+
+    async def aclose(self) -> None:
+        """SDK HTTP 클라이언트를 닫는다."""
+        await self._client.close()
