@@ -18,11 +18,19 @@ class ConversionOutcome(BaseModel):
 
     masked_items에 원문 개인정보가 담기므로 API response_model로 직접 쓰지 않는다
     (MaskingResult와 동일한 취급).
+
+    missing_placeholders 정책: 모델이 자리표시자를 지우거나 변형해 결과에서 사라진 목록이다.
+    개인정보가 새는 방향이 아니라 표시가 사라지는 방향(연락처 등 정보 누락)이므로
+    예외로 막지 않고 HITL 검수 화면 경고로 넘긴다 — 원문 대조 판단은 사람이 한다.
     """
 
     easy_text: str
     masked_items: list[MaskedItem]
+    missing_placeholders: list[str] = []
     model: str
+    provider_name: str
+    input_tokens: int = 0
+    output_tokens: int = 0
 
 
 class ConversionService:
@@ -42,8 +50,17 @@ class ConversionService:
             # 절단 감지는 provider가 사실(truncated)만 보고, 정책(예외/재시도)은 서비스가 결정한다.
             # 예외 메시지에 본문을 담지 않는다 (로그 유출 차단).
             raise LLMProviderError("변환 결과가 토큰 한도에서 잘렸습니다")
+        easy_text = postprocess(response.text)
+        if not easy_text:
+            # 후처리로 전부 벗겨졌거나 모델이 빈 응답을 준 경우 — 빈 결과를 성공으로 넘기지 않는다.
+            raise LLMProviderError("변환 결과가 비어 있습니다")
+        missing = [item.placeholder for item in masking.items if item.placeholder not in easy_text]
         return ConversionOutcome(
-            easy_text=postprocess(response.text),
+            easy_text=easy_text,
             masked_items=masking.items,
+            missing_placeholders=missing,
             model=response.model,
+            provider_name=self._provider.name,
+            input_tokens=response.input_tokens,
+            output_tokens=response.output_tokens,
         )

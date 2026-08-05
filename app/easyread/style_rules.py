@@ -56,7 +56,8 @@ DIFFICULT_WORD_REPLACEMENTS: Mapping[str, str] = MappingProxyType(
 # 프롬프트 치환 지시에만 쓰고 자동 채점에서는 제외하는 표현.
 # "~하기 위해"·"이상기후"처럼 정상 동사 활용·합성어와 기계적으로 구분 불가해
 # 규칙 기반 검사에 넣으면 오탐이 압도적이다(문맥 판단은 LLM 몫).
-_PROMPT_ONLY_WORDS: frozenset[str] = frozenset({"상기", "하기"})
+# 공개 상수: 프롬프트가 '무조건 치환' 그룹과 '문맥 판단' 그룹을 나눠 렌더링할 때 쓴다.
+PROMPT_ONLY_WORDS: frozenset[str] = frozenset({"상기", "하기"})
 
 STYLE_PRINCIPLES: tuple[str, ...] = (
     "한 문장에는 정보를 하나만 담는다.",
@@ -104,12 +105,12 @@ def split_sentences(text: str) -> list[str]:
 def find_difficult_words(text: str) -> list[str]:
     """치환 목록에 있는 어려운 표현 중 본문에 남아 있는 것을 찾는다.
 
-    _PROMPT_ONLY_WORDS는 오탐이 많아 자동 채점 대상에서 제외한다.
+    PROMPT_ONLY_WORDS는 오탐이 많아 자동 채점 대상에서 제외한다.
     """
     return [
         word
         for word in DIFFICULT_WORD_REPLACEMENTS
-        if word not in _PROMPT_ONLY_WORDS and word in text
+        if word not in PROMPT_ONLY_WORDS and word in text
     ]
 
 
