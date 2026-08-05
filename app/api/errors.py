@@ -5,6 +5,7 @@
 짝을 이뤄, 이메일·비밀번호·문서 본문이 응답이나 액세스 로그로 새지 않게 한다.
 """
 
+import logging
 from collections.abc import Awaitable, Callable
 
 from fastapi import FastAPI, Request, status
@@ -19,7 +20,10 @@ from app.exceptions import (
     InvalidInputError,
     LLMProviderError,
     NotFoundError,
+    StorageError,
 )
+
+_logger = logging.getLogger(__name__)
 
 # (예외, 상태 코드, 추가 헤더).
 # Starlette가 예외의 MRO를 따라 핸들러를 찾으므로 상위 예외 하나만 등록하면 하위
@@ -32,6 +36,8 @@ _MAPPINGS: tuple[tuple[type[EasyDocError], int, dict[str, str]], ...] = (
     (NotFoundError, status.HTTP_404_NOT_FOUND, {}),
     (LLMProviderError, status.HTTP_502_BAD_GATEWAY, {}),
     (ConfigurationError, status.HTTP_503_SERVICE_UNAVAILABLE, {}),
+    # 서버 버그. 메시지는 저장소가 만든 고정 문자열이라 그대로 내보내도 안전하다.
+    (StorageError, status.HTTP_500_INTERNAL_SERVER_ERROR, {}),
 )
 
 
@@ -55,7 +61,12 @@ async def _handle_unmapped_domain_error(request: Request, exc: Exception) -> JSO
 
     새 도메인 예외를 만들고 _MAPPINGS 등록을 잊어도 응답 모양이 유지된다. 메시지는
     고정 문자열이다 — 무엇이 담길지 모르는 예외를 그대로 노출하지 않는다.
+
+    조용히 500만 내보내면 매핑 누락을 아무도 모른 채 지나간다. 로그에는 예외 **타입**만
+    적는다 — str(exc)를 로그 인자로 넣지 않는 것은 도메인 예외 메시지에 무엇이 담길지
+    이 지점에서는 알 수 없기 때문이다(개인정보 금지 규칙).
     """
+    _logger.exception("매핑되지 않은 도메인 예외: %s", type(exc).__name__)
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         content={"detail": "요청을 처리하지 못했습니다"},

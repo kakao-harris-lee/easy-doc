@@ -7,18 +7,22 @@
 커밋 시점은 정하지 않는다. 트랜잭션 경계는 서비스가 소유한다(app/services/auth.py).
 """
 
+import logging
 import uuid
 
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.exceptions import EmailAlreadyRegisteredError, InvalidInputError
+from app.exceptions import EmailAlreadyRegisteredError, InvalidInputError, StorageError
 from app.models.user import User
 
-#: PostgreSQL unique_violation. users에 제약이 둘이라(unique 인덱스, 이메일 소문자
-#: CHECK) 어떤 제약이 걸렸는지 구분해야 응답이 엉뚱해지지 않는다.
+_logger = logging.getLogger(__name__)
+
+#: PostgreSQL SQLSTATE. users에 제약이 둘이라(unique 인덱스, 이메일 소문자 CHECK)
+#: 어떤 제약이 걸렸는지 구분해야 응답이 엉뚱해지지 않는다.
 _UNIQUE_VIOLATION = "23505"
+_CHECK_VIOLATION = "23514"
 
 
 class UserRepository:
@@ -54,13 +58,28 @@ class UserRepository:
         except IntegrityError as exc:
             # 롤백하지 않으면 세션이 무효 상태로 남아 다음 쿼리가 전부 실패한다.
             await self._session.rollback()
-            if getattr(exc.orig, "sqlstate", None) == _UNIQUE_VIOLATION:
-                # 예외 메시지에 이메일을 넣지 않는다 (로그·응답 유출 차단).
-                raise EmailAlreadyRegisteredError("이미 가입된 이메일입니다") from exc
-            # unique 위반이 아니면 정규화를 건너뛴 호출 경로가 있다는 뜻이다
-            # (예: 대문자가 섞인 이메일이 소문자 CHECK에 걸림). "이미 가입됨"으로
-            # 둔갑시키지 않되, 원본 예외를 그대로 올려보내지도 않는다.
-            raise InvalidInputError("저장할 수 없는 사용자 정보입니다") from exc
+            sqlstate = getattr(exc.orig, "sqlstate", None)
+            # 어느 분기든 `from exc`로 원본을 매달지 않는다. PostgreSQL은 제약 위반
+            # DETAIL에 "Failing row contains (…, user@example.com, …)"처럼 실패한 행
+            # 전체를 담고, 이 문자열은 SQLAlchemy의 hide_parameters로 가려지지 않는다
+            # (드라이버가 만든 메시지라서). 예외 체인이 붙으면 트레이스백을 남기는
+            # 모든 지점에서 이메일이 로그로 샌다.
+            if sqlstate == _UNIQUE_VIOLATION:
+                raise EmailAlreadyRegisteredError("이미 가입된 이메일입니다") from None
+            if sqlstate == _CHECK_VIOLATION:
+                # 정규화를 건너뛴 호출 경로가 있다는 뜻이다(대문자가 섞인 이메일이
+                # 소문자 CHECK에 걸림). "이미 가입됨"(409)으로 둔갑시키지 않는다.
+                raise InvalidInputError("저장할 수 없는 사용자 정보입니다") from None
+            # NOT NULL(23502)·FK(23503) 같은 나머지는 입력 문제가 아니라 우리 코드의
+            # 버그다. 4xx로 감싸면 조용히 묻히므로 5xx가 되는 예외로 올린다. 진단에
+            # 필요한 식별자만 로그에 남긴다 — SQLSTATE와 제약 이름은 사용자 데이터가
+            # 아니지만, 예외 메시지·DETAIL은 위 이유로 절대 남기지 않는다.
+            _logger.error(
+                "users 저장 제약 위반: sqlstate=%s constraint=%s",
+                sqlstate,
+                getattr(exc.orig, "constraint_name", None),
+            )
+            raise StorageError("사용자 정보를 저장하지 못했습니다") from None
         return user
 
     async def commit(self) -> None:

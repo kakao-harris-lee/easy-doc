@@ -7,11 +7,14 @@
 4. 커밋 시점을 서비스가 소유하는가.
 """
 
+import logging
 import threading
 import uuid
+from collections.abc import Callable
 
 import jwt
 import pytest
+from anyio import to_thread
 from argon2 import PasswordHasher
 
 from app.exceptions import (
@@ -113,6 +116,31 @@ async def test_argon2_계산은_이벤트_루프_스레드_밖에서_돈다(
 
     assert threads, "argon2가 호출되지 않았다"
     assert threading.get_ident() not in threads
+
+
+async def test_argon2_호출은_모두_공유_제한기를_거친다(monkeypatch: pytest.MonkeyPatch) -> None:
+    """제한기가 없으면 anyio 기본 한도(40)까지 동시에 돌아 64MiB × 40 ≈ 2.5GiB를 쓴다."""
+    limiters: list[object] = []
+
+    async def spy(func: Callable[..., object], *args: object, limiter: object = None) -> str:
+        limiters.append(limiter)
+        return "stub-hash"
+
+    # auth 모듈과 같은 anyio.to_thread 모듈 객체다 — 여기를 갈면 호출부에도 반영된다.
+    monkeypatch.setattr(to_thread, "run_sync", spy)
+
+    await hash_password(_PASSWORD)  # 가입 경로
+    with pytest.raises(InvalidCredentialsError):
+        # 없는 사용자 로그인 = 더미 해시 조회 + 검증, 두 번 더 거친다.
+        await _service().login(email="ghost@example.com", password=_PASSWORD)
+
+    assert len(limiters) == 3
+    assert all(limiter is auth_module._HASH_LIMITER for limiter in limiters)
+
+
+def test_동시_해싱_수가_코어_수_수준으로_묶여_있다() -> None:
+    """CPU 바운드라 코어 수를 넘겨도 처리량 이득이 없고, 메모리만 선형으로 는다."""
+    assert auth_module._HASH_LIMITER.total_tokens == 4
 
 
 # --- 가입 ---------------------------------------------------------------------
@@ -296,6 +324,35 @@ async def test_예전_파라미터의_해시는_로그인할_때_다시_저장�
     assert await verify_password(stored.password_hash, _PASSWORD) is True
     # 재해시는 저장까지 끝나야 의미가 있다.
     assert repository.commits == 1
+
+
+class _CommitFailingRepository(FakeUserRepository):
+    """commit이 실패하는 저장소 — DB 일시 장애를 흉내 낸다."""
+
+    async def commit(self) -> None:
+        raise RuntimeError(f"DB 접속 실패: {_EMAIL}")
+
+
+async def test_재해시가_실패해도_로그인은_성공한다(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """이관은 부가 작업이다 — 파라미터 상향 직후 DB가 흔들려도 인증까지 막으면 안 된다.
+
+    자격증명 검증은 이미 끝난 시점이라 로그인을 거부할 이유가 없다. 막히면 재해시
+    대상인 모든 사용자가 한꺼번에 로그인 불가가 된다.
+    """
+    weak_hash = PasswordHasher(time_cost=1, memory_cost=8, parallelism=1).hash(_PASSWORD)
+    repository = _CommitFailingRepository()
+    await repository.create(email=_EMAIL, password_hash=weak_hash)
+    service = _service(repository)
+
+    with caplog.at_level(logging.WARNING, logger="app.services.auth"):
+        token = await service.login(email=_EMAIL, password=_PASSWORD)
+
+    assert service.resolve_token(token)
+    # 예외 타입만 남고 메시지(이메일 포함)는 로그로 새지 않는다.
+    assert "RuntimeError" in caplog.text
+    assert _EMAIL not in caplog.text
 
 
 async def test_최신_파라미터면_재해시하지_않는다() -> None:

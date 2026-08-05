@@ -4,6 +4,9 @@
 등록해 확인한다.
 """
 
+import logging
+
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -33,6 +36,24 @@ def test_매핑되지_않은_도메인_예외는_고정_메시지로_500이_된�
     assert response.json() == {"detail": "요청을 처리하지 못했습니다"}
     # 무엇이 담길지 모르는 예외 메시지를 그대로 내보내지 않는다.
     assert "내부 사정이 담긴 문자열" not in response.text
+
+
+def test_백스톱은_예외_타입을_로그에_남긴다(caplog: pytest.LogCaptureFixture) -> None:
+    """조용히 500만 내보내면 매핑 누락을 아무도 모른 채 지나간다.
+
+    로그 메시지 자체에는 타입만 담는다 — 도메인 예외 메시지에 무엇이 들어올지
+    이 지점에서는 알 수 없기 때문이다(개인정보 금지 규칙).
+    """
+    client = _app_raising(EasyDocError("내부 사정이 담긴 문자열"))
+
+    with caplog.at_level(logging.ERROR, logger="app.api.errors"):
+        client.get("/boom")
+
+    record = next(record for record in caplog.records if record.name == "app.api.errors")
+    assert record.getMessage() == "매핑되지 않은 도메인 예외: EasyDocError"
+    assert "내부 사정이 담긴 문자열" not in record.getMessage()
+    # 원인 추적을 위한 트레이스백은 남긴다.
+    assert record.exc_info is not None
 
 
 def test_하위_예외는_상위_매핑을_물려받는다() -> None:

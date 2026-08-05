@@ -41,6 +41,15 @@ class NotFoundError(EasyDocError):
     """요청한 리소스가 없다."""
 
 
+class StorageError(EasyDocError):
+    """저장 계층에서 예상하지 못한 제약을 위반했다 — 입력 문제가 아니라 코드 버그다.
+
+    5xx로 매핑한다. 4xx로 감싸면 서버 버그가 "사용자가 뭘 잘못했다"로 둔갑해 조용히
+    묻힌다. 원본 DB 예외를 그대로 올리지 않는 이유는 repositories/users.py 참고
+    (PostgreSQL이 제약 위반 DETAIL에 실패한 행 전체를 담는다).
+    """
+
+
 class ConfigurationError(EasyDocError):
     """서버 설정이 비어 있어 기능을 제공할 수 없다 (예: JWT 비밀키 미설정).
 

@@ -6,13 +6,14 @@ create는 flush까지만 하므로, 저장을 확정하려면 commit을 따로 �
 AuthService와 같은 순서다(트랜잭션 경계는 서비스가 소유한다).
 """
 
+import logging
 import uuid
 
 import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.exceptions import EmailAlreadyRegisteredError, InvalidInputError
+from app.exceptions import EmailAlreadyRegisteredError, InvalidInputError, StorageError
 from app.models.user import User
 from app.repositories.users import UserRepository
 
@@ -90,6 +91,47 @@ async def test_대문자_이메일은_중복이_아니라_입력_오류다(db_se
         await repository.create(email="Upper@Example.com", password_hash=_HASH)
 
     assert "Upper@Example.com" not in str(error.value)
+
+
+async def test_그_밖의_제약_위반은_5xx가_된다(
+    db_session: AsyncSession, caplog: pytest.LogCaptureFixture
+) -> None:
+    """NOT NULL 위반 같은 것은 입력 문제가 아니라 우리 코드의 버그다.
+
+    4xx로 감싸면 "사용자가 뭘 잘못했다"로 둔갑해 조용히 묻힌다. 진단은 로그의
+    SQLSTATE·제약 이름으로 하고, 예외 메시지·DETAIL은 남기지 않는다.
+    """
+    repository = UserRepository(db_session)
+
+    with (
+        caplog.at_level(logging.ERROR, logger="app.repositories.users"),
+        pytest.raises(StorageError) as error,
+    ):
+        # 아래 무시 지시자의 사유: 서버 버그 상황(해시 누락)을 일부러 만든다.
+        # 타입 검사를 통과하는 코드로는 이 분기에 닿을 수 없다.
+        await repository.create(
+            email="notnull@example.com",
+            password_hash=None,  # type: ignore[arg-type]
+        )
+
+    assert "sqlstate=23502" in caplog.text
+    # PostgreSQL은 제약 위반 DETAIL에 실패한 행 전체를 담는다 — 예외에도 로그에도
+    # 그 문자열이 흘러들면 안 된다.
+    assert "notnull@example.com" not in str(error.value)
+    assert "notnull@example.com" not in caplog.text
+    assert error.value.__cause__ is None
+
+
+async def test_중복_예외에_DB_원본이_매달리지_않는다(db_session: AsyncSession) -> None:
+    """예외 체인이 붙으면 트레이스백을 찍는 모든 지점에서 이메일이 샌다."""
+    repository = UserRepository(db_session)
+    await _create(repository, "chain@example.com")
+
+    with pytest.raises(EmailAlreadyRegisteredError) as error:
+        await repository.create(email="chain@example.com", password_hash=_HASH)
+
+    assert error.value.__cause__ is None
+    assert "chain@example.com" not in str(error.value)
 
 
 async def test_식별자로_조회한다(db_session: AsyncSession) -> None:

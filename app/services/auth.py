@@ -11,6 +11,7 @@
    그동안 다른 모든 요청이 멈춘다(`hash_password` 참고).
 """
 
+import logging
 import re
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -18,12 +19,14 @@ from functools import cache
 from typing import Protocol
 
 import jwt
-from anyio import to_thread
+from anyio import CapacityLimiter, to_thread
 from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerificationError
 
 from app.exceptions import InvalidCredentialsError, InvalidInputError
 from app.models.user import User
+
+_logger = logging.getLogger(__name__)
 
 #: 비밀번호 최소 길이. 상한은 두지 않는다 — argon2는 입력 길이에 비용이 좌우되지 않는다.
 MIN_PASSWORD_LENGTH = 8
@@ -46,6 +49,14 @@ _EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s.]+(\.[^@\s.]+)+$")
 # 같다(64MiB · 3회 반복 · 병렬 4). 나중에 올릴 때는 로그인 시 자동 재해시로 이관된다.
 _HASHER = PasswordHasher(time_cost=3, memory_cost=65536, parallelism=4)
 
+# argon2 1건은 memory_cost(64MiB)를 계산이 끝날 때까지 붙들고 있다. anyio 기본 스레드
+# 한도는 40이라 동시 로그인 40건이면 약 2.5GiB — 컨테이너 메모리 상한을 넘겨 OOM으로
+# 죽는다. 게다가 CPU 바운드라 코어 수를 넘겨 돌려도 처리량 이득이 없다.
+# 실측(동시 20건, 3회): 한도 없이 총 193~269ms·루프 최대 지연 48~114ms(들쭉날쭉)
+# → 한도 4에서 총 181~205ms·루프 최대 지연 3.4ms(안정). 처리량은 오히려 조금 낫고
+# 동시 해싱 메모리가 1.28GiB에서 256MiB로 묶인다.
+_HASH_LIMITER = CapacityLimiter(4)
+
 _INVALID_CREDENTIALS_MESSAGE = "이메일 또는 비밀번호가 올바르지 않습니다"
 
 
@@ -66,8 +77,9 @@ async def hash_password(password: str) -> str:
     argon2는 의도적으로 느리다(위 파라미터로 약 23ms). 이벤트 루프에서 직접 돌리면
     그 시간 동안 다른 모든 요청이 멈춰 동시 로그인이 직렬화되고 /health까지 밀린다.
     argon2-cffi는 계산 중 GIL을 놓으므로 워커 스레드로 넘기면 실제로 병렬 처리된다.
+    동시 실행 수는 _HASH_LIMITER로 묶는다(메모리 폭주 방지 — 위 주석 참고).
     """
-    return await to_thread.run_sync(_HASHER.hash, password)
+    return await to_thread.run_sync(_HASHER.hash, password, limiter=_HASH_LIMITER)
 
 
 async def verify_password(password_hash: str, password: str) -> bool:
@@ -77,7 +89,9 @@ async def verify_password(password_hash: str, password: str) -> bool:
     "해시 문자열이 깨졌음"을 구분해 분기하면 실패 사유가 응답으로 새기 쉽다.
     """
     try:
-        return await to_thread.run_sync(_HASHER.verify, password_hash, password)
+        return await to_thread.run_sync(
+            _HASHER.verify, password_hash, password, limiter=_HASH_LIMITER
+        )
     except (VerificationError, InvalidHashError):
         return False
 
@@ -158,7 +172,7 @@ class AuthService:
             user.password_hash
             if user is not None
             # 캐시된 값이라 보통 즉시 반환되고, 첫 계산도 루프 밖에서 이뤄진다.
-            else await to_thread.run_sync(_dummy_password_hash)
+            else await to_thread.run_sync(_dummy_password_hash, limiter=_HASH_LIMITER)
         )
         matched = await verify_password(stored_hash, password)
         if user is None or not matched:
@@ -195,11 +209,20 @@ class AuthService:
 
         평문 비밀번호를 손에 쥐는 유일한 순간이 로그인 성공 직후다. 파라미터를 올린 뒤
         사용자가 로그인할 때마다 조금씩 이관되므로 별도 일괄 마이그레이션이 필요 없다.
+
+        실패해도 로그인은 계속 진행한다(best-effort). 이관은 부가 작업인데, 파라미터를
+        올린 직후 DB가 잠깐 흔들리면 재해시 대상인 **모든** 사용자가 로그인하지 못하는
+        상황으로 번진다 — 자격증명 검증은 이미 끝났으므로 인증을 막을 이유가 없다.
         """
         if not _HASHER.check_needs_rehash(user.password_hash):
             return
-        user.password_hash = await hash_password(password)
-        await self._repository.commit()
+        try:
+            user.password_hash = await hash_password(password)
+            await self._repository.commit()
+        except Exception as exc:
+            # 예외 타입만 남긴다. 메시지에는 SQL 파라미터(이메일)가 섞일 수 있고,
+            # 트레이스백도 같은 이유로 남기지 않는다.
+            _logger.warning("비밀번호 재해시 실패: %s", type(exc).__name__)
 
     def _issue_token(self, user_id: uuid.UUID) -> str:
         """sub·exp·typ만 담은 HS256 토큰을 만든다 (이메일 등 개인정보 금지)."""
