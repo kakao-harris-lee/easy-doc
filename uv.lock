@@ -435,11 +435,11 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "alembic", specifier = ">=1.13" },
+    { name = "alembic", specifier = ">=1.13,<2" },
     { name = "anthropic", specifier = ">=0.40" },
     { name = "argon2-cffi", specifier = ">=23.1" },
-    { name = "arq", specifier = ">=0.26" },
-    { name = "asyncpg", specifier = ">=0.29" },
+    { name = "arq", specifier = ">=0.26,<1" },
+    { name = "asyncpg", specifier = ">=0.29,<1" },
     { name = "cryptography", specifier = ">=43.0" },
     { name = "fastapi", specifier = ">=0.115" },
     { name = "openai", specifier = ">=1.50" },
@@ -449,7 +449,7 @@ requires-dist = [
     { name = "pypdf", specifier = ">=5.0" },
     { name = "python-docx", specifier = ">=1.1" },
     { name = "python-multipart", specifier = ">=0.0.9" },
-    { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0" },
+    { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0,<3" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.30" },
 ]
 

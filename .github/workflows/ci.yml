@@ -8,6 +8,8 @@ on:
 jobs:
   quality:
     runs-on: ubuntu-latest
+    # 서비스 컨테이너·네트워크 대기로 잡이 매달리는 것을 방지한다.
+    timeout-minutes: 15
     permissions:
       contents: read
     # 로컬 docker-compose.yml과 같은 이미지 — db 마커 통합 테스트를 CI에서 실제로 실행한다.

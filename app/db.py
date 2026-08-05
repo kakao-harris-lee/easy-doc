@@ -6,6 +6,7 @@ startup)에서 생성해 애플리케이션 상태에 보관하고, 종료 시 �
 안 되기 때문이다.
 """
 
+from sqlalchemy import MetaData
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -14,9 +15,22 @@ from sqlalchemy.ext.asyncio import (
 )
 from sqlalchemy.orm import DeclarativeBase
 
+#: 제약·인덱스 이름 규칙. DB가 자동으로 붙인 이름에 의존하면 나중에 제약을 지우거나
+#: 바꾸는 마이그레이션에서 이름을 몰라 손으로 SQL을 쓰게 된다. 규칙을 고정해두면
+#: alembic이 항상 같은 이름을 생성한다 — 첫 마이그레이션 전에 정해야 하는 값이다.
+NAMING_CONVENTION = {
+    "ix": "ix_%(column_0_label)s",
+    "uq": "uq_%(table_name)s_%(column_0_name)s",
+    "ck": "ck_%(table_name)s_%(constraint_name)s",
+    "fk": "fk_%(table_name)s_%(column_0_name)s_%(referred_table_name)s",
+    "pk": "pk_%(table_name)s",
+}
+
 
 class Base(DeclarativeBase):
     """모든 ORM 모델의 공통 베이스. alembic autogenerate가 이 metadata를 본다."""
+
+    metadata = MetaData(naming_convention=NAMING_CONVENTION)
 
 
 def create_engine_and_factory(

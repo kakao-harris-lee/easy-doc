@@ -10,7 +10,8 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
     ports:
-      - "5432:5432"
+      # 127.0.0.1 바인딩: 개발용 DB가 외부 네트워크에 노출되지 않게 한다.
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -24,7 +25,8 @@ services:
   redis:
     image: redis:7-alpine
     ports:
-      - "6379:6379"
+      # 127.0.0.1 바인딩: 인증 없는 개발용 Redis를 로컬로만 제한한다.
+      - "127.0.0.1:6379:6379"
     volumes:
       - redis_data:/data
     healthcheck:
