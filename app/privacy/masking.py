@@ -22,12 +22,13 @@ class MaskCategory(StrEnum):
 
 
 # 우선순위 순서(먼저 매칭된 구간이 이후 패턴보다 우선).
-# EMAIL은 PHONE보다 앞: 이메일 지역부 숫자열이 부분 마스킹되어 도메인이 남는 것을 방지.
+# EMAIL이 최우선 — 지역부의 숫자열이 부분 마스킹되어 도메인이 평문으로 남는 유출을 방지.
+# EMAIL은 @를 요구하므로 단독 숫자열을 가로채지 않는다.
 # RRN 성별코드는 [1-8]: 5~8은 외국인등록번호(고유식별정보). 구분자 없는 표기도 커버.
 _PATTERNS: tuple[tuple[MaskCategory, re.Pattern[str]], ...] = (
+    (MaskCategory.EMAIL, re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")),
     (MaskCategory.RRN, re.compile(r"(?<!\d)\d{6}[ \t]*-?[ \t]*[1-8]\d{6}(?!\d)")),
     (MaskCategory.CARD, re.compile(r"(?<!\d)\d{4}[- ]?\d{4}[- ]?\d{4}[- ]?\d{4}(?!\d)")),
-    (MaskCategory.EMAIL, re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")),
     (
         MaskCategory.PHONE,
         re.compile(

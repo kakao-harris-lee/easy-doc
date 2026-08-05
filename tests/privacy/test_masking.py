@@ -94,11 +94,37 @@ def test_개인정보_없는_문서는_그대로() -> None:
     assert result.items == []
 
 
-def test_이메일_안에_전화번호가_있어도_주소_전체가_마스킹된다() -> None:
-    """전화번호 패턴이 이메일 지역부만 삼켜 도메인이 남는 유출을 막는다."""
-    result = mask_text("회신 주소: hong01012345678@naver.com")
+@pytest.mark.parametrize(
+    "local_part",
+    [
+        "hong01012345678",  # 휴대전화 11자리
+        "hong9001011234567",  # 주민번호 13자리
+        "hong1234567890123456",  # 카드번호 16자리
+    ],
+)
+def test_이메일_지역부에_숫자열이_있어도_주소_전체가_마스킹된다(local_part: str) -> None:
+    """숫자 패턴이 지역부만 삼키면 도메인이 평문으로 남는다. EMAIL이 최우선인 이유."""
+    result = mask_text(f"회신 주소: {local_part}@naver.com")
     assert "naver.com" not in result.masked_text
+    assert result.masked_text == "회신 주소: [[이메일1]]"
     assert [item.category for item in result.items] == [MaskCategory.EMAIL]
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("900101-5234567", MaskCategory.RRN),
+        ("9001011234567", MaskCategory.RRN),
+        ("1234567890123456", MaskCategory.CARD),
+        ("010-1234-5678", MaskCategory.PHONE),
+    ],
+)
+def test_EMAIL_최우선이어도_단독_숫자열은_가로채지_않는다(
+    text: str, expected: MaskCategory
+) -> None:
+    """EMAIL 패턴은 @를 요구하므로 @ 없는 숫자열은 원래 카테고리로 분류된다."""
+    result = mask_text(f"확인 {text} 끝")
+    assert [item.category for item in result.items] == [expected]
 
 
 def test_기관_대표번호도_마스킹된다() -> None:
