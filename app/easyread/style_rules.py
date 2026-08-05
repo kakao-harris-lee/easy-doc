@@ -7,43 +7,56 @@
 """
 
 import re
+from collections.abc import Mapping
+from types import MappingProxyType
 
 from pydantic import BaseModel
 
 MAX_SENTENCE_CHARS = 50
 MAX_COMMAS_PER_SENTENCE = 2
 
+# 한 문장 한 정보 검사에 쓰는 쉼표(반각·전각·모점)
+_COMMA_CHARS: tuple[str, ...] = (",", "，", "、")
+
 # 이중 피동 등 피해야 할 서술 패턴
 DOUBLE_PASSIVE_PATTERNS: tuple[str, ...] = ("되어지", "보여지", "쓰여지", "믿겨지", "잊혀지")
 
-# 어려운 한자어·행정 용어 → 쉬운 표현 (시드 목록, 지속 확장)
-DIFFICULT_WORD_REPLACEMENTS: dict[str, str] = {
-    "금일": "오늘",
-    "명일": "내일",
-    "익일": "다음 날",
-    "익월": "다음 달",
-    "당월": "이번 달",
-    "동절기": "겨울철",
-    "하절기": "여름철",
-    "상기": "위",
-    "하기": "아래",
-    "소정의": "정해진",
-    "제반": "여러",
-    "구비서류": "준비할 서류",
-    "지참": "가지고 오기",
-    "송부": "보내기",
-    "기재": "적기",
-    "수령": "받기",
-    "납부": "내기",
-    "미납": "내지 않음",
-    "잔여": "남은",
-    "경감": "줄임",
-    "감면": "깎아 줌",
-    "부득이한": "어쩔 수 없는",
-    "해당자": "해당하는 사람",
-    "미제출": "내지 않음",
-    "도래": "다가옴",
-}
+# 어려운 한자어·행정 용어 → 쉬운 표현 (시드 목록, 지속 확장).
+# MappingProxyType: SSOT가 런타임에 변조되지 않도록 읽기 전용으로 노출한다.
+DIFFICULT_WORD_REPLACEMENTS: Mapping[str, str] = MappingProxyType(
+    {
+        "금일": "오늘",
+        "명일": "내일",
+        "익일": "다음 날",
+        "익월": "다음 달",
+        "당월": "이번 달",
+        "동절기": "겨울철",
+        "하절기": "여름철",
+        "상기": "위",
+        "하기": "아래",
+        "소정의": "정해진",
+        "제반": "여러",
+        "구비서류": "준비할 서류",
+        "지참": "가지고 오기",
+        "송부": "보내기",
+        "기재": "적기",
+        "수령": "받기",
+        "납부": "내기",
+        "미납": "내지 않음",
+        "잔여": "남은",
+        "경감": "줄임",
+        "감면": "깎아 줌",
+        "부득이한": "어쩔 수 없는",
+        "해당자": "해당하는 사람",
+        "미제출": "내지 않음",
+        "도래": "다가옴",
+    }
+)
+
+# 프롬프트 치환 지시에만 쓰고 자동 채점에서는 제외하는 표현.
+# "~하기 위해"·"이상기후"처럼 정상 동사 활용·합성어와 기계적으로 구분 불가해
+# 규칙 기반 검사에 넣으면 오탐이 압도적이다(문맥 판단은 LLM 몫).
+_PROMPT_ONLY_WORDS: frozenset[str] = frozenset({"상기", "하기"})
 
 STYLE_PRINCIPLES: tuple[str, ...] = (
     "한 문장에는 정보를 하나만 담는다.",
@@ -56,11 +69,9 @@ STYLE_PRINCIPLES: tuple[str, ...] = (
 
 _SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+|\n+")
 
-# 앞에 한글이 붙으면 다른 낱말이 되는 표현(下記/上記).
-# "신청하기"·"이상기후"처럼 흔한 어절을 어려운 표현으로 오탐하지 않도록
-# 어절 첫머리(앞 글자가 한글이 아닐 때)에서만 검출한다.
-_PREFIX_SENSITIVE_WORDS: frozenset[str] = frozenset({"상기", "하기"})
-_HANGUL_SYLLABLE = re.compile(r"[가-힣]")
+# 개조식 항목 마커("1.", "가.", "①)")는 문장이 아니라 번호다.
+# 분리 후 남는 마커 조각을 버려야 문장 수·평균 길이가 왜곡되지 않는다.
+_LIST_MARKER = re.compile(r"^(?:\d+|[가-힣]|[①-⑳])\s*[.)]$")
 
 
 class SentenceIssue(BaseModel):
@@ -82,29 +93,24 @@ class StyleCheckResult(BaseModel):
 
 
 def split_sentences(text: str) -> list[str]:
-    """마침표·물음표·느낌표·줄바꿈 기준의 단순 문장 분리."""
-    return [s.strip() for s in _SENTENCE_SPLIT.split(text) if s.strip()]
+    """마침표·물음표·느낌표·줄바꿈 기준의 단순 문장 분리.
 
-
-def _contains_difficult_word(text: str, word: str) -> bool:
-    """어려운 표현이 본문에 남아 있는지 판단한다.
-
-    오탐 방지 대상(_PREFIX_SENSITIVE_WORDS)은 앞 글자가 한글이 아닌 위치,
-    즉 어절 첫머리에 나타날 때만 검출한다.
+    개조식 항목 마커 조각은 문장으로 세지 않는다.
     """
-    if word not in _PREFIX_SENSITIVE_WORDS:
-        return word in text
-    start = text.find(word)
-    while start != -1:
-        if start == 0 or not _HANGUL_SYLLABLE.match(text[start - 1]):
-            return True
-        start = text.find(word, start + 1)
-    return False
+    candidates = (s.strip() for s in _SENTENCE_SPLIT.split(text))
+    return [s for s in candidates if s and not _LIST_MARKER.match(s)]
 
 
 def find_difficult_words(text: str) -> list[str]:
-    """치환 목록에 있는 어려운 표현 중 본문에 남아 있는 것을 찾는다."""
-    return [word for word in DIFFICULT_WORD_REPLACEMENTS if _contains_difficult_word(text, word)]
+    """치환 목록에 있는 어려운 표현 중 본문에 남아 있는 것을 찾는다.
+
+    _PROMPT_ONLY_WORDS는 오탐이 많아 자동 채점 대상에서 제외한다.
+    """
+    return [
+        word
+        for word in DIFFICULT_WORD_REPLACEMENTS
+        if word not in _PROMPT_ONLY_WORDS and word in text
+    ]
 
 
 def check_style(text: str) -> StyleCheckResult:
@@ -114,13 +120,13 @@ def check_style(text: str) -> StyleCheckResult:
     for sentence in sentences:
         if len(sentence) > MAX_SENTENCE_CHARS:
             issues.append(SentenceIssue(sentence=sentence, reason="문장 길이 초과"))
-        if sentence.count(",") > MAX_COMMAS_PER_SENTENCE:
+        if sum(sentence.count(comma) for comma in _COMMA_CHARS) > MAX_COMMAS_PER_SENTENCE:
             issues.append(
                 SentenceIssue(sentence=sentence, reason="쉼표 과다(한 문장 한 정보 위반 의심)")
             )
         for pattern in DOUBLE_PASSIVE_PATTERNS:
             if pattern in sentence:
                 issues.append(SentenceIssue(sentence=sentence, reason=f"이중 피동 표현({pattern})"))
-    for word in find_difficult_words(text):
-        issues.append(SentenceIssue(sentence=word, reason=f"어려운 표현 잔존({word})"))
+        for word in find_difficult_words(sentence):
+            issues.append(SentenceIssue(sentence=sentence, reason=f"어려운 표현 잔존({word})"))
     return StyleCheckResult(total_sentences=len(sentences), issues=issues)
