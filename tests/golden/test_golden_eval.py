@@ -7,12 +7,14 @@
 
 import os
 from collections.abc import AsyncIterator
+from statistics import fmean
 
 import pytest
 from pydantic import BaseModel
 
 from app.config import Settings
 from app.easyread.goldenset import GoldenDocument, load_documents
+from app.easyread.judge import JudgeScore, judge_conversion
 from app.easyread.style_rules import check_style
 from app.exceptions import LLMProviderError
 from app.llm.factory import create_provider
@@ -23,7 +25,9 @@ from tests.golden import DOCUMENTS_DIR
 pytestmark = pytest.mark.llm
 
 DEFAULT_PROVIDER = "anthropic"
+DEFAULT_JUDGE_PROVIDER = "anthropic"
 PASS_RATE_THRESHOLD = 0.9
+JUDGE_SCORE_THRESHOLD = 4.0
 
 DOCUMENTS: list[GoldenDocument] = load_documents(DOCUMENTS_DIR)
 
@@ -46,6 +50,19 @@ async def provider() -> AsyncIterator[LLMProvider]:
     created = create_provider(name, Settings())
     if created is None:
         pytest.skip(f"{name} API 키 없음 — 골든셋 평가를 건너뜁니다")
+    try:
+        yield created
+    finally:
+        await created.aclose()
+
+
+@pytest.fixture
+async def judge_provider() -> AsyncIterator[LLMProvider]:
+    """GOLDEN_JUDGE_PROVIDER로 지정한 채점용 provider (키가 없으면 skip)."""
+    name = os.environ.get("GOLDEN_JUDGE_PROVIDER", DEFAULT_JUDGE_PROVIDER)
+    created = create_provider(name, Settings())
+    if created is None:
+        pytest.skip(f"{name} API 키 없음 — judge 채점을 건너뜁니다")
     try:
         yield created
     finally:
@@ -102,3 +119,53 @@ async def test_골든셋_규칙_기반_통과율(provider: LLMProvider) -> None:
         evaluations.append(DocumentEvaluation(document_id=document.id, failures=failures))
     pass_rate = sum(evaluation.passed for evaluation in evaluations) / len(evaluations)
     assert pass_rate >= PASS_RATE_THRESHOLD, format_report(evaluations, pass_rate)
+
+
+def format_judge_report(
+    scores: dict[str, JudgeScore], failures: list[str], fidelity: float, readability: float
+) -> str:
+    """judge 실패 리포트 — 문서 id와 점수만 출력한다.
+
+    JudgeScore.comment에는 문서 본문 일부가 인용될 수 있어 절대 출력하지 않는다.
+    """
+    lines = [
+        f"충실성 평균 {fidelity:.2f} / 이해 용이성 평균 {readability:.2f} "
+        f"(기준 각 {JUDGE_SCORE_THRESHOLD})"
+    ]
+    lines.extend(
+        f"- {document_id}: 충실성 {score.fidelity}, 이해 용이성 {score.readability}"
+        for document_id, score in sorted(scores.items())
+    )
+    lines.extend(f"- {failure}" for failure in failures)
+    return "\n".join(lines)
+
+
+async def test_골든셋_judge_평균_점수(provider: LLMProvider, judge_provider: LLMProvider) -> None:
+    """LLM-as-judge 충실성·이해 용이성 평균이 각각 기준 이상이어야 한다."""
+    outcomes = await convert_all(provider)
+    scores: dict[str, JudgeScore] = {}
+    failures: list[str] = []
+    for document in DOCUMENTS:
+        outcome = outcomes[document.id]
+        if outcome is None:
+            failures.append(f"{document.id}: 변환실패")
+            continue
+        try:
+            scores[document.id] = await judge_conversion(
+                judge_provider, source=document.source_text, converted=outcome.easy_text
+            )
+        except LLMProviderError:
+            failures.append(f"{document.id}: 채점실패")
+    # 대부분이 실패한 provider가 남은 소수의 높은 점수로 통과하지 않도록 채점 범위를 먼저 본다.
+    coverage = len(scores) / len(DOCUMENTS)
+    assert coverage >= PASS_RATE_THRESHOLD, f"채점된 문서 비율 {coverage:.2f}\n" + "\n".join(
+        failures
+    )
+    fidelity = fmean(score.fidelity for score in scores.values())
+    readability = fmean(score.readability for score in scores.values())
+    assert fidelity >= JUDGE_SCORE_THRESHOLD, format_judge_report(
+        scores, failures, fidelity, readability
+    )
+    assert readability >= JUDGE_SCORE_THRESHOLD, format_judge_report(
+        scores, failures, fidelity, readability
+    )
