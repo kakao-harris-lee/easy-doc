@@ -6,8 +6,8 @@
 """
 
 from app.easyread.goldenset import GoldenDocument, load_documents
-from app.easyread.style_rules import find_difficult_words
-from app.privacy.masking import mask_text
+from app.easyread.style_rules import check_style, find_difficult_words
+from app.privacy.masking import MaskCategory, mask_text
 from tests.golden import DOCUMENTS_DIR
 
 MIN_DOCUMENTS = 20
@@ -16,6 +16,22 @@ MIN_FACTS = 3
 MAX_FACTS = 6
 MIN_SOURCE_CHARS = 500
 MAX_SOURCE_CHARS = 1500
+
+# 카테고리 통제 어휘 — 자유 입력이면 "주거 공고문"/"주거 안내문"처럼 축이 갈라져
+# 주제 분포 집계가 깨진다. 새 주제를 넣을 때 이 목록을 함께 갱신한다.
+ALLOWED_CATEGORIES = frozenset(
+    {
+        "복지 안내문",
+        "보건 안내문",
+        "행정 안내문",
+        "주거 안내문",
+        "재난 안내문",
+        "문화 안내문",
+        "교육 안내문",
+        "고용 안내문",
+        "생활요금 안내문",
+    }
+)
 
 DOCUMENTS: list[GoldenDocument] = load_documents(DOCUMENTS_DIR)
 
@@ -75,6 +91,27 @@ def test_합성_개인정보가_문서마다_들어_있다() -> None:
         document.id for document in DOCUMENTS if not mask_text(document.source_text).items
     ]
     assert without_pii == []
+
+
+def test_마스킹_범주_전체가_골든셋에_등장한다() -> None:
+    """한 범주라도 빠지면 그 패턴의 회귀를 골든셋 평가가 잡지 못한다."""
+    covered = {
+        item.category for document in DOCUMENTS for item in mask_text(document.source_text).items
+    }
+    assert covered == set(MaskCategory)
+
+
+def test_카테고리가_통제_어휘_안이다() -> None:
+    unknown = sorted({document.category for document in DOCUMENTS} - ALLOWED_CATEGORIES)
+    assert unknown == []
+
+
+def test_원문은_모두_변환이_필요한_상태다() -> None:
+    """이미 쉬운 글인 문서가 섞이면 통과율이 실력과 무관하게 올라간다."""
+    already_easy = [
+        document.id for document in DOCUMENTS if check_style(document.source_text).passed
+    ]
+    assert already_easy == []
 
 
 def test_required_facts_개수가_기준_범위_안이다() -> None:
