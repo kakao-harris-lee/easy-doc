@@ -1,4 +1,4 @@
-"""골든셋 로더 단위 테스트 — 실제 문서 내용이 아니라 로딩 규칙만 검증한다."""
+"""골든셋 로더 단위 테스트 — 실제 문서 내용이 아니라 로딩·팩트 판정 규칙만 검증한다."""
 
 import json
 from pathlib import Path
@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from app.easyread.goldenset import GoldenDocument, load_documents
+from app.easyread.goldenset import GoldenDocument, RequiredFact, load_documents
 
 
 def _write(directory: Path, filename: str, **overrides: object) -> None:
@@ -46,8 +46,52 @@ def test_모든_필드를_그대로_담는다(tmp_path: Path) -> None:
         category="복지 안내문",
         synthetic=False,
         source_text="본문",
-        required_facts=["3월 2일", "25만 원"],
+        required_facts=[RequiredFact(canonical="3월 2일"), RequiredFact(canonical="25만 원")],
     )
+
+
+def test_문자열_팩트는_canonical로_승격된다(tmp_path: Path) -> None:
+    """변형이 필요 없는 팩트는 JSON에 문자열로만 적을 수 있어야 한다."""
+    _write(tmp_path, "001.json", required_facts=["주민센터"])
+    fact = load_documents(tmp_path)[0].required_facts[0]
+    assert (fact.canonical, fact.accept) == ("주민센터", [])
+
+
+def test_객체_팩트는_허용_변형을_담는다(tmp_path: Path) -> None:
+    _write(
+        tmp_path,
+        "001.json",
+        required_facts=[{"canonical": "만 65세", "accept": ["65세"]}, "주민센터"],
+    )
+    facts = load_documents(tmp_path)[0].required_facts
+    assert facts[0] == RequiredFact(canonical="만 65세", accept=["65세"])
+    assert facts[1] == RequiredFact(canonical="주민센터")
+
+
+def test_팩트_잔존_판정은_허용_변형을_인정한다() -> None:
+    """ "만 65세"를 "65세"로 쓰는 것은 정보 손실이 아니므로 보존으로 본다."""
+    fact = RequiredFact(canonical="만 65세", accept=["65세"])
+    assert fact.retained_in("65세 이상 어르신이 받습니다.")
+    assert fact.retained_in("만 65세 이상 어르신이 받습니다.")
+    assert not fact.retained_in("어르신이 받습니다.")
+
+
+def test_허용_변형이_없으면_canonical만_본다() -> None:
+    fact = RequiredFact(canonical="25만 원")
+    assert fact.retained_in("25만 원을 받습니다.")
+    assert not fact.retained_in("25만원을 받습니다.")
+
+
+def test_남지_않은_팩트만_돌려준다(tmp_path: Path) -> None:
+    """평가 테스트와 벤치마크가 공유하는 유일한 판정 경로다."""
+    _write(
+        tmp_path,
+        "001.json",
+        required_facts=[{"canonical": "30퍼센트", "accept": ["30%"]}, "주민센터", "25만 원"],
+    )
+    document = load_documents(tmp_path)[0]
+    missing = document.missing_facts("30%를 주민센터에서 확인하세요.")
+    assert [fact.canonical for fact in missing] == ["25만 원"]
 
 
 def test_id가_중복이면_ValueError(tmp_path: Path) -> None:
@@ -66,6 +110,12 @@ def test_필드가_빠지면_검증_실패(tmp_path: Path) -> None:
 def test_정의되지_않은_필드는_거부한다(tmp_path: Path) -> None:
     """오타 난 필드가 조용히 무시되면 골든셋 규칙이 헐거워진다."""
     _write(tmp_path, "001.json", requiredfacts=["오타"])
+    with pytest.raises(ValidationError):
+        load_documents(tmp_path)
+
+
+def test_팩트에_정의되지_않은_필드도_거부한다(tmp_path: Path) -> None:
+    _write(tmp_path, "001.json", required_facts=[{"canonical": "25만 원", "허용": ["25만원"]}])
     with pytest.raises(ValidationError):
         load_documents(tmp_path)
 

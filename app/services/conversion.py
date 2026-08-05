@@ -8,7 +8,7 @@ from pydantic import BaseModel
 
 from app.easyread.postprocess import postprocess
 from app.easyread.prompts import build_system_prompt, build_user_prompt
-from app.exceptions import LLMProviderError
+from app.exceptions import LLMEmptyResultError, LLMTruncatedError
 from app.llm.provider import LLMProvider
 from app.privacy.masking import MaskedItem, mask_text
 
@@ -49,11 +49,11 @@ class ConversionService:
         if response.truncated:
             # 절단 감지는 provider가 사실(truncated)만 보고, 정책(예외/재시도)은 서비스가 결정한다.
             # 예외 메시지에 본문을 담지 않는다 (로그 유출 차단).
-            raise LLMProviderError("변환 결과가 토큰 한도에서 잘렸습니다")
+            raise LLMTruncatedError("변환 결과가 토큰 한도에서 잘렸습니다")
         easy_text = postprocess(response.text)
         if not easy_text:
             # 후처리로 전부 벗겨졌거나 모델이 빈 응답을 준 경우 — 빈 결과를 성공으로 넘기지 않는다.
-            raise LLMProviderError("변환 결과가 비어 있습니다")
+            raise LLMEmptyResultError("변환 결과가 비어 있습니다")
         missing = [item.placeholder for item in masking.items if item.placeholder not in easy_text]
         return ConversionOutcome(
             easy_text=easy_text,

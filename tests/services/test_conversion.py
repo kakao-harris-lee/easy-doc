@@ -5,7 +5,7 @@ import re
 import pytest
 
 from app.easyread.prompts import build_system_prompt
-from app.exceptions import LLMProviderError
+from app.exceptions import LLMEmptyResultError, LLMProviderError, LLMTruncatedError
 from app.llm.fake import FakeProvider
 from app.llm.provider import (
     DEFAULT_MAX_TOKENS,
@@ -77,11 +77,16 @@ async def test_프롬프트_SSOT를_그대로_전달한다() -> None:
 
 
 async def test_절단_응답은_예외로_막는다() -> None:
-    """잘린 본문을 정상 결과로 내보내면 정보 누락 사고가 된다."""
+    """잘린 본문을 정상 결과로 내보내면 정보 누락 사고가 된다.
+
+    실패 유형이 구분되어야 벤치마크·평가 리포트가 원인별로 집계할 수 있다.
+    LLMProviderError 하위 클래스라 기존 호출 계약(단일 except)은 그대로 유지된다.
+    """
     provider = _ResponseProvider(LLMResponse(text="쉬운 글이 도중에", model="fake", truncated=True))
     service = ConversionService(provider=provider)
-    with pytest.raises(LLMProviderError):
+    with pytest.raises(LLMTruncatedError):
         await service.convert("안내문 본문")
+    assert issubclass(LLMTruncatedError, LLMProviderError)
 
 
 async def test_provider_예외는_그대로_전파된다() -> None:
@@ -102,8 +107,9 @@ async def test_응답에_붙은_코드_펜스는_후처리로_제거된다() -> 
 async def test_빈_변환_결과는_예외로_막는다(raw: str) -> None:
     """후처리 후 본문이 없으면 성공으로 넘기지 않는다."""
     service = ConversionService(provider=FakeProvider(responses=[raw]))
-    with pytest.raises(LLMProviderError):
+    with pytest.raises(LLMEmptyResultError):
         await service.convert("안내문 본문")
+    assert issubclass(LLMEmptyResultError, LLMProviderError)
 
 
 async def test_유실된_플레이스홀더를_보고한다() -> None:

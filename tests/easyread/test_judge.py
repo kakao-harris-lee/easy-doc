@@ -27,6 +27,20 @@ def test_코드_펜스로_감싼_JSON도_파싱한다() -> None:
 @pytest.mark.parametrize(
     "raw",
     [
+        f"채점 결과입니다:\n{_VALID}",
+        f"{_VALID}\n\n이상입니다.",
+        f"설명이 앞에 붙고 {_VALID} 뒤에도 붙는 경우",
+    ],
+)
+def test_앞뒤에_설명이_붙어도_JSON_구간을_찾아낸다(raw: str) -> None:
+    """머리말·꼬리말을 붙이는 모델 때문에 채점 자체가 실패하지 않도록 한 번 더 시도한다."""
+    score = parse_judge_response(raw)
+    assert (score.fidelity, score.readability) == (4, 5)
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
         "채점을 할 수 없습니다.",
         "",
         '{"fidelity": 4, "readability": 5',

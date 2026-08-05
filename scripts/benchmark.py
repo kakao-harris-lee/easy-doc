@@ -4,9 +4,11 @@
     uv run python scripts/benchmark.py --providers anthropic,openai --judge anthropic
 
 측정: 규칙 통과율(check_style) · 팩트 잔존율 · 플레이스홀더 유실 · judge 점수(옵션)
-     · 응답 지연(초, 변환 호출만) · 출력 문자 수 · 입력/출력 토큰.
+     · 충실성 바닥(fidelity<=2) 문서 수 · 응답 지연(초, 변환 호출만)
+     · 출력 문자 수 · 입력/출력 토큰.
 
-지연 측정의 정확성을 위해 동시 실행하지 않고 순차로 호출한다.
+지연 측정의 정확성을 위해 동시 실행하지 않고 순차로 호출한다. provider마다 측정 전
+워밍업 호출을 한 번 버려 커넥션 수립 비용이 첫 문서에 실리지 않게 한다.
 
 보안: 리포트·표준출력에 문서 본문과 변환 결과를 절대 남기지 않는다.
       문서 ID·수치·실패 사유 코드만 기록한다 (CLAUDE.md 보안·데이터 규칙).
@@ -14,7 +16,7 @@
 
 import argparse
 import asyncio
-import math
+import statistics
 import sys
 import time
 from datetime import datetime
@@ -39,7 +41,11 @@ from app.services.conversion import ConversionService  # noqa: E402
 DOCUMENTS_DIR = REPO_ROOT / "tests" / "golden" / "documents"
 DEFAULT_OUTPUT_DIR = REPO_ROOT / "docs" / "benchmarks"
 DEFAULT_PROVIDERS = "anthropic,openai"
-LATENCY_PERCENTILE = 0.95
+# 충실성 바닥 — 이하이면 중요 정보 누락·날조 의심이라 평균과 별도로 센다
+# (tests/golden/test_golden_eval.py의 FIDELITY_FLOOR와 같은 기준).
+FIDELITY_FLOOR = 2
+# 워밍업용 최소 입력. 결과는 버리고 측정에 넣지 않는다.
+WARMUP_TEXT = "안내문입니다."
 
 
 class DocumentMeasurement(BaseModel):
@@ -71,7 +77,11 @@ class ProviderBenchmark(BaseModel):
 
 
 class ProviderSummary(BaseModel):
-    """리포트 비교 표에 들어가는 집계값."""
+    """리포트 비교 표에 들어가는 집계값.
+
+    성공한 호출에서만 나오는 값(지연·토큰·judge)은 전멸한 provider에서 0으로
+    보이면 오해를 부르므로 None으로 두고 리포트에서 "-"로 렌더링한다.
+    """
 
     provider_name: str
     model: str
@@ -80,25 +90,18 @@ class ProviderSummary(BaseModel):
     style_pass_rate: float
     fact_retention: float
     placeholder_loss: int
+    judged: int
     fidelity_average: float | None
     readability_average: float | None
-    latency_average: float
-    latency_p95: float
-    input_tokens_average: float
-    output_tokens_average: float
+    low_fidelity: int
+    latency_median: float | None
+    latency_max: float | None
+    input_tokens_average: float | None
+    output_tokens_average: float | None
 
 
-def percentile(values: list[float], ratio: float) -> float:
-    """가장 가까운 순위(nearest-rank) 방식 백분위수. 표본이 적어 보간은 쓰지 않는다."""
-    if not values:
-        return 0.0
-    ordered = sorted(values)
-    index = max(1, math.ceil(ratio * len(ordered))) - 1
-    return ordered[index]
-
-
-def average(values: list[float]) -> float:
-    return sum(values) / len(values) if values else 0.0
+def average_or_none(values: list[float]) -> float | None:
+    return sum(values) / len(values) if values else None
 
 
 async def measure_document(
@@ -111,6 +114,7 @@ async def measure_document(
     try:
         outcome = await service.convert(document.source_text)
     except LLMProviderError as error:
+        # 예외 유형이 절단·빈 결과·호출 실패를 구분한다 (app/exceptions.py).
         return DocumentMeasurement(
             document_id=document.id,
             succeeded=False,
@@ -121,7 +125,8 @@ async def measure_document(
     latency = time.perf_counter() - started
 
     style = check_style(outcome.easy_text)
-    kept = sum(1 for fact in document.required_facts if fact in outcome.easy_text)
+    # 팩트 잔존 판정은 GoldenDocument.missing_facts() 한 곳만 쓴다(평가 테스트와 동일 기준).
+    missing_facts = document.missing_facts(outcome.easy_text)
     fidelity: int | None = None
     readability: int | None = None
     if judge_provider is not None:
@@ -141,7 +146,7 @@ async def measure_document(
         style_passed=style.passed,
         style_issues=len(style.issues),
         facts_total=len(document.required_facts),
-        facts_kept=kept,
+        facts_kept=len(document.required_facts) - len(missing_facts),
         missing_placeholders=len(outcome.missing_placeholders),
         latency_seconds=latency,
         output_chars=len(outcome.easy_text),
@@ -152,6 +157,14 @@ async def measure_document(
     )
 
 
+async def warm_up(service: ConversionService) -> None:
+    """커넥션 수립 비용이 첫 문서 지연에 섞이지 않도록 버리는 호출을 한 번 한다."""
+    try:
+        await service.convert(WARMUP_TEXT)
+    except LLMProviderError as error:
+        print(f"    워밍업 호출 실패 ({type(error).__name__}) — 측정은 그대로 진행합니다")
+
+
 async def measure_provider(
     provider: LLMProvider,
     documents: list[GoldenDocument],
@@ -159,6 +172,7 @@ async def measure_provider(
 ) -> ProviderBenchmark:
     """provider 하나로 골든셋 전 문서를 순차 측정한다."""
     service = ConversionService(provider=provider)
+    await warm_up(service)
     measurements: list[DocumentMeasurement] = []
     for document in documents:
         measurement = await measure_document(service, document, judge_provider)
@@ -185,8 +199,8 @@ def summarize(benchmark: ProviderBenchmark) -> ProviderSummary:
     measurements = benchmark.measurements
     successes = [m for m in measurements if m.succeeded]
     facts_total = sum(m.facts_total for m in measurements)
-    fidelities = [float(m.fidelity) for m in successes if m.fidelity is not None]
-    readabilities = [float(m.readability) for m in successes if m.readability is not None]
+    fidelities = [m.fidelity for m in successes if m.fidelity is not None]
+    readabilities = [m.readability for m in successes if m.readability is not None]
     latencies = [m.latency_seconds for m in successes]
     return ProviderSummary(
         provider_name=benchmark.provider_name,
@@ -201,33 +215,44 @@ def summarize(benchmark: ProviderBenchmark) -> ProviderSummary:
             sum(m.facts_kept for m in measurements) / facts_total if facts_total else 0.0
         ),
         placeholder_loss=sum(m.missing_placeholders for m in measurements),
-        fidelity_average=average(fidelities) if fidelities else None,
-        readability_average=average(readabilities) if readabilities else None,
-        # 지연·토큰은 성공한 호출만 평균한다(실패는 조기 종료라 분포가 다르다).
-        latency_average=average(latencies),
-        latency_p95=percentile(latencies, LATENCY_PERCENTILE),
-        input_tokens_average=average([float(m.input_tokens) for m in successes]),
-        output_tokens_average=average([float(m.output_tokens) for m in successes]),
+        judged=len(fidelities),
+        fidelity_average=average_or_none([float(value) for value in fidelities]),
+        readability_average=average_or_none([float(value) for value in readabilities]),
+        low_fidelity=sum(1 for value in fidelities if value <= FIDELITY_FLOOR),
+        # 지연·토큰은 성공한 호출만 집계한다(실패는 조기 종료라 분포가 다르다).
+        # n=20 단일 실행이라 p95는 사실상 두 번째 큰 값이므로 중앙값·최대값만 낸다.
+        latency_median=statistics.median(latencies) if latencies else None,
+        latency_max=max(latencies) if latencies else None,
+        input_tokens_average=average_or_none([float(m.input_tokens) for m in successes]),
+        output_tokens_average=average_or_none([float(m.output_tokens) for m in successes]),
     )
 
 
-def format_score(value: float | None) -> str:
-    return f"{value:.2f}" if value is not None else "-"
+def format_number(value: float | None, digits: int = 2) -> str:
+    """측정값이 없으면 0이 아니라 "-"로 표기한다(전멸 provider 오해 방지)."""
+    return f"{value:.{digits}f}" if value is not None else "-"
+
+
+def format_judge_average(value: float | None, judged: int) -> str:
+    return f"{value:.2f} ({judged}건)" if value is not None else "-"
 
 
 def render_comparison_table(summaries: list[ProviderSummary]) -> str:
     header = (
         "| provider | 모델 | 문서 | 실패 | 규칙 통과율 | 팩트 잔존율 | 플레이스홀더 유실 "
-        "| judge 충실성 | judge 이해 용이성 | 평균 지연(초) | p95 지연(초) "
+        "| judge 충실성 | judge 이해 용이성 | 충실성≤2 문서 | 지연 중앙값(초) | 지연 최대(초) "
         "| 평균 입력 토큰 | 평균 출력 토큰 |\n"
-        "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |"
+        "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: "
+        "| ---: | ---: |"
     )
     rows = [
         f"| {s.provider_name} | {s.model} | {s.documents} | {s.failures} "
         f"| {s.style_pass_rate:.0%} | {s.fact_retention:.0%} | {s.placeholder_loss} "
-        f"| {format_score(s.fidelity_average)} | {format_score(s.readability_average)} "
-        f"| {s.latency_average:.2f} | {s.latency_p95:.2f} "
-        f"| {s.input_tokens_average:.0f} | {s.output_tokens_average:.0f} |"
+        f"| {format_judge_average(s.fidelity_average, s.judged)} "
+        f"| {format_judge_average(s.readability_average, s.judged)} | {s.low_fidelity} "
+        f"| {format_number(s.latency_median)} | {format_number(s.latency_max)} "
+        f"| {format_number(s.input_tokens_average, 0)} "
+        f"| {format_number(s.output_tokens_average, 0)} |"
         for s in summaries
     ]
     return "\n".join([header, *rows])
@@ -256,11 +281,15 @@ def render_report(
     """벤치마크 리포트 markdown을 만든다 (문서 본문·변환 결과 미포함)."""
     summaries = [summarize(benchmark) for benchmark in benchmarks]
     sections = [
-        f"# LLM 벤치마크 결과 ({generated_at:%Y-%m-%d})",
+        f"# LLM 벤치마크 결과 ({generated_at:%Y-%m-%d %H:%M})",
         "",
-        f"- 실행 시각: {generated_at:%Y-%m-%d %H:%M}",
         f"- 골든셋: 합성 {summaries[0].documents}건 (`tests/golden/documents`)",
         f"- judge: {judge_name}",
+        f"- 충실성≤{FIDELITY_FLOOR} 문서는 정보 누락·날조 의심 — 평균과 별도로 확인할 것.",
+        "- 지연은 문서 1건당 변환 호출만 측정했다. 문서 길이 편차(555~1146자)가 그대로",
+        "  섞여 있고 각 문서를 1회만 호출한 단일 실행이라 반복 측정 통계가 아니다.",
+        "  provider 간 상대 비교 참고용으로만 쓰고, 절대 지연 보증에는 쓰지 않는다.",
+        "- 측정값이 없는 칸은 `-`로 표기한다(0이 아님).",
         "- 이 리포트에는 문서 본문과 변환 결과를 기록하지 않는다 (문서 ID·수치만).",
         "",
         "## provider 비교",
@@ -300,7 +329,7 @@ async def run(providers: list[str], judge: str | None, output_dir: Path) -> int:
             if provider is None:
                 print(f"경고: {name} API 키가 없어 건너뜁니다")
                 continue
-            print(f"[{name}] 측정 시작")
+            print(f"[{name}] 워밍업 후 측정 시작")
             try:
                 benchmarks.append(await measure_provider(provider, documents, judge_provider))
             finally:
@@ -311,11 +340,13 @@ async def run(providers: list[str], judge: str | None, output_dir: Path) -> int:
 
     if not benchmarks:
         print("경고: 모든 provider를 건너뛰었습니다 — 리포트를 생성하지 않습니다")
-        return 0
+        # 측정이 하나도 없었다는 사실을 종료 코드로 알린다(CI·스크립트가 성공으로 오인 금지).
+        return 1
 
     generated_at = datetime.now()
     output_dir.mkdir(parents=True, exist_ok=True)
-    report_path = output_dir / f"{generated_at:%Y-%m-%d}-llm-benchmark.md"
+    # 같은 날 여러 번 돌려도 이전 결과를 덮어쓰지 않도록 시각까지 파일명에 넣는다.
+    report_path = output_dir / f"{generated_at:%Y-%m-%d-%H%M}-llm-benchmark.md"
     judge_name = judge if judge is not None and judge_provider is not None else "사용 안 함"
     report_path.write_text(render_report(benchmarks, judge_name, generated_at), encoding="utf-8")
     print(f"리포트 저장: {report_path}")

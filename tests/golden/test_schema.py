@@ -86,24 +86,31 @@ def test_required_facts_개수가_기준_범위_안이다() -> None:
     assert out_of_range == []
 
 
-def test_required_facts가_원문에_실제로_존재한다() -> None:
-    """원문에 없는 리터럴은 변환문에서도 찾을 수 없어 평가가 항상 실패한다."""
+def test_required_facts의_canonical이_원문에_실제로_존재한다() -> None:
+    """원문에 없는 리터럴은 변환문에서도 찾을 수 없어 평가가 항상 실패한다.
+
+    accept(허용 변형)는 변환문에서만 나오는 표기이므로 원문 존재를 요구하지 않는다.
+    """
     violations = [
-        (document.id, fact)
+        (document.id, fact.canonical)
         for document in DOCUMENTS
         for fact in document.required_facts
-        if fact not in document.source_text
+        if fact.canonical not in document.source_text
     ]
     assert violations == []
 
 
 def test_required_facts에_마스킹_대상_패턴이_없다() -> None:
-    """전화·이메일·계좌 등은 플레이스홀더로 치환되므로 팩트로 쓸 수 없다."""
+    """전화·이메일·계좌 등은 플레이스홀더로 치환되므로 팩트로 쓸 수 없다.
+
+    accept 변형도 같은 이유로 검사한다.
+    """
     violations = [
-        (document.id, fact)
+        (document.id, literal)
         for document in DOCUMENTS
         for fact in document.required_facts
-        if mask_text(fact).items
+        for literal in (fact.canonical, *fact.accept)
+        if mask_text(literal).items
     ]
     assert violations == []
 
@@ -111,9 +118,20 @@ def test_required_facts에_마스킹_대상_패턴이_없다() -> None:
 def test_required_facts가_마스킹_후에도_원문에_남는다() -> None:
     """개인정보 바로 옆 리터럴이 마스킹 구간에 삼켜지지 않는지 확인한다."""
     violations = [
-        (document.id, fact)
+        (document.id, fact.canonical)
         for document in DOCUMENTS
         for fact in document.required_facts
-        if fact not in mask_text(document.source_text).masked_text
+        if fact.canonical not in mask_text(document.source_text).masked_text
+    ]
+    assert violations == []
+
+
+def test_허용_변형이_canonical과_다르다() -> None:
+    """canonical을 그대로 accept에 넣으면 판정이 느슨해진 것처럼 보여 오해를 부른다."""
+    violations = [
+        (document.id, fact.canonical)
+        for document in DOCUMENTS
+        for fact in document.required_facts
+        if fact.canonical in fact.accept or len(set(fact.accept)) != len(fact.accept)
     ]
     assert violations == []

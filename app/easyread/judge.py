@@ -35,6 +35,11 @@ _ROLE = (
     "채점은 원문과 변환문을 대조해서만 하고, 추측으로 점수를 주지 마세요."
 )
 
+# 루브릭 축 주의: 5~2점은 '누락'의 정도를 잰다(연속). 1점만 '날조·의미 반전'이라는
+# 다른 축이다. 두 축이 한 척도에 섞여 있으므로 평균만 보면 1점(날조)이 다수의 5점에
+# 희석된다 — 예: 15건 5점 + 5건 1점이면 평균 4.0이지만 25%가 날조다.
+# 평균은 참고값이고, fidelity<=2 문서를 개별로 막는 바닥 게이트가 실제 방어선이다
+# (tests/golden/test_golden_eval.py의 FIDELITY_FLOOR).
 _FIDELITY_CRITERIA: tuple[str, ...] = (
     "5점: 원문의 정보가 빠짐없이 남아 있고 왜곡이 없습니다.",
     "4점: 사소한 정보 하나가 빠졌지만 뜻이 달라지지는 않았습니다.",
@@ -101,16 +106,38 @@ def build_judge_prompt(source: str, converted: str) -> tuple[str, str]:
     return system, user
 
 
+def _extract_json_object(text: str) -> str:
+    """앞뒤에 설명이 붙은 응답에서 첫 '{'부터 마지막 '}'까지를 JSON 후보로 잘라낸다."""
+    start = text.find("{")
+    end = text.rfind("}")
+    if start == -1 or end <= start:
+        return text
+    return text[start : end + 1]
+
+
 def parse_judge_response(raw: str) -> JudgeScore:
-    """채점 응답을 JudgeScore로 파싱한다. 해석 실패·범위 밖 값은 LLMProviderError."""
+    """채점 응답을 JudgeScore로 파싱한다. 해석 실패·범위 밖 값은 LLMProviderError.
+
+    코드 펜스를 벗긴 원문을 먼저 시도하고, 실패하면 중괄호 구간만 잘라 한 번 더 시도한다
+    (모델이 "채점 결과입니다:" 같은 머리말을 붙이는 경우 대비).
+    """
     text = _FENCE_CLOSE.sub("", _FENCE_OPEN.sub("", raw.strip())).strip()
-    try:
-        return JudgeScore.model_validate_json(text)
-    except ValidationError as error:
-        # 사유 코드(오류 타입)만 남긴다. ValidationError는 입력값을 메시지에 담으므로
-        # `from error`로 연쇄시키면 트레이스백에 응답 원문이 실린다 — 의도적으로 끊는다.
-        reasons = ", ".join(sorted({str(detail["type"]) for detail in error.errors()}))
-        raise LLMProviderError(f"채점 응답을 해석할 수 없습니다 (사유: {reasons})") from None
+    candidates = [text]
+    extracted = _extract_json_object(text)
+    if extracted != text:
+        candidates.append(extracted)
+
+    reasons: set[str] = set()
+    for candidate in candidates:
+        try:
+            return JudgeScore.model_validate_json(candidate)
+        except ValidationError as error:
+            # 사유 코드(오류 타입)만 모은다. ValidationError는 입력값을 메시지에 담으므로
+            # `from error`로 연쇄시키면 트레이스백에 응답 원문이 실린다 — 의도적으로 끊는다.
+            reasons.update(str(detail["type"]) for detail in error.errors())
+    raise LLMProviderError(
+        f"채점 응답을 해석할 수 없습니다 (사유: {', '.join(sorted(reasons))})"
+    ) from None
 
 
 async def judge_conversion(provider: LLMProvider, *, source: str, converted: str) -> JudgeScore:
