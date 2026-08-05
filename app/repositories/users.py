@@ -1,7 +1,10 @@
 """users 테이블 접근.
 
 이 계층 밖으로 SQLAlchemy 예외를 흘리지 않는다 — 호출자가 IntegrityError 같은
-구현 세부를 알아야 분기할 수 있다면 레이어 분리가 깨진 것이다.
+구현 세부를 알아야 분기할 수 있다면 레이어 분리가 깨진 것이고, 원본 예외에는 SQL
+파라미터(이메일)가 들어 있어 스택트레이스로 개인정보가 로그에 남는다.
+
+커밋 시점은 정하지 않는다. 트랜잭션 경계는 서비스가 소유한다(app/services/auth.py).
 """
 
 import uuid
@@ -10,8 +13,12 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.exceptions import EmailAlreadyRegisteredError
+from app.exceptions import EmailAlreadyRegisteredError, InvalidInputError
 from app.models.user import User
+
+#: PostgreSQL unique_violation. users에 제약이 둘이라(unique 인덱스, 이메일 소문자
+#: CHECK) 어떤 제약이 걸렸는지 구분해야 응답이 엉뚱해지지 않는다.
+_UNIQUE_VIOLATION = "23505"
 
 
 class UserRepository:
@@ -21,34 +28,44 @@ class UserRepository:
         self._session = session
 
     async def create(self, *, email: str, password_hash: str) -> User:
-        """사용자를 저장한다.
+        """사용자를 INSERT 한다 (flush까지만 — 확정은 호출자가 commit으로 한다).
 
         중복 검사를 `SELECT` 선행이 아니라 unique 제약 위반 처리로 하는 이유:
         동시에 같은 이메일로 두 요청이 들어오면 조회-후-삽입 사이에 틈이 생긴다.
         DB 제약만이 유일한 진실이므로 위반을 잡아 도메인 예외로 바꾼다.
 
         Args:
-            email: 정규화된 이메일 주소.
+            email: 정규화(소문자)된 이메일 주소.
             password_hash: argon2 해시 문자열 (평문 금지).
 
         Returns:
-            저장된 사용자.
+            식별자가 채워진 사용자 (아직 커밋되지 않았다).
 
         Raises:
             EmailAlreadyRegisteredError: 같은 이메일이 이미 있다.
+            InvalidInputError: 그 밖의 제약을 위반했다.
         """
         user = User(email=email, password_hash=password_hash)
         self._session.add(user)
         try:
-            # 커밋까지 여기서 끝낸다. 요청 종료 후(응답 전송 뒤) 커밋하면 실패해도
-            # 이미 나간 201 응답을 되돌릴 수 없다.
-            await self._session.commit()
+            # flush로 INSERT를 지금 보내 제약 위반을 이 자리에서 확인한다. 커밋까지
+            # 미루면 서비스가 정한 커밋 지점에서 터져 원인을 짚기 어려워진다.
+            await self._session.flush()
         except IntegrityError as exc:
             # 롤백하지 않으면 세션이 무효 상태로 남아 다음 쿼리가 전부 실패한다.
             await self._session.rollback()
-            # 예외 메시지에 이메일을 넣지 않는다 (로그·응답 유출 차단).
-            raise EmailAlreadyRegisteredError("이미 가입된 이메일입니다") from exc
+            if getattr(exc.orig, "sqlstate", None) == _UNIQUE_VIOLATION:
+                # 예외 메시지에 이메일을 넣지 않는다 (로그·응답 유출 차단).
+                raise EmailAlreadyRegisteredError("이미 가입된 이메일입니다") from exc
+            # unique 위반이 아니면 정규화를 건너뛴 호출 경로가 있다는 뜻이다
+            # (예: 대문자가 섞인 이메일이 소문자 CHECK에 걸림). "이미 가입됨"으로
+            # 둔갑시키지 않되, 원본 예외를 그대로 올려보내지도 않는다.
+            raise InvalidInputError("저장할 수 없는 사용자 정보입니다") from exc
         return user
+
+    async def commit(self) -> None:
+        """진행 중인 트랜잭션을 확정한다. 호출 시점은 서비스가 정한다."""
+        await self._session.commit()
 
     async def get_by_email(self, email: str) -> User | None:
         """이메일로 사용자를 찾는다. 없으면 None."""

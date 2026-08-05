@@ -41,6 +41,8 @@ class TokenResponse(BaseModel):
 
     access_token: str
     token_type: str = "bearer"
+    #: 유효 기간(초). 클라이언트가 토큰을 디코딩해 exp를 읽지 않고도 재발급 시점을 안다.
+    expires_in: int
 
 
 def _to_response(user: User) -> UserResponse:
@@ -59,7 +61,7 @@ async def signup(payload: SignupRequest, service: AuthServiceDep) -> UserRespons
 async def login(payload: LoginRequest, service: AuthServiceDep) -> TokenResponse:
     """자격증명을 확인하고 액세스 토큰을 발급한다."""
     token = await service.login(email=payload.email, password=payload.password)
-    return TokenResponse(access_token=token)
+    return TokenResponse(access_token=token, expires_in=service.access_token_lifetime_seconds)
 
 
 @router.get("/me")

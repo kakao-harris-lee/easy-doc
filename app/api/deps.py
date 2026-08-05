@@ -14,7 +14,7 @@ from app.config import Settings
 from app.exceptions import ConfigurationError, InvalidCredentialsError
 from app.models.user import User
 from app.repositories.users import UserRepository
-from app.services.auth import AuthService
+from app.services.auth import AuthService, UserStore
 
 # auto_error=False: 헤더가 없거나 스킴이 틀릴 때 FastAPI가 자체 형식의 403/401을
 # 만들어 내지 않게 한다. 우리 도메인 예외로 통일해야 응답 모양이 하나로 유지된다.
@@ -23,7 +23,10 @@ _bearer_scheme = HTTPBearer(auto_error=False)
 
 def get_settings(request: Request) -> Settings:
     """lifespan이 app.state에 넣어둔 설정을 꺼낸다."""
-    settings: Settings = request.app.state.settings
+    settings: Settings | None = getattr(request.app.state, "settings", None)
+    if settings is None:
+        # lifespan을 거치지 않고 앱이 조립된 상태 — 설정 문제이므로 5xx로 알린다.
+        raise ConfigurationError("서버 설정이 준비되지 않았습니다")
     return settings
 
 
@@ -36,13 +39,17 @@ async def get_session(request: Request) -> AsyncIterator[AsyncSession]:
         yield session
 
 
-def get_user_repository(session: Annotated[AsyncSession, Depends(get_session)]) -> UserRepository:
-    """사용자 저장소. 테스트는 이 의존성을 fake로 갈아끼운다."""
+def get_user_repository(session: Annotated[AsyncSession, Depends(get_session)]) -> UserStore:
+    """사용자 저장소. 테스트는 이 의존성을 fake로 갈아끼운다.
+
+    반환 타입을 Protocol로 선언해 두면 UserRepository가 계약을 만족하는지 mypy가
+    이 return 문에서 검사한다 — 구현과 계약이 어긋나면 런타임 전에 잡힌다.
+    """
     return UserRepository(session)
 
 
 def get_auth_service(
-    repository: Annotated[UserRepository, Depends(get_user_repository)],
+    repository: Annotated[UserStore, Depends(get_user_repository)],
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> AuthService:
     """인증 서비스. JWT 비밀키가 없으면 운영 설정 문제로 503을 낸다.
@@ -61,7 +68,7 @@ def get_auth_service(
 async def get_current_user(
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer_scheme)],
     service: Annotated[AuthService, Depends(get_auth_service)],
-    repository: Annotated[UserRepository, Depends(get_user_repository)],
+    repository: Annotated[UserStore, Depends(get_user_repository)],
 ) -> User:
     """Bearer 토큰으로 현재 사용자를 찾는다.
 

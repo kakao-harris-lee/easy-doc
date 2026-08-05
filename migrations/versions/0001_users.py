@@ -37,6 +37,9 @@ def upgrade() -> None:
             server_default=sa.text("now()"),
             nullable=False,
         ),
+        # 이메일 정규화는 서비스가 하지만, 서비스를 거치지 않는 경로(운영 스크립트,
+        # 데이터 이관)가 대소문자만 다른 계정을 넣으면 아래 unique 인덱스가 무력해진다.
+        sa.CheckConstraint("email = lower(email)", name=op.f("ck_users_email_lowercase")),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_users")),
     )
     # unique 인덱스 하나가 유일성 제약과 조회 인덱스를 겸한다(로그인 시 이메일 조회).

@@ -50,6 +50,18 @@ def _make_handler(
     return handler
 
 
+async def _handle_unmapped_domain_error(request: Request, exc: Exception) -> JSONResponse:
+    """매핑되지 않은 도메인 예외의 백스톱.
+
+    새 도메인 예외를 만들고 _MAPPINGS 등록을 잊어도 응답 모양이 유지된다. 메시지는
+    고정 문자열이다 — 무엇이 담길지 모르는 예외를 그대로 노출하지 않는다.
+    """
+    return JSONResponse(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        content={"detail": "요청을 처리하지 못했습니다"},
+    )
+
+
 async def _handle_request_validation(request: Request, exc: Exception) -> JSONResponse:
     """Pydantic 검증 실패(422)에서 입력값 에코를 걷어낸다.
 
@@ -75,6 +87,9 @@ async def _handle_request_validation(request: Request, exc: Exception) -> JSONRe
 
 def register_exception_handlers(app: FastAPI) -> None:
     """도메인 예외 핸들러와 검증 오류 핸들러를 앱에 등록한다."""
+    # 최상위 도메인 예외를 먼저 등록한다. Starlette는 MRO 순서로 핸들러를 찾으므로
+    # 구체적인 예외에 매핑이 있으면 그쪽이 이기고, 없을 때만 이 백스톱이 걸린다.
+    app.add_exception_handler(EasyDocError, _handle_unmapped_domain_error)
     for exception_type, status_code, headers in _MAPPINGS:
         app.add_exception_handler(exception_type, _make_handler(status_code, headers))
     app.add_exception_handler(RequestValidationError, _handle_request_validation)

@@ -97,6 +97,8 @@ def test_로그인_응답은_bearer_토큰이다(client: TestClient) -> None:
     body = response.json()
     assert body["token_type"] == "bearer"
     assert body["access_token"]
+    # 클라이언트가 토큰을 디코딩하지 않고도 재발급 시점을 알 수 있어야 한다.
+    assert body["expires_in"] == 3600
 
 
 def test_응답에_비밀번호와_해시가_없다(client: TestClient) -> None:

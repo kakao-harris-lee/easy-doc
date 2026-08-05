@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, String, func
+from sqlalchemy import CheckConstraint, DateTime, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db import Base
@@ -16,6 +16,12 @@ class User(Base):
     """
 
     __tablename__ = "users"
+    __table_args__ = (
+        # 이메일 정규화는 AuthService가 하지만, 서비스를 거치지 않는 경로(운영 스크립트,
+        # 데이터 이관)가 대소문자만 다른 계정을 만들면 unique 인덱스가 무력해진다.
+        # 제약 이름은 naming convention이 ck_users_email_lowercase로 확장한다.
+        CheckConstraint("email = lower(email)", name="email_lowercase"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
