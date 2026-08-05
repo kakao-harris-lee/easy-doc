@@ -14,6 +14,7 @@ from fastapi.responses import JSONResponse
 
 from app.exceptions import (
     ConfigurationError,
+    DocumentExtractionError,
     EasyDocError,
     EmailAlreadyRegisteredError,
     InvalidCredentialsError,
@@ -21,6 +22,7 @@ from app.exceptions import (
     LLMProviderError,
     NotFoundError,
     StorageError,
+    UnsupportedFormatError,
 )
 
 _logger = logging.getLogger(__name__)
@@ -30,6 +32,10 @@ _logger = logging.getLogger(__name__)
 # 예외(LLMTruncatedError 등)도 같은 응답을 받는다. 등록 순서는 영향을 주지 않는다.
 _MAPPINGS: tuple[tuple[type[EasyDocError], int, dict[str, str]], ...] = (
     (InvalidInputError, status.HTTP_422_UNPROCESSABLE_CONTENT, {}),
+    # 업로드 파일 문제도 사용자가 고칠 수 있는 입력 오류다 — 415가 아니라 422로 통일한다.
+    # Content-Type이 아니라 본문(파일) 자체를 처리할 수 없는 상황이기 때문.
+    (UnsupportedFormatError, status.HTTP_422_UNPROCESSABLE_CONTENT, {}),
+    (DocumentExtractionError, status.HTTP_422_UNPROCESSABLE_CONTENT, {}),
     (EmailAlreadyRegisteredError, status.HTTP_409_CONFLICT, {}),
     # WWW-Authenticate: 401에 요구되는 표준 헤더. 클라이언트가 재인증 방식을 안다.
     (InvalidCredentialsError, status.HTTP_401_UNAUTHORIZED, {"WWW-Authenticate": "Bearer"}),

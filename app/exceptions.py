@@ -37,6 +37,18 @@ class InvalidCredentialsError(EasyDocError):
     """
 
 
+class UnsupportedFormatError(EasyDocError):
+    """지원하지 않는 파일 형식을 업로드했다 (구버전 hwp 등)."""
+
+
+class DocumentExtractionError(EasyDocError):
+    """업로드 문서에서 텍스트를 뽑지 못했다 (손상·암호화·텍스트 없는 스캔본).
+
+    메시지에는 형식명과 안내만 담는다 — 파일명·본문 조각은 개인정보이므로 금지
+    (app/ingest/extractors.py 참고).
+    """
+
+
 class NotFoundError(EasyDocError):
     """요청한 리소스가 없다."""
 
