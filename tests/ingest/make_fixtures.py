@@ -20,6 +20,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 import docx
+from docx.oxml import parse_xml
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
@@ -29,6 +30,21 @@ DOCX_TABLE_CELLS = (("구분", "내용"), ("접수 기간", "3월 1일부터 3�
 PDF_PAGES = ("첫째 쪽 안내문입니다.", "둘째 쪽 안내문입니다.")
 HWPX_SECTION0 = ("한글 문서 추출 확인", "문단 하나가 여러 조각으로 나뉘어도 이어 붙는다.")
 HWPX_SECTION1 = ("둘째 구역의 문장입니다.",)
+
+# sample_rich.docx — python-docx의 paragraphs/tables 순회로는 놓치는 자리들.
+RICH_HEAD = "첫 문단입니다."
+RICH_TABLE_CELL = "바깥 표 셀"
+RICH_NESTED_CELL = "중첩 표 셀"
+RICH_TAIL = "표 뒤에 오는 문단입니다."
+RICH_TEXTBOX = "텍스트 상자 안 문장입니다."
+RICH_INSERTED = "변경 추적으로 삽입된 문장입니다."
+RICH_DELETED = "변경 추적으로 삭제된 문장입니다."
+RICH_SECOND_SECTION = "둘째 구역 본문입니다."
+RICH_HEADER = "머리글 문구"
+RICH_FOOTER = "바닥글 문구"
+
+_WORD_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+_VML_NS = "urn:schemas-microsoft-com:vml"
 
 
 def _write_docx_paragraphs() -> None:
@@ -49,6 +65,67 @@ def _write_docx_table() -> None:
         for column_index, value in enumerate(row_values):
             table.cell(row_index, column_index).text = value
     document.save(str(FIXTURES_DIR / "sample_table.docx"))
+
+
+def _write_docx_rich() -> None:
+    """문서 순서 순회로만 잡히는 자리들을 한 파일에 모은 docx.
+
+    - 표 뒤에 문단을 두어, 표가 문서 끝으로 밀리지 않는지 확인한다.
+    - 중첩 표·텍스트박스(VML `w:pict`)·변경 추적(`w:ins`/`w:del`)은 python-docx의
+      `paragraphs`/`tables` 순회로는 보이지 않는다. 텍스트박스와 변경 추적은
+      python-docx API로 만들 수 없어 OOXML 조각을 직접 붙인다.
+    - 삭제문은 `w:delText`에 담기므로 `w:t`만 걷는 추출기에서 자연히 빠져야 한다.
+    """
+    document = docx.Document()
+    document.add_paragraph(RICH_HEAD)
+
+    table = document.add_table(rows=1, cols=1)
+    cell = table.cell(0, 0)
+    cell.text = RICH_TABLE_CELL
+    nested = cell.add_table(rows=1, cols=1)
+    nested.cell(0, 0).text = RICH_NESTED_CELL
+
+    document.add_paragraph(RICH_TAIL)
+
+    # VML 텍스트박스. w:txbxContent 안의 문단은 본문 트리에 있지만 Document.paragraphs에는
+    # 잡히지 않는다 (run 하위에 들어 있기 때문). 조각은 add_paragraph()가 만든 문단 안에
+    # 넣는다 — body에 직접 append하면 끝의 sectPr 뒤로 밀려 형식이 깨진다.
+    document.add_paragraph()._p.append(
+        parse_xml(
+            f'<w:r xmlns:w="{_WORD_NS}" xmlns:v="{_VML_NS}"><w:pict>'
+            '<v:shape style="width:200pt;height:50pt"><v:textbox><w:txbxContent>'
+            f"<w:p><w:r><w:t>{RICH_TEXTBOX}</w:t></w:r></w:p>"
+            "</w:txbxContent></v:textbox></v:shape>"
+            "</w:pict></w:r>"
+        )
+    )
+
+    # 변경 추적. 삽입문은 남고 삭제문은 빠져야 한다.
+    tracked = document.add_paragraph()._p
+    tracked.append(
+        parse_xml(
+            f'<w:ins xmlns:w="{_WORD_NS}" w:id="101" w:author="tester"'
+            f' w:date="2026-01-01T00:00:00Z"><w:r><w:t>{RICH_INSERTED}</w:t></w:r></w:ins>'
+        )
+    )
+    tracked.append(
+        parse_xml(
+            f'<w:del xmlns:w="{_WORD_NS}" w:id="102" w:author="tester"'
+            f' w:date="2026-01-01T00:00:00Z">'
+            f"<w:r><w:delText>{RICH_DELETED}</w:delText></w:r></w:del>"
+        )
+    )
+
+    section = document.sections[0]
+    section.header.paragraphs[0].text = RICH_HEADER
+    section.footer.paragraphs[0].text = RICH_FOOTER
+
+    # 둘째 구역. 머리글·바닥글을 앞 구역에서 물려받으므로(is_linked_to_previous),
+    # 물려받은 쪽까지 걷는 추출기는 같은 문구를 두 번 내보낸다.
+    document.add_section()
+    document.add_paragraph(RICH_SECOND_SECTION)
+
+    document.save(str(FIXTURES_DIR / "sample_rich.docx"))
 
 
 def _build_pdf(pages: Sequence[str]) -> bytes:
@@ -211,6 +288,7 @@ def main() -> None:
     FIXTURES_DIR.mkdir(parents=True, exist_ok=True)
     _write_docx_paragraphs()
     _write_docx_table()
+    _write_docx_rich()
     _write_pdfs()
     _write_hwpx()
     for path in sorted(FIXTURES_DIR.iterdir()):
