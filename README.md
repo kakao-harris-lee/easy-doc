@@ -11,10 +11,12 @@
 - 로컬 인프라는 PostgreSQL(pgvector 이미지) + Redis — `docker-compose.yml`로 띄운다
 - 비밀키는 `.env`로만 주입한다. `.env.example`을 복사해 값을 채우고, `.env`는 커밋하지 않는다.
 
+호스트에서 직접 돌리는 개발 경로다. 앱까지 컨테이너로 띄우려면 [Docker 파일럿 실행](#docker-파일럿-실행)을 본다.
+
 ### 1. 인프라 기동
 
 ```bash
-docker compose up -d     # postgres(5432) + redis(6379), 127.0.0.1에만 바인딩
+docker compose up -d postgres redis   # 5432·6379, 127.0.0.1에만 바인딩
 ```
 
 ### 2. `.env` 작성
@@ -30,6 +32,7 @@ cp .env.example .env
 | `JWT_SECRET` | `openssl rand -hex 32` — **32바이트 이상 필수.** 짧으면 기동은 되지만 인증 요청이 503으로 거부된다(약한 HMAC 키를 조용히 통과시키지 않는다) |
 | `FERNET_KEY` | `uv run python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"` — 없으면 문서 저장·워커 기동 불가 |
 | `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` | LLM 벤더 키. 없으면 변환 작업이 `ProviderUnavailable`로 실패 기록된다(앱·워커는 정상 기동) |
+| `LLM_PROVIDER` | 워커가 쓸 벤더(`anthropic` \| `openai`). 기본값 `anthropic`은 '벤더 미확정' 상태이며 벤치마크로 확정되면 갱신한다. 벤치마크·골든셋 평가는 이 값이 아니라 `--providers`·`GOLDEN_PROVIDER`를 쓴다 |
 
 ### 3. 마이그레이션 · 서버 · 워커
 
@@ -41,6 +44,30 @@ uv run arq app.workers.settings.WorkerSettings   # 변환 워커 (별도 터미�
 ```
 
 워커가 떠 있지 않으면 업로드는 202로 접수되지만 변환이 `pending`에 머문다. 큐에 쌓인 작업만 처리하고 끝내려면 `--burst`를 붙인다.
+
+## Docker 파일럿 실행
+
+파일럿 기관에 넘기는 경로다. 호스트에 Python·uv가 없어도 되고, 마이그레이션과 워커까지 한 줄로 끝난다.
+
+```bash
+cp .env.example .env     # 값을 채운다 (아래 필수 키)
+docker compose up -d --build
+curl http://127.0.0.1:8000/health     # {"status":"ok"}
+```
+
+- **자동으로 처리되는 것**: `migrate` 컨테이너가 `alembic upgrade head`를 한 번 돌리고 정상 종료하며, `api`와 `worker`는 그 성공을 기다렸다가 뜬다(`service_completed_successfully`). 따로 마이그레이션을 실행하거나 워커를 띄울 필요가 없다.
+- **필수 `.env` 키**: `JWT_SECRET`, `FERNET_KEY`, 그리고 쓰는 벤더의 API 키(`OPENAI_API_KEY` 또는 `ANTHROPIC_API_KEY`) + `LLM_PROVIDER`. 채우는 법은 위 [`.env` 작성](#2-env-작성) 표와 같다. `DATABASE_URL`·`REDIS_URL`은 compose가 컨테이너 호스트명(`postgres`/`redis`)으로 덮어쓰므로 `.env` 값을 그대로 두어도 된다.
+- `.env`는 `env_file`로만 주입된다 — compose 파일과 이미지에는 비밀값이 들어가지 않는다(`.dockerignore`가 `.env`를 빌드 컨텍스트에서 뺀다).
+- api·worker·migrate는 **같은 이미지**(`easy-doc:local`)를 command만 달리해 쓴다. "워커만 옛 버전"이 생기지 않는다.
+- API는 `127.0.0.1:8000`에만 바인딩된다. 외부 공개는 앞단 리버스 프록시(TLS·본문 크기 제한)를 두고 한다 — 아래 [배포 주의](#배포-주의) 참고.
+
+```bash
+docker compose logs -f worker    # 변환 진행 확인
+docker compose ps                # api는 healthcheck(/health)로 상태를 보고한다
+docker compose down              # 중지 (-v를 붙이면 DB 데이터까지 삭제)
+```
+
+코드를 고친 뒤에는 `--build`를 다시 붙여야 이미지에 반영된다(개발 중 핫리로드가 필요하면 호스트 실행 경로를 쓴다).
 
 ## 명령어
 
@@ -121,7 +148,7 @@ uv run pytest tests/golden -m llm
 uv run python scripts/benchmark.py --providers anthropic,openai --judge anthropic --output docs/benchmarks/
 ```
 
-리포트는 `docs/benchmarks/YYYY-MM-DD-llm-benchmark.md`로 저장되며, 문서 ID와 점수만 남기고 문서 본문은 기록하지 않는다.
+리포트는 `docs/benchmarks/YYYY-MM-DD-HHMM-llm-benchmark.md`로 저장되며, 문서 ID와 점수만 남기고 문서 본문은 기록하지 않는다. 키가 없는 provider는 경고만 남기고 건너뛴다.
 
 ## 프로젝트 구조
 
