@@ -9,10 +9,11 @@
     uv run python scripts/collect_bokjiro.py --api local --limit 10
     uv run python scripts/collect_bokjiro.py --api central --serv-id WLF00001138
 
-인증키는 `.env`의 `DATA_GO_KR_API_KEY` 환경변수에서 읽는다. 앱 Settings(app/config.py)를
-넓히지 않는 이유는 수집 도구가 서비스 런타임이 아니기 때문이다 — 서버가 뜨는 데 필요한
-설정과 운영자가 가끔 돌리는 스크립트의 자격증명을 한 곳에 섞으면, 키가 없다는 이유로
-서비스가 못 뜨거나 반대로 서버 설정에 수집용 키가 딸려 들어간다.
+인증키는 `DATA_GO_KR_API_KEY`로 준다 — 리포 루트의 `.env`에 적어 두거나 실제 환경변수로
+넘기면 되고, 둘 다 있으면 환경변수가 이긴다(`CollectionSettings`). 앱 Settings
+(app/config.py)를 넓히지 않는 이유는 수집 도구가 서비스 런타임이 아니기 때문이다 —
+서버가 뜨는 데 필요한 설정과 운영자가 가끔 돌리는 스크립트의 자격증명을 한 곳에 섞으면,
+키가 없다는 이유로 서비스가 못 뜨거나 반대로 서버 설정에 수집용 키가 딸려 들어간다.
 
 트래픽: 개발계정 일일 상한은 중앙부처 100건, 지자체 1,000건이다. 한 번 실행에
 `--limit`만큼의 상세 조회 + 목록 조회 1회를 쓰므로, 상한을 넘기지 않도록 --limit에
@@ -23,7 +24,6 @@
 """
 
 import argparse
-import os
 import sys
 from datetime import date
 from pathlib import Path
@@ -42,6 +42,7 @@ from app.easyread.bokjiro import (  # noqa: E402
 )
 from app.easyread.collection import (  # noqa: E402
     DRAFT_CATEGORY,
+    CollectionSettings,
     GoldenDraft,
     build_draft,
     next_document_id,
@@ -52,7 +53,8 @@ from app.exceptions import EasyDocError  # noqa: E402
 DOCUMENTS_DIR = REPO_ROOT / "tests" / "golden" / "documents"
 DEFAULT_OUTPUT_DIR = REPO_ROOT / "docs" / "golden-drafts"
 
-#: 인증키를 담은 환경변수 이름. 값은 절대 출력하지 않는다.
+#: 인증키 설정 이름. `.env` 또는 실제 환경변수 어느 쪽으로도 줄 수 있다
+#: (`CollectionSettings`가 둘을 함께 읽는다). 값은 절대 출력하지 않는다.
 API_KEY_ENV = "DATA_GO_KR_API_KEY"
 
 #: 한 번 실행에서 받아 올 서비스 수의 상한. 일일 트래픽 상한(중앙 100건)에 비해
@@ -155,9 +157,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
-    service_key = os.environ.get(API_KEY_ENV, "").strip()
+    secret = CollectionSettings().data_go_kr_api_key
+    service_key = secret.get_secret_value().strip() if secret is not None else ""
     if not service_key:
-        print(f"오류: 환경변수 {API_KEY_ENV}가 비어 있습니다 (.env에 인증키를 넣으세요)")
+        print(f"오류: {API_KEY_ENV}가 없습니다 (.env 또는 환경변수로 설정하세요)")
         return 1
 
     api = WELFARE_APIS[args.api]

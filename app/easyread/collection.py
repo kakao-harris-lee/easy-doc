@@ -26,7 +26,8 @@ from pathlib import Path, PurePosixPath
 from urllib.parse import urlparse
 
 import httpx
-from pydantic import BaseModel
+from pydantic import BaseModel, SecretStr
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.easyread.goldenset import GoldenDocument, GoldenSource, RequiredFact
 from app.easyread.style_rules import DIFFICULT_WORD_REPLACEMENTS
@@ -55,6 +56,30 @@ FETCH_HEADERS: dict[str, str] = {"User-Agent": USER_AGENT}
 
 #: URL 응답 대기 상한(초). 공공기관 사이트는 응답이 느린 편이라 넉넉히 잡는다.
 FETCH_TIMEOUT_SECONDS = 30.0
+
+#: `.env`의 절대 경로. 상대 경로("`.env`")로 두면 현재 작업 디렉터리에 따라 읽히거나
+#: 안 읽히는데, 수집 스크립트는 리포 밖에서 실행되는 일이 흔해 위치를 고정한다
+#: (app/config.py는 서버가 리포 루트에서 뜨는 것을 전제로 상대 경로를 쓴다).
+_ENV_FILE = Path(__file__).resolve().parents[2] / ".env"
+
+
+class CollectionSettings(BaseSettings):
+    """수집 도구 전용 설정 (`.env` → 환경변수 순으로 덮어쓴다).
+
+    앱 설정(`app/config.py`의 `Settings`)과 **일부러 분리한다.** 서버 기동에 필요한 설정과
+    운영자가 가끔 돌리는 수집 스크립트의 자격증명을 한 곳에 섞으면, 수집용 키가 없다는
+    이유로 서비스가 못 뜨거나 반대로 서버 설정에 수집용 키가 딸려 들어간다.
+
+    우선순위는 pydantic-settings 기본값을 그대로 쓴다 — 실제 환경변수가 `.env`보다 세다.
+    CI·일회성 실행에서 `DATA_GO_KR_API_KEY=... uv run ...`으로 덮어쓸 수 있어야 한다.
+    """
+
+    model_config = SettingsConfigDict(env_file=_ENV_FILE, env_file_encoding="utf-8", extra="ignore")
+
+    # SecretStr: repr/model_dump에서 자동 마스킹되어 키가 로그·트레이스백으로 새는 경로를
+    # 원천 차단한다(app/config.py와 같은 이유). 쓸 때만 get_secret_value()로 꺼낸다.
+    data_go_kr_api_key: SecretStr | None = None
+
 
 # 본문이 아닌 텍스트를 담는 태그. 걷어내지 않으면 스크립트 코드·메뉴 항목이 본문에
 # 섞여 글자 수 통계와 마스킹 결과를 함께 오염시킨다. noscript·template은 화면에
