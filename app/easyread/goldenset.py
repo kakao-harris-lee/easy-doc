@@ -40,6 +40,22 @@ class RequiredFact(BaseModel):
         return self.canonical in text or any(variant in text for variant in self.accept)
 
 
+class GoldenSource(BaseModel):
+    """수집 출처 메타 (synthetic=false 문서 필수).
+
+    공공저작물은 출처 표시가 이용 조건이므로(공공누리 제1유형) 기관명·이용 조건 없이
+    편입된 문서는 쓸 수 없다. collected_at은 같은 URL의 내용이 나중에 바뀌었을 때
+    평가 결과가 어느 시점 본문의 것인지 특정하기 위해 남긴다.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    url: str | None = None  # 웹 수집 시. 파일럿 기관이 직접 제공한 문서는 없다.
+    organization: str
+    license: str  # 예: "공공누리 제1유형", "파일럿 기관 제공"
+    collected_at: str  # YYYY-MM-DD
+
+
 class GoldenDocument(BaseModel):
     """골든셋 평가용 문서 한 건.
 
@@ -57,6 +73,20 @@ class GoldenDocument(BaseModel):
     synthetic: bool
     source_text: str
     required_facts: list[RequiredFact]
+    # 합성 문서에는 출처가 없다(우리가 만들었다). 실제 수집본은 아래 검증이 강제한다.
+    source: GoldenSource | None = None
+
+    @model_validator(mode="after")
+    def _require_source_when_collected(self) -> "GoldenDocument":
+        """실제 수집 문서는 출처 없이 편입될 수 없다.
+
+        출처 기록은 이용 조건 확인(공공누리 유형)과 재현성의 근거다. 편입 절차
+        (docs/golden-collection-plan.md 3장)를 문서 하나가 건너뛰면 골든셋 전체의
+        이용 근거가 흔들리므로 스키마에서 막는다.
+        """
+        if not self.synthetic and self.source is None:
+            raise ValueError(f"실제 수집 문서에는 source가 필요합니다: {self.id}")
+        return self
 
     def missing_facts(self, text: str) -> list[RequiredFact]:
         """변환문에 남지 않은 팩트 목록. 평가·벤치마크가 공유하는 유일한 판정 경로다."""

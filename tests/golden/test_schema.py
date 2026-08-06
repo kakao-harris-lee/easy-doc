@@ -5,6 +5,9 @@
 실패 출력에는 문서 id와 위반 리터럴만 남기고 본문은 남기지 않는다.
 """
 
+import pytest
+from pydantic import ValidationError
+
 from app.easyread.goldenset import GoldenDocument, load_documents
 from app.easyread.style_rules import check_style, find_difficult_words
 from app.privacy.masking import MaskCategory, mask_text
@@ -54,6 +57,47 @@ def test_문서가_서로_다르다() -> None:
 def test_모두_합성_문서로_표시된다() -> None:
     """실제 수집 문서로 교체하면 synthetic을 false로 바꾸고 이 기준을 조정한다."""
     assert [document.id for document in DOCUMENTS if not document.synthetic] == []
+
+
+def _payload(**overrides: object) -> dict[str, object]:
+    """스키마 불변식 검사용 최소 문서. 파일로 만들지 않아 평가셋에 섞이지 않는다."""
+    payload: dict[str, object] = {
+        "id": "999",
+        "title": "검증용 문서",
+        "category": "복지 안내문",
+        "synthetic": True,
+        "source_text": "검증용 본문입니다.",
+        "required_facts": [],
+    }
+    payload.update(overrides)
+    return payload
+
+
+def test_수집_문서는_출처_없이_만들_수_없다() -> None:
+    """synthetic=false인데 source가 없으면 공공누리 유형·수집 시점 근거가 사라진다."""
+    with pytest.raises(ValidationError):
+        GoldenDocument.model_validate(_payload(synthetic=False))
+
+
+def test_출처가_있으면_수집_문서를_만들_수_있다() -> None:
+    document = GoldenDocument.model_validate(
+        _payload(
+            synthetic=False,
+            source={
+                "url": "https://example.go.kr/notice/1",
+                "organization": "○○구청",
+                "license": "공공누리 제1유형",
+                "collected_at": "2026-08-06",
+            },
+        )
+    )
+    assert document.source is not None
+    assert document.source.license == "공공누리 제1유형"
+
+
+def test_합성_문서는_출처가_없어도_된다() -> None:
+    """기존 합성 20건이 이 규칙에 걸리지 않아야 한다."""
+    assert GoldenDocument.model_validate(_payload()).source is None
 
 
 def test_필수_문자열_필드가_비어_있지_않다() -> None:

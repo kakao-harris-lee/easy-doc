@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from app.easyread.goldenset import GoldenDocument, RequiredFact, load_documents
+from app.easyread.goldenset import GoldenDocument, GoldenSource, RequiredFact, load_documents
 
 
 def _write(directory: Path, filename: str, **overrides: object) -> None:
@@ -32,12 +32,19 @@ def test_문서를_id_순으로_로드한다(tmp_path: Path) -> None:
 
 
 def test_모든_필드를_그대로_담는다(tmp_path: Path) -> None:
+    """synthetic=false 문서라 출처(source)도 함께 왕복해야 한다."""
     _write(
         tmp_path,
         "001.json",
         title="기초연금 신청 안내",
         synthetic=False,
         required_facts=["3월 2일", "25만 원"],
+        source={
+            "url": "https://example.go.kr/notice/1",
+            "organization": "○○구청",
+            "license": "공공누리 제1유형",
+            "collected_at": "2026-08-06",
+        },
     )
     document = load_documents(tmp_path)[0]
     assert document == GoldenDocument(
@@ -47,6 +54,12 @@ def test_모든_필드를_그대로_담는다(tmp_path: Path) -> None:
         synthetic=False,
         source_text="본문",
         required_facts=[RequiredFact(canonical="3월 2일"), RequiredFact(canonical="25만 원")],
+        source=GoldenSource(
+            url="https://example.go.kr/notice/1",
+            organization="○○구청",
+            license="공공누리 제1유형",
+            collected_at="2026-08-06",
+        ),
     )
 
 
