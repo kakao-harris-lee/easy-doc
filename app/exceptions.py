@@ -85,6 +85,15 @@ class GoldenCollectionError(EasyDocError):
     """
 
 
+class WelfareApiError(GoldenCollectionError):
+    """복지서비스 Open API(data.go.kr)가 오류를 돌려줬거나 응답을 해석하지 못했다.
+
+    GoldenCollectionError 하위로 두어 수집 스크립트의 기존 예외 처리(한 줄 오류 출력)를
+    그대로 쓴다. **메시지에 인증키를 담지 않는다** — 서버가 돌려준 문구를 그대로 옮기지
+    않고 코드에 대응하는 우리 설명만 붙인다(app/easyread/bokjiro.py 참고).
+    """
+
+
 class ConfigurationError(EasyDocError):
     """서버 설정이 비어 있어 기능을 제공할 수 없다 (예: JWT 비밀키 미설정).
 

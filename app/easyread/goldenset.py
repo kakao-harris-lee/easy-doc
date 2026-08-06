@@ -54,6 +54,11 @@ class GoldenSource(BaseModel):
     organization: str
     license: str  # 예: "공공누리 제1유형", "파일럿 기관 제공"
     collected_at: str  # YYYY-MM-DD
+    # Open API로 수집한 문서에만 붙는다. 같은 문서를 다시 받아 오려면 URL만으로는
+    # 부족하다 — 어느 데이터셋의 몇 번 레코드인지가 재현의 기준이다.
+    # 예: dataset="data.go.kr 지자체복지서비스", record_id="WLF00006069"
+    dataset: str | None = None
+    record_id: str | None = None
 
 
 class GoldenDocument(BaseModel):
