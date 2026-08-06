@@ -77,6 +77,14 @@ class StorageError(EasyDocError):
     """
 
 
+class GoldenCollectionError(EasyDocError):
+    """골든셋 수집 초안을 만들지 못했다 (내려받기 실패·형식 미지원·빈 본문).
+
+    사용자 요청 경로가 아니라 운영자용 스크립트(scripts/collect_golden.py) 전용이라
+    HTTP 매핑 대상이 아니다. 메시지에는 문서 본문을 담지 않는다.
+    """
+
+
 class ConfigurationError(EasyDocError):
     """서버 설정이 비어 있어 기능을 제공할 수 없다 (예: JWT 비밀키 미설정).
 
