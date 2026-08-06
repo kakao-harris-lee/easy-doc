@@ -6,9 +6,15 @@
     uv run python scripts/collect_golden.py ./내려받은안내문.hwpx \
         --org "○○시" --license "공공누리 제1유형" --category "복지 안내문"
 
+대형 자료(책자·사업안내)는 구조를 먼저 보고 안내문 단위로 발췌한다:
+    uv run python scripts/collect_golden.py ./사업안내.pdf --preview
+    uv run python scripts/collect_golden.py ./사업안내.pdf --pages 42-45 --slice 0:1500 \
+        --org "보건복지부" --license "공공누리 제1유형"
+
 사람이 할 일은 자동화하지 않는다(docs/golden-collection-plan.md 4장): 공공누리 유형
-판단·required_facts 큐레이션·마스킹 결과 확인은 초안이 나온 뒤 사람이 한다. 그래서
-초안은 `tests/golden/documents/`가 아니라 `docs/golden-drafts/`에 쓴다.
+판단·required_facts 큐레이션·마스킹 결과 확인은 초안이 나온 뒤 사람이 한다. 자동 분류와
+팩트 후보는 사람이 고칠 출발점일 뿐이다. 그래서 초안은 `tests/golden/documents/`가
+아니라 `docs/golden-drafts/`에 쓴다.
 
 보안: 표준출력에 문서 본문·마스킹 원문을 남기지 않는다 — 저장 경로·글자 수·마스킹
       건수까지만 출력한다(CLAUDE.md 보안·데이터 규칙). 초안 **파일**에는 마스킹을 마친
@@ -29,11 +35,17 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from app.easyread.collection import (  # noqa: E402
     DRAFT_CATEGORY,
+    FetchedDocument,
     GoldenDraft,
+    PreviewReport,
+    apply_char_slice,
     build_draft,
     extract_source_text,
     fetch_url,
     next_document_id,
+    parse_char_slice,
+    parse_page_range,
+    preview_source,
     read_local_file,
     write_draft,
 )
@@ -52,21 +64,31 @@ LONG_DOCUMENT_CHARS = 4_000
 _URL_SCHEMES = frozenset({"http", "https"})
 
 
+def load_source(source: str) -> tuple[FetchedDocument, str | None]:
+    """URL이면 받아 오고, 아니면 로컬 파일을 읽는다. (원본, 출처로 남길 URL)"""
+    if urlparse(source).scheme in _URL_SCHEMES:
+        return fetch_url(source), source
+    return read_local_file(Path(source)), None
+
+
 def collect(
-    source: str,
+    fetched: FetchedDocument,
+    url: str | None,
     *,
     organization: str,
     license_name: str,
     title: str | None,
     category: str | None,
     output_dir: Path,
+    pages: tuple[int, int] | None = None,
+    span: tuple[int, int | None] | None = None,
 ) -> GoldenDraft:
-    """입력 하나를 초안 문서로 만든다 (저장은 하지 않는다)."""
-    is_url = urlparse(source).scheme in _URL_SCHEMES
-    fetched = fetch_url(source) if is_url else read_local_file(Path(source))
-    text = extract_source_text(fetched)
+    """받아 온 원본 하나를 초안 문서로 만든다 (저장은 하지 않는다)."""
+    text = extract_source_text(fetched, pages=pages)
+    if span is not None:
+        text = apply_char_slice(text, span)
     golden_source = GoldenSource(
-        url=source if is_url else None,
+        url=url,
         organization=organization,
         license=license_name,
         collected_at=date.today().isoformat(),
@@ -77,6 +99,21 @@ def collect(
         source=golden_source,
         title=title,
         category=category,
+    )
+
+
+def report_preview(preview: PreviewReport) -> None:
+    """구조 통계를 표로 출력한다 (첫 줄은 이미 마스킹을 통과한 텍스트다)."""
+    print(f"미리보기: {preview.unit_name} {len(preview.units)}개 | 합계 {preview.total_chars:,}자")
+    for unit in preview.units:
+        print(
+            f"  {preview.unit_name} {unit.index:>4} | {unit.chars:>7,}자"
+            f" | 누적 {unit.cumulative_chars:>9,}자 | {unit.first_line}"
+        )
+    print("첫 줄은 마스킹을 거친 텍스트입니다 (원문은 출력하지 않습니다).")
+    print(
+        "다음 단계: 필요한 구간을 골라 --pages(PDF 전용) 또는 --slice로 다시 실행하세요"
+        " — 누적 글자 수는 이어 붙이는 과정에서 조금 어긋나는 근사치입니다."
     )
 
 
@@ -93,16 +130,27 @@ def report(draft: GoldenDraft, path: Path | None) -> None:
     else:
         print("마스킹: 없음 (개인정보 패턴이 없거나 놓쳤을 수 있으니 초안을 확인하세요)")
 
+    if draft.stats.auto_category is not None:
+        print(f"자동 분류: {draft.stats.auto_category} (규칙 기반 추정 — 사람 확인 필요)")
+    if draft.stats.suggested_facts:
+        print(
+            f"required_facts 자동 추출 후보 {draft.stats.suggested_facts}개 "
+            "— 반드시 사람이 검증·수정하세요 (정확성·중요도 판단은 사람 몫)"
+        )
+
     if draft.stats.source_chars > LONG_DOCUMENT_CHARS:
         print(
             f"경고: 본문이 {LONG_DOCUMENT_CHARS:,}자를 넘습니다 "
             "— 분할 변환 대상이라 골든셋 편입은 보류하세요"
+            " (--preview로 구조를 보고 --pages·--slice로 발췌하세요)"
         )
 
-    steps = ["required_facts를 3~6개 채우기 (전화·이메일·계좌 등 마스킹 대상 패턴 금지)"]
+    steps = ["required_facts를 3~6개로 확정하기 (전화·이메일·계좌 등 마스킹 대상 패턴 금지)"]
     if draft.document.category == DRAFT_CATEGORY:
         # 사람이 --category로 이미 정했다면 안내하지 않는다 — 매번 붙는 문구는 읽히지 않는다.
         steps.append(f"category를 통제 어휘로 고치기 (현재: {DRAFT_CATEGORY})")
+    elif draft.stats.auto_category is not None:
+        steps.append(f"자동 분류가 맞는지 확인하기 (현재: {draft.stats.auto_category})")
     steps.append("공공누리 유형·출처(source) 확인, 마스킹 결과 육안 검수")
     steps.append("tests/golden/documents/로 옮긴 뒤 `uv run pytest tests/golden` 실행")
     print("다음 단계:")
@@ -115,10 +163,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         description="URL·파일에서 골든셋 초안 JSON을 만든다 (본문은 표준출력에 남기지 않음)"
     )
     parser.add_argument("source", help="수집할 URL 또는 로컬 파일 경로 (html/txt/docx/pdf/hwpx)")
-    parser.add_argument("--org", required=True, help="발행 기관명 (예: 보건복지부)")
+    parser.add_argument("--org", default=None, help="발행 기관명 (예: 보건복지부)")
     parser.add_argument(
         "--license",
-        required=True,
+        default=None,
         help='이용 조건 (예: "공공누리 제1유형", "파일럿 기관 제공")',
     )
     parser.add_argument("--title", default=None, help="문서 제목 (기본: 본문 첫 줄)")
@@ -130,11 +178,34 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help=f"초안을 저장할 디렉터리 (기본: {DEFAULT_OUTPUT_DIR})",
     )
     parser.add_argument(
+        "--pages",
+        default=None,
+        metavar="A-B",
+        help="PDF에서 그 쪽 범위만 추출한다 (1부터, 양끝 포함. 예: 12-30, 5). PDF 전용",
+    )
+    parser.add_argument(
+        "--slice",
+        dest="span",
+        default=None,
+        metavar="START:END",
+        help="추출한 본문에서 글자 범위만 잘라낸다 (예: 0:1500, 1500:). 모든 형식",
+    )
+    parser.add_argument(
+        "--preview",
+        action="store_true",
+        help="저장하지 않고 구조 통계만 출력한다 (PDF는 쪽별, hwpx는 구역별 글자 수)",
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="파일을 저장하지 않고 통계만 출력한다",
     )
-    return parser.parse_args(argv)
+    args = parser.parse_args(argv)
+    if not args.preview and not (args.org and args.license):
+        # 초안에는 출처 메타가 반드시 들어가야 한다(공공누리 표시 의무). 다만 --preview는
+        # 어느 범위를 뽑을지 고르는 단계라 아직 출처를 적을 때가 아니다.
+        parser.error("--org와 --license는 필수입니다 (--preview로 구조만 볼 때는 생략 가능)")
+    return args
 
 
 def main() -> int:
@@ -146,17 +217,26 @@ def main() -> int:
     args = parse_args()
     output_dir: Path = args.output
     try:
+        pages = parse_page_range(args.pages) if args.pages else None
+        span = parse_char_slice(args.span) if args.span else None
+        fetched, url = load_source(args.source)
+        if args.preview:
+            report_preview(preview_source(fetched))
+            return 0
         draft = collect(
-            args.source,
+            fetched,
+            url,
             organization=args.org,
             license_name=args.license,
             title=args.title,
             category=args.category,
             output_dir=output_dir,
+            pages=pages,
+            span=span,
         )
         path = None if args.dry_run else write_draft(draft, output_dir)
     except EasyDocError as error:
-        # 내려받기 실패·형식 미지원·빈 본문·추출 실패. 트레이스백 대신 한 줄로 알린다.
+        # 내려받기 실패·형식 미지원·빈 본문·추출 실패·범위 오류. 트레이스백 대신 한 줄로.
         print(f"오류: {error}")
         return 1
     report(draft, path)

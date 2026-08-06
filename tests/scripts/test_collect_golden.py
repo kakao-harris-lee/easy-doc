@@ -14,19 +14,32 @@ from pathlib import Path
 import pytest
 
 from app.easyread.collection import (
+    CATEGORY_KEYWORDS,
     DRAFT_CATEGORY,
+    FETCH_HEADERS,
+    MAX_SUGGESTED_FACTS,
     FetchedDocument,
+    apply_char_slice,
     build_draft,
+    classify_category,
     extract_source_text,
     html_to_text,
     next_document_id,
     normalize_text,
+    parse_char_slice,
+    parse_page_range,
+    preview_source,
+    rewrite_source_url,
     slugify,
+    suggest_facts,
     write_draft,
 )
 from app.easyread.goldenset import GoldenSource, load_documents
-from app.exceptions import GoldenCollectionError
-from app.privacy.masking import MaskCategory
+from app.exceptions import DocumentExtractionError, GoldenCollectionError
+from app.privacy.masking import MaskCategory, mask_text
+from tests.golden.test_schema import ALLOWED_CATEGORIES
+
+FIXTURES = Path(__file__).resolve().parents[1] / "ingest" / "fixtures"
 
 SOURCE = GoldenSource(
     url="https://example.go.kr/notice/1",
@@ -103,12 +116,21 @@ def test_초안_본문이_마스킹을_통과한다() -> None:
     assert 초안.stats.masked_total == 2
 
 
-def test_초안은_사람이_채울_자리를_비워_둔다() -> None:
+def test_초안은_수집본으로_표시되고_제목은_첫_줄에서_온다() -> None:
     초안 = build_draft(html_to_text(PAGE), document_id="021", source=SOURCE)
-    assert 초안.document.required_facts == []
-    assert 초안.document.category == DRAFT_CATEGORY
     assert 초안.document.synthetic is False
     assert 초안.document.title == "기초연금 신청 안내"  # 지정하지 않으면 첫 줄
+
+
+def test_신호가_없는_본문은_사람이_채울_자리로_남는다() -> None:
+    """분류도 팩트도 규칙에 걸리지 않으면 예전처럼 빈 채로 둔다 — 억지로 채우지 않는다."""
+    초안 = build_draft(
+        "안내드립니다.\n자세한 내용은 문의 바랍니다.", document_id="021", source=SOURCE
+    )
+    assert 초안.document.required_facts == []
+    assert 초안.document.category == DRAFT_CATEGORY
+    assert 초안.stats.auto_category is None
+    assert 초안.stats.suggested_facts == 0
 
 
 def test_제목과_분류를_지정할_수_있다() -> None:
@@ -208,3 +230,258 @@ def test_지원하지_않는_형식은_오류다() -> None:
 def test_슬러그가_파일명에_쓸_수_없는_문자를_지운다() -> None:
     assert slugify("2026년 기초연금/신청 안내!") == "2026년-기초연금신청-안내"
     assert slugify("///") == "초안"
+
+
+# --------------------------------------------------------------- 웹 호출 (네트워크 없음)
+
+
+def test_요청_헤더_값은_ascii로_인코딩된다() -> None:
+    """헤더에 한글이 섞이면 요청이 나가기도 전에 UnicodeEncodeError로 죽는다 (실사용 크래시).
+
+    httpx는 헤더를 ascii로 인코딩하므로 값에 한글이 들어가면 어떤 URL을 넣어도 실패한다.
+    """
+    assert FETCH_HEADERS
+    for 이름, 값 in FETCH_HEADERS.items():
+        assert 이름.isascii() and 값.isascii()
+        이름.encode("ascii")
+        값.encode("ascii")
+
+
+@pytest.mark.parametrize(
+    "주소",
+    [
+        "https://blog.naver.com/mohw2016/224348814714",
+        "https://m.blog.naver.com/mohw2016/224348814714",
+        "https://blog.naver.com/mohw2016/224348814714/",
+        "https://blog.naver.com/mohw2016/224348814714?from=postList",
+    ],
+)
+def test_네이버_블로그_주소는_본문_주소로_바뀐다(주소: str) -> None:
+    """본문이 iframe(PostView) 안에 있어 원 주소로는 외피 HTML만 받는다."""
+    바뀐_주소 = rewrite_source_url(주소)
+    assert 바뀐_주소.startswith("https://blog.naver.com/PostView.naver?")
+    assert "blogId=mohw2016" in 바뀐_주소
+    assert "logNo=224348814714" in 바뀐_주소
+
+
+@pytest.mark.parametrize(
+    "주소",
+    [
+        "https://example.go.kr/board/view.do?id=1",
+        "https://blog.naver.com/mohw2016",  # 글이 아니라 블로그 대문
+        "https://blog.naver.com/PostView.naver?blogId=mohw2016&logNo=1",  # 이미 본문 주소
+    ],
+)
+def test_패턴에_맞지_않는_주소는_그대로_둔다(주소: str) -> None:
+    assert rewrite_source_url(주소) == 주소
+
+
+# ------------------------------------------------------------------------- 부분 추출
+
+
+def _fixture(name: str, content_type: str) -> FetchedDocument:
+    return FetchedDocument(
+        filename=name, data=(FIXTURES / name).read_bytes(), content_type=content_type
+    )
+
+
+@pytest.mark.parametrize(("값", "기대"), [("12-30", (12, 30)), ("5", (5, 5)), (" 3 - 7 ", (3, 7))])
+def test_페이지_범위를_해석한다(값: str, 기대: tuple[int, int]) -> None:
+    assert parse_page_range(값) == 기대
+
+
+@pytest.mark.parametrize("값", ["0-3", "7-3", "-1", "a-b", "3-", "1.5"])
+def test_잘못된_페이지_범위는_오류다(값: str) -> None:
+    with pytest.raises(GoldenCollectionError):
+        parse_page_range(값)
+
+
+@pytest.mark.parametrize(
+    ("값", "기대"), [("0:1500", (0, 1500)), ("500:", (500, None)), (":200", (0, 200))]
+)
+def test_문자_범위를_해석한다(값: str, 기대: tuple[int, int | None]) -> None:
+    assert parse_char_slice(값) == 기대
+
+
+@pytest.mark.parametrize("값", ["-1:5", "200:100", "100:100", "abc", "100"])
+def test_잘못된_문자_범위는_오류다(값: str) -> None:
+    with pytest.raises(GoldenCollectionError):
+        parse_char_slice(값)
+
+
+def test_문자_범위로_본문을_잘라낸다() -> None:
+    assert apply_char_slice("0123456789", (2, 5)) == "234"
+    assert apply_char_slice("0123456789", (7, None)) == "789"
+
+
+def test_본문_뒤를_가리킨_범위는_오류다() -> None:
+    with pytest.raises(GoldenCollectionError):
+        apply_char_slice("짧은 본문", (100, None))
+
+
+def test_pdf_페이지_범위만_추출한다() -> None:
+    본문 = extract_source_text(_fixture("sample.pdf", "application/pdf"), pages=(2, 2))
+    assert "둘째 쪽 안내문입니다." in 본문
+    assert "첫째" not in 본문
+
+
+def test_페이지_범위를_넘겨도_있는_쪽까지만_뽑는다() -> None:
+    """사람이 '뒤쪽 전부'를 넉넉히 적는 흔한 사용법을 오류로 막지 않는다."""
+    본문 = extract_source_text(_fixture("sample.pdf", "application/pdf"), pages=(1, 999))
+    assert "첫째 쪽 안내문입니다." in 본문 and "둘째 쪽 안내문입니다." in 본문
+
+
+def test_시작_쪽이_문서_밖이면_오류다() -> None:
+    with pytest.raises(DocumentExtractionError):
+        extract_source_text(_fixture("sample.pdf", "application/pdf"), pages=(9, 10))
+
+
+def test_pdf가_아닌_형식에_페이지_범위를_쓰면_오류다() -> None:
+    """쪽은 조판 결과라 hwpx·docx에는 같은 단위가 없다."""
+    with pytest.raises(GoldenCollectionError) as 오류:
+        extract_source_text(_fixture("sample.hwpx", "application/hwpx"), pages=(1, 2))
+    assert "--pages" in str(오류.value)
+
+
+def test_pdf_미리보기는_쪽별_통계를_준다() -> None:
+    보고 = preview_source(_fixture("sample.pdf", "application/pdf"))
+    assert 보고.unit_name == "페이지"
+    assert [단위.index for 단위 in 보고.units] == [1, 2]
+    assert 보고.units[0].first_line == "첫째 쪽 안내문입니다."
+    assert 보고.total_chars == sum(단위.chars for 단위 in 보고.units)
+    assert 보고.units[1].cumulative_chars == 보고.total_chars
+
+
+def test_hwpx_미리보기는_구역별_통계를_준다() -> None:
+    보고 = preview_source(_fixture("sample.hwpx", "application/hwpx"))
+    assert 보고.unit_name == "구역"
+    assert [단위.index for 단위 in 보고.units] == [1, 2]
+    assert 보고.units[1].first_line == "둘째 구역의 문장입니다."
+
+
+def test_미리보기_첫_줄은_마스킹을_통과한다() -> None:
+    """미리보기는 곧장 표준출력으로 나간다 — 마스킹 전 본문이 한 글자도 실리면 안 된다."""
+    보고 = preview_source(
+        _fetched("문의 02-2100-3456 으로 연락 주세요".encode(), filename="안내.txt")
+    )
+    assert 보고.unit_name == "문서"
+    assert "02-2100-3456" not in 보고.units[0].first_line
+    assert "[[전화번호1]]" in 보고.units[0].first_line
+
+
+def test_미리보기_첫_줄은_길이가_제한된다() -> None:
+    보고 = preview_source(_fetched(("가" * 200).encode(), filename="안내.txt"))
+    assert len(보고.units[0].first_line) == 40
+    assert 보고.units[0].chars == 200
+
+
+# ------------------------------------------------------------------------- 자동 분류
+
+
+def test_자동_분류_카테고리는_통제_어휘_안이다() -> None:
+    """통제 어휘 밖 값을 내놓으면 초안이 스키마 테스트에 걸려 사람 손을 두 번 타게 된다."""
+    assert set(CATEGORY_KEYWORDS) <= ALLOWED_CATEGORIES
+
+
+@pytest.mark.parametrize(
+    ("본문", "기대"),
+    [
+        ("어르신 예방접종 안내입니다. 보건소에서 백신을 맞으세요.", "보건 안내문"),
+        ("임대주택 입주자 모집입니다. 보증금과 월세, 청약 방법을 알려 드립니다.", "주거 안내문"),
+        ("실업급여 안내입니다. 고용보험 가입자는 워크넷에서 구직 등록을 하세요.", "고용 안내문"),
+        ("전기요금 감면 안내입니다. 도시가스 요금과 난방비를 확인하세요.", "생활요금 안내문"),
+    ],
+)
+def test_대표_본문을_카테고리로_분류한다(본문: str, 기대: str) -> None:
+    assert classify_category(본문) == 기대
+
+
+@pytest.mark.parametrize(
+    "본문",
+    [
+        "오늘 날씨가 참 좋습니다. 산책하기에 알맞은 하루입니다.",  # 무매칭
+        "임대주택 입주 안내와 예방접종 보건소 백신 안내를 함께 드립니다.",  # 동점
+    ],
+)
+def test_애매한_본문은_분류하지_않는다(본문: str) -> None:
+    assert classify_category(본문) is None
+
+
+def test_사람이_정한_분류가_자동_분류보다_우선한다() -> None:
+    초안 = build_draft(
+        "예방접종 안내입니다. 보건소에서 백신을 맞으세요.",
+        document_id="021",
+        source=SOURCE,
+        category="복지 안내문",
+    )
+    assert 초안.document.category == "복지 안내문"
+    assert 초안.stats.auto_category is None
+
+
+def test_자동_분류_결과가_초안과_통계에_함께_남는다() -> None:
+    초안 = build_draft(
+        "예방접종 안내입니다. 보건소에서 백신을 맞으세요.", document_id="021", source=SOURCE
+    )
+    assert 초안.document.category == "보건 안내문"
+    assert 초안.stats.auto_category == "보건 안내문"
+
+
+# --------------------------------------------------------------------- 팩트 후보 추출
+
+FACT_TEXT = (
+    "2026년 3월 2일부터 신청합니다.\n"
+    "지원금은 30만 원입니다. 자기부담금은 10%입니다.\n"
+    "신청은 14일 이내에 해야 합니다.\n"
+    "만 65세 이상 어르신은 주민센터로 오세요."
+)
+
+
+def test_날짜_금액_기한_대상_기관을_후보로_뽑는다() -> None:
+    후보 = suggest_facts(FACT_TEXT)
+    assert "2026년 3월 2일" in 후보
+    assert "30만 원" in 후보
+    assert "14일 이내" in 후보
+    assert "만 65세 이상" in 후보
+    assert "주민센터" in 후보
+
+
+def test_후보는_갈래를_돌아가며_담는다() -> None:
+    """앞머리에 날짜가 몰린 문서에서 날짜만 여섯 개 뽑히면 후보로서 쓸모가 없다."""
+    본문 = "3월 1일 3월 2일 3월 3일 3월 4일 1만 원 2만 원"
+    assert suggest_facts(본문) == ["3월 1일", "1만 원", "3월 2일", "2만 원", "3월 3일", "3월 4일"]
+
+
+def test_후보는_최대_여섯_개다() -> None:
+    본문 = " ".join(f"{달}월 {달}일 {달}만 원" for 달 in range(1, 10))
+    assert len(suggest_facts(본문)) == MAX_SUGGESTED_FACTS
+
+
+def test_후보에_마스킹_대상_패턴이_섞이지_않는다() -> None:
+    """마스킹된 본문에서는 플레이스홀더로 바뀌므로 팩트 보존 검사가 영구히 실패한다."""
+    마스킹된_본문 = mask_text(
+        f"{FACT_TEXT}\n문의 02-2100-3456, 이메일 elder@example.go.kr, 계좌 123-45-678901"
+    ).masked_text
+    후보 = suggest_facts(마스킹된_본문)
+    assert 후보
+    assert all(not mask_text(항목).items for 항목 in 후보)
+    assert all("[[" not in 항목 and "]]" not in 항목 for 항목 in 후보)
+
+
+def test_후보는_줄바꿈을_넘어가지_않는다() -> None:
+    """PDF는 한 구절을 줄바꿈으로 가른다. 개행을 품은 리터럴은 변환문에서 다시 나올 수
+    없어 팩트 보존 검사가 항상 실패한다 (실측: "30인\\n이상")."""
+    후보 = suggest_facts("정원이 30인\n이상인 시설은 2026년\n3월까지 신고하세요.")
+    assert 후보
+    assert all("\n" not in 항목 for 항목 in 후보)
+
+
+def test_후보가_없으면_빈_배열이다() -> None:
+    assert suggest_facts("안내드립니다. 자세한 내용은 문의 바랍니다.") == []
+
+
+def test_후보가_초안의_required_facts에_채워진다() -> None:
+    초안 = build_draft(FACT_TEXT, document_id="021", source=SOURCE)
+    후보 = [팩트.canonical for 팩트 in 초안.document.required_facts]
+    assert 후보 == suggest_facts(초안.document.source_text)
+    assert 초안.stats.suggested_facts == len(후보)
+    assert all(팩트.canonical in 초안.document.source_text for 팩트 in 초안.document.required_facts)

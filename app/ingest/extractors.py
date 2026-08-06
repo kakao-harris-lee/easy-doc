@@ -177,6 +177,19 @@ def _ensure_zip_within_budget(data: bytes, format_name: str) -> None:
         raise DocumentExtractionError(f"{format_name} 파일이 너무 큽니다")
 
 
+def _ensure_extracted_length(format_name: str, size: int, text: str) -> str:
+    """추출 길이 상한을 강제한다 (전체 추출·부분 추출이 같은 기준을 쓰게 하는 자리).
+
+    크기 상한만으로는 부족하다 — 마크업 대비 본문 비율이 극단적인 문서를 만들면
+    작은 업로드가 수백만 자가 된다. 상한이 호출 경로마다 갈리면 방어가 새므로
+    한 곳에 둔다.
+    """
+    if len(text) > MAX_EXTRACTED_CHARS:
+        _log_failure(format_name, size, "extracted_too_long")
+        raise DocumentExtractionError(f"문서가 너무 깁니다 (최대 {MAX_EXTRACTED_CHARS:,}자)")
+    return text
+
+
 def _element_blocks(root: BaseOxmlElement) -> Iterator[str]:
     """OOXML 조각을 **문서 순서대로** 훑어 문단 단위 텍스트를 흘린다.
 
@@ -247,13 +260,22 @@ def _extract_docx(data: bytes) -> str:
     return _join_blocks(blocks)
 
 
-def _extract_pdf(data: bytes) -> str:
-    """pypdf로 페이지별 텍스트를 뽑아 잇는다.
+def iter_pdf_pages(
+    data: bytes, page_range: tuple[int, int] | None = None
+) -> Iterator[tuple[int, str]]:
+    """PDF에서 (페이지 번호, 텍스트)를 한 쪽씩 흘린다 (번호는 1부터, 닫힌 구간).
 
-    한계: 쪽 경계에서 잘린 문장은 이어 붙지 않는다. 앞 쪽 마지막 줄과 다음 쪽 첫 줄이
-    한 문장이어도 개행으로 갈라진 채 남는다. 머리글·바닥글·쪽 번호가 본문과 섞여
-    들어오는 PDF 특성상 '문장이 이어지는지'를 신뢰성 있게 판정하기 어려워, 잘못 이으면
-    오히려 원문을 훼손한다. 레이아웃 분석이 필요한 별도 과제로 남긴다.
+    전체 텍스트를 한 문자열로 잇지 않는 이유는 대형 자료(수백 쪽짜리 사업안내 책자)
+    때문이다. 미리보기는 쪽마다 통계만 남기면 되므로 한 쪽 분량만 메모리에 들고 있으면
+    되고, 부분 추출은 `MAX_EXTRACTED_CHARS` 상한에 걸려 통째로는 열 수 없는 문서에서도
+    필요한 쪽만 꺼낼 수 있다.
+
+    page_range를 주면 그 범위만 흘린다. 범위 시작이 문서 쪽 수를 넘으면 오류이고,
+    끝이 넘는 것은 마지막 쪽까지로 줄인다 — 사람이 "뒤쪽 전부"를 넉넉히 적는 흔한
+    사용법을 오류로 막을 이유가 없다.
+
+    Raises:
+        DocumentExtractionError: 파일이 손상·암호화됐거나 시작 쪽이 범위를 벗어났다.
     """
     try:
         reader = PdfReader(io.BytesIO(data))
@@ -265,12 +287,53 @@ def _extract_pdf(data: bytes) -> str:
     # 배포 문서에 흔한 형태라 미리 막으면 정상 파일을 거부하게 된다. pypdf는 읽을 때 빈
     # 암호를 자동으로 시도하므로, 진짜로 암호가 필요한 파일만 여기서 걸린다.
     try:
-        pages = [page.extract_text() for page in reader.pages]
+        total = len(reader.pages)
     except FileNotDecryptedError:
         _log_failure("pdf", len(data), "encrypted")
         raise DocumentExtractionError(_ENCRYPTED_MESSAGE) from None
     except Exception as exc:
         raise _broken("pdf", len(data), exc) from None
+
+    first, last = page_range if page_range is not None else (1, total)
+    if page_range is not None and first > total:
+        # 쪽 수는 본문이 아니라 구조 정보라 메시지에 담아도 안전하다.
+        raise DocumentExtractionError(f"PDF 페이지 범위를 벗어났습니다 (전체 {total}쪽)")
+
+    for number in range(first, min(last, total) + 1):
+        try:
+            text = reader.pages[number - 1].extract_text()
+        except FileNotDecryptedError:
+            _log_failure("pdf", len(data), "encrypted")
+            raise DocumentExtractionError(_ENCRYPTED_MESSAGE) from None
+        except Exception as exc:
+            raise _broken("pdf", len(data), exc) from None
+        yield number, text
+
+
+def extract_pdf_range(data: bytes, page_range: tuple[int, int]) -> str:
+    """PDF에서 지정한 쪽 범위만 뽑아 잇는다 (결과 모양은 `extract_text`와 같다).
+
+    전체 추출과 같은 길이 상한을 적용한다 — 범위를 넓게 잡으면 결국 같은 위험이다.
+
+    Raises:
+        DocumentExtractionError: 손상·암호·범위 이탈이거나, 그 범위에 텍스트가 없다.
+    """
+    text = _join_blocks(text for _, text in iter_pdf_pages(data, page_range))
+    if not text:
+        _log_failure("pdf", len(data), "no_text_layer")
+        raise DocumentExtractionError("선택한 쪽에서 텍스트를 추출할 수 없습니다")
+    return _ensure_extracted_length("pdf", len(data), text)
+
+
+def _extract_pdf(data: bytes) -> str:
+    """pypdf로 페이지별 텍스트를 뽑아 잇는다.
+
+    한계: 쪽 경계에서 잘린 문장은 이어 붙지 않는다. 앞 쪽 마지막 줄과 다음 쪽 첫 줄이
+    한 문장이어도 개행으로 갈라진 채 남는다. 머리글·바닥글·쪽 번호가 본문과 섞여
+    들어오는 PDF 특성상 '문장이 이어지는지'를 신뢰성 있게 판정하기 어려워, 잘못 이으면
+    오히려 원문을 훼손한다. 레이아웃 분석이 필요한 별도 과제로 남긴다.
+    """
+    pages = [text for _, text in iter_pdf_pages(data)]
     if not pages:
         _log_failure("pdf", len(data), "no_pages")
         raise DocumentExtractionError("페이지가 없는 PDF입니다")
@@ -376,14 +439,25 @@ def _hwpx_blocks(section: bytes, file_size: int) -> list[str]:
     return blocks
 
 
+def iter_hwpx_sections(data: bytes) -> Iterator[tuple[int, str]]:
+    """hwpx에서 (구역 번호, 텍스트)를 구역 하나씩 흘린다 (번호는 1부터).
+
+    PDF의 `iter_pdf_pages`와 같은 목적이다 — 대형 자료의 구조를 훑거나 일부만 꺼낼 때
+    전체 본문을 한 문자열로 잇지 않기 위해서다. hwpx에는 쪽 개념이 없으므로(쪽 나눔은
+    조판 결과다) 구역이 가장 작은 자연 단위다.
+    """
+    for number, section in enumerate(_read_hwpx_sections(data), start=1):
+        yield number, _join_blocks(_hwpx_blocks(section, len(data)))
+
+
 def _extract_hwpx(data: bytes) -> str:
     """zip + expat으로 OWPML 본문 텍스트를 뽑는다."""
-    sections = _read_hwpx_sections(data)
+    sections = [text for _, text in iter_hwpx_sections(data)]
     if not sections:
         # 구역이 하나도 없으면 hwpx 패키지가 아니거나 껍데기다.
         _log_failure("hwpx", len(data), "no_sections")
         raise DocumentExtractionError("hwpx 파일을 읽을 수 없습니다 (본문 구역이 없습니다)")
-    return _join_blocks(block for section in sections for block in _hwpx_blocks(section, len(data)))
+    return _join_blocks(sections)
 
 
 @dataclass(frozen=True)
@@ -430,8 +504,4 @@ def extract_text(filename: str, data: bytes) -> str:
         # 경우(python-docx)에는 이 지점이 유일한 방어선이다.
         _ensure_zip_within_budget(data, document_format.name)
 
-    text = document_format.extract(data)
-    if len(text) > MAX_EXTRACTED_CHARS:
-        _log_failure(document_format.name, len(data), "extracted_too_long")
-        raise DocumentExtractionError(f"문서가 너무 깁니다 (최대 {MAX_EXTRACTED_CHARS:,}자)")
-    return text
+    return _ensure_extracted_length(document_format.name, len(data), document_format.extract(data))
