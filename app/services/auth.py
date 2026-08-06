@@ -23,7 +23,7 @@ from anyio import CapacityLimiter, to_thread
 from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerificationError
 
-from app.exceptions import InvalidCredentialsError, InvalidInputError
+from app.exceptions import ConfigurationError, InvalidCredentialsError, InvalidInputError
 from app.models.user import User
 
 _logger = logging.getLogger(__name__)
@@ -32,6 +32,14 @@ _logger = logging.getLogger(__name__)
 MIN_PASSWORD_LENGTH = 8
 #: users.email 컬럼 상한과 같은 값. 넘기면 DB 오류(500) 대신 도메인 예외로 막는다.
 MAX_EMAIL_LENGTH = 255
+
+#: JWT 서명 키 최소 길이(바이트). HS256의 해시 출력 크기와 같다 — 이보다 짧은 키는
+#: 서명 강도를 떨어뜨린다(RFC 7518 3.2도 같은 하한을 요구한다).
+#:
+#: PyJWT 2.13은 짧은 키를 InsecureKeyLengthWarning으로만 알리고 서명은 그대로 해 준다.
+#: 경고는 운영 로그에서 묻히기 쉬우므로, 약한 키가 조용히 통과하는 대신 기동 경로에서
+#: 설정 오류로 끊는다. `.env.example`의 `openssl rand -hex 32`가 이 기준을 만족한다.
+MIN_JWT_SECRET_BYTES = 32
 
 _ALGORITHM = "HS256"
 
@@ -131,6 +139,16 @@ class AuthService:
     """
 
     def __init__(self, repository: UserStore, jwt_secret: str, expire_minutes: int) -> None:
+        """서비스를 조립한다.
+
+        Raises:
+            ConfigurationError: 서명 키가 MIN_JWT_SECRET_BYTES 미만이다. 키 값 자체는
+                메시지에 담지 않는다 — 길이만으로도 진단에 충분하다.
+        """
+        if len(jwt_secret.encode()) < MIN_JWT_SECRET_BYTES:
+            raise ConfigurationError(
+                f"인증 서명 키는 {MIN_JWT_SECRET_BYTES}바이트 이상이어야 합니다"
+            )
         self._repository = repository
         self._jwt_secret = jwt_secret
         self._expire_minutes = expire_minutes

@@ -18,12 +18,18 @@ from anyio import to_thread
 from argon2 import PasswordHasher
 
 from app.exceptions import (
+    ConfigurationError,
     EmailAlreadyRegisteredError,
     InvalidCredentialsError,
     InvalidInputError,
 )
 from app.services import auth as auth_module
-from app.services.auth import AuthService, hash_password, verify_password
+from app.services.auth import (
+    MIN_JWT_SECRET_BYTES,
+    AuthService,
+    hash_password,
+    verify_password,
+)
 from tests.fakes import FakeUserRepository
 
 _SECRET = "test-secret-do-not-use-in-production"
@@ -43,6 +49,31 @@ def _service(
         jwt_secret=_SECRET,
         expire_minutes=expire_minutes,
     )
+
+
+# --- 서명 키 검증 --------------------------------------------------------------
+
+
+def test_짧은_서명_키는_조립_단계에서_거부한다() -> None:
+    """PyJWT는 경고만 내고 서명해 준다 — 약한 HMAC 키가 조용히 운영에 올라가지 않게 막는다."""
+    short = "x" * (MIN_JWT_SECRET_BYTES - 1)
+
+    with pytest.raises(ConfigurationError) as error:
+        AuthService(repository=FakeUserRepository(), jwt_secret=short, expire_minutes=60)
+
+    # 키 값은 메시지로 새지 않는다 — 그 자체가 모든 토큰을 위조할 수 있는 비밀이다.
+    assert short not in str(error.value)
+
+
+def test_최소_길이를_채운_서명_키는_통과한다() -> None:
+    """경계값 — 32바이트 자체는 허용되어야 한다(openssl rand -hex 32는 64바이트)."""
+    service = AuthService(
+        repository=FakeUserRepository(),
+        jwt_secret="y" * MIN_JWT_SECRET_BYTES,
+        expire_minutes=60,
+    )
+
+    assert service.access_token_lifetime_seconds == 3600
 
 
 # --- 비밀번호 해싱 -------------------------------------------------------------

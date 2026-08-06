@@ -108,7 +108,8 @@ class ConversionRepository:
                 # 이전 시도의 실패 코드를 지운다 — 재시도로 성공했는데 실패 사유가
                 # 남아 있으면 조회 응답이 앞뒤가 맞지 않는다.
                 failure_code=None,
-                # ORM 이벤트가 아니라 직접 쓰는 UPDATE라 onupdate가 걸리지 않는다.
+                # 컬럼 onupdate로도 갱신되지만, 이 UPDATE가 무엇을 건드리는지 SET 절에
+                # 눈에 보이게 적어 둔다 — 상태 전이 시각은 재시도 진단의 핵심 단서다.
                 updated_at=func.now(),
             )
             # RETURNING으로 갱신 여부를 본다(rowcount는 드라이버마다 타입이 다르다).
