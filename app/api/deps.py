@@ -13,8 +13,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import Settings
 from app.exceptions import ConfigurationError, InvalidCredentialsError
 from app.models.user import User
+from app.privacy.crypto import TextCipher
+from app.queue import TaskQueue
+from app.repositories.conversions import ConversionRepository
+from app.repositories.documents import DocumentRepository
 from app.repositories.users import UserRepository
 from app.services.auth import AuthService, UserStore
+from app.services.documents import ConversionStore, DocumentService, DocumentStore
 
 # auto_error=False: 헤더가 없거나 스킴이 틀릴 때 FastAPI가 자체 형식의 403/401을
 # 만들어 내지 않게 한다. 우리 도메인 예외로 통일해야 응답 모양이 하나로 유지된다.
@@ -83,5 +88,50 @@ async def get_current_user(
     return user
 
 
+def get_document_repository(
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> DocumentStore:
+    """문서 저장소. 테스트는 이 의존성을 fake로 갈아끼운다."""
+    return DocumentRepository(session)
+
+
+def get_conversion_repository(
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> ConversionStore:
+    """변환 저장소. 문서 저장소와 **같은 요청 세션**을 받는다 — 커밋 하나로 둘이 함께
+    확정되어야 문서만 남고 변환이 없는 상태가 생기지 않는다.
+    """
+    return ConversionRepository(session)
+
+
+def get_text_cipher(settings: Annotated[Settings, Depends(get_settings)]) -> TextCipher:
+    """문서 암호기. 키가 없으면 운영 설정 문제로 503을 낸다.
+
+    기동 자체는 막지 않는다 — 키 없이도 /health로 배포 상태를 진단할 수 있어야 한다.
+    """
+    if settings.fernet_key is None:
+        raise ConfigurationError("문서 저장이 설정되지 않았습니다")
+    return TextCipher(settings.fernet_key.get_secret_value())
+
+
+def get_task_queue(request: Request) -> TaskQueue:
+    """작업 큐. lifespan이 Redis에 붙지 못했으면 503을 낸다."""
+    queue: TaskQueue | None = getattr(request.app.state, "task_queue", None)
+    if queue is None:
+        raise ConfigurationError("작업 큐가 준비되지 않았습니다")
+    return queue
+
+
+def get_document_service(
+    documents: Annotated[DocumentStore, Depends(get_document_repository)],
+    conversions: Annotated[ConversionStore, Depends(get_conversion_repository)],
+    cipher: Annotated[TextCipher, Depends(get_text_cipher)],
+    queue: Annotated[TaskQueue, Depends(get_task_queue)],
+) -> DocumentService:
+    """문서 서비스 조립."""
+    return DocumentService(documents=documents, conversions=conversions, cipher=cipher, queue=queue)
+
+
 AuthServiceDep = Annotated[AuthService, Depends(get_auth_service)]
 CurrentUserDep = Annotated[User, Depends(get_current_user)]
+DocumentServiceDep = Annotated[DocumentService, Depends(get_document_service)]

@@ -21,8 +21,10 @@ from app.exceptions import (
     InvalidInputError,
     LLMProviderError,
     NotFoundError,
+    QueueUnavailableError,
     StorageError,
     UnsupportedFormatError,
+    UploadTooLargeError,
 )
 
 _logger = logging.getLogger(__name__)
@@ -36,11 +38,15 @@ _MAPPINGS: tuple[tuple[type[EasyDocError], int, dict[str, str]], ...] = (
     # Content-Type이 아니라 본문(파일) 자체를 처리할 수 없는 상황이기 때문.
     (UnsupportedFormatError, status.HTTP_422_UNPROCESSABLE_CONTENT, {}),
     (DocumentExtractionError, status.HTTP_422_UNPROCESSABLE_CONTENT, {}),
+    # 크기 초과만 413으로 가른다 — "파일을 나눠 올리라"는 안내가 형식 오류와 다르다.
+    (UploadTooLargeError, status.HTTP_413_CONTENT_TOO_LARGE, {}),
     (EmailAlreadyRegisteredError, status.HTTP_409_CONFLICT, {}),
     # WWW-Authenticate: 401에 요구되는 표준 헤더. 클라이언트가 재인증 방식을 안다.
     (InvalidCredentialsError, status.HTTP_401_UNAUTHORIZED, {"WWW-Authenticate": "Bearer"}),
     (NotFoundError, status.HTTP_404_NOT_FOUND, {}),
     (LLMProviderError, status.HTTP_502_BAD_GATEWAY, {}),
+    # 큐 장애도 하위 시스템 장애다 — 재시도하면 되는 상황임을 502로 알린다.
+    (QueueUnavailableError, status.HTTP_502_BAD_GATEWAY, {}),
     (ConfigurationError, status.HTTP_503_SERVICE_UNAVAILABLE, {}),
     # 서버 버그. 메시지는 저장소가 만든 고정 문자열이라 그대로 내보내도 안전하다.
     (StorageError, status.HTTP_500_INTERNAL_SERVER_ERROR, {}),

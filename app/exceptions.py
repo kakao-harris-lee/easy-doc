@@ -49,6 +49,21 @@ class DocumentExtractionError(EasyDocError):
     """
 
 
+class UploadTooLargeError(EasyDocError):
+    """업로드 파일이 크기 상한을 넘었다.
+
+    형식·내용 문제(422)와 구분한다 — 사용자가 취할 조치가 "파일을 나눠 올리기"로
+    다르기 때문이다. 상한값은 app/ingest/extractors.py의 MAX_UPLOAD_BYTES.
+    """
+
+
+class QueueUnavailableError(EasyDocError):
+    """비동기 작업 큐에 작업을 등록하지 못했다 (Redis 장애 등).
+
+    우리 잘못도 사용자 잘못도 아닌 하위 시스템 장애이므로 502로 매핑한다.
+    """
+
+
 class NotFoundError(EasyDocError):
     """요청한 리소스가 없다."""
 
