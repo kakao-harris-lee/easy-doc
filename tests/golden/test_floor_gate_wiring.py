@@ -15,9 +15,12 @@ from tests.golden import test_golden_eval as harness
 _EASY_TEXT = "오늘 서류를 내세요."
 _HIGH = '{"fidelity": 5, "readability": 5, "comment": "-"}'
 _FABRICATED = '{"fidelity": 1, "readability": 5, "comment": "-"}'
-# 평균이 정확히 JUDGE_SCORE_THRESHOLD(4.0)가 되도록 날조 건수를 잡는다.
-# 5점 n-k건 + 1점 k건의 평균이 4.0이 되는 지점 = k * 4 = n → k = n / 4.
-_FABRICATED_COUNT = len(harness.DOCUMENTS) // 4
+# 필요한 시나리오는 "평균 게이트는 통과하는데 바닥 위반이 섞여 있는 입력" 하나뿐이다.
+# 평균이 임계값에 **정확히** 닿는 날조 건수(n/4)를 계산하려 들면 문서 수가 4의 배수가
+# 아닌 순간 전제가 깨진다(실측: 39건에서 4.08). 날조를 1건만 섞으면 평균은 5 - 4/n이라
+# n이 4 이상인 한 언제나 기준(4.0) 이상이고, 바닥 위반은 확실히 존재한다.
+# 골든셋 하한은 20건이므로(tests/golden/test_schema.py) 조건은 항상 만족된다.
+_FABRICATED_COUNT = 1
 
 
 def _outcomes() -> dict[str, ConversionOutcome | None]:
@@ -31,10 +34,15 @@ def _outcomes() -> dict[str, ConversionOutcome | None]:
 
 
 def test_시나리오가_평균_게이트를_통과하는_입력이다() -> None:
-    """전제 확인 — 평균이 기준 미만이면 바닥 게이트가 아니라 평균 게이트가 잡은 것이 된다."""
+    """전제 확인 — 두 조건이 함께 성립해야 아래 테스트가 바닥 게이트를 본 것이 된다.
+
+    ① 바닥 위반이 실제로 섞여 있고, ② 그런데도 평균은 기준 이상이다. 평균이 기준
+    미만이면 실패의 원인이 바닥 게이트인지 평균 게이트인지 구분되지 않는다.
+    """
+    assert 0 < _FABRICATED_COUNT < len(harness.DOCUMENTS)
     high_count = len(harness.DOCUMENTS) - _FABRICATED_COUNT
     average = (high_count * 5 + _FABRICATED_COUNT * 1) / len(harness.DOCUMENTS)
-    assert average == harness.JUDGE_SCORE_THRESHOLD
+    assert average >= harness.JUDGE_SCORE_THRESHOLD
 
 
 async def test_평균을_통과해도_날조가_섞이면_하네스가_실패한다() -> None:

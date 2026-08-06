@@ -3,6 +3,12 @@
 여기서 걸러지지 않은 문서 결함은 LLM 평가 단계에서 원인 불명의 실패로 나타난다.
 특히 required_facts에 마스킹 대상 패턴이 섞이면 팩트 보존 검사가 영구히 실패한다.
 실패 출력에는 문서 id와 위반 리터럴만 남기고 본문은 남기지 않는다.
+
+**혼합 코퍼스**: 합성 문서(우리가 만든 것)와 실수집 문서(공공기관 배포본)가 함께 있다.
+기준이 갈리는 것은 우리가 통제할 수 있는 속성뿐이다 — 본문 길이와 개인정보 포함 여부는
+합성 문서에서만 우리 마음대로 정할 수 있으므로 출처별로 다른 기준을 쓰고, 팩트 개수·
+카테고리·어려운 표현처럼 **평가의 변별력을 좌우하는 기준은 출처와 무관하게 같다**.
+실수집이라는 이유로 느슨해지면 통과율이 코퍼스 구성에 따라 움직인다.
 """
 
 import pytest
@@ -22,10 +28,21 @@ MIN_DIFFICULT_WORDS = 2
 MIN_FACTS = 3
 MAX_FACTS = 6
 MIN_SOURCE_CHARS = 500
-MAX_SOURCE_CHARS = 1500
+# 합성 문서 상한 — 우리가 길이를 정해 쓰므로 좁게 유지한다.
+MAX_SYNTHETIC_SOURCE_CHARS = 1500
+# 실수집 문서 상한. 실제 공공 안내문은 2~4천 자가 예사라 합성 기준을 그대로 들이대면
+# 코퍼스가 "짧은 문서만 모은 셋"으로 편향된다. 대신 변환 상한을 넘길 수는 없다 —
+# 정책 원본은 app/services/documents.py의 MAX_CONVERTIBLE_CHARS(4,000)이고, 그 위는
+# 변환 자체가 거부되어 평가가 실력과 무관하게 하드 실패한다.
+# 여기서 import하지 않는 이유는 문서 파일만 보는 검사 층에 서비스(DB·큐) 계층을
+# 끌어오지 않기 위해서다(scripts/collect_golden.py도 같은 규칙). 상한 정책이 바뀌면
+# 두 곳을 함께 고칠 것.
+MAX_COLLECTED_SOURCE_CHARS = 4000
 
 # 카테고리 통제 어휘 — 자유 입력이면 "주거 공고문"/"주거 안내문"처럼 축이 갈라져
 # 주제 분포 집계가 깨진다. 새 주제를 넣을 때 이 목록을 함께 갱신한다.
+# "공고문"은 안내문과 문체 축이 다르다(고시·공고체). 실수집본에 공고·공모가 많아
+# 별도 값으로 둔다 — "공고"가 아니라 "공고문"으로 통일한다.
 ALLOWED_CATEGORIES = frozenset(
     {
         "복지 안내문",
@@ -37,6 +54,7 @@ ALLOWED_CATEGORIES = frozenset(
         "교육 안내문",
         "고용 안내문",
         "생활요금 안내문",
+        "공고문",
     }
 )
 
@@ -56,11 +74,6 @@ def test_문서가_서로_다르다() -> None:
     """템플릿 복붙이면 평가 변별력이 없다 — 제목·본문이 모두 달라야 한다."""
     assert len({document.title for document in DOCUMENTS}) == len(DOCUMENTS)
     assert len({document.source_text for document in DOCUMENTS}) == len(DOCUMENTS)
-
-
-def test_모두_합성_문서로_표시된다() -> None:
-    """실제 수집 문서로 교체하면 synthetic을 false로 바꾸고 이 기준을 조정한다."""
-    assert [document.id for document in DOCUMENTS if not document.synthetic] == []
 
 
 def _payload(**overrides: object) -> dict[str, object]:
@@ -114,17 +127,25 @@ def test_필수_문자열_필드가_비어_있지_않다() -> None:
 
 
 def test_본문_길이가_기준_범위_안이다() -> None:
-    """너무 짧으면 변환 난도가 없고, 너무 길면 토큰 한도·지연 측정이 왜곡된다."""
+    """너무 짧으면 변환 난도가 없고, 너무 길면 토큰 한도·지연 측정이 왜곡된다.
+
+    상한만 출처에 따라 갈린다 — 길이는 합성 문서에서만 우리가 정할 수 있다.
+    """
     out_of_range = [
         document.id
         for document in DOCUMENTS
-        if not MIN_SOURCE_CHARS <= len(document.source_text) <= MAX_SOURCE_CHARS
+        if not MIN_SOURCE_CHARS
+        <= len(document.source_text)
+        <= (MAX_SYNTHETIC_SOURCE_CHARS if document.synthetic else MAX_COLLECTED_SOURCE_CHARS)
     ]
     assert out_of_range == []
 
 
 def test_어려운_표현이_문서마다_충분히_들어_있다() -> None:
-    """PROMPT_ONLY_WORDS(상기·하기 등)는 채점 제외라 개수에 포함되지 않는다."""
+    """출처와 무관한 기준 — 어려운 표현이 없는 문서는 변환할 것이 없어 변별력이 없다.
+
+    PROMPT_ONLY_WORDS(상기·하기 등)는 채점 제외라 개수에 포함되지 않는다.
+    """
     insufficient = [
         document.id
         for document in DOCUMENTS
@@ -133,10 +154,17 @@ def test_어려운_표현이_문서마다_충분히_들어_있다() -> None:
     assert insufficient == []
 
 
-def test_합성_개인정보가_문서마다_들어_있다() -> None:
-    """마스킹 파이프라인이 실제로 동작하는지 평가하려면 문서에 개인정보가 있어야 한다."""
+def test_합성_문서에는_합성_개인정보가_들어_있다() -> None:
+    """마스킹 파이프라인 회귀를 잡으려면 개인정보가 든 문서가 필요하다 — 합성 문서의 몫이다.
+
+    실수집 문서는 마스킹을 마친 뒤 편입되므로 0건이 정상이고, 여기서 요구하면 편입
+    절차(마스킹 선행)를 지킨 문서가 오히려 걸린다. 플레이스홀더가 남아 있는지도
+    검사하지 않는다 — 애초에 개인정보가 없는 공개 배포용 안내문이 흔하다.
+    """
     without_pii = [
-        document.id for document in DOCUMENTS if not mask_text(document.source_text).items
+        document.id
+        for document in DOCUMENTS
+        if document.synthetic and not mask_text(document.source_text).items
     ]
     assert without_pii == []
 
