@@ -9,7 +9,11 @@ import pytest
 from pydantic import ValidationError
 
 from app.easyread.goldenset import GoldenDocument, load_documents
-from app.easyread.style_rules import check_style, find_difficult_words
+from app.easyread.style_rules import (
+    DIFFICULT_WORD_REPLACEMENTS,
+    check_style,
+    find_difficult_words,
+)
 from app.privacy.masking import MaskCategory, mask_text
 from tests.golden import DOCUMENTS_DIR
 
@@ -203,6 +207,23 @@ def test_required_facts가_마스킹_후에도_원문에_남는다() -> None:
         for document in DOCUMENTS
         for fact in document.required_facts
         if fact.canonical not in mask_text(document.source_text).masked_text
+    ]
+    assert violations == []
+
+
+def test_required_facts에_치환_대상_표현이_들어_있지_않다() -> None:
+    """팩트 안에 치환 키가 있으면 모델이 그 자리를 바꿔 팩트가 통째로 사라진다.
+
+    실제로 "아이행복카드"가 "이행"을 품고 있어 사전 확충 때 걸러 냈다. 사전을 넓힐
+    때마다 이 검사가 같은 사고를 미리 잡는다(문서 쪽이 아니라 사전 쪽을 고칠 것).
+    """
+    violations = [
+        (document.id, literal, word)
+        for document in DOCUMENTS
+        for fact in document.required_facts
+        for literal in (fact.canonical, *fact.accept)
+        for word in DIFFICULT_WORD_REPLACEMENTS
+        if word in literal
     ]
     assert violations == []
 
