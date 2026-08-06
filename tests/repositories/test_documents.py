@@ -18,6 +18,7 @@ from app.exceptions import StorageError
 from app.models.conversion import Conversion, ConversionStatus
 from app.models.document import RETENTION_DAYS, Document
 from app.models.user import User
+from app.privacy.crypto import CURRENT_KEY_VERSION
 from app.repositories.conversions import ConversionRepository
 from app.repositories.documents import DocumentRepository
 from app.repositories.users import UserRepository
@@ -67,6 +68,8 @@ async def test_문서를_저장하고_소유자로_조회한다(db_session: Asyn
     assert found.char_count == 42
     # bytea 왕복 — 암호문이 인코딩 변환으로 훼손되면 복호화가 통째로 깨진다.
     assert found.source_text_encrypted == _ENCRYPTED
+    # 키 세대 — Fernet 토큰에는 키 식별자가 없어 이 컬럼이 키 교체의 유일한 단서다.
+    assert found.key_version == CURRENT_KEY_VERSION
 
 
 async def test_남의_문서는_조회되지_않는다(db_session: AsyncSession) -> None:
@@ -126,6 +129,7 @@ async def test_변환을_대기_상태로_만든다(db_session: AsyncSession) ->
     assert conversion.missing_placeholders == []
     assert conversion.easy_text_encrypted is None
     assert conversion.failure_code is None
+    assert conversion.key_version == CURRENT_KEY_VERSION
 
 
 async def test_남의_변환은_조회되지_않는다(db_session: AsyncSession) -> None:
@@ -166,7 +170,7 @@ async def test_처리_시작에서_완료까지_상태가_이어진다(db_sessio
     conversions = ConversionRepository(db_session)
     conversion = await conversions.create_pending(document.id)
 
-    await conversions.mark_processing(conversion)
+    assert await conversions.mark_processing(conversion) is True
     assert conversion.status == ConversionStatus.PROCESSING
 
     await conversions.mark_done(
@@ -209,6 +213,50 @@ async def test_실패는_사유_코드만_남긴다(db_session: AsyncSession) ->
     assert reloaded.easy_text_encrypted is None
 
 
+async def test_완료된_변환은_다시_처리_상태로_돌아가지_않는다(db_session: AsyncSession) -> None:
+    """재시도·중복 배달로 워커가 같은 작업을 또 집어도 완료 결과를 덮어쓰면 안 된다.
+
+    읽고-나서-쓰는 방식은 그 사이에 틈이 있다 — 조건부 UPDATE만이 틈 없는 판정이다.
+    """
+    user = await _user(db_session, "idempotent@example.com")
+    document = await _document(DocumentRepository(db_session), user)
+    conversions = ConversionRepository(db_session)
+    conversion = await conversions.create_pending(document.id)
+    await conversions.mark_done(
+        conversion,
+        easy_text_encrypted=b"gAAAAA-easy",
+        masked_items_encrypted=b"gAAAAA-items",
+        missing_placeholders=[],
+        provider_name="fake",
+        model="fake-model",
+        input_tokens=1,
+        output_tokens=2,
+    )
+    await conversions.commit()
+
+    assert await conversions.mark_processing(conversion) is False
+
+    reloaded = await conversions.get_for_user(conversion.id, user.id)
+    assert reloaded is not None
+    assert reloaded.status == ConversionStatus.DONE
+    assert reloaded.easy_text_encrypted == b"gAAAAA-easy"
+
+
+async def test_재시도는_이전_실패_사유를_지운다(db_session: AsyncSession) -> None:
+    """실패 후 재시도로 처리 중이 됐는데 실패 코드가 남아 있으면 응답이 앞뒤가 안 맞는다."""
+    user = await _user(db_session, "retry@example.com")
+    document = await _document(DocumentRepository(db_session), user)
+    conversions = ConversionRepository(db_session)
+    conversion = await conversions.create_pending(document.id)
+    await conversions.mark_failed(conversion, "LLMProviderError")
+    await conversions.commit()
+
+    assert await conversions.mark_processing(conversion) is True
+
+    assert conversion.status == ConversionStatus.PROCESSING
+    assert conversion.failure_code is None
+
+
 async def test_상태를_바꾸면_updated_at을_다시_쓴다(db_session: AsyncSession) -> None:
     """onupdate 배선 확인 — UPDATE 문이 updated_at을 함께 실어 보내야 한다.
 
@@ -226,7 +274,7 @@ async def test_상태를_바꾸면_updated_at을_다시_쓴다(db_session: Async
         text("UPDATE conversions SET updated_at = created_at - interval '1 hour' WHERE id = :id"),
         {"id": conversion.id},
     )
-    await conversions.mark_processing(conversion)
+    assert await conversions.mark_processing(conversion) is True
     await conversions.commit()
 
     await db_session.refresh(conversion)
@@ -284,13 +332,14 @@ async def test_목록은_최신순이고_최신_변환_상태를_함께_준다(d
     )
     await conversions.commit()
 
-    summaries = await documents.list_for_user(user.id, limit=20, offset=0)
+    page = await documents.list_for_user(user.id, limit=20, offset=0)
 
-    assert [summary.document.id for summary in summaries] == [second.id, first.id]
-    assert summaries[0].latest_conversion is not None
-    assert summaries[0].latest_conversion.status == ConversionStatus.DONE
+    assert [summary.document.id for summary in page.items] == [second.id, first.id]
+    assert page.items[0].latest_conversion is not None
+    assert page.items[0].latest_conversion.status == ConversionStatus.DONE
     # 변환을 아직 만들지 않은 문서도 목록에는 나와야 한다.
-    assert summaries[1].latest_conversion is None
+    assert page.items[1].latest_conversion is None
+    assert page.has_more is False
 
 
 async def test_목록에_남의_문서는_섞이지_않는다(db_session: AsyncSession) -> None:
@@ -300,9 +349,9 @@ async def test_목록에_남의_문서는_섞이지_않는다(db_session: AsyncS
     mine = await _document(documents, owner, title="내 문서")
     await _document(documents, stranger, title="남의 문서")
 
-    summaries = await documents.list_for_user(owner.id, limit=20, offset=0)
+    page = await documents.list_for_user(owner.id, limit=20, offset=0)
 
-    assert [summary.document.id for summary in summaries] == [mine.id]
+    assert [summary.document.id for summary in page.items] == [mine.id]
 
 
 async def test_목록은_limit과_offset을_따른다(db_session: AsyncSession) -> None:
@@ -315,14 +364,20 @@ async def test_목록은_limit과_offset을_따른다(db_session: AsyncSession) 
     page = await documents.list_for_user(user.id, limit=2, offset=0)
     rest = await documents.list_for_user(user.id, limit=2, offset=2)
 
-    assert [summary.document.title for summary in page] == ["문서 2", "문서 1"]
-    assert [summary.document.title for summary in rest] == ["문서 0"]
+    assert [summary.document.title for summary in page.items] == ["문서 2", "문서 1"]
+    assert [summary.document.title for summary in rest.items] == ["문서 0"]
+    # 다음 페이지 유무는 한 건 더 읽어 판정한다 (COUNT 쿼리 없이).
+    assert page.has_more is True
+    assert rest.has_more is False
 
 
 async def test_문서가_없으면_빈_목록이다(db_session: AsyncSession) -> None:
     user = await _user(db_session, "empty@example.com")
 
-    assert await DocumentRepository(db_session).list_for_user(user.id, limit=20, offset=0) == []
+    page = await DocumentRepository(db_session).list_for_user(user.id, limit=20, offset=0)
+
+    assert page.items == []
+    assert page.has_more is False
 
 
 # --- 스키마 ------------------------------------------------------------------

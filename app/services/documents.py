@@ -20,7 +20,7 @@ from dataclasses import dataclass
 from pathlib import PurePosixPath
 from typing import Protocol
 
-from anyio import to_thread
+from anyio import CapacityLimiter, to_thread
 from pydantic import BaseModel, ValidationError
 
 from app.exceptions import (
@@ -31,15 +31,33 @@ from app.exceptions import (
     StorageError,
     UploadTooLargeError,
 )
-from app.ingest.extractors import MAX_EXTRACTED_CHARS, MAX_UPLOAD_BYTES, extract_text
+from app.ingest.extractors import MAX_UPLOAD_BYTES, extract_text
 from app.models.conversion import Conversion, ConversionStatus
 from app.models.document import MAX_TITLE_LENGTH, Document
 from app.privacy.crypto import TextCipher
 from app.privacy.masking import MaskedItem
 from app.queue import CONVERT_DOCUMENT_TASK, TaskQueue
-from app.repositories.documents import DocumentSummary
+from app.repositories.documents import DocumentPage
 
 _logger = logging.getLogger(__name__)
+
+#: 한 번에 변환할 수 있는 문서 길이(공백 포함 문자 수).
+#:
+#: 한국어는 대략 글자당 1.5토큰이라 4,000자면 출력이 약 6,000토큰 — provider 기본
+#: 출력 상한(DEFAULT_MAX_TOKENS 4096)을 이미 넘본다. 그보다 긴 문서는 LLM 호출 비용을
+#: 다 치른 뒤 절단(LLMTruncatedError)으로 실패하는 것이 사실상 확정이므로, 돈을 쓰기
+#: 전에 업로드 시점에 거절하는 편이 정직하다. 긴 문서를 문단 단위로 쪼개 변환하는
+#: 청킹은 후속 미션이며, 그때 이 상한이 사라진다.
+#:
+#: 추출기의 MAX_EXTRACTED_CHARS(50만 자)는 그대로 둔다 — 그쪽은 압축 폭탄·거대 문서로부터
+#: **파서를** 지키는 방어선이고, 이 값은 **변환이 성공할 수 있는 범위**라는 다른 기준이다.
+MAX_CONVERTIBLE_CHARS = 4_000
+
+# 추출은 순수 파이썬(python-docx·pypdf) CPU 바운드 작업이라 GIL을 오래 쥐고, 건당
+# 압축 해제 예산이 50MB다. anyio 기본 스레드 한도(40)에 맡기면 최악의 경우 수 GB를
+# 동시에 들고 있게 되어 컨테이너가 OOM으로 죽는다. argon2 해싱과 같은 논리로 동시
+# 실행 수를 묶는다 (app/services/auth.py의 _HASH_LIMITER 참고).
+_EXTRACT_LIMITER = CapacityLimiter(4)
 
 #: 붙여넣기 입력의 source_format 값. 파일 입력은 확장자를 그대로 쓴다.
 TEXT_SOURCE_FORMAT = "text"
@@ -135,9 +153,7 @@ class DocumentStore(Protocol):
         """진행 중인 트랜잭션을 확정한다."""
         ...
 
-    async def list_for_user(
-        self, user_id: uuid.UUID, *, limit: int, offset: int
-    ) -> list[DocumentSummary]:
+    async def list_for_user(self, user_id: uuid.UUID, *, limit: int, offset: int) -> DocumentPage:
         """내 문서를 최신순으로 돌려준다 (최신 변환 상태 포함)."""
         ...
 
@@ -197,11 +213,6 @@ class DocumentService:
         """
         if not text.strip():
             raise InvalidInputError("본문이 비어 있습니다")
-        # 바이트가 아니라 문자 수로 잰다 — 한국어는 UTF-8에서 글자당 3바이트라
-        # 바이트 기준으로 막으면 실제 분량의 1/3에서 잘린다. 추출 경로의
-        # MAX_EXTRACTED_CHARS와 같은 기준을 써서 입력 방식에 따라 한도가 달라지지 않게 한다.
-        if len(text) > MAX_EXTRACTED_CHARS:
-            raise InvalidInputError(f"문서가 너무 깁니다 (최대 {MAX_EXTRACTED_CHARS:,}자)")
         return await self._store_and_enqueue(
             user_id=user_id, text=text, source_format=TEXT_SOURCE_FORMAT, title=title
         )
@@ -223,10 +234,8 @@ class DocumentService:
                 f"파일이 너무 큽니다 (최대 {MAX_UPLOAD_BYTES // (1024 * 1024)}MB)"
             )
         # extract_text는 동기 CPU 바운드다 — 이벤트 루프에서 직접 부르면 큰 문서 하나가
-        # 모든 요청을 멈춘다. 공유 CapacityLimiter는 두지 않는다: 추출량 상한
-        # (MAX_UPLOAD_BYTES·압축 해제 예산·MAX_EXTRACTED_CHARS)이 모듈 안에 이미 있어
-        # argon2처럼 건당 메모리가 고정 폭발하는 구조가 아니다.
-        text = await to_thread.run_sync(extract_text, filename, data)
+        # 모든 요청을 멈춘다. 동시 실행 수는 _EXTRACT_LIMITER로 묶는다(메모리 폭주 방지).
+        text = await to_thread.run_sync(extract_text, filename, data, limiter=_EXTRACT_LIMITER)
         if not text.strip():
             # 빈 docx·hwpx는 예외 없이 ""를 돌려준다 — 빈 문서 판정은 추출 결과로 한다.
             raise DocumentExtractionError("문서에서 텍스트를 찾을 수 없습니다")
@@ -237,9 +246,7 @@ class DocumentService:
             title=title,
         )
 
-    async def list_documents(
-        self, user_id: uuid.UUID, *, limit: int, offset: int
-    ) -> list[DocumentSummary]:
+    async def list_documents(self, user_id: uuid.UUID, *, limit: int, offset: int) -> DocumentPage:
         """내 문서 목록을 최신순으로 돌려준다."""
         return await self._documents.list_for_user(user_id, limit=limit, offset=offset)
 
@@ -274,7 +281,18 @@ class DocumentService:
     async def _store_and_enqueue(
         self, *, user_id: uuid.UUID, text: str, source_format: str, title: str | None
     ) -> tuple[Document, Conversion]:
-        """문서·변환을 저장하고 확정한 뒤 큐에 작업을 넣는다 (이 순서를 지킨다)."""
+        """문서·변환을 저장하고 확정한 뒤 큐에 작업을 넣는다 (이 순서를 지킨다).
+
+        길이 검사를 붙여넣기·파일 두 경로가 만나는 이 자리에 둔다 — 입력 방식에 따라
+        변환 가능 여부가 달라지면 사용자에게 설명할 수 없다. 바이트가 아니라 문자 수로
+        재는 이유는 한국어가 UTF-8에서 글자당 3바이트라 바이트 기준이면 실제 분량의
+        1/3에서 잘리기 때문이다.
+        """
+        if len(text) > MAX_CONVERTIBLE_CHARS:
+            raise InvalidInputError(
+                f"현재는 {MAX_CONVERTIBLE_CHARS:,}자 이하 문서만 변환할 수 있습니다"
+                " (긴 문서 분할 변환은 준비 중입니다)"
+            )
         document = await self._documents.create(
             user_id=user_id,
             title=_resolve_title(title, text),
@@ -290,9 +308,16 @@ class DocumentService:
         return document, conversion
 
     async def _enqueue(self, conversion: Conversion) -> None:
-        """변환 작업을 큐에 넣는다. 실패하면 그 사실을 DB에 남기고 502로 알린다."""
+        """변환 작업을 큐에 넣는다. 실패하면 그 사실을 DB에 남기고 502로 알린다.
+
+        작업 id를 변환 id로 고정해 등록을 멱등하게 만든다 — 등록 명령은 도착했는데 응답만
+        유실된 경우, 재시도가 같은 작업을 두 번 넣지 않고 조용히 넘어간다(그렇지 않으면
+        멀쩡히 처리될 변환이 EnqueueFailed로 기록된다).
+        """
         try:
-            await self._queue.enqueue(CONVERT_DOCUMENT_TASK, str(conversion.id))
+            await self._queue.enqueue(
+                CONVERT_DOCUMENT_TASK, str(conversion.id), job_id=str(conversion.id)
+            )
         except Exception as exc:
             # 넓게 잡는다: 큐 클라이언트가 어떤 예외를 던지는지는 구현 세부이고, 여기서
             # 놓치면 이미 커밋된 변환이 영원히 pending으로 굳는다(사용자는 끝나지 않는

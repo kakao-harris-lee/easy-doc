@@ -9,10 +9,19 @@
 2. **본문 비유출.** 로그·예외에 문서 본문·변환 결과·모델 응답을 담지 않는다. 남기는
    것은 변환 식별자·상태·실패 코드·소요 시간뿐이다.
 
-실패 처리 정책: **도메인 예외만** 실패로 기록한다(failure_code = 예외 클래스명).
-그 밖의 예외(DB 일시 장애 등)는 그대로 올려 arq가 재시도하게 둔다 — 조용히 "실패"로
-확정하면 잠깐의 네트워크 문제로 변환이 영구 소실된다. 재시도까지 모두 실패하면 상태가
-processing에 머무는데, 오래된 processing을 정리하는 잡은 후속 과제다.
+실패 처리 정책:
+
+- **도메인 예외**는 실패로 기록한다(failure_code = 예외 클래스명). 사용자가 원인을 알고
+  다시 시도할 수 있는 상태다.
+- **그 밖의 예외**(DB 일시 장애 등)는 `Retry`로 바꿔 던진다. arq는 일반 예외를 재시도하지
+  **않고** 작업을 영구히 버린다(arq 0.28 `Worker.run_job`: `Retry`·`RetryJob`·
+  `CancelledError`만 재큐한다). 그냥 올리면 mark_done 직전의 DB 장애 한 번에, 이미 비용을
+  치른 LLM 결과가 사라지고 행은 processing에 굳는다. 재시도 횟수는 WorkerSettings의
+  `max_tries`가 제한한다.
+
+멱등성: 재시도와 중복 배달이 전제인 큐라, 이미 done인 변환은 **다시 처리하지 않는다**
+(LLM 비용 이중 지불과, 사용자가 이미 받아 본 결과가 바뀌는 것을 막는다). 판정은 읽은
+값이 아니라 `mark_processing`의 조건부 UPDATE가 한다 — 읽고-나서-쓰는 사이의 틈을 없앤다.
 """
 
 import logging
@@ -20,11 +29,14 @@ import time
 import uuid
 from collections.abc import Callable
 from contextlib import AbstractAsyncContextManager
+from datetime import timedelta
 from typing import Any, Protocol
+
+from arq.worker import Retry
 
 from app.exceptions import EasyDocError
 from app.llm.provider import LLMProvider
-from app.models.conversion import Conversion
+from app.models.conversion import Conversion, ConversionStatus
 from app.models.document import Document
 from app.privacy.crypto import TextCipher
 from app.services.conversion import ConversionService
@@ -34,6 +46,10 @@ _logger = logging.getLogger(__name__)
 
 #: LLM provider를 만들 수 없을 때(API 키 미설정) 남기는 실패 코드.
 PROVIDER_UNAVAILABLE_CODE = "ProviderUnavailable"
+
+#: 예상 못 한 오류로 재시도할 때 기다리는 시간. DB·네트워크가 잠깐 흔들린 경우를
+#: 상정한 값이다 — 즉시 재시도하면 장애 중인 자원을 계속 두드려 회복을 방해한다.
+RETRY_DEFER = timedelta(seconds=30)
 
 
 class ConversionWorkerStore(Protocol):
@@ -49,8 +65,8 @@ class ConversionWorkerStore(Protocol):
         """변환과 원본 문서를 함께 읽는다. 없으면 None."""
         ...
 
-    async def mark_processing(self, conversion: Conversion) -> None:
-        """처리 시작을 기록한다."""
+    async def mark_processing(self, conversion: Conversion) -> bool:
+        """처리 시작을 기록한다. 이미 끝난 변환이면 아무것도 바꾸지 않고 False."""
         ...
 
     async def mark_done(
@@ -81,8 +97,7 @@ class ConversionWorkerStore(Protocol):
 StoreScope = Callable[[], AbstractAsyncContextManager[ConversionWorkerStore]]
 
 
-# ctx가 dict[str, Any]인 것은 arq가 정한 모양이라 좁힐 수 없다. 꺼낸 값은 즉시 지역
-# 변수에 타입을 붙여 Any가 아래로 퍼지지 않게 한다.
+# ctx가 dict[str, Any]인 것은 arq가 정한 모양이라 좁힐 수 없다.
 async def convert_document(ctx: dict[str, Any], conversion_id: str) -> None:
     """변환 한 건을 수행한다 (arq 진입점).
 
@@ -92,6 +107,9 @@ async def convert_document(ctx: dict[str, Any], conversion_id: str) -> None:
     Args:
         conversion_id: conversions.id의 문자열 표현. 큐에는 식별자만 실린다 —
             본문을 큐에 넣으면 Redis에 평문 개인정보가 쌓인다.
+
+    Raises:
+        Retry: 도메인 예외가 아닌 오류가 났다. 잠시 뒤 다시 시도한다.
     """
     try:
         identifier = uuid.UUID(conversion_id)
@@ -101,50 +119,99 @@ async def convert_document(ctx: dict[str, Any], conversion_id: str) -> None:
         _logger.error("변환 작업 식별자 형식이 올바르지 않습니다")
         return
 
+    # ctx에서 꺼낸 값은 즉시 타입을 붙인다 — Any가 아래로 퍼지면 배선 실수를 mypy가
+    # 잡아 주지 못한다.
     store_scope: StoreScope = ctx["store_scope"]
     cipher: TextCipher = ctx["cipher"]
     provider: LLMProvider | None = ctx["provider"]
     started = time.monotonic()
 
-    async with store_scope() as store:
-        loaded = await store.get_with_document(identifier)
-        if loaded is None:
-            # 보존 기간이 지나 삭제됐거나 계정이 사라진 경우 — 재시도할 일이 아니다.
-            _logger.warning("변환 대상을 찾을 수 없습니다: conversion_id=%s", identifier)
-            return
-        conversion, document = loaded
-
-        if provider is None:
-            # 키 없이 워커가 떴다. 대기 상태로 방치하면 사용자는 끝나지 않는 진행 표시만 본다.
-            await _fail(store, conversion, PROVIDER_UNAVAILABLE_CODE, started)
-            return
-
-        await store.mark_processing(conversion)
-        # 여기서 커밋해야 조회 API가 "처리 중"을 보여줄 수 있다(변환은 수 초 걸린다).
-        await store.commit()
-
-        try:
-            source_text = cipher.decrypt(document.source_text_encrypted)
-            # 원문은 반드시 이 서비스를 거친다 — 마스킹 선행 불변식의 유일한 관문이다.
-            outcome = await ConversionService(provider).convert(source_text)
-        except EasyDocError as exc:
-            # 예외 메시지는 남기지 않는다. 도메인 예외라 본문을 담지 않기로 되어 있지만,
-            # 그 규약을 이 자리에서 다시 확인할 수는 없다 — 타입 이름만 기록한다.
-            await _fail(store, conversion, type(exc).__name__, started)
-            return
-
-        await store.mark_done(
-            conversion,
-            easy_text_encrypted=cipher.encrypt(outcome.easy_text),
-            masked_items_encrypted=cipher.encrypt(serialize_masked_items(outcome.masked_items)),
-            missing_placeholders=outcome.missing_placeholders,
-            provider_name=outcome.provider_name,
-            model=outcome.model,
-            input_tokens=outcome.input_tokens,
-            output_tokens=outcome.output_tokens,
+    try:
+        async with store_scope() as store:
+            await _process(
+                store=store,
+                cipher=cipher,
+                provider=provider,
+                identifier=identifier,
+                started=started,
+            )
+    except Retry:
+        raise
+    except Exception as exc:
+        # 여기까지 온 것은 도메인 예외가 아니다 — DB·네트워크가 흔들렸거나 우리 버그다.
+        # 그냥 올리면 arq가 작업을 **영구히 버리므로**(모듈 docstring 참고) 명시적으로
+        # 재시도로 바꾼다. 사유는 타입만 남긴다: DB 예외 메시지에는 SQL 파라미터(=암호문·
+        # 제목)가, Redis 예외에는 접속 URL이 섞여 들어온다.
+        _logger.warning(
+            "변환 작업 재시도 예약: conversion_id=%s reason=%s elapsed_ms=%d",
+            identifier,
+            type(exc).__name__,
+            _elapsed_ms(started),
         )
-        await store.commit()
-        _logger.info("변환 완료: conversion_id=%s elapsed_ms=%d", identifier, _elapsed_ms(started))
+        raise Retry(defer=RETRY_DEFER) from None
+
+
+async def _process(
+    *,
+    store: ConversionWorkerStore,
+    cipher: TextCipher,
+    provider: LLMProvider | None,
+    identifier: uuid.UUID,
+    started: float,
+) -> None:
+    """세션이 열린 상태에서 실제 변환을 수행한다.
+
+    도메인 예외는 여기서 실패로 확정하고, 그 밖의 예외는 호출자가 재시도로 바꾸도록
+    그대로 통과시킨다.
+    """
+    loaded = await store.get_with_document(identifier)
+    if loaded is None:
+        # 보존 기간이 지나 삭제됐거나 계정이 사라진 경우 — 재시도할 일이 아니다.
+        _logger.warning("변환 대상을 찾을 수 없습니다: conversion_id=%s", identifier)
+        return
+    conversion, document = loaded
+
+    if conversion.status == ConversionStatus.DONE:
+        # 재시도·중복 배달이다. 다시 변환하면 LLM 비용을 또 치르고, 사용자가 이미 받아 본
+        # 결과가 새 결과로 바뀐다(모델은 결정적이지 않다).
+        _logger.info("이미 완료된 변환입니다: conversion_id=%s", identifier)
+        return
+
+    if provider is None:
+        # 키 없이 워커가 떴다. 대기 상태로 방치하면 사용자는 끝나지 않는 진행 표시만 본다.
+        await _fail(store, conversion, PROVIDER_UNAVAILABLE_CODE, started)
+        return
+
+    if not await store.mark_processing(conversion):
+        # 위 상태 검사와 이 UPDATE 사이에 다른 워커가 끝냈다. 조건부 UPDATE가 유일하게
+        # 틈 없는 판정이므로 여기서 물러난다.
+        _logger.info("다른 작업이 이미 완료했습니다: conversion_id=%s", identifier)
+        return
+    # 여기서 커밋해야 조회 API가 "처리 중"을 보여줄 수 있다(변환은 수 초 걸린다).
+    await store.commit()
+
+    try:
+        source_text = cipher.decrypt(document.source_text_encrypted)
+        # 원문은 반드시 이 서비스를 거친다 — 마스킹 선행 불변식의 유일한 관문이다.
+        outcome = await ConversionService(provider).convert(source_text)
+    except EasyDocError as exc:
+        # 예외 메시지는 남기지 않는다. 도메인 예외라 본문을 담지 않기로 되어 있지만,
+        # 그 규약을 이 자리에서 다시 확인할 수는 없다 — 타입 이름만 기록한다.
+        await _fail(store, conversion, type(exc).__name__, started)
+        return
+
+    await store.mark_done(
+        conversion,
+        easy_text_encrypted=cipher.encrypt(outcome.easy_text),
+        masked_items_encrypted=cipher.encrypt(serialize_masked_items(outcome.masked_items)),
+        missing_placeholders=outcome.missing_placeholders,
+        provider_name=outcome.provider_name,
+        model=outcome.model,
+        input_tokens=outcome.input_tokens,
+        output_tokens=outcome.output_tokens,
+    )
+    await store.commit()
+    _logger.info("변환 완료: conversion_id=%s elapsed_ms=%d", identifier, _elapsed_ms(started))
 
 
 async def _fail(

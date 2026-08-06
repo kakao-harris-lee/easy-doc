@@ -10,11 +10,21 @@ import uuid
 from datetime import datetime
 from enum import StrEnum
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, LargeBinary, String, func, text
+from sqlalchemy import (
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    LargeBinary,
+    SmallInteger,
+    String,
+    func,
+    text,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db import Base
+from app.privacy.crypto import CURRENT_KEY_VERSION
 
 
 class ConversionStatus(StrEnum):
@@ -61,6 +71,11 @@ class Conversion(Base):
     easy_text_encrypted: Mapped[bytes | None] = mapped_column(LargeBinary)
     #: 마스킹 항목 JSON을 암호화한 값. 원문 개인정보가 그대로 들어 있다.
     masked_items_encrypted: Mapped[bytes | None] = mapped_column(LargeBinary)
+    #: 위 두 암호문을 만든 키의 세대 (documents.key_version과 같은 이유 — 문서와 변환이
+    #: 서로 다른 시점에 암호화되므로 키 교체 중이면 세대가 갈릴 수 있다).
+    key_version: Mapped[int] = mapped_column(
+        SmallInteger, default=CURRENT_KEY_VERSION, server_default=text("1")
+    )
     #: 결과에서 사라진 자리표시자 라벨 목록. 라벨뿐이라 개인정보가 아니므로 평문 JSONB다
     #: (검수 화면 경고용 — app/services/conversion.py 참고).
     missing_placeholders: Mapped[list[str]] = mapped_column(

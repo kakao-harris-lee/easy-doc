@@ -34,6 +34,9 @@ def upgrade() -> None:
         sa.Column("title", sa.String(length=255), nullable=False),
         sa.Column("source_format", sa.String(length=16), nullable=False),
         sa.Column("source_text_encrypted", sa.LargeBinary(), nullable=False),
+        # Fernet 토큰에는 키 식별자가 없다 — 키 교체 때 재암호화 대상을 고르려면
+        # 세대 번호를 함께 저장해 두는 수밖에 없다 (app/privacy/crypto.py 참고).
+        sa.Column("key_version", sa.SmallInteger(), server_default=sa.text("1"), nullable=False),
         sa.Column("char_count", sa.Integer(), nullable=False),
         # 기본 30일 보존 (master-plan 3.2). 만료 문서 삭제 잡은 후속 과제이고
         # 여기서는 판단 기준이 되는 시각만 DB 시계로 못박는다.
@@ -67,6 +70,7 @@ def upgrade() -> None:
         ),
         sa.Column("easy_text_encrypted", sa.LargeBinary(), nullable=True),
         sa.Column("masked_items_encrypted", sa.LargeBinary(), nullable=True),
+        sa.Column("key_version", sa.SmallInteger(), server_default=sa.text("1"), nullable=False),
         # 자리표시자 라벨만 담기므로 개인정보가 아니다 — 평문 JSONB로 둔다.
         sa.Column(
             "missing_placeholders",

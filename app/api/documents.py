@@ -14,7 +14,7 @@ import uuid
 from datetime import datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Query, Request, status
+from fastapi import APIRouter, Query, Request, Response, status
 from fastapi.exceptions import RequestValidationError
 from pydantic import BaseModel, ValidationError
 
@@ -103,6 +103,8 @@ class DocumentListResponse(BaseModel):
     items: list[DocumentListItem]
     limit: int
     offset: int
+    #: 다음 페이지가 있는지. 한 건 더 읽어(limit+1) 판정한다.
+    has_more: bool
 
 
 def _to_masked_item(item: MaskedItemView) -> MaskedItemResponse:
@@ -169,14 +171,19 @@ async def _parse_text_request(request: Request) -> DocumentTextRequest:
 
 @router.post("/documents", status_code=status.HTTP_202_ACCEPTED)
 async def create_document(
-    request: Request, current_user: CurrentUserDep, service: DocumentServiceDep
+    request: Request,
+    response: Response,
+    current_user: CurrentUserDep,
+    service: DocumentServiceDep,
 ) -> DocumentCreatedResponse:
     """문서를 등록하고 변환을 요청한다 (202 — 결과는 변환 조회로 확인한다).
 
     두 가지 입력을 받는다: JSON `{"text": ..., "title": ...}` 또는 `file` 파트를 담은
     multipart. Content-Type으로 가른다.
     """
-    if request.headers.get("content-type", "").startswith(_MULTIPART_PREFIX):
+    # 미디어 타입은 대소문자를 가리지 않는다(RFC 9110) — 클라이언트가 보낸 그대로
+    # 비교하면 `Multipart/Form-Data`가 JSON 경로로 새어 들어간다.
+    if request.headers.get("content-type", "").lower().startswith(_MULTIPART_PREFIX):
         async with request.form() as form:
             upload = form.get("file")
             if not isinstance(upload, UploadFile):
@@ -196,6 +203,9 @@ async def create_document(
         document, conversion = await service.create_from_text(
             user_id=current_user.id, text=payload.text, title=payload.title
         )
+    # 202는 "접수했으니 나중에 여기서 확인하라"는 뜻이다 — 확인할 자리를 표준 헤더로
+    # 알려 주면 클라이언트가 URL을 조립하지 않아도 된다.
+    response.headers["Location"] = f"/conversions/{conversion.id}"
     return DocumentCreatedResponse(
         document_id=document.id,
         conversion_id=conversion.id,
@@ -212,9 +222,12 @@ async def list_documents(
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> DocumentListResponse:
     """내 문서를 최신순으로 돌려준다 (각 문서의 최신 변환 상태 포함)."""
-    summaries = await service.list_documents(current_user.id, limit=limit, offset=offset)
+    page = await service.list_documents(current_user.id, limit=limit, offset=offset)
     return DocumentListResponse(
-        items=[_to_list_item(summary) for summary in summaries], limit=limit, offset=offset
+        items=[_to_list_item(summary) for summary in page.items],
+        limit=limit,
+        offset=offset,
+        has_more=page.has_more,
     )
 
 

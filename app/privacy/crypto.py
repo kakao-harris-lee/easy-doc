@@ -15,6 +15,14 @@ from cryptography.fernet import Fernet, InvalidToken
 
 from app.exceptions import ConfigurationError, StorageError
 
+#: 지금 쓰는 암호화 키의 세대 번호. 암호문과 함께 저장한다.
+#:
+#: Fernet 토큰에는 어떤 키로 만들었는지가 담기지 않는다 — 키를 교체하는 날, 어떤 행이
+#: 옛 키로 암호화됐는지 알아낼 방법이 없어 전수 복호화 시도밖에 남지 않는다. 컬럼 하나를
+#: 지금 넣어두면 그때 `WHERE key_version = 1`로 대상만 골라 재암호화할 수 있다.
+#: 키를 교체할 때 이 값을 올리고, 옛 값은 복호화 전용 키로 남긴다(MultiFernet).
+CURRENT_KEY_VERSION = 1
+
 
 class TextCipher:
     """텍스트를 Fernet 토큰으로 바꾸고 되돌린다.

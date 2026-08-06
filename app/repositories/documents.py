@@ -30,6 +30,18 @@ class DocumentSummary:
     latest_conversion: Conversion | None
 
 
+@dataclass(frozen=True)
+class DocumentPage:
+    """목록 한 페이지.
+
+    총 개수 대신 `has_more`만 준다 — 전수 COUNT는 문서가 쌓일수록 목록 조회마다 느려지고,
+    화면에 필요한 것은 "다음 페이지가 있는지"뿐이다.
+    """
+
+    items: list[DocumentSummary]
+    has_more: bool
+
+
 class DocumentRepository:
     """문서 저장소. 세션은 요청(또는 워커 작업) 단위로 주입받는다."""
 
@@ -98,25 +110,32 @@ class DocumentRepository:
         )
         return result.scalar_one_or_none()
 
-    async def list_for_user(
-        self, user_id: uuid.UUID, *, limit: int, offset: int
-    ) -> list[DocumentSummary]:
+    async def list_for_user(self, user_id: uuid.UUID, *, limit: int, offset: int) -> DocumentPage:
         """내 문서를 최신순으로 돌려준다 (각 문서의 최신 변환 상태 포함).
 
         정렬에 id를 덧붙이는 이유: created_at은 트랜잭션 시각(now())이라 같은 요청에서
         만들어진 행끼리 동률이 된다. 동률이면 페이지 경계에서 같은 문서가 두 번 나오거나
         건너뛰어진다.
+
+        다음 페이지 유무는 한 건 더 읽어서(limit+1) 판정한다 — COUNT 쿼리를 한 번 더
+        치는 것보다 싸다.
+
+        한계: offset 방식이라 조회 중에 새 문서가 만들어지면 경계가 밀려 같은 문서를 다시
+        보게 된다(문서가 목록 맨 앞에 삽입되기 때문). 문서 수가 늘어 이것이 문제가 되면
+        (created_at, id) 커서를 쓰는 키셋 페이지네이션으로 바꾼다 — 후속 과제.
         """
         result = await self._session.execute(
             select(Document)
             .where(Document.user_id == user_id)
             .order_by(Document.created_at.desc(), Document.id.desc())
-            .limit(limit)
+            .limit(limit + 1)
             .offset(offset)
         )
         documents = list(result.scalars())
+        has_more = len(documents) > limit
+        documents = documents[:limit]
         if not documents:
-            return []
+            return DocumentPage(items=[], has_more=False)
 
         # DISTINCT ON: 문서별로 가장 최근 변환 한 건씩만 한 번의 쿼리로 가져온다.
         # (Lean MVP는 문서당 변환이 하나지만, 재변환이 생겨도 이 쿼리는 그대로 맞는다.)
@@ -127,7 +146,10 @@ class DocumentRepository:
             .distinct(Conversion.document_id)
         )
         by_document = {conversion.document_id: conversion for conversion in latest.scalars()}
-        return [
-            DocumentSummary(document=document, latest_conversion=by_document.get(document.id))
-            for document in documents
-        ]
+        return DocumentPage(
+            items=[
+                DocumentSummary(document=document, latest_conversion=by_document.get(document.id))
+                for document in documents
+            ],
+            has_more=has_more,
+        )

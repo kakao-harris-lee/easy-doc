@@ -8,10 +8,11 @@ Fernet 토큰이다 (master-plan 3.2). 파일명은 저장하지 않는다: 파�
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, LargeBinary, String, func, text
+from sqlalchemy import DateTime, ForeignKey, LargeBinary, SmallInteger, String, func, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db import Base
+from app.privacy.crypto import CURRENT_KEY_VERSION
 
 #: 제목 최대 길이(컬럼 상한과 같은 값). 서비스가 유도·검증에 함께 쓴다.
 MAX_TITLE_LENGTH = 255
@@ -42,6 +43,11 @@ class Document(Base):
     source_format: Mapped[str] = mapped_column(String(16))
     #: Fernet 암호문. 평문 원문을 컬럼에 넣는 코드는 작성하지 않는다.
     source_text_encrypted: Mapped[bytes] = mapped_column(LargeBinary)
+    #: 위 암호문을 만든 키의 세대. 키 교체 시 재암호화 대상을 고르는 유일한 단서다
+    #: (app/privacy/crypto.py의 CURRENT_KEY_VERSION 참고).
+    key_version: Mapped[int] = mapped_column(
+        SmallInteger, default=CURRENT_KEY_VERSION, server_default=text("1")
+    )
     #: 공백 포함 문자 수. 크레딧 환산(1,000자=1크레딧) 기준값을 저장 시점에 고정한다 —
     #: 나중에 본문을 복호화해 다시 세지 않아도 과금 근거가 남는다.
     char_count: Mapped[int]

@@ -10,7 +10,7 @@
 import logging
 import uuid
 
-from sqlalchemy import select
+from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -19,6 +19,16 @@ from app.models.conversion import Conversion, ConversionStatus
 from app.models.document import Document
 
 _logger = logging.getLogger(__name__)
+
+#: 처리를 시작(또는 재개)해도 되는 상태. done만 빠져 있다 — 이미 끝난 변환을 다시
+#: 처리하면 LLM 비용을 두 번 치르고 사용자가 이미 받아 본 결과가 바뀐다.
+#: processing이 포함된 이유: 워커가 작업 도중 죽으면 그 행은 processing에 멈춰 있고,
+#: 그것마저 막으면 재시도가 영원히 진입하지 못한다.
+_RESUMABLE_STATUSES = (
+    ConversionStatus.PENDING,
+    ConversionStatus.PROCESSING,
+    ConversionStatus.FAILED,
+)
 
 
 class ConversionRepository:
@@ -79,10 +89,39 @@ class ConversionRepository:
         row = result.one_or_none()
         return None if row is None else (row[0], row[1])
 
-    async def mark_processing(self, conversion: Conversion) -> None:
-        """처리 시작을 기록한다."""
-        conversion.status = ConversionStatus.PROCESSING
-        await self._session.flush()
+    async def mark_processing(self, conversion: Conversion) -> bool:
+        """처리 시작을 기록한다. 이미 끝난 변환이면 아무것도 바꾸지 않고 False.
+
+        조건부 UPDATE인 이유: 작업이 재시도되거나 워커 둘이 같은 작업을 집으면 완료된
+        변환을 다시 처리 상태로 되돌릴 수 있다. 읽고-나서-쓰는 방식은 그 사이에 틈이
+        생기므로, 상태 검사를 UPDATE의 WHERE에 넣어 DB가 한 번에 판정하게 한다.
+
+        Returns:
+            선점에 성공했으면 True. False면 다른 경로가 이미 완료시킨 것이므로 호출자는
+            즉시 물러나야 한다.
+        """
+        result = await self._session.execute(
+            update(Conversion)
+            .where(Conversion.id == conversion.id, Conversion.status.in_(_RESUMABLE_STATUSES))
+            .values(
+                status=ConversionStatus.PROCESSING,
+                # 이전 시도의 실패 코드를 지운다 — 재시도로 성공했는데 실패 사유가
+                # 남아 있으면 조회 응답이 앞뒤가 맞지 않는다.
+                failure_code=None,
+                # ORM 이벤트가 아니라 직접 쓰는 UPDATE라 onupdate가 걸리지 않는다.
+                updated_at=func.now(),
+            )
+            # RETURNING으로 갱신 여부를 본다(rowcount는 드라이버마다 타입이 다르다).
+            # 세션 동기화는 끄고 아래에서 refresh로 명시적으로 맞춘다.
+            .returning(Conversion.id)
+            .execution_options(synchronize_session=False)
+        )
+        if result.scalar_one_or_none() is None:
+            return False
+        # UPDATE는 세션이 들고 있는 객체를 갱신하지 않는다 — DB 상태와 다시 맞춰
+        # 호출자가 보는 status가 실제와 어긋나지 않게 한다.
+        await self._session.refresh(conversion)
+        return True
 
     async def mark_done(
         self,

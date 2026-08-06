@@ -5,6 +5,7 @@ DB·Redis 없이 돈다 — 저장소는 대역, LLM은 FakeProvider, 세션 스
 그리고 **원문이 마스킹을 거치지 않고 LLM에 닿지 않는 것**.
 """
 
+import asyncio
 import logging
 import uuid
 from collections.abc import AsyncIterator, Callable
@@ -13,6 +14,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 import pytest
+from arq.worker import Retry
 from cryptography.fernet import Fernet
 
 from app.exceptions import LLMProviderError
@@ -168,6 +170,110 @@ async def test_처리_시작을_먼저_확정한다(cipher: TextCipher) -> None:
     await convert_document(_ctx(store, cipher, FakeProvider(responses=[_EASY])), str(conversion.id))
 
     assert store.journal == ["processing", "commit", "done", "commit"]
+
+
+# --- 멱등성 (재시도·중복 배달) --------------------------------------------------
+
+
+async def test_이미_완료된_변환은_다시_처리하지_않는다(cipher: TextCipher) -> None:
+    """재시도가 done 결과를 덮어쓰면 LLM 비용을 두 번 치르고 결과가 바뀐다."""
+    conversion, document = _pair(cipher)
+    conversion.status = ConversionStatus.DONE
+    conversion.easy_text_encrypted = cipher.encrypt("이미 만들어 둔 결과")
+    store = FakeConversionWorkerStore((conversion, document))
+    provider = FakeProvider(responses=[_EASY])
+
+    await convert_document(_ctx(store, cipher, provider), str(conversion.id))
+
+    # LLM을 아예 부르지 않는다 — 중복 과금 방지의 핵심 단언이다.
+    assert provider.calls == []
+    assert store.journal == []
+    assert cipher.decrypt(conversion.easy_text_encrypted) == "이미 만들어 둔 결과"
+
+
+async def test_중단된_작업을_다시_돌려도_결과는_한_번만_남는다(cipher: TextCipher) -> None:
+    """워커가 SIGTERM으로 죽으면 arq는 CancelledError로 보고 그 작업을 다시 돌린다.
+
+    첫 시도는 결과 저장 직전에 끊기고(BaseException이라 우리 except를 지나쳐 arq의
+    재큐 경로로 간다), 두 번째 시도가 처음부터 다시 도는 상황이다.
+    """
+    conversion, document = _pair(cipher)
+    store = FakeConversionWorkerStore((conversion, document), done_error=asyncio.CancelledError())
+    first = FakeProvider(responses=[_EASY])
+
+    with pytest.raises(asyncio.CancelledError):
+        await convert_document(_ctx(store, cipher, first), str(conversion.id))
+
+    # 결과가 저장되지 못했으니 재시도는 실제로 다시 변환해야 한다.
+    assert conversion.status == ConversionStatus.PROCESSING
+    store.done_error = None
+    second = FakeProvider(responses=[_EASY])
+    await convert_document(_ctx(store, cipher, second), str(conversion.id))
+
+    assert conversion.status == ConversionStatus.DONE
+    assert len(second.calls) == 1
+    assert conversion.easy_text_encrypted is not None
+    assert cipher.decrypt(conversion.easy_text_encrypted) == _EASY
+
+    # 세 번째 배달(중복)은 이미 done이므로 LLM을 부르지 않는다.
+    third = FakeProvider(responses=[_EASY])
+    await convert_document(_ctx(store, cipher, third), str(conversion.id))
+    assert third.calls == []
+
+
+async def test_다른_워커가_먼저_끝냈으면_물러난다(cipher: TextCipher) -> None:
+    """읽은 뒤 선점 전에 다른 워커가 완료시킨 경우 — 조건부 UPDATE가 유일한 판정이다."""
+    conversion, document = _pair(cipher)
+    store = FakeConversionWorkerStore((conversion, document), preempted=True)
+    provider = FakeProvider(responses=[_EASY])
+
+    await convert_document(_ctx(store, cipher, provider), str(conversion.id))
+
+    assert store.journal == ["processing"]
+    assert provider.calls == []
+
+
+# --- 예상 못 한 오류 → 재시도 ----------------------------------------------------
+
+
+async def test_결과_저장_중_DB_장애는_재시도로_바뀐다(cipher: TextCipher) -> None:
+    """arq는 일반 예외를 재시도하지 않고 작업을 영구히 버린다 (Worker.run_job).
+
+    그대로 두면 이미 비용을 치른 LLM 결과가 사라지고 행은 processing에 굳는다.
+    """
+    conversion, document = _pair(cipher)
+    store = FakeConversionWorkerStore((conversion, document), done_error=OSError("db down"))
+    provider = FakeProvider(responses=[_EASY])
+
+    with pytest.raises(Retry):
+        await convert_document(_ctx(store, cipher, provider), str(conversion.id))
+
+    # 변환은 실제로 일어났고(비용 발생), 저장만 실패했다 — 재시도가 유일한 구제책이다.
+    assert len(provider.calls) == 1
+    assert conversion.status == ConversionStatus.PROCESSING
+
+
+async def test_조회_중_오류도_재시도로_바뀐다(cipher: TextCipher) -> None:
+    store = FakeConversionWorkerStore(load_error=OSError("connection reset"))
+
+    with pytest.raises(Retry):
+        await convert_document(_ctx(store, cipher, FakeProvider(responses=[])), str(uuid.uuid4()))
+
+
+async def test_재시도_예약_로그에_예외_메시지를_남기지_않는다(
+    cipher: TextCipher, caplog: pytest.LogCaptureFixture
+) -> None:
+    """DB 예외 메시지에는 SQL 파라미터(암호문·제목)가, Redis 예외에는 접속 URL이 섞인다."""
+    store = FakeConversionWorkerStore(load_error=OSError("host=db user=postgres password=hunter2"))
+
+    with (
+        caplog.at_level(logging.DEBUG, logger="app.workers.tasks"),
+        pytest.raises(Retry),
+    ):
+        await convert_document(_ctx(store, cipher, None), str(uuid.uuid4()))
+
+    assert "OSError" in caplog.text
+    assert "hunter2" not in caplog.text
 
 
 # --- 실패 경로 -----------------------------------------------------------------

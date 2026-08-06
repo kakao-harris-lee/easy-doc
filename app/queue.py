@@ -22,8 +22,11 @@ CONVERT_DOCUMENT_TASK = "convert_document"
 class TaskQueue(Protocol):
     """작업 등록 계약. 실패하면 예외를 던진다(호출부가 실패를 기록할 수 있게)."""
 
-    async def enqueue(self, name: str, *args: object) -> None:
-        """이름이 가리키는 워커 작업을 인자와 함께 큐에 넣는다."""
+    async def enqueue(self, name: str, *args: object, job_id: str | None = None) -> None:
+        """이름이 가리키는 워커 작업을 인자와 함께 큐에 넣는다.
+
+        job_id를 주면 같은 id의 작업이 이미 있을 때 조용히 넘어간다(멱등 등록).
+        """
         ...
 
 
@@ -33,13 +36,17 @@ class ArqTaskQueue:
     def __init__(self, pool: ArqRedis) -> None:
         self._pool = pool
 
-    async def enqueue(self, name: str, *args: object) -> None:
+    async def enqueue(self, name: str, *args: object, job_id: str | None = None) -> None:
         """arq 큐에 작업을 등록한다.
 
-        반환되는 Job 핸들은 쓰지 않는다 — 결과 조회는 큐가 아니라 conversions 테이블의
-        상태로 한다(워커가 실패해도 사용자에게 보일 기록이 DB에 남아야 하기 때문).
+        반환값이 None이면 같은 job_id의 작업이 이미 큐에 있거나 방금 끝났다는 뜻이다.
+        실패가 아니라 **중복 등록을 arq가 걸러 준 것**이므로 그대로 성공 취급한다 —
+        등록 응답만 유실된 재시도가 가짜 실패로 둔갑하지 않게 하려고 job_id를 준다.
+
+        Job 핸들은 쓰지 않는다 — 결과 조회는 큐가 아니라 conversions 테이블의 상태로
+        한다(워커가 실패해도 사용자에게 보일 기록이 DB에 남아야 하기 때문).
         """
-        await self._pool.enqueue_job(name, *args)
+        await self._pool.enqueue_job(name, *args, _job_id=job_id)
 
     async def aclose(self) -> None:
         """커넥션 풀을 정리한다. 호출 시점은 lifespan이 정한다."""

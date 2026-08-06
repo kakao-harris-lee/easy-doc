@@ -15,7 +15,7 @@ from app.exceptions import EmailAlreadyRegisteredError
 from app.models.conversion import Conversion, ConversionStatus
 from app.models.document import RETENTION_DAYS, Document
 from app.models.user import User
-from app.repositories.documents import DocumentSummary
+from app.repositories.documents import DocumentPage, DocumentSummary
 
 
 class FakeUserRepository:
@@ -107,22 +107,25 @@ class FakeDocumentStore:
         self.journal.append("commit")
         self.commits += 1
 
-    async def list_for_user(
-        self, user_id: uuid.UUID, *, limit: int, offset: int
-    ) -> list[DocumentSummary]:
+    async def list_for_user(self, user_id: uuid.UUID, *, limit: int, offset: int) -> DocumentPage:
         """내 문서를 최신순으로 돌려준다 (실제 저장소의 정렬·페이지네이션과 같은 규칙)."""
         mine = sorted(
             (document for document in self.documents.values() if document.user_id == user_id),
             key=lambda document: (document.created_at, document.id),
             reverse=True,
         )
-        return [
-            DocumentSummary(
-                document=document,
-                latest_conversion=self.conversions_by_document.get(document.id),
-            )
-            for document in mine[offset : offset + limit]
-        ]
+        # 실제 저장소와 같이 한 건 더 떠서 다음 페이지 유무를 판정한다.
+        window = mine[offset : offset + limit + 1]
+        return DocumentPage(
+            items=[
+                DocumentSummary(
+                    document=document,
+                    latest_conversion=self.conversions_by_document.get(document.id),
+                )
+                for document in window[:limit]
+            ],
+            has_more=len(window) > limit,
+        )
 
 
 class FakeConversionStore:
@@ -177,10 +180,28 @@ class FakeConversionWorkerStore:
 
     상태 전이 순서가 이 계층의 관찰 대상이라(processing을 커밋해야 조회 API가 진행
     상태를 보여준다) 호출 순서를 journal에 남긴다.
+
+    장애 주입 인자:
+
+    - `preempted`: 선점에 실패한 것처럼 mark_processing이 False를 돌려준다(읽은 뒤
+      UPDATE 사이에 다른 워커가 끝낸 상황).
+    - `load_error`: 조회 시 던질 예외 (DB 일시 장애).
+    - `done_error`: 결과 저장 시 던질 예외. 테스트가 중간에 None으로 지워 재시도
+      성공을 흉내 낼 수 있다.
     """
 
-    def __init__(self, pair: tuple[Conversion, Document] | None = None) -> None:
+    def __init__(
+        self,
+        pair: tuple[Conversion, Document] | None = None,
+        *,
+        preempted: bool = False,
+        load_error: Exception | None = None,
+        done_error: BaseException | None = None,
+    ) -> None:
         self._pair = pair
+        self._preempted = preempted
+        self._load_error = load_error
+        self.done_error = done_error
         self.journal: list[str] = []
         self.commits = 0
 
@@ -188,14 +209,20 @@ class FakeConversionWorkerStore:
         self, conversion_id: uuid.UUID
     ) -> tuple[Conversion, Document] | None:
         """준비된 변환과 문서를 돌려준다. 식별자가 다르면 None."""
+        if self._load_error is not None:
+            raise self._load_error
         if self._pair is None or self._pair[0].id != conversion_id:
             return None
         return self._pair
 
-    async def mark_processing(self, conversion: Conversion) -> None:
-        """처리 시작을 기록한다."""
+    async def mark_processing(self, conversion: Conversion) -> bool:
+        """처리 시작을 기록한다. 실제 저장소의 조건부 UPDATE와 같은 규칙으로 판정한다."""
         self.journal.append("processing")
+        if self._preempted or conversion.status == ConversionStatus.DONE:
+            return False
         conversion.status = ConversionStatus.PROCESSING
+        conversion.failure_code = None
+        return True
 
     async def mark_done(
         self,
@@ -210,6 +237,8 @@ class FakeConversionWorkerStore:
         output_tokens: int,
     ) -> None:
         """성공 결과를 기록한다."""
+        if self.done_error is not None:
+            raise self.done_error
         self.journal.append("done")
         conversion.status = ConversionStatus.DONE
         conversion.easy_text_encrypted = easy_text_encrypted
@@ -219,6 +248,8 @@ class FakeConversionWorkerStore:
         conversion.model = model
         conversion.input_tokens = input_tokens
         conversion.output_tokens = output_tokens
+        # 실제 저장소와 같이 이전 시도의 실패 사유를 지운다.
+        conversion.failure_code = None
 
     async def mark_failed(self, conversion: Conversion, failure_code: str) -> None:
         """실패를 기록한다."""
@@ -241,11 +272,13 @@ class FakeTaskQueue:
     def __init__(self, journal: list[str] | None = None, error: Exception | None = None) -> None:
         self.journal: list[str] = [] if journal is None else journal
         self.jobs: list[tuple[str, tuple[object, ...]]] = []
+        self.job_ids: list[str | None] = []
         self._error = error
 
-    async def enqueue(self, name: str, *args: object) -> None:
+    async def enqueue(self, name: str, *args: object, job_id: str | None = None) -> None:
         """등록 시도를 기록한다. 실패 주입 시에도 시도 자체는 기록한다."""
         self.journal.append("enqueue")
         if self._error is not None:
             raise self._error
         self.jobs.append((name, args))
+        self.job_ids.append(job_id)

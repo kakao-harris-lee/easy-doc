@@ -31,13 +31,13 @@ from app.api.deps import (
     get_user_repository,
 )
 from app.config import Settings
-from app.ingest.extractors import MAX_EXTRACTED_CHARS, MAX_UPLOAD_BYTES
+from app.ingest.extractors import MAX_UPLOAD_BYTES
 from app.main import app
 from app.models.conversion import ConversionStatus
 from app.models.user import User
 from app.privacy.crypto import TextCipher
 from app.privacy.masking import MaskCategory, MaskedItem
-from app.services.documents import serialize_masked_items
+from app.services.documents import MAX_CONVERTIBLE_CHARS, serialize_masked_items
 from tests.fakes import FakeConversionStore, FakeDocumentStore, FakeTaskQueue, FakeUserRepository
 
 _SECRET = "test-secret-do-not-use-in-production"
@@ -158,6 +158,15 @@ def test_텍스트를_올리면_변환이_접수된다(client: TestClient, fixtu
     assert uuid.UUID(body["document_id"])
     # 큐에는 변환 식별자만 넘긴다 — 본문이 Redis에 남지 않는다.
     assert fixture.queue.jobs == [("convert_document", (body["conversion_id"],))]
+    # 작업 id를 변환 id로 고정해 중복 등록을 arq가 걸러내게 한다.
+    assert fixture.queue.job_ids == [body["conversion_id"]]
+
+
+def test_접수_응답이_결과_주소를_알려준다(client: TestClient, fixture: Fixture) -> None:
+    """202는 "나중에 여기서 확인하라"는 뜻이다 — 그 자리를 표준 헤더로 알려 준다."""
+    response = client.post("/documents", json={"text": _TEXT}, headers=fixture.headers())
+
+    assert response.headers["Location"] == f"/conversions/{response.json()['conversion_id']}"
 
 
 def test_저장을_확정한_뒤에_큐에_넣는다(client: TestClient, fixture: Fixture) -> None:
@@ -257,13 +266,46 @@ def test_JSON이_아니면_422(client: TestClient, fixture: Fixture) -> None:
     assert response.status_code == 422
 
 
-def test_너무_긴_본문은_422(client: TestClient, fixture: Fixture) -> None:
-    """길이는 바이트가 아니라 문자 수로 잰다 (한국어는 글자당 3바이트다)."""
+def test_변환_상한을_넘는_본문은_422(client: TestClient, fixture: Fixture) -> None:
+    """길이는 바이트가 아니라 문자 수로 잰다 (한국어는 글자당 3바이트다).
+
+    상한을 넘는 문서는 LLM 비용을 다 치른 뒤 절단으로 실패하는 것이 확정이므로,
+    돈을 쓰기 전에 거절한다.
+    """
     response = client.post(
-        "/documents", json={"text": "가" * (MAX_EXTRACTED_CHARS + 1)}, headers=fixture.headers()
+        "/documents", json={"text": "가" * (MAX_CONVERTIBLE_CHARS + 1)}, headers=fixture.headers()
     )
 
     assert response.status_code == 422
+    assert "분할 변환" in response.json()["detail"]
+    # 저장도 큐 등록도 일어나지 않는다.
+    assert fixture.journal == []
+
+
+def test_상한_길이_문서는_통과한다(client: TestClient, fixture: Fixture) -> None:
+    """경계에서 한 글자 차이로 정상 문서를 거절하지 않는지 본다."""
+    response = client.post(
+        "/documents", json={"text": "가" * MAX_CONVERTIBLE_CHARS}, headers=fixture.headers()
+    )
+
+    assert response.status_code == 202, response.text
+
+
+def test_변환_상한은_파일_업로드에도_적용된다(client: TestClient, fixture: Fixture) -> None:
+    """입력 방식에 따라 변환 가능 여부가 달라지면 사용자에게 설명할 수 없다."""
+    document = docx.Document()
+    document.add_paragraph("가" * (MAX_CONVERTIBLE_CHARS + 1))
+    buffer = io.BytesIO()
+    document.save(buffer)
+
+    response = client.post(
+        "/documents",
+        files={"file": ("long.docx", buffer.getvalue(), "application/octet-stream")},
+        headers=fixture.headers(),
+    )
+
+    assert response.status_code == 422
+    assert "분할 변환" in response.json()["detail"]
     assert fixture.journal == []
 
 
@@ -465,6 +507,7 @@ def test_목록은_문서_메타와_최신_변환_상태를_준다(client: TestC
     assert body["items"][0]["conversion_id"] == second["conversion_id"]
     assert body["items"][0]["source_format"] == "text"
     assert (body["limit"], body["offset"]) == (20, 0)
+    assert body["has_more"] is False
 
 
 def test_목록_응답에_본문이_실리지_않는다(client: TestClient, fixture: Fixture) -> None:
@@ -490,10 +533,14 @@ def test_목록은_limit과_offset을_따른다(client: TestClient, fixture: Fix
     for index in range(3):
         _upload_text(client, fixture, text=f"문서 {index}")
 
+    first = client.get("/documents?limit=2&offset=0", headers=fixture.headers()).json()
     body = client.get("/documents?limit=2&offset=2", headers=fixture.headers()).json()
 
     assert len(body["items"]) == 1
     assert (body["limit"], body["offset"]) == (2, 2)
+    # 다음 페이지 유무는 한 건 더 읽어 판정한다 (COUNT 쿼리 없이).
+    assert first["has_more"] is True
+    assert body["has_more"] is False
 
 
 @pytest.mark.parametrize("query", ["limit=0", "limit=101", "offset=-1"])

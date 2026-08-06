@@ -60,15 +60,17 @@ async def startup(ctx: dict[str, Any]) -> None:
         raise ConfigurationError("문서 암호화 키(FERNET_KEY)가 설정되지 않았습니다")
 
     engine, session_factory = create_engine_and_factory(settings.database_url)
+    # 만들자마자 ctx에 넣는다 — 아래에서 예외가 나면 shutdown이 정리할 수 있어야 하는데,
+    # 마지막에 몰아 넣으면 그 엔진은 아무도 dispose 하지 못하고 남는다.
+    ctx["engine"] = engine
+    ctx["store_scope"] = _make_store_scope(session_factory)
+    ctx["cipher"] = TextCipher(settings.fernet_key.get_secret_value())
+
     provider = create_provider(DEFAULT_PROVIDER_NAME, settings)
     if provider is None:
         _logger.warning(
             "LLM API 키가 없어 변환 작업이 실패로 기록됩니다: provider=%s", DEFAULT_PROVIDER_NAME
         )
-
-    ctx["engine"] = engine
-    ctx["store_scope"] = _make_store_scope(session_factory)
-    ctx["cipher"] = TextCipher(settings.fernet_key.get_secret_value())
     ctx["provider"] = provider
 
 
@@ -99,3 +101,13 @@ class WorkerSettings:
     redis_settings = RedisSettings.from_dsn(Settings().redis_url)
     on_startup = startup
     on_shutdown = shutdown
+
+    #: 재시도 상한. 기본값과 같은 5지만 명시한다 — 작업이 `Retry`를 던지는 전제 위에
+    #: 서 있는 값이라(app/workers/tasks.py), 라이브러리 기본값이 바뀌면 실패 정책이
+    #: 조용히 달라진다. 30초 간격 × 최대 4회 재시도 = 약 2분간 일시 장애를 견딘다.
+    max_tries = 5
+
+    #: 작업 하나의 제한 시간(초). provider 타임아웃 60초 × 재시도 2회에 백오프까지 더하면
+    #: 최악 약 180초라, 그 위에 여유를 둔 값이다. 기본값과 같지만 위 계산에 의존하는
+    #: 숫자이므로 명시한다 — provider 설정을 올리면 여기도 함께 봐야 한다.
+    job_timeout = 300
