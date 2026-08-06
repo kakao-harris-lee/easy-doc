@@ -5,15 +5,12 @@
 실패 출력에는 문서 id와 위반 리터럴만 남기고 본문은 남기지 않는다.
 """
 
-import re
-
 import pytest
 from pydantic import ValidationError
 
 from app.easyread.goldenset import GoldenDocument, load_documents
 from app.easyread.style_rules import (
     DIFFICULT_WORD_REPLACEMENTS,
-    PROMPT_ONLY_WORDS,
     check_style,
     find_difficult_words,
 )
@@ -228,33 +225,6 @@ def test_required_facts에_치환_대상_표현이_들어_있지_않다() -> Non
         for word in DIFFICULT_WORD_REPLACEMENTS
         if word in literal
     ]
-    assert violations == []
-
-
-def test_채점_대상_표현이_더_긴_낱말_안에_박혀_있지_않다() -> None:
-    """복합어·제도 용어 안에 박힌 키는 모델이 옳게 써도 위반으로 세어진다.
-
-    실측 사례: "소득인정액"의 '정액', "정부양곡"의 '부양', "특별지원"의 '별지'.
-    셋 다 골든셋 LLM 평가에서 통과율을 0.15 떨어뜨렸다. 앞 글자가 한글이면 더 긴
-    낱말의 일부라는 뜻이다(뒤에 붙는 조사·어미는 정상이므로 보지 않는다).
-    문맥 판단이 필요한 낱말은 PROMPT_ONLY_WORDS로 내려 채점에서 빼는 것이 답이고,
-    문서를 고치는 것이 아니다.
-    """
-    scored = [word for word in DIFFICULT_WORD_REPLACEMENTS if word not in PROMPT_ONLY_WORDS]
-    violations: list[tuple[str, str, str]] = []
-    for document in DOCUMENTS:
-        for word in scored:
-            for match in re.finditer(re.escape(word), document.source_text):
-                start = match.start()
-                if start == 0 or not re.match(r"[가-힣]", document.source_text[start - 1]):
-                    continue
-                wider = re.search(
-                    r"[가-힣]*" + re.escape(word), document.source_text[: match.end()]
-                )
-                assert wider is not None
-                # "미제출"처럼 넓은 쪽도 사전 키면 의도한 중첩이다(사전 큐레이션 규칙 3).
-                if wider.group() not in DIFFICULT_WORD_REPLACEMENTS:
-                    violations.append((document.id, word, wider.group()))
     assert violations == []
 
 

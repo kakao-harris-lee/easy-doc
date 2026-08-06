@@ -127,6 +127,25 @@ def test_상기_하기는_자동_채점에서_제외된다() -> None:
     assert DIFFICULT_WORD_REPLACEMENTS["상기"] == "위"
 
 
+def test_복합어_안쪽에_박힌_표현은_검출하지_않는다() -> None:
+    """'소득인정액'의 '정액'처럼 앞 글자가 한글이면 더 긴 낱말의 일부다."""
+    assert find_difficult_words("소득인정액이 기준을 넘습니다.") == []
+    assert find_difficult_words("통장사본을 챙기세요.") == []
+    assert find_difficult_words("대지급금 제도입니다.") == []
+
+
+def test_낱말_시작이면_조사가_붙어도_검출한다() -> None:
+    """뒤에 붙는 조사·어미는 낱말 경계가 아니다 — 진짜 위반이라 잡아야 한다."""
+    assert "감면" in find_difficult_words("요금을 감면을 받습니다.")
+    assert "제출" in find_difficult_words("서류를 제출하십시오.")
+
+
+def test_문장_첫머리_표현을_검출한다() -> None:
+    """앞 글자가 아예 없는 자리(문장·줄 첫머리)도 낱말 시작이다."""
+    assert "납부" in find_difficult_words("납부 기한을 지키세요.")
+    assert "지급" in find_difficult_words("지급 대상은 다음과 같습니다.")
+
+
 def test_사전이_최소_규모_이상이다() -> None:
     assert len(DIFFICULT_WORD_REPLACEMENTS) >= MIN_REPLACEMENTS
 
