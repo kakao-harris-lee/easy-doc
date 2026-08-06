@@ -5,8 +5,11 @@ import re
 from app.easyread.prompts import build_system_prompt, build_user_prompt
 from app.easyread.style_rules import (
     DIFFICULT_WORD_REPLACEMENTS,
+    MAX_COMMAS_PER_SENTENCE,
+    MAX_SENTENCE_CHARS,
     PROMPT_ONLY_WORDS,
     STYLE_PRINCIPLES,
+    check_style,
 )
 
 # 구분자 구조: 여는/닫는 태그의 난수 id가 일치해야 하고 본문은 그 사이에만 존재해야 한다.
@@ -59,6 +62,41 @@ def test_문맥_판단_표현은_별도_그룹으로_분리된다() -> None:
     assert "- 금일 → 오늘" in always
     assert "- 금일 → 오늘" not in conditional
     assert "신청하기" in conditional
+
+
+def test_문장_길이_쉼표_임계값이_SSOT_상수에서_온다() -> None:
+    """수치를 프롬프트에 하드코딩하면 채점 기준과 갈라진다 — 상수 변경이 반영돼야 한다."""
+    prompt = build_system_prompt()
+    length_section = _section_body(prompt, "문장 길이와 쉼표")
+    assert f"{MAX_SENTENCE_CHARS}자를 넘기면 안 됩니다" in length_section
+    assert f"쉼표(,)는 {MAX_COMMAS_PER_SENTENCE}개까지만" in length_section
+
+
+def test_자가_점검_지시가_출력_형식_앞에_있다() -> None:
+    """출력 직전 자가 점검이 규칙 위반을 스스로 고치게 하는 마지막 관문이다."""
+    prompt = build_system_prompt()
+    check = _section_body(prompt, "출력 전 자가 점검")
+    assert f"{MAX_SENTENCE_CHARS}자를 넘는 문장" in check
+    assert f"쉼표가 {MAX_COMMAS_PER_SENTENCE}개를 넘는 문장" in check
+    assert prompt.index("[출력 전 자가 점검]") < prompt.index("[출력 형식]")
+
+
+def test_문장_나누기_예시의_결과_문장은_길이_규칙을_지킨다() -> None:
+    """예시가 규칙을 어기면 모델에게 위반을 시범 보이는 꼴이 된다."""
+    prompt = build_system_prompt()
+    example = _section_body(prompt, "문장 나누기 예시")
+    assert "긴 문장:" in example
+    easy_parts = [block.split("\n예시", 1)[0] for block in example.split("쉬운 글:\n")[1:]]
+    assert easy_parts
+    for part in easy_parts:
+        assert check_style(part).passed, part
+    assert prompt.index("[문장 나누기 예시]") < prompt.index("[출력 형식]")
+
+
+def test_치환_지시가_활용형까지_요구한다() -> None:
+    """원형만 제시하면 '감면됩니다'·'납부하세요' 같은 활용형이 그대로 남는다."""
+    always = _section_body(build_system_prompt(), "어려운 표현 바꾸기")
+    assert "활용형" in always
 
 
 def test_플레이스홀더_보존_지시가_포함된다() -> None:

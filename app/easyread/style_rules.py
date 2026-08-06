@@ -59,8 +59,10 @@ DIFFICULT_WORD_REPLACEMENTS: Mapping[str, str] = MappingProxyType(
 # 공개 상수: 프롬프트가 '무조건 치환' 그룹과 '문맥 판단' 그룹을 나눠 렌더링할 때 쓴다.
 PROMPT_ONLY_WORDS: frozenset[str] = frozenset({"상기", "하기"})
 
+# 원칙 문구는 프롬프트 소스이기도 하다 — 검사 임계값을 문구에 f-string으로 박아
+# 모델이 지켜야 할 수치와 채점 수치가 갈라지지 않게 한다(수치 자체는 위 상수가 SSOT).
 STYLE_PRINCIPLES: tuple[str, ...] = (
-    "한 문장에는 정보를 하나만 담는다.",
+    f"한 문장에는 정보를 하나만 담는다. 쉼표는 한 문장에 {MAX_COMMAS_PER_SENTENCE}개까지만 쓴다.",
     f"문장은 {MAX_SENTENCE_CHARS}자를 넘기지 않는다.",
     "어려운 한자어·행정 용어는 쉬운 말로 바꾼다.",
     "능동태로 쓰고 이중 피동(예: '되어지다')을 쓰지 않는다.",
