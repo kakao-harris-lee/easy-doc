@@ -1,5 +1,21 @@
-# 로컬 개발용 인프라. 운영 배포용 정의가 아니다.
-# 사용법: docker compose up -d  →  uv run alembic upgrade head
+# 로컬 개발·파일럿용 스택. 운영 배포용 정의가 아니다.
+# 사용법: docker compose up -d --build  (마이그레이션까지 자동으로 적용된다)
+#
+# 인프라만 띄우고 앱은 호스트에서 돌리려면: docker compose up -d postgres redis
+
+# api·worker·migrate가 공유하는 정의. 셋은 같은 이미지를 쓰고 command로만 갈린다.
+x-app: &app
+  build: .
+  # 세 서비스가 같은 이미지 이름을 가리켜, 빌드가 한 번만 일어나고 셋이 같은 코드를 본다.
+  image: easy-doc:local
+  # 비밀키는 .env에서만 온다 — compose 파일에는 값을 적지 않는다.
+  env_file: .env
+  environment:
+    # 접속 대상만 덮어쓴다. .env의 값은 호스트 실행 기준(localhost)이라
+    # 컨테이너 안에서는 자기 자신을 가리켜 접속이 실패한다.
+    DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/easydoc
+    REDIS_URL: redis://redis:6379/0
+
 services:
   # PostgreSQL + pgvector. 벡터 컬럼은 아직 없지만, 사전 RAG 도입 시
   # DB 교체 없이 확장하려고 처음부터 pgvector 이미지를 쓴다.
@@ -34,6 +50,52 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+
+  # 스키마 적용. 한 번 돌고 끝나며, api·worker는 이 서비스가 성공 종료한 뒤에야 뜬다 —
+  # 옛 스키마 위에서 앱이 먼저 붙으면 첫 요청이 알 수 없는 컬럼 오류로 깨진다.
+  migrate:
+    <<: *app
+    command: ["alembic", "upgrade", "head"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # 정상 종료(코드 0)를 완료 신호로 쓰므로 재시작 정책을 걸지 않는다.
+    restart: "no"
+
+  api:
+    <<: *app
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    ports:
+      # 127.0.0.1 바인딩: 파일럿 API가 외부 네트워크에 그대로 열리지 않게 한다.
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    healthcheck:
+      # slim 이미지에는 curl이 없다 — 이미 있는 python으로 확인한다.
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8000/health').read()",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  # 변환 워커. 떠 있지 않으면 업로드는 접수되지만 변환이 pending에 머문다.
+  worker:
+    <<: *app
+    command: ["arq", "app.workers.settings.WorkerSettings"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
 
 volumes:
   postgres_data:

@@ -1,0 +1,24 @@
+# 빌드 컨텍스트에서 제외. Dockerfile이 COPY하는 것은 명시된 경로뿐이지만,
+# 비밀 파일은 컨텍스트에 실려 데몬으로 전송되는 것 자체를 막는다.
+.env
+.env.*
+!.env.example
+
+.git
+.github
+.venv
+__pycache__/
+*.py[cod]
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.omc/
+
+# 이미지에 넣지 않는 것들 (런타임에 쓰이지 않는다)
+tests
+docs
+scripts
+README.md
+CLAUDE.md
+Dockerfile
+docker-compose.yml
