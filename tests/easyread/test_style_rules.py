@@ -192,6 +192,15 @@ def test_어려운_표현_이슈는_해당_문장을_기록한다() -> None:
     assert issue.sentence == "금일 중으로 제출하십시오."
 
 
+def test_어려운_표현_이슈는_치환할_낱말을_담는다() -> None:
+    """보정 프롬프트가 사유 문자열을 되파싱하지 않고 사전 키를 그대로 쓰게 한다."""
+    result = check_style("금일 중으로 제출하십시오.")
+    words = {issue.word for issue in result.issues}
+    assert words == {"금일", "제출"}
+    # 길이·쉼표·피동 위반은 치환할 낱말이 없다.
+    assert check_style("가" * (MAX_SENTENCE_CHARS + 1) + ".").issues[0].word is None
+
+
 def test_개조식_항목_마커는_문장으로_세지_않는다() -> None:
     """'1.'·'가.' 같은 마커 조각이 문장 수를 부풀리지 않아야 한다."""
     result = check_style("1. 신청 대상 2. 신청 방법")

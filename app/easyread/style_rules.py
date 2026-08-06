@@ -120,7 +120,6 @@ DIFFICULT_WORD_REPLACEMENTS: Mapping[str, str] = MappingProxyType(
         "날인": "도장 찍기",
         "첨부": "붙임",
         "별첨": "따로 붙임",
-        "별지": "다른 종이",
         "사본": "복사한 것",
         "증빙": "증거",
         "제출": "내기",
@@ -171,7 +170,6 @@ DIFFICULT_WORD_REPLACEMENTS: Mapping[str, str] = MappingProxyType(
         "감면": "깎아 줌",
         "환급": "돌려받기",
         "환수": "도로 거둠",
-        "지급": "드리기",
         "미지급": "드리지 않음",
         "정산": "계산해서 맞춤",
         "산정": "계산함",
@@ -182,7 +180,6 @@ DIFFICULT_WORD_REPLACEMENTS: Mapping[str, str] = MappingProxyType(
         "차감": "뺌",
         "잔액": "남은 돈",
         "잔여": "남은",
-        "정액": "정해진 금액",
         "실비": "실제로 든 돈",
         "본인부담금": "내가 내는 돈",
         "청구": "달라고 함",
@@ -204,7 +201,6 @@ DIFFICULT_WORD_REPLACEMENTS: Mapping[str, str] = MappingProxyType(
         "명의": "이름",
         "연령": "나이",
         "고령": "나이가 많음",
-        "부양": "돌봄",
         "거주": "사는 것",
         "거주지": "사는 곳",
         "소재지": "있는 곳",
@@ -278,7 +274,6 @@ DIFFICULT_WORD_REPLACEMENTS: Mapping[str, str] = MappingProxyType(
         "수진": "진료 받기",
         "가료": "치료",
         "상병": "질병",
-        "질환": "병",
         "복약": "약 먹기",
         "투약": "약 주기",
         "금식": "먹지 않음",
@@ -297,27 +292,60 @@ DIFFICULT_WORD_REPLACEMENTS: Mapping[str, str] = MappingProxyType(
         # --- 고용 ---
         "실직": "일자리를 잃음",
         "구직": "일자리 찾기",
-        "근로": "일하는 것",
         # --- 문맥 판단이 필요한 표현 (PROMPT_ONLY_WORDS — 자동 채점 제외) ---
         "상기": "위",
         "하기": "아래",
         "게시": "붙임",
         "반려": "돌려보냄",
         "하자": "고장난 곳",
+        "정액": "정해진 금액",
+        "부양": "돌봄",
+        "별지": "다른 종이",
+        "지급": "드리기",
+        "질환": "병",
+        "근로": "일하는 것",
     }
 )
 
 # 프롬프트 치환 지시에만 쓰고 자동 채점에서는 제외하는 표현.
-# 정상 낱말·활용형과 기계적으로 구분 불가해 규칙 기반 검사에 넣으면 오탐이
-# 압도적이다(문맥 판단은 LLM 몫). 제외 사유:
+# 정상 낱말·활용형·더 긴 제도 이름과 기계적으로 구분 불가해 규칙 기반 검사에 넣으면
+# 오탐이 압도적이다(문맥 판단은 LLM 몫). 제외 사유:
 #
 # - 상기·하기: "~하기 위해"·"이상기후" 같은 정상 동사 활용·합성어와 겹친다.
 # - 게시: "게시판"이 일상어다.
 # - 반려: "반려동물"이 일상어다.
 # - 하자: "신청하자"처럼 청유형 어미와 겹친다.
 #
+# 아래 여섯은 골든셋 LLM 실측에서 오탐이 확인되어 내려온 것들이다. 모두 안내문에
+# 흔한 복합어·제도 용어 안에 박혀 있어, 모델이 제 이름을 옳게 지켜도 채점이 위반으로
+# 세었다(측정 통과율 0.75 중 4건이 이 오탐이었다).
+#
+# - 정액: "소득인정액"
+# - 부양: "정부양곡"
+# - 별지: "특별지원"
+# - 지급: "대지급금"
+# - 질환: "중증질환"
+# - 근로: "도시근로자"
+#
+# 채점 대상 키가 이런 자리에 박히지 않는지는 tests/golden/test_schema.py가 골든셋
+# 원문 전체를 훑어 기계적으로 확인한다.
+#
 # 공개 상수: 프롬프트가 '무조건 치환' 그룹과 '문맥 판단' 그룹을 나눠 렌더링할 때 쓴다.
-PROMPT_ONLY_WORDS: frozenset[str] = frozenset({"상기", "하기", "게시", "반려", "하자"})
+PROMPT_ONLY_WORDS: frozenset[str] = frozenset(
+    {
+        "상기",
+        "하기",
+        "게시",
+        "반려",
+        "하자",
+        "정액",
+        "부양",
+        "별지",
+        "지급",
+        "질환",
+        "근로",
+    }
+)
 
 # 원칙 문구는 프롬프트 소스이기도 하다 — 검사 임계값을 문구에 f-string으로 박아
 # 모델이 지켜야 할 수치와 채점 수치가 갈라지지 않게 한다(수치 자체는 위 상수가 SSOT).
@@ -338,10 +366,16 @@ _LIST_MARKER = re.compile(r"^(?:\d+|[가-힣]|[①-⑳])\s*[.)]$")
 
 
 class SentenceIssue(BaseModel):
-    """규칙 위반 문장과 사유."""
+    """규칙 위반 문장과 사유.
+
+    word는 어려운 표현 위반일 때만 채워지는 치환 대상 낱말이다. 보정 프롬프트가
+    "X → Y"라는 표적 지시를 만들려면 사전 키가 필요한데, reason 문자열을 되파싱하면
+    사유 문구를 손댈 때마다 조용히 깨진다 — 값으로 들고 다닌다.
+    """
 
     sentence: str
     reason: str
+    word: str | None = None
 
 
 class StyleCheckResult(BaseModel):
@@ -391,5 +425,7 @@ def check_style(text: str) -> StyleCheckResult:
             if pattern in sentence:
                 issues.append(SentenceIssue(sentence=sentence, reason=f"이중 피동 표현({pattern})"))
         for word in find_difficult_words(sentence):
-            issues.append(SentenceIssue(sentence=sentence, reason=f"어려운 표현 잔존({word})"))
+            issues.append(
+                SentenceIssue(sentence=sentence, reason=f"어려운 표현 잔존({word})", word=word)
+            )
     return StyleCheckResult(total_sentences=len(sentences), issues=issues)

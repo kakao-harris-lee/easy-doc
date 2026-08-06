@@ -14,7 +14,7 @@ from app.llm.provider import (
     LLMResponse,
 )
 from app.privacy.masking import mask_text
-from app.services.conversion import ConversionService
+from app.services.conversion import MAX_LLM_CALLS_PER_CONVERSION, ConversionService
 
 # user 프롬프트는 난수 id 때문에 등가 비교가 불가 — 구조에서 본문만 뽑아 검증한다.
 _DOCUMENT_BODY_RE = re.compile(
@@ -23,16 +23,18 @@ _DOCUMENT_BODY_RE = re.compile(
 
 
 class _ResponseProvider(LLMProvider):
-    """지정한 LLMResponse를 그대로 돌려주는 최소 대역.
+    """지정한 LLMResponse를 순서대로 돌려주는 최소 대역.
 
     FakeProvider는 문자열 응답만 받아 truncated·토큰 수를 흉내 낼 수 없다.
     공용 대역을 넓히는 대신 이 테스트 모듈 안에 국한한다.
+    준비한 응답이 소진되면 IndexError — 호출 수 계약 위반을 조용히 넘기지 않는다.
     """
 
     name = "stub"
 
-    def __init__(self, response: LLMResponse) -> None:
-        self._response = response
+    def __init__(self, *responses: LLMResponse) -> None:
+        self._responses = list(responses)
+        self.calls = 0
 
     async def complete(
         self,
@@ -42,7 +44,8 @@ class _ResponseProvider(LLMProvider):
         max_tokens: int = DEFAULT_MAX_TOKENS,
         temperature: float = DEFAULT_TEMPERATURE,
     ) -> LLMResponse:
-        return self._response
+        self.calls += 1
+        return self._responses.pop(0)
 
 
 async def test_마스킹_후에만_LLM에_전달된다() -> None:
@@ -136,3 +139,110 @@ async def test_벤치마크용_메타데이터를_담는다() -> None:
     assert outcome.provider_name == "stub"
     assert outcome.model == "claude-test"
     assert (outcome.input_tokens, outcome.output_tokens) == (120, 45)
+
+
+# --- 보정(수리) 패스 ---
+# 호출 수 계약: 규칙 검사를 통과하면 1회, 위반이 있으면 보정까지 최대 2회.
+
+#: 규칙 위반 하나(어려운 표현 '금일')만 있는 1차 변환 결과.
+_DIRTY = "금일 서류를 내세요."
+#: 위반이 없는 보정 결과.
+_CLEAN = "오늘 서류를 내세요."
+
+
+async def test_스타일이_통과하면_보정을_부르지_않는다() -> None:
+    provider = FakeProvider(responses=[_CLEAN])
+    outcome = await ConversionService(provider=provider).convert("금일 서류를 제출하십시오.")
+    assert len(provider.calls) == 1
+    assert outcome.repaired is False
+    assert outcome.easy_text == _CLEAN
+
+
+async def test_스타일_위반이면_보정을_한_번_더_부른다() -> None:
+    """보정 요청에는 위반 사유와 사전값 치환 지시가 함께 실려야 한다."""
+    provider = FakeProvider(responses=[_DIRTY, _CLEAN])
+    outcome = await ConversionService(provider=provider).convert("금일 서류를 제출하십시오.")
+    assert len(provider.calls) == 2
+    assert outcome.repaired is True
+    assert outcome.easy_text == _CLEAN
+    repair_user = provider.calls[1].user
+    assert _DIRTY in repair_user
+    assert "어려운 표현 잔존(금일)" in repair_user
+    assert "고치는 법: '금일' → '오늘'" in repair_user
+
+
+async def test_보정이_악화되면_원본을_채택한다() -> None:
+    """지적을 고치다 다른 문장을 망가뜨리는 경우 — 위반이 늘면 1차 결과를 남긴다."""
+    worse = "금일 서류를 제출하십시오."  # 위반 2건(금일·제출)
+    provider = FakeProvider(responses=[_DIRTY, worse])
+    outcome = await ConversionService(provider=provider).convert("금일 서류를 제출하십시오.")
+    assert len(provider.calls) == 2
+    assert outcome.easy_text == _DIRTY
+    assert outcome.repaired is False
+
+
+async def test_보정_결과가_같은_건수면_채택한다() -> None:
+    """고친 자리와 새로 생긴 자리가 맞바꿈된 경우 — 지적받은 쪽을 고친 결과를 남긴다."""
+    swapped = "오늘 서류를 제출하십시오."  # 위반 1건(제출)
+    provider = FakeProvider(responses=[_DIRTY, swapped])
+    outcome = await ConversionService(provider=provider).convert("금일 서류를 제출하십시오.")
+    assert outcome.easy_text == swapped
+    assert outcome.repaired is True
+
+
+async def test_보정_응답이_절단되면_원본을_채택한다() -> None:
+    """보정 실패가 변환 전체를 실패시키면 받을 수 있었던 결과마저 잃는다."""
+    provider = _ResponseProvider(
+        LLMResponse(text=_DIRTY, model="stub-model"),
+        LLMResponse(text="오늘 서류를", model="stub-model", truncated=True),
+    )
+    outcome = await ConversionService(provider=provider).convert("금일 서류를 제출하십시오.")
+    assert provider.calls == 2
+    assert outcome.easy_text == _DIRTY
+    assert outcome.repaired is False
+
+
+@pytest.mark.parametrize("raw", ["   ", "```\n```"])
+async def test_보정_응답이_비면_원본을_채택한다(raw: str) -> None:
+    provider = FakeProvider(responses=[_DIRTY, raw])
+    outcome = await ConversionService(provider=provider).convert("금일 서류를 제출하십시오.")
+    assert outcome.easy_text == _DIRTY
+    assert outcome.repaired is False
+
+
+async def test_보정_호출이_실패해도_변환은_성공한다() -> None:
+    provider = FakeProvider(responses=[_DIRTY, LLMProviderError("보정 호출 실패")])
+    outcome = await ConversionService(provider=provider).convert("금일 서류를 제출하십시오.")
+    assert outcome.easy_text == _DIRTY
+    assert outcome.repaired is False
+
+
+async def test_보정에서_자리표시자가_사라지면_원본을_채택한다() -> None:
+    """자리표시자를 잃은 보정문을 채택하면 원문 복원이 깨진다."""
+    dirty = "금일 [[전화번호1]]로 연락하세요."
+    provider = FakeProvider(responses=[dirty, "오늘 전화로 연락하세요."])
+    outcome = await ConversionService(provider=provider).convert("금일 문의 010-1234-5678")
+    assert outcome.easy_text == dirty
+    assert outcome.repaired is False
+    assert outcome.missing_placeholders == []
+
+
+async def test_보정_결과가_여전히_위반이어도_다시_부르지_않는다() -> None:
+    """루프 금지 — 보정은 1회뿐이다(FakeProvider가 소진되면 IndexError로 드러난다)."""
+    provider = FakeProvider(responses=[_DIRTY, "명일 서류를 내세요."])
+    outcome = await ConversionService(provider=provider).convert("금일 서류를 제출하십시오.")
+    assert len(provider.calls) == MAX_LLM_CALLS_PER_CONVERSION
+    assert outcome.easy_text == "명일 서류를 내세요."
+
+
+async def test_보정을_부르면_토큰을_합산한다() -> None:
+    """원본을 채택해도 보정 호출 비용은 이미 치렀다 — 두 호출을 모두 센다."""
+    provider = _ResponseProvider(
+        LLMResponse(text=_DIRTY, model="claude-test", input_tokens=120, output_tokens=45),
+        LLMResponse(
+            text="금일 서류를 제출하십시오.", model="claude-test", input_tokens=80, output_tokens=30
+        ),
+    )
+    outcome = await ConversionService(provider=provider).convert("금일 서류를 제출하십시오.")
+    assert outcome.repaired is False  # 악화 가드로 버려진 결과
+    assert (outcome.input_tokens, outcome.output_tokens) == (200, 75)

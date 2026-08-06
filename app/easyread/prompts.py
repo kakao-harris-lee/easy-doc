@@ -6,6 +6,7 @@
 """
 
 import secrets
+from collections.abc import Sequence
 
 from app.easyread.style_rules import (
     DIFFICULT_WORD_REPLACEMENTS,
@@ -13,11 +14,15 @@ from app.easyread.style_rules import (
     MAX_SENTENCE_CHARS,
     PROMPT_ONLY_WORDS,
     STYLE_PRINCIPLES,
+    SentenceIssue,
 )
 
 # 원문 구간 구분자. 요청마다 다른 난수 id를 붙인다 — 본문에 </문서>를 심어
 # 구분자를 닫고 지시 구간으로 빠져나가려는 프롬프트 인젝션을 막기 위해서다.
 DOCUMENT_TAG_NAME = "문서"
+# 보정 패스가 감싸는 것은 원문이 아니라 1차 변환문이다. 같은 난수 id 방어를 쓴다 —
+# 원문에 심긴 지시문이 변환문까지 살아남았을 수 있다.
+CONVERTED_TAG_NAME = "변환문"
 _DOCUMENT_ID_BYTES = 6
 
 _ROLE = (
@@ -130,6 +135,26 @@ _OUTPUT_INSTRUCTION = (
     "'다음은 ~입니다' 같은 머리말, 설명, 마크다운 코드 펜스(```)를 붙이지 마세요."
 )
 
+# --- 보정(수리) 패스 ---
+# 변환 프롬프트를 아무리 다듬어도 어려운 낱말 잔존·쉼표 초과가 확률적으로 남는다.
+# 기계 검사(check_style)가 잡아낸 자리만 표적으로 다시 쓰게 하는 두 번째 프롬프트다.
+_REPAIR_ROLE = (
+    "당신은 방금 만들어진 쉬운 글에서 지적된 문제만 고치는 편집자입니다. "
+    "새로 쓰는 사람이 아니라 고치는 사람입니다."
+)
+
+_REPAIR_INSTRUCTION = (
+    "아래 [고칠 곳]에 적힌 문장만 고치세요. "
+    "지적되지 않은 문장은 글자 하나 바꾸지 말고 그대로 두세요.\n"
+    "고칠 문장을 여러 문장으로 나눠도 됩니다. 다만 원래 있던 정보는 하나도 버리지 마세요. "
+    f"나눈 문장도 각각 {MAX_SENTENCE_CHARS}자를 넘기지 말고, "
+    f"쉼표는 한 문장에 {MAX_COMMAS_PER_SENTENCE}개까지만 쓰세요.\n"
+    "'고치는 법'이 적혀 있으면 그 지시를 그대로 따르세요. "
+    "지시된 표현을 그대로 끼워 넣어 어색하면 그 문장을 자연스럽게 다시 쓰되, "
+    "지적받은 표현이 결과에 한 글자도 남아 있으면 안 됩니다.\n"
+    "고친 글 전체를 출력하세요. 고친 문장만 따로 출력하면 안 됩니다."
+)
+
 
 def _render_replacements(*, conditional: bool) -> str:
     """치환 목록을 문맥 판단 그룹/무조건 치환 그룹으로 나눠 렌더링한다."""
@@ -174,3 +199,64 @@ def build_user_prompt(masked_text: str) -> str:
         f'</{DOCUMENT_TAG_NAME} id="{document_id}">\n\n'
         "위 문서를 쉬운 글로 바꿔 주세요."
     )
+
+
+def _render_violations(violations: Sequence[SentenceIssue]) -> str:
+    """위반을 문장 단위로 묶어 '문장 + 사유들 (+ 표적 치환 지시)'로 렌더링한다.
+
+    한 문장이 여러 규칙을 한꺼번에 어기는 것이 보통이라(길이 초과 + 어려운 낱말 여럿),
+    위반마다 문장을 되풀이하면 지시가 변환문보다 길어져 입력 토큰이 크게 는다.
+    """
+    grouped: dict[str, list[SentenceIssue]] = {}
+    for issue in violations:
+        grouped.setdefault(issue.sentence, []).append(issue)
+
+    blocks: list[str] = []
+    for number, (sentence, issues) in enumerate(grouped.items(), start=1):
+        lines = [f"{number}. 고칠 문장: {sentence}"]
+        lines.extend(f"   문제: {issue.reason}" for issue in issues)
+        for issue in issues:
+            word = issue.word
+            if word is None:
+                continue
+            replacement = DIFFICULT_WORD_REPLACEMENTS.get(word)
+            if replacement is not None:
+                # 사유만 주면 모델이 제 나름의 동의어를 고른다 — 사전값을 못 박아 준다.
+                # 조사를 붙이지 않고 화살표로 적는다: 값의 받침에 따라 로/으로가 갈린다.
+                lines.append(f"   고치는 법: '{word}' → '{replacement}'")
+        blocks.append("\n".join(lines))
+    return "\n".join(blocks)
+
+
+def build_repair_prompt(
+    converted_text: str, violations: Sequence[SentenceIssue]
+) -> tuple[str, str]:
+    """1차 변환문에서 기계 검출된 위반만 고치도록 지시하는 (system, user) 쌍.
+
+    프롬프트 문구로는 어려운 낱말 잔존·쉼표 초과가 확률적으로 남아, 규칙 검사가
+    잡아낸 자리만 표적으로 다시 쓰게 한다. 전면 재작성을 시키면 이미 통과한 문장까지
+    흔들리므로 "지적된 문장만"이 이 프롬프트의 핵심 제약이다.
+
+    스타일 원칙·자리표시자·인젝션 방어 문구는 변환 프롬프트와 같은 SSOT를 쓴다.
+    """
+    rules = "\n".join(
+        f"{index}. {principle}" for index, principle in enumerate(STYLE_PRINCIPLES, start=1)
+    )
+    listed = _render_violations(violations)
+    system = (
+        f"{_REPAIR_ROLE}\n\n"
+        f"[지켜야 할 규칙]\n{rules}\n\n"
+        f"[고치는 방법]\n{_REPAIR_INSTRUCTION}\n\n"
+        f"[개인정보 표시]\n{PLACEHOLDER_INSTRUCTION}\n\n"
+        f"[문서 취급]\n{INJECTION_GUARD}\n\n"
+        f"[출력 형식]\n{_OUTPUT_INSTRUCTION}"
+    )
+    converted_id = secrets.token_hex(_DOCUMENT_ID_BYTES)
+    user = (
+        f'<{CONVERTED_TAG_NAME} id="{converted_id}">\n'
+        f"{converted_text}\n"
+        f'</{CONVERTED_TAG_NAME} id="{converted_id}">\n\n'
+        f"[고칠 곳]\n{listed}\n\n"
+        "위 문제만 고친 뒤, 고친 글 전체를 처음부터 끝까지 출력해 주세요."
+    )
+    return system, user

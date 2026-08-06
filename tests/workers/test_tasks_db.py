@@ -27,7 +27,7 @@ from app.workers.tasks import ConversionWorkerStore, convert_document
 pytestmark = pytest.mark.db
 
 _SOURCE = "홍길동 님(010-1234-5678)의 신청이 접수되었습니다."
-_EASY = "홍길동 님, 신청이 접수되었어요. 연락처는 [[전화번호1]]입니다."
+_EASY = "홍길동 님, 신청을 받았어요. 연락처는 [[전화번호1]]입니다."
 
 
 @pytest.fixture
