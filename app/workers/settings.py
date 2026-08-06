@@ -30,10 +30,6 @@ from app.workers.tasks import ConversionWorkerStore, StoreScope, convert_documen
 
 _logger = logging.getLogger(__name__)
 
-#: 기본 LLM 벤더. 벤치마크로 벤더가 확정되면 Settings 항목으로 올린다
-#: (master-plan 이월 사항 — 지금은 한 곳에 고정해 둔다).
-DEFAULT_PROVIDER_NAME = "anthropic"
-
 
 def _make_store_scope(session_factory: async_sessionmaker[AsyncSession]) -> StoreScope:
     """작업마다 세션을 열고 닫는 저장소 스코프를 만든다."""
@@ -66,10 +62,10 @@ async def startup(ctx: dict[str, Any]) -> None:
     ctx["store_scope"] = _make_store_scope(session_factory)
     ctx["cipher"] = TextCipher(settings.fernet_key.get_secret_value())
 
-    provider = create_provider(DEFAULT_PROVIDER_NAME, settings)
+    provider = create_provider(settings.llm_provider, settings)
     if provider is None:
         _logger.warning(
-            "LLM API 키가 없어 변환 작업이 실패로 기록됩니다: provider=%s", DEFAULT_PROVIDER_NAME
+            "LLM API 키가 없어 변환 작업이 실패로 기록됩니다: provider=%s", settings.llm_provider
         )
     ctx["provider"] = provider
 

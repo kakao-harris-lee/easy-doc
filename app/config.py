@@ -23,3 +23,11 @@ class Settings(BaseSettings):
 
     # 문서 본문 암호화(Fernet) 키. 미설정 시 문서 저장 불가.
     fernet_key: SecretStr | None = None
+
+    # 변환 워커가 쓸 LLM 벤더 이름 (app/llm/factory.py가 아는 이름).
+    # 기본값이 anthropic인 것은 선택이 아니라 미확정 상태를 그대로 둔 것이다 —
+    # 벤더는 골든셋 벤치마크로 확정하며(master-plan 3.1), 확정되면 그 기록 표를
+    # 채우면서 이 기본값도 함께 갱신한다. 그때까지는 .env의 LLM_PROVIDER로 고른다.
+    # 비교 도구(scripts/benchmark.py·골든셋 평가)는 이 값을 쓰지 않는다 — 대상 벤더를
+    # 명시 지정하는 것이 비교의 전제라 각자 --providers·GOLDEN_PROVIDER를 유지한다.
+    llm_provider: str = "anthropic"
