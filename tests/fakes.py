@@ -172,6 +172,66 @@ class FakeConversionStore:
         await self._documents.commit()
 
 
+class FakeConversionWorkerStore:
+    """워커용 변환 저장소 대역 (`app.workers.tasks.ConversionWorkerStore`).
+
+    상태 전이 순서가 이 계층의 관찰 대상이라(processing을 커밋해야 조회 API가 진행
+    상태를 보여준다) 호출 순서를 journal에 남긴다.
+    """
+
+    def __init__(self, pair: tuple[Conversion, Document] | None = None) -> None:
+        self._pair = pair
+        self.journal: list[str] = []
+        self.commits = 0
+
+    async def get_with_document(
+        self, conversion_id: uuid.UUID
+    ) -> tuple[Conversion, Document] | None:
+        """준비된 변환과 문서를 돌려준다. 식별자가 다르면 None."""
+        if self._pair is None or self._pair[0].id != conversion_id:
+            return None
+        return self._pair
+
+    async def mark_processing(self, conversion: Conversion) -> None:
+        """처리 시작을 기록한다."""
+        self.journal.append("processing")
+        conversion.status = ConversionStatus.PROCESSING
+
+    async def mark_done(
+        self,
+        conversion: Conversion,
+        *,
+        easy_text_encrypted: bytes,
+        masked_items_encrypted: bytes,
+        missing_placeholders: list[str],
+        provider_name: str,
+        model: str,
+        input_tokens: int,
+        output_tokens: int,
+    ) -> None:
+        """성공 결과를 기록한다."""
+        self.journal.append("done")
+        conversion.status = ConversionStatus.DONE
+        conversion.easy_text_encrypted = easy_text_encrypted
+        conversion.masked_items_encrypted = masked_items_encrypted
+        conversion.missing_placeholders = missing_placeholders
+        conversion.provider_name = provider_name
+        conversion.model = model
+        conversion.input_tokens = input_tokens
+        conversion.output_tokens = output_tokens
+
+    async def mark_failed(self, conversion: Conversion, failure_code: str) -> None:
+        """실패를 기록한다."""
+        self.journal.append("failed")
+        conversion.status = ConversionStatus.FAILED
+        conversion.failure_code = failure_code
+
+    async def commit(self) -> None:
+        """커밋 호출을 기록한다."""
+        self.journal.append("commit")
+        self.commits += 1
+
+
 class FakeTaskQueue:
     """작업 큐 대역 (`app.queue.TaskQueue`).
 
