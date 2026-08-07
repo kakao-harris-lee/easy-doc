@@ -37,7 +37,7 @@ describe('인증 가드', () => {
     renderAt('/')
 
     expect(await screen.findByRole('heading', { name: '로그인' })).toBeInTheDocument()
-    expect(screen.queryByRole('heading', { name: '홈' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: '문서 변환하기' })).not.toBeInTheDocument()
     expect(vi.mocked(fetchMe)).not.toHaveBeenCalled()
   })
 
@@ -56,7 +56,7 @@ describe('인증 가드', () => {
 
     renderAt('/')
 
-    expect(await screen.findByRole('heading', { name: '홈' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: '문서 변환하기' })).toBeInTheDocument()
   })
 
   it('로그아웃하면 토큰을 지우고 로그인 화면으로 돌아간다', async () => {

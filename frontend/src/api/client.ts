@@ -3,13 +3,17 @@
  *
  * 화면 코드는 fetch를 직접 부르지 않는다 — 토큰 부착, 401 처리, 오류 메시지 해석을
  * 한 자리에 모아 두어야 "어떤 화면은 세션 만료를 놓친다" 같은 구멍이 생기지 않는다.
- *
- * 멀티파트 업로드와 파일 내려받기(blob)는 여기 없다. JSON이 아닌 요청은 그 화면을
- * 만드는 시점에 필요한 모양이 정해지므로, 쓰이지 않는 추상을 미리 두지 않는다.
  */
 
 import { clearToken, readToken } from './token'
-import type { ConversionResponse, ConversionReviewRequest, DocumentListResponse } from './types'
+import type {
+  ConversionResponse,
+  ConversionReviewRequest,
+  DocumentCreatedResponse,
+  DocumentListResponse,
+  DocumentTextRequest,
+  ExportFormat,
+} from './types'
 
 /** 서버 주소. 배포에서는 빌드 시 VITE_API_BASE_URL로 주입한다(하드코딩 금지). */
 const BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000').replace(/\/+$/, '')
@@ -51,7 +55,7 @@ export function setUnauthorizedHandler(handler: UnauthorizedHandler | null): voi
 
 interface RequestOptions {
   method?: 'GET' | 'POST' | 'PUT' | 'DELETE'
-  /** JSON으로 직렬화해 보낼 본문. */
+  /** 보낼 본문. FormData면 그대로, 그 밖에는 JSON으로 직렬화한다. */
   body?: unknown
   /** 저장된 토큰을 붙일지. 가입·로그인처럼 인증 전 호출은 false. */
   auth?: boolean
@@ -92,7 +96,10 @@ async function send(path: string, options: RequestOptions): Promise<Response> {
   if (token !== null) {
     headers.set('Authorization', `Bearer ${token}`)
   }
-  if (body !== undefined) {
+  // FormData의 Content-Type은 브라우저가 정해야 한다 — 여기서 손으로 붙이면 파서가
+  // 파트를 가르는 데 쓰는 boundary가 빠져 서버가 본문을 읽지 못한다.
+  const isFormData = body instanceof FormData
+  if (body !== undefined && !isFormData) {
     headers.set('Content-Type', 'application/json')
   }
 
@@ -101,7 +108,7 @@ async function send(path: string, options: RequestOptions): Promise<Response> {
     response = await fetch(`${BASE_URL}${path}`, {
       method,
       headers,
-      body: body === undefined ? undefined : JSON.stringify(body),
+      body: body === undefined ? undefined : isFormData ? body : JSON.stringify(body),
       signal,
     })
   } catch (error) {
@@ -128,6 +135,22 @@ async function send(path: string, options: RequestOptions): Promise<Response> {
 export async function requestJson<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const response = await send(path, options)
   return (await response.json()) as T
+}
+
+/** POST /documents — 붙여넣은 본문으로 문서를 등록한다 (202, 변환은 그 뒤에 돌아간다). */
+export function createDocumentFromText(
+  text: string,
+  title?: string,
+): Promise<DocumentCreatedResponse> {
+  const body: DocumentTextRequest = { text, title: title ?? null }
+  return requestJson<DocumentCreatedResponse>('/documents', { method: 'POST', body })
+}
+
+/** POST /documents — 업로드 파일로 문서를 등록한다 (multipart). */
+export function createDocumentFromFile(file: File): Promise<DocumentCreatedResponse> {
+  const form = new FormData()
+  form.append('file', file)
+  return requestJson<DocumentCreatedResponse>('/documents', { method: 'POST', body: form })
 }
 
 /** GET /documents — 내 문서를 최신순으로 조회한다. */
@@ -161,4 +184,48 @@ export function saveReview(conversionId: string, editedText: string): Promise<Co
     method: 'PUT',
     body,
   })
+}
+
+/** 내려받은 파일 한 건. 저장 이름은 서버가 정한 것을 따른다. */
+export interface DownloadedFile {
+  blob: Blob
+  /** 서버가 Content-Disposition으로 알려준 이름. 읽지 못하면 null. */
+  filename: string | null
+}
+
+/** `filename*=UTF-8''...`에서 실제 파일명을 뽑는다. 없으면 null. */
+function parseFilename(disposition: string | null): string | null {
+  if (disposition === null) {
+    return null
+  }
+  // 한글 이름은 filename*(RFC 5987)에만 실린다 — filename=은 ASCII 대체 이름이다.
+  const encoded = /filename\*=UTF-8''([^;]+)/i.exec(disposition)?.[1]
+  if (encoded === undefined) {
+    return null
+  }
+  try {
+    return decodeURIComponent(encoded)
+  } catch {
+    // 서버가 만든 값이라 여기까지 올 일은 없지만, 이름 하나 때문에 내려받기를
+    // 통째로 실패시킬 이유는 없다.
+    return null
+  }
+}
+
+/**
+ * GET /conversions/{id}/export — 검수 완료 문서를 파일로 받는다.
+ *
+ * JSON이 아니라 바이트를 받으므로 requestJson을 쓰지 않는다. 파일명은 응답 헤더에서
+ * 읽는다 — 개발 환경은 교차 출처라 백엔드가 Content-Disposition을 노출 목록에 넣어
+ * 두었지만(app/main.py), 프록시가 걷어낼 수도 있어 호출한 쪽이 대체 이름을 갖는다.
+ */
+export async function downloadExport(
+  conversionId: string,
+  format: ExportFormat,
+): Promise<DownloadedFile> {
+  const response = await send(`/conversions/${conversionId}/export?format=${format}`, {})
+  return {
+    blob: await response.blob(),
+    filename: parseFilename(response.headers.get('Content-Disposition')),
+  }
 }

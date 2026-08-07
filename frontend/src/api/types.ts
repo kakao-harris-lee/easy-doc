@@ -97,6 +97,8 @@ export interface DocumentListItem {
   retention_expires_at: string
   conversion_id: string | null
   status: ConversionStatus | null
+  /** 검수 수정본을 저장한 시각(ISO 8601). null이면 아직 AI 초안 그대로다. */
+  reviewed_at: string | null
 }
 
 /** GET /documents 응답. 총 개수는 싣지 않는다(has_more로 다음 쪽 유무만 알린다). */

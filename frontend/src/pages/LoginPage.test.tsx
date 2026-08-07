@@ -75,7 +75,7 @@ describe('로그인 화면', () => {
     await user.type(screen.getByLabelText('비밀번호'), 'password123')
     await user.click(screen.getByRole('button', { name: '로그인' }))
 
-    expect(await screen.findByRole('heading', { name: '홈' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: '문서 변환하기' })).toBeInTheDocument()
     expect(vi.mocked(login)).toHaveBeenCalledWith({
       email: 'user@example.com',
       password: 'password123',
