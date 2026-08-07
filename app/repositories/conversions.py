@@ -152,6 +152,34 @@ class ConversionRepository:
         conversion.failure_code = None
         await self._session.flush()
 
+    async def save_review(self, conversion: Conversion, *, edited_text_encrypted: bytes) -> None:
+        """담당자 검수 수정본을 기록한다. **AI 초안은 건드리지 않는다.**
+
+        초안(easy_text_encrypted)은 수정률 KPI(master-plan 7장)의 기준선이라 이 메서드가
+        덮어쓸 수 있으면 안 된다 — 시그니처에 초안 인자를 두지 않는 것이 그 보장이다.
+
+        UPDATE 문으로 쓰는 이유는 reviewed_at을 DB 시계로 찍기 위해서다. 애플리케이션
+        시계는 프로세스마다 어긋날 수 있고, 검수 시각은 집계의 기준값이다.
+
+        본문은 **암호화된 상태로만** 받는다 (mark_done과 같은 이유 — 평문을 받는
+        시그니처를 두면 암호화를 빠뜨린 호출이 타입 검사를 통과한다).
+        """
+        await self._session.execute(
+            update(Conversion)
+            .where(Conversion.id == conversion.id)
+            .values(
+                edited_text_encrypted=edited_text_encrypted,
+                reviewed_at=func.now(),
+                # 컬럼 onupdate로도 갱신되지만 이 UPDATE가 무엇을 건드리는지 SET 절에
+                # 눈에 보이게 적어 둔다 (mark_processing과 같은 이유).
+                updated_at=func.now(),
+            )
+            .execution_options(synchronize_session=False)
+        )
+        # UPDATE는 세션이 들고 있는 객체를 갱신하지 않는다 — 응답이 방금 저장한 값을
+        # 실어야 하므로 DB 상태와 다시 맞춘다.
+        await self._session.refresh(conversion)
+
     async def mark_failed(self, conversion: Conversion, failure_code: str) -> None:
         """변환 실패를 기록한다.
 

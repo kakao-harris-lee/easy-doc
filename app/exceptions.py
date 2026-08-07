@@ -68,6 +68,15 @@ class NotFoundError(EasyDocError):
     """요청한 리소스가 없다."""
 
 
+class ConflictError(EasyDocError):
+    """리소스가 지금 상태에서는 받을 수 없는 요청이다 (예: 완료 전 변환에 검수 수정본 저장).
+
+    NotFoundError와 가르는 기준은 "존재를 알려도 되는가"다 — 소유자 확인을 이미 통과한
+    뒤에 상태 때문에 거절하는 자리이므로, 있다는 사실을 숨길 이유가 없고 사용자가 취할
+    조치도 다르다(기다렸다가 다시 시도). 409로 매핑한다.
+    """
+
+
 class StorageError(EasyDocError):
     """저장 계층에서 예상하지 못한 제약을 위반했다 — 입력 문제가 아니라 코드 버그다.
 

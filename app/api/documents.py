@@ -67,6 +67,12 @@ class MaskedItemResponse(BaseModel):
     original: str
 
 
+class ConversionReviewRequest(BaseModel):
+    """검수 수정본 저장 요청. 길이·공백 규칙은 서비스가 판단한다."""
+
+    edited_text: str
+
+
 class ConversionResponse(BaseModel):
     """변환 상태·결과. 완료 전에는 결과 필드가 모두 비어 있다."""
 
@@ -74,6 +80,10 @@ class ConversionResponse(BaseModel):
     document_id: uuid.UUID
     status: str
     easy_text: str | None = None
+    #: 담당자 검수 수정본. 아직 저장하지 않았으면 None이며, 에디터 초기값은
+    #: `edited_text ?? easy_text`다 (AI 초안은 KPI 기준선이라 따로 실어 보낸다).
+    edited_text: str | None = None
+    reviewed_at: datetime | None = None
     masked_items: list[MaskedItemResponse] = []
     missing_placeholders: list[str] = []
     model: str | None = None
@@ -126,6 +136,8 @@ def _to_conversion_response(detail: ConversionDetail) -> ConversionResponse:
         document_id=conversion.document_id,
         status=conversion.status,
         easy_text=detail.easy_text,
+        edited_text=detail.edited_text,
+        reviewed_at=conversion.reviewed_at,
         masked_items=[_to_masked_item(item) for item in detail.masked_items],
         missing_placeholders=list(conversion.missing_placeholders),
         model=conversion.model,
@@ -237,4 +249,21 @@ async def read_conversion(
 ) -> ConversionResponse:
     """변환 상태와 결과를 돌려준다. 내 것이 아니면 404(있다는 사실도 알리지 않는다)."""
     detail = await service.get_conversion(conversion_id, current_user.id)
+    return _to_conversion_response(detail)
+
+
+@router.put("/conversions/{conversion_id}")
+async def update_conversion(
+    conversion_id: uuid.UUID,
+    payload: ConversionReviewRequest,
+    current_user: CurrentUserDep,
+    service: DocumentServiceDep,
+) -> ConversionResponse:
+    """담당자가 고친 검수 수정본을 저장한다 (AI 초안은 그대로 남는다).
+
+    아직 완료되지 않은 변환이면 409다 — 없는 것이 아니라 지금이 아닐 뿐이라는 뜻이다.
+    """
+    detail = await service.save_review(
+        conversion_id, current_user.id, edited_text=payload.edited_text
+    )
     return _to_conversion_response(detail)

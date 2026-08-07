@@ -14,6 +14,7 @@ from fastapi.responses import JSONResponse
 
 from app.exceptions import (
     ConfigurationError,
+    ConflictError,
     DocumentExtractionError,
     EasyDocError,
     EmailAlreadyRegisteredError,
@@ -41,6 +42,9 @@ _MAPPINGS: tuple[tuple[type[EasyDocError], int, dict[str, str]], ...] = (
     # 크기 초과만 413으로 가른다 — "파일을 나눠 올리라"는 안내가 형식 오류와 다르다.
     (UploadTooLargeError, status.HTTP_413_CONTENT_TOO_LARGE, {}),
     (EmailAlreadyRegisteredError, status.HTTP_409_CONFLICT, {}),
+    # 상태 충돌(완료 전 변환 수정 등)도 409다 — 요청 자체는 올바르고 지금이 아닐 뿐이라,
+    # 사용자가 취할 조치가 "기다렸다 다시"로 422와 다르다.
+    (ConflictError, status.HTTP_409_CONFLICT, {}),
     # WWW-Authenticate: 401에 요구되는 표준 헤더. 클라이언트가 재인증 방식을 안다.
     (InvalidCredentialsError, status.HTTP_401_UNAUTHORIZED, {"WWW-Authenticate": "Bearer"}),
     (NotFoundError, status.HTTP_404_NOT_FOUND, {}),

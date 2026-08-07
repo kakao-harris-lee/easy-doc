@@ -242,6 +242,51 @@ async def test_완료된_변환은_다시_처리_상태로_돌아가지_않는�
     assert reloaded.easy_text_encrypted == b"gAAAAA-easy"
 
 
+async def test_검수_수정본은_초안을_남겨둔_채_저장된다(db_session: AsyncSession) -> None:
+    """AI 초안은 수정률 KPI(master-plan 7장)의 기준선이라 덮어쓰면 되살릴 수 없다."""
+    user = await _user(db_session, "review@example.com")
+    document = await _document(DocumentRepository(db_session), user)
+    conversions = ConversionRepository(db_session)
+    conversion = await conversions.create_pending(document.id)
+    await conversions.mark_done(
+        conversion,
+        easy_text_encrypted=b"gAAAAA-easy",
+        masked_items_encrypted=b"gAAAAA-items",
+        missing_placeholders=[],
+        provider_name="fake",
+        model="fake-model",
+        input_tokens=1,
+        output_tokens=2,
+    )
+    await conversions.commit()
+
+    await conversions.save_review(conversion, edited_text_encrypted=b"gAAAAA-edited")
+    await conversions.save_review(conversion, edited_text_encrypted=b"gAAAAA-edited-2")
+    await conversions.commit()
+
+    reloaded = await conversions.get_for_user(conversion.id, user.id)
+    assert reloaded is not None
+    # 재수정은 덮어쓰되 초안은 그대로다.
+    assert reloaded.edited_text_encrypted == b"gAAAAA-edited-2"
+    assert reloaded.easy_text_encrypted == b"gAAAAA-easy"
+    assert reloaded.status == ConversionStatus.DONE
+    # 검수 시각은 DB 시계로 찍는다(집계 기준이 서버 시계마다 달라지면 안 된다).
+    assert reloaded.reviewed_at is not None
+    assert reloaded.reviewed_at.tzinfo is not None
+
+
+async def test_검수_전_변환에는_수정본_컬럼이_비어_있다(db_session: AsyncSession) -> None:
+    user = await _user(db_session, "unreviewed@example.com")
+    document = await _document(DocumentRepository(db_session), user)
+    conversions = ConversionRepository(db_session)
+
+    conversion = await conversions.create_pending(document.id)
+    await conversions.commit()
+
+    assert conversion.edited_text_encrypted is None
+    assert conversion.reviewed_at is None
+
+
 async def test_재시도는_이전_실패_사유를_지운다(db_session: AsyncSession) -> None:
     """실패 후 재시도로 처리 중이 됐는데 실패 코드가 남아 있으면 응답이 앞뒤가 안 맞는다."""
     user = await _user(db_session, "retry@example.com")

@@ -489,6 +489,151 @@ def test_없는_변환은_404(client: TestClient, fixture: Fixture) -> None:
     assert response.status_code == 404
 
 
+# --- 검수 수정 저장 -------------------------------------------------------------
+
+_EDITED = "신청 기간은 3월 2일부터 3월 31일까지예요."
+
+
+def _review(
+    client: TestClient,
+    fixture: Fixture,
+    conversion_id: str,
+    *,
+    text: str = _EDITED,
+    user: User | None = None,
+) -> Any:
+    """검수 수정본을 저장한다(응답을 그대로 돌려준다 — 실패 경로도 본다)."""
+    return client.put(
+        f"/conversions/{conversion_id}",
+        json={"edited_text": text},
+        headers=fixture.headers(user),
+    )
+
+
+def test_검수_수정본을_저장하면_조회에_함께_나온다(client: TestClient, fixture: Fixture) -> None:
+    conversion_id = _upload_text(client, fixture)["conversion_id"]
+    _complete(fixture, conversion_id)
+
+    saved = _review(client, fixture, conversion_id)
+
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["edited_text"] == _EDITED
+    assert saved.json()["reviewed_at"] is not None
+    body = client.get(f"/conversions/{conversion_id}", headers=fixture.headers()).json()
+    assert body["edited_text"] == _EDITED
+    assert body["reviewed_at"] == saved.json()["reviewed_at"]
+
+
+def test_검수_전에는_수정본_필드가_비어_있다(client: TestClient, fixture: Fixture) -> None:
+    conversion_id = _upload_text(client, fixture)["conversion_id"]
+    _complete(fixture, conversion_id)
+
+    body = client.get(f"/conversions/{conversion_id}", headers=fixture.headers()).json()
+
+    assert body["edited_text"] is None
+    assert body["reviewed_at"] is None
+
+
+def test_검수_수정본은_AI_초안을_덮지_않는다(client: TestClient, fixture: Fixture) -> None:
+    """초안은 수정률 KPI(master-plan 7장)의 기준선이다 — 덮어쓰면 되살릴 수 없다."""
+    conversion_id = _upload_text(client, fixture)["conversion_id"]
+    _complete(fixture, conversion_id)
+
+    body = _review(client, fixture, conversion_id).json()
+
+    assert body["easy_text"] == "신청 기간은 3월 2일부터예요."
+    conversion = fixture.conversions.conversions[uuid.UUID(conversion_id)]
+    assert conversion.easy_text_encrypted is not None
+    assert fixture.cipher.decrypt(conversion.easy_text_encrypted) == "신청 기간은 3월 2일부터예요."
+
+
+def test_검수_수정본은_암호화해서_저장한다(client: TestClient, fixture: Fixture) -> None:
+    conversion_id = _upload_text(client, fixture)["conversion_id"]
+    _complete(fixture, conversion_id)
+
+    _review(client, fixture, conversion_id)
+
+    conversion = fixture.conversions.conversions[uuid.UUID(conversion_id)]
+    assert conversion.edited_text_encrypted is not None
+    assert "신청 기간".encode() not in conversion.edited_text_encrypted
+    assert fixture.cipher.decrypt(conversion.edited_text_encrypted) == _EDITED
+
+
+def test_다시_수정하면_덮어쓴다(client: TestClient, fixture: Fixture) -> None:
+    conversion_id = _upload_text(client, fixture)["conversion_id"]
+    _complete(fixture, conversion_id)
+    _review(client, fixture, conversion_id)
+
+    body = _review(client, fixture, conversion_id, text="3월 2일부터 신청하세요.").json()
+
+    assert body["edited_text"] == "3월 2일부터 신청하세요."
+
+
+def test_완료되지_않은_변환은_수정할_수_없다(client: TestClient, fixture: Fixture) -> None:
+    """아직 결과가 없는데 수정본을 받으면 무엇을 고친 것인지 설명할 수 없다."""
+    conversion_id = _upload_text(client, fixture)["conversion_id"]
+
+    response = _review(client, fixture, conversion_id)
+
+    assert response.status_code == 409
+    assert fixture.conversions.conversions[uuid.UUID(conversion_id)].edited_text_encrypted is None
+
+
+def test_실패한_변환도_수정할_수_없다(client: TestClient, fixture: Fixture) -> None:
+    conversion_id = _upload_text(client, fixture)["conversion_id"]
+    conversion = fixture.conversions.conversions[uuid.UUID(conversion_id)]
+    conversion.status = ConversionStatus.FAILED
+    conversion.failure_code = "LLMProviderError"
+
+    assert _review(client, fixture, conversion_id).status_code == 409
+
+
+def test_남의_변환은_수정할_수_없다(client: TestClient, fixture: Fixture) -> None:
+    """소유자 격리 — 있다는 사실 자체를 알리지 않는다(403이 아니라 404)."""
+    conversion_id = _upload_text(client, fixture)["conversion_id"]
+    _complete(fixture, conversion_id)
+    stranger = fixture.other_user()
+
+    response = _review(client, fixture, conversion_id, user=stranger)
+
+    assert response.status_code == 404
+    assert fixture.conversions.conversions[uuid.UUID(conversion_id)].edited_text_encrypted is None
+
+
+def test_없는_변환_수정은_404(client: TestClient, fixture: Fixture) -> None:
+    assert _review(client, fixture, str(uuid.uuid4())).status_code == 404
+
+
+@pytest.mark.parametrize("text", ["", "   \n\t  "])
+def test_빈_수정본은_422(client: TestClient, fixture: Fixture, text: str) -> None:
+    conversion_id = _upload_text(client, fixture)["conversion_id"]
+    _complete(fixture, conversion_id)
+
+    assert _review(client, fixture, conversion_id, text=text).status_code == 422
+
+
+def test_상한을_넘는_수정본은_422(client: TestClient, fixture: Fixture) -> None:
+    """검수는 초안을 다듬는 자리다 — 원문과 같은 길이 상한을 그대로 적용한다."""
+    conversion_id = _upload_text(client, fixture)["conversion_id"]
+    _complete(fixture, conversion_id)
+
+    response = _review(client, fixture, conversion_id, text="가" * (MAX_CONVERTIBLE_CHARS + 1))
+
+    assert response.status_code == 422
+    assert fixture.conversions.conversions[uuid.UUID(conversion_id)].edited_text_encrypted is None
+
+
+def test_수정본_필드가_없으면_422(client: TestClient, fixture: Fixture) -> None:
+    conversion_id = _upload_text(client, fixture)["conversion_id"]
+    _complete(fixture, conversion_id)
+
+    response = client.put(
+        f"/conversions/{conversion_id}", json={"text": _EDITED}, headers=fixture.headers()
+    )
+
+    assert response.status_code == 422
+
+
 # --- 목록 ---------------------------------------------------------------------
 
 
@@ -559,10 +704,11 @@ def test_범위를_벗어난_페이지_인자는_422(client: TestClient, fixture
         ("post", "/documents"),
         ("get", "/documents"),
         ("get", f"/conversions/{uuid.uuid4()}"),
+        ("put", f"/conversions/{uuid.uuid4()}"),
     ],
 )
 def test_인증_없이는_401(client: TestClient, method: str, path: str) -> None:
-    response = client.request(method, path, json={"text": _TEXT})
+    response = client.request(method, path, json={"text": _TEXT, "edited_text": _TEXT})
 
     assert response.status_code == 401
     assert response.headers["WWW-Authenticate"] == "Bearer"

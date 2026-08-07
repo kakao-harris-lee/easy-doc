@@ -69,6 +69,12 @@ class Conversion(Base):
     )
     #: 변환 결과(Fernet 암호문). 완료 전에는 NULL.
     easy_text_encrypted: Mapped[bytes | None] = mapped_column(LargeBinary)
+    #: 담당자 검수 수정본(Fernet 암호문). 저장 전에는 NULL이고, 있으면 이 값이 최종본이다.
+    #:
+    #: AI 초안(easy_text_encrypted)을 덮어쓰지 않고 컬럼을 따로 두는 이유는 **수정률
+    #: KPI**(초안 대비 편집 비율, master-plan 7장) 때문이다 — 초안을 덮어쓰는 순간
+    #: "사람이 얼마나 고쳤는가"의 기준선이 사라지고 되살릴 방법이 없다.
+    edited_text_encrypted: Mapped[bytes | None] = mapped_column(LargeBinary)
     #: 마스킹 항목 JSON을 암호화한 값. 원문 개인정보가 그대로 들어 있다.
     masked_items_encrypted: Mapped[bytes | None] = mapped_column(LargeBinary)
     #: 위 두 암호문을 만든 키의 세대 (documents.key_version과 같은 이유 — 문서와 변환이
@@ -87,6 +93,9 @@ class Conversion(Base):
     output_tokens: Mapped[int | None]
     #: 실패 사유 코드 = 예외 클래스명. 문서 본문·모델 응답은 절대 담지 않는다.
     failure_code: Mapped[str | None] = mapped_column(String(MAX_FAILURE_CODE_LENGTH))
+    #: 검수 수정본을 마지막으로 저장한 시각. NULL이면 아직 사람이 손대지 않은 초안이다
+    #: (목록의 "검수 여부" 표시와 수정률 KPI 집계가 이 값을 본다).
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     # onupdate: UPDATE 문에 now()를 실어 보낸다(애플리케이션 시계가 아니라 DB 시계).
     updated_at: Mapped[datetime] = mapped_column(

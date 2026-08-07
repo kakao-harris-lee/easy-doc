@@ -24,6 +24,7 @@ from anyio import CapacityLimiter, to_thread
 from pydantic import BaseModel, ValidationError
 
 from app.exceptions import (
+    ConflictError,
     DocumentExtractionError,
     InvalidInputError,
     NotFoundError,
@@ -96,12 +97,17 @@ class ConversionDetail:
     """변환 한 건의 조회 결과 (복호화 완료).
 
     ORM 객체를 그대로 들고 다니는 이유: 상태·모델·토큰 같은 비밀 아닌 필드를 다시
-    옮겨 적으면 컬럼이 늘 때마다 두 곳을 고쳐야 한다. 복호화가 필요한 두 필드만
-    따로 담는다. 완료 전 상태에서는 둘 다 비어 있다.
+    옮겨 적으면 컬럼이 늘 때마다 두 곳을 고쳐야 한다. 복호화가 필요한 필드만
+    따로 담는다. 완료 전 상태에서는 전부 비어 있다.
+
+    easy_text는 AI 초안, edited_text는 담당자 검수 수정본이다. 둘을 합치지 않는 이유는
+    수정률 KPI(master-plan 7장)가 둘의 차이를 재기 때문이다 — 최종본이 필요한 쪽
+    (내보내기·에디터 초기값)이 `edited_text ?? easy_text`로 고른다.
     """
 
     conversion: Conversion
     easy_text: str | None
+    edited_text: str | None
     masked_items: list[MaskedItemView]
 
 
@@ -177,6 +183,10 @@ class ConversionStore(Protocol):
 
     async def get_for_user(self, conversion_id: uuid.UUID, user_id: uuid.UUID) -> Conversion | None:
         """소유자를 확인하며 변환을 찾는다. 남의 것·없는 것 모두 None."""
+        ...
+
+    async def save_review(self, conversion: Conversion, *, edited_text_encrypted: bytes) -> None:
+        """검수 수정본을 기록한다(AI 초안은 건드리지 않는다)."""
         ...
 
     async def mark_failed(self, conversion: Conversion, failure_code: str) -> None:
@@ -265,14 +275,62 @@ class DocumentService:
             NotFoundError: 없거나 내 것이 아니다.
             StorageError: 저장된 암호문을 읽을 수 없다.
         """
+        return self._decrypt_detail(await self._require_conversion(conversion_id, user_id))
+
+    async def save_review(
+        self, conversion_id: uuid.UUID, user_id: uuid.UUID, *, edited_text: str
+    ) -> ConversionDetail:
+        """담당자가 고친 결과를 저장하고 갱신된 조회 결과를 돌려준다.
+
+        AI 초안은 그대로 둔다 — 저장소 시그니처가 초안 인자를 받지 않아 여기서 실수로
+        덮어쓸 수 없다 (수정률 KPI의 기준선, master-plan 7장).
+
+        Raises:
+            InvalidInputError: 수정본이 비었거나 길이 상한을 넘었다.
+            NotFoundError: 없거나 내 것이 아니다.
+            ConflictError: 아직 완료되지 않은 변환이다.
+            StorageError: 저장된 암호문을 읽을 수 없다.
+        """
+        if not edited_text.strip():
+            raise InvalidInputError("수정본이 비어 있습니다")
+        if len(edited_text) > MAX_CONVERTIBLE_CHARS:
+            # 원문과 같은 상한을 그대로 쓴다 — 검수는 초안을 다듬는 자리이지 새 문서를
+            # 쓰는 자리가 아니라, 상한이 갈리면 사용자에게 설명할 수 없다.
+            raise InvalidInputError(
+                f"수정본은 {MAX_CONVERTIBLE_CHARS:,}자 이하여야 합니다"
+                " (긴 문서 분할 변환은 준비 중입니다)"
+            )
+        conversion = await self._require_conversion(conversion_id, user_id)
+        if conversion.status != ConversionStatus.DONE:
+            # 소유자 확인은 이미 통과했으므로 존재를 숨길 이유가 없다. 아직 결과가 없는데
+            # 수정본을 받으면 무엇을 고친 것인지 설명할 수 없으므로 409로 거절한다.
+            raise ConflictError("변환이 끝난 뒤에 수정할 수 있습니다")
+        await self._conversions.save_review(
+            conversion, edited_text_encrypted=self._cipher.encrypt(edited_text)
+        )
+        await self._conversions.commit()
+        return self._decrypt_detail(conversion)
+
+    async def _require_conversion(self, conversion_id: uuid.UUID, user_id: uuid.UUID) -> Conversion:
+        """소유자 권한으로 변환을 읽는다. 없으면 404가 되는 예외를 올린다."""
         conversion = await self._conversions.get_for_user(conversion_id, user_id)
         if conversion is None:
             # 남의 변환과 없는 변환을 구분하지 않는다 — 구분하면 식별자의 존재 여부가
             # 새어 나가 다른 사용자의 활동을 추론할 수 있다.
             raise NotFoundError("변환 결과를 찾을 수 없습니다")
+        return conversion
+
+    def _decrypt_detail(self, conversion: Conversion) -> ConversionDetail:
+        """완료된 변환의 암호문을 풀어 조회 결과로 만든다.
+
+        Raises:
+            StorageError: 저장된 암호문을 읽을 수 없다.
+        """
         if conversion.status != ConversionStatus.DONE or conversion.easy_text_encrypted is None:
             # 진행 중·실패 상태에서는 복호화할 것이 없다. 상태와 failure_code만 나간다.
-            return ConversionDetail(conversion=conversion, easy_text=None, masked_items=[])
+            return ConversionDetail(
+                conversion=conversion, easy_text=None, edited_text=None, masked_items=[]
+            )
         masked_items = (
             deserialize_masked_items(self._cipher.decrypt(conversion.masked_items_encrypted))
             if conversion.masked_items_encrypted is not None
@@ -281,6 +339,11 @@ class DocumentService:
         return ConversionDetail(
             conversion=conversion,
             easy_text=self._cipher.decrypt(conversion.easy_text_encrypted),
+            edited_text=(
+                self._cipher.decrypt(conversion.edited_text_encrypted)
+                if conversion.edited_text_encrypted is not None
+                else None
+            ),
             masked_items=masked_items,
         )
 
