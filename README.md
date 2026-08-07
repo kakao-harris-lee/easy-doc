@@ -11,7 +11,7 @@
 - 로컬 인프라는 PostgreSQL(pgvector 이미지) + Redis — `docker-compose.yml`로 띄운다
 - 비밀키는 `.env`로만 주입한다. `.env.example`을 복사해 값을 채우고, `.env`는 커밋하지 않는다.
 
-호스트에서 직접 돌리는 개발 경로다. 앱까지 컨테이너로 띄우려면 [Docker 파일럿 실행](#docker-파일럿-실행)을 본다.
+호스트에서 직접 돌리는 개발 경로다. 화면까지 한 줄로 띄우려면 [파일럿 데모 실행](#파일럿-데모-실행)을 본다.
 
 ### 1. 인프라 기동
 
@@ -45,29 +45,59 @@ uv run arq app.workers.settings.WorkerSettings   # 변환 워커 (별도 터미�
 
 워커가 떠 있지 않으면 업로드는 202로 접수되지만 변환이 `pending`에 머문다. 큐에 쌓인 작업만 처리하고 끝내려면 `--burst`를 붙인다.
 
-## Docker 파일럿 실행
+### 4. 프론트 개발 서버
 
-파일럿 기관에 넘기는 경로다. 호스트에 Python·uv가 없어도 되고, 마이그레이션과 워커까지 한 줄로 끝난다.
+```bash
+cd frontend
+npm ci
+npm run dev        # http://localhost:5173
+```
+
+이 경로는 화면(5173)과 API(8000)의 출처가 달라 **교차 출처**다 — 백엔드 `CORS_ORIGINS`에 `http://localhost:5173`이 들어 있어야 한다(기본값에 포함). 데모 경로는 nginx 한 호스트라 이 설정이 관여하지 않는다.
+
+프론트 게이트는 `frontend/`에서 돌린다.
+
+```bash
+npm run check          # tsc + eslint + prettier
+npm run test -- --run  # vitest
+npm run build
+```
+
+## 파일럿 데모 실행
+
+파일럿 기관에 보여주는 경로다. 호스트에 Python·uv·Node가 없어도 되고, 마이그레이션·워커·화면까지 한 줄로 끝난다.
 
 ```bash
 cp .env.example .env     # 값을 채운다 (아래 필수 키)
 docker compose up -d --build
-curl http://127.0.0.1:8000/health     # {"status":"ok"}
 ```
 
-- **자동으로 처리되는 것**: `migrate` 컨테이너가 `alembic upgrade head`를 한 번 돌리고 정상 종료하며, `api`와 `worker`는 그 성공을 기다렸다가 뜬다(`service_completed_successfully`). 따로 마이그레이션을 실행하거나 워커를 띄울 필요가 없다.
-- **필수 `.env` 키**: `JWT_SECRET`, `FERNET_KEY`, 그리고 쓰는 벤더의 API 키(`OPENAI_API_KEY` 또는 `ANTHROPIC_API_KEY`) + `LLM_PROVIDER`. 채우는 법은 위 [`.env` 작성](#2-env-작성) 표와 같다. `DATABASE_URL`·`REDIS_URL`은 compose가 컨테이너 호스트명(`postgres`/`redis`)으로 덮어쓰므로 `.env` 값을 그대로 두어도 된다.
+브라우저에서 **http://127.0.0.1:8080** 을 연다. 가입 → 글 붙여넣기(또는 파일 올리기) → 변환 → 분할 화면 검수 → docx 내려받기 → 변환 기록까지 이 주소 하나로 진행된다.
+
+- **필수 `.env` 키**: `JWT_SECRET`, `FERNET_KEY`, 그리고 쓰는 벤더의 API 키(`OPENAI_API_KEY` 또는 `ANTHROPIC_API_KEY`) + `LLM_PROVIDER`. 채우는 법은 위 [`.env` 작성](#2-env-작성) 표와 같다. `DATABASE_URL`·`REDIS_URL`은 compose가 컨테이너 호스트명(`postgres`/`redis`)으로 덮어쓰므로 `.env` 값을 그대로 두어도 된다. LLM 키가 없으면 화면까지는 뜨지만 변환이 `ProviderUnavailable`로 실패한다 — 데모 전에 키를 먼저 확인한다.
+- **`--build`를 빼지 않는다**: 코드를 고친 뒤 `docker compose up -d`만 하면 옛 이미지로 만든 컨테이너가 그대로 뜬다. 화면은 멀쩡한데 API만 옛 동작을 하는 상태가 되어 원인을 찾기 어렵다(실제로 낡은 api 컨테이너의 옛 CORS 설정 때문에 한참을 헤맨 적이 있다). 데모 전에는 항상 `--build`를 붙이고 `docker compose ps`의 CREATED 열로 방금 만든 컨테이너인지 확인한다.
+- **화면과 API가 같은 출처다**: nginx가 `/api/`를 `api` 컨테이너로 넘기므로 브라우저에는 8080 하나만 보인다. 이 경로에서는 CORS 설정이 관여하지 않는다 — 개발 서버 경로와 다른 점이다(아래 표).
+- **자동으로 처리되는 것**: `migrate` 컨테이너가 `alembic upgrade head`를 한 번 돌리고 정상 종료하며, `api`와 `worker`는 그 성공을 기다렸다가 뜬다(`service_completed_successfully`). `frontend`는 `api`의 healthcheck 통과를 기다린다. 따로 마이그레이션을 실행하거나 워커를 띄울 필요가 없다.
 - `.env`는 `env_file`로만 주입된다 — compose 파일과 이미지에는 비밀값이 들어가지 않는다(`.dockerignore`가 `.env`를 빌드 컨텍스트에서 뺀다).
-- api·worker·migrate는 **같은 이미지**(`easy-doc:local`)를 command만 달리해 쓴다. "워커만 옛 버전"이 생기지 않는다.
-- API는 `127.0.0.1:8000`에만 바인딩된다. 외부 공개는 앞단 리버스 프록시(TLS·본문 크기 제한)를 두고 한다 — 아래 [배포 주의](#배포-주의) 참고.
+- api·worker·migrate는 **같은 이미지**(`easy-doc:local`)를 command만 달리해 쓴다. "워커만 옛 버전"이 생기지 않는다. 프론트는 별도 이미지(`easy-doc-frontend:local`)다.
+- 포트는 모두 `127.0.0.1`에만 바인딩된다(8080 화면, 8000 API). 외부 공개는 앞단 리버스 프록시(TLS·본문 크기 제한)를 두고 한다 — 아래 [배포 주의](#배포-주의) 참고.
 
 ```bash
-docker compose logs -f worker    # 변환 진행 확인
-docker compose ps                # api는 healthcheck(/health)로 상태를 보고한다
-docker compose down              # 중지 (-v를 붙이면 DB 데이터까지 삭제)
+curl http://127.0.0.1:8080/api/health   # {"status":"ok"} — 프록시까지 살아 있는지
+docker compose logs -f worker           # 변환 진행 확인
+docker compose ps                       # api는 healthcheck(/health)로 상태를 보고한다
+docker compose down                     # 중지 (-v를 붙이면 DB 데이터까지 삭제)
 ```
 
-코드를 고친 뒤에는 `--build`를 다시 붙여야 이미지에 반영된다(개발 중 핫리로드가 필요하면 호스트 실행 경로를 쓴다).
+### 데모 경로와 개발 경로의 차이
+
+|  | 파일럿 데모 (compose) | 개발 (호스트 실행) |
+|---|---|---|
+| 화면 | `http://127.0.0.1:8080` — nginx가 빌드 결과물을 서빙 | `http://localhost:5173` — vite 개발 서버 |
+| API | 같은 출처 `/api` → nginx가 api 컨테이너로 전달 | `http://localhost:8000` 직접 호출 |
+| CORS | 관여하지 않음 (동일 출처) | 필요 — `CORS_ORIGINS`에 5173 포함 |
+| 코드 반영 | `--build` 재빌드 후 컨테이너 재생성 | 저장 즉시(핫리로드) |
+| 업로드 상한 | 앱 4,000자·10MB + nginx `client_max_body_size 10m` | 앱 상한만 |
 
 ## 명령어
 
@@ -107,7 +137,9 @@ DB 테스트는 테스트마다 트랜잭션을 롤백해 격리하지만, 실�
 | GET | `/auth/me` | 현재 사용자 조회 | 필요 |
 | POST | `/documents` | 붙여넣기(JSON `{text, title?}`) 또는 파일(multipart `file`) 업로드 → 202 `{document_id, conversion_id, status, char_count}`. 변환 작업은 큐에 등록된다 | 필요 |
 | GET | `/documents` | 소유자 문서 목록 (최신 변환 상태 포함, `limit`/`offset`) | 필요 |
-| GET | `/conversions/{id}` | 변환 상태·결과. `done`이면 `easy_text`·`masked_items`(복호화된 원문 대응표)·`missing_placeholders`, `failed`면 `failure_code` | 필요 |
+| GET | `/conversions/{id}` | 변환 상태·결과. `done`이면 `easy_text`·`masked_items`(복호화된 원문 대응표)·`missing_placeholders`·`edited_text`(검수본이 있으면), `failed`면 `failure_code` | 필요 |
+| PUT | `/conversions/{id}` | 검수 수정본 저장(`{edited_text}`). AI 초안(`easy_text`)은 그대로 남는다 — 수정률 KPI의 원천. `done`이 아니면 409 | 필요 |
+| GET | `/conversions/{id}/export` | 검수 완료 문서 내려받기(`format=docx\|txt`). 내용은 검수본 우선이며, 자리표시자는 원래 값으로 복원된다 | 필요 |
 
 `GET /health`는 인증 없이 서비스 생존만 알린다(DB·Redis 상태는 보지 않는다).
 
@@ -116,11 +148,12 @@ DB 테스트는 테스트마다 트랜잭션을 롤백해 격리하지만, 실�
 - **문서당 4,000자**(공백 포함). 그보다 길면 업로드 단계에서 422로 거절한다 — LLM 출력 토큰 상한을 넘겨 절단 실패할 것이 사실상 확정이라 비용을 치르기 전에 막는다. 문단 단위 분할 변환은 준비 중이며, 그때 이 상한이 사라진다.
 - **업로드 파일 10MB**, 지원 형식은 **docx · pdf · hwpx**. 구버전 `.hwp`와 텍스트가 없는 스캔 PDF(OCR)는 아직 지원하지 않는다.
 - **LLM API 키가 필요**하다. 키 없이도 기동·업로드는 되지만 변환은 `failure_code: "ProviderUnavailable"`로 실패한다.
-- 30일 보존은 **필드(`documents.retention_expires_at`)만 있고 자동 삭제 잡은 없다.** 크레딧 차감·이메일 알림·에디터 UI도 아직이다 (Lean MVP 범위 구분 — master-plan 4.0).
+- 30일 보존은 **필드(`documents.retention_expires_at`)만 있고 자동 삭제 잡은 없다.** 크레딧 차감·이메일 알림도 아직이다 (Lean MVP 범위 구분 — master-plan 4.0).
+- 에디터는 **전체 텍스트 수정**까지다. 문단 단위 재변환·문단 대응 하이라이트(P0-4), pdf·hwp 내보내기는 다음 단계다.
 
 ## 배포 주의
 
-- **리버스 프록시 본문 크기 제한**: 업로드 상한(10MB)은 애플리케이션 레벨에만 있다. nginx라면 `client_max_body_size 10m;`을 함께 설정해, 거대한 본문이 앱까지 도달해 메모리를 먹기 전에 프록시에서 끊는다.
+- **리버스 프록시 본문 크기 제한**: 업로드 상한(10MB)은 애플리케이션 레벨에만 있다. nginx라면 `client_max_body_size 10m;`을 함께 설정해, 거대한 본문이 앱까지 도달해 메모리를 먹기 전에 프록시에서 끊는다. 데모 스택은 `frontend/nginx.conf`에 이미 걸어 두었다 — 앞단에 프록시를 하나 더 두는 배포에서는 그쪽에도 같은 값이 필요하다.
 - **pgvector 확장**: 마이그레이션 `0001`이 `CREATE EXTENSION vector`를 실행한다. 관리형 PostgreSQL(RDS·Cloud SQL 등)에서는 확장 생성 권한이 필요하며, 권한이 없는 계정으로 마이그레이션하면 이 지점에서 실패한다. 확장을 미리 만들어 두거나 권한 있는 역할로 적용한다.
 - **`0003` 리비전 제자리 수정**: 개발 중 `0003_documents_conversions`를 새 리비전이 아니라 파일 수정으로 고쳤다. 그 이전 버전의 `0003`을 이미 적용한 로컬 DB는 스키마가 어긋나므로, **DB를 drop하고 처음부터 다시 마이그레이션**해야 한다(운영 배포 이력은 아직 없다).
 
@@ -169,6 +202,10 @@ app/
   ingest/        # 파일 텍스트 추출 (docx/pdf/hwpx)
   workers/       # arq 워커 설정 + 변환 태스크
 migrations/      # alembic 리비전
+frontend/        # React + TypeScript(Vite) 화면
+  src/api/       # 백엔드 호출 단일 창구 (fetch 래퍼·토큰·타입)
+  src/pages/     # 업로드·검수 에디터·변환 기록·로그인
+  nginx.conf     # 데모 서빙 설정 (SPA fallback + /api 프록시)
 scripts/
   benchmark.py   # LLM provider 비교 벤치마크
 tests/
