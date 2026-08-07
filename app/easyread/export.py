@@ -9,6 +9,10 @@ LLM으로 나가는 것을 막는 보안 불변식(master-plan 3.2)이고, 내�
 산출물에는 "AI 초안" 같은 꼬리말을 붙이지 않는다 — 담당자가 지우고 배포해야 하는
 문구를 우리가 만들어 넣을 이유가 없다. AI 초안임을 알리는 책임은 검수 화면(HITL
 배너, master-plan 3.3)에 있다.
+
+제어문자 정규화는 `render_export` 진입부에서 한 번 한다. 본문 재료 중 AI 초안과 마스킹
+원문은 저장 경로에서 정규화되지 않으므로 여기가 **유일한** 방어다(제목·검수 수정본은
+저장 시점에 이미 다듬어져 들어온다 — 사유는 app/text.py).
 """
 
 import io
@@ -126,7 +130,15 @@ def render_export(*, export_format: ExportFormat, title: str, body: str) -> Expo
         export_format: 산출물 형식.
         title: 문서 제목 (docx의 제목 문단과 파일명에 쓰인다).
         body: 내보낼 본문 — 자리표시자는 이미 복원된 상태여야 한다.
+
+    제어문자 정규화를 **이 진입부 한 곳**에서 한다. 본문을 이루는 두 재료(워커가 저장한
+    AI 초안, 복원해 넣은 마스킹 원문)는 저장 경로에서 정규화되지 않으므로 여기가 유일한
+    방어다(모듈 docstring 참고). 형식별 분기 뒤가 아니라 앞에서 거르는 이유는 docx와 txt가
+    같은 본문을 내놓아야 하기 때문이다 — XML만 못 담는 문자라고 docx에서만 지우면 두
+    산출물의 내용이 갈린다.
     """
+    title = strip_control_chars(title)
+    body = strip_control_chars(body)
     match export_format:
         case ExportFormat.DOCX:
             content = _render_docx(title=title, body=body)
@@ -147,13 +159,13 @@ def render_export(*, export_format: ExportFormat, title: str, body: str) -> Expo
 def _render_docx(*, title: str, body: str) -> bytes:
     """제목 + 본문 문단으로 docx 파일을 만든다.
 
-    제어문자를 여기서 한 번 더 걷어낸다 — 저장 시점 정규화(app/text.py)가 원칙이지만,
-    그 전에 저장된 데이터나 우리가 놓친 경로가 있으면 lxml이 ValueError를 던져 사용자가
-    설명할 수 없는 500을 받는다. 이 줄이 그 실패를 남지 않게 하는 마지막 방어다.
+    인자는 이미 정규화된 상태로 들어온다(`render_export`) — 여기서 다시 거르지 않는 것은
+    "어디서 걸렀나"를 찾아 두 곳을 뒤지게 만들지 않기 위해서다. 제어문자가 남은 채
+    닿으면 lxml이 ValueError를 던진다.
     """
     document = docx.Document()
-    document.add_heading(strip_control_chars(title), level=1)
-    for block in _split_paragraphs(strip_control_chars(body)):
+    document.add_heading(title, level=1)
+    for block in _split_paragraphs(body):
         # python-docx가 문단 안의 \n을 <w:br/>로 옮긴다 — 줄만 바꾼 곳(목록 등)이
         # 한 줄로 뭉치지 않는다.
         document.add_paragraph(block)

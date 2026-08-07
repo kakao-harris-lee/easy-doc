@@ -239,12 +239,18 @@ async def create_document(
 
 @router.get("/documents")
 async def list_documents(
+    response: Response,
     current_user: CurrentUserDep,
     service: DocumentServiceDep,
     limit: Annotated[int, Query(ge=1, le=MAX_PAGE_SIZE)] = DEFAULT_PAGE_SIZE,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> DocumentListResponse:
-    """내 문서를 최신순으로 돌려준다 (각 문서의 최신 변환 상태 포함)."""
+    """내 문서를 최신순으로 돌려준다 (각 문서의 최신 변환 상태 포함).
+
+    본문은 싣지 않지만 제목이 본문 첫 줄에서 유도한 사용자 콘텐츠라, 조회·내보내기와
+    같은 캐시 금지 헤더를 붙인다(PRIVATE_RESPONSE_HEADERS).
+    """
+    response.headers.update(PRIVATE_RESPONSE_HEADERS)
     page = await service.list_documents(current_user.id, limit=limit, offset=offset)
     return DocumentListResponse(
         items=[_to_list_item(summary) for summary in page.items],

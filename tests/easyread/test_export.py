@@ -102,9 +102,10 @@ def test_빈_줄이_여러_개여도_빈_문단을_만들지_않는다() -> None
 
 
 def test_제어문자가_섞여도_docx를_만든다() -> None:
-    """이중 방어 — 저장 시점 정규화를 지나온 옛 데이터·놓친 경로가 여기서 500이 되면 안 된다.
+    """XML은 탭·개행·복귀를 뺀 제어문자를 담지 못해 lxml이 ValueError를 던진다.
 
-    XML은 탭·개행·복귀를 뺀 제어문자를 담지 못해 lxml이 ValueError를 던진다.
+    제목은 저장 시점에 이미 걸러지지만 초안 본문은 그렇지 않다 — 두 인자 모두
+    렌더 진입부에서 정규화된다는 것을 함께 본다.
     """
     file = render_export(
         export_format=ExportFormat.DOCX, title="안내\x0b문", body="본문\x00입니다.\n\n둘째\x0c 문단"
@@ -114,6 +115,26 @@ def test_제어문자가_섞여도_docx를_만든다() -> None:
 
 
 # --- txt ----------------------------------------------------------------------
+
+
+def test_txt에도_제어문자가_남지_않는다() -> None:
+    """정규화는 형식 분기 앞에서 한다 — docx와 txt가 같은 본문을 내놓아야 한다."""
+    file = render_export(
+        export_format=ExportFormat.TXT, title="안내문", body="본문\x00입니다.\n\n둘째\x0c 문단"
+    )
+
+    assert file.content.decode("utf-8") == "본문입니다.\n\n둘째 문단"
+
+
+def test_복원한_원문에_섞인_제어문자도_걷어낸다() -> None:
+    """AI 초안·마스킹 원문은 저장 경로에서 정규화되지 않는다 — 여기가 유일한 방어다."""
+    body = restore_placeholders(
+        "문의는 [[전화번호1]]로 하세요.", {"[[전화번호1]]": "02-\x00123-4567"}
+    )
+
+    file = render_export(export_format=ExportFormat.TXT, title="안내문", body=body)
+
+    assert file.content.decode("utf-8") == "문의는 02-123-4567로 하세요."
 
 
 def test_txt는_BOM_없는_UTF_8이다() -> None:
