@@ -23,6 +23,7 @@ from pydantic import BaseModel, ValidationError
 from starlette.datastructures import UploadFile
 
 from app.api.deps import CurrentUserDep, DocumentServiceDep
+from app.easyread.export import ExportFormat, content_disposition
 from app.exceptions import InvalidInputError
 from app.ingest.extractors import MAX_UPLOAD_BYTES
 from app.models.conversion import Conversion
@@ -267,3 +268,29 @@ async def update_conversion(
         conversion_id, current_user.id, edited_text=payload.edited_text
     )
     return _to_conversion_response(detail)
+
+
+@router.get("/conversions/{conversion_id}/export")
+async def export_conversion(
+    conversion_id: uuid.UUID,
+    current_user: CurrentUserDep,
+    service: DocumentServiceDep,
+    export_format: Annotated[ExportFormat, Query(alias="format")],
+) -> Response:
+    """검수 완료 문서를 파일로 내려준다 (docx | txt).
+
+    **이 응답에만 마스킹 자리표시자가 원문으로 복원되어 실린다** — 담당자가 그대로
+    배포할 최종 산출물이기 때문이다(사유는 app/easyread/export.py). 목록에 없는
+    형식은 쿼리 검증에서 422로 걸린다.
+
+    응답 모델을 두지 않는 이유: 본문이 JSON이 아니라 파일 바이트다. 무엇이 나가는지는
+    미디어 타입과 Content-Disposition으로 알린다.
+    """
+    export = await service.export_conversion(
+        conversion_id, current_user.id, export_format=export_format
+    )
+    return Response(
+        content=export.content,
+        media_type=export.media_type,
+        headers={"Content-Disposition": content_disposition(export.filename)},
+    )

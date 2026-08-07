@@ -73,6 +73,23 @@ class ConversionRepository:
         )
         return result.scalar_one_or_none()
 
+    async def get_for_user_with_document(
+        self, conversion_id: uuid.UUID, user_id: uuid.UUID
+    ) -> tuple[Conversion, Document] | None:
+        """소유자를 확인하며 변환과 원본 문서를 함께 읽는다. 남의 것·없는 것 모두 None.
+
+        내보내기가 문서 제목(파일명·docx 제목 문단)을 함께 필요로 해서 둔다. 아래
+        `get_with_document`(워커 전용)와 달리 소유자 조건이 붙는다 — 사용자에게
+        응답하는 경로에서는 반드시 이쪽을 쓴다.
+        """
+        result = await self._session.execute(
+            select(Conversion, Document)
+            .join(Document, Conversion.document_id == Document.id)
+            .where(Conversion.id == conversion_id, Document.user_id == user_id)
+        )
+        row = result.one_or_none()
+        return None if row is None else (row[0], row[1])
+
     async def get_with_document(
         self, conversion_id: uuid.UUID
     ) -> tuple[Conversion, Document] | None:

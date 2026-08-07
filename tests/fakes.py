@@ -165,6 +165,15 @@ class FakeConversionStore:
             return None
         return conversion
 
+    async def get_for_user_with_document(
+        self, conversion_id: uuid.UUID, user_id: uuid.UUID
+    ) -> tuple[Conversion, Document] | None:
+        """소유자를 확인하며 변환과 원본 문서를 함께 돌려준다 (내보내기용)."""
+        conversion = await self.get_for_user(conversion_id, user_id)
+        if conversion is None:
+            return None
+        return conversion, self._documents.documents[conversion.document_id]
+
     async def save_review(self, conversion: Conversion, *, edited_text_encrypted: bytes) -> None:
         """검수 수정본을 기록한다. 실제 저장소와 같이 AI 초안은 건드리지 않는다."""
         conversion.edited_text_encrypted = edited_text_encrypted

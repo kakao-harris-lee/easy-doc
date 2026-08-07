@@ -23,6 +23,7 @@ from typing import Protocol
 from anyio import CapacityLimiter, to_thread
 from pydantic import BaseModel, ValidationError
 
+from app.easyread.export import ExportFile, ExportFormat, render_export, restore_placeholders
 from app.exceptions import (
     ConflictError,
     DocumentExtractionError,
@@ -185,6 +186,12 @@ class ConversionStore(Protocol):
         """소유자를 확인하며 변환을 찾는다. 남의 것·없는 것 모두 None."""
         ...
 
+    async def get_for_user_with_document(
+        self, conversion_id: uuid.UUID, user_id: uuid.UUID
+    ) -> tuple[Conversion, Document] | None:
+        """소유자를 확인하며 변환과 원본 문서를 함께 찾는다 (내보내기 — 제목이 필요하다)."""
+        ...
+
     async def save_review(self, conversion: Conversion, *, edited_text_encrypted: bytes) -> None:
         """검수 수정본을 기록한다(AI 초안은 건드리지 않는다)."""
         ...
@@ -310,6 +317,38 @@ class DocumentService:
         )
         await self._conversions.commit()
         return self._decrypt_detail(conversion)
+
+    async def export_conversion(
+        self, conversion_id: uuid.UUID, user_id: uuid.UUID, *, export_format: ExportFormat
+    ) -> ExportFile:
+        """최종 산출물 파일을 만든다 (검수본 우선, 자리표시자 복원).
+
+        **마스킹을 되돌리는 곳은 이 메서드뿐이다.** 내보내기는 담당자가 그대로 배포할
+        문서라 `[[전화번호1]]`이 남아 있으면 쓸 수 없다. 조회 응답·목록·로그를 비롯한
+        다른 어떤 경로도 복원본을 만들지 않는다 — 원문 개인정보가 흘러 다니는 표면을
+        이 한 곳으로 묶어두는 것이 규칙의 목적이다 (app/easyread/export.py 참고).
+
+        Raises:
+            NotFoundError: 없거나 내 것이 아니다.
+            ConflictError: 아직 완료되지 않아 내보낼 결과가 없다.
+            StorageError: 저장된 암호문을 읽을 수 없다.
+        """
+        pair = await self._conversions.get_for_user_with_document(conversion_id, user_id)
+        if pair is None:
+            raise NotFoundError("변환 결과를 찾을 수 없습니다")
+        conversion, document = pair
+        detail = self._decrypt_detail(conversion)
+        if detail.easy_text is None:
+            raise ConflictError("변환이 끝난 뒤에 내려받을 수 있습니다")
+        # 검수본이 있으면 그것이 최종본이다. 초안은 KPI 기준선으로만 남는다.
+        final_text = detail.edited_text if detail.edited_text is not None else detail.easy_text
+        return render_export(
+            export_format=export_format,
+            title=document.title,
+            body=restore_placeholders(
+                final_text, {item.placeholder: item.original for item in detail.masked_items}
+            ),
+        )
 
     async def _require_conversion(self, conversion_id: uuid.UUID, user_id: uuid.UUID) -> Conversion:
         """소유자 권한으로 변환을 읽는다. 없으면 404가 되는 예외를 올린다."""

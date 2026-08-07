@@ -146,6 +146,24 @@ async def test_남의_변환은_조회되지_않는다(db_session: AsyncSession)
     assert await conversions.get_for_user(uuid.uuid4(), owner.id) is None
 
 
+async def test_내보내기는_소유자_확인과_함께_문서를_읽는다(db_session: AsyncSession) -> None:
+    """내보내기는 문서 제목이 필요하다 — 워커용 조회(소유자 검증 없음)를 쓰면 안 된다."""
+    owner = await _user(db_session, "exporter@example.com")
+    stranger = await _user(db_session, "notmine@example.com")
+    document = await _document(DocumentRepository(db_session), owner, title="복지 안내")
+    conversions = ConversionRepository(db_session)
+    conversion = await conversions.create_pending(document.id)
+    await conversions.commit()
+
+    loaded = await conversions.get_for_user_with_document(conversion.id, owner.id)
+
+    assert loaded is not None
+    assert loaded[0].id == conversion.id
+    assert loaded[1].title == "복지 안내"
+    assert await conversions.get_for_user_with_document(conversion.id, stranger.id) is None
+    assert await conversions.get_for_user_with_document(uuid.uuid4(), owner.id) is None
+
+
 async def test_워커는_변환과_문서를_함께_읽는다(db_session: AsyncSession) -> None:
     user = await _user(db_session, "worker@example.com")
     document = await _document(DocumentRepository(db_session), user)

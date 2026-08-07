@@ -14,6 +14,7 @@ from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 import docx
 import jwt
@@ -43,6 +44,8 @@ from tests.fakes import FakeConversionStore, FakeDocumentStore, FakeTaskQueue, F
 _SECRET = "test-secret-do-not-use-in-production"
 _FIXTURES = Path(__file__).resolve().parent.parent / "ingest" / "fixtures"
 _TEXT = "재난지원금 안내\n신청 기간은 3월 2일부터입니다."
+#: 워커가 남긴 AI 초안(자리표시자 없는 기본형).
+_EASY = "신청 기간은 3월 2일부터예요."
 
 
 class Fixture:
@@ -406,7 +409,7 @@ def test_암호화_키가_없으면_503(fixture: Fixture) -> None:
 # --- 변환 조회 -----------------------------------------------------------------
 
 
-def _complete(fixture: Fixture, conversion_id: str) -> None:
+def _complete(fixture: Fixture, conversion_id: str, *, easy_text: str = _EASY) -> None:
     """워커가 성공적으로 끝낸 상태를 만든다 (암호화 저장 형태 그대로)."""
     conversion = fixture.conversions.conversions[uuid.UUID(conversion_id)]
     items = [
@@ -417,7 +420,7 @@ def _complete(fixture: Fixture, conversion_id: str) -> None:
         )
     ]
     conversion.status = ConversionStatus.DONE
-    conversion.easy_text_encrypted = fixture.cipher.encrypt("신청 기간은 3월 2일부터예요.")
+    conversion.easy_text_encrypted = fixture.cipher.encrypt(easy_text)
     conversion.masked_items_encrypted = fixture.cipher.encrypt(serialize_masked_items(items))
     conversion.missing_placeholders = ["[[이메일1]]"]
     conversion.provider_name = "fake"
@@ -634,6 +637,132 @@ def test_수정본_필드가_없으면_422(client: TestClient, fixture: Fixture)
     assert response.status_code == 422
 
 
+# --- 내보내기 -----------------------------------------------------------------
+
+#: 자리표시자가 남아 있는 초안 — 내보내기에서만 원문으로 복원된다.
+_MASKED_EASY = "문의는 [[전화번호1]]로 하세요.\n\n신청은 3월 2일부터예요."
+
+
+def _export(
+    client: TestClient,
+    fixture: Fixture,
+    conversion_id: str,
+    *,
+    export_format: str = "docx",
+    user: User | None = None,
+) -> Any:
+    """내보내기를 요청한다(응답을 그대로 돌려준다 — 실패 경로도 본다)."""
+    return client.get(
+        f"/conversions/{conversion_id}/export",
+        params={"format": export_format},
+        headers=fixture.headers(user),
+    )
+
+
+def _docx_text(content: bytes) -> str:
+    """내려받은 docx를 다시 열어 전체 텍스트를 합친다."""
+    return "\n".join(paragraph.text for paragraph in docx.Document(io.BytesIO(content)).paragraphs)
+
+
+def test_docx로_내려받으면_자리표시자가_원문으로_복원된다(
+    client: TestClient, fixture: Fixture
+) -> None:
+    """내보내기는 담당자가 그대로 배포할 최종 산출물이다 — 여기서만 마스킹을 되돌린다."""
+    conversion_id = _upload_text(client, fixture)["conversion_id"]
+    _complete(fixture, conversion_id, easy_text=_MASKED_EASY)
+
+    response = _export(client, fixture, conversion_id)
+
+    assert response.status_code == 200, response.text
+    text = _docx_text(response.content)
+    assert "[[" not in text
+    assert "010-1234-5678" in text
+    # 제목 + 빈 줄로 나뉜 문단 두 개.
+    assert text == "재난지원금 안내\n문의는 010-1234-5678로 하세요.\n신청은 3월 2일부터예요."
+
+
+def test_docx_응답_헤더가_형식과_파일명을_알려준다(client: TestClient, fixture: Fixture) -> None:
+    conversion_id = _upload_text(client, fixture)["conversion_id"]
+    _complete(fixture, conversion_id)
+
+    response = _export(client, fixture, conversion_id)
+
+    assert response.headers["content-type"].startswith(
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    )
+    disposition = response.headers["content-disposition"]
+    # 한글 파일명은 RFC 5987(퍼센트 인코딩)으로만 실을 수 있다.
+    assert f"filename*=UTF-8''{quote('재난지원금 안내.docx', safe='')}" in disposition
+
+
+def test_txt로_내려받으면_UTF_8_본문이다(client: TestClient, fixture: Fixture) -> None:
+    conversion_id = _upload_text(client, fixture)["conversion_id"]
+    _complete(fixture, conversion_id, easy_text=_MASKED_EASY)
+
+    response = _export(client, fixture, conversion_id, export_format="txt")
+
+    assert response.status_code == 200, response.text
+    assert response.headers["content-type"] == "text/plain; charset=utf-8"
+    assert not response.content.startswith(b"\xef\xbb\xbf")
+    assert response.content.decode("utf-8") == (
+        "문의는 010-1234-5678로 하세요.\n\n신청은 3월 2일부터예요."
+    )
+
+
+def test_검수본이_있으면_검수본을_내보낸다(client: TestClient, fixture: Fixture) -> None:
+    """담당자가 고친 뒤라면 그 결과가 최종본이다 (edited ?? easy)."""
+    conversion_id = _upload_text(client, fixture)["conversion_id"]
+    _complete(fixture, conversion_id, easy_text=_MASKED_EASY)
+    _review(client, fixture, conversion_id, text="문의는 [[전화번호1]]로 주세요.")
+
+    response = _export(client, fixture, conversion_id, export_format="txt")
+
+    # 검수본에 남아 있던 자리표시자도 함께 복원된다.
+    assert response.content.decode("utf-8") == "문의는 010-1234-5678로 주세요."
+
+
+def test_완료되지_않은_변환은_내려받을_수_없다(client: TestClient, fixture: Fixture) -> None:
+    conversion_id = _upload_text(client, fixture)["conversion_id"]
+
+    assert _export(client, fixture, conversion_id).status_code == 409
+
+
+def test_남의_변환은_내려받을_수_없다(client: TestClient, fixture: Fixture) -> None:
+    conversion_id = _upload_text(client, fixture)["conversion_id"]
+    _complete(fixture, conversion_id)
+    stranger = fixture.other_user()
+
+    response = _export(client, fixture, conversion_id, user=stranger)
+
+    assert response.status_code == 404
+    # 원문 개인정보가 남의 손에 넘어가는 경로다 — 본문 조각도 실리면 안 된다.
+    assert "010-1234-5678" not in response.text
+
+
+def test_없는_변환_내려받기는_404(client: TestClient, fixture: Fixture) -> None:
+    assert _export(client, fixture, str(uuid.uuid4())).status_code == 404
+
+
+@pytest.mark.parametrize("export_format", ["pdf", "hwp", ""])
+def test_지원하지_않는_내보내기_형식은_422(
+    client: TestClient, fixture: Fixture, export_format: str
+) -> None:
+    """pdf·hwp 내보내기는 Lean MVP 범위 밖이다 — 조용히 다른 형식을 주지 않는다."""
+    conversion_id = _upload_text(client, fixture)["conversion_id"]
+    _complete(fixture, conversion_id)
+
+    assert _export(client, fixture, conversion_id, export_format=export_format).status_code == 422
+
+
+def test_형식을_지정하지_않으면_422(client: TestClient, fixture: Fixture) -> None:
+    conversion_id = _upload_text(client, fixture)["conversion_id"]
+    _complete(fixture, conversion_id)
+
+    response = client.get(f"/conversions/{conversion_id}/export", headers=fixture.headers())
+
+    assert response.status_code == 422
+
+
 # --- 목록 ---------------------------------------------------------------------
 
 
@@ -705,6 +834,7 @@ def test_범위를_벗어난_페이지_인자는_422(client: TestClient, fixture
         ("get", "/documents"),
         ("get", f"/conversions/{uuid.uuid4()}"),
         ("put", f"/conversions/{uuid.uuid4()}"),
+        ("get", f"/conversions/{uuid.uuid4()}/export?format=docx"),
     ],
 )
 def test_인증_없이는_401(client: TestClient, method: str, path: str) -> None:
