@@ -4,6 +4,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from app.api.auth import router as auth_router
@@ -37,6 +38,23 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(title="Easy-Read AI", lifespan=lifespan)
+
+# CORS는 lifespan이 아니라 조립 시점에 붙여야 한다 — 미들웨어 스택은 기동과 함께
+# 굳어서, 뜬 뒤에는 추가할 수 없다. 그래서 설정을 여기서 한 번 더 읽는다.
+_cors_settings = Settings()
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_cors_settings.cors_origins,
+    # 인증은 Authorization Bearer 헤더로 한다 — 쿠키를 쓰지 않으므로 자격증명을
+    # 허용할 이유가 없고, 켜면 CSRF 노출 면적만 넓어진다.
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "PUT", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
+    # 안전 목록(Content-Type 등) 밖의 응답 헤더는 명시하지 않으면 브라우저 JS가 읽지
+    # 못한다. 내려받기 파일명(Content-Disposition)과 접수 결과 주소(Location)가 그렇다.
+    expose_headers=["Content-Disposition", "Location"],
+)
+
 register_exception_handlers(app)
 app.include_router(auth_router)
 app.include_router(documents_router)

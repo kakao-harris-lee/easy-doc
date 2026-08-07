@@ -17,6 +17,12 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/easydoc"
     redis_url: str = "redis://localhost:6379/0"
 
+    # 브라우저에서 API를 부를 수 있는 오리진 목록.
+    # 파일럿 배포는 nginx가 프론트와 API를 같은 호스트로 서빙하므로 cross-origin이
+    # 아니다 — 다른 오리진이 되는 것은 개발용 Vite 서버(5173)뿐이라 기본값이 그것 하나다.
+    # 환경변수로 덮어쓸 때는 JSON 배열로 준다: CORS_ORIGINS='["https://example.kr"]'
+    cors_origins: list[str] = ["http://localhost:5173"]
+
     # 인증. jwt_secret 미설정 시 인증 API를 쓸 수 없다(앱 기동 자체는 가능).
     jwt_secret: SecretStr | None = None
     jwt_expire_minutes: int = 60
