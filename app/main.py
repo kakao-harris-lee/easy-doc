@@ -48,7 +48,10 @@ app.add_middleware(
     # 인증은 Authorization Bearer 헤더로 한다 — 쿠키를 쓰지 않으므로 자격증명을
     # 허용할 이유가 없고, 켜면 CSRF 노출 면적만 넓어진다.
     allow_credentials=False,
-    allow_methods=["GET", "POST", "PUT", "OPTIONS"],
+    # 우리가 실제로 제공하는 메서드만 적는다(OPTIONS는 미들웨어가 스스로 처리하므로
+    # 목록에 넣지 않는다). **문서 삭제(DELETE) 같은 메서드를 추가하면 이 목록도 함께
+    # 갱신해야 한다** — 빠뜨리면 프리플라이트가 막혀 브라우저에서만 실패한다.
+    allow_methods=["GET", "POST", "PUT"],
     allow_headers=["Authorization", "Content-Type"],
     # 안전 목록(Content-Type 등) 밖의 응답 헤더는 명시하지 않으면 브라우저 JS가 읽지
     # 못한다. 내려받기 파일명(Content-Disposition)과 접수 결과 주소(Location)가 그렇다.

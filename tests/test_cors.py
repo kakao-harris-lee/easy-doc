@@ -12,7 +12,9 @@ from fastapi.testclient import TestClient
 from app.config import Settings
 from app.main import app
 
-_ALLOWED = Settings().cors_origins[0]
+#: 미들웨어가 실제로 허용하는 오리진. 인스턴스가 아니라 선언된 기본값에서 가져온다 —
+#: 실행 환경의 .env·환경변수가 값을 덮어써도 이 테스트가 흔들리지 않게 한다.
+_ALLOWED: str = Settings.model_fields["cors_origins"].default[0]
 
 
 @pytest.fixture
