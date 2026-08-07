@@ -87,6 +87,23 @@ services:
       retries: 10
       start_period: 10s
 
+  # 파일럿 데모 화면. 브라우저는 여기 한 곳만 보고, /api 호출은 nginx가 api로 넘긴다 —
+  # 동일 출처라 데모 경로에서는 CORS 설정이 관여하지 않는다(dev 서버 경로와 다른 점).
+  frontend:
+    build:
+      # 컨텍스트가 리포 루트다 — 백엔드와 .dockerignore를 공유한다.
+      context: .
+      dockerfile: Dockerfile.frontend
+    image: easy-doc-frontend:local
+    ports:
+      # 127.0.0.1 바인딩: 파일럿 화면이 외부 네트워크에 그대로 열리지 않게 한다.
+      - "127.0.0.1:8080:80"
+    depends_on:
+      # nginx는 기동할 때 upstream 호스트명을 한 번 풀어 본다 — api가 아직 없으면
+      # 설정을 읽다가 죽는다. healthcheck 통과를 기다렸다가 뜬다.
+      api:
+        condition: service_healthy
+
   # 변환 워커. 떠 있지 않으면 업로드는 접수되지만 변환이 pending에 머문다.
   worker:
     <<: *app
