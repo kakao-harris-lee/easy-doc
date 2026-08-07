@@ -906,6 +906,21 @@ def test_목록은_문서_메타와_최신_변환_상태를_준다(client: TestC
     assert body["has_more"] is False
 
 
+def test_목록은_검수_저장_여부를_알려준다(client: TestClient, fixture: Fixture) -> None:
+    """상태(done)만으로는 담당자가 검수했는지 알 수 없다 — 목록에서 갈라 보여야 한다."""
+    draft = _upload_text(client, fixture, text="검수 전 문서")
+    _complete(fixture, draft["conversion_id"])
+    reviewed = _upload_text(client, fixture, text="검수한 문서")
+    _complete(fixture, reviewed["conversion_id"])
+    _review(client, fixture, reviewed["conversion_id"])
+
+    items = client.get("/documents", headers=fixture.headers()).json()["items"]
+
+    by_id = {item["id"]: item for item in items}
+    assert by_id[reviewed["document_id"]]["reviewed_at"] is not None
+    assert by_id[draft["document_id"]]["reviewed_at"] is None
+
+
 def test_목록_응답에_본문이_실리지_않는다(client: TestClient, fixture: Fixture) -> None:
     _upload_text(client, fixture)
 

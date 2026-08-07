@@ -116,6 +116,9 @@ class DocumentListItem(BaseModel):
     retention_expires_at: datetime
     conversion_id: uuid.UUID | None = None
     status: str | None = None
+    #: 검수 수정본을 저장한 시각. 목록에서 "검수함/초안" 표시를 하려면 필요한데,
+    #: 상태(status)만으로는 알 수 없다 — done은 "AI 변환이 끝났다"는 뜻일 뿐이다.
+    reviewed_at: datetime | None = None
 
 
 class DocumentListResponse(BaseModel):
@@ -171,6 +174,7 @@ def _to_list_item(summary: DocumentSummary) -> DocumentListItem:
         retention_expires_at=summary.document.retention_expires_at,
         conversion_id=None if latest is None else latest.id,
         status=None if latest is None else latest.status,
+        reviewed_at=None if latest is None else latest.reviewed_at,
     )
 
 
