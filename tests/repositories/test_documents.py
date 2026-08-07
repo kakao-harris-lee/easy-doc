@@ -278,8 +278,10 @@ async def test_검수_수정본은_초안을_남겨둔_채_저장된다(db_sessi
     )
     await conversions.commit()
 
-    await conversions.save_review(conversion, edited_text_encrypted=b"gAAAAA-edited")
-    await conversions.save_review(conversion, edited_text_encrypted=b"gAAAAA-edited-2")
+    assert await conversions.save_review(conversion, edited_text_encrypted=b"gAAAAA-edited") is True
+    assert (
+        await conversions.save_review(conversion, edited_text_encrypted=b"gAAAAA-edited-2") is True
+    )
     await conversions.commit()
 
     reloaded = await conversions.get_for_user(conversion.id, user.id)
@@ -291,6 +293,26 @@ async def test_검수_수정본은_초안을_남겨둔_채_저장된다(db_sessi
     # 검수 시각은 DB 시계로 찍는다(집계 기준이 서버 시계마다 달라지면 안 된다).
     assert reloaded.reviewed_at is not None
     assert reloaded.reviewed_at.tzinfo is not None
+
+
+async def test_완료되지_않은_변환에는_수정본이_저장되지_않는다(db_session: AsyncSession) -> None:
+    """상태 검사를 UPDATE의 WHERE에 넣어 읽고-나서-쓰는 사이의 틈을 닫는다.
+
+    서비스가 앞에서 한 번 걸러내지만, 그 사이에 워커가 상태를 바꿀 수 있다 —
+    판정은 DB가 한 번에 해야 한다 (mark_processing과 같은 규칙).
+    """
+    user = await _user(db_session, "racing@example.com")
+    document = await _document(DocumentRepository(db_session), user)
+    conversions = ConversionRepository(db_session)
+    conversion = await conversions.create_pending(document.id)
+    await conversions.commit()
+
+    assert await conversions.save_review(conversion, edited_text_encrypted=b"gAAAAA-x") is False
+
+    reloaded = await conversions.get_for_user(conversion.id, user.id)
+    assert reloaded is not None
+    assert reloaded.edited_text_encrypted is None
+    assert reloaded.reviewed_at is None
 
 
 async def test_검수_전_변환에는_수정본_컬럼이_비어_있다(db_session: AsyncSession) -> None:

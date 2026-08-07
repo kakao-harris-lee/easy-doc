@@ -169,21 +169,27 @@ class ConversionRepository:
         conversion.failure_code = None
         await self._session.flush()
 
-    async def save_review(self, conversion: Conversion, *, edited_text_encrypted: bytes) -> None:
+    async def save_review(self, conversion: Conversion, *, edited_text_encrypted: bytes) -> bool:
         """담당자 검수 수정본을 기록한다. **AI 초안은 건드리지 않는다.**
 
         초안(easy_text_encrypted)은 수정률 KPI(master-plan 7장)의 기준선이라 이 메서드가
         덮어쓸 수 있으면 안 된다 — 시그니처에 초안 인자를 두지 않는 것이 그 보장이다.
 
-        UPDATE 문으로 쓰는 이유는 reviewed_at을 DB 시계로 찍기 위해서다. 애플리케이션
-        시계는 프로세스마다 어긋날 수 있고, 검수 시각은 집계의 기준값이다.
+        완료 상태 검사를 UPDATE의 WHERE에 넣는다 (mark_processing과 같은 규칙): 호출자가
+        앞에서 상태를 확인해도 그 사이에 워커가 상태를 바꿀 수 있고, 읽고-나서-쓰는
+        방식에는 그 틈이 남는다. reviewed_at을 DB 시계로 찍는 것도 UPDATE 문을 쓰는
+        이유다 — 애플리케이션 시계는 프로세스마다 어긋날 수 있고 검수 시각은 집계 기준값이다.
 
         본문은 **암호화된 상태로만** 받는다 (mark_done과 같은 이유 — 평문을 받는
         시그니처를 두면 암호화를 빠뜨린 호출이 타입 검사를 통과한다).
+
+        Returns:
+            저장했으면 True. False면 그 사이에 완료 상태가 아니게 된 것이므로 호출자는
+            물러나야 한다.
         """
-        await self._session.execute(
+        result = await self._session.execute(
             update(Conversion)
-            .where(Conversion.id == conversion.id)
+            .where(Conversion.id == conversion.id, Conversion.status == ConversionStatus.DONE)
             .values(
                 edited_text_encrypted=edited_text_encrypted,
                 reviewed_at=func.now(),
@@ -191,11 +197,16 @@ class ConversionRepository:
                 # 눈에 보이게 적어 둔다 (mark_processing과 같은 이유).
                 updated_at=func.now(),
             )
+            # RETURNING으로 갱신 여부를 본다(rowcount는 드라이버마다 타입이 다르다).
+            .returning(Conversion.id)
             .execution_options(synchronize_session=False)
         )
+        if result.scalar_one_or_none() is None:
+            return False
         # UPDATE는 세션이 들고 있는 객체를 갱신하지 않는다 — 응답이 방금 저장한 값을
         # 실어야 하므로 DB 상태와 다시 맞춘다.
         await self._session.refresh(conversion)
+        return True
 
     async def mark_failed(self, conversion: Conversion, failure_code: str) -> None:
         """변환 실패를 기록한다.

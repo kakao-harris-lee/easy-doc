@@ -17,9 +17,12 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import PurePosixPath
+from typing import assert_never
 from urllib.parse import quote
 
 import docx
+
+from app.text import strip_control_chars
 
 
 class ExportFormat(StrEnum):
@@ -33,7 +36,9 @@ class ExportFormat(StrEnum):
     TXT = "txt"
 
 
-_MEDIA_TYPES: dict[ExportFormat, str] = {
+#: 형식별 미디어 타입. 라우터가 OpenAPI 문서에도 그대로 싣는다 — 문자열을 두 곳에
+#: 적어두면 형식이 늘 때 문서만 낡는다.
+MEDIA_TYPES: Mapping[ExportFormat, str] = {
     ExportFormat.DOCX: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     # charset 명시: txt는 BOM 없이 UTF-8로 내보내므로, 이 표시가 없으면 브라우저가
     # 로캘 기본 인코딩으로 열어 한글이 깨진다.
@@ -58,6 +63,9 @@ _ASCII_FALLBACK_STEM = "easy-read"
 #: 문단 경계. 빈 줄(공백만 있는 줄 포함)이 하나 이상이면 새 문단으로 본다.
 _PARAGRAPH_BREAK = re.compile(r"\n\s*\n")
 
+#: 자리표시자 한 개. 대괄호가 포함되지 않은 라벨만 받는다(`[[전화번호1]]`).
+_PLACEHOLDER = re.compile(r"\[\[[^\[\]]+\]\]")
+
 
 @dataclass(frozen=True)
 class ExportFile:
@@ -75,12 +83,14 @@ def restore_placeholders(text: str, originals: Mapping[str, str]) -> str:
         text: 자리표시자가 남아 있는 변환 결과.
         originals: 자리표시자 → 가려졌던 원문 값.
 
-    자리표시자는 `[[전화번호1]]`처럼 닫는 괄호까지 통째로 치환한다 — 번호가 이어지는
-    `[[전화번호11]]`을 앞 항목이 갉아먹지 않는다.
+    자리표시자를 하나씩 찾아 한 번에 바꾼다(단일 패스). 치환 결과를 다시 훑지 않으므로
+    복원된 원문이 우연히 자리표시자 모양이어도 두 번 치환되지 않고, 항목 수만큼 본문
+    전체를 다시 쓰지도 않는다.
+
+    목록에 없는 자리표시자는 그대로 둔다 — 우리가 만든 것이 아닌 표기를 지워
+    본문을 조용히 훼손하지 않는다.
     """
-    for placeholder, original in originals.items():
-        text = text.replace(placeholder, original)
-    return text
+    return _PLACEHOLDER.sub(lambda match: originals.get(match.group(), match.group()), text)
 
 
 def export_filename(title: str, export_format: ExportFormat) -> str:
@@ -117,25 +127,33 @@ def render_export(*, export_format: ExportFormat, title: str, body: str) -> Expo
         title: 문서 제목 (docx의 제목 문단과 파일명에 쓰인다).
         body: 내보낼 본문 — 자리표시자는 이미 복원된 상태여야 한다.
     """
-    content = (
-        _render_docx(title=title, body=body)
-        if export_format is ExportFormat.DOCX
-        # txt에는 제목 줄을 덧붙이지 않는다. docx는 제목 스타일이 구조를 만들지만 txt는
-        # 구조가 없어, 제목을 얹으면 본문과 구분되지 않는 중복 줄만 남는다.
-        else body.encode("utf-8")
-    )
+    match export_format:
+        case ExportFormat.DOCX:
+            content = _render_docx(title=title, body=body)
+        case ExportFormat.TXT:
+            # txt에는 제목 줄을 덧붙이지 않는다. docx는 제목 스타일이 구조를 만들지만
+            # txt는 구조가 없어, 제목을 얹으면 본문과 구분되지 않는 중복 줄만 남는다.
+            content = body.encode("utf-8")
+        case _:
+            # 형식을 추가하고 여기를 잊으면 mypy가 이 줄에서 잡는다(런타임까지 가지 않는다).
+            assert_never(export_format)
     return ExportFile(
         filename=export_filename(title, export_format),
-        media_type=_MEDIA_TYPES[export_format],
+        media_type=MEDIA_TYPES[export_format],
         content=content,
     )
 
 
 def _render_docx(*, title: str, body: str) -> bytes:
-    """제목 + 본문 문단으로 docx 파일을 만든다."""
+    """제목 + 본문 문단으로 docx 파일을 만든다.
+
+    제어문자를 여기서 한 번 더 걷어낸다 — 저장 시점 정규화(app/text.py)가 원칙이지만,
+    그 전에 저장된 데이터나 우리가 놓친 경로가 있으면 lxml이 ValueError를 던져 사용자가
+    설명할 수 없는 500을 받는다. 이 줄이 그 실패를 남지 않게 하는 마지막 방어다.
+    """
     document = docx.Document()
-    document.add_heading(title, level=1)
-    for block in _split_paragraphs(body):
+    document.add_heading(strip_control_chars(title), level=1)
+    for block in _split_paragraphs(strip_control_chars(body)):
         # python-docx가 문단 안의 \n을 <w:br/>로 옮긴다 — 줄만 바꾼 곳(목록 등)이
         # 한 줄로 뭉치지 않는다.
         document.add_paragraph(block)

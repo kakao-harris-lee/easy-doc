@@ -101,6 +101,18 @@ def test_빈_줄이_여러_개여도_빈_문단을_만들지_않는다() -> None
     assert _paragraphs(file.content) == ["안내문", "앞", "뒤"]
 
 
+def test_제어문자가_섞여도_docx를_만든다() -> None:
+    """이중 방어 — 저장 시점 정규화를 지나온 옛 데이터·놓친 경로가 여기서 500이 되면 안 된다.
+
+    XML은 탭·개행·복귀를 뺀 제어문자를 담지 못해 lxml이 ValueError를 던진다.
+    """
+    file = render_export(
+        export_format=ExportFormat.DOCX, title="안내\x0b문", body="본문\x00입니다.\n\n둘째\x0c 문단"
+    )
+
+    assert _paragraphs(file.content) == ["안내문", "본문입니다.", "둘째 문단"]
+
+
 # --- txt ----------------------------------------------------------------------
 
 

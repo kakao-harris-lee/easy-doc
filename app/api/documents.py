@@ -23,7 +23,7 @@ from pydantic import BaseModel, ValidationError
 from starlette.datastructures import UploadFile
 
 from app.api.deps import CurrentUserDep, DocumentServiceDep
-from app.easyread.export import ExportFormat, content_disposition
+from app.easyread.export import MEDIA_TYPES, ExportFormat, content_disposition
 from app.exceptions import InvalidInputError
 from app.ingest.extractors import MAX_UPLOAD_BYTES
 from app.models.conversion import Conversion
@@ -38,6 +38,16 @@ from app.services.documents import (
 router = APIRouter(tags=["documents"])
 
 _MULTIPART_PREFIX = "multipart/form-data"
+
+#: 개인정보가 실리는 응답에 붙이는 헤더.
+#:
+#: no-store: 이 응답들에는 마스킹 원문·문서 본문이 담긴다. 파일럿은 nginx가 프론트와
+#: API를 같은 호스트로 서빙하는 구성이라, 누군가 proxy_cache를 켜는 순간 캐시된 사본이
+#: 소유자 검증 없이 다른 사용자에게 나갈 수 있다. 서버가 스스로 "저장하지 말라"고
+#: 말해두는 것이 그 구성 실수를 막는 유일한 방법이다.
+#: nosniff: 브라우저가 내용을 보고 타입을 추측하지 않게 한다 — 사용자 본문이 그대로
+#: 담긴 내려받기 파일이 스크립트로 해석되는 경로를 닫는다.
+PRIVATE_RESPONSE_HEADERS = {"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"}
 
 
 class DocumentTextRequest(BaseModel):
@@ -246,10 +256,17 @@ async def list_documents(
 
 @router.get("/conversions/{conversion_id}")
 async def read_conversion(
-    conversion_id: uuid.UUID, current_user: CurrentUserDep, service: DocumentServiceDep
+    conversion_id: uuid.UUID,
+    response: Response,
+    current_user: CurrentUserDep,
+    service: DocumentServiceDep,
 ) -> ConversionResponse:
-    """변환 상태와 결과를 돌려준다. 내 것이 아니면 404(있다는 사실도 알리지 않는다)."""
+    """변환 상태와 결과를 돌려준다. 내 것이 아니면 404(있다는 사실도 알리지 않는다).
+
+    응답에 마스킹 원문이 실리므로 캐시 금지 헤더를 붙인다(PRIVATE_RESPONSE_HEADERS).
+    """
     detail = await service.get_conversion(conversion_id, current_user.id)
+    response.headers.update(PRIVATE_RESPONSE_HEADERS)
     return _to_conversion_response(detail)
 
 
@@ -270,7 +287,17 @@ async def update_conversion(
     return _to_conversion_response(detail)
 
 
-@router.get("/conversions/{conversion_id}/export")
+@router.get(
+    "/conversions/{conversion_id}/export",
+    # 응답 본문이 JSON이 아니라 파일이다 — 실제로 내보내는 미디어 타입을 문서에 적어
+    # 두지 않으면 OpenAPI가 application/json이라고 잘못 알린다.
+    responses={
+        200: {
+            "description": "검수 완료 문서 파일 (자리표시자가 원문으로 복원된 최종 산출물)",
+            "content": {media_type: {} for media_type in MEDIA_TYPES.values()},
+        }
+    },
+)
 async def export_conversion(
     conversion_id: uuid.UUID,
     current_user: CurrentUserDep,
@@ -292,5 +319,8 @@ async def export_conversion(
     return Response(
         content=export.content,
         media_type=export.media_type,
-        headers={"Content-Disposition": content_disposition(export.filename)},
+        headers={
+            "Content-Disposition": content_disposition(export.filename),
+            **PRIVATE_RESPONSE_HEADERS,
+        },
     )

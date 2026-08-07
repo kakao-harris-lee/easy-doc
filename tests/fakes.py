@@ -174,11 +174,17 @@ class FakeConversionStore:
             return None
         return conversion, self._documents.documents[conversion.document_id]
 
-    async def save_review(self, conversion: Conversion, *, edited_text_encrypted: bytes) -> None:
-        """검수 수정본을 기록한다. 실제 저장소와 같이 AI 초안은 건드리지 않는다."""
+    async def save_review(self, conversion: Conversion, *, edited_text_encrypted: bytes) -> bool:
+        """검수 수정본을 기록한다. 실제 저장소와 같이 AI 초안은 건드리지 않는다.
+
+        완료 상태 판정도 실제 저장소(조건부 UPDATE)와 같은 규칙으로 흉내 낸다.
+        """
+        if conversion.status != ConversionStatus.DONE:
+            return False
         conversion.edited_text_encrypted = edited_text_encrypted
         # 실제 저장소는 DB 시계(now())로 찍는다. 대역에는 DB가 없으므로 여기서 채운다.
         conversion.reviewed_at = datetime.now(UTC)
+        return True
 
     async def mark_failed(self, conversion: Conversion, failure_code: str) -> None:
         """실패를 기록한다."""

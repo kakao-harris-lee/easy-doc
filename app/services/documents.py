@@ -17,6 +17,7 @@ import json
 import logging
 import uuid
 from dataclasses import dataclass
+from functools import partial
 from pathlib import PurePosixPath
 from typing import Protocol
 
@@ -40,6 +41,7 @@ from app.privacy.crypto import TextCipher
 from app.privacy.masking import MaskedItem
 from app.queue import CONVERT_DOCUMENT_TASK, TaskQueue
 from app.repositories.documents import DocumentPage
+from app.text import strip_control_chars
 
 _logger = logging.getLogger(__name__)
 
@@ -192,8 +194,8 @@ class ConversionStore(Protocol):
         """소유자를 확인하며 변환과 원본 문서를 함께 찾는다 (내보내기 — 제목이 필요하다)."""
         ...
 
-    async def save_review(self, conversion: Conversion, *, edited_text_encrypted: bytes) -> None:
-        """검수 수정본을 기록한다(AI 초안은 건드리지 않는다)."""
+    async def save_review(self, conversion: Conversion, *, edited_text_encrypted: bytes) -> bool:
+        """검수 수정본을 기록한다(AI 초안은 건드리지 않는다). 완료 상태가 아니면 False."""
         ...
 
     async def mark_failed(self, conversion: Conversion, failure_code: str) -> None:
@@ -298,6 +300,10 @@ class DocumentService:
             ConflictError: 아직 완료되지 않은 변환이다.
             StorageError: 저장된 암호문을 읽을 수 없다.
         """
+        # 제어문자를 먼저 걷어낸다 — XML(docx)이 담지 못하는 문자를 저장해 두면 내보내기
+        # 시점에야 터진다(사용자는 원인을 알 수 없는 500을 받는다). 걷어낸 뒤에 빈 본문·
+        # 길이를 판정해야 "제어문자만 담긴 수정본"이 빈 수정본과 같은 취급을 받는다.
+        edited_text = strip_control_chars(edited_text)
         if not edited_text.strip():
             raise InvalidInputError("수정본이 비어 있습니다")
         if len(edited_text) > MAX_CONVERTIBLE_CHARS:
@@ -312,9 +318,12 @@ class DocumentService:
             # 소유자 확인은 이미 통과했으므로 존재를 숨길 이유가 없다. 아직 결과가 없는데
             # 수정본을 받으면 무엇을 고친 것인지 설명할 수 없으므로 409로 거절한다.
             raise ConflictError("변환이 끝난 뒤에 수정할 수 있습니다")
-        await self._conversions.save_review(
+        if not await self._conversions.save_review(
             conversion, edited_text_encrypted=self._cipher.encrypt(edited_text)
-        )
+        ):
+            # 위 검사와 UPDATE 사이에 워커가 상태를 바꾼 경우다(재시도 등). 판정은 DB가
+            # 한 번에 했고, 여기서는 같은 결론을 같은 코드로 알린다.
+            raise ConflictError("변환이 끝난 뒤에 수정할 수 있습니다")
         await self._conversions.commit()
         return self._decrypt_detail(conversion)
 
@@ -340,14 +349,24 @@ class DocumentService:
         detail = self._decrypt_detail(conversion)
         if detail.easy_text is None:
             raise ConflictError("변환이 끝난 뒤에 내려받을 수 있습니다")
+        if detail.edited_text is None and conversion.missing_placeholders:
+            # 자리표시자가 결과에서 사라졌다는 것은 그 자리의 정보(연락처 등)가 통째로
+            # 빠졌다는 뜻이다. 검수를 거치지 않은 초안을 그대로 내보내면 정보가 누락된
+            # 안내문이 배포된다. 검수본이 있으면 막지 않는다 — 경고는 검수 화면에서 이미
+            # 보여줬고(missing_placeholders 배지), 최종 판단은 담당자 몫이다(HITL).
+            raise ConflictError(
+                "변환에서 유실된 개인정보 표시가 있습니다 — 검수 화면에서 수정 후 내보내세요"
+            )
         # 검수본이 있으면 그것이 최종본이다. 초안은 KPI 기준선으로만 남는다.
         final_text = detail.edited_text if detail.edited_text is not None else detail.easy_text
-        return render_export(
-            export_format=export_format,
-            title=document.title,
-            body=restore_placeholders(
-                final_text, {item.placeholder: item.original for item in detail.masked_items}
-            ),
+        body = restore_placeholders(
+            final_text, {item.placeholder: item.original for item in detail.masked_items}
+        )
+        # docx 직렬화는 순수 파이썬(lxml·zip) CPU 작업이라 이벤트 루프를 붙잡는다 —
+        # extract_text와 같은 이유로 스레드에 넘긴다. 그쪽과 달리 동시 실행 수를 묶지
+        # 않는 것은 대상이 이미 상한(4,000자) 안의 결과 한 건이라 메모리 폭주가 없기 때문.
+        return await to_thread.run_sync(
+            partial(render_export, export_format=export_format, title=document.title, body=body)
         )
 
     async def _require_conversion(self, conversion_id: uuid.UUID, user_id: uuid.UUID) -> Conversion:
@@ -462,4 +481,6 @@ def _resolve_title(title: str | None, text: str) -> str:
     candidate = (title or "").strip()
     if not candidate:
         candidate = next((line.strip() for line in text.splitlines() if line.strip()), "")
-    return candidate[:MAX_TITLE_LENGTH] or FALLBACK_TITLE
+    # 제어문자를 걷어낸다 — 추출한 문서·붙여넣기에 섞여 들어오면 내보내기(XML)에서
+    # 터진다. 자르기 전에 지워야 잘린 길이가 보이는 글자 수와 어긋나지 않는다.
+    return strip_control_chars(candidate)[:MAX_TITLE_LENGTH] or FALLBACK_TITLE

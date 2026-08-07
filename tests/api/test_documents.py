@@ -409,8 +409,19 @@ def test_암호화_키가_없으면_503(fixture: Fixture) -> None:
 # --- 변환 조회 -----------------------------------------------------------------
 
 
-def _complete(fixture: Fixture, conversion_id: str, *, easy_text: str = _EASY) -> None:
-    """워커가 성공적으로 끝낸 상태를 만든다 (암호화 저장 형태 그대로)."""
+def _complete(
+    fixture: Fixture,
+    conversion_id: str,
+    *,
+    easy_text: str = _EASY,
+    missing_placeholders: tuple[str, ...] = ("[[이메일1]]",),
+) -> None:
+    """워커가 성공적으로 끝낸 상태를 만든다 (암호화 저장 형태 그대로).
+
+    missing_placeholders 기본값이 비어 있지 않은 이유: 자리표시자 유실은 검수 화면
+    경고의 주된 이유라 조회 테스트의 기본 상황으로 둔다. 내보내기 테스트는 유실이
+    없는 상태를 명시적으로 만든다(유실 시 내보내기는 막힌다).
+    """
     conversion = fixture.conversions.conversions[uuid.UUID(conversion_id)]
     items = [
         MaskedItem(
@@ -422,7 +433,7 @@ def _complete(fixture: Fixture, conversion_id: str, *, easy_text: str = _EASY) -
     conversion.status = ConversionStatus.DONE
     conversion.easy_text_encrypted = fixture.cipher.encrypt(easy_text)
     conversion.masked_items_encrypted = fixture.cipher.encrypt(serialize_masked_items(items))
-    conversion.missing_placeholders = ["[[이메일1]]"]
+    conversion.missing_placeholders = list(missing_placeholders)
     conversion.provider_name = "fake"
     conversion.model = "fake-model"
     conversion.input_tokens = 10
@@ -659,6 +670,11 @@ def _export(
     )
 
 
+def _complete_for_export(fixture: Fixture, conversion_id: str, *, easy_text: str = _EASY) -> None:
+    """내보낼 수 있는 완료 상태를 만든다 — 유실된 자리표시자가 없어야 한다."""
+    _complete(fixture, conversion_id, easy_text=easy_text, missing_placeholders=())
+
+
 def _docx_text(content: bytes) -> str:
     """내려받은 docx를 다시 열어 전체 텍스트를 합친다."""
     return "\n".join(paragraph.text for paragraph in docx.Document(io.BytesIO(content)).paragraphs)
@@ -669,7 +685,7 @@ def test_docx로_내려받으면_자리표시자가_원문으로_복원된다(
 ) -> None:
     """내보내기는 담당자가 그대로 배포할 최종 산출물이다 — 여기서만 마스킹을 되돌린다."""
     conversion_id = _upload_text(client, fixture)["conversion_id"]
-    _complete(fixture, conversion_id, easy_text=_MASKED_EASY)
+    _complete_for_export(fixture, conversion_id, easy_text=_MASKED_EASY)
 
     response = _export(client, fixture, conversion_id)
 
@@ -683,7 +699,7 @@ def test_docx로_내려받으면_자리표시자가_원문으로_복원된다(
 
 def test_docx_응답_헤더가_형식과_파일명을_알려준다(client: TestClient, fixture: Fixture) -> None:
     conversion_id = _upload_text(client, fixture)["conversion_id"]
-    _complete(fixture, conversion_id)
+    _complete_for_export(fixture, conversion_id)
 
     response = _export(client, fixture, conversion_id)
 
@@ -697,7 +713,7 @@ def test_docx_응답_헤더가_형식과_파일명을_알려준다(client: TestC
 
 def test_txt로_내려받으면_UTF_8_본문이다(client: TestClient, fixture: Fixture) -> None:
     conversion_id = _upload_text(client, fixture)["conversion_id"]
-    _complete(fixture, conversion_id, easy_text=_MASKED_EASY)
+    _complete_for_export(fixture, conversion_id, easy_text=_MASKED_EASY)
 
     response = _export(client, fixture, conversion_id, export_format="txt")
 
@@ -712,7 +728,7 @@ def test_txt로_내려받으면_UTF_8_본문이다(client: TestClient, fixture: 
 def test_검수본이_있으면_검수본을_내보낸다(client: TestClient, fixture: Fixture) -> None:
     """담당자가 고친 뒤라면 그 결과가 최종본이다 (edited ?? easy)."""
     conversion_id = _upload_text(client, fixture)["conversion_id"]
-    _complete(fixture, conversion_id, easy_text=_MASKED_EASY)
+    _complete_for_export(fixture, conversion_id, easy_text=_MASKED_EASY)
     _review(client, fixture, conversion_id, text="문의는 [[전화번호1]]로 주세요.")
 
     response = _export(client, fixture, conversion_id, export_format="txt")
@@ -729,7 +745,7 @@ def test_완료되지_않은_변환은_내려받을_수_없다(client: TestClien
 
 def test_남의_변환은_내려받을_수_없다(client: TestClient, fixture: Fixture) -> None:
     conversion_id = _upload_text(client, fixture)["conversion_id"]
-    _complete(fixture, conversion_id)
+    _complete_for_export(fixture, conversion_id)
     stranger = fixture.other_user()
 
     response = _export(client, fixture, conversion_id, user=stranger)
@@ -749,18 +765,114 @@ def test_지원하지_않는_내보내기_형식은_422(
 ) -> None:
     """pdf·hwp 내보내기는 Lean MVP 범위 밖이다 — 조용히 다른 형식을 주지 않는다."""
     conversion_id = _upload_text(client, fixture)["conversion_id"]
-    _complete(fixture, conversion_id)
+    _complete_for_export(fixture, conversion_id)
 
     assert _export(client, fixture, conversion_id, export_format=export_format).status_code == 422
 
 
 def test_형식을_지정하지_않으면_422(client: TestClient, fixture: Fixture) -> None:
     conversion_id = _upload_text(client, fixture)["conversion_id"]
-    _complete(fixture, conversion_id)
+    _complete_for_export(fixture, conversion_id)
 
     response = client.get(f"/conversions/{conversion_id}/export", headers=fixture.headers())
 
     assert response.status_code == 422
+
+
+def test_유실된_표시가_남은_초안은_내려받을_수_없다(client: TestClient, fixture: Fixture) -> None:
+    """자리표시자가 사라졌다는 것은 그 자리의 정보(연락처 등)가 통째로 빠졌다는 뜻이다.
+
+    사람이 확인하지 않은 초안을 그대로 배포하면 정보가 빠진 안내문이 나간다 — 검수를
+    거치지 않은 경우에만 막는다.
+    """
+    conversion_id = _upload_text(client, fixture)["conversion_id"]
+    _complete(fixture, conversion_id, missing_placeholders=("[[전화번호1]]",))
+
+    response = _export(client, fixture, conversion_id)
+
+    assert response.status_code == 409
+    assert "검수" in response.json()["detail"]
+
+
+def test_검수를_마쳤으면_유실_표시가_있어도_내려받는다(
+    client: TestClient, fixture: Fixture
+) -> None:
+    """경고를 보고 고칠 기회는 검수 화면에서 이미 주어졌다 — 판단은 담당자 몫이다."""
+    conversion_id = _upload_text(client, fixture)["conversion_id"]
+    _complete(fixture, conversion_id, missing_placeholders=("[[전화번호1]]",))
+    _review(client, fixture, conversion_id, text="문의는 02-123-4567로 하세요.")
+
+    response = _export(client, fixture, conversion_id, export_format="txt")
+
+    assert response.status_code == 200, response.text
+    assert response.content.decode("utf-8") == "문의는 02-123-4567로 하세요."
+
+
+# --- 개인정보 응답 캐시 정책 ------------------------------------------------------
+
+
+def test_변환_조회_응답은_캐시하지_않는다(client: TestClient, fixture: Fixture) -> None:
+    """응답에 마스킹 원문이 실린다 — 중간 캐시에 남으면 소유자 검증이 무력해진다."""
+    conversion_id = _upload_text(client, fixture)["conversion_id"]
+    _complete(fixture, conversion_id)
+
+    response = client.get(f"/conversions/{conversion_id}", headers=fixture.headers())
+
+    assert response.headers["cache-control"] == "no-store"
+    assert response.headers["x-content-type-options"] == "nosniff"
+
+
+def test_내보내기_응답은_캐시하지_않는다(client: TestClient, fixture: Fixture) -> None:
+    conversion_id = _upload_text(client, fixture)["conversion_id"]
+    _complete_for_export(fixture, conversion_id)
+
+    response = _export(client, fixture, conversion_id)
+
+    assert response.headers["cache-control"] == "no-store"
+    assert response.headers["x-content-type-options"] == "nosniff"
+
+
+# --- 제어문자 방어 --------------------------------------------------------------
+
+
+def test_제목에_섞인_제어문자는_저장_시점에_걷어낸다(client: TestClient, fixture: Fixture) -> None:
+    """XML은 탭·개행을 뺀 제어문자를 담지 못한다 — 남겨두면 내보내기가 500이 된다.
+
+    수직 탭(\\x0b) 같은 일부 제어문자는 splitlines가 줄바꿈으로 보아 제목에 애초에
+    닿지 않는다 — 여기서는 그렇지 않은 문자(NUL·DEL)로 정규화 자체를 확인한다.
+    """
+    body = _upload_text(client, fixture, text="재난\x00지원금\x7f 안내\n본문입니다.")
+    document = fixture.documents.documents[uuid.UUID(body["document_id"])]
+    assert document.title == "재난지원금 안내"
+    _complete_for_export(fixture, body["conversion_id"])
+
+    response = _export(client, fixture, body["conversion_id"])
+
+    assert response.status_code == 200, response.text
+    assert _docx_text(response.content).startswith("재난지원금 안내")
+
+
+def test_수정본에_섞인_제어문자는_저장_시점에_걷어낸다(
+    client: TestClient, fixture: Fixture
+) -> None:
+    conversion_id = _upload_text(client, fixture)["conversion_id"]
+    _complete_for_export(fixture, conversion_id)
+
+    saved = _review(client, fixture, conversion_id, text="신청은\x00 3월\x0c 2일부터예요.")
+
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["edited_text"] == "신청은 3월 2일부터예요."
+    response = _export(client, fixture, conversion_id, export_format="txt")
+    assert response.status_code == 200, response.text
+    assert response.content.decode("utf-8") == "신청은 3월 2일부터예요."
+
+
+def test_제어문자만_담긴_수정본은_422(client: TestClient, fixture: Fixture) -> None:
+    """걷어내고 나면 빈 본문이다 — 빈 수정본과 같은 취급을 받아야 한다."""
+    conversion_id = _upload_text(client, fixture)["conversion_id"]
+    _complete_for_export(fixture, conversion_id)
+
+    assert _review(client, fixture, conversion_id, text="\x00\x0b\x0c").status_code == 422
 
 
 # --- 목록 ---------------------------------------------------------------------

@@ -78,14 +78,40 @@ async def _handle_unmapped_domain_error(request: Request, exc: Exception) -> JSO
     새 도메인 예외를 만들고 _MAPPINGS 등록을 잊어도 응답 모양이 유지된다. 메시지는
     고정 문자열이다 — 무엇이 담길지 모르는 예외를 그대로 노출하지 않는다.
 
-    조용히 500만 내보내면 매핑 누락을 아무도 모른 채 지나간다. 로그에는 예외 **타입**만
-    적는다 — str(exc)를 로그 인자로 넣지 않는 것은 도메인 예외 메시지에 무엇이 담길지
+    조용히 500만 내보내면 매핑 누락을 아무도 모른 채 지나간다. 로그 **메시지**에는 예외
+    타입만 적는다 — str(exc)를 인자로 넣지 않는 것은 도메인 예외 메시지에 무엇이 담길지
     이 지점에서는 알 수 없기 때문이다(개인정보 금지 규칙).
+
+    다만 exc_info(트레이스백)는 남긴다. 그 마지막 줄에는 예외 메시지가 함께 찍히므로,
+    도메인 예외 메시지에 입력값·본문을 담지 않는다는 services 계층의 규약이 이 로그의
+    안전을 떠받친다. 트레이스백을 버리면 매핑 누락의 원인 추적이 불가능해져, 규약을
+    지키는 쪽이 낫다는 판단이다.
     """
     _logger.exception("매핑되지 않은 도메인 예외: %s", type(exc).__name__)
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         content={"detail": "요청을 처리하지 못했습니다"},
+    )
+
+
+async def _handle_unexpected_error(request: Request, exc: Exception) -> JSONResponse:
+    """도메인 밖 예외(라이브러리 오류 등)의 마지막 백스톱 — 500 응답 모양을 통일한다.
+
+    이것이 없으면 예상하지 못한 예외는 Starlette 기본 응답(`Internal Server Error`,
+    text/plain)이 되어, JSON `{"detail": ...}` 하나만 기대하는 클라이언트가 응답을 읽지
+    못한다. 메시지는 고정 문자열이다 — 예외에 무엇이 담길지 알 수 없다.
+
+    **한계**: 이 핸들러는 ServerErrorMiddleware가 부르는데, 그 미들웨어는 스택 가장
+    바깥(CORS 미들웨어 **밖**)에 있다. 따라서 이 응답에는 CORS 헤더가 붙지 않아 브라우저는
+    상태 코드조차 읽지 못하고 네트워크 오류로 본다. 미들웨어 순서를 바꿔 해결할 수 있는
+    문제가 아니므로(ServerErrorMiddleware가 바깥이어야 다른 미들웨어의 예외도 잡는다),
+    근본 해소는 **예외 자체를 만들지 않는 것**이다 — 예컨대 XML에 담기지 않는 제어문자는
+    저장 시점에 걷어낸다(app/text.py).
+    """
+    _logger.exception("처리하지 못한 예외: %s", type(exc).__name__)
+    return JSONResponse(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        content={"detail": "서버 오류가 발생했습니다"},
     )
 
 
@@ -120,3 +146,6 @@ def register_exception_handlers(app: FastAPI) -> None:
     for exception_type, status_code, headers in _MAPPINGS:
         app.add_exception_handler(exception_type, _make_handler(status_code, headers))
     app.add_exception_handler(RequestValidationError, _handle_request_validation)
+    # 도메인 밖 예외까지 덮는 마지막 백스톱. Starlette는 이 등록만 ExceptionMiddleware가
+    # 아니라 ServerErrorMiddleware로 넘기므로, 위의 도메인 매핑이 먼저 이긴다.
+    app.add_exception_handler(Exception, _handle_unexpected_error)
