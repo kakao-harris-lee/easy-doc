@@ -52,3 +52,26 @@ jobs:
       - run: uv run alembic upgrade head
       - run: uv run pytest
       # 골든셋 LLM 평가(-m llm)는 API 키 시크릿 등록 후 별도 잡으로 활성화한다.
+
+  # 프론트 게이트. 백엔드 잡과 독립이라 paths 필터 없이 항상 돌린다 — 필터를 걸면
+  # 필수 체크가 건너뛴 채 "성공"으로 보고되어 병합이 열리는 함정이 있다.
+  frontend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      # npm ci는 package-lock.json을 그대로 재현한다(install과 달리 잠금 파일을 고치지 않는다).
+      - run: npm ci
+      - run: npm run check
+      - run: npm run test -- --run
+      - run: npm run build

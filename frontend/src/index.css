@@ -1,0 +1,153 @@
+/*
+ * 기본 스타일.
+ *
+ * 색 대비는 KWCAG 기준(본문 4.5:1)을 넘도록 골랐다 — 흰 배경(#ffffff) 위
+ * 본문 #1f2328(약 14.7:1), 보조 문구 #4a5259(약 8.0:1), 오류 #b3261e(약 6.4:1).
+ * 쉬운 글 서비스이므로 본문 글자를 크게(17px), 줄 간격을 넉넉히 둔다.
+ */
+
+:root {
+  --color-text: #1f2328;
+  --color-muted: #4a5259;
+  --color-error: #b3261e;
+  --color-accent: #1a4fa0;
+  --color-border: #c9ced4;
+
+  color-scheme: light;
+  font-family: 'Pretendard', system-ui, 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
+  font-size: 17px;
+  line-height: 1.7;
+  color: var(--color-text);
+  background-color: #ffffff;
+}
+
+body {
+  margin: 0;
+}
+
+/* 키보드 사용자가 지금 어디에 있는지 항상 보이게 한다. */
+:focus-visible {
+  outline: 3px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+/* 건너뛰기 링크는 초점을 받을 때만 나타난다. */
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  background: #ffffff;
+  padding: 0.5rem 1rem;
+  z-index: 10;
+}
+
+.skip-link:focus {
+  left: 0;
+}
+
+.app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  padding: 1rem 1.5rem;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.app-header h1 {
+  font-size: 1.25rem;
+  margin: 0;
+}
+
+.app-header__account {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.app-header__email {
+  color: var(--color-muted);
+  font-size: 0.9rem;
+}
+
+.app-main {
+  max-width: 44rem;
+  margin: 0 auto;
+  padding: 1.5rem;
+}
+
+.auth-page {
+  max-width: 24rem;
+}
+
+.credentials-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.field label {
+  font-weight: 600;
+}
+
+.field input {
+  font: inherit;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--color-border);
+  border-radius: 0.35rem;
+}
+
+.field input[aria-invalid='true'] {
+  border-color: var(--color-error);
+}
+
+.field-hint {
+  margin: 0;
+  color: var(--color-muted);
+  font-size: 0.9rem;
+}
+
+.field-error,
+.form-error {
+  margin: 0;
+  color: var(--color-error);
+  font-size: 0.95rem;
+}
+
+.form-error {
+  border: 1px solid var(--color-error);
+  border-radius: 0.35rem;
+  padding: 0.6rem 0.8rem;
+}
+
+button {
+  font: inherit;
+  padding: 0.6rem 1rem;
+  border: 1px solid var(--color-accent);
+  border-radius: 0.35rem;
+  background: var(--color-accent);
+  color: #ffffff;
+  cursor: pointer;
+}
+
+button:disabled {
+  /* 비활성 버튼도 문구는 읽혀야 하므로 투명도 대신 색을 낮춘다. */
+  background: #6b7280;
+  border-color: #6b7280;
+  cursor: default;
+}
+
+a {
+  color: var(--color-accent);
+}
+
+.route-status {
+  color: var(--color-muted);
+}
