@@ -356,7 +356,7 @@ async def export_conversion(
     service: DocumentServiceDep,
     export_format: Annotated[ExportFormat, Query(alias="format")],
 ) -> Response:
-    """검수 완료 문서를 파일로 내려준다 (docx | txt).
+    """검수 완료 문서를 파일로 내려준다 (docx | txt | hwpx).
 
     **이 응답에만 마스킹 자리표시자가 원문으로 복원되어 실린다** — 담당자가 그대로
     배포할 최종 산출물이기 때문이다(사유는 app/easyread/export.py). 목록에 없는

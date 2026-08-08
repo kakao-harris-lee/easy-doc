@@ -33,7 +33,7 @@ from app.api.deps import (
     get_workspace_lookup,
 )
 from app.config import Settings
-from app.ingest.extractors import MAX_UPLOAD_BYTES
+from app.ingest.extractors import MAX_UPLOAD_BYTES, extract_text
 from app.main import app
 from app.models.conversion import ConversionStatus
 from app.models.user import User
@@ -814,6 +814,24 @@ def test_txt로_내려받으면_UTF_8_본문이다(client: TestClient, fixture: 
     assert not response.content.startswith(b"\xef\xbb\xbf")
     assert response.content.decode("utf-8") == (
         "문의는 010-1234-5678로 하세요.\n\n신청은 3월 2일부터예요."
+    )
+
+
+def test_hwpx로_내려받으면_우리_추출기로_다시_열린다(client: TestClient, fixture: Fixture) -> None:
+    """왕복(생성→추출)까지 API 경로에서 확인한다. 한컴 실제 열람은 파일럿 몫이다."""
+    conversion_id = _upload_text(client, fixture)["conversion_id"]
+    _complete_for_export(fixture, conversion_id, easy_text=_MASKED_EASY)
+
+    response = _export(client, fixture, conversion_id, export_format="hwpx")
+
+    assert response.status_code == 200, response.text
+    assert response.headers["content-type"] == "application/hwp+zip"
+    assert (
+        f"filename*=UTF-8''{quote('재난지원금 안내.hwpx', safe='')}"
+        in (response.headers["content-disposition"])
+    )
+    assert extract_text("내려받은 파일.hwpx", response.content) == (
+        "재난지원금 안내\n문의는 010-1234-5678로 하세요.\n신청은 3월 2일부터예요."
     )
 
 

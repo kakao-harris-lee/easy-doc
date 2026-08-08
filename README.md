@@ -145,9 +145,25 @@ DB 테스트는 테스트마다 트랜잭션을 롤백해 격리하지만, 실�
 | DELETE | `/documents/{id}` | 문서와 변환 결과를 즉시 파기 → 204. 내 것이 아니면 404 (master-plan 3.2 "삭제 요청 시 즉시 파기") | 필요 |
 | GET | `/conversions/{id}` | 변환 상태·결과. `done`이면 `easy_text`·`masked_items`(복호화된 원문 대응표)·`missing_placeholders`·`edited_text`(검수본이 있으면), `failed`면 `failure_code` | 필요 |
 | PUT | `/conversions/{id}` | 검수 수정본 저장(`{edited_text}`). AI 초안(`easy_text`)은 그대로 남는다 — 수정률 KPI의 원천. `done`이 아니면 409 | 필요 |
-| GET | `/conversions/{id}/export` | 검수 완료 문서 내려받기(`format=docx\|txt`). 내용은 검수본 우선이며, 자리표시자는 원래 값으로 복원된다 | 필요 |
+| GET | `/conversions/{id}/export` | 검수 완료 문서 내려받기(`format=docx\|txt\|hwpx`). 내용은 검수본 우선이며, 자리표시자는 원래 값으로 복원된다 | 필요 |
 
 `GET /health`는 인증 없이 서비스 생존만 알린다(DB·Redis 상태는 보지 않는다).
+
+### 내보내기 형식
+
+| `format` | 미디어 타입 | 비고 |
+|---|---|---|
+| `docx` | `application/vnd.openxmlformats-officedocument.wordprocessingml.document` | 제목이 제목 문단으로 들어간다. python-docx로 만든다 |
+| `txt` | `text/plain; charset=utf-8` | BOM 없는 UTF-8. 제목 줄은 붙이지 않는다(본문과 구분되지 않는 중복 줄만 남는다) |
+| `hwpx` | `application/hwp+zip` | OWPML 패키지를 `zipfile`로 직접 조립한다. **한컴 오피스에서 실제로 열리는지는 파일럿에서 확인 필요** — 아래 설명 참고 |
+
+hwpx는 등록된 미디어 타입이 없어 한컴 개발자 포럼 안내·Apache Tika 정의·패키지 안
+`mimetype` 항목이 함께 쓰는 `application/hwp+zip`을 쓴다.
+
+**hwpx 한계**: 저장소·CI에 한컴 오피스가 없어 실제 열람은 자동으로 검증할 수 없다.
+대신 **우리 ingest 추출기로 다시 읽어 본문이 일치하는지**를 왕복 테스트로 지킨다
+(생성 → `extract_text` → 문단 비교). 서식은 담지 않는다(문단 텍스트만). 한컴 오피스
+호환성은 파일럿에서 사람이 확인해야 한다.
 
 ## 보존 만료 자동 삭제
 
@@ -194,7 +210,7 @@ uv run python scripts/pilot_report.py --since 2026-08-08 \
 - **업로드 파일 10MB**, 지원 형식은 **docx · pdf · hwpx**. 구버전 `.hwp`와 텍스트가 없는 스캔 PDF(OCR)는 아직 지원하지 않는다.
 - **LLM API 키가 필요**하다. 키 없이도 기동·업로드는 되지만 변환은 `failure_code: "ProviderUnavailable"`로 실패한다.
 - 크레딧 차감·이메일 알림은 아직이다 (Lean MVP 범위 구분 — master-plan 4.0). 변환 완료는 화면에서 확인해야 한다.
-- 에디터는 **전체 텍스트 수정**까지다. 문단 단위 재변환·문단 대응 하이라이트(P0-4), pdf·hwp 내보내기는 다음 단계다.
+- 에디터는 **전체 텍스트 수정**까지다. 문단 단위 재변환·문단 대응 하이라이트(P0-4), pdf 내보내기는 다음 단계다. hwpx 내보내기는 되지만 **한컴 오피스 열람은 아직 사람이 확인하지 않았다**(위 "내보내기 형식" 참고). 구버전 `.hwp`(바이너리) 내보내기는 계획에 없다.
 
 ## 배포 주의
 

@@ -1,4 +1,9 @@
-"""검수 완료 문서의 내보내기 산출물 생성 (docx·txt).
+"""검수 완료 문서의 내보내기 산출물 생성 (docx·txt·hwpx).
+
+**hwpx 한계**: OWPML 패키지는 스펙과 우리 ingest 파서가 읽는 구조를 보고 직접 조립한다
+(app/easyread/hwpx.py). 자동으로 확인하는 것은 "우리 추출기로 다시 읽힌다"까지이고,
+**한컴 오피스에서 실제로 열리는지는 파일럿에서 사람이 확인해야 한다** — 저장소·CI에
+한컴 오피스가 없다.
 
 **이 모듈의 `restore_placeholders`는 내보내기 경로 전용이다.** 마스킹은 문서 본문이
 LLM으로 나가는 것을 막는 보안 불변식(master-plan 3.2)이고, 내보내기는 그 불변식의
@@ -26,18 +31,21 @@ from urllib.parse import quote
 
 import docx
 
+from app.easyread.hwpx import MIMETYPE as HWPX_MIMETYPE
+from app.easyread.hwpx import build_hwpx
 from app.text import strip_control_chars
 
 
 class ExportFormat(StrEnum):
     """내보내기 파일 형식. 값이 그대로 확장자이자 쿼리 파라미터 값이다.
 
-    pdf·hwp는 Lean MVP 범위 밖이다 (스프린트 3 계획). 여기에 이름이 없는 형식은
+    pdf와 구버전 hwp(바이너리)는 Lean MVP 범위 밖이다. 여기에 이름이 없는 형식은
     라우터의 쿼리 검증에서 422로 걸린다.
     """
 
     DOCX = "docx"
     TXT = "txt"
+    HWPX = "hwpx"
 
 
 #: 형식별 미디어 타입. 라우터가 OpenAPI 문서에도 그대로 싣는다 — 문자열을 두 곳에
@@ -47,6 +55,13 @@ MEDIA_TYPES: Mapping[ExportFormat, str] = {
     # charset 명시: txt는 BOM 없이 UTF-8로 내보내므로, 이 표시가 없으면 브라우저가
     # 로캘 기본 인코딩으로 열어 한글이 깨진다.
     ExportFormat.TXT: "text/plain; charset=utf-8",
+    # hwpx에는 IANA 등록 미디어 타입이 없다. 후보 둘 중 `application/hwp+zip`을 쓰는
+    # 이유는 근거가 세 곳에서 일치하기 때문이다: 한컴 개발자 포럼의 공식 답변("공식
+    # 등록된 mimetype이 없으니 커스텀 동작을 구현한다면 application/hwp+zip"),
+    # Apache Tika의 형식 정의, 그리고 우리가 만드는 패키지 안 mimetype 항목의 값
+    # (OWPML 규약). `application/vnd.hancom.hwpx`는 한컴 리눅스 패키지의 데스크톱
+    # 등록값으로 도는 표기지만 역시 미등록이고, 패키지 내부 표기와 어긋난다.
+    ExportFormat.HWPX: HWPX_MIMETYPE,
 }
 
 #: 파일명에서 걷어낼 문자 — 경로 구분자, 제어문자, 따옴표. 제목은 본문 첫 줄에서
@@ -146,6 +161,8 @@ def render_export(*, export_format: ExportFormat, title: str, body: str) -> Expo
             # txt에는 제목 줄을 덧붙이지 않는다. docx는 제목 스타일이 구조를 만들지만
             # txt는 구조가 없어, 제목을 얹으면 본문과 구분되지 않는 중복 줄만 남는다.
             content = body.encode("utf-8")
+        case ExportFormat.HWPX:
+            content = _render_hwpx(title=title, body=body)
         case _:
             # 형식을 추가하고 여기를 잊으면 mypy가 이 줄에서 잡는다(런타임까지 가지 않는다).
             assert_never(export_format)
@@ -172,6 +189,27 @@ def _render_docx(*, title: str, body: str) -> bytes:
     buffer = io.BytesIO()
     document.save(buffer)
     return buffer.getvalue()
+
+
+def _render_hwpx(*, title: str, body: str) -> bytes:
+    """제목 + 본문 문단으로 hwpx(OWPML) 패키지를 만든다.
+
+    인자는 이미 정규화된 상태로 들어온다(`render_export`) — docx와 같은 이유다.
+
+    docx는 문단 안의 줄바꿈을 강제 개행(`<w:br/>`)으로 옮기지만 여기서는 **줄마다 문단을
+    하나씩** 만든다. 강제 개행(`<hp:lineBreak/>`)까지 조립하면 검증할 수 없는 스키마 조각이
+    하나 더 늘어나는데, 목록처럼 줄만 바꾼 곳은 문단으로 나눠도 보이는 결과가 사실상 같다.
+
+    제목은 문단 하나로 얹는다(docx의 제목 문단과 같은 자리). 제목 스타일을 주지 않는 것은
+    우리 header.xml이 스타일을 하나만 정의하기 때문이다 — 검증할 수 없는 서식 정의를
+    늘리는 대신 본문이 온전히 남는 쪽을 택했다.
+    """
+    paragraphs: list[str] = []
+    if heading := title.strip():
+        paragraphs.append(heading)
+    for block in _split_paragraphs(body):
+        paragraphs.extend(stripped for line in block.splitlines() if (stripped := line.strip()))
+    return build_hwpx(paragraphs)
 
 
 def _split_paragraphs(body: str) -> list[str]:

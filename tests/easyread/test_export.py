@@ -1,10 +1,15 @@
 """내보내기 산출물 생성 테스트.
 
-여기서 보려는 것은 세 가지다: 자리표시자가 원문으로 온전히 복원되는지, docx가 실제로
-다시 열리는 파일인지(왕복), 그리고 한글 제목이 담긴 파일명 헤더가 규격을 지키는지.
+여기서 보려는 것은 세 가지다: 자리표시자가 원문으로 온전히 복원되는지, docx·hwpx가
+실제로 다시 열리는 파일인지(왕복), 그리고 한글 제목이 담긴 파일명 헤더가 규격을 지키는지.
+
+hwpx 왕복은 **우리 ingest 추출기로** 확인한다 — 저장소에 한컴 오피스가 없어 실제 열람은
+검증할 수 없고(그 한계는 export.py에 적혀 있다), 우리가 읽을 수 있는 구조로 조립됐는지가
+지금 자동으로 지킬 수 있는 최대치다.
 """
 
 import io
+import zipfile
 from urllib.parse import quote
 
 import docx
@@ -17,6 +22,7 @@ from app.easyread.export import (
     render_export,
     restore_placeholders,
 )
+from app.ingest.extractors import extract_text
 
 
 def _paragraphs(content: bytes) -> list[str]:
@@ -144,6 +150,89 @@ def test_txt는_BOM_없는_UTF_8이다() -> None:
     assert file.content.decode("utf-8") == "본문입니다."
     assert file.filename == "안내문.txt"
     assert file.media_type == "text/plain; charset=utf-8"
+
+
+# --- hwpx ---------------------------------------------------------------------
+
+
+def _hwpx_text(content: bytes) -> str:
+    """생성한 hwpx를 **우리 ingest 추출기로** 다시 읽는다.
+
+    한컴 오피스가 없어 실제 열람은 확인할 수 없으므로(export.py 참고), 왕복 검증의
+    기준은 읽기 경로다 — 우리가 이미 파싱하는 OWPML 구조로 조립됐는지를 본다.
+    """
+    return extract_text("내려받은 파일.hwpx", content)
+
+
+def test_hwpx는_우리_추출기로_다시_열린다() -> None:
+    """왕복: 생성 → 추출에서 제목·문단이 그대로 나와야 한다."""
+    file = render_export(
+        export_format=ExportFormat.HWPX,
+        title="재난지원금 안내",
+        body="첫 문단입니다.\n\n둘째 문단입니다.",
+    )
+
+    assert _hwpx_text(file.content) == "재난지원금 안내\n첫 문단입니다.\n둘째 문단입니다."
+    assert file.filename == "재난지원금 안내.hwpx"
+    assert file.media_type == "application/hwp+zip"
+
+
+def test_hwpx는_mimetype을_무압축_첫_항목으로_담는다() -> None:
+    """OWPML 패키지 규약(ODF와 같다) — 매직 바이트로 형식을 알아보는 도구를 위한 자리다."""
+    file = render_export(export_format=ExportFormat.HWPX, title="안내문", body="본문입니다.")
+
+    with zipfile.ZipFile(io.BytesIO(file.content)) as archive:
+        first = archive.infolist()[0]
+        assert first.filename == "mimetype"
+        assert first.compress_type == zipfile.ZIP_STORED
+        assert archive.read("mimetype") == b"application/hwp+zip"
+        # 본문 구역과 패키지 뼈대가 함께 들어 있어야 한다.
+        assert {"version.xml", "META-INF/container.xml", "Contents/header.xml"} <= set(
+            archive.namelist()
+        )
+
+
+def test_hwpx에_XML_특수문자를_그대로_담는다() -> None:
+    """&·<·>를 이스케이프하지 않으면 XML이 깨져 추출 자체가 실패한다."""
+    body = '접수는 <온라인> & "우편" 둘 다 됩니다.\n\n기간 > 3월 2일'
+    file = render_export(export_format=ExportFormat.HWPX, title="접수 안내 & 유의사항", body=body)
+
+    assert _hwpx_text(file.content) == (
+        '접수 안내 & 유의사항\n접수는 <온라인> & "우편" 둘 다 됩니다.\n기간 > 3월 2일'
+    )
+
+
+def test_hwpx에도_제어문자가_남지_않는다() -> None:
+    """정규화는 형식 분기 앞에서 한다 — 세 형식이 같은 본문을 내놓아야 한다."""
+    file = render_export(
+        export_format=ExportFormat.HWPX, title="안내\x0b문", body="본문\x00입니다.\n\n둘째\x0c 문단"
+    )
+
+    assert _hwpx_text(file.content) == "안내문\n본문입니다.\n둘째 문단"
+
+
+def test_hwpx는_빈_문단을_만들지_않는다() -> None:
+    file = render_export(
+        export_format=ExportFormat.HWPX, title="안내문", body="\n\n앞\n\n\n\n뒤\n\n"
+    )
+
+    assert _hwpx_text(file.content) == "안내문\n앞\n뒤"
+
+
+def test_hwpx는_문단_안의_줄바꿈도_문단으로_나눈다() -> None:
+    """hwpx 문단에는 강제 줄바꿈 대신 문단을 하나 더 쓴다 — 본문 줄 구성은 그대로다."""
+    file = render_export(
+        export_format=ExportFormat.HWPX, title="안내문", body="첫째 줄\n둘째 줄\n\n다음 문단"
+    )
+
+    assert _hwpx_text(file.content) == "안내문\n첫째 줄\n둘째 줄\n다음 문단"
+
+
+def test_본문이_비어도_hwpx가_열린다() -> None:
+    """제목만 남은 산출물도 깨진 패키지가 아니어야 한다."""
+    file = render_export(export_format=ExportFormat.HWPX, title="안내문", body="   \n\n  ")
+
+    assert _hwpx_text(file.content) == "안내문"
 
 
 # --- 파일명 -------------------------------------------------------------------
