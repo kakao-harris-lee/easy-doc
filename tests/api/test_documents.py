@@ -30,16 +30,24 @@ from app.api.deps import (
     get_task_queue,
     get_text_cipher,
     get_user_repository,
+    get_workspace_lookup,
 )
 from app.config import Settings
 from app.ingest.extractors import MAX_UPLOAD_BYTES
 from app.main import app
 from app.models.conversion import ConversionStatus
 from app.models.user import User
+from app.models.workspace import DEFAULT_WORKSPACE_NAME
 from app.privacy.crypto import TextCipher
 from app.privacy.masking import MaskCategory, MaskedItem
 from app.services.documents import MAX_CONVERTIBLE_CHARS, serialize_masked_items
-from tests.fakes import FakeConversionStore, FakeDocumentStore, FakeTaskQueue, FakeUserRepository
+from tests.fakes import (
+    FakeConversionStore,
+    FakeDocumentStore,
+    FakeTaskQueue,
+    FakeUserRepository,
+    FakeWorkspaceStore,
+)
 
 _SECRET = "test-secret-do-not-use-in-production"
 _FIXTURES = Path(__file__).resolve().parent.parent / "ingest" / "fixtures"
@@ -55,13 +63,14 @@ class Fixture:
         self.journal: list[str] = []
         self.documents = FakeDocumentStore(self.journal)
         self.conversions = FakeConversionStore(self.documents)
+        self.workspaces = FakeWorkspaceStore(self.documents)
         self.queue = FakeTaskQueue(self.journal, error=queue_error)
         self.cipher = TextCipher(Fernet.generate_key().decode())
         self.users = FakeUserRepository()
         self.user = self._register("owner@example.com")
 
     def _register(self, email: str) -> User:
-        """가입 흐름(argon2)을 거치지 않고 사용자를 넣는다."""
+        """가입 흐름(argon2)을 거치지 않고 사용자를 기본 작업 공간과 함께 넣는다."""
         user = User(
             id=uuid.uuid4(),
             email=email,
@@ -69,7 +78,19 @@ class Fixture:
             created_at=datetime.now(UTC),
         )
         self.users.add(user)
+        # 실제 가입은 기본 작업 공간을 함께 만든다(AuthService.signup) — 문서는 반드시
+        # 작업 공간에 담기므로 대역도 같은 상태에서 시작해야 한다.
+        self.workspaces.add(user.id, DEFAULT_WORKSPACE_NAME)
         return user
+
+    def default_workspace_id(self, user: User | None = None) -> uuid.UUID:
+        """그 사용자의 기본 작업 공간(가장 먼저 만든 것) 식별자."""
+        workspaces = [
+            workspace
+            for workspace in self.workspaces.workspaces.values()
+            if workspace.user_id == (user or self.user).id
+        ]
+        return min(workspaces, key=lambda workspace: workspace.created_at).id
 
     def other_user(self) -> User:
         """다른 소유자 — 격리 테스트용."""
@@ -107,6 +128,7 @@ def _client_with(fixture: Fixture, *, queue_ready: bool = True) -> Iterator[Test
     app.dependency_overrides[get_user_repository] = lambda: fixture.users
     app.dependency_overrides[get_document_repository] = lambda: fixture.documents
     app.dependency_overrides[get_conversion_repository] = lambda: fixture.conversions
+    app.dependency_overrides[get_workspace_lookup] = lambda: fixture.workspaces
     app.dependency_overrides[get_text_cipher] = lambda: fixture.cipher
     app.dependency_overrides[get_settings] = lambda: _settings("x" * 44)
     if queue_ready:
@@ -1029,6 +1051,115 @@ def test_범위를_벗어난_페이지_인자는_422(client: TestClient, fixture
     response = client.get(f"/documents?{query}", headers=fixture.headers())
 
     assert response.status_code == 422
+
+
+# --- 작업 공간 ------------------------------------------------------------------
+
+
+def test_작업_공간을_지정하지_않으면_기본_공간에_담긴다(
+    client: TestClient, fixture: Fixture
+) -> None:
+    """작업 공간을 모르는 클라이언트도 그대로 동작해야 한다."""
+    body = _upload_text(client, fixture)
+
+    document = fixture.documents.documents[uuid.UUID(body["document_id"])]
+    assert document.workspace_id == fixture.default_workspace_id()
+
+
+def test_지정한_작업_공간에_담긴다(client: TestClient, fixture: Fixture) -> None:
+    target = fixture.workspaces.add(fixture.user.id, "민원 안내")
+
+    body = _upload_text(client, fixture, workspace_id=str(target.id))
+
+    document = fixture.documents.documents[uuid.UUID(body["document_id"])]
+    assert document.workspace_id == target.id
+
+
+def test_파일_업로드도_작업_공간을_받는다(client: TestClient, fixture: Fixture) -> None:
+    """폼 값은 전부 문자열이라 라우터가 직접 해석한다 — 붙여넣기와 같은 결과여야 한다."""
+    target = fixture.workspaces.add(fixture.user.id, "민원 안내")
+    data = (_FIXTURES / "sample.docx").read_bytes()
+
+    response = client.post(
+        "/documents",
+        files={"file": ("안내문.docx", data, "application/octet-stream")},
+        data={"workspace_id": str(target.id)},
+        headers=fixture.headers(),
+    )
+
+    assert response.status_code == 202, response.text
+    document = fixture.documents.documents[uuid.UUID(response.json()["document_id"])]
+    assert document.workspace_id == target.id
+
+
+def test_남의_작업_공간에는_올릴_수_없다(client: TestClient, fixture: Fixture) -> None:
+    """소유자 격리 — 있다는 사실 자체를 알리지 않는다(403이 아니라 404)."""
+    stranger = fixture.other_user()
+    theirs = fixture.default_workspace_id(stranger)
+
+    response = client.post(
+        "/documents",
+        json={"text": _TEXT, "workspace_id": str(theirs)},
+        headers=fixture.headers(),
+    )
+
+    assert response.status_code == 404
+    # 거절당한 업로드가 기본 공간에 남으면 안 된다 — 저장 자체가 일어나지 않는다.
+    assert fixture.journal == []
+
+
+def test_형식이_틀린_작업_공간_식별자는_422(client: TestClient, fixture: Fixture) -> None:
+    response = client.post(
+        "/documents",
+        files={"file": ("a.docx", b"x", "application/octet-stream")},
+        data={"workspace_id": "not-a-uuid"},
+        headers=fixture.headers(),
+    )
+
+    assert response.status_code == 422
+    assert fixture.journal == []
+
+
+def test_목록을_작업_공간으로_거른다(client: TestClient, fixture: Fixture) -> None:
+    target = fixture.workspaces.add(fixture.user.id, "민원 안내")
+    default_document = _upload_text(client, fixture, text="기본 공간 문서")
+    other_document = _upload_text(client, fixture, text="민원 문서", workspace_id=str(target.id))
+
+    body = client.get(f"/documents?workspace_id={target.id}", headers=fixture.headers()).json()
+
+    assert [item["id"] for item in body["items"]] == [other_document["document_id"]]
+    # 필터를 주지 않으면 두 공간의 문서가 모두 나온다.
+    everything = client.get("/documents", headers=fixture.headers()).json()
+    assert {item["id"] for item in everything["items"]} == {
+        default_document["document_id"],
+        other_document["document_id"],
+    }
+
+
+def test_남의_작업_공간으로_거르면_404(client: TestClient, fixture: Fixture) -> None:
+    """빈 목록으로 답하면 남의 작업 공간이 존재하는지 확인하는 수단이 된다."""
+    _upload_text(client, fixture)
+    stranger = fixture.other_user()
+
+    response = client.get(
+        f"/documents?workspace_id={fixture.default_workspace_id(stranger)}",
+        headers=fixture.headers(),
+    )
+
+    assert response.status_code == 404
+
+
+def test_작업_공간이_하나도_없으면_업로드는_500이다(client: TestClient, fixture: Fixture) -> None:
+    """가입이 하나를 만들고 마지막 하나는 지울 수 없다 — 이 상태는 우리 불변식이 깨진 것이다.
+
+    사용자 입력 문제가 아니므로 4xx로 감싸지 않는다(감싸면 서버 버그가 조용히 묻힌다).
+    """
+    fixture.workspaces.workspaces.clear()
+
+    response = client.post("/documents", json={"text": _TEXT}, headers=fixture.headers())
+
+    assert response.status_code == 500
+    assert fixture.journal == []
 
 
 # --- 삭제 ---------------------------------------------------------------------

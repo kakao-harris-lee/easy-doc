@@ -38,6 +38,17 @@ class Document(Base):
     user_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), index=True
     )
+    #: 담긴 작업 공간. 소유자(user_id)는 여기서 유도하지 않고 그대로 둔다 — 목록·삭제가
+    #: 전부 user_id 단독 조건으로 소유자를 판정하는데, 그 판정을 조인 하나 뒤로 옮기면
+    #: 호출부가 조인을 빠뜨릴 여지가 생긴다.
+    #:
+    #: **ondelete를 주지 않는다(NO ACTION).** 문서가 든 작업 공간은 DB가 지우지 못하게
+    #: 막아야 한다 — API가 409로 먼저 거절하지만(app/services/workspaces.py), 그 검사와
+    #: DELETE 사이의 틈은 FK만이 닫는다. CASCADE로 두면 그 틈에서 문서가 조용히 사라진다.
+    #: 계정 삭제(users → documents·workspaces 양쪽 CASCADE)는 이 제약과 충돌하지 않는다:
+    #: NO ACTION 검사는 문장 끝으로 미뤄지므로, 그때는 문서도 이미 지워져 있다
+    #: (RESTRICT였다면 캐스케이드 순서에 따라 실패했을 자리다).
+    workspace_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("workspaces.id"), index=True)
     title: Mapped[str] = mapped_column(String(MAX_TITLE_LENGTH))
     #: "text" | "docx" | "pdf" | "hwpx". 입력 경로 추적·통계용.
     source_format: Mapped[str] = mapped_column(String(16))

@@ -23,6 +23,7 @@ from app.exceptions import (
     InvalidCredentialsError,
     InvalidInputError,
 )
+from app.models.workspace import DEFAULT_WORKSPACE_NAME
 from app.services import auth as auth_module
 from app.services.auth import (
     MIN_JWT_SECRET_BYTES,
@@ -30,7 +31,7 @@ from app.services.auth import (
     hash_password,
     verify_password,
 )
-from tests.fakes import FakeUserRepository
+from tests.fakes import FakeUserRepository, FakeWorkspaceStore
 
 _SECRET = "test-secret-do-not-use-in-production"
 # HMAC 키가 32바이트 미만이면 PyJWT가 경고를 낸다 — 테스트 출력을 깨끗하게 유지한다.
@@ -42,10 +43,12 @@ _PASSWORD = "sufficiently-long-password"
 def _service(
     repository: FakeUserRepository | None = None,
     expire_minutes: int = 60,
+    workspaces: FakeWorkspaceStore | None = None,
 ) -> AuthService:
     """테스트용 서비스. 저장소를 넘기지 않으면 비어 있는 저장소를 쓴다."""
     return AuthService(
         repository=repository if repository is not None else FakeUserRepository(),
+        workspaces=workspaces if workspaces is not None else FakeWorkspaceStore(),
         jwt_secret=_SECRET,
         expire_minutes=expire_minutes,
     )
@@ -59,7 +62,12 @@ def test_짧은_서명_키는_조립_단계에서_거부한다() -> None:
     short = "x" * (MIN_JWT_SECRET_BYTES - 1)
 
     with pytest.raises(ConfigurationError) as error:
-        AuthService(repository=FakeUserRepository(), jwt_secret=short, expire_minutes=60)
+        AuthService(
+            repository=FakeUserRepository(),
+            workspaces=FakeWorkspaceStore(),
+            jwt_secret=short,
+            expire_minutes=60,
+        )
 
     # 키 값은 메시지로 새지 않는다 — 그 자체가 모든 토큰을 위조할 수 있는 비밀이다.
     assert short not in str(error.value)
@@ -69,6 +77,7 @@ def test_최소_길이를_채운_서명_키는_통과한다() -> None:
     """경계값 — 32바이트 자체는 허용되어야 한다(openssl rand -hex 32는 64바이트)."""
     service = AuthService(
         repository=FakeUserRepository(),
+        workspaces=FakeWorkspaceStore(),
         jwt_secret="y" * MIN_JWT_SECRET_BYTES,
         expire_minutes=60,
     )
@@ -194,6 +203,40 @@ async def test_가입은_커밋까지_마친다() -> None:
     await _service(repository).signup(email=_EMAIL, password=_PASSWORD)
 
     assert repository.commits == 1
+
+
+async def test_가입하면_기본_작업_공간이_함께_생긴다() -> None:
+    """새 사용자가 갈 곳 없는 상태로 시작하면 첫 업로드가 실패한다."""
+    repository = FakeUserRepository()
+    workspaces = FakeWorkspaceStore()
+
+    user = await _service(repository, workspaces=workspaces).signup(
+        email=_EMAIL, password=_PASSWORD
+    )
+
+    created = await workspaces.list_for_user(user.id)
+    assert [summary.workspace.name for summary in created] == [DEFAULT_WORKSPACE_NAME]
+
+
+async def test_기본_작업_공간은_계정과_같은_커밋으로_확정된다() -> None:
+    """따로 커밋하면 계정만 있고 작업 공간이 없는 사용자가 생길 수 있다."""
+    repository = FakeUserRepository()
+    workspaces = FakeWorkspaceStore()
+
+    await _service(repository, workspaces=workspaces).signup(email=_EMAIL, password=_PASSWORD)
+
+    # 커밋은 사용자 저장소(=같은 세션)에서 한 번만 일어난다.
+    assert (repository.commits, workspaces.commits) == (1, 0)
+
+
+async def test_가입에_실패하면_작업_공간도_만들지_않는다() -> None:
+    """입력 검증이 먼저다 — 거절된 가입이 빈 작업 공간을 남기면 안 된다."""
+    workspaces = FakeWorkspaceStore()
+
+    with pytest.raises(InvalidInputError):
+        await _service(workspaces=workspaces).signup(email="not-an-email", password=_PASSWORD)
+
+    assert workspaces.workspaces == {}
 
 
 @pytest.mark.parametrize(

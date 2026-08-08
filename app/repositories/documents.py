@@ -52,6 +52,7 @@ class DocumentRepository:
         self,
         *,
         user_id: uuid.UUID,
+        workspace_id: uuid.UUID,
         title: str,
         source_format: str,
         source_text_encrypted: bytes,
@@ -61,6 +62,8 @@ class DocumentRepository:
 
         Args:
             user_id: 소유자 식별자 (인증된 사용자).
+            workspace_id: 담을 작업 공간. 소유자 확인은 서비스가 이미 마쳤다
+                (app/services/documents.py) — 여기서 다시 검사하면 판정이 두 곳에 생긴다.
             title: 화면 표시용 제목. 파일명은 저장하지 않는다.
             source_format: "text" | "docx" | "pdf" | "hwpx".
             source_text_encrypted: `TextCipher.encrypt` 결과. 평문 금지.
@@ -74,6 +77,7 @@ class DocumentRepository:
         """
         document = Document(
             user_id=user_id,
+            workspace_id=workspace_id,
             title=title,
             source_format=source_format,
             source_text_encrypted=source_text_encrypted,
@@ -165,8 +169,19 @@ class DocumentRepository:
         )
         return len(result.scalars().all())
 
-    async def list_for_user(self, user_id: uuid.UUID, *, limit: int, offset: int) -> DocumentPage:
+    async def list_for_user(
+        self,
+        user_id: uuid.UUID,
+        *,
+        limit: int,
+        offset: int,
+        workspace_id: uuid.UUID | None = None,
+    ) -> DocumentPage:
         """내 문서를 최신순으로 돌려준다 (각 문서의 최신 변환 상태 포함).
+
+        `workspace_id`를 주면 그 작업 공간만 본다. 주더라도 user_id 조건은 그대로 남긴다 —
+        소유자 판정을 작업 공간 소유 여부에 의존시키면, 작업 공간 검사를 빠뜨린 호출
+        하나가 곧바로 남의 문서 노출이 된다.
 
         정렬에 id를 덧붙이는 이유: created_at은 트랜잭션 시각(now())이라 같은 요청에서
         만들어진 행끼리 동률이 된다. 동률이면 페이지 경계에서 같은 문서가 두 번 나오거나
@@ -179,9 +194,12 @@ class DocumentRepository:
         보게 된다(문서가 목록 맨 앞에 삽입되기 때문). 문서 수가 늘어 이것이 문제가 되면
         (created_at, id) 커서를 쓰는 키셋 페이지네이션으로 바꾼다 — 후속 과제.
         """
+        conditions = [Document.user_id == user_id]
+        if workspace_id is not None:
+            conditions.append(Document.workspace_id == workspace_id)
         result = await self._session.execute(
             select(Document)
-            .where(Document.user_id == user_id)
+            .where(*conditions)
             .order_by(Document.created_at.desc(), Document.id.desc())
             .limit(limit + 1)
             .offset(offset)

@@ -55,6 +55,9 @@ class DocumentTextRequest(BaseModel):
 
     text: str
     title: str | None = None
+    #: 담을 작업 공간. 지정하지 않으면 기본(가장 먼저 만든) 작업 공간에 담긴다 —
+    #: 작업 공간을 모르는 옛 클라이언트도 그대로 동작한다.
+    workspace_id: uuid.UUID | None = None
 
 
 class DocumentCreatedResponse(BaseModel):
@@ -178,6 +181,20 @@ def _to_list_item(summary: DocumentSummary) -> DocumentListItem:
     )
 
 
+def _parse_form_workspace_id(value: object) -> uuid.UUID | None:
+    """multipart 폼의 workspace_id 파트를 식별자로 바꾼다. 없으면 None.
+
+    JSON 모드는 Pydantic이 같은 일을 해 주지만 폼 값은 전부 문자열이라 여기서 해석한다.
+    형식이 틀리면 입력 오류(422)로 돌려준다 — 값 자체는 메시지에 담지 않는다.
+    """
+    if not isinstance(value, str) or value == "":
+        return None
+    try:
+        return uuid.UUID(value)
+    except ValueError:
+        raise InvalidInputError("작업 공간 식별자 형식이 올바르지 않습니다") from None
+
+
 async def _parse_text_request(request: Request) -> DocumentTextRequest:
     """JSON 본문을 읽어 검증한다.
 
@@ -224,11 +241,15 @@ async def create_document(
                 filename=upload.filename or "",
                 data=data,
                 title=title if isinstance(title, str) else None,
+                workspace_id=_parse_form_workspace_id(form.get("workspace_id")),
             )
     else:
         payload = await _parse_text_request(request)
         document, conversion = await service.create_from_text(
-            user_id=current_user.id, text=payload.text, title=payload.title
+            user_id=current_user.id,
+            text=payload.text,
+            title=payload.title,
+            workspace_id=payload.workspace_id,
         )
     # 202는 "접수했으니 나중에 여기서 확인하라"는 뜻이다 — 확인할 자리를 표준 헤더로
     # 알려 주면 클라이언트가 URL을 조립하지 않아도 된다.
@@ -248,14 +269,20 @@ async def list_documents(
     service: DocumentServiceDep,
     limit: Annotated[int, Query(ge=1, le=MAX_PAGE_SIZE)] = DEFAULT_PAGE_SIZE,
     offset: Annotated[int, Query(ge=0)] = 0,
+    workspace_id: uuid.UUID | None = None,
 ) -> DocumentListResponse:
     """내 문서를 최신순으로 돌려준다 (각 문서의 최신 변환 상태 포함).
+
+    `workspace_id`를 주면 그 작업 공간만 본다. 내 것이 아닌 식별자는 404다 — 빈 목록으로
+    답하면 남의 작업 공간이 존재하는지 확인하는 수단이 된다.
 
     본문은 싣지 않지만 제목이 본문 첫 줄에서 유도한 사용자 콘텐츠라, 조회·내보내기와
     같은 캐시 금지 헤더를 붙인다(PRIVATE_RESPONSE_HEADERS).
     """
     response.headers.update(PRIVATE_RESPONSE_HEADERS)
-    page = await service.list_documents(current_user.id, limit=limit, offset=offset)
+    page = await service.list_documents(
+        current_user.id, limit=limit, offset=offset, workspace_id=workspace_id
+    )
     return DocumentListResponse(
         items=[_to_list_item(summary) for summary in page.items],
         limit=limit,

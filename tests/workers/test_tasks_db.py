@@ -21,6 +21,7 @@ from app.privacy.crypto import TextCipher
 from app.repositories.conversions import ConversionRepository
 from app.repositories.documents import DocumentRepository
 from app.repositories.users import UserRepository
+from app.repositories.workspaces import WorkspaceRepository
 from app.services.documents import deserialize_masked_items
 from app.workers.tasks import ConversionWorkerStore, convert_document
 
@@ -42,9 +43,11 @@ async def _pending_conversion(session: AsyncSession, cipher: TextCipher) -> Conv
     user = await users.create(
         email=f"worker-{uuid.uuid4().hex[:8]}@example.com", password_hash="$argon2id$fake"
     )
+    workspace = await WorkspaceRepository(session).create(user_id=user.id, name="기본 작업 공간")
     documents = DocumentRepository(session)
     document = await documents.create(
         user_id=user.id,
+        workspace_id=workspace.id,
         title="신청 접수 안내",
         source_format="text",
         source_text_encrypted=cipher.encrypt(_SOURCE),

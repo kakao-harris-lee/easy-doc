@@ -13,10 +13,11 @@ import pytest
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
 
-from app.api.deps import get_settings, get_user_repository
+from app.api.deps import get_settings, get_user_repository, get_workspace_repository
 from app.config import Settings
 from app.main import app
-from tests.fakes import FakeUserRepository
+from app.models.workspace import DEFAULT_WORKSPACE_NAME
+from tests.fakes import FakeUserRepository, FakeWorkspaceStore
 
 _SECRET = "test-secret-do-not-use-in-production"
 _EMAIL = "user@example.com"
@@ -36,9 +37,21 @@ def _settings(jwt_secret: str | None = _SECRET, expire_minutes: int = 60) -> Set
 
 
 @contextmanager
-def _client_with(repository: FakeUserRepository, settings: Settings) -> Iterator[TestClient]:
-    """저장소·설정만 오버라이드한 테스트 클라이언트."""
+def _client_with(
+    repository: FakeUserRepository,
+    settings: Settings,
+    workspaces: FakeWorkspaceStore | None = None,
+) -> Iterator[TestClient]:
+    """저장소·설정만 오버라이드한 테스트 클라이언트.
+
+    가입이 기본 작업 공간까지 만들므로 작업 공간 저장소도 대역으로 갈아끼운다 —
+    갈아끼우지 않으면 DB 세션을 찾다가 503이 된다.
+    """
     app.dependency_overrides[get_user_repository] = lambda: repository
+    # 요청마다 새로 만들면 가입이 남긴 작업 공간을 다음 요청이 보지 못한다 — 실제
+    # 저장소가 같은 세션을 공유하는 것처럼 하나를 계속 쓴다.
+    workspace_store = workspaces if workspaces is not None else FakeWorkspaceStore()
+    app.dependency_overrides[get_workspace_repository] = lambda: workspace_store
     app.dependency_overrides[get_settings] = lambda: settings
     try:
         with TestClient(app) as test_client:
@@ -108,6 +121,21 @@ def test_응답에_비밀번호와_해시가_없다(client: TestClient) -> None:
     assert set(signup_response.json()) == {"id", "email"}
     assert _PASSWORD not in signup_response.text
     assert "argon2" not in signup_response.text
+
+
+def test_가입_직후_기본_작업_공간이_보인다(repository: FakeUserRepository) -> None:
+    """새 사용자가 빈 상태로 시작하지 않아야 한다 — 첫 업로드가 갈 곳이 있어야 한다."""
+    workspaces = FakeWorkspaceStore()
+
+    with _client_with(repository, _settings(), workspaces) as client:
+        _signup(client)
+        token = _login(client)
+        response = client.get("/workspaces", headers={"Authorization": f"Bearer {token}"})
+
+    assert response.status_code == 200, response.text
+    items = response.json()["items"]
+    assert [item["name"] for item in items] == [DEFAULT_WORKSPACE_NAME]
+    assert items[0]["document_count"] == 0
 
 
 def test_이메일_대소문자가_달라도_같은_계정이다(client: TestClient) -> None:

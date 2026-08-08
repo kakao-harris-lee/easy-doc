@@ -11,11 +11,13 @@
 import uuid
 from datetime import UTC, datetime, timedelta
 
-from app.exceptions import EmailAlreadyRegisteredError
+from app.exceptions import ConflictError, EmailAlreadyRegisteredError
 from app.models.conversion import Conversion, ConversionStatus
 from app.models.document import RETENTION_DAYS, Document
 from app.models.user import User
+from app.models.workspace import Workspace
 from app.repositories.documents import DocumentPage, DocumentSummary
+from app.repositories.workspaces import WorkspaceSummary
 
 
 class FakeUserRepository:
@@ -81,6 +83,7 @@ class FakeDocumentStore:
         self,
         *,
         user_id: uuid.UUID,
+        workspace_id: uuid.UUID,
         title: str,
         source_format: str,
         source_text_encrypted: bytes,
@@ -92,6 +95,7 @@ class FakeDocumentStore:
         document = Document(
             id=uuid.uuid4(),
             user_id=user_id,
+            workspace_id=workspace_id,
             title=title,
             source_format=source_format,
             source_text_encrypted=source_text_encrypted,
@@ -118,10 +122,23 @@ class FakeDocumentStore:
         self.conversions_by_document.pop(document_id, None)
         return True
 
-    async def list_for_user(self, user_id: uuid.UUID, *, limit: int, offset: int) -> DocumentPage:
+    async def list_for_user(
+        self,
+        user_id: uuid.UUID,
+        *,
+        limit: int,
+        offset: int,
+        workspace_id: uuid.UUID | None = None,
+    ) -> DocumentPage:
         """내 문서를 최신순으로 돌려준다 (실제 저장소의 정렬·페이지네이션과 같은 규칙)."""
         mine = sorted(
-            (document for document in self.documents.values() if document.user_id == user_id),
+            (
+                document
+                for document in self.documents.values()
+                if document.user_id == user_id
+                # 실제 저장소와 같이 소유자 조건은 작업 공간 필터와 별개로 늘 건다.
+                and (workspace_id is None or document.workspace_id == workspace_id)
+            ),
             key=lambda document: (document.created_at, document.id),
             reverse=True,
         )
@@ -136,6 +153,118 @@ class FakeDocumentStore:
                 for document in window[:limit]
             ],
             has_more=len(window) > limit,
+        )
+
+
+class FakeWorkspaceStore:
+    """작업 공간 저장소 대역.
+
+    세 계약을 한 클래스로 만족한다 — `WorkspaceStore`(서비스), `WorkspaceLookup`(문서
+    서비스), `WorkspaceCreator`(인증 서비스). 실제 저장소도 같은 한 구현이 셋을
+    만족하므로, 대역을 쪼개면 진짜와 다른 구조를 검증하게 된다.
+
+    `documents`를 주면 문서 수를 그 대역에서 센다 — 삭제 거절("먼저 비우세요")과
+    목록 응답이 실제와 같은 값을 보게 하려면 두 대역이 같은 세계를 봐야 한다.
+    """
+
+    def __init__(self, documents: FakeDocumentStore | None = None) -> None:
+        self._documents = documents
+        self.workspaces: dict[uuid.UUID, Workspace] = {}
+        self.commits = 0
+        #: 만든 순서를 created_at에 반영하기 위한 일련번호. 실제 DB는 트랜잭션 시각을
+        #: 쓰지만, 대역에서는 같은 마이크로초에 여러 개가 만들어져 "가장 오래된 것"이
+        #: 흔들릴 수 있다.
+        self._sequence = 0
+
+    def add(self, user_id: uuid.UUID, name: str) -> Workspace:
+        """가입 흐름을 거치지 않고 작업 공간을 넣는다 (FakeUserRepository.add와 같은 용도)."""
+        self._sequence += 1
+        workspace = Workspace(
+            id=uuid.uuid4(),
+            user_id=user_id,
+            name=name,
+            created_at=datetime.now(UTC) + timedelta(microseconds=self._sequence),
+        )
+        self.workspaces[workspace.id] = workspace
+        return workspace
+
+    async def create(self, *, user_id: uuid.UUID, name: str) -> Workspace:
+        """저장한다. 같은 사용자에게 같은 이름이 있으면 실제 저장소와 같은 도메인 예외."""
+        if self._find_by_name(user_id, name) is not None:
+            raise ConflictError("같은 이름의 작업 공간이 이미 있습니다")
+        return self.add(user_id, name)
+
+    async def commit(self) -> None:
+        """커밋 호출을 기록한다."""
+        self.commits += 1
+
+    async def list_for_user(self, user_id: uuid.UUID) -> list[WorkspaceSummary]:
+        """내 작업 공간을 만든 순서대로 돌려준다 (문서 수 포함)."""
+        return [
+            WorkspaceSummary(workspace=workspace, document_count=self._count(workspace.id))
+            for workspace in self._mine(user_id)
+        ]
+
+    async def get_for_user(self, workspace_id: uuid.UUID, user_id: uuid.UUID) -> Workspace | None:
+        """소유자를 확인하며 찾는다. 남의 것·없는 것 모두 None."""
+        workspace = self.workspaces.get(workspace_id)
+        if workspace is None or workspace.user_id != user_id:
+            return None
+        return workspace
+
+    async def get_default_for_user(self, user_id: uuid.UUID) -> Workspace | None:
+        """가장 먼저 만든 작업 공간. 하나도 없으면 None."""
+        return next(iter(self._mine(user_id)), None)
+
+    async def rename_for_user(
+        self, workspace_id: uuid.UUID, user_id: uuid.UUID, *, name: str
+    ) -> Workspace | None:
+        """소유자를 확인하며 이름을 바꾼다. 같은 이름이 있으면 실제 저장소와 같은 예외."""
+        workspace = await self.get_for_user(workspace_id, user_id)
+        if workspace is None:
+            return None
+        existing = self._find_by_name(user_id, name)
+        if existing is not None and existing.id != workspace_id:
+            raise ConflictError("같은 이름의 작업 공간이 이미 있습니다")
+        workspace.name = name
+        return workspace
+
+    async def delete_for_user(self, workspace_id: uuid.UUID, user_id: uuid.UUID) -> bool:
+        """소유자를 확인하며 지운다. 문서가 남아 있으면 FK 위반을 흉내 낸 도메인 예외."""
+        workspace = await self.get_for_user(workspace_id, user_id)
+        if workspace is None:
+            return False
+        if self._count(workspace_id) > 0:
+            raise ConflictError("작업 공간에 문서가 남아 있습니다 — 먼저 비운 뒤 삭제해 주세요")
+        del self.workspaces[workspace_id]
+        return True
+
+    def _mine(self, user_id: uuid.UUID) -> list[Workspace]:
+        """내 작업 공간을 오래된 순으로 (실제 저장소와 같은 정렬)."""
+        return sorted(
+            (workspace for workspace in self.workspaces.values() if workspace.user_id == user_id),
+            key=lambda workspace: (workspace.created_at, workspace.id),
+        )
+
+    def _find_by_name(self, user_id: uuid.UUID, name: str) -> Workspace | None:
+        """같은 사용자 안에서 이름으로 찾는다 (unique 제약이 보는 범위와 같다)."""
+        return next(
+            (
+                workspace
+                for workspace in self.workspaces.values()
+                if workspace.user_id == user_id and workspace.name == name
+            ),
+            None,
+        )
+
+    def _count(self, workspace_id: uuid.UUID) -> int:
+        """작업 공간에 담긴 문서 수."""
+        if self._documents is None:
+            return 0
+        return sum(
+            1
+            for document in self._documents.documents.values()
+            if document.workspace_id == workspace_id
         )
 
 

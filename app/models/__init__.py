@@ -9,5 +9,6 @@
 from app.models.conversion import Conversion, ConversionStatus
 from app.models.document import Document
 from app.models.user import User
+from app.models.workspace import Workspace
 
-__all__ = ["Conversion", "ConversionStatus", "Document", "User"]
+__all__ = ["Conversion", "ConversionStatus", "Document", "User", "Workspace"]

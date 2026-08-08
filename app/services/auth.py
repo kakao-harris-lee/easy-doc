@@ -25,6 +25,7 @@ from argon2.exceptions import InvalidHashError, VerificationError
 
 from app.exceptions import ConfigurationError, InvalidCredentialsError, InvalidInputError
 from app.models.user import User
+from app.models.workspace import DEFAULT_WORKSPACE_NAME, Workspace
 
 _logger = logging.getLogger(__name__)
 
@@ -130,6 +131,18 @@ class UserStore(Protocol):
         ...
 
 
+class WorkspaceCreator(Protocol):
+    """AuthService가 작업 공간 저장소에 요구하는 계약 (구현: WorkspaceRepository).
+
+    가입에 필요한 것은 만들기 하나뿐이다 — 인증 경로가 남의 작업 공간을 읽거나 지울
+    수 있어야 할 이유가 없으므로 계약을 그만큼으로 좁힌다.
+    """
+
+    async def create(self, *, user_id: uuid.UUID, name: str) -> Workspace:
+        """작업 공간을 저장 대기 상태로 만든다(커밋하지 않는다)."""
+        ...
+
+
 class AuthService:
     """가입·로그인·토큰 검증.
 
@@ -138,7 +151,13 @@ class AuthService:
     저장소 안에 숨은 커밋에 좌우되면 안 되기 때문이다.
     """
 
-    def __init__(self, repository: UserStore, jwt_secret: str, expire_minutes: int) -> None:
+    def __init__(
+        self,
+        repository: UserStore,
+        workspaces: WorkspaceCreator,
+        jwt_secret: str,
+        expire_minutes: int,
+    ) -> None:
         """서비스를 조립한다.
 
         Raises:
@@ -150,6 +169,7 @@ class AuthService:
                 f"인증 서명 키는 {MIN_JWT_SECRET_BYTES}바이트 이상이어야 합니다"
             )
         self._repository = repository
+        self._workspaces = workspaces
         self._jwt_secret = jwt_secret
         self._expire_minutes = expire_minutes
 
@@ -159,7 +179,11 @@ class AuthService:
         return self._expire_minutes * 60
 
     async def signup(self, email: str, password: str) -> User:
-        """새 계정을 만든다.
+        """새 계정과 그 계정의 기본 작업 공간을 만든다.
+
+        작업 공간을 **같은 트랜잭션 안에서** 만드는 이유: 두 저장소가 같은 요청 세션을
+        공유하므로 커밋 한 번이 둘을 함께 확정한다. 나눠 커밋하면 계정만 있고 작업
+        공간이 없는 사용자가 생기고, 그 사람은 첫 업로드에서 갈 곳을 찾지 못한다.
 
         Raises:
             InvalidInputError: 이메일 형식이 아니거나 비밀번호가 너무 짧다.
@@ -174,6 +198,7 @@ class AuthService:
         user = await self._repository.create(
             email=normalized, password_hash=await hash_password(password)
         )
+        await self._workspaces.create(user_id=user.id, name=DEFAULT_WORKSPACE_NAME)
         await self._repository.commit()
         return user
 

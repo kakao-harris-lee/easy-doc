@@ -37,6 +37,7 @@ from app.exceptions import (
 from app.ingest.extractors import MAX_UPLOAD_BYTES, extract_text
 from app.models.conversion import Conversion, ConversionStatus
 from app.models.document import MAX_TITLE_LENGTH, Document
+from app.models.workspace import Workspace
 from app.privacy.crypto import TextCipher
 from app.privacy.masking import MaskedItem
 from app.queue import CONVERT_DOCUMENT_TASK, TaskQueue
@@ -163,6 +164,7 @@ class DocumentStore(Protocol):
         self,
         *,
         user_id: uuid.UUID,
+        workspace_id: uuid.UUID,
         title: str,
         source_format: str,
         source_text_encrypted: bytes,
@@ -175,12 +177,35 @@ class DocumentStore(Protocol):
         """진행 중인 트랜잭션을 확정한다."""
         ...
 
-    async def list_for_user(self, user_id: uuid.UUID, *, limit: int, offset: int) -> DocumentPage:
+    async def list_for_user(
+        self,
+        user_id: uuid.UUID,
+        *,
+        limit: int,
+        offset: int,
+        workspace_id: uuid.UUID | None = None,
+    ) -> DocumentPage:
         """내 문서를 최신순으로 돌려준다 (최신 변환 상태 포함)."""
         ...
 
     async def delete_for_user(self, document_id: uuid.UUID, user_id: uuid.UUID) -> bool:
         """소유자를 확인하며 문서를 지운다(커밋하지 않는다). 없거나 남의 것이면 False."""
+        ...
+
+
+class WorkspaceLookup(Protocol):
+    """DocumentService가 작업 공간 저장소에 요구하는 계약 (구현: WorkspaceRepository).
+
+    읽기 메서드만 있다 — 문서 경로가 작업 공간을 만들거나 지울 이유가 없으므로,
+    가질 수 있는 권한을 필요한 만큼으로 좁힌다(ConversionStore와 같은 규칙).
+    """
+
+    async def get_for_user(self, workspace_id: uuid.UUID, user_id: uuid.UUID) -> Workspace | None:
+        """소유자를 확인하며 작업 공간을 찾는다. 남의 것·없는 것 모두 None."""
+        ...
+
+    async def get_default_for_user(self, user_id: uuid.UUID) -> Workspace | None:
+        """기본 작업 공간(가장 먼저 만든 것)을 돌려준다. 하나도 없으면 None."""
         ...
 
 
@@ -230,31 +255,49 @@ class DocumentService:
         *,
         documents: DocumentStore,
         conversions: ConversionStore,
+        workspaces: WorkspaceLookup,
         cipher: TextCipher,
         queue: TaskQueue,
     ) -> None:
         self._documents = documents
         self._conversions = conversions
+        self._workspaces = workspaces
         self._cipher = cipher
         self._queue = queue
 
     async def create_from_text(
-        self, *, user_id: uuid.UUID, text: str, title: str | None = None
+        self,
+        *,
+        user_id: uuid.UUID,
+        text: str,
+        title: str | None = None,
+        workspace_id: uuid.UUID | None = None,
     ) -> tuple[Document, Conversion]:
         """붙여넣은 본문으로 문서를 만들고 변환을 요청한다.
 
         Raises:
             InvalidInputError: 본문이 비었거나 길이 상한을 넘었다.
+            NotFoundError: 지정한 작업 공간이 없거나 내 것이 아니다.
             QueueUnavailableError: 큐에 작업을 등록하지 못했다.
         """
         if not text.strip():
             raise InvalidInputError("본문이 비어 있습니다")
         return await self._store_and_enqueue(
-            user_id=user_id, text=text, source_format=TEXT_SOURCE_FORMAT, title=title
+            user_id=user_id,
+            text=text,
+            source_format=TEXT_SOURCE_FORMAT,
+            title=title,
+            workspace_id=workspace_id,
         )
 
     async def create_from_file(
-        self, *, user_id: uuid.UUID, filename: str, data: bytes, title: str | None = None
+        self,
+        *,
+        user_id: uuid.UUID,
+        filename: str,
+        data: bytes,
+        title: str | None = None,
+        workspace_id: uuid.UUID | None = None,
     ) -> tuple[Document, Conversion]:
         """업로드 파일에서 본문을 뽑아 문서를 만들고 변환을 요청한다.
 
@@ -262,6 +305,7 @@ class DocumentService:
             UploadTooLargeError: 파일이 크기 상한을 넘었다.
             UnsupportedFormatError: 지원하지 않는 확장자다.
             DocumentExtractionError: 텍스트를 뽑지 못했거나 결과가 비었다.
+            NotFoundError: 지정한 작업 공간이 없거나 내 것이 아니다.
             QueueUnavailableError: 큐에 작업을 등록하지 못했다.
         """
         if len(data) > MAX_UPLOAD_BYTES:
@@ -280,11 +324,31 @@ class DocumentService:
             text=text,
             source_format=_source_format(filename),
             title=title,
+            workspace_id=workspace_id,
         )
 
-    async def list_documents(self, user_id: uuid.UUID, *, limit: int, offset: int) -> DocumentPage:
-        """내 문서 목록을 최신순으로 돌려준다."""
-        return await self._documents.list_for_user(user_id, limit=limit, offset=offset)
+    async def list_documents(
+        self,
+        user_id: uuid.UUID,
+        *,
+        limit: int,
+        offset: int,
+        workspace_id: uuid.UUID | None = None,
+    ) -> DocumentPage:
+        """내 문서 목록을 최신순으로 돌려준다 (작업 공간을 주면 그 안만).
+
+        남의 작업 공간 식별자로는 빈 목록이 아니라 404를 돌려준다 — 빈 목록은 "그
+        작업 공간은 비어 있다"는 사실을 알려주는 셈이라, 남의 공간이 존재하는지를
+        확인하는 수단이 된다.
+
+        Raises:
+            NotFoundError: 지정한 작업 공간이 없거나 내 것이 아니다.
+        """
+        if workspace_id is not None:
+            await self._require_workspace(workspace_id, user_id)
+        return await self._documents.list_for_user(
+            user_id, limit=limit, offset=offset, workspace_id=workspace_id
+        )
 
     async def delete_document(self, document_id: uuid.UUID, user_id: uuid.UUID) -> None:
         """문서와 그 변환 결과를 즉시 파기한다 (master-plan 3.2 "삭제 요청 시 즉시 파기").
@@ -434,8 +498,43 @@ class DocumentService:
             masked_items=masked_items,
         )
 
+    async def _require_workspace(self, workspace_id: uuid.UUID, user_id: uuid.UUID) -> Workspace:
+        """소유자 권한으로 작업 공간을 읽는다. 없으면 404가 되는 예외를 올린다.
+
+        남의 작업 공간과 없는 작업 공간을 구분하지 않는다 — 구분하면 식별자의 존재
+        여부가 새어 나간다(변환 조회와 같은 규칙).
+        """
+        workspace = await self._workspaces.get_for_user(workspace_id, user_id)
+        if workspace is None:
+            raise NotFoundError("작업 공간을 찾을 수 없습니다")
+        return workspace
+
+    async def _resolve_workspace_id(
+        self, user_id: uuid.UUID, workspace_id: uuid.UUID | None
+    ) -> uuid.UUID:
+        """문서를 담을 작업 공간을 정한다. 지정이 없으면 기본(가장 오래된) 공간이다.
+
+        Raises:
+            NotFoundError: 지정한 작업 공간이 없거나 내 것이 아니다.
+            StorageError: 작업 공간이 하나도 없다. 가입이 하나를 만들고(AuthService)
+                마지막 하나는 지울 수 없으므로(WorkspaceService) 이 상태는 사용자
+                입력 문제가 아니라 우리 불변식이 깨진 것이다 — 5xx로 올린다.
+        """
+        if workspace_id is not None:
+            return (await self._require_workspace(workspace_id, user_id)).id
+        default = await self._workspaces.get_default_for_user(user_id)
+        if default is None:
+            raise StorageError("작업 공간을 찾을 수 없습니다")
+        return default.id
+
     async def _store_and_enqueue(
-        self, *, user_id: uuid.UUID, text: str, source_format: str, title: str | None
+        self,
+        *,
+        user_id: uuid.UUID,
+        text: str,
+        source_format: str,
+        title: str | None,
+        workspace_id: uuid.UUID | None,
     ) -> tuple[Document, Conversion]:
         """문서·변환을 저장하고 확정한 뒤 큐에 작업을 넣는다 (이 순서를 지킨다).
 
@@ -449,8 +548,12 @@ class DocumentService:
                 f"현재는 {MAX_CONVERTIBLE_CHARS:,}자 이하 문서만 변환할 수 있습니다"
                 " (긴 문서 분할 변환은 준비 중입니다)"
             )
+        # 작업 공간 확인이 저장보다 먼저다 — 남의 공간을 지목한 요청이 문서를 만든 뒤
+        # 404가 되면, 거절당한 업로드가 기본 공간에 남는다.
+        resolved_workspace_id = await self._resolve_workspace_id(user_id, workspace_id)
         document = await self._documents.create(
             user_id=user_id,
+            workspace_id=resolved_workspace_id,
             title=_resolve_title(title, text),
             source_format=source_format,
             source_text_encrypted=self._cipher.encrypt(text),

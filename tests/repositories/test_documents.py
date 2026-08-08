@@ -19,31 +19,47 @@ from app.exceptions import StorageError
 from app.models.conversion import Conversion, ConversionStatus
 from app.models.document import RETENTION_DAYS, Document
 from app.models.user import User
+from app.models.workspace import DEFAULT_WORKSPACE_NAME
 from app.privacy.crypto import CURRENT_KEY_VERSION
 from app.repositories.conversions import ConversionRepository
 from app.repositories.documents import DocumentRepository
 from app.repositories.users import UserRepository
+from app.repositories.workspaces import WorkspaceRepository
 
 pytestmark = pytest.mark.db
 
 _ENCRYPTED = b"gAAAAA-fake-fernet-token"
 _TITLE = "재난지원금 신청 안내"
 
+#: 사용자별 기본 작업 공간. 문서는 반드시 작업 공간에 담기므로(NOT NULL) 테스트도
+#: 가입 직후와 같은 상태에서 시작한다 — `_user`가 계정과 함께 만들어 둔다.
+_workspaces: dict[uuid.UUID, uuid.UUID] = {}
+
 
 async def _user(session: AsyncSession, email: str) -> User:
-    """문서 소유자로 쓸 계정을 만든다."""
+    """문서 소유자로 쓸 계정을 기본 작업 공간과 함께 만든다 (가입 흐름과 같은 순서)."""
     repository = UserRepository(session)
     user = await repository.create(email=email, password_hash="$argon2id$fake")
+    workspace = await WorkspaceRepository(session).create(
+        user_id=user.id, name=DEFAULT_WORKSPACE_NAME
+    )
     await repository.commit()
+    _workspaces[user.id] = workspace.id
     return user
 
 
 async def _document(
-    repository: DocumentRepository, user: User, *, title: str = _TITLE, char_count: int = 12
+    repository: DocumentRepository,
+    user: User,
+    *,
+    title: str = _TITLE,
+    char_count: int = 12,
+    workspace_id: uuid.UUID | None = None,
 ) -> Document:
     """문서를 저장하고 확정한다 (서비스가 하는 순서 그대로)."""
     document = await repository.create(
         user_id=user.id,
+        workspace_id=workspace_id if workspace_id is not None else _workspaces[user.id],
         title=title,
         source_format="text",
         source_text_encrypted=_ENCRYPTED,
@@ -104,6 +120,7 @@ async def test_없는_사용자의_문서는_저장되지_않는다(db_session: 
     with pytest.raises(StorageError) as error:
         await repository.create(
             user_id=uuid.uuid4(),
+            workspace_id=uuid.uuid4(),
             title=_TITLE,
             source_format="text",
             source_text_encrypted=_ENCRYPTED,
@@ -455,6 +472,41 @@ async def test_목록은_limit과_offset을_따른다(db_session: AsyncSession) 
     # 다음 페이지 유무는 한 건 더 읽어 판정한다 (COUNT 쿼리 없이).
     assert page.has_more is True
     assert rest.has_more is False
+
+
+async def test_목록을_작업_공간으로_거를_수_있다(db_session: AsyncSession) -> None:
+    """작업 공간을 지정하면 그 안의 문서만 나온다 — 소유자 조건은 그대로 함께 건다."""
+    user = await _user(db_session, "filtered@example.com")
+    workspaces = WorkspaceRepository(db_session)
+    other = await workspaces.create(user_id=user.id, name="민원 안내")
+    await workspaces.commit()
+    documents = DocumentRepository(db_session)
+    default_document = await _document(documents, user, title="기본 공간 문서")
+    other_document = await _document(documents, user, title="민원 공간 문서", workspace_id=other.id)
+
+    page = await documents.list_for_user(user.id, limit=20, offset=0, workspace_id=other.id)
+    everything = await documents.list_for_user(user.id, limit=20, offset=0)
+
+    assert [summary.document.id for summary in page.items] == [other_document.id]
+    # 필터를 주지 않으면 두 공간의 문서가 모두 나온다.
+    assert {summary.document.id for summary in everything.items} == {
+        default_document.id,
+        other_document.id,
+    }
+
+
+async def test_남의_작업_공간으로_걸러도_문서가_새지_않는다(db_session: AsyncSession) -> None:
+    """소유자 조건이 작업 공간 필터와 별개로 걸려 있어야 한다 (조인 하나에 기대지 않는다)."""
+    owner = await _user(db_session, "ws-owner@example.com")
+    stranger = await _user(db_session, "ws-stranger@example.com")
+    documents = DocumentRepository(db_session)
+    await _document(documents, owner, title="내 문서")
+
+    page = await documents.list_for_user(
+        stranger.id, limit=20, offset=0, workspace_id=_workspaces[owner.id]
+    )
+
+    assert page.items == []
 
 
 async def test_문서가_없으면_빈_목록이다(db_session: AsyncSession) -> None:
