@@ -208,6 +208,76 @@ def test_첫_줄이_없으면_기본_제목을_쓴다(client: TestClient, fixtur
     assert document.title == "내용"
 
 
+# --- 자동 유도 제목 줄이기 -------------------------------------------------------
+#
+# 본문 첫 줄은 문장 하나가 통째로 들어오는 일이 흔하다. 그 값이 변환 기록 목록에
+# 그대로 나가면 한 줄이 제목으로 도배된다 — 우리가 임의로 지은 이름이므로 줄여도 된다
+# (사용자가 적어 준 제목은 손대지 않는다).
+
+#: 자동 유도 제목의 절대 상한. 어떤 입력이 와도 이 선을 넘지 않는다.
+_AUTO_TITLE_CEILING = 40
+
+
+def test_자동_유도_제목은_어절_경계에서_줄이고_말줄임표를_붙인다(
+    client: TestClient, fixture: Fixture
+) -> None:
+    """어절 중간에서 자르면 남은 조각이 다른 말로 읽힌다 — 공백 경계를 먼저 찾는다."""
+    body = _upload_text(
+        client,
+        fixture,
+        text="재난지원금 신청 방법과 지급 일정 안내 사항을 자세히 설명하는 안내문\n본문입니다.",
+    )
+
+    document = fixture.documents.documents[uuid.UUID(body["document_id"])]
+    assert document.title == "재난지원금 신청 방법과 지급 일정 안내 사항을 자세히…"
+    assert len(document.title) <= _AUTO_TITLE_CEILING
+
+
+def test_자동_유도_제목이_30자면_그대로_둔다(client: TestClient, fixture: Fixture) -> None:
+    """경계값 — 목표 길이에 딱 맞는 첫 줄에는 말줄임표가 붙지 않는다."""
+    line = "재난지원금 신청 방법 지급 일정 안내 공고문 상세 알림"
+    assert len(line) == 30
+
+    body = _upload_text(client, fixture, text=f"{line}\n본문입니다.")
+
+    document = fixture.documents.documents[uuid.UUID(body["document_id"])]
+    assert document.title == line
+
+
+def test_자동_유도_제목은_31자부터_줄인다(client: TestClient, fixture: Fixture) -> None:
+    """경계값 — 한 글자만 넘어도 어절 경계까지 물러선다."""
+    line = "재난지원금 신청 방법 지급 일정 안내 공고문 상세 알림장"
+    assert len(line) == 31
+
+    body = _upload_text(client, fixture, text=f"{line}\n본문입니다.")
+
+    document = fixture.documents.documents[uuid.UUID(body["document_id"])]
+    assert document.title == "재난지원금 신청 방법 지급 일정 안내 공고문 상세…"
+
+
+def test_공백_없는_긴_첫_줄은_그대로_하드컷한다(client: TestClient, fixture: Fixture) -> None:
+    """붙여 쓴 제목에는 물러설 경계가 없다 — 자르지 않는 것보다 자르는 편이 낫다."""
+    body = _upload_text(
+        client,
+        fixture,
+        text="재난지원금신청방법과지급일정안내사항을자세히설명하는안내문입니다\n본문입니다.",
+    )
+
+    document = fixture.documents.documents[uuid.UUID(body["document_id"])]
+    assert document.title == "재난지원금신청방법과지급일정안내사항을자세히설명하는안내문입…"
+    assert len(document.title) <= _AUTO_TITLE_CEILING
+
+
+def test_사용자가_준_긴_제목은_줄이지_않는다(client: TestClient, fixture: Fixture) -> None:
+    """직접 적은 이름을 말없이 자르면 사용자가 붙인 뜻이 사라진다 — 255자 상한만 지킨다."""
+    title = "재난지원금 신청 방법과 지급 일정 안내 사항을 자세히 설명하는 안내문"
+
+    body = _upload_text(client, fixture, title=title)
+
+    document = fixture.documents.documents[uuid.UUID(body["document_id"])]
+    assert document.title == title
+
+
 def test_파일을_올리면_본문을_뽑아_저장한다(client: TestClient, fixture: Fixture) -> None:
     data = (_FIXTURES / "sample.docx").read_bytes()
 

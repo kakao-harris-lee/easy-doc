@@ -78,6 +78,13 @@ ENQUEUE_FAILURE_CODE = "EnqueueFailed"
 #: 제목을 유도할 수 없을 때(첫 줄이 없거나 공백뿐일 때) 쓰는 이름.
 FALLBACK_TITLE = "제목 없음"
 
+#: 본문에서 유도한 제목의 목표 길이. 어절 경계는 이 안에서만 찾는다.
+#:
+#: 컬럼 상한(MAX_TITLE_LENGTH 255)과 다른 기준이다 — 저쪽은 저장할 수 있는 최대치이고,
+#: 이쪽은 변환 기록 목록에서 한 줄로 읽히는 길이다. 본문 첫 줄은 문장 하나가 통째로
+#: 들어오는 일이 흔해서, 상한만 믿으면 목록이 제목으로 도배된다.
+AUTO_TITLE_TARGET_LENGTH = 30
+
 #: 목록 조회 기본·최대 개수. 라우터의 Query 제약과 같은 값을 쓴다.
 DEFAULT_PAGE_SIZE = 20
 MAX_PAGE_SIZE = 100
@@ -499,10 +506,43 @@ def _resolve_title(title: str | None, text: str) -> str:
 
     상한을 넘는 제목은 거부하지 않고 자른다 — 목록에 보일 이름일 뿐이라, 긴 첫 줄을
     가진 문서 업로드를 통째로 실패시킬 이유가 없다.
+
+    **자동 유도한 이름만 짧게 줄인다**(`_shorten_derived_title`). 사용자가 적어 준 제목은
+    255자 상한만 지키고 손대지 않는다 — 직접 붙인 이름을 말없이 자르면 그 사람이 담은
+    뜻이 사라진다. 반대로 본문 첫 줄은 우리가 임의로 고른 값이라, 문장 하나가 통째로
+    변환 기록 목록을 채우는 편이 더 나쁘다.
+
+    파일 업로드도 같은 규칙을 받는다 — 두 입력 경로가 모두 이 함수를 지난다.
     """
-    candidate = (title or "").strip()
-    if not candidate:
-        candidate = next((line.strip() for line in text.splitlines() if line.strip()), "")
+    given = (title or "").strip()
     # 제어문자를 걷어낸다 — 추출한 문서·붙여넣기에 섞여 들어오면 내보내기(XML)에서
     # 터진다. 자르기 전에 지워야 잘린 길이가 보이는 글자 수와 어긋나지 않는다.
-    return strip_control_chars(candidate)[:MAX_TITLE_LENGTH] or FALLBACK_TITLE
+    if given:
+        return strip_control_chars(given)[:MAX_TITLE_LENGTH] or FALLBACK_TITLE
+    derived = next((line.strip() for line in text.splitlines() if line.strip()), "")
+    # 제어문자를 지우면 앞뒤에 공백이 드러날 수 있다(`"\x00 안내"` → `" 안내"`).
+    # 어절 경계를 세기 전에 다시 다듬는다.
+    derived = strip_control_chars(derived).strip()
+    if not derived:
+        return FALLBACK_TITLE
+    return _shorten_derived_title(derived)
+
+
+def _shorten_derived_title(title: str) -> str:
+    """본문에서 유도한 제목을 목표 길이 안으로 줄이고 말줄임표를 붙인다.
+
+    어절(공백) 경계를 먼저 찾는 이유는 한국어에서 어절 중간이 잘리면 남은 조각이 다른
+    말로 읽히기 때문이다. 목표 길이 안에 경계가 없으면(붙여 쓴 제목·URL) 그대로 하드컷
+    한다 — 한 줄을 통째로 남기는 것보다 낫다.
+
+    결과는 길어야 목표 길이 + 말줄임표 한 글자다(스프린트 4 미션 BB의 절대 상한 40자
+    아래). 앞뒤 공백이 없는 문자열을 전제로 하므로 `_resolve_title`에서만 부른다.
+    """
+    if len(title) <= AUTO_TITLE_TARGET_LENGTH:
+        return title
+    # 목표 길이 바로 다음 글자까지 본다 — 어절이 정확히 목표 길이에서 끝나면 그 경계를
+    # 살릴 수 있다(한 어절을 통째로 잃지 않는다).
+    window = title[: AUTO_TITLE_TARGET_LENGTH + 1].rstrip()
+    boundary = max((i for i, char in enumerate(window) if char.isspace()), default=-1)
+    head = window[:boundary].rstrip() if boundary > 0 else window[:AUTO_TITLE_TARGET_LENGTH]
+    return f"{head}…"
