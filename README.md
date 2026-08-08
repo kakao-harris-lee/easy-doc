@@ -167,6 +167,23 @@ docker compose exec worker python -m app.workers.purge
 이 잡은 **만료된 문서만** 지운다. 만료 전 문서를 지우는 것은 `DELETE /documents/{id}`
 (화면에서는 변환 기록의 "삭제" 버튼)이며, 그쪽은 보존 기간과 무관하게 즉시 파기한다.
 
+## 파일럿 운영
+
+파일럿 세션 진행 절차는 [`docs/pilot-runbook.md`](docs/pilot-runbook.md)에 있다 —
+사전 준비·세션 시나리오·측정 항목·한계 고지·세션 후 정리까지.
+
+세션이 끝나면 KPI 리포트를 만든다 (master-plan 7장: 수정률·소요 시간·실패율).
+
+```bash
+uv run python scripts/pilot_report.py                       # 표준출력
+uv run python scripts/pilot_report.py --since 2026-08-08 \
+  --output docs/pilot/2026-08-08-report.md                  # 파일로
+```
+
+**운영자 전용 도구다** — API가 아니라 DB에 직접 붙고 소유자 격리를 거치지 않는다.
+수정률 계산에 본문 복호화가 필요하므로 `FERNET_KEY`가 있어야 하지만, 복호화한 글은
+비율을 재는 순간에만 존재하고 **리포트에는 문서 ID 앞자리와 수치만 남는다**.
+
 ## 현재 제한 사항
 
 - **문서당 4,000자**(공백 포함). 그보다 길면 업로드 단계에서 422로 거절한다 — LLM 출력 토큰 상한을 넘겨 절단 실패할 것이 사실상 확정이라 비용을 치르기 전에 막는다. 문단 단위 분할 변환은 준비 중이며, 그때 이 상한이 사라진다.
@@ -231,7 +248,8 @@ frontend/        # React + TypeScript(Vite) 화면
   src/pages/     # 업로드·검수 에디터·변환 기록·로그인
   nginx.conf     # 데모 서빙 설정 (SPA fallback + /api 프록시)
 scripts/
-  benchmark.py   # LLM provider 비교 벤치마크
+  benchmark.py     # LLM provider 비교 벤치마크
+  pilot_report.py  # 파일럿 KPI 리포트 (운영자 전용 — DB 직접 조회)
 tests/
   golden/        # 골든셋 문서 + 평가 하네스
 ```
@@ -252,4 +270,5 @@ tests/
 |---|---|
 | [`docs/master-plan.md`](docs/master-plan.md) | 마스터 기획서 — 단일 기준 문서(SSOT) |
 | [`docs/plans/`](docs/plans/) | 스프린트별 구현 계획서 |
+| [`docs/pilot-runbook.md`](docs/pilot-runbook.md) | 파일럿 세션 진행 가이드 (준비·시나리오·측정·정리) |
 | [`CLAUDE.md`](CLAUDE.md) | 개발 지침 (아키텍처·코딩·테스트·보안 규칙) |
