@@ -9,7 +9,13 @@ from typing import ClassVar
 
 from pydantic import BaseModel
 
-DEFAULT_MAX_TOKENS = 4096
+# 출력 상한이지 지출이 아니다 — 과금은 실제 생성한 토큰만큼이다. 넉넉히 잡는 이유는
+# claude-sonnet-5가 thinking 미지정 시 적응형 사고를 켜고 그 사고 토큰이 max_tokens를
+# 본문과 나눠 쓰기 때문이다. 1차 벤치마크(docs/benchmarks/2026-08-08-1642-llm-benchmark.md)
+# 에서 anthropic 장문 20건(36%)이 빈 응답·절단으로 실패한 원인이 옛 상한 4,096이었다
+# (완주 문서도 출력 토큰 중앙값 3,616으로 상한에 붙어 있었다).
+# 16,000은 비스트리밍 요청의 권장 상한이다 — 더 키우면 SDK가 스트리밍을 요구할 수 있다.
+DEFAULT_MAX_TOKENS = 16000
 DEFAULT_TEMPERATURE = 0.2
 # SDK 기본값(read 600초 × 재시도 3회)은 문서 변환 워커에 과도하다 — 명시적으로 좁힌다.
 DEFAULT_TIMEOUT_SECONDS = 60.0

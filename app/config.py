@@ -42,3 +42,10 @@ class Settings(BaseSettings):
     # 모델 교체·롤백을 코드 수정 없이 .env만으로 할 수 있게 두는 것이 목적이다 —
     # 기본 모델 자체는 실측 근거와 함께 provider 구현체에 남긴다(docs/quality 보고서 인용).
     llm_model: str | None = None
+
+    # Anthropic 전용 사고 깊이(output_config.effort): low|medium|high|xhigh|max.
+    # None이면 파라미터를 보내지 않는다 = API 기본값(high). 낮출수록 사고 토큰·지연·원가가
+    # 줄고 품질이 떨어질 수 있어, 값을 바꾸면 벤치마크로 확인한 뒤 반영한다.
+    # llm_model과 달리 llm_provider와 짝지어 게이팅하지 않는다 — effort는 Anthropic만
+    # 받는 파라미터라 다른 벤더로 새어 나갈 경로 자체가 없다(app/llm/factory.py).
+    llm_effort: str | None = None

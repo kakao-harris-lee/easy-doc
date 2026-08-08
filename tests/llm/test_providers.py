@@ -16,7 +16,7 @@ from types import SimpleNamespace
 
 import httpx
 import pytest
-from anthropic import AnthropicError, AsyncAnthropic
+from anthropic import AnthropicError, AsyncAnthropic, Omit
 from anthropic import APIStatusError as AnthropicAPIStatusError
 from openai import APIStatusError as OpenAIAPIStatusError
 from openai import AsyncOpenAI, OpenAIError
@@ -25,9 +25,9 @@ from app.config import Settings
 from app.exceptions import LLMProviderError
 from app.llm import anthropic_provider as anthropic_module
 from app.llm import openai_provider as openai_module
-from app.llm.anthropic_provider import AnthropicProvider
+from app.llm.anthropic_provider import ANTHROPIC_TIMEOUT_SECONDS, AnthropicProvider
 from app.llm.openai_provider import OpenAIProvider
-from app.llm.provider import DEFAULT_MAX_RETRIES, DEFAULT_TIMEOUT_SECONDS
+from app.llm.provider import DEFAULT_MAX_RETRIES, DEFAULT_MAX_TOKENS, DEFAULT_TIMEOUT_SECONDS
 
 _시스템 = "너는 쉬운 글 변환기다."
 _본문 = "신청자는 관계 법령에 의거하여 서류를 제출하여야 한다."
@@ -119,6 +119,17 @@ def test_생성자_기본값과_name() -> None:
     오픈에이아이 = OpenAIProvider(api_key="테스트키")
     assert (앤트로픽.name, 앤트로픽.model) == ("anthropic", "claude-sonnet-5")
     assert (오픈에이아이.name, 오픈에이아이.model) == ("openai", "gpt-4.1")
+    # effort 기본은 미설정 — output_config를 보내지 않아 API 기본값(high)을 쓴다.
+    assert 앤트로픽.effort is None
+
+
+def test_출력_상한_기본값이_사고_토큰_여유를_포함한다() -> None:
+    """4,096은 claude-sonnet-5의 사고 토큰과 본문이 나눠 쓰기에 부족해 장문이 실패했다.
+
+    상한이지 지출이 아니므로(실제 생성분만 과금) 넉넉히 잡는다. 되돌리면 1차 벤치마크의
+    빈 응답·절단 실패가 재현되므로 값 자체를 회귀 방지 대상으로 고정한다.
+    """
+    assert DEFAULT_MAX_TOKENS == 16000
 
 
 def test_클라이언트에_타임아웃과_재시도가_명시된다(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -143,6 +154,28 @@ def test_클라이언트에_타임아웃과_재시도가_명시된다(monkeypatc
     assert 인자["anthropic"]["max_retries"] == DEFAULT_MAX_RETRIES
     assert 인자["openai"]["timeout"] == DEFAULT_TIMEOUT_SECONDS
     assert 인자["openai"]["max_retries"] == DEFAULT_MAX_RETRIES
+
+
+def test_anthropic_타임아웃_기본값은_공용값보다_길다(monkeypatch: pytest.MonkeyPatch) -> None:
+    """사고 토큰 때문에 실측 지연이 OpenAI의 4~5배라 벤더 전용 기본값을 쓴다."""
+    인자: dict[str, object] = {}
+
+    def _앤트로픽(**kwargs: object) -> object:
+        인자.update(kwargs)
+        return SimpleNamespace()
+
+    monkeypatch.setattr(anthropic_module, "AsyncAnthropic", _앤트로픽)
+
+    AnthropicProvider(api_key="테스트키")
+
+    assert 인자["timeout"] == ANTHROPIC_TIMEOUT_SECONDS
+    assert ANTHROPIC_TIMEOUT_SECONDS > DEFAULT_TIMEOUT_SECONDS
+
+
+def test_effort가_잘못된_값이면_생성자에서_거부한다() -> None:
+    """오타를 호출 시점 HTTP 400이 아니라 생성 시점에 잡는다(전건 실패 방지)."""
+    with pytest.raises(ValueError, match="지원하지 않는 effort 값"):
+        AnthropicProvider(api_key="테스트키", effort="낮음")
 
 
 async def test_aclose는_SDK_클라이언트를_닫는다(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -171,6 +204,34 @@ async def test_anthropic_system은_전용_필드로_user는_메시지로_전달�
     assert 엔드포인트.kwargs["model"] == "claude-sonnet-5"
     # 현재 Claude 모델은 샘플링 파라미터를 받으면 400 — 회귀 방지.
     assert "temperature" not in 엔드포인트.kwargs
+    # thinking도 보내지 않는다: claude-sonnet-5에서 미지정은 적응형 사고 기본 켜기이고,
+    # budget_tokens를 보내면 400이다. 사고 깊이는 output_config.effort로만 조절한다.
+    assert "thinking" not in 엔드포인트.kwargs
+
+
+async def test_anthropic_effort_미설정이면_output_config를_보내지_않는다(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """미전송이 곧 API 기본값(high)이다 — 빈 dict를 보내 기본값을 흔들지 않는다."""
+    엔드포인트 = _가짜엔드포인트(result=_앤트로픽_응답())
+    provider = _앤트로픽_대역(monkeypatch, 엔드포인트)
+
+    await provider.complete(system=_시스템, user=_본문)
+
+    assert isinstance(엔드포인트.kwargs["output_config"], Omit)
+
+
+async def test_anthropic_effort를_설정하면_output_config로_전달된다(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    엔드포인트 = _가짜엔드포인트(result=_앤트로픽_응답())
+    클라이언트 = SimpleNamespace(messages=엔드포인트)
+    monkeypatch.setattr(anthropic_module, "AsyncAnthropic", lambda **_: 클라이언트)
+    provider = AnthropicProvider(api_key="테스트키", effort="low")
+
+    await provider.complete(system=_시스템, user=_본문)
+
+    assert 엔드포인트.kwargs["output_config"] == {"effort": "low"}
 
 
 async def test_anthropic_응답이_LLMResponse로_변환된다(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -361,10 +422,43 @@ async def test_anthropic_계약_직렬화된_요청과_실제_응답_스키마(
     assert 포착["system"] == _시스템
     assert 포착["messages"] == [{"role": "user", "content": _본문}]
     assert "temperature" not in 포착
+    assert "thinking" not in 포착
+    # effort 미설정이면 output_config 키 자체가 직렬화되지 않아야 한다 — omit 센티널이
+    # 빈 객체로 새어 나가면 API 기본값(high)이 흔들릴 수 있다.
+    assert "output_config" not in 포착
     assert response.text == _결과
     assert response.model == "claude-sonnet-5-테스트판"
     assert (response.input_tokens, response.output_tokens) == (120, 45)
     assert response.truncated is True
+
+
+async def test_anthropic_계약_effort가_직렬화된_본문에_실린다(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """SDK가 실제로 만든 HTTP 본문에 output_config.effort가 들어가는지 확인한다."""
+    포착: dict[str, object] = {}
+    응답본문: dict[str, object] = {
+        "id": "msg_test",
+        "type": "message",
+        "role": "assistant",
+        "model": "claude-sonnet-5-테스트판",
+        "content": [{"type": "text", "text": _결과}],
+        "stop_reason": "end_turn",
+        "stop_sequence": None,
+        "usage": {"input_tokens": 120, "output_tokens": 45},
+    }
+    http_client = httpx.AsyncClient(transport=httpx.MockTransport(_계약_핸들러(포착, 응답본문)))
+    monkeypatch.setattr(
+        anthropic_module,
+        "AsyncAnthropic",
+        lambda **_: AsyncAnthropic(api_key=_계약_키, http_client=http_client, max_retries=0),
+    )
+    provider = AnthropicProvider(api_key=_계약_키, effort="low")
+
+    await provider.complete(system=_시스템, user=_본문)
+    await provider.aclose()
+
+    assert 포착["output_config"] == {"effort": "low"}
 
 
 async def test_openai_계약_직렬화된_요청과_실제_응답_스키마(

@@ -18,6 +18,12 @@ def create_provider(name: str, settings: Settings) -> LLMProvider | None:
     settings.llm_model이 있으면 모델명을 덮어쓴다 — 단, llm_provider로 고른 벤더에만
     적용한다. 벤치마크·골든셋 평가는 대상 벤더를 따로 지정하므로(--providers·GOLDEN_PROVIDER),
     다른 벤더에까지 적용하면 없는 모델명으로 호출해 전건 실패한다.
+
+    settings.llm_effort는 Anthropic에만 넘긴다. llm_model처럼 llm_provider와 짝지어
+    게이팅하지 않는 이유는 실패 양상이 다르기 때문이다 — 모델명은 벤더가 어긋나면 없는
+    이름으로 호출해 전건 실패하지만, effort는 애초에 Anthropic만 받는 파라미터라 다른
+    벤더로 새어 나갈 경로가 없다. OpenAI의 reasoning_effort는 별개 파라미터이며 여기서
+    다루지 않는다.
     """
     model = settings.llm_model if name == settings.llm_provider else None
     if name == AnthropicProvider.name:
@@ -25,8 +31,12 @@ def create_provider(name: str, settings: Settings) -> LLMProvider | None:
         if anthropic_key is None:
             return None
         if model is None:
-            return AnthropicProvider(api_key=anthropic_key.get_secret_value())
-        return AnthropicProvider(api_key=anthropic_key.get_secret_value(), model=model)
+            return AnthropicProvider(
+                api_key=anthropic_key.get_secret_value(), effort=settings.llm_effort
+            )
+        return AnthropicProvider(
+            api_key=anthropic_key.get_secret_value(), model=model, effort=settings.llm_effort
+        )
     if name == OpenAIProvider.name:
         openai_key = settings.openai_api_key
         if openai_key is None:

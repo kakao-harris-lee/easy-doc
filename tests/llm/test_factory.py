@@ -57,3 +57,36 @@ def test_llm_model은_고른_벤더의_모델만_덮어쓴다() -> None:
     assert isinstance(anthropic, AnthropicProvider)
     assert openai.model == "gpt-4o"
     assert anthropic.model == "claude-sonnet-5"
+
+
+def test_llm_effort가_없으면_provider가_effort를_안_보낸다() -> None:
+    settings = Settings(llm_effort=None, anthropic_api_key=SecretStr("앤트로픽키"))
+    provider = create_provider("anthropic", settings)
+    assert isinstance(provider, AnthropicProvider)
+    assert provider.effort is None
+
+
+def test_llm_effort는_anthropic에만_전달된다() -> None:
+    """effort는 Anthropic 전용 파라미터다 — OpenAI 생성 경로에 새면 안 된다.
+
+    OpenAI의 reasoning_effort는 이름만 비슷한 별개 파라미터이며, provider가 그 인자를
+    받지도 않는다. 여기서는 anthropic만 값을 받는다는 계약을 고정한다.
+    """
+    settings = Settings(
+        llm_effort="low",
+        anthropic_api_key=SecretStr("앤트로픽키"),
+        openai_api_key=SecretStr("오픈에이아이키"),
+    )
+    anthropic = create_provider("anthropic", settings)
+    openai = create_provider("openai", settings)
+    assert isinstance(anthropic, AnthropicProvider)
+    assert isinstance(openai, OpenAIProvider)
+    assert anthropic.effort == "low"
+    assert not hasattr(openai, "effort")
+
+
+def test_llm_effort가_잘못되면_생성에서_ValueError() -> None:
+    """.env 오타를 앱·워커 기동 시점에 드러낸다 — 첫 변환 호출까지 미루지 않는다."""
+    settings = Settings(llm_effort="빠름", anthropic_api_key=SecretStr("앤트로픽키"))
+    with pytest.raises(ValueError, match="지원하지 않는 effort 값"):
+        create_provider("anthropic", settings)
