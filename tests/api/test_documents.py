@@ -961,6 +961,70 @@ def test_범위를_벗어난_페이지_인자는_422(client: TestClient, fixture
     assert response.status_code == 422
 
 
+# --- 삭제 ---------------------------------------------------------------------
+
+
+def test_문서를_지우면_204와_함께_사라진다(client: TestClient, fixture: Fixture) -> None:
+    """master-plan 3.2 "삭제 요청 시 즉시 파기" — 보존 기간을 기다리지 않는다."""
+    body = _upload_text(client, fixture)
+
+    response = client.delete(f"/documents/{body['document_id']}", headers=fixture.headers())
+
+    assert response.status_code == 204, response.text
+    assert response.content == b""
+    assert fixture.documents.documents == {}
+
+
+def test_문서를_지우면_변환_결과도_함께_사라진다(client: TestClient, fixture: Fixture) -> None:
+    """변환 행은 FK CASCADE로 함께 지워진다 — 조회는 404가 되어야 한다."""
+    body = _upload_text(client, fixture)
+    _complete(fixture, body["conversion_id"])
+
+    client.delete(f"/documents/{body['document_id']}", headers=fixture.headers())
+
+    detail = client.get(f"/conversions/{body['conversion_id']}", headers=fixture.headers())
+    assert detail.status_code == 404
+    assert client.get("/documents", headers=fixture.headers()).json()["items"] == []
+
+
+def test_남의_문서는_지울_수_없다(client: TestClient, fixture: Fixture) -> None:
+    """소유자 격리 — 없는 문서와 남의 문서를 구분하지 않는다(존재가 새어 나간다)."""
+    body = _upload_text(client, fixture)
+    stranger = fixture.other_user()
+
+    response = client.delete(f"/documents/{body['document_id']}", headers=fixture.headers(stranger))
+
+    assert response.status_code == 404
+    # 남의 삭제 시도가 소유자의 문서를 건드리지 않았다.
+    assert uuid.UUID(body["document_id"]) in fixture.documents.documents
+
+
+def test_없는_문서를_지우면_404(client: TestClient, fixture: Fixture) -> None:
+    response = client.delete(f"/documents/{uuid.uuid4()}", headers=fixture.headers())
+
+    assert response.status_code == 404
+
+
+def test_삭제는_지운_뒤에_확정한다(client: TestClient, fixture: Fixture) -> None:
+    """커밋하지 않으면 요청이 끝나며 롤백되어 문서가 되살아난다."""
+    body = _upload_text(client, fixture)
+    fixture.journal.clear()
+
+    client.delete(f"/documents/{body['document_id']}", headers=fixture.headers())
+
+    assert fixture.journal == ["delete_document", "commit"]
+
+
+def test_실패한_삭제는_확정하지_않는다(client: TestClient, fixture: Fixture) -> None:
+    """지운 것이 없는데 커밋하면 같은 세션의 다른 변경까지 함께 확정된다."""
+    _upload_text(client, fixture)
+    fixture.journal.clear()
+
+    client.delete(f"/documents/{uuid.uuid4()}", headers=fixture.headers())
+
+    assert fixture.journal == ["delete_document"]
+
+
 # --- 인증 ---------------------------------------------------------------------
 
 
@@ -969,6 +1033,7 @@ def test_범위를_벗어난_페이지_인자는_422(client: TestClient, fixture
     [
         ("post", "/documents"),
         ("get", "/documents"),
+        ("delete", f"/documents/{uuid.uuid4()}"),
         ("get", f"/conversions/{uuid.uuid4()}"),
         ("put", f"/conversions/{uuid.uuid4()}"),
         ("get", f"/conversions/{uuid.uuid4()}/export?format=docx"),

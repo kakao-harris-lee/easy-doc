@@ -107,6 +107,17 @@ class FakeDocumentStore:
         self.journal.append("commit")
         self.commits += 1
 
+    async def delete_for_user(self, document_id: uuid.UUID, user_id: uuid.UUID) -> bool:
+        """소유자를 확인하며 문서를 지운다. 실제 저장소의 FK CASCADE를 손으로 흉내 낸다."""
+        self.journal.append("delete_document")
+        document = self.documents.get(document_id)
+        if document is None or document.user_id != user_id:
+            return False
+        del self.documents[document_id]
+        # DB에서는 ondelete=CASCADE가 변환 행을 함께 지운다.
+        self.conversions_by_document.pop(document_id, None)
+        return True
+
     async def list_for_user(self, user_id: uuid.UUID, *, limit: int, offset: int) -> DocumentPage:
         """내 문서를 최신순으로 돌려준다 (실제 저장소의 정렬·페이지네이션과 같은 규칙)."""
         mine = sorted(

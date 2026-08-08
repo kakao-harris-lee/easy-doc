@@ -1,12 +1,15 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 
-import { ApiError, listDocuments } from '../api/client'
+import { ApiError, deleteDocument, listDocuments } from '../api/client'
 import type { ConversionStatus, DocumentListItem } from '../api/types'
 import { conversionPath, HOME_PATH } from '../routes/paths'
 
 /** 한 번에 불러올 개수. 백엔드 기본값과 같다. */
 const PAGE_SIZE = 20
+
+/** 삭제 전에 묻는 말. 되돌릴 수 없다는 것과 무엇이 함께 사라지는지를 밝힌다. */
+const DELETE_CONFIRM_MESSAGE = '문서와 변환 결과가 즉시 삭제됩니다. 되돌릴 수 없습니다. 삭제할까요?'
 
 /** 상태 코드 → 사람이 읽는 말. */
 const STATUS_TEXT: Record<ConversionStatus, string> = {
@@ -38,6 +41,10 @@ export function HistoryPage() {
   const [error, setError] = useState<string | null>(null)
   // 화면이 나타나는 즉시 첫 조회가 시작되므로 처음부터 true다.
   const [loading, setLoading] = useState(true)
+  // 삭제 뒤 같은 offset(0)으로 다시 읽으려면 조회를 다시 걸 신호가 하나 더 필요하다 —
+  // offset만 보고 있으면 "0에서 0으로" 바뀌지 않아 effect가 돌지 않는다.
+  const [reloadToken, setReloadToken] = useState(0)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
 
   useEffect(() => {
     const controller = new AbortController()
@@ -66,7 +73,35 @@ export function HistoryPage() {
 
     void load()
     return () => controller.abort()
-  }, [offset])
+  }, [offset, reloadToken])
+
+  /**
+   * 문서를 파기한다. 되돌릴 수 없으므로 반드시 먼저 묻는다.
+   *
+   * 지운 뒤 첫 쪽부터 다시 읽는 이유: 삭제로 다음 쪽 경계가 한 칸 밀려, 이어 붙여
+   * 둔 쪽을 그대로 두면 아직 못 본 문서가 조용히 건너뛰어진다.
+   */
+  async function handleDelete(item: DocumentListItem): Promise<void> {
+    if (!window.confirm(DELETE_CONFIRM_MESSAGE)) {
+      return
+    }
+    setDeletingId(item.id)
+    try {
+      await deleteDocument(item.id)
+      setError(null)
+      setLoading(true)
+      setOffset(0)
+      setReloadToken((token) => token + 1)
+    } catch (caught) {
+      setError(
+        caught instanceof ApiError
+          ? caught.message
+          : '문서를 삭제하지 못했습니다. 잠시 후 다시 시도해 주세요.',
+      )
+    } finally {
+      setDeletingId(null)
+    }
+  }
 
   return (
     <section aria-labelledby="history-heading">
@@ -92,6 +127,7 @@ export function HistoryPage() {
               <th scope="col">글자 수</th>
               <th scope="col">올린 날짜</th>
               <th scope="col">검수</th>
+              <th scope="col">삭제</th>
             </tr>
           </thead>
           <tbody>
@@ -109,6 +145,17 @@ export function HistoryPage() {
                 <td>{item.char_count.toLocaleString('ko-KR')}자</td>
                 <td>{formatDate(item.created_at)}</td>
                 <td>{item.reviewed_at === null ? '초안' : '검수함'}</td>
+                <td>
+                  <button
+                    type="button"
+                    // 줄마다 같은 "삭제"가 반복되므로 어떤 문서인지 이름에 실어 준다.
+                    aria-label={`${item.title} 삭제`}
+                    onClick={() => void handleDelete(item)}
+                    disabled={deletingId === item.id}
+                  >
+                    삭제
+                  </button>
+                </td>
               </tr>
             ))}
           </tbody>

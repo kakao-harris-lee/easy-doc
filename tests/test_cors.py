@@ -49,18 +49,22 @@ def test_모르는_오리진에는_CORS_헤더를_주지_않는다(client: TestC
     assert "access-control-allow-origin" not in response.headers
 
 
-def test_preflight에_필요한_메서드와_헤더를_알려준다(client: TestClient) -> None:
+@pytest.mark.parametrize("method", ["GET", "POST", "PUT", "DELETE"])
+def test_preflight에_필요한_메서드와_헤더를_알려준다(client: TestClient, method: str) -> None:
+    """허용 목록에서 빠진 메서드는 브라우저에서만 막힌다 — 서버 테스트로는 드러나지
+    않으므로 우리가 실제로 제공하는 메서드를 여기에 모아 지킨다(삭제 포함).
+    """
     response = client.options(
         "/documents",
         headers={
             "Origin": _ALLOWED,
-            "Access-Control-Request-Method": "PUT",
+            "Access-Control-Request-Method": method,
             "Access-Control-Request-Headers": "authorization",
         },
     )
 
     assert response.status_code == 200
-    assert "PUT" in response.headers["access-control-allow-methods"]
+    assert method in response.headers["access-control-allow-methods"]
     assert "authorization" in response.headers["access-control-allow-headers"].lower()
 
 

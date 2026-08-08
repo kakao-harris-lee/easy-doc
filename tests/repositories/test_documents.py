@@ -2,8 +2,9 @@
 
 DATABASE_URL이 없으면 conftest가 `db` 마커를 보고 자동으로 skip 한다.
 
-여기서 보려는 것은 세 가지다: 소유자 격리(남의 문서가 절대 보이지 않는다), 상태
-전이(pending → processing → done/failed), 그리고 30일 보존 기본값이다.
+여기서 보려는 것은 네 가지다: 소유자 격리(남의 문서가 절대 보이지 않는다), 상태
+전이(pending → processing → done/failed), 30일 보존 기본값, 그리고 즉시 삭제가
+암호문·변환 행을 남기지 않는 것이다.
 """
 
 import uuid
@@ -463,6 +464,60 @@ async def test_문서가_없으면_빈_목록이다(db_session: AsyncSession) ->
 
     assert page.items == []
     assert page.has_more is False
+
+
+# --- 삭제 ---------------------------------------------------------------------
+
+
+async def _row_counts(session: AsyncSession, document: Document) -> int:
+    """DB에 남아 있는 문서·변환 행 수를 센다 (세션 캐시가 아니라 실제 테이블)."""
+    result = await session.execute(
+        text(
+            "SELECT (SELECT count(*) FROM documents WHERE id = :id)"
+            " + (SELECT count(*) FROM conversions WHERE document_id = :id)"
+        ),
+        {"id": document.id},
+    )
+    return int(result.scalar_one())
+
+
+async def test_문서를_지우면_변환과_암호문이_함께_사라진다(db_session: AsyncSession) -> None:
+    """master-plan 3.2 "삭제 요청 시 즉시 파기" — 암호화 컬럼도 남지 않아야 한다."""
+    user = await _user(db_session, "delete-owner@example.com")
+    documents = DocumentRepository(db_session)
+    conversions = ConversionRepository(db_session)
+    document = await _document(documents, user)
+    await conversions.create_pending(document.id)
+    await conversions.commit()
+
+    assert await documents.delete_for_user(document.id, user.id) is True
+    await documents.commit()
+
+    assert await _row_counts(db_session, document) == 0
+    # 암호문 잔존 0 — bytea 컬럼이 어디에도 남아 있지 않은지 직접 센다.
+    leftover = await db_session.execute(
+        text("SELECT count(*) FROM documents WHERE source_text_encrypted = :blob"),
+        {"blob": _ENCRYPTED},
+    )
+    assert leftover.scalar_one() == 0
+
+
+async def test_남의_문서는_지워지지_않는다(db_session: AsyncSession) -> None:
+    """소유자 격리 — 삭제도 조회와 같은 조건을 WHERE에서 함께 판정한다."""
+    owner = await _user(db_session, "delete-mine@example.com")
+    stranger = await _user(db_session, "delete-stranger@example.com")
+    documents = DocumentRepository(db_session)
+    document = await _document(documents, owner)
+
+    assert await documents.delete_for_user(document.id, stranger.id) is False
+
+    assert await _row_counts(db_session, document) == 1
+
+
+async def test_없는_문서를_지우면_False다(db_session: AsyncSession) -> None:
+    user = await _user(db_session, "delete-missing@example.com")
+
+    assert await DocumentRepository(db_session).delete_for_user(uuid.uuid4(), user.id) is False
 
 
 # --- 스키마 ------------------------------------------------------------------

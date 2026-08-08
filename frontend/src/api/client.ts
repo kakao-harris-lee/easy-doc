@@ -169,6 +169,15 @@ export function listDocuments(
   return requestJson<DocumentListResponse>(`/documents${suffix}`, { signal })
 }
 
+/**
+ * DELETE /documents/{id} — 문서와 변환 결과를 즉시 파기한다.
+ *
+ * 204라 본문이 없다 — requestJson을 쓰면 빈 본문을 JSON으로 읽다가 실패한다.
+ */
+export async function deleteDocument(documentId: string): Promise<void> {
+  await send(`/documents/${documentId}`, { method: 'DELETE' })
+}
+
 /** GET /conversions/{id} — 변환 상태·결과를 조회한다. */
 export function getConversion(
   conversionId: string,

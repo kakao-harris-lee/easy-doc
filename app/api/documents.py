@@ -264,6 +264,21 @@ async def list_documents(
     )
 
 
+@router.delete("/documents/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_document(
+    document_id: uuid.UUID,
+    current_user: CurrentUserDep,
+    service: DocumentServiceDep,
+) -> Response:
+    """문서와 그 변환 결과를 즉시 파기한다. 내 것이 아니면 404.
+
+    응답 모델을 두지 않는 이유: 204에는 본문이 없다. 지운 내용을 되돌려 주면 방금
+    파기한 문서를 다시 밖으로 내보내는 셈이라, 삭제 확인은 상태 코드로만 한다.
+    """
+    await service.delete_document(document_id, current_user.id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 @router.get("/conversions/{conversion_id}")
 async def read_conversion(
     conversion_id: uuid.UUID,

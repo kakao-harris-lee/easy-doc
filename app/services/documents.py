@@ -172,6 +172,10 @@ class DocumentStore(Protocol):
         """내 문서를 최신순으로 돌려준다 (최신 변환 상태 포함)."""
         ...
 
+    async def delete_for_user(self, document_id: uuid.UUID, user_id: uuid.UUID) -> bool:
+        """소유자를 확인하며 문서를 지운다(커밋하지 않는다). 없거나 남의 것이면 False."""
+        ...
+
 
 class ConversionStore(Protocol):
     """DocumentService가 변환 저장소에 요구하는 계약 (구현: ConversionRepository).
@@ -274,6 +278,24 @@ class DocumentService:
     async def list_documents(self, user_id: uuid.UUID, *, limit: int, offset: int) -> DocumentPage:
         """내 문서 목록을 최신순으로 돌려준다."""
         return await self._documents.list_for_user(user_id, limit=limit, offset=offset)
+
+    async def delete_document(self, document_id: uuid.UUID, user_id: uuid.UUID) -> None:
+        """문서와 그 변환 결과를 즉시 파기한다 (master-plan 3.2 "삭제 요청 시 즉시 파기").
+
+        보존 기간(30일)을 기다리지 않고 지우는 경로다. 지운 뒤 복구 수단은 없다 —
+        원문·변환 결과·마스킹 항목이 한 번에 사라지는 것이 이 기능의 목적이다.
+
+        Raises:
+            NotFoundError: 없거나 내 것이 아니다. 남의 문서와 없는 문서를 구분하지
+                않는다 — 구분하면 식별자의 존재 여부가 새어 나간다(get_conversion과
+                같은 규칙).
+        """
+        if not await self._documents.delete_for_user(document_id, user_id):
+            raise NotFoundError("문서를 찾을 수 없습니다")
+        await self._documents.commit()
+        # 감사 로그는 행위 단위로 문서 ID만 남긴다 — 제목은 본문 첫 줄에서 유도한
+        # 사용자 콘텐츠라 로그에 담지 않는다 (master-plan 3.2 로그 규칙).
+        _logger.info("문서 삭제: document_id=%s user_id=%s", document_id, user_id)
 
     async def get_conversion(
         self, conversion_id: uuid.UUID, user_id: uuid.UUID

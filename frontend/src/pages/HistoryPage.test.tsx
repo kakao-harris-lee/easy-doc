@@ -3,13 +3,14 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { listDocuments } from '../api/client'
+import { ApiError, deleteDocument, listDocuments } from '../api/client'
 import { documentItem } from '../test/factories'
 import { HistoryPage } from './HistoryPage'
 
 vi.mock('../api/client', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api/client')>()),
   listDocuments: vi.fn(),
+  deleteDocument: vi.fn(),
 }))
 
 function renderPage() {
@@ -22,6 +23,8 @@ function renderPage() {
 
 beforeEach(() => {
   vi.mocked(listDocuments).mockReset()
+  vi.mocked(deleteDocument).mockReset()
+  vi.restoreAllMocks()
 })
 
 describe('변환 기록', () => {
@@ -86,5 +89,62 @@ describe('변환 기록', () => {
     renderPage()
 
     expect(await screen.findByRole('alert')).toHaveTextContent('변환 기록을 불러오지 못했습니다')
+  })
+})
+
+describe('문서 삭제', () => {
+  /** 문서 한 건만 있는 첫 쪽. 삭제 뒤에는 빈 목록을 돌려준다. */
+  function mockOneThenEmpty() {
+    vi.mocked(listDocuments)
+      .mockResolvedValueOnce({
+        items: [documentItem({ id: 'd1', title: '재난지원금 안내' })],
+        limit: 20,
+        offset: 0,
+        has_more: false,
+      })
+      .mockResolvedValue({ items: [], limit: 20, offset: 0, has_more: false })
+  }
+
+  it('묻고 나서 지운 뒤 목록을 다시 읽는다', async () => {
+    const user = userEvent.setup()
+    mockOneThenEmpty()
+    vi.mocked(deleteDocument).mockResolvedValue(undefined)
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    renderPage()
+
+    await user.click(await screen.findByRole('button', { name: '재난지원금 안내 삭제' }))
+
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining('즉시 삭제됩니다'))
+    expect(vi.mocked(deleteDocument)).toHaveBeenCalledWith('d1')
+    // 지운 줄이 사라지고 첫 쪽부터 다시 읽는다 — 삭제로 다음 쪽 경계가 밀리기 때문이다.
+    expect(await screen.findByText(/아직 변환한 문서가 없습니다/)).toBeInTheDocument()
+    expect(vi.mocked(listDocuments).mock.calls[1]?.[0]).toEqual({ limit: 20, offset: 0 })
+  })
+
+  it('취소하면 아무것도 지우지 않는다', async () => {
+    const user = userEvent.setup()
+    mockOneThenEmpty()
+    vi.spyOn(window, 'confirm').mockReturnValue(false)
+    renderPage()
+
+    await user.click(await screen.findByRole('button', { name: '재난지원금 안내 삭제' }))
+
+    expect(vi.mocked(deleteDocument)).not.toHaveBeenCalled()
+    expect(screen.getByText('재난지원금 안내')).toBeInTheDocument()
+    // 다시 읽지도 않는다 — 첫 조회 한 번뿐이다.
+    expect(vi.mocked(listDocuments)).toHaveBeenCalledTimes(1)
+  })
+
+  it('지우지 못하면 사유를 알리고 줄을 남겨 둔다', async () => {
+    const user = userEvent.setup()
+    mockOneThenEmpty()
+    vi.mocked(deleteDocument).mockRejectedValue(new ApiError(404, '문서를 찾을 수 없습니다'))
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    renderPage()
+
+    await user.click(await screen.findByRole('button', { name: '재난지원금 안내 삭제' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('문서를 찾을 수 없습니다')
+    expect(screen.getByText('재난지원금 안내')).toBeInTheDocument()
   })
 })

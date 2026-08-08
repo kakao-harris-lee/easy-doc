@@ -8,7 +8,7 @@ import logging
 import uuid
 from dataclasses import dataclass
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -109,6 +109,30 @@ class DocumentRepository:
             select(Document).where(Document.id == document_id, Document.user_id == user_id)
         )
         return result.scalar_one_or_none()
+
+    async def delete_for_user(self, document_id: uuid.UUID, user_id: uuid.UUID) -> bool:
+        """소유자를 확인하며 문서를 지운다 (flush까지만 — 확정은 호출자가 commit으로 한다).
+
+        변환 행은 FK `ondelete=CASCADE`가 DB 안에서 함께 지운다 — 애플리케이션이 두 번
+        지우면 그 사이에 끼어든 워커의 UPDATE가 고아 행을 남길 수 있고, 삭제 순서를
+        코드가 기억해야 한다. 파기는 한 문장이어야 원자적이다 (master-plan 3.2 "삭제
+        요청 시 즉시 파기").
+
+        소유자 조건을 WHERE에 함께 넣는 이유는 `get_for_user`와 같다 — "찾았지만 남의
+        것"이라는 상태를 만들지 않으면 호출부가 소유자 검사를 빠뜨릴 수 없다.
+
+        Returns:
+            지웠으면 True. False면 없거나 내 것이 아니다(호출부가 404로 바꾼다).
+        """
+        result = await self._session.execute(
+            delete(Document)
+            .where(Document.id == document_id, Document.user_id == user_id)
+            # RETURNING으로 삭제 여부를 본다(rowcount는 드라이버마다 타입이 다르다) —
+            # conversions 저장소의 조건부 UPDATE와 같은 규칙이다.
+            .returning(Document.id)
+            .execution_options(synchronize_session=False)
+        )
+        return result.scalar_one_or_none() is not None
 
     async def list_for_user(self, user_id: uuid.UUID, *, limit: int, offset: int) -> DocumentPage:
         """내 문서를 최신순으로 돌려준다 (각 문서의 최신 변환 상태 포함).
