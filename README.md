@@ -33,6 +33,7 @@ cp .env.example .env
 | `FERNET_KEY` | `uv run python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"` — 없으면 문서 저장·워커 기동 불가 |
 | `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` | LLM 벤더 키. 없으면 변환 작업이 `ProviderUnavailable`로 실패 기록된다(앱·워커는 정상 기동) |
 | `LLM_PROVIDER` | 워커가 쓸 벤더(`anthropic` \| `openai`). 기본값 `anthropic`은 '벤더 미확정' 상태이며 벤치마크로 확정되면 갱신한다. 벤치마크·골든셋 평가는 이 값이 아니라 `--providers`·`GOLDEN_PROVIDER`를 쓴다 |
+| `LLM_MODEL` | (선택) `LLM_PROVIDER`로 고른 벤더의 모델명 덮어쓰기. 비우면 provider 기본 모델(openai=`gpt-4.1`, anthropic=`claude-sonnet-5`)을 쓴다. 모델 롤백을 코드 수정 없이 하기 위한 값이며 다른 벤더에는 적용되지 않는다 |
 
 ### 3. 마이그레이션 · 서버 · 워커
 

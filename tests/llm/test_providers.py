@@ -78,7 +78,7 @@ def _오픈에이아이_응답(
     *, finish_reason: str = "stop", content: str | None = _결과
 ) -> SimpleNamespace:
     return SimpleNamespace(
-        model="gpt-4o-테스트판",
+        model="gpt-4.1-테스트판",
         choices=[
             SimpleNamespace(message=SimpleNamespace(content=content), finish_reason=finish_reason)
         ],
@@ -118,7 +118,7 @@ def test_생성자_기본값과_name() -> None:
     앤트로픽 = AnthropicProvider(api_key="테스트키")
     오픈에이아이 = OpenAIProvider(api_key="테스트키")
     assert (앤트로픽.name, 앤트로픽.model) == ("anthropic", "claude-sonnet-5")
-    assert (오픈에이아이.name, 오픈에이아이.model) == ("openai", "gpt-4o")
+    assert (오픈에이아이.name, 오픈에이아이.model) == ("openai", "gpt-4.1")
 
 
 def test_클라이언트에_타임아웃과_재시도가_명시된다(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -255,7 +255,7 @@ async def test_openai_system과_user가_역할별_메시지로_전달된다(
     ]
     assert 엔드포인트.kwargs["max_completion_tokens"] == 1024
     assert 엔드포인트.kwargs["temperature"] == 0.5
-    assert 엔드포인트.kwargs["model"] == "gpt-4o"
+    assert 엔드포인트.kwargs["model"] == "gpt-4.1"
 
 
 async def test_openai_응답이_LLMResponse로_변환된다(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -265,7 +265,7 @@ async def test_openai_응답이_LLMResponse로_변환된다(monkeypatch: pytest.
     response = await provider.complete(system=_시스템, user=_본문)
 
     assert response.text == _결과
-    assert response.model == "gpt-4o-테스트판"
+    assert response.model == "gpt-4.1-테스트판"
     assert (response.input_tokens, response.output_tokens) == (120, 45)
     assert response.truncated is False
 
@@ -282,7 +282,7 @@ async def test_openai_finish_reason이_length면_truncated(
 
 
 async def test_openai_choices가_비면_LLMProviderError(monkeypatch: pytest.MonkeyPatch) -> None:
-    빈_응답 = SimpleNamespace(model="gpt-4o-테스트판", choices=[], usage=None)
+    빈_응답 = SimpleNamespace(model="gpt-4.1-테스트판", choices=[], usage=None)
     provider = _오픈에이아이_대역(monkeypatch, _가짜엔드포인트(result=빈_응답))
 
     with pytest.raises(LLMProviderError, match="빈 choices"):
@@ -376,7 +376,7 @@ async def test_openai_계약_직렬화된_요청과_실제_응답_스키마(
         "id": "chatcmpl-test",
         "object": "chat.completion",
         "created": 0,
-        "model": "gpt-4o-테스트판",
+        "model": "gpt-4.1-테스트판",
         "choices": [
             {
                 "index": 0,
@@ -397,7 +397,7 @@ async def test_openai_계약_직렬화된_요청과_실제_응답_스키마(
     response = await provider.complete(system=_시스템, user=_본문, max_tokens=1024, temperature=0.5)
     await provider.aclose()
 
-    assert 포착["model"] == "gpt-4o"
+    assert 포착["model"] == "gpt-4.1"
     assert 포착["max_completion_tokens"] == 1024
     assert "max_tokens" not in 포착  # deprecated 파라미터로 되돌아가지 않았는지
     assert 포착["temperature"] == 0.5
@@ -406,7 +406,7 @@ async def test_openai_계약_직렬화된_요청과_실제_응답_스키마(
         {"role": "user", "content": _본문},
     ]
     assert response.text == _결과
-    assert response.model == "gpt-4o-테스트판"
+    assert response.model == "gpt-4.1-테스트판"
     assert (response.input_tokens, response.output_tokens) == (120, 45)
     assert response.truncated is True
 

@@ -26,7 +26,12 @@ class OpenAIProvider(LLMProvider):
     def __init__(
         self,
         api_key: str,
-        model: str = "gpt-4o",
+        # 기본 모델 근거: docs/quality/2026-08-07-model-comparison.md.
+        # gpt-4o는 입력 2,600자 이상에서 지시 없이 스스로 요약해 출력이 0.44~0.77배로
+        # 줄었고(장문 4건 전부), gpt-4.1은 같은 문서·같은 프롬프트에서 1.06~1.21배로
+        # 정상 팽창했다. 파라미터 변경이 필요 없는 드롭인이라 이 줄만 바꾼다.
+        # 모델을 바꿔 보려면 코드가 아니라 .env의 LLM_MODEL로 덮어쓴다(app/llm/factory.py).
+        model: str = "gpt-4.1",
         timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
     ) -> None:
         self.model = model

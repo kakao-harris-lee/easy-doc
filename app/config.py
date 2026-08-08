@@ -37,3 +37,8 @@ class Settings(BaseSettings):
     # 비교 도구(scripts/benchmark.py·골든셋 평가)는 이 값을 쓰지 않는다 — 대상 벤더를
     # 명시 지정하는 것이 비교의 전제라 각자 --providers·GOLDEN_PROVIDER를 유지한다.
     llm_provider: str = "anthropic"
+
+    # llm_provider로 고른 벤더의 모델명 덮어쓰기. None이면 provider 구현체의 기본 모델을 쓴다.
+    # 모델 교체·롤백을 코드 수정 없이 .env만으로 할 수 있게 두는 것이 목적이다 —
+    # 기본 모델 자체는 실측 근거와 함께 provider 구현체에 남긴다(docs/quality 보고서 인용).
+    llm_model: str | None = None
