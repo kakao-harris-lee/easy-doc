@@ -295,6 +295,34 @@ class FakeConversionWorkerStore:
         self.commits += 1
 
 
+class FakeRetentionStore:
+    """보존 만료 파기 저장소 대역 (`app.workers.tasks.RetentionStore`).
+
+    `batches`는 delete_expired가 차례로 돌려줄 삭제 건수다 — 목록이 바닥나면 0을
+    돌려준다(더 지울 것이 없는 상태). 배치마다 커밋하는지 보려고 호출 순서를 남긴다.
+
+    `error`를 주면 첫 삭제 시도에서 그 예외를 던진다 (DB 장애 경로 테스트용).
+    """
+
+    def __init__(self, batches: list[int] | None = None, *, error: Exception | None = None) -> None:
+        self._batches = list(batches or [])
+        self._error = error
+        self.journal: list[str] = []
+        self.limits: list[int] = []
+
+    async def delete_expired(self, *, limit: int) -> int:
+        """준비된 배치를 차례로 돌려준다. 요청받은 상한도 기록한다."""
+        self.journal.append("delete_expired")
+        self.limits.append(limit)
+        if self._error is not None:
+            raise self._error
+        return self._batches.pop(0) if self._batches else 0
+
+    async def commit(self) -> None:
+        """커밋 호출을 기록한다."""
+        self.journal.append("commit")
+
+
 class FakeTaskQueue:
     """작업 큐 대역 (`app.queue.TaskQueue`).
 

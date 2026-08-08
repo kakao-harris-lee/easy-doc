@@ -145,12 +145,34 @@ DB 테스트는 테스트마다 트랜잭션을 롤백해 격리하지만, 실�
 
 `GET /health`는 인증 없이 서비스 생존만 알린다(DB·Redis 상태는 보지 않는다).
 
+## 보존 만료 자동 삭제
+
+업로드 원문·변환 결과는 기본 **30일** 뒤 자동으로 삭제된다 (master-plan 3.2). 판단
+기준은 `documents.retention_expires_at`이고, 실제로 지우는 것은 워커의 cron 잡이다.
+
+| 항목 | 값 |
+|---|---|
+| 잡 이름 | `purge_expired_documents` (`app/workers/tasks.py`) |
+| 주기 | **매일 04:00 KST** — 등록은 `WorkerSettings.cron_jobs`, 시간대는 `WorkerSettings.timezone`이 고정한다(컨테이너 TZ는 UTC라 명시하지 않으면 낮에 돈다) |
+| 배치 | 한 번에 500건씩 지우고 배치마다 커밋한다 — 만료 문서가 쌓여도 한 트랜잭션이 테이블을 오래 잠그지 않는다 |
+| 로그 | 삭제 **건수**만 남긴다. 어떤 문서였는지는 남기지 않는다(이미 파기한 개인정보의 흔적) |
+| 실패 | 재시도하지 않는다 — 매일 다시 돌고, 남은 문서는 다음 실행이 이어서 지운다 |
+
+워커가 떠 있어야 돈다(`docker compose up -d worker`). 파기를 앞당겨야 하면 손으로 한 번 돌린다.
+
+```bash
+docker compose exec worker python -m app.workers.purge
+```
+
+이 잡은 **만료된 문서만** 지운다. 만료 전 문서를 지우는 것은 `DELETE /documents/{id}`
+(화면에서는 변환 기록의 "삭제" 버튼)이며, 그쪽은 보존 기간과 무관하게 즉시 파기한다.
+
 ## 현재 제한 사항
 
 - **문서당 4,000자**(공백 포함). 그보다 길면 업로드 단계에서 422로 거절한다 — LLM 출력 토큰 상한을 넘겨 절단 실패할 것이 사실상 확정이라 비용을 치르기 전에 막는다. 문단 단위 분할 변환은 준비 중이며, 그때 이 상한이 사라진다.
 - **업로드 파일 10MB**, 지원 형식은 **docx · pdf · hwpx**. 구버전 `.hwp`와 텍스트가 없는 스캔 PDF(OCR)는 아직 지원하지 않는다.
 - **LLM API 키가 필요**하다. 키 없이도 기동·업로드는 되지만 변환은 `failure_code: "ProviderUnavailable"`로 실패한다.
-- 30일 보존은 **필드(`documents.retention_expires_at`)만 있고 자동 삭제 잡은 없다.** 크레딧 차감·이메일 알림도 아직이다 (Lean MVP 범위 구분 — master-plan 4.0).
+- 크레딧 차감·이메일 알림은 아직이다 (Lean MVP 범위 구분 — master-plan 4.0). 변환 완료는 화면에서 확인해야 한다.
 - 에디터는 **전체 텍스트 수정**까지다. 문단 단위 재변환·문단 대응 하이라이트(P0-4), pdf·hwp 내보내기는 다음 단계다.
 
 ## 배포 주의
@@ -202,7 +224,7 @@ app/
   llm/           # LLMProvider 인터페이스 + anthropic·openai 구현체 + 팩토리
   privacy/       # 개인정보 마스킹 파이프라인 + Fernet 암호기
   ingest/        # 파일 텍스트 추출 (docx/pdf/hwpx)
-  workers/       # arq 워커 설정 + 변환 태스크
+  workers/       # arq 워커 설정 + 변환 태스크 + 보존 만료 파기 잡
 migrations/      # alembic 리비전
 frontend/        # React + TypeScript(Vite) 화면
   src/api/       # 백엔드 호출 단일 창구 (fetch 래퍼·토큰·타입)

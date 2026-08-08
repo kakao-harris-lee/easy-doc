@@ -51,9 +51,12 @@ class Document(Base):
     #: 공백 포함 문자 수. 크레딧 환산(1,000자=1크레딧) 기준값을 저장 시점에 고정한다 —
     #: 나중에 본문을 복호화해 다시 세지 않아도 과금 근거가 남는다.
     char_count: Mapped[int]
-    # 삭제 잡 자체는 이번 스프린트 범위 밖이다(필드와 기본값만 둔다).
+    #: 보존 만료 시각. 지난 문서는 매일 도는 파기 잡이 지운다
+    #: (app/workers/tasks.py의 purge_expired_documents).
+    #: index: 그 잡이 `WHERE retention_expires_at < now()`로 대상을 고른다 — 없으면
+    #: 매일 새벽 전수 스캔이 된다.
     retention_expires_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=text(RETENTION_DEFAULT_SQL)
+        DateTime(timezone=True), server_default=text(RETENTION_DEFAULT_SQL), index=True
     )
     # timezone=True: 보존 만료 판정이 서버 타임존에 좌우되지 않게 한다.
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

@@ -3,8 +3,8 @@
 DATABASE_URL이 없으면 conftest가 `db` 마커를 보고 자동으로 skip 한다.
 
 여기서 보려는 것은 네 가지다: 소유자 격리(남의 문서가 절대 보이지 않는다), 상태
-전이(pending → processing → done/failed), 30일 보존 기본값, 그리고 즉시 삭제가
-암호문·변환 행을 남기지 않는 것이다.
+전이(pending → processing → done/failed), 30일 보존 기본값, 그리고 파기(즉시 삭제와
+보존 만료 삭제가 암호문·변환 행을 남기지 않는 것)다.
 """
 
 import uuid
@@ -518,6 +518,66 @@ async def test_없는_문서를_지우면_False다(db_session: AsyncSession) -> 
     user = await _user(db_session, "delete-missing@example.com")
 
     assert await DocumentRepository(db_session).delete_for_user(uuid.uuid4(), user.id) is False
+
+
+# --- 보존 만료 자동 삭제 ---------------------------------------------------------
+
+
+async def _expire(session: AsyncSession, document: Document, *, days_ago: int) -> None:
+    """보존 만료 시각을 과거로 옮긴다 (30일을 실제로 기다릴 수 없으므로)."""
+    await session.execute(
+        text(
+            "UPDATE documents SET retention_expires_at = now() - make_interval(days => :days)"
+            " WHERE id = :id"
+        ),
+        {"days": days_ago, "id": document.id},
+    )
+
+
+async def test_보존_기간이_지난_문서만_지워진다(db_session: AsyncSession) -> None:
+    """경계 판정은 DB 시계(now())가 한다 — 아직 만료되지 않은 문서는 남아야 한다."""
+    user = await _user(db_session, "expired@example.com")
+    documents = DocumentRepository(db_session)
+    conversions = ConversionRepository(db_session)
+    expired = await _document(documents, user, title="만료된 안내문")
+    await conversions.create_pending(expired.id)
+    alive = await _document(documents, user, title="아직 살아 있는 안내문")
+    await conversions.commit()
+    await _expire(db_session, expired, days_ago=1)
+
+    deleted = await documents.delete_expired(limit=500)
+    await documents.commit()
+
+    assert deleted == 1
+    # 변환 행도 FK CASCADE로 함께 사라졌다.
+    assert await _row_counts(db_session, expired) == 0
+    assert await _row_counts(db_session, alive) == 1
+
+
+async def test_만료_문서가_없으면_아무것도_지우지_않는다(db_session: AsyncSession) -> None:
+    """0을 돌려줘야 호출자(cron 잡)가 반복을 멈춘다."""
+    user = await _user(db_session, "not-expired@example.com")
+    documents = DocumentRepository(db_session)
+    await _document(documents, user)
+
+    assert await documents.delete_expired(limit=500) == 0
+
+
+async def test_만료_삭제는_한_번에_limit만큼만_지운다(db_session: AsyncSession) -> None:
+    """만료 문서가 쌓인 날 단일 DELETE가 테이블을 오래 잠그지 않게 나눠 지운다."""
+    user = await _user(db_session, "expired-batch@example.com")
+    documents = DocumentRepository(db_session)
+    for index in range(3):
+        document = await _document(documents, user, title=f"만료 {index}")
+        await _expire(db_session, document, days_ago=index + 1)
+    await documents.commit()
+
+    first = await documents.delete_expired(limit=2)
+    rest = await documents.delete_expired(limit=2)
+    await documents.commit()
+
+    assert (first, rest) == (2, 1)
+    assert await documents.delete_expired(limit=2) == 0
 
 
 # --- 스키마 ------------------------------------------------------------------

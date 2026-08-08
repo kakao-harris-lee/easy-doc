@@ -8,7 +8,7 @@ import logging
 import uuid
 from dataclasses import dataclass
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -133,6 +133,37 @@ class DocumentRepository:
             .execution_options(synchronize_session=False)
         )
         return result.scalar_one_or_none() is not None
+
+    async def delete_expired(self, *, limit: int) -> int:
+        """보존 기간이 지난 문서를 최대 `limit`건 지운다 (flush까지만).
+
+        만료 판정을 애플리케이션이 아니라 DB 시계(`now()`)로 하는 이유는
+        `retention_expires_at` 기본값이 DB 시계로 찍히기 때문이다 — 두 시계가 어긋나면
+        경계에 있는 문서가 하루 일찍/늦게 사라진다.
+
+        한 번에 다 지우지 않고 건수를 끊는 이유: 만료 문서가 수만 건 쌓인 날 단일
+        DELETE는 트랜잭션 하나로 그만큼의 행을 잠근다. 호출자(cron 잡)가 이 메서드를
+        반복 호출하며 배치마다 커밋한다.
+
+        Returns:
+            실제로 지운 건수. 0이면 더 지울 것이 없다는 뜻이라 호출자는 반복을 멈춘다.
+        """
+        expired = (
+            select(Document.id)
+            .where(Document.retention_expires_at < func.now())
+            # 오래된 것부터 지운다 — 중간에 멈춰도 "가장 오래 남아 있던 문서"가 먼저
+            # 사라져, 반복 실행이 만료 대기열을 앞에서부터 줄인다.
+            .order_by(Document.retention_expires_at)
+            .limit(limit)
+        )
+        result = await self._session.execute(
+            # conversions는 FK CASCADE로 함께 사라진다 (delete_for_user와 같은 이유).
+            delete(Document)
+            .where(Document.id.in_(expired))
+            .returning(Document.id)
+            .execution_options(synchronize_session=False)
+        )
+        return len(result.scalars().all())
 
     async def list_for_user(self, user_id: uuid.UUID, *, limit: int, offset: int) -> DocumentPage:
         """내 문서를 최신순으로 돌려준다 (각 문서의 최신 변환 상태 포함).

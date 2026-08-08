@@ -8,14 +8,19 @@ DB 엔진·LLM provider·암호기는 워커 수명 단위로 한 번 만들어 
 새로 만들면 커넥션 풀이 재사용되지 않는다(provider 수명 규약은 app/llm/provider.py).
 세션만은 작업마다 새로 연다: 워커는 여러 작업을 동시에 돌리므로 세션을 공유하면
 한 작업의 롤백이 다른 작업의 트랜잭션까지 무너뜨린다.
+
+정기 작업(cron)은 보존 만료 문서 파기 하나다 — 매일 04:00 KST에 돈다. 시각은
+`WorkerSettings.timezone`이 정하며, 컨테이너의 TZ 설정과 무관하게 같은 시각을 가리킨다.
 """
 
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from datetime import timedelta, timezone
 from typing import Any
 
 from arq.connections import RedisSettings
+from arq.cron import cron
 from arq.worker import func
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -24,11 +29,28 @@ from app.db import create_engine_and_factory
 from app.exceptions import ConfigurationError
 from app.llm.factory import create_provider
 from app.privacy.crypto import TextCipher
-from app.queue import CONVERT_DOCUMENT_TASK
+from app.queue import CONVERT_DOCUMENT_TASK, PURGE_EXPIRED_TASK
 from app.repositories.conversions import ConversionRepository
-from app.workers.tasks import ConversionWorkerStore, StoreScope, convert_document
+from app.repositories.documents import DocumentRepository
+from app.workers.tasks import (
+    ConversionWorkerStore,
+    RetentionScope,
+    RetentionStore,
+    StoreScope,
+    convert_document,
+    purge_expired_documents,
+)
 
 _logger = logging.getLogger(__name__)
+
+#: cron 시각의 기준 시간대. 한국 표준시는 서머타임이 없어 고정 오프셋이 정확하다.
+#: 명시하지 않으면 arq는 워커 프로세스의 로컬 시간대를 쓰는데, 컨테이너는 UTC라
+#: "04:00"이 한국 기준 낮 1시가 된다.
+KST = timezone(timedelta(hours=9))
+
+#: 보존 만료 파기 잡이 도는 시각(KST). 새벽으로 두는 이유는 업로드·변환이 가장 적은
+#: 시간대라, 삭제가 잠그는 행과 사용자 요청이 부딪힐 여지가 가장 작기 때문이다.
+RETENTION_CRON_HOUR = 4
 
 
 def _make_store_scope(session_factory: async_sessionmaker[AsyncSession]) -> StoreScope:
@@ -38,6 +60,21 @@ def _make_store_scope(session_factory: async_sessionmaker[AsyncSession]) -> Stor
     async def scope() -> AsyncIterator[ConversionWorkerStore]:
         async with session_factory() as session:
             yield ConversionRepository(session)
+
+    return scope
+
+
+def _make_retention_scope(session_factory: async_sessionmaker[AsyncSession]) -> RetentionScope:
+    """보존 만료 파기 잡이 쓸 저장소 스코프를 만든다.
+
+    변환 스코프와 세션을 나누는 이유는 계약을 나눈 이유와 같다 — 파기 잡은 문서를
+    지우기만 하고, 변환 작업은 문서를 지울 수 없어야 한다.
+    """
+
+    @asynccontextmanager
+    async def scope() -> AsyncIterator[RetentionStore]:
+        async with session_factory() as session:
+            yield DocumentRepository(session)
 
     return scope
 
@@ -60,6 +97,7 @@ async def startup(ctx: dict[str, Any]) -> None:
     # 마지막에 몰아 넣으면 그 엔진은 아무도 dispose 하지 못하고 남는다.
     ctx["engine"] = engine
     ctx["store_scope"] = _make_store_scope(session_factory)
+    ctx["retention_scope"] = _make_retention_scope(session_factory)
     ctx["cipher"] = TextCipher(settings.fernet_key.get_secret_value())
 
     provider = create_provider(settings.llm_provider, settings)
@@ -94,6 +132,21 @@ class WorkerSettings:
     #: 작업 이름을 상수로 못박는다 — 함수 이름을 바꿔도 큐에 쌓인 작업이 유실되지 않고,
     #: 넣는 쪽(app/queue.py)과 어긋나면 이 자리에서 드러난다.
     functions = [func(convert_document, name=CONVERT_DOCUMENT_TASK)]
+
+    #: 정기 작업. 보존 만료 문서 파기를 매일 04:00 KST에 돌린다 (master-plan 3.2
+    #: "기본 보존 30일 후 자동 삭제"). `unique=True`(기본값)라 워커를 여러 개 띄워도
+    #: 그 시각에 한 번만 실행된다.
+    #:
+    #: `max_tries=1`(기본값)을 그대로 둔다 — 실패해도 내일 다시 돌므로, 장애 중인 DB를
+    #: 재시도로 계속 두드릴 이유가 없다(app/workers/tasks.py 참고).
+    cron_jobs = [
+        cron(purge_expired_documents, name=PURGE_EXPIRED_TASK, hour=RETENTION_CRON_HOUR, minute=0)
+    ]
+
+    #: cron 시각 계산의 기준 시간대. 컨테이너 TZ가 UTC라 명시하지 않으면 위 시각이
+    #: 한국 기준 낮 1시가 된다.
+    timezone = KST
+
     redis_settings = RedisSettings.from_dsn(Settings().redis_url)
     on_startup = startup
     on_shutdown = shutdown

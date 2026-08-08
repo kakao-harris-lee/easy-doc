@@ -1,4 +1,4 @@
-"""arq 변환 작업.
+"""arq 워커 작업 — 문서 변환과 보존 만료 문서 파기.
 
 워커는 사용자 요청 맥락 없이 큐가 넘겨준 식별자만 들고 일한다. 그래서 여기서 지켜야
 할 규칙이 둘이다.
@@ -22,6 +22,10 @@
 멱등성: 재시도와 중복 배달이 전제인 큐라, 이미 done인 변환은 **다시 처리하지 않는다**
 (LLM 비용 이중 지불과, 사용자가 이미 받아 본 결과가 바뀌는 것을 막는다). 판정은 읽은
 값이 아니라 `mark_processing`의 조건부 UPDATE가 한다 — 읽고-나서-쓰는 사이의 틈을 없앤다.
+
+보존 만료 파기(`purge_expired_documents`)는 사용자 요청이 아니라 cron이 부르는 작업이다
+(등록: `app/workers/settings.py`의 `WorkerSettings.cron_jobs`). 남기는 로그는 삭제
+**건수**뿐이다 — 어떤 문서가 지워졌는지는 이미 사라진 개인정보에 대한 기록이 된다.
 """
 
 import logging
@@ -97,6 +101,35 @@ class ConversionWorkerStore(Protocol):
 StoreScope = Callable[[], AbstractAsyncContextManager[ConversionWorkerStore]]
 
 
+class RetentionStore(Protocol):
+    """보존 만료 파기 잡이 문서 저장소에 요구하는 계약 (구현: DocumentRepository).
+
+    변환 저장소 계약과 마찬가지로 필요한 만큼으로 좁힌다 — 이 잡은 문서를 **지우기만**
+    하며, 읽거나 만들 권한은 갖지 않는다.
+    """
+
+    async def delete_expired(self, *, limit: int) -> int:
+        """보존 기간이 지난 문서를 최대 limit건 지운다(커밋하지 않는다). 지운 건수를 준다."""
+        ...
+
+    async def commit(self) -> None:
+        """진행 중인 트랜잭션을 확정한다."""
+        ...
+
+
+#: 파기 잡이 쓸 저장소(=세션)를 열고 닫는 스코프. on_startup이 만들어 ctx에 넣는다.
+RetentionScope = Callable[[], AbstractAsyncContextManager[RetentionStore]]
+
+#: 한 번에 지우는 문서 수. 트랜잭션 하나가 잠그는 행 수를 묶는다 — 만료 문서가 수만 건
+#: 쌓인 날 단일 DELETE는 그만큼을 한 트랜잭션에 담아, 그 사이 업로드·조회가 밀린다.
+RETENTION_BATCH_SIZE = 500
+
+#: 한 번의 실행이 도는 최대 배치 수. 안전장치다 — 저장소가 지웠다고 하는데 실제로는
+#: 줄지 않는 상황(버그)에서 잡이 영원히 돌지 않게 한다. 하루 최대 50만 건이면
+#: 파일럿 규모에서는 사실상 상한에 닿지 않는다.
+RETENTION_MAX_BATCHES = 1_000
+
+
 # ctx가 dict[str, Any]인 것은 arq가 정한 모양이라 좁힐 수 없다.
 async def convert_document(ctx: dict[str, Any], conversion_id: str) -> None:
     """변환 한 건을 수행한다 (arq 진입점).
@@ -149,6 +182,55 @@ async def convert_document(ctx: dict[str, Any], conversion_id: str) -> None:
             _elapsed_ms(started),
         )
         raise Retry(defer=RETRY_DEFER) from None
+
+
+# ctx가 dict[str, Any]인 것은 arq가 정한 모양이라 좁힐 수 없다.
+async def purge_expired_documents(ctx: dict[str, Any]) -> None:
+    """보존 기간이 지난 문서를 지운다 (arq cron 진입점 — master-plan 3.2).
+
+    "기본 보존 30일 후 자동 삭제"를 이행하는 유일한 경로다. 만료 판정과 삭제는 DB가
+    한 문장으로 하고(`DocumentRepository.delete_expired`), 여기서는 배치를 반복하며
+    배치마다 커밋한다 — 도중에 워커가 죽어도 이미 지운 만큼은 확정되어 있고, 다음
+    실행이 남은 것부터 이어서 지운다.
+
+    실패를 `Retry`로 바꾸지 않는 이유: 이 잡은 매일 다시 돈다. 일시 장애로 오늘 못
+    지운 문서는 내일 지워지므로, 재시도로 장애 중인 DB를 계속 두드릴 이유가 없다.
+
+    ctx에서 읽는 값은 `app/workers/settings.py`의 startup이 채운다:
+    `retention_scope`(RetentionScope).
+
+    수동 실행(파기를 앞당겨야 할 때)::
+
+        docker compose exec worker python -m app.workers.purge
+    """
+    retention_scope: RetentionScope = ctx["retention_scope"]
+    started = time.monotonic()
+    deleted = 0
+    try:
+        async with retention_scope() as store:
+            for _ in range(RETENTION_MAX_BATCHES):
+                batch = await store.delete_expired(limit=RETENTION_BATCH_SIZE)
+                # 배치마다 확정한다 — 다음 배치가 실패해도 여기까지는 되돌아가지 않는다.
+                await store.commit()
+                deleted += batch
+                if batch < RETENTION_BATCH_SIZE:
+                    # 상한보다 적게 지웠다는 것은 더 지울 것이 없다는 뜻이다.
+                    break
+            else:
+                # 상한까지 돌고도 끝나지 않았다. 다음 실행이 이어서 지우므로 오류는
+                # 아니지만, 만료 대기열이 하루치 처리량을 넘었다는 신호라 남긴다.
+                _logger.warning("보존 만료 삭제가 배치 상한에 걸렸습니다: deleted=%d", deleted)
+    except Exception as exc:
+        # 사유는 타입만 남긴다 — DB 예외 메시지에는 SQL 파라미터(=암호문·제목)가 실린다.
+        _logger.error(
+            "보존 만료 삭제 실패: deleted=%d reason=%s elapsed_ms=%d",
+            deleted,
+            type(exc).__name__,
+            _elapsed_ms(started),
+        )
+        return
+    # 어떤 문서를 지웠는지는 남기지 않는다 — 이미 파기한 개인정보의 흔적이 로그에 남는다.
+    _logger.info("보존 만료 삭제 완료: deleted=%d elapsed_ms=%d", deleted, _elapsed_ms(started))
 
 
 async def _process(

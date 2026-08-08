@@ -18,6 +18,10 @@ _logger = logging.getLogger(__name__)
 #: 적어두면 한쪽만 고쳤을 때 작업이 조용히 큐에 쌓이기만 한다.
 CONVERT_DOCUMENT_TASK = "convert_document"
 
+#: 보존 만료 문서 삭제 잡 이름. cron으로 자동 실행되므로 넣는 쪽이 따로 없지만,
+#: 운영자가 손으로 한 번 돌릴 때(README "보존 만료 삭제 잡" 참고) 이 이름을 큐에 넣는다.
+PURGE_EXPIRED_TASK = "purge_expired_documents"
+
 
 class TaskQueue(Protocol):
     """작업 등록 계약. 실패하면 예외를 던진다(호출부가 실패를 기록할 수 있게)."""
