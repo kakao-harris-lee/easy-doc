@@ -7,7 +7,10 @@
   "required_facts": [
     {
       "canonical": "30%",
-      "accept": []
+      "accept": [
+        "30퍼센트",
+        "30 퍼센트"
+      ]
     },
     {
       "canonical": "주민센터",
@@ -15,7 +18,10 @@
     },
     {
       "canonical": "70%",
-      "accept": []
+      "accept": [
+        "70퍼센트",
+        "70 퍼센트"
+      ]
     },
     {
       "canonical": "구청",
@@ -23,11 +29,17 @@
     },
     {
       "canonical": "50%",
-      "accept": []
+      "accept": [
+        "50퍼센트",
+        "50 퍼센트"
+      ]
     },
     {
       "canonical": "100%",
-      "accept": []
+      "accept": [
+        "100퍼센트",
+        "100 퍼센트"
+      ]
     }
   ],
   "source": {

@@ -11,15 +11,24 @@
     },
     {
       "canonical": "3억원",
-      "accept": []
+      "accept": [
+        "3억 원"
+      ]
     },
     {
       "canonical": "1억원",
-      "accept": []
+      "accept": [
+        "1억 원"
+      ]
     },
     {
       "canonical": "70,000원",
-      "accept": []
+      "accept": [
+        "70,000 원",
+        "70000원",
+        "7만원",
+        "7만 원"
+      ]
     }
   ],
   "source": {
