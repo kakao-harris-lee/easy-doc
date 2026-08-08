@@ -192,6 +192,11 @@ export function ReviewEditor({ conversion, sourceText }: ReviewEditorProps) {
         <button type="button" onClick={() => void handleDownload('docx')} disabled={busy}>
           docx 내려받기
         </button>
+        {/* hwpx는 공공기관에서 그대로 이어 쓰는 형식이라 docx 바로 옆에 둔다.
+            열리는지 확인이 필요한 형식이므로(한컴 호환 미검증) txt보다 앞이되 기본은 아니다. */}
+        <button type="button" onClick={() => void handleDownload('hwpx')} disabled={busy}>
+          hwpx 내려받기
+        </button>
         <button type="button" onClick={() => void handleDownload('txt')} disabled={busy}>
           txt 내려받기
         </button>

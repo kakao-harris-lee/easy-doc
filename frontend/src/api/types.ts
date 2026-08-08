@@ -12,7 +12,7 @@
 export type ConversionStatus = 'pending' | 'processing' | 'done' | 'failed'
 
 /** 내보내기 형식. 백엔드 ExportFormat과 같다. */
-export type ExportFormat = 'docx' | 'txt'
+export type ExportFormat = 'docx' | 'txt' | 'hwpx'
 
 // --- auth ---
 
