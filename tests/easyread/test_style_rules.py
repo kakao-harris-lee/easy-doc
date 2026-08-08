@@ -4,15 +4,20 @@ from typing import cast
 
 import pytest
 
+from app.easyread.goldenset import load_documents
 from app.easyread.style_rules import (
+    COMPOUND_TAIL_KEYS,
     DIFFICULT_WORD_REPLACEMENTS,
+    LEXICALIZED_GLOSSES,
     MAX_COMMAS_PER_SENTENCE,
     MAX_SENTENCE_CHARS,
     PROMPT_ONLY_WORDS,
     check_style,
     find_difficult_words,
+    find_gloss_collisions,
     split_sentences,
 )
+from tests.golden import DOCUMENTS_DIR
 
 # 사전 확충의 최소 규모. 프롬프트 지시만으로는 어려운 낱말 잔존이 확률적으로 남아
 # (통과율 0.75~0.85 플래토) 기계 검출로 잡을 수 있는 표면을 넓힌 것이 확충의 목적이다.
@@ -238,3 +243,86 @@ def test_개조식_항목_마커는_문장으로_세지_않는다() -> None:
 def test_쉼표_개수_경계(sentence: str, expected_pass: bool) -> None:
     assert MAX_COMMAS_PER_SENTENCE == 2
     assert check_style(sentence).passed is expected_pass
+
+
+# --- 치환 비문(뜻풀이 축자 삽입) 검출 ---
+
+# 2026-08-09 문서 020에서 사람이 확인한 비문 3종. 이 셋은 반드시 잡혀야 한다
+# (docs/quality/2026-08-09-doc020-fidelity-review.md).
+OBSERVED_GLOSS_COLLISIONS = (
+    ("바우처 카드를 내어 줌 받아 사용하세요.", "내어 줌"),  # 명사형 뜻풀이 + 용언
+    ("뽑음 결과", "뽑음"),  # 명사형 뜻풀이 + 체언(제목)
+    ("사용 정해진 날짜가 지나면 남은 금액은 사라집니다.", "정해진 날짜"),  # 복합어 자리
+)
+
+# 오탐 회귀 코퍼스 — 모두 자연스러운 표현이라 한 건도 걸리면 안 된다.
+# "~음 받"처럼 형태소로 일반화하면 여기 대부분이 걸린다(그래서 값 문자열에 앵커링한다).
+NATURAL_TEXT_CORPUS = (
+    "가까운 평생학습관에서 도움 받으실 수 있습니다.",
+    "배움을 원하는 성인에게 지원합니다.",
+    "노래 모음집을 나눠 드립니다.",
+    "알림 문자를 받으실 수 있습니다.",
+    "돌봄 서비스를 신청하세요.",
+    "처음 하시는 분은 도움을 받으세요.",
+    "지금 하는 신청은 무료입니다.",
+    "이름 하나만 적으세요.",
+    "그 남은 돈은 자동으로 사라집니다.",
+    "올해 남은 돈을 돌려드립니다.",
+    "제2조제10호에 해당하는 사람 중에서 뽑습니다.",
+    "사용 방법과 정해진 날짜를 확인하세요.",
+    "사용할 수 있는 정해진 날짜가 지났습니다.",
+    "법으로 정해진 금액을 드립니다.",
+    "우리가 지킴 활동을 합니다.",
+    "선생님이 도움 주시는 시간입니다.",
+    # 복합어 안쪽('줄바꿈'의 '바꿈')은 뜻풀이가 끼워진 자리가 아니다.
+    "줄바꿈 기준으로 문장을 나눕니다.",
+    "옷차림 단정하게 오세요.",
+)
+
+
+@pytest.mark.parametrize(("sentence", "gloss"), OBSERVED_GLOSS_COLLISIONS)
+def test_관찰된_치환_비문을_검출한다(sentence: str, gloss: str) -> None:
+    assert gloss in find_gloss_collisions(sentence)
+
+
+@pytest.mark.parametrize("sentence", NATURAL_TEXT_CORPUS)
+def test_자연스러운_표현은_치환_비문으로_보지_않는다(sentence: str) -> None:
+    assert find_gloss_collisions(sentence) == []
+
+
+def test_골든셋_원문_전수에서_치환_비문_오탐이_없다() -> None:
+    """게이트를 엄격하게 만드는 검사는 오탐이 0이어야 신뢰할 수 있다.
+
+    골든셋 원문은 아직 변환되지 않은 '어려운 글'이라 뜻풀이가 끼워질 자리가 없다 —
+    여기서 걸리는 것은 전부 오탐이다.
+    """
+    false_positives = {
+        document.id: find_gloss_collisions(document.source_text)
+        for document in load_documents(DOCUMENTS_DIR)
+        if find_gloss_collisions(document.source_text)
+    }
+    assert false_positives == {}
+
+
+def test_치환_비문은_한_자리를_한_건으로_센다() -> None:
+    """'정해진 날'과 '정해진 날짜'가 겹쳐 두 건이 되면 보정 채택 판정이 왜곡된다."""
+    assert find_gloss_collisions("사용 정해진 날짜가 지나면 사라집니다.") == ["정해진 날짜"]
+
+
+def test_치환_비문은_check_style_위반으로_보고된다() -> None:
+    """새 검사가 기존 보정 패스를 발동시키는 경로 — 신규 LLM 호출은 없다."""
+    result = check_style("뽑음 결과를 알려 드립니다.")
+    issue = next(issue for issue in result.issues if "뜻풀이" in issue.reason)
+    assert issue.sentence == "뽑음 결과를 알려 드립니다."
+    assert "자연스럽게 다시 쓸 것" in issue.reason
+    # 처방이 사전값 치환이 아니라 재서술이므로 word를 채우지 않는다.
+    assert issue.word is None
+
+
+def test_낱말로_굳은_명사형_값은_검출_대상에서_빠진다() -> None:
+    """제외 목록이 실제 사전 값이어야 한다 — 값이 바뀌면 목록도 함께 갱신해야 한다."""
+    assert set(DIFFICULT_WORD_REPLACEMENTS.values()) >= LEXICALIZED_GLOSSES
+
+
+def test_복합어_꼬리_키는_모두_사전에_있다() -> None:
+    assert DIFFICULT_WORD_REPLACEMENTS.keys() >= COMPOUND_TAIL_KEYS

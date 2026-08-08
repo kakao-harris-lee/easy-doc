@@ -115,8 +115,9 @@ DIFFICULT_WORD_REPLACEMENTS: Mapping[str, str] = MappingProxyType(
         "우송": "우편으로 보냄",
         "동봉": "함께 넣음",
         "기재": "적기",
-        "기입": "적음",
-        "표기": "적음",
+        # 값 감사(2026-08-09): "적음"은 '양이 적음'과 동음이의라 뜻풀이로 오해를 만든다.
+        "기입": "적는 것",
+        "표기": "적는 것",
         "명시": "분명히 밝힘",
         "작성": "쓰기",
         "날인": "도장 찍기",
@@ -267,7 +268,8 @@ DIFFICULT_WORD_REPLACEMENTS: Mapping[str, str] = MappingProxyType(
         "허위": "거짓",
         "이수": "다 들음",
         "보유": "가지고 있음",
-        "부여": "줌",
+        # 값 감사(2026-08-09): 한 글자 값 "줌"은 뜻풀이 구실을 못 하고 '한 줌'과 혼동된다.
+        "부여": "주는 것",
         "비치": "갖춰 둠",
         "분실": "잃어버림",
         "파손": "깨짐",
@@ -421,8 +423,136 @@ def find_difficult_words(text: str) -> list[str]:
     ]
 
 
+# --- 치환 비문(뜻풀이 축자 삽입) 검출 ---
+#
+# 사전의 오른쪽 값은 '그 자리에 끼워 넣을 치환어'가 아니라 뜻풀이다(프롬프트도 같은
+# 정의를 쓴다 — prompts.py의 "(뜻: ...)" 렌더링). 값이 문장에 축자로 끼워지면
+# "내어 줌 받아"·"뽑음 결과"·"사용 정해진 날짜" 같은 비문이 된다. 프롬프트 문구만으로는
+# 확률적으로 재발하므로 기계 검출해 기존 보정 패스로 넘긴다(신규 LLM 호출 없음).
+#
+# 설계 원칙 두 가지:
+#
+# 1. **반드시 사전 값 문자열에 앵커링한다.** "~음 받"처럼 형태소로 일반화하면
+#    "도움 받으실"·"배움을 원하는"·"모음집" 같은 자연 표현이 오탐된다. 값 문자열은
+#    "내어 줌"·"뽑음"처럼 실제 문장에 자연스럽게 등장할 일이 거의 없는 표기라
+#    앵커로 쓸 수 있다.
+# 2. **완벽한 비문 검출이 목표가 아니다.** 실측(2026-08-09 문서 020)에서 확인된 세
+#    유형만 잡는다. 과소 검출은 골든셋 judge가 보완하지만, 과잉 검출은 게이트 신뢰를
+#    무너뜨리고 멀쩡한 문장에 보정을 유발한다.
+
+_HANGUL_BASE = 0xAC00
+_JONGSEONG_COUNT = 28
+_JONGSEONG_MIEUM = 16
+
+# 명사형(-ㅁ/-음) 값이지만 낱말로 굳어 자연스럽게 쓰이는 것 — 검출 대상에서 뺀다.
+# "알림 문자를 받으세요"·"돌봄 서비스"·"처음 하시는 분"·"이름 하나만"처럼 정상
+# 표현이 오탐되기 때문이다. 값이 바뀌면 이 목록도 함께 갱신해야 한다
+# (tests/easyread/test_style_rules.py가 사전 값 소속을 기계 검증한다).
+LEXICALIZED_GLOSSES: frozenset[str] = frozenset(
+    {
+        "이름",
+        "밤",
+        "지금",
+        "처음",
+        "바람",
+        "알림",
+        "널리 알림",
+        "돌봄",
+        "맞춤",
+        "붙임",
+        "따로 붙임",
+        "빠짐",
+        "같음",
+        "지킴",
+    }
+)
+
+# 복합어 뒷자리에 자주 쓰이는 키("사용 기한"·"납부 기한"·"신청 기일"). 값이 관형구라
+# 앞 낱말과 조사 없이 이어지면 "사용 정해진 날짜"류 비문이 된다.
+COMPOUND_TAIL_KEYS: frozenset[str] = frozenset({"기한", "기일", "정액"})
+
+# 명사형 뜻풀이 바로 뒤에 오는 용언 — "내어 줌 받아"의 '받아'. 어미 글자까지 못 박아
+# "이름 하나"("하"+"나")처럼 용언이 아닌 낱말이 걸리지 않게 한다.
+# 공백은 줄바꿈을 뺀 가로 공백만 본다 — 줄이 바뀌면 다른 문장·다른 항목이라
+# ("…신청을 받음\n보조기기 안내") 붙여 읽으면 오탐이 된다.
+_LIGHT_VERB_CHAIN = r"[ \t]?(?:받|하|되|시키)[아어여은는을며면고지도야으기게]"
+# 앞 낱말 끝에 붙는 조사. 조사가 붙어 있으면 복합어 자리가 아니라 정상 수식이다
+# ("사용 방법과 정해진 날짜"는 비문이 아니고 "사용 정해진 날짜"가 비문이다).
+_TRAILING_PARTICLE = "의을를이가은는에로와과도만서께나며"
+# 뜻풀이도 낱말 시작 위치에서만 센다(find_difficult_words와 같은 근사). 앞 글자가
+# 한글이면 더 긴 낱말의 일부다 — "줄바꿈 기준"의 '바꿈'이 걸리면 안 된다.
+_NOT_AFTER_HANGUL = r"(?<![가-힣])"
+
+
+def _is_nominalized(value: str) -> bool:
+    """값이 용언의 명사형(-ㅁ/-음)으로 끝나는가 — 종성 ㅁ으로 판정한다."""
+    last = value[-1]
+    if not ("가" <= last <= "힣"):
+        return False
+    return (ord(last) - _HANGUL_BASE) % _JONGSEONG_COUNT == _JONGSEONG_MIEUM
+
+
+_NOMINAL_GLOSSES = frozenset(
+    value
+    for value in DIFFICULT_WORD_REPLACEMENTS.values()
+    if _is_nominalized(value) and value not in LEXICALIZED_GLOSSES
+)
+
+# 검출 패턴은 사전에서 유도한다 — 목록을 손으로 복제하면 사전과 기준이 갈라진다.
+# (1) 명사형 뜻풀이 + 용언: "내어 줌 받아"
+# (2) 한 낱말짜리 명사형 뜻풀이 + 체언: "뽑음 결과"
+#     여러 낱말짜리 값은 "해당하는 사람 중"처럼 체언이 뒤따르는 정상 표현이 있어 뺀다.
+# (3) 앞 체언 + 관형구 뜻풀이: "사용 정해진 날짜"
+GLOSS_COLLISION_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    *(
+        (gloss, re.compile(_NOT_AFTER_HANGUL + re.escape(gloss) + _LIGHT_VERB_CHAIN))
+        for gloss in sorted(_NOMINAL_GLOSSES)
+    ),
+    *(
+        (gloss, re.compile(_NOT_AFTER_HANGUL + re.escape(gloss) + r"[ \t][가-힣]"))
+        for gloss in sorted(_NOMINAL_GLOSSES)
+        if " " not in gloss
+    ),
+    *(
+        (
+            DIFFICULT_WORD_REPLACEMENTS[key],
+            re.compile(
+                r"[가-힣]{2,}(?<!["
+                + _TRAILING_PARTICLE
+                + r"])[ \t]"
+                + re.escape(DIFFICULT_WORD_REPLACEMENTS[key])
+            ),
+        )
+        for key in sorted(COMPOUND_TAIL_KEYS)
+    ),
+)
+
+
+def find_gloss_collisions(text: str) -> list[str]:
+    """뜻풀이가 축자로 끼워져 비문이 된 자리의 뜻풀이 목록.
+
+    한 자리가 여러 패턴에 걸리면("사용 정해진 날짜"의 '정해진 날'과 '정해진 날짜')
+    가장 긴 매치 하나만 남긴다 — 같은 결함을 여러 건으로 세면 보정 채택 판정
+    (_accepts_repair의 위반 건수 비교)이 왜곡된다.
+    """
+    matches = [
+        (match.start(), match.end(), gloss)
+        for gloss, pattern in GLOSS_COLLISION_PATTERNS
+        for match in pattern.finditer(text)
+    ]
+    found: list[str] = []
+    covered: list[tuple[int, int]] = []
+    # 긴 매치부터 본다(start - end = -길이) — 짧은 쪽이 안에 들어가면 버린다.
+    for start, end, gloss in sorted(matches, key=lambda item: item[0] - item[1]):
+        if any(before <= start and end <= after for before, after in covered):
+            continue
+        covered.append((start, end))
+        found.append(gloss)
+    return found
+
+
 def check_style(text: str) -> StyleCheckResult:
-    """문장 길이·쉼표 수·이중 피동·어려운 표현을 검사한다."""
+    """문장 길이·쉼표 수·이중 피동·어려운 표현·치환 비문을 검사한다."""
     sentences = split_sentences(text)
     issues: list[SentenceIssue] = []
     for sentence in sentences:
@@ -438,5 +568,16 @@ def check_style(text: str) -> StyleCheckResult:
         for word in find_difficult_words(sentence):
             issues.append(
                 SentenceIssue(sentence=sentence, reason=f"어려운 표현 잔존({word})", word=word)
+            )
+        for gloss in find_gloss_collisions(sentence):
+            # word를 채우지 않는다 — 이 위반의 처방은 사전값 치환이 아니라 재서술이다.
+            # 사유 문구 자체가 보정 프롬프트의 지시가 된다(prompts._render_violations).
+            issues.append(
+                SentenceIssue(
+                    sentence=sentence,
+                    reason=(
+                        f"뜻풀이 축자 삽입({gloss}) — 그 뜻이 통하게 문장을 자연스럽게 다시 쓸 것"
+                    ),
+                )
             )
     return StyleCheckResult(total_sentences=len(sentences), issues=issues)

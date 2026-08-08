@@ -30,7 +30,10 @@ _ALL_WORDS_INPUT = " ".join(DIFFICULT_WORD_REPLACEMENTS)
 
 
 def _replacement_lines(section: str) -> list[str]:
-    """치환 목록 블록에서 '- 어려운말 → 쉬운말' 줄만 골라낸다."""
+    """치환 목록 블록에서 '- 어려운말 (뜻: 풀이)' 줄만 골라낸다.
+
+    지시문 안의 예시 줄은 '·'로 시작해 사전 항목과 섞이지 않는다.
+    """
     return [line for line in section.splitlines() if line.startswith("- ")]
 
 
@@ -59,18 +62,18 @@ def test_입력에_전_항목이_등장하면_치환_목록_전체가_포함된�
     assert "금일" in prompt
     assert "오늘" in prompt
     for difficult, easy in DIFFICULT_WORD_REPLACEMENTS.items():
-        assert f"{difficult} → {easy}" in prompt
+        assert f"- {difficult} (뜻: {easy})" in prompt
 
 
 def test_치환_목록은_입력에_등장한_낱말만_싣는다() -> None:
     """246개 전량 렌더링은 입력과 무관한 고정 비용이다 — 등장한 낱말만 싣는다."""
     always = _section_body(build_system_prompt(_SAMPLE_INPUT), "어려운 표현 바꾸기")
-    assert "- 금일 → 오늘" in always
-    assert "- 구비서류 → 준비할 서류" in always
-    assert "- 제출 → 내기" in always
+    assert "- 금일 (뜻: 오늘)" in always
+    assert "- 구비서류 (뜻: 준비할 서류)" in always
+    assert "- 제출 (뜻: 내기)" in always
     # 입력에 없는 낱말은 한 줄도 실리지 않는다(문맥 판단 그룹은 별도 블록이라 애초에 제외).
     # '구비'는 "구비서류" 안에서도 잡히는 의도된 키 쌍이다 (style_rules 큐레이션 규칙 3).
-    listed = {line.split(" → ", 1)[0].removeprefix("- ") for line in _replacement_lines(always)}
+    listed = {line.split(" (뜻: ", 1)[0].removeprefix("- ") for line in _replacement_lines(always)}
     assert listed == {"금일", "구비", "구비서류", "제출"}
 
 
@@ -85,7 +88,7 @@ def test_문맥_판단_표현은_입력과_무관하게_항상_포함된다() ->
     conditional = _section_body(build_system_prompt(_EASY_INPUT), "문맥을 보고 판단할 표현")
     assert PROMPT_ONLY_WORDS
     for word in PROMPT_ONLY_WORDS:
-        assert f"- {word} → " in conditional
+        assert f"- {word} (뜻: " in conditional
 
 
 def test_문맥_판단_표현은_별도_그룹으로_분리된다() -> None:
@@ -95,10 +98,10 @@ def test_문맥_판단_표현은_별도_그룹으로_분리된다() -> None:
     conditional = _section_body(prompt, "문맥을 보고 판단할 표현")
     assert PROMPT_ONLY_WORDS
     for word in PROMPT_ONLY_WORDS:
-        assert f"- {word} → " in conditional
-        assert f"- {word} → " not in always
-    assert "- 금일 → 오늘" in always
-    assert "- 금일 → 오늘" not in conditional
+        assert f"- {word} (뜻: " in conditional
+        assert f"- {word} (뜻: " not in always
+    assert "- 금일 (뜻: 오늘)" in always
+    assert "- 금일 (뜻: 오늘)" not in conditional
     assert "신청하기" in conditional
 
 
@@ -193,10 +196,15 @@ def test_보정_프롬프트는_위반_문장과_사유를_나열한다() -> Non
         assert issue.reason in user
 
 
-def test_보정_프롬프트는_사전값_치환을_지시한다() -> None:
-    """사유만 주면 모델이 제 나름의 동의어를 고른다 — 사전값을 못 박아야 한다."""
+def test_보정_프롬프트는_사전값을_뜻풀이로만_준다() -> None:
+    """ "'X' → 'Y'"는 축자 치환을 명령해 비문을 만든다 — 뜻만 주고 재서술을 시킨다."""
     _, user = build_repair_prompt("금일 서류를 내세요.", check_style("금일 서류를 내세요.").issues)
-    assert f"고치는 법: '금일' → '{DIFFICULT_WORD_REPLACEMENTS['금일']}'" in user
+    gloss = DIFFICULT_WORD_REPLACEMENTS["금일"]
+    assert f"'금일' — 어려운 말입니다. 뜻: {gloss}." in user
+    assert "자연스럽게 다시 쓰세요" in user
+    assert "그대로 끼워 넣지 마세요" in user
+    assert f"'금일' → '{gloss}'" not in user
+    assert "→" not in user
 
 
 def test_보정_프롬프트는_같은_문장을_되풀이하지_않는다() -> None:
@@ -215,7 +223,51 @@ def test_보정_프롬프트는_치환_대상이_없는_위반은_사유만_적�
     issues = check_style(long_sentence).issues
     _, user = build_repair_prompt(long_sentence, issues)
     assert "문장 길이 초과" in user
-    assert "고치는 법" not in user
+    assert "어려운 말입니다" not in user
+
+
+def test_치환_목록에_화살표_형식을_쓰지_않는다() -> None:
+    """'X → Y'는 형식 자체가 축자 치환을 명령한다 — 비문의 직접 원인이었다.
+
+    다른 절의 화살표(문장 바꿔 쓰기 예시)는 치환 명령이 아니므로 대상이 아니다.
+    """
+    prompt = build_system_prompt(_ALL_WORDS_INPUT)
+    assert "→" not in _section_body(prompt, "어려운 표현 바꾸기")
+    assert "→" not in _section_body(prompt, "문맥을 보고 판단할 표현")
+
+
+def test_치환_지시가_뜻풀이_축자_삽입을_금지한다() -> None:
+    """오른쪽 값은 끼워 넣을 치환어가 아니라 뜻풀이라는 것이 이 지시의 핵심이다."""
+    always = _section_body(build_system_prompt(_SAMPLE_INPUT), "어려운 표현 바꾸기")
+    assert "그 자리에 끼워 넣을 말이 아닙니다" in always
+    assert "문장 전체를 자연스럽게 다시 쓰세요" in always
+    # 관찰된 세 실패 유형(명사형 값+동사·복합어·제목)을 일반화한 예시가 있어야 한다.
+    assert "받으세요'라고 씁니다" in always
+    assert "받음 기간" in always
+    assert "제목" in always
+
+
+def test_자가_점검이_뜻풀이_축자_삽입도_확인시킨다() -> None:
+    """왼쪽 잔존만 점검시키면 오른쪽을 끼워 넣어 생긴 비문이 그대로 나간다."""
+    check = _section_body(build_system_prompt(_SAMPLE_INPUT), "출력 전 자가 점검")
+    assert "뜻풀이를 그대로 끼워 넣어 어색해진 문장은 없는가" in check
+
+
+def test_보정_지시가_뜻풀이_축자_삽입을_금지한다() -> None:
+    """보정 패스가 비문 주입원이었다(2026-08-09 실측) — 같은 기조로 재서술을 시킨다."""
+    system, _ = build_repair_prompt("오늘 서류를 내세요.", [])
+    assert "그 자리에 끼워 넣을 말이 아닙니다" in system
+    assert "자연스럽게 다시 쓰세요" in system
+
+
+def test_보정_프롬프트는_치환_비문_사유를_그대로_싣는다() -> None:
+    """새 검사의 사유 문구가 곧 '자연스럽게 다시 쓰라'는 지시다."""
+    converted = "뽑음 결과를 알려 드립니다."
+    issues = check_style(converted).issues
+    assert issues
+    _, user = build_repair_prompt(converted, issues)
+    assert "뜻풀이 축자 삽입(뽑음)" in user
+    assert "자연스럽게 다시 쓸 것" in user
 
 
 def test_보정_프롬프트도_난수_id_구분자로_변환문을_감싼다() -> None:

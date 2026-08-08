@@ -85,9 +85,9 @@ async def test_시스템_프롬프트_치환_목록은_입력_기준으로_걸�
     service = ConversionService(provider=provider)
     await service.convert("금일 중으로 제출하십시오.")
     system = provider.calls[0].system
-    assert "- 금일 → 오늘" in system
-    assert "- 제출 → 내기" in system
-    assert "- 침수 → " not in system
+    assert "- 금일 (뜻: 오늘)" in system
+    assert "- 제출 (뜻: 내기)" in system
+    assert "- 침수 (뜻: " not in system
 
 
 async def test_절단_응답은_예외로_막는다() -> None:
@@ -170,7 +170,7 @@ async def test_스타일이_통과하면_보정을_부르지_않는다() -> None
 
 
 async def test_스타일_위반이면_보정을_한_번_더_부른다() -> None:
-    """보정 요청에는 위반 사유와 사전값 치환 지시가 함께 실려야 한다."""
+    """보정 요청에는 위반 사유와 사전값 뜻풀이·재서술 지시가 함께 실려야 한다."""
     provider = FakeProvider(responses=[_DIRTY, _CLEAN])
     outcome = await ConversionService(provider=provider).convert("금일 서류를 제출하십시오.")
     assert len(provider.calls) == 2
@@ -179,7 +179,8 @@ async def test_스타일_위반이면_보정을_한_번_더_부른다() -> None:
     repair_user = provider.calls[1].user
     assert _DIRTY in repair_user
     assert "어려운 표현 잔존(금일)" in repair_user
-    assert "고치는 법: '금일' → '오늘'" in repair_user
+    assert "'금일' — 어려운 말입니다. 뜻: 오늘." in repair_user
+    assert "자연스럽게 다시 쓰세요" in repair_user
 
 
 async def test_보정이_악화되면_원본을_채택한다() -> None:
