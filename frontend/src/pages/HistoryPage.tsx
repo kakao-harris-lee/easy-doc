@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom'
 import { ApiError, deleteDocument, listDocuments } from '../api/client'
 import type { ConversionStatus, DocumentListItem } from '../api/types'
 import { conversionPath, HOME_PATH } from '../routes/paths'
+import { useWorkspace } from '../workspace/context'
 
 /** 한 번에 불러올 개수. 백엔드 기본값과 같다. */
 const PAGE_SIZE = 20
@@ -35,6 +36,8 @@ function formatDate(value: string): string {
  * 자리에서 한다.
  */
 export function HistoryPage() {
+  const { workspaces, currentId: workspaceId } = useWorkspace()
+  const currentName = workspaces.find((workspace) => workspace.id === workspaceId)?.name ?? null
   const [offset, setOffset] = useState(0)
   const [items, setItems] = useState<DocumentListItem[]>([])
   const [hasMore, setHasMore] = useState(false)
@@ -45,13 +48,32 @@ export function HistoryPage() {
   // offset만 보고 있으면 "0에서 0으로" 바뀌지 않아 effect가 돌지 않는다.
   const [reloadToken, setReloadToken] = useState(0)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  // 작업 공간이 바뀌면 첫 쪽부터 다시 본다. 렌더 중에 맞추는 이유: effect로 미루면
+  // 바뀐 작업 공간과 예전 offset으로 한 번 더 조회가 나가고, 그 응답이 잘못된 목록을
+  // 잠깐 보여준다(React 공식 "렌더 중 상태 조정" 패턴).
+  const [renderedWorkspaceId, setRenderedWorkspaceId] = useState(workspaceId)
+  if (renderedWorkspaceId !== workspaceId) {
+    setRenderedWorkspaceId(workspaceId)
+    setOffset(0)
+    setItems([])
+    setHasMore(false)
+    setLoading(true)
+  }
 
   useEffect(() => {
     const controller = new AbortController()
 
     async function load(): Promise<void> {
       try {
-        const page = await listDocuments({ limit: PAGE_SIZE, offset }, controller.signal)
+        const page = await listDocuments(
+          {
+            limit: PAGE_SIZE,
+            offset,
+            // 아직 목록을 못 받았으면 거르지 않는다 — 전체를 보여주는 편이 빈 화면보다 낫다.
+            ...(workspaceId === null ? {} : { workspaceId }),
+          },
+          controller.signal,
+        )
         // 첫 쪽은 갈아 끼우고 다음 쪽은 이어 붙인다.
         setItems((previous) => (offset === 0 ? page.items : [...previous, ...page.items]))
         setHasMore(page.has_more)
@@ -73,7 +95,7 @@ export function HistoryPage() {
 
     void load()
     return () => controller.abort()
-  }, [offset, reloadToken])
+  }, [offset, reloadToken, workspaceId])
 
   /**
    * 문서를 파기한다. 되돌릴 수 없으므로 반드시 먼저 묻는다.
@@ -115,11 +137,21 @@ export function HistoryPage() {
 
       {items.length === 0 && !loading && error === null ? (
         <p>
-          아직 변환한 문서가 없습니다. <Link to={HOME_PATH}>문서를 올려 보세요.</Link>
+          {currentName === null
+            ? '아직 변환한 문서가 없습니다.'
+            : `‘${currentName}’ 작업 공간에는 아직 변환한 문서가 없습니다.`}{' '}
+          <Link to={HOME_PATH}>문서를 올려 보세요.</Link>
         </p>
       ) : (
         <table className="history-table">
-          <caption>내가 변환한 문서 목록입니다. 제목을 누르면 검수 화면이 열립니다.</caption>
+          {/* 어느 작업 공간을 보고 있는지 표 설명에 적는다 — 목록이 걸러졌다는 사실이
+              화면을 보지 않는 사용자에게도 전달되어야 한다(KWCAG). */}
+          <caption>
+            {currentName === null
+              ? '내가 변환한 문서 목록입니다.'
+              : `‘${currentName}’ 작업 공간의 변환 문서 목록입니다.`}{' '}
+            제목을 누르면 검수 화면이 열립니다.
+          </caption>
           <thead>
             <tr>
               <th scope="col">제목</th>

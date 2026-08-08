@@ -42,6 +42,8 @@ export interface TokenResponse {
 export interface DocumentTextRequest {
   text: string
   title?: string | null
+  /** 담을 작업 공간. 없으면 서버가 기본(가장 먼저 만든) 작업 공간에 담는다. */
+  workspace_id?: string | null
 }
 
 /** POST /documents 응답 (202 — 변환은 아직 시작 전). */
@@ -107,4 +109,29 @@ export interface DocumentListResponse {
   limit: number
   offset: number
   has_more: boolean
+}
+
+// --- workspaces ---
+
+/** 작업 공간 한 건 (POST·PATCH 응답). */
+export interface WorkspaceResponse {
+  id: string
+  name: string
+  /** ISO 8601 문자열. */
+  created_at: string
+}
+
+/** 목록 한 줄. 문서 수는 목록 응답에만 실린다. */
+export interface WorkspaceListItem extends WorkspaceResponse {
+  document_count: number
+}
+
+/** GET /workspaces 응답. 첫 번째 항목이 기본 작업 공간이다(가장 먼저 만든 것). */
+export interface WorkspaceListResponse {
+  items: WorkspaceListItem[]
+}
+
+/** POST /workspaces, PATCH /workspaces/{id} 요청 본문. */
+export interface WorkspaceNameRequest {
+  name: string
 }

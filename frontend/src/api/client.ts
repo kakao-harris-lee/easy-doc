@@ -13,6 +13,9 @@ import type {
   DocumentListResponse,
   DocumentTextRequest,
   ExportFormat,
+  WorkspaceListResponse,
+  WorkspaceNameRequest,
+  WorkspaceResponse,
 } from './types'
 
 /** 서버 주소. 배포에서는 빌드 시 VITE_API_BASE_URL로 주입한다(하드코딩 금지). */
@@ -54,7 +57,7 @@ export function setUnauthorizedHandler(handler: UnauthorizedHandler | null): voi
 }
 
 interface RequestOptions {
-  method?: 'GET' | 'POST' | 'PUT' | 'DELETE'
+  method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
   /** 보낼 본문. FormData면 그대로, 그 밖에는 JSON으로 직렬화한다. */
   body?: unknown
   /** 저장된 토큰을 붙일지. 가입·로그인처럼 인증 전 호출은 false. */
@@ -137,25 +140,40 @@ export async function requestJson<T>(path: string, options: RequestOptions = {})
   return (await response.json()) as T
 }
 
-/** POST /documents — 붙여넣은 본문으로 문서를 등록한다 (202, 변환은 그 뒤에 돌아간다). */
+/**
+ * POST /documents — 붙여넣은 본문으로 문서를 등록한다 (202, 변환은 그 뒤에 돌아간다).
+ *
+ * workspaceId가 null이면 싣지 않는다 — 서버가 기본 작업 공간에 담는다. 작업 공간
+ * 목록을 아직 못 불러온 상태에서도 업로드가 막히지 않게 하려는 선택이다.
+ */
 export function createDocumentFromText(
   text: string,
+  workspaceId: string | null,
   title?: string,
 ): Promise<DocumentCreatedResponse> {
   const body: DocumentTextRequest = { text, title: title ?? null }
+  if (workspaceId !== null) {
+    body.workspace_id = workspaceId
+  }
   return requestJson<DocumentCreatedResponse>('/documents', { method: 'POST', body })
 }
 
 /** POST /documents — 업로드 파일로 문서를 등록한다 (multipart). */
-export function createDocumentFromFile(file: File): Promise<DocumentCreatedResponse> {
+export function createDocumentFromFile(
+  file: File,
+  workspaceId: string | null,
+): Promise<DocumentCreatedResponse> {
   const form = new FormData()
   form.append('file', file)
+  if (workspaceId !== null) {
+    form.append('workspace_id', workspaceId)
+  }
   return requestJson<DocumentCreatedResponse>('/documents', { method: 'POST', body: form })
 }
 
-/** GET /documents — 내 문서를 최신순으로 조회한다. */
+/** GET /documents — 내 문서를 최신순으로 조회한다 (작업 공간을 주면 그 안만). */
 export function listDocuments(
-  params: { limit?: number; offset?: number } = {},
+  params: { limit?: number; offset?: number; workspaceId?: string } = {},
   signal?: AbortSignal,
 ): Promise<DocumentListResponse> {
   const query = new URLSearchParams()
@@ -165,8 +183,34 @@ export function listDocuments(
   if (params.offset !== undefined) {
     query.set('offset', String(params.offset))
   }
+  if (params.workspaceId !== undefined) {
+    query.set('workspace_id', params.workspaceId)
+  }
   const suffix = query.size > 0 ? `?${query.toString()}` : ''
   return requestJson<DocumentListResponse>(`/documents${suffix}`, { signal })
+}
+
+/** GET /workspaces — 내 작업 공간을 만든 순서대로 조회한다 (문서 수 포함). */
+export function listWorkspaces(signal?: AbortSignal): Promise<WorkspaceListResponse> {
+  return requestJson<WorkspaceListResponse>('/workspaces', { signal })
+}
+
+/** POST /workspaces — 작업 공간을 만든다. 같은 이름이 있으면 409. */
+export function createWorkspace(name: string): Promise<WorkspaceResponse> {
+  const body: WorkspaceNameRequest = { name }
+  return requestJson<WorkspaceResponse>('/workspaces', { method: 'POST', body })
+}
+
+/**
+ * PATCH /workspaces/{id} — 이름을 바꾼다.
+ *
+ * 삭제(DELETE /workspaces/{id})는 여기에 두지 않는다. 화면이 이번 범위에 없어
+ * (app/api/workspaces.py 참고) 부를 곳이 없고, 되돌릴 수 없는 조작의 통로를 미리
+ * 열어 두면 확인 절차 없이 연결될 위험만 남는다.
+ */
+export function renameWorkspace(workspaceId: string, name: string): Promise<WorkspaceResponse> {
+  const body: WorkspaceNameRequest = { name }
+  return requestJson<WorkspaceResponse>(`/workspaces/${workspaceId}`, { method: 'PATCH', body })
 }
 
 /**

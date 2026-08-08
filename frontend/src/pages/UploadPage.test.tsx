@@ -4,6 +4,9 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ApiError, createDocumentFromText } from '../api/client'
+import { workspaceContext, workspaceItem } from '../test/factories'
+import { WorkspaceContext } from '../workspace/context'
+import type { WorkspaceContextValue } from '../workspace/context'
 import { UploadPage } from './UploadPage'
 
 vi.mock('../api/client', async (importOriginal) => ({
@@ -13,14 +16,16 @@ vi.mock('../api/client', async (importOriginal) => ({
   createDocumentFromFile: vi.fn(),
 }))
 
-function renderPage() {
+function renderPage(workspace: Partial<WorkspaceContextValue> = {}) {
   return render(
-    <MemoryRouter initialEntries={['/']}>
-      <Routes>
-        <Route path="/" element={<UploadPage />} />
-        <Route path="/conversions/:conversionId" element={<h2>변환 화면</h2>} />
-      </Routes>
-    </MemoryRouter>,
+    <WorkspaceContext.Provider value={workspaceContext(workspace)}>
+      <MemoryRouter initialEntries={['/']}>
+        <Routes>
+          <Route path="/" element={<UploadPage />} />
+          <Route path="/conversions/:conversionId" element={<h2>변환 화면</h2>} />
+        </Routes>
+      </MemoryRouter>
+    </WorkspaceContext.Provider>,
   )
 }
 
@@ -42,8 +47,44 @@ describe('업로드 화면', () => {
     await user.type(screen.getByLabelText('바꿀 글'), '신청 안내')
     await user.click(screen.getByRole('button', { name: '쉬운 글로 바꾸기' }))
 
-    expect(vi.mocked(createDocumentFromText)).toHaveBeenCalledWith('신청 안내')
+    expect(vi.mocked(createDocumentFromText)).toHaveBeenCalledWith('신청 안내', 'w1')
     expect(await screen.findByRole('heading', { name: '변환 화면' })).toBeInTheDocument()
+  })
+
+  it('지금 고른 작업 공간에 담는다', async () => {
+    const user = userEvent.setup()
+    vi.mocked(createDocumentFromText).mockResolvedValue({
+      document_id: 'd1',
+      conversion_id: 'c1',
+      status: 'pending',
+      char_count: 7,
+    })
+    renderPage({
+      workspaces: [workspaceItem({ id: 'w1' }), workspaceItem({ id: 'w2', name: '민원 안내' })],
+      currentId: 'w2',
+    })
+
+    await user.type(screen.getByLabelText('바꿀 글'), '신청 안내')
+    await user.click(screen.getByRole('button', { name: '쉬운 글로 바꾸기' }))
+
+    expect(vi.mocked(createDocumentFromText)).toHaveBeenCalledWith('신청 안내', 'w2')
+  })
+
+  it('작업 공간을 아직 못 받았어도 올릴 수 있다', async () => {
+    const user = userEvent.setup()
+    vi.mocked(createDocumentFromText).mockResolvedValue({
+      document_id: 'd1',
+      conversion_id: 'c1',
+      status: 'pending',
+      char_count: 7,
+    })
+    renderPage({ workspaces: [], currentId: null })
+
+    await user.type(screen.getByLabelText('바꿀 글'), '신청 안내')
+    await user.click(screen.getByRole('button', { name: '쉬운 글로 바꾸기' }))
+
+    // null이면 서버가 기본 작업 공간에 담는다 — 업로드를 막지 않는다.
+    expect(vi.mocked(createDocumentFromText)).toHaveBeenCalledWith('신청 안내', null)
   })
 
   it('상한을 넘은 글은 서버에 보내지 않고 알린다', async () => {

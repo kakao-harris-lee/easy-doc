@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router-dom'
 import { ApiError, createDocumentFromFile, createDocumentFromText } from '../api/client'
 import type { DocumentCreatedResponse } from '../api/types'
 import { conversionPath, type SourceTextState } from '../routes/paths'
+import { useWorkspace } from '../workspace/context'
 
 /** 한 번에 변환할 수 있는 길이. 백엔드 MAX_CONVERTIBLE_CHARS와 같은 값이다. */
 const MAX_CHARS = 4000
@@ -33,6 +34,9 @@ function chars(count: number): string {
  */
 export function UploadPage() {
   const navigate = useNavigate()
+  // 지금 고른 작업 공간에 담는다. 아직 목록을 못 받았으면(null) 서버가 기본 작업
+  // 공간에 담는다 — 업로드를 막는 대신 늘 갈 곳이 있게 한다.
+  const { currentId: workspaceId } = useWorkspace()
   const textareaId = useId()
   const fileId = useId()
   const counterId = useId()
@@ -89,7 +93,7 @@ export function UploadPage() {
         setError(`글이 너무 깁니다. ${chars(MAX_CHARS)}자 이내로 줄여 주세요.`)
         return
       }
-      await submit(() => createDocumentFromText(text), text)
+      await submit(() => createDocumentFromText(text, workspaceId), text)
       return
     }
     if (file === null) {
@@ -100,7 +104,7 @@ export function UploadPage() {
       setError('파일이 너무 큽니다. 10MB 이내 파일로 나눠 올려 주세요.')
       return
     }
-    await submit(() => createDocumentFromFile(file))
+    await submit(() => createDocumentFromFile(file, workspaceId))
   }
 
   function selectMode(next: InputMode) {

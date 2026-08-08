@@ -14,6 +14,8 @@ import { fetchMe } from '../api/auth'
 import { getConversion, listDocuments } from '../api/client'
 import { AuthProvider } from '../auth/AuthProvider'
 import { AppLayout } from '../components/AppLayout'
+import { workspaceContext } from '../test/factories'
+import { WorkspaceContext } from '../workspace/context'
 import { AppRoutes } from '../routes/AppRoutes'
 import { conversion } from '../test/factories'
 import { setUnsavedChanges } from './unsavedChanges'
@@ -35,11 +37,15 @@ vi.mock('../api/client', async (importOriginal) => ({
 function renderEditor() {
   return render(
     <AuthProvider>
-      <MemoryRouter initialEntries={['/conversions/c1']}>
-        <AppLayout>
-          <AppRoutes />
-        </AppLayout>
-      </MemoryRouter>
+      {/* 머리말의 작업 공간 메뉴가 이 컨텍스트를 읽는다 — 여기서는 관심사가 아니라
+          고정된 값을 꽂는다(요청은 WorkspaceProvider 테스트가 본다). */}
+      <WorkspaceContext.Provider value={workspaceContext()}>
+        <MemoryRouter initialEntries={['/conversions/c1']}>
+          <AppLayout>
+            <AppRoutes />
+          </AppLayout>
+        </MemoryRouter>
+      </WorkspaceContext.Provider>
     </AuthProvider>,
   )
 }

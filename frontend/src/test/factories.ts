@@ -1,6 +1,7 @@
 /** 테스트에서 쓰는 API 응답 만들기. 필요한 필드만 덮어써서 의도를 드러낸다. */
 
-import type { ConversionResponse, DocumentListItem } from '../api/types'
+import type { ConversionResponse, DocumentListItem, WorkspaceListItem } from '../api/types'
+import type { WorkspaceContextValue } from '../workspace/context'
 
 /** 변환 조회 응답. 기본값은 "완료된 검수 대상". */
 export function conversion(overrides: Partial<ConversionResponse> = {}): ConversionResponse {
@@ -18,6 +19,35 @@ export function conversion(overrides: Partial<ConversionResponse> = {}): Convers
     input_tokens: 10,
     output_tokens: 20,
     failure_code: null,
+    ...overrides,
+  }
+}
+
+/** 작업 공간 목록 한 줄. */
+export function workspaceItem(overrides: Partial<WorkspaceListItem> = {}): WorkspaceListItem {
+  return {
+    id: 'w1',
+    name: '기본 작업 공간',
+    created_at: '2026-08-01T00:00:00Z',
+    document_count: 0,
+    ...overrides,
+  }
+}
+
+/**
+ * 작업 공간 컨텍스트 값. 화면 테스트가 제공자 대신 이 값을 직접 꽂는다 —
+ * 화면이 보는 것은 상태이지 그 상태를 만드는 요청이 아니다.
+ */
+export function workspaceContext(
+  overrides: Partial<WorkspaceContextValue> = {},
+): WorkspaceContextValue {
+  return {
+    workspaces: [workspaceItem()],
+    currentId: 'w1',
+    error: null,
+    select: () => undefined,
+    create: () => Promise.resolve(),
+    rename: () => Promise.resolve(),
     ...overrides,
   }
 }

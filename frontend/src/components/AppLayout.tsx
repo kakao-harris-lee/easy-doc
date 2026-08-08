@@ -4,6 +4,7 @@ import { NavLink } from 'react-router-dom'
 import { useAuth } from '../auth/context'
 import { confirmDiscardUnsaved } from '../review/unsavedChanges'
 import { HISTORY_PATH, HOME_PATH } from '../routes/paths'
+import { WorkspaceMenu } from './WorkspaceMenu'
 
 /**
  * 앱 껍데기 — 머리말(서비스명·이동 메뉴·로그아웃)과 본문 랜드마크.
@@ -40,6 +41,9 @@ export function AppLayout({ children }: { children: ReactNode }) {
                 변환 기록
               </NavLink>
             </nav>
+            {/* 업로드가 갈 곳과 변환 기록의 범위를 정하는 자리다 — 두 화면 모두에서
+                보이도록 머리말에 둔다. */}
+            <WorkspaceMenu />
             <div className="app-header__account">
               {user !== null && <span className="app-header__email">{user.email}</span>}
               <button
