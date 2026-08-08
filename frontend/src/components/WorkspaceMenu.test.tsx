@@ -31,13 +31,13 @@ beforeEach(() => {
 })
 
 describe('작업 공간 메뉴', () => {
-  it('작업 공간을 문서 수와 함께 보여주고 지금 고른 것을 표시한다', () => {
+  it('작업 공간을 모두 보여주고 지금 고른 것을 표시한다', () => {
     renderMenu({ currentId: 'w2' })
 
     const menu = screen.getByLabelText('작업 공간')
     expect(menu).toHaveValue('w2')
-    expect(screen.getByRole('option', { name: '기본 작업 공간 (문서 2개)' })).toBeInTheDocument()
-    expect(screen.getByRole('option', { name: '민원 안내 (문서 0개)' })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: '기본 작업 공간' })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: '민원 안내' })).toBeInTheDocument()
   })
 
   it('다른 작업 공간을 고르면 전환한다', async () => {

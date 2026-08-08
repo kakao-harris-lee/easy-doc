@@ -136,8 +136,12 @@ DB 테스트는 테스트마다 트랜잭션을 롤백해 격리하지만, 실�
 | POST | `/auth/signup` | 이메일·비밀번호(8자 이상) 가입 → 201 `{id, email}` | — |
 | POST | `/auth/login` | 로그인 → 200 `{access_token, token_type, expires_in}` | — |
 | GET | `/auth/me` | 현재 사용자 조회 | 필요 |
-| POST | `/documents` | 붙여넣기(JSON `{text, title?}`) 또는 파일(multipart `file`) 업로드 → 202 `{document_id, conversion_id, status, char_count}`. 변환 작업은 큐에 등록된다 | 필요 |
-| GET | `/documents` | 소유자 문서 목록 (최신 변환 상태 포함, `limit`/`offset`) | 필요 |
+| POST | `/documents` | 붙여넣기(JSON `{text, title?, workspace_id?}`) 또는 파일(multipart `file`, `workspace_id?`) 업로드 → 202 `{document_id, conversion_id, status, char_count}`. 변환 작업은 큐에 등록된다. `workspace_id`를 주지 않으면 기본(가장 먼저 만든) 작업 공간에 담긴다 | 필요 |
+| GET | `/documents` | 소유자 문서 목록 (최신 변환 상태 포함, `limit`/`offset`/`workspace_id`) | 필요 |
+| GET | `/workspaces` | 내 작업 공간 목록 (만든 순서, 문서 수 포함). 첫 번째가 기본 작업 공간이다 | 필요 |
+| POST | `/workspaces` | 작업 공간 만들기(`{name}`, 50자 이내) → 201. 같은 이름이 이미 있으면 409 | 필요 |
+| PATCH | `/workspaces/{id}` | 이름 바꾸기(`{name}`). 내 것이 아니면 404, 같은 이름이 있으면 409 | 필요 |
+| DELETE | `/workspaces/{id}` | 빈 작업 공간 삭제 → 204. 문서가 남아 있거나 마지막 하나면 409(문서를 함께 지우지 않는다) | 필요 |
 | DELETE | `/documents/{id}` | 문서와 변환 결과를 즉시 파기 → 204. 내 것이 아니면 404 (master-plan 3.2 "삭제 요청 시 즉시 파기") | 필요 |
 | GET | `/conversions/{id}` | 변환 상태·결과. `done`이면 `easy_text`·`masked_items`(복호화된 원문 대응표)·`missing_placeholders`·`edited_text`(검수본이 있으면), `failed`면 `failure_code` | 필요 |
 | PUT | `/conversions/{id}` | 검수 수정본 저장(`{edited_text}`). AI 초안(`easy_text`)은 그대로 남는다 — 수정률 KPI의 원천. `done`이 아니면 409 | 필요 |

@@ -59,9 +59,12 @@ export function WorkspaceMenu() {
         disabled={busy}
         onChange={(event) => select(event.target.value)}
       >
+        {/* 문서 수는 적지 않는다. 목록은 로그인할 때 한 번 읽으므로, 올리거나 지운
+            뒤에는 틀린 수가 그대로 남는다 — 틀린 숫자는 없는 숫자보다 나쁘다.
+            (서버는 문서 수를 준다: 빈 작업 공간만 지울 수 있다는 판정에 쓰인다.) */}
         {workspaces.map((workspace) => (
           <option key={workspace.id} value={workspace.id}>
-            {workspace.name} (문서 {workspace.document_count.toLocaleString('ko-KR')}개)
+            {workspace.name}
           </option>
         ))}
       </select>

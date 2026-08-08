@@ -139,7 +139,7 @@ export function HistoryPage() {
         <p>
           {currentName === null
             ? '아직 변환한 문서가 없습니다.'
-            : `‘${currentName}’ 작업 공간에는 아직 변환한 문서가 없습니다.`}{' '}
+            : `‘${currentName}’에는 아직 변환한 문서가 없습니다.`}{' '}
           <Link to={HOME_PATH}>문서를 올려 보세요.</Link>
         </p>
       ) : (
@@ -149,7 +149,7 @@ export function HistoryPage() {
           <caption>
             {currentName === null
               ? '내가 변환한 문서 목록입니다.'
-              : `‘${currentName}’ 작업 공간의 변환 문서 목록입니다.`}{' '}
+              : `‘${currentName}’에서 변환한 문서 목록입니다.`}{' '}
             제목을 누르면 검수 화면이 열립니다.
           </caption>
           <thead>
