@@ -46,9 +46,9 @@ DOUBLE_PASSIVE_PATTERNS: tuple[str, ...] = ("되어지", "보여지", "쓰여지
 #
 # MappingProxyType: SSOT가 런타임에 변조되지 않도록 읽기 전용으로 노출한다.
 #
-# 후속 최적화 후보(이번 스코프 밖): 전량을 시스템 프롬프트에 렌더링하므로 항목이
-# 늘수록 입력 토큰이 는다. 문서에 실제로 등장한 키만 골라 넣는 동적 필터링은
-# 효과가 확인된 뒤에 검토한다 (master-plan 4.0 Lean MVP 방침 — YAGNI).
+# 프롬프트에는 전량이 아니라 입력에 등장한 키만 실린다(build_system_prompt이
+# find_difficult_words로 걸러 낸다). 항목이 늘어도 입력 토큰이 비례해 늘지 않지만,
+# 출력 검사(check_style)는 계속 전량 기준이라 큐레이션 규칙은 그대로 적용된다.
 DIFFICULT_WORD_REPLACEMENTS: Mapping[str, str] = MappingProxyType(
     {
         # --- 때·기간 ---

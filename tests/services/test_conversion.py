@@ -73,10 +73,21 @@ async def test_프롬프트_SSOT를_그대로_전달한다() -> None:
     service = ConversionService(provider=provider)
     await service.convert(text)
     call = provider.calls[0]
-    assert call.system == build_system_prompt()
+    assert call.system == build_system_prompt(mask_text(text).masked_text)
     match = _DOCUMENT_BODY_RE.match(call.user)
     assert match is not None
     assert match.group("body") == mask_text(text).masked_text
+
+
+async def test_시스템_프롬프트_치환_목록은_입력_기준으로_걸러진다() -> None:
+    """246개 전량이 아니라 마스킹된 원문에 등장한 낱말만 실려야 한다."""
+    provider = FakeProvider(responses=["쉬운 글입니다."])
+    service = ConversionService(provider=provider)
+    await service.convert("금일 중으로 제출하십시오.")
+    system = provider.calls[0].system
+    assert "- 금일 → 오늘" in system
+    assert "- 제출 → 내기" in system
+    assert "- 침수 → " not in system
 
 
 async def test_절단_응답은_예외로_막는다() -> None:

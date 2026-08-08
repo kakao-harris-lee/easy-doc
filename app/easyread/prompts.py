@@ -6,7 +6,7 @@
 """
 
 import secrets
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 
 from app.easyread.style_rules import (
     DIFFICULT_WORD_REPLACEMENTS,
@@ -15,6 +15,7 @@ from app.easyread.style_rules import (
     PROMPT_ONLY_WORDS,
     STYLE_PRINCIPLES,
     SentenceIssue,
+    find_difficult_words,
 )
 
 # 원문 구간 구분자. 요청마다 다른 난수 id를 붙인다 — 본문에 </문서>를 심어
@@ -156,22 +157,37 @@ _REPAIR_INSTRUCTION = (
 )
 
 
-def _render_replacements(*, conditional: bool) -> str:
-    """치환 목록을 문맥 판단 그룹/무조건 치환 그룹으로 나눠 렌더링한다."""
+def _render_replacements(words: Collection[str]) -> str:
+    """지정한 낱말만 '- 어려운말 → 쉬운말' 줄로 렌더링한다.
+
+    출력 순서는 인자 순서가 아니라 사전 정의 순서다 — 같은 낱말 집합이면 항상 같은
+    문자열이 나와야 프롬프트가 요청마다 흔들리지 않는다.
+    """
     return "\n".join(
         f"- {difficult} → {easy}"
         for difficult, easy in DIFFICULT_WORD_REPLACEMENTS.items()
-        if (difficult in PROMPT_ONLY_WORDS) is conditional
+        if difficult in words
     )
 
 
-def build_system_prompt() -> str:
-    """스타일 규칙 SSOT를 순회해 시스템 프롬프트를 생성한다."""
+def build_system_prompt(masked_text: str) -> str:
+    """스타일 규칙 SSOT를 순회해 시스템 프롬프트를 생성한다.
+
+    치환 목록은 전량이 아니라 masked_text에 실제 등장하는 낱말만 싣는다 — 246개
+    전량은 입력과 무관한 고정 비용인데(실측 2026-08-08: 시스템 프롬프트 5,825자 중
+    2,927자), 문서 한 건이 쓰는 낱말은 그중 소수다.
+
+    필터링이 놓치는 경우(입력에 없던 어려운 낱말을 모델이 새로 만들어 내는 경우)는
+    출력 검사(check_style)가 여전히 246개 전체 기준으로 잡아 보정 패스로 넘긴다.
+
+    PROMPT_ONLY_WORDS(문맥 판단 그룹)는 5개뿐이라 걸러도 이득이 없고, 입력에 원형이
+    없어도 모델이 활용형으로 만들어 내므로 입력과 무관하게 항상 싣는다.
+    """
     rules = "\n".join(
         f"{index}. {principle}" for index, principle in enumerate(STYLE_PRINCIPLES, start=1)
     )
-    always = _render_replacements(conditional=False)
-    conditional = _render_replacements(conditional=True)
+    always = _render_replacements(find_difficult_words(masked_text))
+    conditional = _render_replacements(PROMPT_ONLY_WORDS)
     return (
         f"{_ROLE}\n\n"
         f"[변환 규칙]\n{rules}\n\n"

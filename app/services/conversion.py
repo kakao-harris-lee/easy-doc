@@ -85,7 +85,9 @@ class ConversionService:
         """
         masking = mask_text(text)
         easy_text, response = await self._complete(
-            system=build_system_prompt(),
+            # 시스템 프롬프트의 치환 목록도 마스킹된 원문에서 뽑는다 — 이 문서에 실제
+            # 등장하는 낱말만 실어 입력 토큰을 줄인다(마스킹 선행 순서는 그대로).
+            system=build_system_prompt(masking.masked_text),
             user=build_user_prompt(masking.masked_text),
         )
         input_tokens = response.input_tokens
