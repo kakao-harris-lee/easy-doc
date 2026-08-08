@@ -66,15 +66,15 @@
 ### 3.1 LLM 전략 — 확정: 추상화 레이어 + 상용 API
 
 - **Provider 추상화 레이어**를 두고 LLM을 교체 가능한 구조로 설계한다. 코드 어디에서도 특정 벤더 SDK를 직접 호출하지 않는다.
-- MVP는 상용 API(Claude/GPT 등)로 시작. 벤더 선정은 골든셋 벤치마크로 확정한다. **1차 비교 실행 완료(2026-08-08, 56건)**: 양쪽 완주 36건 기준 claude-sonnet-5가 규칙 통과율(91.7% vs 75.0%)·팩트 잔존(97.4% vs 94.7%) 우위, gpt-4.1이 지연(5.7초 vs 33.5초)·원가(1/3~1/5) 우위. 단 Anthropic 측은 provider 설정 문제(적응형 사고가 max_tokens 4,096 공유 → 장문 36% 실패)로 **확정 근거 불충분 — 설정 조정 후 재실행 필요**.
-- **알려진 제약**: claude-sonnet-5는 `thinking` 미지정 시 적응형 사고가 기본 켜지며 사고 토큰이 `max_tokens`를 공유한다. Anthropic 채택 시 provider 계약(max_tokens 상향 또는 thinking 명시)에 반영해야 한다.
+- MVP는 상용 API(Claude/GPT 등)로 시작. 벤더 선정은 골든셋 벤치마크로 확정한다. **1차 비교 실행 완료(2026-08-08, 56건)**: 양쪽 완주 36건 기준 claude-sonnet-5가 규칙 통과율(91.7% vs 75.0%)·팩트 잔존(97.4% vs 94.7%) 우위, gpt-4.1이 지연(5.7초 vs 33.5초)·원가(1/3~1/5) 우위. 1차의 Anthropic 측 provider 설정 문제(적응형 사고가 max_tokens 4,096 공유 → 장문 36% 실패)는 수정 후 **재실행 완료(2026-08-08, 56건)**: 실패 20→0, claude-sonnet-5 규칙 통과율 80.4% vs 58.9%(gpt-4.1), 팩트 잔존 90.1%. 남은 확정 변수는 원가(정상가 기준 약 2.9배)·지연(약 3.3배) 수용 여부와 no-training 약관 확인, 그리고 judge 충실성 관찰 1건(문서 020 사람 대조 진행 중).
+- **알려진 제약 (해소됨)**: claude-sonnet-5는 `thinking` 미지정 시 적응형 사고가 기본 켜지며 사고 토큰이 `max_tokens`를 공유한다. provider 기본값에 반영 완료 — max_tokens 16,000 + `LLM_EFFORT` 설정(채택: low. 사전 실험에서 medium 이상은 규칙·팩트 이득 없이 비용만 증가). 근거: `docs/benchmarks/2026-08-08-2136-llm-benchmark.md`.
 - **벤더 확정 기록** (확정 시 채운다):
 
 | 항목 | 내용 |
 |---|---|
-| 확정 벤더 · 모델 ID | (미정 — 비교 벤더 키 미확보) · **현재 운영 기본: openai / gpt-4.1** (장문 압축 해소 실측 근거, docs/quality/ 비교 리포트 2건) |
+| 확정 벤더 · 모델 ID | (미정 — 재벤치마크까지 완료, 원가·약관 판단 대기) · **현재 운영 기본: openai / gpt-4.1** (장문 압축 해소 실측 근거, docs/quality/ 비교 리포트 2건) |
 | 확정일 | (미정) |
-| 근거 리포트 | `docs/benchmarks/2026-08-08-1642-llm-benchmark.md` (1차 비교 — gpt-4.1 vs claude-sonnet-5) + `docs/quality/` 리포트들 |
+| 근거 리포트 | `docs/benchmarks/2026-08-08-1642-llm-benchmark.md` (1차 비교) + `docs/benchmarks/2026-08-08-2136-llm-benchmark.md` (설정 수정 후 재벤치마크 + effort 실험·결정) + `docs/quality/` 리포트들 |
 | no-training 약관 확인일 | (미확인 — 확정 전 필수) |
 - 필수 계약 조건: **입력 데이터 학습 미사용(zero data retention 또는 no-training 조항)**.
 - 국외 이전 리스크 관리: 마스킹 후 전송(3.2) + 개인정보처리방침·위탁 문서에 국외 이전 고지. B2G 본격화(Phase 2) 시 국내 리전/국산 LLM 옵션을 추상화 레이어에 추가.
