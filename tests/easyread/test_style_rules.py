@@ -6,17 +6,21 @@ import pytest
 
 from app.easyread.goldenset import load_documents
 from app.easyread.style_rules import (
+    COMPOUND_HEAD_NOUNS,
     COMPOUND_TAIL_KEYS,
     DIFFICULT_WORD_REPLACEMENTS,
     LEXICALIZED_GLOSSES,
     MAX_COMMAS_PER_SENTENCE,
     MAX_SENTENCE_CHARS,
+    MODIFIER_CHECKED_GLOSSES,
+    NOMINAL_GLOSSES,
     PROMPT_ONLY_WORDS,
     check_style,
     find_difficult_words,
     find_gloss_collisions,
     split_sentences,
 )
+from tests.easyread.converted_samples import CONVERTED_SAMPLES
 from tests.golden import DOCUMENTS_DIR
 
 # 사전 확충의 최소 규모. 프롬프트 지시만으로는 어려운 낱말 잔존이 확률적으로 남아
@@ -247,12 +251,15 @@ def test_쉼표_개수_경계(sentence: str, expected_pass: bool) -> None:
 
 # --- 치환 비문(뜻풀이 축자 삽입) 검출 ---
 
-# 2026-08-09 문서 020에서 사람이 확인한 비문 3종. 이 셋은 반드시 잡혀야 한다
-# (docs/quality/2026-08-09-doc020-fidelity-review.md).
+# 2026-08-09 문서 020에서 사람이 확인한 비문 3종. 이 셋은 반드시 잡혀야 한다.
+# 문장은 관찰된 출력 그대로다(docs/quality/2026-08-09-doc020-fidelity-review.md) —
+# 바꿔 쓰면 회귀 테스트가 실제 사건과 끊어진다.
 OBSERVED_GLOSS_COLLISIONS = (
-    ("바우처 카드를 내어 줌 받아 사용하세요.", "내어 줌"),  # 명사형 뜻풀이 + 용언
-    ("뽑음 결과", "뽑음"),  # 명사형 뜻풀이 + 체언(제목)
-    ("사용 정해진 날짜가 지나면 남은 금액은 사라집니다.", "정해진 날짜"),  # 복합어 자리
+    # 명사형 뜻풀이 + 용언 (review:289)
+    ("뽑히신 분은 바우처 카드를 내어 줌 받아 사용하시면 됩니다.", "내어 줌"),
+    ("뽑음 결과", "뽑음"),  # 명사형 뜻풀이 + 체언(제목, review:287)
+    # 복합어 자리 (review:294)
+    ("· 사용 정해진 날짜가 지나면 남은 금액은 자동으로 없어집니다.", "정해진 날짜"),
 )
 
 # 오탐 회귀 코퍼스 — 모두 자연스러운 표현이라 한 건도 걸리면 안 된다.
@@ -277,6 +284,129 @@ NATURAL_TEXT_CORPUS = (
     # 복합어 안쪽('줄바꿈'의 '바꿈')은 뜻풀이가 끼워진 자리가 아니다.
     "줄바꿈 기준으로 문장을 나눕니다.",
     "옷차림 단정하게 오세요.",
+    # 관형구 뜻풀이 앞의 부사·시간명사 — 조사가 없어도 복합어 자리가 아니다.
+    # 사전이 '정액 → 정해진 금액'을 지시하므로 이런 문장이 정상 변환 결과다.
+    "매달 정해진 금액을 드립니다.",
+    "매월 정해진 금액을 지급합니다.",
+    "미리 정해진 날짜에 서류를 내세요.",
+    "이미 정해진 날짜입니다.",
+    "매년 정해진 금액을 지원합니다.",
+    "아래 정해진 날짜를 보세요.",
+    "다시 정해진 날짜를 알려 드립니다.",
+    "올해 정해진 금액은 30만 원입니다.",
+    "해마다 정해진 날짜에 신청하세요.",
+    "따로 정해진 날짜는 없습니다.",
+    # 끝 글자가 한 글자 조사 목록에 없는 다음절 조사 뒤
+    "학생에게 정해진 금액을 드립니다.",
+    "신청자마다 정해진 날짜가 다릅니다.",
+    "3월부터 정해진 날짜에 받습니다.",
+    "생각보다 정해진 날짜가 이릅니다.",
+    "예상만큼 정해진 금액을 받습니다.",
+    "3월까지 정해진 날짜에 내세요.",
+    "주민센터에서 정해진 금액을 드립니다.",
+    # 사고·현상 이름으로 굳은 명사형 값
+    "휠체어가 걸림 없이 지나갈 수 있습니다.",
+    "유리 깨짐 사고가 나면 알려 주세요.",
+    "일정이 겹침 없이 진행됩니다.",
+    "높임 표현을 씁니다.",
+    "줄임 표현을 쓰지 마세요.",
+    "낙하 떨어짐 주의 표지판입니다.",
+    "건물 무너짐 사고를 대비합니다.",
+)
+
+
+# NOMINAL_GLOSSES 스냅샷 — 사전에 -ㅁ으로 끝나는 값이 새로 들어오면 검출 대상이
+# 조용히 늘어나므로(그 즉시 자연 표현을 잡기 시작한다) 여기서 못 박는다.
+# 이 테스트가 깨지면 새 값을 검출 대상에 넣을지 LEXICALIZED_GLOSSES로 뺄지 판단할 것.
+NOMINAL_GLOSSES_SNAPSHOT = frozenset(
+    {
+        "가까워짐",
+        "가려 정함",
+        "가지고 있음",
+        "갖춤",
+        "갖춰 둠",
+        "거둬들임",
+        "거슬러 올라가 적용함",
+        "계산에 넣음",
+        "계산함",
+        "계산해 냄",
+        "계산해서 맞춤",
+        "고쳐서 채움",
+        "고침",
+        "기간을 늘림",
+        "깎아 줌",
+        "끊음",
+        "끝남",
+        "끝냄",
+        "나눠 정함",
+        "나눠 줌",
+        "나이가 많음",
+        "내붙임",
+        "내어 줌",
+        "내지 않고 밀림",
+        "내지 않음",
+        "널리 나눠 줌",
+        "넘음",
+        "눈 내림",
+        "다 냄",
+        "다 들음",
+        "다가옴",
+        "달라고 함",
+        "대신하는 사람",
+        "도로 거둠",
+        "도와줌",
+        "돌려보냄",
+        "드리지 않음",
+        "따르지 않음",
+        "따름",
+        "만 해당함",
+        "망가뜨림",
+        "맡은 사람",
+        "먹지 않음",
+        "물에 잠김",
+        "미룸",
+        "바꿈",
+        "바뀜",
+        "바로잡음",
+        "받음",
+        "병원에 옴",
+        "부탁함",
+        "북돋움",
+        "분명히 밝힘",
+        "비 내림",
+        "빌려 씀",
+        "빌려 줌",
+        "뺌",
+        "뽑음",
+        "살펴봄",
+        "새로 고침",
+        "생각함",
+        "소용없음",
+        "시작함",
+        "신청한 사람",
+        "실제로 함",
+        "쓸 수 있음",
+        "안 내도 됨",
+        "어김",
+        "얼어붙음",
+        "우편으로 보냄",
+        "이사 감",
+        "이사 옴",
+        "이어 줌",
+        "이유를 밝힘",
+        "일자리를 잃음",
+        "잃어버림",
+        "재촉함",
+        "조심할 점",
+        "지남",
+        "지키지 않음",
+        "진행함",
+        "집에서 나감",
+        "찾아봄",
+        "필요한 일을 함",
+        "함께 넣음",
+        "해당하는 사람",
+    }
 )
 
 
@@ -290,11 +420,28 @@ def test_자연스러운_표현은_치환_비문으로_보지_않는다(sentence
     assert find_gloss_collisions(sentence) == []
 
 
-def test_골든셋_원문_전수에서_치환_비문_오탐이_없다() -> None:
-    """게이트를 엄격하게 만드는 검사는 오탐이 0이어야 신뢰할 수 있다.
+@pytest.mark.parametrize(
+    ("label", "text", "expected"),
+    [pytest.param(*sample, id=sample[0]) for sample in CONVERTED_SAMPLES],
+)
+def test_실제_변환_결과에서_검출이_정확하다(
+    label: str, text: str, expected: tuple[str, ...]
+) -> None:
+    """오탐 증거의 주 코퍼스 — 검사 대상 표면인 '변환 결과물'로 재현율·정밀도를 함께 고정한다.
 
-    골든셋 원문은 아직 변환되지 않은 '어려운 글'이라 뜻풀이가 끼워질 자리가 없다 —
-    여기서 걸리는 것은 전부 오탐이다.
+    기대값보다 많이 잡으면 오탐, 적게 잡으면 미검출이다. 픽스처 출처와 기대값 근거는
+    tests/easyread/converted_samples.py 참고.
+    """
+    assert sorted(find_gloss_collisions(text)) == sorted(expected)
+
+
+def test_골든셋_원문_전수에서_치환_비문_오탐이_없다() -> None:
+    """보조 증거 — 원문에는 검사 표면이 거의 없어 이것만으로는 오탐 0을 말할 수 없다.
+
+    실측(2026-08-09): 골든 56건 원문에 사전의 관형구 뜻풀이는 한 번도 등장하지 않고,
+    명사형 뜻풀이도 극소수만 나온다. 원문은 아직 변환되지 않은 '어려운 글'이라 뜻풀이가
+    끼워질 자리 자체가 없기 때문이다 — 그래서 **주 증거는 위의 변환 결과물 코퍼스**이고,
+    이 테스트는 "원문을 건드리지는 않는다"만 확인하는 보조 장치다.
     """
     false_positives = {
         document.id: find_gloss_collisions(document.source_text)
@@ -326,3 +473,55 @@ def test_낱말로_굳은_명사형_값은_검출_대상에서_빠진다() -> No
 
 def test_복합어_꼬리_키는_모두_사전에_있다() -> None:
     assert DIFFICULT_WORD_REPLACEMENTS.keys() >= COMPOUND_TAIL_KEYS
+
+
+def test_복합어_앞자리_낱말_목록은_비어_있지_않다() -> None:
+    """패턴 ③의 주 방어선 — 앞 낱말을 열거하지 않으면 부사·시간명사가 전부 걸린다."""
+    assert "사용" in COMPOUND_HEAD_NOUNS
+    assert all(len(noun) >= 2 for noun in COMPOUND_HEAD_NOUNS)
+
+
+def test_사전이_지시한_표현을_비문으로_잡지_않는다() -> None:
+    """'갱신 → 새로 고침'을 따른 결과가 '정정 → 고침'에 걸리면 사전이 자기모순이다."""
+    assert DIFFICULT_WORD_REPLACEMENTS["갱신"] == "새로 고침"
+    assert DIFFICULT_WORD_REPLACEMENTS["정정"] == "고침"
+    assert find_gloss_collisions("새로 고침 안내를 보내 드립니다.") == []
+
+
+def test_다른_뜻풀이의_꼬리인_값은_체언_수식_검사에서_빠진다() -> None:
+    """사전이 쓰라고 한 긴 값의 끝부분이 짧은 값과 같으면 그 자리는 비문이 아니다."""
+    values = set(DIFFICULT_WORD_REPLACEMENTS.values())
+    tails = {
+        value
+        for value in values
+        if " " not in value and any(other != value and other.endswith(value) for other in values)
+    }
+    assert tails, "꼬리 관계가 하나도 없으면 이 방어는 의미가 없다"
+    assert tails.isdisjoint(MODIFIER_CHECKED_GLOSSES)
+
+
+def test_명사형_뜻풀이_집합은_스냅샷으로_고정된다() -> None:
+    """사전에 -ㅁ으로 끝나는 값이 새로 들어오면 검출 대상이 조용히 늘어난다.
+
+    '잠·봄·힘·마음·그림·사람' 같은 값이 추가되면 그 즉시 자연 표현을 잡기 시작하므로,
+    사전을 넓힐 때 이 테스트가 빨간불을 켜서 제외 여부를 판단하게 강제한다.
+    """
+    assert NOMINAL_GLOSSES == NOMINAL_GLOSSES_SNAPSHOT
+
+
+@pytest.mark.parametrize(
+    "sentence",
+    [
+        "사용  정해진 날짜가 지났습니다.",  # 연속 공백
+        "사용 정해진 날짜가 지났습니다.",  # NBSP
+        "사용　정해진 날짜가 지났습니다.",  # 전각 공백
+    ],
+)
+def test_공백_변형에서도_검출한다(sentence: str) -> None:
+    """hwpx·pdf 추출본에 흔한 공백이다 — 후처리가 정규화하지 않아 검사에서 새면 안 된다."""
+    assert find_gloss_collisions(sentence) == ["정해진 날짜"]
+
+
+def test_줄이_바뀌면_이어_읽지_않는다() -> None:
+    """다른 줄은 다른 문장·다른 항목이다 — 붙여 읽으면 오탐이 된다."""
+    assert find_gloss_collisions("신청을 받음\n보조기기 안내") == []

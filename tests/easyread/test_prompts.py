@@ -198,13 +198,34 @@ def test_보정_프롬프트는_위반_문장과_사유를_나열한다() -> Non
 
 def test_보정_프롬프트는_사전값을_뜻풀이로만_준다() -> None:
     """ "'X' → 'Y'"는 축자 치환을 명령해 비문을 만든다 — 뜻만 주고 재서술을 시킨다."""
-    _, user = build_repair_prompt("금일 서류를 내세요.", check_style("금일 서류를 내세요.").issues)
+    system, user = build_repair_prompt(
+        "금일 서류를 내세요.", check_style("금일 서류를 내세요.").issues
+    )
     gloss = DIFFICULT_WORD_REPLACEMENTS["금일"]
-    assert f"'금일' — 어려운 말입니다. 뜻: {gloss}." in user
-    assert "자연스럽게 다시 쓰세요" in user
-    assert "그대로 끼워 넣지 마세요" in user
+    assert f"'금일' (뜻: {gloss})" in user
     assert f"'금일' → '{gloss}'" not in user
     assert "→" not in user
+    # 재서술 규칙은 낱말마다가 아니라 시스템 프롬프트에 한 번만 적는다.
+    assert "자연스럽게 다시 쓰세요" in system
+    assert "자연스럽게 다시 쓰세요" not in user
+
+
+def test_보정_프롬프트의_뜻풀이_줄은_짧다() -> None:
+    """규칙을 낱말마다 되풀이하면 [고칠 곳] 블록이 부풀어 보정 입력을 잠식한다."""
+    dirty = "금일 중으로 구비서류를 지참하여 제출하시고, 미납 요금을 납부하시기 바랍니다."
+    _, user = build_repair_prompt(dirty, check_style(dirty).issues)
+    gloss_lines = [line for line in user.splitlines() if line.startswith("   '")]
+    assert gloss_lines
+    assert all(len(line) < 30 for line in gloss_lines), gloss_lines
+
+
+def test_보정_프롬프트는_같은_사유를_되풀이하지_않는다() -> None:
+    """한 문장에 같은 뜻풀이가 두 번 걸려도 사유 줄은 한 번만 싣는다."""
+    converted = "뽑음 결과 뽑음 안내를 보내 드립니다."
+    issues = check_style(converted).issues
+    assert len([issue for issue in issues if "뜻풀이" in issue.reason]) == 2
+    _, user = build_repair_prompt(converted, issues)
+    assert user.count("뜻풀이 축자 삽입(뽑음)") == 1
 
 
 def test_보정_프롬프트는_같은_문장을_되풀이하지_않는다() -> None:

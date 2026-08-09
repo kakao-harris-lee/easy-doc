@@ -363,9 +363,12 @@ _LIST_MARKER = re.compile(r"^(?:\d+|[가-힣]|[①-⑳])\s*[.)]$")
 class SentenceIssue(BaseModel):
     """규칙 위반 문장과 사유.
 
-    word는 어려운 표현 위반일 때만 채워지는 치환 대상 낱말이다. 보정 프롬프트가
-    "X → Y"라는 표적 지시를 만들려면 사전 키가 필요한데, reason 문자열을 되파싱하면
-    사유 문구를 손댈 때마다 조용히 깨진다 — 값으로 들고 다닌다.
+    word는 어려운 표현 잔존 위반일 때만 채워지는 사전 키다. 보정 프롬프트가 그 낱말의
+    뜻풀이를 함께 실으려면 사전 키가 필요한데, reason 문자열을 되파싱하면 사유 문구를
+    손댈 때마다 조용히 깨진다 — 값으로 들고 다닌다.
+
+    치환 비문(뜻풀이 축자 삽입) 위반은 word를 비운다. 처방이 사전값 조회가 아니라
+    문장 재서술이라 보정 프롬프트가 사유 문구만 그대로 전달하면 된다.
     """
 
     sentence: str
@@ -464,6 +467,15 @@ LEXICALIZED_GLOSSES: frozenset[str] = frozenset(
         "빠짐",
         "같음",
         "지킴",
+        # 사고·현상·문법 용어로 굳어 명사처럼 쓰이는 말: "걸림 없이", "깨짐 사고",
+        # "겹침 없이", "떨어짐 주의", "무너짐 사고", "높임 표현", "줄임 표현".
+        "걸림",
+        "깨짐",
+        "겹침",
+        "떨어짐",
+        "무너짐",
+        "높임",
+        "줄임",
     }
 )
 
@@ -471,14 +483,44 @@ LEXICALIZED_GLOSSES: frozenset[str] = frozenset(
 # 앞 낱말과 조사 없이 이어지면 "사용 정해진 날짜"류 비문이 된다.
 COMPOUND_TAIL_KEYS: frozenset[str] = frozenset({"기한", "기일", "정액"})
 
+# 위 키가 복합어를 이룰 때 앞자리에 오는 낱말. **열거가 이 패턴의 주 방어선이다.**
+# "앞에 조사 없는 낱말이 오면 비문"으로 잡으면 "매달 정해진 금액"·"미리 정해진 날짜"·
+# "학생에게 정해진 금액"처럼 정상 문장이 무더기로 걸린다(부사·시간명사·다음절 조사).
+# 실제 비문은 원문에 "사용 기한"·"납부 기일" 같은 복합어가 있던 자리에서만 생기므로,
+# 그 앞자리에 실제로 오는 낱말만 열거해 재현율을 거의 잃지 않고 오탐을 없앤다.
+# 사전 키에서 유도할 수 없다 — 이 낱말들은 대부분 사전에 없는 일반 명사다.
+COMPOUND_HEAD_NOUNS: frozenset[str] = frozenset(
+    {
+        "사용",
+        "신청",
+        "이용",
+        "납부",
+        "접수",
+        "제출",
+        "처리",
+        "지급",
+        "지원",
+        "등록",
+        "보관",
+        "상환",
+        "계약",
+        "적용",
+        "판매",
+        "모집",
+        "예약",
+        "반납",
+        "교육",
+    }
+)
+
+# 낱말 사이 공백. 줄바꿈은 제외한다 — 줄이 바뀌면 다른 문장·다른 항목이라
+# ("…신청을 받음\n보조기기 안내") 붙여 읽으면 오탐이 된다. 반대로 연속 공백·NBSP·
+# 전각 공백은 hwpx/pdf 추출본에 흔하고 후처리가 정규화하지 않으므로 모두 받아 준다
+# (전각 쉼표를 세는 _COMMA_CHARS와 같은 기조다).
+_INLINE_SPACE = r"[^\S\r\n]"
 # 명사형 뜻풀이 바로 뒤에 오는 용언 — "내어 줌 받아"의 '받아'. 어미 글자까지 못 박아
 # "이름 하나"("하"+"나")처럼 용언이 아닌 낱말이 걸리지 않게 한다.
-# 공백은 줄바꿈을 뺀 가로 공백만 본다 — 줄이 바뀌면 다른 문장·다른 항목이라
-# ("…신청을 받음\n보조기기 안내") 붙여 읽으면 오탐이 된다.
-_LIGHT_VERB_CHAIN = r"[ \t]?(?:받|하|되|시키)[아어여은는을며면고지도야으기게]"
-# 앞 낱말 끝에 붙는 조사. 조사가 붙어 있으면 복합어 자리가 아니라 정상 수식이다
-# ("사용 방법과 정해진 날짜"는 비문이 아니고 "사용 정해진 날짜"가 비문이다).
-_TRAILING_PARTICLE = "의을를이가은는에로와과도만서께나며"
+_LIGHT_VERB_CHAIN = _INLINE_SPACE + r"*(?:받|하|되|시키)[아어여은는을며면고지도야으기게]"
 # 뜻풀이도 낱말 시작 위치에서만 센다(find_difficult_words와 같은 근사). 앞 글자가
 # 한글이면 더 긴 낱말의 일부다 — "줄바꿈 기준"의 '바꿈'이 걸리면 안 된다.
 _NOT_AFTER_HANGUL = r"(?<![가-힣])"
@@ -486,40 +528,58 @@ _NOT_AFTER_HANGUL = r"(?<![가-힣])"
 
 def _is_nominalized(value: str) -> bool:
     """값이 용언의 명사형(-ㅁ/-음)으로 끝나는가 — 종성 ㅁ으로 판정한다."""
+    if not value:
+        return False
     last = value[-1]
     if not ("가" <= last <= "힣"):
         return False
     return (ord(last) - _HANGUL_BASE) % _JONGSEONG_COUNT == _JONGSEONG_MIEUM
 
 
-_NOMINAL_GLOSSES = frozenset(
+#: 검출 대상 명사형 뜻풀이. 파생 규칙이 "종성 ㅁ − 제외 목록"이라 사전에 -ㅁ 값이
+#: 새로 들어오면 자동으로 편입된다 — 그래서 테스트가 이 집합을 스냅샷으로 고정한다
+#: (사전 확장 시 반드시 제외 여부를 판단하게 만드는 장치).
+NOMINAL_GLOSSES: frozenset[str] = frozenset(
     value
     for value in DIFFICULT_WORD_REPLACEMENTS.values()
     if _is_nominalized(value) and value not in LEXICALIZED_GLOSSES
 )
 
+#: 패턴 ②(체언 수식) 대상. 한 낱말짜리만 본다 — 여러 낱말짜리 값은
+#: "해당하는 사람 중"처럼 체언이 뒤따르는 정상 표현이 있다. 다른 뜻풀이의 꼬리인 값도
+#: 뺀다: '갱신 → 새로 고침'을 따른 결과가 '정정 → 고침'에 걸리면 사전이 자기모순이다.
+MODIFIER_CHECKED_GLOSSES: frozenset[str] = frozenset(
+    gloss
+    for gloss in NOMINAL_GLOSSES
+    if " " not in gloss
+    and not any(
+        other != gloss and other.endswith(gloss) for other in DIFFICULT_WORD_REPLACEMENTS.values()
+    )
+)
+
 # 검출 패턴은 사전에서 유도한다 — 목록을 손으로 복제하면 사전과 기준이 갈라진다.
 # (1) 명사형 뜻풀이 + 용언: "내어 줌 받아"
 # (2) 한 낱말짜리 명사형 뜻풀이 + 체언: "뽑음 결과"
-#     여러 낱말짜리 값은 "해당하는 사람 중"처럼 체언이 뒤따르는 정상 표현이 있어 뺀다.
-# (3) 앞 체언 + 관형구 뜻풀이: "사용 정해진 날짜"
+# (3) 복합어 앞자리 낱말 + 관형구 뜻풀이: "사용 정해진 날짜"
 GLOSS_COLLISION_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     *(
         (gloss, re.compile(_NOT_AFTER_HANGUL + re.escape(gloss) + _LIGHT_VERB_CHAIN))
-        for gloss in sorted(_NOMINAL_GLOSSES)
+        for gloss in sorted(NOMINAL_GLOSSES)
     ),
     *(
-        (gloss, re.compile(_NOT_AFTER_HANGUL + re.escape(gloss) + r"[ \t][가-힣]"))
-        for gloss in sorted(_NOMINAL_GLOSSES)
-        if " " not in gloss
+        (gloss, re.compile(_NOT_AFTER_HANGUL + re.escape(gloss) + _INLINE_SPACE + r"+[가-힣]"))
+        for gloss in sorted(MODIFIER_CHECKED_GLOSSES)
     ),
     *(
         (
             DIFFICULT_WORD_REPLACEMENTS[key],
             re.compile(
-                r"[가-힣]{2,}(?<!["
-                + _TRAILING_PARTICLE
-                + r"])[ \t]"
+                _NOT_AFTER_HANGUL
+                + r"(?:"
+                + "|".join(re.escape(noun) for noun in sorted(COMPOUND_HEAD_NOUNS))
+                + r")"
+                + _INLINE_SPACE
+                + r"+"
                 + re.escape(DIFFICULT_WORD_REPLACEMENTS[key])
             ),
         )

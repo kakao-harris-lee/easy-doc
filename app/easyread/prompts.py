@@ -248,21 +248,19 @@ def _render_violations(violations: Sequence[SentenceIssue]) -> str:
     blocks: list[str] = []
     for number, (sentence, issues) in enumerate(grouped.items(), start=1):
         lines = [f"{number}. 고칠 문장: {sentence}"]
-        lines.extend(f"   문제: {issue.reason}" for issue in issues)
-        for issue in issues:
-            word = issue.word
-            if word is None:
-                continue
-            replacement = DIFFICULT_WORD_REPLACEMENTS.get(word)
-            if replacement is not None:
-                # "'X' → 'Y'"는 축자 치환을 직접 명령해 비문을 만든다(2026-08-09 실측:
-                # '선정 결과'가 보정 패스에서 '뽑음 결과'가 됐다). 값은 뜻풀이로만 주고
-                # 재서술을 지시한다. 낱말에 조사를 붙이지 않는다 — 받침에 따라 갈린다.
-                lines.append(
-                    f"   '{word}' — 어려운 말입니다. 뜻: {replacement}. "
-                    "이 뜻이 통하게 문장을 자연스럽게 다시 쓰세요. "
-                    "뜻풀이를 그대로 끼워 넣지 마세요."
-                )
+        # 같은 사유가 여러 번 잡히는 자리가 있다(한 문장에 같은 뜻풀이가 두 번 등). 사유
+        # 줄을 되풀이해도 모델에게 주는 정보는 같고 입력 토큰만 는다 — 순서를 지켜 접는다.
+        lines.extend(dict.fromkeys(f"   문제: {issue.reason}" for issue in issues))
+        # 뜻풀이는 낱말마다 한 줄씩 짧게만 준다. "그대로 끼워 넣지 말고 다시 쓰라"는
+        # 규칙은 시스템 프롬프트(_REPAIR_INSTRUCTION)에 한 번만 적는다 — 낱말마다
+        # 되풀이하면 [고칠 곳] 블록이 60% 넘게 부풀어 보정 호출 입력을 잠식한다.
+        # 표기는 변환 프롬프트의 치환 목록과 같은 "(뜻: ...)" 형식이다.
+        glosses = {
+            f"   '{issue.word}' (뜻: {DIFFICULT_WORD_REPLACEMENTS[issue.word]})"
+            for issue in issues
+            if issue.word is not None and issue.word in DIFFICULT_WORD_REPLACEMENTS
+        }
+        lines.extend(sorted(glosses))
         blocks.append("\n".join(lines))
     return "\n".join(blocks)
 

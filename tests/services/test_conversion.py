@@ -179,8 +179,8 @@ async def test_스타일_위반이면_보정을_한_번_더_부른다() -> None:
     repair_user = provider.calls[1].user
     assert _DIRTY in repair_user
     assert "어려운 표현 잔존(금일)" in repair_user
-    assert "'금일' — 어려운 말입니다. 뜻: 오늘." in repair_user
-    assert "자연스럽게 다시 쓰세요" in repair_user
+    assert "'금일' (뜻: 오늘)" in repair_user
+    assert "자연스럽게 다시 쓰세요" in provider.calls[1].system
 
 
 async def test_보정이_악화되면_원본을_채택한다() -> None:
