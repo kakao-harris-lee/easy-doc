@@ -304,6 +304,18 @@ NATURAL_TEXT_CORPUS = (
     "예상만큼 정해진 금액을 받습니다.",
     "3월까지 정해진 날짜에 내세요.",
     "주민센터에서 정해진 금액을 드립니다.",
+    # 복합어 앞자리 낱말이 관형구 뜻풀이 **가까이** 오지만 붙지는 않는 정상 문장.
+    # 화이트리스트를 넓힐 때 가장 먼저 깨질 자리라 항목마다 한 문장씩 둔다.
+    "변경 없이 정해진 날짜에 진행합니다.",
+    "심사를 거쳐 정해진 날짜에 발표합니다.",
+    "결제는 정해진 날짜에 하시면 됩니다.",
+    "신고 후 정해진 날짜에 결과를 받습니다.",
+    "가입할 때 정해진 금액을 냅니다.",
+    "입금하면 정해진 날짜에 처리됩니다.",
+    "환불 절차는 정해진 날짜 안에 마칩니다.",
+    "심의 결과에 따라 정해진 금액을 드립니다.",
+    "회신을 받으면 정해진 날짜에 알려 드립니다.",
+    "이행하지 않으면 정해진 금액을 내야 합니다.",
     # 사고·현상 이름으로 굳은 명사형 값
     "휠체어가 걸림 없이 지나갈 수 있습니다.",
     "유리 깨짐 사고가 나면 알려 주세요.",
@@ -475,10 +487,69 @@ def test_복합어_꼬리_키는_모두_사전에_있다() -> None:
     assert DIFFICULT_WORD_REPLACEMENTS.keys() >= COMPOUND_TAIL_KEYS
 
 
-def test_복합어_앞자리_낱말_목록은_비어_있지_않다() -> None:
-    """패턴 ③의 주 방어선 — 앞 낱말을 열거하지 않으면 부사·시간명사가 전부 걸린다."""
+# 화이트리스트에 절대 들어오면 안 되는 부류 — 관형구를 자연스럽게 앞에서 꾸미는
+# 부사·시간명사다. B-1 오탐(2026-08-09 리뷰)이 정확히 이 부류에서 나왔다.
+FORBIDDEN_HEAD_WORDS = frozenset(
+    {
+        "매달",
+        "매월",
+        "매년",
+        "매주",
+        "미리",
+        "이미",
+        "다시",
+        "따로",
+        "아래",
+        "올해",
+        "내년",
+        "작년",
+        "오늘",
+        "내일",
+        "어제",
+        "이번",
+        "다음",
+        "지난",
+        "현재",
+        "최근",
+        "해마다",
+        "그때",
+    }
+)
+
+
+def test_복합어_앞자리_낱말은_선정_원칙을_지킨다() -> None:
+    """패턴 ③의 주 방어선 — 목록이 무분별하게 늘면 오탐 표면이 그대로 넓어진다.
+
+    원칙(style_rules.COMPOUND_HEAD_NOUNS 주석): '기한·기일·정액' 앞에 복합어로 붙는
+    동작성 한자어 명사만 넣는다. 부사·시간명사는 절대 넣지 않는다.
+    """
     assert "사용" in COMPOUND_HEAD_NOUNS
-    assert all(len(noun) >= 2 for noun in COMPOUND_HEAD_NOUNS)
+    # 한자어 명사는 두세 글자 순한글 표기다(공백·기호가 섞이면 낱말이 아니다).
+    assert all(2 <= len(noun) <= 3 for noun in COMPOUND_HEAD_NOUNS), COMPOUND_HEAD_NOUNS
+    assert all(noun.isalpha() and not noun.isascii() for noun in COMPOUND_HEAD_NOUNS)
+    assert COMPOUND_HEAD_NOUNS.isdisjoint(FORBIDDEN_HEAD_WORDS)
+
+
+@pytest.mark.parametrize("noun", sorted(COMPOUND_HEAD_NOUNS))
+def test_복합어_앞자리_낱말은_모두_검출에_기여한다(noun: str) -> None:
+    """열거했는데 잡히지 않는 낱말은 오탐 표면만 넓히고 재현율은 못 늘린다."""
+    assert find_gloss_collisions(f"{noun} 정해진 날짜가 지났습니다.") == ["정해진 날짜"]
+
+
+# 2026-08-09 리뷰가 지목한 재현율 공백 — 공공 안내문에 흔한 복합어들이다.
+MISSED_COMPOUND_SLOTS = (
+    "결제 정해진 날짜가 지나면 이용할 수 없습니다.",
+    "환불 정해진 날짜를 확인하세요.",
+    "신고 정해진 날짜입니다.",
+    "가입 정해진 날짜",
+    "입금 정해진 날짜",
+    "심사 정해진 날짜",
+)
+
+
+@pytest.mark.parametrize("sentence", MISSED_COMPOUND_SLOTS)
+def test_흔한_복합어_자리도_검출한다(sentence: str) -> None:
+    assert find_gloss_collisions(sentence) == ["정해진 날짜"]
 
 
 def test_사전이_지시한_표현을_비문으로_잡지_않는다() -> None:
