@@ -7,26 +7,36 @@
 
 실행:
     uv run python .claude/skills/migration-safety-gate/scripts/scan_privacy_invariants.py
-    # 변경분만 (Phase 진행 중 빠른 회전)
+    # 변경분만 (Phase 진행 중 빠른 회전). 기본 base는 main — 브랜치에 **커밋된** 변경도 포함한다.
     uv run python .claude/skills/migration-safety-gate/scripts/scan_privacy_invariants.py --changed
+    uv run python .claude/skills/migration-safety-gate/scripts/scan_privacy_invariants.py \
+        --changed --base origin/main
     # 특정 규칙만 / 마크다운 리포트
     uv run python .claude/skills/migration-safety-gate/scripts/scan_privacy_invariants.py \
         --rule LOG-BODY --report-md docs/migration/_workspace/07_privacy-gate_scan.md
 
-종료 코드: 0 = BLOCK 후보 없음, 1 = BLOCK 후보 있음(사람 확인 필요), 2 = 입력 오류.
-`--no-fail`을 주면 항상 0으로 끝난다(리포트 수집 용도).
+종료 코드: 0 = BLOCK 후보 없음, 1 = BLOCK 후보 있음(사람 확인 필요), 2 = 입력 오류,
+3 = `--changed` 범위가 비어 아무것도 검사하지 못함. "검사하지 않음"을 "통과"로 읽으면 게이트가
+무의미해지므로 실패시킨다 — 정말 빈 것이 정상이면 `--allow-empty`.
+`--no-fail`을 주면 BLOCK 후보가 있어도 0으로 끝난다(리포트 수집 용도).
 """
 
 from __future__ import annotations
 
 import argparse
+import math
 import re
 import subprocess
 import sys
+from collections import Counter
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
+
+#: `--changed`의 기준 ref. 이 값이 없으면 브랜치에 **커밋된** 변경이 통째로 검사에서 빠진다.
+DEFAULT_BASE_REF = "main"
 
 SCAN_ROOTS = ["app", "backend-kotlin", "scripts", "frontend/src"]
 SUFFIXES = {".py", ".kt", ".kts", ".ts", ".tsx", ".java"}
@@ -55,6 +65,38 @@ LOG_CALL = (
 )
 
 
+def shannon_bits_per_char(value: str) -> float:
+    """문자당 섀넌 엔트로피. 난수 키와 사람이 타이핑한 낱말열을 가르는 축이다."""
+    if not value:
+        return 0.0
+    total = len(value)
+    return -sum((count / total) * math.log2(count / total) for count in Counter(value).values())
+
+
+_HEX_KEY = re.compile(r"^[0-9a-fA-F]{32,}$")
+_TOKEN_CHARS = re.compile(r"^[A-Za-z0-9+/=_.\-]{24,}$")
+
+
+def looks_like_real_secret(value: str) -> bool:
+    """리터럴이 **진짜 키의 꼴**인지 본다 — 위치(tests/ 여부)가 아니라 값의 모양으로 가른다.
+
+    `tests/`를 통째로 면제하면 테스트 파일에 실제 Fernet 키를 넣어도 통과한다. 그래서
+    기준을 파일 경로가 아니라 리터럴 자체에 둔다: 진짜 키는 base64·hex 난수라 문자
+    클래스가 섞이고 엔트로피가 높지만, `wrongpassword` 같은 픽스처는 소문자 낱말이라
+    두 축 모두에서 떨어진다. 반대로 테스트 파일 안이라도 난수꼴 리터럴이면 그대로 잡힌다.
+    """
+    if _HEX_KEY.match(value):
+        return True  # hex 키는 클래스가 2종뿐이라 아래 기준에 안 걸린다
+    entropy = shannon_bits_per_char(value)
+    if _TOKEN_CHARS.match(value) and entropy >= 3.8:
+        return True  # base64/토큰꼴 — 클래스가 적어도 난수면 키다
+    classes = sum(
+        bool(re.search(pattern, value))
+        for pattern in (r"[a-z]", r"[A-Z]", r"[0-9]", r"[^A-Za-z0-9]")
+    )
+    return classes >= 3 and len(value) >= 12 and entropy >= 3.2
+
+
 @dataclass(frozen=True)
 class Rule:
     id: str
@@ -68,6 +110,15 @@ class Rule:
     #: 무시하게 되므로, 승인된 예외는 여기 적어 리포트에서 뺀다. 이 목록 자체가 감사
     #: 대상이다 — 늘어날 때마다 왜 허용인지 근거를 남긴다.
     sanctioned: tuple[str, ...] = ()
+    #: 적중한 줄을 2차로 판정한다. False를 주면 후보에서 뺀다. 경로 면제와 달리 **값의
+    #: 성질**로 거르므로 예외 경로를 넓히지 않고도 오탐을 줄일 수 있다.
+    refine: Callable[[re.Match[str]], bool] | None = None
+    #: 같은 창(window) 안에 이 패턴이 있으면 "완화 조치가 붙어 있다"로 보고 후보에서 뺀다.
+    #: 규칙의 `false_positive` 주석이 사람에게 시키던 "주변 줄 확인"을 기계화한 것이다.
+    #: 창을 벗어난 곳에서 완화하면 여전히 후보로 남는다 — 그 편이 안전한 방향이다.
+    hardened: re.Pattern[str] | None = None
+    hardened_before: int = 2
+    hardened_after: int = 10
 
 
 RULES: tuple[Rule, ...] = (
@@ -147,25 +198,49 @@ RULES: tuple[Rule, ...] = (
         "BLOCK",
         "비밀키는 환경변수만 쓴다",
         re.compile(
-            r"(?:fernet[_-]?key|jwt[_-]?secret|api[_-]?key|secret[_-]?key|password)\s*[:=]\s*[\"'][^\"'\s]{12,}[\"']",
+            r"(?:fernet[_-]?key|jwt[_-]?secret|api[_-]?key|secret[_-]?key|password)"
+            r"\s*[:=]\s*[\"'](?P<literal>[^\"'\s]{12,})[\"']",
             re.IGNORECASE,
         ),
         "코드·커밋에 들어간 키는 히스토리에서 지워지지 않는다.",
-        "테스트 fixture·예시 문자열이면 오탐이지만, 실제 키가 아님을 사람이 확인해야 한다.",
+        "리터럴이 난수꼴일 때만 후보로 올린다(`looks_like_real_secret`). 낱말꼴 픽스처"
+        "(`wrongpassword`)는 여기서 걸러지지만, 테스트 파일이라도 난수꼴이면 그대로 잡힌다 "
+        "— 경로가 아니라 값의 모양이 기준이다.",
+        None,
+        (),
+        lambda match: looks_like_real_secret(match.group("literal")),
     ),
     Rule(
         "XML-DTD",
         "BLOCK",
         "문서 파서는 DTD·외부 엔터티를 거부한다",
         re.compile(
-            r"DocumentBuilderFactory\.newInstance|XMLInputFactory\.newInstance|SAXParserFactory\.newInstance"
-            r"|xml\.etree|ElementTree\.(?:parse|fromstring)"
+            # JVM: 팩토리 생성이 위험 지점이다(기본값이 XXE 허용).
+            r"(?:DocumentBuilderFactory|XMLInputFactory|SAXParserFactory|TransformerFactory"
+            r"|SchemaFactory|XMLReaderFactory)\.(?:newInstance|createXMLReader)"
+            # Python: **import가 아니라 파싱 호출**이 위험 지점이다. 별칭(`import ... as ET`)을
+            # 쓰면 모듈 경로가 줄에 남지 않으므로 별칭까지 훑는다.
+            r"|\b(?:ET|ElementTree|etree|minidom|objectify)"
+            r"\.(?:parse|fromstring|iterparse|XMLParser|XMLPullParser)\s*\("
+            r"|\bexpat\.ParserCreate\s*\(|\bmake_parser\s*\("
+            # `from xml.etree.ElementTree import fromstring` 형태는 호출부에 모듈명이 없다.
+            r"|^\s*from\s+xml\.(?:etree|dom|sax)\b.*\bimport\b.*\b(?:parse|fromstring|iterparse)\b"
         ),
         "기본 설정 XML 파서는 XXE·billion laughs에 열려 있다. "
         "Python 쪽은 expat DTD 핸들러로 막고 있다.",
-        "바로 다음 줄들에서 setFeature/setProperty로 DTD를 끄고 있으면 정상 — "
-        "반드시 주변 줄을 확인.",
+        "같은 창 안에서 DTD를 끄면(`hardened`) 자동으로 빠진다. 창 밖에서 완화했거나 "
+        "완화 호출 이름이 목록에 없으면 후보로 남으니, 그때는 실제 파싱 경로를 열어 확인한다.",
         frozenset({".kt", ".kts", ".java", ".py"}),
+        (),
+        None,
+        # DTD·외부 엔터티를 끄는 호출들. Python expat 핸들러와 JAXP/StAX 기능 플래그를 함께 본다.
+        re.compile(
+            r"StartDoctypeDeclHandler|disallow-doctype-decl|FEATURE_SECURE_PROCESSING"
+            r"|SUPPORT_DTD|IS_SUPPORTING_EXTERNAL_ENTITIES|IS_REPLACING_ENTITY_REFERENCES"
+            r"|external-general-entities|external-parameter-entities|load-external-dtd"
+            r"|setEntityResolver|setXIncludeAware|ACCESS_EXTERNAL_(?:DTD|SCHEMA|STYLESHEET)"
+            r"|resolve_entities\s*=\s*False|forbid_dtd|setExpandEntityReferences"
+        ),
     ),
     Rule(
         "ZIP-NO-BUDGET",
@@ -202,31 +277,65 @@ RULES: tuple[Rule, ...] = (
 )
 
 
-def iter_files(changed_only: bool) -> list[Path]:
+def _git(*args: str) -> str:
+    return subprocess.run(
+        ["git", "-C", str(REPO_ROOT), *args],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+
+
+def _resolves(ref: str) -> bool:
+    try:
+        _git("rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}")
+    except (OSError, subprocess.CalledProcessError):
+        return False
+    return True
+
+
+FULL_SCOPE = "전수"
+
+
+def iter_files(changed_only: bool, base: str | None = None) -> tuple[list[Path], str]:
+    """검사 대상 파일과 **실제로 적용된** 범위 설명을 함께 돌려준다.
+
+    범위를 호출자가 따로 조립하면 폴백이 일어났을 때 리포트가 "변경분"이라고 적으면서
+    실제로는 전수를 검사한 파일 수를 싣는다 — 사후에 이 리포트를 읽는 사람이 검사 범위를
+    잘못 재구성하게 되므로, 범위 문자열을 결정한 곳에서 그대로 내보낸다.
+    """
     if changed_only:
         try:
-            out = subprocess.run(
-                ["git", "-C", str(REPO_ROOT), "diff", "--name-only", "HEAD"],
-                capture_output=True,
-                text=True,
-                check=True,
-            ).stdout
-            untracked = subprocess.run(
-                ["git", "-C", str(REPO_ROOT), "ls-files", "--others", "--exclude-standard"],
-                capture_output=True,
-                text=True,
-                check=True,
-            ).stdout
+            # 작업 트리 변경(스테이지 포함)과 미추적 파일.
+            out = _git("diff", "--name-only", "HEAD")
+            untracked = _git("ls-files", "--others", "--exclude-standard")
+            # **브랜치에 커밋된 변경**. 이게 빠지면 에이전트가 구현을 커밋한 순간
+            # `--changed`가 0건이 되어, 보안 코드를 한 줄도 안 읽고 게이트가 통과한다.
+            committed = ""
+            ref = base or DEFAULT_BASE_REF
+            if _resolves(ref):
+                committed = _git("diff", "--name-only", f"{ref}...HEAD")
+            else:
+                # base를 못 잡으면 커밋된 변경을 통째로 놓친다. 좁은 범위로 조용히 진행하는
+                # 대신 전수로 넓힌다 — 게이트가 틀릴 때는 과검사 쪽으로 틀려야 한다.
+                reason = (
+                    f"--base {base!r}를 해석할 수 없습니다"
+                    if base is not None
+                    else f"기본 base {ref!r}가 없어 커밋된 변경을 볼 수 없습니다"
+                )
+                print(f"[경고] {reason} — 전수 검사로 전환", file=sys.stderr)
+                return iter_files(False)
         except (OSError, subprocess.CalledProcessError) as exc:
             print(
                 f"[경고] git 변경분 조회 실패({type(exc).__name__}) — 전수 검사로 전환",
                 file=sys.stderr,
             )
             return iter_files(False)
-        names = [line for line in (out + untracked).splitlines() if line.strip()]
+        merged = (out + untracked + committed).splitlines()
+        names = sorted({line for line in merged if line.strip()})
         # 전수 검사와 같은 범위로 좁힌다 — 그러지 않으면 이 스크립트 자신(규칙 문자열)까지
         # 후보로 잡혀 리포트가 오탐으로 시작한다.
-        return [
+        changed = [
             path
             for name in names
             if (path := REPO_ROOT / name).is_file()
@@ -234,28 +343,44 @@ def iter_files(changed_only: bool) -> list[Path]:
             and any(path.is_relative_to(REPO_ROOT / root) for root in SCAN_ROOTS)
             and not SKIP_PARTS & set(path.parts)
         ]
+        return changed, f"변경분 ({ref}...HEAD + 작업 트리 + 미추적)"
 
     files: list[Path] = []
     for root in SCAN_ROOTS:
-        base = REPO_ROOT / root
-        if not base.exists():
+        root_path = REPO_ROOT / root
+        if not root_path.exists():
             continue
         files.extend(
             path
-            for path in base.rglob("*")
+            for path in root_path.rglob("*")
             if path.is_file() and path.suffix in SUFFIXES and not SKIP_PARTS & set(path.parts)
         )
-    return sorted(files)
+    return sorted(files), FULL_SCOPE
 
 
-def scan(files: list[Path], rule_filter: set[str]) -> dict[str, list[tuple[Path, int, str]]]:
+@dataclass
+class ScanResult:
+    hits: dict[str, list[tuple[Path, int, str]]]
+    #: 규칙별로 2차 판정에서 뺀 건수. 조용히 지우면 규칙이 언제부터 아무것도 안 보는지
+    #: 알 수 없으므로 리포트에 함께 찍는다.
+    suppressed: dict[str, dict[str, int]]
+
+
+def scan(files: list[Path], rule_filter: set[str]) -> ScanResult:
     hits: dict[str, list[tuple[Path, int, str]]] = {}
+    suppressed: dict[str, dict[str, int]] = {}
+
+    def drop(rule_id: str, reason: str) -> None:
+        suppressed.setdefault(rule_id, {}).setdefault(reason, 0)
+        suppressed[rule_id][reason] += 1
+
     rules = [rule for rule in RULES if not rule_filter or rule.id in rule_filter]
     for path in files:
         try:
             lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
         except OSError:
             continue
+        posix = path.as_posix()
         for number, line in enumerate(lines, start=1):
             stripped = line.strip()
             if stripped.startswith(("#", "//", "*", '"""')):
@@ -263,22 +388,43 @@ def scan(files: list[Path], rule_filter: set[str]) -> dict[str, list[tuple[Path,
             for rule in rules:
                 if rule.suffixes and path.suffix not in rule.suffixes:
                     continue
-                posix = path.as_posix()
                 if any(allowed in posix for allowed in rule.sanctioned):
                     continue
-                if rule.pattern.search(line):
-                    hits.setdefault(rule.id, []).append((path, number, stripped[:160]))
-    return hits
+                match = rule.pattern.search(line)
+                if match is None:
+                    continue
+                if rule.refine is not None and not rule.refine(match):
+                    drop(rule.id, "값의 모양이 불변식 대상이 아님")
+                    continue
+                if rule.hardened is not None:
+                    index = number - 1
+                    window = lines[
+                        max(0, index - rule.hardened_before) : index + rule.hardened_after + 1
+                    ]
+                    if any(rule.hardened.search(near) for near in window):
+                        drop(rule.id, "같은 창에서 완화 조치 확인")
+                        continue
+                hits.setdefault(rule.id, []).append((path, number, stripped[:160]))
+    return ScanResult(hits, suppressed)
 
 
-def render(hits: dict[str, list[tuple[Path, int, str]]], scanned: int) -> tuple[str, int]:
+def render(result: ScanResult, scanned: int, scope: str) -> tuple[str, int]:
+    hits = result.hits
     lines = [
         "# 데이터 보호 불변식 스캔",
         "",
-        f"검사 파일 {scanned}개. **이 결과는 후보 목록이지 판정이 아니다** — "
+        f"검사 범위: {scope}. 검사 파일 {scanned}개. "
+        "**이 결과는 후보 목록이지 판정이 아니다** — "
         "정규식은 문맥을 읽지 못하므로 오탐이 섞인다. 각 항목을 열어 사람이 확인한다.",
         "",
     ]
+    if result.suppressed:
+        lines.append("2차 판정으로 제외한 적중(규칙이 눈감은 양을 드러내기 위해 함께 적는다):")
+        lines.append("")
+        for rule_id, reasons in sorted(result.suppressed.items()):
+            detail = ", ".join(f"{reason} {count}건" for reason, count in sorted(reasons.items()))
+            lines.append(f"- `{rule_id}` — {detail}")
+        lines.append("")
     blocking = 0
     for rule in RULES:
         found = hits.get(rule.id, [])
@@ -313,11 +459,24 @@ def main() -> int:
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
     parser.add_argument("--changed", action="store_true", help="git 변경분만 검사 (기본은 전수)")
+    parser.add_argument(
+        "--base",
+        help=f"--changed의 비교 기준 ref (기본 {DEFAULT_BASE_REF}). "
+        "이 ref와 HEAD의 merge-base 이후 커밋된 변경까지 포함한다.",
+    )
+    parser.add_argument(
+        "--allow-empty",
+        action="store_true",
+        help="--changed 결과가 0건이어도 실패시키지 않는다 (기본은 종료 코드 3)",
+    )
     parser.add_argument("--rule", action="append", default=[], help="이 규칙만 (반복 가능)")
     parser.add_argument("--report-md", type=Path, help="마크다운 리포트 저장 경로")
     parser.add_argument("--no-fail", action="store_true", help="BLOCK 후보가 있어도 0으로 종료")
     parser.add_argument("--list-rules", action="store_true", help="규칙 목록 출력")
     args = parser.parse_args()
+
+    if args.base and not args.changed:
+        parser.error("--base는 --changed와 함께 씁니다 (전수 검사에는 기준 ref가 없습니다)")
 
     if args.list_rules:
         for rule in RULES:
@@ -328,12 +487,20 @@ def main() -> int:
     if unknown:
         parser.error(f"알 수 없는 규칙: {', '.join(unknown)}")
 
-    files = iter_files(args.changed)
+    files, scope = iter_files(args.changed, args.base)
     if not files:
-        print("검사 대상 파일이 없습니다.")
+        print(f"검사 대상 파일이 없습니다 (범위: {scope}).")
+        if args.changed and not args.allow_empty:
+            print(
+                "\n검사한 파일이 0개입니다 — 이 결과는 '위반 없음'이 아니라 "
+                "'확인하지 않음'입니다.\n"
+                "범위가 맞는지 --base로 확인하거나, 정말 빈 것이 맞으면 --allow-empty를 주십시오.",
+                file=sys.stderr,
+            )
+            return 3
         return 0
-    hits = scan(files, set(args.rule))
-    report, blocking = render(hits, len(files))
+    result = scan(files, set(args.rule))
+    report, blocking = render(result, len(files), scope)
     print(report)
     if args.report_md:
         args.report_md.parent.mkdir(parents=True, exist_ok=True)

@@ -22,17 +22,19 @@ codex CLI를 호출해 Claude 계열이 아닌 독립 모델의 리뷰를 받아
 
 ## Phase별 리뷰 지점과 맥락 구성
 
-언제 무엇을 물을지 미리 정해 두면 매번 프롬프트를 새로 짜면서 맥락이 흔들리는 일을 막을 수 있다. `{scope}` 슬러그도 여기서 가져온다.
+언제 무엇을 물을지 미리 정해 두면 매번 프롬프트를 새로 짜면서 맥락이 흔들리는 일을 막을 수 있다.
 
-| Phase | scope | 리뷰 대상 | 프롬프트에 함께 넣을 맥락 |
+아래 `scope` 칸의 값은 **`kotlin-migration` 스킬의 "리뷰 게이트 → `{scope}` 정본" 표에서 가져온 것이며, 그 표가 유일한 출처다.** 여기서 새 슬러그를 만들지 않는다 — 값을 문서마다 따로 적은 것이 슬러그가 세 갈래로 갈려 교차 종합이 입력 파일을 못 찾게 된 원인이었다. 각 Phase의 나머지 scope도 정본 표에 있으니 대상이 다르면 그쪽에서 고른다.
+
+| Phase | scope (정본 표에서 발췌) | 리뷰 대상 | 프롬프트에 함께 넣을 맥락 |
 |---|---|---|---|
-| 0 | `contract-yaml` | `contracts/easy-doc-v1.yaml` | §2.2 계약 조항 전문, `app/api/*` 경로, `frontend/src/api/types.ts` |
-| 1 | `gradle-skeleton` | `backend-kotlin/` 골격, `libs.versions.toml` | §3.1 기술 선택표, §3.2 모듈 경계, Phase 1 종료 조건 |
-| 2 | `core-domain` | `backend-kotlin/core/` | §4.6 "동등 포팅, 개선 금지", 대응 Python 원본 경로 |
-| 3 | `auth-jdbc` | `application/`·`infrastructure/` 인증·repository | §4.2 스키마 인수 원칙, §4.3 Argon2·JWT 정책 |
-| 4 | `document-crypto` | 업로드·추출·암호화·내보내기 | §4.3 Fernet 게이트, §4.5 문서 표와 필수 검증 |
-| 5 | `worker-lease` | `worker/`, 작업 큐 | §4.4 lease·재시도·실패 분류, §2.3 최대 2회 호출 |
-| 6 | `frontend-contract` | `frontend/src/api/` | §4.1 React 변경 범위 5항목 |
+| 0 | `contract` | `contracts/easy-doc-v1.yaml` | §2.2 계약 조항 전문, `app/api/*` 경로, `frontend/src/api/types.ts` |
+| 1 | `skeleton` | `backend-kotlin/` 골격, `libs.versions.toml` | §3.1 기술 선택표, §3.2 모듈 경계, Phase 1 종료 조건 |
+| 2 | `masking` | `backend-kotlin/core/` | §4.6 "동등 포팅, 개선 금지", 대응 Python 원본 경로 |
+| 3 | `auth` | `application/`·`infrastructure/` 인증·repository | §4.2 스키마 인수 원칙, §4.3 Argon2·JWT 정책 |
+| 4 | `crypto` | 업로드·추출·암호화·내보내기 | §4.3 Fernet 게이트, §4.5 문서 표와 필수 검증 |
+| 5 | `worker` | `worker/`, 작업 큐 | §4.4 lease·재시도·실패 분류, §2.3 최대 2회 호출 |
+| 6 | `frontend` | `frontend/src/api/` | §4.1 React 변경 범위 5항목 |
 | 7 | `cutover` | 절체·롤백 절차 문서 | §5 Phase 7 순서와 즉시 중단 기준 |
 
 ## 입력 / 출력 프로토콜
@@ -53,7 +55,7 @@ codex CLI를 호출해 Claude 계열이 아닌 독립 모델의 리뷰를 받아
   4. 정리(가공) — 지적 항목을 목록화한 것. 원문과 다른 구획이며, 여기서도 옳고 그름은 판정하지 않는다
   5. 미실행·실패 항목
 
-`{scope}`는 리뷰 대상을 알아볼 수 있는 짧은 슬러그를 쓴다(예: `core-domain`, `contract-yaml`, `worker-lease`, `cutover`).
+`{phase}_{scope}` 어간은 **리더가 1단계 호출에서 지정한 값을 그대로 쓴다.** 지정이 없으면 `kotlin-migration` 스킬의 `{scope}` 정본 표에서 고르고 어느 값을 썼는지 산출물 머리에 적는다. 임의 슬러그를 만들지 않는다 — `migration-reviewer`의 2차 교차 종합이 같은 어간으로 이 파일을 찾으므로, 어간이 어긋나면 파일을 써 놓고도 게이트가 닫히지 않는다.
 
 ## 프롬프트 구성 규칙
 

@@ -26,7 +26,7 @@ Easy-Read AI의 Python/FastAPI 런타임을 Kotlin/Spring Boot로 교체하는 �
 
 이 환경에 `TeamCreate`는 없다. 실제 가용 도구로 팀 협업 효과를 구성한다.
 
-- **진행 추적(리더 전용)**: `TaskCreate` / `TaskList` / `TaskUpdate`는 메인 세션에만 있고 **서브에이전트로 실행되는 6개 에이전트에는 보이지 않는다.** 따라서 "공유" 작업 목록이 되지 못한다 — 리더만 읽고 쓸 수 있고 에이전트는 갱신할 수 없다. 리더가 자기 진행을 추적하는 보조 수단으로만 쓰고, **에이전트에게 이 도구 사용을 지시하지 않는다.** `addBlockedBy`로 표현한 의존성도 에이전트에게는 보이지 않으므로 강제력이 없다.
+- **진행 추적**: **`docs/migration/_workspace/00_progress.md` 파일 하나가 유일한 판정 근거다.** 착수 첫 동작은 이 파일을 읽는 것이다. `TaskCreate`/`TaskList`/`TaskUpdate`는 메인 세션(리더)에는 실재하지만 **서브에이전트로 실행되는 6개 에이전트에는 보이지 않으므로** 공유 작업 목록이 되지 못한다. 따라서 이 도구는 리더가 원할 때만 쓰는 개인 메모이고, **Phase 의존성 강제·종료 판정·다음 Phase 착수 가부에는 일절 관여하지 않는다.** 쓰지 않아도 하네스는 그대로 돌며, 에이전트에게 사용을 지시하지도 않는다. `addBlockedBy`로 적은 의존성도 에이전트에게 보이지 않아 강제력이 없다.
 - **공유 상태**: `docs/migration/_workspace/00_progress.md` 파일. 리더와 에이전트가 함께 읽고 쓰는 단일 진실이며, 아래 스키마를 따른다. Phase 종료 판정과 다음 Phase 착수 가부는 **이 파일만 근거로 삼는다.**
 - **병렬 실행**: `Agent` 도구 + `run_in_background: true`. 모델은 각 에이전트 정의 frontmatter의 `model: opus`가 **기본값**이고, `Agent` 도구의 `model` 파라미터는 **그 호출에 한해** 기본값을 재정의한다. 원칙은 기본값을 그대로 두는 것이다 — 마이그레이션 판단은 추론 품질에 직결된다. 특정 호출만 낮추려면 그 호출에만 파라미터를 주고 이유를 `00_progress.md`에 남긴다.
 - **에이전트 간 통신**: `SendMessage`. 실행 중인 에이전트에게 추가 맥락이나 다른 에이전트의 발견을 전달할 때 쓴다.
@@ -43,7 +43,7 @@ Phase마다 표를 하나씩 둔다. 계획 문서 §5의 해당 Phase 종료 �
 |---|---|---|---|---|---|
 | parity suite가 양쪽에서 같은 결과 | 예 | `_workspace/02_parity-verifier_report.md` | - | - | parity-verifier |
 | 마스킹 fixture 전건 일치 | 아니오 | 3건 불일치 | 유니코드 결합 문자 3건 | kotlin-implementer | parity-verifier |
-| 리뷰 게이트 Critical 0건 | 아니오 | `reviews/02_domain_cross.md` | Critical 1건 | kotlin-implementer | migration-reviewer |
+| 리뷰 게이트 Critical 0건 | 아니오 | `reviews/02_masking_cross.md` | Critical 1건 | kotlin-implementer | migration-reviewer |
 ```
 
 컬럼 규칙:
@@ -159,17 +159,46 @@ Kotlin 코드 변경이 한 덩어리 끝날 때마다 실행한다. Phase 종�
 
 1회차와 3단계를 한 번의 호출로 합치지 않는다. 합치면 `migration-reviewer`가 시작 시점에 codex 산출물을 찾지 못해 매번 "codex 리뷰 없음"으로 종결된다 — 게이트가 형식만 남는다.
 
+**심각도와 착수 차단은 별개 축이다.** 심각도 척도는 `codex-review` 스킬 §5가 정한다 — 사건(§5 Phase 7 즉시 중단 기준)뿐 아니라 **그 사건을 탐지·차단하는 게이트의 무력화**도 Critical이다. 그 Critical을 **언제까지 닫아야 하는가**는 리더가 따로 판정한다: 기준은 "그 게이트가 처음 실제로 쓰이는 시점"이며, 아직 쓰이지 않는 게이트의 Critical은 다음 Phase 착수를 막지 않고 그 시점 전까지 닫으면 된다. 판정 결과(항목·마감 Phase)는 `00_progress.md`에 남긴다.
+
 **산출물 경로**: `docs/migration/_workspace/reviews/{phase}_{scope}_{reviewer}.md`
 `{reviewer}` = `codex-reviewer` | `migration-reviewer` | `privacy-gate` | `cross` — 작성한 에이전트 이름, 또는 교차 종합본이면 `cross`. 파일명만 보고 작성 주체를 알 수 있어야 한다.
 예: `04_crypto_codex-reviewer.md`, `04_crypto_migration-reviewer.md`, `04_crypto_cross.md`
 
-**게이트 면제**: 문서·주석만 수정, 스킬/에이전트 정의 수정, 포맷터 결과 반영. 이 외에는 면제하지 않는다. 면제 기준을 넓히면 게이트가 형식화된다.
+### `{scope}` 정본 (이 표가 유일한 출처)
+
+한 게이트의 세 산출물은 **같은 `{phase}_{scope}` 어간**을 공유해야 3단계 교차 종합이 자기 입력을 찾는다. 어간이 갈리면 1단계 파일이 만들어져도 3단계가 입력을 못 찾아 게이트가 닫히지 않는다 — 그래서 값을 여러 문서에 복제하지 않고 여기 한 곳에만 둔다. 다른 스킬·에이전트 정의는 이 표를 **참조**만 하고 값을 다시 적지 않는다.
+
+계획 문서 §5의 각 Phase 작업 단위에서 뽑은 목록이다.
+
+| Phase | `{scope}` 정본 |
+|---|---|
+| 0 | `contract` · `crypto-spike` · `doc-spike` |
+| 1 | `skeleton` · `db-baseline` · `ci` |
+| 2 | `masking` · `text-normalize` · `prompt` · `style-rules` · `export-naming` · `parity-harness` |
+| 3 | `repository` · `auth` · `workspaces` · `error-mapping` |
+| 4 | `upload` · `extract` · `crypto` · `documents` · `export` |
+| 5 | `llm-provider` · `worker` · `retention` |
+| 6 | `frontend` · `a11y` · `e2e` |
+| 7 | `cutover` |
+| 8 | `python-removal` |
+| 9 | `offline-tools` |
+| 전 Phase 공통 | `security` — `privacy-gate`가 보안 축 리뷰를 낼 때만(`{phase}_security_privacy-gate.md`). 3단계 게이트의 세 산출물에는 쓰지 않는다 |
+| Phase 밖 | `pre-phase0`(Phase 0 착수 전 하네스 점검, `{phase}` = `00`) · `harness`(그 외 하네스 점검, `{phase}` = `xx`) |
+
+규칙:
+
+- **표에 없는 값을 쓰지 않는다.** 새 대상이 생기면 이 표에 먼저 추가하고 근거가 된 계획 §5 작업 항목을 같은 커밋에 남긴다.
+- **어간은 리더가 정해 내려보낸다.** 1단계에서 `codex-reviewer`와 `migration-reviewer`를 띄울 때 `{phase}_{scope}` 문자열을 그대로 지정해 둘에게 같은 값을 준다. 각자 짓게 두면 이 표가 있어도 갈린다.
+- **2단계에서 어간을 대조한다.** 두 산출물이 존재하는지와 함께 파일명 어간이 지정한 값과 같은지 확인한 뒤에만 3단계로 넘어간다.
+
+**게이트 면제**: 면제는 **산출물의 동작에 영향이 없는 변경**뿐이다 — 산문 문서(`docs/**`)·주석·문자열 오탈자 수정, 포매터 자동 결과, `docs/migration/_workspace/**` 리뷰·분석 산출물 추가. **스킬·에이전트 정의(`.claude/**`)는 확장자가 `.md`여도 면제하지 않는다** — 하네스 자체가 게이트이므로 하네스 수정을 면제하면 게이트를 검증 없이 통과시키는 경로가 그대로 남는다(실제로 pre-phase0 회차 지적은 전부 하네스였다). 면제 기준을 넓히면 게이트가 형식화된다. 같은 목록이 `codex-review` 스킬 §2.2에도 있으며 두 곳은 항상 같은 내용이어야 한다.
 
 **codex 실패 시**: 1회 재시도 후 재실패하면 codex 결과 없이 진행하되 종합 리포트에 **"codex 리뷰 누락"을 명시**한다. 조용히 통과시키면 필수 게이트가 무의미해진다.
 
 ## 데이터 전달 프로토콜
 
-- **작업 상태**: `docs/migration/_workspace/00_progress.md` (스키마는 "실행 모드 → 작업 추적" 절). 에이전트와 리더가 공유하는 유일한 진실이고, Phase 의존성도 여기서 판정한다. 리더는 `TaskCreate`/`TaskUpdate`로 자기 진행을 따로 추적해도 되지만 그 상태는 에이전트에게 보이지 않으므로 **판정 근거로 쓰지 않는다.**
+- **작업 상태**: `docs/migration/_workspace/00_progress.md` (스키마는 "실행 모드 → 작업 추적" 절). 에이전트와 리더가 공유하는 유일한 진실이고, Phase 의존성도 여기서 판정한다. 리더가 `TaskCreate`/`TaskUpdate`로 자기 진행을 따로 적어 두는 것은 선택 사항이며(쓰지 않아도 하네스는 그대로 돈다), 그 상태는 에이전트에게 보이지 않으므로 **판정 근거로 쓰지 않는다.**
 - **산출물**: `docs/migration/_workspace/{phase}_{agent}_{artifact}.{ext}` (예: `01_contract-keeper_endpoint-matrix.md`)
 - **실시간 전달**: `SendMessage`. 예 — `parity-verifier`가 불일치를 발견하면 `kotlin-implementer`에게 즉시 보낸다.
 - **중간 파일은 지우지 않는다.** 절체 후 문제가 생겼을 때 어느 단계에서 갈라졌는지 추적할 근거가 된다.
@@ -211,7 +240,7 @@ Python 테스트 878개를 줄 단위로 번역하는 것이 목표가 아니다
 4. `kotlin-implementer`가 `core` 모듈에 포팅, 같은 fixture를 읽는 Kotlin 테스트 작성
 5. `parity-verifier`가 양쪽 실행 결과 비교 → 불일치 시 최소 재현 입력과 함께 반환
 6. 일치 확인 후 `codex-reviewer`·`migration-reviewer` 병렬 독립 리뷰 (1단계)
-7. 두 산출물 파일 존재 확인 (2단계) → `migration-reviewer` 재호출로 `02_domain_cross.md` 작성 (3단계)
+7. 두 산출물 파일 존재 확인 (2단계) → `migration-reviewer` 재호출로 `02_masking_cross.md` 작성 (3단계)
 8. `privacy-gate`가 마스킹 선행 불변식 확인
 9. `00_progress.md`의 Phase 2 종료 조건 행을 담당 에이전트가 갱신
 

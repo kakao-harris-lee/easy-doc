@@ -249,6 +249,8 @@ Python과 Kotlin 소스를 함께 훑어 불변식 위반 **후보**를 모은�
 ```bash
 uv run python .claude/skills/migration-safety-gate/scripts/scan_privacy_invariants.py
 uv run python .claude/skills/migration-safety-gate/scripts/scan_privacy_invariants.py --changed
+uv run python .claude/skills/migration-safety-gate/scripts/scan_privacy_invariants.py \
+    --changed --base origin/main
 uv run python .claude/skills/migration-safety-gate/scripts/scan_privacy_invariants.py --list-rules
 uv run python .claude/skills/migration-safety-gate/scripts/scan_privacy_invariants.py \
     --rule LOG-BODY --report-md docs/migration/_workspace/07_privacy-gate_scan.md
@@ -256,11 +258,17 @@ uv run python .claude/skills/migration-safety-gate/scripts/scan_privacy_invarian
 
 규칙 12개: `LOG-BODY`, `LOG-FSTRING`, `EXC-BODY`, `LLM-VENDOR-SDK`, `LLM-RAW-INPUT`, `OWNERSHIP-403`, `PLAINTEXT-PERSIST`, `SECRET-LITERAL`, `XML-DTD`, `ZIP-NO-BUDGET`, `CACHE-HEADER`, `RETENTION-PURGE`. 대상: `app/`, `backend-kotlin/`, `scripts/`, `frontend/src/`의 `.py .kt .kts .ts .tsx .java`.
 
-종료 코드 0 = BLOCK 후보 없음, 1 = BLOCK 후보 있음. 리포트 수집만 할 때는 `--no-fail`.
+종료 코드 0 = BLOCK 후보 없음, 1 = BLOCK 후보 있음, 2 = 입력 오류, 3 = `--changed` 범위가 비어 아무것도 검사하지 못함. 리포트 수집만 할 때는 `--no-fail`.
+
+**`--changed`의 범위**는 `<base>...HEAD` + 작업 트리 + 미추적이고 base 기본값은 `main`이다. base 없이 작업 트리만 보면 **브랜치에 커밋된 변경이 통째로 빠져**, 에이전트가 구현을 커밋한 뒤 스캔하면 보안 코드를 한 줄도 안 읽고 통과한다. 같은 이유로 검사 파일이 0개면 종료 코드 3으로 실패시킨다 — "검사하지 않음"과 "위반 없음"은 다르다. 정말 빈 것이 맞을 때만 `--allow-empty`. base를 해석할 수 없으면 전수로 넓혀 폴백하고, 리포트의 `검사 범위:` 줄에 실제 적용된 범위를 적는다.
+
+**2차 판정**: 규칙은 정규식 적중 뒤에 두 가지를 더 볼 수 있다. `refine`은 적중한 **값의 모양**으로 거르고(`SECRET-LITERAL`은 엔트로피·문자 클래스로 난수 키와 `wrongpassword` 같은 픽스처를 가른다 — 경로가 아니라 값이 기준이므로 테스트 파일 안의 진짜 키는 그대로 잡힌다), `hardened`는 같은 창 안에 완화 조치가 있으면 뺀다(`XML-DTD`는 `disallow-doctype-decl`·`SUPPORT_DTD=false`·`StartDoctypeDeclHandler`를 인정한다). 제외 건수는 리포트 상단에 함께 찍는다 — 규칙이 눈감은 양이 보이지 않으면 규칙이 죽은 것을 알아채지 못한다.
 
 **출력은 후보 목록이지 판정이 아니다.** 정규식은 문맥을 읽지 못하므로 오탐이 반드시 섞이고, 스크립트도 그렇게 출력한다. 자동 차단에 쓰면 곧 "어차피 오탐"이라며 전체를 무시하게 되고, 그때 진짜 유출이 지나간다. 각 항목의 `오탐 가능` 줄을 읽고 파일을 열어 판정하라.
 
 설계상 허용된 경로는 규칙의 `sanctioned` 필드로 제외되어 있다(예: `LLM-VENDOR-SDK`는 `app/llm/`·`backend-kotlin/infrastructure/` 안의 어댑터를 제외). **이 목록 자체가 감사 대상이다** — 새 경로를 추가할 때는 그 파일이 정말 어댑터 경계인지 확인하고 근거를 주석에 남긴다.
+
+**규칙이 구조적으로 못 보는 것**(실증 목록은 `docs/migration/_workspace/00_privacy-gate_scan-baseline.md`): 매칭이 **줄 단위**라 인자를 개행으로 나누면 전 규칙이 뚫린다(`provider.complete(\n  sourceText)`). 변수를 한 번 경유해도 놓치고, 동적 import(`__import__("openai")`)·산술 상태코드(`400 + 3`)도 못 본다. 그래서 스캔 0건은 "위반 없음"이 아니라 "이 표현형에서 안 걸림"이다. **Kotlin 본코드가 들어오는 Phase 3 시작 전에 최소한 `LLM-RAW-INPUT`·`LOG-BODY`·`PLAINTEXT-PERSIST`를 다중 줄 대응으로 올려야 한다** — 이 셋이 §5 Phase 7 즉시 중단 기준에 직접 걸리고, Kotlin의 여러 줄 호출 스타일에서 가장 먼저 무력화되기 때문이다. `CACHE-HEADER`는 성질이 달라 개선이 아니라 **교체**가 필요하다: 헤더가 붙은 줄을 세는 방식이라 엔드포인트가 몇 개든 적중이 상수이고, 찾아야 할 것은 헤더가 **없는** 응답이므로 라우트 목록과의 대조로만 판정된다(계약 테스트가 맡는 편이 맞다).
 
 **스캔이 못 보는 것**을 기억하라. `toString()` 노출, 프레임워크 기본 로그, actuator 엔드포인트, 설정 파일의 로그 레벨, 파일 사이의 호출 관계 — 전부 정규식 밖이다. 스캔은 감사의 시작이지 전부가 아니다.
 

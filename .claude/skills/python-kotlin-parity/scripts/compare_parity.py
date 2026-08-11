@@ -11,7 +11,7 @@
     # 전체 게이트 — 기대 도메인 전부를 요구한다
     uv run python .claude/skills/python-kotlin-parity/scripts/compare_parity.py \
         --fixture parity/fixtures --actual parity/actual --report-md report.md
-    # 개발 중 한 도메인만 (부분 검증 — 게이트를 닫는 근거가 아니다)
+    # 개발 중 한 도메인만 (부분 검증 — 게이트를 닫는 근거가 아니다. 통과해도 종료 코드 3)
     uv run python .claude/skills/python-kotlin-parity/scripts/compare_parity.py \
         --fixture parity/fixtures --actual parity/actual --only-domain masking
 
@@ -36,7 +36,7 @@ verify-crypto` / `verify-jwt`가 남긴 **실행 증거 파일**만 근거로 �
       전부가 있어야 한다.
     - `--only-domain` / `--only` / 단일 fixture 파일 지정은 **부분 검증**이다. 지정한 범위만
       판정하고, 통과해도 출력에 "게이트를 닫는 근거가 아니다"를 명시하며 마지막 줄을
-      `전건 일치:`로 시작하지 않는다.
+      `전건 일치:`로 시작하지 않는다. **종료 코드도 0이 아니라 3이다**(아래 참고).
 
 종료 코드:
     0 = 전건 일치 + 미검증 0건 + 기대 도메인 전부 존재 (게이트를 닫아도 되는 유일한 상태)
@@ -48,6 +48,19 @@ verify-crypto` / `verify-jwt`가 남긴 **실행 증거 파일**만 근거로 �
     2 = 불일치는 없으나 미검증 케이스가 남음 — "돌렸다"이지 "증명됐다"가 아니다.
         2는 **fixture가 그 케이스를 정의했고 남은 것이 외부 실행 증거뿐인** 좁은 상태에만
         쓴다. 도메인이 통째로 없으면 정의 자체가 없으므로 2의 의미에 해당하지 않는다.
+    3 = **부분 검증**이 지정한 범위 안에서 통과 — 게이트를 닫는 근거가 아니다.
+        (`--only`, `--only-domain`, 단일 fixture 파일, 도메인 디렉터리 지정)
+        **왜 0이 아닌가.** 종료 코드는 자동화가 읽는 유일한 계약이다. stdout에 찍히는
+        "게이트를 닫는 근거가 아니다"는 사람이 읽을 때만 유효하고, CI·에이전트는 exit
+        code로 판정한다. 부분 검증이 0으로 나가면 10개 도메인을 건너뛴 실행이 "전체
+        통과"로 기록된다. 게다가 이 파일이 바로 위에서 "0은 기대 도메인 전부가 있을
+        때만"이라고 계약해 놓았으니, 0을 돌려주는 것은 코드가 자기 계약을 어기는 것이다.
+        **왜 1이 아닌가.** 부분 검증 자체는 정상적인 개발 중 작업이다 — 모듈 하나가
+        끝날 때마다 그 도메인만 돌리는 것이 이 하네스의 사용법이다. 불일치·누락과 같은
+        코드로 묶으면 "고쳐야 할 문제가 있다"와 "범위를 좁혀 돌렸다"를 호출자가 구분할
+        수 없다. 3은 "이 범위에서는 문제 없음, 그러나 게이트는 열린 채"라는 뜻이다.
+        부분 검증이라도 불일치가 있으면 1, 미검증이 남으면 2가 그대로 나간다 —
+        3은 그 두 검사를 모두 통과한 뒤에만 도달한다.
     사용법 오류(인자 누락·알 수 없는 도메인)도 1이다. argparse 기본값 2를 쓰면 "인자를
     잘못 줬다"와 "미검증이 남았다"가 같은 코드로 나가 호출자가 구분할 수 없다.
 """
@@ -56,6 +69,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import re
 import sys
 import unicodedata
@@ -82,7 +96,10 @@ ALLOWED = {
     "trim": "문자열 앞뒤 공백 제거",
     "trim_line_ends": "각 줄의 끝 공백만 제거",
     "mask_document_id": 'prompt injection 방어용 난수 id(id="...")를 <ID>로 치환',
-    "float_tol": "부동소수 비교 허용 오차 1e-9 (float_tol:1e-6 형태로 지정 가능)",
+    "float_tol": (
+        "부동소수 비교 허용 오차 1e-9 (float_tol:1e-6 형태로 지정 가능. "
+        "유한·비음수·1e-3 이하만 허용 — inf/nan은 숫자 비교를 통째로 무력화한다)"
+    ),
 }
 
 #: 절대 허용하지 않는 정규화. 이걸 켜는 순간 검증이 통과를 위한 의식이 된다.
@@ -100,19 +117,81 @@ _DOC_ID = re.compile(r'id="[0-9a-f]{4,}"')
 
 _DUMP = ".claude/skills/python-kotlin-parity/scripts/dump_parity_fixtures.py"
 
+#: `float_tol`의 기본 허용 오차. 표기·연산 순서 차이만 흡수하는 크기다.
+DEFAULT_FLOAT_TOL = 1e-9
+
+#: fixture가 선언할 수 있는 허용 오차의 상한.
+#: 근거 — 이 규칙의 목적은 IEEE754 표기 차이와 연산 순서 차이를 흡수하는 것이지 값 차이를
+#: 덮는 것이 아니다. 기본값이 1e-9, 문서화된 예시가 1e-6이므로 1e-3은 그보다 세 자리 더
+#: 느슨하다. 그 위는 "다른 값을 같다고 부르는" 영역이고, 그렇게 넓은 오차가 필요하다면
+#: 그것은 정규화 문제가 아니라 Kotlin 구현이나 fixture 설계 문제다.
+MAX_FLOAT_TOL = 1e-3
+
+#: 부분 검증 성공. 0(전체 게이트 통과)과 반드시 구분되는 별도 코드다 — 모듈 docstring의
+#: "종료 코드" 절 참고. 자동화가 읽는 계약은 stdout 문구가 아니라 이 값 하나뿐이다.
+EXIT_PARTIAL_OK = 3
+
+
+def _float_tolerance(raw: str) -> float:
+    """`float_tol:<값>`의 값을 읽는다. 유한·비음수·상한 이내일 때만 통과시킨다.
+
+    `float_tol:inf`(또는 `float_tol:1e309`)는 `abs(a - b) <= inf`를 **항상 참**으로 만들어
+    모든 숫자 불일치를 일치로 바꾼다. `nan`은 반대로 모든 비교를 거짓으로 만든다. 어느 쪽도
+    정규화가 아니라 게이트 무력화다.
+
+    거부할 때 조용히 기본값으로 되돌리지 않고 비교 자체를 중단한다. fixture가 허용 오차를
+    **명시**했는데 그 의도를 무시하고 다른 값으로 돌리는 것은 또 다른 은폐다 — 사람은
+    자기가 적은 값으로 통과했다고 믿게 된다.
+    """
+    try:
+        value = float(raw)
+    except ValueError:
+        raise SystemExit(
+            f"[중단] float_tol 값을 숫자로 읽을 수 없다: {raw!r} (예: float_tol:1e-6)"
+        ) from None
+    if math.isnan(value):
+        raise SystemExit(
+            f"[중단] float_tol 이 nan 이다 ({raw!r}). nan 허용 오차는 모든 숫자 비교를 "
+            "거짓으로 만든다"
+        )
+    if not math.isfinite(value):
+        raise SystemExit(
+            f"[중단] float_tol 은 유한한 값이어야 한다 (받은 값: {raw!r}). "
+            "inf 허용 오차는 모든 숫자 불일치를 일치로 바꾼다 — 정규화가 아니라 게이트 무력화다"
+        )
+    if value < 0:
+        raise SystemExit(
+            f"[중단] float_tol 은 음수일 수 없다 (받은 값: {raw!r}). "
+            "음수 오차는 같은 값끼리도 불일치로 만든다"
+        )
+    if value > MAX_FLOAT_TOL:
+        raise SystemExit(
+            f"[중단] float_tol 이 상한 {MAX_FLOAT_TOL:g} 을 넘는다 (받은 값: {raw!r}). "
+            "이 크기는 표기 차이 흡수가 아니라 값 차이 은폐다 — 오차가 이만큼 필요하다면 "
+            "고칠 곳은 정규화 규칙이 아니라 구현이나 fixture다"
+        )
+    return value
+
 
 def _rules(names: list[str]) -> tuple[set[str], float]:
     active: set[str] = set()
-    tolerance = 1e-9
+    tolerance = DEFAULT_FLOAT_TOL
     for name in names:
-        head, _, arg = name.partition(":")
+        head, sep, arg = name.partition(":")
         if head in FORBIDDEN:
             raise SystemExit(f"[중단] 금지된 정규화 규칙: {head} — {FORBIDDEN[head]}")
         if head not in ALLOWED:
             raise SystemExit(f"[중단] 알 수 없는 정규화 규칙: {head} (가능: {', '.join(ALLOWED)})")
         active.add(head)
-        if head == "float_tol" and arg:
-            tolerance = float(arg)
+        if head == "float_tol" and sep:
+            # `float_tol`(콜론 없음)은 기본값을 쓰겠다는 뜻이지만, `float_tol:`처럼 콜론을
+            # 찍고 값을 비워 둔 것은 값을 지정하려다 만 상태다 — 조용히 기본값으로 넘기지 않는다.
+            if not arg.strip():
+                raise SystemExit(
+                    "[중단] float_tol: 뒤에 허용 오차 값이 없다. "
+                    "기본값을 쓰려면 콜론 없이 `float_tol` 이라고 적어라"
+                )
+            tolerance = _float_tolerance(arg)
     return active, tolerance
 
 
@@ -615,8 +694,11 @@ def main() -> int:
         print(f"[검증 없음] {summary} — 비교한 케이스가 0건이다. 통과로 보고하지 않는다")
         return 1
     if partial:
+        # 0이 아니라 3이다. 자동화가 읽는 계약은 위에 찍은 "게이트 아님" 문구가 아니라
+        # 종료 코드 하나뿐이므로, 여기서 0을 돌려주면 10개 도메인을 건너뛴 실행이
+        # 전체 통과로 기록된다 (모듈 docstring "종료 코드" 절 참고).
         print(f"부분 검증 통과(게이트 아님): {summary}")
-        return 0
+        return EXIT_PARTIAL_OK
     print(f"전건 일치: {summary}")
     return 0
 

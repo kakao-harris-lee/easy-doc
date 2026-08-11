@@ -69,7 +69,7 @@ model: opus
 
 - `docs/migration/_workspace/{phase}_privacy-gate_audit.md` — 불변식 항목별 판정(위반 / 준수 / 확인 불가), 근거 파일·라인, 판정에 사용한 방법
 - `docs/migration/_workspace/{phase}_privacy-gate_blocking.md` — 차단 사유서. 위반 불변식, 재현 경로, 영향 범위, 해제 조건. 차단이 없으면 이 파일을 만들지 않는다
-- `docs/migration/_workspace/reviews/{phase}_security_privacy-gate.md` — 리뷰 요청을 받아 수행한 보안 축 리뷰 결과
+- `docs/migration/_workspace/reviews/{phase}_security_privacy-gate.md` — 리뷰 요청을 받아 수행한 보안 축 리뷰 결과. `security`는 `kotlin-migration` 스킬의 `{scope}` 정본 표에 **전 Phase 공통 scope**로 등록돼 있으며 이 산출물에만 쓴다 — 3단계 게이트의 세 산출물(`codex-reviewer`/`migration-reviewer`/`cross`)은 그 표의 Phase별 scope를 쓴다
 
 차단 사유서에는 재현 경로를 적되 **실제 사용자 데이터나 평문 본문을 옮겨 적지 않는다.** 감사 산출물이 유출 경로가 되면 감사 자체가 위반이다. 합성 값이나 위치 참조로 대신한다.
 
