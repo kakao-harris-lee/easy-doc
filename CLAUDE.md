@@ -6,6 +6,21 @@
 
 현재 단계: **Lean MVP (master-plan 4.0)**. Lean MVP 범위 밖 기능(PG 결제, RAG 사전, 어드민 등)은 사용자가 명시적으로 요청하지 않는 한 구현하지 않는다. 범위가 애매하면 구현 전에 물어볼 것.
 
+## 하네스: Kotlin 마이그레이션
+
+**목표:** 제품 동작과 개인정보 보호 정책을 보존한 채 Python/FastAPI 런타임을 Kotlin/Spring Boot로 교체한다. 계획 기준 문서는 `docs/plans/2026-08-11-kotlin-react-migration.md`.
+
+**트리거:** 코틀린 전환·Kotlin 포팅·`backend-kotlin/` 작업·API 계약 동결·Python↔Kotlin parity 검증·Fernet/JWT/Argon2 호환·Flyway 인수·작업 큐 전환·절체(cutover) 관련 요청이면 `kotlin-migration` 스킬을 사용하라. 후속 요청("이어서", "다시", "재검증", "Phase N만 다시")에도 같은 스킬을 쓴다. 단순 조회나 질문은 직접 응답해도 된다.
+
+**리뷰 게이트:** Kotlin 코드 변경이 끝날 때마다 codex 독립 리뷰가 **필수**다. `codex-reviewer`와 `migration-reviewer`를 병렬·독립 실행한 뒤 교차 대조한다. 두 리뷰가 상충하면 어느 쪽도 삭제하지 않고 양쪽 근거를 병기해 사용자 판단을 받는다.
+
+**변경 이력:**
+| 날짜 | 변경 내용 | 대상 | 사유 |
+|------|----------|------|------|
+| 2026-08-11 | 초기 구성 (에이전트 6, 스킬 6) | 전체 | Kotlin 마이그레이션 착수 |
+| 2026-08-11 | 독립 검증 결함 수정 (Critical 5·Major 10·Minor 7) | 에이전트 6, 스킬 6 | 병렬 작성으로 생긴 레인 간 규약 드리프트(리뷰 파일명·fixture 도메인명·mismatch 파일명), 리뷰 게이트가 병렬 호출만으로는 닫히지 않던 문제, 스킬 간 트리거 충돌 |
+| 2026-08-11 | 계약 표 503 경로 보강 | skills/api-contract-freeze | codex stop-time 게이트 지적 — `POST /documents`의 "큐 미준비 → 503"(`app/api/deps.py`) 경로가 표에서 누락됨 |
+
 ## 기술 스택 (확정)
 
 - Python 3.12+ / FastAPI / **uv** (패키지·가상환경 관리 — Poetry, pip requirements.txt 금지)
