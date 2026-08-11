@@ -932,6 +932,18 @@ def test_변환_조회_응답은_캐시하지_않는다(client: TestClient, fixt
     assert response.headers["x-content-type-options"] == "nosniff"
 
 
+def test_검수_저장_응답은_캐시하지_않는다(client: TestClient, fixture: Fixture) -> None:
+    """저장 응답도 조회와 같은 스키마다 — masked_items에 원문 개인정보가 함께 실린다."""
+    conversion_id = _upload_text(client, fixture)["conversion_id"]
+    _complete(fixture, conversion_id)
+
+    response = _review(client, fixture, conversion_id)
+
+    assert response.status_code == 200, response.text
+    assert response.headers["cache-control"] == "no-store"
+    assert response.headers["x-content-type-options"] == "nosniff"
+
+
 def test_문서_목록_응답은_캐시하지_않는다(client: TestClient, fixture: Fixture) -> None:
     """본문은 없지만 제목이 본문 첫 줄에서 유도한 사용자 콘텐츠다."""
     _upload_text(client, fixture)

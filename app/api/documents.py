@@ -326,16 +326,21 @@ async def read_conversion(
 async def update_conversion(
     conversion_id: uuid.UUID,
     payload: ConversionReviewRequest,
+    response: Response,
     current_user: CurrentUserDep,
     service: DocumentServiceDep,
 ) -> ConversionResponse:
     """담당자가 고친 검수 수정본을 저장한다 (AI 초안은 그대로 남는다).
 
     아직 완료되지 않은 변환이면 409다 — 없는 것이 아니라 지금이 아닐 뿐이라는 뜻이다.
+
+    조회와 **같은 응답 스키마**라 마스킹 원문이 그대로 실린다 — 캐시 금지 헤더도 같이
+    붙인다(PRIVATE_RESPONSE_HEADERS).
     """
     detail = await service.save_review(
         conversion_id, current_user.id, edited_text=payload.edited_text
     )
+    response.headers.update(PRIVATE_RESPONSE_HEADERS)
     return _to_conversion_response(detail)
 
 

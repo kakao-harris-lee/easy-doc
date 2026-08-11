@@ -252,3 +252,38 @@ def test_비밀키가_없어도_헬스체크는_동작한다(repository: FakeUse
     """설정이 비어도 기동 자체는 되어야 배포 후 진단이 가능하다."""
     with _client_with(repository, _settings(jwt_secret=None)) as client:
         assert client.get("/health").status_code == 200
+
+
+# --- 개인정보 응답 캐시 정책 ------------------------------------------------------
+
+
+def test_가입_응답은_캐시하지_않는다(client: TestClient) -> None:
+    """응답에 이메일이 실린다 — 이 프로젝트가 개인정보로 취급하는 값이다."""
+    response = client.post("/auth/signup", json={"email": _EMAIL, "password": _PASSWORD})
+
+    assert response.status_code == 201, response.text
+    assert response.headers["cache-control"] == "no-store"
+    assert response.headers["x-content-type-options"] == "nosniff"
+
+
+def test_로그인_응답은_캐시하지_않는다(client: TestClient) -> None:
+    """응답에 액세스 토큰 자체가 실린다 — 캐시된 사본은 그대로 계정 탈취 수단이 된다."""
+    _signup(client)
+
+    response = client.post("/auth/login", json={"email": _EMAIL, "password": _PASSWORD})
+
+    assert response.status_code == 200, response.text
+    assert response.headers["cache-control"] == "no-store"
+    assert response.headers["x-content-type-options"] == "nosniff"
+
+
+def test_내_정보_응답은_캐시하지_않는다(client: TestClient) -> None:
+    """가입 응답과 같은 스키마다 — 이메일이 그대로 실린다."""
+    _signup(client)
+    token = _login(client)
+
+    response = client.get("/auth/me", headers={"Authorization": f"Bearer {token}"})
+
+    assert response.status_code == 200, response.text
+    assert response.headers["cache-control"] == "no-store"
+    assert response.headers["x-content-type-options"] == "nosniff"
