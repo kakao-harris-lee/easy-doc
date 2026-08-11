@@ -60,7 +60,9 @@ fixture 파일이 하나여야 동등성 증명이 성립한다. Python 테스�
 | `expected` | Python 실행 결과. **손으로 쓰지 않는다.** |
 | `normalization` | 비교 전 적용할 규칙. 케이스에 없으면 파일 수준 값을 상속하고, 케이스 값이 있으면 그것이 이긴다(케이스 우선). |
 | `source` | 어느 Python 함수에서 나왔는지. 불일치가 났을 때 `kotlin-implementer`가 대조할 원본 위치이자, Python이 바뀌었을 때 어느 fixture를 다시 뽑아야 하는지의 색인이다. |
-| `verification` | **역방향 케이스에만** 붙는다(`{"mode": "external", "script", "proof", "required_cases", "actual_schema"}`). 이 표시가 붙은 케이스는 값 비교로 닫히지 않고 `verify-*`가 남긴 실행 증거 파일로만 닫힌다. 붙이는 것을 잊으면 Kotlin이 기대값을 되받아 적는 것만으로 통과한다. |
+| `verification` | **역방향 케이스에만** 붙는다(`{"mode": "external", "command", "actual_file", "proof", "required_cases", "actual_schema"}`). 이 표시가 붙은 케이스는 값 비교로 닫히지 않는다 — 비교기가 `actual_file`(Kotlin 산출물)을 찾아 `command` 검증기를 **직접 돌려** 판정한다. 붙이는 것을 잊으면 Kotlin이 기대값을 되받아 적는 것만으로 통과한다. |
+
+**fixture 파일은 손으로 고치지 않는다.** 비교기는 비교할 때마다 생성기를 다시 돌려 이 파일이 정본의 산출물인지 대조한다(아래 [fixture가 정본 산출물인지 대조한다](#fixture가-정본-산출물인지-대조한다)). 케이스를 하나 지우거나 기대값을 손으로 고치면 그 자리에서 종료 코드 1이 나온다.
 
 **입력은 전부 합성(synthetic)이다.** fixture는 커밋되어 영구히 남는다. 실제 사용자 문서·실제 개인정보·실제 운영 키를 넣지 않는다. `crypto` 도메인의 키는 매 생성 시 새로 만든 테스트 전용 키다.
 
@@ -146,19 +148,26 @@ JVM 주의: `_appears_at_word_start`는 매치 시작 **직전 한 글자**가 �
 
 docx·hwpx는 **바이트 동등이 기준이 아니다.** zip 타임스탬프·엔트리 순서·라이브러리 버전이 바이트를 흔든다. 기준은 (1) 자체 추출기로 다시 읽은 본문이 일치하고 (2) HWPX는 `mimetype` 엔트리가 무압축 첫 항목이며 `application/hwp+zip`이고 (3) 미디어 타입과 파일명이 계약과 같은 것이다. 계획 §2.3이 "HWPX는 최소한 생성 후 자체 추출기로 다시 읽어 본문이 일치해야 한다"고 못박았고, 한컴 오피스 실제 호환성은 사람 검증으로 남는다.
 
-### 자격증명·암호 3개 도메인 공통 — 역방향은 실행 증거가 있어야 닫힌다
+### 자격증명·암호 3개 도메인 공통 — 역방향은 비교기가 직접 돌린다
 
 §6 Crypto 게이트의 통과 기준은 "Fernet/JWT/Argon2 **양방향** fixture와 tamper test 통과"다. 그래서 이 셋은 `crypto`·`jwt`·`argon2` **세 도메인으로 분리**되어 있다. 한 도메인 안에 접어 두면 Fernet 케이스만 전건 일치해도 "crypto 도메인 통과"로 읽혀 JWT·Argon2를 한 건도 검증하지 않은 채 게이트가 닫힌다 — 실제로 그렇게 닫힌 적이 있다.
 
 **세 도메인이 다 있어야 한다는 것을 이제 스크립트가 강제한다.** 도메인을 통째로 빼고 돌리면 `compare_parity.py`가 종료 코드 1로 끝나며 없는 도메인 이름을 찍는다([기대 도메인 집합을 스크립트가 강제한다](#기대-도메인-집합을-스크립트가-강제한다) 참고). `--only-domain crypto`처럼 범위를 명시해 한 도메인만 돌리는 것은 허용되지만, 그 출력은 "부분 검증 — 게이트를 닫는 근거가 아니다"로 표시되고 마지막 줄이 `전건 일치:`로 시작하지 않는다.
 
-역방향(Kotlin이 만들고 Python이 읽는 방향)은 **값 비교로 닫을 수 없다.** fixture의 `crypto-roundtrip-request`·`jwt-roundtrip-request`는 Kotlin에게 "이 평문/이 subject로 산출물을 만들어라"라고 지시하는 요청 케이스이고, Kotlin이 기대값을 그대로 되받아 적으면 아무것도 실행하지 않고 "일치"가 나온다. 그래서 이 케이스들은 `verification.mode = "external"`로 표시되어 있고, 비교기는 이 표시가 붙은 케이스의 `actual`을 **아예 보지 않는다.** 근거로 인정하는 것은 `verify-crypto`/`verify-jwt`가 남긴 실행 증거 파일 하나뿐이다.
+역방향(Kotlin이 만들고 Python이 읽는 방향)은 **값 비교로 닫을 수 없다.** fixture의 `crypto-roundtrip-request`·`jwt-roundtrip-request`는 Kotlin에게 "이 평문/이 subject로 산출물을 만들어라"라고 지시하는 요청 케이스이고, Kotlin이 기대값을 그대로 되받아 적으면 아무것도 실행하지 않고 "일치"가 나온다. 그래서 이 케이스들은 `verification.mode = "external"`로 표시되어 있고, 비교기는 이 표시가 붙은 케이스의 `actual`을 **아예 보지 않는다.**
 
-- 증거 파일이 없으면 → **미검증(pending)**. `compare_parity.py`가 종료 코드 **2**로 끝나고 "전건 일치"라고 쓰지 않는다.
-- 증거 파일의 `status`가 `pass`가 아니거나, 검증한 건수가 `verification.required_cases`보다 적으면 → **불일치**(종료 코드 1).
-- Kotlin 결과 파일에 요청 케이스 id를 적어 넣으면 → **불일치**. 그 자리에 기대값을 베끼는 것이 정확히 이 게이트를 무력화하는 경로다.
+**증거 파일은 이제 판정의 입력이 아니다.** 예전에는 `verify-*`가 남긴 `*.verified.json`을 비교기가 읽어 `fixture_case`·`status`·`checked` 세 값만 확인했다. 그 세 값을 적은 6줄짜리 JSON을 손으로 만들면 Kotlin을 한 번도 돌리지 않고 "외부 검증 1건"이 인정됐다. 지금 비교기는 그 파일을 **읽지 않는다**:
+
+1. `verification.actual_file`(예: `parity/actual/crypto/kotlin-encrypt.json`)을 Kotlin 결과 디렉터리에서 찾는다. 없으면 → **미검증(pending)**, 종료 코드 **2**. 손으로 쓴 증거 파일이 옆에 있으면 "증거 파일만 있고 산출물이 없다"고 함께 찍는다.
+2. 있으면 그 파일의 `runtime`을 확인하고 **Python 검증기를 그 자리에서 돌린다.**
+3. 검증은 **fixture 요청과 결합**된다 — 요청한 키/시크릿을 썼는가, 요청한 평문·subject를 **전부** 덮었는가, 중복 id로 표본 수를 채우지 않았는가. 하나라도 어긋나면 → **불일치**(종료 코드 1).
+4. 실행 결과를 `verification.proof` 경로에 **기록으로 덮어쓴다.** 손으로 적어 둔 내용은 그때 사라진다. 기록에는 fixture·산출물·검증기의 SHA-256, 실행 nonce, 결합 여부가 함께 남는다.
+
+Kotlin 결과 파일에 요청 케이스 id를 적어 넣으면 → **불일치**. 그 자리에 기대값을 베끼는 것이 정확히 이 게이트를 무력화하는 경로다.
 
 미검증을 통과로 세지 않는 이유: 게이트의 목적은 "돌렸다"가 아니라 "호환성이 증명됐다"이다. 미실행을 침묵으로 두면 Phase 4 종료 조건이 거짓으로 닫히고, 그 거짓은 절체 당일 기존 문서를 못 읽는 형태로 드러난다.
+
+**Kotlin 산출물이 아직 없는 지금도 이 경로는 돈다.** 나머지 도메인은 정상 비교되고 역방향 2건만 미검증으로 남아 종료 코드 2가 나온다 — 오류가 아니라 "여기까지는 됐고 저것이 남았다"는 판정이다.
 
 ### crypto — Fernet (`app/privacy/crypto.py::TextCipher`)
 
@@ -318,14 +327,16 @@ Python을 실행해 fixture를 생성한다. 도메인 11개(`masking`, `text`, 
 uv run python .claude/skills/python-kotlin-parity/scripts/dump_parity_fixtures.py
 uv run python .claude/skills/python-kotlin-parity/scripts/dump_parity_fixtures.py --domain masking --domain style
 uv run python .claude/skills/python-kotlin-parity/scripts/dump_parity_fixtures.py --list
-# 역방향 검증: Kotlin이 만든 산출물을 Python이 읽는다 (실행 증거 파일을 남긴다)
+# 역방향 검증을 사람이 직접 돌려 볼 때 (게이트 판정은 compare_parity.py 가 한다)
 uv run python .claude/skills/python-kotlin-parity/scripts/dump_parity_fixtures.py \
-    verify-crypto --actual parity/actual/crypto/kotlin-encrypt.json
+    verify-crypto --actual parity/actual/crypto/kotlin-encrypt.json \
+    --fixture parity/fixtures/crypto/crypto.json
 uv run python .claude/skills/python-kotlin-parity/scripts/dump_parity_fixtures.py \
-    verify-jwt --actual parity/actual/jwt/kotlin-issue.json
+    verify-jwt --actual parity/actual/jwt/kotlin-issue.json \
+    --fixture parity/fixtures/jwt/jwt.json
 ```
 
-`verify-*`는 성공하든 실패하든 `--actual`과 **같은 디렉터리**에 실행 증거 파일(`verify-crypto.verified.json` / `verify-jwt.verified.json`)을 남긴다. `compare_parity.py`가 그 파일로 역방향 케이스를 닫으므로 경로를 옮기지 않는다(`--proof`로 바꿀 수는 있지만 fixture의 `verification.proof`와 어긋나면 미검증으로 남는다).
+`verify-*`는 **사람이 확인해 보는 용도**다. 성공하든 실패하든 `--actual`과 같은 디렉터리에 실행 기록(`verify-crypto.verified.json` / `verify-jwt.verified.json`)을 남기지만, **그 파일로 게이트가 닫히지 않는다** — `compare_parity.py`가 같은 검증기를 자기가 다시 돌리고 그 기록을 덮어쓴다. `--fixture`를 주면 요청(키·평문·subject)과 결합해 검증하고, 생략하면 산출물 자체만 보며 그 사실을 경고로 찍는다.
 
 Kotlin이 내야 할 입력 형식은 fixture의 `verification.actual_schema`에 적혀 있다.
 
@@ -333,7 +344,7 @@ Kotlin이 내야 할 입력 형식은 fixture의 `verification.actual_schema`에
 - `verify-jwt`: `{"cases": [{"id", "secret", "token", "verify_at", "expected_subject", "expected_outcome"}]}`
   `verify_at`(epoch 초)은 **필수**다 — 없으면 그 케이스를 실패로 본다. 만료 동작까지 보이려면 `expected_outcome: "invalid_credentials"` 케이스를 함께 낸다.
 
-도메인을 추가하려면 `BUILDERS` 딕셔너리에 `() -> (source, normalization, cases)` 함수를 등록한다. 역방향 요청 케이스를 만들 때는 `_external(...)`을 `verification=`으로 붙이고 대응하는 `verify-*` 서브커맨드를 함께 추가한다 — 붙이지 않으면 Kotlin이 기대값을 되받아 적는 것만으로 케이스가 닫힌다. `ingest`·`golden` 도메인은 아직 없다 — 바이너리 fixture 경로 참조 방식을 결정한 뒤 추가한다.
+도메인을 추가하려면 `BUILDERS` 딕셔너리에 `() -> (source, normalization, cases)` 함수를 등록한다. **빌더는 결정적이어야 한다** — 난수를 쓰는 자리가 생기면 `compare_parity.py`의 `VOLATILE_INPUT_FIELDS`에 그 필드를 등록해야 하고, 그만큼 정본 대조가 약해진다. 역방향 요청 케이스를 만들 때는 `_external(...)`을 `verification=`으로 붙이고, 대응하는 검증 함수를 `VERIFIERS`·`PROOF_FILE_NAMES`·`PROOF_FIXTURE_CASES`에 함께 등록한다 — 붙이지 않으면 Kotlin이 기대값을 되받아 적는 것만으로 케이스가 닫힌다. 검증 함수는 `(actual_doc, request) -> VerificationOutcome` 형태이며 `request`(fixture 요청 케이스의 `input`)와 **결합**해 판정해야 한다. 건수만 세면 같은 값을 복사해 표본 수를 채울 수 있다. `ingest`·`golden` 도메인은 아직 없다 — 바이너리 fixture 경로 참조 방식을 결정한 뒤 추가한다.
 
 ### `scripts/compare_parity.py`
 
@@ -359,9 +370,35 @@ uv run python .claude/skills/python-kotlin-parity/scripts/compare_parity.py \
 한 파일에 합치면 `kotlin-implementer`가 자기가 고칠 도메인 항목을 먼저 골라내야 하고,
 "모듈이 완성될 때마다 즉시 돌린다"(핵심 원칙 3)는 흐름이 깨진다.
 
-Kotlin 결과 파일 형식: `{"runtime": "kotlin", "cases": [{"id": "...", "actual": {...}}]}` — fixture와 같은 상대 경로에 둔다.
+Kotlin 결과 파일 형식: `{"runtime": "kotlin", "cases": [{"id": "...", "actual": {...}}]}` — fixture와 같은 상대 경로에 둔다. **`runtime`은 반드시 `kotlin`이어야 한다.** 예전에는 이 필드를 읽는 코드가 한 줄도 없어 `runtime: not-kotlin` 결과도 통과했다. 다만 이 검사는 문자열 선언을 보는 것이라 **단독 방어선이 아니다** — 실수로 Python 하네스 출력을 넣은 경우를 잡는 것이 현실적인 값어치다.
 
-동작: 케이스 id로 짝지어 정규화 후 비교하고, 미실행 케이스와 기대값 없는 케이스를 따로 보고한다. 금지된 정규화 규칙 이름이 fixture에 들어 있으면 비교 자체를 중단하고, 정규화가 자리표시자 목록을 바꾸면 그 케이스를 "정규화 오류"로 보고한다. `verification.mode == "external"`인 역방향 케이스는 값 비교 대신 실행 증거 파일로 판정한다(위 [자격증명·암호 3개 도메인 공통](#자격증명암호-3개-도메인-공통--역방향은-실행-증거가-있어야-닫힌다) 참고).
+동작: 케이스 id로 짝지어 정규화 후 비교하고, 미실행 케이스와 기대값 없는 케이스를 따로 보고한다. 금지된 정규화 규칙 이름이 fixture에 들어 있으면 비교 자체를 중단하고, 정규화가 자리표시자 목록을 바꾸면 그 케이스를 "정규화 오류"로 보고한다. `verification.mode == "external"`인 역방향 케이스는 값 비교 대신 검증기를 직접 돌려 판정한다(위 [자격증명·암호 3개 도메인 공통](#자격증명암호-3개-도메인-공통--역방향은-비교기가-직접-돌린다) 참고).
+
+#### fixture가 정본 산출물인지 대조한다
+
+비교기는 주어진 fixture 파일을 그대로 믿었다. 그래서 도메인 이름별로 **기대값=실제값인 가짜 케이스 하나씩만** 남기면 원래 있던 수백 건의 경계·변조 케이스가 사라져도 `missing=0`·`considered>0`이 되어 **`전건 일치` + 종료 코드 0**이 나왔다. 도메인 존재만 강제하는 것으로는 이 경로가 막히지 않는다 — 이름만 남기고 내용을 비우면 그만이기 때문이다.
+
+지금은 비교할 때마다 `dump_parity_fixtures.py`의 빌더를 **다시 돌려** 파일과 대조한다.
+
+| 대조하는 것 | 왜 대조할 수 있나 |
+|---|---|
+| 케이스 id 집합·개수·**순서** | 생성기 출력이 결정적이다. 케이스를 지우거나 손으로 추가하면 즉시 드러난다 |
+| `source` · `generator` · `normalization` 선언 | 상수다. 정규화 선언을 손으로 늘리는 경로가 여기서 막힌다 |
+| 각 케이스의 `description` · `input` · `expected` · `verification` | 11개 도메인 전부에서 `expected`가 결정적이다(실측 확인) |
+
+대조할 수 **없는** 것은 난수뿐이고, 그 목록은 코드의 `VOLATILE_INPUT_FIELDS` 한 곳에 있다 — `crypto`의 `input.key`/`input.token`(Fernet 키를 매 생성 새로 만든다), `argon2`의 `input.phc`(솔트가 매번 다르다). `prompts`의 난수 문서 id는 fixture가 선언한 `mask_document_id` 정규화가 접어 주므로 대조 대상이다. **이 목록을 늘리는 것이 곧 구멍을 늘리는 것이다.**
+
+값 대조에는 **정본이 선언한** 정규화를 쓴다. 파일 쪽 선언은 위조 대상이라 근거가 못 된다.
+
+이 대조는 Python 코드가 바뀌었는데 fixture를 다시 뽑지 않은 상태도 함께 잡는다 — 그때의 실패는 "위조"가 아니라 **"fixture가 낡았다"**는 뜻이고, 닫는 방법은 재생성이다(출력에 명령이 함께 찍힌다). 재생성 diff가 곧 `kotlin-implementer`에게 넘길 변경 목록이다(핵심 원칙 2).
+
+#### 이 게이트가 막지 못하는 것
+
+완벽히 막을 수 없는 것은 문서에 적어 둔다. 조용히 뚫리는 것보다 낫다.
+
+- **"그 산출물을 정말 Kotlin이 만들었는가"는 증명되지 않는다.** fixture가 Fernet 키와 JWT 시크릿을 공개하므로 같은 값을 Python으로도 만들 수 있고, `runtime` 필드는 손으로 적을 수 있다. 이 경계는 코드로 닫히지 않는다 — **Kotlin 테스트 하네스가 `actual_file`을 쓰도록 CI에 배선하는 것이 유일한 방어**이며, Phase 1에서 그 배선을 만들 때 함께 확인한다.
+- **정본 생성기 자체의 위조는 막지 못한다.** 생성기를 고치면 "정본"이 따라 바뀐다. 생성기와 비교기는 같은 리뷰 게이트를 지나야 한다.
+- **Python 구현이 옳은지는 이 하네스의 질문이 아니다.** 기준은 현재 Python 동작이다(계획 §4.6).
 
 #### 기대 도메인 집합을 스크립트가 강제한다
 
@@ -371,6 +408,7 @@ Kotlin 결과 파일 형식: `{"runtime": "kotlin", "cases": [{"id": "...", "act
 
 - **기대 집합의 정본은 `dump_parity_fixtures.py`의 `BUILDERS` 키 하나뿐이다.** `compare_parity.py`가 그 키를 import해서 쓰므로 목록이 두 벌로 갈라지지 않는다. 도메인을 추가할 때 고칠 곳은 생성기 한 곳이다.
 - 빠진 도메인은 **이름으로** 찍힌다: `없는 도메인: crypto, jwt, argon2`. "파일 8개 비교"로는 사람이 알아채지 못한다. 리포트(`--report-md`)에도 "parity 도메인 누락 리포트" 절이 붙는다.
+- 도메인 이름만 남기고 **내용을 비우는** 경로는 도메인 존재 강제로 막히지 않는다. 그것은 아래 [fixture가 정본 산출물인지 대조한다](#fixture가-정본-산출물인지-대조한다)가 맡는다.
 - 같은 원리("검증하지 않은 것이 통과로 집계되면 안 된다")로 함께 막힌 것: **빈 fixture**(`cases: []` — 0건 비교는 통과가 아니다), `cases` 키가 없는 fixture, fixture의 중복 케이스 id, `BUILDERS`에 없는 손수 만든 도메인, fixture 위치(`{도메인}/`)와 `domain` 필드 불일치(디렉터리 이름만 바꿔 도메인을 숨기는 경로), Kotlin 결과 파일의 중복 id·id 없는 항목, 존재하지 않는 id를 `--only`로 준 경우(예전에는 모든 문제가 사후 필터에 지워져 종료 코드 0이 나왔다). fixture는 있는데 actual이 없는 경우와 actual의 케이스 수가 모자란 경우는 이전부터 `Kotlin 결과 파일 없음`·`미실행`으로 막혀 있다.
 
 #### 전체 게이트와 부분 검증을 구분한다
@@ -399,13 +437,13 @@ Kotlin 결과 파일 형식: `{"runtime": "kotlin", "cases": [{"id": "...", "act
 | 코드 | 뜻 | 게이트 |
 |---|---|---|
 | 0 | 전건 일치 + 미검증 0건 + 기대 도메인 전부 존재 | 닫아도 된다 (마지막 줄이 `전건 일치:`일 때만) |
-| 1 | 불일치·미실행·읽기 실패·역방향 검증 실패·**도메인 누락**·빈 fixture·사용법 오류 | 차단 |
-| 2 | 불일치는 없으나 **미검증** 케이스가 남음 | 닫지 않는다 |
+| 1 | 불일치·미실행·읽기 실패·역방향 검증 실패·**도메인 누락**·빈 fixture·**fixture가 정본과 다름**·**`runtime` 미선언·불일치**·사용법 오류 | 차단 |
+| 2 | 불일치는 없으나 **미검증** 케이스가 남음 (역방향 산출물 미생성 포함) | 닫지 않는다 |
 | 3 | **부분 검증**(`--only` / `--only-domain` / 단일 fixture / 도메인 디렉터리)이 그 범위 안에서 통과 | 닫지 않는다 |
 
 **부분 검증을 0이 아니라 3에 둔 근거.** 종료 코드는 자동화가 읽는 유일한 계약이다. stdout에 찍히는 "이 결과는 게이트를 닫는 근거가 아니다"는 사람이 읽을 때만 유효하고, CI와 에이전트는 exit code로 판정한다. 예전에는 masking 한 도메인만 돌린 실행이 "기대 집합 11개 중 10개는 돌리지 않았다"고 **경고하면서 종료 코드는 0**이었다 — 종료 코드만 보는 호출자에게는 전체 통과와 구별되지 않았고, 스크립트 상단이 "0은 기대 도메인 전부가 있을 때만"이라고 계약해 놓은 것과도 모순됐다. 1(차단)로 묶지 않은 이유는 부분 검증이 정상적인 개발 중 작업이기 때문이다(핵심 원칙 3 — 모듈 하나가 끝날 때마다 그 도메인만 돌린다). "고쳐야 할 문제가 있다"(1)와 "범위를 좁혀 돌렸다"(3)가 같은 코드로 나가면 호출자가 둘을 구분할 수 없다. 3은 **"이 범위에서는 문제 없음, 그러나 게이트는 열린 채"**라는 뜻이며, 부분 검증이라도 불일치가 있으면 1, 미검증이 남으면 2가 그대로 나간다 — 3은 그 두 검사를 모두 통과한 뒤에만 도달한다.
 
-**도메인 누락을 2가 아니라 1에 둔 근거.** 누락은 "돌리지 않은 것"이라 성격상 2에 가까워 보이지만, 이미 "Kotlin 결과 파일 없음"(파일 누락)과 "미실행"(케이스 누락)이 1로 나간다. 같은 성격의 누락을 입도가 커졌다는 이유로(케이스 → 파일 → 도메인) 더 약한 코드로 내보내면 **많이 지울수록 종료 코드가 약해지는** 유인이 생기고, 그것이 정확히 이 게이트를 무력화하는 경로다. 2는 **fixture가 그 케이스를 정의했고 남은 것이 외부 실행 증거뿐인** 좁은 상태에만 쓴다 — 도메인이 통째로 없으면 정의 자체가 없으므로 2의 의미에 해당하지 않는다. 같은 이유로 사용법 오류도 argparse 기본값 2가 아니라 1로 끝난다(인자를 잘못 준 것과 미검증이 남은 것이 같은 코드면 호출자가 구분할 수 없다).
+**도메인 누락을 2가 아니라 1에 둔 근거.** 누락은 "돌리지 않은 것"이라 성격상 2에 가까워 보이지만, 이미 "Kotlin 결과 파일 없음"(파일 누락)과 "미실행"(케이스 누락)이 1로 나간다. 같은 성격의 누락을 입도가 커졌다는 이유로(케이스 → 파일 → 도메인) 더 약한 코드로 내보내면 **많이 지울수록 종료 코드가 약해지는** 유인이 생기고, 그것이 정확히 이 게이트를 무력화하는 경로다. 2는 **fixture가 그 케이스를 정의했고 남은 것이 Kotlin 산출물뿐인** 좁은 상태에만 쓴다 — 도메인이 통째로 없으면 정의 자체가 없으므로 2의 의미에 해당하지 않는다. 같은 이유로 사용법 오류도 argparse 기본값 2가 아니라 1로 끝난다(인자를 잘못 준 것과 미검증이 남은 것이 같은 코드면 호출자가 구분할 수 없다).
 
 **종료 코드 2를 0처럼 다루지 않는다.** 출력 마지막 줄이 `전건 일치:`로 시작할 때만 통과다. 미검증이 있으면 `[미검증] ... — 전건 일치로 보고하지 않는다 (종료 코드 2)`가 찍히고, 리포트에 별도의 "parity 미검증 리포트" 절이 붙는다.
 
@@ -413,7 +451,7 @@ Kotlin 결과 파일 형식: `{"runtime": "kotlin", "cases": [{"id": "...", "act
 
 `docs/migration/_workspace/`의 이전 parity 산출물을 먼저 전부 읽는다.
 
-- Python 쪽 코드가 바뀌었으면 **fixture부터 다시 생성**하고 diff를 본다. fixture diff가 곧 "Python 동작이 이렇게 바뀌었다"는 기록이고, 그 diff를 `kotlin-implementer`에게 전달할 변경 목록으로 쓴다. `style_rules.py`는 이 프로젝트에서 가장 자주 바뀌므로 재호출 시 항상 재생성 대상이다.
+- Python 쪽 코드가 바뀌었으면 **fixture부터 다시 생성**하고 diff를 본다. 이제 비교기가 정본과 대조하므로, 재생성을 건너뛰면 종료 코드 1과 함께 "정본과 다르다"가 찍힌다 — 그 출력이 곧 재생성 지시다. fixture diff가 곧 "Python 동작이 이렇게 바뀌었다"는 기록이고, 그 diff를 `kotlin-implementer`에게 전달할 변경 목록으로 쓴다. `style_rules.py`는 이 프로젝트에서 가장 자주 바뀌므로 재호출 시 항상 재생성 대상이다.
 - 이전에 통과한 도메인도 관련 파일이 바뀌었으면 다시 돌린다. 통과 기록은 그 시점 코드에 대한 것이다.
 - 이전 불일치가 해결되었다는 보고를 받으면 **말이 아니라 스크립트 출력으로** 확인한다.
 - 정규화 규칙을 추가한 이력이 있으면 그 근거가 여전히 유효한지 재확인한다. 근거 없이 남은 정규화가 다음 회귀를 숨긴다.

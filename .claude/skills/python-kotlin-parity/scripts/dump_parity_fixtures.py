@@ -10,13 +10,16 @@ Kotlin 쪽에서 기대값을 다시 손으로 적으면 두 구현이 아니라
         --domain masking --domain style
     uv run python .claude/skills/python-kotlin-parity/scripts/dump_parity_fixtures.py --list
     uv run python .claude/skills/python-kotlin-parity/scripts/dump_parity_fixtures.py \
-        verify-crypto --actual parity/actual/crypto/kotlin-encrypt.json
+        verify-crypto --actual parity/actual/crypto/kotlin-encrypt.json \
+        --fixture parity/fixtures/crypto/crypto.json
     uv run python .claude/skills/python-kotlin-parity/scripts/dump_parity_fixtures.py \
-        verify-jwt --actual parity/actual/jwt/kotlin-issue.json
+        verify-jwt --actual parity/actual/jwt/kotlin-issue.json \
+        --fixture parity/fixtures/jwt/jwt.json
 
-`verify-*` 서브커맨드는 **역방향**(Kotlin 산출물을 Python이 읽는 방향) 전용이다.
-검증에 성공하든 실패하든 실행 증거 파일(proof)을 남긴다 — `compare_parity.py`는 그
-파일이 있어야만 역방향 케이스를 닫는다. 증거가 없으면 통과가 아니라 **미검증**이다.
+`verify-*` 서브커맨드는 **역방향**(Kotlin 산출물을 Python이 읽는 방향) 전용이며 사람이
+직접 돌려 보는 용도다. **게이트 판정은 이 명령의 산출물로 하지 않는다** — `compare_parity.py`가
+같은 검증기를 자기가 다시 돌려 판정한다. 이 명령이 남기는 `*.verified.json`은 판정의
+입력이 아니라 실행 **기록**이다(예전에는 입력이었고, 그래서 손으로 적으면 통과했다).
 
 입력 문자열은 전부 합성(synthetic)이다. 실제 사용자 문서·실제 개인정보를 fixture에
 넣지 않는다 — fixture는 저장소에 커밋되어 영구히 남는다.
@@ -35,6 +38,7 @@ import unicodedata
 import uuid
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta, tzinfo
 from pathlib import Path
 from types import ModuleType
@@ -56,6 +60,20 @@ BASE_NORMALIZATION = ["nfc", "lf"]
 #: argon2 해시가 달라진다**. 정규화는 줄이는 방향으로 관리한다(스킬 핵심 원칙 4).
 NO_NORMALIZATION: list[str] = []
 
+#: 역방향 검증기(`verify-*`)와 그 실행 기록 파일 이름. 기록 파일은 Kotlin 산출물(`--actual`)과
+#: **같은 디렉터리**에 놓인다. 이 파일은 판정의 **입력이 아니라 출력**이다 — 비교기는 이것을
+#: 읽어서 판정하지 않고, 검증기를 직접 돌린 뒤 결과를 여기에 덮어쓴다.
+PROOF_FILE_NAMES: dict[str, str] = {
+    "verify-crypto": "verify-crypto.verified.json",
+    "verify-jwt": "verify-jwt.verified.json",
+}
+
+#: 각 검증기가 닫는 fixture 요청 케이스 id. 검증기는 이 케이스의 `input`을 요구 사항으로 읽는다.
+PROOF_FIXTURE_CASES: dict[str, str] = {
+    "verify-crypto": "crypto-roundtrip-request",
+    "verify-jwt": "jwt-roundtrip-request",
+}
+
 Case = dict[str, Any]
 Builder = Callable[[], tuple[str, list[str], list[Case]]]
 
@@ -72,19 +90,32 @@ def _case(case_id: str, description: str, payload: Any, expected: Any, **extra: 
 
 
 def _external(
-    *, script: str, proof: str, required_cases: int, actual_schema: dict[str, str]
+    *,
+    command: str,
+    actual_file: str,
+    required_cases: int,
+    actual_schema: dict[str, str],
 ) -> dict[str, Any]:
     """역방향(Kotlin → Python) 케이스임을 표시한다.
 
     이런 케이스는 Kotlin 산출물을 값으로 비교해서는 닫을 수 없다 — Kotlin이 기대값을
-    그대로 되받아 적으면 아무것도 실행하지 않고도 "일치"가 나온다. 그래서 비교기는 이
-    표시가 붙은 케이스의 `actual`을 아예 보지 않고, `verify-*` 서브커맨드가 남긴 실행
-    증거 파일(`proof`)만 근거로 인정한다. 증거가 없으면 **미검증**이다.
+    그대로 되받아 적으면 아무것도 실행하지 않고도 "일치"가 나온다.
+
+    **증거 파일은 비교기의 입력이 아니다.** 예전에는 `verify-*`가 남긴 `*.verified.json`을
+    비교기가 읽어 판정했는데, 그 파일은 손으로 6줄만 적으면 만들어졌다(교차 리뷰 X-1).
+    지금 비교기는 `actual_file`(Kotlin 산출물)을 찾아 **자기가 검증기를 돌리고** 그 결과로
+    판정한다. 증거 파일은 그 실행의 **기록**으로 새로 쓰인다.
+
+    - `command` — 비교기가 호출할 검증기 이름(`VERIFIERS` 키). 문자열 파싱 없이 이 값으로 건다.
+    - `actual_file` — Kotlin 산출물 파일 이름. `--actual` 디렉터리 기준 상대 이름이다.
+      이 파일이 없으면 통과가 아니라 **미검증(pending)**이다.
     """
     return {
         "mode": "external",
-        "script": script,
-        "proof": proof,
+        "command": command,
+        "script": f"dump_parity_fixtures.py {command}",
+        "actual_file": actual_file,
+        "proof": PROOF_FILE_NAMES[command],
         "required_cases": required_cases,
         "actual_schema": actual_schema,
     }
@@ -547,13 +578,14 @@ def build_crypto() -> tuple[str, list[str], list[Case]]:
     cases.append(
         _case(
             "crypto-roundtrip-request",
-            "역방향 검증용 — Kotlin이 이 평문들을 이 키로 암호화하고 verify-crypto로 확인한다. "
-            "Kotlin 결과 파일에 이 id를 적어도 닫히지 않는다 — 증거 파일만 인정한다",
+            "역방향 검증용 — Kotlin이 이 평문들을 이 키로 암호화해 kotlin-encrypt.json 에 남긴다. "
+            "Kotlin 결과 파일에 이 id를 적어도 닫히지 않는다 — 비교기가 그 산출물을 "
+            "직접 복호화한다",
             {"key": key, "plaintexts": [text for _, text in plaintexts]},
             {"outcome": "verified_externally"},
             verification=_external(
-                script="dump_parity_fixtures.py verify-crypto",
-                proof="verify-crypto.verified.json",
+                command="verify-crypto",
+                actual_file="kotlin-encrypt.json",
                 required_cases=len(plaintexts),
                 actual_schema={
                     "key": "이 케이스의 key를 그대로",
@@ -790,8 +822,9 @@ def build_jwt() -> tuple[str, list[str], list[Case]]:
     cases.append(
         _case(
             "jwt-roundtrip-request",
-            "역방향 검증용 — Kotlin이 이 subject들로 토큰을 발급하고 verify-jwt로 Python이 읽는다. "
-            "만료 동작까지 보이려면 expected_outcome=invalid_credentials 케이스를 함께 낸다",
+            "역방향 검증용 — Kotlin이 이 subject들로 토큰을 발급해 kotlin-issue.json 에 남기고 "
+            "Python이 그것을 읽는다. 만료 동작까지 보이려면 "
+            "expected_outcome=invalid_credentials 케이스를 함께 낸다",
             {
                 "secret": JWT_SECRET,
                 "expire_minutes": JWT_EXPIRE_MINUTES,
@@ -801,8 +834,8 @@ def build_jwt() -> tuple[str, list[str], list[Case]]:
             },
             {"outcome": "verified_externally"},
             verification=_external(
-                script="dump_parity_fixtures.py verify-jwt",
-                proof="verify-jwt.verified.json",
+                command="verify-jwt",
+                actual_file="kotlin-issue.json",
                 required_cases=2,
                 actual_schema={
                     "secret": "이 케이스의 secret을 그대로",
@@ -1057,132 +1090,323 @@ def dump(domains: list[str], out_root: Path) -> int:
     return 0 if written else 1
 
 
-#: 역방향 검증의 실행 증거 파일 이름. fixture의 `verification.proof`와 같아야 하고,
-#: Kotlin 산출물(`--actual`)과 **같은 디렉터리**에 놓인다 — `compare_parity.py`가 거기서 찾는다.
-PROOF_NAMES = {
-    "verify-crypto": ("crypto-roundtrip-request", "verify-crypto.verified.json"),
-    "verify-jwt": ("jwt-roundtrip-request", "verify-jwt.verified.json"),
-}
+# ------------------------------------------------------- 역방향 검증 (Kotlin → Python)
+#
+# 신뢰 경계 — 이 절이 지키는 것과 지키지 못하는 것:
+#   지킨다: "Kotlin 산출물 파일의 내용이 Python 구현으로 실제로 해독·검증된다."
+#           검증은 매 실행마다 새로 돈다. 결과를 파일로 받아 믿지 않는다.
+#   지키지 못한다: "그 산출물을 정말 Kotlin이 만들었는가." fixture가 키·시크릿을 공개하므로
+#           같은 값을 Python으로도 만들 수 있다. 이 경계는 문서로만 막힌다(SKILL.md 참고).
 
 
-def _write_proof(
-    command: str, actual_path: Path, proof_path: Path | None, checked: int, failures: list[str]
-) -> Path:
-    """역방향 검증을 **실제로 돌렸다**는 증거를 남긴다.
+@dataclass(frozen=True)
+class VerificationOutcome:
+    """역방향 검증 1회의 결과. 파일에 쓰기 전의 순수 값이다.
 
-    이 파일이 없으면 `compare_parity.py`는 해당 케이스를 통과가 아니라 미검증으로 센다.
-    실패했을 때도 남긴다 — 실패를 침묵으로 두면 미검증과 구분되지 않는다.
-    failures에는 케이스 id와 사유 분류만 담는다(평문·토큰·키 금지).
+    `checked`는 **요구 사항을 만족한 채로 통과한 건수**이지 산출물의 케이스 수가 아니다.
+    예전 구현은 입력 케이스 개수를 그대로 `checked`로 적어, 같은 값을 복사해 넣은 산출물이
+    표본 수를 채울 수 있었다.
     """
-    fixture_case, default_name = PROOF_NAMES[command]
-    target = proof_path or actual_path.parent / default_name
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(
-        json.dumps(
-            {
-                "script": f"dump_parity_fixtures.py {command}",
-                "fixture_case": fixture_case,
-                "status": "fail" if failures else "pass",
-                "checked": checked,
-                "actual": str(actual_path),
-                "verified_at": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
-                "failures": failures,
-            },
-            ensure_ascii=False,
-            indent=2,
-        )
-        + "\n",
-        encoding="utf-8",
-    )
-    return target
+
+    checked: int
+    required: int
+    failures: list[str]
+    bound: bool
+
+    @property
+    def passed(self) -> bool:
+        return not self.failures and self.checked >= self.required
 
 
-def _report_verification(command: str, target: Path, checked: int, failures: list[str]) -> int:
-    if failures:
-        print(f"역방향 검증 실패 ({command}):")
-        for failure in failures:
-            print(f"  - {failure}")
-        print(f"[증거] {target} (status: fail)")
-        return 1
-    print(f"역방향 검증 통과 ({command}): {checked}건")
-    print(f"[증거] {target} (status: pass)")
-    return 0
+Verifier = Callable[[dict[str, Any], dict[str, Any] | None], VerificationOutcome]
 
 
-def verify_crypto(actual_path: Path, proof_path: Path | None) -> int:
-    """Kotlin이 만든 암호문을 Python이 읽는 역방향 검증.
+def _case_key(case: Any, index: int, seen: set[str]) -> tuple[str, str | None]:
+    """산출물 케이스의 id를 꺼내며 형식·중복을 검사한다 (중복은 표본 부풀리기 경로다)."""
+    if not isinstance(case, dict):
+        return (f"#{index}", f"#{index}: 케이스가 객체가 아니다")
+    case_id = str(case.get("id") or f"#{index}")
+    if case_id in seen:
+        return (case_id, f"{case_id}: 같은 id가 두 번 — 중복으로 표본 수를 채울 수 없다")
+    seen.add(case_id)
+    return (case_id, None)
 
-    입력 JSON: {"cases": [{"id": ..., "key": ..., "token": ..., "expected_plaintext": ...}]}
+
+def _requested(request: dict[str, Any] | None, field: str) -> list[str]:
+    values = (request or {}).get(field)
+    return [str(item) for item in values] if isinstance(values, list) else []
+
+
+def _coverage_failure(wanted: list[str], covered: set[str], label: str) -> list[str]:
+    """요청한 값 중 검증되지 않은 것을 **번호로만** 보고한다 (평문·subject 노출 금지)."""
+    missing = [str(index) for index, value in enumerate(wanted) if value not in covered]
+    if not missing:
+        return []
+    return [
+        f"요청 {label} 미검증 {len(missing)}건 (index {', '.join(missing)}) — "
+        f"fixture가 요청한 {label} 전부를 Kotlin 산출물이 덮어야 한다"
+    ]
+
+
+def run_verify_crypto(
+    actual_doc: dict[str, Any], request: dict[str, Any] | None
+) -> VerificationOutcome:
+    """Kotlin이 만든 Fernet 토큰을 Python이 실제로 복호화한다.
+
+    `request`는 fixture 요청 케이스(`crypto-roundtrip-request`)의 `input`이다. 이것을 주면
+    검증이 **요청과 결합**된다 — 요청한 키를 썼는지, 요청한 평문을 하나도 빠짐없이 덮었는지까지
+    본다. 건수만 세면 같은 평문 하나를 다섯 번 복사해 표본 수를 채울 수 있다.
     """
-    from app.exceptions import StorageError
     from app.privacy.crypto import TextCipher
 
-    payload = json.loads(actual_path.read_text(encoding="utf-8"))
-    cases = payload.get("cases", [])
+    cases = actual_doc.get("cases")
+    bound = request is not None
+    if not isinstance(cases, list):
+        return VerificationOutcome(0, 1, ["cases 배열이 없다 — 검증할 산출물이 없다"], bound)
+    wanted_key = str(request["key"]) if request and "key" in request else ""
+    wanted = _requested(request, "plaintexts")
     failures: list[str] = []
-    for case in cases:
-        case_id = case.get("id", "?")
+    covered: set[str] = set()
+    seen: set[str] = set()
+    checked = 0
+    for index, case in enumerate(cases):
+        case_id, defect = _case_key(case, index, seen)
+        if defect:
+            failures.append(defect)
+            continue
+        key = case.get("key")
+        token = case.get("token")
+        expected = case.get("expected_plaintext")
+        if not (isinstance(key, str) and isinstance(token, str) and isinstance(expected, str)):
+            failures.append(
+                f"{case_id}: 입력 결함 — key·token·expected_plaintext 가 모두 문자열이어야 한다"
+            )
+            continue
+        if wanted_key and key != wanted_key:
+            failures.append(f"{case_id}: fixture가 지정한 키가 아니다 — 요청과 무관한 토큰이다")
+            continue
+        if wanted and expected not in wanted:
+            failures.append(f"{case_id}: fixture가 요청하지 않은 평문이다")
+            continue
         try:
-            got = TextCipher(case["key"]).decrypt(case["token"].encode("ascii"))
-        except (StorageError, Exception) as exc:  # noqa: BLE001 - 어떤 실패든 불일치로 본다
+            got = TextCipher(key).decrypt(token.encode("ascii"))
+        except Exception as exc:  # noqa: BLE001 - 복호화 실패는 사유를 가리지 않고 불일치다
             failures.append(f"{case_id}: 복호화 실패 ({type(exc).__name__})")
             continue
-        if got != case.get("expected_plaintext"):
-            failures.append(
-                f"{case_id}: 평문 불일치 "
-                f"(길이 기대 {len(case.get('expected_plaintext', ''))} / 실제 {len(got)})"
-            )
-    target = _write_proof("verify-crypto", actual_path, proof_path, len(cases), failures)
-    return _report_verification("verify-crypto", target, len(cases), failures)
+        if got != expected:
+            failures.append(f"{case_id}: 평문 불일치 (길이 기대 {len(expected)} / 실제 {len(got)})")
+            continue
+        checked += 1
+        covered.add(expected)
+    failures += _coverage_failure(wanted, covered, "평문")
+    return VerificationOutcome(checked, len(wanted) or 1, failures, bound)
 
 
-def verify_jwt(actual_path: Path, proof_path: Path | None) -> int:
-    """Kotlin이 발급한 토큰을 Python이 읽는 역방향 검증.
+def run_verify_jwt(
+    actual_doc: dict[str, Any], request: dict[str, Any] | None
+) -> VerificationOutcome:
+    """Kotlin이 발급한 토큰을 Python이 실제로 검증한다.
 
-    입력 JSON: {"cases": [{"id", "secret", "token", "verify_at",
-                           "expected_subject", "expected_outcome"}]}
-    `verify_at`(epoch 초)을 반드시 넣는다 — 벽시계로 판정하면 같은 산출물이 실행 시각에
-    따라 통과와 실패를 오간다.
+    산출물 케이스: {"id", "secret", "token", "verify_at", "expected_subject", "expected_outcome"}
+    `verify_at`(epoch 초)을 반드시 넣는다 — 벽시계로 판정하면 같은 산출물이 실행 시각에 따라
+    통과와 실패를 오간다. `request`를 주면 fixture가 지정한 시크릿과 subject 집합에 결합한다.
     """
     from jwt import api_jwt
 
     from app.exceptions import ConfigurationError, InvalidCredentialsError
     from app.services.auth import AuthService, UserStore, WorkspaceCreator
 
-    payload = json.loads(actual_path.read_text(encoding="utf-8"))
-    cases = payload.get("cases", [])
+    cases = actual_doc.get("cases")
+    bound = request is not None
+    if not isinstance(cases, list):
+        return VerificationOutcome(0, 1, ["cases 배열이 없다 — 검증할 산출물이 없다"], bound)
+    wanted_secret = str(request["secret"]) if request and "secret" in request else ""
+    wanted = _requested(request, "subjects")
     failures: list[str] = []
-    for case in cases:
-        case_id = case.get("id", "?")
-        expected_outcome = case.get("expected_outcome", "ok")
-        if "verify_at" not in case:
-            failures.append(f"{case_id}: verify_at 누락 — 기준 시각 없이는 만료 판정이 무의미하다")
+    covered: set[str] = set()
+    seen: set[str] = set()
+    checked = 0
+    for index, case in enumerate(cases):
+        case_id, defect = _case_key(case, index, seen)
+        if defect:
+            failures.append(defect)
             continue
+        secret = case.get("secret")
+        token = case.get("token")
+        if not (isinstance(secret, str) and isinstance(token, str)):
+            failures.append(f"{case_id}: 입력 결함 — secret·token 이 모두 문자열이어야 한다")
+            continue
+        if wanted_secret and secret != wanted_secret:
+            failures.append(f"{case_id}: fixture가 지정한 시크릿이 아니다")
+            continue
+        try:
+            moment = datetime.fromtimestamp(int(case["verify_at"]), UTC)
+        except (KeyError, TypeError, ValueError, OSError, OverflowError):
+            failures.append(
+                f"{case_id}: verify_at 누락·형식 오류 — 기준 시각 없이는 만료 판정이 무의미하다"
+            )
+            continue
+        expected_outcome = str(case.get("expected_outcome", "ok"))
         try:
             service = AuthService(
                 cast(UserStore, _UNUSED_STORE),
                 cast(WorkspaceCreator, _UNUSED_STORE),
-                case["secret"],
+                secret,
                 JWT_EXPIRE_MINUTES,
             )
         except ConfigurationError:
             failures.append(f"{case_id}: 시크릿이 최소 길이 미달")
             continue
-        moment = datetime.fromtimestamp(int(case["verify_at"]), UTC)
         with _frozen(api_jwt, moment):
             try:
-                subject = str(service.resolve_token(case["token"]))
+                subject: str | None = str(service.resolve_token(token))
             except InvalidCredentialsError:
-                if expected_outcome != "invalid_credentials":
-                    failures.append(f"{case_id}: 검증 실패 (InvalidCredentialsError)")
+                subject = None
+        if subject is None:
+            if expected_outcome != "invalid_credentials":
+                failures.append(f"{case_id}: 검증 실패 (InvalidCredentialsError)")
                 continue
+            checked += 1
+            continue
         if expected_outcome == "invalid_credentials":
             failures.append(f"{case_id}: 거부돼야 할 토큰이 통과했다")
-        elif subject != case.get("expected_subject"):
+            continue
+        if subject != case.get("expected_subject"):
             # 토큰·sub 값을 메시지에 담지 않는다 — 토큰 자체가 자격증명이다.
             failures.append(f"{case_id}: sub 불일치")
-    target = _write_proof("verify-jwt", actual_path, proof_path, len(cases), failures)
-    return _report_verification("verify-jwt", target, len(cases), failures)
+            continue
+        checked += 1
+        covered.add(subject)
+    failures += _coverage_failure(wanted, covered, "subject")
+    return VerificationOutcome(checked, len(wanted) or 1, failures, bound)
+
+
+VERIFIERS: dict[str, Verifier] = {
+    "verify-crypto": run_verify_crypto,
+    "verify-jwt": run_verify_jwt,
+}
+
+#: 이 스크립트 자신. 기록 파일에 해시를 남겨 "어느 버전의 검증기가 돌았는가"를 고정한다.
+VERIFIER_SOURCE = Path(__file__).resolve()
+
+
+def sha256_of(path: Path) -> str:
+    try:
+        return hashlib.sha256(path.read_bytes()).hexdigest()
+    except OSError:
+        return "unavailable"
+
+
+def write_proof_record(
+    *,
+    command: str,
+    actual_path: Path,
+    fixture_path: Path | None,
+    proof_path: Path | None,
+    outcome: VerificationOutcome,
+    produced_by: str,
+    actual_runtime: Any = None,
+) -> Path:
+    """역방향 검증을 실제로 돌렸다는 **기록**을 남긴다.
+
+    이 파일은 판정의 **입력이 아니라 출력**이다. 예전에는 `compare_parity.py`가 이 파일을
+    읽어 역방향 케이스를 닫았고, 그래서 손으로 6줄 적으면 게이트가 열렸다(교차 리뷰 X-1).
+    지금 비교기는 이 파일을 읽지 않고 검증기를 직접 돌린 뒤 결과를 여기에 **덮어쓴다** —
+    손으로 적어 둔 내용은 그 순간 사라진다.
+
+    입력과 결합할 수 있는 값(fixture·산출물·검증기의 SHA-256, 실행 nonce, 결합 여부)을 함께
+    적는다. 사람이 이 기록을 볼 때 "무엇을 근거로 통과했는가"가 파일 안에서 닫히게 하기 위해서다.
+    실패했을 때도 남긴다 — 실패를 침묵으로 두면 미검증과 구분되지 않는다.
+    failures에는 케이스 id와 사유 분류만 담는다(평문·토큰·키 금지).
+    """
+    target = proof_path or actual_path.parent / PROOF_FILE_NAMES[command]
+    target.parent.mkdir(parents=True, exist_ok=True)
+    record: dict[str, Any] = {
+        "script": f"dump_parity_fixtures.py {command}",
+        "command": command,
+        "fixture_case": PROOF_FIXTURE_CASES[command],
+        "status": "pass" if outcome.passed else "fail",
+        "checked": outcome.checked,
+        "required": outcome.required,
+        "bound_to_fixture": outcome.bound,
+        "fixture": str(fixture_path) if fixture_path is not None else None,
+        "fixture_sha256": sha256_of(fixture_path) if fixture_path is not None else None,
+        "actual": str(actual_path),
+        "actual_sha256": sha256_of(actual_path),
+        "actual_runtime": actual_runtime,
+        "verifier": VERIFIER_SOURCE.name,
+        "verifier_sha256": sha256_of(VERIFIER_SOURCE),
+        "run_nonce": uuid.uuid4().hex,
+        "verified_at": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "produced_by": produced_by,
+        "failures": outcome.failures,
+        "note": "이 파일은 실행 기록이다. 게이트 판정의 입력이 아니다 — compare_parity.py 는 "
+        "이것을 읽지 않고 검증기를 직접 돌린다",
+    }
+    target.write_text(json.dumps(record, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return target
+
+
+def load_request(command: str, fixture_path: Path | None) -> dict[str, Any] | None:
+    """fixture에서 이 검증기가 닫는 요청 케이스의 `input`을 읽는다."""
+    if fixture_path is None:
+        return None
+    try:
+        fixture = json.loads(fixture_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise SystemExit(
+            f"[중단] {fixture_path} 를 읽을 수 없습니다: {type(exc).__name__}"
+        ) from None
+    wanted = PROOF_FIXTURE_CASES[command]
+    for case in fixture.get("cases", []) if isinstance(fixture, dict) else []:
+        if isinstance(case, dict) and case.get("id") == wanted:
+            payload = case.get("input")
+            if not isinstance(payload, dict):
+                raise SystemExit(f"[중단] {fixture_path} 의 `{wanted}` 케이스에 input 이 없습니다")
+            return payload
+    raise SystemExit(f"[중단] {fixture_path} 에 `{wanted}` 케이스가 없습니다")
+
+
+def run_verification(
+    command: str, actual_path: Path, fixture_path: Path | None, proof_path: Path | None
+) -> int:
+    """CLI 진입점. 게이트 판정은 이 명령이 아니라 `compare_parity.py`가 내린다."""
+    try:
+        actual_doc = json.loads(actual_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise SystemExit(
+            f"[중단] {actual_path} 를 읽을 수 없습니다: {type(exc).__name__}"
+        ) from None
+    if not isinstance(actual_doc, dict):
+        raise SystemExit(f"[중단] {actual_path} 의 최상위가 JSON 객체가 아닙니다")
+    request = load_request(command, fixture_path)
+    if request is None:
+        print(
+            "[경고] --fixture 를 주지 않았다 — 요청(키·평문·subject)과 결합하지 않고 "
+            "산출물 자체만 검증한다. 게이트 판정은 compare_parity.py 가 fixture와 결합해 "
+            "다시 돌린 결과로만 한다"
+        )
+    outcome = VERIFIERS[command](actual_doc, request)
+    target = write_proof_record(
+        command=command,
+        actual_path=actual_path,
+        fixture_path=fixture_path,
+        proof_path=proof_path,
+        outcome=outcome,
+        produced_by=f"dump_parity_fixtures.py {command}",
+        actual_runtime=actual_doc.get("runtime"),
+    )
+    if not outcome.passed:
+        print(f"역방향 검증 실패 ({command}):")
+        for failure in outcome.failures:
+            print(f"  - {failure}")
+        if not outcome.failures:
+            print(f"  - 표본 부족: {outcome.required}건이 필요한데 {outcome.checked}건만 통과했다")
+        print(f"[기록] {target} (status: fail)")
+        return 1
+    print(f"역방향 검증 통과 ({command}): {outcome.checked}건")
+    print(f"[기록] {target} (status: pass)")
+    return 0
 
 
 def main() -> int:
@@ -1200,9 +1424,17 @@ def main() -> int:
     )
     parser.add_argument("--actual", type=Path, help="verify-crypto / verify-jwt 입력 JSON")
     parser.add_argument(
+        "--fixture",
+        type=Path,
+        help=(
+            "요청 케이스를 읽을 fixture JSON. 주면 검증이 요청(키·평문·subject)과 결합된다. "
+            "생략하면 산출물 자체만 본다"
+        ),
+    )
+    parser.add_argument(
         "--proof",
         type=Path,
-        help="실행 증거 파일 경로 (기본: --actual 과 같은 디렉터리의 verify-*.verified.json)",
+        help="실행 기록 파일 경로 (기본: --actual 과 같은 디렉터리의 verify-*.verified.json)",
     )
     parser.add_argument("--list", action="store_true", help="도메인 목록만 출력")
     args = parser.parse_args()
@@ -1211,11 +1443,10 @@ def main() -> int:
         for name, builder in BUILDERS.items():
             print(f"{name:16} {summary(builder)}")
         return 0
-    if args.command in PROOF_NAMES:
+    if args.command in VERIFIERS:
         if args.actual is None:
             parser.error(f"{args.command}에는 --actual 이 필요합니다")
-        verify = verify_crypto if args.command == "verify-crypto" else verify_jwt
-        return verify(args.actual, args.proof)
+        return run_verification(args.command, args.actual, args.fixture, args.proof)
 
     unknown = [d for d in args.domain if d not in BUILDERS]
     if unknown:

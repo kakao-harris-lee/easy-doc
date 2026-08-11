@@ -1,0 +1,851 @@
+openapi: 3.1.0
+info:
+  title: Easy-Read AI
+  version: 0.1.0
+paths:
+  /auth/signup:
+    post:
+      tags:
+      - auth
+      summary: Signup
+      description: '이메일과 비밀번호로 계정을 만든다.
+
+
+        응답에 이메일이 실리므로 캐시 금지 헤더를 붙인다(PRIVATE_RESPONSE_HEADERS).'
+      operationId: signup_auth_signup_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SignupRequest'
+        required: true
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /auth/login:
+    post:
+      tags:
+      - auth
+      summary: Login
+      description: '자격증명을 확인하고 액세스 토큰을 발급한다.
+
+
+        응답 본문이 액세스 토큰 자체다 — 캐시된 사본이 다른 사용자에게 나가면 그대로 계정
+
+        탈취가 되므로 문서 응답과 같은 캐시 금지 헤더를 붙인다(PRIVATE_RESPONSE_HEADERS).'
+      operationId: login_auth_login_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /auth/me:
+    get:
+      tags:
+      - auth
+      summary: Read Me
+      description: '토큰이 가리키는 사용자 정보를 돌려준다.
+
+
+        가입과 같은 응답 스키마라 이메일이 그대로 실린다 — 캐시 금지 헤더도 같이 붙인다
+
+        (PRIVATE_RESPONSE_HEADERS).'
+      operationId: read_me_auth_me_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+      security:
+      - HTTPBearer: []
+  /documents:
+    post:
+      tags:
+      - documents
+      summary: Create Document
+      description: '문서를 등록하고 변환을 요청한다 (202 — 결과는 변환 조회로 확인한다).
+
+
+        두 가지 입력을 받는다: JSON `{"text": ..., "title": ...}` 또는 `file` 파트를 담은
+
+        multipart. Content-Type으로 가른다.'
+      operationId: create_document_documents_post
+      security:
+      - HTTPBearer: []
+      responses:
+        '202':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentCreatedResponse'
+    get:
+      tags:
+      - documents
+      summary: List Documents
+      description: '내 문서를 최신순으로 돌려준다 (각 문서의 최신 변환 상태 포함).
+
+
+        `workspace_id`를 주면 그 작업 공간만 본다. 내 것이 아닌 식별자는 404다 — 빈 목록으로
+
+        답하면 남의 작업 공간이 존재하는지 확인하는 수단이 된다.
+
+
+        본문은 싣지 않지만 제목이 본문 첫 줄에서 유도한 사용자 콘텐츠라, 조회·내보내기와
+
+        같은 캐시 금지 헤더를 붙인다(PRIVATE_RESPONSE_HEADERS).'
+      operationId: list_documents_documents_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 100
+          minimum: 1
+          default: 20
+          title: Limit
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+          title: Offset
+      - name: workspace_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Workspace Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentListResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /documents/{document_id}:
+    delete:
+      tags:
+      - documents
+      summary: Delete Document
+      description: '문서와 그 변환 결과를 즉시 파기한다. 내 것이 아니면 404.
+
+
+        응답 모델을 두지 않는 이유: 204에는 본문이 없다. 지운 내용을 되돌려 주면 방금
+
+        파기한 문서를 다시 밖으로 내보내는 셈이라, 삭제 확인은 상태 코드로만 한다.'
+      operationId: delete_document_documents__document_id__delete
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: document_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Document Id
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /conversions/{conversion_id}:
+    get:
+      tags:
+      - documents
+      summary: Read Conversion
+      description: '변환 상태와 결과를 돌려준다. 내 것이 아니면 404(있다는 사실도 알리지 않는다).
+
+
+        응답에 마스킹 원문이 실리므로 캐시 금지 헤더를 붙인다(PRIVATE_RESPONSE_HEADERS).'
+      operationId: read_conversion_conversions__conversion_id__get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: conversion_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Conversion Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConversionResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    put:
+      tags:
+      - documents
+      summary: Update Conversion
+      description: '담당자가 고친 검수 수정본을 저장한다 (AI 초안은 그대로 남는다).
+
+
+        아직 완료되지 않은 변환이면 409다 — 없는 것이 아니라 지금이 아닐 뿐이라는 뜻이다.
+
+
+        조회와 **같은 응답 스키마**라 마스킹 원문이 그대로 실린다 — 캐시 금지 헤더도 같이
+
+        붙인다(PRIVATE_RESPONSE_HEADERS).'
+      operationId: update_conversion_conversions__conversion_id__put
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: conversion_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Conversion Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConversionReviewRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConversionResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /conversions/{conversion_id}/export:
+    get:
+      tags:
+      - documents
+      summary: Export Conversion
+      description: '검수 완료 문서를 파일로 내려준다 (docx | txt | hwpx).
+
+
+        **이 응답에만 마스킹 자리표시자가 원문으로 복원되어 실린다** — 담당자가 그대로
+
+        배포할 최종 산출물이기 때문이다(사유는 app/easyread/export.py). 목록에 없는
+
+        형식은 쿼리 검증에서 422로 걸린다.
+
+
+        응답 모델을 두지 않는 이유: 본문이 JSON이 아니라 파일 바이트다. 무엇이 나가는지는
+
+        미디어 타입과 Content-Disposition으로 알린다.'
+      operationId: export_conversion_conversions__conversion_id__export_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: conversion_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Conversion Id
+      - name: format
+        in: query
+        required: true
+        schema:
+          $ref: '#/components/schemas/ExportFormat'
+      responses:
+        '200':
+          description: 검수 완료 문서 파일 (자리표시자가 원문으로 복원된 최종 산출물)
+          content:
+            application/json:
+              schema: {}
+            application/vnd.openxmlformats-officedocument.wordprocessingml.document: {}
+            text/plain; charset=utf-8: {}
+            application/hwp+zip: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /workspaces:
+    get:
+      tags:
+      - workspaces
+      summary: List Workspaces
+      description: '내 작업 공간을 만든 순서대로 돌려준다 (각 공간의 문서 수 포함).
+
+
+        이름은 사용자가 적은 콘텐츠라 문서 목록과 같은 캐시 금지 헤더를 붙인다.'
+      operationId: list_workspaces_workspaces_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspaceListResponse'
+      security:
+      - HTTPBearer: []
+    post:
+      tags:
+      - workspaces
+      summary: Create Workspace
+      description: 작업 공간을 만든다. 같은 이름이 이미 있으면 409.
+      operationId: create_workspace_workspaces_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WorkspaceNameRequest'
+        required: true
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspaceResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
+  /workspaces/{workspace_id}:
+    patch:
+      tags:
+      - workspaces
+      summary: Rename Workspace
+      description: '작업 공간 이름을 바꾼다. 내 것이 아니면 404, 같은 이름이 이미 있으면 409.
+
+
+        PUT이 아니라 PATCH인 이유: 바꾸는 것이 이름 하나뿐이라, 전체 표현을 보내는 PUT은
+
+        클라이언트가 나머지 필드(만든 시각 등)까지 실어 보내야 한다는 뜻이 된다.'
+      operationId: rename_workspace_workspaces__workspace_id__patch
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: workspace_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Workspace Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WorkspaceNameRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspaceResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - workspaces
+      summary: Delete Workspace
+      description: '빈 작업 공간을 지운다. 내 것이 아니면 404.
+
+
+        문서가 남아 있거나 마지막 하나면 409다 — 요청 자체는 올바르고, 사용자가 취할
+
+        조치(문서를 옮기거나 지우기)가 422와 다르다.
+
+
+        응답 모델을 두지 않는 이유: 204에는 본문이 없다(문서 삭제와 같은 규칙).'
+      operationId: delete_workspace_workspaces__workspace_id__delete
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: workspace_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Workspace Id
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /health:
+    get:
+      summary: Health
+      description: 서비스 생존 확인.
+      operationId: health_health_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+components:
+  schemas:
+    ConversionResponse:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+        document_id:
+          type: string
+          format: uuid
+          title: Document Id
+        status:
+          type: string
+          title: Status
+        easy_text:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Easy Text
+        edited_text:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Edited Text
+        reviewed_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Reviewed At
+        masked_items:
+          items:
+            $ref: '#/components/schemas/MaskedItemResponse'
+          type: array
+          title: Masked Items
+          default: []
+        missing_placeholders:
+          items:
+            type: string
+          type: array
+          title: Missing Placeholders
+          default: []
+        model:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Model
+        provider_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Provider Name
+        input_tokens:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Input Tokens
+        output_tokens:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Output Tokens
+        failure_code:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Failure Code
+      type: object
+      required:
+      - id
+      - document_id
+      - status
+      title: ConversionResponse
+      description: 변환 상태·결과. 완료 전에는 결과 필드가 모두 비어 있다.
+    ConversionReviewRequest:
+      properties:
+        edited_text:
+          type: string
+          title: Edited Text
+      type: object
+      required:
+      - edited_text
+      title: ConversionReviewRequest
+      description: 검수 수정본 저장 요청. 길이·공백 규칙은 서비스가 판단한다.
+    DocumentCreatedResponse:
+      properties:
+        document_id:
+          type: string
+          format: uuid
+          title: Document Id
+        conversion_id:
+          type: string
+          format: uuid
+          title: Conversion Id
+        status:
+          type: string
+          title: Status
+        char_count:
+          type: integer
+          title: Char Count
+      type: object
+      required:
+      - document_id
+      - conversion_id
+      - status
+      - char_count
+      title: DocumentCreatedResponse
+      description: 업로드 접수 응답. 변환은 아직 시작되지 않았다(202).
+    DocumentListItem:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+        title:
+          type: string
+          title: Title
+        source_format:
+          type: string
+          title: Source Format
+        char_count:
+          type: integer
+          title: Char Count
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+        retention_expires_at:
+          type: string
+          format: date-time
+          title: Retention Expires At
+        conversion_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Conversion Id
+        status:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Status
+        reviewed_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Reviewed At
+      type: object
+      required:
+      - id
+      - title
+      - source_format
+      - char_count
+      - created_at
+      - retention_expires_at
+      title: DocumentListItem
+      description: 문서 목록 한 줄 (문서 메타 + 최신 변환 상태).
+    DocumentListResponse:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/DocumentListItem'
+          type: array
+          title: Items
+        limit:
+          type: integer
+          title: Limit
+        offset:
+          type: integer
+          title: Offset
+        has_more:
+          type: boolean
+          title: Has More
+      type: object
+      required:
+      - items
+      - limit
+      - offset
+      - has_more
+      title: DocumentListResponse
+      description: 문서 목록 응답. 총 개수는 싣지 않는다(전수 count는 목록 조회마다 비싸다).
+    ExportFormat:
+      type: string
+      enum:
+      - docx
+      - txt
+      - hwpx
+      title: ExportFormat
+      description: '내보내기 파일 형식. 값이 그대로 확장자이자 쿼리 파라미터 값이다.
+
+
+        pdf와 구버전 hwp(바이너리)는 Lean MVP 범위 밖이다. 여기에 이름이 없는 형식은
+
+        라우터의 쿼리 검증에서 422로 걸린다.'
+    HTTPValidationError:
+      properties:
+        detail:
+          items:
+            $ref: '#/components/schemas/ValidationError'
+          type: array
+          title: Detail
+      type: object
+      title: HTTPValidationError
+    HealthResponse:
+      properties:
+        status:
+          type: string
+          title: Status
+      type: object
+      required:
+      - status
+      title: HealthResponse
+      description: 헬스 체크 응답.
+    LoginRequest:
+      properties:
+        email:
+          type: string
+          title: Email
+        password:
+          type: string
+          title: Password
+      type: object
+      required:
+      - email
+      - password
+      title: LoginRequest
+      description: 로그인 요청.
+    MaskedItemResponse:
+      properties:
+        category:
+          type: string
+          title: Category
+        placeholder:
+          type: string
+          title: Placeholder
+        original:
+          type: string
+          title: Original
+      type: object
+      required:
+      - category
+      - placeholder
+      - original
+      title: MaskedItemResponse
+      description: '검수 화면에 보여줄 마스킹 항목.
+
+
+        original은 가려졌던 실제 개인정보다 — 소유자 인증을 통과한 조회에서만 실린다.'
+    SignupRequest:
+      properties:
+        email:
+          type: string
+          title: Email
+        password:
+          type: string
+          title: Password
+      type: object
+      required:
+      - email
+      - password
+      title: SignupRequest
+      description: 가입 요청.
+    TokenResponse:
+      properties:
+        access_token:
+          type: string
+          title: Access Token
+        token_type:
+          type: string
+          title: Token Type
+          default: bearer
+        expires_in:
+          type: integer
+          title: Expires In
+      type: object
+      required:
+      - access_token
+      - expires_in
+      title: TokenResponse
+      description: 액세스 토큰 응답.
+    UserResponse:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+        email:
+          type: string
+          title: Email
+      type: object
+      required:
+      - id
+      - email
+      title: UserResponse
+      description: 사용자 공개 표현. password_hash는 절대 포함하지 않는다.
+    ValidationError:
+      properties:
+        loc:
+          items:
+            anyOf:
+            - type: string
+            - type: integer
+          type: array
+          title: Location
+        msg:
+          type: string
+          title: Message
+        type:
+          type: string
+          title: Error Type
+        input:
+          title: Input
+        ctx:
+          type: object
+          title: Context
+      type: object
+      required:
+      - loc
+      - msg
+      - type
+      title: ValidationError
+    WorkspaceListItem:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+        name:
+          type: string
+          title: Name
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+        document_count:
+          type: integer
+          title: Document Count
+      type: object
+      required:
+      - id
+      - name
+      - created_at
+      - document_count
+      title: WorkspaceListItem
+      description: '목록 한 줄. 문서 수는 목록에서만 준다.
+
+
+        단건 응답에 싣지 않는 이유: 방금 만든 공간은 늘 0이고, 이름만 바꾼 공간의 문서 수는
+
+        화면이 이미 알고 있다. 응답마다 COUNT를 붙이면 쓰지 않는 값을 위해 질의가 는다.'
+    WorkspaceListResponse:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/WorkspaceListItem'
+          type: array
+          title: Items
+      type: object
+      required:
+      - items
+      title: WorkspaceListResponse
+      description: 작업 공간 목록. 첫 번째 항목이 기본 작업 공간이다(가장 먼저 만든 것).
+    WorkspaceNameRequest:
+      properties:
+        name:
+          type: string
+          title: Name
+      type: object
+      required:
+      - name
+      title: WorkspaceNameRequest
+      description: 작업 공간 만들기·이름 바꾸기 요청. 길이·빈 값 규칙은 서비스가 판단한다.
+    WorkspaceResponse:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+        name:
+          type: string
+          title: Name
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+      type: object
+      required:
+      - id
+      - name
+      - created_at
+      title: WorkspaceResponse
+      description: 작업 공간 한 건 (만들기·이름 바꾸기 응답).
+  securitySchemes:
+    HTTPBearer:
+      type: http
+      scheme: bearer

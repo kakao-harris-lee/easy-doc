@@ -1,0 +1,1376 @@
+openapi: 3.1.0
+
+# =============================================================================
+# easy-doc 외부 HTTP 계약 v1 (동결)
+#
+# 이 파일이 Kotlin API 구현과 React 타입 생성의 **단일 정본**이다.
+# 계약 스펙 전문을 다른 문서에 복사하지 않는다 — 두 벌이 갈라지면 어느 쪽이 정본인지
+# 알 수 없게 된다.
+#
+# 작성 기준(2026-08-12): **현재 Python 구현의 실제 동작**이다. 계획 문서
+# `docs/plans/2026-08-11-kotlin-react-migration.md` §2.2는 의도를 적은 것이고,
+# 지켜야 하는 값은 `app/api/*.py`와 `app/main.py`에 있다. 둘이 어긋나면 코드가 이겼고,
+# 어긋난 지점은 `docs/migration/_workspace/00_contract-keeper_three-way-diff.md`에 남겼다.
+#
+# FastAPI 자동 생성 OpenAPI(`docs/migration/_workspace/00_contract-keeper_openapi-fastapi.yaml`)는
+# 초안으로만 썼다. 자동 생성물에는 401·404·409·413·502·503, 모든 응답 헤더,
+# multipart 요청 본문, CORS, status enum이 빠져 있어 손으로 채웠다.
+#
+# 이 파일의 예시 값은 전부 합성이다. 실제 사용자 데이터·개인정보를 넣지 않는다.
+# =============================================================================
+
+info:
+  title: Easy-Read AI API
+  version: "1.0.0"
+  x-frozen-at: "2026-08-12"
+  x-source-runtime: "Python 3.12 / FastAPI (app/main.py)"
+  description: |
+    공공기관용 '쉬운 글' 자동 변환 서비스의 HTTP 계약 v1.
+
+    **엔드포인트는 정확히 14개다** — 제품 13개 + 헬스 체크 1개.
+    계획 §2.2의 "14개 HTTP 엔드포인트"는 `/health`를 포함해야 맞는 수다.
+
+    ## 경로 접두사
+    애플리케이션 경로에는 `/api` 접두사가 없다. `app/api/auth.py`의
+    `APIRouter(prefix="/auth")`만 존재하고 문서·작업 공간 라우터는 접두사가 없다.
+    nginx가 `/api`로 프록시하는 구성(계획 §5 Phase 6)은 **배포 구성 항목**이며
+    이 스펙이 정하는 애플리케이션 경로와 별개다.
+
+    ## 오류 본문 계약
+    모든 오류 응답의 최상위 키는 `detail` **하나뿐**이고, `Content-Type`은
+    `application/json`이다 (`application/problem+json` 아님).
+    `detail`은 **문자열 또는 객체 배열의 union**이다:
+      - 도메인 예외 → 문자열(한국어 사용자 문구)
+      - 입력 검증 실패(422) → `[{loc, msg, type}]` 객체 배열
+    React `frontend/src/api/client.ts`의 `readErrorMessage`가 두 모양을 모두
+    분기 처리하므로, 한쪽만 구현하면 화면에서 진짜 사유가 사라지고 폴백 문구만 나온다.
+    Spring 기본 `ProblemDetail`을 그대로 노출하면 계약 위반이다(계획 §2.2).
+
+    ## 422 응답의 입력값 에코 금지
+    검증 실패 응답 항목에 `input`·`ctx` 키를 **넣지 않는다**. FastAPI 기본 핸들러는
+    넣지만 `app/api/errors.py`의 `_handle_request_validation`이 걷어낸다 —
+    비밀번호가 응답 본문과 액세스 로그에 남는 경로이기 때문이다.
+    실측 확인(2026-08-12): `POST /auth/signup` 본문에서 `password`를 빼면
+    `{"detail": [{"loc": ["body", "password"], "msg": "Field required", "type": "missing"}]}`.
+
+    ## 소유권 은닉
+    다른 사용자의 자원은 **403이 아니라 404**다. 없는 자원과 남의 자원을 구분하지
+    않는다 — 구분하면 식별자의 존재 여부가 새어 나간다. 403이 새면 스타일 문제가
+    아니라 보안 계약 위반이다(계획 §5 Phase 7 즉시 중단 기준).
+
+    ## 인증 실패와 입력 검증의 우선순위
+    **인증이 먼저다.** 실측 확인(2026-08-12): 위조 토큰으로 `GET /documents?limit=0`,
+    `DELETE /documents/not-a-uuid`, `GET /conversions/{id}/export?format=pdf`를
+    호출하면 셋 다 422가 아니라 **401**이 나온다. Kotlin 구현에서 Bean Validation이
+    보안 필터보다 먼저 돌면 이 순서가 뒤집혀 계약 위반이 된다.
+
+    ## 필드 이름
+    모든 JSON 필드는 **snake_case**다. Jackson 기본 네이밍 전략이 camelCase로 바꾸면
+    계약 위반이다. 식별자는 UUID 문자열, 시각은 ISO 8601 문자열이다.
+
+servers:
+  - url: http://localhost:8000
+    description: 개발 서버 (React는 VITE_API_BASE_URL로 주입받는다)
+
+# -----------------------------------------------------------------------------
+# CORS 정책 — OpenAPI로 표현할 수 없어 확장 필드로 둔다.
+# 원본: app/main.py의 CORSMiddleware 설정.
+# -----------------------------------------------------------------------------
+x-cors:
+  allow_origins:
+    - http://localhost:5173   # Settings.cors_origins 기본값 (app/config.py:24)
+  allow_credentials: false     # 쿠키를 쓰지 않는다 — 켜면 CSRF 노출 면적만 넓어진다
+  allow_methods: [GET, POST, PUT, PATCH, DELETE]  # OPTIONS는 미들웨어가 스스로 처리
+  allow_headers: [Authorization, Content-Type]
+  expose_headers: [Content-Disposition, Location]
+  x-note: |
+    expose_headers가 빠지면 서버 응답은 완전한데 **브라우저 JS만** 헤더를 못 읽는다.
+    다운로드 파일명(Content-Disposition)과 접수 주소(Location)가 그 대상이다.
+    서버 테스트로는 잡히지 않으므로 브라우저 컨텍스트에서 확인한다.
+  x-known-limitation: |
+    미처리 500 응답에는 CORS 헤더가 붙지 않는다. `ServerErrorMiddleware`가 CORS
+    미들웨어 **바깥**에 있어 구조적으로 붙지 않기 때문이다(app/api/errors.py에 한계로
+    명시). 브라우저는 상태 코드조차 읽지 못하고 네트워크 오류로 본다.
+    **Kotlin에서 이 제약을 동등하게 재현할지 개선할지는 미결이다** — 리더 판단 대기
+    (api-contract-freeze §2.7 미결 3). 개선을 택하면 React가 지금 네트워크 오류로
+    보던 상황을 500으로 보게 되므로 화면 분기가 달라진다.
+
+# -----------------------------------------------------------------------------
+# 인증 계약
+# 원본: app/services/auth.py, app/api/deps.py
+# -----------------------------------------------------------------------------
+x-auth:
+  scheme: "Authorization: Bearer <token>"
+  algorithm: HS256
+  claims: [sub, exp, typ]        # 세 개뿐. 이메일 등 개인정보를 넣지 않는다
+  claim_sub: "사용자 UUID 문자열"
+  claim_typ: "access"            # 값이 다르면 거부
+  required_claims: [sub, exp, typ]  # 모두 있어야 유효. exp 없는 토큰은 영구 자격증명이 된다
+  min_secret_bytes: 32           # HS256 해시 출력 크기. 미만이면 ConfigurationError → 503
+  default_lifetime_seconds: 3600 # Settings.jwt_expire_minutes 기본 60분
+  password_hash: "argon2id (time_cost=3, memory_cost=65536, parallelism=4)"
+  rehash_policy: |
+    로그인 **성공 시에만** 파라미터가 낡은 해시를 재해시한다. 기존 PHC 문자열은 그대로
+    검증 가능해야 한다. 재해시 실패는 로그인을 막지 않는다(best-effort).
+  failure_uniformity: |
+    이메일 부재·비밀번호 불일치·토큰 만료·위조·계정 삭제를 **모두 같은 401과 같은
+    메시지**로 처리한다. 구분하면 계정 열거 공격의 단서가 된다. 사용자가 없을 때도
+    더미 해시로 같은 검증 비용을 치러 응답 시간으로도 새지 않게 한다.
+
+# -----------------------------------------------------------------------------
+# 입력 상한 — 전부 계약이다.
+# -----------------------------------------------------------------------------
+x-input-limits:
+  max_convertible_chars: 4000        # app/services/documents.py MAX_CONVERTIBLE_CHARS → 초과 시 422
+  max_review_chars: 4000             # 검수 수정본도 같은 상한 → 초과 시 422
+  max_upload_bytes: 10485760         # app/ingest/extractors.py MAX_UPLOAD_BYTES (10 * 1024 * 1024) → 초과 시 413
+  max_extracted_chars: 500000        # 추출 결과 상한 → 초과 시 422
+  zip_uncompressed_budget_bytes: 52428800  # 업로드 상한의 5배. 초과 시 422 (압축 폭탄 방어)
+  supported_upload_formats: [docx, pdf, hwpx]  # 확장자 대소문자 무시. 그 밖은 422
+  legacy_doc_policy: |
+    구버전 `.doc`(OLE2)은 전용 안내 문구와 함께 422다 —
+    "구버전 doc 형식은 지원하지 않습니다 (docx로 다시 저장해 올려주세요)".
+  rejected_pdf: "텍스트 레이어 없는 스캔 PDF·암호화 PDF는 422"
+  list_limit: { min: 1, max: 100, default: 20 }   # 범위 밖은 422
+  list_offset: { min: 0, default: 0 }             # 범위 밖은 422
+  max_workspace_name_length: 50      # 초과 시 422 (자르지 않고 거절)
+  max_title_length: 255              # 사용자가 준 제목은 자른다(거절하지 않는다)
+  retention_days: 30
+
+# -----------------------------------------------------------------------------
+# 캐시 금지 헤더가 붙는 자리 — 정확히 10곳.
+# 검증: grep -rn "headers.update(PRIVATE_RESPONSE_HEADERS)\|\*\*PRIVATE_RESPONSE_HEADERS" app/api/ | wc -l  → 10
+# -----------------------------------------------------------------------------
+x-private-response-headers:
+  headers:
+    Cache-Control: no-store
+    X-Content-Type-Options: nosniff
+  applies_to:
+    - "POST /auth/signup"              # 이메일이 실린다
+    - "POST /auth/login"               # 응답 본문이 Bearer 토큰 자체다
+    - "GET /auth/me"                   # 이메일이 실린다
+    - "GET /documents"                 # 제목이 본문 첫 줄에서 유도한 사용자 콘텐츠다
+    - "GET /conversions/{conversion_id}"       # masked_items[].original에 실제 개인정보
+    - "PUT /conversions/{conversion_id}"       # GET과 같은 응답 스키마
+    - "GET /conversions/{conversion_id}/export"  # 자리표시자가 원문으로 복원된 최종본
+    - "GET /workspaces"                # 작업 공간 이름도 사용자가 적은 콘텐츠
+    - "POST /workspaces"
+    - "PATCH /workspaces/{workspace_id}"
+  does_not_apply_to:
+    - "DELETE /documents/{document_id} (204)"
+    - "DELETE /workspaces/{workspace_id} (204)"
+    - "GET /health"
+    - "모든 오류 응답 (4xx·5xx)"
+  x-rationale: |
+    DELETE 204와 오류 응답에는 붙이지 않는 것이 **현행 동작이자 동결된 계약**이다
+    (api-contract-freeze §2.7 해결 3 — 오류 본문에 개인정보가 없음을 실측 확인).
+    실측 확인(2026-08-12): 401·422 응답 헤더에 cache-control이 없다.
+    Kotlin에서 전역 필터로 모든 응답에 붙이면 계약보다 넓어진다 — 보안상 더 안전한
+    방향이라 즉시 위반은 아니지만, parity 대조가 불일치로 잡으므로 리더 승인 없이
+    범위를 넓히지 않는다.
+    반대로 위 10곳 중 하나라도 빠지면 **계약 위반**이다. 200 OK로 나타나는 보안
+    사고이므로 본문 검증으로는 절대 잡히지 않는다.
+
+tags:
+  - name: auth
+    description: 가입·로그인·내 정보
+  - name: documents
+    description: 문서 업로드·목록·변환 결과 조회·검수·내보내기
+  - name: workspaces
+    description: 작업 공간 목록·만들기·이름 바꾸기·삭제
+  - name: health
+    description: 생존 확인 (인증 불필요)
+
+paths:
+
+  # ===========================================================================
+  # #1 POST /auth/signup — 201
+  # 원본: app/api/auth.py::signup
+  # ===========================================================================
+  /auth/signup:
+    post:
+      tags: [auth]
+      operationId: signup
+      summary: 계정을 만든다 (기본 작업 공간도 함께 생성된다)
+      security: []          # 인증 불필요
+      description: |
+        가입은 계정과 **기본 작업 공간**을 같은 트랜잭션에서 만든다. 나눠 커밋하면
+        계정만 있고 작업 공간이 없는 사용자가 생겨 첫 업로드가 갈 곳을 잃는다.
+        기본 작업 공간 이름은 `기본 작업 공간`(app/models/workspace.py).
+
+        입력 규칙: 이메일은 공백 제거 + 소문자 정규화 후 형식 검사(최대 255자),
+        비밀번호는 최소 8자. 위반은 **도메인 예외 → 422 문자열 detail**이며,
+        Pydantic 필드 누락은 **422 배열 detail**이다. 같은 상태 코드에 두 모양이
+        모두 나오므로 union 처리가 필수다.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SignupRequest' }
+      responses:
+        '201':
+          description: 계정 생성됨
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CacheControlNoStore' }
+            X-Content-Type-Options: { $ref: '#/components/headers/XContentTypeOptions' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UserResponse' }
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '500': { $ref: '#/components/responses/InternalError' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+
+  # ===========================================================================
+  # #2 POST /auth/login — 200
+  # 원본: app/api/auth.py::login
+  # ===========================================================================
+  /auth/login:
+    post:
+      tags: [auth]
+      operationId: login
+      summary: 자격증명을 확인하고 액세스 토큰을 발급한다
+      security: []
+      description: |
+        **응답 본문이 액세스 토큰 자체다.** 캐시된 사본 하나가 그대로 계정 탈취
+        수단이 되므로 캐시 금지 헤더가 반드시 붙는다.
+        실패는 401이며 이메일 부재와 비밀번호 불일치를 구분하지 않는다.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LoginRequest' }
+      responses:
+        '200':
+          description: 토큰 발급됨
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CacheControlNoStore' }
+            X-Content-Type-Options: { $ref: '#/components/headers/XContentTypeOptions' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TokenResponse' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '500': { $ref: '#/components/responses/InternalError' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+
+  # ===========================================================================
+  # #3 GET /auth/me — 200
+  # 원본: app/api/auth.py::read_me
+  # ===========================================================================
+  /auth/me:
+    get:
+      tags: [auth]
+      operationId: readMe
+      summary: 토큰이 가리키는 사용자 정보
+      security: [{ HTTPBearer: [] }]
+      responses:
+        '200':
+          description: 사용자 정보
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CacheControlNoStore' }
+            X-Content-Type-Options: { $ref: '#/components/headers/XContentTypeOptions' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UserResponse' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500': { $ref: '#/components/responses/InternalError' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+
+  # ===========================================================================
+  # #4 POST /documents — 202 (201 아님 — 변환은 아직 시작 전)
+  # 원본: app/api/documents.py::create_document
+  # ===========================================================================
+  /documents:
+    post:
+      tags: [documents]
+      operationId: createDocument
+      summary: 문서를 등록하고 변환을 요청한다 (접수만 한다)
+      security: [{ HTTPBearer: [] }]
+      description: |
+        한 엔드포인트가 **두 가지 입력**을 받는다. `Content-Type`으로 가르며 비교는
+        대소문자를 가리지 않는다(RFC 9110) — `Multipart/Form-Data`가 JSON 경로로
+        새면 안 된다.
+
+        1. `application/json` — 붙여넣기 모드 (`text`, `title?`, `workspace_id?`)
+        2. `multipart/form-data` — 파일 모드 (`file`, `title?`, `workspace_id?`)
+
+        **FastAPI 자동 생성 OpenAPI에는 이 요청 본문이 아예 없다.** 라우터가
+        `Request`를 직접 읽어 파싱하기 때문이다(본문은 한 번만 읽을 수 있어 두 방식을
+        동시에 선언할 수 없다). 아래 스키마는 라우터 코드를 읽고 손으로 적은 것이다.
+
+        `workspace_id`를 주지 않으면 기본(가장 먼저 만든) 작업 공간에 담긴다.
+        남의 `workspace_id`는 **404**다 — 빈 목록으로 답하면 남의 작업 공간 존재를
+        확인하는 수단이 된다.
+
+        검사 순서(app/services/documents.py): 파일 크기(413) → 추출(422) →
+        본문 길이(422) → 작업 공간 소유권(404) → 저장 → 커밋 → 큐 등록(502).
+        작업 공간 확인이 저장보다 **먼저**여야 거절당한 업로드가 기본 공간에 남지 않는다.
+
+        큐 등록에 실패하면 이미 커밋된 변환을 `failure_code = "EnqueueFailed"`로
+        표시한 뒤 **502**를 낸다. 등록은 작업 id를 변환 id로 고정해 멱등하다.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DocumentTextRequest' }
+          multipart/form-data:
+            schema: { $ref: '#/components/schemas/DocumentFileRequest' }
+            encoding:
+              file:
+                contentType: >-
+                  application/vnd.openxmlformats-officedocument.wordprocessingml.document,
+                  application/pdf,
+                  application/hwp+zip
+      responses:
+        '202':
+          description: |
+            접수됨. 변환은 아직 시작되지 않았다 — `Location`이 가리키는 주소에서
+            상태를 확인한다.
+          headers:
+            Location:
+              description: |
+                `/conversions/{conversion_id}` 형식. 클라이언트가 폴링 주소를 스스로
+                조립하지 않아도 되게 하는 표준 헤더다. **CORS `expose_headers`에
+                포함되어야 브라우저 JS가 읽을 수 있다.**
+              required: true
+              schema: { type: string, examples: ["/conversions/00000000-0000-4000-8000-000000000001"] }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DocumentCreatedResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404':
+          description: 지정한 작업 공간이 없거나 내 것이 아니다 (403 아님)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+              examples:
+                workspace_not_found:
+                  value: { detail: "작업 공간을 찾을 수 없습니다" }
+        '413': { $ref: '#/components/responses/PayloadTooLarge' }
+        '422':
+          description: |
+            빈 본문 · 4,000자 초과 · 지원하지 않는 형식 · 추출 실패 · 잘못된 JSON ·
+            `workspace_id` 형식 오류 · 필드 누락.
+            앞의 것들은 문자열 detail, 마지막은 배열 detail이다.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+              examples:
+                empty_body:
+                  value: { detail: "본문이 비어 있습니다" }
+                too_long:
+                  value: { detail: "현재는 4,000자 이하 문서만 변환할 수 있습니다 (긴 문서 분할 변환은 준비 중입니다)" }
+                unsupported_format:
+                  value: { detail: "지원 형식: docx, pdf, hwpx" }
+                missing_field:
+                  value: { detail: [{ loc: ["body", "text"], msg: "Field required", type: "missing" }] }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '502': { $ref: '#/components/responses/BadGateway' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+
+    # =========================================================================
+    # #5 GET /documents — 200
+    # 원본: app/api/documents.py::list_documents
+    # =========================================================================
+    get:
+      tags: [documents]
+      operationId: listDocuments
+      summary: 내 문서를 최신순으로 조회한다
+      security: [{ HTTPBearer: [] }]
+      description: |
+        소유자 범위로만 조회한다. 총 개수는 싣지 않고 `has_more`로 다음 쪽 유무만
+        알린다(전수 count는 목록 조회마다 비싸다).
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+        - name: offset
+          in: query
+          required: false
+          schema: { type: integer, minimum: 0, default: 0 }
+        - name: workspace_id
+          in: query
+          required: false
+          description: 주면 그 작업 공간만 본다. 내 것이 아니면 404.
+          schema:
+            anyOf:
+              - { type: string, format: uuid }
+              - { type: 'null' }
+      responses:
+        '200':
+          description: 문서 목록
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CacheControlNoStore' }
+            X-Content-Type-Options: { $ref: '#/components/headers/XContentTypeOptions' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DocumentListResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404':
+          description: 지정한 작업 공간이 없거나 내 것이 아니다
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '500': { $ref: '#/components/responses/InternalError' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+
+  # ===========================================================================
+  # #6 DELETE /documents/{document_id} — 204
+  # 원본: app/api/documents.py::delete_document
+  # ===========================================================================
+  /documents/{document_id}:
+    delete:
+      tags: [documents]
+      operationId: deleteDocument
+      summary: 문서와 변환 결과를 즉시 파기한다
+      security: [{ HTTPBearer: [] }]
+      description: |
+        보존 기간(30일)을 기다리지 않는 즉시 파기 경로다(master-plan 3.2).
+        복구 수단은 없다.
+
+        **본문이 없다.** 지운 내용을 되돌려 주면 방금 파기한 문서를 다시 밖으로
+        내보내는 셈이므로 삭제 확인은 상태 코드로만 한다.
+        캐시 금지 헤더도 붙이지 않는다(본문이 없어 캐시될 내용이 없다).
+      parameters:
+        - name: document_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '204':
+          description: 파기됨. 본문 길이 0.
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404':
+          description: 없거나 내 것이 아니다 (403 아님 — 존재 자체를 숨긴다)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+              examples:
+                not_found: { value: { detail: "문서를 찾을 수 없습니다" } }
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '500': { $ref: '#/components/responses/InternalError' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+
+  # ===========================================================================
+  # #7 GET /conversions/{conversion_id} — 200
+  # #8 PUT /conversions/{conversion_id} — 200
+  # 원본: app/api/documents.py::read_conversion, ::update_conversion
+  # ===========================================================================
+  /conversions/{conversion_id}:
+    parameters:
+      - name: conversion_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [documents]
+      operationId: readConversion
+      summary: 변환 상태와 결과를 조회한다
+      security: [{ HTTPBearer: [] }]
+      description: |
+        **`masked_items[].original`에 가려졌던 실제 개인정보가 실린다** — 소유자 인증을
+        통과한 조회에서만 나간다. 그래서 캐시 금지 헤더가 필수다.
+        완료(`done`) 전에는 `easy_text`·`edited_text`·`masked_items`가 비어 있고
+        상태와 `failure_code`만 나간다.
+      responses:
+        '200':
+          description: 변환 상태·결과
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CacheControlNoStore' }
+            X-Content-Type-Options: { $ref: '#/components/headers/XContentTypeOptions' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ConversionResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404':
+          description: 없거나 내 것이 아니다
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+              examples:
+                not_found: { value: { detail: "변환 결과를 찾을 수 없습니다" } }
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '500': { $ref: '#/components/responses/InternalError' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+    put:
+      tags: [documents]
+      operationId: updateConversion
+      summary: 담당자 검수 수정본을 저장한다
+      security: [{ HTTPBearer: [] }]
+      description: |
+        **AI 초안(`easy_text`)은 그대로 남는다.** 수정률 KPI(master-plan 7장)가 둘의
+        차이를 재므로 초안을 덮어쓰면 기준선이 사라지고 되살릴 수 없다.
+
+        아직 `done`이 아니면 **409**다 — 없는 것이 아니라 지금이 아닐 뿐이라는 뜻이며
+        사용자가 취할 조치가 422와 다르다(기다렸다 다시).
+
+        저장 전에 제어문자를 걷어낸 뒤 빈 값·길이를 판정한다 — "제어문자만 담긴
+        수정본"이 빈 수정본과 같은 취급을 받아야 하고, XML(docx)이 담지 못하는 문자를
+        저장해 두면 내보내기 시점에야 터지기 때문이다.
+
+        **응답은 GET과 같은 스키마다** — 따라서 캐시 금지 헤더도 GET과 같다
+        (api-contract-freeze §2.7 해결 1: 2026-08-11에 구현을 고쳐 계약으로 확정).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ConversionReviewRequest' }
+      responses:
+        '200':
+          description: 저장됨 (갱신된 조회 결과)
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CacheControlNoStore' }
+            X-Content-Type-Options: { $ref: '#/components/headers/XContentTypeOptions' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ConversionResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404':
+          description: 없거나 내 것이 아니다
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '409':
+          description: 아직 완료되지 않은 변환이다
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+              examples:
+                not_done: { value: { detail: "변환이 끝난 뒤에 수정할 수 있습니다" } }
+        '422':
+          description: 수정본이 비었거나 4,000자를 넘었다 / 필드 누락
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+              examples:
+                empty: { value: { detail: "수정본이 비어 있습니다" } }
+                too_long: { value: { detail: "수정본은 4,000자 이하여야 합니다 (긴 문서 분할 변환은 준비 중입니다)" } }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+
+  # ===========================================================================
+  # #9 GET /conversions/{conversion_id}/export — 200 (파일)
+  # 원본: app/api/documents.py::export_conversion
+  # ===========================================================================
+  /conversions/{conversion_id}/export:
+    get:
+      tags: [documents]
+      operationId: exportConversion
+      summary: 검수 완료 문서를 파일로 내려받는다
+      security: [{ HTTPBearer: [] }]
+      description: |
+        **이 응답에만 마스킹 자리표시자가 원문으로 복원되어 실린다** — 담당자가 그대로
+        배포할 최종 산출물이기 때문이다(app/easyread/export.py). 마스킹 선행 불변식의
+        유일한 예외이며, 다른 어떤 경로도 복원본을 만들지 않는다.
+
+        본문 선택 규칙: 검수본이 있으면 그것이 최종본이고, 없으면 AI 초안이다
+        (`edited_text ?? easy_text`).
+
+        409가 나는 경우가 둘이다:
+          1. 아직 완료되지 않아 내보낼 결과가 없다
+          2. 검수본이 없는데 `missing_placeholders`가 비어 있지 않다 — 자리표시자가
+             결과에서 사라졌다는 것은 그 자리의 정보가 통째로 빠졌다는 뜻이라,
+             검수를 거치지 않은 초안을 그대로 배포하게 둘 수 없다. 검수본이 있으면
+             막지 않는다(최종 판단은 담당자 몫 — HITL).
+      parameters:
+        - name: conversion_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: format
+          in: query
+          required: true
+          description: |
+            **필수 파라미터다.** 목록에 없는 값(`pdf`·구버전 `hwp` 등)은 422다.
+          schema: { $ref: '#/components/schemas/ExportFormat' }
+      responses:
+        '200':
+          description: |
+            파일 바이트. 미디어 타입은 `format`에 따라 셋 중 하나다.
+            `txt`의 `charset=utf-8`은 필수다 — 없으면 브라우저가 로캘 기본 인코딩으로
+            열어 한글이 깨진다(BOM 없이 UTF-8로 내보내기 때문).
+          headers:
+            Content-Disposition:
+              description: |
+                `attachment; filename="easy-read.<ext>"; filename*=UTF-8''<percent-encoded>`
+
+                ASCII 대체 이름과 RFC 5987 확장을 **둘 다** 보낸다. HTTP 헤더 값은
+                latin-1만 담을 수 있어 한글 이름은 `filename*`에만 실린다.
+                React `parseFilename`이 `filename\*=UTF-8''` 부분만 읽으므로 이 부분이
+                빠지면 다운로드는 되고 파일명만 깨진다.
+                **CORS `expose_headers`에 포함되어야 브라우저 JS가 읽을 수 있다.**
+              required: true
+              schema:
+                type: string
+                examples:
+                  - "attachment; filename=\"easy-read.docx\"; filename*=UTF-8''%EC%89%AC%EC%9A%B4%20%EA%B8%80.docx"
+            Cache-Control: { $ref: '#/components/headers/CacheControlNoStore' }
+            X-Content-Type-Options: { $ref: '#/components/headers/XContentTypeOptions' }
+          content:
+            application/vnd.openxmlformats-officedocument.wordprocessingml.document:
+              schema: { type: string, format: binary }
+            text/plain; charset=utf-8:
+              schema: { type: string, format: binary }
+            application/hwp+zip:
+              schema: { type: string, format: binary }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404':
+          description: 없거나 내 것이 아니다
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '409':
+          description: 아직 완료되지 않았거나, 검수 없이 자리표시자가 유실된 초안이다
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+              examples:
+                not_done: { value: { detail: "변환이 끝난 뒤에 내려받을 수 있습니다" } }
+                missing_placeholders:
+                  value: { detail: "변환에서 유실된 개인정보 표시가 있습니다 — 검수 화면에서 수정 후 내보내세요" }
+        '422':
+          description: '`format` 누락 또는 미지원 값'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+
+  # ===========================================================================
+  # #10 GET /workspaces — 200
+  # #11 POST /workspaces — 201
+  # 원본: app/api/workspaces.py
+  # ===========================================================================
+  /workspaces:
+    get:
+      tags: [workspaces]
+      operationId: listWorkspaces
+      summary: 내 작업 공간을 만든 순서대로 조회한다
+      security: [{ HTTPBearer: [] }]
+      description: |
+        **첫 번째 항목이 기본 작업 공간이다**(가장 먼저 만든 것). 이 순서가 계약이다 —
+        Kotlin이 정렬을 바꾸면 업로드 기본 대상이 달라진다.
+        문서 수(`document_count`)는 목록 응답에만 실린다.
+      responses:
+        '200':
+          description: 작업 공간 목록
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CacheControlNoStore' }
+            X-Content-Type-Options: { $ref: '#/components/headers/XContentTypeOptions' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkspaceListResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+    post:
+      tags: [workspaces]
+      operationId: createWorkspace
+      summary: 작업 공간을 만든다
+      security: [{ HTTPBearer: [] }]
+      description: |
+        이름은 제어문자를 걷어내고 앞뒤 공백을 턴 뒤 검사한다. 빈 이름·50자 초과는 422.
+        상한을 넘는 이름은 자르지 않고 **거절한다** — 사용자가 직접 적은 이름을
+        말없이 자르면 그 사람이 담은 뜻이 사라진다(문서 제목 자동 유도와 다른 자리).
+        같은 사용자 안에서 이름은 유일하다(`uq_workspaces_user_id_name`) — 중복은 409.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WorkspaceNameRequest' }
+      responses:
+        '201':
+          description: 생성됨
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CacheControlNoStore' }
+            X-Content-Type-Options: { $ref: '#/components/headers/XContentTypeOptions' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkspaceResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409':
+          description: 같은 이름의 작업 공간이 이미 있다
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '422':
+          description: 이름이 비었거나 50자를 넘었다 / 필드 누락
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+              examples:
+                empty: { value: { detail: "작업 공간 이름을 입력해 주세요" } }
+                too_long: { value: { detail: "작업 공간 이름은 50자 이하여야 합니다" } }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+
+  # ===========================================================================
+  # #12 PATCH /workspaces/{workspace_id} — 200 (PUT 아님)
+  # #13 DELETE /workspaces/{workspace_id} — 204
+  # 원본: app/api/workspaces.py
+  # ===========================================================================
+  /workspaces/{workspace_id}:
+    parameters:
+      - name: workspace_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    patch:
+      tags: [workspaces]
+      operationId: renameWorkspace
+      summary: 작업 공간 이름을 바꾼다
+      security: [{ HTTPBearer: [] }]
+      description: |
+        **PUT이 아니라 PATCH다.** 바꾸는 것이 이름 하나뿐이라, 전체 표현을 보내는 PUT은
+        클라이언트가 나머지 필드(만든 시각 등)까지 실어 보내야 한다는 뜻이 된다.
+        메서드를 바꾸면 React `renameWorkspace`가 그대로 깨진다.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WorkspaceNameRequest' }
+      responses:
+        '200':
+          description: 이름 변경됨
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CacheControlNoStore' }
+            X-Content-Type-Options: { $ref: '#/components/headers/XContentTypeOptions' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkspaceResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404':
+          description: 없거나 내 것이 아니다
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+              examples:
+                not_found: { value: { detail: "작업 공간을 찾을 수 없습니다" } }
+        '409':
+          description: 같은 이름의 작업 공간이 이미 있다
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '422':
+          description: 이름이 비었거나 50자를 넘었다 / 필드 누락
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+    delete:
+      tags: [workspaces]
+      operationId: deleteWorkspace
+      summary: 빈 작업 공간을 지운다
+      security: [{ HTTPBearer: [] }]
+      description: |
+        **React에 호출부가 없다** — UI 범위 밖이라 의도적으로 비워 둔 것이다
+        (`frontend/src/api/client.ts`의 `renameWorkspace` 주석, `app/api/workspaces.py`
+        모듈 docstring). 계약에는 포함하되 Phase 6 타입 교체 후에도 호출 래퍼를
+        추가하지 않는다.
+
+        409가 나는 경우가 둘이다(계획 §2.3):
+          1. 문서가 남아 있다 — 되돌릴 수 없는 파기를 "정리"라는 이름으로 실행하게
+             두지 않고 무엇이 사라지는지 사용자가 먼저 보게 한다
+          2. 마지막 남은 작업 공간이다 — 전부 지우면 업로드가 갈 곳을 잃고
+             "기본 작업 공간"이라는 기준도 가리킬 대상이 없어진다
+      responses:
+        '204':
+          description: 삭제됨. 본문 길이 0.
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404':
+          description: 없거나 내 것이 아니다
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '409':
+          description: 문서가 남아 있거나 마지막 남은 작업 공간이다
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+              examples:
+                has_documents:
+                  value: { detail: "작업 공간에 문서가 남아 있습니다 — 먼저 비운 뒤 삭제해 주세요" }
+                last_one:
+                  value: { detail: "작업 공간은 적어도 하나 있어야 합니다" }
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '500': { $ref: '#/components/responses/InternalError' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+
+  # ===========================================================================
+  # #14 GET /health — 200 (인증 불필요)
+  # 원본: app/main.py::health
+  # ===========================================================================
+  /health:
+    get:
+      tags: [health]
+      operationId: health
+      summary: 서비스 생존 확인
+      security: []
+      description: |
+        인증이 필요 없고 캐시 금지 헤더도 붙지 않는다(실측 확인 2026-08-12).
+        React 화면은 이 엔드포인트를 부르지 않는다.
+
+        **현재 구현은 의존 서비스를 진단하지 않고 상수 `{"status": "ok"}`만 돌려준다.**
+        계획 §2.2 주변 서술의 "의존 서비스 상태 진단"과 어긋나며, 코드가 이겼다.
+        DB·Redis·설정이 모두 죽어도 200 ok가 나온다 — 기동 자체는 막지 않고 /health로
+        배포 상태를 진단한다는 설계 의도(app/api/deps.py 주석)가 아직 구현되지 않은
+        상태다. v1은 현행대로 동결하고, 진단 확장은 v2 후보다.
+      responses:
+        '200':
+          description: 생존
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/HealthResponse' }
+
+components:
+
+  securitySchemes:
+    HTTPBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        `Authorization: Bearer <token>`. HS256 서명, 페이로드 클레임은
+        `sub`·`exp`·`typ` 셋뿐이다. 자세한 계약은 최상위 `x-auth` 참고.
+
+  headers:
+    CacheControlNoStore:
+      description: |
+        `no-store`. 이 응답에는 개인정보 또는 자격증명이 실린다. 파일럿은 nginx가
+        프론트와 API를 같은 호스트로 서빙하는 구성이라, 누군가 proxy_cache를 켜는
+        순간 캐시된 사본이 소유자 검증 없이 다른 사용자에게 나갈 수 있다.
+      required: true
+      schema: { type: string, const: "no-store" }
+    XContentTypeOptions:
+      description: |
+        `nosniff`. 브라우저가 내용을 보고 타입을 추측하지 않게 한다 — 사용자 본문이
+        그대로 담긴 내려받기 파일이 스크립트로 해석되는 경로를 닫는다.
+      required: true
+      schema: { type: string, const: "nosniff" }
+    WWWAuthenticateBearer:
+      description: 401에 요구되는 표준 헤더. 클라이언트가 재인증 방식을 안다.
+      required: true
+      schema: { type: string, const: "Bearer" }
+
+  responses:
+
+    Unauthorized:
+      description: |
+        인증 실패. **헤더 누락·토큰 위조·만료·용도 불일치·계정 삭제를 모두 같은 401,
+        같은 메시지로 처리한다** — 어디서 실패했는지 알려주면 유효한 토큰 형식을
+        탐색하는 단서가 된다.
+
+        메시지는 두 가지가 나온다: 헤더가 아예 없으면 `"인증이 필요합니다"`,
+        토큰이 있으나 유효하지 않으면 `"이메일 또는 비밀번호가 올바르지 않습니다"`.
+        (실측 확인 2026-08-12)
+      headers:
+        WWW-Authenticate: { $ref: '#/components/headers/WWWAuthenticateBearer' }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+          examples:
+            no_header: { value: { detail: "인증이 필요합니다" } }
+            invalid_token: { value: { detail: "이메일 또는 비밀번호가 올바르지 않습니다" } }
+
+    Conflict:
+      description: 상태 충돌. 요청 자체는 올바르고 지금이 아닐 뿐이거나 이미 있다.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+          examples:
+            duplicate_email: { value: { detail: "이미 가입된 이메일입니다" } }
+
+    PayloadTooLarge:
+      description: |
+        업로드 파일이 10MB를 넘었다.
+
+        **계획 §2.2 목록에 없는 상태 코드지만 실재한다**(`UploadTooLargeError` →
+        `413 CONTENT_TOO_LARGE`, app/api/errors.py). 형식·내용 문제(422)와 가르는
+        이유는 사용자가 취할 조치가 "파일을 나눠 올리기"로 다르기 때문이다.
+        회귀 테스트: `tests/api/test_documents.py::test_상한을_넘는_파일은_413`.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+          examples:
+            too_large: { value: { detail: "파일이 너무 큽니다 (최대 10MB)" } }
+
+    ValidationFailed:
+      description: |
+        입력 검증 실패. **Spring 기본값 400이 아니라 422다.**
+
+        같은 422에 `detail`의 두 모양이 모두 나온다:
+          - Pydantic/Bean Validation 층에서 걸리면 **배열**
+          - 도메인 규칙에서 걸리면 **문자열**
+
+        배열 항목에는 `loc`·`msg`·`type`만 있다. `input`·`ctx`는 금지 —
+        비밀번호가 응답 본문과 액세스 로그에 남는 경로다.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+          examples:
+            field_missing:
+              value: { detail: [{ loc: ["body", "password"], msg: "Field required", type: "missing" }] }
+            query_range:
+              value: { detail: [{ loc: ["query", "limit"], msg: "Input should be greater than or equal to 1", type: "greater_than_equal" }] }
+            domain_rule:
+              value: { detail: "이메일 형식이 올바르지 않습니다" }
+
+    InternalError:
+      description: |
+        서버 오류. 두 가지 고정 문구가 있고 **예외 내용을 그대로 노출하지 않는다**.
+          - 매핑되지 않은 도메인 예외 → `"요청을 처리하지 못했습니다"`
+          - 도메인 밖 예외(라이브러리 오류 등) → `"서버 오류가 발생했습니다"`
+          - `StorageError`(코드 버그) → 저장소가 만든 고정 문자열
+        후자에는 CORS 헤더가 붙지 않는다(최상위 `x-cors.x-known-limitation` 참고).
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+          examples:
+            unmapped_domain: { value: { detail: "요청을 처리하지 못했습니다" } }
+            unexpected: { value: { detail: "서버 오류가 발생했습니다" } }
+            storage: { value: { detail: "저장된 변환 결과를 읽을 수 없습니다" } }
+
+    BadGateway:
+      description: |
+        하위 시스템 장애 — 재시도할 값어치가 있다.
+          - `LLMProviderError`(및 하위 `LLMTruncatedError`·`LLMEmptyResultError`)
+          - `QueueUnavailableError` — 큐에 **등록을 시도했다가 실패**한 경우
+
+        **503과 반드시 구분한다.** 503은 큐·설정이 아예 배선되지 않은 상태다.
+        둘을 하나로 합치면 "일시적 장애라 재시도할 값어치가 있는가"라는 클라이언트
+        판단이 무너진다.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+          examples:
+            enqueue_failed: { value: { detail: "변환 요청을 등록하지 못했습니다" } }
+
+    ServiceUnavailable:
+      description: |
+        운영 설정 문제(`ConfigurationError`). 사용자 잘못이 아니다.
+        기동 자체는 막지 않는다 — 설정이 비어도 `/health`로 배포 상태를 진단할 수
+        있어야 하므로, 그 설정이 필요한 요청만 503이 된다.
+          - JWT 비밀키 미설정 또는 32바이트 미만 → 인증 API 전체
+          - Fernet 키 미설정 → 문서 API 전체
+          - 큐(Redis) 미배선 → 업로드
+          - DB 세션 팩토리 미배선 → 전체
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+          examples:
+            no_jwt: { value: { detail: "인증이 설정되지 않았습니다" } }
+            no_cipher: { value: { detail: "문서 저장이 설정되지 않았습니다" } }
+            no_queue: { value: { detail: "작업 큐가 준비되지 않았습니다" } }
+            short_secret: { value: { detail: "인증 서명 키는 32바이트 이상이어야 합니다" } }
+
+  schemas:
+
+    # ---------------------------------------------------------------------
+    # 오류 본문 — 계약의 핵심
+    # ---------------------------------------------------------------------
+    ErrorResponse:
+      type: object
+      required: [detail]
+      additionalProperties: false
+      description: |
+        모든 오류 응답의 유일한 모양. 최상위 키는 `detail` 하나뿐이다.
+      properties:
+        detail:
+          description: |
+            **문자열 또는 객체 배열의 union이다.** 이 union이 계약의 핵심이며,
+            한쪽만 구현하면 React가 폴백 문구만 보여 준다.
+          oneOf:
+            - type: string
+              description: 도메인 예외의 한국어 사용자 문구
+            - type: array
+              description: 입력 검증 실패 항목 목록
+              items: { $ref: '#/components/schemas/ValidationErrorItem' }
+
+    ValidationErrorItem:
+      type: object
+      required: [loc, msg, type]
+      additionalProperties: false
+      description: |
+        검증 실패 항목. **`input`·`ctx`를 넣지 않는다** — FastAPI 기본 핸들러는
+        넣지만 `_handle_request_validation`이 걷어낸다. 비밀번호가 응답 본문과
+        액세스 로그에 그대로 남는 경로이기 때문이다.
+        `loc`의 원소는 현행 구현에서 전부 **문자열**이다(배열 인덱스도 `str()`로
+        변환된다 — FastAPI 자동 생성 스키마의 `string | integer`와 다르다).
+      properties:
+        loc:
+          type: array
+          items: { type: string }
+          examples: [["body", "password"]]
+        msg: { type: string, examples: ["Field required"] }
+        type: { type: string, examples: ["missing"] }
+
+    # ---------------------------------------------------------------------
+    # 값 집합 — enum으로 고정한다
+    # ---------------------------------------------------------------------
+    ConversionStatus:
+      type: string
+      enum: [pending, processing, done, failed]
+      description: |
+        변환 상태. DB CHECK 제약(`ck_conversions_status_valid`)과 **같은 값 집합**이며
+        소문자 4개뿐이다.
+
+        **백엔드 Pydantic은 이 필드를 `str`로 선언해 FastAPI 자동 생성 스키마에
+        `string`으로만 나온다.** React는 4값 리터럴 union으로 좁혀 놓았으므로,
+        계약 파일이 enum으로 고정하지 않으면 Phase 6에서 생성 타입이 자유 문자열로
+        넓어져 **현재보다 타입 안전성이 떨어진다**. 교체가 퇴보가 되면 안 되므로
+        여기서 enum으로 동결한다(계획 §2.2 "변환 상태 유지"의 이행).
+
+    ExportFormat:
+      type: string
+      enum: [docx, txt, hwpx]
+      description: |
+        내보내기 형식. 값이 그대로 확장자이자 쿼리 파라미터 값이다.
+        `pdf`와 구버전 `hwp`(바이너리)는 Lean MVP 범위 밖이며 목록에 없는 값은 422다.
+
+    # ---------------------------------------------------------------------
+    # auth
+    # ---------------------------------------------------------------------
+    SignupRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          maxLength: 255
+          description: 공백 제거 + 소문자로 정규화한 뒤 형식을 검사한다. 위반은 422 문자열 detail.
+          examples: ["user@example.test"]
+        password:
+          type: string
+          minLength: 8
+          description: |
+            최소 8자. 상한은 두지 않는다(argon2는 입력 길이에 비용이 좌우되지 않는다).
+            **이 값은 응답 본문·로그 어디에도 반향되지 않는다.**
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string, examples: ["user@example.test"] }
+        password: { type: string }
+
+    UserResponse:
+      type: object
+      required: [id, email]
+      description: 사용자 공개 표현. `password_hash`는 절대 포함하지 않는다.
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string, examples: ["user@example.test"] }
+
+    TokenResponse:
+      type: object
+      required: [access_token, token_type, expires_in]
+      description: |
+        `token_type`은 Pydantic 기본값 `"bearer"`가 있어 FastAPI 자동 생성 스키마에서
+        `required`가 아니지만 **응답에는 항상 실린다**. React도 필수로 다루므로
+        계약에서는 필수로 고정한다.
+      properties:
+        access_token: { type: string, description: HS256 JWT }
+        token_type: { type: string, const: "bearer" }
+        expires_in:
+          type: integer
+          description: |
+            유효 기간(초). 클라이언트가 토큰을 디코딩해 `exp`를 읽지 않고도 재발급
+            시점을 안다. 현재 기본값 3600(60분).
+          examples: [3600]
+
+    # ---------------------------------------------------------------------
+    # documents
+    # ---------------------------------------------------------------------
+    DocumentTextRequest:
+      type: object
+      required: [text]
+      description: |
+        붙여넣기 업로드 요청 (JSON 모드).
+        **FastAPI 자동 생성 OpenAPI에는 이 스키마가 등장하지 않는다** — 라우터가
+        `Request`를 직접 읽기 때문이다. 라우터 코드를 읽고 손으로 적었다.
+      properties:
+        text:
+          type: string
+          maxLength: 4000
+          description: |
+            공백만 있으면 422("본문이 비어 있습니다").
+            4,000자 초과도 422. **바이트가 아니라 문자 수**로 잰다 — 한국어는 UTF-8에서
+            글자당 3바이트라 바이트 기준이면 실제 분량의 1/3에서 잘린다.
+        title:
+          anyOf: [{ type: string }, { type: 'null' }]
+          description: |
+            생략하면 본문 첫 줄에서 유도한다(30자 목표, 어절 경계에서 자르고 `…` 부착).
+            사용자가 준 제목은 255자까지 자르기만 하고 거절하지 않는다.
+            **파일명은 제목으로 쓰지 않는다** — 파일명 자체가 개인정보일 수 있다.
+        workspace_id:
+          anyOf: [{ type: string, format: uuid }, { type: 'null' }]
+          description: 생략하면 기본(가장 먼저 만든) 작업 공간. 남의 것이면 404.
+
+    DocumentFileRequest:
+      type: object
+      required: [file]
+      description: |
+        파일 업로드 요청 (multipart/form-data 모드).
+        **FastAPI 자동 생성 OpenAPI에는 이 요청 본문이 없다** — 손으로 적었다.
+        React `createDocumentFromFile`은 `file`과 `workspace_id`만 보낸다.
+      properties:
+        file:
+          type: string
+          format: binary
+          description: |
+            docx · pdf · hwpx (확장자 대소문자 무시). 10MB 초과는 413,
+            그 밖의 형식·추출 실패는 422.
+            파트가 없거나 파일이 아니면 422("업로드할 파일(file)이 필요합니다").
+        title:
+          type: string
+          description: 폼 값은 전부 문자열이다. 생략하면 추출한 본문 첫 줄에서 유도한다.
+        workspace_id:
+          type: string
+          format: uuid
+          description: |
+            빈 문자열은 미지정과 같게 다룬다. UUID 형식이 아니면 422
+            ("작업 공간 식별자 형식이 올바르지 않습니다") — **값 자체는 메시지에 담지 않는다.**
+
+    DocumentCreatedResponse:
+      type: object
+      required: [document_id, conversion_id, status, char_count]
+      description: 업로드 접수 응답. 변환은 아직 시작되지 않았다(202).
+      properties:
+        document_id: { type: string, format: uuid }
+        conversion_id:
+          type: string
+          format: uuid
+          description: '`Location` 헤더의 값과 같은 식별자여야 한다.'
+        status: { $ref: '#/components/schemas/ConversionStatus' }
+        char_count:
+          type: integer
+          description: 공백 포함 문자 수. 크레딧 환산(1,000자 = 1크레딧)의 기준값이다.
+
+    MaskedItemResponse:
+      type: object
+      required: [category, placeholder, original]
+      description: |
+        검수 화면에 보여줄 마스킹 항목.
+        **`original`은 가려졌던 실제 개인정보다** — 소유자 인증을 통과한 조회에서만
+        실린다. 이 필드가 있기 때문에 조회·검수 응답에 캐시 금지 헤더가 필수다.
+      properties:
+        category: { type: string, examples: ["phone"] }
+        placeholder: { type: string, examples: ["[[전화번호1]]"] }
+        original: { type: string, description: 실제 개인정보 (합성 예시 없음 — 문서에 예시를 적지 않는다) }
+
+    ConversionReviewRequest:
+      type: object
+      required: [edited_text]
+      properties:
+        edited_text:
+          type: string
+          maxLength: 4000
+          description: |
+            제어문자를 걷어낸 뒤 빈 값·길이를 판정한다. 원문과 **같은 4,000자 상한**을
+            쓴다 — 검수는 초안을 다듬는 자리이지 새 문서를 쓰는 자리가 아니다.
+
+    ConversionResponse:
+      type: object
+      required:
+        [id, document_id, status, easy_text, edited_text, reviewed_at,
+         masked_items, missing_placeholders, model, provider_name,
+         input_tokens, output_tokens, failure_code]
+      description: |
+        변환 상태·결과. 완료 전에는 결과 필드가 모두 비어 있다.
+
+        **required 범위가 FastAPI 자동 생성물보다 넓다.** 자동 생성물은
+        기본값이 있거나 nullable인 필드를 required에서 빼지만, 실제 응답은 항상
+        모든 키를 실어 보내고 React도 모든 키를 필수로 다룬다. 계약은 "키가 항상
+        존재하고 값이 null일 수 있다"로 고정한다 — Kotlin이 null 필드를 생략하면
+        (Jackson `NON_NULL`) React가 `undefined`를 받아 분기가 달라진다.
+      properties:
+        id: { type: string, format: uuid }
+        document_id: { type: string, format: uuid }
+        status: { $ref: '#/components/schemas/ConversionStatus' }
+        easy_text:
+          anyOf: [{ type: string }, { type: 'null' }]
+          description: AI 초안. `done`이 아니면 null.
+        edited_text:
+          anyOf: [{ type: string }, { type: 'null' }]
+          description: |
+            담당자 검수 수정본. 저장 전에는 null.
+            **AI 초안과 별도로 보존한다** — 에디터 초기값은 `edited_text ?? easy_text`이고,
+            초안은 수정률 KPI의 기준선으로 남는다.
+        reviewed_at:
+          anyOf: [{ type: string, format: date-time }, { type: 'null' }]
+          description: 검수 수정본을 마지막으로 저장한 시각(ISO 8601). null이면 초안 그대로.
+        masked_items:
+          type: array
+          items: { $ref: '#/components/schemas/MaskedItemResponse' }
+          description: '`done`이 아니면 빈 배열. null이 아니다.'
+        missing_placeholders:
+          type: array
+          items: { type: string }
+          description: |
+            결과에서 사라진 자리표시자 라벨 목록. 라벨뿐이라 개인정보가 아니다.
+            비어 있지 않고 검수본도 없으면 내보내기가 409로 막힌다.
+        model: { anyOf: [{ type: string }, { type: 'null' }] }
+        provider_name: { anyOf: [{ type: string }, { type: 'null' }] }
+        input_tokens: { anyOf: [{ type: integer }, { type: 'null' }] }
+        output_tokens: { anyOf: [{ type: integer }, { type: 'null' }] }
+        failure_code:
+          anyOf: [{ type: string }, { type: 'null' }]
+          maxLength: 64
+          description: |
+            실패 사유 코드 = 예외 클래스명. **문서 본문·모델 응답은 절대 담기지 않는다.**
+            큐 등록 실패는 예외 클래스명이 아닌 `"EnqueueFailed"`를 쓴다.
+
+    DocumentListItem:
+      type: object
+      required:
+        [id, title, source_format, char_count, created_at,
+         retention_expires_at, conversion_id, status, reviewed_at]
+      description: 문서 목록 한 줄 (문서 메타 + 최신 변환 상태). required 범위는 ConversionResponse와 같은 이유로 넓다.
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string, maxLength: 255 }
+        source_format:
+          type: string
+          description: |
+            붙여넣기는 `"text"`, 파일은 소문자 확장자(`docx`·`pdf`·`hwpx`).
+            **enum으로 고정하지 않는다** — 백엔드가 확장자를 그대로 쓰는 자유 문자열이고
+            React도 `string`으로 받는다. 좁히면 계약 축소(파괴적 변경)가 된다.
+        char_count: { type: integer }
+        created_at: { type: string, format: date-time }
+        retention_expires_at:
+          type: string
+          format: date-time
+          description: 보관 만료 시점. 기본 생성 시각 + 30일.
+        conversion_id: { anyOf: [{ type: string, format: uuid }, { type: 'null' }] }
+        status:
+          anyOf:
+            - { $ref: '#/components/schemas/ConversionStatus' }
+            - { type: 'null' }
+          description: 최신 변환의 상태. 변환이 하나도 없으면 null.
+        reviewed_at:
+          anyOf: [{ type: string, format: date-time }, { type: 'null' }]
+          description: |
+            목록에서 "검수함/초안"을 표시하려면 필요하다 — `status`만으로는 알 수 없다
+            (`done`은 "AI 변환이 끝났다"는 뜻일 뿐이다).
+
+    DocumentListResponse:
+      type: object
+      required: [items, limit, offset, has_more]
+      description: 총 개수는 싣지 않는다(전수 count는 목록 조회마다 비싸다).
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/DocumentListItem' }
+          description: 최신순.
+        limit: { type: integer, description: 요청에 쓰인 값을 그대로 되돌려준다. }
+        offset: { type: integer, description: 요청에 쓰인 값을 그대로 되돌려준다. }
+        has_more:
+          type: boolean
+          description: 다음 페이지가 있는지. 한 건 더 읽어(limit+1) 판정한다.
+
+    # ---------------------------------------------------------------------
+    # workspaces
+    # ---------------------------------------------------------------------
+    WorkspaceNameRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 50
+          description: 제어문자를 걷어내고 앞뒤 공백을 턴 뒤 판정한다.
+
+    WorkspaceResponse:
+      type: object
+      required: [id, name, created_at]
+      description: 작업 공간 한 건 (POST·PATCH 응답). `document_count`는 싣지 않는다.
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string, maxLength: 50 }
+        created_at: { type: string, format: date-time }
+
+    WorkspaceListItem:
+      allOf:
+        - $ref: '#/components/schemas/WorkspaceResponse'
+        - type: object
+          required: [document_count]
+          description: |
+            목록 한 줄. **문서 수는 목록에서만 준다** — 방금 만든 공간은 늘 0이고,
+            이름만 바꾼 공간의 문서 수는 화면이 이미 안다. 응답마다 COUNT를 붙이면
+            쓰지 않는 값을 위해 질의가 는다.
+          properties:
+            document_count: { type: integer, minimum: 0 }
+
+    WorkspaceListResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/WorkspaceListItem' }
+          description: '만든 순서. **첫 번째가 기본 작업 공간이다.**'
+
+    # ---------------------------------------------------------------------
+    # health
+    # ---------------------------------------------------------------------
+    HealthResponse:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          const: "ok"
+          description: |
+            현재 구현은 상수만 돌려준다. `ConversionStatus`와 **다른 네임스페이스**이므로
+            혼동하지 않는다.
+
+# =============================================================================
+# 변경 이력
+# =============================================================================
+x-changelog:
+  - version: "1.0.0"
+    date: "2026-08-12"
+    author: contract-keeper
+    change: "v1 최초 동결 (14 엔드포인트)"
+    basis: |
+      현재 Python 구현에서 추출. 라우터 코드 정독 + FastAPI OpenAPI 초안 대조 +
+      실제 앱 TestClient 실측(422 본문 모양, 401 우선순위, 헤더 유무).
+      3자 대조 결과: docs/migration/_workspace/00_contract-keeper_three-way-diff.md
+
+# =============================================================================
+# v2 후보 — v1에서는 고치지 않는다
+# 개선안이 보여도 v1을 다듬으면 React가 이미 의존하는 동작이 소리 없이 깨지고,
+# 실패 원인이 "포팅 버그"인지 "계약 변경"인지 가릴 수 없게 된다(계획 §2.2).
+# =============================================================================
+x-v2-candidates:
+  - id: V2-1
+    subject: "GET /health"
+    proposal: "의존 서비스(DB·Redis·설정) 상태를 실제로 진단하고 degraded 상태를 표현한다"
+    reason: "현재는 상수 ok만 돌려줘 DB가 죽어도 200이다. 계획 §2.2 주변 서술과 어긋난다"
+  - id: V2-2
+    subject: "미처리 500 응답의 CORS 헤더"
+    proposal: "Kotlin에서는 500에도 CORS 헤더를 붙여 브라우저가 상태 코드를 읽게 한다"
+    reason: "Python은 ServerErrorMiddleware 위치 때문에 구조적으로 불가능. Kotlin에는 그 제약이 없다"
+    status: "미결 — 리더 판단 대기. 재현할지 개선할지 정해지기 전에는 구현하지 않는다"
+  - id: V2-3
+    subject: "DELETE /documents/{id} · DELETE /workspaces/{id}"
+    proposal: "204 응답에도 no-store/nosniff를 붙인다"
+    reason: "본문이 없어 실익은 없으나 정책 일관성. v1은 현행 유지가 계약이다"
+  - id: V2-4
+    subject: "목록 응답의 총 개수"
+    proposal: "total 필드 추가 (필드 추가는 비파괴적)"
+    reason: "현재는 has_more만으로 페이지네이션 UI를 만들 수 있는 범위가 좁다"
