@@ -24,7 +24,7 @@
 | Argon2 PHC 검증 spike | 아니오 | - | 미착수 | privacy-gate | leader |
 | JWT 양방향 호환 spike | 아니오 | - | 미착수 | privacy-gate | leader |
 | DOCX/PDF/HWPX 라이브러리 spike | 아니오 | - | 미착수. Python docx 추출기가 비공개 XML 요소까지 순회하므로 POI 단순 추출로는 부족할 수 있음 (§4.5) | kotlin-implementer | leader |
-| 리뷰 게이트 Critical 0건 | 아니오 | - | 미착수 | migration-reviewer | leader |
+| 리뷰 게이트 Critical 0건 | 아니오 | 1회차 실행 완료 — `reviews/00_pre-phase0_{codex-reviewer,migration-reviewer,cross}.md` 3건 (정본은 `_cross.md`) | **Critical 2건이 열려 있다** (codex 척도 critical: X-1 proof 파일 위조 가능 · X-2 fixture 출처 미검증). 심각도 척도 상충(상충-2)도 리더 판단 대기. 1회차는 Phase 0 **착수 전** 점검이라 종료 리뷰는 별건이다 | migration-reviewer | migration-reviewer |
 
 ### Phase 0에서 사용자 승인이 필요한 다섯 결정 (계획 §9)
 
@@ -48,7 +48,7 @@
 | Unit (core, application, React) | 미실행 |
 | Contract (14 endpoints) | 미실행 — 계약 파일 미작성 |
 | DB (Testcontainers) | 미실행 |
-| Crypto (Python ↔ Kotlin) | 미실행 — fixture 11 도메인은 준비됨, Kotlin 측 부재 |
+| Crypto (Python ↔ Kotlin) | 미실행 — fixture **생성기**가 11개 도메인을 지원할 뿐, **`parity/fixtures/` 산출물은 저장소에 존재하지 않는다**(`parity/` 디렉터리 자체가 없음). Kotlin 측도 부재 |
 | Document (docx/pdf/hwpx/txt) | 미실행 |
 | Worker (lease/retry/crash) | 미실행 |
 | Quality (골든셋) | 미실행 |
@@ -68,7 +68,12 @@ Phase 0 착수 전에 하네스 구축 과정에서 발견해 처리한 항목�
 |---|---|---|
 | 계약 사실 정정 | 계획 §2.2에 없는 **413**(10MB 초과) 실재. 오류 본문 `detail`이 문자열/객체배열 **union**. 401에 `WWW-Authenticate: Bearer`. 엔드포인트는 제품 13 + `/health` = 14 | 반영됨 (`api-contract-freeze`) |
 | 502/503 구분 | 큐 **등록 실패** = 502(`QueueUnavailableError`), 큐/설정 **미배선** = 503(`ConfigurationError`, `app/api/deps.py`) | 반영됨 |
-| `PUT /conversions/{id}` 캐시 헤더 누락 | GET과 같은 스키마라 `masked_items[].original`에 개인정보가 실리는데 `no-store`/`nosniff` 부재 | **수정 진행 중** (사용자 승인) |
-| parity 게이트 공백 | crypto 도메인이 Fernet만 검증. JWT·Argon2 fixture 부재 상태로 Crypto 게이트가 닫혔음 | 수정됨 — jwt 18건·argon2 14건 추가 (11 도메인) |
-| parity 게이트 우회 | 도메인 디렉터리를 통째로 빼면 "전건 일치"로 통과 | **수정 진행 중** |
+| `PUT /conversions/{id}` 캐시 헤더 누락 | GET과 같은 스키마라 `masked_items[].original`에 개인정보가 실리는데 `no-store`/`nosniff` 부재 | **완료** — 커밋 `0fafac7`. 회귀 테스트 `tests/api/test_documents.py::test_검수_저장_응답은_캐시하지_않는다` |
+| `/auth` 3종 캐시 헤더 누락 | `POST /auth/signup`·`POST /auth/login`·`GET /auth/me`가 `PRIVATE_RESPONSE_HEADERS`를 import조차 하지 않았음. 로그인 응답 본문은 Bearer 토큰 자체, 나머지 둘은 이메일 | **완료** — 커밋 `0fafac7`(같은 커밋). 회귀 테스트 3건 `tests/api/test_auth.py::test_{가입,로그인,내_정보}_응답은_캐시하지_않는다` |
+| 캐시 금지 헤더 대상 범위 | 위 두 건으로 대상이 **6개 → 10개**로 늘었다 (documents 4 · workspaces 3 · auth 3). 계약 스킬 §2.5가 정본이고 §1 표는 포인터 표시만 둔다 | **완료** — 코드 확인: `grep -rn "headers.update(PRIVATE_RESPONSE_HEADERS)\|\*\*PRIVATE_RESPONSE_HEADERS" app/api/ \| wc -l` = 10 |
+| parity 게이트 공백 | crypto 도메인이 Fernet만 검증. JWT·Argon2 fixture 부재 상태로 Crypto 게이트가 닫혔음 | 수정됨 — 커밋 `e88db3e`. 생성기에 jwt 18건·argon2 14건 추가 (11 도메인). **fixture 산출물은 아직 없음** |
+| parity 게이트 우회 | 도메인 디렉터리를 통째로 빼면 "전건 일치"로 통과 | **완료** — 커밋 `e88db3e`. `compare_parity.py`의 `EXPECTED_DOMAINS` 검사 + 도메인 누락 시 exit 1 |
+| 리뷰 게이트 1회차 | Phase 0 착수 **전** 점검으로 codex·Claude 독립 리뷰 + 교차 종합을 실행 | **완료** — `reviews/00_pre-phase0_{codex-reviewer,migration-reviewer,cross}.md` 3건. 교차 결과 **합의 9건 · codex 단독 4건 · Claude 단독 23건 · 상충 2건**. 정본은 `_cross.md` |
+| 계약 스킬 §1↔§2.5 불일치 | §2.5는 헤더 대상 10개인데 §1 표에는 8개만 표기(`GET /conversions/{id}/export`·`PATCH /workspaces/{id}` 누락). §1만 보고 계약을 쓰면 두 곳이 헤더 요구 없이 동결됨 (X-14) | **완료** — 코드 기준으로 §1을 §2.5에 맞추고, §2.5를 정본으로 선언 |
+| 오류 응답 캐시 헤더 | 오류 경로(`app/api/errors.py`)에 헤더를 붙일지 미결 (X-15) | **완료 — 현행 유지 판정**(붙이지 않음). 근거: 오류 본문에 개인정보 없음을 실측 확인. `api-contract-freeze` §2.7 해결 3에 전제 파기 조건과 함께 기록 |
 | `status` 필드 넓이 | 백엔드 Pydantic `str` vs React 4값 리터럴 union. OpenAPI 생성 타입으로 그냥 교체하면 타입 안전성 퇴보 | Phase 6 전까지 계약 파일에서 enum 고정 필요 |
