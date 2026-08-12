@@ -52,6 +52,11 @@ class RuleEvaluation(BaseModel):
     변환 산출물만 있으면 이 객체는 결정적으로 만들어진다. 그래서 배선 테스트가
     FakeProvider로 같은 경로를 돌릴 수 있고, 차단 게이트가 실제로 걸리는지를 기본
     스위트(LLM 없음)에서 고정할 수 있다.
+
+    `measurement` 와 `observed_models` 는 **같은 outcomes 로 한 pass 에서** 만들어져 한
+    객체에 함께 실린다. 수치와 그 수치의 조건(어떤 모델이 냈는가)이 한 객체에서 나오므로,
+    기록 경로가 조건을 다른 곳(리포트)에서 맞출 필요가 없다 — 결속이 구조로 성립한다.
+    이것이 "측정치를 만드는 것이 증거도 함께 만들면 결속을 확인할 일이 없어진다"의 자리다.
     """
 
     evaluations: list[DocumentEvaluation]
@@ -59,6 +64,10 @@ class RuleEvaluation(BaseModel):
     failure_reasons: dict[str, int]
     conversion_failures: list[str]
     fact_losses: list[FactLoss]
+    #: 이 측정치를 만든 변환들이 **실제로 보고한** 모델(`ConversionOutcome.model` ←
+    #: `LLMResponse.model`). `measurement` 와 같은 pass·같은 outcomes 에서 모은다 —
+    #: 그래서 이 목록은 언제나 이 측정치의 조건이지, 다른 실행의 것일 수 없다.
+    observed_models: list[str]
 
 
 def evaluate_rules(document: GoldenDocument, outcome: ConversionOutcome) -> list[str]:
@@ -92,11 +101,16 @@ def evaluate_all(
 
     문서 목록을 인자로 받는다. 모듈 전역을 읽으면 "무엇을 셌는가"가 호출자에게 보이지 않아,
     지문은 코퍼스 전량으로 계산되는데 평가만 축소된 목록으로 도는 어긋남을 만들 수 있다.
+
+    `observed_models` 를 **이 loop 에서 함께** 모은다 — measurement 를 만든 바로 그
+    outcomes(성공한 변환)에서 나온 모델이라, 수치와 조건이 같은 pass 에 묶인다. 따로
+    유도하지 않으므로 "측정치는 이 평가·조건은 다른 실행"이 될 통로가 없다.
     """
     evaluations: list[DocumentEvaluation] = []
     reasons: Counter[str] = Counter()
     conversion_failures: list[str] = []
     converted: dict[str, tuple[GoldenDocument, str]] = {}
+    observed: set[str] = set()
     for document in documents:
         outcome = outcomes.get(document.id)
         if outcome is None:
@@ -108,6 +122,8 @@ def evaluate_all(
             converted[document.id] = (document, outcome.easy_text)
             failures = evaluate_rules(document, outcome)
             reasons.update(issue.reason for issue in check_style(outcome.easy_text).issues)
+            # 측정에 실제로 들어간 변환이 보고한 모델만 담는다 — 이 수치의 조건이다.
+            observed.add(outcome.model)
         evaluations.append(
             DocumentEvaluation(
                 document_id=document.id, synthetic=document.synthetic, failures=failures
@@ -119,6 +135,7 @@ def evaluate_all(
         failure_reasons=dict(reasons),
         conversion_failures=conversion_failures,
         fact_losses=find_fact_losses(converted),
+        observed_models=sorted(observed),
     )
 
 

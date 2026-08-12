@@ -67,8 +67,8 @@ def _preserving_outcomes(model: str = "fake") -> dict[str, ConversionOutcome | N
     """필수 정보를 전부 보존한 변환 결과 — 팩트 게이트를 통과시키는 입력.
 
     `model`은 **측정치에 영향을 주지 않는다.** 규칙 평가는 `easy_text`만 보므로, 모델명만
-    바꾼 두 호출은 수치가 같고 조건(`RunContext.observed_models`)만 다른 두 실행이 된다 —
-    결속 검사가 값 동등성으로 충분한지 가르는 입력이 정확히 이것이다.
+    바꾼 두 호출은 수치가 같고 조건(`observed_models`)만 다른 두 실행이 된다 — 남의 리포트가
+    최신이어도 기준선 조건이 새지 않는지 가르는 입력이 정확히 이것이다.
     """
     return {
         document.id: ConversionOutcome(
@@ -390,7 +390,7 @@ def test_바뀔_것이_없는_기록_실행은_정상_판정으로_떨어진다(
     harness.test_규칙_기반_통과율이_직전_기록보다_낮지_않다(evaluation)
 
 
-# ═════════════════════════════════ 기록 경로의 결속: 리포트가 **이번 평가의 것인가**
+# ═══════════════════ 기록 경로의 결속: 측정치와 조건이 한 객체(evaluation)에서 온다
 
 
 class _Recording:
@@ -436,40 +436,47 @@ class _Recording:
         return written
 
 
-def test_값이_같아도_다른_실행의_리포트로는_기록하지_않는다(
+def test_기준선_조건은_리포트가_아니라_평가에서_온다(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """**이번 결함의 핵심 재현** — 측정치 동등성은 실행 결속을 증명하지 못한다.
+    """**6번째 지적을 구조로 닫는 자리** — 기록되는 조건(observed_models)은 `evaluation` 에서
+    오고, 최신 리포트의 `context` 는 기준선에 새지 않는다.
 
-    결속 검사는 처음에 `report.measurement != evaluation.measurement`(값 비교)였다.
-    `Measurement`는 pydantic 모델이라 `!=`가 필드 값 비교이고, 통과율은 정수 쌍 셋뿐이라
-    **다른 실행이 같은 수치를 내는 일이 흔하다.** 아래 입력이 정확히 그 상태다 — 같은
-    본문을 모델명만 바꿔 두 번 평가했으므로 수치는 완전히 같고 모델 증거만 다르다.
-    값 검사는 이것을 그대로 통과시켜 **남의 모델 증거를 실은 기준선**을 썼다
-    (2026-08-12 실측: `observed_models=['stale-model-from-another-run']`으로 기록됨).
+    예전 `is` 검사는 `report.measurement is evaluation.measurement` 로 **측정치**를 묶었지만
+    기록에 실리는 것은 `report.context` 였다. `build_report(result, 다른_outcomes)` 는 측정치
+    동일성을 지키면서 남의 observed 를 context 에 실어, 검사를 통과한 채 남의 모델 증거가
+    기준선에 실렸다 — 측정치는 이번 평가에서, 조건은 다른 실행에서.
 
-    그래서 검사는 `is`다. 물어야 하는 것은 "값이 같은가"가 아니라 **"그 객체가 이번
-    평가에서 왔는가"**다.
+    지금은 `build_report` 가 조건을 따로 받지 않고(`test_build_report_는_조건을_따로_받지_않는다`),
+    기록 경로가 `report.context` 를 읽지 않고 `evaluation.observed_models` 를 쓴다. 그래서
+    아래처럼 **남의 실행 리포트를 최신으로 세워도**(수치는 같고 조건만 다르다) 기준선의
+    observed 는 언제나 이번 평가의 것이다. 남의 조건이 실리는 상태를 검사로 막는 게 아니라
+    **만들 수 없다.**
     """
     evaluation = evaluate_all(_preserving_outcomes("this-run"), harness.DOCUMENTS)
-    # 다른 실행의 리포트를 세운다 — 수치는 같고 조건만 다르다.
-    stale_outcomes = _preserving_outcomes("stale-model-from-another-run")
-    harness.build_report(evaluate_all(stale_outcomes, harness.DOCUMENTS), stale_outcomes)
-    stale = golden_report.latest()
-    assert stale is not None
-    assert stale.measurement == evaluation.measurement, (
-        "전제 실패 — 두 실행의 수치가 같아야 값 검사로는 못 거른다는 것을 보일 수 있다"
+    # 남의 실행 리포트를 최신으로 세운다 — 수치는 같고 조건(observed)만 다르다.
+    stale = evaluate_all(_preserving_outcomes("stale-model-from-another-run"), harness.DOCUMENTS)
+    harness.build_report(stale)
+    latest = golden_report.latest()
+    assert latest is not None
+    assert latest.measurement == evaluation.measurement, "전제 — 수치는 같다(정수 쌍이라 흔하다)"
+    assert latest.measurement is not evaluation.measurement, "전제 — 별개 객체다"
+    assert latest.context.observed_models == ["stale-model-from-another-run"], (
+        "전제 — 조건만 다르다"
     )
-    assert stale.measurement is not evaluation.measurement, "전제 실패 — 별개 객체여야 한다"
-    assert stale.context.observed_models == ["stale-model-from-another-run"]
 
-    recording = _Recording(monkeypatch, evaluation, tmp_path / "baseline.json")
-    with pytest.raises(AssertionError, match="결속되지 않았다"):
+    path = tmp_path / "baseline.json"
+    recording = _Recording(monkeypatch, evaluation, path)
+    # 기록 실행은 판정이 아니므로 실패로 끝나는 것이 정상이다 — 중요한 것은 무엇이 실렸는가다.
+    with pytest.raises(AssertionError, match="기록 실행"):
         harness.test_규칙_기반_통과율이_직전_기록보다_낮지_않다(evaluation)
-    assert recording.written == [], "결속되지 않은 리포트의 조건으로 기준선을 썼다"
-    assert recording.attempts == [], "쓰기를 시도했다 — 가드에 기대지 말고 여기서 막아야 한다"
-    assert recording.bodies == [], "막기 전에 본문을 먼저 조립했다 — 검사가 너무 늦다"
-    assert not (tmp_path / "baseline.json").exists()
+    assert len(recording.written) == 1, "결속된 조건인데 기록되지 않았다"
+    body = recording.written[0]
+    assert body["context"]["observed_models"] == ["this-run"], (
+        "남의 리포트가 최신이어도 기준선 조건은 이번 평가에서 와야 한다"
+    )
+    assert body["measurement"] == evaluation.measurement.model_dump()
+    assert path.exists()
 
 
 def test_같은_평가로_세운_리포트는_그대로_기록된다(
@@ -481,9 +488,8 @@ def test_같은_평가로_세운_리포트는_그대로_기록된다(
     기록 경로가 통째로 막혔는데, 거부 시나리오만 확인해 통과했다.
     기록된 조건이 **이번 실행의 모델 증거**인지까지 본다.
     """
-    outcomes = _preserving_outcomes("this-run")
-    evaluation = evaluate_all(outcomes, harness.DOCUMENTS)
-    harness.build_report(evaluation, outcomes)
+    evaluation = evaluate_all(_preserving_outcomes("this-run"), harness.DOCUMENTS)
+    harness.build_report(evaluation)
     path = tmp_path / "baseline.json"
     recording = _Recording(monkeypatch, evaluation, path)
 
@@ -500,32 +506,39 @@ def test_같은_평가로_세운_리포트는_그대로_기록된다(
 
 
 def test_리포트가_없으면_기록하지_않는다(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    """부수 경로 — `report is None`은 fail-closed다.
+    """부수 경로 — `report is None`은 fail-closed다(무변경).
 
-    리포트가 없다는 것은 이번 실행의 수치를 세운 것 자체가 없다는 뜻이라, 인자 없는
-    `run_context()`로 떨어지고 관측 모델이 비어 `write_baseline` 가드가 거부한다.
+    리포트가 없다는 것은 이번 실행이 리포트로 조립되지 않았다는 뜻이다. 예전에는 인자 없는
+    `run_context()`로 떨어져 관측 모델이 비고 `write_baseline` 가드가 거부했다. 지금은
+    측정치·조건이 `evaluation` 에 있어 그 자리에서는 거부되지 않으므로, 기록 경로가 **본문을
+    만들기 전에** 리포트 부재를 보고 거부한다. 결과는 같다 — 기준선을 쓰지 않는다.
     """
     evaluation = evaluate_all(_preserving_outcomes(), harness.DOCUMENTS)
     golden_report.reset()  # 리포트를 세우지 않은 상태를 만든다
     assert golden_report.latest() is None
     path = tmp_path / "baseline.json"
     recording = _Recording(monkeypatch, evaluation, path)
-    with pytest.raises(AssertionError, match="관측된 모델이 없다"):
+    with pytest.raises(AssertionError, match="리포트가 없다"):
         harness.test_규칙_기반_통과율이_직전_기록보다_낮지_않다(evaluation)
-    assert recording.attempts, "전제 — 이 경로는 가드까지 가서 거부되는 것이 맞다"
-    assert recording.written == [], "가드를 통과해 파일을 썼다"
+    assert recording.bodies == [], "리포트 부재를 본문 조립 전에 막아야 한다"
+    assert recording.attempts == [], "write 를 시도했다 — 가드에 기대지 말고 먼저 막는다"
+    assert recording.written == [], "기준선을 썼다"
     assert not path.exists()
 
 
-def test_비기록_모드는_결속_검사에_걸리지_않는다(monkeypatch: pytest.MonkeyPatch) -> None:
-    """부수 경로 — 결속 검사는 **기록 분기 안에만** 있다.
+def test_비기록_모드는_남의_리포트가_최신이어도_정상_판정한다(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """부수 경로 — 기록에 관한 것은 **기록 분기 안에만** 있다(무변경).
 
-    비기록 실행은 기준선을 쓰지 않으므로 남의 조건이 파일에 실릴 일이 없다. 이 검사를
-    기록 분기 밖으로 올리면 평범한 판정 실행이 리포트 부재·순서만으로 막힌다.
+    비기록 실행은 기준선을 쓰지 않으므로 남의 조건이 파일에 실릴 일이 없다. 기록 분기 밖으로
+    무언가를 끌어올리면 평범한 판정 실행이 리포트 부재·순서만으로 막힌다 — 그런 일이 없음을
+    남의 실행 리포트를 최신으로 둔 채 확인한다.
     """
     evaluation = evaluate_all(_preserving_outcomes("this-run"), harness.DOCUMENTS)
-    stale_outcomes = _preserving_outcomes("stale-model-from-another-run")
-    harness.build_report(evaluate_all(stale_outcomes, harness.DOCUMENTS), stale_outcomes)
+    harness.build_report(
+        evaluate_all(_preserving_outcomes("stale-model-from-another-run"), harness.DOCUMENTS)
+    )
     monkeypatch.setattr(harness, "load_baseline", lambda: _matching_baseline(evaluation))
     monkeypatch.setattr(harness, "recording_requested", lambda: False)
     monkeypatch.setattr(
@@ -534,31 +547,29 @@ def test_비기록_모드는_결속_검사에_걸리지_않는다(monkeypatch: p
     harness.test_규칙_기반_통과율이_직전_기록보다_낮지_않다(evaluation)
 
 
-def test_리포트가_측정치_인스턴스를_그대로_보관한다() -> None:
-    """결속 검사가 `is`로 성립하는 **전제**를 고정한다.
-
-    pydantic v2는 `revalidate_instances`가 기본값(`'never'`)이면 중첩 모델 필드에 넘긴
-    인스턴스를 복사하지 않고 그대로 보관한다. `build_report`가
-    `measurement=result.measurement`로 넘기므로 같은 객체가 되돌아오고, 그래서 `is`가
-    "이 리포트는 이 평가로 세워졌다"를 증명한다.
-
-    전제가 깨지면(pydantic 업그레이드·`model_config` 변경) 기록 경로는 **유효한 실행까지
-    거부한다.** fail-closed라 안전한 방향이지만 원인이 보이지 않으므로, 그때 여기가 먼저
-    깨져 원인을 말해 준다.
-
-    두 번째 단언이 값 비교로는 왜 부족한지를 그대로 보여 준다 — 별개 객체가 `==`로는 같다.
+def test_평가가_관측_모델을_측정치와_함께_싣는다() -> None:
+    """**구조적 결속의 근원** — `evaluate_all` 이 measurement 와 observed_models 를 같은
+    outcomes 로 한 객체에 싣는다. 둘이 한 객체에서 나오므로 기록 경로가 조건을 다른 곳에서
+    맞출 필요가 없다.
     """
-    outcomes = _preserving_outcomes()
-    evaluation = evaluate_all(outcomes, harness.DOCUMENTS)
-    report = harness.build_report(evaluation, outcomes)
-    assert report.measurement is evaluation.measurement, (
-        "pydantic이 인스턴스를 복사한다 — `is` 결속이 성립하지 않으므로 명시적 실행 토큰이 "
-        "필요하다(평가마다 만든 고유 값을 `RuleEvaluation`과 `GoldenRunReport` 양쪽에 실어 대조)"
-    )
-    copied = evaluation.measurement.model_copy(deep=True)
-    assert copied == evaluation.measurement and copied is not evaluation.measurement, (
-        "값 동등성은 실행 결속을 증명하지 못한다 — 별개 객체가 `==`로 같다"
-    )
+    evaluation = evaluate_all(_preserving_outcomes("model-x"), harness.DOCUMENTS)
+    assert evaluation.observed_models == ["model-x"]
+    # 변환이 전건 실패하면 관측 모델도 빈다 — write_baseline 가드가 무-모델 기록을 거부한다.
+    assert evaluate_all({}, harness.DOCUMENTS).observed_models == []
+    # build_report 의 조건도 같은 값에서 온다 — outcomes 를 따로 받지 않는다.
+    report = harness.build_report(evaluation)
+    assert report.context.observed_models == evaluation.observed_models
+
+
+def test_build_report_는_조건을_따로_받지_않는다() -> None:
+    """6번째 지적의 공격(`build_report(result, 다른_outcomes)`)이 **표현 불가**임을 고정한다.
+
+    조건을 result 와 분리해 넘기는 통로가 있으면 측정치 동일성을 지키면서 남의 조건을 싣는
+    상태를 만들 수 있다. 그 통로가 없어야 구조로 닫힌다 — mypy 도 이 호출을 거부한다.
+    """
+    evaluation = evaluate_all(_preserving_outcomes(), harness.DOCUMENTS)
+    with pytest.raises(TypeError):
+        harness.build_report(evaluation, {})  # type: ignore[call-arg]  # 조건 인자 통로 부재 고정
 
 
 # ═══════════════════════════════════════════ 비차단축: judge

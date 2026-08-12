@@ -182,19 +182,24 @@ def evaluation(outcomes: dict[str, ConversionOutcome | None]) -> RuleEvaluation:
     원인이었다(`tests/golden/report.py`).
     """
     result = evaluate_all(outcomes, DOCUMENTS)
-    build_report(result, outcomes)
+    build_report(result)
     return result
 
 
-def build_report(
-    result: RuleEvaluation,
-    outcomes: dict[str, ConversionOutcome | None] | None = None,
-) -> golden_report.GoldenRunReport:
-    """이번 실행의 리포트를 세워 붙든다. 배선 테스트도 같은 경로를 쓴다."""
+def build_report(result: RuleEvaluation) -> golden_report.GoldenRunReport:
+    """이번 실행의 리포트를 세워 붙든다. 배선 테스트도 같은 경로를 쓴다.
+
+    조건(`RunContext`)을 `result.observed_models` 에서 만든다 — 측정치와 조건을 한
+    객체(`result`)에서 함께 꺼내므로, 리포트 안에서 수치와 조건이 서로 다른 실행에서
+    오는 일이 없다. 예전에는 `outcomes` 를 따로 받아 조건을 다시 유도했고, 그 자유 변수가
+    "측정치는 이 평가·조건은 다른 실행"을 만드는 통로였다: `build_report(result, 다른_outcomes)`
+    는 measurement 동일성을 지키면서 남의 observed 를 context 에 실었다(6번째 지적).
+    이제 그 인자가 없어 그 호출 자체가 표현 불가다.
+    """
     return golden_report.record(
         golden_report.GoldenRunReport(
             fingerprint=Fingerprint.of(DOCUMENTS),
-            context=run_context(outcomes),
+            context=run_context(result.observed_models),
             targets=TARGETS,
             measurement=result.measurement,
             failure_reasons=result.failure_reasons,
@@ -204,22 +209,25 @@ def build_report(
     )
 
 
-def run_context(
-    outcomes: dict[str, ConversionOutcome | None] | None = None,
-) -> RunContext:
+def run_context(observed_models: list[str]) -> RunContext:
     """비교의 조건 — 판정에 쓰지 않고 기록만 한다.
 
-    `observed_models`는 **변환 응답이 실제로 보고한 모델**이다(`LLMResponse.model`).
-    `settings.llm_model`은 설정값이라 별칭 해석·폴백이 있으면 실제와 갈린다 — 그래서
-    둘을 따로 싣는다. 기준선 기록은 관측값이 있어야만 허용된다(`write_baseline`).
+    `observed_models` 는 **호출자가 측정치와 함께 들고 있던 값**을 그대로 받는다
+    (`RuleEvaluation.observed_models`). 여기서 outcomes 로부터 다시 유도하지 않는다 —
+    조건을 두 번 유도하면 두 값이 갈릴 수 있고, 갈리면 어느 쪽이 그 수치의 조건인지 말할
+    수 없다. `LLMResponse.model`(관측)과 `settings.llm_model`(설정값)을 둘 다 싣는 이유는
+    그대로다: 설정값은 별칭 해석·폴백이 있으면 실제와 갈리므로 관측값이 증거다.
+
+    나머지(provider·judge_provider·model·effort)는 **환경·설정에서** 오므로 outcomes 와
+    무관하다. 그래서 이 값들은 여기서 매번 새로 읽어도 결속과 상관없다 — 결속이 필요한 것은
+    관측 모델뿐이고, 그것은 인자로 받아 이미 measurement 와 한 객체에 묶여 있다.
     """
     settings = Settings()
-    observed = sorted({o.model for o in (outcomes or {}).values() if o is not None})
     return RunContext(
         provider=os.environ.get("GOLDEN_PROVIDER", DEFAULT_PROVIDER),
         judge_provider=os.environ.get("GOLDEN_JUDGE_PROVIDER", DEFAULT_JUDGE_PROVIDER),
         model=settings.llm_model,
-        observed_models=observed,
+        observed_models=observed_models,
         effort=settings.llm_effort,
     )
 
@@ -371,66 +379,41 @@ def test_규칙_기반_통과율이_직전_기록보다_낮지_않다(evaluation
         report.floor = judgement
 
     if recording_requested():
-        # 조건은 **리포트가 들고 있는 것을 그대로** 쓴다. 여기서 `run_context()`를 새로
-        # 부르면 안 된다 — 관측 모델(`observed_models`)은 **변환 결과에서만** 나오는데
-        # 인자 없는 호출은 `outcomes`가 `None`이라 그 목록이 항상 비고, `write_baseline`의
-        # fail-closed 가드가 **유효한 실행까지 거부**한다(2026-08-12 실측: 가드를 넣으면서
-        # 이 자리를 빠뜨려 기록 경로가 통째로 막혔다). 리포트의 `context`는 이미 같은
-        # `outcomes`로 만들어진 값이라(`build_report` → `run_context(outcomes)`) 그대로 쓴다.
-        # 새로 유도하지 않는 이유는 하나 더 있다 — **같은 실행의 조건을 두 번 유도하면 두 값이
-        # 갈릴 수 있고, 갈리면 어느 쪽이 그 수치의 조건인지 말할 수 없다.**
-        # `report`가 `None`인 경로만 `run_context()`로 떨어진다. 그때는 이번 실행의 수치를
-        # 세운 리포트 자체가 없다는 뜻이라, 가드가 기록을 거부하는 것이 옳다(fail-closed).
+        # 기록할 측정치와 그 조건(관측 모델)을 **둘 다 evaluation 에서** 꺼낸다.
+        # `evaluate_all` 이 같은 outcomes 로 measurement 와 observed_models 를 한 pass 에서
+        # 만들어 `RuleEvaluation` 한 객체에 실었으므로, 이 둘은 서로 다른 실행에서 올 수 없다.
+        # 그래서 `report.context` 를 신뢰하지 않고, 결속을 `is` 로 확인하지도 않는다 —
+        # 확인할 상태 자체가 만들어지지 않는다.
         #
-        # 다만 리포트를 그대로 쓰려면 **그 리포트가 이번 평가의 것이어야 한다.**
-        # `golden_report.latest()`가 돌려주는 것은 "마지막으로 세워진 리포트"일 뿐,
-        # 이번 평가에 결속된 리포트가 아니다 — `build_report`는 모듈 공개 함수라
-        # `tests/golden/test_floor_gate_wiring.py`의 배선 테스트들도 **같은 경로로**
-        # 리포트를 세우고, 이 함수를 직접 호출한다. 결속을 확인하지 않으면 **수치는 이번
-        # 평가에서 오고 조건(모델 증거 `context.observed_models`)은 다른 실행에서 온**
-        # 기준선이 만들어진다. 그 파일은 자기가 무엇의 하한선인지 **잘못 말한다.**
+        # 이 자리에서 검사를 다섯 번 얹었고, 그때마다 검사가 묶은 것(measurement)과 기록되는
+        # 것(`report.context`)이 어긋나 새 구멍이 났다. 6번째 지적이 정확히 그 어긋남이었다:
+        # `build_report(result, 다른_outcomes)` 는 measurement 동일성(is)을 지키면서 남의
+        # observed 를 context 에 실었다. 이제 `build_report` 가 outcomes 를 받지 않고
+        # `run_context` 가 관측 모델을 인자로만 받으므로, 그 호출도 이 기록 경로도 남의 조건을
+        # 실을 통로가 없다. **`report.context` 로 갈아타지 않고 `evaluation` 이 든 값을 쓰는
+        # 이유가 이것이다** — 리포트를 거치면 다시 "그 리포트가 이번 평가의 것인가"를 확인해야
+        # 하고(검사 추가), `evaluation` 을 직접 보면 그 확인이 필요 없다(구조).
         #
-        # 조건이 비어 있는 것보다 나쁘다. **빈 조건은 `write_baseline`의 fail-closed
-        # 가드가 막지만(provider·observed_models·effort), 남의 조건은 전부 채워져 있어
-        # 그럴듯하고 그대로 통과한다.** 그래서 여기서 결속 자체를 먼저 본다.
-        #
-        # **비교는 `is`다 — 값 동등성으로는 결속이 증명되지 않는다.** `Measurement`는
-        # pydantic 모델이라 `!=`가 필드 **값** 비교인데, 통과율은 정수 쌍
-        # (`passed`/`documents`) 셋뿐이라 **두 실행이 같은 수치를 내는 일이 흔하다** —
-        # 특히 배선 테스트가 실제 코퍼스 수치를 흉내 내면 그대로 겹친다. 겹치면 값 검사는
-        # 통과하고 **다른 실행의 모델 증거가 그대로 기준선에 실린다.** 값 검사가 보는 것은
-        # 결속이 아니라 *수치가 우연히 같은지*다(2026-08-12 실측: 수치는 이번 평가와 같은
-        # 0/56이고 조건만 `stale-model-from-another-run`인 리포트가 값 검사를 그대로
-        # 통과해 임시 경로에 기록됐다 — 남의 모델 증거를 실은 채로).
-        #
-        # 그래서 묻는 것은 "값이 같은가"가 아니라 **"그 객체가 이번 평가에서 왔는가"**다.
-        # `is`가 성립하는 근거는 실측이다 — pydantic v2는 `revalidate_instances`가
-        # 기본값(`'never'`)이면 중첩 모델 필드에 **넘긴 인스턴스를 그대로 보관한다.**
-        # `build_report`가 `measurement=result.measurement`로 넘긴 바로 그 객체가
-        # `report.measurement`로 되돌아오므로, `is`는 "이 리포트는 이 평가로 세워졌다"를
-        # 증명한다. 그 전제 자체는 `tests/golden/test_floor_gate_wiring.py`가 따로 고정한다
-        # — 전제가 깨지면 유효한 실행까지 거부되는데(fail-closed라 안전한 방향이지만
-        # 원인이 안 보인다) 그때 원인을 말해 줄 자리가 필요해서다.
-        #
-        # 실행 토큰(uuid4 등)을 새로 싣지 않은 이유: 필드를 늘리지 않아도 동일성이
-        # 성립하고, 토큰을 만들어 두면 **그 토큰을 실수로 재사용하는 경로가 또 생긴다.**
-        if report is not None and report.measurement is not evaluation.measurement:
+        # report 는 결속과 무관한 두 가지에만 쓴다:
+        #  - judge: **비차단** 축이라 LLM 이 필요해 무-LLM·결정적인 `RuleEvaluation` 에 담을
+        #    수 없다. 측정치-조건 결속의 대상이 아니므로 report 에서 받아도 된다.
+        #  - side effect(`baseline_changes`) 기록.
+        # report 가 없으면 이번 실행이 리포트로 조립되지 않은 것이라 기록하지 않는다
+        # (fail-closed 부수 경로). measurement·observed 는 evaluation 에 있어 기록 자체는
+        # 가능하지만, 커밋된 하한선을 다시 쓰는 일은 리포트가 선 정상 실행에서만 한다.
+        if report is None:
             raise AssertionError(
-                "기준선을 쓰지 않는다 — 기록할 조건이 **이번 평가에 결속되지 않았다.** "
-                "리포트의 측정치가 이번 평가의 측정치와 **같은 객체가 아니다**(다른 "
-                "실행의 리포트가 잡혔다). 수치가 우연히 같아도 결속이 아니다 — 통과율은 "
-                "정수 쌍이라 다른 실행에서도 같은 값이 나온다. 수치와 조건이 서로 다른 "
-                "실행에서 오면 그 기준선은 자기가 무엇의 하한선인지 잘못 말한다."
+                "기준선을 쓰지 않는다 — 이번 실행의 리포트가 없다(fail-closed). 리포트가 "
+                "세워진 정상 실행에서만 커밋된 하한선을 갱신한다."
             )
         body = baseline_body(
             Fingerprint.of(DOCUMENTS),
             evaluation.measurement,
-            report.context if report is not None else run_context(),
-            report.judge if report is not None else None,
+            run_context(evaluation.observed_models),
+            report.judge,
         )
         changes = baseline_changes(body)
-        if report is not None:
-            report.baseline_changes = changes
+        report.baseline_changes = changes
         if changes:
             path = write_baseline(body)
             # 지적 건수가 아니라 **쓸 내용과 이전 내용의 차이**로 판정한다. 지적 0건인
