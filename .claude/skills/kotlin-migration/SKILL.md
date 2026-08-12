@@ -122,12 +122,14 @@ Kotlin 코드를 쓰는 에이전트는 `kotlin-implementer` 하나다. 여러 �
 전원 참여. 계획 문서 §5 Phase 7(2026-08-12 2차 개정)의 절차와 즉시 중단 기준을 그대로 집행한다. **절체·롤백이 아니라 일방향 첫 배포다** — 되돌아갈 운영 Python이 없으므로 중단 기준에 걸리면 신규 업로드를 멈추고 원인을 고쳐 다시 배포한다(fix-forward). **이 Phase는 사용자 승인 없이 실행하지 않는다** — 되돌리기 어려운 상태 변경이 걸려 있고, 이제는 되돌릴 수단 자체가 없다.
 
 ### Phase 8 — Python 런타임 제거
-관찰 기간 종료 후에만, 그리고 **`docs/migration/_workspace/03_rebuild-extraction-list.md`의 폐기 게이트가 0으로 닫힌 뒤에만**. 재개발에는 Python 차분 그물이 없어, 코드에만 있던 판단(프롬프트 전문·스타일 상수·치환 비문 실측 튜닝·골든셋 채점 기준)을 지우면 **영구 손실**이다. `app/`, ARQ, FastAPI, SQLAlchemy, Alembic 제거와 문서 동기화.
+관찰 기간 종료 후에만, 그리고 **`docs/migration/_workspace/03_rebuild-extraction-list.md`의 폐기 게이트가 0으로 닫힌 뒤에만**. 재개발에는 Python 차분 그물이 없어, 코드에만 있던 판단(프롬프트 전문·스타일 상수·치환 비문 실측 튜닝·골든셋 채점 기준)을 지우면 **영구 손실**이다. `app/`, ARQ, FastAPI, SQLAlchemy, Alembic 제거와 문서 동기화. **단 오프라인 도구(`app/easyread/{judge,goldenset,collection,bokjiro}.py`·`scripts/{benchmark,collect_*,pilot_report}.py`)는 Phase 9까지 존치하므로 이 삭제에서 제외**한다 — Phase 9가 그 파일로 Kotlin 대체물을 검증하므로 먼저 지우면 순환이다.
 
-### Phase 9 — 오프라인 도구 Kotlin 전환 (선택)
-런타임 밖 도구를 옮기는 단계: `scripts/benchmark.py`, `scripts/collect_*`, `scripts/pilot_report.py`, `app/easyread/goldenset.py`, `judge.py`, `collection.py`, `bokjiro.py`와 관련 fixture·CLI·리포트 형식.
+### Phase 9 — 오프라인 도구 이식·폐기 (한시 존치 후 최종 폐기)
+런타임 밖 도구: `scripts/benchmark.py`, `scripts/collect_*`, `scripts/pilot_report.py`, `app/easyread/goldenset.py`, `judge.py`, `collection.py`, `bokjiro.py`와 관련 fixture·CLI·리포트 형식. Phase 8에서 지우지 않고 **한시 존치**한 뒤, 이 단계에서 건별로 **이식하거나 폐기**한다(계획 문서 §5 Phase 9, 2026-08-12 2차 개정).
 
-**착수 조건**: 이 Python 골든 도구들은 Kotlin 구현을 채점하는 **독립 검증 oracle**이다 (계획 문서 §5 Phase 9). 옮기는 순간 "Kotlin이 Kotlin을 채점하는" 구조가 되어 교차 검증이 사라진다. 따라서 **리더와 사용자의 명시 승인 없이 착수하지 않는다.** 승인 없이 이 Phase 요청을 받으면 위 이유를 설명하고 승인을 요청한다. 계획 문서도 Kotlin 런타임이 안정되고 동일 결과가 확인된 뒤에 제거하라고 명시한다.
+**성격 (2026-08-12 2차 개정 — 옛 '선택'·'영구 oracle 보존' 폐기).** 초판은 이 도구를 영구 독립 oracle로 두려 했으나 그 논거는 약하다 — 아키텍처 규칙 4가 프롬프트 생성과 골든셋 평가에 **같은 스타일 정의를 공유**시켜 채점자 독립성은 지금도 없다. 진짜 독립성은 fixture·명세에서 온다. 따라서 **최종 폐기 대상**이며 영구 존치가 아니다. Python 도구의 제거 조건은 "Kotlin과 같은 값"이 아니라 **Kotlin 대체 도구가 같은 fixture로 §4.6 합격선을 단독 판정**할 수 있음이다(judge 루브릭·goldenset 판정식은 `03_rebuild-extraction-list.md` §D로 별도 명세화 — 도구를 버려도 합격선 판정은 남는다).
+
+**착수 조건**: Phase 8 완료(오프라인 도구는 존치된 상태) + **리더·사용자 명시 승인**(되돌릴 수 없는 도구 제거·이식이 걸린다). 승인 없이 이 Phase 요청을 받으면 위 이유를 설명하고 승인을 요청한다.
 
 ## 리뷰 게이트 (필수)
 

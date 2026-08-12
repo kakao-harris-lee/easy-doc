@@ -2,8 +2,15 @@
 #
 # ── 이 파일이 있는 이유 ────────────────────────────────────────────────────
 # parity 게이트는 도메인 11개(정본: dump_parity_fixtures.py 의 BUILDERS 키)를 전부
-# 요구한다. 그런데 Kotlin 포팅은 Phase 2(도메인 8개) → Phase 3(jwt·argon2) →
-# Phase 4(crypto) 순으로 나뉘어 진행된다. 그래서 전환 기간 내내 "fixture 는 있는데
+# 요구한다. 그런데 Kotlin 포팅은 Phase 2(도메인 8개)에서 도메인을 나눠 진행한다.
+#
+# ── 2026-08-12 2차 개정 주의: crypto·jwt·argon2 는 이제 parity 대상이 아니다 ──
+# 재개발 전환으로 값 동일성(양방향/compat) 요구가 소멸했다(계획 §4.3 2차). 저장 암호화
+# (crypto) 정확성은 parity 가 아니라 Kotlin 자체 테스트 + migration-safety-gate I-7 이
+# 판정하고, jwt·argon2 는 I-9·I-8 + 필수조치 A·B 회귀가 판정한다. 그래서 이 세 도메인은
+# 이 파일에 선언하지 않는다(선언하면 없는 parity 비교를 요구하게 된다). 이 셋이
+# dump_parity_fixtures.py 정본·.github/parity-canonical-floor.txt(정본 11)에 남아 있는
+# 문제는 이 파일 밖(python-kotlin-parity 스킬 소유)이며 별도 조정 대상이다. 그래서 전환 기간 내내 "fixture 는 있는데
 # Kotlin 구현이 아직 없는 도메인"이 존재한다.
 #
 # 그 상태를 다루는 방법은 둘뿐이다.
@@ -29,8 +36,8 @@
 # 이름과 같아야 하고, 정본에 없는 이름을 적으면 CI 가 막는다.
 # 가능한 값(정본 확인: `uv run python .claude/skills/python-kotlin-parity/scripts/dump_parity_fixtures.py --list`):
 #   masking  text  style  style-tables  prompts  postprocess  repair-adoption  export   ← Phase 2
-#   jwt  argon2                                                                        ← Phase 3
-#   crypto                                                                             ← Phase 4
+#   jwt  argon2                                                                        ← (옛 Phase 3) 2026-08-12 2차: parity 아님 → migration-safety-gate I-9·I-8. 선언 금지
+#   crypto                                                                             ← (옛 Phase 4) 2026-08-12 2차: parity 아님 → Kotlin 자체 테스트 + I-7. 선언 금지
 #
 # ── 현재 상태: Phase 1 종료 시점 — 선언 0개 ────────────────────────────────
 # Phase 1 은 골격만 만들었고 도메인 포팅은 한 건도 하지 않았다. 선언이 0개이므로

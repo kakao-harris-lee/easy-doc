@@ -169,6 +169,48 @@
 
 ---
 
+## L. 문서 추출 보안·정확성 판단 — `app/ingest/extractors.py` (508줄) — 코드-온리 (codex 계획 심사 Q2)
+
+**codex Q2가 지목한 누락.** 이 파일은 **신뢰할 수 없는 입력**을 다루는 보안 모듈이고, 방어의 대부분이 코드·주석에만 있다. 상당수는 `migration-safety-gate` I-10(파서 방어)이 이미 덮지만, **추출 정확성(중복·누락 방지) 판단은 어느 게이트에도 없다** — 지우면 정상 문서 호환이 조용히 깨진다. Kotlin 재구현은 계획 §5 Phase 4(문서 API)다. deep-reasoner가 파일 전문을 훑어 아래를 뽑았다(codex가 든 43-76·232-249·285-293 + 그 밖).
+
+| 판단 | 무엇 | 받을 곳 / 덮는 게이트 |
+|---|---|---|
+| `MAX_UPLOAD_BYTES=10MB`·`MAX_EXTRACTED_CHARS=500,000`·`_MAX_UNCOMPRESSED_BYTES=5×상한` | 상한 3종. 추출 길이 상한은 **크기 상한만으로 부족**(마크업:본문 비율 극단 → 0.14MB가 900만 자)하고 전체·부분 추출에 **같은 함수로** 강제(`_ensure_extracted_length`) | I-10(값 3종 표에 있음) + DOC-03 |
+| **헤더 선언 크기 불신** (`_ensure_zip_within_budget`) | ZipExtFile은 선언 크기·CRC를 **압축 해제 뒤** 검사 → 선언값 위조한 94KB가 힙 141MB를 먼저 먹는다(실측). 믿을 것은 **남은 예산까지 실제 읽은 바이트**뿐. python-docx가 스스로 압축 풀기 **전** 유일 방어선 | I-10 검증3 — **Kotlin `ZipEntry.getSize()` 신뢰가 정확히 이 함정** |
+| `_COUNT_CHUNK_BYTES=64KiB` 계수 단위 | 검사는 **바이트 수만** 세면 되므로 조각을 안 들고 있는다 — 한 번에 예산만큼 읽으면 검사가 예산 크기 메모리를 쓴다 | DOC-03 상세(신규) |
+| **owner-password 허용·user-password만 거부** (`iter_pdf_pages`:285-293) | `is_encrypted`로 미리 거르지 **않는다**. 인쇄·복사만 막은 소유자 암호 PDF는 `is_encrypted=True`인데 열람 자유(빈 user 암호)라 **공공기관 배포 문서에 흔하다**. 미리 막으면 정상 파일 거부. 진짜 암호 필요 파일만 `FileNotDecryptedError` | **신규 인벤토리 항목 필요** — DOC-03은 "스캔 PDF 거절"만 있고 이 판단 없음 |
+| **linked header/footer 중복 방지** (`_docx_blocks`:232-249) | `is_linked_to_previous` 머리글·바닥글은 건너뛴다 — 물려받은 것까지 걷으면 같은 문구가 **구역 수만큼 반복**. 비공개 `_element` 순회(공개 API는 머리글 안 텍스트박스·SDT를 놓침), python-docx 상한 고정으로 업그레이드가 조용히 안 깨게 | **신규 인벤토리 항목 필요**(DOC-01 상세) |
+| **`mc:Fallback` 가지치기** (`_element_blocks`:193-229) | Word 2010+는 텍스트박스를 `mc:Choice`(DrawingML)+`mc:Fallback`(VML) **두 벌**로 저장. 둘 다 걷으면 같은 문구가 **정확히 두 번** → 크레딧 2배·마스킹/프롬프트 오염. 스택 하강으로 Fallback에서 멈춤 | **신규 인벤토리 항목 필요**(DOC-01 상세, 비용·정확성 직결) |
+| **변경추적 `w:ins` 포함·`w:delText` 제외** (동) | 삽입문은 본문, 삭제문은 `w:delText`라 태그 이름으로 자연히 갈린다. 로컬 이름 판별로 `a:t`(도형)·`m:t`(수식)까지, 문서 순서 순회로 **표가 본문 제자리**에 남음 | **신규 인벤토리 항목 필요**(DOC-01 상세) |
+| **OLE2 진단** (`_diagnose_ole2`) | zip 자리에 OLE2가 오면 암호 OOXML(`EncryptedPackage`)·구버전 `.doc`(`WordDocument`)·불명을 UTF-16LE 스트림 이름 바이트 검색으로 갈라 **다른 안내**(olefile 의존 없이) | DOC-02(미지원 요소 명시 실패) 상세 |
+| **DTD/XXE를 파서 수준 거부** (`_hwpx_blocks`) | ElementTree는 내부 엔티티를 펼침(billion laughs). `<!DOCTYPE` 바이트 스캔은 **UTF-16이면 뚫림(실측)** → expat `StartDoctypeDeclHandler`(인코딩 무관, 주석 오인 없음). defusedxml 의존 없음 | I-10 검증2(이미 경고) |
+| **좁은 예외 포착·예외/로그 개인정보 위생** (`_ZIP_ERRORS`·`_broken`·`_log_failure`·모듈 docstring) | zip 계층 예외만 좁게 잡고 나머지(우리 버그)는 **500으로 드러나야**. 예외·로그에 파일명(그 자체가 개인정보: `홍길동_주민등록등본.pdf`)·본문·라이브러리 메시지 금지, `from None` 체인 끊기, `_broken`은 예외 **타입만** | I-3(로그) — Kotlin `data class toString()`·`logger.error(msg, exc)` 기본값이 이걸 되돌린다 |
+| HWPX 구역 번호 정렬·이중 예산(`_read_hwpx_sections`), `_join_blocks` 정규화(빈 줄 제거·개행 하나), 확장자 판별·hwp 명시 거부·CPU 바운드 경고, PDF 쪽 범위(1-based 닫힘·시작>전체=오류·끝>전체=클램프)·스캔 PDF와 손상 구분 | 정확성·안전 세부 | DOC-01/02/03 상세 + fixture |
+
+**주의:** "신규 인벤토리 항목 필요" 4건(owner-password·linked header·mc:Fallback·w:ins)은 **I-10에도 DOC-01~03에도 정확한 판단이 없다.** 지우기 전 인벤토리 DOC-01/03 상세로 올려야 폐기 게이트가 실제로 막는다. Phase 4 착수 시 작성.
+
+---
+
+## M. 인증 보안 판단 — `app/services/auth.py` (284줄) — 코드-온리 (codex 계획 심사 Q2)
+
+**codex Q2가 지목한 누락.** 인증 모듈의 방어 대부분이 코드·주석에만 있다. Argon2·JWT의 **정확성**은 `migration-safety-gate` I-8·I-9가 덮지만(필수조치 A·B 포함), **계정 존재 timing oracle 방지와 몇몇 하드닝은 어느 게이트에도 정확히 없다**. Kotlin 재구현은 계획 §5 Phase 3(인증 API)다. deep-reasoner가 파일 전문을 훑었다(codex가 든 61-67·212-218 + 그 밖).
+
+| 판단 | 무엇 | 받을 곳 / 덮는 게이트 |
+|---|---|---|
+| **계정 존재 timing oracle 방지** (`_dummy_password_hash`·`login`:211-222) | 사용자가 없어도 검증을 **건너뛰지 않고** 더미 해시로 같은 비용 — 조기 반환하면 응답 시간이 가입 여부를 누설. `@cache` 1회·첫 사용까지 지연(워커·CLI가 64MiB를 안 물게) | **신규 인벤토리 항목 필요** — I-8에 timing oracle 항목 없음(codex가 콕 집음) |
+| **Argon2 동시성 메모리 상한** (`_HASH_LIMITER=CapacityLimiter(4)`) | 1건이 `memory_cost=64MiB`를 끝까지 붙듦 → anyio 기본 40스레드면 동시 40건≈2.5GiB→OOM. 실측 한도 4에서 256MiB·지연 안정 | I-8 검증5(이미 경고) |
+| **Argon2 파라미터 명시 고정** (`PasswordHasher(3,65536,4)`) | 라이브러리 기본값은 업그레이드에서 **조용히 바뀜** → 검증 비용·저장 형식 변함 | I-8(기본값 의존 금지) |
+| **재해시 전체 파라미터 동등성** (`check_needs_rehash`) | Python은 전체 동등, Spring `upgradeEncoding`은 memory·iterations "미만"만 — 파라미터 올리는 날 이관이 조용히 멈춤 | I-8 검증4 = **필수조치 A**(살아 있음) |
+| **재해시 best-effort** (`_rehash_if_outdated`) | 재해시 실패가 로그인을 막지 않음 — 파라미터 올린 직후 DB가 흔들리면 재해시 대상 **전원**이 못 들어오는 것 방지. 예외 **타입만** 로깅 | I-8 검증3(이미 있음) |
+| **JWT 서명 키 ≥32B 기동 강제** (`MIN_JWT_SECRET_BYTES`·`__init__`:167) | HS256은 ≥32B(RFC 7518). PyJWT는 짧아도 경고만 하고 서명 → 약한 키 조용히 통과. 기동 경로에서 **설정 오류로 끊음**(키 값은 메시지에 없음) | I-9 검증3(이미 있음) |
+| **`typ=access` 페이로드 클레임** (`_TOKEN_TYPE`·`resolve_token`:240) | 같은 시크릿으로 서명될 이메일 인증·비번 재설정 토큰이 **액세스 토큰으로 오용되지 않게** 용도를 새기고 대조(JOSE 헤더 `typ`와 별개 네임스페이스) | I-9(‘typ 불일치 거부’는 있으나 **설계 의도**는 코드-온리) |
+| **`exp` 필수·검증 예외 위생** (`options.require`·`resolve_token`:246) | `exp` 없으면 영구 토큰 → 필수. 토큰 값을 메시지에 안 담고(토큰=자격증명), `PyJWTError`·`TypeError`·`ValueError`를 **한 예외로** 정규화. `uuid.UUID(sub)`—문자열 아니면 우리 토큰 아님 | I-9 인접(신규 상세) |
+| **verify 예외→불리언 정규화**·**가입 원자성·이메일 정규화·입력 에코 금지** | "불일치"vs"해시 깨짐"을 분기하면 사유 누설 → 불리언. 계정+기본 작업공간 **같은 트랜잭션**, 가입·로그인 같은 키(strip+lower), 검증 메시지에 입력값 되풀이 금지 | I-8 인접 + CNV-05/INV-09 인접(신규 상세) |
+
+**주의:** "계정 존재 timing oracle 방지"와 "`typ=access` 설계 의도"는 인벤토리·safety-gate 어디에도 **정확한 항목이 없다.** timing oracle은 codex가 명시 지목했다. 지우기 전 인벤토리(§3 또는 신규 [보안] 항목)로 올린다. Phase 3 착수 시 작성.
+
+---
+
 ## 폐기 게이트 요약 (Phase 8 선행 조건)
 
 Python `app/**`·`tests/**` 삭제 전, 아래가 전부 "옮겨졌음"이어야 한다:
@@ -179,7 +221,9 @@ Python `app/**`·`tests/**` 삭제 전, 아래가 전부 "옮겨졌음"이어야
 - [ ] D 코퍼스 데이터 보존 + 스키마 상수·게이트 임계값·judge 루브릭 전사, 미확정 계측기 4종 인계
 - [ ] E·F·H·I 결정적 도메인 → fixture 동결(provenance 재읽기)
 - [ ] G 변환 오케스트레이션 판정 로직 → 인벤토리 상세 + `repair-adoption` fixture, `missing_placeholders` 도메인 배정
-- [ ] K 오프라인 도구 → 건별 이식/폐기 결정 완료
+- [ ] K 오프라인 도구가 **Phase 8 삭제 대상에서 제외**되고 Phase 9까지 존치됨이 확인 + durable 지식(judge 루브릭·goldenset 판정식 = §D) 명세화. **건별 이식/폐기 결정은 Phase 9 작업이며 Phase 8 선행 조건이 아니다**(순환 의존 제거)
+- [ ] L 문서 추출 보안·정확성 판단(`extractors.py`) → I-10에 덮인 것 확인 + **미덮임 4건(owner-password·linked header·mc:Fallback·w:ins)을 인벤토리 DOC-01/03 상세로** 올림
+- [ ] M 인증 보안 판단(`auth.py`) → I-8·I-9에 덮인 것 확인 + **미덮임(계정 timing oracle·`typ` 설계 의도)을 인벤토리 [보안] 항목으로** 올림
 - [ ] 위 fixture들의 `expected`가 **Python 실행이 아니라 명세**를 근거로 재확인됨(품질 도메인은 동결 금지)
 
 이 체크리스트가 0으로 닫히기 전 Python을 지우면 계획 §1.1의 잔여 위험이 영구 손실로 실현된다.
