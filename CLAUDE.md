@@ -38,7 +38,7 @@ uv run uvicorn app.main:app --reload   # 개발 서버
 uv run pytest                # 테스트
 uv run pytest tests/golden   # 프롬프트 골든셋 평가
 uv run ruff check --fix . && uv run ruff format .
-uv run mypy .
+uv run mypy . .claude/skills/python-kotlin-parity/scripts   # 점 디렉터리는 크롤링에서 빠지므로 경로를 명시한다
 ```
 
 커밋 전 필수 통과: ruff → mypy → pytest. CI(GitHub Actions)에서도 동일 순서로 강제된다.

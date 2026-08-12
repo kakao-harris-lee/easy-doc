@@ -132,10 +132,7 @@ def mask_contract() -> MaskContract:
     if _MASK_CONTRACT is not None:
         return _MASK_CONTRACT
     try:
-        # 아래 무시 주석의 사유 — PyYAML 은 현재 `uvicorn[standard]` 의 전이 의존이라 들어와
-        # 있고 `types-PyYAML` 스텁은 설치돼 있지 않다. 스텁 추가는 `pyproject.toml` 소유자의
-        # 일이므로 여기서는 사유만 적어 남긴다(리포트에 후속 항목으로 올린다).
-        import yaml  # type: ignore[import-untyped]
+        import yaml
     except ImportError as exc:  # pragma: no cover - 환경 결손
         raise ContractError(
             f"PyYAML 이 없어 {CONTRACT_PATH.name} 을 읽을 수 없다 ({exc}). "

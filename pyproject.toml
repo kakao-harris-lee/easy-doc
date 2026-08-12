@@ -39,6 +39,14 @@ dev = [
     "ruff>=0.8",
     "mypy>=1.13",
     "fpdf2>=2.8",
+    # 런타임 앱(app/)이 아니라 검증 도구가 쓴다: parity 게이트의
+    # `.claude/skills/python-kotlin-parity/scripts/dump_parity_fixtures.py`가
+    # `contracts/easy-doc-v1.yaml`에서 마스킹 범주 enum을 읽는다. 전에는 `uvicorn[standard]`의
+    # 전이 의존으로 우연히 설치돼 있었는데, uvicorn 옵션이 바뀌는 순간 게이트가 계약을 못 읽고
+    # 그 실패가 "계약 위반"으로 오진된다 — 신뢰 뿌리라서 명시 선언한다.
+    "pyyaml>=6.0",
+    # 스텁이 있어야 mypy --strict 에서 yaml import에 무시 주석을 달지 않는다.
+    "types-pyyaml>=6.0.12",
 ]
 
 [tool.ruff]
