@@ -14,6 +14,9 @@
   "layout.pdf": {
     "text": "오른쪽 단 첫 줄왼쪽 단 첫 줄\n왼쪽 단 둘째 줄 오른쪽 단 둘째 줄"
   },
+  "oversized": {
+    "python": "DocumentExtractionError: hwpx 파일이 너무 큽니다"
+  },
   "forged_size": {
     "python": "DocumentExtractionError: hwpx 파일을 읽을 수 없습니다 (파일이 손상되었습니다)"
   }

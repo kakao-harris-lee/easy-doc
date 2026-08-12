@@ -115,6 +115,16 @@ raw[22:26] = struct.pack("<I", 1024)
 cd = raw.rfind(b"PK\x01\x02")
 raw[cd+24:cd+28] = struct.pack("<I", 1024)
 (SP / "forged_size.zip").write_bytes(bytes(raw))
+
+# 5-b) 위조하지 **않은** 압축 폭탄. 2026-08-12 실측으로 갈렸다 — 위 forged_size 는
+# 예산 방어가 아니라 BadZipFile(손상)로 거부된다. 예산 방어(I-10 검증 3)를 실제로
+# 밟는 것은 이쪽이다: reason=uncompressed_too_large.
+(SP / "oversized.zip").write_bytes(buf.getvalue())
+try:
+    extract_text("o.hwpx", buf.getvalue())
+    out["oversized"] = {"python": "통과(!!)"}
+except Exception as e:
+    out["oversized"] = {"python": f"{type(e).__name__}: {e}"}
 try:
     extract_text("f.hwpx", bytes(raw))
     out["forged_size"] = {"python": "통과(!!)"}
