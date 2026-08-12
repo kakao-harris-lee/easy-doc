@@ -333,11 +333,11 @@ def test_하한선_판정이_리포트에_실린다(monkeypatch: pytest.MonkeyPa
     harness.build_report(evaluation)
     monkeypatch.setattr(harness, "load_baseline", lambda: _matching_baseline(evaluation))
     harness.test_규칙_기반_통과율이_직전_기록보다_낮지_않다(evaluation)
-    report = golden_report.latest()
+    report = golden_report.for_evaluation(evaluation)
     assert report is not None
     assert report.floor is not None, "판정이 리포트에 실리지 않았다"
     assert report.floor.verdict is Verdict.HELD
-    assert "상대 하한선" in report.render()
+    assert "── 상대 하한선 ──" in report.render()
 
 
 def test_하락한_수치로_기록하면_실패_메시지에_방향이_남는다(
@@ -451,13 +451,12 @@ def _judge_at(fidelity: float, *, low: list[str]) -> JudgeObservation:
 def test_남의_리포트가_최신이어도_judge_가_기준선에_새지_않는다(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """**8번째 지적의 입력이 이제 깨끗이 기록된다** — 이 파일에서 가장 중요한 증명이다.
+    """**8번째 지적의 입력이 이제 깨끗이 기록된다.**
 
-    문제의 입력은 그대로다: `golden_report.latest()` 는 "마지막으로 세워진" 리포트지 이번
-    평가의 리포트가 아니라, `build_report` 가 여러 번 불리는 프로세스(배선 테스트가 그렇다)
-    에서는 남의 실행 리포트가 최신일 수 있다. 예전에는 그 리포트에서 judge 를 **가져왔기
-    때문에** 수치·조건은 이번 실행인데 judge 만 남의 실행인 기준선이 만들어졌고, 그래서
-    출처를 검사해 기록 자체를 거부했다.
+    문제의 입력은 그대로다: `build_report` 가 여러 번 불리는 프로세스(배선 테스트가 그렇다)
+    에서는 남의 실행 리포트가 최신일 수 있다. 예전에는 기록 경로가 `golden_report.latest()`
+    로 리포트를 집어 judge 를 **가져왔기 때문에** 수치·조건은 이번 실행인데 judge 만 남의
+    실행인 기준선이 만들어졌고, 그래서 출처를 검사해 기록 자체를 거부했다.
 
     2026-08-13에 judge 를 기준선에서 뺐다 — judge 는 비차단축이라 애초에 하한선의 구성요소가
     아니다(`Baseline` docstring). 리포트에서 **읽는 값이 없어지자** 이 입력은 더 이상 오염될
@@ -465,17 +464,17 @@ def test_남의_리포트가_최신이어도_judge_가_기준선에_새지_않�
     있고 judge 자리는 아예 없다. 거부를 지웠으면 그 자리에 남는 것은 이 성질이다.
     """
     evaluation = evaluate_all(_preserving_outcomes("this-run"), harness.DOCUMENTS)
+    harness.build_report(evaluation)
     # 남의 실행 리포트를 최신으로 세운다 — 수치는 같고 조건(observed)·judge 만 다르다.
-    stale = evaluate_all(_preserving_outcomes("stale-model-from-another-run"), harness.DOCUMENTS)
-    harness.build_report(stale)
-    latest = golden_report.latest()
-    assert latest is not None
-    assert latest.measurement == evaluation.measurement, "전제 — 수치는 같다(정수 쌍이라 흔하다)"
-    assert latest.measurement is not evaluation.measurement, "전제 — 별개 객체다"
-    assert latest.context.observed_models == ["stale-model-from-another-run"], (
-        "전제 — 조건만 다르다"
+    stale_source = evaluate_all(
+        _preserving_outcomes("stale-model-from-another-run"), harness.DOCUMENTS
     )
-    latest.judge = _judge_at(1.25, low=["stale-run-doc"])  # 남의 실행에서 채점된 관측
+    stale = harness.build_report(stale_source)
+    assert golden_report.latest() is stale, "전제 — 남의 리포트가 최신이다"
+    assert stale.measurement == evaluation.measurement, "전제 — 수치는 같다(정수 쌍이라 흔하다)"
+    assert stale.measurement is not evaluation.measurement, "전제 — 별개 객체다"
+    assert stale.context.observed_models == ["stale-model-from-another-run"], "전제 — 조건만 다르다"
+    stale.judge = _judge_at(1.25, low=["stale-run-doc"])  # 남의 실행에서 채점된 관측
 
     path = tmp_path / "baseline.json"
     recording = _Recording(monkeypatch, evaluation, path)
@@ -490,6 +489,46 @@ def test_남의_리포트가_최신이어도_judge_가_기준선에_새지_않�
     assert path.exists()
 
 
+def test_남의_리포트에는_이번_실행의_판정이_실리지_않는다(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """**9번째 지적** — 기준선 파일이 아니라 **사람이 읽는 리포트**가 오염되던 자리다.
+
+    직전 커밋은 "리포트에 쓰는 것은 값을 읽는 게 아니라 방향이 반대이므로 커밋되는 파일의
+    무결성과 무관하다"고 방어했다. 그 방어가 틀렸다. `golden_report.latest()` 가 남의
+    리포트일 때 기록 경로는 이번 실행의 `floor` 판정과 `baseline_changes` 를 **그 리포트에
+    실었고**, 사람이 읽는 것은 그 리포트다 — 다른 실행의 수치 위에 이번 판정이 얹힌다.
+    (고치기 전 이 입력을 태우면 stale 리포트의 렌더에 `── 상대 하한선 ──`·`── 기준선 기록 ──`
+    절이 나타났고 이번 실행의 리포트는 비어 있었다.)
+
+    검사를 얹어 막지 않았다. 조회를 `for_evaluation(evaluation)` 으로 바꿔 **남의 리포트가
+    잡힐 통로 자체를 없앴다.** 그래서 여기서 보는 것은 "거부됐다"가 아니라 **"남의 리포트는
+    건드려지지 않았고 이번 리포트에는 그대로 실렸다"**이다.
+    """
+    evaluation = evaluate_all(_preserving_outcomes("this-run"), harness.DOCUMENTS)
+    own = harness.build_report(evaluation)
+    stale = harness.build_report(
+        evaluate_all(_preserving_outcomes("stale-model-from-another-run"), harness.DOCUMENTS)
+    )
+    assert golden_report.latest() is stale, "전제 — 남의 리포트가 최신이다"
+
+    path = tmp_path / "baseline.json"
+    recording = _Recording(monkeypatch, evaluation, path)
+    with pytest.raises(AssertionError, match="기록 실행"):
+        harness.test_규칙_기반_통과율이_직전_기록보다_낮지_않다(evaluation)
+
+    # ① 남의 리포트는 손대지 않는다 — 렌더에도 이번 실행의 절이 나타나지 않는다.
+    assert stale.floor is None, "남의 리포트에 이번 실행의 하한선 판정이 실렸다"
+    assert stale.baseline_changes == [], "남의 리포트에 이번 실행의 기준선 변경 내역이 실렸다"
+    rendered = stale.render()
+    assert "── 상대 하한선 ──" not in rendered
+    assert "── 기준선 기록 ──" not in rendered
+    # ② 이번 평가의 리포트에는 그대로 실린다 — 막아서 아무데도 안 실리는 것과 구분한다.
+    assert own.floor is not None
+    assert own.baseline_changes == ["- 기준선을 새로 만든다"]
+    assert len(recording.written) == 1, "정상 기록이 막혔다"
+
+
 def test_같은_평가의_리포트에_붙은_judge_도_기준선에_실리지_않는다(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -502,9 +541,7 @@ def test_같은_평가의_리포트에_붙은_judge_도_기준선에_실리지_�
     리포트에 그대로 남아 렌더·경고로 보이고, 기준선 파일에만 들어가지 않는다.
     """
     evaluation = evaluate_all(_preserving_outcomes("this-run"), harness.DOCUMENTS)
-    harness.build_report(evaluation)
-    report = golden_report.latest()
-    assert report is not None
+    report = harness.build_report(evaluation)
     observation = _judge_at(4.5, low=[])
     report.judge = observation  # judge 테스트가 이번 실행의 리포트에 붙이는 자리
 
@@ -531,9 +568,7 @@ def test_judge_를_재지_않은_실행도_기준선을_기록한다(
     실패가 아니라 skip 인 이유와 같은 자리다.
     """
     evaluation = evaluate_all(_preserving_outcomes("this-run"), harness.DOCUMENTS)
-    harness.build_report(evaluation)
-    report = golden_report.latest()
-    assert report is not None
+    report = harness.build_report(evaluation)
     assert report.judge is None, "전제 — judge 를 재지 않은 상태(키 없음 → skip)"
 
     path = tmp_path / "baseline.json"
@@ -581,7 +616,7 @@ def test_리포트가_없으면_기록하지_않는다(monkeypatch: pytest.Monke
     """
     evaluation = evaluate_all(_preserving_outcomes(), harness.DOCUMENTS)
     golden_report.reset()  # 리포트를 세우지 않은 상태를 만든다
-    assert golden_report.latest() is None
+    assert golden_report.for_evaluation(evaluation) is None
     path = tmp_path / "baseline.json"
     recording = _Recording(monkeypatch, evaluation, path)
     with pytest.raises(AssertionError, match="리포트가 없다"):
@@ -589,6 +624,31 @@ def test_리포트가_없으면_기록하지_않는다(monkeypatch: pytest.Monke
     assert recording.bodies == [], "리포트 부재를 본문 조립 전에 막아야 한다"
     assert recording.attempts == [], "write 를 시도했다 — 가드에 기대지 말고 먼저 막는다"
     assert recording.written == [], "기준선을 썼다"
+    assert not path.exists()
+
+
+def test_남의_리포트만_있으면_이번_실행은_기록하지_않는다(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """가드의 뜻이 **"이번 평가의 리포트가 있는가"**로 좁혀졌음을 고정한다.
+
+    예전 조회(`latest()`)에서는 남의 리포트가 하나라도 있으면 가드가 통과했다 — 리포트가
+    "있기는" 했으니까. 그 통과가 곧 남의 리포트에 이번 판정을 쓰는 경로였다. 이제 조회가
+    결속을 요구하므로, 리포트가 있어도 **이번 평가의 것이 아니면** 기록하지 않는다.
+    """
+    evaluation = evaluate_all(_preserving_outcomes("this-run"), harness.DOCUMENTS)
+    stale = harness.build_report(
+        evaluate_all(_preserving_outcomes("stale-model-from-another-run"), harness.DOCUMENTS)
+    )
+    assert golden_report.latest() is stale, "전제 — 리포트가 있기는 하다(남의 것이다)"
+    path = tmp_path / "baseline.json"
+    recording = _Recording(monkeypatch, evaluation, path)
+    with pytest.raises(AssertionError, match="리포트가 없다"):
+        harness.test_규칙_기반_통과율이_직전_기록보다_낮지_않다(evaluation)
+    assert recording.bodies == [], "본문 조립 전에 막아야 한다"
+    assert recording.written == [], "기준선을 썼다"
+    assert stale.floor is None, "남의 리포트에 이번 실행의 판정이 실렸다"
+    assert stale.baseline_changes == []
     assert not path.exists()
 
 
@@ -602,7 +662,8 @@ def test_비기록_모드는_남의_리포트가_최신이어도_정상_판정�
     남의 실행 리포트를 최신으로 둔 채 확인한다.
     """
     evaluation = evaluate_all(_preserving_outcomes("this-run"), harness.DOCUMENTS)
-    harness.build_report(
+    own = harness.build_report(evaluation)
+    stale = harness.build_report(
         evaluate_all(_preserving_outcomes("stale-model-from-another-run"), harness.DOCUMENTS)
     )
     monkeypatch.setattr(harness, "load_baseline", lambda: _matching_baseline(evaluation))
@@ -611,6 +672,9 @@ def test_비기록_모드는_남의_리포트가_최신이어도_정상_판정�
         harness, "write_baseline", lambda body: pytest.fail("비기록 모드가 기준선을 썼다")
     )
     harness.test_규칙_기반_통과율이_직전_기록보다_낮지_않다(evaluation)
+    # 판정 자체는 기록 분기 밖이라 비기록 실행에서도 리포트에 실린다 — **이번 리포트에만**.
+    assert own.floor is not None
+    assert stale.floor is None, "비기록 실행이 남의 리포트에 판정을 실었다"
 
 
 def test_평가가_관측_모델을_측정치와_함께_싣는다() -> None:
@@ -638,6 +702,34 @@ def test_build_report_는_조건을_따로_받지_않는다() -> None:
         harness.build_report(evaluation, {})  # type: ignore[call-arg]  # 조건 인자 통로 부재 고정
 
 
+def test_리포트는_평가에_결속해야만_등록된다() -> None:
+    """**결속 없는 등록 통로가 없다** — 9번째 지적을 구조로 닫는 자리다.
+
+    등록에 평가를 요구하지 않으면 "누구 것인지 말할 수 없는 리포트"가 생기고, 그런 리포트를
+    나중에 `latest()` 로 집어 오는 경로가 다시 열린다. 인자를 필수로 두면 그 상태가 애초에
+    만들어지지 않는다(mypy 도 이 호출을 거부한다).
+    """
+    evaluation = evaluate_all(_preserving_outcomes(), harness.DOCUMENTS)
+    report = harness.build_report(evaluation)
+    with pytest.raises(TypeError):
+        golden_report.record(report)  # type: ignore[call-arg]  # 결속 인자 필수 고정
+    assert golden_report.for_evaluation(evaluation) is report
+
+
+def test_수치가_같은_다른_평가의_리포트는_잡히지_않는다() -> None:
+    """키는 **값이 아니라 객체 동일성**이다.
+
+    값으로 잡으면 수치가 같은 두 실행이 겹친다 — 통과 수는 정수 쌍이라 같은 값이 흔하고,
+    아래 두 평가가 정확히 그 입력이다(`==` 로는 구분되지 않고 `is` 로만 갈린다).
+    """
+    first = evaluate_all(_preserving_outcomes("run-a"), harness.DOCUMENTS)
+    second = evaluate_all(_preserving_outcomes("run-b"), harness.DOCUMENTS)
+    assert first.measurement == second.measurement, "전제 — 값으로는 구분되지 않는다"
+    report = harness.build_report(first)
+    assert golden_report.for_evaluation(first) is report
+    assert golden_report.for_evaluation(second) is None, "값이 같다는 이유로 남의 리포트가 잡혔다"
+
+
 # ═══════════════════════════════════════════ 비차단축: judge
 
 
@@ -653,7 +745,7 @@ async def test_날조가_섞여도_judge는_차단하지_않는다() -> None:
     responses += [_FABRICATED] * _FABRICATED_COUNT
     with pytest.warns(UserWarning, match="judge 비차단"):
         await harness.test_judge_점수를_기록한다(
-            _preserving_outcomes(), FakeProvider(responses=responses)
+            evaluation, _preserving_outcomes(), FakeProvider(responses=responses)
         )
 
 
@@ -663,14 +755,12 @@ async def test_날조는_경고와_리포트에_남는다() -> None:
     `find_low_fidelity` 호출을 지우면 이 테스트가 깨진다.
     """
     evaluation = evaluate_all(_preserving_outcomes(), harness.DOCUMENTS)
-    harness.build_report(evaluation)
+    report = harness.build_report(evaluation)
     responses: list[str | Exception] = [_FABRICATED] * len(harness.DOCUMENTS)
     with pytest.warns(UserWarning, match="충실성"):
         await harness.test_judge_점수를_기록한다(
-            _preserving_outcomes(), FakeProvider(responses=responses)
+            evaluation, _preserving_outcomes(), FakeProvider(responses=responses)
         )
-    report = golden_report.latest()
-    assert report is not None
     assert report.judge is not None
     assert len(report.judge.low_fidelity_ids) == len(harness.DOCUMENTS)
     assert "충실성" in report.render()
@@ -679,17 +769,37 @@ async def test_날조는_경고와_리포트에_남는다() -> None:
 async def test_judge_점수가_리포트에_실린다() -> None:
     """통과하는 실행에서도 judge 수치가 남아야 한다 — 기록·경고용이라는 뜻이 이것이다."""
     evaluation = evaluate_all(_preserving_outcomes(), harness.DOCUMENTS)
-    harness.build_report(evaluation)
+    report = harness.build_report(evaluation)
     responses: list[str | Exception] = [_HIGH] * len(harness.DOCUMENTS)
     await harness.test_judge_점수를_기록한다(
-        _preserving_outcomes(), FakeProvider(responses=responses)
+        evaluation, _preserving_outcomes(), FakeProvider(responses=responses)
     )
-    report = golden_report.latest()
-    assert report is not None
     assert report.judge is not None
     assert report.judge.scored == len(harness.DOCUMENTS)
     assert report.judge.fidelity_mean == 5.0
     assert report.judge.low_fidelity_ids == []
+
+
+async def test_남의_리포트에는_judge_관측이_실리지_않는다() -> None:
+    """judge 도 같은 구조로 닫힌다 — 관측을 실을 리포트를 **이번 평가로** 찾는다.
+
+    예전에는 `golden_report.latest()` 에 대입해서, 남의 리포트가 최신이면 이번 실행의 judge
+    수치가 남의 리포트에 실렸다(하한선 기록 경로의 9번째 지적과 같은 모양이다). 사람이 읽는
+    것이 그 리포트라는 점도 같다.
+    """
+    evaluation = evaluate_all(_preserving_outcomes("this-run"), harness.DOCUMENTS)
+    own = harness.build_report(evaluation)
+    stale = harness.build_report(
+        evaluate_all(_preserving_outcomes("stale-model-from-another-run"), harness.DOCUMENTS)
+    )
+    assert golden_report.latest() is stale, "전제 — 남의 리포트가 최신이다"
+    responses: list[str | Exception] = [_HIGH] * len(harness.DOCUMENTS)
+    await harness.test_judge_점수를_기록한다(
+        evaluation, _preserving_outcomes(), FakeProvider(responses=responses)
+    )
+    assert stale.judge is None, "남의 리포트에 이번 실행의 judge 관측이 실렸다"
+    assert stale.judge_notes == []
+    assert own.judge is not None, "이번 실행의 리포트에는 실려야 한다"
 
 
 # ═══════════════════════════════════════════ 게이트 실행 전제: 자격 증명

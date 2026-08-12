@@ -33,6 +33,7 @@ from tests.golden.baseline import (
     stored_body,
     write_baseline,
 )
+from tests.golden.evaluation import RuleEvaluation
 
 DOCUMENTS: list[GoldenDocument] = load_documents(DOCUMENTS_DIR)
 
@@ -425,6 +426,18 @@ def test_실제_코퍼스_전건에_보존_검사가_돈다() -> None:
 # ═══════════════════════════════════════════════════ B. 리포트는 항상 수치를 남긴다
 
 
+def _evaluation(measurement: Measurement) -> RuleEvaluation:
+    """리포트를 결속할 평가 하나. 여기서는 **키로만** 쓰이므로 최소 구성으로 만든다."""
+    return RuleEvaluation(
+        evaluations=[],
+        measurement=measurement,
+        failure_reasons={},
+        conversion_failures=[],
+        fact_losses=[],
+        observed_models=["fake-model"],
+    )
+
+
 def _report(measurement: Measurement) -> golden_report.GoldenRunReport:
     return golden_report.GoldenRunReport(
         fingerprint=Fingerprint.of(DOCUMENTS),
@@ -456,11 +469,19 @@ def test_통과하는_실행도_수치가_남는다() -> None:
     golden_report.reset()
     assert golden_report.latest() is None
     perfect = _measurement((56, 56), (20, 20))
-    golden_report.record(_report(perfect))
+    evaluation = _evaluation(perfect)
+    recorded = golden_report.record(_report(perfect), evaluation)
     latest = golden_report.latest()
     assert latest is not None
     assert "56/56" in latest.render()
+    # 등록은 **평가에 결속된다** — 같은 평가로 조회하면 같은 리포트가 나온다.
+    assert golden_report.for_evaluation(evaluation) is recorded
+    # 다른 평가로 조회하면 없다. 수치가 같아도(값으로는 구분되지 않아도) 잡히지 않는다.
+    other = _evaluation(perfect)
+    assert other.measurement == evaluation.measurement
+    assert golden_report.for_evaluation(other) is None
     golden_report.reset()
+    assert golden_report.for_evaluation(evaluation) is None, "reset 이 등록부를 비우지 않았다"
 
 
 def test_리포트에_본문이_실리지_않는다() -> None:

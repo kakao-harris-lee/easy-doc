@@ -195,6 +195,10 @@ def build_report(result: RuleEvaluation) -> golden_report.GoldenRunReport:
     "측정치는 이 평가·조건은 다른 실행"을 만드는 통로였다: `build_report(result, 다른_outcomes)`
     는 measurement 동일성을 지키면서 남의 observed 를 context 에 실었다(6번째 지적).
     이제 그 인자가 없어 그 호출 자체가 표현 불가다.
+
+    리포트를 **`result` 에 결속해** 등록한다(`golden_report.record` 의 두 번째 인자). 아래
+    두 테스트는 이 결속을 통해 `for_evaluation(evaluation)` 으로 자기 리포트만 받는다 —
+    "마지막으로 세워진 리포트"를 집어 오는 통로가 없어야 남의 리포트가 잡히지 않는다.
     """
     return golden_report.record(
         golden_report.GoldenRunReport(
@@ -205,7 +209,8 @@ def build_report(result: RuleEvaluation) -> golden_report.GoldenRunReport:
             failure_reasons=result.failure_reasons,
             conversion_failures=result.conversion_failures,
             fact_losses=result.fact_losses,
-        )
+        ),
+        result,
     )
 
 
@@ -294,7 +299,9 @@ def test_필수_정보가_보존된다(evaluation: RuleEvaluation) -> None:
 
 @pytest.mark.asyncio(loop_scope="module")
 async def test_judge_점수를_기록한다(
-    outcomes: dict[str, ConversionOutcome | None], judge_provider: LLMProvider
+    evaluation: RuleEvaluation,
+    outcomes: dict[str, ConversionOutcome | None],
+    judge_provider: LLMProvider,
 ) -> None:
     """**차단하지 않는다.** 점수를 재서 리포트와 경고로 남긴다.
 
@@ -303,6 +310,12 @@ async def test_judge_점수를_기록한다(
     `UserWarning`으로 올리고 리포트에 수치를 싣는다.
 
     이 축이 막던 정보 누락은 위의 필수 정보 보존 게이트가 LLM 없이 절대 기준으로 받는다.
+
+    `evaluation` 을 받는 이유는 **관측을 실을 리포트를 이번 평가로 찾기 위해서**다. 예전에는
+    `golden_report.latest()` 에 대입했는데, 그것은 "마지막으로 세워진" 리포트지 이번 실행의
+    리포트가 아니다 — 남의 리포트가 최신이면 이번 실행의 judge 수치가 남의 리포트에 실린다
+    (하한선 기록 경로에서 지적된 것과 **같은 모양**이다). 채점 자체는 `outcomes` 로 하고,
+    `evaluation` 은 리포트를 찾는 열쇠로만 쓴다.
     """
     scores: dict[str, JudgeScore] = {}
     notes: list[str] = []
@@ -338,7 +351,7 @@ async def test_judge_점수를_기록한다(
             f"이해 용이성 평균 {observation.readability_mean:.2f} < 목표 {JUDGE_SCORE_THRESHOLD}"
         )
 
-    report = golden_report.latest()
+    report = golden_report.for_evaluation(evaluation)
     if report is not None:
         report.judge = observation
         report.judge_notes = notes
@@ -373,7 +386,7 @@ def test_규칙_기반_통과율이_직전_기록보다_낮지_않다(evaluation
         f"측정 대상이 코퍼스 전건이 아니다 — {measured}/{len(DOCUMENTS)}건만 셌다. "
         "지문은 전건으로 계산되므로 이 어긋남은 지문에 걸리지 않는다"
     )
-    report = golden_report.latest()
+    report = golden_report.for_evaluation(evaluation)
     judgement = compare(load_baseline(), Fingerprint.of(DOCUMENTS), evaluation.measurement)
     if report is not None:
         report.floor = judgement
@@ -405,16 +418,26 @@ def test_규칙_기반_통과율이_직전_기록보다_낮지_않다(evaluation
         # `report.measurement is evaluation.measurement` 검사를 지웠다. judge 관측은 실행
         # 리포트에 그대로 남는다 — 정보를 잃은 것이 아니라 하한선에서 내린 것이다.
         #
-        # **남은 report 접촉 둘이 왜 같은 버그가 아닌가** (이 방어 문장을 빼지 마라 — 빼면
-        # "report 를 만지는데 왜 출처 검사가 없나"가 다시 제기되고 여덟 번째 검사로 돌아온다):
-        #  ⓐ `report is None` — fail-closed 가드다. 리포트에서 **값을 가져오지 않고** 이번
-        #     실행이 리포트로 조립됐는지만 본다. 조립되지 않았으면 커밋된 하한선을 다시 쓰지
-        #     않는다. 남의 리포트가 최신이어도 기록되는 본문은 `evaluation` 의 것뿐이다.
-        #  ⓑ `report.baseline_changes = changes` — **리포트에서 값을 읽는 게 아니라
-        #     evaluation 으로 만든 값을 리포트에 쓰는 것**이다. 방향이 반대라 남의 실행 값이
-        #     기준선으로 흘러들 통로가 아니고, 최신 리포트가 남의 것이면 그 리포트에 이번
-        #     실행의 변경 목록이 붙을 뿐이다 — 사람이 보는 표시이지 **커밋되는 파일의
-        #     무결성과는 무관하다.**
+        # **직전 커밋의 방어("ⓑ 는 쓰기라서 안전하다")는 틀렸다** — 9번째 지적이 그것을 깼다.
+        # 그 방어는 보호 대상을 커밋되는 `baseline.json` 하나로 잡고 "리포트에 쓰는 것은
+        # 표시일 뿐 파일 무결성과 무관하다"고 적었다. 대상을 잘못 잡았다 — **사람이 읽는 것은
+        # 그 리포트다.** `latest()` 가 남의 리포트일 때 이 자리는 이번 실행의 `floor` 판정과
+        # `baseline_changes` 를 남의 실행 리포트에 실었고, 그 리포트를 읽는 사람은 다른 실행의
+        # 수치 위에 이번 판정이 얹힌 것을 한 실행의 결과로 읽는다. 기준선 파일이 안전해도
+        # 리포트가 오염된다 — 방향만 반대일 뿐 두 실행이 섞이는 것은 같다.
+        #
+        # 그래서 일곱 번째 검사를 얹지 않고 **통로를 없앴다.** 리포트는
+        # `golden_report.for_evaluation(evaluation)` 으로만 찾는다 — `record` 가 리포트를 만든
+        # 평가에 결속해 등록하고 조회는 그 평가로 한다(키는 값이 아니라 **객체 동일성**이다.
+        # 값으로 잡으면 수치가 같은 두 실행이 겹친다). 남의 리포트가 최신이어도 이 조회에
+        # 잡히지 않으므로 **"남의 리포트에 이번 판정을 쓴 상태"가 만들어질 수 없다.** 검사로
+        # 그 상태를 잡아내는 것과 그 상태를 만들 수 없게 하는 것은 다르다 — 이 자리에 검사를
+        # 다섯 번 얹었고 그때마다 검사가 묶은 것과 실제로 쓰이는 것이 어긋나 새 구멍이 났다.
+        #
+        # 남는 `report is None` 은 그대로 fail-closed 가드다. 다만 이제 "리포트가 있는가"가
+        # 아니라 **"이번 평가의 리포트가 있는가"**를 뜻한다 — 조회가 결속을 요구하므로 None 은
+        # 이번 실행이 리포트로 조립되지 않았다는 뜻이고, 그때는 커밋된 하한선을 갱신하지 않는다.
+        # 기록되는 본문은 여전히 `evaluation` 에서만 온다.
         if report is None:
             raise AssertionError(
                 "기준선을 쓰지 않는다 — 이번 실행의 리포트가 없다(fail-closed). 리포트가 "

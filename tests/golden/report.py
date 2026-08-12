@@ -32,6 +32,7 @@ from tests.golden.baseline import (
     Measurement,
     RunContext,
 )
+from tests.golden.evaluation import RuleEvaluation
 
 #: 리포트 파일을 쓸 디렉터리. **기본값은 없다** — 지정했을 때만 파일로 남긴다.
 #: 저장소에 리포트를 자동으로 떨어뜨리면 `.gitignore`를 손대야 하는데, 이번 작업의 소유
@@ -39,7 +40,17 @@ from tests.golden.baseline import (
 #: CI가 산출물을 보관하고 싶으면 이 환경변수를 준다.
 REPORT_DIR_ENV = "GOLDEN_REPORT_DIR"
 
+#: 표시용 — **마지막으로 세워진** 리포트. 터미널 요약(`conftest.py`)이 실행 끝에 한 번
+#: 출력할 대상을 고르는 데만 쓴다. 이 값을 **읽어서 쓰거나 여기에 값을 대입하는 경로는
+#: 없어야 한다**(아래 `for_evaluation` 참조).
 _LATEST: "GoldenRunReport | None" = None
+
+#: 평가 → 그 평가로 세운 리포트. **키는 값이 아니라 객체 동일성**이다(`for_evaluation`이
+#: `is`로 찾는다). 값으로 키를 잡으면 수치가 같은 두 실행이 겹치는데, 통과 수는 정수 쌍이라
+#: 같은 값이 흔하다(`test_floor_gate_wiring.py`가 그 입력을 실제로 만든다).
+#: 실행당 항목 수는 리포트를 세우는 횟수와 같다 — 실제 게이트 실행에서는 모듈 스코프 fixture가
+#: 한 번 세우므로 1건이고, 여러 번 세우는 배선 테스트는 `reset()`으로 매 테스트 씻는다.
+_BOUND: "list[tuple[RuleEvaluation, GoldenRunReport]]" = []
 
 
 class Targets(BaseModel):
@@ -159,10 +170,19 @@ class GoldenRunReport(BaseModel):
         return dict(json.loads(self.model_dump_json()))
 
 
-def record(report: GoldenRunReport) -> GoldenRunReport:
-    """이번 실행의 리포트를 붙든다. 터미널 요약이 통과·실패와 무관하게 이것을 출력한다."""
+def record(report: GoldenRunReport, evaluation: RuleEvaluation) -> GoldenRunReport:
+    """리포트를 **그 리포트를 만든 평가에 결속해** 등록한다.
+
+    `evaluation` 은 선택 인자가 아니다. 결속 없이 등록할 수 있으면 "이 리포트는 누구 것인가"를
+    말할 수 없는 리포트가 생기고, 그런 리포트를 나중에 `latest()` 로 집어 오는 경로가 다시
+    열린다. 인자를 필수로 두면 그 상태가 애초에 만들어지지 않는다.
+
+    터미널 요약은 계속 `latest()` 를 본다 — 출력할 리포트 하나를 고르는 표시용 용도이고,
+    거기서는 "마지막으로 세워진 것"이 정확히 맞는 뜻이다.
+    """
     global _LATEST
     _LATEST = report
+    _BOUND.append((evaluation, report))
     directory = os.environ.get(REPORT_DIR_ENV, "").strip()
     if directory:
         path = Path(directory) / "golden-report.json"
@@ -173,11 +193,39 @@ def record(report: GoldenRunReport) -> GoldenRunReport:
     return report
 
 
+def for_evaluation(evaluation: RuleEvaluation) -> GoldenRunReport | None:
+    """**이 평가로 세운** 리포트만 돌려준다. 없으면 `None`.
+
+    기록 경로가 리포트를 찾는 유일한 통로다. `latest()` 와 다른 점이 이 함수의 존재 이유다 —
+    `latest()` 는 "마지막으로 세워진" 리포트라 이번 평가와 아무 관계가 없을 수 있고,
+    `build_report` 가 여러 번 불리는 프로세스(배선 테스트가 그렇다)에서는 실제로 남의 실행
+    리포트가 최신이다. 그 리포트를 집어 오면 이번 실행의 판정이 남의 리포트에 실린다.
+
+    찾기는 `is` 다 — 값(`==`)으로 찾으면 수치가 같은 두 실행이 겹친다. 통과 수는 정수 쌍이라
+    같은 값이 흔하고, 이번 사가에서 그 입력을 이미 확인했다.
+
+    **방향은 면죄부가 아니다.** 리포트에서 값을 읽는 것만 위험하고 쓰는 것은 안전하다는
+    방어를 한 번 했는데(9번째 지적이 그 방어를 깼다), 쓰기는 커밋되는 기준선 파일 대신
+    **사람이 읽는 리포트**를 오염시킨다. 읽기든 쓰기든 남의 리포트를 집는 순간 두 실행이
+    섞이고, 섞인 쪽을 사람이 읽는다는 점에서 결과는 같다.
+    """
+    for source, report in reversed(_BOUND):
+        if source is evaluation:
+            return report
+    return None
+
+
 def latest() -> GoldenRunReport | None:
+    """**표시용** — 마지막으로 세워진 리포트(터미널 요약이 무엇을 출력할지 고른다).
+
+    여기서 받은 리포트에 값을 대입하거나 여기서 값을 읽어 판정·기록에 쓰지 마라. 이번 실행의
+    리포트가 필요하면 `for_evaluation` 을 써라 — 이 함수는 "이번 실행"을 뜻하지 않는다.
+    """
     return _LATEST
 
 
 def reset() -> None:
-    """테스트용 — 붙들고 있던 리포트를 버린다."""
+    """테스트용 — 붙들고 있던 리포트와 결속 등록부를 함께 버린다."""
     global _LATEST
     _LATEST = None
+    _BOUND.clear()
