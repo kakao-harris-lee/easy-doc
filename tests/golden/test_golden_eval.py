@@ -381,6 +381,25 @@ def test_규칙_기반_통과율이_직전_기록보다_낮지_않다(evaluation
         # 갈릴 수 있고, 갈리면 어느 쪽이 그 수치의 조건인지 말할 수 없다.**
         # `report`가 `None`인 경로만 `run_context()`로 떨어진다. 그때는 이번 실행의 수치를
         # 세운 리포트 자체가 없다는 뜻이라, 가드가 기록을 거부하는 것이 옳다(fail-closed).
+        #
+        # 다만 리포트를 그대로 쓰려면 **그 리포트가 이번 평가의 것이어야 한다.**
+        # `golden_report.latest()`가 돌려주는 것은 "마지막으로 세워진 리포트"일 뿐,
+        # 이번 평가에 결속된 리포트가 아니다 — `build_report`는 모듈 공개 함수라
+        # `tests/golden/test_floor_gate_wiring.py`의 배선 테스트들도 **같은 경로로**
+        # 리포트를 세우고, 이 함수를 직접 호출한다. 결속을 확인하지 않으면 **수치는 이번
+        # 평가에서 오고 조건(모델 증거 `context.observed_models`)은 다른 실행에서 온**
+        # 기준선이 만들어진다. 그 파일은 자기가 무엇의 하한선인지 **잘못 말한다.**
+        #
+        # 조건이 비어 있는 것보다 나쁘다. **빈 조건은 `write_baseline`의 fail-closed
+        # 가드가 막지만(provider·observed_models·effort), 남의 조건은 전부 채워져 있어
+        # 그럴듯하고 그대로 통과한다.** 그래서 여기서 결속 자체를 먼저 본다.
+        if report is not None and report.measurement != evaluation.measurement:
+            raise AssertionError(
+                "기준선을 쓰지 않는다 — 기록할 조건이 **이번 평가에 결속되지 않았다.** "
+                "리포트의 측정치가 이번 평가와 다르다(다른 실행의 리포트가 잡혔다). "
+                "수치와 조건이 서로 다른 실행에서 오면 그 기준선은 자기가 무엇의 "
+                "하한선인지 잘못 말한다."
+            )
         body = baseline_body(
             Fingerprint.of(DOCUMENTS),
             evaluation.measurement,
