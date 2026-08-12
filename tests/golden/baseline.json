@@ -1,0 +1,98 @@
+{
+  "fingerprint": {
+    "corpus_sha256": "eca83d43bc9db2e0789fc45963d57d54851ac61f86c8acff8c3e251ebcf3cee2",
+    "criteria_sha256": "e2a5d27bfd952416c81e92a55bc5bfdbe066c310e16daa7ac4659b76f264908e",
+    "document_count": 56,
+    "synthetic_count": 20,
+    "collected_count": 36,
+    "document_ids": [
+      "001",
+      "002",
+      "003",
+      "004",
+      "005",
+      "006",
+      "007",
+      "008",
+      "009",
+      "010",
+      "011",
+      "012",
+      "013",
+      "014",
+      "015",
+      "016",
+      "017",
+      "018",
+      "019",
+      "020",
+      "032",
+      "039",
+      "041",
+      "042",
+      "045",
+      "048",
+      "049",
+      "051",
+      "052",
+      "060",
+      "062",
+      "063",
+      "064",
+      "070",
+      "072",
+      "074",
+      "077",
+      "078",
+      "079",
+      "080",
+      "081",
+      "087",
+      "088",
+      "089",
+      "090",
+      "091",
+      "092",
+      "093",
+      "094",
+      "095",
+      "096",
+      "097",
+      "098",
+      "099",
+      "100",
+      "101"
+    ]
+  },
+  "measurement": {
+    "overall": {
+      "documents": 56,
+      "passed": 31
+    },
+    "synthetic": {
+      "documents": 20,
+      "passed": 16
+    },
+    "collected": {
+      "documents": 36,
+      "passed": 15
+    }
+  },
+  "context": {
+    "provider": "anthropic",
+    "judge_provider": "anthropic",
+    "model": null
+  },
+  "judge_observed": {
+    "scored": 55,
+    "documents": 56,
+    "fidelity_mean": 4.654545454545454,
+    "readability_mean": 4.9818181818181815,
+    "low_fidelity_ids": [
+      "041",
+      "042"
+    ]
+  },
+  "note": "골든셋 규칙 기반 통과 측정치의 직전 기록이다. 합격 기준은 절대 수치가 아니라 '이 수치보다 낮아지지 않는다'이며, fingerprint가 다르면 비교 자체가 성립하지 않는다. 갱신: GOLDEN_RECORD_BASELINE=1 로 tests/golden 을 -m llm 으로 실행한 뒤 diff를 커밋한다.",
+  "recorded_at": "2026-08-12T14:00:04Z"
+}
