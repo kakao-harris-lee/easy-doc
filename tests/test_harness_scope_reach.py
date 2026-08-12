@@ -73,7 +73,13 @@
 - **(닫힘) 충족 강등과 행 삭제.** 예전엔 하한에 여유(행 5 · `충족 = 예` 3 · 표기 7)가
   있어 `충족 = 예` 3행을 `아니오` + `안 돎` 으로 내리거나 행 5개를 지워도 통과했다.
   하필 지워도 안 걸리는 것 중에 **품질 게이트 행**(근거 6번의 그 행)이 있었다.
-  `EXPECTED_ROWS` 등을 **정확 일치**로 바꿔 닫았다.
+  `EXPECTED_ROWS`·`EXPECTED_REACH_TOKENS` 를 **정확 일치**로 바꿔 닫았다.
+- **(닫힘) `충족 = 예` 행의 치환·개명.** 정확 일치 개수는 **순소실만** 막았다 — 품질
+  게이트 행을 지우고 아무 행이나 하나 더하면 총개수가 그대로라 통과했고, 제목만 갈아
+  끼워도 통과했다. **개수는 정체성의 대리 지표**이고, 대리 지표로 실물을 판정하는 것이
+  이 하네스 규칙 2가 금지하는 바로 그것이다(근거 4번). 그래서 개수를 **정체성 집합**
+  (`EXPECTED_MET_YES_KEYS`)으로 **교체**했다 — 병존이 아니라 교체다. 집합의 크기가
+  개수를 포함하므로 두 벌을 두면 같은 사실의 두 표현이 갈릴 뿐이다.
 - **표기의 진실.** 위 첫 문단대로다. 문서가 `상태 = 미실행` 이라 적은 행에 `ci:quality`
   를 달아도 통과한다. 이 검사는 "어디서 도는가에 답했는가" 만 본다.
 - **`local:` 로 닫힌 행.** 근거가 된 사고(합격선의 CI 도달 0)를 다시 겪어도 이 검사는
@@ -87,10 +93,19 @@
   표시하므로 **문서엔 11행이 보이는데 검사기는 10행만 본다.** 행 삭제와 달리 diff 가
   **2글자**라 눈에 잘 띄지 않는다. 표 중간에 빈 줄을 하나 넣어도 같다 — 그 아래
   전부가 별개 블록이 되어 표에서 떨어져 나간다.
-- **위조 행 추가는 여전히 안 잡는다.** 개수를 정확 일치로 바꿔 **삭제·강등은 닫혔지만**,
-  근거 없는 행을 넣고 `EXPECTED_ROWS` 를 함께 올리면 통과한다. 기록 위조는 이 검사의
+- **`충족 = 아니오` 행과 게이트 표 행은 개수로만 지켜진다.** `충족 = 예` 행은 정체성
+  집합에 박혀 삭제·치환·개명이 **이름과 함께** 드러나지만, 나머지 행은 총개수만 맞으면
+  된다 — 하나를 지우고 다른 하나를 넣거나 제목만 갈아 끼우면 통과한다. 주장을 담은 행만
+  정체성으로 고정한 것은 **위협의 무게를 따른 선택**이지 나머지가 안전해서가 아니다.
+- **제목 앞 40자 밖의 편집은 안 잡는다.** 키는 제목을 정규화해 앞 40자로 자른 값이라,
+  그보다 뒤를 고치거나 `종료 조건` 열 **밖의** 칸(근거·미해결 항목·blocked-by)을 통째로
+  바꿔 써도 키는 그대로다. 클립을 없애면 사소한 문구 수정마다 상수가 갈려 다음 사람이
+  규칙을 느슨하게 만든다 — 브리틀함과 맞바꾼 자리다. 앞 40자가 겹치는 두 행이 생기면
+  그때는 삭제가 다시 숨을 수 있으므로, 키 충돌 자체를 위반으로 잡는다.
+- **상수를 함께 갱신하면 무엇이든 통과한다.** 행을 지우고 `EXPECTED_ROWS` 를 내리거나,
+  위조 행을 넣고 그 키를 집합에 더하면 이 검사는 조용해진다. 기록 위조는 이 검사의
   threat model 이 아니라 **리뷰와 diff** 의 몫이다 — 다만 이제 그 diff 에 상수 변경이
-  반드시 딸려 나오므로 눈에 띈다.
+  반드시 딸려 나오고, `충족 = 예` 쪽은 **어느 행인지가 이름으로** 드러난다.
 - **(닫힘) 이 파일을 스위트에서 통째로 빼는 것.** `pytestmark = pytest.mark.llm`
   한 줄이면 `addopts = "-m 'not llm'"` 때문에 전건 제외되는데 전체 수집은 **exit 0**
   이라 스위트가 초록이었다(근거 6번과 같은 기제다). 파일 삭제도 마찬가지였다.
@@ -101,9 +116,10 @@
   어떤 파일도 자기 자신에 대한 절대 기준이 될 수 없으므로 그 지점의 방어선은 리뷰다.
 
 판정 로직은 저장소 상태에 의존하지 않는 **순수 함수**(`parse_tables` ·
-`select_target_tables` · `judge_tables`)로 빼 두었고, 아래쪽에 **음성 대조**가 합성
-입력으로 붙어 있다. 각 규칙이 어떤 입력에서 실패하는지 보이지 않으면 이 파일의 통과는
-"입력이 애초에 무해해서" 와 구분되지 않는다(규칙 5).
+`select_target_tables` · `judge_tables` · `identity_key` · `census_problems`)로 빼
+두었고, 아래쪽에 **음성 대조**가 합성 입력으로 붙어 있다. 각 규칙이 어떤 입력에서
+실패하는지 보이지 않으면 이 파일의 통과는 "입력이 애초에 무해해서" 와 구분되지
+않는다(규칙 5).
 
 지금 어디서 도는가: `tests/` 아래라 `uv run pytest` 가 수집한다 — CI `quality` 잡의
 `uv run pytest` 단계에서 매 실행 돈다. `-m llm` 마커를 붙이지 않았고 네트워크·LLM·DB 를
@@ -117,6 +133,7 @@ from __future__ import annotations
 
 import re
 import subprocess
+from collections import Counter
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import date
@@ -171,9 +188,67 @@ EXPECTED_TARGET_TABLES: Final = 4
 #: 그래서 정확 일치로 바꿨다. 표를 정당하게 고치면 이 상수도 함께 고쳐야 하고,
 #: **그 diff 가 "판정 범위를 건드렸다"는 신호로 리뷰에 올라가는 것**이 이 상수의
 #: 값어치다. 브리틀한 것이 아니라 마찰이 의도된 자리다.
+#:
+#: 이 둘이 덮는 것은 **주장 없는 행과 표기까지 포함한 전체 규모**다. 주장을 담은 행
+#: (`충족 = 예`)의 정체성은 아래 `EXPECTED_MET_YES_KEYS` 가 따로 덮는다.
 EXPECTED_ROWS: Final = 45
-EXPECTED_MET_YES: Final = 18
 EXPECTED_REACH_TOKENS: Final = 52
+
+#: 제목에서 정체성 키를 뽑을 때 자르는 길이. 길수록 사소한 문구 수정마다 상수가 갈리고,
+#: 짧을수록 서로 다른 행이 같은 키로 뭉쳐 삭제가 숨는다. 40자는 현재 18개 행이 전부
+#: 구분되면서(키 충돌 검사가 이를 강제한다) 꼬리말 편집에는 둔감한 지점이다.
+_KEY_CLIP: Final = 40
+
+_BR_TAG: Final = re.compile(r"<br\s*/?>", re.IGNORECASE)
+_EMPHASIS: Final = re.compile(r"\*+")
+_WHITESPACE: Final = re.compile(r"\s+")
+
+#: `충족 = 예` 행의 **정체성 집합**. 개수(`EXPECTED_MET_YES` 였다)를 **대체한** 것이지
+#: 병존하지 않는다 — 집합의 크기가 개수를 포함하므로, 두 벌을 두면 같은 사실의 두 표현이
+#: 갈릴 뿐이고 갈리면 둘 다 못 믿게 된다.
+#:
+#: 개수로는 **순소실만** 막혔다. 「품질 합격선 기제 확정·승인」 행을 지우고 아무 행이나
+#: 하나 더하면 총개수가 그대로라 통과했고, 제목만 갈아 끼워도 통과했다. **개수는 정체성의
+#: 대리 지표**이고, 대리 지표로 실물을 판정하는 것이 하네스 규칙 2가 금지하는 바로
+#: 그것이다(근거 4번 — "지적 건수"를 "변경 여부"의 대리로 써서 원장을 새로 만들고도
+#: 성공 코드로 끝났다). 집합은 삭제·치환·개명을 **무엇이 없어졌고 무엇이 생겼는지**까지
+#: 드러낸다.
+#:
+#: 값은 **실측**이다(`select_target_tables` → `충족 = 예` 행 → `identity_key`).
+#: 불투명한 해시를 쓰지 않는 이유는, 리뷰에 올라가는 diff 가 이 상수의 값어치인데
+#: 해시는 diff 에서 아무것도 말해 주지 않기 때문이다.
+EXPECTED_MET_YES_KEYS: Final = frozenset(
+    {
+        "Argon2 PHC 검증 spike",
+        "DOCX/PDF/HWPX 라이브러리 spike",
+        "Dockerfile·compose Kotlin profile 추가 (기존",
+        "FastAPI OpenAPI·계약 파일·React 타입 3자 대조",
+        "Fernet JVM 호환 spike",
+        "JWT 양방향 호환 spike",
+        "Testcontainers PostgreSQL + Flyway basel",
+        '`/health` 가 계약대로 응답 (상수 `{"status":"ok"}',
+        "`backend-kotlin` Gradle 멀티모듈 생성 (§3.2의 5",
+        "`contracts/easy-doc-v1.yaml` 작성",
+        "toolchain·dependency locking·version cat",
+        "대상 DB와 보존할 파일럿 데이터 유무 확인",
+        "리뷰 차단 C-1·C-2·C-3 — 오류 계약의 HTTP 경계 검증과 C",
+        "범위 승인: 런타임만 Kotlin화 vs 오프라인 도구까지 Python ",
+        "설정 바인딩·구조화 로그·비밀값 마스킹",
+        "종료 조건: 빈 DB와 기존 schema snapshot 양쪽에서 기동 ",
+        "품질 합격선 기제 확정·승인 (계획 §5 Phase 0 · §4.6 게이",
+        "필수 조치 D — `encryption_scheme` additive 추",
+    }
+)
+
+#: 위 세 상수가 실패했을 때 붙는 안내. 세 곳에서 같은 문장을 쓰므로 한 벌만 둔다.
+_UPDATE_GUIDE: Final = (
+    "표를 정당하게 고쳤다면 이 상수를 갱신하라 — 그 diff 가 "
+    "'판정 범위를 건드렸다'는 신호로 리뷰에 올라가는 것이 이 상수의 값어치다."
+)
+
+#: 정체성 불일치 메시지를 음성 대조에서 골라내는 표식. 문자열을 두 곳에 따로 적으면
+#: 한쪽만 고쳐졌을 때 음성 대조가 조용히 빈 필터가 된다.
+_IDENTITY_MISMATCH_MARK: Final = "정체성 집합이 기대와 다르다"
 
 _CI_TOKEN: Final = re.compile(r"^ci:([A-Za-z0-9][A-Za-z0-9_.-]*)$")
 _LOCAL_TOKEN: Final = re.compile(r"^local:(\S.*)$")
@@ -304,6 +379,26 @@ def split_reach_tokens(cell: str) -> list[str]:
     if cell.strip() in _BLANK_MARKS:
         return []
     return [token.strip().strip("`").strip() for token in cell.split(_TOKEN_SEPARATOR)]
+
+
+def identity_key(title: str) -> str:
+    """행 제목(첫 셀)에서 **안정된 정체성 키**를 뽑는다.
+
+    키가 만족해야 하는 두 성질이 서로 반대 방향이라 정규화가 필요하다.
+
+    * **같은 행은 같은 키여야 한다.** 이 문서의 제목은 굵게·기울임 표시가 붙었다 떨어지고
+      (`품질 합격선 **기제** 확정`), `<br>` 뒤에 개정 꼬리말이 자란다
+      (`…<br>*직전 행 제목: "합격선 **수치** 확정·승인" — …*`). 그런 표기 변화마다 상수가
+      갈리면 다음 사람이 규칙을 느슨하게 만든다.
+    * **다른 행은 다른 키여야 한다.** 뭉치면 한 행이 지워져도 집합이 그대로라 삭제가
+      숨는다. 그래서 `census_problems` 가 키 충돌 자체를 위반으로 잡는다.
+
+    그 사이를 `<br>` 이후 절단 → 강조 표시 제거 → 연속 공백 축약 → 앞 `_KEY_CLIP` 자
+    절단으로 잡는다. 이 함수는 저장소 상태를 보지 않으므로 아래에서 직접 검사한다.
+    """
+    head = _BR_TAG.split(title, maxsplit=1)[0]
+    plain = _EMPHASIS.sub("", head)
+    return _WHITESPACE.sub(" ", plain).strip()[:_KEY_CLIP]
 
 
 # --- 판정 (순수 함수) ---------------------------------------------------------
@@ -487,6 +582,68 @@ def judge_tables(tables: Sequence[Table], context: JudgeContext) -> list[Violati
     return violations
 
 
+def census_problems(
+    tables: Sequence[Table],
+    *,
+    expected_rows: int,
+    expected_met_yes_keys: frozenset[str],
+    expected_reach_tokens: int,
+) -> list[str]:
+    """대상 표의 **규모와 정체성**을 기대값에 대조한다. 통과면 빈 목록이다.
+
+    규모(행 수·표기 수)는 순소실만 막는다 — 하나를 지우고 하나를 넣으면 그대로다.
+    그래서 주장을 담은 행(`충족 = 예`)은 개수가 아니라 **정체성 집합**으로 본다.
+    실물 판정과 음성 대조가 **같은 함수**를 부르게 해 둔 이유는, 둘이 다른 코드를 보면
+    음성 대조가 "이 검사가 잡는다"가 아니라 "닮은 검사가 잡는다"만 증명하기 때문이다.
+    """
+    rows = sum(len(table.rows) for table in tables)
+    met_yes_keys: list[str] = []
+    tokens = 0
+    for table in tables:
+        if _REACH_HEADER not in table.headers:
+            continue
+        reach_index = table.headers.index(_REACH_HEADER)
+        met_index = table.headers.index(_MET_HEADER) if _MET_HEADER in table.headers else None
+        for row in table.rows:
+            if len(row) != len(table.headers):
+                continue
+            tokens += len(split_reach_tokens(row[reach_index]))
+            if met_index is not None and met_verdict(row[met_index]) is True:
+                met_yes_keys.append(identity_key(row[0]))
+
+    problems: list[str] = []
+    if rows != expected_rows:
+        problems.append(
+            f"대상 행이 {rows}개다 (기대 {expected_rows}) — 표가 사라졌거나 파싱이 깨졌다."
+        )
+
+    collisions = sorted(key for key, count in Counter(met_yes_keys).items() if count > 1)
+    if collisions:
+        problems.append(
+            f"정체성 키가 겹치는 `{_MET_HEADER} = {_MET_YES}` 행이 있다: {collisions}. "
+            f"제목 앞 {_KEY_CLIP}자가 같으면 그중 한 행이 지워져도 집합은 그대로라 "
+            "삭제가 숨는다 — 앞부분이 갈리도록 행 제목을 구분하라."
+        )
+
+    actual_keys = frozenset(met_yes_keys)
+    missing = sorted(expected_met_yes_keys - actual_keys)
+    added = sorted(actual_keys - expected_met_yes_keys)
+    if missing or added:
+        problems.append(
+            f"`{_MET_HEADER} = {_MET_YES}` 행의 {_IDENTITY_MISMATCH_MARK} "
+            f"(기대 {len(expected_met_yes_keys)}개 / 실제 {len(actual_keys)}개).\n"
+            f"     없어진 행: {missing if missing else '없음'}\n"
+            f"     새로 생긴 행: {added if added else '없음'}"
+        )
+
+    if tokens != expected_reach_tokens:
+        problems.append(
+            f"실행 경로 표기가 {tokens}개다 (기대 {expected_reach_tokens}) — "
+            "규칙 3·4·5가 검사할 대상이 사라졌다."
+        )
+    return problems
+
+
 def read_ci_job_names(workflow_yaml: str) -> frozenset[str]:
     """워크플로의 `jobs:` 이름을 읽는다.
 
@@ -575,41 +732,25 @@ def test_판정이_실제로_행을_보고_있다(target_tables: list[Table]) ->
 
     이 하네스가 이미 겪은 실패다 — "미충족 0" 이 항목 0개에서 참이 되던 구멍(리뷰
     A-1/X-08). 표를 못 읽거나 `충족 = 예` 행을 하나도 못 골라도 규칙 2는 조용히
-    통과하므로, 기대 개수를 세워 그 상태를 실패로 만든다.
+    통과하므로, 규모와 정체성을 못 박아 그 상태를 실패로 만든다.
 
-    **정확 일치이지 하한이 아니다.** 여유를 두면 그만큼 조용히 줄어들 수 있고, 실측에서
-    지워도 안 걸리는 행 중에 **품질 게이트 행**(근거 6번)이 있었다 — 알려진 약한 자리의
-    기록이 흔적 없이 사라지는 것이 이 검사가 막아야 할 바로 그 일이다.
+    **규모는 정확 일치이지 하한이 아니다.** 여유를 두면 그만큼 조용히 줄어들 수 있고,
+    실측에서 지워도 안 걸리는 행 중에 **품질 게이트 행**(근거 6번)이 있었다.
+
+    **그리고 규모만으로는 부족하다.** 총개수는 순소실만 막는다 — 그 품질 게이트 행을
+    지우고 아무 행이나 하나 더하면 45가 그대로라 통과했고, 제목만 갈아 끼워도 통과했다.
+    개수는 정체성의 **대리 지표**이고, 대리 지표로 실물을 판정하는 것이 하네스 규칙 2가
+    금지하는 그것이다. 그래서 주장을 담은 행은 개수 대신 **정체성 집합**으로 본다.
     """
-    rows = sum(len(table.rows) for table in target_tables)
-    met_yes = 0
-    tokens = 0
-    for table in target_tables:
-        if _REACH_HEADER not in table.headers:
-            continue
-        reach_index = table.headers.index(_REACH_HEADER)
-        met_index = table.headers.index(_MET_HEADER) if _MET_HEADER in table.headers else None
-        for row in table.rows:
-            if len(row) != len(table.headers):
-                continue
-            tokens += len(split_reach_tokens(row[reach_index]))
-            if met_index is not None and met_verdict(row[met_index]) is True:
-                met_yes += 1
-
-    _guide = (
-        "표를 정당하게 고쳤다면 이 상수를 갱신하라 — 그 diff 가 "
-        "'판정 범위를 건드렸다'는 신호로 리뷰에 올라가는 것이 이 상수의 값어치다."
+    problems = census_problems(
+        target_tables,
+        expected_rows=EXPECTED_ROWS,
+        expected_met_yes_keys=EXPECTED_MET_YES_KEYS,
+        expected_reach_tokens=EXPECTED_REACH_TOKENS,
     )
-    assert rows == EXPECTED_ROWS, (
-        f"대상 행이 {rows}개다 (기대 {EXPECTED_ROWS}). 표가 사라졌거나 파싱이 깨졌다. {_guide}"
-    )
-    assert met_yes == EXPECTED_MET_YES, (
-        f"`충족 = 예` 행이 {met_yes}개다 (기대 {EXPECTED_MET_YES}). "
-        f"규칙 2가 검사할 대상이 사라지면 그 규칙은 항상 통과한다. {_guide}"
-    )
-    assert tokens == EXPECTED_REACH_TOKENS, (
-        f"실행 경로 표기가 {tokens}개다 (기대 {EXPECTED_REACH_TOKENS}). "
-        f"규칙 3·4·5가 검사할 대상이 사라졌다. {_guide}"
+    rendered = "\n".join(f"  {number}. {problem}" for number, problem in enumerate(problems, 1))
+    assert not problems, (
+        f"대상 표의 규모·정체성이 기대와 다르다 ({len(problems)}건):\n{rendered}\n  {_UPDATE_GUIDE}"
     )
 
 
@@ -847,6 +988,139 @@ def test_음성F5_결정_날짜가_달력에_없으면_실패한다() -> None:
     # 윤년은 통과해야 한다 — 날짜 검사를 정규식으로 흉내 내지 않았다는 증거다.
     assert _judge_markdown(_goal_table("예", "`결정:2024-02-29`")) == []
     assert _sole_reason(_goal_table("예", "`결정:2026-02-29`"))
+
+
+# --- 음성 대조 I1~I5 (정체성 집합이 개수를 대체했음을 보이는 자리) ----------------
+#
+# `EXPECTED_ROWS` 만 있던 시절 통과하던 조작들이다. 총개수는 **순소실만** 막으므로,
+# 지운 자리에 아무 행이나 채워 넣거나 제목을 갈아 끼우면 초록이었다.
+
+#: 합성 원장. 실제 원장의 두 행 제목을 본떠 두는 이유는, 대리 지표 문제가 실제로
+#: 드러난 자리가 「품질 합격선 …」 행이기 때문이다. 셋째 행은 `충족 = 아니오` 라
+#: 정체성 집합 밖에 있다 — 그 행이 개수로만 지켜진다는 사실도 아래에서 함께 고정한다.
+_IDENTITY_ROWS: Final = (
+    ("품질 합격선 **기제** 확정·승인<br>*직전 제목: 합격선 수치 확정·승인*", "예", "`ci:unit`"),
+    ("`contracts/easy-doc-v1.yaml` 작성", "예", "`ci:lint`"),
+    ("아직 안 닫힌 행", "아니오", "`미배선`"),
+)
+_IDENTITY_KEYS: Final = frozenset(
+    {"품질 합격선 기제 확정·승인", "`contracts/easy-doc-v1.yaml` 작성"}
+)
+_IDENTITY_ROW_COUNT: Final = 3
+_IDENTITY_TOKEN_COUNT: Final = 3
+
+
+def _identity_table(rows: Sequence[tuple[str, str, str]]) -> str:
+    """(제목, 충족, 실행 경로) 여러 줄짜리 합성 종료 조건 표."""
+    header = (
+        f"## 합성 정체성 표\n\n| 종료 조건 | 충족 | {_REACH_HEADER} | 근거 |\n|---|---|---|---|\n"
+    )
+    body = "".join(f"| {title} | {met} | {reach} | 근거 |\n" for title, met, reach in rows)
+    return header + body
+
+
+def _census(
+    rows: Sequence[tuple[str, str, str]],
+    *,
+    keys: frozenset[str] = _IDENTITY_KEYS,
+) -> list[str]:
+    """합성 표를 **실물과 같은 함수**로 판정한다 — 닮은 검사가 아니라 그 검사여야 한다."""
+    return census_problems(
+        select_target_tables(parse_tables(_identity_table(rows))),
+        expected_rows=_IDENTITY_ROW_COUNT,
+        expected_met_yes_keys=keys,
+        expected_reach_tokens=_IDENTITY_TOKEN_COUNT,
+    )
+
+
+def test_정체성_대조군_손대지_않은_표는_통과한다() -> None:
+    """대조군. 이게 실패하면 아래 넷은 "입력이 애초에 틀려서" 와 구분되지 않는다."""
+    assert _census(_IDENTITY_ROWS) == []
+
+
+def test_정체성_I1_충족_예_행을_지우면_없어진_키가_지목된다() -> None:
+    deleted = _IDENTITY_ROWS[1:]
+    problems = _census(deleted)
+    identity = [problem for problem in problems if _IDENTITY_MISMATCH_MARK in problem]
+    assert len(identity) == 1, f"정체성 위반이 정확히 1건이어야 한다: {problems}"
+    assert "없어진 행: ['품질 합격선 기제 확정·승인']" in identity[0]
+    assert "새로 생긴 행: 없음" in identity[0]
+    # 순소실은 규모 축도 함께 잡는다(행 2≠3 · 표기 2≠3). 정체성 축이 더하는 것은
+    # **무엇이** 없어졌는지를 이름으로 말한다는 한 줄이고, 그 한 줄이 아래 I2 를 가능하게 한다.
+    assert len(problems) == 3, problems
+
+
+def test_정체성_I2_총개수를_유지한_치환은_정체성만_잡는다() -> None:
+    """**이번 수정의 핵심.** 세 개수 축이 전부 그대로인데 원장의 주장이 갈린다.
+
+    「품질 합격선 …」 행을 지우고 근거 없는 행을 하나 채워 넣은 편집이다. 행 3개,
+    표기 3개, `충족 = 예` **2개** — 개수만 보는 검사는 전부 통과한다. 대리 지표로
+    실물을 판정하면 이 편집이 초록으로 지나간다는 것이 이 자리의 요점이다.
+    """
+    swapped = (("근거 없이 새로 넣은 행", "예", "`ci:e2e`"), *_IDENTITY_ROWS[1:])
+    problems = _census(swapped)
+    assert len(problems) == 1, f"개수 축이 걸렸다 — 총개수 유지 시나리오가 아니다: {problems}"
+    assert _IDENTITY_MISMATCH_MARK in problems[0]
+    # `충족 = 예` **개수까지 같다** — 옛 `EXPECTED_MET_YES` 였다면 통과했을 편집이다.
+    assert "(기대 2개 / 실제 2개)" in problems[0], problems[0]
+    assert "없어진 행: ['품질 합격선 기제 확정·승인']" in problems[0]
+    assert "새로 생긴 행: ['근거 없이 새로 넣은 행']" in problems[0]
+
+
+def test_정체성_I3_제목만_개명해도_없어진_키와_새_키가_둘_다_지목된다() -> None:
+    renamed = (
+        ("품질 합격선 **수치** 확정·승인<br>*꼬리말*", "예", "`ci:unit`"),
+        *_IDENTITY_ROWS[1:],
+    )
+    problems = _census(renamed)
+    assert len(problems) == 1, f"개수 축이 걸렸다 — 개명 시나리오가 아니다: {problems}"
+    assert "없어진 행: ['품질 합격선 기제 확정·승인']" in problems[0]
+    assert "새로 생긴 행: ['품질 합격선 수치 확정·승인']" in problems[0]
+
+
+def test_정체성_I4_표기만_달라진_제목은_같은_행으로_읽힌다() -> None:
+    """거짓 고발 쪽 경계. 강조가 떨어지고 꼬리말이 자라고 공백이 늘어도 같은 행이다.
+
+    이쪽을 고정하지 않으면 문구를 다듬을 때마다 상수가 갈리고, 몇 번 겪은 다음 사람이
+    규칙을 통째로 느슨하게 만든다. 정상 문서를 고발하는 검사는 한계가 아니라 버그다.
+    """
+    retouched = (
+        ("품질 합격선  기제   확정·승인<br />*완전히 다른 꼬리말*", "예", "`ci:unit`"),
+        *_IDENTITY_ROWS[1:],
+    )
+    assert _census(retouched) == []
+
+
+def test_정체성_I5_앞_40자가_겹치는_두_행은_위반이다() -> None:
+    """키가 뭉치면 그중 하나가 지워져도 집합이 그대로라 **삭제가 다시 숨는다.**"""
+    shared_head = "앞부분이 똑같아서 정체성 키가 뭉쳐 버리는 아주 긴 종료 조건 제목이다 그래서"
+    assert len(shared_head) >= _KEY_CLIP, "이 대조의 전제 — 앞머리가 클립 길이보다 길어야 한다"
+    collided = (
+        (shared_head + " 갑", "예", "`ci:unit`"),
+        (shared_head + " 을", "예", "`ci:lint`"),
+        _IDENTITY_ROWS[2],
+    )
+    problems = _census(collided, keys=frozenset({identity_key(shared_head)}))
+    assert len(problems) == 1, problems
+    assert "정체성 키가 겹치는" in problems[0]
+
+
+def test_정체성_키는_표기를_걷어_내고_앞부분만_남긴다() -> None:
+    """키 산출 함수를 직접 본다 — 표를 거쳐서만 검사하면 어느 정규화가 살아 있는지 흐려진다."""
+    # 강조 표시(굵게·기울임)는 걷어 낸다. `_normalize_cell` 이 `**` 만 걷으므로 `*` 도 여기서 본다.
+    assert identity_key("**품질 합격선** 확정") == "품질 합격선 확정"
+    assert identity_key("*품질 합격선* 확정") == "품질 합격선 확정"
+    # `<br>` 이후 꼬리말은 버린다 — 이 문서의 개정 주석이 거기 자란다. 변종 표기도 같다.
+    assert identity_key("품질 합격선 확정<br>*직전 제목: 다른 이름*") == "품질 합격선 확정"
+    assert identity_key("품질 합격선 확정<br/>꼬리말") == "품질 합격선 확정"
+    assert identity_key("품질 합격선 확정<br />꼬리말") == "품질 합격선 확정"
+    assert identity_key("품질 합격선 확정<BR>꼬리말") == "품질 합격선 확정"
+    # 연속 공백은 하나로 줄이고 양끝은 턴다.
+    assert identity_key("  품질   합격선\t확정  ") == "품질 합격선 확정"
+    # 앞 `_KEY_CLIP` 자로 자른다. 그래서 그 뒤만 다른 두 제목은 같은 키가 되고,
+    # 그 상태를 `census_problems` 가 키 충돌로 잡는다(I5).
+    assert identity_key("가" * 60) == "가" * _KEY_CLIP
+    assert identity_key("나" * _KEY_CLIP + "갑") == identity_key("나" * _KEY_CLIP + "을")
 
 
 def test_git_추적_목록은_NUL_구분으로_읽는다() -> None:
