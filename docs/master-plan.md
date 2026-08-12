@@ -190,11 +190,11 @@ v1 기획의 MVP는 물론, 아래 P0 전체(11개)도 "정식 출시" 기준이
 
 | 영역 | 선택 | 비고 |
 |---|---|---|
-| Backend | Python 3.12+, FastAPI | 비동기 처리 |
-| 패키지 관리 | **uv** | Poetry 대신 확정. requirements.txt 직접 관리 금지 |
+| Backend | **Kotlin + Spring Boot** (2026-08-12 재개발 전환) | 아래 전환 주석 참조. Python 3.12 + FastAPI 는 폐기 대상 구현이다 |
+| 빌드·패키지 | **Gradle**(제품 런타임) / **uv**(남은 Python 도구) | Python 쪽은 Poetry·requirements.txt 직접 관리 금지가 그대로 유효 |
 | AI | LLM Provider 추상화 레이어 (자체 인터페이스) + 상용 API | LangChain은 필요한 부분(문서 로더 등)만 선택적 사용, 체인 로직은 직접 구현 우선 |
 | DB | **PostgreSQL + pgvector** | 유저·결제·문서 메타 + 쉬운 말 사전 벡터를 단일 DB로. ChromaDB 미사용 |
-| 비동기 작업 | **arq + Redis** (확정) | 대용량 변환, 알림 발송 |
+| 비동기 작업 | **PostgreSQL lease 기반 작업 큐** (2026-08-12 전환, 계획 §4.4) | 대용량 변환, 알림 발송. arq + Redis 는 폐기 — 큐를 위해 두 번째 저장소를 운영하지 않는다 |
 | Frontend | React + TypeScript | 분할 화면 에디터 |
 | Infra | 클라우드 (Phase 2에 CSAP 요건 반영해 리전·구성 재검토) | |
 

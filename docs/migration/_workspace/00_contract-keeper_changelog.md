@@ -5,6 +5,87 @@
 
 ---
 
+## 2026-08-12 · R-1 · 재개발 전환으로 근거를 잃은 호환 요구 정리
+
+| 항목 | 값 |
+|---|---|
+| 계기 | **2026-08-12 2차 사용자 결정** — Python 코드를 폐기하고 재개발한다. **롤백을 포기**했으므로 Fernet 암호문·JWT·Argon2의 바이트 동일성 요구가 근거를 잃었다. 표준 AEAD를 처음부터 쓴다 |
+| 근거 | **G3** (정책 결정 변경) + **G1** (재해시 판정 기준·clock skew 서술이 사실과 달랐다 — Phase 0 실측) |
+| `info.version` | **올리지 않는다** (1.1.0 유지) — 와이어 스키마 무변경. 상태 코드·오류 본문·필드 이름·enum이 하나도 안 바뀌었고, 바뀐 것은 인증 검증 규약의 서술과 503 사유의 **명칭**뿐이다 |
+| React 영향 | **없음.** `types.ts`·`client.ts`·컴포넌트 어느 쪽도 Argon2 파라미터·JWT 허용 오차·503 사유 명칭을 읽지 않는다. 토큰 만료는 `client.ts`가 401 응답으로만 감지하고 그 계약은 그대로다 |
+| 통보 대상 | `kotlin-implementer`(필수조치 A·B는 살아 있는 요구), `parity-verifier`, `privacy-gate`(키 명칭만 변경), 리더 |
+
+### 원칙 — 없어진 것은 "Python과 같은가"이지 "올바른가"가 아니다
+
+호환 프레이밍을 걷어내면서 그 안에 들어 있던 **기능 요구까지 함께 날리면**, Phase 0에서
+실측으로 찾은 결함 두 개가 검증 없이 되살아난다. 그래서 세 자리 모두 **삭제가 아니라
+재작성**이고, 재작성한 자리마다 무엇이 왜 바뀌었는지를 남겼다.
+
+- **필수조치 A (살아 있음)** — Argon2 재해시 판정을 **전체 파라미터 동등성**으로.
+  Spring `Argon2PasswordEncoder.upgradeEncoding()`은 `memory`·`iterations`의 **"미만"만**
+  보므로 파라미터를 **낮춘** 경우와 `parallelism`만 바뀐 경우를 놓친다.
+- **필수조치 B (살아 있음)** — JWT **clock skew 0**. Nimbus·Spring 기본값 60초를 그냥 두면
+  만료된 토큰이 **+59초까지 통과한다**. `exp` 필수 조항이 강제되려면 이것이 함께 있어야 한다.
+
+### 바뀐 조항 (`contracts/easy-doc-v1.yaml`)
+
+| 조항 | 종전 | 지금 |
+|---|---|---|
+| `x-auth.rehash_policy` | "기존 PHC 문자열은 **그대로 검증 가능해야** 한다" (호환 요구) | 재해시 판정 = 변형·`time_cost`·`memory_cost`·`parallelism` **전체 동등성** (기능 요구). `upgradeEncoding()` 함정 명시 |
+| `x-auth.clock_skew_seconds` · `x-clock-skew` | 없음 | **신설.** 허용 오차 0, 기본 60초의 실패 양상 명시 |
+| `x-auth.x-rebuild-note` | 없음 | **신설.** 양방향 상호 수용 요구의 폐기와 **무엇이 남았는지** |
+| `responses.ServiceUnavailable` | "**Fernet** 키 미설정 → 문서 API 전체" | "**저장 암호화 키** 미설정 → 문서 API 전체" + 개명 사유. **상태 코드(503)·동작·`detail` 문구 불변** |
+| `x-global-response-headers.x-python-deviation` | "인정된 이탈 / 관찰 기간의 기록된 차이 / parity 불일치로 올리지 않는다" | **`x-origin-of-the-ten`으로 재작성** — 10곳 목록의 출처만 남기고 parity 지시는 대상 소멸 처리 |
+| `info.description` · `x-superseded` · `x-not-a-scope` | 위 키를 참조 | 새 키를 참조하도록 3곳 갱신 |
+
+### 재심 — "Python은 현행 10곳 유지, 인정된 이탈" (OQ-1 부수 결정 2)
+
+**판정: 대상 소멸(moot). 리더 판정을 뒤집은 것이 아니다.**
+
+그 결정이 붙어 있던 지시는 "관찰 기간에 두 런타임의 헤더가 다른 것은 기록된 차이이며
+parity 대조에서 불일치로 올리지 않는다"였다. 이 지시는 **Python과 Kotlin이 함께 도는
+관찰 기간과 롤백 창**을 전제한다. 롤백을 포기하고 Python을 폐기하면 헤더가 갈릴 상대
+런타임이 없으므로, 기록할 차이도 올리지 않을 불일치도 존재하지 않는다.
+
+결론 자체("Python은 고치지 않는다")는 오늘도 그대로다 — 고칠 Python이 남지 않기 때문이다.
+그래서 이것은 `x-change-policy.escalate_to_leader` 1번이 금지하는 **판정 뒤집기가 아니라
+판정 대상의 소멸**이며, 리더가 이 정리를 직접 지시했다.
+
+**남긴 것**: 10곳 목록의 출처(Python `PRIVATE_RESPONSE_HEADERS`가 붙던 자리). 그 목록을
+하한선으로 유지하는 근거는 연혁이 아니라 `x-why-these-ten`의 위험도 기준이므로, 출처가
+사라져도 하한선은 그대로다.
+
+### 바뀐 조항 (`.claude/skills/api-contract-freeze/SKILL.md`)
+
+- **§2.4** — Argon2 항목을 전체 파라미터 동등성으로 재작성, JWT 항목을 **계약 준수
+  fixture**(clock skew 0 포함)로 교체. 양방향 fixture가 왜 폐기됐고 무엇이 남았는지를
+  절 끝에 산문으로 남겼다.
+- **§2.5** — "Python은 이 전역 요구를 만족하지 않는다 — 인정된 이탈" 항목을 **대상 소멸**
+  정리로 교체. 10곳의 출처만 남기고 grep은 연혁 확인용으로 표시했다.
+- **§2.8 판정 9 부수 결정 ②** — 취소선 + 대상 소멸 표시.
+- **§5 추가 테스트 목록** — "양방향 fixture" → **JWT 계약 준수 fixture** + **Argon2 재해시
+  판정 단위 테스트**.
+- **§5.1 대조표의 Python 행** · **§5 맺음** — Python suite가 남지 않는다는 사실 반영.
+
+### 영향받는 contract test (`00_contract-keeper_test-plan.md`)
+
+| ID | 종전 | 지금 |
+|---|---|---|
+| **X-I1** | Python 발급 JWT를 Kotlin이 수용하고 그 반대도 된다 (X 계층) | `sub`/`exp`/`typ` HS256 수용 + `typ` 오값·`exp` 누락·서명 위조·**만료 직후** 401 (**C 계층**) |
+| **X-I2** | 기존 Argon2 PHC가 그대로 검증되고 성공 시에만 재해시 (X 계층) | 파라미터가 **하나라도 다르면** 재해시 (**U 계층** — HTTP 경계에서 안 보인다) |
+| 계층 표 | **X. 교차 런타임**(양방향 parity fixture) | 삭제 → **U. 단위** 신설. 폐지 사유 명시 |
+| 실행 시점 표 | Phase 2 = X-I1·X-I2 | Phase 2 = 계약 소유 항목 없음, X-I1·X-I2는 **Phase 3**으로 |
+| 머리말 · §0-3 · §4 | "Python suite가 비교 기준선" / "두 런타임이 같은 표를 읽는다" / "Python 기준선 커버리지" | 기준선이 아니라 **연혁**으로 재서술. §0-3의 데이터-우선 원칙 자체는 유지 |
+
+### 검증
+
+```bash
+uvx --from openapi-spec-validator openapi-spec-validator contracts/easy-doc-v1.yaml
+# contracts/easy-doc-v1.yaml: OK
+```
+
+---
+
 ## 2026-08-12 · H-1 · 강제 수단 2층화 + 오류 본문 사각지대 신설
 
 | 항목 | 값 |

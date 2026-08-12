@@ -106,7 +106,9 @@ info:
     그것은 고위험 경로에 남긴 **하한선**이고 범위가 아니다.
     요구의 정본은 최상위 `x-global-response-headers`이며, **OpenAPI 문법으로는 이 요구를
     끝까지 표현할 수 없다**(같은 절의 `x-openapi-expressibility`에 무엇을 표현하지 못하는지
-    적었다). 현행 Python은 이 전역 요구를 만족하지 않는다 — 인정된 이탈이며 결함이 아니다.
+    적었다). 이 요구의 대상은 **Kotlin 런타임 하나뿐**이다 — Python은 폐기·재개발
+    대상이고 롤백 창이 없으므로 "두 런타임의 헤더가 다르다"는 상황이 존재하지 않는다
+    (2026-08-12 2차 재심, `x-global-response-headers.x-origin-of-the-ten`).
 
 servers:
   - url: http://localhost:8000
@@ -267,10 +269,33 @@ x-auth:
   required_claims: [sub, exp, typ]  # 모두 있어야 유효. exp 없는 토큰은 영구 자격증명이 된다
   min_secret_bytes: 32           # HS256 해시 출력 크기. 미만이면 ConfigurationError → 503
   default_lifetime_seconds: 3600 # Settings.jwt_expire_minutes 기본 60분
+  clock_skew_seconds: 0
+  x-clock-skew: |
+    **만료 검증에 허용 오차를 두지 않는다.** `exp`를 1초라도 지난 토큰은 401이다.
+    Nimbus·Spring Security의 기본 허용 오차가 **60초**라 그냥 두면 만료된 토큰이
+    **+59초까지 통과한다**(Phase 0 실측 결함 — 필수조치 B). `exp` 없는 토큰을 금지한
+    위 `required_claims` 조항과 같은 목적이다 — 만료가 강제되지 않으면 그 클레임을
+    요구한 의미가 없다. 서버 시계는 NTP 동기를 전제한다.
+  x-rebuild-note: |
+    **2026-08-12 2차 개정 — "Python 발급 토큰과 Kotlin 발급 토큰의 양방향 상호 수용"
+    요구는 폐기됐다.** 그 요구는 롤백 창에서만 나왔고, Python 폐기·재개발과 롤백 포기로
+    근거가 사라졌다. 없어진 것은 **상호 수용**이지 이 절의 발급·검증 정확성이 아니다 —
+    `claims`·`algorithm`·`required_claims`·`clock_skew_seconds`는 그대로 계약이며,
+    검증 방법은 `.claude/skills/api-contract-freeze` §2.4·§5로 옮겨 갔다.
   password_hash: "argon2id (time_cost=3, memory_cost=65536, parallelism=4)"
   rehash_policy: |
-    로그인 **성공 시에만** 파라미터가 낡은 해시를 재해시한다. 기존 PHC 문자열은 그대로
-    검증 가능해야 한다. 재해시 실패는 로그인을 막지 않는다(best-effort).
+    로그인 **성공 시에만** 재해시한다. 재해시 실패는 로그인을 막지 않는다(best-effort).
+
+    **재해시 판정은 저장된 PHC의 파라미터가 현재 설정과 전부 같은지로 한다** —
+    변형(`argon2id`)·`time_cost`·`memory_cost`·`parallelism` 중 **하나라도 다르면**
+    재해시 대상이다. Spring `Argon2PasswordEncoder.upgradeEncoding()`은 `memory`와
+    `iterations`의 **"미만"만** 보므로, 파라미터를 **낮춘** 경우와 `parallelism`만 바뀐
+    경우를 놓친다(Phase 0 실측 결함 — 필수조치 A). 그대로 쓰면 계약 위반이다.
+
+    **2026-08-12 2차 개정**: 종전 문구는 "기존 PHC 문자열은 그대로 검증 가능해야 한다"는
+    **호환 요구**였다. 그 요구는 롤백 창(Python이 Kotlin이 쓴 데이터를 읽어야 한다)에서만
+    나왔는데 Python 폐기·재개발과 롤백 포기로 근거가 사라졌다. 남은 것은 호환이 아니라
+    **기능 요구**다 — 저장된 해시로 로그인이 되어야 하고, 파라미터가 낡았으면 올려야 한다.
   failure_uniformity: |
     이메일 부재·비밀번호 불일치·토큰 만료·위조·계정 삭제를 **모두 같은 401과 같은
     메시지**로 처리한다. 구분하면 계정 열거 공격의 단서가 된다. 사용자가 없을 때도
@@ -477,18 +502,24 @@ x-global-response-headers:
     **귀결**: 이 조항의 강제 수단은 스펙 밖에 있다 — contract test와 실측뿐이다.
     스펙은 요구를 **기술**할 수 있을 뿐 **검사 가능한 형태로** 만들지 못한다.
     "스펙에 적혀 있으니 검증됐다"고 읽으면 오독이다.
-  x-python-deviation: |
-    **현행 Python은 이 전역 요구를 만족하지 않는다 — 인정된 이탈이며 결함이 아니다.**
-    Python은 아래 `x-private-response-headers.applies_to`의 성공 응답 **10곳에만** 붙이고,
-    오류 응답·204·`/health`에는 붙이지 않는다(실측 2026-08-12: 401·422 응답 헤더에
-    cache-control 없음).
-    **Python을 고치지 않기로 리더가 판정했다** — 은퇴 예정 런타임에 전역 미들웨어를 새로
-    넣는 회귀 위험이 이득보다 크고, 오류 응답에 개인정보가 없다는 실측이 그 위험을 감수할
-    이유를 없앤다.
-    따라서 관찰 기간에 두 런타임의 헤더가 다른 것은 **결함이 아니라 기록된 차이**다.
-    parity 대조에서 불일치로 올리지 않는다.
-    이 계약을 읽는 사람이 "Python도 이렇다"고 오해하면 안 된다 — 이 절이 그 오해를
-    막는 자리다.
+  x-origin-of-the-ten: |
+    **아래 `x-private-response-headers.applies_to`의 10곳이 왜 하필 10곳인지의 출처.**
+    그 목록은 Python `app/api/`의 `PRIVATE_RESPONSE_HEADERS` 부착 자리에서 왔다 —
+    Python은 그 성공 응답 10곳에만 붙이고 오류 응답·204·`/health`에는 붙이지 않았다
+    (실측 2026-08-12: 401·422 응답 헤더에 cache-control 없음). Kotlin 계약이 전역으로
+    넓힌 뒤에도 이 10곳을 하한선으로 남긴 이유는 그 연혁이 아니라
+    `x-private-response-headers.x-why-these-ten`의 위험도 기준이다.
+
+    **2026-08-12 2차 재심 — 이 절의 옛 내용(`x-python-deviation`)은 대상 소멸로 정리됐다.**
+    종전에는 "Python은 이 전역 요구를 만족하지 않는다 — 인정된 이탈이며, 관찰 기간에 두
+    런타임의 헤더가 다른 것은 기록된 차이이므로 parity 불일치로 올리지 않는다"고 적혀
+    있었다. 그 지시는 **Python과 Kotlin이 함께 도는 관찰 기간과 롤백 창**을 전제했는데,
+    Python 폐기·재개발과 롤백 포기로 **전제 상황 자체가 없어졌다.** 헤더가 갈릴 상대
+    런타임이 없으므로 기록할 차이도, 올리지 않을 불일치도 없다.
+    **리더 판정(부수 결정 2 "Python은 고치지 않는다")이 뒤집힌 것이 아니다** — 판정이
+    다루던 대상이 사라진 것이고, 결론("고치지 않는다")은 오늘도 그대로다.
+    키 이름을 `x-python-deviation`에서 바꾼 것은 그 이름이 더는 존재하지 않는 이탈을
+    가리키기 때문이다. 이 파일 밖에서 옛 이름을 참조하는 곳은 없음을 확인했다.
   x-phase3-measurement:
     status: "실측 완료 (2026-08-12) — 종전 '미실측' 서술은 무효. 필터 단층으로는 부족했고 밸브를 더해 충족"
     measured_by: "kotlin-implementer"
@@ -542,8 +573,8 @@ x-global-response-headers:
       측정되지 않았다 — `x-error-body-universality.x-unmeasured`가 그 자리다.
   x-superseded: |
     이 절은 종전 `x-private-response-headers.does_not_apply_to`("DELETE 204 · /health ·
-    모든 오류 응답")를 **무효화한다.** 그 목록은 Python 동작의 기술로만 남고
-    (`x-python-deviation`), Kotlin 계약에서는 제외 대상이 없다.
+    모든 오류 응답")를 **무효화한다.** 그 목록의 유래는 Python 동작이었고
+    (`x-origin-of-the-ten`), Kotlin 계약에서는 제외 대상이 없다.
     개선 원장의 V2-3(DELETE 204의 헤더)도 이 판정에 흡수됐다.
 
 # -----------------------------------------------------------------------------
@@ -582,7 +613,7 @@ x-private-response-headers:
   x-not-a-scope: |
     **여기 없는 응답에도 헤더는 붙는다.** 종전 이 절에 있던 `does_not_apply_to`
     (DELETE 204 · `/health` · 모든 오류 응답)는 2026-08-12 리더 판정으로 **무효**이며,
-    지금은 Python 동작의 기술로만 `x-global-response-headers.x-python-deviation`에 남아 있다.
+    그 목록이 어디서 왔는지는 `x-global-response-headers.x-origin-of-the-ten`에 남아 있다.
     Kotlin 계약에는 제외 대상이 없다.
   x-resolved-question:
     id: OQ-1
@@ -1414,9 +1445,14 @@ components:
         기동 자체는 막지 않는다 — 설정이 비어도 `/health`로 배포 상태를 진단할 수
         있어야 하므로, 그 설정이 필요한 요청만 503이 된다.
           - JWT 비밀키 미설정 또는 32바이트 미만 → 인증 API 전체
-          - Fernet 키 미설정 → 문서 API 전체
+          - **저장 암호화 키 미설정 → 문서 API 전체**
           - 큐(Redis) 미배선 → 업로드
           - DB 세션 팩토리 미배선 → 전체
+
+        둘째 줄은 2026-08-12 2차 개정으로 이름만 바뀌었다("Fernet 키" → "저장 암호화 키").
+        재개발에서 표준 AEAD를 처음부터 쓰기로 해 **스킴 이름이 Fernet에 묶이지 않는다** —
+        계약이 정하는 것은 "원문 저장 암호화 키가 없으면 문서 API가 실패한다"이지 어떤
+        암호 스킴을 쓰는가가 아니다. **상태 코드(503)와 동작·`detail` 문구는 그대로다.**
       content:
         application/json:
           schema: { $ref: '#/components/schemas/ErrorResponse' }
@@ -1992,6 +2028,52 @@ x-changelog:
       통보 대상: kotlin-implementer(E-1~E-3은 Phase 3 인증 필터와 같은 단위),
       parity-verifier(오류 본문은 Python과 같아야 하는 자리다 — 의도된 차이가 아니다),
       privacy-gate, 리더(④ 미실측 항목이 어긋나면 재심).
+
+  - version: "1.1.0"
+    revision: "R-1"
+    date: "2026-08-12"
+    author: contract-keeper
+    change: |
+      **재개발 전환으로 근거를 잃은 호환 요구 정리.** 2026-08-12 2차 사용자 결정으로
+      Python을 폐기하고 재개발하며 **롤백을 포기했다.** 롤백 창에서만 성립하던 요구를
+      걷어내되 **그 자리에 있던 "올바른가"는 남겼다.**
+
+        - `x-auth.rehash_policy` — "기존 PHC 문자열은 그대로 검증 가능해야 한다"는
+          **호환 프레이밍**을 **기능 요구**로 다시 썼다. 재해시 판정 기준을
+          변형·`time_cost`·`memory_cost`·`parallelism`의 **전체 파라미터 동등성**으로
+          명시했다(Phase 0 실측 결함 — Spring `upgradeEncoding()`은 `memory`·`iterations`의
+          "미만"만 본다).
+        - `x-auth.clock_skew_seconds: 0` + `x-clock-skew` **신설** — 만료 검증 허용 오차 0.
+          Nimbus·Spring 기본 60초를 그대로 두면 만료 토큰이 **+59초까지 통과한다**
+          (Phase 0 실측 결함). `exp` 필수 조항이 강제되려면 이것이 함께 있어야 한다.
+        - `x-auth.x-rebuild-note` **신설** — "Python↔Kotlin 양방향 상호 수용" 요구가
+          폐기됐고, 없어진 것은 **상호 수용**이지 발급·검증의 정확성이 아님을 남겼다.
+          지우기만 하면 다음 사람이 "왜 JWT 검증 요구가 없지?"라고 묻고 되돌린다.
+        - `responses.ServiceUnavailable` — "Fernet 키 미설정" → **"저장 암호화 키 미설정"**.
+          재개발이 표준 AEAD를 처음부터 쓰므로 스킴 이름에 묶이지 않는다.
+          **상태 코드(503)·동작·`detail` 문구는 바꾸지 않았다.**
+        - `x-global-response-headers.x-python-deviation` → **`x-origin-of-the-ten`으로
+          재작성.** 종전 내용("인정된 이탈 / 관찰 기간의 기록된 차이 / parity 불일치로
+          올리지 않는다")은 두 런타임 병행과 롤백 창을 전제했는데 그 상황이 소멸했다.
+          **리더 판정(부수 결정 2)이 뒤집힌 것이 아니라 대상이 사라진 것**이며, 남긴 것은
+          10곳 목록의 출처뿐이다. `info.description`·`x-superseded`·`x-not-a-scope`의
+          참조 3곳을 함께 고쳤다.
+    basis: |
+      근거 **G3**(정책 결정 변경 — 2026-08-12 2차 사용자 결정: Python 폐기·재개발, 롤백
+      포기) + **G1**(재해시 판정 기준과 clock skew 서술이 사실과 달랐다 — Phase 0 실측).
+      **`info.version`은 올리지 않는다** — 와이어 스키마가 그대로다. 상태 코드·오류 본문·
+      필드 이름·enum이 하나도 바뀌지 않았고, 바뀐 것은 인증 검증 규약의 서술과 503 사유의
+      **명칭**뿐이라 React 생성 타입에 영향이 없다(U-1·OQ-1·H-1과 같은 판단).
+      React 영향: **없음.** `types.ts`·`client.ts`·컴포넌트 어느 쪽도 Argon2 파라미터,
+      JWT 허용 오차, 503 사유 명칭을 읽지 않는다. 토큰 만료는 `client.ts`가 401 응답으로만
+      감지하며 그 계약은 그대로다.
+      영향받는 검증: ① 옛 "JWT 양방향 fixture" → **JWT 계약 준수 fixture**(만료 직후 401 ·
+      `typ` 오값 · `exp` 누락 · 서명 위조), ② **Argon2 재해시 판정 단위 테스트 신규**
+      (파라미터가 하나라도 다르면 재해시), ③ 사적 헤더의 "Python 이탈 기록" 관련 parity
+      항목 **삭제**(대조 상대가 없다).
+      통보 대상: kotlin-implementer(**필수조치 A·B는 살아 있는 요구다**),
+      parity-verifier(crypto·jwt·argon2 도메인과 `compat` 판정 모드 삭제를 계약 쪽에서도
+      확인), privacy-gate(저장 암호화 키 **명칭만** 변경 — 동작 불변), 리더.
 
 # =============================================================================
 # 개선 원장 (2026-08-12 개정 — 옛 이름 `x-v2-candidates`)
