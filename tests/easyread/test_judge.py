@@ -117,13 +117,15 @@ async def test_judge_conversion은_원문을_마스킹한_뒤_전달한다() -> 
     provider = FakeProvider(responses=[_VALID])
     await judge_conversion(
         provider,
-        source="문의 010-1234-5678, 담당자 hong@example.go.kr",
-        converted="문의는 [[전화번호1]]로 해 주세요.",
+        source="등록번호 900101-1234567, 담당자 hong@example.go.kr",
+        converted="등록번호는 [[주민등록번호1]]이에요.",
     )
     sent = provider.calls[0].user
-    assert "010-1234-5678" not in sent
-    assert "hong@example.go.kr" not in sent
-    assert "[[전화번호1]]" in sent
+    assert "900101-1234567" not in sent
+    assert "[[주민등록번호1]]" in sent
+    # 이메일은 마스킹 범주에서 뺐다(2026-08-12, master-plan 3.2) — 채점 호출에도 평문으로
+    # 실린다. 감수하기로 한 대가이고, 다시 가려지면 정책이 조용히 바뀐 것이다.
+    assert "hong@example.go.kr" in sent
 
 
 async def test_판독_불가_응답은_LLMProviderError() -> None:

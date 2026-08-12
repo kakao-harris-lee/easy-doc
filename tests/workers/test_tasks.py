@@ -32,8 +32,8 @@ from app.services.documents import deserialize_masked_items
 from app.workers.tasks import PROVIDER_UNAVAILABLE_CODE, ConversionWorkerStore, convert_document
 from tests.fakes import FakeConversionWorkerStore
 
-_SOURCE = "홍길동 님(010-1234-5678)의 신청이 접수되었습니다."
-_EASY = "홍길동 님, 신청을 받았어요. 연락처는 [[전화번호1]]입니다."
+_SOURCE = "홍길동 님(900101-1234567)의 신청이 접수되었습니다."
+_EASY = "홍길동 님, 신청을 받았어요. 등록번호는 [[주민등록번호1]]입니다."
 
 
 class _TruncatedProvider(LLMProvider):
@@ -131,9 +131,11 @@ async def test_마스킹_항목도_암호화해_저장한다(cipher: TextCipher)
     await convert_document(_ctx(store, cipher, FakeProvider(responses=[_EASY])), str(conversion.id))
 
     assert conversion.masked_items_encrypted is not None
-    assert b"010-1234-5678" not in conversion.masked_items_encrypted
+    assert b"900101-1234567" not in conversion.masked_items_encrypted
     items = deserialize_masked_items(cipher.decrypt(conversion.masked_items_encrypted))
-    assert [(item.category, item.original) for item in items] == [("전화번호", "010-1234-5678")]
+    assert [(item.category, item.original) for item in items] == [
+        ("주민등록번호", "900101-1234567")
+    ]
 
 
 async def test_결과에서_사라진_자리표시자를_기록한다(cipher: TextCipher) -> None:
@@ -142,11 +144,11 @@ async def test_결과에서_사라진_자리표시자를_기록한다(cipher: Te
     store = FakeConversionWorkerStore((conversion, document))
 
     await convert_document(
-        _ctx(store, cipher, FakeProvider(responses=["연락처가 사라진 쉬운 글."])),
+        _ctx(store, cipher, FakeProvider(responses=["등록번호가 사라진 쉬운 글."])),
         str(conversion.id),
     )
 
-    assert conversion.missing_placeholders == ["[[전화번호1]]"]
+    assert conversion.missing_placeholders == ["[[주민등록번호1]]"]
 
 
 async def test_원문은_마스킹을_거쳐서만_LLM에_전달된다(cipher: TextCipher) -> None:
@@ -158,8 +160,8 @@ async def test_원문은_마스킹을_거쳐서만_LLM에_전달된다(cipher: T
     await convert_document(_ctx(store, cipher, provider), str(conversion.id))
 
     sent = provider.calls[0].user
-    assert "010-1234-5678" not in sent
-    assert "[[전화번호1]]" in sent
+    assert "900101-1234567" not in sent
+    assert "[[주민등록번호1]]" in sent
 
 
 async def test_처리_시작을_먼저_확정한다(cipher: TextCipher) -> None:
@@ -370,7 +372,7 @@ async def test_로그에_문서_본문이_남지_않는다(
         )
 
     assert "홍길동" not in caplog.text
-    assert "010-1234-5678" not in caplog.text
+    assert "900101-1234567" not in caplog.text
     # 진단에 필요한 식별자·소요 시간은 남아야 한다.
     assert str(conversion.id) in caplog.text
     assert "elapsed_ms" in caplog.text

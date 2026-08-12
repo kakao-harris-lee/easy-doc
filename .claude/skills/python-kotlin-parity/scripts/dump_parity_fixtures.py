@@ -1,9 +1,21 @@
 #!/usr/bin/env python3
-"""Python 기준 parity fixture 생성기.
+"""parity fixture 생성기 — 요구 성질(spec)과 호환 기대값(compat)을 함께 굳힌다.
 
-`parity/fixtures/{도메인}/*.json`에 "이 입력에 Python은 이 값을 냈다"를 기록한다.
-Kotlin 테스트가 **같은 파일**을 읽어 자기 출력과 비교해야 진짜 동등성 증명이 된다 —
-Kotlin 쪽에서 기대값을 다시 손으로 적으면 두 구현이 아니라 두 벌의 사람 해석을 비교하게 된다.
+**기준은 Python 출력이 아니다.** Python 구현은 회귀가 잦아 Kotlin으로 옮기는 중이며,
+사용자 결정(2026-08-12)은 "출력 결과를 Python과 동일하게 맞출 필요는 없다. 요구사항을
+구현하고 이후에 개선한다"이다. 그래서 이 생성기가 만드는 fixture는 두 종류다.
+
+    mode="spec"   판정 근거가 **요구사항이 요구하는 성질**이다. 케이스마다 `assert`
+                  목록이 들어가고, 비교기가 Kotlin 산출물에 그 성질을 실행해 판정한다.
+                  Python 실행 결과는 `reference`(참고값)로 함께 담기지만 **판정에 쓰지
+                  않는다** — 다른 자리는 `참고 갈림 원장`에 기록될 뿐이다.
+    mode="compat" 판정 근거가 **값 동일성**이다. 롤백 창에서 Python이 Kotlin 산출물을
+                  읽어야 하는 도메인(crypto·jwt·argon2)뿐이다. 여기서는 값이 같은 것이
+                  곧 요구사항이므로 `expected`를 그대로 쓴다.
+
+spec 도메인이라도 성질을 아직 적지 못했으면 `spec_status="pending"`으로 선언한다.
+그 도메인은 "통과"가 아니라 **미검증**으로 집계된다(비교기 종료 코드 2). 성질을 적지
+않은 채 값 비교로 때우면 폐기된 전제로 되돌아가는 것이므로 그 경로를 두지 않는다.
 
 실행:
     uv run python .claude/skills/python-kotlin-parity/scripts/dump_parity_fixtures.py \
@@ -75,7 +87,73 @@ PROOF_FIXTURE_CASES: dict[str, str] = {
 }
 
 Case = dict[str, Any]
-Builder = Callable[[], tuple[str, list[str], list[Case]]]
+
+#: 판정 방식. 도메인마다 **하나**를 선언한다.
+MODE_SPEC = "spec"  # 요구 성질로 판정한다 (Python 출력은 참고값)
+MODE_COMPAT = "compat"  # 값 동일성이 곧 요구사항이다 (crypto·jwt·argon2)
+
+#: spec 도메인의 성질 작성 상태. pending은 "아직 성질로 표현하지 못했다"이며
+#: 비교기에서 **미검증**으로 집계된다 — 통과가 아니다.
+STATUS_READY = "ready"
+STATUS_PENDING = "pending"
+
+
+@dataclass(frozen=True)
+class FixtureSpec:
+    """도메인 하나의 fixture 정본.
+
+    `requirement`는 이 도메인이 무엇을 지켜야 하는지를 **문서 근거와 함께** 적는 자리다.
+    폐기된 전제("Python과 같은 값")로 되돌아가는 것을 막는 첫 방어선이 이 한 줄이다 —
+    여기에 근거를 못 적으면 그 도메인은 아직 성질로 판정할 준비가 안 된 것이다.
+    """
+
+    source: str
+    mode: str
+    requirement: str
+    normalization: list[str]
+    cases: list[Case]
+    spec_status: str = STATUS_READY
+
+    def __post_init__(self) -> None:
+        if self.mode not in (MODE_SPEC, MODE_COMPAT):
+            raise ValueError(f"알 수 없는 mode: {self.mode}")
+        if self.mode == MODE_COMPAT and self.spec_status != STATUS_READY:
+            raise ValueError("compat 도메인에는 spec_status 가 없다")
+        if self.mode == MODE_SPEC and self.spec_status not in (STATUS_READY, STATUS_PENDING):
+            raise ValueError(f"알 수 없는 spec_status: {self.spec_status}")
+
+    def document(self, domain: str) -> dict[str, Any]:
+        """fixture 파일에 쓰이는 형태. `generated_at`은 여기서 넣지 않는다.
+
+        비교기가 정본 대조에 그대로 쓰는 값이므로 **결정적**이어야 한다.
+        """
+        header: dict[str, Any] = {
+            "domain": domain,
+            "mode": self.mode,
+            "requirement": self.requirement,
+            "source": self.source,
+            "generator": "dump_parity_fixtures.py",
+            "normalization": self.normalization,
+        }
+        if self.mode == MODE_SPEC:
+            header["spec_status"] = self.spec_status
+        header["cases"] = [self._render(case) for case in self.cases]
+        return header
+
+    def _render(self, case: Case) -> Case:
+        """spec 도메인에서는 Python 실행 결과의 이름을 `reference`로 바꾼다.
+
+        이름이 곧 계약이다. `expected`라고 부르는 순간 "Python이 낸 값에 맞춰라"라는
+        읽기가 되살아난다. spec 도메인에서 그 값의 지위는 **참고**뿐이다.
+        """
+        if self.mode == MODE_COMPAT or "expected" not in case:
+            return case
+        rendered = {key: value for key, value in case.items() if key != "expected"}
+        rendered["reference"] = case["expected"]
+        return rendered
+
+
+Builder = Callable[[], FixtureSpec]
 
 
 def _case(case_id: str, description: str, payload: Any, expected: Any, **extra: Any) -> Case:
@@ -85,6 +163,29 @@ def _case(case_id: str, description: str, payload: Any, expected: Any, **extra: 
         "input": payload,
         "expected": expected,
     }
+    case.update(extra)
+    return case
+
+
+def _assert(check: str, **args: Any) -> dict[str, Any]:
+    """성질 단언 하나. `check` 이름의 정본은 `compare_parity.py`의 `CHECKS`다."""
+    entry: dict[str, Any] = {"check": check}
+    if args:
+        entry["args"] = args
+    return entry
+
+
+def _unreferenced(
+    case_id: str, description: str, payload: Any, asserts: list[dict[str, Any]], **extra: Any
+) -> Case:
+    """참고값 **없이** 성질만 있는 케이스.
+
+    Python 쪽에 값싸게 돌릴 대응 실행이 없을 때 쓴다(예: 문서 1건 변환의 LLM 호출 횟수는
+    서비스·저장소를 세워야 나온다). 참고값을 억지로 지어 넣으면 참고 갈림 원장이 매 실행
+    갈림으로 차서 신호가 죽는다 — 없으면 없다고 두는 편이 정직하고 유용하다.
+    """
+    case: Case = {"id": case_id, "description": description, "input": payload}
+    case["assert"] = asserts
     case.update(extra)
     return case
 
@@ -159,33 +260,81 @@ _UNUSED_STORE = object()
 # --------------------------------------------------------------------------- 마스킹
 
 
-def build_masking() -> tuple[str, list[str], list[Case]]:
-    """개인정보 마스킹 — 패턴 우선순위·자리표시자 번호·구간 겹침"""
+def build_masking() -> FixtureSpec:
+    """개인정보 마스킹 — 주민등록번호·카드번호를 빠짐없이 가리고 나머지 본문은 보존한다"""
     from app.privacy.masking import mask_text
 
-    samples: list[tuple[str, str]] = [
-        ("plain", "이 안내문에는 개인정보가 없습니다."),
-        ("rrn-hyphen", "주민등록번호 900101-1234567 를 확인합니다."),
-        ("rrn-no-sep", "번호는 9001011234567 입니다."),
-        ("rrn-foreigner", "외국인등록번호 900101-5234567 확인."),
-        ("email-with-digits", "문의는 user01234567@example.com 으로 주세요."),
-        ("phone-mobile", "연락처 010-1234-5678 로 전화 주세요."),
-        ("phone-seoul", "02-123-4567 로 문의하세요."),
-        ("card", "카드번호 1234-5678-9012-3456 을 입력합니다."),
-        ("account", "계좌 123-456-789012 로 입금하세요."),
-        ("multi-same-category", "010-1234-5678 또는 010-8765-4321 로 연락 주세요."),
-        ("multi-category", "kim@example.com / 010-1234-5678 / 900101-1234567"),
-        ("adjacent", "010-1234-5678010-8765-4321"),
-        ("empty", ""),
-        ("newline", "이름: 홍길동\n전화: 010-1234-5678\n메일: a@b.co.kr"),
-    ]
-    cases = [
-        _case(
+    #: 마스킹 범주. 사용자 결정(2026-08-12)으로 **2종만** 유지한다. 전화번호·이메일·
+    #: 계좌번호는 뺐다 — 공용 문서 번역이 주 용도라 개인정보 위험이 낮고, 포팅 비용을
+    #: 줄여 개발 속도를 얻는다는 판단이다. 범주 문자열은 자리표시자에 그대로 박히므로
+    #: (`[[주민등록번호1]]`) 값 자체가 복원 계약의 일부다.
+    categories = ["주민등록번호", "카드번호"]
+
+    # ── 자릿수 표기 축 ────────────────────────────────────────────────────────
+    # 리터럴로 적지 않고 코드포인트로 조립한다. 편집기·도구 경로에서 조용히 변형되는
+    # 문자들이고, 코드포인트가 곧 근거이기도 하다.
+    def chars(*codepoints: int) -> str:
+        return "".join(chr(code) for code in codepoints)
+
+    arabic_indic = chars(*range(0x0660, 0x066A))  # U+0660~U+0669
+    fullwidth = chars(*range(0xFF10, 0xFF1A))  # U+FF10~U+FF19
+
+    def restyle(text: str, table: str) -> str:
+        """ASCII 숫자만 다른 자릿수 표기로 바꾼다 (구분자는 ASCII 그대로 둔다)."""
+        return "".join(table[int(ch)] if ch in "0123456789" else ch for ch in text)
+
+    rrn_arabic_head = restyle("900101", arabic_indic) + "-1234567"
+    rrn_fullwidth = restyle("900101-1234567", fullwidth)
+    card_arabic_head = restyle("1234", arabic_indic) + "-5678-9012-3456"
+    card_fullwidth = restyle("1234-5678-9012-3456", fullwidth)
+    rrn_with_nul = "900101" + chars(0x0000) + "-1234567"
+
+    def surroundings(text: str, asserts: tuple[Any, ...]) -> list[str]:
+        """가려야 할 조각을 뺀 **나머지 본문 조각**을 모은다.
+
+        케이스마다 반대 방향 가드를 자동으로 붙이기 위한 것이다. `absent`만 있는 케이스는
+        본문을 통째로 가린 구현도 만족시킨다 — 실제로 스탠드인 실험에서 전문 마스킹 구현이
+        RRN 케이스들을 전부 통과했다. 주변 본문이 남아 있는지를 함께 걸면 그 경로가 막힌다.
+        """
+        needles = [
+            needle
+            for entry in asserts
+            if entry.get("check") == "absent"
+            for needle in entry.get("args", {}).get("needles", [])
+        ]
+        if not needles:
+            # 가릴 것을 지목하지 않은 케이스(알려진 공백)는 여기서 아무것도 만들지 않는다.
+            # 만들면 "본문 전체가 그대로 남아야 한다"가 되어, 판정을 미루겠다고 적어 둔
+            # 자리에서 **개선을 금지**하게 된다.
+            return []
+        remaining = [text]
+        for needle in needles:
+            remaining = [piece for chunk in remaining for piece in chunk.split(needle)]
+        return [piece.strip() for piece in remaining if piece.strip()]
+
+    def case(name: str, text: str, description: str, *asserts: Any, **extra: Any) -> Case:
+        """케이스 하나. 모든 케이스가 두 구조 불변식을 공통으로 진다.
+
+        `restores_input` — 자리표시자를 원문으로 되돌리면 입력과 정확히 같아진다.
+            마스킹이 본문을 잃거나 바꾸지 않았고 대응표가 실제로 복원 가능하다는 뜻이다.
+            내보내기(`restore_placeholders`)가 이 성질 위에 서 있다.
+        `placeholder_scheme` — 자리표시자가 `[[{범주}{번호}]]` 형태이고, 범주가 위 2종
+            안이며, 번호가 범주별로 1부터 등장 순서로 붙는다. `items` 순서·범주도 함께 본다.
+
+        둘 다 **Python 출력을 보지 않고** 판정된다. 어느 쪽도 "값이 같은가"를 묻지 않는다.
+        여기에 `absent`가 붙은 케이스는 남은 본문 조각에 대한 `present`가 자동으로 따라붙어
+        모든 케이스가 양방향이 된다.
+        """
+        result = mask_text(text)
+        kept = surroundings(text, asserts)
+        if kept:
+            asserts = (*asserts, _assert("present", path="masked_text", needles=kept))
+        return _case(
             f"masking-{name}",
-            "mask_text 우선순위·번호 매김·구간 겹침 처리",
+            description,
             {"text": text},
             {
-                "masked_text": (result := mask_text(text)).masked_text,
+                "masked_text": result.masked_text,
                 "items": [
                     {
                         "category": item.category.value,
@@ -195,17 +344,205 @@ def build_masking() -> tuple[str, list[str], list[Case]]:
                     for item in result.items
                 ],
             },
+            **{
+                "assert": [
+                    _assert("restores_input"),
+                    _assert("placeholder_scheme", categories=categories),
+                    *asserts,
+                ],
+                **extra,
+            },
         )
-        for name, text in samples
+
+    hidden = "가려야 한다 — 남으면 개인정보가 그대로 외부 LLM으로 나간다"
+    kept = "가리면 안 된다 — 범위 밖이거나 개인정보가 아니다. 과잉 마스킹은 팩트를 지운다"
+
+    cases = [
+        case(
+            "plain",
+            "이 안내문에는 개인정보가 없습니다.",
+            f"개인정보가 없는 문장은 한 글자도 바뀌지 않는다. {kept}",
+            _assert("present", path="masked_text", needles=["이 안내문에는 개인정보가 없습니다."]),
+        ),
+        case(
+            "empty",
+            "",
+            "빈 입력에서 예외를 던지지 않고 빈 결과를 낸다",
+        ),
+        # ── 주민등록번호: 표기 변형을 빠짐없이 잡는다 ─────────────────────────
+        case(
+            "rrn-hyphen",
+            "주민등록번호 900101-1234567 를 확인합니다.",
+            f"하이픈 표기 주민등록번호를 {hidden}",
+            _assert("absent", path="masked_text", needles=["900101-1234567"]),
+        ),
+        case(
+            "rrn-no-sep",
+            "번호는 9001011234567 입니다.",
+            f"구분자 없는 13자리 표기도 {hidden}",
+            _assert("absent", path="masked_text", needles=["9001011234567"]),
+        ),
+        case(
+            "rrn-spaced",
+            "주민등록번호 900101 - 1234567 확인.",
+            f"하이픈 앞뒤에 공백이 있는 표기도 {hidden}",
+            _assert("absent", path="masked_text", needles=["900101 - 1234567"]),
+        ),
+        case(
+            "rrn-tab",
+            "주민등록번호 900101\t-\t1234567 확인.",
+            f"탭이 구분자로 쓰인 표기도 {hidden} (표 붙여넣기에서 실제로 나온다)",
+            _assert("absent", path="masked_text", needles=["900101\t-\t1234567"]),
+        ),
+        case(
+            "rrn-foreigner",
+            "외국인등록번호 900101-5234567 확인.",
+            f"성별코드 5~8(외국인등록번호)도 고유식별정보다. {hidden}",
+            _assert("absent", path="masked_text", needles=["900101-5234567"]),
+        ),
+        case(
+            "rrn-unicode-digit-head",
+            f"번호 {rrn_arabic_head} 확인.",
+            "앞 6자리가 아랍-인도 숫자여도 주민등록번호다. "
+            f"{hidden}. Java 기본 `\\d`=`[0-9]`로 옮기면 여기서 조용히 누락된다",
+            _assert("absent", path="masked_text", needles=[rrn_arabic_head]),
+        ),
+        # ── 카드번호 ──────────────────────────────────────────────────────────
+        case(
+            "card-hyphen",
+            "카드번호 1234-5678-9012-3456 을 입력합니다.",
+            f"하이픈 표기 16자리 카드번호를 {hidden}",
+            _assert("absent", path="masked_text", needles=["1234-5678-9012-3456"]),
+        ),
+        case(
+            "card-spaced",
+            "카드번호 1234 5678 9012 3456 입력.",
+            f"공백 구분 표기도 {hidden}",
+            _assert("absent", path="masked_text", needles=["1234 5678 9012 3456"]),
+        ),
+        case(
+            "card-no-sep",
+            "카드번호 1234567890123456 입력.",
+            f"구분자 없는 16자리도 {hidden}",
+            _assert("absent", path="masked_text", needles=["1234567890123456"]),
+        ),
+        case(
+            "card-unicode-digit-arabic",
+            f"카드 {card_arabic_head} 입력.",
+            f"아랍-인도 숫자가 섞인 카드번호도 {hidden}",
+            _assert("absent", path="masked_text", needles=[card_arabic_head]),
+        ),
+        case(
+            "card-unicode-digit-fullwidth",
+            f"카드 {card_fullwidth} 입력.",
+            f"전각 숫자로 적은 카드번호도 {hidden}",
+            _assert("absent", path="masked_text", needles=[card_fullwidth]),
+        ),
+        # ── 번호 매김·복원 ────────────────────────────────────────────────────
+        case(
+            "multi-same-category",
+            "900101-1234567 와 850505-2345678 두 건.",
+            "같은 범주 2건은 등장 순서로 1·2번을 받는다. 전역 카운터 구현이 여기서 죽고, "
+            "번호가 어긋나면 복원이 잘못된 원문을 꽂는다",
+            _assert("absent", path="masked_text", needles=["900101-1234567", "850505-2345678"]),
+        ),
+        case(
+            "multi-category",
+            "주민 900101-1234567 카드 1234-5678-9012-3456 입니다.",
+            "서로 다른 범주는 각각 1번부터 센다. `items` 순서는 텍스트 등장 순서다",
+            _assert(
+                "absent", path="masked_text", needles=["900101-1234567", "1234-5678-9012-3456"]
+            ),
+        ),
+        case(
+            "newline",
+            "이름: 홍길동\n주민: 900101-1234567\n주소: 서울시 어딘가 1-2",
+            f"개행과 마스킹 대상이 아닌 줄은 그대로 남는다. 이름·주소는 {kept}",
+            _assert("absent", path="masked_text", needles=["900101-1234567"]),
+            _assert(
+                "present",
+                path="masked_text",
+                needles=["이름: 홍길동", "주소: 서울시 어딘가 1-2"],
+            ),
+        ),
+        # ── 과잉 마스킹 가드 ──────────────────────────────────────────────────
+        case(
+            "keeps-date",
+            "신청 기간은 2026-01-01 부터입니다.",
+            f"날짜는 개인정보가 아니다. {kept} — 지우면 안내문의 핵심 팩트가 사라진다",
+            _assert("present", path="masked_text", needles=["2026-01-01"]),
+        ),
+        case(
+            "keeps-long-digits",
+            "접수번호 123456789012 와 관리번호 12345678901234 를 적으세요.",
+            f"12자리·14자리 숫자열은 주민번호도 카드번호도 아니다. {kept}",
+            _assert("present", path="masked_text", needles=["123456789012", "12345678901234"]),
+        ),
+        # ── 범위 밖 — 가리지 않는 것이 요구사항이다 ───────────────────────────
+        # 이 셋은 한때 `reference_divergence="expected"`였다. 그때는 Python이 아직
+        # 5범주였고 요구사항과 갈리는 것이 정상이었기 때문이다. Python 구현이 2종으로
+        # 축소되면서(`app/privacy/masking.py`) 참고값이 요구사항과 일치하게 되어 선언이
+        # 낡았고, 남겨 두면 비교기가 "의도한 갈림이 사라졌다"로 막는다. 선언을 지운다고
+        # 판정이 느슨해지지는 않는다 — `present` 단언이 그대로 남아, 누가 패턴을 다시
+        # 넓히면 여기서 걸린다.
+        case(
+            "scope-out-phone",
+            "연락처 010-1234-5678 로 전화 주세요.",
+            f"전화번호는 마스킹 범주에서 뺐다(사용자 결정 2026-08-12). {kept}. "
+            "가려지면 정책 위반이다 — 마스킹 없이 LLM으로 나가는 것이 감수한 대가다",
+            _assert("present", path="masked_text", needles=["010-1234-5678"]),
+        ),
+        case(
+            "scope-out-email",
+            "문의는 kim@example.com 으로 주세요.",
+            f"이메일은 마스킹 범주에서 뺐다. {kept}. 가려지면 정책 위반이다",
+            _assert("present", path="masked_text", needles=["kim@example.com"]),
+        ),
+        case(
+            "scope-out-account",
+            "계좌 123-456-789012 로 입금하세요.",
+            f"계좌번호는 마스킹 범주에서 뺐다. {kept}. 가려지면 정책 위반이다",
+            _assert("present", path="masked_text", needles=["123-456-789012"]),
+        ),
+        # ── 알려진 공백 — 어느 방향도 단언하지 않는다 ─────────────────────────
+        case(
+            "known-gap-rrn-fullwidth",
+            f"번호 {rrn_fullwidth} 확인.",
+            "전각 숫자로만 적은 주민등록번호는 **현재 Python이 가리지 못한다**(성별코드 "
+            "`[1-8]`이 ASCII 리터럴이라 매치가 끊긴다). 요구사항으로 보면 가려야 맞지만, "
+            "지금 그것을 단언하면 Kotlin에 Python보다 넓은 구현을 요구하게 되므로 "
+            "**어느 방향도 단언하지 않는다**. 개선하면 참고 갈림 원장에 찍혀 드러난다",
+            known_gap="전각 표기 주민등록번호 미검출 (개선 후보 — 판정 대상 아님)",
+        ),
+        case(
+            "known-gap-rrn-control-char",
+            f"번호 {rrn_with_nul}-를 확인.",
+            "숫자 사이에 NUL(U+0000)이 끼면 현재 Python은 가리지 못한다 — 마스킹 앞에 "
+            "`strip_control_chars`가 없기 때문이다(`app/services/conversion.py`). 회피 "
+            "벡터로 볼 수도 있고 편집기 흔적으로 볼 수도 있어 **판정을 미룬다**. "
+            "판단은 `privacy-gate` 소관이고, 결론이 나면 단언을 추가한다",
+            known_gap="제어문자 삽입 표기 미검출 (보안 판단 대기 — 판정 대상 아님)",
+        ),
     ]
-    return "app/privacy/masking.py::mask_text", BASE_NORMALIZATION, cases
+    return FixtureSpec(
+        source="app/privacy/masking.py::mask_text",
+        mode=MODE_SPEC,
+        requirement=(
+            "master-plan §3.2 마스킹 선행 + 사용자 결정(2026-08-12) 범위 축소 — "
+            "문서 본문이 LLM으로 나가기 전에 주민등록번호(외국인등록번호 포함)와 카드번호가 "
+            "빠짐없이 가려지고, 그 밖의 본문은 한 글자도 잃지 않으며, 자리표시자를 되돌리면 "
+            "원문이 정확히 복원된다"
+        ),
+        normalization=BASE_NORMALIZATION,
+        cases=cases,
+    )
 
 
 # ----------------------------------------------------------------------- 텍스트 정규화
 
 
-def build_text() -> tuple[str, list[str], list[Case]]:
-    """제어문자 제거 — XML 1.0 비허용 문자만, 탭·개행·복귀 유지"""
+def build_text() -> FixtureSpec:
+    """제어문자 제거 — XML에 담을 수 없는 문자만 빼고 나머지 본문은 그대로 둔다"""
     from app.text import strip_control_chars
 
     samples: list[tuple[str, str]] = [
@@ -216,17 +553,38 @@ def build_text() -> tuple[str, list[str], list[Case]]:
         ("drops-c1-range", "가\x1f나\x0e다\x08라"),
         ("empty", ""),
         ("only-control", "\x00\x01\x02"),
+        ("keeps-hangul-and-emoji", "가나다 😀 라마바\n둘째 줄"),
     ]
+    # 이 도메인의 요구사항은 규칙으로 완전히 적힌다 — 제거 대상 집합이 정해져 있고
+    # 나머지는 손대지 않는다. 그래서 판정도 Python 출력이 아니라 **입력에서 규칙으로
+    # 유도한 값**과 비교한다(`control_strip`은 비교기가 자기 힘으로 계산한다).
     cases = [
         _case(
             f"text-{name}",
-            "strip_control_chars — XML 1.0 비허용 제어문자만 제거(탭·개행·복귀 유지)",
+            "XML(docx)에 담을 수 없는 제어문자만 사라지고, 탭·개행·복귀와 나머지 문자는 "
+            "순서까지 그대로 남는다. 지우면 문단 구조가 무너지고, 남기면 내보내기가 "
+            "lxml ValueError로 500이 된다",
             {"text": text},
             {"text": strip_control_chars(text)},
+            **{
+                "assert": [
+                    _assert("equals_derived", rule="control_strip", path="text", source="text")
+                ]
+            },
         )
         for name, text in samples
     ]
-    return "app/text.py::strip_control_chars", BASE_NORMALIZATION, cases
+    return FixtureSpec(
+        source="app/text.py::strip_control_chars",
+        mode=MODE_SPEC,
+        requirement=(
+            "app/text.py 모듈 규약 — XML 1.0이 담지 못하는 제어문자"
+            "(U+0000~U+0008, U+000B, U+000C, U+000E~U+001F, U+007F)만 제거하고 "
+            "탭·개행·복귀를 포함한 나머지 문자는 순서까지 보존한다"
+        ),
+        normalization=BASE_NORMALIZATION,
+        cases=cases,
+    )
 
 
 # ------------------------------------------------------------------------ 스타일 규칙
@@ -250,7 +608,7 @@ _STYLE_SAMPLES: list[tuple[str, str]] = [
 ]
 
 
-def build_style() -> tuple[str, list[str], list[Case]]:
+def build_style() -> FixtureSpec:
     """스타일 검사 — 문장 분리, 어려운 표현, 뜻풀이 축자 삽입, 위반 목록"""
     from app.easyread.style_rules import (
         check_style,
@@ -276,10 +634,23 @@ def build_style() -> tuple[str, list[str], list[Case]]:
         )
         for name, text in _STYLE_SAMPLES
     ]
-    return "app/easyread/style_rules.py::check_style 외", BASE_NORMALIZATION, cases
+    return FixtureSpec(
+        source="app/easyread/style_rules.py::check_style 외",
+        mode=MODE_SPEC,
+        requirement=(
+            "master-plan §3.3 쉬운 글 스타일 규칙 — 문장 길이 상한(MAX_SENTENCE_CHARS=50)과 "
+            "한 문장 쉼표 상한(MAX_COMMAS_PER_SENTENCE=2)을 넘는 문장이 빠짐없이 위반으로 "
+            "보고되고(누락 금지), 넘지 않는 문장이 위반으로 보고되지 않는다(오탐 금지). "
+            "문장 분리 경계 자체는 휴리스틱이라 규칙으로 적히지 않는다 — 그 자리는 판정하지 "
+            "않고 참고 갈림으로만 남긴다"
+        ),
+        normalization=BASE_NORMALIZATION,
+        cases=cases,
+        spec_status=STATUS_PENDING,
+    )
 
 
-def build_style_tables() -> tuple[str, list[str], list[Case]]:
+def build_style_tables() -> FixtureSpec:
     """스타일 규칙 상수 표 전체를 그대로 덤프한다.
 
     상수 하나가 갈리면 프롬프트·검사·보정 채택이 동시에 어긋난다. 표를 통째로
@@ -318,13 +689,25 @@ def build_style_tables() -> tuple[str, list[str], list[Case]]:
             tables,
         ),
     ]
-    return "app/easyread/style_rules.py 상수", BASE_NORMALIZATION, cases
+    return FixtureSpec(
+        source="app/easyread/style_rules.py 상수",
+        mode=MODE_SPEC,
+        requirement=(
+            "CLAUDE.md 아키텍처 규칙 4 — 스타일 규칙 정의가 한 곳이고 프롬프트 생성과 평가가 "
+            "같은 정의를 쓴다. 정책 상수(MAX_SENTENCE_CHARS·MAX_COMMAS_PER_SENTENCE·"
+            "STYLE_PRINCIPLES)는 값이 같아야 하고, 치환 사전은 **표제어를 잃지 않아야** 한다"
+            "(추가는 개선이므로 허용하고 기록만 한다)"
+        ),
+        normalization=BASE_NORMALIZATION,
+        cases=cases,
+        spec_status=STATUS_PENDING,
+    )
 
 
 # ---------------------------------------------------------------------------- 프롬프트
 
 
-def build_prompts() -> tuple[str, list[str], list[Case]]:
+def build_prompts() -> FixtureSpec:
     """프롬프트 렌더링 — 시스템·사용자·보정 프롬프트 전문"""
     from app.easyread.prompts import build_repair_prompt, build_system_prompt, build_user_prompt
     from app.easyread.style_rules import check_style
@@ -332,7 +715,7 @@ def build_prompts() -> tuple[str, list[str], list[Case]]:
     masked_samples: list[tuple[str, str]] = [
         ("no-difficult-word", "신청은 9월에 합니다."),
         ("one-difficult-word", "감면을 받으려면 신청서를 제출하세요."),
-        ("with-placeholder", "문의는 [[전화번호1]] 로 하세요. 감면 대상을 확인합니다."),
+        ("with-placeholder", "번호는 [[주민등록번호1]] 입니다. 감면 대상을 확인합니다."),
         (
             "many-difficult-words",
             "수급자는 부양의무자 기준을 충족해야 하며 소급 적용이 가능합니다.",
@@ -357,17 +740,27 @@ def build_prompts() -> tuple[str, list[str], list[Case]]:
         )
     # 사용자·보정 프롬프트는 요청마다 난수 문서 id를 넣는다(prompt injection 방어).
     # 그 자리만 가리고 비교한다 — 난수 자체가 같을 수는 없다.
-    return (
-        "app/easyread/prompts.py::build_system_prompt / build_user_prompt / build_repair_prompt",
-        [*BASE_NORMALIZATION, "mask_document_id"],
-        cases,
+    return FixtureSpec(
+        source=(
+            "app/easyread/prompts.py::build_system_prompt / build_user_prompt / build_repair_prompt"
+        ),
+        mode=MODE_SPEC,
+        requirement=(
+            "master-plan §3.3 — 프롬프트가 스타일 규칙 원칙 전량과 입력에서 검출된 어려운 말"
+            "풀이를 싣고, 마스킹 자리표시자를 그대로 보존하며, prompt injection 방어용 문서 "
+            "id 경계를 유지한다. 문면이 Python과 한 글자까지 같아야 하는 것은 아니다 — "
+            "품질은 골든셋 게이트가 판정한다"
+        ),
+        normalization=[*BASE_NORMALIZATION, "mask_document_id"],
+        cases=cases,
+        spec_status=STATUS_PENDING,
     )
 
 
 # --------------------------------------------------------------------------- 후처리
 
 
-def build_postprocess() -> tuple[str, list[str], list[Case]]:
+def build_postprocess() -> FixtureSpec:
     """LLM 응답 후처리 — 코드 펜스·머리말 제거(과잉 제거 금지)"""
     from app.easyread.postprocess import postprocess
 
@@ -390,16 +783,27 @@ def build_postprocess() -> tuple[str, list[str], list[Case]]:
         )
         for name, raw in samples
     ]
-    return "app/easyread/postprocess.py::postprocess", BASE_NORMALIZATION, cases
+    return FixtureSpec(
+        source="app/easyread/postprocess.py::postprocess",
+        mode=MODE_SPEC,
+        requirement=(
+            "LLM 응답에서 코드 펜스·머리말 같은 껍데기만 벗기고 **본문은 한 글자도 잃지 "
+            "않는다**. 과잉 제거가 과소 제거보다 위험하다 — 사용자는 성공 응답을 받고 본문 "
+            "일부가 사라진 결과를 받는다"
+        ),
+        normalization=BASE_NORMALIZATION,
+        cases=cases,
+        spec_status=STATUS_PENDING,
+    )
 
 
 # ------------------------------------------------------------------------ 보정 채택
 
 
-def build_repair_adoption() -> tuple[str, list[str], list[Case]]:
-    """보정 채택 판정 — 자리표시자 유실·위반 건수 악화 가드"""
+def build_repair_adoption() -> FixtureSpec:
+    """보정 채택 정책과 변환 호출 상한 — 자리표시자 유실·악화는 거부, 호출은 최대 2회"""
     from app.easyread.style_rules import check_style
-    from app.services.conversion import _accepts_repair
+    from app.services.conversion import MAX_LLM_CALLS_PER_CONVERSION, _accepts_repair
 
     samples: list[tuple[str, str, str, list[str]]] = [
         ("improves", "결과가 보여지고 있습니다.", "결과를 보여 드립니다.", []),
@@ -407,16 +811,28 @@ def build_repair_adoption() -> tuple[str, list[str], list[Case]]:
         ("equal-count", "감면을 받으세요.", "제출을 하세요.", []),
         (
             "loses-placeholder",
-            "문의는 [[전화번호1]] 감면 대상입니다.",
-            "문의해 주세요.",
-            ["[[전화번호1]]"],
+            "번호는 [[주민등록번호1]] 감면 대상입니다.",
+            "번호를 확인해 주세요.",
+            ["[[주민등록번호1]]"],
         ),
-        ("placeholder-absent-in-original", "감면 대상입니다.", "깎아 드립니다.", ["[[전화번호1]]"]),
+        (
+            "placeholder-absent-in-original",
+            "감면 대상입니다.",
+            "깎아 드립니다.",
+            ["[[주민등록번호1]]"],
+        ),
     ]
-    cases = [
+    # 이 도메인의 요구사항은 **정책**이라 규칙으로 완전히 적힌다:
+    #   채택 = (자리표시자를 하나도 잃지 않았다) AND (위반 건수가 늘지 않았다)
+    # 그래서 판정은 산출물이 **스스로 보고한 건수**를 입력으로 이 정책을 다시 계산해
+    # 대조한다(`repair_policy`). 건수 자체가 맞는지는 `style` 도메인의 질문이고, 여기서는
+    # "같은 건수를 받았을 때 같은 결정을 내리는가"만 본다 — 두 질문을 섞으면 어느 쪽이
+    # 틀렸는지 알 수 없다.
+    cases: list[Case] = [
         _case(
             f"repair-{name}",
-            "_accepts_repair — 자리표시자 유실·위반 건수 악화 시 1차 결과 채택",
+            "보정 결과 채택 정책 — 자리표시자를 잃거나 위반이 늘면 거부하고, "
+            "같은 건수는 채택한다(경계값)",
             {"original": original, "candidate": candidate, "placeholders": placeholders},
             {
                 "accepted": _accepts_repair(
@@ -428,16 +844,47 @@ def build_repair_adoption() -> tuple[str, list[str], list[Case]]:
                 "original_issue_count": len(check_style(original).issues),
                 "candidate_issue_count": len(check_style(candidate).issues),
             },
+            **{"assert": [_assert("equals_derived", rule="repair_policy", path="accepted")]},
         )
         for name, original, candidate, placeholders in samples
     ]
-    return "app/services/conversion.py::_accepts_repair", BASE_NORMALIZATION, cases
+    # 변환 호출 상한은 master-plan §3.3의 계약이고 §5 Phase 7의 즉시 중단 기준이다.
+    # 값이 아니라 **런타임 동작**이라 Python 쪽에 값싼 대응 실행이 없다 — 참고값 없이
+    # 성질만 둔다. Kotlin 하네스는 fake provider로 변환 1건을 돌려 호출 횟수를 보고한다.
+    cases += [
+        _unreferenced(
+            "repair-call-budget-clean",
+            "위반이 기계 검출되지 않으면 보정을 부르지 않는다 — 변환 1건에 LLM 호출 1회. "
+            "여기서 2회가 나오면 크레딧 원가 산정(master-plan 5장)이 무너진다",
+            {"scenario": "no-style-violations"},
+            [_assert("equals_field", path="llm_calls", value=1)],
+        ),
+        _unreferenced(
+            "repair-call-budget-violations",
+            f"위반이 있어 보정을 부르더라도 문서 1건당 LLM 호출은 "
+            f"{MAX_LLM_CALLS_PER_CONVERSION}회를 넘지 않는다 — 루프 없음. 채택하든 "
+            "거부하든 재보정하지 않는다",
+            {"scenario": "style-violations-detected"},
+            [_assert("at_most", path="llm_calls", limit=MAX_LLM_CALLS_PER_CONVERSION)],
+        ),
+    ]
+    return FixtureSpec(
+        source=("app/services/conversion.py::_accepts_repair / MAX_LLM_CALLS_PER_CONVERSION"),
+        mode=MODE_SPEC,
+        requirement=(
+            "master-plan §3.3 변환 호출 계약 — 문서 1건 = LLM 호출 최대 2회(변환 1회 + "
+            "기계 검출된 위반이 있을 때만 표적 보정 1회, 루프 없음). 보정 결과는 "
+            "자리표시자를 잃거나 위반이 늘면 채택하지 않는다(보정 실패·악화 시 원본 채택)"
+        ),
+        normalization=BASE_NORMALIZATION,
+        cases=cases,
+    )
 
 
 # -------------------------------------------------------------------------- 내보내기
 
 
-def build_export() -> tuple[str, list[str], list[Case]]:
+def build_export() -> FixtureSpec:
     """내보내기 — 파일명 정제, RFC 5987 헤더, 자리표시자 복원, TXT 바이트"""
     from app.easyread.export import (
         ExportFormat,
@@ -472,12 +919,16 @@ def build_export() -> tuple[str, list[str], list[Case]]:
         for name, title in titles
     ]
     restore_samples: list[tuple[str, str, dict[str, str]]] = [
-        ("basic", "문의는 [[전화번호1]] 입니다.", {"[[전화번호1]]": "010-1234-5678"}),
-        ("unknown-placeholder", "문의는 [[전화번호9]] 입니다.", {"[[전화번호1]]": "010-1234-5678"}),
+        ("basic", "번호는 [[주민등록번호1]] 입니다.", {"[[주민등록번호1]]": "900101-1234567"}),
+        (
+            "unknown-placeholder",
+            "번호는 [[주민등록번호9]] 입니다.",
+            {"[[주민등록번호1]]": "900101-1234567"},
+        ),
         (
             "single-pass",
-            "값은 [[이메일1]] 입니다.",
-            {"[[이메일1]]": "[[전화번호1]]", "[[전화번호1]]": "010-1234-5678"},
+            "값은 [[카드번호1]] 입니다.",
+            {"[[카드번호1]]": "[[주민등록번호1]]", "[[주민등록번호1]]": "900101-1234567"},
         ),
         ("none", "자리표시자가 없습니다.", {}),
     ]
@@ -510,18 +961,27 @@ def build_export() -> tuple[str, list[str], list[Case]]:
         )
     )
     # docx·hwpx는 바이트 동등이 기준이 아니다(§4.5 참고) — 자체 추출기 round-trip으로 본다.
-    return (
-        "app/easyread/export.py::export_filename / content_disposition / "
-        "restore_placeholders / render_export(TXT)",
-        BASE_NORMALIZATION,
-        cases,
+    return FixtureSpec(
+        source=(
+            "app/easyread/export.py::export_filename / content_disposition / "
+            "restore_placeholders / render_export(TXT)"
+        ),
+        mode=MODE_SPEC,
+        requirement=(
+            "내보내기 파일명에 경로 구분자·제어문자가 남지 않고 길이 상한을 지키며, "
+            "Content-Disposition이 RFC 5987로 해석 가능하고, 자리표시자가 **하나도 남김없이** "
+            "원문으로 복원된다(미복원 자리표시자는 개인정보 자리가 빈 채 배포되는 것이다)"
+        ),
+        normalization=BASE_NORMALIZATION,
+        cases=cases,
+        spec_status=STATUS_PENDING,
     )
 
 
 # ------------------------------------------------------------------------------ 암호
 
 
-def build_crypto() -> tuple[str, list[str], list[Case]]:
+def build_crypto() -> FixtureSpec:
     """Fernet 교차 런타임 — 정방향·역방향·변조·다른 키"""
     from cryptography.fernet import Fernet
 
@@ -595,7 +1055,17 @@ def build_crypto() -> tuple[str, list[str], list[Case]]:
             ),
         )
     )
-    return "app/privacy/crypto.py::TextCipher", ["nfc"], cases
+    return FixtureSpec(
+        source="app/privacy/crypto.py::TextCipher",
+        mode=MODE_COMPAT,
+        requirement=(
+            "롤백 창 호환성 — Python이 만든 Fernet 토큰을 Kotlin이 그대로 복호화하고 그 반대도 "
+            "성립해야 한다. 값이 갈리면 기존 문서를 읽지 못한다(§5 Phase 7 즉시 중단 기준). "
+            "변조 토큰·다른 키는 양쪽에서 똑같이 거부돼야 한다"
+        ),
+        normalization=["nfc"],
+        cases=cases,
+    )
 
 
 # ------------------------------------------------------------------------------- JWT
@@ -616,7 +1086,7 @@ JWT_ISSUED_AT = datetime(2026, 1, 2, 3, 4, 5, tzinfo=UTC)
 JWT_EXPIRE_MINUTES = 30
 
 
-def build_jwt() -> tuple[str, list[str], list[Case]]:
+def build_jwt() -> FixtureSpec:
     """JWT 교차 런타임 — 양방향·만료 경계·서명 위조·알고리즘 혼동·시크릿 하한"""
     import jwt as pyjwt
     from jwt import api_jwt
@@ -847,10 +1317,16 @@ def build_jwt() -> tuple[str, list[str], list[Case]]:
             ),
         )
     )
-    return (
-        "app/services/auth.py::AuthService._issue_token / AuthService.resolve_token",
-        NO_NORMALIZATION,
-        cases,
+    return FixtureSpec(
+        source="app/services/auth.py::AuthService._issue_token / AuthService.resolve_token",
+        mode=MODE_COMPAT,
+        requirement=(
+            "롤백 창 호환성 — 한쪽이 발급한 액세스 토큰을 다른 쪽이 그대로 받아들여야 한다. "
+            "값이 갈리면 절체 순간 로그인 세션이 전부 끊긴다. 서명 위조·알고리즘 혼동·만료 "
+            "경계(PyJWT는 exp <= now를 만료로 본다)는 양쪽에서 똑같이 거부돼야 한다"
+        ),
+        normalization=NO_NORMALIZATION,
+        cases=cases,
     )
 
 
@@ -863,12 +1339,12 @@ ARGON2_LEGACY_MEMORY_COST = 8192
 ARGON2_LEGACY_PARALLELISM = 2
 
 
-def build_argon2() -> tuple[str, list[str], list[Case]]:
+def build_argon2() -> FixtureSpec:
     """Argon2 PHC — 기존 해시 그대로 검증, 재해시 판정, 변조·오입력 거부"""
     return asyncio.run(_argon2_cases())
 
 
-async def _argon2_cases() -> tuple[str, list[str], list[Case]]:
+async def _argon2_cases() -> FixtureSpec:
     from argon2 import PasswordHasher, extract_parameters
     from argon2.exceptions import InvalidHashError
 
@@ -1037,11 +1513,19 @@ async def _argon2_cases() -> tuple[str, list[str], list[Case]]:
             },
         )
     )
-    return (
-        "app/services/auth.py::hash_password / verify_password / "
-        "AuthService._rehash_if_outdated(_HASHER.check_needs_rehash)",
-        NO_NORMALIZATION,
-        cases,
+    return FixtureSpec(
+        source=(
+            "app/services/auth.py::hash_password / verify_password / "
+            "AuthService._rehash_if_outdated(_HASHER.check_needs_rehash)"
+        ),
+        mode=MODE_COMPAT,
+        requirement=(
+            "롤백 창 호환성 — Python이 저장한 Argon2 PHC 문자열을 Kotlin이 그대로 검증해야 "
+            "한다. 값이 갈리면 기존 사용자가 전부 로그인하지 못한다. 낮은 파라미터로 만든 "
+            "기존 해시도 검증되고, 재해시 판정이 양쪽에서 같아야 한다"
+        ),
+        normalization=NO_NORMALIZATION,
+        cases=cases,
     )
 
 
@@ -1069,15 +1553,11 @@ def summary(builder: Builder) -> str:
 def dump(domains: list[str], out_root: Path) -> int:
     written = 0
     for domain in domains:
-        source, normalization, cases = BUILDERS[domain]()
-        payload = {
-            "domain": domain,
-            "source": source,
-            "generator": "dump_parity_fixtures.py",
-            "generated_at": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
-            "normalization": normalization,
-            "cases": cases,
-        }
+        spec = BUILDERS[domain]()
+        payload = spec.document(domain)
+        # `generated_at`만 비결정적이다. 정본 대조에서 제외되는 유일한 헤더 필드이므로
+        # 여기서만 넣는다 — `document()`는 결정적으로 유지한다.
+        payload["generated_at"] = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
         target = out_root / domain / f"{domain}.json"
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(
@@ -1085,7 +1565,8 @@ def dump(domains: list[str], out_root: Path) -> int:
             encoding="utf-8",
         )
         shown = target.relative_to(REPO_ROOT) if target.is_relative_to(REPO_ROOT) else target
-        print(f"[생성] {shown} — {len(cases)}건 (source: {source})")
+        mark = spec.mode if spec.mode == MODE_COMPAT else f"{spec.mode}/{spec.spec_status}"
+        print(f"[생성] {shown} — {len(spec.cases)}건 [{mark}] (source: {spec.source})")
         written += 1
     return 0 if written else 1
 

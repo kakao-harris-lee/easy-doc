@@ -72,7 +72,7 @@
 | 3 | `GET /auth/me` | 200 + no-store/nosniff + `{id,email}` | ✔ | — | — | — | `paths./auth/me` |
 | 4 | `POST /documents` | **202** + **`Location`** + `{document_id,conversion_id,status,char_count}` | ✔ | 남의 `workspace_id` | 빈 본문·4,000자 초과·미지원 형식·추출 실패·잘못된 JSON | **413** 10MB 초과 · **502** 큐 등록 실패 · **503** 큐 미배선 · **multipart 경로 별도** | `paths./documents.post`, `x-input-limits`, `components/responses/PayloadTooLarge`, `.../BadGateway`, `.../ServiceUnavailable` |
 | 5 | `GET /documents` | 200 + no-store/nosniff + `{items,limit,offset,has_more}` | ✔ | 남의 `workspace_id` | `limit=0`·`limit=101`·`offset=-1` | — | `x-input-limits.list_limit`, `.list_offset` |
-| 6 | `DELETE /documents/{id}` | **204 + 본문 길이 0 + 캐시 헤더 없음** | ✔ | ✔ | UUID 형식 | — | `paths./documents/{document_id}.delete`, `x-private-response-headers.does_not_apply_to` |
+| 6 | `DELETE /documents/{id}` | **204 + 본문 길이 0 + 캐시 헤더 있음**(2026-08-12 전역 부착으로 부호 반전) | ✔ | ✔ | UUID 형식 | — | `paths./documents/{document_id}.delete`, `x-global-response-headers` |
 | 7 | `GET /conversions/{id}` | 200 + no-store/nosniff + 13필드 전부 존재 | ✔ | ✔ | UUID 형식 | 상태 4종별 응답 모양(`pending`/`processing`은 결과 null·배열 `[]`, `failed`는 `failure_code`) | `components/schemas/ConversionResponse`, `.../ConversionStatus` |
 | 8 | `PUT /conversions/{id}` | 200 + **no-store/nosniff** + `easy_text`가 **보존됨** | ✔ | ✔ | 빈 값·4,000자 초과 | **409** `done` 아님 | `paths./conversions/{conversion_id}.put` (§2.7 해결 1) |
 | 9 | `GET /conversions/{id}/export` | 200 + 미디어 타입 3종 + **`Content-Disposition` 양쪽 표기** + no-store/nosniff | ✔ | ✔ | `format` 누락·`pdf` 등 미지원 | **409** 미완료 · **409** 검수 없이 `missing_placeholders` 존재 | `paths..../export`, `components/schemas/ExportFormat` |
@@ -80,7 +80,7 @@
 | 11 | `POST /workspaces` | 201 + **no-store/nosniff** | ✔ | — | 빈 이름·50자 초과 | **409** 같은 이름 | `paths./workspaces.post` |
 | 12 | `PATCH /workspaces/{id}` | 200 + **no-store/nosniff** + **PUT이 아님** | ✔ | ✔ | 빈 이름·50자 초과 | **409** 같은 이름 | `paths./workspaces/{workspace_id}.patch` |
 | 13 | `DELETE /workspaces/{id}` | **204 + 본문 길이 0** | ✔ | ✔ | UUID 형식 | **409** 문서 있음 · **409** 마지막 하나 | `paths./workspaces/{workspace_id}.delete` |
-| 14 | `GET /health` | 200 + `{"status":"ok"}` + **캐시 헤더 없음** | — (인증 불필요) | — | — | 인증 없이 200임을 단언 | `paths./health` |
+| 14 | `GET /health` | 200 + **캐시 헤더 있음**(2026-08-12 전역 부착으로 부호 반전) + `status`가 `checks`와 일치(degraded여도 200) | — (인증 불필요) | — | — | 인증 없이 200임을 단언 | `paths./health`, `x-global-response-headers` |
 
 ---
 
@@ -101,9 +101,11 @@
 | **X-C4** | 오류 응답의 `Content-Type`이 `application/json`이다 (`application/problem+json` 아님) | C | 같음 | Spring 기본 `ProblemDetail`이 새는 자리 |
 | **X-C5** | 미매핑 도메인 예외 → 500 `"요청을 처리하지 못했습니다"` / 도메인 밖 예외 → 500 `"서버 오류가 발생했습니다"` | C | `components/responses/InternalError` | 예외 내용이 그대로 노출되는 경로를 닫는다 |
 | **X-C6** | 502(`QueueUnavailableError`)와 503(`ConfigurationError`)이 **다른 코드로** 나간다 | C | `components/responses/BadGateway`, `.../ServiceUnavailable` | 합치면 "재시도할 값어치가 있는가"라는 클라이언트 판단이 무너진다 |
-| **X-D1** | 캐시 금지 헤더가 붙는 성공 응답이 **정확히 10곳**이다 (열거 검증) | C | `x-private-response-headers.applies_to` | 하나라도 빠지면 200 OK로 나타나는 보안 사고다 |
-| **X-D2** | DELETE 204 두 곳과 `/health`, **모든 오류 응답**에는 캐시 헤더가 **없다** | C | `x-private-response-headers.does_not_apply_to` | Kotlin에서 전역 필터로 전 응답에 붙이면 계약보다 넓어져 parity가 깨진다 |
-| **X-D3** | 라우터가 헤더를 적어 둔 **뒤에 예외를 던져도** 오류 응답에 헤더가 새지 않는다 | C | 같음 | Python 기준선에 이미 있다(`test_errors.py`의 `_app_raising_after_private_headers`) |
+| **X-D1** | 고위험 성공 응답 **10곳 각각**에 캐시 금지 헤더가 있다 (하한선 — 전역 규칙이 있어도 **삭제하지 않는다**) | C | `x-private-response-headers.applies_to` | 필터가 제거되거나 체인 순서가 어긋나도 고위험 경로에서 **먼저** 깨져야 한다(리더 판정 부수 결정 1) |
+| **X-D2** | ~~DELETE 204 두 곳과 `/health`, 모든 오류 응답에는 캐시 헤더가 **없다**~~ → **2026-08-12 부호 반전.** DELETE 204 두 곳·`/health`·**모든 오류 응답**(401·404·409·413·422·500·502·503)·프리플라이트에 캐시 헤더가 **있다** | C | `x-global-response-headers` | 리더 판정으로 전역 부착이 요구가 됐다. **Python은 고치지 않으므로 이 단언은 Kotlin 전용**이고, Python이 통과하지 못하는 것이 정상이다 |
+| **X-D2b** | 헤더가 **하나씩만** 있고 값이 정확히 `no-store`/`nosniff`다 (`header().stringValues(...)`로 **개수까지**) | C | `x-global-response-headers.enforcement` | 필터와 `ResponseEntity`가 둘 다 실으면 `no-store, no-store`가 나가 `const` 제약 위반. 값만 보는 단언은 통과해 버린다 |
+| **X-D2c** | **컨테이너 레벨 응답**(malformed HTTP 400 · 핸들러 없는 404 · 413 · 415)에도 두 헤더가 있다 — ⚠️ **미실측. MockMvc 불가**, `@SpringBootTest(RANDOM_PORT)` + 원시 소켓 필요 | C | `x-global-response-headers.x-phase3-measurement` | 실패 양상이 "누가 빠뜨렸는가"에서 **"필터가 닿는가"**로 옮겨간 자리. 어긋나면 계약을 좁히지 말고 필터 배치를 고친 뒤 리더 재심 |
+| ~~**X-D3**~~ | ~~라우터가 헤더를 적어 둔 **뒤에 예외를 던져도** 오류 응답에 헤더가 새지 않는다~~ | — | — | **폐기 (2026-08-12).** 전역 부착으로 "헤더가 새는 것"이 더는 위반이 아니다. Python 기준선의 `test_errors.py::_app_raising_after_private_headers`는 Python 쪽 기술로 남지만 Kotlin 계약 단언이 아니다 |
 | **X-D4** | `POST /documents` 202의 `Location` 값이 **본문 `conversion_id`와 같다** | C | `paths./documents.post` 응답 헤더 | 두 값이 갈리면 폴링이 엉뚱한 자원을 본다 |
 | **X-D5** | `Content-Disposition`에 ASCII `filename=`과 RFC 5987 `filename*=UTF-8''`가 **둘 다** 있고, 한글 제목이 퍼센트 인코딩돼 `filename*`에 실린다 | C | `paths..../export` 응답 헤더 | 헤더 값은 latin-1만 담는다. React `parseFilename`이 `filename*`만 읽는다 |
 | **X-D6** | `txt` 내보내기의 미디어 타입에 `charset=utf-8`이 **있다** | C | `paths..../export` 200 content | 없으면 브라우저가 로캘 기본 인코딩으로 열어 한글이 깨진다 |
@@ -147,7 +149,7 @@ Phase 3에서 Kotlin 테스트를 쓸 때 "Python에 이미 있는 것"과 "양�
 | 401 + `WWW-Authenticate` | `test_auth.py:207`, `test_workspaces.py:327`, `test_documents.py:1277`, `test_errors.py:219` |
 | 소유권 404(403 아님) | `test_documents.py:583,698,1126`, `test_workspaces.py:218` (docstring에 "403이 아니라 404"로 명시) |
 | 비밀번호 에코 없음 | `test_auth.py:173` (`assert password not in response.text`) |
-| 오류 응답에 캐시 헤더 없음 | `test_errors.py`의 `_app_raising_after_private_headers` |
+| 오류 응답에 캐시 헤더 없음 | `test_errors.py`의 `_app_raising_after_private_headers` — **Python 기준선의 기술이며 Kotlin 계약 단언이 아니다.** Kotlin은 2026-08-12 전역 부착으로 반대(있음)를 요구한다. Python은 고치지 않기로 판정됐으므로 이 차이는 결함이 아니라 **기록된 차이**다 |
 | `Location` 값 = 본문 `conversion_id` | `test_documents.py:194` |
 | `Content-Disposition`의 `filename*` | `test_documents.py:803,830` (docx·hwpx) |
 | CORS 5종 | `tests/test_cors.py` 5건 |
@@ -214,6 +216,6 @@ UUID 값. 이것들은 값이 아니라 **형식**만 같으면 된다.
 
 | 대상 | 내용 |
 |---|---|
-| `kotlin-implementer` | 정본 계약은 `contracts/easy-doc-v1.yaml`. 특히 **X-A3(인증 우선순위)**, **X-C2(`input` 금지)**, **X-E1/E2(snake_case·키 생략 금지)**, **X-D2(오류 응답에 캐시 헤더 금지)** 네 가지가 Spring 기본값과 충돌하는 자리다 |
-| `parity-verifier` | §6의 범위. 오류 `detail` 문구는 형식이 아니라 **전문 일치**가 계약이다 |
-| 리더 | **G-1**(Python에도 없는 캐시 헤더 테스트 2건)의 처리 시점 판단. **U-1**(500 응답의 CORS 헤더, 3자 대조 문서 §7) 판단 |
+| `kotlin-implementer` | 정본 계약은 `contracts/easy-doc-v1.yaml`. 특히 **X-A3(인증 우선순위)**, **X-C2(`input` 금지)**, **X-E1/E2(snake_case·키 생략 금지)** 셋이 Spring 기본값과 충돌한다. 헤더는 **X-D2로 부호가 반전됐다** — 이제 오류 응답에 캐시 헤더가 **있어야** 하고 수단은 서블릿 필터다(`add`가 아닌 `set`, X-D2b). **X-D2c(컨테이너 레벨 도달)는 미실측이며 MockMvc로 측정할 수 없다** |
+| `parity-verifier` | §6의 범위. 오류 `detail` 문구는 형식이 아니라 **전문 일치**가 계약이다. **응답 헤더는 두 런타임이 의도적으로 다르다**(Kotlin 전역 / Python 10곳) — 불일치로 올리지 않는다 |
+| 리더 | **G-1**(Python에도 없는 캐시 헤더 테스트 2건)의 처리 시점 판단. ~~**U-1**~~·~~**OQ-1**~~ 둘 다 2026-08-12 판정 완료. **X-D2c 실측이 어긋나면 재심 대상** |

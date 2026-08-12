@@ -1,16 +1,33 @@
 openapi: 3.1.0
 
 # =============================================================================
-# easy-doc 외부 HTTP 계약 v1 (동결)
+# easy-doc 외부 HTTP 계약 v1
 #
 # 이 파일이 Kotlin API 구현과 React 타입 생성의 **단일 정본**이다.
 # 계약 스펙 전문을 다른 문서에 복사하지 않는다 — 두 벌이 갈라지면 어느 쪽이 정본인지
 # 알 수 없게 된다.
 #
-# 작성 기준(2026-08-12): **현재 Python 구현의 실제 동작**이다. 계획 문서
-# `docs/plans/2026-08-11-kotlin-react-migration.md` §2.2는 의도를 적은 것이고,
-# 지켜야 하는 값은 `app/api/*.py`와 `app/main.py`에 있다. 둘이 어긋나면 코드가 이겼고,
-# 어긋난 지점은 `docs/migration/_workspace/00_contract-keeper_three-way-diff.md`에 남겼다.
+# ## 이 계약이 무엇인가 (2026-08-12 개정)
+#
+# **요구사항이 요구하는 인터페이스**다. 현재 Python 구현의 스냅샷이 아니다.
+# 초판(2026-08-12)은 "현재 Python 동작을 v1으로 동결한다"는 전제로 썼으나,
+# 사용자 결정으로 그 전제가 걷혔다 — **Python은 회귀가 잦은 구현이지 기준이 아니다.**
+# 따라서 Python 동작은 이제 **가장 신뢰도 높은 출발점**이지 정답이 아니며,
+# 명백히 잘못된 계약(상태 코드 오용, 필드 누락, 실재하지 않는 값 예시)은 고친다.
+#
+# 그렇다고 아무나 아무 때나 바꿀 수 있는 문서는 아니다. 바꿀 수 있는 근거와
+# 바꿀 수 없는 것을 `x-change-policy`에 적었다. **그 절을 읽지 않고 이 파일을 고치지 않는다.**
+#
+# 계약이 여전히 계약인 이유: React가 의존하는 인터페이스이고, Kotlin 구현과 프런트
+# 타입 생성이 같은 한 곳을 읽어야 두 쪽이 갈리지 않는다.
+#
+# ## 출처
+#
+# 조항의 1차 출처는 여전히 `app/api/*.py`·`app/main.py`의 실제 동작이다 —
+# 다만 "그렇게 동작한다"가 곧 "그래야 한다"는 아니다. Python과 의도적으로 다른 조항은
+# 각 자리에 `x-improved` 또는 산문으로 근거를 남긴다.
+# 3자 대조 기록: `docs/migration/_workspace/00_contract-keeper_three-way-diff.md`
+# 재분류 기록: `docs/migration/_workspace/02_contract-rebase.md`
 #
 # FastAPI 자동 생성 OpenAPI(`docs/migration/_workspace/00_contract-keeper_openapi-fastapi.yaml`)는
 # 초안으로만 썼다. 자동 생성물에는 401·404·409·413·502·503, 모든 응답 헤더,
@@ -21,9 +38,11 @@ openapi: 3.1.0
 
 info:
   title: Easy-Read AI API
-  version: "1.0.0"
-  x-frozen-at: "2026-08-12"
-  x-source-runtime: "Python 3.12 / FastAPI (app/main.py)"
+  version: "1.1.0"
+  x-baselined-at: "2026-08-12"       # 초판 기준선을 뜬 날 (동결일이 아니다)
+  x-rebased-at: "2026-08-12"         # 계약의 성격을 "개선 대상"으로 다시 정의한 날
+  x-source-runtime: "Python 3.12 / FastAPI (app/main.py) — 기준선 출처이지 정답이 아니다"
+  x-change-policy-ref: "최상위 x-change-policy"
   description: |
     공공기관용 '쉬운 글' 자동 변환 서비스의 HTTP 계약 v1.
 
@@ -59,7 +78,11 @@ info:
     아니라 보안 계약 위반이다(계획 §5 Phase 7 즉시 중단 기준).
 
     ## 인증 실패와 입력 검증의 우선순위
-    **인증이 먼저다.** 실측 확인(2026-08-12): 위조 토큰으로 `GET /documents?limit=0`,
+    **인증이 먼저다.** 이것은 Python이 그렇게 동작해서가 아니라 **그래야 하기
+    때문이다** — 인증되지 않은 호출자에게 검증 의미론(어느 파라미터가 어떤 범위를
+    받는지, 어떤 경로가 UUID를 요구하는지)을 알려 줄 이유가 없다. 순서가 뒤집히면
+    토큰 없이도 API 표면을 탐색할 수 있게 된다.
+    실측 확인(2026-08-12): 위조 토큰으로 `GET /documents?limit=0`,
     `DELETE /documents/not-a-uuid`, `GET /conversions/{id}/export?format=pdf`를
     호출하면 셋 다 422가 아니라 **401**이 나온다. Kotlin 구현에서 Bean Validation이
     보안 필터보다 먼저 돌면 이 순서가 뒤집혀 계약 위반이 된다.
@@ -68,9 +91,91 @@ info:
     모든 JSON 필드는 **snake_case**다. Jackson 기본 네이밍 전략이 camelCase로 바꾸면
     계약 위반이다. 식별자는 UUID 문자열, 시각은 ISO 8601 문자열이다.
 
+    ## 응답 헤더 — 전역 요구 (2026-08-12 리더 판정)
+    `Cache-Control: no-store`와 `X-Content-Type-Options: nosniff`는 **Kotlin 런타임이
+    내보내는 모든 응답**에 붙는다. 상태 코드·경로·핸들러 유무를 가리지 않는다.
+    **`paths` 아래 개별 응답에 적힌 헤더 선언 10건을 "붙는 자리 목록"으로 읽으면 안 된다** —
+    그것은 고위험 경로에 남긴 **하한선**이고 범위가 아니다.
+    요구의 정본은 최상위 `x-global-response-headers`이며, **OpenAPI 문법으로는 이 요구를
+    끝까지 표현할 수 없다**(같은 절의 `x-openapi-expressibility`에 무엇을 표현하지 못하는지
+    적었다). 현행 Python은 이 전역 요구를 만족하지 않는다 — 인정된 이탈이며 결함이 아니다.
+
 servers:
   - url: http://localhost:8000
     description: 개발 서버 (React는 VITE_API_BASE_URL로 주입받는다)
+
+# -----------------------------------------------------------------------------
+# 계약 변경 기준 — 이 계약은 동결물이 아니라 개선 대상이다.
+# 이 절이 "무엇을 근거로 바꿀 수 있고 무엇은 못 바꾸는지"의 정본이다.
+# -----------------------------------------------------------------------------
+x-change-policy:
+  premise: |
+    Python 구현은 회귀가 잦아 Kotlin으로 옮기는 중이다. 따라서 **Python과 같은 값을
+    내는 것이 목표가 아니고**, 프로젝트 요구사항을 만족하는 인터페이스를 내는 것이 목표다.
+    "Python이 이렇게 한다"는 사실 진술이지 근거가 아니다.
+
+  # 바꿀 수 있는 근거 — 이 넷 중 하나에 해당해야 변경이 성립한다.
+  valid_grounds:
+    - id: G1
+      name: 계약이 사실과 다르다
+      detail: |
+        스펙에 적힌 값이 어떤 구현에서도 나오지 않는다(존재하지 않는 예시 값, 잘못 옮겨
+        적은 상태 코드, 실제와 다른 필드명). 판단이 필요 없는 오기이므로 즉시 고친다.
+    - id: G2
+      name: 요구사항이 그것을 요구한다
+      detail: |
+        제품·보안·운영 요구사항이 현재 조항으로 충족되지 않는다. 근거로 요구사항을
+        지목해야 하며 "이게 더 낫다"는 취향 진술은 근거가 아니다.
+    - id: G3
+      name: 정책 결정이 바뀌었다
+      detail: |
+        사용자·리더가 정책을 바꾸면 계약이 따라간다(예: 마스킹 범주 5종 → 2종,
+        2026-08-12 사용자 결정). 계약 소유자가 정책을 만들지는 않는다.
+    - id: G4
+      name: 조항이 지킬 수 없거나 지켜지지 않는 형태다
+      detail: |
+        Kotlin/Spring에서 물리적으로 만족시킬 수 없거나, 사람이 매번 기억해야만 지켜지는
+        조항이라 이미 두 번 이상 누락된 이력이 있다. 이때는 **결과가 아니라 강제 수단**을
+        함께 바꾼다.
+
+  # 바꿀 수 없는 것 — 근거가 G1~G4에 해당해도 이 목록은 계약 소유자 단독으로 못 바꾼다.
+  invariants:
+    - "소유권 은닉 404 (403 금지) — 보안 계약이다"
+    - "오류 본문 최상위 키 `detail` 하나, Content-Type application/json"
+    - "422 응답에 입력값 에코 금지(`input`·`ctx`) — 비밀번호 유출 경로"
+    - "JSON 필드 snake_case"
+    - "JWT 페이로드에 개인정보 금지 (sub·exp·typ 세 개)"
+    - "Cache-Control: no-store + X-Content-Type-Options: nosniff — Kotlin 런타임의 모든 응답
+       (2026-08-12 리더 판정, 정본 `x-global-response-headers`). 고위험 10곳은 좁힐 수 없는 하한선이다"
+    - "인증 실패 응답의 균일성(계정 열거 방지)"
+  invariants_note: |
+    위 목록은 깨지면 사용자 데이터가 새는 항목이다. 개선의 이름으로도 좁히지 않는다.
+    넓히는 방향(더 많은 응답에 no-store)은 리더 승인 사항이지 금지가 아니다.
+
+  # 계약 소유자가 단독으로 못 정하는 것
+  escalate_to_leader:
+    - "리더가 이미 명시적으로 판정한 조항을 뒤집는 변경 — 전제가 바뀌었더라도 재심을 요청한다"
+    - "React 런타임 코드가 이미 의존하는 동작의 변경 (테스트·타입만 닿는 것은 제외)"
+    - "invariants 목록의 축소"
+    - "배포·운영 동작이 달라지는 변경 (헬스 체크 상태 코드, 컨테이너 재시작 조건 등)"
+
+  # 절차
+  procedure: |
+    1. 근거를 G1~G4 중 하나로 지목한다. 지목할 수 없으면 변경하지 않는다.
+    2. React 영향을 먼저 확인한다 — `frontend/src/api/types.ts`·`client.ts`·컴포넌트를
+       읽고 무엇이 깨지는지 적는다. "아마 괜찮다"는 확인이 아니다.
+    3. 파괴적인지 판정한다. 필드·헤더·상태 코드 추가는 대개 비파괴, 제거·이름 변경·
+       타입 축소·enum 값 제거는 파괴다.
+    4. 계약과 contract test를 **같은 변경 단위**에서 고친다. 스펙만 바뀌면 두 기준이 충돌한다.
+    5. `x-changelog`와 `docs/migration/_workspace/00_contract-keeper_changelog.md`에
+       조항·근거 ID·영향받는 테스트·통보 대상을 남긴다.
+    6. `kotlin-implementer`와 `parity-verifier`에 통보한다.
+
+  parity_relationship: |
+    **parity 불일치는 더 이상 자동으로 차단 사유가 아니다.** 계약이 Python과 의도적으로
+    다른 조항에서는 Kotlin이 계약을 따르는 것이 옳고, parity 하네스는 그 차이를
+    "의도된 차이"로 기록한다. 반대로 계약에 없는 자리에서 값이 갈리면 종전대로 차단이다.
+    판정 권한은 계약 소유자에게 있다.
 
 # -----------------------------------------------------------------------------
 # CORS 정책 — OpenAPI로 표현할 수 없어 확장 필드로 둔다.
@@ -87,10 +192,15 @@ x-cors:
     expose_headers가 빠지면 서버 응답은 완전한데 **브라우저 JS만** 헤더를 못 읽는다.
     다운로드 파일명(Content-Disposition)과 접수 주소(Location)가 그 대상이다.
     서버 테스트로는 잡히지 않으므로 브라우저 컨텍스트에서 확인한다.
-  # 미처리 500 응답의 CORS 헤더 — Python과 Kotlin이 **의도적으로 다른** 유일한 지점.
+  # 미처리 500 응답의 CORS 헤더 — Python과 Kotlin이 의도적으로 다른 지점.
   # 이 절이 그 결정의 정본이다(다른 문서에 옮겨 적지 않는다).
   x-unhandled-500-cors:
     decision_status: "결정됨 (2026-08-12 리더 판정, 사용자 승인) — 개선을 받아들인다"
+    x-rebase-note: |
+      2026-08-12 계약 성격 개정 이후 이 항목의 지위가 달라졌다. 예전에는 "동결 원칙의
+      유일한 예외"였으나, 이제는 `x-change-policy` G2를 적용한 **통상적인 개선**이다.
+      아래 rationale은 그대로 유효하고 결론도 바뀌지 않는다 — 바뀐 것은 "왜 예외가
+      허용됐는가"를 더는 설명할 필요가 없다는 점뿐이다.
     python_behavior: |
       미처리 500 응답에는 CORS 헤더가 붙지 않는다. `ServerErrorMiddleware`가 CORS
       미들웨어 **바깥**에 있어 구조적으로 붙일 수 없다(app/api/errors.py에 한계로 명시).
@@ -177,10 +287,107 @@ x-input-limits:
   retention_days: 30
 
 # -----------------------------------------------------------------------------
-# 캐시 금지 헤더가 붙는 자리 — 정확히 10곳.
-# 검증: grep -rn "headers.update(PRIVATE_RESPONSE_HEADERS)\|\*\*PRIVATE_RESPONSE_HEADERS" app/api/ | wc -l  → 10
+# 사적 응답 헤더 — 읽는 순서를 틀리지 않는다.
+#
+# `x-global-response-headers`가 **요구의 정본**이다 (Kotlin의 모든 응답).
+# 뒤따르는 `x-private-response-headers`의 10곳 목록은 그 요구의 **하한선**이지
+# 범위가 아니다. 10곳을 범위로 읽으면 이 절을 거꾸로 읽은 것이다.
+# -----------------------------------------------------------------------------
+x-global-response-headers:
+  status: "결정됨 (2026-08-12 리더 판정) — OQ-1 종결. 경로: 계약 소유자 재심 제기 → 리더 판정"
+  headers:
+    Cache-Control: no-store
+    X-Content-Type-Options: nosniff
+  ground: G4
+  applies_to: |
+    **Kotlin 런타임이 내보내는 모든 HTTP 응답.** 상태 코드·경로·핸들러 유무·본문 유무를
+    가리지 않는다. 성공 응답, 오류 응답(4xx·5xx), 본문 없는 204, `GET /health`,
+    CORS 프리플라이트, 그리고 매칭되는 핸들러가 없어 컨테이너가 직접 만든 응답까지
+    전부 포함이다.
+  rationale: |
+    열거식 범위가 이 저장소에서 **이미 두 번** 누락됐다(`PUT /conversions/{id}` 하나,
+    `/auth` 셋). 사람이 매번 기억해야 지켜지는 조항은 지켜지지 않는 형태이고, 그것이
+    G4의 정의다. "오류 본문에 개인정보가 없다"는 실측은 여전히 유효하지만 그것은
+    *얻는 것이 작다*는 근거일 뿐 *좁게 유지해야 한다*는 근거가 아니다.
+    전역 부착의 비용이 사실상 0인 쪽이 결정을 갈랐다 — 이 API가 내보내는 것은 JSON과
+    첨부 파일뿐이라 정적 자원·HTML 문서가 없고, `no-store`가 망가뜨릴 캐시 동작 자체가
+    없다. CORS 프리플라이트 캐시는 `Access-Control-Max-Age`가 관장하므로 영향받지 않는다.
+  x-failure-mode-shift: |
+    **이 판정의 핵심 귀결은 실패 양상이 바뀐다는 것이다.**
+    위험이 "누가 한 자리를 빠뜨렸는가"에서 **"필터가 그 응답까지 닿는가"**로 옮겨간다.
+    전자는 목록 대조로 잡히지만 후자는 **실행해 봐야만** 잡힌다.
+    따라서 이 조항은 적어 두면 지켜지는 종류가 아니다. 아래 `x-phase3-measurement`가
+    끝나기 전까지 **요구는 확정이되 충족은 미확인**이며, 그 상태를 감춰 적지 않는다.
+  enforcement: |
+    서블릿 필터 하나로 붙인다. 체인의 **가장 바깥**(CORS 필터와 같은 층 또는 그 바깥)에
+    두어 라우팅·예외 처리보다 먼저 응답 객체를 잡는다.
+    헤더는 `add`가 아니라 **`set`**으로 쓴다 — 컨트롤러 `ResponseEntity`가 같은 헤더를
+    이미 실은 10곳에서 `add`를 쓰면 `Cache-Control: no-store, no-store`가 나가고,
+    값을 `const`로 못박은 이 계약(`components.headers.CacheControlNoStore`)에 위반된다.
+    이중 부착은 기능은 멀쩡하고 계약만 깨지는 종류라 눈으로는 안 잡힌다.
+  x-openapi-expressibility: |
+    **이 전역 요구를 OpenAPI 문법으로 끝까지 표현할 수 없다.** 아래가 표현하지 못한
+    것의 전부이며, 표현한 척하지 않기 위해 남긴다.
+
+    ① **"모든 응답에 적용"이라는 구성 자체가 없다.** `components.headers`는 헤더
+       **정의**를 재사용할 뿐 **부착**하지 않는다. 루트에서 상속되는 `security`와 달리
+       헤더에는 대응물이 없다.
+    ② **응답 객체는 (경로, 오퍼레이션, 상태 코드) 삼중키에만 달린다.** 그런데 이번
+       판정이 정확히 겨냥한 위험은 **어떤 경로에도 매칭되지 않는 요청의 응답**이다 —
+       핸들러 없는 404, malformed HTTP 400, 디스패치 전에 잘리는 413·415. 이들에는
+       헤더를 적을 **문법상의 자리가 존재하지 않는다.** `paths`에 없는 응답을
+       `paths` 아래에 적을 수 없다.
+    ③ **`default` 응답도 대안이 아니다.** 한 오퍼레이션 안의 미문서화 상태 코드만
+       덮고 오퍼레이션 밖은 못 덮으며, 명시된 상태 코드는 애초에 `default`를 쓰지 않는다.
+    ④ **CORS 프리플라이트(OPTIONS) 응답에는 오퍼레이션이 없다.** 필터가 처리하므로
+       스펙에 자리가 없는데, 전역 요구의 대상이기는 하다.
+    ⑤ **모든 응답에 헤더를 적어 넣는 것은 "표현"이 아니라 "재열거"다.** 그렇게 하면
+       G4가 지목한 실패 양상(사람이 기억해야 지켜지는 목록)을 스펙 안에 복제하는 셈이고,
+       그러고도 ②·③·④는 여전히 못 덮는다. 그래서 `paths` 아래 선언을 늘리지 않았다.
+
+    **귀결**: 이 조항의 강제 수단은 스펙 밖에 있다 — contract test와 Phase 3 실측뿐이다.
+    스펙은 요구를 **기술**할 수 있을 뿐 **검사 가능한 형태로** 만들지 못한다.
+    "스펙에 적혀 있으니 검증됐다"고 읽으면 오독이다.
+  x-python-deviation: |
+    **현행 Python은 이 전역 요구를 만족하지 않는다 — 인정된 이탈이며 결함이 아니다.**
+    Python은 아래 `x-private-response-headers.applies_to`의 성공 응답 **10곳에만** 붙이고,
+    오류 응답·204·`/health`에는 붙이지 않는다(실측 2026-08-12: 401·422 응답 헤더에
+    cache-control 없음).
+    **Python을 고치지 않기로 리더가 판정했다** — 은퇴 예정 런타임에 전역 미들웨어를 새로
+    넣는 회귀 위험이 이득보다 크고, 오류 응답에 개인정보가 없다는 실측이 그 위험을 감수할
+    이유를 없앤다.
+    따라서 관찰 기간에 두 런타임의 헤더가 다른 것은 **결함이 아니라 기록된 차이**다.
+    parity 대조에서 불일치로 올리지 않는다.
+    이 계약을 읽는 사람이 "Python도 이렇다"고 오해하면 안 된다 — 이 절이 그 오해를
+    막는 자리다.
+  x-phase3-measurement: |
+    **미실측 항목 — Phase 3.** 필터가 컨테이너 레벨 응답까지 닿는지는 이 저장소에서
+    **실측된 적이 없다.** 서블릿 컨테이너가 필터 체인에 진입하기 전이나 체인 바깥에서
+    직접 만드는 응답이 있다 — malformed HTTP 400, 매칭 핸들러 없는 404, 요청 본문
+    상한 초과 413, 미지원 미디어 타입 415가 후보다.
+    측정 대상과 판정은 `.claude/skills/api-contract-freeze` §5에 체크 항목으로 있다.
+    **어긋났을 때 계약을 좁히지 않는다** — 요구는 리더가 판정했으므로, 먼저 필터 배치로
+    닿게 만들고, 물리적으로 닿지 않는 자리가 남으면 그 목록과 함께 리더에게 다시 올린다
+    (`x-change-policy.escalate_to_leader` 1번).
+  x-superseded: |
+    이 절은 종전 `x-private-response-headers.does_not_apply_to`("DELETE 204 · /health ·
+    모든 오류 응답")를 **무효화한다.** 그 목록은 Python 동작의 기술로만 남고
+    (`x-python-deviation`), Kotlin 계약에서는 제외 대상이 없다.
+    개선 원장의 V2-3(DELETE 204의 헤더)도 이 판정에 흡수됐다.
+
+# -----------------------------------------------------------------------------
+# 하한선 — 개인정보·자격증명이 실리는 고위험 10곳.
+#
+# 전역 규칙이 있는데도 이 목록을 남기는 이유: 필터가 제거되거나 체인 순서가 어긋나도
+# **고위험 경로에서 테스트가 먼저 깨져야** 하기 때문이다(2026-08-12 리더 판정 부수 결정 1).
+# 이 10곳의 개별 contract test는 삭제하지 않는다.
+# Python 기준선 확인: grep -rn "headers.update(PRIVATE_RESPONSE_HEADERS)\|\*\*PRIVATE_RESPONSE_HEADERS" app/api/ | wc -l  → 10
 # -----------------------------------------------------------------------------
 x-private-response-headers:
+  role: |
+    **하한선이지 범위가 아니다.** 요구의 정본은 `x-global-response-headers`이고
+    이 목록은 그 요구가 무너졌을 때 가장 먼저 깨져야 하는 자리를 지목한다.
+    여기에 없는 응답이라고 헤더가 없어도 되는 것이 아니다.
   headers:
     Cache-Control: no-store
     X-Content-Type-Options: nosniff
@@ -195,20 +402,34 @@ x-private-response-headers:
     - "GET /workspaces"                # 작업 공간 이름도 사용자가 적은 콘텐츠
     - "POST /workspaces"
     - "PATCH /workspaces/{workspace_id}"
-  does_not_apply_to:
-    - "DELETE /documents/{document_id} (204)"
-    - "DELETE /workspaces/{workspace_id} (204)"
-    - "GET /health"
-    - "모든 오류 응답 (4xx·5xx)"
-  x-rationale: |
-    DELETE 204와 오류 응답에는 붙이지 않는 것이 **현행 동작이자 동결된 계약**이다
-    (api-contract-freeze §2.7 해결 3 — 오류 본문에 개인정보가 없음을 실측 확인).
-    실측 확인(2026-08-12): 401·422 응답 헤더에 cache-control이 없다.
-    Kotlin에서 전역 필터로 모든 응답에 붙이면 계약보다 넓어진다 — 보안상 더 안전한
-    방향이라 즉시 위반은 아니지만, parity 대조가 불일치로 잡으므로 리더 승인 없이
-    범위를 넓히지 않는다.
-    반대로 위 10곳 중 하나라도 빠지면 **계약 위반**이다. 200 OK로 나타나는 보안
-    사고이므로 본문 검증으로는 절대 잡히지 않는다.
+  x-why-these-ten: |
+    이 열 자리를 고른 규칙은 **"개인정보·자격증명이 실리는 응답"**이다.
+    `POST /auth/login`은 Bearer 토큰 자체를, 나머지 `/auth` 둘은 이메일을, 문서·작업 공간
+    응답은 사용자 콘텐츠를 싣는다. 헤더가 빠지면 **200 OK로 나타나는 보안 사고**라
+    본문 검증으로는 절대 잡히지 않는다 — 그래서 전역 규칙과 별개로 개별 단언을 남긴다.
+    이 목록은 `paths` 아래 개별 응답의 헤더 선언 10건과 1:1로 대응한다.
+  x-not-a-scope: |
+    **여기 없는 응답에도 헤더는 붙는다.** 종전 이 절에 있던 `does_not_apply_to`
+    (DELETE 204 · `/health` · 모든 오류 응답)는 2026-08-12 리더 판정으로 **무효**이며,
+    지금은 Python 동작의 기술로만 `x-global-response-headers.x-python-deviation`에 남아 있다.
+    Kotlin 계약에는 제외 대상이 없다.
+  x-resolved-question:
+    id: OQ-1
+    subject: "사적 헤더를 모든 응답에 붙일 것인가 (전역 필터)"
+    status: "종결 (2026-08-12 리더 판정) — **전역 부착 승인**"
+    resolution_ref: "`x-global-response-headers` (요구의 정본)"
+    path: |
+      계약 소유자가 재심을 **제기**하고 리더가 **판정**했다. 계약 소유자는 전제 변화
+      (parity 재현이 더는 목표가 아님)를 근거로 리더 판정을 **스스로 뒤집지 않고** 올렸다.
+      결과가 같아도 경로가 다르다 — 이 절차가 없으면 앞으로 어떤 리더 결정도 "전제가
+      바뀌었다"는 주장 하나로 무효화된다(`x-change-policy.escalate_to_leader` 1번).
+    x-corrected-premise: |
+      재심 제기 시 계약 소유자가 적었던 **"넓혔다가 좁히려면 서블릿 API에 헤더 삭제
+      수단이 없어 되돌릴 수 없다"는 과장이며 판정과 함께 정정됐다.** 좁히는 것은 필터
+      하나에 조건을 더하는 일이지 전송된 헤더를 회수하는 일이 아니고, 절체 전이라 캐시에
+      남은 응답도 없다. 판정이 틀린 전제 위에 기록되지 않도록 함께 남긴다.
+      다만 **비대칭 판단 자체는 옳았다** — 좁은 쪽을 기본값으로 두고 재심을 올린 절차
+      판단은 이 정정과 무관하게 유효하다.
 
 tags:
   - name: auth
@@ -478,7 +699,9 @@ paths:
 
         **본문이 없다.** 지운 내용을 되돌려 주면 방금 파기한 문서를 다시 밖으로
         내보내는 셈이므로 삭제 확인은 상태 코드로만 한다.
-        캐시 금지 헤더도 붙이지 않는다(본문이 없어 캐시될 내용이 없다).
+        **캐시 금지 헤더는 붙는다** — 본문이 없어 캐시될 내용이 없다는 것은 사실이지만,
+        2026-08-12 리더 판정으로 헤더 부착이 열거식 범위에서 전역 규칙으로 바뀌었다
+        (`x-global-response-headers`). 종전 서술("붙이지 않는다")은 무효다.
       parameters:
         - name: document_id
           in: path
@@ -862,14 +1085,29 @@ paths:
         인증이 필요 없고 캐시 금지 헤더도 붙지 않는다(실측 확인 2026-08-12).
         React 화면은 이 엔드포인트를 부르지 않는다.
 
-        **현재 구현은 의존 서비스를 진단하지 않고 상수 `{"status": "ok"}`만 돌려준다.**
-        계획 §2.2 주변 서술의 "의존 서비스 상태 진단"과 어긋나며, 코드가 이겼다.
-        DB·Redis·설정이 모두 죽어도 200 ok가 나온다 — 기동 자체는 막지 않고 /health로
-        배포 상태를 진단한다는 설계 의도(app/api/deps.py 주석)가 아직 구현되지 않은
-        상태다. v1은 현행대로 동결하고, 진단 확장은 v2 후보다.
+        **의존 서비스를 진단한다** (2026-08-12 개정, `x-change-policy` G2).
+        현재 Python 구현은 상수 `{"status": "ok"}`만 돌려주어 DB·Redis·설정이 모두 죽어도
+        200 ok가 나온다(`app/main.py::health`). 그것은 요구사항 미구현이지 계약이 아니다 —
+        기동을 막지 않는 대신 `/health`로 배포 상태를 진단한다는 설계 의도가
+        `app/api/deps.py` 주석에 이미 적혀 있는데, 진단하지 않는 헬스 체크는 그 의도를
+        전혀 만족하지 못한다. **Kotlin은 진단하는 쪽으로 구현한다.**
+
+        **항상 200이다. degraded여도 503을 내지 않는다.** 이 엔드포인트 하나가 liveness와
+        readiness를 겸하기 때문이다 — Redis가 잠깐 죽었다고 503을 내면 오케스트레이터가
+        멀쩡히 읽기를 처리하던 프로세스를 재시작시켜 장애를 키운다. 상태는 본문으로
+        표현하고, 상태 코드는 "프로세스가 살아 있다"만 뜻한다.
+        상태 코드를 바꾸는 변경은 배포 동작을 바꾸므로
+        `x-change-policy.escalate_to_leader` 4번 항목이다.
+
+        **응답에 진단 상세를 싣지 않는다.** 인증 없이 누구나 부를 수 있으므로 호스트명·
+        포트·드라이버 버전·예외 메시지는 넣지 않는다. 의존 서비스 **이름과 up/down**까지다.
+
+        구현 시점: 진단 대상이 실제로 배선되는 Phase에 맞춘다(DB Phase 3, 큐·Redis Phase 5).
+        그 전까지 Kotlin이 확인 못 하는 의존 서비스는 `checks`에서 **키 자체를 생략**한다 —
+        확인하지 않은 것을 `true`로 적으면 진단이 거짓말이 된다.
       responses:
         '200':
-          description: 생존
+          description: 프로세스 생존 (degraded 포함 — 상태는 본문으로 표현한다)
           content:
             application/json:
               schema: { $ref: '#/components/schemas/HealthResponse' }
@@ -1072,7 +1310,7 @@ components:
         `string`으로만 나온다.** React는 4값 리터럴 union으로 좁혀 놓았으므로,
         계약 파일이 enum으로 고정하지 않으면 Phase 6에서 생성 타입이 자유 문자열로
         넓어져 **현재보다 타입 안전성이 떨어진다**. 교체가 퇴보가 되면 안 되므로
-        여기서 enum으로 동결한다(계획 §2.2 "변환 상태 유지"의 이행).
+        여기서 enum으로 고정한다(계획 §2.2 "변환 상태 유지"의 이행).
 
     ExportFormat:
       type: string
@@ -1207,9 +1445,30 @@ components:
         검수 화면에 보여줄 마스킹 항목.
         **`original`은 가려졌던 실제 개인정보다** — 소유자 인증을 통과한 조회에서만
         실린다. 이 필드가 있기 때문에 조회·검수 응답에 캐시 금지 헤더가 필수다.
+
+        **마스킹 범주는 2종뿐이다** (2026-08-12 사용자 결정 — `x-change-policy` G3).
+        주민등록번호·카드번호만 가린다. 전화번호·이메일·계좌번호는 **가리지 않는다** —
+        공공기관 안내문에는 담당 부서 연락처처럼 가려서는 안 되는 값이 본문에 그대로
+        들어가고, 그것을 자리표시자로 바꾸면 안내문의 쓸모가 사라진다.
+        고유식별정보(주민등록번호·외국인등록번호)와 금융 식별자(카드번호)만 남긴다.
       properties:
-        category: { type: string, examples: ["phone"] }
-        placeholder: { type: string, examples: ["[[전화번호1]]"] }
+        category:
+          type: string
+          enum: ["주민등록번호", "카드번호"]
+          description: |
+            **한국어 값이다.** `MaskCategory` StrEnum의 값이 그대로 실린다 —
+            `"rrn"`·`"phone"` 같은 영문 코드가 아니다. React `ReviewEditor`가 이 값을
+            표에 **그대로 렌더링**하므로(`<td>{item.category}</td>`) 값 자체가 화면 문구다.
+            초판 스펙의 예시 `"phone"`은 어떤 구현에서도 나오지 않는 값이었다
+            (`x-change-policy` G1로 정정, 2026-08-12).
+        placeholder:
+          type: string
+          pattern: '^\[\[(주민등록번호|카드번호)[0-9]+\]\]$'
+          examples: ["[[주민등록번호1]]"]
+          description: |
+            `[[<범주><n>]]` 형식. `n`은 **범주별** 1부터의 일련번호다(전역 카운터가 아니다).
+            자리표시자는 값이지 표기 형식이 아니다 — 형태·번호·개수가 달라지면
+            내보내기 시 원문 복원이 어긋난다.
         original: { type: string, description: 실제 개인정보 (합성 예시 없음 — 문서에 예시를 적지 않는다) }
 
     ConversionReviewRequest:
@@ -1256,13 +1515,19 @@ components:
         masked_items:
           type: array
           items: { $ref: '#/components/schemas/MaskedItemResponse' }
-          description: '`done`이 아니면 빈 배열. null이 아니다.'
+          description: |
+            `done`이 아니면 빈 배열. null이 아니다.
+            범주는 주민등록번호·카드번호 **2종뿐**이므로, 전화번호·이메일이 든 문서라도
+            이 배열이 비어 있는 것이 정상이다.
         missing_placeholders:
           type: array
-          items: { type: string }
+          items:
+            type: string
+            pattern: '^\[\[(주민등록번호|카드번호)[0-9]+\]\]$'
           description: |
             결과에서 사라진 자리표시자 라벨 목록. 라벨뿐이라 개인정보가 아니다.
             비어 있지 않고 검수본도 없으면 내보내기가 409로 막힌다.
+            범주 2종만 남으므로 `[[전화번호1]]`·`[[이메일1]]` 같은 라벨은 더 이상 나오지 않는다.
         model: { anyOf: [{ type: string }, { type: 'null' }] }
         provider_name: { anyOf: [{ type: string }, { type: 'null' }] }
         input_tokens: { anyOf: [{ type: integer }, { type: 'null' }] }
@@ -1285,10 +1550,20 @@ components:
         title: { type: string, maxLength: 255 }
         source_format:
           type: string
+          enum: [text, docx, pdf, hwpx]
           description: |
-            붙여넣기는 `"text"`, 파일은 소문자 확장자(`docx`·`pdf`·`hwpx`).
-            **enum으로 고정하지 않는다** — 백엔드가 확장자를 그대로 쓰는 자유 문자열이고
-            React도 `string`으로 받는다. 좁히면 계약 축소(파괴적 변경)가 된다.
+            붙여넣기는 `"text"`, 파일은 소문자 확장자.
+
+            **enum으로 고정한다** (2026-08-12 개정, `x-change-policy` G1).
+            초판은 "자유 문자열이라 좁히면 파괴적"이라고 적었으나 사실이 아니었다 —
+            값 집합은 이미 닫혀 있다. `_source_format`이 확장자를 소문자화해 쓰지만
+            그 함수는 `extract_text`가 지원 형식(`docx`·`pdf`·`hwpx`)만 통과시킨 **뒤에**
+            불리고, 붙여넣기는 상수 `TEXT_SOURCE_FORMAT = "text"`다. 그 밖의 값이 나올
+            경로가 없다(`app/services/documents.py`).
+            React 영향 없음 — 이 필드를 화면에 쓰는 코드가 없다(2026-08-12 실측:
+            `frontend/src` 전체에서 `types.ts` 선언과 테스트 팩토리에만 등장).
+            지원 형식을 늘리면 이 enum과 `x-input-limits.supported_upload_formats`를
+            같은 변경 단위에서 함께 늘린다(추가는 비파괴).
         char_count: { type: integer }
         created_at: { type: string, format: date-time }
         retention_expires_at:
@@ -1370,14 +1645,31 @@ components:
     # ---------------------------------------------------------------------
     HealthResponse:
       type: object
-      required: [status]
+      required: [status, checks]
+      description: |
+        `status`는 **`checks`에서 유도한다** — 별개로 계산하지 않는다.
+        `checks`의 값이 모두 true면 `ok`, 하나라도 false면 `degraded`다.
+        둘이 어긋난 응답은 계약 위반이다(단언하기 쉬운 조항이므로 contract test로 고정한다).
       properties:
         status:
           type: string
-          const: "ok"
+          enum: [ok, degraded]
           description: |
-            현재 구현은 상수만 돌려준다. `ConversionStatus`와 **다른 네임스페이스**이므로
-            혼동하지 않는다.
+            `ConversionStatus`와 **다른 네임스페이스**이므로 혼동하지 않는다.
+            `"ok"`는 초판(상수 응답)과 같은 값이라, 이 필드만 보던 소비자는 영향받지 않는다.
+        checks:
+          type: object
+          additionalProperties: { type: boolean }
+          description: |
+            의존 서비스 이름 → 사용 가능 여부. **불리언만 싣는다** — 인증 없는
+            엔드포인트이므로 예외 메시지·호스트·버전 같은 내부 정보를 담지 않는다.
+            아직 배선되지 않아 확인할 수 없는 의존 서비스는 **키를 생략한다**
+            (`false`가 아니다 — "죽었다"와 "확인 안 했다"는 다른 말이다).
+            현재 정의된 키: `database`, `queue`.
+            의존 서비스가 하나도 배선되지 않았으면 `{}`이고 `status`는 `ok`다.
+          examples:
+            - { database: true, queue: true }
+            - { database: true, queue: false }
 
 # =============================================================================
 # 변경 이력
@@ -1407,29 +1699,163 @@ x-changelog:
       기록), ② Phase 6 React 분기 확인(`x-cors.x-unhandled-500-cors.x-phase6-check`).
       통보 대상: kotlin-implementer, parity-verifier.
 
+  - version: "1.1.0"
+    date: "2026-08-12"
+    author: contract-keeper
+    change: |
+      **계약의 성격 개정 — 동결물에서 개선 대상으로.** 아울러 그 새 기준으로 기존
+      개선 후보를 전수 재분류하고, 명백한 오기 2건과 정책 변경 1건을 반영했다.
+
+      성격 변경:
+        - 최상위 `x-change-policy` 신설 — 변경 근거 G1~G4, 못 바꾸는 불변식,
+          리더 에스컬레이션 대상, 절차, parity와의 관계.
+        - 파일 머리말·`info.x-baselined-at`(옛 `x-frozen-at`)·`x-source-runtime` —
+          "Python 동작 = 계약"이라는 등식을 걷어냈다.
+        - `x-v2-candidates` → `x-improvements`. 보류함이 아니라 판정 원장이다.
+          ID(V2-N)는 기존 리뷰·문서의 인용을 살리려 그대로 뒀다.
+
+      조항 변경:
+        - `MaskedItemResponse` — 마스킹 범주 **2종**(주민등록번호·카드번호) enum 고정,
+          `placeholder`·`missing_placeholders` pattern 추가, 허구 예시 `"phone"` 제거.
+          (V2-5 · V2-6)
+        - `DocumentListItem.source_format` — `[text, docx, pdf, hwpx]` enum 고정. (V2-7)
+        - `GET /health` · `HealthResponse` — 의존 서비스 진단으로 개정. `status`는
+          `ok|degraded`, `checks`(이름→불리언) 추가. degraded여도 200. (V2-1)
+        - `x-private-response-headers` — 범위 규칙을 명시하고, 전역 부착 재심(OQ-1)을
+          미결로 기록. **범위 자체는 현행 10곳 그대로다.**
+        - `info.description` 인증 우선순위 절 — 근거를 "Python이 그렇다"에서
+          "인증되지 않은 호출자에게 검증 의미론을 노출하지 않는다"로 다시 썼다.
+    basis: |
+      2026-08-12 사용자 결정 — ① Python은 회귀가 잦은 구현이지 기준이 아니며 출력을
+      Python과 맞출 필요가 없다, ② API 계약도 개선 대상이고 명백히 잘못된 계약은 고치고
+      React도 맞춰 고친다, ③ 마스킹은 주민등록번호·카드번호 2종만 유지한다.
+      **`info.version`을 1.1.0으로 올린다** — `source_format`·`category`·`HealthResponse`가
+      와이어 스키마 변경이라 React 생성 타입이 달라진다(모두 비파괴: enum 축소는
+      응답 필드라 소비자에게 안전하고, `checks`는 필드 추가다).
+      영향받는 검증: contract test에 ① `/health` `status`↔`checks` 일관성,
+      ② `category` 2종 밖 값 부재, ③ `source_format` enum 밖 값 부재를 추가한다.
+      React 영향(고치지 않고 기록): `frontend/src/test/factories.ts`,
+      `frontend/src/components/ReviewEditor.test.tsx`의 마스킹 픽스처가 사라진 범주를 쓴다.
+      통보 대상: kotlin-implementer, parity-verifier, privacy-gate(마스킹 범위 축소),
+      리더(OQ-1 재심).
+      재분류 전문: `docs/migration/_workspace/02_contract-rebase.md`
+
+  - version: "1.1.0"
+    revision: "OQ-1"
+    date: "2026-08-12"
+    author: contract-keeper
+    change: |
+      **사적 응답 헤더의 전역 부착 — OQ-1 종결.** `Cache-Control: no-store` +
+      `X-Content-Type-Options: nosniff`를 **Kotlin 런타임의 모든 응답**에 필터로 붙인다.
+
+        - `x-global-response-headers` **신설** — 요구의 정본. 근거 G4, 강제 수단(필터 배치 +
+          `set` 사용), 실패 양상 전환, OpenAPI 표현 한계, Python 이탈, Phase 3 실측 항목.
+        - `x-private-response-headers` — **범위에서 하한선으로 성격 변경.** 10곳 목록과
+          `paths` 아래 헤더 선언 10건은 **그대로 둔다**(필터가 무너져도 고위험 경로에서
+          먼저 깨지게 하는 장치). `does_not_apply_to` 목록은 무효화하고 Python 동작 기술로 이관.
+          `x-open-question` → `x-resolved-question`(정정된 전제 포함).
+        - `info.description` — "응답 헤더 — 전역 요구" 절 추가. 10건 선언을 범위로 읽지
+          말라는 경고와 Python 이탈 명시.
+        - `x-change-policy.invariants` — no-store 항목을 전역 요구로 갱신.
+        - `x-improvements` — OQ-1 `반영됨`, V2-3(DELETE 204) `흡수됨`.
+    basis: |
+      2026-08-12 리더 판정. 계약 소유자가 재심을 제기하고 리더가 판정한 경로다
+      (`x-change-policy.escalate_to_leader` 1번 — 계약 소유자 단독으로 리더 판정을 뒤집지 않는다).
+      근거 G4: 열거식 범위가 이 저장소에서 이미 두 번 누락됐다.
+      **`info.version`은 올리지 않는다** — 헤더 추가는 비파괴이고 와이어 스키마가 그대로라
+      React 생성 타입에 영향이 없다(U-1과 같은 판단).
+      영향받는 검증: ① 오류 응답의 헤더 **부정** 단언이 **긍정**으로 뒤집힌다(Kotlin 한정.
+      Python `tests/api/test_errors.py`의 부정 단언은 그대로 옳다), ② 열거 10곳 단언 유지,
+      ③ 컨테이너 레벨 응답(400·404·413·415) 도달 여부 **Phase 3 실측 신규**,
+      ④ 헤더 중복 부착(`no-store, no-store`) 부재 단언 신규.
+      체크 항목 정본: `.claude/skills/api-contract-freeze` §5.
+      통보 대상: kotlin-implementer, parity-verifier(두 런타임 헤더 차이는 불일치가 아니라
+      기록된 차이), privacy-gate.
+      판정문 전문: `docs/migration/_workspace/02_contract-rebase.md` §3.2
+
 # =============================================================================
-# v2 후보 — v1에서는 고치지 않는다
-# 개선안이 보여도 v1을 다듬으면 React가 이미 의존하는 동작이 소리 없이 깨지고,
-# 실패 원인이 "포팅 버그"인지 "계약 변경"인지 가릴 수 없게 된다(계획 §2.2).
+# 개선 원장 (2026-08-12 개정 — 옛 이름 `x-v2-candidates`)
+#
+# 계약이 동결물이 아니게 되면서 "v2 후보"라는 보류함도 없어졌다. 개선안은 이제
+# 미루는 대상이 아니라 `x-change-policy`의 근거로 판정하는 대상이다.
+# ID(V2-N)는 기존 문서·리뷰가 그 번호로 인용하고 있어 **추적성을 위해 그대로 둔다** —
+# 번호의 "V2"는 이제 역사적 접두사일 뿐 "버전 2로 미룸"을 뜻하지 않는다.
+#
+# status 값: 반영됨 / 진행 / 요구사항 없음 — 유지 / 리더 재심
 # =============================================================================
-x-v2-candidates:
+x-improvements:
   - id: V2-1
-    subject: "GET /health"
-    proposal: "의존 서비스(DB·Redis·설정) 상태를 실제로 진단하고 degraded 상태를 표현한다"
-    reason: "현재는 상수 ok만 돌려줘 DB가 죽어도 200이다. 계획 §2.2 주변 서술과 어긋난다"
+    subject: "GET /health 의존 서비스 진단"
+    status: 반영됨
+    ground: G2
+    detail: |
+      계약을 진단하는 쪽으로 고쳤다(`paths./health`, `components.schemas.HealthResponse`).
+      degraded여도 200을 유지하고 상태는 본문으로 표현한다 — 상태 코드를 바꾸면 배포
+      동작이 달라지기 때문이다. 진단 상세(호스트·버전·예외 메시지)는 싣지 않는다.
+      React 영향 없음(화면이 `/health`를 부르지 않는다).
+      **구현은 의존성이 배선되는 Phase에 맞춘다**(DB Phase 3, 큐 Phase 5). 확인하지 못한
+      의존 서비스는 `checks`에서 키를 생략한다.
   - id: V2-2
     subject: "미처리 500 응답의 CORS 헤더"
-    status: |
-      **종결 — v2로 미루지 않고 v1 Kotlin에 반영한다** (2026-08-12 리더 판정, 사용자 승인).
-      Kotlin은 미처리 500에도 CORS 헤더를 낸다. Python 동작과 의도적으로 다르며,
-      parity 대조가 불일치로 잡아도 구현 차단 사유가 아니다.
-      근거·범위·Phase 6 확인 항목은 최상위 `x-cors.x-unhandled-500-cors`가 정본이다 —
+    status: 반영됨
+    ground: G2
+    detail: |
+      Kotlin은 미처리 500에도 CORS 헤더를 낸다(2026-08-12 리더 판정, 사용자 승인).
+      근거·범위·Phase 6 확인 항목은 `x-cors.x-unhandled-500-cors`가 정본이다 —
       두 벌이 갈리지 않게 여기에 옮겨 적지 않는다.
   - id: V2-3
-    subject: "DELETE /documents/{id} · DELETE /workspaces/{id}"
-    proposal: "204 응답에도 no-store/nosniff를 붙인다"
-    reason: "본문이 없어 실익은 없으나 정책 일관성. v1은 현행 유지가 계약이다"
+    subject: "DELETE 204 응답의 no-store/nosniff"
+    status: "흡수됨 — OQ-1 전역 부착에 포함"
+    detail: |
+      **2026-08-12 리더 판정으로 이 항목은 독립 판정 대상이 아니게 됐다.** 전역 부착이
+      승인되어 204에도 두 헤더가 붙는다(`x-global-response-headers`).
+      직전 판정("요구사항 없음 — 유지")의 논지는 여전히 옳았다는 점을 기록해 둔다 —
+      204에 캐시될 사적 값이 없다는 것은 사실이고, 그것이 뒤집힌 이유는 이 항목의 이득이
+      새로 발견됐기 때문이 **아니라** 범위를 열거로 관리하는 방식 자체가 G4로 폐기됐기
+      때문이다. 즉 이 항목은 논쟁에서 진 것이 아니라 논쟁의 대상이 없어졌다.
   - id: V2-4
-    subject: "목록 응답의 총 개수"
-    proposal: "total 필드 추가 (필드 추가는 비파괴적)"
-    reason: "현재는 has_more만으로 페이지네이션 UI를 만들 수 있는 범위가 좁다"
+    subject: "목록 응답의 총 개수(total)"
+    status: "요구사항 없음 — 유지"
+    detail: |
+      필드 추가는 비파괴적이지만, 요구하는 화면이 없다. 목록 요청마다 `COUNT(*)`가
+      늘어나는 비용만 확정되고 쓰는 곳은 없다. 페이지네이션 UI 요구사항이 생기면
+      그때 G2로 추가한다(추가는 비파괴이므로 미리 넣어 둘 이유가 없다).
+  - id: V2-5
+    subject: "MaskedItemResponse.category 예시 값"
+    status: 반영됨
+    ground: G1
+    detail: |
+      초판 예시가 `"phone"`이었는데 어떤 구현에서도 나오지 않는 값이다(실제 값은
+      한국어 `"전화번호"`였고, 2종 결정 이후로는 그것조차 없다).
+      `frontend/src/test/factories.ts`도 같은 허구 값 `'phone'`을 쓰고 있어 계약과
+      프런트 픽스처가 나란히 틀려 있었다 — 프런트 수정은 별도 작업이다.
+  - id: V2-6
+    subject: "마스킹 범주 5종 → 2종"
+    status: 반영됨
+    ground: G3
+    detail: |
+      주민등록번호·카드번호만 유지한다(2026-08-12 사용자 결정).
+      계약에는 `MaskedItemResponse.category` enum, `placeholder` pattern,
+      `missing_placeholders` pattern으로 반영했다.
+      **프런트 영향(고치지 않고 기록만)**: `frontend/src/test/factories.ts`와
+      `frontend/src/components/ReviewEditor.test.tsx`의 픽스처가 사라진 범주
+      (`전화번호`·`이메일`)를 쓴다. 런타임 코드는 `category`를 문자열로 렌더링만 하므로
+      깨지지 않는다.
+  - id: V2-7
+    subject: "DocumentListItem.source_format enum 고정"
+    status: 반영됨
+    ground: G1
+    detail: |
+      초판이 "자유 문자열"이라 적었으나 값 집합은 이미 닫혀 있다(text·docx·pdf·hwpx).
+      React 영향 없음 — 이 필드를 읽는 화면 코드가 없다.
+  - id: OQ-1
+    subject: "사적 헤더 전역 부착"
+    status: 반영됨
+    ground: G4
+    detail: |
+      **2026-08-12 리더 판정 — 전역 부착 승인.** 정본은 `x-global-response-headers`다.
+      여기에 옮겨 적지 않는다.
+      경로: 계약 소유자가 재심을 제기하고 리더가 판정했다. 계약 소유자가 전제 변화를
+      근거로 리더 판정을 스스로 뒤집지 않았다(`x-change-policy.escalate_to_leader` 1번).
+      **충족은 아직 미확인이다** — 필터가 컨테이너 레벨 응답(400·404·413·415)까지 닿는지는
+      실측된 적이 없다(`x-global-response-headers.x-phase3-measurement`).

@@ -213,7 +213,7 @@ async def test_처리_시작에서_완료까지_상태가_이어진다(db_sessio
         conversion,
         easy_text_encrypted=b"gAAAAA-easy",
         masked_items_encrypted=b"gAAAAA-items",
-        missing_placeholders=["[[전화번호1]]"],
+        missing_placeholders=["[[주민등록번호1]]"],
         provider_name="fake",
         model="fake-model",
         input_tokens=11,
@@ -227,7 +227,7 @@ async def test_처리_시작에서_완료까지_상태가_이어진다(db_sessio
     assert reloaded.easy_text_encrypted == b"gAAAAA-easy"
     assert reloaded.masked_items_encrypted == b"gAAAAA-items"
     # JSONB 왕복 — 리스트가 문자열로 눌리면 검수 화면 경고가 깨진다.
-    assert reloaded.missing_placeholders == ["[[전화번호1]]"]
+    assert reloaded.missing_placeholders == ["[[주민등록번호1]]"]
     assert (reloaded.input_tokens, reloaded.output_tokens) == (11, 22)
     assert reloaded.failure_code is None
 

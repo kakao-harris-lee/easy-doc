@@ -34,33 +34,36 @@ def _paragraphs(content: bytes) -> list[str]:
 
 
 def test_자리표시자를_원문으로_되돌린다() -> None:
-    text = "문의는 [[전화번호1]] 또는 [[이메일1]]로 하세요."
+    text = "번호는 [[주민등록번호1]] 또는 [[카드번호1]]이에요."
 
     restored = restore_placeholders(
-        text, {"[[전화번호1]]": "010-1234-5678", "[[이메일1]]": "help@example.kr"}
+        text, {"[[주민등록번호1]]": "900101-1234567", "[[카드번호1]]": "1234-5678-9012-3456"}
     )
 
-    assert restored == "문의는 010-1234-5678 또는 help@example.kr로 하세요."
+    assert restored == "번호는 900101-1234567 또는 1234-5678-9012-3456이에요."
     assert "[[" not in restored
 
 
 def test_같은_자리표시자가_여러_번_나와도_모두_되돌린다() -> None:
-    text = "[[전화번호1]]로 전화하세요. 다시 적으면 [[전화번호1]]입니다."
+    text = "[[주민등록번호1]]을 확인하세요. 다시 적으면 [[주민등록번호1]]입니다."
 
-    restored = restore_placeholders(text, {"[[전화번호1]]": "02-123-4567"})
+    restored = restore_placeholders(text, {"[[주민등록번호1]]": "900101-1234567"})
 
-    assert restored.count("02-123-4567") == 2
+    assert restored.count("900101-1234567") == 2
 
 
 def test_번호가_이어지는_자리표시자를_섞지_않는다() -> None:
-    """[[전화번호1]] 치환이 [[전화번호11]]을 갉아먹으면 안 된다 (닫는 괄호까지 통째로 본다)."""
-    text = "[[전화번호1]]과 [[전화번호11]]"
+    """[[주민등록번호1]] 치환이 [[주민등록번호11]]을 갉아먹으면 안 된다.
+
+    닫는 괄호까지 통째로 보아야 한다.
+    """
+    text = "[[주민등록번호1]]과 [[주민등록번호11]]"
 
     restored = restore_placeholders(
-        text, {"[[전화번호1]]": "010-1111-1111", "[[전화번호11]]": "010-2222-2222"}
+        text, {"[[주민등록번호1]]": "900101-1111111", "[[주민등록번호11]]": "900101-2222222"}
     )
 
-    assert restored == "010-1111-1111과 010-2222-2222"
+    assert restored == "900101-1111111과 900101-2222222"
 
 
 def test_가린_항목이_없으면_본문이_그대로다() -> None:
@@ -135,12 +138,12 @@ def test_txt에도_제어문자가_남지_않는다() -> None:
 def test_복원한_원문에_섞인_제어문자도_걷어낸다() -> None:
     """AI 초안·마스킹 원문은 저장 경로에서 정규화되지 않는다 — 여기가 유일한 방어다."""
     body = restore_placeholders(
-        "문의는 [[전화번호1]]로 하세요.", {"[[전화번호1]]": "02-\x00123-4567"}
+        "번호는 [[주민등록번호1]]이에요.", {"[[주민등록번호1]]": "900101-\x001234567"}
     )
 
     file = render_export(export_format=ExportFormat.TXT, title="안내문", body=body)
 
-    assert file.content.decode("utf-8") == "문의는 02-123-4567로 하세요."
+    assert file.content.decode("utf-8") == "번호는 900101-1234567이에요."
 
 
 def test_txt는_BOM_없는_UTF_8이다() -> None:

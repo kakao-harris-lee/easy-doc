@@ -27,8 +27,8 @@ from app.workers.tasks import ConversionWorkerStore, convert_document
 
 pytestmark = pytest.mark.db
 
-_SOURCE = "홍길동 님(010-1234-5678)의 신청이 접수되었습니다."
-_EASY = "홍길동 님, 신청을 받았어요. 연락처는 [[전화번호1]]입니다."
+_SOURCE = "홍길동 님(900101-1234567)의 신청이 접수되었습니다."
+_EASY = "홍길동 님, 신청을 받았어요. 등록번호는 [[주민등록번호1]]입니다."
 
 
 @pytest.fixture
@@ -83,7 +83,7 @@ async def test_실제_저장소로_변환을_끝내면_암호문이_DB에_남는
     assert cipher.decrypt(conversion.easy_text_encrypted) == _EASY
     assert conversion.masked_items_encrypted is not None
     items = deserialize_masked_items(cipher.decrypt(conversion.masked_items_encrypted))
-    assert [item.original for item in items] == ["010-1234-5678"]
+    assert [item.original for item in items] == ["900101-1234567"]
     assert conversion.failure_code is None
 
     # 컬럼을 직접 읽어 평문이 없는지 본다 — ORM을 거치면 복호화 여부를 알 수 없다.
@@ -95,7 +95,7 @@ async def test_실제_저장소로_변환을_끝내면_암호문이_DB에_남는
         {"id": conversion.id},
     )
     blob = stored.scalar_one()
-    assert "010-1234-5678" not in blob
+    assert "900101-1234567" not in blob
     assert "홍길동" not in blob
 
 

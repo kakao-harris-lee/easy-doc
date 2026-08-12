@@ -154,25 +154,29 @@ def test_어려운_표현이_문서마다_충분히_들어_있다() -> None:
     assert insufficient == []
 
 
-def test_합성_문서에는_합성_개인정보가_들어_있다() -> None:
+def test_합성_문서에_마스킹_범주_전체가_들어_있다() -> None:
     """마스킹 파이프라인 회귀를 잡으려면 개인정보가 든 문서가 필요하다 — 합성 문서의 몫이다.
+
+    2026-08-12 범주 축소(5종 → 2종) 전에는 "합성 문서는 **전부** 개인정보를 품는다"와
+    "골든셋 전체가 전 범주를 덮는다" 두 검사가 따로 있었다. 합성 20건 중 18건이 전화번호·
+    이메일로 앞 조건을 채우고 있었는데 그 두 범주가 범위에서 빠지면서, 마스킹 대상을
+    품은 합성 문서는 `003`(주민등록번호)·`011`(카드번호) 둘만 남았다. 나머지 18건에
+    주민등록번호·카드번호를 억지로 심으면 안내문으로서 부자연스러워지고 본문이 바뀌어
+    팩트 보존·통과율 추이까지 함께 흔들린다. 그래서 요구를 **문서마다**에서 **합성 집합
+    전체**로 옮겨 두 검사를 하나로 합쳤다 — 합성 집합이 전 범주를 덮으면 골든셋 전체도
+    덮으므로 옛 검사보다 좁아지지 않는다.
 
     실수집 문서는 마스킹을 마친 뒤 편입되므로 0건이 정상이고, 여기서 요구하면 편입
     절차(마스킹 선행)를 지킨 문서가 오히려 걸린다. 플레이스홀더가 남아 있는지도
     검사하지 않는다 — 애초에 개인정보가 없는 공개 배포용 안내문이 흔하다.
+
+    한 범주라도 빠지면 그 패턴의 회귀를 골든셋 평가가 잡지 못한다.
     """
-    without_pii = [
-        document.id
-        for document in DOCUMENTS
-        if document.synthetic and not mask_text(document.source_text).items
-    ]
-    assert without_pii == []
-
-
-def test_마스킹_범주_전체가_골든셋에_등장한다() -> None:
-    """한 범주라도 빠지면 그 패턴의 회귀를 골든셋 평가가 잡지 못한다."""
     covered = {
-        item.category for document in DOCUMENTS for item in mask_text(document.source_text).items
+        item.category
+        for document in DOCUMENTS
+        if document.synthetic
+        for item in mask_text(document.source_text).items
     }
     assert covered == set(MaskCategory)
 
@@ -214,9 +218,11 @@ def test_required_facts의_canonical이_원문에_실제로_존재한다() -> No
 
 
 def test_required_facts에_마스킹_대상_패턴이_없다() -> None:
-    """전화·이메일·계좌 등은 플레이스홀더로 치환되므로 팩트로 쓸 수 없다.
+    """주민등록번호·카드번호는 플레이스홀더로 치환되므로 팩트로 쓸 수 없다.
 
-    accept 변형도 같은 이유로 검사한다.
+    2026-08-12 축소로 전화번호·이메일·계좌번호는 이 검사에 걸리지 않는다. 본문에서도
+    가려지지 않으므로 팩트로 남아도 보존 검사는 깨지지 않는다 — 검사가 느슨해진 것이
+    아니라 치환되는 대상 자체가 줄었다. accept 변형도 같은 이유로 함께 검사한다.
     """
     violations = [
         (document.id, literal)

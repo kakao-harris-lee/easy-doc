@@ -54,14 +54,17 @@ async def test_마스킹_후에만_LLM에_전달된다() -> None:
     await service.convert("홍길동 900101-1234567, 연락처 010-1234-5678")
     sent = provider.calls[0].user
     assert "900101-1234567" not in sent
-    assert "010-1234-5678" not in sent
     assert "[[주민등록번호1]]" in sent
+    # 전화번호는 마스킹 범주에서 뺐다(2026-08-12, master-plan 3.2) — 평문 그대로
+    # 외부 모델로 나간다. 결함이 아니라 감수하기로 한 대가라, 다시 가려지기 시작하면
+    # 정책이 조용히 바뀐 것이므로 여기서 걸린다.
+    assert "010-1234-5678" in sent
 
 
 async def test_변환_결과와_마스킹_항목_반환() -> None:
     provider = FakeProvider(responses=["쉬운 글입니다."])
     service = ConversionService(provider=provider)
-    outcome = await service.convert("문의 010-1234-5678")
+    outcome = await service.convert("등록번호 900101-1234567")
     assert outcome.easy_text == "쉬운 글입니다."
     assert len(outcome.masked_items) == 1
 
@@ -128,16 +131,16 @@ async def test_빈_변환_결과는_예외로_막는다(raw: str) -> None:
 
 async def test_유실된_플레이스홀더를_보고한다() -> None:
     """모델이 자리표시자를 지우면 검수 화면 경고용으로 목록에 담는다(예외 아님)."""
-    provider = FakeProvider(responses=["문의는 전화로 해 주세요."])
+    provider = FakeProvider(responses=["등록번호가 사라진 쉬운 글."])
     service = ConversionService(provider=provider)
-    outcome = await service.convert("문의 010-1234-5678")
-    assert outcome.missing_placeholders == ["[[전화번호1]]"]
+    outcome = await service.convert("등록번호 900101-1234567")
+    assert outcome.missing_placeholders == ["[[주민등록번호1]]"]
 
 
 async def test_플레이스홀더가_보존되면_유실_목록이_비어_있다() -> None:
-    provider = FakeProvider(responses=["문의는 [[전화번호1]]로 해 주세요."])
+    provider = FakeProvider(responses=["등록번호는 [[주민등록번호1]]이에요."])
     service = ConversionService(provider=provider)
-    outcome = await service.convert("문의 010-1234-5678")
+    outcome = await service.convert("등록번호 900101-1234567")
     assert outcome.missing_placeholders == []
 
 
@@ -231,9 +234,9 @@ async def test_보정_호출이_실패해도_변환은_성공한다() -> None:
 
 async def test_보정에서_자리표시자가_사라지면_원본을_채택한다() -> None:
     """자리표시자를 잃은 보정문을 채택하면 원문 복원이 깨진다."""
-    dirty = "금일 [[전화번호1]]로 연락하세요."
-    provider = FakeProvider(responses=[dirty, "오늘 전화로 연락하세요."])
-    outcome = await ConversionService(provider=provider).convert("금일 문의 010-1234-5678")
+    dirty = "금일 [[주민등록번호1]]을 확인하세요."
+    provider = FakeProvider(responses=[dirty, "오늘 번호를 확인하세요."])
+    outcome = await ConversionService(provider=provider).convert("금일 등록번호 900101-1234567")
     assert outcome.easy_text == dirty
     assert outcome.repaired is False
     assert outcome.missing_placeholders == []

@@ -506,7 +506,7 @@ def _complete(
     conversion_id: str,
     *,
     easy_text: str = _EASY,
-    missing_placeholders: tuple[str, ...] = ("[[이메일1]]",),
+    missing_placeholders: tuple[str, ...] = ("[[카드번호1]]",),
 ) -> None:
     """워커가 성공적으로 끝낸 상태를 만든다 (암호화 저장 형태 그대로).
 
@@ -517,9 +517,9 @@ def _complete(
     conversion = fixture.conversions.conversions[uuid.UUID(conversion_id)]
     items = [
         MaskedItem(
-            category=MaskCategory.PHONE,
-            placeholder="[[전화번호1]]",
-            original=SecretStr("010-1234-5678"),
+            category=MaskCategory.RRN,
+            placeholder="[[주민등록번호1]]",
+            original=SecretStr("900101-1234567"),
         )
     ]
     conversion.status = ConversionStatus.DONE
@@ -556,12 +556,12 @@ def test_완료되면_결과와_마스킹_항목을_복호화해_돌려준다(
     # 검수 화면은 원문 대조가 목적이라 원문을 함께 본다 (소유자 인증 필수).
     assert body["masked_items"] == [
         {
-            "category": "전화번호",
-            "placeholder": "[[전화번호1]]",
-            "original": "010-1234-5678",
+            "category": "주민등록번호",
+            "placeholder": "[[주민등록번호1]]",
+            "original": "900101-1234567",
         }
     ]
-    assert body["missing_placeholders"] == ["[[이메일1]]"]
+    assert body["missing_placeholders"] == ["[[카드번호1]]"]
     assert (body["provider_name"], body["model"]) == ("fake", "fake-model")
     assert (body["input_tokens"], body["output_tokens"]) == (10, 20)
 
@@ -743,7 +743,7 @@ def test_수정본_필드가_없으면_422(client: TestClient, fixture: Fixture)
 # --- 내보내기 -----------------------------------------------------------------
 
 #: 자리표시자가 남아 있는 초안 — 내보내기에서만 원문으로 복원된다.
-_MASKED_EASY = "문의는 [[전화번호1]]로 하세요.\n\n신청은 3월 2일부터예요."
+_MASKED_EASY = "등록번호는 [[주민등록번호1]]이에요.\n\n신청은 3월 2일부터예요."
 
 
 def _export(
@@ -784,9 +784,9 @@ def test_docx로_내려받으면_자리표시자가_원문으로_복원된다(
     assert response.status_code == 200, response.text
     text = _docx_text(response.content)
     assert "[[" not in text
-    assert "010-1234-5678" in text
+    assert "900101-1234567" in text
     # 제목 + 빈 줄로 나뉜 문단 두 개.
-    assert text == "재난지원금 안내\n문의는 010-1234-5678로 하세요.\n신청은 3월 2일부터예요."
+    assert text == "재난지원금 안내\n등록번호는 900101-1234567이에요.\n신청은 3월 2일부터예요."
 
 
 def test_docx_응답_헤더가_형식과_파일명을_알려준다(client: TestClient, fixture: Fixture) -> None:
@@ -813,7 +813,7 @@ def test_txt로_내려받으면_UTF_8_본문이다(client: TestClient, fixture: 
     assert response.headers["content-type"] == "text/plain; charset=utf-8"
     assert not response.content.startswith(b"\xef\xbb\xbf")
     assert response.content.decode("utf-8") == (
-        "문의는 010-1234-5678로 하세요.\n\n신청은 3월 2일부터예요."
+        "등록번호는 900101-1234567이에요.\n\n신청은 3월 2일부터예요."
     )
 
 
@@ -831,7 +831,7 @@ def test_hwpx로_내려받으면_우리_추출기로_다시_열린다(client: Te
         in (response.headers["content-disposition"])
     )
     assert extract_text("내려받은 파일.hwpx", response.content) == (
-        "재난지원금 안내\n문의는 010-1234-5678로 하세요.\n신청은 3월 2일부터예요."
+        "재난지원금 안내\n등록번호는 900101-1234567이에요.\n신청은 3월 2일부터예요."
     )
 
 
@@ -839,12 +839,12 @@ def test_검수본이_있으면_검수본을_내보낸다(client: TestClient, fi
     """담당자가 고친 뒤라면 그 결과가 최종본이다 (edited ?? easy)."""
     conversion_id = _upload_text(client, fixture)["conversion_id"]
     _complete_for_export(fixture, conversion_id, easy_text=_MASKED_EASY)
-    _review(client, fixture, conversion_id, text="문의는 [[전화번호1]]로 주세요.")
+    _review(client, fixture, conversion_id, text="등록번호는 [[주민등록번호1]]이 맞아요.")
 
     response = _export(client, fixture, conversion_id, export_format="txt")
 
     # 검수본에 남아 있던 자리표시자도 함께 복원된다.
-    assert response.content.decode("utf-8") == "문의는 010-1234-5678로 주세요."
+    assert response.content.decode("utf-8") == "등록번호는 900101-1234567이 맞아요."
 
 
 def test_완료되지_않은_변환은_내려받을_수_없다(client: TestClient, fixture: Fixture) -> None:
@@ -862,7 +862,7 @@ def test_남의_변환은_내려받을_수_없다(client: TestClient, fixture: F
 
     assert response.status_code == 404
     # 원문 개인정보가 남의 손에 넘어가는 경로다 — 본문 조각도 실리면 안 된다.
-    assert "010-1234-5678" not in response.text
+    assert "900101-1234567" not in response.text
 
 
 def test_없는_변환_내려받기는_404(client: TestClient, fixture: Fixture) -> None:
@@ -896,7 +896,7 @@ def test_유실된_표시가_남은_초안은_내려받을_수_없다(client: Te
     거치지 않은 경우에만 막는다.
     """
     conversion_id = _upload_text(client, fixture)["conversion_id"]
-    _complete(fixture, conversion_id, missing_placeholders=("[[전화번호1]]",))
+    _complete(fixture, conversion_id, missing_placeholders=("[[주민등록번호1]]",))
 
     response = _export(client, fixture, conversion_id)
 
@@ -909,7 +909,7 @@ def test_검수를_마쳤으면_유실_표시가_있어도_내려받는다(
 ) -> None:
     """경고를 보고 고칠 기회는 검수 화면에서 이미 주어졌다 — 판단은 담당자 몫이다."""
     conversion_id = _upload_text(client, fixture)["conversion_id"]
-    _complete(fixture, conversion_id, missing_placeholders=("[[전화번호1]]",))
+    _complete(fixture, conversion_id, missing_placeholders=("[[주민등록번호1]]",))
     _review(client, fixture, conversion_id, text="문의는 02-123-4567로 하세요.")
 
     response = _export(client, fixture, conversion_id, export_format="txt")

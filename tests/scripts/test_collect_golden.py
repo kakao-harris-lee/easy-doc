@@ -108,12 +108,25 @@ def test_공백과_빈_줄을_정리한다() -> None:
 
 
 def test_초안_본문이_마스킹을_통과한다() -> None:
-    초안 = build_draft(html_to_text(PAGE), document_id="021", source=SOURCE)
-    assert "02-2100-3456" not in 초안.document.source_text
-    assert "elder@example.go.kr" not in 초안.document.source_text
-    assert "[[전화번호1]]" in 초안.document.source_text
-    assert 초안.stats.masked_counts == {MaskCategory.PHONE: 1, MaskCategory.EMAIL: 1}
-    assert 초안.stats.masked_total == 2
+    """범주가 2종이라 주민등록번호는 가려지고 연락처는 **평문으로 남는다**.
+
+    후자는 미구현이 아니라 감수하기로 한 대가다(2026-08-12 축소, master-plan 3.2).
+    초안은 저장소에 커밋되므로 연락처는 코드가 아니라 사람이 걸러 낸다 —
+    `docs/golden-collection-plan.md` §4.3의 검출을 커밋 전에 반드시 밟는다.
+    이 단언들은 그 전제가 조용히 바뀌지 않도록 잡아 두는 것이다.
+    """
+    초안 = build_draft(
+        f"{html_to_text(PAGE)}\n담당자 확인용 900101-1234567",
+        document_id="021",
+        source=SOURCE,
+    )
+    assert "900101-1234567" not in 초안.document.source_text
+    assert "[[주민등록번호1]]" in 초안.document.source_text
+    # 범위 밖 — 수집 파이프라인이 걸러 주지 않는다.
+    assert "02-2100-3456" in 초안.document.source_text
+    assert "elder@example.go.kr" in 초안.document.source_text
+    assert 초안.stats.masked_counts == {MaskCategory.RRN: 1}
+    assert 초안.stats.masked_total == 1
 
 
 def test_초안은_수집본으로_표시되고_제목은_첫_줄에서_온다() -> None:
@@ -360,13 +373,17 @@ def test_hwpx_미리보기는_구역별_통계를_준다() -> None:
 
 
 def test_미리보기_첫_줄은_마스킹을_통과한다() -> None:
-    """미리보기는 곧장 표준출력으로 나간다 — 마스킹 전 본문이 한 글자도 실리면 안 된다."""
+    """미리보기는 곧장 표준출력으로 나간다 — 범주 안(2종) 개인정보가 실리면 안 된다.
+
+    범위 밖인 연락처는 평문으로 찍힌다. 축소로 감수하기로 한 대가이므로 함께 고정한다.
+    """
     보고 = preview_source(
-        _fetched("문의 02-2100-3456 으로 연락 주세요".encode(), filename="안내.txt")
+        _fetched("등록번호 900101-1234567 (문의 02-2100-3456)".encode(), filename="안내.txt")
     )
     assert 보고.unit_name == "문서"
-    assert "02-2100-3456" not in 보고.units[0].first_line
-    assert "[[전화번호1]]" in 보고.units[0].first_line
+    assert "900101-1234567" not in 보고.units[0].first_line
+    assert "[[주민등록번호1]]" in 보고.units[0].first_line
+    assert "02-2100-3456" in 보고.units[0].first_line
 
 
 def test_미리보기_첫_줄은_길이가_제한된다() -> None:
@@ -459,7 +476,7 @@ def test_후보는_최대_여섯_개다() -> None:
 def test_후보에_마스킹_대상_패턴이_섞이지_않는다() -> None:
     """마스킹된 본문에서는 플레이스홀더로 바뀌므로 팩트 보존 검사가 영구히 실패한다."""
     마스킹된_본문 = mask_text(
-        f"{FACT_TEXT}\n문의 02-2100-3456, 이메일 elder@example.go.kr, 계좌 123-45-678901"
+        f"{FACT_TEXT}\n등록번호 900101-1234567, 카드 1234-5678-9012-3456"
     ).masked_text
     후보 = suggest_facts(마스킹된_본문)
     assert 후보

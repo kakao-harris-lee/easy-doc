@@ -9,10 +9,15 @@ export function conversion(overrides: Partial<ConversionResponse> = {}): Convers
     id: 'c1',
     document_id: 'd1',
     status: 'done',
-    easy_text: '신청은 3월 2일부터 할 수 있어요. 전화번호는 [[전화번호1]]이에요.',
+    easy_text: '신청은 3월 2일부터 할 수 있어요. 등록번호는 [[주민등록번호1]]이에요.',
     edited_text: null,
     reviewed_at: null,
-    masked_items: [{ category: 'phone', placeholder: '[[전화번호1]]', original: '010-1234-5678' }],
+    // category는 서버가 주는 한국어 문자열 그대로다 — 자리표시자에 그대로 박히는
+    // 복원 키라서(`[[주민등록번호1]]`) 영문 코드로 바꿀 수 없다. 범주는 2종뿐이다
+    // (주민등록번호·카드번호, 2026-08-12 축소).
+    masked_items: [
+      { category: '주민등록번호', placeholder: '[[주민등록번호1]]', original: '900101-1234567' },
+    ],
     missing_placeholders: [],
     model: 'test-model',
     provider_name: 'fake',

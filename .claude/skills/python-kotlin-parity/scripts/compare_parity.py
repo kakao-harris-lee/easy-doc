@@ -1,8 +1,23 @@
 #!/usr/bin/env python3
-"""parity fixture(기대값)와 Kotlin 실행 결과(실제값)를 정규화 후 비교한다.
+"""Kotlin 산출물이 **요구사항이 요구하는 성질**을 만족하는지 판정한다.
 
-"Kotlin에 함수가 있다"는 동등성이 아니다. 같은 입력에 같은 출력이 나오는지를
-값으로 증명하는 것이 이 스크립트의 유일한 목적이다.
+기준은 Python 출력이 아니다. Python 구현은 회귀가 잦아 옮기는 중이고, 사용자 결정
+(2026-08-12)은 "출력을 Python과 동일하게 맞출 필요 없다. 요구사항을 구현하고 이후에
+개선한다"이다. 그래서 이 스크립트는 두 가지를 서로 다른 방식으로 판정한다.
+
+    spec 도메인   fixture의 `assert` 목록을 Kotlin 산출물에 **실행**해 판정한다.
+                  "가려야 할 것이 남았는가", "남겨야 할 것이 지워졌는가", "자리표시자를
+                  되돌리면 원문이 복원되는가" 같은 성질이며, Python 출력을 보지 않는다.
+                  Python 실행 결과는 `reference`(참고값)로 함께 오고, 다른 자리는
+                  **참고 갈림 원장**에 기록된다 — 판정이 아니라 기록이다.
+    compat 도메인 값이 같은 것이 곧 요구사항인 자리(crypto·jwt·argon2). 롤백 창에서
+                  Python이 Kotlin 산출물을 읽어야 하므로 값 동일성을 그대로 요구한다.
+
+참고 갈림을 기록으로 남기는 이유: 값이 다르다는 것은 둘 중 하나가 틀렸다는 신호라
+정보 가치가 있는데, 그것을 차단 사유로 쓰면 폐기된 전제("Python이 정답")로 되돌아간다.
+그래서 **막지 않되 조용할 수는 없게** 한다 — 기록되지 않은 갈림은 종료 코드 1이고,
+닫는 방법은 구현 수정이 아니라 `--record-reference`로 원장을 갱신해 커밋하는 것이다.
+그 diff가 리뷰에 올라가는 것이 이 장치의 전부이자 목적이다.
 
 실행:
     uv run python .claude/skills/python-kotlin-parity/scripts/compare_parity.py \
@@ -29,14 +44,19 @@ Python 검증기를 돌려** 판정한다. `verification.actual_file`(Kotlin 산
 신뢰 경계 — 이 스크립트가 보장하는 것과 보장하지 못하는 것:
 
     보장한다 (1) fixture가 정본 생성기(`dump_parity_fixtures.py`)의 산출물이다.
-        비교할 때마다 생성기를 다시 돌려 케이스 id 집합·개수·순서·source·정규화 선언·
-        기대값을 대조한다. 대조할 수 없는 자리는 난수뿐이다 — crypto의 키/토큰,
-        argon2의 PHC(솔트). 그 목록이 `VOLATILE_INPUT_FIELDS`이고, **그 목록을 늘리는
-        것이 곧 구멍을 늘리는 것**이다.
+        비교할 때마다 생성기를 다시 돌려 케이스 id 집합·개수·순서·source·요구사항 선언·
+        정규화 선언·**단언 목록**·참고값을 대조한다. 단언을 손으로 지워 게이트를 무르게
+        만드는 경로가 여기서 막힌다. 대조할 수 없는 자리는 난수뿐이다 — crypto의
+        키/토큰, argon2의 PHC(솔트). 그 목록이 `VOLATILE_INPUT_FIELDS`이고, **그 목록을
+        늘리는 것이 곧 구멍을 늘리는 것**이다.
     보장한다 (2) 역방향 케이스의 판정이 실제 실행에서 나온다. 증거 파일을 읽지 않고
         검증기를 직접 돌린다. `*.verified.json`은 그 실행의 **기록**으로 덮어써진다.
     보장한다 (3) 역방향 산출물이 fixture의 요청과 결합돼 있다 — 요청한 키/시크릿을 썼고,
         요청한 평문·subject를 하나도 빠짐없이 덮었으며, 중복 id로 표본을 채우지 않았다.
+    보장한다 (4) spec 도메인의 단언이 **양방향**이다. 성질 검증의 고전적 실패는 한쪽으로만
+        재는 것이다 — "가려졌는가"만 재면 전문을 통째로 가린 구현이 만점을 받는다. 그래서
+        도메인마다 `under`(덜 한 것을 잡는다)와 `over`(더 한 것을 잡는다) 방향의 검사가
+        **둘 다** 있어야 하고, 없으면 구조 결함으로 막는다.
 
     보장하지 못한다 (a) **그 산출물을 정말 Kotlin이 만들었는가.** fixture가 키와 시크릿을
         공개하므로 같은 값을 Python으로도 만들 수 있다. `runtime` 필드는 선언일 뿐이고
@@ -44,7 +64,11 @@ Python 검증기를 돌려** 판정한다. `verification.actual_file`(Kotlin 산
         그 파일을 쓰도록 CI에 배선하는 것이 유일한 방어다.
     보장하지 못한다 (b) **정본 생성기 자체의 위조.** 생성기를 고치면 "정본"이 따라 바뀐다.
         생성기와 이 비교기는 같은 리뷰·같은 커밋 게이트를 지나야 한다.
-    보장하지 못한다 (c) Python 구현이 옳은가. 이 하네스의 기준은 현재 Python 동작이다.
+    보장하지 못한다 (c) **단언이 요구사항을 다 덮는가.** 성질로 적히지 않은 것은 판정되지
+        않는다. 값 동일성 시절에는 "전부"를 재는 대신 무엇을 재는지 몰랐고, 지금은 무엇을
+        재는지 알되 그것이 전부가 아니다. 덮이지 않은 자리는 참고 갈림 원장과 골든셋
+        게이트가 받는다. 커버리지는 사람이 리뷰해야 한다.
+    보장하지 못한다 (d) 품질. 통과율·judge 점수·충실성 바닥은 `tests/golden`의 몫이다.
 
 판정 범위 — 전체 게이트와 부분 검증을 구분한다:
     비교기는 **주어진 파일만** 본다. 그래서 도메인 디렉터리를 통째로 빼면 그 도메인이 한 건도
@@ -61,16 +85,20 @@ Python 검증기를 돌려** 판정한다. `verification.actual_file`(Kotlin 산
       `전건 일치:`로 시작하지 않는다. **종료 코드도 0이 아니라 3이다**(아래 참고).
 
 종료 코드:
-    0 = 전건 일치 + 미검증 0건 + 기대 도메인 전부 존재 (게이트를 닫아도 되는 유일한 상태)
-    1 = 불일치·누락·읽기 실패(금지된 정규화 규칙, fixture가 정본과 다름, runtime 미선언·
-        불일치, 역방향 검증 실패·표본 부족 포함)
+    0 = 요구 성질 전건 충족 + 미검증 0건 + 기대 도메인 전부 존재
+        (게이트를 닫아도 되는 유일한 상태)
+    1 = 성질 불충족·값 불일치·누락·읽기 실패(금지된 정규화 규칙, fixture가 정본과 다름,
+        단언 없는 spec 케이스, 방향 가드가 한쪽뿐인 도메인, **기록되지 않은 참고 갈림**,
+        runtime 미선언·불일치, 역방향 검증 실패·표본 부족 포함)
         **도메인 누락도 1이다.** 근거: 이미 "Kotlin 결과 파일 없음"(파일 누락)과
         "미실행"(케이스 누락)이 1로 나간다. 같은 성격의 누락을 입도가 커졌다는 이유로
         (케이스 → 파일 → 도메인) 더 약한 코드로 내보내면 "많이 지울수록 종료 코드가 약해지는"
         유인이 생긴다 — 그것이 정확히 이 게이트를 무력화하는 경로다.
-    2 = 불일치는 없으나 미검증 케이스가 남음 — "돌렸다"이지 "증명됐다"가 아니다.
-        2는 **fixture가 그 케이스를 정의했고 남은 것이 외부 실행 증거뿐인** 좁은 상태에만
-        쓴다. 도메인이 통째로 없으면 정의 자체가 없으므로 2의 의미에 해당하지 않는다.
+    2 = 불충족은 없으나 미검증 케이스가 남음 — "돌렸다"이지 "증명됐다"가 아니다.
+        두 갈래가 여기로 온다. (i) 역방향 산출물 미생성. (ii) **spec_status=pending**
+        도메인 — 요구 성질을 아직 적지 못해 판정할 근거가 없는 상태다. 값 비교로 때우지
+        않고 미검증으로 세는 것이 이 하네스의 전제다.
+        도메인이 통째로 없으면 정의 자체가 없으므로 2의 의미에 해당하지 않는다(1이다).
     3 = **부분 검증**이 지정한 범위 안에서 통과 — 게이트를 닫는 근거가 아니다.
         (`--only`, `--only-domain`, 단일 fixture 파일, 도메인 디렉터리 지정)
         **왜 0이 아닌가.** 종료 코드는 자동화가 읽는 유일한 계약이다. stdout에 찍히는
@@ -91,12 +119,15 @@ Python 검증기를 돌려** 판정한다. `verification.actual_file`(Kotlin 산
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import re
 import sys
 import unicodedata
+from collections.abc import Callable
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, NoReturn
 
@@ -106,6 +137,10 @@ if str(_SCRIPT_DIR) not in sys.path:
 
 from dump_parity_fixtures import (  # noqa: E402 — sys.path 주입 뒤에만 import된다
     BUILDERS,
+    MODE_COMPAT,
+    MODE_SPEC,
+    REPO_ROOT,
+    STATUS_PENDING,
     VERIFIERS,
     VerificationOutcome,
     write_proof_record,
@@ -158,6 +193,14 @@ FORBIDDEN = {
 
 _PLACEHOLDER = re.compile(r"\[\[[^\[\]]+\]\]")
 _DOC_ID = re.compile(r'id="[0-9a-f]{4,}"')
+
+#: XML 1.0이 담지 못하는 제어문자. `equals_derived`의 `control_strip` 규칙이 쓴다.
+#: **app/text.py를 import하지 않고 여기서 직접 정의한다** — 판정 근거가 요구사항이지
+#: Python 구현이 아니어야 하기 때문이다. 구현을 불러 쓰면 구현의 버그가 곧 기대값이 된다.
+_XML_FORBIDDEN = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+
+#: 참고 갈림 원장의 기본 위치. 저장소에 커밋되어 리뷰에 올라가는 것이 존재 이유다.
+DEFAULT_LEDGER = REPO_ROOT / "parity" / "reference-ledger"
 
 _DUMP = ".claude/skills/python-kotlin-parity/scripts/dump_parity_fixtures.py"
 
@@ -316,6 +359,345 @@ def first_difference(expected: Any, actual: Any, tolerance: float, path: str = "
     return f"{path}: 기대 {left} / 실제 {right}"
 
 
+# ------------------------------------------------------------------ 성질 검사(spec 모드)
+#
+# 여기 있는 함수들이 "무엇을 요구사항으로 볼 것인가"의 정본이다. 전부 **Kotlin 산출물과
+# fixture 입력만** 보고 판정한다 — Python 구현을 부르지 않는다. 부르는 순간 기준이 다시
+# Python 동작이 되고, 그것이 이번에 폐기된 전제다.
+
+_MISSING = object()
+
+
+def at_path(value: Any, path: str) -> Any:
+    """`"$"`(전체) 또는 점으로 이어진 키 경로. 없으면 `_MISSING`."""
+    if path in ("", "$"):
+        return value
+    current = value
+    for key in path.split("."):
+        if not isinstance(current, dict) or key not in current:
+            return _MISSING
+        current = current[key]
+    return current
+
+
+def strings_of(value: Any) -> list[str]:
+    """값 안의 모든 문자열 (검사 대상 범위를 넓게 잡을 때 쓴다)."""
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, dict):
+        return [text for item in value.values() for text in strings_of(item)]
+    if isinstance(value, list):
+        return [text for item in value for text in strings_of(item)]
+    return []
+
+
+@dataclass(frozen=True)
+class CheckCall:
+    """검사 1회에 주어지는 것 — 산출물, fixture 입력, 인자, 활성 정규화."""
+
+    actual: Any
+    payload: Any
+    args: dict[str, Any]
+    active: set[str]
+
+    def arg(self, name: str, default: Any = None) -> Any:
+        return self.args.get(name, default)
+
+    def target(self, default_path: str = "$") -> Any:
+        return at_path(self.actual, str(self.arg("path", default_path)))
+
+    def text(self, value: Any) -> Any:
+        return normalize(value, self.active)
+
+
+def check_absent(call: CheckCall) -> list[str]:
+    """지정한 문자열이 산출물에 **남아 있으면 안 된다** (누락 가드)."""
+    target = call.target("$")
+    if target is _MISSING:
+        return [f"경로 `{call.arg('path', '$')}` 가 산출물에 없다"]
+    haystack = [call.text(text) for text in strings_of(target)]
+    return [
+        f"가려지지 않았다: {needle!r} 가 `{call.arg('path', '$')}` 에 그대로 남아 있다"
+        for needle in call.arg("needles", [])
+        if any(call.text(needle) in text for text in haystack)
+    ]
+
+
+def check_present(call: CheckCall) -> list[str]:
+    """지정한 문자열이 산출물에 **남아 있어야 한다** (과잉 가드)."""
+    target = call.target("$")
+    if target is _MISSING:
+        return [f"경로 `{call.arg('path', '$')}` 가 산출물에 없다"]
+    haystack = [call.text(text) for text in strings_of(target)]
+    return [
+        f"사라졌다: {needle!r} 가 `{call.arg('path', '$')}` 에 없다 — 지우면 안 되는 본문을 지웠다"
+        for needle in call.arg("needles", [])
+        if not any(call.text(needle) in text for text in haystack)
+    ]
+
+
+def check_restores_input(call: CheckCall) -> list[str]:
+    """자리표시자를 원문으로 되돌리면 입력과 정확히 같아져야 한다.
+
+    이 하나가 "본문을 잃지 않았다 + 대응표가 실제로 복원 가능하다 + 자리표시자가 본문에
+    실재한다"를 함께 건다. 내보내기(`restore_placeholders`)가 이 성질 위에 서 있다.
+    """
+    text_field = str(call.arg("text_field", "masked_text"))
+    items_field = str(call.arg("items_field", "items"))
+    input_field = str(call.arg("input_field", "text"))
+    masked = at_path(call.actual, text_field)
+    items = at_path(call.actual, items_field)
+    source = at_path(call.payload, input_field)
+    if not isinstance(masked, str) or not isinstance(items, list) or not isinstance(source, str):
+        return [f"산출물에 `{text_field}`(문자열)과 `{items_field}`(배열)이 있어야 한다"]
+    failures: list[str] = []
+    restored = masked
+    for index, item in enumerate(items):
+        if not isinstance(item, dict):
+            failures.append(f"items[{index}] 가 객체가 아니다")
+            continue
+        placeholder = str(item.get("placeholder", ""))
+        original = str(item.get("original", ""))
+        if placeholder not in restored:
+            failures.append(
+                f"items[{index}] 의 자리표시자 {placeholder!r} 가 본문에 없다 — 복원 불가"
+            )
+            continue
+        restored = restored.replace(placeholder, original, 1)
+    if failures:
+        return failures
+    want, got = call.text(source), call.text(restored)
+    if want != got:
+        offset = next(
+            (i for i, (a, b) in enumerate(zip(want, got, strict=False)) if a != b),
+            min(len(want), len(got)),
+        )
+        return [
+            "복원 결과가 입력과 다르다 — 마스킹이 본문을 바꿨거나 대응표가 어긋났다 "
+            f"(첫 차이 오프셋 {offset}, 길이 입력 {len(want)} / 복원 {len(got)})"
+        ]
+    return []
+
+
+def check_placeholder_scheme(call: CheckCall) -> list[str]:
+    """자리표시자 형식·범주·번호 규칙.
+
+    `[[{범주}{번호}]]`이고, 범주는 선언된 집합 안이며, 번호는 **범주별로 1부터 등장 순서**다.
+    `items`의 순서·범주·자리표시자도 본문 등장 순서와 짝이 맞아야 한다. 번호가 어긋나면
+    복원이 다른 원문을 꽂으므로 개인정보 축에서 가장 직접적인 결함이다.
+    """
+    categories = [str(name) for name in call.arg("categories", [])]
+    masked = at_path(call.actual, str(call.arg("text_field", "masked_text")))
+    items = at_path(call.actual, str(call.arg("items_field", "items")))
+    if not isinstance(masked, str) or not isinstance(items, list):
+        return ["산출물에 `masked_text`(문자열)와 `items`(배열)가 있어야 한다"]
+    found = _PLACEHOLDER.findall(masked)
+    failures: list[str] = []
+    counters: dict[str, int] = {}
+    for index, token in enumerate(found):
+        body = token[2:-2]
+        category = next((name for name in categories if body.startswith(name)), None)
+        if category is None:
+            failures.append(
+                f"{token!r} 의 범주가 선언 집합 {categories} 에 없다 — "
+                "범주 문자열이 곧 자리표시자이자 복원 키다"
+            )
+            continue
+        number = body[len(category) :]
+        if not number.isdigit():
+            failures.append(f"{token!r} 의 번호 자리가 십진수가 아니다")
+            continue
+        counters[category] = counters.get(category, 0) + 1
+        if int(number) != counters[category]:
+            failures.append(
+                f"{token!r} 의 번호가 {counters[category]} 여야 한다 — "
+                "번호는 범주별로 1부터 등장 순서다"
+            )
+        if index < len(items) and isinstance(items[index], dict):
+            item = items[index]
+            if str(item.get("placeholder")) != token:
+                failures.append(
+                    f"items[{index}].placeholder 가 본문 {index}번째 자리표시자와 다르다 "
+                    "— items 순서는 텍스트 등장 순서다"
+                )
+            if str(item.get("category")) != category:
+                failures.append(f"items[{index}].category 가 {category!r} 가 아니다")
+    if len(found) != len(items):
+        failures.append(f"본문 자리표시자 {len(found)}개 / items {len(items)}개 — 개수가 다르다")
+    return failures
+
+
+def check_equals_field(call: CheckCall) -> list[str]:
+    """지정 경로의 값이 요구사항이 못박은 값과 같아야 한다."""
+    path = str(call.arg("path", "$"))
+    got = call.target()
+    if got is _MISSING:
+        return [f"경로 `{path}` 가 산출물에 없다"]
+    want = call.arg("value")
+    if not equal(call.text(want), call.text(got), DEFAULT_FLOAT_TOL):
+        return [f"`{path}` 가 {want!r} 여야 하는데 {got!r} 다"]
+    return []
+
+
+def check_at_most(call: CheckCall) -> list[str]:
+    """지정 경로의 수가 상한을 넘지 않아야 한다 (호출 횟수·건수 계약)."""
+    path = str(call.arg("path", "$"))
+    got = call.target()
+    limit = call.arg("limit")
+    if not isinstance(got, int | float) or isinstance(got, bool):
+        return [f"경로 `{path}` 에 수가 없다 (받은 값: {got!r})"]
+    if not isinstance(limit, int | float):
+        return [f"`limit` 인자가 수가 아니다: {limit!r}"]
+    if got > limit:
+        return [f"`{path}` 가 상한 {limit} 을 넘었다: {got}"]
+    return []
+
+
+def check_contains_all(call: CheckCall) -> list[str]:
+    """지정 경로가 요구 항목을 **전부 포함**해야 한다 (추가는 허용 — 누락만 막는다)."""
+    path = str(call.arg("path", "$"))
+    got = call.target()
+    if got is _MISSING:
+        return [f"경로 `{path}` 가 산출물에 없다"]
+    required = call.arg("required", [])
+    if isinstance(got, str):
+        missing = [item for item in required if call.text(str(item)) not in call.text(got)]
+    elif isinstance(got, dict):
+        missing = [item for item in required if str(item) not in got]
+    elif isinstance(got, list):
+        present = {json.dumps(call.text(item), ensure_ascii=False, sort_keys=True) for item in got}
+        missing = [
+            item
+            for item in required
+            if json.dumps(call.text(item), ensure_ascii=False, sort_keys=True) not in present
+        ]
+    else:
+        return [f"경로 `{path}` 가 문자열·객체·배열이 아니다"]
+    if missing:
+        shown = ", ".join(repr(item) for item in missing[:MAX_REPORTED_CASE_DIFFS])
+        return [f"`{path}` 에서 {len(missing)}건이 빠졌다: {shown}"]
+    return []
+
+
+def _derive_control_strip(call: CheckCall) -> tuple[Any, list[str]]:
+    source = at_path(call.payload, str(call.arg("source", "text")))
+    if not isinstance(source, str):
+        return (None, [f"입력에 `{call.arg('source', 'text')}` 문자열이 없다"])
+    return (_XML_FORBIDDEN.sub("", source), [])
+
+
+def _derive_repair_policy(call: CheckCall) -> tuple[Any, list[str]]:
+    """채택 = (자리표시자를 하나도 잃지 않았다) AND (위반 건수가 늘지 않았다).
+
+    건수는 **산출물이 스스로 보고한 값**을 쓴다. 건수 자체가 옳은지는 `style` 도메인의
+    질문이고, 여기서는 같은 건수를 받았을 때 같은 결정을 내리는지만 본다 — 두 질문을 섞으면
+    실패했을 때 어느 쪽이 원인인지 알 수 없다.
+    """
+    original = at_path(call.payload, "original")
+    candidate = at_path(call.payload, "candidate")
+    placeholders = at_path(call.payload, "placeholders")
+    before = at_path(call.actual, "original_issue_count")
+    after = at_path(call.actual, "candidate_issue_count")
+    if not isinstance(original, str) or not isinstance(candidate, str):
+        return (None, ["입력에 `original`·`candidate` 문자열이 필요하다"])
+    if not isinstance(before, int) or not isinstance(after, int):
+        return (
+            None,
+            [
+                "산출물이 `original_issue_count`·`candidate_issue_count` 를 보고해야 한다 — "
+                "정책 판정의 입력이다"
+            ],
+        )
+    lost = [
+        token
+        for token in (placeholders if isinstance(placeholders, list) else [])
+        if str(token) in original and str(token) not in candidate
+    ]
+    return (not lost and after <= before, [])
+
+
+#: `equals_derived`가 쓸 수 있는 규칙. **요구사항에서 유도**되며 app/ 구현을 부르지 않는다.
+DERIVATIONS: dict[str, Callable[[CheckCall], tuple[Any, list[str]]]] = {
+    "control_strip": _derive_control_strip,
+    "repair_policy": _derive_repair_policy,
+}
+
+
+def check_equals_derived(call: CheckCall) -> list[str]:
+    """산출물이 **입력에서 규칙으로 유도한 값**과 같아야 한다.
+
+    요구사항이 규칙으로 완전히 적히는 도메인(제어문자 제거, 보정 채택 정책)에서 쓴다.
+    유도는 이 스크립트가 직접 하므로 Python 구현이 틀려도 기대값이 따라 틀리지 않는다.
+    """
+    rule = str(call.arg("rule", ""))
+    if rule not in DERIVATIONS:
+        return [f"알 수 없는 유도 규칙: {rule!r} (가능: {', '.join(DERIVATIONS)})"]
+    want, problems = DERIVATIONS[rule](call)
+    if problems:
+        return problems
+    path = str(call.arg("path", "$"))
+    got = call.target()
+    if got is _MISSING:
+        return [f"경로 `{path}` 가 산출물에 없다"]
+    if not equal(call.text(want), call.text(got), DEFAULT_FLOAT_TOL):
+        return [
+            f"`{path}` 가 규칙 `{rule}` 의 유도값과 다르다 — "
+            f"{first_difference(call.text(want), call.text(got), DEFAULT_FLOAT_TOL)}"
+        ]
+    return []
+
+
+@dataclass(frozen=True)
+class Check:
+    run: Callable[[CheckCall], list[str]]
+    #: 이 검사가 막는 방향. `under` = 덜 한 것, `over` = 더 한 것, `structural` = 형태.
+    #: spec 도메인은 `under`와 `over`를 **둘 다** 갖춰야 한다(모듈 docstring 보장 (4)).
+    directions: frozenset[str]
+    doc: str
+
+
+CHECKS: dict[str, Check] = {
+    "absent": Check(check_absent, frozenset({"under"}), "가려야 할 문자열이 남지 않았다"),
+    "present": Check(check_present, frozenset({"over"}), "남겨야 할 문자열이 지워지지 않았다"),
+    "restores_input": Check(
+        check_restores_input, frozenset({"structural"}), "자리표시자 역치환이 입력을 복원한다"
+    ),
+    "placeholder_scheme": Check(
+        check_placeholder_scheme, frozenset({"structural"}), "자리표시자 형식·범주·번호 규칙"
+    ),
+    "equals_field": Check(
+        check_equals_field, frozenset({"under", "over"}), "요구사항이 못박은 값과 같다"
+    ),
+    "at_most": Check(check_at_most, frozenset({"over"}), "수가 상한을 넘지 않는다"),
+    "contains_all": Check(
+        check_contains_all, frozenset({"under"}), "요구 항목을 전부 포함한다(추가는 허용)"
+    ),
+    "equals_derived": Check(
+        check_equals_derived, frozenset({"under", "over"}), "입력에서 규칙으로 유도한 값과 같다"
+    ),
+}
+
+
+def run_assertions(case: dict[str, Any], actual: Any, active: set[str]) -> list[str]:
+    """케이스의 단언을 전부 실행한다. 반환은 실패 사유 목록(빈 목록 = 충족)."""
+    failures: list[str] = []
+    for entry in case.get("assert", []):
+        if not isinstance(entry, dict):
+            failures.append("단언 항목이 객체가 아니다")
+            continue
+        name = str(entry.get("check", ""))
+        if name not in CHECKS:
+            failures.append(f"알 수 없는 검사: {name!r} (가능: {', '.join(CHECKS)})")
+            continue
+        raw_args = entry.get("args")
+        args: dict[str, Any] = raw_args if isinstance(raw_args, dict) else {}
+        failures += [
+            f"[{name}] {reason}"
+            for reason in CHECKS[name].run(CheckCall(actual, case.get("input"), args, active))
+        ]
+    return failures
+
+
 def load(path: Path) -> dict[str, Any]:
     try:
         loaded: dict[str, Any] = json.loads(path.read_text(encoding="utf-8"))
@@ -326,12 +708,19 @@ def load(path: Path) -> dict[str, Any]:
 
 @dataclass(frozen=True)
 class Pair:
-    """비교할 fixture 한 벌 (fixture는 이미 읽어 둔다 — 도메인 판정에 필요하다)."""
+    """비교할 fixture 한 벌 (fixture는 이미 읽어 둔다 — 도메인 판정에 필요하다).
+
+    `mode`·`spec_status`는 **정본에서** 온다. 파일 쪽 선언은 위조 대상이라 판정 방식을
+    정하는 근거가 될 수 없다 — 파일이 `mode: compat` 이라고 적어 성질 검사를 피해 가는
+    경로를 막는다(파일과 정본이 다르면 정본 대조가 따로 잡는다).
+    """
 
     fixture_path: Path
     actual_path: Path
     domain: str
     fixture: dict[str, Any]
+    mode: str
+    spec_status: str
 
     @property
     def case_ids(self) -> list[str]:
@@ -340,15 +729,28 @@ class Pair:
             return []
         return [str(case.get("id")) for case in cases if isinstance(case, dict) and case.get("id")]
 
+    @property
+    def pending_spec(self) -> bool:
+        return self.mode == MODE_SPEC and self.spec_status == STATUS_PENDING
+
 
 @dataclass
 class FileResult:
     problems: list[str] = field(default_factory=list)
     pendings: list[str] = field(default_factory=list)
+    #: compat 도메인에서 값으로 대조한 케이스 수.
     checked: int = 0
+    #: spec 도메인에서 성질을 실행해 판정한 케이스 수.
+    judged: int = 0
+    #: 실행한 단언 수. 케이스 수만 세면 단언 1개짜리 케이스가 늘어난 것을 못 본다.
+    assertions: int = 0
     external_ok: int = 0
+    #: 참고값과 갈린 케이스 (원장에 기록됐거나 fixture가 의도를 선언한 것).
+    diverged: int = 0
     #: `--only` 필터를 통과해 실제로 판정 대상이 된 케이스 수. 0이면 아무것도 검증하지 않은 것이다.
     considered: int = 0
+    #: 이번 실행에서 관측한 참고 갈림 상태 (원장 갱신용).
+    ledger: dict[str, dict[str, Any]] = field(default_factory=dict)
 
 
 def domain_of(fixture_path: Path, fixture: dict[str, Any]) -> str:
@@ -387,6 +789,47 @@ def structural_problems(pair: Pair, *, check_location: bool) -> list[str]:
             f"- **fixture 위치 불일치** — domain은 `{pair.domain}`인데 디렉터리는 "
             f"`{pair.fixture_path.parent.name}`다. 도메인 존재 판정이 경로와 어긋난다"
         )
+    problems += spec_shape_problems(pair)
+    return problems
+
+
+def spec_shape_problems(pair: Pair) -> list[str]:
+    """spec 도메인의 **단언 구조**를 본다 — 성질 검증이 형식만 남는 것을 막는다.
+
+    두 가지를 막는다.
+    1. 단언 없는 케이스. 값 비교를 뺐는데 단언도 없으면 그 케이스는 아무것도 판정하지 않는다.
+    2. 한 방향뿐인 도메인. "가려졌는가"만 재면 전문을 통째로 가린 구현이 만점을 받고,
+       "남았는가"만 재면 아무것도 안 하는 구현이 만점을 받는다. 성질 검증에서 가장 흔한
+       실패라 도메인마다 양방향을 강제한다.
+    """
+    if pair.mode != MODE_SPEC or pair.pending_spec:
+        return []
+    cases = pair.fixture.get("cases")
+    if not isinstance(cases, list) or not cases:
+        return []
+    problems: list[str] = []
+    directions: set[str] = set()
+    for case in cases:
+        if not isinstance(case, dict):
+            continue
+        entries = case.get("assert")
+        if not isinstance(entries, list) or not entries:
+            problems.append(
+                f"- `{case.get('id')}` **단언 없는 spec 케이스** — 판정할 성질이 없다. "
+                "값 비교도 하지 않으므로 이 케이스는 아무것도 검증하지 않는다"
+            )
+            continue
+        for entry in entries:
+            name = str(entry.get("check", "")) if isinstance(entry, dict) else ""
+            if name in CHECKS:
+                directions |= CHECKS[name].directions
+    for missing, meaning in (("under", "덜 한 것(누락)"), ("over", "더 한 것(과잉)")):
+        if missing not in directions:
+            problems.append(
+                f"- **방향 가드 결손** — 이 도메인에 `{missing}` 방향 검사가 하나도 없다"
+                f"({meaning}을 잡을 수단이 없다). 한 방향만 재는 성질 검증은 "
+                "반대 방향으로 망가진 구현을 통과시킨다"
+            )
     return problems
 
 
@@ -409,20 +852,11 @@ def canonical_fixture(domain: str) -> tuple[dict[str, Any] | None, str | None]:
     """
     if domain not in _CANONICAL:
         try:
-            source, normalization, cases = BUILDERS[domain]()
+            document = BUILDERS[domain]().document(domain)
         except Exception as exc:  # noqa: BLE001 - 생성 실패 원인은 가리지 않고 그대로 보고한다
             _CANONICAL[domain] = (None, f"정본 생성 실패 ({type(exc).__name__}: {exc})")
         else:
-            _CANONICAL[domain] = (
-                {
-                    "domain": domain,
-                    "source": source,
-                    "generator": "dump_parity_fixtures.py",
-                    "normalization": normalization,
-                    "cases": cases,
-                },
-                None,
-            )
+            _CANONICAL[domain] = (document, None)
     return _CANONICAL[domain]
 
 
@@ -455,7 +889,10 @@ def provenance_problems(pair: Pair) -> list[str]:
             "통과로 보고하지 않는다"
         ]
     problems: list[str] = []
-    for field_name in ("source", "generator", "normalization"):
+    # 헤더 전량을 대조한다. `mode`·`spec_status`가 특히 중요하다 — 파일에서 `spec`을
+    # `compat`으로 바꿔 적으면 성질 검사를 건너뛰고 값 비교로 되돌아갈 수 있고,
+    # `pending`을 `ready`로 바꾸면 단언 없는 도메인이 통과로 집계된다.
+    for field_name in (key for key in canonical if key not in ("cases", "domain", "generated_at")):
         if pair.fixture.get(field_name) != canonical[field_name]:
             problems.append(
                 f"- **fixture 위조 의심** — `{field_name}` 가 정본과 다르다 "
@@ -622,7 +1059,97 @@ def check_external(case: dict[str, Any], pair: Pair) -> tuple[str | None, str | 
     return (None, None)
 
 
-def compare_file(pair: Pair, only: str | None = None) -> FileResult:
+# --------------------------------------------------------------------- 참고 갈림 원장
+#
+# 원장은 "Kotlin 산출물이 Python 참고값과 어디서 갈렸는가"의 **기록**이다. 판정이 아니다.
+# 값이 갈렸다는 사실 자체는 잘못이 아니지만(둘 중 하나가 틀렸다는 신호일 뿐이다), 아무도
+# 모르게 갈리는 것은 잘못이다. 그래서 기록되지 않은 갈림만 막는다.
+#
+# 본문·개인정보를 원장에 넣지 않는다 — 갈린 첫 경로와 양쪽 값의 SHA-256만 남긴다.
+
+
+def digest(value: Any) -> str:
+    payload = json.dumps(value, ensure_ascii=False, sort_keys=True)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def ledger_file(root: Path, domain: str) -> Path:
+    return root / f"{domain}.json"
+
+
+def load_ledger(root: Path, domain: str) -> dict[str, Any]:
+    path = ledger_file(root, domain)
+    if not path.exists():
+        return {}
+    try:
+        loaded = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    cases = loaded.get("cases") if isinstance(loaded, dict) else None
+    return cases if isinstance(cases, dict) else {}
+
+
+def write_ledger(root: Path, domain: str, entries: dict[str, dict[str, Any]]) -> Path:
+    path = ledger_file(root, domain)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "domain": domain,
+        "note": (
+            "Kotlin 산출물과 Python 참고값이 갈린 자리의 기록이다. 판정 근거가 아니라 "
+            "리뷰에 올리기 위한 원장이며, 본문 없이 경로와 SHA-256만 남긴다. "
+            "갱신: compare_parity.py --record-reference"
+        ),
+        "recorded_at": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "cases": dict(sorted(entries.items())),
+    }
+    path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=False) + "\n",
+        encoding="utf-8",
+    )
+    return path
+
+
+def reference_problems(
+    case_id: str,
+    entry: dict[str, Any],
+    recorded: Any,
+    ledger_root: Path,
+    domain: str,
+) -> list[str]:
+    """원장과 이번 관측을 대조한다. 닫는 방법은 언제나 `--record-reference`다."""
+    closing = (
+        f"  - 닫는 방법: `--record-reference` 로 `{ledger_file(ledger_root, domain)}` 를 "
+        "갱신하고 그 diff를 리뷰에 올린다 (구현을 되돌리라는 뜻이 아니다)"
+    )
+    if not isinstance(recorded, dict):
+        if entry["status"] == "agree":
+            return []
+        return [
+            f"- `{case_id}` **기록되지 않은 참고 갈림** — Python 참고값과 다르다 "
+            f"(첫 차이 {entry['first_diff_path']}). 차이 자체는 차단 사유가 아니지만 "
+            f"기록 없이 통과시키지 않는다\n{closing}"
+        ]
+    if recorded.get("status") != entry["status"]:
+        return [
+            f"- `{case_id}` **원장이 낡았다** — 기록 `{recorded.get('status')}` / 관측 "
+            f"`{entry['status']}`. 갈림이 생겼거나 사라졌다\n{closing}"
+        ]
+    if entry["status"] == "diverge" and recorded.get("actual_sha256") != entry["actual_sha256"]:
+        return [
+            f"- `{case_id}` **갈림의 내용이 바뀌었다** — 기록된 산출물 해시와 다르다 "
+            f"(첫 차이 {entry['first_diff_path']})\n{closing}"
+        ]
+    return []
+
+
+def compare_file(
+    pair: Pair,
+    only: str | None = None,
+    *,
+    ledger_cases: dict[str, Any] | None = None,
+    ledger_root: Path = DEFAULT_LEDGER,
+    record: bool = False,
+) -> FileResult:
     fixture = pair.fixture
     actual_doc = load(pair.actual_path)
     file_rules = list(fixture.get("normalization", []))
@@ -646,6 +1173,7 @@ def compare_file(pair: Pair, only: str | None = None) -> FileResult:
 
     raw_cases = fixture.get("cases")
     fixture_cases: list[dict[str, Any]] = raw_cases if isinstance(raw_cases, list) else []
+    pending_spec = 0
     for case in fixture_cases:
         case_id = case["id"]
         if only is not None and case_id != only:
@@ -670,28 +1198,90 @@ def compare_file(pair: Pair, only: str | None = None) -> FileResult:
                 result.external_ok += 1
             continue
         active, tolerance = _rules(list(case.get("normalization", file_rules)))
+        if pair.pending_spec:
+            pending_spec += 1
+            continue
         if case_id not in actual_cases:
             result.problems.append(f"- `{case_id}` **미실행** — Kotlin 결과에 이 케이스가 없다")
             continue
-        result.checked += 1
-        expected = normalize(case["expected"], active)
-        got = normalize(actual_cases[case_id], active)
-        if sorted(placeholders_of(expected)) != sorted(placeholders_of(case["expected"])):
-            result.problems.append(
-                f"- `{case_id}` **정규화 오류** — 정규화가 자리표시자를 바꿨다. 규칙을 고쳐라"
-            )
+        got_raw = actual_cases[case_id]
+        reproduce = (
+            f"  - 재현: `uv run python .claude/skills/python-kotlin-parity/scripts/"
+            f"compare_parity.py --fixture {pair.fixture_path} "
+            f"--actual {pair.actual_path} --only {case_id}`\n"
+            f"  - source: {case.get('source', fixture.get('source', '?'))}"
+        )
+        if pair.mode == MODE_COMPAT:
+            # 값이 같은 것이 곧 요구사항인 자리다 — 롤백 창에서 Python이 이 산출물을 읽는다.
+            result.checked += 1
+            expected = normalize(case["expected"], active)
+            got = normalize(got_raw, active)
+            if sorted(placeholders_of(expected)) != sorted(placeholders_of(case["expected"])):
+                result.problems.append(
+                    f"- `{case_id}` **정규화 오류** — 정규화가 자리표시자를 바꿨다. 규칙을 고쳐라"
+                )
+                continue
+            if not equal(expected, got, tolerance):
+                result.problems.append(
+                    f"- `{case_id}` **호환성 불일치** (compat 도메인 — 값이 같아야 한다)\n"
+                    f"  - 최초 차이: {first_difference(expected, got, tolerance)}\n"
+                    f"  - 입력: `{json.dumps(case['input'], ensure_ascii=False)[:200]}`\n"
+                    f"  - 정규화: {', '.join(sorted(active)) or '없음'}\n" + reproduce
+                )
             continue
-        if not equal(expected, got, tolerance):
+
+        # ── spec 도메인: 요구 성질을 실행해 판정한다 ─────────────────────────
+        result.judged += 1
+        entries = case.get("assert")
+        result.assertions += len(entries) if isinstance(entries, list) else 0
+        failures = run_assertions(case, normalize(got_raw, active), active)
+        if failures:
+            detail = "\n".join(f"  - {reason}" for reason in failures)
             result.problems.append(
-                f"- `{case_id}` 불일치\n"
-                f"  - 최초 차이: {first_difference(expected, got, tolerance)}\n"
-                f"  - 입력: `{json.dumps(case['input'], ensure_ascii=False)[:200]}`\n"
-                f"  - 정규화: {', '.join(sorted(active)) or '없음'}\n"
-                f"  - 재현: `uv run python .claude/skills/python-kotlin-parity/scripts/"
-                f"compare_parity.py --fixture {pair.fixture_path} "
-                f"--actual {pair.actual_path} --only {case_id}`\n"
-                f"  - source: {case.get('source', fixture.get('source', '?'))}"
+                f"- `{case_id}` **요구 성질 불충족** ({len(failures)}건)\n{detail}\n"
+                f"  - 이 케이스가 지키는 것: {case.get('description', '(설명 없음)')}\n"
+                f"  - 입력: `{json.dumps(case['input'], ensure_ascii=False)[:200]}`\n" + reproduce
             )
+        if failures or "reference" not in case:
+            # 성질을 못 지킨 케이스의 참고 갈림은 이미 설명된 차이다. 원장에 넣지도, 다시
+            # 보고하지도 않는다 — 고장난 산출물을 원장에 굳히면 그것이 다음 기준이 된다.
+            continue
+        # 참고 대조 — 판정이 아니라 기록이다.
+        want = normalize(case["reference"], active)
+        got = normalize(got_raw, active)
+        agrees = equal(want, got, tolerance)
+        if not agrees:
+            result.diverged += 1
+        if case.get("reference_divergence") == "expected":
+            if agrees:
+                result.problems.append(
+                    f"- `{case_id}` **의도한 갈림이 사라졌다** — fixture는 이 케이스가 Python "
+                    "참고값과 갈릴 것이라 선언했는데 같은 값이 나왔다. 요구사항이 바뀌었거나 "
+                    "선언이 낡았다(Python 쪽이 따라 바뀐 경우 포함)\n"
+                    f"  - 닫는 방법: fixture를 재생성하고 선언이 여전히 맞는지 확인한다\n"
+                    + reproduce
+                )
+            continue
+        first_path = "" if agrees else first_difference(want, got, tolerance).split(":")[0]
+        observed: dict[str, Any] = {
+            "status": "agree" if agrees else "diverge",
+            "first_diff_path": first_path,
+            "reference_sha256": digest(want),
+            "actual_sha256": digest(got),
+        }
+        result.ledger[case_id] = observed
+        if not record:
+            result.problems += reference_problems(
+                case_id, observed, (ledger_cases or {}).get(case_id), ledger_root, pair.domain
+            )
+    if pending_spec:
+        result.pendings.append(
+            f"- **{pending_spec}건 미검증** — 이 도메인은 `spec_status=pending` 이다. "
+            "요구 성질이 아직 적히지 않아 판정할 근거가 없다\n"
+            "  - 닫는 방법: 생성기의 이 도메인 빌더에 `assert` 목록을 넣고 "
+            "`spec_status`를 ready로 바꾼다 (요구사항 문장은 fixture의 `requirement`에 있다)\n"
+            "  - 값 비교로 대신하지 않는다 — 그것이 이번에 폐기된 전제다"
+        )
     if only is None:
         for extra in set(actual_cases) - set(pair.case_ids):
             result.problems.append(
@@ -713,8 +1303,26 @@ def collect_pairs(fixture_root: Path, actual_root: Path, domains: list[str]) -> 
         actual_path = (
             actual_root / fixture_path.relative_to(fixture_root) if directory_mode else actual_root
         )
-        pairs.append(Pair(fixture_path, actual_path, domain, fixture))
+        mode, status = resolve_mode(domain, fixture)
+        pairs.append(Pair(fixture_path, actual_path, domain, fixture, mode, status))
     return pairs
+
+
+def resolve_mode(domain: str, fixture: dict[str, Any]) -> tuple[str, str]:
+    """판정 방식(mode·spec_status)을 **정본에서** 정한다.
+
+    파일 쪽 선언을 믿으면 `mode: compat`으로 바꿔 적는 것만으로 성질 검사를 건너뛸 수 있다.
+    정본을 만들 수 없을 때만 파일 선언으로 물러서되, 그 상태는 정본 대조가 이미 결함으로
+    보고한다(통과로 집계되지 않는다).
+    """
+    canonical, _ = canonical_fixture(domain) if domain in BUILDERS else (None, None)
+    source = canonical if canonical is not None else fixture
+    mode = source.get("mode")
+    status = source.get("spec_status", "ready")
+    return (
+        mode if isinstance(mode, str) and mode in (MODE_SPEC, MODE_COMPAT) else MODE_COMPAT,
+        str(status),
+    )
 
 
 def missing_section(missing: list[str], fixture_root: Path) -> str:
@@ -770,6 +1378,20 @@ def main() -> int:
         ),
     )
     parser.add_argument("--report-md", type=Path, help="불일치 리포트를 마크다운으로 저장")
+    parser.add_argument(
+        "--ledger",
+        type=Path,
+        default=DEFAULT_LEDGER,
+        help=f"참고 갈림 원장 디렉터리 (기본 {DEFAULT_LEDGER})",
+    )
+    parser.add_argument(
+        "--record-reference",
+        action="store_true",
+        help=(
+            "이번 실행에서 관측한 참고 갈림을 원장에 기록한다. 갈림을 **승인**하는 것이 아니라 "
+            "리뷰에 올릴 diff를 만드는 것이다 — 기록 자체가 판정을 바꾸지는 않는다"
+        ),
+    )
     args = parser.parse_args()
 
     selected: list[str] = list(dict.fromkeys(args.only_domain))
@@ -829,8 +1451,12 @@ def main() -> int:
     total_problems = 0
     total_pending = 0
     total_checked = 0
+    total_judged = 0
+    total_assertions = 0
     total_external = 0
     total_considered = 0
+    total_diverged = 0
+    recorded: dict[str, dict[str, dict[str, Any]]] = {}
     for pair in pairs:
         problems = structural_problems(pair, check_location=directory_mode)
         if pair.domain in BUILDERS:
@@ -839,23 +1465,41 @@ def main() -> int:
         if not pair.actual_path.exists():
             problems.append(f"- **Kotlin 결과 파일 없음**: {pair.actual_path}")
         else:
-            result = compare_file(pair, args.only)
+            result = compare_file(
+                pair,
+                args.only,
+                ledger_cases=load_ledger(args.ledger, pair.domain),
+                ledger_root=args.ledger,
+                record=args.record_reference,
+            )
             problems += result.problems
             total_checked += result.checked
+            total_judged += result.judged
+            total_assertions += result.assertions
             total_external += result.external_ok
             total_considered += result.considered
+            total_diverged += result.diverged
             total_pending += len(result.pendings)
+            recorded.setdefault(pair.domain, {}).update(result.ledger)
             if result.pendings:
                 pending_sections.append(
                     f"## {pair.domain} · {pair.fixture_path.name}\n\n" + "\n".join(result.pendings)
                 )
             if not problems and not result.pendings:
-                print(f"[일치] {pair.domain} · {pair.fixture_path.name} — {result.checked}건")
+                judged = f"성질 {result.judged}건/단언 {result.assertions}개"
+                shown = judged if pair.mode == MODE_SPEC else f"값 대조 {result.checked}건"
+                print(f"[충족] {pair.domain} · {pair.fixture_path.name} — {shown}")
         if problems:
             total_problems += len(problems)
             sections.append(
                 f"## {pair.domain} · {pair.fixture_path.name}\n\n" + "\n".join(problems)
             )
+
+    if args.record_reference:
+        for domain, entries in sorted(recorded.items()):
+            target = write_ledger(args.ledger, domain, entries)
+            diverged = sum(1 for entry in entries.values() if entry["status"] == "diverge")
+            print(f"[원장 기록] {target} — {len(entries)}건 중 갈림 {diverged}건")
 
     report = ""
     if sections:
@@ -876,8 +1520,9 @@ def main() -> int:
             + f"# parity 미검증 리포트 ({total_pending}건)\n\n"
             + "\n\n".join(pending_sections)
             + (
-                "\n\n> 미검증은 통과가 아니다. 이 목록이 비지 않으면 역방향(Kotlin → Python) "
-                "호환성이 증명되지 않은 것이므로 게이트를 닫지 않는다.\n"
+                "\n\n> 미검증은 통과가 아니다. 요구 성질이 적히지 않았거나(spec_status=pending) "
+                "역방향(Kotlin → Python) 산출물이 없어서 **판정할 근거가 없는** 상태이므로 "
+                "게이트를 닫지 않는다.\n"
             )
         )
     if report:
@@ -911,22 +1556,24 @@ def main() -> int:
         )
 
     summary = (
-        f"도메인 {covered}/{len(expected_domains)} / 값 비교 {total_checked}건 / "
-        f"외부 검증 {total_external}건 / 미검증 {total_pending}건 / "
-        f"불일치 {total_problems}건 / 도메인 누락 {len(missing)}개 / 파일 {len(pairs)}개"
+        f"도메인 {covered}/{len(expected_domains)} / 성질 판정 {total_judged}건"
+        f"(단언 {total_assertions}개) / 호환 값 대조 {total_checked}건 / "
+        f"외부 검증 {total_external}건 / 참고 갈림 {total_diverged}건 / "
+        f"미검증 {total_pending}건 / 불충족 {total_problems}건 / "
+        f"도메인 누락 {len(missing)}개 / 파일 {len(pairs)}개"
     )
     if missing and not total_problems:
         print(f"[도메인 누락] {summary} — 없는 도메인: {', '.join(missing)} (종료 코드 1)")
         return 1
     if total_problems:
         detail = f" — 없는 도메인: {', '.join(missing)}" if missing else ""
-        print(f"[불일치] {summary}{detail}")
+        print(f"[불충족] {summary}{detail}")
         return 1
     if total_pending:
-        print(f"[미검증] {summary} — 전건 일치로 보고하지 않는다 (종료 코드 2)")
+        print(f"[미검증] {summary} — 충족으로 보고하지 않는다 (종료 코드 2)")
         return 2
     if total_considered == 0:
-        print(f"[검증 없음] {summary} — 비교한 케이스가 0건이다. 통과로 보고하지 않는다")
+        print(f"[검증 없음] {summary} — 판정한 케이스가 0건이다. 통과로 보고하지 않는다")
         return 1
     if partial:
         # 0이 아니라 3이다. 자동화가 읽는 계약은 위에 찍은 "게이트 아님" 문구가 아니라
@@ -934,7 +1581,7 @@ def main() -> int:
         # 전체 통과로 기록된다 (모듈 docstring "종료 코드" 절 참고).
         print(f"부분 검증 통과(게이트 아님): {summary}")
         return EXIT_PARTIAL_OK
-    print(f"전건 일치: {summary}")
+    print(f"요구 성질 충족: {summary}")
     return 0
 
 

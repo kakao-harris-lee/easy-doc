@@ -54,13 +54,13 @@ describe('검수 에디터', () => {
   it('AI 초안임을 알리는 배너와 자리표시자 유실 경고를 보여준다', () => {
     render(
       <ReviewEditor
-        conversion={conversion({ missing_placeholders: ['[[이메일1]]'] })}
+        conversion={conversion({ missing_placeholders: ['[[카드번호1]]'] })}
         sourceText={null}
       />,
     )
 
     expect(screen.getByRole('note')).toHaveTextContent('AI가 만든 초안입니다')
-    expect(screen.getByText(/\[\[이메일1\]\]가 결과에서 빠졌습니다/)).toBeInTheDocument()
+    expect(screen.getByText(/\[\[카드번호1\]\]가 결과에서 빠졌습니다/)).toBeInTheDocument()
   })
 
   it('수정한 글을 저장하고 결과를 알린다', async () => {
@@ -143,16 +143,16 @@ describe('검수 에디터', () => {
     const user = userEvent.setup()
     render(
       <ReviewEditor
-        conversion={conversion({ easy_text: '전화는 [[전화번호1]]이에요.' })}
+        conversion={conversion({ easy_text: '등록번호는 [[주민등록번호1]]이에요.' })}
         sourceText={null}
       />,
     )
 
-    expect(screen.getByRole('row', { name: /전화번호1/ })).toHaveTextContent('있음')
+    expect(screen.getByRole('row', { name: /주민등록번호1/ })).toHaveTextContent('있음')
 
     // 검수하다 자리표시자를 지우면 그 사실이 표에 바로 드러나야 한다.
     await user.clear(screen.getByLabelText('쉬운 글 결과 (고칠 수 있습니다)'))
 
-    expect(screen.getByRole('row', { name: /전화번호1/ })).toHaveTextContent('없음')
+    expect(screen.getByRole('row', { name: /주민등록번호1/ })).toHaveTextContent('없음')
   })
 })

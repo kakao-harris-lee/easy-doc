@@ -1,0 +1,1020 @@
+{
+  "domain": "masking",
+  "mode": "spec",
+  "requirement": "master-plan §3.2 마스킹 선행 + 사용자 결정(2026-08-12) 범위 축소 — 문서 본문이 LLM으로 나가기 전에 주민등록번호(외국인등록번호 포함)와 카드번호가 빠짐없이 가려지고, 그 밖의 본문은 한 글자도 잃지 않으며, 자리표시자를 되돌리면 원문이 정확히 복원된다",
+  "source": "app/privacy/masking.py::mask_text",
+  "generator": "dump_parity_fixtures.py",
+  "normalization": [
+    "nfc",
+    "lf"
+  ],
+  "spec_status": "ready",
+  "cases": [
+    {
+      "id": "masking-plain",
+      "description": "개인정보가 없는 문장은 한 글자도 바뀌지 않는다. 가리면 안 된다 — 범위 밖이거나 개인정보가 아니다. 과잉 마스킹은 팩트를 지운다",
+      "input": {
+        "text": "이 안내문에는 개인정보가 없습니다."
+      },
+      "assert": [
+        {
+          "check": "restores_input"
+        },
+        {
+          "check": "placeholder_scheme",
+          "args": {
+            "categories": [
+              "주민등록번호",
+              "카드번호"
+            ]
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "masked_text",
+            "needles": [
+              "이 안내문에는 개인정보가 없습니다."
+            ]
+          }
+        }
+      ],
+      "reference": {
+        "masked_text": "이 안내문에는 개인정보가 없습니다.",
+        "items": []
+      }
+    },
+    {
+      "id": "masking-empty",
+      "description": "빈 입력에서 예외를 던지지 않고 빈 결과를 낸다",
+      "input": {
+        "text": ""
+      },
+      "assert": [
+        {
+          "check": "restores_input"
+        },
+        {
+          "check": "placeholder_scheme",
+          "args": {
+            "categories": [
+              "주민등록번호",
+              "카드번호"
+            ]
+          }
+        }
+      ],
+      "reference": {
+        "masked_text": "",
+        "items": []
+      }
+    },
+    {
+      "id": "masking-rrn-hyphen",
+      "description": "하이픈 표기 주민등록번호를 가려야 한다 — 남으면 개인정보가 그대로 외부 LLM으로 나간다",
+      "input": {
+        "text": "주민등록번호 900101-1234567 를 확인합니다."
+      },
+      "assert": [
+        {
+          "check": "restores_input"
+        },
+        {
+          "check": "placeholder_scheme",
+          "args": {
+            "categories": [
+              "주민등록번호",
+              "카드번호"
+            ]
+          }
+        },
+        {
+          "check": "absent",
+          "args": {
+            "path": "masked_text",
+            "needles": [
+              "900101-1234567"
+            ]
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "masked_text",
+            "needles": [
+              "주민등록번호",
+              "를 확인합니다."
+            ]
+          }
+        }
+      ],
+      "reference": {
+        "masked_text": "주민등록번호 [[주민등록번호1]] 를 확인합니다.",
+        "items": [
+          {
+            "category": "주민등록번호",
+            "placeholder": "[[주민등록번호1]]",
+            "original": "900101-1234567"
+          }
+        ]
+      }
+    },
+    {
+      "id": "masking-rrn-no-sep",
+      "description": "구분자 없는 13자리 표기도 가려야 한다 — 남으면 개인정보가 그대로 외부 LLM으로 나간다",
+      "input": {
+        "text": "번호는 9001011234567 입니다."
+      },
+      "assert": [
+        {
+          "check": "restores_input"
+        },
+        {
+          "check": "placeholder_scheme",
+          "args": {
+            "categories": [
+              "주민등록번호",
+              "카드번호"
+            ]
+          }
+        },
+        {
+          "check": "absent",
+          "args": {
+            "path": "masked_text",
+            "needles": [
+              "9001011234567"
+            ]
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "masked_text",
+            "needles": [
+              "번호는",
+              "입니다."
+            ]
+          }
+        }
+      ],
+      "reference": {
+        "masked_text": "번호는 [[주민등록번호1]] 입니다.",
+        "items": [
+          {
+            "category": "주민등록번호",
+            "placeholder": "[[주민등록번호1]]",
+            "original": "9001011234567"
+          }
+        ]
+      }
+    },
+    {
+      "id": "masking-rrn-spaced",
+      "description": "하이픈 앞뒤에 공백이 있는 표기도 가려야 한다 — 남으면 개인정보가 그대로 외부 LLM으로 나간다",
+      "input": {
+        "text": "주민등록번호 900101 - 1234567 확인."
+      },
+      "assert": [
+        {
+          "check": "restores_input"
+        },
+        {
+          "check": "placeholder_scheme",
+          "args": {
+            "categories": [
+              "주민등록번호",
+              "카드번호"
+            ]
+          }
+        },
+        {
+          "check": "absent",
+          "args": {
+            "path": "masked_text",
+            "needles": [
+              "900101 - 1234567"
+            ]
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "masked_text",
+            "needles": [
+              "주민등록번호",
+              "확인."
+            ]
+          }
+        }
+      ],
+      "reference": {
+        "masked_text": "주민등록번호 [[주민등록번호1]] 확인.",
+        "items": [
+          {
+            "category": "주민등록번호",
+            "placeholder": "[[주민등록번호1]]",
+            "original": "900101 - 1234567"
+          }
+        ]
+      }
+    },
+    {
+      "id": "masking-rrn-tab",
+      "description": "탭이 구분자로 쓰인 표기도 가려야 한다 — 남으면 개인정보가 그대로 외부 LLM으로 나간다 (표 붙여넣기에서 실제로 나온다)",
+      "input": {
+        "text": "주민등록번호 900101\t-\t1234567 확인."
+      },
+      "assert": [
+        {
+          "check": "restores_input"
+        },
+        {
+          "check": "placeholder_scheme",
+          "args": {
+            "categories": [
+              "주민등록번호",
+              "카드번호"
+            ]
+          }
+        },
+        {
+          "check": "absent",
+          "args": {
+            "path": "masked_text",
+            "needles": [
+              "900101\t-\t1234567"
+            ]
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "masked_text",
+            "needles": [
+              "주민등록번호",
+              "확인."
+            ]
+          }
+        }
+      ],
+      "reference": {
+        "masked_text": "주민등록번호 [[주민등록번호1]] 확인.",
+        "items": [
+          {
+            "category": "주민등록번호",
+            "placeholder": "[[주민등록번호1]]",
+            "original": "900101\t-\t1234567"
+          }
+        ]
+      }
+    },
+    {
+      "id": "masking-rrn-foreigner",
+      "description": "성별코드 5~8(외국인등록번호)도 고유식별정보다. 가려야 한다 — 남으면 개인정보가 그대로 외부 LLM으로 나간다",
+      "input": {
+        "text": "외국인등록번호 900101-5234567 확인."
+      },
+      "assert": [
+        {
+          "check": "restores_input"
+        },
+        {
+          "check": "placeholder_scheme",
+          "args": {
+            "categories": [
+              "주민등록번호",
+              "카드번호"
+            ]
+          }
+        },
+        {
+          "check": "absent",
+          "args": {
+            "path": "masked_text",
+            "needles": [
+              "900101-5234567"
+            ]
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "masked_text",
+            "needles": [
+              "외국인등록번호",
+              "확인."
+            ]
+          }
+        }
+      ],
+      "reference": {
+        "masked_text": "외국인등록번호 [[주민등록번호1]] 확인.",
+        "items": [
+          {
+            "category": "주민등록번호",
+            "placeholder": "[[주민등록번호1]]",
+            "original": "900101-5234567"
+          }
+        ]
+      }
+    },
+    {
+      "id": "masking-rrn-unicode-digit-head",
+      "description": "앞 6자리가 아랍-인도 숫자여도 주민등록번호다. 가려야 한다 — 남으면 개인정보가 그대로 외부 LLM으로 나간다. Java 기본 `\\d`=`[0-9]`로 옮기면 여기서 조용히 누락된다",
+      "input": {
+        "text": "번호 ٩٠٠١٠١-1234567 확인."
+      },
+      "assert": [
+        {
+          "check": "restores_input"
+        },
+        {
+          "check": "placeholder_scheme",
+          "args": {
+            "categories": [
+              "주민등록번호",
+              "카드번호"
+            ]
+          }
+        },
+        {
+          "check": "absent",
+          "args": {
+            "path": "masked_text",
+            "needles": [
+              "٩٠٠١٠١-1234567"
+            ]
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "masked_text",
+            "needles": [
+              "번호",
+              "확인."
+            ]
+          }
+        }
+      ],
+      "reference": {
+        "masked_text": "번호 [[주민등록번호1]] 확인.",
+        "items": [
+          {
+            "category": "주민등록번호",
+            "placeholder": "[[주민등록번호1]]",
+            "original": "٩٠٠١٠١-1234567"
+          }
+        ]
+      }
+    },
+    {
+      "id": "masking-card-hyphen",
+      "description": "하이픈 표기 16자리 카드번호를 가려야 한다 — 남으면 개인정보가 그대로 외부 LLM으로 나간다",
+      "input": {
+        "text": "카드번호 1234-5678-9012-3456 을 입력합니다."
+      },
+      "assert": [
+        {
+          "check": "restores_input"
+        },
+        {
+          "check": "placeholder_scheme",
+          "args": {
+            "categories": [
+              "주민등록번호",
+              "카드번호"
+            ]
+          }
+        },
+        {
+          "check": "absent",
+          "args": {
+            "path": "masked_text",
+            "needles": [
+              "1234-5678-9012-3456"
+            ]
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "masked_text",
+            "needles": [
+              "카드번호",
+              "을 입력합니다."
+            ]
+          }
+        }
+      ],
+      "reference": {
+        "masked_text": "카드번호 [[카드번호1]] 을 입력합니다.",
+        "items": [
+          {
+            "category": "카드번호",
+            "placeholder": "[[카드번호1]]",
+            "original": "1234-5678-9012-3456"
+          }
+        ]
+      }
+    },
+    {
+      "id": "masking-card-spaced",
+      "description": "공백 구분 표기도 가려야 한다 — 남으면 개인정보가 그대로 외부 LLM으로 나간다",
+      "input": {
+        "text": "카드번호 1234 5678 9012 3456 입력."
+      },
+      "assert": [
+        {
+          "check": "restores_input"
+        },
+        {
+          "check": "placeholder_scheme",
+          "args": {
+            "categories": [
+              "주민등록번호",
+              "카드번호"
+            ]
+          }
+        },
+        {
+          "check": "absent",
+          "args": {
+            "path": "masked_text",
+            "needles": [
+              "1234 5678 9012 3456"
+            ]
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "masked_text",
+            "needles": [
+              "카드번호",
+              "입력."
+            ]
+          }
+        }
+      ],
+      "reference": {
+        "masked_text": "카드번호 [[카드번호1]] 입력.",
+        "items": [
+          {
+            "category": "카드번호",
+            "placeholder": "[[카드번호1]]",
+            "original": "1234 5678 9012 3456"
+          }
+        ]
+      }
+    },
+    {
+      "id": "masking-card-no-sep",
+      "description": "구분자 없는 16자리도 가려야 한다 — 남으면 개인정보가 그대로 외부 LLM으로 나간다",
+      "input": {
+        "text": "카드번호 1234567890123456 입력."
+      },
+      "assert": [
+        {
+          "check": "restores_input"
+        },
+        {
+          "check": "placeholder_scheme",
+          "args": {
+            "categories": [
+              "주민등록번호",
+              "카드번호"
+            ]
+          }
+        },
+        {
+          "check": "absent",
+          "args": {
+            "path": "masked_text",
+            "needles": [
+              "1234567890123456"
+            ]
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "masked_text",
+            "needles": [
+              "카드번호",
+              "입력."
+            ]
+          }
+        }
+      ],
+      "reference": {
+        "masked_text": "카드번호 [[카드번호1]] 입력.",
+        "items": [
+          {
+            "category": "카드번호",
+            "placeholder": "[[카드번호1]]",
+            "original": "1234567890123456"
+          }
+        ]
+      }
+    },
+    {
+      "id": "masking-card-unicode-digit-arabic",
+      "description": "아랍-인도 숫자가 섞인 카드번호도 가려야 한다 — 남으면 개인정보가 그대로 외부 LLM으로 나간다",
+      "input": {
+        "text": "카드 ١٢٣٤-5678-9012-3456 입력."
+      },
+      "assert": [
+        {
+          "check": "restores_input"
+        },
+        {
+          "check": "placeholder_scheme",
+          "args": {
+            "categories": [
+              "주민등록번호",
+              "카드번호"
+            ]
+          }
+        },
+        {
+          "check": "absent",
+          "args": {
+            "path": "masked_text",
+            "needles": [
+              "١٢٣٤-5678-9012-3456"
+            ]
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "masked_text",
+            "needles": [
+              "카드",
+              "입력."
+            ]
+          }
+        }
+      ],
+      "reference": {
+        "masked_text": "카드 [[카드번호1]] 입력.",
+        "items": [
+          {
+            "category": "카드번호",
+            "placeholder": "[[카드번호1]]",
+            "original": "١٢٣٤-5678-9012-3456"
+          }
+        ]
+      }
+    },
+    {
+      "id": "masking-card-unicode-digit-fullwidth",
+      "description": "전각 숫자로 적은 카드번호도 가려야 한다 — 남으면 개인정보가 그대로 외부 LLM으로 나간다",
+      "input": {
+        "text": "카드 １２３４-５６７８-９０１２-３４５６ 입력."
+      },
+      "assert": [
+        {
+          "check": "restores_input"
+        },
+        {
+          "check": "placeholder_scheme",
+          "args": {
+            "categories": [
+              "주민등록번호",
+              "카드번호"
+            ]
+          }
+        },
+        {
+          "check": "absent",
+          "args": {
+            "path": "masked_text",
+            "needles": [
+              "１２３４-５６７８-９０１２-３４５６"
+            ]
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "masked_text",
+            "needles": [
+              "카드",
+              "입력."
+            ]
+          }
+        }
+      ],
+      "reference": {
+        "masked_text": "카드 [[카드번호1]] 입력.",
+        "items": [
+          {
+            "category": "카드번호",
+            "placeholder": "[[카드번호1]]",
+            "original": "１２３４-５６７８-９０１２-３４５６"
+          }
+        ]
+      }
+    },
+    {
+      "id": "masking-multi-same-category",
+      "description": "같은 범주 2건은 등장 순서로 1·2번을 받는다. 전역 카운터 구현이 여기서 죽고, 번호가 어긋나면 복원이 잘못된 원문을 꽂는다",
+      "input": {
+        "text": "900101-1234567 와 850505-2345678 두 건."
+      },
+      "assert": [
+        {
+          "check": "restores_input"
+        },
+        {
+          "check": "placeholder_scheme",
+          "args": {
+            "categories": [
+              "주민등록번호",
+              "카드번호"
+            ]
+          }
+        },
+        {
+          "check": "absent",
+          "args": {
+            "path": "masked_text",
+            "needles": [
+              "900101-1234567",
+              "850505-2345678"
+            ]
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "masked_text",
+            "needles": [
+              "와",
+              "두 건."
+            ]
+          }
+        }
+      ],
+      "reference": {
+        "masked_text": "[[주민등록번호1]] 와 [[주민등록번호2]] 두 건.",
+        "items": [
+          {
+            "category": "주민등록번호",
+            "placeholder": "[[주민등록번호1]]",
+            "original": "900101-1234567"
+          },
+          {
+            "category": "주민등록번호",
+            "placeholder": "[[주민등록번호2]]",
+            "original": "850505-2345678"
+          }
+        ]
+      }
+    },
+    {
+      "id": "masking-multi-category",
+      "description": "서로 다른 범주는 각각 1번부터 센다. `items` 순서는 텍스트 등장 순서다",
+      "input": {
+        "text": "주민 900101-1234567 카드 1234-5678-9012-3456 입니다."
+      },
+      "assert": [
+        {
+          "check": "restores_input"
+        },
+        {
+          "check": "placeholder_scheme",
+          "args": {
+            "categories": [
+              "주민등록번호",
+              "카드번호"
+            ]
+          }
+        },
+        {
+          "check": "absent",
+          "args": {
+            "path": "masked_text",
+            "needles": [
+              "900101-1234567",
+              "1234-5678-9012-3456"
+            ]
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "masked_text",
+            "needles": [
+              "주민",
+              "카드",
+              "입니다."
+            ]
+          }
+        }
+      ],
+      "reference": {
+        "masked_text": "주민 [[주민등록번호1]] 카드 [[카드번호1]] 입니다.",
+        "items": [
+          {
+            "category": "주민등록번호",
+            "placeholder": "[[주민등록번호1]]",
+            "original": "900101-1234567"
+          },
+          {
+            "category": "카드번호",
+            "placeholder": "[[카드번호1]]",
+            "original": "1234-5678-9012-3456"
+          }
+        ]
+      }
+    },
+    {
+      "id": "masking-newline",
+      "description": "개행과 마스킹 대상이 아닌 줄은 그대로 남는다. 이름·주소는 가리면 안 된다 — 범위 밖이거나 개인정보가 아니다. 과잉 마스킹은 팩트를 지운다",
+      "input": {
+        "text": "이름: 홍길동\n주민: 900101-1234567\n주소: 서울시 어딘가 1-2"
+      },
+      "assert": [
+        {
+          "check": "restores_input"
+        },
+        {
+          "check": "placeholder_scheme",
+          "args": {
+            "categories": [
+              "주민등록번호",
+              "카드번호"
+            ]
+          }
+        },
+        {
+          "check": "absent",
+          "args": {
+            "path": "masked_text",
+            "needles": [
+              "900101-1234567"
+            ]
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "masked_text",
+            "needles": [
+              "이름: 홍길동",
+              "주소: 서울시 어딘가 1-2"
+            ]
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "masked_text",
+            "needles": [
+              "이름: 홍길동\n주민:",
+              "주소: 서울시 어딘가 1-2"
+            ]
+          }
+        }
+      ],
+      "reference": {
+        "masked_text": "이름: 홍길동\n주민: [[주민등록번호1]]\n주소: 서울시 어딘가 1-2",
+        "items": [
+          {
+            "category": "주민등록번호",
+            "placeholder": "[[주민등록번호1]]",
+            "original": "900101-1234567"
+          }
+        ]
+      }
+    },
+    {
+      "id": "masking-keeps-date",
+      "description": "날짜는 개인정보가 아니다. 가리면 안 된다 — 범위 밖이거나 개인정보가 아니다. 과잉 마스킹은 팩트를 지운다 — 지우면 안내문의 핵심 팩트가 사라진다",
+      "input": {
+        "text": "신청 기간은 2026-01-01 부터입니다."
+      },
+      "assert": [
+        {
+          "check": "restores_input"
+        },
+        {
+          "check": "placeholder_scheme",
+          "args": {
+            "categories": [
+              "주민등록번호",
+              "카드번호"
+            ]
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "masked_text",
+            "needles": [
+              "2026-01-01"
+            ]
+          }
+        }
+      ],
+      "reference": {
+        "masked_text": "신청 기간은 2026-01-01 부터입니다.",
+        "items": []
+      }
+    },
+    {
+      "id": "masking-keeps-long-digits",
+      "description": "12자리·14자리 숫자열은 주민번호도 카드번호도 아니다. 가리면 안 된다 — 범위 밖이거나 개인정보가 아니다. 과잉 마스킹은 팩트를 지운다",
+      "input": {
+        "text": "접수번호 123456789012 와 관리번호 12345678901234 를 적으세요."
+      },
+      "assert": [
+        {
+          "check": "restores_input"
+        },
+        {
+          "check": "placeholder_scheme",
+          "args": {
+            "categories": [
+              "주민등록번호",
+              "카드번호"
+            ]
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "masked_text",
+            "needles": [
+              "123456789012",
+              "12345678901234"
+            ]
+          }
+        }
+      ],
+      "reference": {
+        "masked_text": "접수번호 123456789012 와 관리번호 12345678901234 를 적으세요.",
+        "items": []
+      }
+    },
+    {
+      "id": "masking-scope-out-phone",
+      "description": "전화번호는 마스킹 범주에서 뺐다(사용자 결정 2026-08-12). 가리면 안 된다 — 범위 밖이거나 개인정보가 아니다. 과잉 마스킹은 팩트를 지운다. 가려지면 정책 위반이다 — 마스킹 없이 LLM으로 나가는 것이 감수한 대가다",
+      "input": {
+        "text": "연락처 010-1234-5678 로 전화 주세요."
+      },
+      "assert": [
+        {
+          "check": "restores_input"
+        },
+        {
+          "check": "placeholder_scheme",
+          "args": {
+            "categories": [
+              "주민등록번호",
+              "카드번호"
+            ]
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "masked_text",
+            "needles": [
+              "010-1234-5678"
+            ]
+          }
+        }
+      ],
+      "reference": {
+        "masked_text": "연락처 010-1234-5678 로 전화 주세요.",
+        "items": []
+      }
+    },
+    {
+      "id": "masking-scope-out-email",
+      "description": "이메일은 마스킹 범주에서 뺐다. 가리면 안 된다 — 범위 밖이거나 개인정보가 아니다. 과잉 마스킹은 팩트를 지운다. 가려지면 정책 위반이다",
+      "input": {
+        "text": "문의는 kim@example.com 으로 주세요."
+      },
+      "assert": [
+        {
+          "check": "restores_input"
+        },
+        {
+          "check": "placeholder_scheme",
+          "args": {
+            "categories": [
+              "주민등록번호",
+              "카드번호"
+            ]
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "masked_text",
+            "needles": [
+              "kim@example.com"
+            ]
+          }
+        }
+      ],
+      "reference": {
+        "masked_text": "문의는 kim@example.com 으로 주세요.",
+        "items": []
+      }
+    },
+    {
+      "id": "masking-scope-out-account",
+      "description": "계좌번호는 마스킹 범주에서 뺐다. 가리면 안 된다 — 범위 밖이거나 개인정보가 아니다. 과잉 마스킹은 팩트를 지운다. 가려지면 정책 위반이다",
+      "input": {
+        "text": "계좌 123-456-789012 로 입금하세요."
+      },
+      "assert": [
+        {
+          "check": "restores_input"
+        },
+        {
+          "check": "placeholder_scheme",
+          "args": {
+            "categories": [
+              "주민등록번호",
+              "카드번호"
+            ]
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "masked_text",
+            "needles": [
+              "123-456-789012"
+            ]
+          }
+        }
+      ],
+      "reference": {
+        "masked_text": "계좌 123-456-789012 로 입금하세요.",
+        "items": []
+      }
+    },
+    {
+      "id": "masking-known-gap-rrn-fullwidth",
+      "description": "전각 숫자로만 적은 주민등록번호는 **현재 Python이 가리지 못한다**(성별코드 `[1-8]`이 ASCII 리터럴이라 매치가 끊긴다). 요구사항으로 보면 가려야 맞지만, 지금 그것을 단언하면 Kotlin에 Python보다 넓은 구현을 요구하게 되므로 **어느 방향도 단언하지 않는다**. 개선하면 참고 갈림 원장에 찍혀 드러난다",
+      "input": {
+        "text": "번호 ９００１０１-１２３４５６７ 확인."
+      },
+      "assert": [
+        {
+          "check": "restores_input"
+        },
+        {
+          "check": "placeholder_scheme",
+          "args": {
+            "categories": [
+              "주민등록번호",
+              "카드번호"
+            ]
+          }
+        }
+      ],
+      "known_gap": "전각 표기 주민등록번호 미검출 (개선 후보 — 판정 대상 아님)",
+      "reference": {
+        "masked_text": "번호 ９００１０１-１２３４５６７ 확인.",
+        "items": []
+      }
+    },
+    {
+      "id": "masking-known-gap-rrn-control-char",
+      "description": "숫자 사이에 NUL(U+0000)이 끼면 현재 Python은 가리지 못한다 — 마스킹 앞에 `strip_control_chars`가 없기 때문이다(`app/services/conversion.py`). 회피 벡터로 볼 수도 있고 편집기 흔적으로 볼 수도 있어 **판정을 미룬다**. 판단은 `privacy-gate` 소관이고, 결론이 나면 단언을 추가한다",
+      "input": {
+        "text": "번호 900101\u0000-1234567-를 확인."
+      },
+      "assert": [
+        {
+          "check": "restores_input"
+        },
+        {
+          "check": "placeholder_scheme",
+          "args": {
+            "categories": [
+              "주민등록번호",
+              "카드번호"
+            ]
+          }
+        }
+      ],
+      "known_gap": "제어문자 삽입 표기 미검출 (보안 판단 대기 — 판정 대상 아님)",
+      "reference": {
+        "masked_text": "번호 900101\u0000-1234567-를 확인.",
+        "items": []
+      }
+    }
+  ],
+  "generated_at": "2026-08-12T05:42:34Z"
+}
