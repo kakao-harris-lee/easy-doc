@@ -4,6 +4,15 @@ on:
   push:
     branches: [main]
   pull_request:
+  # llm-lane 잡을 손으로 강제 실행하기 위한 트리거. 조건부 게이트는 반드시 손으로
+  # 돌릴 길이 있어야 한다 — 조건 계산이 틀렸을 때 확인할 방법이 없으면 그 게이트는
+  # 검증 불가능하다.
+  workflow_dispatch:
+    inputs:
+      run_llm_lane:
+        description: "변경 경로와 무관하게 -m llm 레인을 강제 실행한다"
+        type: boolean
+        default: true
 
 jobs:
   quality:
@@ -371,3 +380,200 @@ jobs:
               exit 1
               ;;
           esac
+
+  # ── LLM 레인 (실제 API 호출 — 관련 변경일 때만 돈다) ──────────────────────
+  #
+  # 배경: `-m llm` 마커가 붙은 테스트는 실제 Anthropic/OpenAI API 를 호출한다.
+  # 그런데 pyproject.toml 의 `addopts = "-m 'not llm'"` 때문에 기본 스위트에서 빠지고,
+  # 그것을 돌리는 잡이 없어서 **CI 도달이 0** 이었다. 품질 합격선의 차단축 3개가
+  # 전부 이 마커에 있는데 한 번도 안 돈 채 "합격선 확정" 이 보고된 적이 있다
+  # (`kotlin-migration` 스킬 「선언한 범위와 실제 도달을 대조한다」 근거 6번).
+  #
+  # 그렇다고 매 커밋마다 돌리면 56건 골든 코퍼스를 통째로 변환하는 비용이 매번 나간다.
+  # 그래서 **관련 변경일 때만** 돈다. 무엇이 '관련' 인지의 선언은
+  # `.github/llm-lane-paths.txt` 한 곳뿐이고, 그 선언이 실제 도달보다 좁지 않은지는
+  # `tests/test_llm_lane_scope.py` 가 매번 폐포를 다시 계산해 검사한다.
+  #
+  # 서드파티 액션(dorny/paths-filter 등)을 쓰지 않는다 — 공공기관 문서를 다루는
+  # 저장소라 공급망을 늘리지 않는다. git 으로 직접 구한다.
+  #
+  # ## 조용한 초록을 만들지 않는다
+  # 건너뛸 때 잡은 초록으로 끝나지만, 그 초록이 "레인이 통과했다" 로 읽히면 근거
+  # 6번의 재발이다. 그래서 건너뛴 실행은 스텝 요약(job summary)과 로그에 **건너뛰었다는
+  # 사실과 그 이유**를 반드시 남긴다.
+  #
+  # ## 이 잡이 막지 못하는 것
+  # 필수 체크로 걸어도 조건 분기가 초록을 내므로, 이 잡의 성공은 "레인이 통과했다"가
+  # 아니라 "레인이 필요했다면 통과했다" 이다. 실제로 무엇이 돌았는지는 요약을 읽어야 한다.
+  llm-lane:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    # 워크플로 전체가 아니라 이 잡에만 건다 — quality·frontend·kotlin 의 실행 정책을
+    # 건드리지 않기 위해서다. 연속 푸시로 API 호출이 겹쳐 쌓이는 것만 막는다.
+    concurrency:
+      group: llm-lane-${{ github.event.pull_request.number || github.ref }}
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # PR base 와 push 이전 커밋을 diff 하려면 히스토리가 필요하다.
+          # 얕게 받으면 merge-base 를 못 찾아 조건 계산이 통째로 실패한다.
+          fetch-depth: 0
+
+      # 경로 목록의 완전성 검사. **조건 없이 매번 돈다** — 판정 규칙 자신은 조건부일
+      # 수 없다. 여기서 실패하면 "목록이 레인의 실제 도달보다 좁다" 는 뜻이고,
+      # 그 상태의 초록은 아무것도 보장하지 않는다.
+      #
+      # 이 스텝을 경로로 명시 호출하는 데는 또 다른 이유가 있다. 검사 파일 안에 적은
+      # 자기 단언은 그 파일과 함께 사라지지만, 이 스텝은 모듈을 import 하므로
+      # 파일을 지우면 `No module named tests.test_llm_lane_scope` 로 **잡이 깨진다**.
+      # 장치 밖에서 깨지는 지점을 그렇게 만든다(스킬 규칙 5·6).
+      #
+      # uv 없이 러너의 맨 python3 로 돈다 — 이 모듈은 표준 라이브러리만 쓴다.
+      - name: 경로 목록 완전성 검사 (조건 없이 매번 — API 안 씀)
+        run: python3 -m tests.test_llm_lane_scope --self-check
+
+      - name: 변경 범위 판정 (.github/llm-lane-paths.txt 대조)
+        id: scope
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+          FORCE_INPUT: ${{ github.event.inputs.run_llm_lane }}
+        run: |
+          set -euo pipefail
+          work=$(mktemp -d)
+          changed="$work/changed.txt"
+          reason=""
+          force=no
+
+          # 수동 실행은 언제나 강제. 조건 계산을 우회할 손잡이가 반드시 하나 있어야 한다.
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            if [ "$FORCE_INPUT" != "false" ]; then
+              force=yes
+              reason="workflow_dispatch 수동 강제 실행"
+            fi
+          fi
+
+          if [ "$force" = "no" ]; then
+            base=""
+            if [ "$EVENT_NAME" = "pull_request" ]; then
+              base="$PR_BASE_SHA"
+            else
+              base="$PUSH_BEFORE"
+            fi
+
+            # 판정할 수 없는 상태(첫 푸시의 0-sha, 강제 푸시로 사라진 커밋 등)에서는
+            # **건너뛰지 않고 돌린다.** '알 수 없음' 은 '무관' 이 아니다. 여기서 조용히
+            # 건너뛰면 그것이 정확히 근거 6번의 형태(도달 0 인데 초록)가 된다.
+            if [ -z "$base" ] || [ "$base" = "0000000000000000000000000000000000000000" ] \
+               || ! git cat-file -e "${base}^{commit}" 2>/dev/null; then
+              force=yes
+              reason="비교 기준 커밋을 찾을 수 없다(base='${base:-없음}') — 알 수 없음은 무관이 아니므로 실행한다"
+            else
+              # --no-renames: 이름만 바꾼 변경도 양쪽 경로가 다 나오게 한다.
+              # 한쪽만 나오면 레인 파일을 목록 밖으로 옮기는 변경이 안 걸린다.
+              merge_base=$(git merge-base "$base" HEAD 2>/dev/null || echo "$base")
+              git diff --name-only --no-renames "$merge_base" HEAD > "$changed"
+              echo "변경 파일 $(wc -l < "$changed" | tr -d '[:space:]')건 (기준 ${merge_base})"
+            fi
+          fi
+
+          if [ "$force" = "yes" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            echo "reason=$reason" >> "$GITHUB_OUTPUT"
+            {
+              echo "### LLM 레인: **실행**"
+              echo ""
+              echo "사유: $reason"
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          # 매칭 규칙은 CI 쪽에 복제하지 않는다 — 완전성 검사와 **같은 판정기**를 부른다.
+          # 규칙이 두 곳에 있으면 그 복사본이 갈리고, 갈린 순간 검사는 CI 가 실제로
+          # 쓰는 규칙이 아니라 자기 규칙을 검사하게 된다.
+          matched="$work/matched.txt"
+          python3 -m tests.test_llm_lane_scope --match "$changed" > "$matched"
+          count=$(wc -l < "$matched" | tr -d '[:space:]')
+
+          if [ "$count" -gt 0 ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            echo "reason=골든 경로 ${count}건 변경" >> "$GITHUB_OUTPUT"
+            {
+              echo "### LLM 레인: **실행**"
+              echo ""
+              echo "\`.github/llm-lane-paths.txt\` 에 걸린 변경 ${count}건:"
+              echo ""
+              sed 's/^/- `/; s/$/`/' "$matched"
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "레인을 돌린다 — 걸린 경로:"
+            cat "$matched"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "reason=골든 경로 무변경" >> "$GITHUB_OUTPUT"
+          fi
+
+      # 건너뛴 실행이 통과처럼 보이면 안 된다. 초록은 남지만 그 초록이 무엇을
+      # 뜻하는지는 로그와 요약에 글자로 남긴다.
+      - name: 건너뜀 사유 기록 (조용한 초록 방지)
+        if: steps.scope.outputs.run != 'true'
+        run: |
+          set -euo pipefail
+          echo "::notice::이 커밋은 골든 경로를 건드리지 않아 -m llm API 레인을 돌리지 않았다."
+          echo "::warning::이 잡의 초록은 '레인이 통과했다'가 아니라 '레인을 돌릴 필요가 없었다'는 뜻이다."
+          {
+            echo "### LLM 레인: **건너뜀**"
+            echo ""
+            echo "이 커밋은 \`.github/llm-lane-paths.txt\` 의 어떤 경로도 건드리지 않았다."
+            echo "실제 API 호출은 **한 건도 하지 않았다.**"
+            echo ""
+            echo "> 이 초록은 품질 판정이 아니다 — 판정을 **하지 않았다**는 기록이다."
+            echo "> 손으로 돌리려면: Actions → CI → Run workflow (workflow_dispatch)."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: astral-sh/setup-uv@v5
+        if: steps.scope.outputs.run == 'true'
+        with:
+          python-version: "3.12"
+          enable-cache: true
+
+      - run: uv sync --locked
+        if: steps.scope.outputs.run == 'true'
+
+      # 실제 호출 지점. 키는 시크릿에서만 오고 **값을 찍지 않는다** — 로그에 키가
+      # 남으면 회수 외에는 되돌릴 방법이 없다.
+      #
+      # GOLDEN_RECORD_BASELINE 은 **세우지 않는다.** 기준선 기록은 판정이 아니라
+      # 기준 자체를 바꾸는 일이라 CI 가 할 일이 아니다. 세우면 CI 가 자기 합격선을
+      # 매번 새로 써서 회귀가 영원히 안 잡힌다. `tests/golden/baseline.json` 이
+      # 저장소에 없다는 사실도 그래서 유지된다.
+      - name: -m llm 레인 실행 (실제 API 호출)
+        if: steps.scope.outputs.run == 'true'
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          # 스텝 출력을 `run:` 본문에 `${{ }}` 로 직접 끼워 넣지 않는다 — 그 자리는
+          # 셸 소스로 치환돼 값이 곧 코드가 된다. env 로 넘기면 값으로만 남는다.
+          LANE_REASON: ${{ steps.scope.outputs.reason }}
+        run: |
+          set -euo pipefail
+          if [ -z "${ANTHROPIC_API_KEY:-}" ]; then
+            echo "::error::ANTHROPIC_API_KEY 시크릿이 비어 있다 — 자격 증명 없는 실행은 0건 측정이고 0건은 통과가 아니다."
+            exit 1
+          fi
+          # 키 값 자체는 절대 찍지 않는다. 길이조차 찍지 않는다 — 회수 말고는 되돌릴 방법이 없다.
+          echo "레인 실행 사유: $LANE_REASON"
+          uv run pytest -m llm
+
+      - name: 실행 결과 요약
+        if: steps.scope.outputs.run == 'true'
+        env:
+          LANE_REASON: ${{ steps.scope.outputs.reason }}
+        run: |
+          set -euo pipefail
+          {
+            echo ""
+            echo "레인 실행 사유: $LANE_REASON"
+          } >> "$GITHUB_STEP_SUMMARY"

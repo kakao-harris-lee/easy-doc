@@ -1,0 +1,81 @@
+# `-m llm` 레인(실제 API 호출)을 켜는 경로 — **이 목록이 유일한 정본이다.**
+#
+# 이 파일을 읽는 곳은 둘뿐이고, 둘 다 같은 판정기를 쓴다:
+#   - `.github/workflows/ci.yml` 의 `llm-lane` 잡  → `python3 -m tests.test_llm_lane_scope --match`
+#   - `tests/test_llm_lane_scope.py` 의 완전성 검사 → 같은 모듈의 `--self-check`
+# 목록을 두 곳에 적지 않는다. 복사본이 갈리는 것이 이 하네스가 이미 겪은 실패다
+# (리뷰 파일명·fixture 도메인명 드리프트).
+#
+# ## 문법
+#   빈 줄과 `#` 뒤는 무시. 저장소 루트 기준 상대 경로.
+#   `**` = 0개 이상 세그먼트, `*` = 한 세그먼트 안, `?` = 한 글자.
+#
+# ## 이 목록이 좁으면 무슨 일이 나는가
+#   목록에 없는 파일만 고친 커밋에서는 레인이 **안 돌고** CI 는 초록이다.
+#   그래서 `tests/test_llm_lane_scope.py` 가 매 CI 마다 `-m llm` 대상 모듈의
+#   1st-party import 이행 폐포를 다시 계산해, 그 전부가 아래에 덮이는지 단언한다.
+#   안 덮이면 파일 이름을 지목하며 실패한다 — 좁아지는 것은 조용할 수 없다.
+#
+# ## 이 목록이 넓으면 무슨 일이 나는가
+#   무관한 커밋에서 API 비용이 나간다. 그래서 `app/` 은 디렉터리 글롭을 쓰지 않고
+#   폐포에 실제로 든 파일만 적는다 (`app/easyread/export.py`·`hwpx.py` 처럼 레인이
+#   import 하지 않는 이웃 파일까지 끌려오지 않게).
+#
+# ## 실측 방법 (재현)
+#   python3 -c "import sys; sys.path.insert(0,'.'); \
+#     from tests.test_llm_lane_scope import lane_closure; print('\n'.join(lane_closure()))"
+#   기준 시점 2026-08-13: 대상 모듈 2개(tests/golden/test_golden_eval.py,
+#   tests/llm/test_providers.py), 폐포 28개. **절대 개수는 커밋마다 움직이므로
+#   시점 없이 인용하지 마라** — 판정은 언제나 위 명령을 다시 돌려서 한다.
+
+# ── app/ — 레인이 실제로 import 하는 파일 (폐포 실측) ────────────────────
+app/__init__.py
+app/config.py
+app/db.py
+app/easyread/__init__.py
+app/easyread/goldenset.py
+app/easyread/judge.py
+app/easyread/postprocess.py
+app/easyread/prompts.py
+app/easyread/style_rules.py
+app/exceptions.py
+app/llm/__init__.py
+app/llm/anthropic_provider.py
+app/llm/factory.py
+# fake.py 는 `-m llm` 로 선택된 5건의 폐포에는 없다. 그런데 pytest 는 `-m llm` 을
+# 줘도 **전체 테스트 모듈을 일단 import 한 뒤 deselect** 하므로, 골든 디렉터리의
+# 비-llm 테스트가 import 하는 이 파일이 깨지면 레인 자체가 못 돈다. 넣는다.
+app/llm/fake.py
+app/llm/openai_provider.py
+app/llm/provider.py
+app/privacy/__init__.py
+app/privacy/masking.py
+app/services/__init__.py
+app/services/conversion.py
+
+# ── tests/ ──────────────────────────────────────────────────────────────
+# conftest 는 import 문에 안 적히지만 pytest 가 로드해 픽스처·수집 훅을 바꾼다.
+tests/__init__.py
+tests/conftest.py
+# 골든 코퍼스(documents/*.json)와 채점·기준선 코드가 전부 여기 산다. 문서 한 건이
+# 바뀌면 통과율이 바뀌므로 디렉터리 전체가 레인 입력이다.
+tests/golden/**
+tests/llm/test_providers.py
+
+# ── 레인의 실행 조건 ────────────────────────────────────────────────────
+# 마커 정의·addopts·의존 선언. 여기가 바뀌면 무엇이 도는지가 바뀐다.
+pyproject.toml
+# 벤더 SDK 의 실제 고정 버전. anthropic/openai 가 올라가면 요청·응답 스키마가
+# 바뀔 수 있고 그건 레인의 판정을 바꾼다.
+uv.lock
+
+# ── 게이트 자신 (규칙 6: 판정하는 장치일수록 자기를 대상에 넣는다) ──────
+# 이 둘을 고치는 커밋에서는 레인이 실제로 돌아야, 바뀐 판정 규칙이 한 번도
+# 돌지 않은 채 초록으로 남지 않는다.
+.github/llm-lane-paths.txt
+.github/workflows/ci.yml
+
+# 일부러 넣지 않은 것:
+#   tests/test_llm_lane_scope.py — 판정기이지 레인 입력이 아니다. 그리고 llm-lane
+#     잡의 `--self-check` 스텝이 **조건 없이** 매번 돌므로 트리거가 필요 없다.
+#   migrations/** — 레인은 DB 를 쓰지 않는다(`-m llm` 선택분에 `db` 마커가 없다).
