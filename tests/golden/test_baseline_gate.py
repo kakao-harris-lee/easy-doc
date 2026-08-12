@@ -22,7 +22,6 @@ from tests.golden.baseline import (
     Baseline,
     Fingerprint,
     GroupMeasurement,
-    JudgeObservation,
     Measurement,
     RunContext,
     Verdict,
@@ -65,10 +64,8 @@ def _measurement(overall: tuple[int, int], synthetic: tuple[int, int]) -> Measur
     )
 
 
-def _baseline(
-    fingerprint: Fingerprint, measurement: Measurement, judge: JudgeObservation | None = None
-) -> Baseline:
-    return Baseline.model_validate(baseline_body(fingerprint, measurement, _context(), judge))
+def _baseline(fingerprint: Fingerprint, measurement: Measurement) -> Baseline:
+    return Baseline.model_validate(baseline_body(fingerprint, measurement, _context()))
 
 
 def _document(
@@ -279,9 +276,7 @@ def test_첫_기록은_지적이_0건이어도_변경으로_센다(tmp_path: Pat
     내용이 없음'이다.
     """
     path = tmp_path / "baseline.json"
-    body = baseline_body(
-        Fingerprint.of(DOCUMENTS), _measurement((36, 56), (17, 20)), _context(), None
-    )
+    body = baseline_body(Fingerprint.of(DOCUMENTS), _measurement((36, 56), (17, 20)), _context())
     assert not path.exists()
     changes = baseline_changes(body, path)
     assert changes, "파일 부재를 변경 없음으로 처리하면 첫 기록이 조용히 통과한다"
@@ -295,9 +290,7 @@ def test_같은_내용을_다시_기록하면_변경이_없다(tmp_path: Path) -
     말할 수 있어야 하기 때문이기도 하다.
     """
     path = tmp_path / "baseline.json"
-    body = baseline_body(
-        Fingerprint.of(DOCUMENTS), _measurement((36, 56), (17, 20)), _context(), None
-    )
+    body = baseline_body(Fingerprint.of(DOCUMENTS), _measurement((36, 56), (17, 20)), _context())
     write_baseline(body, path)
     assert baseline_changes(body, path) == []
 
@@ -307,9 +300,7 @@ def test_기록_시각은_변경_판정에_들어가지_않는다(tmp_path: Path
     항상 차단되고, 그러면 기록 실행이 영원히 아무것도 닫지 못한다.
     """
     path = tmp_path / "baseline.json"
-    body = baseline_body(
-        Fingerprint.of(DOCUMENTS), _measurement((36, 56), (17, 20)), _context(), None
-    )
+    body = baseline_body(Fingerprint.of(DOCUMENTS), _measurement((36, 56), (17, 20)), _context())
     write_baseline(body, path)
     first = json.loads(path.read_text(encoding="utf-8"))["recorded_at"]
     # 시각만 다른 파일을 만든다.
@@ -331,25 +322,30 @@ def first_payload(path: Path) -> dict[str, Any]:
 def test_수치가_달라지면_변경으로_센다(tmp_path: Path) -> None:
     path = tmp_path / "baseline.json"
     fingerprint = Fingerprint.of(DOCUMENTS)
-    write_baseline(
-        baseline_body(fingerprint, _measurement((36, 56), (17, 20)), _context(), None), path
-    )
-    changed = baseline_body(fingerprint, _measurement((38, 56), (18, 20)), _context(), None)
+    write_baseline(baseline_body(fingerprint, _measurement((36, 56), (17, 20)), _context()), path)
+    changed = baseline_body(fingerprint, _measurement((38, 56), (18, 20)), _context())
     assert any("measurement" in line for line in baseline_changes(changed, path))
 
 
-def test_judge_관측이_붙거나_빠지는_것도_변경이다(tmp_path: Path) -> None:
-    """judge는 비교하지 않지만 기록은 한다 — 사라지는 것이 diff에 보여야 한다."""
+def test_judge_관측은_기준선에_실리지_않는다(tmp_path: Path) -> None:
+    """**스키마 축소를 고정한다**(2026-08-13). judge 를 다시 넣으면 이 테스트가 깨진다.
+
+    judge 는 비차단축이라 애초에 하한선의 구성요소가 아니다 — 채점 모델을 고정할 수단이
+    없어 우리 코드를 고치지 않아도 값이 움직인다(`Baseline` docstring). 예전에는 기준선에
+    실려 "이 수치가 어느 실행의 것인가"라는 출처 문제를 만들었고 그 자리에 검사가 여섯 번
+    얹혔다. 관측 자체는 실행 리포트에 그대로 남는다 — 하한선에서 내렸을 뿐이다.
+    """
     path = tmp_path / "baseline.json"
     fingerprint = Fingerprint.of(DOCUMENTS)
-    observation = JudgeObservation(
-        scored=56, documents=56, fidelity_mean=4.66, readability_mean=4.93, low_fidelity_ids=["020"]
-    )
-    write_baseline(
-        baseline_body(fingerprint, _measurement((36, 56), (17, 20)), _context(), observation), path
-    )
-    without = baseline_body(fingerprint, _measurement((36, 56), (17, 20)), _context(), None)
-    assert any("judge_observed" in line for line in baseline_changes(without, path))
+    body = baseline_body(fingerprint, _measurement((36, 56), (17, 20)), _context())
+    assert "judge_observed" not in body
+    # 필드 자체가 없다 — 인자를 지웠을 뿐 스키마에 남겨 두면 되살리기가 한 줄이다.
+    assert "judge_observed" not in Baseline.model_fields
+    write_baseline(body, path)
+    written = stored_body(path)
+    assert written is not None
+    assert "judge_observed" not in written, "디스크에 쓰인 기준선에 judge 자리가 남아 있다"
+    assert baseline_changes(body, path) == []
 
 
 def test_깨진_기준선은_통과가_아니라_기준선_없음이다(tmp_path: Path) -> None:
@@ -370,7 +366,7 @@ def test_기록한_기준선을_그대로_다시_읽을_수_있다(tmp_path: Pat
     path = tmp_path / "baseline.json"
     fingerprint = Fingerprint.of(DOCUMENTS)
     measurement = _measurement((36, 56), (17, 20))
-    write_baseline(baseline_body(fingerprint, measurement, _context(), None), path)
+    write_baseline(baseline_body(fingerprint, measurement, _context()), path)
     loaded = load_baseline(path)
     assert loaded is not None
     assert loaded.fingerprint == fingerprint

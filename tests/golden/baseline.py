@@ -443,14 +443,33 @@ class RunContext(BaseModel):
 
 
 class Baseline(BaseModel):
-    """기준선 파일의 내용."""
+    """기준선 파일의 내용.
+
+    **judge 관측은 여기 없다**(2026-08-13 제거). judge 는 비차단축이라(2026-08-12 결정)
+    애초에 **하한선의 구성요소가 아니다** — 채점 모델을 고정할 수단이 없어
+    (`GOLDEN_JUDGE_PROVIDER`는 벤더만 고르고 모델은 `settings.llm_model`을 따른다)
+    우리 코드를 한 줄도 고치지 않아도 모델이 바뀌면 값이 움직인다. 하한선은 **우리가
+    고정할 수 있는 것**으로만 서야 한다.
+
+    하한선에 있을 이유가 없는 값을 넣은 탓에 "이 judge 수치가 어느 실행에서 나왔는가"라는
+    출처 문제가 생겼고, 그 자리에 검사를 **여섯 번** 얹었다. 그릇(리포트)은 구조로 묶을 수
+    있어도 **나중에 대입되는 내용물(`report.judge`)의 출처는 구조로 묶이지 않는다** —
+    리포트는 세워진 뒤에 judge 테스트가 관측을 대입하므로, 세울 때 건 결속이 나중에 들어온
+    값까지 보증하지 못한다. 그래서 일곱 번째 검사를 얹지 않고 **값 자체를 뺐다.**
+
+    **정보는 잃지 않는다** — judge 관측은 실행 리포트(`tests/golden/report.py`)에 그대로
+    남는다. 평균·커버리지·저충실성 지목이 매 실행 렌더에 찍히고 경고로도 올라간다.
+    사라진 것은 *커밋되는 하한선 파일의 한 필드*이지 관측 자체가 아니다.
+
+    **여기에 judge 를 다시 넣지 마라.** 넣는 순간 출처 문제가 되살아나고, 우리가 고정할 수
+    없는 값이 커밋되는 하한선 파일의 무결성을 좌우하게 된다.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
     fingerprint: Fingerprint
     measurement: Measurement
     context: RunContext
-    judge_observed: JudgeObservation | None = None
     note: str = ""
 
 
@@ -465,19 +484,19 @@ def baseline_body(
     fingerprint: Fingerprint,
     measurement: Measurement,
     context: RunContext,
-    judge: JudgeObservation | None,
 ) -> dict[str, Any]:
     """기준선 파일의 **내용**. 기록 시각은 여기 없다.
 
     이 함수가 따로 있는 이유는 "기준선이 바뀌었는가"를 **쓸 내용과 이전 내용의 차이**로
     재기 위해서다(모듈 docstring 2번). 지적 건수 같은 대리 지표를 쓰면 "파일을 새로
     만들고도 통과"가 성립한다.
+
+    judge 인자는 2026-08-13에 없앴다 — 이유는 `Baseline` docstring에 있다.
     """
     model = Baseline(
         fingerprint=fingerprint,
         measurement=measurement,
         context=context,
-        judge_observed=judge,
         note=BASELINE_NOTE,
     )
     body: dict[str, Any] = json.loads(model.model_dump_json())
