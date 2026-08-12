@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from pydantic import ValidationError
 
 from app.config import Settings
 from app.easyread.goldenset import GoldenDocument
@@ -76,6 +77,31 @@ def _preserving_outcomes(model: str = "fake") -> dict[str, ConversionOutcome | N
         )
         for document in harness.DOCUMENTS
     }
+
+
+#: `_mixed_outcomes` 에서 **규칙을 지키는** 변환문을 받을 문서 수. 통과와 실패가 섞여야
+#: "고른 문서만 채우면 통과율이 오른다"를 수치로 보일 수 있다.
+_COMPLIANT_COUNT = 20
+
+
+def _mixed_outcomes(model: str = "fake") -> dict[str, ConversionOutcome | None]:
+    """앞 `_COMPLIANT_COUNT` 건만 규칙을 지키고 나머지는 원문 그대로인 변환 결과.
+
+    `_preserving_outcomes` 는 원문을 그대로 실어 **전건이 스타일 위반**이라 통과율이 0이다.
+    분모 우회를 수치로 보이려면 통과하는 문서가 실제로 있어야 한다. 필수 사실을 짧은 문장
+    하나씩으로 늘어놓으면 팩트 보존·스타일·플레이스홀더 세 조건을 모두 지난다(실측 56/56).
+    """
+    result: dict[str, ConversionOutcome | None] = {}
+    for index, document in enumerate(harness.DOCUMENTS):
+        text = (
+            "\n".join(f"{fact.canonical} 입니다." for fact in document.required_facts)
+            if index < _COMPLIANT_COUNT
+            else document.source_text
+        )
+        result[document.id] = ConversionOutcome(
+            easy_text=text, masked_items=[], model=model, provider_name="fake"
+        )
+    return result
 
 
 @pytest.fixture(autouse=True)
@@ -310,10 +336,17 @@ def test_판정_기준_지문이_다르면_하네스가_비교_불가로_떨어�
 
 
 def test_측정이_코퍼스_전건이_아니면_하네스가_실패한다(monkeypatch: pytest.MonkeyPatch) -> None:
-    """분모를 줄이는 우회는 **지문에 걸리지 않는다** — 지문은 언제나 전건으로 계산되므로.
+    """게이트 실행은 코퍼스 전량을 재야 한다 — **개수** 축을 받는 검사다.
 
-    측정만 축소 목록으로 돌면 통과율이 실력과 무관하게 오르는데 코퍼스 지문은 그대로다.
-    0건 측정이 만점으로 보이는 경로도 같은 자리에서 닫힌다.
+    2026-08-13에 지문이 `evaluation.documents` 에서 나오게 되면서(11번째 지적) 이 검사와
+    지문의 역할이 갈렸다. 예전 docstring 은 "분모를 줄이는 우회는 지문에 걸리지 않는다 —
+    지문은 언제나 전건으로 계산되므로"였는데, **그 전제가 곧 결함이었다.** 지금은 축소된
+    집합으로 잰 수치에는 축소된 집합의 지문이 붙어 비교 자체가 성립하지 않는다.
+
+    그래도 이 검사는 남는다. 지문 쪽 반응은 "비교 불가"라 *기록 모드에서는* 새 구성의
+    기준선을 세우는 정상 절차로 읽히는데, 게이트 실행이 코퍼스의 일부만 재는 것은 코퍼스
+    구성이 바뀐 것과 다른 사건이다. 여기서 개수로 먼저 막아 그 둘을 구분한다 — 0건 측정이
+    만점으로 보이는 경로도 같은 자리에서 닫힌다.
     """
     evaluation = evaluate_all(_preserving_outcomes(), harness.DOCUMENTS)
     harness.build_report(evaluation)
@@ -321,6 +354,29 @@ def test_측정이_코퍼스_전건이_아니면_하네스가_실패한다(monke
     shrunk = evaluate_all(_preserving_outcomes(), harness.DOCUMENTS[:-1])
     with pytest.raises(AssertionError, match="코퍼스 전건이 아니다"):
         harness.test_규칙_기반_통과율이_직전_기록보다_낮지_않다(shrunk)
+
+
+def test_리포트_지문은_평가가_든_문서_집합에서_나온다() -> None:
+    """축소된 집합으로 만든 평가를 태워도 **한 리포트 안에서 지문과 분모가 어긋나지 않는다.**
+
+    고치기 전 실측(2026-08-13): `build_report(evaluate_all(outcomes, DOCUMENTS[:20]))` 가
+    `fingerprint.document_count = 56` 과 `measurement.overall.documents = 20` 을 한 파일에
+    실었다(`GOLDEN_REPORT_DIR` 로 떨어지는 `golden-report.json`). 렌더 첫 줄은 "코퍼스
+    56건"인데 그 아래 통과율의 분모는 20이었다 — 사람이 읽는 쪽이 오염되는 자리라 9번째
+    지적과 성질이 같다. 다른 점은 오염원이 남의 **리포트**가 아니라 남의 **분모**라는 것뿐이다.
+
+    이 방향도 함께 본다: 전량 평가는 전량 지문을 단다. 지문을 상수로 굳혀도 통과하는 검사가
+    되면 배선을 확인하지 못한다.
+    """
+    shrunk = evaluate_all(_preserving_outcomes(), harness.DOCUMENTS[:20])
+    report = harness.build_report(shrunk)
+    assert report.fingerprint.document_count == len(shrunk.documents)
+    assert report.fingerprint.document_count == report.measurement.overall.documents
+    assert report.fingerprint.document_ids == sorted(document.id for document in shrunk.documents)
+    assert f"코퍼스 {report.measurement.overall.documents}건" in report.render()
+
+    full = harness.build_report(evaluate_all(_preserving_outcomes(), harness.DOCUMENTS))
+    assert full.fingerprint.document_count == len(harness.DOCUMENTS)
 
 
 def test_하한선_판정이_리포트에_실린다(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -606,6 +662,83 @@ def test_같은_평가로_세운_리포트는_그대로_기록된다(
     assert path.exists()
 
 
+def _cherry_picked(outcomes: dict[str, ConversionOutcome | None]) -> list[GoldenDocument]:
+    """**통과하는 문서만** 골라 코퍼스와 **같은 개수**로 채운 목록 — 분모 우회의 최소 형태.
+
+    개수를 맞추는 이유가 핵심이다. 게이트의 코퍼스 전건 검사는 `measured == len(DOCUMENTS)`
+    라 **개수만** 본다. 개수를 맞추면 그 검사를 지나가므로 남는 방어는 지문 하나뿐이고,
+    지문이 전역으로 계산되던 동안 그 하나가 비어 있었다.
+    """
+    corpus = evaluate_all(outcomes, harness.DOCUMENTS)
+    passing = [
+        document
+        for document, item in zip(harness.DOCUMENTS, corpus.evaluations, strict=True)
+        if item.passed
+    ]
+    assert 0 < len(passing) < len(harness.DOCUMENTS), (
+        "전제 실패 — 통과와 실패가 섞인 실행이어야 '고르면 오른다'를 수치로 보일 수 있다"
+    )
+    return [passing[index % len(passing)] for index in range(len(harness.DOCUMENTS))]
+
+
+def test_고른_문서로_분모를_채워도_전량_코퍼스의_지문을_달_수_없다(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """**11번째 지적** — 지문이 막으려던 분모 우회가 **지문 자신에게** 열려 있었다.
+
+    고치기 전 실측(2026-08-13): 통과하는 20건만 골라 56칸을 채운 평가가 `56/56`(1.000)을
+    내고, 그 수치가 **진짜 56건 코퍼스의 `corpus_sha256`** 을 단 기준선으로 기록됐다.
+    같은 outcomes 로 전량을 재면 `20/56`(0.357)이다. 개수 검사는 개수만 보므로 지나갔고,
+    지문은 모듈 전역에서 계산돼 무엇을 쟀는지와 무관했다 — 그래서 **다음 실행은 그 지문이
+    맞아떨어지므로 비교 가능으로 읽고 1.000을 하한선으로 삼는다.**
+
+    이제 기록되는 지문이 `evaluation.documents` 에서 나온다. 우회로 얻은 수치에는 우회한
+    집합의 지문이 붙어, 전량 코퍼스로 돌린 다음 실행과 **비교 불가**가 된다. 값을 검사해
+    막는 것이 아니라 **그 상태를 적을 수 없게** 만든 것이다.
+    """
+    outcomes = _mixed_outcomes("this-run")
+    corpus = evaluate_all(outcomes, harness.DOCUMENTS)
+    picked = _cherry_picked(outcomes)
+    evaluation = evaluate_all(outcomes, picked)
+    harness.build_report(evaluation)
+    assert evaluation.measurement.overall.documents == len(harness.DOCUMENTS), (
+        "전제 — 개수 검사를 지나가는 입력이어야 남는 방어가 지문 하나로 좁혀진다"
+    )
+    assert evaluation.measurement.overall.passed > corpus.measurement.overall.passed, (
+        "전제 — 고른 문서로 채우면 통과 수가 오른다"
+    )
+
+    path = tmp_path / "baseline.json"
+    recording = _Recording(monkeypatch, evaluation, path)
+    with pytest.raises(AssertionError, match="기록 실행"):
+        harness.test_규칙_기반_통과율이_직전_기록보다_낮지_않다(evaluation)
+    assert len(recording.written) == 1
+    fingerprint = recording.written[0]["fingerprint"]
+    assert fingerprint["corpus_sha256"] == Fingerprint.of(picked).corpus_sha256, (
+        "기록된 지문이 실제로 잰 집합의 것이 아니다"
+    )
+    assert fingerprint["corpus_sha256"] != Fingerprint.of(harness.DOCUMENTS).corpus_sha256, (
+        "고른 문서로 잰 수치가 전량 코퍼스의 지문을 달았다 — 다음 실행이 이것을 하한선으로 읽는다"
+    )
+
+
+def test_고른_문서로_채운_평가는_전량_기준선과_비교되지_않는다(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """같은 우회를 **판정 쪽에서** 본다 — 비기록 실행은 비교 불가로 떨어져 차단된다.
+
+    수치는 기준선과 정확히 같게 두었다(`_matching_baseline`). 막히는 이유가 지문 하나로
+    좁혀지므로, 지문이 평가를 따라가지 않으면 이 검사가 바로 깨진다.
+    """
+    outcomes = _mixed_outcomes("this-run")
+    evaluation = evaluate_all(outcomes, _cherry_picked(outcomes))
+    harness.build_report(evaluation)
+    # 기준선의 지문은 전량 코퍼스(`_matching_baseline` 기본값)이고 수치는 이번 것과 같다.
+    monkeypatch.setattr(harness, "load_baseline", lambda: _matching_baseline(evaluation))
+    with pytest.raises(AssertionError, match="코퍼스 구성이 바뀌었다"):
+        harness.test_규칙_기반_통과율이_직전_기록보다_낮지_않다(evaluation)
+
+
 def test_리포트가_없으면_기록하지_않는다(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """부수 경로 — `report is None`은 fail-closed다(무변경).
 
@@ -741,7 +874,7 @@ async def test_날조가_섞여도_judge는_차단하지_않는다() -> None:
     """
     evaluation = evaluate_all(_preserving_outcomes(), harness.DOCUMENTS)
     harness.build_report(evaluation)
-    responses: list[str | Exception] = [_HIGH] * (len(harness.DOCUMENTS) - _FABRICATED_COUNT)
+    responses: list[str | Exception] = [_HIGH] * (len(evaluation.documents) - _FABRICATED_COUNT)
     responses += [_FABRICATED] * _FABRICATED_COUNT
     with pytest.warns(UserWarning, match="judge 비차단"):
         await harness.test_judge_점수를_기록한다(evaluation, FakeProvider(responses=responses))
@@ -754,11 +887,11 @@ async def test_날조는_경고와_리포트에_남는다() -> None:
     """
     evaluation = evaluate_all(_preserving_outcomes(), harness.DOCUMENTS)
     report = harness.build_report(evaluation)
-    responses: list[str | Exception] = [_FABRICATED] * len(harness.DOCUMENTS)
+    responses: list[str | Exception] = [_FABRICATED] * len(evaluation.documents)
     with pytest.warns(UserWarning, match="충실성"):
         await harness.test_judge_점수를_기록한다(evaluation, FakeProvider(responses=responses))
     assert report.judge is not None
-    assert len(report.judge.low_fidelity_ids) == len(harness.DOCUMENTS)
+    assert len(report.judge.low_fidelity_ids) == len(evaluation.documents)
     assert "충실성" in report.render()
 
 
@@ -766,10 +899,10 @@ async def test_judge_점수가_리포트에_실린다() -> None:
     """통과하는 실행에서도 judge 수치가 남아야 한다 — 기록·경고용이라는 뜻이 이것이다."""
     evaluation = evaluate_all(_preserving_outcomes(), harness.DOCUMENTS)
     report = harness.build_report(evaluation)
-    responses: list[str | Exception] = [_HIGH] * len(harness.DOCUMENTS)
+    responses: list[str | Exception] = [_HIGH] * len(evaluation.documents)
     await harness.test_judge_점수를_기록한다(evaluation, FakeProvider(responses=responses))
     assert report.judge is not None
-    assert report.judge.scored == len(harness.DOCUMENTS)
+    assert report.judge.scored == len(evaluation.documents)
     assert report.judge.fidelity_mean == 5.0
     assert report.judge.low_fidelity_ids == []
 
@@ -787,7 +920,7 @@ async def test_남의_리포트에는_judge_관측이_실리지_않는다() -> N
         evaluate_all(_preserving_outcomes("stale-model-from-another-run"), harness.DOCUMENTS)
     )
     assert golden_report.latest() is stale, "전제 — 남의 리포트가 최신이다"
-    responses: list[str | Exception] = [_HIGH] * len(harness.DOCUMENTS)
+    responses: list[str | Exception] = [_HIGH] * len(evaluation.documents)
     await harness.test_judge_점수를_기록한다(evaluation, FakeProvider(responses=responses))
     assert stale.judge is None, "남의 리포트에 이번 실행의 judge 관측이 실렸다"
     assert stale.judge_notes == []
@@ -810,8 +943,8 @@ async def test_judge_는_이번_평가의_outcomes_를_채점한다() -> None:
     이제 채점 대상이 `evaluation.outcomes` 뿐이라 그 어긋남을 만들 표현이 없다. 여기서
     보는 것은 **"거부됐다"가 아니라 지목이 이번 평가의 outcomes 를 따른다**는 것이다.
     """
-    docs = harness.DOCUMENTS
-    evaluation = evaluate_all(_preserving_outcomes("this-run"), docs)
+    evaluation = evaluate_all(_preserving_outcomes("this-run"), harness.DOCUMENTS)
+    docs = evaluation.documents
     report = harness.build_report(evaluation)
     assert evaluation.conversion_failures == [], "전제 — 이번 평가는 전건 변환 성공이다"
 
@@ -841,7 +974,7 @@ async def test_judge_는_채점_대상을_따로_받지_않는다() -> None:
     """
     evaluation = evaluate_all(_preserving_outcomes(), harness.DOCUMENTS)
     harness.build_report(evaluation)
-    provider = FakeProvider(responses=[_HIGH] * len(harness.DOCUMENTS))
+    provider = FakeProvider(responses=[_HIGH] * len(evaluation.documents))
     with pytest.raises(TypeError):
         await harness.test_judge_점수를_기록한다(
             evaluation,
@@ -849,6 +982,30 @@ async def test_judge_는_채점_대상을_따로_받지_않는다() -> None:
             _preserving_outcomes(),  # type: ignore[arg-type]
             provider,  # type: ignore[call-arg]
         )
+
+
+async def test_judge_는_평가가_든_문서_집합만_돈다() -> None:
+    """**11번째 지적의 judge 쪽 면** — 채점 대상은 묶였는데 **도는 문서**가 안 묶여 있었다.
+
+    고치기 전 이 loop 는 모듈 전역 `DOCUMENTS` 를 돌았다. 20건만 평가한 실행에서도 judge 는
+    56건을 돌아 평가가 본 적 없는 문서를 채점하고, 커버리지 분모까지 56으로 적었다 — 리포트에
+    "20/56 채점"이 찍히고 경고가 "대부분 채점에 실패했다"고 말한다. 준비한 응답이 20개뿐이라
+    고치기 전 이 입력은 `IndexError` 로 터진다(FakeProvider 소진).
+
+    호출 수까지 세는 이유: 관측 값만 보면 초과 호출이 조용히 지나갈 수 있다. 평가가 20건인데
+    LLM 을 56번 부르는 것 자체가 결함이다.
+    """
+    shrunk = evaluate_all(_preserving_outcomes(), harness.DOCUMENTS[:20])
+    report = harness.build_report(shrunk)
+    provider = FakeProvider(responses=[_HIGH] * len(shrunk.documents))
+    await harness.test_judge_점수를_기록한다(shrunk, provider)
+    assert len(provider.calls) == len(shrunk.documents), "평가가 든 집합보다 많이 채점했다"
+    assert report.judge is not None
+    assert report.judge.scored == len(shrunk.documents)
+    assert report.judge.documents == len(shrunk.documents), (
+        "커버리지 분모가 평가의 분모가 아니다 — 한 실행의 비율이 아니게 된다"
+    )
+    assert report.judge_notes == [], "전건 채점인데 커버리지 경고가 붙었다"
 
 
 def test_평가가_채점_대상을_측정치와_함께_싣는다() -> None:
@@ -874,6 +1031,47 @@ def test_평가가_채점_대상을_측정치와_함께_싣는다() -> None:
     partial = dict(outcomes)
     partial[harness.DOCUMENTS[0].id] = None
     assert evaluate_all(partial, harness.DOCUMENTS).outcomes[harness.DOCUMENTS[0].id] is None
+
+
+def test_평가가_문서_집합을_측정치와_함께_싣는다() -> None:
+    """**분모의 근원도 하나다** — `evaluate_all` 이 잰 그 문서 집합이 평가에 실린다.
+
+    받아서 쓰고 **버리던** 값이다. 그래서 하류가 같은 것을 모듈 전역에서 다시 구했고,
+    두 값이 갈릴 수 있었다(11번째 지적). 지문·judge 순회·커버리지 분모가 전부 이 필드에서
+    나오므로, 여기서 확인하는 것은 그 셋의 공통 근원이다.
+
+    문서 객체는 **동일성**으로 본다 — 같은 값의 다른 객체를 실어도 걸린다. 실패 출력에
+    본문이 실리지 않는 것은 덤이다(id 만 비교한다).
+    """
+    docs = harness.DOCUMENTS[:20]
+    evaluation = evaluate_all(_preserving_outcomes(), docs)
+    assert [document.id for document in evaluation.documents] == [document.id for document in docs]
+    assert all(held is given for held, given in zip(evaluation.documents, docs, strict=True)), (
+        "평가가 든 문서가 잰 것과 다른 객체다 — 지문이 재지 않은 문서에서 나온다"
+    )
+    assert evaluation.documents is not docs, "바깥 목록은 복제본이다(호출자 변경에 흔들리지 않는다)"
+    # 분모는 이 목록에서 나온다 — 측정치가 이 집합의 것임을 같은 객체가 말한다.
+    assert evaluation.measurement.overall.documents == len(evaluation.documents)
+
+
+def test_평가는_문서_집합_없이_만들어지지_않는다() -> None:
+    """`documents` 는 **필수 필드**다 — `outcomes` 를 필수로 둔 것과 같은 이유다.
+
+    기본값을 주면 "자기가 무엇을 평가했는지 말 못 하는 평가"가 되살아나고, 그런 평가를 받은
+    하류는 분모를 다시 전역에서 구할 수밖에 없다. 이번 작업이 없애려는 바로 그 상태다.
+    mypy 도 이 생성을 거부한다(정적으로도 통로가 없다).
+    """
+    empty = GroupMeasurement(passed=0, documents=0)
+    with pytest.raises(ValidationError):
+        RuleEvaluation(  # type: ignore[call-arg]  # 분모 필드 필수 고정
+            outcomes={},
+            evaluations=[],
+            measurement=Measurement(overall=empty, synthetic=empty, collected=empty),
+            failure_reasons={},
+            conversion_failures=[],
+            fact_losses=[],
+            observed_models=[],
+        )
 
 
 # ═══════════════════════════════════════════ 게이트 실행 전제: 자격 증명

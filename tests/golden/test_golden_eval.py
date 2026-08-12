@@ -185,6 +185,11 @@ def evaluation(outcomes: dict[str, ConversionOutcome | None]) -> RuleEvaluation:
     리포트를 여기서 세우는 이유: 아래 테스트가 하나라도 실패하거나 skip되어도 이번 실행의
     수치가 남아야 한다. 통과 실행에서 수치가 사라지던 것이 상대 하한선을 세우지 못한
     원인이었다(`tests/golden/report.py`).
+
+    **모듈 전역 `DOCUMENTS` 를 읽는 것은 여기가 맞다.** 이 자리가 "무엇을 평가하는가"를
+    *고르는* 곳이고, 고른 집합은 `evaluate_all` 이 결과에 실어 하류로 넘긴다. 위험한 것은
+    전역을 읽는 것 자체가 아니라 **평가 결과를 다루는 자리가 전역을 다시 읽는 것**이다 —
+    그러면 고른 집합과 다시 읽은 집합이 갈릴 수 있다(11번째 지적).
     """
     result = evaluate_all(outcomes, DOCUMENTS)
     build_report(result)
@@ -201,13 +206,19 @@ def build_report(result: RuleEvaluation) -> golden_report.GoldenRunReport:
     는 measurement 동일성을 지키면서 남의 observed 를 context 에 실었다(6번째 지적).
     이제 그 인자가 없어 그 호출 자체가 표현 불가다.
 
+    지문도 `result` 에서 만든다(`result.documents`). 예전에는 모듈 전역 `DOCUMENTS` 로
+    계산해, 축소된 집합으로 만든 평가를 태우면 **지문은 56건인데 통과율의 분모는 20건**인
+    리포트가 나왔다 — 사람이 읽는 줄에 "코퍼스 56건"이 찍히고 그 아래 분모가 20이었다.
+    지문은 "이 수치가 무엇을 재서 나온 것인가"인데 그 '무엇'을 수치와 다른 데서 구하고
+    있었다(11번째 지적). 이제 분모와 지문이 한 객체에서 나와 어긋날 표현이 없다.
+
     리포트를 **`result` 에 결속해** 등록한다(`golden_report.record` 의 두 번째 인자). 아래
     두 테스트는 이 결속을 통해 `for_evaluation(evaluation)` 으로 자기 리포트만 받는다 —
     "마지막으로 세워진 리포트"를 집어 오는 통로가 없어야 남의 리포트가 잡히지 않는다.
     """
     return golden_report.record(
         golden_report.GoldenRunReport(
-            fingerprint=Fingerprint.of(DOCUMENTS),
+            fingerprint=Fingerprint.of(result.documents),
             context=run_context(result.observed_models),
             targets=TARGETS,
             measurement=result.measurement,
@@ -243,7 +254,12 @@ def run_context(observed_models: list[str]) -> RunContext:
 
 
 async def convert_all(provider: LLMProvider) -> dict[str, ConversionOutcome | None]:
-    """전 문서를 변환한다. 변환 실패는 None으로 기록하고 계속 진행한다."""
+    """전 문서를 변환한다. 변환 실패는 None으로 기록하고 계속 진행한다.
+
+    여기도 전역을 읽지만 **평가 결과를 다루는 자리가 아니다** — 산출물을 만드는 쪽이다.
+    평가와 갈려도 조용하지 않다: 여기서 빠진 문서는 `evaluate_all` 에서 `outcomes.get`
+    이 `None` 이 되어 **변환 실패**로 세어지고, 변환 실패는 차단축이 잡는다.
+    """
     service = ConversionService(provider=provider)
     results: dict[str, ConversionOutcome | None] = {}
     for document in DOCUMENTS:
@@ -315,24 +331,27 @@ async def test_judge_점수를_기록한다(
 
     이 축이 막던 정보 누락은 위의 필수 정보 보존 게이트가 LLM 없이 절대 기준으로 받는다.
 
-    **`evaluation` 하나만 받는다 — 채점 대상과 붙이는 자리가 여기서 함께 나온다.**
-    채점은 `evaluation.outcomes`, 관측을 실을 리포트는 `for_evaluation(evaluation)`.
+    **`evaluation` 하나만 받는다 — 순회 대상·채점 대상·붙이는 자리가 여기서 함께 나온다.**
+    도는 문서는 `evaluation.documents`, 채점은 `evaluation.outcomes`, 관측을 실을 리포트는
+    `for_evaluation(evaluation)`.
 
-    이 자리에서 그릇과 내용물을 두 번 헷갈렸다(`RuleEvaluation` docstring 이 정본이다).
+    이 자리에서 그릇과 내용물을 세 번 헷갈렸다(`RuleEvaluation` docstring 이 정본이다).
     한 번은 기준선에서 judge 를 뺄 때 — 리포트는 결속돼 있었지만 **나중에 대입되는 필드**의
-    출처는 그 결속 밖이었다. 또 한 번은 직전 커밋 — 관측을 **붙이는 자리**를 이번 평가로
-    묶고서 채점할 `outcomes` 는 **별도 fixture 로** 받았다. 그릇만 묶고 내용물을 안 묶은
-    것이라, A 의 outcomes 를 채점해 B 의 평가 리포트에 싣는 상태가 그대로 표현 가능했다
-    (10번째 지적 — `test_floor_gate_wiring.py` 가 그 상태를 만들 수 없음을 고정한다).
+    출처는 그 결속 밖이었다. 두 번째는 관측을 **붙이는 자리**를 이번 평가로 묶고서 채점할
+    `outcomes` 는 **별도 fixture 로** 받은 것이다. 그릇만 묶고 내용물을 안 묶은 것이라,
+    A 의 outcomes 를 채점해 B 의 평가 리포트에 싣는 상태가 그대로 표현 가능했다(10번째 지적).
+    세 번째가 **여기서 문서를 도는 이 loop 였다** — 채점 대상은 이번 평가인데 `for` 가
+    모듈 전역 `DOCUMENTS` 를 돌았다. 20건만 평가한 실행에서도 judge 는 56건을 돌아, 평가가
+    본 적 없는 문서를 채점하고 커버리지 분모까지 56으로 적었다(11번째 지적).
 
-    세 번째가 없는 이유는 두 끝이 **같은 객체에서** 나오기 때문이다. 다른 대상을 채점하려면
-    다른 `evaluation` 을 넘겨야 하는데, 그러면 붙는 리포트도 함께 옮겨 가 두 실행이 섞이지
-    않는다. `outcomes` 를 따로 받는 인자가 **없다**는 것이 이 성질의 전부다 — 남겨 두면
+    네 번째가 없는 이유는 세 끝이 **같은 객체에서** 나오기 때문이다. 다른 대상을 채점하려면
+    다른 `evaluation` 을 넘겨야 하는데, 그러면 도는 문서도 붙는 리포트도 함께 옮겨 간다.
+    `outcomes` 도 문서 목록도 **따로 받는 인자가 없다**는 것이 이 성질의 전부다 — 남겨 두면
     통로가 그대로 남는다.
     """
     scores: dict[str, JudgeScore] = {}
     notes: list[str] = []
-    for document in DOCUMENTS:
+    for document in evaluation.documents:
         outcome = evaluation.outcomes.get(document.id)
         if outcome is None:
             notes.append(f"{document.id}: 변환실패")
@@ -344,7 +363,7 @@ async def test_judge_점수를_기록한다(
         except LLMProviderError:
             notes.append(f"{document.id}: 채점실패")
 
-    observation = summarize_judge(scores)
+    observation = summarize_judge(evaluation, scores)
     coverage = observation.scored / observation.documents if observation.documents else 0.0
     if coverage < JUDGE_COVERAGE_THRESHOLD:
         notes.append(
@@ -391,16 +410,30 @@ def test_규칙_기반_통과율이_직전_기록보다_낮지_않다(evaluation
     않는다(`Baseline` docstring). 판정도 기록도 judge 와 무관하게 돈다 — 키가 없어 judge 가
     건너뛰어도 이 게이트는 그대로다.
     """
-    # 분모가 코퍼스 전건인지 먼저 본다. 측정 대상을 줄이면 통과율은 실력과 무관하게 오르고,
-    # 그것은 문서를 코퍼스에서 빼는 우회와 같은데 **지문은 전건으로 계산되므로** 코퍼스 지문에
-    # 걸리지 않는다. 0건 측정이 만점으로 보이는 경로도 여기서 닫힌다.
+    # 분모가 코퍼스 전건인지 먼저 본다. 측정 대상을 줄이면 통과율은 실력과 무관하게 오른다.
+    #
+    # **여기가 이 함수에서 모듈 전역 `DOCUMENTS` 를 읽는 유일한 자리이고, 그래야 하는
+    # 자리다.** 이 검사의 내용 자체가 "이번 평가가 든 분모(`evaluation.documents`)와 코퍼스
+    # 전량이 같은가"라는 **대조**라, 양쪽이 다 필요하다. 전역에서 값을 가져와 이번 실행의
+    # 산출물(지문·수치·리포트)에 **싣지 않는다** — 대조만 하고 버린다. 섞이려면 전역의 값이
+    # 결과물에 실려야 하는데 그 통로가 여기엔 없다.
+    #
+    # 아래 지문과 역할이 갈린다. 이 검사는 **개수** 축(축소된 집합)을, 지문은 **집합** 축
+    # (같은 개수로 다른 문서를 채우는 우회)을 받는다. 예전에는 지문이 전역으로 계산돼
+    # 집합 축이 통째로 비어 있었다 — 통과하는 20건을 56칸에 채우면 개수 검사는 통과하고
+    # 지문은 진짜 코퍼스를 가리켜, `56/56`(1.000)이 전량 코퍼스의 지문을 달고 기록됐다
+    # (전량 평가는 20/56, 11번째 지적). 지문이 평가가 든 집합에서 나오면서 그쪽이 닫혔다.
     measured = evaluation.measurement.overall.documents
     assert measured == len(DOCUMENTS), (
         f"측정 대상이 코퍼스 전건이 아니다 — {measured}/{len(DOCUMENTS)}건만 셌다. "
-        "지문은 전건으로 계산되므로 이 어긋남은 지문에 걸리지 않는다"
+        "게이트 실행은 코퍼스 전량을 재야 한다"
     )
     report = golden_report.for_evaluation(evaluation)
-    judgement = compare(load_baseline(), Fingerprint.of(DOCUMENTS), evaluation.measurement)
+    # 지문은 **이번 평가가 든 문서 집합**에서 만든다. 전역으로 계산하면 수치와 지문이 서로
+    # 다른 집합에서 와, 지문이 막으려던 분모 우회가 지문 자신에게 열린다(11번째 지적).
+    judgement = compare(
+        load_baseline(), Fingerprint.of(evaluation.documents), evaluation.measurement
+    )
     if report is not None:
         report.floor = judgement
 
@@ -456,8 +489,13 @@ def test_규칙_기반_통과율이_직전_기록보다_낮지_않다(evaluation
                 "기준선을 쓰지 않는다 — 이번 실행의 리포트가 없다(fail-closed). 리포트가 "
                 "세워진 정상 실행에서만 커밋된 하한선을 갱신한다."
             )
+        # **본문 세 조각이 전부 `evaluation` 에서 나온다** — 지문(무엇을 쟀는가)·측정치
+        # (무엇이 나왔는가)·조건(무엇이 만들었는가). 지문만 전역에서 오던 것이 11번째
+        # 지적이었다. 그때는 기록된 파일 하나 안에서 `corpus_sha256` 는 진짜 56건 코퍼스를
+        # 가리키고 `measurement` 는 다른 집합에서 온 수치였다 — 그리고 다음 실행은 그
+        # 지문이 맞아떨어지므로 **비교 가능**으로 읽어 그 수치를 하한선으로 삼는다.
         body = baseline_body(
-            Fingerprint.of(DOCUMENTS),
+            Fingerprint.of(evaluation.documents),
             evaluation.measurement,
             run_context(evaluation.observed_models),
         )
@@ -497,12 +535,19 @@ def test_규칙_기반_통과율이_직전_기록보다_낮지_않다(evaluation
     )
 
 
-def summarize_judge(scores: dict[str, JudgeScore]) -> JudgeObservation:
-    """judge 관측치 집계. 채점이 0건이어도 안전하게 0으로 떨어진다."""
+def summarize_judge(evaluation: RuleEvaluation, scores: dict[str, JudgeScore]) -> JudgeObservation:
+    """judge 관측치 집계. 채점이 0건이어도 안전하게 0으로 떨어진다.
+
+    커버리지의 **분모를 `evaluation` 에서 받는다.** 전역을 읽으면 "56건 중 20건 채점"처럼
+    평가가 본 적 없는 문서가 분모에 들어가고, 커버리지 경고("대부분 채점에 실패했다면 아래
+    평균은 남은 소수만의 값이다")가 엉뚱한 실행을 가리킨다. 분자(`scores`)는 바로 위에서
+    `evaluation.outcomes` 를 채점해 만든 값이라, 분모도 같은 객체에서 와야 한 실행의 비율이
+    된다(11번째 지적).
+    """
     count = len(scores)
     return JudgeObservation(
         scored=count,
-        documents=len(DOCUMENTS),
+        documents=len(evaluation.documents),
         fidelity_mean=(sum(score.fidelity for score in scores.values()) / count) if count else 0.0,
         readability_mean=(
             (sum(score.readability for score in scores.values()) / count) if count else 0.0
