@@ -5,7 +5,9 @@ import docx
 from docx.oxml import parse_xml
 from app.ingest.extractors import extract_text, _docx_blocks
 
-SP = pathlib.Path("/private/tmp/claude-503/-Users-harris-Development-private-easy-doc/6f3e0698-996a-4c4a-b701-ef39bb65da0a/scratchpad/extra")
+# 2026-08-12 구조 시 경로 고정 해제 — 원본은 세션 스크래치패드 절대경로를 박고 있어
+# 다른 곳에서 실행할 수 없었다. 산출물은 이 스크립트 옆에 쓴다.
+SP = pathlib.Path(__file__).resolve().parent
 SP.mkdir(exist_ok=True)
 
 W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
@@ -119,5 +121,5 @@ try:
 except Exception as e:
     out["forged_size"] = {"python": f"{type(e).__name__}: {e}"}
 
-(pathlib.Path("/private/tmp/claude-503/-Users-harris-Development-private-easy-doc/6f3e0698-996a-4c4a-b701-ef39bb65da0a/scratchpad/extra_oracle.json")).write_text(json.dumps(out, ensure_ascii=False, indent=2))
+(SP / "spike-oracle.json").write_text(json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8")
 print(json.dumps(out, ensure_ascii=False, indent=2))
