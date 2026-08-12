@@ -128,8 +128,17 @@ Python 검증기를 돌려** 판정한다. `verification.actual_file`(Kotlin 산
         침묵시켰는지"는 stdout에만 남았다 — 이 파일이 3을 정의하며 세운 원칙("종료 코드는
         자동화가 읽는 유일한 계약이고 stdout 문구는 사람에게만 유효하다")을 자기가 어긴
         자리다. 이제 원장이 바뀌면 4로 끝나고 그 실행으로는 어떤 게이트도 닫지 못한다.
+        **"바뀌었다"의 기준은 쓴 내용과 이전 내용의 차이다** — 지적 건수가 아니다.
+        한동안 기준이 `reference_problems()` 의 지적 건수였는데, 그것은 "원장이 낡았다"의
+        척도이지 "원장이 바뀐다"의 척도가 아니다. 원장이 아직 **없고** 관측이 전부 `agree`
+        이면 지적이 0건이라, 31건을 담은 원장을 새로 만들고도 0/3(성공)으로 끝났다.
+        CI는 3을 통과로 읽으므로 "원장을 쓰고서 게이트 통과"가 성립했다(X-12).
+        비교에서 빼는 것은 `recorded_at` 뿐이다(`LEDGER_VOLATILE_FIELDS`). 그것을 넣으면
+        정반대로 고장난다 — 매 실행 값이 달라 **항상** 4가 되고 기록 실행이 영원히
+        아무것도 닫지 못한다. 없음 → 있음은 변경으로 센다.
         기록 모드라도 **바뀐 것이 없으면** 0/2/3의 정상 경로로 떨어진다. 그때는 관측이
-        커밋된 원장과 정확히 같다는 뜻이라 플래그 없이 돌린 실행과 판정이 정의상 같다.
+        커밋된 원장과 정확히 같다는 뜻이라 플래그 없이 돌린 실행과 판정이 정의상 같고,
+        원장 파일도 다시 쓰지 않는다(빈 diff를 리뷰에 올리지 않기 위해서다).
         **CI 영향 없음** — `.github/workflows/ci.yml` 은 이 플래그를 주지 않고(원장 갱신은
         사람이 커밋해 리뷰에 올려야 한다), 0과 3만 통과로 읽고 나머지는 실패로 본다.
     사용법 오류(인자 누락·알 수 없는 도메인)도 1이다. argparse 기본값 2를 쓰면 "인자를
@@ -1151,18 +1160,100 @@ def load_ledger(root: Path, domain: str) -> dict[str, Any]:
     return cases if isinstance(cases, dict) else {}
 
 
+LEDGER_NOTE = (
+    "Kotlin 산출물과 Python 참고값이 갈린 자리의 기록이다. 판정 근거가 아니라 "
+    "리뷰에 올리기 위한 원장이며, 본문 없이 경로와 SHA-256만 남긴다. "
+    "갱신: compare_parity.py --record-reference"
+)
+
+#: 원장 파일에서 **내용이 아닌** 필드. 매 실행 값이 달라지므로 변경 판정에서 뺀다.
+#: 이 목록에 무엇을 넣는지가 기록 실행의 종료 코드를 정한다 — 실제 내용을 여기 넣으면
+#: 그 변경이 조용해지고, 시각을 여기서 빼면 기록 실행이 **항상** 4가 되어 아무것도 닫지 못한다.
+LEDGER_VOLATILE_FIELDS = frozenset({"recorded_at"})
+
+
+def ledger_body(domain: str, entries: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    """원장 파일의 **내용**. 기록 시각은 여기 없다.
+
+    이 함수가 따로 있는 이유는 "원장이 바뀌었는가"를 **쓸 내용과 이전 내용의 차이**로
+    재기 위해서다. 예전 기준은 `reference_problems()` 의 지적 건수였는데, 그것은
+    "원장이 **낡았다**"의 척도이지 "원장이 **바뀐다**"의 척도가 아니었다(X-12).
+    """
+    return {"domain": domain, "note": LEDGER_NOTE, "cases": dict(sorted(entries.items()))}
+
+
+def stored_ledger_body(root: Path, domain: str) -> dict[str, Any] | None:
+    """디스크에 있는 원장의 내용. 없거나 읽을 수 없으면 `None`.
+
+    `None` 은 "변경 없음"이 아니라 **비교할 이전 내용이 없다**는 뜻이다. 없음 → 있음도
+    변경이고, 그것이 X-12에서 새 파일 31건을 성공 코드로 통과시킨 자리다.
+    """
+    path = ledger_file(root, domain)
+    if not path.exists():
+        return None
+    try:
+        loaded = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(loaded, dict):
+        return None
+    return {key: value for key, value in loaded.items() if key not in LEDGER_VOLATILE_FIELDS}
+
+
+def ledger_write_problems(domain: str, root: Path, entries: dict[str, dict[str, Any]]) -> list[str]:
+    """이번 기록이 원장을 **실제로** 바꾸는가. 바꾸지 않으면 빈 목록.
+
+    반드시 `write_ledger()` **앞에서** 부른다 — 쓰고 나서 비교하면 항상 같다.
+    """
+    path = ledger_file(root, domain)
+    before = stored_ledger_body(root, domain)
+    if before is None:
+        diverged = sum(1 for entry in entries.values() if entry.get("status") == "diverge")
+        what = "덮어쓴다(이전 파일을 읽을 수 없다)" if path.exists() else "새로 만든다"
+        return [
+            f"- **원장을 {what}** — `{path}` (케이스 {len(entries)}건, 갈림 {diverged}건)\n"
+            "  - 없음 → 있음도 변경이다. 지적이 0건이어도 이 실행은 게이트를 닫지 않는다"
+        ]
+    after = ledger_body(domain, entries)
+    if before == after:
+        return []
+    old_cases = before.get("cases")
+    old_cases = old_cases if isinstance(old_cases, dict) else {}
+    new_cases = after["cases"]
+    found: list[str] = []
+    groups = (
+        ("추가", sorted(set(new_cases) - set(old_cases))),
+        ("삭제", sorted(set(old_cases) - set(new_cases))),
+        (
+            "내용 변경",
+            sorted(
+                key for key in set(new_cases) & set(old_cases) if new_cases[key] != old_cases[key]
+            ),
+        ),
+    )
+    for label, ids in groups:
+        if not ids:
+            continue
+        shown = ", ".join(ids[:MAX_REPORTED_CASE_DIFFS])
+        found.append(
+            f"- **원장 항목 {label} {len(ids)}건** — `{path}`: {shown}"
+            f"{' 외' if len(ids) > MAX_REPORTED_CASE_DIFFS else ''}"
+        )
+    if not found:
+        # 케이스 목록은 같은데 파일이 달라졌다 — 머리말(`domain`·`note`)이 바뀐 경우다.
+        found.append(f"- **원장 머리말이 바뀐다** — `{path}` (케이스 목록은 그대로)")
+    return found
+
+
 def write_ledger(root: Path, domain: str, entries: dict[str, dict[str, Any]]) -> Path:
     path = ledger_file(root, domain)
     path.parent.mkdir(parents=True, exist_ok=True)
+    body = ledger_body(domain, entries)
     payload = {
-        "domain": domain,
-        "note": (
-            "Kotlin 산출물과 Python 참고값이 갈린 자리의 기록이다. 판정 근거가 아니라 "
-            "리뷰에 올리기 위한 원장이며, 본문 없이 경로와 SHA-256만 남긴다. "
-            "갱신: compare_parity.py --record-reference"
-        ),
+        "domain": body["domain"],
+        "note": body["note"],
         "recorded_at": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
-        "cases": dict(sorted(entries.items())),
+        "cases": body["cases"],
     }
     path.write_text(
         json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=False) + "\n",
@@ -1629,14 +1720,32 @@ def main() -> int:
             if stale:
                 ledger_findings.setdefault(domain, []).extend(stale)
 
-    ledger_changed = sum(len(found) for found in ledger_findings.values())
+    # 두 척도를 구분한다. `ledger_stale` 은 "원장이 **낡았다**"(관측이 기록과 다르다)이고,
+    # `ledger_writes` 는 "원장이 **바뀐다**"(쓸 내용이 디스크의 내용과 다르다)이다. 예전에는
+    # 앞의 것 하나로 기록 실행을 판정해서, 원장이 **없는** 상태에서 전 케이스가 `agree` 면
+    # 지적 0건 → 성공 코드로 끝나면서 파일은 새로 생겼다(X-12).
+    ledger_stale = sum(len(found) for found in ledger_findings.values())
+    ledger_writes: dict[str, list[str]] = {}
     if args.record_reference:
         for domain, entries in sorted(recorded.items()):
-            target = write_ledger(args.ledger, domain, entries)
+            # 쓰기 **전에** 비교한다. 쓰고 나서 비교하면 언제나 같다.
+            changes = ledger_write_problems(domain, args.ledger, entries)
             diverged = sum(1 for entry in entries.values() if entry["status"] == "diverge")
+            if not changes:
+                # 내용이 같으면 쓰지 않는다. 다시 쓰면 `recorded_at` 만 흔들려 리뷰에
+                # 내용 없는 diff가 올라가고, "바뀐 것이 없다"를 파일로도 말할 수 없게 된다.
+                print(
+                    f"[원장 유지] {ledger_file(args.ledger, domain)} — {len(entries)}건 중 "
+                    f"갈림 {diverged}건, 내용 변경 없음"
+                )
+                continue
+            ledger_writes[domain] = changes
+            target = write_ledger(args.ledger, domain, entries)
             print(f"[원장 기록] {target} — {len(entries)}건 중 갈림 {diverged}건")
+            for line in changes:
+                print(f"  {line.splitlines()[0]}")
         for domain, found in sorted(ledger_findings.items()):
-            print(f"[원장 변경] {domain} — {len(found)}건")
+            print(f"[원장 지적] {domain} — {len(found)}건")
             for line in found:
                 print(f"  {line.splitlines()[0]}")
     else:
@@ -1712,14 +1821,25 @@ def main() -> int:
         detail = f" — 없는 도메인: {', '.join(missing)}" if missing else ""
         print(f"[불충족] {summary}{detail}")
         return 1
-    if args.record_reference and ledger_changed:
+    written = sum(len(found) for found in ledger_writes.values())
+    if args.record_reference and (written or ledger_stale):
         # 방금 원장을 바꾼 실행은 **판정이 아니다.** 예전에는 갈림 23건을 침묵시킨 실행과
         # 애초에 0건이던 실행이 둘 다 종료 코드 3을 냈다 — 이 파일이 스스로 세운 원칙
         # ("종료 코드는 자동화가 읽는 유일한 계약")을 자기가 어긴 자리였다(X-09).
+        #
+        # 그 뒤로도 한 자리가 남아 있었다(X-12): 판정 기준이 **지적 건수**였기 때문에,
+        # 원장이 아직 **없고** 관측이 전부 `agree` 인 실행은 지적 0건이라 이 분기를 타지
+        # 않았다 — 파일을 새로 만들고서 0/3(성공)으로 끝났고 CI는 3을 통과로 읽는다.
+        # 지금 기준은 **쓴 내용과 이전 내용의 차이**(`ledger_writes`)이고, 없음 → 있음도
+        # 변경이다. 지적 건수(`ledger_stale`)는 그 위에 얹은 안전망으로만 남는다.
+        #
         # 바뀐 것이 없으면 아래 정상 경로로 떨어진다. 그때는 관측이 커밋된 원장과 정확히
-        # 같다는 뜻이고, 플래그 없이 돌린 실행과 판정이 **정의상 동일**하다.
+        # 같다는 뜻이고, 플래그 없이 돌린 실행과 판정이 **정의상 동일**하다 — 파일도
+        # 건드리지 않는다(`recorded_at` 을 변경 판정에서 뺀 이유이자, 뺐기 때문에 가능한 일).
+        stale_note = f" / 원장 지적 {ledger_stale}건" if ledger_stale else ""
+        detail = f"원장 변경 {written}건{stale_note}"
         print(
-            f"원장 기록으로 종료(판정 아님): {summary} — 원장 변경 {ledger_changed}건. "
+            f"원장 기록으로 종료(판정 아님): {summary} — {detail}. "
             "이 실행은 게이트를 닫지 않는다. 원장 diff를 커밋해 리뷰에 올린 뒤, "
             "`--record-reference` **없이** 다시 돌린 결과로 판정한다 (종료 코드 4)"
         )
