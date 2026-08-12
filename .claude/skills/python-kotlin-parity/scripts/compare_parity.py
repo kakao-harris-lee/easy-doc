@@ -3,15 +3,20 @@
 
 기준은 Python 출력이 아니다. Python 구현은 회귀가 잦아 옮기는 중이고, 사용자 결정
 (2026-08-12)은 "출력을 Python과 동일하게 맞출 필요 없다. 요구사항을 구현하고 이후에
-개선한다"이다. 그래서 이 스크립트는 두 가지를 서로 다른 방식으로 판정한다.
+개선한다"이다. 그래서 판정 방식은 하나뿐이다.
 
     spec 도메인   fixture의 `assert` 목록을 Kotlin 산출물에 **실행**해 판정한다.
                   "가려야 할 것이 남았는가", "남겨야 할 것이 지워졌는가", "자리표시자를
                   되돌리면 원문이 복원되는가" 같은 성질이며, Python 출력을 보지 않는다.
                   Python 실행 결과는 `reference`(참고값)로 함께 오고, 다른 자리는
                   **참고 갈림 원장**에 기록된다 — 판정이 아니라 기록이다.
-    compat 도메인 값이 같은 것이 곧 요구사항인 자리(crypto·jwt·argon2). 롤백 창에서
-                  Python이 Kotlin 산출물을 읽어야 하므로 값 동일성을 그대로 요구한다.
+
+값 동일성으로 판정하던 `compat` 모드(crypto·jwt·argon2)와 역방향 외부 검증은
+2026-08-12에 **지웠다.** 근거는 생성기(`dump_parity_fixtures.py`) 모듈 docstring의
+"없어진 것" 문단에 있다 — 되살리기 전에 그것을 읽어라. 요약하면, 그 장치들은 "롤백 창에서
+Python이 Kotlin 산출물을 읽는다"는 전제 위에 있었고 롤백을 포기하면서 전제가 사라졌다.
+암호 검증 자체가 없어진 것은 아니다(round-trip·변조 거부·키 회전은 여전히 요구사항이며
+Kotlin 자체 테스트와 `migration-safety-gate` 감사가 받는다).
 
 참고 갈림을 기록으로 남기는 이유: 값이 다르다는 것은 둘 중 하나가 틀렸다는 신호라
 정보 가치가 있는데, 그것을 차단 사유로 쓰면 폐기된 전제("Python이 정답")로 되돌아간다.
@@ -35,41 +40,31 @@
     `runtime`은 반드시 "kotlin"이어야 한다. 예전에는 이 필드를 읽는 코드가 없어
     `runtime: not-kotlin` 결과도 그대로 통과했다.
 
-역방향 케이스(`verification.mode == "external"`, 예: Fernet·JWT를 **Kotlin이 만들고
-Python이 읽는** 방향)는 값 비교로 닫지 않는다. Kotlin이 기대값을 그대로 되받아 적으면
-아무것도 실행하지 않고 "일치"가 나오기 때문이다. 이런 케이스는 **비교기가 그 자리에서
-Python 검증기를 돌려** 판정한다. `verification.actual_file`(Kotlin 산출물)이 없으면
-통과가 아니라 **미검증(pending)** 으로 센다.
-
 신뢰 경계 — 이 스크립트가 보장하는 것과 보장하지 못하는 것:
 
     보장한다 (1) fixture가 정본 생성기(`dump_parity_fixtures.py`)의 산출물이다.
         비교할 때마다 생성기를 다시 돌려 케이스 id 집합·개수·순서·source·요구사항 선언·
         정규화 선언·**단언 목록**·참고값을 대조한다. 단언을 손으로 지워 게이트를 무르게
-        만드는 경로가 여기서 막힌다. 대조할 수 없는 자리는 난수뿐이다 — crypto의
-        키/토큰, argon2의 PHC(솔트). 그 목록이 `VOLATILE_INPUT_FIELDS`이고, **그 목록을
-        늘리는 것이 곧 구멍을 늘리는 것**이다.
-    보장한다 (2) 역방향 케이스의 판정이 실제 실행에서 나온다. 증거 파일을 읽지 않고
-        검증기를 직접 돌린다. `*.verified.json`은 그 실행의 **기록**으로 덮어써진다.
-    보장한다 (3) 역방향 산출물이 fixture의 요청과 결합돼 있다 — 요청한 키/시크릿을 썼고,
-        요청한 평문·subject를 하나도 빠짐없이 덮었으며, 중복 id로 표본을 채우지 않았다.
-    보장한다 (4) spec 도메인의 단언이 **양방향**이다. 성질 검증의 고전적 실패는 한쪽으로만
+        만드는 경로가 여기서 막힌다. 대조에서 빠지는 자리는 난수 입력뿐인데
+        (`VOLATILE_INPUT_FIELDS`) **지금은 그런 도메인이 없어 목록이 비어 있다.**
+        거기에 한 줄을 더하는 것이 곧 구멍을 하나 내는 것이다.
+    보장한다 (2) 단언이 **양방향**이다. 성질 검증의 고전적 실패는 한쪽으로만
         재는 것이다 — "가려졌는가"만 재면 전문을 통째로 가린 구현이 만점을 받는다. 그래서
         도메인마다 `under`(덜 한 것을 잡는다)와 `over`(더 한 것을 잡는다) 방향의 검사가
         **둘 다** 있어야 하고, 없으면 구조 결함으로 막는다.
-    보장한다 (5) 마스킹 범주 문자열이 **API 계약과 같다.** 범주는 자리표시자에 그대로 박히는
+    보장한다 (3) 마스킹 범주 문자열이 **API 계약과 같다.** 범주는 자리표시자에 그대로 박히는
         복원 키이고 React가 화면에 그대로 렌더링하는 문구다. 정본은 이 저장소가 아니라
         `contracts/easy-doc-v1.yaml`의 `MaskedItemResponse` 이며, 비교기는 그 파일을 직접
         읽어 fixture 선언과 대조한다. 예전에는 fixture가 넘긴 `categories` 인자와만
         대조해서, 생성기가 `["RRN","CARD"]`로 흘러가면 게이트는 통과하고 API는 계약을
         위반했다. 계약을 못 읽으면 통과가 아니라 **불충족**이다(fail closed).
-    보장한다 (6) 참고 갈림이 **선언 한 줄로 면제되지 않는다.** `reference_divergence:
+    보장한다 (4) 참고 갈림이 **선언 한 줄로 면제되지 않는다.** `reference_divergence:
         "expected"` 는 원장 기록을 면제하지 않고 검사를 **하나 더한다**(갈림이 사라지면
         실패). 예전에는 그 선언이 원장 기록과 대조를 통째로 건너뛰어, 갈림의 내용이 바뀌어도
         아무도 몰랐다. 원장에 남았지만 이번 관측 범위에 없는 **낡은 항목**도 함께 보고한다.
 
-    보장하지 못한다 (a) **그 산출물을 정말 Kotlin이 만들었는가.** fixture가 키와 시크릿을
-        공개하므로 같은 값을 Python으로도 만들 수 있다. `runtime` 필드는 선언일 뿐이고
+    보장하지 못한다 (a) **그 산출물을 정말 Kotlin이 만들었는가.** fixture의 입력이 전부
+        공개돼 있으므로 같은 값을 Python으로도 만들 수 있다. `runtime` 필드는 선언일 뿐이고
         손으로 적을 수 있다. 이 경계는 코드로 막히지 않는다 — Kotlin 테스트 하네스가
         그 파일을 쓰도록 CI에 배선하는 것이 유일한 방어다.
     보장하지 못한다 (b) **정본 생성기 자체의 위조.** 생성기를 고치면 "정본"이 따라 바뀐다.
@@ -97,17 +92,16 @@ Python 검증기를 돌려** 판정한다. `verification.actual_file`(Kotlin 산
 종료 코드:
     0 = 요구 성질 전건 충족 + 미검증 0건 + 기대 도메인 전부 존재
         (게이트를 닫아도 되는 유일한 상태)
-    1 = 성질 불충족·값 불일치·누락·읽기 실패(금지된 정규화 규칙, fixture가 정본과 다름,
-        단언 없는 spec 케이스, 방향 가드가 한쪽뿐인 도메인, **기록되지 않은 참고 갈림**,
-        runtime 미선언·불일치, 역방향 검증 실패·표본 부족 포함)
+    1 = 성질 불충족·누락·읽기 실패(금지된 정규화 규칙, fixture가 정본과 다름,
+        단언 없는 케이스, 방향 가드가 한쪽뿐인 도메인, **기록되지 않은 참고 갈림**,
+        runtime 미선언·불일치 포함)
         **도메인 누락도 1이다.** 근거: 이미 "Kotlin 결과 파일 없음"(파일 누락)과
         "미실행"(케이스 누락)이 1로 나간다. 같은 성격의 누락을 입도가 커졌다는 이유로
         (케이스 → 파일 → 도메인) 더 약한 코드로 내보내면 "많이 지울수록 종료 코드가 약해지는"
         유인이 생긴다 — 그것이 정확히 이 게이트를 무력화하는 경로다.
     2 = 불충족은 없으나 미검증 케이스가 남음 — "돌렸다"이지 "증명됐다"가 아니다.
-        두 갈래가 여기로 온다. (i) 역방향 산출물 미생성. (ii) **spec_status=pending**
-        도메인 — 요구 성질을 아직 적지 못해 판정할 근거가 없는 상태다. 값 비교로 때우지
-        않고 미검증으로 세는 것이 이 하네스의 전제다.
+        **spec_status=pending** 도메인이 여기로 온다 — 요구 성질을 아직 적지 못해 판정할
+        근거가 없는 상태다. 값 비교로 때우지 않고 미검증으로 세는 것이 이 하네스의 전제다.
         도메인이 통째로 없으면 정의 자체가 없으므로 2의 의미에 해당하지 않는다(1이다).
     3 = **부분 검증**이 지정한 범위 안에서 통과 — 게이트를 닫는 근거가 아니다.
         (`--only`, `--only-domain`, 단일 fixture 파일, 도메인 디렉터리 지정)
@@ -166,15 +160,11 @@ if str(_SCRIPT_DIR) not in sys.path:
 
 from dump_parity_fixtures import (  # noqa: E402 — sys.path 주입 뒤에만 import된다
     BUILDERS,
-    MODE_COMPAT,
     MODE_SPEC,
     REPO_ROOT,
     STATUS_PENDING,
-    VERIFIERS,
     ContractError,
-    VerificationOutcome,
     mask_contract,
-    write_proof_record,
 )
 
 #: 기대 도메인 집합. **정본은 생성기의 BUILDERS 키 하나뿐이다.** 여기에 목록을 다시 적지
@@ -189,11 +179,12 @@ KOTLIN_RUNTIME = "kotlin"
 
 #: 정본 대조에서 **값을 비교할 수 없는** 입력 필드. 생성기가 매 실행 난수를 쓰는 자리다.
 #: 여기 없는 필드는 전부 대조 대상이다 — 목록을 늘릴 때는 왜 난수인지 근거를 함께 적는다.
-#: (crypto: Fernet 키를 매번 새로 만든다 / argon2: 솔트가 매번 다르다)
-VOLATILE_INPUT_FIELDS: dict[str, frozenset[str]] = {
-    "crypto": frozenset({"key", "token"}),
-    "argon2": frozenset({"phc"}),
-}
+#:
+#: **지금은 비어 있다.** 난수를 쓰던 유일한 자리가 crypto(Fernet 키·토큰)와 argon2(솔트)
+#: 였고, 두 도메인은 2026-08-12에 사라졌다(모듈 docstring "없어진 것" 참고). 빈 채로
+#: 남겨 두는 이유는 이 목록에 한 줄을 더하는 것이 곧 정본 대조에 구멍을 하나 내는 일이기
+#: 때문이다 — 채우려는 사람이 이 문단을 먼저 읽게 하려고 기계는 그대로 둔다.
+VOLATILE_INPUT_FIELDS: dict[str, frozenset[str]] = {}
 
 #: 정본과 다른 케이스를 몇 건까지 본문에 적을지. 전부 적으면 리포트가 수백 줄이 된다.
 MAX_REPORTED_CASE_DIFFS = 5
@@ -776,8 +767,8 @@ class Pair:
     """비교할 fixture 한 벌 (fixture는 이미 읽어 둔다 — 도메인 판정에 필요하다).
 
     `mode`·`spec_status`는 **정본에서** 온다. 파일 쪽 선언은 위조 대상이라 판정 방식을
-    정하는 근거가 될 수 없다 — 파일이 `mode: compat` 이라고 적어 성질 검사를 피해 가는
-    경로를 막는다(파일과 정본이 다르면 정본 대조가 따로 잡는다).
+    정하는 근거가 될 수 없다 — 파일에 다른 `mode`·`spec_status`를 적어 성질 검사를 피해
+    가는 경로를 막는다(파일과 정본이 다르면 정본 대조가 따로 잡는다).
     """
 
     fixture_path: Path
@@ -803,13 +794,10 @@ class Pair:
 class FileResult:
     problems: list[str] = field(default_factory=list)
     pendings: list[str] = field(default_factory=list)
-    #: compat 도메인에서 값으로 대조한 케이스 수.
-    checked: int = 0
-    #: spec 도메인에서 성질을 실행해 판정한 케이스 수.
+    #: 성질을 실행해 판정한 케이스 수.
     judged: int = 0
     #: 실행한 단언 수. 케이스 수만 세면 단언 1개짜리 케이스가 늘어난 것을 못 본다.
     assertions: int = 0
-    external_ok: int = 0
     #: 참고값과 갈린 케이스 (원장에 기록됐거나 fixture가 의도를 선언한 것).
     diverged: int = 0
     #: `--only` 필터를 통과해 실제로 판정 대상이 된 케이스 수. 0이면 아무것도 검증하지 않은 것이다.
@@ -907,7 +895,7 @@ def spec_shape_problems(pair: Pair) -> list[str]:
 # ------------------------------------------------------------------ fixture 정본 대조
 
 #: 도메인별 정본 생성 결과 캐시. 한 실행에서 같은 도메인을 두 번 만들지 않는다
-#: (argon2는 생성마다 해시를 여러 번 돌린다).
+#: (빌더가 Python 구현을 실제로 돌리므로 반복 생성은 그만큼 느리다).
 _CANONICAL: dict[str, tuple[dict[str, Any] | None, str | None]] = {}
 
 
@@ -950,8 +938,8 @@ def provenance_problems(pair: Pair) -> list[str]:
     """이 fixture가 **정본 생성기의 산출물인지** 확인한다.
 
     대조할 수 있는 것과 없는 것을 구분한다. 케이스 id 집합·개수·정규화 선언·source·기대값은
-    언제나 대조 가능하다. crypto의 키/토큰과 argon2의 PHC는 매 생성 난수라 대조할 수 없고,
-    그 자리만 `VOLATILE_INPUT_FIELDS`로 빼 둔다 — **빼는 자리를 늘리는 것이 곧 구멍이다.**
+    언제나 대조 가능하다. 난수 입력이 있는 도메인만 `VOLATILE_INPUT_FIELDS`로 빼 두는데
+    **지금은 그런 도메인이 없어 목록이 비어 있다** — 빼는 자리를 늘리는 것이 곧 구멍이다.
     """
     canonical, failure = canonical_fixture(pair.domain)
     if canonical is None:
@@ -960,9 +948,8 @@ def provenance_problems(pair: Pair) -> list[str]:
             "통과로 보고하지 않는다"
         ]
     problems: list[str] = []
-    # 헤더 전량을 대조한다. `mode`·`spec_status`가 특히 중요하다 — 파일에서 `spec`을
-    # `compat`으로 바꿔 적으면 성질 검사를 건너뛰고 값 비교로 되돌아갈 수 있고,
-    # `pending`을 `ready`로 바꾸면 단언 없는 도메인이 통과로 집계된다.
+    # 헤더 전량을 대조한다. `spec_status`가 특히 중요하다 — 파일에서 `pending`을 `ready`로
+    # 바꾸면 단언 없는 도메인이 통과로 집계된다. `mode`도 같은 이유로 대조 범위에 둔다.
     for field_name in (key for key in canonical if key not in ("cases", "domain", "generated_at")):
         if pair.fixture.get(field_name) != canonical[field_name]:
             problems.append(
@@ -1019,7 +1006,12 @@ def provenance_problems(pair: Pair) -> list[str]:
     return problems
 
 
-# --------------------------------------------------------------- 역방향(external) 검증
+# ----------------------------------------------------------- 결과 파일의 런타임 선언
+#
+# 이 자리에는 역방향(external) 검증 — Kotlin이 만든 Fernet 토큰·JWT를 Python 검증기가
+# 그 자리에서 읽어 판정하는 장치 — 도 함께 있었다. 2026-08-12에 지웠다(모듈 docstring
+# "없어진 것" 참고). 역방향은 "롤백 창에서 Python이 Kotlin 산출물을 읽는다"를 증명하는
+# 장치였고, 롤백을 포기하면서 읽을 쪽이 사라졌다.
 
 
 def runtime_problem(document: dict[str, Any], path: Path) -> str | None:
@@ -1042,92 +1034,6 @@ def runtime_problem(document: dict[str, Any], path: Path) -> str | None:
             "Kotlin이 낸 결과가 아니면 비교 대상이 아니다"
         )
     return None
-
-
-def _safe_load(path: Path) -> tuple[dict[str, Any] | None, str | None]:
-    """읽기 실패로 실행 전체를 중단시키지 않는 로더 (역방향 산출물용)."""
-    try:
-        loaded = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
-        return (None, f"{path} 를 읽을 수 없다 ({type(exc).__name__})")
-    if not isinstance(loaded, dict):
-        return (None, f"{path} 의 최상위가 JSON 객체가 아니다")
-    return (loaded, None)
-
-
-def check_external(case: dict[str, Any], pair: Pair) -> tuple[str | None, str | None]:
-    """역방향 케이스를 **검증기를 직접 돌려** 판정한다.
-
-    반환: (문제, 미검증 사유) — 둘 중 하나만 채워지거나 둘 다 비어 있다(=검증됨).
-
-    예전에는 `verify-*`가 남긴 증거 파일의 `fixture_case`·`status`·`checked` 세 값만 읽었다.
-    그 세 값을 손으로 적은 6줄짜리 JSON이 "외부 검증 1건"으로 인정됐다(교차 리뷰 X-1).
-    지금은 증거 파일을 **읽지 않는다.** Kotlin 산출물을 찾아 Python 검증기를 그 자리에서
-    돌리고, 그 실행의 기록을 같은 경로에 덮어쓴다.
-    """
-    case_id = str(case["id"])
-    verification = case.get("verification") or {}
-    command = str(verification.get("command") or "")
-    actual_file = verification.get("actual_file")
-    proof_name = verification.get("proof")
-    if command not in VERIFIERS or not actual_file or not proof_name:
-        return (
-            f"- `{case_id}` **fixture 결함** — verification 에 command·actual_file·proof 가 "
-            f"모두 있어야 한다 (`uv run python {_DUMP} --domain {pair.domain}` 로 재생성)",
-            None,
-        )
-    kotlin_path = pair.actual_path.parent / str(actual_file)
-    proof_path = pair.actual_path.parent / str(proof_name)
-    if not kotlin_path.exists():
-        orphan = ""
-        if proof_path.exists():
-            orphan = (
-                f"\n  - **증거 파일만 있고 산출물이 없다**: {proof_path}. 증거 파일은 이제 "
-                "판정의 근거가 아니다(비교기가 검증기를 직접 돌린다) — 미검증으로 센다"
-            )
-        return (
-            None,
-            f"- `{case_id}` **미검증** — Kotlin 산출물 없음: {kotlin_path}\n"
-            f"  - 닫는 방법: Kotlin이 `verification.actual_schema` 형식으로 그 파일을 만들면 "
-            f"비교기가 `{command}` 검증기를 직접 돌려 판정한다\n"
-            f"  - 이 케이스가 남아 있는 한 역방향(Kotlin → Python) 호환성은 미증명이다{orphan}",
-        )
-    document, read_failure = _safe_load(kotlin_path)
-    if document is None:
-        return (f"- `{case_id}` **역방향 산출물 읽기 실패** — {read_failure}", None)
-
-    bad_runtime = runtime_problem(document, kotlin_path)
-    if bad_runtime:
-        outcome = VerificationOutcome(0, 1, [bad_runtime.lstrip("- ")], True)
-    else:
-        try:
-            outcome = VERIFIERS[command](document, case.get("input"))
-        except Exception as exc:  # noqa: BLE001 - 검증기가 죽으면 그 자체가 판정 불가다
-            return (
-                f"- `{case_id}` **검증기 실행 실패** — {command} ({type(exc).__name__}: {exc}). "
-                "검증하지 못한 것을 통과로 세지 않는다",
-                None,
-            )
-    target = write_proof_record(
-        command=command,
-        actual_path=kotlin_path,
-        fixture_path=pair.fixture_path,
-        proof_path=proof_path,
-        outcome=outcome,
-        produced_by="compare_parity.py",
-        actual_runtime=document.get("runtime"),
-    )
-    required = max(int(verification.get("required_cases", 1)), outcome.required)
-    if outcome.failures:
-        detail = "; ".join(outcome.failures[:MAX_REPORTED_CASE_DIFFS])
-        return (f"- `{case_id}` **역방향 검증 실패** — {detail} (기록: {target})", None)
-    if outcome.checked < required:
-        return (
-            f"- `{case_id}` **역방향 검증 표본 부족** — {required}건이 필요한데 "
-            f"{outcome.checked}건만 통과했다 (기록: {target})",
-            None,
-        )
-    return (None, None)
 
 
 # --------------------------------------------------------------------- 참고 갈림 원장
@@ -1378,24 +1284,6 @@ def compare_file(
         if only is not None and case_id != only:
             continue
         result.considered += 1
-        verification = case.get("verification") or {}
-        if verification.get("mode") == "external":
-            if case_id in actual_cases:
-                # 그 자리에 기대값을 베껴 넣는 것이 정확히 이 게이트를 무력화하는 경로다.
-                result.problems.append(
-                    f"- `{case_id}` **역방향 케이스를 Kotlin 결과로 닫으려 했다** — 이 케이스는 "
-                    "값 비교 대상이 아니다. "
-                    f"`{verification.get('actual_file')}` 산출물을 만들어라"
-                )
-                continue
-            problem, pending = check_external(case, pair)
-            if problem:
-                result.problems.append(problem)
-            elif pending:
-                result.pendings.append(pending)
-            else:
-                result.external_ok += 1
-            continue
         active, tolerance = _rules(list(case.get("normalization", file_rules)))
         if pair.pending_spec:
             pending_spec += 1
@@ -1410,26 +1298,7 @@ def compare_file(
             f"--actual {pair.actual_path} --only {case_id}`\n"
             f"  - source: {case.get('source', fixture.get('source', '?'))}"
         )
-        if pair.mode == MODE_COMPAT:
-            # 값이 같은 것이 곧 요구사항인 자리다 — 롤백 창에서 Python이 이 산출물을 읽는다.
-            result.checked += 1
-            expected = normalize(case["expected"], active)
-            got = normalize(got_raw, active)
-            if sorted(placeholders_of(expected)) != sorted(placeholders_of(case["expected"])):
-                result.problems.append(
-                    f"- `{case_id}` **정규화 오류** — 정규화가 자리표시자를 바꿨다. 규칙을 고쳐라"
-                )
-                continue
-            if not equal(expected, got, tolerance):
-                result.problems.append(
-                    f"- `{case_id}` **호환성 불일치** (compat 도메인 — 값이 같아야 한다)\n"
-                    f"  - 최초 차이: {first_difference(expected, got, tolerance)}\n"
-                    f"  - 입력: `{json.dumps(case['input'], ensure_ascii=False)[:200]}`\n"
-                    f"  - 정규화: {', '.join(sorted(active)) or '없음'}\n" + reproduce
-                )
-            continue
-
-        # ── spec 도메인: 요구 성질을 실행해 판정한다 ─────────────────────────
+        # ── 요구 성질을 실행해 판정한다 ──────────────────────────────────────
         result.judged += 1
         entries = case.get("assert")
         result.assertions += len(entries) if isinstance(entries, list) else 0
@@ -1511,16 +1380,20 @@ def collect_pairs(fixture_root: Path, actual_root: Path, domains: list[str]) -> 
 def resolve_mode(domain: str, fixture: dict[str, Any]) -> tuple[str, str]:
     """판정 방식(mode·spec_status)을 **정본에서** 정한다.
 
-    파일 쪽 선언을 믿으면 `mode: compat`으로 바꿔 적는 것만으로 성질 검사를 건너뛸 수 있다.
-    정본을 만들 수 없을 때만 파일 선언으로 물러서되, 그 상태는 정본 대조가 이미 결함으로
+    파일 쪽 선언을 믿으면 `mode`를 바꿔 적는 것만으로 성질 검사를 건너뛸 수 있다. 정본을
+    만들 수 없을 때만 파일 선언으로 물러서되, 그 상태는 정본 대조가 이미 결함으로
     보고한다(통과로 집계되지 않는다).
+
+    **알 수 없는 mode는 `spec`으로 떨어진다.** 값 동일성으로 판정하던 `compat` 모드가
+    2026-08-12에 사라지면서 fallback도 뒤집혔다 — 예전에는 모르는 값이 `compat`이 되어
+    `assert` 의무와 방향 가드를 통째로 건너뛰었다. 지금은 가장 엄격한 쪽으로 떨어진다.
     """
     canonical, _ = canonical_fixture(domain) if domain in BUILDERS else (None, None)
     source = canonical if canonical is not None else fixture
     mode = source.get("mode")
     status = source.get("spec_status", "ready")
     return (
-        mode if isinstance(mode, str) and mode in (MODE_SPEC, MODE_COMPAT) else MODE_COMPAT,
+        mode if isinstance(mode, str) and mode == MODE_SPEC else MODE_SPEC,
         str(status),
     )
 
@@ -1651,10 +1524,8 @@ def main() -> int:
     pending_sections: list[str] = []
     total_problems = 0
     total_pending = 0
-    total_checked = 0
     total_judged = 0
     total_assertions = 0
-    total_external = 0
     total_considered = 0
     total_diverged = 0
     recorded: dict[str, dict[str, dict[str, Any]]] = {}
@@ -1681,10 +1552,8 @@ def main() -> int:
                 ledger_root=args.ledger,
             )
             problems += result.problems
-            total_checked += result.checked
             total_judged += result.judged
             total_assertions += result.assertions
-            total_external += result.external_ok
             total_considered += result.considered
             total_diverged += result.diverged
             total_pending += len(result.pendings)
@@ -1698,8 +1567,7 @@ def main() -> int:
                     f"## {pair.domain} · {pair.fixture_path.name}\n\n" + "\n".join(result.pendings)
                 )
             if not problems and not result.ledger_problems and not result.pendings:
-                judged = f"성질 {result.judged}건/단언 {result.assertions}개"
-                shown = judged if pair.mode == MODE_SPEC else f"값 대조 {result.checked}건"
+                shown = f"성질 {result.judged}건/단언 {result.assertions}개"
                 print(f"[충족] {pair.domain} · {pair.fixture_path.name} — {shown}")
         if problems:
             total_problems += len(problems)
@@ -1772,8 +1640,8 @@ def main() -> int:
             + f"# parity 미검증 리포트 ({total_pending}건)\n\n"
             + "\n\n".join(pending_sections)
             + (
-                "\n\n> 미검증은 통과가 아니다. 요구 성질이 적히지 않았거나(spec_status=pending) "
-                "역방향(Kotlin → Python) 산출물이 없어서 **판정할 근거가 없는** 상태이므로 "
+                "\n\n> 미검증은 통과가 아니다. 요구 성질이 적히지 않아"
+                "(spec_status=pending) **판정할 근거가 없는** 상태이므로 "
                 "게이트를 닫지 않는다.\n"
             )
         )
@@ -1809,8 +1677,7 @@ def main() -> int:
 
     summary = (
         f"도메인 {covered}/{len(expected_domains)} / 성질 판정 {total_judged}건"
-        f"(단언 {total_assertions}개) / 호환 값 대조 {total_checked}건 / "
-        f"외부 검증 {total_external}건 / 참고 갈림 {total_diverged}건 / "
+        f"(단언 {total_assertions}개) / 참고 갈림 {total_diverged}건 / "
         f"미검증 {total_pending}건 / 불충족 {total_problems}건 / "
         f"도메인 누락 {len(missing)}개 / 파일 {len(pairs)}개"
     )

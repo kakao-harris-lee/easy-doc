@@ -9,6 +9,29 @@
 
 ---
 
+## 재개발 전환 (2026-08-12 2차) — 아래 역사 행 중 일부가 무효화됨
+
+**사용자 결정 + 리더 판정.** 방향이 **전환(포팅)에서 재개발(rebuild)**로 바뀌었다. Python은 폐기 대상이다. 근거·상세는 계획 `docs/plans/2026-08-11-kotlin-react-migration.md`의 "2026-08-12 (2차)" 변경 이력. 이 파일의 아래 역사 행은 **고치지 않는다**(파일 규약) — 대신 여기서 무엇이 무효화됐는지 못 박는다.
+
+**호환성 요구 소멸로 무효화된 행(역사 참고로만 남긴다 — 게이트로 쓰지 말 것):**
+
+- **Phase 0 「Fernet JVM 호환 spike」 · 「결정 3 상세 — Fernet 직접 구현」 전체 · 필수조치 C(Fernet TTL·60초 토큰)** — 롤백이 없어 Fernet 자체가 불필요. **표준 AEAD 신규 구현**(계획 §4.3). crypto spike의 역방향·tamper **호환** 검증도 근거 소멸.
+- **Phase 0 결정표 결정 3(Fernet 직접 구현)** → **무효.** 결정 2(보존 DB 없음)는 유효하되 그 함의가 "재암호화 창 불필요"에서 "**롤백·호환성 자체가 소멸**"로 확장됐다. 결정 1의 "Python 도구는 독립 oracle로 존치"는 "**한시 존치 후 이식/폐기**"로 바뀐다(계획 Phase 9 개정).
+- **JWT·Argon2의 「양방향」·「역방향」·「기존 PHC 그대로 검증」 프레이밍** — Python이 Kotlin 산출물을 읽을 요구가 없다. crypto·jwt·argon2 parity의 `compat` 판정 모드 근거 소멸.
+- **검증 게이트 표 「Crypto (Python ↔ Kotlin)」 → 「Kotlin 단독」**, **「Ops (cutover/rollback)」 → 「첫 배포·파일럿 관찰(롤백 없음)」**.
+
+**무효화되지 '않는' 것(혼동 주의 — 순수 정확성 문제라 그대로 유효):**
+
+- **필수조치 A(Argon2 재해시 전체 파라미터 동등성)·B(JWT clock skew 0 경계)** — 이 둘은 *호환*이 아니라 *정확성* 문제다. 재개발 Argon2·JWT에도 그대로 적용된다. 탐침 7건·경계 fixture 2건 회귀 유지.
+- **필수조치 D(`encryption_scheme` additive)** — 컬럼은 남기되 의미가 "롤백 호환"에서 **"향후 키 회전용"**으로 바뀐다. 처음부터 `'fernet-v1'`이 아니라 새 AEAD scheme 값(예: `'aes-gcm-v1'`)으로 쓴다.
+- **계약·보안 불변식(마스킹 선행·no-store·404 소유권·평문 미저장)**, **DB baseline/Flyway 구조**, **contract 3자 대조·CORS·오류 계약(C-1/C-2/C-3)** — 재개발 기준(요구사항·계약·React)에서 그대로 유효.
+
+**신설 게이트 — 추출 완료(Python 폐기 선행 조건):** 재개발에는 Python 차분 그물이 없어, 코드에만 있던 판단(프롬프트 전문·스타일 상수·**치환 비문 실측 튜닝** `eae75c7`/`0894854`/`a4c9fd9`·골든셋 채점 기준)을 지우기 전에 명세·fixture로 옮겨야 한다. 목록·폐기 게이트는 **`03_rebuild-extraction-list.md`**. 이 게이트가 0으로 닫히기 전 `app/**`·`tests/**` 삭제 금지.
+
+**품질 문제는 이 전환이 해결하지 않는다:** 골든셋 통과율(실수집 52.8%·전체 64.3%)·judge·장문 절벽은 언어 무관이며 프롬프트·긴 문서 전략의 문제다(`02_quality-baseline.md`). Phase 0 합격선 확정 + Phase 2 이후 프롬프트 작업으로 이월.
+
+---
+
 ## Phase 0 — 범위·계약 동결
 
 계획 문서 §5 Phase 0. 원문 종료 조건: "Kotlin이 **기존 암호문**을 안전하게 읽을 경로와 문서 포팅 가능성이 확인됨."
@@ -24,7 +47,7 @@
 | 종료 조건 | 충족 | 근거 | 미해결 항목 | blocked-by | 마지막 갱신 주체 |
 |---|---|---|---|---|---|
 | `contracts/easy-doc-v1.yaml` 작성 | 예 | `contracts/easy-doc-v1.yaml` 작성 완료. 14 엔드포인트(제품 13 + `/health`)가 FastAPI 실제 노출 경로와 **차집합 양쪽 공집합**으로 일치. `openapi-spec-validator` → OK. 413·502/503·`detail` union·응답 헤더 5종·multipart 요청 본문·`status` enum·CORS·입력 상한 전부 수기 기입 | **U-1 해소 (2026-08-12)** — 리더 결정 + 사용자 승인으로 **개선 수용**(Python 동작을 재현하지 않는다). 계약 파일의 `x-cors.x-known-limitation` → `x-cors.x-unhandled-500-cors`("결정됨 — Python과 의도적으로 다름")로 대체, `components.responses.InternalError.description` 정정, v2 후보 `V2-2` **종결**, `x-changelog` 항목 추가. `info.version`은 1.0.0 유지. 근거 `00_contract-keeper_changelog.md` | - | contract-keeper (2026-08-12) |
-| 응답·헤더·오류·인증·권한·입력 상한을 contract test로 고정 | 아니오 | 목록·기준만 작성 (`00_contract-keeper_test-plan.md` — 엔드포인트별 세트 14 + 횡단 41종). **테스트 코드는 미구현**이며 실행도 하지 않았다 | 리더 지시로 Phase 0에서는 목록만 세웠다(Kotlin API가 Phase 3부터 생긴다). 추가로 **G-1: Python 기준선에도 없는 공백** — `POST /workspaces`·`PATCH /workspaces/{id}`의 캐시 헤더를 어떤 테스트도 단언하지 않는다(계약상 10곳 중 2곳). Python에 먼저 채울지 Phase 3에서 양쪽 동시에 넣을지 판단 필요.<br>**2026-08-12 OQ-1 판정 반영** — 사적 헤더가 **모든 응답**에 붙게 되면서 테스트 계획의 헤더 축이 바뀌었다: ① 오류 응답의 **부정** 단언이 **긍정**으로 뒤집힘(Kotlin 한정 — Python 부정 단언은 그대로 옳다), ② 열거 10곳 개별 단언은 **하한선으로 유지**(삭제 금지), ③ 신규 — DELETE 204·`/health`·프리플라이트·**헤더 중복 부착 부재**(H-2), ④ 신규·미실측 — 컨테이너 레벨 응답 도달 여부(**H-1**). 체크 항목 정본 `.claude/skills/api-contract-freeze` §5.1·§5.2 | 리더(G-1 시점 판단) → Phase 3 kotlin-implementer | contract-keeper (2026-08-12) |
+| 응답·헤더·오류·인증·권한·입력 상한을 contract test로 고정 | 아니오 | 목록·기준만 작성 (`00_contract-keeper_test-plan.md` — 엔드포인트별 세트 14 + 횡단 48종). **테스트 코드는 미구현**이며 실행도 하지 않았다 | 리더 지시로 Phase 0에서는 목록만 세웠다(Kotlin API가 Phase 3부터 생긴다). 추가로 **G-1: Python 기준선에도 없는 공백** — `POST /workspaces`·`PATCH /workspaces/{id}`의 캐시 헤더를 어떤 테스트도 단언하지 않는다(계약상 10곳 중 2곳). Python에 먼저 채울지 Phase 3에서 양쪽 동시에 넣을지 판단 필요.<br>**2026-08-12 OQ-1 판정 반영** — 사적 헤더가 **모든 응답**에 붙게 되면서 테스트 계획의 헤더 축이 바뀌었다: ① 오류 응답의 **부정** 단언이 **긍정**으로 뒤집힘(Kotlin 한정 — Python 부정 단언은 그대로 옳다), ② 열거 10곳 개별 단언은 **하한선으로 유지**(삭제 금지), ③ 신규 — DELETE 204·`/health`·프리플라이트·**헤더 중복 부착 부재**(H-2), ④ 신규 — 컨테이너 레벨 응답 도달 여부(**H-1**). 체크 항목 정본 `.claude/skills/api-contract-freeze` §5.1·§5.2.<br>**2026-08-12 H-1 실측 반영** — ④가 **실측 완료**로 닫혔다(X-D2c). 필터 1층으로는 파싱 단계 거절 7종에 못 닿아 **Tomcat Engine 밸브를 더한 2층**이 됐고, 테스트 축에 X-D2d(밸브 음성 대조)·X-D2e(Tomcat 결합 인지)가 추가됐다. 부수로 **오류 본문 사각지대**가 드러나 X-C7·X-C8(`sendError`→`/error` 본문이 `{"detail":…}`가 아니다)·X-C9(컨테이너 응답 본문 **미측정**)가 신설됐다. 계약 정본 `x-error-body-universality`, 절차 정본 스킬 §5.3 | 리더(G-1 시점 판단) → Phase 3 kotlin-implementer | contract-keeper (2026-08-12) |
 | FastAPI OpenAPI·계약 파일·React 타입 3자 대조 | 예 | `00_contract-keeper_three-way-diff.md`. 불일치 **21건 + 계획-코드 3건 + 미결 1건**. ①이 런타임과 **다른 값**을 말하는 곳 3건(422의 `input`/`ctx`, `loc` 타입, export의 `application/json`), 누락 6건, 느슨함 5건, 의도된 차이 6건. `DELETE /workspaces/{id}`가 React에 없는 것은 **의도된 차이**로 기록 | **없음** — 유일하게 남았던 U-1(§7)이 2026-08-12 리더 결정으로 종결(위 행) | - | contract-keeper (2026-08-12) |
 | 대상 DB와 보존할 파일럿 데이터 유무 확인 | 예 | 사용자 확인 (2026-08-12): **보존할 운영/파일럿 DB 없음. 빈 DB로 시작한다.** 이로써 계획 §7이 "변동 폭이 가장 크다"고 지목한 두 변수 중 하나(기존 암호문 호환)가 소멸했다 | - | - | leader |
 | 범위 승인: 런타임만 Kotlin화 vs 오프라인 도구까지 Python 제거 | 예 | 사용자 승인 (2026-08-12): **제품 런타임만 Kotlin화**(§9-1). Phase 9(오프라인 도구)는 착수하지 않는다. 골든셋 평가·벤치마크·수집·파일럿 리포트 도구는 Python으로 남아 **독립 검증 oracle** 역할을 유지한다 | - | - | leader |
@@ -254,7 +277,8 @@ Python 게이트 820 passed 가 업그레이드 전과 동일하다. Kotlin 2.3.
 | 계약 multipart `contentType` 제약이 구현에 없음 (F2 = 교차 C-6) — 성실히 구현하면 `.hwpx` 업로드가 깨지고 **그 구현이 contract test 를 통과한다**(`.hwpx` 는 브라우저가 `application/octet-stream` 을 보내고, `application/hwp+zip` 은 내보내기 mimetype 이다) | Phase 4 착수 전 |
 | **G-1** `POST /workspaces`·`PATCH /workspaces/{id}` 캐시 헤더 테스트 공백 — Python 기준선에도 없다(계약상 10곳 중 2곳) | Phase 3 |
 | ~~계약 §2.7-3 **규칙 1**을 Phase 3에서 **실측**해 성립 확인~~ — **폐기 (2026-08-12 리더 판정, OQ-1).** 규칙 1(사적 헤더는 `ResponseEntity`로만 싣고 필터 금지)이 전역 부착과 정면 충돌해 내려갔다. 이 항목의 자리는 아래 **H-1**이 대신한다 | ~~Phase 3 종료 전~~ **폐기** |
-| **H-1** 전역 헤더 필터가 **컨테이너 레벨 응답까지 닿는가 — 미실측.** 2026-08-12 리더 판정으로 `no-store`+`nosniff`가 Kotlin의 **모든 응답**에 붙게 되면서 실패 양상이 "누가 한 자리를 빠뜨렸는가"에서 **"필터가 그 응답까지 닿는가"**로 옮겨갔다. 필터 앞·바깥에서 컨테이너가 직접 만드는 응답 4종(**malformed HTTP 400 · 핸들러 없는 404 · 413 · 415**)이 필터에 도달하는지 **이 저장소에서 실측된 적이 없다.** ⚠️ **MockMvc로는 측정 불가** — 서블릿 컨테이너를 띄우지 않아 재현되지 않으므로 `@SpringBootTest(RANDOM_PORT)` + 원시 소켓이 필요하다. 어긋나면 **계약을 좁히지 않는다**: ① 필터 배치로 닿게 만들고(후보 원인 — `OncePerRequestFilter.shouldNotFilterErrorDispatch()` 기본 `true`, dispatcher type 에 `ERROR` 누락, CORS 필터보다 안쪽 등록. **셋 다 이 저장소에서 미확인**) → ② 그래도 남으면 목록·실측 근거와 함께 리더에게 재심. 절차 정본 `.claude/skills/api-contract-freeze` §5.2, 계약 정본 `x-global-response-headers.x-phase3-measurement` | Phase 3 종료 전 |
+| ~~**H-1** 전역 헤더 필터가 **컨테이너 레벨 응답까지 닿는가 — 미실측**~~ — **실측 완료 (2026-08-12, kotlin-implementer / Tomcat 11.0.22 · Boot 4.1.0).** 원시 소켓 + `@SpringBootTest(RANDOM_PORT)`로 측정. **필터에 닿음**: 핸들러 없는 404 · 415 · 413 · 프리플라이트 OPTIONS 200 · `sendError`→`/error` 503. **필터에 못 닿음 7종**: 요청 대상 금지 문자 400 · 콜론 없는 헤더 줄 400 · 요청 줄 파손 400 · 헤더 상한 초과 400 · `Host` 없음 400 · 알 수 없는 HTTP 버전 505 · 알 수 없는 메서드 405 — 파싱 단계에서 거절돼 **필터 체인이 시작조차 하지 않는다**(배치로 고칠 수 없다). **해결: 계약을 좁히지 않고 강제 수단을 넓혔다** — Tomcat Engine 밸브가 7종 전부를 덮음을 계측 확인, 음성 대조(밸브 제거 시 malformed 3건만 깨짐)까지 돌렸다. 리더 재심 불필요. **후보 원인 ⓐ `shouldNotFilterErrorDispatch()`는 기각** — 그것과 `DispatcherType.ERROR`를 둘 다 기본값으로 되돌려도 헤더가 남는다(필터가 `chain.doFilter` 앞에서 쓰고 Tomcat이 포워딩에서 버퍼만 비운다). ⚠️ **회귀는 원시 소켓으로 유지** — MockMvc로 옮기면 "측정한 것처럼 보이는 통과"가 나온다. ⚠️ **밸브는 Tomcat 결합** — 컨테이너 교체 시 기동 시점에 깨진다(계약 `x-container-coupling`) | ~~Phase 3 종료 전~~ **완료** |
+| **H-4** 오류 본문이 **경로를 가리지 않는가** — H-1 실측의 **범위 밖 부수 발견.** `sendError` → `/error` 응답이 `{"detail":…}`가 아니라 Spring `BasicErrorController` 기본 본문 `{"timestamp","status","error","path"}`를 낸다. 계약의 "오류 본문 최상위 `detail` 하나"는 계획 §2.2 **불변식**인데 이 경로가 사각지대였다. **지금은 운영 코드가 `sendError`를 안 불러 안 드러난다 — Phase 3에서 인증 필터가 401을 `sendError`로 내는 것이 가장 흔한 구현이고 그 순간 깨진다**(401은 React `client.ts`의 세션 만료 분기라 화면 동작까지 바뀐다). 계약에 `x-error-body-universality` 신설, 검증 E-1~E-3 = 테스트 X-C7·X-C8. **구현 수단은 규정하지 않는다** — 계약이 정하는 것은 나간 바이트뿐이다. 남은 미측정: 위 7종의 **본문 모양**(E-4 = X-C9) — 이번 실측은 헤더만 봤다. 만족시킬 수 없으면 계약을 좁히지 말고 리더 재심 | Phase 3 종료 전 |
 | **H-2** 전역 필터 도입에 따른 **헤더 중복 부착** — 필터와 컨트롤러 `ResponseEntity`가 같은 헤더를 둘 다 실으면 `Cache-Control: no-store, no-store`가 나가 계약의 `const` 제약에 위반된다. 값만 보는 단언은 통과하므로 **개수까지** 단언해야 한다(`header().stringValues(...)`). 필터는 `add`가 아니라 `set` | Phase 3 |
 | **문서 spike 재검증** — Phase 0 spike 는 Kotlin **2.2.0** 조합에서 통과한 것이다. 현재 2.3.21이므로 POI 5.4.1·PDFBox 3.0.5·commons-compress 1.27.1 조합으로 **DOCX 동등성 7항목을 다시 확인**해야 한다. 이번에 확인한 것은 좌표 해석과 컴파일뿐이다 | Phase 4 착수 전 |
 | DOCX 내보내기 템플릿 동봉 여부 — POI 산출물에 `styles.xml`/`theme` 가 없어 Heading 1 서식이 소실된다 | Phase 4 착수 전 |

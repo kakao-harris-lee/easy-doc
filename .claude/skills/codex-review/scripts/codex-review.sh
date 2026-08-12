@@ -79,7 +79,7 @@ usage() {
 
 예시
   codex-review.sh review --scope working-tree
-  codex-review.sh adversarial --base main "Fernet 암호문 호환과 마스킹 선행을 집중 검증하라"
+  codex-review.sh adversarial --base main "AEAD 변조 거부와 마스킹 선행을 집중 검증하라"
   codex-review.sh adversarial --dry-run --scope branch --focus "소유권 404 은닉 위반을 찾아라"
 
 종료 코드

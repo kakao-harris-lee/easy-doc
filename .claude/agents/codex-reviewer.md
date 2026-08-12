@@ -1,6 +1,6 @@
 ---
 name: codex-reviewer
-description: codex CLI를 호출해 Claude와 독립적인 관점의 리뷰를 받아 오는 게이트. Phase 종료 조건 판정 전, Kotlin 모듈 구현이 끝났을 때, 계약 스펙이나 parity 하네스가 확정되기 직전, 절체 직전 최종 점검처럼 "Claude 혼자 판단하면 같은 맹점을 반복할 위험"이 있는 지점에서 호출한다. 리뷰 결과는 가공하지 않은 원본 상태로 migration-reviewer에게 전달된다.
+description: codex CLI를 호출해 Claude와 독립적인 관점의 리뷰를 받아 오는 게이트. Phase 종료 조건 판정 전, Kotlin 모듈 구현이 끝났을 때, 계약 스펙이나 parity 하네스가 확정되기 직전, 첫 배포 직전 최종 점검처럼 "Claude 혼자 판단하면 같은 맹점을 반복할 위험"이 있는 지점에서 호출한다. 리뷰 결과는 가공하지 않은 원본 상태로 migration-reviewer에게 전달된다.
 model: opus
 ---
 
@@ -31,11 +31,11 @@ codex CLI를 호출해 Claude 계열이 아닌 독립 모델의 리뷰를 받아
 | 0 | `contract` | `contracts/easy-doc-v1.yaml` | §2.2 계약 조항 전문, `app/api/*` 경로, `frontend/src/api/types.ts` |
 | 1 | `skeleton` | `backend-kotlin/` 골격, `libs.versions.toml` | §3.1 기술 선택표, §3.2 모듈 경계, Phase 1 종료 조건 |
 | 2 | `masking` | `backend-kotlin/core/` | §4.6 "동등 포팅, 개선 금지", 대응 Python 원본 경로 |
-| 3 | `auth` | `application/`·`infrastructure/` 인증·repository | §4.2 스키마 인수 원칙, §4.3 Argon2·JWT 정책 |
-| 4 | `crypto` | 업로드·추출·암호화·내보내기 | §4.3 Fernet 게이트, §4.5 문서 표와 필수 검증 |
+| 3 | `auth` | `application/`·`infrastructure/` 인증·repository | §4.2 스키마 원칙, §4.3(2026-08-12 2차 개정) Argon2·JWT 정책 — **호환이 아니라 정확성**(재해시 전체 파라미터 동등성, JWT clock skew 0) |
+| 4 | `crypto` | 업로드·추출·암호화·내보내기 | §4.3(2026-08-12 2차 개정) **표준 AEAD 신규 구현** — round-trip·변조 거부·nonce 재사용 금지·복호화 oracle 금지. Fernet 호환 게이트는 롤백 포기로 소멸했다. §4.5 문서 표와 필수 검증 |
 | 5 | `worker` | `worker/`, 작업 큐 | §4.4 lease·재시도·실패 분류, §2.3 최대 2회 호출 |
 | 6 | `frontend` | `frontend/src/api/` | §4.1 React 변경 범위 5항목 |
-| 7 | `cutover` | 절체·롤백 절차 문서 | §5 Phase 7 순서와 즉시 중단 기준 |
+| 7 | `cutover` | 첫 배포·파일럿 관찰 절차 문서 (scope 이름은 상호 참조 때문에 유지한다 — 내용만 일방향 배포로 바뀌었다) | §5 Phase 7(2차 개정) 순서와 즉시 중단 기준. **롤백 절차는 없다** — 대응은 신규 업로드 중단 + fix-forward |
 
 ## 입력 / 출력 프로토콜
 

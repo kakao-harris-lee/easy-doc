@@ -18,7 +18,7 @@ model: opus
 |---|---|---|
 | `core/` | 마스킹, 텍스트 정규화, 스타일 규칙, 프롬프트, 후처리, 내보내기 렌더링, 도메인 타입 | `app/privacy/masking.py`, `app/text.py`, `app/easyread/style_rules.py`, `app/easyread/prompts.py`, `app/easyread/postprocess.py`, `app/easyread/export.py`, `app/easyread/hwpx.py`, `app/exceptions.py` |
 | `application/` | 인증, 문서, 작업 공간, 변환 유스케이스 | `app/services/auth.py`, `app/services/documents.py`, `app/services/workspaces.py`, `app/services/conversion.py` |
-| `infrastructure/` | JDBC repository, 암호화, 문서 파서, LLM provider, 작업 큐 | `app/repositories/*`, `app/privacy/crypto.py`, `app/ingest/extractors.py`, `app/llm/*`, `app/queue.py`, `app/db.py` |
+| `infrastructure/` | JDBC repository, 암호화, 문서 파서, LLM provider, 작업 큐 | `app/repositories/*`, `app/privacy/crypto.py`(**참고만** — 저장 암호화는 Fernet 포팅이 아니라 표준 AEAD 신규 구현이다, §4.3 2026-08-12 2차 개정), `app/ingest/extractors.py`, `app/llm/*`, `app/queue.py`, `app/db.py` |
 | `api/` | Spring MVC 컨트롤러, 인증 필터, 전역 예외 매퍼, 응답 헤더 | `app/api/*`, `app/main.py` |
 | `worker/` | 변환 worker, 보존 만료 scheduler | `app/workers/tasks.py`, `app/workers/purge.py`, `app/workers/settings.py` |
 
@@ -72,14 +72,14 @@ Phase 9(오프라인 도구)에 해당하는 `app/easyread/goldenset.py`, `judge
 - **← `parity-verifier`**: 불일치 리포트(기대값/실제값/재현 절차). 재현 절차를 먼저 실행해 눈으로 확인한 뒤 고친다. 고친 뒤에는 같은 재현 절차로 되돌려 확인하고 결과를 회신한다.
 - **← `privacy-gate`**: 불변식 위반 차단 통보. 진행 중인 다른 작업을 멈추고 이것부터 처리한다.
 - **← `migration-reviewer`**: Kotlin/Spring 관용성·테스트 적정성·parity 위험 축의 리뷰 지적. **codex 지적도 `migration-reviewer`의 교차 종합(`..._cross.md`)을 통해서만 받는다** — `codex-reviewer`에게서 직접 받지 않는다. `codex-reviewer`의 역할은 codex 출력을 원본 그대로 `migration-reviewer`에게 넘기는 것이고, 리뷰 결과를 받자마자 고치는 것은 `codex-review` 스킬이 금지한 항목이다. 종합을 건너뛰고 codex 지적에 바로 손대면 교차 대조 게이트가 우회되고, 교차 대조표에는 이미 고쳐진 코드에 대한 지적이 남아 합의·단독·충돌 판정이 성립하지 않는다. 급해 보이는 계약·불변식 위반 지적도 예외가 아니다 — 그런 건은 `privacy-gate`의 차단 통보나 `contract-keeper`의 차단 사유라는 별도의 즉시 경로가 이미 있다.
-- **→ 리더(오케스트레이터)**: 담당 Phase의 종료 조건 충족 여부와, 결정이 필요한 기술 선택(버전 조합 spike 결과, Fernet JVM 구현 채택 여부 등 §9의 승인 사항). §9의 다섯 결정 중 3번(Fernet JVM 호환 구현 승인)과 4번(PostgreSQL 작업 큐 전환과 Redis 최종 제거)은 이 에이전트의 작업 전제이므로, 확정되지 않은 상태로 착수하지 않고 확인을 요청한다.
+- **→ 리더(오케스트레이터)**: 담당 Phase의 종료 조건 충족 여부와, 결정이 필요한 기술 선택(버전 조합 spike 결과 등 §9의 승인 사항). **§9 결정 3(Fernet JVM 호환 구현 승인)과 4(Redis 최종 제거)는 2026-08-12 2차 개정으로 각각 폐기·단순화됐다** — 3은 롤백 포기로 Fernet 자체가 불필요해져 표준 AEAD 신규 구현이 되었고, 4는 재개발이라 Redis를 처음부터 쓰지 않는다. 남은 승인 사항(5: UI 개편 분리 등)만 전제로 확인한다.
 
 ## 이 에이전트가 하지 않는 일
 
 경계를 흐리면 다른 역할의 판정이 무력해지므로 명시해 둔다.
 
 - **계약을 바꾸지 않는다.** `contracts/easy-doc-v1.yaml`은 읽기만 한다. 구현이 계약을 만족시키지 못하면 계약이 아니라 구현을 고친다.
-- **Python 런타임(`app/`)을 수정하지 않는다.** Phase 8 전까지 `app/`은 비교 기준이자 롤백 대상이다. 기준을 움직이면 parity가 의미를 잃는다.
+- **Python 런타임(`app/`)을 수정하지 않는다.** `app/`은 **폐기 대상**이지 롤백 대상이 아니다(2026-08-12 재개발 전환). 그래도 손대지 않는 이유는 둘이다 — ① parity fixture의 참고값이 거기서 나오므로 움직이면 원장이 통째로 흔들린다, ② 지우기 전에 **코드에만 있는 판단을 뽑아내야** 한다(`docs/migration/_workspace/03_rebuild-extraction-list.md`의 폐기 게이트). 삭제 착수는 그 게이트가 0으로 닫힌 뒤 Phase 8에서 한다.
 - **스키마를 재설계하지 않는다.** 테이블·컬럼·제약 이름 변경, 타입 축소, 컬럼 삭제는 §4.2가 Python 제거와 관찰 기간 이후로 미뤘다.
 - **품질 개선을 끼워 넣지 않는다.** 프롬프트 문구 다듬기, 어려운 말 사전 보강, 스타일 규칙 조정은 전환 범위 밖이다.
 - **자신의 구현을 스스로 parity 통과로 선언하지 않는다.** 판정은 `parity-verifier`가 한다. 자체 테스트 통과는 검증의 시작이지 결론이 아니다.

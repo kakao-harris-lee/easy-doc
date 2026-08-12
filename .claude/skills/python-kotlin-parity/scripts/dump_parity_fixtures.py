@@ -1,17 +1,14 @@
 #!/usr/bin/env python3
-"""parity fixture 생성기 — 요구 성질(spec)과 호환 기대값(compat)을 함께 굳힌다.
+"""parity fixture 생성기 — 요구 성질(spec)을 굳힌다.
 
 **기준은 Python 출력이 아니다.** Python 구현은 회귀가 잦아 Kotlin으로 옮기는 중이며,
 사용자 결정(2026-08-12)은 "출력 결과를 Python과 동일하게 맞출 필요는 없다. 요구사항을
-구현하고 이후에 개선한다"이다. 그래서 이 생성기가 만드는 fixture는 두 종류다.
+구현하고 이후에 개선한다"이다. 그래서 이 생성기가 만드는 fixture는 한 종류뿐이다.
 
     mode="spec"   판정 근거가 **요구사항이 요구하는 성질**이다. 케이스마다 `assert`
                   목록이 들어가고, 비교기가 Kotlin 산출물에 그 성질을 실행해 판정한다.
                   Python 실행 결과는 `reference`(참고값)로 함께 담기지만 **판정에 쓰지
                   않는다** — 다른 자리는 `참고 갈림 원장`에 기록될 뿐이다.
-    mode="compat" 판정 근거가 **값 동일성**이다. 롤백 창에서 Python이 Kotlin 산출물을
-                  읽어야 하는 도메인(crypto·jwt·argon2)뿐이다. 여기서는 값이 같은 것이
-                  곧 요구사항이므로 `expected`를 그대로 쓴다.
 
 spec 도메인이라도 성질을 아직 적지 못했으면 `spec_status="pending"`으로 선언한다.
 그 도메인은 "통과"가 아니라 **미검증**으로 집계된다(비교기 종료 코드 2). 성질을 적지
@@ -21,42 +18,44 @@ spec 도메인이라도 성질을 아직 적지 못했으면 `spec_status="pendi
     uv run python .claude/skills/python-kotlin-parity/scripts/dump_parity_fixtures.py \
         --domain masking --domain style
     uv run python .claude/skills/python-kotlin-parity/scripts/dump_parity_fixtures.py --list
-    uv run python .claude/skills/python-kotlin-parity/scripts/dump_parity_fixtures.py \
-        verify-crypto --actual parity/actual/crypto/kotlin-encrypt.json \
-        --fixture parity/fixtures/crypto/crypto.json
-    uv run python .claude/skills/python-kotlin-parity/scripts/dump_parity_fixtures.py \
-        verify-jwt --actual parity/actual/jwt/kotlin-issue.json \
-        --fixture parity/fixtures/jwt/jwt.json
-
-`verify-*` 서브커맨드는 **역방향**(Kotlin 산출물을 Python이 읽는 방향) 전용이며 사람이
-직접 돌려 보는 용도다. **게이트 판정은 이 명령의 산출물로 하지 않는다** — `compare_parity.py`가
-같은 검증기를 자기가 다시 돌려 판정한다. 이 명령이 남기는 `*.verified.json`은 판정의
-입력이 아니라 실행 **기록**이다(예전에는 입력이었고, 그래서 손으로 적으면 통과했다).
 
 입력 문자열은 전부 합성(synthetic)이다. 실제 사용자 문서·실제 개인정보를 fixture에
 넣지 않는다 — fixture는 저장소에 커밋되어 영구히 남는다.
+
+── 2026-08-12 재개발 전환으로 **없어진 것** (다시 넣기 전에 이 문단을 읽어라) ─────────
+여기에는 `mode="compat"`(값 동일성이 곧 요구사항)과 `crypto`·`jwt`·`argon2` 도메인,
+그리고 역방향 검증(`verify-crypto`/`verify-jwt`, `VERIFIERS`, `*.verified.json` 기록)이
+있었다. 셋 다 **하나의 전제** 위에 서 있었다 — "절체 후 롤백 창에서 Python이 Kotlin의
+암호문·토큰·해시를 읽어야 한다". 사용자 결정(2026-08-12)으로 Python 런타임을 폐기하고
+롤백을 포기하면서 그 전제가 사라졌고(계획 `docs/plans/2026-08-11-kotlin-react-migration.md`
+2026-08-12 2차 변경 이력 §4.3), 저장 암호화는 표준 AEAD를 처음부터 쓴다.
+
+왜 도메인만 빼지 않고 mode까지 지웠나: `compat`의 기대값은 **다른 런타임이 낸 값**에서
+권위를 얻는 방식이다. 그 다른 런타임이 없어졌으므로 어떤 도메인도 compat의 권위를
+공급할 수 없다. 반면 "요구사항이 못박은 값과 같아야 한다"는 spec 모드의 `equals_field`가
+이미 표현한다. 남겨 두면 `mode: compat` 한 줄로 `assert` 의무와 방향 가드를 건너뛰는
+경로만 남는다 — 쓰는 곳 없이 우회로만 남는 셈이라 뺐다.
+
+**암호 검증이 없어진 것이 아니다.** round-trip·변조 거부·다른 키 거부·키 회전은 여전히
+요구사항이고, 받는 곳이 이 하네스에서 **Kotlin 자체 테스트 + `migration-safety-gate`
+I-7/I-8/I-9 감사**로 옮겨졌다. 이 하네스로는 그것을 판정할 수 없다 — 암호문은 불투명해서
+비교기가 열어 볼 수 없고, "변조를 거부했다"는 Kotlin 하네스의 자기 신고라 증거가 아니다.
+독립 검증이 필요하면 Phase 4에서 AEAD 방식을 고정한 뒤 **표준 AEAD를 독립 구현으로
+복호화하는** 검증기를 새로 짜는 것이 옳고, 그때 이 문단을 근거로 설계를 다시 판단하라.
 """
 
 from __future__ import annotations
 
 import argparse
-import asyncio
-import base64
 import hashlib
-import hmac
 import json
 import re
 import sys
-import unicodedata
-import uuid
-from collections.abc import Callable, Iterator
-from contextlib import contextmanager
+from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta, tzinfo
+from datetime import UTC, datetime
 from pathlib import Path
-from types import ModuleType
-from typing import Any, cast
-from unittest.mock import patch
+from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 if str(REPO_ROOT) not in sys.path:
@@ -71,25 +70,6 @@ CONTRACT_PATH = REPO_ROOT / "contracts" / "easy-doc-v1.yaml"
 #: 기본 정규화. 두 런타임이 "같다"고 볼 표기 차이만 담는다.
 #: 이 목록을 늘릴 때는 반드시 왜 그 차이가 무해한지 근거를 함께 남긴다.
 BASE_NORMALIZATION = ["nfc", "lf"]
-
-#: 자격증명 도메인(jwt·argon2)은 정규화를 쓰지 않는다. 기대값이 전부 ASCII(불리언·UUID·
-#: 16진 해시·PHC 문자열)라 접을 표기 차이가 없고, 무엇보다 **비밀번호 바이트를 NFC로 접으면
-#: argon2 해시가 달라진다**. 정규화는 줄이는 방향으로 관리한다(스킬 핵심 원칙 4).
-NO_NORMALIZATION: list[str] = []
-
-#: 역방향 검증기(`verify-*`)와 그 실행 기록 파일 이름. 기록 파일은 Kotlin 산출물(`--actual`)과
-#: **같은 디렉터리**에 놓인다. 이 파일은 판정의 **입력이 아니라 출력**이다 — 비교기는 이것을
-#: 읽어서 판정하지 않고, 검증기를 직접 돌린 뒤 결과를 여기에 덮어쓴다.
-PROOF_FILE_NAMES: dict[str, str] = {
-    "verify-crypto": "verify-crypto.verified.json",
-    "verify-jwt": "verify-jwt.verified.json",
-}
-
-#: 각 검증기가 닫는 fixture 요청 케이스 id. 검증기는 이 케이스의 `input`을 요구 사항으로 읽는다.
-PROOF_FIXTURE_CASES: dict[str, str] = {
-    "verify-crypto": "crypto-roundtrip-request",
-    "verify-jwt": "jwt-roundtrip-request",
-}
 
 Case = dict[str, Any]
 
@@ -190,9 +170,10 @@ def mask_contract() -> MaskContract:
     return _MASK_CONTRACT
 
 
-#: 판정 방식. 도메인마다 **하나**를 선언한다.
+#: 판정 방식. 지금은 하나뿐이다 — 값 동일성으로 판정하던 `compat`은 2026-08-12에 지웠다
+#: (모듈 docstring "없어진 것" 참고). 상수를 남겨 두는 이유는 fixture 헤더의 `mode` 필드가
+#: 계속 그 값을 선언하고, 비교기가 **정본에서** 그것을 읽어 판정 방식을 정하기 때문이다.
 MODE_SPEC = "spec"  # 요구 성질로 판정한다 (Python 출력은 참고값)
-MODE_COMPAT = "compat"  # 값 동일성이 곧 요구사항이다 (crypto·jwt·argon2)
 
 #: spec 도메인의 성질 작성 상태. pending은 "아직 성질로 표현하지 못했다"이며
 #: 비교기에서 **미검증**으로 집계된다 — 통과가 아니다.
@@ -217,11 +198,9 @@ class FixtureSpec:
     spec_status: str = STATUS_READY
 
     def __post_init__(self) -> None:
-        if self.mode not in (MODE_SPEC, MODE_COMPAT):
-            raise ValueError(f"알 수 없는 mode: {self.mode}")
-        if self.mode == MODE_COMPAT and self.spec_status != STATUS_READY:
-            raise ValueError("compat 도메인에는 spec_status 가 없다")
-        if self.mode == MODE_SPEC and self.spec_status not in (STATUS_READY, STATUS_PENDING):
+        if self.mode != MODE_SPEC:
+            raise ValueError(f"알 수 없는 mode: {self.mode} (지금은 {MODE_SPEC} 하나뿐이다)")
+        if self.spec_status not in (STATUS_READY, STATUS_PENDING):
             raise ValueError(f"알 수 없는 spec_status: {self.spec_status}")
 
     def document(self, domain: str) -> dict[str, Any]:
@@ -236,19 +215,18 @@ class FixtureSpec:
             "source": self.source,
             "generator": "dump_parity_fixtures.py",
             "normalization": self.normalization,
+            "spec_status": self.spec_status,
         }
-        if self.mode == MODE_SPEC:
-            header["spec_status"] = self.spec_status
         header["cases"] = [self._render(case) for case in self.cases]
         return header
 
     def _render(self, case: Case) -> Case:
-        """spec 도메인에서는 Python 실행 결과의 이름을 `reference`로 바꾼다.
+        """Python 실행 결과의 이름을 `reference`로 바꾼다.
 
         이름이 곧 계약이다. `expected`라고 부르는 순간 "Python이 낸 값에 맞춰라"라는
-        읽기가 되살아난다. spec 도메인에서 그 값의 지위는 **참고**뿐이다.
+        읽기가 되살아난다. 이 하네스에서 그 값의 지위는 **참고**뿐이다.
         """
-        if self.mode == MODE_COMPAT or "expected" not in case:
+        if "expected" not in case:
             return case
         rendered = {key: value for key, value in case.items() if key != "expected"}
         rendered["reference"] = case["expected"]
@@ -290,73 +268,6 @@ def _unreferenced(
     case["assert"] = asserts
     case.update(extra)
     return case
-
-
-def _external(
-    *,
-    command: str,
-    actual_file: str,
-    required_cases: int,
-    actual_schema: dict[str, str],
-) -> dict[str, Any]:
-    """역방향(Kotlin → Python) 케이스임을 표시한다.
-
-    이런 케이스는 Kotlin 산출물을 값으로 비교해서는 닫을 수 없다 — Kotlin이 기대값을
-    그대로 되받아 적으면 아무것도 실행하지 않고도 "일치"가 나온다.
-
-    **증거 파일은 비교기의 입력이 아니다.** 예전에는 `verify-*`가 남긴 `*.verified.json`을
-    비교기가 읽어 판정했는데, 그 파일은 손으로 6줄만 적으면 만들어졌다(교차 리뷰 X-1).
-    지금 비교기는 `actual_file`(Kotlin 산출물)을 찾아 **자기가 검증기를 돌리고** 그 결과로
-    판정한다. 증거 파일은 그 실행의 **기록**으로 새로 쓰인다.
-
-    - `command` — 비교기가 호출할 검증기 이름(`VERIFIERS` 키). 문자열 파싱 없이 이 값으로 건다.
-    - `actual_file` — Kotlin 산출물 파일 이름. `--actual` 디렉터리 기준 상대 이름이다.
-      이 파일이 없으면 통과가 아니라 **미검증(pending)**이다.
-    """
-    return {
-        "mode": "external",
-        "command": command,
-        "script": f"dump_parity_fixtures.py {command}",
-        "actual_file": actual_file,
-        "proof": PROOF_FILE_NAMES[command],
-        "required_cases": required_cases,
-        "actual_schema": actual_schema,
-    }
-
-
-# ------------------------------------------------------------------- 고정 시각 주입
-
-
-class _FrozenClock:
-    """`datetime.now()` 자리에 끼워 넣는 고정 시계.
-
-    JWT의 `exp` 검증은 실행 시각에 좌우된다. 벽시계로 검증하면 fixture를 만든 날과 돌리는
-    날이 다를 때 같은 토큰의 판정이 뒤집혀 parity 검증 자체가 무의미해진다. 그래서 fixture는
-    케이스마다 기준 시각(`verify_at`, epoch 초)을 못박고 검증할 때 그 시각을 주입한다.
-    """
-
-    def __init__(self, moment: datetime) -> None:
-        self._moment = moment
-
-    def now(self, tz: tzinfo | None = None) -> datetime:
-        return self._moment if tz is None else self._moment.astimezone(tz)
-
-
-@contextmanager
-def _frozen(module: ModuleType, moment: datetime) -> Iterator[None]:
-    """`module.datetime.now()`가 `moment`를 반환하도록 잠시 바꾼다.
-
-    발급은 `app.services.auth`의 시계를, 검증은 PyJWT(`jwt.api_jwt`)의 시계를 묶는다.
-    두 곳을 동시에 묶지 않는다 — `jwt.encode`는 `datetime` 클래스로 `isinstance` 검사를
-    하므로 발급 중에 PyJWT 쪽 시계를 바꾸면 인코딩이 깨진다.
-    """
-    with patch.object(module, "datetime", _FrozenClock(moment)):
-        yield
-
-
-#: `AuthService.resolve_token`·`_issue_token`은 저장소를 만지지 않는다. 이 자리에 실제
-#: 저장소를 끼우면 fixture 생성이 DB에 묶이므로, 호출되면 그 자체가 결함인 자리표시자를 둔다.
-_UNUSED_STORE = object()
 
 
 # --------------------------------------------------------------------------- 마스킹
@@ -1139,557 +1050,6 @@ def build_export() -> FixtureSpec:
     )
 
 
-# ------------------------------------------------------------------------------ 암호
-
-
-def build_crypto() -> FixtureSpec:
-    """Fernet 교차 런타임 — 정방향·역방향·변조·다른 키"""
-    from cryptography.fernet import Fernet
-
-    from app.privacy.crypto import CURRENT_KEY_VERSION, TextCipher
-
-    key = Fernet.generate_key().decode()
-    other_key = Fernet.generate_key().decode()
-    cipher = TextCipher(key)
-
-    plaintexts: list[tuple[str, str]] = [
-        ("ascii", "hello world"),
-        ("hangul", "기초연금 신청 안내입니다."),
-        ("empty", ""),
-        ("long", "가나다라마바사" * 2000),
-        ("emoji-and-control", "줄바꿈\n탭\t끝"),
-    ]
-    cases: list[Case] = [
-        _case(
-            f"crypto-decrypt-{name}",
-            "Python이 만든 Fernet 토큰을 Kotlin이 복호화한다",
-            {"key": key, "token": cipher.encrypt(text).decode("ascii")},
-            {"outcome": "ok", "plaintext": text, "key_version": CURRENT_KEY_VERSION},
-        )
-        for name, text in plaintexts
-    ]
-    good = cipher.encrypt("변조 대상").decode("ascii")
-    tampered = base64.urlsafe_b64encode(
-        bytes([base64.urlsafe_b64decode(good)[0] ^ 0x01, *base64.urlsafe_b64decode(good)[1:]])
-    ).decode("ascii")
-    cases.append(
-        _case(
-            "crypto-tampered",
-            "변조된 토큰은 반드시 복호화 실패여야 한다 — 조용히 통과하면 인증 암호화가 아니다",
-            {"key": key, "token": tampered},
-            {"outcome": "invalid_token"},
-        )
-    )
-    cases.append(
-        _case(
-            "crypto-wrong-key",
-            "다른 키로는 복호화되지 않는다",
-            {"key": other_key, "token": good},
-            {"outcome": "invalid_token"},
-        )
-    )
-    cases.append(
-        _case(
-            "crypto-garbage",
-            "Fernet 토큰이 아닌 바이트",
-            {"key": key, "token": "not-a-fernet-token"},
-            {"outcome": "invalid_token"},
-        )
-    )
-    cases.append(
-        _case(
-            "crypto-roundtrip-request",
-            "역방향 검증용 — Kotlin이 이 평문들을 이 키로 암호화해 kotlin-encrypt.json 에 남긴다. "
-            "Kotlin 결과 파일에 이 id를 적어도 닫히지 않는다 — 비교기가 그 산출물을 "
-            "직접 복호화한다",
-            {"key": key, "plaintexts": [text for _, text in plaintexts]},
-            {"outcome": "verified_externally"},
-            verification=_external(
-                command="verify-crypto",
-                actual_file="kotlin-encrypt.json",
-                required_cases=len(plaintexts),
-                actual_schema={
-                    "key": "이 케이스의 key를 그대로",
-                    "token": "Kotlin이 만든 Fernet 토큰(ASCII)",
-                    "expected_plaintext": "암호화 전 평문",
-                },
-            ),
-        )
-    )
-    return FixtureSpec(
-        source="app/privacy/crypto.py::TextCipher",
-        mode=MODE_COMPAT,
-        requirement=(
-            "롤백 창 호환성 — Python이 만든 Fernet 토큰을 Kotlin이 그대로 복호화하고 그 반대도 "
-            "성립해야 한다. 값이 갈리면 기존 문서를 읽지 못한다(§5 Phase 7 즉시 중단 기준). "
-            "변조 토큰·다른 키는 양쪽에서 똑같이 거부돼야 한다"
-        ),
-        normalization=["nfc"],
-        cases=cases,
-    )
-
-
-# ------------------------------------------------------------------------------- JWT
-
-#: fixture 전용 합성 시크릿. 운영 키를 넣지 않는다. 길이는 MIN_JWT_SECRET_BYTES(32) 이상.
-JWT_SECRET = "parity-jwt-secret-" + "0" * 32
-#: 공격자 키 역할. 이 키로 서명한 토큰은 반드시 거부돼야 한다.
-JWT_OTHER_SECRET = "parity-jwt-other-secret-" + "1" * 32
-#: 하한 경계 — 정확히 32바이트라 받아들여져야 한다.
-JWT_MIN_SECRET = "m" * 32
-#: 하한에서 1바이트 모자란다 — ConfigurationError로 기동이 끊겨야 한다.
-JWT_TOO_SHORT_SECRET = "s" * 31
-
-JWT_SUBJECT = "3f2504e0-4f89-41d3-9a0c-0305e82c3301"
-JWT_OTHER_SUBJECT = "00000000-0000-4000-8000-000000000000"
-#: 발급 기준 시각. 벽시계를 쓰지 않는다 — 아래 `verify_at`은 전부 이 값에서 파생된다.
-JWT_ISSUED_AT = datetime(2026, 1, 2, 3, 4, 5, tzinfo=UTC)
-JWT_EXPIRE_MINUTES = 30
-
-
-def build_jwt() -> FixtureSpec:
-    """JWT 교차 런타임 — 양방향·만료 경계·서명 위조·알고리즘 혼동·시크릿 하한"""
-    import jwt as pyjwt
-    from jwt import api_jwt
-
-    from app.exceptions import ConfigurationError, InvalidCredentialsError
-    from app.services import auth as auth_module
-    from app.services.auth import (
-        _ALGORITHM,
-        _TOKEN_TYPE,
-        MIN_JWT_SECRET_BYTES,
-        AuthService,
-        UserStore,
-        WorkspaceCreator,
-    )
-
-    expires_at = JWT_ISSUED_AT + timedelta(minutes=JWT_EXPIRE_MINUTES)
-    exp = int(expires_at.timestamp())
-    issued_epoch = int(JWT_ISSUED_AT.timestamp())
-    live_at = issued_epoch + 60
-
-    def service(secret: str) -> AuthService:
-        return AuthService(
-            cast(UserStore, _UNUSED_STORE),
-            cast(WorkspaceCreator, _UNUSED_STORE),
-            secret,
-            JWT_EXPIRE_MINUTES,
-        )
-
-    def issue(secret: str, subject: str) -> str:
-        # 실제 발급 경로(`_issue_token`)를 고정 시계 아래에서 돌린다 — 클레임 구성을
-        # 손으로 옮겨 적으면 두 구현이 아니라 두 벌의 사람 해석을 비교하게 된다.
-        with _frozen(auth_module, JWT_ISSUED_AT):
-            return service(secret)._issue_token(uuid.UUID(subject))
-
-    def encode(claims: dict[str, Any], secret: str) -> str:
-        return pyjwt.encode(claims, secret, algorithm=_ALGORITHM)
-
-    def b64(raw: bytes) -> str:
-        return base64.urlsafe_b64encode(raw).rstrip(b"=").decode("ascii")
-
-    def raw_token(header: dict[str, str], claims: dict[str, Any], sign_with: str | None) -> str:
-        """헤더를 직접 조립한 토큰 — PyJWT가 만들어 주지 않는 공격 형태를 만든다."""
-        head = b64(json.dumps(header, separators=(",", ":"), sort_keys=True).encode("utf-8"))
-        body = b64(json.dumps(claims, separators=(",", ":"), sort_keys=True).encode("utf-8"))
-        if sign_with is None:
-            return f"{head}.{body}."
-        signature = hmac.new(
-            sign_with.encode("utf-8"), f"{head}.{body}".encode("ascii"), hashlib.sha256
-        ).digest()
-        return f"{head}.{body}.{b64(signature)}"
-
-    def outcome(secret: str, token: str, verify_at: int) -> dict[str, Any]:
-        """`AuthService`를 그 기준 시각에 실제로 돌린 결과."""
-        try:
-            svc = service(secret)
-        except ConfigurationError:
-            return {"outcome": "configuration_error", "min_secret_bytes": MIN_JWT_SECRET_BYTES}
-        with _frozen(api_jwt, datetime.fromtimestamp(verify_at, UTC)):
-            try:
-                subject = svc.resolve_token(token)
-            except InvalidCredentialsError:
-                return {"outcome": "invalid_credentials"}
-            claims = pyjwt.decode(
-                token,
-                secret,
-                algorithms=[_ALGORITHM],
-                options={"require": ["sub", "exp", "typ"]},
-            )
-        return {
-            "outcome": "ok",
-            "subject": str(subject),
-            "claims": {"sub": claims["sub"], "exp": claims["exp"], "typ": claims["typ"]},
-        }
-
-    valid = issue(JWT_SECRET, JWT_SUBJECT)
-    head, _, signature = valid.split(".")
-    base_claims: dict[str, Any] = {"sub": JWT_SUBJECT, "exp": exp, "typ": _TOKEN_TYPE}
-    tampered_body = b64(
-        json.dumps({**base_claims, "sub": JWT_OTHER_SUBJECT}, separators=(",", ":")).encode("utf-8")
-    )
-
-    #: (id, 설명, 시크릿, 토큰, 검증 기준 시각)
-    samples: list[tuple[str, str, str, str, int]] = [
-        (
-            "valid",
-            "Python이 발급한 토큰을 Kotlin이 읽는다 — sub·exp·typ 전부 대조",
-            JWT_SECRET,
-            valid,
-            live_at,
-        ),
-        (
-            "exp-boundary-one-second-before",
-            "만료 1초 전은 유효하다 — 경계 판정이 갈리면 로그인이 조기에 끊긴다",
-            JWT_SECRET,
-            valid,
-            exp - 1,
-        ),
-        (
-            "exp-boundary-exact",
-            "기준 시각이 exp와 같으면 만료다 (PyJWT: exp <= now). "
-            "JVM 라이브러리는 exp < now로 보는 것이 많아 여기서 갈린다",
-            JWT_SECRET,
-            valid,
-            exp,
-        ),
-        ("expired", "만료된 토큰은 거부된다", JWT_SECRET, valid, exp + 60),
-        (
-            "wrong-secret",
-            "다른 키로는 검증되지 않는다",
-            JWT_OTHER_SECRET,
-            valid,
-            live_at,
-        ),
-        (
-            "forged-signature",
-            "공격자 키로 서명한 토큰 — 조용히 통과하면 아무나 로그인한다",
-            JWT_SECRET,
-            issue(JWT_OTHER_SECRET, JWT_OTHER_SUBJECT),
-            live_at,
-        ),
-        (
-            "tampered-payload",
-            "sub만 바꾸고 서명은 그대로 — 남의 계정으로 바뀌면 안 된다",
-            JWT_SECRET,
-            f"{head}.{tampered_body}.{signature}",
-            live_at,
-        ),
-        (
-            "alg-none",
-            "alg=none·서명 없음 — 알고리즘 혼동의 고전. 반드시 거부",
-            JWT_SECRET,
-            raw_token({"alg": "none", "typ": "JWT"}, base_claims, None),
-            live_at,
-        ),
-        (
-            "alg-rs256-header",
-            "헤더만 RS256으로 바꾸고 HMAC으로 서명 — 헤더의 alg를 믿으면 뚫린다",
-            JWT_SECRET,
-            raw_token({"alg": "RS256", "typ": "JWT"}, base_claims, JWT_SECRET),
-            live_at,
-        ),
-        (
-            "missing-exp",
-            "exp 없는 토큰은 만료되지 않는 영구 자격증명이 된다 — require로 막는다",
-            JWT_SECRET,
-            encode({"sub": JWT_SUBJECT, "typ": _TOKEN_TYPE}, JWT_SECRET),
-            live_at,
-        ),
-        (
-            "missing-typ",
-            "typ 없는 토큰 거부 (require)",
-            JWT_SECRET,
-            encode({"sub": JWT_SUBJECT, "exp": exp}, JWT_SECRET),
-            live_at,
-        ),
-        (
-            "missing-sub",
-            "sub 없는 토큰 거부 (require)",
-            JWT_SECRET,
-            encode({"exp": exp, "typ": _TOKEN_TYPE}, JWT_SECRET),
-            live_at,
-        ),
-        (
-            "wrong-typ",
-            "다른 용도로 발급한 토큰을 액세스 토큰으로 쓰려는 시도",
-            JWT_SECRET,
-            encode({"sub": JWT_SUBJECT, "exp": exp, "typ": "refresh"}, JWT_SECRET),
-            live_at,
-        ),
-        (
-            "non-uuid-subject",
-            "sub가 UUID가 아니면 우리가 발급한 토큰이 아니다",
-            JWT_SECRET,
-            encode({"sub": "not-a-uuid", "exp": exp, "typ": _TOKEN_TYPE}, JWT_SECRET),
-            live_at,
-        ),
-        ("garbage", "JWT 형식이 아닌 문자열", JWT_SECRET, "not-a-jwt", live_at),
-        (
-            "secret-exactly-min-bytes",
-            f"시크릿 {MIN_JWT_SECRET_BYTES}바이트는 하한이라 받아들여진다",
-            JWT_MIN_SECRET,
-            issue(JWT_MIN_SECRET, JWT_SUBJECT),
-            live_at,
-        ),
-        (
-            "secret-one-byte-short",
-            f"{MIN_JWT_SECRET_BYTES - 1}바이트 시크릿은 기동 경로에서 설정 오류로 끊는다 "
-            "(PyJWT는 경고만 하고 서명해 준다)",
-            JWT_TOO_SHORT_SECRET,
-            valid,
-            live_at,
-        ),
-    ]
-    cases = [
-        _case(
-            f"jwt-{name}",
-            description,
-            {"secret": secret, "token": token, "verify_at": verify_at},
-            outcome(secret, token, verify_at),
-        )
-        for name, description, secret, token, verify_at in samples
-    ]
-    cases.append(
-        _case(
-            "jwt-roundtrip-request",
-            "역방향 검증용 — Kotlin이 이 subject들로 토큰을 발급해 kotlin-issue.json 에 남기고 "
-            "Python이 그것을 읽는다. 만료 동작까지 보이려면 "
-            "expected_outcome=invalid_credentials 케이스를 함께 낸다",
-            {
-                "secret": JWT_SECRET,
-                "expire_minutes": JWT_EXPIRE_MINUTES,
-                "algorithm": _ALGORITHM,
-                "token_type": _TOKEN_TYPE,
-                "subjects": [JWT_SUBJECT, JWT_OTHER_SUBJECT],
-            },
-            {"outcome": "verified_externally"},
-            verification=_external(
-                command="verify-jwt",
-                actual_file="kotlin-issue.json",
-                required_cases=2,
-                actual_schema={
-                    "secret": "이 케이스의 secret을 그대로",
-                    "token": "Kotlin이 발급한 토큰",
-                    "verify_at": "이 토큰을 평가할 기준 시각(epoch 초, UTC)",
-                    "expected_subject": "토큰에 담은 sub (ok 케이스만)",
-                    "expected_outcome": "ok | invalid_credentials (생략 시 ok)",
-                },
-            ),
-        )
-    )
-    return FixtureSpec(
-        source="app/services/auth.py::AuthService._issue_token / AuthService.resolve_token",
-        mode=MODE_COMPAT,
-        requirement=(
-            "롤백 창 호환성 — 한쪽이 발급한 액세스 토큰을 다른 쪽이 그대로 받아들여야 한다. "
-            "값이 갈리면 절체 순간 로그인 세션이 전부 끊긴다. 서명 위조·알고리즘 혼동·만료 "
-            "경계(PyJWT는 exp <= now를 만료로 본다)는 양쪽에서 똑같이 거부돼야 한다"
-        ),
-        normalization=NO_NORMALIZATION,
-        cases=cases,
-    )
-
-
-# ---------------------------------------------------------------------------- Argon2
-
-#: 예전 파라미터로 만들어진 해시를 흉내 낸다. 현재 `_HASHER`(t=3, m=65536, p=4)보다
-#: 모든 비용이 낮아 `check_needs_rehash`가 True를 내야 한다.
-ARGON2_LEGACY_TIME_COST = 2
-ARGON2_LEGACY_MEMORY_COST = 8192
-ARGON2_LEGACY_PARALLELISM = 2
-
-
-def build_argon2() -> FixtureSpec:
-    """Argon2 PHC — 기존 해시 그대로 검증, 재해시 판정, 변조·오입력 거부"""
-    return asyncio.run(_argon2_cases())
-
-
-async def _argon2_cases() -> FixtureSpec:
-    from argon2 import PasswordHasher, extract_parameters
-    from argon2.exceptions import InvalidHashError
-
-    from app.services.auth import _HASHER, MIN_PASSWORD_LENGTH, hash_password, verify_password
-
-    async def outcome(phc: str, password: str) -> dict[str, Any]:
-        """실제 검증 경로(`verify_password`)와 재해시 판정(`check_needs_rehash`)의 결과.
-
-        Argon2 해시는 솔트가 매번 새로 생성되므로 **출력 문자열을 비교할 수 없다.**
-        그래서 fixture는 언제나 "주어진 PHC 문자열을 검증하는" 방향으로만 짠다.
-        """
-        try:
-            needs_rehash: bool | None = _HASHER.check_needs_rehash(phc)
-        except InvalidHashError:
-            # PHC 형식이 깨져 파라미터를 읽을 수 없다 — 참/거짓 어느 쪽도 아니다.
-            needs_rehash = None
-        return {
-            "verified": await verify_password(phc, password),
-            "needs_rehash": needs_rehash,
-            # 파일을 읽는 과정에서 비밀번호가 NFC/NFD로 접히면 해시가 통째로 달라진다.
-            # 양쪽이 같은 바이트를 넣었는지 여기서 먼저 드러난다.
-            "password_utf8_sha256": hashlib.sha256(password.encode("utf-8")).hexdigest(),
-        }
-
-    hangul = "비밀번호-가나다-1234"
-    passwords: list[tuple[str, str, str]] = [
-        ("ascii", "correct-horse-battery-staple", "ASCII 비밀번호"),
-        ("hangul", hangul, "한글 비밀번호 — UTF-8 바이트가 그대로 해싱된다"),
-        (
-            "long",
-            "가나다라마바사" * 40,
-            "긴 비밀번호 — argon2는 입력 길이에 비용이 좌우되지 않는다",
-        ),
-        (
-            "empty",
-            "",
-            f"빈 비밀번호 — 해셔 자체는 막지 않는다. 길이 하한({MIN_PASSWORD_LENGTH}자)은 "
-            "가입 경로(AuthService.signup)의 정책이지 해시 계층의 동작이 아니다",
-        ),
-        (
-            "symbols",
-            "p@ss\twith\nnewline & 공백 ",
-            "제어문자·공백이 섞인 비밀번호도 그대로 해싱된다",
-        ),
-    ]
-
-    cases: list[Case] = []
-    for name, password, description in passwords:
-        phc = await hash_password(password)
-        cases.append(
-            _case(
-                f"argon2-verify-{name}",
-                f"{description} — Python이 만든 PHC를 Kotlin이 그대로 검증한다",
-                {"phc": phc, "password": password},
-                await outcome(phc, password),
-            )
-        )
-
-    ascii_phc = await hash_password("correct-horse-battery-staple")
-    cases.append(
-        _case(
-            "argon2-wrong-password",
-            "틀린 비밀번호는 거부된다",
-            {"phc": ascii_phc, "password": "correct-horse-battery-stapl"},
-            await outcome(ascii_phc, "correct-horse-battery-stapl"),
-        )
-    )
-    hangul_phc = await hash_password(hangul)
-    hangul_nfd = unicodedata.normalize("NFD", hangul)
-    cases.append(
-        _case(
-            "argon2-hangul-nfd-mismatch",
-            "NFC로 해싱한 비밀번호는 NFD 표기로 검증되지 않는다 — 이 도메인에 nfc 정규화를 "
-            "걸면 안 되는 이유다. 정규화가 이 케이스를 통과시키면 검증이 은폐로 바뀐다",
-            {"phc": hangul_phc, "password": hangul_nfd},
-            await outcome(hangul_phc, hangul_nfd),
-        )
-    )
-    # 해시 본문 마지막 글자만 바꾼다 — 파라미터 구획은 멀쩡하므로 재해시 판정은 살아 있고
-    # 검증만 실패해야 한다.
-    flipped = "A" if ascii_phc[-1] != "A" else "B"
-    tampered_phc = ascii_phc[:-1] + flipped
-    cases.append(
-        _case(
-            "argon2-tampered-phc",
-            "변조된 PHC 문자열은 거부된다 (파라미터 구획은 온전하므로 재해시 판정은 살아 있다)",
-            {"phc": tampered_phc, "password": "correct-horse-battery-staple"},
-            await outcome(tampered_phc, "correct-horse-battery-staple"),
-        )
-    )
-    cases.append(
-        _case(
-            "argon2-invalid-phc",
-            "PHC 형식이 아닌 문자열 — 검증 실패이고 재해시 판정은 불가(null)다. "
-            "예외를 밖으로 흘리면 '불일치'와 '해시가 깨짐'이 응답으로 구분돼 새어 나간다",
-            {"phc": "not-a-phc-string", "password": "correct-horse-battery-staple"},
-            await outcome("not-a-phc-string", "correct-horse-battery-staple"),
-        )
-    )
-
-    legacy_hasher = PasswordHasher(
-        time_cost=ARGON2_LEGACY_TIME_COST,
-        memory_cost=ARGON2_LEGACY_MEMORY_COST,
-        parallelism=ARGON2_LEGACY_PARALLELISM,
-    )
-    legacy_password = "legacy-parameter-password"
-    legacy_phc = legacy_hasher.hash(legacy_password)
-    cases.append(
-        _case(
-            "argon2-legacy-verify",
-            "낮은 파라미터로 만든 기존 해시도 그대로 검증된다 — 이것이 깨지면 기존 사용자가 "
-            "전부 로그인하지 못한다. 재해시는 **로그인 성공 시에만** 하고(_rehash_if_outdated), "
-            "실패해도 로그인은 계속 진행한다(best-effort)",
-            {"phc": legacy_phc, "password": legacy_password},
-            await outcome(legacy_phc, legacy_password),
-        )
-    )
-    cases.append(
-        _case(
-            "argon2-legacy-wrong-password",
-            "낮은 파라미터 해시라도 틀린 비밀번호는 거부된다 (재해시 판정은 그대로 True)",
-            {"phc": legacy_phc, "password": "wrong-password"},
-            await outcome(legacy_phc, "wrong-password"),
-        )
-    )
-
-    def parameters(phc: str) -> dict[str, Any]:
-        params = extract_parameters(phc)
-        return {
-            "type": params.type.name,
-            "version": params.version,
-            "time_cost": params.time_cost,
-            "memory_cost": params.memory_cost,
-            "parallelism": params.parallelism,
-            "salt_len": params.salt_len,
-            "hash_len": params.hash_len,
-            "phc_prefix": "$".join(phc.split("$")[:4]) + "$",
-        }
-
-    cases.append(
-        _case(
-            "argon2-phc-parameters",
-            "PHC 문자열 파싱 — 형식·버전·비용 파라미터를 같은 값으로 읽어야 한다",
-            {"phc": ascii_phc},
-            parameters(ascii_phc),
-        )
-    )
-    cases.append(
-        _case(
-            "argon2-legacy-phc-parameters",
-            "임의 파라미터의 PHC도 읽을 수 있어야 한다 (현재 설정값을 가정해 파싱하면 안 된다)",
-            {"phc": legacy_phc},
-            parameters(legacy_phc),
-        )
-    )
-    cases.append(
-        _case(
-            "argon2-current-parameters",
-            "양쪽 해셔의 설정값 — 라이브러리 기본값에 기대지 않고 명시 고정한 값이다. "
-            "여기가 갈리면 로그인마다 불필요한 재해시가 돌거나 반대로 이관이 멈춘다",
-            {},
-            {
-                "time_cost": _HASHER.time_cost,
-                "memory_cost": _HASHER.memory_cost,
-                "parallelism": _HASHER.parallelism,
-            },
-        )
-    )
-    return FixtureSpec(
-        source=(
-            "app/services/auth.py::hash_password / verify_password / "
-            "AuthService._rehash_if_outdated(_HASHER.check_needs_rehash)"
-        ),
-        mode=MODE_COMPAT,
-        requirement=(
-            "롤백 창 호환성 — Python이 저장한 Argon2 PHC 문자열을 Kotlin이 그대로 검증해야 "
-            "한다. 값이 갈리면 기존 사용자가 전부 로그인하지 못한다. 낮은 파라미터로 만든 "
-            "기존 해시도 검증되고, 재해시 판정이 양쪽에서 같아야 한다"
-        ),
-        normalization=NO_NORMALIZATION,
-        cases=cases,
-    )
-
-
 BUILDERS: dict[str, Builder] = {
     "masking": build_masking,
     "text": build_text,
@@ -1699,10 +1059,11 @@ BUILDERS: dict[str, Builder] = {
     "postprocess": build_postprocess,
     "repair-adoption": build_repair_adoption,
     "export": build_export,
-    "crypto": build_crypto,
-    "jwt": build_jwt,
-    "argon2": build_argon2,
 }
+# `crypto`·`jwt`·`argon2` 가 여기 없는 것은 빠뜨린 것이 아니라 2026-08-12에 **뺀** 것이다.
+# 근거와 그 보장이 어디로 갔는지는 모듈 docstring "없어진 것" 문단에 있다. 되살리기 전에
+# 읽어라 — 이 세 도메인의 판정은 이 하네스가 아니라 Kotlin 자체 테스트와
+# `migration-safety-gate` I-7/I-8/I-9 감사가 맡는다.
 
 
 def summary(builder: Builder) -> str:
@@ -1726,329 +1087,10 @@ def dump(domains: list[str], out_root: Path) -> int:
             encoding="utf-8",
         )
         shown = target.relative_to(REPO_ROOT) if target.is_relative_to(REPO_ROOT) else target
-        mark = spec.mode if spec.mode == MODE_COMPAT else f"{spec.mode}/{spec.spec_status}"
+        mark = f"{spec.mode}/{spec.spec_status}"
         print(f"[생성] {shown} — {len(spec.cases)}건 [{mark}] (source: {spec.source})")
         written += 1
     return 0 if written else 1
-
-
-# ------------------------------------------------------- 역방향 검증 (Kotlin → Python)
-#
-# 신뢰 경계 — 이 절이 지키는 것과 지키지 못하는 것:
-#   지킨다: "Kotlin 산출물 파일의 내용이 Python 구현으로 실제로 해독·검증된다."
-#           검증은 매 실행마다 새로 돈다. 결과를 파일로 받아 믿지 않는다.
-#   지키지 못한다: "그 산출물을 정말 Kotlin이 만들었는가." fixture가 키·시크릿을 공개하므로
-#           같은 값을 Python으로도 만들 수 있다. 이 경계는 문서로만 막힌다(SKILL.md 참고).
-
-
-@dataclass(frozen=True)
-class VerificationOutcome:
-    """역방향 검증 1회의 결과. 파일에 쓰기 전의 순수 값이다.
-
-    `checked`는 **요구 사항을 만족한 채로 통과한 건수**이지 산출물의 케이스 수가 아니다.
-    예전 구현은 입력 케이스 개수를 그대로 `checked`로 적어, 같은 값을 복사해 넣은 산출물이
-    표본 수를 채울 수 있었다.
-    """
-
-    checked: int
-    required: int
-    failures: list[str]
-    bound: bool
-
-    @property
-    def passed(self) -> bool:
-        return not self.failures and self.checked >= self.required
-
-
-Verifier = Callable[[dict[str, Any], dict[str, Any] | None], VerificationOutcome]
-
-
-def _case_key(case: Any, index: int, seen: set[str]) -> tuple[str, str | None]:
-    """산출물 케이스의 id를 꺼내며 형식·중복을 검사한다 (중복은 표본 부풀리기 경로다)."""
-    if not isinstance(case, dict):
-        return (f"#{index}", f"#{index}: 케이스가 객체가 아니다")
-    case_id = str(case.get("id") or f"#{index}")
-    if case_id in seen:
-        return (case_id, f"{case_id}: 같은 id가 두 번 — 중복으로 표본 수를 채울 수 없다")
-    seen.add(case_id)
-    return (case_id, None)
-
-
-def _requested(request: dict[str, Any] | None, field: str) -> list[str]:
-    values = (request or {}).get(field)
-    return [str(item) for item in values] if isinstance(values, list) else []
-
-
-def _coverage_failure(wanted: list[str], covered: set[str], label: str) -> list[str]:
-    """요청한 값 중 검증되지 않은 것을 **번호로만** 보고한다 (평문·subject 노출 금지)."""
-    missing = [str(index) for index, value in enumerate(wanted) if value not in covered]
-    if not missing:
-        return []
-    return [
-        f"요청 {label} 미검증 {len(missing)}건 (index {', '.join(missing)}) — "
-        f"fixture가 요청한 {label} 전부를 Kotlin 산출물이 덮어야 한다"
-    ]
-
-
-def run_verify_crypto(
-    actual_doc: dict[str, Any], request: dict[str, Any] | None
-) -> VerificationOutcome:
-    """Kotlin이 만든 Fernet 토큰을 Python이 실제로 복호화한다.
-
-    `request`는 fixture 요청 케이스(`crypto-roundtrip-request`)의 `input`이다. 이것을 주면
-    검증이 **요청과 결합**된다 — 요청한 키를 썼는지, 요청한 평문을 하나도 빠짐없이 덮었는지까지
-    본다. 건수만 세면 같은 평문 하나를 다섯 번 복사해 표본 수를 채울 수 있다.
-    """
-    from app.privacy.crypto import TextCipher
-
-    cases = actual_doc.get("cases")
-    bound = request is not None
-    if not isinstance(cases, list):
-        return VerificationOutcome(0, 1, ["cases 배열이 없다 — 검증할 산출물이 없다"], bound)
-    wanted_key = str(request["key"]) if request and "key" in request else ""
-    wanted = _requested(request, "plaintexts")
-    failures: list[str] = []
-    covered: set[str] = set()
-    seen: set[str] = set()
-    checked = 0
-    for index, case in enumerate(cases):
-        case_id, defect = _case_key(case, index, seen)
-        if defect:
-            failures.append(defect)
-            continue
-        key = case.get("key")
-        token = case.get("token")
-        expected = case.get("expected_plaintext")
-        if not (isinstance(key, str) and isinstance(token, str) and isinstance(expected, str)):
-            failures.append(
-                f"{case_id}: 입력 결함 — key·token·expected_plaintext 가 모두 문자열이어야 한다"
-            )
-            continue
-        if wanted_key and key != wanted_key:
-            failures.append(f"{case_id}: fixture가 지정한 키가 아니다 — 요청과 무관한 토큰이다")
-            continue
-        if wanted and expected not in wanted:
-            failures.append(f"{case_id}: fixture가 요청하지 않은 평문이다")
-            continue
-        try:
-            got = TextCipher(key).decrypt(token.encode("ascii"))
-        except Exception as exc:  # noqa: BLE001 - 복호화 실패는 사유를 가리지 않고 불일치다
-            failures.append(f"{case_id}: 복호화 실패 ({type(exc).__name__})")
-            continue
-        if got != expected:
-            failures.append(f"{case_id}: 평문 불일치 (길이 기대 {len(expected)} / 실제 {len(got)})")
-            continue
-        checked += 1
-        covered.add(expected)
-    failures += _coverage_failure(wanted, covered, "평문")
-    return VerificationOutcome(checked, len(wanted) or 1, failures, bound)
-
-
-def run_verify_jwt(
-    actual_doc: dict[str, Any], request: dict[str, Any] | None
-) -> VerificationOutcome:
-    """Kotlin이 발급한 토큰을 Python이 실제로 검증한다.
-
-    산출물 케이스: {"id", "secret", "token", "verify_at", "expected_subject", "expected_outcome"}
-    `verify_at`(epoch 초)을 반드시 넣는다 — 벽시계로 판정하면 같은 산출물이 실행 시각에 따라
-    통과와 실패를 오간다. `request`를 주면 fixture가 지정한 시크릿과 subject 집합에 결합한다.
-    """
-    from jwt import api_jwt
-
-    from app.exceptions import ConfigurationError, InvalidCredentialsError
-    from app.services.auth import AuthService, UserStore, WorkspaceCreator
-
-    cases = actual_doc.get("cases")
-    bound = request is not None
-    if not isinstance(cases, list):
-        return VerificationOutcome(0, 1, ["cases 배열이 없다 — 검증할 산출물이 없다"], bound)
-    wanted_secret = str(request["secret"]) if request and "secret" in request else ""
-    wanted = _requested(request, "subjects")
-    failures: list[str] = []
-    covered: set[str] = set()
-    seen: set[str] = set()
-    checked = 0
-    for index, case in enumerate(cases):
-        case_id, defect = _case_key(case, index, seen)
-        if defect:
-            failures.append(defect)
-            continue
-        secret = case.get("secret")
-        token = case.get("token")
-        if not (isinstance(secret, str) and isinstance(token, str)):
-            failures.append(f"{case_id}: 입력 결함 — secret·token 이 모두 문자열이어야 한다")
-            continue
-        if wanted_secret and secret != wanted_secret:
-            failures.append(f"{case_id}: fixture가 지정한 시크릿이 아니다")
-            continue
-        try:
-            moment = datetime.fromtimestamp(int(case["verify_at"]), UTC)
-        except (KeyError, TypeError, ValueError, OSError, OverflowError):
-            failures.append(
-                f"{case_id}: verify_at 누락·형식 오류 — 기준 시각 없이는 만료 판정이 무의미하다"
-            )
-            continue
-        expected_outcome = str(case.get("expected_outcome", "ok"))
-        try:
-            service = AuthService(
-                cast(UserStore, _UNUSED_STORE),
-                cast(WorkspaceCreator, _UNUSED_STORE),
-                secret,
-                JWT_EXPIRE_MINUTES,
-            )
-        except ConfigurationError:
-            failures.append(f"{case_id}: 시크릿이 최소 길이 미달")
-            continue
-        with _frozen(api_jwt, moment):
-            try:
-                subject: str | None = str(service.resolve_token(token))
-            except InvalidCredentialsError:
-                subject = None
-        if subject is None:
-            if expected_outcome != "invalid_credentials":
-                failures.append(f"{case_id}: 검증 실패 (InvalidCredentialsError)")
-                continue
-            checked += 1
-            continue
-        if expected_outcome == "invalid_credentials":
-            failures.append(f"{case_id}: 거부돼야 할 토큰이 통과했다")
-            continue
-        if subject != case.get("expected_subject"):
-            # 토큰·sub 값을 메시지에 담지 않는다 — 토큰 자체가 자격증명이다.
-            failures.append(f"{case_id}: sub 불일치")
-            continue
-        checked += 1
-        covered.add(subject)
-    failures += _coverage_failure(wanted, covered, "subject")
-    return VerificationOutcome(checked, len(wanted) or 1, failures, bound)
-
-
-VERIFIERS: dict[str, Verifier] = {
-    "verify-crypto": run_verify_crypto,
-    "verify-jwt": run_verify_jwt,
-}
-
-#: 이 스크립트 자신. 기록 파일에 해시를 남겨 "어느 버전의 검증기가 돌았는가"를 고정한다.
-VERIFIER_SOURCE = Path(__file__).resolve()
-
-
-def sha256_of(path: Path) -> str:
-    try:
-        return hashlib.sha256(path.read_bytes()).hexdigest()
-    except OSError:
-        return "unavailable"
-
-
-def write_proof_record(
-    *,
-    command: str,
-    actual_path: Path,
-    fixture_path: Path | None,
-    proof_path: Path | None,
-    outcome: VerificationOutcome,
-    produced_by: str,
-    actual_runtime: Any = None,
-) -> Path:
-    """역방향 검증을 실제로 돌렸다는 **기록**을 남긴다.
-
-    이 파일은 판정의 **입력이 아니라 출력**이다. 예전에는 `compare_parity.py`가 이 파일을
-    읽어 역방향 케이스를 닫았고, 그래서 손으로 6줄 적으면 게이트가 열렸다(교차 리뷰 X-1).
-    지금 비교기는 이 파일을 읽지 않고 검증기를 직접 돌린 뒤 결과를 여기에 **덮어쓴다** —
-    손으로 적어 둔 내용은 그 순간 사라진다.
-
-    입력과 결합할 수 있는 값(fixture·산출물·검증기의 SHA-256, 실행 nonce, 결합 여부)을 함께
-    적는다. 사람이 이 기록을 볼 때 "무엇을 근거로 통과했는가"가 파일 안에서 닫히게 하기 위해서다.
-    실패했을 때도 남긴다 — 실패를 침묵으로 두면 미검증과 구분되지 않는다.
-    failures에는 케이스 id와 사유 분류만 담는다(평문·토큰·키 금지).
-    """
-    target = proof_path or actual_path.parent / PROOF_FILE_NAMES[command]
-    target.parent.mkdir(parents=True, exist_ok=True)
-    record: dict[str, Any] = {
-        "script": f"dump_parity_fixtures.py {command}",
-        "command": command,
-        "fixture_case": PROOF_FIXTURE_CASES[command],
-        "status": "pass" if outcome.passed else "fail",
-        "checked": outcome.checked,
-        "required": outcome.required,
-        "bound_to_fixture": outcome.bound,
-        "fixture": str(fixture_path) if fixture_path is not None else None,
-        "fixture_sha256": sha256_of(fixture_path) if fixture_path is not None else None,
-        "actual": str(actual_path),
-        "actual_sha256": sha256_of(actual_path),
-        "actual_runtime": actual_runtime,
-        "verifier": VERIFIER_SOURCE.name,
-        "verifier_sha256": sha256_of(VERIFIER_SOURCE),
-        "run_nonce": uuid.uuid4().hex,
-        "verified_at": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
-        "produced_by": produced_by,
-        "failures": outcome.failures,
-        "note": "이 파일은 실행 기록이다. 게이트 판정의 입력이 아니다 — compare_parity.py 는 "
-        "이것을 읽지 않고 검증기를 직접 돌린다",
-    }
-    target.write_text(json.dumps(record, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    return target
-
-
-def load_request(command: str, fixture_path: Path | None) -> dict[str, Any] | None:
-    """fixture에서 이 검증기가 닫는 요청 케이스의 `input`을 읽는다."""
-    if fixture_path is None:
-        return None
-    try:
-        fixture = json.loads(fixture_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
-        raise SystemExit(
-            f"[중단] {fixture_path} 를 읽을 수 없습니다: {type(exc).__name__}"
-        ) from None
-    wanted = PROOF_FIXTURE_CASES[command]
-    for case in fixture.get("cases", []) if isinstance(fixture, dict) else []:
-        if isinstance(case, dict) and case.get("id") == wanted:
-            payload = case.get("input")
-            if not isinstance(payload, dict):
-                raise SystemExit(f"[중단] {fixture_path} 의 `{wanted}` 케이스에 input 이 없습니다")
-            return payload
-    raise SystemExit(f"[중단] {fixture_path} 에 `{wanted}` 케이스가 없습니다")
-
-
-def run_verification(
-    command: str, actual_path: Path, fixture_path: Path | None, proof_path: Path | None
-) -> int:
-    """CLI 진입점. 게이트 판정은 이 명령이 아니라 `compare_parity.py`가 내린다."""
-    try:
-        actual_doc = json.loads(actual_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
-        raise SystemExit(
-            f"[중단] {actual_path} 를 읽을 수 없습니다: {type(exc).__name__}"
-        ) from None
-    if not isinstance(actual_doc, dict):
-        raise SystemExit(f"[중단] {actual_path} 의 최상위가 JSON 객체가 아닙니다")
-    request = load_request(command, fixture_path)
-    if request is None:
-        print(
-            "[경고] --fixture 를 주지 않았다 — 요청(키·평문·subject)과 결합하지 않고 "
-            "산출물 자체만 검증한다. 게이트 판정은 compare_parity.py 가 fixture와 결합해 "
-            "다시 돌린 결과로만 한다"
-        )
-    outcome = VERIFIERS[command](actual_doc, request)
-    target = write_proof_record(
-        command=command,
-        actual_path=actual_path,
-        fixture_path=fixture_path,
-        proof_path=proof_path,
-        outcome=outcome,
-        produced_by=f"dump_parity_fixtures.py {command}",
-        actual_runtime=actual_doc.get("runtime"),
-    )
-    if not outcome.passed:
-        print(f"역방향 검증 실패 ({command}):")
-        for failure in outcome.failures:
-            print(f"  - {failure}")
-        if not outcome.failures:
-            print(f"  - 표본 부족: {outcome.required}건이 필요한데 {outcome.checked}건만 통과했다")
-        print(f"[기록] {target} (status: fail)")
-        return 1
-    print(f"역방향 검증 통과 ({command}): {outcome.checked}건")
-    print(f"[기록] {target} (status: pass)")
-    return 0
 
 
 def main() -> int:
@@ -2056,27 +1098,10 @@ def main() -> int:
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
     parser.add_argument(
-        "command", nargs="?", default="dump", choices=["dump", "verify-crypto", "verify-jwt"]
-    )
-    parser.add_argument(
         "--domain", action="append", default=[], help="생성할 도메인 (반복 가능, 기본 전체)"
     )
     parser.add_argument(
         "--out", type=Path, default=DEFAULT_OUT, help=f"출력 루트 (기본 {DEFAULT_OUT})"
-    )
-    parser.add_argument("--actual", type=Path, help="verify-crypto / verify-jwt 입력 JSON")
-    parser.add_argument(
-        "--fixture",
-        type=Path,
-        help=(
-            "요청 케이스를 읽을 fixture JSON. 주면 검증이 요청(키·평문·subject)과 결합된다. "
-            "생략하면 산출물 자체만 본다"
-        ),
-    )
-    parser.add_argument(
-        "--proof",
-        type=Path,
-        help="실행 기록 파일 경로 (기본: --actual 과 같은 디렉터리의 verify-*.verified.json)",
     )
     parser.add_argument("--list", action="store_true", help="도메인 목록만 출력")
     args = parser.parse_args()
@@ -2085,10 +1110,6 @@ def main() -> int:
         for name, builder in BUILDERS.items():
             print(f"{name:16} {summary(builder)}")
         return 0
-    if args.command in VERIFIERS:
-        if args.actual is None:
-            parser.error(f"{args.command}에는 --actual 이 필요합니다")
-        return run_verification(args.command, args.actual, args.fixture, args.proof)
 
     unknown = [d for d in args.domain if d not in BUILDERS]
     if unknown:

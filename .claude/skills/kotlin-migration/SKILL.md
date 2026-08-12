@@ -89,12 +89,12 @@ Kotlin 코드를 쓰는 에이전트는 `kotlin-implementer` 하나다. 여러 �
 
 ### Phase 0 — 범위·계약 동결
 1. `contract-keeper`: `contracts/easy-doc-v1.yaml` 작성, FastAPI OpenAPI·React 타입 3자 대조
-2. `privacy-gate`: Fernet·Argon2·JWT 호환 spike 요건 정리
+2. `privacy-gate`: 저장 암호화(표준 AEAD)·Argon2·JWT spike 요건 정리. **호환 spike가 아니다** — 2026-08-12 재개발 전환으로 롤백과 값 동일성 요구가 소멸했다(계획 §4.3 2차 개정). 남는 것은 round-trip·변조 거부·재해시 전체 파라미터 동등성(필수조치 A)·JWT clock skew 0(필수조치 B)
 3. `kotlin-implementer`: 문서 라이브러리(POI·PDFBox·HWPX) spike
 
-**종료 조건**: Kotlin이 기존 암호문을 안전하게 읽을 경로와 문서 포팅 가능성이 확인됨. 확인되지 않으면 일정 산정부터 다시 한다 — 여기서 실패한 채 진행하면 Phase 4에서 전체가 막힌다.
+**종료 조건**: 요구사항 인벤토리 1차본과 품질 합격선이 승인되고, 표준 AEAD·Argon2·JWT 구현 경로와 문서 포팅 가능성이 확인됨. **"기존 암호문을 읽을 경로"는 종료 조건이 아니다** — 보존할 DB가 없고(§9 결정 2) 롤백도 없다. 확인되지 않으면 일정 산정부터 다시 한다.
 
-**사용자 승인 필요**: 계획 문서 §9의 다섯 결정(런타임만 Kotlin화 vs Python 완전 제거 / 대상 DB와 유지보수 창 / Fernet JVM 구현 승인 / Redis 최종 제거 / UI 개편 분리)을 Phase 0에서 고정한다. 승인 없이 Phase 1로 넘어가지 않는다.
+**사용자 승인 필요**: 계획 문서 §9의 결정을 Phase 0에서 고정한다. **2026-08-12 2차 개정으로 결정 3(Fernet JVM 구현 승인)은 폐기**(롤백 포기 → 표준 AEAD 신규), **결정 4(Redis 최종 제거)는 단순화**(재개발이라 처음부터 안 쓴다)됐다. 남은 미결은 5(UI 개편 분리)이고, 1·2·6은 승인·단순화 완료다. 승인 없이 Phase 1로 넘어가지 않는다.
 
 ### Phase 1 — Kotlin 골격과 CI
 `kotlin-implementer` 주도. Gradle 멀티모듈, toolchain, dependency locking, ktlint/detekt, `/health`, Testcontainers, Flyway baseline, CI에 Kotlin gate 추가(기존 Python/React gate 유지).
@@ -108,7 +108,7 @@ Kotlin 코드를 쓰는 에이전트는 `kotlin-implementer` 하나다. 여러 �
 `kotlin-implementer` + `contract-keeper`(계약 준수) + `privacy-gate`(소유권 404, Argon2/JWT).
 
 ### Phase 4 — 문서 API·암호화·내보내기
-`kotlin-implementer` + `parity-verifier`(문서 fixture 교차 비교) + `privacy-gate`(암호 호환, 평문 미노출).
+`kotlin-implementer` + `parity-verifier`(문서 fixture 비교) + `privacy-gate`(**저장 암호화 AEAD 정확성** — round-trip·변조 거부·nonce 재사용 금지, 평문 미노출). 암호는 parity 하네스가 아니라 Kotlin 자체 테스트 + `privacy-gate` 감사로 판정한다(2026-08-12).
 
 **종료 조건**: 실제 PostgreSQL에서 업로드 → 조회 → 검수 → 3형식 다운로드 → 삭제가 통과하고 평문이 DB·로그에 없다.
 
@@ -118,11 +118,11 @@ Kotlin 코드를 쓰는 에이전트는 `kotlin-implementer` 하나다. 여러 �
 ### Phase 6 — React 통합·접근성·전체 E2E
 `contract-keeper` 주도. OpenAPI 생성 타입 교체, polling·세션 만료·미저장 경고 검증, 키보드·focus·aria-live·색 대비, nginx `/api` 프록시.
 
-### Phase 7 — 절체·관찰·롤백
-전원 참여. 계획 문서 §5 Phase 7의 9단계 절차와 즉시 중단 기준을 그대로 집행한다. **이 Phase는 사용자 승인 없이 실행하지 않는다** — 운영 데이터와 되돌리기 어려운 상태 변경이 걸려 있다.
+### Phase 7 — 첫 배포·파일럿 관찰 (일방향)
+전원 참여. 계획 문서 §5 Phase 7(2026-08-12 2차 개정)의 절차와 즉시 중단 기준을 그대로 집행한다. **절체·롤백이 아니라 일방향 첫 배포다** — 되돌아갈 운영 Python이 없으므로 중단 기준에 걸리면 신규 업로드를 멈추고 원인을 고쳐 다시 배포한다(fix-forward). **이 Phase는 사용자 승인 없이 실행하지 않는다** — 되돌리기 어려운 상태 변경이 걸려 있고, 이제는 되돌릴 수단 자체가 없다.
 
 ### Phase 8 — Python 런타임 제거
-관찰 기간 종료 후에만. `app/`, ARQ, FastAPI, SQLAlchemy, Alembic 제거와 문서 동기화.
+관찰 기간 종료 후에만, 그리고 **`docs/migration/_workspace/03_rebuild-extraction-list.md`의 폐기 게이트가 0으로 닫힌 뒤에만**. 재개발에는 Python 차분 그물이 없어, 코드에만 있던 판단(프롬프트 전문·스타일 상수·치환 비문 실측 튜닝·골든셋 채점 기준)을 지우면 **영구 손실**이다. `app/`, ARQ, FastAPI, SQLAlchemy, Alembic 제거와 문서 동기화.
 
 ### Phase 9 — 오프라인 도구 Kotlin 전환 (선택)
 런타임 밖 도구를 옮기는 단계: `scripts/benchmark.py`, `scripts/collect_*`, `scripts/pilot_report.py`, `app/easyread/goldenset.py`, `judge.py`, `collection.py`, `bokjiro.py`와 관련 fixture·CLI·리포트 형식.
@@ -180,7 +180,7 @@ Kotlin 코드 변경이 한 덩어리 끝날 때마다 실행한다. Phase 종�
 | 4 | `upload` · `extract` · `crypto` · `documents` · `export` |
 | 5 | `llm-provider` · `worker` · `retention` |
 | 6 | `frontend` · `a11y` · `e2e` |
-| 7 | `cutover` |
+| 7 | `cutover` (이름 유지 — 내용은 첫 배포·파일럿 관찰) |
 | 8 | `python-removal` |
 | 9 | `offline-tools` |
 | 전 Phase 공통 | `security` — `privacy-gate`가 보안 축 리뷰를 낼 때만(`{phase}_security_privacy-gate.md`). 3단계 게이트의 세 산출물에는 쓰지 않는다 |
@@ -201,7 +201,7 @@ Kotlin 코드 변경이 한 덩어리 끝날 때마다 실행한다. Phase 종�
 - **작업 상태**: `docs/migration/_workspace/00_progress.md` (스키마는 "실행 모드 → 작업 추적" 절). 에이전트와 리더가 공유하는 유일한 진실이고, Phase 의존성도 여기서 판정한다. 리더가 `TaskCreate`/`TaskUpdate`로 자기 진행을 따로 적어 두는 것은 선택 사항이며(쓰지 않아도 하네스는 그대로 돈다), 그 상태는 에이전트에게 보이지 않으므로 **판정 근거로 쓰지 않는다.**
 - **산출물**: `docs/migration/_workspace/{phase}_{agent}_{artifact}.{ext}` (예: `01_contract-keeper_endpoint-matrix.md`)
 - **실시간 전달**: `SendMessage`. 예 — `parity-verifier`가 불일치를 발견하면 `kotlin-implementer`에게 즉시 보낸다.
-- **중간 파일은 지우지 않는다.** 절체 후 문제가 생겼을 때 어느 단계에서 갈라졌는지 추적할 근거가 된다.
+- **중간 파일은 지우지 않는다.** 배포 후 문제가 생겼을 때 어느 단계에서 갈라졌는지 추적할 근거가 된다.
 
 고정 경로:
 
@@ -227,7 +227,7 @@ Kotlin 코드 변경이 한 덩어리 끝날 때마다 실행한다. Phase 종�
 
 ## 검증 매트릭스
 
-계획 문서 §6을 게이트로 쓴다: Build / Unit / Contract / DB / Crypto / Document / Worker / Quality / Security / E2E / Ops. 어느 게이트를 아직 안 돌렸는지 `00_progress.md`에 남긴다. **돌리지 않은 게이트를 통과한 것처럼 보고하지 않는다.**
+계획 문서 §6을 게이트로 쓴다: Build / Unit / Requirements / Difference / Contract / DB / Crypto / Document / Worker / Quality / Security / E2E / Ops. **Crypto 게이트의 통과 기준이 바뀌었다** — "Python↔Kotlin 양방향"이 아니라 "Kotlin 단독으로 AEAD round-trip·변조 거부, Argon2 재해시 전체 파라미터 동등성, JWT skew 0 경계"다(2026-08-12 2차 개정). Ops 게이트도 절체·롤백이 아니라 첫 배포·파일럿 관찰이다. 어느 게이트를 아직 안 돌렸는지 `00_progress.md`에 남긴다. **돌리지 않은 게이트를 통과한 것처럼 보고하지 않는다.**
 
 Python 테스트 878개를 줄 단위로 번역하는 것이 목표가 아니다. 각 테스트가 보장하던 행동을 계약·도메인·통합·E2E 계층에 재배치하고, 누락된 보장 목록이 0인지 추적표로 관리한다.
 

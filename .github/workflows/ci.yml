@@ -128,8 +128,8 @@ jobs:
         run: ./gradlew build --no-daemon
 
       # --- parity 게이트 배선 (Phase 0 필수 조치 E) ---------------------------
-      # 역방향 산출물(parity/actual/)을 **Kotlin 테스트가** 만든다는 것을 CI에서 보장한다.
-      # 이 배선이 없으면 fixture가 공개하는 키·시크릿으로 Python이 같은 파일을 만들어도
+      # 산출물(parity/actual/)을 **Kotlin 테스트가** 만든다는 것을 CI에서 보장한다.
+      # 이 배선이 없으면 fixture 입력이 전부 공개돼 있으므로 Python이 같은 파일을 만들어도
       # 게이트가 구분하지 못한다(python-kotlin-parity 스킬 "이 게이트가 막지 못하는 것").
       # 이 태스크는 산출물을 쓰고 **곧바로** backend-kotlin/parity-domains.txt 의 선언과
       # 대조한다(parityManifestCheck). "포팅했다고 선언했는데 산출물이 없다"는 여기서
@@ -332,7 +332,7 @@ jobs:
               ;;
             *)
               echo "::error::parity 부분 게이트 실패 (종료 코드 $status)."
-              echo "::error::1 = 불일치·도메인 누락·결과 파일 없음 / 2 = 선언한 도메인의 역방향 산출물 미생성."
+              echo "::error::1 = 불일치·도메인 누락·결과 파일 없음 / 2 = 선언한 도메인이 spec_status=pending 이라 미검증."
               echo "::error::둘 다 '아직 포팅하지 않았다'가 아니라 '선언한 것을 지키지 못했다'이므로 사면하지 않는다."
               exit 1
               ;;

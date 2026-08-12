@@ -65,8 +65,8 @@ worker ─┘        └─> infrastructure ─> core
   전이 의존성을 공유한다. 모듈마다 버전을 적으면 같은 라이브러리가 모듈별로 다른
   버전으로 해석되어, `api`에서는 되고 `worker`에서는 깨지는 상황이 생긴다.
 - dependency locking(`dependencyLocking { lockAllConfigurations() }` + 커밋된
-  `*.lockfile`)을 켠다. 이유: 전이 의존성이 조용히 올라가면 Fernet·JWT·문서 파서처럼
-  **바이트 단위 호환이 걸린 지점**에서 재현 불가능한 차이가 난다. 락파일이 있으면
+  `*.lockfile`)을 켠다. 이유: 전이 의존성이 조용히 올라가면 암호 라이브러리·JWT·문서
+  파서처럼 **바이트가 곧 결과인 지점**에서 재현 불가능한 차이가 난다. 락파일이 있으면
   "어제는 통과했는데 오늘 실패"의 원인 후보에서 의존성 드리프트를 제거할 수 있다.
 - 버전은 **직접 고르지 않는다.** 계획 §3.1대로 구현 시작 시 호환성 spike를 돌려
   통과한 조합만 catalog에 적고, 근거(어떤 spike가 무엇을 확인했는지)를 catalog의
@@ -88,7 +88,7 @@ worker ─┘        └─> infrastructure ─> core
 | `app/exceptions.py` | `core` | 도메인 예외 계층 |
 | `app/text.py` | `core` | 제어문자 제거·정규화 |
 | `app/privacy/masking.py` | `core` | 마스킹 규칙 — parity 대상 1순위 |
-| `app/privacy/crypto.py` | `infrastructure` | Fernet 호환. 계획 §4.3 게이트 통과 전에는 손대지 않는다 |
+| `app/privacy/crypto.py` | `infrastructure` | **포팅 대상이 아니라 참고 자료다.** 저장 암호화는 표준 AEAD(AES-GCM 등) 신규 구현이며 Fernet 토큰 형식을 재현하지 않는다 — 롤백 포기로 호환 요구가 소멸했다(계획 §4.3 2026-08-12 2차 개정). 검증은 `migration-safety-gate` I-7 |
 | `app/easyread/style_rules.py`, `prompts.py`, `postprocess.py` | `core` | 프롬프트·스타일·보정 채택 |
 | `app/easyread/export.py`의 파일명·`content_disposition` 생성 | `core` | 순수 문자열 로직이라 fixture로 검증 가능 |
 | `app/easyread/export.py`의 바이트 생성, `hwpx.py` | `infrastructure` | POI/ZIP 의존 |
@@ -109,8 +109,8 @@ worker ─┘        └─> infrastructure ─> core
 |---|---|---|
 | JVM | Java 21 toolchain | 장기 지원. `kotlin { jvmToolchain(21) }`로 로컬 JDK와 무관하게 고정 |
 | 언어 | Kotlin 2.2 이상 | Spring Boot 공식 지원 범위. 실제 버전은 Boot BOM에 정렬 |
-| 웹 | **Spring MVC** (WebFlux 아님) | 파이프라인의 무거운 구간이 전부 blocking이다 — JDBC, POI/PDFBox 파싱, Fernet 복호화, LLM SDK 동기 호출. WebFlux를 써도 이들 앞에서 스레드로 되돌아가야 하므로 non-blocking 이득은 없고, 스택 트레이스와 트랜잭션 전파만 어려워진다 |
-| DB 접근 | **`JdbcClient` / Spring Data JDBC** (JPA 아님) | ① 기존 스키마·컬럼·제약 이름을 첫 절체에서 바꾸지 않는다(계획 §4.2) — JPA는 엔티티가 스키마를 주도하려 한다. ② 소유권 은닉 404는 `WHERE id = ? AND user_id = ?` 조건이 **모든 조회에 빠짐없이** 붙어야 성립하는데, 이 조건이 SQL에 눈에 보이는 편이 안전하다. ③ 워커 lease는 `FOR UPDATE SKIP LOCKED`가 필수인데 JPA 추상화 뒤에서는 실제 발행 SQL을 통제하기 어렵다. ④ 지연 로딩·1차 캐시·flush 타이밍이 만드는 암묵적 동작이 parity 검증의 변수를 늘린다 |
+| 웹 | **Spring MVC** (WebFlux 아님) | 파이프라인의 무거운 구간이 전부 blocking이다 — JDBC, POI/PDFBox 파싱, AEAD 복호화, LLM SDK 동기 호출. WebFlux를 써도 이들 앞에서 스레드로 되돌아가야 하므로 non-blocking 이득은 없고, 스택 트레이스와 트랜잭션 전파만 어려워진다 |
+| DB 접근 | **`JdbcClient` / Spring Data JDBC** (JPA 아님) | ① 스키마·컬럼·제약 이름을 코드가 아니라 Flyway 마이그레이션이 정한다(계획 §4.2) — JPA는 엔티티가 스키마를 주도하려 한다. ② 소유권 은닉 404는 `WHERE id = ? AND user_id = ?` 조건이 **모든 조회에 빠짐없이** 붙어야 성립하는데, 이 조건이 SQL에 눈에 보이는 편이 안전하다. ③ 워커 lease는 `FOR UPDATE SKIP LOCKED`가 필수인데 JPA 추상화 뒤에서는 실제 발행 SQL을 통제하기 어렵다. ④ 지연 로딩·1차 캐시·flush 타이밍이 만드는 암묵적 동작이 parity 검증의 변수를 늘린다 |
 | 마이그레이션 | Flyway | §6 참고 |
 | 테스트 | JUnit 5, (선택) Kotest, Testcontainers PostgreSQL, MockWebServer 또는 WireMock | §8 참고 |
 | 문서 | Apache POI(XWPF), Apache PDFBox, namespace-aware StAX/JAXP | HWPX는 ZIP+XML 직접 조립. DTD·외부 엔터티 차단, 압축 해제 예산 유지 |
@@ -347,7 +347,7 @@ cd backend-kotlin
 ```
 
 커밋 전 필수 통과 순서: **ktlintCheck → detekt → test**. Python 쪽의
-`ruff → mypy → pytest`와 같은 자리이며, 절체 전까지는 **양쪽 모두** 통과해야 한다.
+`ruff → mypy → pytest`와 같은 자리이며, Python을 지우기 전까지는 **양쪽 모두** 통과해야 한다.
 
 프롬프트·스타일 규칙·LLM 설정에 해당하는 `core` 코드를 고쳤다면 Kotlin 테스트만으로
 끝내지 말고 **`uv run pytest tests/golden`도 함께 돌려** 기존 기준선과 비교하고 결과를
@@ -361,5 +361,5 @@ cd backend-kotlin
 - parity fixture: `parity/fixtures/{도메인}/*.json`
 - 중간 산출물·조사 메모: `docs/migration/_workspace/{phase}_{agent}_{artifact}.{ext}`
 
-중간 산출물을 저장소 루트나 `docs/` 최상단에 흘리지 않는다. 절체가 끝나면 `_workspace`는
-통째로 정리 대상이다.
+중간 산출물을 저장소 루트나 `docs/` 최상단에 흘리지 않는다. 첫 배포가 끝나면 `_workspace`는
+통째로 정리 대상이다 — 단 `reviews/**`와 과거 회차 산출물은 그때의 판단 기록이므로 남긴다.

@@ -80,7 +80,7 @@ _TOKEN_CHARS = re.compile(r"^[A-Za-z0-9+/=_.\-]{24,}$")
 def looks_like_real_secret(value: str) -> bool:
     """리터럴이 **진짜 키의 꼴**인지 본다 — 위치(tests/ 여부)가 아니라 값의 모양으로 가른다.
 
-    `tests/`를 통째로 면제하면 테스트 파일에 실제 Fernet 키를 넣어도 통과한다. 그래서
+    `tests/`를 통째로 면제하면 테스트 파일에 실제 암호화 키를 넣어도 통과한다. 그래서
     기준을 파일 경로가 아니라 리터럴 자체에 둔다: 진짜 키는 base64·hex 난수라 문자
     클래스가 섞이고 엔트로피가 높지만, `wrongpassword` 같은 픽스처는 소문자 낱말이라
     두 축 모두에서 떨어진다. 반대로 테스트 파일 안이라도 난수꼴 리터럴이면 그대로 잡힌다.
@@ -198,7 +198,11 @@ RULES: tuple[Rule, ...] = (
         "BLOCK",
         "비밀키는 환경변수만 쓴다",
         re.compile(
-            r"(?:fernet[_-]?key|jwt[_-]?secret|api[_-]?key|secret[_-]?key|password)"
+            # 저장 암호화 키의 설정 이름은 재개발에서 바뀐다(Fernet → 표준 AEAD,
+            # 2026-08-12). 옛 이름을 지우지 않고 새 이름을 **더한다** — 전환 중에는 두
+            # 이름이 함께 존재할 수 있고, 이 목록에서 이름을 빼는 것은 탐지를 줄이는 것이다.
+            r"(?:fernet[_-]?key|encryption[_-]?key|aead[_-]?key|cipher[_-]?key"
+            r"|jwt[_-]?secret|api[_-]?key|secret[_-]?key|password)"
             r"\s*[:=]\s*[\"'](?P<literal>[^\"'\s]{12,})[\"']",
             re.IGNORECASE,
         ),
