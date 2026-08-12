@@ -35,3 +35,7 @@ backend-kotlin/**/bin/
 # fixture(parity/fixtures/)는 정본이므로 Phase 2에서 생기면 커밋한다.
 parity/actual/
 parity/_harness-selfcheck/
+
+# 확장자가 잘린 골든셋 파일. 로더가 무시하므로 데이터가 아니고, `git add tests/golden/`
+# 에 두 번 쓸려 들어갔다. 편입하려면 .json 으로 고쳐 이름을 바꾼다.
+*.jso
