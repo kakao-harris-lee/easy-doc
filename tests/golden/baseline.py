@@ -532,7 +532,26 @@ def baseline_changes(body: dict[str, Any], path: Path = BASELINE_PATH) -> list[s
 
 
 def write_baseline(body: dict[str, Any], path: Path = BASELINE_PATH) -> Path:
-    """기준선을 쓴다. `recorded_at`은 여기서만 붙는다(비교 대상이 아니다)."""
+    """기준선을 쓴다. `recorded_at`은 여기서만 붙는다(비교 대상이 아니다).
+
+    **실행 조건이 비어 있으면 쓰지 않는다.** 2026-08-12에 `context.model`이 `None`인
+    채로 기준선이 기록됐고(`settings.llm_model` 미설정), 그 값은 직전 저장 실행보다
+    9%p 낮았다. 무엇으로 쟀는지 모르는 수치가 하한선이 되면 **그 하락이 정상이 된다** —
+    다음 실행은 낮아진 값과 비교해 통과한다. `RunContext`가 "판정에 쓰지 않는다"인 것은
+    맞지만, 그것은 *비교식*에 넣지 않는다는 뜻이지 *비어도 된다*는 뜻이 아니다.
+    """
+    context = body.get("context")
+    missing = [
+        key
+        for key in ("provider", "model")
+        if not (isinstance(context, dict) and context.get(key))
+    ]
+    if missing:
+        raise AssertionError(
+            f"기준선을 쓰지 않는다 — 실행 조건이 비어 있다: {', '.join(missing)}. "
+            "무엇으로 쟀는지 모르는 수치는 하한선이 될 수 없다(비교 조건이 성립하지 않는다). "
+            "`LLM_MODEL`을 고정하고 다시 기록하라."
+        )
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = {**body, "recorded_at": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")}
     path.write_text(
