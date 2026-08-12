@@ -371,10 +371,20 @@ def test_규칙_기반_통과율이_직전_기록보다_낮지_않다(evaluation
         report.floor = judgement
 
     if recording_requested():
+        # 조건은 **리포트가 들고 있는 것을 그대로** 쓴다. 여기서 `run_context()`를 새로
+        # 부르면 안 된다 — 관측 모델(`observed_models`)은 **변환 결과에서만** 나오는데
+        # 인자 없는 호출은 `outcomes`가 `None`이라 그 목록이 항상 비고, `write_baseline`의
+        # fail-closed 가드가 **유효한 실행까지 거부**한다(2026-08-12 실측: 가드를 넣으면서
+        # 이 자리를 빠뜨려 기록 경로가 통째로 막혔다). 리포트의 `context`는 이미 같은
+        # `outcomes`로 만들어진 값이라(`build_report` → `run_context(outcomes)`) 그대로 쓴다.
+        # 새로 유도하지 않는 이유는 하나 더 있다 — **같은 실행의 조건을 두 번 유도하면 두 값이
+        # 갈릴 수 있고, 갈리면 어느 쪽이 그 수치의 조건인지 말할 수 없다.**
+        # `report`가 `None`인 경로만 `run_context()`로 떨어진다. 그때는 이번 실행의 수치를
+        # 세운 리포트 자체가 없다는 뜻이라, 가드가 기록을 거부하는 것이 옳다(fail-closed).
         body = baseline_body(
             Fingerprint.of(DOCUMENTS),
             evaluation.measurement,
-            run_context(),
+            report.context if report is not None else run_context(),
             report.judge if report is not None else None,
         )
         changes = baseline_changes(body)
