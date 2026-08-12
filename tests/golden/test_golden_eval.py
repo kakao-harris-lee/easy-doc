@@ -1,12 +1,44 @@
 """골든셋 실제 LLM 평가 — 기본 실행에서 제외된다(pytest addopts의 -m 'not llm').
 
 실행: `GOLDEN_PROVIDER=anthropic uv run pytest tests/golden -m llm`
-개별 문서가 아니라 집계로 판정하되, 날조(fidelity 바닥)는 개별로 막는다.
-변환은 모듈 스코프 fixture에서 한 번만 수행하고 규칙 평가와 judge 평가가 공유한다.
+기준선 갱신: 같은 명령에 `GOLDEN_RECORD_BASELINE=1` 을 붙인다. **기록 실행은 판정이
+아니므로** 기준선이 바뀌면 실패로 끝난다 — diff를 커밋한 뒤 플래그 없이 다시 돌린다.
+
+변환은 모듈 스코프 fixture에서 한 번만 수행하고 세 축이 공유한다.
 실패 출력에는 문서 id와 사유 코드·건수만 남긴다 (본문·문장·팩트 리터럴 출력 금지).
+
+## 세 축과 그 차단 성격 (2026-08-12 사용자 결정)
+
+| 축 | 차단하는가 | 기준 |
+|---|---|---|
+| 규칙 기반 통과율 | **차단** | **상대** — 직전에 기록된 측정치보다 낮아지지 않는다 |
+| 필수 정보 보존 | **차단** | **절대** — 누락 0건. LLM을 쓰지 않는 결정적 검사다 |
+| judge 점수 | **차단하지 않는다** | 기록·경고용. 목표선 대비 위치를 리포트에 싣는다 |
+
+세 축의 성격이 다른 이유:
+
+- **규칙 통과율이 상대인 이유.** 실측이 0.446~0.643인데 절대선 0.90을 차단으로 두면
+  게이트가 상시 빨간불이 된다. 실수집 52.8%는 구현 결함이 아니라 **코퍼스 난이도**로
+  판정됐다(`docs/migration/_workspace/02_quality-baseline.md` §4·§5.4 — 2,000자를 경계로
+  통과율이 91%→7%로 무너지고, 최장 문장 상위 8건이 전부 실수집의 PDF 추출 아티팩트다).
+  현재 성능을 합격선으로 옮기지 않으면서 회귀만 막는 방법이 상대 하한선이다.
+- **judge가 차단하지 않는 이유.** 채점 모델을 고정할 수단이 없다 —
+  `GOLDEN_JUDGE_PROVIDER`는 벤더만 고르고 모델은 `settings.llm_model`을 따른다.
+  모델이 바뀌면 **우리 코드를 한 줄도 고치지 않았는데** CI가 빨개진다. 점수는 계속 재고
+  기록하되 판정에는 쓰지 않는다(`02_quality-baseline.md` §6.5).
+- **필수 정보 보존만 절대인 이유.** judge가 차단하지 못하게 되면서
+  `DEFAULT_FIDELITY_FLOOR`(judge 축)가 막던 중요 정보 누락이 무방비가 된다. 금액·기한·
+  대상이 빠진 결과물은 품질이 낮은 안내문이 아니라 **틀린 안내문**이라 "직전보다
+  나빠지지 않았으면 됨"의 대상이 아니다.
+
+⚠ **이 절대 기준은 지금 통과하지 못할 가능성이 높다.** 마지막으로 저장된 실행
+(2026-08-08 anthropic)의 팩트 잔존율은 90.1%였고 **14개 문서에서 누락**이 있었다
+(`02_quality-baseline.md` §5.3). 그 상태를 통과로 만들어 주지 않는 것이 이 게이트의
+목적이다 — 수치를 낮춰 맞추지 말고, 무엇이 빠지는지를 리포트로 보고 프롬프트를 고친다.
 """
 
 import os
+import warnings
 from collections import Counter
 from collections.abc import AsyncIterator
 
@@ -15,7 +47,7 @@ import pytest_asyncio
 from pydantic import BaseModel
 
 from app.config import Settings
-from app.easyread.goldenset import GoldenDocument, load_documents
+from app.easyread.goldenset import FactLoss, GoldenDocument, find_fact_losses, load_documents
 from app.easyread.judge import (
     DEFAULT_FIDELITY_FLOOR,
     JudgeScore,
@@ -28,16 +60,36 @@ from app.llm.factory import create_provider
 from app.llm.provider import LLMProvider
 from app.services.conversion import ConversionOutcome, ConversionService
 from tests.golden import DOCUMENTS_DIR
+from tests.golden import report as golden_report
+from tests.golden.baseline import (
+    Fingerprint,
+    GroupMeasurement,
+    JudgeObservation,
+    Measurement,
+    RunContext,
+    baseline_body,
+    baseline_changes,
+    compare,
+    load_baseline,
+    recording_requested,
+    write_baseline,
+)
 
 pytestmark = pytest.mark.llm
 
 DEFAULT_PROVIDER = "anthropic"
 DEFAULT_JUDGE_PROVIDER = "anthropic"
 
-# 통계 한계: n=20 단일 실행이다. 문서별 성공 확률이 진짜 90%인 provider라도
-# 20건 중 18건 미만이 나올 확률이 약 32%다 — 정상 provider가 우연히 불통과할 수 있다.
-# master-plan 7장 KPI 수치를 게이트로 차용한 값이며, 경계에서 흔들릴 경우
-# 재실행·표본 확대 판단은 사람이 한다(자동 재시도로 숨기지 않는다).
+# ─────────────────────────────────────────────────────────────────────────────
+# 목표선 — **차단하지 않는다.** 2026-08-12 결정으로 통과율의 차단 기준은 상대 하한선
+# (직전 기록 대비)으로 바뀌었고, 아래 수치들은 "지금 어디쯤인가"를 읽는 눈금으로 남는다.
+# 지우지 않는 이유: 0.90은 master-plan §7 KPI가 정한 제품 목표이고, 차단에서 내려왔다고
+# 목표가 사라진 것이 아니다. 리포트가 매 실행 목표 대비 현재를 함께 찍는다.
+#
+# 통계 한계(그대로 유효): n=20~56 단일 실행이다. 문서별 성공 확률이 진짜 90%인 provider도
+# 20건 중 18건 미만이 나올 확률이 약 32%다. 경계에서 흔들릴 경우 재실행·표본 확대 판단은
+# 사람이 한다(자동 재시도로 숨기지 않는다).
+# ─────────────────────────────────────────────────────────────────────────────
 PASS_RATE_THRESHOLD = 0.9
 # 채점이 이루어진 문서 비율 하한 — 대부분 실패한 provider가 남은 소수의 높은 점수로
 # 통과하는 것을 막는 별도 기준이다(통과율 기준과 목적이 달라 상수를 분리한다).
@@ -45,22 +97,49 @@ JUDGE_COVERAGE_THRESHOLD = 0.9
 JUDGE_SCORE_THRESHOLD = 4.0
 # 바닥 게이트: fidelity 1~2는 중요 정보 누락·날조라 평균으로 상쇄할 수 없다.
 # 평균 게이트만 두면 15건 5점 + 5건 1점(날조 25%)이 평균 4.0으로 통과한다.
-# 판정 자체는 judge.find_low_fidelity()에 있고 기본 스위트가 회귀 테스트로 고정한다
-# (이 파일은 -m llm이라 기본 실행에서 제외되므로 여기에만 두면 보호되지 않는다).
+# **판정에는 쓰지 않는다**(judge 비차단). 계속 계산해 리포트·경고로 남기며, 이 축이 막던
+# 정보 누락은 아래 필수 정보 보존 게이트가 LLM 없이 절대 기준으로 받는다.
 FIDELITY_FLOOR = DEFAULT_FIDELITY_FLOOR
 
+#: 필수 정보 보존의 **절대** 허용치. 상대 기준의 대상이 아니다 —
+#: 필수 사실이 빠진 안내문은 품질이 낮은 것이 아니라 틀린 것이다.
+REQUIRED_FACT_LOSS_LIMIT = 0
+
 DOCUMENTS: list[GoldenDocument] = load_documents(DOCUMENTS_DIR)
+
+TARGETS = golden_report.Targets(
+    pass_rate=PASS_RATE_THRESHOLD,
+    judge_coverage=JUDGE_COVERAGE_THRESHOLD,
+    judge_score=JUDGE_SCORE_THRESHOLD,
+    fidelity_floor=FIDELITY_FLOOR,
+)
 
 
 class DocumentEvaluation(BaseModel):
     """문서 한 건의 평가 결과. failures에는 사유 코드만 담는다."""
 
     document_id: str
+    synthetic: bool
     failures: list[str]
 
     @property
     def passed(self) -> bool:
         return not self.failures
+
+
+class RuleEvaluation(BaseModel):
+    """규칙 기반 평가 전체 — LLM 호출 없이 변환 결과만 보고 만든다.
+
+    변환 산출물만 있으면 이 객체는 결정적으로 만들어진다. 그래서 배선 테스트가
+    FakeProvider로 같은 경로를 돌릴 수 있고, 차단 게이트가 실제로 걸리는지를 기본
+    스위트(LLM 없음)에서 고정할 수 있다.
+    """
+
+    evaluations: list[DocumentEvaluation]
+    measurement: Measurement
+    failure_reasons: dict[str, int]
+    conversion_failures: list[str]
+    fact_losses: list[FactLoss]
 
 
 @pytest_asyncio.fixture(scope="module", loop_scope="module")
@@ -91,8 +170,46 @@ async def judge_provider() -> AsyncIterator[LLMProvider]:
 
 @pytest_asyncio.fixture(scope="module", loop_scope="module")
 async def outcomes(provider: LLMProvider) -> dict[str, ConversionOutcome | None]:
-    """전 문서를 한 번만 변환해 규칙 평가와 judge 평가가 공유한다(LLM 호출 절감)."""
+    """전 문서를 한 번만 변환해 세 축이 공유한다(LLM 호출 절감)."""
     return await convert_all(provider)
+
+
+@pytest.fixture(scope="module")
+def evaluation(outcomes: dict[str, ConversionOutcome | None]) -> RuleEvaluation:
+    """규칙 평가를 만들고 **리포트를 먼저 세운다.**
+
+    리포트를 여기서 세우는 이유: 아래 테스트가 하나라도 실패하거나 skip되어도 이번 실행의
+    수치가 남아야 한다. 통과 실행에서 수치가 사라지던 것이 상대 하한선을 세우지 못한
+    원인이었다(`tests/golden/report.py`).
+    """
+    result = evaluate_all(outcomes)
+    build_report(result)
+    return result
+
+
+def build_report(result: RuleEvaluation) -> golden_report.GoldenRunReport:
+    """이번 실행의 리포트를 세워 붙든다. 배선 테스트도 같은 경로를 쓴다."""
+    return golden_report.record(
+        golden_report.GoldenRunReport(
+            fingerprint=Fingerprint.of(DOCUMENTS),
+            context=run_context(),
+            targets=TARGETS,
+            measurement=result.measurement,
+            failure_reasons=result.failure_reasons,
+            conversion_failures=result.conversion_failures,
+            fact_losses=result.fact_losses,
+        )
+    )
+
+
+def run_context() -> RunContext:
+    """비교의 조건 — 판정에 쓰지 않고 기록만 한다."""
+    settings = Settings()
+    return RunContext(
+        provider=os.environ.get("GOLDEN_PROVIDER", DEFAULT_PROVIDER),
+        judge_provider=os.environ.get("GOLDEN_JUDGE_PROVIDER", DEFAULT_JUDGE_PROVIDER),
+        model=settings.llm_model,
+    )
 
 
 async def convert_all(provider: LLMProvider) -> dict[str, ConversionOutcome | None]:
@@ -109,7 +226,13 @@ async def convert_all(provider: LLMProvider) -> dict[str, ConversionOutcome | No
 
 
 def evaluate_rules(document: GoldenDocument, outcome: ConversionOutcome) -> list[str]:
-    """규칙 기반 3개 조건을 확인하고 위반 사유 코드를 돌려준다."""
+    """규칙 기반 3개 조건을 확인하고 위반 사유 코드를 돌려준다.
+
+    팩트 유실이 여기 **그대로 남아 있는 것은 의도**다. 절대 기준의 필수 정보 보존 게이트가
+    따로 생겼지만, 이 목록에서 빼면 통과율의 정의가 바뀌어 과거 실측치(2026-08-08 AND
+    통과율 0.643)와 비교가 끊긴다 — 상대 하한선은 정의가 같아야 성립한다. 두 축이 같은
+    사실을 겹쳐 보는 대가로 통과율의 의미를 보존한다.
+    """
     failures: list[str] = []
     style = check_style(outcome.easy_text)
     if not style.passed:
@@ -126,80 +249,205 @@ def evaluate_rules(document: GoldenDocument, outcome: ConversionOutcome) -> list
     return failures
 
 
-def format_report(evaluations: list[DocumentEvaluation], pass_rate: float) -> str:
-    """실패 리포트 — 문서 id와 사유 코드만 출력한다."""
-    lines = [f"통과율 {pass_rate:.2f} (기준 {PASS_RATE_THRESHOLD})"]
-    lines.extend(
+def evaluate_all(outcomes: dict[str, ConversionOutcome | None]) -> RuleEvaluation:
+    """변환 결과 전체를 규칙으로 평가한다 — **LLM 호출 없음, 결정적**."""
+    evaluations: list[DocumentEvaluation] = []
+    reasons: Counter[str] = Counter()
+    conversion_failures: list[str] = []
+    converted: dict[str, tuple[GoldenDocument, str]] = {}
+    for document in DOCUMENTS:
+        outcome = outcomes.get(document.id)
+        if outcome is None:
+            conversion_failures.append(document.id)
+            failures = ["변환실패(LLMProviderError)"]
+        else:
+            converted[document.id] = (document, outcome.easy_text)
+            failures = evaluate_rules(document, outcome)
+            reasons.update(issue.reason for issue in check_style(outcome.easy_text).issues)
+        evaluations.append(
+            DocumentEvaluation(
+                document_id=document.id, synthetic=document.synthetic, failures=failures
+            )
+        )
+    return RuleEvaluation(
+        evaluations=evaluations,
+        measurement=measure(evaluations),
+        failure_reasons=dict(reasons),
+        conversion_failures=conversion_failures,
+        fact_losses=find_fact_losses(converted),
+    )
+
+
+def measure(evaluations: list[DocumentEvaluation]) -> Measurement:
+    """집단별 통과 측정치. **합성과 실수집을 나눈다** — 합친 평균은 어느 집단도 대표하지 않는다."""
+
+    def group(subset: list[DocumentEvaluation]) -> GroupMeasurement:
+        return GroupMeasurement(documents=len(subset), passed=sum(item.passed for item in subset))
+
+    return Measurement(
+        overall=group(evaluations),
+        synthetic=group([item for item in evaluations if item.synthetic]),
+        collected=group([item for item in evaluations if not item.synthetic]),
+    )
+
+
+def format_report(evaluations: list[DocumentEvaluation]) -> str:
+    """실패 문서 목록 — 문서 id와 사유 코드만 출력한다."""
+    return "\n".join(
         f"- {evaluation.document_id}: {', '.join(evaluation.failures)}"
         for evaluation in evaluations
         if not evaluation.passed
     )
-    return "\n".join(lines)
 
 
-def format_judge_report(
-    scores: dict[str, JudgeScore], failures: list[str], fidelity: float, readability: float
-) -> str:
-    """judge 리포트 — 문서 id와 점수만 출력한다.
+# ═══════════════════════════════════════════════════════════ 차단축 1: 필수 정보 보존
 
-    JudgeScore.comment에는 문서 본문 일부가 인용될 수 있어 절대 출력하지 않는다.
+
+def test_필수_정보가_보존된다(evaluation: RuleEvaluation) -> None:
+    """**절대 기준.** 필수 사실이 하나라도 빠지면 차단한다 — LLM을 쓰지 않는 결정적 검사다.
+
+    이 게이트만 절대인 근거는 모듈 docstring에 있다. 요약하면 금액·기한·대상 누락은 품질
+    저하가 아니라 **틀린 안내문**이고, "직전보다 나빠지지 않았으면 됨"으로 다룰 수 없다.
+
+    판정은 `RequiredFact.retained_in`의 부분 문자열 일치뿐이라 모델도 난수도 개입하지
+    않는다 — 절대 기준을 세울 수 있는 것은 검사가 결정적이기 때문이다.
     """
-    lines = [
-        f"충실성 평균 {fidelity:.2f} / 이해 용이성 평균 {readability:.2f} "
-        f"(기준 각 {JUDGE_SCORE_THRESHOLD}, 바닥 {FIDELITY_FLOOR} 초과)"
-    ]
-    lines.extend(
-        f"- {document_id}: 충실성 {score.fidelity}, 이해 용이성 {score.readability}"
-        for document_id, score in sorted(scores.items())
+    losses = evaluation.fact_losses
+    total = sum(loss.missing for loss in losses)
+    detail = "\n".join(
+        f"- {loss.document_id}: {loss.missing}/{loss.required}건 누락" for loss in losses
     )
-    lines.extend(f"- {failure}" for failure in failures)
-    return "\n".join(lines)
+    assert total <= REQUIRED_FACT_LOSS_LIMIT, (
+        f"필수 정보 누락 {total}건 / 문서 {len(losses)}건 "
+        f"(허용 {REQUIRED_FACT_LOSS_LIMIT}건 — 절대 기준, 상대 하한선의 대상이 아니다)\n"
+        f"{detail}\n"
+        "이 축은 완화하지 않는다. 금액·기한·대상이 빠진 결과물은 품질이 낮은 안내문이 아니라 "
+        "틀린 안내문이다 — 고칠 곳은 기준이 아니라 프롬프트다"
+    )
+
+
+# ═══════════════════════════════════════════════════════════ 비차단축: judge 점수
 
 
 @pytest.mark.asyncio(loop_scope="module")
-async def test_골든셋_규칙_기반_통과율(outcomes: dict[str, ConversionOutcome | None]) -> None:
-    """세 조건(스타일 규칙·팩트 잔존·플레이스홀더 보존)을 모두 만족한 문서 비율을 판정한다."""
-    evaluations: list[DocumentEvaluation] = []
-    for document in DOCUMENTS:
-        outcome = outcomes[document.id]
-        failures = (
-            ["변환실패(LLMProviderError)"] if outcome is None else evaluate_rules(document, outcome)
-        )
-        evaluations.append(DocumentEvaluation(document_id=document.id, failures=failures))
-    pass_rate = sum(evaluation.passed for evaluation in evaluations) / len(evaluations)
-    assert pass_rate >= PASS_RATE_THRESHOLD, format_report(evaluations, pass_rate)
-
-
-@pytest.mark.asyncio(loop_scope="module")
-async def test_골든셋_judge_점수(
+async def test_judge_점수를_기록한다(
     outcomes: dict[str, ConversionOutcome | None], judge_provider: LLMProvider
 ) -> None:
-    """judge 평균이 기준 이상이고, 충실성 바닥(날조 의심) 문서가 하나도 없어야 한다."""
+    """**차단하지 않는다.** 점수를 재서 리포트와 경고로 남긴다.
+
+    차단하지 않는 이유는 채점자를 고정할 수단이 없어서다 — 모델이 바뀌면 우리 코드를 한 줄도
+    고치지 않았는데 CI가 빨개진다. 그렇다고 그냥 통과시키지도 않는다. 목표선을 밑돌면
+    `UserWarning`으로 올리고 리포트에 수치를 싣는다.
+
+    이 축이 막던 정보 누락은 위의 필수 정보 보존 게이트가 LLM 없이 절대 기준으로 받는다.
+    """
     scores: dict[str, JudgeScore] = {}
-    failures: list[str] = []
+    notes: list[str] = []
     for document in DOCUMENTS:
-        outcome = outcomes[document.id]
+        outcome = outcomes.get(document.id)
         if outcome is None:
-            failures.append(f"{document.id}: 변환실패")
+            notes.append(f"{document.id}: 변환실패")
             continue
         try:
             scores[document.id] = await judge_conversion(
                 judge_provider, source=document.source_text, converted=outcome.easy_text
             )
         except LLMProviderError:
-            failures.append(f"{document.id}: 채점실패")
+            notes.append(f"{document.id}: 채점실패")
 
-    coverage = len(scores) / len(DOCUMENTS)
-    assert coverage >= JUDGE_COVERAGE_THRESHOLD, f"채점된 문서 비율 {coverage:.2f}\n" + "\n".join(
-        failures
+    observation = summarize_judge(scores)
+    coverage = observation.scored / observation.documents if observation.documents else 0.0
+    if coverage < JUDGE_COVERAGE_THRESHOLD:
+        notes.append(
+            f"채점 커버리지 {coverage:.2f} < 목표 {JUDGE_COVERAGE_THRESHOLD} — "
+            "대부분 채점에 실패했다면 아래 평균은 남은 소수만의 값이다"
+        )
+    if observation.low_fidelity_ids:
+        notes.append(
+            f"충실성 {FIDELITY_FLOOR} 이하 문서 {len(observation.low_fidelity_ids)}건: "
+            f"{', '.join(observation.low_fidelity_ids)} — 날조·중요 정보 누락 의심. "
+            "차단하지는 않으나 필수 정보 보존 게이트와 함께 읽을 것"
+        )
+    if scores and observation.fidelity_mean < JUDGE_SCORE_THRESHOLD:
+        notes.append(f"충실성 평균 {observation.fidelity_mean:.2f} < 목표 {JUDGE_SCORE_THRESHOLD}")
+    if scores and observation.readability_mean < JUDGE_SCORE_THRESHOLD:
+        notes.append(
+            f"이해 용이성 평균 {observation.readability_mean:.2f} < 목표 {JUDGE_SCORE_THRESHOLD}"
+        )
+
+    report = golden_report.latest()
+    if report is not None:
+        report.judge = observation
+        report.judge_notes = notes
+    for note in notes:
+        # 경고로 올린다 — 통과시키되 조용하지는 않게. pytest가 요약에 모아 보여 준다.
+        warnings.warn(f"[judge 비차단] {note}", UserWarning, stacklevel=2)
+
+
+# ═══════════════════════════════════════════════════════ 차단축 2: 규칙 통과율(상대)
+
+
+def test_규칙_기반_통과율이_직전_기록보다_낮지_않다(evaluation: RuleEvaluation) -> None:
+    """**상대 기준.** 직전에 기록된 측정치보다 낮아지면 차단한다.
+
+    지문이 다르면(코퍼스나 판정 기준이 바뀌면) 수치를 비교하지 않고 **비교 불가**로
+    떨어진다 — 문서를 빼서 통과율이 오르는 경로를 막는 자리다.
+
+    기록 모드(`GOLDEN_RECORD_BASELINE=1`)에서 기준선이 **실제로 바뀌면 이 테스트는
+    실패한다.** 기록 실행은 판정이 아니기 때문이다 — 기준선을 방금 갱신한 실행과 애초에
+    문제없던 실행이 같은 결과를 내면 자동화가 둘을 구분하지 못한다.
+
+    **judge 테스트보다 뒤에 있어야 한다.** 기준선은 judge 관측치를 함께 담는데(비교하지는
+    않고 기록만 한다), pytest는 파일에 적힌 순서로 돌기 때문에 judge가 뒤에 오면 기록되는
+    값이 언제나 비어 있다. 판정 자체는 순서와 무관하다 — judge가 건너뛰어도(키 없음)
+    이 게이트는 그대로 돈다.
+    """
+    report = golden_report.latest()
+    judgement = compare(load_baseline(), Fingerprint.of(DOCUMENTS), evaluation.measurement)
+    if report is not None:
+        report.floor = judgement
+
+    if recording_requested():
+        body = baseline_body(
+            Fingerprint.of(DOCUMENTS),
+            evaluation.measurement,
+            run_context(),
+            report.judge if report is not None else None,
+        )
+        changes = baseline_changes(body)
+        if report is not None:
+            report.baseline_changes = changes
+        if changes:
+            path = write_baseline(body)
+            # 지적 건수가 아니라 **쓸 내용과 이전 내용의 차이**로 판정한다. 지적 0건인
+            # 새 파일 생성이 조용히 통과하던 것이 원장에서 겪은 결함이다.
+            #
+            # `pytest.fail`이 아니라 `AssertionError`를 쓴다 — `pytest.fail`이 던지는
+            # `Failed`는 `BaseException` 계열이라 배선 테스트가 `pytest.raises(Exception)`
+            # 으로 잡지 못한다. 게이트가 실제로 막는지 확인할 수 없는 예외는 쓰지 않는다.
+            raise AssertionError(
+                f"기록 실행 — 판정이 아니다. 기준선을 갱신했다: {path}\n"
+                + "\n".join(changes)
+                + "\n이 실행으로는 게이트를 닫지 못한다. diff를 커밋해 리뷰에 올린 뒤 "
+                "`GOLDEN_RECORD_BASELINE` **없이** 다시 돌린 결과로 판정한다"
+            )
+        # 바뀐 것이 없으면 아래 정상 판정으로 떨어진다 — 관측이 커밋된 기준선과 정확히
+        # 같다는 뜻이라 플래그 없이 돌린 실행과 판정이 정의상 같다.
+
+    assert not judgement.blocking, (
+        judgement.summary() + "\n\n실패 문서:\n" + format_report(evaluation.evaluations)
     )
 
-    fidelity = sum(score.fidelity for score in scores.values()) / len(scores)
-    readability = sum(score.readability for score in scores.values()) / len(scores)
-    report = format_judge_report(scores, failures, fidelity, readability)
 
-    # 바닥 게이트를 평균보다 먼저 본다 — 날조가 섞였다면 평균이 높아도 실패여야 한다.
-    low_fidelity = find_low_fidelity(scores, FIDELITY_FLOOR)
-    assert not low_fidelity, f"충실성 {FIDELITY_FLOOR} 이하 문서: {low_fidelity}\n{report}"
-    assert fidelity >= JUDGE_SCORE_THRESHOLD, report
-    assert readability >= JUDGE_SCORE_THRESHOLD, report
+def summarize_judge(scores: dict[str, JudgeScore]) -> JudgeObservation:
+    """judge 관측치 집계. 채점이 0건이어도 안전하게 0으로 떨어진다."""
+    count = len(scores)
+    return JudgeObservation(
+        scored=count,
+        documents=len(DOCUMENTS),
+        fidelity_mean=(sum(score.fidelity for score in scores.values()) / count) if count else 0.0,
+        readability_mean=(
+            (sum(score.readability for score in scores.values()) / count) if count else 0.0
+        ),
+        low_fidelity_ids=find_low_fidelity(scores, FIDELITY_FLOOR),
+    )

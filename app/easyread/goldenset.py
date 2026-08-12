@@ -8,6 +8,7 @@
 """
 
 import json
+from collections.abc import Mapping
 from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, model_validator
@@ -96,6 +97,47 @@ class GoldenDocument(BaseModel):
     def missing_facts(self, text: str) -> list[RequiredFact]:
         """변환문에 남지 않은 팩트 목록. 평가·벤치마크가 공유하는 유일한 판정 경로다."""
         return [fact for fact in self.required_facts if not fact.retained_in(text)]
+
+
+class FactLoss(BaseModel):
+    """문서 하나에서 사라진 필수 정보의 건수.
+
+    **리터럴을 담지 않는다.** 이 값은 실패 메시지·리포트에 그대로 실리는데, 골든셋 본문과
+    팩트 리터럴을 출력에 남기지 않는 것이 이 패키지의 규약이다(로더 docstring).
+    건수만으로도 "어느 문서에서 몇 건이 빠졌는가"라는 조치에 필요한 정보는 다 있다.
+    """
+
+    document_id: str
+    missing: int
+    required: int
+
+
+def find_fact_losses(pairs: Mapping[str, tuple["GoldenDocument", str]]) -> list[FactLoss]:
+    """필수 정보가 사라진 문서 목록 — **LLM 없이 결정적으로 도는 보존 검사**.
+
+    judge가 아니라 여기가 정보 누락의 방어선이다. 2026-08-12 결정으로 judge는 차단하지
+    않게 되었고(모델이 바뀌면 우리 코드를 고치지 않아도 점수가 움직이므로), 그 결정만으로는
+    `DEFAULT_FIDELITY_FLOOR`(judge 축)가 막던 **중요 정보 누락**이 무방비가 된다.
+    금액·기한·대상이 빠진 결과물은 품질이 나쁜 안내문이 아니라 **틀린 안내문**이라
+    "직전보다 나빠지지 않았으면 됨"의 대상이 될 수 없다 — 그래서 이 검사에만 절대 기준을
+    적용한다(허용 0건).
+
+    판정은 `RequiredFact.retained_in`의 부분 문자열 일치뿐이라 모델도 난수도 개입하지
+    않는다. 같은 입력에 언제나 같은 답이 나오는 것이 절대 기준을 세울 수 있는 근거다.
+
+    근거가 되는 코퍼스 상태(2026-08-12 실측): 56개 문서 전부가 3~6개의 required_facts를
+    가지며(총 253개) 개수 범위·원문 존재·마스킹 후 잔존·치환 키 불포함이 이미
+    `tests/golden/test_schema.py`에서 기계적으로 강제된다. 검사가 설 근거가 실제로 있다.
+    """
+    losses = [
+        FactLoss(
+            document_id=document_id,
+            missing=len(document.missing_facts(text)),
+            required=len(document.required_facts),
+        )
+        for document_id, (document, text) in sorted(pairs.items())
+    ]
+    return [loss for loss in losses if loss.missing]
 
 
 def load_documents(directory: Path) -> list[GoldenDocument]:
