@@ -17,11 +17,18 @@
 **넣는다 ① 코퍼스** (문서 id 집합·본문·required_facts·합성 여부).
     재는 대상이 바뀌면 수치가 비교 불가다. 문서를 빼서 하한선을 통과하는 경로가 여기다.
 
-**넣는다 ② 판정 기준** (`style_rules`의 규칙 정의 전량).
+**넣는다 ② 판정 기준** (규칙 정의·팩트 잔존 판정·통과율 정의의 **값과 코드 전량**).
     자[尺]가 바뀌면 같은 변환문도 다른 점수를 받는다. 실제로 2026-08-09에 '뜻풀이 축자
     삽입' 축(패턴 123종)이 **신설**되어 그 이전 수치와의 비교가 깨졌다
     (`02_quality-baseline.md` §5.2). 문장 길이 상한을 50→80으로 풀면 통과율이 뛰는데,
     이것은 문서를 빼는 것과 **구조가 같은 우회**다. 한쪽만 막으면 다른 쪽으로 나간다.
+
+    자는 상수만이 아니다. 2026-08-12 교차 리뷰가 실측으로 보였다 — 대문자 상수만 걷던
+    지문은 `_SENTENCE_SPLIT`(문장 분리 정규식) 교체로 문장 길이 위반이 375→20건이 되어도,
+    `check_style` 본문에서 길이 검사를 빼 375→0건이 되어도 **바이트 동일**했다. 그래서 지금은
+    ⓐ 모듈 전역의 값 전량(이름 규칙 없음)과 ⓑ 판정 모듈 소스의 정규화 digest를 함께 걷는다.
+    통과율의 정의(`tests/golden/evaluation.py`)도 같은 이유로 여기 들어온다 — 분모를 지문으로
+    막아 놓고 분자의 정의를 열어 두면 같은 출력이 더 높은 통과율을 받는다.
 
 **넣지 않는다 ③ 프롬프트·모델**.
     이쪽은 *재는 대상*이 아니라 **재어지는 것**이다. 프롬프트를 고쳐 통과율이 오르는 것은
@@ -47,6 +54,7 @@ compare_parity.py`)에서 실측으로 얻은 교훈을 그대로 따른다. 그
    차단되는 정반대 고장이 난다(`BASELINE_VOLATILE_FIELDS`).
 """
 
+import ast
 import hashlib
 import json
 import os
@@ -60,7 +68,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
-from app.easyread import style_rules
+from app.easyread import goldenset, style_rules
 from app.easyread.goldenset import GoldenDocument
 
 #: 기준선 파일. **버전 관리 대상이다** — 커밋되어 diff가 리뷰에 올라가는 것이 존재 이유다.
@@ -74,10 +82,9 @@ RECORD_ENV = "GOLDEN_RECORD_BASELINE"
 #: 변경으로 잡혀 아무것도 닫지 못한다 — 양쪽 다 게이트를 무력화한다(모듈 docstring 4번).
 BASELINE_VOLATILE_FIELDS = frozenset({"recorded_at"})
 
-#: 판정 기준 지문에 넣을 상수의 이름 규칙. 목록을 손으로 적지 않는 것이 요점이다 —
-#: 적는 순간 새 규칙 축이 추가돼도 지문이 그대로여서, 자가 바뀌었는데 비교가 성립한 것처럼
-#: 보인다(2026-08-09 '뜻풀이 축자 삽입' 축 신설이 정확히 그런 사건이었다).
-_RULE_CONSTANT = re.compile(r"[A-Z][A-Z0-9_]*")
+#: 소스를 읽을 수 없을 때 판정 기준 지문에 남기는 값. **없음도 값이라 지문이 달라진다**
+#: (fail-closed) — 축이 조용히 사라지는 경로를 두지 않는다.
+_NO_SOURCE = "소스 없음"
 
 #: diff에 적을 문서 id 최대 개수. 전부 적으면 실패 메시지가 수십 줄이 된다.
 MAX_REPORTED_IDS = 8
@@ -165,30 +172,124 @@ def corpus_payload(documents: list[GoldenDocument]) -> list[dict[str, Any]]:
     ]
 
 
-def criteria_payload(module: ModuleType | None = None) -> dict[str, Any]:
-    """판정 기준 지문의 원재료 — `style_rules`의 공개 상수 전량.
+def _criteria_modules(module: ModuleType | None = None) -> list[ModuleType]:
+    """자[尺]에 참여하는 모듈 전량. **여기 없는 것은 지문이 보지 않는다.**
 
-    **목록을 손으로 적지 않는다.** 대문자 이름의 비호출 모듈 전역을 전부 걷는다. 규칙 축이
-    새로 생기면(2026-08-09의 뜻풀이 축자 삽입처럼) 자동으로 지문에 들어와야 하고, 손으로
-    적은 목록은 바로 그때 갱신되지 않아 "자가 바뀌었는데 비교는 성립"을 만든다.
+    셋을 걷는다.
 
-    기본값을 `None`으로 두고 **호출 시점에** 모듈을 찾는다. 기본 인자로 `style_rules`를
-    직접 적으면 그 참조가 정의 시점에 굳어, 규칙이 바뀐 상황을 테스트로 재현할 수단이
-    사라진다 — 재현할 수 없는 게이트는 있는지 없는지 확인할 수 없다.
+    1. `style_rules` — 규칙 상수·정규식·검사 함수. 자의 본체다.
+    2. `goldenset` — 팩트 잔존 판정(`RequiredFact.retained_in`)과 문서 로딩 규칙. 통과율의
+       세 조건 중 하나가 이 판정을 부르므로 자의 일부다.
+    3. `evaluation` — 통과율의 정의(무엇을 실패로 세고 무엇을 분모에 넣는가).
+
+    `evaluation`은 **호출 시점에** 들여온다. 그 모듈이 이 모듈의 `Measurement`를 쓰기 때문에
+    모듈 최상단에서 들여오면 순환이 된다.
+
+    `module`은 `style_rules` 자리를 갈아 끼우는 시험용 손잡이다. 기본 인자로 모듈을 직접
+    적지 않고 호출 시점에 찾는 이유도 같다 — 참조가 정의 시점에 굳으면 규칙이 바뀐 상황을
+    테스트로 재현할 수단이 사라지고, 재현할 수 없는 게이트는 있는지 없는지 확인할 수 없다.
     """
-    target = module if module is not None else style_rules
+    from tests.golden import evaluation
+
+    return [module if module is not None else style_rules, goldenset, evaluation]
+
+
+def criteria_payload(module: ModuleType | None = None) -> dict[str, Any]:
+    """판정 기준 지문의 원재료 — 자에 참여하는 모듈의 **값과 코드 전량**.
+
+    **목록을 손으로 적지 않는다.** 모듈 단위로 걷으므로 규칙 축이 새로 생기면(2026-08-09의
+    뜻풀이 축자 삽입처럼) 자동으로 지문에 들어온다. 손으로 적은 목록은 바로 그때 갱신되지
+    않아 "자가 바뀌었는데 비교는 성립"을 만든다.
+
+    두 축으로 걷는다. **경계는 아래 두 함수의 docstring에 적어 둔다** — 무엇을 걷지 않는지가
+    곧 이 게이트의 사각이므로, 읽는 사람이 코드에서 바로 확인할 수 있어야 한다.
+
+    - **값 축**(`_module_values`) — 모듈 전역의 *값*.
+    - **코드 축**(`_module_source`) — 값으로 노출되지 않는 판정(함수 본문·인라인 임계값).
+
+    2026-08-12 교차 리뷰 전에는 값 축만, 그것도 `[A-Z][A-Z0-9_]*` 이름만 걸었다.
+    `style_rules` 전역 28개 중 12개만 지문에 들어왔고, `_SENTENCE_SPLIT` 하나만 바꿔 56문서의
+    문장 길이 위반을 375→20건(-94.7%)으로 몰아도 `criteria_sha256`가 바이트 동일했다.
+    `check_style` 본문에서 길이 검사를 빼면 375→0건이 되는데 역시 동일했다. **이름 규칙은
+    자의 경계가 아니다.**
+    """
     return {
-        name: _canonical(getattr(target, name))
-        for name in sorted(vars(target))
-        if _is_rule_constant(target, name)
+        _module_key(target): {
+            "values": _module_values(target),
+            "source_sha256": _module_source(target),
+        }
+        for target in _criteria_modules(module)
     }
 
 
-def _is_rule_constant(module: ModuleType, name: str) -> bool:
-    if not _RULE_CONSTANT.fullmatch(name):
-        return False
-    value = getattr(module, name)
-    return not callable(value) and not isinstance(value, ModuleType)
+def _module_key(module: ModuleType) -> str:
+    name = getattr(module, "__name__", None)
+    return name if isinstance(name, str) else "<이름 없는 모듈>"
+
+
+def _module_values(module: ModuleType) -> dict[str, Any]:
+    """모듈 전역의 **값**. 이름 규칙으로 거르지 않는다 — `_` 접두도 자의 일부다.
+
+    걷지 않는 것 셋.
+
+    - **던더** — `__file__`은 체크아웃 경로라 지문이 기계마다 갈리고, `__doc__`은 문서를
+      고칠 때마다 "비교 불가"를 만든다. 둘 다 판정을 움직이지 않는다.
+    - **모듈 객체** — 그 모듈의 값이 아니라 남의 이름공간이다.
+    - **호출 가능 객체** — 함수·클래스는 값이 아니라 코드라 아래 소스 축이 받는다. 수입한
+      함수·클래스(`re.compile`, `BaseModel`)가 여기서 함께 빠지는 것은 의도다. 그것들은
+      이 저장소의 자가 아니며, 넣으면 라이브러리 버전이 지문을 흔든다.
+    """
+    values: dict[str, Any] = {}
+    for name in sorted(vars(module)):
+        if name.startswith("__"):
+            continue
+        value = getattr(module, name)
+        if isinstance(value, ModuleType) or callable(value):
+            continue
+        values[name] = _canonical(value)
+    return values
+
+
+def _module_source(module: ModuleType) -> str:
+    """모듈 소스를 AST로 정규화한 digest — 값으로 노출되지 않는 판정이 여기 들어온다.
+
+    `check_style`의 인라인 임계값, `evaluate_rules`의 조건 목록, `retained_in`의 비교식처럼
+    **상수를 건드리지 않고 판정을 바꾸는 편집**이 이 축에 걸린다.
+
+    **주석·서식·docstring은 지문을 움직이지 않는다**(`ast.unparse` + docstring 제거).
+    이 저장소의 판정 코드는 근거를 긴 docstring으로 남기는 규약이라, 문서를 고칠 때마다
+    기준선을 다시 기록해야 하면 게이트를 끄게 된다 — 과민한 지문은 '항상 비교 불가'라는
+    반대 방향 고장이다.
+    """
+    path = getattr(module, "__file__", None)
+    if not isinstance(path, str):
+        return _NO_SOURCE
+    try:
+        text = Path(path).read_text(encoding="utf-8")
+    except OSError:
+        return _NO_SOURCE
+    return _text_digest(_normalized_source(text))
+
+
+_Documented = ast.Module | ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef
+
+
+def _normalized_source(text: str) -> str:
+    tree = ast.parse(text)
+    for node in ast.walk(tree):
+        if isinstance(node, _Documented):
+            _strip_docstring(node)
+    return ast.unparse(tree)
+
+
+def _strip_docstring(node: _Documented) -> None:
+    first = node.body[0] if node.body else None
+    if (
+        isinstance(first, ast.Expr)
+        and isinstance(first.value, ast.Constant)
+        and isinstance(first.value.value, str)
+    ):
+        node.body = node.body[1:] or [ast.Pass()]
 
 
 class Fingerprint(BaseModel):
@@ -226,7 +327,9 @@ class Fingerprint(BaseModel):
             found.append(self._corpus_difference(other))
         if self.criteria_sha256 != other.criteria_sha256:
             found.append(
-                "- **판정 기준이 바뀌었다** — `app/easyread/style_rules.py`의 규칙 상수가 "
+                "- **판정 기준이 바뀌었다** — 규칙 정의(`app/easyread/style_rules.py`)·팩트 "
+                "잔존 판정(`app/easyread/goldenset.py`)·통과율 정의"
+                "(`tests/golden/evaluation.py`) 중 하나가 "
                 f"기준선 기록과 다르다 (기준선 {other.criteria_sha256[:12]} / 현재 "
                 f"{self.criteria_sha256[:12]}). 자가 바뀌면 같은 변환문도 다른 점수를 받는다 "
                 "— 문장 길이 상한을 풀거나 사전을 넓히는 것은 문서를 빼는 것과 구조가 같은 "
