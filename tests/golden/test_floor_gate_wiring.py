@@ -744,9 +744,7 @@ async def test_날조가_섞여도_judge는_차단하지_않는다() -> None:
     responses: list[str | Exception] = [_HIGH] * (len(harness.DOCUMENTS) - _FABRICATED_COUNT)
     responses += [_FABRICATED] * _FABRICATED_COUNT
     with pytest.warns(UserWarning, match="judge 비차단"):
-        await harness.test_judge_점수를_기록한다(
-            evaluation, _preserving_outcomes(), FakeProvider(responses=responses)
-        )
+        await harness.test_judge_점수를_기록한다(evaluation, FakeProvider(responses=responses))
 
 
 async def test_날조는_경고와_리포트에_남는다() -> None:
@@ -758,9 +756,7 @@ async def test_날조는_경고와_리포트에_남는다() -> None:
     report = harness.build_report(evaluation)
     responses: list[str | Exception] = [_FABRICATED] * len(harness.DOCUMENTS)
     with pytest.warns(UserWarning, match="충실성"):
-        await harness.test_judge_점수를_기록한다(
-            evaluation, _preserving_outcomes(), FakeProvider(responses=responses)
-        )
+        await harness.test_judge_점수를_기록한다(evaluation, FakeProvider(responses=responses))
     assert report.judge is not None
     assert len(report.judge.low_fidelity_ids) == len(harness.DOCUMENTS)
     assert "충실성" in report.render()
@@ -771,9 +767,7 @@ async def test_judge_점수가_리포트에_실린다() -> None:
     evaluation = evaluate_all(_preserving_outcomes(), harness.DOCUMENTS)
     report = harness.build_report(evaluation)
     responses: list[str | Exception] = [_HIGH] * len(harness.DOCUMENTS)
-    await harness.test_judge_점수를_기록한다(
-        evaluation, _preserving_outcomes(), FakeProvider(responses=responses)
-    )
+    await harness.test_judge_점수를_기록한다(evaluation, FakeProvider(responses=responses))
     assert report.judge is not None
     assert report.judge.scored == len(harness.DOCUMENTS)
     assert report.judge.fidelity_mean == 5.0
@@ -794,12 +788,92 @@ async def test_남의_리포트에는_judge_관측이_실리지_않는다() -> N
     )
     assert golden_report.latest() is stale, "전제 — 남의 리포트가 최신이다"
     responses: list[str | Exception] = [_HIGH] * len(harness.DOCUMENTS)
-    await harness.test_judge_점수를_기록한다(
-        evaluation, _preserving_outcomes(), FakeProvider(responses=responses)
-    )
+    await harness.test_judge_점수를_기록한다(evaluation, FakeProvider(responses=responses))
     assert stale.judge is None, "남의 리포트에 이번 실행의 judge 관측이 실렸다"
     assert stale.judge_notes == []
     assert own.judge is not None, "이번 실행의 리포트에는 실려야 한다"
+
+
+async def test_judge_는_이번_평가의_outcomes_를_채점한다() -> None:
+    """**10번째 지적** — 붙이는 자리는 묶였는데 **채점 대상**이 안 묶여 있었다.
+
+    직전 커밋은 관측을 실을 리포트를 `for_evaluation(evaluation)` 으로 찾게 해 그릇을
+    결속했다. 그런데 judge 테스트는 채점할 `outcomes` 를 **별도 fixture 로** 받았다 —
+    그릇만 묶고 내용물을 안 묶은 것이라, A 의 outcomes 를 채점해 B 의 평가 리포트에 싣는
+    상태가 구조적으로 표현 가능했다.
+
+    고치기 전 그 상태를 실제로 만들었다(`_preserving_outcomes()` 중 첫 문서만 `None` 인
+    남의 outcomes 를 넘김). 이번 평가는 전건 변환 성공인데도 리포트에는 `001: 변환실패`
+    라는 남의 note 가 실렸고, 저충실성 지목이 `['002']` 로 **한 칸 밀렸다** — 응답열이
+    건너뛴 문서만큼 어긋났기 때문이다. 이번 평가의 outcomes 로 채점하면 `['001']` 이다.
+
+    이제 채점 대상이 `evaluation.outcomes` 뿐이라 그 어긋남을 만들 표현이 없다. 여기서
+    보는 것은 **"거부됐다"가 아니라 지목이 이번 평가의 outcomes 를 따른다**는 것이다.
+    """
+    docs = harness.DOCUMENTS
+    evaluation = evaluate_all(_preserving_outcomes("this-run"), docs)
+    report = harness.build_report(evaluation)
+    assert evaluation.conversion_failures == [], "전제 — 이번 평가는 전건 변환 성공이다"
+
+    # 첫 응답만 날조 — 어느 문서가 지목되는지가 **채점 대상**에 달린 입력이다.
+    responses: list[str | Exception] = [_HIGH] * len(docs)
+    responses[0] = _FABRICATED
+    with pytest.warns(UserWarning, match="충실성"):
+        await harness.test_judge_점수를_기록한다(evaluation, FakeProvider(responses=responses))
+
+    assert report.judge is not None
+    assert report.judge.low_fidelity_ids == [docs[0].id], (
+        "지목이 이번 평가의 outcomes 를 따르지 않는다 — 다른 실행의 산출물을 채점했다"
+    )
+    assert report.judge.scored == len(docs), "이번 평가는 전건 채점 대상이다"
+    assert not any("변환실패" in note for note in report.judge_notes), (
+        "이번 평가에는 변환 실패가 없는데 남의 실행 note 가 실렸다"
+    )
+
+
+async def test_judge_는_채점_대상을_따로_받지_않는다() -> None:
+    """**통로 부재를 고정한다** — 남겨 두면 그릇만 묶은 상태로 되돌아간다.
+
+    `outcomes` fixture 자체는 남아 있다(`evaluate_all` 의 입력이다). 없앤 것은 **judge 가
+    그것을 직접 받는 것**이다. 인자가 있으면 `test_judge_점수를_기록한다(evaluation,
+    다른_outcomes, provider)` 로 위 어긋남을 다시 조립할 수 있다 — mypy 도 이 호출을
+    거부한다(`build_report` 의 조건 인자를 없앨 때와 같은 자리).
+    """
+    evaluation = evaluate_all(_preserving_outcomes(), harness.DOCUMENTS)
+    harness.build_report(evaluation)
+    provider = FakeProvider(responses=[_HIGH] * len(harness.DOCUMENTS))
+    with pytest.raises(TypeError):
+        await harness.test_judge_점수를_기록한다(
+            evaluation,
+            # 대상 인자 통로 부재 고정 — mypy 도 이 호출을 거부한다(정적으로도 통로가 없다).
+            _preserving_outcomes(),  # type: ignore[arg-type]
+            provider,  # type: ignore[call-arg]
+        )
+
+
+def test_평가가_채점_대상을_측정치와_함께_싣는다() -> None:
+    """근원이 하나임을 고정한다 — `evaluate_all` 이 잰 그 산출물이 평가에 실린다.
+
+    비교는 **객체 동일성**으로 한다. 값 비교(`==`)를 쓰면 실패 출력에 변환문 전문이 실리는데,
+    이 하네스는 문서 id·사유 코드·수치까지만 남기는 규약이다(`report.py` 모듈 docstring).
+    동일성이 더 강한 판정이기도 하다 — 같은 값의 다른 객체를 실어도 걸린다.
+
+    바깥 dict 는 pydantic 이 복제해 별개다. 호출자가 나중에 자기 dict 를 고쳐도 평가가 든
+    대상은 움직이지 않는다는 뜻이라, 이 방향으로도 대상이 갈릴 수 없다.
+    """
+    outcomes = _preserving_outcomes("model-x")
+    evaluation = evaluate_all(outcomes, harness.DOCUMENTS)
+    assert set(evaluation.outcomes) == set(outcomes), "채점 대상의 문서 집합이 다르다"
+    assert all(evaluation.outcomes[key] is outcomes[key] for key in outcomes), (
+        "평가가 든 산출물이 잰 것과 다른 객체다 — judge 가 채점하는 것과 규칙 평가가 잰 것이 갈린다"
+    )
+    assert evaluation.outcomes is not outcomes, (
+        "바깥 dict 는 복제본이다(호출자 변경에 흔들리지 않는다)"
+    )
+    # 변환 실패도 그대로 실린다 — judge 가 "무엇을 못 쟀는가"를 같은 근원에서 본다.
+    partial = dict(outcomes)
+    partial[harness.DOCUMENTS[0].id] = None
+    assert evaluate_all(partial, harness.DOCUMENTS).outcomes[harness.DOCUMENTS[0].id] is None
 
 
 # ═══════════════════════════════════════════ 게이트 실행 전제: 자격 증명

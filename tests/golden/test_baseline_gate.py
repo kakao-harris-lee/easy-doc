@@ -427,8 +427,13 @@ def test_실제_코퍼스_전건에_보존_검사가_돈다() -> None:
 
 
 def _evaluation(measurement: Measurement) -> RuleEvaluation:
-    """리포트를 결속할 평가 하나. 여기서는 **키로만** 쓰이므로 최소 구성으로 만든다."""
+    """리포트를 결속할 평가 하나. 여기서는 **키로만** 쓰이므로 최소 구성으로 만든다.
+
+    `outcomes` 는 필수 필드다(기본값을 주지 않는다) — 무엇을 평가했는지 말할 수 없는
+    평가를 만들 수 있으면 judge 가 대상을 다른 데서 구하던 통로가 되살아난다.
+    """
     return RuleEvaluation(
+        outcomes={},
         evaluations=[],
         measurement=measurement,
         failure_reasons={},

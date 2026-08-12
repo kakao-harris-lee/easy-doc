@@ -53,12 +53,40 @@ class RuleEvaluation(BaseModel):
     FakeProvider로 같은 경로를 돌릴 수 있고, 차단 게이트가 실제로 걸리는지를 기본
     스위트(LLM 없음)에서 고정할 수 있다.
 
-    `measurement` 와 `observed_models` 는 **같은 outcomes 로 한 pass 에서** 만들어져 한
-    객체에 함께 실린다. 수치와 그 수치의 조건(어떤 모델이 냈는가)이 한 객체에서 나오므로,
-    기록 경로가 조건을 다른 곳(리포트)에서 맞출 필요가 없다 — 결속이 구조로 성립한다.
-    이것이 "측정치를 만드는 것이 증거도 함께 만들면 결속을 확인할 일이 없어진다"의 자리다.
+    **이 객체가 근원이다.** `outcomes`(무엇을 보고 만들었는가)·`measurement`(무엇이
+    나왔는가)·`observed_models`(어떤 모델이 냈는가)가 **같은 pass 에서** 한 객체에 함께
+    실린다. 세 값이 한 객체에서만 나오므로 뒤에 오는 어떤 소비자도 "측정치는 이 실행·대상은
+    다른 실행"을 조립할 수 없다 — 결속이 검사가 아니라 구조로 성립한다.
+
+    ## 그릇과 내용물을 두 번 헷갈렸다
+
+    이 사슬에서 같은 착오를 두 번 했다. **그릇(값이 담기는 자리)을 묶고 내용물(그 값이
+    무엇을 보고 나왔는가)을 안 묶은 것**이다.
+
+    1. **judge 를 기준선에서 뺄 때**(7269eed) — 기준선에 실리는 `report.judge` 의 출처를
+       구조로 묶을 수 없다고 보고 값을 뺐다. 리포트라는 그릇은 결속돼 있었지만 **나중에
+       대입되는 필드의 출처**는 그 결속이 말해 주지 않았기 때문이다. 진단은 맞았는데
+       처방이 그릇 쪽만 봤다 — 대입되는 값이 무엇을 보고 나왔는지는 그대로 자유 변수였다.
+    2. **리포트를 결속할 때**(98cbe17·353f0c8) — judge 관측을 **붙이는 자리**를
+       `for_evaluation(evaluation)` 으로 묶었다. 그런데 judge 테스트는 채점할
+       `outcomes` 를 **별도 fixture 로** 받았다. 붙이는 자리(그릇)는 이번 평가인데
+       채점 대상(내용물)은 아무 outcomes 여도 됐다 — A 의 outcomes 를 채점해 B 의 평가
+       리포트에 싣는 상태가 구조적으로 표현 가능했고, 실제로 만들어 확인했다(10번째 지적).
+
+    ## 왜 세 번째는 없는가
+
+    채점 대상과 붙이는 자리가 **같은 객체에서** 나온다. judge 테스트는
+    `evaluation.outcomes` 를 채점하고 `for_evaluation(evaluation)` 이 찾아 준 리포트에
+    붙인다. 두 끝이 같은 `evaluation` 한 값에서 유도되므로 **둘을 어긋나게 하는 표현이
+    없다** — 어긋나려면 서로 다른 두 `evaluation` 이 필요한데, 그러면 붙는 리포트도 함께
+    옮겨 가 두 실행이 섞이지 않는다. 이전 두 번은 자유 변수를 남긴 채 검사를 얹었고,
+    이번에는 자유 변수를 없앴다.
     """
 
+    #: **이 평가가 실제로 본 변환 결과.** 규칙 평가가 여기서 나왔으므로, 같은 산출물을
+    #: 다시 보는 축(judge)은 이 값을 채점해야 "무엇을 채점했는가"가 측정치와 같은 근원을
+    #: 갖는다. 별도 fixture 로 받으면 그 축만 다른 실행을 볼 수 있다.
+    outcomes: Mapping[str, ConversionOutcome | None]
     evaluations: list[DocumentEvaluation]
     measurement: Measurement
     failure_reasons: dict[str, int]
@@ -105,6 +133,11 @@ def evaluate_all(
     `observed_models` 를 **이 loop 에서 함께** 모은다 — measurement 를 만든 바로 그
     outcomes(성공한 변환)에서 나온 모델이라, 수치와 조건이 같은 pass 에 묶인다. 따로
     유도하지 않으므로 "측정치는 이 평가·조건은 다른 실행"이 될 통로가 없다.
+
+    **입력 자체도 결과에 실어 돌려준다**(`outcomes`). 같은 산출물을 다시 보는 축이
+    있기 때문이다 — judge 는 규칙 평가와 같은 변환 결과를 채점하는데, 그 대상을 따로
+    받으면 "무엇을 채점했는가"가 이 평가와 갈릴 수 있다(10번째 지적). 여기서 함께
+    돌려주면 소비자가 대상을 다른 데서 구할 이유가 없어진다.
     """
     evaluations: list[DocumentEvaluation] = []
     reasons: Counter[str] = Counter()
@@ -130,6 +163,7 @@ def evaluate_all(
             )
         )
     return RuleEvaluation(
+        outcomes=outcomes,
         evaluations=evaluations,
         measurement=measure(evaluations),
         failure_reasons=dict(reasons),

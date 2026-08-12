@@ -169,7 +169,12 @@ async def judge_provider() -> AsyncIterator[LLMProvider]:
 
 @pytest_asyncio.fixture(scope="module", loop_scope="module")
 async def outcomes(provider: LLMProvider) -> dict[str, ConversionOutcome | None]:
-    """전 문서를 한 번만 변환해 세 축이 공유한다(LLM 호출 절감)."""
+    """전 문서를 한 번만 변환한다(LLM 호출 절감) — **`evaluate_all` 의 입력이다.**
+
+    테스트가 이 fixture 를 **직접 받지 않는다.** 세 축이 공유하는 것은 맞지만, 공유는
+    `evaluation` 을 거쳐서 한다(`RuleEvaluation.outcomes`). 축이 여기서 따로 받으면 그
+    축만 다른 실행의 산출물을 볼 수 있고, judge 가 정확히 그 상태였다(10번째 지적).
+    """
     return await convert_all(provider)
 
 
@@ -300,7 +305,6 @@ def test_필수_정보가_보존된다(evaluation: RuleEvaluation) -> None:
 @pytest.mark.asyncio(loop_scope="module")
 async def test_judge_점수를_기록한다(
     evaluation: RuleEvaluation,
-    outcomes: dict[str, ConversionOutcome | None],
     judge_provider: LLMProvider,
 ) -> None:
     """**차단하지 않는다.** 점수를 재서 리포트와 경고로 남긴다.
@@ -311,16 +315,25 @@ async def test_judge_점수를_기록한다(
 
     이 축이 막던 정보 누락은 위의 필수 정보 보존 게이트가 LLM 없이 절대 기준으로 받는다.
 
-    `evaluation` 을 받는 이유는 **관측을 실을 리포트를 이번 평가로 찾기 위해서**다. 예전에는
-    `golden_report.latest()` 에 대입했는데, 그것은 "마지막으로 세워진" 리포트지 이번 실행의
-    리포트가 아니다 — 남의 리포트가 최신이면 이번 실행의 judge 수치가 남의 리포트에 실린다
-    (하한선 기록 경로에서 지적된 것과 **같은 모양**이다). 채점 자체는 `outcomes` 로 하고,
-    `evaluation` 은 리포트를 찾는 열쇠로만 쓴다.
+    **`evaluation` 하나만 받는다 — 채점 대상과 붙이는 자리가 여기서 함께 나온다.**
+    채점은 `evaluation.outcomes`, 관측을 실을 리포트는 `for_evaluation(evaluation)`.
+
+    이 자리에서 그릇과 내용물을 두 번 헷갈렸다(`RuleEvaluation` docstring 이 정본이다).
+    한 번은 기준선에서 judge 를 뺄 때 — 리포트는 결속돼 있었지만 **나중에 대입되는 필드**의
+    출처는 그 결속 밖이었다. 또 한 번은 직전 커밋 — 관측을 **붙이는 자리**를 이번 평가로
+    묶고서 채점할 `outcomes` 는 **별도 fixture 로** 받았다. 그릇만 묶고 내용물을 안 묶은
+    것이라, A 의 outcomes 를 채점해 B 의 평가 리포트에 싣는 상태가 그대로 표현 가능했다
+    (10번째 지적 — `test_floor_gate_wiring.py` 가 그 상태를 만들 수 없음을 고정한다).
+
+    세 번째가 없는 이유는 두 끝이 **같은 객체에서** 나오기 때문이다. 다른 대상을 채점하려면
+    다른 `evaluation` 을 넘겨야 하는데, 그러면 붙는 리포트도 함께 옮겨 가 두 실행이 섞이지
+    않는다. `outcomes` 를 따로 받는 인자가 **없다**는 것이 이 성질의 전부다 — 남겨 두면
+    통로가 그대로 남는다.
     """
     scores: dict[str, JudgeScore] = {}
     notes: list[str] = []
     for document in DOCUMENTS:
-        outcome = outcomes.get(document.id)
+        outcome = evaluation.outcomes.get(document.id)
         if outcome is None:
             notes.append(f"{document.id}: 변환실패")
             continue
