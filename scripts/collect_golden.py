@@ -16,9 +16,12 @@
 팩트 후보는 사람이 고칠 출발점일 뿐이다. 그래서 초안은 `tests/golden/documents/`가
 아니라 `docs/golden-drafts/`에 쓴다.
 
-보안: 표준출력에 문서 본문·마스킹 원문을 남기지 않는다 — 저장 경로·글자 수·마스킹
-      건수까지만 출력한다(CLAUDE.md 보안·데이터 규칙). 초안 **파일**에는 마스킹을 마친
-      본문이 들어가므로 검토를 마친 뒤 평가셋으로 옮긴다.
+보안: 표준출력에 문서 본문·마스킹 원문을 남기지 않는다 — 저장 경로·글자 수·건수까지만
+      출력한다(CLAUDE.md 보안·데이터 규칙). 마스킹 범주는 2종(주민등록번호·카드번호)이라
+      전화번호·이메일·계좌번호는 그것만으로 걸러지지 않는다. 초안이 저장소에 커밋되고
+      미리보기가 곧장 화면에 찍히므로, 그 두 경로에는 수집 도구의 안전장치가 따로 걸린다
+      (`app/easyread/collection.py`의 '연락처 sink 안전장치'). 런타임이 LLM에 보내는
+      경로의 정책을 바꾸는 것이 아니다.
 """
 
 import argparse
@@ -110,7 +113,7 @@ def report_preview(preview: PreviewReport) -> None:
             f"  {preview.unit_name} {unit.index:>4} | {unit.chars:>7,}자"
             f" | 누적 {unit.cumulative_chars:>9,}자 | {unit.first_line}"
         )
-    print("첫 줄은 마스킹을 거친 텍스트입니다 (원문은 출력하지 않습니다).")
+    print("첫 줄은 마스킹(2종)과 연락처 가림(3종)을 거친 텍스트입니다 (원문은 출력하지 않습니다).")
     print(
         "다음 단계: 필요한 구간을 골라 --pages(PDF 전용) 또는 --slice로 다시 실행하세요"
         " — 누적 글자 수는 이어 붙이는 과정에서 조금 어긋나는 근사치입니다."
@@ -130,6 +133,18 @@ def report(draft: GoldenDraft, path: Path | None) -> None:
     else:
         print("마스킹: 없음 (개인정보 패턴이 없거나 놓쳤을 수 있으니 초안을 확인하세요)")
 
+    # 연락처는 마스킹 범주(2종) 밖이라 위 줄에 잡히지 않는다. 초안이 저장소에 커밋되므로
+    # 수집 도구가 갈래 표시로 바꿔 두는데, 문서 뜻이 통하려면 합성값으로 되돌려야 하는
+    # 자리가 있어 사람에게 알린다 (app/easyread/collection.py '연락처 sink 안전장치').
+    if draft.stats.contact_counts:
+        연락처 = ", ".join(
+            f"{kind.value} {count}건" for kind, count in draft.stats.contact_counts.items()
+        )
+        print(
+            f"연락처 가림: {연락처} — 초안에서 지우거나 합성값(044-000-0000 등)으로 바꾸세요"
+            " (정규식이 놓치는 표기가 있으니 본문도 훑어보세요)"
+        )
+
     if draft.stats.auto_category is not None:
         print(f"자동 분류: {draft.stats.auto_category} (규칙 기반 추정 — 사람 확인 필요)")
     if draft.stats.suggested_facts:
@@ -145,7 +160,9 @@ def report(draft: GoldenDraft, path: Path | None) -> None:
             " (--preview로 구조를 보고 --pages·--slice로 발췌하세요)"
         )
 
-    steps = ["required_facts를 3~6개로 확정하기 (전화·이메일·계좌 등 마스킹 대상 패턴 금지)"]
+    steps = ["required_facts를 3~6개로 확정하기 (연락처·마스킹 대상 패턴 금지)"]
+    if draft.stats.contact_counts:
+        steps.append("가려진 연락처 자리를 지우거나 합성값으로 바꾸기 + 본문 육안 훑기")
     if draft.document.category == DRAFT_CATEGORY:
         # 사람이 --category로 이미 정했다면 안내하지 않는다 — 매번 붙는 문구는 읽히지 않는다.
         steps.append(f"category를 통제 어휘로 고치기 (현재: {DRAFT_CATEGORY})")

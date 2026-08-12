@@ -1,5 +1,6 @@
 package kr.easydoc.api
 
+import kr.easydoc.api.config.PrivateResponseHeadersConfig
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
@@ -7,6 +8,7 @@ import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.CsvSource
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest
+import org.springframework.context.annotation.Import
 import org.springframework.http.HttpHeaders
 import org.springframework.http.MediaType
 import org.springframework.test.json.JsonCompareMode
@@ -27,8 +29,15 @@ import org.springframework.test.web.servlet.get
  *
  * 예외를 던지는 자리는 [kr.easydoc.api.support.ErrorProbeController] 다 —
  * 테스트 소스셋에만 있고 운영 JAR 에 들어가지 않는다.
+ *
+ * ## 왜 [PrivateResponseHeadersConfig] 를 [Import] 하는가
+ *
+ * `@WebMvcTest` 슬라이스는 `@Bean` 으로 등록된 `FilterRegistrationBean` 을 자동으로
+ * 끌어오지 않는다(`@Controller`·`@ControllerAdvice`·`Filter` 빈 등만 포함한다).
+ * 명시적으로 들여와야 실제 체인과 같은 필터가 붙는다 — `CorsContractTest` 와 같은 이유다.
  */
 @WebMvcTest
+@Import(PrivateResponseHeadersConfig::class)
 class ErrorContractTest {
     @Autowired
     private lateinit var mockMvc: MockMvc
@@ -123,20 +132,29 @@ class ErrorContractTest {
     }
 
     @Test
-    @DisplayName("오류 응답에는 캐시 금지 헤더가 붙지 않는다 (§2.7 해결 3)")
-    fun `오류 응답에 캐시 금지 헤더가 없다`() {
-        assertNoPrivateHeaders(mockMvc.get("/__probe/domain/credentials").andReturn())
-        assertNoPrivateHeaders(mockMvc.get("/__probe/domain/not-found").andReturn())
-        assertNoPrivateHeaders(mockMvc.get("/__probe/domain/conflict").andReturn())
-        assertNoPrivateHeaders(mockMvc.get("/__probe/domain/unmapped").andReturn())
+    @DisplayName("오류 응답에도 사적 응답 헤더가 붙는다 (OQ-1 전역 부착)")
+    fun `오류 응답에 사적 응답 헤더가 있다`() {
+        assertPrivateHeaders(mockMvc.get("/__probe/domain/credentials").andReturn())
+        assertPrivateHeaders(mockMvc.get("/__probe/domain/not-found").andReturn())
+        assertPrivateHeaders(mockMvc.get("/__probe/domain/conflict").andReturn())
+        assertPrivateHeaders(mockMvc.get("/__probe/domain/unmapped").andReturn())
     }
 
-    private fun assertNoPrivateHeaders(result: MvcResult) {
+    /**
+     * 계약 `x-global-response-headers`: *"성공 응답, 오류 응답(4xx·5xx), 본문 없는 204 …
+     * 전부 포함"*. 2026-08-12 리더 판정(OQ-1 종결)으로 **부호가 뒤집힌 단언**이다.
+     *
+     * 이 자리의 종전 판은 "오류 응답에 헤더가 **없다**"였고, 그 근거는 열거식 범위
+     * (성공 응답 10곳)였다. 그 범위가 이 저장소에서 두 번 누락된 것이 G4 근거가 되어
+     * 전역 부착으로 바뀌었다. **지우지 않고 반대 단언으로 바꾼다** — 지우기만 하면 이
+     * 자리에 아무 검사도 남지 않는다(`api-contract-freeze` §5.1 G-B).
+     */
+    private fun assertPrivateHeaders(result: MvcResult) {
         assertThat(result.response.getHeader(HttpHeaders.CACHE_CONTROL))
-            .withFailMessage("오류 응답에 Cache-Control 이 붙었다 — 계약은 성공 응답 10곳에만 붙인다")
-            .isNull()
+            .withFailMessage("오류 응답에 Cache-Control 이 없다 — 계약은 모든 응답에 no-store 를 요구한다")
+            .isEqualTo("no-store")
         assertThat(result.response.getHeader("X-Content-Type-Options"))
-            .withFailMessage("오류 응답에 X-Content-Type-Options 가 붙었다")
-            .isNull()
+            .withFailMessage("오류 응답에 X-Content-Type-Options 가 없다 — 계약은 모든 응답에 nosniff 를 요구한다")
+            .isEqualTo("nosniff")
     }
 }

@@ -14,19 +14,21 @@ mypy strict가 app/ 나머지와 같은 기준으로 검사한다. 네트워크�
 
 보안: 예외 메시지에 문서 본문·파일명을 담지 않는다(app/ingest/extractors.py와 같은
 규칙). 초안 **파일**에는 마스킹을 마친 본문이 들어가지만, 호출자가 표준출력으로 옮기지
-않도록 통계(`CollectionStats`)를 본문과 분리해 돌려준다.
+않도록 통계(`CollectionStats`)를 본문과 분리해 돌려준다. 그 위에 이 모듈만의 안전장치가
+하나 더 있다 — 아래 '연락처 sink 안전장치'.
 """
 
 import json
 import re
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
+from enum import StrEnum
 from html.parser import HTMLParser
 from pathlib import Path, PurePosixPath
 from urllib.parse import urlparse
 
 import httpx
-from pydantic import BaseModel, SecretStr
+from pydantic import BaseModel, Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.easyread.goldenset import GoldenDocument, GoldenSource, RequiredFact
@@ -194,6 +196,93 @@ _CHAR_SLICE = re.compile(r"(\d*)\s*:\s*(\d*)")
 #: 미리보기에서 단위마다 보여 줄 첫 줄 길이. 범위를 고를 단서로는 이 정도면 충분하고,
 #: 길수록 (마스킹을 거치더라도) 본문이 터미널에 남는 양만 늘어난다.
 _PREVIEW_FIRST_LINE_CHARS = 40
+
+
+# ======================================================= 연락처 sink 안전장치 (수집 도구 전용)
+#
+# **이것은 런타임 마스킹이 아니다.** `app/privacy/masking.py`의 마스킹 범주는
+# 주민등록번호·카드번호 2종이고(2026-08-12 축소, master-plan 3.2) 그 결정은 여기서
+# 되돌리지 않는다. 전화번호·이메일·계좌번호는 앞으로도 **런타임에서 LLM으로 평문 전달**
+# 된다 — 감수하기로 한 대가다.
+#
+# 아래 장치가 지키는 것은 그 감수 범위 **밖**의 두 경로뿐이다:
+#
+#   1. 초안 JSON 파일 — `docs/golden-drafts/`는 저장소 안이고 `.gitignore` 대상이 아니라
+#      **커밋되면 그대로 재배포된다.** 공개 여부와 저장소 재배포는 별개다.
+#   2. 표준출력 — 오프라인 도구라도 화면과 셸 히스토리에 남는다
+#      (CLAUDE.md 보안·데이터 규칙: 로그에 문서 본문·개인정보를 남기지 않는다).
+#
+# 그래서 이 값들을 `MaskCategory`에 합치지 않고 별도 축(`ContactKind`)으로 둔다. 섞으면
+# 2종 축소를 되돌린 것으로 읽히고, 마스킹 파이프라인의 회귀 테스트가 수집 도구의 사정에
+# 끌려다니게 된다.
+#
+# **자동 검출은 사람 검수를 대신하지 못한다.** 정규식은 괄호 국번(`(044)202-3000`)과
+# `내선 1234`를 놓친다. 이 장치는 "조용히 새는 것"을 막을 뿐이고, 본문 육안 훑기는
+# 그대로 사람 몫이다.
+#
+# 다만 미탐 목록을 실제보다 넓게 적지는 않는다 — `docs/golden-collection-plan.md` §4.3은
+# 띄어쓴 번호(`044 202 3000`)와 PDF 공백 소실로 붙어 버린 숫자열(`0442023000`)도 미탐으로
+# 적었지만 실측은 다르다(`[-.\s]?`가 공백을 받고, 붙은 10자리는 백트래킹으로 갈린다).
+# 그 둘은 걸린다 — tests/scripts/test_collect_golden.py가 관측값을 고정한다. 못 잡는
+# 목록이 부풀면 "어차피 못 잡는다"가 장치를 건너뛰는 근거가 된다.
+
+
+class ContactKind(StrEnum):
+    """저장소·표준출력에 남기지 않는 연락처 갈래. `MaskCategory`와 **다른 축**이다."""
+
+    PHONE = "전화번호"
+    EMAIL = "이메일"
+    ACCOUNT = "계좌번호"
+
+
+#: 검출 정규식. **범주 축소 전 `app/privacy/masking.py`가 쓰던 것과 같은 값이며**, 코드에서
+#: 사라진 판정 기준을 옮겨 적은 `docs/golden-collection-plan.md` §4.3이 유일한 출처다.
+#: 순서가 의미를 갖는다 — 계좌 패턴이 넓어 전화번호를 겹쳐 집으므로(§4.3 실측) 전화를 먼저
+#: 지운다. 갈래를 정확히 맞히는 것보다 평문이 남지 않는 것이 이 장치의 목적이다.
+CONTACT_PATTERNS: tuple[tuple[ContactKind, re.Pattern[str]], ...] = (
+    (
+        ContactKind.PHONE,
+        re.compile(
+            r"(?<!\d)(?:01[016789]|02|0[3-6]\d|070|080|050\d)[-.\s]?\d{3,4}[-.\s]?\d{4}(?!\d)"
+        ),
+    ),
+    (ContactKind.EMAIL, re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")),
+    (ContactKind.ACCOUNT, re.compile(r"(?<!\d)\d{3,6}-\d{2,6}-\d{4,8}(?!\d)")),
+)
+
+
+def contact_placeholder(kind: ContactKind) -> str:
+    """가린 자리에 남길 표시. 마스킹 플레이스홀더(`[[주민등록번호1]]`)와 **모양이 다르다**.
+
+    갈래를 남기는 이유는 사람이 초안을 손볼 때 무엇을 합성값(`044-000-0000`)으로 되돌려야
+    문서 뜻이 통하는지 판단할 수 있어야 하기 때문이다. 번호마다 일련번호를 붙이지 않는 것도
+    일부러다 — 원문을 복원할 단서를 초안에 남기지 않는다.
+    """
+    return f"[{kind.value} 삭제-사람 확인]"
+
+
+def scan_contacts(text: str) -> dict[ContactKind, int]:
+    """연락처 검출 건수만 돌려준다 (**값은 담지 않는다** — 통계는 그대로 출력되므로).
+
+    갈래가 겹치는 자리는 `redact_contacts`와 같은 순서로 한 번만 센다.
+    """
+    return {kind: count for kind, count in _redact_contacts(text)[1].items() if count}
+
+
+def redact_contacts(text: str) -> str:
+    """연락처를 갈래 표시로 바꾼 텍스트를 돌려준다 (저장소·표준출력으로 나가기 직전에 쓴다)."""
+    return _redact_contacts(text)[0]
+
+
+def _redact_contacts(text: str) -> tuple[str, dict[ContactKind, int]]:
+    """치환 결과와 갈래별 건수를 함께 만든다 (`scan_contacts`·`redact_contacts` 공용)."""
+    counts: dict[ContactKind, int] = {}
+    redacted = text
+    for kind, pattern in CONTACT_PATTERNS:
+        redacted, hits = pattern.subn(contact_placeholder(kind), redacted)
+        counts[kind] = hits
+    return redacted, counts
+
 
 #: 자동 분류 키워드. 값은 tests/golden/test_schema.py의 ALLOWED_CATEGORIES(통제 어휘)와
 #: 일치해야 한다 — 어긋나면 스키마 테스트가 초안을 막는다(테스트가 기계적으로 검사).
@@ -431,9 +520,13 @@ class CollectionStats(BaseModel):
     """
 
     source_chars: int
-    #: 범주별 마스킹 건수. 범주가 2종이므로 **연락처가 든 초안도 0건으로 보고된다** —
-    #: 이 값이 0이라는 것은 개인정보가 없다는 뜻이 아니다(수집 방안 4.3 참고).
+    #: 범주별 마스킹 건수. 범주가 2종이므로 **연락처는 여기 잡히지 않는다** — 이 값이
+    #: 0이라는 것은 개인정보가 없다는 뜻이 아니다(연락처는 아래 contact_counts가 센다).
     masked_counts: dict[MaskCategory, int]
+    #: 저장 전에 갈래 표시로 바꾼 연락처 건수 ('연락처 sink 안전장치' 참고). 건수만 담고
+    #: 값은 담지 않는다. **0건이 "연락처가 없다"는 뜻은 아니다** — 정규식이 놓치는 표기가
+    #: 있어 본문 육안 훑기는 그대로 사람 몫이다(수집 방안 §4.3).
+    contact_counts: dict[ContactKind, int] = Field(default_factory=dict)
     #: 규칙 기반 분류기가 고른 카테고리. 사람이 --category로 정했거나 분류에 실패하면 None.
     auto_category: str | None = None
     #: 자동으로 채워 넣은 required_facts 후보 개수 (내용이 아니라 개수만 담는다).
@@ -456,11 +549,12 @@ class PreviewUnit(BaseModel):
     #: 이 단위까지의 누적 글자 수. `--slice` 범위를 어림잡는 데 쓴다 — 단위를 이어 붙이는
     #: 과정에서 몇 글자씩 어긋날 수 있는 근사치다.
     cumulative_chars: int
+    #: 마스킹(2종)과 연락처 가림(3종)을 **둘 다** 지난 첫 줄. 표준출력으로 나가는 값이다.
     first_line: str
 
 
 class PreviewReport(BaseModel):
-    """미리보기 결과. 통계와 마스킹된 첫 줄만 담아 그대로 출력할 수 있다."""
+    """미리보기 결과. 통계와 (마스킹·연락처 가림을 지난) 첫 줄만 담아 그대로 출력할 수 있다."""
 
     unit_name: str
     units: list[PreviewUnit]
@@ -650,8 +744,13 @@ def preview_source(fetched: FetchedDocument) -> PreviewReport:
     각 단위의 첫 줄은 `mask_text`를 통과한 뒤에야 담긴다. 미리보기 결과는 곧장
     표준출력으로 나가므로, 마스킹 전 본문이 한 글자라도 실리면 안 된다.
 
-    다만 `mask_text`는 이제 주민등록번호·카드번호 2종만 가린다(2026-08-12 축소).
-    첫 줄에 기관 대표번호·부서 메일·계좌번호가 있으면 **평문 그대로 표준출력에 찍힌다.**
+    `mask_text`는 주민등록번호·카드번호 2종만 가리므로(2026-08-12 축소) 그것만으로는
+    기관 대표번호·부서 메일·계좌번호가 터미널에 평문으로 찍힌다. 그래서 표준출력으로
+    나가기 전에 `redact_contacts`를 한 번 더 통과시킨다 — 런타임 마스킹을 넓히는 것이
+    아니라 **출력 경로에만 거는 안전장치**다('연락처 sink 안전장치' 참고).
+
+    자르기(`_PREVIEW_FIRST_LINE_CHARS`)는 가림 **뒤에** 한다. 먼저 자르면 경계에 걸친
+    번호가 조각으로 남는다.
     """
     unit_name, units = _preview_units(fetched)
     report_units: list[PreviewUnit] = []
@@ -659,7 +758,7 @@ def preview_source(fetched: FetchedDocument) -> PreviewReport:
     for index, raw in units:
         text = normalize_text(raw)
         cumulative += len(text)
-        masked = mask_text(text).masked_text
+        masked = redact_contacts(mask_text(text).masked_text)
         first_line = next((line for line in masked.split("\n") if line), "")
         report_units.append(
             PreviewUnit(
@@ -818,8 +917,9 @@ def suggest_facts(masked_text: str) -> list[str]:
 
     - 마스킹 대상 패턴(주민등록번호·카드번호). 초안 본문에서는 플레이스홀더로 바뀌므로
       팩트로 쓰면 보존 검사가 영구히 실패한다 — 검사 자체는 `mask_text`에 그대로 맡긴다.
-      범주가 2종으로 좁아진 뒤로 전화번호·계좌번호는 여기서 걸리지 않지만, 본문에서도
-      가려지지 않으므로 팩트로 남아도 보존 검사는 깨지지 않는다.
+      전화번호·이메일·계좌번호는 여기서 따로 거르지 않는다. `build_draft`가 넘겨주는
+      본문이 이미 `redact_contacts`를 지나 갈래 표시로 바뀌어 있어 후보로 올라올 값이
+      남아 있지 않기 때문이다('연락처 sink 안전장치').
     - 마스킹 플레이스홀더 조각(`[[주민등록번호1]]`).
     - 쉬운 말 치환 대상 낱말. 모델이 그 자리를 바꾸므로 팩트가 통째로 사라진다
       (tests/golden/test_schema.py가 같은 규칙을 검사한다).
@@ -864,16 +964,22 @@ def build_draft(
     제목을 따로 주지 않으면 **마스킹 후** 본문의 첫 줄에서 뽑는다: 원문에서 뽑으면
     제목·파일명 경로로 개인정보가 새어 나갈 수 있다.
 
-    **초안이 저장소에 커밋된다는 점에 주의한다.** 마스킹 범주가 2종으로 좁아진 뒤
-    (2026-08-12) 이 함수는 전화번호·이메일·계좌번호를 가리지 않으므로 원문에 있던
-    기관 대표번호·부서 메일은 초안 본문에 **평문으로 남는다.** 실측으로 축소 전 수집한
-    실수집 36건 중 13건의 원문에 연락처가 들어 있었고, 그 문서들이 지금 안전한 이유는
-    수집 절차가 아니라 그때 파이프라인이 5종이었기 때문이다. 축소 이후 만든 초안은
-    커밋 전에 `docs/golden-collection-plan.md` §4.3의 연락처 검출을 사람이 반드시 밟는다
-    — 코드가 대신해 주지 않는다.
+    본문은 **두 단계**를 지난다. ① `mask_text` — 런타임과 같은 마스킹 파이프라인
+    (주민등록번호·카드번호 2종). ② `redact_contacts` — 전화번호·이메일·계좌번호를 갈래
+    표시로 바꾸는 **이 수집 도구만의 저장소 sink 안전장치**다. ②는 런타임 마스킹 범주를
+    넓히는 것이 아니다. 초안이 `docs/golden-drafts/`에 커밋되기 때문에 거는 것이고,
+    LLM으로 나가는 경로는 종전대로 2종만 가린 채 평문으로 보낸다(master-plan 3.2).
 
-    분류와 required_facts는 규칙 기반
-    으로 채워 넣되(각각 `classify_category`·`suggest_facts`) 어느 쪽도 사람의 판단을
+    ②를 코드로 옮긴 근거: 축소 전 수집한 실수집 36건 중 13건의 원문에 연락처가 있었고,
+    그 문서들이 안전한 이유는 절차가 아니라 그때 파이프라인이 5종이었기 때문이다.
+    "커밋 전에 사람이 §4.3 검출을 밟는다"는 절차는 밟았는지 검사하는 장치가 없으면
+    지켜졌다고 말할 근거가 없다.
+
+    **그래도 사람 검수를 없애지는 못한다.** 정규식이 놓치는 표기가 있으므로(§4.3)
+    통계의 `contact_counts`가 0건이어도 본문 육안 훑기는 남는다.
+
+    제목·분류·팩트 후보는 모두 ②까지 지난 본문에서 뽑는다. 분류와 required_facts는 규칙
+    기반으로 채워 넣되(각각 `classify_category`·`suggest_facts`) 어느 쪽도 사람의 판단을
     대신하지 않는다 — 통계에 자동으로 채운 사실을 남겨 호출자가 검수를 안내하게 한다.
 
     Raises:
@@ -887,18 +993,23 @@ def build_draft(
     counts: dict[MaskCategory, int] = {}
     for item in masked.items:
         counts[item.category] = counts.get(item.category, 0) + 1
+    sanitized, contact_counts = _redact_contacts(masked.masked_text)
 
     given_title = (title or "").strip()
     given_category = (category or "").strip()
+    # 사람이 준 제목에도 연락처가 섞일 수 있다(게시판 제목에 담당 부서 번호가 붙는다).
+    redacted_title, title_contacts = _redact_contacts(given_title)
+    for kind, hits in title_contacts.items():
+        contact_counts[kind] = contact_counts.get(kind, 0) + hits
     # 사람이 정한 분류가 언제나 우선한다. 분류기는 빈자리를 메울 때만 돈다.
-    auto_category = None if given_category else classify_category(masked.masked_text)
-    facts = suggest_facts(masked.masked_text)
+    auto_category = None if given_category else classify_category(sanitized)
+    facts = suggest_facts(sanitized)
     document = GoldenDocument(
         id=document_id,
-        title=given_title or _title_from_text(masked.masked_text),
+        title=redacted_title or _title_from_text(sanitized),
         category=given_category or auto_category or DRAFT_CATEGORY,
         synthetic=False,
-        source_text=masked.masked_text,
+        source_text=sanitized,
         required_facts=[RequiredFact(canonical=fact) for fact in facts],
         source=source,
     )
@@ -907,10 +1018,25 @@ def build_draft(
         stats=CollectionStats(
             source_chars=len(document.source_text),
             masked_counts=counts,
+            contact_counts={kind: hits for kind, hits in contact_counts.items() if hits},
             auto_category=auto_category,
             suggested_facts=len(facts),
         ),
     )
+
+
+def draft_contact_counts(document: GoldenDocument) -> dict[ContactKind, int]:
+    """저장 직전 문서에 남은 연락처 건수 (제목·본문·required_facts를 함께 본다).
+
+    `source`(기관명·이용 조건·수집일·출처 URL)는 보지 않는다 — 운영자가 손으로 적는
+    출처 메타이지 문서 본문이 아니고, 수집일(`2026-08-06`) 같은 값이 계좌 패턴에 걸려
+    저장을 막는 오탐이 된다.
+    """
+    parts = [document.title, document.source_text]
+    for fact in document.required_facts:
+        parts.append(fact.canonical)
+        parts.extend(fact.accept)
+    return scan_contacts("\n".join(parts))
 
 
 def write_draft(draft: GoldenDraft, directory: Path) -> Path:
@@ -919,7 +1045,23 @@ def write_draft(draft: GoldenDraft, directory: Path) -> Path:
     tests/golden/documents가 아니라 초안 디렉터리에 쓴다 — required_facts 큐레이션과
     이용 조건 확인을 거치지 않은 문서가 평가셋에 섞이면 통과율이 사람 손을 타지 않은
     채로 움직인다.
+
+    저장 직전에 연락처를 한 번 더 훑고 **남아 있으면 쓰지 않는다.** `build_draft`가 이미
+    가리므로 정상 경로에서는 걸리지 않는다 — 이 검사는 `GoldenDraft`를 손으로 조립했거나
+    `build_draft`의 가림이 나중에 깨졌을 때 조용히 커밋되는 것을 막는 최종 관문이다.
+    검사가 통과했다고 연락처가 없다는 뜻은 아니다(정규식 미탐, 수집 방안 §4.3).
+
+    Raises:
+        GoldenCollectionError: 문서에 연락처가 남아 있다 (건수만 알리고 값은 담지 않는다).
     """
+    remaining = draft_contact_counts(draft.document)
+    if remaining:
+        detail = ", ".join(f"{kind.value} {count}건" for kind, count in remaining.items())
+        raise GoldenCollectionError(
+            f"초안에 연락처가 남아 저장하지 않았습니다 ({detail})"
+            " — 지우거나 합성값(044-000-0000 등)으로 바꾼 뒤 다시 실행하세요"
+            " (docs/golden-collection-plan.md 3장 3-b)"
+        )
     directory.mkdir(parents=True, exist_ok=True)
     path = directory / draft.filename
     # exclude_none: 로컬 파일 수집이면 source.url이 없다. null을 남기는 것보다

@@ -4,7 +4,6 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.boot.web.servlet.FilterRegistrationBean
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
-import org.springframework.core.Ordered
 import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpMethod
 import org.springframework.web.cors.CorsConfiguration
@@ -50,11 +49,17 @@ import org.springframework.web.filter.CorsFilter
 @EnableConfigurationProperties(EasyDocProperties::class)
 class CorsConfig {
     /**
-     * CORS 필터를 서블릿 체인 맨 앞에 둔다.
+     * CORS 필터를 서블릿 체인 앞쪽에 둔다 — 단, [PrivateResponseHeadersConfig] 의 헤더
+     * 필터보다는 **한 칸 뒤**다.
      *
      * 앞에 두는 이유는 preflight(OPTIONS)가 인증 필터나 컨트롤러까지 내려가지 않고 여기서
      * 끝나야 하기 때문이다 — Phase 3 에서 인증 필터가 붙으면 preflight 에는
      * `Authorization` 헤더가 실리지 않으므로, 뒤에 두면 모든 preflight 가 401 이 된다.
+     *
+     * 맨 앞을 내준 이유는 그 "여기서 끝난다"는 성질 때문이다. [CorsFilter] 는 preflight 를
+     * 스스로 처리하고 체인의 나머지를 부르지 않으므로, 사적 응답 헤더 필터가 뒤에 있으면
+     * OPTIONS 응답에만 `no-store`·`nosniff` 가 빠진다. 순서 상수는 두 파일에 흩어지지
+     * 않도록 [PrivateResponseHeadersConfig] 한곳에 모아 두었다.
      */
     @Bean
     fun corsFilterRegistration(properties: EasyDocProperties): FilterRegistrationBean<CorsFilter> {
@@ -74,7 +79,7 @@ class CorsConfig {
                 registerCorsConfiguration("/**", configuration)
             }
         return FilterRegistrationBean(CorsFilter(source)).apply {
-            order = Ordered.HIGHEST_PRECEDENCE
+            order = PrivateResponseHeadersConfig.CORS_FILTER_ORDER
         }
     }
 

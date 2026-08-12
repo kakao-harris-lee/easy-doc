@@ -100,11 +100,16 @@ def report(draft: GoldenDraft, serv_id: str, path: Path | None) -> None:
     """초안 한 건의 통계만 출력한다 (본문·마스킹 원문은 출력하지 않는다)."""
     print(f"  초안 저장: {path}" if path is not None else "  초안 저장 안 함 (--dry-run)")
     분류 = draft.document.category
+    # 연락처 건수를 함께 낸다: 이 경로는 상세 응답의 '문의처' 필드가 기관 대표번호·부서
+    # 메일을 그대로 실어 오므로 가려지는 자리가 가장 많다(수집 방안 4.2 실측). 값은 담지
+    # 않고 건수만 낸다 — 초안 파일에서 갈래 표시를 보고 사람이 합성값으로 되돌린다.
+    연락처 = sum(draft.stats.contact_counts.values())
     print(
         f"    id {draft.document.id} | servId {serv_id}"
         f" | 본문 {draft.stats.source_chars:,}자"
         f" | 분류 {분류}{' (규칙 기반 추정)' if draft.stats.auto_category else ''}"
         f" | 마스킹 {draft.stats.masked_total}건"
+        f" | 연락처 가림 {연락처}건"
         f" | 팩트 후보 {draft.stats.suggested_facts}개"
     )
 
@@ -202,10 +207,11 @@ def main() -> int:
 
     print(f"완료: 초안 {만든_건수}건 생성, {건너뛴_건수}건 건너뜀")
     print("다음 단계:")
-    print("  1. 초안마다 required_facts를 3~6개로 확정하기 (마스킹 대상 패턴 금지)")
-    print(f"  2. category 확인·수정하기 (자동 분류는 추정이고, 실패하면 {DRAFT_CATEGORY})")
-    print("  3. 마스킹 결과 육안 검수 + 출처(source) 확인")
-    print("  4. tests/golden/documents/로 옮긴 뒤 `uv run pytest tests/golden` 실행")
+    print("  1. 가려진 연락처 자리를 지우거나 합성값으로 바꾸기 + 본문 육안 훑기")
+    print("  2. 초안마다 required_facts를 3~6개로 확정하기 (연락처·마스킹 대상 패턴 금지)")
+    print(f"  3. category 확인·수정하기 (자동 분류는 추정이고, 실패하면 {DRAFT_CATEGORY})")
+    print("  4. 마스킹 결과 육안 검수 + 출처(source) 확인")
+    print("  5. tests/golden/documents/로 옮긴 뒤 `uv run pytest tests/golden` 실행")
     return 0
 
 

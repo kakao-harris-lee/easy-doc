@@ -45,6 +45,7 @@ import base64
 import hashlib
 import hmac
 import json
+import re
 import sys
 import unicodedata
 import uuid
@@ -62,6 +63,10 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 DEFAULT_OUT = REPO_ROOT / "parity" / "fixtures"
+
+#: 외부 HTTP 계약. **마스킹 범주 문자열의 정본은 이 파일 하나다.**
+#: 이 하네스가 소유하지 않는 파일이며 읽기만 한다(소유자는 `contract-keeper`).
+CONTRACT_PATH = REPO_ROOT / "contracts" / "easy-doc-v1.yaml"
 
 #: 기본 정규화. 두 런타임이 "같다"고 볼 표기 차이만 담는다.
 #: 이 목록을 늘릴 때는 반드시 왜 그 차이가 무해한지 근거를 함께 남긴다.
@@ -87,6 +92,106 @@ PROOF_FIXTURE_CASES: dict[str, str] = {
 }
 
 Case = dict[str, Any]
+
+
+# ------------------------------------------------------- 계약(단일 출처) 읽기
+#
+# 왜 계약을 읽는가: 예전에는 마스킹 범주 집합을 이 파일이 리터럴로 들고 있었고, 비교기는
+# **fixture가 스스로 넘긴 `categories` 인자**와 자리표시자를 대조했다. 생성기가 선언한 값을
+# 생성기가 만든 fixture로 검사하는 구조라, 생성기가 `["RRN","CARD"]`로 흘러가면 게이트는
+# 통과하고 API는 계약을 위반한다(교차 종합 X-12 / stop-gate S-1, 재현: 종료 코드 3 = 통과).
+#
+# 이제 생성기도 비교기도 이 함수를 통해 계약 파일에서 값을 읽는다. 저장소 안의 파일이 저장소
+# 자신에 대한 기준이 되는 자리를 하나 줄인 것이다 — 계약은 이 하네스가 소유하지 않는다.
+#
+# **읽지 못하면 닫는다(fail closed).** 계약을 못 읽는 상태는 "범주를 검사하지 않는 상태"와
+# 같으므로 통과시키지 않는다.
+
+
+class ContractError(RuntimeError):
+    """계약을 단일 출처로 쓸 수 없는 상태. 통과가 아니라 중단이다."""
+
+
+@dataclass(frozen=True)
+class MaskContract:
+    """계약이 못박은 마스킹 범주 계약."""
+
+    #: `MaskedItemResponse.category` 의 enum. **순서까지** 계약 그대로다.
+    categories: tuple[str, ...]
+    #: `MaskedItemResponse.placeholder` 의 정규식. 자리표시자는 표기가 아니라 복원 키다.
+    placeholder_pattern: str
+    source: str
+
+
+_MASK_CONTRACT: MaskContract | None = None
+
+
+def mask_contract() -> MaskContract:
+    """계약에서 마스킹 범주 enum과 자리표시자 패턴을 읽는다. 실패하면 `ContractError`."""
+    global _MASK_CONTRACT
+    if _MASK_CONTRACT is not None:
+        return _MASK_CONTRACT
+    try:
+        # 아래 무시 주석의 사유 — PyYAML 은 현재 `uvicorn[standard]` 의 전이 의존이라 들어와
+        # 있고 `types-PyYAML` 스텁은 설치돼 있지 않다. 스텁 추가는 `pyproject.toml` 소유자의
+        # 일이므로 여기서는 사유만 적어 남긴다(리포트에 후속 항목으로 올린다).
+        import yaml  # type: ignore[import-untyped]
+    except ImportError as exc:  # pragma: no cover - 환경 결손
+        raise ContractError(
+            f"PyYAML 이 없어 {CONTRACT_PATH.name} 을 읽을 수 없다 ({exc}). "
+            "계약을 읽지 못하는 상태는 범주를 검사하지 않는 상태와 같으므로 통과시키지 않는다"
+        ) from None
+    try:
+        document = yaml.safe_load(CONTRACT_PATH.read_text(encoding="utf-8"))
+    except (OSError, yaml.YAMLError) as exc:
+        raise ContractError(
+            f"{CONTRACT_PATH} 를 읽을 수 없다 ({type(exc).__name__}: {exc})"
+        ) from None
+    schema = (
+        (document or {}).get("components", {}).get("schemas", {}).get("MaskedItemResponse")
+        if isinstance(document, dict)
+        else None
+    )
+    properties = schema.get("properties") if isinstance(schema, dict) else None
+    if not isinstance(properties, dict):
+        raise ContractError(
+            f"{CONTRACT_PATH.name} 에 `components.schemas.MaskedItemResponse.properties` 가 없다"
+        )
+    enum = (properties.get("category") or {}).get("enum")
+    pattern = (properties.get("placeholder") or {}).get("pattern")
+    if not isinstance(enum, list) or not enum or not all(isinstance(name, str) for name in enum):
+        raise ContractError(
+            f"{CONTRACT_PATH.name} 의 `MaskedItemResponse.category.enum` 이 문자열 목록이 아니다"
+        )
+    if not isinstance(pattern, str) or not pattern:
+        raise ContractError(
+            f"{CONTRACT_PATH.name} 의 `MaskedItemResponse.placeholder.pattern` 이 없다"
+        )
+    try:
+        compiled = re.compile(pattern)
+    except re.error as exc:
+        raise ContractError(
+            f"{CONTRACT_PATH.name} 의 placeholder pattern 이 정규식이 아니다 ({exc})"
+        ) from None
+    # 계약 **안에서의** 정합. enum과 pattern은 같은 사실을 두 번 적는 자리라 한쪽만 고치는
+    # 부분 수정이 실제로 일어난다. 그러면 "enum에는 있는데 자리표시자로는 쓸 수 없는 범주"가
+    # 생기고, 게이트는 어느 쪽을 믿어야 할지 모른 채 통과시킨다. 여기서 막는다.
+    # (이것은 값을 다시 적는 것이 아니라 계약이 자기 자신과 맞는지 보는 것이다 —
+    #  범주 문자열의 정본은 여전히 계약 하나뿐이다.)
+    unusable = [name for name in enum if not compiled.fullmatch(f"[[{name}1]]")]
+    if unusable:
+        raise ContractError(
+            f"{CONTRACT_PATH.name} 의 category enum 과 placeholder pattern 이 어긋난다 — "
+            f"{unusable} 는 enum에 있는데 자리표시자 패턴 `{pattern}` 이 받지 않는다. "
+            "한쪽만 고친 부분 수정으로 보인다"
+        )
+    _MASK_CONTRACT = MaskContract(
+        categories=tuple(enum),
+        placeholder_pattern=pattern,
+        source=f"{CONTRACT_PATH.name}::MaskedItemResponse",
+    )
+    return _MASK_CONTRACT
+
 
 #: 판정 방식. 도메인마다 **하나**를 선언한다.
 MODE_SPEC = "spec"  # 요구 성질로 판정한다 (Python 출력은 참고값)
@@ -264,11 +369,11 @@ def build_masking() -> FixtureSpec:
     """개인정보 마스킹 — 주민등록번호·카드번호를 빠짐없이 가리고 나머지 본문은 보존한다"""
     from app.privacy.masking import mask_text
 
-    #: 마스킹 범주. 사용자 결정(2026-08-12)으로 **2종만** 유지한다. 전화번호·이메일·
-    #: 계좌번호는 뺐다 — 공용 문서 번역이 주 용도라 개인정보 위험이 낮고, 포팅 비용을
-    #: 줄여 개발 속도를 얻는다는 판단이다. 범주 문자열은 자리표시자에 그대로 박히므로
-    #: (`[[주민등록번호1]]`) 값 자체가 복원 계약의 일부다.
-    categories = ["주민등록번호", "카드번호"]
+    #: 마스킹 범주. **리터럴로 적지 않고 계약에서 읽는다.** 사용자 결정(2026-08-12)으로
+    #: 2종만 유지하지만, 그 사실을 여기에 다시 적으면 계약과 생성기가 두 벌이 되고 어긋난
+    #: 쪽을 알려 줄 장치가 없어진다. 범주 문자열은 자리표시자에 그대로 박히므로
+    #: (`[[주민등록번호1]]`) 값 자체가 복원 계약의 일부이고, 그 정본은 API 계약이다.
+    categories = list(mask_contract().categories)
 
     # ── 자릿수 표기 축 ────────────────────────────────────────────────────────
     # 리터럴로 적지 않고 코드포인트로 조립한다. 편집기·도구 경로에서 조용히 변형되는
@@ -287,7 +392,33 @@ def build_masking() -> FixtureSpec:
     rrn_fullwidth = restyle("900101-1234567", fullwidth)
     card_arabic_head = restyle("1234", arabic_indic) + "-5678-9012-3456"
     card_fullwidth = restyle("1234-5678-9012-3456", fullwidth)
-    rrn_with_nul = "900101" + chars(0x0000) + "-1234567"
+
+    # ── 회피 문자 축 ──────────────────────────────────────────────────────────
+    # `privacy-gate` 판정(`02_privacy-gate_control-char-verdict.md`, 2026-08-12)이 (가)
+    # **실제 위험**으로 닫은 자리다. 판정 근거의 요지 셋:
+    #   - 위협 모델은 "악의적 회피"가 아니라 **사고성 유입**이다. 업로더(기관 담당자)와
+    #     개인정보 주체(문서에 등장하는 시민)가 다르므로 숨겨서 얻는 이득이 없다.
+    #   - 그런데도 실재한다 — 실문서 16건(1,971,740자)에서 제어문자 1,000건 이상,
+    #     그중 "숫자 사이 끼임" 4건, U+00AD가 하이픈 자리를 대신한 사례가 실측됐다(M4·M5).
+    #   - 막아야 할 대상은 "제어문자"가 아니라 **숫자 사이에서 보이지 않는 문자 전체**다.
+    #     C0 제어문자는 docx·hwpx에서 XML 1.0 위반으로 파일째 거부되지만, U+00AD·U+200B·
+    #     U+FEFF는 XML에 합법이라 그대로 통과하고 PDF·JSON 붙여넣기 경로는 아예 무방비다.
+    #
+    # 그래서 `known_gap`(어느 방향도 단언하지 않음)을 걷어내고 `absent` 단언으로 전환한다.
+    # 단언이 구현보다 앞서는 것이 옳은 의존 방향이다 — 성질을 먼저 못박고 구현이 따라온다.
+    # 판정서 §5.4가 U+00AD를 최우선으로 지목했다(유일하게 실문서 근거가 있는 문자).
+    evasive = (
+        ("soft-hyphen", 0x00AD, "소프트하이픈 U+00AD — **실문서에서 실제로 검출된 문자**"),
+        ("zwsp", 0x200B, "폭 없는 공백 U+200B — 웹페이지 복사·붙여넣기로 흔히 섞인다"),
+        ("bom", 0xFEFF, "폭 없는 비분할 공백 U+FEFF — 파일 병합 흔적으로 본문 중간에 남는다"),
+        ("nul", 0x0000, "NUL U+0000 — PDF 추출·JSON 붙여넣기 경로로 들어온다"),
+        (
+            "fs",
+            0x001C,
+            "파일 구분자 U+001C — `splitlines()` 경계라 개행으로 바뀌어도 매치가 깨진다",
+        ),
+        ("us", 0x001F, "단위 구분자 U+001F — 표 붙여넣기 잔재"),
+    )
 
     def surroundings(text: str, asserts: tuple[Any, ...]) -> list[str]:
         """가려야 할 조각을 뺀 **나머지 본문 조각**을 모은다.
@@ -504,6 +635,45 @@ def build_masking() -> FixtureSpec:
             f"계좌번호는 마스킹 범주에서 뺐다. {kept}. 가려지면 정책 위반이다",
             _assert("present", path="masked_text", needles=["123-456-789012"]),
         ),
+        # ── 보이지 않는 문자 회피 — privacy-gate 판정 (가)로 단언 전환 ────────
+        *[
+            case(
+                f"rrn-{name}",
+                f"번호 900101{chars(code)}-1234567 확인.",
+                f"주민등록번호 숫자 사이에 {note}가 끼어 있어도 {hidden}. "
+                "정규화한 뷰에서 찾고 자르기는 원문 좌표로 한다 — 원문을 정규화해 넘기면 "
+                "`restores_input`이 깨지고 내보내기가 잘못된 원문을 꽂는다",
+                _assert(
+                    "absent",
+                    path="masked_text",
+                    needles=[f"900101{chars(code)}-1234567"],
+                ),
+            )
+            for name, code, note in evasive
+        ],
+        case(
+            "rrn-zwsp-inside-tail",
+            f"번호 900101-123{chars(0x200B)}4567 확인.",
+            f"뒤 7자리 **안쪽**에 폭 없는 공백이 끼어도 {hidden}. 앞뒤 경계만 훑는 구현은 "
+            "여기서 걸린다",
+            _assert("absent", path="masked_text", needles=[f"900101-123{chars(0x200B)}4567"]),
+        ),
+        case(
+            "card-zwsp",
+            f"카드 1234-5678-9012{chars(0x200B)}-3456 입력.",
+            f"같은 회피가 카드번호에도 걸린다(판정서 M11 — 2종 축소본에서 6종 전부 누락). {hidden}",
+            _assert("absent", path="masked_text", needles=[f"1234-5678-9012{chars(0x200B)}-3456"]),
+        ),
+        # 회피 차단의 반대 방향 가드. 이것이 없으면 "보이지 않는 문자를 접는다"를
+        # "공백을 전부 접는다"로 구현해도 통과하고, 그 구현은 서로 다른 줄의 숫자를 붙여
+        # 진짜 과잉 마스킹을 만든다(판정서 §5.2 — 탭·개행·일반 공백은 제외한다).
+        case(
+            "keeps-newline-split-digits",
+            "접수번호 900101\n1234567 을 적으세요.",
+            f"개행으로 갈린 두 숫자열은 하나의 주민등록번호가 아니다. {kept} — "
+            "회피 차단을 공백 접기로 구현하면 여기서 두 줄이 붙어 오검출된다",
+            _assert("present", path="masked_text", needles=["900101\n1234567"]),
+        ),
         # ── 알려진 공백 — 어느 방향도 단언하지 않는다 ─────────────────────────
         case(
             "known-gap-rrn-fullwidth",
@@ -511,27 +681,21 @@ def build_masking() -> FixtureSpec:
             "전각 숫자로만 적은 주민등록번호는 **현재 Python이 가리지 못한다**(성별코드 "
             "`[1-8]`이 ASCII 리터럴이라 매치가 끊긴다). 요구사항으로 보면 가려야 맞지만, "
             "지금 그것을 단언하면 Kotlin에 Python보다 넓은 구현을 요구하게 되므로 "
-            "**어느 방향도 단언하지 않는다**. 개선하면 참고 갈림 원장에 찍혀 드러난다",
+            "**어느 방향도 단언하지 않는다**. 개선하면 참고 갈림 원장에 찍혀 드러난다. "
+            "이 건은 `privacy-gate` 판정 §5.4의 범위 **밖**이다(별개 사안으로 명시)",
             known_gap="전각 표기 주민등록번호 미검출 (개선 후보 — 판정 대상 아님)",
-        ),
-        case(
-            "known-gap-rrn-control-char",
-            f"번호 {rrn_with_nul}-를 확인.",
-            "숫자 사이에 NUL(U+0000)이 끼면 현재 Python은 가리지 못한다 — 마스킹 앞에 "
-            "`strip_control_chars`가 없기 때문이다(`app/services/conversion.py`). 회피 "
-            "벡터로 볼 수도 있고 편집기 흔적으로 볼 수도 있어 **판정을 미룬다**. "
-            "판단은 `privacy-gate` 소관이고, 결론이 나면 단언을 추가한다",
-            known_gap="제어문자 삽입 표기 미검출 (보안 판단 대기 — 판정 대상 아님)",
         ),
     ]
     return FixtureSpec(
         source="app/privacy/masking.py::mask_text",
         mode=MODE_SPEC,
         requirement=(
-            "master-plan §3.2 마스킹 선행 + 사용자 결정(2026-08-12) 범위 축소 — "
+            "master-plan §3.2 마스킹 선행 + 사용자 결정(2026-08-12) 범위 축소 + "
+            "privacy-gate 판정 (가)(02_privacy-gate_control-char-verdict.md) — "
             "문서 본문이 LLM으로 나가기 전에 주민등록번호(외국인등록번호 포함)와 카드번호가 "
-            "빠짐없이 가려지고, 그 밖의 본문은 한 글자도 잃지 않으며, 자리표시자를 되돌리면 "
-            "원문이 정확히 복원된다"
+            "빠짐없이 가려지고(숫자 사이에 보이지 않는 문자가 끼어 있어도 가려진다), "
+            "그 밖의 본문은 한 글자도 잃지 않으며, 자리표시자를 되돌리면 원문이 정확히 "
+            f"복원된다. 범주 문자열의 정본은 계약({mask_contract().source})이다"
         ),
         normalization=BASE_NORMALIZATION,
         cases=cases,

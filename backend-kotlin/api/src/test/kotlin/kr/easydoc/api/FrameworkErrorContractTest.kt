@@ -1,10 +1,12 @@
 package kr.easydoc.api
 
+import kr.easydoc.api.config.PrivateResponseHeadersConfig
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest
+import org.springframework.context.annotation.Import
 import org.springframework.http.HttpHeaders
 import org.springframework.http.MediaType
 import org.springframework.test.json.JsonCompareMode
@@ -32,6 +34,7 @@ import org.springframework.test.web.servlet.post
  * **500 + 고정 문자열**이 된다. 그래서 검증 실패 계열도 여기서 함께 고정한다.
  */
 @WebMvcTest
+@Import(PrivateResponseHeadersConfig::class)
 class FrameworkErrorContractTest {
     @Autowired
     private lateinit var mockMvc: MockMvc
@@ -140,16 +143,30 @@ class FrameworkErrorContractTest {
 
     // ---------------------------------------------------------------- 공통 계약
 
+    /**
+     * 2026-08-12 리더 판정(OQ-1 종결)으로 **부호가 뒤집힌 단언**이다. 종전 판은
+     * "프레임워크 오류 응답에 캐시 금지 헤더가 **없다**"였고 근거는 열거식 범위였다.
+     *
+     * 프레임워크 오류는 컨트롤러를 **아예 거치지 않는** 응답이라, 헤더를 `ResponseEntity`
+     * 로 싣는 방식으로는 붙일 자리가 없다. 전역 필터가 이 자리를 덮는지가 여기서 갈린다.
+     * 다만 MockMvc 는 서블릿 컨테이너를 띄우지 않으므로 **컨테이너가 직접 만드는 응답**은
+     * 이 테스트로 측정되지 않는다 — 그쪽은 [PrivateResponseHeadersReachTest] 가 실제
+     * 소켓으로 잰다.
+     */
     @Test
-    @DisplayName("프레임워크 오류 응답에도 캐시 금지 헤더가 붙지 않는다")
-    fun `프레임워크 오류 응답에 캐시 금지 헤더가 없다`() {
+    @DisplayName("프레임워크 오류 응답에도 사적 응답 헤더가 붙는다 (OQ-1 전역 부착)")
+    fun `프레임워크 오류 응답에 사적 응답 헤더가 있다`() {
         listOf(
             mockMvc.get("/nope").andReturn(),
             mockMvc.post("/__probe/get-only").andReturn(),
             mockMvc.get("/__probe/query").andReturn(),
         ).forEach { result ->
-            assertThat(result.response.getHeader(HttpHeaders.CACHE_CONTROL)).isNull()
-            assertThat(result.response.getHeader("X-Content-Type-Options")).isNull()
+            assertThat(result.response.getHeader(HttpHeaders.CACHE_CONTROL))
+                .withFailMessage("프레임워크 오류 응답에 Cache-Control 이 없다 — 계약은 모든 응답에 no-store 를 요구한다")
+                .isEqualTo("no-store")
+            assertThat(result.response.getHeader("X-Content-Type-Options"))
+                .withFailMessage("프레임워크 오류 응답에 X-Content-Type-Options 가 없다")
+                .isEqualTo("nosniff")
         }
     }
 

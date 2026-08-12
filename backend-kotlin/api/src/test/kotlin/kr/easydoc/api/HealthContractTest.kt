@@ -1,11 +1,13 @@
 package kr.easydoc.api
 
+import kr.easydoc.api.config.PrivateResponseHeadersConfig
 import kr.easydoc.api.health.HealthController
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest
+import org.springframework.context.annotation.Import
 import org.springframework.http.HttpHeaders
 import org.springframework.http.MediaType
 import org.springframework.test.json.JsonCompareMode
@@ -19,6 +21,7 @@ import org.springframework.test.web.servlet.get
  * 실제 DB 위에서의 기동 확인은 [ApiStartupWithDatabaseTest] 가 맡는다.
  */
 @WebMvcTest(HealthController::class)
+@Import(PrivateResponseHeadersConfig::class)
 class HealthContractTest {
     @Autowired
     private lateinit var mockMvc: MockMvc
@@ -41,16 +44,21 @@ class HealthContractTest {
     }
 
     @Test
-    @DisplayName("캐시 금지 헤더를 붙이지 않는다")
-    fun `health 응답에는 캐시 금지 헤더가 없다`() {
-        // 계약: "인증이 필요 없고 캐시 금지 헤더도 붙지 않는다(실측 확인 2026-08-12)."
-        // 이 응답에는 개인정보도 자격증명도 없다. PRIVATE_RESPONSE_HEADERS 대상 10곳에
-        // /health 는 들어 있지 않다. 반대 방향의 회귀(무심코 no-store 를 전역으로 붙이는 것)를
-        // 여기서 잡는다.
+    @DisplayName("사적 응답 헤더를 붙인다 (OQ-1 전역 부착)")
+    fun `health 응답에도 사적 응답 헤더가 있다`() {
+        // 2026-08-12 리더 판정(OQ-1 종결)으로 **부호가 뒤집힌 단언**이다.
+        // 종전 판은 "/health 는 열거 10곳에 없으므로 헤더가 없다"였고, 그 주석은
+        // "무심코 no-store 를 전역으로 붙이는 것"을 회귀로 규정했다. 이제 전역 부착이
+        // 계약이므로 그 방향이 반대가 됐다 — 계약 `x-global-response-headers.applies_to`
+        // 가 `GET /health` 를 명시적으로 포함한다.
+        //
+        // /health 는 이 저장소에서 전역 부착을 가장 값싸게 지키는 자리다. 개인정보도
+        // 자격증명도 없어 "얻는 것이 없다"고 빼기 쉬운데, 그렇게 빼기 시작하면 열거식으로
+        // 되돌아간다.
         val response = mockMvc.get("/health").andReturn().response
 
-        assertThat(response.getHeader(HttpHeaders.CACHE_CONTROL)).isNull()
-        assertThat(response.getHeader("X-Content-Type-Options")).isNull()
+        assertThat(response.getHeader(HttpHeaders.CACHE_CONTROL)).isEqualTo("no-store")
+        assertThat(response.getHeader("X-Content-Type-Options")).isEqualTo("nosniff")
     }
 
     @Test

@@ -18,10 +18,13 @@ from app.easyread.collection import (
     DRAFT_CATEGORY,
     FETCH_HEADERS,
     MAX_SUGGESTED_FACTS,
+    ContactKind,
     FetchedDocument,
+    GoldenDraft,
     apply_char_slice,
     build_draft,
     classify_category,
+    contact_placeholder,
     extract_source_text,
     html_to_text,
     next_document_id,
@@ -29,7 +32,9 @@ from app.easyread.collection import (
     parse_char_slice,
     parse_page_range,
     preview_source,
+    redact_contacts,
     rewrite_source_url,
+    scan_contacts,
     slugify,
     suggest_facts,
     write_draft,
@@ -108,12 +113,11 @@ def test_공백과_빈_줄을_정리한다() -> None:
 
 
 def test_초안_본문이_마스킹을_통과한다() -> None:
-    """범주가 2종이라 주민등록번호는 가려지고 연락처는 **평문으로 남는다**.
+    """범주가 2종이라 주민등록번호는 `mask_text`가 가린다.
 
-    후자는 미구현이 아니라 감수하기로 한 대가다(2026-08-12 축소, master-plan 3.2).
-    초안은 저장소에 커밋되므로 연락처는 코드가 아니라 사람이 걸러 낸다 —
-    `docs/golden-collection-plan.md` §4.3의 검출을 커밋 전에 반드시 밟는다.
-    이 단언들은 그 전제가 조용히 바뀌지 않도록 잡아 두는 것이다.
+    연락처는 마스킹 범주 밖이라 `masked_counts`에 잡히지 않는다 — 그 자리는 수집 도구의
+    sink 안전장치(`contact_counts`)가 따로 센다. 두 축을 섞지 않는 것이 요점이다:
+    런타임이 LLM에 보내는 경로는 종전대로 2종만 가린다(master-plan 3.2).
     """
     초안 = build_draft(
         f"{html_to_text(PAGE)}\n담당자 확인용 900101-1234567",
@@ -122,11 +126,167 @@ def test_초안_본문이_마스킹을_통과한다() -> None:
     )
     assert "900101-1234567" not in 초안.document.source_text
     assert "[[주민등록번호1]]" in 초안.document.source_text
-    # 범위 밖 — 수집 파이프라인이 걸러 주지 않는다.
-    assert "02-2100-3456" in 초안.document.source_text
-    assert "elder@example.go.kr" in 초안.document.source_text
     assert 초안.stats.masked_counts == {MaskCategory.RRN: 1}
     assert 초안.stats.masked_total == 1
+    # 연락처는 마스킹이 아니라 sink 안전장치가 걷어낸다 (별도 축).
+    assert 초안.stats.contact_counts == {ContactKind.PHONE: 1, ContactKind.EMAIL: 1}
+
+
+# ------------------------------------------------- 연락처 3종 (저장소 sink 안전장치)
+#
+# 마스킹 범주가 2종으로 줄어든 뒤(2026-08-12) `mask_text`는 전화·이메일·계좌를 가리지
+# 않는다. 그 감수 범위는 **런타임이 LLM에 보내는 것**이고, 수집 도구가 저장소에 커밋되는
+# 파일과 터미널에 남기는 것은 별개다(CLAUDE.md 보안·데이터 규칙). 아래 테스트는 그
+# 경계를 지키는 장치를 고정한다 — 2종 축소 결정과는 무관하다.
+
+CONTACT_TEXT = (
+    "○○구 노인 일자리 안내\n"
+    "문의는 02-2100-3456 또는 elder@example.go.kr로 하세요.\n"
+    "자부담금은 123-456-789012 계좌로 넣으세요."
+)
+
+CONTACT_VALUES = ("02-2100-3456", "elder@example.go.kr", "123-456-789012")
+
+#: 연락처가 하나도 없는 본문 (검출 장치가 오탐으로 막지 않아야 하는 쪽).
+PLAIN_TEXT = "안내드립니다. 자세한 내용은 문의 바랍니다."
+
+
+def test_초안_본문에_연락처가_평문으로_남지_않는다() -> None:
+    """초안 파일은 저장소에 커밋된다 — 2종 마스킹만 거친 본문을 그대로 담으면 유출이다."""
+    초안 = build_draft(CONTACT_TEXT, document_id="021", source=SOURCE)
+    for 값 in CONTACT_VALUES:
+        assert 값 not in 초안.document.source_text
+
+
+def test_초안_제목에_연락처가_평문으로_남지_않는다() -> None:
+    """--title을 주지 않으면 제목이 본문 첫 줄에서 온다 (수집 방안 3장 3-b)."""
+    초안 = build_draft(
+        f"문의 02-2100-3456 elder@example.go.kr\n{CONTACT_TEXT}",
+        document_id="021",
+        source=SOURCE,
+    )
+    for 값 in CONTACT_VALUES[:2]:
+        assert 값 not in 초안.document.title
+
+
+def test_저장한_초안_파일에_연락처가_평문으로_남지_않는다(tmp_path: Path) -> None:
+    """검출은 자동이어야 한다 — 사람이 절차를 밟았다고 말하는 것으로 통과하면 안 된다."""
+    초안 = build_draft(CONTACT_TEXT, document_id="021", source=SOURCE)
+    본문 = write_draft(초안, tmp_path).read_text(encoding="utf-8")
+    for 값 in CONTACT_VALUES:
+        assert 값 not in 본문
+
+
+def test_미리보기_첫_줄에_연락처가_평문으로_찍히지_않는다() -> None:
+    """미리보기는 곧장 표준출력으로 나간다 — 화면·셸 히스토리에 남는다."""
+    보고 = preview_source(
+        _fetched(
+            "문의 02-2100-3456 elder@example.go.kr 계좌 123-456-789012".encode(),
+            filename="안내.txt",
+        )
+    )
+    for 값 in CONTACT_VALUES:
+        assert 값 not in 보고.units[0].first_line
+
+
+@pytest.mark.parametrize(
+    ("본문", "기대"),
+    [
+        ("문의 02-2100-3456", {ContactKind.PHONE: 1}),
+        ("휴대전화 010-1234-5678", {ContactKind.PHONE: 1}),
+        ("대표번호 044.202.3000", {ContactKind.PHONE: 1}),
+        ("메일 elder@example.go.kr", {ContactKind.EMAIL: 1}),
+        ("계좌 123-456-789012", {ContactKind.ACCOUNT: 1}),
+        ("2026년 3월 2일부터 30만 원을 지원합니다.", {}),
+    ],
+)
+def test_연락처_갈래를_건수로_검출한다(본문: str, 기대: dict[ContactKind, int]) -> None:
+    """판정 기준은 축소 전 마스킹 정규식과 같다 (docs/golden-collection-plan.md §4.3)."""
+    assert scan_contacts(본문) == 기대
+
+
+def test_계좌_패턴이_전화번호를_겹쳐_집지_않는다() -> None:
+    """계좌 패턴이 넓어 전화번호를 함께 문다(§4.3 실측) — 전화를 먼저 지워 한 번만 센다."""
+    assert scan_contacts("문의 070-4567-8901") == {ContactKind.PHONE: 1}
+
+
+def test_가린_자리에_갈래가_남는다() -> None:
+    """사람이 무엇을 합성값으로 되돌려야 문서 뜻이 통하는지 판단할 수 있어야 한다."""
+    가려진 = redact_contacts("문의는 02-2100-3456입니다.")
+    assert 가려진 == f"문의는 {contact_placeholder(ContactKind.PHONE)}입니다."
+    assert "[[" not in 가려진  # 마스킹 플레이스홀더와 모양이 겹치면 안 된다
+
+
+def test_연락처가_없으면_본문을_건드리지_않는다() -> None:
+    본문 = "2026년 3월 2일부터 신청하세요. 지원금은 30만 원입니다."
+    assert redact_contacts(본문) == 본문
+
+
+def test_통계는_연락처_건수만_담고_값은_담지_않는다() -> None:
+    """통계는 그대로 표준출력으로 나간다 (CollectionStats docstring의 전제)."""
+    초안 = build_draft(CONTACT_TEXT, document_id="021", source=SOURCE)
+    assert 초안.stats.contact_counts == {
+        ContactKind.PHONE: 1,
+        ContactKind.EMAIL: 1,
+        ContactKind.ACCOUNT: 1,
+    }
+    직렬화 = 초안.stats.model_dump_json()
+    for 값 in CONTACT_VALUES:
+        assert 값 not in 직렬화
+
+
+def test_연락처가_남은_초안은_저장이_막힌다(tmp_path: Path) -> None:
+    """`build_draft`의 가림이 나중에 깨져도 조용히 커밋되지는 않게 하는 최종 관문."""
+    성한_초안 = build_draft(PLAIN_TEXT, document_id="021", source=SOURCE)
+    샌_초안 = GoldenDraft(
+        document=성한_초안.document.model_copy(update={"source_text": CONTACT_TEXT}),
+        stats=성한_초안.stats,
+    )
+    with pytest.raises(GoldenCollectionError) as 오류:
+        write_draft(샌_초안, tmp_path)
+    메시지 = str(오류.value)
+    assert "전화번호 1건" in 메시지 and "이메일 1건" in 메시지 and "계좌번호 1건" in 메시지
+    for 값 in CONTACT_VALUES:
+        assert 값 not in 메시지  # 오류 메시지도 화면에 남는다 — 건수까지만
+    assert list(tmp_path.glob("*.json")) == []
+
+
+def test_제목에_남은_연락처도_저장을_막는다(tmp_path: Path) -> None:
+    """--title은 사람이 주는 값이라 `build_draft`의 본문 가림만으로는 닫히지 않는다."""
+    성한_초안 = build_draft(PLAIN_TEXT, document_id="021", source=SOURCE)
+    샌_초안 = GoldenDraft(
+        document=성한_초안.document.model_copy(update={"title": "문의 02-2100-3456"}),
+        stats=성한_초안.stats,
+    )
+    with pytest.raises(GoldenCollectionError):
+        write_draft(샌_초안, tmp_path)
+
+
+def test_출처_메타의_날짜는_저장을_막지_않는다(tmp_path: Path) -> None:
+    """수집일(`2026-08-06`)·출처 URL은 문서 본문이 아니다 — 오탐으로 저장을 막으면 안 된다."""
+    초안 = build_draft(PLAIN_TEXT, document_id="021", source=SOURCE)
+    assert write_draft(초안, tmp_path).exists()
+
+
+def test_자동_검출은_사람_검수를_대신하지_못한다() -> None:
+    """미탐을 코드에도 남긴다 — 이 장치는 본문 육안 훑기를 없애지 않는다.
+
+    괄호 국번과 `내선 1234`는 걸리지 않는다. `contact_counts`가 0건이라는 것이
+    "연락처가 없다"는 뜻이 아니라는 근거이며, 정규식을 넓히려면 이 테스트를 **의도적으로**
+    고쳐야 한다.
+    """
+    assert scan_contacts("문의 (044)202-3000") == {}
+    assert scan_contacts("문의 내선 1234") == {}
+
+
+def test_띄어쓴_번호와_붙은_숫자열은_실제로는_걸린다() -> None:
+    """§4.3은 이 둘을 미탐으로 적었지만 실측은 다르다 — `[-.\\s]?`가 공백을 받는다.
+
+    문서보다 코드가 실제 판정이므로 관측값을 여기 고정한다. 미탐 목록을 실제보다 넓게
+    적어 두면 "어차피 못 잡는다"는 이유로 장치를 건너뛰는 근거가 된다.
+    """
+    assert scan_contacts("문의 044 202 3000") == {ContactKind.PHONE: 1}
+    assert scan_contacts("문의 0442023000") == {ContactKind.PHONE: 1}
 
 
 def test_초안은_수집본으로_표시되고_제목은_첫_줄에서_온다() -> None:
@@ -373,17 +533,15 @@ def test_hwpx_미리보기는_구역별_통계를_준다() -> None:
 
 
 def test_미리보기_첫_줄은_마스킹을_통과한다() -> None:
-    """미리보기는 곧장 표준출력으로 나간다 — 범주 안(2종) 개인정보가 실리면 안 된다.
-
-    범위 밖인 연락처는 평문으로 찍힌다. 축소로 감수하기로 한 대가이므로 함께 고정한다.
-    """
+    """미리보기는 곧장 표준출력으로 나간다 — 마스킹(2종)도 연락처 가림(3종)도 지나야 한다."""
     보고 = preview_source(
         _fetched("등록번호 900101-1234567 (문의 02-2100-3456)".encode(), filename="안내.txt")
     )
     assert 보고.unit_name == "문서"
     assert "900101-1234567" not in 보고.units[0].first_line
     assert "[[주민등록번호1]]" in 보고.units[0].first_line
-    assert "02-2100-3456" in 보고.units[0].first_line
+    assert "02-2100-3456" not in 보고.units[0].first_line
+    assert contact_placeholder(ContactKind.PHONE) in 보고.units[0].first_line
 
 
 def test_미리보기_첫_줄은_길이가_제한된다() -> None:

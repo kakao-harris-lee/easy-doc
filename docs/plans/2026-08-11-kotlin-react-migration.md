@@ -50,7 +50,7 @@
 
 세 가지로 방어한다.
 
-1. **요구사항 인벤토리**. Python 코드·테스트·골든셋에서 "이 시스템이 보장하던 것"을 항목으로 뽑아 추적표에 올리고, 항목마다 Kotlin 쪽 검증 수단을 매단다. Phase 종료 조건은 "미충족 0"이지 "Python과 동일"이 아니다. 전역 요구사항과 합격선은 Phase 0에서 확정하고, 도메인별 상세 항목은 각 Phase 착수 시 그 범위만 작성한다.
+1. **요구사항 인벤토리** — 정본 산출물 `docs/migration/_workspace/00_requirements-inventory.md`(2026-08-12 전역 1차본 작성, 미승인). Python 코드·테스트·골든셋에서 "이 시스템이 보장하던 것"을 항목으로 뽑아 추적표에 올리고, 항목마다 Kotlin 쪽 검증 수단을 매단다. Phase 종료 조건은 "미충족 0"이지 "Python과 동일"이 아니다. 전역 요구사항과 합격선은 Phase 0에서 확정하고, 도메인별 상세 항목은 각 Phase 착수 시 그 범위만 작성한다.
 2. **차분 비교의 강등**. 같은 입력을 두 구현에 넣어 출력을 비교하는 하네스는 초판대로 만든다. 다만 불일치는 실패가 아니라 **분류 대상**이다. 각 불일치를 `의도된 개선` / `요구사항과 무관` / `미확인` 중 하나로 분류하고, **미확인이 0이 되어야** 해당 Phase를 닫는다. 자동 판정을 사람 판단으로 바꾼 것이므로 비용은 사라지지 않고 이동한다(§7).
 3. **Python suite 병행 유지**. 절체 시점까지 Python 테스트를 계속 실행해 비교 기준으로 쓴다(§6).
 
@@ -423,7 +423,7 @@ Python 골든 도구는 Kotlin 런타임이 안정될 때까지 남겨 두는 �
 |---|---|---|
 | Build | Gradle, TypeScript | warning 정책 포함 모두 성공 |
 | Unit | core, application, React | 신규 Kotlin 테스트 + React 테스트 통과 |
-| Requirements | 요구사항 인벤토리 | 해당 Phase 범위 항목의 미충족 0 |
+| Requirements | 요구사항 인벤토리 (`docs/migration/_workspace/00_requirements-inventory.md`) | 해당 Phase 범위 항목의 미충족 0 |
 | Difference | 차분 비교 하네스 | `미확인` 불일치 0, 나머지는 사유가 기록됨 |
 | Contract | 14 endpoints | status/body/header/error가 승인된 계약 spec과 일치(개선분 포함) |
 | DB | PostgreSQL Testcontainers | 제약, 트랜잭션, 잠금, cascade, timezone 일치 |

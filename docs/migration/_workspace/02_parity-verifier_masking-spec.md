@@ -2,10 +2,15 @@
 
 작성: `parity-verifier` (2026-08-12)
 1차 개정: 2026-08-12 — 유니코드 커버리지 공백을 닫음 (14 → 22 케이스, **값 동일성 전제**)
-**2차 개정: 2026-08-12 — 전제 전환 + 범주 축소로 전면 재작성 (22 → 23 케이스)**
+2차 개정: 2026-08-12 — 전제 전환 + 범주 축소로 전면 재작성 (22 → 23 케이스)
+**3차 개정: 2026-08-12 — 게이트 자기승인 경로 차단 + 보이지 않는 문자 단언 전환 (23 → 31 케이스)**
 수신: `kotlin-implementer`
-fixture: `parity/fixtures/masking/masking.json` — 23 케이스, 생성기 `dump_parity_fixtures.py::build_masking`
+fixture: `parity/fixtures/masking/masking.json` — **31 케이스·단언 114개**, 생성기 `dump_parity_fixtures.py::build_masking`
 참고 Python: `app/privacy/masking.py::mask_text` — **정답이 아니라 참고값이다**
+
+> **3차 개정 요약 (2026-08-12).** 교차 종합 `reviews/02_criteria-pivot_cross.md`가 지목한 게이트 결함을 닫으면서 이 문서의 **합격 기준도 함께 정정했다.** 2차 개정본의 §6은 "단언 89개"와 "`reference_divergence: expected` 3건 선언"을 합격 기준으로 적었는데 둘 다 사실이 아니었다(실제 81개 / 0건, X-13). 설명문이 아니라 **절차대로 밟으라고 만든 합격 기준**이라, 그대로 두면 밟은 사람이 숫자를 맞추려고 fixture를 손대게 된다. 지금 §6은 실측값으로 고쳐져 있고, 아래 §2.4·§2.5·§7도 3차 기준으로 갱신했다.
+>
+> 바뀐 것 넷: ① 범주 문자열의 정본이 계약(`contracts/easy-doc-v1.yaml`)이 되고 게이트가 그것을 직접 읽는다. ② 보이지 않는 문자 회피가 `known_gap`에서 `absent` 단언 8건 + 과잉 가드 1건으로 전환됐다. ③ `reference_divergence: "expected"`가 원장 기록을 면제하지 않는다. ④ `--record-reference`가 원장을 바꾸면 종료 코드 4로 끝난다(판정 아님).
 
 ---
 
@@ -49,7 +54,7 @@ fixture: `parity/fixtures/masking/masking.json` — 23 케이스, 생성기 `dum
 
 계약 레인이 확정했다. fixture와 Kotlin 구현이 **그대로** 따라야 한다.
 
-- `MaskedItemResponse.category` — `enum: ["주민등록번호", "카드번호"]`. **값이 한국어 문자열이다.** Kotlin enum 이름(`RRN`)이나 영문 코드(`"phone"`)를 직렬화하면 계약 위반이자 전건 불충족이다.
+- `MaskedItemResponse.category` — `enum: ["주민등록번호", "카드번호"]`. **값이 한국어 문자열이다.** Kotlin enum 이름(`RRN`)이나 영문 코드(`"phone"`)를 직렬화하면 계약 위반이자 전건 불충족이다. **3차 개정부터 게이트가 이것을 실제로 읽어 대조한다** — 생성기도 비교기도 계약 파일에서 값을 가져오고, 계약을 읽지 못하면 통과가 아니라 불충족이다. 그전에는 fixture가 스스로 넘긴 값과만 대조해, 생성기가 영문으로 흘러가면 게이트는 통과하고 API는 계약을 위반했다(X-12/S-1).
 - `placeholder`·`missing_placeholders[]` — `^\[\[(주민등록번호|카드번호)[0-9]+\]\]$`.
 - **전화번호·이메일이 든 문서라도 `masked_items`가 비어 있는 것이 정상이다.**
 
@@ -105,15 +110,36 @@ fixture가 값으로 검사한다. **방법을 지시하지 않는다** — 어�
 | 케이스 | 현재 Python | 왜 단언하지 않나 |
 |---|---|---|
 | `masking-known-gap-rrn-fullwidth` — 전부 전각 숫자 주민번호 | **못 잡는다** (성별코드 `[1-8]`이 ASCII 리터럴) | 요구사항으로는 가리는 편이 맞지만, 지금 단언하면 Kotlin에 Python보다 넓은 구현을 요구하게 된다. 개선하면 참고 갈림 원장에 찍힌다 |
-| `masking-known-gap-rrn-control-char` — 숫자 사이 NUL | **못 잡는다** (마스킹 앞에 `strip_control_chars`가 없다) | 회피 벡터로 볼 수도, 편집기 흔적으로 볼 수도 있다. 판단은 `privacy-gate` 소관이고 결론이 나면 단언을 추가한다 |
 
-두 케이스는 구조 불변식만 진다. **어느 방향도 막지 않으므로 개선해도 되고 안 해도 된다** — 다만 개선하면 원장 갱신이 필요하다.
+~~`masking-known-gap-rrn-control-char` — 숫자 사이 NUL~~ → **3차 개정에서 단언으로 전환됐다.** `privacy-gate` 판정 (가)(`02_privacy-gate_control-char-verdict.md`)가 이것을 실제 위험으로 닫았고, 판정서 §5.4의 지시대로 `known_gap`을 해제했다. `known_gap`으로 두는 동안 이 케이스는 **제어문자가 낀 주민등록번호를 한 글자도 가리지 않은 산출물을 합격시켰다**(재현 확인: 종료 코드 3).
 
-### 2.5 의도한 갈림
+남은 `known_gap`은 **전각 표기 1건뿐**이며 구조 불변식만 진다. 어느 방향도 막지 않으므로 개선해도 되고 안 해도 된다 — 다만 개선하면 원장 갱신이 필요하다. 판정서가 이 건을 범위 밖으로 명시했다.
 
-`masking-scope-out-*` 3건은 `reference_divergence: "expected"`로 선언되어 있다. 현재 Python은 전화·이메일·계좌를 가리므로 참고값과 **갈리는 것이 정상**이다. 원장을 요구하지 않는다.
+### 2.4a 보이지 않는 문자 회피 — 단언 9건 (3차 개정에서 추가)
 
-반대로 이 3건이 참고값과 **같아지면** 종료 코드 1이 난다 — 선언이 낡았다는 뜻이다(Kotlin이 5범주를 옮겼거나, Python이 따라 축소됐거나).
+막을 대상은 "제어문자"가 아니라 **숫자 사이에서 보이지 않는 문자 전체**다. C0 제어문자는 docx·hwpx에서 XML 1.0 위반으로 파일째 거부되지만 U+00AD·U+200B·U+FEFF는 XML에 합법이고, PDF와 JSON 붙여넣기 경로는 무방비다. 실문서 16건에서 제어문자 1,000건 이상·"숫자 사이 끼임" 4건이 실측됐다(판정서 M4·M5).
+
+| 케이스 | 문자 | 비고 |
+|---|---|---|
+| `masking-rrn-soft-hyphen` | U+00AD | **실문서 근거가 있는 유일한 문자.** 우선순위 최상 |
+| `masking-rrn-zwsp` | U+200B | 웹페이지 복사·붙여넣기 |
+| `masking-rrn-bom` | U+FEFF | 파일 병합 흔적 |
+| `masking-rrn-nul` | U+0000 | PDF 추출·JSON 붙여넣기 |
+| `masking-rrn-fs` | U+001C | `splitlines()` 경계 |
+| `masking-rrn-us` | U+001F | 표 붙여넣기 잔재 |
+| `masking-rrn-zwsp-inside-tail` | U+200B | 뒤 7자리 **안쪽** — 앞뒤 경계만 훑는 구현이 걸린다 |
+| `masking-card-zwsp` | U+200B | 카드번호도 같은 벡터다 (판정서 M11) |
+| `masking-keeps-newline-split-digits` | — | **반대 방향 가드.** 개행으로 갈린 두 숫자열이 붙으면 안 된다 |
+
+구현 제약(판정서 §5.1): **원문을 정규화해 마스킹에 넘기지 마라.** 정규화한 **뷰**에서 찾고, 매치 스팬을 대응 배열로 **원문 좌표**로 되돌려 자른다. 그래야 `original`이 낀 문자를 포함한 채로 잘려 `restores_input`이 유지된다. 대응은 **UTF-16 인덱스 기준**으로 만든다. `UNICODE_CHARACTER_CLASS`를 켜도 이 건은 해결되지 않는다 — 낀 문자는 숫자가 아니라 숫자 **사이**에 있다.
+
+마지막 줄이 없으면 "보이지 않는 문자를 접는다"를 "공백을 전부 접는다"로 구현해도 통과하고, 그 구현은 서로 다른 줄의 숫자를 붙여 진짜 과잉 마스킹을 만든다. 스탠드인 `whitespace-fold`로 실증했다(종료 코드 1, 2건 지목).
+
+### 2.5 의도한 갈림 — 현재 0건
+
+`reference_divergence: "expected"` 선언은 **지금 fixture에 하나도 없다.** `masking-scope-out-*` 3건이 한때 선언돼 있었으나 Python이 2종으로 축소되면서 참고값이 요구사항과 일치하게 되어 선언이 낡았고 생성기에서 지웠다.
+
+**이 필드의 의미도 3차 개정에서 바뀌었다.** 예전에는 "원장을 요구하지 않는다"는 면제였고, 그래서 그 선언이 붙은 케이스는 갈림의 **내용이 바뀌어도** 아무도 몰랐다(X-10/S-2). 지금 이 필드가 하는 일은 **더하기뿐**이다 — 갈림이 사라지면 막고, 원장 기록 요구는 그대로다. 선언이 붙거나 빠지면 원장 항목의 `declared` 값이 바뀌어 그 변경도 diff로 리뷰에 올라간다.
 
 ---
 
@@ -126,6 +152,8 @@ fixture가 값으로 검사한다. **방법을 지시하지 않는다** — 어�
 - 입력 문자열은 정규식이 준 `start`/`end`로만 잘라야 한다. **코드포인트 오프셋으로 변환하지 마라** (§4.2 참고).
 
 `nfc` 정규화는 fixture 비교 단계에만 적용되며 **구현이 호출할 것이 아니다.**
+
+**§2.4a의 회피 차단은 이 규칙과 충돌하지 않는다.** 요구되는 것은 "정규화 **선행**"이 아니라 **"정규화된 뷰에서 찾고, 자르기는 원문 좌표로"**다 — 마스킹 함수 **내부**에서 탐색용 뷰를 만들 뿐 파이프라인 앞단에 단계를 추가하지 않는다. 그래서 마스킹 선행 불변식(`CLAUDE.md` 아키텍처 규칙 2)도, `restores_input`도 그대로 유지된다. 이 설계는 `privacy-gate`가 프로토타입으로 실증했다(fixture 전건 `restores_input` 위반 0건, 회피 6종 전부 차단, 실문서 16건 과잉 마스킹 0건).
 
 ---
 
@@ -182,7 +210,7 @@ parity/actual/masking/masking.json
 
 - `items`의 각 항목은 `category`·`placeholder`·`original` 세 필드다.
 - `runtime`은 반드시 `"kotlin"` (실측: 다른 값이면 종료 코드 1).
-- 23 케이스 **전부** 있어야 한다. 하나라도 빠지면 "미실행"으로 종료 코드 1.
+- fixture의 케이스 **전부**(현재 31건) 있어야 한다. 하나라도 빠지면 "미실행"으로 종료 코드 1. 개수를 이 문서에서 옮겨 적지 말고 fixture를 읽어 만든다.
 - 케이스 id 중복 금지.
 
 ### 5.2 하네스
@@ -197,33 +225,41 @@ parity/actual/masking/masking.json
 
 ## 6. Definition of Done
 
-1. `parity/actual/masking/masking.json`이 `parityHarness` 실행으로 생성된다 (`runtime: kotlin`, 23 케이스).
+1. `parity/actual/masking/masking.json`이 `parityHarness` 실행으로 생성된다 (`runtime: kotlin`, **31 케이스**).
 2. `backend-kotlin/parity-domains.txt`에 `masking`이 **같은 커밋에** 들어간다.
 3. 아래가 종료 코드 **3**(부분 검증 통과)으로 끝난다:
    ```bash
    uv run python .claude/skills/python-kotlin-parity/scripts/compare_parity.py \
        --fixture parity/fixtures --actual parity/actual --only-domain masking
    ```
-   마지막 줄이 `부분 검증 통과(게이트 아님): … 성질 판정 23건(단언 89개) … 불충족 0건`이어야 한다.
+   마지막 줄이 `부분 검증 통과(게이트 아님): … 성질 판정 31건(단언 114개) … 불충족 0건`이어야 한다.
    **종료 코드 0이 나오면 통과가 아니라 비교기 계약 위반이다** — CI가 그 경우를 실패로 잡는다.
-4. `참고 갈림`이 선언된 3건(scope-out) 외에 남으면 **왜 갈렸는지 한 줄과 함께** `--record-reference`로 원장을 갱신하고 커밋한다.
+
+   > 케이스·단언 수는 **fixture에서 읽어 확인한다**. 이 줄의 숫자와 fixture가 어긋나면 fixture가 옳고 이 문서가 낡은 것이다 — 숫자를 맞추려고 fixture를 손대는 것이 정확히 2차 개정본이 유발했던 실패다. 확인 명령:
+   > `uv run python -c "import json;d=json.load(open('parity/fixtures/masking/masking.json'));print(len(d['cases']),sum(len(c.get('assert',[])) for c in d['cases']))"`
+4. **참고 갈림 0건이 현재 기대값이다.** 선언된 갈림(`reference_divergence`)은 지금 fixture에 **없다** — 2종 축소와 회피 차단이 Python에도 반영되면서 참고값이 요구사항과 일치하게 됐다. 갈림이 새로 남으면 **왜 갈렸는지 한 줄과 함께** `--record-reference`로 원장을 갱신하고 커밋한다. 그 갱신 실행은 종료 코드 4이고 판정이 아니다 — 판정은 플래그 없이 다시 돌린 결과로 한다.
 5. Kotlin 테스트가 fixture 파일을 **읽어** 입력을 얻는다 (하드코딩 금지).
+6. **자리표시자의 범주 문자열은 계약에서 온다.** Kotlin enum 이름이나 영문 코드를 직렬화하면 게이트가 계약 enum과 대조해 막는다(fail closed — 계약을 못 읽어도 막힌다).
 
 Phase 2 종료 조건은 이 도메인 하나로 닫히지 않는다. 선언한 도메인 전부가 종료 코드 0인 전체 게이트 실행을 내야 한다.
 
 ---
 
-## 7. 스탠드인 실증 (2026-08-12, 23 케이스)
+## 7. 스탠드인 실증 (3차 개정 재측정, 2026-08-12 — 31 케이스·단언 114개)
 
-Kotlin 구현이 없으므로 있을 법한 포팅을 Python 위에서 흉내 내 게이트에 넣었다.
+Kotlin 구현이 없으므로 있을 법한 포팅을 Python 위에서 흉내 내 게이트에 넣었다. 명령은 전부
+`--fixture parity/fixtures --actual <스탠드인> --only-domain masking`이다.
 
 | 스탠드인 | 흉내 낸 것 | 종료 코드 | 지목 |
 |---|---|---|---|
-| `scope2` — RRN·CARD만, 유니코드 `\d` | 요구사항대로 포팅 | **3** (통과) | 0건 |
+| `conformant` — 2범주 + 유니코드 `\d` + 뷰/좌표 대응 | **요구사항대로 포팅** | **3** (통과) | 0건 |
+| `scope2` — 위와 같되 보이지 않는 문자 미처리 | 판정 전의 "충분해 보이는" 포팅 | 1 | **8건** |
 | `java-default` — `\d`=`[0-9]` | 플래그 안 켠 포팅 | 1 | 3건 |
-| `python-verbatim` — 현재 Python 5범주 | **옛 기준의 "정답"** | 1 | 3건 (scope-out) |
-| `over` — 전문을 하나로 가림 | 과잉 마스킹 | 1 | 22건 |
-| `nomask` — 아무것도 안 함 | 마스킹 누락 | 1 | 12건 |
-| `bad-numbering` — 전역 카운터 | 번호 매김 오류 | 1 | 1건 |
+| `whitespace-fold` — 회피 차단을 공백 접기로 구현 | 과잉으로 넘어간 방어 | 1 | 2건 |
+| `over` — 전문을 하나로 가림 | 과잉 마스킹 | 1 | 30건 |
+| `nomask` — 아무것도 안 함 | 마스킹 누락 | 1 | 22건 |
+| `python-verbatim` — Python 참고값 그대로 | 값 동일성 시대의 "정답" | 3 | 0건 |
 
-세 번째 줄이 이번 개정의 요지다. **Python을 그대로 옮기면 게이트가 막는다.**
+두 번째 줄이 3차 개정의 요지다. **단언 전환 전에는 `scope2`가 통과했고, 그 산출물은 제어문자가 낀 주민등록번호를 평문으로 흘렸다.**
+
+마지막 줄은 2차 개정본과 뒤집혔다(1 → 3). 그때는 Python이 5범주였고 지금은 2종 축소 + 회피 차단이 반영됐기 때문이다. **"Python이 정답"이라는 뜻이 아니라 "이 시점의 Python이 이 성질 집합을 전부 만족한다"는 뜻이다.** 이 표를 인용할 때는 측정 시점을 함께 적는다.

@@ -58,7 +58,35 @@ ALLOWED_CATEGORIES = frozenset(
     }
 )
 
+# 마스킹 대상을 품은 합성 문서의 **정확한 분포**. 2026-08-12 범주 축소(5종 → 2종)
+# 전에는 합성 20건이 전부 여기 들어 있었다(마스킹 항목 31건). 전화번호·이메일이 범위에서
+# 빠지면서 2건만 남았고, 그 사실이 어떤 검사도 깨지 않은 채 지나갔다. 그래서 **줄어든
+# 결과 자체를 기대값으로 적어** 다음에 같은 일이 조용히 일어나지 못하게 한다.
+PII_BEARING_SYNTHETIC_DOCUMENTS: dict[str, frozenset[MaskCategory]] = {
+    "003": frozenset({MaskCategory.RRN}),  # 주민등록-사실조사
+    "011": frozenset({MaskCategory.CARD}),  # 문화누리카드
+}
+
+# 문서별 마스킹 경로 확인용 가짜 값. 저장하지 않고 사본에만 끼워 넣는다.
+MASKING_PROBES: tuple[tuple[MaskCategory, str], ...] = (
+    (MaskCategory.RRN, "900101-1234567"),
+    (MaskCategory.CARD, "1234-5678-9012-3456"),
+)
+
 DOCUMENTS: list[GoldenDocument] = load_documents(DOCUMENTS_DIR)
+
+
+def _with_probe(source_text: str, probe: str) -> str:
+    """본문 한가운데(첫 줄바꿈 뒤)에 가짜 개인정보를 끼운 사본을 만든다.
+
+    끝에 덧붙이면 앞뒤 문맥이 없어 경계 판정을 거의 시험하지 못한다. 문단 사이에 넣어야
+    실제 안내문에서 개인정보가 나타나는 자리와 같은 조건이 된다.
+    """
+    cut = source_text.find("\n")
+    head, tail = (
+        (source_text[: cut + 1], source_text[cut + 1 :]) if cut != -1 else (source_text, "")
+    )
+    return f"{head}담당자 확인용 {probe} 기재.\n{tail}"
 
 
 def test_문서가_최소_수량_이상_로드된다() -> None:
@@ -157,14 +185,25 @@ def test_어려운_표현이_문서마다_충분히_들어_있다() -> None:
 def test_합성_문서에_마스킹_범주_전체가_들어_있다() -> None:
     """마스킹 파이프라인 회귀를 잡으려면 개인정보가 든 문서가 필요하다 — 합성 문서의 몫이다.
 
-    2026-08-12 범주 축소(5종 → 2종) 전에는 "합성 문서는 **전부** 개인정보를 품는다"와
-    "골든셋 전체가 전 범주를 덮는다" 두 검사가 따로 있었다. 합성 20건 중 18건이 전화번호·
-    이메일로 앞 조건을 채우고 있었는데 그 두 범주가 범위에서 빠지면서, 마스킹 대상을
-    품은 합성 문서는 `003`(주민등록번호)·`011`(카드번호) 둘만 남았다. 나머지 18건에
-    주민등록번호·카드번호를 억지로 심으면 안내문으로서 부자연스러워지고 본문이 바뀌어
-    팩트 보존·통과율 추이까지 함께 흔들린다. 그래서 요구를 **문서마다**에서 **합성 집합
-    전체**로 옮겨 두 검사를 하나로 합쳤다 — 합성 집합이 전 범주를 덮으면 골든셋 전체도
-    덮으므로 옛 검사보다 좁아지지 않는다.
+    2026-08-12 범주 축소(5종 → 2종) 전에는 검사가 둘이었다.
+
+    - **A**: 합성 문서는 **하나하나가** 개인정보를 품는다
+    - **B**: 골든셋 **전체**의 범주 합집합이 전 범주를 덮는다
+
+    지금 이 검사는 **C**(합성 집합의 범주 합집합 = 전 범주)다. 합성 집합은 골든셋 전체의
+    부분집합이므로 **C ⟹ B**이고, 그 방향으로는 옛 검사보다 강화됐다. **그러나 A는
+    대체 없이 사라졌다** — 축소 전 합성 20건 중 18건은 전화번호·이메일로 A를 채우고
+    있었고 그 두 범주가 빠지면서 마스킹 대상을 품은 합성 문서가 `003`·`011` 둘만 남았다
+    (마스킹 항목 31건 → 2건, PII 보유 합성문서 20/20 → 2/20 실측).
+
+    A를 원형 그대로 되살릴 수는 없다. 18개 문서에 주민등록번호를 심으면 안내문으로서
+    부자연스러워지고 `source_text`가 바뀌어 팩트 보존·골든셋 통과율까지 함께 움직인다.
+    **그래서 A를 복원하는 대신 잃은 것을 명시적으로 만들었다** — 아래 두 검사가 그 몫이다.
+
+    - `test_마스킹_대상을_품은_합성_문서가_명시된_2건뿐이다`: 축소 결과를 값으로 못박아
+      "조용히 사라진 상태"를 없앤다
+    - `test_합성_문서마다_2종_마스킹_경로가_실제로_돈다`: 파일을 건드리지 않는 주입본으로
+      **문서별** 보장을 되살린다
 
     실수집 문서는 마스킹을 마친 뒤 편입되므로 0건이 정상이고, 여기서 요구하면 편입
     절차(마스킹 선행)를 지킨 문서가 오히려 걸린다. 플레이스홀더가 남아 있는지도
@@ -179,6 +218,62 @@ def test_합성_문서에_마스킹_범주_전체가_들어_있다() -> None:
         for item in mask_text(document.source_text).items
     }
     assert covered == set(MaskCategory)
+
+
+def test_마스킹_대상을_품은_합성_문서가_명시된_2건뿐이다() -> None:
+    """축소로 잃은 것을 값으로 못박는다 — 위 검사(C)가 삼킨 A의 소실을 눈에 보이게 한다.
+
+    C는 "합집합이 전 범주를 덮는가"만 묻기 때문에, 마스킹 대상을 품은 문서가 20건이든
+    2건이든 똑같이 통과한다. 그래서 축소가 통과 상태를 바꾸지 않은 채 지나갔다.
+    여기서는 **분포 자체**를 고정한다. 이 검사가 깨지는 두 방향이 모두 알림이다.
+
+    - 줄어드는 쪽: `003`·`011`에서 개인정보가 빠지면 골든셋에 남은 마지막 실사용 표본이
+      사라진다. C만으로는 한 범주가 통째로 빠져야 겨우 걸린다
+    - 늘어나는 쪽: 새 문서가 개인정보를 품고 들어오면 편입 절차(마스킹 선행)를 밟았는지
+      확인해야 한다. 조용히 늘지 못하게 막는다
+
+    기대값을 고칠 때는 왜 분포가 달라졌는지를 커밋 메시지에 남길 것.
+    """
+    found: dict[str, frozenset[MaskCategory]] = {}
+    for document in DOCUMENTS:
+        if not document.synthetic:
+            continue
+        categories = frozenset(item.category for item in mask_text(document.source_text).items)
+        if categories:
+            found[document.id] = categories
+    assert found == PII_BEARING_SYNTHETIC_DOCUMENTS
+
+
+def test_합성_문서마다_2종_마스킹_경로가_실제로_돈다() -> None:
+    """옛 검사 A의 **문서별** 보장을 파일을 건드리지 않고 되살린다.
+
+    `source_text`를 실제로 고치면 안 된다 — 본문이 바뀌면 required_facts·어려운 표현·
+    골든셋 통과율이 함께 움직여, 마스킹 회귀를 잡으려다 평가 기준을 흔든다. 대신 문서
+    문맥 한가운데에 가짜 2종을 끼워 넣은 **사본**을 만들어 문서마다 확인한다.
+
+    A가 실제로 지켜 주던 것은 "각 문서의 문맥에서 마스킹이 돈다"이지 "파일에 개인정보가
+    저장돼 있다"가 아니었다. 주입본은 그 성질을 그대로 유지하면서 저장은 하지 않는다.
+    복원(`restores_input`)까지 함께 보는 이유는 마스킹이 문맥을 과잉 잠식하면 내보내기가
+    잘못된 원문을 꽂기 때문이다.
+    """
+    failures: list[tuple[str, str, str]] = []
+    for document in DOCUMENTS:
+        if not document.synthetic:
+            continue
+        for category, probe in MASKING_PROBES:
+            text = _with_probe(document.source_text, probe)
+            result = mask_text(text)
+            if probe in result.masked_text:
+                failures.append((document.id, category.value, "미마스킹"))
+                continue
+            if category not in {item.category for item in result.items}:
+                failures.append((document.id, category.value, "범주 오판정"))
+            restored = result.masked_text
+            for item in result.items:
+                restored = restored.replace(item.placeholder, item.original.get_secret_value(), 1)
+            if restored != text:
+                failures.append((document.id, category.value, "복원 실패"))
+    assert failures == []
 
 
 def test_카테고리가_통제_어휘_안이다() -> None:

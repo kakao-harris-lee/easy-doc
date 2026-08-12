@@ -1,5 +1,6 @@
 package kr.easydoc.api.support
 
+import jakarta.servlet.http.HttpServletResponse
 import kr.easydoc.core.exceptions.ConfigurationException
 import kr.easydoc.core.exceptions.ConflictException
 import kr.easydoc.core.exceptions.DocumentExtractionException
@@ -53,6 +54,23 @@ class ErrorProbeController {
     /** 성공 경로가 `GET` 뿐인 자리 — 다른 메서드로 부르면 405 가 나와야 한다. */
     @GetMapping("/get-only")
     fun getOnly(): ResponseEntity<Void> = ResponseEntity.noContent().build()
+
+    /**
+     * 컨테이너의 **ERROR 디스패치**를 강제로 태우는 자리.
+     *
+     * `sendError` 를 부르면 서블릿 컨테이너가 응답을 직접 만들지 않고 `/error` 로 두 번째
+     * 디스패치를 돌린다. 이 경로가 H-1 의 후보 원인 ⓐ 가 지목한 자리다 —
+     * `OncePerRequestFilter.shouldNotFilterErrorDispatch()` 기본값이 `true` 라 전역 필터가
+     * **여기서만** 돌지 않을 수 있다. 그 상태의 증상은 "이 응답에만 헤더가 없다" 하나뿐이라
+     * 다른 테스트로는 드러나지 않는다.
+     *
+     * MockMvc 로는 재현되지 않는다(디스패치가 한 번뿐이다). 실제 컨테이너를 띄우는
+     * [kr.easydoc.api.PrivateResponseHeadersReachTest] 가 이 자리를 쓴다.
+     */
+    @GetMapping("/send-error")
+    fun sendError(response: HttpServletResponse) {
+        response.sendError(HttpServletResponse.SC_SERVICE_UNAVAILABLE)
+    }
 
     /** 요청 본문을 읽는 자리 — 깨진 JSON 이면 `HttpMessageNotReadableException` 이 난다. */
     @PostMapping("/body")

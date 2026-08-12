@@ -57,6 +57,16 @@ Python 검증기를 돌려** 판정한다. `verification.actual_file`(Kotlin 산
         재는 것이다 — "가려졌는가"만 재면 전문을 통째로 가린 구현이 만점을 받는다. 그래서
         도메인마다 `under`(덜 한 것을 잡는다)와 `over`(더 한 것을 잡는다) 방향의 검사가
         **둘 다** 있어야 하고, 없으면 구조 결함으로 막는다.
+    보장한다 (5) 마스킹 범주 문자열이 **API 계약과 같다.** 범주는 자리표시자에 그대로 박히는
+        복원 키이고 React가 화면에 그대로 렌더링하는 문구다. 정본은 이 저장소가 아니라
+        `contracts/easy-doc-v1.yaml`의 `MaskedItemResponse` 이며, 비교기는 그 파일을 직접
+        읽어 fixture 선언과 대조한다. 예전에는 fixture가 넘긴 `categories` 인자와만
+        대조해서, 생성기가 `["RRN","CARD"]`로 흘러가면 게이트는 통과하고 API는 계약을
+        위반했다. 계약을 못 읽으면 통과가 아니라 **불충족**이다(fail closed).
+    보장한다 (6) 참고 갈림이 **선언 한 줄로 면제되지 않는다.** `reference_divergence:
+        "expected"` 는 원장 기록을 면제하지 않고 검사를 **하나 더한다**(갈림이 사라지면
+        실패). 예전에는 그 선언이 원장 기록과 대조를 통째로 건너뛰어, 갈림의 내용이 바뀌어도
+        아무도 몰랐다. 원장에 남았지만 이번 관측 범위에 없는 **낡은 항목**도 함께 보고한다.
 
     보장하지 못한다 (a) **그 산출물을 정말 Kotlin이 만들었는가.** fixture가 키와 시크릿을
         공개하므로 같은 값을 Python으로도 만들 수 있다. `runtime` 필드는 선언일 뿐이고
@@ -112,6 +122,16 @@ Python 검증기를 돌려** 판정한다. `verification.actual_file`(Kotlin 산
         수 없다. 3은 "이 범위에서는 문제 없음, 그러나 게이트는 열린 채"라는 뜻이다.
         부분 검증이라도 불일치가 있으면 1, 미검증이 남으면 2가 그대로 나간다 —
         3은 그 두 검사를 모두 통과한 뒤에만 도달한다.
+    4 = `--record-reference` 가 **원장을 바꾼** 실행. 판정이 아니라 기록이다.
+        **왜 새로 만들었나.** 갈림 23건을 방금 침묵시킨 실행과 애초에 0건이던 실행이 둘 다
+        3을 냈다. 자동화는 종료 코드만 읽으므로 두 실행이 구분되지 않았고, "무엇을
+        침묵시켰는지"는 stdout에만 남았다 — 이 파일이 3을 정의하며 세운 원칙("종료 코드는
+        자동화가 읽는 유일한 계약이고 stdout 문구는 사람에게만 유효하다")을 자기가 어긴
+        자리다. 이제 원장이 바뀌면 4로 끝나고 그 실행으로는 어떤 게이트도 닫지 못한다.
+        기록 모드라도 **바뀐 것이 없으면** 0/2/3의 정상 경로로 떨어진다. 그때는 관측이
+        커밋된 원장과 정확히 같다는 뜻이라 플래그 없이 돌린 실행과 판정이 정의상 같다.
+        **CI 영향 없음** — `.github/workflows/ci.yml` 은 이 플래그를 주지 않고(원장 갱신은
+        사람이 커밋해 리뷰에 올려야 한다), 0과 3만 통과로 읽고 나머지는 실패로 본다.
     사용법 오류(인자 누락·알 수 없는 도메인)도 1이다. argparse 기본값 2를 쓰면 "인자를
     잘못 줬다"와 "미검증이 남았다"가 같은 코드로 나가 호출자가 구분할 수 없다.
 """
@@ -142,7 +162,9 @@ from dump_parity_fixtures import (  # noqa: E402 — sys.path 주입 뒤에만 i
     REPO_ROOT,
     STATUS_PENDING,
     VERIFIERS,
+    ContractError,
     VerificationOutcome,
+    mask_contract,
     write_proof_record,
 )
 
@@ -217,6 +239,13 @@ MAX_FLOAT_TOL = 1e-3
 #: 부분 검증 성공. 0(전체 게이트 통과)과 반드시 구분되는 별도 코드다 — 모듈 docstring의
 #: "종료 코드" 절 참고. 자동화가 읽는 계약은 stdout 문구가 아니라 이 값 하나뿐이다.
 EXIT_PARTIAL_OK = 3
+
+#: `--record-reference` 가 원장을 **바꾼** 실행. 판정이 아니라 기록이다.
+#: 왜 별도 코드인가 — 예전에는 갈림 23건을 방금 침묵시킨 실행과 애초에 0건이던 실행이 둘 다
+#: 3(부분 검증 통과)을 냈다. 자동화는 종료 코드만 읽으므로 두 실행을 구분할 수 없었고,
+#: "무엇을 침묵시켰는지"는 stdout에만 남았다. CI는 이 플래그를 주지 않으므로 4가 CI 계약을
+#: 바꾸지 않는다(`.github/workflows/ci.yml`은 0과 3만 통과로 읽고 나머지를 실패로 본다).
+EXIT_RECORDED = 4
 
 
 def _float_tolerance(raw: str) -> float:
@@ -480,13 +509,32 @@ def check_restores_input(call: CheckCall) -> list[str]:
 
 
 def check_placeholder_scheme(call: CheckCall) -> list[str]:
-    """자리표시자 형식·범주·번호 규칙.
+    """자리표시자 형식·범주·번호 규칙. **범주 집합의 정본은 API 계약이다.**
 
-    `[[{범주}{번호}]]`이고, 범주는 선언된 집합 안이며, 번호는 **범주별로 1부터 등장 순서**다.
-    `items`의 순서·범주·자리표시자도 본문 등장 순서와 짝이 맞아야 한다. 번호가 어긋나면
-    복원이 다른 원문을 꽂으므로 개인정보 축에서 가장 직접적인 결함이다.
+    `[[{범주}{번호}]]`이고, 범주는 계약이 못박은 enum 안이며, 번호는 **범주별로 1부터 등장
+    순서**다. `items`의 순서·범주·자리표시자도 본문 등장 순서와 짝이 맞아야 한다. 번호가
+    어긋나면 복원이 다른 원문을 꽂으므로 개인정보 축에서 가장 직접적인 결함이다.
+
+    예전에는 범주를 **fixture가 스스로 넘긴 `categories` 인자**와만 대조했다. 그 인자는
+    생성기가 써 넣으므로 생성기가 선언한 값을 생성기가 만든 fixture로 검사하는 구조였고,
+    생성기가 `["RRN","CARD"]`로 흘러가면 게이트는 통과하고 API는 계약을 위반했다(X-12/S-1,
+    재현으로 확인: 종료 코드 3 = 통과). 이제 계약을 직접 읽어 **fixture 선언과 계약을 먼저
+    대조**하고, 판정에는 계약 쪽 값을 쓴다.
     """
-    categories = [str(name) for name in call.arg("categories", [])]
+    try:
+        contract = mask_contract()
+    except ContractError as exc:
+        # 계약을 못 읽는 상태는 "범주를 검사하지 않는 상태"와 같다. 통과시키지 않는다.
+        return [f"계약을 읽을 수 없어 범주를 판정할 수 없다 — {exc}"]
+    categories = list(contract.categories)
+    declared = [str(name) for name in call.arg("categories", [])]
+    if declared and declared != categories:
+        return [
+            f"fixture가 선언한 범주 {declared} 가 계약({contract.source})의 enum "
+            f"{categories} 와 다르다 — 범주 문자열은 표기가 아니라 자리표시자에 그대로 박히는 "
+            "복원 키다. 계약을 고칠 일이면 contract-keeper가, 생성기가 흘러간 것이면 "
+            "생성기가 계약을 읽도록 되돌린다"
+        ]
     masked = at_path(call.actual, str(call.arg("text_field", "masked_text")))
     items = at_path(call.actual, str(call.arg("items_field", "items")))
     if not isinstance(masked, str) or not isinstance(items, list):
@@ -499,8 +547,16 @@ def check_placeholder_scheme(call: CheckCall) -> list[str]:
         category = next((name for name in categories if body.startswith(name)), None)
         if category is None:
             failures.append(
-                f"{token!r} 의 범주가 선언 집합 {categories} 에 없다 — "
+                f"{token!r} 의 범주가 계약 enum {categories} 에 없다 — "
                 "범주 문자열이 곧 자리표시자이자 복원 키다"
+            )
+            continue
+        if not re.fullmatch(contract.placeholder_pattern, token):
+            # 계약은 범주뿐 아니라 자리표시자 **형태**도 못박았다. 형태가 갈리면 React가
+            # 그대로 렌더링하는 문구와 내보내기 복원이 함께 어긋난다.
+            failures.append(
+                f"{token!r} 가 계약의 placeholder 패턴 "
+                f"`{contract.placeholder_pattern}` 와 맞지 않는다"
             )
             continue
         number = body[len(category) :]
@@ -751,6 +807,12 @@ class FileResult:
     considered: int = 0
     #: 이번 실행에서 관측한 참고 갈림 상태 (원장 갱신용).
     ledger: dict[str, dict[str, Any]] = field(default_factory=dict)
+    #: 원장 대조에서 나온 문제. **`problems` 와 따로 담는다** — 평소에는 불충족으로 합류하지만
+    #: `--record-reference` 실행에서는 "원장이 이렇게 바뀐다"의 사유 목록이 되기 때문이다.
+    #: 두 모드가 같은 계산을 쓰므로 "기록 모드에서만 조용해지는" 자리가 생기지 않는다.
+    ledger_problems: list[str] = field(default_factory=list)
+    #: 참고값이 있어 원장 대조 범위에 든 케이스 id. 낡은 원장 항목 판정의 기준이다.
+    referenced: set[str] = field(default_factory=set)
 
 
 def domain_of(fixture_path: Path, fixture: dict[str, Any]) -> str:
@@ -1116,10 +1178,23 @@ def reference_problems(
     ledger_root: Path,
     domain: str,
 ) -> list[str]:
-    """원장과 이번 관측을 대조한다. 닫는 방법은 언제나 `--record-reference`다."""
+    """원장과 이번 관측을 대조한다. 닫는 방법은 언제나 `--record-reference`다.
+
+    `reference_divergence: "expected"` 선언은 **면제가 아니다.** 예전에는 그 선언이 붙은
+    케이스가 원장 기록과 이 대조를 통째로 건너뛰어(`continue`가 `ledger[...] = observed`
+    앞에 있었다), 갈림의 **내용이 바뀌어도** 아무도 몰랐다 — 한 단어를 붙이면 불일치 보고가
+    사라지는 자기 선언식 면제였다(X-10/S-2). 지금 그 선언이 하는 일은 **더하기뿐**이다:
+    갈림이 사라지면 실패를 하나 추가한다. 원장 요구는 그대로 남는다.
+    """
     closing = (
         f"  - 닫는 방법: `--record-reference` 로 `{ledger_file(ledger_root, domain)}` 를 "
         "갱신하고 그 diff를 리뷰에 올린다 (구현을 되돌리라는 뜻이 아니다)"
+    )
+    declared_note = (
+        ' (fixture가 `reference_divergence: "expected"` 로 선언했더라도 원장 기록은 '
+        "면제되지 않는다 — 선언은 갈림이 사라졌을 때의 가드일 뿐이다)"
+        if entry.get("declared")
+        else ""
     )
     if not isinstance(recorded, dict):
         if entry["status"] == "agree":
@@ -1127,19 +1202,53 @@ def reference_problems(
         return [
             f"- `{case_id}` **기록되지 않은 참고 갈림** — Python 참고값과 다르다 "
             f"(첫 차이 {entry['first_diff_path']}). 차이 자체는 차단 사유가 아니지만 "
-            f"기록 없이 통과시키지 않는다\n{closing}"
+            f"기록 없이 통과시키지 않는다{declared_note}\n{closing}"
         ]
     if recorded.get("status") != entry["status"]:
         return [
             f"- `{case_id}` **원장이 낡았다** — 기록 `{recorded.get('status')}` / 관측 "
             f"`{entry['status']}`. 갈림이 생겼거나 사라졌다\n{closing}"
         ]
+    if bool(recorded.get("declared")) != bool(entry.get("declared")):
+        return [
+            f"- `{case_id}` **갈림 선언이 바뀌었다** — 기록 "
+            f"`declared={bool(recorded.get('declared'))}` / 관측 "
+            f"`declared={bool(entry.get('declared'))}`. fixture에 "
+            '`reference_divergence: "expected"` 가 붙거나 빠졌다는 뜻이고, 그 변경은 '
+            f"원장 diff로 리뷰에 올라가야 한다\n{closing}"
+        ]
     if entry["status"] == "diverge" and recorded.get("actual_sha256") != entry["actual_sha256"]:
         return [
             f"- `{case_id}` **갈림의 내용이 바뀌었다** — 기록된 산출물 해시와 다르다 "
-            f"(첫 차이 {entry['first_diff_path']})\n{closing}"
+            f"(첫 차이 {entry['first_diff_path']}){declared_note}\n{closing}"
         ]
     return []
+
+
+def stale_ledger_problems(
+    domain: str, recorded: dict[str, Any], referenced: set[str], ledger_root: Path
+) -> list[str]:
+    """원장에는 있는데 이번 관측 범위에 **없는** 항목을 찾는다.
+
+    대조 루프는 fixture 케이스만 돈다. 그래서 fixture에서 사라졌거나 `reference`를 잃은
+    케이스의 원장 항목은 다시 방문되지 않고 조용히 남았다(X-11). 남은 항목은 "이 갈림은
+    검토됐다"는 인상을 계속 주면서 실제로는 아무것도 가리키지 않는다.
+
+    호출자는 **도메인 전체를 판정한 실행에서만** 이것을 부른다 — `--only` 로 범위를 좁힌
+    실행에서 부르면 돌리지 않은 케이스가 전부 낡은 항목으로 보인다.
+    """
+    stale = sorted(set(recorded) - referenced)
+    if not stale:
+        return []
+    shown = ", ".join(stale[:MAX_REPORTED_CASE_DIFFS])
+    return [
+        f"- **낡은 원장 항목 {len(stale)}건** — `{ledger_file(ledger_root, domain)}` 에 있는데 "
+        f"이번 fixture의 참고 대조 범위에 없다: {shown}"
+        f"{' 외' if len(stale) > MAX_REPORTED_CASE_DIFFS else ''}\n"
+        "  - 케이스가 지워졌거나 `reference` 가 사라졌다는 뜻이다. 남겨 두면 '검토된 갈림'처럼 "
+        "보이면서 아무것도 가리키지 않는다\n"
+        f"  - 닫는 방법: `--record-reference` 로 원장을 다시 쓰고 그 diff를 리뷰에 올린다"
+    ]
 
 
 def compare_file(
@@ -1148,7 +1257,6 @@ def compare_file(
     *,
     ledger_cases: dict[str, Any] | None = None,
     ledger_root: Path = DEFAULT_LEDGER,
-    record: bool = False,
 ) -> FileResult:
     fixture = pair.fixture
     actual_doc = load(pair.actual_path)
@@ -1252,28 +1360,29 @@ def compare_file(
         agrees = equal(want, got, tolerance)
         if not agrees:
             result.diverged += 1
-        if case.get("reference_divergence") == "expected":
-            if agrees:
-                result.problems.append(
-                    f"- `{case_id}` **의도한 갈림이 사라졌다** — fixture는 이 케이스가 Python "
-                    "참고값과 갈릴 것이라 선언했는데 같은 값이 나왔다. 요구사항이 바뀌었거나 "
-                    "선언이 낡았다(Python 쪽이 따라 바뀐 경우 포함)\n"
-                    f"  - 닫는 방법: fixture를 재생성하고 선언이 여전히 맞는지 확인한다\n"
-                    + reproduce
-                )
-            continue
+        declared = case.get("reference_divergence") == "expected"
+        if declared and agrees:
+            result.problems.append(
+                f"- `{case_id}` **의도한 갈림이 사라졌다** — fixture는 이 케이스가 Python "
+                "참고값과 갈릴 것이라 선언했는데 같은 값이 나왔다. 요구사항이 바뀌었거나 "
+                "선언이 낡았다(Python 쪽이 따라 바뀐 경우 포함)\n"
+                f"  - 닫는 방법: fixture를 재생성하고 선언이 여전히 맞는지 확인한다\n" + reproduce
+            )
+        # **선언 여부와 무관하게** 원장에 기록하고 대조한다. 예전에는 여기서 `continue` 로
+        # 빠져나가 선언된 케이스가 원장·`reference_problems()` 밖에 있었다(X-10/S-2).
         first_path = "" if agrees else first_difference(want, got, tolerance).split(":")[0]
         observed: dict[str, Any] = {
             "status": "agree" if agrees else "diverge",
+            "declared": declared,
             "first_diff_path": first_path,
             "reference_sha256": digest(want),
             "actual_sha256": digest(got),
         }
+        result.referenced.add(case_id)
         result.ledger[case_id] = observed
-        if not record:
-            result.problems += reference_problems(
-                case_id, observed, (ledger_cases or {}).get(case_id), ledger_root, pair.domain
-            )
+        result.ledger_problems += reference_problems(
+            case_id, observed, (ledger_cases or {}).get(case_id), ledger_root, pair.domain
+        )
     if pending_spec:
         result.pendings.append(
             f"- **{pending_spec}건 미검증** — 이 도메인은 `spec_status=pending` 이다. "
@@ -1389,7 +1498,8 @@ def main() -> int:
         action="store_true",
         help=(
             "이번 실행에서 관측한 참고 갈림을 원장에 기록한다. 갈림을 **승인**하는 것이 아니라 "
-            "리뷰에 올릴 diff를 만드는 것이다 — 기록 자체가 판정을 바꾸지는 않는다"
+            "리뷰에 올릴 diff를 만드는 것이다. 원장이 바뀌면 종료 코드 4로 끝나고 그 실행으로는 "
+            "게이트를 닫지 못한다 — 판정은 이 플래그 **없이** 다시 돌린 결과로 한다"
         ),
     )
     args = parser.parse_args()
@@ -1457,6 +1567,13 @@ def main() -> int:
     total_considered = 0
     total_diverged = 0
     recorded: dict[str, dict[str, dict[str, Any]]] = {}
+    referenced: dict[str, set[str]] = {}
+    #: 원장 대조 결과. 평소에는 불충족으로 합류하고, `--record-reference` 에서는 "원장이
+    #: 이렇게 바뀐다"의 사유가 된다. **두 모드가 같은 계산을 쓴다** — 기록 모드에서만
+    #: 조용해지는 자리를 만들지 않기 위해서다.
+    ledger_findings: dict[str, list[str]] = {}
+    #: 도메인 전체를 판정했는가(결과 파일이 다 있었는가). 낡은 원장 항목 판정의 전제다.
+    fully_compared: dict[str, bool] = {}
     for pair in pairs:
         problems = structural_problems(pair, check_location=directory_mode)
         if pair.domain in BUILDERS:
@@ -1464,13 +1581,13 @@ def main() -> int:
             problems += provenance_problems(pair)
         if not pair.actual_path.exists():
             problems.append(f"- **Kotlin 결과 파일 없음**: {pair.actual_path}")
+            fully_compared[pair.domain] = False
         else:
             result = compare_file(
                 pair,
                 args.only,
                 ledger_cases=load_ledger(args.ledger, pair.domain),
                 ledger_root=args.ledger,
-                record=args.record_reference,
             )
             problems += result.problems
             total_checked += result.checked
@@ -1481,11 +1598,15 @@ def main() -> int:
             total_diverged += result.diverged
             total_pending += len(result.pendings)
             recorded.setdefault(pair.domain, {}).update(result.ledger)
+            referenced.setdefault(pair.domain, set()).update(result.referenced)
+            fully_compared.setdefault(pair.domain, True)
+            if result.ledger_problems:
+                ledger_findings.setdefault(pair.domain, []).extend(result.ledger_problems)
             if result.pendings:
                 pending_sections.append(
                     f"## {pair.domain} · {pair.fixture_path.name}\n\n" + "\n".join(result.pendings)
                 )
-            if not problems and not result.pendings:
+            if not problems and not result.ledger_problems and not result.pendings:
                 judged = f"성질 {result.judged}건/단언 {result.assertions}개"
                 shown = judged if pair.mode == MODE_SPEC else f"값 대조 {result.checked}건"
                 print(f"[충족] {pair.domain} · {pair.fixture_path.name} — {shown}")
@@ -1495,11 +1616,33 @@ def main() -> int:
                 f"## {pair.domain} · {pair.fixture_path.name}\n\n" + "\n".join(problems)
             )
 
+    # 낡은 원장 항목은 **도메인 단위**로 본다. 한 도메인에 fixture 파일이 여러 개일 수 있고
+    # 원장은 도메인마다 하나이기 때문이다. 범위를 좁힌 실행(`--only`)이나 결과 파일이 없어
+    # 대조하지 못한 도메인에서는 보지 않는다 — 돌리지 않은 케이스가 낡은 항목으로 보인다.
+    if args.only is None:
+        for domain in sorted(referenced):
+            if not fully_compared.get(domain, False):
+                continue
+            stale = stale_ledger_problems(
+                domain, load_ledger(args.ledger, domain), referenced[domain], args.ledger
+            )
+            if stale:
+                ledger_findings.setdefault(domain, []).extend(stale)
+
+    ledger_changed = sum(len(found) for found in ledger_findings.values())
     if args.record_reference:
         for domain, entries in sorted(recorded.items()):
             target = write_ledger(args.ledger, domain, entries)
             diverged = sum(1 for entry in entries.values() if entry["status"] == "diverge")
             print(f"[원장 기록] {target} — {len(entries)}건 중 갈림 {diverged}건")
+        for domain, found in sorted(ledger_findings.items()):
+            print(f"[원장 변경] {domain} — {len(found)}건")
+            for line in found:
+                print(f"  {line.splitlines()[0]}")
+    else:
+        for domain, found in sorted(ledger_findings.items()):
+            sections.append(f"## {domain} · 참고 갈림 원장\n\n" + "\n".join(found))
+            total_problems += len(found)
 
     report = ""
     if sections:
@@ -1569,6 +1712,18 @@ def main() -> int:
         detail = f" — 없는 도메인: {', '.join(missing)}" if missing else ""
         print(f"[불충족] {summary}{detail}")
         return 1
+    if args.record_reference and ledger_changed:
+        # 방금 원장을 바꾼 실행은 **판정이 아니다.** 예전에는 갈림 23건을 침묵시킨 실행과
+        # 애초에 0건이던 실행이 둘 다 종료 코드 3을 냈다 — 이 파일이 스스로 세운 원칙
+        # ("종료 코드는 자동화가 읽는 유일한 계약")을 자기가 어긴 자리였다(X-09).
+        # 바뀐 것이 없으면 아래 정상 경로로 떨어진다. 그때는 관측이 커밋된 원장과 정확히
+        # 같다는 뜻이고, 플래그 없이 돌린 실행과 판정이 **정의상 동일**하다.
+        print(
+            f"원장 기록으로 종료(판정 아님): {summary} — 원장 변경 {ledger_changed}건. "
+            "이 실행은 게이트를 닫지 않는다. 원장 diff를 커밋해 리뷰에 올린 뒤, "
+            "`--record-reference` **없이** 다시 돌린 결과로 판정한다 (종료 코드 4)"
+        )
+        return EXIT_RECORDED
     if total_pending:
         print(f"[미검증] {summary} — 충족으로 보고하지 않는다 (종료 코드 2)")
         return 2
