@@ -436,25 +436,44 @@ class _Recording:
         return written
 
 
-def test_기준선_조건은_리포트가_아니라_평가에서_온다(
+def _judge_at(fidelity: float, *, low: list[str]) -> JudgeObservation:
+    """구분 가능한 judge 관측 하나 — 어느 실행의 것인지 값으로 알아볼 수 있게 만든다."""
+    return JudgeObservation(
+        scored=len(harness.DOCUMENTS),
+        documents=len(harness.DOCUMENTS),
+        fidelity_mean=fidelity,
+        readability_mean=fidelity,
+        low_fidelity_ids=low,
+    )
+
+
+def test_남의_리포트가_최신이면_judge_를_가져오지_않고_거부한다(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """**6번째 지적을 구조로 닫는 자리** — 기록되는 조건(observed_models)은 `evaluation` 에서
-    오고, 최신 리포트의 `context` 는 기준선에 새지 않는다.
+    """**7번째 지적** — 리포트에서 무언가를 가져오려면 그 리포트가 이번 평가의 것이어야 한다.
 
-    예전 `is` 검사는 `report.measurement is evaluation.measurement` 로 **측정치**를 묶었지만
-    기록에 실리는 것은 `report.context` 였다. `build_report(result, 다른_outcomes)` 는 측정치
-    동일성을 지키면서 남의 observed 를 context 에 실어, 검사를 통과한 채 남의 모델 증거가
-    기준선에 실렸다 — 측정치는 이번 평가에서, 조건은 다른 실행에서.
+    6번째 지적(조건이 남의 실행에서 오던 것)은 `observed_models` 유도를 `evaluation` 으로
+    옮겨 구조로 닫혔다. 그런데 judge 는 LLM 이 필요해 무-LLM·결정적인 `RuleEvaluation` 에
+    담을 수 없어 여전히 `golden_report.latest()` 에서 온다. `latest()` 는 **마지막으로
+    세워진** 리포트지 이번 평가의 리포트가 아니다 — 배선 테스트처럼 `build_report` 가 여러 번
+    불리는 프로세스에서는 남의 실행 리포트가 최신일 수 있다.
 
-    지금은 `build_report` 가 조건을 따로 받지 않고(`test_build_report_는_조건을_따로_받지_않는다`),
-    기록 경로가 `report.context` 를 읽지 않고 `evaluation.observed_models` 를 쓴다. 그래서
-    아래처럼 **남의 실행 리포트를 최신으로 세워도**(수치는 같고 조건만 다르다) 기준선의
-    observed 는 언제나 이번 평가의 것이다. 남의 조건이 실리는 상태를 검사로 막는 게 아니라
-    **만들 수 없다.**
+    고치기 전 이 입력의 실측: 기준선 본문이 `observed_models=['this-run']`(이번 실행)인 채
+    `judge_observed` 만 stale 실행의 값이었다 — **수치·조건은 이번 실행, judge 관측만 다른
+    실행**인 기준선이다.
+
+    judge 는 비차단축이지만 잘못 기록되면 그 파일이 거짓말을 하고, `baseline_changes` 는
+    judge 관측이 붙거나 빠지는 것도 변경으로 세므로 기록 실행의 판정에도 닿는다. 그래서
+    judge 만 `None` 으로 떨어뜨리지 않고 **기록 자체를 거부한다** — 조용히 빼면 섞임이 숨고,
+    남는 파일이 "judge 를 재지 않은 실행"과 구분되지 않는다.
+
+    조건이 리포트에서 새지 않는다는 6번째 지적의 성질은 그대로다. 그 성질은 이제 통로 부재로
+    고정되고(`test_build_report_는_조건을_따로_받지_않는다`,
+    `test_평가가_관측_모델을_측정치와_함께_싣는다`), 정상 경로에서 실제로 이번 실행의 조건이
+    실리는 것은 `test_같은_평가로_세운_리포트는_그대로_기록된다` 가 본다.
     """
     evaluation = evaluate_all(_preserving_outcomes("this-run"), harness.DOCUMENTS)
-    # 남의 실행 리포트를 최신으로 세운다 — 수치는 같고 조건(observed)만 다르다.
+    # 남의 실행 리포트를 최신으로 세운다 — 수치는 같고 조건(observed)·judge 만 다르다.
     stale = evaluate_all(_preserving_outcomes("stale-model-from-another-run"), harness.DOCUMENTS)
     harness.build_report(stale)
     latest = golden_report.latest()
@@ -464,18 +483,68 @@ def test_기준선_조건은_리포트가_아니라_평가에서_온다(
     assert latest.context.observed_models == ["stale-model-from-another-run"], (
         "전제 — 조건만 다르다"
     )
+    latest.judge = _judge_at(1.25, low=["stale-run-doc"])  # 남의 실행에서 채점된 관측
 
     path = tmp_path / "baseline.json"
     recording = _Recording(monkeypatch, evaluation, path)
-    # 기록 실행은 판정이 아니므로 실패로 끝나는 것이 정상이다 — 중요한 것은 무엇이 실렸는가다.
+    with pytest.raises(AssertionError, match="이번 평가의 것이 아니다"):
+        harness.test_규칙_기반_통과율이_직전_기록보다_낮지_않다(evaluation)
+    assert recording.bodies == [], "남의 리포트인데 본문을 조립했다 — 조립 전에 막아야 한다"
+    assert recording.attempts == [], "write 를 시도했다"
+    assert recording.written == [], "남의 judge 가 실린 기준선을 썼다"
+    assert not path.exists()
+
+
+def test_같은_평가의_리포트에_붙은_judge_는_그대로_기록된다(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """**정상 경로는 judge 를 싣는다.** 거부되는 쪽만 보면 통로를 잠가 버린 것과 구분되지 않는다.
+
+    실제 실행의 순서가 이것이다 — `evaluation` fixture 가 리포트를 세우고,
+    judge 테스트가 그 리포트에 관측을 붙이고(`report.judge = ...`), 하한선 테스트가 기록한다.
+    출처 검사는 이 경로를 건드리지 않아야 한다.
+    """
+    evaluation = evaluate_all(_preserving_outcomes("this-run"), harness.DOCUMENTS)
+    harness.build_report(evaluation)
+    report = golden_report.latest()
+    assert report is not None
+    observation = _judge_at(4.5, low=[])
+    report.judge = observation  # judge 테스트가 이번 실행의 리포트에 붙이는 자리
+
+    path = tmp_path / "baseline.json"
+    recording = _Recording(monkeypatch, evaluation, path)
     with pytest.raises(AssertionError, match="기록 실행"):
         harness.test_규칙_기반_통과율이_직전_기록보다_낮지_않다(evaluation)
-    assert len(recording.written) == 1, "결속된 조건인데 기록되지 않았다"
+    assert len(recording.written) == 1, "결속된 리포트인데 기록되지 않았다"
     body = recording.written[0]
-    assert body["context"]["observed_models"] == ["this-run"], (
-        "남의 리포트가 최신이어도 기준선 조건은 이번 평가에서 와야 한다"
+    assert body["judge_observed"] == observation.model_dump(), (
+        "이번 평가의 리포트에 붙은 judge 는 그대로 실려야 한다"
     )
-    assert body["measurement"] == evaluation.measurement.model_dump()
+    assert body["context"]["observed_models"] == ["this-run"]
+    assert path.exists()
+
+
+def test_judge_를_재지_않은_실행도_기준선을_기록한다(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """부수 경로 — **judge 는 비차단이다.** 키가 없어 judge 테스트가 skip 되거나 실패해서
+    `report.judge` 가 비어도 기준선은 기록돼야 한다.
+
+    출처 검사가 여기까지 막으면 과잉이다. judge 자격 증명 하나 때문에 두 차단축의 기록이
+    막히는 것은 `judge_provider` fixture 가 실패가 아니라 skip 인 이유와 같은 자리다.
+    """
+    evaluation = evaluate_all(_preserving_outcomes("this-run"), harness.DOCUMENTS)
+    harness.build_report(evaluation)
+    report = golden_report.latest()
+    assert report is not None
+    assert report.judge is None, "전제 — judge 를 재지 않은 상태(키 없음 → skip)"
+
+    path = tmp_path / "baseline.json"
+    recording = _Recording(monkeypatch, evaluation, path)
+    with pytest.raises(AssertionError, match="기록 실행"):
+        harness.test_규칙_기반_통과율이_직전_기록보다_낮지_않다(evaluation)
+    assert len(recording.written) == 1, "judge 가 없다는 이유로 기록이 막혔다 — 과잉이다"
+    assert recording.written[0]["judge_observed"] is None
     assert path.exists()
 
 
