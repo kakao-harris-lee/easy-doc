@@ -393,12 +393,34 @@ def test_규칙_기반_통과율이_직전_기록보다_낮지_않다(evaluation
         # 조건이 비어 있는 것보다 나쁘다. **빈 조건은 `write_baseline`의 fail-closed
         # 가드가 막지만(provider·observed_models·effort), 남의 조건은 전부 채워져 있어
         # 그럴듯하고 그대로 통과한다.** 그래서 여기서 결속 자체를 먼저 본다.
-        if report is not None and report.measurement != evaluation.measurement:
+        #
+        # **비교는 `is`다 — 값 동등성으로는 결속이 증명되지 않는다.** `Measurement`는
+        # pydantic 모델이라 `!=`가 필드 **값** 비교인데, 통과율은 정수 쌍
+        # (`passed`/`documents`) 셋뿐이라 **두 실행이 같은 수치를 내는 일이 흔하다** —
+        # 특히 배선 테스트가 실제 코퍼스 수치를 흉내 내면 그대로 겹친다. 겹치면 값 검사는
+        # 통과하고 **다른 실행의 모델 증거가 그대로 기준선에 실린다.** 값 검사가 보는 것은
+        # 결속이 아니라 *수치가 우연히 같은지*다(2026-08-12 실측: 수치는 이번 평가와 같은
+        # 0/56이고 조건만 `stale-model-from-another-run`인 리포트가 값 검사를 그대로
+        # 통과해 임시 경로에 기록됐다 — 남의 모델 증거를 실은 채로).
+        #
+        # 그래서 묻는 것은 "값이 같은가"가 아니라 **"그 객체가 이번 평가에서 왔는가"**다.
+        # `is`가 성립하는 근거는 실측이다 — pydantic v2는 `revalidate_instances`가
+        # 기본값(`'never'`)이면 중첩 모델 필드에 **넘긴 인스턴스를 그대로 보관한다.**
+        # `build_report`가 `measurement=result.measurement`로 넘긴 바로 그 객체가
+        # `report.measurement`로 되돌아오므로, `is`는 "이 리포트는 이 평가로 세워졌다"를
+        # 증명한다. 그 전제 자체는 `tests/golden/test_floor_gate_wiring.py`가 따로 고정한다
+        # — 전제가 깨지면 유효한 실행까지 거부되는데(fail-closed라 안전한 방향이지만
+        # 원인이 안 보인다) 그때 원인을 말해 줄 자리가 필요해서다.
+        #
+        # 실행 토큰(uuid4 등)을 새로 싣지 않은 이유: 필드를 늘리지 않아도 동일성이
+        # 성립하고, 토큰을 만들어 두면 **그 토큰을 실수로 재사용하는 경로가 또 생긴다.**
+        if report is not None and report.measurement is not evaluation.measurement:
             raise AssertionError(
                 "기준선을 쓰지 않는다 — 기록할 조건이 **이번 평가에 결속되지 않았다.** "
-                "리포트의 측정치가 이번 평가와 다르다(다른 실행의 리포트가 잡혔다). "
-                "수치와 조건이 서로 다른 실행에서 오면 그 기준선은 자기가 무엇의 "
-                "하한선인지 잘못 말한다."
+                "리포트의 측정치가 이번 평가의 측정치와 **같은 객체가 아니다**(다른 "
+                "실행의 리포트가 잡혔다). 수치가 우연히 같아도 결속이 아니다 — 통과율은 "
+                "정수 쌍이라 다른 실행에서도 같은 값이 나온다. 수치와 조건이 서로 다른 "
+                "실행에서 오면 그 기준선은 자기가 무엇의 하한선인지 잘못 말한다."
             )
         body = baseline_body(
             Fingerprint.of(DOCUMENTS),
