@@ -14,7 +14,7 @@
 
 **리뷰 게이트:** Kotlin 코드 변경이 끝날 때마다 codex 독립 리뷰가 **필수**다. `codex-reviewer`와 `migration-reviewer`를 병렬·독립 실행한 뒤 교차 대조한다. 두 리뷰가 상충하면 어느 쪽도 삭제하지 않고 양쪽 근거를 병기해 사용자 판단을 받는다.
 
-**범위 대조:** 게이트·불변식·규칙을 세우거나 넓힐 때 **선언한 범위와 실제 도달 범위를 실행으로 대조**한다. 대조 없이 "전역"·"모든"·"항상"을 쓰지 않고, 도달 0("이 게이트가 지금 어디서 도는가")을 특히 의심하며, **범위는 근거를 넘지 않는다**(한 번 겪은 일에 전역 패턴을 넣지 않는다 — 넓은 규칙은 신호를 끈다). 규칙 전문과 근거가 된 실패 7건은 `.claude/skills/kotlin-migration/SKILL.md`의 "선언한 범위와 실제 도달을 대조한다" 절에 있다.
+**범위 대조:** 게이트·불변식·규칙을 세우거나 넓힐 때 **선언한 범위와 실제 도달 범위를 실행으로 대조**한다. 대조 없이 "전역"·"모든"·"항상"을 쓰지 않고, 도달 0("이 게이트가 지금 어디서 도는가")을 특히 의심하며, **범위는 근거를 넘지 않는다** — 판정 기준은 겪은 **횟수가 아니라 결함의 구조**다. **장치를 먼저 분류한다**(탐지 / 은폐 / 강제·표현 / 범위 선언). 빈자리가 구조적으로 재발하면(열거할 수 없는 자리를 **종류로** 댈 수 있으면) 그 종류만큼 넓히되, **은폐형**(무시 패턴·억제·면제 조항)은 ⑴이 참이어도 **넓히지 않는다 — 탐지형으로 갈아탄다.** **범위 선언형**은 빈 선언에서 통과하면 안 된다. 규칙 전문과 근거가 된 실패 7건은 `.claude/skills/kotlin-migration/SKILL.md`의 "선언한 범위와 실제 도달을 대조한다" 절에 있다. `실행 경로` 규약의 어휘·강제자·그 강제자 자신의 도달은 **그 절이 정본이다** — 여기에 값을 옮겨 적지 않는다(옮겨 적었더니 즉시 갈렸고, 그 드리프트가 바로 이 절이 금지하는 것이다).
 
 **변경 이력:**
 | 날짜 | 변경 내용 | 대상 | 사유 |
@@ -24,6 +24,8 @@
 | 2026-08-11 | 계약 표 503 경로 보강 | skills/api-contract-freeze | codex stop-time 게이트 지적 — `POST /documents`의 "큐 미준비 → 503"(`app/api/deps.py`) 경로가 표에서 누락됨 |
 | 2026-08-12 | 방향 전환 3건: ① 검증 기준을 "Python 출력 일치"에서 "요구사항 충족"으로, ② 마스킹 범주 5종 → 2종, ③ API 계약 v1을 동결이 아닌 개선 대상으로 | docs/master-plan.md(3.2·6.2·7·8), CLAUDE.md | 사용자 결정 — Python의 반복 회귀가 전환 계기이므로 Python을 정답으로 삼지 않는다. 마스킹은 공용 문서 중심 용도 판단으로 고위험 2종만 유지(전화·이메일·계좌 유입 시 무마스킹 전송 위험 감수). 하위 스킬·에이전트·`contracts/` 반영은 별건 |
 | 2026-08-12 | 규칙 추가 — "선언한 범위와 실제 도달을 대조한다"(규칙 6개 + 실패 7건 근거) | skills/kotlin-migration(전문)·CLAUDE.md·skills/codex-review·agents/migration-reviewer·skills/migration-safety-gate·skills/api-contract-freeze·skills/python-kotlin-parity(포인터) | 같은 형태의 실패 7건 — 사적 헤더 필터 미도달, 계약이 "모든 응답"을 표현 못 함, parity 게이트가 계약 대신 자기 fixture와 대조, 원장 기록 실행이 성공 코드, `mypy .`가 점 디렉터리를 건너뜀, 품질 게이트 CI 도달 0, `.gitignore` 전역 패턴이 근거보다 넓어 이상 징후를 은폐 |
+| 2026-08-13 | 규칙 4 판정 기준 교체(횟수 → 결함의 구조: 구조적 재발인가 / 탐지인가 은폐인가) + 근거 7번 재기술 + 규칙 3에 `실행 경로` 열·어휘 6종·강제 테스트 신설 | skills/kotlin-migration(전문)·CLAUDE.md·`docs/migration/_workspace/00_progress.md`(표 4개)·`tests/test_harness_scope_reach.py` | "두 번이면 전역, 한 번이면 그 자리만"은 세어서 답을 얻으려는 기준이라 기제를 묻지 않는다. 규칙 3은 문장뿐이라 **자기 도달이 0**이었다 |
+| 2026-08-13 | mypy 도달 수정 — 개별 스크립트 경로 열거 → `.claude` 루트 명시 | CLAUDE.md·README.md·`.github/workflows/ci.yml`·agents/kotlin-implementer | 새 규칙 4를 첫 적용하다 발견. 주석은 `**/scripts/`로 **복수 선언**하는데 명령은 한 곳만 줘서 `migration-safety-gate/scripts/scan_privacy_invariants.py`가 **한 번도 타입 검사를 받지 않았다**(음성 대조: 오류 주입 시 옛 명령 `Success 126` / 새 명령 검출). 열거는 다음 스킬에서 또 벌어지므로 구조로 고쳤다 |
 
 ## 기술 스택 (확정)
 
@@ -42,7 +44,7 @@ uv run uvicorn app.main:app --reload   # 개발 서버
 uv run pytest                # 테스트
 uv run pytest tests/golden   # 프롬프트 골든셋 평가
 uv run ruff check --fix . && uv run ruff format .
-uv run mypy . .claude/skills/python-kotlin-parity/scripts   # 점 디렉터리는 크롤링에서 빠지므로 경로를 명시한다
+uv run mypy . .claude   # 점 디렉터리는 크롤링에서 빠진다 — 개별 스크립트 경로를 열거하지 말고 루트를 명시한다
 ```
 
 커밋 전 필수 통과: ruff → mypy → pytest. CI(GitHub Actions)에서도 동일 순서로 강제된다.

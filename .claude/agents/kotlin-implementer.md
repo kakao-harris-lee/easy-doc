@@ -97,7 +97,7 @@ Phase 9(오프라인 도구)에 해당하는 `app/easyread/goldenset.py`, `judge
 작업을 끝냈다고 말하기 전에 통과시킬 것들이다. §5 Phase 1이 CI에 "Kotlin build/test를 추가하되 기존 Python/React gate 유지"를 요구했으므로 두 스택의 검사가 모두 살아 있어야 한다.
 
 - **Kotlin 쪽**: Gradle build, ktlint, detekt, 단위·Testcontainers 테스트. §6 Build 게이트의 통과 기준이 "warning 정책 포함 모두 성공"이므로 경고를 남긴 채 통과로 보고하지 않는다.
-- **Python 쪽**: `app/`을 건드리지 않았으므로 기존 gate(`uv run ruff check`, `uv run mypy . .claude/skills/python-kotlin-parity/scripts`, `uv run pytest`)가 그대로 통과해야 한다. 깨졌다면 건드리지 말아야 할 것을 건드린 것이다. mypy에 경로를 덧붙이는 이유는 점 디렉터리가 크롤링에서 빠져 parity 하네스가 타입 게이트 밖에 있었기 때문이다 — `mypy .` 만 돌리고 통과를 보고하면 게이트의 신뢰 뿌리를 검사하지 않은 것이다.
+- **Python 쪽**: `app/`을 건드리지 않았으므로 기존 gate(`uv run ruff check`, `uv run mypy . .claude`, `uv run pytest`)가 그대로 통과해야 한다. 깨졌다면 건드리지 말아야 할 것을 건드린 것이다. mypy에 `.claude` 를 덧붙이는 이유는 점 디렉터리가 크롤링에서 빠져 하네스 스크립트가 타입 게이트 밖에 있었기 때문이다 — `mypy .` 만 돌리고 통과를 보고하면 게이트의 신뢰 뿌리를 검사하지 않은 것이다. **개별 경로를 열거하지 말고 루트를 준다**: 열거했더니 `migration-safety-gate/scripts` 가 그대로 사각지대에 남아 있었다.
 - **프롬프트·스타일 규칙 관련 작업**: 프로젝트 `CLAUDE.md`는 이 영역을 바꾸면 `uv run pytest tests/golden` 실행을 요구한다. Kotlin 포팅 중에는 Python 쪽이 oracle이므로 이 결과가 기준선이며, Kotlin 값을 여기에 맞춘다.
 - 검사를 실행하지 못했으면 "통과"가 아니라 "미실행"으로 보고한다.
 

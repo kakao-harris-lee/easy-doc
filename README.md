@@ -106,7 +106,7 @@ docker compose down                     # 중지 (-v를 붙이면 DB 데이터�
 uv run pytest                # 테스트 (인프라 없으면 db 테스트는 자동 skip)
 uv run pytest tests/golden   # 프롬프트 골든셋 평가
 uv run ruff check --fix . && uv run ruff format .
-uv run mypy . .claude/skills/python-kotlin-parity/scripts   # 점 디렉터리는 크롤링에서 빠지므로 경로를 명시한다
+uv run mypy . .claude   # 점 디렉터리는 크롤링에서 빠진다 — 개별 스크립트 경로를 열거하지 말고 루트를 명시한다
 ```
 
 커밋 전 필수 통과 순서: **ruff → mypy → pytest**. GitHub Actions CI(`.github/workflows/ci.yml`)에서도 같은 순서로 강제된다.
