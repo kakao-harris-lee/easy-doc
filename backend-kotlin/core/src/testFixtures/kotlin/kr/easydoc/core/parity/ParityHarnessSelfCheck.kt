@@ -62,11 +62,11 @@ object ParityHarnessSelfCheck {
                                 "kotlinVersion" to JsonPrimitive(KotlinVersion.CURRENT.toString()),
                             ),
                         ),
-                    "domainsPending" to
-                        JsonPrimitive(
-                            "masking·text·style·style-tables·prompts·postprocess·repair-adoption·export 는 Phase 2, " +
-                                "jwt·argon2 는 Phase 3, crypto 는 Phase 4에서 채운다.",
-                        ),
+                    // 어느 도메인이 포팅됐는지는 **여기 적지 않는다.** 그 목록의 정본은
+                    // backend-kotlin/parity-domains.txt 하나이고, Gradle parityManifestCheck 가
+                    // 그 파일을 실제 산출물과 대조한다. 여기에 목록을 다시 적으면 두 벌이
+                    // 되어 한쪽만 갱신된 채 사실과 어긋난 진행 상황이 남는다.
+                    "domainsDeclaredIn" to JsonPrimitive("backend-kotlin/parity-domains.txt"),
                 ),
             )
 

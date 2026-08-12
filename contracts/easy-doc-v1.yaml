@@ -87,13 +87,52 @@ x-cors:
     expose_headers가 빠지면 서버 응답은 완전한데 **브라우저 JS만** 헤더를 못 읽는다.
     다운로드 파일명(Content-Disposition)과 접수 주소(Location)가 그 대상이다.
     서버 테스트로는 잡히지 않으므로 브라우저 컨텍스트에서 확인한다.
-  x-known-limitation: |
-    미처리 500 응답에는 CORS 헤더가 붙지 않는다. `ServerErrorMiddleware`가 CORS
-    미들웨어 **바깥**에 있어 구조적으로 붙지 않기 때문이다(app/api/errors.py에 한계로
-    명시). 브라우저는 상태 코드조차 읽지 못하고 네트워크 오류로 본다.
-    **Kotlin에서 이 제약을 동등하게 재현할지 개선할지는 미결이다** — 리더 판단 대기
-    (api-contract-freeze §2.7 미결 3). 개선을 택하면 React가 지금 네트워크 오류로
-    보던 상황을 500으로 보게 되므로 화면 분기가 달라진다.
+  # 미처리 500 응답의 CORS 헤더 — Python과 Kotlin이 **의도적으로 다른** 유일한 지점.
+  # 이 절이 그 결정의 정본이다(다른 문서에 옮겨 적지 않는다).
+  x-unhandled-500-cors:
+    decision_status: "결정됨 (2026-08-12 리더 판정, 사용자 승인) — 개선을 받아들인다"
+    python_behavior: |
+      미처리 500 응답에는 CORS 헤더가 붙지 않는다. `ServerErrorMiddleware`가 CORS
+      미들웨어 **바깥**에 있어 구조적으로 붙일 수 없다(app/api/errors.py에 한계로 명시).
+      브라우저는 상태 코드조차 읽지 못하고 네트워크 오류로 보며, React
+      `frontend/src/api/client.ts`의 fetch catch가
+      `ApiError(0, "서버에 연결하지 못했습니다…")`를 만든다.
+    kotlin_behavior: |
+      **미처리 500에도 CORS 헤더가 붙는다.** `CorsFilter`가 라우팅 밖(서블릿 필터 체인
+      앞)에 있기 때문이다 — Starlette 미들웨어와 같은 위치이고, `/nope`(404)와 405에도
+      헤더가 붙어야 하므로 이 배치가 옳다. 그 결과 예외가 어디서 나든 헤더가 남는다.
+      실측(리더 보고, 일회성 프로브 — 커밋되지 않음):
+      `미처리 500 | status=500 | ACAO=http://localhost:5173 | EXPOSE=Content-Disposition, Location`
+    rationale: |
+      브라우저가 응답을 읽을 수 있게 되어 React가
+      `ApiError(500, "서버 오류가 발생했습니다")`를 받는다. 진단이 쉬워지고 사용자에게
+      더 정확한 문구가 나간다. 반대로 Python 동작을 재현하려면 `CorsFilter`를 감싸는
+      필터를 새로 만들어야 하는데, 그것은 **일부러 나쁜 동작을 만드는 코드**가 저장소에
+      영구히 남는다는 뜻이다.
+    scope: |
+      달라지는 것은 **CORS 응답 헤더의 유무뿐**이다. 상태 코드(500)와 본문
+      (`{"detail": "서버 오류가 발생했습니다"}`)은 Python과 같아야 한다 — 그쪽이
+      달라지면 의도된 차이가 아니라 계약 위반이다.
+      parity 대조가 이 헤더를 불일치로 잡더라도 **의도된 차이**이므로 구현 차단 사유가
+      아니다. 그 밖의 500 응답 항목이 어긋나면 종전대로 차단한다.
+    x-phase6-check: |
+      **Phase 6 확인 항목 — React 오류 분기.**
+      실측(2026-08-12, `grep -rn "NETWORK_ERROR_STATUS|status === 0|\.status" frontend/src`):
+      **`status = 0` 경로에 의존하는 화면 분기는 없다.** `NETWORK_ERROR_STATUS`는
+      `client.ts`(생성 지점)와 `client.test.ts`(단언)에만 등장한다. 화면 컴포넌트는
+      UploadPage · HistoryPage · ReviewEditor · WorkspaceMenu · WorkspaceProvider ·
+      useConversionPolling · CredentialsForm 전부
+      `caught instanceof ApiError ? caught.message : <폴백 문구>` 한 가지 모양이라
+      HTTP 상태를 아예 보지 않는다. 상태로 갈리는 자리는 `client.ts`의
+      `response.status === 401 && token !== null`(토큰 폐기 + unauthorizedHandler)
+      하나뿐이며 500과 무관하다.
+      따라서 이 결정이 깨뜨리는 화면 분기는 없고, 사용자에게 보이는 **문구만**
+      "서버에 연결하지 못했습니다…" → "서버 오류가 발생했습니다"로 바뀐다.
+      `client.test.ts`의 네트워크 오류 테스트는 `fetch`를 직접 reject시키는 방식이라
+      이 변경과 무관하게 통과한다(진짜 연결 실패는 계속 status 0이다).
+      Phase 6에서 다시 확인할 것 — ① 위 grep을 재실행해 그 사이 `status === 0` 분기가
+      새로 생기지 않았는지, ② Kotlin 미처리 500의 `detail` 문구가 위와 같은지
+      (계획 §4.1의 오류 문구 어댑터가 이 값을 전제한다).
 
 # -----------------------------------------------------------------------------
 # 인증 계약
@@ -934,7 +973,9 @@ components:
           - 매핑되지 않은 도메인 예외 → `"요청을 처리하지 못했습니다"`
           - 도메인 밖 예외(라이브러리 오류 등) → `"서버 오류가 발생했습니다"`
           - `StorageError`(코드 버그) → 저장소가 만든 고정 문자열
-        후자에는 CORS 헤더가 붙지 않는다(최상위 `x-cors.x-known-limitation` 참고).
+        미처리 예외(둘째 줄)에 CORS 헤더가 붙는지는 런타임에 따라 다르다 — Python은
+        구조적으로 못 붙이고 Kotlin은 붙인다. **의도된 차이**이며 상태 코드와 본문은
+        같다(최상위 `x-cors.x-unhandled-500-cors`가 정본).
       content:
         application/json:
           schema: { $ref: '#/components/schemas/ErrorResponse' }
@@ -1350,6 +1391,21 @@ x-changelog:
       현재 Python 구현에서 추출. 라우터 코드 정독 + FastAPI OpenAPI 초안 대조 +
       실제 앱 TestClient 실측(422 본문 모양, 401 우선순위, 헤더 유무).
       3자 대조 결과: docs/migration/_workspace/00_contract-keeper_three-way-diff.md
+  - version: "1.0.0"
+    revision: "U-1"
+    date: "2026-08-12"
+    author: contract-keeper
+    change: |
+      미처리 500 응답의 CORS 헤더 — 미결 해소. Kotlin은 헤더를 낸다(Python과 의도적 차이).
+      `x-cors.x-known-limitation` → `x-cors.x-unhandled-500-cors`로 바꿔 결정 내용을 담고,
+      v2 후보 V2-2를 종결 처리했다.
+    basis: |
+      리더 판정(2026-08-12, 사용자 승인). **`info.version`은 올리지 않는다** — 상태 코드·
+      오류 본문·필드 이름 등 와이어 스키마가 그대로이고 달라지는 것은 CORS 응답 헤더의
+      유무뿐이라, React 생성 타입에 영향이 없기 때문이다.
+      영향받는 검증: ① parity 대조의 미처리 500 헤더 항목(불일치가 아니라 의도된 차이로
+      기록), ② Phase 6 React 분기 확인(`x-cors.x-unhandled-500-cors.x-phase6-check`).
+      통보 대상: kotlin-implementer, parity-verifier.
 
 # =============================================================================
 # v2 후보 — v1에서는 고치지 않는다
@@ -1363,9 +1419,12 @@ x-v2-candidates:
     reason: "현재는 상수 ok만 돌려줘 DB가 죽어도 200이다. 계획 §2.2 주변 서술과 어긋난다"
   - id: V2-2
     subject: "미처리 500 응답의 CORS 헤더"
-    proposal: "Kotlin에서는 500에도 CORS 헤더를 붙여 브라우저가 상태 코드를 읽게 한다"
-    reason: "Python은 ServerErrorMiddleware 위치 때문에 구조적으로 불가능. Kotlin에는 그 제약이 없다"
-    status: "미결 — 리더 판단 대기. 재현할지 개선할지 정해지기 전에는 구현하지 않는다"
+    status: |
+      **종결 — v2로 미루지 않고 v1 Kotlin에 반영한다** (2026-08-12 리더 판정, 사용자 승인).
+      Kotlin은 미처리 500에도 CORS 헤더를 낸다. Python 동작과 의도적으로 다르며,
+      parity 대조가 불일치로 잡아도 구현 차단 사유가 아니다.
+      근거·범위·Phase 6 확인 항목은 최상위 `x-cors.x-unhandled-500-cors`가 정본이다 —
+      두 벌이 갈리지 않게 여기에 옮겨 적지 않는다.
   - id: V2-3
     subject: "DELETE /documents/{id} · DELETE /workspaces/{id}"
     proposal: "204 응답에도 no-store/nosniff를 붙인다"

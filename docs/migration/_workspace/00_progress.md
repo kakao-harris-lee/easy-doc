@@ -23,16 +23,16 @@
 
 | 종료 조건 | 충족 | 근거 | 미해결 항목 | blocked-by | 마지막 갱신 주체 |
 |---|---|---|---|---|---|
-| `contracts/easy-doc-v1.yaml` 작성 | 예 | `contracts/easy-doc-v1.yaml` 작성 완료. 14 엔드포인트(제품 13 + `/health`)가 FastAPI 실제 노출 경로와 **차집합 양쪽 공집합**으로 일치. `openapi-spec-validator` → OK. 413·502/503·`detail` union·응답 헤더 5종·multipart 요청 본문·`status` enum·CORS·입력 상한 전부 수기 기입 | **미결 1건(U-1)**: 미처리 500 응답의 CORS 헤더를 Kotlin에서 재현할지 개선할지 (3자 대조 §7). 계약 파일에 `x-cors.x-known-limitation`·v2 후보 `V2-2`로 미결 명시 | 리더(U-1 판단) | contract-keeper |
+| `contracts/easy-doc-v1.yaml` 작성 | 예 | `contracts/easy-doc-v1.yaml` 작성 완료. 14 엔드포인트(제품 13 + `/health`)가 FastAPI 실제 노출 경로와 **차집합 양쪽 공집합**으로 일치. `openapi-spec-validator` → OK. 413·502/503·`detail` union·응답 헤더 5종·multipart 요청 본문·`status` enum·CORS·입력 상한 전부 수기 기입 | **U-1 해소 (2026-08-12)** — 리더 결정 + 사용자 승인으로 **개선 수용**(Python 동작을 재현하지 않는다). 계약 파일의 `x-cors.x-known-limitation` → `x-cors.x-unhandled-500-cors`("결정됨 — Python과 의도적으로 다름")로 대체, `components.responses.InternalError.description` 정정, v2 후보 `V2-2` **종결**, `x-changelog` 항목 추가. `info.version`은 1.0.0 유지. 근거 `00_contract-keeper_changelog.md` | - | contract-keeper (2026-08-12) |
 | 응답·헤더·오류·인증·권한·입력 상한을 contract test로 고정 | 아니오 | 목록·기준만 작성 (`00_contract-keeper_test-plan.md` — 엔드포인트별 세트 14 + 횡단 41종). **테스트 코드는 미구현**이며 실행도 하지 않았다 | 리더 지시로 Phase 0에서는 목록만 세웠다(Kotlin API가 Phase 3부터 생긴다). 추가로 **G-1: Python 기준선에도 없는 공백** — `POST /workspaces`·`PATCH /workspaces/{id}`의 캐시 헤더를 어떤 테스트도 단언하지 않는다(계약상 10곳 중 2곳). Python에 먼저 채울지 Phase 3에서 양쪽 동시에 넣을지 판단 필요 | 리더(G-1 시점 판단) → Phase 3 kotlin-implementer | contract-keeper |
-| FastAPI OpenAPI·계약 파일·React 타입 3자 대조 | 예 | `00_contract-keeper_three-way-diff.md`. 불일치 **21건 + 계획-코드 3건 + 미결 1건**. ①이 런타임과 **다른 값**을 말하는 곳 3건(422의 `input`/`ctx`, `loc` 타입, export의 `application/json`), 누락 6건, 느슨함 5건, 의도된 차이 6건. `DELETE /workspaces/{id}`가 React에 없는 것은 **의도된 차이**로 기록 | U-1(§7)만 미해결 | 리더(U-1 판단) | contract-keeper |
+| FastAPI OpenAPI·계약 파일·React 타입 3자 대조 | 예 | `00_contract-keeper_three-way-diff.md`. 불일치 **21건 + 계획-코드 3건 + 미결 1건**. ①이 런타임과 **다른 값**을 말하는 곳 3건(422의 `input`/`ctx`, `loc` 타입, export의 `application/json`), 누락 6건, 느슨함 5건, 의도된 차이 6건. `DELETE /workspaces/{id}`가 React에 없는 것은 **의도된 차이**로 기록 | **없음** — 유일하게 남았던 U-1(§7)이 2026-08-12 리더 결정으로 종결(위 행) | - | contract-keeper (2026-08-12) |
 | 대상 DB와 보존할 파일럿 데이터 유무 확인 | 예 | 사용자 확인 (2026-08-12): **보존할 운영/파일럿 DB 없음. 빈 DB로 시작한다.** 이로써 계획 §7이 "변동 폭이 가장 크다"고 지목한 두 변수 중 하나(기존 암호문 호환)가 소멸했다 | - | - | leader |
 | 범위 승인: 런타임만 Kotlin화 vs 오프라인 도구까지 Python 제거 | 예 | 사용자 승인 (2026-08-12): **제품 런타임만 Kotlin화**(§9-1). Phase 9(오프라인 도구)는 착수하지 않는다. 골든셋 평가·벤치마크·수집·파일럿 리포트 도구는 Python으로 남아 **독립 검증 oracle** 역할을 유지한다 | - | - | leader |
 | Fernet JVM 호환 spike | 예 | `00_privacy-gate_crypto-spike.md` §4. `com.macasaet.fernet:fernet-java8:1.5.0` / Temurin 21.0.4 / Gradle 9.1.0. **정방향 8/8**(한글·빈 값·긴 값·제어문자·변조·다른 키·garbage), **역방향 5/5**(`verify-crypto` 통과, `crypto-verify.verified.json` status: pass), **tamper 5/5**(version·timestamp·IV·ciphertext·HMAC 각 1비트 변조 전건 `StorageError` 거부, 무변조 대조군 정상). 즉흥 암호 구현은 하지 않았다 | **(1) 조달 유보** — 이 라이브러리는 최신 1.5.0이 **2020-09-26** 릴리스로 약 5년 11개월 무릴리스(`maven-metadata.xml`·jar `Last-Modified` 실측). §4.3-2의 "유지보수 상태"를 만족한다고 보기 어렵다. 채택(코드 전량 검토 조건) vs JDK primitive 자체 조립 중 선택 필요 = **§9 결정 3**. **(2) 필수 조치 C** — 기본 Validator는 TTL 60초라 **유효 토큰 5건 전부 `TokenExpiredException`으로 실패**한다. 그대로 쓰면 업로드 60초 뒤 모든 문서가 안 읽힌다. Phase 4에서 TTL·maxClockSkew 명시적 무력화 + 60초 경과 토큰으로 회귀 테스트 필요. **(3)** AES-GCM(선택지 2)은 미검증 — 권고하지 않아 수행하지 않았다 | 리더(§9 결정 3) | privacy-gate |
 | Argon2 PHC 검증 spike | 예 | `00_privacy-gate_crypto-spike.md` §2. `spring-security-crypto:6.4.2`(`Argon2PasswordEncoder(16,32,4,65536,3)`) + `bcprov-jdk18on:1.78.1`. 파라미터는 `app/services/auth.py:59`에서 직접 읽었고 salt 16B·hash 32B는 fixture PHC base64 길이에서 역산. **정방향 13/13**(한글·NFD 불일치 거부·legacy `m=8192,t=2,p=2` 검증·변조·비PHC 문자열이 예외 아닌 `false`), **역방향 4/4**(`app/services/auth.py::_HASHER`가 Kotlin 산출 PHC를 전건 검증, `needs_rehash=false`, 틀린 비밀번호 거부, prefix `$argon2id$v=19$m=65536,t=3,p=4$` 동일) | **필수 조치 A** — 재해시 판정이 갈린다. Python `check_needs_rehash`는 **전체 파라미터 동등성**, Spring `upgradeEncoding`은 **memory·iterations의 "미만"만** 본다. 자체 탐침 7건 중 5건 불일치(parallelism만 다름·더 강한 memory·더 강한 iterations·hash_len·salt_len에서 Python `true` / Kotlin `false`). **공식 fixture 14건으로는 드러나지 않는다.** 지금은 무해하나(살아 있는 해시가 전부 현재 파라미터) 파라미터를 바꾸는 날 **이관이 조용히 멈춘다**. Phase 3에서 전체 동등성 판정 함수로 교체 + 탐침 7건 회귀 고정 필요 | Phase 3 kotlin-implementer | privacy-gate |
 | JWT 양방향 호환 spike | 예 | `00_privacy-gate_crypto-spike.md` §3. **정방향 17/17을 두 라이브러리에서 각각**(`nimbus-jose-jwt:9.41.2`, `auth0 java-jwt:4.4.0`) — alg=none·RS256 헤더 혼동·서명 위조·페이로드 변조·`sub`/`exp`/`typ` 누락·`typ` 불일치·비UUID sub·32B 시크릿 통과·31B `configuration_error` 전건 일치. **`exp` 경계 질문 해소**: skew 0에서 두 라이브러리 모두 `exp <= now`를 만료로 봐 PyJWT와 같다(`exp-2…exp+2` 훑어 예외 타입까지 확인 — 결과만 보고 오독하지 않도록 메커니즘 대조). **역방향 4/4**(`verify-jwt` 통과, subject 2종 × 유효/만료, `jwt-verify.verified.json` status: pass) | **필수 조치 B** — 경계가 맞은 것은 skew를 0으로 **명시했기 때문**이다. `DefaultJWTClaimsVerifier` 기본 `maxClockSkew`는 **60초**라 기본값으로 두면 만료 토큰이 `+59s`까지 ACCEPT돼 `jwt-exp-boundary-exact` fixture에서 실패한다. Spring Security `NimbusJwtDecoder`의 `JwtTimestampValidator`도 기본 60초라 같은 함정. auth0는 기본 leeway 0이라 무해. Phase 3에서 skew 0 명시 + 경계 fixture 2건 회귀 고정 필요 | Phase 3 kotlin-implementer | privacy-gate |
 | DOCX/PDF/HWPX 라이브러리 spike | 예 | `00_kotlin-implementer_doc-spike.md`. **§4.5가 경고한 DOCX 위험은 해소됨** — POI를 usermodel이 아니라 OOXML DOM 순회로 쓰면 Python `_docx_blocks`와 **블록 리스트가 완전 일치**한다. 기존 fixture 6개 + 합성 fixture 4개 전부 Python 산출값 일치(거부 메시지 문자열까지). 동등성 6항목 전부 확인(표 제자리·텍스트박스·SDT·`w:ins`/`w:delText`·`mc:Fallback`·`a:t`/`m:t`·linked 머리글). HWPX: DTD/UTF-16 DTD/XXE 차단, 1GiB zip bomb을 힙 256MB에서 거부(힙 증가 0MB), 자체 round-trip·mimetype STORED 첫 항목·생성 결정성 PASS, Python↔Kotlin 패키지 교차 읽기 PASS. 검증 조합: Java 21.0.4 / Gradle 9.1.0 / Kotlin 2.2.0 / POI 5.4.1 / PDFBox 3.0.5 / commons-compress 1.27.1. `uv run pytest tests/ingest -q` 57 passed로 Python 기준선 무손상 | **가능성은 확인됐고 남은 것은 Phase 4 결정·구현이다.** (1) POI 산출 DOCX에 `styles.xml`/`theme` 부재 — Heading 1 서식이 사라짐, 템플릿 정책 결정 필요 (2) zip 컨테이너 바이트는 Python과 동일해질 수 없음(실측 `java=434B` vs `python=348B`) → parity fixture를 바이트 해시로 잡으면 안 됨, `parity-verifier` 합의 필요 (3) StAX DTD 판정을 예외 **메시지**로 하면 로케일 의존 — `DTD` 이벤트 직접 처리로 바꿔야 함 (4) 위조 크기 zip의 사용자 메시지가 Python과 갈림(`손상되었습니다` vs `너무 큽니다`) (5) **미검증**: 실제 한컴/Word 저장 파일, 실제 공공기관 PDF의 pypdf↔PDFBox 동등성, `MAX_EXTRACTED_CHARS`·10MB 경계, 암호 PDF/DOCX 실파일, Spring Boot BOM 적용 후 버전 재정렬 | - | kotlin-implementer |
-| 리뷰 게이트 Critical 0건 | 아니오 | 1회차 실행 완료 — `reviews/00_pre-phase0_{codex-reviewer,migration-reviewer,cross}.md` 3건 (정본은 `_cross.md`). **지적된 Critical 2건은 코드로 닫혔다**: X-1(proof 위조) → `check_external`이 proof 파일을 읽지 않고 검증기를 in-process 실행 후 증거를 덮어씀 / X-2·X-11(fixture 출처) → `provenance_problems()`가 매 비교마다 정본 생성기를 재실행해 대조, `runtime` 검사 추가. 실증 14종 | **재리뷰를 돌리지 않았다.** 수정 자체가 검증받지 않았으므로 이 행은 닫지 않는다. 상충-2(심각도 척도)는 리더가 판정해 반영 완료 — 사건뿐 아니라 **탐지 장치의 무력화도 Critical**로 세되, 심각도와 착수 차단은 별개 축이고 마감은 그 게이트의 첫 실사용 시점이다 | migration-reviewer | leader |
+| 리뷰 게이트 Critical 0건<br>→ **범위를 좁혀 판정**: "Phase 2 착수를 막는 Critical 0건" | 예 | 2회차(Phase 1 골격) 실행 완료 — `reviews/01_skeleton_{codex-reviewer,migration-reviewer,cross}.md` 3건 (정본은 `_cross.md`). 1회차 수정(pre-phase0 X-1·X-2)이 2회차 리뷰를 실제로 받았고, 2회차가 새로 지적한 차단 중 **Phase 2 작업에 닿는 것은 parity CI(2회차 X-2) 하나**였으며 `01_kotlin-implementer_parity-ci-fix.md`로 닫혔다. 함께 닫힌 것: C-1·C-2·C-3(`01_kotlin-implementer_error-cors-fix.md`), T-5=P1-1 판정(`01_kotlin-implementer_boot41-upgrade.md`), F-8 확인(Phase 0 §9-2 "보존할 DB 없음"이 이미 답). **판정 근거는 교차 종합 §7.1·§8** — Phase 2는 순수 도메인 로직 포팅이라 HTTP·DB·CORS 경계를 쓰지 않으므로 심각도가 높다는 이유만으로 착수를 막는 것은 과잉이라는 권고를 채택했다 | **나머지 차단 지적은 사라지지 않는다** — 마감이 명시된 미결 원장(§Phase 1 종료 판정)으로 이월했고 각 Phase 착수 게이트에서 다시 센다. 원 판정("Critical 0건")을 그대로 쓴 것이 아니라 **범위를 좁혀** 닫은 것임을 명시한다. 상충-2(심각도 척도)는 1회차에 리더가 판정해 반영 완료 — 사건뿐 아니라 **탐지 장치의 무력화도 Critical**로 세되, 심각도와 착수 차단은 별개 축이고 마감은 그 게이트의 첫 실사용 시점이다 | - | leader (2026-08-12) |
 
 ### Phase 0에서 사용자 승인이 필요한 다섯 결정 (계획 §9)
 
@@ -77,11 +77,14 @@ Phase 1 착수를 막지는 않는다. 4는 Phase 5(작업 큐)에서, 5는 Phas
 | 미충족 행 | 왜 지금 못 닫는가 | 언제 닫는가 |
 |---|---|---|
 | 응답·헤더·오류·인증·권한·입력 상한을 contract test로 고정 | 계약 테스트는 HTTP 경계에서 도는데 **Kotlin API가 아직 없다.** 지금 Python에만 채우면 절반이고, 그 절반이 "계약이 검증됐다"는 착각을 준다 | **Phase 3** — `/auth/*`·`/workspaces/*`가 Kotlin에 생기는 시점. 목록과 기준은 `00_contract-keeper_test-plan.md`에 이미 있다 |
-| 리뷰 게이트 Critical 0건 | 지적된 Critical 2건은 코드로 닫았으나 **그 수정 자체가 리뷰를 받지 않았다.** 이번 세션에서 "고쳤다고 보고한 직후 codex가 그 수정의 결함을 잡은" 일이 세 번 있었다 | **Phase 1 종료 시** — Kotlin 골격이라는 실제 코드가 생긴 뒤 3단계 게이트를 돌린다. 문서·스크립트만 있는 지금보다 그때 리뷰가 값이 크다 |
+| 리뷰 게이트 Critical 0건 | 지적된 Critical 2건은 코드로 닫았으나 **그 수정 자체가 리뷰를 받지 않았다.** 이번 세션에서 "고쳤다고 보고한 직후 codex가 그 수정의 결함을 잡은" 일이 세 번 있었다 | **Phase 1 종료 시** — Kotlin 골격이라는 실제 코드가 생긴 뒤 3단계 게이트를 돌린다. 문서·스크립트만 있는 지금보다 그때 리뷰가 값이 크다 → **2026-08-12 닫힘.** 예정대로 Phase 1 종료 시점에 2회차 게이트를 돌렸고, "Phase 2 착수를 막는 Critical 0건"으로 **범위를 좁혀** 판정했다(위 표) |
+
+**2026-08-12 갱신.** 위 2행 중 아래 행이 닫혀 Phase 0 종료 조건은 **10행 중 9행 충족 / 1행 미충족**이 됐다.
+남은 1행(contract test)의 마감은 그대로 Phase 3다. 위 "8행 충족" 문장은 2026-08-12 판정 시점의 기록이므로 고치지 않는다.
 
 ### 착수 전 판단이 필요했으나 Phase 1을 막지 않는 항목
 
-- **U-1** — 미처리 500 응답의 CORS 헤더를 Kotlin에서 재현할지 개선할지. Python은 미들웨어 순서 때문에 구조적으로 못 붙이고 **React가 이미 그 동작(`status = 0` → "서버에 연결하지 못했습니다")에 의존한다.** 선택에 따라 화면 분기가 달라지므로 계약 소유자 단독 결정 사항이 아니다. **Phase 3(오류 매핑) 착수 전까지** 정한다. 그전까지 `kotlin-implementer`는 이 경로를 구현하지 않는다
+- ~~**U-1** — 미처리 500 응답의 CORS 헤더를 Kotlin에서 재현할지 개선할지~~ → **2026-08-12 결정됨: 개선 수용**(리더 판정 + 사용자 승인). 착수 전 전제였던 "React가 그 동작(`status = 0`)에 의존한다"는 **실측으로 무너졌다** — `grep -rn "NETWORK_ERROR_STATUS|status === 0|\.status" frontend/src` 결과 `status = 0` 경로에 의존하는 화면 분기가 없고, 모든 화면이 `caught instanceof ApiError ? caught.message : <폴백>` 한 모양이다. 상태로 갈리는 자리는 `client.ts`의 401 하나뿐이다. 바뀌는 것은 사용자에게 보이는 **문구뿐**("서버에 연결하지 못했습니다…" → "서버 오류가 발생했습니다"). 되돌리려면 `CorsFilter`를 감싸 **일부러 나쁜 동작을 만드는 코드**를 영구히 남겨야 한다. 근거 `00_contract-keeper_changelog.md`, 비용 비교 `01_kotlin-implementer_error-cors-fix.md` §5. **범위**: 달라지는 것은 CORS 응답 헤더의 유무뿐이며 상태 코드(500)·본문(`{"detail": "서버 오류가 발생했습니다"}`)이 갈리면 그것은 의도된 차이가 아니라 계약 위반이다
 - **G-1** — `POST /workspaces`·`PATCH /workspaces/{id}`의 캐시 헤더를 **Python 기준선에서도 어떤 테스트가 단언하지 않는다.** 계약상 10곳 중 2곳이 회귀 방지 없이 구현에만 존재한다. Phase 3에서 Kotlin·Python 양쪽에 동시에 넣는다
 - **DOCX 내보내기 템플릿** — POI 산출물에 `styles.xml`/`theme`가 없어 Heading 1 서식이 사라진다. 템플릿을 저장소에 동봉할지 **Phase 4 착수 전** 결정
 - **내보내기 parity 비교 기준** — zip 컨테이너 바이트는 Python과 동일해질 수 없다(실측 java 434B vs python 348B). 바이트 해시가 아니라 정규화 텍스트로 비교하도록 `parity-verifier`와 합의 필요. **Phase 4 착수 전**
@@ -107,48 +110,160 @@ Phase 1 착수를 막지는 않는다. 4는 Phase 5(작업 큐)에서, 5는 Phas
 | 종료 조건 | 충족 | 근거 | 미해결 항목 | blocked-by | 마지막 갱신 주체 |
 |---|---|---|---|---|---|
 | `backend-kotlin` Gradle 멀티모듈 생성 (§3.2의 5개 모듈, 의존 방향) | 예 | `core`/`application`/`infrastructure`/`api`/`worker` 생성. `api`·`worker` 는 `infrastructure` 를 **`runtimeOnly`** 로만 의존해 JDBC·(Phase 5) LLM SDK 타입이 컴파일 시점에 보이지 않는다. `application` 은 `infrastructure` 를 의존하지 않는다. `api`↔`worker` 상호 의존 없음. **`core` 의 Spring·DB 비의존을 `CoreModuleBoundaryTest` 가 실행으로 확인**(7개 클래스 부재: `ApplicationContext`·`SpringApplication`·`JdbcClient`·`Flyway`·`org.postgresql.Driver`·Jackson 2/3 `ObjectMapper`) | `application` 본 소스는 비어 있다(경계만 세움, 유스케이스는 Phase 3~5). 계약은 `application/README.md` | - | kotlin-implementer |
-| toolchain·dependency locking·version catalog·ktlint/detekt·테스트 설정 | 예 | Java 21 toolchain(`jvmToolchain(21)`), `allWarningsAsErrors=true`. 락파일 6개 커밋(모듈 5 + settings, 792줄) — `clean build` 가 락 갱신 없이 성공. catalog 가 유일한 버전 선언 지점이고 **BOM 밖에서 버전을 고르는 것은 Kotlin 플러그인·ktlint·detekt 셋뿐**. ktlintCheck·detekt 모두 통과(위반 0). **locking 이 실제 드리프트를 잡았다** — kotlinx-serialization 1.11.0이 테스트 클래스패스 stdlib 만 2.2.21→2.3.20으로 올린 것을 발견해 BOM(1.9.0)에 넘겼다 | 기본값을 벗어난 규칙 2건(ktlint `class-signature` 임계 1→2, detekt `SpreadOperator` off) — 사유는 산출물 §2.4. detekt 1.23.8은 Kotlin 1.9 파서 내장(2.x는 alpha뿐이라 미채택) | - | kotlin-implementer |
+| toolchain·dependency locking·version catalog·ktlint/detekt·테스트 설정 | 예 | Java 21 toolchain(`jvmToolchain(21)`), `allWarningsAsErrors=true`. 락파일 6개 커밋(모듈 5 + settings, 792줄) — `clean build` 가 락 갱신 없이 성공. catalog 가 유일한 버전 선언 지점이고 **BOM 밖에서 버전을 고르는 것은 Kotlin 플러그인·ktlint·detekt 셋뿐**. ktlintCheck·detekt 모두 통과(위반 0). **locking 이 실제 드리프트를 잡았다** — kotlinx-serialization 1.11.0이 테스트 클래스패스 stdlib 만 2.2.21→2.3.20으로 올린 것을 발견해 BOM(1.9.0)에 넘겼다 | 기본값을 벗어난 규칙 2건(ktlint `class-signature` 임계 1→2, detekt `SpreadOperator` off) — 사유는 산출물 §2.4.<br>**2026-08-12 사실 정정** — detekt 1.23.8의 내장 파서는 Kotlin **1.9가 아니라 2.0.21**이다(`detekt-parser` POM 실측). 같은 종류의 간격이 ktlint에도 있고 Phase 1 문서에 언급이 없었다 — ktlint-cli 1.8.0은 **2.2.21**을 내장한다. Boot 4.0.7 시절엔 컴파일러도 2.2.21이라 우연히 같았고 **2.3.21로 올리면서 갈렸다**. 둘 다 올릴 곳이 없다(ktlint 1.8.0/플러그인 14.2.0이 최신, detekt 2.x는 `dev.detekt` 좌표에 alpha만). 남는 위험은 "Kotlin 2.3 신문법을 쓰면 그때 파싱 실패"인데 **태스크 실패로 드러나므로 조용히 틀리는 종류가 아니다**. 근거 `01_kotlin-implementer_boot41-upgrade.md` §6 | - | kotlin-implementer (2026-08-12) |
 | `/health` 가 계약대로 응답 (상수 `{"status":"ok"}`) | 예 | `HealthContractTest` 4건 — 200·`{"status":"ok"}`(strict)·인증 불필요·**캐시 금지 헤더 없음**·DataSource 없이도 200(=의존 서비스 진단 안 함). compose 실측: `HTTP/1.1 200 / Content-Type: application/json / {"status":"ok"}`. Actuator 미도입(계약 14 엔드포인트 밖 경로를 노출하지 않으려고) | - | - | kotlin-implementer |
-| 설정 바인딩·구조화 로그·비밀값 마스킹 | 예 | `EasyDocProperties`(`app/config.py` 포팅) + `Secret` 타입(`SecretStr` 대응) + `SecretConverter`. `SecretTest` 7건 — `toString`·문자열 템플릿·**데이터 클래스 필드로 들어가도** 평문 미노출, 값 비의존 `hashCode`, 상수 시간 비교. 구조화 로그는 Dockerfile `LOGGING_STRUCTURED_FORMAT_CONSOLE=ecs` 로 ECS JSON — compose 로그로 확인. `server.error.include-*` 를 전부 `never`/false 로 꺼 스택·입력값이 응답에 실리지 않게 했다 | 설정 값이 실제로 **쓰이는** 곳은 아직 없다(`/health` 는 설정을 읽지 않는다). 사용·검증은 각 기능 Phase | - | kotlin-implementer |
+| 설정 바인딩·구조화 로그·비밀값 마스킹 | 예 | `EasyDocProperties`(`app/config.py` 포팅) + `Secret` 타입(`SecretStr` 대응) + `SecretConverter`. `SecretTest` 7건 — `toString`·문자열 템플릿·**데이터 클래스 필드로 들어가도** 평문 미노출, 값 비의존 `hashCode`, 상수 시간 비교. 구조화 로그는 Dockerfile `LOGGING_STRUCTURED_FORMAT_CONSOLE=ecs` 로 ECS JSON — compose 로그로 확인. `server.error.include-*` 를 전부 `never`/false 로 꺼 스택·입력값이 응답에 실리지 않게 했다.<br>**2026-08-12** — `easydoc.cors-origins` 가 `CorsConfig` 에서 **실제로 소비**되면서 바인딩 경로가 `CorsContractTest` 로 실행된다(리뷰 T-1 부분 해소) | `Secret` 필드(`jwtSecret`·`fernetKey`)와 `SecretConverter` 의 바인딩은 여전히 미실행 — 값을 쓰는 기능이 Phase 3·4에 온다 | - | kotlin-implementer (2026-08-12) |
+| **리뷰 차단 C-1·C-2·C-3** — 오류 계약의 HTTP 경계 검증과 CORS | 예 | 상세는 `01_kotlin-implementer_error-cors-fix.md`. **C-1**: `GlobalExceptionHandler` 가 `ResponseEntityExceptionHandler` 를 상속해 프레임워크 예외 20종의 **상태 코드는 위임**하고 **본문만** `createResponseEntity` 한 곳에서 `{"detail": ...}`·`application/json` 으로 덮는다. `detail` 은 상태 코드의 표준 사유 문구만 쓴다(Spring `ProblemDetail.detail` 은 예외 메시지에서 유도돼 요청 본문 조각이 실릴 수 있다). `WebMvcConfig` 로 내용 협상을 끄고(FastAPI 는 협상하지 않는다) 검증 실패를 **422 + `[{loc,msg,type}]`** 로 되돌렸다(`input`·`ctx` 미노출). **C-2**: `ErrorContractTest` 를 핸들러 직접 호출 → `@WebMvcTest`+MockMvc 로 이전하고 테스트 소스셋 전용 `ErrorProbeController`(`/__probe`, 운영 JAR 에 없음)를 세웠다. **고치기 전 8건 실패 → 고친 뒤 31건 전건 통과**(도메인 매핑 12건은 전후 모두 통과 = 새 테스트가 정확히 C-1 범위만 새로 잡았다). **C-3**: `CorsConfig` 의 `CorsFilter`(order HIGHEST_PRECEDENCE) — origin 설정값·credentials false·메서드 5종·요청 헤더 2종·**노출 헤더 `Content-Disposition, Location`**·max-age 600. `addCorsMappings` 가 아니라 필터인 이유는 Starlette 미들웨어처럼 **라우팅 밖**이어야 404·405 에도 헤더가 붙기 때문(실측 일치). 살아 있는 두 컨테이너 16 케이스 대조: C-1 세 케이스 **전건 일치**, CORS 5 케이스 일치 | 남은 차이 5건 전부 기록·분류함 — **U-1(미처리 500 의 CORS 헤더)은 2026-08-12 리더 결정으로 종결**(개선 수용), `GET /health/` 307 vs 404는 판단 대기, **범위 밖 3건**(`OPTIONS` Origin 없음 = 리뷰 C-4, `HEAD /health`, preflight 본문).<br>**C-2 의 8건 중 1건은 고치지 않고 테스트를 철회했다** — `컨트롤러가 적어 둔 캐시 금지 헤더가 오류 응답으로 새지 않는다`. 서블릿 API 에 헤더 삭제가 없고(`setHeader(name, null)` 무시) `response.reset()` 은 CORS 헤더까지 지운다. 강제 가능한 규칙은 "쓰지 않는 것"뿐이며, 이 사실이 계약 §2.7-3 재작성(규칙 1 + 단언 A·B)의 근거가 됐다. 남아 있는 보호: "핸들러 자신이 캐시 헤더를 붙이지 않는다" 단언 7건.<br>`handleHandlerMethodValidationException` 은 `spring-boot-starter-validation` 이 없어 **HTTP 경계 미검증**(의존성 추가는 동시 작업 중인 빌드 스크립트를 건드려야 해 보류) | - | kotlin-implementer (2026-08-12) |
 | Testcontainers PostgreSQL + Flyway baseline 구축 | 예 | `V1__python_schema_baseline.sql` 을 **Alembic 을 실제로 돌려**(`uv run alembic upgrade head` → `alembic_version=0006`) 뽑은 스키마로 작성. 지문 대조 **전건 일치**(extension 1 · table 4 · column 32(서수 포함) · constraint 11 · index 11). 회귀는 `PythonSchemaBaselineTest` 4건 + `FlywayBaselineGuardTest` 4건. `baseline-on-migrate=true` 를 쓰지 않고 **지문이 일치할 때만** baseline 하는 `FlywayBaselineGuard` 를 만들었다(§4.2-4). `alembic_version` 은 만들지도 읽지도 쓰지도 않는다(§4.2-7) | Testcontainers 컨테이너가 모듈마다 따로 뜬다(`withReuse` 미적용). 로컬 전체 16초라 지금은 무해 | - | kotlin-implementer |
 | **필수 조치 D** — `encryption_scheme` additive 추가 | 예 | **V2에 배치**(V1 아님). 근거: ① V1은 "Python 스키마 재현"이라 신규 컬럼이 들어가면 지문 대조가 성립하지 않는다 ② **결정적** — baseline 은 V1을 건너뛰므로 V1에 넣으면 기존 Alembic DB에서 컬럼이 영원히 안 생긴다 ③ §4.2-5가 "Kotlin 전용 변경은 V2부터"라고 명시. 대상 `documents`·`conversions`, 기본값 `'fernet-v1'`, CHECK 제약 동반. `V2 는 encryption_scheme 을 additive 로 추가한다`·`Python 컬럼만 지정한 INSERT 가 성공한다` 테스트 통과 | 관찰 기간 내내 `fernet-v1` 고정. AEAD 전환은 Phase 8 이후 별건 | - | kotlin-implementer |
 | Dockerfile·compose Kotlin profile 추가 (기존 Python 서비스 유지) | 예 | `backend-kotlin/Dockerfile`(멀티스테이지, api·worker bootJar 한 이미지). compose에 `kotlin-migrate`·`kotlin-api`(8100)·`kotlin-worker` 를 `profiles:["kotlin"]` 뒤에 추가 — **기존 Python 서비스 정의를 하나도 바꾸지 않았고** 기본 `docker compose up` 동작이 그대로다. 실측: 두 스택 동시 기동, Kotlin 8100·Python 8000 양쪽 `/health` 200. `kotlin-migrate` exit 0. §4.2-6대로 **DB를 갈랐다**(`easydoc` / `easydoc_kotlin`) — Python DB에 `flyway_schema_history` 0개 확인 | `easydoc_kotlin` 은 기존 볼륨에서 자동 생성되지 않는다(initdb 는 빈 데이터 디렉터리에서만 실행) — 수동 절차 문서화. compose 실행 중 **worker 즉시 종료**를 발견해 `spring.main.keep-alive: true` 로 고쳤다(산출물 §9.5) | - | kotlin-implementer |
 | CI에 Kotlin build/test 추가 + 기존 Python/React gate 유지 | 아니오 | `.github/workflows/ci.yml` 에 `kotlin` 잡 추가(9 steps: setup-java 21 · setup-gradle · setup-uv · 이미지 pull · `./gradlew build` · `parityHarness` · 배선 확인 · parity 비교). **기존 `quality`(8 steps)·`frontend`(6 steps) 잡을 건드리지 않았다** — 로컬에서 `ruff`·`ruff format`·`mypy`·`pytest`(820 passed, 68 skipped) 전부 통과 확인 | **CI가 실제 GitHub Actions 에서 도는 것을 확인하지 못했다.** YAML 파싱과 로컬 동등 명령만 검증했다. `gradle/actions/setup-gradle@v4`·러너 Docker 데몬 위 Testcontainers 는 **첫 push 에서 처음 검증된다**. 이 행은 그때 닫는다 | 첫 PR 실행 | kotlin-implementer |
-| **필수 조치 E** — Kotlin 테스트가 `parity/actual/` 을 쓰도록 CI 배선 | 아니오 | 배선 구조 완성: `ParityActual`(경로를 시스템 프로퍼티로만 받고 **없으면 던진다**) + `parityHarness` Gradle 태스크(`@Tag("parity")` 만, 저장소 루트로 출력) + 일반 `test` 는 모듈 `build/` 로 격리 + CI 3단계(생성 → 존재·`runtime:kotlin` 확인 → 비교). `ParityActualTest` 5건이 산출물 형식·경로·한글 비이스케이프·거부 조건을 고정. 실측 산출물 `parity/_harness-selfcheck/kotlin.json`(`runtime:kotlin`, JVM 21.0.4 Temurin, Kotlin 2.2.21) | **채우지 못한 것**: `parity/fixtures/` 자체가 없어 `compare_parity.py` 를 **한 번도 돌리지 못했다**(Phase 2). 도메인 산출물은 Phase 2(8개)·Phase 3(jwt·argon2)·Phase 4(crypto). **CI 비교 단계가 종료 코드 2를 통과 처리한다 — Phase 4 종료 시 이 완화를 제거해야 한다** | Phase 2 (fixture 생성) | kotlin-implementer |
-| 종료 조건: 빈 DB와 기존 schema snapshot 양쪽에서 기동 + `/health` 응답 | 예 | `ApiStartupOnEmptyDatabaseTest` 2건 + `ApiStartupOnPythonSnapshotTest` 2건. `@SpringBootTest(RANDOM_PORT)` + JDK `HttpClient` 로 **실제 소켓**을 친다. 빈 DB → `flyway_schema_history=[1,2]`, 200 `{"status":"ok"}`. 기존 스냅샷(Alembic 0006 상태) → `[1(BASELINE), 2(SQL)]`, `alembic_version=0006` 불변, 200 `{"status":"ok"}`. compose 실측으로도 재확인(산출물 §9) | - | - | kotlin-implementer |
+| **필수 조치 E** — Kotlin 테스트가 `parity/actual/` 을 쓰도록 CI 배선 | 아니오 | 배선 구조 완성: `ParityActual`(경로를 시스템 프로퍼티로만 받고 **없으면 던진다**) + `parityHarness` Gradle 태스크(`@Tag("parity")` 만, 저장소 루트로 출력) + 일반 `test` 는 모듈 `build/` 로 격리 + CI 3단계(생성·선언 대조 → 존재·`runtime:kotlin` 확인 → 비교). `ParityActualTest` 5건이 산출물 형식·경로·한글 비이스케이프·거부 조건을 고정. 실측 산출물 `parity/_harness-selfcheck/kotlin.json`(`runtime:kotlin`, JVM 21.0.4 Temurin, Kotlin 2.2.21).<br>**2026-08-12 X-1·X-2 수정 (`01_kotlin-implementer_parity-ci-fix.md`)** — 판정 범위를 디렉터리 유무가 아니라 버전 관리 선언 `backend-kotlin/parity-domains.txt` 에서 가져오고, 그 선언을 Gradle `parityManifestCheck` 가 실제 산출물과 **양방향 대조**한다(선언 O/산출 X·선언 X/산출 O·json 0건 전부 빌드 실패). `parityActualClean` 이 매 실행 전 `parity/actual/` 을 비워 stale 산출물 통과를 막는다. **종료 코드 2 사면은 제거**했고(실측: exit 2 는 "선언한 도메인의 역방향 산출물 미생성"일 때만 난다), 사면은 `--only-domain` 부분 검증(exit 3)으로 옮겨 **탐지(Gradle 단계)와 사면(비교 단계)을 다른 CI 단계에 분리**했다. 선언이 정본 11개를 덮으면 좁히기가 자동으로 사라진다. 실증 14종(CI 셸 8 + Gradle 6): 현재 상태 exit 0 / Phase 2 흉내 exit 0(값 21건 대조) / 선언했는데 산출물 없음 exit 1 / 값 불일치 exit 1 / fixture 트리 삭제 exit 1 / 전체 게이트 exit 0(값 101건 + 외부 2건). Python 게이트 무손상(820 passed).<br>**2026-08-12 가드 2종 추가 (`01_parity-canonical-floor.md`)** — ① **정본 0개 가드**: `canonical_count == 0`이면 exit 1(`ci.yml:197`). `--list`가 exit 0인데 출력만 비는 경로는 `pipefail`이 못 잡고, 그대로 두면 "11개를 안 봤다"는 경고가 "0개를 안 봤다"로 바뀌어 무검증이 통과한다. ② **정본 하한**: `.github/parity-canonical-floor.txt`(초기값 정본 11개) + **비대칭 검사**(현재 정본 ⊇ 스냅샷). 추가는 통과시키고 **삭제만 막는다** — 축소가 "전체 게이트 통과"로 위장되던 경로가 닫혔다. 실증 12종: 11→3 축소가 선언 0개·선언 3개 양쪽에서 exit 1, 가드 제거 변형 4종은 전부 exit 0(막고 있는 것이 정확히 이 비교임을 확인), 하한 파일 삭제·비움도 exit 1 | **채우지 못한 것**: `parity/fixtures/` 는 여전히 저장소에 없다(Phase 2 산출물). 실증에 쓴 Kotlin 산출물은 Python 스탠드인이며 실제 Kotlin 구현으로 도는 것은 Phase 2 첫 도메인에서 처음 확인된다. **GitHub Actions 러너 실행 미검증**(로컬 bash 3.2 재현). `parityManifestCheck` 는 도메인 입도까지만 봐서 **X-5 의 모듈↔도메인 대응 단언은 열려 있다**. 하한도 도메인 **이름**만 보므로 도메인 안의 케이스 축소는 잡지 못하고, 같은 커밋에서 정본과 하한을 함께 줄이는 것은 원리적으로 막을 수 없다(최종 방어선은 `.github/` diff 를 사람이 읽는 리뷰 게이트다). 미결 원장 `P1-2`(종료 코드 2 완화)는 **해소 확인**(아래 사실 정정) | Phase 2 (fixture 생성 · 첫 push 에서 러너 검증) | kotlin-implementer (2026-08-12) |
+| 종료 조건: 빈 DB와 기존 schema snapshot 양쪽에서 기동 + `/health` 응답 | 예 | `ApiStartupOnEmptyDatabaseTest` 2건 + `ApiStartupOnPythonSnapshotTest` 2건. `@SpringBootTest(RANDOM_PORT)` + JDK `HttpClient` 로 **실제 소켓**을 친다. 빈 DB → `flyway_schema_history=[1,2]`, 200 `{"status":"ok"}`. 기존 스냅샷(Alembic 0006 상태) → `[1(BASELINE), 2(SQL)]`, `alembic_version=0006` 불변, 200 `{"status":"ok"}`. compose 실측으로도 재확인(산출물 §9).<br>**2026-08-12 Boot 4.1.0 업그레이드 후 재확인** — 같은 4건이 그대로 통과하고, Flyway 11→12(유일한 메이저 상승)에 대해 **11.14.1이 쓴 `flyway_schema_history` 를 12.4.0이 `Successfully validated 2 migrations` 로 수용**하는 것까지 compose 로그로 확인했다(체크섬 재계산 요구 없음). 근거 `01_kotlin-implementer_boot41-upgrade.md` §5·§8-4·§8-5 | - | - | kotlin-implementer (2026-08-12) |
 
-**전체 테스트**: `./gradlew clean build` → **BUILD SUCCESSFUL, tests=48 failures=0** (core 19 · infrastructure 8 · api 18 · worker 3).
+**전체 테스트**: `./gradlew build` → **BUILD SUCCESSFUL, tests=75 failures=0** (core 19 · infrastructure 8 · api 45 · worker 3).
+2026-08-12 리뷰 C-1·C-2·C-3 수정으로 48 → 75 (api 18 → 45: `ErrorContractTest` 10→18 경계 이전 ·
+`FrameworkErrorContractTest` 9 신규 · `CorsContractTest` 10 신규). 기존 48건은 전건 유지.
+**Boot 4.1.0 업그레이드 후에도 같은 75건이 그대로 통과한다** — 업그레이드 전(4.0.7) 기준선을 먼저 찍고 대조했다.
 
-### 확정한 버전 조합 (Boot BOM 적용 후)
+### 확정한 버전 조합 (Boot 4.1.0 BOM 적용 후 — 2026-08-12 갱신)
 
-| 항목 | 값 | spike(§Phase 0) 대비 |
+| 항목 | 값 | 이전(4.0.7) 대비 |
 |---|---|---|
 | JDK / Gradle | Temurin 21.0.4 / 9.1.0 | 동일 |
-| Kotlin | **2.2.21** | 2.2.0 → BOM 정렬 (변경) |
-| Spring Boot | **4.0.7** | 신규 확정 |
-| Spring Framework / Jackson / JUnit / Testcontainers / Flyway / PG 드라이버 | 7.0.8 / **3.1.4** / **6.0.3** / **2.0.5** / 11.14.1 / 42.7.11 | 전부 BOM 관리 |
-| ktlint(플러그인/CLI) / detekt | 14.2.0 / 1.8.0 / 1.23.8 | 신규 |
+| Kotlin | **2.3.21** | 2.2.21 → BOM `kotlin.version` 정렬 (변경) |
+| Spring Boot | **4.1.0** | 4.0.7 → **P1-1 판정 이행**. 4.1 계열 안정판은 4.1.0 하나뿐(Maven Central 메타데이터 실측) |
+| Flyway | **12.4.0** | 11.14.1 → **유일한 메이저 상승**. §5 에서 따로 검증 |
+| kotlinx-serialization | **1.11.0** | 1.9.0 → BOM |
+| Spring Framework / Jackson / JUnit / Testcontainers / PG 드라이버 | 7.0.8 / 3.1.4 / 6.0.3 / 2.0.5 / 42.7.11 | **전부 동일** (BOM 관리) |
+| ktlint(플러그인/CLI) / detekt | 14.2.0 / 1.8.0 / 1.23.8 | 동일 (§위 표의 사실 정정 참고) |
 
-Boot 4가 spike 이후 바꾼 좌표(실측): `FlywayMigrationStrategy` → `spring-boot-starter-flyway` /
+Boot 4가 spike 이후 바꾼 좌표(실측)는 4.1.0에서도 그대로다: `FlywayMigrationStrategy` → `spring-boot-starter-flyway` /
 `org.springframework.boot.flyway.autoconfigure`, `@WebMvcTest` → `spring-boot-starter-webmvc-test` /
 `org.springframework.boot.webmvc.test.autoconfigure`, Testcontainers → `org.testcontainers:testcontainers-postgresql`.
 **Jackson 3.1.4**(패키지 `tools.jackson`)가 관리 버전이라 Phase 2 이후 JSON 처리 시 주의가 필요하다.
 
-### 리더 판단이 필요한 항목
+**업그레이드 결과 (`01_kotlin-implementer_boot41-upgrade.md`)** — **코드 변경 0줄.** 바뀐 파일은 version catalog 와
+락파일 5개뿐이고, `clean build` tests=75 failures=0 · ktlint/detekt 위반 0 · 컴파일 경고 0(`allWarningsAsErrors=true`) ·
+Python 게이트 820 passed 가 업그레이드 전과 동일하다. Kotlin 2.3.21이 실제로 런타임까지 갔다는 증거는
+`parity/_harness-selfcheck/kotlin.json` 의 `kotlinVersion` 필드(JVM 이 `KotlinVersion.CURRENT` 를 읽어 쓴다)다.
 
-| # | 내용 | 마감 |
+두 가지가 부수 성과다.
+
+- **Jackson 2가 클래스패스에서 제거됐다.** Flyway 12가 Jackson 2 → 3으로 갈아타면서, 4.0.7에서 api `runtimeClasspath` 에
+  Jackson 2 databind 와 3 databind 가 **동시에** 올라와 있던 상태가 해소됐다. 직렬화 라이브러리 두 벌은 나중에
+  오류 본문·`Content-Disposition` 같은 계약 지점에서 "어느 `ObjectMapper` 가 잡혔는가"로 번지기 쉬운 배치였다.
+- **락파일 재생성 절차를 확립했다.** 증분 `--write-locks` 는 계열이 바뀌는 업그레이드에서 **stale 제약을 남긴다** —
+  KGP 2.3이 더 이상 해석하지 않는 `kotlinCompilerClasspath` 의 락 항목이 2.2.21로 남아 2.3.21 요청을 **강등**시켰다
+  (`dependencyInsight` 로 확인). 조치: 락파일 5개를 지우고 `clean build --write-locks --no-build-cache` 로 재생성.
+  `clean` 과 `--no-build-cache` 가 함께 없으면 태스크가 up-to-date 로 건너뛰어 락파일이 실제보다 **비어 있게** 생성된다.
+
+### 리더 판단이 필요했던 항목 — 둘 다 해소 (2026-08-12)
+
+| # | 내용 | 결과 |
 |---|---|---|
-| P1-1 | **Spring Boot 4.0.7 vs 4.1.0.** 계획 §3.1은 "4.1 계열 후보"라 적었으나 4.0.7을 골랐다. 두 계열 차이는 Kotlin(2.2.21 vs 2.3.21)과 Flyway(11.14.1 vs 12.4.0)뿐이고 나머지는 동일하다. 4.0.7을 고른 이유는 ① Phase 0 문서 spike가 Kotlin **2.2.0** 위에서 POI·PDFBox·commons-compress 를 통과시켰고 2.2.21이 같은 마이너 계열이라 그 결과를 승계할 수 있다 ② 4.0 계열은 패치 7회 누적, 4.1.0은 GA 직후. **4.1.0으로 올릴지 / 계획 문서 문구를 정정할지** 판단 필요. 되돌리는 비용은 작다(catalog 두 줄 + 재빌드) | Phase 2 착수 전 |
-| P1-2 | CI parity 비교 단계가 **종료 코드 2를 통과 처리**한다. 지금은 역방향 산출물이 없어 정상이지만 Phase 4 종료 시 이 완화를 제거해야 게이트가 미검증 케이스를 잡는다 | Phase 4 종료 시 |
+| P1-1 | **Spring Boot 4.0.7 vs 4.1.0.** 계획 §3.1은 "4.1 계열 후보"라 적었으나 4.0.7을 골랐다 (2차 리뷰 K-3 = 교차 T-5, 마감 Phase 2 착수 전) | **해소 — 4.1.0으로 올렸다.** 되돌릴 이유를 찾지 못했다(코드 0줄, 이동·폐기 좌표 0건, 테스트 75건 유지, 메이저 상승인 Flyway 12는 별도 검증). 되돌리는 비용은 시간에 비례해 커지므로 판단을 미루지 말라는 리뷰 권고를 따랐다 |
+| P1-2 | CI parity 비교 단계가 **종료 코드 2를 통과 처리**한다 (마감 Phase 4 종료 시) | **해소 — 사면 자체가 제거됐다.** 아래 사실 정정 참고 |
 
 ### Phase 1에서 손대지 않은 것 (지시대로 보류)
 
-- **U-1**(미처리 500 응답의 CORS 헤더) — 리더 판단 전이라 **CORS 자체를 설정하지 않았다**
-- 검증 실패(422) 응답의 `detail` **배열** 형태 — 요청 본문을 받는 엔드포인트가 없어 재현 대상이 없다. Phase 3에서 옮길 때 `rejectedValue`(비밀번호 유출 경로)를 반드시 걷어낼 것
-- `GlobalExceptionHandler` 의 HTTP 경계 검증 — 도메인 예외를 던지는 엔드포인트가 없어 핸들러를 직접 호출했다(`ErrorContractTest` 10건). HTTP 경계는 Phase 3 contract test
+- ~~**U-1**(미처리 500 응답의 CORS 헤더) — 리더 판단 전이라 **CORS 자체를 설정하지 않았다**~~
+  → **2026-08-12 갱신**: CORS 는 구현했다(리뷰 C-3). **U-1 경로에는 헤더를 붙이는 코드도 떼는 코드도 넣지 않았고 테스트로도 고정하지 않았다.** 다만 `CorsFilter` 가 체인 앞에서 헤더를 쓰므로 **기계적으로 "개선" 쪽 값이 나온다**(측정: 미처리 500 에 `Access-Control-Allow-Origin`·`Expose-Headers` 있음)
+  → **2026-08-12 종결**: 리더가 그 값을 **확정**했다(개선 수용, 사용자 승인). 계약 파일과 changelog 에 "의도된 차이"로 기록됐고, parity 대조에서 이 헤더 불일치는 차단 사유가 아니다. `kotlin-implementer` 는 이 결정을 **테스트로 고정**할 것 — 현재 이 경로에는 긍정 단언도 부정 단언도 없다
+- ~~검증 실패(422) 응답의 `detail` **배열** 형태~~ → **2026-08-12 구현**. 상태 코드 422 + `[{loc,msg,type}]`, `rejectedValue`·`input`·`ctx` 미노출을 HTTP 경계 테스트로 고정. **`msg`/`type` 문자열은 Pydantic 과 바이트 동일할 수 없다**(검증 엔진이 다르다) — 계약이 동결한 것은 상태 코드·키 구성·입력값 부재이고 문구는 그 아래라는 판단이며 `contract-keeper` 확인이 필요하다
+- ~~`GlobalExceptionHandler` 의 HTTP 경계 검증~~ → **2026-08-12 이전 완료**(리뷰 C-2). `@WebMvcTest`+MockMvc + 테스트 전용 `ErrorProbeController`. Phase 3 는 이 위에 **실제 엔드포인트의** 401·404·409·422·500 을 얹으면 된다
+- **성공 응답의 캐시 금지 헤더는 Phase 3 에서 `ResponseEntity` 에 붙여야 한다** — 컨트롤러가 `HttpServletResponse` 에 직접 쓰면 예외가 나도 그 헤더가 오류 응답에 남는다(Python 과 반대 거동). 서블릿 API 에 헤더 삭제가 없고 `response.reset()` 은 CORS 헤더까지 지워 대안이 되지 못한다. 이 제약을 `GlobalExceptionHandler` KDoc 에 적어 두었다
+- `spring-boot-starter-validation` 미추가 — 의존성·락파일·빌드 스크립트가 동시 작업 중이라 열지 않았다. 그래서 `handleHandlerMethodValidationException` 은 **미검증**이다. Phase 3 에서 입력 상한과 함께 회귀 고정
 - `app/`·`tests/`·`frontend/`·`scripts/`·`.claude/`·`contracts/` — 읽기만 했다
+  (이후 같은 라운드에서 `contract-keeper` 가 자기 소유 파일인 `contracts/easy-doc-v1.yaml` 과
+  `.claude/skills/api-contract-freeze/SKILL.md` 를 U-1·§2.7-3 반영으로 고쳤다. `app/`·`tests/`·`frontend/` 는 무손상)
 
 ---
+
+## Phase 1 종료 판정 — **조건부 종료** (2026-08-12, 리더)
+
+계획 §5 Phase 1의 **명시 종료 조건**("빈 DB·기존 schema snapshot 양쪽에서 Kotlin 앱이 기동되고 `/health` 가 응답함")은
+**충족**이며, Boot 4.1.0 업그레이드 후에도 재확인됐다.
+
+**"리뷰 게이트 Critical 0건" 행은 "Phase 2 착수를 막는 Critical 0건"으로 범위를 좁혀 판정하고 충족으로 닫는다.**
+근거는 2회차 교차 종합(`reviews/01_skeleton_cross.md` §7.1·§8)이다 — Phase 2는 순수 도메인 로직 포팅이고
+종료 조건이 "외부 API·DB 없이 실행하는 parity suite"라서 **HTTP·DB·CORS 경계를 쓰지 않는다.**
+실제로 Phase 2를 막던 것은 parity CI(2회차 X-2) 하나였고 그것이 닫혔다. 심각도가 높다는 이유만으로
+착수를 막는 것은 과잉이라는 교차 종합의 권고를 채택했다.
+
+**나머지 차단 지적은 마감이 명시된 미결 원장으로 이월한다.** 이렇게 하면 (a) 충족된 종료 조건을 인위적으로
+열어 두지 않고, (b) 차단 항목이 마감 없이 사라지지 않으며, (c) Phase 2가 실제로 막히는 한 건만 선행 조건이 된다.
+
+> **조건부인 이유** — Phase 1 표에 `아니오` 2행이 남아 있다: CI가 실제 GitHub Actions에서 도는 것 미검증(첫 push),
+> 필수 조치 E의 fixture 산출물 부재(Phase 2). 둘 다 이 저장소 안에서는 닫을 수 없고 마감이 명시돼 있다.
+
+### 이번 라운드에 닫힌 것
+
+| 항목 | 내용과 근거 |
+|---|---|
+| **C-1** 프레임워크 예외 500 | 상태 코드는 프레임워크에 위임(`ResponseEntityExceptionHandler` 상속)하고 **본문만** `createResponseEntity` 한 곳에서 계약대로 덮는다. `detail` 은 상태 코드의 **표준 사유 문구**만 쓴다 — Spring `ProblemDetail.detail` 은 예외 메시지에서 유도돼 요청 본문 조각이 실릴 수 있기 때문이다. 살아 있는 컨테이너에서 404 · 405+`Allow: GET` · `Accept: application/xml` 에도 200 확인 |
+| **C-2** 오류 계약 테스트가 HTTP 경계를 안 봄 | 핸들러 직접 호출 → `@WebMvcTest`+MockMvc + 테스트 소스셋 전용 `ErrorProbeController`(`/__probe`, 운영 JAR 에 없음)로 이전. **새 테스트를 먼저 넣어 8건 실패를 확인한 뒤 고쳤고**(도메인 매핑 12건은 전후 모두 통과 = 새 테스트가 정확히 C-1 범위만 새로 잡았다) → **31건 전건 통과**. 8건 중 1건은 고칠 수 없어 테스트를 철회했고 그 근거가 계약 §2.7-3 재작성으로 이어졌다(위 표 참고) |
+| **CORS** (C-3) | `addCorsMappings` 가 아니라 **`CorsFilter`**(order HIGHEST_PRECEDENCE) — Starlette 미들웨어와 같은 **라우팅 밖** 위치여야 404·405에도 헤더가 붙는다(Python 실측 일치). 노출 헤더 `Content-Disposition`·`Location` 을 **preflight·실요청 양쪽에서** 확인. 회귀 테스트 10건 |
+| **parity CI** (2회차 X-1·X-2) | 판정 범위를 **"디렉터리 유무"에서 "버전 관리되는 선언"으로** 옮겼다. `backend-kotlin/parity-domains.txt` + Gradle `parityManifestCheck` 양방향 대조(선언 O/산출 X · 선언 X/산출 O · json 0건 전부 빌드 실패) + `parityActualClean`. **exit 2 사면은 제거** — 실측 결과 그 조건은 발생하지 않았고, exit 2는 "선언해 놓고 역방향 산출물을 안 만든" 상태에서만 난다. 사면은 `--only-domain` 부분 검증(exit 3)으로 옮겨 **탐지(Gradle 단계)와 사면(비교 단계)을 다른 CI 단계에 배치**했다 |
+| **정본 0개 가드** | `canonical_count == 0` 이면 exit 1. `--list` 가 exit 0 인데 출력만 비는 경로는 `pipefail` 이 못 잡는다 |
+| **정본 하한** | `.github/parity-canonical-floor.txt` + **비대칭 검사**(현재 정본 ⊇ 스냅샷). 추가는 자유, **삭제는 차단** |
+| **Boot 4.1.0** (P1-1) | Kotlin 2.3.21. **코드 변경 0.** 락파일 재생성 절차 확립(증분 `--write-locks` 는 stale 제약을 남긴다). Jackson 2가 클래스패스에서 제거됨 |
+| **U-1** 미처리 500의 CORS 헤더 | **개선 수용**(리더 판정 + 사용자 승인). React 분기 실측 결과 `status = 0` 에 의존하는 화면이 없다 |
+| **계약 §2.7-3** | 실행 불가능한 종료 조건을 **"규칙 1(사적 헤더는 `ResponseEntity` 에만) + 단언 A·B"** 로 재작성 |
+
+### 사실 정정 (기존 기재가 틀렸다)
+
+- **`P1-2`**(CI parity 비교 단계가 exit 2를 통과 처리) — **해소됨.** exit 2 사면 **자체가 제거**됐다.
+  마감을 "Phase 4 종료 시"로 잡았던 것은 그 완화를 그때까지 유지한다는 전제였는데, 실측 결과 그 사면이
+  겨냥한 조건("아직 포팅하지 않았다")은 애초에 exit 2를 내지 않았다 — exit 1을 낸다. 사면할 이유가 없었다.
+- **detekt 1.23.8의 내장 Kotlin 파서는 1.9가 아니라 2.0.21이다**(`detekt-parser` POM 실측).
+  그리고 **ktlint-cli 1.8.0은 2.2.21을 내장해 이제 컴파일러(2.3.21)와 다르다** — 4.0.7 시절엔 우연히 같아서
+  Phase 1 문서에 기재되지 않았다.
+
+### 미결 원장 (마감 명시) — 각 Phase 착수 게이트에서 다시 센다
+
+| 항목 | 마감 |
+|---|---|
+| Flyway 지문 TOCTOU + Alembic head 미확인 (2회차 codex #3·#4 / 교차 F-3·F-5) — 지문 판정·baseline·migrate 가 각각 별도 연결이고 어떤 잠금에도 덮이지 않는다. `alembic_version` **읽기**는 계획이 금지한 적이 없다(구현자의 자기부과 제약이었다) | Phase 3 착수 전 |
+| `CoreModuleBoundaryTest` 우회 (2회차 codex #5) — `compileOnly` + 목록 밖 타입이면 통과한다. `api`·`worker` 가 `infrastructure` 를 `runtimeOnly` 로 유지하는지 **단언하는 코드가 0건**이라, `runtimeOnly` → `implementation` 한 글자 변경에 아무 테스트도 깨지지 않는다 | Phase 3 착수 전 |
+| provenance·external이 **같은 변경 가능 소스를 신뢰** (2회차 codex #2 / 교차 X-3) — 정본 하한이 삭제 방향을 막았으나, 생성기와 검증기를 같은 diff 에서 함께 약화시키는 경로는 남아 있다. codex 권고(정본 manifest 를 `BUILDERS` 에서 분리 / 알려진 손상 산출물을 먹여 exit 1 을 단언하는 adversarial 테스트) 채택 여부 판정 필요 | Phase 2 종료 전 |
+| crypto 음성 케이스가 정본 대조에서 빠짐 (H-3 = 교차 X-4) — `VOLATILE_INPUT_FIELDS` 가 도메인 단위라 crypto 의 `input`(`{key, token}`)이 통째로 빠지고 음성 3건의 `expected` 가 동일하다. **`crypto-tampered.token` 을 쓰레기로 바꿔도 게이트가 닫힌다.** 해법은 같은 파일 안 `argon2` 방식(파생 성질을 `expected` 에 담기)에 이미 실증돼 있다 | Phase 4 종료 전 |
+| 계약의 요청 길이 제약 5개가 계약 자신의 422 규칙과 충돌 (F3 = 교차 C-5) — 코드에서 이 다섯은 스키마 제약이 아니라 서비스 계층 규칙이라 422 **문자열** `detail` 인데, 계약은 스키마 실패를 422 **배열**로 못박았다. 셋은 코드보다 엄격하기까지 하다(코드는 정규화 **후** 길이를 잰다) | Phase 3 착수 전 |
+| 계약 multipart `contentType` 제약이 구현에 없음 (F2 = 교차 C-6) — 성실히 구현하면 `.hwpx` 업로드가 깨지고 **그 구현이 contract test 를 통과한다**(`.hwpx` 는 브라우저가 `application/octet-stream` 을 보내고, `application/hwp+zip` 은 내보내기 mimetype 이다) | Phase 4 착수 전 |
+| **G-1** `POST /workspaces`·`PATCH /workspaces/{id}` 캐시 헤더 테스트 공백 — Python 기준선에도 없다(계약상 10곳 중 2곳) | Phase 3 |
+| 계약 §2.7-3 **규칙 1**을 Phase 3에서 **실측**해 성립 확인 — 근거(Spring MVC 는 `ResponseEntity` 헤더를 컨트롤러 정상 반환 이후에 기록한다)를 문서 수준에서만 확인했고 이 저장소에서 실행하지 않았다. 어긋나면 §5를 고친 뒤 Phase 3을 닫는다 | Phase 3 종료 전 |
+| **문서 spike 재검증** — Phase 0 spike 는 Kotlin **2.2.0** 조합에서 통과한 것이다. 현재 2.3.21이므로 POI 5.4.1·PDFBox 3.0.5·commons-compress 1.27.1 조합으로 **DOCX 동등성 7항목을 다시 확인**해야 한다. 이번에 확인한 것은 좌표 해석과 컴파일뿐이다 | Phase 4 착수 전 |
+| DOCX 내보내기 템플릿 동봉 여부 — POI 산출물에 `styles.xml`/`theme` 가 없어 Heading 1 서식이 소실된다 | Phase 4 착수 전 |
+| 내보내기 parity 를 **바이트 해시가 아닌 정규화 텍스트로** — zip 컨테이너 바이트는 Python 과 같아질 수 없다(실측 java 434B vs python 348B). `parity-verifier` 합의 필요 | Phase 4 착수 전 |
+| `handleHandlerMethodValidationException` **HTTP 경계 미검증** — `spring-boot-starter-validation` 부재. 입력 상한과 함께 회귀 고정 | Phase 3 |
+| parity 하네스 배선 주의 — 디렉터리 비교는 `actual_root / fixture_path.relative_to(fixture_root)` 로 짝짓는다(`compare_parity.py:713-715`). 즉 **actual 파일명이 fixture 파일명과 같아야** 한다 — `masking.json` 이나 `kotlin.json` 이 아니다 | Phase 2 배선 시 |
+| `resolveAndLockAll` 태스크 도입 · Gradle 플러그인 클래스패스 locking · Gradle 10 deprecation 경고 — 셋 다 기존 상태이거나 별건이며 구현자가 코드에 넣지 않았다 | 승인 대기 |
+| **다음 회차 리뷰 focus 를 계약·보안 불변식·테스트 적정성 축으로** — 이번 codex focus 를 5축(모듈 경계·Flyway·`encryption_scheme`·CI 게이트·parity 우회)으로 좁힌 탓에 그 세 축의 Claude 지적 **17건(C-1~C-9, S-1~S-5, T-1~T-6)이 단일 관점 판정으로 남아 교차 검증을 받지 못했다** | Phase 2 리뷰 |
+| CI가 실제 GitHub Actions 에서 도는 것 미검증 — YAML 파싱과 로컬 동등 명령만 검증했다. `::error::`/`::notice::` 렌더링, `setup-gradle@v4`, 러너 Docker 위 Testcontainers 는 첫 push 에서 처음 검증된다 | 첫 push |
+
+---
+
+## Phase 2 — 순수 도메인 로직 포팅
+
+계획 문서 §5 Phase 2. 원문 종료 조건: "**외부 API·DB 없이 실행하는 parity suite가 동일 결과를 냄.**"
+
+**전부 미착수다.** 아래 표는 착수 시점의 판정 기준이며, 근거 없는 `예`는 `아니오`로 취급한다는 규칙이 그대로 적용된다.
+`관련 정본 도메인`은 `dump_parity_fixtures.py --list` 의 11개 중 이 Phase 가 덮는 8개를 배정한 것이다
+(나머지 `crypto`·`jwt`·`argon2` 는 Phase 3·4).
+
+| 종료 조건 | 충족 | 관련 정본 도메인 | 근거 | 미해결 항목 | blocked-by | 마지막 갱신 주체 |
+|---|---|---|---|---|---|---|
+| 개인정보 마스킹 포팅 (`app/privacy/masking.py`) | 아니오 | `masking` | - | 패턴 우선순위·자리표시자 번호·구간 겹침이 판정 대상 | - | - |
+| 텍스트 정규화·제어문자 제거 포팅 | 아니오 | `text` | - | XML 1.0 비허용 문자만 제거하고 탭·개행·복귀는 유지 | - | - |
+| 프롬프트 렌더링과 동적 어려운 말 목록 포팅 | 아니오 | `prompts` | - | 시스템·사용자·보정 프롬프트 **전문**이 대조 대상 | - | - |
+| 스타일 규칙 포팅 (`app/easyread/style_rules.py`) | 아니오 | `style` · `style-tables` | - | 규칙 상수 표 전체 덤프까지 일치해야 한다. CLAUDE.md 규약대로 프롬프트 생성과 골든셋 평가가 같은 정의를 써야 한다 | - | - |
+| 보정 채택 판정 포팅 | 아니오 | `repair-adoption` | - | 자리표시자 유실·위반 건수 악화 가드 | - | - |
+| placeholder 보존 검사 포팅 | 아니오 | `repair-adoption` · `export` | - | **확인 필요**: 변환 결과 전체의 `missing_placeholders` 산출(`app/services/conversion.py:115`)은 어느 정본 도메인에도 배정돼 있지 않다. 도메인을 늘릴지 기존 도메인에 케이스를 넣을지 착수 시 판정 | - | - |
+| 내보내기 파일명·`Content-Disposition` 생성 포팅 | 아니오 | `export` | - | RFC 5987 헤더·파일명 정제·자리표시자 복원·TXT 바이트. **바이트 해시로 비교하지 않는다**(미결 원장) | - | - |
+| LLM 응답 후처리 포팅 | 아니오 | `postprocess` | - | 코드 펜스·머리말 제거에서 **과잉 제거 금지** | - | - |
+| Python/Kotlin 공용 JSON fixture 생성 (`parity/fixtures/`) | 아니오 | 전 도메인 | - | 저장소에 `parity/` 디렉터리 자체가 없다. 이것이 Phase 1 필수 조치 E를 닫는 선행 조건이다 | - | - |
+| 도메인마다 `backend-kotlin/parity-domains.txt` 선언 + Kotlin parity 테스트가 `parity/actual/` 산출 | 아니오 | 전 도메인 | - | **구현과 선언이 같은 커밋에 들어가야 한다** — 선언만 하면 `parityManifestCheck` 가 "선언 O/산출 X", 구현만 하면 "선언 X/산출 O" 로 빌드를 깬다 | - | - |
+| **종료 조건**: 외부 API·DB 없이 도는 parity suite 가 양쪽에서 같은 결과 | 아니오 | 전 도메인 | - | 8개 도메인 전부 선언되어 값 비교가 실제로 돌아야 한다. 부분 선언은 exit 3(부분 게이트)이며 **전체 통과가 아니다** | - | - |
 
 ---
 

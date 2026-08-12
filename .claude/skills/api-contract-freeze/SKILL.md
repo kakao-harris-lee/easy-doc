@@ -212,9 +212,13 @@ grep -rn "headers.update(PRIVATE_RESPONSE_HEADERS)\|\*\*PRIVATE_RESPONSE_HEADERS
      들어간 도메인 예외 메시지, 오류에 부분 결과 첨부) 이 결정의 근거가 사라진다. §2.2의
      "검증 실패 응답에 입력값이 없다"와 **한 묶음**이므로, 그 항목을 건드리는 변경은 이
      결정도 함께 검토한다.
-   - **Kotlin 주의 — 이 차이는 Kotlin 테스트로만 잡힌다**: Spring MVC는
-     `HttpServletResponse`에 쓴 헤더가 `@ExceptionHandler` 응답에도 남는다. Python과
-     거동이 반대이므로 순진한 포팅은 계약 위반이 된다.
+   - **Kotlin 주의 — 지우는 규칙이 아니라 붙이는 자리의 규칙이다**: Spring MVC는
+     `HttpServletResponse`에 쓴 헤더가 `@ExceptionHandler` 응답에도 남고, **사후에 지울
+     수단이 없다** — 서블릿 API에 `removeHeader`가 없고 `response.reset()`은 필터가 써 둔
+     CORS 헤더까지 함께 지운다(구현자 확인, 2026-08-12). Python과 거동이 반대이므로
+     순진한 포팅은 계약 위반이 되는데, 위반을 되돌릴 방법이 없으므로 계약을 지키는 길은
+     **애초에 `HttpServletResponse`에 쓰지 않는 것** 하나뿐이다. 강제 가능한 규칙과 그
+     감시 단언은 §5에 Phase 3 종료 조건으로 적었다.
      Python 쪽 부정 단언은 이미 있다 — `tests/api/test_errors.py`의
      `test_도메인_예외_오류_응답에는_캐시_금지_헤더가_없다`(401·404·409),
      `test_검증_실패_응답에도_캐시_금지_헤더가_없다`(422),
@@ -227,12 +231,35 @@ grep -rn "headers.update(PRIVATE_RESPONSE_HEADERS)\|\*\*PRIVATE_RESPONSE_HEADERS
      ② Kotlin이 이식할 원본이 되는 것 둘뿐이다. **실제 회귀 검출은 Phase 3에서 만들
      Kotlin 계약 테스트가 유일한 수단이며, 그것을 §5에 종료 조건으로 걸어 두었다.**
 
-#### 미결 (동결 전에 판단할 것)
+4. **미처리 500 응답에도 CORS 헤더를 낸다 — Python과 의도적으로 다르다** (2026-08-12
+   리더 판정, 사용자 승인). 동결의 기본값은 "현재 동작을 굳힌다"이고 이 항목만 예외다.
+   - **Python(사실)**: `ServerErrorMiddleware`가 CORS 미들웨어 **바깥**에 있어 미처리
+     500에 헤더를 붙일 수 없다(`app/api/errors.py`에 한계로 명시). 브라우저는 상태
+     코드조차 못 읽고, React `client.ts`가 `ApiError(0, "서버에 연결하지 못했습니다…")`를
+     만든다.
+   - **Kotlin(사실)**: `CorsFilter`가 라우팅 밖(서블릿 필터 체인 앞)에 있다. Starlette
+     미들웨어와 같은 위치이고 `/nope`(404)·405에도 헤더가 붙어야 하므로 이 배치가 옳다 —
+     그 결과 미처리 500에도 헤더가 붙는다. 실측(일회성 프로브, 커밋되지 않음):
+     `status=500 | ACAO=http://localhost:5173 | EXPOSE=Content-Disposition, Location`.
+   - **결정과 근거**: **개선을 받아들인다.** 브라우저가 응답을 읽어 React가
+     `ApiError(500, "서버 오류가 발생했습니다")`를 받으므로 진단이 쉬워지고 사용자에게
+     나가는 문구가 정확해진다. Python을 재현하려면 `CorsFilter`를 감싸는 필터를 새로
+     만들어야 하는데, 그것은 **일부러 나쁜 동작을 만드는 코드**를 저장소에 남긴다.
+   - **범위**: 달라지는 것은 CORS 응답 헤더의 유무뿐이다. 상태 코드(500)와 본문
+     (`{"detail": "서버 오류가 발생했습니다"}`)이 달라지면 의도된 차이가 아니라 위반이다.
+     parity 대조가 이 헤더를 불일치로 잡아도 **차단 사유가 아니다**.
+   - **Phase 6 확인 항목**: React에 `status = 0`을 보는 화면 분기는 **없다**(2026-08-12
+     실측 — `NETWORK_ERROR_STATUS`는 `client.ts`와 `client.test.ts`에만 등장하고,
+     컴포넌트는 전부 `caught instanceof ApiError ? caught.message : <폴백>` 한 모양이다).
+     상태로 갈리는 자리는 `client.ts`의 `response.status === 401 && token !== null`
+     하나뿐이며 500과 무관하다. 바뀌는 것은 사용자에게 보이는 문구뿐이다. Phase 6에서는
+     같은 grep을 재실행해 그 사이 새 분기가 생기지 않았는지만 확인한다.
+   - 계약 정본은 `contracts/easy-doc-v1.yaml`의 `x-cors.x-unhandled-500-cors`다.
 
-4. **미처리 500 응답에 CORS 헤더가 없다.** `ServerErrorMiddleware`가 CORS 미들웨어 바깥에
-   있어 구조적으로 붙지 않는다(`app/api/errors.py`에 한계로 명시됨). 브라우저는 상태
-   코드조차 못 읽고 네트워크 오류로 본다. Kotlin에서는 이 제약이 없으므로 "동등하게
-   재현"할지 "개선"할지 결정한다.
+#### 미결
+
+현재 없다 — 위 4건으로 모두 해소됐다. 새 미결이 생기면 이 소절에 "동결 전에 판단할 것"으로
+적고 리더 판단을 받는다. 임의로 고치지 않는다.
 
 ## 3. `contracts/easy-doc-v1.yaml` 작성 절차
 
@@ -368,12 +395,39 @@ for p, m, r in rows: print(f'{m:6} {p:40} {r}')
 - 401 응답에 `WWW-Authenticate: Bearer`가 있음.
 - 오류 응답(401·422 최소 각 1건)에 `Cache-Control`이 **없음**을 단언한다(§2.7 해결 3).
   Python 쪽은 `tests/api/test_errors.py`에 있고 401·404·409·422·500을 덮는다.
-  **Phase 3(Kotlin 오류 매핑 구현)의 종료 조건 — 빠지면 Phase 3을 닫지 않는다**: 같은 부정
-  단언을 Kotlin 계약 테스트(MockMvc)에 넣는다. 성공 응답에 `Cache-Control: no-store`를
-  붙이는 **바로 그 컨트롤러**가 실패하는 경로로 최소 401·404·409·422·500을 내게 하고,
-  응답에 `Cache-Control`과 `X-Content-Type-Options`가 **없음**을 단언한다. Spring MVC의
-  헤더 상속 사고를 잡는 것은 이 Kotlin 테스트뿐이다 — Python 테스트는 핸들러가 새 응답
-  객체를 만들어 구조적으로 통과하므로 이 회귀를 잡지 못한다(§2.7 해결 3).
+
+  **Phase 3(Kotlin 오류 매핑 구현)의 종료 조건 — 빠지면 Phase 3을 닫지 않는다.**
+  조건은 **규칙 하나 + 단언 둘**이며 셋 다 실행 가능한 형태다.
+
+  1. **규칙 — 사적 헤더의 부착 지점을 고정한다.** `Cache-Control: no-store`와
+     `X-Content-Type-Options: nosniff`는 컨트롤러가 돌려주는 **`ResponseEntity`의 헤더로만**
+     싣는다. `HttpServletResponse.setHeader`, `HandlerInterceptor`, 서블릿 `Filter`,
+     전역 `WebMvcConfigurer` — 어느 것으로도 붙이지 않는다.
+     이유: 한 번 붙은 헤더는 **되돌릴 수 없다**(§2.7 해결 3). 그러니 "붙였다가 오류
+     경로에서 지운다"는 설계는 존재할 수 없고, 강제 가능한 규칙은 **성공 경로에서만
+     기록되는 자리에 두는 것**뿐이다. `ResponseEntity`의 헤더는 컨트롤러가 **정상 반환한
+     뒤** 반환값 처리기가 실제 응답에 옮겨 적으므로, 예외로 빠지면 그 `ResponseEntity`
+     자체가 만들어지지 않아 헤더도 따라가지 않는다.
+  2. **단언 A(긍정)**: §2.5의 성공 응답 **10곳 각각**에 두 헤더가 있음을 MockMvc로 단언한다.
+  3. **단언 B(부정)**: 그 헤더를 내는 **바로 그 컨트롤러 메서드**가 실패하는 경로로 최소
+     401·404·409·422·500을 내게 하고, 응답에 `Cache-Control`과 `X-Content-Type-Options`가
+     **없음**을 단언한다.
+
+  단언 B는 규칙 1의 **감시 장치**이지 별도의 구현 과제가 아니다. 규칙 1을 지키면 그냥
+  통과하고, 누가 헤더 부착을 `HttpServletResponse`나 필터로 옮기는 순간 깨진다.
+  이전 판본은 규칙 1 없이 단언 B만 걸어 두어, `HttpServletResponse`로 구현한 뒤에는
+  만족시킬 방법이 없는 조건이었다(구현자 확인, 2026-08-12). 종료 조건은 **결과만이 아니라
+  그 결과를 낼 수 있는 수단과 함께** 적는다.
+
+  **검증 상태 — 실측으로 확정할 것**: 규칙 1의 근거인 Spring MVC 거동(`ResponseEntity`
+  헤더는 정상 반환 경로에서만 응답에 기록된다)은 Servlet·Spring API 문서 수준에서만
+  확인했고 이 저장소에서 실행해 보지는 않았다. Phase 3에서 단언 A·B를 **먼저 돌려** 규칙
+  1이 실제로 성립하는지 실측하고, 어긋나면 이 절을 고친 뒤 Phase 3을 닫는다.
+  (알려진 예외 하나: 응답이 이미 커밋된 뒤 — 파일 스트리밍 도중 — 터진 예외는 어느 규칙으로도
+  깨끗한 오류 응답을 만들 수 없다. 계약 판정 대상이 아니다.)
+
+  Spring MVC의 헤더 상속 사고를 잡는 것은 이 Kotlin 테스트뿐이다 — Python 테스트는
+  핸들러가 새 응답 객체를 만들어 구조적으로 통과하므로 이 회귀를 잡지 못한다(§2.7 해결 3).
 - 남의 자원 접근이 403이 **아님**을 단언한다(404여야 한다).
 - Python 발급 JWT를 Kotlin이 수용하고 그 반대도 되는 양방향 fixture 테스트.
 
