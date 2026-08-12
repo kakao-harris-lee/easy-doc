@@ -98,22 +98,74 @@ Phase 1 착수를 막지는 않는다. 4는 Phase 5(작업 큐)에서, 5는 Phas
 
 ---
 
+## Phase 1 — Kotlin 골격과 CI
+
+계획 문서 §5 Phase 1. 원문 종료 조건: "**빈 DB와 기존 schema snapshot 양쪽에서 Kotlin 앱이 기동되고 `/health`가 응답함.**"
+
+작업 항목 6개를 종료 조건 행으로 쪼갰다. 상세 근거·명령·출력은 `01_kotlin-implementer_skeleton.md`.
+
+| 종료 조건 | 충족 | 근거 | 미해결 항목 | blocked-by | 마지막 갱신 주체 |
+|---|---|---|---|---|---|
+| `backend-kotlin` Gradle 멀티모듈 생성 (§3.2의 5개 모듈, 의존 방향) | 예 | `core`/`application`/`infrastructure`/`api`/`worker` 생성. `api`·`worker` 는 `infrastructure` 를 **`runtimeOnly`** 로만 의존해 JDBC·(Phase 5) LLM SDK 타입이 컴파일 시점에 보이지 않는다. `application` 은 `infrastructure` 를 의존하지 않는다. `api`↔`worker` 상호 의존 없음. **`core` 의 Spring·DB 비의존을 `CoreModuleBoundaryTest` 가 실행으로 확인**(7개 클래스 부재: `ApplicationContext`·`SpringApplication`·`JdbcClient`·`Flyway`·`org.postgresql.Driver`·Jackson 2/3 `ObjectMapper`) | `application` 본 소스는 비어 있다(경계만 세움, 유스케이스는 Phase 3~5). 계약은 `application/README.md` | - | kotlin-implementer |
+| toolchain·dependency locking·version catalog·ktlint/detekt·테스트 설정 | 예 | Java 21 toolchain(`jvmToolchain(21)`), `allWarningsAsErrors=true`. 락파일 6개 커밋(모듈 5 + settings, 792줄) — `clean build` 가 락 갱신 없이 성공. catalog 가 유일한 버전 선언 지점이고 **BOM 밖에서 버전을 고르는 것은 Kotlin 플러그인·ktlint·detekt 셋뿐**. ktlintCheck·detekt 모두 통과(위반 0). **locking 이 실제 드리프트를 잡았다** — kotlinx-serialization 1.11.0이 테스트 클래스패스 stdlib 만 2.2.21→2.3.20으로 올린 것을 발견해 BOM(1.9.0)에 넘겼다 | 기본값을 벗어난 규칙 2건(ktlint `class-signature` 임계 1→2, detekt `SpreadOperator` off) — 사유는 산출물 §2.4. detekt 1.23.8은 Kotlin 1.9 파서 내장(2.x는 alpha뿐이라 미채택) | - | kotlin-implementer |
+| `/health` 가 계약대로 응답 (상수 `{"status":"ok"}`) | 예 | `HealthContractTest` 4건 — 200·`{"status":"ok"}`(strict)·인증 불필요·**캐시 금지 헤더 없음**·DataSource 없이도 200(=의존 서비스 진단 안 함). compose 실측: `HTTP/1.1 200 / Content-Type: application/json / {"status":"ok"}`. Actuator 미도입(계약 14 엔드포인트 밖 경로를 노출하지 않으려고) | - | - | kotlin-implementer |
+| 설정 바인딩·구조화 로그·비밀값 마스킹 | 예 | `EasyDocProperties`(`app/config.py` 포팅) + `Secret` 타입(`SecretStr` 대응) + `SecretConverter`. `SecretTest` 7건 — `toString`·문자열 템플릿·**데이터 클래스 필드로 들어가도** 평문 미노출, 값 비의존 `hashCode`, 상수 시간 비교. 구조화 로그는 Dockerfile `LOGGING_STRUCTURED_FORMAT_CONSOLE=ecs` 로 ECS JSON — compose 로그로 확인. `server.error.include-*` 를 전부 `never`/false 로 꺼 스택·입력값이 응답에 실리지 않게 했다 | 설정 값이 실제로 **쓰이는** 곳은 아직 없다(`/health` 는 설정을 읽지 않는다). 사용·검증은 각 기능 Phase | - | kotlin-implementer |
+| Testcontainers PostgreSQL + Flyway baseline 구축 | 예 | `V1__python_schema_baseline.sql` 을 **Alembic 을 실제로 돌려**(`uv run alembic upgrade head` → `alembic_version=0006`) 뽑은 스키마로 작성. 지문 대조 **전건 일치**(extension 1 · table 4 · column 32(서수 포함) · constraint 11 · index 11). 회귀는 `PythonSchemaBaselineTest` 4건 + `FlywayBaselineGuardTest` 4건. `baseline-on-migrate=true` 를 쓰지 않고 **지문이 일치할 때만** baseline 하는 `FlywayBaselineGuard` 를 만들었다(§4.2-4). `alembic_version` 은 만들지도 읽지도 쓰지도 않는다(§4.2-7) | Testcontainers 컨테이너가 모듈마다 따로 뜬다(`withReuse` 미적용). 로컬 전체 16초라 지금은 무해 | - | kotlin-implementer |
+| **필수 조치 D** — `encryption_scheme` additive 추가 | 예 | **V2에 배치**(V1 아님). 근거: ① V1은 "Python 스키마 재현"이라 신규 컬럼이 들어가면 지문 대조가 성립하지 않는다 ② **결정적** — baseline 은 V1을 건너뛰므로 V1에 넣으면 기존 Alembic DB에서 컬럼이 영원히 안 생긴다 ③ §4.2-5가 "Kotlin 전용 변경은 V2부터"라고 명시. 대상 `documents`·`conversions`, 기본값 `'fernet-v1'`, CHECK 제약 동반. `V2 는 encryption_scheme 을 additive 로 추가한다`·`Python 컬럼만 지정한 INSERT 가 성공한다` 테스트 통과 | 관찰 기간 내내 `fernet-v1` 고정. AEAD 전환은 Phase 8 이후 별건 | - | kotlin-implementer |
+| Dockerfile·compose Kotlin profile 추가 (기존 Python 서비스 유지) | 예 | `backend-kotlin/Dockerfile`(멀티스테이지, api·worker bootJar 한 이미지). compose에 `kotlin-migrate`·`kotlin-api`(8100)·`kotlin-worker` 를 `profiles:["kotlin"]` 뒤에 추가 — **기존 Python 서비스 정의를 하나도 바꾸지 않았고** 기본 `docker compose up` 동작이 그대로다. 실측: 두 스택 동시 기동, Kotlin 8100·Python 8000 양쪽 `/health` 200. `kotlin-migrate` exit 0. §4.2-6대로 **DB를 갈랐다**(`easydoc` / `easydoc_kotlin`) — Python DB에 `flyway_schema_history` 0개 확인 | `easydoc_kotlin` 은 기존 볼륨에서 자동 생성되지 않는다(initdb 는 빈 데이터 디렉터리에서만 실행) — 수동 절차 문서화. compose 실행 중 **worker 즉시 종료**를 발견해 `spring.main.keep-alive: true` 로 고쳤다(산출물 §9.5) | - | kotlin-implementer |
+| CI에 Kotlin build/test 추가 + 기존 Python/React gate 유지 | 아니오 | `.github/workflows/ci.yml` 에 `kotlin` 잡 추가(9 steps: setup-java 21 · setup-gradle · setup-uv · 이미지 pull · `./gradlew build` · `parityHarness` · 배선 확인 · parity 비교). **기존 `quality`(8 steps)·`frontend`(6 steps) 잡을 건드리지 않았다** — 로컬에서 `ruff`·`ruff format`·`mypy`·`pytest`(820 passed, 68 skipped) 전부 통과 확인 | **CI가 실제 GitHub Actions 에서 도는 것을 확인하지 못했다.** YAML 파싱과 로컬 동등 명령만 검증했다. `gradle/actions/setup-gradle@v4`·러너 Docker 데몬 위 Testcontainers 는 **첫 push 에서 처음 검증된다**. 이 행은 그때 닫는다 | 첫 PR 실행 | kotlin-implementer |
+| **필수 조치 E** — Kotlin 테스트가 `parity/actual/` 을 쓰도록 CI 배선 | 아니오 | 배선 구조 완성: `ParityActual`(경로를 시스템 프로퍼티로만 받고 **없으면 던진다**) + `parityHarness` Gradle 태스크(`@Tag("parity")` 만, 저장소 루트로 출력) + 일반 `test` 는 모듈 `build/` 로 격리 + CI 3단계(생성 → 존재·`runtime:kotlin` 확인 → 비교). `ParityActualTest` 5건이 산출물 형식·경로·한글 비이스케이프·거부 조건을 고정. 실측 산출물 `parity/_harness-selfcheck/kotlin.json`(`runtime:kotlin`, JVM 21.0.4 Temurin, Kotlin 2.2.21) | **채우지 못한 것**: `parity/fixtures/` 자체가 없어 `compare_parity.py` 를 **한 번도 돌리지 못했다**(Phase 2). 도메인 산출물은 Phase 2(8개)·Phase 3(jwt·argon2)·Phase 4(crypto). **CI 비교 단계가 종료 코드 2를 통과 처리한다 — Phase 4 종료 시 이 완화를 제거해야 한다** | Phase 2 (fixture 생성) | kotlin-implementer |
+| 종료 조건: 빈 DB와 기존 schema snapshot 양쪽에서 기동 + `/health` 응답 | 예 | `ApiStartupOnEmptyDatabaseTest` 2건 + `ApiStartupOnPythonSnapshotTest` 2건. `@SpringBootTest(RANDOM_PORT)` + JDK `HttpClient` 로 **실제 소켓**을 친다. 빈 DB → `flyway_schema_history=[1,2]`, 200 `{"status":"ok"}`. 기존 스냅샷(Alembic 0006 상태) → `[1(BASELINE), 2(SQL)]`, `alembic_version=0006` 불변, 200 `{"status":"ok"}`. compose 실측으로도 재확인(산출물 §9) | - | - | kotlin-implementer |
+
+**전체 테스트**: `./gradlew clean build` → **BUILD SUCCESSFUL, tests=48 failures=0** (core 19 · infrastructure 8 · api 18 · worker 3).
+
+### 확정한 버전 조합 (Boot BOM 적용 후)
+
+| 항목 | 값 | spike(§Phase 0) 대비 |
+|---|---|---|
+| JDK / Gradle | Temurin 21.0.4 / 9.1.0 | 동일 |
+| Kotlin | **2.2.21** | 2.2.0 → BOM 정렬 (변경) |
+| Spring Boot | **4.0.7** | 신규 확정 |
+| Spring Framework / Jackson / JUnit / Testcontainers / Flyway / PG 드라이버 | 7.0.8 / **3.1.4** / **6.0.3** / **2.0.5** / 11.14.1 / 42.7.11 | 전부 BOM 관리 |
+| ktlint(플러그인/CLI) / detekt | 14.2.0 / 1.8.0 / 1.23.8 | 신규 |
+
+Boot 4가 spike 이후 바꾼 좌표(실측): `FlywayMigrationStrategy` → `spring-boot-starter-flyway` /
+`org.springframework.boot.flyway.autoconfigure`, `@WebMvcTest` → `spring-boot-starter-webmvc-test` /
+`org.springframework.boot.webmvc.test.autoconfigure`, Testcontainers → `org.testcontainers:testcontainers-postgresql`.
+**Jackson 3.1.4**(패키지 `tools.jackson`)가 관리 버전이라 Phase 2 이후 JSON 처리 시 주의가 필요하다.
+
+### 리더 판단이 필요한 항목
+
+| # | 내용 | 마감 |
+|---|---|---|
+| P1-1 | **Spring Boot 4.0.7 vs 4.1.0.** 계획 §3.1은 "4.1 계열 후보"라 적었으나 4.0.7을 골랐다. 두 계열 차이는 Kotlin(2.2.21 vs 2.3.21)과 Flyway(11.14.1 vs 12.4.0)뿐이고 나머지는 동일하다. 4.0.7을 고른 이유는 ① Phase 0 문서 spike가 Kotlin **2.2.0** 위에서 POI·PDFBox·commons-compress 를 통과시켰고 2.2.21이 같은 마이너 계열이라 그 결과를 승계할 수 있다 ② 4.0 계열은 패치 7회 누적, 4.1.0은 GA 직후. **4.1.0으로 올릴지 / 계획 문서 문구를 정정할지** 판단 필요. 되돌리는 비용은 작다(catalog 두 줄 + 재빌드) | Phase 2 착수 전 |
+| P1-2 | CI parity 비교 단계가 **종료 코드 2를 통과 처리**한다. 지금은 역방향 산출물이 없어 정상이지만 Phase 4 종료 시 이 완화를 제거해야 게이트가 미검증 케이스를 잡는다 | Phase 4 종료 시 |
+
+### Phase 1에서 손대지 않은 것 (지시대로 보류)
+
+- **U-1**(미처리 500 응답의 CORS 헤더) — 리더 판단 전이라 **CORS 자체를 설정하지 않았다**
+- 검증 실패(422) 응답의 `detail` **배열** 형태 — 요청 본문을 받는 엔드포인트가 없어 재현 대상이 없다. Phase 3에서 옮길 때 `rejectedValue`(비밀번호 유출 경로)를 반드시 걷어낼 것
+- `GlobalExceptionHandler` 의 HTTP 경계 검증 — 도메인 예외를 던지는 엔드포인트가 없어 핸들러를 직접 호출했다(`ErrorContractTest` 10건). HTTP 경계는 Phase 3 contract test
+- `app/`·`tests/`·`frontend/`·`scripts/`·`.claude/`·`contracts/` — 읽기만 했다
+
+---
+
 ---
 
 ## 아직 돌리지 않은 검증 게이트 (계획 §6)
 
 | 게이트 | 상태 |
 |---|---|
-| Build (Gradle, TypeScript) | 미실행 — `backend-kotlin/` 미생성 |
-| Unit (core, application, React) | 미실행 |
+| Build (Gradle, TypeScript) | **Gradle 실행됨** (Phase 1) — `./gradlew clean build` BUILD SUCCESSFUL (컴파일 + ktlintCheck + detekt + test). TypeScript 는 기존 `frontend` 잡이 그대로 담당 |
+| Unit (core, application, React) | **부분 실행** (Phase 1) — core 19건(모듈 경계 7 · Secret 7 · parity 하네스 5) 통과. **도메인 로직은 아직 없다**(마스킹·스타일 규칙 등은 Phase 2). `application` 은 본 소스가 없어 테스트도 없다. React 는 기존 `frontend` 잡 |
 | Contract (14 endpoints) | 미실행 — 계약 파일은 **작성됨**(`contracts/easy-doc-v1.yaml`)이나 contract test 미구현. 실행은 Kotlin API가 생기는 Phase 3부터 (`00_contract-keeper_test-plan.md` §5) |
-| DB (Testcontainers) | 미실행 |
+| DB (Testcontainers) | **실행됨** (Phase 1) — pgvector/pgvector:pg16 컨테이너로 8건. V1↔Alembic 지문 대조, V2 additive, baseline 가드 4갈래, 빈 DB·기존 스냅샷 기동. **repository·트랜잭션·SKIP LOCKED 는 아직 없다**(Phase 3·5) |
 | Crypto (Python ↔ Kotlin) | 미실행 — fixture **생성기**가 11개 도메인을 지원할 뿐, **`parity/fixtures/` 산출물은 저장소에 존재하지 않는다**(`parity/` 디렉터리 자체가 없음). Kotlin 측도 부재 |
 | Document (docx/pdf/hwpx/txt) | 미실행 |
 | Worker (lease/retry/crash) | 미실행 |
 | Quality (골든셋) | 미실행 |
 | Security (소유권·로그·캐시) | 미실행 |
-| E2E (compose + browser) | 미실행 |
+| E2E (compose + browser) | **compose 부분 실행** (Phase 1) — Kotlin api·worker·migrate 3서비스가 Python 스택과 동시 기동, `/health` 200 확인. **browser·업무 흐름은 미실행**(Phase 6) |
 | Ops (cutover/rollback) | 미실행 |
 
 **돌리지 않은 게이트를 통과한 것처럼 보고하지 않는다.**

@@ -19,3 +19,19 @@ dist/
 
 # OMC 상태
 .omc/
+
+# Kotlin / Gradle
+# 빌드 산출물과 데몬 상태는 커밋하지 않는다. 단 **gradle.lockfile 과 wrapper 는 커밋한다** —
+# 락파일이 없으면 전이 의존성이 조용히 올라가고, wrapper 가 없으면 CI가 로컬과 다른
+# Gradle 로 빌드한다(계획 §3.1).
+backend-kotlin/build/
+backend-kotlin/*/build/
+backend-kotlin/.gradle/
+backend-kotlin/*/.gradle/
+backend-kotlin/**/bin/
+!backend-kotlin/gradle/wrapper/gradle-wrapper.jar
+
+# parity 산출물은 실행할 때마다 생기는 결과물이라 커밋하지 않는다.
+# fixture(parity/fixtures/)는 정본이므로 Phase 2에서 생기면 커밋한다.
+parity/actual/
+parity/_harness-selfcheck/

@@ -75,3 +75,86 @@ jobs:
       - run: npm run check
       - run: npm run test -- --run
       - run: npm run build
+
+  # Kotlin 게이트. 계획 §5 Phase 1 "CI에 Kotlin build/test를 추가하되 기존 Python/React
+  # gate 유지". 위 두 잡을 건드리지 않는다 — 절체(Phase 7)까지 Python suite가 비교
+  # 기준으로 계속 돌아야 한다.
+  #
+  # paths 필터를 걸지 않는 이유는 frontend 잡과 같다: 필터를 걸면 필수 체크가 건너뛴 채
+  # "성공"으로 보고되어 병합이 열린다.
+  kotlin:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: backend-kotlin
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          # build.gradle.kts 의 jvmToolchain(21)과 같은 값. Phase 0 spike 조합이기도 하다.
+          distribution: temurin
+          java-version: "21"
+      - uses: gradle/actions/setup-gradle@v4
+      # parity 비교기(compare_parity.py)가 Python 정본 생성기를 다시 돌려 fixture 를
+      # 대조하므로 이 잡에도 uv 가 필요하다. Python **게이트**는 위 quality 잡이 그대로
+      # 담당한다 — 여기서 중복 실행하지 않는다.
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+          enable-cache: true
+
+      # Testcontainers 는 ubuntu-latest 러너의 Docker 데몬을 그대로 쓴다.
+      # 이미지를 미리 받아 두면 첫 테스트의 타임아웃 위험이 줄고, 무엇을 쓰는지 로그에 남는다.
+      - name: PostgreSQL 이미지 미리 받기
+        run: docker pull pgvector/pgvector:pg16
+
+      # build = 컴파일 + ktlintCheck + detekt + test (Testcontainers 포함).
+      # 락파일과 어긋나면 실패시킨다 — 전이 의존성이 조용히 올라가는 것을 막는 지점이다.
+      - name: Gradle build (ktlint · detekt · test)
+        run: ./gradlew build --no-daemon
+
+      # --- parity 게이트 배선 (Phase 0 필수 조치 E) ---------------------------
+      # 역방향 산출물(parity/actual/)을 **Kotlin 테스트가** 만든다는 것을 CI에서 보장한다.
+      # 이 배선이 없으면 fixture가 공개하는 키·시크릿으로 Python이 같은 파일을 만들어도
+      # 게이트가 구분하지 못한다(python-kotlin-parity 스킬 "이 게이트가 막지 못하는 것").
+      - name: parity 산출물 생성 (Kotlin 하네스)
+        run: ./gradlew parityHarness --no-daemon
+
+      - name: parity 하네스 배선 확인
+        working-directory: .
+        run: |
+          set -euo pipefail
+          selfcheck=parity/_harness-selfcheck/kotlin.json
+          if [ ! -f "$selfcheck" ]; then
+            echo "::error::Kotlin parity 하네스가 산출물을 쓰지 않았다 ($selfcheck 없음)."
+            echo "parityHarness 태스크와 ParityActual 의 parity.actual.dir 배선을 확인하라."
+            exit 1
+          fi
+          grep -q '"runtime": "kotlin"' "$selfcheck" || {
+            echo "::error::$selfcheck 의 runtime 이 kotlin 이 아니다."; exit 1; }
+          echo "parity 하네스 배선 OK:"; cat "$selfcheck"
+
+      # fixture 는 Phase 2에서 생긴다. 그전까지 비교기를 돌릴 대상이 없으므로 건너뛰되,
+      # **건너뛴 사실을 로그에 크게 남긴다** — 조용히 통과하면 Phase 2에서 이 단계가
+      # 처음부터 동작하지 않았다는 것을 늦게 발견한다.
+      - name: parity 비교 (fixture 가 있을 때만)
+        working-directory: .
+        run: |
+          set -uo pipefail
+          if [ ! -d parity/fixtures ]; then
+            echo "::warning::parity/fixtures 가 아직 없다 — Phase 2에서 생성한다. 비교를 건너뛴다."
+            exit 0
+          fi
+          uv run python .claude/skills/python-kotlin-parity/scripts/compare_parity.py \
+            --fixture parity/fixtures --actual parity/actual
+          status=$?
+          # 종료 코드 2 = 불일치는 없으나 미검증(역방향 산출물 미생성) 케이스가 남음.
+          # Phase 3·4에서 crypto·jwt·argon2 산출물이 채워질 때까지는 정상 상태다.
+          if [ "$status" -eq 2 ]; then
+            echo "::warning::parity 미검증 케이스가 남아 있다(종료 코드 2). Phase 3·4에서 닫는다."
+            exit 0
+          fi
+          exit "$status"

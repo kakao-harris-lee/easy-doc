@@ -1,0 +1,33 @@
+spring:
+  application:
+    name: easy-doc-worker
+
+  profiles:
+    default: worker
+
+  main:
+    # worker 는 HTTP 를 받지 않는다.
+    web-application-type: none
+    # 웹 서버가 없으면 non-daemon 스레드가 하나도 없어 main 이 반환하는 순간 JVM 이
+    # 종료한다(Phase 1 compose 실행에서 실제로 exit 0 로 즉시 끝나는 것을 확인했다).
+    # worker 는 상주 프로세스여야 하므로 Spring 이 유지 스레드를 띄우게 한다.
+    # Phase 5에서 lease 폴링 루프가 붙으면 그 루프가 같은 일을 하지만, 그때까지 compose 의
+    # worker 서비스가 "떠 있다"를 보여줄 수 있어야 배선 문제와 구분된다.
+    keep-alive: true
+
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/easydoc_kotlin}
+    username: ${SPRING_DATASOURCE_USERNAME:postgres}
+    password: ${SPRING_DATASOURCE_PASSWORD:postgres}
+    hikari:
+      initialization-fail-timeout: -1
+
+  flyway:
+    # worker 는 스키마를 적용하지 않는다. 마이그레이션 주체는 migrate profile 하나뿐이다 —
+    # 여럿이 동시에 migrate 하면 Flyway 잠금 경합과 부분 적용 상태가 생긴다.
+    enabled: false
+
+logging:
+  level:
+    root: INFO
+    kr.easydoc: INFO

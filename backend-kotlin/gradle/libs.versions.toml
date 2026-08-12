@@ -1,0 +1,89 @@
+# 의존성 좌표와 버전의 **유일한** 선언 지점.
+# 모듈 빌드 스크립트에는 `implementation(libs.xxx)` 형태만 쓴다 (kotlin-spring-conventions §1).
+#
+# 버전 근거 (계획 §3.1 "구현 시작 시 호환성 spike를 통과한 조합을 고정한다"):
+#
+# - Phase 0 문서 spike(`00_kotlin-implementer_doc-spike.md`)가 검증한 조합은
+#   Java 21.0.4 Temurin / Gradle 9.1.0 / Kotlin 2.2.0 / POI 5.4.1 / PDFBox 3.0.5 /
+#   commons-compress 1.27.1 이다. 그 spike는 Spring Boot BOM 없이 좌표를 해석했으므로
+#   여기서 BOM 기준으로 재정렬했다.
+# - Spring Boot는 **4.0.7**을 고른다. 계획 §3.1은 "4.1 계열 후보"라고 적었으나 그것은
+#   "현재 공식 안정 버전 기준으로 spike 후 고정"이라는 단서가 붙은 후보였다. 실측 결과
+#   4.1.0(GA)이 존재하지만 두 계열의 차이는 Kotlin(2.2.21 vs 2.3.21)과
+#   Flyway(11.14.1 vs 12.4.0)뿐이고, Spring Framework(7.0.8)·Jackson(3.1.4)·
+#   JUnit(6.0.3)·Testcontainers(2.0.5)·PostgreSQL 드라이버(42.7.11)는 동일하다.
+#   4.0.7의 Kotlin 2.2.21이 spike가 실제로 통과한 2.2.0과 같은 마이너 계열이라
+#   문서 파서 spike 결과를 그대로 승계할 수 있고, 4.0 계열은 패치가 7번 누적됐다.
+#   → 4.1.0으로 올리는 판단은 리더 결정 사항으로 산출물에 남긴다.
+# - Kotlin·Jackson·JUnit·Testcontainers·Flyway·PostgreSQL 드라이버는 버전을 여기에
+#   적지 않고 **Boot BOM이 관리**하게 둔다. 계획 §3.1의 "각자 임의 버전으로 섞지 않는다"를
+#   지키는 가장 확실한 방법이다. 관리되는 값은 위 주석에 실측 기록으로만 남긴다.
+
+[versions]
+# Kotlin 플러그인 버전만은 BOM이 아니라 여기서 정해야 한다(플러그인은 BOM 대상이 아님).
+# Boot 4.0.7이 관리하는 kotlin.version과 **같은 값**으로 맞춰 런타임 라이브러리와
+# 컴파일러가 갈리지 않게 한다.
+kotlin = "2.2.21"
+springBoot = "4.0.7"
+
+# 품질 게이트. Boot BOM 대상이 아니라 직접 고정한다.
+ktlintPlugin = "14.2.0"
+ktlintCli = "1.8.0"
+detekt = "1.23.8"
+
+[libraries]
+# --- Spring Boot BOM ---------------------------------------------------------
+# platform()으로 적용해 아래 좌표들의 버전을 BOM이 결정하게 한다.
+spring-boot-bom = { module = "org.springframework.boot:spring-boot-dependencies", version.ref = "springBoot" }
+
+# --- Spring (버전 없음 = BOM 결정) -------------------------------------------
+spring-boot-starter = { module = "org.springframework.boot:spring-boot-starter" }
+spring-boot-starter-web = { module = "org.springframework.boot:spring-boot-starter-web" }
+spring-boot-starter-jdbc = { module = "org.springframework.boot:spring-boot-starter-jdbc" }
+spring-boot-starter-test = { module = "org.springframework.boot:spring-boot-starter-test" }
+# Spring Boot 4는 테스트 슬라이스도 기술별 모듈로 쪼갰다. @WebMvcTest·MockMvc 는
+# spring-boot-starter-test 가 아니라 여기에 있다.
+spring-boot-starter-webmvc-test = { module = "org.springframework.boot:spring-boot-starter-webmvc-test" }
+spring-boot-testcontainers = { module = "org.springframework.boot:spring-boot-testcontainers" }
+spring-boot-configuration-processor = { module = "org.springframework.boot:spring-boot-configuration-processor" }
+
+# --- 마이그레이션 ------------------------------------------------------------
+# Spring Boot 4는 autoconfigure를 기술별 모듈로 쪼갰다. Flyway 자동설정(FlywayMigrationStrategy
+# 포함)은 spring-boot-autoconfigure가 아니라 spring-boot-flyway에 있고, starter가 그것을 끌어온다.
+spring-boot-starter-flyway = { module = "org.springframework.boot:spring-boot-starter-flyway" }
+flyway-core = { module = "org.flywaydb:flyway-core" }
+# flyway-core만으로는 PostgreSQL을 인식하지 못한다(Flyway 10부터 DB별 모듈 분리).
+flyway-postgresql = { module = "org.flywaydb:flyway-database-postgresql" }
+
+# --- DB ----------------------------------------------------------------------
+postgresql = { module = "org.postgresql:postgresql" }
+
+# --- 테스트 ------------------------------------------------------------------
+# Testcontainers 2.x는 좌표가 바뀌었다: org.testcontainers:postgresql →
+# org.testcontainers:testcontainers-postgresql (2.0.5 BOM 실측).
+testcontainers-postgresql = { module = "org.testcontainers:testcontainers-postgresql" }
+testcontainers-junit-jupiter = { module = "org.testcontainers:testcontainers-junit-jupiter" }
+junit-jupiter = { module = "org.junit.jupiter:junit-jupiter" }
+junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher" }
+assertj-core = { module = "org.assertj:assertj-core" }
+
+# --- parity 하네스 -----------------------------------------------------------
+# core 의 testFixtures 에서만 쓰는 JSON 직렬화. core 본 소스에는 들어가지 않는다 —
+# core는 Spring도 Jackson도 모른다(§3.2).
+#
+# 버전을 여기서 고르지 않는다. 처음에는 최신(1.11.0)을 박았는데, dependency locking 이
+# 잡아냈다: 1.11.0이 kotlin-stdlib 2.3.20을 끌어와 **테스트 클래스패스의 stdlib만**
+# 2.2.21 → 2.3.20으로 올렸다(main 은 2.2.21 유지). 컴파일과 테스트 실행이 서로 다른
+# stdlib 을 보는 상태이며, 계획 §3.1이 금지한 "각자 임의 버전으로 섞는" 바로 그 상황이다.
+# BOM 이 관리하는 1.9.0을 쓴다.
+kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json" }
+
+# --- detekt 규칙 -------------------------------------------------------------
+detekt-formatting = { module = "io.gitlab.arturbosch.detekt:detekt-formatting", version.ref = "detekt" }
+
+[plugins]
+kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
+kotlin-spring = { id = "org.jetbrains.kotlin.plugin.spring", version.ref = "kotlin" }
+spring-boot = { id = "org.springframework.boot", version.ref = "springBoot" }
+ktlint = { id = "org.jlleitschuh.gradle.ktlint", version.ref = "ktlintPlugin" }
+detekt = { id = "io.gitlab.arturbosch.detekt", version.ref = "detekt" }

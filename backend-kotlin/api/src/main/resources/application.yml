@@ -1,0 +1,68 @@
+spring:
+  application:
+    name: easy-doc-api
+
+  # 실행 profile 은 api / worker / migrate 셋이다 (계획 §3.2).
+  # 같은 JAR·같은 레이어를 쓰고 profile 로만 갈린다.
+  profiles:
+    default: api
+
+  datasource:
+    # 기본값은 docker-compose.yml 의 로컬 개발 환경 기준. 운영은 환경변수로 덮어쓴다.
+    # 비밀값을 이 파일에 적지 않는다 — .env/환경변수만 쓴다(프로젝트 CLAUDE.md).
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/easydoc_kotlin}
+    username: ${SPRING_DATASOURCE_USERNAME:postgres}
+    password: ${SPRING_DATASOURCE_PASSWORD:postgres}
+    hikari:
+      # 기동 시 접속을 시도하지 않는다 — DB가 떠 있지 않아도 앱은 뜨고 /health 로
+      # 진단할 수 있어야 한다(Python app/main.py lifespan 주석과 같은 동작).
+      initialization-fail-timeout: -1
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    # baseline-on-migrate 를 여기서 켜지 않는다. 켜면 스키마가 기준선과 달라도 아무 확인
+    # 없이 baseline 한다. 판정은 FlywayBaselineGuard 가 지문 대조로 한다.
+    baseline-on-migrate: false
+    baseline-version: 1
+
+  # 오류 응답은 GlobalExceptionHandler 가 {"detail": ...} 로 만든다.
+  # Spring 기본 /error 경로가 ProblemDetail 이나 흰 화면을 내지 않도록 막는다.
+  mvc:
+    problemdetails:
+      enabled: false
+
+server:
+  port: ${SERVER_PORT:8000}
+  error:
+    # 오류 응답에 스택 트레이스·예외 메시지·바인딩 오류가 실리지 않게 전부 끈다.
+    # 하나라도 켜지면 문서 본문이나 입력값이 응답 본문으로 새는 경로가 생긴다.
+    include-stacktrace: never
+    include-message: never
+    include-binding-errors: never
+    include-exception: false
+    whitelabel:
+      enabled: false
+
+easydoc:
+  cors-origins:
+    - http://localhost:5173
+  auth:
+    jwt-expire-minutes: 60
+
+logging:
+  level:
+    root: INFO
+    kr.easydoc: INFO
+    # 요청 본문을 찍는 로거는 절대 DEBUG 로 내리지 않는다 — 문서 본문이 로그에 남는다.
+    org.springframework.web: INFO
+    org.flywaydb: INFO
+
+---
+# migrate profile — 스키마만 적용하고 종료한다. compose 의 kotlin-migrate 가 쓴다.
+spring:
+  config:
+    activate:
+      on-profile: migrate
+  main:
+    web-application-type: none

@@ -1,0 +1,73 @@
+# detekt 규칙 덮어쓰기. buildUponDefaultConfig = true 라 여기 적은 것만 기본값을 덮는다.
+# 포매팅 논쟁에 리뷰 시간을 쓰지 않는 것이 목적이므로 기본값에서 크게 벗어나지 않는다
+# (kotlin-spring-conventions §7).
+
+build:
+  # 아래 규칙들이 error 로 승격돼 있으므로 weighted 임계값은 0으로 둔다 —
+  # "몇 건까지는 봐준다"가 생기면 게이트가 아니라 권고가 된다.
+  maxIssues: 0
+
+config:
+  validation: true
+
+potential-bugs:
+  UnsafeCallOnNullableType:
+    # `!!` 금지. 예외 없음 (kotlin-spring-conventions §7).
+    # null 이 올 수 없음을 아는 자리라면 타입을 non-null 로 바꾸고, 모르는 자리라면
+    # `?:` 로 도메인 예외를 던진다. `!!` 는 "여기서 NPE가 나면 원인을 알 수 없다"는 선언이다.
+    active: true
+  UnsafeCast:
+    active: true
+
+exceptions:
+  TooGenericExceptionCaught:
+    active: true
+  SwallowedException:
+    active: true
+  # 예외를 삼키고 메시지만 로깅하는 경로가 본문 유출의 흔한 통로다.
+  PrintStackTrace:
+    active: true
+
+style:
+  MaxLineLength:
+    maxLineLength: 120
+  # 한국어 주석·문자열이 많아 기본 매직 넘버 규칙만으로 충분하다.
+  MagicNumber:
+    active: true
+    ignorePropertyDeclaration: true
+    ignoreCompanionObjectPropertyDeclaration: true
+    ignoreAnnotation: true
+  ForbiddenComment:
+    active: true
+    # 미포팅 잔여 항목은 산출물 문서에 적는다. 코드에 TODO 로 흘리면 추적되지 않는다.
+    # 단 Phase 경계를 명시한 것은 허용한다 (예: "Phase 3에서 채운다").
+    comments:
+      - reason: '미완성 표시는 docs/migration/_workspace/ 산출물에 적는다'
+        value: 'FIXME:'
+      - reason: '미완성 표시는 docs/migration/_workspace/ 산출물에 적는다'
+        value: 'STOPSHIP:'
+
+performance:
+  SpreadOperator:
+    # `runApplication<App>(*args)` 는 Spring Boot Kotlin 진입점의 표준 관용구다.
+    # 프로그램 수명에 한 번 도는 자리라 배열 복사 비용이 문제가 되지 않는다.
+    # 이것을 켜 두면 진입점마다 @Suppress 를 달게 되고, 그 억제가 다른 곳으로 번진다.
+    active: false
+
+complexity:
+  LongParameterList:
+    # 설정 바인딩 데이터 클래스는 필드가 많다.
+    ignoreAnnotated:
+      - 'ConfigurationProperties'
+
+naming:
+  FunctionNaming:
+    # 테스트 함수 이름은 한국어 백틱 식별자를 쓴다 (Python 테스트 이름과 대응시키기 위해).
+    ignoreAnnotated:
+      - 'Test'
+      - 'ParameterizedTest'
+
+formatting:
+  # detekt-formatting 은 ktlint 래퍼다. ktlint 태스크가 이미 같은 규칙을 돌리므로
+  # 여기서는 중복 보고만 끄고 규칙 자체는 ktlint 쪽에 맡긴다.
+  active: false
