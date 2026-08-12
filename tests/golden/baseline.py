@@ -433,7 +433,13 @@ class RunContext(BaseModel):
 
     provider: str
     judge_provider: str | None = None
+    #: 설정값(`settings.llm_model`). **주장이지 증거가 아니다** — 별칭 해석·폴백이
+    #: 있으면 실제로 쓴 모델과 다를 수 있다.
     model: str | None = None
+    #: 변환 응답이 **실제로 보고한** 모델(`LLMResponse.model`). 이쪽이 증거다.
+    observed_models: list[str] = []
+    #: 같은 모델이라도 결과를 크게 움직인다(Anthropic 전용). 비어 있어도 기록은 남긴다.
+    effort: str | None = None
 
 
 class Baseline(BaseModel):
@@ -540,17 +546,27 @@ def write_baseline(body: dict[str, Any], path: Path = BASELINE_PATH) -> Path:
     다음 실행은 낮아진 값과 비교해 통과한다. `RunContext`가 "판정에 쓰지 않는다"인 것은
     맞지만, 그것은 *비교식*에 넣지 않는다는 뜻이지 *비어도 된다*는 뜻이 아니다.
     """
-    context = body.get("context")
-    missing = [
-        key
-        for key in ("provider", "model")
-        if not (isinstance(context, dict) and context.get(key))
-    ]
-    if missing:
+    context = body.get("context") if isinstance(body.get("context"), dict) else {}
+    assert isinstance(context, dict)
+    if not context.get("provider"):
+        raise AssertionError("기준선을 쓰지 않는다 — `provider`가 비어 있다.")
+    observed = context.get("observed_models") or []
+    if not observed:
         raise AssertionError(
-            f"기준선을 쓰지 않는다 — 실행 조건이 비어 있다: {', '.join(missing)}. "
-            "무엇으로 쟀는지 모르는 수치는 하한선이 될 수 없다(비교 조건이 성립하지 않는다). "
-            "`LLM_MODEL`을 고정하고 다시 기록하라."
+            "기준선을 쓰지 않는다 — **관측된 모델이 없다**. `settings.llm_model`은 설정값일 뿐 "
+            "실제로 무엇이 응답했는지의 증거가 아니다. 변환 응답의 `LLMResponse.model`을 "
+            "실어야 한다 — 그것이 없으면 이 수치가 무엇의 하한선인지 말할 수 없다."
+        )
+    if len(set(observed)) > 1:
+        raise AssertionError(
+            f"기준선을 쓰지 않는다 — 한 실행에서 **모델이 섞였다**: {sorted(set(observed))}. "
+            "섞인 실행의 수치는 어느 모델의 하한선도 아니다."
+        )
+    if "effort" not in context:
+        raise AssertionError(
+            "기준선을 쓰지 않는다 — `effort`가 기록되지 않았다. 같은 모델이라도 effort가 "
+            "결과를 크게 움직인다(2026-08-12 9%p 하락의 유력 원인). 값이 없으면 `null`로 "
+            "**명시**하라 — 키의 부재와 값의 부재는 다르다."
         )
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = {**body, "recorded_at": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")}

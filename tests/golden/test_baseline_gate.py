@@ -43,7 +43,15 @@ EXCLUSION_CANDIDATE = "063"
 
 
 def _context() -> RunContext:
-    return RunContext(provider="fake", judge_provider="fake", model="fake-model")
+    return RunContext(
+        provider="fake",
+        judge_provider="fake",
+        model="fake-model",
+        # 2026-08-12: 기록에는 **관측된** 모델과 effort 가 있어야 한다
+        # (`write_baseline` fail-closed). 설정값만으로는 무엇이 응답했는지 모른다.
+        observed_models=["fake-model"],
+        effort=None,
+    )
 
 
 def _measurement(overall: tuple[int, int], synthetic: tuple[int, int]) -> Measurement:
@@ -464,3 +472,39 @@ def test_리포트에_본문이_실리지_않는다() -> None:
     rendered = _report(_measurement((36, 56), (17, 20))).render()
     for document in DOCUMENTS[:5]:
         assert document.source_text[:40] not in rendered
+
+
+# ═════════════════════════════════════ F. 실행 조건이 비면 기록하지 않는다 (fail-closed)
+#
+# 2026-08-12 첫 기록이 `context.model = null`로 남았다(`settings.llm_model` 미설정). 그 상태로
+# 파일이 써져 **무엇으로 쟀는지 모르는 수치가 하한선이 될 뻔했다** — 게다가 그 값은 직전 저장
+# 실행보다 9%p 낮았다. 무엇으로 쟀는지 모르는 수치가 하한선이 되면 그 하락이 정상이 된다.
+# 아래 셋은 `write_baseline`의 가드를 붙잡는 음성 대조다 — 가드를 지우면 이 셋이 깨진다.
+
+
+def test_관측_모델_없이는_기준선을_쓰지_않는다() -> None:
+    """설정값만 있고 **관측값이 없으면** 기록을 거부한다.
+
+    `settings.llm_model`은 주장이고 `LLMResponse.model`이 증거다. 별칭 해석·폴백이
+    있으면 설정값과 실제로 응답한 모델이 갈린다.
+    """
+    with pytest.raises(AssertionError, match="관측된 모델이 없다"):
+        write_baseline({"context": {"provider": "fake", "model": "설정값", "effort": None}})
+
+
+def test_모델이_섞인_실행은_기준선이_되지_못한다() -> None:
+    """한 실행에서 두 모델이 응답했으면 그 수치는 어느 모델의 하한선도 아니다."""
+    with pytest.raises(AssertionError, match="모델이 섞였다"):
+        write_baseline(
+            {"context": {"provider": "fake", "observed_models": ["a", "b"], "effort": None}}
+        )
+
+
+def test_effort_는_키_자체가_있어야_한다() -> None:
+    """값이 없으면 `null`로 **명시**한다 — 키의 부재와 값의 부재는 다르다.
+
+    같은 모델이라도 effort가 결과를 크게 움직인다. 키가 없으면 그 실행이 어떤
+    effort였는지 영영 알 수 없어 9%p 하락 같은 것의 원인을 가릴 수 없다.
+    """
+    with pytest.raises(AssertionError, match="effort"):
+        write_baseline({"context": {"provider": "fake", "observed_models": ["a"]}})

@@ -182,16 +182,19 @@ def evaluation(outcomes: dict[str, ConversionOutcome | None]) -> RuleEvaluation:
     원인이었다(`tests/golden/report.py`).
     """
     result = evaluate_all(outcomes, DOCUMENTS)
-    build_report(result)
+    build_report(result, outcomes)
     return result
 
 
-def build_report(result: RuleEvaluation) -> golden_report.GoldenRunReport:
+def build_report(
+    result: RuleEvaluation,
+    outcomes: dict[str, ConversionOutcome | None] | None = None,
+) -> golden_report.GoldenRunReport:
     """이번 실행의 리포트를 세워 붙든다. 배선 테스트도 같은 경로를 쓴다."""
     return golden_report.record(
         golden_report.GoldenRunReport(
             fingerprint=Fingerprint.of(DOCUMENTS),
-            context=run_context(),
+            context=run_context(outcomes),
             targets=TARGETS,
             measurement=result.measurement,
             failure_reasons=result.failure_reasons,
@@ -201,13 +204,23 @@ def build_report(result: RuleEvaluation) -> golden_report.GoldenRunReport:
     )
 
 
-def run_context() -> RunContext:
-    """비교의 조건 — 판정에 쓰지 않고 기록만 한다."""
+def run_context(
+    outcomes: dict[str, ConversionOutcome | None] | None = None,
+) -> RunContext:
+    """비교의 조건 — 판정에 쓰지 않고 기록만 한다.
+
+    `observed_models`는 **변환 응답이 실제로 보고한 모델**이다(`LLMResponse.model`).
+    `settings.llm_model`은 설정값이라 별칭 해석·폴백이 있으면 실제와 갈린다 — 그래서
+    둘을 따로 싣는다. 기준선 기록은 관측값이 있어야만 허용된다(`write_baseline`).
+    """
     settings = Settings()
+    observed = sorted({o.model for o in (outcomes or {}).values() if o is not None})
     return RunContext(
         provider=os.environ.get("GOLDEN_PROVIDER", DEFAULT_PROVIDER),
         judge_provider=os.environ.get("GOLDEN_JUDGE_PROVIDER", DEFAULT_JUDGE_PROVIDER),
         model=settings.llm_model,
+        observed_models=observed,
+        effort=settings.llm_effort,
     )
 
 
