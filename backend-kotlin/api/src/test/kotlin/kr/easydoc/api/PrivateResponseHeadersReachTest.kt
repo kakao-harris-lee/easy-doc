@@ -1,5 +1,8 @@
 package kr.easydoc.api
 
+import kr.easydoc.api.support.ContainerRejectedRequest
+import kr.easydoc.api.support.RawHttp
+import kr.easydoc.api.support.RawHttpResponse
 import kr.easydoc.infrastructure.PostgresTestSupport
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.DisplayName
@@ -10,9 +13,6 @@ import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.boot.test.web.server.LocalServerPort
 import org.springframework.test.context.DynamicPropertyRegistry
 import org.springframework.test.context.DynamicPropertySource
-import java.io.InputStream
-import java.net.InetSocketAddress
-import java.net.Socket
 import java.nio.charset.StandardCharsets
 
 /**
@@ -156,14 +156,17 @@ class PrivateResponseHeadersReachTest {
      * 모른다.
      */
     @ParameterizedTest(name = "{0}")
-    @EnumSource(MalformedRequest::class)
-    @DisplayName("서블릿에 매핑되지 않는 malformed 400 에도 두 헤더가 있다 (밸브가 덮는 자리)")
-    fun `malformed 400 에도 닿는다`(kind: MalformedRequest) {
+    @EnumSource(ContainerRejectedRequest::class)
+    @DisplayName("서블릿에 매핑되지 않는 컨테이너 거절 응답에도 두 헤더가 있다 (밸브가 덮는 자리)")
+    fun `컨테이너 거절 응답에도 닿는다`(kind: ContainerRejectedRequest) {
         val response = exchange(kind.build(port))
 
         assertThat(response.statusCode)
-            .withFailMessage("Tomcat 이 이 요청을 400 으로 거절하지 않았다 (실제 %d) — 측정 전제가 깨졌다", response.statusCode)
-            .isEqualTo(BAD_REQUEST)
+            .withFailMessage(
+                "Tomcat 이 이 요청을 %d 로 거절하지 않았다 (실제 %d) — 측정 전제가 깨졌다",
+                kind.expectedStatus,
+                response.statusCode,
+            ).isEqualTo(kind.expectedStatus)
         assertPrivateHeaders(response)
     }
 
@@ -177,27 +180,21 @@ class PrivateResponseHeadersReachTest {
             .containsExactly("nosniff")
     }
 
-    /** 원시 소켓으로 보내고 응답 **헤더 블록까지만** 읽는다. 본문은 이 측정의 대상이 아니다. */
-    private fun exchange(request: ByteArray): RawHttpResponse =
-        Socket().use { socket ->
-            socket.connect(InetSocketAddress(LOOPBACK, port), SOCKET_TIMEOUT_MILLIS)
-            socket.soTimeout = SOCKET_TIMEOUT_MILLIS
-            socket.getOutputStream().apply {
-                write(request)
-                flush()
-            }
-            parseHead(readHead(socket.getInputStream()))
-        }
+    /**
+     * 원시 소켓으로 보내고 응답을 읽는다.
+     *
+     * 측정 도구는 [kr.easydoc.api.support.RawHttp] 하나뿐이다 — 본문 도달을 재는
+     * [ContractErrorBodyReachTest] 도 같은 것을 쓴다. 도구가 갈리면 "헤더는 닿는데 본문은
+     * 안 닿는다"가 도구 차이인지 실제 차이인지 가릴 수 없다.
+     */
+    private fun exchange(request: ByteArray): RawHttpResponse = RawHttp.exchange(port, request)
 
     companion object {
-        private const val LOOPBACK = "127.0.0.1"
-        private const val SOCKET_TIMEOUT_MILLIS = 10_000
         private const val CACHE_CONTROL = "cache-control"
         private const val X_CONTENT_TYPE_OPTIONS = "x-content-type-options"
         private const val ALLOWED_ORIGIN = "http://localhost:5173"
 
         private const val OK = 200
-        private const val BAD_REQUEST = 400
         private const val NOT_FOUND = 404
         private const val PAYLOAD_TOO_LARGE = 413
         private const val UNSUPPORTED_MEDIA_TYPE = 415
@@ -216,157 +213,4 @@ class PrivateResponseHeadersReachTest {
             registry.add("spring.datasource.password") { database.password }
         }
     }
-}
-
-/**
- * 서블릿에 매핑되지 않는 요청 세 갈래. **파싱이 실패하는 단계가 서로 다르다** —
- * 요청 대상 문자 검사, 요청 줄 형식, 헤더 크기 상한. 한 갈래만 두면 다른 갈래에서 도달
- * 경로가 달라져도 모른다.
- */
-enum class MalformedRequest {
-    /**
-     * 요청 대상에 금지 문자(`<`).
-     *
-     * Tomcat 의 `relaxedPathChars` 기본값이 비어 있어 거절된다
-     * ("Invalid character found in the request target" — `Http11InputBuffer.parseRequestLine`).
-     */
-    INVALID_REQUEST_TARGET {
-        override fun build(port: Int): ByteArray =
-            RawHttp.raw("GET /health<bad> HTTP/1.1\r\nHost: 127.0.0.1:$port\r\nConnection: close\r\n\r\n")
-    },
-
-    /** 요청 줄이 HTTP 로 보이지도 않는다 — 평문 포트에 TLS 핸드셰이크가 들어온 상황이 실제 사례다. */
-    GARBAGE_REQUEST_LINE {
-        override fun build(port: Int): ByteArray = RawHttp.raw(" ÿ garbage\r\n\r\n")
-    },
-
-    /** 헤더 블록이 `server.max-http-request-header-size`(기본 8KB)를 넘는다. */
-    OVERSIZED_HEADER {
-        override fun build(port: Int): ByteArray =
-            RawHttp.raw(
-                "GET /health HTTP/1.1\r\nHost: 127.0.0.1:$port\r\n" +
-                    "X-Big: ${"a".repeat(OVERSIZED_HEADER_BYTES)}\r\nConnection: close\r\n\r\n",
-            )
-    },
-    ;
-
-    abstract fun build(port: Int): ByteArray
-
-    private companion object {
-        /** 기본 상한(8KB)을 확실히 넘기되, 소켓 송신 버퍼 안에 들어가 쓰기가 막히지 않는 크기. */
-        const val OVERSIZED_HEADER_BYTES = 20_000
-    }
-}
-
-/** 응답의 상태 줄과 헤더. 헤더 이름은 소문자로 정규화하고 **값 목록**을 그대로 보존한다. */
-private class RawHttpResponse(
-    val statusCode: Int,
-    private val headers: Map<String, List<String>>,
-) {
-    fun values(lowercaseName: String): List<String> = headers[lowercaseName] ?: emptyList()
-}
-
-/** 요청 바이트를 손으로 만든다. HTTP 클라이언트는 깨진 요청을 교정해 버려 쓸 수 없다. */
-private object RawHttp {
-    private const val CRLF = "\r\n"
-    private const val BOUNDARY = "easydocboundary"
-
-    /** multipart 상한(1KB)을 확실히 넘기는 크기. 소켓 버퍼 안에 들어가 쓰기가 막히지 않는다. */
-    private const val OVERSIZED_PART_BYTES = 4096
-
-    fun get(
-        path: String,
-        port: Int,
-    ): ByteArray = head("GET", path, port, emptyList()).toByteArray(StandardCharsets.ISO_8859_1)
-
-    fun post(
-        path: String,
-        port: Int,
-        contentType: String,
-        body: ByteArray,
-    ): ByteArray {
-        val head =
-            head(
-                "POST",
-                path,
-                port,
-                listOf("Content-Type: $contentType", "Content-Length: ${body.size}"),
-            )
-        return head.toByteArray(StandardCharsets.ISO_8859_1) + body
-    }
-
-    fun preflight(
-        path: String,
-        port: Int,
-    ): ByteArray =
-        head(
-            "OPTIONS",
-            path,
-            port,
-            listOf("Origin: http://localhost:5173", "Access-Control-Request-Method: GET"),
-        ).toByteArray(StandardCharsets.ISO_8859_1)
-
-    fun oversizedMultipart(
-        path: String,
-        port: Int,
-    ): ByteArray {
-        val body =
-            buildString {
-                append("--").append(BOUNDARY).append(CRLF)
-                append("""Content-Disposition: form-data; name="file"; filename="big.txt"""").append(CRLF)
-                append("Content-Type: text/plain").append(CRLF).append(CRLF)
-                append("x".repeat(OVERSIZED_PART_BYTES)).append(CRLF)
-                append("--").append(BOUNDARY).append("--").append(CRLF)
-            }.toByteArray(StandardCharsets.ISO_8859_1)
-        return post(path, port, "multipart/form-data; boundary=$BOUNDARY", body)
-    }
-
-    fun raw(text: String): ByteArray = text.toByteArray(StandardCharsets.ISO_8859_1)
-
-    private fun head(
-        method: String,
-        path: String,
-        port: Int,
-        extraHeaders: List<String>,
-    ): String =
-        buildString {
-            append("$method $path HTTP/1.1$CRLF")
-            append("Host: 127.0.0.1:$port$CRLF")
-            extraHeaders.forEach { append("$it$CRLF") }
-            // 응답 헤더 블록만 읽고 소켓을 닫으므로 keep-alive 를 쓰지 않는다.
-            append("Connection: close$CRLF$CRLF")
-        }
-}
-
-/** 응답 헤더 블록(`\r\n\r\n` 까지)만 읽는다. 본문까지 읽으면 큰 응답에서 무의미하게 기다린다. */
-private fun readHead(input: InputStream): String {
-    val head = StringBuilder()
-    while (!head.endsWith("\r\n\r\n")) {
-        val next = input.read()
-        check(next >= 0) { "응답 헤더가 끝나기 전에 연결이 닫혔다: $head" }
-        head.append(Char(next))
-    }
-    return head.toString()
-}
-
-private fun parseHead(head: String): RawHttpResponse {
-    val lines = head.trim().split("\r\n")
-    // "HTTP/1.1 404 Not Found" — 두 번째 토큰이 상태 코드다. 사유 문구는 비어 있을 수 있다.
-    val statusCode =
-        lines
-            .first()
-            .split(' ')
-            .getOrNull(1)
-            ?.toIntOrNull()
-            ?: error("상태 줄을 읽지 못했다: ${lines.firstOrNull()}")
-    val headers = mutableMapOf<String, MutableList<String>>()
-    lines.drop(1).forEach { line ->
-        val separator = line.indexOf(':')
-        if (separator > 0) {
-            headers
-                .getOrPut(line.take(separator).trim().lowercase()) { mutableListOf() }
-                .add(line.substring(separator + 1).trim())
-        }
-    }
-    return RawHttpResponse(statusCode, headers)
 }

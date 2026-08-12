@@ -368,8 +368,15 @@ private fun jsonError(
         .headers(headers ?: HttpHeaders())
         .body(body)
 
-/** 상태 코드의 표준 사유 문구. Starlette `HTTPException` 의 기본 detail 과 같은 값이다. */
-private fun reasonPhraseOf(statusCode: HttpStatusCode): String =
+/**
+ * 상태 코드의 표준 사유 문구. Starlette `HTTPException` 의 기본 detail 과 같은 값이다.
+ *
+ * **오류 본문을 만드는 세 경로가 전부 이 함수를 쓴다** — advice([GlobalExceptionHandler]),
+ * `/error` 디스패치([ContractErrorController]), 컨테이너가 직접 만드는 응답
+ * ([ContractErrorReportValve]). 경로마다 문구 규칙이 갈리면 같은 상태 코드에 다른 본문이
+ * 나가고, 그 차이는 어느 경로를 탔는지를 밖에서 알려주는 신호가 된다.
+ */
+internal fun reasonPhraseOf(statusCode: HttpStatusCode): String =
     HttpStatus.resolve(statusCode.value())?.reasonPhrase ?: UNEXPECTED_MESSAGE
 
 /**

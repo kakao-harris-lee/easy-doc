@@ -1,5 +1,11 @@
 package kr.easydoc.api.support
 
+import jakarta.servlet.Filter
+import jakarta.servlet.FilterChain
+import jakarta.servlet.ServletException
+import jakarta.servlet.ServletRequest
+import jakarta.servlet.ServletResponse
+import jakarta.servlet.http.HttpServletRequest
 import jakarta.servlet.http.HttpServletResponse
 import kr.easydoc.core.exceptions.ConfigurationException
 import kr.easydoc.core.exceptions.ConflictException
@@ -16,6 +22,7 @@ import kr.easydoc.core.exceptions.UnsupportedFormatException
 import kr.easydoc.core.exceptions.UploadTooLargeException
 import org.springframework.core.MethodParameter
 import org.springframework.http.ResponseEntity
+import org.springframework.stereotype.Component
 import org.springframework.validation.BeanPropertyBindingResult
 import org.springframework.web.bind.MethodArgumentNotValidException
 import org.springframework.web.bind.annotation.GetMapping
@@ -70,6 +77,42 @@ class ErrorProbeController {
     @GetMapping("/send-error")
     fun sendError(response: HttpServletResponse) {
         response.sendError(HttpServletResponse.SC_SERVICE_UNAVAILABLE)
+    }
+
+    /**
+     * `sendError(int, String)` — **두 번째 인자가 응답 본문에 실리는지** 재는 자리.
+     *
+     * 컨테이너는 그 문자열을 `jakarta.servlet.error.message` 요청 속성으로 넘긴다.
+     * `/error` 컨트롤러가 그 속성을 읽으면 호출자가 넘긴 값이 그대로 본문이 되는데, Phase 3
+     * 의 인증 필터가 `sendError(401, "비밀번호가 틀렸습니다: $입력값")` 처럼 쓰는 순간
+     * 입력값이 응답 본문과 액세스 로그에 남는다. [PROBE_ECHO_MARKER] 가 응답에 나타나지
+     * 않아야 한다.
+     */
+    @GetMapping("/send-error-message")
+    fun sendErrorWithMessage(response: HttpServletResponse) {
+        response.sendError(HttpServletResponse.SC_SERVICE_UNAVAILABLE, PROBE_ECHO_MARKER)
+    }
+
+    /**
+     * **응답을 커밋한 뒤** 실패하는 자리.
+     *
+     * 상태 줄과 헤더가 이미 소켓으로 나간 뒤에는 어떤 층도 본문을 계약 형태로 바꿀 수 없다.
+     * 서블릿 API 에도 Tomcat 밸브에도 이미 보낸 바이트를 되돌리는 수단이 없기 때문이다.
+     * Phase 4 의 내려받기(`GET /conversions/{id}/export`)처럼 본문이 긴 응답에서 중간에
+     * 실패하면 정확히 이 모양이 된다.
+     *
+     * **오류 본문 조치의 경계를 못박으려고 둔다.** 여기까지 계약 형태라고 적으면 그것이
+     * 거짓이 되고, 반대로 이 자리를 재지 않으면 "전역"이라는 말이 어디까지인지 아무도
+     * 모른다.
+     */
+    @GetMapping("/commit-then-throw")
+    fun commitThenThrow(response: HttpServletResponse) {
+        response.status = HttpServletResponse.SC_OK
+        response.contentType = "application/json"
+        response.writer.write(COMMITTED_BODY_PREFIX)
+        // 여기서 상태 줄·헤더가 나간다. 이후의 실패는 응답 모양을 바꿀 수 없다.
+        response.flushBuffer()
+        error("커밋 뒤 실패")
     }
 
     /** 요청 본문을 읽는 자리 — 깨진 JSON 이면 `HttpMessageNotReadableException` 이 난다. */
@@ -133,3 +176,43 @@ class ErrorProbeController {
         fun domainExceptionOf(kind: String): EasyDocException = (DOMAIN_EXCEPTIONS[kind] ?: error("알 수 없는 프로브 종류"))()
     }
 }
+
+/**
+ * `sendError(int, String)` 의 두 번째 인자로 쓰는 표식.
+ *
+ * 실제 개인정보가 아니라 합성 문자열이다. 응답 본문·헤더 어디에도 이 문자열이 나타나면
+ * 안 된다 — 나타난다면 호출자가 넘긴 값이 그대로 밖으로 나가는 경로가 살아 있다는 뜻이다.
+ */
+const val PROBE_ECHO_MARKER: String = "probe-echo-표식-절대-노출-금지"
+
+/** 커밋 뒤 실패 프로브가 먼저 흘려보내는 조각. 합성값이라 노출돼도 무방하다. */
+const val COMMITTED_BODY_PREFIX: String = """{"partial":"""
+
+/**
+ * **필터가 던진 예외**를 재현하는 테스트 전용 필터.
+ *
+ * `@RestControllerAdvice` 는 `DispatcherServlet` 안에서만 돈다. 필터 체인에서 던져진 예외는
+ * 디스패처에 닿지 못해 advice 가 잡을 기회가 없고, 컨테이너가 500 을 만들어 `/error` 로 두
+ * 번째 디스패치를 돌린다. **Phase 3 의 인증 필터가 정확히 이 자리에 선다** — 토큰 파싱이
+ * 실패해 예외가 새면 그 응답이 계약 형태인지가 여기서 갈린다.
+ *
+ * `@Component` 라 `kr.easydoc.api` 컴포넌트 스캔에 잡히지만, 지정한 한 경로에서만 던지므로
+ * 다른 테스트에 영향을 주지 않는다. **테스트 소스셋에만 있어 운영 JAR 에 들어가지 않는다.**
+ */
+@Component
+class ThrowingProbeFilter : Filter {
+    override fun doFilter(
+        request: ServletRequest,
+        response: ServletResponse,
+        chain: FilterChain,
+    ) {
+        if ((request as? HttpServletRequest)?.requestURI == THROWING_FILTER_PATH) {
+            // 메시지에 표식을 넣는다 — 예외 메시지가 본문으로 새는지 함께 잰다.
+            throw ServletException(PROBE_ECHO_MARKER)
+        }
+        chain.doFilter(request, response)
+    }
+}
+
+/** [ThrowingProbeFilter] 가 예외를 던지는 경로. 계약의 14개 엔드포인트와 겹치지 않는다. */
+const val THROWING_FILTER_PATH: String = "/__probe/filter-throws"
