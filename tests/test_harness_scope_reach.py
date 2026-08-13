@@ -301,7 +301,10 @@ EXPECTED_MET_YES_KEYS: Final[frozenset[tuple[str, str]]] = frozenset(
         # Phase 2 — 순수 도메인 로직 포팅 (2026-08-13 · kotlin-implementer 조각에서 3행 충족)
         #   나머지 Phase 2 행(텍스트 정규화·프롬프트·스타일·내보내기·후처리)은 아직 `아니오` 다.
         #   아직 돌리지 않은 검증 게이트 표에는 `충족` 열 자체가 없어 구조적으로 이 집합 밖이다.
-        ("Phase 2 — 순수 도메인 로직 포팅", "개인정보 마스킹 포팅 (`app/privacy/masking.py`)"),
+        #   2026-08-14 리더 재판정(게이트 08 C-12): 「개인정보 마스킹 포팅」을 예 → 아니오로
+        #   되돌려 집합에서 제거했다 — 차단 ①사건 C-01(보충 평면 숫자·복합 카드 구분자가
+        #   실측 items=0 통과)이 열린 행을 예로 둘 수 없다.
+        #   근거: reviews/08_conversion-usecase_cross.md §10.
         ("Phase 2 — 순수 도메인 로직 포팅", "placeholder 보존 검사 포팅"),
         ("Phase 2 — 순수 도메인 로직 포팅", "보정 채택 판정 포팅"),
     }
