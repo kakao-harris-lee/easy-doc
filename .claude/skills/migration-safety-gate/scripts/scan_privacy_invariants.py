@@ -31,7 +31,7 @@ import subprocess
 import sys
 from collections import Counter
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
@@ -111,48 +111,150 @@ _SAFE_MEMBERS = (
 #:
 #: `document` 는 판정문 표에 없었으나 실물(`draft.document.id`)이 2단 접근이라 더했다.
 #: 한정자로만 두었으므로 `document.value`·`document.text` 는 여전히 잡힌다.
-_SAFE_QUALIFIERS = r"stats|document"
+_SAFE_QUALIFIERS = ("stats", "document")
 
-#: 본문 이름 **바로 뒤**의 안전한 접근 형태.
-#:
-#: 끝의 `(?!\.)` 가 **사슬 종단을 고정한다.** 이것이 없으면 `re.match()` 가 시작만 고정하고
-#: 끝은 열어 두어, 안전 멤버에서 매칭이 끝난 **뒤의 사슬이 검사되지 않은 채 통과**한다
-#: (privacy-gate 해제 심사 §4-sexies.3 실측):
-#:
-#:   `.document.id.value`      → `.document.id` 까지만 소비, **`.value` 미검사**
-#:   `.stats.count.original`   → `.stats.count` 까지만 소비, **`.original` 미검사**
-#:   `.document.category.body` → `.document.category` 까지만 소비, **`.body` 미검사**
-#:
-#: 즉 한정자 뒤에 안전 멤버를 하나 끼워 넣으면 그 뒤로 무엇이든 붙일 수 있었다. 이 결손은
-#: `document` 한정자 때문이 아니다 — 판정문이 표에 직접 적은 `stats` 로도 똑같이 샜다.
-#: 안전 멤버 목록만 정하고 **"접근 사슬 전체가 한정자 + 종단 안전 멤버로만 이뤄질 것"**을
-#: 요구하지 않은 것이 원인이라, 고칠 자리는 목록이 아니라 **패턴의 끝**이다.
-_SAFE_ACCESS = re.compile(rf"\.(?:(?:{_SAFE_QUALIFIERS})\.)*(?:{_SAFE_MEMBERS})\b(?!\.)")
+_SAFE_MEMBER_RE = re.compile(rf"(?:{_SAFE_MEMBERS})\Z")
 
 #: 금지 멤버 자기검사 — 목록이 넓어져 규칙을 무력화하는 것을 **모듈 적재 시점에** 막는다.
 #: 주석으로만 두면 다음 사람이 `value` 를 한 줄 더한다.
 for _forbidden in ("value", "text", "body", "content", "original", "raw"):
-    if _SAFE_ACCESS.fullmatch(f".{_forbidden}"):
+    if _SAFE_MEMBER_RE.match(_forbidden) or _forbidden in _SAFE_QUALIFIERS:
         raise AssertionError(
-            f"_SAFE_MEMBERS 에 {_forbidden!r} 가 들어갔다 — LOG-BODY 훅이 규칙 자체를 무력화한다."
+            f"안전 멤버/한정자 목록에 {_forbidden!r} 가 들어갔다 — "
+            "LOG-BODY 훅이 규칙 자체를 무력화한다."
         )
+
+_IDENTIFIER_RE = re.compile(r"[A-Za-z_]\w*")
+
+
+def safe_access_chain(text: str, position: int) -> bool:
+    """`text[position:]`에서 시작하는 **접근 사슬 전체**가 안전한지 판정한다.
+
+    ## 정규식 종단 고정을 버린 이유 (게이트 09 M-01)
+
+    앞선 판은 `\\.(?:한정자\\.)*(?:안전멤버)\\b(?!\\.)` 라는 정규식 하나였다. `(?!\\.)` 는
+    **점이 곧바로 이어지는 경우만** 막는다. 실측된 탈출 셋:
+
+        draft.id[0]                 첨자 — `[` 는 점이 아니라 통과
+        draft.stats.count().value   호출 — `(` 는 점이 아니라 통과
+        draft.id . value            공백 낀 점 — `(?!\\.)` 는 공백을 보고 만족
+
+    셋째가 특히 나쁘다. **논리 줄 결합(`" ".join`)이 ktlint 강제 다중 줄 체인을 정확히 그
+    ` .` 모양으로 만든다** — 즉 이 저장소의 표준 표기가 안전 판정을 받고 있었다.
+
+    §4-sexies.3 의 원 요구는 *"접근 사슬 전체가 한정자 + 종단 안전 멤버로만 이뤄질 것"*
+    이었다. 정규식 종단은 그 요구의 **근사**였고, 근사가 새는 자리가 셋이었다. 그래서
+    종결자를 열거하는 대신 **사슬을 끝까지 읽는다** — 열거는 다음 표기에서 또 빠진다.
+
+    ## 판정
+
+    - 사슬이 비어 있으면(맨 이름) 안전하지 않다.
+    - 마지막 마디를 뺀 전부가 한정자여야 하고, 마지막 마디가 안전 멤버여야 한다.
+    - 어느 마디 뒤에든 `(`·`[` 가 오면 안전하지 않다 — 호출·첨자의 결과는 우리가 아는 값이
+      아니다.
+    """
+    segments: list[str] = []
+    index = position
+    length = len(text)
+    while True:
+        while index < length and text[index] in " \t":
+            index += 1
+        if index >= length or text[index] != ".":
+            break
+        index += 1
+        while index < length and text[index] in " \t":
+            index += 1
+        identifier = _IDENTIFIER_RE.match(text, index)
+        if identifier is None:
+            return False  # `..` 이나 `.(` 처럼 우리가 읽을 수 없는 모양 — 안전하다고 하지 않는다
+        segments.append(identifier.group())
+        index = identifier.end()
+        probe = index
+        while probe < length and text[probe] in " \t":
+            probe += 1
+        if probe < length and text[probe] in "([":
+            return False  # 호출·첨자 — 결과값의 성질을 알 수 없다
+
+    if not segments:
+        return False
+    return all(part in _SAFE_QUALIFIERS for part in segments[:-1]) and bool(
+        _SAFE_MEMBER_RE.match(segments[-1])
+    )
+
+
+def balanced_arguments(text: str, open_paren: int) -> str:
+    """`text[open_paren]` 의 `(` 에 대응하는 `)` 까지의 **인자 구간**을 돌려준다.
+
+    ## 왜 `[^)]*` 를 버렸나 (게이트 09 M-09)
+
+    `LOG-BODY` 패턴이 `{LOG_CALL}\\s*\\([^)]*\\b(?:본문이름)\\b` 였다. `[^)]*` 는 **첫 `)`
+    에서 끊긴다** — 메시지 문자열 안의 괄호 하나만 있어도 그 뒤 인자를 못 본다:
+
+        logger.info("완료(1단계)", draft.value)     ← `draft.value` 가 구간 밖
+
+    괄호 균형을 세면 문자열 안의 괄호를 세지 않아야 하므로, 인자 구간 추출도 따옴표 상태를
+    함께 읽는다. 닫는 괄호를 못 찾으면 **남은 전부**를 돌려준다 — 게이트가 틀릴 때는
+    과검사 쪽으로 틀린다.
+    """
+    depth = 0
+    quote: str | None = None
+    index = open_paren
+    length = len(text)
+    while index < length:
+        char = text[index]
+        if quote is not None:
+            if char == "\\":
+                index += 2
+                continue
+            if text.startswith(quote, index):
+                index += len(quote)
+                quote = None
+                continue
+            index += 1
+            continue
+        for opener in ('"""', "'''", '"', "'"):
+            if text.startswith(opener, index):
+                quote = opener
+                index += len(opener)
+                break
+        else:
+            if char == "(":
+                depth += 1
+            elif char == ")":
+                depth -= 1
+                if depth == 0:
+                    return text[open_paren + 1 : index]
+            index += 1
+    return text[open_paren + 1 :]
 
 
 def log_body_is_real_candidate(match: re.Match[str]) -> bool:
     """`LOG-BODY` 적중이 **진짜 후보**인지 2차 판정한다 (privacy-gate 판정 §4-quater.1).
 
-    거르는 것은 `draft.stats.masked_total` 처럼 본문 이름 뒤에 **집계 멤버 접근만** 오는
-    줄이다. 맨 이름(`draft`)·`draft.value`·첨자는 그대로 후보로 남는다.
+    패턴은 "로그 호출이 있고 그 뒤 어딘가에 본문 이름이 있다"까지만 본다(값싼 예비 판정).
+    실제 판정은 여기서 한다 — **균형 괄호로 인자 구간을 잘라내고**(M-09), 그 안의 본문
+    이름마다 **접근 사슬 전체**를 읽는다(M-01).
 
-    **줄 안의 본문 이름을 전부 본다.** 정규식이 `[^)]*` 로 탐욕 매칭해 마지막 것만 잡으므로,
-    적중 위치 하나만 판정하면 `logger.info("{} {}", draft.value, draft.stats.count)` 에서
-    안전한 쪽을 보고 진짜 유출을 놓친다. 하나라도 안전하지 않으면 후보로 남긴다.
+    거르는 것은 `draft.stats.masked_total` 처럼 사슬이 한정자 + 집계 멤버로만 끝나는 줄이다.
+    맨 이름·`draft.value`·첨자·호출·공백 낀 점 뒤의 위험 멤버는 전부 후보로 남는다.
+
+    **인자 구간 안의 본문 이름을 전부 본다.** 하나라도 안전하지 않으면 후보다 —
+    `logger.info("{} {}", draft.value, draft.stats.count)` 에서 안전한 쪽만 보고 넘기면
+    진짜 유출을 놓친다.
     """
     line = match.string
-    for occurrence in re.finditer(rf"\b(?:{BODY_NAMES})\b", line):
-        if not _SAFE_ACCESS.match(line, occurrence.end()):
+    open_paren = line.find("(", match.start())
+    if open_paren < 0:
+        return True  # 패턴이 `(` 를 요구하므로 여기 오지 않는다. 와도 후보로 남긴다.
+    arguments = balanced_arguments(line, open_paren)
+    base = open_paren + 1
+    found = False
+    for occurrence in re.finditer(rf"\b(?:{BODY_NAMES})\b", arguments):
+        found = True
+        if not safe_access_chain(line, base + occurrence.end()):
             return True
-    return False
+    # 인자 구간에 본문 이름이 없으면 이 적중은 애초에 후보가 아니다(예비 판정의 잔여).
+    return not found
 
 
 LOG_CALL = (
@@ -223,6 +325,15 @@ class Rule:
     #: 배선 시점 실측(privacy-gate 판정 §4-quater.2): ktlint 가 강제하는 Kotlin 줄바꿈
     #: 스타일에서 `logger.info(` 호출이 여러 줄로 갈리면 줄 단위 판정은 **전 줄 무적중**이었다.
     multiline: bool = False
+    #: 이 규칙이 읽는 **호출의 시작 모양**. `multiline` 규칙은 반드시 준다(아래 자기검사).
+    #:
+    #: 쓰이는 곳은 하나다 — 논리 줄이 상한에서 끊겼을 때 **그 구간에 이 규칙이 볼 호출이
+    #: 있었는가**를 판정한다. 없으면 못 읽은 것이 없으므로 fail-closed 대상이 아니다.
+    #: 246개짜리 사전 리터럴이나 긴 KDoc 은 규칙이 읽을 호출이 아니다.
+    #:
+    #: 규칙 목록에서 **파생**시키는 이유: 손으로 따로 적으면 규칙을 더할 때 그 목록을 잊고,
+    #: 그때 fail-closed 가 조용히 그 규칙만 빠뜨린다.
+    opener: re.Pattern[str] | None = None
 
 
 RULES: tuple[Rule, ...] = (
@@ -230,11 +341,14 @@ RULES: tuple[Rule, ...] = (
         "LOG-BODY",
         "BLOCK",
         "로그에 문서 본문·개인정보가 없다",
-        re.compile(rf"{LOG_CALL}\s*\([^)]*\b(?:{BODY_NAMES})\b"),
+        # 예비 판정만 한다 — "로그 호출이 있고 그 뒤 어딘가에 본문 이름이 있다".
+        # `[^)]*` 를 쓰지 않는 이유는 `balanced_arguments` KDoc(M-09). 실제 판정은 refine 이다.
+        re.compile(rf"{LOG_CALL}\s*\((?=[^\n]*\b(?:{BODY_NAMES})\b)"),
         "로그는 평문으로 수집·장기 보관된다. 한 줄만 새도 암호화 저장 정책 전체가 무의미해진다.",
         "변수명이 우연히 겹치거나(`title` 로그가 문서 ID인 경우) 길이·타입만 찍는 줄이면 오탐.",
         refine=log_body_is_real_candidate,
         multiline=True,
+        opener=re.compile(rf"{LOG_CALL}\s*\("),
     ),
     Rule(
         "LOG-FSTRING",
@@ -244,6 +358,7 @@ RULES: tuple[Rule, ...] = (
         "f-string·템플릿 보간은 지연 포매팅을 우회해 값이 곧장 문자열이 된다.",
         "포매팅 인자가 이미 마스킹·요약된 값이면 오탐.",
         multiline=True,
+        opener=re.compile(rf"{LOG_CALL}\s*\("),
     ),
     Rule(
         "EXC-BODY",
@@ -253,6 +368,7 @@ RULES: tuple[Rule, ...] = (
         "예외 메시지는 5xx 응답과 스택트레이스 로그 양쪽으로 흘러간다.",
         "메시지가 아니라 원인 예외를 넘기는 인자면 오탐.",
         multiline=True,
+        opener=re.compile(r"(?:raise|throw)\s"),
     ),
     Rule(
         "LLM-VENDOR-SDK",
@@ -281,6 +397,7 @@ RULES: tuple[Rule, ...] = (
         "마스킹 전 본문이 벤더로 나가면 §5 Phase 7의 즉시 중단 사유다.",
         "변수명이 이미 마스킹된 값을 담고 있으면 오탐 — 이름을 masked*로 바꿔 의도를 드러낼 것.",
         multiline=True,
+        opener=re.compile(r"\.complete\s*\("),
     ),
     Rule(
         "OWNERSHIP-403",
@@ -302,6 +419,7 @@ RULES: tuple[Rule, ...] = (
         "이미 암호화된 bytes를 담는 줄이면 오탐 — encrypt/cipher 호출이 같은 줄에 "
         "없을 뿐일 수 있다.",
         multiline=True,
+        opener=re.compile(r"(?:INSERT|UPDATE)|\b(?:setSourceText|setEasyText|set_original)\s*\("),
     ),
     Rule(
         "SECRET-LITERAL",
@@ -505,84 +623,155 @@ class ScanResult:
     #: 규칙별로 2차 판정에서 뺀 건수. 조용히 지우면 규칙이 언제부터 아무것도 안 보는지
     #: 알 수 없으므로 리포트에 함께 찍는다.
     suppressed: dict[str, dict[str, int]]
+    #: **검사하지 못한** 논리 줄 (상한에 걸려 끊긴 호출). 빈 목록이 아니면 BLOCK 이다 —
+    #: "검사했는데 없음"과 "검사하지 못함"은 다르다(게이트 09 M-03).
+    unscanned: list[tuple[Path, int]] = field(default_factory=list)
 
 
 #: 논리 줄 하나가 삼킬 수 있는 물리 줄 상한. 없으면 **깨진 괄호 하나가 파일 전체를 한
 #: 줄로 만들어** 오탐이 폭발한다. 실제 로그·예외 호출은 길어야 열 줄 남짓이다.
 MAX_LOGICAL_LINE_SPAN = 40
 
-#: 괄호 깊이를 셀 때 만나는 토큰. 문자열·주석 안의 괄호를 세면 논리 줄이 엉뚱한 데서 끊긴다.
-_DEPTH_TOKENS = re.compile(r'\\.|"""|\'\'\'|"|\'|//|#|\(|\)')
-
-#: 문자열을 여는 토큰. 같은 토큰을 다시 만나면 닫힌다.
+#: 여는 따옴표 후보. 긴 것부터 본다 — `"""` 를 `"` 로 읽으면 즉시 닫힌 것으로 오인한다.
 _QUOTES = ('"""', "'''", '"', "'")
 
 
-def _depth_after(line: str, depth: int) -> int:
-    """줄 하나를 지난 뒤의 괄호 깊이. 문자열·줄 주석 안의 괄호는 세지 않는다."""
+@dataclass(frozen=True)
+class LexState:
+    """물리 줄 **사이에 유지되는** 어휘 상태.
+
+    ## 줄마다 초기화하면 왜 새는가 (게이트 09 M-03 · codex K-2)
+
+    앞선 판은 `_depth_after` 가 진입할 때마다 `quote = None` 으로 시작했다. 그래서 여러 줄에
+    걸친 raw string(`\"\"\"` … `\"\"\"`) 안의 `)` 가 **코드로 읽혀** 호출이 조기에 닫혔고,
+    그 뒤 인자는 다른 논리 줄로 밀려 규칙이 아예 발화하지 못했다. 은폐가 아니라
+    **탐지형 fail-open** 이라 리포트에는 아무 흔적도 남지 않는다.
+    """
+
+    depth: int = 0
     quote: str | None = None
-    position = 0
-    while True:
-        token = _DEPTH_TOKENS.search(line, position)
-        if token is None:
-            return depth
-        text = token.group()
-        position = token.end()
-        if text.startswith("\\"):
-            continue  # 이스케이프 — 다음 문자를 통째로 건너뛴다
-        if quote is not None:
-            if text == quote:
-                quote = None
+    in_block_comment: bool = False
+
+    @property
+    def open(self) -> bool:
+        """논리 줄이 아직 닫히지 않았는가."""
+        return self.depth > 0 or self.quote is not None or self.in_block_comment
+
+
+@dataclass(frozen=True)
+class LogicalLine:
+    """이어 붙인 논리 줄 하나.
+
+    @param number 시작 **물리** 줄 번호. 사람이 파일을 열어 찾아갈 수 있어야 한다.
+    @param complete 괄호·따옴표가 닫힌 채로 끝났는가. `False` 는 상한에 걸려 **끊긴** 것이며,
+        그 구간은 **검사되지 않았다** — 호출부가 fail-closed 로 다뤄야 한다.
+    """
+
+    number: int
+    text: str
+    complete: bool
+
+
+def _advance(line: str, state: LexState, python_syntax: bool) -> LexState:
+    """물리 줄 하나를 지난 뒤의 어휘 상태.
+
+    문자열·주석 안의 괄호는 세지 않는다. `#` 는 **`.py` 에서만** 줄 주석이다 —
+    `.ts` 의 `#private` 필드를 주석으로 읽으면 그 줄의 나머지가 사라져 **과소 결합**이
+    되고, 그것은 이 함수가 선언한 "틀릴 때는 이어 붙이는 쪽" 과 반대 방향이다(M-23).
+    """
+    depth, quote, block = state.depth, state.quote, state.in_block_comment
+    index = 0
+    length = len(line)
+    while index < length:
+        rest = line[index:]
+        if block:
+            if rest.startswith("*/"):
+                block = False
+                index += 2
+            else:
+                index += 1
             continue
-        if text in _QUOTES:
-            quote = text
-        elif text in ("//", "#"):
-            return depth  # 줄 주석 — 나머지는 코드가 아니다
-        elif text == "(":
-            depth += 1
-        elif text == ")":
-            depth = max(0, depth - 1)
+        if quote is not None:
+            if rest.startswith("\\"):
+                index += 2
+                continue
+            if rest.startswith(quote):
+                index += len(quote)
+                quote = None
+                continue
+            index += 1
+            continue
+        if rest.startswith("//") or (python_syntax and rest.startswith("#")):
+            break  # 줄 주석 — 나머지는 코드가 아니다
+        if not python_syntax and rest.startswith("/*"):
+            block = True
+            index += 2
+            continue
+        for opener in _QUOTES:
+            if rest.startswith(opener):
+                quote = opener
+                index += len(opener)
+                break
+        else:
+            if rest[0] == "(":
+                depth += 1
+            elif rest[0] == ")":
+                depth = max(0, depth - 1)
+            index += 1
+    return LexState(depth=depth, quote=quote, in_block_comment=block)
 
 
-def logical_lines(lines: list[str]) -> list[tuple[int, str]]:
+def logical_lines(lines: list[str], python_syntax: bool = False) -> list[LogicalLine]:
     """물리 줄을 **논리 줄**(괄호가 닫힐 때까지)로 묶는다.
-
-    `(시작 물리 줄 번호, 이어 붙인 문자열)` 목록을 돌려준다. 시작 번호로 보고하는 이유는
-    사람이 파일을 열어 찾아갈 수 있어야 하기 때문이다.
 
     ## AST를 쓰지 않는 이유 (privacy-gate 판정 §4-quater.2)
 
     이 스캐너는 `.py`·`.kt`·`.kts`·`.ts`·`.tsx`·`.java` 6종을 본다. Kotlin AST를 파이썬에서
     얻으려면 외부 도구가 붙고, **그 도구가 없는 환경에서 스캐너가 조용히 0건**이 된다 —
-    C-04와 같은 실패를 새로 만드는 셈이다. 게다가 정규식이 문맥을 못 읽는다는 것은 이
-    스크립트의 선언된 성격이고, 정밀도를 올리려 AST를 넣으면 "판정하는 도구"로 성격이
-    바뀌어 오탐 억제 압력이 생긴다.
+    C-04와 같은 실패를 새로 만드는 셈이다. 대신 문자열·주석 상태를 물리 줄 사이에 유지하는
+    작은 어휘 분석기를 둔다(`LexState`).
 
-    ## 틀릴 때는 이어 붙이는 쪽으로 틀린다
+    ## 상한은 fail-closed 다 (게이트 09 M-03)
 
-    따옴표 추적은 완벽하지 않다(중첩 주석·언어별 문자열 문법 차이). 깊이를 못 세면
-    **이어 붙이는 쪽**으로 틀리게 두었다 — 게이트가 틀릴 때는 과검사 쪽으로 틀려야 한다
-    (`iter_files`의 폴백 원칙과 같다).
+    앞선 판은 상한 40줄에 닿으면 **조용히 새 논리 줄을 시작**했다. 그러면 41줄짜리 호출은
+    어느 논리 줄에서도 온전히 보이지 않고, 리포트에는 아무 흔적도 남지 않는다 —
+    "검사했는데 없음"과 "검사하지 못함"이 구분되지 않는 상태다. 이 스크립트가 `--changed`
+    0건과 스캔 루트 부재에서 이미 거부한 바로 그 형태다.
+
+    지금은 끊긴 논리 줄에 `complete=False` 를 달아 호출부가 **후보로 승격**하게 한다.
     """
-    joined: list[tuple[int, str]] = []
+    joined: list[LogicalLine] = []
     index = 0
     while index < len(lines):
         start = index
-        depth = 0
+        state = LexState()
         parts: list[str] = []
         while index < len(lines) and index - start < MAX_LOGICAL_LINE_SPAN:
             parts.append(lines[index].strip())
-            depth = _depth_after(lines[index], depth)
+            state = _advance(lines[index], state, python_syntax)
             index += 1
-            if depth <= 0:
+            if not state.open:
                 break
-        joined.append((start + 1, " ".join(parts)))
+        joined.append(LogicalLine(number=start + 1, text=" ".join(parts), complete=not state.open))
     return joined
+
+
+#: `multiline` 규칙은 반드시 `opener` 를 갖는다 — 없으면 그 규칙만 fail-closed 밖으로 빠진다.
+for _rule in RULES:
+    if _rule.multiline and _rule.opener is None:
+        raise AssertionError(
+            f"multiline 규칙 {_rule.id} 에 opener 가 없다 — 끊긴 논리 줄에서 이 규칙이 "
+            "볼 호출이 있었는지 판정할 수 없어 fail-closed 가 그 규칙만 놓친다."
+        )
+
+#: 끊긴 논리 줄이 **실제로 무언가를 가렸는가**를 판정할 때 쓰는 호출 시작 모양 전부.
+ARG_LIST_OPENERS = tuple(rule.opener for rule in RULES if rule.multiline and rule.opener)
 
 
 def scan(files: list[Path], rule_filter: set[str]) -> ScanResult:
     hits: dict[str, list[tuple[Path, int, str]]] = {}
     suppressed: dict[str, dict[str, int]] = {}
+    unscanned: list[tuple[Path, int]] = []
 
     def drop(rule_id: str, reason: str) -> None:
         suppressed.setdefault(rule_id, {}).setdefault(reason, 0)
@@ -625,7 +814,15 @@ def scan(files: list[Path], rule_filter: set[str]) -> ScanResult:
         # 인자 목록을 보는 규칙은 **논리 줄**에서 판정한다. ktlint가 강제하는 Kotlin
         # 줄바꿈 스타일에서 `logger.info(` 호출이 여러 줄로 갈리면 줄 단위 판정은
         # 전 줄 무적중이었다(privacy-gate 판정 §4-quater.2).
-        for number, line in logical_lines(lines):
+        for logical in logical_lines(lines, python_syntax=path.suffix == ".py"):
+            # **끊긴 논리 줄은 fail-closed 다.** 상한에 걸려 못 읽은 호출을 조용히 넘기면
+            # "검사하지 못함"이 "위반 없음"으로 집계된다 — 이 스크립트가 스캔 루트 부재와
+            # `--changed` 0건에서 이미 거부한 형태다(게이트 09 M-03).
+            if not logical.complete and any(o.search(logical.text) for o in ARG_LIST_OPENERS):
+                unscanned.append((path, logical.number))
+                continue
+            line = logical.text
+            number = logical.number
             if line.startswith(("#", "//", "*", '"""')):
                 continue
             for rule in rules:
@@ -653,7 +850,7 @@ def scan(files: list[Path], rule_filter: set[str]) -> ScanResult:
                         drop(rule.id, "같은 창에서 완화 조치 확인")
                         continue
                 hits.setdefault(rule.id, []).append((path, number, line[:160]))
-    return ScanResult(hits, suppressed)
+    return ScanResult(hits, suppressed, unscanned)
 
 
 def render(result: ScanResult, scanned: int, scope: str) -> tuple[str, int]:
@@ -674,6 +871,28 @@ def render(result: ScanResult, scanned: int, scope: str) -> tuple[str, int]:
             lines.append(f"- `{rule_id}` — {detail}")
         lines.append("")
     blocking = 0
+    if result.unscanned:
+        # **BLOCK 이다.** 상한에 걸려 못 읽은 호출은 "위반 없음"이 아니라 "확인하지 않음"이고,
+        # 이 스크립트는 같은 판단을 스캔 루트 부재와 `--changed` 0건에서 이미 내린다.
+        blocking += len(result.unscanned)
+        lines.extend(
+            [
+                "## [BLOCK] SCAN-INCOMPLETE — 검사하지 못한 호출이 있다 "
+                f"({len(result.unscanned)}건)",
+                "",
+                f"- 왜: 논리 줄 결합이 {MAX_LOGICAL_LINE_SPAN}줄 상한에 걸려 끊겼다. 그 구간의 "
+                "인자 목록은 **아무 규칙도 보지 못했다** — 조용히 넘기면 미검사가 통과로 집계된다.",
+                "- 조치: 해당 호출을 줄이거나, 정말 그만큼 길어야 한다면 상한을 올리는 커밋으로 "
+                "처리한다(그 diff 가 리뷰에 올라가는 것이 요점이다).",
+                "",
+            ]
+        )
+        for path, number in result.unscanned[:40]:
+            shown = path.relative_to(REPO_ROOT) if path.is_relative_to(REPO_ROOT) else path
+            lines.append(f"- `{shown}:{number}` — 논리 줄이 상한에서 끊겼다")
+        if len(result.unscanned) > 40:
+            lines.append(f"- … 외 {len(result.unscanned) - 40}건")
+        lines.append("")
     for rule in RULES:
         found = hits.get(rule.id, [])
         if not found:
@@ -695,7 +914,7 @@ def render(result: ScanResult, scanned: int, scope: str) -> tuple[str, int]:
         if len(found) > 40:
             lines.append(f"- … 외 {len(found) - 40}건 (전체는 --rule {rule.id} 로 확인)")
         lines.append("")
-    if not hits:
+    if not hits and not result.unscanned:
         lines.append(
             "후보 없음. 다만 정규식이 못 보는 경로가 있으니 수동 감사 절차를 건너뛰지 않는다."
         )

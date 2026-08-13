@@ -122,6 +122,11 @@ jobs:
       # 절대 기준이 될 수 없다 — 이 diff 가 리뷰에 올라가는 것이 최종 방어선이다.
       - name: 하네스 도달 검사 실재 확인 (경로 명시 — 자기 단언은 파일과 함께 사라진다)
         run: uv run pytest tests/test_harness_scope_reach.py
+      # 같은 규약을 스캐너 회귀에도 적용한다 (게이트 09 M-13). `uv run pytest` 전체 수집만
+      # 있으면 이 파일을 지워도 exit 0 이다 — 수집이 한 건 줄고 스위트는 초록이다.
+      # 이 파일이 지키는 것은 CI BLOCK 게이트(scan_privacy_invariants.py)의 동작 전부다.
+      - name: 스캐너 회귀 실재 확인 (경로 명시)
+        run: uv run pytest tests/test_privacy_scanner.py
       - run: uv run pytest
       # 골든셋 LLM 평가(-m llm)는 API 키 시크릿 등록 후 별도 잡으로 활성화한다.
 

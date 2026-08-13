@@ -158,8 +158,12 @@ def test_안전_멤버_목록에_본문_이름이_없다(scanner: ModuleType) ->
     여기서 한 번 더 보는 이유는 **그 자기검사가 지워지는 경우**를 잡기 위해서다.
     """
     for forbidden in ("value", "text", "body", "content", "original", "raw"):
-        assert scanner._SAFE_ACCESS.fullmatch(f".{forbidden}") is None, (
+        assert scanner._SAFE_MEMBER_RE.match(forbidden) is None, (
             f"_SAFE_MEMBERS 에 {forbidden!r} 가 들어갔다 — LOG-BODY 가 아무것도 잡지 못하게 된다."
+        )
+        assert forbidden not in scanner._SAFE_QUALIFIERS, (
+            f"_SAFE_QUALIFIERS 에 {forbidden!r} 가 들어갔다 — 한정자는 사슬을 이어 주므로 "
+            "여기 들어가면 그 뒤 어떤 안전 멤버로도 종단할 수 있다."
         )
 
 
@@ -256,7 +260,7 @@ def test_논리_줄_결합에_상한이_있다(scanner: ModuleType) -> None:
     joined = scanner.logical_lines(broken)
 
     assert len(joined) > 1, "상한이 없어 파일 전체가 한 논리 줄이 됐다."
-    first_span = joined[1][0] - joined[0][0]
+    first_span = joined[1].number - joined[0].number
     assert first_span <= scanner.MAX_LOGICAL_LINE_SPAN, (
         f"논리 줄 하나가 물리 줄 {first_span}개를 삼켰다 (상한 {scanner.MAX_LOGICAL_LINE_SPAN})"
     )
@@ -350,3 +354,123 @@ def test_allow_empty_는_0건만_눌러주고_루트_부재는_못_누른다(
     monkeypatch.undo()
     monkeypatch.setattr(scanner, "SCAN_ROOTS", ["존재하지-않는-루트"])
     assert scanner.main(["--allow-empty"]) == 2
+
+
+# ── 게이트 09 M-01 — 접근 사슬 전체 파싱 ────────────────────────────────────────────
+#
+# `_SAFE_ACCESS` 정규식의 종단 고정 `(?!\.)`은 **점이 곧바로 이어지는 경우만** 막았다.
+# 아래 셋은 전부 SUPPRESSED로 샜다. 특히 셋째가 나쁘다 — 논리 줄 결합(`" ".join`)이
+# ktlint 강제 다중 줄 체인을 정확히 그 ` .` 모양으로 만들므로, **이 저장소의 표준
+# 표기가 안전 판정을 받고 있었다.**
+
+CHAIN_ESCAPES = [
+    'logger.info("{}", draft.id[0])',
+    'logger.info("{}", draft.stats.count().value)',
+    'logger.info("{}", draft.id . value)',
+    'logger.info( "{}", draft .stats .value )',
+]
+
+
+@pytest.mark.parametrize("line", CHAIN_ESCAPES)
+def test_사슬_중간에_끼워_넣은_우회를_잡는다(scanner: ModuleType, line: str) -> None:
+    assert _log_body_verdict(scanner, line) == "CAUGHT", (
+        f"접근 사슬 우회가 빠져나간다: {line} — 종결자 열거로 되돌아갔는지 확인하라."
+    )
+
+
+def test_다중_줄_체인의_안전한_종단은_계속_거른다(scanner: ModuleType) -> None:
+    """우회를 막느라 정당한 표기까지 후보로 만들면 이 훅은 못 쓰게 된다.
+
+    ` .` 모양 자체는 죄가 없다 — 죄는 그 뒤에 위험 멤버가 오는 것이다.
+    """
+    assert _log_body_verdict(scanner, 'logger.info( "{}", draft .stats .masked_total )') == "MISSED"
+
+
+def test_사슬_판정은_종결자를_열거하지_않는다(scanner: ModuleType) -> None:
+    """호출·첨자 뒤의 값은 **성질을 알 수 없으므로** 안전하다고 하지 않는다.
+
+    이것을 "`[`와 `(`도 종결자 목록에 넣는다"로 고치면 다음 표기에서 또 빠진다.
+    사슬을 끝까지 읽는 쪽이 열거보다 좁다.
+    """
+    assert scanner.safe_access_chain("draft.stats.masked_total", len("draft")) is True
+    assert scanner.safe_access_chain("draft.stats.masked_total[0]", len("draft")) is False
+    assert scanner.safe_access_chain("draft.stats.count()", len("draft")) is False
+    assert scanner.safe_access_chain("draft", len("draft")) is False
+
+
+# ── 게이트 09 M-09 — 중첩 괄호에서 인자가 잘리지 않는다 ─────────────────────────────
+
+
+def test_메시지_안의_괄호가_인자_구간을_끊지_않는다(scanner: ModuleType) -> None:
+    """`[^)]*`는 첫 `)`에서 끊겨 그 뒤 인자를 못 봤다."""
+    assert _log_body_verdict(scanner, 'logger.info("완료(1단계)", draft.value)') == "CAUGHT"
+    assert scanner.balanced_arguments('f("a(b)", x)', 1) == '"a(b)", x'
+
+
+# ── 게이트 09 M-03 — 논리 줄 조립의 fail-closed·상태 유지 ───────────────────────────
+
+PROBE_OVER_CAP = PROBE_DIR / "OverCapProbe.kt"
+PROBE_RAW_STRING = PROBE_DIR / "RawStringProbe.kt"
+
+
+def test_상한을_넘긴_호출은_조용히_넘어가지_않는다(scanner: ModuleType) -> None:
+    """**fail-open이 fail-closed로 바뀌었다.**
+
+    앞선 판은 상한에 닿으면 새 논리 줄을 시작해 그 호출을 어느 논리 줄에서도 온전히
+    보지 못했고, 리포트에는 아무 흔적도 남지 않았다. "검사했는데 없음"과 "검사하지
+    못함"이 구분되지 않는 상태 — 이 스크립트가 스캔 루트 부재와 `--changed` 0건에서
+    이미 거부한 형태다.
+    """
+    result = scanner.scan([PROBE_OVER_CAP], set())
+
+    assert result.unscanned, "상한을 넘긴 호출이 미검사로 보고되지 않는다"
+    _report, blocking = scanner.render(result, 1, "테스트")
+    assert blocking >= 1, "미검사 논리 줄이 BLOCK 으로 집계되지 않는다"
+
+
+def test_상한_초과라도_규칙이_볼_호출이_없으면_막지_않는다(scanner: ModuleType) -> None:
+    """246개짜리 사전 리터럴이나 긴 KDoc은 규칙이 읽을 호출이 아니다.
+
+    이 구분이 없으면 fail-closed가 정당한 긴 리터럴에서 영구히 빨개져, 결국 누군가
+    상한을 무한대로 올리거나 fail-closed 자체를 되돌린다.
+    """
+    long_map = ["val words = mapOf(", *[f'    "낱말{i}" to "뜻{i}",' for i in range(80)], ")"]
+    result = scanner.scan([PROBE_OVER_CAP], set())  # 탐침은 그대로 두고
+    joined = scanner.logical_lines(long_map)
+
+    assert not joined[0].complete, "이 리터럴은 상한을 넘는다 (전제 확인)"
+    assert result.unscanned, "로그 호출이 든 탐침은 여전히 미검사로 보고돼야 한다"
+    # 사전 리터럴에는 어떤 규칙의 호출 시작 모양도 없다.
+    assert not any(opener.search(joined[0].text) for opener in scanner.ARG_LIST_OPENERS)
+
+
+def test_raw_string_안의_괄호가_호출을_조기에_닫지_않는다(scanner: ModuleType) -> None:
+    """어휘 상태를 물리 줄마다 초기화하면 raw string 안의 `)`가 코드로 읽힌다."""
+    result = scanner.scan([PROBE_RAW_STRING], {"LOG-BODY"})
+
+    assert "LOG-BODY" in result.hits, (
+        "raw string 안의 괄호에 호출이 조기에 닫혀 뒤 인자를 보지 못한다 — "
+        "LexState 가 물리 줄 사이에 유지되는지 확인하라."
+    )
+
+
+def test_multiline_규칙은_모두_opener_를_갖는다(scanner: ModuleType) -> None:
+    """없으면 끊긴 논리 줄에서 **그 규칙만** fail-closed 밖으로 빠진다."""
+    missing = [rule.id for rule in scanner.RULES if rule.multiline and rule.opener is None]
+    assert not missing, f"opener 없는 multiline 규칙: {missing}"
+
+
+def test_파이썬이_아닌_파일에서_샵은_주석이_아니다(scanner: ModuleType) -> None:
+    """`.ts`의 `#private` 필드를 줄 주석으로 읽으면 그 줄의 나머지가 사라진다.
+
+    선언(「틀릴 때는 이어 붙이는 쪽」)과 **반대 방향**의 결함이라 함께 고쳤다.
+    """
+    source = ["class A { #secret = f(", '    "x"', ") }"]
+
+    # `#` 를 주석으로 보지 않으면 `(` 가 세어져 세 줄이 한 논리 줄로 묶인다.
+    kotlin_like = scanner.logical_lines(source, python_syntax=False)[0]
+    assert '"x"' in kotlin_like.text, f"과소 결합 — 뒷줄을 보지 못한다: {kotlin_like.text!r}"
+
+    # 파이썬에서는 `#` 뒤가 주석이므로 그 줄에서 끊기는 것이 옳다.
+    python_like = scanner.logical_lines(source, python_syntax=True)[0]
+    assert '"x"' not in python_like.text
