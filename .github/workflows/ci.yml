@@ -80,6 +80,28 @@ jobs:
       # 음성 대조: 위 gate 파일에 반환 타입 오류를 심으면 옛 명령은 Success, 새 명령은
       # `error: Incompatible return value type`. 도달 차이가 실제로 존재한다.
       - run: uv run mypy . .claude
+      # 데이터 보호 불변식 기계 스캔 (privacy-gate 판정 X-8, 2026-08-13 · 리더 승인).
+      #
+      # **`kotlin` 잡이 아니라 여기다.** SCAN_ROOTS 가 app·backend-kotlin·scripts·frontend/src
+      # 를 함께 덮는데, 배선 시점 실측으로 검사 171파일 중 **98개(57%)가 backend-kotlin 밖**
+      # 이다. 좁은 잡에 붙이면 선언한 범위보다 좁은 자리에서 도는 게이트가 된다.
+      # 이 잡은 이미 `uv sync --locked` 를 마쳐 필요한 것이 다 있고 DB·JDK 를 쓰지 않는다.
+      #
+      # 위치가 mypy 바로 다음인 이유: ⑴ 이 스캐너 자신이 mypy 대상이라 타입 검사를 통과한
+      # 직후가 순서상 맞고, ⑵ alembic·pytest 같은 느린 단계 앞이라 실패가 빠르다.
+      #
+      # 배선 시점 실측: 검사 171파일(backend-kotlin 73) · BLOCK 후보 0 · exit 0.
+      # 음성 대조(합성 저장소): 로거 본문 보간·403·난수 키·DTD 팩터리를 심은 .kt 에서
+      # BLOCK 4건 검출 — Kotlin 에서 실제로 작동한다.
+      #
+      # `--changed` 를 쓰지 않는다: 기본 base 가 `main` 이라 오래 사는 브랜치에서 범위가
+      # 계속 넓어지거나 fork point 이동으로 흔들리고, 전수가 이미 1초 미만이다.
+      # `--no-fail` 을 붙이지 않는다: 붙이면 BLOCK 후보가 있어도 초록이라 게이트가 장식이 된다.
+      #
+      # 이 스텝 자체의 삭제는 이 스텝이 막지 못한다. 최종 방어선은 그 diff 가 리뷰에
+      # 올라가는 것이다 — 한 칸 더 옮기지 않는다.
+      - name: 데이터 보호 불변식 스캔 (BLOCK 후보 0건 유지)
+        run: uv run python .claude/skills/migration-safety-gate/scripts/scan_privacy_invariants.py
       - run: uv run alembic upgrade head
       # 아래 `uv run pytest` 가 이 파일도 수집하는데 왜 경로를 또 적는가 —
       # **자기 안의 단언은 파일과 함께 사라지기 때문이다.**

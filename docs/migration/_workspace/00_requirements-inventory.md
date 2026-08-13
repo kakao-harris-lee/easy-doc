@@ -26,6 +26,7 @@ ID는 게이트·fixture·테스트가 참조하는 안정 키다. `관련 도�
 | ID | 요구사항 | 출처 | 확인 방법(계측기·도메인) | Phase | 현재 상태 / blocked-by |
 |---|---|---|---|---|---|
 | INV-01 | 마스킹 선행 — 원문은 마스킹 파이프라인 통과 **후에만** LLMProvider로 전달. 우회 경로를 타입 수준에서 차단 | master-plan §3.2 · 계획 §2.3 · CLAUDE.md 아키텍처2 | migration-safety-gate 코드 추적 + `core`에서 미마스킹 텍스트가 provider에 닿는 경로 부재를 타입으로 강제(kotlin-spring-conventions) | 2(타입)·5(호출부) | 미충족 — 미포팅 |
+| INV-01-a | provenance 사용 규약 — `ReviewedBody`(사람이 제출한 `edited_text`)는 **HTTP 요청 경계의 검수 제출 어댑터에서만** 만든다. `easy_text`·LLM 응답·후처리 산출물·워커 재처리·내보내기 본문 선택으로 만들지 않는다. `ModelDraft`는 LLM 출력과 저장된 `easy_text`로만 만든다(업로드 원문 금지). **`edited_text`는 사람이 실제로 제출하기 전까지 `null`** — 검수 화면을 열 때 초안을 자동 저장하면 이 통제가 통째로 무너진다 | privacy-gate 판정 `07_privacy-gate_masking-verdicts.md` §2.3 조건 1 (X-5 수용 조건) | 규약 정본은 `core/privacy/Masking.kt`「provenance 래퍼 사용 규약」. 생성 지점은 `ProvenanceCreationSitesTest` 허용목록이 상시 대조(음성 대조 확인). **`edited_text` null 유지**는 검수 저장 API 통합 테스트가 Phase 4에서 판정 | 2(규약·탐지기)·4(`edited_text` null 유지) | 규약·탐지기 **충족**(2026-08-13) / `edited_text` null 유지 미충족 — 검수 저장 API 미구현 |
 | INV-02 | 마스킹 범주 = 주민등록번호(외국인등록번호 포함)·카드번호 **2종**. 전화·이메일·계좌 **미마스킹** | master-plan §3.2 | `masking` parity fixture 값 대조 + 계약 enum 2값 + 골든셋 마스킹 계수 | 2 | 미충족 — 파이프라인 미포팅(fixture 22케이스 존재) |
 | INV-03 | 원문-플레이스홀더 대응표는 **인증된 소유자 검수 조회 응답에만** 반환. 로그·목록 응답·외부 반출 금지 | master-plan §3.2 | contract test(검수 조회에만 포함/타 응답 부재) + 로그 스캔 | 3·4 | 미충족 |
 | INV-04 | 원문·결과·대응표를 **평문으로 DB·로그에 미저장**(암호화 저장) | master-plan §3.2 · 계획 §2.3 | migration-safety-gate — 저장 경로 암호화 확인 + 로그 스캔 | 4·5 | 미충족 |

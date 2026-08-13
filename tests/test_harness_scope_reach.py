@@ -298,8 +298,12 @@ EXPECTED_MET_YES_KEYS: Final[frozenset[tuple[str, str]]] = frozenset(
         ("Phase 1 — Kotlin 골격과 CI", "설정 바인딩·구조화 로그·비밀값 마스킹"),
         ("Phase 1 — Kotlin 골격과 CI", "종료 조건: 빈 DB와 기존 schema snapshot 양쪽에서 기동 "),
         ("Phase 1 — Kotlin 골격과 CI", "필수 조치 D — `encryption_scheme` additive 추"),
-        # Phase 2 — 순수 도메인 로직 포팅 · 아직 돌리지 않은 검증 게이트: `충족 = 예` 행 없음.
-        #   (게이트 표에는 `충족` 열 자체가 없어 구조적으로 이 집합 밖이다.)
+        # Phase 2 — 순수 도메인 로직 포팅 (2026-08-13 · kotlin-implementer 조각에서 3행 충족)
+        #   나머지 Phase 2 행(텍스트 정규화·프롬프트·스타일·내보내기·후처리)은 아직 `아니오` 다.
+        #   아직 돌리지 않은 검증 게이트 표에는 `충족` 열 자체가 없어 구조적으로 이 집합 밖이다.
+        ("Phase 2 — 순수 도메인 로직 포팅", "개인정보 마스킹 포팅 (`app/privacy/masking.py`)"),
+        ("Phase 2 — 순수 도메인 로직 포팅", "placeholder 보존 검사 포팅"),
+        ("Phase 2 — 순수 도메인 로직 포팅", "보정 채택 판정 포팅"),
     }
 )
 
