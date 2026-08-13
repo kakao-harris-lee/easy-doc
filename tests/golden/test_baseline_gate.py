@@ -14,6 +14,7 @@ from types import ModuleType, SimpleNamespace
 from typing import Any
 
 import pytest
+from pydantic import ValidationError
 
 from app.easyread.goldenset import GoldenDocument, find_fact_losses, load_documents
 from tests.golden import DOCUMENTS_DIR
@@ -541,16 +542,28 @@ def test_리포트에_본문이_실리지_않는다() -> None:
 
 
 def test_provider_없이는_기준선을_쓰지_않는다(tmp_path: Path) -> None:
-    """**빈 provider는 손으로 조립한 body의 이야기가 아니다** — 하네스 경로로 도달한다.
+    """**`write_baseline`의 직접 호출 계약이다** — 하네스 경로로는 여기까지 오지 않는다.
 
-    `run_context()`는 `os.environ.get("GOLDEN_PROVIDER", DEFAULT_PROVIDER)`로 provider를
-    만든다. `GOLDEN_PROVIDER=`(빈 값)로 실행하면 기본값이 아니라 `""`가 들어오고,
-    `RunContext(provider="")`는 pydantic을 그대로 통과한다(아래에서 확인한다). 그리고 그
-    순간이 **사람이 손으로 기준선을 기록하는 실행**이다 — 환경변수를 붙여 돌리는 명령이
-    기록 명령이기 때문이다.
+    **2026-08-13 정정.** 이 docstring은 원래 "`GOLDEN_PROVIDER=`(빈 값)로 돌리면 하네스
+    경로로 도달한다"고 적었다. 그 서술이 **틀렸다**(독립 검증 A-2, 실측으로 확인):
+    `GOLDEN_PROVIDER=`이면 provider fixture가 `require_provider("")` →
+    `create_provider("", settings)`를 부르고, 거기서 이름이 어느 벤더와도 맞지 않아
+    `ValueError: 지원하지 않는 provider 이름:`이 난다. 변환도 평가도 기록도 시작되지 않으므로
+    `write_baseline`은 **불리지 않는다.**
 
-    무엇으로 쟀는지 모르는 수치가 하한선이 되면 그 하락이 정상이 된다는 것이 이 절 전체의
-    근거인데, provider가 비면 producer 축의 첫 칸부터 비어 "누가 낸 수치인가"를 말할 수 없다.
+        >>> create_provider("", Settings())
+        ValueError: 지원하지 않는 provider 이름:
+
+    그래서 이 테스트는 위 두 하네스 테스트(`test_관측_모델이_없으면…`·`test_모델이_섞이면…`,
+    `test_floor_gate_wiring.py`)와 **같은 수준의 배선 증거가 아니다.** 저쪽은 실제 기록
+    경로를 태워 가드에 닿고, 이쪽은 함수를 직접 부른다. 그 구분을 흐리면 "배선을 확인했다"는
+    말이 아무것도 뜻하지 않게 된다.
+
+    **그래도 가드와 이 테스트는 남는다.** `write_baseline`은 dict를 받는 공개 함수이고
+    손으로 조립한 body가 실제로 들어온다(바로 아래 셋이 그 형태다). provider가 비면 producer
+    축의 첫 칸부터 비어 "누가 낸 수치인가"를 말할 수 없고, 무엇으로 쟀는지 모르는 수치가
+    하한선이 되면 그 하락이 정상이 된다 — 이 절 전체의 근거다. 지키는 것이 *하네스 경로*가
+    아니라 *직접 호출 계약*일 뿐이다.
     """
     path = tmp_path / "baseline.json"
     # 전제 — 이 상태는 만들 수 있다. 스키마가 막아 준다면 이 가드는 죽은 분기다.
@@ -596,7 +609,15 @@ def test_effort_는_키_자체가_있어야_한다(tmp_path: Path) -> None:
 
     **이 가드만 성격이 다르다.** `baseline_body`가 pydantic `Baseline`을 dump하므로 하네스
     경로로 만든 본문에는 `effort` 키가 언제나 있다 — 이것은 손으로 조립한 body에 대한 방어이고,
-    위 셋처럼 실행 조건으로 재현되지 않는다. 그래서 "도달 0"으로 묶어 고칠 대상이 아니다.
+    위 셋처럼 실행 조건으로 재현되지 않는다.
+
+    **2026-08-13 정정 — "그래서 도달 0으로 묶어 고칠 대상이 아니다"는 쓰기 경계에서만 참이다.**
+    독립 검증(A-3)이 **읽기 경계에 살아 있는 분기**를 짚었고 실측으로 재현됐다: `effort`에
+    기본값이 있으면 `load_baseline()`이 디스크의 `context.effort` 키가 없는 파일을
+    `effort=None`인 정상 기준선으로 복구했고, 그 기준선이 같은 지문에 `유지`를 돌려줬다.
+    쓰기에서 "키가 없으면 안 된다"고 해 놓고 읽기에서 없는 키를 만들어 주고 있었던 것이다.
+    이제 `RunContext.effort`에 기본값이 없어 그 파일은 검증 실패 → `None` → 차단이 된다
+    (아래 `test_effort_키가_없는_기준선_파일은_읽히지_않는다`).
     """
     path = tmp_path / "baseline.json"
     with pytest.raises(AssertionError, match="effort"):
@@ -727,3 +748,212 @@ def test_관측_모델이_비거나_섞여도_사실대로_적힌다() -> None:
         verdict, summary = _producer_case(normal, broken)
         assert verdict is Verdict.INCOMPARABLE
         assert "관측 모델: claude-sonnet-5 → " in summary
+
+
+# ════════════════ H. producer 결속 — 지문과 context 가 갈린 기준선은 만들어지지 않는다
+#
+# **12번째 지적**(2026-08-13 독립 검증 A-1, high). producer 축을 넣을 때 같은 값이
+# `fingerprint.producer`(기계가 비교하는 면)와 `context`(사람이 읽는 기록) 두 자리에 실렸고,
+# 저자는 "둘이 갈리지 않는 것은 한 `RunContext`에서 유도하기 때문"이라며 **호출 규약으로만**
+# 막았다. 그때의 위험 평가는 "갈려도 비교는 지문이 하므로 판정은 안전하고 사람이 읽는 기록만
+# 틀어진다"였다.
+#
+# **그 평가가 틀렸다.** 실측 재현: 지문 `anthropic/model-a`, context `openai/model-b`인 본문이
+# writer 를 통과했고(`write_baseline: 통과`), 다음 model-a 실행이 그 파일을 읽어 지문만
+# 대조하고 **`개선`/차단 False** 를 냈다. 즉 **model-b 로 잰 낮은 수치가 model-a 실행의
+# 하한선으로 채택된다.** 틀어진 것은 기록이 아니라 하한선 자체다.
+#
+# 검사를 얹는 대신 **그 상태를 표현할 수 없게** 했다. 아래 넷은 성분별 음성 대조와 대조군이고,
+# 그 아래 둘이 경로(writer·읽기)를, 마지막 하나가 위 재현 전체를 회귀로 고정한다.
+
+
+def _mismatched_body(fingerprint_context: RunContext, body_context: RunContext) -> dict[str, Any]:
+    """지문과 context 를 **다른 `RunContext`에서** 유도해 본문을 만들려 시도한다.
+
+    이것이 A-1 재현의 첫 줄이다. 성공하면 그 뒤가 전부 성립하고, 여기서 막히면 뒤가 없다.
+    """
+    return baseline_body(
+        Fingerprint.of(DOCUMENTS, fingerprint_context),
+        _measurement((36, 56), (17, 20)),
+        body_context,
+    )
+
+
+def test_provider만_갈려도_본문이_조립되지_않는다() -> None:
+    """성분 하나만 어긋나도 거부한다 — 셋을 묶어 보면 어느 성분이 열려 있는지 알 수 없다."""
+    with pytest.raises(ValidationError, match="지문의 producer와 context가 갈렸다") as caught:
+        _mismatched_body(_context(provider="anthropic"), _context(provider="openai"))
+    message = str(caught.value)
+    assert "provider: 지문 anthropic / context openai" in message
+    assert "관측 모델:" not in message, "안 갈린 성분까지 적으면 무엇이 어긋났는지 흐려진다"
+
+
+def test_관측_모델만_갈려도_본문이_조립되지_않는다() -> None:
+    """같은 벤더 안에서 모델만 갈리는 것이 제품에서 훨씬 흔하다 — provider 만 보면 열려 있다."""
+    with pytest.raises(ValidationError, match="지문의 producer와 context가 갈렸다") as caught:
+        _mismatched_body(
+            _context(observed_models=["model-a"]), _context(observed_models=["model-b"])
+        )
+    message = str(caught.value)
+    assert "관측 모델: 지문 model-a / context model-b" in message
+    assert "provider:" not in message
+
+
+def test_effort만_갈려도_본문이_조립되지_않는다() -> None:
+    """`effort` 도 producer 축이다 — 값이 없는 쪽은 이름(`없음`)으로 적힌다."""
+    with pytest.raises(ValidationError, match="지문의 producer와 context가 갈렸다") as caught:
+        _mismatched_body(_context(effort="high"), _context(effort=None))
+    message = str(caught.value)
+    assert "effort: 지문 high / context 없음" in message
+    assert "provider:" not in message
+
+
+def test_한_실행_조건에서_유도한_본문은_그대로_조립된다() -> None:
+    """**대조군.** 막는 쪽만 확인하면 "전부 거부하게 만들었다"와 구분되지 않는다.
+
+    `judge_provider`·설정값 `model` 은 producer 축이 아니므로 **달라도 통과해야 한다** —
+    그 둘까지 결속하면 판정과 무관한 변경이 기록을 거부한다(과민한 지문은 반대 방향 고장이다).
+    """
+    context = _context(provider="anthropic", observed_models=["model-a"], effort="high")
+    body = baseline_body(
+        Fingerprint.of(DOCUMENTS, context), _measurement((36, 56), (17, 20)), context
+    )
+    assert body["fingerprint"]["producer"]["provider"] == "anthropic"
+
+    # producer 축 밖의 필드만 다른 두 조건 — 결속은 세 성분만 본다.
+    other_claim = context.model_copy(
+        update={"judge_provider": "다른-채점자", "model": "다른-설정값"}
+    )
+    assert (
+        baseline_body(
+            Fingerprint.of(DOCUMENTS, context), _measurement((36, 56), (17, 20)), other_claim
+        )["context"]["judge_provider"]
+        == "다른-채점자"
+    )
+
+
+def test_손으로_조립한_갈린_본문은_writer가_거부한다(tmp_path: Path) -> None:
+    """**G5** — `baseline_body` 를 거치지 않는 통로를 같은 층위에서 막는다.
+
+    `write_baseline` 은 모델이 아니라 dict 를 받으므로 `Baseline` 의 불변식이 닿지 않는다.
+    위 G1~G4 를 붙잡는 음성 대조 넷이 정확히 그 형태(손으로 조립한 body)이므로, 이 통로가
+    있다는 것은 가정이 아니라 이 파일이 이미 쓰고 있는 사실이다.
+    """
+    path = tmp_path / "baseline.json"
+    body = {
+        "fingerprint": {
+            "producer": {"provider": "anthropic", "observed_models": ["model-a"], "effort": "low"}
+        },
+        "context": {"provider": "openai", "observed_models": ["model-b"], "effort": "low"},
+    }
+    with pytest.raises(AssertionError, match="지문의 producer와 context가 갈렸다"):
+        write_baseline(body, path)
+    assert not path.exists(), "거부했는데 파일이 생겼다"
+
+
+def test_지문_없는_본문도_writer가_거부한다(tmp_path: Path) -> None:
+    """결속을 **확인할 수 없는** 본문도 거부다 — 없는 것은 맞는 것이 아니다.
+
+    지문이 빠진 body 는 G1~G4 를 전부 지난다(그 넷은 `context` 만 본다). 결속을 대조할
+    상대가 없다는 이유로 통과시키면, 필드 하나를 지우는 것이 가드를 지나는 방법이 된다.
+    """
+    path = tmp_path / "baseline.json"
+    with pytest.raises(AssertionError, match="지문의 producer와 context가 갈렸다"):
+        write_baseline(
+            {"context": {"provider": "fake", "observed_models": ["model-a"], "effort": None}}, path
+        )
+    assert not path.exists()
+
+
+def test_갈린_기준선_파일은_읽기_경계에서도_거부된다(tmp_path: Path) -> None:
+    """**쓰기만 막으면 부족하다** — 이전 코드가 남긴 파일과 손으로 고친 파일이 있다.
+
+    커밋되는 하한선 파일은 사람이 열어 고칠 수 있고, 이 가드가 없던 시절의 파일도 있을 수
+    있다. 읽기 경계가 열려 있으면 그런 파일이 그대로 하한선이 된다 — A-1 재현의 후반부가
+    정확히 "이미 디스크에 있는 갈린 파일을 읽어 판정한다"이다.
+    """
+    path = tmp_path / "baseline.json"
+    context = _context(provider="anthropic", observed_models=["model-a"], effort="low")
+    body = baseline_body(
+        Fingerprint.of(DOCUMENTS, context), _measurement((10, 56), (5, 20)), context
+    )
+    # 디스크에 이미 있는 갈린 파일을 손으로 만든다(writer 를 거치지 않는다).
+    body["context"]["provider"] = "openai"
+    body["context"]["observed_models"] = ["model-b"]
+    path.write_text(json.dumps(body, ensure_ascii=False), encoding="utf-8")
+
+    assert stored_body(path) is not None, "전제 — JSON 으로는 멀쩡한 파일이다"
+    assert load_baseline(path) is None, "갈린 파일이 기준선으로 읽혔다"
+    judgement = compare(
+        load_baseline(path), Fingerprint.of(DOCUMENTS, context), _measurement((40, 56), (18, 20))
+    )
+    assert judgement.verdict is Verdict.ABSENT
+    assert judgement.blocking is True, "갈린 파일을 읽고도 차단하지 않았다"
+
+
+def test_effort_키가_없는_기준선_파일은_읽히지_않는다(tmp_path: Path) -> None:
+    """**A-3 의 읽기 경계.** 쓰기에서 요구한 것을 읽기에서 만들어 주지 않는다.
+
+    고치기 전 실측: `RunContext.effort` 의 기본값 때문에 `load_baseline()` 이 디스크의
+    `context.effort` 키가 없는 파일을 `effort=None` 인 정상 기준선으로 복구했고, 그 기준선이
+    같은 지문에 판정을 돌려줬다. G4 가 쓰기에서 "키의 부재와 값의 부재는 다르다"고 막는
+    동안 읽기가 그 구분을 지우고 있었다.
+
+    `null` 로 **명시된** 파일은 그대로 읽혀야 한다 — 막는 것은 키의 부재이지 값의 부재가 아니다.
+    """
+    path = tmp_path / "baseline.json"
+    context = _context(provider="anthropic", observed_models=["model-a"], effort=None)
+    body = baseline_body(
+        Fingerprint.of(DOCUMENTS, context), _measurement((10, 56), (5, 20)), context
+    )
+    assert body["context"]["effort"] is None, "전제 — 값 없음은 `null` 로 명시된다"
+    path.write_text(json.dumps(body, ensure_ascii=False), encoding="utf-8")
+    assert load_baseline(path) is not None, "`null` 명시는 정상 기준선이다"
+
+    del body["context"]["effort"]
+    path.write_text(json.dumps(body, ensure_ascii=False), encoding="utf-8")
+    assert stored_body(path) is not None, "전제 — JSON 으로는 멀쩡한 파일이다"
+    assert load_baseline(path) is None, "키가 없는 파일이 `effort=None` 으로 복구됐다"
+
+
+def test_다른_producer의_수치가_하한선으로_채택되지_않는다(tmp_path: Path) -> None:
+    """**A-1 재현 전체를 회귀로 고정한다** — 리더가 실행한 시나리오 그대로다.
+
+    고치기 전 실측(2026-08-13):
+
+        ctx_a = RunContext(provider="anthropic", model="model-a", …)   # 지문 쪽
+        ctx_b = RunContext(provider="openai",    model="model-b", …)   # context 쪽
+        body  = baseline_body(Fingerprint.of(DOCUMENTS, ctx_a), 낮은_수치, ctx_b)
+        write_baseline(body, path=tmp)   # → 통과. 가드가 막지 않는다
+        compare(load_baseline(tmp), Fingerprint.of(DOCUMENTS, ctx_a), 높은_수치)
+        # → 판정 `개선`, 차단 False  ← model-b 의 낮은 수치가 model-a 의 하한선이 됐다
+
+    이제 **첫 줄에서 끝난다.** 본문이 만들어지지 않으므로 writer 도 읽기도 판정도 없다.
+    아래는 그 사슬의 각 마디가 하나씩 성립하지 않음을 확인한다 — 첫 마디만 보면 뒤의 마디가
+    다시 열렸을 때(예: `Baseline` 불변식을 지우고 writer 만 남길 때) 알아채지 못한다.
+    """
+    path = tmp_path / "baseline.json"
+    ctx_a = _context(provider="anthropic", observed_models=["model-a"], effort="low")
+    ctx_b = _context(provider="openai", observed_models=["model-b"], effort="low")
+    low, high = _measurement((10, 56), (5, 20)), _measurement((40, 56), (18, 20))
+    fingerprint_a = Fingerprint.of(DOCUMENTS, ctx_a)
+
+    # ① 본문 조립 — 여기서 끝난다.
+    with pytest.raises(ValidationError, match="지문의 producer와 context가 갈렸다"):
+        baseline_body(fingerprint_a, low, ctx_b)
+
+    # ② 그 사슬을 우회해 손으로 본문을 만들어도 writer 가 막는다.
+    forged = baseline_body(fingerprint_a, low, ctx_a)
+    forged["context"] = json.loads(ctx_b.model_dump_json())
+    with pytest.raises(AssertionError, match="지문의 producer와 context가 갈렸다"):
+        write_baseline(forged, path)
+    assert not path.exists()
+
+    # ③ writer 까지 우회해 파일을 직접 써도 읽기에서 막힌다 — 판정에 도달하지 않는다.
+    path.write_text(json.dumps(forged, ensure_ascii=False), encoding="utf-8")
+    assert load_baseline(path) is None
+    judgement = compare(load_baseline(path), fingerprint_a, high)
+    assert judgement.verdict is not Verdict.IMPROVED, (
+        "다른 producer 의 낮은 수치가 이 실행의 하한선으로 읽혔다"
+    )
+    assert judgement.blocking is True, "갈린 파일을 만난 실행이 차단되지 않았다"

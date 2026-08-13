@@ -214,6 +214,14 @@ def _baseline_at(
     fingerprint: Fingerprint | None = None,
     observed_models: list[str] | None = None,
 ) -> Baseline:
+    """기준선 하나. **지문을 넘기면 조건은 그 지문에서 나온다.**
+
+    `observed_models` 인자는 지문을 넘기지 않을 때만 쓰인다. 헬퍼가 두 인자를 따로 받아
+    본문에 싣던 동안에는 *지문은 A, context는 B* 인 기준선을 여기서 만들 수 있었고,
+    실제로 아래 producer 배선 테스트가 그런 자기모순 기준선을 물려 놓고 있었다. 지금은
+    `Baseline`이 그 조합을 불변식으로 거부하므로 만들어지지도 않지만, 그 전에 **헬퍼가
+    그것을 조립할 수 없게** 둔다 — 시험 입력이 자기모순이면 무엇을 확인한 것인지 말할 수 없다.
+    """
     measurement = Measurement(
         overall=GroupMeasurement(passed=passed[0], documents=passed[1]),
         synthetic=GroupMeasurement(passed=synthetic[0], documents=synthetic[1]),
@@ -221,7 +229,12 @@ def _baseline_at(
             passed=passed[0] - synthetic[0], documents=passed[1] - synthetic[1]
         ),
     )
-    context = _baseline_context(_DEFAULT_OBSERVED if observed_models is None else observed_models)
+    observed = (
+        fingerprint.producer.observed_models
+        if fingerprint is not None
+        else (_DEFAULT_OBSERVED if observed_models is None else observed_models)
+    )
+    context = _baseline_context(observed)
     return Baseline.model_validate(
         baseline_body(
             fingerprint if fingerprint is not None else Fingerprint.of(harness.DOCUMENTS, context),
@@ -378,6 +391,62 @@ def test_producer_지문이_다르면_하네스가_비교_불가로_떨어진다
         harness.test_규칙_기반_통과율이_직전_기록보다_낮지_않다(evaluation)
     # 무엇이 달라졌는지 **이름으로** 말한다 — 해시로 접지 않은 이유가 이 줄이다.
     assert "관측 모델: 다른-실행의-모델 → this-run" in str(caught.value)
+
+
+# ── producer 세 성분의 **배선**: 관측 모델만으로는 축이 물려 있다고 말할 수 없다
+#
+# 위 테스트는 관측 모델(=`evaluation` 에서 오는 값)만 바꾼다. provider·effort 는 환경·설정에서
+# 오는데 `_baseline_at` 이 기준선과 현재를 **같은 `harness.run_context`** 로 만들므로, 그 둘의
+# 배선이 끊겨도 양변이 나란히 움직여 아무 테스트도 깨지지 않는다. 실측(2026-08-13 독립 검증
+# A-5): `run_context` 의 provider 를 하드코딩하고 effort 를 항상 `None` 으로 고정해도
+# `test_floor_gate_wiring.py` + `test_baseline_gate.py` 87건이 전부 통과했다.
+#
+# 아래 둘은 **양변을 다른 환경값에서** 만든다 — 기준선을 만든 뒤 환경을 바꾸고 게이트를
+# 돌린다. 값이 지문까지 오지 않으면 드리프트가 나지 않아 `pytest.raises` 가 실패한다.
+
+
+def test_provider_환경값이_이번_실행의_지문까지_간다(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`GOLDEN_PROVIDER` 가 **이번 실행의 producer** 로 실린다 — 하드코딩하면 깨진다.
+
+    기준선은 `기록한-provider` 로 만들고, 환경을 `이번-실행-provider` 로 바꾼 뒤 게이트를
+    돌린다. provider 가 지문까지 오지 않으면 양변이 같아져 비교 불가가 나지 않는다.
+    """
+    monkeypatch.setenv("GOLDEN_PROVIDER", "기록한-provider")
+    evaluation = evaluate_all(_preserving_outcomes("this-run"), harness.DOCUMENTS)
+    recorded = _matching_baseline(evaluation)
+    assert recorded.fingerprint.producer.provider == "기록한-provider", "전제 — 기준선 쪽 조건"
+
+    monkeypatch.setenv("GOLDEN_PROVIDER", "이번-실행-provider")
+    report = harness.build_report(evaluation)
+    assert report.fingerprint.producer.provider == "이번-실행-provider", (
+        "환경값이 이번 실행의 지문에 실리지 않았다 — producer 축의 provider 배선이 끊겼다"
+    )
+    monkeypatch.setattr(harness, "load_baseline", lambda: recorded)
+    with pytest.raises(AssertionError, match="수치를 만든 것") as caught:
+        harness.test_규칙_기반_통과율이_직전_기록보다_낮지_않다(evaluation)
+    assert "provider: 기록한-provider → 이번-실행-provider" in str(caught.value)
+
+
+def test_effort_환경값이_이번_실행의_지문까지_간다(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`LLM_EFFORT` 도 같은 자리에서 확인한다 — `None` 으로 고정하면 깨진다.
+
+    9%p 하락의 후보로 이 저장소가 스스로 지목한 값이라(`04_goldenset-first-run.md`)
+    지문에 넣었다. 넣어 놓고 배선을 확인하지 않으면 축이 있는데 아무것도 걸리지 않는다.
+    """
+    monkeypatch.setenv("LLM_EFFORT", "low")
+    evaluation = evaluate_all(_preserving_outcomes("this-run"), harness.DOCUMENTS)
+    recorded = _matching_baseline(evaluation)
+    assert recorded.fingerprint.producer.effort == "low", "전제 — 기준선 쪽 조건"
+
+    monkeypatch.setenv("LLM_EFFORT", "high")
+    report = harness.build_report(evaluation)
+    assert report.fingerprint.producer.effort == "high", (
+        "환경값이 이번 실행의 지문에 실리지 않았다 — producer 축의 effort 배선이 끊겼다"
+    )
+    monkeypatch.setattr(harness, "load_baseline", lambda: recorded)
+    with pytest.raises(AssertionError, match="수치를 만든 것") as caught:
+        harness.test_규칙_기반_통과율이_직전_기록보다_낮지_않다(evaluation)
+    assert "effort: low → high" in str(caught.value)
 
 
 def test_측정이_코퍼스_전건이_아니면_하네스가_실패한다(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -85,7 +85,7 @@ from pathlib import Path
 from types import ModuleType
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, model_validator
 
 from app.easyread import goldenset, style_rules
 from app.easyread.goldenset import GoldenDocument
@@ -332,8 +332,14 @@ class RunContext(BaseModel):
     model: str | None = None
     #: 변환 응답이 **실제로 보고한** 모델(`LLMResponse.model`). 이쪽이 증거다.
     observed_models: list[str] = []
-    #: 같은 모델이라도 결과를 크게 움직인다(Anthropic 전용). 비어 있어도 기록은 남긴다.
-    effort: str | None = None
+    #: 같은 모델이라도 결과를 크게 움직인다(Anthropic 전용). 값이 비어도 기록은 남기지만
+    #: **기본값은 두지 않는다** — 값의 부재(`None`)와 키의 부재는 다르고, 기본값이 있으면
+    #: 디스크에서 읽을 때 그 구분이 조용히 사라진다. `write_baseline`이 쓰기 경계에서
+    #: 키 부재를 거부하는데(아래 G4), 기본값을 두면 **읽기 경계에는 같은 불변식이 없어서**
+    #: 키가 빠진 파일이 `effort=None`인 정상 기준선으로 복구된다(2026-08-13 독립 검증 A-3,
+    #: 실측 확인). 기본값을 없애면 그 파일은 `load_baseline`에서 검증 실패 → `None` →
+    #: "기준선 없음"(차단)이 된다. 쓰기에서 요구하는 것을 읽기에서도 요구하게 만드는 한 글자다.
+    effort: str | None
 
 
 #: 관측 모델이 하나도 없을 때 producer 라벨에 적는 값. **없음도 값이다** — 빈 문자열로
@@ -358,9 +364,22 @@ class Producer(BaseModel):
 
     `RunContext`의 세 필드를 **복사해** 담는다. 같은 값이 기준선 파일에 두 번(지문과 context)
     실리는 것은 의도다 — 지문은 기계가 비교하는 면이고 context는 사람이 읽는 기록이라, 둘을
-    합치면 "비교에 쓰이는 값"과 "참고로 적는 값"의 경계가 흐려진다. 두 자리가 갈리지 않는
-    것은 **한 `RunContext`에서 둘 다 유도하기 때문**이다(`Fingerprint.of`와 `baseline_body`에
-    같은 객체를 넘긴다).
+    합치면 "비교에 쓰이는 값"과 "참고로 적는 값"의 경계가 흐려진다.
+
+    **둘이 갈리지 않는 근거는 호출 규약이 아니라 `Baseline`의 불변식이다**(2026-08-13 수정).
+    도입 당시에는 "한 `RunContext`에서 둘 다 유도하니 갈리지 않는다"로 두고 가드를 더하지
+    않았고, 갈려도 "비교는 지문이 하므로 판정은 안전하고 사람이 읽는 기록만 틀어진다"고 봤다.
+    **그 평가가 틀렸다** — 독립 검증이 재현했다. 지문 `anthropic/model-a`, context
+    `openai/model-b`인 본문이 writer를 통과했고, 다음 model-a 실행이 지문만 대조해 그 파일을
+    비교 가능으로 읽었다. **틀어진 것은 기록이 아니라 하한선 자체다** — model-b로 잰 낮은
+    수치가 model-a 실행의 하한선이 된다. 지문도 context도 "이 수치를 누가 냈는가"를 스스로
+    증명하지 못한다. 그 결속은 *기록하는 호출*이 만드는데, 두 자리가 갈린 파일은 그 호출이
+    무엇을 결속했는지 말할 수 없다.
+
+    그래서 검사를 얹지 않고 **그 상태를 표현할 수 없게** 했다 —
+    `Baseline._producer는_context와_같아야_한다`가 쓰기(모델 조립)와 읽기(디스크 검증) 양쪽에서
+    같은 불변식을 건다. 손으로 조립한 dict는 모델을 거치지 않으므로 `write_baseline`의 G5가
+    같은 것을 한 번 더 본다.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -388,6 +407,41 @@ class Producer(BaseModel):
             f"{self.provider}/{_models_label(self.observed_models)}"
             f"(effort={self.effort or NO_EFFORT_LABEL})"
         )
+
+
+def _producer_gaps(fingerprint: Producer, context: Producer) -> list[str]:
+    """지문 쪽 producer와 context 쪽 producer가 **어느 성분에서** 갈렸는지.
+
+    빈 목록이면 결속돼 있다. `Fingerprint._producer_difference`와 방향이 다르다 — 저쪽은
+    *두 실행*(기준선 대 현재)을 비교하고, 이쪽은 *한 파일 안의 두 자리*를 비교한다.
+    """
+    gaps: list[str] = []
+    if fingerprint.provider != context.provider:
+        gaps.append(f"  - provider: 지문 {fingerprint.provider} / context {context.provider}")
+    if fingerprint.observed_models != context.observed_models:
+        gaps.append(
+            f"  - 관측 모델: 지문 {_models_label(fingerprint.observed_models)} / "
+            f"context {_models_label(context.observed_models)}"
+        )
+    if fingerprint.effort != context.effort:
+        gaps.append(
+            f"  - effort: 지문 {fingerprint.effort or NO_EFFORT_LABEL} / "
+            f"context {context.effort or NO_EFFORT_LABEL}"
+        )
+    return gaps
+
+
+#: producer 결속이 깨졌을 때의 설명. 쓰기·읽기·writer 세 자리가 같은 문장을 쓴다 —
+#: 어디서 걸렸든 사람이 해야 할 일이 같기 때문이다.
+PRODUCER_BOND_NOTE = (
+    "  - 지문과 context는 **같은 실행의 조건**이어야 한다. 갈리면 이 수치를 누가 냈는지 "
+    "말할 수 없다 — 비교는 지문이 하므로, 갈린 파일은 *한쪽 producer의 수치를 다른 쪽 "
+    "producer의 하한선으로* 세운다(2026-08-13 독립 검증이 재현했다). 사람이 읽는 기록만 "
+    "틀어지는 문제가 아니다\n"
+    "  - 닫는 방법: 측정치와 **같은 실행의** `RunContext` 하나에서 지문과 context를 둘 다 "
+    "유도한다(`Fingerprint.of(documents, context)`와 `baseline_body(..., context)`에 같은 "
+    "객체를 넘긴다). 값을 맞춰 덮어쓰지 마라 — 어느 쪽이 진짜 조건인지는 호출자만 안다"
+)
 
 
 class Fingerprint(BaseModel):
@@ -593,6 +647,42 @@ class Baseline(BaseModel):
     context: RunContext
     note: str = ""
 
+    @model_validator(mode="after")
+    def _producer는_context와_같아야_한다(self) -> "Baseline":
+        """지문의 producer와 `context`의 producer 성분이 갈린 기준선은 **만들어지지 않는다.**
+
+        불변식을 이 자리에 둔 이유는 **두 경계가 한 규칙으로 닫히기 때문**이다.
+
+        - **쓰기**: `baseline_body`가 하는 첫 일이 이 모델을 조립하는 것이라, 갈린 조합은
+          본문 dict가 생기기 **전에** 거부된다. 본문을 만든 뒤에 막으면 "무엇을 쓰려 했는가"가
+          이미 남의 조건으로 조립된 뒤라, 가드 한 겹을 걷어내는 편집에 그대로 노출된다.
+        - **읽기**: `load_baseline`이 디스크 본문을 이 모델로 검증하므로, 갈린 파일은
+          `None`(=기준선 없음, 차단)이 된다. 쓰기만 막으면 이전 코드가 남긴 파일이나 손으로
+          고친 파일이 그대로 하한선이 된다.
+
+        **값을 맞춰 조용히 덮어쓰지 않는다.** `fingerprint.producer`로 `context`를 갈아
+        끼우면 호출자의 실수가 가려지고, 그 실수는 "측정치가 어느 실행의 것인가"에 대한
+        것이라 가릴수록 나빠진다. 어긋남은 드러나야 한다.
+
+        `judge_provider`·설정값 `model`은 보지 않는다 — producer 축에 없는 필드라
+        지문에 실릴 이유가 없고, 넣으면 판정과 무관한 변경이 기록을 거부하게 된다.
+        """
+        recorded = Producer.of(self.context)
+        gaps = _producer_gaps(self.fingerprint.producer, recorded)
+        if gaps:
+            raise ValueError(
+                "\n".join(
+                    [
+                        "기준선이 자기모순이다 — 지문의 producer와 context가 갈렸다: "
+                        f"지문 `{self.fingerprint.producer.label()}` / "
+                        f"context `{recorded.label()}`",
+                        *gaps,
+                        PRODUCER_BOND_NOTE,
+                    ]
+                )
+            )
+        return self
+
 
 BASELINE_NOTE = (
     "골든셋 규칙 기반 통과 측정치의 직전 기록이다. 합격 기준은 절대 수치가 아니라 "
@@ -613,6 +703,13 @@ def baseline_body(
     만들고도 통과"가 성립한다.
 
     judge 인자는 2026-08-13에 없앴다 — 이유는 `Baseline` docstring에 있다.
+
+    **`fingerprint`와 `context`가 같은 실행의 것이 아니면 여기서 끝난다.** 이 함수가 하는
+    첫 일이 `Baseline` 조립이고 그 모델이 producer 결속을 불변식으로 걸고 있어(
+    `Baseline._producer는_context와_같아야_한다`), 갈린 조합에서는 **본문 dict 자체가 생기지
+    않는다.** 검사를 이 함수 안에 따로 적지 않은 것은 빠뜨려서가 아니라, 모델에 걸면
+    `Baseline.model_validate`로 만드는 경로(테스트 헬퍼·`load_baseline`)까지 같은 규칙을
+    받기 때문이다 — 여기에만 적으면 그 경로들이 규칙 밖에 남는다.
     """
     model = Baseline(
         fingerprint=fingerprint,
@@ -685,6 +782,11 @@ def write_baseline(body: dict[str, Any], path: Path = BASELINE_PATH) -> Path:
     9%p 낮았다. 무엇으로 쟀는지 모르는 수치가 하한선이 되면 **그 하락이 정상이 된다** —
     다음 실행은 낮아진 값과 비교해 통과한다. `RunContext`가 "판정에 쓰지 않는다"인 것은
     맞지만, 그것은 *비교식*에 넣지 않는다는 뜻이지 *비어도 된다*는 뜻이 아니다.
+
+    **G5(producer 결속)는 앞의 넷과 같은 층위다.** 이 함수는 모델이 아니라 dict를 받으므로
+    `Baseline`의 불변식이 닿지 않는다 — `baseline_body`를 거치지 않고 손으로 조립한 body가
+    실제로 여기 들어온다(바로 위 G1~G4를 붙잡는 음성 대조 넷이 그 형태다). 그 통로가 있는
+    한 모델 쪽 불변식만으로는 "갈린 파일이 디스크에 생기지 않는다"가 성립하지 않는다.
     """
     context = body.get("context") if isinstance(body.get("context"), dict) else {}
     assert isinstance(context, dict)
@@ -707,6 +809,18 @@ def write_baseline(body: dict[str, Any], path: Path = BASELINE_PATH) -> Path:
             "기준선을 쓰지 않는다 — `effort`가 기록되지 않았다. 같은 모델이라도 effort가 "
             "결과를 크게 움직인다(2026-08-12 9%p 하락의 유력 원인). 값이 없으면 `null`로 "
             "**명시**하라 — 키의 부재와 값의 부재는 다르다."
+        )
+    fingerprint = body.get("fingerprint")
+    stamped = fingerprint.get("producer") if isinstance(fingerprint, dict) else None
+    claimed = {
+        "provider": context.get("provider"),
+        "observed_models": context.get("observed_models"),
+        "effort": context.get("effort"),
+    }
+    if stamped != claimed:
+        raise AssertionError(
+            "기준선을 쓰지 않는다 — **지문의 producer와 context가 갈렸다**: "
+            f"지문 {stamped} / context {claimed}.\n" + PRODUCER_BOND_NOTE
         )
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = {**body, "recorded_at": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")}
