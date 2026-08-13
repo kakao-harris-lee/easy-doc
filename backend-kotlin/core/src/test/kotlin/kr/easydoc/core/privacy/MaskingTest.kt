@@ -155,6 +155,132 @@ class MaskingTest {
     }
 
     @Nested
+    @DisplayName("표기 변형 — 유니코드 인식 패턴 안의 ASCII 리터럴")
+    inner class NotationVariants {
+        // privacy-gate 판정 `07_privacy-gate_masking-verdicts.md` §1 이 실측으로 가른 두 종류다.
+        // 둘 다 "가려야 할 고유식별정보·카드번호가 그대로 외부 모델로 나가는" 방향이고,
+        // 아래 케이스는 전부 **수정 전에는 실패하던 것**이다(음성 대조 기록은 산출물 문서).
+
+        @ParameterizedTest(name = "{0}")
+        @ValueSource(
+            strings = [
+                // 전각 숫자로만 적은 주민등록번호. 성별코드가 `[1-8]` 이던 시절 통째로 통과했다.
+                "９００１０１-１２３４５６７",
+                // 성별코드 한 자리만 전각이어도 매치가 끊겼다 — 결함의 위치를 정확히 짚는 케이스.
+                "900101-１234567",
+                // 앞 6자리만 전각인 표기는 수정 전에도 잡혔다. 회귀 가드로 남긴다.
+                "９００１０１-1234567",
+                // 아라비아-인도 숫자 성별코드(٥ = 5, 외국인등록번호대).
+                "900101-٥234567",
+            ],
+        )
+        @DisplayName("종류 A — 성별코드가 ASCII 가 아니어도 가린다 (값으로 판정한다)")
+        fun `전각 성별코드를 가린다`(rrn: String) {
+            val result = maskText("주민번호는 $rrn 입니다.")
+
+            assertThat(result.maskedText.value).isEqualTo("주민번호는 [[주민등록번호1]] 입니다.")
+            assertThat(result.items.single().category).isEqualTo(MaskCategory.RRN)
+            assertThat(
+                result.items
+                    .single()
+                    .original
+                    .reveal(),
+            ).isEqualTo(rrn)
+        }
+
+        @ParameterizedTest(name = "{0}")
+        @ValueSource(
+            strings = [
+                // 성별코드 9·0 거부는 이미 ASCII 로 단언돼 있다. **전각에서도 성립해야 한다** —
+                // 값 판정으로 바꾸면 자동으로 성립하지만, 단언 없이 두면 다음 회차에 되돌아간다.
+                "９００１０１-９２３４５６７",
+                "９００１０１-０２３４５６７",
+                "900101-９234567",
+                "900101-０234567",
+            ],
+        )
+        @DisplayName("종류 A 과잉 마스킹 가드 — 전각 성별코드 9·0 도 거부한다")
+        fun `전각 성별코드 9와 0은 가리지 않는다`(notRrn: String) {
+            val text = "번호는 $notRrn 입니다."
+
+            assertThat(maskText(text).maskedText.value).isEqualTo(text)
+            assertThat(maskText(text).items).isEmpty()
+        }
+
+        @ParameterizedTest(name = "{0}")
+        @ValueSource(
+            strings = [
+                "900101\uFF0D1234567",
+                "900101\u22121234567",
+                "900101\u20131234567",
+                "900101\u20141234567",
+                "900101\u20101234567",
+                "900101\u00A01234567",
+                "900101\u30001234567",
+                "900101\u20071234567",
+                "900101\u202F1234567",
+            ],
+        )
+        @DisplayName("종류 B — 구분자가 ASCII 하이픈·공백이 아니어도 가린다 (RRN)")
+        fun `표기 변형 구분자를 가린다`(rrn: String) {
+            val result = maskText("주민번호는 $rrn 입니다.")
+
+            assertThat(result.maskedText.value).isEqualTo("주민번호는 [[주민등록번호1]] 입니다.")
+            // 잘라내는 것은 언제나 원문이다 — 구분자가 그대로 보존돼야 복원이 성립한다.
+            assertThat(
+                result.items
+                    .single()
+                    .original
+                    .reveal(),
+            ).isEqualTo(rrn)
+        }
+
+        @ParameterizedTest(name = "{0}")
+        @ValueSource(
+            strings = [
+                // 카드번호에는 종류 A 가 없다(숫자 자리가 전부 `\d`). 뚫려 있던 것은 구분자뿐이고,
+                // 두 리뷰 어디도 카드번호를 보지 않아 privacy-gate 실측이 처음 찾은 자리다.
+                "1234\uFF0D5678\uFF0D9012\uFF0D3456",
+                "1234\u00A05678\u00A09012\u00A03456",
+                "1234\u30005678\u30009012\u30003456",
+                "1234\u20135678\u20139012\u20133456",
+                "１２３４\uFF0D５６７８\uFF0D９０１２\uFF0D３４５６",
+            ],
+        )
+        @DisplayName("종류 B — 구분자가 ASCII 하이픈·공백이 아니어도 가린다 (CARD)")
+        fun `카드번호 표기 변형 구분자를 가린다`(card: String) {
+            val result = maskText("카드 $card 로 결제")
+
+            assertThat(result.maskedText.value).isEqualTo("카드 [[카드번호1]] 로 결제")
+            assertThat(result.items.single().category).isEqualTo(MaskCategory.CARD)
+            assertThat(
+                result.items
+                    .single()
+                    .original
+                    .reveal(),
+            ).isEqualTo(card)
+        }
+
+        @ParameterizedTest(name = "{0}")
+        @ValueSource(
+            strings = [
+                "900101\u000A1234567",
+                "900101\u000D1234567",
+                "1234\u000A5678\u000A9012\u000A3456",
+            ],
+        )
+        @DisplayName("과잉 마스킹 가드 — 개행·캐리지리턴은 구분자가 아니다")
+        fun `줄이 갈린 숫자열은 붙이지 않는다`(split: String) {
+            // 구분자 집합에 `\s` 를 쓰면 여기서 두 줄의 숫자열이 이어 붙어 **진짜 과잉
+            // 마스킹**이 된다. 안내문에서 접수번호와 관리번호가 연달아 적히는 표는 흔하다.
+            val text = "번호 $split 을 적으세요."
+
+            assertThat(maskText(text).maskedText.value).isEqualTo(text)
+            assertThat(maskText(text).items).isEmpty()
+        }
+    }
+
+    @Nested
     @DisplayName("범주는 2종뿐이다")
     inner class ScopeIsTwoCategories {
         @ParameterizedTest(name = "{0}")

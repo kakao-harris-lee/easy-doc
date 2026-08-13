@@ -122,7 +122,24 @@ data class PlaceholderRestoration(
     val ambiguous: List<String>,
     val foreign: List<String>,
     val withheld: List<String>,
-)
+) {
+    /**
+     * 길이·건수만 남긴다. [text] 는 **자리표시자가 진짜 주민등록번호로 되돌아간 최종 본문**이라,
+     * 이 저장소에서 평문 개인정보가 담기는 값 중 가장 위험한 축에 든다.
+     *
+     * `data class` 의 기본 `toString()` 은 모든 필드를 그대로 찍으므로, 로거 인자로 한 번
+     * 실리는 순간 복원된 원문이 로그 수집기로 나간다(CLAUDE.md 보안 규칙: 로깅은 문서 ID·
+     * 길이·처리 상태까지만). 형제 타입인 `LlmPrompt`·`LlmCompletion` 이 같은 이유로 이미
+     * 같은 처리를 받고 있었고 이 타입만 빠져 있었다 — 교차 리뷰 X-6.
+     *
+     * 라벨 목록도 개수만 남긴다. 계약상 라벨 자체는 개인정보가 아니지만
+     * (`missing_placeholders` 는 라벨뿐), 여기서 얻을 것은 "몇 건인가"이고 어느 라벨인지는
+     * 호출부가 값으로 다루면 된다.
+     */
+    override fun toString(): String =
+        "PlaceholderRestoration(text=${text.length}자, missing=${missing.size}, " +
+            "ambiguous=${ambiguous.size}, foreign=${foreign.size}, withheld=${withheld.size})"
+}
 
 // ── 범주에서 뺀 것: 전화번호·이메일·계좌번호 (2026-08-12, master-plan 3.2) ──────────
 //
@@ -141,19 +158,122 @@ data class PlaceholderRestoration(
 // 두는 방식은 금지다.
 // ──────────────────────────────────────────────────────────────────────────────────
 
+// ── 표기 변형: 유니코드 인식 패턴 안에 ASCII 전용 리터럴을 남기지 않는다 ────────────
+//
+// 판정: `07_privacy-gate_masking-verdicts.md` §1 (2026-08-13).
+//
+// `unicodeRegex` 는 `\d` 를 전각·아라비아-인도 숫자까지 넓히지만, **패턴 안에 손으로 적은
+// ASCII 리터럴은 그 플래그가 건드리지 않는다.** privacy-gate 실측이 그 빈자리를 두 종류로
+// 갈랐고, 둘 다 "가려야 할 고유식별정보·카드번호가 그대로 외부 모델로 나가는" 방향이다.
+//
+//   종류 A · ASCII 전용 숫자 클래스 — RRN 성별코드가 `[1-8]` 이었다. 앞 6자리가 전각이면
+//       `\d` 가 잡아 주는데 이 한 자리에서 매치가 끊겨 `９００１０１-１２３４５６７` 가
+//       통째로 통과했다. 카드번호에는 숫자 클래스가 `\d` 뿐이라 이 종류가 없다.
+//   종류 B · ASCII 전용 구분자 리터럴 — RRN 의 `[ \t]`·`-` 와 CARD 의 `[- ]`.
+//       **두 패턴 모두에 있었다.** 전각 하이픈(U+FF0D)·마이너스(U+2212)·엔 대시(U+2013)·
+//       NBSP(U+00A0)·전각 공백(U+3000)이 전부 뚫었다.
+//
+// `searchView` 는 이 둘을 막지 못한다 — 그것이 지우는 것은 **보이지 않는** 문자이고,
+// 전각 숫자·전각 하이픈·NBSP·전각 공백은 **보이는** 문자다.
+//
+// **마스킹 전 정규화로 고치지 않는다.** 입력을 접어서 넘기면 `MaskedItem.original` 이 접힌
+// 값이 되고 `restoreForExport` 가 사용자 본문을 다른 글자로 되돌린다
+// (`02_privacy-gate_control-char-verdict.md` §5.1). 고친 것은 **패턴뿐**이라 파이프라인
+// 단계가 늘지 않았고, 잘라 내는 것은 여전히 원문이다 — 복원 성질과 마스킹 선행 불변식이
+// 둘 다 그대로다.
+
+/**
+ * 구분자로 인정하는 하이픈류.
+ *
+ * 하이픈과 공백을 한 상수로 합치지 않고 둘로 나눈 이유는 두 범주가 **쓰는 자리가 다르기**
+ * 때문이다 — RRN 은 `공백* 하이픈? 공백*` 으로 세 자리에 나눠 쓰고, CARD 는 둘을 합친
+ * 한 자리를 쓴다. 그래도 **원천은 이 두 상수 하나씩**이라 다음에 문자를 더할 때 한쪽만
+ * 늘어나는 일이 생기지 않는다(`CATEGORY_ALTERNATION` 이 같은 이유로 이미 그렇게 돼 있다).
+ */
+private const val HYPHEN_CHARS =
+    // U+002D 하이픈마이너스 · U+2010 하이픈 · U+2013 엔 대시 · U+2014 엠 대시 ·
+    // U+2212 마이너스 · U+FF0D 전각 하이픈. 문자 리터럴을 직접 적지 않고 코드포인트로
+    // 적는다 — 전각·대시류는 소스에서 눈으로 구별되지 않아, 리터럴로 적으면 다음 사람이
+    // 무엇이 빠졌는지 셀 수 없다. `\uXXXX` 는 정규식 엔진이 해석한다.
+    """\u002D\u2010\u2013\u2014\u2212\uFF0D"""
+
+/**
+ * 구분자로 인정하는 공백류.
+ *
+ * **`\s` 를 쓰지 않는다.** `\s` 에는 개행·캐리지리턴이 들어 있어, 서로 다른 줄의 숫자열이
+ * 이어 붙어 **진짜 과잉 마스킹**이 된다(parity fixture `masking-keeps-newline-split-digits`
+ * 가 그 성질을 못박는다). 탭·개행을 뺀 것과 같은 이유다
+ * (`02_privacy-gate_control-char-verdict.md` §5.2).
+ */
+private const val SPACE_CHARS =
+    // U+0020 공백 · U+0009 탭 · U+00A0 NBSP · U+2007 FIGURE SPACE ·
+    // U+202F NARROW NBSP · U+3000 전각 공백.
+    """\u0020\u0009\u00A0\u2007\u202F\u3000"""
+
+/** RRN 이 쓰는 공백 자리. */
+private const val SPACE_CLASS = "[$SPACE_CHARS]"
+
+/** RRN 이 쓰는 하이픈 자리. */
+private const val HYPHEN_CLASS = "[$HYPHEN_CHARS]"
+
+/** CARD 가 쓰는 합친 구분자 자리. 위 두 상수에서 파생시킨다 — 따로 적지 않는다. */
+private const val SEPARATOR_CLASS = "[$HYPHEN_CHARS$SPACE_CHARS]"
+
+/** RRN 성별코드로 인정하는 값. 5~8 은 외국인등록번호(고유식별정보)다. */
+private val RRN_GENDER_CODES = 1..8
+
+/** [Character.digit] 의 진법. 성별코드는 십진 한 자리다. */
+private const val DECIMAL_RADIX = 10
+
+/**
+ * 마스킹 대상 패턴 하나.
+ *
+ * [accept] 를 정규식 밖에 두는 이유: 성별코드 판정을 문자 클래스로 적으면 다시 표기
+ * 열거가 되어 종류 A 가 되살아난다. 대신 자리는 `\d` 로 잡고 **매치된 문자의 십진값**을
+ * [Character.digit] 으로 본다 — 전각뿐 아니라 **모든 유니코드 십진 숫자 체계**가 한 번에
+ * 덮이고, 열거 누락이 재발하지 않는다.
+ */
+private class MaskPattern(
+    val category: MaskCategory,
+    val regex: Regex,
+    /** 매치를 채택할지 판정한다. 거부한 매치는 구간을 **점유하지 않는다**. */
+    val accept: (MatchResult) -> Boolean = { true },
+)
+
+/**
+ * 성별코드 자리의 값이 1~8 인지 본다. 값 판정이라 표기 체계와 무관하다.
+ *
+ * 거부된 매치는 [maskParts] 의 `spans` 에 들어가지 않으므로 구간을 점유하지 않는다 —
+ * 뒤이은 CARD 패턴이 같은 자리를 판정할 기회를 잃지 않는다.
+ */
+private fun acceptsRrnGenderCode(match: MatchResult): Boolean {
+    val genderCode = match.groupValues[1].singleOrNull() ?: return false
+    return Character.digit(genderCode, DECIMAL_RADIX) in RRN_GENDER_CODES
+}
+
 /**
  * 우선순위 순서 — 먼저 매칭된 구간이 이후 패턴보다 우선한다.
  *
- * 원본: `app/privacy/masking.py::_PATTERNS`.
+ * 원본: `app/privacy/masking.py::_PATTERNS`. 표기 변형 대응은 원본에 없는 확장이다
+ * (privacy-gate 판정 §1.4 — Python 도 같은 결함을 갖고 있으나 기준은 Python 출력이 아니다).
  *
- * RRN 성별코드는 `[1-8]`: 5~8 은 외국인등록번호(고유식별정보)다. 구분자 없는 표기도 덮는다.
  * RRN 이 CARD 보다 앞이다 — 13자리와 16자리는 lookaround 로 갈리지만, 겹치는 표기가
  * 생기면 더 민감한 고유식별정보 쪽으로 판정되는 편이 안전하다.
  */
-private val PATTERNS: List<Pair<MaskCategory, Regex>> =
+private val PATTERNS: List<MaskPattern> =
     listOf(
-        MaskCategory.RRN to unicodeRegex("""(?<!\d)\d{6}[ \t]*-?[ \t]*[1-8]\d{6}(?!\d)"""),
-        MaskCategory.CARD to unicodeRegex("""(?<!\d)\d{4}[- ]?\d{4}[- ]?\d{4}[- ]?\d{4}(?!\d)"""),
+        MaskPattern(
+            category = MaskCategory.RRN,
+            regex = unicodeRegex("""(?<!\d)\d{6}$SPACE_CLASS*$HYPHEN_CLASS?$SPACE_CLASS*(\d)\d{6}(?!\d)"""),
+            accept = ::acceptsRrnGenderCode,
+        ),
+        MaskPattern(
+            category = MaskCategory.CARD,
+            regex =
+                unicodeRegex(
+                    """(?<!\d)\d{4}$SEPARATOR_CLASS?\d{4}$SEPARATOR_CLASS?\d{4}$SEPARATOR_CLASS?\d{4}(?!\d)""",
+                ),
+        ),
     )
 
 // ── 자리표시자 충돌: 입력에 이미 자리표시자 모양이 있을 때 ──────────────────────────
@@ -216,8 +336,12 @@ private val ESCAPED_LOOKALIKE: Regex = Regex("""\[\[!+(?:$CATEGORY_ALTERNATION)[
  * 입력에 있던 자리표시자 모양에 탈출 한 겹을 씌운다.
  *
  * 마스킹 판정에는 영향이 없다 — `!` 는 `[[` 와 한글 라벨 사이에만 들어가는데, 주민등록번호·
- * 카드번호 패턴은 숫자와 `-`·공백만 잇기 때문에 어떤 매치도 그 자리를 가로지르지 않는다.
- * 즉 탈출은 매치를 새로 만들지도, 깨지도 않는다.
+ * 카드번호 패턴이 잇는 것은 **숫자와 [HYPHEN_CHARS]·[SPACE_CHARS] 뿐**이라 어떤 매치도
+ * 그 자리를 가로지르지 않는다. 즉 탈출은 매치를 새로 만들지도, 깨지도 않는다.
+ *
+ * 구분자 집합을 넓힐 때(privacy-gate 판정 §1.4 종류 B) 이 문장이 계속 성립하려면 조건이
+ * 하나다 — **집합에 `!`·`[`·`]`·한글을 넣지 않는 것.** 현재 두 상수는 하이픈류와 공백류
+ * 뿐이라 성립한다. 넣게 되면 이 KDoc 이 아니라 탈출 표기부터 다시 설계해야 한다.
  */
 private fun escapeLookalikes(text: String): String =
     PLACEHOLDER_LOOKALIKE.replace(text) { match -> "[[!" + match.value.removePrefix("[[") }
@@ -304,23 +428,33 @@ private fun searchView(text: String): Pair<String, IntArray?> {
  * 스팬은 시작 오름차순, 같은 시작이면 **긴 것 우선**으로 준다 — 낀 문자를 포함한 넓은
  * 쪽이 이겨야 원문에 조각이 남지 않는다.
  *
+ * [MaskPattern.accept] 가 거부한 매치는 **여기서 걸러진다.** 판정을 매치 단계에서 하는
+ * 이유는 성별코드처럼 "몇 번째 문자인가"가 필요한 판정을 스팬(시작·끝)만으로는 할 수
+ * 없기 때문이다 — 매치 그룹은 원문 경로와 뷰 경로 어느 쪽에서도 같은 문자를 가리킨다.
+ *
  * @return `(시작, 끝 배타)` 쌍의 목록.
  */
 private fun candidateSpans(
-    pattern: Regex,
+    pattern: MaskPattern,
     text: String,
     view: String,
     offsets: IntArray?,
 ): List<Pair<Int, Int>> {
     val spans = LinkedHashSet<Pair<Int, Int>>()
-    pattern.findAll(text).forEach { spans += it.range.first to it.range.last + 1 }
+    pattern.regex
+        .findAll(text)
+        .filter(pattern.accept)
+        .forEach { spans += it.range.first to it.range.last + 1 }
 
     if (offsets != null) {
-        pattern.findAll(view).forEach { match ->
-            // 끝 좌표는 마지막으로 **매칭된 문자**의 원문 인덱스 + 1 이다. offsets[end] 를
-            // 쓰면 매치 뒤에 붙은 보이지 않는 문자까지 삼켜 경계가 과잉 잠식된다.
-            spans += offsets[match.range.first] to offsets[match.range.last] + 1
-        }
+        pattern.regex
+            .findAll(view)
+            .filter(pattern.accept)
+            .forEach { match ->
+                // 끝 좌표는 마지막으로 **매칭된 문자**의 원문 인덱스 + 1 이다. offsets[end] 를
+                // 쓰면 매치 뒤에 붙은 보이지 않는 문자까지 삼켜 경계가 과잉 잠식된다.
+                spans += offsets[match.range.first] to offsets[match.range.last] + 1
+            }
     }
     return spans.sortedWith(compareBy({ it.first }, { -it.second }))
 }
@@ -344,11 +478,13 @@ private fun maskParts(text: String): Pair<String, List<MaskedItem>> {
     val (view, offsets) = searchView(source)
 
     val spans = mutableListOf<Triple<Int, Int, MaskCategory>>()
-    for ((category, pattern) in PATTERNS) {
+    for (pattern in PATTERNS) {
         for ((start, end) in candidateSpans(pattern, source, view, offsets)) {
-            // 이미 다른 패턴이 차지한 구간이면 건너뛴다.
+            // 이미 다른 패턴이 차지한 구간이면 건너뛴다. 판정에서 거부된 매치는 애초에
+            // candidateSpans 가 걸러 여기 오지 않으므로 구간을 점유하지 않는다 —
+            // 성별코드가 9·0 인 13자리 숫자열이 뒤 패턴의 판정 기회를 뺏지 않는다.
             if (spans.any { (taken, takenEnd, _) -> start < takenEnd && taken < end }) continue
-            spans += Triple(start, end, category)
+            spans += Triple(start, end, pattern.category)
         }
     }
     spans.sortWith(compareBy({ it.first }, { it.second }))
@@ -444,12 +580,47 @@ fun maskText(text: String): MaskingResult = MaskedText.mask(text)
 // 그 사실을 [PlaceholderRestoration.withheld] 로 알리고, 막을지 내보낼지는 application 이 정한다.
 // ──────────────────────────────────────────────────────────────────────────────────
 
+// ── provenance 래퍼 사용 규약 (privacy-gate 판정 X-5 조건 1, 2026-08-13) ────────────
+//
+// 두 타입의 생성자는 **public 이고 앞으로도 public 이다.** 좁힐 수 없다는 것이 판정이다:
+// Kotlin `internal` 은 Gradle 모듈 경계인데, `ReviewedBody` 를 만들어야 하는 계층이 바로
+// 그 밖(`api` 의 HTTP 요청 어댑터)이다. 이름 있는 팩터리(`fromHumanSubmission(...)`)로
+// 옮기는 것도 방어가 아니다 — 손으로 `ReviewedBody(모델응답)` 을 쓸 수 있는 사람은
+// `ReviewedBody.fromHumanSubmission(모델응답)` 도 쓸 수 있다. **한 칸 옮기는 것은 방어가
+// 아니라 이동이다**(`00_progress.md` 가 같은 형태를 이미 그렇게 판정했다).
+//
+// 그래서 수용하되 **조용할 수는 없게** 만든다. 규칙은 아래에 적고, 새 생성 지점이 조용히
+// 늘지 않는 것은 `ProvenanceCreationSitesTest` 의 허용목록이 지킨다 — 생성 지점을 늘리려면
+// 허용목록에 줄을 더해야 하고, 그 diff 는 리뷰에 올라간다.
+//
+// **[ReviewedBody] 를 만들어도 되는 곳 — 한 곳뿐이다.**
+//   HTTP 요청 경계에서 사람이 제출한 `edited_text` 필드를 읽는 어댑터. 그 필드가 요청에
+//   **실제로 실려 왔을 때만** 만든다.
+//
+// **[ReviewedBody] 를 만들면 안 되는 값·자리.**
+//   `easy_text`(초안) · LLM 응답 · 후처리 산출물 · 워커 재처리 경로 ·
+//   내보내기 경로에서 "본문을 고르는" 코드. `core`·`infrastructure` 에서는 만들지 않는다.
+//
+// **[ModelDraft] 로 감쌀 수 있는 값.**
+//   `LlmCompletion.text` 와 그 후처리 결과, 또는 저장된 `easy_text` 컬럼.
+//   **사용자 업로드 원문으로 만들지 않는다** — 그것이 `LlmPrompt.forRepair` 를 통해
+//   마스킹 없이 provider 로 나가는 경로다.
+//
+// **`edited_text` 는 사람이 실제로 제출하기 전까지 `null` 이어야 한다.**
+//   검수 화면을 열 때 초안을 자동 저장하는 구현은 이 통제를 통째로 무너뜨린다.
+//   요구사항 대장 INV-01-a (`00_requirements-inventory.md` §1) 로 올려 두었다 —
+//   여기 주석으로만 있으면 Phase 4 게이트에서 세어지지 않는다.
+// ──────────────────────────────────────────────────────────────────────────────────
+
 /**
  * 검수를 거치지 않은 모델 초안 (`easy_text`).
  *
  * [ReviewedBody] 와 **다른 타입**인 것이 요점이다. 둘 다 생 `String` 이면
  * `restoreForExport(edited, easy, items)` 처럼 뒤집어 넣어도 컴파일되고, 그 순간 검수하지
  * 않은 초안이 검수본 자리에 들어가 이 통제가 막으려는 일이 그대로 일어난다.
+ *
+ * **감쌀 수 있는 값은 위 「provenance 래퍼 사용 규약」이 열거한 것뿐이다.** 사용자 업로드
+ * 원문을 여기 감싸면 `LlmPrompt.forRepair` 를 통해 마스킹 없이 provider 로 나간다.
  */
 @JvmInline
 value class ModelDraft(val value: String)
@@ -459,6 +630,11 @@ value class ModelDraft(val value: String)
  *
  * 이 타입으로 감싸는 행위가 곧 "사람 검수를 거쳤다"는 선언이다. 초안을 여기 감싸 넣으면
  * 통제가 무너진다 — 위 절의 "못 잡는 것" 참고.
+ *
+ * **만들 수 있는 곳은 HTTP 요청 경계의 `edited_text` 어댑터 하나뿐이다**(위
+ * 「provenance 래퍼 사용 규약」). 변환 유스케이스·워커·내보내기에서는 만들지 않는다 —
+ * 그 자리에서 이 타입이 필요해 보인다면 "사람이 제출했다"는 사실을 어디선가 잃어버린
+ * 것이므로, 감싸지 말고 그 사실을 인자로 받아 올려야 한다.
  */
 @JvmInline
 value class ReviewedBody(val value: String)
