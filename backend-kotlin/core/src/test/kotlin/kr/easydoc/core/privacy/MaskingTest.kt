@@ -19,6 +19,11 @@ import org.junit.jupiter.params.provider.ValueSource
  * 3. **정확히 복원된다** — 자리표시자를 되돌리면 입력이 한 글자도 다르지 않다.
  *    이것이 깨지면 내보내기가 잘못된 원문을 꽂는다.
  *
+ * 복원은 **제품 코드의 [restorePlaceholders]** 로만 검증한다. 예전에는 이 파일 안에서
+ * `replace` 로 되돌려 비교했는데, 그것은 테스트가 자기 헬퍼의 왕복을 증명한 것이지
+ * 제품이 복원할 수 있다는 증거가 아니었다 — 실제로 그 헬퍼는 입력에 이미 있던
+ * 자리표시자를 개인정보로 바꾸는 결함을 통과시켰다.
+ *
  * 보이지 않는 문자는 소스에 리터럴로 적지 않는다 — 전부 `\uXXXX` 다.
  */
 class MaskingTest {
@@ -189,6 +194,11 @@ class MaskingTest {
         @ValueSource(
             strings = [
                 "이 안내문에는 개인정보가 없습니다.",
+                // 입력에 자리표시자 모양이 이미 있는 경우 — 아래 PlaceholderCollision 참고.
+                "앞 [[주민등록번호1]] 뒤 900101-1234567 끝",
+                "[[카드번호1]] 만 있고 개인정보는 없다",
+                "이미 탈출된 모양 [[!주민등록번호1]] 과 900101-1234567",
+                "자리표시자 안에 13자리가 든 경우 [[주민등록번호1234567890123]]",
                 "주민 900101-1234567 카드 1234-5678-9012-3456",
                 "900101\u00AD1234567 과 1\u200B900101-1234567",
                 "",
@@ -199,12 +209,12 @@ class MaskingTest {
             // 이것이 깨지면 내보내기가 잘못된 원문을 꽂는다. 마스킹 앞단에서 입력을
             // 정규화하지 않는 이유가 이 성질이다.
             val result = maskText(input)
-            val restored =
-                result.items.fold(result.maskedText.value) { text, item ->
-                    text.replace(item.placeholder, item.original.reveal())
-                }
+            val restoration = restorePlaceholders(result.maskedText.value, result.items)
 
-            assertThat(restored).isEqualTo(input)
+            assertThat(restoration.text).isEqualTo(input)
+            assertThat(restoration.missing).isEmpty()
+            assertThat(restoration.ambiguous).isEmpty()
+            assertThat(restoration.foreign).isEmpty()
         }
 
         @Test
@@ -224,6 +234,106 @@ class MaskingTest {
 
             assertThat(result.maskedText.value).isEmpty()
             assertThat(result.items).isEmpty()
+        }
+    }
+
+    @Nested
+    @DisplayName("입력에 이미 있던 자리표시자 모양")
+    inner class PlaceholderCollision {
+        @Test
+        @DisplayName("같은 자리표시자가 둘이 되지 않는다 — 입력 쪽을 탈출시킨다")
+        fun `입력의 자리표시자와 충돌하지 않는다`() {
+            // codex stop-time 리뷰가 짚은 재현 입력. 고치기 전에는 마스킹 결과에
+            // [[주민등록번호1]] 이 둘이었고, 되돌리면 원문에 원래 있던 글자까지
+            // 주민등록번호로 바뀌었다.
+            val input = "앞 [[주민등록번호1]] 뒤 900101-1234567 끝"
+            val result = maskText(input)
+
+            assertThat(result.maskedText.value)
+                .isEqualTo("앞 [[!주민등록번호1]] 뒤 [[주민등록번호1]] 끝")
+            // 우리가 만든 자리표시자는 본문에 딱 하나다. 이 성질이 복원 판정의 근거다.
+            assertThat(result.maskedText.value.split("[[주민등록번호1]]")).hasSize(2)
+            assertThat(restorePlaceholders(result.maskedText.value, result.items).text)
+                .isEqualTo(input)
+        }
+
+        @Test
+        @DisplayName("탈출 표기 자체도 탈출된다 — 겹쳐도 정확히 되돌아온다")
+        fun `탈출 문자를 탈출한다`() {
+            val input = "[[!주민등록번호1]] 과 [[!!카드번호9]]"
+            val result = maskText(input)
+
+            assertThat(result.maskedText.value).isEqualTo("[[!!주민등록번호1]] 과 [[!!!카드번호9]]")
+            assertThat(restorePlaceholders(result.maskedText.value, result.items).text)
+                .isEqualTo(input)
+        }
+
+        @Test
+        @DisplayName("범위 밖 범주는 자리표시자가 아니므로 건드리지 않는다")
+        fun `범위 밖 라벨은 탈출하지 않는다`() {
+            // 마스킹하지 않는 범주의 라벨은 우리 자리표시자와 충돌할 수 없다.
+            // 탈출 대상을 넓히면 본문을 이유 없이 바꾼다.
+            val input = "[[전화번호1]] 과 [[주민등록번호]] 는 그대로 둔다"
+
+            assertThat(maskText(input).maskedText.value).isEqualTo(input)
+        }
+    }
+
+    @Nested
+    @DisplayName("LLM 이 만들어 낸 자리표시자")
+    inner class ForeignPlaceholdersInModelOutput {
+        // 복원 대상은 **LLM 출력**이다. 모델이 자리표시자 모양을 엉뚱한 자리에 만들어 내면
+        // 거기에 진짜 주민등록번호가 꽂힌다 — 마스킹의 목적이 정면으로 뒤집히는 경로다.
+        // 아래 셋이 그 경로를 고정한다.
+
+        private fun maskedItems() = maskText("주민 900101-1234567").items
+
+        @Test
+        @DisplayName("복제된 자리표시자는 한 곳도 복원하지 않는다")
+        fun `복제되면 복원하지 않는다`() {
+            // 마스킹은 각 자리표시자를 정확히 한 번만 넣는다. 둘이라는 것은 우리가 만든
+            // 본문이 아니라는 뜻이고, 어느 쪽이 우리 자리인지 판정할 근거가 없다.
+            // 전부 채우면 개인정보를 모델이 고른 자리에 심는 것이다.
+            val modelOutput = "요약: [[주민등록번호1]] 참고. 담당자 [[주민등록번호1]] 문의"
+            val restoration = restorePlaceholders(modelOutput, maskedItems())
+
+            assertThat(restoration.text).isEqualTo(modelOutput)
+            assertThat(restoration.text).doesNotContain("900101")
+            assertThat(restoration.ambiguous).containsExactly("[[주민등록번호1]]")
+            assertThat(restoration.missing).isEmpty()
+        }
+
+        @Test
+        @DisplayName("우리가 만들지 않은 자리표시자는 그대로 둔다")
+        fun `모르는 자리표시자를 채우지 않는다`() {
+            // 모델이 [[주민등록번호9]] 를 만들어 냈다. 우리 목록에 없으므로 채울 값이 없고,
+            // 지우지도 않는다 — 우리가 만들지 않은 표기를 지워 본문을 훼손하지 않는다.
+            val modelOutput = "본인 [[주민등록번호1]] 과 배우자 [[주민등록번호9]]"
+            val restoration = restorePlaceholders(modelOutput, maskedItems())
+
+            assertThat(restoration.text).isEqualTo("본인 900101-1234567 과 배우자 [[주민등록번호9]]")
+            assertThat(restoration.foreign).containsExactly("[[주민등록번호9]]")
+            assertThat(restoration.ambiguous).isEmpty()
+        }
+
+        @Test
+        @DisplayName("사라진 자리표시자를 보고한다")
+        fun `사라지면 보고한다`() {
+            val restoration = restorePlaceholders("주민번호는 생략합니다", maskedItems())
+
+            assertThat(restoration.text).isEqualTo("주민번호는 생략합니다")
+            assertThat(restoration.missing).containsExactly("[[주민등록번호1]]")
+        }
+
+        @Test
+        @DisplayName("모델이 만들어 낸 탈출 표기는 라벨로 남을 뿐 개인정보가 되지 않는다")
+        fun `모델이 만든 탈출 표기`() {
+            // 탈출 표기는 우리 자리표시자가 아니므로 값이 채워지지 않는다.
+            // 한 겹 벗겨진 라벨이 남고, 라벨은 개인정보가 아니다(계약).
+            val restoration = restorePlaceholders("모델이 쓴 [[!주민등록번호1]]", maskedItems())
+
+            assertThat(restoration.text).isEqualTo("모델이 쓴 [[주민등록번호1]]")
+            assertThat(restoration.text).doesNotContain("900101")
         }
     }
 
