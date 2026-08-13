@@ -602,5 +602,81 @@ class MaskingTest {
             // 값이 필요하면 명시적으로 꺼내야 한다 — 그 호출은 코드 리뷰에서 눈에 띈다.
             assertThat(item.original.reveal()).isEqualTo("900101-1234567")
         }
+
+        // ── value class 3종의 toString (privacy-gate 판정 5 / §4-bis) ──────────────
+        //
+        // 셋 다 문서 본문을 감싸는데 재정의가 하나도 없었다. 일반 class·data class 에는
+        // 이미 같은 규율이 있었으므로(`LlmPrompt`·`LlmCompletion`·`Secret`·
+        // `PlaceholderRestoration`) 결함은 한 건이 아니라 **종류**였다.
+        //
+        // **단언은 "길이 표기가 있다"가 아니라 "본문이 없다"를 본다.** 전자는 형식이 바뀌면
+        // 조용히 통과한다 — `MaskedText(48자) value=...` 같은 출력도 통과시킨다.
+
+        /** 마스킹 범주 밖이라 정책상 그대로 남는 값을 일부러 섞는다(전화·이메일). */
+        private val bodyWithUnmaskedPii =
+            "문의 02-1234-5678 또는 hong@korea.kr 로 연락하세요. 신청자 900101-1234567 님."
+
+        @Test
+        @DisplayName("MaskedText.toString 에 본문이 실리지 않는다")
+        fun `MaskedText 는 본문을 찍지 않는다`() {
+            val masked = maskText(bodyWithUnmaskedPii).maskedText
+
+            assertThat(masked.toString())
+                .withFailMessage("MaskedText.toString 이 본문을 노출한다 — 로거 인자 한 번이면 문서 본문이 로그 수집기로 나간다")
+                .doesNotContain("02-1234-5678")
+                .doesNotContain("hong@korea.kr")
+                .doesNotContain("신청자")
+                .doesNotContain("[[주민등록번호1]]")
+            // 마스킹했어도 안전하지 않다 — 가려지는 것은 2종뿐이고, 전화·이메일은 **전송**을
+            // 감수한 것이지 **로그 적재**를 감수한 것이 아니다.
+            assertThat(masked.value).contains("02-1234-5678")
+        }
+
+        @Test
+        @DisplayName("ModelDraft·ReviewedBody 의 toString 에 본문이 실리지 않는다")
+        fun `provenance 래퍼는 본문을 찍지 않는다`() {
+            val draft = ModelDraft(bodyWithUnmaskedPii)
+            val reviewed = ReviewedBody(bodyWithUnmaskedPii)
+
+            listOf(draft.toString(), reviewed.toString()).forEach { rendered ->
+                assertThat(rendered)
+                    .withFailMessage("provenance 래퍼의 toString 이 본문을 노출한다: %s", rendered)
+                    .doesNotContain("02-1234-5678")
+                    .doesNotContain("hong@korea.kr")
+                    .doesNotContain("900101-1234567")
+            }
+        }
+
+        @Test
+        @DisplayName("보간·Any 인자·컬렉션 — 재정의가 실제 노출 경로 전부에서 듣는다")
+        fun `노출 경로 네 갈래를 모두 막는다`() {
+            // privacy-gate 가 kotlinc 로 실측한 네 경로다. `Any` 인자(로거 형태)와 컬렉션은
+            // value class 가 **박싱되는** 경로라, 재정의가 인라인 자리에서만 듣고 박싱
+            // 자리에서 새면 여기서 드러난다.
+            val draft = ModelDraft(bodyWithUnmaskedPii)
+            val asAny: Any = draft
+
+            val paths =
+                mapOf(
+                    "문자열 보간" to "$draft",
+                    "명시 호출" to draft.toString(),
+                    "Any 인자(로거)" to logLike("변환 완료 {}", asAny),
+                    "컬렉션" to listOf(draft).toString(),
+                )
+
+            paths.forEach { (path, rendered) ->
+                assertThat(rendered)
+                    .withFailMessage("[%s] 경로로 본문이 샌다: %s", path, rendered)
+                    .doesNotContain("02-1234-5678")
+                    .doesNotContain("hong@korea.kr")
+                    .doesNotContain("900101-1234567")
+            }
+        }
+
+        /** 로거가 `Any` 인자를 포매팅하는 형태를 흉내 낸다. 실제 로거를 끌어오지 않는다. */
+        private fun logLike(
+            template: String,
+            argument: Any,
+        ): String = template.replace("{}", argument.toString())
     }
 }

@@ -41,6 +41,17 @@ class ProvenanceCreationSitesTest {
         val COMMENT_PREFIXES = listOf("//", "*", "/*")
 
         /**
+         * 큰따옴표 문자열 리터럴. 매칭 전에 지운다.
+         *
+         * 지우지 않으면 타입 자신의 `toString()` 이 자기 이름을 찍는 순간
+         * (`"ModelDraft(${'$'}{value.length}자)"`) 선언 파일이 **생성 지점으로 오인된다** —
+         * 실제로 privacy-gate 판정 5 의 `toString` 재정의를 넣자마자 그렇게 됐다.
+         * 문자열 템플릿 안에서 생성하는 경우(`"${'$'}{ModelDraft(x)}"`)는 이 처리로 놓치지만,
+         * 그런 코드는 실재하지 않고 놓치는 방향이 좁다.
+         */
+        val STRING_LITERAL = Regex("\"(?:\\\\.|[^\"\\\\])*\"")
+
+        /**
          * 생성 지점 허용목록. 키는 타입 이름, 값은 `backend-kotlin` 기준 상대 경로.
          *
          * **줄을 더하기 전에 `Masking.kt` 의 사용 규약을 읽어라.** 특히 [ReviewedBody] 는
@@ -146,7 +157,8 @@ class ProvenanceCreationSitesTest {
         val trimmed = line.trimStart()
         val commentOrDeclaration =
             COMMENT_PREFIXES.any { trimmed.startsWith(it) } || trimmed.startsWith("value class $type(")
-        return !commentOrDeclaration && Regex("""(?<![A-Za-z0-9_])$type\(""").containsMatchIn(line)
+        val code = STRING_LITERAL.replace(line, "\"\"")
+        return !commentOrDeclaration && Regex("""(?<![A-Za-z0-9_])$type\(""").containsMatchIn(code)
     }
 
     private fun sourceRoot(): Path {

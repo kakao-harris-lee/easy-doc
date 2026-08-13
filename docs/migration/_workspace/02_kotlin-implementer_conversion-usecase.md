@@ -376,3 +376,120 @@ backend-kotlin 밖이라 좁은 잡에 붙이면 선언한 범위보다 좁은 �
 `tests/test_harness_scope_reach.py::test_판정이_실제로_행을_보고_있다` 가 "기대 18개 / 실제 21개"로 실패.
 가드를 무르게 만들지 않고 `EXPECTED_MET_YES_KEYS` 에 세 줄을 **정체성 키로** 더했다. 그 diff 가
 "판정 범위를 건드렸다"는 신호로 리뷰에 올라가는 것이 그 상수의 값어치다.
+
+
+---
+
+## 11. 추가 조치 — privacy-gate 판정 5 (§4-bis, 2026-08-14)
+
+내가 §5.3·§8.1 ③으로 올린 `ModelDraft.toString()` 관측이 **종류 전체**로 판정돼 돌아왔다.
+회부한 것은 1종이었는데 판정은 3종 + 스캐너 목록이다 — 내가 자기 코드가 닿은 타입만 보고
+형제 둘(`MaskedText`·`ReviewedBody`)을 못 본 것이 맞다.
+
+### 11.1 조치 1 — value class 3종 `toString` 재정의
+
+`MaskedText`·`ModelDraft`·`ReviewedBody` 셋 다 길이만 남긴다. 사유는 타입 하나가 아니라
+`Masking.kt` 의 **「value class 와 toString」 절**에 뒀다 — 결함이 한 건이 아니라 **종류**이고,
+다음에 본문 래퍼를 만드는 사람이 읽을 자리가 거기이기 때문이다.
+
+이 결함이 왜 여기까지 오지 못했는지도 그 절에 적었다: 일반 class·data class 에는 이미 같은
+규율이 있었고(`LlmPrompt` 는 `data class` 를 포기하면서까지 KDoc 한 절을 썼다) **value class
+셋에만 한 번도 적용되지 않았다.**
+
+### 11.2 조치 3 — 회귀 단언은 "본문 미포함"을 본다
+
+해제 조건 ③이 지정한 형태로 썼다. **"길이 표기가 있다"를 보지 않는다** — 그것은 형식이
+바뀌면 조용히 통과하고, `MaskedText(48자) value=...` 같은 출력도 통과시킨다.
+
+본문에 **마스킹 범주 밖이라 정책상 그대로 남는 값**(전화번호·이메일)을 일부러 섞었다.
+"마스킹했으니 안전하다"가 성립하지 않는다는 것이 판정 §4-bis.2 근거 B 이고, 단언이 그
+사실을 값으로 붙잡고 있어야 한다.
+
+네 노출 경로(문자열 보간 · 명시 호출 · `Any` 인자(로거 형태) · 컬렉션)를 모두 단언한다.
+뒤 둘은 value class 가 **박싱되는** 경로라, 재정의가 인라인 자리에서만 듣고 박싱 자리에서
+새는 회귀를 여기서만 잡을 수 있다.
+
+**음성 대조**: 재정의 3건을 걷어내고 돌리면 `LeakPrevention` 4건 중 **3건이 실패**한다
+(나머지 1건은 `MaskedItem`/`Secret` 을 보는 기존 단언이라 영향 없음). 되돌린 뒤 전건 통과.
+
+### 11.3 조치 2 — 스캐너 `BODY_NAMES` 확장
+
+`draft`·`modelDraft`·`model_draft`·`reviewedBody`·`reviewed_body`·`reviewed`·
+`edited_text`·`editedText`·`result` 를 **더했다. 뺀 이름은 없다.**
+
+`reviewed` 가 함정이었다 — 목록에 `review` 가 이미 있었지만 `\b` 경계 때문에 `reviewed` 에는
+걸리지 않는다. "비슷한 이름이 있으니 잡히겠지"가 통하지 않는 자리라 주석으로 남겼다.
+
+**해제 조건 ② 실측 — §4-bis.4 탐침 7건에서 MISSED 0:**
+
+```
+CAUGHT  logger.info("변환 완료 {}", draft)        ← 확장 전 MISSED
+CAUGHT  logger.info("변환 완료 {}", modelDraft)   ← 확장 전 MISSED
+CAUGHT  logger.info("변환 완료 {}", reviewed)     ← 확장 전 MISSED
+CAUGHT  logger.info("변환 완료 {}", result)       ← 확장 전 MISSED
+CAUGHT  logger.info("변환 완료 {}", easyText)
+CAUGHT  logger.info("변환 완료 {}", body)
+CAUGHT  logger.info("변환 완료 {}", maskedText)
+MISSED = 0
+```
+
+### 11.4 ⚠ 확장이 만든 BLOCK 후보 3건 — **privacy-gate 판정 필요. 내가 처분하지 않았다**
+
+확장 직후 전수 스캔이 **exit 1**이 됐다. 판정 §4-bis.4 는 *"지금 이 목록을 고치면 즉시
+도달한다"* 고만 적었고 이 3건은 예상하지 못한 것으로 보인다.
+
+```
+[BLOCK] LOG-BODY (3건)
+- scripts/collect_golden.py:126 — print(f"문서 id: {draft.document.id} | 마스킹 후 본문 {draft.stats.source_chars:,}자")
+- scripts/collect_golden.py:132 — print(f"마스킹: {detail} (총 {draft.stats.masked_total}건 …)")
+- scripts/collect_golden.py:149 — print(f"자동 분류: {draft.stats.auto_category} …)")
+```
+
+**세 줄 모두 오탐으로 보인다.** 보간되는 것이 문서 id·글자 수·건수·분류값뿐이고, 이는
+`CLAUDE.md` 가 허용목록으로 못박은 *"문서 ID·길이·처리 상태까지만"* 에 정확히 들어간다.
+함수 docstring 자체가 *"통계와 다음 단계만 출력한다(본문·제목·마스킹 원문은 출력하지
+않는다)"* 다. 이름이 겹친 것은 여기 `draft` 가 `GoldenDraft`(수집 도구의 통계 묶음)여서다.
+
+**그런데 나는 이것을 처분하지 않았다.** 셋 다 내 판단으로 닫을 수 있는 자리가 아니다.
+
+| 가능한 처분 | 왜 내가 하지 않았나 |
+|---|---|
+| `BODY_NAMES` 에서 `draft` 제거 | 판정이 명시적으로 금지했다 — *"이름을 빼지 말고 더하기만 한다"*. 해제 조건 ②도 깨진다 |
+| `sanctioned` 에 `scripts/collect_golden.py` 추가 | **은폐형**이다. `CLAUDE.md` 규칙 4가 은폐형은 넓히지 말라고 했고, 파일 통째 면제라 그 파일의 **진짜** 유출도 함께 가린다 |
+| `refine` 훅으로 멤버 접근 걸러내기 | 정밀도 개선이지만 **BLOCK 규칙의 판정 의미를 바꾸는 일**이고, 안전 멤버 허용목록을 잘못 고르면(`draft.document.title` 같은 2단 접근) 진짜 유출이 빠진다. `migration-safety-gate` 소유 파일이자 `privacy-gate` 의 판정 영역이다 |
+| `collect_golden.py` 의 지역 변수 이름 변경 | **게이트를 피해 이름을 바꾸는 것**이다. 그 습관이 자리 잡으면 이 탐지기는 다음부터 아무것도 못 잡는다 |
+
+**따라서 현재 CI `quality` 잡의 스캔 단계는 red 다.** 이것을 알리지 않고 넘기지 않는다 —
+판정을 요청하며, 내 권고는 **`refine` 훅**이다(경로 면제와 달리 값의 성질로 거르므로
+예외 경로를 넓히지 않는다고 스캐너 자신이 `refine` 주석에 적어 두었다). 다만 안전 멤버
+목록의 설계는 `privacy-gate` 가 정해야 한다.
+
+### 11.5 부수 발견 — 탐지기가 자기 자신의 `toString` 에 걸렸다
+
+`toString` 재정의를 넣자마자 §5.2 의 `ProvenanceCreationSitesTest` 가 `Masking.kt` 를
+**생성 지점으로 오인**했다. `"ModelDraft(${'$'}{value.length}자)"` 라는 **문자열 리터럴 안의**
+`ModelDraft(` 를 호출로 읽은 것이다.
+
+허용목록에 `Masking.kt` 를 추가해 닫지 **않았다** — 그러면 선언 파일에서의 진짜 생성이
+영원히 조용해진다. 대신 매칭 전에 큰따옴표 문자열 리터럴을 지운다.
+
+**정밀도 개선이 탐지를 줄이지 않았는지 음성 대조**: 문자열 미끼(`"ModelDraft(는 …)"`)와
+진짜 생성(`ModelDraft("진짜 생성 지점")`)을 한 파일에 넣으면 **진짜 쪽만 잡힌다.**
+남는 한계(문자열 템플릿 안에서 생성하는 경우)는 KDoc 에 적었다.
+
+### 11.6 검사 결과 (이 절 범위)
+
+| 게이트 | 결과 |
+|---|---|
+| `./gradlew build` | **BUILD SUCCESSFUL** |
+| `ruff check` · `ruff format --check` | All checks passed · 145 files already formatted |
+| `uv run mypy . .claude` | Success — 129 source files (스캐너 포함) |
+| `uv run pytest` | **1061 passed, 68 skipped, 5 deselected** |
+| parity (읽기 전용 재확인) | masking **57건/214단언** · repair-adoption 25건/75단언 충족 · exit 3 |
+| `scan_privacy_invariants.py` | **exit 1 — §11.4 판정 대기** |
+
+parity 는 `parity-verifier` 가 병렬로 masking fixture 를 31 → 57건으로 확장한 뒤 다시 돌린
+것이다. **내 생산자가 확장된 57건을 그대로 처리해 전건 충족한다** — 종류 A·B 수정과 그들의
+신규 케이스가 맞물린다는 뜻이다. 참고 갈림 21건은 그 개선이 만든 것으로 그들 원장에 있다.
+그들 소유 파일(`dump_parity_fixtures.py`·`parity/fixtures/masking/`·`parity/reference-ledger/`·
+`02_parity-verifier_masking-spec.md`)은 읽기만 했고 커밋하지 않았다.

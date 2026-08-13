@@ -49,9 +49,14 @@ enum class MaskCategory(val label: String) {
  *
  * LLM provider 인터페이스는 아직 없다(다음 조각). 그때 원문 `String` 오버로드를 만들지
  * 않는 것이 이 타입이 존재하는 이유 전부다.
+ *
+ * `toString()` 재정의 사유는 아래 「value class 와 toString」 절.
  */
 @JvmInline
 value class MaskedText private constructor(val value: String) {
+    /** 길이만 남긴다. 사유는 아래 「value class 와 toString」 절. */
+    override fun toString(): String = "MaskedText(${value.length}자)"
+
     companion object {
         /**
          * [MaskedText] 를 만드는 **유일한** 경로. 임의 문자열을 감쌀 수 없다 —
@@ -66,6 +71,34 @@ value class MaskedText private constructor(val value: String) {
         }
     }
 }
+
+// ── value class 와 toString (privacy-gate 판정 5 / §4-bis, 2026-08-14) ─────────────
+//
+// 이 파일의 `@JvmInline value class` 셋([MaskedText]·[ModelDraft]·[ReviewedBody])은 전부
+// **문서 본문**을 감싼다. 셋 다 `toString()` 을 재정의해 **길이만** 남긴다.
+//
+// **왜 이 규율이 여기까지 오지 못했었나.** 일반 class·data class 에는 이미 같은 규율이
+// 적용돼 있었다 — `LlmPrompt` 는 `data class` 를 포기하면서까지 KDoc 한 절로 사유를 적었고
+// (`LlmPrompt.kt` 「data class 가 아닌 이유」), `LlmCompletion`·`Secret`·[PlaceholderRestoration]
+// 도 각각 재정의를 갖고 있다. **그런데 value class 셋에는 한 번도 적용되지 않았다.**
+// 결함이 한 건이 아니라 **종류**인 이유가 이것이다 — 다음에 본문을 감싸는 래퍼를 만드는
+// 사람도 같은 자리를 빠뜨린다. 그래서 사유를 타입 하나가 아니라 이 절에 둔다.
+//
+// **본문은 개인정보와 별개로 금지 대상이다.** `CLAUDE.md` 보안 규칙은 *"로그에 문서 본문·
+// 개인정보를 절대 남기지 않는다. 로깅은 문서 ID·길이·처리 상태까지만"* 이라고 **둘**을 열거하고
+// 뒷문장을 허용목록으로 못박았다. 개인정보가 한 글자도 없어도 본문은 금지다.
+//
+// **"마스킹했으니 안전하다"는 성립하지 않는다.** 가려지는 것은 주민등록번호·카드번호 2종뿐이고
+// 전화번호·이메일·계좌번호는 그대로 남는다. 그 셋은 **LLM 전송을 감수한 것이지 로그 적재를
+// 감수한 것이 아니다** — 범주 축소는 전송 경계의 결정이었고 로그 경계를 건드리지 않았다.
+//
+// **실측(privacy-gate)**: 재정의는 문자열 보간 · 명시 호출 · `Any` 인자(로거) · 컬렉션
+// 네 경로에서 모두 듣는다. 박싱되는 로거 경로에서도 듣는다.
+//
+// **못 막는 것**: `.value` 를 직접 꺼내 넘기는 줄. 공개 프로퍼티라 타입으로는 닫히지 않는다 —
+// 그쪽 절반은 `scan_privacy_invariants.py` 의 `LOG-BODY` 규칙이 식별자 이름으로 잡는다
+// (그래서 그 `BODY_NAMES` 에 `draft`·`modelDraft`·`reviewed` 를 함께 넣었다).
+// ──────────────────────────────────────────────────────────────────────────────────
 
 /**
  * 마스킹된 개별 항목 (검수 화면 표시용).
@@ -621,9 +654,16 @@ fun maskText(text: String): MaskingResult = MaskedText.mask(text)
  *
  * **감쌀 수 있는 값은 위 「provenance 래퍼 사용 규약」이 열거한 것뿐이다.** 사용자 업로드
  * 원문을 여기 감싸면 `LlmPrompt.forRepair` 를 통해 마스킹 없이 provider 로 나간다.
+ *
+ * `toString()` 재정의 사유는 「value class 와 toString」 절. 이 타입에서 특히 중요한 이유가
+ * 하나 더 있다 — 생성자가 공개라 규약이 깨지면 **마스킹 전 원문**이 들어올 수 있고, 그때
+ * 무방비 `toString()` 은 그것을 로그로 내보내는 증폭기가 된다.
  */
 @JvmInline
-value class ModelDraft(val value: String)
+value class ModelDraft(val value: String) {
+    /** 길이만 남긴다. 사유는 「value class 와 toString」 절. */
+    override fun toString(): String = "ModelDraft(${value.length}자)"
+}
 
 /**
  * 사람이 검수 화면에서 **제출한** 본문 (`edited_text`). 제출 전에는 `null` 이다.
@@ -635,9 +675,14 @@ value class ModelDraft(val value: String)
  * 「provenance 래퍼 사용 규약」). 변환 유스케이스·워커·내보내기에서는 만들지 않는다 —
  * 그 자리에서 이 타입이 필요해 보인다면 "사람이 제출했다"는 사실을 어디선가 잃어버린
  * 것이므로, 감싸지 말고 그 사실을 인자로 받아 올려야 한다.
+ *
+ * `toString()` 재정의 사유는 「value class 와 toString」 절.
  */
 @JvmInline
-value class ReviewedBody(val value: String)
+value class ReviewedBody(val value: String) {
+    /** 길이만 남긴다. 사유는 「value class 와 toString」 절. */
+    override fun toString(): String = "ReviewedBody(${value.length}자)"
+}
 
 /**
  * 내보낼 최종 본문을 고르고, **사람 검수를 거친 경우에만** 자리표시자를 원문으로

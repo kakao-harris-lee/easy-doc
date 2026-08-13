@@ -54,10 +54,27 @@ SKIP_PARTS = {
 }
 
 #: 본문·개인정보를 담을 법한 식별자. 로그·예외 메시지에 이 이름이 보간되면 후보다.
+#:
+#: **이름을 빼지 않는다 — 더하기만 한다.** 이 목록에서 이름을 지우는 것은 오탐을 줄이는 것이
+#: 아니라 **탐지를 줄이는 것**이다(`SECRET_LITERAL` 쪽이 같은 원칙을 이미 적었다). 오탐은
+#: 사람이 확인해 넘기면 되지만, 빠진 이름은 아무 신호도 내지 않는다.
+#:
+#: 2026-08-14 확장 (privacy-gate 판정 5 / §4-bis.4): Kotlin 쪽이 실제로 쓰는 식별자 넷이
+#: 빠져 있어 탐침 7건 중 4건을 놓쳤다 — `draft`·`modelDraft`·`reviewed`·`result`.
+#: `reviewed` 가 특히 함정이었다. 기존 목록에 `review` 가 있었지만 `\b` 경계 때문에
+#: `reviewed` 에는 걸리지 않는다. **부분 문자열이 아니라 낱말 단위로 걸린다**는 것을 잊으면
+#: "비슷한 이름이 이미 있으니 잡히겠지"로 넘어가게 된다.
+#: 셋은 `Masking.kt` 의 provenance 래퍼가 감싸는 값의 이름이고(`ModelDraft`·`ReviewedBody`),
+#: `result` 는 변환 유스케이스의 결과 타입(`ConversionResult`)이 본문을 들고 다니는 이름이다.
+#: 래퍼의 `toString()` 은 가려 두었지만 `.value` 를 직접 꺼내 넘기는 줄은 타입으로 닫히지
+#: 않으므로, 그 절반을 이 목록이 맡는다.
 BODY_NAMES = (
     r"text|body|content|source_text|sourceText|easy_text|easyText|masked_text|maskedText|"
     r"original|plaintext|plain_text|raw|password|secret|token|email|payload|prompt|"
-    r"converted|review|comment|title|filename"
+    r"converted|review|comment|title|filename|"
+    # 2026-08-14 추가 — 위 주석의 사유 참고.
+    r"draft|modelDraft|model_draft|reviewedBody|reviewed_body|reviewed|"
+    r"edited_text|editedText|result"
 )
 LOG_CALL = (
     r"(?:_?logger?\.(?:debug|info|warning|warn|error|exception|trace)"
