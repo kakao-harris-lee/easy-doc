@@ -94,6 +94,22 @@ STILL_CAUGHT_LINES = [
     'logger.info("변환 완료 {}", draft)',
     'logger.info("변환 완료 {}", draft.value)',
     'logger.info("변환 완료 {}", draft.text)',
+    # ── 사슬 종단 미고정 탈출 3종 (privacy-gate 해제 심사 §4-sexies.3) ──────────
+    # 안전 멤버 **뒤에** 위험 멤버를 이어 붙이면 통과했다. `re.match()` 가 시작만
+    # 고정하고 끝을 고정하지 않아, 안전 멤버에서 매칭이 끝난 뒤의 사슬이 검사되지
+    # 않았다. 한정자 뒤에 안전 멤버를 하나 끼워 넣는 것이 곧 통행증이었다.
+    #
+    # **셋 중 실제로 샌 것은 첫 줄뿐이다** — 음성 대조 실측(종단 고정을 걷어내면
+    # 첫 줄만 실패). 나머지 둘은 꼬리(`original`·`body`)가 `BODY_NAMES` 에도 있어
+    # **다른 경로로 이미 잡히고 있었다.** 셋을 다 남기는 이유는 두 방어선이 각각
+    # 살아 있음을 고정하기 위해서다 — 언젠가 `BODY_NAMES` 에서 그 이름이 빠지면
+    # 종단 고정만 남고, 그때 이 줄들이 진짜 회귀 감지기가 된다.
+    #
+    # 종단 고정 **자체**를 재는 것은 아래 전용 테스트다(꼬리를 `BODY_NAMES` 밖의
+    # `value` 로 두어 다른 방어선이 겹치지 않게 했다).
+    'logger.info("{}", draft.document.id.value)',
+    'logger.info("{}", draft.stats.count.original)',
+    'logger.info("{}", draft.document.category.body)',
 ]
 
 
@@ -109,6 +125,30 @@ def test_refine_훅이_본문_보간은_계속_잡는다(scanner: ModuleType, li
     assert _log_body_verdict(scanner, line) == "CAUGHT", (
         f"훅이 너무 넓다 — 진짜 본문 보간이 빠져나간다: {line}"
     )
+
+
+def test_안전한_멤버_뒤에_위험한_멤버를_이어_붙일_수_없다(scanner: ModuleType) -> None:
+    """접근 사슬 **전체**가 한정자 + 종단 안전 멤버로만 이뤄져야 한다.
+
+    이 성질을 따로 이름 붙여 두는 이유: 위 `STILL_CAUGHT_LINES` 가 세 줄을 값으로
+    잡아 주지만, **왜** 잡혀야 하는지는 목록에서 읽히지 않는다. 결손은 안전 멤버
+    목록이 아니라 **패턴의 끝**에 있었다 — 목록을 아무리 좁혀도 그 뒤에 무엇이든
+    붙일 수 있으면 소용이 없다.
+
+    `document` 한정자 때문이 아니라는 것도 함께 고정한다 — 판정문이 표에 직접 적은
+    `stats` 로도 똑같이 샜다. 그래서 두 한정자 모두에 대해 단언한다.
+    """
+    for qualifier in ("document", "stats"):
+        안전한_종단 = f'logger.info("{{}}", draft.{qualifier}.count)'
+        위험한_꼬리 = f'logger.info("{{}}", draft.{qualifier}.count.value)'
+
+        assert _log_body_verdict(scanner, 안전한_종단) == "MISSED", (
+            f"집계 멤버로 끝나는 접근이 후보로 남는다: {안전한_종단}"
+        )
+        assert _log_body_verdict(scanner, 위험한_꼬리) == "CAUGHT", (
+            f"안전 멤버 뒤에 이어 붙인 위험 멤버가 빠져나간다: {위험한_꼬리} — "
+            "패턴 끝의 사슬 종단 고정이 사라졌는지 확인하라."
+        )
 
 
 def test_안전_멤버_목록에_본문_이름이_없다(scanner: ModuleType) -> None:

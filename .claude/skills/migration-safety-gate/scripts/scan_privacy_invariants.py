@@ -114,7 +114,20 @@ _SAFE_MEMBERS = (
 _SAFE_QUALIFIERS = r"stats|document"
 
 #: 본문 이름 **바로 뒤**의 안전한 접근 형태.
-_SAFE_ACCESS = re.compile(rf"\.(?:(?:{_SAFE_QUALIFIERS})\.)*(?:{_SAFE_MEMBERS})\b")
+#:
+#: 끝의 `(?!\.)` 가 **사슬 종단을 고정한다.** 이것이 없으면 `re.match()` 가 시작만 고정하고
+#: 끝은 열어 두어, 안전 멤버에서 매칭이 끝난 **뒤의 사슬이 검사되지 않은 채 통과**한다
+#: (privacy-gate 해제 심사 §4-sexies.3 실측):
+#:
+#:   `.document.id.value`      → `.document.id` 까지만 소비, **`.value` 미검사**
+#:   `.stats.count.original`   → `.stats.count` 까지만 소비, **`.original` 미검사**
+#:   `.document.category.body` → `.document.category` 까지만 소비, **`.body` 미검사**
+#:
+#: 즉 한정자 뒤에 안전 멤버를 하나 끼워 넣으면 그 뒤로 무엇이든 붙일 수 있었다. 이 결손은
+#: `document` 한정자 때문이 아니다 — 판정문이 표에 직접 적은 `stats` 로도 똑같이 샜다.
+#: 안전 멤버 목록만 정하고 **"접근 사슬 전체가 한정자 + 종단 안전 멤버로만 이뤄질 것"**을
+#: 요구하지 않은 것이 원인이라, 고칠 자리는 목록이 아니라 **패턴의 끝**이다.
+_SAFE_ACCESS = re.compile(rf"\.(?:(?:{_SAFE_QUALIFIERS})\.)*(?:{_SAFE_MEMBERS})\b(?!\.)")
 
 #: 금지 멤버 자기검사 — 목록이 넓어져 규칙을 무력화하는 것을 **모듈 적재 시점에** 막는다.
 #: 주석으로만 두면 다음 사람이 `value` 를 한 줄 더한다.

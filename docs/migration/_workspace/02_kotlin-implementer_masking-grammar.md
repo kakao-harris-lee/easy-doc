@@ -265,6 +265,65 @@ ABI·재정의 허용목록과 대조한다.
 
 ---
 
+## 4-bis. 재회부 1건 — `_SAFE_ACCESS` 사슬 종단 고정 (§4-sexies.3)
+
+해제 심사에서 6건이 해제되고 1건이 돌아왔다. **내가 더한 `document` 한정자 때문이 아니라
+판정문 §4-quater.1 명세 자체의 결손**이라는 것이 심사의 진단이고, 실측이 그것을 뒷받침한다 —
+판정문이 표에 직접 적은 `stats` 로도 똑같이 샜다.
+
+### 결손의 기제
+
+`_SAFE_ACCESS` 를 `re.match()` 로 쓰면 **시작만 고정되고 끝은 열려 있다.** 안전 멤버에서
+매칭이 끝나면 그 뒤 사슬은 검사되지 않는다.
+
+| 식 | 소비된 부분 | 검사되지 않은 잔여 |
+|---|---|---|
+| `.document.id.value` | `.document.id` | **`.value`** |
+| `.stats.count.original` | `.stats.count` | **`.original`** |
+| `.document.category.body` | `.document.category` | **`.body`** |
+
+즉 **한정자 뒤에 안전 멤버를 하나 끼워 넣는 것이 곧 통행증**이었다. 안전 멤버 목록을
+아무리 좁혀도 소용이 없다 — 고칠 자리는 목록이 아니라 **패턴의 끝**이다.
+
+### 수정
+
+패턴 끝에 `(?!\.)` 하나. 접근 사슬 전체가 **한정자 + 종단 안전 멤버**로만 이뤄질 것을
+강제한다. `document` 한정자는 지시대로 **되돌리지 않았다** — 되돌리면 실물 오탐 3건이
+되살아난다.
+
+### 9탐침 실측 (전건 정상)
+
+```
+탈출 3종  -> CAUGHT       (draft.document.id.value / .stats.count.original / .document.category.body)
+오탐 3종  -> SUPPRESSED   (draft.stats.masked_total / .document.id / .stats.source_chars)
+금지 3종  -> CAUGHT       (draft.value / draft.text / draft 맨 이름)
+불일치 0건
+```
+
+### 음성 대조가 판정문보다 정확했던 자리 — 기록
+
+종단 고정을 걷어내고 돌렸더니 **탈출 3종 중 실패한 것은 첫 줄뿐**이었다. 나머지 둘은
+꼬리(`original`·`body`)가 `BODY_NAMES` 에도 있어 **다른 방어선이 이미 잡고 있었다.**
+
+판정문 표의 3행이 전부 같은 무게로 새는 것처럼 읽히지만, 실제로 종단 고정만이 막는 것은
+**꼬리가 `BODY_NAMES` 밖에 있는 경우**(`.value`·`.category` 등)다. 셋을 다 회귀로 남기되
+그 사실을 주석에 적었다 — 두 방어선이 각각 살아 있음을 고정하는 값어치는 있고, 언젠가
+`BODY_NAMES` 에서 그 이름이 빠지면 그때 이 줄들이 진짜 회귀 감지기가 된다.
+
+**종단 고정 자체를 재는 것은 전용 테스트**로 따로 뒀다 — 꼬리를 `BODY_NAMES` 밖의 `value` 로
+두어 다른 방어선이 겹치지 않게 했고, `document`·`stats` 두 한정자 모두에 대해 단언한다.
+음성 대조: 종단 고정을 걷어내면 그 테스트가 실패하고, 되돌리면 통과한다.
+
+### 검사
+
+`pytest` **1091 passed**(훅 테스트 30건) · `ruff` · `mypy` 130 files · 전수 스캔 **exit 0**
+(184파일 · BLOCK 0 · 2차 판정 제외 7건 리포트 표시).
+
+`parity/**`·`dump_parity_fixtures.py`·`ci.yml` 은 건드리지 않았다 — `parity-verifier` 가
+fixture 동결·C-02 작업 중이다. 이 조각의 변경은 `scan_privacy_invariants.py` 와 그 테스트뿐이다.
+
+---
+
 ## 5. 남는 것
 
 | 항목 | 소관 | 비고 |
