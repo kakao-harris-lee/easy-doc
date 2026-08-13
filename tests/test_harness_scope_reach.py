@@ -28,11 +28,15 @@
    완전 일치만으로는 부족하고, 그렇다고 **접두**로 읽으면 `예정`(뜻은 "아직")·`예외`·
    `예상`·`예비` 가 전부 충족으로 뒤집혀 **정상 문서를 거짓 고발한다.**
    어느 쪽으로도 읽히지 않으면 **조용히 건너뛰지 않고 위반**이다.
-4. `ci:<잡>` 의 잡이 `.github/workflows/ci.yml` 의 `jobs:` 에 실재한다.
+4. `ci:<잡>` 의 잡이 `.github/workflows/ci.yml` 의 `jobs:` 에 실재한다. 조건부 형식
+   `ci:<잡>(조건:<조건 정본 경로>)` 도 **같은** 잡 실재 검사를 받고, 괄호 안 경로는
+   규칙 5와 **같은 기준**(git 추적 파일)으로 본다 — 아니면 조건부 형식이 새 자유 통과
+   카드가 된다. 깨진 형식(`ci:x(` · `ci:x()` · `ci:x(조건:)`)은 단순형으로 읽히지 않고
+   어휘 밖이다.
 5. `1회성:<경로>` 가 **git 이 추적하는 파일**이다(디렉터리·미추적 파일 거부).
 6. `local:<명령>` 의 첫 낱말이 실행 파일 이름 꼴이다(산문 약속 거부).
 7. `결정:<날짜>` 가 실제 달력 날짜다.
-8. 어휘 6종 밖의 표기가 없다.
+8. 어휘 7종 밖의 표기가 없다.
 
 ## 이 검사가 못 잡는 것 (한계 — 닫지 않고 적는다)
 
@@ -58,6 +62,15 @@
 - **`local:` 명령의 실재.** 첫 낱말의 **모양**만 본다. `local:TBD 예정` 처럼 첫 낱말이
   ASCII 면 통과한다 — 명령이 실제로 존재하는지 확인하려면 실행해야 하고, 그건 이
   검사의 범위 밖이다. 막는 것은 `local:언젠가 돌릴 예정` 같은 **한글 산문**뿐이다.
+- **조건부 표기를 쓸 의무가 없다.** `ci:llm-lane` 단순형은 그 잡이 실제로 조건부여도
+  그대로 통과한다 — 검사기는 `ci.yml` 에서 잡 **이름**만 보고 `if:`·`paths` 같은 실행
+  조건은 읽지 않는다. 그러니까 조건부 형식이 막는 것은 **"조건부라고 적었는데 조건
+  정본이 없는 것"**이지 **"조건부인데 단순형으로 적어 과장하는 것"**이 아니다. 후자가
+  바로 이 형식을 만든 계기인데, 형식은 그 과장을 **표현 가능하게** 할 뿐 강제하지
+  못한다. 반대 방향(상시로 도는 잡에 조건을 붙여 축소해 적기)도 마찬가지로 안 잡힌다.
+- **괄호 안 경로의 관련성을 안 본다.** `1회성:` 과 같은 한계다 — 추적 파일이기만 하면
+  그 잡의 실행 조건과 무관한 파일이어도(`ci:quality(조건:.gitignore)`) 통과한다.
+  마찬가지로 `git add` 만으로 근거가 생기며 커밋도 리뷰도 거치지 않는다.
 - **`1회성:` 이 자기참조를 막지 않는다.** `1회성:tests/test_harness_scope_reach.py`
   (검사기 자신)나 `1회성:.gitignore` 로 아무 행이나 닫을 수 있다. 검사기가 자기
   존재를 자기 규칙의 근거로 인정하는 셈이다.
@@ -306,6 +319,21 @@ _EMPTY_CAPTION_MARK: Final = "표 이름(caption)이 비었다"
 _DUPLICATE_CAPTION_MARK: Final = "두 대상 표의 이름(caption)이 같다"
 
 _CI_TOKEN: Final = re.compile(r"^ci:([A-Za-z0-9][A-Za-z0-9_.-]*)$")
+
+#: 조건부 CI 표기 — `ci:<잡>(조건:<조건 정본 경로>)`. 잡에 배선돼 있으나 **조건이 맞을
+#: 때만** 도는 레인을 적는 자리다. 단순형으로 적으면 "매 실행 돈다"로 읽혀 과장이 되고,
+#: 어휘에 자리가 없으면 그 과장 말고는 적을 방법이 없다 — 그래서 형식을 더했다.
+#:
+#: **양끝을 앵커로 묶는 것이 이 정규식의 요점이다.** `ci:llm-lane(` 처럼 잘린 표기가
+#: 단순형 `_CI_TOKEN` 으로 읽히면 조건 정본 검사가 통째로 우회된다. 단순형 쪽 문자
+#: 클래스에 `(` 가 없어 지금도 그렇게 읽히지 않지만, 그 사실은 **테스트로 고정**해
+#: 둔다(문자 클래스를 넓히는 다음 편집이 조용히 뚫지 못하게).
+#:
+#: 경로를 `\S+` 로 받는 이유는 공백이 낀 값을 형식 단계에서 떨어뜨리기 위해서다.
+#: 산문(`조건:나중에`)은 여기서 통과하고 아래 추적 파일 검사가 잡는다 — 한글이라고
+#: 모양으로 거르면 한글 파일명(이 저장소에 실재한다)이 함께 막힌다.
+_CI_CONDITIONAL_TOKEN: Final = re.compile(r"^ci:([A-Za-z0-9][A-Za-z0-9_.-]*)\(조건:(\S+)\)$")
+
 _LOCAL_TOKEN: Final = re.compile(r"^local:(\S.*)$")
 _ONCE_TOKEN: Final = re.compile(r"^1회성:(\S+)$")
 _DECISION_TOKEN: Final = re.compile(r"^결정:(\d{4}-\d{2}-\d{2})$")
@@ -494,28 +522,54 @@ def _render_pair(key: tuple[str, str]) -> str:
 # --- 판정 (순수 함수) ---------------------------------------------------------
 
 
+def _unknown_job_problem(job: str, context: JudgeContext) -> str | None:
+    """`ci:` 두 형식이 **같은** 잡 실재 검사를 쓰게 하는 한 곳.
+
+    각자 판정하면 한쪽만 느슨해지고, 느슨한 쪽이 곧 자유 통과 카드가 된다.
+    """
+    if job in context.ci_jobs:
+        return None
+    known = ", ".join(sorted(context.ci_jobs)) or "없음"
+    return f"`ci:{job}` 인데 ci.yml 의 jobs 에 `{job}` 이 없다 (실재하는 잡: {known})"
+
+
+def _untracked_problem(label: str, target: str, context: JudgeContext) -> str | None:
+    """`1회성:` 과 `ci:…(조건:…)` 이 **같은 기준**을 쓰게 하는 한 곳.
+
+    둘 다 "저장소가 추적하는 파일을 가리켜라" 이고, 존재가 아니라 **git 추적**을 본다.
+    조건부 표기의 괄호 안이 이 검사를 안 받으면 `조건:나중에` 같은 산문으로 아무 행이나
+    닫을 수 있어, 형식을 더한 것이 곧 구멍을 더한 것이 된다.
+    """
+    if context.is_tracked_file(target):
+        return None
+    return (
+        f"{label} `{target}` 이 git 이 추적하는 **파일**이 아니다 — "
+        "디렉터리(`.` 같은)·미추적 파일·산문(`조건:나중에`)은 근거가 되지 못한다"
+    )
+
+
 def _vocabulary_problem(token: str, context: JudgeContext) -> str | None:
-    """표기 하나를 어휘 6종에 대조한다. 맞으면 None, 어긋나면 사유를 돌려준다."""
+    """표기 하나를 어휘 7종에 대조한다. 맞으면 None, 어긋나면 사유를 돌려준다."""
     if token in (_NEVER, _UNWIRED):
         return None
 
+    # 조건부를 먼저 본다. 두 정규식이 양끝 앵커라 순서가 판정을 바꾸지는 않지만,
+    # **더 구체적인 형식을 먼저 시도한다**는 것이 읽는 사람에게 보이는 편이 낫다.
+    conditional_match = _CI_CONDITIONAL_TOKEN.match(token)
+    if conditional_match is not None:
+        job, condition = conditional_match.group(1), conditional_match.group(2)
+        job_problem = _unknown_job_problem(job, context)
+        if job_problem is not None:
+            return job_problem
+        return _untracked_problem(f"`ci:{job}(조건:…)` 의 조건 정본 경로", condition, context)
+
     ci_match = _CI_TOKEN.match(token)
     if ci_match is not None:
-        job = ci_match.group(1)
-        if job not in context.ci_jobs:
-            known = ", ".join(sorted(context.ci_jobs)) or "없음"
-            return f"`ci:{job}` 인데 ci.yml 의 jobs 에 `{job}` 이 없다 (실재하는 잡: {known})"
-        return None
+        return _unknown_job_problem(ci_match.group(1), context)
 
     once_match = _ONCE_TOKEN.match(token)
     if once_match is not None:
-        target = once_match.group(1)
-        if not context.is_tracked_file(target):
-            return (
-                f"`1회성:{target}` 이 git 이 추적하는 **파일**이 아니다 — "
-                "디렉터리(`1회성:.` 같은)나 미추적 파일은 산출물 근거가 되지 못한다"
-            )
-        return None
+        return _untracked_problem("`1회성:` 의 산출물 경로", once_match.group(1), context)
 
     local_match = _LOCAL_TOKEN.match(token)
     if local_match is not None:
@@ -537,8 +591,9 @@ def _vocabulary_problem(token: str, context: JudgeContext) -> str | None:
         return None
 
     return (
-        f"어휘 밖 표기 `{token}` — 허용은 `ci:<잡>` · `local:<명령>` · `1회성:<경로>` · "
-        f"`결정:<YYYY-MM-DD>` · `{_NEVER}` · `{_UNWIRED}` 여섯뿐이다"
+        f"어휘 밖 표기 `{token}` — 허용은 `ci:<잡>` · `ci:<잡>(조건:<조건 정본 경로>)` · "
+        f"`local:<명령>` · `1회성:<경로>` · `결정:<YYYY-MM-DD>` · `{_NEVER}` · "
+        f"`{_UNWIRED}` 일곱뿐이다"
     )
 
 
@@ -952,13 +1007,14 @@ def _gate_table(reach: str) -> str:
 
 
 def test_대조군_정상_표는_통과한다() -> None:
-    """어휘 6종을 모두 쓴 정상 표. 이게 실패하면 아래 음성 대조가 무의미하다."""
+    """어휘 7종을 모두 쓴 정상 표. 이게 실패하면 아래 음성 대조가 무의미하다."""
     markdown = (
         "## 합성 정상 표\n"
         "\n"
         f"| 종료 조건 | 충족 | {_REACH_HEADER} | 근거 |\n"
         "|---|---|---|---|\n"
         "| CI 로 도는 행 | 예 | `ci:unit` | 근거 |\n"
+        f"| 조건부로 도는 행 | 예 | `ci:e2e(조건:{_FAKE_TRACKED_PATH})` | 근거 |\n"
         "| 여러 경로가 도는 행 | 예 | `ci:lint` · `ci:e2e` | 근거 |\n"
         "| 로컬로만 도는 행 | 예 | `local:uv run pytest tests/golden -m llm` | 근거 |\n"
         f"| 한 번 재고 만 행 | 예 | `1회성:{_FAKE_TRACKED_PATH}` | 근거 |\n"
@@ -997,6 +1053,69 @@ def test_음성3_존재하지_않는_CI_잡이면_실패한다() -> None:
     # 실제 CI 잡 이름은 합성 컨텍스트에서 **통과하면 안 된다** — 통과한다면 컨텍스트
     # 치환이 먹지 않고 어딘가에서 진짜 ci.yml 을 읽고 있다는 뜻이다.
     assert "ci.yml" in _sole_reason(_goal_table("예", "`ci:quality`"))
+
+
+def test_음성3b_조건부_표기의_잡_이름도_ci_yml_에_실재해야_한다() -> None:
+    """조건부 형식이 잡 실재 검사를 **우회하지 않는다.** 우회하면 괄호 한 쌍이
+    "없는 잡을 적어도 되는" 권한이 된다.
+    """
+    reason = _sole_reason(_goal_table("예", f"`ci:llm-lane(조건:{_FAKE_TRACKED_PATH})`"))
+    assert "ci.yml" in reason
+    assert "llm-lane" in reason
+    # `충족 = 아니오` 인 행도 똑같이 걸린다 — 이 규칙은 충족 값과 무관하다.
+    nightly = _goal_table("아니오", f"`ci:nightly(조건:{_FAKE_TRACKED_PATH})`")
+    assert "ci.yml" in _sole_reason(nightly)
+    # 실제 CI 잡 이름은 합성 컨텍스트에서 **통과하면 안 된다** — 통과한다면 컨텍스트
+    # 치환이 먹지 않고 어딘가에서 진짜 ci.yml 을 읽고 있다는 뜻이다. `llm-lane` 은 실물
+    # ci.yml 에 실재하는 잡이라 이 대조가 특히 잘 든다.
+    assert "ci.yml" in _sole_reason(_goal_table("예", f"`ci:quality(조건:{_FAKE_TRACKED_PATH})`"))
+
+
+def test_음성3c_조건_정본_경로가_추적_파일이_아니면_실패한다() -> None:
+    """괄호 안이 `1회성:` 과 **같은 기준**을 받는다.
+
+    이 검사가 없으면 조건부 형식은 새 자유 통과 카드다 — `ci:<실재하는 잡>(조건:나중에)`
+    한 줄로 아무 행이나 닫을 수 있고, 잡 이름이 실재하므로 규칙 4도 조용하다.
+    """
+    for bad in (
+        "`ci:unit(조건:나중에)`",  # 산문
+        "`ci:unit(조건:.)`",  # 저장소 루트
+        "`ci:unit(조건:docs)`",  # 디렉터리
+        "`ci:unit(조건:scratch.md)`",  # 미추적 파일
+        "`ci:unit(조건:.github/llm-lane-paths.txt)`",  # 실물엔 있으나 합성 컨텍스트엔 없다
+    ):
+        reason = _sole_reason(_goal_table("예", bad))
+        assert "git 이 추적하는" in reason, f"{bad} 이 통과했다: {reason}"
+    # 잡 이름은 전부 실재하는 것을 썼다 — 그래야 위 실패가 조건 경로 때문임이 확정된다.
+    assert "unit" in _FAKE_JOBS
+
+
+def test_음성3d_깨진_조건부_표기는_단순_ci_로_읽히지_않는다() -> None:
+    """**이번 형식 추가의 경계.** 잘린 조건부 표기가 `ci:<잡>` 단순형으로 읽히면 안 된다.
+
+    경계가 보이려면 잡 이름이 합성 컨텍스트에 **실재해야** 한다 — 없는 잡을 쓰면 어느
+    쪽으로 읽히든 "잡이 없다"로 걸려서 두 경로가 구분되지 않는다. 실재하는 잡을 쓰면
+    단순형으로 오독되는 순간 위반 0건이 되어 **조용히 통과**하므로, 그 상태가 실패로
+    드러난다.
+    """
+    assert "unit" in _FAKE_JOBS, "이 대조의 전제 — 잡 이름이 실재해야 오독이 침묵으로 드러난다"
+    for broken in (
+        "`ci:unit(`",  # 괄호가 열리기만 함
+        f"`ci:unit(조건:{_FAKE_TRACKED_PATH}`",  # 괄호가 안 닫힘
+        f"`ci:unit조건:{_FAKE_TRACKED_PATH})`",  # 여는 괄호가 없음
+        "`ci:unit()`",  # 조건 자리가 통째로 빔
+        "`ci:unit(조건:)`",  # 경로가 빔
+        f"`ci:unit(조건: {_FAKE_TRACKED_PATH})`",  # 경로 앞에 공백
+        f"`ci:unit (조건:{_FAKE_TRACKED_PATH})`",  # 잡 이름과 괄호 사이 공백
+        f"`ci:unit(조건={_FAKE_TRACKED_PATH})`",  # 낱말이 `조건:` 이 아님
+        f"`ci:(조건:{_FAKE_TRACKED_PATH})`",  # 잡 이름이 빔
+    ):
+        reason = _sole_reason(_goal_table("예", broken))
+        assert "어휘 밖 표기" in reason, f"깨진 조건부 표기가 통과했다: {broken} → {reason}"
+
+    # 그러면서 단순형 판정은 **그대로다** — 형식을 더하며 기존 규칙을 느슨하게 하지 않았다.
+    assert _judge_markdown(_goal_table("예", "`ci:unit`")) == []
+    assert "ci.yml" in _sole_reason(_goal_table("예", "`ci:golden`"))
 
 
 def test_음성4_존재하지_않는_1회성_경로면_실패한다() -> None:
