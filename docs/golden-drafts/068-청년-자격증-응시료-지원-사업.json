@@ -1,0 +1,29 @@
+{
+  "id": "068",
+  "title": "청년 자격증 응시료 지원 사업",
+  "category": "고용 안내문",
+  "synthetic": false,
+  "source_text": "청년 자격증 응시료 지원 사업\n\n서비스 요약\n자격증 응시료 지원을 통한 청년 역량강화 및 구직비용 부담 완화\n\n지원 대상\n18세 ~ 39세 미취업 청년으로 아래 요건을 모두 만족하는 자- 연 령 : 2026. 1. 1. 기준 18세 ~ 39세 (1986. 1. 2. ~ 2008. 1. 1. 출생자)- 주 소 : 응시일부터 신청일까지 진주시에 거주중인 자(주민등록 주소 기준)- 취업여부 : 신청일 기준 미취업자(시험 응시 후 취업 여부 무관)- 시험응시 : 2026. 1. 1.부터 실시한 시험의 실제 응시자(합격 여부 무관)- 지원내용 : 시험 응시료 실비 *1인 연 2회, 10만원 한도\n\n선정 기준\n진주시 거주(주민등록상 기준) 18 ~ 39세 청년 중 미취업자\n\n서비스 내용\n1인 연 2회, 최대 10만원 지원\n\n신청 방법\n온라인 신청 : https://young.jinju.go.kr/young/\n\n문의처\n- 진주시 인구청년정책관: [[전화번호1]]\n\n근거 법령\n- 진주시 청년 기본조례 제 17조(청년정책 사업의 추진)\n\n구비 서류\n- 2025년 진주시 청년 자격증 응시료 지원사업 추진 계획.pdf",
+  "required_facts": [
+    {
+      "canonical": "2025년",
+      "accept": []
+    },
+    {
+      "canonical": "10만원",
+      "accept": []
+    },
+    {
+      "canonical": "구청",
+      "accept": []
+    }
+  ],
+  "source": {
+    "url": "https://www.bokjiro.go.kr/ssis-tbu/twataa/wlfareInfo/moveTWAT52011M.do?wlfareInfoId=WLF00005731&wlfareInfoReldBztpCd=02",
+    "organization": "경상남도 진주시 인구청년정책관",
+    "license": "이용허락범위 제한 없음(data.go.kr)",
+    "collected_at": "2026-08-07",
+    "dataset": "data.go.kr 지자체복지서비스",
+    "record_id": "WLF00005731"
+  }
+}
