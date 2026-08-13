@@ -16,6 +16,7 @@ import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.CsvSource
+import org.junit.jupiter.params.provider.ValueSource
 import java.time.Duration
 
 /** 응답 해석과 실패 매핑을 확인한다. 벤더 오류 타입이 core 를 넘어오지 않는 것이 핵심이다. */
@@ -65,7 +66,9 @@ class AnthropicProviderResponseTest {
     @DisplayName("응답에 모델 이름이 없으면 실패로 다룬다")
     fun `모델 이름이 없으면 실패다`() {
         server.replyWith(
-            body = """{"content":[{"type":"text","text":"결과"}],"stop_reason":"end_turn","usage":{}}""",
+            body =
+                """{"content":[{"type":"text","text":"결과"}],"stop_reason":"end_turn",""" +
+                    """"usage":{"input_tokens":1,"output_tokens":1}}""",
         )
 
         assertThatThrownBy { provider().complete(conversionPrompt()) }
@@ -80,7 +83,9 @@ class AnthropicProviderResponseTest {
         "stop_sequence, STOP_SEQUENCE",
         "refusal, REFUSAL",
         "pause_turn, OTHER",
-        "'', OTHER",
+        // 빈 문자열은 이 표에서 뺐다 — `stop_reason` **누락**은 이제 실패다(게이트 09 M-11).
+        // OTHER 의 뜻은 "벤더가 우리가 모르는 값을 줬다"이지 "아무 값도 안 줬다"가 아니다.
+        // 누락 쪽은 「stop_reason 누락을 OTHER 로 접지 않는다」가 따로 본다.
     )
     @DisplayName("종료 사유를 우리 어휘로 정규화한다")
     fun `finish reason 을 매핑한다`(
@@ -194,6 +199,95 @@ class AnthropicProviderResponseTest {
             .hasMessageContaining("anthropic 호출 실패")
             .hasMessageNotContaining(TEST_API_KEY)
             .hasNoCause()
+    }
+
+    @Test
+    @DisplayName("모델 이름이 없어도 usage 를 먼저 읽는다 — 인자 안에서 던지지 않는다")
+    fun `모델 누락은 인자 평가 사고가 아니다`() {
+        // 게이트 09 M-10. 이전 판은 requireModel 을 LlmCompletion 생성자 **인자 자리**에서
+        // 불러, 던지는 순간 이미 읽어 둔 usage 가 통째로 사라졌다. 어느 인자가 먼저
+        // 평가되는지에 결과가 달린 코드였다.
+        //
+        // 지금도 예외에 토큰을 실어 보내지는 못한다(M-12 · Phase 5). 여기서 고정하는 것은
+        // **던지는 자리가 조립 전으로 옮겨졌다**는 것과, 그 실패가 usage 문제와 구분된다는 것이다.
+        server.replyWith(
+            body =
+                """{"content":[{"type":"text","text":"결과"}],"stop_reason":"end_turn",""" +
+                    """"usage":{"input_tokens":7,"output_tokens":3}}""",
+        )
+
+        assertThatThrownBy { provider().complete(conversionPrompt()) }
+            .isInstanceOf(LlmProviderException::class.java)
+            .hasMessageContaining("모델 이름")
+            .hasNoCause()
+    }
+
+    @ParameterizedTest(name = "usage = {0}")
+    @ValueSource(
+        strings = [
+            "{}",
+            """{"input_tokens": 5}""",
+            """{"input_tokens": null, "output_tokens": 2}""",
+            """{"input_tokens": "5", "output_tokens": 2}""",
+            """{"input_tokens": 1.5, "output_tokens": 2}""",
+            """{"input_tokens": -1, "output_tokens": 2}""",
+        ],
+    )
+    @DisplayName("누락·null·비정수·음수 토큰 수를 0으로 받아들이지 않는다")
+    fun `없는 값과 0을 구분한다`(usage: String) {
+        // 게이트 09 M-11(codex K-5). `asInt(0)` 은 "관측하지 못했다"를 "0이더라"로 바꿔 적는다.
+        // 사용량은 크레딧 원가의 근거이고, 0으로 접힌 수는 아무도 다시 세지 않는다.
+        server.replyWith(
+            body =
+                """{"model":"claude-sonnet-5-20260101","content":[{"type":"text","text":"결과"}],""" +
+                    """"stop_reason":"end_turn","usage":$usage}""",
+        )
+
+        assertThatThrownBy { provider().complete(conversionPrompt()) }
+            .isInstanceOf(LlmProviderException::class.java)
+            .hasMessageContaining("usage")
+    }
+
+    @Test
+    @DisplayName("출력 토큰 0은 정상 관측이다 — 누락과 구분한다")
+    fun `실려 온 0은 받아들인다`() {
+        // 빈 응답에서 output_tokens 가 실제로 0으로 온다. "없는 값을 거절한다"가
+        // "0을 거절한다"가 되면 그 정상 경로가 막힌다.
+        server.replyWith(body = emptyBody(stopReason = "end_turn"))
+
+        val completion = provider().complete(conversionPrompt())
+
+        assertThat(completion.inputTokens).isEqualTo(5)
+        assertThat(completion.outputTokens).isZero()
+    }
+
+    @Test
+    @DisplayName("stop_reason 누락을 OTHER 로 접지 않는다")
+    fun `종료 사유 누락은 실패다`() {
+        // OTHER 의 뜻은 "벤더가 우리가 모르는 값을 줬다"이지 "아무 값도 안 줬다"가 아니다.
+        // 뭉뚱그리면 절단 판정이 조용히 거짓인 응답을 성공으로 넘긴다.
+        server.replyWith(
+            body =
+                """{"model":"claude-sonnet-5-20260101","content":[{"type":"text","text":"결과"}],""" +
+                    """"usage":{"input_tokens":1,"output_tokens":1}}""",
+        )
+
+        assertThatThrownBy { provider().complete(conversionPrompt()) }
+            .isInstanceOf(LlmProviderException::class.java)
+            .hasMessageContaining("stop_reason")
+    }
+
+    @Test
+    @DisplayName("모르는 stop_reason 값은 OTHER 다 — 누락과 다른 자리다")
+    fun `모르는 값은 OTHER 다`() {
+        server.replyWith(
+            body =
+                """{"model":"claude-sonnet-5-20260101","content":[{"type":"text","text":"결과"}],""" +
+                    """"stop_reason":"장래에 생길 값","usage":{"input_tokens":1,"output_tokens":1}}""",
+        )
+
+        assertThat(provider().complete(conversionPrompt()).finishReason)
+            .isEqualTo(LlmFinishReason.OTHER)
     }
 
     @Test

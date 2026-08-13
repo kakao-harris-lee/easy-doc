@@ -249,16 +249,42 @@ class AnthropicProvider(private val settings: AnthropicSettings) : LlmProvider {
         return root
     }
 
+    /**
+     * 응답을 공통 타입으로 옮긴다. **관측을 먼저 끝내고 그다음에 만든다.**
+     *
+     * ## 인자 안에서 던지지 않는다 (게이트 09 M-10)
+     *
+     * 이전 판은 `requireModel(node)` 를 [LlmCompletion] **생성자 인자 자리에서** 불렀다.
+     * 모델 이름이 없으면 그 인자를 평가하다 던지므로 **이미 읽어 둔 usage 가 통째로
+     * 사라진다.** 어느 인자가 먼저 평가되는지에 결과가 달린 코드였고, 그것은 설계가 아니라
+     * 우연이다. 지금은 관측치를 전부 지역 변수로 확정한 뒤 마지막에 조립한다.
+     *
+     * ## 없는 값과 0을 구분한다 (게이트 09 M-11 · codex K-5)
+     *
+     * 이전 판은 `usage.path("input_tokens").asInt(0)` 으로 **누락·null·비정수를 전부 0으로**
+     * 받았고, `stop_reason` 누락도 `OTHER` 로 접었다. 둘 다 "관측하지 못했다"를
+     * "관측했더니 그 값이더라"로 바꿔 적는 형태다. 토큰이 0으로 접히면 크레딧 원가가
+     * 조용히 적게 잡히고(master-plan 5장), 그 수는 아무도 다시 세지 않는다.
+     *
+     * **남는 한계**: 스키마 위반으로 던질 때는 그때까지 읽은 usage 도 함께 사라진다.
+     * 예외에 토큰 수를 실으려면 도메인 예외 계층을 넓혀야 하고, 그것은 C-08 처방 2절
+     * (M-12)로 Phase 5 에 배정돼 있다. 여기서는 **던지는 자리를 줄이는 것**까지 한다.
+     */
     private fun parse(raw: String): LlmCompletion {
         val node = readTree(raw)
-        val finishReason = finishReason(node.path("stop_reason").stringValue(""))
-        val usage = node.path("usage")
+        // 관측 먼저. 이 셋이 확정된 뒤에야 조립한다.
+        val inputTokens = requireTokenCount(node, "input_tokens")
+        val outputTokens = requireTokenCount(node, "output_tokens")
+        val finishReason = requireFinishReason(node)
+        val model = requireModel(node)
+        val text = extractText(node)
+
         return LlmCompletion(
-            text = extractText(node),
+            text = text,
             provider = name,
-            model = requireModel(node),
-            inputTokens = usage.path("input_tokens").asInt(0),
-            outputTokens = usage.path("output_tokens").asInt(0),
+            model = model,
+            inputTokens = inputTokens,
+            outputTokens = outputTokens,
             finishReason = finishReason,
         )
     }
@@ -327,12 +353,52 @@ private fun extractText(node: JsonNode): String =
 private fun requireModel(node: JsonNode): String =
     node.path("model").stringValue("").ifEmpty { throw failure("응답에 모델 이름이 없습니다") }
 
+/**
+ * 토큰 수를 **필수로** 읽는다. 누락·null·비정수·음수는 전부 실패다.
+ *
+ * `asInt(0)` 을 쓰지 않는 이유(게이트 09 M-11): 그 기본값은 **"관측하지 못했다"를
+ * "0이더라"로 바꿔 적는다.** 사용량은 크레딧 원가의 근거이고(master-plan 5장), 0으로
+ * 접힌 수는 아무도 다시 세지 않는다. 없는 것과 0인 것은 다르다 — 출력 토큰 0은 실제로
+ * 있을 수 있는 관측이고(빈 응답), 그때는 필드가 `0` 으로 **실려 온다**.
+ *
+ * 실패 메시지에는 필드 이름만 담는다. 값·본문은 담지 않는다.
+ */
+private fun requireTokenCount(
+    node: JsonNode,
+    field: String,
+): Int {
+    val value = node.path("usage").path(field)
+    if (!value.isIntegralNumber) throw failure("응답 usage.$field 가 정수가 아닙니다")
+    val count = value.asInt()
+    if (count < 0) throw failure("응답 usage.$field 가 음수입니다")
+    return count
+}
+
+/**
+ * 종료 사유를 **필수로** 읽는다.
+ *
+ * 누락을 [LlmFinishReason.OTHER] 로 접지 않는다(게이트 09 M-11). `OTHER` 의 뜻은
+ * *"벤더가 우리가 모르는 값을 줬다"* 이지 *"벤더가 아무 값도 안 줬다"* 가 아니다. 둘을
+ * 뭉뚱그리면 절단 판정(`truncated`)이 조용히 거짓이 되는 응답을 성공으로 넘긴다 —
+ * C-08 이 닫은 자리와 같은 종류의 결함이다.
+ */
+private fun requireFinishReason(node: JsonNode): LlmFinishReason {
+    val raw = node.path("stop_reason").stringValue("")
+    if (raw.isEmpty()) throw failure("응답에 stop_reason 이 없습니다")
+    return finishReason(raw)
+}
+
 /** 벤더 어휘를 우리 어휘로 정규화한다. 이 매핑이 이 파일 밖으로 나가지 않게 한다. */
 private fun finishReason(raw: String): LlmFinishReason =
     when (raw) {
         "end_turn" -> LlmFinishReason.END_TURN
+
         "max_tokens" -> LlmFinishReason.MAX_TOKENS
+
         "stop_sequence" -> LlmFinishReason.STOP_SEQUENCE
+
         "refusal" -> LlmFinishReason.REFUSAL
+
+        // 여기 오는 것은 **벤더가 우리가 모르는 값을 준** 경우뿐이다. 누락은 위에서 막았다.
         else -> LlmFinishReason.OTHER
     }
