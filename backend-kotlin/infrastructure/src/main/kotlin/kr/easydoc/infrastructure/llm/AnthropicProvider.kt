@@ -1,7 +1,6 @@
 package kr.easydoc.infrastructure.llm
 
 import kr.easydoc.core.exceptions.ConfigurationException
-import kr.easydoc.core.exceptions.LlmEmptyResultException
 import kr.easydoc.core.exceptions.LlmProviderException
 import kr.easydoc.core.llm.LlmCompletion
 import kr.easydoc.core.llm.LlmFinishReason
@@ -255,7 +254,7 @@ class AnthropicProvider(private val settings: AnthropicSettings) : LlmProvider {
         val finishReason = finishReason(node.path("stop_reason").stringValue(""))
         val usage = node.path("usage")
         return LlmCompletion(
-            text = requireText(node, finishReason),
+            text = extractText(node),
             provider = name,
             model = requireModel(node),
             inputTokens = usage.path("input_tokens").asInt(0),
@@ -289,28 +288,37 @@ class AnthropicProvider(private val settings: AnthropicSettings) : LlmProvider {
 private fun failure(reason: String) = LlmProviderException("anthropic 호출 실패 ($reason)")
 
 /**
- * 본문을 꺼낸다. 비어 있으면 실패다.
+ * 본문을 꺼낸다. **비어 있어도 던지지 않는다.**
  *
- * 사고(thinking) 블록만 오거나 안전 분류기가 거절한 경우 — 호출 측이 빈 문자열을 정상
- * 변환 결과로 오인하지 않도록 실패로 처리한다(원본과 같은 판단).
+ * ## 던지던 것을 그만둔 이유 (교차 종합 C-08)
  *
- * 거절은 HTTP 200 으로 오므로 상태 코드만 보면 성공으로 읽힌다. 원본은 이 둘을 뭉뚱그려
- * "빈 응답"으로 처리했는데, 사용자가 취할 조치가 다르므로(거절은 입력을 바꿔야 하고,
- * 빈 응답은 우리 쪽 버그 후보다) 여기서 가른다.
+ * 이전 판은 본문이 비면 여기서 [LlmEmptyResultException] 을 던졌다. 그런데 그 순간
+ * **[LlmCompletion] 이 만들어지지 않아 `finishReason` 과 `usage` 가 함께 사라진다.**
+ * 결과가 둘이었다.
+ *
+ * 1. **출력 상한에서 잘려 본문이 비어 온 응답**(`stop_reason=max_tokens` + 빈 content)이
+ *    변환 계층에 `EMPTY_RESULT` 로 보고됐다. 요구는 `TRUNCATED` 다 — 사용자가 취할 조치가
+ *    다르다(문서를 나눠 올리기 vs 다시 시도).
+ * 2. 예외에는 토큰 수가 실리지 않아 **최종 사용량이 두 호출의 합보다 적게** 보고됐다.
+ *    보정 호출이 그렇게 끝나면 그 비용이 원가에서 통째로 빠진다.
+ *
+ * 그래서 어댑터는 **사실만 보고한다** — 본문(빈 문자열일 수 있음)·종료 사유·사용량.
+ * 그것을 실패로 볼지, 어떤 실패로 볼지는 변환 계층의 정책이다. `truncated` 를 두고 이미
+ * 같은 규약을 적어 두었는데(*"provider 가 보고하는 것은 사실뿐이고 정책은 변환 쪽이
+ * 정한다"*), 빈 본문만 그 규약 밖에 있었다.
+ *
+ * **거절(`refusal`)의 구분은 사라지지 않는다.** 어댑터가 던져서 가르던 것을
+ * [LlmFinishReason.REFUSAL] 이 값으로 나른다 — 오히려 이쪽이 더 낫다. 예외 메시지는
+ * 문자열이라 분기 조건으로 쓸 수 없었고, 실제로 변환 계층은 그것을 읽지 못했다.
+ *
+ * 사고(thinking) 블록만 온 경우도 같다 — 빈 본문 + `end_turn` 으로 나가고, 변환 계층이
+ * 후처리 뒤 비었음을 보고 `EMPTY_RESULT` 로 판정한다.
  */
-private fun requireText(
-    node: JsonNode,
-    finishReason: LlmFinishReason,
-): String {
-    val text =
-        node
-            .path("content")
-            .filter { block -> block.path("type").stringValue("") == "text" }
-            .joinToString("") { block -> block.path("text").stringValue("") }
-    if (text.isNotEmpty()) return text
-    if (finishReason == LlmFinishReason.REFUSAL) throw failure("요청이 거절되었습니다")
-    throw LlmEmptyResultException("anthropic 응답 본문이 비었습니다")
-}
+private fun extractText(node: JsonNode): String =
+    node
+        .path("content")
+        .filter { block -> block.path("type").stringValue("") == "text" }
+        .joinToString("") { block -> block.path("text").stringValue("") }
 
 /**
  * 모델 이름은 **응답에서 관측한다.** 설정값으로 대신 채우지 않는다 — 별칭 해석과 폴백이

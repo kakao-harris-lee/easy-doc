@@ -104,24 +104,45 @@ class AnthropicProviderResponseTest {
     }
 
     @Test
-    @DisplayName("본문이 비면 빈 응답 예외를 던진다")
-    fun `빈 응답을 실패로 다룬다`() {
+    @DisplayName("본문이 비어도 던지지 않고 종료 사유·사용량을 함께 돌려준다")
+    fun `빈 응답을 사실로 보고한다`() {
+        // 교차 종합 C-08. 이전 판은 여기서 예외를 던져 **LlmCompletion 이 만들어지지 않았고**,
+        // 그 순간 finishReason 과 usage 가 함께 사라졌다. 어댑터는 사실만 보고한다.
         server.replyWith(body = emptyBody(stopReason = "end_turn"))
 
-        assertThatThrownBy { provider().complete(conversionPrompt()) }
-            .isInstanceOf(LlmEmptyResultException::class.java)
+        val completion = provider().complete(conversionPrompt())
+
+        assertThat(completion.text).isEmpty()
+        assertThat(completion.finishReason).isEqualTo(LlmFinishReason.END_TURN)
+        assertThat(completion.inputTokens).isEqualTo(5)
     }
 
     @Test
-    @DisplayName("안전 분류기 거절은 빈 응답과 구분한다")
+    @DisplayName("잘려서 본문이 비어 와도 절단 사실과 사용량을 잃지 않는다")
+    fun `빈 절단 응답이 절단으로 남는다`() {
+        // **C-08 의 핵심**. 이것이 예외로 나가면 변환 계층은 절단을 EMPTY_RESULT 로 기록하고
+        // (사용자가 취할 조치가 달라진다) 토큰도 누계에서 빠진다.
+        server.replyWith(body = emptyBody(stopReason = "max_tokens"))
+
+        val completion = provider().complete(conversionPrompt())
+
+        assertThat(completion.text).isEmpty()
+        assertThat(completion.truncated).isTrue()
+        assertThat(completion.inputTokens).isEqualTo(5)
+    }
+
+    @Test
+    @DisplayName("안전 분류기 거절은 값으로 구분한다 — 예외 메시지가 아니라 finishReason 으로")
     fun `거절을 구분한다`() {
         // HTTP 200 + 빈 content + stop_reason=refusal. 상태 코드만 보면 성공으로 읽힌다.
+        // 예전에는 예외 메시지 문자열로 갈랐는데, 문자열은 분기 조건이 될 수 없어 변환
+        // 계층이 실제로는 그것을 읽지 못했다.
         server.replyWith(body = emptyBody(stopReason = "refusal"))
 
-        assertThatThrownBy { provider().complete(conversionPrompt()) }
-            .isInstanceOf(LlmProviderException::class.java)
-            .isNotInstanceOf(LlmEmptyResultException::class.java)
-            .hasMessageContaining("거절")
+        val completion = provider().complete(conversionPrompt())
+
+        assertThat(completion.finishReason).isEqualTo(LlmFinishReason.REFUSAL)
+        assertThat(completion.truncated).isFalse()
     }
 
     @ParameterizedTest(name = "HTTP {0}")

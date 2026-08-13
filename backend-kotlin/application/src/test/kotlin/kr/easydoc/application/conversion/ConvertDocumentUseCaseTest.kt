@@ -214,6 +214,107 @@ class ConvertDocumentUseCaseTest {
     }
 
     @Nested
+    @DisplayName("빈 본문 응답의 분류 — 교차 종합 C-08")
+    inner class EmptyBodyClassification {
+        // 어댑터가 빈 본문에서 예외를 던지던 시절에는 LlmCompletion 이 만들어지지 않아
+        // finishReason 과 usage 가 함께 사라졌다. 그 결과 **잘려서 비어 온 응답이
+        // EMPTY_RESULT 로 기록**되고(사용자가 취할 조치가 달라진다) 토큰도 누계에서 빠졌다.
+        //
+        // 이제 어댑터는 사실만 보고하고 분류는 이 계층이 한다. **1차와 보정 두 위치에서
+        // 모두 확인한다** — 같은 사건이라도 위치에 따라 처분이 정반대이기 때문이다.
+
+        private fun emptyReply(
+            truncated: Boolean = false,
+            refusal: Boolean = false,
+            inputTokens: Int = 0,
+            outputTokens: Int = 0,
+        ) = FakeLlmTurn.Reply(
+            text = "",
+            inputTokens = inputTokens,
+            outputTokens = outputTokens,
+            finishReason =
+                when {
+                    truncated -> LlmFinishReason.MAX_TOKENS
+                    refusal -> LlmFinishReason.REFUSAL
+                    else -> LlmFinishReason.END_TURN
+                },
+        )
+
+        @Test
+        @DisplayName("1차: MAX_TOKENS + 빈 본문은 절단이다 (빈 결과가 아니다)")
+        fun `빈 절단은 절단으로 기록된다`() {
+            val provider = FakeLlmProvider(listOf(emptyReply(truncated = true, inputTokens = 40)))
+
+            val result = useCase(provider).convert(source)
+
+            assertThat((result as ConversionResult.Failed).kind).isEqualTo(ConversionFailureKind.TRUNCATED)
+            // 예외 경로로 나가면 이 토큰이 통째로 사라진다.
+            assertThat(result.usage.inputTokens).isEqualTo(40)
+        }
+
+        @Test
+        @DisplayName("1차: END_TURN + 빈 본문은 빈 결과다")
+        fun `빈 정상종료는 빈 결과다`() {
+            val provider = FakeLlmProvider(listOf(emptyReply(inputTokens = 40)))
+
+            val result = useCase(provider).convert(source)
+
+            assertThat((result as ConversionResult.Failed).kind).isEqualTo(ConversionFailureKind.EMPTY_RESULT)
+            assertThat(result.usage.inputTokens).isEqualTo(40)
+        }
+
+        @Test
+        @DisplayName("1차: REFUSAL 은 빈 결과와 구분한다 — 값으로 가른다")
+        fun `거절은 빈 결과가 아니다`() {
+            // 우리 쪽 버그 후보(빈 응답)와 입력 특성(거절)은 사용자가 취할 조치가 다르다.
+            val provider = FakeLlmProvider(listOf(emptyReply(refusal = true)))
+
+            val result = useCase(provider).convert(source)
+
+            assertThat((result as ConversionResult.Failed).kind).isEqualTo(ConversionFailureKind.PROVIDER_ERROR)
+        }
+
+        @Test
+        @DisplayName("보정: MAX_TOKENS + 빈 본문이어도 1차 결과를 채택하고 토큰은 합산한다")
+        fun `보정의 빈 절단을 삼키고 토큰은 합산한다`() {
+            val provider =
+                FakeLlmProvider(
+                    listOf(
+                        reply(draftWithIssue, inputTokens = 120, outputTokens = 45),
+                        emptyReply(truncated = true, inputTokens = 80, outputTokens = 30),
+                    ),
+                )
+
+            val result = converted(useCase(provider).convert(source))
+
+            assertThat(result.easyText.value).isEqualTo(draftWithIssue)
+            assertThat(result.repaired).isFalse()
+            // **부른 순간 비용은 발생했다.** 예외 경로에서는 이 80/30 이 빠져 최종 사용량이
+            // 두 호출의 합보다 적게 보고됐다.
+            assertThat(result.usage.inputTokens).isEqualTo(200)
+            assertThat(result.usage.outputTokens).isEqualTo(75)
+        }
+
+        @Test
+        @DisplayName("보정: END_TURN + 빈 본문도 1차 결과를 채택하고 토큰은 합산한다")
+        fun `보정의 빈 정상종료를 삼키고 토큰은 합산한다`() {
+            val provider =
+                FakeLlmProvider(
+                    listOf(
+                        reply(draftWithIssue, inputTokens = 120, outputTokens = 45),
+                        emptyReply(inputTokens = 80, outputTokens = 30),
+                    ),
+                )
+
+            val result = converted(useCase(provider).convert(source))
+
+            assertThat(result.easyText.value).isEqualTo(draftWithIssue)
+            assertThat(result.usage.inputTokens).isEqualTo(200)
+            assertThat(result.usage.outputTokens).isEqualTo(75)
+        }
+    }
+
+    @Nested
     @DisplayName("보정 채택 판정 (CNV-04)")
     inner class RepairAdoption {
         @Test

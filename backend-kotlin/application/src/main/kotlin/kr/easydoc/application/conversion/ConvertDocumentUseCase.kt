@@ -9,6 +9,7 @@ import kr.easydoc.core.exceptions.LlmEmptyResultException
 import kr.easydoc.core.exceptions.LlmProviderException
 import kr.easydoc.core.exceptions.LlmTruncatedException
 import kr.easydoc.core.llm.LlmCompletion
+import kr.easydoc.core.llm.LlmFinishReason
 import kr.easydoc.core.llm.LlmOptions
 import kr.easydoc.core.llm.LlmPrompt
 import kr.easydoc.core.llm.LlmProvider
@@ -200,8 +201,23 @@ private fun classify(completion: LlmCompletion): Outcome =
         // provider 가 보고하는 것은 "출력 상한에서 잘렸다"는 **사실**뿐이다. 그것을 실패로
         // 볼지는 이 계층의 정책이고, 여기서는 실패다 — 잘린 본문을 성공 결과로 내보내면
         // 조용한 정보 누락이 된다(CNV-03).
+        //
+        // **빈 결과보다 먼저 본다.** 잘려서 본문이 아예 비어 온 응답이 실제로 있고
+        // (`stop_reason=max_tokens` + 빈 content), 그때 사용자가 취할 조치는 "문서를 나눠
+        // 올리기"이지 "다시 시도"가 아니다. 어댑터가 빈 본문에서 던지던 시절에는 이 분기가
+        // 아예 도달하지 못했다 — 교차 종합 C-08.
         completion.truncated -> {
             Outcome.Rejected(ConversionFailureKind.TRUNCATED)
+        }
+
+        // 안전 분류기 거절. HTTP 200 + 빈 본문으로 오므로 값으로 구분하지 않으면 "빈 응답"과
+        // 뭉뚱그려진다. 우리 쪽 버그 후보(빈 응답)와 입력 특성(거절)은 취할 조치가 다르다.
+        //
+        // 요구가 정한 실패 어휘는 셋(절단·빈 결과·호출 실패)뿐이라 새 종류를 만들지 않고
+        // **호출 실패**로 접는다 — 우리가 만든 결과가 아니라 provider 가 내주기를 거부한
+        // 것이기 때문이다. 어휘가 넓어지면 그때 갈라 낸다.
+        completion.finishReason == LlmFinishReason.REFUSAL -> {
+            Outcome.Rejected(ConversionFailureKind.PROVIDER_ERROR)
         }
 
         else -> {
