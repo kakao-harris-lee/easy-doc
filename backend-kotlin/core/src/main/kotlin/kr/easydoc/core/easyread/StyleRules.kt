@@ -1,5 +1,6 @@
 package kr.easydoc.core.easyread
 
+import kr.easydoc.core.text.isTextWhitespace
 import kr.easydoc.core.text.unicodeRegex
 
 // 쉬운 글 스타일 규칙 — 단일 정의(SSOT).
@@ -61,27 +62,6 @@ private val SENTENCE_SPLIT = unicodeRegex("""(?<=[.!?])\s+|\n+""")
  * Kotlin 문자열에서 `$` 를 이스케이프할 일이 없다(입력은 이미 양끝이 다듬어져 있다).
  */
 private val LIST_MARKER = unicodeRegex("""(?:\d+|[가-힣]|[①-⑳])\s*[.)]""")
-
-/**
- * Python `str.strip()` 과 같은 공백 집합.
- *
- * Java 의 [Char.isWhitespace] 는 NBSP 류(U+00A0·U+2007·U+202F)와 NEL(U+0085)을 공백으로
- * 보지 않는다. 이 문자들은 hwpx/pdf 추출본에 실제로 섞여 들어오고, 다듬지 않으면 문장
- * 앞뒤에 남아 길이 검사(`> 50자`)를 경계에서 뒤집는다.
- */
-private fun Char.isTextWhitespace(): Boolean = isWhitespace() || this in EXTRA_WHITESPACE
-
-/**
- * [Char.isWhitespace] 가 놓치는 공백. 눈으로 구분되지 않는 문자라 리터럴로 적지 않고
- * 코드포인트로 적는다 — 소스에 그대로 넣으면 diff 에서 보이지 않고 편집기가 조용히 지워도 모른다.
- */
-private val EXTRA_WHITESPACE: Set<Char> =
-    setOf(
-        '\u00A0', // NO-BREAK SPACE
-        '\u2007', // FIGURE SPACE
-        '\u202F', // NARROW NO-BREAK SPACE
-        '\u0085', // NEXT LINE
-    )
 
 /**
  * 마침표·물음표·느낌표·줄바꿈 기준의 단순 문장 분리.
