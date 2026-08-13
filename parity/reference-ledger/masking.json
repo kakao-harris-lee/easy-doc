@@ -1,0 +1,224 @@
+{
+  "domain": "masking",
+  "note": "Kotlin 산출물과 Python 참고값이 갈린 자리의 기록이다. 판정 근거가 아니라 리뷰에 올리기 위한 원장이며, 본문 없이 경로와 SHA-256만 남긴다. 갱신: compare_parity.py --record-reference",
+  "recorded_at": "2026-08-13T14:38:31Z",
+  "cases": {
+    "masking-card-hyphen": {
+      "status": "agree",
+      "declared": false,
+      "first_diff_path": "",
+      "reference_sha256": "bf2d37c0cbc7617698a4da7206f3d3190a3a22e5b6308e291a5d69ae1bcdcbbf",
+      "actual_sha256": "bf2d37c0cbc7617698a4da7206f3d3190a3a22e5b6308e291a5d69ae1bcdcbbf"
+    },
+    "masking-card-no-sep": {
+      "status": "agree",
+      "declared": false,
+      "first_diff_path": "",
+      "reference_sha256": "4bfcd24818d73d5d67904f71ca67e6e33bbc5dbe50df06015dfe281267c93410",
+      "actual_sha256": "4bfcd24818d73d5d67904f71ca67e6e33bbc5dbe50df06015dfe281267c93410"
+    },
+    "masking-card-spaced": {
+      "status": "agree",
+      "declared": false,
+      "first_diff_path": "",
+      "reference_sha256": "992b930b0d39ddb4ab042e5f4759c2246bfdac5bd76df52e618748fa986ae7b3",
+      "actual_sha256": "992b930b0d39ddb4ab042e5f4759c2246bfdac5bd76df52e618748fa986ae7b3"
+    },
+    "masking-card-unicode-digit-arabic": {
+      "status": "agree",
+      "declared": false,
+      "first_diff_path": "",
+      "reference_sha256": "5c4396db6e0d4a0134e5b52d60eb2e891f0a897eee2b8e88d4c190ce0417f079",
+      "actual_sha256": "5c4396db6e0d4a0134e5b52d60eb2e891f0a897eee2b8e88d4c190ce0417f079"
+    },
+    "masking-card-unicode-digit-fullwidth": {
+      "status": "agree",
+      "declared": false,
+      "first_diff_path": "",
+      "reference_sha256": "4a197821901db3c20d44c4eb39429dcd91a0501a4d7d5cde8bc22ec4acfc565c",
+      "actual_sha256": "4a197821901db3c20d44c4eb39429dcd91a0501a4d7d5cde8bc22ec4acfc565c"
+    },
+    "masking-card-zwsp": {
+      "status": "agree",
+      "declared": false,
+      "first_diff_path": "",
+      "reference_sha256": "1b86f74cff735733e429850c72bcda7d5ea56ccba58ae97622057f51dbdc3843",
+      "actual_sha256": "1b86f74cff735733e429850c72bcda7d5ea56ccba58ae97622057f51dbdc3843"
+    },
+    "masking-empty": {
+      "status": "agree",
+      "declared": false,
+      "first_diff_path": "",
+      "reference_sha256": "19efdc7521381d7cdd6e614d9fa830cea8101bca34824e266f7fe779c7832cd5",
+      "actual_sha256": "19efdc7521381d7cdd6e614d9fa830cea8101bca34824e266f7fe779c7832cd5"
+    },
+    "masking-keeps-date": {
+      "status": "agree",
+      "declared": false,
+      "first_diff_path": "",
+      "reference_sha256": "ef364f86ddebaff2e86bacdb839d8948c060e159cf0008fcd98e75743fa3b203",
+      "actual_sha256": "ef364f86ddebaff2e86bacdb839d8948c060e159cf0008fcd98e75743fa3b203"
+    },
+    "masking-keeps-long-digits": {
+      "status": "agree",
+      "declared": false,
+      "first_diff_path": "",
+      "reference_sha256": "0457bea1f69abf98482e7cb66a1721da48608ca8c24cae6798ff7f7829e21f86",
+      "actual_sha256": "0457bea1f69abf98482e7cb66a1721da48608ca8c24cae6798ff7f7829e21f86"
+    },
+    "masking-keeps-newline-split-digits": {
+      "status": "agree",
+      "declared": false,
+      "first_diff_path": "",
+      "reference_sha256": "2529edec4cc2efddc99c4f34def672564f9477ee02b8de7d91223f0397e9f30b",
+      "actual_sha256": "2529edec4cc2efddc99c4f34def672564f9477ee02b8de7d91223f0397e9f30b"
+    },
+    "masking-known-gap-rrn-fullwidth": {
+      "status": "diverge",
+      "declared": false,
+      "first_diff_path": "$.masked_text",
+      "reference_sha256": "aa6eb0d2d61665a6d1073f485f59cbd49d5730022f74d90afc6a70ab0e51b74a",
+      "actual_sha256": "c0f2d4182d8b787692e75e9be4dce8348dbd897b0c95a63c02e7a248b41a3375"
+    },
+    "masking-multi-category": {
+      "status": "agree",
+      "declared": false,
+      "first_diff_path": "",
+      "reference_sha256": "57d578be06fdf4b87c0169091c0e6f23022ff1236e92507745f28b1e7964790f",
+      "actual_sha256": "57d578be06fdf4b87c0169091c0e6f23022ff1236e92507745f28b1e7964790f"
+    },
+    "masking-multi-same-category": {
+      "status": "agree",
+      "declared": false,
+      "first_diff_path": "",
+      "reference_sha256": "0721ce28e4c3f8c7aee60f2cea429e620d240dada599c30eb0b5447f83b18d3d",
+      "actual_sha256": "0721ce28e4c3f8c7aee60f2cea429e620d240dada599c30eb0b5447f83b18d3d"
+    },
+    "masking-newline": {
+      "status": "agree",
+      "declared": false,
+      "first_diff_path": "",
+      "reference_sha256": "10d47d7ec2c4091d4aa80520b52393da02a27e3e73c2057c96682d2c9e99a7b9",
+      "actual_sha256": "10d47d7ec2c4091d4aa80520b52393da02a27e3e73c2057c96682d2c9e99a7b9"
+    },
+    "masking-plain": {
+      "status": "agree",
+      "declared": false,
+      "first_diff_path": "",
+      "reference_sha256": "0e03f80e83de4a0b48b8ae9c45e3edba3fb2b289ceed4a95bc9a33e8631ed69d",
+      "actual_sha256": "0e03f80e83de4a0b48b8ae9c45e3edba3fb2b289ceed4a95bc9a33e8631ed69d"
+    },
+    "masking-rrn-bom": {
+      "status": "agree",
+      "declared": false,
+      "first_diff_path": "",
+      "reference_sha256": "8f0765ab1f894eaf0fb2225717650ac4f5f7bea9cc56c1e9c438813d0ec57725",
+      "actual_sha256": "8f0765ab1f894eaf0fb2225717650ac4f5f7bea9cc56c1e9c438813d0ec57725"
+    },
+    "masking-rrn-foreigner": {
+      "status": "agree",
+      "declared": false,
+      "first_diff_path": "",
+      "reference_sha256": "9436bd6183f26d71434b33376314d79eefde5e44774aa2ab82b20396618062c2",
+      "actual_sha256": "9436bd6183f26d71434b33376314d79eefde5e44774aa2ab82b20396618062c2"
+    },
+    "masking-rrn-fs": {
+      "status": "agree",
+      "declared": false,
+      "first_diff_path": "",
+      "reference_sha256": "131a482fe30b0097e5369b31452a4b5f6d92675db166edc928a5dbeb0e217b32",
+      "actual_sha256": "131a482fe30b0097e5369b31452a4b5f6d92675db166edc928a5dbeb0e217b32"
+    },
+    "masking-rrn-hyphen": {
+      "status": "agree",
+      "declared": false,
+      "first_diff_path": "",
+      "reference_sha256": "ae1475ebb8d0cb8d6d359f889ff124412bd1a8688a25861ed8a5932a83bbbc9b",
+      "actual_sha256": "ae1475ebb8d0cb8d6d359f889ff124412bd1a8688a25861ed8a5932a83bbbc9b"
+    },
+    "masking-rrn-no-sep": {
+      "status": "agree",
+      "declared": false,
+      "first_diff_path": "",
+      "reference_sha256": "b7dd169e08651ebf6e9efe38491cb443461f807a806230b1a417e6370207bc95",
+      "actual_sha256": "b7dd169e08651ebf6e9efe38491cb443461f807a806230b1a417e6370207bc95"
+    },
+    "masking-rrn-nul": {
+      "status": "agree",
+      "declared": false,
+      "first_diff_path": "",
+      "reference_sha256": "b3329ff317ff1d64bdcab683341eb05b2e67942d4d5ad173ce54535f37f5b89b",
+      "actual_sha256": "b3329ff317ff1d64bdcab683341eb05b2e67942d4d5ad173ce54535f37f5b89b"
+    },
+    "masking-rrn-soft-hyphen": {
+      "status": "agree",
+      "declared": false,
+      "first_diff_path": "",
+      "reference_sha256": "cc6f448a1d58170e40bea56b36a7d2bfa114b8cca93401dd240bda21ecb1b655",
+      "actual_sha256": "cc6f448a1d58170e40bea56b36a7d2bfa114b8cca93401dd240bda21ecb1b655"
+    },
+    "masking-rrn-spaced": {
+      "status": "agree",
+      "declared": false,
+      "first_diff_path": "",
+      "reference_sha256": "1ec6e857cdd26ceabb5f9001833b3e7a139d047f77d4465a3f0d30fb0d058ac9",
+      "actual_sha256": "1ec6e857cdd26ceabb5f9001833b3e7a139d047f77d4465a3f0d30fb0d058ac9"
+    },
+    "masking-rrn-tab": {
+      "status": "agree",
+      "declared": false,
+      "first_diff_path": "",
+      "reference_sha256": "ae1c8c3b33c88b1faaaa83e8bf6cba455b71e960a4ae5ddf9a2119efd6b20f61",
+      "actual_sha256": "ae1c8c3b33c88b1faaaa83e8bf6cba455b71e960a4ae5ddf9a2119efd6b20f61"
+    },
+    "masking-rrn-unicode-digit-head": {
+      "status": "agree",
+      "declared": false,
+      "first_diff_path": "",
+      "reference_sha256": "ee85eeeb858f8f4a78042e27ce8a9affbe39dc6399cfe729c5ff0eeb7e387853",
+      "actual_sha256": "ee85eeeb858f8f4a78042e27ce8a9affbe39dc6399cfe729c5ff0eeb7e387853"
+    },
+    "masking-rrn-us": {
+      "status": "agree",
+      "declared": false,
+      "first_diff_path": "",
+      "reference_sha256": "ecfb572790388d562489c95da66f66de31e5e6dc4a596c7da18bbf81b70fd39e",
+      "actual_sha256": "ecfb572790388d562489c95da66f66de31e5e6dc4a596c7da18bbf81b70fd39e"
+    },
+    "masking-rrn-zwsp": {
+      "status": "agree",
+      "declared": false,
+      "first_diff_path": "",
+      "reference_sha256": "c804f088592336e148494b16a890b6a6a1c5649c53897dd8b00aa592bf59924a",
+      "actual_sha256": "c804f088592336e148494b16a890b6a6a1c5649c53897dd8b00aa592bf59924a"
+    },
+    "masking-rrn-zwsp-inside-tail": {
+      "status": "agree",
+      "declared": false,
+      "first_diff_path": "",
+      "reference_sha256": "d3c94fee56e4ac77ac3a91781cbdf5bd421f735dffa7829695c95ed5c603ca61",
+      "actual_sha256": "d3c94fee56e4ac77ac3a91781cbdf5bd421f735dffa7829695c95ed5c603ca61"
+    },
+    "masking-scope-out-account": {
+      "status": "agree",
+      "declared": false,
+      "first_diff_path": "",
+      "reference_sha256": "99cf939f4799e6fb5726d49bb43adce4bcaa6e5006d247b32aea9210bbb1cb02",
+      "actual_sha256": "99cf939f4799e6fb5726d49bb43adce4bcaa6e5006d247b32aea9210bbb1cb02"
+    },
+    "masking-scope-out-email": {
+      "status": "agree",
+      "declared": false,
+      "first_diff_path": "",
+      "reference_sha256": "636b1fc1b88f3cd2c2f61a80ede336e59e24727d9c0bd7fe38dd2df187e8b2f2",
+      "actual_sha256": "636b1fc1b88f3cd2c2f61a80ede336e59e24727d9c0bd7fe38dd2df187e8b2f2"
+    },
+    "masking-scope-out-phone": {
+      "status": "agree",
+      "declared": false,
+      "first_diff_path": "",
+      "reference_sha256": "7f74b6d88279f5a9d9dd8bb147b3128e188edc9e8b9793bd265d236438f2d068",
+      "actual_sha256": "7f74b6d88279f5a9d9dd8bb147b3128e188edc9e8b9793bd265d236438f2d068"
+    }
+  }
+}

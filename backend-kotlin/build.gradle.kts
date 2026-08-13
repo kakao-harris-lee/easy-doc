@@ -17,6 +17,10 @@ plugins {
 // parity 산출물의 저장소 루트 기준 경로. backend-kotlin/ 이 Gradle 루트이므로 한 단계 위다.
 val parityActualDir: File = File(rootDir.parentFile, "parity/actual")
 
+// parity fixture(입력)의 경로. 산출물과 달리 **읽기 전용**이라 test·parityHarness 가 같은
+// 곳을 본다 — 사본을 두면 어느 것이 정본인지 알 수 없어진다.
+val parityFixturesDir: File = File(rootDir.parentFile, "parity/fixtures")
+
 // Kotlin 이 포팅을 끝냈다고 선언한 parity 도메인 목록. 파일 자체의 설명은 그 안에 있다.
 val parityDomainsFile: File = rootProject.file("parity-domains.txt")
 
@@ -118,6 +122,14 @@ subprojects {
         // Testcontainers 컨테이너 재사용 — 테스트 클래스마다 새 PostgreSQL을 띄우면
         // 전체 실행이 분 단위로 늘어난다.
         systemProperty("testcontainers.reuse.enable", "true")
+
+        // parity fixture(입력)는 읽기 전용이라 test·parityHarness 가 같은 곳을 본다.
+        // 산출 경로(parity.actual.dir)와 달리 실행 종류에 따라 갈리지 않는다.
+        systemProperty("parity.fixtures.dir", parityFixturesDir.absolutePath)
+
+        // 소스 전수를 훑는 탐지기(허용목록 가드 등)가 쓰는 루트. 테스트 작업 디렉터리는
+        // 모듈 디렉터리라, 코드에서 상대 경로로 거슬러 올라가면 모듈이 늘 때 조용히 어긋난다.
+        systemProperty("easydoc.kotlin.source.root", rootDir.absolutePath)
     }
 
     // 일반 `test` 는 게이트 디렉터리를 건드리지 않는다. parity 산출물은 모듈 build/ 안에
@@ -147,6 +159,8 @@ subprojects {
             excludeTags("llm")
         }
         systemProperty("parity.actual.dir", parityActualDir.absolutePath)
+        systemProperty("parity.fixtures.dir", parityFixturesDir.absolutePath)
+        systemProperty("easydoc.kotlin.source.root", rootDir.absolutePath)
         // 입력이 같아도 매번 다시 써야 게이트가 최신 산출물을 본다.
         outputs.upToDateWhen { false }
     }
