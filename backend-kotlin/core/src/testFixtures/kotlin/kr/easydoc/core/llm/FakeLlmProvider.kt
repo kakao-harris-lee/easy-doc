@@ -39,13 +39,30 @@ data class FakeLlmCall(
  * 아예 올라오지 않고, `application`·`worker` 테스트는 `testFixtures(project(":core"))`
  * 로 가져다 쓸 수 있다.
  */
-class FakeLlmProvider(turns: List<FakeLlmTurn>) : LlmProvider {
+class FakeLlmProvider(
+    turns: List<FakeLlmTurn>,
+    /**
+     * 어댑터가 완성 요청 **1건**을 만들기 위해 실제로 전송하는 횟수.
+     *
+     * 실제 어댑터(`AnthropicProvider`)는 재시도하지 않으므로 기본값이 1이다. 이 값을 올리면
+     * "타임아웃·5xx 때문에 같은 요청을 여러 번 전송하는 어댑터"를 흉내 낸다.
+     *
+     * **이 수는 변환 쪽에 보이지 않아야 한다.** 호출 상한(문서당 2회)이 세는 단위는 완성
+     * 요청이지 전송 시도가 아니다 — 합쳐 세면 상한이 재시도 설정에 따라 흔들리고, 모델에게
+     * 실제로 몇 번 물었는지도 잃는다(요구사항 인벤토리 §3.1 (가) 4).
+     */
+    private val transportAttemptsPerCall: Int = 1,
+) : LlmProvider {
     override val name: String = "fake"
 
     private val remaining = ArrayDeque(turns)
 
     /** 지금까지 받은 호출. 순서·인자를 그대로 보존한다. */
     val calls: MutableList<FakeLlmCall> = mutableListOf()
+
+    /** 전송 시도 누계. [calls] 와 **따로** 센다 — 두 수를 가르는 것이 CNV-01 의 요구다. */
+    var transportAttempts: Int = 0
+        private set
 
     /** 아직 쓰이지 않은 응답 수. 테스트가 "준비한 만큼 정확히 불렸는가"를 단언할 수 있다. */
     val unusedTurns: Int
@@ -56,6 +73,8 @@ class FakeLlmProvider(turns: List<FakeLlmTurn>) : LlmProvider {
         options: LlmOptions,
     ): LlmCompletion {
         calls += FakeLlmCall(prompt = prompt, options = options)
+        // 실패한 완성 요청도 전송은 일어났다. 성공 경로에서만 세면 재전송 계측이 거짓이 된다.
+        transportAttempts += transportAttemptsPerCall
         // 소진 시 조용히 넘기지 않는다 — 준비한 응답 수와 실제 호출 수의 불일치는
         // 대개 호출 상한 계약(문서당 최대 2회)이 깨졌다는 신호다.
         // 원본은 IndexError 를 그대로 노출했다. 여기서는 사유를 담은 예외로 바꾼다.
