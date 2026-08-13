@@ -426,3 +426,252 @@ Phase 6에서 다시 확인할 것:
   실행하지 않았다. **Phase 3에서 단언 A·B를 먼저 돌려 실측하고, 어긋나면 §5를 고친 뒤
   Phase 3을 닫는다.**
 - 통보 대상: `kotlin-implementer`(구현 규칙), `parity-verifier`(단언 범위).
+
+---
+
+## 2026-08-13 · OQ-2 · OQ-3 · OQ-4 · OQ-5 — 미결 계약 질문 4건 정식 등록 (계약 파일 무변경)
+
+| 항목 | 값 |
+|---|---|
+| 계기 | 리뷰 게이트 `07_core-rebuild` 교차 종합 §6 순위 9·12·15가 `contract-keeper`로 회부(X-10·X-12·X-13) + `parity-verifier` §G 추출이 회부(`failure_code`) |
+| 출처 | `docs/migration/_workspace/reviews/07_core-rebuild_cross.md`(OQ-2·3·4) / `docs/migration/_workspace/02_parity-verifier_conversion-spec.md` §6 갈림 후보 ② + `00_requirements-inventory.md` §9-E(OQ-5) |
+| 성격 | **등록이지 개정이 아니다.** `contracts/easy-doc-v1.yaml`은 이번에 **한 글자도 바꾸지 않았다** — `info.version` 1.1.0 유지 |
+| 해결 시점 | OQ-2 Phase 4 · OQ-3 Phase 3 · OQ-4 Phase 4 · OQ-5 Phase 5(늦어도 `app/**` 삭제 전) |
+| 통보 대상 | `kotlin-implementer`(OQ-3 공동·OQ-5 구현 전제), `parity-verifier`(OQ-4·OQ-5), `privacy-gate`(OQ-2 인접), 리더(OQ-2·OQ-5 판정 가능성) |
+
+### 왜 "등록"이 그 자체로 작업인가
+
+OQ-2는 커밋 `8412b89` 메시지가 *"contract-keeper 에 넘겼다"*고 적은 항목이다. **확인 결과
+아무도 받지 않았다** — 등록 직전 실측으로 이 changelog와 `00_contract-keeper_test-plan.md`,
+그리고 `contracts/easy-doc-v1.yaml` 세 파일 모두에서 `ambiguous`·`withheld`·`foreign`·
+`masked_text`·`[[!` 가 **각각 0회**였다(교차 종합 C-1의 주장과 일치, 독립 재확인).
+
+**인계가 커밋 메시지 안에서만 살아 있는 상태**는 그 자체로 결함이다. 커밋 메시지는 검색 대상이
+아니고 원장이 아니며, 다음 Phase가 읽는 문서가 아니다. 이 절의 목적은 답을 정하는 것이 아니라
+**질문이 사라지지 않는 자리에 놓는 것**이다. 답은 각 항목의 해결 Phase에서 정한다.
+
+---
+
+### OQ-2 (= 교차 종합 X-10 = `migration-reviewer` C-1) · 해결 Phase 4
+
+**복원 상태 `ambiguous`·`withheld`가 내보내기 409 조건 어디에도 대응되지 않는다.**
+
+#### 확인한 사실 (실측)
+
+`backend-kotlin/core/src/main/kotlin/kr/easydoc/core/privacy/Masking.kt`의
+`restoreForExport(draft, reviewed, items)`는 결과를 `PlaceholderRestoration` 5필드로 낸다
+(`:119-125` 정의, `:527-548` 산출). 그중 셋이 "복원하지 않았다"를 뜻한다.
+
+| 상태 | 뜻 | 그때 본문에 남는 것 | 현행 계약 대응 |
+|---|---|---|---|
+| `missing` | 우리가 만든 자리표시자가 본문에서 **사라졌다**(0회) | 그 자리의 정보가 통째로 빠짐 | **있다** — `ConversionResponse.missing_placeholders` + 409 `missing_placeholders` |
+| `ambiguous` | 같은 자리표시자가 **2회 이상** 나타났다 → 한 곳도 복원하지 않는다 | `[[주민등록번호1]]`이 **글자 그대로** 남음 | **없다** |
+| `withheld` | **검수본이 없어서**(`reviewed == null`) 복원을 보류했다 | 같음 | **없다** |
+| `foreign` | 자리표시자 모양이지만 우리가 만들지 않은 토큰 | 그대로 둠(설계된 무동작) | 없음 — 문제 아님 |
+
+계약의 409는 정확히 둘이고 **둘 다 `missing`에 걸린다**(`contracts/easy-doc-v1.yaml:1043-1049`
+설명, `:1097-1105` 응답 예시). `ambiguous`인 본문은 자리표시자가 **사라진 게 아니라 늘어난**
+것이므로 `missing`이 비어 있고, `withheld`인 본문도 개수 판정을 통과한 것들이라 `missing`이
+비어 있다. **둘 다 409에 걸리지 않는다 → 자리표시자가 박힌 문서가 200으로 나간다.**
+
+#### 이것이 이론적 위험이 아닌 이유
+
+유입 경로가 실재한다. 입력에 `[[주민등록번호1]]`이 이미 있으면 마스킹이 이를
+`[[!주민등록번호1]]`로 탈출시켜 내보내고(`Masking.kt:222-223`의 `escapeLookalikes`,
+`:343`에서 마스킹 입력에 적용), 그 문자열이 **검수 화면에 그대로 보인다.** 검수자가 그 `!`를
+오타로 보고 지우면 그 순간 같은 토큰이 둘이 되어 `ambiguous`가 된다. `withheld` 쪽은 더 흔하다 —
+**검수를 한 번도 하지 않고 바로 내보내면 항상 발생한다**(Python은 이 경우 초안을 복원했고,
+Kotlin은 `8412b89`로 보류하도록 바뀌었다).
+
+#### 미결 질문 (여기서 답하지 않는다)
+
+1. `withheld`가 비어 있지 않을 때 내보내기를 **409로 막는가, 알리며 200으로 내보내는가.**
+2. `ambiguous`가 비어 있지 않을 때는 어떻게 하는가. `withheld`와 **같은 처분인가 다른가** —
+   `withheld`는 "사람이 아직 안 봤다"(절차 미완)이고 `ambiguous`는 "본문이 우리가 만든
+   모양이 아니다"(내용 이상)라 성격이 다르다.
+3. 막는다면 `detail` 문구는 무엇인가. 현행 `missing_placeholders` 문구
+   (*"변환에서 유실된 개인정보 표시가 있습니다 — 검수 화면에서 수정 후 내보내세요"*)는
+   `withheld`에 대해 **사실과 다르다**(유실된 것이 없다).
+4. 조회 응답(`ConversionResponse`)에 `missing_placeholders`와 나란히 `ambiguous`를 노출할
+   것인가. 노출하면 React `ReviewEditor:143-146`이 쓰는 것과 같은 종류의 경고를 띄울 수 있다.
+5. `foreign`은 계약 밖으로 둔다 — 무동작이 설계이고 노출 요구가 없다. **묻지 않기로 한
+   것도 판정이므로 적어 둔다.**
+
+#### 답을 미리 좁히지 않기 위한 메모
+
+- `core`는 **판정 수단만** 제공하고 막을지 여부는 호출부(application)에 넘긴다고 스스로
+  적어 두었다(`Masking.kt:440-444` 주석). 즉 계약이 어느 쪽을 정하든 core는 그대로다.
+  **이 질문은 순수하게 계약 질문이다.**
+- 라벨은 개인정보가 아니다(계약이 `missing_placeholders`에 대해 이미 그렇게 판정했다).
+  따라서 `ambiguous`·`withheld`를 응답에 싣는 것 자체는 INV-01과 충돌하지 않는다.
+- **`privacy-gate` 인접**: 커밋 `8412b89`가 *"복원은 사람 제출 본문에만"*을 감사 항목으로
+  추가할지도 함께 물었다. 그것은 I-항목 질문이지 계약 질문이 아니므로 여기서 다루지 않는다.
+
+#### 단독으로 정하지 않는 것
+
+409를 **추가**하는 것은 React 런타임 코드가 의존하는 동작을 바꾼다 —
+`frontend/src/components/ReviewEditor.tsx:119`가 내보내기 409를 잡아 백엔드 `detail` 문구를
+그대로 보여 준다. 문구만 바뀌면 화면은 깨지지 않지만, **지금까지 내려받히던 문서가 갑자기
+막히는 것**은 사용자에게 보이는 동작 변경이다. 처분이 "막는다"로 기울면 계약·백엔드·프런트를
+같은 변경 단위로 묶어야 하므로 **리더에게 올린다.**
+
+---
+
+### OQ-3 (= X-12 = C-2) · 해결 Phase 3 · `kotlin-implementer` 공동
+
+**계약이 못박은 값을 실행 검사가 계약 파일에서 읽지 않는다 — 계약 값이 테스트에 수기 복제된다.**
+
+계약은 자리표시자를 앵커까지 못박았다(`contracts/easy-doc-v1.yaml:1680`
+`MaskedItemResponse.placeholder`, `:1740` `missing_placeholders.items`:
+`^\[\[(주민등록번호|카드번호)[0-9]+\]\]$`). 대응하는 Kotlin 단언은
+`backend-kotlin/core/src/test/kotlin/kr/easydoc/core/privacy/MaskingTest.kt:187-188`인데
+**문자열 두 개를 하드코딩**한다. 바로 위 `:185-186` 주석은 *"계약이 이 한국어 문자열을 enum으로
+못박았다"*고 말하지만 계약 파일을 읽지 않는다.
+
+전수 확인 결과 `backend-kotlin/**`에서 `easy-doc-v1`을 언급하는 자리는 **전부 주석**이다
+(`MaskingTest.kt:185`, `Masking.kt:12`·`:173`, `CorsContractTest.kt:18`,
+`PrivateResponseHeadersContractTest.kt:19`, `HealthContractTest.kt:18`, `CorsConfig.kt:15`,
+`HealthController.kt:11`, `GlobalExceptionHandler.kt:67`·`:418`). **파일을 여는 코드는 0건이다.**
+
+계약을 실제로 파싱하는 코드는 저장소에 있다 —
+`.claude/skills/python-kotlin-parity/scripts/dump_parity_fixtures.py`의 `CONTRACT_PATH`와
+`compare_parity.py::check_placeholder_scheme`. 그러나 그 경로는 **도달 0**이다(교차 종합 X-1).
+즉 계약↔구현 대조는 현재 **주석으로만 존재한다.**
+
+미결 질문: 계약 파일을 테스트가 **직접 파싱**하게 할 것인가(어느 계층에서·어느 값까지),
+아니면 계약에서 **생성한 산출물**을 테스트가 읽게 할 것인가(Phase 6 OpenAPI 생성 타입 교체와
+같은 기제). 전자는 즉시 가능하지만 YAML 파서 의존이 붙고, 후자는 프런트와 기제를 공유하지만
+Phase 6까지 공백이 남는다.
+
+**계약 조항 자체는 바뀌지 않는다** — 이 항목은 계약의 *내용*이 아니라 *도달*의 문제다.
+그래서 `x-change-policy`의 G1~G4 근거가 필요 없다.
+
+---
+
+### OQ-4 (= X-13 = C-3) · 해결 Phase 4
+
+**마스킹된 본문 채널이 계약에 필드로 존재하지 않는다.**
+
+`grep masked_text contracts/easy-doc-v1.yaml` → **0회**(재확인). `[[!` → **0회**.
+
+#### 회부 문구를 그대로 받지 않고 갈라 둔다
+
+리더 회부 문구는 *"`masked_items[].original` 등 `masked_text` 채널"*이라고 묶었으나,
+**둘의 상태가 다르다.** 뭉뚱그리면 이미 있는 것을 다시 만들거나 없는 것을 있다고 착각한다.
+
+- **`masked_items[].original` — 이미 계약에 있다.** `contracts/easy-doc-v1.yaml:1657`
+  (required), `:1686`(정의), `:1660-1667`(원문이 실리는 근거와 캐시 금지 헤더 연결),
+  `:945`·`:601`(고위험 응답 지정). **공백이 아니다.**
+- **마스킹된 본문 자체 — 계약에 없다.** LLM에 보내지고 검수 화면 좌측에 보이는 그 문자열이다.
+  자리표시자(`[[주민등록번호1]]`)와 **탈출 표기**(`[[!주민등록번호1]]`)가 담기는 채널인데
+  계약에 이름이 없다.
+
+#### 지금 계약 위반은 아니다
+
+`easy_text`·`edited_text`에는 pattern 제약이 없으므로(`:1717-1728`) 그 안에 탈출 표기가 실려도
+계약을 어기지 않는다. **이 항목은 위반이 아니라 공백이다** — 사용자가 보게 되는 문자열이
+계약 밖에 있다는 것.
+
+#### 미결 질문
+
+1. 마스킹 본문을 응답 필드로 **계약화할 것인가**(새 필드) — 아니면 "이 채널은 계약이 기술하지
+   않는다"를 명시적으로 적을 것인가. 후자도 판정이다.
+2. 탈출 표기 `[[!<범주><n>]]`를 계약 어휘로 **승격할 것인가.** 승격하면 프런트가 이를 알아보고
+   검수 화면에서 설명할 수 있고(OQ-2의 유입 경로가 줄어든다), 승격하지 않으면 사용자는 정체
+   불명의 `!`를 보고 지운다 — **OQ-2와 이 지점에서 만난다. 두 항목은 함께 판정해야 한다.**
+3. 계약화한다면 그 필드가 `original`처럼 고위험(캐시 금지 필수) 범주인가. 마스킹 본문에는
+   정의상 주민등록번호·카드번호가 없지만 **전화번호·이메일·계좌번호는 그대로 있다**
+   (2026-08-12 범주 축소의 감수 대가). 이 사실이 판정에 들어가야 한다.
+
+---
+
+### OQ-5 (`parity-verifier` §6 갈림 후보 ② = 인벤토리 §9-E) · 해결 Phase 5
+
+**계약이 `failure_code`를 enum이 아니라 "구현을 되짚는 규칙"으로 정의한다.**
+
+현행 조항(`contracts/easy-doc-v1.yaml:1750-1755`):
+
+> 실패 사유 코드 = 예외 클래스명. 큐 등록 실패는 예외 클래스명이 아닌 `"EnqueueFailed"`를 쓴다.
+
+#### 왜 이것이 결함 후보인가
+
+**값의 정본이 계약이 아니라 Python 클래스 이름이다.** 새로 쓰는 Kotlin이 이 계약을 지키려면
+예외 클래스를 `LLMTruncatedError`·`LLMEmptyResultError`·`LLMProviderError`로 **베껴 이름
+지어야** 하고, 그것은 CLAUDE.md 「하지 말 것」의 *"명세가 있는 것을 확인하겠다고 Python 코드
+읽기"*·*"Python 출력을 정답으로 삼기"* 둘 다에 걸린다. 게다가 **Python을 지우면 이 규칙은
+가리킬 대상이 없어진다** — 규칙이 자기 정의를 잃는다. 근거 후보는 **G4**(지킬 수 없거나
+지켜지지 않는 형태)이며, `x-change-policy`가 요구하는 지목 가능한 근거를 갖췄다.
+
+#### 지금 fixture가 하는 것
+
+`repair-adoption` fixture는 계약 문자열이 아니라 요구 수준 이름
+`failure_kind`(`truncated`·`empty_result`·`provider_error`)로 **셋을 구분하는가**만 판정한다.
+문자열이 무엇이어야 하는가는 판정하지 않는다. 그래서 CNV-02는 현재 "구분한다"까지만 판정되고
+"무엇으로 부르는가"는 **아무도 판정하지 않는다.**
+
+#### 후보안 (병기만 한다 — 확정하지 않는다)
+
+**후보 A — 요구 수준 이름 enum.** `failure_code`를 닫힌 집합으로 열거하고 값을 구현에서
+분리한다. `parity-verifier`가 제안한 셋이 출발점이다.
+
+**⚠ 셋으로는 부족하다 — 실제 값은 다섯이다.** 계약과 React가 이미 다루는 코드는
+`LLMTruncatedError`·`LLMEmptyResultError`·`LLMProviderError` **셋에 더해**
+`ProviderUnavailable`(설정 미배선)·`EnqueueFailed`(큐 등록 실패) **둘**이 있다
+(`frontend/src/conversion/failureMessages.ts:23-47`, 계약 `:777`·`:1754`). 뒤의 둘은 변환
+파이프라인 실패가 아니라 **배선·인프라 실패**라 요구 수준 이름이 따로 필요하다. 셋만 열거하는
+enum은 두 값을 갈 곳 없게 만든다.
+
+**후보 B — 규칙을 유지하되 정본을 계약으로 옮긴다.** "예외 클래스명"이라는 되짚기를 지우고
+계약이 문자열을 열거하되 **현행 값 다섯을 그대로 채택**한다. Kotlin은 계약의 문자열을 내면
+되고 예외 클래스 이름은 자유다. React 무영향.
+
+**후보 C — 현행 유지.** 근거를 대지 못하면 바꾸지 않는 것이 기본값이다. 다만 이 경우
+`app/**` 삭제 시점에 조항이 가리킬 대상을 잃는다는 사실을 명시해야 한다.
+
+#### React 영향 — **런타임 코드가 이 값에 의존한다** (실측)
+
+`frontend/src/conversion/failureMessages.ts`가 코드 문자열 다섯을 **키로 하는 맵**을 갖고,
+`frontend/src/pages/ConversionPage.tsx:36`이 `failureMessage(conversion.failure_code)`로
+화면 문구·조언·재시도 버튼 노출을 결정한다. 테스트 픽스처만이 아니라 **런타임 경로다.**
+
+**화면은 깨지지 않지만 조용히 나빠진다.** 모르는 코드는 `UNKNOWN`으로 떨어지므로
+(`failureMessages.ts:66-71`) 값이 바뀌면 예외가 아니라 **모든 실패가 일반 문구 하나로 뭉개지고**,
+`LLMTruncatedError`의 `retryable: false`가 `UNKNOWN`의 `retryable: true`로 뒤집혀
+**"문서를 나눠 올리세요"가 "다시 시도하세요"로 바뀐다** — 사용자가 같은 실패를 반복하게 된다.
+크래시가 없어서 **테스트로도 잡히지 않는 종류의 회귀**다(`ConversionPage.test.tsx:62`는
+`'LLMTruncatedError'` 한 값만 단언한다).
+
+→ 후보 A·B 어느 쪽으로 가든 `failureMessages.ts`를 **같은 변경 단위**에서 함께 고쳐야 한다.
+`x-change-policy.escalate_to_leader` 2번(React 런타임 의존)에 해당하므로 **리더 판정 대상**이다.
+
+#### 함께 정리해야 하는 인접 조항
+
+`components/responses/BadGateway`(`:1427-1435`)도 `LLMProviderError`·`QueueUnavailableError`를
+이름으로 부른다. 다만 **성격이 다르다** — 그쪽은 "어떤 예외가 502로 매핑되는가"라는 구현 대응표
+설명이고, `failure_code`는 **와이어에 실려 나가는 값**이다. 값이 아닌 설명은 같은 문제가
+아니므로 **OQ-5의 범위는 `failure_code` 하나로 한정한다.** (인접 조항을 함께 손대고 싶은
+충동과 고쳐야 할 결함을 가르는 자리다.)
+
+---
+
+### 계약 파일 변경 없음 — 확인
+
+이번 등록으로 `contracts/easy-doc-v1.yaml`은 바뀌지 않았다. `x-changelog`·`x-improvements`에
+항목을 넣는 것은 **조항 확정과 같은 커밋**에서 한다 — 미결 상태를 정본 스펙에 적으면 구현자가
+"계약이 이렇게 정했다"로 읽을 여지가 생긴다. 미결의 정본은 이 changelog와
+`00_contract-keeper_test-plan.md` §3-1이다.
+
+### 영향받는 검증
+
+`00_contract-keeper_test-plan.md`에 **X-J1~X-J4**를 추가했다. 넷 모두 **조항 미확정**으로
+표시했다 — 존재하지 않는 조항을 고정하는 테스트는 쓸 수 없다. 각 항목이 확정되는 Phase에
+테스트가 함께 자란다(§5 실행 시점 표에 반영).
+
+### 통보
+
+| 대상 | 내용 |
+|---|---|
+| `kotlin-implementer` | **OQ-3 공동 담당** — 계약 파일을 테스트가 직접 읽는 기제. **OQ-5는 구현 전제** — Phase 5 변환 파이프라인을 쓰기 전에 `failure_code` 값 집합이 정해져야 하고, **그전까지 Python 예외 클래스 이름을 베껴 짓지 마라.** OQ-2는 core 무변경(판정 수단은 이미 있다) |
+| `parity-verifier` | **OQ-5**: `failure_kind` 3종은 계약 확정 전까지 유효한 임시 이름이다. 확정되면 fixture를 그 값으로 재생성한다 — 다만 **실제 값은 다섯**이므로 `ProviderUnavailable`·`EnqueueFailed`에 해당하는 두 자리를 어떻게 다룰지 함께 판정한다. **OQ-4**: 마스킹 본문 채널이 계약 밖이라 그 채널의 Python↔Kotlin 차이는 현재 계약 위반으로 판정할 근거가 없다 |
+| `privacy-gate` | **OQ-2 인접** — 커밋 `8412b89`가 물은 *"복원은 사람 제출 본문에만"*의 I-항목 등재 여부는 계약 질문이 아니라 감사 항목 질문이다. 이 changelog는 그것을 판정하지 않았다 |
+| 리더 | **OQ-2**(409 추가는 사용자에게 보이는 동작 변경)와 **OQ-5**(React 런타임 의존)가 `x-change-policy.escalate_to_leader`에 해당한다. OQ-3·OQ-4는 계약 소유자 단독 처리 가능 |

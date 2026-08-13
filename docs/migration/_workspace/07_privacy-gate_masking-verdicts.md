@@ -1,4 +1,4 @@
-# 07_core-rebuild 회부 4건 — `privacy-gate` 판정
+# 07_core-rebuild 회부 5건 — `privacy-gate` 판정
 
 > **작성**: 2026-08-13 · **어간**: `07_core-rebuild` · **회부처**: `reviews/07_core-rebuild_cross.md` §4(충돌 2건) · §6(조치 순위 3·10)
 > **대상 커밋 범위**: `c11a404..f73879b` (5커밋)
@@ -14,8 +14,11 @@
 | 2 | X-5 provenance 래퍼 공개 생성자 | **수용(조건부)** — 타입 봉쇄 기각, **사용 규약 명문화 + 탐지기**를 조건으로 | 규약 **즉시** · 탐지기 **application 조각과 동시** | `kotlin-implementer` |
 | 3 | X-8 `scan_privacy_invariants.py` CI 미배선 | **수정 — 마감을 Phase 3 → 지금으로 당긴다** | **이번 커밋 범위와 함께** | 리더(승인) → `kotlin-implementer`(배선) |
 | 4 | X-11 `baseUrl` 노출 · 응답 크기 상한 부재 | **수정 — Phase 5 유지, 단 근거 정정 + 해제 조건 신설** | **Phase 5** (당기지 않는다) | `kotlin-implementer` |
+| 5 | `ModelDraft.toString()` 본문 노출 (추가 회부 · §4-bis) | **수정** (불변식 4 **잠정 위반**) — 회부된 1종이 아니라 **value class 3종 + 스캐너 목록** | **즉시** | `kotlin-implementer` |
 
-**§5 Phase 7 즉시 중단 기준 해당: 0건.** 넷 중 어느 것도 "마스킹 전 본문이 LLM·로그로 전송됨"에 해당하지 않는다 — 현재 저장소에 **provider를 부르는 프로덕션 경로가 없다**(`LlmProvider` 구현체를 생성하는 비테스트 코드 0건, `AnthropicSettings(` 생성 지점이 `AnthropicTestSupport.kt` 하나뿐). 따라서 **차단 사유서(`07_privacy-gate_blocking.md`)를 만들지 않는다.**
+**§5 Phase 7 즉시 중단 기준 해당: 0건.** 다섯 중 어느 것도 "마스킹 전 본문이 LLM·로그로 전송됨"에 해당하지 않는다 — 판정 1~4는 현재 저장소에 **provider를 부르는 프로덕션 경로가 없어서**(회부 시점 실측), 판정 5는 **세 타입을 로거 인자로 넘기는 줄이 실재하지 않아서**다. 따라서 **차단 사유서(`07_privacy-gate_blocking.md`)를 만들지 않는다.**
+
+> **회차 주기**: §1~§4는 2026-08-13 회부(`c11a404..f73879b`) 판정. **§4-bis는 2026-08-14 추가 회부**(`f73879b..6d8e88c`, application 조각) 판정이다. 그 사이 `kotlin-implementer`가 §1~§4의 조치를 대부분 닫았으므로, 각 절의 상태 주석을 함께 읽을 것.
 
 ---
 
@@ -299,13 +302,107 @@ Claude S-4는 *"`AnthropicSettings.baseUrl`이 **설정으로 열려 있고** �
 
 ---
 
+## 4-bis. 판정 5 — `ModelDraft.toString()` 본문 노출 (추가 회부 · 2026-08-14)
+
+> **회부**: 리더 · `kotlin-implementer`가 application 조각(`f73879b..6d8e88c`)을 끝내며 올린 신규 관측.
+> 근거 위치: `02_kotlin-implementer_conversion-usecase.md` §5.3 · §8.1 ③.
+> 구현자는 **자기 결과 타입(`ConversionResult.Converted`)은 가렸고 `ModelDraft` 타입 선언은 판정 대상이라 손대지 않았다** — 옳은 경계 판단이다.
+
+### 4-bis.1 실측 — 결함은 `ModelDraft` 하나가 아니다
+
+`kotlinc-jvm 2.2.20`으로 저장소 타입 3종의 선언 형태를 그대로 옮겨 합성 재현했다(제품 파일 미수정). 본문에는 **마스킹 범주 밖이라 정책상 무마스킹 통과하는 값**(전화번호·이메일)을 일부러 섞은 합성 문자열을 썼다.
+
+| 경로 | `ModelDraft` 출력 |
+|---|---|
+| 문자열 보간 `"$draft"` | `ModelDraft(value=…본문 전체…)` |
+| 명시 `toString()` | `ModelDraft(value=…본문 전체…)` |
+| **`Any` 인자 (로거 형태)** | `ModelDraft(value=…본문 전체…)` |
+| 컬렉션 안 | `[ModelDraft(value=…본문 전체…)]` |
+
+**네 경로 전부 본문을 통째로 찍는다.** 구현자 관측이 정확하다.
+
+**그리고 같은 결함이 두 개 더 있다** — 구현자는 자기 코드가 닿은 `ModelDraft`만 보고했다:
+
+| 타입 | 선언 위치 | `toString` | 담는 것 |
+|---|---|---|---|
+| `MaskedText` | `Masking.kt:53-54` | **없음 — 본문 노출** | 마스킹된 본문(전화·이메일·계좌 무마스킹 포함) |
+| `ModelDraft` | `Masking.kt:625-626` | **없음 — 본문 노출** | LLM 1차 변환문 |
+| `ReviewedBody` | `Masking.kt:639-640` | **없음 — 본문 노출** | 사람이 제출한 검수본 |
+| `PlaceholderRestoration` | `Masking.kt:139` | 있음(X-6에서 수정) | 복원된 최종 본문 |
+| `LlmPrompt` / `LlmCompletion` / `Secret` / `ConversionResult.Converted` | 각 파일 | 있음 | — |
+
+`grep "override fun toString" backend-kotlin/*/src/main`이 6건을 내는데 `Masking.kt`에서는 **139행 하나뿐**이다. **저장소의 `@JvmInline value class`는 정확히 이 셋이고, 셋 다 빠져 있다.**
+
+### 4-bis.2 ① 본문 자체가 로그 금지 대상인가 — **그렇다. 독립된 근거 둘 중 하나만으로도 충족된다**
+
+**근거 A — "문서 본문"은 개인정보와 **별개로** 금지된다.** `CLAUDE.md` 보안·데이터 규칙 첫 줄: *"로그에 **문서 본문**·개인정보를 절대 남기지 않는다. **로깅은 문서 ID·길이·처리 상태까지만.**"* 금지 대상이 `·`로 이어진 **둘**이고, 뒷문장은 **허용목록**이다. `ModelDraft`가 담는 것은 사용자 문서를 다시 쓴 글이므로 첫 번째 항목에 그대로 해당한다. **개인정보가 한 글자도 없어도 금지다.** 계획 §4.4가 로그에 남길 것을 *"conversion id, 상태, 시도 횟수, failure code만"*으로 열거한 것도 같다 — 본문은 그 목록에 없다.
+
+**근거 B — 실제로 개인정보가 들어 있다.** "마스킹된 입력에서 파생됐으니 안전하다"는 추론은 **성립하지 않는다.** 마스킹 범주는 주민등록번호·카드번호 **2종뿐**이고, `Masking.kt:127-142`가 명시적으로 적었다 — *"**이 셋(전화번호·이메일·계좌번호)은 문서에 섞여 들어오면 마스킹 없이 그대로 LLM(국외 포함)으로 전송된다.** … 명시적으로 감수하기로 한 대가다."* 그 셋은 전송을 감수한 것이지 **로그 적재를 감수한 것이 아니다.** 같은 절이 *"로그·응답 노출 규칙은 축소와 무관하게 유지"*(`CLAUDE.md` 아키텍처 규칙 2)라고 못박았다. 마스킹 범주 축소는 **LLM 전송 경계**의 결정이고 **로그 경계**를 건드리지 않았다. §4-bis.1 실측에서 전화번호·이메일이 그대로 찍힌 것이 이것이다.
+
+**근거 C — §2 판정과 맞물려 위험이 증폭된다.** `ModelDraft`의 생성자는 공개이고, §2에서 내가 수용한 것은 **"사용 규약 + 탐지기를 조건으로 한" 잔여 위험**이었다. 규약은 관례이지 타입 보장이 아니다. 규약이 깨져 `ModelDraft(원문)`이 만들어지면 그 안에는 **마스킹 전 원문(주민등록번호·카드번호 포함)**이 들어 있고, 무방비 `toString()`은 그것을 **로그로 내보내는 증폭기**가 된다. 즉 §2의 수용은 "새 생성 지점이 조용할 수 없게" 만드는 것을 전제로 했는데, 이 결함은 그 전제의 반대편에서 조용한 유출 경로를 하나 더 연다.
+
+### 4-bis.3 ② 형제 타입과의 비대칭 — **해소해야 한다. 그리고 회부된 것보다 넓게**
+
+비대칭은 실재하고(§4-bis.1 표), **결함의 구조가 하나**다 — `CLAUDE.md` 규칙 4 ⑴이 요구하는 대로 빈자리를 **종류로** 댄다:
+
+> **종류 · 문서 텍스트를 감싸는 `@JvmInline value class`.** 일반 class·data class에 적용한 `toString` 규율이 value class에는 한 번도 적용되지 않았다.
+
+이 종류는 **구조적으로 재발한다** — 다음에 본문을 감싸는 래퍼를 만드는 사람도 같은 자리를 빠뜨린다. `LlmPrompt`가 *"`data class`가 아닌 이유"*를 KDoc 한 절로 설명해 둔 것(`LlmPrompt.kt:39-45`)이 value class 셋에는 **닿지 않았다.** 따라서 판정은 **`ModelDraft` 한 건이 아니라 종류 전체**에 내린다.
+
+**은폐형이 아닌가 — 아니다(규칙 4의 분류).** `toString` 재정의는 탐지기를 억누르는 조치가 아니라 **위험 자체를 없애는 조치**다(본문이 애초에 문자열에 들어가지 않는다). 이 저장소가 스스로 택한 방향과 같다 — *"검사를 얹는 것보다 만들 수 없게 하는 쪽"*(`Masking.kt:168`). 다만 **그것만으로 끝내지 않는다**: 아래 조치 2가 탐지형 절반이다.
+
+### 4-bis.4 실측 — 처방이 실제로 듣는가, 그리고 무엇을 못 막는가
+
+`@JvmInline value class`에 `toString()`을 재정의해 같은 네 경로를 다시 돌렸다:
+
+```
+1) 보간        -> ModelDraft(48자)
+2) toString()  -> ModelDraft(48자)
+3) Any (로거)  -> ModelDraft(48자)     ← 박싱되는 로거 경로에서도 듣는다
+4) 컬렉션      -> [ModelDraft(48자)]
+5) .value 직접 -> 문의 02-1234-5678 …  ← 재정의로 막지 못하는 유일한 경로
+```
+
+**재정의는 네 경로 모두에서 듣는다.** 못 막는 것은 `.value`를 직접 꺼내 넘기는 줄 하나이며, 이는 `MaskedText`가 이미 선언해 둔 한계와 같은 성질이다(공개 프로퍼티).
+
+**그 남은 한 줄을 탐지기가 잡는가 — 지금은 못 잡는다.** `scan_privacy_invariants.py`의 `BODY_NAMES`에 이 저장소가 쓰는 식별자가 빠져 있다. `LOG-BODY` 규칙에 직접 투입한 결과:
+
+```
+  MISSED  logger.info("변환 완료 {}", draft)
+  MISSED  logger.info("변환 완료 {}", modelDraft)
+  MISSED  logger.info("변환 완료 {}", reviewed)
+  MISSED  logger.info("변환 완료 {}", result)
+  CAUGHT  logger.info("변환 완료 {}", easyText)
+  CAUGHT  logger.info("변환 완료 {}", body)
+  CAUGHT  logger.info("변환 완료 {}", maskedText)
+```
+
+`draft`·`modelDraft`·`reviewed`가 전부 빠져 있다(`reviewed`는 `BODY_NAMES`의 `review`가 `\b` 경계라 걸리지 않는다). **타입도 안 가리고 탐지기도 안 보는 상태**였다. 판정 3으로 스캐너를 CI에 붙였으므로 지금 이 목록을 고치면 즉시 도달한다.
+
+### 4-bis.5 판정 — **수정**
+
+**불변식 4(로그에 본문·개인정보 없음) — 잠정 위반.** "잠정"인 이유: 현재 이 세 타입을 로거 인자로 넘기는 줄이 저장소에 **실재하지 않는다**(구현자가 자기 결과 타입을 가려 두었다). 사건이 아니라 **장치의 빈자리**다. §5 Phase 7 즉시 중단 기준 **해당 없음** — 실제 전송이 일어나지 않았다.
+
+**마감: 즉시.** 미루지 않는 근거 셋 — ⑴ 타입당 한 줄이고 위험이 0이다, ⑵ 이번 조각이 **첫 프로덕션 `ModelDraft` 생성 지점**(`ConvertDocumentUseCase`)을 들여와 실제 값이 존재하기 시작했다, ⑶ 형제 6종 중 3종만 고쳐 둔 비대칭이 곧 X-6을 낳은 형태 그 자체다 — 남겨 두면 같은 지적이 다음 회차에 다시 올라온다.
+
+**조치 (수신자: `kotlin-implementer`)**
+
+1. **`MaskedText`·`ModelDraft`·`ReviewedBody` 셋 모두** `toString()`을 재정의해 **길이만** 남긴다. `ModelDraft` 하나만 고치면 비대칭이 남는다. 형태는 형제 타입과 같게 한다(`PlaceholderRestoration`·`LlmPrompt`가 선례).
+2. **`scan_privacy_invariants.py`의 `BODY_NAMES`에 `draft`·`modelDraft`·`reviewed`·`reviewedBody`·`easyText`계열 누락분을 더한다.** ⑴이 위험을 없애는 절반이면 이것이 **탐지하는 절반**이다 — 규칙 4가 "은폐형 대신 탐지형으로 갈아탄다"고 한 것을 둘 다 두는 것으로 만족시킨다. **이름을 빼지 말고 더하기만 한다**(그 목록에서 이름을 빼는 것은 탐지를 줄이는 것이다 — `SECRET-LITERAL` 주석이 같은 원칙을 이미 적었다).
+3. **회귀 단언.** 세 타입 각각에 대해 `toString()`이 본문을 담지 않음을 실행으로 단언한다. **길이 표기만 확인하지 말고 "본문 문자열이 결과에 포함되지 않는다"를 단언**한다 — 전자는 형식이 바뀌면 조용히 통과한다. `Secret`·`LlmPrompt`의 기존 단언과 같은 자리에 둔다.
+4. KDoc에 **왜** 재정의했는지 한 줄을 남긴다. `LlmPrompt.kt:39-45`의 "`data class`가 아닌 이유" 절이 value class 셋에 닿지 않은 것이 이 결함의 원인이므로, 다음 사람이 새 래퍼를 만들 때 읽을 자리에 근거를 둔다.
+
+**해제 조건**: 세 타입 모두 재정의가 실재할 것 · `BODY_NAMES` 확장 후 §4-bis.4의 7개 탐침에서 MISSED가 0일 것 · 조치 3의 단언이 **본문 미포함**을 보는 형태일 것. 재확인은 회신을 신뢰하지 않고 §4-bis.1·§4-bis.4와 같은 방식으로 직접 돌린다.
+
+---
+
 ## 5. 불변식 판정표 (이번 회부 범위에 걸리는 것만)
 
 | # | 불변식 | 판정 | 근거 |
 |---|---|---|---|
 | 1 | 원문은 마스킹한 뒤에만 LLM으로 간다 | **순서 준수 / 커버리지 위반** | 순서: `MaskedText` 생성 통로 단일(`Masking.kt:53-68`), `LlmPrompt` 생성자 private(`LlmPrompt.kt:46`). 커버리지: §1.1 실측 — RRN 종류 A·B, CARD 종류 B |
 | 2 | LLM 호출 최대 2회 | **확인 불가 (대상 코드 없음)** | 호출 상한을 강제할 application 계층이 아직 없다. X-3 소관이며 이 회부 범위 밖 |
-| 4 | 로그에 본문·개인정보 없음 | **준수 (단 탐지 도달 0)** | `AnthropicProvider` 로거 없음·예외 메시지 타입명만(`:222-232`, `:267-274`), `LlmPrompt.toString` 길이만(`:53`), `Secret` 래핑. **그러나 이 상태를 지키는 상시 탐지기가 CI에서 0회 돈다** — 판정 3 |
+| 4 | 로그에 본문·개인정보 없음 | **잠정 위반** (2026-08-14 재판정 — 이전 판정 "준수(단 탐지 도달 0)"에서 변경) | **변경 사유**: `@JvmInline value class` 3종(`MaskedText`·`ModelDraft`·`ReviewedBody`)의 기본 `toString()`이 본문을 통째로 찍음을 `kotlinc` 실측으로 확인 — §4-bis.1. 이전 판정은 `LlmPrompt`·`LlmCompletion`·`Secret`만 보고 value class를 보지 않았다. 사건은 없고(로거 인자로 넘기는 줄 0건) **장치의 빈자리**라 "잠정". 탐지 도달은 판정 3으로 닫혔으나 `BODY_NAMES`가 `draft`·`modelDraft`·`reviewed`를 몰라 이 셋에는 **도달하지 않는다**(§4-bis.4) |
 | 6 | private 응답 헤더 유지 | **준수 (이번 범위 무변경)** | `PrivateResponseHeadersConfig.kt` 및 회귀 4종 실재. 이번 5커밋이 건드리지 않았다 |
 | 13 | LLM 계약 no-training 전제 명시 | **준수** | `AnthropicProvider.kt:28-32`에 명시 주석 실재 |
 
@@ -322,6 +419,9 @@ Claude S-4는 *"`AnthropicSettings.baseUrl`이 **설정으로 열려 있고** �
 |---|---|---|
 | `kotlin-implementer` | §1.6 `UnicodeRegex.kt` KDoc 사실 정정 — **1차 완료(병행 작업)**. 종류 B(구분자)를 반영해 한 번 더 갱신 | **즉시** |
 | `kotlin-implementer` | §2.3 조건 1 — provenance 사용 규약을 KDoc + 요구사항 대장에 명문화 | **즉시** |
+| `kotlin-implementer` | **§4-bis.5 조치 1** — `MaskedText`·`ModelDraft`·`ReviewedBody` **3종 모두** `toString` 재정의(길이만) | **즉시** |
+| `kotlin-implementer` | **§4-bis.5 조치 2** — `scan_privacy_invariants.py` `BODY_NAMES`에 `draft`·`modelDraft`·`reviewed`·`reviewedBody` 추가(빼지 말고 더하기만) | **즉시** |
+| `kotlin-implementer` | **§4-bis.5 조치 3·4** — "본문 미포함"을 보는 회귀 단언 3건 + KDoc 근거 한 줄 | **즉시** |
 | 리더 | §3.3 CI 배선 승인 | **즉시** |
 | `kotlin-implementer` | §3.3 `quality` 잡 배선(승인 후) | 승인 직후 |
 | `kotlin-implementer` | §1.4 종류 A·B 수정 + 과잉 마스킹 가드 | **Phase 2 종료 전** |
@@ -331,14 +431,15 @@ Claude S-4는 *"`AnthropicSettings.baseUrl`이 **설정으로 열려 있고** �
 | `migration-reviewer` | 보안 축 종합 리뷰에 이 판정 포함 | 다음 회차 |
 | 리더 | **Phase 2 종료 판정 시**: 판정 1이 INV-02 게이트를 열어 두고 있음. 판정 3은 §6 Security 게이트의 탐지 도달 항목 | Phase 2 종료 전 |
 
-**차단 사유서 미작성.** §0대로 §5 Phase 7 즉시 중단 기준 해당 0건이고 프로덕션 노출 경로가 없다. 넷 중 어느 것도 다른 레인의 작업을 멈추게 하지 않는다 — 다만 판정 1은 **Phase 2 종료를 막는다**(INV-02).
+**차단 사유서 미작성.** §0대로 §5 Phase 7 즉시 중단 기준 해당 0건이고 프로덕션 노출 경로가 없다. 다섯 중 어느 것도 다른 레인의 작업을 멈추게 하지 않는다 — 다만 판정 1은 **Phase 2 종료를 막는다**(INV-02).
 
-**추적.** 위 8개 요청은 해제될 때까지 상태를 추적한다. 수정 완료 회신은 **그대로 신뢰하지 않고** 각 절의 "해제 조건 확인 방법"으로 다시 확인한 뒤에만 해제한다.
+**추적.** 위 요청들은 해제될 때까지 상태를 추적한다. 수정 완료 회신은 **그대로 신뢰하지 않고** 각 절의 "해제 조건 확인 방법"으로 다시 확인한 뒤에만 해제한다.
 
 ---
 
 ## 7. 부기 — 산출물 위생
 
 - 이 문서에 **실제 문서 본문·개인정보·암호문·키를 옮겨 적지 않았다.** §1.1의 표에 쓴 번호는 전부 합성값이며, fixture(`masking-known-gap-rrn-fullwidth`)가 이미 쓰고 있는 표기를 그대로 따랐다. `sk-ant-…`로 표기한 것은 음성 대조용으로 **스크래치패드에서 생성한 난수 문자열**이고 실제 키가 아니다.
+- **§4-bis의 `toString` 실측에 쓴 본문도 합성값이다.** 전화번호·이메일을 일부러 섞은 것은 "마스킹 범주 밖이라 통과한다"는 정책 결과를 눈에 보이게 하기 위해서이고, `02-1234-5678`·`hong@example.go.kr`은 **예약된 예시 도메인(RFC 2606 `example.`)과 임의 숫자**다. 실측 출력을 이 문서에 옮길 때도 본문을 `…본문 전체…`로 줄여 실제 문자열이 산출물에 남지 않게 했다.
 - **제품 파일을 하나도 수정하지 않았다.** 음성 대조는 스크래치패드 합성 저장소에서만 수행했고, `git status backend-kotlin/`·`git diff --stat backend-kotlin/`이 비어 있음을 실행으로 확인했다(§3.1 부기).
 - 프로토타입·스캔 리포트·프로브 소스는 스크래치패드에만 두었고 저장소에 커밋하지 않는다.
