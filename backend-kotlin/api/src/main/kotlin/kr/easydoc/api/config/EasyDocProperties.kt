@@ -37,7 +37,6 @@ data class EasyDocProperties(
     val corsOrigins: List<String> = listOf("http://localhost:5173"),
     val auth: AuthProperties = AuthProperties(),
     val crypto: CryptoProperties = CryptoProperties(),
-    val llm: LlmProperties = LlmProperties(),
 ) {
     /** 인증 설정. `jwtSecret` 미설정 시 인증 API를 쓸 수 없다(앱 기동 자체는 가능). */
     data class AuthProperties(
@@ -48,19 +47,18 @@ data class EasyDocProperties(
     /** 문서 본문 암호화(Fernet) 키. 미설정 시 문서 저장 불가. */
     data class CryptoProperties(val fernetKey: Secret = Secret.EMPTY)
 
-    /**
-     * LLM 벤더 설정.
-     *
-     * `provider` 기본값이 anthropic 인 것은 선택이 아니라 미확정 상태를 그대로 둔 것이다 —
-     * 벤더는 골든셋 벤치마크로 확정한다(master-plan 3.1). Python 기본값을 그대로 옮겼다.
-     */
-    data class LlmProperties(
-        val provider: String = "anthropic",
-        /** null 이면 provider 구현체의 기본 모델을 쓴다. */
-        val model: String? = null,
-        /** Anthropic 전용 사고 깊이. null 이면 파라미터를 보내지 않는다(API 기본값). */
-        val effort: String? = null,
-        val anthropicApiKey: Secret = Secret.EMPTY,
-        val openaiApiKey: Secret = Secret.EMPTY,
-    )
+    // ── `easydoc.llm.*` 은 여기 없다 — infrastructure 가 소유한다 ──────────────────
+    //
+    // 이전에는 `LlmProperties` 가 이 클래스의 중첩 타입이었다. 그런데 그 값을 써서
+    // provider 를 조립할 수 있는 모듈은 `infrastructure` 뿐인데(`api` 는 그것을
+    // `runtimeOnly` 로만 의존해 `AnthropicProvider` 타입을 컴파일 시점에 보지 못한다),
+    // `infrastructure` 는 `api` 를 의존할 수 없다. 즉 **아무도 조립할 수 없는 설정**이었다.
+    //
+    // 그래서 설정을 구현 옆으로 내렸다: `infrastructure/llm/LlmProviderConfiguration.kt` 의
+    // `LlmProperties`(접두사 `easydoc.llm`). YAML 키와 환경변수 이름은 그대로다.
+    // 두 곳에 같은 접두사를 두면 소유자가 둘이 되므로 여기서는 **지운다.**
+    //
+    // 그 파일이 함께 지고 있는 조건 하나: **`baseUrl` 을 설정으로 열지 않는다**
+    // (privacy-gate 판정 X-11). 문서 본문이 나가는 대상을 바꾸는 값이기 때문이다.
+    // ────────────────────────────────────────────────────────────────────────────
 }

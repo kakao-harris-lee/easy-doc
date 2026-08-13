@@ -3,7 +3,7 @@
 // **Spring도 DB도 모른다** (계획 §3.2, kotlin-spring-conventions §1).
 // 이 조건이 깨지면 Phase 2의 "외부 API·DB 없이 실행하는 parity suite" 종료 조건이
 // 성립하지 않는다 — 불일치가 났을 때 도메인 로직 문제인지 배선 문제인지 가릴 수 없다.
-// 조건은 문서가 아니라 CoreHasNoSpringOrDbDependencyTest 가 지킨다.
+// 조건은 문서가 아니라 CoreModuleBoundaryTest 가 지킨다.
 
 plugins {
     // parity 하네스(ParityActualWriter)를 infrastructure·application 테스트가 함께 쓴다.

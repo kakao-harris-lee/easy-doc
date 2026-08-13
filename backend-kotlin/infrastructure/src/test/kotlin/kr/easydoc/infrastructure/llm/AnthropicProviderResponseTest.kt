@@ -141,6 +141,11 @@ class AnthropicProviderResponseTest {
             .hasMessageNotContaining(TEST_API_KEY)
             .hasMessageNotContaining("900101-1234567")
             .hasMessageNotContaining("echoed prompt")
+            // **cause 를 매달지 않는다** — 교차 리뷰 X-16. 메시지만 정제해도 원인 예외를
+            // 체인으로 달면 스택 트레이스를 한 번 찍는 것으로 벤더가 되비춘 프롬프트가
+            // 그대로 로그로 나간다(Spring 의 HttpClientErrorException 은 응답 본문을
+            // 메시지에 담는다). "키가 새지 않는 다섯 겹" 중 이 한 겹만 단언이 없었다.
+            .hasNoCause()
     }
 
     @Test
@@ -152,6 +157,9 @@ class AnthropicProviderResponseTest {
             .isInstanceOf(LlmProviderException::class.java)
             .hasMessageContaining("응답 형식 오류")
             .hasMessageNotContaining("900101-1234567")
+            // 파싱 실패 메시지에는 본문 조각이 그대로 실린다(어느 위치의 어떤 토큰인지).
+            // 메시지도 cause 도 버리고 예외 **타입 이름**만 남긴다.
+            .hasNoCause()
     }
 
     @Test
@@ -164,6 +172,7 @@ class AnthropicProviderResponseTest {
         }.isInstanceOf(LlmProviderException::class.java)
             .hasMessageContaining("anthropic 호출 실패")
             .hasMessageNotContaining(TEST_API_KEY)
+            .hasNoCause()
     }
 
     @Test
