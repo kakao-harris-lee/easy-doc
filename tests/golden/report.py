@@ -22,7 +22,7 @@ import os
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, model_validator
 
 from app.easyread.goldenset import FactLoss
 from tests.golden.baseline import (
@@ -31,6 +31,7 @@ from tests.golden.baseline import (
     JudgeObservation,
     Measurement,
     RunContext,
+    producer_bond_error,
 )
 from tests.golden.evaluation import RuleEvaluation
 
@@ -91,6 +92,30 @@ class GoldenRunReport(BaseModel):
     #: 기록 모드에서 기준선이 어떻게 바뀌는가.
     baseline_changes: list[str] = []
 
+    @model_validator(mode="after")
+    def _producer는_context와_같아야_한다(self) -> "GoldenRunReport":
+        """지문의 producer와 `context`가 갈린 리포트는 **만들어지지 않는다.**
+
+        `Baseline`과 **같은 모양의 이중 기록**이라 같은 불변식을 건다. 같은 값이 두 자리에
+        실리고(지문 = 비교에 쓰이는 면, context = 사람이 읽는 기록), 지금까지 둘이 갈리지
+        않는 근거는 `build_report`가 한 `RunContext`로 둘 다 만든다는 **호출 규약**뿐이었다.
+
+        그 형태가 불충분함은 이미 증명됐다. `Baseline`도 같은 규약으로만 막혀 있었고,
+        독립 검증이 갈린 본문을 실제로 통과시켜 다른 producer의 수치를 하한선으로 세웠다
+        (`c0aa926`). 리포트에서 갈리면 하한선이 아니라 **사람이 읽는 화면**이 틀어진다 —
+        렌더 첫 줄의 `producer` 라벨과 그 아래 `변환 provider` 줄이 서로 다른 실행을
+        가리키고, 읽는 사람은 그것을 한 실행의 결과로 읽는다. 9번째 지적이 "오염되는 것이
+        기준선 파일이 아니라 리포트"라는 이유로 차단이었던 것과 같은 자리다.
+
+        **비용이 0이라는 것도 근거다.** 현재 이 모델을 세우는 자리는 전부 한
+        `RunContext`에서 둘을 유도하므로, 이 불변식은 지금 만들 수 있는 리포트를 하나도
+        막지 않는다. 막는 것은 앞으로 조건을 두 번 읽게 되는 편집뿐이다.
+        """
+        error = producer_bond_error(self.fingerprint, self.context)
+        if error:
+            raise ValueError(f"실행 리포트가 자기모순이다 — {error}")
+        return self
+
     def render(self) -> str:
         lines = [
             "",
@@ -112,6 +137,14 @@ class GoldenRunReport(BaseModel):
             lines.append(
                 f"  {label:<4} {group.passed:>3}/{group.documents:<3} = "
                 f"{group.pass_rate:.3f}   목표 {self.targets.pass_rate:.2f} 대비 {gap:+.3f}"
+                # 미측정을 수치 **옆에** 적는다. 아래 "변환 실패" 줄과 겹쳐 보이지만 그쪽은
+                # 문서 id 목록이고, 이쪽은 "이 비율의 분자에 부재가 몇 건 섞여 있는가"다.
+                # 떨어뜨려 놓으면 0.000을 품질로 읽는 오독이 그대로 남는다.
+                + (
+                    f"   ⚠ 미측정 {group.unmeasured}건 — 이 분자의 0은 부재다"
+                    if group.unmeasured
+                    else ""
+                )
             )
         if self.conversion_failures:
             lines.append(

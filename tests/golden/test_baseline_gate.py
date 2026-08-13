@@ -65,13 +65,27 @@ def _context(
     )
 
 
-def _measurement(overall: tuple[int, int], synthetic: tuple[int, int]) -> Measurement:
-    """(통과, 전체) 쌍으로 측정치를 만든다. 실수집은 나머지로 계산한다."""
+def _measurement(
+    overall: tuple[int, int],
+    synthetic: tuple[int, int],
+    unmeasured: tuple[int, int] = (0, 0),
+) -> Measurement:
+    """(통과, 전체) 쌍으로 측정치를 만든다. 실수집은 나머지로 계산한다.
+
+    `unmeasured` 는 (전체, 합성)의 **미측정 건수**이고 기본은 전건 측정(0, 0)이다. 기본을
+    0으로 둔 것은 이 파일의 시나리오 대부분이 "정상적으로 잰 수치끼리의 판정"이기 때문이고,
+    미측정이 섞인 입력은 그것을 확인하는 테스트가 **명시적으로** 넘긴다 — 기본값에 숨어
+    있으면 무엇을 확인한 것인지 말할 수 없다.
+    """
     return Measurement(
-        overall=GroupMeasurement(passed=overall[0], documents=overall[1]),
-        synthetic=GroupMeasurement(passed=synthetic[0], documents=synthetic[1]),
+        overall=GroupMeasurement(passed=overall[0], documents=overall[1], unmeasured=unmeasured[0]),
+        synthetic=GroupMeasurement(
+            passed=synthetic[0], documents=synthetic[1], unmeasured=unmeasured[1]
+        ),
         collected=GroupMeasurement(
-            passed=overall[0] - synthetic[0], documents=overall[1] - synthetic[1]
+            passed=overall[0] - synthetic[0],
+            documents=overall[1] - synthetic[1],
+            unmeasured=unmeasured[0] - unmeasured[1],
         ),
     )
 
@@ -520,6 +534,63 @@ def test_통과하는_실행도_수치가_남는다() -> None:
     assert golden_report.for_evaluation(evaluation) is None, "reset 이 등록부를 비우지 않았다"
 
 
+def test_지문과_context가_갈린_리포트는_만들어지지_않는다() -> None:
+    """**기준선과 같은 이중 기록에 같은 불변식을 건다**(2026-08-13).
+
+    `GoldenRunReport` 는 `Baseline` 과 같은 모양이다 — 같은 값이 지문(비교에 쓰이는 면)과
+    `context`(사람이 읽는 기록) 두 자리에 실리고, 갈리지 않는 근거는 `build_report` 가 한
+    `RunContext` 로 둘 다 만든다는 **호출 규약**뿐이었다. 그 형태가 불충분함은 `Baseline`
+    에서 이미 증명됐다(독립 검증이 갈린 본문을 통과시켰다).
+
+    갈리면 렌더 첫 줄의 `producer` 라벨과 그 아래 `변환 provider` 줄이 서로 다른 실행을
+    가리키고, 읽는 사람은 그것을 한 실행의 결과로 읽는다.
+    """
+    with pytest.raises(ValidationError, match="지문의 producer와 context가 갈렸다"):
+        golden_report.GoldenRunReport(
+            fingerprint=Fingerprint.of(
+                DOCUMENTS, _context(provider="anthropic", observed_models=["model-a"])
+            ),
+            context=_context(provider="openai", observed_models=["model-b"]),
+            targets=golden_report.Targets(
+                pass_rate=0.9, judge_coverage=0.9, judge_score=4.0, fidelity_floor=2
+            ),
+            measurement=_measurement((36, 56), (17, 20)),
+        )
+
+
+def test_producer_밖의_조건이_달라도_리포트는_만들어진다() -> None:
+    """**대조군.** `judge_provider`·설정값 `model` 은 producer 축이 아니다.
+
+    그 둘까지 결속하면 판정과 무관한 변경이 리포트 생성을 막는다 — 과민한 불변식은 반대
+    방향 고장이다. `Baseline` 쪽 대조군(`test_한_실행_조건에서_유도한_본문은…`)과 같은 경계다.
+    """
+    context = _context(provider="anthropic", observed_models=["model-a"])
+    report = golden_report.GoldenRunReport(
+        fingerprint=Fingerprint.of(DOCUMENTS, context),
+        context=context.model_copy(
+            update={"judge_provider": "다른-채점자", "model": "다른-설정값"}
+        ),
+        targets=golden_report.Targets(
+            pass_rate=0.9, judge_coverage=0.9, judge_score=4.0, fidelity_floor=2
+        ),
+        measurement=_measurement((36, 56), (17, 20)),
+    )
+    assert report.context.judge_provider == "다른-채점자"
+
+
+def test_리포트가_미측정을_수치_옆에_적는다() -> None:
+    """0.000을 품질로 읽는 오독을 렌더에서 막는다.
+
+    아래 `변환 실패` 줄과 겹쳐 보이지만 그쪽은 문서 id 목록이고, 이쪽은 **그 비율의 분자에
+    부재가 몇 건 섞였는가**다. 떨어뜨려 놓으면 사람이 통과율 줄만 보고 지나간다.
+    """
+    rendered = _report(_measurement((16, 56), (16, 20), (36, 0))).render()
+    assert "미측정 36건" in rendered
+    assert "부재다" in rendered
+    # 전건을 잰 실행에는 붙지 않는다 — 항상 붙으면 경고가 신호를 잃는다.
+    assert "미측정" not in _report(_measurement((36, 56), (17, 20))).render()
+
+
 def test_리포트에_본문이_실리지_않는다() -> None:
     """문서 id·건수·점수만 싣는다. 렌더 결과에 원문 조각이 섞이면 로그 규칙 위반이다."""
     rendered = _report(_measurement((36, 56), (17, 20))).render()
@@ -914,6 +985,207 @@ def test_effort_키가_없는_기준선_파일은_읽히지_않는다(tmp_path: 
     path.write_text(json.dumps(body, ensure_ascii=False), encoding="utf-8")
     assert stored_body(path) is not None, "전제 — JSON 으로는 멀쩡한 파일이다"
     assert load_baseline(path) is None, "키가 없는 파일이 `effort=None` 으로 복구됐다"
+
+
+# ══════════════ I. 미측정 — 변환에 실패한 문서가 있는 실행은 기준선이 되지 못한다
+#
+# **2026-08-13 사고.** 합성 20건은 변환에 성공하고 실수집 36건이 전부 HTTP 400(크레딧 소진)
+# 으로 실패한 실행이 기록 경로의 가드 넷(provider·관측 모델·모델 섞임·effort 키)을 **전부
+# 통과**했다. 관측 모델은 성공한 20건에서만 모이므로 지문이 건강한 실행과 한 글자도 다르지
+# 않았기 때문이다. 그날 그 파일이 하한선이 되는 것을 막은 것은 사람이 손으로 되돌린 것뿐이다.
+#
+# 그 수치가 하한선이 되면 두 방향이 함께 고장난다(리뷰어 실측):
+#
+#     2026-08-12 실측 31/56 (16/20·15/36)  → 하락  blocking=True   ← 정상 실행이 거짓 차단
+#     실수집 전멸 재발 0/36                 → 유지  blocking=False  ← 실수집 축 영구 개방
+#
+# 아래는 그 사슬의 마디를 하나씩 끊는다. 마지막 하나는 **끊긴 뒤에도 두 행이 성립하지
+# 않는가**를 리뷰어의 수치 그대로 확인한다.
+
+#: 2026-08-13 실행의 형태 — 합성 20건은 변환됐고(16건 통과) 실수집 36건은 전멸했다.
+_사고_수치 = ((16, 56), (16, 20), (36, 0))
+
+
+def _사고_측정치() -> Measurement:
+    passed, synthetic, unmeasured = _사고_수치
+    return _measurement(passed, synthetic, unmeasured)
+
+
+def test_미측정이_섞인_기준선은_조립되지_않는다() -> None:
+    """**첫 마디** — 본문 dict가 생기기 전에 끝난다.
+
+    `baseline_body` 가 하는 첫 일이 `Baseline` 조립이라, 미측정이 섞인 측정치는 파일로
+    나갈 수 있는 모양이 되기 전에 거부된다.
+    """
+    with pytest.raises(ValidationError, match="측정하지 못한 문서가 있다") as caught:
+        baseline_body(Fingerprint.of(DOCUMENTS, _context()), _사고_측정치(), _context())
+    message = str(caught.value)
+    assert "실수집: 36/36건" in message, "어느 축이 통째로 비었는지가 메시지에 없다"
+    assert "합성:" not in message, "전건을 잰 집단까지 적으면 무엇이 비었는지 흐려진다"
+
+
+def test_전건을_잰_실행은_그대로_조립된다() -> None:
+    """**대조군.** 막는 쪽만 확인하면 "기록을 통째로 잠갔다"와 구분되지 않는다.
+
+    수치가 낮은 것은 막지 않는다 — 하한선은 현재 위치에서 출발하고, 여기서 보는 것은
+    "이 수치가 측정인가"이지 "이 수치가 좋은가"가 아니다.
+    """
+    body = baseline_body(
+        Fingerprint.of(DOCUMENTS, _context()), _measurement((0, 56), (0, 20)), _context()
+    )
+    assert body["measurement"]["collected"]["unmeasured"] == 0
+
+
+def test_손으로_조립한_미측정_본문은_writer가_거부한다(tmp_path: Path) -> None:
+    """**둘째 마디(G6)** — `baseline_body` 를 거치지 않는 dict 통로도 같은 규칙을 받는다."""
+    path = tmp_path / "baseline.json"
+    forged = baseline_body(
+        Fingerprint.of(DOCUMENTS, _context()), _measurement((16, 56), (16, 20)), _context()
+    )
+    forged["measurement"]["collected"]["unmeasured"] = 36
+    forged["measurement"]["overall"]["unmeasured"] = 36
+    with pytest.raises(AssertionError, match="측정하지 못한 문서가 있다"):
+        write_baseline(forged, path)
+    assert not path.exists(), "거부했는데 파일이 생겼다"
+
+
+def test_미측정_키가_없는_본문도_writer가_거부한다(tmp_path: Path) -> None:
+    """**키의 부재는 0이 아니다** — 필드 하나를 지우는 것이 가드를 지나는 방법이 되면 안 된다.
+
+    `effort`(G4)·지문 없는 본문에서 이미 같은 판단을 했다. 여기만 관대하면 그 자리가
+    가장 싼 우회로가 된다.
+    """
+    path = tmp_path / "baseline.json"
+    body = baseline_body(
+        Fingerprint.of(DOCUMENTS, _context()), _measurement((36, 56), (17, 20)), _context()
+    )
+    del body["measurement"]["collected"]["unmeasured"]
+    with pytest.raises(AssertionError, match="unmeasured.*가 없다"):
+        write_baseline(body, path)
+
+    without_measurement = {key: value for key, value in body.items() if key != "measurement"}
+    with pytest.raises(AssertionError, match="`measurement`가 없다"):
+        write_baseline(without_measurement, path)
+    assert not path.exists()
+
+
+def test_미측정_기준선_파일은_읽기_경계에서도_거부된다(tmp_path: Path) -> None:
+    """**셋째 마디** — 이미 디스크에 있는 파일이 하한선이 되는 경로.
+
+    커밋되는 하한선 파일은 사람이 열어 고칠 수 있고, 이 가드가 없던 시절의 파일도 있을 수
+    있다. 읽기가 열려 있으면 그런 파일이 그대로 하한선이 된다.
+    """
+    path = tmp_path / "baseline.json"
+    body = baseline_body(
+        Fingerprint.of(DOCUMENTS, _context()), _measurement((16, 56), (16, 20)), _context()
+    )
+    body["measurement"]["collected"]["unmeasured"] = 36
+    body["measurement"]["overall"]["unmeasured"] = 36
+    path.write_text(json.dumps(body, ensure_ascii=False), encoding="utf-8")
+
+    assert stored_body(path) is not None, "전제 — JSON 으로는 멀쩡한 파일이다"
+    assert load_baseline(path) is None, "미측정이 섞인 파일이 기준선으로 읽혔다"
+
+
+def test_미측정_키가_없는_기준선_파일은_읽히지_않는다(tmp_path: Path) -> None:
+    """**A-3 과 같은 자리** — 쓰기에서 요구한 것을 읽기가 만들어 주지 않는다.
+
+    G6 는 `unmeasured` 키가 없는 본문을 거부한다. 그런데 `GroupMeasurement.unmeasured` 에
+    기본값이 있으면 `load_baseline` 이 **키가 없는 디스크 파일을 `unmeasured=0` 인 정상
+    기준선으로 복구**한다 — 쓰기에서 "키의 부재는 0이 아니다"라고 해 놓고 읽기가 그 구분을
+    지우는 것이다. `effort` 가 정확히 그 형태로 열려 있었고 독립 검증(A-3)이 재현했다.
+
+    **이 테스트가 없으면 그 기본값을 되돌려 놓아도 스위트가 초록이다**(실측: 기본값 `= 0`
+    으로 되돌린 변이에서 150건 전부 통과). 필드를 필수로 두는 편집을 붙잡는 것이 여기다.
+    """
+    path = tmp_path / "baseline.json"
+    body = baseline_body(
+        Fingerprint.of(DOCUMENTS, _context()), _measurement((36, 56), (17, 20)), _context()
+    )
+    path.write_text(json.dumps(body, ensure_ascii=False), encoding="utf-8")
+    assert load_baseline(path) is not None, "전제 — 전건을 잰 기준선은 정상적으로 읽힌다"
+
+    del body["measurement"]["collected"]["unmeasured"]
+    path.write_text(json.dumps(body, ensure_ascii=False), encoding="utf-8")
+    assert stored_body(path) is not None, "전제 — JSON 으로는 멀쩡한 파일이다"
+    assert load_baseline(path) is None, (
+        "미측정 키가 없는 파일이 `unmeasured=0` 으로 복구됐다 — 읽기가 쓰기보다 관대하다"
+    )
+
+
+def test_미측정이_섞인_실행은_판정도_하지_못한다() -> None:
+    """**기록 경로만 막으면 반쪽이다** — 평범한(비기록) 게이트 실행의 자리.
+
+    부분 실패한 문서가 **원래도 실패하던 문서**라면 수치가 기준선과 같아 `유지`(비차단)로
+    통과한다. 36건을 모델에 보내지도 못한 실행이 초록으로 끝나는 것이다. 기록을 막는 것과
+    판정을 막는 것은 다른 사건이라 자리도 둘이다.
+    """
+    fingerprint = Fingerprint.of(DOCUMENTS, _context())
+    baseline = _baseline(fingerprint, _measurement((16, 56), (16, 20)))
+    judgement = compare(baseline, fingerprint, _사고_측정치())
+    assert judgement.verdict is Verdict.UNMEASURED
+    assert judgement.blocking is True
+    # 재기록을 요구하지 않는다 — 요구해 봐야 `Baseline` 불변식이 그 기록을 거부한다.
+    assert judgement.requires_record is False
+    assert "실수집: 36/36건" in judgement.summary()
+
+
+def test_전건을_잰_실행은_그대로_수치_판정을_받는다() -> None:
+    """**대조군.** 미측정 검사가 정상 실행의 판정을 가로채지 않는다."""
+    fingerprint = Fingerprint.of(DOCUMENTS, _context())
+    baseline = _baseline(fingerprint, _measurement((36, 56), (17, 20)))
+    assert compare(baseline, fingerprint, _measurement((36, 56), (17, 20))).verdict is Verdict.HELD
+    assert (
+        compare(baseline, fingerprint, _measurement((30, 56), (17, 20))).verdict
+        is Verdict.REGRESSED
+    )
+
+
+def test_사고_실행의_수치는_어느_방향으로도_하한선이_되지_못한다(tmp_path: Path) -> None:
+    """**리뷰어가 낸 두 행을 그대로 확인한다** — 사슬이 끊긴 뒤에도 성립하지 않는가.
+
+    고치기 전 실측(2026-08-13):
+
+        기준선 = 사고 실행(16/56 · 합성 16/20 · 실수집 0/36, 실수집 36건 미측정)
+        2026-08-12 실측 31/56 (16/20·15/36)  → 하락  blocking=True   ← 정상 실행이 거짓 차단
+        실수집 전멸 재발 0/36                 → 유지  blocking=False  ← 실수집 축 영구 개방
+
+    두 행 모두 **그 기준선이 존재한다**는 전제 위에 선다. 이제 그 전제가 세 경계에서 전부
+    성립하지 않으므로 두 행 자체가 없다. 마디를 하나씩 확인하는 이유는, 하나만 보면 뒤의
+    마디가 다시 열렸을 때(예: 불변식을 지우고 writer 만 남길 때) 알아채지 못하기 때문이다.
+    """
+    path = tmp_path / "baseline.json"
+    fingerprint = Fingerprint.of(DOCUMENTS, _context())
+    사고 = _사고_측정치()
+
+    # ① 사고 실행의 기준선은 조립되지 않는다.
+    with pytest.raises(ValidationError, match="측정하지 못한 문서가 있다"):
+        baseline_body(fingerprint, 사고, _context())
+
+    # ② 손으로 조립해 writer 를 태워도 파일이 생기지 않는다.
+    forged = baseline_body(fingerprint, _measurement((16, 56), (16, 20)), _context())
+    forged["measurement"] = json.loads(사고.model_dump_json())
+    with pytest.raises(AssertionError, match="측정하지 못한 문서가 있다"):
+        write_baseline(forged, path)
+    assert not path.exists()
+
+    # ③ writer 까지 우회해 파일을 직접 써도 읽기에서 막힌다 — 두 행의 전제가 사라진다.
+    path.write_text(json.dumps(forged, ensure_ascii=False), encoding="utf-8")
+    assert load_baseline(path) is None
+
+    # ④ 그래서 두 행이 성립하지 않는다. 정상 실행은 **거짓 차단되지 않고**(하한선이 없으므로
+    #    "기준선 없음"으로 재기록을 요구할 뿐 하락으로 몰리지 않는다), 전멸 재발은
+    #    **유지로 통과하지 않는다**(측정 미완으로 차단된다).
+    정상 = _measurement((31, 56), (16, 20))
+    거짓_차단 = compare(load_baseline(path), fingerprint, 정상)
+    assert 거짓_차단.verdict not in {Verdict.REGRESSED, Verdict.HELD, Verdict.IMPROVED}, (
+        "사고 수치가 정상 실행의 비교 대상이 됐다 — 수치 판정이 났다"
+    )
+    assert 거짓_차단.verdict is Verdict.ABSENT
+
+    재발 = compare(load_baseline(path), fingerprint, _사고_측정치())
+    assert 재발.verdict is Verdict.UNMEASURED, "실수집 전멸 재발이 하한선을 통과했다"
+    assert 재발.blocking is True
 
 
 def test_다른_producer의_수치가_하한선으로_채택되지_않는다(tmp_path: Path) -> None:

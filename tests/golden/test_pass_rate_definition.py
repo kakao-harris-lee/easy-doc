@@ -117,8 +117,53 @@ def test_변환에_실패한_문서는_통과로_세지_않는다() -> None:
 
 
 def test_통과는_사유가_하나도_없을_때만이다() -> None:
-    assert DocumentEvaluation(document_id="001", synthetic=True, failures=[]).passed is True
-    assert DocumentEvaluation(document_id="001", synthetic=True, failures=["x"]).passed is False
+    assert (
+        DocumentEvaluation(document_id="001", synthetic=True, measured=True, failures=[]).passed
+        is True
+    )
+    assert (
+        DocumentEvaluation(document_id="001", synthetic=True, measured=True, failures=["x"]).passed
+        is False
+    )
+
+
+def test_측정_여부는_통과_여부와_별개로_기록된다() -> None:
+    """**실패는 측정이 아니다** — 통과 0과 미측정을 구분하는 자리가 여기다.
+
+    변환에 실패한 문서도 실패로 세어지지만(`passed is False`), 그 0은 품질이 아니라 부재다.
+    두 상태가 `failures` 문자열로만 구분되면 문구 한 글자에 구분이 묶인다.
+    """
+    failed = DocumentEvaluation(
+        document_id="001", synthetic=True, measured=True, failures=["팩트유실 1/1건"]
+    )
+    unconverted = DocumentEvaluation(
+        document_id="002", synthetic=True, measured=False, failures=["변환실패(LLMProviderError)"]
+    )
+    assert failed.passed is unconverted.passed is False
+    assert (failed.measured, unconverted.measured) == (True, False)
+
+
+def test_미측정_건수가_측정치에_함께_실린다() -> None:
+    """**C-1 의 근원.** 수치와 "그 수치에 부재가 몇 건 섞였는가"가 한 객체에서 나온다.
+
+    따로 두면(예: `conversion_failures`) 소비자가 그 값을 따로 구해야 하고, 따로 구할 수
+    있는 값은 따로 잃을 수 있다 — 기준선 파일에 실리는 것은 `measurement` 뿐이라 실제로
+    잃었다. 2026-08-13 실행은 실수집 36건을 모델에 보내지도 못했는데 기록 경로의 가드
+    넷을 전부 통과했다.
+    """
+    evaluations = [
+        DocumentEvaluation(document_id="001", synthetic=True, measured=True, failures=[]),
+        DocumentEvaluation(
+            document_id="002", synthetic=False, measured=False, failures=["변환실패(x)"]
+        ),
+    ]
+    measurement = measure(evaluations)
+    assert (measurement.overall.unmeasured, measurement.overall.documents) == (1, 2)
+    assert measurement.synthetic.unmeasured == 0
+    assert measurement.collected.unmeasured == 1
+    assert measurement.unmeasured_gaps(), "미측정이 있는데 갈래가 비었다"
+    # 전건 측정이면 비어야 한다 — 항상 채우면 정상 실행까지 막는다.
+    assert measure(evaluations[:1]).unmeasured_gaps() == []
 
 
 # ════════════════════════════════════════════ 통과율의 분모
@@ -127,9 +172,13 @@ def test_통과는_사유가_하나도_없을_때만이다() -> None:
 def test_분모는_평가_전건이다() -> None:
     """실패한 문서를 분모에서 빼면 통과율은 실력과 무관하게 오른다 — 문서를 빼는 우회와 같다."""
     evaluations = [
-        DocumentEvaluation(document_id="001", synthetic=True, failures=[]),
-        DocumentEvaluation(document_id="002", synthetic=True, failures=["팩트유실 1/1건"]),
-        DocumentEvaluation(document_id="003", synthetic=False, failures=["팩트유실 1/1건"]),
+        DocumentEvaluation(document_id="001", synthetic=True, measured=True, failures=[]),
+        DocumentEvaluation(
+            document_id="002", synthetic=True, measured=True, failures=["팩트유실 1/1건"]
+        ),
+        DocumentEvaluation(
+            document_id="003", synthetic=False, measured=True, failures=["팩트유실 1/1건"]
+        ),
     ]
     measurement = measure(evaluations)
     assert (measurement.overall.passed, measurement.overall.documents) == (1, 3)

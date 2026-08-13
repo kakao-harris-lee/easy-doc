@@ -34,6 +34,15 @@ class DocumentEvaluation(BaseModel):
 
     document_id: str
     synthetic: bool
+    #: 이 문서를 **실제로 측정했는가.** 변환에 실패하면 `False`다.
+    #:
+    #: `failures` 문자열에서 유도하지 않고 별도 필드로 두는 이유가 있다. 변환 실패도
+    #: 실패이므로 사유 목록에는 `변환실패(...)`가 담기고 통과로 세어지지 않는데, 그
+    #: **0은 품질이 아니라 부재**다. 둘을 구분하려면 사유 문자열을 파싱해야 하고, 문구
+    #: 한 글자만 바뀌어도 구분이 조용히 사라진다. 아래 `measure`가 이 값을 세어 측정치
+    #: 안에 함께 싣는다 — 그 결과 "판정하지 못한 문서가 몇 건인가"가 수치와 **같은
+    #: 객체**에 실려, 소비자가 둘을 떼어 놓을 표현이 없다.
+    measured: bool
     failures: list[str]
 
     @property
@@ -180,17 +189,26 @@ def evaluate_all(
         if outcome is None:
             # 변환 실패는 **통과가 아니다.** 판정하지 못한 것을 통과로 세면 provider가
             # 전건 실패한 실행이 만점으로 보인다.
+            #
+            # 동시에 **측정도 아니다**(`measured=False`). 실패를 통과로 세지 않는 것만으로는
+            # 부족하다 — 그 0이 분모에 남은 채 기준선이 되면 다음 실행부터 "0 이상"이
+            # 합격선이 되어 같은 전멸이 재발해도 통과한다(2026-08-13 실측).
             conversion_failures.append(document.id)
             failures = ["변환실패(LLMProviderError)"]
+            measured = False
         else:
             converted[document.id] = (document, outcome.easy_text)
             failures = evaluate_rules(document, outcome)
             reasons.update(issue.reason for issue in check_style(outcome.easy_text).issues)
             # 측정에 실제로 들어간 변환이 보고한 모델만 담는다 — 이 수치의 조건이다.
             observed.add(outcome.model)
+            measured = True
         evaluations.append(
             DocumentEvaluation(
-                document_id=document.id, synthetic=document.synthetic, failures=failures
+                document_id=document.id,
+                synthetic=document.synthetic,
+                measured=measured,
+                failures=failures,
             )
         )
     return RuleEvaluation(
@@ -212,10 +230,20 @@ def measure(evaluations: list[DocumentEvaluation]) -> Measurement:
 
     **분모는 평가 전건이다.** 실패한 문서를 분모에서 빼면 통과율은 실력과 무관하게 오르고,
     그것은 문서를 코퍼스에서 빼는 우회와 구조가 같다(코퍼스 지문이 막는 바로 그 경로다).
+
+    **측정하지 못한 건수를 같은 자리에 싣는다**(`unmeasured`, 2026-08-13). 분모에서 빼지
+    않으면서도 "이 0은 품질이 아니라 부재"를 말하는 유일한 방법이다. 별도 필드
+    (`RuleEvaluation.conversion_failures`)로만 두면 측정치를 받는 소비자가 그것을 **따로**
+    구해야 하고, 따로 구할 수 있는 값은 따로 잃을 수 있다 — 기준선 파일에 실리는 것은
+    `measurement` 뿐이라 실제로 잃었다. 여기 있으면 수치를 든 사람은 언제나 이 값도 든다.
     """
 
     def group(subset: list[DocumentEvaluation]) -> GroupMeasurement:
-        return GroupMeasurement(documents=len(subset), passed=sum(item.passed for item in subset))
+        return GroupMeasurement(
+            documents=len(subset),
+            passed=sum(item.passed for item in subset),
+            unmeasured=sum(not item.measured for item in subset),
+        )
 
     return Measurement(
         overall=group(evaluations),

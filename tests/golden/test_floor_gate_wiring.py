@@ -222,11 +222,13 @@ def _baseline_at(
     `Baseline`이 그 조합을 불변식으로 거부하므로 만들어지지도 않지만, 그 전에 **헬퍼가
     그것을 조립할 수 없게** 둔다 — 시험 입력이 자기모순이면 무엇을 확인한 것인지 말할 수 없다.
     """
+    # 기준선은 정의상 **전건을 잰 실행**의 수치다 — 미측정이 섞인 측정치는 `Baseline`
+    # 불변식이 거부하므로 여기서 만들 수 있는 값도 0뿐이다.
     measurement = Measurement(
-        overall=GroupMeasurement(passed=passed[0], documents=passed[1]),
-        synthetic=GroupMeasurement(passed=synthetic[0], documents=synthetic[1]),
+        overall=GroupMeasurement(passed=passed[0], documents=passed[1], unmeasured=0),
+        synthetic=GroupMeasurement(passed=synthetic[0], documents=synthetic[1], unmeasured=0),
         collected=GroupMeasurement(
-            passed=passed[0] - synthetic[0], documents=passed[1] - synthetic[1]
+            passed=passed[0] - synthetic[0], documents=passed[1] - synthetic[1], unmeasured=0
         ),
     )
     observed = (
@@ -447,6 +449,44 @@ def test_effort_환경값이_이번_실행의_지문까지_간다(monkeypatch: p
     with pytest.raises(AssertionError, match="수치를 만든 것") as caught:
         harness.test_규칙_기반_통과율이_직전_기록보다_낮지_않다(evaluation)
     assert "effort: low → high" in str(caught.value)
+
+
+def test_적용되지_않는_effort는_지문에_실리지_않는다(monkeypatch: pytest.MonkeyPatch) -> None:
+    """**X-5** — 지문은 *설정값*이 아니라 이 실행에 **적용된** effort 를 싣는다.
+
+    `create_provider` 는 effort 를 Anthropic 에만 넘긴다(`OpenAIProvider.__init__` 에 인자가
+    없다). 그런데 `run_context` 가 `settings.llm_effort` 를 그대로 실으면, OpenAI 레인에서
+    `LLM_EFFORT` 만 바꾼 두 실행이 **결과에 아무 영향이 없는데도 비교 불가**가 된다.
+    `.env` 에 `LLM_EFFORT=low` 가 실제로 들어 있어 가상의 상황이 아니다.
+
+    과민한 지문은 하한선이 영영 축적되지 않는 반대 방향 고장이라, 위의 `test_effort_환경값이…`
+    (진짜 교란 변수를 지문까지 보낸다)와 **짝으로** 봐야 한다. 둘 중 하나만 있으면 값을 통째로
+    빼거나 통째로 싣는 쪽으로 무너진다.
+    """
+    monkeypatch.setenv("LLM_EFFORT", "low")
+
+    monkeypatch.setenv("GOLDEN_PROVIDER", "anthropic")
+    assert harness.run_context(["m"]).effort == "low", (
+        "적용되는 레인에서 effort 가 사라졌다 — 9%p 후보로 지목된 교란 변수다"
+    )
+
+    monkeypatch.setenv("GOLDEN_PROVIDER", "openai")
+    assert harness.run_context(["m"]).effort is None, (
+        "적용되지 않는 값이 지문에 실렸다 — 결과에 닿지 않는 설정으로 비교가 끊긴다"
+    )
+
+    # 실제 해악을 수치로도 본다: OpenAI 레인에서 effort 만 바꾼 두 실행은 비교가 성립해야 한다.
+    evaluation = evaluate_all(_preserving_outcomes("this-run"), harness.DOCUMENTS)
+    recorded = _matching_baseline(evaluation)
+    monkeypatch.setenv("LLM_EFFORT", "high")
+    judgement = compare(
+        recorded,
+        Fingerprint.of(harness.DOCUMENTS, _baseline_context(evaluation.observed_models)),
+        evaluation.measurement,
+    )
+    assert judgement.verdict is Verdict.HELD, (
+        "OpenAI 레인에서 적용되지도 않은 effort 변경이 비교를 끊었다"
+    )
 
 
 def test_측정이_코퍼스_전건이_아니면_하네스가_실패한다(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -811,26 +851,38 @@ def test_관측_모델이_없으면_하네스_기록_경로가_막힌다(
     """**전건 변환 실패 실행은 기준선이 되지 못한다** — 하네스 경로로 확인한다.
 
     `evaluate_all({}, DOCUMENTS)` 는 56건을 전부 변환 실패로 세므로 분모는 전건이고
-    (개수 검사를 지난다) `observed_models` 만 빈다. 이 상태로 기록 모드를 돌리면 "무엇이
-    이 수치를 냈는가"를 말할 수 없는 하한선이 커밋되는데, 그 수치는 0/56이라 **다음 실행이
-    무엇을 내든 통과한다.** 가드가 마지막에 막는다.
+    (개수 검사를 지난다) 이 상태로 기록 모드를 돌리면 "무엇이 이 수치를 냈는가"를 말할 수
+    없는 하한선이 커밋되는데, 그 수치는 0/56이라 **다음 실행이 무엇을 내든 통과한다.**
 
-    `attempts` 가 1건이라는 것이 중요하다 — 본문 조립까지는 정상으로 갔고 거부가 실제로
-    `write_baseline` 에서 났다는 뜻이다. 그 구분이 없으면 앞단의 다른 가드(리포트 부재 등)가
-    막은 것과 같은 모양이 된다.
+    **2026-08-13 정정 — 어디서 막히는지가 바뀌었다.** 예전에는 본문 조립까지 정상으로 가고
+    `write_baseline` 의 G2(관측된 모델이 없다)가 마지막에 막았다. 지금은 `Baseline` 의
+    미측정 불변식이 **본문이 만들어지기 전에** 막는다(`bodies` 가 빈다). 순서가 그렇게 되는
+    것이 맞다 — 전건 변환 실패는 "모델을 모르는 실행"이기 전에 **아무것도 재지 못한 실행**이고,
+    본문을 만든 뒤에 막으면 "무엇을 쓰려 했는가"가 이미 조립된 뒤라 가드 한 겹을 걷어내는
+    편집에 그대로 노출된다.
+
+    **그래서 G2 의 하네스 도달은 이제 0이다.** 관측 모델이 비는 것은 전건 변환 실패와
+    동치이므로(성공한 변환에서만 모은다) 미측정 불변식이 언제나 먼저 걸린다. G2 는 G1·G5·G6
+    과 같은 **직접 호출 계약**으로 남고 그 음성 대조는 `test_baseline_gate.py` 의
+    `test_관측_모델_없이는_기준선을_쓰지_않는다` 다. 도달이 0이 된 것을 적어 두지 않으면
+    다음 사람이 이 파일을 G2 의 배선 증거로 읽는다.
+
+    `write_baseline` 까지 실제로 도달하는 하네스 음성 대조는 아래 모델 섞임 테스트다 —
+    그쪽은 전건 변환에 성공하므로 미측정이 0이다.
     """
     evaluation = evaluate_all({}, harness.DOCUMENTS)
     assert evaluation.observed_models == [], "전제 — 전건 실패면 관측 모델이 빈다"
     assert evaluation.measurement.overall.documents == len(harness.DOCUMENTS), (
-        "전제 — 개수 검사를 지나가야 가드까지 도달한다"
+        "전제 — 개수 검사를 지나가야 기록 경로까지 도달한다"
     )
     harness.build_report(evaluation)
 
     path = tmp_path / "baseline.json"
     recording = _Recording(monkeypatch, evaluation, path)
-    with pytest.raises(AssertionError, match="관측된 모델이 없다"):
+    with pytest.raises(ValidationError, match="측정하지 못한 문서가 있다"):
         harness.test_규칙_기반_통과율이_직전_기록보다_낮지_않다(evaluation)
-    assert len(recording.attempts) == 1, "가드까지 도달하지 못했다 — 다른 이유로 막혔다"
+    assert recording.bodies == [], "미측정을 본문 조립 전에 막아야 한다"
+    assert recording.attempts == [], "write 를 시도했다 — 가드에 기대지 말고 먼저 막는다"
     assert recording.written == [], "무-모델 실행이 기준선으로 기록됐다"
     assert not path.exists()
 
@@ -854,6 +906,146 @@ def test_모델이_섞이면_하네스_기록_경로가_막힌다(
     assert len(recording.attempts) == 1, "가드까지 도달하지 못했다 — 다른 이유로 막혔다"
     assert recording.written == [], "섞인 실행이 기준선으로 기록됐다"
     assert not path.exists()
+
+
+# ───────────────────────────── 미측정: **2026-08-13 실행의 형태**를 하네스 경로로 태운다
+#
+# 그날 합성 20건은 변환에 성공하고 실수집 36건이 전부 HTTP 400(크레딧 소진)으로 실패했는데,
+# 그 실행이 기록 경로의 가드 넷을 **전부 통과**했다 — 관측 모델은 성공한 20건에서만 모이므로
+# 지문이 건강한 실행과 한 글자도 다르지 않았다. 사고를 막은 것은 사람이 손으로 되돌린 것뿐이고
+# 장치는 없었다.
+#
+# 아래 입력이 정확히 그 형태다. 위의 `test_관측_모델이_없으면…`(전건 실패)과 다른 점이 핵심이다
+# — 저쪽은 관측 모델이 비어 G2 가 막지만, 이쪽은 **관측 모델이 정상이라 아무 가드도 반응하지
+# 않았다.** 부분 실패가 전건 실패보다 위험한 이유가 그것이다.
+
+
+def _partial_failure_outcomes(model: str = "this-run") -> dict[str, ConversionOutcome | None]:
+    """합성은 전건 변환 성공(규칙도 통과), 실수집은 전건 변환 실패.
+
+    합성 쪽에 `_mixed_outcomes` 와 같은 "필수 사실을 짧은 문장으로 늘어놓은" 변환문을 쓴다 —
+    실제로 **통과하는** 문서가 있어야 사고 실행이 그럴듯한 수치를 내고, 그 수치가 하한선이
+    되는 시나리오가 성립한다. 전부 실패하는 입력으로는 "부분 실패가 위험하다"를 보일 수 없다.
+    """
+    result: dict[str, ConversionOutcome | None] = {}
+    for document in harness.DOCUMENTS:
+        if document.synthetic:
+            result[document.id] = ConversionOutcome(
+                easy_text="\n".join(
+                    f"{fact.canonical} 입니다." for fact in document.required_facts
+                ),
+                masked_items=[],
+                model=model,
+                provider_name="fake",
+            )
+        else:
+            # 변환 실패 — `convert_all` 이 `LLMProviderError` 를 잡아 None 으로 남기는 자리다.
+            result[document.id] = None
+    return result
+
+
+def test_부분_실패_실행은_하네스_기록_경로에서_막힌다(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """**⑴ 기록이 거부되는가** — 사고 실행의 형태를 실제 기록 경로로 태운다.
+
+    전제 넷을 먼저 못박는다. 이 실행은 ① 관측 모델이 정상이고(단일) ② 분모가 코퍼스 전건이며
+    ③ 실수집이 통째로 비었고 ④ 합성은 건강하다 — 즉 **기존 가드 넷이 전부 지나가는 입력**이다.
+    그 전제가 깨지면 이 테스트는 다른 이유로 막힌 것을 확인하게 된다. 위의 전건 실패 테스트와
+    다른 점이 여기다: 저쪽은 관측 모델이 비어 예전 가드에도 걸렸지만, 이쪽은 **아무 가드도
+    반응하지 않았다.** 부분 실패가 전건 실패보다 위험한 이유가 그것이다.
+
+    `bodies` 가 비는 것이 중요하다 — 거부가 **본문 조립 전**에 났다는 뜻이다. 본문을 만든
+    뒤에 막으면 "무엇을 쓰려 했는가"가 이미 조립된 뒤라 가드 한 겹을 걷어내는 편집에 그대로
+    노출된다.
+    """
+    evaluation = evaluate_all(_partial_failure_outcomes(), harness.DOCUMENTS)
+    assert evaluation.observed_models == ["this-run"], "전제 — 관측 모델은 정상이다(G2·G3 통과)"
+    assert evaluation.measurement.overall.documents == len(harness.DOCUMENTS), (
+        "전제 — 개수 검사를 지나가야 기록 경로까지 도달한다"
+    )
+    assert evaluation.measurement.collected.passed == 0, "전제 — 실수집이 통째로 비었다"
+    assert evaluation.measurement.synthetic.passed > 0, "전제 — 합성은 건강하다(부분 실패다)"
+    harness.build_report(evaluation)
+
+    path = tmp_path / "baseline.json"
+    recording = _Recording(monkeypatch, evaluation, path)
+    with pytest.raises(ValidationError, match="측정하지 못한 문서가 있다") as caught:
+        harness.test_규칙_기반_통과율이_직전_기록보다_낮지_않다(evaluation)
+    assert "실수집: 36/36건" in str(caught.value), "어느 축이 통째로 비었는지가 메시지에 없다"
+    assert recording.bodies == [], "미측정을 본문 조립 전에 막아야 한다"
+    assert recording.attempts == [], "write 를 시도했다 — 가드에 기대지 말고 먼저 막는다"
+    assert recording.written == [], "부분 실패 실행이 기준선으로 기록됐다"
+    assert not path.exists()
+
+
+def test_부분_실패_실행은_하네스_판정_경로에서도_막힌다(monkeypatch: pytest.MonkeyPatch) -> None:
+    """**⑵ 그 상태가 하한선으로 채택되지 않는가** — 기록 모드가 아닌 평범한 실행의 자리.
+
+    여기서 쓰는 기준선은 **이번 수치와 정확히 같다**(`_matching_baseline`). 미측정 검사가
+    없으면 수치 비교가 `유지`로 떨어져 **차단되지 않는다** — 36건을 모델에 보내지도 못한
+    실행이 초록으로 끝난다. 수치를 같게 두었기 때문에 막히는 이유가 미측정 하나로 좁혀진다.
+    """
+    evaluation = evaluate_all(_partial_failure_outcomes(), harness.DOCUMENTS)
+    harness.build_report(evaluation)
+    monkeypatch.setattr(harness, "load_baseline", lambda: _matching_baseline(evaluation))
+    monkeypatch.setattr(harness, "recording_requested", lambda: False)
+    with pytest.raises(AssertionError, match="측정하지 못한 문서가 있다") as caught:
+        harness.test_규칙_기반_통과율이_직전_기록보다_낮지_않다(evaluation)
+    assert "실수집:" in str(caught.value), "어느 축이 통째로 비었는지가 메시지에 없다"
+    report = golden_report.for_evaluation(evaluation)
+    assert report is not None
+    assert report.floor is not None
+    assert report.floor.verdict is Verdict.UNMEASURED
+
+
+def test_전건을_변환한_실행은_그대로_기록된다(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """**⑶ 대조군** — 막는 쪽만 확인하면 "기록을 통째로 잠갔다"와 구분되지 않는다.
+
+    같은 합성 변환문을 쓰되 실수집도 변환에 성공한 실행이다. 기록된 본문에 미측정이 0으로
+    실려 있는지까지 본다 — 값이 실리지 않으면 다음 실행이 그것을 확인할 방법이 없다.
+    """
+    outcomes = _partial_failure_outcomes()
+    for document in harness.DOCUMENTS:
+        if outcomes[document.id] is None:
+            outcomes[document.id] = ConversionOutcome(
+                easy_text=document.source_text,
+                masked_items=[],
+                model="this-run",
+                provider_name="fake",
+            )
+    evaluation = evaluate_all(outcomes, harness.DOCUMENTS)
+    assert evaluation.conversion_failures == [], "전제 — 전건 변환에 성공한 실행이다"
+    harness.build_report(evaluation)
+
+    path = tmp_path / "baseline.json"
+    recording = _Recording(monkeypatch, evaluation, path)
+    with pytest.raises(AssertionError, match="기록 실행"):
+        harness.test_규칙_기반_통과율이_직전_기록보다_낮지_않다(evaluation)
+    assert len(recording.written) == 1, "전건을 잰 실행의 기록이 막혔다 — 과잉이다"
+    written = recording.written[0]["measurement"]
+    assert [written[label]["unmeasured"] for label in ("overall", "synthetic", "collected")] == [
+        0,
+        0,
+        0,
+    ], "미측정 0이 기준선에 실리지 않았다 — 다음 실행이 확인할 값이 없다"
+    assert path.exists()
+
+
+def test_미측정은_리포트에도_남는다() -> None:
+    """사람이 보는 화면에서도 0.000이 품질로 읽히지 않아야 한다.
+
+    차단은 게이트가 하지만, 실행 리포트는 게이트가 통과하든 막히든 사람이 읽는 유일한
+    수치 기록이다(`report.py` 모듈 docstring).
+    """
+    evaluation = evaluate_all(_partial_failure_outcomes(), harness.DOCUMENTS)
+    report = harness.build_report(evaluation)
+    assert report.measurement.collected.unmeasured == report.measurement.collected.documents
+    rendered = report.render()
+    assert "미측정" in rendered
+    assert "부재다" in rendered
 
 
 def _cherry_picked(outcomes: dict[str, ConversionOutcome | None]) -> list[GoldenDocument]:
@@ -1259,7 +1451,7 @@ def test_평가는_문서_집합_없이_만들어지지_않는다() -> None:
     하류는 분모를 다시 전역에서 구할 수밖에 없다. 이번 작업이 없애려는 바로 그 상태다.
     mypy 도 이 생성을 거부한다(정적으로도 통로가 없다).
     """
-    empty = GroupMeasurement(passed=0, documents=0)
+    empty = GroupMeasurement(passed=0, documents=0, unmeasured=0)
     with pytest.raises(ValidationError):
         RuleEvaluation(  # type: ignore[call-arg]  # 분모 필드 필수 고정
             outcomes={},

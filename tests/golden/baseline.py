@@ -116,6 +116,8 @@ class Verdict(StrEnum):
     IMPROVED = "개선"
     REGRESSED = "하락"
     INCOMPARABLE = "비교 불가"
+    #: 변환에 실패해 판정하지 못한 문서가 있다 — **수치가 나왔어도 측정이 아니다.**
+    UNMEASURED = "측정 미완"
     ABSENT = "기준선 없음"
     RECORDED = "기록 실행"
 
@@ -552,6 +554,29 @@ class Fingerprint(BaseModel):
         return "\n".join(parts)
 
 
+def producer_bond_error(fingerprint: Fingerprint, context: RunContext) -> str | None:
+    """지문의 producer와 `context`가 갈렸으면 설명, 결속돼 있으면 `None`.
+
+    두 곳이 같은 규칙을 쓴다 — 커밋되는 기준선(`Baseline`)과 사람이 읽는 실행 리포트
+    (`tests/golden/report.py`의 `GoldenRunReport`). 둘 다 같은 값을 두 자리(기계가 비교하는
+    지문 / 사람이 읽는 기록)에 싣는 **같은 모양의 이중 기록**이라, 규칙도 하나여야 한다.
+    한쪽에만 적으면 다른 쪽이 규칙 밖에 남고, 그 상태가 무엇을 뜻하는지는 이미 실측으로
+    확인됐다(`Producer` docstring).
+    """
+    recorded = Producer.of(context)
+    gaps = _producer_gaps(fingerprint.producer, recorded)
+    if not gaps:
+        return None
+    return "\n".join(
+        [
+            "지문의 producer와 context가 갈렸다: "
+            f"지문 `{fingerprint.producer.label()}` / context `{recorded.label()}`",
+            *gaps,
+            PRODUCER_BOND_NOTE,
+        ]
+    )
+
+
 def _shown(ids: list[str]) -> str:
     head = ", ".join(ids[:MAX_REPORTED_IDS])
     return f"{head} 외 {len(ids) - MAX_REPORTED_IDS}건" if len(ids) > MAX_REPORTED_IDS else head
@@ -567,6 +592,14 @@ class GroupMeasurement(BaseModel):
 
     documents: int
     passed: int
+    #: 변환에 실패해 **판정하지 못한** 문서 수. 분모(`documents`)에는 그대로 남아 있고
+    #: 분자(`passed`)에는 들어가지 않는다 — 즉 이 수만큼의 0이 수치 안에 섞여 있다.
+    #:
+    #: **기본값을 두지 않는다.** 키가 빠진 기준선 파일이 `unmeasured=0`인 정상 기준선으로
+    #: 복구되면, 쓰기에서 막은 것을 읽기가 만들어 주는 상태가 된다 — `RunContext.effort`가
+    #: 정확히 그 형태로 열려 있었다(2026-08-13 독립 검증 A-3). 필수 필드면 그 파일은
+    #: `load_baseline`에서 검증 실패 → `None` → "기준선 없음"(차단)이 된다.
+    unmeasured: int
 
     @property
     def pass_rate(self) -> float:
@@ -597,6 +630,34 @@ class Measurement(BaseModel):
             ("합성", self.synthetic),
             ("실수집", self.collected),
         ]
+
+    def unmeasured_gaps(self) -> list[str]:
+        """판정하지 못한 문서가 있는 집단. 빈 목록이면 **전건을 실제로 쟀다.**
+
+        집단별로 적는 이유는 2026-08-13 사고의 모양이 그것이었기 때문이다 — 합성 20건은
+        전부 변환됐고 실수집 36건만 전멸했다. 전체 수 하나로 접으면 "36건이 안 됐다"까지만
+        보이고, **어느 축이 통째로 비었는가**가 사라진다. 그 구분이 곧 다음 행동을 가른다.
+        """
+        return [
+            f"  - {label}: {group.unmeasured}/{group.documents}건을 변환하지 못해 판정하지 못했다"
+            for label, group in self.groups()
+            if group.unmeasured
+        ]
+
+
+#: 측정하지 못한 문서가 섞였을 때의 설명. 쓰기(모델·writer)와 판정 세 자리가 같은 문장을
+#: 쓴다 — 어디서 걸렸든 사람이 해야 할 일이 같기 때문이다.
+NOT_A_MEASUREMENT_NOTE = (
+    "  - **실패는 측정이 아니다.** 변환하지 못한 문서는 통과 0으로 분모에 남지만 그 0은 "
+    "품질이 아니라 부재다. 그 수치를 하한선으로 세우면 두 방향이 함께 고장난다 — ① 전건을 "
+    "변환한 정상 실행이 **거짓 차단**되고(부재로 눌린 집단이 회복되면 다른 집단이 상대적으로 "
+    "내려간다) ② 같은 전멸이 재발해도 0 이상이라 **'유지'로 통과**한다. 그 축은 영구히 열린다\n"
+    "  - 2026-08-13 실측이 정확히 이 형태였다: 합성 20건 변환 성공 · 실수집 36건 전건 "
+    "HTTP 400. 지문은 건강한 실행과 한 글자도 다르지 않았고 producer 축 가드 4개가 전부 "
+    "통과했다 — 관측 모델은 성공한 20건에서만 모이기 때문이다\n"
+    "  - 닫는 방법: 변환이 왜 실패했는지(크레딧·키·네트워크)를 고친 뒤 **전건 변환에 성공한 "
+    "실행**으로 다시 돌린다. 실패한 문서를 코퍼스에서 빼는 것은 분모 우회이지 해결이 아니다"
+)
 
 
 class JudgeObservation(BaseModel):
@@ -667,17 +728,45 @@ class Baseline(BaseModel):
         `judge_provider`·설정값 `model`은 보지 않는다 — producer 축에 없는 필드라
         지문에 실릴 이유가 없고, 넣으면 판정과 무관한 변경이 기록을 거부하게 된다.
         """
-        recorded = Producer.of(self.context)
-        gaps = _producer_gaps(self.fingerprint.producer, recorded)
+        error = producer_bond_error(self.fingerprint, self.context)
+        if error:
+            raise ValueError(f"기준선이 자기모순이다 — {error}")
+        return self
+
+    @model_validator(mode="after")
+    def _측정하지_못한_실행은_기준선이_아니다(self) -> "Baseline":
+        """변환에 실패한 문서가 하나라도 있으면 그 실행의 수치는 **기준선이 되지 못한다.**
+
+        2026-08-13 사고가 이 자리를 지나갔다. 합성 20건은 변환에 성공하고 실수집 36건이
+        전부 HTTP 400(크레딧 소진)으로 실패한 실행이, 기존 가드 넷(provider 비어 있음·관측
+        모델 없음·모델 섞임·effort 키 부재)을 **전부 통과**했다. 관측 모델은 성공한 20건
+        에서만 모이므로 지문이 건강한 실행과 한 글자도 다르지 않았기 때문이다. 그날 그
+        파일이 하한선이 되는 것을 막은 것은 **사람이 손으로 되돌린 것뿐**이었다.
+
+        불변식을 이 자리에 둔 이유는 producer 결속과 같다 — **두 경계가 한 규칙으로 닫힌다.**
+
+        - **쓰기**: `baseline_body`가 하는 첫 일이 이 모델을 조립하는 것이라, 미측정이 섞인
+          측정치는 본문 dict가 생기기 **전에** 거부된다.
+        - **읽기**: `load_baseline`이 디스크 본문을 이 모델로 검증하므로, 이 가드가 없던
+          시절에 기록됐거나 손으로 고친 파일은 `None`(=기준선 없음, 차단)이 된다.
+
+        **검사가 아니라 구조인 이유는 값이 어디서 오는가에 있다.** 판정에 쓰는 수는
+        `measurement` 안에 있다 — 하한선으로 쓰이는 바로 그 필드다. 미측정 건수를 별도
+        필드로 두고 대조했다면 그 필드는 기준선 파일에 실리지 않았을 것이고(실제로
+        `conversion_failures`가 그렇다), 실리지 않은 값은 다음 실행이 확인할 수 없다.
+
+        **`fact_losses`·`conversion_failures` 같은 다른 축은 보지 않는다.** 여기서 막는
+        것은 "이 수치가 측정인가"이지 "이 수치가 좋은가"가 아니다. 품질이 나쁜 실행의
+        기준선은 정상적으로 기록돼야 한다 — 하한선은 현재 위치에서 출발한다.
+        """
+        gaps = self.measurement.unmeasured_gaps()
         if gaps:
             raise ValueError(
                 "\n".join(
                     [
-                        "기준선이 자기모순이다 — 지문의 producer와 context가 갈렸다: "
-                        f"지문 `{self.fingerprint.producer.label()}` / "
-                        f"context `{recorded.label()}`",
+                        "기준선이 될 수 없다 — 측정하지 못한 문서가 있다",
                         *gaps,
-                        PRODUCER_BOND_NOTE,
+                        NOT_A_MEASUREMENT_NOTE,
                     ]
                 )
             )
@@ -822,6 +911,7 @@ def write_baseline(body: dict[str, Any], path: Path = BASELINE_PATH) -> Path:
             "기준선을 쓰지 않는다 — **지문의 producer와 context가 갈렸다**: "
             f"지문 {stamped} / context {claimed}.\n" + PRODUCER_BOND_NOTE
         )
+    _write할_수_있는_측정치인가(body)
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = {**body, "recorded_at": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")}
     path.write_text(
@@ -829,6 +919,43 @@ def write_baseline(body: dict[str, Any], path: Path = BASELINE_PATH) -> Path:
         encoding="utf-8",
     )
     return path
+
+
+def _write할_수_있는_측정치인가(body: dict[str, Any]) -> None:
+    """**G6** — 미측정이 섞인 본문은 쓰지 않는다. `Baseline` 불변식과 같은 규칙이다.
+
+    G5(producer 결속)를 dict 경로에도 둔 이유가 그대로 적용된다. 이 함수는 모델이 아니라
+    dict를 받으므로 `Baseline._측정하지_못한_실행은_기준선이_아니다`가 닿지 않고,
+    `baseline_body`를 거치지 않고 손으로 조립한 body가 실제로 여기 들어온다(G1~G5를
+    붙잡는 음성 대조들이 정확히 그 형태다).
+
+    **키가 없는 것도 거부한다.** 없음을 0으로 읽으면 필드 하나를 지우는 것이 가드를 지나는
+    방법이 된다 — G4(`effort`)와 "지문 없는 본문"에서 이미 같은 판단을 했다.
+
+    가드 순서에서 **마지막**이다. 앞의 다섯은 `context`·`fingerprint`만 보는데, 그것들을
+    붙잡는 음성 대조 본문에는 `measurement`가 아예 없다. 이 검사가 먼저 서면 그 본문들이
+    전부 여기서 막혀 앞선 가드가 무엇을 막는지 확인할 수 없게 된다.
+    """
+    measurement = body.get("measurement")
+    if not isinstance(measurement, dict):
+        raise AssertionError(
+            "기준선을 쓰지 않는다 — `measurement`가 없다. 하한선으로 세울 수치가 없으면 "
+            "이 파일이 무엇의 기준선인지 말할 수 없고, 미측정 대조의 상대도 사라진다."
+        )
+    for label in ("overall", "synthetic", "collected"):
+        group = measurement.get(label)
+        count = group.get("unmeasured") if isinstance(group, dict) else None
+        if not isinstance(count, int):
+            raise AssertionError(
+                f"기준선을 쓰지 않는다 — `measurement.{label}.unmeasured`가 없다. "
+                "키의 부재는 0이 아니다 — 없으면 그 실행이 전건을 실제로 쟀는지 말할 수 없다."
+            )
+        if count:
+            raise AssertionError(
+                "기준선을 쓰지 않는다 — **측정하지 못한 문서가 있다**: "
+                f"{label} {count}/{group.get('documents') if isinstance(group, dict) else '?'}건.\n"
+                + NOT_A_MEASUREMENT_NOTE
+            )
 
 
 def recording_requested() -> bool:
@@ -866,9 +993,30 @@ def compare(
 ) -> "FloorJudgement":
     """현재 측정치를 기준선과 대조한다.
 
-    순서가 중요하다. **지문을 먼저 본다** — 코퍼스가 바뀐 상태에서 수치만 비교하면
-    "문서를 빼서 오른 통과율"이 개선으로 보인다. 지문이 다르면 수치는 아예 읽지 않는다.
+    순서가 중요하다. **미측정을 가장 먼저 본다** — 판정하지 못한 문서가 섞인 수치는
+    비교의 대상이 아니라 측정의 실패다. 그다음이 **지문**이다. 코퍼스가 바뀐 상태에서 수치만
+    비교하면 "문서를 빼서 오른 통과율"이 개선으로 보이므로, 지문이 다르면 수치는 아예 읽지
+    않는다.
+
+    미측정 검사가 여기 있어야 하는 이유는 기록 경로만으로는 반쪽이기 때문이다. 기록 모드가
+    아닌 평범한 게이트 실행에서도 부분 실패는 일어나는데, 실패한 문서가 **원래도 실패하던
+    문서**라면 수치가 기준선과 같아 `유지`(비차단)로 통과한다 — 36건을 모델에 보내지도
+    못한 실행이 초록으로 끝난다. 기록을 막는 것과 판정을 막는 것은 다른 사건이다.
     """
+    unmeasured = current.unmeasured_gaps()
+    if unmeasured:
+        return FloorJudgement(
+            verdict=Verdict.UNMEASURED,
+            blocking=True,
+            # 재기록을 요구하지 않는다 — 요구해 봐야 `Baseline` 불변식이 그 기록을 거부한다.
+            # 사람이 할 일은 기준선을 갱신하는 것이 아니라 변환이 실패한 원인을 고치는 것이다.
+            requires_record=False,
+            reasons=[
+                "- **측정하지 못한 문서가 있다** — 이 실행은 판정도 기록도 하지 못한다",
+                *unmeasured,
+                NOT_A_MEASUREMENT_NOTE,
+            ],
+        )
     if baseline is None:
         return FloorJudgement(
             verdict=Verdict.ABSENT,

@@ -233,7 +233,8 @@
 | P1-4 | 스타일 규칙 **데이터** | `app/easyread/style_rules.py` (677줄) — 심볼별 행 번호는 아래 표 | 246 어려운말 사전 외 8종 | **예** (`app/**`) |
 | P1-5 | 문서 추출 fixture | `tests/ingest/fixtures/` — `sample.docx`·`sample_table.docx`·`sample_rich.docx`·`sample.pdf`·`empty.pdf`·`sample.hwpx` (**6개, 실측 확인**) | 이진 6개 | **예** |
 | P1-6 | 위 fixture 생성기 | `tests/ingest/make_fixtures.py` (313줄) | 6개 fixture를 재생성하는 스크립트 | **예** — 이진과 **함께** 반출(생성기만 있고 `app/` 의존이 남으면 재생성 불가) |
-| P1-7 | 문서 spike 합성 fixture | **저장소 밖** — `/private/tmp/claude-503/-Users-harris-Development-private-easy-doc/6f3e0698-996a-4c4a-b701-ef39bb65da0a/scratchpad/extra/{sdt_shape_math.docx, layout.pdf}` + 생성기 `…/scratchpad/extra_fixtures.py` + oracle `…/scratchpad/oracle.json` | docx 36,817 B / pdf 1,184 B | **아니오 — 더 나쁘다.** 아래 주 참조 |
+| P1-7 | 문서 spike 합성 fixture | ~~**저장소 밖** — `…/scratchpad/extra/`~~ → **2026-08-12 구조 완료.** `tests/ingest/fixtures/doc-spike/` 에 **8건 추적 중**(fixture 4 + oracle 2 + 생성기 + README) | docx·pdf·zip 2종 + oracle 2 | **예** (`tests/**`) — 위험이 "tmp 정리로 소멸"에서 "Phase 8 삭제 구역"으로 **바뀌었다**. 아래 주는 구조 전 기록이다 |
+| P1-8 | 골든셋 **원본 공공기관 문서** | `docs/golden/` 13건(PDF 9 · HWPX 4) | 76MB, **추적 0건** | **아니오** — 삭제 구역 밖이다. 그런데 **한 번도 추적된 적이 없고 2026-08-13 부터 `.gitignore` 대상**이라 `git status` 에도 안 뜬다. **fresh clone 에는 없다** — "최상위라 생존"은 이 기계의 작업 사본에서만 참이다. 반출 대상이 아니라 **보관 위치를 정해야 하는** 항목이며, 정해지기 전까지 이 디렉터리를 지우면 골든셋의 출처가 사라진다 |
 
 **P1-4 상세 — `style_rules.py`에서 반출할 데이터 심볼 (행 번호 실측)**
 

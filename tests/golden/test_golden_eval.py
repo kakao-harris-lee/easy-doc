@@ -59,7 +59,7 @@ from app.easyread.judge import (
     judge_conversion,
 )
 from app.exceptions import LLMProviderError
-from app.llm.factory import create_provider
+from app.llm.factory import applied_effort, create_provider
 from app.llm.provider import LLMProvider
 from app.services.conversion import ConversionOutcome, ConversionService
 from tests.golden import DOCUMENTS_DIR
@@ -247,14 +247,27 @@ def run_context(observed_models: list[str]) -> RunContext:
     나머지(provider·judge_provider·model·effort)는 **환경·설정에서** 오므로 outcomes 와
     무관하다. 그래서 이 값들은 여기서 매번 새로 읽어도 결속과 상관없다 — 결속이 필요한 것은
     관측 모델뿐이고, 그것은 인자로 받아 이미 measurement 와 한 객체에 묶여 있다.
+
+    **effort 는 설정값이 아니라 `applied_effort` 를 쓴다**(2026-08-13, 교차 종합 X-5).
+    `settings.llm_effort` 를 그대로 실으면 이 실행에 **적용되지도 않은 값**이 지문의
+    producer 축에 들어간다 — `create_provider` 는 effort 를 Anthropic 에만 넘기므로, OpenAI
+    레인에서는 `LLM_EFFORT` 를 바꿔도 모델에 닿지 않는데 지문만 갈려 비교 불가가 된다
+    (`.env` 에 `LLM_EFFORT=low` 가 실제로 들어 있다). 지문을 과민하게 만드는 것은 하한선이
+    영영 축적되지 않는 반대 방향 고장이다.
+
+    **값을 지문에서 빼지는 않았다.** Anthropic 레인에서 effort 는 진짜 교란 변수이고 이
+    저장소가 9%p 하락의 후보로 스스로 지목한 값이다(`04_goldenset-first-run.md`). 없앤 것은
+    값이 아니라 *적용되지 않은 값이 지문을 흔드는 경로*다. 판단의 정본은 `app/llm/factory.py`
+    한 곳이라 여기와 provider 생성 쪽이 갈릴 수 없다.
     """
     settings = Settings()
+    provider = os.environ.get("GOLDEN_PROVIDER", DEFAULT_PROVIDER)
     return RunContext(
-        provider=os.environ.get("GOLDEN_PROVIDER", DEFAULT_PROVIDER),
+        provider=provider,
         judge_provider=os.environ.get("GOLDEN_JUDGE_PROVIDER", DEFAULT_JUDGE_PROVIDER),
         model=settings.llm_model,
         observed_models=observed_models,
-        effort=settings.llm_effort,
+        effort=applied_effort(provider, settings),
     )
 
 
