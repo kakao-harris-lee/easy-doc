@@ -474,3 +474,137 @@ def test_파이썬이_아닌_파일에서_샵은_주석이_아니다(scanner: Mo
     # 파이썬에서는 `#` 뒤가 주석이므로 그 줄에서 끊기는 것이 옳다.
     python_like = scanner.logical_lines(source, python_syntax=True)[0]
     assert '"x"' not in python_like.text
+
+
+# ── codex stop-time 게이트 (2026-08-14) — 인자 파서가 주석을 몰랐다 ─────────────────
+#
+# 재현 조건 셋이 **함께** 성립해야 샌다:
+#   ① 주석 안에 짝 없는 `)` → 인자 구간이 거기서 조기에 닫힌다
+#   ② 그 앞에 **안전한** 본문 접근 → 2차 판정이 "찾았고 전부 안전"으로 빠진다
+#   ③ 진짜 위험한 접근이 그 뒤 → 잘린 구간 밖이라 아예 검사되지 않는다
+#
+# ②가 없으면 "본문 이름 없음"으로 보수적 CAUGHT 가 나므로 드러나지 않는다. 그래서
+# "주석이 있으면 샌다"가 아니라 **"안전한 접근이 위험한 접근의 방패가 된다"**가 정확하다.
+
+PROBE_COMMENT_KOTLIN = PROBE_DIR / "CommentProbe.kt"
+PROBE_COMMENT_PYTHON = PROBE_DIR / "comment_probe.py"
+
+
+@pytest.mark.parametrize(
+    ("probe", "expected"),
+    [(PROBE_COMMENT_KOTLIN, 3), (PROBE_COMMENT_PYTHON, 2)],
+)
+def test_주석이_인자_구간을_끊어_뒤를_가리지_못한다(
+    scanner: ModuleType, probe: Path, expected: int
+) -> None:
+    """주석이 낀 호출과 주석 없는 대조군이 **모두** 잡혀야 한다.
+
+    수정 전에는 대조군만 잡혔다 — 주석 안의 `)`가 인자 구간을 조기에 닫고, 잘린 구간에
+    남은 안전한 접근이 판정을 통과시켰다.
+    """
+    result = scanner.scan([probe], {"LOG-BODY"})
+    found = result.hits.get("LOG-BODY", [])
+
+    assert len(found) == expected, (
+        f"{probe.name}: {expected}건이 잡혀야 하는데 {len(found)}건이다 "
+        f"(줄 {[number for _p, number, _t in found]}). "
+        "인자 파서가 주석을 다시 코드로 읽는지 확인하라."
+    )
+
+
+def test_주석_유무가_검출을_바꾸지_않는다(scanner: ModuleType) -> None:
+    """**주석 제거가 탐지를 줄이는 방향으로 오작동하지 않는지** 보는 단언이다.
+
+    고친 방향(주석을 코드에서 뺀다)은 그 자체로 탐지를 줄일 수 있다 — 주석 안에 있던
+    무언가를 이제 안 보게 되기 때문이다. 그래서 "주석 있는 원본"과 "주석만 없앤 사본"의
+    검출이 **같아야 한다**로 재고, 이 단언은 두 방향을 동시에 막는다:
+    주석이 검출을 **만들어서도**, **없애서도** 안 된다.
+    """
+    for probe in sorted(PROBE_DIR.iterdir()):
+        source = probe.read_text(encoding="utf-8")
+        stripped = _strip_comments(source, python_syntax=probe.suffix == ".py")
+        if stripped == source:
+            continue  # 주석이 없는 탐침 — 비교할 것이 없다
+
+        twin = probe.with_name(f"twin{probe.suffix}")
+        try:
+            twin.write_text(stripped, encoding="utf-8")
+            original = scanner.scan([probe], set())
+            without = scanner.scan([twin], set())
+        finally:
+            twin.unlink(missing_ok=True)
+
+        assert {k: len(v) for k, v in original.hits.items()} == {
+            k: len(v) for k, v in without.hits.items()
+        }, f"{probe.name}: 주석 유무로 검출이 갈린다"
+
+
+def _strip_comments(source: str, python_syntax: bool) -> str:
+    """대조용 **참조 구현**. 스캐너와 독립적으로 주석만 지운다.
+
+    스캐너의 `_advance`를 재사용하지 않는 이유: 같은 코드로 만든 두 입력을 비교하면
+    그 코드가 틀렸을 때 둘이 같이 틀려 단언이 통과한다.
+    """
+    out: list[str] = []
+    quote: str | None = None
+    block = False
+    index = 0
+    while index < len(source):
+        rest = source[index:]
+        if block:
+            if rest.startswith("*/"):
+                block = False
+                index += 2
+            else:
+                out.append("\n" if source[index] == "\n" else " ")
+                index += 1
+            continue
+        if quote is not None:
+            if rest.startswith("\\"):
+                out.append(source[index : index + 2])
+                index += 2
+            elif rest.startswith(quote):
+                out.append(quote)
+                index += len(quote)
+                quote = None
+            else:
+                out.append(source[index])
+                index += 1
+            continue
+        if rest.startswith("//") or (python_syntax and rest.startswith("#")):
+            while index < len(source) and source[index] != "\n":
+                index += 1
+            continue
+        if not python_syntax and rest.startswith("/*"):
+            block = True
+            index += 2
+            continue
+        opened = next((q for q in ('"""', "'''", '"', "'") if rest.startswith(q)), None)
+        if opened is not None:
+            quote = opened
+            out.append(opened)
+            index += len(opened)
+            continue
+        out.append(source[index])
+        index += 1
+    return "".join(out)
+
+
+def test_문자열_안의_주석_기호는_주석이_아니다(scanner: ModuleType) -> None:
+    """`"https://example.com"`의 `//`를 주석으로 읽으면 그 줄의 코드가 사라진다.
+
+    §4-bis에서 문자열 리터럴 제거 때 겪은 것과 같은 함정이다 — 지우는 규칙은 반드시
+    따옴표 상태와 함께 가야 한다.
+    """
+    source = ["logger.info(", '    "경로 https://example.com/x",', "    draft.value,", ")"]
+    joined = scanner.logical_lines(source)[0]
+
+    assert "https://example.com/x" in joined.text, "문자열 안의 `//`를 주석으로 읽었다"
+    assert "draft.value" in joined.text
+
+
+def test_주석_제거가_토큰을_붙이지_않는다(scanner: ModuleType) -> None:
+    """블록 주석 자리에 공백을 남기지 않으면 앞뒤 토큰이 한 낱말로 붙는다."""
+    joined = scanner.logical_lines(["val x = a/* 설명 */b"])[0]
+
+    assert "ab" not in joined.text, f"토큰이 붙었다: {joined.text!r}"

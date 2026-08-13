@@ -672,14 +672,33 @@ class LogicalLine:
     complete: bool
 
 
-def _advance(line: str, state: LexState, python_syntax: bool) -> LexState:
-    """물리 줄 하나를 지난 뒤의 어휘 상태.
+def _advance(line: str, state: LexState, python_syntax: bool) -> tuple[LexState, str]:
+    """물리 줄 하나를 지난 뒤의 어휘 상태와 **주석을 뺀 코드 부분**.
 
     문자열·주석 안의 괄호는 세지 않는다. `#` 는 **`.py` 에서만** 줄 주석이다 —
     `.ts` 의 `#private` 필드를 주석으로 읽으면 그 줄의 나머지가 사라져 **과소 결합**이
     되고, 그것은 이 함수가 선언한 "틀릴 때는 이어 붙이는 쪽" 과 반대 방향이다(M-23).
+
+    ## 코드 부분을 함께 돌려주는 이유 (codex stop-time 게이트, 2026-08-14)
+
+    논리 줄 텍스트에 주석이 섞여 있으면 그것을 읽는 **인자 파서가 주석 안의 괄호를 코드로
+    센다.** 실측된 누락:
+
+        logger.info(
+            "완료 {} {}",
+            draft.stats.count, // 건수) 설명     ← 이 `)` 가 인자 구간을 조기에 닫는다
+            draft.value,                          ← 잘린 구간 밖 = **검사되지 않는다**
+        )
+
+    잘린 구간에 남은 것이 `draft.stats.count`(안전)뿐이라 2차 판정이 "찾았고 전부 안전"으로
+    빠진다. **안전한 접근이 위험한 접근의 방패가 되는** 형태다. 주석이 없는 같은 코드는
+    정상으로 잡히므로, 주석 유무가 검출을 바꾸고 있었다.
+
+    깊이를 세는 곳과 텍스트를 만드는 곳이 **같은 순회**여야 한다. 따로 두면 둘이 서로 다른
+    문자열을 보게 되고, 그 어긋남이 정확히 위 결함의 모양이다.
     """
     depth, quote, block = state.depth, state.quote, state.in_block_comment
+    kept: list[str] = []
     index = 0
     length = len(line)
     while index < length:
@@ -688,17 +707,22 @@ def _advance(line: str, state: LexState, python_syntax: bool) -> LexState:
             if rest.startswith("*/"):
                 block = False
                 index += 2
+                kept.append(" ")  # 토큰이 붙지 않게 자리만 남긴다
             else:
                 index += 1
             continue
         if quote is not None:
+            # 문자열 **안**은 그대로 남긴다. f-string 보간(`{draft.value}`)이 여기 산다.
             if rest.startswith("\\"):
+                kept.append(line[index : index + 2])
                 index += 2
                 continue
             if rest.startswith(quote):
+                kept.append(quote)
                 index += len(quote)
                 quote = None
                 continue
+            kept.append(line[index])
             index += 1
             continue
         if rest.startswith("//") or (python_syntax and rest.startswith("#")):
@@ -710,6 +734,7 @@ def _advance(line: str, state: LexState, python_syntax: bool) -> LexState:
         for opener in _QUOTES:
             if rest.startswith(opener):
                 quote = opener
+                kept.append(opener)
                 index += len(opener)
                 break
         else:
@@ -717,8 +742,9 @@ def _advance(line: str, state: LexState, python_syntax: bool) -> LexState:
                 depth += 1
             elif rest[0] == ")":
                 depth = max(0, depth - 1)
+            kept.append(line[index])
             index += 1
-    return LexState(depth=depth, quote=quote, in_block_comment=block)
+    return LexState(depth=depth, quote=quote, in_block_comment=block), "".join(kept)
 
 
 def logical_lines(lines: list[str], python_syntax: bool = False) -> list[LogicalLine]:
@@ -747,8 +773,12 @@ def logical_lines(lines: list[str], python_syntax: bool = False) -> list[Logical
         state = LexState()
         parts: list[str] = []
         while index < len(lines) and index - start < MAX_LOGICAL_LINE_SPAN:
-            parts.append(lines[index].strip())
-            state = _advance(lines[index], state, python_syntax)
+            state, code = _advance(lines[index], state, python_syntax)
+            # **주석을 뺀 코드만 잇는다.** 사유는 `_advance` KDoc — 주석 안의 괄호를 인자
+            # 파서가 코드로 세면 인자 구간이 조기에 닫히고 그 뒤가 미검사로 남는다.
+            stripped = code.strip()
+            if stripped:
+                parts.append(stripped)
             index += 1
             if not state.open:
                 break
