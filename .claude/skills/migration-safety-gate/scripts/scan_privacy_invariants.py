@@ -15,7 +15,8 @@
     uv run python .claude/skills/migration-safety-gate/scripts/scan_privacy_invariants.py \
         --rule LOG-BODY --report-md docs/migration/_workspace/07_privacy-gate_scan.md
 
-종료 코드: 0 = BLOCK 후보 없음, 1 = BLOCK 후보 있음(사람 확인 필요), 2 = 입력 오류,
+종료 코드: 0 = BLOCK 후보 없음, 1 = BLOCK 후보 있음(사람 확인 필요),
+          2 = 입력 오류(**선언한 스캔 루트 부재·빈 루트 포함**),
 3 = `--changed` 범위가 비어 아무것도 검사하지 못함. "검사하지 않음"을 "통과"로 읽으면 게이트가
 무의미해지므로 실패시킨다 — 정말 빈 것이 정상이면 `--allow-empty`.
 `--no-fail`을 주면 BLOCK 후보가 있어도 0으로 끝난다(리포트 수집 용도).
@@ -397,6 +398,15 @@ def _resolves(ref: str) -> bool:
 FULL_SCOPE = "전수"
 
 
+class ScopeError(Exception):
+    """검사 **범위**가 선언과 어긋난다. 결과가 아니라 입력의 문제이므로 종료 코드 2다.
+
+    이 예외가 있는 이유는 하나다 — **범위 결손을 0건과 구분하기 위해서다.** 루트가 사라져
+    0건이 된 것과 정말 위반이 없어 0건인 것은 리포트에서 똑같이 보이는데, 전자는
+    "확인하지 않음"이고 후자만 "위반 없음"이다.
+    """
+
+
 def iter_files(changed_only: bool, base: str | None = None) -> tuple[list[Path], str]:
     """검사 대상 파일과 **실제로 적용된** 범위 설명을 함께 돌려준다.
 
@@ -448,13 +458,31 @@ def iter_files(changed_only: bool, base: str | None = None) -> tuple[list[Path],
     files: list[Path] = []
     for root in SCAN_ROOTS:
         root_path = REPO_ROOT / root
+        # **조용히 건너뛰지 않는다.** 이전 판은 `if not root_path.exists(): continue` 였다 —
+        # 디렉터리 하나가 이름이 바뀌면 그 트리 전체가 검사에서 빠지는데 리포트는 여전히
+        # "전수"라고 적었다(privacy-gate 판정 §4-quater.3, codex B-4 실측: 루트를 전부
+        # 오타로 바꿔도 대상 0건에 성공 종료).
+        #
+        # 루트가 사라지는 정상 경우(예: Phase 8 의 `app/` 삭제)는 **`SCAN_ROOTS` 에서 빼는
+        # 커밋**으로 처리해야 하고, 그 diff 가 리뷰에 올라가는 것이 요점이다.
         if not root_path.exists():
-            continue
-        files.extend(
+            raise ScopeError(
+                f"선언된 스캔 루트가 없다: {root} — 이름이 바뀌었거나 지워졌다면 "
+                "SCAN_ROOTS 에서 빼는 커밋으로 처리하라. 조용히 건너뛰면 그 트리 전체가 "
+                "검사에서 빠진 채 리포트는 '전수'라고 적는다."
+            )
+        found = [
             path
             for path in root_path.rglob("*")
             if path.is_file() and path.suffix in SUFFIXES and not SKIP_PARTS & set(path.parts)
-        )
+        ]
+        # 디렉터리는 남았는데 내용이 빠진 경우. 위와 같은 이유로 실패시킨다.
+        if not found:
+            raise ScopeError(
+                f"스캔 루트 {root} 에 검사 대상 파일이 하나도 없다 (확장자: "
+                f"{', '.join(sorted(SUFFIXES))}). 디렉터리는 남았는데 내용이 빠졌는지 확인하라."
+            )
+        files.extend(found)
     return sorted(files), FULL_SCOPE
 
 
@@ -661,7 +689,12 @@ def render(result: ScanResult, scanned: int, scope: str) -> tuple[str, int]:
     return "\n".join(lines), blocking
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
+    """`argv` 를 인자로 받는 이유: 종료 코드 분기를 테스트가 직접 돌릴 수 있어야 한다.
+
+    범위 무결성 가드(루트 부재 2 / 0건 3)는 **정상 저장소에서는 한 번도 실행되지 않는
+    분기**라, 프로세스를 띄우지 않고 부를 수 있어야 회귀로 고정된다.
+    """
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
@@ -680,7 +713,7 @@ def main() -> int:
     parser.add_argument("--report-md", type=Path, help="마크다운 리포트 저장 경로")
     parser.add_argument("--no-fail", action="store_true", help="BLOCK 후보가 있어도 0으로 종료")
     parser.add_argument("--list-rules", action="store_true", help="규칙 목록 출력")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     if args.base and not args.changed:
         parser.error("--base는 --changed와 함께 씁니다 (전수 검사에는 기준 ref가 없습니다)")
@@ -694,14 +727,26 @@ def main() -> int:
     if unknown:
         parser.error(f"알 수 없는 규칙: {', '.join(unknown)}")
 
-    files, scope = iter_files(args.changed, args.base)
+    try:
+        files, scope = iter_files(args.changed, args.base)
+    except ScopeError as exc:
+        print(f"검사 범위 오류: {exc}", file=sys.stderr)
+        return 2
     if not files:
         print(f"검사 대상 파일이 없습니다 (범위: {scope}).")
-        if args.changed and not args.allow_empty:
+        # **전수 모드에도 같은 판단을 적용한다.** 이전 판은 `--changed` 에만 이 분기를
+        # 두어 자기 원칙을 절반만 적용했다 — "0건은 '위반 없음'이 아니라 '확인하지 않음'"은
+        # 범위와 무관하게 참이다(판정 §4-quater.3).
+        if not args.allow_empty:
+            hint = (
+                "범위가 맞는지 --base로 확인하거나"
+                if args.changed
+                else "SCAN_ROOTS 선언이 맞는지 확인하거나"
+            )
             print(
                 "\n검사한 파일이 0개입니다 — 이 결과는 '위반 없음'이 아니라 "
                 "'확인하지 않음'입니다.\n"
-                "범위가 맞는지 --base로 확인하거나, 정말 빈 것이 맞으면 --allow-empty를 주십시오.",
+                f"{hint}, 정말 빈 것이 맞으면 --allow-empty를 주십시오.",
                 file=sys.stderr,
             )
             return 3

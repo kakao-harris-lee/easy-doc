@@ -238,3 +238,75 @@ def test_보고_위치는_논리_줄의_시작_물리_줄이다(scanner: ModuleT
     assert "provider.complete(" in opening, (
         f"{number}행이 호출 시작 줄이 아니다: {opening.strip()!r}"
     )
+
+
+# ── 판정 §4-quater.3 — 범위 무결성 (C-04) ──────────────────────────────────────────
+#
+# "0건은 '위반 없음'이 아니라 '확인하지 않음'"은 스크립트가 `--changed`에 이미 갖고 있던
+# 원칙이다. 전수 모드에는 그것이 없어 **루트가 통째로 사라져도 성공 종료**였다.
+
+
+def test_선언한_루트가_없으면_실패한다(
+    scanner: ModuleType, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """**존재하는 루트만으로는 이 분기가 한 번도 실행되지 않는다.**
+
+    그래서 판정문이 "`SCAN_ROOTS`에 없는 이름을 넣어" 확인하라고 지정했다. 조용히
+    건너뛰던 시절에는 루트를 전부 오타로 바꿔도 대상 0건에 성공 종료였다.
+    """
+    monkeypatch.setattr(scanner, "SCAN_ROOTS", ["app", "존재하지-않는-루트"])
+
+    with pytest.raises(scanner.ScopeError) as caught:
+        scanner.iter_files(False)
+
+    assert "존재하지-않는-루트" in str(caught.value)
+
+
+def test_루트에_대상_파일이_없으면_실패한다(
+    scanner: ModuleType, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """디렉터리는 남았는데 내용이 빠진 경우."""
+    empty = tmp_path / "빈루트"
+    empty.mkdir()
+    monkeypatch.setattr(scanner, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(scanner, "SCAN_ROOTS", ["빈루트"])
+
+    with pytest.raises(scanner.ScopeError) as caught:
+        scanner.iter_files(False)
+
+    assert "검사 대상 파일이 하나도 없다" in str(caught.value)
+
+
+def test_전수_모드_0건은_비영_종료다(
+    scanner: ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """`--changed`와 **같은 코드·같은 문구**를 쓴다. 자기 원칙을 절반만 적용하지 않는다."""
+    monkeypatch.setattr(scanner, "iter_files", lambda *_args, **_kwargs: ([], scanner.FULL_SCOPE))
+
+    assert scanner.main([]) == 3
+    assert "확인하지 않음" in capsys.readouterr().err
+
+
+def test_루트_부재는_입력_오류_코드로_끝난다(
+    scanner: ModuleType, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """결과가 아니라 **입력**의 문제이므로 2다 — 0건(3)과 구분한다."""
+    monkeypatch.setattr(scanner, "SCAN_ROOTS", ["존재하지-않는-루트"])
+
+    assert scanner.main([]) == 2
+    assert "검사 범위 오류" in capsys.readouterr().err
+
+
+def test_allow_empty_는_0건만_눌러주고_루트_부재는_못_누른다(
+    scanner: ModuleType, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """범위 결손을 `--allow-empty`로 덮을 수 있으면 이 가드는 장식이 된다."""
+    monkeypatch.setattr(scanner, "iter_files", lambda *_args, **_kwargs: ([], scanner.FULL_SCOPE))
+    assert scanner.main(["--allow-empty"]) == 0
+
+    monkeypatch.undo()
+    monkeypatch.setattr(scanner, "SCAN_ROOTS", ["존재하지-않는-루트"])
+    assert scanner.main(["--allow-empty"]) == 2
