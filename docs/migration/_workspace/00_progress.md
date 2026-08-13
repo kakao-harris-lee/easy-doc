@@ -366,7 +366,7 @@ Python 게이트 820 passed 가 업그레이드 전과 동일하다. Kotlin 2.3.
 | Crypto (Python ↔ Kotlin) | `안 돎` | 미실행 — fixture **생성기**가 11개 도메인을 지원할 뿐, **`parity/fixtures/` 산출물은 저장소에 존재하지 않는다**(`parity/` 디렉터리 자체가 없음). Kotlin 측도 부재 |
 | Document (docx/pdf/hwpx/txt) | `안 돎` | 미실행 |
 | Worker (lease/retry/crash) | `안 돎` | 미실행 |
-| Quality (골든셋) | `local:uv run pytest tests/golden -m llm` | 미실행 |
+| Quality (골든셋) | `ci:llm-lane(조건:.github/llm-lane-paths.txt)` | 미실행 |
 | Security (소유권·로그·캐시) | `ci:kotlin` | 미실행 |
 | E2E (compose + browser) | `1회성:docs/migration/_workspace/01_kotlin-implementer_skeleton.md` | **compose 부분 실행** (Phase 1) — Kotlin api·worker·migrate 3서비스가 Python 스택과 동시 기동, `/health` 200 확인. **browser·업무 흐름은 미실행**(Phase 6) |
 | Ops (cutover/rollback) | `안 돎` | 미실행 |
