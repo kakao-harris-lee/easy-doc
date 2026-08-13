@@ -30,14 +30,33 @@
     통과율의 정의(`tests/golden/evaluation.py`)도 같은 이유로 여기 들어온다 — 분모를 지문으로
     막아 놓고 분자의 정의를 열어 두면 같은 출력이 더 높은 통과율을 받는다.
 
-**넣지 않는다 ③ 프롬프트·모델**.
+**넣는다 ③ producer** (변환 provider·**관측된** 모델·effort). 2026-08-13 사용자 결정.
+    앞의 둘이 "무엇을" "어떤 자로" 쟀는가라면 이쪽은 **누가 낸 수치인가**다. 넣기 전에는
+    provider·모델이 `RunContext`에만 있어 비교 가능성 판정에 들어가지 않았고, 그래서
+    anthropic으로 기록한 기준선과 openai 실행이 **비교 가능**으로 읽혀 수치 판정이 나왔다.
+    다른 모델의 통과율끼리 비교하는 것은 자를 바꾸고 비교하는 것과 같은 종류의 무의미다.
+    effort를 함께 담는 근거도 짐작이 아니라 이 저장소의 기록이다 — 9%p 하락의 후보로
+    `.env`의 `LLM_EFFORT` 차이를 스스로 지목했다(`04_goldenset-first-run.md`). 모델과
+    같은 부류다.
+
+    **해시가 아니라 값으로 담는다.** 앞의 두 축은 원재료가 커서 접었지만 producer는 짧은
+    문자열이라 접을 이유가 없고, 접으면 drift 메시지가 "무언가 달라졌다"까지만 말한다.
+    비교 불가를 만난 사람이 가장 먼저 알아야 하는 것은 **무엇이** 달라졌는가다
+    (`anthropic/claude-sonnet-5 → openai/gpt-4.1`).
+
+    `criteria_sha256`에 접어 넣지 않은 이유는 코퍼스와 판정 기준을 따로 둔 이유와 같다
+    (`Fingerprint` docstring) — 비교 불가일 때 재는 대상이 바뀐 건지, 자가 바뀐 건지,
+    만든 쪽이 바뀐 건지가 곧 다음 행동을 가른다.
+
+**넣지 않는다 ④ 프롬프트**.
     이쪽은 *재는 대상*이 아니라 **재어지는 것**이다. 프롬프트를 고쳐 통과율이 오르는 것은
     우회가 아니라 목적이며, 지문에 넣으면 개선할 때마다 "비교 불가"가 되어 하한선이
     영원히 축적되지 않는다.
 
-정리하면 **자와 재는 대상은 고정하고, 재어지는 것만 움직이게 둔다.** 프롬프트·모델·judge
-정보는 지문이 아니라 `RunContext`로 함께 **기록만** 한다 — 사람이 비교의 조건을 볼 수 있게
-하되 기계 판정에는 쓰지 않는다.
+정리하면 **자와 재는 대상과 만든 쪽은 고정하고, 재어지는 것(프롬프트)만 움직이게 둔다.**
+judge 정보와 설정값 `model`은 지문이 아니라 `RunContext`로 **기록만** 한다 — judge는
+비차단축이라 하한선의 구성요소가 아니고, 설정값 `model`은 별칭 해석·폴백이 있으면 실제와
+갈리는 *주장*이라 증거인 **관측 모델**이 지문을 맡는다.
 
 기록 실행의 규약은 참고 갈림 원장(`.claude/skills/python-kotlin-parity/scripts/
 compare_parity.py`)에서 실측으로 얻은 교훈을 그대로 따른다. 그 장치는 구조가 같고,
@@ -292,17 +311,99 @@ def _strip_docstring(node: _Documented) -> None:
         node.body = node.body[1:] or [ast.Pass()]
 
 
+class RunContext(BaseModel):
+    """비교의 조건.
+
+    2026-08-13 이전에는 이 객체 **전체**가 "판정에 쓰지 않는다"였다. 그 상태에서 anthropic으로
+    기록한 기준선과 openai 실행이 비교 가능으로 읽혀 수치 판정이 났고, 사용자 결정으로
+    provider·관측 모델·effort가 지문의 producer 축이 됐다(`Producer`). 남은 필드
+    (`judge_provider`·설정값 `model`)는 여전히 **기록만** 한다 — judge는 비차단축이라 하한선의
+    구성요소가 아니고, 설정값은 주장이라 증거가 아니다.
+
+    이 클래스가 `Fingerprint` **위**에 있는 것은 그래서다. 지문이 이 값을 원재료로 받는다.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    provider: str
+    judge_provider: str | None = None
+    #: 설정값(`settings.llm_model`). **주장이지 증거가 아니다** — 별칭 해석·폴백이
+    #: 있으면 실제로 쓴 모델과 다를 수 있다. 그래서 지문에는 이 값이 아니라 아래 관측값이 간다.
+    model: str | None = None
+    #: 변환 응답이 **실제로 보고한** 모델(`LLMResponse.model`). 이쪽이 증거다.
+    observed_models: list[str] = []
+    #: 같은 모델이라도 결과를 크게 움직인다(Anthropic 전용). 비어 있어도 기록은 남긴다.
+    effort: str | None = None
+
+
+#: 관측 모델이 하나도 없을 때 producer 라벨에 적는 값. **없음도 값이다** — 빈 문자열로
+#: 두면 라벨이 `anthropic//effort=...` 가 되어 사람이 읽을 때 사라진 것처럼 보인다.
+NO_MODEL_LABEL = "모델 없음"
+
+#: effort가 설정되지 않았을 때 라벨에 적는 값. 같은 이유로 빈 자리를 남기지 않는다.
+NO_EFFORT_LABEL = "없음"
+
+
+def _models_label(models: list[str]) -> str:
+    """관측 모델 목록의 표시형. 정상 실행에서는 한 개다."""
+    return "+".join(models) if models else NO_MODEL_LABEL
+
+
+class Producer(BaseModel):
+    """이 수치를 **만든 것** — 변환 provider·관측 모델·effort.
+
+    **해시가 아니라 값이다.** 다른 두 축은 원재료(56문서 본문·모듈 소스 전량)가 커서 접었을
+    뿐이고, 여기서 접으면 얻는 것 없이 drift 메시지만 벙어리가 된다. 이 저장소는 "해시는
+    아무것도 말해 주지 않는다"를 이미 교훈으로 적었다.
+
+    `RunContext`의 세 필드를 **복사해** 담는다. 같은 값이 기준선 파일에 두 번(지문과 context)
+    실리는 것은 의도다 — 지문은 기계가 비교하는 면이고 context는 사람이 읽는 기록이라, 둘을
+    합치면 "비교에 쓰이는 값"과 "참고로 적는 값"의 경계가 흐려진다. 두 자리가 갈리지 않는
+    것은 **한 `RunContext`에서 둘 다 유도하기 때문**이다(`Fingerprint.of`와 `baseline_body`에
+    같은 객체를 넘긴다).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    provider: str
+    #: 변환 응답이 실제로 보고한 모델 **전량**. 정상 실행에서는 1건이다 — `write_baseline`의
+    #: fail-closed 가드가 빈 목록과 섞인 목록을 거부한다. 다만 **그 가드는 기록 경로에만
+    #: 있고 판정 경로에는 없다.** 그래서 여기서는 단일 값으로 접지 않고 목록을 사실대로
+    #: 담는다. 전건 변환 실패(빈 목록)나 모델이 섞인 실행은 어떤 단일 모델 기준선과도 값이
+    #: 달라 비교 불가로 떨어지는데, 그것이 맞는 결과다 — 없는 모델을 있는 것처럼 접거나
+    #: 섞인 것 중 하나를 고르면 그 실행이 남의 하한선을 통과해 버린다.
+    observed_models: list[str]
+    effort: str | None
+
+    @classmethod
+    def of(cls, context: RunContext) -> "Producer":
+        return cls(
+            provider=context.provider,
+            observed_models=list(context.observed_models),
+            effort=context.effort,
+        )
+
+    def label(self) -> str:
+        return (
+            f"{self.provider}/{_models_label(self.observed_models)}"
+            f"(effort={self.effort or NO_EFFORT_LABEL})"
+        )
+
+
 class Fingerprint(BaseModel):
     """ "이 수치가 무엇을 재서 나온 것인가"의 지문.
 
-    두 축을 **따로** 둔다. 합쳐 하나로 만들면 비교 불가일 때 코퍼스가 바뀐 것인지 규칙이
-    바뀐 것인지 알 수 없고, 그 구분이 곧 다음 행동(문서 편입 절차 / 규칙 변경 리뷰)을 가른다.
+    세 축을 **따로** 둔다. 합쳐 하나로 만들면 비교 불가일 때 코퍼스가 바뀐 것인지 규칙이
+    바뀐 것인지 만든 쪽이 바뀐 것인지 알 수 없고, 그 구분이 곧 다음 행동(문서 편입 절차 /
+    규칙 변경 리뷰 / 같은 provider·모델로 재실행)을 가른다.
     """
 
     model_config = ConfigDict(extra="forbid")
 
     corpus_sha256: str
     criteria_sha256: str
+    #: 세 번째 축 — **값 그대로** 담는다(해시하지 않는다). 근거는 모듈 docstring ③.
+    producer: Producer
     document_count: int
     synthetic_count: int
     collected_count: int
@@ -310,10 +411,18 @@ class Fingerprint(BaseModel):
     document_ids: list[str]
 
     @classmethod
-    def of(cls, documents: list[GoldenDocument]) -> "Fingerprint":
+    def of(cls, documents: list[GoldenDocument], context: RunContext) -> "Fingerprint":
+        """지문을 만든다. `context`는 **선택 인자가 아니다.**
+
+        기본값을 주면 producer 축이 비거나 고정값으로 채워진 지문을 만들 수 있고, 그런 지문은
+        어떤 실행과도 producer가 맞아떨어져 축이 조용히 죽는다 — 축을 추가하기 전 상태로
+        되돌아가는 데 인자 하나를 빠뜨리면 충분해진다. 호출자는 이미 측정치와 같은 실행의
+        `RunContext`를 들고 있다.
+        """
         return cls(
             corpus_sha256=sha256_of(corpus_payload(documents)),
             criteria_sha256=sha256_of(criteria_payload()),
+            producer=Producer.of(context),
             document_count=len(documents),
             synthetic_count=sum(document.synthetic for document in documents),
             collected_count=sum(not document.synthetic for document in documents),
@@ -335,7 +444,35 @@ class Fingerprint(BaseModel):
                 "— 문장 길이 상한을 풀거나 사전을 넓히는 것은 문서를 빼는 것과 구조가 같은 "
                 "우회다. 규칙 변경 자체는 정상 작업이며, 필요한 것은 재기록뿐이다"
             )
+        if self.producer != other.producer:
+            found.append(self._producer_difference(other))
         return found
+
+    def _producer_difference(self, other: "Fingerprint") -> str:
+        """**무엇이** 달라졌는지 이름으로 적는다 — 해시를 쓰지 않은 이유가 이 메시지다."""
+        before, now = other.producer, self.producer
+        parts = [
+            "- **수치를 만든 것(producer)이 바뀌었다** — 기준선 "
+            f"`{before.label()}` / 현재 `{now.label()}`"
+        ]
+        if before.provider != now.provider:
+            parts.append(f"  - provider: {before.provider} → {now.provider}")
+        if before.observed_models != now.observed_models:
+            parts.append(
+                f"  - 관측 모델: {_models_label(before.observed_models)} → "
+                f"{_models_label(now.observed_models)}"
+            )
+        if before.effort != now.effort:
+            parts.append(
+                f"  - effort: {before.effort or NO_EFFORT_LABEL} → {now.effort or NO_EFFORT_LABEL}"
+            )
+        parts.append(
+            "  - 다른 provider·모델·effort로 낸 통과율끼리는 비교가 성립하지 않는다. 우리 코드를 "
+            "한 줄도 고치지 않아도 값이 움직이므로, 그 비교로 나온 '유지'도 '하락'도 판정이 "
+            "아니다 — 같은 조건으로 다시 돌리거나, 조건을 바꾼 것이 의도라면 새 조건의 "
+            "기준선을 재기록한다"
+        )
+        return "\n".join(parts)
 
     def _corpus_difference(self, other: "Fingerprint") -> str:
         removed = [name for name in other.document_ids if name not in set(self.document_ids)]
@@ -424,22 +561,6 @@ class JudgeObservation(BaseModel):
     fidelity_mean: float
     readability_mean: float
     low_fidelity_ids: list[str]
-
-
-class RunContext(BaseModel):
-    """비교의 조건. **판정에 쓰지 않는다** — 사람이 읽고 조건 차이를 알아채기 위한 기록이다."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    provider: str
-    judge_provider: str | None = None
-    #: 설정값(`settings.llm_model`). **주장이지 증거가 아니다** — 별칭 해석·폴백이
-    #: 있으면 실제로 쓴 모델과 다를 수 있다.
-    model: str | None = None
-    #: 변환 응답이 **실제로 보고한** 모델(`LLMResponse.model`). 이쪽이 증거다.
-    observed_models: list[str] = []
-    #: 같은 모델이라도 결과를 크게 움직인다(Anthropic 전용). 비어 있어도 기록은 남긴다.
-    effort: str | None = None
 
 
 class Baseline(BaseModel):

@@ -191,10 +191,28 @@ def test_필수_정보_게이트는_절대_기준이다() -> None:
 # ═══════════════════════════════════════════ 차단축 2: 상대 하한선
 
 
+#: 배선 테스트의 변환 결과가 보고하는 기본 모델명(`_preserving_outcomes` 의 기본 인자).
+_DEFAULT_OBSERVED = ["fake"]
+
+
+def _baseline_context(observed_models: list[str]) -> RunContext:
+    """기준선 쪽 조건. **하네스가 쓰는 것과 같은 경로(`harness.run_context`)로 만든다.**
+
+    2026-08-13에 지문이 producer 축(provider·관측 모델·effort)을 담게 되면서 필요해졌다.
+    예전에는 여기서 `RunContext(provider="fake")` 를 손으로 세워도 지문이 그 값을 보지 않아
+    상관없었지만, 이제는 기준선과 현재의 producer 가 갈리면 **모든 배선 테스트가 비교 불가로
+    떨어진다** — 그러면 이 파일이 확인하려던 코퍼스·판정 기준·수치 배선이 전부 producer 하나에
+    가려진다. provider·effort 는 환경·설정에서 오므로 같은 함수를 부르면 양변이 같아지고,
+    관측 모델만 이번 실행에 맞춰 넘긴다.
+    """
+    return harness.run_context(observed_models)
+
+
 def _baseline_at(
     passed: tuple[int, int],
     synthetic: tuple[int, int],
     fingerprint: Fingerprint | None = None,
+    observed_models: list[str] | None = None,
 ) -> Baseline:
     measurement = Measurement(
         overall=GroupMeasurement(passed=passed[0], documents=passed[1]),
@@ -203,11 +221,12 @@ def _baseline_at(
             passed=passed[0] - synthetic[0], documents=passed[1] - synthetic[1]
         ),
     )
+    context = _baseline_context(_DEFAULT_OBSERVED if observed_models is None else observed_models)
     return Baseline.model_validate(
         baseline_body(
-            fingerprint if fingerprint is not None else Fingerprint.of(harness.DOCUMENTS),
+            fingerprint if fingerprint is not None else Fingerprint.of(harness.DOCUMENTS, context),
             measurement,
-            RunContext(provider="fake"),
+            context,
         )
     )
 
@@ -218,13 +237,15 @@ def _matching_baseline(
     """이번 측정치와 **정확히 같은** 기준선 — 수치로는 통과하는 상태를 만든다.
 
     지문 배선을 보는 테스트가 이것을 쓴다. 수치가 어긋나면 무엇 때문에 막혔는지 갈리므로,
-    막히는 이유를 지문 하나로 좁혀 둔다.
+    막히는 이유를 지문 하나로 좁혀 둔다. producer 축도 같은 이유로 이번 평가의 관측 모델에
+    맞춘다 — 조건이 갈리면 막힌 이유가 지문 안에서 다시 둘로 갈린다.
     """
     measurement = evaluation.measurement
     return _baseline_at(
         (measurement.overall.passed, measurement.overall.documents),
         (measurement.synthetic.passed, measurement.synthetic.documents),
         fingerprint,
+        evaluation.observed_models,
     )
 
 
@@ -290,9 +311,8 @@ def test_기록_실행은_게이트를_닫지_못한다(
     monkeypatch.setattr(harness, "write_baseline", _capture)
 
     # 판정만 보면 통과다 — 그런데도 기록 실행이라 실패해야 한다.
-    assert (
-        compare(same, Fingerprint.of(harness.DOCUMENTS), evaluation.measurement).blocking is False
-    )
+    current = Fingerprint.of(harness.DOCUMENTS, _baseline_context(evaluation.observed_models))
+    assert compare(same, current, evaluation.measurement).blocking is False
     with pytest.raises(AssertionError, match="기록 실행"):
         harness.test_규칙_기반_통과율이_직전_기록보다_낮지_않다(evaluation)
     assert written, "기록 모드인데 기준선을 쓰지 않았다"
@@ -313,7 +333,10 @@ def test_코퍼스_지문이_다르면_하네스가_비교_불가로_떨어진�
     """
     evaluation = evaluate_all(_preserving_outcomes(), harness.DOCUMENTS)
     harness.build_report(evaluation)
-    drifted = _matching_baseline(evaluation, Fingerprint.of(harness.DOCUMENTS[:-1]))
+    drifted = _matching_baseline(
+        evaluation,
+        Fingerprint.of(harness.DOCUMENTS[:-1], _baseline_context(evaluation.observed_models)),
+    )
     monkeypatch.setattr(harness, "load_baseline", lambda: drifted)
     with pytest.raises(AssertionError, match="코퍼스 구성이 바뀌었다"):
         harness.test_규칙_기반_통과율이_직전_기록보다_낮지_않다(evaluation)
@@ -325,14 +348,36 @@ def test_판정_기준_지문이_다르면_하네스가_비교_불가로_떨어�
     """자[尺]가 바뀐 기준선과의 비교도 하네스 수준에서 막혀야 한다(위와 같은 배선, 다른 축)."""
     evaluation = evaluate_all(_preserving_outcomes(), harness.DOCUMENTS)
     harness.build_report(evaluation)
-    other_criteria = Fingerprint.of(harness.DOCUMENTS).model_copy(
-        update={"criteria_sha256": "0" * 64}
-    )
+    other_criteria = Fingerprint.of(
+        harness.DOCUMENTS, _baseline_context(evaluation.observed_models)
+    ).model_copy(update={"criteria_sha256": "0" * 64})
     monkeypatch.setattr(
         harness, "load_baseline", lambda: _matching_baseline(evaluation, other_criteria)
     )
     with pytest.raises(AssertionError, match="판정 기준이 바뀌었다"):
         harness.test_규칙_기반_통과율이_직전_기록보다_낮지_않다(evaluation)
+
+
+def test_producer_지문이_다르면_하네스가_비교_불가로_떨어진다(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """**세 번째 축의 배선**(2026-08-13). 위 둘과 같은 자리, 다른 축이다.
+
+    판정 함수(`Fingerprint.differences`)만 확인하면 "하네스가 *이번 실행의* producer 를 담은
+    지문을 넘기는가"는 무방비다 — 축을 만들어 놓고 하네스가 고정값을 넘기면 축은 있는데
+    아무것도 걸리지 않는다. 여기서는 관측 모델만 다른 기준선을 물려 하네스가 실제로 막는지
+    본다(수치·코퍼스·판정 기준은 전부 같게 둔다 — 막히는 이유가 producer 하나로 좁혀진다).
+    """
+    evaluation = evaluate_all(_preserving_outcomes("this-run"), harness.DOCUMENTS)
+    harness.build_report(evaluation)
+    other_producer = Fingerprint.of(harness.DOCUMENTS, _baseline_context(["다른-실행의-모델"]))
+    monkeypatch.setattr(
+        harness, "load_baseline", lambda: _matching_baseline(evaluation, other_producer)
+    )
+    with pytest.raises(AssertionError, match="수치를 만든 것") as caught:
+        harness.test_규칙_기반_통과율이_직전_기록보다_낮지_않다(evaluation)
+    # 무엇이 달라졌는지 **이름으로** 말한다 — 해시로 접지 않은 이유가 이 줄이다.
+    assert "관측 모델: 다른-실행의-모델 → this-run" in str(caught.value)
 
 
 def test_측정이_코퍼스_전건이_아니면_하네스가_실패한다(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -662,6 +707,86 @@ def test_같은_평가로_세운_리포트는_그대로_기록된다(
     assert path.exists()
 
 
+# ─────────────────────────────────────────── `write_baseline` 가드의 **거부 방향** 배선
+#
+# 위의 다섯 테스트는 `_Recording` 으로 기록 경로를 태우되 전부 **통과 방향**이다
+# (`written` 이 1건). 가드가 거부하는 쪽은 `test_baseline_gate.py` 가 함수를 직접 불러
+# 확인했을 뿐, **하네스 경로로는 한 번도 도달하지 않았다**(2026-08-13 독립 검증 실측).
+# 함수 단위 확인과 배선 확인은 다른 것이다 — 이 파일 전체의 존재 이유가 그 구분이다.
+#
+# 아래 둘은 `_Recording` 을 **그대로 쓰고 입력만 바꾼다**. `attempts` 는 1건인데 `written` 이
+# 비는 것이 곧 "본문까지 조립됐고 가드가 마지막에 막았다"는 뜻이다 — 시도와 기록을 나눠 세는
+# 구조가 이미 있어서 확인이 한 줄로 끝난다.
+
+
+def _two_model_outcomes() -> dict[str, ConversionOutcome | None]:
+    """한 실행에서 **두 모델이 응답한** 변환 결과 — 별칭 해석·폴백이 만드는 상태다.
+
+    규칙 평가는 `easy_text` 만 보므로 수치는 `_preserving_outcomes()` 와 같다. 달라지는 것은
+    `observed_models` 하나뿐이라, 막히는 이유가 그 하나로 좁혀진다.
+    """
+    return {
+        document.id: ConversionOutcome(
+            easy_text=document.source_text,
+            masked_items=[],
+            model="fallback-model" if index else "this-run",
+            provider_name="fake",
+        )
+        for index, document in enumerate(harness.DOCUMENTS)
+    }
+
+
+def test_관측_모델이_없으면_하네스_기록_경로가_막힌다(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """**전건 변환 실패 실행은 기준선이 되지 못한다** — 하네스 경로로 확인한다.
+
+    `evaluate_all({}, DOCUMENTS)` 는 56건을 전부 변환 실패로 세므로 분모는 전건이고
+    (개수 검사를 지난다) `observed_models` 만 빈다. 이 상태로 기록 모드를 돌리면 "무엇이
+    이 수치를 냈는가"를 말할 수 없는 하한선이 커밋되는데, 그 수치는 0/56이라 **다음 실행이
+    무엇을 내든 통과한다.** 가드가 마지막에 막는다.
+
+    `attempts` 가 1건이라는 것이 중요하다 — 본문 조립까지는 정상으로 갔고 거부가 실제로
+    `write_baseline` 에서 났다는 뜻이다. 그 구분이 없으면 앞단의 다른 가드(리포트 부재 등)가
+    막은 것과 같은 모양이 된다.
+    """
+    evaluation = evaluate_all({}, harness.DOCUMENTS)
+    assert evaluation.observed_models == [], "전제 — 전건 실패면 관측 모델이 빈다"
+    assert evaluation.measurement.overall.documents == len(harness.DOCUMENTS), (
+        "전제 — 개수 검사를 지나가야 가드까지 도달한다"
+    )
+    harness.build_report(evaluation)
+
+    path = tmp_path / "baseline.json"
+    recording = _Recording(monkeypatch, evaluation, path)
+    with pytest.raises(AssertionError, match="관측된 모델이 없다"):
+        harness.test_규칙_기반_통과율이_직전_기록보다_낮지_않다(evaluation)
+    assert len(recording.attempts) == 1, "가드까지 도달하지 못했다 — 다른 이유로 막혔다"
+    assert recording.written == [], "무-모델 실행이 기준선으로 기록됐다"
+    assert not path.exists()
+
+
+def test_모델이_섞이면_하네스_기록_경로가_막힌다(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """**한 실행에서 두 모델이 응답하면 그 수치는 어느 모델의 하한선도 아니다.**
+
+    별칭 해석·폴백으로 실제로 일어나는 상태다. 수치는 `_preserving_outcomes()` 와 같게 두어
+    막히는 이유를 관측 모델 하나로 좁혔다.
+    """
+    evaluation = evaluate_all(_two_model_outcomes(), harness.DOCUMENTS)
+    assert evaluation.observed_models == ["fallback-model", "this-run"], "전제 — 모델이 섞였다"
+    harness.build_report(evaluation)
+
+    path = tmp_path / "baseline.json"
+    recording = _Recording(monkeypatch, evaluation, path)
+    with pytest.raises(AssertionError, match="모델이 섞였다"):
+        harness.test_규칙_기반_통과율이_직전_기록보다_낮지_않다(evaluation)
+    assert len(recording.attempts) == 1, "가드까지 도달하지 못했다 — 다른 이유로 막혔다"
+    assert recording.written == [], "섞인 실행이 기준선으로 기록됐다"
+    assert not path.exists()
+
+
 def _cherry_picked(outcomes: dict[str, ConversionOutcome | None]) -> list[GoldenDocument]:
     """**통과하는 문서만** 골라 코퍼스와 **같은 개수**로 채운 목록 — 분모 우회의 최소 형태.
 
@@ -714,12 +839,13 @@ def test_고른_문서로_분모를_채워도_전량_코퍼스의_지문을_달_
         harness.test_규칙_기반_통과율이_직전_기록보다_낮지_않다(evaluation)
     assert len(recording.written) == 1
     fingerprint = recording.written[0]["fingerprint"]
-    assert fingerprint["corpus_sha256"] == Fingerprint.of(picked).corpus_sha256, (
+    context = _baseline_context(evaluation.observed_models)
+    assert fingerprint["corpus_sha256"] == Fingerprint.of(picked, context).corpus_sha256, (
         "기록된 지문이 실제로 잰 집합의 것이 아니다"
     )
-    assert fingerprint["corpus_sha256"] != Fingerprint.of(harness.DOCUMENTS).corpus_sha256, (
-        "고른 문서로 잰 수치가 전량 코퍼스의 지문을 달았다 — 다음 실행이 이것을 하한선으로 읽는다"
-    )
+    assert (
+        fingerprint["corpus_sha256"] != Fingerprint.of(harness.DOCUMENTS, context).corpus_sha256
+    ), "고른 문서로 잰 수치가 전량 코퍼스의 지문을 달았다 — 다음 실행이 이것을 하한선으로 읽는다"
 
 
 def test_고른_문서로_채운_평가는_전량_기준선과_비교되지_않는다(
@@ -817,7 +943,10 @@ def test_평가가_관측_모델을_측정치와_함께_싣는다() -> None:
     """
     evaluation = evaluate_all(_preserving_outcomes("model-x"), harness.DOCUMENTS)
     assert evaluation.observed_models == ["model-x"]
-    # 변환이 전건 실패하면 관측 모델도 빈다 — write_baseline 가드가 무-모델 기록을 거부한다.
+    # 변환이 전건 실패하면 관측 모델도 빈다. **그 거부를 실제로 태우는 것은 여기가 아니라**
+    # `test_관측_모델이_없으면_하네스_기록_경로가_막힌다` 다 — 이 줄은 그 입력이 만들어진다는
+    # 사실만 말한다. 2026-08-13 이전에는 이 주석이 거부를 주장하면서 아무 경로도 태우지 않아,
+    # 가드를 지워도 스위트가 초록으로 남았다.
     assert evaluate_all({}, harness.DOCUMENTS).observed_models == []
     # build_report 의 조건도 같은 값에서 온다 — outcomes 를 따로 받지 않는다.
     report = harness.build_report(evaluation)

@@ -99,7 +99,8 @@ class GoldenRunReport(BaseModel):
             f"(합성 {self.fingerprint.synthetic_count} / 실수집 "
             f"{self.fingerprint.collected_count}) · 지문 코퍼스 "
             f"{self.fingerprint.corpus_sha256[:12]} · 기준 "
-            f"{self.fingerprint.criteria_sha256[:12]}",
+            f"{self.fingerprint.criteria_sha256[:12]} · producer "
+            f"{self.fingerprint.producer.label()}",
             f"변환 provider {self.context.provider}"
             + (f" · judge {self.context.judge_provider}" if self.context.judge_provider else "")
             + (f" · model {self.context.model}" if self.context.model else ""),

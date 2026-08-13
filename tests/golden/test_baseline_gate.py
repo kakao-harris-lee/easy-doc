@@ -42,15 +42,25 @@ DOCUMENTS: list[GoldenDocument] = load_documents(DOCUMENTS_DIR)
 EXCLUSION_CANDIDATE = "063"
 
 
-def _context() -> RunContext:
+def _context(
+    *,
+    provider: str = "fake",
+    observed_models: list[str] | None = None,
+    effort: str | None = None,
+) -> RunContext:
+    """비교의 조건 하나.
+
+    **세 인자가 producer 축(지문)의 원재료다**(2026-08-13). 나머지(`judge_provider`·설정값
+    `model`)는 기록만 되므로 고정해 둔다 — 그 둘로 지문이 흔들리지 않는 것도 아래에서 본다.
+    """
     return RunContext(
-        provider="fake",
+        provider=provider,
         judge_provider="fake",
         model="fake-model",
         # 2026-08-12: 기록에는 **관측된** 모델과 effort 가 있어야 한다
         # (`write_baseline` fail-closed). 설정값만으로는 무엇이 응답했는지 모른다.
-        observed_models=["fake-model"],
-        effort=None,
+        observed_models=["fake-model"] if observed_models is None else observed_models,
+        effort=effort,
     )
 
 
@@ -65,8 +75,15 @@ def _measurement(overall: tuple[int, int], synthetic: tuple[int, int]) -> Measur
     )
 
 
-def _baseline(fingerprint: Fingerprint, measurement: Measurement) -> Baseline:
-    return Baseline.model_validate(baseline_body(fingerprint, measurement, _context()))
+def _baseline(
+    fingerprint: Fingerprint, measurement: Measurement, context: RunContext | None = None
+) -> Baseline:
+    """기준선 하나. `context`를 지문과 **같은 것으로** 넘길 수 있어야 한다 —
+    producer 축이 생긴 뒤로 둘이 갈린 기준선은 자기모순이라 시험 입력으로도 부적절하다.
+    """
+    return Baseline.model_validate(
+        baseline_body(fingerprint, measurement, context if context is not None else _context())
+    )
 
 
 def _document(
@@ -99,8 +116,8 @@ def _document(
 
 def test_문서를_하나_빼면_코퍼스_지문이_달라진다() -> None:
     """지문이 문서 집합에 반응하지 않으면 아래 재현이 전부 무의미하다 — 전제 확인."""
-    full = Fingerprint.of(DOCUMENTS)
-    reduced = Fingerprint.of([d for d in DOCUMENTS if d.id != EXCLUSION_CANDIDATE])
+    full = Fingerprint.of(DOCUMENTS, _context())
+    reduced = Fingerprint.of([d for d in DOCUMENTS if d.id != EXCLUSION_CANDIDATE], _context())
     assert full.corpus_sha256 != reduced.corpus_sha256
     assert full.document_count == reduced.document_count + 1
     # 판정 기준은 건드리지 않았으므로 그대로여야 한다 — 두 축이 실제로 분리돼 있는지 확인.
@@ -114,7 +131,7 @@ def test_문서를_빼서_통과율이_올라도_통과가_아니라_비교_불�
     없으면 "직전보다 낮아지지 않았다"가 충족되어 **조용히 통과**한다. 지문이 있으면
     수치를 아예 읽지 않고 비교 불가로 떨어진다.
     """
-    baseline = _baseline(Fingerprint.of(DOCUMENTS), _measurement((36, 56), (17, 20)))
+    baseline = _baseline(Fingerprint.of(DOCUMENTS, _context()), _measurement((36, 56), (17, 20)))
     reduced_documents = [d for d in DOCUMENTS if d.id != EXCLUSION_CANDIDATE]
     # 063은 실수집이고 원래 실패한 문서로 둔다 — 빼면 실수집 분모만 1 줄어든다.
     current = _measurement((36, 55), (17, 20))
@@ -123,7 +140,7 @@ def test_문서를_빼서_통과율이_올라도_통과가_아니라_비교_불�
     assert current.overall.pass_rate > baseline.measurement.overall.pass_rate
     assert current.collected.pass_rate > baseline.measurement.collected.pass_rate
 
-    judgement = compare(baseline, Fingerprint.of(reduced_documents), current)
+    judgement = compare(baseline, Fingerprint.of(reduced_documents, _context()), current)
     assert judgement.verdict is Verdict.INCOMPARABLE
     assert judgement.blocking is True
     assert judgement.requires_record is True
@@ -132,9 +149,11 @@ def test_문서를_빼서_통과율이_올라도_통과가_아니라_비교_불�
 
 def test_문서를_추가해도_비교_불가다() -> None:
     """편입도 같은 문제다 — 실측으로 25→36건 편입만으로 0.51→0.446이 됐다."""
-    baseline = _baseline(Fingerprint.of(DOCUMENTS), _measurement((36, 56), (17, 20)))
+    baseline = _baseline(Fingerprint.of(DOCUMENTS, _context()), _measurement((36, 56), (17, 20)))
     added = [*DOCUMENTS, _document("999", synthetic=False)]
-    judgement = compare(baseline, Fingerprint.of(added), _measurement((36, 57), (17, 20)))
+    judgement = compare(
+        baseline, Fingerprint.of(added, _context()), _measurement((36, 57), (17, 20))
+    )
     assert judgement.verdict is Verdict.INCOMPARABLE
     assert "999" in judgement.summary()
 
@@ -143,8 +162,8 @@ def test_문서_본문이_바뀌면_비교_불가다() -> None:
     """id 집합이 같아도 본문이 바뀌면 난도가 바뀐다 — 수치를 비교할 수 없다."""
     original = [_document("001", text="원래 본문")]
     edited = [_document("001", text="더 쉬운 본문으로 갈아 끼웠다")]
-    baseline = _baseline(Fingerprint.of(original), _measurement((0, 1), (0, 1)))
-    judgement = compare(baseline, Fingerprint.of(edited), _measurement((1, 1), (1, 1)))
+    baseline = _baseline(Fingerprint.of(original, _context()), _measurement((0, 1), (0, 1)))
+    judgement = compare(baseline, Fingerprint.of(edited, _context()), _measurement((1, 1), (1, 1)))
     assert judgement.verdict is Verdict.INCOMPARABLE
     assert "내용" in judgement.summary()
 
@@ -153,8 +172,8 @@ def test_required_facts가_바뀌면_비교_불가다() -> None:
     """팩트를 줄이면 통과율이 오른다 — 문서를 빼는 것과 같은 우회다."""
     before = [_document("001", facts=["10만 원", "3월 31일", "만 65세"])]
     after = [_document("001", facts=["10만 원"])]
-    baseline = _baseline(Fingerprint.of(before), _measurement((0, 1), (0, 1)))
-    judgement = compare(baseline, Fingerprint.of(after), _measurement((1, 1), (1, 1)))
+    baseline = _baseline(Fingerprint.of(before, _context()), _measurement((0, 1), (0, 1)))
+    judgement = compare(baseline, Fingerprint.of(after, _context()), _measurement((1, 1), (1, 1)))
     assert judgement.verdict is Verdict.INCOMPARABLE
 
 
@@ -176,7 +195,7 @@ def test_판정_기준이_바뀌면_비교_불가다(monkeypatch: pytest.MonkeyP
     assert criteria_payload() != original
 
     strict = [_document("001")]
-    baseline_fingerprint = Fingerprint.of(strict)
+    baseline_fingerprint = Fingerprint.of(strict, _context())
     monkeypatch.setattr(
         module,
         "style_rules",
@@ -184,7 +203,7 @@ def test_판정_기준이_바뀌면_비교_불가다(monkeypatch: pytest.MonkeyP
     )
     judgement = compare(
         _baseline(baseline_fingerprint, _measurement((0, 1), (0, 1))),
-        Fingerprint.of(strict),
+        Fingerprint.of(strict, _context()),
         _measurement((1, 1), (1, 1)),
     )
     assert judgement.verdict is Verdict.INCOMPARABLE
@@ -193,9 +212,9 @@ def test_판정_기준이_바뀌면_비교_불가다(monkeypatch: pytest.MonkeyP
 
 def test_채점에_쓰이지_않는_필드는_지문을_흔들지_않는다() -> None:
     """과민한 지문은 '항상 비교 불가'라는 반대 방향 고장이다 — 제목 오타 수정은 통과해야 한다."""
-    before = Fingerprint.of([_document("001")])
+    before = Fingerprint.of([_document("001")], _context())
     renamed = _document("001")
-    after = Fingerprint.of([renamed.model_copy(update={"title": "제목 오타 수정"})])
+    after = Fingerprint.of([renamed.model_copy(update={"title": "제목 오타 수정"})], _context())
     assert before.corpus_sha256 == after.corpus_sha256
 
 
@@ -205,9 +224,11 @@ def test_프롬프트_개선은_비교_불가를_만들지_않는다() -> None:
     지문은 코퍼스와 판정 기준만 본다. 둘 다 그대로면 같은 지문이고, 그래야 프롬프트를
     고쳐 오른 통과율이 '개선'으로 판정되어 하한선에 쌓인다.
     """
-    fingerprint = Fingerprint.of(DOCUMENTS)
+    fingerprint = Fingerprint.of(DOCUMENTS, _context())
     baseline = _baseline(fingerprint, _measurement((36, 56), (17, 20)))
-    judgement = compare(baseline, Fingerprint.of(DOCUMENTS), _measurement((40, 56), (18, 20)))
+    judgement = compare(
+        baseline, Fingerprint.of(DOCUMENTS, _context()), _measurement((40, 56), (18, 20))
+    )
     assert judgement.verdict is Verdict.IMPROVED
 
 
@@ -216,14 +237,14 @@ def test_프롬프트_개선은_비교_불가를_만들지_않는다() -> None:
 
 def test_기준선이_없으면_통과가_아니라_차단이다() -> None:
     """부재를 통과로 처리하면 첫 실행이 조용히 지나가고 하한선이 영영 서지 않는다."""
-    judgement = compare(None, Fingerprint.of(DOCUMENTS), _measurement((0, 56), (0, 20)))
+    judgement = compare(None, Fingerprint.of(DOCUMENTS, _context()), _measurement((0, 56), (0, 20)))
     assert judgement.verdict is Verdict.ABSENT
     assert judgement.blocking is True
     assert judgement.requires_record is True
 
 
 def test_하락하면_차단한다() -> None:
-    fingerprint = Fingerprint.of(DOCUMENTS)
+    fingerprint = Fingerprint.of(DOCUMENTS, _context())
     baseline = _baseline(fingerprint, _measurement((36, 56), (17, 20)))
     judgement = compare(baseline, fingerprint, _measurement((35, 56), (17, 20)))
     assert judgement.verdict is Verdict.REGRESSED
@@ -233,7 +254,7 @@ def test_하락하면_차단한다() -> None:
 
 
 def test_유지하면_통과한다() -> None:
-    fingerprint = Fingerprint.of(DOCUMENTS)
+    fingerprint = Fingerprint.of(DOCUMENTS, _context())
     baseline = _baseline(fingerprint, _measurement((36, 56), (17, 20)))
     judgement = compare(baseline, fingerprint, _measurement((36, 56), (17, 20)))
     assert judgement.verdict is Verdict.HELD
@@ -243,7 +264,7 @@ def test_유지하면_통과한다() -> None:
 
 def test_개선은_차단하지_않되_재기록을_요구한다() -> None:
     """개선까지 차단하면 LLM 잡음으로 오르내리는 수치가 매 실행 게이트를 막아 게이트를 끄게 된다."""
-    fingerprint = Fingerprint.of(DOCUMENTS)
+    fingerprint = Fingerprint.of(DOCUMENTS, _context())
     baseline = _baseline(fingerprint, _measurement((36, 56), (17, 20)))
     judgement = compare(baseline, fingerprint, _measurement((38, 56), (18, 20)))
     assert judgement.verdict is Verdict.IMPROVED
@@ -257,7 +278,7 @@ def test_집단_하나만_하락해도_차단한다() -> None:
     전체만 보면 이 회귀는 보이지 않는다 — 실측으로 두 집단의 분포가 다르다는 것이
     확인된 이상(합성 스타일 위반 0/20 대 실수집 11/36) 합친 수치는 근거가 약하다.
     """
-    fingerprint = Fingerprint.of(DOCUMENTS)
+    fingerprint = Fingerprint.of(DOCUMENTS, _context())
     baseline = _baseline(fingerprint, _measurement((36, 56), (17, 20)))
     current = _measurement((36, 56), (19, 20))  # 합성 +2, 실수집 -2, 전체 동일
     assert current.overall.passed == baseline.measurement.overall.passed
@@ -277,7 +298,9 @@ def test_첫_기록은_지적이_0건이어도_변경으로_센다(tmp_path: Pat
     내용이 없음'이다.
     """
     path = tmp_path / "baseline.json"
-    body = baseline_body(Fingerprint.of(DOCUMENTS), _measurement((36, 56), (17, 20)), _context())
+    body = baseline_body(
+        Fingerprint.of(DOCUMENTS, _context()), _measurement((36, 56), (17, 20)), _context()
+    )
     assert not path.exists()
     changes = baseline_changes(body, path)
     assert changes, "파일 부재를 변경 없음으로 처리하면 첫 기록이 조용히 통과한다"
@@ -291,7 +314,9 @@ def test_같은_내용을_다시_기록하면_변경이_없다(tmp_path: Path) -
     말할 수 있어야 하기 때문이기도 하다.
     """
     path = tmp_path / "baseline.json"
-    body = baseline_body(Fingerprint.of(DOCUMENTS), _measurement((36, 56), (17, 20)), _context())
+    body = baseline_body(
+        Fingerprint.of(DOCUMENTS, _context()), _measurement((36, 56), (17, 20)), _context()
+    )
     write_baseline(body, path)
     assert baseline_changes(body, path) == []
 
@@ -301,7 +326,9 @@ def test_기록_시각은_변경_판정에_들어가지_않는다(tmp_path: Path
     항상 차단되고, 그러면 기록 실행이 영원히 아무것도 닫지 못한다.
     """
     path = tmp_path / "baseline.json"
-    body = baseline_body(Fingerprint.of(DOCUMENTS), _measurement((36, 56), (17, 20)), _context())
+    body = baseline_body(
+        Fingerprint.of(DOCUMENTS, _context()), _measurement((36, 56), (17, 20)), _context()
+    )
     write_baseline(body, path)
     first = json.loads(path.read_text(encoding="utf-8"))["recorded_at"]
     # 시각만 다른 파일을 만든다.
@@ -322,7 +349,7 @@ def first_payload(path: Path) -> dict[str, Any]:
 
 def test_수치가_달라지면_변경으로_센다(tmp_path: Path) -> None:
     path = tmp_path / "baseline.json"
-    fingerprint = Fingerprint.of(DOCUMENTS)
+    fingerprint = Fingerprint.of(DOCUMENTS, _context())
     write_baseline(baseline_body(fingerprint, _measurement((36, 56), (17, 20)), _context()), path)
     changed = baseline_body(fingerprint, _measurement((38, 56), (18, 20)), _context())
     assert any("measurement" in line for line in baseline_changes(changed, path))
@@ -337,7 +364,7 @@ def test_judge_관측은_기준선에_실리지_않는다(tmp_path: Path) -> Non
     얹혔다. 관측 자체는 실행 리포트에 그대로 남는다 — 하한선에서 내렸을 뿐이다.
     """
     path = tmp_path / "baseline.json"
-    fingerprint = Fingerprint.of(DOCUMENTS)
+    fingerprint = Fingerprint.of(DOCUMENTS, _context())
     body = baseline_body(fingerprint, _measurement((36, 56), (17, 20)), _context())
     assert "judge_observed" not in body
     # 필드 자체가 없다 — 인자를 지웠을 뿐 스키마에 남겨 두면 되살리기가 한 줄이다.
@@ -356,7 +383,7 @@ def test_깨진_기준선은_통과가_아니라_기준선_없음이다(tmp_path
     assert stored_body(path) is None
     assert load_baseline(path) is None
     judgement = compare(
-        load_baseline(path), Fingerprint.of(DOCUMENTS), _measurement((56, 56), (20, 20))
+        load_baseline(path), Fingerprint.of(DOCUMENTS, _context()), _measurement((56, 56), (20, 20))
     )
     assert judgement.verdict is Verdict.ABSENT
     assert judgement.blocking is True
@@ -365,7 +392,7 @@ def test_깨진_기준선은_통과가_아니라_기준선_없음이다(tmp_path
 def test_기록한_기준선을_그대로_다시_읽을_수_있다(tmp_path: Path) -> None:
     """왕복이 깨지면 기록 실행이 매번 '변경'으로 잡혀 게이트가 영영 닫히지 않는다."""
     path = tmp_path / "baseline.json"
-    fingerprint = Fingerprint.of(DOCUMENTS)
+    fingerprint = Fingerprint.of(DOCUMENTS, _context())
     measurement = _measurement((36, 56), (17, 20))
     write_baseline(baseline_body(fingerprint, measurement, _context()), path)
     loaded = load_baseline(path)
@@ -448,7 +475,7 @@ def _evaluation(measurement: Measurement) -> RuleEvaluation:
 
 def _report(measurement: Measurement) -> golden_report.GoldenRunReport:
     return golden_report.GoldenRunReport(
-        fingerprint=Fingerprint.of(DOCUMENTS),
+        fingerprint=Fingerprint.of(DOCUMENTS, _context()),
         context=_context(),
         targets=golden_report.Targets(
             pass_rate=0.9, judge_coverage=0.9, judge_score=4.0, fidelity_floor=2
@@ -504,32 +531,199 @@ def test_리포트에_본문이_실리지_않는다() -> None:
 # 2026-08-12 첫 기록이 `context.model = null`로 남았다(`settings.llm_model` 미설정). 그 상태로
 # 파일이 써져 **무엇으로 쟀는지 모르는 수치가 하한선이 될 뻔했다** — 게다가 그 값은 직전 저장
 # 실행보다 9%p 낮았다. 무엇으로 쟀는지 모르는 수치가 하한선이 되면 그 하락이 정상이 된다.
-# 아래 셋은 `write_baseline`의 가드를 붙잡는 음성 대조다 — 가드를 지우면 이 셋이 깨진다.
+# 아래 넷은 `write_baseline`의 가드를 붙잡는 음성 대조다 — 가드를 지우면 이 넷이 깨진다.
+#
+# **넷 다 `tmp_path`로 쓴다**(2026-08-13). 예전에는 `path` 인자 없이 불러 대상이 저장소의
+# `tests/golden/baseline.json`이었다. 지금은 가드가 먼저 나서 파일이 생기지 않지만, 그것은
+# **가드가 있는 동안에만** 참이다 — 즉 "가드를 지우면 이 테스트가 깨진다"와 "가드를 지우면 이
+# 테스트가 저장소에 하한선 파일을 만든다"가 같은 편집에 묶여 있었다. 하한선 파일은 존재하는
+# 순간 활성화되므로, 가드를 만지는 편집이 곧 하한선을 세우는 편집이 되는 결합은 끊는다.
 
 
-def test_관측_모델_없이는_기준선을_쓰지_않는다() -> None:
+def test_provider_없이는_기준선을_쓰지_않는다(tmp_path: Path) -> None:
+    """**빈 provider는 손으로 조립한 body의 이야기가 아니다** — 하네스 경로로 도달한다.
+
+    `run_context()`는 `os.environ.get("GOLDEN_PROVIDER", DEFAULT_PROVIDER)`로 provider를
+    만든다. `GOLDEN_PROVIDER=`(빈 값)로 실행하면 기본값이 아니라 `""`가 들어오고,
+    `RunContext(provider="")`는 pydantic을 그대로 통과한다(아래에서 확인한다). 그리고 그
+    순간이 **사람이 손으로 기준선을 기록하는 실행**이다 — 환경변수를 붙여 돌리는 명령이
+    기록 명령이기 때문이다.
+
+    무엇으로 쟀는지 모르는 수치가 하한선이 되면 그 하락이 정상이 된다는 것이 이 절 전체의
+    근거인데, provider가 비면 producer 축의 첫 칸부터 비어 "누가 낸 수치인가"를 말할 수 없다.
+    """
+    path = tmp_path / "baseline.json"
+    # 전제 — 이 상태는 만들 수 있다. 스키마가 막아 준다면 이 가드는 죽은 분기다.
+    reachable = RunContext(provider="", observed_models=["fake-model"], effort=None)
+    assert reachable.provider == ""
+    body = baseline_body(
+        Fingerprint.of(DOCUMENTS, reachable), _measurement((36, 56), (17, 20)), reachable
+    )
+    assert body["context"]["provider"] == "", "전제 — 빈 provider가 본문까지 그대로 실린다"
+
+    with pytest.raises(AssertionError, match="`provider`가 비어 있다"):
+        write_baseline(body, path)
+    assert not path.exists(), "거부했는데 파일이 생겼다"
+
+
+def test_관측_모델_없이는_기준선을_쓰지_않는다(tmp_path: Path) -> None:
     """설정값만 있고 **관측값이 없으면** 기록을 거부한다.
 
     `settings.llm_model`은 주장이고 `LLMResponse.model`이 증거다. 별칭 해석·폴백이
     있으면 설정값과 실제로 응답한 모델이 갈린다.
     """
+    path = tmp_path / "baseline.json"
     with pytest.raises(AssertionError, match="관측된 모델이 없다"):
-        write_baseline({"context": {"provider": "fake", "model": "설정값", "effort": None}})
+        write_baseline({"context": {"provider": "fake", "model": "설정값", "effort": None}}, path)
+    assert not path.exists()
 
 
-def test_모델이_섞인_실행은_기준선이_되지_못한다() -> None:
+def test_모델이_섞인_실행은_기준선이_되지_못한다(tmp_path: Path) -> None:
     """한 실행에서 두 모델이 응답했으면 그 수치는 어느 모델의 하한선도 아니다."""
+    path = tmp_path / "baseline.json"
     with pytest.raises(AssertionError, match="모델이 섞였다"):
         write_baseline(
-            {"context": {"provider": "fake", "observed_models": ["a", "b"], "effort": None}}
+            {"context": {"provider": "fake", "observed_models": ["a", "b"], "effort": None}}, path
         )
+    assert not path.exists()
 
 
-def test_effort_는_키_자체가_있어야_한다() -> None:
+def test_effort_는_키_자체가_있어야_한다(tmp_path: Path) -> None:
     """값이 없으면 `null`로 **명시**한다 — 키의 부재와 값의 부재는 다르다.
 
     같은 모델이라도 effort가 결과를 크게 움직인다. 키가 없으면 그 실행이 어떤
     effort였는지 영영 알 수 없어 9%p 하락 같은 것의 원인을 가릴 수 없다.
+
+    **이 가드만 성격이 다르다.** `baseline_body`가 pydantic `Baseline`을 dump하므로 하네스
+    경로로 만든 본문에는 `effort` 키가 언제나 있다 — 이것은 손으로 조립한 body에 대한 방어이고,
+    위 셋처럼 실행 조건으로 재현되지 않는다. 그래서 "도달 0"으로 묶어 고칠 대상이 아니다.
     """
+    path = tmp_path / "baseline.json"
     with pytest.raises(AssertionError, match="effort"):
-        write_baseline({"context": {"provider": "fake", "observed_models": ["a"]}})
+        write_baseline({"context": {"provider": "fake", "observed_models": ["a"]}}, path)
+    assert not path.exists()
+
+
+# ═══════════════════════════════════ G. producer 축 — 만든 쪽이 바뀌면 비교하지 않는다
+#
+# 2026-08-13 사용자 결정: "provider·모델이 바뀌면 하한선 비교를 **비교 불가로 막는다** —
+# 지문에 추가." 그전까지 provider·모델·effort는 `RunContext`에만 있어 비교 가능성 판정에
+# 들어가지 않았고, anthropic으로 기록한 기준선과 openai 실행이 **비교 가능**으로 읽혀 수치
+# 판정이 났다. 다른 모델의 통과율끼리 비교하는 것은 의미가 없다.
+#
+# 아래는 세 필드 각각의 음성 대조와 대조군 하나다. 대조군이 없으면 "축을 넣어 전부 막았다"와
+# 구분되지 않는다 — 지문을 과민하게 만드는 것은 '항상 비교 불가'라는 반대 방향 고장이다.
+
+
+def _producer_case(
+    baseline_context: RunContext, current_context: RunContext
+) -> tuple[Verdict, str]:
+    """조건만 다른 두 실행을 대조한다. **수치와 코퍼스는 같게 둔다** — 막히거나 통과하는
+    이유가 producer 하나로 좁혀져야 무엇을 확인한 것인지 말할 수 있다.
+    """
+    measurement = _measurement((36, 56), (17, 20))
+    baseline = _baseline(Fingerprint.of(DOCUMENTS, baseline_context), measurement, baseline_context)
+    judgement = compare(baseline, Fingerprint.of(DOCUMENTS, current_context), measurement)
+    return judgement.verdict, judgement.summary()
+
+
+def test_provider가_바뀌면_비교_불가다() -> None:
+    """anthropic으로 기록한 하한선과 openai 실행은 비교되지 않는다 — 사용자 결정의 본문."""
+    verdict, summary = _producer_case(
+        _context(provider="anthropic", observed_models=["claude-sonnet-5"]),
+        _context(provider="openai", observed_models=["claude-sonnet-5"]),
+    )
+    assert verdict is Verdict.INCOMPARABLE
+    # **해시가 아니라 값으로 담은 이유가 이 줄이다** — 무엇이 달라졌는지 이름으로 말한다.
+    assert "provider: anthropic → openai" in summary
+
+
+def test_관측_모델이_바뀌면_비교_불가다() -> None:
+    """provider가 같아도 모델이 다르면 같은 자로 잰 수치가 아니다.
+
+    같은 벤더 안에서 모델을 갈아 끼우는 것이 제품에서 훨씬 흔한 변경이라, provider만 막으면
+    실제로 일어나는 경로가 열린 채 남는다.
+    """
+    verdict, summary = _producer_case(
+        _context(provider="anthropic", observed_models=["claude-sonnet-5"]),
+        _context(provider="anthropic", observed_models=["claude-opus-5"]),
+    )
+    assert verdict is Verdict.INCOMPARABLE
+    assert "관측 모델: claude-sonnet-5 → claude-opus-5" in summary
+    assert "provider:" not in summary, "안 바뀐 필드까지 적으면 무엇이 달라졌는지 흐려진다"
+
+
+def test_effort가_바뀌면_비교_불가다() -> None:
+    """**짐작이 아니라 이 저장소의 기록이다.** 9%p 하락의 후보로 `.env`의 `LLM_EFFORT`
+    차이를 스스로 지목했다(`04_goldenset-first-run.md`). 모델과 같은 부류다.
+
+    값이 없는 쪽은 `null`이 아니라 이름(`없음`)으로 적힌다 — 없음도 값이고, 그것이 어느
+    쪽인지 사람이 읽어야 한다.
+    """
+    verdict, summary = _producer_case(
+        _context(effort="high"),
+        _context(effort=None),
+    )
+    assert verdict is Verdict.INCOMPARABLE
+    assert "effort: high → 없음" in summary
+
+
+def test_producer가_같으면_정상_비교된다() -> None:
+    """**대조군.** 셋이 다 같으면 수치 판정이 그대로 난다.
+
+    이것이 없으면 "축을 넣어 전부 막았다"와 구분되지 않는다. 과민한 지문은 하한선이 영영
+    축적되지 않는 반대 방향 고장이라, 막는 쪽만 확인하는 것으로는 부족하다.
+    """
+    context = _context(provider="anthropic", observed_models=["claude-sonnet-5"], effort="high")
+    fingerprint = Fingerprint.of(DOCUMENTS, context)
+    baseline = _baseline(fingerprint, _measurement((36, 56), (17, 20)), context)
+    held = compare(baseline, fingerprint, _measurement((36, 56), (17, 20)))
+    assert held.verdict is Verdict.HELD
+    # 수치 판정이 실제로 도는지까지 본다 — '전부 통과'가 아니라 '수치를 읽는다'가 맞는 상태다.
+    dropped = compare(baseline, fingerprint, _measurement((30, 56), (17, 20)))
+    assert dropped.verdict is Verdict.REGRESSED
+
+
+def test_기록만_하는_조건은_producer_를_흔들지_않는다() -> None:
+    """**축의 경계를 고정한다.** 담는 것은 provider·관측 모델·effort **셋뿐**이다.
+
+    `judge_provider`는 비차단축의 채점자라 규칙 통과율과 무관하고, 설정값 `model`은
+    별칭 해석·폴백이 있으면 실제와 갈리는 *주장*이다. 둘을 넣으면 판정과 무관한 변경이
+    하한선을 리셋한다 — 지문을 과민하게 만드는 쪽의 고장이다.
+    """
+    claimed = RunContext(
+        provider="anthropic",
+        judge_provider="openai",
+        model="설정값-별칭",
+        observed_models=["claude-sonnet-5"],
+        effort="high",
+    )
+    other_claim = claimed.model_copy(update={"judge_provider": "anthropic", "model": "다른-설정값"})
+    assert (
+        Fingerprint.of(DOCUMENTS, claimed).producer
+        == Fingerprint.of(DOCUMENTS, other_claim).producer
+    )
+
+
+def test_관측_모델이_비거나_섞여도_사실대로_적힌다() -> None:
+    """**가드가 없는 쪽을 확인한다.** "비면 안 되고 섞이면 안 된다"는 `write_baseline`의
+    fail-closed 가드가 보장하는데, **그 가드는 기록 경로에만 있다.** 판정 경로(비기록 실행)는
+    전건 변환 실패로 관측이 비거나 별칭 해석·폴백으로 섞인 채 여기까지 온다.
+
+    그래서 단일 값으로 접지 않고 목록을 사실대로 담는다. 결과는 어느 쪽이든 **비교 불가**이고
+    그것이 맞다 — 없는 모델을 있는 것처럼 접거나 섞인 것 중 하나를 고르면, 그 실행이 남의
+    하한선을 통과해 버린다.
+    """
+    normal = _context(provider="anthropic", observed_models=["claude-sonnet-5"])
+    empty = _context(provider="anthropic", observed_models=[])
+    mixed = _context(provider="anthropic", observed_models=["claude-sonnet-5", "claude-opus-5"])
+
+    assert Fingerprint.of(DOCUMENTS, empty).producer.label() == "anthropic/모델 없음(effort=없음)"
+    assert (
+        Fingerprint.of(DOCUMENTS, mixed).producer.label()
+        == "anthropic/claude-sonnet-5+claude-opus-5(effort=없음)"
+    )
+    for broken in (empty, mixed):
+        verdict, summary = _producer_case(normal, broken)
+        assert verdict is Verdict.INCOMPARABLE
+        assert "관측 모델: claude-sonnet-5 → " in summary

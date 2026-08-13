@@ -215,11 +215,16 @@ def build_report(result: RuleEvaluation) -> golden_report.GoldenRunReport:
     리포트를 **`result` 에 결속해** 등록한다(`golden_report.record` 의 두 번째 인자). 아래
     두 테스트는 이 결속을 통해 `for_evaluation(evaluation)` 으로 자기 리포트만 받는다 —
     "마지막으로 세워진 리포트"를 집어 오는 통로가 없어야 남의 리포트가 잡히지 않는다.
+
+    조건을 **한 번만 만들어 지문과 리포트 양쪽에 넘긴다**(2026-08-13, producer 축). 지문이
+    provider·관측 모델·effort 를 담게 되면서 `run_context()` 를 두 번 부르면 한 리포트 안에서
+    지문의 producer 와 `context` 가 갈릴 표현이 생긴다 — 같은 객체를 쓰면 그 표현이 없다.
     """
+    context = run_context(result.observed_models)
     return golden_report.record(
         golden_report.GoldenRunReport(
-            fingerprint=Fingerprint.of(result.documents),
-            context=run_context(result.observed_models),
+            fingerprint=Fingerprint.of(result.documents, context),
+            context=context,
             targets=TARGETS,
             measurement=result.measurement,
             failure_reasons=result.failure_reasons,
@@ -431,9 +436,15 @@ def test_규칙_기반_통과율이_직전_기록보다_낮지_않다(evaluation
     report = golden_report.for_evaluation(evaluation)
     # 지문은 **이번 평가가 든 문서 집합**에서 만든다. 전역으로 계산하면 수치와 지문이 서로
     # 다른 집합에서 와, 지문이 막으려던 분모 우회가 지문 자신에게 열린다(11번째 지적).
-    judgement = compare(
-        load_baseline(), Fingerprint.of(evaluation.documents), evaluation.measurement
-    )
+    #
+    # 조건도 **여기서 한 번만** 만든다(2026-08-13, producer 축). 지문이 provider·관측 모델·
+    # effort 를 담게 되면서, 판정에 쓰는 지문과 아래 기록에 쓰는 지문이 서로 다른 `run_context()`
+    # 호출에서 나오면 "판정은 통과인데 기록되는 producer 는 다른 값"이 표현 가능해진다.
+    # 관측 모델은 `evaluation` 에서 오고 나머지는 환경·설정에서 오는데, 그 환경을 두 번 읽지
+    # 않는 것으로 그 표현을 없앤다.
+    context = run_context(evaluation.observed_models)
+    fingerprint = Fingerprint.of(evaluation.documents, context)
+    judgement = compare(load_baseline(), fingerprint, evaluation.measurement)
     if report is not None:
         report.floor = judgement
 
@@ -494,11 +505,11 @@ def test_규칙_기반_통과율이_직전_기록보다_낮지_않다(evaluation
         # 지적이었다. 그때는 기록된 파일 하나 안에서 `corpus_sha256` 는 진짜 56건 코퍼스를
         # 가리키고 `measurement` 는 다른 집합에서 온 수치였다 — 그리고 다음 실행은 그
         # 지문이 맞아떨어지므로 **비교 가능**으로 읽어 그 수치를 하한선으로 삼는다.
-        body = baseline_body(
-            Fingerprint.of(evaluation.documents),
-            evaluation.measurement,
-            run_context(evaluation.observed_models),
-        )
+        #
+        # 지문과 조건은 **판정에 쓴 그 값 그대로**다(위에서 한 번 만들었다). 여기서 다시
+        # 만들면 "판정한 지문"과 "기록한 지문"이 갈릴 수 있고, 갈리면 이 실행이 무엇과
+        # 비교해 통과했는지와 무엇을 하한선으로 남겼는지가 서로 다른 이야기가 된다.
+        body = baseline_body(fingerprint, evaluation.measurement, context)
         changes = baseline_changes(body)
         report.baseline_changes = changes
         if changes:
