@@ -869,42 +869,90 @@ def build_postprocess() -> FixtureSpec:
     )
 
 
-# ------------------------------------------------------------------------ 보정 채택
+# ------------------------------------------------- 변환 오케스트레이션 (보정 채택 포함)
 
 
 def build_repair_adoption() -> FixtureSpec:
-    """보정 채택 정책과 변환 호출 상한 — 자리표시자 유실·악화는 거부, 호출은 최대 2회"""
+    """변환 오케스트레이션 — 호출 상한·4대 예외·보정 채택·자리표시자 유실 보고
+
+    도메인 **이름은 `repair-adoption`이지만 범위는 변환 오케스트레이션 전체**다. 이름은
+    `.github/parity-canonical-floor.txt`·`backend-kotlin/parity-domains.txt`가 참조하는
+    키라 바꾸면 삭제+추가가 되므로 그대로 둔다(하한 파일 (3) 항). 범위의 정본은 이름이
+    아니라 아래 `requirement` 한 줄이다.
+    """
     from app.easyread.style_rules import check_style
     from app.services.conversion import MAX_LLM_CALLS_PER_CONVERSION, _accepts_repair
 
-    samples: list[tuple[str, str, str, list[str]]] = [
-        ("improves", "결과가 보여지고 있습니다.", "결과를 보여 드립니다.", []),
-        ("worsens", "감면을 받으세요.", "감면을 받으시고, 가, 나, 다, 라를 준비하세요.", []),
-        ("equal-count", "감면을 받으세요.", "제출을 하세요.", []),
-        (
-            "loses-placeholder",
-            "번호는 [[주민등록번호1]] 감면 대상입니다.",
-            "번호를 확인해 주세요.",
-            ["[[주민등록번호1]]"],
-        ),
-        (
-            "placeholder-absent-in-original",
-            "감면 대상입니다.",
-            "깎아 드립니다.",
-            ["[[주민등록번호1]]"],
-        ),
-    ]
+    # ── 1. 보정 채택 정책 (CNV-04) — 순수 판정 ────────────────────────────────
     # 이 도메인의 요구사항은 **정책**이라 규칙으로 완전히 적힌다:
     #   채택 = (자리표시자를 하나도 잃지 않았다) AND (위반 건수가 늘지 않았다)
     # 그래서 판정은 산출물이 **스스로 보고한 건수**를 입력으로 이 정책을 다시 계산해
     # 대조한다(`repair_policy`). 건수 자체가 맞는지는 `style` 도메인의 질문이고, 여기서는
     # "같은 건수를 받았을 때 같은 결정을 내리는가"만 본다 — 두 질문을 섞으면 어느 쪽이
     # 틀렸는지 알 수 없다.
+    policy = (
+        "보정 결과 채택 정책 — 자리표시자를 잃거나 위반이 늘면 거부하고, "
+        "같은 건수는 채택한다(경계값)"
+    )
+    samples: list[tuple[str, str, str, list[str], str]] = [
+        ("improves", "결과가 보여지고 있습니다.", "결과를 보여 드립니다.", [], policy),
+        (
+            "worsens",
+            "감면을 받으세요.",
+            "감면을 받으시고, 가, 나, 다, 라를 준비하세요.",
+            [],
+            policy,
+        ),
+        ("equal-count", "감면을 받으세요.", "제출을 하세요.", [], policy),
+        (
+            "loses-placeholder",
+            "번호는 [[주민등록번호1]] 감면 대상입니다.",
+            "번호를 확인해 주세요.",
+            ["[[주민등록번호1]]"],
+            policy,
+        ),
+        (
+            "placeholder-absent-in-original",
+            "감면 대상입니다.",
+            "깎아 드립니다.",
+            ["[[주민등록번호1]]"],
+            policy,
+        ),
+        # ── 2026-08-13 확장 (추출 목록 §G 집행) ───────────────────────────────
+        # 위 5건은 "잃음 vs 안 잃음"과 "건수 증가 vs 감소·동수"의 대각선만 짚어, 자리표시자
+        # 가드를 **전부-아니면-전무**로 구현하거나 자리표시자가 있으면 보정을 통째로
+        # 버리는 구현을 걸러내지 못했다. 아래 3건이 그 세 경로를 각각 막는다.
+        (
+            "partial-placeholder-loss",
+            "금일 [[주민등록번호1]]과 [[카드번호1]]을 확인하세요.",
+            "오늘 [[주민등록번호1]]을 확인하세요.",
+            ["[[주민등록번호1]]", "[[카드번호1]]"],
+            "여러 자리표시자 중 **하나만 잃어도** 거부한다 — 위반은 오히려 줄었지만 "
+            "복원이 깨진 결과를 품질 개선으로 사들이지 않는다. 가드를 '전부 잃었을 때'로 "
+            "구현하면 여기서 걸린다",
+        ),
+        (
+            "keeps-placeholders-and-improves",
+            "금일 [[주민등록번호1]]을 확인하세요.",
+            "오늘 [[주민등록번호1]]을 확인하세요.",
+            ["[[주민등록번호1]]"],
+            "자리표시자를 모두 지키면서 위반이 줄면 채택한다. **과잉 거부 가드** — "
+            "'자리표시자가 든 결과는 보정하지 않는다'로 구현하면 보정이 사실상 죽는데, "
+            "유실 케이스만으로는 그 구현이 드러나지 않는다",
+        ),
+        (
+            "placeholder-reordered",
+            "금일 [[주민등록번호1]]과 [[카드번호1]]을 확인하세요.",
+            "오늘 [[카드번호1]]과 [[주민등록번호1]]을 확인하세요.",
+            ["[[주민등록번호1]]", "[[카드번호1]]"],
+            "유실 판정은 **존재 여부**이지 위치가 아니다 — 문장을 다시 쓰면서 자리표시자 "
+            "순서가 바뀌어도 잃은 것이 없으면 채택한다. 위치·인덱스로 대조하는 구현을 막는다",
+        ),
+    ]
     cases: list[Case] = [
         _case(
             f"repair-{name}",
-            "보정 결과 채택 정책 — 자리표시자를 잃거나 위반이 늘면 거부하고, "
-            "같은 건수는 채택한다(경계값)",
+            description,
             {"original": original, "candidate": candidate, "placeholders": placeholders},
             {
                 "accepted": _accepts_repair(
@@ -918,8 +966,10 @@ def build_repair_adoption() -> FixtureSpec:
             },
             **{"assert": [_assert("equals_derived", rule="repair_policy", path="accepted")]},
         )
-        for name, original, candidate, placeholders in samples
+        for name, original, candidate, placeholders, description in samples
     ]
+
+    # ── 2. 변환 호출 상한 (CNV-01) — 런타임 동작 ──────────────────────────────
     # 변환 호출 상한은 master-plan §3.3의 계약이고 §5 Phase 7의 즉시 중단 기준이다.
     # 값이 아니라 **런타임 동작**이라 Python 쪽에 값싼 대응 실행이 없다 — 참고값 없이
     # 성질만 둔다. Kotlin 하네스는 fake provider로 변환 1건을 돌려 호출 횟수를 보고한다.
@@ -940,13 +990,312 @@ def build_repair_adoption() -> FixtureSpec:
             [_assert("at_most", path="llm_calls", limit=MAX_LLM_CALLS_PER_CONVERSION)],
         ),
     ]
+
+    # ── 3. 대본 있는 변환 시나리오 (CNV-01·CNV-02 + missing_placeholders) ──────
+    # 위 두 케이스는 대본 없이 시나리오 이름만 주어 하네스가 문서를 알아서 짓게 한다.
+    # 4대 예외와 자리표시자 유실 보고는 **어느 호출에서 무엇이 일어났는가**가 곧 성질이라
+    # 그 자유도를 남기면 케이스가 무엇을 재는지 알 수 없다. 그래서 아래 케이스는
+    # provider 응답을 대본으로 못박는다. 입력·산출물 형식은 명세 문서
+    # `docs/migration/_workspace/02_parity-verifier_conversion-spec.md` §3 이 정본이다.
+    #
+    # 참고값을 싣지 않는 이유: 실패 경로의 결과는 Python이 **값이 아니라 예외**로 내므로
+    # `reference`에 넣으려면 사람이 손으로 인코딩해야 하고, 그러면 그것은 참고값이 아니라
+    # 두 번째 기대값이 된다. Python 현행 동작 실측은 명세 문서 §5에 표로 남긴다.
+    src_plain = "금일 서류를 제출하십시오."
+    src_rrn = "금일 등록번호 900101-1234567 을 확인하십시오."
+    src_two = "금일 등록번호 900101-1234567 과 카드 4111-1111-1111-1111 을 확인하십시오."
+    dirty = "금일 서류를 내세요."
+    clean = "오늘 서류를 내세요."
+    worse = "금일 서류를 제출하십시오."
+    still_dirty = "명일 서류를 내세요."
+    ph_dirty = "금일 [[주민등록번호1]]을 확인하세요."
+    ph_clean = "오늘 [[주민등록번호1]]을 확인하세요."
+    ph_lost = "오늘 번호를 확인하세요."
+    ph_lost_dirty = "금일 번호를 확인하세요."
+    ph2_partial = "오늘 [[주민등록번호1]]을 확인하세요."
+
+    # 생성 시점 드리프트 가드. 아래 시나리오의 기대값(어느 쪽이 채택되는가·보정을 부르는가)은
+    # 표본의 규칙 위반 건수에 달려 있는데, 그 건수는 `style_rules.py`가 바뀌면 함께 바뀐다.
+    # 조용히 바뀌면 fixture는 "요구 성질"이라고 적힌 채 틀린 기대값을 굳힌다 — 여기서 깬다.
+    intended_violations = {
+        dirty: 1,
+        clean: 0,
+        worse: 2,
+        still_dirty: 1,
+        ph_dirty: 1,
+        ph_clean: 0,
+        ph_lost: 0,
+        ph_lost_dirty: 1,
+        ph2_partial: 0,
+    }
+    drifted = {
+        text: (want, len(check_style(text).issues))
+        for text, want in intended_violations.items()
+        if len(check_style(text).issues) != want
+    }
+    if drifted:
+        raise ValueError(
+            "시나리오 표본의 규칙 위반 건수가 바뀌었다 — 스타일 규칙이 달라졌다는 뜻이므로 "
+            "시나리오 기대값을 다시 정한 뒤 재생성해야 한다 (표본: 기대→실측): "
+            f"{ {text[:20]: pair for text, pair in drifted.items()} }"
+        )
+
+    def says(
+        text: str, *, truncated: bool = False, input_tokens: int = 0, output_tokens: int = 0
+    ) -> dict[str, Any]:
+        """provider가 이 호출에서 돌려줄 응답."""
+        return {
+            "text": text,
+            "truncated": truncated,
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+        }
+
+    #: 이 호출은 응답 없이 실패한다 (전송 오류·서버 오류 등 provider 계층 실패).
+    fails: dict[str, Any] = {"error": "provider"}
+
+    def scenario(
+        case_id: str,
+        description: str,
+        *,
+        source_text: str,
+        script: list[dict[str, Any]],
+        asserts: list[dict[str, Any]],
+        transport_attempts_per_call: int | None = None,
+    ) -> Case:
+        payload: dict[str, Any] = {
+            "scenario": case_id,
+            "source_text": source_text,
+            "provider_script": script,
+        }
+        if transport_attempts_per_call is not None:
+            payload["transport_attempts_per_call"] = transport_attempts_per_call
+        return _unreferenced(case_id, description, payload, asserts)
+
+    def fails_with(kind: str, *, calls: int) -> list[dict[str, Any]]:
+        """변환이 실패로 끝나는 경우의 공통 단언 — 결과를 사용자에게 주지 않는다."""
+        return [
+            _assert("equals_field", path="outcome", value="error"),
+            _assert("equals_field", path="failure_kind", value=kind),
+            _assert("equals_field", path="llm_calls", value=calls),
+            _assert("equals_field", path="easy_text", value=None),
+        ]
+
+    def keeps_original(text: str) -> list[dict[str, Any]]:
+        """보정이 실패·기각된 경우의 공통 단언 — 1차 결과를 그대로 돌려준다."""
+        return [
+            _assert("equals_field", path="outcome", value="ok"),
+            _assert("equals_field", path="easy_text", value=text),
+            _assert("equals_field", path="repaired", value=False),
+            _assert("equals_field", path="llm_calls", value=MAX_LLM_CALLS_PER_CONVERSION),
+        ]
+
+    cases += [
+        # 4대 예외 ①·② — 1차 호출에서 나면 변환 실패다. 잘린 본문·빈 본문을 성공으로
+        # 넘기면 사용자는 크레딧을 내고 일부가 사라진 결과를 받는다.
+        scenario(
+            "conversion-truncated-first-call-fails",
+            "1차 변환 응답이 토큰 한도에서 잘리면 변환은 **실패**로 끝난다 — 잘린 본문을 "
+            "성공 결과로 내보내면 조용한 정보 누락이 된다. 보정으로 덮지 않는다(호출 1회)",
+            source_text=src_plain,
+            script=[says("쉬운 글이 도중에", truncated=True)],
+            asserts=fails_with("truncated", calls=1),
+        ),
+        scenario(
+            "conversion-empty-first-call-fails",
+            "후처리 뒤 본문이 남지 않으면 변환은 **실패**로 끝난다 — 빈 결과를 성공으로 "
+            "넘기지 않는다. 껍데기만 온 응답(코드펜스뿐)도 같은 취급이다",
+            source_text=src_plain,
+            script=[says("```\n```")],
+            asserts=fails_with("empty_result", calls=1),
+        ),
+        scenario(
+            "conversion-provider-error-first-call-fails",
+            "1차 호출 자체가 실패하면 변환은 실패로 끝난다. **보정 호출 실패와 대칭이 "
+            "아니다** — 1차가 없으면 사용자에게 줄 결과가 아예 없다",
+            source_text=src_plain,
+            script=[fails],
+            asserts=fails_with("provider_error", calls=1),
+        ),
+        # 4대 예외 ①·② (보정 위치) — 같은 사건이 보정 호출에서 나면 삼키고 1차를 채택한다.
+        # 보정 실패가 변환 전체를 실패시키면 사용자는 받을 수 있었던 결과마저 잃는다.
+        scenario(
+            "conversion-repair-truncated-keeps-original",
+            "보정 응답이 잘리면 보정을 버리고 **1차 결과를 채택**한다. 변환은 성공이고 "
+            "`repaired`는 거짓이다 — 1차 위치와 정반대 처리라 같은 코드로 뭉뚱그릴 수 없다",
+            source_text=src_plain,
+            script=[says(dirty), says("오늘 서류를", truncated=True)],
+            asserts=keeps_original(dirty),
+        ),
+        scenario(
+            "conversion-repair-empty-keeps-original",
+            "보정 응답이 후처리 뒤 비면 보정을 버리고 1차 결과를 채택한다",
+            source_text=src_plain,
+            script=[says(dirty), says("   ")],
+            asserts=keeps_original(dirty),
+        ),
+        scenario(
+            "conversion-repair-provider-error-keeps-original",
+            "보정 호출이 실패해도 변환은 성공한다 — 1차 결과를 채택한다. 실패한 호출도 "
+            "**호출 상한에는 셈한다**(다시 부르지 않는다)",
+            source_text=src_plain,
+            script=[says(dirty), fails],
+            asserts=keeps_original(dirty),
+        ),
+        # 4대 예외 ③ 보정 악화 · ④ 자리표시자 유실 — 정책이 최종 산출물에 실제로 적용되는가.
+        scenario(
+            "conversion-repair-worsens-keeps-original",
+            "보정이 위반을 늘리면 1차 결과를 채택한다. **토큰은 두 호출의 합**이다 — "
+            "채택하지 않았어도 호출한 순간 비용은 발생했고, 그것을 빼면 원가가 실제보다 "
+            "적게 잡힌다",
+            source_text=src_plain,
+            script=[
+                says(dirty, input_tokens=120, output_tokens=45),
+                says(worse, input_tokens=80, output_tokens=30),
+            ],
+            asserts=[
+                *keeps_original(dirty),
+                _assert("equals_field", path="input_tokens", value=200),
+                _assert("equals_field", path="output_tokens", value=75),
+            ],
+        ),
+        scenario(
+            "conversion-repair-loses-placeholder-keeps-original",
+            "보정이 자리표시자를 잃으면 1차 결과를 채택하고, 유실 목록은 **채택 결정 뒤 "
+            "최종 본문 기준**으로 비어 있다. 1차 결과에 대고 산출하면 여기서 유실이 "
+            "잘못 보고돼 내보내기가 409로 막힌다",
+            source_text=src_rrn,
+            script=[says(ph_dirty), says(ph_lost)],
+            asserts=[
+                *keeps_original(ph_dirty),
+                _assert("equals_field", path="missing_placeholders", value=[]),
+            ],
+        ),
+        # 과잉 거부 가드 — 위 다섯 케이스는 "보정을 절대 채택하지 않는" 구현도 통과시킨다.
+        scenario(
+            "conversion-repair-accepted",
+            "보정이 자리표시자를 지키면서 위반을 줄이면 **보정문을 채택**하고 `repaired`가 "
+            "참이다. 이 케이스가 없으면 보정을 항상 버리는 구현이 예외 케이스를 전부 "
+            "통과한다 — 보정 호출 비용만 치르고 품질은 그대로인 상태",
+            source_text=src_plain,
+            script=[
+                says(dirty, input_tokens=120, output_tokens=45),
+                says(clean, input_tokens=80, output_tokens=30),
+            ],
+            asserts=[
+                _assert("equals_field", path="outcome", value="ok"),
+                _assert("equals_field", path="easy_text", value=clean),
+                _assert("equals_field", path="repaired", value=True),
+                _assert("equals_field", path="llm_calls", value=MAX_LLM_CALLS_PER_CONVERSION),
+                _assert("equals_field", path="input_tokens", value=200),
+                _assert("equals_field", path="output_tokens", value=75),
+            ],
+        ),
+        # 호출 상한 — 루프 없음과 계측 지점.
+        scenario(
+            "conversion-no-repair-loop",
+            f"보정 결과에 위반이 **남아 있어도 다시 부르지 않는다** — 호출은 정확히 "
+            f"{MAX_LLM_CALLS_PER_CONVERSION}회다. '위반이 없어질 때까지' 루프는 상한이 "
+            "아니라 지연·비용의 하한이 없다는 뜻이 된다. 대본은 2건뿐이라 3번째 호출을 "
+            "요구하는 구현은 하네스에서 드러나야 한다",
+            source_text=src_plain,
+            script=[says(dirty), says(still_dirty)],
+            asserts=[
+                _assert("equals_field", path="outcome", value="ok"),
+                _assert("equals_field", path="easy_text", value=still_dirty),
+                _assert("equals_field", path="llm_calls", value=MAX_LLM_CALLS_PER_CONVERSION),
+                _assert("at_most", path="llm_calls", limit=MAX_LLM_CALLS_PER_CONVERSION),
+            ],
+        ),
+        scenario(
+            "conversion-transport-retry-not-counted",
+            "전송 계층 재전송은 호출 상한과 **분리 계측**한다(CNV-01). provider 어댑터가 "
+            "같은 완성 요청을 3번 전송해도 논리 호출은 1회다. 계측 지점을 HTTP 요청으로 "
+            "잡으면 상한이 재시도 설정에 따라 흔들리고, 실제로 몇 번 물어봤는지도 잃는다",
+            source_text=src_plain,
+            script=[says(clean)],
+            transport_attempts_per_call=3,
+            asserts=[
+                _assert("equals_field", path="easy_text", value=clean),
+                _assert("equals_field", path="llm_calls", value=1),
+                _assert("at_most", path="llm_calls", limit=MAX_LLM_CALLS_PER_CONVERSION),
+                _assert("equals_field", path="transport_attempts", value=3),
+            ],
+        ),
+        # 자리표시자 유실 보고 (INV-03 인접) — 예외가 아니라 검수 화면 경고다.
+        scenario(
+            "missing-placeholders-preserved",
+            "모델이 자리표시자를 지키면 유실 목록은 비어 있다. **과잉 보고 가드** — "
+            "빈 목록을 낼 수 없는 구현은 모든 변환을 내보내기 409로 막는다",
+            source_text=src_rrn,
+            script=[says(ph_clean)],
+            asserts=[
+                _assert("equals_field", path="outcome", value="ok"),
+                _assert("equals_field", path="easy_text", value=ph_clean),
+                _assert("equals_field", path="llm_calls", value=1),
+                _assert("equals_field", path="missing_placeholders", value=[]),
+            ],
+        ),
+        scenario(
+            "missing-placeholders-dropped-reported",
+            "모델이 자리표시자를 지우면 그 라벨을 유실 목록에 담되 **예외로 막지 않는다** — "
+            "개인정보가 새는 방향이 아니라 표시가 사라지는 방향이라 사람이 원문과 대조해 "
+            "판단한다. 여기서 실패로 처리하면 쓸 만한 결과를 통째로 버린다",
+            source_text=src_rrn,
+            script=[says(ph_lost)],
+            asserts=[
+                _assert("equals_field", path="outcome", value="ok"),
+                _assert("equals_field", path="easy_text", value=ph_lost),
+                _assert("equals_field", path="llm_calls", value=1),
+                _assert("equals_field", path="missing_placeholders", value=["[[주민등록번호1]]"]),
+            ],
+        ),
+        scenario(
+            "missing-placeholders-basis-is-adopted-text",
+            "유실 목록의 **기준 본문은 채택된 최종 결과**다 — 1차 결과가 자리표시자를 "
+            "잃었더라도 채택된 보정문이 그것을 되살렸으면 목록은 비어 있다. 1차 결과에 "
+            "대고 산출하면 사용자가 받은 본문에 멀쩡히 있는 라벨을 유실로 신고하게 되고, "
+            "내보내기가 409로 막혀 정상 결과를 못 받는다. **이 케이스가 없으면 1차 결과 "
+            "기준으로 산출하는 구현이 다른 23건을 전부 통과한다**(실증: 변형 "
+            "`missing-from-first-draft` 가 확장 전 24건에서 종료 코드 3)",
+            source_text=src_rrn,
+            script=[says(ph_lost_dirty), says(ph_clean)],
+            asserts=[
+                _assert("equals_field", path="outcome", value="ok"),
+                _assert("equals_field", path="easy_text", value=ph_clean),
+                _assert("equals_field", path="repaired", value=True),
+                _assert("equals_field", path="llm_calls", value=MAX_LLM_CALLS_PER_CONVERSION),
+                _assert("equals_field", path="missing_placeholders", value=[]),
+            ],
+        ),
+        scenario(
+            "missing-placeholders-partial-reports-only-lost",
+            "자리표시자 둘 중 하나만 사라지면 **사라진 것만** 보고한다 — 남아 있는 라벨을 "
+            "함께 실으면 검수자가 멀쩡한 자리를 찾아 헤맨다. 목록은 마스킹이 매긴 등장 "
+            "순서를 따른다",
+            source_text=src_two,
+            script=[says(ph2_partial)],
+            asserts=[
+                _assert("equals_field", path="outcome", value="ok"),
+                _assert("equals_field", path="easy_text", value=ph2_partial),
+                _assert("equals_field", path="missing_placeholders", value=["[[카드번호1]]"]),
+            ],
+        ),
+    ]
     return FixtureSpec(
-        source=("app/services/conversion.py::_accepts_repair / MAX_LLM_CALLS_PER_CONVERSION"),
+        source=(
+            "app/services/conversion.py::ConversionService.convert / _accepts_repair / "
+            "MAX_LLM_CALLS_PER_CONVERSION"
+        ),
         mode=MODE_SPEC,
         requirement=(
-            "master-plan §3.3 변환 호출 계약 — 문서 1건 = LLM 호출 최대 2회(변환 1회 + "
-            "기계 검출된 위반이 있을 때만 표적 보정 1회, 루프 없음). 보정 결과는 "
-            "자리표시자를 잃거나 위반이 늘면 채택하지 않는다(보정 실패·악화 시 원본 채택)"
+            "master-plan §3.3 변환 호출 계약 + 계획 §2.3·§4.6 (인벤토리 CNV-01·CNV-02·"
+            "CNV-04) — 문서 1건 = LLM 호출 최대 2회(변환 1회 + 기계 검출된 위반이 있을 "
+            "때만 표적 보정 1회, 루프 없음. 전송 계층 재전송은 이 수에 들어가지 않는다). "
+            "보정 결과는 자리표시자를 잃거나 위반이 늘면 채택하지 않는다. 응답 절단·빈 "
+            "결과·호출 실패는 1차 호출에서는 변환 실패로 끝내고 보정 호출에서는 삼켜 1차 "
+            "결과를 채택한다. 결과에서 사라진 자리표시자는 예외로 막지 않고 채택 결정 뒤 "
+            "최종 본문을 기준으로 유실 목록에 담아 검수 화면으로 넘긴다"
         ),
         normalization=BASE_NORMALIZATION,
         cases=cases,
