@@ -493,3 +493,20 @@ parity 는 `parity-verifier` 가 병렬로 masking fixture 를 31 → 57건으�
 신규 케이스가 맞물린다는 뜻이다. 참고 갈림 21건은 그 개선이 만든 것으로 그들 원장에 있다.
 그들 소유 파일(`dump_parity_fixtures.py`·`parity/fixtures/masking/`·`parity/reference-ledger/`·
 `02_parity-verifier_masking-spec.md`)은 읽기만 했고 커밋하지 않았다.
+
+
+---
+
+## 12. 후속 배치 (2026-08-14)
+
+privacy-gate 판정 §4-ter·§4-quater·§4-quinquies 와 게이트 08 교차 종합 §10(C-05·C-08·C-18)의
+집행은 **별도 문서**에 있다 — `02_kotlin-implementer_masking-grammar.md`.
+
+그 배치가 이 문서의 다음 항목들을 갱신한다.
+
+- §4 의 구분자 집합은 **유한 문법 `SEP` 으로 대체**됐다(과잉 마스킹을 열어 둔 채였다).
+- §5.3 이 한계로 적어 둔 `ModelDraft.toString()` 은 닫혔고, 형제 `MaskingResult` 도 함께.
+- §5.2 의 provenance 탐지기는 파일 단위 집합에서 **호출 개수 + 별칭·ctor 참조 금지 +
+  CI 명시 실행**으로 넓어졌다.
+- §7 의 스캐너 배선은 **다중 줄 맹점과 루트 부재**가 드러나 두 번 더 고쳐졌다.
+- §11.4 가 판정을 요청한 BLOCK 후보 3건은 **refine 훅으로 해소**됐다(CI red 종료).
