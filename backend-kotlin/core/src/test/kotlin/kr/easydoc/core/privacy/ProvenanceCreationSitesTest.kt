@@ -52,10 +52,37 @@ class ProvenanceCreationSitesTest {
         val STRING_LITERAL = Regex("\"(?:\\\\.|[^\"\\\\])*\"")
 
         /**
-         * 생성 지점 허용목록. 키는 타입 이름, 값은 `backend-kotlin` 기준 상대 경로.
+         * **감시 대상 타입.** 허용목록과 **독립된** 근거다 (게이트 09 M-04).
+         *
+         * 이전 판은 감시 대상을 `ALLOWED.keys` 에서 얻었다. 그러면 **허용목록을 편집하는
+         * 것이 곧 감시 축소**다 — `ALLOWED` 에서 `ReviewedBody` 항목을 지우면 그 타입에
+         * 대한 검사가 통째로 사라지는데 테스트는 초록이다. 하나뿐인 provenance 탐지기를
+         * 끄는 두 방법 중 하나였다(다른 하나는 파일 삭제 — M-02, CI 에서 닫았다).
+         *
+         * 여기 적은 수가 옳은지는 **소스가 판정한다** — 아래
+         * 「감시 대상이 소스의 value class 선언과 일치한다」가 `Masking.kt` 에서 provenance
+         * 래퍼 선언을 세어 이 집합과 대조한다. 세 번째 래퍼가 생기면 그 테스트가 먼저
+         * 빨개지므로, 새 타입이 영영 스캔 밖에 남는 경로가 닫힌다.
+         */
+        val WATCHED_TYPES = setOf("ModelDraft", "ReviewedBody")
+
+        /**
+         * provenance 래퍼가 선언된 파일. 감시 대상 자기 대조가 여기를 읽는다.
+         *
+         * `MaskedText` 는 이 집합에 넣지 않는다 — 생성 통로가 `mask` 하나뿐이라 별도
+         * 탐지기(`MaskedTextGatewayTest`)가 맡는 대상이고, 여기는 **생성자가 공개인**
+         * 래퍼만 본다. 그 구분이 흐려지면 두 탐지기가 서로를 대신하는 것처럼 보인다.
+         */
+        const val PROVENANCE_DECLARATION_FILE =
+            "core/src/main/kotlin/kr/easydoc/core/privacy/Masking.kt"
+
+        /**
+         * 생성 지점 허용목록. 키는 타입 이름, 값은 `backend-kotlin` 기준 상대 경로 → 호출 수.
          *
          * **줄을 더하기 전에 `Masking.kt` 의 사용 규약을 읽어라.** 특히 [ReviewedBody] 는
          * "HTTP 요청 경계에서 사람이 제출한 `edited_text` 를 읽는 어댑터" 한 곳뿐이다.
+         *
+         * 이 목록은 **무엇을 허용하는가**만 정한다. **무엇을 감시하는가**는 [WATCHED_TYPES] 다.
          */
         val ALLOWED: Map<String, Map<String, Int>> =
             mapOf(
@@ -101,8 +128,8 @@ class ProvenanceCreationSitesTest {
     fun `허용하지 않은 생성 지점이 없다`() {
         val found = creationSites()
 
-        ALLOWED.keys.forEach { type ->
-            val unexpected = (found[type] ?: emptyMap()).keys - ALLOWED.getValue(type).keys
+        WATCHED_TYPES.forEach { type ->
+            val unexpected = (found[type] ?: emptyMap()).keys - (ALLOWED[type] ?: emptyMap()).keys
             assertThat(unexpected)
                 .withFailMessage {
                     "$type 을 허용목록 밖에서 만든다: ${unexpected.sorted()}\n" +
@@ -123,8 +150,8 @@ class ProvenanceCreationSitesTest {
         // 개수를 세면 그 diff 가 반드시 이 상수를 건드리므로 리뷰에 올라간다.
         val found = creationSites()
 
-        ALLOWED.forEach { (type, expected) ->
-            expected.forEach { (file, count) ->
+        WATCHED_TYPES.forEach { type ->
+            (ALLOWED[type] ?: emptyMap()).forEach { (file, count) ->
                 assertThat(found[type]?.get(file))
                     .withFailMessage {
                         "$type 의 $file 생성 개수가 $count 가 아니라 ${found[type]?.get(file)} 다.\n" +
@@ -143,14 +170,51 @@ class ProvenanceCreationSitesTest {
         // 남아 있으면, 나중에 그 파일에 전혀 다른 맥락으로 생성이 들어와도 통과한다.
         val found = creationSites()
 
-        ALLOWED.forEach { (type, allowed) ->
-            val stale = allowed.keys - (found[type] ?: emptyMap()).keys
+        WATCHED_TYPES.forEach { type ->
+            val stale = (ALLOWED[type] ?: emptyMap()).keys - (found[type] ?: emptyMap()).keys
             assertThat(stale)
                 .withFailMessage {
                     "$type 허용목록에 더는 생성하지 않는 자리가 남아 있다: ${stale.sorted()}\n" +
                         "  줄을 지워라 — 남겨 두면 그 파일에 새 생성 지점이 들어와도 조용히 통과한다."
                 }.isEmpty()
         }
+    }
+
+    @Test
+    @DisplayName("감시 대상이 소스의 provenance 래퍼 선언과 일치한다")
+    fun `감시 대상 목록이 소스와 어긋나지 않는다`() {
+        // 게이트 09 M-04. `WATCHED_TYPES` 를 손으로 적었으므로 **그 수가 옳은지 판정할
+        // 독립 근거**가 필요하다. 없으면 세 번째 래퍼가 생겨도 영영 스캔 밖에 남는다
+        // (증가 방향), 그리고 목록에서 한 줄을 지우면 그 타입 검사가 통째로 사라진다
+        // (감소 방향). 두 방향을 같은 단언이 막는다.
+        //
+        // 판정 근거는 **소스의 선언**이다 — `Masking.kt` 에서 공개 생성자를 가진
+        // provenance value class 를 세어 대조한다.
+        val declaration = sourceRoot().resolve(PROVENANCE_DECLARATION_FILE)
+        check(
+            java.nio.file.Files
+                .isRegularFile(declaration),
+        ) {
+            "provenance 선언 파일이 없다: $declaration — 옮겼다면 PROVENANCE_DECLARATION_FILE 을 고쳐라."
+        }
+
+        // `private constructor` 인 것(MaskedText)은 제외한다 — 그쪽은 생성 통로가 하나뿐이라
+        // MaskedTextGatewayTest 가 맡는 대상이고, 여기는 생성자가 열린 래퍼만 본다.
+        val declared =
+            declaration
+                .readLines()
+                .mapNotNull { line ->
+                    Regex("""^value class (\w+)\(val value: String\)""").find(line.trimStart())
+                }.map { it.groupValues[1] }
+                .toSet()
+
+        assertThat(declared)
+            .withFailMessage {
+                "감시 대상($WATCHED_TYPES)이 소스의 provenance 래퍼 선언($declared)과 다르다.\n" +
+                    "  새 래퍼가 생겼다면 WATCHED_TYPES 와 ALLOWED 에 함께 더하라 — " +
+                    "감시 대상을 허용목록에서 파생시키면 목록 편집이 곧 감시 축소가 된다.\n" +
+                    "  래퍼를 지웠다면 WATCHED_TYPES 에서도 지워라."
+            }.isEqualTo(WATCHED_TYPES)
     }
 
     @Test
@@ -195,12 +259,12 @@ class ProvenanceCreationSitesTest {
     /** 타입 이름 → (파일 → 그 파일이 그 타입을 **생성하는 줄 수**). */
     private fun creationSites(): Map<String, Map<String, Int>> {
         val root = sourceRoot()
-        val sites = ALLOWED.keys.associateWith { mutableMapOf<String, Int>() }
+        val sites = WATCHED_TYPES.associateWith { mutableMapOf<String, Int>() }
 
         kotlinSources(root).forEach { file ->
             val relative = root.relativize(file).joinToString("/")
             val lines = file.readLines()
-            ALLOWED.keys.forEach { type ->
+            WATCHED_TYPES.forEach { type ->
                 val count = lines.count { createsType(it, type) }
                 if (count > 0) sites.getValue(type)[relative] = count
             }

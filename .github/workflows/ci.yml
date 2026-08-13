@@ -206,11 +206,19 @@ jobs:
       #
       # 존재 단언을 파일 밖에 두는 이유는 quality 잡의 pytest 경로 명시와 같다:
       # 자기 안의 단언은 파일과 함께 사라진다.
-      - name: 보안 불변식 탐지기 존재 확인 (클래스 삭제 시 실패)
-        run: |
-          ./gradlew :core:test --no-daemon \
-            --tests kr.easydoc.core.privacy.ProvenanceCreationSitesTest \
-            --tests kr.easydoc.core.privacy.MaskedTextGatewayTest
+      # `--tests` 는 **집합 의미론**이다 — 여러 개를 주면 "하나라도 맞으면 통과"라서
+      # 클래스 **하나만** 지워도 RC=0 이었다(게이트 09 M-02 실측). 둘 다 지워야 실패하는
+      # 가드는 "탐지기가 살아 있다"를 보장하지 못한다.
+      #
+      # 그래서 **클래스마다 따로 돌린다.** 하나가 사라지면 그 스텝이
+      # `No tests found for given includes` 로 실패한다.
+      #
+      # 목록을 손으로 적는 것 자체는 이 스텝이 막지 못한다(줄을 지우면 그만이다).
+      # 최종 방어선은 그 diff 가 리뷰에 올라가는 것이다 — 한 칸 더 옮기지 않는다.
+      - name: 탐지기 존재 확인 — provenance 생성 지점 (단독 삭제 시 실패)
+        run: ./gradlew :core:test --no-daemon --tests kr.easydoc.core.privacy.ProvenanceCreationSitesTest
+      - name: 탐지기 존재 확인 — MaskedText 생성 통로 (단독 삭제 시 실패)
+        run: ./gradlew :core:test --no-daemon --tests kr.easydoc.core.privacy.MaskedTextGatewayTest
 
       # --- parity 게이트 배선 (Phase 0 필수 조치 E) ---------------------------
       # 산출물(parity/actual/)을 **Kotlin 테스트가** 만든다는 것을 CI에서 보장한다.
