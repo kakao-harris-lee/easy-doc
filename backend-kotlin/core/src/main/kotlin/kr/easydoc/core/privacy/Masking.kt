@@ -128,7 +128,20 @@ data class MaskedItem(
 data class MaskingResult(
     val maskedText: MaskedText,
     val items: List<MaskedItem>,
-)
+) {
+    /**
+     * 길이·건수만 남긴다. 사유는 아래 「value class 와 toString」 절과 **같지만**,
+     * 이 타입만은 이유가 하나 더 있다.
+     *
+     * 두 필드는 각각 이미 안전하다 — [MaskedText.toString] 은 길이만 남기고
+     * [MaskedItem.original] 은 [Secret] 이다. 그래서 재정의가 없어도 지금 당장은 평문이
+     * 새지 않는다. **그러나 그것은 전이(轉移) 안전이지 이 타입의 성질이 아니다** —
+     * 여기에 본문 필드를 하나 더하거나 [MaskedItem] 에 평문 필드를 더하는 순간 조용히 샌다.
+     * 형제 타입 다섯이 전부 명시적으로 가려진 상태에서 이 하나만 **남의 안전에 얹혀 있었다**
+     * (privacy-gate 판정 §4-quinquies).
+     */
+    override fun toString(): String = "MaskingResult(maskedText=${maskedText.value.length}자, items=${items.size})"
+}
 
 /**
  * [restoreForExport] 의 결과.
@@ -243,14 +256,44 @@ private const val SPACE_CHARS =
     // U+202F NARROW NBSP · U+3000 전각 공백.
     """\u0020\u0009\u00A0\u2007\u202F\u3000"""
 
-/** RRN 이 쓰는 공백 자리. */
 private const val SPACE_CLASS = "[$SPACE_CHARS]"
 
-/** RRN 이 쓰는 하이픈 자리. */
 private const val HYPHEN_CLASS = "[$HYPHEN_CHARS]"
 
-/** CARD 가 쓰는 합친 구분자 자리. 위 두 상수에서 파생시킨다 — 따로 적지 않는다. */
-private const val SEPARATOR_CLASS = "[$HYPHEN_CHARS$SPACE_CHARS]"
+/**
+ * **구분자 문법. RRN 과 CARD 가 이 하나를 공유한다.**
+ *
+ * ```
+ * SEP := (?: SPACE? HYPHEN SPACE? | SPACE? )
+ * ```
+ *
+ * 읽는 법: "하이픈이 있으면 양옆에 공백을 **한 개씩까지** 허용하고, 하이픈이 없으면 공백은
+ * **한 개까지**." 최대 길이 **3문자로 유한**하다.
+ *
+ * ## 상한을 문자 수가 아니라 문법으로 고른 이유 (privacy-gate 판정 §4-ter.2)
+ *
+ * 정당한 주민등록번호·카드번호 표기에서 구분자는 **자릿수 그룹을 가르는 기호 하나**이고,
+ * 그 기호 주변의 공백은 **조판 여백 한 칸**이다. 같은 자리에 공백이 둘 이상 오는 표기는
+ * "구분"이 아니라 **정렬**이다 — 표 열 맞춤으로 떨어져 있는 접수번호 6자리와 관리번호
+ * 7자리가 하나의 주민등록번호로 결합되던 것이 그것이다(과잉 마스킹 = STY-03 팩트 소실).
+ *
+ * **판정 기준은 문자 종류가 아니라 개수다.** NBSP·U+3000 을 집합에서 빼는 방식은 택하지
+ * 않았다 — 그 문자로 적힌 **진짜** 주민등록번호(`900101<NBSP>1234567`)를 다시 놓친다.
+ *
+ * ## 이전 판이 왜 틀렸나
+ *
+ * 이전 판은 RRN 이 `SPACE* HYPHEN? SPACE*`, CARD 가 `[하이픈∪공백]?` 이었다. 두 벌로
+ * 적혀 있었고 **둘 다 틀렸다** — RRN 은 반복 상한이 없어 표 정렬을 삼켰고(과잉), CARD 는
+ * 구분자가 한 문자뿐이라 `1234 - 5678 - 9012 - 3456` 을 놓쳤다(누락). 한 문법이 두 결함을
+ * 동시에 닫는다. 상수를 하나로 묶은 것은 다음 확장에서 한쪽만 늘어나지 않게 하기 위해서다.
+ *
+ * ## 판정 1 의 "`\s` 금지"와의 관계
+ *
+ * 모순이 아니라 **그 지시를 완성한 것**이다. 그때는 문자 집합만 열거하고 반복 상한을
+ * 지정하지 않았는데, 그 누락이 과잉 결합을 만들었다. 여기서 집합은 그대로 두고 반복만 묶는다.
+ * 개행·CR·VT·FF 는 여전히 집합 밖이다 — 줄·문단·페이지 경계이기 때문이다.
+ */
+private const val SEP = "(?:$SPACE_CLASS?$HYPHEN_CLASS$SPACE_CLASS?|$SPACE_CLASS?)"
 
 /** RRN 성별코드로 인정하는 값. 5~8 은 외국인등록번호(고유식별정보)다. */
 private val RRN_GENDER_CODES = 1..8
@@ -280,8 +323,20 @@ private class MaskPattern(
  * 뒤이은 CARD 패턴이 같은 자리를 판정할 기회를 잃지 않는다.
  */
 private fun acceptsRrnGenderCode(match: MatchResult): Boolean {
-    val genderCode = match.groupValues[1].singleOrNull() ?: return false
-    return Character.digit(genderCode, DECIMAL_RADIX) in RRN_GENDER_CODES
+    val genderCode = match.groupValues[1]
+    // **코드포인트로 센다.** 이전 판은 `singleOrNull()` 로 UTF-16 `Char` 하나인지 봤는데,
+    // `\d`(UNICODE_CHARACTER_CLASS)가 인정하는 십진 숫자 중 **보충 평면의 310개는 전부
+    // 2문자(서로게이트 쌍)**라 그 전부를 거부했다. 정규식은 잡았는데 가드가 되돌려서
+    // 마스킹이 통째로 빠지는 결함이었다 — privacy-gate 판정 §4-ter.1.
+    //
+    // 결함의 종류는 커버리지가 아니라 **정합성**이다: 패턴은 코드포인트로 세고 가드는
+    // `Char` 로 세어, 둘이 "숫자 한 자"의 정의를 다르게 갖고 있었다. 그래서 고친 것은
+    // "U+1D7CF 를 잡는 것"이 아니라 **계수 단위를 패턴과 일치시킨 것**이다.
+    //
+    // `Character.digit(Char, Int)` 오버로드를 쓰지 않는다 — **그 오버로드의 존재가 이
+    // 결함의 원인이다.** `codePointAt` 이 `Int` 를 주므로 `(Int, Int)` 오버로드가 잡힌다.
+    if (genderCode.codePointCount(0, genderCode.length) != 1) return false
+    return Character.digit(genderCode.codePointAt(0), DECIMAL_RADIX) in RRN_GENDER_CODES
 }
 
 /**
@@ -297,15 +352,12 @@ private val PATTERNS: List<MaskPattern> =
     listOf(
         MaskPattern(
             category = MaskCategory.RRN,
-            regex = unicodeRegex("""(?<!\d)\d{6}$SPACE_CLASS*$HYPHEN_CLASS?$SPACE_CLASS*(\d)\d{6}(?!\d)"""),
+            regex = unicodeRegex("""(?<!\d)\d{6}$SEP(\d)\d{6}(?!\d)"""),
             accept = ::acceptsRrnGenderCode,
         ),
         MaskPattern(
             category = MaskCategory.CARD,
-            regex =
-                unicodeRegex(
-                    """(?<!\d)\d{4}$SEPARATOR_CLASS?\d{4}$SEPARATOR_CLASS?\d{4}$SEPARATOR_CLASS?\d{4}(?!\d)""",
-                ),
+            regex = unicodeRegex("""(?<!\d)\d{4}$SEP\d{4}$SEP\d{4}$SEP\d{4}(?!\d)"""),
         ),
     )
 
@@ -405,9 +457,18 @@ private fun unescapeLookalikes(text: String): String =
 /** 원본: `app/privacy/masking.py::_INVISIBLE_RANGES`. */
 private val INVISIBLE_RANGES: List<IntRange> =
     listOf(
-        0x0000..0x0008, // C0 (탭 U+0009·개행 U+000A 제외)
-        0x000B..0x000C,
-        0x000E..0x001F, // 캐리지리턴 U+000D 제외
+        // C0 중 **줄·페이지 경계 문자 넷을 모두 뺀다** — 탭 U+0009 · LF U+000A ·
+        // VT U+000B(수직 탭) · FF U+000C(폼피드) · CR U+000D.
+        //
+        // VT·FF 를 뺀 것이 privacy-gate 판정 §4-ter.3 이다. 이전 판은 `0x000B..0x000C` 를
+        // 넣어 두어 `900101<VT>1234567` 이 탐색 뷰에서 13자리로 **결합**됐다 — 서로 다른
+        // 줄·페이지의 숫자열이 하나의 주민등록번호로 마스킹되는 과잉이다. LF·CR 을 뺀 근거
+        // (`02_privacy-gate_control-char-verdict.md` §5.2)가 VT·FF 에도 그대로 적용되는데
+        // 그때 열거에서 빠졌다. **열거로 범위를 정한 것의 전형적 실패다.**
+        //
+        // 여기 구멍이 난 것처럼 보인다고 되메우지 말 것 — 의도된 구멍이다.
+        0x0000..0x0008,
+        0x000E..0x001F,
         0x007F..0x007F, // DEL
         0x00AD..0x00AD, // 소프트하이픈 — 실문서에서 실제로 검출된 것
         0x200B..0x200F, // 폭 없는 공백·비연결자·방향 표시
@@ -418,7 +479,16 @@ private val INVISIBLE_RANGES: List<IntRange> =
 
 private val INVISIBLE: Set<Char> =
     INVISIBLE_RANGES
-        .flatMap { range -> range.map { it.toChar() } }
+        // `toChar()` 는 코드포인트를 UTF-16 한 자로 자른다 — BMP 밖 값이 들어오면 **조용히
+        // 다른 문자가 된다.** `acceptsRrnGenderCode` 가 앓던 것과 같은 종류(코드포인트를
+        // Char 로 세는 것)라, 범위가 넓어지는 날 같은 방식으로 무너지지 않게 못박는다.
+        // 여기 담기는 것은 전부 BMP 이고, 보충 평면 문자를 넣어야 한다면 이 자료구조부터
+        // 코드포인트 집합으로 바꿔야 한다.
+        .onEach { range ->
+            check(range.last <= Char.MAX_VALUE.code) {
+                "INVISIBLE_RANGES 에 BMP 밖 코드포인트가 들어왔다: $range — Char 집합으로는 담을 수 없다."
+            }
+        }.flatMap { range -> range.map { it.toChar() } }
         .toSet()
 
 private val INVISIBLE_RE: Regex =

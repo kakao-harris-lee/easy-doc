@@ -117,6 +117,139 @@ class MaskingTest {
     }
 
     @Nested
+    @DisplayName("구분자 문법 SEP — 판정 §4-ter.2 의 12탐침")
+    inner class SeparatorGrammar {
+        // SEP := (?: SPACE? HYPHEN SPACE? | SPACE? )  — 최대 3문자로 유한하다.
+        //
+        // 이 12건은 privacy-gate 가 `java Grammar.java` 로 돌린 탐침을 그대로 옮긴 것이다.
+        // **정당 5 유지 · 과잉 4 탈락 · 누락 2 신규 검출**이 한 문법에서 동시에 성립한다는
+        // 것이 판정의 본체다. 방향이 반대인 두 지적(C-01② 넓히기 / C-10 좁히기)을 따로
+        // 처방했다면 한쪽이 다른 쪽을 되돌렸을 자리다.
+
+        @ParameterizedTest(name = "{0}")
+        @ValueSource(
+            strings = [
+                "900101-1234567",
+                "900101\u00201234567",
+                "9001011234567",
+                "900101\u0020-\u00201234567",
+                "900101\u00A0-\u00A01234567",
+            ],
+        )
+        @DisplayName("정당한 표기 5종 — 구분자 자리 공백 0~1개는 구분자다")
+        fun `정당한 구분자는 가린다`(rrn: String) {
+            val result = maskText("주민번호는 $rrn 입니다.")
+
+            assertThat(result.maskedText.value).isEqualTo("주민번호는 [[주민등록번호1]] 입니다.")
+            assertThat(
+                result.items
+                    .single()
+                    .original
+                    .reveal(),
+            ).isEqualTo(rrn)
+        }
+
+        @ParameterizedTest(name = "{0}")
+        @ValueSource(
+            strings = [
+                // 표 열 맞춤으로 떨어져 있는 접수번호 6자리 + 관리번호 7자리다.
+                // 이것을 결합해 가리면 안내문의 팩트가 조용히 사라진다(STY-03).
+                "900101\u3000\u3000\u30001234567",
+                "900101\u0020\u0020\u0020\u0020\u00201234567",
+                "900101\u0020\u00201234567",
+                "1234\u3000\u3000\u30005678\u3000\u3000\u30009012\u3000\u3000\u30003456",
+            ],
+        )
+        @DisplayName("과잉 4종 — 같은 자리에 공백 2개 이상은 구분이 아니라 정렬이다")
+        fun `정렬 여백은 가리지 않는다`(notMasked: String) {
+            val text = "번호 $notMasked 를 적으세요."
+
+            assertThat(maskText(text).maskedText.value).isEqualTo(text)
+            assertThat(maskText(text).items).isEmpty()
+        }
+
+        @ParameterizedTest(name = "{0}")
+        @ValueSource(
+            strings = [
+                // 이전 판 CARD 패턴은 구분자가 **한 문자**뿐이라 이 둘을 놓쳤다(C-01②).
+                "1234\u0020-\u00205678\u0020-\u00209012\u0020-\u00203456",
+                "1234\u00A0-\u00A05678\u00A0-\u00A09012\u00A0-\u00A03456",
+                "1234-5678-9012-3456",
+            ],
+        )
+        @DisplayName("누락 2종 + 기존 1종 — 복합 구분자 카드번호를 가린다")
+        fun `복합 구분자 카드번호를 가린다`(card: String) {
+            val result = maskText("카드 $card 로 결제")
+
+            assertThat(result.maskedText.value).isEqualTo("카드 [[카드번호1]] 로 결제")
+            assertThat(result.items.single().category).isEqualTo(MaskCategory.CARD)
+            assertThat(
+                result.items
+                    .single()
+                    .original
+                    .reveal(),
+            ).isEqualTo(card)
+        }
+
+        @Test
+        @DisplayName("RRN 과 CARD 가 같은 SEP 상수를 쓴다 — 대칭이 코드에서 성립한다")
+        fun `두 패턴의 구분자 문법이 같다`() {
+            // 상수를 두 벌로 적으면 다음 확장에서 한쪽만 늘어난다. 그 비대칭이 실제로
+            // C-01②(카드만 좁음)를 만들었으므로, 같은 입력 모양에서 두 범주가 같이
+            // 움직이는지를 값으로 확인한다.
+            val rrnSpaced = maskText("번호 900101\u0020-\u00201234567 확인.")
+            val cardSpaced = maskText("카드 1234\u0020-\u00205678\u0020-\u00209012\u0020-\u00203456 확인.")
+            val rrnAligned = maskText("번호 900101\u0020\u00201234567 확인.")
+            val cardAligned = maskText("카드 1234\u0020\u00205678\u0020\u00209012\u0020\u00203456 확인.")
+
+            assertThat(rrnSpaced.items).hasSize(1)
+            assertThat(cardSpaced.items).hasSize(1)
+            assertThat(rrnAligned.items).isEmpty()
+            assertThat(cardAligned.items).isEmpty()
+        }
+    }
+
+    @Nested
+    @DisplayName("성별코드 판정의 계수 단위 — 판정 §4-ter.1")
+    inner class GenderCodeCounting {
+        // 결함의 종류는 커버리지가 아니라 **정합성**이었다 — 패턴은 코드포인트로 세고
+        // 가드는 UTF-16 Char 로 세어, 둘이 "숫자 한 자"의 정의를 다르게 갖고 있었다.
+        // U+1D7CF(MATHEMATICAL BOLD DIGIT ONE)는 서로게이트 쌍이라 `singleOrNull()` 이
+        // 거부했고, 그런 십진 숫자가 보충 평면에 310개 있다.
+
+        /** U+1D7CF — 십진값 1. 성별코드 자리가 서로게이트 쌍인 경우. */
+        private val boldOne = String(Character.toChars(0x1D7CF))
+
+        /** U+1D7D7 — 십진값 9. 거부돼야 한다. */
+        private val boldNine = String(Character.toChars(0x1D7D7))
+
+        @Test
+        @DisplayName("양성 — 보충 평면 성별코드도 값이 1~8이면 가린다")
+        fun `보충 평면 성별코드를 가린다`() {
+            val rrn = "900101-${boldOne}234567"
+
+            val result = maskText("주민번호는 $rrn 입니다.")
+
+            assertThat(result.maskedText.value).isEqualTo("주민번호는 [[주민등록번호1]] 입니다.")
+            assertThat(
+                result.items
+                    .single()
+                    .original
+                    .reveal(),
+            ).isEqualTo(rrn)
+        }
+
+        @Test
+        @DisplayName("음성 — 보충 평면이어도 값이 9면 거부한다 (과잉 마스킹 가드)")
+        fun `보충 평면 성별코드 9는 거부한다`() {
+            val text = "번호는 900101-${boldNine}234567 입니다."
+
+            assertThat(maskText(text).maskedText.value).isEqualTo(text)
+            assertThat(maskText(text).items).isEmpty()
+        }
+    }
+
+    @Nested
     @DisplayName("보이지 않는 문자를 이용한 회피")
     inner class InvisibleCharEvasion {
         @ParameterizedTest(name = "{0}")
@@ -278,6 +411,62 @@ class MaskingTest {
             assertThat(maskText(text).maskedText.value).isEqualTo(text)
             assertThat(maskText(text).items).isEmpty()
         }
+    }
+
+    @Nested
+    @DisplayName("탐색 뷰의 경계 문자 — 판정 §4-ter.3 의 6케이스")
+    inner class SearchViewBoundaries {
+        // `searchView` 는 "보이지 않는 문자"를 지워 그 사이로 끊긴 숫자열을 잇는다. 그런데
+        // **줄·페이지 경계 문자를 지우면 서로 다른 줄의 숫자열이 결합된다** — 과잉 마스킹이다.
+        //
+        // 이전 판은 `INVISIBLE_RANGES` 에 `0x000B..0x000C` 를 넣어 두어 VT·FF 가 결합됐다.
+        // LF·CR 만 확인하던 가드는 이것을 잡지 못했다 — **열거로 범위를 정한 것의 전형적
+        // 실패**라, 여섯을 각각 독립 케이스로 둔다. 묶으면 다음에 하나가 빠져도 모른다.
+
+        private fun notCombined(separator: String) {
+            val text = "번호 900101${separator}1234567 을 적으세요."
+
+            assertThat(maskText(text).maskedText.value).isEqualTo(text)
+            assertThat(maskText(text).items).isEmpty()
+        }
+
+        private fun combined(separator: String) {
+            val raw = "900101${separator}1234567"
+            val result = maskText("번호 $raw 확인.")
+
+            assertThat(result.maskedText.value).isEqualTo("번호 [[주민등록번호1]] 확인.")
+            // 잘라내는 것은 언제나 원문이다 — 낀 문자가 그대로 들어가야 복원이 성립한다.
+            assertThat(
+                result.items
+                    .single()
+                    .original
+                    .reveal(),
+            ).isEqualTo(raw)
+        }
+
+        @Test
+        @DisplayName("LF(U+000A) 는 줄 경계 — 결합하지 않는다")
+        fun `개행은 결합하지 않는다`() = notCombined("\u000A")
+
+        @Test
+        @DisplayName("CR(U+000D) 은 줄 경계 — 결합하지 않는다")
+        fun `캐리지리턴은 결합하지 않는다`() = notCombined("\u000D")
+
+        @Test
+        @DisplayName("VT(U+000B) 는 수직 탭 = 줄 경계 — 결합하지 않는다")
+        fun `수직탭은 결합하지 않는다`() = notCombined("\u000B")
+
+        @Test
+        @DisplayName("FF(U+000C) 는 폼피드 = 페이지 경계 — 결합하지 않는다")
+        fun `폼피드는 결합하지 않는다`() = notCombined("\u000C")
+
+        @Test
+        @DisplayName("ZWSP(U+200B) 는 폭 없는 문자 — 결합한다(회피 차단)")
+        fun `폭없는공백은 결합한다`() = combined("\u200B")
+
+        @Test
+        @DisplayName("SHY(U+00AD) 는 소프트하이픈 — 결합한다(실문서에서 실측된 회피 경로)")
+        fun `소프트하이픈은 결합한다`() = combined("\u00AD")
     }
 
     @Nested
@@ -630,6 +819,23 @@ class MaskingTest {
             // 마스킹했어도 안전하지 않다 — 가려지는 것은 2종뿐이고, 전화·이메일은 **전송**을
             // 감수한 것이지 **로그 적재**를 감수한 것이 아니다.
             assertThat(masked.value).contains("02-1234-5678")
+        }
+
+        @Test
+        @DisplayName("MaskingResult.toString 에 본문이 실리지 않는다")
+        fun `MaskingResult 는 본문을 찍지 않는다`() {
+            // 두 필드가 각각은 이미 안전하다(MaskedText 는 길이만, MaskedItem.original 은
+            // Secret). **그러나 그것은 전이 안전이지 이 타입의 성질이 아니다** — 여기에
+            // 본문 필드를 하나 더하는 순간 조용히 샌다. 형제 다섯이 전부 명시적으로 가려진
+            // 상태에서 이 하나만 남의 안전에 얹혀 있었다(판정 §4-quinquies).
+            val rendered = maskText(bodyWithUnmaskedPii).toString()
+
+            assertThat(rendered)
+                .withFailMessage("MaskingResult.toString 이 본문을 노출한다: %s", rendered)
+                .doesNotContain("02-1234-5678")
+                .doesNotContain("hong@korea.kr")
+                .doesNotContain("신청자")
+                .doesNotContain("[[주민등록번호1]]")
         }
 
         @Test
