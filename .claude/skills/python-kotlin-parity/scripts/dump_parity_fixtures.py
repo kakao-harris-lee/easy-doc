@@ -298,6 +298,11 @@ def build_masking() -> FixtureSpec:
 
     rrn_arabic_head = restyle("900101", arabic_indic) + "-1234567"
     rrn_fullwidth = restyle("900101-1234567", fullwidth)
+    # 성별코드 한 자리만 다른 표기인 경우. 결함의 **위치**를 정확히 짚는다 — 앞 6자리만
+    # 전각인 표기는 수정 전에도 잡혔고(끊기는 자리를 지나가지 않는다) 성별코드가 전각이면
+    # 끊겼다. 두 케이스가 함께 있어야 "어디가 ASCII 전용이었나"가 fixture로 드러난다.
+    rrn_fullwidth_gender = "900101-" + fullwidth[1] + "234567"
+    rrn_arabic_gender = "900101-" + arabic_indic[5] + "234567"
     card_arabic_head = restyle("1234", arabic_indic) + "-5678-9012-3456"
     card_fullwidth = restyle("1234-5678-9012-3456", fullwidth)
 
@@ -326,6 +331,46 @@ def build_masking() -> FixtureSpec:
             "파일 구분자 U+001C — `splitlines()` 경계라 개행으로 바뀌어도 매치가 깨진다",
         ),
         ("us", 0x001F, "단위 구분자 U+001F — 표 붙여넣기 잔재"),
+    )
+
+    # ── 구분자 표기 변형 축 (2026-08-13) ──────────────────────────────────────
+    # `07_privacy-gate_masking-verdicts.md` §1.2가 **종류 B**로 이름 붙인 결함이다.
+    # 결함의 구조: 유니코드 인식 패턴 안에 남은 **ASCII 전용 구분자 리터럴**. 숫자 자리를
+    # 유니코드로 열어도 구분자가 ASCII 하이픈·공백뿐이면 전각 하이픈 하나에 매치가 끊긴다.
+    # 판정서 §1.1 실측이 RRN·CARD **양쪽**에서 뚫림을 확인했고, 이 fixture에는 그때까지
+    # 구분자 변형 케이스가 **0건**이었다(판정서 §1.6이 지목).
+    #
+    # 왜 문자마다 케이스를 두는가: 이 결함은 **열거 집합의 누락**이라 한 문자씩 뚫린다.
+    # 대표 한 문자만 두면 나머지 여덟 자리는 여전히 아무도 보지 않는다. RRN·CARD를 같은
+    # 집합으로 대칭 배치하는 이유도 같다 — 판정서 §1.4가 "집합은 상수 하나로 두고 RRN·CARD가
+    # 함께 참조한다"를 요구했는데, 그 요구를 **밖에서** 검증할 수 있는 유일한 방법이
+    # 양쪽에 같은 문자 집합을 걸어 보는 것이다. 한쪽만 덮으면 집합이 두 벌로 갈라져
+    # 한쪽만 늘어난 구현을 통과시킨다.
+    #
+    # **개행·캐리지리턴은 이 집합에 없다.** 넣으면 서로 다른 줄의 숫자열이 붙어 진짜 과잉
+    # 마스킹이 된다(판정서 §1.4 — `\s`를 쓰지 말라는 지시). 그 반대 방향은 아래
+    # `keeps-*-split-digits` 가드가 본다.
+    separators = (
+        ("fullwidth-hyphen", 0xFF0D, "전각 하이픈 U+FF0D — 한글 입력 환경에서 그대로 나온다"),
+        ("minus", 0x2212, "수학 마이너스 U+2212 — 표 편집기가 하이픈 대신 넣는다"),
+        ("en-dash", 0x2013, "엔 대시 U+2013 — 워드프로세서 자동 교정이 만든다"),
+        ("em-dash", 0x2014, "엠 대시 U+2014"),
+        ("hyphen", 0x2010, "유니코드 하이픈 U+2010 — ASCII 하이픈과 눈으로 구별되지 않는다"),
+        ("nbsp", 0x00A0, "줄바꿈 없는 공백 U+00A0 — 웹페이지 복사·붙여넣기에 흔하다"),
+        ("ideographic-space", 0x3000, "전각 공백 U+3000 — 한글 문서에서 자리 맞춤에 쓰인다"),
+        ("figure-space", 0x2007, "숫자 폭 공백 U+2007 — 표에서 자릿수를 맞출 때 쓰인다"),
+        ("narrow-nbsp", 0x202F, "좁은 줄바꿈 없는 공백 U+202F"),
+    )
+
+    #: 성별코드 값 판정의 **과잉 마스킹 가드**. 판정서 §1.4는 성별코드를 `\d`로 넓히되
+    #: 매치 후 값이 1~8인지 보라고 했다. 값 판정으로 바꾸면 9·0 거부가 자동으로 성립하지만,
+    #: 단언 없이 두면 다음 회차에 되돌아간다 — 그때 증상은 접수번호·관리번호가 통째로
+    #: 가려지는 것이고, 사용자는 성공 응답을 받고 팩트가 사라진 결과를 받는다.
+    gender_rejects = (
+        ("gender-9", "900101-9234567", "성별코드 9"),
+        ("gender-0", "900101-0234567", "성별코드 0"),
+        ("gender-fullwidth-9", restyle("900101-9234567", fullwidth), "전각 성별코드 ９"),
+        ("gender-fullwidth-0", restyle("900101-0234567", fullwidth), "전각 성별코드 ０"),
     )
 
     def surroundings(text: str, asserts: tuple[Any, ...]) -> list[str]:
@@ -446,6 +491,63 @@ def build_masking() -> FixtureSpec:
             f"{hidden}. Java 기본 `\\d`=`[0-9]`로 옮기면 여기서 조용히 누락된다",
             _assert("absent", path="masked_text", needles=[rrn_arabic_head]),
         ),
+        # ── 종류 A: 성별코드가 ASCII가 아닌 표기 ──────────────────────────────
+        # 2026-08-13 `known_gap` 해제. 옛 케이스 `known-gap-rrn-fullwidth`가 여기로 왔다.
+        # 그 케이스는 어느 방향도 단언하지 않았고, 제외 사유가 *"Kotlin에 Python보다 넓은
+        # 구현을 요구하게 되므로"*였다. 그 사유는 **2026-08-12 재개발 전환으로 실효**했다 —
+        # CLAUDE.md가 "Python 출력을 정답으로 삼기"를 금지 목록에 올렸고, 기준은 요구사항이다.
+        # `privacy-gate` 판정(`07_privacy-gate_masking-verdicts.md` §1.3)이 "전각 표기도
+        # 범주 주민등록번호에 **포함된다**"로 닫았다: 범주를 좁힌 것은 2종 축소이고
+        # (전화·이메일·계좌), **표기 체계를 넓히는 것은 범주를 넓히는 것이 아니다.**
+        # 전각으로 적힌 고유식별정보는 여전히 고유식별정보다.
+        #
+        # 이 세 케이스는 **Python이 못 잡는다**(성별코드 `[1-8]`이 ASCII 리터럴). 그래서
+        # 참고 갈림이 뜨는 것이 정상이고 `reference_divergence`로 선언한다 — 선언은 면제가
+        # 아니라 검사 추가다. 원장 기록 의무는 그대로이고, Python이 고쳐져 갈림이 사라지면
+        # 선언이 낡은 것이므로 게이트가 막는다.
+        case(
+            "rrn-unicode-digit-fullwidth",
+            f"번호 {rrn_fullwidth} 확인.",
+            f"전각 숫자로만 적은 주민등록번호도 {hidden}. 성별코드를 ASCII 리터럴 `[1-8]`로 "
+            "두면 그 한 자리에서 매치가 끊긴다 — 값이 1~8인지 **십진값으로** 판정하면 "
+            "전각뿐 아니라 모든 유니코드 십진 숫자 체계가 한 번에 덮인다",
+            _assert("absent", path="masked_text", needles=[rrn_fullwidth]),
+            reference_divergence="expected",
+        ),
+        case(
+            "rrn-unicode-digit-gender",
+            f"번호 {rrn_fullwidth_gender} 확인.",
+            f"성별코드 **한 자리만** 전각이어도 {hidden}. 결함의 위치를 짚는 케이스다 — "
+            "앞 6자리만 전각인 표기(`rrn-unicode-digit-head`)는 끊기는 자리를 지나가지 "
+            "않아 전부터 잡혔다. 두 케이스의 차이가 곧 ASCII 전용 리터럴의 좌표다",
+            _assert("absent", path="masked_text", needles=[rrn_fullwidth_gender]),
+            reference_divergence="expected",
+        ),
+        case(
+            "rrn-arabic-digit-gender",
+            f"번호 {rrn_arabic_gender} 확인.",
+            f"아라비아-인도 숫자 성별코드(외국인등록번호대)도 {hidden}. 전각만 열거해 "
+            "고치면 여기서 다시 뚫린다 — 열거가 아니라 **십진값 판정**이어야 하는 이유다",
+            _assert("absent", path="masked_text", needles=[rrn_arabic_gender]),
+            reference_divergence="expected",
+        ),
+        # ── 종류 B: 구분자가 ASCII 하이픈·공백이 아닌 표기 (RRN) ──────────────
+        *[
+            case(
+                f"rrn-sep-{name}",
+                f"번호 900101{chars(code)}1234567 확인.",
+                f"주민등록번호 구분자가 {note}여도 {hidden}. 구분자를 `-`·공백·탭만 "
+                "열거하면 여기서 끊긴다 — 사람 눈에는 하이픈으로 보이므로 담당자는 "
+                "가려졌다고 믿는다",
+                _assert(
+                    "absent",
+                    path="masked_text",
+                    needles=[f"900101{chars(code)}1234567"],
+                ),
+                reference_divergence="expected",
+            )
+            for name, code, note in separators
+        ],
         # ── 카드번호 ──────────────────────────────────────────────────────────
         case(
             "card-hyphen",
@@ -477,6 +579,29 @@ def build_masking() -> FixtureSpec:
             f"전각 숫자로 적은 카드번호도 {hidden}",
             _assert("absent", path="masked_text", needles=[card_fullwidth]),
         ),
+        # ── 종류 B: 구분자 변형 (CARD) ────────────────────────────────────────
+        # 카드번호에는 **종류 A가 없다** — 숫자 자리가 전부 `\d`라 전각·아라비아-인도가
+        # 이미 잡힌다(위 두 케이스). 뚫려 있던 것은 구분자뿐이고, 두 리뷰 어디도 카드번호를
+        # 보지 않아 `privacy-gate` 실측이 처음 찾은 자리다(판정서 §1.5, 교차 검증 미수).
+        # RRN과 **같은 문자 집합**을 거는 것이 이 그룹의 요점이다 — 한쪽만 덮으면 구분자
+        # 집합이 두 벌로 갈라져 한쪽만 늘어난 구현을 통과시킨다.
+        *[
+            case(
+                f"card-sep-{name}",
+                f"카드 1234{chars(code)}5678{chars(code)}9012{chars(code)}3456 입력.",
+                f"카드번호 구분자가 {note}여도 {hidden}. RRN과 같은 집합이어야 한다 — "
+                "두 패턴이 각자 구분자를 열거하면 다음 확장에서 한쪽만 늘어난다",
+                _assert(
+                    "absent",
+                    path="masked_text",
+                    needles=[
+                        f"1234{chars(code)}5678{chars(code)}9012{chars(code)}3456",
+                    ],
+                ),
+                reference_divergence="expected",
+            )
+            for name, code, note in separators
+        ],
         # ── 번호 매김·복원 ────────────────────────────────────────────────────
         case(
             "multi-same-category",
@@ -517,6 +642,18 @@ def build_masking() -> FixtureSpec:
             f"12자리·14자리 숫자열은 주민번호도 카드번호도 아니다. {kept}",
             _assert("present", path="masked_text", needles=["123456789012", "12345678901234"]),
         ),
+        # 성별코드 값 판정의 반대 방향. 종류 A를 "성별코드를 `\\d`로 넓힌다"까지만 하고 값
+        # 판정을 빠뜨리면 여기가 전부 가려지고, 그 구현은 위 종류 A 케이스를 **전건 통과**한다.
+        *[
+            case(
+                f"keeps-rrn-{name}",
+                f"번호 {sample} 을 적으세요.",
+                f"{note}는 주민등록번호가 아니다. {kept} — 성별코드를 `\\d`로 넓히면서 "
+                "값이 1~8인지 보지 않으면 13자리 접수번호가 통째로 가려진다",
+                _assert("present", path="masked_text", needles=[sample]),
+            )
+            for name, sample, note in gender_rejects
+        ],
         # ── 범위 밖 — 가리지 않는 것이 요구사항이다 ───────────────────────────
         # 이 셋은 한때 `reference_divergence="expected"`였다. 그때는 Python이 아직
         # 5범주였고 요구사항과 갈리는 것이 정상이었기 때문이다. Python 구현이 2종으로
@@ -582,16 +719,23 @@ def build_masking() -> FixtureSpec:
             "회피 차단을 공백 접기로 구현하면 여기서 두 줄이 붙어 오검출된다",
             _assert("present", path="masked_text", needles=["900101\n1234567"]),
         ),
-        # ── 알려진 공백 — 어느 방향도 단언하지 않는다 ─────────────────────────
+        # 구분자 집합을 넓히는 수정의 반대 방향 가드 2건. 위 `separators` 아홉 자를 넣으면서
+        # `\s`로 뭉뚱그리면 개행·캐리지리턴이 딸려 들어오고, 그 순간 안내문 표에서 연달아
+        # 적힌 접수번호와 관리번호가 하나로 붙는다. 이 셋(개행 RRN·복귀 RRN·개행 CARD)이
+        # 그 구현을 막는 유일한 자리다.
         case(
-            "known-gap-rrn-fullwidth",
-            f"번호 {rrn_fullwidth} 확인.",
-            "전각 숫자로만 적은 주민등록번호는 **현재 Python이 가리지 못한다**(성별코드 "
-            "`[1-8]`이 ASCII 리터럴이라 매치가 끊긴다). 요구사항으로 보면 가려야 맞지만, "
-            "지금 그것을 단언하면 Kotlin에 Python보다 넓은 구현을 요구하게 되므로 "
-            "**어느 방향도 단언하지 않는다**. 개선하면 참고 갈림 원장에 찍혀 드러난다. "
-            "이 건은 `privacy-gate` 판정 §5.4의 범위 **밖**이다(별개 사안으로 명시)",
-            known_gap="전각 표기 주민등록번호 미검출 (개선 후보 — 판정 대상 아님)",
+            "keeps-cr-split-digits",
+            "접수번호 900101\r1234567 을 적으세요.",
+            f"캐리지리턴으로 갈린 두 숫자열도 하나의 주민등록번호가 아니다. {kept} — "
+            "구분자 집합에 `\\s`를 쓰면 개행과 함께 여기도 뚫린다",
+            _assert("present", path="masked_text", needles=["900101\r1234567"]),
+        ),
+        case(
+            "keeps-card-newline-split-digits",
+            "번호 1234\n5678\n9012\n3456 을 차례로 적으세요.",
+            f"줄마다 적힌 네 숫자열은 하나의 카드번호가 아니다. {kept} — 구분자 집합을 "
+            "RRN·CARD가 공유하므로 과잉 방향도 **양쪽에서** 봐야 한다",
+            _assert("present", path="masked_text", needles=["1234\n5678\n9012\n3456"]),
         ),
     ]
     return FixtureSpec(
@@ -599,11 +743,16 @@ def build_masking() -> FixtureSpec:
         mode=MODE_SPEC,
         requirement=(
             "master-plan §3.2 마스킹 선행 + 사용자 결정(2026-08-12) 범위 축소 + "
-            "privacy-gate 판정 (가)(02_privacy-gate_control-char-verdict.md) — "
+            "privacy-gate 판정 (가)(02_privacy-gate_control-char-verdict.md) + "
+            "privacy-gate 판정 §1(07_privacy-gate_masking-verdicts.md) — "
             "문서 본문이 LLM으로 나가기 전에 주민등록번호(외국인등록번호 포함)와 카드번호가 "
-            "빠짐없이 가려지고(숫자 사이에 보이지 않는 문자가 끼어 있어도 가려진다), "
-            "그 밖의 본문은 한 글자도 잃지 않으며, 자리표시자를 되돌리면 원문이 정확히 "
-            f"복원된다. 범주 문자열의 정본은 계약({mask_contract().source})이다"
+            "빠짐없이 가려지고(숫자 사이에 보이지 않는 문자가 끼어 있어도, 숫자·구분자가 "
+            "ASCII가 아닌 표기로 적혀 있어도 가려진다), 그 밖의 본문은 한 글자도 잃지 "
+            "않으며(줄이 갈린 숫자열·성별코드 9·0은 가리지 않는다), 자리표시자를 되돌리면 "
+            f"원문이 정확히 복원된다. 범주 문자열의 정본은 계약({mask_contract().source})이다. "
+            "**`assert`의 기준은 요구사항이고 참고값(Python)이 아니다** — 표기 변형 21건은 "
+            "현행 Python이 못 잡아 참고값과 갈리며, 그 갈림은 차단 사유가 아니라 "
+            '`reference_divergence: "expected"` 선언과 참고 갈림 원장에 남길 기록이다'
         ),
         normalization=BASE_NORMALIZATION,
         cases=cases,

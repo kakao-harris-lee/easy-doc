@@ -1,7 +1,7 @@
 {
   "domain": "masking",
   "mode": "spec",
-  "requirement": "master-plan §3.2 마스킹 선행 + 사용자 결정(2026-08-12) 범위 축소 + privacy-gate 판정 (가)(02_privacy-gate_control-char-verdict.md) — 문서 본문이 LLM으로 나가기 전에 주민등록번호(외국인등록번호 포함)와 카드번호가 빠짐없이 가려지고(숫자 사이에 보이지 않는 문자가 끼어 있어도 가려진다), 그 밖의 본문은 한 글자도 잃지 않으며, 자리표시자를 되돌리면 원문이 정확히 복원된다. 범주 문자열의 정본은 계약(easy-doc-v1.yaml::MaskedItemResponse)이다",
+  "requirement": "master-plan §3.2 마스킹 선행 + 사용자 결정(2026-08-12) 범위 축소 + privacy-gate 판정 (가)(02_privacy-gate_control-char-verdict.md) + privacy-gate 판정 §1(07_privacy-gate_masking-verdicts.md) — 문서 본문이 LLM으로 나가기 전에 주민등록번호(외국인등록번호 포함)와 카드번호가 빠짐없이 가려지고(숫자 사이에 보이지 않는 문자가 끼어 있어도, 숫자·구분자가 ASCII가 아닌 표기로 적혀 있어도 가려진다), 그 밖의 본문은 한 글자도 잃지 않으며(줄이 갈린 숫자열·성별코드 9·0은 가리지 않는다), 자리표시자를 되돌리면 원문이 정확히 복원된다. 범주 문자열의 정본은 계약(easy-doc-v1.yaml::MaskedItemResponse)이다. **`assert`의 기준은 요구사항이고 참고값(Python)이 아니다** — 표기 변형 21건은 현행 Python이 못 잡아 참고값과 갈리며, 그 갈림은 차단 사유가 아니라 `reference_divergence: \"expected\"` 선언과 참고 갈림 원장에 남길 기록이다",
   "source": "app/privacy/masking.py::mask_text",
   "generator": "dump_parity_fixtures.py",
   "normalization": [
@@ -370,6 +370,546 @@
       }
     },
     {
+      "id": "masking-rrn-unicode-digit-fullwidth",
+      "description": "전각 숫자로만 적은 주민등록번호도 가려야 한다 — 남으면 개인정보가 그대로 외부 LLM으로 나간다. 성별코드를 ASCII 리터럴 `[1-8]`로 두면 그 한 자리에서 매치가 끊긴다 — 값이 1~8인지 **십진값으로** 판정하면 전각뿐 아니라 모든 유니코드 십진 숫자 체계가 한 번에 덮인다",
+      "input": {
+        "text": "번호 ９００１０１-１２３４５６７ 확인."
+      },
+      "assert": [
+        {
+          "check": "restores_input"
+        },
+        {
+          "check": "placeholder_scheme",
+          "args": {
+            "categories": [
+              "주민등록번호",
+              "카드번호"
+            ]
+          }
+        },
+        {
+          "check": "absent",
+          "args": {
+            "path": "masked_text",
+            "needles": [
+              "９００１０１-１２３４５６７"
+            ]
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "masked_text",
+            "needles": [
+              "번호",
+              "확인."
+            ]
+          }
+        }
+      ],
+      "reference_divergence": "expected",
+      "reference": {
+        "masked_text": "번호 ９００１０１-１２３４５６７ 확인.",
+        "items": []
+      }
+    },
+    {
+      "id": "masking-rrn-unicode-digit-gender",
+      "description": "성별코드 **한 자리만** 전각이어도 가려야 한다 — 남으면 개인정보가 그대로 외부 LLM으로 나간다. 결함의 위치를 짚는 케이스다 — 앞 6자리만 전각인 표기(`rrn-unicode-digit-head`)는 끊기는 자리를 지나가지 않아 전부터 잡혔다. 두 케이스의 차이가 곧 ASCII 전용 리터럴의 좌표다",
+      "input": {
+        "text": "번호 900101-１234567 확인."
+      },
+      "assert": [
+        {
+          "check": "restores_input"
+        },
+        {
+          "check": "placeholder_scheme",
+          "args": {
+            "categories": [
+              "주민등록번호",
+              "카드번호"
+            ]
+          }
+        },
+        {
+          "check": "absent",
+          "args": {
+            "path": "masked_text",
+            "needles": [
+              "900101-１234567"
+            ]
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "masked_text",
+            "needles": [
+              "번호",
+              "확인."
+            ]
+          }
+        }
+      ],
+      "reference_divergence": "expected",
+      "reference": {
+        "masked_text": "번호 900101-１234567 확인.",
+        "items": []
+      }
+    },
+    {
+      "id": "masking-rrn-arabic-digit-gender",
+      "description": "아라비아-인도 숫자 성별코드(외국인등록번호대)도 가려야 한다 — 남으면 개인정보가 그대로 외부 LLM으로 나간다. 전각만 열거해 고치면 여기서 다시 뚫린다 — 열거가 아니라 **십진값 판정**이어야 하는 이유다",
+      "input": {
+        "text": "번호 900101-٥234567 확인."
+      },
+      "assert": [
+        {
+          "check": "restores_input"
+        },
+        {
+          "check": "placeholder_scheme",
+          "args": {
+            "categories": [
+              "주민등록번호",
+              "카드번호"
+            ]
+          }
+        },
+        {
+          "check": "absent",
+          "args": {
+            "path": "masked_text",
+            "needles": [
+              "900101-٥234567"
+            ]
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "masked_text",
+            "needles": [
+              "번호",
+              "확인."
+            ]
+          }
+        }
+      ],
+      "reference_divergence": "expected",
+      "reference": {
+        "masked_text": "번호 900101-٥234567 확인.",
+        "items": []
+      }
+    },
+    {
+      "id": "masking-rrn-sep-fullwidth-hyphen",
+      "description": "주민등록번호 구분자가 전각 하이픈 U+FF0D — 한글 입력 환경에서 그대로 나온다여도 가려야 한다 — 남으면 개인정보가 그대로 외부 LLM으로 나간다. 구분자를 `-`·공백·탭만 열거하면 여기서 끊긴다 — 사람 눈에는 하이픈으로 보이므로 담당자는 가려졌다고 믿는다",
+      "input": {
+        "text": "번호 900101－1234567 확인."
+      },
+      "assert": [
+        {
+          "check": "restores_input"
+        },
+        {
+          "check": "placeholder_scheme",
+          "args": {
+            "categories": [
+              "주민등록번호",
+              "카드번호"
+            ]
+          }
+        },
+        {
+          "check": "absent",
+          "args": {
+            "path": "masked_text",
+            "needles": [
+              "900101－1234567"
+            ]
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "masked_text",
+            "needles": [
+              "번호",
+              "확인."
+            ]
+          }
+        }
+      ],
+      "reference_divergence": "expected",
+      "reference": {
+        "masked_text": "번호 900101－1234567 확인.",
+        "items": []
+      }
+    },
+    {
+      "id": "masking-rrn-sep-minus",
+      "description": "주민등록번호 구분자가 수학 마이너스 U+2212 — 표 편집기가 하이픈 대신 넣는다여도 가려야 한다 — 남으면 개인정보가 그대로 외부 LLM으로 나간다. 구분자를 `-`·공백·탭만 열거하면 여기서 끊긴다 — 사람 눈에는 하이픈으로 보이므로 담당자는 가려졌다고 믿는다",
+      "input": {
+        "text": "번호 900101−1234567 확인."
+      },
+      "assert": [
+        {
+          "check": "restores_input"
+        },
+        {
+          "check": "placeholder_scheme",
+          "args": {
+            "categories": [
+              "주민등록번호",
+              "카드번호"
+            ]
+          }
+        },
+        {
+          "check": "absent",
+          "args": {
+            "path": "masked_text",
+            "needles": [
+              "900101−1234567"
+            ]
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "masked_text",
+            "needles": [
+              "번호",
+              "확인."
+            ]
+          }
+        }
+      ],
+      "reference_divergence": "expected",
+      "reference": {
+        "masked_text": "번호 900101−1234567 확인.",
+        "items": []
+      }
+    },
+    {
+      "id": "masking-rrn-sep-en-dash",
+      "description": "주민등록번호 구분자가 엔 대시 U+2013 — 워드프로세서 자동 교정이 만든다여도 가려야 한다 — 남으면 개인정보가 그대로 외부 LLM으로 나간다. 구분자를 `-`·공백·탭만 열거하면 여기서 끊긴다 — 사람 눈에는 하이픈으로 보이므로 담당자는 가려졌다고 믿는다",
+      "input": {
+        "text": "번호 900101–1234567 확인."
+      },
+      "assert": [
+        {
+          "check": "restores_input"
+        },
+        {
+          "check": "placeholder_scheme",
+          "args": {
+            "categories": [
+              "주민등록번호",
+              "카드번호"
+            ]
+          }
+        },
+        {
+          "check": "absent",
+          "args": {
+            "path": "masked_text",
+            "needles": [
+              "900101–1234567"
+            ]
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "masked_text",
+            "needles": [
+              "번호",
+              "확인."
+            ]
+          }
+        }
+      ],
+      "reference_divergence": "expected",
+      "reference": {
+        "masked_text": "번호 900101–1234567 확인.",
+        "items": []
+      }
+    },
+    {
+      "id": "masking-rrn-sep-em-dash",
+      "description": "주민등록번호 구분자가 엠 대시 U+2014여도 가려야 한다 — 남으면 개인정보가 그대로 외부 LLM으로 나간다. 구분자를 `-`·공백·탭만 열거하면 여기서 끊긴다 — 사람 눈에는 하이픈으로 보이므로 담당자는 가려졌다고 믿는다",
+      "input": {
+        "text": "번호 900101—1234567 확인."
+      },
+      "assert": [
+        {
+          "check": "restores_input"
+        },
+        {
+          "check": "placeholder_scheme",
+          "args": {
+            "categories": [
+              "주민등록번호",
+              "카드번호"
+            ]
+          }
+        },
+        {
+          "check": "absent",
+          "args": {
+            "path": "masked_text",
+            "needles": [
+              "900101—1234567"
+            ]
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "masked_text",
+            "needles": [
+              "번호",
+              "확인."
+            ]
+          }
+        }
+      ],
+      "reference_divergence": "expected",
+      "reference": {
+        "masked_text": "번호 900101—1234567 확인.",
+        "items": []
+      }
+    },
+    {
+      "id": "masking-rrn-sep-hyphen",
+      "description": "주민등록번호 구분자가 유니코드 하이픈 U+2010 — ASCII 하이픈과 눈으로 구별되지 않는다여도 가려야 한다 — 남으면 개인정보가 그대로 외부 LLM으로 나간다. 구분자를 `-`·공백·탭만 열거하면 여기서 끊긴다 — 사람 눈에는 하이픈으로 보이므로 담당자는 가려졌다고 믿는다",
+      "input": {
+        "text": "번호 900101‐1234567 확인."
+      },
+      "assert": [
+        {
+          "check": "restores_input"
+        },
+        {
+          "check": "placeholder_scheme",
+          "args": {
+            "categories": [
+              "주민등록번호",
+              "카드번호"
+            ]
+          }
+        },
+        {
+          "check": "absent",
+          "args": {
+            "path": "masked_text",
+            "needles": [
+              "900101‐1234567"
+            ]
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "masked_text",
+            "needles": [
+              "번호",
+              "확인."
+            ]
+          }
+        }
+      ],
+      "reference_divergence": "expected",
+      "reference": {
+        "masked_text": "번호 900101‐1234567 확인.",
+        "items": []
+      }
+    },
+    {
+      "id": "masking-rrn-sep-nbsp",
+      "description": "주민등록번호 구분자가 줄바꿈 없는 공백 U+00A0 — 웹페이지 복사·붙여넣기에 흔하다여도 가려야 한다 — 남으면 개인정보가 그대로 외부 LLM으로 나간다. 구분자를 `-`·공백·탭만 열거하면 여기서 끊긴다 — 사람 눈에는 하이픈으로 보이므로 담당자는 가려졌다고 믿는다",
+      "input": {
+        "text": "번호 900101 1234567 확인."
+      },
+      "assert": [
+        {
+          "check": "restores_input"
+        },
+        {
+          "check": "placeholder_scheme",
+          "args": {
+            "categories": [
+              "주민등록번호",
+              "카드번호"
+            ]
+          }
+        },
+        {
+          "check": "absent",
+          "args": {
+            "path": "masked_text",
+            "needles": [
+              "900101 1234567"
+            ]
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "masked_text",
+            "needles": [
+              "번호",
+              "확인."
+            ]
+          }
+        }
+      ],
+      "reference_divergence": "expected",
+      "reference": {
+        "masked_text": "번호 900101 1234567 확인.",
+        "items": []
+      }
+    },
+    {
+      "id": "masking-rrn-sep-ideographic-space",
+      "description": "주민등록번호 구분자가 전각 공백 U+3000 — 한글 문서에서 자리 맞춤에 쓰인다여도 가려야 한다 — 남으면 개인정보가 그대로 외부 LLM으로 나간다. 구분자를 `-`·공백·탭만 열거하면 여기서 끊긴다 — 사람 눈에는 하이픈으로 보이므로 담당자는 가려졌다고 믿는다",
+      "input": {
+        "text": "번호 900101　1234567 확인."
+      },
+      "assert": [
+        {
+          "check": "restores_input"
+        },
+        {
+          "check": "placeholder_scheme",
+          "args": {
+            "categories": [
+              "주민등록번호",
+              "카드번호"
+            ]
+          }
+        },
+        {
+          "check": "absent",
+          "args": {
+            "path": "masked_text",
+            "needles": [
+              "900101　1234567"
+            ]
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "masked_text",
+            "needles": [
+              "번호",
+              "확인."
+            ]
+          }
+        }
+      ],
+      "reference_divergence": "expected",
+      "reference": {
+        "masked_text": "번호 900101　1234567 확인.",
+        "items": []
+      }
+    },
+    {
+      "id": "masking-rrn-sep-figure-space",
+      "description": "주민등록번호 구분자가 숫자 폭 공백 U+2007 — 표에서 자릿수를 맞출 때 쓰인다여도 가려야 한다 — 남으면 개인정보가 그대로 외부 LLM으로 나간다. 구분자를 `-`·공백·탭만 열거하면 여기서 끊긴다 — 사람 눈에는 하이픈으로 보이므로 담당자는 가려졌다고 믿는다",
+      "input": {
+        "text": "번호 900101 1234567 확인."
+      },
+      "assert": [
+        {
+          "check": "restores_input"
+        },
+        {
+          "check": "placeholder_scheme",
+          "args": {
+            "categories": [
+              "주민등록번호",
+              "카드번호"
+            ]
+          }
+        },
+        {
+          "check": "absent",
+          "args": {
+            "path": "masked_text",
+            "needles": [
+              "900101 1234567"
+            ]
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "masked_text",
+            "needles": [
+              "번호",
+              "확인."
+            ]
+          }
+        }
+      ],
+      "reference_divergence": "expected",
+      "reference": {
+        "masked_text": "번호 900101 1234567 확인.",
+        "items": []
+      }
+    },
+    {
+      "id": "masking-rrn-sep-narrow-nbsp",
+      "description": "주민등록번호 구분자가 좁은 줄바꿈 없는 공백 U+202F여도 가려야 한다 — 남으면 개인정보가 그대로 외부 LLM으로 나간다. 구분자를 `-`·공백·탭만 열거하면 여기서 끊긴다 — 사람 눈에는 하이픈으로 보이므로 담당자는 가려졌다고 믿는다",
+      "input": {
+        "text": "번호 900101 1234567 확인."
+      },
+      "assert": [
+        {
+          "check": "restores_input"
+        },
+        {
+          "check": "placeholder_scheme",
+          "args": {
+            "categories": [
+              "주민등록번호",
+              "카드번호"
+            ]
+          }
+        },
+        {
+          "check": "absent",
+          "args": {
+            "path": "masked_text",
+            "needles": [
+              "900101 1234567"
+            ]
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "masked_text",
+            "needles": [
+              "번호",
+              "확인."
+            ]
+          }
+        }
+      ],
+      "reference_divergence": "expected",
+      "reference": {
+        "masked_text": "번호 900101 1234567 확인.",
+        "items": []
+      }
+    },
+    {
       "id": "masking-card-hyphen",
       "description": "하이픈 표기 16자리 카드번호를 가려야 한다 — 남으면 개인정보가 그대로 외부 LLM으로 나간다",
       "input": {
@@ -620,6 +1160,411 @@
       }
     },
     {
+      "id": "masking-card-sep-fullwidth-hyphen",
+      "description": "카드번호 구분자가 전각 하이픈 U+FF0D — 한글 입력 환경에서 그대로 나온다여도 가려야 한다 — 남으면 개인정보가 그대로 외부 LLM으로 나간다. RRN과 같은 집합이어야 한다 — 두 패턴이 각자 구분자를 열거하면 다음 확장에서 한쪽만 늘어난다",
+      "input": {
+        "text": "카드 1234－5678－9012－3456 입력."
+      },
+      "assert": [
+        {
+          "check": "restores_input"
+        },
+        {
+          "check": "placeholder_scheme",
+          "args": {
+            "categories": [
+              "주민등록번호",
+              "카드번호"
+            ]
+          }
+        },
+        {
+          "check": "absent",
+          "args": {
+            "path": "masked_text",
+            "needles": [
+              "1234－5678－9012－3456"
+            ]
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "masked_text",
+            "needles": [
+              "카드",
+              "입력."
+            ]
+          }
+        }
+      ],
+      "reference_divergence": "expected",
+      "reference": {
+        "masked_text": "카드 1234－5678－9012－3456 입력.",
+        "items": []
+      }
+    },
+    {
+      "id": "masking-card-sep-minus",
+      "description": "카드번호 구분자가 수학 마이너스 U+2212 — 표 편집기가 하이픈 대신 넣는다여도 가려야 한다 — 남으면 개인정보가 그대로 외부 LLM으로 나간다. RRN과 같은 집합이어야 한다 — 두 패턴이 각자 구분자를 열거하면 다음 확장에서 한쪽만 늘어난다",
+      "input": {
+        "text": "카드 1234−5678−9012−3456 입력."
+      },
+      "assert": [
+        {
+          "check": "restores_input"
+        },
+        {
+          "check": "placeholder_scheme",
+          "args": {
+            "categories": [
+              "주민등록번호",
+              "카드번호"
+            ]
+          }
+        },
+        {
+          "check": "absent",
+          "args": {
+            "path": "masked_text",
+            "needles": [
+              "1234−5678−9012−3456"
+            ]
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "masked_text",
+            "needles": [
+              "카드",
+              "입력."
+            ]
+          }
+        }
+      ],
+      "reference_divergence": "expected",
+      "reference": {
+        "masked_text": "카드 1234−5678−9012−3456 입력.",
+        "items": []
+      }
+    },
+    {
+      "id": "masking-card-sep-en-dash",
+      "description": "카드번호 구분자가 엔 대시 U+2013 — 워드프로세서 자동 교정이 만든다여도 가려야 한다 — 남으면 개인정보가 그대로 외부 LLM으로 나간다. RRN과 같은 집합이어야 한다 — 두 패턴이 각자 구분자를 열거하면 다음 확장에서 한쪽만 늘어난다",
+      "input": {
+        "text": "카드 1234–5678–9012–3456 입력."
+      },
+      "assert": [
+        {
+          "check": "restores_input"
+        },
+        {
+          "check": "placeholder_scheme",
+          "args": {
+            "categories": [
+              "주민등록번호",
+              "카드번호"
+            ]
+          }
+        },
+        {
+          "check": "absent",
+          "args": {
+            "path": "masked_text",
+            "needles": [
+              "1234–5678–9012–3456"
+            ]
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "masked_text",
+            "needles": [
+              "카드",
+              "입력."
+            ]
+          }
+        }
+      ],
+      "reference_divergence": "expected",
+      "reference": {
+        "masked_text": "카드 1234–5678–9012–3456 입력.",
+        "items": []
+      }
+    },
+    {
+      "id": "masking-card-sep-em-dash",
+      "description": "카드번호 구분자가 엠 대시 U+2014여도 가려야 한다 — 남으면 개인정보가 그대로 외부 LLM으로 나간다. RRN과 같은 집합이어야 한다 — 두 패턴이 각자 구분자를 열거하면 다음 확장에서 한쪽만 늘어난다",
+      "input": {
+        "text": "카드 1234—5678—9012—3456 입력."
+      },
+      "assert": [
+        {
+          "check": "restores_input"
+        },
+        {
+          "check": "placeholder_scheme",
+          "args": {
+            "categories": [
+              "주민등록번호",
+              "카드번호"
+            ]
+          }
+        },
+        {
+          "check": "absent",
+          "args": {
+            "path": "masked_text",
+            "needles": [
+              "1234—5678—9012—3456"
+            ]
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "masked_text",
+            "needles": [
+              "카드",
+              "입력."
+            ]
+          }
+        }
+      ],
+      "reference_divergence": "expected",
+      "reference": {
+        "masked_text": "카드 1234—5678—9012—3456 입력.",
+        "items": []
+      }
+    },
+    {
+      "id": "masking-card-sep-hyphen",
+      "description": "카드번호 구분자가 유니코드 하이픈 U+2010 — ASCII 하이픈과 눈으로 구별되지 않는다여도 가려야 한다 — 남으면 개인정보가 그대로 외부 LLM으로 나간다. RRN과 같은 집합이어야 한다 — 두 패턴이 각자 구분자를 열거하면 다음 확장에서 한쪽만 늘어난다",
+      "input": {
+        "text": "카드 1234‐5678‐9012‐3456 입력."
+      },
+      "assert": [
+        {
+          "check": "restores_input"
+        },
+        {
+          "check": "placeholder_scheme",
+          "args": {
+            "categories": [
+              "주민등록번호",
+              "카드번호"
+            ]
+          }
+        },
+        {
+          "check": "absent",
+          "args": {
+            "path": "masked_text",
+            "needles": [
+              "1234‐5678‐9012‐3456"
+            ]
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "masked_text",
+            "needles": [
+              "카드",
+              "입력."
+            ]
+          }
+        }
+      ],
+      "reference_divergence": "expected",
+      "reference": {
+        "masked_text": "카드 1234‐5678‐9012‐3456 입력.",
+        "items": []
+      }
+    },
+    {
+      "id": "masking-card-sep-nbsp",
+      "description": "카드번호 구분자가 줄바꿈 없는 공백 U+00A0 — 웹페이지 복사·붙여넣기에 흔하다여도 가려야 한다 — 남으면 개인정보가 그대로 외부 LLM으로 나간다. RRN과 같은 집합이어야 한다 — 두 패턴이 각자 구분자를 열거하면 다음 확장에서 한쪽만 늘어난다",
+      "input": {
+        "text": "카드 1234 5678 9012 3456 입력."
+      },
+      "assert": [
+        {
+          "check": "restores_input"
+        },
+        {
+          "check": "placeholder_scheme",
+          "args": {
+            "categories": [
+              "주민등록번호",
+              "카드번호"
+            ]
+          }
+        },
+        {
+          "check": "absent",
+          "args": {
+            "path": "masked_text",
+            "needles": [
+              "1234 5678 9012 3456"
+            ]
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "masked_text",
+            "needles": [
+              "카드",
+              "입력."
+            ]
+          }
+        }
+      ],
+      "reference_divergence": "expected",
+      "reference": {
+        "masked_text": "카드 1234 5678 9012 3456 입력.",
+        "items": []
+      }
+    },
+    {
+      "id": "masking-card-sep-ideographic-space",
+      "description": "카드번호 구분자가 전각 공백 U+3000 — 한글 문서에서 자리 맞춤에 쓰인다여도 가려야 한다 — 남으면 개인정보가 그대로 외부 LLM으로 나간다. RRN과 같은 집합이어야 한다 — 두 패턴이 각자 구분자를 열거하면 다음 확장에서 한쪽만 늘어난다",
+      "input": {
+        "text": "카드 1234　5678　9012　3456 입력."
+      },
+      "assert": [
+        {
+          "check": "restores_input"
+        },
+        {
+          "check": "placeholder_scheme",
+          "args": {
+            "categories": [
+              "주민등록번호",
+              "카드번호"
+            ]
+          }
+        },
+        {
+          "check": "absent",
+          "args": {
+            "path": "masked_text",
+            "needles": [
+              "1234　5678　9012　3456"
+            ]
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "masked_text",
+            "needles": [
+              "카드",
+              "입력."
+            ]
+          }
+        }
+      ],
+      "reference_divergence": "expected",
+      "reference": {
+        "masked_text": "카드 1234　5678　9012　3456 입력.",
+        "items": []
+      }
+    },
+    {
+      "id": "masking-card-sep-figure-space",
+      "description": "카드번호 구분자가 숫자 폭 공백 U+2007 — 표에서 자릿수를 맞출 때 쓰인다여도 가려야 한다 — 남으면 개인정보가 그대로 외부 LLM으로 나간다. RRN과 같은 집합이어야 한다 — 두 패턴이 각자 구분자를 열거하면 다음 확장에서 한쪽만 늘어난다",
+      "input": {
+        "text": "카드 1234 5678 9012 3456 입력."
+      },
+      "assert": [
+        {
+          "check": "restores_input"
+        },
+        {
+          "check": "placeholder_scheme",
+          "args": {
+            "categories": [
+              "주민등록번호",
+              "카드번호"
+            ]
+          }
+        },
+        {
+          "check": "absent",
+          "args": {
+            "path": "masked_text",
+            "needles": [
+              "1234 5678 9012 3456"
+            ]
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "masked_text",
+            "needles": [
+              "카드",
+              "입력."
+            ]
+          }
+        }
+      ],
+      "reference_divergence": "expected",
+      "reference": {
+        "masked_text": "카드 1234 5678 9012 3456 입력.",
+        "items": []
+      }
+    },
+    {
+      "id": "masking-card-sep-narrow-nbsp",
+      "description": "카드번호 구분자가 좁은 줄바꿈 없는 공백 U+202F여도 가려야 한다 — 남으면 개인정보가 그대로 외부 LLM으로 나간다. RRN과 같은 집합이어야 한다 — 두 패턴이 각자 구분자를 열거하면 다음 확장에서 한쪽만 늘어난다",
+      "input": {
+        "text": "카드 1234 5678 9012 3456 입력."
+      },
+      "assert": [
+        {
+          "check": "restores_input"
+        },
+        {
+          "check": "placeholder_scheme",
+          "args": {
+            "categories": [
+              "주민등록번호",
+              "카드번호"
+            ]
+          }
+        },
+        {
+          "check": "absent",
+          "args": {
+            "path": "masked_text",
+            "needles": [
+              "1234 5678 9012 3456"
+            ]
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "masked_text",
+            "needles": [
+              "카드",
+              "입력."
+            ]
+          }
+        }
+      ],
+      "reference_divergence": "expected",
+      "reference": {
+        "masked_text": "카드 1234 5678 9012 3456 입력.",
+        "items": []
+      }
+    },
+    {
       "id": "masking-multi-same-category",
       "description": "같은 범주 2건은 등장 순서로 1·2번을 받는다. 전역 카운터 구현이 여기서 죽고, 번호가 어긋나면 복원이 잘못된 원문을 꽂는다",
       "input": {
@@ -858,6 +1803,142 @@
       ],
       "reference": {
         "masked_text": "접수번호 123456789012 와 관리번호 12345678901234 를 적으세요.",
+        "items": []
+      }
+    },
+    {
+      "id": "masking-keeps-rrn-gender-9",
+      "description": "성별코드 9는 주민등록번호가 아니다. 가리면 안 된다 — 범위 밖이거나 개인정보가 아니다. 과잉 마스킹은 팩트를 지운다 — 성별코드를 `\\d`로 넓히면서 값이 1~8인지 보지 않으면 13자리 접수번호가 통째로 가려진다",
+      "input": {
+        "text": "번호 900101-9234567 을 적으세요."
+      },
+      "assert": [
+        {
+          "check": "restores_input"
+        },
+        {
+          "check": "placeholder_scheme",
+          "args": {
+            "categories": [
+              "주민등록번호",
+              "카드번호"
+            ]
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "masked_text",
+            "needles": [
+              "900101-9234567"
+            ]
+          }
+        }
+      ],
+      "reference": {
+        "masked_text": "번호 900101-9234567 을 적으세요.",
+        "items": []
+      }
+    },
+    {
+      "id": "masking-keeps-rrn-gender-0",
+      "description": "성별코드 0는 주민등록번호가 아니다. 가리면 안 된다 — 범위 밖이거나 개인정보가 아니다. 과잉 마스킹은 팩트를 지운다 — 성별코드를 `\\d`로 넓히면서 값이 1~8인지 보지 않으면 13자리 접수번호가 통째로 가려진다",
+      "input": {
+        "text": "번호 900101-0234567 을 적으세요."
+      },
+      "assert": [
+        {
+          "check": "restores_input"
+        },
+        {
+          "check": "placeholder_scheme",
+          "args": {
+            "categories": [
+              "주민등록번호",
+              "카드번호"
+            ]
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "masked_text",
+            "needles": [
+              "900101-0234567"
+            ]
+          }
+        }
+      ],
+      "reference": {
+        "masked_text": "번호 900101-0234567 을 적으세요.",
+        "items": []
+      }
+    },
+    {
+      "id": "masking-keeps-rrn-gender-fullwidth-9",
+      "description": "전각 성별코드 ９는 주민등록번호가 아니다. 가리면 안 된다 — 범위 밖이거나 개인정보가 아니다. 과잉 마스킹은 팩트를 지운다 — 성별코드를 `\\d`로 넓히면서 값이 1~8인지 보지 않으면 13자리 접수번호가 통째로 가려진다",
+      "input": {
+        "text": "번호 ９００１０１-９２３４５６７ 을 적으세요."
+      },
+      "assert": [
+        {
+          "check": "restores_input"
+        },
+        {
+          "check": "placeholder_scheme",
+          "args": {
+            "categories": [
+              "주민등록번호",
+              "카드번호"
+            ]
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "masked_text",
+            "needles": [
+              "９００１０１-９２３４５６７"
+            ]
+          }
+        }
+      ],
+      "reference": {
+        "masked_text": "번호 ９００１０１-９２３４５６７ 을 적으세요.",
+        "items": []
+      }
+    },
+    {
+      "id": "masking-keeps-rrn-gender-fullwidth-0",
+      "description": "전각 성별코드 ０는 주민등록번호가 아니다. 가리면 안 된다 — 범위 밖이거나 개인정보가 아니다. 과잉 마스킹은 팩트를 지운다 — 성별코드를 `\\d`로 넓히면서 값이 1~8인지 보지 않으면 13자리 접수번호가 통째로 가려진다",
+      "input": {
+        "text": "번호 ９００１０１-０２３４５６７ 을 적으세요."
+      },
+      "assert": [
+        {
+          "check": "restores_input"
+        },
+        {
+          "check": "placeholder_scheme",
+          "args": {
+            "categories": [
+              "주민등록번호",
+              "카드번호"
+            ]
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "masked_text",
+            "needles": [
+              "９００１０１-０２３４５６７"
+            ]
+          }
+        }
+      ],
+      "reference": {
+        "masked_text": "번호 ９００１０１-０２３４５６７ 을 적으세요.",
         "items": []
       }
     },
@@ -1398,10 +2479,10 @@
       }
     },
     {
-      "id": "masking-known-gap-rrn-fullwidth",
-      "description": "전각 숫자로만 적은 주민등록번호는 **현재 Python이 가리지 못한다**(성별코드 `[1-8]`이 ASCII 리터럴이라 매치가 끊긴다). 요구사항으로 보면 가려야 맞지만, 지금 그것을 단언하면 Kotlin에 Python보다 넓은 구현을 요구하게 되므로 **어느 방향도 단언하지 않는다**. 개선하면 참고 갈림 원장에 찍혀 드러난다. 이 건은 `privacy-gate` 판정 §5.4의 범위 **밖**이다(별개 사안으로 명시)",
+      "id": "masking-keeps-cr-split-digits",
+      "description": "캐리지리턴으로 갈린 두 숫자열도 하나의 주민등록번호가 아니다. 가리면 안 된다 — 범위 밖이거나 개인정보가 아니다. 과잉 마스킹은 팩트를 지운다 — 구분자 집합에 `\\s`를 쓰면 개행과 함께 여기도 뚫린다",
       "input": {
-        "text": "번호 ９００１０１-１２３４５６７ 확인."
+        "text": "접수번호 900101\r1234567 을 적으세요."
       },
       "assert": [
         {
@@ -1415,14 +2496,56 @@
               "카드번호"
             ]
           }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "masked_text",
+            "needles": [
+              "900101\r1234567"
+            ]
+          }
         }
       ],
-      "known_gap": "전각 표기 주민등록번호 미검출 (개선 후보 — 판정 대상 아님)",
       "reference": {
-        "masked_text": "번호 ９００１０１-１２３４５６７ 확인.",
+        "masked_text": "접수번호 900101\r1234567 을 적으세요.",
+        "items": []
+      }
+    },
+    {
+      "id": "masking-keeps-card-newline-split-digits",
+      "description": "줄마다 적힌 네 숫자열은 하나의 카드번호가 아니다. 가리면 안 된다 — 범위 밖이거나 개인정보가 아니다. 과잉 마스킹은 팩트를 지운다 — 구분자 집합을 RRN·CARD가 공유하므로 과잉 방향도 **양쪽에서** 봐야 한다",
+      "input": {
+        "text": "번호 1234\n5678\n9012\n3456 을 차례로 적으세요."
+      },
+      "assert": [
+        {
+          "check": "restores_input"
+        },
+        {
+          "check": "placeholder_scheme",
+          "args": {
+            "categories": [
+              "주민등록번호",
+              "카드번호"
+            ]
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "masked_text",
+            "needles": [
+              "1234\n5678\n9012\n3456"
+            ]
+          }
+        }
+      ],
+      "reference": {
+        "masked_text": "번호 1234\n5678\n9012\n3456 을 차례로 적으세요.",
         "items": []
       }
     }
   ],
-  "generated_at": "2026-08-12T06:53:35Z"
+  "generated_at": "2026-08-13T15:17:23Z"
 }
