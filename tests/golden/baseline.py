@@ -5,6 +5,13 @@
 현재 실측이 0.446~0.643이라(`docs/migration/_workspace/02_quality-baseline.md` §5.3)
 0.90을 차단선으로 두면 게이트가 상시 빨간불이 되어 아무도 읽지 않게 된다.
 
+**차단축은 `전체` 하나이고, 허용 폭이 있다**(2026-08-13 사용자 결정 — 5회 실측 근거는
+`OVERALL_FLOOR_TOLERANCE`). 합성·실수집은 **기록·경고만** 한다. 그 전까지는 세 축이
+각각 차단이고 폭이 0이었는데, 코드를 한 줄도 바꾸지 않은 5회 실행 중 **4회가 판정 대상이고
+그중 3회가 차단**됐다. 상시 빨간불은 0.90을 차단선으로 두었을 때와 같은 고장이다 — 게이트가
+품질이 아니라 잡음에 반응하면 사람이 게이트를 끈다. **이 완화가 못 잡게 된 것은 숨기지 않고
+`TOLERANCE_BLIND_SPOTS`에 적어 차단·통과 메시지 양쪽에 싣는다.**
+
 상대 기준에는 절대 기준에 없는 함정이 하나 있다. **분모를 바꾸면 수치가 저절로 오른다.**
 실측으로 확인된 경로다 — 25→36건 편입만으로 통과율이 0.51→0.446으로 움직였고
 (`2026-08-08-golden-baseline-56.md`), 반대 방향으로 문서 063·064는 **세 차례** 제외
@@ -83,7 +90,7 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
 from types import ModuleType
-from typing import Any
+from typing import Any, Final
 
 from pydantic import BaseModel, ConfigDict, model_validator
 
@@ -108,6 +115,61 @@ _NO_SOURCE = "소스 없음"
 #: diff에 적을 문서 id 최대 개수. 전부 적으면 실패 메시지가 수십 줄이 된다.
 MAX_REPORTED_IDS = 8
 
+#: **차단축의 이름.** 세 집단 중 이 축만 차단한다(2026-08-13 사용자 결정). 나머지 둘
+#: (합성·실수집)은 판정에 참여하지 않고 리포트에 델타와 경고만 남긴다.
+#:
+#: `Measurement.groups()`가 이 상수를 쓴다 — 라벨이 두 벌이 되면 "차단하는 축"과 "리포트에
+#: 전체라고 적히는 축"이 갈릴 수 있고, 갈리면 어느 쪽이 진짜 차단축인지 코드로 말할 수 없다.
+BLOCKING_GROUP_LABEL: Final = "전체"
+
+#: 차단축(`전체`)의 **허용 폭** — 기준선보다 이 건수까지 낮아도 차단하지 않는다.
+#: 판정식은 `현재 전체 통과 < 기준선 전체 통과 - OVERALL_FLOOR_TOLERANCE`일 때만 차단이다.
+#: 기준선 33이면 31·32·33은 통과하고 **30부터 막힌다.**
+#:
+#: **값의 근거는 실측이다.** 2026-08-13, **같은 커밋·같은 코퍼스(56건)·같은 판정 기준·같은
+#: producer**(anthropic / claude-sonnet-5 / effort low)로 **코드를 한 줄도 바꾸지 않고**
+#: 5회 돌린 표본이다.
+#:
+#: | 축 | 표본 (5회) | 평균 | 표준편차 | 폭 | 이항 sd |
+#: |---|---|---|---|---|---|
+#: | 전체 (n=56) | 33·31·32·33·33 | 32.4 | 0.89 | **2** | 3.70 |
+#: | 합성 (n=20) | 16·16·17·14·16 | 15.8 | 1.10 | **3** | 1.82 |
+#: | 실수집 (n=36) | 17·15·15·19·17 | 16.6 | 1.67 | **4** | 2.99 |
+#:
+#: 두 가지가 이 표에서 나왔다.
+#:
+#: - **폭 0(직전 기록 대비 하락 0)에서는 코드 무변경 4회 중 3회가 차단됐다**(첫 실행 33이
+#:   기준선이므로 판정 대상은 4회다). 잡음이 매번 게이트를 막으면 사람이 게이트를 끈다.
+#: - **부분이 전체보다 더 흔들린다** — 폭이 전체 2 < 합성 3 < 실수집 4다. 두 하위 축이 반대로
+#:   움직여 상쇄되기 때문이다. run 4가 실물이다: 합성 14(최저)·실수집 19(최고)인데 전체는
+#:   33으로 기준선과 **같았고**, 그런데도 합성 하나 때문에 차단됐다. 그래서 차단축을 전체
+#:   하나로 좁혔다.
+#: - 관측 sd가 세 축 모두 **이항 sd보다 작다**. 즉 이 변동은 품질 신호가 아니라 표본 잡음이다.
+#:
+#: **이 상수를 고치면 그 diff가 "게이트를 얼마나 열었는지"라는 신호로 리뷰에 올라가는 것이
+#: 이 상수의 값어치다.** 값만 있고 근거가 없으면 다음 사람이 마음대로 올린다 — 그래서 표를
+#: 여기 그대로 둔다. 올리려면 **새 표본을 실측해 이 표를 교체**하고, 그 실행 조건(커밋·코퍼스·
+#: 판정 기준·producer)이 같았음을 함께 적어라. 표 없이 숫자만 올리는 diff는 근거가 없다.
+OVERALL_FLOOR_TOLERANCE: Final = 2
+
+#: **허용 폭이 못 잡게 된 것.** 차단 메시지와 **통과 메시지 양쪽에** 같은 문장을 싣는다 —
+#: 게이트의 사각은 막힌 사람보다 **통과한 사람**이 알아야 한다. 완화를 코드에만 적고 출력에
+#: 적지 않으면, 읽는 사람은 초록불을 "회귀가 없다"로 읽는다. 실제 뜻은 "차단축이 허용 폭
+#: 안이다"이고 그 둘은 다르다.
+TOLERANCE_BLIND_SPOTS: Final[tuple[str, ...]] = (
+    f"  - ⚠ **이 게이트는 약하다(2026-08-13 완화).** 차단축은 `{BLOCKING_GROUP_LABEL}` 하나이고 "
+    f"허용 폭은 {OVERALL_FLOOR_TOLERANCE}건이다. 아래 셋은 **통과한다**",
+    f"    ① 전체가 {OVERALL_FLOOR_TOLERANCE}건 이하로 **진짜 회귀해도** 통과한다 — 33→31을 "
+    "잡음과 회귀로 가르지 못한다. 기준선이 갱신되지 않으므로 31이 계속 나와도 매번 통과한다",
+    "    ② **하위 축에만 갇힌 회귀는 차단하지 않는다** — 합성이 20/20 → 14/20으로 무너져도 "
+    "실수집이 그만큼 오르면 전체가 유지되어 통과한다(2026-08-13 run 4가 그 형태였다: "
+    "합성 14 최저 · 실수집 19 최고 · 전체 33 = 기준선)",
+    f"    ③ 허용 폭 {OVERALL_FLOOR_TOLERANCE}는 **표본 5회의 관측 폭**이지 분포 추정이 아니다 "
+    "— 6회째가 폭을 넓힐 수 있다",
+    "  - 그래서 하위 축 델타는 차단하지 않아도 **항상 적는다**. 차단하지 않는 것과 안 보이게 "
+    "하는 것은 다르다 — 판단은 사람이 한다",
+)
+
 
 class Verdict(StrEnum):
     """상대 하한선 판정 결과."""
@@ -115,6 +177,13 @@ class Verdict(StrEnum):
     HELD = "유지"
     IMPROVED = "개선"
     REGRESSED = "하락"
+    #: 낮아진 집단이 있지만 **차단하지 않았다** — 차단축(`전체`)이 허용 폭 안이거나,
+    #: 내려간 것이 비차단 하위 축(합성·실수집)뿐이다. 2026-08-13 신설.
+    #:
+    #: `HELD`(직전 기록과 **같다**)와 섞지 않는다. 섞으면 "아무것도 안 내려갔다"와 "내려갔지만
+    #: 봐줬다"가 한 값이 되어, 과거 기록의 `유지`가 무엇을 뜻했는지 알 수 없게 된다. 기존 값의
+    #: 뜻을 바꾸는 대신 값을 **더한** 이유가 이것이다.
+    TOLERATED = "하락 허용"
     INCOMPARABLE = "비교 불가"
     #: 변환에 실패해 판정하지 못한 문서가 있다 — **수치가 나왔어도 측정이 아니다.**
     UNMEASURED = "측정 미완"
@@ -606,16 +675,36 @@ class GroupMeasurement(BaseModel):
         return self.passed / self.documents if self.documents else 0.0
 
     def dropped_from(self, baseline: "GroupMeasurement") -> bool:
-        """분모가 달라도 성립하도록 교차 곱으로 비교한다(분모가 같은 것은 지문이 보장한다)."""
+        """조금이라도 낮아졌는가. **차단이 아니라 기록·경고용이다**(2026-08-13부터).
+
+        분모가 달라도 성립하도록 교차 곱으로 비교한다(분모가 같은 것은 지문이 보장한다).
+        """
         return self.passed * baseline.documents < baseline.passed * self.documents
+
+    def dropped_beyond(self, baseline: "GroupMeasurement", tolerance: int) -> bool:
+        """**허용 폭을 넘겨** 낮아졌는가 — 차단 판정은 이쪽만 본다.
+
+        분모가 같을 때(지문이 보장한다) `passed < baseline.passed - tolerance`와 같다.
+        허용 폭은 **건수**이므로 분모가 다르면 뜻을 잃는데, 그 상태는 지문이 먼저 비교 불가로
+        떨어뜨린다. 그래도 교차 곱을 유지하는 이유는 `dropped_from`과 같은 식 위에 서 있어야
+        `tolerance=0`이 정확히 `dropped_from`이 되기 때문이다 — 허용 폭을 0으로 되돌리면
+        완화 이전 동작으로 돌아간다는 것이 식에서 바로 읽힌다.
+        """
+        return self.passed * baseline.documents < (baseline.passed - tolerance) * self.documents
 
 
 class Measurement(BaseModel):
     """한 실행의 규칙 기반 통과 측정치.
 
     **합성과 실수집을 나눠 담는다.** 두 집단은 분포가 달라(합성 스타일 위반 0/20 대 실수집
-    11/36, `02_quality-baseline.md` §5.3) 합친 평균이 어느 집단도 대표하지 않는다. 하한선도
-    셋을 **각각** 본다 — 전체만 보면 합성이 실수집의 하락을 상쇄해 회귀가 숨는다.
+    11/36, `02_quality-baseline.md` §5.3) 합친 평균이 어느 집단도 대표하지 않는다.
+
+    **차단은 그중 `전체` 하나만 한다**(2026-08-13 사용자 결정, `OVERALL_FLOOR_TOLERANCE`).
+    셋을 각각 차단하던 이유("전체만 보면 합성이 실수집의 하락을 상쇄해 회귀가 숨는다")는
+    사실이고 지금도 사실이다 — 그 회귀는 이제 **차단되지 않고 경고로만 남는다**
+    (`TOLERANCE_BLIND_SPOTS` ②). 바꾼 근거는 그 논리가 틀려서가 아니라 실측이다: 5회 표본에서
+    폭이 전체 2 < 합성 3 < 실수집 4로, **하위 축이 전체보다 더 흔들려** 상쇄가 아니라 잡음이
+    먼저 잡혔다. 셋을 나눠 담는 것 자체는 그대로다 — 판정에서 내렸을 뿐 리포트에는 계속 싣는다.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -626,7 +715,7 @@ class Measurement(BaseModel):
 
     def groups(self) -> list[tuple[str, GroupMeasurement]]:
         return [
-            ("전체", self.overall),
+            (BLOCKING_GROUP_LABEL, self.overall),
             ("합성", self.synthetic),
             ("실수집", self.collected),
         ]
@@ -972,6 +1061,10 @@ class FloorJudgement(BaseModel):
     `blocking`과 `requires_record`를 나눈다 — 하락은 **차단**이고 개선은 **재기록 요구**다.
     개선을 차단으로 묶으면 LLM 잡음으로 오르내리는 수치가 매 실행 게이트를 막아, 결국
     게이트를 끄게 된다. 반대로 개선을 조용히 통과시키면 하한선이 영영 오르지 않는다.
+
+    셋째 상태가 `Verdict.TOLERATED`다 — **하락인데 차단도 재기록도 아니다.** 차단하면 잡음이
+    게이트를 막고(위와 같은 고장), 재기록하면 낮아진 수치가 다음 하한선이 되어 폭만큼씩
+    사다리를 타고 내려간다. 남는 수단은 **경고**뿐이라 `reasons`에 델타를 싣는다.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -992,6 +1085,29 @@ def compare(
     baseline: Baseline | None, fingerprint: Fingerprint, current: Measurement
 ) -> "FloorJudgement":
     """현재 측정치를 기준선과 대조한다.
+
+    **차단 조건은 하나다** — `현재 전체 통과 < 기준선 전체 통과 - OVERALL_FLOOR_TOLERANCE`.
+    합성·실수집은 차단하지 않고 델타와 경고만 남긴다(2026-08-13 사용자 결정, 5회 실측 근거는
+    `OVERALL_FLOOR_TOLERANCE`).
+
+    **이 판정은 약해진 판정이다.** 못 잡는 것 셋을 여기에도 적어 둔다 —
+    `TOLERANCE_BLIND_SPOTS`가 같은 내용을 실행 메시지로 내보내지만, 코드를 읽는 사람이
+    출력을 보고 있으리라는 보장은 없다.
+
+    1. 전체가 `OVERALL_FLOOR_TOLERANCE`건 이하로 **진짜 회귀해도 통과한다.** 33→31을 잡음과
+       회귀로 가를 수단이 없다. 통과 실행은 기준선을 갱신하지 않으므로 31이 계속 나와도
+       매번 통과한다 — 허용 폭 안의 **드리프트**는 이 게이트가 보지 못한다.
+    2. **하위 축에만 갇힌 회귀는 차단하지 않는다.** 합성이 20/20 → 14/20으로 무너져도
+       실수집이 그만큼 오르면 전체가 유지되어 통과한다. 2026-08-13 run 4가 정확히 그
+       형태였고(합성 14 최저 · 실수집 19 최고 · 전체 33 = 기준선), 그것이 차단축을 전체
+       하나로 좁힌 근거이자 **이 완화가 실제로 뚫어 준 구멍**이다. 근거와 구멍이 같은 실행에서
+       나왔다는 사실을 지우지 마라.
+    3. 허용 폭 2는 **표본 5회의 관측 폭**이지 분포 추정이 아니다.
+
+    되돌리려면 `OVERALL_FLOOR_TOLERANCE`를 0으로 두면 차단축의 폭이 닫히고
+    (`dropped_beyond`가 `dropped_from`과 같은 식이 된다), 하위 축까지 되살리려면 아래
+    차단 분기가 `current.overall` 대신 `dropped`를 보게 하면 된다 — **두 축은 별개의 완화**라
+    한쪽만 되돌릴 수도 있다.
 
     순서가 중요하다. **미측정을 가장 먼저 본다** — 판정하지 못한 문서가 섞인 수치는
     비교의 대상이 아니라 측정의 실패다. 그다음이 **지문**이다. 코퍼스가 바뀐 상태에서 수치만
@@ -1042,12 +1158,13 @@ def compare(
                 "리뷰에 올린다. **수치 비교는 하지 않았다** — 통과도 실패도 아닌 비교 불가다",
             ],
         )
+    before_groups = dict(baseline.measurement.groups())
     dropped: list[str] = []
     gained: list[str] = []
     for label, group in current.groups():
-        before = dict(baseline.measurement.groups())[label]
+        before = before_groups[label]
         line = (
-            f"  - {label}: 기준선 {before.passed}/{before.documents}"
+            f"{label}: 기준선 {before.passed}/{before.documents}"
             f"({before.pass_rate:.3f}) → 현재 {group.passed}/{group.documents}"
             f"({group.pass_rate:.3f})"
         )
@@ -1055,17 +1172,41 @@ def compare(
             dropped.append(line)
         elif before.dropped_from(group):
             gained.append(line)
-    if dropped:
+    # **차단 판정은 전체 축 하나만 본다.** 위 순회는 세 축의 델타를 *적기* 위한 것이고,
+    # 여기서 읽는 것은 `current.overall` 하나다. 두 일을 한 루프에서 하면 "적는 축"과
+    # "막는 축"이 다시 붙어, 하위 축 하락이 차단으로 새는 예전 상태로 돌아간다.
+    if current.overall.dropped_beyond(baseline.measurement.overall, OVERALL_FLOOR_TOLERANCE):
         return FloorJudgement(
             verdict=Verdict.REGRESSED,
             blocking=True,
             requires_record=False,
             reasons=[
-                "- **직전 기록보다 낮아졌다** — 이것이 차단 기준이다",
-                *dropped,
-                *(["- 함께 오른 집단:", *gained] if gained else []),
+                f"- **차단축(`{BLOCKING_GROUP_LABEL}`)이 허용 폭 {OVERALL_FLOOR_TOLERANCE}건을 "
+                "넘겨 낮아졌다** — 이것이 차단 기준이다",
+                *(f"  - {line}" for line in dropped),
+                *(["- 함께 오른 집단:", *(f"  - {line}" for line in gained)] if gained else []),
+                *TOLERANCE_BLIND_SPOTS,
                 "  - n=20~56 단일 실행이라 경계에서는 통계 변동이 크다(master-plan §7). "
                 "재실행·표본 확대 판단은 사람이 한다 — 자동 재시도로 숨기지 않는다",
+            ],
+        )
+    if dropped:
+        # 하락이 있는데 차단하지 않은 실행. **재기록을 요구하지 않는다** — 요구하면 낮아진
+        # 수치가 다음 하한선이 되어, 허용 폭 안의 하락이 매번 기준선을 끌어내리는 사다리가
+        # 된다(폭 2씩 무한히 내려갈 수 있다). 기준선은 그대로 두고 경고만 남긴다.
+        return FloorJudgement(
+            verdict=Verdict.TOLERATED,
+            blocking=False,
+            requires_record=False,
+            reasons=[
+                f"- ⚠ **낮아진 집단이 있다 — 차단하지 않았다.** 차단축(`{BLOCKING_GROUP_LABEL}`)이 "
+                f"허용 폭 {OVERALL_FLOOR_TOLERANCE}건 안이다. **통과는 '회귀가 없다'는 뜻이 "
+                "아니다**",
+                *(f"  ⚠ {line}" for line in dropped),
+                *(["- 함께 오른 집단:", *(f"  - {line}" for line in gained)] if gained else []),
+                *TOLERANCE_BLIND_SPOTS,
+                "  - 기준선은 갱신하지 않는다 — 허용 폭 안의 하락을 기록하면 그 수치가 다음 "
+                "하한선이 되어 폭만큼씩 계속 내려간다",
             ],
         )
     if gained:
@@ -1076,7 +1217,7 @@ def compare(
             reasons=[
                 "- **직전 기록보다 올랐다** — 차단하지 않는다. 다만 기준선을 갱신하지 않으면 "
                 "이 개선은 다음 실행의 하한선이 되지 못하고 사라진다",
-                *gained,
+                *(f"  - {line}" for line in gained),
                 f"  - 갱신: `{RECORD_ENV}=1` 로 다시 돌려 diff를 커밋한다",
             ],
         )
@@ -1084,5 +1225,10 @@ def compare(
         verdict=Verdict.HELD,
         blocking=False,
         requires_record=False,
-        reasons=["- 직전 기록과 같다 — 하한선 유지"],
+        reasons=[
+            "- 직전 기록과 같다 — 하한선 유지",
+            f"  - 차단축은 `{BLOCKING_GROUP_LABEL}` 하나이고 허용 폭은 "
+            f"{OVERALL_FLOOR_TOLERANCE}건이다(2026-08-13 완화). 이번 실행은 세 축 모두 "
+            "기준선과 같아 그 폭을 쓰지 않았다",
+        ],
     )

@@ -489,10 +489,36 @@ def test_ci_가_이_목록과_판정기를_실제로_읽는다() -> None:
     )
 
 
-def test_기준선_파일은_저장소에_없다() -> None:
-    """`tests/golden/baseline.json` 부재 유지 — CI 가 기준선을 만들지 않는다는 사실의 대응물."""
-    assert not (ROOT / "tests" / "golden" / "baseline.json").exists(), (
-        "tests/golden/baseline.json 이 생겼다 — CI 기록 실행이 켜졌는지 확인하라"
+def test_기준선_파일이_있다면_의도적으로_커밋된_것이다() -> None:
+    """기준선이 **흘러나온 산출물**이 아니라 사람이 커밋한 것임을 고정한다.
+
+    이 테스트는 원래 "파일이 없다"를 단언했고, docstring 스스로 그것을 *"CI 가 기준선을
+    만들지 않는다는 사실의 **대응물**"* 이라 적었다 — **대리 지표**다. 2026-08-13 에
+    첫 정식 기준선(33/56·미측정 0)을 **의도적으로** 커밋하자 그 대리 지표가 거짓이
+    됐다. 진짜 불변식이 깨진 게 아니라 대리가 어긋난 것이다.
+
+    진짜 불변식은 위 `test_ci_가_이_목록과_판정기를_실제로_읽는다` 가 **직접** 단언한다
+    (`GOLDEN_RECORD_BASELINE` 이 워크플로 어디에도 없다 — 주석은 걷어내고 본다).
+    이 저장소는 대리 지표로 다친 적이 있다 — "지적 건수"를 "변경 여부"의 대리로 써서
+    원장을 새로 만들고도 성공 코드로 끝났다(`kotlin-migration` 스킬 근거 4번).
+
+    그래서 부재 단언을 버리고 **남아 있던 탐지력만** 가져왔다: 로컬 기록 실행이 만든
+    파일이 **미추적으로 굴러다니는** 상태를 잡는다. 그것은 리뷰를 거치지 않은 하한선이
+    조용히 판정에 쓰이는 경로다.
+    """
+    path = ROOT / "tests" / "golden" / "baseline.json"
+    if not path.exists():
+        return  # 부재는 정상이다 — 첫 기록 전이거나 오염본을 내린 뒤다
+    tracked = subprocess.run(
+        ["git", "ls-files", "--error-unmatch", "tests/golden/baseline.json"],
+        cwd=ROOT,
+        capture_output=True,
+        check=False,
+    )
+    assert tracked.returncode == 0, (
+        "tests/golden/baseline.json 이 있는데 git 이 추적하지 않는다 — "
+        "기록 실행이 만든 파일이 미추적으로 남아 있다. 리뷰를 거치지 않은 하한선이 "
+        "다음 판정의 기준이 된다. 의도한 기록이면 커밋하고, 아니면 지워라"
     )
 
 

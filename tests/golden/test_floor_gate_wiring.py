@@ -32,6 +32,7 @@ from app.services.conversion import ConversionOutcome
 from tests.golden import report as golden_report
 from tests.golden import test_golden_eval as harness
 from tests.golden.baseline import (
+    OVERALL_FLOOR_TOLERANCE,
     Baseline,
     Fingerprint,
     GroupMeasurement,
@@ -265,12 +266,17 @@ def _matching_baseline(
 
 
 def test_직전_기록보다_낮으면_하네스가_실패한다(monkeypatch: pytest.MonkeyPatch) -> None:
-    """하네스가 기준선을 읽어 `compare`로 판정하는지 고정한다."""
+    """하네스가 기준선을 읽어 `compare`로 판정하는지 고정한다.
+
+    기준선을 **허용 폭보다 한 건 더** 높게 잡는다(2026-08-13 완화). `+1`이던 시절 이 배선
+    테스트는 폭이 생기는 순간 조용히 통과해 버린다 — 하네스가 판정을 부르는지 보려던 테스트가
+    "판정이 통과였다"로 바뀌는 것이라, 배선이 끊겨도 초록이 된다.
+    """
     evaluation = evaluate_all(_preserving_outcomes(), harness.DOCUMENTS)
     harness.build_report(evaluation)
     total = evaluation.measurement.overall
     higher = _baseline_at(
-        (total.passed + 1, total.documents),
+        (total.passed + OVERALL_FLOOR_TOLERANCE + 1, total.documents),
         (evaluation.measurement.synthetic.passed + 1, evaluation.measurement.synthetic.documents),
     )
     monkeypatch.setattr(harness, "load_baseline", lambda: higher)
@@ -563,8 +569,10 @@ def test_하락한_수치로_기록하면_실패_메시지에_방향이_남는�
     evaluation = evaluate_all(_preserving_outcomes(), harness.DOCUMENTS)
     harness.build_report(evaluation)
     total = evaluation.measurement.overall
+    # 허용 폭을 넘겨야 '하락'이다(2026-08-13 완화). 폭 안쪽이면 기록 실행이 하한선을 낮추는
+    # 것은 그대로인데 메시지의 경고만 사라져, 이 테스트가 확인하려는 방향 표시가 없어진다.
     higher = _baseline_at(
-        (total.passed + 1, total.documents),
+        (total.passed + OVERALL_FLOOR_TOLERANCE + 1, total.documents),
         (evaluation.measurement.synthetic.passed + 1, evaluation.measurement.synthetic.documents),
     )
     monkeypatch.setattr(harness, "load_baseline", lambda: higher)

@@ -20,6 +20,8 @@ from app.easyread.goldenset import GoldenDocument, find_fact_losses, load_docume
 from tests.golden import DOCUMENTS_DIR
 from tests.golden import report as golden_report
 from tests.golden.baseline import (
+    OVERALL_FLOOR_TOLERANCE,
+    TOLERANCE_BLIND_SPOTS,
     Baseline,
     Fingerprint,
     GroupMeasurement,
@@ -258,14 +260,66 @@ def test_기준선이_없으면_통과가_아니라_차단이다() -> None:
     assert judgement.requires_record is True
 
 
-def test_하락하면_차단한다() -> None:
+def test_허용_폭을_넘겨_하락하면_차단한다() -> None:
+    """폭을 **넘긴** 하락만 차단이다(2026-08-13 완화 이후). 폭 안쪽은 아래 두 테스트가 잡는다."""
     fingerprint = Fingerprint.of(DOCUMENTS, _context())
     baseline = _baseline(fingerprint, _measurement((36, 56), (17, 20)))
-    judgement = compare(baseline, fingerprint, _measurement((35, 56), (17, 20)))
+    넘긴_수치 = 36 - OVERALL_FLOOR_TOLERANCE - 1
+    judgement = compare(baseline, fingerprint, _measurement((넘긴_수치, 56), (17, 20)))
     assert judgement.verdict is Verdict.REGRESSED
     assert judgement.blocking is True
     # 하락은 재기록으로 닫는 것이 아니다 — 기준선을 낮춰 통과시키는 경로를 열지 않는다.
     assert judgement.requires_record is False
+
+
+def test_허용_폭은_5회_실측_표에서_나온_값이다() -> None:
+    """**값 자체를 못박는다.** 아래 경계 테스트들은 상수를 기호로 쓰므로 폭을 2→5로 올려도
+    함께 따라 움직여 조용히 통과한다 — 게이트를 넓히는 편집이 무검출이라는 뜻이다.
+    `EXPECTED_*` 상수들과 같은 이유로 여기서만 **리터럴**로 고정한다(`tests/
+    test_harness_scope_reach.py`의 `EXPECTED_ROWS`가 하한에서 정확 일치로 바뀐 것과 같은 자리).
+
+    브리틀한 것이 아니라 **마찰이 의도된 자리**다. 이 줄과 상수를 함께 고치는 diff가
+    "게이트를 이만큼 열었다"는 신호로 리뷰에 올라가는 것이 이 테스트의 값어치다.
+    """
+    assert OVERALL_FLOOR_TOLERANCE == 2, (
+        "허용 폭이 바뀌었다. 근거는 2026-08-13 5회 실측(같은 커밋·코퍼스·판정 기준·producer)의 "
+        "**전체 축 관측 폭 2**다 — 표본 33·31·32·33·33. 올리려면 새 표본을 실측해 "
+        "`OVERALL_FLOOR_TOLERANCE`의 표를 교체하고 그 실행 조건을 함께 적어라. "
+        "표 없이 숫자만 올리는 diff는 근거가 없다"
+    )
+
+
+def test_허용_폭_경계는_정확히_그_건수까지다() -> None:
+    """**경계를 양쪽에서 고정한다** — 폭이 조용히 넓어지거나 좁아지면 여기서 깨진다.
+
+    사용자 결정(2026-08-13)의 문장 그대로다: 기준선 33이면 **31 미만에서 차단**하고
+    31·32·33은 통과한다. 실측 근거는 `OVERALL_FLOOR_TOLERANCE`의 5회 표본이다.
+    """
+    fingerprint = Fingerprint.of(DOCUMENTS, _context())
+    baseline = _baseline(fingerprint, _measurement((33, 56), (16, 20)))
+
+    딱_폭만큼 = compare(
+        baseline, fingerprint, _measurement((33 - OVERALL_FLOOR_TOLERANCE, 56), (16, 20))
+    )
+    assert 딱_폭만큼.blocking is False, "허용 폭 경계값이 차단됐다 — 폭이 좁아졌다"
+    assert 딱_폭만큼.verdict is Verdict.TOLERATED
+
+    한_건_더 = compare(
+        baseline, fingerprint, _measurement((33 - OVERALL_FLOOR_TOLERANCE - 1, 56), (16, 20))
+    )
+    assert 한_건_더.blocking is True, "허용 폭을 넘긴 하락이 통과했다 — 폭이 넓어졌다"
+    assert 한_건_더.verdict is Verdict.REGRESSED
+
+
+def test_허용_폭_안의_하락은_기준선을_갱신하지_않는다() -> None:
+    """**사다리를 만들지 않는다.** 허용 폭 안의 하락을 기록하면 그 수치가 다음 하한선이 되고,
+    다음 실행이 다시 폭만큼 내려가도 통과한다 — 폭 2씩 무한히 내려가는 경로가 열린다.
+    """
+    fingerprint = Fingerprint.of(DOCUMENTS, _context())
+    baseline = _baseline(fingerprint, _measurement((33, 56), (16, 20)))
+    judgement = compare(baseline, fingerprint, _measurement((31, 56), (16, 20)))
+    assert judgement.blocking is False
+    assert judgement.requires_record is False, "허용 폭 안의 하락이 기준선을 끌어내린다"
 
 
 def test_유지하면_통과한다() -> None:
@@ -287,19 +341,94 @@ def test_개선은_차단하지_않되_재기록을_요구한다() -> None:
     assert judgement.requires_record is True
 
 
-def test_집단_하나만_하락해도_차단한다() -> None:
-    """**집단을 나눠 비교하는 이유.** 합성이 오르고 실수집이 내리면 전체는 유지될 수 있다.
+def test_하위_축만_하락하면_차단하지_않고_경고만_남긴다() -> None:
+    """**이 게이트가 못 잡게 된 것 — 2026-08-13 완화의 값을 여기 고정한다.**
 
-    전체만 보면 이 회귀는 보이지 않는다 — 실측으로 두 집단의 분포가 다르다는 것이
-    확인된 이상(합성 스타일 위반 0/20 대 실수집 11/36) 합친 수치는 근거가 약하다.
+    2026-08-13 이전에는 이 입력이 차단이었다(`test_집단_하나만_하락해도_차단한다`).
+    지금은 통과한다. 바꾼 근거는 같은 날 5회 실측이다 — 폭이 전체 2 < 합성 3 < 실수집 4로
+    **하위 축이 전체보다 더 흔들려**, 코드 무변경 4회 중 3회가 하위 축 때문에 차단됐다.
+    run 4가 정확히 이 형태였다: 합성 14(최저)·실수집 19(최고)·전체 33(기준선과 동일).
+
+    **잃은 것을 적어 둔다.** 합성이 20/20 → 14/20으로 무너져도 실수집이 그만큼 오르면
+    이 게이트는 막지 않는다. 남은 방어는 경고 한 줄뿐이고, 그 줄을 읽는 것은 사람이다 —
+    그래서 아래에서 경고가 실제로 나오는지까지 확인한다. 차단하지 않는 것과 안 보이게
+    하는 것은 다르다.
     """
     fingerprint = Fingerprint.of(DOCUMENTS, _context())
     baseline = _baseline(fingerprint, _measurement((36, 56), (17, 20)))
     current = _measurement((36, 56), (19, 20))  # 합성 +2, 실수집 -2, 전체 동일
     assert current.overall.passed == baseline.measurement.overall.passed
     judgement = compare(baseline, fingerprint, current)
-    assert judgement.verdict is Verdict.REGRESSED
-    assert judgement.blocking is True
+    assert judgement.verdict is Verdict.TOLERATED
+    assert judgement.blocking is False
+    assert judgement.requires_record is False
+
+    summary = judgement.summary()
+    assert "실수집: 기준선 19/36" in summary, "차단하지 않는다고 델타까지 지우면 사람이 볼 수 없다"
+    assert "⚠" in summary, "경고 표시가 없으면 통과 로그에 묻힌다"
+    assert "차단하지 않았다" in summary
+
+
+def test_통과한_실행의_리포트에도_하위_축_경고가_남는다() -> None:
+    """**차단하지 않는 것과 안 보이게 하는 것은 다르다.**
+
+    하위 축 하락이 비차단이 된 이상, 그 사실이 사람 눈에 닿는 경로는 리포트 렌더 하나뿐이다.
+    `FloorJudgement`에만 담기고 렌더에 실리지 않으면 완화는 **무성(無聲)**이 된다.
+    """
+    fingerprint = Fingerprint.of(DOCUMENTS, _context())
+    baseline = _baseline(fingerprint, _measurement((36, 56), (17, 20)))
+    current = _measurement((36, 56), (19, 20))  # run 4 형태
+    report = _report(current)
+    report.floor = compare(baseline, fingerprint, current)
+
+    # **통과한 실행이라는 것을 먼저 못박는다.** 이 줄이 없으면 차단된 실행의 리포트에도
+    # 같은 델타와 ⚠가 찍히므로, 아래 확인이 "통과 실행에서도 보인다"를 뜻하지 못한다
+    # (실측: 차단축을 되돌린 변이에서 이 테스트만 조용히 통과했다).
+    assert report.floor.blocking is False
+    rendered = report.render()
+    assert "── 상대 하한선 ──" in rendered
+    assert "실수집: 기준선 19/36" in rendered, "통과 실행의 리포트에서 하위 축 델타가 사라졌다"
+    assert "⚠" in rendered
+
+
+def test_완화가_무엇을_못_잡는지_차단과_통과_양쪽_메시지에_적힌다() -> None:
+    """**게이트의 사각은 막힌 사람보다 통과한 사람이 알아야 한다.**
+
+    완화를 코드에만 적고 출력에 적지 않으면 읽는 사람은 초록불을 "회귀가 없다"로 읽는다.
+    실제 뜻은 "차단축이 허용 폭 안이다"이고 그 둘은 다르다. 이 테스트가 없으면 다음 편집이
+    메시지에서 이 문장들을 지워도 아무것도 깨지지 않는다.
+    """
+    fingerprint = Fingerprint.of(DOCUMENTS, _context())
+    baseline = _baseline(fingerprint, _measurement((36, 56), (17, 20)))
+    차단 = compare(baseline, fingerprint, _measurement((20, 56), (10, 20)))
+    통과 = compare(baseline, fingerprint, _measurement((36, 56), (19, 20)))
+    assert 차단.blocking is True and 통과.blocking is False
+
+    for judgement in (차단, 통과):
+        summary = judgement.summary()
+        for note in TOLERANCE_BLIND_SPOTS:
+            assert note in summary, f"완화 고지가 빠졌다 — {judgement.verdict.value}"
+        # 셋 중 가장 잃기 쉬운 것 둘을 문구로도 못박는다.
+        assert "하위 축에만 갇힌 회귀는 차단하지 않는다" in summary
+        assert "분포 추정이 아니다" in summary
+
+
+def test_허용_폭_상수가_판정식에_실제로_쓰인다() -> None:
+    """**상수와 판정식이 갈리지 않는지 본다.** 상수를 고쳐도 판정이 그대로면 그 상수는 장식이고,
+    "이 상수의 diff가 리뷰에 올라가는 것이 값어치"라는 근거가 통째로 무너진다.
+
+    비교식(`dropped_beyond`)을 직접 두드린다 — `tolerance=0`이 완화 이전 판정식
+    (`dropped_from`)과 정확히 같아야 하고, 폭을 주면 그만큼만 관대해져야 한다.
+    """
+    기준선 = GroupMeasurement(passed=33, documents=56, unmeasured=0)
+    for 통과 in range(28, 34):
+        현재 = GroupMeasurement(passed=통과, documents=56, unmeasured=0)
+        assert 현재.dropped_beyond(기준선, 0) is 현재.dropped_from(기준선), (
+            "허용 폭 0이 완화 이전 판정식과 다르다 — 되돌릴 수 없는 완화다"
+        )
+        assert 현재.dropped_beyond(기준선, OVERALL_FLOOR_TOLERANCE) is (
+            통과 < 33 - OVERALL_FLOOR_TOLERANCE
+        )
 
 
 # ═══════════════════════════════════════════════════ C. 기록 실행은 판정이 아니다
