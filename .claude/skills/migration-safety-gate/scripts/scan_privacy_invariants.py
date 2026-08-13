@@ -76,6 +76,61 @@ BODY_NAMES = (
     r"draft|modelDraft|model_draft|reviewedBody|reviewed_body|reviewed|"
     r"edited_text|editedText|result"
 )
+#: `LOG-BODY` 2차 판정이 **안전하다고 보는 멤버 이름**. 본문 이름 뒤에 이 멤버 접근만
+#: 오면 후보에서 뺀다 (`draft.stats.masked_total` 처럼).
+#:
+#: **`value`·`text`·`body`·`content`·`original`·`raw` 는 절대 넣지 않는다.** 그것들이
+#: 들어가는 순간 이 훅이 규칙 자체를 무력화한다. 이 금지는 아래 자기검사가 강제한다.
+#:
+#: 근거는 계획 §4.4 와 `CLAUDE.md` 보안 규칙의 **허용목록**이다 — 로그에 남겨도 되는 것은
+#: 문서 ID·길이·처리 상태·시도 횟수·실패 코드까지다. 이름을 더할 때마다 근거를 적는다.
+_SAFE_MEMBERS = (
+    # 식별자 — 계획 §4.4 가 로그에 명시 허용
+    r"id|document_id|documentId|conversion_id|conversionId|"
+    # 개수·길이
+    r"length|size|count|\w+_count|\w+_counts|\w+_total|\w+_chars|"
+    # 상태·분류값(열거형)
+    r"status|state|stage|kind|category|\w+_category|"
+    # §4.4 가 명시 허용한 넷 중 나머지
+    r"attempt|attempts|failure_code|failureCode"
+)
+
+#: 안전 멤버 **앞에 올 수 있는 한정자**. 그 자체로는 안전하지 않고, 뒤에 안전 멤버가
+#: 이어질 때만 통과시킨다 — `draft.stats` 단독 보간이나 `draft.document.text` 는 후보로 남는다.
+#:
+#: `document` 는 판정문 표에 없었으나 실물(`draft.document.id`)이 2단 접근이라 더했다.
+#: 한정자로만 두었으므로 `document.value`·`document.text` 는 여전히 잡힌다.
+_SAFE_QUALIFIERS = r"stats|document"
+
+#: 본문 이름 **바로 뒤**의 안전한 접근 형태.
+_SAFE_ACCESS = re.compile(rf"\.(?:(?:{_SAFE_QUALIFIERS})\.)*(?:{_SAFE_MEMBERS})\b")
+
+#: 금지 멤버 자기검사 — 목록이 넓어져 규칙을 무력화하는 것을 **모듈 적재 시점에** 막는다.
+#: 주석으로만 두면 다음 사람이 `value` 를 한 줄 더한다.
+for _forbidden in ("value", "text", "body", "content", "original", "raw"):
+    if _SAFE_ACCESS.fullmatch(f".{_forbidden}"):
+        raise AssertionError(
+            f"_SAFE_MEMBERS 에 {_forbidden!r} 가 들어갔다 — LOG-BODY 훅이 규칙 자체를 무력화한다."
+        )
+
+
+def log_body_is_real_candidate(match: re.Match[str]) -> bool:
+    """`LOG-BODY` 적중이 **진짜 후보**인지 2차 판정한다 (privacy-gate 판정 §4-quater.1).
+
+    거르는 것은 `draft.stats.masked_total` 처럼 본문 이름 뒤에 **집계 멤버 접근만** 오는
+    줄이다. 맨 이름(`draft`)·`draft.value`·첨자는 그대로 후보로 남는다.
+
+    **줄 안의 본문 이름을 전부 본다.** 정규식이 `[^)]*` 로 탐욕 매칭해 마지막 것만 잡으므로,
+    적중 위치 하나만 판정하면 `logger.info("{} {}", draft.value, draft.stats.count)` 에서
+    안전한 쪽을 보고 진짜 유출을 놓친다. 하나라도 안전하지 않으면 후보로 남긴다.
+    """
+    line = match.string
+    for occurrence in re.finditer(rf"\b(?:{BODY_NAMES})\b", line):
+        if not _SAFE_ACCESS.match(line, occurrence.end()):
+            return True
+    return False
+
+
 LOG_CALL = (
     r"(?:_?logger?\.(?:debug|info|warning|warn|error|exception|trace)"
     r"|print|println|System\.out\.print)"
@@ -146,6 +201,7 @@ RULES: tuple[Rule, ...] = (
         re.compile(rf"{LOG_CALL}\s*\([^)]*\b(?:{BODY_NAMES})\b"),
         "로그는 평문으로 수집·장기 보관된다. 한 줄만 새도 암호화 저장 정책 전체가 무의미해진다.",
         "변수명이 우연히 겹치거나(`title` 로그가 문서 ID인 경우) 길이·타입만 찍는 줄이면 오탐.",
+        refine=log_body_is_real_candidate,
     ),
     Rule(
         "LOG-FSTRING",
