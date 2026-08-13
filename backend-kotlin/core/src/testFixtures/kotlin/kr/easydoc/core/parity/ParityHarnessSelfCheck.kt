@@ -50,9 +50,15 @@ object ParityHarnessSelfCheck {
             JsonObject(
                 mapOf(
                     "runtime" to JsonPrimitive(ParityActual.RUNTIME),
+                    // 2026-08-14(C-24) 현행화. 옛 문구는 "Phase 1 배선 증명 전용"이었는데,
+                    // Phase 2 에서 masking·repair-adoption 이 실제로 값을 판정하기 시작하면서
+                    // **거짓이 됐다** — 배선은 이미 증명됐고 이 파일은 그 뒤로도 계속 쓰인다.
+                    // 바뀌지 않은 것은 "게이트 판정에 쓰지 않는다" 쪽이라 그 절만 남긴다.
                     "purpose" to
                         JsonPrimitive(
-                            "Phase 1 배선 증명 전용. 게이트 판정에 쓰지 않는다.",
+                            "하네스 배선 자체 점검용(도메인 산출물이 아니다). " +
+                                "게이트 판정에 쓰지 않는다 — 판정 범위의 정본은 " +
+                                "backend-kotlin/parity-domains.txt 다.",
                         ),
                     "jvm" to
                         JsonObject(

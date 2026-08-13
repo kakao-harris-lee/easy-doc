@@ -4,9 +4,10 @@
 1차 개정: 2026-08-12 — 유니코드 커버리지 공백을 닫음 (14 → 22 케이스, **값 동일성 전제**)
 2차 개정: 2026-08-12 — 전제 전환 + 범주 축소로 전면 재작성 (22 → 23 케이스)
 3차 개정: 2026-08-12 — 게이트 자기승인 경로 차단 + 보이지 않는 문자 단언 전환 (23 → 31 케이스)
-**4차 개정: 2026-08-14 — 표기 변형 축 신설 + `known_gap` 소멸 (31 → 57 케이스). 상세는 §8**
+4차 개정: 2026-08-14 — 표기 변형 축 신설 + `known_gap` 소멸 (31 → 57 케이스). 상세는 §8
+**5차 개정: 2026-08-14 — 구분자 문법 `SEP` 동결, 반복 상한 (57 → 69 케이스). 상세는 §9**
 수신: `kotlin-implementer`
-fixture: `parity/fixtures/masking/masking.json` — **57 케이스·단언 214개**, 생성기 `dump_parity_fixtures.py::build_masking`
+fixture: `parity/fixtures/masking/masking.json` — **69 케이스·단언 255개**, 생성기 `dump_parity_fixtures.py::build_masking`
 참고 Python: `app/privacy/masking.py::mask_text` — **정답이 아니라 참고값이다**
 
 > **3차 개정 요약 (2026-08-12).** 교차 종합 `reviews/02_criteria-pivot_cross.md`가 지목한 게이트 결함을 닫으면서 이 문서의 **합격 기준도 함께 정정했다.** 2차 개정본의 §6은 "단언 89개"와 "`reference_divergence: expected` 3건 선언"을 합격 기준으로 적었는데 둘 다 사실이 아니었다(실제 81개 / 0건, X-13). 설명문이 아니라 **절차대로 밟으라고 만든 합격 기준**이라, 그대로 두면 밟은 사람이 숫자를 맞추려고 fixture를 손대게 된다. 지금 §6은 실측값으로 고쳐져 있고, 아래 §2.4·§2.5·§7도 3차 기준으로 갱신했다.
@@ -142,9 +143,9 @@ fixture가 값으로 검사한다. **방법을 지시하지 않는다** — 어�
 
 마지막 줄이 없으면 "보이지 않는 문자를 접는다"를 "공백을 전부 접는다"로 구현해도 통과하고, 그 구현은 서로 다른 줄의 숫자를 붙여 진짜 과잉 마스킹을 만든다. 스탠드인 `whitespace-fold`로 실증했다(종료 코드 1, 2건 지목).
 
-### 2.5 의도한 갈림 — **4차 개정에서 21건**
+### 2.5 의도한 갈림 — **5차 개정에서 29건**
 
-`reference_divergence: "expected"` 선언이 **21건** 있다 — 표기 변형 축 전부(종류 A 3 + 종류 B RRN 9 + 종류 B CARD 9)다. 요구사항이 현행 Python보다 넓어졌기 때문이고, 그 기준을 fixture 헤더가 한 줄로 선언한다(**§8.3**).
+`reference_divergence: "expected"` 선언이 **29건** 있다 — 표기 변형 축 21건(종류 A 3 + 종류 B RRN 9 + 종류 B CARD 9)과 구분자 문법 축 8건(§9.5)이다. **그중 4건은 Python이 과잉 마스킹하는 방향이다** — 요구사항이 Python보다 넓기만 한 것이 아니라 좁기도 하다. 요구사항이 현행 Python보다 넓어졌기 때문이고, 그 기준을 fixture 헤더가 한 줄로 선언한다(**§8.3**).
 
 역사: `masking-scope-out-*` 3건이 한때 선언돼 있었으나 Python이 2종으로 축소되면서 참고값이 요구사항과 일치하게 되어 선언이 낡았고 생성기에서 지웠다. 3차 개정 시점에는 0건이었다.
 
@@ -234,19 +235,19 @@ parity/actual/masking/masking.json
 
 ## 6. Definition of Done
 
-1. `parity/actual/masking/masking.json`이 `parityHarness` 실행으로 생성된다 (`runtime: kotlin`, **57 케이스**).
+1. `parity/actual/masking/masking.json`이 `parityHarness` 실행으로 생성된다 (`runtime: kotlin`, **69 케이스**).
 2. `backend-kotlin/parity-domains.txt`에 `masking`이 **같은 커밋에** 들어간다.
 3. 아래가 종료 코드 **3**(부분 검증 통과)으로 끝난다:
    ```bash
    uv run python .claude/skills/python-kotlin-parity/scripts/compare_parity.py \
        --fixture parity/fixtures --actual parity/actual --only-domain masking
    ```
-   마지막 줄이 `부분 검증 통과(게이트 아님): … 성질 판정 57건(단언 214개) … 불충족 0건`이어야 한다.
+   마지막 줄이 `부분 검증 통과(게이트 아님): … 성질 판정 69건(단언 255개) … 불충족 0건`이어야 한다.
    **종료 코드 0이 나오면 통과가 아니라 비교기 계약 위반이다** — CI가 그 경우를 실패로 잡는다.
 
    > 케이스·단언 수는 **fixture에서 읽어 확인한다**. 이 줄의 숫자와 fixture가 어긋나면 fixture가 옳고 이 문서가 낡은 것이다 — 숫자를 맞추려고 fixture를 손대는 것이 정확히 2차 개정본이 유발했던 실패다. 확인 명령:
    > `uv run python -c "import json;d=json.load(open('parity/fixtures/masking/masking.json'));print(len(d['cases']),sum(len(c.get('assert',[])) for c in d['cases']))"`
-4. **참고 갈림 21건이 현재 기대값이다** (4차 개정). 표기 변형 축 전부이며 `reference_divergence: "expected"`로 선언돼 있고 원장 `parity/reference-ledger/masking.json`에 `diverge`로 기록돼 있다. 요구사항이 현행 Python보다 넓기 때문이고, 그 자체는 차단 사유가 아니다. **갈림이 더 늘거나 줄면** — 늘면 새 갈림이고 줄면 선언이 낡은 것이다 — **왜 그렇게 됐는지 한 줄과 함께** `--record-reference`로 원장을 갱신하고 커밋한다. 그 갱신 실행은 종료 코드 4이고 판정이 아니다 — 판정은 플래그 없이 다시 돌린 결과로 한다.
+4. **참고 갈림 29건이 현재 기대값이다** (5차 개정 — 4차의 21건 + 구분자 문법 8건, §9.5). 표기 변형 축 전부이며 `reference_divergence: "expected"`로 선언돼 있고 원장 `parity/reference-ledger/masking.json`에 `diverge`로 기록돼 있다. 요구사항이 현행 Python보다 넓기 때문이고, 그 자체는 차단 사유가 아니다. **갈림이 더 늘거나 줄면** — 늘면 새 갈림이고 줄면 선언이 낡은 것이다 — **왜 그렇게 됐는지 한 줄과 함께** `--record-reference`로 원장을 갱신하고 커밋한다. 그 갱신 실행은 종료 코드 4이고 판정이 아니다 — 판정은 플래그 없이 다시 돌린 결과로 한다.
 5. Kotlin 테스트가 fixture 파일을 **읽어** 입력을 얻는다 (하드코딩 금지).
 6. **자리표시자의 범주 문자열은 계약에서 온다.** Kotlin enum 이름이나 영문 코드를 직렬화하면 게이트가 계약 enum과 대조해 막는다(fail closed — 계약을 못 읽어도 막힌다).
 
@@ -393,3 +394,99 @@ fixture: **31 → 57 케이스 · 단언 114 → 214개** · 참고 갈림 원�
 - 스냅샷에 표기 변형·자리표시자 모양 입력을 **넣지 않는다**. 넣어야 할 이유가 생기면 그것은 마스킹 도메인의 질문이고, 받는 곳은 이 fixture다.
 
 **이 레인이 남기는 경계 선언**: **마스킹 요구 성질의 정본은 `parity/fixtures/masking/masking.json`이다.** 프롬프트 스냅샷은 프롬프트 문안의 정본이고 마스킹의 정본이 아니다. 두 장치가 같은 값을 두고 다투면 fixture가 이긴다.
+
+---
+
+## 9. 5차 개정 (2026-08-14) — 구분자 문법 `SEP` 동결
+
+작성: `parity-verifier` · 근거: `07_privacy-gate_masking-verdicts.md` **§4-ter**(판정 6 — C-01·C-10·C-11) · 리뷰 08 Y-2
+fixture: **57 → 69 케이스 · 단언 214 → 255개** · 참고 갈림 **21 → 29건**
+
+> **한 줄 요약.** 4차 개정은 구분자 **문자 집합**만 넓히고 **반복 상한**을 두지 않았다. 그 누락이 반대 방향 결함(C-10)을 만들었고 — 열 맞춤 공백이 인접 칸의 두 숫자열을 결합 마스킹한다 — 판정 6이 준 유한 문법 `SEP` 하나가 그 과잉과 남아 있던 누락(C-01②)을 **동시에** 닫았다. 12탐침·보충 평면 2건·VT·FF 2건을 fixture로 동결했다.
+
+### 9.1 4차 개정이 만든 반대 방향 결함
+
+| 개정 | 넓힌 것 | 두지 않은 것 | 결과 |
+|---|---|---|---|
+| 4차 (§8) | 구분자 **문자 집합**(하이픈 6·공백 6) | **반복 상한** | 열 맞춤 공백이 두 값을 결합 |
+
+리뷰 08 Y-2가 실측했다 — `900101` + U+3000×3 + `1234567`이 하나의 주민등록번호로 매치된다. 새로 들어온 문자들이 정확히 **hwpx·pdf 추출본이 열 정렬에 쓰는 문자**라 위험이 이론적이지 않다. 안내문 표에서 접수번호 6자리와 관리번호 7자리가 인접 칸에 있으면 **두 팩트가 동시에 사라지고**, 과잉 마스킹은 조용해서 아무도 실패로 보지 않는다(STY-03 절대 팩트축).
+
+**이 개정의 교훈은 "집합을 넓힐 때는 상한도 함께 정한다"이다.** 4차 개정이 판정 1의 지시(문자 6종·6종 열거)를 그대로 집행하면서 상한을 묻지 않은 것이 원인이고, 판정 6 §4-ter.2 ③이 *"그때 나는 문자 집합만 열거하고 반복 상한을 지정하지 않았다 — 그 누락이 C-10을 만들었다"*고 같은 것을 적었다.
+
+### 9.2 동결한 문법과 **판정문 문구 불일치 1건 (privacy-gate 회신 요망)**
+
+```
+SEP := (?: SPACE? HYPHEN SPACE? | SPACE? )      최대 3문자. RRN·CARD 공유.
+```
+
+가르는 기준은 **문자 종류가 아니라 개수**다 — 자리당 공백 0~1개는 구분자, 2개 이상은 정렬이다. NBSP·전각 공백을 집합에서 빼는 방식은 채택되지 않았다(그 문자로 적힌 **진짜** 주민등록번호를 다시 놓친다).
+
+> ⚠ **판정문 §4-ter.4 조건 5의 한 줄이 이 하네스의 검사 어휘 기준으로 뒤집혀 있다.** 그 줄은 *"자리당 공백 2개 이상은 `absent`, 0~1개는 `present`"*로 적었는데, 이 하네스에서 `absent`는 **그 문자열이 `masked_text`에 남지 않았다 = 가려졌다**이고 `present`는 그 반대다. 문법대로면 2개 이상 = **안 가림** = `present`, 0~1개 = **가림** = `absent`다.
+>
+> **정본은 §4-ter.2의 12탐침 표로 보고 그 `기대` 열을 따랐다** — 표는 `900101<U+3000 ×3>1234567`을 **안 가림**으로, `900101 1234567`(공백1)을 **가림**으로 적어 문법·§4-ter.0(C-10 = 과잉 방향)과 일관된다. 요약 한 줄이 검사 이름을 느슨하게 쓴 것으로 읽었다. **판정 내용이 아니라 표기 문제로 판단했으므로 fixture를 멈추지 않았고, 판정문 파일도 건드리지 않았다**(privacy-gate 소유). 회신에서 확인해 주기를 요청한다 — 내가 잘못 읽은 것이면 12건의 방향이 뒤집힌다.
+
+### 9.3 동결한 케이스 12건
+
+| 근거 | 케이스 | 방향 |
+|---|---|---|
+| §4-ter.2 탐침2 | `masking-rrn-space-one` (공백 1개) | `absent` |
+| §4-ter.2 탐침5 | `masking-rrn-nbsp-around-hyphen` | `absent` |
+| §4-ter.2 탐침8 | `masking-keeps-rrn-space-two` — **경계값** | `present` |
+| §4-ter.2 탐침7 | `masking-keeps-rrn-space-five` | `present` |
+| §4-ter.2 탐침6 | `masking-keeps-rrn-ideographic-space-three` | `present` |
+| §4-ter.2 탐침9 | `masking-card-spaced-hyphen` | `absent` |
+| §4-ter.2 탐침10 | `masking-card-nbsp-around-hyphen` | `absent` |
+| §4-ter.2 탐침12 | `masking-keeps-card-ideographic-space-three` | `present` |
+| §4-ter.1 양성 | `masking-rrn-supplementary-digit-gender` (U+1D7CF) | `absent` |
+| §4-ter.1 음성 | `masking-keeps-rrn-gender-supplementary-9` | `present` |
+| §4-ter.3 | `masking-keeps-vt-split-digits` (U+000B) | `present` |
+| §4-ter.3 | `masking-keeps-ff-split-digits` (U+000C) | `present` |
+
+**12탐침 중 4건은 이미 있었다** — 탐침1 `masking-rrn-hyphen` · 탐침3 `masking-rrn-no-sep` · 탐침4 `masking-rrn-spaced` · 탐침11 `masking-card-hyphen`. 중복해 넣지 않았고, 위 8건이 나머지다.
+
+`rrn-space-one`(가림)과 `keeps-rrn-space-two`(안 가림)가 **짝**이다. 둘을 함께 읽어야 경계가 보이고, 하나만 있으면 어느 쪽으로 기운 구현도 통과한다.
+
+**§4-ter.3은 "묶어서 한 케이스로 만들지 말라"고 못박았다.** LF·CR만 있던 탓에 VT·FF를 놓쳤으므로 네 문자를 각각 독립 케이스로 둔다 — 이제 `keeps-newline-split-digits`(LF) · `keeps-cr-split-digits`(CR) · `keeps-vt-split-digits` · `keeps-ff-split-digits` 넷이고, 결합 쪽은 `rrn-zwsp`·`rrn-soft-hyphen`이 받는다(§4-ter.3이 요구한 6케이스 충족).
+
+### 9.4 기존 케이스는 하나도 뒤집히지 않았다 — 측정으로 확인
+
+문법이 **좁아지는** 변경이라 기존 `absent` 케이스가 방향을 잃을 수 있다. 57건의 입력을 전수 훑어 **자리당 공백 2개 이상을 담은 것이 0건**임을 확인했다. `masking-rrn-spaced`(`900101 - 1234567`)와 `masking-rrn-tab`은 자리당 1개씩이라 `SEP`이 그대로 받는다.
+
+### 9.5 참고 갈림 — 8건 추가 (21 → 29)
+
+Python 현행이 요구사항과 갈리는 자리를 16탐침 전수로 측정했다. 새로 갈린 8건:
+
+| 케이스 | 요구 | Python 현행 | 왜 갈리나 |
+|---|---|---|---|
+| `rrn-nbsp-around-hyphen` · `card-spaced-hyphen` · `card-nbsp-around-hyphen` | 가림 | **안 가림** | 구분자가 ASCII 한 문자뿐 |
+| `rrn-supplementary-digit-gender` | 가림 | **안 가림** | 성별코드 `[1-8]`이 ASCII 리터럴 |
+| `keeps-rrn-space-two` · `keeps-rrn-space-five` | 안 가림 | **가림** | `[ \t]*` — Python도 반복 상한이 없다(C-10과 같은 결함) |
+| `keeps-vt-split-digits` · `keeps-ff-split-digits` | 안 가림 | **가림** | Python `_INVISIBLE_RE`도 VT·FF를 접는다 |
+
+**아래 두 줄이 이번 개정에서 처음 나온 성질의 갈림이다** — 지금까지 갈림은 전부 "Kotlin이 더 많이 잡는다"(누락 방향)였는데, 여기서 처음으로 **"Python이 과잉 마스킹한다"** 쪽이 나왔다. 요구사항이 Python보다 넓기만 한 것이 아니라 **좁기도 하다**는 뜻이고, "Python이 정답"이 왜 폐기됐는지의 직접 증거다.
+
+### 9.6 검출 실증 — 수정 전 문법을 진짜 Kotlin 산출물에 주입
+
+대조군은 `./gradlew parityHarness`가 만든 원본(**exit 3**, 69건·255단언·불충족 0).
+
+| 주입한 수정 전 문법 | 흉내 낸 것 | 결과 |
+|---|---|---|
+| `pre-fix-unbounded-repetition` (4건) | `SPACE_CLASS*` — 반복 상한 없음 (C-10) | **1** · 4건 (`[present] 사라졌다: '900101  1234567' …`) |
+| `pre-fix-char-gender-guard` (1건) | 캡처를 UTF-16 `Char`로 후검증 (C-01①) | **1** · 1건 (`[absent] … '900101-𝟏234567' 가 그대로 남아 있다`) |
+| `pre-fix-single-char-separator` (3건) | 구분자를 한 문자로만 (C-01②) | **1** · 3건 |
+| `pre-fix-vt-ff-folded` (2건) | `INVISIBLE_RANGES`가 VT·FF를 접음 (C-11) | **1** · 2건 |
+| `sep-not-shared-with-card` (1건) | 상한을 RRN에만 두고 CARD에 빠뜨림 | **1** · 1건 |
+
+마지막 줄이 해제 조건 2(**RRN·CARD가 하나의 `SEP` 상수를 공유**)를 **구현 밖에서** 검증하는 자리다.
+
+### 9.7 §4-ter.4 해제 조건 대조
+
+| # | 조건 | 상태 |
+|---|---|---|
+| 1 | `acceptsRrnGenderCode`가 코드포인트 기준 | **`kotlin-implementer` 집행 완료** — 이 레인은 fixture로 재현 확인(`rrn-supplementary-digit-gender` 충족, 수정 전 주입 시 exit 1) |
+| 2 | RRN·CARD가 하나의 `SEP` 상수 공유 | **fixture로 확인** — `sep-not-shared-with-card` 주입이 exit 1 |
+| 3 | `INVISIBLE_RANGES`에서 `0x000B..0x000C` 삭제 | **fixture로 확인** — VT·FF 2건 충족, 접는 구현 주입 시 exit 1 |
+| 4 | 회귀: 12탐침 + 6케이스 + 보충 평면 2건 | **충족** — §9.3 표(12탐침 중 4건은 기존 케이스가 담당) |
+| 5 | **구분자 fixture 과잉 방향 기대값 확정** | **충족 — 이 절이 그 집행이다.** 단 문구 불일치 1건을 §9.2에 올렸다 |
+

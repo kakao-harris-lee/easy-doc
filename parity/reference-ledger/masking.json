@@ -1,7 +1,7 @@
 {
   "domain": "masking",
   "note": "Kotlin 산출물과 Python 참고값이 갈린 자리의 기록이다. 판정 근거가 아니라 리뷰에 올리기 위한 원장이며, 본문 없이 경로와 SHA-256만 남긴다. 갱신: compare_parity.py --record-reference",
-  "recorded_at": "2026-08-13T15:08:30Z",
+  "recorded_at": "2026-08-13T21:43:07Z",
   "cases": {
     "masking-card-hyphen": {
       "status": "agree",
@@ -9,6 +9,13 @@
       "first_diff_path": "",
       "reference_sha256": "bf2d37c0cbc7617698a4da7206f3d3190a3a22e5b6308e291a5d69ae1bcdcbbf",
       "actual_sha256": "bf2d37c0cbc7617698a4da7206f3d3190a3a22e5b6308e291a5d69ae1bcdcbbf"
+    },
+    "masking-card-nbsp-around-hyphen": {
+      "status": "diverge",
+      "declared": true,
+      "first_diff_path": "$.masked_text",
+      "reference_sha256": "26e0d28090bb3a0fe33243d10a1f486072313aa5e7b8b68c89591abfe9ce3c4e",
+      "actual_sha256": "2b0f627b14e9e9ef82bb88b308525ff9ae180e60baa7acb72c438246497fffc6"
     },
     "masking-card-no-sep": {
       "status": "agree",
@@ -87,6 +94,13 @@
       "reference_sha256": "992b930b0d39ddb4ab042e5f4759c2246bfdac5bd76df52e618748fa986ae7b3",
       "actual_sha256": "992b930b0d39ddb4ab042e5f4759c2246bfdac5bd76df52e618748fa986ae7b3"
     },
+    "masking-card-spaced-hyphen": {
+      "status": "diverge",
+      "declared": true,
+      "first_diff_path": "$.masked_text",
+      "reference_sha256": "d83611bbe1871ae2eb0858ece3062c903ff630d8df34eb651b260a9d743db225",
+      "actual_sha256": "30372fdb7a9aa98c0cb5f99bdf51372bfbf9eb680b9ecc788c0329117ac109d6"
+    },
     "masking-card-unicode-digit-arabic": {
       "status": "agree",
       "declared": false,
@@ -115,6 +129,13 @@
       "reference_sha256": "19efdc7521381d7cdd6e614d9fa830cea8101bca34824e266f7fe779c7832cd5",
       "actual_sha256": "19efdc7521381d7cdd6e614d9fa830cea8101bca34824e266f7fe779c7832cd5"
     },
+    "masking-keeps-card-ideographic-space-three": {
+      "status": "agree",
+      "declared": false,
+      "first_diff_path": "",
+      "reference_sha256": "33308d4023a1eaafcfdc942d9ebb193d4f6cf0955a9852e27078499dd6e97497",
+      "actual_sha256": "33308d4023a1eaafcfdc942d9ebb193d4f6cf0955a9852e27078499dd6e97497"
+    },
     "masking-keeps-card-newline-split-digits": {
       "status": "agree",
       "declared": false,
@@ -135,6 +156,13 @@
       "first_diff_path": "",
       "reference_sha256": "ef364f86ddebaff2e86bacdb839d8948c060e159cf0008fcd98e75743fa3b203",
       "actual_sha256": "ef364f86ddebaff2e86bacdb839d8948c060e159cf0008fcd98e75743fa3b203"
+    },
+    "masking-keeps-ff-split-digits": {
+      "status": "diverge",
+      "declared": true,
+      "first_diff_path": "$.masked_text",
+      "reference_sha256": "221a968c9a90aaf089167a6573f43e8c0a5ea6443a347014a56f9bd037d39dfc",
+      "actual_sha256": "2a26474d697a9a0fb454e5b8227834068d888f4c035a126b0cfe14924a4092b4"
     },
     "masking-keeps-long-digits": {
       "status": "agree",
@@ -177,6 +205,41 @@
       "first_diff_path": "",
       "reference_sha256": "06e0b81137dd6a0b34372bc174828c420161d6f3c80489a3fe73cf890bef24be",
       "actual_sha256": "06e0b81137dd6a0b34372bc174828c420161d6f3c80489a3fe73cf890bef24be"
+    },
+    "masking-keeps-rrn-gender-supplementary-9": {
+      "status": "agree",
+      "declared": false,
+      "first_diff_path": "",
+      "reference_sha256": "3444b70fb68dab1f0b5c96a0d9820e5dc5b3da33bcc089eaa88ca33da7542f75",
+      "actual_sha256": "3444b70fb68dab1f0b5c96a0d9820e5dc5b3da33bcc089eaa88ca33da7542f75"
+    },
+    "masking-keeps-rrn-ideographic-space-three": {
+      "status": "agree",
+      "declared": false,
+      "first_diff_path": "",
+      "reference_sha256": "9039b80535afd00ba28ca2facff5eb25590646739d0c4e2df37b5199cec7c65f",
+      "actual_sha256": "9039b80535afd00ba28ca2facff5eb25590646739d0c4e2df37b5199cec7c65f"
+    },
+    "masking-keeps-rrn-space-five": {
+      "status": "diverge",
+      "declared": true,
+      "first_diff_path": "$.masked_text",
+      "reference_sha256": "2eab283a79a27a0222429fda68874add09ebf10416a63c04c5e8a207ed9677d3",
+      "actual_sha256": "a92753c8bc6f7b2fa20dd9c867e873432e25ab574ce9627c0417372e061987b3"
+    },
+    "masking-keeps-rrn-space-two": {
+      "status": "diverge",
+      "declared": true,
+      "first_diff_path": "$.masked_text",
+      "reference_sha256": "059cf208b45b79b1ee5b3a2dd1d50066e8c0103fa6b3eb93deee70d3896f1756",
+      "actual_sha256": "bed5a6303ea7c0e587147e9818cb8089366836d9d5b978fd2472bbfa180560ef"
+    },
+    "masking-keeps-vt-split-digits": {
+      "status": "diverge",
+      "declared": true,
+      "first_diff_path": "$.masked_text",
+      "reference_sha256": "fb323186479a4e96825bca5a8c1a61dc3d2d3de7dc3214c1933b26f6c978f0fc",
+      "actual_sha256": "77aa1f3e5e0787b6af3e9b18349bb8e2e7461dc1fc1b76a58d81af382f977856"
     },
     "masking-multi-category": {
       "status": "agree",
@@ -240,6 +303,13 @@
       "first_diff_path": "",
       "reference_sha256": "ae1475ebb8d0cb8d6d359f889ff124412bd1a8688a25861ed8a5932a83bbbc9b",
       "actual_sha256": "ae1475ebb8d0cb8d6d359f889ff124412bd1a8688a25861ed8a5932a83bbbc9b"
+    },
+    "masking-rrn-nbsp-around-hyphen": {
+      "status": "diverge",
+      "declared": true,
+      "first_diff_path": "$.masked_text",
+      "reference_sha256": "ac720c779a796544735fac70c20b00a4bbb8301cb926aaf554cafce38b9797c2",
+      "actual_sha256": "35ab3f7dfbec51c931008d0fd5b3f8cc20807b4b0303593dfc6a5f0ccab563f7"
     },
     "masking-rrn-no-sep": {
       "status": "agree",
@@ -325,12 +395,26 @@
       "reference_sha256": "cc6f448a1d58170e40bea56b36a7d2bfa114b8cca93401dd240bda21ecb1b655",
       "actual_sha256": "cc6f448a1d58170e40bea56b36a7d2bfa114b8cca93401dd240bda21ecb1b655"
     },
+    "masking-rrn-space-one": {
+      "status": "agree",
+      "declared": false,
+      "first_diff_path": "",
+      "reference_sha256": "41f98ac9e1183d4906b525a4786b20b278823c2a4d0619f7b8411ecc22d4d73f",
+      "actual_sha256": "41f98ac9e1183d4906b525a4786b20b278823c2a4d0619f7b8411ecc22d4d73f"
+    },
     "masking-rrn-spaced": {
       "status": "agree",
       "declared": false,
       "first_diff_path": "",
       "reference_sha256": "1ec6e857cdd26ceabb5f9001833b3e7a139d047f77d4465a3f0d30fb0d058ac9",
       "actual_sha256": "1ec6e857cdd26ceabb5f9001833b3e7a139d047f77d4465a3f0d30fb0d058ac9"
+    },
+    "masking-rrn-supplementary-digit-gender": {
+      "status": "diverge",
+      "declared": true,
+      "first_diff_path": "$.masked_text",
+      "reference_sha256": "523c14b2ba6afcd1fb811d2a2860d2b232fc4a915ba97dc41c82fde57bb25a2c",
+      "actual_sha256": "7d851486b5f79b3e83174bc4433288be8d25ea1c11d3634d733d12fa01d347c7"
     },
     "masking-rrn-tab": {
       "status": "agree",

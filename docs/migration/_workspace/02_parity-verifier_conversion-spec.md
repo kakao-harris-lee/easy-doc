@@ -326,3 +326,34 @@ uv run python .claude/skills/python-kotlin-parity/scripts/compare_parity.py \
 uv run python .claude/skills/python-kotlin-parity/scripts/compare_parity.py \
     --fixture parity/fixtures --actual parity/actual
 ```
+
+---
+
+## 9. 후속 (2026-08-14) — 조건부 판정 표기(C-21)와 C-20 처분
+
+### 9.1 C-21 — 이 도메인의 "충족"은 `style` 위에 서 있다
+
+**사실.** 채택 정책 8건은 `equals_derived: repair_policy`로 판정하고, 그 유도는 산출물이 **스스로 보고한** `original_issue_count`·`candidate_issue_count`를 입력으로 쓴다(§2.1). 그 건수가 옳은지는 `style` 도메인의 질문인데, **`style`은 아직 선언되지 않았다**(`backend-kotlin/parity-domains.txt`에 `masking`·`repair-adoption` 둘뿐).
+
+**따라서 이 도메인의 통과는 조건부다** — *"같은 건수를 받았을 때 같은 결정을 내린다"*까지만 참이고, 건수 자체가 틀리면 채택 결정도 함께 틀린다. 게이트는 그것을 잡지 못한다.
+
+**왜 이 구조를 그대로 두는가.** 두 질문을 한 케이스에 섞으면 실패했을 때 어느 쪽이 원인인지 알 수 없다(§8 첫 줄과 같은 이유). 분리는 옳고, **분리했다는 사실이 기록되지 않은 것**이 결함이었다.
+
+**표기한 곳** — fixture `requirement` 헤더에 넣었다. 케이스 설명이나 이 문서에만 적으면 게이트 산출물을 읽는 사람에게 닿지 않는다.
+
+> **조건부 판정 주의(C-21)**: … 그 건수가 옳은지는 `style` 도메인의 질문인데 `style`은 아직 선언되지 않았다(미포팅). 따라서 이 도메인의 '충족'은 **'같은 건수를 받았을 때 같은 결정을 내린다'까지만** 참이고, 건수 자체가 틀리면 채택 결정도 함께 틀린다. `style` 선언 전까지 이 조건은 열려 있다
+
+**닫히는 조건**: `style` 도메인이 선언되고 값 판정이 돌면 자동으로 닫힌다. 그때 이 문단과 `requirement` 문장을 함께 지운다.
+
+### 9.2 C-20 — 레거시 시나리오 2건 대본화: **하지 않는다**
+
+`repair-call-budget-clean`·`repair-call-budget-violations` 두 케이스는 `{"scenario": ...}`만 주고 문서 구성을 하네스에 맡긴다(§3.1). 이를 `provider_script` 형태로 통일하자는 제안(C-20, 선택)에 대한 처분이다.
+
+**하지 않는다. 사유 둘.**
+
+1. **기존 케이스의 `input`을 바꾸는 변경이다.** 이 fixture 계열이 확장할 때마다 지켜 온 규약("기존 케이스 id·input·expected·순서 불변")을 정면으로 어긴다. 규약을 한 번 어기면 다음 확장에서 "이번에도 이유가 있다"가 반복된다.
+2. **커버리지가 늘지 않는다.** 두 케이스가 고정하는 성질(위반 없으면 호출 1회 / 있어도 2회 이하)은 대본 있는 케이스가 이미 **더 강하게** 판정한다 — `missing-placeholders-preserved`가 `llm_calls == 1`을, `conversion-repair-accepted`·`conversion-no-repair-loop`가 `llm_calls == 2`를 정확히 못박는다. 대본화는 표기를 통일할 뿐 새로 잡는 결함이 없다.
+
+**대신 남기는 것**: 입력이 세 형태라는 사실은 §3.1 표에 이미 있다. 하네스가 그 분기를 다뤄야 한다는 것이 유일한 비용이고, 그 비용은 이미 치러졌다(`ConversionParityTest`가 돌고 있다).
+
+**되돌릴 조건**: 레거시 2건이 실제로 애매해서 하네스가 잘못된 문서를 짓는 일이 생기면 그때 대본화한다. 그 경우 판정이 흔들린 것이므로 규약보다 우선한다.

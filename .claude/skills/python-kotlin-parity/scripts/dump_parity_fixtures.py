@@ -373,6 +373,31 @@ def build_masking() -> FixtureSpec:
         ("gender-fullwidth-0", restyle("900101-0234567", fullwidth), "전각 성별코드 ０"),
     )
 
+    # ── 구분자 문법 `SEP` 동결 (2026-08-14, privacy-gate 판정 6 §4-ter) ────────
+    # 앞선 확장(§구분자 표기 변형 축)은 구분자 **문자 집합**만 넓히고 **반복 상한**을
+    # 지정하지 않았다. 그 누락이 반대 방향 결함을 만들었다(리뷰 08 Y-2 → C-10) —
+    # NBSP·전각 공백이 열 맞춤에 쓰이는 hwpx·pdf 추출본에서 인접 칸의 접수번호 6자리와
+    # 관리번호 7자리가 **하나의 주민등록번호로 결합**돼 두 팩트가 동시에 사라진다.
+    #
+    # 판정문이 준 문법 하나가 누락(C-01②)과 과잉(C-10)을 **동시에** 닫는다:
+    #
+    #     SEP := (?: SPACE? HYPHEN SPACE? | SPACE? )        최대 3문자. RRN·CARD 공유.
+    #
+    # 가르는 기준은 **문자 종류가 아니라 개수**다 — 자리당 공백 0~1개는 자릿수 그룹을
+    # 가르는 구분자, 2개 이상은 열 맞춤(정렬)이라 두 값 사이의 여백이다. NBSP·전각 공백을
+    # 집합에서 빼는 방식은 채택되지 않았다(그 문자로 적힌 **진짜** 주민등록번호를 다시
+    # 놓친다). 아래 탐침 6·7·8이 그 경계를 값으로 고정한다.
+    #
+    # **fixture 표기 주의**: 판정문 §4-ter.4 조건 5는 이 방향을 *"자리당 공백 2개 이상은
+    # `absent`, 0~1개는 `present`"*로 요약했는데, 이 하네스의 검사 이름 기준으로는 **반대**다
+    # (`absent` = 그 문자열이 `masked_text`에 남지 않았다 = 가려졌다). 정본은 §4-ter.2의
+    # 12탐침 표이고 그 표의 `기대` 열을 따랐다 — 2개 이상 = **안 가림** = `present`.
+    # 명세 문서 §9.2에 이 불일치를 기록해 `privacy-gate`에 올린다.
+    space, idsp, nbsp = chars(0x0020), chars(0x3000), chars(0x00A0)
+    #: 보충 평면 십진 숫자. `\d`가 인정하는 십진 숫자 310개가 전부 서로게이트 쌍이라,
+    #: 캡처를 UTF-16 `Char`로 후검증하는 가드는 그 전부를 거부한다(C-01① — 차단 ①사건).
+    bold_digits = tuple(chars(0x1D7CE + n) for n in range(10))
+
     def surroundings(text: str, asserts: tuple[Any, ...]) -> list[str]:
         """가려야 할 조각을 뺀 **나머지 본문 조각**을 모은다.
 
@@ -478,6 +503,22 @@ def build_masking() -> FixtureSpec:
             f"탭이 구분자로 쓰인 표기도 {hidden} (표 붙여넣기에서 실제로 나온다)",
             _assert("absent", path="masked_text", needles=["900101\t-\t1234567"]),
         ),
+        # ── 구분자 문법 `SEP` — 정당한 표기 쪽 (판정 6 §4-ter.2 탐침 2·5) ──────
+        case(
+            "rrn-space-one",
+            f"번호 900101{space}1234567 확인.",
+            f"하이픈 없이 공백 **한 개**로만 갈린 표기도 {hidden}. 자리당 공백 1개는 "
+            "자릿수 그룹 구분이다 — 2개 이상(정렬)과 갈리는 경계가 여기서 시작한다",
+            _assert("absent", path="masked_text", needles=[f"900101{space}1234567"]),
+        ),
+        case(
+            "rrn-nbsp-around-hyphen",
+            f"번호 900101{nbsp}-{nbsp}1234567 확인.",
+            f"하이픈 양옆에 NBSP가 **한 개씩** 붙은 표기도 {hidden}. `SEP`이 허용하는 "
+            "최대 형태(공백1+하이픈+공백1, 3문자)이고 hwpx 추출본에서 실제로 나온다",
+            _assert("absent", path="masked_text", needles=[f"900101{nbsp}-{nbsp}1234567"]),
+            reference_divergence="expected",
+        ),
         case(
             "rrn-foreigner",
             "외국인등록번호 900101-5234567 확인.",
@@ -531,6 +572,37 @@ def build_masking() -> FixtureSpec:
             _assert("absent", path="masked_text", needles=[rrn_arabic_gender]),
             reference_divergence="expected",
         ),
+        # 보충 평면 숫자 (판정 6 §4-ter.1 — **차단 ①사건**). 결함은 커버리지가 아니라
+        # **정합성**이다: 패턴은 코드포인트로 세고 그것을 지키는 판정 함수는 UTF-16 `Char`로
+        # 센다. `\d`가 인정하는 십진 숫자 중 보충 평면 310개가 전부 서로게이트 쌍이라
+        # `Char` 하나인지 보는 가드가 그 **전건을 거부**했다 — 정규식은 잡았는데 가드가
+        # 되돌려 마스킹이 통째로 빠진다. 그래서 이 케이스가 고정하는 것은 "U+1D7CF를
+        # 잡아라"가 아니라 **"판정 함수의 계수 단위가 패턴과 같은가"**다.
+        case(
+            "rrn-supplementary-digit-gender",
+            f"번호 900101-{bold_digits[1]}234567 확인.",
+            f"성별코드가 **보충 평면** 십진 숫자(서로게이트 쌍)여도 {hidden}. 캡처를 "
+            "`Char` 하나로 후검증하면 보충 평면 십진 숫자 310개가 전건 거부되어 "
+            "**정규식이 잡은 것을 가드가 되돌린다**",
+            _assert(
+                "absent",
+                path="masked_text",
+                needles=[f"900101-{bold_digits[1]}234567"],
+            ),
+            reference_divergence="expected",
+        ),
+        case(
+            "keeps-rrn-gender-supplementary-9",
+            f"번호 900101-{bold_digits[9]}234567 을 적으세요.",
+            f"보충 평면으로 적힌 성별코드 **9**는 주민등록번호가 아니다. {kept} — "
+            "계수 단위를 코드포인트로 고치면 수용이 늘어나는데, 그 확대가 **값 판정을 "
+            "건너뛰는 방향으로** 새면 여기서 걸린다. 양성 케이스와 짝이다",
+            _assert(
+                "present",
+                path="masked_text",
+                needles=[f"900101-{bold_digits[9]}234567"],
+            ),
+        ),
         # ── 종류 B: 구분자가 ASCII 하이픈·공백이 아닌 표기 (RRN) ──────────────
         *[
             case(
@@ -566,6 +638,36 @@ def build_masking() -> FixtureSpec:
             "카드번호 1234567890123456 입력.",
             f"구분자 없는 16자리도 {hidden}",
             _assert("absent", path="masked_text", needles=["1234567890123456"]),
+        ),
+        # ── 복합 구분자 (판정 6 §4-ter.2 탐침 9·10 — C-01② 누락분) ────────────
+        # 구분자를 "한 문자"로만 두면 카드번호의 `1234 - 5678` 형태가 통째로 빠진다.
+        # 같은 형태가 RRN에는 전부터 있었는데(`rrn-spaced`) 카드에는 없었다 — 두 패턴이
+        # 구분자를 따로 적고 있었다는 증거이고, `SEP` 상수 공유가 닫는 자리다.
+        case(
+            "card-spaced-hyphen",
+            f"카드 1234{space}-{space}5678{space}-{space}9012{space}-{space}3456 입력.",
+            f"하이픈 양옆에 공백이 붙은 카드번호도 {hidden}. RRN에는 같은 형태가 전부터 "
+            "있었는데(`masking-rrn-spaced`) 카드에는 없었다 — 구분자를 두 벌로 적으면 "
+            "이렇게 한쪽만 좁아진다",
+            _assert(
+                "absent",
+                path="masked_text",
+                needles=[f"1234{space}-{space}5678{space}-{space}9012{space}-{space}3456"],
+            ),
+            reference_divergence="expected",
+        ),
+        case(
+            "card-nbsp-around-hyphen",
+            f"카드 1234{nbsp}-{nbsp}5678{nbsp}-{nbsp}9012{nbsp}-{nbsp}3456 입력.",
+            f"NBSP가 하이픈 양옆에 붙은 카드번호도 {hidden}. 문자 변형(NBSP)과 복합 "
+            "구분자(공백+하이픈+공백)가 **함께** 오는 형태이며, 둘 중 하나만 고친 구현은 "
+            "여기서 걸린다",
+            _assert(
+                "absent",
+                path="masked_text",
+                needles=[f"1234{nbsp}-{nbsp}5678{nbsp}-{nbsp}9012{nbsp}-{nbsp}3456"],
+            ),
+            reference_divergence="expected",
         ),
         case(
             "card-unicode-digit-arabic",
@@ -736,6 +838,76 @@ def build_masking() -> FixtureSpec:
             f"줄마다 적힌 네 숫자열은 하나의 카드번호가 아니다. {kept} — 구분자 집합을 "
             "RRN·CARD가 공유하므로 과잉 방향도 **양쪽에서** 봐야 한다",
             _assert("present", path="masked_text", needles=["1234\n5678\n9012\n3456"]),
+        ),
+        # ── 정렬 vs 구분 경계 (판정 6 §4-ter.2 탐침 6·7·8·12) ─────────────────
+        # 구분자 문자 집합을 넓히면서 **반복 상한을 두지 않은** 결과가 이 자리다. 열 맞춤에
+        # 쓰인 공백이 인접 칸의 두 숫자열을 하나로 잇는다. 안내문 표에서 접수번호 6자리와
+        # 관리번호 7자리가 나란히 있으면 **두 팩트가 동시에 사라지고**, 과잉 마스킹은
+        # 조용해서 아무도 실패로 보지 않는다(STY-03 절대 팩트축).
+        #
+        # 기준은 문자 종류가 아니라 **개수**다. `keeps-rrn-space-two`가 경계값이고,
+        # 바로 위 `rrn-space-one`(가려야 한다)과 짝이다 — 둘을 함께 읽어야 경계가 보인다.
+        case(
+            "keeps-rrn-space-two",
+            f"접수 900101{space * 2}1234567 끝.",
+            f"자리당 공백이 **2개**면 구분이 아니라 정렬이다. {kept} — `rrn-space-one`과 "
+            "짝을 이루는 **경계값**이다. 반복 상한이 없으면 여기서 두 숫자열이 결합된다",
+            _assert("present", path="masked_text", needles=[f"900101{space * 2}1234567"]),
+            reference_divergence="expected",
+        ),
+        case(
+            "keeps-rrn-space-five",
+            f"접수 900101{space * 5}1234567 끝.",
+            f"열 맞춤용 공백 5개로 갈린 두 숫자열은 하나의 주민등록번호가 아니다. {kept}",
+            _assert("present", path="masked_text", needles=[f"900101{space * 5}1234567"]),
+            reference_divergence="expected",
+        ),
+        case(
+            "keeps-rrn-ideographic-space-three",
+            f"접수 900101{idsp * 3}1234567 끝.",
+            f"전각 공백 3개로 갈린 두 숫자열도 마찬가지다. {kept} — 전각 공백은 hwpx·pdf "
+            "추출본이 **열 정렬에 실제로 쓰는 문자**라 이 형태가 실문서에서 나온다",
+            _assert("present", path="masked_text", needles=[f"900101{idsp * 3}1234567"]),
+        ),
+        case(
+            "keeps-card-ideographic-space-three",
+            f"표 1234{idsp * 3}5678{idsp * 3}9012{idsp * 3}3456 끝.",
+            f"표의 네 칸에 나뉜 숫자열은 하나의 카드번호가 아니다. {kept} — 반복 상한을 "
+            "RRN에만 두고 CARD에 빠뜨리면 여기서 걸린다",
+            _assert(
+                "present",
+                path="masked_text",
+                needles=[f"1234{idsp * 3}5678{idsp * 3}9012{idsp * 3}3456"],
+            ),
+        ),
+        # ── 줄·페이지 경계 4종 비결합 (판정 6 §4-ter.3 — C-11) ────────────────
+        # 보이지 않는 문자를 접는 탐색 뷰에 VT(수직 탭)·FF(폼피드)가 들어 있었다. 둘은
+        # LF·CR과 같은 **줄·페이지 경계**인데 C0 범위를 통짜로 열거하다 딸려 들어갔다.
+        # 판정문이 "묶어서 한 케이스로 만들지 말라"고 못박았다 — LF·CR만 있던 탓에
+        # 이 결함을 놓쳤으므로 네 문자를 **각각** 독립 케이스로 둔다.
+        case(
+            "keeps-vt-split-digits",
+            f"접수번호 900101{chars(0x000B)}1234567 을 적으세요.",
+            f"수직 탭 U+000B로 갈린 두 숫자열은 하나의 주민등록번호가 아니다. {kept} — "
+            "VT는 줄 경계라 LF·CR과 같은 부류다. 탐색 뷰에서 접으면 두 줄이 붙는다",
+            _assert(
+                "present",
+                path="masked_text",
+                needles=[f"900101{chars(0x000B)}1234567"],
+            ),
+            reference_divergence="expected",
+        ),
+        case(
+            "keeps-ff-split-digits",
+            f"접수번호 900101{chars(0x000C)}1234567 을 적으세요.",
+            f"폼피드 U+000C로 갈린 두 숫자열도 마찬가지다. {kept} — FF는 페이지 경계다. "
+            "C0 범위를 통짜로 열거하면 줄 경계 문자가 조용히 딸려 들어온다",
+            _assert(
+                "present",
+                path="masked_text",
+                needles=[f"900101{chars(0x000C)}1234567"],
+            ),
+            reference_divergence="expected",
         ),
     ]
     return FixtureSpec(
@@ -1444,7 +1616,12 @@ def build_repair_adoption() -> FixtureSpec:
             "보정 결과는 자리표시자를 잃거나 위반이 늘면 채택하지 않는다. 응답 절단·빈 "
             "결과·호출 실패는 1차 호출에서는 변환 실패로 끝내고 보정 호출에서는 삼켜 1차 "
             "결과를 채택한다. 결과에서 사라진 자리표시자는 예외로 막지 않고 채택 결정 뒤 "
-            "최종 본문을 기준으로 유실 목록에 담아 검수 화면으로 넘긴다"
+            "최종 본문을 기준으로 유실 목록에 담아 검수 화면으로 넘긴다. "
+            "**조건부 판정 주의(C-21)**: 채택 정책 8건은 산출물이 스스로 보고한 규칙 위반 "
+            "건수를 입력으로 정책을 다시 계산해 대조한다 — 그 건수가 옳은지는 `style` "
+            "도메인의 질문인데 `style`은 아직 선언되지 않았다(미포팅). 따라서 이 도메인의 "
+            "'충족'은 **'같은 건수를 받았을 때 같은 결정을 내린다'까지만** 참이고, 건수 "
+            "자체가 틀리면 채택 결정도 함께 틀린다. `style` 선언 전까지 이 조건은 열려 있다"
         ),
         normalization=BASE_NORMALIZATION,
         cases=cases,

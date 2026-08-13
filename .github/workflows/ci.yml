@@ -338,13 +338,67 @@ jobs:
 
           declared_count=$(wc -l < "$work/declared" | tr -d '[:space:]')
           declared_list=$(tr '\n' ' ' < "$work/declared")
+
+          # --- 선언 0개 = 실패 — C-02 ------------------------------------------
+          # 2026-08-14 이전에는 경고 + exit 0 이었다. Phase 1 종료 시점에는 그것이
+          # **사실**이었다 — 포팅한 도메인이 0개였으므로 "검증하지 않았다"가 정직한 보고다.
+          # 그 시기가 끝났다(masking·repair-adoption 이 실제로 값을 판정한다). 선언이 0개가
+          # 되는 경로는 이제 하나뿐이다 — **누군가 지웠다.**
+          #
+          # 아래 선언 하한 검사보다 **먼저** 둔다. 순서가 뒤집히면 이 분기는 도달 0 이 된다
+          # (하한이 비어 있지 않으면 전부 누락으로 걸려 여기까지 오지 못하고, 하한이 비면
+          # 그쪽 검사가 먼저 막는다). 실측으로 확인했다 — 처음에 뒤에 두었더니 선언을 비운
+          # 변형이 하한 검사 메시지로 걸려, 이 분기의 진단이 한 번도 출력되지 않았다.
+          if [ "$declared_count" -eq 0 ]; then
+            echo "::error::parity 게이트 미가동 — 포팅을 끝냈다고 선언한 도메인이 0개다."
+            echo "::error::이 실행은 값을 한 건도 검증하지 않았다. '아직 시작 안 했다'와 '방금 껐다'는 로그가 같으므로 통과시키지 않는다."
+            echo "::error::복구: $declaration 에 구현이 끝난 도메인을 선언한다(생산자 테스트와 같은 커밋에)."
+            exit 1
+          fi
+
+          # --- 선언 하한 검사 (현재 선언 ⊇ 스냅샷) — C-02 -----------------------
+          # 위 정본 하한은 "생성기가 아는 세계"가 줄어드는 것을 막는다. 그것과 별개로
+          # **이미 검증되고 있던 도메인이 검증 대상에서 빠지는** 경로가 열려 있었다.
+          # 선언을 2개에서 1개로 줄이면 남은 1개가 통과하므로 로그는 초록이고, 0개로
+          # 줄이면 아래 분기가 "미가동"을 찍고 exit 0 이었다. 둘 다 게이트를 끄는 편집인데
+          # 결과가 초록이다. 여기서 막는다.
+          dfloor=.github/parity-declared-floor.txt
+          if [ ! -f "$dfloor" ]; then
+            echo "::error::$dfloor 가 없다 — 구현 완료 도메인이 줄어드는 것을 감지할 기준점이 사라졌다."
+            echo "::error::이 파일이 없으면 '어제까지 무엇을 검증하고 있었는지'를 알 수 없으므로 통과시키지 않는다."
+            exit 1
+          fi
+          sed 's/#.*//' "$dfloor" | tr -d '[:blank:]' | grep -v '^$' \
+            | LC_ALL=C sort -u > "$work/dfloor" || true
+          dfloor_count=$(wc -l < "$work/dfloor" | tr -d '[:space:]')
+          if [ "$dfloor_count" -eq 0 ]; then
+            echo "::error::$dfloor 에 도메인이 한 줄도 없다 — 하한이 비면 무엇을 지우든 통과한다."
+            echo "::error::파일을 지우는 것과 비우는 것은 같은 일이므로 똑같이 실패로 판정한다."
+            exit 1
+          fi
+          undeclared=$(LC_ALL=C comm -23 "$work/dfloor" "$work/declared" | tr '\n' ' ')
+          if [ -n "$(echo "$undeclared" | tr -d '[:space:]')" ]; then
+            echo "::error::구현 완료로 선언돼 있던 도메인이 선언에서 사라졌다: $undeclared"
+            echo "::error::$dfloor 은 ${dfloor_count}개를 요구하는데 $declaration 은 ${declared_count}개를 선언한다."
+            echo "::error::그 도메인의 값 비교가 이 실행에서 빠졌다 — 남은 도메인의 '통과'는 사라진 것에 대해 아무 의미가 없다."
+            echo "::error::되돌리거나, 삭제가 의도라면 $dfloor 을 함께 고치고 PR 에 근거를 적어라(생산자·fixture 도 함께 지웠는지 포함)."
+            exit 1
+          fi
+          # 선언에 있고 하한에 없는 것 = 이 파일이 만들어진 뒤 끝낸 포팅. 막지 않고 이름만 남긴다.
+          dfloor_new=$(LC_ALL=C comm -13 "$work/dfloor" "$work/declared" | tr '\n' ' ')
+          # --------------------------------------------------------------------
+
           skipped_list=$(LC_ALL=C comm -13 "$work/declared" "$work/canonical" | tr '\n' ' ')
           # 하한에 없는 정본 = 이 파일이 만들어진 뒤 추가된 도메인. 막지 않고 이름만 남긴다.
           unlisted=$(LC_ALL=C comm -13 "$work/floor" "$work/canonical" | tr '\n' ' ')
 
           echo "──────────────── parity 게이트 판정 범위 ────────────────"
           echo "  정본 도메인      : ${canonical_count}개 (하한 ${floor_count}개 충족)"
-          echo "  Kotlin 구현 선언 : ${declared_count}개 — ${declared_list:-없음}"
+          echo "  Kotlin 구현 선언 : ${declared_count}개 (하한 ${dfloor_count}개 충족) — ${declared_list:-없음}"
+          if [ -n "$(echo "$dfloor_new" | tr -d '[:space:]')" ]; then
+            echo "  선언 하한 미등재 : ${dfloor_new}"
+            echo "  ($dfloor 에도 적어야 나중에 이 도메인이 선언에서 빠질 때 걸린다)"
+          fi
           echo "  검증하지 않음    : $((canonical_count - declared_count))개 — ${skipped_list:-없음}"
           echo "  (검증하지 않은 도메인은 '통과'가 아니라 '증명되지 않음'이다)"
           if [ -n "$(echo "$unlisted" | tr -d '[:space:]')" ]; then
@@ -352,14 +406,6 @@ jobs:
             echo "  (정본에 추가된 새 도메인이다. $floor 에도 적어야 나중에 삭제될 때 걸린다)"
           fi
           echo "─────────────────────────────────────────────────────────"
-
-          if [ "$declared_count" -eq 0 ]; then
-            # 실제로 발생하는 상태다(Phase 1 종료 시점). 산출물이 있는데 선언이 0개인
-            # 경우는 위 parityManifestCheck 가 이미 빌드를 실패시켰으므로 여기 못 온다.
-            echo "::warning::parity 게이트 미가동 — 포팅을 끝냈다고 선언한 도메인이 0개다."
-            echo "::warning::이 실행은 값을 한 건도 검증하지 않았다. Phase 2에서 도메인을 선언하며 닫는다."
-            exit 0
-          fi
 
           # 선언이 0개가 아닌데 fixture 트리가 없다 = 정본이 사라진 것이다. 비교기에
           # 그대로 넘기면 "--only-domain 은 디렉터리일 때만" 이라는 인자 오류로 죽어
