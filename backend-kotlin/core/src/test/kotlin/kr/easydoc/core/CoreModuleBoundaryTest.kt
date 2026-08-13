@@ -31,14 +31,22 @@ class CoreModuleBoundaryTest {
             // Jackson 은 2.x(com.fasterxml)와 3.x(tools.jackson) 패키지가 다르다. 둘 다 막는다.
             "com.fasterxml.jackson.databind.ObjectMapper",
             "tools.jackson.databind.ObjectMapper",
+            // LLM 경계(2026-08-13 추가). CLAUDE.md 아키텍처 규칙 1은 "벤더 SDK를 서비스
+            // 코드에서 직접 import 하지 않는다"인데, 그 규칙이 실제로 도달하는 범위는
+            // "core 의존성에 SDK 가 없다"이다. core 는 LlmProvider 인터페이스만 갖고
+            // 구현은 infrastructure 에 둔다 — 벤더 SDK 도, HTTP 클라이언트도 여기 없어야
+            // 그 분리가 문서가 아니라 빌드로 강제된다.
+            "com.anthropic.client.AnthropicClient",
+            "com.openai.client.OpenAIClient",
+            "org.springframework.web.client.RestClient",
         ],
     )
-    @DisplayName("core 클래스패스에 Spring·DB·Jackson 이 없다")
+    @DisplayName("core 클래스패스에 Spring·DB·Jackson·벤더 SDK 가 없다")
     fun `core 클래스패스에 프레임워크 의존성이 없다`(className: String) {
         val loaded = runCatching { Class.forName(className) }
         assertThat(loaded.isFailure)
             .withFailMessage(
-                "core 클래스패스에서 %s 를 찾았다. core 는 Spring·DB·Jackson 을 몰라야 한다(계획 §3.2). " +
+                "core 클래스패스에서 %s 를 찾았다. core 는 Spring·DB·Jackson·벤더 SDK 를 몰라야 한다(계획 §3.2). " +
                     "core/build.gradle.kts 에 들어온 의존성을 되돌리고, 필요한 코드는 " +
                     "application 또는 infrastructure 로 옮겨라.",
                 className,

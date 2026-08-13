@@ -78,6 +78,20 @@ flyway-postgresql = { module = "org.flywaydb:flyway-database-postgresql" }
 # --- DB ----------------------------------------------------------------------
 postgresql = { module = "org.postgresql:postgresql" }
 
+# --- LLM provider 어댑터 ------------------------------------------------------
+# **벤더 SDK(anthropic-sdk-java)를 쓰지 않는다.** 이유는 격리다 — SDK 를 들이면 그 전이
+# 의존성(자체 HTTP 클라이언트·Jackson 버전·재시도 정책)이 BOM 밖에서 따라 들어오고,
+# 계획 §3.1이 금지한 "각자 임의 버전으로 섞는" 상태가 LLM 레인에서 되살아난다. 게다가
+# SDK 의 내장 재시도는 워커 재시도와 겹쳐 호출 수를 늘린다(§4.6, §5 Phase 7 즉시 중단
+# 기준의 "중복 LLM 호출"). Anthropic Messages API 는 단일 POST 라 Spring 의 RestClient
+# 로 충분하고, 그 편이 재시도·타임아웃을 우리가 전부 통제한다.
+#
+# 둘 다 버전을 여기서 고르지 않는다 — Boot BOM 이 관리한다(spring-web 7.0.8,
+# jackson-databind 3.1.4. api 모듈 락파일 실측). Jackson 3 은 groupId 가
+# com.fasterxml → tools.jackson 으로 바뀐 계열이다.
+spring-web = { module = "org.springframework:spring-web" }
+jackson-databind = { module = "tools.jackson.core:jackson-databind" }
+
 # --- 테스트 ------------------------------------------------------------------
 # Testcontainers 2.x는 좌표가 바뀌었다: org.testcontainers:postgresql →
 # org.testcontainers:testcontainers-postgresql (2.0.5 BOM 실측).
