@@ -150,3 +150,91 @@ def test_적중_위치_판정에_정규식_경계가_유지된다(scanner: Modul
     """
     assert re.search(rf"\b(?:{scanner.BODY_NAMES})\b", "reviewed") is not None
     assert re.search(rf"\b(?:{scanner.BODY_NAMES})\b", "혼자쓰는이름") is None
+
+
+# ── 판정 §4-quater.2 — 다중 줄 호출 (C-03) ─────────────────────────────────────────
+#
+# 합성 탐침은 `SCAN_ROOTS` 밖(`tests/fixtures/`)에 둔다. 전수 스캔이 자기 탐침에 걸려
+# CI가 빨개지면 안 되기 때문이다.
+
+PROBE_DIR = REPO_ROOT / "tests" / "fixtures" / "privacy-scanner-probes"
+PROBE_KOTLIN = PROBE_DIR / "MultilineProbe.kt"
+
+#: 다중 줄로 써야만 재현되는 위반 3종. 판정문이 지정한 그대로다.
+MULTILINE_RULES = ["LOG-BODY", "LLM-RAW-INPUT", "PLAINTEXT-PERSIST"]
+
+
+def test_합성_탐침이_스캔_루트_밖에_있다() -> None:
+    """탐침이 `SCAN_ROOTS` 안으로 들어오면 전수 스캔이 자기 자신을 잡아 CI가 빨개진다."""
+    scanner = _load_scanner()
+    assert PROBE_KOTLIN.is_file(), f"합성 탐침이 없다: {PROBE_KOTLIN}"
+    for root in scanner.SCAN_ROOTS:
+        assert not PROBE_KOTLIN.is_relative_to(REPO_ROOT / root), (
+            f"탐침이 스캔 루트 {root!r} 안에 있다 — 전수 스캔이 자기 탐침을 잡는다."
+        )
+
+
+@pytest.mark.parametrize("rule_id", MULTILINE_RULES)
+def test_다중_줄_호출을_잡는다(scanner: ModuleType, rule_id: str) -> None:
+    """ktlint가 강제하는 Kotlin 줄바꿈 스타일에서도 인자 목록을 본다."""
+    result = scanner.scan([PROBE_KOTLIN], set())
+    assert rule_id in result.hits, (
+        f"{rule_id}가 다중 줄 호출을 놓쳤다 — 논리 줄 결합이 깨졌는지 확인하라. "
+        f"적중한 규칙: {sorted(result.hits)}"
+    )
+
+
+@pytest.mark.parametrize("rule_id", MULTILINE_RULES)
+def test_줄_단위로는_같은_위반이_보이지_않는다(scanner: ModuleType, rule_id: str) -> None:
+    """**이 테스트가 위 테스트의 값어치를 증명한다.**
+
+    물리 줄 하나씩 보면 세 위반 모두 무적중이다. 그것이 C-03이 재현한 상태이고, 논리 줄
+    결합이 없으면 위 테스트도 통과하지 못한다. 두 단언을 함께 두는 이유는, 위 테스트만
+    있으면 "원래부터 잡히던 것 아닌가"를 구분할 수 없기 때문이다.
+    """
+    rule = _rule(scanner, rule_id)
+    lines = PROBE_KOTLIN.read_text(encoding="utf-8").splitlines()
+    # 한 줄 대조용으로 일부러 남겨 둔 마지막 호출은 제외한다 — 그것은 줄 단위로도 잡힌다.
+    multiline_only = [line for line in lines if not line.strip().startswith('logger.info("변환')]
+    for line in multiline_only:
+        assert rule.pattern.search(line) is None, (  # type: ignore[attr-defined]
+            f"{rule_id}가 물리 줄 하나에서 이미 잡힌다: {line.strip()!r} — "
+            "그렇다면 이 탐침은 다중 줄 맹점을 재현하지 못한다."
+        )
+
+
+def test_한_줄_호출도_계속_잡는다(scanner: ModuleType) -> None:
+    """논리 줄 도입이 기존 한 줄 탐지를 되돌리지 않았는지 본다."""
+    result = scanner.scan([PROBE_KOTLIN], {"LOG-BODY"})
+    reported = [number for _path, number, _line in result.hits["LOG-BODY"]]
+    assert len(reported) >= 2, f"한 줄 호출과 다중 줄 호출이 함께 잡혀야 한다: {reported}"
+
+
+def test_논리_줄_결합에_상한이_있다(scanner: ModuleType) -> None:
+    """깨진 괄호 하나가 파일 전체를 한 줄로 만들면 오탐이 폭발한다."""
+    broken = ["logger.info("] + [f"    arg{i}," for i in range(200)]
+    joined = scanner.logical_lines(broken)
+
+    assert len(joined) > 1, "상한이 없어 파일 전체가 한 논리 줄이 됐다."
+    first_span = joined[1][0] - joined[0][0]
+    assert first_span <= scanner.MAX_LOGICAL_LINE_SPAN, (
+        f"논리 줄 하나가 물리 줄 {first_span}개를 삼켰다 (상한 {scanner.MAX_LOGICAL_LINE_SPAN})"
+    )
+
+
+def test_문자열_안의_괄호는_깊이로_세지_않는다(scanner: ModuleType) -> None:
+    """문자열 안의 `(`를 세면 논리 줄이 엉뚱한 데서 끊기거나 파일 끝까지 이어진다."""
+    joined = scanner.logical_lines(['println("웃는 얼굴 :-) 입니다")', "다음줄()"])
+
+    assert len(joined) == 2, f"문자열 안의 괄호를 세어 논리 줄이 어긋났다: {joined}"
+
+
+def test_보고_위치는_논리_줄의_시작_물리_줄이다(scanner: ModuleType) -> None:
+    """사람이 파일을 열어 찾아갈 수 있어야 한다."""
+    result = scanner.scan([PROBE_KOTLIN], {"LLM-RAW-INPUT"})
+    _path, number, _line = result.hits["LLM-RAW-INPUT"][0]
+    opening = PROBE_KOTLIN.read_text(encoding="utf-8").splitlines()[number - 1]
+
+    assert "provider.complete(" in opening, (
+        f"{number}행이 호출 시작 줄이 아니다: {opening.strip()!r}"
+    )

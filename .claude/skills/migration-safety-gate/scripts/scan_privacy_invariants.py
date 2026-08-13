@@ -87,12 +87,22 @@ BODY_NAMES = (
 _SAFE_MEMBERS = (
     # 식별자 — 계획 §4.4 가 로그에 명시 허용
     r"id|document_id|documentId|conversion_id|conversionId|"
-    # 개수·길이
+    # 개수·길이 (snake_case)
     r"length|size|count|\w+_count|\w+_counts|\w+_total|\w+_chars|"
+    # 개수·길이 (camelCase) — 위 snake 목록의 **대칭**이다. 이 저장소는 Python 과 Kotlin 을
+    # 함께 스캔하는데 snake 표기만 적어 두면 Kotlin 쪽은 같은 성질의 값마다 예외를 하나씩
+    # 더하게 된다. 표기 규약이 둘이면 목록도 둘이어야 도달이 같아진다.
+    r"\w+Count|\w+Counts|\w+Total|\w+Chars|\w+Id|"
     # 상태·분류값(열거형)
-    r"status|state|stage|kind|category|\w+_category|"
+    r"status|state|stage|kind|category|\w+_category|\w+Category|"
     # §4.4 가 명시 허용한 넷 중 나머지
-    r"attempt|attempts|failure_code|failureCode"
+    r"attempt|attempts|failure_code|failureCode|"
+    # 아래 셋은 실물 오탐에서 왔다. 넓은 패턴으로 일반화하지 않고 **이름 그대로** 적는다 —
+    # `\w+Version` 같은 일반화는 무엇이 더 들어올지 모르는 채로 문을 여는 것이다.
+    #   suggested_facts     — 추출된 팩트 후보 **개수** (scripts/collect_golden.py)
+    #   migrationsExecuted  — 적용된 마이그레이션 **개수** (FlywayBaselineGuard.kt)
+    #   targetSchemaVersion — 스키마 **버전 식별자**, 본문이 실릴 자리가 아니다 (같은 파일)
+    r"suggested_facts|migrationsExecuted|targetSchemaVersion"
 )
 
 #: 안전 멤버 **앞에 올 수 있는 한정자**. 그 자체로는 안전하지 않고, 뒤에 안전 멤버가
@@ -191,6 +201,14 @@ class Rule:
     hardened: re.Pattern[str] | None = None
     hardened_before: int = 2
     hardened_after: int = 10
+    #: **논리 줄**(괄호가 닫힐 때까지 이어 붙인 물리 줄)에서 판정한다. 인자 목록을 보는
+    #: 규칙만 켠다 — 한 줄에서 완결되는 규칙(`LLM-VENDOR-SDK`·`XML-DTD` 등)까지 켜면
+    #: 이어 붙인 문맥이 오탐을 만든다. 규칙 **자신이 선언**하게 두는 이유는, 한 곳에서
+    #: 목록으로 관리하면 새 규칙을 더할 때 그 목록을 잊기 때문이다.
+    #:
+    #: 배선 시점 실측(privacy-gate 판정 §4-quater.2): ktlint 가 강제하는 Kotlin 줄바꿈
+    #: 스타일에서 `logger.info(` 호출이 여러 줄로 갈리면 줄 단위 판정은 **전 줄 무적중**이었다.
+    multiline: bool = False
 
 
 RULES: tuple[Rule, ...] = (
@@ -202,6 +220,7 @@ RULES: tuple[Rule, ...] = (
         "로그는 평문으로 수집·장기 보관된다. 한 줄만 새도 암호화 저장 정책 전체가 무의미해진다.",
         "변수명이 우연히 겹치거나(`title` 로그가 문서 ID인 경우) 길이·타입만 찍는 줄이면 오탐.",
         refine=log_body_is_real_candidate,
+        multiline=True,
     ),
     Rule(
         "LOG-FSTRING",
@@ -210,6 +229,7 @@ RULES: tuple[Rule, ...] = (
         re.compile(rf"{LOG_CALL}\s*\(\s*f?[\"'][^\"']*\{{[^}}]*\b(?:{BODY_NAMES})\b"),
         "f-string·템플릿 보간은 지연 포매팅을 우회해 값이 곧장 문자열이 된다.",
         "포매팅 인자가 이미 마스킹·요약된 값이면 오탐.",
+        multiline=True,
     ),
     Rule(
         "EXC-BODY",
@@ -218,6 +238,7 @@ RULES: tuple[Rule, ...] = (
         re.compile(rf"(?:raise|throw)\s+\w*(?:Error|Exception)\s*\([^)]*\b(?:{BODY_NAMES})\b"),
         "예외 메시지는 5xx 응답과 스택트레이스 로그 양쪽으로 흘러간다.",
         "메시지가 아니라 원인 예외를 넘기는 인자면 오탐.",
+        multiline=True,
     ),
     Rule(
         "LLM-VENDOR-SDK",
@@ -245,6 +266,7 @@ RULES: tuple[Rule, ...] = (
         ),
         "마스킹 전 본문이 벤더로 나가면 §5 Phase 7의 즉시 중단 사유다.",
         "변수명이 이미 마스킹된 값을 담고 있으면 오탐 — 이름을 masked*로 바꿔 의도를 드러낼 것.",
+        multiline=True,
     ),
     Rule(
         "OWNERSHIP-403",
@@ -265,6 +287,7 @@ RULES: tuple[Rule, ...] = (
         "암호문 컬럼에 평문이 들어가면 DB 덤프 한 번으로 전량이 노출된다.",
         "이미 암호화된 bytes를 담는 줄이면 오탐 — encrypt/cipher 호출이 같은 줄에 "
         "없을 뿐일 수 있다.",
+        multiline=True,
     ),
     Rule(
         "SECRET-LITERAL",
@@ -443,6 +466,79 @@ class ScanResult:
     suppressed: dict[str, dict[str, int]]
 
 
+#: 논리 줄 하나가 삼킬 수 있는 물리 줄 상한. 없으면 **깨진 괄호 하나가 파일 전체를 한
+#: 줄로 만들어** 오탐이 폭발한다. 실제 로그·예외 호출은 길어야 열 줄 남짓이다.
+MAX_LOGICAL_LINE_SPAN = 40
+
+#: 괄호 깊이를 셀 때 만나는 토큰. 문자열·주석 안의 괄호를 세면 논리 줄이 엉뚱한 데서 끊긴다.
+_DEPTH_TOKENS = re.compile(r'\\.|"""|\'\'\'|"|\'|//|#|\(|\)')
+
+#: 문자열을 여는 토큰. 같은 토큰을 다시 만나면 닫힌다.
+_QUOTES = ('"""', "'''", '"', "'")
+
+
+def _depth_after(line: str, depth: int) -> int:
+    """줄 하나를 지난 뒤의 괄호 깊이. 문자열·줄 주석 안의 괄호는 세지 않는다."""
+    quote: str | None = None
+    position = 0
+    while True:
+        token = _DEPTH_TOKENS.search(line, position)
+        if token is None:
+            return depth
+        text = token.group()
+        position = token.end()
+        if text.startswith("\\"):
+            continue  # 이스케이프 — 다음 문자를 통째로 건너뛴다
+        if quote is not None:
+            if text == quote:
+                quote = None
+            continue
+        if text in _QUOTES:
+            quote = text
+        elif text in ("//", "#"):
+            return depth  # 줄 주석 — 나머지는 코드가 아니다
+        elif text == "(":
+            depth += 1
+        elif text == ")":
+            depth = max(0, depth - 1)
+
+
+def logical_lines(lines: list[str]) -> list[tuple[int, str]]:
+    """물리 줄을 **논리 줄**(괄호가 닫힐 때까지)로 묶는다.
+
+    `(시작 물리 줄 번호, 이어 붙인 문자열)` 목록을 돌려준다. 시작 번호로 보고하는 이유는
+    사람이 파일을 열어 찾아갈 수 있어야 하기 때문이다.
+
+    ## AST를 쓰지 않는 이유 (privacy-gate 판정 §4-quater.2)
+
+    이 스캐너는 `.py`·`.kt`·`.kts`·`.ts`·`.tsx`·`.java` 6종을 본다. Kotlin AST를 파이썬에서
+    얻으려면 외부 도구가 붙고, **그 도구가 없는 환경에서 스캐너가 조용히 0건**이 된다 —
+    C-04와 같은 실패를 새로 만드는 셈이다. 게다가 정규식이 문맥을 못 읽는다는 것은 이
+    스크립트의 선언된 성격이고, 정밀도를 올리려 AST를 넣으면 "판정하는 도구"로 성격이
+    바뀌어 오탐 억제 압력이 생긴다.
+
+    ## 틀릴 때는 이어 붙이는 쪽으로 틀린다
+
+    따옴표 추적은 완벽하지 않다(중첩 주석·언어별 문자열 문법 차이). 깊이를 못 세면
+    **이어 붙이는 쪽**으로 틀리게 두었다 — 게이트가 틀릴 때는 과검사 쪽으로 틀려야 한다
+    (`iter_files`의 폴백 원칙과 같다).
+    """
+    joined: list[tuple[int, str]] = []
+    index = 0
+    while index < len(lines):
+        start = index
+        depth = 0
+        parts: list[str] = []
+        while index < len(lines) and index - start < MAX_LOGICAL_LINE_SPAN:
+            parts.append(lines[index].strip())
+            depth = _depth_after(lines[index], depth)
+            index += 1
+            if depth <= 0:
+                break
+        joined.append((start + 1, " ".join(parts)))
+    return joined
+
+
 def scan(files: list[Path], rule_filter: set[str]) -> ScanResult:
     hits: dict[str, list[tuple[Path, int, str]]] = {}
     suppressed: dict[str, dict[str, int]] = {}
@@ -463,6 +559,8 @@ def scan(files: list[Path], rule_filter: set[str]) -> ScanResult:
             if stripped.startswith(("#", "//", "*", '"""')):
                 continue  # 주석·docstring은 후보에서 뺀다(설명문이 대량 오탐을 만든다)
             for rule in rules:
+                if rule.multiline:
+                    continue  # 아래 논리 줄 순회가 맡는다
                 if rule.suffixes and path.suffix not in rule.suffixes:
                     continue
                 if any(allowed in posix for allowed in rule.sanctioned):
@@ -482,6 +580,38 @@ def scan(files: list[Path], rule_filter: set[str]) -> ScanResult:
                         drop(rule.id, "같은 창에서 완화 조치 확인")
                         continue
                 hits.setdefault(rule.id, []).append((path, number, stripped[:160]))
+
+        # 인자 목록을 보는 규칙은 **논리 줄**에서 판정한다. ktlint가 강제하는 Kotlin
+        # 줄바꿈 스타일에서 `logger.info(` 호출이 여러 줄로 갈리면 줄 단위 판정은
+        # 전 줄 무적중이었다(privacy-gate 판정 §4-quater.2).
+        for number, line in logical_lines(lines):
+            if line.startswith(("#", "//", "*", '"""')):
+                continue
+            for rule in rules:
+                if not rule.multiline:
+                    continue
+                if rule.suffixes and path.suffix not in rule.suffixes:
+                    continue
+                if any(allowed in posix for allowed in rule.sanctioned):
+                    continue
+                match = rule.pattern.search(line)
+                if match is None:
+                    continue
+                if rule.refine is not None and not rule.refine(match):
+                    drop(rule.id, "값의 모양이 불변식 대상이 아님")
+                    continue
+                # `hardened` 창은 **물리 줄 기준**을 유지한다. 지금 multiline 규칙 중
+                # 창을 쓰는 것은 없지만(`XML-DTD`만 쓴다), 나중에 켤 때 기준이 조용히
+                # 갈리지 않도록 여기서 물리 줄 인덱스를 쓴다는 것을 못박는다.
+                if rule.hardened is not None:
+                    index = number - 1
+                    window = lines[
+                        max(0, index - rule.hardened_before) : index + rule.hardened_after + 1
+                    ]
+                    if any(rule.hardened.search(near) for near in window):
+                        drop(rule.id, "같은 창에서 완화 조치 확인")
+                        continue
+                hits.setdefault(rule.id, []).append((path, number, line[:160]))
     return ScanResult(hits, suppressed)
 
 
