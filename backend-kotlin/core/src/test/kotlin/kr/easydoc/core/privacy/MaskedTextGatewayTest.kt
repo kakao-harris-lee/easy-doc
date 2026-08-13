@@ -85,6 +85,43 @@ class MaskedTextGatewayTest {
     }
 
     @Test
+    @DisplayName("클래스 표면에도 우회 통로가 없다 — companion 밖까지 본다")
+    fun `클래스가 여는 비합성 메서드가 허용목록뿐이다`() {
+        // 교차 종합 C-18. 위 두 단언은 **companion 표면**만 보는데 클래스 KDoc 은 클래스
+        // 전체를 선언한다 — 선언한 범위와 실제 도달 범위가 어긋난 자리다. `wrap` 을
+        // companion 이 아니라 클래스 본체의 함수로 만들면 위 검사를 그대로 빠져나간다.
+        //
+        // 허용목록에 담은 것은 **Kotlin 인라인 클래스 ABI**가 만드는 이름과 이 타입이
+        // 스스로 재정의한 것뿐이다. `-impl` 접미사 계열은 컴파일러 산물이고,
+        // `constructor-impl` 의 가시성은 위 첫 번째 테스트가 따로 본다.
+        val declared =
+            MaskedText::class.java.declaredMethods
+                .filterNot { it.isSynthetic }
+                .map { it.name }
+                .toSet()
+
+        val abiOrOverride =
+            setOf(
+                "constructor-impl",
+                "equals",
+                "equals-impl",
+                "equals-impl0",
+                "getValue",
+                "hashCode",
+                "hashCode-impl",
+                "toString",
+                "toString-impl",
+            )
+
+        assertThat(declared - abiOrOverride)
+            .withFailMessage {
+                "MaskedText 가 ABI·재정의 밖의 메서드를 연다: ${(declared - abiOrOverride).sorted()}\n" +
+                    "  companion 이 아니라 클래스 본체에 감싸기 통로가 생기면 companion 검사를 " +
+                    "그대로 빠져나간다. 새 메서드가 마스킹을 수행하는지 확인하고 허용목록에 근거와 함께 더하라."
+            }.isEmpty()
+    }
+
+    @Test
     @DisplayName("유일한 통로는 감싸기가 아니라 실제 마스킹을 수행한다")
     fun `mask 는 입력을 그대로 통과시키지 않는다`() {
         val result = MaskedText.mask("신청자 900101-1234567 님")

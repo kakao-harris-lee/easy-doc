@@ -57,28 +57,43 @@ class ProvenanceCreationSitesTest {
          * **줄을 더하기 전에 `Masking.kt` 의 사용 규약을 읽어라.** 특히 [ReviewedBody] 는
          * "HTTP 요청 경계에서 사람이 제출한 `edited_text` 를 읽는 어댑터" 한 곳뿐이다.
          */
-        val ALLOWED: Map<String, Set<String>> =
+        val ALLOWED: Map<String, Map<String, Int>> =
             mapOf(
                 // ModelDraft = LLM 출력 경로. 변환 결과와 그 후처리물만 감싼다.
                 "ModelDraft" to
-                    setOf(
+                    mapOf(
                         // 변환 유스케이스 — 보정 프롬프트 입력과 최종 결과. 값의 출처가 LLM 출력이다.
-                        "application/src/main/kotlin/kr/easydoc/application/conversion/ConvertDocumentUseCase.kt",
+                        "application/src/main/kotlin/kr/easydoc/application/conversion/ConvertDocumentUseCase.kt" to 2,
                         // 아래는 전부 테스트. 프롬프트·복원 동작을 재려면 초안을 지어내야 한다.
-                        "core/src/test/kotlin/kr/easydoc/core/easyread/PromptInjectionGuardTest.kt",
-                        "core/src/test/kotlin/kr/easydoc/core/easyread/PromptTextSnapshotTest.kt",
-                        "core/src/test/kotlin/kr/easydoc/core/easyread/PromptsTest.kt",
-                        "core/src/test/kotlin/kr/easydoc/core/llm/LlmPromptTest.kt",
-                        "core/src/test/kotlin/kr/easydoc/core/privacy/MaskingTest.kt",
+                        "core/src/test/kotlin/kr/easydoc/core/easyread/PromptInjectionGuardTest.kt" to 4,
+                        "core/src/test/kotlin/kr/easydoc/core/easyread/PromptTextSnapshotTest.kt" to 1,
+                        "core/src/test/kotlin/kr/easydoc/core/easyread/PromptsTest.kt" to 4,
+                        "core/src/test/kotlin/kr/easydoc/core/llm/LlmPromptTest.kt" to 1,
+                        "core/src/test/kotlin/kr/easydoc/core/privacy/MaskingTest.kt" to 10,
                     ),
                 // ReviewedBody = 사람이 제출한 검수본. **프로덕션 생성 지점은 아직 없다** —
                 // 검수 제출 API 는 Phase 3~4 다. 지금 프로덕션 경로에 이 타입이 생기면
                 // 그것은 "사람이 제출했다"는 사실을 어딘가에서 지어낸 것이다.
                 "ReviewedBody" to
-                    setOf(
-                        "core/src/test/kotlin/kr/easydoc/core/privacy/MaskingTest.kt",
+                    mapOf(
+                        "core/src/test/kotlin/kr/easydoc/core/privacy/MaskingTest.kt" to 4,
                     ),
             )
+
+        /**
+         * import 별칭 탐지. `import kr.easydoc.core.privacy.ModelDraft as 초안` 을 쓰면
+         * 생성 지점이 `초안(...)` 이 되어 이름 기반 스캔을 통째로 빠져나간다.
+         *
+         * 별칭은 **금지한다**. 허용하고 별칭 이름까지 추적하는 방법도 있지만, 그러면 이
+         * 가드가 파서에 가까워지고 우회 표면은 그대로 남는다(별칭의 별칭). 금지가 더 좁다.
+         */
+        val ALIAS_IMPORT = Regex("""^import\s+kr\.easydoc\.core\.privacy\.(ModelDraft|ReviewedBody)\s+as\s+""")
+
+        /**
+         * 생성자 참조(`::ModelDraft`). 호출 괄호가 없어 `ModelDraft\(` 패턴에 걸리지 않는데,
+         * 넘겨받은 쪽에서 임의 문자열로 인스턴스를 만들 수 있다.
+         */
+        val CONSTRUCTOR_REFERENCE = Regex("""(?<![A-Za-z0-9_])::(?:ModelDraft|ReviewedBody)\b""")
     }
 
     @Test
@@ -87,7 +102,7 @@ class ProvenanceCreationSitesTest {
         val found = creationSites()
 
         ALLOWED.keys.forEach { type ->
-            val unexpected = (found[type] ?: emptySet()) - ALLOWED.getValue(type)
+            val unexpected = (found[type] ?: emptyMap()).keys - ALLOWED.getValue(type).keys
             assertThat(unexpected)
                 .withFailMessage {
                     "$type 을 허용목록 밖에서 만든다: ${unexpected.sorted()}\n" +
@@ -99,6 +114,29 @@ class ProvenanceCreationSitesTest {
     }
 
     @Test
+    @DisplayName("허용된 파일 안에서도 생성 **개수**가 늘면 실패한다")
+    fun `허용 파일 안의 추가 생성을 잡는다`() {
+        // 교차 종합 C-05 ①. 파일 단위 집합으로만 보면 **이미 허용된 파일에 생성 지점을
+        // 하나 더 넣는 것**이 아무 신호도 내지 않는다. 그 파일이 프로덕션 코드면
+        // "ModelDraft 는 LLM 출력 경로에서만" 이라는 규약이 조용히 넓어진다.
+        //
+        // 개수를 세면 그 diff 가 반드시 이 상수를 건드리므로 리뷰에 올라간다.
+        val found = creationSites()
+
+        ALLOWED.forEach { (type, expected) ->
+            expected.forEach { (file, count) ->
+                assertThat(found[type]?.get(file))
+                    .withFailMessage {
+                        "$type 의 $file 생성 개수가 $count 가 아니라 ${found[type]?.get(file)} 다.\n" +
+                            "  늘었다면 새 생성 지점이 규약에 맞는지 확인하고 이 수를 고쳐라 — " +
+                            "그 diff 가 리뷰에 올라가는 것이 이 숫자의 값어치다.\n" +
+                            "  줄었다면 남은 수로 고쳐라(죽은 허용은 조용히 권한을 넓힌다)."
+                    }.isEqualTo(count)
+            }
+        }
+    }
+
+    @Test
     @DisplayName("허용목록에 더는 만들지 않는 자리가 남아 있지 않다")
     fun `죽은 허용 줄이 없다`() {
         // 낡은 허용 줄은 **조용히 권한을 넓힌다.** 어떤 파일에서 생성이 사라졌는데 줄이
@@ -106,7 +144,7 @@ class ProvenanceCreationSitesTest {
         val found = creationSites()
 
         ALLOWED.forEach { (type, allowed) ->
-            val stale = allowed - (found[type] ?: emptySet())
+            val stale = allowed.keys - (found[type] ?: emptyMap()).keys
             assertThat(stale)
                 .withFailMessage {
                     "$type 허용목록에 더는 생성하지 않는 자리가 남아 있다: ${stale.sorted()}\n" +
@@ -115,16 +153,59 @@ class ProvenanceCreationSitesTest {
         }
     }
 
-    /** 타입 이름 → 그 타입을 **생성하는** 파일들(소스 루트 기준 상대 경로). */
-    private fun creationSites(): Map<String, Set<String>> {
+    @Test
+    @DisplayName("import 별칭으로 이름을 바꿔 빠져나갈 수 없다")
+    fun `별칭 import 를 금지한다`() {
+        // 교차 종합 C-05 ②(양측 합의). `import ... ModelDraft as 초안` 뒤에는 생성 지점이
+        // `초안(...)` 이라 이름 기반 스캔이 통째로 무력해진다.
+        val offenders =
+            kotlinSources(sourceRoot()).filter { file ->
+                file.readLines().any { ALIAS_IMPORT.containsMatchIn(it.trimStart()) }
+            }
+
+        assertThat(offenders)
+            .withFailMessage {
+                "provenance 타입을 별칭으로 import 한 파일이 있다: ${offenders.map { it.fileName }}\n" +
+                    "  별칭을 쓰면 이 가드가 생성 지점을 이름으로 찾지 못한다. 원래 이름으로 쓰라."
+            }.isEmpty()
+    }
+
+    @Test
+    @DisplayName("생성자 참조(::ModelDraft)로 넘겨줄 수 없다")
+    fun `생성자 참조를 금지한다`() {
+        // 교차 종합 C-05 ③. `::ModelDraft` 는 호출 괄호가 없어 `ModelDraft(` 패턴에 걸리지
+        // 않는데, 넘겨받은 쪽은 임의 문자열로 인스턴스를 만들 수 있다. 생성 지점이 코드에서
+        // **보이지 않는 곳으로 옮겨가는** 형태라 금지한다.
+        val offenders =
+            kotlinSources(sourceRoot()).filter { file ->
+                file.readLines().any { line ->
+                    val trimmed = line.trimStart()
+                    COMMENT_PREFIXES.none { trimmed.startsWith(it) } &&
+                        CONSTRUCTOR_REFERENCE.containsMatchIn(STRING_LITERAL.replace(line, "\"\""))
+                }
+            }
+
+        assertThat(offenders)
+            .withFailMessage {
+                "provenance 타입의 생성자 참조가 있다: ${offenders.map { it.fileName }}\n" +
+                    "  ::ModelDraft 는 생성 지점을 호출부 밖으로 옮긴다. 명시적으로 감싸라."
+            }.isEmpty()
+    }
+
+    /** 타입 이름 → (파일 → 그 파일이 그 타입을 **생성하는 줄 수**). */
+    private fun creationSites(): Map<String, Map<String, Int>> {
         val root = sourceRoot()
-        val sites = ALLOWED.keys.associateWith { mutableSetOf<String>() }
+        val sites = ALLOWED.keys.associateWith { mutableMapOf<String, Int>() }
 
         kotlinSources(root).forEach { file ->
             val relative = root.relativize(file).joinToString("/")
-            typesCreatedIn(file).forEach { type -> sites.getValue(type) += relative }
+            val lines = file.readLines()
+            ALLOWED.keys.forEach { type ->
+                val count = lines.count { createsType(it, type) }
+                if (count > 0) sites.getValue(type)[relative] = count
+            }
         }
-        return sites.mapValues { it.value.toSet() }
+        return sites.mapValues { it.value.toMap() }
     }
 
     /** 스캔 대상 파일. Gradle 산출물은 소스가 아니다 — 넣으면 같은 파일을 두 번 센다. */
@@ -136,19 +217,12 @@ class ProvenanceCreationSitesTest {
                 .toList()
         }
 
-    /** 이 파일이 생성하는 provenance 타입들. */
-    private fun typesCreatedIn(file: Path): Set<String> {
-        val lines = file.readLines()
-        return ALLOWED.keys.filterTo(mutableSetOf()) { type -> lines.any { createsType(it, type) } }
-    }
-
     /**
      * 이 줄이 [type] 을 **생성**하는가.
      *
-     * 주석과 선언은 뺀다 — KDoc 이 `ModelDraft(원문)` 처럼 규약을 설명하는 자리가 실제로
-     * 여럿 있고, `value class ModelDraft(val value: String)` 은 생성이 아니라 정의다.
-     * 문자열 리터럴 안의 우연한 일치까지 가리지는 않는다(그 정밀도는 파서가 필요하고,
-     * 이 가드가 재려는 것은 "새 호출 자리가 조용히 생기는가"다).
+     * 주석과 선언은 뺀다 — KDoc 이 규약을 설명하는 자리가 여럿 있고,
+     * `value class ModelDraft(val value: String)` 은 생성이 아니라 정의다. 문자열 리터럴도
+     * 지운다(타입 자신의 `toString()` 이 자기 이름을 찍는다).
      */
     private fun createsType(
         line: String,

@@ -192,6 +192,21 @@ jobs:
       - name: Gradle build (ktlint · detekt · test)
         run: ./gradlew build --no-daemon
 
+      # 보안 불변식 **탐지기 자신의 존재**를 확인한다 (교차 종합 C-05).
+      #
+      # 위 `build` 는 있는 테스트를 전부 돌리지만, **테스트 파일을 지우면 그대로 초록**이다.
+      # 두 탐지기가 지켜야 할 것은 마스킹 선행 불변식(INV-01)이고, 그것을 지우는 diff 가
+      # 조용히 지나가면 안 된다. `--tests` 필터는 일치하는 테스트가 없으면
+      # `No tests found for given includes` 로 **실패**한다 — 실측 확인.
+      #
+      # 존재 단언을 파일 밖에 두는 이유는 quality 잡의 pytest 경로 명시와 같다:
+      # 자기 안의 단언은 파일과 함께 사라진다.
+      - name: 보안 불변식 탐지기 존재 확인 (클래스 삭제 시 실패)
+        run: |
+          ./gradlew :core:test --no-daemon \
+            --tests kr.easydoc.core.privacy.ProvenanceCreationSitesTest \
+            --tests kr.easydoc.core.privacy.MaskedTextGatewayTest
+
       # --- parity 게이트 배선 (Phase 0 필수 조치 E) ---------------------------
       # 산출물(parity/actual/)을 **Kotlin 테스트가** 만든다는 것을 CI에서 보장한다.
       # 이 배선이 없으면 fixture 입력이 전부 공개돼 있으므로 Python이 같은 파일을 만들어도
