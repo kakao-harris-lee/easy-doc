@@ -855,11 +855,18 @@ def structural_problems(pair: Pair, *, check_location: bool) -> list[str]:
 def spec_shape_problems(pair: Pair) -> list[str]:
     """spec 도메인의 **단언 구조**를 본다 — 성질 검증이 형식만 남는 것을 막는다.
 
-    두 가지를 막는다.
+    세 가지를 막는다.
     1. 단언 없는 케이스. 값 비교를 뺐는데 단언도 없으면 그 케이스는 아무것도 판정하지 않는다.
     2. 한 방향뿐인 도메인. "가려졌는가"만 재면 전문을 통째로 가린 구현이 만점을 받고,
        "남았는가"만 재면 아무것도 안 하는 구현이 만점을 받는다. 성질 검증에서 가장 흔한
        실패라 도메인마다 양방향을 강제한다.
+    3. **입력이 같은 케이스 둘**(M-08). 같은 입력은 같은 산출물을 내므로 두 케이스가 같은
+       것을 두 번 잰다. 성질이 늘지 않는데 케이스 수는 늘고, 그 수가 리포트에서 커버리지의
+       대리 지표로 쓰인다("성질 판정 83건"). 즉 **커버리지가 늘어난 것처럼 보이게 만드는
+       가장 값싼 방법**이 중복 붙여넣기이고, 그것을 아무도 잡지 않았다.
+
+       손편집으로 들어오는 경로는 정본 대조가 이미 막는다. 이 검사가 받는 것은 **생성기에
+       중복이 들어오는 경로**다 — 그때 fixture는 자기 정본과 일치하므로 정본 대조는 조용하다.
     """
     if pair.mode != MODE_SPEC or pair.pending_spec:
         return []
@@ -868,6 +875,21 @@ def spec_shape_problems(pair: Pair) -> list[str]:
         return []
     problems: list[str] = []
     directions: set[str] = set()
+    seen_inputs: dict[str, str] = {}
+    for case in cases:
+        if not isinstance(case, dict) or "input" not in case:
+            continue
+        key = json.dumps(case["input"], ensure_ascii=False, sort_keys=True)
+        first = seen_inputs.get(key)
+        if first is None:
+            seen_inputs[key] = str(case.get("id"))
+            continue
+        problems.append(
+            f"- `{case.get('id')}` **입력이 `{first}` 와 같다** — 같은 입력은 같은 산출물을 "
+            "내므로 두 케이스가 같은 것을 두 번 잰다. 성질은 늘지 않는데 케이스 수만 늘어 "
+            "커버리지를 실제보다 크게 보이게 한다. 단언을 나눌 의도였다면 한 케이스로 "
+            "합치고, 다른 성질을 재려던 것이라면 입력을 다르게 한다"
+        )
     for case in cases:
         if not isinstance(case, dict):
             continue

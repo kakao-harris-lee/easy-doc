@@ -220,56 +220,6 @@
       }
     },
     {
-      "id": "masking-rrn-tab",
-      "description": "탭이 구분자로 쓰인 표기도 가려야 한다 — 남으면 개인정보가 그대로 외부 LLM으로 나간다 (표 붙여넣기에서 실제로 나온다)",
-      "input": {
-        "text": "주민등록번호 900101\t-\t1234567 확인."
-      },
-      "assert": [
-        {
-          "check": "restores_input"
-        },
-        {
-          "check": "placeholder_scheme",
-          "args": {
-            "categories": [
-              "주민등록번호",
-              "카드번호"
-            ]
-          }
-        },
-        {
-          "check": "absent",
-          "args": {
-            "path": "masked_text",
-            "needles": [
-              "900101\t-\t1234567"
-            ]
-          }
-        },
-        {
-          "check": "present",
-          "args": {
-            "path": "masked_text",
-            "needles": [
-              "주민등록번호",
-              "확인."
-            ]
-          }
-        }
-      ],
-      "reference": {
-        "masked_text": "주민등록번호 [[주민등록번호1]] 확인.",
-        "items": [
-          {
-            "category": "주민등록번호",
-            "placeholder": "[[주민등록번호1]]",
-            "original": "900101\t-\t1234567"
-          }
-        ]
-      }
-    },
-    {
       "id": "masking-rrn-space-one",
       "description": "하이픈 없이 공백 **한 개**로만 갈린 표기도 가려야 한다 — 남으면 개인정보가 그대로 외부 LLM으로 나간다. 자리당 공백 1개는 자릿수 그룹 구분이다 — 2개 이상(정렬)과 갈리는 경계가 여기서 시작한다",
       "input": {
@@ -2709,6 +2659,399 @@
       }
     },
     {
+      "id": "masking-boundary-fold-rrn-head",
+      "description": "앞 경계 — 앞에 붙은 숫자와 주민등록번호 사이에 **폭 0 문자 하나**가 끼면 가린다. 가려야 한다 — 남으면 개인정보가 그대로 외부 LLM으로 나간다 — 원문 경로에서는 그 문자가 숫자가 아니라 경계가 성립하고, 합집합이라 한쪽만 성립해도 가린다. **바로 아래 음성 짝과 폭 0 문자 하나만 다르다**",
+      "input": {
+        "text": "번호 1​900101-1234567 확인."
+      },
+      "assert": [
+        {
+          "check": "restores_input"
+        },
+        {
+          "check": "placeholder_scheme",
+          "args": {
+            "categories": [
+              "주민등록번호",
+              "카드번호"
+            ]
+          }
+        },
+        {
+          "check": "absent",
+          "args": {
+            "path": "masked_text",
+            "needles": [
+              "900101-1234567"
+            ]
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "masked_text",
+            "needles": [
+              "번호 1​",
+              "확인."
+            ]
+          }
+        }
+      ],
+      "reference": {
+        "masked_text": "번호 1​[[주민등록번호1]] 확인.",
+        "items": [
+          {
+            "category": "주민등록번호",
+            "placeholder": "[[주민등록번호1]]",
+            "original": "900101-1234567"
+          }
+        ]
+      }
+    },
+    {
+      "id": "masking-keeps-boundary-rrn-head",
+      "description": "앞 경계 — 앞에 붙은 숫자와 주민등록번호 사이에 폭 0 문자가 **없으면** 그것은 더 긴 숫자열의 일부다. 가리면 안 된다 — 범위 밖이거나 개인정보가 아니다. 과잉 마스킹은 팩트를 지운다 — **바로 위 양성의 음성 짝이다.** 이 케이스만 보고 '경계 검사가 있다'고 읽어 합집합을 지우면 위 양성이 조용히 뒤집힌다. 그래서 짝으로 둔다",
+      "input": {
+        "text": "번호 1900101-1234567 확인."
+      },
+      "assert": [
+        {
+          "check": "restores_input"
+        },
+        {
+          "check": "placeholder_scheme",
+          "args": {
+            "categories": [
+              "주민등록번호",
+              "카드번호"
+            ]
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "masked_text",
+            "needles": [
+              "1900101-1234567"
+            ]
+          }
+        }
+      ],
+      "reference": {
+        "masked_text": "번호 1900101-1234567 확인.",
+        "items": []
+      }
+    },
+    {
+      "id": "masking-boundary-fold-rrn-tail",
+      "description": "뒤 경계 — 대칭 확인. 앞 경계만 보는 구현이 여기서 걸린다에 **폭 0 문자 하나**가 끼면 가린다. 가려야 한다 — 남으면 개인정보가 그대로 외부 LLM으로 나간다 — 원문 경로에서는 그 문자가 숫자가 아니라 경계가 성립하고, 합집합이라 한쪽만 성립해도 가린다. **바로 아래 음성 짝과 폭 0 문자 하나만 다르다**",
+      "input": {
+        "text": "번호 900101-1234567​8 확인."
+      },
+      "assert": [
+        {
+          "check": "restores_input"
+        },
+        {
+          "check": "placeholder_scheme",
+          "args": {
+            "categories": [
+              "주민등록번호",
+              "카드번호"
+            ]
+          }
+        },
+        {
+          "check": "absent",
+          "args": {
+            "path": "masked_text",
+            "needles": [
+              "900101-1234567"
+            ]
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "masked_text",
+            "needles": [
+              "번호",
+              "​8 확인."
+            ]
+          }
+        }
+      ],
+      "reference": {
+        "masked_text": "번호 [[주민등록번호1]]​8 확인.",
+        "items": [
+          {
+            "category": "주민등록번호",
+            "placeholder": "[[주민등록번호1]]",
+            "original": "900101-1234567"
+          }
+        ]
+      }
+    },
+    {
+      "id": "masking-keeps-boundary-rrn-tail",
+      "description": "뒤 경계 — 대칭 확인. 앞 경계만 보는 구현이 여기서 걸린다에 폭 0 문자가 **없으면** 그것은 더 긴 숫자열의 일부다. 가리면 안 된다 — 범위 밖이거나 개인정보가 아니다. 과잉 마스킹은 팩트를 지운다 — **바로 위 양성의 음성 짝이다.** 이 케이스만 보고 '경계 검사가 있다'고 읽어 합집합을 지우면 위 양성이 조용히 뒤집힌다. 그래서 짝으로 둔다",
+      "input": {
+        "text": "번호 900101-12345678 확인."
+      },
+      "assert": [
+        {
+          "check": "restores_input"
+        },
+        {
+          "check": "placeholder_scheme",
+          "args": {
+            "categories": [
+              "주민등록번호",
+              "카드번호"
+            ]
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "masked_text",
+            "needles": [
+              "900101-12345678"
+            ]
+          }
+        }
+      ],
+      "reference": {
+        "masked_text": "번호 900101-12345678 확인.",
+        "items": []
+      }
+    },
+    {
+      "id": "masking-boundary-fold-card-head",
+      "description": "카드 대칭 — 경계축도 RRN·CARD 양쪽에서 같아야 한다에 **폭 0 문자 하나**가 끼면 가린다. 가려야 한다 — 남으면 개인정보가 그대로 외부 LLM으로 나간다 — 원문 경로에서는 그 문자가 숫자가 아니라 경계가 성립하고, 합집합이라 한쪽만 성립해도 가린다. **바로 아래 음성 짝과 폭 0 문자 하나만 다르다**",
+      "input": {
+        "text": "카드 1​1234-5678-9012-3456 입력."
+      },
+      "assert": [
+        {
+          "check": "restores_input"
+        },
+        {
+          "check": "placeholder_scheme",
+          "args": {
+            "categories": [
+              "주민등록번호",
+              "카드번호"
+            ]
+          }
+        },
+        {
+          "check": "absent",
+          "args": {
+            "path": "masked_text",
+            "needles": [
+              "1234-5678-9012-3456"
+            ]
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "masked_text",
+            "needles": [
+              "카드 1​",
+              "입력."
+            ]
+          }
+        }
+      ],
+      "reference": {
+        "masked_text": "카드 1​[[카드번호1]] 입력.",
+        "items": [
+          {
+            "category": "카드번호",
+            "placeholder": "[[카드번호1]]",
+            "original": "1234-5678-9012-3456"
+          }
+        ]
+      }
+    },
+    {
+      "id": "masking-keeps-boundary-card-head",
+      "description": "카드 대칭 — 경계축도 RRN·CARD 양쪽에서 같아야 한다에 폭 0 문자가 **없으면** 그것은 더 긴 숫자열의 일부다. 가리면 안 된다 — 범위 밖이거나 개인정보가 아니다. 과잉 마스킹은 팩트를 지운다 — **바로 위 양성의 음성 짝이다.** 이 케이스만 보고 '경계 검사가 있다'고 읽어 합집합을 지우면 위 양성이 조용히 뒤집힌다. 그래서 짝으로 둔다",
+      "input": {
+        "text": "카드 11234-5678-9012-3456 입력."
+      },
+      "assert": [
+        {
+          "check": "restores_input"
+        },
+        {
+          "check": "placeholder_scheme",
+          "args": {
+            "categories": [
+              "주민등록번호",
+              "카드번호"
+            ]
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "masked_text",
+            "needles": [
+              "11234-5678-9012-3456"
+            ]
+          }
+        }
+      ],
+      "reference": {
+        "masked_text": "카드 11234-5678-9012-3456 입력.",
+        "items": []
+      }
+    },
+    {
+      "id": "masking-fold-visible-gap-zero",
+      "description": "폭 0 문자가 **다섯 개** 끼어도 가시 간격은 0칸이라 구분자다. 가려야 한다 — 남으면 개인정보가 그대로 외부 LLM으로 나간다 — 개수 상한이 재는 것은 문자 수가 아니라 **여백의 폭**이다",
+      "input": {
+        "text": "번호 900101​​​​​1234567 확인."
+      },
+      "assert": [
+        {
+          "check": "restores_input"
+        },
+        {
+          "check": "placeholder_scheme",
+          "args": {
+            "categories": [
+              "주민등록번호",
+              "카드번호"
+            ]
+          }
+        },
+        {
+          "check": "absent",
+          "args": {
+            "path": "masked_text",
+            "needles": [
+              "900101​​​​​1234567"
+            ]
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "masked_text",
+            "needles": [
+              "번호",
+              "확인."
+            ]
+          }
+        }
+      ],
+      "reference": {
+        "masked_text": "번호 [[주민등록번호1]] 확인.",
+        "items": [
+          {
+            "category": "주민등록번호",
+            "placeholder": "[[주민등록번호1]]",
+            "original": "900101​​​​​1234567"
+          }
+        ]
+      }
+    },
+    {
+      "id": "masking-fold-visible-gap-one",
+      "description": "폭 0 문자 사이에 공백 **한 칸**이면 가시 간격 1칸 — 구분자다. 가려야 한다 — 남으면 개인정보가 그대로 외부 LLM으로 나간다",
+      "input": {
+        "text": "번호 900101​ ​1234567 확인."
+      },
+      "assert": [
+        {
+          "check": "restores_input"
+        },
+        {
+          "check": "placeholder_scheme",
+          "args": {
+            "categories": [
+              "주민등록번호",
+              "카드번호"
+            ]
+          }
+        },
+        {
+          "check": "absent",
+          "args": {
+            "path": "masked_text",
+            "needles": [
+              "900101​ ​1234567"
+            ]
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "masked_text",
+            "needles": [
+              "번호",
+              "확인."
+            ]
+          }
+        }
+      ],
+      "reference": {
+        "masked_text": "번호 [[주민등록번호1]] 확인.",
+        "items": [
+          {
+            "category": "주민등록번호",
+            "placeholder": "[[주민등록번호1]]",
+            "original": "900101​ ​1234567"
+          }
+        ]
+      }
+    },
+    {
+      "id": "masking-keeps-fold-visible-gap-two",
+      "description": "폭 0 문자를 끼워도 **가시 간격이 2칸**이면 정렬이다. 가리면 안 된다 — 범위 밖이거나 개인정보가 아니다. 과잉 마스킹은 팩트를 지운다 — 접기로 개수 상한을 우회할 수 없다는 것을 고정한다. 위 두 건과 함께 읽어야 '무엇을 세는가'가 드러난다",
+      "input": {
+        "text": "접수 900101 ​ 1234567 끝."
+      },
+      "assert": [
+        {
+          "check": "restores_input"
+        },
+        {
+          "check": "placeholder_scheme",
+          "args": {
+            "categories": [
+              "주민등록번호",
+              "카드번호"
+            ]
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "masked_text",
+            "needles": [
+              "900101 ​ 1234567"
+            ]
+          }
+        }
+      ],
+      "reference_divergence": "expected",
+      "reference": {
+        "masked_text": "접수 [[주민등록번호1]] 끝.",
+        "items": [
+          {
+            "category": "주민등록번호",
+            "placeholder": "[[주민등록번호1]]",
+            "original": "900101 ​ 1234567"
+          }
+        ]
+      }
+    },
+    {
       "id": "masking-keeps-newline-split-digits",
       "description": "개행으로 갈린 두 숫자열은 하나의 주민등록번호가 아니다. 가리면 안 된다 — 범위 밖이거나 개인정보가 아니다. 과잉 마스킹은 팩트를 지운다 — 회피 차단을 공백 접기로 구현하면 여기서 두 줄이 붙어 오검출된다",
       "input": {
@@ -2961,6 +3304,156 @@
       }
     },
     {
+      "id": "masking-keeps-rrn-tab",
+      "description": "탭으로 벌어진 표기는 구분이 아니라 **열 정렬**이다. 가리면 안 된다 — 범위 밖이거나 개인정보가 아니다. 과잉 마스킹은 팩트를 지운다 — `keeps-rrn-space-two`(공백 2칸)와 **같은 자리**이고, 둘의 결과가 같아야 조판 문자에 따라 판정이 갈리지 않는다. 2026-08-14 방향 전환(판정 8 §4-septies.7, 리더 승인): 옛 `masking-rrn-tab`은 이 입력을 가려야 한다고 못박고 있었다",
+      "input": {
+        "text": "주민등록번호 900101\t-\t1234567 확인."
+      },
+      "assert": [
+        {
+          "check": "restores_input"
+        },
+        {
+          "check": "placeholder_scheme",
+          "args": {
+            "categories": [
+              "주민등록번호",
+              "카드번호"
+            ]
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "masked_text",
+            "needles": [
+              "900101\t-\t1234567"
+            ]
+          }
+        }
+      ],
+      "reference_divergence": "expected",
+      "reference": {
+        "masked_text": "주민등록번호 [[주민등록번호1]] 확인.",
+        "items": [
+          {
+            "category": "주민등록번호",
+            "placeholder": "[[주민등록번호1]]",
+            "original": "900101\t-\t1234567"
+          }
+        ]
+      }
+    },
+    {
+      "id": "masking-keeps-rrn-tab-two-columns",
+      "description": "탭 하나로 갈린 6자리·7자리는 **두 열**이지 하나의 주민등록번호가 아니다. 가리면 안 된다 — 범위 밖이거나 개인정보가 아니다. 과잉 마스킹은 팩트를 지운다 — TAB을 여백으로 인정하면 표에서 접수번호와 관리번호가 하나로 붙는다",
+      "input": {
+        "text": "접수 900101\t1234567 끝."
+      },
+      "assert": [
+        {
+          "check": "restores_input"
+        },
+        {
+          "check": "placeholder_scheme",
+          "args": {
+            "categories": [
+              "주민등록번호",
+              "카드번호"
+            ]
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "masked_text",
+            "needles": [
+              "900101\t1234567"
+            ]
+          }
+        }
+      ],
+      "reference_divergence": "expected",
+      "reference": {
+        "masked_text": "접수 [[주민등록번호1]] 끝.",
+        "items": [
+          {
+            "category": "주민등록번호",
+            "placeholder": "[[주민등록번호1]]",
+            "original": "900101\t1234567"
+          }
+        ]
+      }
+    },
+    {
+      "id": "masking-keeps-card-tab-four-columns",
+      "description": "탭으로 갈린 네 칸은 카드번호가 아니다. 가리면 안 된다 — 범위 밖이거나 개인정보가 아니다. 과잉 마스킹은 팩트를 지운다 — **표 4열이 통째로 카드번호가 되던 자리**이고, TAB이 구분자였을 때 실측으로 확인된 과잉이다",
+      "input": {
+        "text": "표 1234\t5678\t9012\t3456 끝."
+      },
+      "assert": [
+        {
+          "check": "restores_input"
+        },
+        {
+          "check": "placeholder_scheme",
+          "args": {
+            "categories": [
+              "주민등록번호",
+              "카드번호"
+            ]
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "masked_text",
+            "needles": [
+              "1234\t5678\t9012\t3456"
+            ]
+          }
+        }
+      ],
+      "reference": {
+        "masked_text": "표 1234\t5678\t9012\t3456 끝.",
+        "items": []
+      }
+    },
+    {
+      "id": "masking-keeps-amount-tab-four-columns",
+      "description": "금액 4열도 같은 형태다. 가리면 안 된다 — 범위 밖이거나 개인정보가 아니다. 과잉 마스킹은 팩트를 지운다 — 카드번호 표기와 자릿수가 같아서 구분자만으로는 갈리지 않는다. 열 경계를 구분자로 인정하지 않는 것이 유일한 방어다",
+      "input": {
+        "text": "금액 1200\t3400\t5600\t7800 원."
+      },
+      "assert": [
+        {
+          "check": "restores_input"
+        },
+        {
+          "check": "placeholder_scheme",
+          "args": {
+            "categories": [
+              "주민등록번호",
+              "카드번호"
+            ]
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "masked_text",
+            "needles": [
+              "1200\t3400\t5600\t7800"
+            ]
+          }
+        }
+      ],
+      "reference": {
+        "masked_text": "금액 1200\t3400\t5600\t7800 원.",
+        "items": []
+      }
+    },
+    {
       "id": "masking-keeps-vt-split-digits",
       "description": "수직 탭 U+000B로 갈린 두 숫자열은 하나의 주민등록번호가 아니다. 가리면 안 된다 — 범위 밖이거나 개인정보가 아니다. 과잉 마스킹은 팩트를 지운다 — VT는 줄 경계라 LF·CR과 같은 부류다. 탐색 뷰에서 접으면 두 줄이 붙는다",
       "input": {
@@ -3041,7 +3534,71 @@
           }
         ]
       }
+    },
+    {
+      "id": "masking-known-gap-four-groups-single-space",
+      "description": "네 개의 4자리 숫자가 한 칸 공백으로 이어지면 카드번호로 가려진다(연도 표). **줄일 수 없는 모호성** — `1234 5678 9012 3456`이 카드번호 표준 표기라 공백 한 칸을 빼면 진짜 누락이 된다. `privacy-gate`가 §4-septies.8에서 **판정하지 않고** 관리 대상으로 넘긴 자리이고 **교차 검증이 없다**(실측 1건). 어느 방향도 단언하지 않는다 — 개선·악화는 참고 갈림 원장에 찍혀 드러난다",
+      "input": {
+        "text": "연도 2021 2022 2023 2024 실적."
+      },
+      "assert": [
+        {
+          "check": "restores_input"
+        },
+        {
+          "check": "placeholder_scheme",
+          "args": {
+            "categories": [
+              "주민등록번호",
+              "카드번호"
+            ]
+          }
+        }
+      ],
+      "known_gap": "한 칸 공백으로 이어진 4×4자리 과잉 (감수한 표면 — 판정 대상 아님)",
+      "reference": {
+        "masked_text": "연도 [[카드번호1]] 실적.",
+        "items": [
+          {
+            "category": "카드번호",
+            "placeholder": "[[카드번호1]]",
+            "original": "2021 2022 2023 2024"
+          }
+        ]
+      }
+    },
+    {
+      "id": "masking-known-gap-five-groups-single-space",
+      "description": "같은 형태가 **다섯 열**이면 앞 네 개만 가려진다 — 후행 그룹 경계를 보지 않는다는 뜻이다. 판정서가 *\"확정 시 함께 본다\"*고 지목한 동작이며, 위 케이스와 같은 이유로 방향을 단언하지 않는다. 이 자리가 닫히면 두 케이스를 함께 전환한다",
+      "input": {
+        "text": "연도 2020 2021 2022 2023 2024 실적."
+      },
+      "assert": [
+        {
+          "check": "restores_input"
+        },
+        {
+          "check": "placeholder_scheme",
+          "args": {
+            "categories": [
+              "주민등록번호",
+              "카드번호"
+            ]
+          }
+        }
+      ],
+      "known_gap": "5열에서 앞 4개만 가려짐 (후행 경계 미검사 — 판정 대상 아님)",
+      "reference": {
+        "masked_text": "연도 [[카드번호1]] 2024 실적.",
+        "items": [
+          {
+            "category": "카드번호",
+            "placeholder": "[[카드번호1]]",
+            "original": "2020 2021 2022 2023"
+          }
+        ]
+      }
     }
   ],
-  "generated_at": "2026-08-13T21:48:58Z"
+  "generated_at": "2026-08-13T23:36:56Z"
 }
