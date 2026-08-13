@@ -86,9 +86,11 @@ data class MaskedItem(
  * 나가는 것은 [maskedText] 뿐이며, 원문-자리표시자 대응은 검수 화면 표시용으로만 쓴다.
  * 담기는 값이 고유식별정보·카드번호로 좁아졌으므로 반출 금지의 강도는 오히려 높다.
  *
- * **복원 성질**: `restorePlaceholders(maskedText.value, items).text` 는 [maskText] 의
- * 입력과 정확히 같다. 이 성질은 [restorePlaceholders] 로만 성립한다 — 자리표시자를
- * 손으로 `replace` 하면 입력에 원래 있던 자리표시자 모양까지 개인정보로 바뀐다.
+ * **복원 성질**: 사람 검수를 거친 본문이라면 [restoreForExport] 가 [maskText] 의 입력을
+ * 한 글자도 다르지 않게 되돌린다. 이 성질은 [restoreForExport] 로만 성립한다 —
+ * 자리표시자를 손으로 `replace` 하면 입력에 원래 있던 자리표시자 모양까지 개인정보로 바뀐다.
+ * 검수를 거치지 않은 본문에서는 이 성질이 **일부러** 성립하지 않는다(사유는
+ * [restoreForExport] 앞의 "검수를 거치지 않은 본문" 절).
  */
 data class MaskingResult(
     val maskedText: MaskedText,
@@ -96,25 +98,30 @@ data class MaskingResult(
 )
 
 /**
- * [restorePlaceholders] 의 결과.
+ * [restoreForExport] 의 결과.
  *
  * 값 하나(복원된 본문)만 돌려주지 않는 이유: 복원 대상은 **LLM 이 다시 쓴 글**이라
- * 우리가 넣은 자리표시자가 그대로 있다는 보장이 없다. 어긋난 방식이 세 가지이고
+ * 우리가 넣은 자리표시자가 그대로 있다는 보장이 없다. 어긋난 방식이 네 가지이고
  * 각각 처리가 다르므로, 호출부가 판단할 수 있게 사실을 분리해 돌려준다.
  *
- * @property text 복원된 본문.
+ * @property text 최종 본문. 검수본이 없으면 복원하지 않은 초안이다.
  * @property missing 우리가 만들었는데 본문에서 **사라진** 자리표시자. 그 자리의 정보가
  *   통째로 빠졌다는 뜻이다(계약의 `missing_placeholders` 와 같은 개념).
  * @property ambiguous 본문에 **두 번 이상** 나타난 우리 자리표시자. 마스킹은 각 자리표시자를
  *   딱 한 번만 넣으므로, 복수 출현은 LLM 이나 검수자가 복제했다는 뜻이다. 어느 쪽이
- *   우리 자리인지 알 수 없으므로 **한 곳도 복원하지 않는다**(사유는 [restorePlaceholders]).
+ *   우리 자리인지 알 수 없으므로 **한 곳도 복원하지 않는다**(사유는 [restoreForExport]).
  * @property foreign 자리표시자 모양이지만 우리가 만들지 않은 토큰. 그대로 두었다.
+ * @property withheld **검수본이 없어서** 복원을 보류한 자리표시자. 검수를 거쳤다면 값이
+ *   들어갔을 자리다(개수 판정을 통과한 것들). 검수본이 있으면 항상 빈 목록이다.
+ *   비어 있지 않다는 것은 "내보낼 문서에 `[[주민등록번호1]]` 이 글자 그대로 남는다"는
+ *   뜻이므로, 그대로 내보낼지 막을지는 application 이 정한다(사유는 [restoreForExport]).
  */
 data class PlaceholderRestoration(
     val text: String,
     val missing: List<String>,
     val ambiguous: List<String>,
     val foreign: List<String>,
+    val withheld: List<String>,
 )
 
 // ── 범주에서 뺀 것: 전화번호·이메일·계좌번호 (2026-08-12, master-plan 3.2) ──────────
@@ -179,7 +186,8 @@ private val PATTERNS: List<Pair<MaskCategory, Regex>> =
 // 탈출된 토큰은 계약 패턴과 겹치지 않으므로 자리표시자로 오인되지 않는다.
 //
 // 대가: 이런 입력에서는 마스킹 결과가 입력과 한 글자 달라지고(그 `!`), LLM 과 검수 화면에
-// 그대로 보인다. [restorePlaceholders] 가 내보내기 시점에 되돌린다.
+// 그대로 보인다. [restoreForExport] 가 내보내기 시점에 되돌린다(검수 여부와 무관하다 —
+// 탈출을 벗기는 것은 개인정보 복원이 아니라 우리가 바꿔 놓은 사용자 본문의 복구다).
 // ──────────────────────────────────────────────────────────────────────────────────
 
 /**
@@ -374,32 +382,114 @@ private fun maskParts(text: String): Pair<String, List<MaskedItem>> {
  *
  * 원본: `app/privacy/masking.py::mask_text`.
  *
- * [restorePlaceholders] 로 되돌리면 입력이 **정확히** 복원된다. 자리표시자 모양이 입력에
- * 이미 있었다면 탈출 표기로 바뀌어 나가고(`[[주민등록번호1]]` → `[[!주민등록번호1]]`),
- * 복원 때 되돌려진다 — 사유는 위 "자리표시자 충돌" 절.
+ * 사람 검수를 거친 본문이라면 [restoreForExport] 가 입력을 **정확히** 되돌린다. 자리표시자
+ * 모양이 입력에 이미 있었다면 탈출 표기로 바뀌어 나가고(`[[주민등록번호1]]` →
+ * `[[!주민등록번호1]]`), 복원 때 되돌려진다 — 사유는 위 "자리표시자 충돌" 절.
  */
 fun maskText(text: String): MaskingResult = MaskedText.mask(text)
 
+// ── 검수를 거치지 않은 본문에는 개인정보를 꽂지 않는다 ──────────────────────────────
+//
+// 아래 [restoreForExport] 의 개수 판정(정확히 1회)이 잡는 것은 **복제와 유실뿐**이다.
+// 모델이 우리 자리표시자를 지우고 **다른 자리에 하나** 만들면 개수는 여전히 1이라 그
+// 자리에 복원된다. 본문만 놓고 보면 이것과 "모델이 문장을 다시 써서 자리가 옮겨간
+// 정상 경로"를 구분할 수단이 없다. 구분에 실패한 대가는 시민의 주민등록번호가 엉뚱한
+// 사람 자리에 박힌 채 배포되는 것이다.
+//
+// 위치를 확증할 수 있는 것은 **분할 화면을 본 사람**뿐이다. HITL 은 이 제품의 설계된
+// 통제이지 변명이 아니다(master-plan 3.3). 그런데 Python 은 그 통제를 우회한다 —
+// `app/services/documents.py::export_conversion` 이 `edited_text ?? easy_text` 로 본문을
+// 고른 뒤 **무조건** 복원해서, 검수를 한 번도 거치지 않은 모델 초안에도 개인정보를 꽂는다.
+// 409 차단은 `missing_placeholders` 가 비어 있지 않을 때만 걸리는데, 단발 위조는 개수가
+// 1이라 그 목록이 비어 있다. 즉 "검수 없이 개인정보가 잘못된 위치에 복원되는" 경로가
+// 실제로 열려 있다. Kotlin 에는 아직 호출자가 없으므로 지금이 막을 자리다 — 호출자가
+// 생긴 뒤에 막으면 이미 그 형태로 짜여 있다.
+//
+// 그래서 두 가지를 한다.
+//
+// 1. **본문 선택을 호출부에서 뺏는다.** `easy_text` 와 `edited_text` 를 서로 다른 타입으로
+//    받아 core 가 고른다. 호출부는 "이 본문이 사람 검수를 거쳤는가"를 말하지 않으면
+//    컴파일되지 않고, 두 값을 바꿔 넣으면 타입이 어긋난다. 런타임 검사나 주석으로 두지
+//    않는 이유는 [MaskedText] 와 같다 — 다음 사람은 주석을 읽지 않는다.
+// 2. **검수본이 없으면 복원하지 않는다.** 자리표시자를 글자 그대로 남긴 채 내보낸다.
+//
+// 2번의 근거는 두 실패의 비대칭이다. 복원하지 않았을 때의 최악은 `[[주민등록번호1]]` 이
+// 박힌 문서다 — 눈에 보이고, 되돌릴 수 있고, 그 자체는 개인정보가 아니다(계약: 라벨뿐).
+// 복원했을 때의 최악은 엉뚱한 자리의 진짜 주민등록번호다 — 보이지 않고, 배포되면 되돌릴
+// 수 없다. 게다가 이 규칙이 무는 것은 [MaskedItem] 이 실제로 잡힌 문서뿐이다. 주 용도인
+// 공용 안내문은 대개 `items` 가 비어 있어 한 글자도 달라지지 않는다 — 규칙이 비용을
+// 물리는 대상이 정확히 실수 비용이 가장 큰 문서와 겹친다.
+//
+// 택하지 않은 갈래: **자리표시자들의 상대 순서가 마스킹 때와 같은지 보고 복원한다.**
+// 순서는 *위치*가 아니라 *차례*에 대한 증거다. 쉬운 글 변환은 문장을 쪼개고 묶으므로
+// 정상 재작성에서도 차례가 흔들려 오탐이 나고, 반대로 차례를 지킨 채 자리만 옮긴 위조는
+// 그대로 통과한다. 무엇보다 **자리표시자가 하나뿐이면 순서로는 아무것도 잡지 못하는데**,
+// 지적된 것이 바로 그 경우다. 검증하지 못한 것을 검증했다고 믿게 만드는 장치라 넣지 않는다.
+//
+// **이 통제가 못 잡는 것** (닫은 척하지 않는다):
+// - **읽지 않고 저장만 한 검수본.** `edited_text` 가 있다는 것은 "사람이 본문을 제출했다"이지
+//   "자리표시자 위치를 확인했다"가 아니다. core 는 둘을 구분할 수단이 없다. 남는 위험은
+//   검수 화면(HITL)과 application 이 진다.
+// - **검수본 안의 단발 위조.** 사람이 넘긴 본문은 그대로 복원한다 — 사람 눈이 마지막 방어다.
+// - **application 이 초안을 `edited_text` 에 미리 채우면 이 통제는 통째로 무너진다.**
+//   검수 화면을 열 때 자동 저장하는 식의 구현이 그렇다. `edited_text` 는 사람이 실제로
+//   제출하기 전까지 null 이어야 한다 — Phase 4 문서 API 가 지켜야 할 요구사항이다.
+// - **Java 호출자·리플렉션.** `value class` 는 JVM 에서 `String` 으로 지워진다([MaskedText]
+//   와 같은 한계).
+//
+// **계약에 대해**: 검수 없는 내보내기를 409 로 막을지는 여기서 정하지 않는다. 계약이 정한
+// 409 조건은 둘뿐이고("아직 완료되지 않음", "검수본이 없는데 `missing_placeholders` 가 비어
+// 있지 않음"), 그 조건을 재해석하거나 새 실패 모드를 만드는 것은 contract-keeper 의 일이다.
+// core 가 보장하는 것은 하나다 — **검수를 거치지 않은 본문에는 개인정보가 들어가지 않는다.**
+// 그 사실을 [PlaceholderRestoration.withheld] 로 알리고, 막을지 내보낼지는 application 이 정한다.
+// ──────────────────────────────────────────────────────────────────────────────────
+
 /**
- * 자리표시자를 원문 값으로 되돌린다 (**내보내기 전용**).
+ * 검수를 거치지 않은 모델 초안 (`easy_text`).
  *
- * 원본: `app/easyread/export.py::restore_placeholders`. 원본은 내보내기 모듈에 있지만
- * 이쪽으로 옮겼다. **근거**: 이 함수가 지키는 성질(정확 복원)을 만든 것은 마스킹이고,
- * 성립 조건도 마스킹 쪽에 있다 — 자리표시자 형태, 탈출 표기, "각 자리표시자는 딱 한 번만
- * 넣는다"가 전부 이 파일의 결정이다. 두 곳에 나눠 두면 한쪽만 바뀌어 성질이 조용히
- * 깨진다. 실제로 Python 은 나뉘어 있었고, 마스킹이 보장하지 않는 것(입력에 이미 있던
- * 자리표시자)을 내보내기가 보장한다고 가정해 이 결함이 생겼다. 내보내기 조각(Phase 4)은
- * 이 함수를 부른다.
+ * [ReviewedBody] 와 **다른 타입**인 것이 요점이다. 둘 다 생 `String` 이면
+ * `restoreForExport(edited, easy, items)` 처럼 뒤집어 넣어도 컴파일되고, 그 순간 검수하지
+ * 않은 초안이 검수본 자리에 들어가 이 통제가 막으려는 일이 그대로 일어난다.
+ */
+@JvmInline
+value class ModelDraft(val value: String)
+
+/**
+ * 사람이 검수 화면에서 **제출한** 본문 (`edited_text`). 제출 전에는 `null` 이다.
+ *
+ * 이 타입으로 감싸는 행위가 곧 "사람 검수를 거쳤다"는 선언이다. 초안을 여기 감싸 넣으면
+ * 통제가 무너진다 — 위 절의 "못 잡는 것" 참고.
+ */
+@JvmInline
+value class ReviewedBody(val value: String)
+
+/**
+ * 내보낼 최종 본문을 고르고, **사람 검수를 거친 경우에만** 자리표시자를 원문으로
+ * 되돌린다 (**내보내기 전용**).
+ *
+ * 원본: `app/easyread/export.py::restore_placeholders` + `app/services/documents.py::
+ * export_conversion` 의 본문 선택(`edited_text ?? easy_text`). 두 곳에 나뉘어 있던 것을
+ * 하나로 합쳤다. **근거**: 나뉘어 있었기 때문에 "검수본이 없으면 초안을 쓴다"(services)와
+ * "자리표시자를 무조건 되돌린다"(export)가 서로를 모른 채 결합해, 검수 없이 개인정보를
+ * 복원하는 경로가 생겼다. 정확 복원이라는 성질을 만든 것도 마스킹 쪽이다 — 자리표시자
+ * 형태, 탈출 표기, "각 자리표시자는 딱 한 번만 넣는다"가 전부 이 파일의 결정이다.
+ * 내보내기 조각(Phase 4)은 이 함수를 부른다.
  *
  * **호출 경로 규칙은 원본 그대로다** — 복원본을 만드는 경로는 내보내기 하나뿐이다.
  * 조회 응답·목록·로그에서 부르지 않는다.
  *
- * ## 우리가 만들지 않은 자리표시자를 어떻게 다루는가
+ * ## 판정 규칙
  *
- * 복원 대상은 **LLM 이 다시 쓴 글**이다. 자리표시자 모양은 모델이 얼마든지 만들어 낼 수
- * 있고, 그 자리에 진짜 주민등록번호를 꽂으면 마스킹의 목적이 정면으로 뒤집힌다. 그래서
- * 개수로 판정한다 — 마스킹은 각 자리표시자를 **정확히 한 번** 넣으므로, 개수가 1이 아닌
- * 것은 우리가 만든 본문이 아니다.
+ * 본문은 `reviewed ?? draft` 다(계약의 본문 선택 규칙과 같다).
+ *
+ * **[reviewed] 가 `null` 이면 한 곳도 복원하지 않는다.** 복원했을 자리표시자는
+ * [PlaceholderRestoration.withheld] 로 알린다. 사유는 이 함수 앞의 "검수를 거치지 않은
+ * 본문" 절.
+ *
+ * 검수본이 있으면 자리표시자별 등장 횟수로 판정한다. 복원 대상은 **LLM 이 다시 쓴 글**이라
+ * 자리표시자 모양은 모델이 얼마든지 만들어 낼 수 있고, 그 자리에 진짜 주민등록번호를 꽂으면
+ * 마스킹의 목적이 정면으로 뒤집힌다. 마스킹은 각 자리표시자를 **정확히 한 번** 넣으므로,
+ * 개수가 1이 아닌 것은 우리가 만든 본문 그대로가 아니다.
  *
  * - **정확히 1회** → 복원한다. (모델이 문장을 다시 써서 자리가 옮겨간 것은 정상 경로다.)
  * - **0회** ([PlaceholderRestoration.missing]) → 복원할 것이 없다. 그 자리의 정보가 통째로
@@ -411,25 +501,37 @@ fun maskText(text: String): MaskingResult = MaskedText.mask(text)
  * - **우리 목록에 없는 자리표시자** ([PlaceholderRestoration.foreign]) → 그대로 둔다.
  *   우리가 만들지 않은 표기를 지워 본문을 조용히 훼손하지 않는다(원본과 같은 판단).
  *
- * 마지막에 탈출 표기를 한 겹 벗긴다. 치환 뒤에 한 번 더 훑는 이유는 마스킹이 탈출된
- * 토큰 **안쪽**의 숫자를 가릴 수 있기 때문이다(`[[!주민등록번호1234567890123]]`).
- * 그 경우 자리표시자를 되돌려야 비로소 탈출된 토큰이 온전한 모양이 된다.
+ * [PlaceholderRestoration] 의 `missing`·`ambiguous`·`foreign` 은 **검수 여부와 무관하게**
+ * 계산한다 — 호출부가 본문 상태를 보고할 수 있어야 하고, 그 값들은 라벨이라 개인정보가 아니다.
  *
- * @param text 자리표시자가 남아 있는 변환 결과(또는 검수 수정본).
+ * 마지막에 탈출 표기를 한 겹 벗기는 것도 **검수 여부와 무관하다.** 탈출은 우리가 사용자
+ * 본문을 바꿔 놓은 것이고 벗기는 것은 그 복구일 뿐이라, 개인정보가 새로 들어가지 않는다.
+ * 치환 뒤에 한 번 더 훑는 이유는 마스킹이 탈출된 토큰 **안쪽**의 숫자를 가릴 수 있기
+ * 때문이다(`[[!주민등록번호1234567890123]]`). 그 경우 자리표시자를 되돌려야 비로소 탈출된
+ * 토큰이 온전한 모양이 된다.
+ *
+ * @param draft 변환 결과 초안(`easy_text`). 완료된 변환에는 항상 있다.
+ * @param reviewed 사람이 제출한 검수본(`edited_text`). 제출 전이면 `null`.
  * @param items [maskText] 가 낸 항목 목록.
  */
-fun restorePlaceholders(
-    text: String,
+fun restoreForExport(
+    draft: ModelDraft,
+    reviewed: ReviewedBody?,
     items: List<MaskedItem>,
 ): PlaceholderRestoration {
+    val body = reviewed?.value ?: draft.value
     val originals = items.associate { it.placeholder to it.original }
-    val found = PLACEHOLDER.findAll(text).map { it.value }.toList()
+    val found = PLACEHOLDER.findAll(body).map { it.value }.toList()
     val occurrences = found.groupingBy { it }.eachCount()
 
     val restored =
-        PLACEHOLDER.replace(text) { match ->
-            val original = originals[match.value]
-            if (original != null && occurrences[match.value] == 1) original.reveal() else match.value
+        if (reviewed == null) {
+            body
+        } else {
+            PLACEHOLDER.replace(body) { match ->
+                val original = originals[match.value]
+                if (original != null && occurrences[match.value] == 1) original.reveal() else match.value
+            }
         }
 
     return PlaceholderRestoration(
@@ -437,5 +539,11 @@ fun restorePlaceholders(
         missing = items.map { it.placeholder }.filter { occurrences[it] == null },
         ambiguous = items.map { it.placeholder }.filter { (occurrences[it] ?: 0) > 1 },
         foreign = found.filterNot { it in originals }.distinct(),
+        withheld =
+            if (reviewed == null) {
+                items.map { it.placeholder }.filter { occurrences[it] == 1 }
+            } else {
+                emptyList()
+            },
     )
 }

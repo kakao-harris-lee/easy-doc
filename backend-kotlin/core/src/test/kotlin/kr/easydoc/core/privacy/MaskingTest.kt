@@ -18,8 +18,10 @@ import org.junit.jupiter.params.provider.ValueSource
  *    않는다. 과잉 마스킹은 안내문의 팩트(금액·전화번호)를 지운다.
  * 3. **정확히 복원된다** — 자리표시자를 되돌리면 입력이 한 글자도 다르지 않다.
  *    이것이 깨지면 내보내기가 잘못된 원문을 꽂는다.
+ * 4. **검수를 거치지 않은 본문에는 개인정보를 꽂지 않는다** — 위치를 확증하는 것은 사람뿐이다.
+ *    이것이 깨지면 시민의 주민등록번호가 엉뚱한 자리에 박힌 문서가 배포된다.
  *
- * 복원은 **제품 코드의 [restorePlaceholders]** 로만 검증한다. 예전에는 이 파일 안에서
+ * 복원은 **제품 코드의 [restoreForExport]** 로만 검증한다. 예전에는 이 파일 안에서
  * `replace` 로 되돌려 비교했는데, 그것은 테스트가 자기 헬퍼의 왕복을 증명한 것이지
  * 제품이 복원할 수 있다는 증거가 아니었다 — 실제로 그 헬퍼는 입력에 이미 있던
  * 자리표시자를 개인정보로 바꾸는 결함을 통과시켰다.
@@ -27,6 +29,18 @@ import org.junit.jupiter.params.provider.ValueSource
  * 보이지 않는 문자는 소스에 리터럴로 적지 않는다 — 전부 `\uXXXX` 다.
  */
 class MaskingTest {
+    /**
+     * 사람 검수를 거친 본문으로 복원한다.
+     *
+     * 제품 함수를 그대로 부르는 **얇은 어댑터**다 — 복원 로직을 다시 쓰지 않는다(클래스
+     * KDoc 의 경고 참고). 담당자가 검수 화면에서 초안을 고치지 않고 그대로 제출한 경우와
+     * 같다(`edited_text == easy_text`).
+     */
+    private fun restoreReviewed(
+        text: String,
+        items: List<MaskedItem>,
+    ) = restoreForExport(ModelDraft(text), ReviewedBody(text), items)
+
     @Nested
     @DisplayName("주민등록번호")
     inner class RrnMasking {
@@ -209,7 +223,7 @@ class MaskingTest {
             // 이것이 깨지면 내보내기가 잘못된 원문을 꽂는다. 마스킹 앞단에서 입력을
             // 정규화하지 않는 이유가 이 성질이다.
             val result = maskText(input)
-            val restoration = restorePlaceholders(result.maskedText.value, result.items)
+            val restoration = restoreReviewed(result.maskedText.value, result.items)
 
             assertThat(restoration.text).isEqualTo(input)
             assertThat(restoration.missing).isEmpty()
@@ -253,7 +267,7 @@ class MaskingTest {
                 .isEqualTo("앞 [[!주민등록번호1]] 뒤 [[주민등록번호1]] 끝")
             // 우리가 만든 자리표시자는 본문에 딱 하나다. 이 성질이 복원 판정의 근거다.
             assertThat(result.maskedText.value.split("[[주민등록번호1]]")).hasSize(2)
-            assertThat(restorePlaceholders(result.maskedText.value, result.items).text)
+            assertThat(restoreReviewed(result.maskedText.value, result.items).text)
                 .isEqualTo(input)
         }
 
@@ -264,7 +278,7 @@ class MaskingTest {
             val result = maskText(input)
 
             assertThat(result.maskedText.value).isEqualTo("[[!!주민등록번호1]] 과 [[!!!카드번호9]]")
-            assertThat(restorePlaceholders(result.maskedText.value, result.items).text)
+            assertThat(restoreReviewed(result.maskedText.value, result.items).text)
                 .isEqualTo(input)
         }
 
@@ -295,7 +309,7 @@ class MaskingTest {
             // 본문이 아니라는 뜻이고, 어느 쪽이 우리 자리인지 판정할 근거가 없다.
             // 전부 채우면 개인정보를 모델이 고른 자리에 심는 것이다.
             val modelOutput = "요약: [[주민등록번호1]] 참고. 담당자 [[주민등록번호1]] 문의"
-            val restoration = restorePlaceholders(modelOutput, maskedItems())
+            val restoration = restoreReviewed(modelOutput, maskedItems())
 
             assertThat(restoration.text).isEqualTo(modelOutput)
             assertThat(restoration.text).doesNotContain("900101")
@@ -309,7 +323,7 @@ class MaskingTest {
             // 모델이 [[주민등록번호9]] 를 만들어 냈다. 우리 목록에 없으므로 채울 값이 없고,
             // 지우지도 않는다 — 우리가 만들지 않은 표기를 지워 본문을 훼손하지 않는다.
             val modelOutput = "본인 [[주민등록번호1]] 과 배우자 [[주민등록번호9]]"
-            val restoration = restorePlaceholders(modelOutput, maskedItems())
+            val restoration = restoreReviewed(modelOutput, maskedItems())
 
             assertThat(restoration.text).isEqualTo("본인 900101-1234567 과 배우자 [[주민등록번호9]]")
             assertThat(restoration.foreign).containsExactly("[[주민등록번호9]]")
@@ -319,7 +333,7 @@ class MaskingTest {
         @Test
         @DisplayName("사라진 자리표시자를 보고한다")
         fun `사라지면 보고한다`() {
-            val restoration = restorePlaceholders("주민번호는 생략합니다", maskedItems())
+            val restoration = restoreReviewed("주민번호는 생략합니다", maskedItems())
 
             assertThat(restoration.text).isEqualTo("주민번호는 생략합니다")
             assertThat(restoration.missing).containsExactly("[[주민등록번호1]]")
@@ -330,10 +344,120 @@ class MaskingTest {
         fun `모델이 만든 탈출 표기`() {
             // 탈출 표기는 우리 자리표시자가 아니므로 값이 채워지지 않는다.
             // 한 겹 벗겨진 라벨이 남고, 라벨은 개인정보가 아니다(계약).
-            val restoration = restorePlaceholders("모델이 쓴 [[!주민등록번호1]]", maskedItems())
+            val restoration = restoreReviewed("모델이 쓴 [[!주민등록번호1]]", maskedItems())
 
             assertThat(restoration.text).isEqualTo("모델이 쓴 [[주민등록번호1]]")
             assertThat(restoration.text).doesNotContain("900101")
+        }
+    }
+
+    @Nested
+    @DisplayName("검수를 거치지 않은 본문")
+    inner class UnreviewedBodyGate {
+        // codex stop-time 리뷰가 남긴 잔여를 고정한다. 모델이 우리 자리표시자를 지우고
+        // **다른 자리에 하나** 만들면 개수가 여전히 1이라 그 자리에 복원된다 — 개수 판정으로는
+        // 정상적인 문장 재작성과 구분할 수단이 없다. 위치를 확증하는 것은 분할 화면을 본
+        // 사람뿐이므로, 사람이 제출하지 않은 본문에는 아예 꽂지 않는다.
+
+        private fun source() = maskText("신청자 주민등록번호는 900101-1234567 입니다.")
+
+        @Test
+        @DisplayName("단발 위조 — 검수 없는 본문에는 개인정보를 주입하지 않는다")
+        fun `검수 없는 본문에는 주입하지 않는다`() {
+            val masked = source()
+            // 모델이 우리 자리표시자를 지우고 담당자 자리에 하나 만들어 냈다.
+            val forged = "담당자 [[주민등록번호1]] 에게 문의하세요."
+
+            val result = restoreForExport(ModelDraft(forged), reviewed = null, items = masked.items)
+
+            assertThat(result.text).isEqualTo(forged)
+            assertThat(result.text).doesNotContain("900101")
+            assertThat(result.withheld).containsExactly("[[주민등록번호1]]")
+            // 개수 판정이 이 경로를 **못 잡는다**는 사실 자체를 고정한다. missing 도 ambiguous 도
+            // 비어 있으므로 계약의 409 조건에도 걸리지 않는다 — 그래서 타입 쪽에서 막았다.
+            assertThat(result.missing).isEmpty()
+            assertThat(result.ambiguous).isEmpty()
+        }
+
+        @Test
+        @DisplayName("검수본이면 자리가 옮겨져도 복원한다 — 위조와 정상 재작성을 구분하지 못한다는 뜻이기도 하다")
+        fun `검수본은 복원한다`() {
+            val masked = source()
+            // 위 테스트와 **같은 본문**이다. 다른 것은 사람이 제출했다는 사실 하나뿐이고,
+            // core 가 가진 근거도 그것뿐이다. 검수본 안의 단발 위조는 사람 눈이 마지막 방어다.
+            val submitted = "담당자 [[주민등록번호1]] 에게 문의하세요."
+
+            val result =
+                restoreForExport(ModelDraft(masked.maskedText.value), ReviewedBody(submitted), masked.items)
+
+            assertThat(result.text).isEqualTo("담당자 900101-1234567 에게 문의하세요.")
+            assertThat(result.withheld).isEmpty()
+        }
+
+        @Test
+        @DisplayName("검수본이 있으면 그것이 최종본이다 — 초안은 쓰지 않는다")
+        fun `검수본이 초안을 이긴다`() {
+            val masked = source()
+
+            val result =
+                restoreForExport(
+                    ModelDraft("버려질 초안 [[주민등록번호1]]"),
+                    ReviewedBody("검수본 [[주민등록번호1]] 입니다."),
+                    masked.items,
+                )
+
+            assertThat(result.text).isEqualTo("검수본 900101-1234567 입니다.")
+        }
+
+        @Test
+        @DisplayName("개인정보가 없는 문서는 검수가 없어도 한 글자도 바뀌지 않는다")
+        fun `개인정보가 없으면 규칙이 물지 않는다`() {
+            // 주 용도인 공용 안내문은 대개 여기 해당한다. 이 규칙이 비용을 물리는 대상은
+            // 정확히 실수 비용이 가장 큰 문서(개인정보가 실제로 잡힌 문서)뿐이다.
+            val masked = maskText("이 안내문에는 개인정보가 없습니다.")
+            val draft = "안내문입니다. 개인정보는 없습니다."
+
+            val result = restoreForExport(ModelDraft(draft), reviewed = null, items = masked.items)
+
+            assertThat(result.text).isEqualTo(draft)
+            assertThat(result.withheld).isEmpty()
+        }
+
+        @Test
+        @DisplayName("탈출 표기는 검수 여부와 무관하게 벗긴다 — 사용자 본문의 복구일 뿐이다")
+        fun `검수 없이도 탈출을 벗긴다`() {
+            // 마스킹이 입력에 있던 자리표시자 모양을 [[!주민등록번호1]] 로 탈출시켰다.
+            // 그것을 되돌리는 것은 우리가 바꿔 놓은 사용자 본문을 복구하는 일이라
+            // 개인정보가 새로 들어가지 않는다.
+            val masked = maskText("앞 [[주민등록번호1]] 뒤 900101-1234567 끝")
+
+            val result =
+                restoreForExport(ModelDraft(masked.maskedText.value), reviewed = null, items = masked.items)
+
+            assertThat(result.text).isEqualTo("앞 [[주민등록번호1]] 뒤 [[주민등록번호1]] 끝")
+            assertThat(result.text).doesNotContain("900101")
+            assertThat(result.text).doesNotContain("[[!")
+        }
+
+        @Test
+        @DisplayName("검수가 없어도 유실·복제는 보고한다 — 라벨이라 개인정보가 아니다")
+        fun `검수 없이도 본문 상태를 보고한다`() {
+            val masked = source()
+
+            val dropped =
+                restoreForExport(ModelDraft("주민번호는 생략합니다"), reviewed = null, items = masked.items)
+            assertThat(dropped.missing).containsExactly("[[주민등록번호1]]")
+            assertThat(dropped.withheld).isEmpty()
+
+            val duplicated =
+                restoreForExport(
+                    ModelDraft("[[주민등록번호1]] 와 [[주민등록번호1]]"),
+                    reviewed = null,
+                    items = masked.items,
+                )
+            assertThat(duplicated.ambiguous).containsExactly("[[주민등록번호1]]")
+            assertThat(duplicated.text).doesNotContain("900101")
+            assertThat(duplicated.withheld).isEmpty()
         }
     }
 
