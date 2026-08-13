@@ -50,7 +50,8 @@ class MaskingTest {
                 "900101-1234567",
                 "9001011234567",
                 "900101 - 1234567",
-                "900101\t-\t1234567",
+                // "900101<TAB>-<TAB>1234567" 은 여기서 **음성으로 옮겼다** —
+                // 아래 「TAB 은 열 경계다」. privacy-gate 판정 §4-septies.7.
                 "900101-5234567",
                 "900101-8234567",
             ],
@@ -467,6 +468,104 @@ class MaskingTest {
         @Test
         @DisplayName("SHY(U+00AD) 는 소프트하이픈 — 결합한다(실문서에서 실측된 회피 경로)")
         fun `소프트하이픈은 결합한다`() = combined("\u00AD")
+    }
+
+    @Nested
+    @DisplayName("TAB 은 여백이 아니라 열 경계다 — 판정 §4-septies.7")
+    inner class TabIsColumnBoundary {
+        // SEP 의 개수 상한은 **폭의 대리 지표**다("자리당 한 칸까지는 구분, 둘 이상은 정렬").
+        // TAB 은 정의상 다음 탭 스톱까지 밀어내는 문자라, 공백으로는 2개 이상 있어야 하는
+        // 일을 **1개로 한다** — 대리 지표가 TAB 에서만 성립하지 않는다.
+        //
+        // 이 네 케이스는 전부 **수정 전에는 가려지던 것**이다(과잉 마스킹 = STY-03 팩트 소실).
+
+        @ParameterizedTest(name = "{0}")
+        @ValueSource(
+            strings = [
+                "900101\u00091234567",
+                "1234\u00095678\u00099012\u00093456",
+                "1200\u00093400\u00095600\u00097800",
+                "900101\u0009-\u00091234567",
+            ],
+        )
+        @DisplayName("탭으로 갈린 열은 하나의 값이 아니다")
+        fun `탭은 구분자가 아니다`(tabbed: String) {
+            // 표 4열이 통째로 카드번호가 되던 자리다. 붙여넣기 경로로 표를 복사하면
+            // 클립보드 TSV 가 그대로 TAB 이라 실제로 들어온다.
+            val text = "번호 $tabbed 을 적으세요."
+
+            assertThat(maskText(text).maskedText.value).isEqualTo(text)
+            assertThat(maskText(text).items).isEmpty()
+        }
+
+        @Test
+        @DisplayName("대가 — 탭으로 조판된 진짜 주민등록번호는 이제 놓친다")
+        fun `누락 방향의 대가를 명시한다`() {
+            // **이 테스트는 결함을 고정하는 것이 아니라 감수한 대가를 고정한다.**
+            // §4-ter.2 가 개수 상한을 두면서 이미 감수한 누락과 같은 종류다 —
+            // 아래 두 입력은 조판 문자만 다르고 결과가 같아야 한다. TAB 만 예외로 두면
+            // "어느 공백 문자로 조판됐는지에 따라 결과가 갈린다"가 되살아난다.
+            val tabbed = "번호 900101\u0009-\u00091234567 확인."
+            val spaced = "번호 900101  -  1234567 확인."
+
+            assertThat(maskText(tabbed).items).isEmpty()
+            assertThat(maskText(spaced).items).isEmpty()
+        }
+
+        @Test
+        @DisplayName("탭은 탐색 뷰에서도 접지 않는다 — 접으면 정반대 결함이 된다")
+        fun `INVISIBLE 범위는 건드리지 않았다`() {
+            // TAB 을 접기 대상으로 만들면 서로 다른 열의 숫자가 뷰에서 붙어 다시 가려진다.
+            // 구분자 집합에서 뺀 것과 접기 대상으로 넣는 것은 **반대 방향**이다.
+            val text = "번호 900101\u00091234567 확인."
+
+            assertThat(maskText(text).items).isEmpty()
+        }
+    }
+
+    @Nested
+    @DisplayName("탐색 뷰 접기 경계 — 판정 §4-septies.6 의 양성·음성 짝")
+    inner class SearchViewBoundaryAxis {
+        // 경계축(`(?<!\d)`·`(?!\d)`)은 **거부권**이다 — 거부는 원문 읽기와 접힌 읽기가
+        // **둘 다** 거부할 때만 성립한다. 그래서 폭 0인 문자 **한 개**가 "긴 숫자열의
+        // 일부"라는 거부 근거를 무효화한다(열거 1,120조합 중 90건, 전부 이 한 종류).
+        //
+        // **양성과 음성을 반드시 짝으로 둔다.** 따로 두면 다음 사람이 음성 쪽만 보고
+        // "경계 검사가 있다"고 읽어 합집합을 지운다 — 그 순간 §4-septies.5 의 판정이
+        // 조용히 뒤집힌다. 짝을 이루는 두 입력은 **폭 0 문자 하나만 다르다.**
+
+        private fun masked(text: String) = maskText(text).items.size
+
+        @Test
+        @DisplayName("앞 경계 — RRN")
+        fun `앞에 붙은 폭 0 문자가 거부를 무효화한다`() {
+            assertThat(masked("1\u200B900101-1234567")).isEqualTo(1)
+            assertThat(masked("1900101-1234567")).isZero()
+        }
+
+        @Test
+        @DisplayName("뒤 경계 — RRN (앞 경계와 대칭)")
+        fun `뒤에 붙은 폭 0 문자도 같다`() {
+            assertThat(masked("900101-1234567\u200B8")).isEqualTo(1)
+            assertThat(masked("900101-12345678")).isZero()
+        }
+
+        @Test
+        @DisplayName("앞 경계 — CARD (범주 대칭)")
+        fun `카드번호에서도 같다`() {
+            assertThat(masked("1\u200B1234-5678-9012-3456")).isEqualTo(1)
+            assertThat(masked("11234-5678-9012-3456")).isZero()
+        }
+
+        @Test
+        @DisplayName("분리축 × 접기 교차 — 개수 판정은 접기에 흔들리지 않는다")
+        fun `가시 간격으로 센다`() {
+            // K-1 이 "SEP 반복 상한이 무너진다"고 본 자리. 실측은 반대다 — 개수 기준이
+            // 재는 것은 **여백의 폭**이고 폭 0인 문자는 몇 개가 와도 폭을 만들지 않는다.
+            assertThat(masked("900101\u200B\u200B\u200B\u200B\u200B1234567")).isEqualTo(1)
+            assertThat(masked("900101\u200B \u200B1234567")).isEqualTo(1)
+            assertThat(masked("900101 \u200B 1234567")).isZero()
+        }
     }
 
     @Nested
