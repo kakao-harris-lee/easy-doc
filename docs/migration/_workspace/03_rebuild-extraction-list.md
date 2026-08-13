@@ -100,7 +100,7 @@
 
 | 항목 | 지금 위치 | 상태 |
 |---|---|---|
-| 코퍼스 56 JSON(합성20+실수집36, `id`/`title`/`category`/`synthetic`/`source_text`/`required_facts` 필드) | `tests/golden/documents/*.json` | **재도출 대상 아님 + 삭제 전 반출(copy-out) 대상 — P1.** `tests/**` 안이라 Phase 8 삭제 구역이다. 원본 문서 `docs/golden/`(정부 PDF·HWPX)는 최상위라 생존 |
+| 코퍼스 56 JSON(합성20+실수집36, `id`/`title`/`category`/`synthetic`/`source_text`/`required_facts` 필드) | `tests/golden/documents/*.json` | **재도출 대상 아님 + 삭제 전 반출(copy-out) 대상 — P1.** `tests/**` 안이라 Phase 8 삭제 구역이다. 원본 문서 `docs/golden/`(정부 PDF·HWPX)는 최상위라 Phase 8 삭제 구역 밖이다. **다만 "생존"을 저장소 기준으로 읽지 마라** — 13건 76MB 바이너리라 2026-08-13에 `.gitignore` 대상이 됐고, 그 전에도 한 번도 추적된 적이 없다. **fresh clone 에는 없다.** 이 기계의 작업 사본에서만 생존한다 |
 | 코퍼스 스키마 상수 | `tests/golden/test_schema.py`(368줄): MIN_DOCUMENTS=20, MIN_DIFFICULT_WORDS=2, MIN/MAX_FACTS=3/6, MIN_SOURCE_CHARS=500, MAX_SYNTHETIC=1500, MAX_COLLECTED=4000, `PII_BEARING={003:RRN,011:CARD}`, 카테고리 10종, 팩트 제약 5종 | `[기준·기존]` — 코드-온리, 전사 필요 |
 | 게이트 임계값 | `tests/golden/test_golden_eval.py`: PASS_RATE=0.90, JUDGE_COVERAGE=0.90, JUDGE_SCORE=4.0 / `app/easyread/judge.py`: DEFAULT_FIDELITY_FLOOR=2 | **인벤토리 §9-A가 "없다"고 오기 — 정정 대상**(quality-baseline §2). 존재하고 강제됨 |
 | judge 루브릭(충실성 1–5·이해용이성 1–5 전문), 바닥 게이트 순서(≤2 먼저), JUDGE_MAX_TOKENS=512, 인젝션 방어, 자리표시자 무감점 | `app/easyread/judge.py`(170줄) | 코드-온리 |
