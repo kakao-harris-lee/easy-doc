@@ -98,6 +98,9 @@ class ProvenanceCreationSitesTest {
                         // parity 생산자 — fixture 가 "1차 변환문" 자리에 둔 본문을 보정
                         // 프롬프트에 넣는다. 값의 출처가 LLM 출력이라 규약 안이다.
                         "core/src/test/kotlin/kr/easydoc/core/CoreDomainsParityTest.kt" to 1,
+                        // export parity 생산자 — 복원 케이스의 "1차 변환문" 자리.
+                        // 아래 ReviewedBody 항목에 같은 파일을 넣은 사유가 함께 적혀 있다.
+                        "core/src/test/kotlin/kr/easydoc/core/ExportParityTest.kt" to 1,
                         "core/src/test/kotlin/kr/easydoc/core/llm/LlmPromptTest.kt" to 1,
                         "core/src/test/kotlin/kr/easydoc/core/privacy/MaskingTest.kt" to 10,
                     ),
@@ -107,6 +110,12 @@ class ProvenanceCreationSitesTest {
                 "ReviewedBody" to
                     mapOf(
                         "core/src/test/kotlin/kr/easydoc/core/privacy/MaskingTest.kt" to 4,
+                        // export parity 생산자. `restoreForExport` 는 검수본이 없으면 복원을
+                        // **보류**하므로(사람이 위치를 확증하지 않은 본문에 개인정보를 꽂지
+                        // 않는다), 정본이 요구하는 "자리표시자가 남김없이 복원된다"는 성질을
+                        // 재려면 검수 제출을 표현할 수밖에 없다. 값의 출처는 fixture 이고
+                        // 프로덕션 경로가 아니다 — MaskingTest 가 같은 이유로 이미 여기 있다.
+                        "core/src/test/kotlin/kr/easydoc/core/ExportParityTest.kt" to 1,
                     ),
             )
 
