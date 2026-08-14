@@ -68,15 +68,18 @@ def _rule(scanner: ModuleType, rule_id: str) -> object:
 
 
 def _log_body_verdict(scanner: ModuleType, line: str) -> str:
-    """한 줄을 `LOG-BODY`에 넣어 `CAUGHT`/`MISSED`를 돌려준다."""
+    """한 줄을 `LOG-BODY`에 넣어 `CAUGHT`/`MISSED`를 돌려준다.
+
+    **스캐너의 판정 함수를 그대로 부른다.** 예전에는 이 헬퍼가 `search` + `refine`을
+    직접 조립했는데, 그것은 스캐너의 **옛 구현을 베낀 것**이라 스캐너가 R-1로 고쳐진 뒤에도
+    헬퍼만 옛 의미로 남아 테스트가 거짓 실패를 냈다. 판정 로직을 두 벌 두면 어느 쪽이
+    진실인지 알 수 없어진다 — 헬퍼는 **호출만** 한다.
+    """
     rule = _rule(scanner, "LOG-BODY")
-    match = rule.pattern.search(line)  # type: ignore[attr-defined]  # Rule 은 이 모듈의 dataclass다
-    if match is None:
+    if rule.pattern.search(line) is None:  # type: ignore[attr-defined]  # Rule 은 이 모듈의 dataclass다
         return "MISSED"
-    refine = rule.refine  # type: ignore[attr-defined]
-    if refine is not None and not refine(match):
-        return "MISSED"
-    return "CAUGHT"
+    candidate = scanner._is_candidate(rule, line, [line], 1, lambda _rule_id, _reason: None)
+    return "CAUGHT" if candidate else "MISSED"
 
 
 # ── 판정 §4-quater.1 — refine 훅의 음성 대조 (없으면 privacy-gate 미승인) ────────────
@@ -547,13 +550,19 @@ def _strip_comments(source: str, python_syntax: bool) -> str:
     """
     out: list[str] = []
     quote: str | None = None
-    block = False
+    # **깊이로 센다.** Kotlin은 블록 주석 중첩을 허용하므로 Boolean으로 들면 첫 `*/`에서
+    # 닫혀 바깥 주석 본문이 코드로 샌다(게이트 10 R-2). 참조 구현이 스캐너와 다른 의미를
+    # 갖고 있으면 이 대조는 아무것도 재지 못한다.
+    block = 0
     index = 0
     while index < len(source):
         rest = source[index:]
-        if block:
-            if rest.startswith("*/"):
-                block = False
+        if block > 0:
+            if not python_syntax and rest.startswith("/*"):
+                block += 1
+                index += 2
+            elif rest.startswith("*/"):
+                block -= 1
                 index += 2
             else:
                 out.append("\n" if source[index] == "\n" else " ")
@@ -576,7 +585,7 @@ def _strip_comments(source: str, python_syntax: bool) -> str:
                 index += 1
             continue
         if not python_syntax and rest.startswith("/*"):
-            block = True
+            block += 1
             index += 2
             continue
         opened = next((q for q in ('"""', "'''", '"', "'") if rest.startswith(q)), None)
@@ -683,3 +692,137 @@ def test_전역_예외_핸들러의_로그가_검사_대상이다(scanner: Modul
         f"전역 예외 핸들러의 로그 호출이 LOG_CALL 에 잡히지 않는다 (잡힌 것 {len(matched)}건). "
         "패턴이 `_?logger?\\.` 로 되돌아갔는지 확인하라 — 그것은 `log.` 를 못 본다."
     )
+
+
+# ── 게이트 10 R-1 — 한 줄에 호출이 둘일 때 앞이 뒤를 가리지 않는가 ──────────────────
+#
+# `search`는 첫 적중 하나만 2차 판정에 넘겼다. 그 하나가 안전하면 같은 줄의 나머지 호출이
+# 통째로 후보에서 빠진다 — `_advance` KDoc이 이름 붙인 "안전한 접근이 방패"가 호출과
+# 호출 **사이**에 남아 있었다. c2255dc가 한 호출 **안**을 닫았고 이것은 호출 **개수**다.
+
+PROBE_MULTI_CALL = PROBE_DIR / "MultiCallProbe.kt"
+PROBE_NESTED_COMMENT = PROBE_DIR / "NestedCommentProbe.kt"
+
+
+def test_한_줄의_두_번째_호출도_판정한다(scanner: ModuleType) -> None:
+    """세 함수 전부 잡혀야 한다 — 앞이 안전한 둘과, 순서를 뒤집은 대조군."""
+    result = scanner.scan([PROBE_MULTI_CALL], {"LOG-BODY"})
+    found = [number for _p, number, _t in result.hits.get("LOG-BODY", [])]
+
+    assert len(found) == 3, (
+        f"3건이 잡혀야 하는데 {len(found)}건이다 (줄 {found}). "
+        "줄 안의 적중을 전부 판정하는지(finditer) 확인하라."
+    )
+
+
+def test_순서를_뒤집으면_잡히던_것이_결함의_증거다(scanner: ModuleType) -> None:
+    """**이 단언이 위 테스트의 값어치를 증명한다.**
+
+    "위험한 호출이 앞이면 잡히고 뒤면 안 잡힌다"가 곧 "첫 적중 하나만 본다"이다.
+    이것이 없으면 위 3건이 원래부터 잡히던 것인지 구분할 수 없다.
+    """
+    safe_first = (
+        'if (ok) logger.info("건수 {}", draft.stats.count) else logger.info("본문 {}", draft.value)'
+    )
+    risky_first = (
+        'if (ok) logger.info("본문 {}", draft.value) else logger.info("건수 {}", draft.stats.count)'
+    )
+
+    assert _log_body_verdict(scanner, safe_first) == "CAUGHT"
+    assert _log_body_verdict(scanner, risky_first) == "CAUGHT"
+
+
+# ── 게이트 10 R-2 — 블록 주석 중첩 ─────────────────────────────────────────────────
+
+
+def test_중첩_블록_주석이_주석_본문을_코드로_흘리지_않는다(scanner: ModuleType) -> None:
+    """Kotlin은 블록 주석 중첩을 허용한다. Boolean 상태는 첫 `*/`에서 닫혀
+    바깥 주석 본문이 코드로 새고, 그 본문의 `)` 하나가 인자 구간을 끊는다.
+    """
+    result = scanner.scan([PROBE_NESTED_COMMENT], {"LOG-BODY"})
+    found = [number for _p, number, _t in result.hits.get("LOG-BODY", [])]
+
+    assert len(found) == 2, (
+        f"중첩 주석 케이스와 대조군 둘 다 잡혀야 하는데 {len(found)}건이다 (줄 {found})."
+    )
+
+
+def test_중첩_주석_안의_호출은_잡지_않는다(scanner: ModuleType) -> None:
+    """주석 **안**의 호출은 실행되지 않으므로 잡지 않는 것이 옳다.
+
+    깊이 계수가 양방향으로 도는지 본다 — 조기에 닫으면 이 호출이 코드로 새어 나와
+    **잡히고**, 그것은 과검출이지만 어휘 분석이 틀렸다는 신호다.
+    """
+    source = [
+        "fun f(draft: Any) {",
+        "    /* 주석 /* 중첩 */",
+        '    logger.info("본문 {}", draft.value)',
+        "    */",
+        "}",
+    ]
+    joined = " ".join(logical.text for logical in scanner.logical_lines(source))
+
+    assert "draft.value" not in joined, f"주석 안의 호출이 코드로 샜다: {joined!r}"
+
+
+def test_블록_주석_깊이가_상태로_유지된다(scanner: ModuleType) -> None:
+    """`LexState.block_depth`가 Boolean이 아니라 수인지 직접 본다."""
+    state = scanner.LexState()
+    state, _code = scanner._advance("/* 바깥 /* 안쪽", state, False)
+
+    assert state.block_depth == 2, f"중첩 깊이를 세지 않는다: {state}"
+    assert state.open
+
+
+# ── 게이트 10 M-02 보완 — 탐지기 존재 확인의 상시 음성 대조 ─────────────────────────
+#
+# CI 스텝 분리는 닫혔지만 "클래스 하나를 지우면 실패한다"를 재는 장치가 CI 실행에만
+# 있었다. ci.yml에서 **선언된 클래스를 추출해** 로컬에서 상시 확인한다
+# (`test_harness_scope_reach.py`가 진행표를 읽는 것과 같은 방식).
+
+CI_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "ci.yml"
+KOTLIN_TEST_ROOT = REPO_ROOT / "backend-kotlin"
+
+
+def test_CI_가_명시한_탐지기_클래스가_전부_실재한다() -> None:
+    """클래스 하나를 지우면 **여기서 먼저** 빨개진다.
+
+    CI의 클래스별 스텝은 실행 시점에 `No tests found`로 막지만, 그 방어는 CI를 돌려야만
+    보인다. 파일 삭제는 로컬에서 즉시 드러나야 한다 — 삭제와 CI 실행 사이에 리뷰가 있다.
+    """
+    workflow = CI_WORKFLOW.read_text(encoding="utf-8")
+    declared = re.findall(r"--tests\s+(kr\.easydoc[\w.]+)", workflow)
+
+    assert declared, "ci.yml에서 --tests로 명시한 탐지기 클래스를 찾지 못했다"
+
+    missing: list[str] = []
+    for fqcn in declared:
+        simple = fqcn.rsplit(".", 1)[-1]
+        if not list(KOTLIN_TEST_ROOT.rglob(f"{simple}.kt")):
+            missing.append(fqcn)
+
+    assert not missing, (
+        f"ci.yml이 명시한 탐지기 클래스의 소스가 없다: {missing}\n"
+        "  클래스를 지웠다면 ci.yml의 그 스텝도 함께 지워야 하고, 그 diff가 리뷰에 올라간다."
+    )
+
+
+def test_탐지기_클래스가_개별_스텝으로_선언돼_있다() -> None:
+    """**`--tests`를 한 스텝에 여러 개 주면 집합 의미론이라 하나만 지워도 통과한다.**
+
+    M-02가 그 형태였다(실측 RC=0). 스텝당 클래스 하나인지를 못박는다.
+    """
+    workflow = CI_WORKFLOW.read_text(encoding="utf-8")
+    steps = [
+        step
+        for step in workflow.split("      - name:")
+        if "--tests" in step and "kr.easydoc" in step
+    ]
+
+    assert steps, "탐지기 존재 확인 스텝을 찾지 못했다"
+    for step in steps:
+        count = len(re.findall(r"--tests\s+kr\.easydoc", step))
+        assert count == 1, (
+            f"한 스텝이 --tests를 {count}개 준다 — 집합 의미론이라 하나만 지워도 통과한다.\n"
+            f"  스텝: {step.splitlines()[0].strip()}"
+        )

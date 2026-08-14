@@ -661,12 +661,18 @@ class LexState:
 
     depth: int = 0
     quote: str | None = None
-    in_block_comment: bool = False
+    #: 블록 주석 **깊이**. Boolean 이 아니다 — Kotlin 은 블록 주석 중첩을 허용하므로
+    #: `/* 바깥 /* 안쪽 */ 아직 바깥 */` 에서 첫 `*/` 로 닫아 버리면 **주석 본문이 코드로
+    #: 새어 나온다.** `c2255dc` 가 닫은 것(코드가 주석으로 새는 것)과 **상보**이고 같은
+    #: 함수의 다른 입력 종류다(게이트 10 R-2).
+    #:
+    #: 파이썬에는 블록 주석이 없으므로 이 값은 `.py` 에서 늘 0이다.
+    block_depth: int = 0
 
     @property
     def open(self) -> bool:
         """논리 줄이 아직 닫히지 않았는가."""
-        return self.depth > 0 or self.quote is not None or self.in_block_comment
+        return self.depth > 0 or self.quote is not None or self.block_depth > 0
 
 
 @dataclass(frozen=True)
@@ -708,17 +714,23 @@ def _advance(line: str, state: LexState, python_syntax: bool) -> tuple[LexState,
     깊이를 세는 곳과 텍스트를 만드는 곳이 **같은 순회**여야 한다. 따로 두면 둘이 서로 다른
     문자열을 보게 되고, 그 어긋남이 정확히 위 결함의 모양이다.
     """
-    depth, quote, block = state.depth, state.quote, state.in_block_comment
+    depth, quote, block = state.depth, state.quote, state.block_depth
     kept: list[str] = []
     index = 0
     length = len(line)
     while index < length:
         rest = line[index:]
-        if block:
-            if rest.startswith("*/"):
-                block = False
+        if block > 0:
+            # **중첩을 센다.** 첫 `*/` 로 닫으면 바깥 주석 본문이 코드로 새어 나온다 —
+            # 그 본문의 `)` 하나가 인자 구간을 끊어 뒤를 미검사로 만든다(R-2).
+            if rest.startswith("/*"):
+                block += 1
                 index += 2
-                kept.append(" ")  # 토큰이 붙지 않게 자리만 남긴다
+            elif rest.startswith("*/"):
+                block -= 1
+                index += 2
+                if block == 0:
+                    kept.append(" ")  # 토큰이 붙지 않게 자리만 남긴다
             else:
                 index += 1
             continue
@@ -739,7 +751,7 @@ def _advance(line: str, state: LexState, python_syntax: bool) -> tuple[LexState,
         if rest.startswith("//") or (python_syntax and rest.startswith("#")):
             break  # 줄 주석 — 나머지는 코드가 아니다
         if not python_syntax and rest.startswith("/*"):
-            block = True
+            block += 1
             index += 2
             continue
         for opener in _QUOTES:
@@ -755,7 +767,7 @@ def _advance(line: str, state: LexState, python_syntax: bool) -> tuple[LexState,
                 depth = max(0, depth - 1)
             kept.append(line[index])
             index += 1
-    return LexState(depth=depth, quote=quote, in_block_comment=block), "".join(kept)
+    return LexState(depth=depth, quote=quote, block_depth=block), "".join(kept)
 
 
 def logical_lines(lines: list[str], python_syntax: bool = False) -> list[LogicalLine]:
@@ -809,6 +821,46 @@ for _rule in RULES:
 ARG_LIST_OPENERS = tuple(rule.opener for rule in RULES if rule.multiline and rule.opener)
 
 
+def _is_candidate(
+    rule: Rule,
+    line: str,
+    lines: list[str],
+    number: int,
+    drop: Callable[[str, str], None],
+) -> bool:
+    """이 줄이 `rule` 의 후보인가. **줄 안의 적중을 전부 판정한다.**
+
+    ## `search` 하나로는 왜 새는가 (게이트 10 R-1 — 양 레인 독립 합의)
+
+    앞선 판은 `rule.pattern.search(line)` 으로 **첫 적중 하나만** 2차 판정에 넘겼다.
+    그 하나가 안전하면 같은 줄의 **나머지 호출이 통째로 후보에서 빠진다.**
+
+        if (ok) logger.info("건수 {}", draft.stats.count) else logger.info("본문 {}", draft.value)
+        compute().also { logger.info("건수 {}", draft.stats.count) }
+            .also { logger.info("본문 {}", draft.value) }        ← 결합하면 한 줄이 된다
+
+    `_advance` KDoc 이 이름 붙인 **"안전한 접근이 위험한 접근의 방패가 된다"**가 호출과
+    호출 **사이**에 그대로 남아 있었다. 같은 형태를 c2255dc 에서 한 번 닫았는데, 그때는
+    한 호출 **안**만 보고 줄 안의 호출 개수를 보지 않았다. 순서를 뒤집으면(위험이 앞)
+    잡히던 것이 그 증거다.
+
+    첫 후보를 찾으면 멈춘다 — 한 줄은 한 번만 보고하면 되고, 그 뒤 적중까지 2차 판정에
+    넣으면 억제 건수가 실제로 눈감은 양보다 부풀려진다.
+    """
+    for match in rule.pattern.finditer(line):
+        if rule.refine is not None and not rule.refine(match):
+            drop(rule.id, "값의 모양이 불변식 대상이 아님")
+            continue
+        if rule.hardened is not None:
+            index = number - 1
+            window = lines[max(0, index - rule.hardened_before) : index + rule.hardened_after + 1]
+            if any(rule.hardened.search(near) for near in window):
+                drop(rule.id, "같은 창에서 완화 조치 확인")
+                continue
+        return True
+    return False
+
+
 def scan(files: list[Path], rule_filter: set[str]) -> ScanResult:
     hits: dict[str, list[tuple[Path, int, str]]] = {}
     suppressed: dict[str, dict[str, int]] = {}
@@ -836,21 +888,8 @@ def scan(files: list[Path], rule_filter: set[str]) -> ScanResult:
                     continue
                 if any(allowed in posix for allowed in rule.sanctioned):
                     continue
-                match = rule.pattern.search(line)
-                if match is None:
-                    continue
-                if rule.refine is not None and not rule.refine(match):
-                    drop(rule.id, "값의 모양이 불변식 대상이 아님")
-                    continue
-                if rule.hardened is not None:
-                    index = number - 1
-                    window = lines[
-                        max(0, index - rule.hardened_before) : index + rule.hardened_after + 1
-                    ]
-                    if any(rule.hardened.search(near) for near in window):
-                        drop(rule.id, "같은 창에서 완화 조치 확인")
-                        continue
-                hits.setdefault(rule.id, []).append((path, number, stripped[:160]))
+                if _is_candidate(rule, line, lines, number, drop):
+                    hits.setdefault(rule.id, []).append((path, number, stripped[:160]))
 
         # 인자 목록을 보는 규칙은 **논리 줄**에서 판정한다. ktlint가 강제하는 Kotlin
         # 줄바꿈 스타일에서 `logger.info(` 호출이 여러 줄로 갈리면 줄 단위 판정은
@@ -873,24 +912,8 @@ def scan(files: list[Path], rule_filter: set[str]) -> ScanResult:
                     continue
                 if any(allowed in posix for allowed in rule.sanctioned):
                     continue
-                match = rule.pattern.search(line)
-                if match is None:
-                    continue
-                if rule.refine is not None and not rule.refine(match):
-                    drop(rule.id, "값의 모양이 불변식 대상이 아님")
-                    continue
-                # `hardened` 창은 **물리 줄 기준**을 유지한다. 지금 multiline 규칙 중
-                # 창을 쓰는 것은 없지만(`XML-DTD`만 쓴다), 나중에 켤 때 기준이 조용히
-                # 갈리지 않도록 여기서 물리 줄 인덱스를 쓴다는 것을 못박는다.
-                if rule.hardened is not None:
-                    index = number - 1
-                    window = lines[
-                        max(0, index - rule.hardened_before) : index + rule.hardened_after + 1
-                    ]
-                    if any(rule.hardened.search(near) for near in window):
-                        drop(rule.id, "같은 창에서 완화 조치 확인")
-                        continue
-                hits.setdefault(rule.id, []).append((path, number, line[:160]))
+                if _is_candidate(rule, line, lines, number, drop):
+                    hits.setdefault(rule.id, []).append((path, number, line[:160]))
     return ScanResult(hits, suppressed, unscanned)
 
 
