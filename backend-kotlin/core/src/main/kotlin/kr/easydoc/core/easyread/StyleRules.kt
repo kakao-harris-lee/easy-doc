@@ -115,7 +115,37 @@ fun findDifficultWords(text: String): List<String> =
     DIFFICULT_WORD_REPLACEMENTS.keys.filter { it !in PROMPT_ONLY_WORDS && appearsAtWordStart(it, text) }
 
 /**
+ * 어떤 규칙이 걸렸는가. **사유 문구가 아니라 값으로 든다.**
+ *
+ * [SentenceIssue.reason] 은 사람이 읽는 한국어 문장이고 보정 프롬프트에 그대로 실린다 —
+ * 문구를 다듬는 것은 품질 작업이라 앞으로도 일어난다. 그 문자열을 되파싱해 규칙을 가르면
+ * 문구를 손대는 순간 조용히 깨진다. [SentenceIssue.word] 를 값으로 든 것과 같은 이유다.
+ *
+ * 지금 이 값을 실제로 읽는 곳은 parity 생산자다(`style` 도메인이 길이·쉼표 위반을 **각각**
+ * 보고해야 한다 — 비교기가 그 둘에 서로 다른 유도 규칙을 건다). 읽는 곳이 하나뿐이라고
+ * 사유 문자열 파싱으로 대신하지 않는 이유가 위 문장이다.
+ */
+enum class StyleRuleKind {
+    /** 문장 길이 상한 초과. */
+    LENGTH,
+
+    /** 한 문장 쉼표 개수 초과. */
+    COMMA,
+
+    /** 이중 피동 표현. */
+    DOUBLE_PASSIVE,
+
+    /** 어려운 표현 잔존 — 이때만 [SentenceIssue.word] 가 채워진다. */
+    DIFFICULT_WORD,
+
+    /** 뜻풀이 축자 삽입(치환 비문). */
+    GLOSS_COLLISION,
+}
+
+/**
  * 규칙 위반 문장과 사유.
+ *
+ * [kind] 는 **기계가 읽는 축**이고 [reason] 은 사람이 읽는 문장이다. 둘을 섞지 않는다.
  *
  * [word] 는 **어려운 표현 잔존** 위반일 때만 채워지는 사전 키다. 보정 프롬프트가 그
  * 낱말의 뜻풀이를 함께 실으려면 사전 키가 필요한데, [reason] 문자열을 되파싱하면 사유
@@ -126,6 +156,7 @@ fun findDifficultWords(text: String): List<String> =
  */
 data class SentenceIssue(
     val sentence: String,
+    val kind: StyleRuleKind,
     val reason: String,
     val word: String? = null,
 )
@@ -151,16 +182,18 @@ fun checkStyle(text: String): StyleCheckResult {
                 // 코드포인트로 센다. UTF-16 단위(`length`)로 세면 BMP 밖 문자가 두 자로
                 // 잡혀 "50자"가 사용자가 세는 글자 수와 어긋난다.
                 if (sentence.codePointCount(0, sentence.length) > MAX_SENTENCE_CHARS) {
-                    this += SentenceIssue(sentence, "문장 길이 초과")
+                    this += SentenceIssue(sentence, StyleRuleKind.LENGTH, "문장 길이 초과")
                 }
                 if (COMMA_CHARS.sumOf { comma -> sentence.count { it == comma } } > MAX_COMMAS_PER_SENTENCE) {
-                    this += SentenceIssue(sentence, "쉼표 과다(한 문장 한 정보 위반 의심)")
+                    this += SentenceIssue(sentence, StyleRuleKind.COMMA, "쉼표 과다(한 문장 한 정보 위반 의심)")
                 }
                 for (pattern in DOUBLE_PASSIVE_PATTERNS) {
-                    if (pattern in sentence) this += SentenceIssue(sentence, "이중 피동 표현($pattern)")
+                    if (pattern in sentence) {
+                        this += SentenceIssue(sentence, StyleRuleKind.DOUBLE_PASSIVE, "이중 피동 표현($pattern)")
+                    }
                 }
                 for (word in findDifficultWords(sentence)) {
-                    this += SentenceIssue(sentence, "어려운 표현 잔존($word)", word)
+                    this += SentenceIssue(sentence, StyleRuleKind.DIFFICULT_WORD, "어려운 표현 잔존($word)", word)
                 }
                 for (gloss in findGlossCollisions(sentence)) {
                     // word 를 채우지 않는다 — 이 위반의 처방은 사전값 치환이 아니라 재서술이다.
@@ -168,6 +201,7 @@ fun checkStyle(text: String): StyleCheckResult {
                     this +=
                         SentenceIssue(
                             sentence,
+                            StyleRuleKind.GLOSS_COLLISION,
                             "뜻풀이 축자 삽입($gloss) — 그 뜻이 통하게 문장을 자연스럽게 다시 쓸 것",
                         )
                 }

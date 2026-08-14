@@ -794,6 +794,81 @@ dataclass 주석으로 남겼다.
 
 ---
 
+## 11. 잔여 5도메인 생산자 — 선언 2 → 7
+
+`text` · `style` · `style-tables` · `prompts` · `postprocess` 의 Kotlin 생산자를 만들고
+선언·declared-floor 를 같은 커밋에 넣었다.
+
+### 11.1 `style` 이 요구한 것 — 기계가독 축을 타입에 넣었다
+
+비교기가 `length_violations` 와 `comma_violations` 에 **서로 다른 유도 규칙**을 걸므로
+둘을 갈라 보고해야 한다. `SentenceIssue.reason` 은 사람이 읽는 한국어 문장이고 **보정
+프롬프트에 그대로 실린다** — 문구 다듬기는 품질 작업이라 앞으로도 일어난다. 그것을
+되파싱해 규칙을 가르면 문구를 손대는 순간 조용히 깨진다.
+
+그래서 `StyleRuleKind` enum 을 더해 `checkStyle` 이 값으로 붙인다. `word` 를 값으로 든 것과
+같은 이유이고, 그 KDoc 이 이미 적어 둔 원칙을 한 축 더 적용한 것이다.
+
+### 11.2 `prompts` — 타입 게이트를 우회하지 않고 통과했다
+
+fixture 가 주는 것은 이미 **마스킹된** 본문인데, `MaskedText` 를 만드는 통로는 `maskText`
+하나뿐이다(그것이 마스킹 선행 불변식의 실체다). 그 본문을 그대로 감쌀 방법이 없다 —
+`wrap` 류 통로를 여는 것은 X-7 가드가 막는다.
+
+**되돌린 원문을 만들어 마스킹을 통과시켰다.** 자리표시자를 그 범주의 합성값으로 바꿔
+`maskText` 에 넣으면 fixture 의 `masked_text` 가 그대로 나온다 — 프로덕션에서 실제로
+일어나는 순서와 같다. 왕복 결과가 한 글자라도 다르면 단언이 막는다(조용히 다른 프롬프트를
+내지 않는다). 범주가 늘면 합성값 표도 늘어야 하고, 빠뜨리면 그 단언에서 걸린다.
+
+### 11.3 산출물 모양을 참고값에 맞췄다 — 원장이 진짜 갈림을 덮지 않게
+
+처음에는 **단언이 요구하는 필드만** 냈다. 그랬더니 `style` 10건·`prompts` 4건·
+`style-tables` 1건이 전부 "참고 갈림"으로 찍혔다 — 값이 달라서가 아니라 **필드 개수가
+달라서**다. 원장은 값이 갈린 자리를 위한 것이지 모양이 좁은 자리가 아니고, 그런 잡음이
+쌓이면 진짜 갈림 한 건이 그 안에 묻힌다.
+
+`check_style`·`difficult_words`·`gloss_collisions`·`repair_system_prompt`·`counts`·
+`NOMINAL_GLOSSES`·`MODIFIER_CHECKED_GLOSSES` 를 더하고 `DIFFICULT_WORD_REPLACEMENTS` 를
+키 배열에서 **맵**으로 바꿨더니 갈림이 **15건 → 1건**으로 줄었다.
+
+### 11.4 실측
+
+```
+./gradlew parityHarness → parity 선언 7개 전부 산출물 확인
+선언 범위(7개) 비교      → **exit 3** · 도메인 7/7 · 성질 판정 137건(단언 437개) · 불충족 0
+전체 범위(8개) 비교      → exit 1 · 판정 범위는 **8/8** 이나 `export` 만 결과 파일 없음
+```
+
+도메인별: masking 81/295 · repair-adoption 25/75 · style 10/20 · text 8/8 ·
+postprocess 8/12 · prompts 4/18 · style-tables 1/9.
+
+### 11.5 갈림 1건 — `parity-verifier` 인계
+
+| 항목 | 값 |
+|---|---|
+| 케이스 | **`style-tables-snapshot`** |
+| 첫 차이 | `$.PROMPT_ONLY_WORDS[0]` |
+| 성격 | **집합의 순회 순서** 차이다. Kotlin `Set` 과 Python `set`/`frozenset` 의 순서는 요구사항이 아니고, 그 자리의 단언도 `contains_all`(누락 금지·추가 허용)이라 성질은 충족한다 |
+| 처분 | 원장에 기록만 했다. **정렬해서 맞추지 않았다** — 그것은 값을 참고값에 맞추는 것이고, 순서가 요구가 아닌데 요구인 것처럼 굳힌다 |
+
+나머지 4개 도메인(`text`·`style`·`prompts`·`postprocess`)은 **갈림 0건** — 참고값과 전건
+일치한다. fixture 는 건드리지 않았다(`git status parity/fixtures` 무변경).
+
+### 11.6 부수 — 가드 둘이 자기 일을 했다
+
+- **provenance 허용목록**: 생산자가 `ModelDraft` 를 새로 만들자 즉시 실패했다. 허용목록에
+  줄을 더하며 사유를 적었고, 그 diff 가 리뷰에 올라간다 — 설계된 대로다.
+- **`SentenceIssue` 에 필드를 더하자** 기존 테스트 4곳이 컴파일 실패했다. 기본값을 주지
+  않은 결과이고, 그래서 **모든 생성 지점이 kind 를 의식적으로 고르게** 됐다.
+
+### 11.7 남은 것
+
+`export` 도메인만 생산자가 없다 — 내보내기 포팅은 Phase 4다. **전체 게이트(exit 0)는 그때까지
+닫히지 않는다.** 지금 초록인 것은 선언 범위(7/7)이고, 그것은 "전건 동등"이 아니라
+"선언한 범위 안에서 동등"이다.
+
+---
+
 ## 5. 남는 것
 
 | 항목 | 소관 | 비고 |

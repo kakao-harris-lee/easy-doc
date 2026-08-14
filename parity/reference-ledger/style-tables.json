@@ -1,0 +1,14 @@
+{
+  "domain": "style-tables",
+  "note": "Kotlin 산출물과 Python 참고값이 갈린 자리의 기록이다. 판정 근거가 아니라 리뷰에 올리기 위한 원장이며, 본문 없이 경로와 SHA-256만 남긴다. 갱신: compare_parity.py --record-reference",
+  "recorded_at": "2026-08-14T03:24:39Z",
+  "cases": {
+    "style-tables-snapshot": {
+      "status": "diverge",
+      "declared": false,
+      "first_diff_path": "$.PROMPT_ONLY_WORDS[0]",
+      "reference_sha256": "d703d3138850162149b43c972cc9477fe93eec542a49d637b4b28bc09e4abc24",
+      "actual_sha256": "e93252e448e7f2f636597935531e2461ce2504e2e052135d039e2fd438572023"
+    }
+  }
+}

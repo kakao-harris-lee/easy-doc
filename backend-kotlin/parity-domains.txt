@@ -39,11 +39,17 @@
 #   jwt  argon2                                                                        ← (옛 Phase 3) 2026-08-12 2차: parity 아님 → migration-safety-gate I-9·I-8. 선언 금지
 #   crypto                                                                             ← (옛 Phase 4) 2026-08-12 2차: parity 아님 → Kotlin 자체 테스트 + I-7. 선언 금지
 #
-# ── 현재 상태: Phase 2 진행 중 — 선언 2개 ──────────────────────────────────
+# ── 현재 상태: Phase 2 진행 중 — 선언 7개 ──────────────────────────────────
 # Phase 1 은 골격만 만들었고 선언이 0개였다(= 게이트 미가동). Phase 2 에서 모듈을 하나
 # 끝낼 때마다 여기에 한 줄씩 **추가**한다. 아직 선언하지 않은 도메인
 # (text·style·style-tables·prompts·postprocess·export)은 값 비교를 받지 않는다 —
 # CI 가 그 목록을 "아직 검증하지 않은 도메인"으로 매 실행 경고한다.
 
-masking          # 2026-08-13 · 생산자 core/src/test/.../privacy/MaskingParityTest.kt · fixture 31건
-repair-adoption  # 2026-08-13 · 생산자 application/src/test/.../conversion/ConversionParityTest.kt · fixture 25건
+masking          # 2026-08-13 · 생산자 core/src/test/.../privacy/MaskingParityTest.kt
+repair-adoption  # 2026-08-13 · 생산자 application/src/test/.../conversion/ConversionParityTest.kt
+# 아래 다섯은 2026-08-14 · 생산자 core/src/test/kotlin/kr/easydoc/core/CoreDomainsParityTest.kt
+text             # 제어문자 제거
+style            # 문장 분리 + 길이·쉼표 규칙
+style-tables     # 정책 상수와 큐레이션 표
+prompts          # 시스템·사용자·보정 프롬프트
+postprocess      # 껍데기 제거

@@ -95,6 +95,9 @@ class ProvenanceCreationSitesTest {
                         "core/src/test/kotlin/kr/easydoc/core/easyread/PromptInjectionGuardTest.kt" to 4,
                         "core/src/test/kotlin/kr/easydoc/core/easyread/PromptTextSnapshotTest.kt" to 1,
                         "core/src/test/kotlin/kr/easydoc/core/easyread/PromptsTest.kt" to 4,
+                        // parity 생산자 — fixture 가 "1차 변환문" 자리에 둔 본문을 보정
+                        // 프롬프트에 넣는다. 값의 출처가 LLM 출력이라 규약 안이다.
+                        "core/src/test/kotlin/kr/easydoc/core/CoreDomainsParityTest.kt" to 1,
                         "core/src/test/kotlin/kr/easydoc/core/llm/LlmPromptTest.kt" to 1,
                         "core/src/test/kotlin/kr/easydoc/core/privacy/MaskingTest.kt" to 10,
                     ),

@@ -1,0 +1,63 @@
+{
+  "domain": "text",
+  "note": "Kotlin 산출물과 Python 참고값이 갈린 자리의 기록이다. 판정 근거가 아니라 리뷰에 올리기 위한 원장이며, 본문 없이 경로와 SHA-256만 남긴다. 갱신: compare_parity.py --record-reference",
+  "recorded_at": "2026-08-14T03:24:39Z",
+  "cases": {
+    "text-drops-c1-range": {
+      "status": "agree",
+      "declared": false,
+      "first_diff_path": "",
+      "reference_sha256": "baa9f1bee6a5ef0a5c64652b2770c236fcfdfaa573c5247adfcdc3e1226d1e3e",
+      "actual_sha256": "baa9f1bee6a5ef0a5c64652b2770c236fcfdfaa573c5247adfcdc3e1226d1e3e"
+    },
+    "text-drops-del": {
+      "status": "agree",
+      "declared": false,
+      "first_diff_path": "",
+      "reference_sha256": "41804b7327796138948c5ec2d80974d4141481f75ad35c4edd1dfdfe2cfb3aa3",
+      "actual_sha256": "41804b7327796138948c5ec2d80974d4141481f75ad35c4edd1dfdfe2cfb3aa3"
+    },
+    "text-drops-nul": {
+      "status": "agree",
+      "declared": false,
+      "first_diff_path": "",
+      "reference_sha256": "41804b7327796138948c5ec2d80974d4141481f75ad35c4edd1dfdfe2cfb3aa3",
+      "actual_sha256": "41804b7327796138948c5ec2d80974d4141481f75ad35c4edd1dfdfe2cfb3aa3"
+    },
+    "text-drops-vt-ff": {
+      "status": "agree",
+      "declared": false,
+      "first_diff_path": "",
+      "reference_sha256": "8a074837a447778c1b6f1cbc3d9bf88ec885c3104ab32c5bfdd6baa542a8a2a2",
+      "actual_sha256": "8a074837a447778c1b6f1cbc3d9bf88ec885c3104ab32c5bfdd6baa542a8a2a2"
+    },
+    "text-empty": {
+      "status": "agree",
+      "declared": false,
+      "first_diff_path": "",
+      "reference_sha256": "00ef5051526028d198d236b0708a9aee76d8281b731f60bfe3b865b769ab1ceb",
+      "actual_sha256": "00ef5051526028d198d236b0708a9aee76d8281b731f60bfe3b865b769ab1ceb"
+    },
+    "text-keeps-hangul-and-emoji": {
+      "status": "agree",
+      "declared": false,
+      "first_diff_path": "",
+      "reference_sha256": "b54411fc13f4846047f23286fb89f26ba7eff67989bef80d468a548e833ff439",
+      "actual_sha256": "b54411fc13f4846047f23286fb89f26ba7eff67989bef80d468a548e833ff439"
+    },
+    "text-keeps-tab-lf-cr": {
+      "status": "agree",
+      "declared": false,
+      "first_diff_path": "",
+      "reference_sha256": "f2cac7b989be42417ecc02e7ad391e6cc489166f99518bb27586311a92963d56",
+      "actual_sha256": "f2cac7b989be42417ecc02e7ad391e6cc489166f99518bb27586311a92963d56"
+    },
+    "text-only-control": {
+      "status": "agree",
+      "declared": false,
+      "first_diff_path": "",
+      "reference_sha256": "00ef5051526028d198d236b0708a9aee76d8281b731f60bfe3b865b769ab1ceb",
+      "actual_sha256": "00ef5051526028d198d236b0708a9aee76d8281b731f60bfe3b865b769ab1ceb"
+    }
+  }
+}

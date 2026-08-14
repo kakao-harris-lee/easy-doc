@@ -2,6 +2,7 @@ package kr.easydoc.core.llm
 
 import kr.easydoc.core.easyread.DocumentIdGenerator
 import kr.easydoc.core.easyread.SentenceIssue
+import kr.easydoc.core.easyread.StyleRuleKind
 import kr.easydoc.core.privacy.ModelDraft
 import kr.easydoc.core.privacy.maskText
 import org.assertj.core.api.Assertions.assertThat
@@ -66,7 +67,13 @@ class LlmPromptTest {
     @Test
     @DisplayName("보정 프롬프트는 1차 변환문과 지적 목록을 담는다")
     fun `보정 프롬프트를 만든다`() {
-        val issue = SentenceIssue(sentence = "신청을 접수합니다.", reason = "어려운 낱말: 접수", word = "접수")
+        val issue =
+            SentenceIssue(
+                sentence = "신청을 접수합니다.",
+                kind = StyleRuleKind.DIFFICULT_WORD,
+                reason = "어려운 낱말: 접수",
+                word = "접수",
+            )
 
         val prompt = LlmPrompt.forRepair(ModelDraft("신청을 접수합니다."), listOf(issue), fixedIds)
 

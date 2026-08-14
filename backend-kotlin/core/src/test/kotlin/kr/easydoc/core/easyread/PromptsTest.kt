@@ -156,7 +156,7 @@ class PromptsTest {
         @Test
         @DisplayName("지적된 낱말의 뜻풀이를 한 줄씩만 준다")
         fun `뜻풀이를 낱말마다 한 번만 싣는다`() {
-            val duplicated = List(3) { SentenceIssue(long, "어려운 표현 잔존(금일)", "금일") }
+            val duplicated = List(3) { SentenceIssue(long, StyleRuleKind.DIFFICULT_WORD, "어려운 표현 잔존(금일)", "금일") }
             val user = buildRepairPrompt(ModelDraft(long), duplicated).user
 
             assertThat(user.windowed(GLOSS_LINE.length).count { it == GLOSS_LINE }).isEqualTo(1)
@@ -168,7 +168,14 @@ class PromptsTest {
             val user =
                 buildRepairPrompt(
                     ModelDraft("본문입니다."),
-                    listOf(SentenceIssue("본문입니다.", "어려운 표현 잔존(없는말)", "없는말")),
+                    listOf(
+                        SentenceIssue(
+                            "본문입니다.",
+                            StyleRuleKind.DIFFICULT_WORD,
+                            "어려운 표현 잔존(없는말)",
+                            "없는말",
+                        ),
+                    ),
                 ).user
 
             assertThat(user).contains("문제: 어려운 표현 잔존(없는말)")

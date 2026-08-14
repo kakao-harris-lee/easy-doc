@@ -1,0 +1,35 @@
+{
+  "domain": "prompts",
+  "note": "Kotlin 산출물과 Python 참고값이 갈린 자리의 기록이다. 판정 근거가 아니라 리뷰에 올리기 위한 원장이며, 본문 없이 경로와 SHA-256만 남긴다. 갱신: compare_parity.py --record-reference",
+  "recorded_at": "2026-08-14T03:24:39Z",
+  "cases": {
+    "prompts-many-difficult-words": {
+      "status": "agree",
+      "declared": false,
+      "first_diff_path": "",
+      "reference_sha256": "f676195a89e5daa0afa71d149782bfc8212c835874c45b2b1d1d51e39a04c332",
+      "actual_sha256": "f676195a89e5daa0afa71d149782bfc8212c835874c45b2b1d1d51e39a04c332"
+    },
+    "prompts-no-difficult-word": {
+      "status": "agree",
+      "declared": false,
+      "first_diff_path": "",
+      "reference_sha256": "8f270e44ea7c64219bfc33b41266171fb69f22e76a1c901818ebcdd834941936",
+      "actual_sha256": "8f270e44ea7c64219bfc33b41266171fb69f22e76a1c901818ebcdd834941936"
+    },
+    "prompts-one-difficult-word": {
+      "status": "agree",
+      "declared": false,
+      "first_diff_path": "",
+      "reference_sha256": "99d96e4eae7baab73689d683ac08be629807e5435e55838e7415976e41bbc9f9",
+      "actual_sha256": "99d96e4eae7baab73689d683ac08be629807e5435e55838e7415976e41bbc9f9"
+    },
+    "prompts-with-placeholder": {
+      "status": "agree",
+      "declared": false,
+      "first_diff_path": "",
+      "reference_sha256": "b7aa1f862670383bc8212051c418cc0f921658c82f51f0287cae0f574c1011c6",
+      "actual_sha256": "b7aa1f862670383bc8212051c418cc0f921658c82f51f0287cae0f574c1011c6"
+    }
+  }
+}

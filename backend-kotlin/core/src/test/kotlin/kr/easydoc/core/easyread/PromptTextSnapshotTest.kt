@@ -179,6 +179,9 @@ class PromptTextSnapshotTest {
                         val fields = issue.jsonObject
                         SentenceIssue(
                             sentence = fields.string("sentence"),
+                            // 스냅샷은 사람이 읽는 사유·낱말만 담는다 — 기계 축(kind)은
+                            // 프롬프트 문면에 실리지 않으므로 여기서 고정하지 않는다.
+                            kind = StyleRuleKind.DIFFICULT_WORD,
                             reason = fields.string("reason"),
                             word = fields.getValue("word").jsonPrimitive.contentOrNull,
                         )

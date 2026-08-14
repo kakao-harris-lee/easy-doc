@@ -62,8 +62,15 @@
 # 한 줄에 도메인 하나. `#` 뒤는 주석. 현재 선언 확인:
 #   sed 's/#.*//' backend-kotlin/parity-domains.txt | tr -d '[:blank:]' | grep -v '^$'
 #
-# ── 현재 스냅샷: 2개 (2026-08-14 기준) ─────────────────────────────────────
+# ── 현재 스냅샷: 7개 (2026-08-14 기준) ─────────────────────────────────────
 # masking          — 생산자 core/src/test/.../privacy/MaskingParityTest.kt
 # repair-adoption  — 생산자 application/src/test/.../conversion/ConversionParityTest.kt
+# text·style·style-tables·prompts·postprocess
+#                  — 생산자 core/src/test/kotlin/kr/easydoc/core/CoreDomainsParityTest.kt
 masking
+postprocess
+prompts
 repair-adoption
+style
+style-tables
+text
