@@ -608,3 +608,78 @@ def test_주석_제거가_토큰을_붙이지_않는다(scanner: ModuleType) -> 
     joined = scanner.logical_lines(["val x = a/* 설명 */b"])[0]
 
     assert "ab" not in joined.text, f"토큰이 붙었다: {joined.text!r}"
+
+
+# ── 게이트 10 R-3 — LOG_CALL 이 저장소의 로거 호출에 실제로 닿는가 ──────────────────
+#
+# `_?logger?\.`는 읽으면 "logger에서 r이 선택적"처럼 보이지만 정규식은
+# `_?` + `logge` + `r?` + `\.`로 읽는다 — `logge.`·`logger.`는 잡고 **`log.`는 못 잡았다.**
+# 저장소 로거 호출 4곳 중 2곳이 `GlobalExceptionHandler`의 `log.error(...)`이고,
+# 하필 **전역 예외 핸들러**가 탐지 밖이었다.
+
+#: 로그 호출로 **보이는** 것을 찾는 독립 정의. `LOG_CALL`을 재사용하지 않는다 —
+#: 같은 패턴으로 찾고 같은 패턴으로 검사하면 그 패턴이 틀렸을 때 둘이 같이 틀린다.
+LOGGER_SHAPED = re.compile(
+    r"(?<![A-Za-z0-9_])[A-Za-z_]\w*(?:log|logger|LOG|LOGGER)\s*\."
+    r"\s*(?:debug|info|warn|warning|error|exception|trace)\s*\("
+    r"|(?<![A-Za-z0-9_.])(?:log|logger|LOG|LOGGER)\s*\."
+    r"\s*(?:debug|info|warn|warning|error|exception|trace)\s*\("
+)
+
+
+def _logger_call_lines(scanner: ModuleType) -> list[tuple[Path, int, str]]:
+    """스캔 루트에서 로그 호출로 보이는 줄을 전부 모은다."""
+    found: list[tuple[Path, int, str]] = []
+    files, _scope = scanner.iter_files(False)
+    for path in files:
+        for number, line in enumerate(
+            path.read_text(encoding="utf-8", errors="replace").splitlines(), 1
+        ):
+            stripped = line.strip()
+            if stripped.startswith(("#", "//", "*")):
+                continue
+            if LOGGER_SHAPED.search(line):
+                found.append((path, number, stripped))
+    return found
+
+
+def test_저장소의_로거_호출이_전부_LOG_CALL_에_잡힌다(scanner: ModuleType) -> None:
+    """**패턴만 고치고 도달을 재지 않으면 다음에 또 조용해진다.**
+
+    합성 탐침이 아니라 저장소의 실제 줄을 읽는다 — R-3가 드러난 방식이 정확히
+    "합성 입력으로는 통과하는데 실물 이름이 달랐다"이기 때문이다.
+    """
+    calls = _logger_call_lines(scanner)
+    assert calls, "로그 호출을 한 줄도 찾지 못했다 — 이 테스트가 0건을 검사하고 있다"
+
+    log_call = re.compile(scanner.LOG_CALL)
+    missed = [(p, n, t) for p, n, t in calls if not log_call.search(t)]
+
+    assert not missed, "LOG_CALL 이 못 보는 로그 호출이 있다:\n" + "\n".join(
+        f"  {p.relative_to(REPO_ROOT)}:{n} — {t[:80]}" for p, n, t in missed
+    )
+
+
+def test_전역_예외_핸들러의_로그가_검사_대상이다(scanner: ModuleType) -> None:
+    """R-3가 실제로 물던 자리를 **파일과 함께** 고정한다.
+
+    예외 메시지는 5xx 응답과 스택트레이스 로그 양쪽으로 흘러가므로, 전역 예외 핸들러는
+    이 규칙이 가장 필요한 자리다. 그곳이 탐지 밖이었다.
+    """
+    handler = (
+        REPO_ROOT
+        / "backend-kotlin/api/src/main/kotlin/kr/easydoc/api/error/GlobalExceptionHandler.kt"
+    )
+    assert handler.is_file(), f"전역 예외 핸들러가 없다: {handler} — 옮겼다면 이 경로를 고쳐라."
+
+    log_call = re.compile(scanner.LOG_CALL)
+    matched = [
+        line.strip()
+        for line in handler.read_text(encoding="utf-8").splitlines()
+        if LOGGER_SHAPED.search(line) and log_call.search(line)
+    ]
+
+    assert len(matched) >= 2, (
+        f"전역 예외 핸들러의 로그 호출이 LOG_CALL 에 잡히지 않는다 (잡힌 것 {len(matched)}건). "
+        "패턴이 `_?logger?\\.` 로 되돌아갔는지 확인하라 — 그것은 `log.` 를 못 본다."
+    )

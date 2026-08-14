@@ -257,8 +257,19 @@ def log_body_is_real_candidate(match: re.Match[str]) -> bool:
     return not found
 
 
+#: 로그 호출의 시작 모양.
+#:
+#: **`_?log(?:ger)?\.` 이지 `_?logger?\.` 가 아니다.** 후자는 읽으면 "logger 에서 r 이
+#: 선택적"처럼 보이지만 정규식은 `_?` + `logge` + `r?` + `\.` 로 읽는다 — 즉 `logge.` 와
+#: `logger.` 는 잡고 **`log.` 는 못 잡는다.** 이 저장소의 로거 호출 4곳 중 2곳이
+#: `GlobalExceptionHandler` 의 `log.error(...)` 이고, 하필 **전역 예외 핸들러**가 탐지
+#: 밖이었다 — 예외 메시지가 본문을 실어 나르는 자리라 이 규칙이 가장 필요한 곳이다
+#: (게이트 10 R-3).
+#:
+#: 실제 도달은 `LoggerCallReachTest` 가 **저장소의 그 줄들을 읽어** 상시 확인한다.
+#: 패턴만 고치고 도달을 재지 않으면 다음에 이름이 또 갈렸을 때 같은 방식으로 조용해진다.
 LOG_CALL = (
-    r"(?:_?logger?\.(?:debug|info|warning|warn|error|exception|trace)"
+    r"(?:_?log(?:ger)?\.(?:debug|info|warning|warn|error|exception|trace)"
     r"|print|println|System\.out\.print)"
 )
 
