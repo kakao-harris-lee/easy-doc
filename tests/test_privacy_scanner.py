@@ -138,7 +138,7 @@ def test_줄_단위로는_같은_위반이_보이지_않는다(scanner: ModuleTy
 def test_한_줄_호출도_계속_잡는다(scanner: ModuleType) -> None:
     """논리 줄 도입이 기존 한 줄 탐지를 되돌리지 않았는지 본다."""
     result = scanner.scan([PROBE_KOTLIN], {"LOG-BODY"})
-    reported = [number for _path, number, _line in result.hits["LOG-BODY"]]
+    reported = [hit.line for hit in result.hits["LOG-BODY"]]
     assert len(reported) >= 2, f"한 줄 호출과 다중 줄 호출이 함께 잡혀야 한다: {reported}"
 
 
@@ -164,7 +164,7 @@ def test_문자열_안의_괄호는_깊이로_세지_않는다(scanner: ModuleTy
 def test_보고_위치는_논리_줄의_시작_물리_줄이다(scanner: ModuleType) -> None:
     """사람이 파일을 열어 찾아갈 수 있어야 한다."""
     result = scanner.scan([PROBE_KOTLIN], {"LLM-RAW-INPUT"})
-    _path, number, _line = result.hits["LLM-RAW-INPUT"][0]
+    number = result.hits["LLM-RAW-INPUT"][0].line
     opening = PROBE_KOTLIN.read_text(encoding="utf-8").splitlines()[number - 1]
 
     assert "provider.complete(" in opening, (
@@ -344,7 +344,7 @@ def test_주석이_인자_구간을_끊어_뒤를_가리지_못한다(
 
     assert len(found) == expected, (
         f"{probe.name}: {expected}건이 잡혀야 하는데 {len(found)}건이다 "
-        f"(줄 {[number for _p, number, _t in found]}). "
+        f"(줄 {[hit.line for hit in found]}). "
         "인자 파서가 주석을 다시 코드로 읽는지 확인하라."
     )
 
@@ -460,29 +460,30 @@ def test_주석_제거가_토큰을_붙이지_않는다(scanner: ModuleType) -> 
 # 저장소 로거 호출 4곳 중 2곳이 `GlobalExceptionHandler`의 `log.error(...)`이고,
 # 하필 **전역 예외 핸들러**가 탐지 밖이었다.
 
-#: 로그 호출로 **보이는** 것을 찾는 독립 정의. `LOG_CALL`을 재사용하지 않는다 —
-#: 같은 패턴으로 찾고 같은 패턴으로 검사하면 그 패턴이 틀렸을 때 둘이 같이 틀린다.
-LOGGER_SHAPED = re.compile(
-    r"(?<![A-Za-z0-9_])[A-Za-z_]\w*(?:log|logger|LOG|LOGGER)\s*\."
-    r"\s*(?:debug|info|warn|warning|error|exception|trace)\s*\("
-    r"|(?<![A-Za-z0-9_.])(?:log|logger|LOG|LOGGER)\s*\."
-    r"\s*(?:debug|info|warn|warning|error|exception|trace)\s*\("
-)
+# 정의는 **스캐너에 한 벌**만 있다(Z-1). 여기서 재구현하지 않는다 — 두 벌이 각자 살면
+# 갈리고, 갈린 쪽이 조용한 것은 늘 도달 쪽이었다. `scanner.LOGGER_SHAPED` 는 "검사됐어야
+# 할 것", `scanner.LOG_CALL` 은 "검사할 것"이고, 이 파일은 그 둘의 **차집합**을 잰다.
 
 
 def _logger_call_lines(scanner: ModuleType) -> list[tuple[Path, int, str]]:
-    """스캔 루트에서 로그 호출로 보이는 줄을 전부 모은다."""
+    """스캔 루트에서 로그 호출로 보이는 **논리 줄**을 전부 모은다.
+
+    ## 물리 줄이 아니라 논리 줄인 이유 (Z-1 줄 모델 통합)
+
+    탐지는 논리 줄에서 돈다. 도달을 물리 줄로 세면 두 층이 서로 다른 문자열을 보게 되고,
+    "탐지가 보는 것"과 "도달이 세는 것"이 영원히 어긋난다 — 여러 줄로 갈린 호출은
+    물리 줄 어디에서도 온전하지 않아 도달 검사가 **애초에 후보로 세지 않는다.**
+    """
     found: list[tuple[Path, int, str]] = []
     files, _scope = scanner.iter_files(False)
     for path in files:
-        for number, line in enumerate(
-            path.read_text(encoding="utf-8", errors="replace").splitlines(), 1
-        ):
-            stripped = line.strip()
-            if stripped.startswith(("#", "//", "*")):
+        lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+        for logical in scanner.logical_lines(lines, python_syntax=path.suffix == ".py"):
+            text = logical.text
+            if text.startswith(("#", "//", "*")):
                 continue
-            if LOGGER_SHAPED.search(line):
-                found.append((path, number, stripped))
+            if scanner.LOGGER_SHAPED.search(text):
+                found.append((path, logical.number, text))
     return found
 
 
@@ -519,7 +520,7 @@ def test_전역_예외_핸들러의_로그가_검사_대상이다(scanner: Modul
     matched = [
         line.strip()
         for line in handler.read_text(encoding="utf-8").splitlines()
-        if LOGGER_SHAPED.search(line) and log_call.search(line)
+        if scanner.LOGGER_SHAPED.search(line) and log_call.search(line)
     ]
 
     assert len(matched) >= 2, (
@@ -547,11 +548,15 @@ def test_한_줄의_적중을_전부_판정한다(scanner: ModuleType) -> None:
     여기서는 각 호출이 독립적으로 후보가 되는지만 본다.
     """
     result = scanner.scan([PROBE_MULTI_CALL], {"LOG-BODY"})
-    found = [number for _p, number, _t in result.hits.get("LOG-BODY", [])]
+    found = [hit.line for hit in result.hits.get("LOG-BODY", [])]
 
-    # 한 줄 분기 1 + `.also` 두 줄 2 + 순서뒤집기 1 = 4.
-    # `.also` 두 줄이 각각 논리 줄이라 둘 다 후보다 — 훅이 있던 시절에는 앞 하나가 눌렸다.
-    assert len(found) == 4, f"4건이 잡혀야 하는데 {len(found)}건이다 (줄 {found})."
+    # 한 줄 분기 **2** + `.also` 두 줄 2 + 순서뒤집기 **2** = 6.
+    #
+    # 4가 아니라 6인 것이 §4-novies 의 변경이다. 앞선 판은 한 줄에 호출이 둘이어도 적중을
+    # **하나만** 냈고, 그래서 억제도 줄 단위일 수밖에 없었다(X-1). 이제 호출마다 적중이
+    # 나므로 표기도 호출마다 결속된다 — 아래 ⓐ 재현이 그 성질을 직접 잰다.
+    assert len(found) == 6, f"6건이 잡혀야 하는데 {len(found)}건이다 (줄 {found})."
+    assert found.count(13) == 2, "한 줄의 두 호출이 각각 적중으로 나와야 한다"
 
 
 def test_2차_판정이_있는_규칙에서_앞이_뒤를_가리지_않는다(scanner: ModuleType) -> None:
@@ -571,7 +576,8 @@ def test_2차_판정이_있는_규칙에서_앞이_뒤를_가리지_않는다(sc
     assert rule.refine(matches[1]) is True, "뒤 리터럴이 난수꼴이어야 한다"  # type: ignore[attr-defined]
 
     dropped: list[str] = []
-    assert scanner._is_candidate(rule, line, [line], 1, lambda _r, reason: dropped.append(reason))
+    found = scanner._candidates(rule, line, [line], 1, lambda _r, reason: dropped.append(reason))
+    assert found, "뒤의 진짜 키가 후보로 나오지 않았다"
     assert len(dropped) == 1, "앞 적중이 2차 판정으로 빠진 뒤 뒤 적중까지 봐야 한다"
 
 
@@ -583,7 +589,7 @@ def test_중첩_블록_주석이_주석_본문을_코드로_흘리지_않는다(
     바깥 주석 본문이 코드로 새고, 그 본문의 `)` 하나가 인자 구간을 끊는다.
     """
     result = scanner.scan([PROBE_NESTED_COMMENT], {"LOG-BODY"})
-    found = [number for _p, number, _t in result.hits.get("LOG-BODY", [])]
+    found = [hit.line for hit in result.hits.get("LOG-BODY", [])]
 
     assert len(found) == 2, (
         f"중첩 주석 케이스와 대조군 둘 다 잡혀야 하는데 {len(found)}건이다 (줄 {found})."
@@ -696,6 +702,27 @@ def _scan_source(scanner: ModuleType, tmp_path: Path, source: str, suffix: str =
 LOGGING_LEAK = 'fun f(draft: Any) { logger.info("본문 {}", draft.value) }'
 
 
+def _digest_for(
+    scanner: ModuleType,
+    tmp_path: Path,
+    source: str,
+    rule_id: str = "LOG-BODY",
+    which: int = 0,
+) -> str:
+    """표기 **없는** 소스를 한 번 스캔해 적중의 지문을 얻는다.
+
+    테스트가 지문을 손으로 적을 수 없고, 적으면 지문 계산이 바뀔 때마다 테스트가 통째로
+    갈린다. 스캐너가 낸 값을 그대로 되먹이면 재구현이 없다 — 도달 검사가 정의를 import
+    하는 것과 같은 이유다(Z-1).
+    """
+    probe = tmp_path / "digest_probe.kt"
+    probe.write_text(source, encoding="utf-8")
+    digest = scanner.scan([probe], {rule_id}).hits[rule_id][which].digest
+    assert isinstance(digest, str), "지문이 문자열이 아니다 — Hit 계약이 바뀌었는지 확인하라"
+    return digest
+
+
+
 def test_표기가_없으면_억제_층은_항등_함수다(scanner: ModuleType) -> None:
     """**불변량: `suppress(hits, ∅) == hits`.**
 
@@ -704,8 +731,11 @@ def test_표기가_없으면_억제_층은_항등_함수다(scanner: ModuleType)
     층을 나눈 이유가 이것이다.
     """
     hits = {
-        "LOG-BODY": [(Path("a.kt"), 1, "x"), (Path("b.kt"), 7, "y")],
-        "EXC-BODY": [(Path("c.py"), 3, "z")],
+        "LOG-BODY": [
+            scanner.Hit(Path("a.kt"), 1, "c0", "d0", "x"),
+            scanner.Hit(Path("b.kt"), 7, "c1", "d1", "y"),
+        ],
+        "EXC-BODY": [scanner.Hit(Path("c.py"), 3, "c2", "d2", "z")],
     }
 
     kept, removed = scanner.suppress(hits, {})
@@ -720,7 +750,13 @@ def test_속성_무작위_적중에도_항등이다(scanner: ModuleType, seed: i
     rng = random.Random(seed)
     hits = {
         rng.choice(["LOG-BODY", "EXC-BODY", "XML-DTD"]): [
-            (Path(f"f{rng.randrange(5)}.kt"), rng.randrange(1, 50), "text")
+            scanner.Hit(
+                Path(f"f{rng.randrange(5)}.kt"),
+                rng.randrange(1, 50),
+                f"c{rng.randrange(9)}",
+                f"{rng.randrange(16**8):08x}",
+                "text",
+            )
             for _ in range(rng.randrange(1, 6))
         ]
         for _ in range(rng.randrange(1, 4))
@@ -762,7 +798,9 @@ def test_고아_표기는_실패한다(scanner: ModuleType, tmp_path: Path) -> N
     코드가 바뀌어 위험이 사라졌는데 표기만 남는 것을 막는다. 중앙 목록은 죽은 항목을
     영원히 품는다 — 어느 이름이 지금 무엇을 누르는지 아무도 모른다.
     """
-    result = _scan_source(scanner, tmp_path, "val x = 1  // privacy-allow: LOG-BODY — 적중 없음\n")
+    result = _scan_source(
+        scanner, tmp_path, "val x = 1  // privacy-allow: LOG-BODY @deadbeef — 적중 없음\n"
+    )
 
     assert any("고아 표기" in problem for problem in result.marker_problems)
 
@@ -781,8 +819,9 @@ def test_markable_이_아닌_규칙은_표기로_눌리지_않는다(scanner: Mo
 
 def test_바로_위_단독_주석_표기만_아래_줄에_닿는다(scanner: ModuleType, tmp_path: Path) -> None:
     """표기 위치는 **같은 줄 끝**이거나 **바로 위 단독 주석** 둘뿐이다."""
-    above = f"// privacy-allow: LOG-BODY — 위 줄 단독\n{LOGGING_LEAK}\n"
-    two_above = f"// privacy-allow: LOG-BODY — 두 줄 위\nval x = 1\n{LOGGING_LEAK}\n"
+    mark = _digest_for(scanner, tmp_path, LOGGING_LEAK + "\n")
+    above = f"// privacy-allow: LOG-BODY @{mark} — 위 줄 단독\n{LOGGING_LEAK}\n"
+    two_above = f"// privacy-allow: LOG-BODY @{mark} — 두 줄 위\nval x = 1\n{LOGGING_LEAK}\n"
 
     assert not _scan_source(scanner, tmp_path, above).hits.get("LOG-BODY")
     assert _scan_source(scanner, tmp_path, two_above).hits.get("LOG-BODY"), "두 줄 위 표기가 닿았다"
@@ -793,7 +832,8 @@ def test_예산_상한을_넘으면_실패한다(
 ) -> None:
     """방어 a — 상한을 올리는 것은 그 자체가 diff이고 리뷰 대상이다."""
     monkeypatch.setattr(scanner, "MARKER_BUDGET", 1)
-    source = f"{LOGGING_LEAK}  // privacy-allow: LOG-BODY — 하나\n" * 2
+    mark = _digest_for(scanner, tmp_path, LOGGING_LEAK + "\n")
+    source = f"{LOGGING_LEAK}  // privacy-allow: LOG-BODY @{mark} — 하나\n" * 2
     result = _scan_source(scanner, tmp_path, source)
 
     assert any("상한" in problem for problem in result.marker_problems)
@@ -803,8 +843,9 @@ def test_눌린_적중이_리포트에_위치와_사유로_전건_실린다(
     scanner: ModuleType, tmp_path: Path
 ) -> None:
     """**불변량 1.** 앞선 판은 개수만 남겼고, 그래서 R-1이 리포트 *안에서* 보이지 않았다."""
+    mark = _digest_for(scanner, tmp_path, LOGGING_LEAK + "\n")
     result = _scan_source(
-        scanner, tmp_path, f"{LOGGING_LEAK}  // privacy-allow: LOG-BODY — 집계만 보간\n"
+        scanner, tmp_path, f"{LOGGING_LEAK}  // privacy-allow: LOG-BODY @{mark} — 집계만 보간\n"
     )
     report, _blocking = scanner.render(result, 1, "테스트")
 
@@ -883,3 +924,357 @@ def test_markable_배정이_설계대로다(scanner: ModuleType) -> None:
         "RETENTION-PURGE",
     }
     assert not (markable & scanner.UNMARKABLE_RULES)
+
+
+# ── §4-novies — 표기 키 = 적중 키 (X-1) ────────────────────────────────────────────
+#
+# 앞선 판의 표기 키는 `(rule_id, path, physical_line)` 이었다. 표기가 **그 줄의 그 규칙
+# 적중을 무엇이든** 눌렀으므로, 사람이 사유를 쓸 때 본 것과 실제로 눌리는 것이 같다는
+# 보장이 없었다. 아래 다섯이 그 보장을 잰다 — 1·2 는 X-1 의 두 실측을 그대로 회귀로
+# 고정한 것이고, 이 둘이 없으면 같은 설계 결함이 다시 난다.
+
+SAFE_CALL = 'logger.info("건수 {}", draft.stats.count)'
+LEAK_CALL = 'logger.info("본문 {}", draft.value)'
+
+
+def test_a_같은_줄의_두_번째_호출은_눌리지_않는다(
+    scanner: ModuleType, tmp_path: Path
+) -> None:
+    """**X-1 실측 ⓐ의 회귀.**
+
+    표기 단 호출과 같은 논리 줄에 두 번째 개인정보 호출을 더한다. 줄 단위 억제에서는
+    그것도 함께 눌렸다 — 아무도 승인한 적 없는 호출이 조용히 통과했다.
+    """
+    one = f"fun f(draft: Any) {{ {LEAK_CALL} }}\n"
+    mark = _digest_for(scanner, tmp_path, one)
+
+    two = f"fun f(draft: Any) {{ {LEAK_CALL}; logger.info(\"제목 {{}}\", draft.title) }}\n"
+    marked = two.replace("}\n", f"}}  // privacy-allow: LOG-BODY @{mark} — 첫 호출만\n")
+    result = _scan_source(scanner, tmp_path, marked)
+
+    survivors = result.hits.get("LOG-BODY", [])
+    assert len(survivors) == 1, (
+        f"두 번째 호출이 함께 눌렸다 (남은 적중 {len(survivors)}건). "
+        "표기가 줄이 아니라 호출에 결속돼야 한다."
+    )
+    assert "draft.title" in survivors[0].text, "눌린 쪽과 남은 쪽이 뒤바뀌었다"
+
+
+def test_b_인자가_바뀌면_표기가_어긋난다(scanner: ModuleType, tmp_path: Path) -> None:
+    """**X-1 실측 ⓑ의 회귀.**
+
+    구판 `refine` 은 값을 다시 봤기 때문에 인자가 바뀌면 판정도 다시 했다. 표기로 옮기며
+    그 성질을 잃었고 — 표기는 줄만 보므로 인자가 무엇으로 바뀌든 계속 눌렀다. 지문이
+    그 성질을 되찾는다.
+    """
+    before = f"fun f(draft: Any) {{ {LEAK_CALL} }}\n"
+    mark = _digest_for(scanner, tmp_path, before)
+
+    after = (
+        'fun f(draft: Any) { logger.info("본문 {} {}", draft.value, draft.title) }'
+        f"  // privacy-allow: LOG-BODY @{mark} — 예전 인자에 대한 사유\n"
+    )
+    result = _scan_source(scanner, tmp_path, after)
+
+    assert result.hits.get("LOG-BODY"), "인자가 바뀌었는데도 옛 표기가 계속 눌렀다"
+    assert any("고아 표기" in problem for problem in result.marker_problems), (
+        "어긋난 표기가 조용히 남았다 — 실패는 항상 닫히는 쪽이어야 한다"
+    )
+
+
+def test_표기는_같은_줄의_다른_호출을_누르지_않는다(
+    scanner: ModuleType, tmp_path: Path
+) -> None:
+    """다른 호출의 지문을 단 표기는 이 줄의 어떤 호출도 누르지 않는다.
+
+    ⓐ가 "표기 단 호출 **말고 다른 것**이 눌리는가"를 재는 반면, 여기서는 표기가 가리키는
+    호출이 **이 줄에 아예 없을 때** 줄 위치만 보고 아무거나 누르지 않는지를 잰다.
+    앞선 판은 줄만 봤으므로 이 경우에도 첫 적중을 눌렀다.
+
+    `logger.info("건수 {}", draft.stats.count)` 도 적중이라는 점에 주의한다 — `LOG-BODY`
+    의 2차 판정은 §4-octies 에서 삭제됐고(잘린 조각을 보고 "안전"을 판정하던 훅이다),
+    안전함의 판단은 이제 사람이 표기로 한다.
+    """
+    absent = _digest_for(scanner, tmp_path, f"fun f(draft: Any) {{ {LEAK_CALL} }}\n")
+    mixed = (
+        f"fun f(draft: Any) {{ {SAFE_CALL}; logger.info(\"제목 {{}}\", draft.title) }}"
+        f"  // privacy-allow: LOG-BODY @{absent} — 이 줄에 없는 호출의 지문\n"
+    )
+    result = _scan_source(scanner, tmp_path, mixed)
+
+    assert len(result.hits.get("LOG-BODY", [])) == 2, (
+        "이 줄에 없는 호출의 지문을 단 표기가 무언가를 눌렀다"
+    )
+    assert any("고아 표기" in problem for problem in result.marker_problems)
+
+
+def test_지문이_같아도_규칙_id_가_다르면_눌리지_않는다(
+    scanner: ModuleType, tmp_path: Path
+) -> None:
+    """방어 d — 와일드카드가 없다. 지문은 규칙을 가로지르지 않는다."""
+    source = f"fun f(draft: Any) {{ {LEAK_CALL} }}\n"
+    mark = _digest_for(scanner, tmp_path, source)
+
+    marked = source.replace("}\n", f"}}  // privacy-allow: LOG-FSTRING @{mark} — 다른 규칙\n")
+    result = _scan_source(scanner, tmp_path, marked)
+
+    assert result.hits.get("LOG-BODY"), "다른 규칙의 표기가 LOG-BODY 적중을 눌렀다"
+
+
+def test_호출_순서를_바꿔도_같은_호출이_눌린다(scanner: ModuleType, tmp_path: Path) -> None:
+    """**`call_ref` 가 순서 의존이면 여기서 깨진다.**
+
+    표기가 "이 줄의 n번째 호출"에 결속되면, 두 호출을 맞바꿨을 때 승인은 그대로인데
+    눌리는 대상이 **다른 호출로 옮겨 간다.** 사유가 심사받은 범위와 눌리는 범위가
+    어긋나는 또 하나의 경로다.
+    """
+    mark = _digest_for(scanner, tmp_path, f"fun f(draft: Any) {{ {LEAK_CALL} }}\n")
+    other = 'logger.info("제목 {}", draft.title)'
+    tail = f"  // privacy-allow: LOG-BODY @{mark} — 본문 호출만\n"
+
+    forward = _scan_source(
+        scanner, tmp_path, f"fun f(draft: Any) {{ {LEAK_CALL}; {other} }}{tail}"
+    )
+    backward = _scan_source(
+        scanner, tmp_path, f"fun f(draft: Any) {{ {other}; {LEAK_CALL} }}{tail}"
+    )
+
+    for name, result in (("정순", forward), ("역순", backward)):
+        survivors = result.hits.get("LOG-BODY", [])
+        assert len(survivors) == 1, f"{name}: 남은 적중이 {len(survivors)}건이다"
+        assert "draft.title" in survivors[0].text, (
+            f"{name}: 표기가 다른 호출로 옮겨 붙었다 — call_ref 가 순서에서 나오는지 확인하라"
+        )
+
+
+def test_불변량4_표기_하나는_적중_하나만_누른다(scanner: ModuleType, tmp_path: Path) -> None:
+    """**불변량 4** — `|suppressed_by(marker)| ≤ 1`.
+
+    지문까지 같은 적중이 둘이면 사람이 무엇을 승인했는지 확정할 수 없다. 그때는 **아무것도
+    누르지 않고** 실패로 알린다 — 하나를 골라 누르면 나머지 하나가 조용히 통과한다.
+    """
+    single = f"fun f(draft: Any) {{ {LEAK_CALL} }}\n"
+    mark = _digest_for(scanner, tmp_path, single)
+
+    twice = (
+        f"fun f(draft: Any) {{ {LEAK_CALL}; {LEAK_CALL} }}"
+        f"  // privacy-allow: LOG-BODY @{mark} — 어느 쪽인지 알 수 없다\n"
+    )
+    result = _scan_source(scanner, tmp_path, twice)
+
+    assert len(result.hits.get("LOG-BODY", [])) == 2, "모호한 표기가 무언가를 눌렀다"
+    assert not result.suppressions, "억제가 하나라도 일어났다"
+    assert any("적중 2건에 닿는다" in problem for problem in result.marker_problems)
+
+
+def test_속성_한_표기가_두_적중을_억제하지_않는다(scanner: ModuleType) -> None:
+    """불변량 4를 합성 적중으로 전수 확인한다. 무작위 배치에서도 성립해야 한다."""
+    import random
+
+    rng = random.Random(20260814)
+    for _ in range(200):
+        digest = f"{rng.randrange(16**8):08x}"
+        line = rng.randrange(1, 20)
+        path = Path("probe.kt")
+        count = rng.randrange(1, 4)
+        hits = {
+            "LOG-BODY": [
+                scanner.Hit(path, line, f"c{index}", digest, "text") for index in range(count)
+            ]
+        }
+        markers = {
+            path: [
+                scanner.Marker(
+                    line=line, rule_id="LOG-BODY", digest=digest, reason="사유", standalone=False
+                )
+            ]
+        }
+        _kept, removed = scanner.suppress(hits, markers)
+
+        assert len(removed) <= 1, f"표기 하나가 {len(removed)}건을 눌렀다 (적중 {count}건)"
+
+
+def test_지문_없는_표기는_아무것도_누르지_않는다(scanner: ModuleType, tmp_path: Path) -> None:
+    """**4′** — 지문을 산출할 수 없으면 억제 대상이 아니다(닫힘)."""
+    source = f"fun f(draft: Any) {{ {LEAK_CALL} }}  // privacy-allow: LOG-BODY — 지문 없음\n"
+    result = _scan_source(scanner, tmp_path, source)
+
+    assert result.hits.get("LOG-BODY"), "지문 없는 표기가 적중을 눌렀다"
+    assert any("지문이 없다" in problem for problem in result.marker_problems)
+
+
+# ── §4-novies.5 — 재생성 도구에 건 셋 ──────────────────────────────────────────────
+
+
+def test_update_markers_는_CI_에서_거부된다(scanner: ModuleType, monkeypatch: Any) -> None:
+    """CI 가 지문을 고칠 수 있으면 게이트가 자기를 통과시킨다."""
+    monkeypatch.setenv("CI", "true")
+
+    assert scanner.main(["--update-markers"]) == 2, "CI 에서 지문 갱신이 통과했다"
+    assert scanner.running_in_ci(), "CI 판정이 환경 변수를 보지 않는다"
+
+
+def test_update_markers_는_지문만_바꾸고_사유를_남긴다(
+    scanner: ModuleType, tmp_path: Path
+) -> None:
+    """사유가 그대로 남아야 리뷰어가 '이 사유가 새 내용에도 맞나'를 판단할 수 있다."""
+    probe = tmp_path / "probe.kt"
+    probe.write_text(
+        f"fun f(draft: Any) {{ {LEAK_CALL} }}"
+        "  // privacy-allow: LOG-BODY @deadbeef — 원래 사유 그대로\n",
+        encoding="utf-8",
+    )
+
+    scanner.update_markers([probe], set())
+    updated = probe.read_text(encoding="utf-8")
+
+    assert "원래 사유 그대로" in updated, "도구가 사유를 건드렸다"
+    assert "@deadbeef" not in updated, "지문이 갱신되지 않았다"
+    assert not _scan_source(scanner, tmp_path, updated).hits.get("LOG-BODY"), (
+        "갱신한 지문으로도 억제가 안 된다"
+    )
+
+
+# ── §4-novies.6 · 6-bis — X-5 · Z-1: 가정을 표로 만들고 미도달을 선언한다 ────────────
+#
+# 두 정의(`LOG_CALL` 탐지 / `LOGGER_SHAPED` 도달)는 **같은 가정**을 공유했다 —
+# "로그 호출에는 이름 붙은 수신자가 있다". 그래서 둘이 함께 놓쳤고, 도달 검사가 미도달을
+# 못 알렸다. 그 가정을 판정하러 온 grep 까지 같은 가정을 써서 **셋이 함께 틀렸다**.
+#
+# 처분은 은폐가 아니라 선언이다. 못 잡는 형태를 `xfail(strict=True)` 로 적어 두면
+# 조용한 0이 **선언된 0**이 되고, 누가 그 형태를 탐지에 넣는 순간 `xpass` 로 뒤집혀
+# 시끄러워진다. X-5가 깨뜨린 "채택 순간 시끄러운 실패" 전제를 이 장치가 실제로 세운다.
+
+CHAIN_CALL_FILE = REPO_ROOT / (
+    "backend-kotlin/api/src/main/kotlin/kr/easydoc/api/error/ContractErrorReportValve.kt"
+)
+
+#: 형태 목록. `reached=False` 는 **알려진 미도달**이며 `xfail` 로 붙는다.
+LOGGER_SHAPES: list[tuple[str, str, bool]] = [
+    ("명명 수신자 logger", 'logger.info("본문 {}", draft.value)', True),
+    ("명명 수신자 log", 'log.error("본문 {}", draft.value)', True),
+    ("체인 팩터리", 'LoggerFactory.getLogger(X::class.java).debug("본문 {}", draft.value)', False),
+    ("정적 import", 'getLogger().error("본문 {}", draft.value)', False),
+    ("kotlin-logging 람다", 'logger.info { "본문 ${draft.value}" }', False),
+    ("slf4j fluent", 'logger.atInfo().log("본문 {}", draft.value)', False),
+]
+
+
+@pytest.mark.parametrize(
+    ("name", "source", "reached"),
+    [
+        pytest.param(
+            name,
+            source,
+            reached,
+            id=name,
+            marks=[] if reached else [pytest.mark.xfail(strict=True, reason="알려진 미도달 (X-5)")],
+        )
+        for name, source, reached in LOGGER_SHAPES
+    ],
+)
+def test_로그_호출_형태_목록(scanner: ModuleType, name: str, source: str, reached: bool) -> None:
+    """탐지 정의가 각 형태에 닿는가. **닿지 않는 것은 xfail 로 적혀 있다.**
+
+    `xfail(strict=True)` 라 미도달이 해소되면 `xpass` 로 **실패**한다 — 그때 이 표에서
+    `reached=True` 로 옮기라는 신호다. 표가 코드보다 뒤처지는 것을 표 자신이 막는다.
+    """
+    # **규칙 패턴으로 잰다.** `LOG_CALL` 은 호출 **토큰**만 보므로 `logger.info { ... }`
+    # 처럼 괄호가 없는 형태에도 걸린다 — 그것은 "탐지된다"가 아니다. 실제로 적중을 내는
+    # 것은 규칙(`{LOG_CALL}\s*\(...`)이므로 도달을 그쪽에서 재야 표가 사실과 맞는다.
+    pattern = _rule(scanner, "LOG-BODY").pattern  # type: ignore[attr-defined]  # 동적 적재 모듈
+
+    assert pattern.search(source), f"{name} 형태가 LOG-BODY 규칙에 안 잡힌다"
+
+
+def test_실물_체인_호출이_탐지에_잡힌다(scanner: ModuleType) -> None:
+    """**이 표의 유일한 실물 미도달** — `ContractErrorReportValve.kt:104-106`.
+
+    합성 탐침이 아니라 저장소의 그 줄들을 읽는다. 지금 그 자리에 `exception.message` 를
+    넣어도 아무것도 빨개지지 않는다 — 유출은 없지만(인자가 예외 **타입 이름**뿐이다)
+    **그 줄이 탐지 밖**이라는 것이 결함이다.
+    """
+    assert CHAIN_CALL_FILE.is_file(), f"실물이 없다: {CHAIN_CALL_FILE} — 옮겼다면 경로를 고쳐라"
+    lines = CHAIN_CALL_FILE.read_text(encoding="utf-8").splitlines()
+    chain = [line for line in lines if ".getLogger(" in line or "LoggerFactory" in line]
+    assert chain, "실물 체인 호출이 사라졌다 — 이 xfail 이 0건을 검사하고 있다"
+
+    joined = " ".join(line.strip() for line in lines)
+    if not re.compile(scanner.LOG_CALL).search(joined.split("LoggerFactory")[1][:200]):
+        pytest.xfail("체인 형태 미도달 (X-5) — 탐지 정의가 이름 붙은 수신자를 가정한다")
+    # 여기 도달했다면 탐지가 체인을 보게 된 것이다. 형태 목록의 `체인 팩터리` 를
+    # `reached=True` 로 옮기고 이 함수를 평범한 단언으로 바꿔라.
+
+
+def test_축1_논리_줄_결합만으로는_체인이_닫히지_않는다(scanner: ModuleType) -> None:
+    """**두 축 중 첫째 — 줄 모델.**
+
+    실물은 세 물리 줄에 걸친 체인이다. 그런데 첫 줄(`LoggerFactory`)에는 열린 괄호가 없어
+    논리 줄이 **거기서 끝난다** — 결합조차 일어나지 않는다. 줄 모델만 고쳐도 이 형태는
+    닫히지 않는다는 것을 실물로 고정한다.
+    """
+    lines = CHAIN_CALL_FILE.read_text(encoding="utf-8").splitlines()
+    logical = [ll for ll in scanner.logical_lines(lines) if ".getLogger(" in ll.text]
+    assert logical, "실물 체인이 사라졌다"
+
+    assert not any("debug(" in ll.text for ll in logical), (
+        "체인이 한 논리 줄로 묶였다 — 그렇다면 이 테스트의 전제가 바뀐 것이므로 "
+        "축2 테스트와 형태 목록의 `체인 팩터리` 항목을 함께 다시 보라"
+    )
+
+
+def test_축2_한_줄로_붙여도_수신자_가정_때문에_안_잡힌다(scanner: ModuleType) -> None:
+    r"""**두 축 중 둘째 — 수신자 가정.**
+
+    줄 모델을 완전히 이겼다고 가정하고(손으로 한 줄에 붙인다) 재도 여전히 무적중이다.
+    `LOG_CALL` 의 `_?log(?:ger)?\.` 는 `LoggerFactory` 뒤에 `.` 가 아니라 `Factory` 가
+    오므로 걸리지 않는다. 두 축은 독립이며 **둘 다** 고쳐야 닫힌다.
+    """
+    one_line = 'LoggerFactory.getLogger(X::class.java).debug("본문 {}", draft.value)'
+
+    assert not re.compile(scanner.LOG_CALL).search(one_line), (
+        "탐지가 체인을 보게 됐다 — 형태 목록의 `체인 팩터리` 를 reached=True 로 옮겨라"
+    )
+    assert not scanner.LOGGER_SHAPED.search(one_line), (
+        "도달 정의가 체인을 보게 됐다 — 도달만 넓히면 탐지 미도달이 **드러나는** 것이므로 "
+        "형태 목록과 함께 다시 보라"
+    )
+
+
+def test_도달_정의는_스캐너에_한_벌뿐이다(scanner: ModuleType) -> None:
+    """**Z-1 처분의 회귀** — 이 파일이 정의를 재구현하면 두 벌이 갈린다.
+
+    앞선 판은 `LOGGER_SHAPED` 를 테스트 파일에 두었고, 그래서 탐지 정의와 도달 정의가
+    각자 살았다. 갈린 쪽이 조용한 것은 늘 도달이었다.
+    """
+    source = Path(__file__).read_text(encoding="utf-8")
+
+    # 바늘을 조각으로 만든다 — 통째로 적으면 **이 파일 자신이 걸린다**.
+    needle = "LOGGER_SHAPED = " + "re.compile"
+
+    assert needle not in source, (
+        "도달 정의가 이 파일에 재구현됐다 — 정의는 스캐너에 두고 import 만 한다"
+    )
+    assert hasattr(scanner, "LOGGER_SHAPED"), "스캐너에 도달 정의가 없다"
+
+
+def test_어떤_워크플로도_지문_갱신을_돌리지_않는다() -> None:
+    """**선언과 도달의 대조.** `running_in_ci()` 가 막는다고 적었으니 실제로 부르는 곳이
+    없는지도 본다 — 환경 변수 판정이 어떤 러너에서 빗나가도 호출 자체가 없으면 안전하다.
+
+    두 장치는 상보다. 환경 판정은 **사람이 CI 에서 손으로 부르는 것**까지 막고,
+    이 검사는 **워크플로에 배선되는 것**을 막는다.
+    """
+    workflows = sorted((REPO_ROOT / ".github/workflows").glob("*.yml"))
+    assert workflows, "워크플로를 하나도 못 찾았다 — 이 검사가 0건을 보고 있다"
+
+    offenders = [
+        path.name
+        for path in workflows
+        if "--update-markers" in path.read_text(encoding="utf-8")
+    ]
+
+    assert not offenders, (
+        f"{offenders} 가 지문 갱신을 돌린다. CI 가 지문을 고칠 수 있으면 "
+        "게이트가 자기를 통과시킨다."
+    )

@@ -25,7 +25,9 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import math
+import os
 import re
 import subprocess
 import sys
@@ -103,11 +105,34 @@ BODY_NAMES = (
 #: 3. **고아가 되면 실패한다** — 휴리스틱에는 없던 자가 정리 기제.
 MARKER_PREFIX = "privacy-allow:"
 
-#: 표기 문법: `privacy-allow: <RULE-ID> — <사유>`. 규칙 id와 사유가 **모두 필수**다.
-#: 구분자는 em dash 또는 하이픈 둘 다 받는다(편집기·키보드에 따라 갈리는 것을 규칙으로
-#: 만들지 않는다). 사유가 비면 억제하지 않고 스캔도 실패한다(방어 c).
+#: 지문 길이(hex 문자 수). SHA-256 앞 8자 — 표기 한 줄에 눈으로 담기고, 한 파일 안의
+#: 호출 수(수십)에서 충돌이 실질적으로 일어나지 않는다. 충돌해도 방향은 닫히는 쪽이다
+#: (같은 지문의 적중이 둘이면 불변량 4 위반으로 **아무것도 억제하지 않는다**).
+DIGEST_LENGTH = 8
+
+#: 표기 문법: `privacy-allow: <RULE-ID> @<지문8자> — <사유>`.
+#: 규칙 id·지문·사유가 **모두 필수**다. 구분자는 em dash 또는 하이픈 둘 다 받는다
+#: (편집기·키보드에 따라 갈리는 것을 규칙으로 만들지 않는다). 사유가 비면 억제하지 않고
+#: 스캔도 실패한다(방어 c).
+#:
+#: ## 지문이 왜 문법에 들어왔는가 (X-1 — §4-octies 설계의 결함)
+#:
+#: 앞선 판의 표기 키는 `(rule_id, path, physical_line)` 이었다. 그래서 표기는 **그 줄의
+#: 그 규칙 적중을 무엇이든** 눌렀다 — 사람이 사유를 쓸 때 본 것과 실제로 눌리는 것이
+#: 같다는 보장이 없었다. 두 가지가 조용히 통과했다:
+#:
+#: - ⓐ 표기 단 호출과 **같은 논리 줄에 두 번째 호출**을 더하면 그것도 눌렸다
+#: - ⓑ 표기 단 호출에 **인자를 더해도** 표기는 그대로 눌렀다 (구판 `refine` 은 이것을
+#:   잡았다 — 값을 다시 봤기 때문이다. 표기로 옮기며 그 성질을 잃었다)
+#:
+#: 지문이 그 성질을 되찾는다. 지문은 **그 호출의 인자 구간**에서 나오므로 인자가 바뀌면
+#: 표기가 어긋나고, 어긋남은 **항상 닫히는 쪽**(적중 노출 + 고아 표기)으로 실패한다.
+#: 사람이 손으로 계산할 수 없으므로 `--update-markers` 가 갱신하되, 그 갱신은 diff 에
+#: 한 줄로 떠서 리뷰어가 "이 사유가 새 내용에도 맞나"를 다시 본다.
 MARKER_RE = re.compile(
-    rf"{re.escape(MARKER_PREFIX)}\s*(?P<rule>[A-Z][A-Z0-9-]*)\s*(?:—|-{{1,2}}|:)?\s*(?P<reason>.*)$"
+    rf"{re.escape(MARKER_PREFIX)}\s*(?P<rule>[A-Z][A-Z0-9-]*)"
+    rf"\s*(?:@(?P<digest>[0-9a-f]{{{DIGEST_LENGTH}}}))?"
+    rf"\s*(?:—|-{{1,2}}|:)?\s*(?P<reason>.*)$"
 )
 
 #: 저장소 전체 표기 수의 **하드 상한**. 초과하면 스캔이 실패한다.
@@ -128,14 +153,16 @@ MARKER_BUDGET = 7
 class Marker:
     """한 줄에 달린 억제 표기.
 
-    @param line 표기가 **적힌** 물리 줄.
+    @param line 표기가 **적힌** 물리 줄. 표기를 **찾을 자리**이지 키가 아니다(e′).
     @param rule_id 이 표기가 누르는 규칙. **그 규칙만** 누른다(방어 d) — 와일드카드가 없다.
+    @param digest 누를 호출의 인자 구간 지문 8자. 비면 억제하지 않는다(4′ — 닫힘).
     @param reason 사람이 적은 사유. 비면 억제하지 않는다(방어 c).
     @param standalone 그 줄에 코드가 없는가. `True` 면 **바로 아래 줄**의 적중을 누른다.
     """
 
     line: int
     rule_id: str
+    digest: str
     reason: str
     standalone: bool
 
@@ -155,6 +182,7 @@ def parse_markers(comment: str, line: int, standalone: bool) -> list[Marker]:
             Marker(
                 line=line,
                 rule_id=match.group("rule"),
+                digest=match.group("digest") or "",
                 reason=match.group("reason").strip(),
                 standalone=standalone,
             )
@@ -176,6 +204,32 @@ def parse_markers(comment: str, line: int, standalone: bool) -> list[Marker]:
 LOG_CALL = (
     r"(?:_?log(?:ger)?\.(?:debug|info|warning|warn|error|exception|trace)"
     r"|print|println|System\.out\.print)"
+)
+
+#: **로그 호출로 보이는 것**의 넓은 정의. 도달 검사가 "무엇을 찾아야 하는가"로 쓴다.
+#:
+#: ## 왜 탐지 정의(`LOG_CALL`)와 따로 있고, 왜 **여기** 있는가 (Z-1)
+#:
+#: 둘은 하는 일이 다르다 — [LOG_CALL] 은 **검사할 것**을 고르고 이것은 **검사됐어야 할
+#: 것**을 고른다. 그래서 이쪽이 의도적으로 넓다. 같은 패턴으로 찾고 같은 패턴으로 검사하면
+#: 그 패턴이 틀렸을 때 둘이 같이 틀려 도달 검사가 **자기 자신을 증명**한다.
+#:
+#: 그러나 앞선 판은 이 정의를 **테스트 파일에 재구현**해 두었다(`tests/test_privacy_scanner.py`).
+#: 두 벌이 각자 살면 갈리고, 갈린 쪽이 조용한 것은 늘 도달 쪽이다. 그래서 **정의는 둘 다
+#: 여기 한 파일에 두고 테스트는 import 만 한다.** 재구현 0 이 Z-1 의 처분이다.
+#:
+#: ## 이 정의가 못 보는 형태 (X-5 — 선언된 미도달)
+#:
+#: 이것도 **"로그 호출에는 이름 붙은 수신자가 있다"**는 가정을 쓴다. `LoggerFactory
+#: .getLogger(X).debug(...)` 같은 체인은 수신자가 이름이 아니라 **식**이라 여기도 안 잡힌다.
+#: 그 사실은 숨기지 않고 `tests/test_privacy_scanner.py` 의 형태 목록 표에 `xfail` 로
+#: 적혀 있다 — 조용한 0이 아니라 **선언된 0**이다. 누가 그 형태를 탐지에 넣으면 `xpass` 로
+#: 뒤집혀 시끄러워진다.
+LOGGER_SHAPED = re.compile(
+    r"(?<![A-Za-z0-9_])[A-Za-z_]\w*(?:log|logger|LOG|LOGGER)\s*\."
+    r"\s*(?:debug|info|warn|warning|error|exception|trace)\s*\("
+    r"|(?<![A-Za-z0-9_.])(?:log|logger|LOG|LOGGER)\s*\."
+    r"\s*(?:debug|info|warn|warning|error|exception|trace)\s*\("
 )
 
 
@@ -571,7 +625,7 @@ def iter_files(changed_only: bool, base: str | None = None) -> tuple[list[Path],
 
 @dataclass
 class ScanResult:
-    hits: dict[str, list[tuple[Path, int, str]]]
+    hits: dict[str, list[Hit]]
     #: 규칙별로 2차 판정에서 뺀 건수. 조용히 지우면 규칙이 언제부터 아무것도 안 보는지
     #: 알 수 없으므로 리포트에 함께 찍는다.
     suppressed: dict[str, dict[str, int]]
@@ -809,15 +863,94 @@ for _rule in RULES:
 ARG_LIST_OPENERS = tuple(rule.opener for rule in RULES if rule.multiline and rule.opener)
 
 
-#: 억제 층이 보는 적중. **이 셋이 전부다.**
-#:
-#: `logical_span`·`column`·`matched_text` 는 리포트용이며 억제 판정에 쓰지 않는다 —
-#: 어휘·구문 층이 논리 줄 구조나 매치 표현을 바꿔도 억제 층은 따라 바뀌지 않아야 한다
-#: (§4-octies.5 층 인터페이스).
-Hit = tuple[Path, int, str]
+@dataclass(frozen=True)
+class Hit:
+    """적중 하나. **호출 하나에 하나씩** 난다(줄 하나에 하나가 아니다).
+
+    ## 왜 줄이 아니라 호출인가 (§4-novies.3 — X-1)
+
+    앞선 판의 적중은 `(path, physical_line, text)` 였고 억제 키도 그 셋이었다. 그래서 표기
+    하나가 **그 줄의 그 규칙 적중 전부**를 눌렀다. 한 논리 줄에 호출이 둘이면 안전한 쪽에
+    붙인 표기가 위험한 쪽까지 눌렀다 — `_advance`·`_is_candidate` KDoc 이 두 번 이름 붙인
+    **"안전한 접근이 위험한 접근의 방패가 된다"** 가 세 번째 층(억제)에 남아 있었다.
+
+    입도를 잘게 내는 것은 **검출 층의 일**이다. 억제 층은 더 풍부한 적중을 받을 뿐 여전히
+    아무것도 파싱하지 않는다(금지 1 유지).
+
+    @param line 물리 줄. 표기를 **찾을 자리**이자 리포트 위치. **키가 아니다**.
+    @param call_ref 파일 안에서 이 호출을 유일하게 지목한다. **내용에서 나온다** —
+        위치나 순서에서 나오면 같은 줄의 호출 순서를 바꿨을 때 표기가 다른 호출로
+        옮겨 붙는다(음성 대조 5가 그것을 잡는다).
+    @param digest 인자 구간 지문 8자. 표기가 결속하는 값이다. 산출할 수 없으면 빈 문자열
+        이고, 그때 이 적중은 **억제 대상이 아니다**(4′ — 닫힘).
+    @param text 리포트용. 억제 판정에 쓰지 않는다.
+    """
+
+    path: Path
+    line: int
+    call_ref: str
+    digest: str
+    text: str
 
 #: 파일별 표기 색인. **어휘 층(①)이 만든다.**
 MarkerIndex = dict[Path, list[Marker]]
+
+#: 인자 구간을 훑을 때 넘어갈 문자열 여는 기호. `_QUOTES` 와 같은 이유로 긴 것이 먼저다.
+_ARG_QUOTES = ('"""', "'''", '"', "'")
+
+
+def _argument_span(text: str, start: int) -> tuple[str, int] | None:
+    """`start` 이후 첫 여는 괄호부터 **짝 괄호 직전**까지의 인자 구간과 닫는 괄호 위치.
+
+    닫는 괄호를 찾지 못하거나 여는 괄호가 없으면 `None` — 그 적중은 지문을 가질 수 없고
+    따라서 **억제 대상이 아니다**(4′). 상한 초과 구간이 이미 BLOCK 인 것과 같은 성질이다.
+
+    문자열 리터럴 안의 괄호는 세지 않는다. 주석은 셀 필요가 없다 — 이 함수에 오는 텍스트는
+    어휘 층이 이미 주석을 뺀 것이다(`_advance`). **여기서 주석을 다시 다루지 않는 것이
+    금지 2 를 지키는 방식이다.**
+    """
+    open_at = text.find("(", start)
+    if open_at < 0:
+        return None
+    depth = 0
+    index = open_at
+    quote: str | None = None
+    while index < len(text):
+        rest = text[index:]
+        if quote is not None:
+            if rest.startswith("\\"):
+                index += 2
+                continue
+            if rest.startswith(quote):
+                index += len(quote)
+                quote = None
+                continue
+            index += 1
+            continue
+        for opener in _ARG_QUOTES:
+            if rest.startswith(opener):
+                quote = opener
+                index += len(opener)
+                break
+        else:
+            if rest[0] == "(":
+                depth += 1
+            elif rest[0] == ")":
+                depth -= 1
+                if depth == 0:
+                    return text[open_at + 1 : index], index
+            index += 1
+    return None
+
+
+def _digest(value: str) -> str:
+    """정규화한 문자열의 SHA-256 앞 [DIGEST_LENGTH] 자.
+
+    **정규화는 공백 접기 하나뿐이다.** 그 이상 하면(따옴표 통일·인자 정렬 등) 지문이
+    실제 내용보다 거칠어지고, 거칠어진 만큼 ⓑ(인자 추가·교체)를 놓친다. 지문이 빡빡해서
+    무관한 편집에 깨지는 쪽은 **닫히는 방향**의 실패라 그쪽을 택한다(§4-novies.5).
+    """
+    return hashlib.sha256(" ".join(value.split()).encode("utf-8")).hexdigest()[:DIGEST_LENGTH]
 
 
 @dataclass(frozen=True)
@@ -827,6 +960,8 @@ class Suppression:
     rule_id: str
     path: Path
     line: int
+    call_ref: str
+    digest: str
     reason: str
 
 
@@ -853,48 +988,88 @@ def suppress(
     - **검출 루프 안에서 불리지 않는다.** ②층이 전량을 낸 **뒤에** 한 번 돈다.
     - **물리 줄을 특정할 수 없는 적중은 억제 대상이 아니다**(닫힘).
 
-    ## 표기가 적중에 닿는 규칙
+    ## 표기가 적중에 닿는 규칙 (e′ — 표기 키 = 적중 키)
 
-    같은 물리 줄의 표기, 또는 **바로 위 줄의 단독 주석** 표기만 닿는다. 규칙 id 가 같아야
-    하고(방어 d — 와일드카드 없음), 사유가 비면 닿지 않는다(방어 c).
+    표기는 `(path, call_ref, rule_id, digest)` **넷 모두**가 일치하는 적중 **하나**를
+    누른다. 어떤 경우에도 구간·줄·영역을 누르지 않는다. 물리 줄은 표기가 **놓이는 자리**일
+    뿐이라 후보를 좁히는 데만 쓴다 — 같은 줄의 표기, 또는 바로 위 줄의 단독 주석 표기.
+
+    ## 불변량 4 — `|suppressed_by(marker)| ≤ 1`
+
+    한 표기가 둘 이상의 적중에 닿으면 **아무것도 누르지 않는다.** 사람이 사유를 쓸 때 본
+    것과 눌리는 것이 같다는 보장이 깨진 상태이므로, 그때는 닫히는 쪽으로 간다.
+    같은 판정을 [marker_problems] 가 오류로도 낸다 — 조용히 통과하지 않게.
     """
     allowed = (
         markable_rules
         if markable_rules is not None
         else frozenset(rule.id for rule in RULES if rule.markable)
     )
+    reach = suppression_map(markers, hits, allowed)
+    # 불변량 4 를 어긴 표기는 억제력을 잃는다. 키는 표기 자신이다.
+    effective = {key: found[0] for key, found in reach.items() if len(found) == 1}
+    claimed = {(hit.path, rule_id, hit.call_ref) for (_, _, rule_id), hit in effective.items()}
+
     kept: dict[str, list[Hit]] = {}
     removed: list[Suppression] = []
     for rule_id, entries in hits.items():
-        survivors: list[Hit] = []
-        for path, line, text in entries:
-            # **`markable=False` 규칙은 표기로 눌리지 않는다**(방어, §4-octies.3).
-            # 문제로 보고만 하고 억제까지 해 주면 "판정 요청이어야 한다"는 규칙이
-            # 경고문으로 내려앉는다 — 닫히는 쪽으로 둔다.
-            marker = (
-                _marker_for(markers.get(path, []), rule_id, line) if rule_id in allowed else None
-            )
-            if marker is None:
-                survivors.append((path, line, text))
-            else:
-                removed.append(
-                    Suppression(rule_id=rule_id, path=path, line=line, reason=marker.reason)
-                )
+        survivors = [hit for hit in entries if (hit.path, rule_id, hit.call_ref) not in claimed]
         if survivors:
             kept[rule_id] = survivors
+    for (path, marker_line, rule_id), hit in sorted(
+        effective.items(), key=lambda item: (item[0][0].as_posix(), item[0][1], item[0][2])
+    ):
+        marker = next(
+            m for m in markers.get(path, []) if m.line == marker_line and m.rule_id == rule_id
+        )
+        removed.append(
+            Suppression(
+                rule_id=rule_id,
+                path=path,
+                line=hit.line,
+                call_ref=hit.call_ref,
+                digest=hit.digest,
+                reason=marker.reason,
+            )
+        )
     return kept, removed
 
 
-def _marker_for(markers: list[Marker], rule_id: str, line: int) -> Marker | None:
-    """이 적중에 닿는 표기. 사유가 빈 표기는 닿지 않는다(방어 c)."""
-    for marker in markers:
-        if marker.rule_id != rule_id or not marker.reason:
+def suppression_map(
+    markers: MarkerIndex,
+    hits: dict[str, list[Hit]],
+    allowed: frozenset[str],
+) -> dict[tuple[Path, int, str], list[Hit]]:
+    """표기 하나가 닿는 적중들. **억제와 표기 진단이 같은 계산을 쓴다.**
+
+    두 벌로 두면 "억제한 것"과 "고아라고 판정한 것"이 갈린다 — 이 저장소가 반복해 겪은
+    형태이고(`CLAUDE.md` 변경 이력), 그 갈림이 조용한 쪽은 늘 억제였다.
+    """
+    reach: dict[tuple[Path, int, str], list[Hit]] = {}
+    for rule_id, entries in hits.items():
+        if rule_id not in allowed:
+            # **`markable=False` 규칙은 표기로 눌리지 않는다**(방어, §4-octies.3).
+            # 문제로 보고만 하고 억제까지 해 주면 "판정 요청이어야 한다"는 규칙이
+            # 경고문으로 내려앉는다 — 닫히는 쪽으로 둔다.
             continue
-        if marker.line == line:
-            return marker
-        if marker.standalone and marker.line == line - 1:
-            return marker
-    return None
+        for hit in entries:
+            for marker in markers.get(hit.path, []):
+                if _marker_touches(marker, rule_id, hit):
+                    reach.setdefault((hit.path, marker.line, rule_id), []).append(hit)
+    return reach
+
+
+def _marker_touches(marker: Marker, rule_id: str, hit: Hit) -> bool:
+    """이 표기가 이 적중에 닿는가. 넷 중 하나라도 어긋나면 닿지 않는다."""
+    if marker.rule_id != rule_id or not marker.reason:
+        return False  # 방어 c·d
+    if not marker.digest or not hit.digest:
+        return False  # 4′ — 지문 없는 쪽은 억제에 참여하지 않는다
+    if marker.digest != hit.digest:
+        return False
+    if marker.line == hit.line:
+        return True
+    return marker.standalone and marker.line == hit.line - 1
 
 
 def marker_problems(
@@ -909,15 +1084,10 @@ def marker_problems(
     막는다.
     """
     known = {rule.id for rule in rules}
-    markable = {rule.id for rule in rules if rule.markable}
+    markable = frozenset(rule.id for rule in rules if rule.markable)
     problems: list[str] = []
 
-    touched: set[tuple[Path, int, str]] = set()
-    for rule_id, entries in hits.items():
-        for path, line, _text in entries:
-            marker = _marker_for(markers.get(path, []), rule_id, line)
-            if marker is not None:
-                touched.add((path, marker.line, rule_id))
+    reach = suppression_map(markers, hits, markable)
 
     total = 0
     for path, file_markers in sorted(markers.items()):
@@ -939,10 +1109,29 @@ def marker_problems(
                     "이 규칙의 오탐은 표기가 아니라 **판정 요청**이어야 한다(§4-octies.3)"
                 )
                 continue
-            if (path, marker.line, marker.rule_id) not in touched:
+            if not marker.digest:
                 problems.append(
-                    f"{where} — **고아 표기**: 이 자리에 `{marker.rule_id}` 적중이 없다. "
-                    "위험이 사라졌으면 표기도 지운다"
+                    f"{where} — 지문이 없다 (`privacy-allow: {marker.rule_id} @지문8자 — 사유`). "
+                    "지문 없는 표기는 아무것도 누르지 않는다. "
+                    "`--update-markers` 로 채운다(로컬 전용)"
+                )
+                continue
+            found = reach.get((path, marker.line, marker.rule_id), [])
+            if len(found) > 1:
+                # 불변량 4 위반. 지문이 같은 적중이 둘이면 사람이 무엇을 승인했는지
+                # 확정할 수 없다 — 억제도 하지 않고(위 `suppress`) 실패로도 알린다.
+                where_hits = ", ".join(f"{hit.line}행/{hit.call_ref}" for hit in found)
+                problems.append(
+                    f"{where} — 표기 하나가 적중 {len(found)}건에 닿는다({where_hits}). "
+                    "사유가 심사받은 범위와 눌리는 범위가 어긋나므로 아무것도 누르지 않았다. "
+                    "호출마다 표기를 따로 단다"
+                )
+                continue
+            if not found:
+                problems.append(
+                    f"{where} — **고아 표기**: 이 자리에 지문 `@{marker.digest}` 인 "
+                    f"`{marker.rule_id}` 적중이 없다. 위험이 사라졌으면 표기를 지우고, "
+                    "인자가 바뀐 것이면 `--update-markers` 로 갱신한 뒤 **사유를 다시 본다**"
                 )
 
     if total > MARKER_BUDGET:
@@ -953,14 +1142,26 @@ def marker_problems(
     return problems
 
 
-def _is_candidate(
+def _candidates(
     rule: Rule,
     line: str,
     lines: list[str],
     number: int,
     drop: Callable[[str, str], None],
-) -> bool:
-    """이 줄이 `rule` 의 후보인가. **줄 안의 적중을 전부 판정한다.**
+) -> list[tuple[str, str, str]]:
+    """이 줄에서 `rule` 의 후보 **전부**를 `(call_ref, digest, 발췌)` 로 낸다.
+
+    ## 왜 `bool` 이 아니라 목록인가 (§4-novies.3)
+
+    앞선 판은 첫 후보에서 멈추고 "이 줄은 후보다" 하나만 냈다. 그러면 억제도 줄 단위가
+    될 수밖에 없고, 그것이 X-1 이다. 호출별로 내야 표기도 호출별로 결속된다.
+
+    `call_ref` 는 **호출 텍스트**(수신자·메서드·인자 전체)의 지문이고 `digest` 는
+    **인자 구간만**의 지문이다. 둘을 나눈 이유: 수신자만 바뀌면(`logger` → `log`)
+    호출은 다른 호출이지만 인자는 같다. 그때 표기가 옮겨 붙지 않아야 한다.
+
+    둘 다 **내용에서 나온다.** 위치·순서에서 뽑으면 같은 줄의 호출 둘을 맞바꿨을 때 표기가
+    다른 호출로 옮겨 붙는다 — 음성 대조 5가 정확히 그것을 잡는다.
 
     ## `search` 하나로는 왜 새는가 (게이트 10 R-1 — 양 레인 독립 합의)
 
@@ -976,9 +1177,10 @@ def _is_candidate(
     한 호출 **안**만 보고 줄 안의 호출 개수를 보지 않았다. 순서를 뒤집으면(위험이 앞)
     잡히던 것이 그 증거다.
 
-    첫 후보를 찾으면 멈춘다 — 한 줄은 한 번만 보고하면 되고, 그 뒤 적중까지 2차 판정에
-    넣으면 억제 건수가 실제로 눈감은 양보다 부풀려진다.
+    지문을 낼 수 없는 적중(괄호가 안 닫힘 등)은 `digest=""` 로 낸다 — **보고는 하되 억제는
+    받지 못한다**(4′). 조용히 빼면 그것이 곧 fail-open 이다.
     """
+    found: list[tuple[str, str, str]] = []
     for match in rule.pattern.finditer(line):
         if rule.refine is not None and not rule.refine(match):
             drop(rule.id, "값의 모양이 불변식 대상이 아님")
@@ -989,8 +1191,27 @@ def _is_candidate(
             if any(rule.hardened.search(near) for near in window):
                 drop(rule.id, "같은 창에서 완화 조치 확인")
                 continue
-        return True
-    return False
+        # **`match.start()` 에서 찾는다. `match.end()` 가 아니다.**
+        # `LOG-BODY` 의 패턴은 여는 괄호까지 삼키고 그 뒤는 lookahead 다
+        # (`{LOG_CALL}\s*\((?=...)`). `match.end()` 부터 찾으면 **그 호출의 괄호를 이미
+        # 지나쳐** 인자 안의 다음 괄호를 잡거나 아무것도 못 찾는다. 실측: 괄호 없는
+        # `print(f"문서 id: {...}")` 가 지문 없음으로 나와 표기가 붙지 못했다.
+        # 규칙마다 패턴이 어디서 끝나는지 다르므로 **호출의 시작**을 기준으로 삼는다.
+        span = _argument_span(line, match.start())
+        if span is None:
+            # 지문 없음 = 억제 불가. 호출을 특정할 수 없으므로 call_ref 는 매치 텍스트로
+            # 만든다 — 리포트에서 구분되기만 하면 되고, 어차피 표기가 닿지 않는다.
+            found.append((_digest(match.group(0)), "", line[match.start() : match.start() + 160]))
+            continue
+        args, close = span
+        found.append(
+            (
+                _digest(line[match.start() : close + 1]),
+                _digest(args),
+                line[match.start() : match.start() + 160],
+            )
+        )
+    return found
 
 
 def scan(files: list[Path], rule_filter: set[str]) -> ScanResult:
@@ -1003,6 +1224,32 @@ def scan(files: list[Path], rule_filter: set[str]) -> ScanResult:
         suppressed.setdefault(rule_id, {}).setdefault(reason, 0)
         suppressed[rule_id][reason] += 1
 
+    def record(
+        rule_id: str,
+        path: Path,
+        number: int,
+        seen: dict[str, int],
+        candidates: list[tuple[str, str, str]],
+    ) -> None:
+        """후보를 적중으로 옮긴다. 같은 호출 텍스트가 한 파일에 여러 번이면 순번을 붙인다.
+
+        순번은 **완전히 같은 텍스트끼리만** 매긴다. 같은 텍스트는 맞바꿔도 구별되지 않으므로
+        순번이 순서 의존을 들여오지 않는다 — 음성 대조 5가 재는 것은 **서로 다른** 호출의
+        순서이고, 그쪽은 내용이 달라 지문으로 갈린다.
+        """
+        for call_ref, digest, text in candidates:
+            seen[call_ref] = seen.get(call_ref, 0) + 1
+            ordinal = seen[call_ref]
+            hits.setdefault(rule_id, []).append(
+                Hit(
+                    path=path,
+                    line=number,
+                    call_ref=call_ref if ordinal == 1 else f"{call_ref}~{ordinal}",
+                    digest=digest,
+                    text=text,
+                )
+            )
+
     rules = [rule for rule in RULES if not rule_filter or rule.id in rule_filter]
     for path in files:
         try:
@@ -1014,6 +1261,9 @@ def scan(files: list[Path], rule_filter: set[str]) -> ScanResult:
         found_markers = scan_markers(lines, python_syntax=path.suffix == ".py")
         if found_markers:
             markers[path] = found_markers
+        # 같은 호출 텍스트의 등장 횟수. **파일 단위**다 — call_ref 가 파일 안에서 유일해야
+        # 표기가 다른 파일의 같은 호출까지 누르는 일이 없다.
+        seen: dict[str, int] = {}
         for number, line in enumerate(lines, start=1):
             stripped = line.strip()
             if stripped.startswith(("#", "//", "*", '"""')):
@@ -1025,8 +1275,7 @@ def scan(files: list[Path], rule_filter: set[str]) -> ScanResult:
                     continue
                 if any(allowed in posix for allowed in rule.sanctioned):
                     continue
-                if _is_candidate(rule, line, lines, number, drop):
-                    hits.setdefault(rule.id, []).append((path, number, stripped[:160]))
+                record(rule.id, path, number, seen, _candidates(rule, line, lines, number, drop))
 
         # 인자 목록을 보는 규칙은 **논리 줄**에서 판정한다. ktlint가 강제하는 Kotlin
         # 줄바꿈 스타일에서 `logger.info(` 호출이 여러 줄로 갈리면 줄 단위 판정은
@@ -1049,8 +1298,7 @@ def scan(files: list[Path], rule_filter: set[str]) -> ScanResult:
                     continue
                 if any(allowed in posix for allowed in rule.sanctioned):
                     continue
-                if _is_candidate(rule, line, lines, number, drop):
-                    hits.setdefault(rule.id, []).append((path, number, line[:160]))
+                record(rule.id, path, number, seen, _candidates(rule, line, lines, number, drop))
 
     # ── ③층. **②가 전량을 낸 뒤에 한 번 돈다.** ────────────────────────────────
     # 검출 루프 안에서 억제하면 억제가 검출을 가로챈다 — R-1 의 직접 원인이었다.
@@ -1084,7 +1332,10 @@ def render(result: ScanResult, scanned: int, scope: str) -> tuple[str, int]:
                 if item.path.is_relative_to(REPO_ROOT)
                 else item.path
             )
-            lines.append(f"- `{shown}:{item.line}` — `{item.rule_id}` — {item.reason}")
+            lines.append(
+                f"- `{shown}:{item.line}` — `{item.rule_id}` @{item.digest} "
+                f"(호출 {item.call_ref}) — {item.reason}"
+            )
         lines.append("")
     if result.suppressed:
         lines.append("2차 판정으로 제외한 적중(규칙이 눈감은 양을 드러내기 위해 함께 적는다):")
@@ -1145,9 +1396,14 @@ def render(result: ScanResult, scanned: int, scope: str) -> tuple[str, int]:
                 "",
             ]
         )
-        for path, number, text in found[:40]:
-            shown = path.relative_to(REPO_ROOT) if path.is_relative_to(REPO_ROOT) else path
-            lines.append(f"- `{shown}:{number}` — `{text}`")
+        for hit in found[:40]:
+            shown = (
+                hit.path.relative_to(REPO_ROOT)
+                if hit.path.is_relative_to(REPO_ROOT)
+                else hit.path
+            )
+            mark = hit.digest or "지문없음"
+            lines.append(f"- `{shown}:{hit.line}` @{mark} — `{hit.text}`")
         if len(found) > 40:
             lines.append(f"- … 외 {len(found) - 40}건 (전체는 --rule {rule.id} 로 확인)")
         lines.append("")
@@ -1156,6 +1412,94 @@ def render(result: ScanResult, scanned: int, scope: str) -> tuple[str, int]:
             "후보 없음. 다만 정규식이 못 보는 경로가 있으니 수동 감사 절차를 건너뛰지 않는다."
         )
     return "\n".join(lines), blocking
+
+
+#: CI 를 알아보는 환경 변수. GitHub Actions·GitLab·CircleCI 가 공통으로 `CI` 를 준다.
+CI_ENV_VARS = ("CI", "GITHUB_ACTIONS", "GITLAB_CI", "BUILDKITE", "JENKINS_URL")
+
+
+def running_in_ci() -> bool:
+    """CI 안인가. **모르면 CI 로 본다**가 아니라, 하나라도 있으면 CI 로 본다.
+
+    이 판정이 틀리는 두 방향의 값이 다르다 — 로컬을 CI 로 잘못 보면 도구를 못 쓰는
+    불편이고, CI 를 로컬로 잘못 보면 **게이트가 자기를 통과시킨다.** 그래서 넓게 잡는다.
+    """
+    return any(os.environ.get(name) for name in CI_ENV_VARS)
+
+
+def update_markers(files: list[Path], rule_filter: set[str]) -> int:
+    """표기의 지문을 현재 코드에 맞춰 갱신한다. **사유는 건드리지 않는다.**
+
+    ## 셋을 건다 (§4-novies.5)
+
+    1. **CI 에서 실행 금지** — 호출부([main])가 막는다.
+    2. **사유 불변** — 지문만 바꾼다. 리뷰어가 "이 사유가 새 내용에도 맞나"를 판단할
+       재료가 diff 에 남아야 한다.
+    3. **전후 출력** — 지문 변경이 diff 에 한 줄로 뜬다. 인자를 추가하면 표기 줄이 함께
+       바뀌므로 리뷰어가 억제 재승인을 **본다**. 표기 설계가 상쇄에 실패했던 신호가
+       여기서 생긴다.
+
+    갱신 대상은 **표기 자리에 적중이 정확히 하나** 있을 때뿐이다. 둘 이상이면 무엇을
+    승인한 것인지 도구가 정할 수 없으므로 건드리지 않고 알린다 — 사람이 호출마다 표기를
+    나눠 달아야 한다(불변량 4).
+    """
+    markable = frozenset(rule.id for rule in RULES if rule.markable)
+    changed = 0
+    for path in files:
+        try:
+            original = path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        lines = original.splitlines()
+        file_hits = scan([path], rule_filter).hits
+        # 표기 자리 → 그 자리에서 그 규칙의 적중들(지문 무관). 지문이 **바뀌었기 때문에**
+        # 갱신하는 것이므로 여기서는 지문을 맞추지 않는다.
+        by_site: dict[tuple[int, str], list[Hit]] = {}
+        for rule_id, entries in file_hits.items():
+            if rule_id not in markable:
+                continue
+            for hit in entries:
+                if hit.digest:
+                    by_site.setdefault((hit.line, rule_id), []).append(hit)
+
+        updated = list(lines)
+        for marker in scan_markers(lines, python_syntax=path.suffix == ".py"):
+            target = marker.line + 1 if marker.standalone else marker.line
+            found = by_site.get((target, marker.rule_id), [])
+            if len(found) != 1:
+                if found:
+                    print(
+                        f"{path}:{marker.line} — 적중 {len(found)}건이라 갱신하지 않는다. "
+                        "호출마다 표기를 따로 단다"
+                    )
+                continue
+            fresh = found[0].digest
+            if marker.digest == fresh:
+                continue
+            index = marker.line - 1
+            before = updated[index]
+            after = _rewrite_digest(before, marker.rule_id, fresh)
+            if after == before:
+                continue
+            updated[index] = after
+            changed += 1
+            print(f"{path}:{marker.line}\n  전: {before.strip()}\n  후: {after.strip()}")
+        if updated != lines:
+            path.write_text("\n".join(updated) + "\n", encoding="utf-8")
+
+    print(
+        f"\n표기 {changed}건의 지문을 갱신했다. **사유는 그대로다** — "
+        "diff 를 열어 사유가 새 내용에도 맞는지 확인하라."
+    )
+    return 0
+
+
+def _rewrite_digest(line: str, rule_id: str, digest: str) -> str:
+    """표기 한 줄의 지문만 바꾼다. 없으면 규칙 id 뒤에 끼운다."""
+    pattern = re.compile(
+        rf"({re.escape(MARKER_PREFIX)}\s*{re.escape(rule_id)})(\s*@[0-9a-f]{{{DIGEST_LENGTH}}})?"
+    )
+    return pattern.sub(lambda m: f"{m.group(1)} @{digest}", line, count=1)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -1182,6 +1526,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--report-md", type=Path, help="마크다운 리포트 저장 경로")
     parser.add_argument("--no-fail", action="store_true", help="BLOCK 후보가 있어도 0으로 종료")
     parser.add_argument("--list-rules", action="store_true", help="규칙 목록 출력")
+    parser.add_argument(
+        "--update-markers",
+        action="store_true",
+        help="표기의 지문을 현재 코드에 맞춰 갱신한다 (로컬 전용 — CI 에서는 거부한다)",
+    )
     args = parser.parse_args(argv)
 
     if args.base and not args.changed:
@@ -1195,6 +1544,15 @@ def main(argv: list[str] | None = None) -> int:
     unknown = [name for name in args.rule if name not in {rule.id for rule in RULES}]
     if unknown:
         parser.error(f"알 수 없는 규칙: {', '.join(unknown)}")
+
+    if args.update_markers and running_in_ci():
+        print(
+            "--update-markers 는 CI 에서 실행할 수 없다. "
+            "CI 가 지문을 고칠 수 있으면 게이트가 자기를 통과시킨다 — "
+            "지문 불일치는 사람이 사유를 다시 보라는 신호이지 자동으로 지울 것이 아니다.",
+            file=sys.stderr,
+        )
+        return 2
 
     try:
         files, scope = iter_files(args.changed, args.base)
@@ -1220,6 +1578,8 @@ def main(argv: list[str] | None = None) -> int:
             )
             return 3
         return 0
+    if args.update_markers:
+        return update_markers(files, set(args.rule))
     result = scan(files, set(args.rule))
     report, blocking = render(result, len(files), scope)
     print(report)

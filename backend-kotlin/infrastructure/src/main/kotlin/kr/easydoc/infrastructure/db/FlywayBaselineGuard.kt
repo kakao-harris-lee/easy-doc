@@ -51,7 +51,7 @@ class FlywayBaselineGuard {
             }
             val result = flyway.migrate()
             // 로그에 남기는 것은 개수와 버전뿐이다 — 본문·개인정보가 실릴 자리가 아니다.
-            // privacy-allow: LOG-BODY — 적용 개수와 스키마 버전만 보간한다.
+            // privacy-allow: LOG-BODY @9b55d330 — 적용 개수와 스키마 버전만 보간한다.
             logger.info(
                 "Flyway 마이그레이션 완료: applied={} targetSchemaVersion={}",
                 result.migrationsExecuted,
