@@ -1,0 +1,220 @@
+{
+  "domain": "postprocess",
+  "mode": "spec",
+  "requirement": "LLM 응답에서 코드 펜스·머리말 같은 껍데기만 벗기고 **본문은 한 글자도 잃지 않는다**. 과잉 제거가 과소 제거보다 위험하다 — 사용자는 성공 응답을 받고 본문 일부가 사라진 결과를 받는다",
+  "source": "app/easyread/postprocess.py::postprocess",
+  "generator": "dump_parity_fixtures.py",
+  "normalization": [
+    "nfc",
+    "lf"
+  ],
+  "spec_status": "ready",
+  "cases": [
+    {
+      "id": "postprocess-plain",
+      "description": "껍데기만 벗기고 **본문은 한 글자도 잃지 않는다**. 과잉 제거가 과소 제거보다 위험하다 — 사용자는 성공 응답을 받고 본문 일부가 사라진 결과를 받는다",
+      "input": {
+        "raw": "쉬운 글 본문입니다."
+      },
+      "assert": [
+        {
+          "check": "present",
+          "args": {
+            "path": "text",
+            "needles": [
+              "쉬운 글 본문입니다."
+            ]
+          }
+        }
+      ],
+      "reference": {
+        "text": "쉬운 글 본문입니다."
+      }
+    },
+    {
+      "id": "postprocess-fence",
+      "description": "껍데기만 벗기고 **본문은 한 글자도 잃지 않는다**. 과잉 제거가 과소 제거보다 위험하다 — 사용자는 성공 응답을 받고 본문 일부가 사라진 결과를 받는다",
+      "input": {
+        "raw": "```\n본문입니다.\n```"
+      },
+      "assert": [
+        {
+          "check": "absent",
+          "args": {
+            "path": "text",
+            "needles": [
+              "```"
+            ]
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "text",
+            "needles": [
+              "본문입니다."
+            ]
+          }
+        }
+      ],
+      "reference": {
+        "text": "본문입니다."
+      }
+    },
+    {
+      "id": "postprocess-fence-lang",
+      "description": "껍데기만 벗기고 **본문은 한 글자도 잃지 않는다**. 과잉 제거가 과소 제거보다 위험하다 — 사용자는 성공 응답을 받고 본문 일부가 사라진 결과를 받는다",
+      "input": {
+        "raw": "```markdown\n본문입니다.\n```"
+      },
+      "assert": [
+        {
+          "check": "absent",
+          "args": {
+            "path": "text",
+            "needles": [
+              "```",
+              "markdown"
+            ]
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "text",
+            "needles": [
+              "본문입니다."
+            ]
+          }
+        }
+      ],
+      "reference": {
+        "text": "본문입니다."
+      }
+    },
+    {
+      "id": "postprocess-preamble",
+      "description": "껍데기만 벗기고 **본문은 한 글자도 잃지 않는다**. 과잉 제거가 과소 제거보다 위험하다 — 사용자는 성공 응답을 받고 본문 일부가 사라진 결과를 받는다",
+      "input": {
+        "raw": "다음은 변환 결과입니다:\n본문입니다."
+      },
+      "assert": [
+        {
+          "check": "absent",
+          "args": {
+            "path": "text",
+            "needles": [
+              "다음은 변환 결과입니다:"
+            ]
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "text",
+            "needles": [
+              "본문입니다."
+            ]
+          }
+        }
+      ],
+      "reference": {
+        "text": "본문입니다."
+      }
+    },
+    {
+      "id": "postprocess-preamble-without-body",
+      "description": "껍데기만 벗기고 **본문은 한 글자도 잃지 않는다**. 과잉 제거가 과소 제거보다 위험하다 — 사용자는 성공 응답을 받고 본문 일부가 사라진 결과를 받는다",
+      "input": {
+        "raw": "다음은 변환 결과입니다:"
+      },
+      "assert": [
+        {
+          "check": "present",
+          "args": {
+            "path": "text",
+            "needles": [
+              "다음은 변환 결과입니다:"
+            ]
+          }
+        }
+      ],
+      "reference": {
+        "text": "다음은 변환 결과입니다:"
+      }
+    },
+    {
+      "id": "postprocess-preamble-lookalike",
+      "description": "껍데기만 벗기고 **본문은 한 글자도 잃지 않는다**. 과잉 제거가 과소 제거보다 위험하다 — 사용자는 성공 응답을 받고 본문 일부가 사라진 결과를 받는다",
+      "input": {
+        "raw": "다음은 심사 결과입니다.\n본문입니다."
+      },
+      "assert": [
+        {
+          "check": "present",
+          "args": {
+            "path": "text",
+            "needles": [
+              "다음은 심사 결과입니다.",
+              "본문입니다."
+            ]
+          }
+        }
+      ],
+      "reference": {
+        "text": "다음은 심사 결과입니다.\n본문입니다."
+      }
+    },
+    {
+      "id": "postprocess-fence-then-preamble",
+      "description": "껍데기만 벗기고 **본문은 한 글자도 잃지 않는다**. 과잉 제거가 과소 제거보다 위험하다 — 사용자는 성공 응답을 받고 본문 일부가 사라진 결과를 받는다",
+      "input": {
+        "raw": "```\n아래는 쉬운 글입니다:\n본문입니다.\n```"
+      },
+      "assert": [
+        {
+          "check": "absent",
+          "args": {
+            "path": "text",
+            "needles": [
+              "```",
+              "아래는 쉬운 글입니다:"
+            ]
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "text",
+            "needles": [
+              "본문입니다."
+            ]
+          }
+        }
+      ],
+      "reference": {
+        "text": "본문입니다."
+      }
+    },
+    {
+      "id": "postprocess-only-whitespace",
+      "description": "껍데기만 벗기고 **본문은 한 글자도 잃지 않는다**. 과잉 제거가 과소 제거보다 위험하다 — 사용자는 성공 응답을 받고 본문 일부가 사라진 결과를 받는다",
+      "input": {
+        "raw": "   \n  "
+      },
+      "assert": [
+        {
+          "check": "equals_field",
+          "args": {
+            "path": "text",
+            "value": ""
+          }
+        }
+      ],
+      "reference": {
+        "text": ""
+      }
+    }
+  ],
+  "generated_at": "2026-08-14T03:06:08Z"
+}

@@ -1,0 +1,116 @@
+# 잔여 도메인 fixture 명세 — text · style · style-tables · prompts · postprocess
+
+작성: `parity-verifier` (2026-08-14) · 근거: 게이트 10 리더 판정 **J-4**(Phase 2 착수 허용)
+대상 Kotlin 구현: 커밋 `0c377a5`(TextNormalization·StyleRules) · `81f1d84`(Prompts·Postprocess)
+수신: `kotlin-implementer` — **선언(`parity-domains.txt`)과 생산자는 이 문서가 만들지 않았다. 같은 커밋 규약대로 그쪽에서 함께 넣는다.**
+
+> **한 줄 요약.** 다섯 도메인을 `pending`(미검증)에서 **`ready`로 올렸다.** 케이스 32건·단언 69개. 각 도메인이 **무엇을 판정하고 무엇을 판정하지 않는지**를 먼저 갈랐고, 도메인마다 결함을 주입해 게이트가 잡는 것을 실증했다(8종 전건 검출).
+
+---
+
+## 0. 현황
+
+| 도메인 | 상태 | 케이스 | 단언 | 판정하지 않는 것 |
+|---|---|---|---|---|
+| `text` | ready (기존) | 8 | 8 | — |
+| `style` | **pending → ready** | 10 | 20 | **문장 분리 경계** |
+| `style-tables` | **pending → ready** | 1 | 11 | 표의 **순서**·추가 항목 |
+| `prompts` | **pending → ready** | 4 | 18 | **문면 전문** |
+| `postprocess` | **pending → ready** | 8 | 12 | 빈 결과의 **처분** |
+| `export` | pending (유지) | 12 | 0 | Kotlin 구현 없음 — 그 조각에서 |
+
+`export`를 남긴 것은 지시대로다. 구현이 없는 도메인에 성질을 먼저 쓰면 그 성질이 무엇을 향해 있는지 확인할 방법이 없다.
+
+## 1. 스냅샷 테스트가 이미 덮는 것과 fixture 축이 더하는 것
+
+리더가 요구한 커버리지 구분이다. **둘은 다른 것을 본다.**
+
+| | 스냅샷 테스트 (`PromptTextSnapshotTest`·`StyleRuleDataSnapshotTest`) | parity fixture |
+|---|---|---|
+| 무엇의 정본인가 | **문안·데이터 전문** — 한 글자도 표류하지 않았는가 | **요구 성질** — 규칙이 같게 적용되는가 |
+| 기준 | Python 산출물 스냅샷 | 요구사항(비교기가 유도하거나 계약이 못박은 값) |
+| 개선을 어떻게 다루나 | 문안을 고치면 **깨진다**(의도 — 승인 경로를 밟게 한다) | 개선은 통과시킨다(`contains_all` 은 추가를 허용) |
+| 실행 주체 | Kotlin 단위 테스트 | 게이트(비교기) |
+
+**겹치지 않게 나눈 자리가 `prompts` 다.** 프롬프트 **전문**은 스냅샷이 정본이고, fixture는 전문을 걸지 않는다 — 걸면 문안 개선이 두 곳에서 동시에 빨개지고 그때 사람은 fixture를 맞추려고 **문안을 되돌린다.** X-15에서 선언한 경계("마스킹 요구 성질의 정본은 fixture, 프롬프트 스냅샷은 문안의 정본")를 반대 방향으로도 지킨 것이다.
+
+## 2. 도메인별 — 무엇을 판정하고 무엇을 판정하지 않는가
+
+### 2.1 `style` — 규칙의 건전성·완전성만, 문장 분리는 판정하지 않는다
+
+| 판정한다 | 판정하지 않는다 |
+|---|---|
+| 길이 50자 상한을 넘는 문장이 **빠짐없이** 잡히고(완전성) 넘지 않는 문장이 **잡히지 않는다**(건전성) | **문장 분리 경계** — 휴리스틱이라 요구사항으로 적히지 않는다 |
+| 쉼표 2개 상한도 같은 두 방향 | 어려운 말·치환 비문 검출(그것은 큐레이션 데이터의 문제이고 `style-tables` 가 받는다) |
+
+**구조**: 비교기가 산출물이 **스스로 보고한** `sentences` 를 입력으로 규칙만 다시 적용한다(유도 규칙 `style_length_rule`·`style_comma_rule` 신설). `repair-adoption` 이 위반 **건수**를 산출물에서 받는 것과 같은 모양이다 — 두 질문을 섞으면 실패했을 때 분리가 틀린 건지 규칙이 틀린 건지 알 수 없다.
+
+정책 상수(50·2)와 쉼표 3종은 **비교기가 자기 힘으로 들고 있다**(`MAX_SENTENCE_CHARS`·`COMMA_CHARS`). 구현에서 읽어 오면 구현이 자기 자신을 채점한다.
+
+### 2.2 `style-tables` — 정책 상수는 값으로, 큐레이션 표는 포함 관계로
+
+- **정책 상수**(`MAX_SENTENCE_CHARS`·`MAX_COMMAS_PER_SENTENCE`) → `equals_field`. 프롬프트가 이 숫자를 문구에 박아 쓰고 채점도 같은 숫자를 쓴다. 갈리면 **모델에게 지시한 것과 채점하는 것이 달라진다.**
+- **큐레이션 표** 7종 → `contains_all`(누락 금지·추가 허용). 값으로 통째로 비교하면 사전에 한 항목을 더하는 순간 빨개져 **개선이 회귀로 잡힌다.**
+
+오탐 경계인 `COMPOUND_HEAD_NOUNS`·`LEXICALIZED_GLOSSES`·`COMPOUND_TAIL_KEYS` 는 사전 키에서 유도되지 않는 실측 산출물(미션 GG 3커밋)이라 누락이 특히 위험하다 — `03_rebuild-extraction-list.md` P1-4가 "영구 손실 위험"으로 지목한 그 데이터다.
+
+> **케이스 2건을 1건으로 합쳤다.** 처음에 `counts`·`full` 로 나눴는데 이 도메인은 상수 덤프라 두 케이스의 `input` 이 똑같이 비어 있었다 — **직전 회차에 내가 넣은 M-08 중복 검사가 그것을 잡았다.** 같은 산출물을 두 번 재면서 케이스 수만 늘던 자리다. 장치가 만든 사람에게 먼저 물린 사례라 적어 둔다.
+
+### 2.3 `prompts` — 넷만 판정한다
+
+① 스타일 원칙 **전량** 포함 ② 입력에 등장한 어려운 말이 **각각** 뜻풀이와 함께(동적 필터링 — 246개 전량이 아니다) ③ 자리표시자가 본문에 **그대로**(깨지면 모델이 옮길 수 없고 복원이 무너진다) ④ 문서 경계 태그 유지(prompt injection 방어).
+
+**문면 전문은 판정하지 않는다** — §1의 이유.
+
+> **재현성 결함을 하나 고쳤다.** 프롬프트는 요청마다 난수 문서 id를 넣는데(주입 방어) 그 값이 `reference` 에 그대로 들어가 **fixture 가 매 덤프 달라졌다.** 정본 대조는 생성기를 다시 돌려 비교하므로 이대로면 **영구히 깨진다.** 생성기에서 id를 `<ID>` 로 고정했다(비교기 쪽은 같은 자리를 `mask_document_id` 정규화로 덮으므로 판정은 영향받지 않는다). 이 도메인을 ready로 올리지 않았으면 드러나지 않았을 결함이다.
+
+### 2.4 `postprocess` — 비대칭한 위험을 양방향으로 건다
+
+껍데기를 남기면 후처리 부하가 늘 뿐이지만, **본문을 지우면 사용자는 성공 응답을 받고 팩트가 사라진 결과**를 받는다. 그래서 케이스마다 "벗겨야 할 것"(`absent`)과 "남아야 할 것"(`present`)을 **함께** 건다 — 한쪽만 걸면 전부 지우는 구현이나 아무것도 안 하는 구현이 통과한다.
+
+과잉 제거 가드의 핵심 두 건: `preamble-without-body`(머리말 뒤에 본문이 없으면 **전부 날리지 않는다**) · `preamble-lookalike`(`다음은 심사 결과입니다.` 는 정상 본문이다).
+
+빈 결과의 **처분**은 판정하지 않는다 — 그것은 변환 서비스의 질문이고 `repair-adoption` 의 `conversion-empty-first-call-fails` 가 받는다. 여기서는 "무엇을 돌려주는가"만 못박는다.
+
+### 2.5 `text` — 기존 ready 유지
+
+XML 1.0 비허용 문자만 제거하고 탭·개행·복귀는 보존. 유도 규칙 `control_strip` 이 비교기 자신의 계산과 대조하므로 Python 구현이 틀려도 기대값이 따라 틀리지 않는다.
+
+## 3. 하네스 계약 (`kotlin-implementer` 인계)
+
+산출물은 `parity/actual/{도메인}/{도메인}.json`, 최상위 `runtime: "kotlin"`, fixture와 **같은 파일명**.
+
+| 도메인 | 산출물 필드 |
+|---|---|
+| `text` | `text` |
+| `style` | `sentences`(문자열 배열) · `difficult_words` · `gloss_collisions` · `check_style.{total_sentences, issues[]}` · **`length_violations`** · **`comma_violations`** |
+| `style-tables` | 상수 표 전량 + `counts` |
+| `prompts` | `system_prompt` · `user_prompt` · `repair_system_prompt` · `repair_user_prompt` |
+| `postprocess` | `text` |
+
+**`length_violations`·`comma_violations` 가 이번에 새로 요구하는 것이다.** 규칙 위반을 **기계가 읽을 수 있는 형태**로 내라는 뜻이다 — 지금 `issues[].reason` 은 한국어 산문(`"문장 길이 초과"`)이라 그것을 되파싱해 판정하면 문구를 손대는 날 게이트가 조용히 깨진다. 그 되파싱을 하지 않으려고 필드를 나눈다.
+
+## 4. 검출 실증 — 도메인당 결함 주입
+
+대조군은 **`python-verbatim`**(fixture 의 `reference` 를 Kotlin 자리에 넣은 것). 다섯 도메인 전부 **exit 3**·불충족 0 — 성질이 현행 구현으로 만족 가능함을 먼저 확인했다.
+
+| 도메인 | 주입한 결함 | 결과 |
+|---|---|---|
+| `text` | 탭까지 지운다 | **1** · 1건 (`control_strip` 유도값과 다르다) |
+| `style` | 길이 위반을 보고하지 않는다(완전성) | **1** · 1건 |
+| `style` | 위반 아닌 문장을 쉼표 위반으로 보고(건전성) | **1** · 8건 |
+| `style-tables` | 사전에서 표제어 1개 삭제 | **1** · 1건 (`'가료'` 지목) |
+| `style-tables` | 정책 상수를 50 → 60 | **1** · 1건 |
+| `prompts` | 스타일 원칙·뜻풀이 줄 제거 | **1** · 3건 |
+| `prompts` | 자리표시자 파괴 | **1** · 1건 |
+| `postprocess` | 본문까지 지운다 | **1** · 7건 |
+
+## 5. 검증
+
+전 도메인(8개) 재현성 2회 덤프 `generated_at` 외 **바이트 동일** · 실제 Kotlin 산출물 게이트 **exit 3**(성질 106건·판정 보류 2건·불충족 0) · `pytest` **1124 passed** · ruff·`mypy . .claude`(132 files) 통과.
+
+## 6. 남는 것
+
+- **선언과 생산자는 `kotlin-implementer` 몫이다.** 이 문서는 fixture와 계약까지만 만들었다. `backend-kotlin/parity-domains.txt` 와 생산자 테스트가 **같은 커밋에** 들어가야 `parityManifestCheck` 가 산다. 선언이 들어오면 `.github/parity-declared-floor.txt` 도 함께 늘려야 한다.
+- **`export` 는 pending 그대로다** — Kotlin 구현이 없다.
+- **이 다섯 도메인은 아직 Kotlin 산출물로 판정된 적이 없다.** §4의 실증은 전부 Python standin이다. "그 산출물을 Kotlin이 만들었는가"는 CI 배선(`parityHarness`)이 유일한 근거이고, 그 배선이 이 다섯에 닿는 것은 생산자가 생긴 뒤다.

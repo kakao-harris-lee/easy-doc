@@ -1,0 +1,227 @@
+{
+  "domain": "export",
+  "mode": "spec",
+  "requirement": "내보내기 파일명에 경로 구분자·제어문자가 남지 않고 길이 상한을 지키며, Content-Disposition이 RFC 5987로 해석 가능하고, 자리표시자가 **하나도 남김없이** 원문으로 복원된다(미복원 자리표시자는 개인정보 자리가 빈 채 배포되는 것이다)",
+  "source": "app/easyread/export.py::export_filename / content_disposition / restore_placeholders / render_export(TXT)",
+  "generator": "dump_parity_fixtures.py",
+  "normalization": [
+    "nfc",
+    "lf"
+  ],
+  "spec_status": "pending",
+  "cases": [
+    {
+      "id": "export-filename-hangul",
+      "description": "export_filename / content_disposition — 파일명 정제와 RFC 5987 인코딩",
+      "input": {
+        "title": "기초연금 신청 안내"
+      },
+      "reference": {
+        "docx": {
+          "filename": "기초연금 신청 안내.docx",
+          "content_disposition": "attachment; filename=\"easy-read.docx\"; filename*=UTF-8''%EA%B8%B0%EC%B4%88%EC%97%B0%EA%B8%88%20%EC%8B%A0%EC%B2%AD%20%EC%95%88%EB%82%B4.docx"
+        },
+        "txt": {
+          "filename": "기초연금 신청 안내.txt",
+          "content_disposition": "attachment; filename=\"easy-read.txt\"; filename*=UTF-8''%EA%B8%B0%EC%B4%88%EC%97%B0%EA%B8%88%20%EC%8B%A0%EC%B2%AD%20%EC%95%88%EB%82%B4.txt"
+        },
+        "hwpx": {
+          "filename": "기초연금 신청 안내.hwpx",
+          "content_disposition": "attachment; filename=\"easy-read.hwpx\"; filename*=UTF-8''%EA%B8%B0%EC%B4%88%EC%97%B0%EA%B8%88%20%EC%8B%A0%EC%B2%AD%20%EC%95%88%EB%82%B4.hwpx"
+        }
+      }
+    },
+    {
+      "id": "export-filename-path-chars",
+      "description": "export_filename / content_disposition — 파일명 정제와 RFC 5987 인코딩",
+      "input": {
+        "title": "../etc/passwd"
+      },
+      "reference": {
+        "docx": {
+          "filename": "etc passwd.docx",
+          "content_disposition": "attachment; filename=\"easy-read.docx\"; filename*=UTF-8''etc%20passwd.docx"
+        },
+        "txt": {
+          "filename": "etc passwd.txt",
+          "content_disposition": "attachment; filename=\"easy-read.txt\"; filename*=UTF-8''etc%20passwd.txt"
+        },
+        "hwpx": {
+          "filename": "etc passwd.hwpx",
+          "content_disposition": "attachment; filename=\"easy-read.hwpx\"; filename*=UTF-8''etc%20passwd.hwpx"
+        }
+      }
+    },
+    {
+      "id": "export-filename-quotes",
+      "description": "export_filename / content_disposition — 파일명 정제와 RFC 5987 인코딩",
+      "input": {
+        "title": "보고서 \"최종\""
+      },
+      "reference": {
+        "docx": {
+          "filename": "보고서 최종.docx",
+          "content_disposition": "attachment; filename=\"easy-read.docx\"; filename*=UTF-8''%EB%B3%B4%EA%B3%A0%EC%84%9C%20%EC%B5%9C%EC%A2%85.docx"
+        },
+        "txt": {
+          "filename": "보고서 최종.txt",
+          "content_disposition": "attachment; filename=\"easy-read.txt\"; filename*=UTF-8''%EB%B3%B4%EA%B3%A0%EC%84%9C%20%EC%B5%9C%EC%A2%85.txt"
+        },
+        "hwpx": {
+          "filename": "보고서 최종.hwpx",
+          "content_disposition": "attachment; filename=\"easy-read.hwpx\"; filename*=UTF-8''%EB%B3%B4%EA%B3%A0%EC%84%9C%20%EC%B5%9C%EC%A2%85.hwpx"
+        }
+      }
+    },
+    {
+      "id": "export-filename-dots",
+      "description": "export_filename / content_disposition — 파일명 정제와 RFC 5987 인코딩",
+      "input": {
+        "title": "...보고서..."
+      },
+      "reference": {
+        "docx": {
+          "filename": "보고서.docx",
+          "content_disposition": "attachment; filename=\"easy-read.docx\"; filename*=UTF-8''%EB%B3%B4%EA%B3%A0%EC%84%9C.docx"
+        },
+        "txt": {
+          "filename": "보고서.txt",
+          "content_disposition": "attachment; filename=\"easy-read.txt\"; filename*=UTF-8''%EB%B3%B4%EA%B3%A0%EC%84%9C.txt"
+        },
+        "hwpx": {
+          "filename": "보고서.hwpx",
+          "content_disposition": "attachment; filename=\"easy-read.hwpx\"; filename*=UTF-8''%EB%B3%B4%EA%B3%A0%EC%84%9C.hwpx"
+        }
+      }
+    },
+    {
+      "id": "export-filename-all-forbidden",
+      "description": "export_filename / content_disposition — 파일명 정제와 RFC 5987 인코딩",
+      "input": {
+        "title": "///"
+      },
+      "reference": {
+        "docx": {
+          "filename": "쉬운 글.docx",
+          "content_disposition": "attachment; filename=\"easy-read.docx\"; filename*=UTF-8''%EC%89%AC%EC%9A%B4%20%EA%B8%80.docx"
+        },
+        "txt": {
+          "filename": "쉬운 글.txt",
+          "content_disposition": "attachment; filename=\"easy-read.txt\"; filename*=UTF-8''%EC%89%AC%EC%9A%B4%20%EA%B8%80.txt"
+        },
+        "hwpx": {
+          "filename": "쉬운 글.hwpx",
+          "content_disposition": "attachment; filename=\"easy-read.hwpx\"; filename*=UTF-8''%EC%89%AC%EC%9A%B4%20%EA%B8%80.hwpx"
+        }
+      }
+    },
+    {
+      "id": "export-filename-long",
+      "description": "export_filename / content_disposition — 파일명 정제와 RFC 5987 인코딩",
+      "input": {
+        "title": "가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가"
+      },
+      "reference": {
+        "docx": {
+          "filename": "가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가.docx",
+          "content_disposition": "attachment; filename=\"easy-read.docx\"; filename*=UTF-8''%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80.docx"
+        },
+        "txt": {
+          "filename": "가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가.txt",
+          "content_disposition": "attachment; filename=\"easy-read.txt\"; filename*=UTF-8''%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80.txt"
+        },
+        "hwpx": {
+          "filename": "가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가.hwpx",
+          "content_disposition": "attachment; filename=\"easy-read.hwpx\"; filename*=UTF-8''%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80%EA%B0%80.hwpx"
+        }
+      }
+    },
+    {
+      "id": "export-filename-control-chars",
+      "description": "export_filename / content_disposition — 파일명 정제와 RFC 5987 인코딩",
+      "input": {
+        "title": "제\u0000목\u001f입니다"
+      },
+      "reference": {
+        "docx": {
+          "filename": "제 목 입니다.docx",
+          "content_disposition": "attachment; filename=\"easy-read.docx\"; filename*=UTF-8''%EC%A0%9C%20%EB%AA%A9%20%EC%9E%85%EB%8B%88%EB%8B%A4.docx"
+        },
+        "txt": {
+          "filename": "제 목 입니다.txt",
+          "content_disposition": "attachment; filename=\"easy-read.txt\"; filename*=UTF-8''%EC%A0%9C%20%EB%AA%A9%20%EC%9E%85%EB%8B%88%EB%8B%A4.txt"
+        },
+        "hwpx": {
+          "filename": "제 목 입니다.hwpx",
+          "content_disposition": "attachment; filename=\"easy-read.hwpx\"; filename*=UTF-8''%EC%A0%9C%20%EB%AA%A9%20%EC%9E%85%EB%8B%88%EB%8B%A4.hwpx"
+        }
+      }
+    },
+    {
+      "id": "export-restore-basic",
+      "description": "restore_placeholders — 단일 패스 치환, 미등록 자리표시자는 보존",
+      "input": {
+        "text": "번호는 [[주민등록번호1]] 입니다.",
+        "originals": {
+          "[[주민등록번호1]]": "900101-1234567"
+        }
+      },
+      "reference": {
+        "text": "번호는 900101-1234567 입니다."
+      }
+    },
+    {
+      "id": "export-restore-unknown-placeholder",
+      "description": "restore_placeholders — 단일 패스 치환, 미등록 자리표시자는 보존",
+      "input": {
+        "text": "번호는 [[주민등록번호9]] 입니다.",
+        "originals": {
+          "[[주민등록번호1]]": "900101-1234567"
+        }
+      },
+      "reference": {
+        "text": "번호는 [[주민등록번호9]] 입니다."
+      }
+    },
+    {
+      "id": "export-restore-single-pass",
+      "description": "restore_placeholders — 단일 패스 치환, 미등록 자리표시자는 보존",
+      "input": {
+        "text": "값은 [[카드번호1]] 입니다.",
+        "originals": {
+          "[[카드번호1]]": "[[주민등록번호1]]",
+          "[[주민등록번호1]]": "900101-1234567"
+        }
+      },
+      "reference": {
+        "text": "값은 [[주민등록번호1]] 입니다."
+      }
+    },
+    {
+      "id": "export-restore-none",
+      "description": "restore_placeholders — 단일 패스 치환, 미등록 자리표시자는 보존",
+      "input": {
+        "text": "자리표시자가 없습니다.",
+        "originals": {}
+      },
+      "reference": {
+        "text": "자리표시자가 없습니다."
+      }
+    },
+    {
+      "id": "export-txt-bytes",
+      "description": "TXT 산출물 — BOM 없는 UTF-8, 제목 줄 미첨부",
+      "input": {
+        "title": "제목",
+        "body": "본문 한 줄.\n두 번째 줄.\u0000"
+      },
+      "reference": {
+        "filename": "제목.txt",
+        "media_type": "text/plain; charset=utf-8",
+        "content_utf8": "본문 한 줄.\n두 번째 줄.",
+        "content_sha256_hex": "691d48806ee386c50b9619bf041c1b1f8fa27829d79be826cf75deb53b0436b8"
+      }
+    }
+  ],
+  "generated_at": "2026-08-14T03:06:08Z"
+}

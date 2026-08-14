@@ -3536,7 +3536,7 @@
       }
     },
     {
-      "id": "masking-known-gap-four-groups-single-space",
+      "id": "masking-deferred-four-groups-single-space",
       "description": "네 개의 4자리 숫자가 한 칸 공백으로 이어지면 카드번호로 가려진다(연도 표). **줄일 수 없는 모호성** — `1234 5678 9012 3456`이 카드번호 표준 표기라 공백 한 칸을 빼면 진짜 누락이 된다. `privacy-gate`가 §4-septies.8에서 **판정하지 않고** 관리 대상으로 넘긴 자리이고 **교차 검증이 없다**(실측 1건). 어느 방향도 단언하지 않는다 — 개선·악화는 참고 갈림 원장에 찍혀 드러난다",
       "input": {
         "text": "연도 2021 2022 2023 2024 실적."
@@ -3555,7 +3555,12 @@
           }
         }
       ],
-      "known_gap": "한 칸 공백으로 이어진 4×4자리 과잉 (감수한 표면 — 판정 대상 아님)",
+      "verdict_pending": {
+        "reason": "한 칸 공백으로 이어진 4×4자리 숫자가 카드번호로 가려진다. `1234 5678 9012 3456`이 표준 표기라 분리축에서 공백 한 칸을 빼면 진짜 누락이 된다 — 줄일 수 없는 모호성이라 어느 방향도 단언하지 않는다",
+        "owner": "privacy-gate",
+        "deadline": "Phase 2 종료 전 재판정 (교차 검증 없는 단독 관측이라 리뷰 1회 필요)",
+        "referred_by": "07_privacy-gate_masking-verdicts.md §4-septies.8"
+      },
       "reference": {
         "masked_text": "연도 [[카드번호1]] 실적.",
         "items": [
@@ -3568,7 +3573,7 @@
       }
     },
     {
-      "id": "masking-known-gap-five-groups-single-space",
+      "id": "masking-deferred-five-groups-single-space",
       "description": "같은 형태가 **다섯 열**이면 앞 네 개만 가려진다 — 후행 그룹 경계를 보지 않는다는 뜻이다. 판정서가 *\"확정 시 함께 본다\"*고 지목한 동작이며, 위 케이스와 같은 이유로 방향을 단언하지 않는다. 이 자리가 닫히면 두 케이스를 함께 전환한다",
       "input": {
         "text": "연도 2020 2021 2022 2023 2024 실적."
@@ -3587,7 +3592,12 @@
           }
         }
       ],
-      "known_gap": "5열에서 앞 4개만 가려짐 (후행 경계 미검사 — 판정 대상 아님)",
+      "verdict_pending": {
+        "reason": "다섯 열이면 앞 네 개만 가려진다 — 후행 그룹 경계를 보지 않는다. 위 케이스와 한 몸이라 함께 닫힌다",
+        "owner": "privacy-gate",
+        "deadline": "Phase 2 종료 전 재판정 (위 케이스와 동시)",
+        "referred_by": "07_privacy-gate_masking-verdicts.md §4-septies.8"
+      },
       "reference": {
         "masked_text": "연도 [[카드번호1]] 2024 실적.",
         "items": [
@@ -3600,5 +3610,5 @@
       }
     }
   ],
-  "generated_at": "2026-08-13T23:36:56Z"
+  "generated_at": "2026-08-14T03:06:08Z"
 }

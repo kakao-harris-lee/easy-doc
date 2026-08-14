@@ -1067,22 +1067,35 @@ def build_masking() -> FixtureSpec:
         # 방향을 이 레인이 대신 정하는 것이 된다. 존재와 참고값만 남겨 개선·악화가 원장에
         # 찍히게 한다.
         case(
-            "known-gap-four-groups-single-space",
+            "deferred-four-groups-single-space",
             "연도 2021 2022 2023 2024 실적.",
             "네 개의 4자리 숫자가 한 칸 공백으로 이어지면 카드번호로 가려진다(연도 표). "
             "**줄일 수 없는 모호성** — `1234 5678 9012 3456`이 카드번호 표준 표기라 공백 "
             "한 칸을 빼면 진짜 누락이 된다. `privacy-gate`가 §4-septies.8에서 **판정하지 "
             "않고** 관리 대상으로 넘긴 자리이고 **교차 검증이 없다**(실측 1건). 어느 방향도 "
             "단언하지 않는다 — 개선·악화는 참고 갈림 원장에 찍혀 드러난다",
-            known_gap="한 칸 공백으로 이어진 4×4자리 과잉 (감수한 표면 — 판정 대상 아님)",
+            verdict_pending={
+                "reason": "한 칸 공백으로 이어진 4×4자리 숫자가 카드번호로 가려진다. "
+                "`1234 5678 9012 3456`이 표준 표기라 분리축에서 공백 한 칸을 빼면 진짜 "
+                "누락이 된다 — 줄일 수 없는 모호성이라 어느 방향도 단언하지 않는다",
+                "owner": "privacy-gate",
+                "deadline": "Phase 2 종료 전 재판정 (교차 검증 없는 단독 관측이라 리뷰 1회 필요)",
+                "referred_by": "07_privacy-gate_masking-verdicts.md §4-septies.8",
+            },
         ),
         case(
-            "known-gap-five-groups-single-space",
+            "deferred-five-groups-single-space",
             "연도 2020 2021 2022 2023 2024 실적.",
             "같은 형태가 **다섯 열**이면 앞 네 개만 가려진다 — 후행 그룹 경계를 보지 않는다는 "
             '뜻이다. 판정서가 *"확정 시 함께 본다"*고 지목한 동작이며, 위 케이스와 같은 '
             "이유로 방향을 단언하지 않는다. 이 자리가 닫히면 두 케이스를 함께 전환한다",
-            known_gap="5열에서 앞 4개만 가려짐 (후행 경계 미검사 — 판정 대상 아님)",
+            verdict_pending={
+                "reason": "다섯 열이면 앞 네 개만 가려진다 — 후행 그룹 경계를 보지 않는다. "
+                "위 케이스와 한 몸이라 함께 닫힌다",
+                "owner": "privacy-gate",
+                "deadline": "Phase 2 종료 전 재판정 (위 케이스와 동시)",
+                "referred_by": "07_privacy-gate_masking-verdicts.md §4-septies.8",
+            },
         ),
     ]
     return FixtureSpec(
@@ -1178,6 +1191,7 @@ _STYLE_SAMPLES: list[tuple[str, str]] = [
 
 def build_style() -> FixtureSpec:
     """스타일 검사 — 문장 분리, 어려운 표현, 뜻풀이 축자 삽입, 위반 목록"""
+    from app.easyread import style_rules as sr
     from app.easyread.style_rules import (
         check_style,
         find_difficult_words,
@@ -1185,23 +1199,50 @@ def build_style() -> FixtureSpec:
         split_sentences,
     )
 
-    cases = [
-        _case(
-            f"style-{name}",
-            "split_sentences / find_difficult_words / find_gloss_collisions / check_style",
-            {"text": text},
-            {
-                "sentences": split_sentences(text),
-                "difficult_words": find_difficult_words(text),
-                "gloss_collisions": find_gloss_collisions(text),
-                "check_style": {
-                    "total_sentences": (result := check_style(text)).total_sentences,
-                    "issues": [issue.model_dump() for issue in result.issues],
+    # 판정하는 것과 하지 않는 것을 여기서 가른다.
+    #   판정한다  — 길이·쉼표 두 규칙의 **건전성과 완전성**. 넘는 문장은 빠짐없이 잡히고
+    #     넘지 않는 문장은 잡히지 않는다. `equals_derived`가 양방향을 한 번에 건다.
+    #   판정하지 않는다 — **문장 분리 경계**. 휴리스틱이라 요구사항으로 적히지 않는다.
+    #     그래서 비교기는 산출물이 **스스로 보고한** `sentences`를 입력으로 규칙만 다시
+    #     적용한다(`repair_policy`가 위반 건수를 산출물에서 받는 것과 같은 구조다).
+    #     두 질문을 섞으면 실패했을 때 분리가 틀린 건지 규칙이 틀린 건지 알 수 없다.
+    def rule_violations(sentences: list[str], comma: bool) -> list[str]:
+        if comma:
+            return [s for s in sentences if sum(s.count(ch) for ch in sr._COMMA_CHARS) > 2]
+        return [s for s in sentences if len(s) > 50]
+
+    cases = []
+    for name, text in _STYLE_SAMPLES:
+        result = check_style(text)
+        sentences = split_sentences(text)
+        cases.append(
+            _case(
+                f"style-{name}",
+                "길이 50자·쉼표 2개 규칙의 **건전성과 완전성** — 넘는 문장은 빠짐없이 "
+                "보고되고 넘지 않는 문장은 보고되지 않는다. 문장 분리 경계는 판정하지 "
+                "않는다(휴리스틱). 산출물이 보고한 문장에 규칙을 다시 적용해 대조한다",
+                {"text": text},
+                {
+                    "sentences": sentences,
+                    "difficult_words": find_difficult_words(text),
+                    "gloss_collisions": find_gloss_collisions(text),
+                    "check_style": {
+                        "total_sentences": result.total_sentences,
+                        "issues": [issue.model_dump() for issue in result.issues],
+                    },
+                    "length_violations": rule_violations(sentences, comma=False),
+                    "comma_violations": rule_violations(sentences, comma=True),
                 },
-            },
+                **{
+                    "assert": [
+                        _assert(
+                            "equals_derived", rule="style_length_rule", path="length_violations"
+                        ),
+                        _assert("equals_derived", rule="style_comma_rule", path="comma_violations"),
+                    ]
+                },
+            )
         )
-        for name, text in _STYLE_SAMPLES
-    ]
     return FixtureSpec(
         source="app/easyread/style_rules.py::check_style 외",
         mode=MODE_SPEC,
@@ -1214,7 +1255,6 @@ def build_style() -> FixtureSpec:
         ),
         normalization=BASE_NORMALIZATION,
         cases=cases,
-        spec_status=STATUS_PENDING,
     )
 
 
@@ -1243,18 +1283,43 @@ def build_style_tables() -> FixtureSpec:
         key: (len(value) if isinstance(value, (list, dict)) else value)
         for key, value in tables.items()
     }
+    # 두 축을 다르게 판정한다.
+    #   정책 상수 — **값이 같아야 한다**(`equals_field`). 프롬프트 문구와 채점 기준이 이
+    #     숫자를 f-string 으로 박아 쓰므로, 갈리면 "지시한 것과 채점하는 것"이 어긋난다.
+    #   큐레이션 표 — **누락만 막는다**(`contains_all`). 추가는 개선이라 허용한다. 값으로
+    #     통째로 비교하면 사전에 한 항목을 더하는 순간 게이트가 빨개져 개선이 회귀가 된다.
+    policy = [
+        _assert("equals_field", path="MAX_SENTENCE_CHARS", value=sr.MAX_SENTENCE_CHARS),
+        _assert("equals_field", path="MAX_COMMAS_PER_SENTENCE", value=sr.MAX_COMMAS_PER_SENTENCE),
+    ]
+    curated = [
+        _assert("contains_all", path=key, required=required)
+        for key, required in (
+            ("DIFFICULT_WORD_REPLACEMENTS", sorted(sr.DIFFICULT_WORD_REPLACEMENTS)),
+            ("STYLE_PRINCIPLES", list(sr.STYLE_PRINCIPLES)),
+            ("DOUBLE_PASSIVE_PATTERNS", list(sr.DOUBLE_PASSIVE_PATTERNS)),
+            ("PROMPT_ONLY_WORDS", sorted(sr.PROMPT_ONLY_WORDS)),
+            ("COMPOUND_HEAD_NOUNS", sorted(sr.COMPOUND_HEAD_NOUNS)),
+            ("LEXICALIZED_GLOSSES", sorted(sr.LEXICALIZED_GLOSSES)),
+            ("COMPOUND_TAIL_KEYS", sorted(sr.COMPOUND_TAIL_KEYS)),
+        )
+    ]
+    # **한 케이스다.** 처음에는 `counts` 와 `full` 로 나눠 두었는데 둘의 `input` 이 똑같이
+    # 비어 있어(이 도메인은 상수 덤프라 입력이 없다) 같은 산출물을 두 번 재고 있었다 —
+    # M-08 중복 검사가 실제로 그것을 잡았다. 케이스 수만 늘고 성질은 늘지 않는 자리였다.
+    # 크기(`counts`)는 진단용으로 산출물에 함께 담되, 판정은 한 곳에서 한다.
     cases = [
         _case(
-            "style-tables-counts",
-            "표 크기 — 낱말 하나가 조용히 빠지면 여기서 먼저 걸린다",
+            "style-tables-snapshot",
+            "정책 상수는 **값이 같아야 하고**(프롬프트가 이 숫자를 문구에 박아 쓰고 채점도 "
+            "같은 숫자를 쓴다 — 갈리면 지시한 것과 채점하는 것이 달라진다), 큐레이션 표는 "
+            "**표제어를 잃지 않아야 한다**(누락 금지·추가 허용). 표를 값으로 통째로 비교하면 "
+            "사전에 한 항목을 더하는 순간 빨개져 **개선이 회귀로 잡힌다**. 오탐 경계인 "
+            "`COMPOUND_HEAD_NOUNS`·`LEXICALIZED_GLOSSES` 는 사전 키에서 유도되지 않는 실측 "
+            "산출물이라 특히 누락이 위험하다",
             {},
-            counts,
-        ),
-        _case(
-            "style-tables-full",
-            "표 전문 — 순서까지 포함해 동일해야 한다(사전 정의 순서가 프롬프트 출력 순서다)",
-            {},
-            tables,
+            {**tables, "counts": counts},
+            **{"assert": [*policy, *curated]},
         ),
     ]
     return FixtureSpec(
@@ -1268,7 +1333,6 @@ def build_style_tables() -> FixtureSpec:
         ),
         normalization=BASE_NORMALIZATION,
         cases=cases,
-        spec_status=STATUS_PENDING,
     )
 
 
@@ -1277,8 +1341,25 @@ def build_style_tables() -> FixtureSpec:
 
 def build_prompts() -> FixtureSpec:
     """프롬프트 렌더링 — 시스템·사용자·보정 프롬프트 전문"""
-    from app.easyread.prompts import build_repair_prompt, build_system_prompt, build_user_prompt
-    from app.easyread.style_rules import check_style
+    import re
+
+    from app.easyread import style_rules as sr
+    from app.easyread.prompts import (
+        DOCUMENT_TAG_NAME,
+        build_repair_prompt,
+        build_system_prompt,
+        build_user_prompt,
+    )
+    from app.easyread.style_rules import check_style, find_difficult_words
+
+    placeholder_re = re.compile(r"\[\[[가-힣]+[0-9]+\]\]")
+    # 난수 문서 id 를 **생성 시점에** 고정한다. 그대로 두면 fixture 가 매 덤프 달라져
+    # 정본 대조(생성기 재실행 후 비교)가 **영구히 깨진다** — 재현성이 이 하네스의 전제다.
+    # 비교기 쪽은 같은 자리를 `mask_document_id` 정규화로 덮으므로 판정은 영향받지 않는다.
+    document_id_re = re.compile(r'id="[0-9a-f]{6,}"')
+
+    def fix_document_id(text: str) -> str:
+        return document_id_re.sub('id="<ID>"', text)
 
     masked_samples: list[tuple[str, str]] = [
         ("no-difficult-word", "신청은 9월에 합니다."),
@@ -1289,21 +1370,54 @@ def build_prompts() -> FixtureSpec:
             "수급자는 부양의무자 기준을 충족해야 하며 소급 적용이 가능합니다.",
         ),
     ]
+    # **문면이 한 글자까지 같아야 하는 도메인이 아니다**(§4.6이 개선을 허용한다). 판정하는
+    # 것은 넷이다 — ① 스타일 원칙이 **전량** 실린다 ② 입력에 등장한 어려운 말이 **각각**
+    # 뜻풀이와 함께 실린다(동적 필터링: 246개 전량이 아니라 등장한 것만) ③ 자리표시자가
+    # 본문에 **그대로** 남는다 ④ 문서 경계 태그가 유지된다(prompt injection 방어).
+    #
+    # 프롬프트 **전문**의 정본은 이 fixture 가 아니라 `python-prompt-snapshot.json` 이다
+    # (X-15 에서 선언한 경계와 같은 모양이다 — 두 장치가 다른 것을 본다). 여기서 전문을
+    # 값으로 걸면 문안을 고치는 순간 두 곳이 함께 빨개지고, 그때 사람은 fixture 를 맞추려고
+    # 문안을 되돌린다.
     cases: list[Case] = []
     for name, masked in masked_samples:
         issues = check_style(masked).issues
         repair_system, repair_user = build_repair_prompt(masked, issues)
+        detected = find_difficult_words(masked)
+        gloss_lines = [
+            f"- {word} (뜻: {sr.DIFFICULT_WORD_REPLACEMENTS[word]})"
+            for word in detected
+            if word in sr.DIFFICULT_WORD_REPLACEMENTS
+        ]
+        placeholders = placeholder_re.findall(masked)
+        asserts = [
+            _assert("contains_all", path="system_prompt", required=list(sr.STYLE_PRINCIPLES)),
+            _assert("contains_all", path="system_prompt", required=gloss_lines),
+            _assert("present", path="user_prompt", needles=[masked] if masked else []),
+            _assert(
+                "present",
+                path="user_prompt",
+                needles=[f"<{DOCUMENT_TAG_NAME}", f"</{DOCUMENT_TAG_NAME}"],
+            ),
+        ]
+        if placeholders:
+            # 자리표시자가 프롬프트에서 깨지면 모델이 그대로 옮길 수 없고, 복원이 무너진다.
+            asserts.append(_assert("present", path="user_prompt", needles=placeholders))
+            asserts.append(_assert("present", path="repair_user_prompt", needles=placeholders))
         cases.append(
             _case(
                 f"prompts-{name}",
-                "build_system_prompt / build_user_prompt / build_repair_prompt",
+                "스타일 원칙 전량 + 입력에 등장한 어려운 말 풀이 + 자리표시자 보존 + 문서 "
+                "경계 태그. **문면 전문은 판정하지 않는다** — 그 정본은 프롬프트 스냅샷이고, "
+                "여기서 전문을 걸면 문안 개선이 회귀로 잡힌다",
                 {"masked_text": masked, "violations": [issue.model_dump() for issue in issues]},
                 {
                     "system_prompt": build_system_prompt(masked),
-                    "user_prompt": build_user_prompt(masked),
+                    "user_prompt": fix_document_id(build_user_prompt(masked)),
                     "repair_system_prompt": repair_system,
-                    "repair_user_prompt": repair_user,
+                    "repair_user_prompt": fix_document_id(repair_user),
                 },
+                **{"assert": asserts},
             )
         )
     # 사용자·보정 프롬프트는 요청마다 난수 문서 id를 넣는다(prompt injection 방어).
@@ -1321,7 +1435,6 @@ def build_prompts() -> FixtureSpec:
         ),
         normalization=[*BASE_NORMALIZATION, "mask_document_id"],
         cases=cases,
-        spec_status=STATUS_PENDING,
     )
 
 
@@ -1342,15 +1455,48 @@ def build_postprocess() -> FixtureSpec:
         ("fence-then-preamble", "```\n아래는 쉬운 글입니다:\n본문입니다.\n```"),
         ("only-whitespace", "   \n  "),
     ]
-    cases = [
-        _case(
-            f"postprocess-{name}",
-            "postprocess — 코드 펜스·머리말 제거 조건(과잉 제거 금지)",
-            {"raw": raw},
-            {"text": postprocess(raw)},
+    # 이 도메인의 위험은 **비대칭**이다. 껍데기를 남기면 후처리 부하가 늘 뿐이지만, 본문을
+    # 지우면 사용자는 **성공 응답을 받고 팩트가 사라진 결과**를 받는다. 그래서 케이스마다
+    # "벗겨야 할 것"(`absent`)과 "남아야 할 것"(`present`)을 **함께** 건다 — 한쪽만 걸면
+    # 전부 지우는 구현이나 아무것도 안 하는 구현이 통과한다.
+    #
+    # `preamble-without-body`·`preamble-lookalike` 둘이 과잉 제거 가드의 핵심이다. 앞은
+    # 머리말 뒤에 본문이 없으면 **전부 날리지 않는다**를, 뒤는 '다음은'으로 시작해도 변환
+    # 결과를 가리키는 어구가 없으면 **정상 본문**임을 고정한다.
+    expectations: dict[str, tuple[list[str], list[str]]] = {
+        # 이름: (벗겨져야 하는 조각, 남아야 하는 조각)
+        "plain": ([], ["쉬운 글 본문입니다."]),
+        "fence": (["```"], ["본문입니다."]),
+        "fence-lang": (["```", "markdown"], ["본문입니다."]),
+        "preamble": (["다음은 변환 결과입니다:"], ["본문입니다."]),
+        "preamble-without-body": ([], ["다음은 변환 결과입니다:"]),
+        "preamble-lookalike": ([], ["다음은 심사 결과입니다.", "본문입니다."]),
+        "fence-then-preamble": (["```", "아래는 쉬운 글입니다:"], ["본문입니다."]),
+        "only-whitespace": ([], []),
+    }
+    cases = []
+    for name, raw in samples:
+        stripped, kept_pieces = expectations[name]
+        asserts = []
+        if stripped:
+            asserts.append(_assert("absent", path="text", needles=stripped))
+        if kept_pieces:
+            asserts.append(_assert("present", path="text", needles=kept_pieces))
+        else:
+            # 공백뿐인 응답은 빈 문자열이 된다. 빈 결과 판정은 변환 서비스가 하고
+            # (`repair-adoption` 의 `conversion-empty-first-call-fails`), 여기서는
+            # "무엇을 돌려주는가"만 못박는다.
+            asserts.append(_assert("equals_field", path="text", value=""))
+        cases.append(
+            _case(
+                f"postprocess-{name}",
+                "껍데기만 벗기고 **본문은 한 글자도 잃지 않는다**. 과잉 제거가 과소 제거보다 "
+                "위험하다 — 사용자는 성공 응답을 받고 본문 일부가 사라진 결과를 받는다",
+                {"raw": raw},
+                {"text": postprocess(raw)},
+                **{"assert": asserts},
+            )
         )
-        for name, raw in samples
-    ]
     return FixtureSpec(
         source="app/easyread/postprocess.py::postprocess",
         mode=MODE_SPEC,
@@ -1361,7 +1507,6 @@ def build_postprocess() -> FixtureSpec:
         ),
         normalization=BASE_NORMALIZATION,
         cases=cases,
-        spec_status=STATUS_PENDING,
     )
 
 

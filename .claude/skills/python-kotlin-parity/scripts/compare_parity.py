@@ -224,6 +224,24 @@ _XML_FORBIDDEN = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 #: 참고 갈림 원장의 기본 위치. 저장소에 커밋되어 리뷰에 올라가는 것이 존재 이유다.
 DEFAULT_LEDGER = REPO_ROOT / "parity" / "reference-ledger"
 
+#: 케이스 **정체성** 하한. 도메인별 케이스 id 스냅샷이고 비대칭으로 본다 —
+#: 추가는 자유, **삭제·개명은 차단**. `.github/parity-*-floor.txt` 두 파일의 전례를 따르되
+#: 대상이 도메인 이름이 아니라 **케이스 id**다.
+#:
+#: 왜 개수가 아니라 id 인가: 이 저장소가 이미 한 번 판정한 자리다(`86c6a99` — "개수를
+#: 정체성으로 바꾼다"). 총개수 하한은 **순소실만** 막는다. 케이스 하나를 지우고 아무거나
+#: 하나 더하면 개수가 그대로라 통과하고, 지워진 것이 하필 유일한 과잉 가드일 수 있다.
+#: 개수는 정체성의 대리 지표이고, 대리 지표로 실물을 판정하는 것이 이 하네스가 금지하는 그것이다.
+CASE_FLOOR_PATH = REPO_ROOT / ".github" / "parity-case-floor.txt"
+
+#: `verdict_pending` 이 반드시 담아야 하는 것. 없으면 **탐지되지 않는 보류**가 된다 —
+#: 마커만 붙여 두고 아무도 읽지 않던 옛 `known_gap` 이 정확히 그 상태였다(R-4).
+#: 넷은 각각 다른 질문에 답한다: 무엇이 열려 있나 / 누가 닫나 / 언제까지 / 누가 회부했나.
+VERDICT_PENDING_FIELDS: tuple[str, ...] = ("reason", "owner", "deadline", "referred_by")
+
+#: 케이스 하한에서 "이 케이스는 보류 상태다"를 표시하는 꼬리표.
+DEFERRED_FLOOR_SUFFIX = " !deferred"
+
 _DUMP = ".claude/skills/python-kotlin-parity/scripts/dump_parity_fixtures.py"
 
 #: `float_tol`의 기본 허용 오차. 표기·연산 순서 차이만 흡수하는 크기다.
@@ -672,10 +690,54 @@ def _derive_repair_policy(call: CheckCall) -> tuple[Any, list[str]]:
     return (not lost and after <= before, [])
 
 
+#: 정책 상수. **요구사항이 못박은 값**이라 여기 적는다 — `_XML_FORBIDDEN` 과 같은 지위다.
+#: app/ 도 backend-kotlin/ 도 부르지 않는다. 구현에서 읽어 오면 구현이 자기 자신을 채점한다.
+MAX_SENTENCE_CHARS = 50
+MAX_COMMAS_PER_SENTENCE = 2
+#: 반각·전각·모점. 셋 다 한국어 공문서에 실제로 쓰인다.
+COMMA_CHARS = ",，、"
+
+
+def _reported_sentences(call: CheckCall) -> tuple[list[str] | None, list[str]]:
+    """산출물이 **스스로 보고한** 문장 목록.
+
+    문장 분리 경계는 휴리스틱이라 요구사항으로 적히지 않는다 — 그래서 판정하지 않고,
+    "그 문장들을 받았을 때 규칙을 같게 적용하는가"만 본다. `repair_policy` 가 위반 **건수**를
+    산출물에서 받는 것과 같은 이유다. 두 질문을 섞으면 실패했을 때 어느 쪽이 원인인지 모른다.
+    """
+    sentences = at_path(call.actual, "sentences")
+    if not isinstance(sentences, list) or any(not isinstance(s, str) for s in sentences):
+        return (None, ["산출물이 `sentences` 문자열 배열을 보고해야 한다 — 규칙 판정의 입력이다"])
+    return ([str(s) for s in sentences], [])
+
+
+def _derive_length_rule(call: CheckCall) -> tuple[Any, list[str]]:
+    """길이 상한을 넘는 문장 전부, 그리고 그것만."""
+    sentences, problems = _reported_sentences(call)
+    if problems:
+        return (None, problems)
+    assert sentences is not None
+    return ([s for s in sentences if len(s) > MAX_SENTENCE_CHARS], [])
+
+
+def _derive_comma_rule(call: CheckCall) -> tuple[Any, list[str]]:
+    """쉼표 상한을 넘는 문장 전부, 그리고 그것만."""
+    sentences, problems = _reported_sentences(call)
+    if problems:
+        return (None, problems)
+    assert sentences is not None
+    return (
+        [s for s in sentences if sum(s.count(ch) for ch in COMMA_CHARS) > MAX_COMMAS_PER_SENTENCE],
+        [],
+    )
+
+
 #: `equals_derived`가 쓸 수 있는 규칙. **요구사항에서 유도**되며 app/ 구현을 부르지 않는다.
 DERIVATIONS: dict[str, Callable[[CheckCall], tuple[Any, list[str]]]] = {
     "control_strip": _derive_control_strip,
     "repair_policy": _derive_repair_policy,
+    "style_length_rule": _derive_length_rule,
+    "style_comma_rule": _derive_comma_rule,
 }
 
 
@@ -810,6 +872,10 @@ class FileResult:
     ledger_problems: list[str] = field(default_factory=list)
     #: 참고값이 있어 원장 대조 범위에 든 케이스 id. 낡은 원장 항목 판정의 기준이다.
     referenced: set[str] = field(default_factory=set)
+    #: 방향 판정이 **보류된** 케이스 (`verdict_pending`). `judged` 와 **따로 센다** —
+    #: 구조 불변식은 걸려 있지만 정작 물음이 된 방향은 아무도 단언하지 않았으므로,
+    #: 이것을 `성질 판정 N건` 에 섞으면 판정된 적 없는 자리가 판정 수를 부풀린다.
+    deferred: list[tuple[str, dict[str, Any], int]] = field(default_factory=list)
 
 
 def domain_of(fixture_path: Path, fixture: dict[str, Any]) -> str:
@@ -850,6 +916,149 @@ def structural_problems(pair: Pair, *, check_location: bool) -> list[str]:
         )
     problems += spec_shape_problems(pair)
     return problems
+
+
+def verdict_pending_problems(case: dict[str, Any]) -> list[str]:
+    """방향 보류 마커가 **읽히는 형태**인지 본다 (R-4).
+
+    옛 `known_gap` 은 자유 문자열이었고 **어느 게이트도 읽지 않았다.** 마커를 붙이는 것이
+    곧 "판정을 미뤘다"의 기록이었는데, 미룬 것을 누가 언제까지 닫는지가 어디에도 없어
+    미룸이 영구가 됐다. 그래서 네 필드를 필수로 만든다 — 각각 다른 질문에 답한다.
+
+    이 검사가 없으면 마커는 **은폐형 장치**가 된다(면제 조항). 필드를 강제하면 같은 마커가
+    **탐지형**이 된다 — 리포트에 소유자와 기한이 찍히고, 그 줄이 비면 게이트가 막는다.
+    """
+    case_id = case.get("id")
+    if "known_gap" in case:
+        return [
+            f"- `{case_id}` **옛 `known_gap` 마커** — 자유 문자열이라 어느 게이트도 읽지 "
+            "않았다(R-4). `verdict_pending` 객체로 옮기고 "
+            f"{'·'.join(f'`{name}`' for name in VERDICT_PENDING_FIELDS)} 를 채운다"
+        ]
+    marker = case.get("verdict_pending")
+    if marker is None:
+        return []
+    if not isinstance(marker, dict):
+        return [
+            f"- `{case_id}` **`verdict_pending` 이 객체가 아니다** — 누가 언제까지 닫는지를 "
+            "담을 수 없는 형태다. 문자열 하나로는 미룸이 영구가 되는 것을 막지 못한다"
+        ]
+    missing = [
+        name
+        for name in VERDICT_PENDING_FIELDS
+        if not isinstance(marker.get(name), str) or not marker[name].strip()
+    ]
+    if missing:
+        return [
+            f"- `{case_id}` **`verdict_pending` 필수 항목 누락**: "
+            f"{', '.join(f'`{name}`' for name in missing)} — 보류를 선언하려면 "
+            "무엇이 열려 있고(`reason`) 누가 닫으며(`owner`) 언제까지인지(`deadline`) "
+            "누가 회부했는지(`referred_by`)를 함께 적어야 한다. 셋 중 하나라도 비면 "
+            "그것은 보류가 아니라 방치다"
+        ]
+    return []
+
+
+def case_floor_problems(pairs: list[Pair], scoped: bool) -> list[str]:
+    """케이스 **정체성** 하한 — 삭제·개명을 막는다 (J-1+J-3).
+
+    개수가 아니라 id 로 본다. 총개수 하한은 순소실만 막아서, 케이스 하나를 지우고 아무거나
+    하나 더하면 통과한다 — 지워진 것이 하필 유일한 과잉 가드일 수 있다. 이 저장소는 같은
+    판정을 이미 한 번 내렸다(`86c6a99`).
+
+    비대칭이다. **추가는 자유**(검증이 늘어난 것이라 무해하고, 하한에 없으면 이름만 찍는다),
+    **삭제·개명은 차단**(그 케이스가 지키던 성질이 조용히 사라진다). 개명이 삭제로 잡히는
+    것은 의도다 — id 는 리포트·원장·명세 문서가 함께 쓰는 키라 바꾸면 그것들이 전부 어긋난다.
+
+    `scoped` 는 `--only` 로 케이스를 골라 돌린 실행이다. 그때는 관측 범위가 fixture 전체가
+    아니므로 이 검사를 건너뛴다 — 켜 두면 정상적인 단일 케이스 재현이 매번 빨개진다.
+    """
+    if scoped or not pairs:
+        return []
+    if not CASE_FLOOR_PATH.exists():
+        return [
+            f"- **케이스 하한 파일 없음** — `{CASE_FLOOR_PATH}` 가 없다. 케이스가 사라지는 "
+            "것을 감지할 기준점이 사라졌으므로 통과시키지 않는다"
+        ]
+    floor: dict[str, set[str]] = {}
+    deferred_floor: dict[str, set[str]] = {}
+    for raw in CASE_FLOOR_PATH.read_text(encoding="utf-8").splitlines():
+        line = raw.split("#", 1)[0].strip()
+        if not line:
+            continue
+        # `도메인/케이스id` 뒤에 `!deferred` 를 붙이면 "이 케이스는 방향이 보류된 상태"까지
+        # 하한이 기억한다. 마커만 떼면 보류 케이스가 조용히 `성질 판정` 수로 넘어가는데,
+        # 그것은 **판정된 적 없는 자리가 판정 수를 채우는 것**이라 id 만으로는 잡히지 않는다.
+        marked = line.endswith(DEFERRED_FLOOR_SUFFIX)
+        if marked:
+            line = line[: -len(DEFERRED_FLOOR_SUFFIX)].strip()
+        domain, _, case_id = line.partition("/")
+        if not case_id:
+            return [
+                f"- **케이스 하한 형식 오류** — `{raw.strip()}` 은 `도메인/케이스id` 가 "
+                "아니다. 형식이 깨지면 무엇을 요구하는지 알 수 없으므로 막는다"
+            ]
+        floor.setdefault(domain, set()).add(case_id)
+        if marked:
+            deferred_floor.setdefault(domain, set()).add(case_id)
+    if not floor:
+        return [
+            f"- **케이스 하한이 비었다** — `{CASE_FLOOR_PATH}` 에 항목이 한 줄도 없다. "
+            "하한이 비면 무엇을 지우든 통과한다. 파일을 지우는 것과 같은 취급이다"
+        ]
+    problems: list[str] = []
+    for pair in pairs:
+        required = floor.get(pair.domain)
+        if not required:
+            continue
+        present = set(pair.case_ids)
+        deferred_required = deferred_floor.get(pair.domain, set())
+        now_deferred = {
+            str(case.get("id"))
+            for case in pair.fixture.get("cases", [])
+            if isinstance(case, dict) and isinstance(case.get("verdict_pending"), dict)
+        }
+        closed = sorted((deferred_required & present) - now_deferred)
+        if closed:
+            problems.append(
+                f"- `{pair.domain}` **보류 마커가 사라졌다**: {', '.join(closed)}\n"
+                f"  - 하한이 이 케이스를 `{DEFERRED_FLOOR_SUFFIX.strip()}` 로 기억하고 있는데 "
+                "fixture 에 `verdict_pending` 이 없다. 마커만 떼면 그 케이스는 조용히 "
+                "`성질 판정` 수로 넘어간다 — **판정된 적 없는 자리가 판정 수를 채운다**\n"
+                "  - 보류가 실제로 닫혔다면(판정을 받았다면) 방향을 단언으로 걸고 하한에서 "
+                f"`{DEFERRED_FLOOR_SUFFIX.strip()}` 를 지운다. 어느 판정이 닫았는지 PR 에 적는다"
+            )
+        vanished = sorted(required - present)
+        if vanished:
+            problems.append(
+                f"- `{pair.domain}` **케이스가 사라졌다**: {', '.join(vanished)}\n"
+                f"  - 하한 `{CASE_FLOOR_PATH.name}` 은 이 도메인에서 {len(required)}건을 "
+                f"요구하는데 fixture 에는 {len(present)}건이 있다. 개명도 여기서 삭제로 "
+                "잡힌다 — id 는 리포트·원장·명세가 함께 쓰는 키다\n"
+                "  - 되돌리거나, 삭제·개명이 의도라면 하한 파일을 함께 고치고 PR 에 근거를 "
+                "적는다(그 케이스가 지키던 성질을 지금 무엇이 지키는가)"
+            )
+    return problems
+
+
+def case_floor_additions(pairs: list[Pair], scoped: bool) -> list[str]:
+    """하한에 아직 없는 케이스 id. **막지 않고 이름만 남긴다**(비대칭의 추가 쪽)."""
+    if scoped or not pairs or not CASE_FLOOR_PATH.exists():
+        return []
+    known: set[str] = set()
+    for raw in CASE_FLOOR_PATH.read_text(encoding="utf-8").splitlines():
+        line = raw.split("#", 1)[0].strip()
+        if line:
+            known.add(line)
+    notes: list[str] = []
+    for pair in pairs:
+        fresh = sorted(cid for cid in pair.case_ids if f"{pair.domain}/{cid}" not in known)
+        if fresh:
+            notes.append(
+                f"  {pair.domain}: {len(fresh)}건 — {', '.join(fresh[:6])}"
+                + (" …" if len(fresh) > 6 else "")
+            )
+    return notes
 
 
 def spec_shape_problems(pair: Pair) -> list[str]:
@@ -893,6 +1102,7 @@ def spec_shape_problems(pair: Pair) -> list[str]:
     for case in cases:
         if not isinstance(case, dict):
             continue
+        problems += verdict_pending_problems(case)
         entries = case.get("assert")
         if not isinstance(entries, list) or not entries:
             problems.append(
@@ -1321,9 +1531,17 @@ def compare_file(
             f"  - source: {case.get('source', fixture.get('source', '?'))}"
         )
         # ── 요구 성질을 실행해 판정한다 ──────────────────────────────────────
-        result.judged += 1
         entries = case.get("assert")
-        result.assertions += len(entries) if isinstance(entries, list) else 0
+        entry_count = len(entries) if isinstance(entries, list) else 0
+        marker = case.get("verdict_pending")
+        if isinstance(marker, dict):
+            # 방향이 보류된 케이스. 구조 불변식은 그대로 실행하되(아래 run_assertions)
+            # **판정 수에는 넣지 않는다.** 넣으면 "아무도 방향을 정하지 않은 자리"가
+            # `성질 판정 N건` 을 부풀려, 커버리지 지표가 판정되지 않은 것을 세게 된다.
+            result.deferred.append((case_id, marker, entry_count))
+        else:
+            result.judged += 1
+            result.assertions += entry_count
         failures = run_assertions(case, normalize(got_raw, active), active)
         if failures:
             detail = "\n".join(f"  - {reason}" for reason in failures)
@@ -1550,6 +1768,7 @@ def main() -> int:
     total_assertions = 0
     total_considered = 0
     total_diverged = 0
+    deferred_all: list[tuple[str, str, dict[str, Any], int]] = []
     recorded: dict[str, dict[str, dict[str, Any]]] = {}
     referenced: dict[str, set[str]] = {}
     #: 원장 대조 결과. 평소에는 불충족으로 합류하고, `--record-reference` 에서는 "원장이
@@ -1558,6 +1777,10 @@ def main() -> int:
     ledger_findings: dict[str, list[str]] = {}
     #: 도메인 전체를 판정했는가(결과 파일이 다 있었는가). 낡은 원장 항목 판정의 전제다.
     fully_compared: dict[str, bool] = {}
+    floor_problems = case_floor_problems(pairs, scoped=args.only is not None)
+    if floor_problems:
+        total_problems += len(floor_problems)
+        sections.append("## 케이스 정체성 하한\n\n" + "\n".join(floor_problems))
     for pair in pairs:
         problems = structural_problems(pair, check_location=directory_mode)
         if pair.domain in BUILDERS:
@@ -1579,6 +1802,9 @@ def main() -> int:
             total_considered += result.considered
             total_diverged += result.diverged
             total_pending += len(result.pendings)
+            deferred_all += [
+                (pair.domain, case_id, marker, count) for case_id, marker, count in result.deferred
+            ]
             recorded.setdefault(pair.domain, {}).update(result.ledger)
             referenced.setdefault(pair.domain, set()).update(result.referenced)
             fully_compared.setdefault(pair.domain, True)
@@ -1590,6 +1816,8 @@ def main() -> int:
                 )
             if not problems and not result.ledger_problems and not result.pendings:
                 shown = f"성질 {result.judged}건/단언 {result.assertions}개"
+                if result.deferred:
+                    shown += f" · 판정 보류 {len(result.deferred)}건"
                 print(f"[충족] {pair.domain} · {pair.fixture_path.name} — {shown}")
         if problems:
             total_problems += len(problems)
@@ -1667,6 +1895,32 @@ def main() -> int:
                 "게이트를 닫지 않는다.\n"
             )
         )
+    if deferred_all:
+        rows = "\n".join(
+            f"| `{domain}` | `{case_id}` | {marker['owner']} | {marker['deadline']} | "
+            f"{marker['referred_by']} | {count} | {marker['reason']} |"
+            for domain, case_id, marker, count in deferred_all
+        )
+        report += (
+            ("\n" if report else "")
+            + f"# 판정 보류 ({len(deferred_all)}건) — 성질 판정 수에 **넣지 않았다**\n\n"
+            + "방향이 아직 정해지지 않은 자리다. 구조 불변식은 그대로 걸려 있고 실행됐으나, "
+            + "정작 물음이 된 방향은 아무도 단언하지 않았다. 이 표가 비어 보이면 "
+            + "마커가 지워진 것이지 보류가 닫힌 것이 아니다.\n\n"
+            + "| 도메인 | 케이스 | 소유자 | 기한 | 회부 | 실행 단언 | 무엇이 열려 있나 |\n"
+            + "|---|---|---|---|---|---|---|\n"
+            + rows
+            + "\n"
+        )
+    additions = case_floor_additions(pairs, scoped=args.only is not None)
+    if additions:
+        report += (
+            ("\n" if report else "")
+            + "# 케이스 하한 미등재 (막지 않는다)\n\n"
+            + "\n".join(additions)
+            + f"\n\n> `{CASE_FLOOR_PATH.name}` 에 적어야 나중에 이 케이스가 지워질 때 걸린다. "
+            + "추가는 게이트를 막지 않으므로 이름만 남긴다.\n"
+        )
     if report:
         print(report, file=sys.stderr)
         if args.report_md:
@@ -1699,7 +1953,8 @@ def main() -> int:
 
     summary = (
         f"도메인 {covered}/{len(expected_domains)} / 성질 판정 {total_judged}건"
-        f"(단언 {total_assertions}개) / 참고 갈림 {total_diverged}건 / "
+        f"(단언 {total_assertions}개) / 판정 보류 {len(deferred_all)}건 / "
+        f"참고 갈림 {total_diverged}건 / "
         f"미검증 {total_pending}건 / 불충족 {total_problems}건 / "
         f"도메인 누락 {len(missing)}개 / 파일 {len(pairs)}개"
     )

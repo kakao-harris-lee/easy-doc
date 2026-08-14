@@ -1,0 +1,175 @@
+{
+  "domain": "text",
+  "mode": "spec",
+  "requirement": "app/text.py 모듈 규약 — XML 1.0이 담지 못하는 제어문자(U+0000~U+0008, U+000B, U+000C, U+000E~U+001F, U+007F)만 제거하고 탭·개행·복귀를 포함한 나머지 문자는 순서까지 보존한다",
+  "source": "app/text.py::strip_control_chars",
+  "generator": "dump_parity_fixtures.py",
+  "normalization": [
+    "nfc",
+    "lf"
+  ],
+  "spec_status": "ready",
+  "cases": [
+    {
+      "id": "text-keeps-tab-lf-cr",
+      "description": "XML(docx)에 담을 수 없는 제어문자만 사라지고, 탭·개행·복귀와 나머지 문자는 순서까지 그대로 남는다. 지우면 문단 구조가 무너지고, 남기면 내보내기가 lxml ValueError로 500이 된다",
+      "input": {
+        "text": "가\t나\n다\r라"
+      },
+      "assert": [
+        {
+          "check": "equals_derived",
+          "args": {
+            "rule": "control_strip",
+            "path": "text",
+            "source": "text"
+          }
+        }
+      ],
+      "reference": {
+        "text": "가\t나\n다\r라"
+      }
+    },
+    {
+      "id": "text-drops-nul",
+      "description": "XML(docx)에 담을 수 없는 제어문자만 사라지고, 탭·개행·복귀와 나머지 문자는 순서까지 그대로 남는다. 지우면 문단 구조가 무너지고, 남기면 내보내기가 lxml ValueError로 500이 된다",
+      "input": {
+        "text": "가\u0000나"
+      },
+      "assert": [
+        {
+          "check": "equals_derived",
+          "args": {
+            "rule": "control_strip",
+            "path": "text",
+            "source": "text"
+          }
+        }
+      ],
+      "reference": {
+        "text": "가나"
+      }
+    },
+    {
+      "id": "text-drops-vt-ff",
+      "description": "XML(docx)에 담을 수 없는 제어문자만 사라지고, 탭·개행·복귀와 나머지 문자는 순서까지 그대로 남는다. 지우면 문단 구조가 무너지고, 남기면 내보내기가 lxml ValueError로 500이 된다",
+      "input": {
+        "text": "가\u000b나\f다"
+      },
+      "assert": [
+        {
+          "check": "equals_derived",
+          "args": {
+            "rule": "control_strip",
+            "path": "text",
+            "source": "text"
+          }
+        }
+      ],
+      "reference": {
+        "text": "가나다"
+      }
+    },
+    {
+      "id": "text-drops-del",
+      "description": "XML(docx)에 담을 수 없는 제어문자만 사라지고, 탭·개행·복귀와 나머지 문자는 순서까지 그대로 남는다. 지우면 문단 구조가 무너지고, 남기면 내보내기가 lxml ValueError로 500이 된다",
+      "input": {
+        "text": "가나"
+      },
+      "assert": [
+        {
+          "check": "equals_derived",
+          "args": {
+            "rule": "control_strip",
+            "path": "text",
+            "source": "text"
+          }
+        }
+      ],
+      "reference": {
+        "text": "가나"
+      }
+    },
+    {
+      "id": "text-drops-c1-range",
+      "description": "XML(docx)에 담을 수 없는 제어문자만 사라지고, 탭·개행·복귀와 나머지 문자는 순서까지 그대로 남는다. 지우면 문단 구조가 무너지고, 남기면 내보내기가 lxml ValueError로 500이 된다",
+      "input": {
+        "text": "가\u001f나\u000e다\b라"
+      },
+      "assert": [
+        {
+          "check": "equals_derived",
+          "args": {
+            "rule": "control_strip",
+            "path": "text",
+            "source": "text"
+          }
+        }
+      ],
+      "reference": {
+        "text": "가나다라"
+      }
+    },
+    {
+      "id": "text-empty",
+      "description": "XML(docx)에 담을 수 없는 제어문자만 사라지고, 탭·개행·복귀와 나머지 문자는 순서까지 그대로 남는다. 지우면 문단 구조가 무너지고, 남기면 내보내기가 lxml ValueError로 500이 된다",
+      "input": {
+        "text": ""
+      },
+      "assert": [
+        {
+          "check": "equals_derived",
+          "args": {
+            "rule": "control_strip",
+            "path": "text",
+            "source": "text"
+          }
+        }
+      ],
+      "reference": {
+        "text": ""
+      }
+    },
+    {
+      "id": "text-only-control",
+      "description": "XML(docx)에 담을 수 없는 제어문자만 사라지고, 탭·개행·복귀와 나머지 문자는 순서까지 그대로 남는다. 지우면 문단 구조가 무너지고, 남기면 내보내기가 lxml ValueError로 500이 된다",
+      "input": {
+        "text": "\u0000\u0001\u0002"
+      },
+      "assert": [
+        {
+          "check": "equals_derived",
+          "args": {
+            "rule": "control_strip",
+            "path": "text",
+            "source": "text"
+          }
+        }
+      ],
+      "reference": {
+        "text": ""
+      }
+    },
+    {
+      "id": "text-keeps-hangul-and-emoji",
+      "description": "XML(docx)에 담을 수 없는 제어문자만 사라지고, 탭·개행·복귀와 나머지 문자는 순서까지 그대로 남는다. 지우면 문단 구조가 무너지고, 남기면 내보내기가 lxml ValueError로 500이 된다",
+      "input": {
+        "text": "가나다 😀 라마바\n둘째 줄"
+      },
+      "assert": [
+        {
+          "check": "equals_derived",
+          "args": {
+            "rule": "control_strip",
+            "path": "text",
+            "source": "text"
+          }
+        }
+      ],
+      "reference": {
+        "text": "가나다 😀 라마바\n둘째 줄"
+      }
+    }
+  ],
+  "generated_at": "2026-08-14T03:06:08Z"
+}

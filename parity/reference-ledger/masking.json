@@ -1,7 +1,7 @@
 {
   "domain": "masking",
   "note": "Kotlin 산출물과 Python 참고값이 갈린 자리의 기록이다. 판정 근거가 아니라 리뷰에 올리기 위한 원장이며, 본문 없이 경로와 SHA-256만 남긴다. 갱신: compare_parity.py --record-reference",
-  "recorded_at": "2026-08-13T23:28:52Z",
+  "recorded_at": "2026-08-14T02:52:22Z",
   "cases": {
     "masking-boundary-fold-card-head": {
       "status": "agree",
@@ -142,6 +142,20 @@
       "first_diff_path": "",
       "reference_sha256": "1b86f74cff735733e429850c72bcda7d5ea56ccba58ae97622057f51dbdc3843",
       "actual_sha256": "1b86f74cff735733e429850c72bcda7d5ea56ccba58ae97622057f51dbdc3843"
+    },
+    "masking-deferred-five-groups-single-space": {
+      "status": "agree",
+      "declared": false,
+      "first_diff_path": "",
+      "reference_sha256": "448ad3571b1e3abfee66485e8ef2337fee8e22d0f72ec8d274778b6816ae1ca1",
+      "actual_sha256": "448ad3571b1e3abfee66485e8ef2337fee8e22d0f72ec8d274778b6816ae1ca1"
+    },
+    "masking-deferred-four-groups-single-space": {
+      "status": "agree",
+      "declared": false,
+      "first_diff_path": "",
+      "reference_sha256": "fb49c3ccfb388d25552907eaa2a2668ccf536dc8878e8a8b616e9d28e80896f4",
+      "actual_sha256": "fb49c3ccfb388d25552907eaa2a2668ccf536dc8878e8a8b616e9d28e80896f4"
     },
     "masking-empty": {
       "status": "agree",
@@ -331,20 +345,6 @@
       "first_diff_path": "$.masked_text",
       "reference_sha256": "fb323186479a4e96825bca5a8c1a61dc3d2d3de7dc3214c1933b26f6c978f0fc",
       "actual_sha256": "77aa1f3e5e0787b6af3e9b18349bb8e2e7461dc1fc1b76a58d81af382f977856"
-    },
-    "masking-known-gap-five-groups-single-space": {
-      "status": "agree",
-      "declared": false,
-      "first_diff_path": "",
-      "reference_sha256": "448ad3571b1e3abfee66485e8ef2337fee8e22d0f72ec8d274778b6816ae1ca1",
-      "actual_sha256": "448ad3571b1e3abfee66485e8ef2337fee8e22d0f72ec8d274778b6816ae1ca1"
-    },
-    "masking-known-gap-four-groups-single-space": {
-      "status": "agree",
-      "declared": false,
-      "first_diff_path": "",
-      "reference_sha256": "fb49c3ccfb388d25552907eaa2a2668ccf536dc8878e8a8b616e9d28e80896f4",
-      "actual_sha256": "fb49c3ccfb388d25552907eaa2a2668ccf536dc8878e8a8b616e9d28e80896f4"
     },
     "masking-multi-category": {
       "status": "agree",
