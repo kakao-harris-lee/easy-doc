@@ -303,8 +303,8 @@ def build_masking() -> FixtureSpec:
     # 끊겼다. 두 케이스가 함께 있어야 "어디가 ASCII 전용이었나"가 fixture로 드러난다.
     rrn_fullwidth_gender = "900101-" + fullwidth[1] + "234567"
     rrn_arabic_gender = "900101-" + arabic_indic[5] + "234567"
-    card_arabic_head = restyle("1234", arabic_indic) + "-5678-9012-3456"
-    card_fullwidth = restyle("1234-5678-9012-3456", fullwidth)
+    card_arabic_head = restyle("4111", arabic_indic) + "-1111-1111-1111"
+    card_fullwidth = restyle("4111-1111-1111-1111", fullwidth)
 
     # ── 회피 문자 축 ──────────────────────────────────────────────────────────
     # `privacy-gate` 판정(`02_privacy-gate_control-char-verdict.md`, 2026-08-12)이 (가)
@@ -617,49 +617,49 @@ def build_masking() -> FixtureSpec:
         # ── 카드번호 ──────────────────────────────────────────────────────────
         case(
             "card-hyphen",
-            "카드번호 1234-5678-9012-3456 을 입력합니다.",
+            "카드번호 4111-1111-1111-1111 을 입력합니다.",
             f"하이픈 표기 16자리 카드번호를 {hidden}",
-            _assert("absent", path="masked_text", needles=["1234-5678-9012-3456"]),
+            _assert("absent", path="masked_text", needles=["4111-1111-1111-1111"]),
         ),
         case(
             "card-spaced",
-            "카드번호 1234 5678 9012 3456 입력.",
+            "카드번호 4111 1111 1111 1111 입력.",
             f"공백 구분 표기도 {hidden}",
-            _assert("absent", path="masked_text", needles=["1234 5678 9012 3456"]),
+            _assert("absent", path="masked_text", needles=["4111 1111 1111 1111"]),
         ),
         case(
             "card-no-sep",
-            "카드번호 1234567890123456 입력.",
+            "카드번호 4111111111111111 입력.",
             f"구분자 없는 16자리도 {hidden}",
-            _assert("absent", path="masked_text", needles=["1234567890123456"]),
+            _assert("absent", path="masked_text", needles=["4111111111111111"]),
         ),
         # ── 복합 구분자 (판정 6 §4-ter.2 탐침 9·10 — C-01② 누락분) ────────────
-        # 구분자를 "한 문자"로만 두면 카드번호의 `1234 - 5678` 형태가 통째로 빠진다.
+        # 구분자를 "한 문자"로만 두면 카드번호의 `4111 - 1111` 형태가 통째로 빠진다.
         # 같은 형태가 RRN에는 전부터 있었는데(`rrn-spaced`) 카드에는 없었다 — 두 패턴이
         # 구분자를 따로 적고 있었다는 증거이고, `SEP` 상수 공유가 닫는 자리다.
         case(
             "card-spaced-hyphen",
-            f"카드 1234{space}-{space}5678{space}-{space}9012{space}-{space}3456 입력.",
+            f"카드 4111{space}-{space}1111{space}-{space}1111{space}-{space}1111 입력.",
             f"하이픈 양옆에 공백이 붙은 카드번호도 {hidden}. RRN에는 같은 형태가 전부터 "
             "있었는데(`masking-rrn-spaced`) 카드에는 없었다 — 구분자를 두 벌로 적으면 "
             "이렇게 한쪽만 좁아진다",
             _assert(
                 "absent",
                 path="masked_text",
-                needles=[f"1234{space}-{space}5678{space}-{space}9012{space}-{space}3456"],
+                needles=[f"4111{space}-{space}1111{space}-{space}1111{space}-{space}1111"],
             ),
             reference_divergence="expected",
         ),
         case(
             "card-nbsp-around-hyphen",
-            f"카드 1234{nbsp}-{nbsp}5678{nbsp}-{nbsp}9012{nbsp}-{nbsp}3456 입력.",
+            f"카드 4111{nbsp}-{nbsp}1111{nbsp}-{nbsp}1111{nbsp}-{nbsp}1111 입력.",
             f"NBSP가 하이픈 양옆에 붙은 카드번호도 {hidden}. 문자 변형(NBSP)과 복합 "
             "구분자(공백+하이픈+공백)가 **함께** 오는 형태이며, 둘 중 하나만 고친 구현은 "
             "여기서 걸린다",
             _assert(
                 "absent",
                 path="masked_text",
-                needles=[f"1234{nbsp}-{nbsp}5678{nbsp}-{nbsp}9012{nbsp}-{nbsp}3456"],
+                needles=[f"4111{nbsp}-{nbsp}1111{nbsp}-{nbsp}1111{nbsp}-{nbsp}1111"],
             ),
             reference_divergence="expected",
         ),
@@ -684,14 +684,14 @@ def build_masking() -> FixtureSpec:
         *[
             case(
                 f"card-sep-{name}",
-                f"카드 1234{chars(code)}5678{chars(code)}9012{chars(code)}3456 입력.",
+                f"카드 4111{chars(code)}1111{chars(code)}1111{chars(code)}1111 입력.",
                 f"카드번호 구분자가 {note}여도 {hidden}. RRN과 같은 집합이어야 한다 — "
                 "두 패턴이 각자 구분자를 열거하면 다음 확장에서 한쪽만 늘어난다",
                 _assert(
                     "absent",
                     path="masked_text",
                     needles=[
-                        f"1234{chars(code)}5678{chars(code)}9012{chars(code)}3456",
+                        f"4111{chars(code)}1111{chars(code)}1111{chars(code)}1111",
                     ],
                 ),
                 reference_divergence="expected",
@@ -708,10 +708,10 @@ def build_masking() -> FixtureSpec:
         ),
         case(
             "multi-category",
-            "주민 900101-1234567 카드 1234-5678-9012-3456 입니다.",
+            "주민 900101-1234567 카드 4111-1111-1111-1111 입니다.",
             "서로 다른 범주는 각각 1번부터 센다. `items` 순서는 텍스트 등장 순서다",
             _assert(
-                "absent", path="masked_text", needles=["900101-1234567", "1234-5678-9012-3456"]
+                "absent", path="masked_text", needles=["900101-1234567", "4111-1111-1111-1111"]
             ),
         ),
         case(
@@ -801,9 +801,9 @@ def build_masking() -> FixtureSpec:
         ),
         case(
             "card-zwsp",
-            f"카드 1234-5678-9012{chars(0x200B)}-3456 입력.",
+            f"카드 4111-1111-1111{chars(0x200B)}-1111 입력.",
             f"같은 회피가 카드번호에도 걸린다(판정서 M11 — 2종 축소본에서 6종 전부 누락). {hidden}",
-            _assert("absent", path="masked_text", needles=[f"1234-5678-9012{chars(0x200B)}-3456"]),
+            _assert("absent", path="masked_text", needles=[f"4111-1111-1111{chars(0x200B)}-1111"]),
         ),
         # ── 탐색 뷰 접기의 **경계축** (판정 8 §4-septies.6) ────────────────────
         # 접기는 두 축에 다르게 작용한다. 이 구분이 이 절의 전부다.
@@ -846,11 +846,11 @@ def build_masking() -> FixtureSpec:
                 ),
                 (
                     "boundary-fold-card-head",
-                    f"카드 1{chars(0x200B)}1234-5678-9012-3456 입력.",
+                    f"카드 1{chars(0x200B)}4111-1111-1111-1111 입력.",
                     "keeps-boundary-card-head",
-                    "카드 11234-5678-9012-3456 입력.",
-                    "1234-5678-9012-3456",
-                    "11234-5678-9012-3456",
+                    "카드 14111-1111-1111-1111 입력.",
+                    "4111-1111-1111-1111",
+                    "14111-1111-1111-1111",
                     "카드 대칭 — 경계축도 RRN·CARD 양쪽에서 같아야 한다",
                 ),
             )
@@ -931,10 +931,10 @@ def build_masking() -> FixtureSpec:
         ),
         case(
             "keeps-card-newline-split-digits",
-            "번호 1234\n5678\n9012\n3456 을 차례로 적으세요.",
+            "번호 4111\n1111\n1111\n1111 을 차례로 적으세요.",
             f"줄마다 적힌 네 숫자열은 하나의 카드번호가 아니다. {kept} — 구분자 집합을 "
             "RRN·CARD가 공유하므로 과잉 방향도 **양쪽에서** 봐야 한다",
-            _assert("present", path="masked_text", needles=["1234\n5678\n9012\n3456"]),
+            _assert("present", path="masked_text", needles=["4111\n1111\n1111\n1111"]),
         ),
         # ── 정렬 vs 구분 경계 (판정 6 §4-ter.2 탐침 6·7·8·12) ─────────────────
         # 구분자 문자 집합을 넓히면서 **반복 상한을 두지 않은** 결과가 이 자리다. 열 맞춤에
@@ -968,13 +968,13 @@ def build_masking() -> FixtureSpec:
         ),
         case(
             "keeps-card-ideographic-space-three",
-            f"표 1234{idsp * 3}5678{idsp * 3}9012{idsp * 3}3456 끝.",
+            f"표 4111{idsp * 3}1111{idsp * 3}1111{idsp * 3}1111 끝.",
             f"표의 네 칸에 나뉜 숫자열은 하나의 카드번호가 아니다. {kept} — 반복 상한을 "
             "RRN에만 두고 CARD에 빠뜨리면 여기서 걸린다",
             _assert(
                 "present",
                 path="masked_text",
-                needles=[f"1234{idsp * 3}5678{idsp * 3}9012{idsp * 3}3456"],
+                needles=[f"4111{idsp * 3}1111{idsp * 3}1111{idsp * 3}1111"],
             ),
         ),
         # ── TAB은 여백이 아니라 열 경계다 (판정 8 §4-septies.7 — M-06) ────────
@@ -1010,10 +1010,10 @@ def build_masking() -> FixtureSpec:
         ),
         case(
             "keeps-card-tab-four-columns",
-            "표 1234\t5678\t9012\t3456 끝.",
+            "표 4111\t1111\t1111\t1111 끝.",
             f"탭으로 갈린 네 칸은 카드번호가 아니다. {kept} — **표 4열이 통째로 카드번호가 "
             "되던 자리**이고, TAB이 구분자였을 때 실측으로 확인된 과잉이다",
-            _assert("present", path="masked_text", needles=["1234\t5678\t9012\t3456"]),
+            _assert("present", path="masked_text", needles=["4111\t1111\t1111\t1111"]),
         ),
         case(
             "keeps-amount-tab-four-columns",
@@ -1051,51 +1051,49 @@ def build_masking() -> FixtureSpec:
             ),
             reference_divergence="expected",
         ),
-        # ── 감수한 과잉 표면 — 어느 방향도 단언하지 않는다 (판정 8 §4-septies.8) ─
-        # 네 개의 4자리 숫자 그룹이 **한 칸 공백**으로 이어지면 카드번호로 가려진다. 연도·금액
-        # 표가 그 형태다. **줄일 수 없는 모호성이다** — `1234 5678 9012 3456`이 카드번호의
-        # 표준 표기라, 분리축에서 공백 한 칸을 빼면 진짜 누락이 된다. 두 요구가 같은 입력
-        # 형태를 놓고 맞선다.
+        # ── 카드가 아닌 4×4 숫자열 — 가리면 안 된다 (판정 §4-decies.4) ────────
+        # 2026-08-14 방향 전환. 이 두 건은 `verdict_pending`(어느 방향도 단언하지 않음)이었다.
+        # `privacy-gate` 가 **감수를 확정하지 않고** 카드 패턴 협소화(Luhn)를 별건 회부하면서
+        # 방향을 요구사항 쪽으로 정했다 — **가려지면 안 된다.**
         #
-        # `privacy-gate`가 **판정하지 않고** 관리 대상으로 남겼다(§4-septies.8). 가리는 쪽이
-        # 정책 정합이라고 적었으나 — 누락은 조용하고 되돌릴 수 없는 반면 과잉은 검수 화면에
-        # `original`과 나란히 보인다 — **교차 검증이 없다.** 두 리뷰 어디도 이 자리를 보지
-        # 않았고 실측 1건이 근거의 전부다.
+        # 실측이 근거다: 실문서 계열에서 카드형 16자리 적중 **30건 중 Luhn 통과는 1건**이고,
+        # 단일 공백 4×4 25건은 **전부 Luhn 실패**이며 그중 14건이 연속·인접 연도다. 연도·금액
+        # 4열 표가 공공문서에 흔하다는 가설이 실측으로 확인됐다.
         #
-        # 그래서 **어느 방향도 단언하지 않는다.** `absent`를 걸면 과잉을 요구사항으로 굳혀
-        # 나중에 카드 패턴을 좁히는 개선이 회귀로 잡히고, `present`를 걸면 판정되지 않은
-        # 방향을 이 레인이 대신 정하는 것이 된다. 존재와 참고값만 남겨 개선·악화가 원장에
-        # 찍히게 한다.
+        # **현행 동작(가림)에 맞춰 `absent` 로 얼리지 않는다.** 얼리면 Luhn 도입이 회귀로
+        # 잡힌다 — 단언이 구현보다 앞서는 것이 옳은 의존 방향이고, 이 하네스가 표기 변형
+        # 축에서 이미 쓴 방식이다(§8.2). Luhn 이 착지하기 전까지 이 두 건은 **불충족으로
+        # 뜨며 그것이 사실이다** — 지금 과잉 마스킹이 일어나고 있다.
         case(
-            "deferred-four-groups-single-space",
+            "keeps-four-groups-single-space",
             "연도 2021 2022 2023 2024 실적.",
-            "네 개의 4자리 숫자가 한 칸 공백으로 이어지면 카드번호로 가려진다(연도 표). "
-            "**줄일 수 없는 모호성** — `1234 5678 9012 3456`이 카드번호 표준 표기라 공백 "
-            "한 칸을 빼면 진짜 누락이 된다. `privacy-gate`가 §4-septies.8에서 **판정하지 "
-            "않고** 관리 대상으로 넘긴 자리이고 **교차 검증이 없다**(실측 1건). 어느 방향도 "
-            "단언하지 않는다 — 개선·악화는 참고 갈림 원장에 찍혀 드러난다",
-            verdict_pending={
-                "reason": "한 칸 공백으로 이어진 4×4자리 숫자가 카드번호로 가려진다. "
-                "`1234 5678 9012 3456`이 표준 표기라 분리축에서 공백 한 칸을 빼면 진짜 "
-                "누락이 된다 — 줄일 수 없는 모호성이라 어느 방향도 단언하지 않는다",
-                "owner": "privacy-gate",
-                "deadline": "Phase 2 종료 전 재판정 (교차 검증 없는 단독 관측이라 리뷰 1회 필요)",
-                "referred_by": "07_privacy-gate_masking-verdicts.md §4-septies.8",
-            },
+            f"한 칸 공백으로 이어진 네 개의 4자리 숫자는 카드번호가 아니다. {kept} — "
+            "진짜 카드번호는 **구성상** Luhn 체크디짓을 통과하므로, 통과하지 못하는 숫자열을 "
+            "카드라고 부르지 않는 것은 '덜 잡기로 하는 결정'이 아니라 **'카드일 수 없는 것을 "
+            "카드라 하지 않기로 하는 결정'**이다(판정 §4-decies.4). 실측 30건 중 29건이 이 "
+            "형태의 오탐이었다",
+            _assert("present", path="masked_text", needles=["2021 2022 2023 2024"]),
+            reference_divergence="expected",
         ),
         case(
-            "deferred-five-groups-single-space",
+            "keeps-five-groups-single-space",
             "연도 2020 2021 2022 2023 2024 실적.",
-            "같은 형태가 **다섯 열**이면 앞 네 개만 가려진다 — 후행 그룹 경계를 보지 않는다는 "
-            '뜻이다. 판정서가 *"확정 시 함께 본다"*고 지목한 동작이며, 위 케이스와 같은 '
-            "이유로 방향을 단언하지 않는다. 이 자리가 닫히면 두 케이스를 함께 전환한다",
-            verdict_pending={
-                "reason": "다섯 열이면 앞 네 개만 가려진다 — 후행 그룹 경계를 보지 않는다. "
-                "위 케이스와 한 몸이라 함께 닫힌다",
-                "owner": "privacy-gate",
-                "deadline": "Phase 2 종료 전 재판정 (위 케이스와 동시)",
-                "referred_by": "07_privacy-gate_masking-verdicts.md §4-septies.8",
-            },
+            f"다섯 열이어도 마찬가지다. {kept} — 현행은 **앞 네 개만** 가려 후행 그룹 경계를 "
+            "보지 않는다는 것까지 드러낸다. 위 케이스와 한 몸이라 함께 닫힌다",
+            _assert("present", path="masked_text", needles=["2020 2021 2022 2023 2024"]),
+            reference_divergence="expected",
+        ),
+        # Luhn 음성 — 체크디짓이 틀린 16자리는 카드번호가 아니다.
+        # **이 케이스가 없으면 Luhn 도입이 아무것도 바꾸지 않은 것처럼 보인다.** 양성 쪽은
+        # 전부 Luhn 유효 값으로 교체돼 도입 전후가 같기 때문이다(그것이 교체의 목적이다).
+        case(
+            "keeps-card-luhn-invalid",
+            "관리번호 1234-5678-9012-3456 을 적으세요.",
+            f"체크디짓이 맞지 않는 16자리는 카드번호가 아니다. {kept} — 이 값은 이 fixture 가 "
+            "오랫동안 **카드번호 표본으로 쓰던 것**이고 Luhn 을 통과하지 못한다. 양성 케이스를 "
+            "전부 Luhn 유효 값으로 옮긴 지금, 도입 전후를 가르는 것은 이 음성 케이스 하나다",
+            _assert("present", path="masked_text", needles=["1234-5678-9012-3456"]),
+            reference_divergence="expected",
         ),
     ]
     return FixtureSpec(

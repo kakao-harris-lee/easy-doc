@@ -130,8 +130,9 @@ masking/masking-keeps-card-tab-four-columns
 masking/masking-keeps-amount-tab-four-columns
 masking/masking-keeps-vt-split-digits
 masking/masking-keeps-ff-split-digits
-masking/masking-deferred-four-groups-single-space !deferred
-masking/masking-deferred-five-groups-single-space !deferred
+masking/masking-keeps-four-groups-single-space
+masking/masking-keeps-five-groups-single-space
+masking/masking-keeps-card-luhn-invalid
 postprocess/postprocess-plain
 postprocess/postprocess-fence
 postprocess/postprocess-fence-lang
