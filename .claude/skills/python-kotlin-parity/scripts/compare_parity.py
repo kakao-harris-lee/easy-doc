@@ -653,6 +653,53 @@ def check_contains_all(call: CheckCall) -> list[str]:
     return []
 
 
+def check_max_length(call: CheckCall) -> list[str]:
+    """지정 경로의 문자열이 길이 상한을 넘지 않아야 한다 (over 방향).
+
+    파일명 상한은 **값이 아니라 경계**다 — 어떤 제목이 와도 넘지 않아야 하는 것이지 특정
+    길이여야 하는 것이 아니다. `equals_field` 로 파일명을 통째로 못박으면 정제 규칙(공백
+    접기·앞뒤 점 깎기)까지 값으로 고정돼, 규칙을 고치는 순간 개선이 회귀로 잡힌다.
+    """
+    path = str(call.arg("path", "$"))
+    got = call.target()
+    if got is _MISSING:
+        return [f"경로 `{path}` 가 산출물에 없다"]
+    if not isinstance(got, str):
+        return [f"경로 `{path}` 가 문자열이 아니다"]
+    limit = call.arg("limit")
+    if not isinstance(limit, int):
+        return [f"`limit` 인자가 정수가 아니다: {limit!r}"]
+    if len(got) > limit:
+        return [
+            f"`{path}` 가 길이 상한 {limit} 을 넘었다: {len(got)}자 — 파일 시스템·헤더가 "
+            "긴 이름에서 잘리거나 거부한다"
+        ]
+    return []
+
+
+def check_ascii_only(call: CheckCall) -> list[str]:
+    """지정 경로의 문자열이 US-ASCII 안에 있어야 한다 (under 방향).
+
+    HTTP 헤더 값이 그렇다. RFC 5987 `ext-value` 는 비ASCII를 **퍼센트 인코딩**해 싣게 되어
+    있고, 인코딩하지 않고 원문을 그대로 넣으면 서버·프록시가 latin-1 로 해석하거나 거부한다.
+    "한글 파일명이 깨진다"가 아니라 **응답 자체가 나가지 않는** 자리다.
+    """
+    path = str(call.arg("path", "$"))
+    got = call.target()
+    if got is _MISSING:
+        return [f"경로 `{path}` 가 산출물에 없다"]
+    if not isinstance(got, str):
+        return [f"경로 `{path}` 가 문자열이 아니다"]
+    offenders = sorted({ch for ch in got if ord(ch) > 0x7F})
+    if offenders:
+        shown = ", ".join(f"U+{ord(ch):04X}" for ch in offenders[:MAX_REPORTED_CASE_DIFFS])
+        return [
+            f"`{path}` 에 US-ASCII 밖 문자가 있다: {shown} — RFC 5987 은 비ASCII를 "
+            "퍼센트 인코딩해 싣게 되어 있다. 원문을 그대로 넣으면 헤더가 깨진다"
+        ]
+    return []
+
+
 def check_contains_derived(call: CheckCall) -> list[str]:
     """산출물의 목록이 **입력에서 유도한 항목 전부를 담아야** 한다 (하한, under 방향).
 
@@ -939,6 +986,10 @@ CHECKS: dict[str, Check] = {
         frozenset({"under"}),
         "사전의 표제어와 값이 함께 보존된다 (추가 허용)",
     ),
+    "max_length": Check(check_max_length, frozenset({"over"}), "문자열이 길이 상한을 넘지 않는다"),
+    "ascii_only": Check(
+        check_ascii_only, frozenset({"under"}), "문자열이 US-ASCII 안에 있다 (HTTP 헤더)"
+    ),
 }
 
 
@@ -1195,7 +1246,12 @@ def case_floor_problems(
     # codex 가 연 사각이 정확히 이것이다 — `bogus/placeholder` 한 줄을 넣어도 지적 0건이라
     # "하한이 비어 있지 않다"가 "하한이 무언가를 지킨다"를 뜻하지 않았다. 빈 선언을 막는
     # 검사는 있는데(`floor_count == 0`) **무의미한 선언**을 막는 검사가 없었다.
-    unknown_domains = sorted(set(floor) - set(scope))
+    # **범위가 좁혀진 실행에서는 이 검사를 하지 않는다.** `--fixture parity/fixtures/export`
+    # 처럼 도메인 디렉터리를 지목하면 `scope` 에 그 도메인만 들어와, 나머지 하한 줄이 전부
+    # "실물 없음"으로 보인다. 실제로 그 오탐이 났다(도메인 7개 오지목). 정본 전체가 보이는
+    # 실행에서만 대조한다 — 도메인이 통째로 사라진 경우는 전체 게이트의 `missing` 이 받는다.
+    narrowed = set(scope) != set(BUILDERS)
+    unknown_domains = [] if narrowed else sorted(set(floor) - set(scope))
     if unknown_domains:
         problems.append(
             f"- **하한이 없는 도메인을 선언한다**: {', '.join(unknown_domains)}\n"

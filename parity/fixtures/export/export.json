@@ -1,21 +1,170 @@
 {
   "domain": "export",
   "mode": "spec",
-  "requirement": "내보내기 파일명에 경로 구분자·제어문자가 남지 않고 길이 상한을 지키며, Content-Disposition이 RFC 5987로 해석 가능하고, 자리표시자가 **하나도 남김없이** 원문으로 복원된다(미복원 자리표시자는 개인정보 자리가 빈 채 배포되는 것이다)",
+  "requirement": "내보내기 파일명에 경로 구분자·제어문자가 남지 않고 길이 상한을 지키며, Content-Disposition이 RFC 5987로 해석 가능하고, 자리표시자가 **하나도 남김없이** 원문으로 복원된다(미복원 자리표시자는 개인정보 자리가 빈 채 배포되는 것이다). TXT는 zip 컨테이너가 없어 **본문 UTF-8 바이트가 곧 파일**이므로 BOM 부재·제어문자 제거가 값으로 판정된다 — docx·hwpx는 타임스탬프·엔트리 순서 때문에 바이트가 같아질 수 없고 같을 필요도 없다",
   "source": "app/easyread/export.py::export_filename / content_disposition / restore_placeholders / render_export(TXT)",
   "generator": "dump_parity_fixtures.py",
   "normalization": [
     "nfc",
     "lf"
   ],
-  "spec_status": "pending",
+  "spec_status": "ready",
   "cases": [
     {
       "id": "export-filename-hangul",
-      "description": "export_filename / content_disposition — 파일명 정제와 RFC 5987 인코딩",
+      "description": "파일명에 경로 구분자·따옴표·제어문자가 **남지 않고**, 확장자가 살아 있으며, 길이 상한을 넘지 않는다. `Content-Disposition` 은 RFC 5987 `ext-value` 형식이고 **US-ASCII 안에 있다** — 비ASCII를 인코딩 없이 실으면 헤더가 깨져 응답 자체가 나가지 않는다. 정제 **결과값**은 판정하지 않는다(규칙 개선을 회귀로 잡지 않으려고)",
       "input": {
         "title": "기초연금 신청 안내"
       },
+      "assert": [
+        {
+          "check": "absent",
+          "args": {
+            "path": "docx.filename",
+            "needles": [
+              "/",
+              "\\",
+              "..",
+              "\"",
+              "\u0000",
+              "\u001f",
+              "",
+              ":",
+              "|"
+            ]
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "docx.filename",
+            "needles": [
+              ".docx"
+            ]
+          }
+        },
+        {
+          "check": "max_length",
+          "args": {
+            "path": "docx.filename",
+            "limit": 85
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "docx.content_disposition",
+            "needles": [
+              "attachment;",
+              "filename*=UTF-8''"
+            ]
+          }
+        },
+        {
+          "check": "ascii_only",
+          "args": {
+            "path": "docx.content_disposition"
+          }
+        },
+        {
+          "check": "absent",
+          "args": {
+            "path": "txt.filename",
+            "needles": [
+              "/",
+              "\\",
+              "..",
+              "\"",
+              "\u0000",
+              "\u001f",
+              "",
+              ":",
+              "|"
+            ]
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "txt.filename",
+            "needles": [
+              ".txt"
+            ]
+          }
+        },
+        {
+          "check": "max_length",
+          "args": {
+            "path": "txt.filename",
+            "limit": 84
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "txt.content_disposition",
+            "needles": [
+              "attachment;",
+              "filename*=UTF-8''"
+            ]
+          }
+        },
+        {
+          "check": "ascii_only",
+          "args": {
+            "path": "txt.content_disposition"
+          }
+        },
+        {
+          "check": "absent",
+          "args": {
+            "path": "hwpx.filename",
+            "needles": [
+              "/",
+              "\\",
+              "..",
+              "\"",
+              "\u0000",
+              "\u001f",
+              "",
+              ":",
+              "|"
+            ]
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "hwpx.filename",
+            "needles": [
+              ".hwpx"
+            ]
+          }
+        },
+        {
+          "check": "max_length",
+          "args": {
+            "path": "hwpx.filename",
+            "limit": 85
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "hwpx.content_disposition",
+            "needles": [
+              "attachment;",
+              "filename*=UTF-8''"
+            ]
+          }
+        },
+        {
+          "check": "ascii_only",
+          "args": {
+            "path": "hwpx.content_disposition"
+          }
+        }
+      ],
       "reference": {
         "docx": {
           "filename": "기초연금 신청 안내.docx",
@@ -33,10 +182,159 @@
     },
     {
       "id": "export-filename-path-chars",
-      "description": "export_filename / content_disposition — 파일명 정제와 RFC 5987 인코딩",
+      "description": "파일명에 경로 구분자·따옴표·제어문자가 **남지 않고**, 확장자가 살아 있으며, 길이 상한을 넘지 않는다. `Content-Disposition` 은 RFC 5987 `ext-value` 형식이고 **US-ASCII 안에 있다** — 비ASCII를 인코딩 없이 실으면 헤더가 깨져 응답 자체가 나가지 않는다. 정제 **결과값**은 판정하지 않는다(규칙 개선을 회귀로 잡지 않으려고)",
       "input": {
         "title": "../etc/passwd"
       },
+      "assert": [
+        {
+          "check": "absent",
+          "args": {
+            "path": "docx.filename",
+            "needles": [
+              "/",
+              "\\",
+              "..",
+              "\"",
+              "\u0000",
+              "\u001f",
+              "",
+              ":",
+              "|"
+            ]
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "docx.filename",
+            "needles": [
+              ".docx"
+            ]
+          }
+        },
+        {
+          "check": "max_length",
+          "args": {
+            "path": "docx.filename",
+            "limit": 85
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "docx.content_disposition",
+            "needles": [
+              "attachment;",
+              "filename*=UTF-8''"
+            ]
+          }
+        },
+        {
+          "check": "ascii_only",
+          "args": {
+            "path": "docx.content_disposition"
+          }
+        },
+        {
+          "check": "absent",
+          "args": {
+            "path": "txt.filename",
+            "needles": [
+              "/",
+              "\\",
+              "..",
+              "\"",
+              "\u0000",
+              "\u001f",
+              "",
+              ":",
+              "|"
+            ]
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "txt.filename",
+            "needles": [
+              ".txt"
+            ]
+          }
+        },
+        {
+          "check": "max_length",
+          "args": {
+            "path": "txt.filename",
+            "limit": 84
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "txt.content_disposition",
+            "needles": [
+              "attachment;",
+              "filename*=UTF-8''"
+            ]
+          }
+        },
+        {
+          "check": "ascii_only",
+          "args": {
+            "path": "txt.content_disposition"
+          }
+        },
+        {
+          "check": "absent",
+          "args": {
+            "path": "hwpx.filename",
+            "needles": [
+              "/",
+              "\\",
+              "..",
+              "\"",
+              "\u0000",
+              "\u001f",
+              "",
+              ":",
+              "|"
+            ]
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "hwpx.filename",
+            "needles": [
+              ".hwpx"
+            ]
+          }
+        },
+        {
+          "check": "max_length",
+          "args": {
+            "path": "hwpx.filename",
+            "limit": 85
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "hwpx.content_disposition",
+            "needles": [
+              "attachment;",
+              "filename*=UTF-8''"
+            ]
+          }
+        },
+        {
+          "check": "ascii_only",
+          "args": {
+            "path": "hwpx.content_disposition"
+          }
+        }
+      ],
       "reference": {
         "docx": {
           "filename": "etc passwd.docx",
@@ -54,10 +352,159 @@
     },
     {
       "id": "export-filename-quotes",
-      "description": "export_filename / content_disposition — 파일명 정제와 RFC 5987 인코딩",
+      "description": "파일명에 경로 구분자·따옴표·제어문자가 **남지 않고**, 확장자가 살아 있으며, 길이 상한을 넘지 않는다. `Content-Disposition` 은 RFC 5987 `ext-value` 형식이고 **US-ASCII 안에 있다** — 비ASCII를 인코딩 없이 실으면 헤더가 깨져 응답 자체가 나가지 않는다. 정제 **결과값**은 판정하지 않는다(규칙 개선을 회귀로 잡지 않으려고)",
       "input": {
         "title": "보고서 \"최종\""
       },
+      "assert": [
+        {
+          "check": "absent",
+          "args": {
+            "path": "docx.filename",
+            "needles": [
+              "/",
+              "\\",
+              "..",
+              "\"",
+              "\u0000",
+              "\u001f",
+              "",
+              ":",
+              "|"
+            ]
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "docx.filename",
+            "needles": [
+              ".docx"
+            ]
+          }
+        },
+        {
+          "check": "max_length",
+          "args": {
+            "path": "docx.filename",
+            "limit": 85
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "docx.content_disposition",
+            "needles": [
+              "attachment;",
+              "filename*=UTF-8''"
+            ]
+          }
+        },
+        {
+          "check": "ascii_only",
+          "args": {
+            "path": "docx.content_disposition"
+          }
+        },
+        {
+          "check": "absent",
+          "args": {
+            "path": "txt.filename",
+            "needles": [
+              "/",
+              "\\",
+              "..",
+              "\"",
+              "\u0000",
+              "\u001f",
+              "",
+              ":",
+              "|"
+            ]
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "txt.filename",
+            "needles": [
+              ".txt"
+            ]
+          }
+        },
+        {
+          "check": "max_length",
+          "args": {
+            "path": "txt.filename",
+            "limit": 84
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "txt.content_disposition",
+            "needles": [
+              "attachment;",
+              "filename*=UTF-8''"
+            ]
+          }
+        },
+        {
+          "check": "ascii_only",
+          "args": {
+            "path": "txt.content_disposition"
+          }
+        },
+        {
+          "check": "absent",
+          "args": {
+            "path": "hwpx.filename",
+            "needles": [
+              "/",
+              "\\",
+              "..",
+              "\"",
+              "\u0000",
+              "\u001f",
+              "",
+              ":",
+              "|"
+            ]
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "hwpx.filename",
+            "needles": [
+              ".hwpx"
+            ]
+          }
+        },
+        {
+          "check": "max_length",
+          "args": {
+            "path": "hwpx.filename",
+            "limit": 85
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "hwpx.content_disposition",
+            "needles": [
+              "attachment;",
+              "filename*=UTF-8''"
+            ]
+          }
+        },
+        {
+          "check": "ascii_only",
+          "args": {
+            "path": "hwpx.content_disposition"
+          }
+        }
+      ],
       "reference": {
         "docx": {
           "filename": "보고서 최종.docx",
@@ -75,10 +522,159 @@
     },
     {
       "id": "export-filename-dots",
-      "description": "export_filename / content_disposition — 파일명 정제와 RFC 5987 인코딩",
+      "description": "파일명에 경로 구분자·따옴표·제어문자가 **남지 않고**, 확장자가 살아 있으며, 길이 상한을 넘지 않는다. `Content-Disposition` 은 RFC 5987 `ext-value` 형식이고 **US-ASCII 안에 있다** — 비ASCII를 인코딩 없이 실으면 헤더가 깨져 응답 자체가 나가지 않는다. 정제 **결과값**은 판정하지 않는다(규칙 개선을 회귀로 잡지 않으려고)",
       "input": {
         "title": "...보고서..."
       },
+      "assert": [
+        {
+          "check": "absent",
+          "args": {
+            "path": "docx.filename",
+            "needles": [
+              "/",
+              "\\",
+              "..",
+              "\"",
+              "\u0000",
+              "\u001f",
+              "",
+              ":",
+              "|"
+            ]
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "docx.filename",
+            "needles": [
+              ".docx"
+            ]
+          }
+        },
+        {
+          "check": "max_length",
+          "args": {
+            "path": "docx.filename",
+            "limit": 85
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "docx.content_disposition",
+            "needles": [
+              "attachment;",
+              "filename*=UTF-8''"
+            ]
+          }
+        },
+        {
+          "check": "ascii_only",
+          "args": {
+            "path": "docx.content_disposition"
+          }
+        },
+        {
+          "check": "absent",
+          "args": {
+            "path": "txt.filename",
+            "needles": [
+              "/",
+              "\\",
+              "..",
+              "\"",
+              "\u0000",
+              "\u001f",
+              "",
+              ":",
+              "|"
+            ]
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "txt.filename",
+            "needles": [
+              ".txt"
+            ]
+          }
+        },
+        {
+          "check": "max_length",
+          "args": {
+            "path": "txt.filename",
+            "limit": 84
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "txt.content_disposition",
+            "needles": [
+              "attachment;",
+              "filename*=UTF-8''"
+            ]
+          }
+        },
+        {
+          "check": "ascii_only",
+          "args": {
+            "path": "txt.content_disposition"
+          }
+        },
+        {
+          "check": "absent",
+          "args": {
+            "path": "hwpx.filename",
+            "needles": [
+              "/",
+              "\\",
+              "..",
+              "\"",
+              "\u0000",
+              "\u001f",
+              "",
+              ":",
+              "|"
+            ]
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "hwpx.filename",
+            "needles": [
+              ".hwpx"
+            ]
+          }
+        },
+        {
+          "check": "max_length",
+          "args": {
+            "path": "hwpx.filename",
+            "limit": 85
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "hwpx.content_disposition",
+            "needles": [
+              "attachment;",
+              "filename*=UTF-8''"
+            ]
+          }
+        },
+        {
+          "check": "ascii_only",
+          "args": {
+            "path": "hwpx.content_disposition"
+          }
+        }
+      ],
       "reference": {
         "docx": {
           "filename": "보고서.docx",
@@ -96,10 +692,159 @@
     },
     {
       "id": "export-filename-all-forbidden",
-      "description": "export_filename / content_disposition — 파일명 정제와 RFC 5987 인코딩",
+      "description": "파일명에 경로 구분자·따옴표·제어문자가 **남지 않고**, 확장자가 살아 있으며, 길이 상한을 넘지 않는다. `Content-Disposition` 은 RFC 5987 `ext-value` 형식이고 **US-ASCII 안에 있다** — 비ASCII를 인코딩 없이 실으면 헤더가 깨져 응답 자체가 나가지 않는다. 정제 **결과값**은 판정하지 않는다(규칙 개선을 회귀로 잡지 않으려고)",
       "input": {
         "title": "///"
       },
+      "assert": [
+        {
+          "check": "absent",
+          "args": {
+            "path": "docx.filename",
+            "needles": [
+              "/",
+              "\\",
+              "..",
+              "\"",
+              "\u0000",
+              "\u001f",
+              "",
+              ":",
+              "|"
+            ]
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "docx.filename",
+            "needles": [
+              ".docx"
+            ]
+          }
+        },
+        {
+          "check": "max_length",
+          "args": {
+            "path": "docx.filename",
+            "limit": 85
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "docx.content_disposition",
+            "needles": [
+              "attachment;",
+              "filename*=UTF-8''"
+            ]
+          }
+        },
+        {
+          "check": "ascii_only",
+          "args": {
+            "path": "docx.content_disposition"
+          }
+        },
+        {
+          "check": "absent",
+          "args": {
+            "path": "txt.filename",
+            "needles": [
+              "/",
+              "\\",
+              "..",
+              "\"",
+              "\u0000",
+              "\u001f",
+              "",
+              ":",
+              "|"
+            ]
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "txt.filename",
+            "needles": [
+              ".txt"
+            ]
+          }
+        },
+        {
+          "check": "max_length",
+          "args": {
+            "path": "txt.filename",
+            "limit": 84
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "txt.content_disposition",
+            "needles": [
+              "attachment;",
+              "filename*=UTF-8''"
+            ]
+          }
+        },
+        {
+          "check": "ascii_only",
+          "args": {
+            "path": "txt.content_disposition"
+          }
+        },
+        {
+          "check": "absent",
+          "args": {
+            "path": "hwpx.filename",
+            "needles": [
+              "/",
+              "\\",
+              "..",
+              "\"",
+              "\u0000",
+              "\u001f",
+              "",
+              ":",
+              "|"
+            ]
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "hwpx.filename",
+            "needles": [
+              ".hwpx"
+            ]
+          }
+        },
+        {
+          "check": "max_length",
+          "args": {
+            "path": "hwpx.filename",
+            "limit": 85
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "hwpx.content_disposition",
+            "needles": [
+              "attachment;",
+              "filename*=UTF-8''"
+            ]
+          }
+        },
+        {
+          "check": "ascii_only",
+          "args": {
+            "path": "hwpx.content_disposition"
+          }
+        }
+      ],
       "reference": {
         "docx": {
           "filename": "쉬운 글.docx",
@@ -117,10 +862,159 @@
     },
     {
       "id": "export-filename-long",
-      "description": "export_filename / content_disposition — 파일명 정제와 RFC 5987 인코딩",
+      "description": "파일명에 경로 구분자·따옴표·제어문자가 **남지 않고**, 확장자가 살아 있으며, 길이 상한을 넘지 않는다. `Content-Disposition` 은 RFC 5987 `ext-value` 형식이고 **US-ASCII 안에 있다** — 비ASCII를 인코딩 없이 실으면 헤더가 깨져 응답 자체가 나가지 않는다. 정제 **결과값**은 판정하지 않는다(규칙 개선을 회귀로 잡지 않으려고)",
       "input": {
         "title": "가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가"
       },
+      "assert": [
+        {
+          "check": "absent",
+          "args": {
+            "path": "docx.filename",
+            "needles": [
+              "/",
+              "\\",
+              "..",
+              "\"",
+              "\u0000",
+              "\u001f",
+              "",
+              ":",
+              "|"
+            ]
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "docx.filename",
+            "needles": [
+              ".docx"
+            ]
+          }
+        },
+        {
+          "check": "max_length",
+          "args": {
+            "path": "docx.filename",
+            "limit": 85
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "docx.content_disposition",
+            "needles": [
+              "attachment;",
+              "filename*=UTF-8''"
+            ]
+          }
+        },
+        {
+          "check": "ascii_only",
+          "args": {
+            "path": "docx.content_disposition"
+          }
+        },
+        {
+          "check": "absent",
+          "args": {
+            "path": "txt.filename",
+            "needles": [
+              "/",
+              "\\",
+              "..",
+              "\"",
+              "\u0000",
+              "\u001f",
+              "",
+              ":",
+              "|"
+            ]
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "txt.filename",
+            "needles": [
+              ".txt"
+            ]
+          }
+        },
+        {
+          "check": "max_length",
+          "args": {
+            "path": "txt.filename",
+            "limit": 84
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "txt.content_disposition",
+            "needles": [
+              "attachment;",
+              "filename*=UTF-8''"
+            ]
+          }
+        },
+        {
+          "check": "ascii_only",
+          "args": {
+            "path": "txt.content_disposition"
+          }
+        },
+        {
+          "check": "absent",
+          "args": {
+            "path": "hwpx.filename",
+            "needles": [
+              "/",
+              "\\",
+              "..",
+              "\"",
+              "\u0000",
+              "\u001f",
+              "",
+              ":",
+              "|"
+            ]
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "hwpx.filename",
+            "needles": [
+              ".hwpx"
+            ]
+          }
+        },
+        {
+          "check": "max_length",
+          "args": {
+            "path": "hwpx.filename",
+            "limit": 85
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "hwpx.content_disposition",
+            "needles": [
+              "attachment;",
+              "filename*=UTF-8''"
+            ]
+          }
+        },
+        {
+          "check": "ascii_only",
+          "args": {
+            "path": "hwpx.content_disposition"
+          }
+        }
+      ],
       "reference": {
         "docx": {
           "filename": "가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가.docx",
@@ -138,10 +1032,159 @@
     },
     {
       "id": "export-filename-control-chars",
-      "description": "export_filename / content_disposition — 파일명 정제와 RFC 5987 인코딩",
+      "description": "파일명에 경로 구분자·따옴표·제어문자가 **남지 않고**, 확장자가 살아 있으며, 길이 상한을 넘지 않는다. `Content-Disposition` 은 RFC 5987 `ext-value` 형식이고 **US-ASCII 안에 있다** — 비ASCII를 인코딩 없이 실으면 헤더가 깨져 응답 자체가 나가지 않는다. 정제 **결과값**은 판정하지 않는다(규칙 개선을 회귀로 잡지 않으려고)",
       "input": {
         "title": "제\u0000목\u001f입니다"
       },
+      "assert": [
+        {
+          "check": "absent",
+          "args": {
+            "path": "docx.filename",
+            "needles": [
+              "/",
+              "\\",
+              "..",
+              "\"",
+              "\u0000",
+              "\u001f",
+              "",
+              ":",
+              "|"
+            ]
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "docx.filename",
+            "needles": [
+              ".docx"
+            ]
+          }
+        },
+        {
+          "check": "max_length",
+          "args": {
+            "path": "docx.filename",
+            "limit": 85
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "docx.content_disposition",
+            "needles": [
+              "attachment;",
+              "filename*=UTF-8''"
+            ]
+          }
+        },
+        {
+          "check": "ascii_only",
+          "args": {
+            "path": "docx.content_disposition"
+          }
+        },
+        {
+          "check": "absent",
+          "args": {
+            "path": "txt.filename",
+            "needles": [
+              "/",
+              "\\",
+              "..",
+              "\"",
+              "\u0000",
+              "\u001f",
+              "",
+              ":",
+              "|"
+            ]
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "txt.filename",
+            "needles": [
+              ".txt"
+            ]
+          }
+        },
+        {
+          "check": "max_length",
+          "args": {
+            "path": "txt.filename",
+            "limit": 84
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "txt.content_disposition",
+            "needles": [
+              "attachment;",
+              "filename*=UTF-8''"
+            ]
+          }
+        },
+        {
+          "check": "ascii_only",
+          "args": {
+            "path": "txt.content_disposition"
+          }
+        },
+        {
+          "check": "absent",
+          "args": {
+            "path": "hwpx.filename",
+            "needles": [
+              "/",
+              "\\",
+              "..",
+              "\"",
+              "\u0000",
+              "\u001f",
+              "",
+              ":",
+              "|"
+            ]
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "hwpx.filename",
+            "needles": [
+              ".hwpx"
+            ]
+          }
+        },
+        {
+          "check": "max_length",
+          "args": {
+            "path": "hwpx.filename",
+            "limit": 85
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "hwpx.content_disposition",
+            "needles": [
+              "attachment;",
+              "filename*=UTF-8''"
+            ]
+          }
+        },
+        {
+          "check": "ascii_only",
+          "args": {
+            "path": "hwpx.content_disposition"
+          }
+        }
+      ],
       "reference": {
         "docx": {
           "filename": "제 목 입니다.docx",
@@ -159,33 +1202,66 @@
     },
     {
       "id": "export-restore-basic",
-      "description": "restore_placeholders — 단일 패스 치환, 미등록 자리표시자는 보존",
+      "description": "자리표시자 복원 — 등록된 것은 원문으로 되돌리고, **모르는 것은 그대로 두며**, 치환은 한 번만 돈다. 구현 정본은 마스킹 쪽(`restoreForExport`)이고 여기서는 내보내기 시점에 그 성질이 지켜지는지를 본다",
       "input": {
         "text": "번호는 [[주민등록번호1]] 입니다.",
         "originals": {
           "[[주민등록번호1]]": "900101-1234567"
         }
       },
+      "assert": [
+        {
+          "check": "absent",
+          "args": {
+            "path": "text",
+            "needles": [
+              "[[주민등록번호1]]"
+            ]
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "text",
+            "needles": [
+              "900101-1234567",
+              "번호는",
+              "입니다."
+            ]
+          }
+        }
+      ],
       "reference": {
         "text": "번호는 900101-1234567 입니다."
       }
     },
     {
       "id": "export-restore-unknown-placeholder",
-      "description": "restore_placeholders — 단일 패스 치환, 미등록 자리표시자는 보존",
+      "description": "자리표시자 복원 — 등록된 것은 원문으로 되돌리고, **모르는 것은 그대로 두며**, 치환은 한 번만 돈다. 구현 정본은 마스킹 쪽(`restoreForExport`)이고 여기서는 내보내기 시점에 그 성질이 지켜지는지를 본다",
       "input": {
         "text": "번호는 [[주민등록번호9]] 입니다.",
         "originals": {
           "[[주민등록번호1]]": "900101-1234567"
         }
       },
+      "assert": [
+        {
+          "check": "present",
+          "args": {
+            "path": "text",
+            "needles": [
+              "[[주민등록번호9]]"
+            ]
+          }
+        }
+      ],
       "reference": {
         "text": "번호는 [[주민등록번호9]] 입니다."
       }
     },
     {
       "id": "export-restore-single-pass",
-      "description": "restore_placeholders — 단일 패스 치환, 미등록 자리표시자는 보존",
+      "description": "자리표시자 복원 — 등록된 것은 원문으로 되돌리고, **모르는 것은 그대로 두며**, 치환은 한 번만 돈다. 구현 정본은 마스킹 쪽(`restoreForExport`)이고 여기서는 내보내기 시점에 그 성질이 지켜지는지를 본다",
       "input": {
         "text": "값은 [[카드번호1]] 입니다.",
         "originals": {
@@ -193,17 +1269,48 @@
           "[[주민등록번호1]]": "900101-1234567"
         }
       },
+      "assert": [
+        {
+          "check": "absent",
+          "args": {
+            "path": "text",
+            "needles": [
+              "[[카드번호1]]"
+            ]
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "text",
+            "needles": [
+              "[[주민등록번호1]]"
+            ]
+          }
+        }
+      ],
       "reference": {
         "text": "값은 [[주민등록번호1]] 입니다."
       }
     },
     {
       "id": "export-restore-none",
-      "description": "restore_placeholders — 단일 패스 치환, 미등록 자리표시자는 보존",
+      "description": "자리표시자 복원 — 등록된 것은 원문으로 되돌리고, **모르는 것은 그대로 두며**, 치환은 한 번만 돈다. 구현 정본은 마스킹 쪽(`restoreForExport`)이고 여기서는 내보내기 시점에 그 성질이 지켜지는지를 본다",
       "input": {
         "text": "자리표시자가 없습니다.",
         "originals": {}
       },
+      "assert": [
+        {
+          "check": "present",
+          "args": {
+            "path": "text",
+            "needles": [
+              "자리표시자가 없습니다."
+            ]
+          }
+        }
+      ],
       "reference": {
         "text": "자리표시자가 없습니다."
       }
@@ -215,6 +1322,61 @@
         "title": "제목",
         "body": "본문 한 줄.\n두 번째 줄.\u0000"
       },
+      "assert": [
+        {
+          "check": "absent",
+          "args": {
+            "path": "content_utf8",
+            "needles": [
+              "﻿"
+            ]
+          }
+        },
+        {
+          "check": "absent",
+          "args": {
+            "path": "content_utf8",
+            "needles": [
+              "\u0000"
+            ]
+          }
+        },
+        {
+          "check": "absent",
+          "args": {
+            "path": "content_utf8",
+            "needles": [
+              "제목"
+            ]
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "content_utf8",
+            "needles": [
+              "본문 한 줄.",
+              "두 번째 줄."
+            ]
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "filename",
+            "needles": [
+              ".txt"
+            ]
+          }
+        },
+        {
+          "check": "equals_field",
+          "args": {
+            "path": "media_type",
+            "value": "text/plain; charset=utf-8"
+          }
+        }
+      ],
       "reference": {
         "filename": "제목.txt",
         "media_type": "text/plain; charset=utf-8",
@@ -223,5 +1385,5 @@
       }
     }
   ],
-  "generated_at": "2026-08-14T03:06:08Z"
+  "generated_at": "2026-08-14T08:01:29Z"
 }

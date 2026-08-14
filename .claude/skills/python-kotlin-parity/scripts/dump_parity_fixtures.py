@@ -1975,6 +1975,8 @@ def build_repair_adoption() -> FixtureSpec:
 def build_export() -> FixtureSpec:
     """내보내기 — 파일명 정제, RFC 5987 헤더, 자리표시자 복원, TXT 바이트"""
     from app.easyread.export import (
+        _MAX_FILENAME_STEM,
+        MEDIA_TYPES,
         ExportFormat,
         content_disposition,
         export_filename,
@@ -1991,10 +1993,38 @@ def build_export() -> FixtureSpec:
         ("long", "가" * 120),
         ("control-chars", "제\x00목\x1f입니다"),
     ]
+
+    # 파일명은 **값이 아니라 경계**로 판정한다. 정제 결과를 `equals_field` 로 못박으면
+    # 공백 접기·앞뒤 점 깎기 같은 규칙까지 값으로 고정돼, 규칙을 고치는 순간 개선이 회귀로
+    # 잡힌다. 요구사항이 말하는 것은 셋뿐이다 — 위험한 문자가 **남지 않고**, 확장자가
+    # **살아 있고**, 길이가 상한을 **넘지 않는다**.
+    #
+    # `_MAX_FILENAME_STEM` 은 **줄기(stem)** 상한이라 실제 파일명은 거기에 `.` + 확장자가
+    # 붙는다. 상한을 리터럴로 적지 않고 구현 상수에서 읽는 이유는, 이 값이 바뀌면 fixture 가
+    # 재생성되면서 함께 따라와야 하기 때문이다(정본 대조가 그것을 강제한다).
+    # 코드포인트로 조립한다 — 편집기·도구 경로에서 조용히 변형되는 문자들이라 리터럴로
+    # 적으면 무엇을 막는지가 흐려진다(masking 도메인과 같은 이유).
+    def codepoint(value: int) -> str:
+        return chr(value)
+
+    dangerous = [
+        "/",
+        "\\",
+        "..",
+        '"',
+        codepoint(0x0000),
+        codepoint(0x001F),
+        codepoint(0x007F),
+        ":",
+        "|",
+    ]
     cases: list[Case] = [
         _case(
             f"export-filename-{name}",
-            "export_filename / content_disposition — 파일명 정제와 RFC 5987 인코딩",
+            "파일명에 경로 구분자·따옴표·제어문자가 **남지 않고**, 확장자가 살아 있으며, "
+            "길이 상한을 넘지 않는다. `Content-Disposition` 은 RFC 5987 `ext-value` 형식이고 "
+            "**US-ASCII 안에 있다** — 비ASCII를 인코딩 없이 실으면 헤더가 깨져 응답 자체가 "
+            "나가지 않는다. 정제 **결과값**은 판정하지 않는다(규칙 개선을 회귀로 잡지 않으려고)",
             {"title": title},
             {
                 fmt.value: {
@@ -2002,6 +2032,31 @@ def build_export() -> FixtureSpec:
                     "content_disposition": content_disposition(filename),
                 }
                 for fmt in ExportFormat
+            },
+            **{
+                "assert": [
+                    entry
+                    for fmt in ExportFormat
+                    for entry in (
+                        _assert("absent", path=f"{fmt.value}.filename", needles=list(dangerous)),
+                        _assert(
+                            "present",
+                            path=f"{fmt.value}.filename",
+                            needles=[f".{fmt.value}"],
+                        ),
+                        _assert(
+                            "max_length",
+                            path=f"{fmt.value}.filename",
+                            limit=_MAX_FILENAME_STEM + 1 + len(fmt.value),
+                        ),
+                        _assert(
+                            "present",
+                            path=f"{fmt.value}.content_disposition",
+                            needles=["attachment;", "filename*=UTF-8''"],
+                        ),
+                        _assert("ascii_only", path=f"{fmt.value}.content_disposition"),
+                    )
+                ]
             },
         )
         for name, title in titles
@@ -2020,12 +2075,41 @@ def build_export() -> FixtureSpec:
         ),
         ("none", "자리표시자가 없습니다.", {}),
     ]
+    # 복원의 **구현 정본은 마스킹 쪽**이다(`Masking.kt::restoreForExport`). 구현자가 두 벌
+    # 금지를 이유로 export 에서 뺀 판단을 확인했고 그것이 옳다 — 복원 규칙(정확히 1회일
+    # 때만·검수본 없으면 보류)은 마스킹이 정하는 것이라 두 곳에 두면 한쪽만 고쳐진다.
+    #
+    # 그래도 케이스는 **여기 남긴다.** 이 성질이 깨졌을 때 피해가 나는 자리가 내보내기이기
+    # 때문이다 — 자리표시자가 남은 채 배포되면 개인정보 자리가 빈 문서가 기관 밖으로 나간다.
+    # 마스킹 도메인의 `restores_input` 은 **마스킹 시점**의 왕복을 보는 다른 성질이다.
+    restore_asserts: dict[str, list[dict[str, Any]]] = {
+        "basic": [
+            _assert("absent", path="text", needles=["[[주민등록번호1]]"]),
+            _assert("present", path="text", needles=["900101-1234567", "번호는", "입니다."]),
+        ],
+        # 우리가 만들지 않은 자리표시자는 **채우지 않는다.** 지어내면 없는 개인정보를
+        # 만들어 넣는 것이고, 지우면 본문이 소리 없이 사라진다. 그대로 두는 것이 유일하게
+        # 안전한 처리이며, 남았다는 사실은 `missing_placeholders` 가 따로 보고한다.
+        "unknown-placeholder": [
+            _assert("present", path="text", needles=["[[주민등록번호9]]"]),
+        ],
+        # 치환은 **한 번만** 돈다. 복원값이 자리표시자 모양이어도 다시 치환하지 않는다 —
+        # 돌면 사용자 본문에 있던 문자열이 개인정보로 바뀌는 주입 경로가 열린다.
+        "single-pass": [
+            _assert("absent", path="text", needles=["[[카드번호1]]"]),
+            _assert("present", path="text", needles=["[[주민등록번호1]]"]),
+        ],
+        "none": [_assert("present", path="text", needles=["자리표시자가 없습니다."])],
+    }
     cases.extend(
         _case(
             f"export-restore-{name}",
-            "restore_placeholders — 단일 패스 치환, 미등록 자리표시자는 보존",
+            "자리표시자 복원 — 등록된 것은 원문으로 되돌리고, **모르는 것은 그대로 두며**, "
+            "치환은 한 번만 돈다. 구현 정본은 마스킹 쪽(`restoreForExport`)이고 여기서는 "
+            "내보내기 시점에 그 성질이 지켜지는지를 본다",
             {"text": text, "originals": originals},
             {"text": restore_placeholders(text, originals)},
+            **{"assert": restore_asserts[name]},
         )
         for name, text, originals in restore_samples
     )
@@ -2046,6 +2130,30 @@ def build_export() -> FixtureSpec:
                 "content_utf8": file.content.decode("utf-8"),
                 "content_sha256_hex": hashlib.sha256(file.content).hexdigest(),
             },
+            **{
+                "assert": [
+                    # BOM 없음 — 붙으면 첫 줄이 보이지 않는 문자로 시작해 다른 도구가 깨진다.
+                    _assert("absent", path="content_utf8", needles=[codepoint(0xFEFF)]),
+                    # 제어문자 제거 — 여기서 남기면 docx·hwpx 경로가 XML 위반으로 죽는다.
+                    _assert("absent", path="content_utf8", needles=[codepoint(0x0000)]),
+                    # 제목 줄을 본문 앞에 덧붙이지 않는다. 붙이면 사용자가 쓰지 않은 줄이
+                    # 문서에 생기고, 검수본과 내보낸 것이 달라진다.
+                    _assert("absent", path="content_utf8", needles=["제목"]),
+                    # 본문은 한 글자도 잃지 않는다 (줄 구분 포함).
+                    _assert(
+                        "present",
+                        path="content_utf8",
+                        needles=["본문 한 줄.", "두 번째 줄."],
+                    ),
+                    _assert("present", path="filename", needles=[".txt"]),
+                    # 미디어 타입은 계약이 읽는 값이다.
+                    _assert(
+                        "equals_field",
+                        path="media_type",
+                        value=MEDIA_TYPES[ExportFormat.TXT],
+                    ),
+                ]
+            },
         )
     )
     # docx·hwpx는 바이트 동등이 기준이 아니다(§4.5 참고) — 자체 추출기 round-trip으로 본다.
@@ -2058,11 +2166,13 @@ def build_export() -> FixtureSpec:
         requirement=(
             "내보내기 파일명에 경로 구분자·제어문자가 남지 않고 길이 상한을 지키며, "
             "Content-Disposition이 RFC 5987로 해석 가능하고, 자리표시자가 **하나도 남김없이** "
-            "원문으로 복원된다(미복원 자리표시자는 개인정보 자리가 빈 채 배포되는 것이다)"
+            "원문으로 복원된다(미복원 자리표시자는 개인정보 자리가 빈 채 배포되는 것이다). "
+            "TXT는 zip 컨테이너가 없어 **본문 UTF-8 바이트가 곧 파일**이므로 BOM 부재·제어문자 "
+            "제거가 값으로 판정된다 — docx·hwpx는 타임스탬프·엔트리 순서 때문에 바이트가 "
+            "같아질 수 없고 같을 필요도 없다"
         ),
         normalization=BASE_NORMALIZATION,
         cases=cases,
-        spec_status=STATUS_PENDING,
     )
 
 
