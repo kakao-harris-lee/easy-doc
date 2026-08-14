@@ -77,184 +77,89 @@ BODY_NAMES = (
     r"draft|modelDraft|model_draft|reviewedBody|reviewed_body|reviewed|"
     r"edited_text|editedText|result"
 )
-#: `LOG-BODY` 2차 판정이 **안전하다고 보는 멤버 이름**. 본문 이름 뒤에 이 멤버 접근만
-#: 오면 후보에서 뺀다 (`draft.stats.masked_total` 처럼).
+#: 호출 지점 **가시 표기**. 억제는 이 표기로만 이뤄진다.
 #:
-#: **`value`·`text`·`body`·`content`·`original`·`raw` 는 절대 넣지 않는다.** 그것들이
-#: 들어가는 순간 이 훅이 규칙 자체를 무력화한다. 이 금지는 아래 자기검사가 강제한다.
+#: ## 왜 중앙 휴리스틱을 걷어냈나 (privacy-gate 판정 §4-octies)
 #:
-#: 근거는 계획 §4.4 와 `CLAUDE.md` 보안 규칙의 **허용목록**이다 — 로그에 남겨도 되는 것은
-#: 문서 ID·길이·처리 상태·시도 횟수·실패 코드까지다. 이름을 더할 때마다 근거를 적는다.
-_SAFE_MEMBERS = (
-    # 식별자 — 계획 §4.4 가 로그에 명시 허용
-    r"id|document_id|documentId|conversion_id|conversionId|"
-    # 개수·길이 (snake_case)
-    r"length|size|count|\w+_count|\w+_counts|\w+_total|\w+_chars|"
-    # 개수·길이 (camelCase) — 위 snake 목록의 **대칭**이다. 이 저장소는 Python 과 Kotlin 을
-    # 함께 스캔하는데 snake 표기만 적어 두면 Kotlin 쪽은 같은 성질의 값마다 예외를 하나씩
-    # 더하게 된다. 표기 규약이 둘이면 목록도 둘이어야 도달이 같아진다.
-    r"\w+Count|\w+Counts|\w+Total|\w+Chars|\w+Id|"
-    # 상태·분류값(열거형)
-    r"status|state|stage|kind|category|\w+_category|\w+Category|"
-    # §4.4 가 명시 허용한 넷 중 나머지
-    r"attempt|attempts|failure_code|failureCode|"
-    # 아래 셋은 실물 오탐에서 왔다. 넓은 패턴으로 일반화하지 않고 **이름 그대로** 적는다 —
-    # `\w+Version` 같은 일반화는 무엇이 더 들어올지 모르는 채로 문을 여는 것이다.
-    #   suggested_facts     — 추출된 팩트 후보 **개수** (scripts/collect_golden.py)
-    #   migrationsExecuted  — 적용된 마이그레이션 **개수** (FlywayBaselineGuard.kt)
-    #   targetSchemaVersion — 스키마 **버전 식별자**, 본문이 실릴 자리가 아니다 (같은 파일)
-    r"suggested_facts|migrationsExecuted|targetSchemaVersion"
+#: 앞선 판은 `LOG-BODY`에 `refine` 훅을 두어 "값의 성질"로 오탐을 눌렀다. 그 훅은
+#: **경로가 아니라 값을 본다**는 원칙을 끝까지 지켰고 목록이 넓어져 샌 갈래는 하나도
+#: 없었다. **그런데 다섯 갈래가 났다 — 고른 축이 위험을 가르는 축이 아니었다.**
+#:
+#: 위험을 가르는 축은 이것이다:
+#:
+#: > **억제가 아래 층(어휘·구문)의 정확성에 의존하는가.** 의존하면 그 층의 모든 결함을
+#: > **조용한 통과로 상속한다.** 인자 구간을 잘못 자르면 훅은 **잘린 조각을 보고**
+#: > 정직하게 "안전"을 판정한다 — 판정은 옳게 수행됐고 결과는 거짓이다.
+#:
+#: 다섯 갈래 중 셋(M-09 메시지 안 괄호 · stop-gate 주석 안 `)` · R-2 중첩 주석)은
+#: **훅의 결함이 아니라 lexer 결함**인데 훅이 그것을 조용한 통과로 바꿨다.
+#: **탐지 실패는 원리적으로 시끄럽고**(언젠가 누가 못 잡힌 것을 발견한다)
+#: **억제 실패는 구조적으로 조용하다**(리포트에 숫자 하나로만 남았다).
+#:
+#: 표기가 "한 칸 더 옮기기"가 아닌 이유 셋:
+#: 1. **파서 버그가 표기를 만들어 낼 수 없다.** 표기는 사람이 타이핑해야만 생긴다.
+#:    파싱 결함은 앞으로도 **미검출**을 낼 수 있지만 **조용한 억제는 더 이상 낼 수 없다.**
+#: 2. **억제가 코드에 보인다.** diff에 뜨고 리뷰를 지난다.
+#: 3. **고아가 되면 실패한다** — 휴리스틱에는 없던 자가 정리 기제.
+MARKER_PREFIX = "privacy-allow:"
+
+#: 표기 문법: `privacy-allow: <RULE-ID> — <사유>`. 규칙 id와 사유가 **모두 필수**다.
+#: 구분자는 em dash 또는 하이픈 둘 다 받는다(편집기·키보드에 따라 갈리는 것을 규칙으로
+#: 만들지 않는다). 사유가 비면 억제하지 않고 스캔도 실패한다(방어 c).
+MARKER_RE = re.compile(
+    rf"{re.escape(MARKER_PREFIX)}\s*(?P<rule>[A-Z][A-Z0-9-]*)\s*(?:—|-{{1,2}}|:)?\s*(?P<reason>.*)$"
 )
 
-#: 안전 멤버 **앞에 올 수 있는 한정자**. 그 자체로는 안전하지 않고, 뒤에 안전 멤버가
-#: 이어질 때만 통과시킨다 — `draft.stats` 단독 보간이나 `draft.document.text` 는 후보로 남는다.
+#: 저장소 전체 표기 수의 **하드 상한**. 초과하면 스캔이 실패한다.
 #:
-#: `document` 는 판정문 표에 없었으나 실물(`draft.document.id`)이 2단 접근이라 더했다.
-#: 한정자로만 두었으므로 `document.value`·`document.text` 는 여전히 잡힌다.
-_SAFE_QUALIFIERS = ("stats", "document")
-
-_SAFE_MEMBER_RE = re.compile(rf"(?:{_SAFE_MEMBERS})\Z")
-
-#: 금지 멤버 자기검사 — 목록이 넓어져 규칙을 무력화하는 것을 **모듈 적재 시점에** 막는다.
-#: 주석으로만 두면 다음 사람이 `value` 를 한 줄 더한다.
-for _forbidden in ("value", "text", "body", "content", "original", "raw"):
-    if _SAFE_MEMBER_RE.match(_forbidden) or _forbidden in _SAFE_QUALIFIERS:
-        raise AssertionError(
-            f"안전 멤버/한정자 목록에 {_forbidden!r} 가 들어갔다 — "
-            "LOG-BODY 훅이 규칙 자체를 무력화한다."
-        )
-
-_IDENTIFIER_RE = re.compile(r"[A-Za-z_]\w*")
+#: 초기값은 이관 시점 실제 개수 **+ 0** 이다 — 여유를 주지 않는다. 상한을 올리는 것은
+#: 그 자체가 diff이고 리뷰 대상이다(방어 a). 이 수가 조용히 자라면 표기는 새 면제 목록이 된다.
+#:
+#: **설계문(§4-octies.6)은 초기값을 `3` 으로 적었으나 이관 시점 실측은 `7` 이다.**
+#: 그 `3` 은 §4-quater.1 시점(훅 도입 직후)의 개수이고, 그 뒤 게이트 09 배치에서 안전 멤버
+#: 목록이 넓어져(camelCase 대칭 · `suggested_facts` · `migrationsExecuted` ·
+#: `targetSchemaVersion`) 억제 건수가 7로 늘었다 — 그 사실은 그때 리포트에 계속 찍히고
+#: 있었다(`LOG-BODY — 값의 모양이 불변식 대상이 아님 7건`). 설계문의 숫자가 낡은 것이고
+#: **원칙("실측 + 0")을 적용한 결과가 7**이다. 숫자가 아니라 원칙을 따랐다.
+MARKER_BUDGET = 7
 
 
-def safe_access_chain(text: str, position: int) -> bool:
-    """`text[position:]`에서 시작하는 **접근 사슬 전체**가 안전한지 판정한다.
+@dataclass(frozen=True)
+class Marker:
+    """한 줄에 달린 억제 표기.
 
-    ## 정규식 종단 고정을 버린 이유 (게이트 09 M-01)
-
-    앞선 판은 `\\.(?:한정자\\.)*(?:안전멤버)\\b(?!\\.)` 라는 정규식 하나였다. `(?!\\.)` 는
-    **점이 곧바로 이어지는 경우만** 막는다. 실측된 탈출 셋:
-
-        draft.id[0]                 첨자 — `[` 는 점이 아니라 통과
-        draft.stats.count().value   호출 — `(` 는 점이 아니라 통과
-        draft.id . value            공백 낀 점 — `(?!\\.)` 는 공백을 보고 만족
-
-    셋째가 특히 나쁘다. **논리 줄 결합(`" ".join`)이 ktlint 강제 다중 줄 체인을 정확히 그
-    ` .` 모양으로 만든다** — 즉 이 저장소의 표준 표기가 안전 판정을 받고 있었다.
-
-    §4-sexies.3 의 원 요구는 *"접근 사슬 전체가 한정자 + 종단 안전 멤버로만 이뤄질 것"*
-    이었다. 정규식 종단은 그 요구의 **근사**였고, 근사가 새는 자리가 셋이었다. 그래서
-    종결자를 열거하는 대신 **사슬을 끝까지 읽는다** — 열거는 다음 표기에서 또 빠진다.
-
-    ## 판정
-
-    - 사슬이 비어 있으면(맨 이름) 안전하지 않다.
-    - 마지막 마디를 뺀 전부가 한정자여야 하고, 마지막 마디가 안전 멤버여야 한다.
-    - 어느 마디 뒤에든 `(`·`[` 가 오면 안전하지 않다 — 호출·첨자의 결과는 우리가 아는 값이
-      아니다.
+    @param line 표기가 **적힌** 물리 줄.
+    @param rule_id 이 표기가 누르는 규칙. **그 규칙만** 누른다(방어 d) — 와일드카드가 없다.
+    @param reason 사람이 적은 사유. 비면 억제하지 않는다(방어 c).
+    @param standalone 그 줄에 코드가 없는가. `True` 면 **바로 아래 줄**의 적중을 누른다.
     """
-    segments: list[str] = []
-    index = position
-    length = len(text)
-    while True:
-        while index < length and text[index] in " \t":
-            index += 1
-        if index >= length or text[index] != ".":
-            break
-        index += 1
-        while index < length and text[index] in " \t":
-            index += 1
-        identifier = _IDENTIFIER_RE.match(text, index)
-        if identifier is None:
-            return False  # `..` 이나 `.(` 처럼 우리가 읽을 수 없는 모양 — 안전하다고 하지 않는다
-        segments.append(identifier.group())
-        index = identifier.end()
-        probe = index
-        while probe < length and text[probe] in " \t":
-            probe += 1
-        if probe < length and text[probe] in "([":
-            return False  # 호출·첨자 — 결과값의 성질을 알 수 없다
 
-    if not segments:
-        return False
-    return all(part in _SAFE_QUALIFIERS for part in segments[:-1]) and bool(
-        _SAFE_MEMBER_RE.match(segments[-1])
-    )
+    line: int
+    rule_id: str
+    reason: str
+    standalone: bool
 
 
-def balanced_arguments(text: str, open_paren: int) -> str:
-    """`text[open_paren]` 의 `(` 에 대응하는 `)` 까지의 **인자 구간**을 돌려준다.
+def parse_markers(comment: str, line: int, standalone: bool) -> list[Marker]:
+    """주석 조각에서 표기를 뽑는다. **어휘 층(①)의 일이다.**
 
-    ## 왜 `[^)]*` 를 버렸나 (게이트 09 M-09)
-
-    `LOG-BODY` 패턴이 `{LOG_CALL}\\s*\\([^)]*\\b(?:본문이름)\\b` 였다. `[^)]*` 는 **첫 `)`
-    에서 끊긴다** — 메시지 문자열 안의 괄호 하나만 있어도 그 뒤 인자를 못 본다:
-
-        logger.info("완료(1단계)", draft.value)     ← `draft.value` 가 구간 밖
-
-    괄호 균형을 세면 문자열 안의 괄호를 세지 않아야 하므로, 인자 구간 추출도 따옴표 상태를
-    함께 읽는다. 닫는 괄호를 못 찾으면 **남은 전부**를 돌려준다 — 게이트가 틀릴 때는
-    과검사 쪽으로 틀린다.
+    억제 층이 자기 주석 파서를 가지면 중첩 주석 갈래(R-2)를 그대로 되산다 — 주석 판별은
+    이미 이 층이 하고 있으므로 여기서 함께 뽑아 색인으로 넘긴다.
     """
-    depth = 0
-    quote: str | None = None
-    index = open_paren
-    length = len(text)
-    while index < length:
-        char = text[index]
-        if quote is not None:
-            if char == "\\":
-                index += 2
-                continue
-            if text.startswith(quote, index):
-                index += len(quote)
-                quote = None
-                continue
-            index += 1
+    found: list[Marker] = []
+    for piece in comment.split(MARKER_PREFIX)[1:]:
+        match = MARKER_RE.match(MARKER_PREFIX + piece)
+        if match is None:
             continue
-        for opener in ('"""', "'''", '"', "'"):
-            if text.startswith(opener, index):
-                quote = opener
-                index += len(opener)
-                break
-        else:
-            if char == "(":
-                depth += 1
-            elif char == ")":
-                depth -= 1
-                if depth == 0:
-                    return text[open_paren + 1 : index]
-            index += 1
-    return text[open_paren + 1 :]
-
-
-def log_body_is_real_candidate(match: re.Match[str]) -> bool:
-    """`LOG-BODY` 적중이 **진짜 후보**인지 2차 판정한다 (privacy-gate 판정 §4-quater.1).
-
-    패턴은 "로그 호출이 있고 그 뒤 어딘가에 본문 이름이 있다"까지만 본다(값싼 예비 판정).
-    실제 판정은 여기서 한다 — **균형 괄호로 인자 구간을 잘라내고**(M-09), 그 안의 본문
-    이름마다 **접근 사슬 전체**를 읽는다(M-01).
-
-    거르는 것은 `draft.stats.masked_total` 처럼 사슬이 한정자 + 집계 멤버로만 끝나는 줄이다.
-    맨 이름·`draft.value`·첨자·호출·공백 낀 점 뒤의 위험 멤버는 전부 후보로 남는다.
-
-    **인자 구간 안의 본문 이름을 전부 본다.** 하나라도 안전하지 않으면 후보다 —
-    `logger.info("{} {}", draft.value, draft.stats.count)` 에서 안전한 쪽만 보고 넘기면
-    진짜 유출을 놓친다.
-    """
-    line = match.string
-    open_paren = line.find("(", match.start())
-    if open_paren < 0:
-        return True  # 패턴이 `(` 를 요구하므로 여기 오지 않는다. 와도 후보로 남긴다.
-    arguments = balanced_arguments(line, open_paren)
-    base = open_paren + 1
-    found = False
-    for occurrence in re.finditer(rf"\b(?:{BODY_NAMES})\b", arguments):
-        found = True
-        if not safe_access_chain(line, base + occurrence.end()):
-            return True
-    # 인자 구간에 본문 이름이 없으면 이 적중은 애초에 후보가 아니다(예비 판정의 잔여).
-    return not found
+        found.append(
+            Marker(
+                line=line,
+                rule_id=match.group("rule"),
+                reason=match.group("reason").strip(),
+                standalone=standalone,
+            )
+        )
+    return found
 
 
 #: 로그 호출의 시작 모양.
@@ -321,6 +226,21 @@ class Rule:
     sanctioned: tuple[str, ...] = ()
     #: 적중한 줄을 2차로 판정한다. False를 주면 후보에서 뺀다. 경로 면제와 달리 **값의
     #: 성질**로 거르므로 예외 경로를 넓히지 않고도 오탐을 줄일 수 있다.
+    #: 적중한 줄을 2차로 판정한다. False를 주면 후보에서 뺀다.
+    #:
+    #: ## 새 `refine` 을 더하기 전에 통과해야 하는 판별식 (§4-octies.7)
+    #:
+    #: > **이 `refine` 의 입력이 어휘·구문 층의 정확성에 의존하는가?**
+    #: > - **의존하면 금지.** 그 층의 모든 결함을 **조용한 통과로 상속한다.**
+    #: >   인자 구간·괄호·주석 경계를 읽어야 판정할 수 있다면 여기 두지 말고
+    #: >   호출 지점 표기(`privacy-allow:`)로 처리한다.
+    #: > - **의존하지 않으면 허용.** 자기 완결적 캡처 그룹의 **값 자체**만 본다.
+    #:
+    #: `LOG-BODY` 의 훅이 전자였고 다섯 갈래를 냈다 — 삭제했다.
+    #: `SECRET-LITERAL` 의 `looks_like_real_secret` 은 후자다 — 캡처한 리터럴 하나를
+    #: 엔트로피·문자 클래스로 판정하고 괄호·주석·인자 경계를 보지 않는다. 유지한다.
+    #:
+    #: **판별식을 여기 적어 두지 않으면 다음 사람이 `LOG-BODY` 와 같은 형태를 다시 만든다.**
     refine: Callable[[re.Match[str]], bool] | None = None
     #: 같은 창(window) 안에 이 패턴이 있으면 "완화 조치가 붙어 있다"로 보고 후보에서 뺀다.
     #: 규칙의 `false_positive` 주석이 사람에게 시키던 "주변 줄 확인"을 기계화한 것이다.
@@ -345,6 +265,19 @@ class Rule:
     #: 규칙 목록에서 **파생**시키는 이유: 손으로 따로 적으면 규칙을 더할 때 그 목록을 잊고,
     #: 그때 fail-closed 가 조용히 그 규칙만 빠뜨린다.
     opener: re.Pattern[str] | None = None
+    #: 호출 지점 표기(`privacy-allow:`)로 **누를 수 있는** 규칙인가.
+    #:
+    #: 정당한 오탐이 존재할 수 없는 규칙은 `False` 로 둔다 — 그 규칙에서 "오탐이니 눌러
+    #: 달라"가 나오면 그것은 표기가 아니라 **판정 요청**이어야 한다(§4-octies.3).
+    #: 기본값이 `False` 인 것은 의도다: 새 규칙은 **누를 수 없는 쪽**에서 시작한다.
+    markable: bool = False
+
+    # ── 필드를 더할 때 ──────────────────────────────────────────────────────────
+    # **끝에 더한다.** 아래 규칙들 중 일부가 위치 인자로 구성돼 있어(`XML-DTD` 의
+    # `suffixes`·`sanctioned`·`refine`·`hardened`), 중간에 필드를 끼우면 그 인자들이
+    # **한 칸씩 밀려 조용히 다른 필드에 박힌다.** 실제로 `markable` 을 `refine` 뒤에
+    # 넣었다가 `XML-DTD` 의 `hardened` 정규식이 `markable` 로 들어가 자기검사가 터졌다.
+    # 그 자기검사가 없었다면 XML-DTD 의 완화 창이 조용히 사라졌을 것이다.
 
 
 RULES: tuple[Rule, ...] = (
@@ -352,12 +285,17 @@ RULES: tuple[Rule, ...] = (
         "LOG-BODY",
         "BLOCK",
         "로그에 문서 본문·개인정보가 없다",
-        # 예비 판정만 한다 — "로그 호출이 있고 그 뒤 어딘가에 본문 이름이 있다".
-        # `[^)]*` 를 쓰지 않는 이유는 `balanced_arguments` KDoc(M-09). 실제 판정은 refine 이다.
+        # `[^)]*` 를 쓰지 않는다 — 메시지 문자열 안의 괄호 하나에 인자 구간이 끊겨 그 뒤를
+        # 못 보던 자리다(M-09). 논리 줄에는 개행이 없으므로 `[^\n]*` 가 줄 전체를 본다.
+        #
+        # **2차 판정(refine)이 없다.** 여기서 값의 성질로 오탐을 누르던 훅은 §4-octies 로
+        # 삭제됐다 — 그 훅은 인자 구간 파싱의 정확성에 의존해서, 아래 층이 틀리면
+        # **잘린 조각을 보고 정직하게 "안전"을 판정**했다. 정당한 오탐은 이제 호출 지점
+        # 표기(`privacy-allow:`)로 누른다.
         re.compile(rf"{LOG_CALL}\s*\((?=[^\n]*\b(?:{BODY_NAMES})\b)"),
         "로그는 평문으로 수집·장기 보관된다. 한 줄만 새도 암호화 저장 정책 전체가 무의미해진다.",
         "변수명이 우연히 겹치거나(`title` 로그가 문서 ID인 경우) 길이·타입만 찍는 줄이면 오탐.",
-        refine=log_body_is_real_candidate,
+        markable=True,
         multiline=True,
         opener=re.compile(rf"{LOG_CALL}\s*\("),
     ),
@@ -368,6 +306,7 @@ RULES: tuple[Rule, ...] = (
         re.compile(rf"{LOG_CALL}\s*\(\s*f?[\"'][^\"']*\{{[^}}]*\b(?:{BODY_NAMES})\b"),
         "f-string·템플릿 보간은 지연 포매팅을 우회해 값이 곧장 문자열이 된다.",
         "포매팅 인자가 이미 마스킹·요약된 값이면 오탐.",
+        markable=True,
         multiline=True,
         opener=re.compile(rf"{LOG_CALL}\s*\("),
     ),
@@ -378,6 +317,7 @@ RULES: tuple[Rule, ...] = (
         re.compile(rf"(?:raise|throw)\s+\w*(?:Error|Exception)\s*\([^)]*\b(?:{BODY_NAMES})\b"),
         "예외 메시지는 5xx 응답과 스택트레이스 로그 양쪽으로 흘러간다.",
         "메시지가 아니라 원인 예외를 넘기는 인자면 오탐.",
+        markable=True,
         multiline=True,
         opener=re.compile(r"(?:raise|throw)\s"),
     ),
@@ -473,11 +413,9 @@ RULES: tuple[Rule, ...] = (
         "Python 쪽은 expat DTD 핸들러로 막고 있다.",
         "같은 창 안에서 DTD를 끄면(`hardened`) 자동으로 빠진다. 창 밖에서 완화했거나 "
         "완화 호출 이름이 목록에 없으면 후보로 남으니, 그때는 실제 파싱 경로를 열어 확인한다.",
-        frozenset({".kt", ".kts", ".java", ".py"}),
-        (),
-        None,
+        suffixes=frozenset({".kt", ".kts", ".java", ".py"}),
         # DTD·외부 엔터티를 끄는 호출들. Python expat 핸들러와 JAXP/StAX 기능 플래그를 함께 본다.
-        re.compile(
+        hardened=re.compile(
             r"StartDoctypeDeclHandler|disallow-doctype-decl|FEATURE_SECURE_PROCESSING"
             r"|SUPPORT_DTD|IS_SUPPORTING_EXTERNAL_ENTITIES|IS_REPLACING_ENTITY_REFERENCES"
             r"|external-general-entities|external-parameter-entities|load-external-dtd"
@@ -493,6 +431,7 @@ RULES: tuple[Rule, ...] = (
         "선언 크기는 위조 가능하다 — 실제로 읽은 바이트만 믿을 수 있다"
         "(app/ingest/extractors.py 주석).",
         "예산 검사를 이미 통과한 뒤의 재파싱이면 오탐.",
+        markable=True,
     ),
     Rule(
         "CACHE-HEADER",
@@ -502,6 +441,7 @@ RULES: tuple[Rule, ...] = (
         "누락 탐지가 아니라 **분포 확인**용이다. "
         "개인정보 응답 수 대비 헤더 지정 지점이 적으면 빠진 곳이 있다.",
         "여기 걸린 줄은 대부분 정상 — 걸리지 *않은* 개인정보 엔드포인트를 찾는 것이 목적이다.",
+        markable=True,
     ),
     Rule(
         "RETENTION-PURGE",
@@ -516,6 +456,7 @@ RULES: tuple[Rule, ...] = (
         "다중 worker 동시 실행은 같은 행을 두 번 지우거나 트랜잭션을 길게 잠근다.",
         "위치 확인용 규칙이다. 걸린 지점이 배치 크기(500)·advisory lock·04:00 KST를 "
         "모두 갖췄는지 사람이 본다.",
+        markable=True,
     ),
 )
 
@@ -637,6 +578,11 @@ class ScanResult:
     #: **검사하지 못한** 논리 줄 (상한에 걸려 끊긴 호출). 빈 목록이 아니면 BLOCK 이다 —
     #: "검사했는데 없음"과 "검사하지 못함"은 다르다(게이트 09 M-03).
     unscanned: list[tuple[Path, int]] = field(default_factory=list)
+    #: 호출 지점 표기로 눌린 적중. **전건**을 리포트에 싣는다 — 개수만 남기면 무엇이
+    #: 눌렸는지 아무도 되짚지 않는다(그 결함이 R-1 을 리포트 안에서 보이지 않게 했다).
+    suppressions: list[Suppression] = field(default_factory=list)
+    #: 표기 자체의 결함(고아·사유 누락·알 수 없는 규칙·상한 초과). 있으면 스캔 실패다.
+    marker_problems: list[str] = field(default_factory=list)
 
 
 #: 논리 줄 하나가 삼킬 수 있는 물리 줄 상한. 없으면 **깨진 괄호 하나가 파일 전체를 한
@@ -689,7 +635,7 @@ class LogicalLine:
     complete: bool
 
 
-def _advance(line: str, state: LexState, python_syntax: bool) -> tuple[LexState, str]:
+def _advance(line: str, state: LexState, python_syntax: bool) -> tuple[LexState, str, str]:
     """물리 줄 하나를 지난 뒤의 어휘 상태와 **주석을 뺀 코드 부분**.
 
     문자열·주석 안의 괄호는 세지 않는다. `#` 는 **`.py` 에서만** 줄 주석이다 —
@@ -716,6 +662,9 @@ def _advance(line: str, state: LexState, python_syntax: bool) -> tuple[LexState,
     """
     depth, quote, block = state.depth, state.quote, state.block_depth
     kept: list[str] = []
+    # 주석 조각. 표기(`privacy-allow:`) 추출은 **이 층의 일이다** — 억제 층이 자기 주석
+    # 파서를 가지면 중첩 주석 갈래(R-2)를 그대로 되산다(§4-octies.5).
+    comment: list[str] = []
     index = 0
     length = len(line)
     while index < length:
@@ -732,6 +681,7 @@ def _advance(line: str, state: LexState, python_syntax: bool) -> tuple[LexState,
                 if block == 0:
                     kept.append(" ")  # 토큰이 붙지 않게 자리만 남긴다
             else:
+                comment.append(line[index])
                 index += 1
             continue
         if quote is not None:
@@ -749,6 +699,7 @@ def _advance(line: str, state: LexState, python_syntax: bool) -> tuple[LexState,
             index += 1
             continue
         if rest.startswith("//") or (python_syntax and rest.startswith("#")):
+            comment.append(rest)
             break  # 줄 주석 — 나머지는 코드가 아니다
         if not python_syntax and rest.startswith("/*"):
             block += 1
@@ -767,7 +718,24 @@ def _advance(line: str, state: LexState, python_syntax: bool) -> tuple[LexState,
                 depth = max(0, depth - 1)
             kept.append(line[index])
             index += 1
-    return LexState(depth=depth, quote=quote, block_depth=block), "".join(kept)
+    return LexState(depth=depth, quote=quote, block_depth=block), "".join(kept), "".join(comment)
+
+
+def scan_markers(lines: list[str], python_syntax: bool = False) -> list[Marker]:
+    """물리 줄을 훑어 억제 표기를 뽑는다. **①층이 소유한다.**
+
+    `logical_lines` 와 같은 어휘 분석기(`_advance`)를 쓴다 — 표기가 문자열 리터럴 안에
+    적혀 있으면 주석이 아니므로 잡히지 않아야 하고, 그 판별은 이미 여기 있다.
+
+    상태는 물리 줄 사이에 유지된다. 여러 줄 주석 안의 표기도 그 줄 번호로 잡힌다.
+    """
+    found: list[Marker] = []
+    state = LexState()
+    for number, line in enumerate(lines, start=1):
+        state, code, comment = _advance(line, state, python_syntax)
+        if MARKER_PREFIX in comment:
+            found.extend(parse_markers(comment, number, standalone=not code.strip()))
+    return found
 
 
 def logical_lines(lines: list[str], python_syntax: bool = False) -> list[LogicalLine]:
@@ -796,7 +764,7 @@ def logical_lines(lines: list[str], python_syntax: bool = False) -> list[Logical
         state = LexState()
         parts: list[str] = []
         while index < len(lines) and index - start < MAX_LOGICAL_LINE_SPAN:
-            state, code = _advance(lines[index], state, python_syntax)
+            state, code, _comment = _advance(lines[index], state, python_syntax)
             # **주석을 뺀 코드만 잇는다.** 사유는 `_advance` KDoc — 주석 안의 괄호를 인자
             # 파서가 코드로 세면 인자 구간이 조기에 닫히고 그 뒤가 미검사로 남는다.
             stripped = code.strip()
@@ -809,6 +777,26 @@ def logical_lines(lines: list[str], python_syntax: bool = False) -> list[Logical
     return joined
 
 
+#: **표기로 누를 수 없어야 하는 규칙.** §4-octies.3 이 지정한 여섯이다 — 이들에서
+#: "오탐이니 눌러 달라"가 나오면 그것은 표기가 아니라 **판정 요청**이어야 한다.
+#: 목록을 주석으로만 두면 다음 사람이 한 줄을 `True` 로 바꾼다.
+UNMARKABLE_RULES = frozenset(
+    {
+        "LLM-RAW-INPUT",
+        "OWNERSHIP-403",
+        "PLAINTEXT-PERSIST",
+        "SECRET-LITERAL",
+        "LLM-VENDOR-SDK",
+        "XML-DTD",
+    }
+)
+
+for _rule in RULES:
+    if _rule.id in UNMARKABLE_RULES and _rule.markable:
+        raise AssertionError(
+            f"{_rule.id} 는 표기로 누를 수 없어야 한다(§4-octies.3) — markable=True 가 붙었다."
+        )
+
 #: `multiline` 규칙은 반드시 `opener` 를 갖는다 — 없으면 그 규칙만 fail-closed 밖으로 빠진다.
 for _rule in RULES:
     if _rule.multiline and _rule.opener is None:
@@ -819,6 +807,150 @@ for _rule in RULES:
 
 #: 끊긴 논리 줄이 **실제로 무언가를 가렸는가**를 판정할 때 쓰는 호출 시작 모양 전부.
 ARG_LIST_OPENERS = tuple(rule.opener for rule in RULES if rule.multiline and rule.opener)
+
+
+#: 억제 층이 보는 적중. **이 셋이 전부다.**
+#:
+#: `logical_span`·`column`·`matched_text` 는 리포트용이며 억제 판정에 쓰지 않는다 —
+#: 어휘·구문 층이 논리 줄 구조나 매치 표현을 바꿔도 억제 층은 따라 바뀌지 않아야 한다
+#: (§4-octies.5 층 인터페이스).
+Hit = tuple[Path, int, str]
+
+#: 파일별 표기 색인. **어휘 층(①)이 만든다.**
+MarkerIndex = dict[Path, list[Marker]]
+
+
+@dataclass(frozen=True)
+class Suppression:
+    """억제된 적중 하나. 리포트에 **전건** 실린다."""
+
+    rule_id: str
+    path: Path
+    line: int
+    reason: str
+
+
+def suppress(
+    hits: dict[str, list[Hit]],
+    markers: MarkerIndex,
+    markable_rules: frozenset[str] | None = None,
+) -> tuple[dict[str, list[Hit]], list[Suppression]]:
+    """표기로 눌린 적중을 걷어낸다. **③층 — 재파싱하지 않는다.**
+
+    ## 불변량: `suppress(hits, ∅) == hits`
+
+    표기가 하나도 없으면 이 함수는 **항등 함수**다. 앞선 판에서는 이 명제를 쓸 수조차
+    없었다 — 검출과 억제가 같은 루프에 있어 억제가 검출을 **가로챘다**(첫 적중이 눌리면
+    나머지가 탐색되지 않았다. R-1 의 직접 원인이다). 층을 나눈 이유가 이것이고,
+    속성 테스트가 이 명제를 고정한다.
+
+    ## 이 함수가 하지 않는 것 (넷)
+
+    - **재파싱 금지.** 표현식·괄호·주석을 다시 읽지 않는다. 다섯 갈래 중 셋이 "아래 층이
+      틀렸는데 억제가 그것을 조용한 통과로 바꾼" 형태였다 — 그 표면 자체를 없앤다.
+    - **표기 추출을 스스로 하지 않는다.** 주석 판별은 ①층의 일이다. 여기서 자기 주석
+      파서를 가지면 중첩 주석 갈래(R-2)를 그대로 되산다.
+    - **검출 루프 안에서 불리지 않는다.** ②층이 전량을 낸 **뒤에** 한 번 돈다.
+    - **물리 줄을 특정할 수 없는 적중은 억제 대상이 아니다**(닫힘).
+
+    ## 표기가 적중에 닿는 규칙
+
+    같은 물리 줄의 표기, 또는 **바로 위 줄의 단독 주석** 표기만 닿는다. 규칙 id 가 같아야
+    하고(방어 d — 와일드카드 없음), 사유가 비면 닿지 않는다(방어 c).
+    """
+    allowed = (
+        markable_rules
+        if markable_rules is not None
+        else frozenset(rule.id for rule in RULES if rule.markable)
+    )
+    kept: dict[str, list[Hit]] = {}
+    removed: list[Suppression] = []
+    for rule_id, entries in hits.items():
+        survivors: list[Hit] = []
+        for path, line, text in entries:
+            # **`markable=False` 규칙은 표기로 눌리지 않는다**(방어, §4-octies.3).
+            # 문제로 보고만 하고 억제까지 해 주면 "판정 요청이어야 한다"는 규칙이
+            # 경고문으로 내려앉는다 — 닫히는 쪽으로 둔다.
+            marker = (
+                _marker_for(markers.get(path, []), rule_id, line) if rule_id in allowed else None
+            )
+            if marker is None:
+                survivors.append((path, line, text))
+            else:
+                removed.append(
+                    Suppression(rule_id=rule_id, path=path, line=line, reason=marker.reason)
+                )
+        if survivors:
+            kept[rule_id] = survivors
+    return kept, removed
+
+
+def _marker_for(markers: list[Marker], rule_id: str, line: int) -> Marker | None:
+    """이 적중에 닿는 표기. 사유가 빈 표기는 닿지 않는다(방어 c)."""
+    for marker in markers:
+        if marker.rule_id != rule_id or not marker.reason:
+            continue
+        if marker.line == line:
+            return marker
+        if marker.standalone and marker.line == line - 1:
+            return marker
+    return None
+
+
+def marker_problems(
+    markers: MarkerIndex,
+    hits: dict[str, list[Hit]],
+    rules: tuple[Rule, ...] = RULES,
+) -> list[str]:
+    """표기 자체의 결함. **하나라도 있으면 스캔이 실패한다.**
+
+    표기가 새 면제 목록이 되지 않게 거는 방어들이다(§4-octies.3). 특히 **고아 표기 실패**는
+    휴리스틱에는 없던 자가 정리 기제다 — 코드가 바뀌어 위험이 사라졌는데 표기만 남는 것을
+    막는다.
+    """
+    known = {rule.id for rule in rules}
+    markable = {rule.id for rule in rules if rule.markable}
+    problems: list[str] = []
+
+    touched: set[tuple[Path, int, str]] = set()
+    for rule_id, entries in hits.items():
+        for path, line, _text in entries:
+            marker = _marker_for(markers.get(path, []), rule_id, line)
+            if marker is not None:
+                touched.add((path, marker.line, rule_id))
+
+    total = 0
+    for path, file_markers in sorted(markers.items()):
+        for marker in file_markers:
+            total += 1
+            shown = path.relative_to(REPO_ROOT) if path.is_relative_to(REPO_ROOT) else path
+            where = f"{shown}:{marker.line}"
+            if marker.rule_id not in known:
+                problems.append(f"{where} — 알 수 없는 규칙 id `{marker.rule_id}`")
+                continue
+            if not marker.reason:
+                problems.append(
+                    f"{where} — 사유가 비었다 (`privacy-allow: {marker.rule_id} — 사유`)"
+                )
+                continue
+            if marker.rule_id not in markable:
+                problems.append(
+                    f"{where} — `{marker.rule_id}` 는 표기로 누를 수 없다. "
+                    "이 규칙의 오탐은 표기가 아니라 **판정 요청**이어야 한다(§4-octies.3)"
+                )
+                continue
+            if (path, marker.line, marker.rule_id) not in touched:
+                problems.append(
+                    f"{where} — **고아 표기**: 이 자리에 `{marker.rule_id}` 적중이 없다. "
+                    "위험이 사라졌으면 표기도 지운다"
+                )
+
+    if total > MARKER_BUDGET:
+        problems.append(
+            f"표기가 {total}개로 상한 {MARKER_BUDGET}을 넘었다. "
+            "상한을 올리려면 MARKER_BUDGET 을 고치는 커밋이 필요하고, 그 diff 가 리뷰에 올라간다"
+        )
+    return problems
 
 
 def _is_candidate(
@@ -862,9 +994,10 @@ def _is_candidate(
 
 
 def scan(files: list[Path], rule_filter: set[str]) -> ScanResult:
-    hits: dict[str, list[tuple[Path, int, str]]] = {}
+    hits: dict[str, list[Hit]] = {}
     suppressed: dict[str, dict[str, int]] = {}
     unscanned: list[tuple[Path, int]] = []
+    markers: MarkerIndex = {}
 
     def drop(rule_id: str, reason: str) -> None:
         suppressed.setdefault(rule_id, {}).setdefault(reason, 0)
@@ -877,6 +1010,10 @@ def scan(files: list[Path], rule_filter: set[str]) -> ScanResult:
         except OSError:
             continue
         posix = path.as_posix()
+        # ①층이 표기 색인을 만든다. 억제 층은 이 색인만 보고 재파싱하지 않는다.
+        found_markers = scan_markers(lines, python_syntax=path.suffix == ".py")
+        if found_markers:
+            markers[path] = found_markers
         for number, line in enumerate(lines, start=1):
             stripped = line.strip()
             if stripped.startswith(("#", "//", "*", '"""')):
@@ -914,7 +1051,12 @@ def scan(files: list[Path], rule_filter: set[str]) -> ScanResult:
                     continue
                 if _is_candidate(rule, line, lines, number, drop):
                     hits.setdefault(rule.id, []).append((path, number, line[:160]))
-    return ScanResult(hits, suppressed, unscanned)
+
+    # ── ③층. **②가 전량을 낸 뒤에 한 번 돈다.** ────────────────────────────────
+    # 검출 루프 안에서 억제하면 억제가 검출을 가로챈다 — R-1 의 직접 원인이었다.
+    problems = marker_problems(markers, hits, tuple(rules))
+    kept, removed = suppress(hits, markers)
+    return ScanResult(kept, suppressed, unscanned, removed, problems)
 
 
 def render(result: ScanResult, scanned: int, scope: str) -> tuple[str, int]:
@@ -927,6 +1069,23 @@ def render(result: ScanResult, scanned: int, scope: str) -> tuple[str, int]:
         "정규식은 문맥을 읽지 못하므로 오탐이 섞인다. 각 항목을 열어 사람이 확인한다.",
         "",
     ]
+    if result.suppressions:
+        # **전건을 위치·사유와 함께 싣는다.** 앞선 판은 개수만 남겼고, 그래서 R-1 이
+        # 리포트 **안에서** 보이지 않았다 — 억제 실패가 구조적으로 조용했던 이유가 이것이다.
+        lines.append(
+            f"호출 지점 표기로 누른 적중 {len(result.suppressions)}건 "
+            f"(상한 {MARKER_BUDGET}). **무엇을 눌렀는지 전부 적는다** — "
+            "개수만 남기면 아무도 되짚지 않는다:"
+        )
+        lines.append("")
+        for item in result.suppressions:
+            shown = (
+                item.path.relative_to(REPO_ROOT)
+                if item.path.is_relative_to(REPO_ROOT)
+                else item.path
+            )
+            lines.append(f"- `{shown}:{item.line}` — `{item.rule_id}` — {item.reason}")
+        lines.append("")
     if result.suppressed:
         lines.append("2차 판정으로 제외한 적중(규칙이 눈감은 양을 드러내기 위해 함께 적는다):")
         lines.append("")
@@ -935,6 +1094,20 @@ def render(result: ScanResult, scanned: int, scope: str) -> tuple[str, int]:
             lines.append(f"- `{rule_id}` — {detail}")
         lines.append("")
     blocking = 0
+    if result.marker_problems:
+        # 표기가 새 면제 목록이 되지 않게 거는 방어들이 여기서 터진다(§4-octies.3).
+        blocking += len(result.marker_problems)
+        lines.extend(
+            [
+                f"## [BLOCK] MARKER — 억제 표기 자체가 잘못됐다 ({len(result.marker_problems)}건)",
+                "",
+                "- 왜: 표기는 억제의 **유일한** 통로다. 고아·사유 누락·상한 초과를 허용하면 "
+                "표기가 새 면제 목록이 된다.",
+                "",
+            ]
+        )
+        lines.extend(f"- {problem}" for problem in result.marker_problems)
+        lines.append("")
     if result.unscanned:
         # **BLOCK 이다.** 상한에 걸려 못 읽은 호출은 "위반 없음"이 아니라 "확인하지 않음"이고,
         # 이 스크립트는 같은 판단을 스캔 루트 부재와 `--changed` 0건에서 이미 내린다.
@@ -978,7 +1151,7 @@ def render(result: ScanResult, scanned: int, scope: str) -> tuple[str, int]:
         if len(found) > 40:
             lines.append(f"- … 외 {len(found) - 40}건 (전체는 --rule {rule.id} 로 확인)")
         lines.append("")
-    if not hits and not result.unscanned:
+    if not hits and not result.unscanned and not result.marker_problems:
         lines.append(
             "후보 없음. 다만 정규식이 못 보는 경로가 있으니 수동 감사 절차를 건너뛰지 않는다."
         )

@@ -20,10 +20,12 @@
 from __future__ import annotations
 
 import importlib.util
+import random
 import re
 import sys
 from pathlib import Path
 from types import ModuleType
+from typing import Any
 
 import pytest
 
@@ -80,123 +82,6 @@ def _log_body_verdict(scanner: ModuleType, line: str) -> str:
         return "MISSED"
     candidate = scanner._is_candidate(rule, line, [line], 1, lambda _rule_id, _reason: None)
     return "CAUGHT" if candidate else "MISSED"
-
-
-# ── 판정 §4-quater.1 — refine 훅의 음성 대조 (없으면 privacy-gate 미승인) ────────────
-#
-# 통과해야 할 3줄과 **반드시 잡혀야 할 3줄**을 함께 둔다. 후자가 하나라도 통과하면
-# 훅이 너무 넓은 것이다.
-
-SUPPRESSED_LINES = [
-    'print(f"마스킹: {detail} (총 {draft.stats.masked_total}건)")',
-    'print(f"문서 id: {draft.document.id}")',
-    'print(f"본문 {draft.stats.source_chars:,}자")',
-]
-
-STILL_CAUGHT_LINES = [
-    'logger.info("변환 완료 {}", draft)',
-    'logger.info("변환 완료 {}", draft.value)',
-    'logger.info("변환 완료 {}", draft.text)',
-    # ── 사슬 종단 미고정 탈출 3종 (privacy-gate 해제 심사 §4-sexies.3) ──────────
-    # 안전 멤버 **뒤에** 위험 멤버를 이어 붙이면 통과했다. `re.match()` 가 시작만
-    # 고정하고 끝을 고정하지 않아, 안전 멤버에서 매칭이 끝난 뒤의 사슬이 검사되지
-    # 않았다. 한정자 뒤에 안전 멤버를 하나 끼워 넣는 것이 곧 통행증이었다.
-    #
-    # **셋 중 실제로 샌 것은 첫 줄뿐이다** — 음성 대조 실측(종단 고정을 걷어내면
-    # 첫 줄만 실패). 나머지 둘은 꼬리(`original`·`body`)가 `BODY_NAMES` 에도 있어
-    # **다른 경로로 이미 잡히고 있었다.** 셋을 다 남기는 이유는 두 방어선이 각각
-    # 살아 있음을 고정하기 위해서다 — 언젠가 `BODY_NAMES` 에서 그 이름이 빠지면
-    # 종단 고정만 남고, 그때 이 줄들이 진짜 회귀 감지기가 된다.
-    #
-    # 종단 고정 **자체**를 재는 것은 아래 전용 테스트다(꼬리를 `BODY_NAMES` 밖의
-    # `value` 로 두어 다른 방어선이 겹치지 않게 했다).
-    'logger.info("{}", draft.document.id.value)',
-    'logger.info("{}", draft.stats.count.original)',
-    'logger.info("{}", draft.document.category.body)',
-]
-
-
-@pytest.mark.parametrize("line", SUPPRESSED_LINES)
-def test_refine_훅이_집계_멤버_보간을_거른다(scanner: ModuleType, line: str) -> None:
-    assert _log_body_verdict(scanner, line) == "MISSED", (
-        f"오탐으로 판정된 줄이 여전히 후보다: {line}"
-    )
-
-
-@pytest.mark.parametrize("line", STILL_CAUGHT_LINES)
-def test_refine_훅이_본문_보간은_계속_잡는다(scanner: ModuleType, line: str) -> None:
-    assert _log_body_verdict(scanner, line) == "CAUGHT", (
-        f"훅이 너무 넓다 — 진짜 본문 보간이 빠져나간다: {line}"
-    )
-
-
-def test_안전한_멤버_뒤에_위험한_멤버를_이어_붙일_수_없다(scanner: ModuleType) -> None:
-    """접근 사슬 **전체**가 한정자 + 종단 안전 멤버로만 이뤄져야 한다.
-
-    이 성질을 따로 이름 붙여 두는 이유: 위 `STILL_CAUGHT_LINES` 가 세 줄을 값으로
-    잡아 주지만, **왜** 잡혀야 하는지는 목록에서 읽히지 않는다. 결손은 안전 멤버
-    목록이 아니라 **패턴의 끝**에 있었다 — 목록을 아무리 좁혀도 그 뒤에 무엇이든
-    붙일 수 있으면 소용이 없다.
-
-    `document` 한정자 때문이 아니라는 것도 함께 고정한다 — 판정문이 표에 직접 적은
-    `stats` 로도 똑같이 샜다. 그래서 두 한정자 모두에 대해 단언한다.
-    """
-    for qualifier in ("document", "stats"):
-        안전한_종단 = f'logger.info("{{}}", draft.{qualifier}.count)'
-        위험한_꼬리 = f'logger.info("{{}}", draft.{qualifier}.count.value)'
-
-        assert _log_body_verdict(scanner, 안전한_종단) == "MISSED", (
-            f"집계 멤버로 끝나는 접근이 후보로 남는다: {안전한_종단}"
-        )
-        assert _log_body_verdict(scanner, 위험한_꼬리) == "CAUGHT", (
-            f"안전 멤버 뒤에 이어 붙인 위험 멤버가 빠져나간다: {위험한_꼬리} — "
-            "패턴 끝의 사슬 종단 고정이 사라졌는지 확인하라."
-        )
-
-
-def test_안전_멤버_목록에_본문_이름이_없다(scanner: ModuleType) -> None:
-    """`value`·`text`·`body` 등이 목록에 들어가면 훅이 규칙 자체를 무력화한다.
-
-    모듈 적재 시점에도 같은 자기검사가 돌지만(그때는 `AssertionError`로 죽는다),
-    여기서 한 번 더 보는 이유는 **그 자기검사가 지워지는 경우**를 잡기 위해서다.
-    """
-    for forbidden in ("value", "text", "body", "content", "original", "raw"):
-        assert scanner._SAFE_MEMBER_RE.match(forbidden) is None, (
-            f"_SAFE_MEMBERS 에 {forbidden!r} 가 들어갔다 — LOG-BODY 가 아무것도 잡지 못하게 된다."
-        )
-        assert forbidden not in scanner._SAFE_QUALIFIERS, (
-            f"_SAFE_QUALIFIERS 에 {forbidden!r} 가 들어갔다 — 한정자는 사슬을 이어 주므로 "
-            "여기 들어가면 그 뒤 어떤 안전 멤버로도 종단할 수 있다."
-        )
-
-
-def test_한_줄에_안전한_접근과_본문_접근이_섞이면_후보로_남는다(scanner: ModuleType) -> None:
-    """정규식이 탐욕 매칭이라 **마지막** 본문 이름만 잡는다.
-
-    적중 위치 하나만 판정하면 안전한 쪽을 보고 진짜 유출을 놓친다. 훅은 줄 안의 본문
-    이름을 전부 본다.
-    """
-    본문먼저 = 'logger.info("{} {}", draft.value, draft.stats.count)'
-    집계먼저 = 'logger.info("{} {}", draft.stats.count, draft.value)'
-
-    assert _log_body_verdict(scanner, 본문먼저) == "CAUGHT"
-    assert _log_body_verdict(scanner, 집계먼저) == "CAUGHT"
-
-
-def test_한정자는_그_자체로_안전하지_않다(scanner: ModuleType) -> None:
-    """`stats`·`document`는 뒤에 안전 멤버가 이어질 때만 통과한다."""
-    assert _log_body_verdict(scanner, 'logger.info("{}", draft.stats)') == "CAUGHT"
-    assert _log_body_verdict(scanner, 'logger.info("{}", draft.document.text)') == "CAUGHT"
-    assert _log_body_verdict(scanner, 'logger.info("{}", draft[0])') == "CAUGHT"
-
-
-def test_적중_위치_판정에_정규식_경계가_유지된다(scanner: ModuleType) -> None:
-    """`review`가 있다고 `reviewed`가 잡히지는 않는다 — 낱말 단위다.
-
-    이 성질을 잊으면 "비슷한 이름이 이미 있으니 잡히겠지"로 넘어가게 된다(판정 5 §4-bis.4).
-    """
-    assert re.search(rf"\b(?:{scanner.BODY_NAMES})\b", "reviewed") is not None
-    assert re.search(rf"\b(?:{scanner.BODY_NAMES})\b", "혼자쓰는이름") is None
 
 
 # ── 판정 §4-quater.2 — 다중 줄 호출 (C-03) ─────────────────────────────────────────
@@ -357,57 +242,6 @@ def test_allow_empty_는_0건만_눌러주고_루트_부재는_못_누른다(
     monkeypatch.undo()
     monkeypatch.setattr(scanner, "SCAN_ROOTS", ["존재하지-않는-루트"])
     assert scanner.main(["--allow-empty"]) == 2
-
-
-# ── 게이트 09 M-01 — 접근 사슬 전체 파싱 ────────────────────────────────────────────
-#
-# `_SAFE_ACCESS` 정규식의 종단 고정 `(?!\.)`은 **점이 곧바로 이어지는 경우만** 막았다.
-# 아래 셋은 전부 SUPPRESSED로 샜다. 특히 셋째가 나쁘다 — 논리 줄 결합(`" ".join`)이
-# ktlint 강제 다중 줄 체인을 정확히 그 ` .` 모양으로 만들므로, **이 저장소의 표준
-# 표기가 안전 판정을 받고 있었다.**
-
-CHAIN_ESCAPES = [
-    'logger.info("{}", draft.id[0])',
-    'logger.info("{}", draft.stats.count().value)',
-    'logger.info("{}", draft.id . value)',
-    'logger.info( "{}", draft .stats .value )',
-]
-
-
-@pytest.mark.parametrize("line", CHAIN_ESCAPES)
-def test_사슬_중간에_끼워_넣은_우회를_잡는다(scanner: ModuleType, line: str) -> None:
-    assert _log_body_verdict(scanner, line) == "CAUGHT", (
-        f"접근 사슬 우회가 빠져나간다: {line} — 종결자 열거로 되돌아갔는지 확인하라."
-    )
-
-
-def test_다중_줄_체인의_안전한_종단은_계속_거른다(scanner: ModuleType) -> None:
-    """우회를 막느라 정당한 표기까지 후보로 만들면 이 훅은 못 쓰게 된다.
-
-    ` .` 모양 자체는 죄가 없다 — 죄는 그 뒤에 위험 멤버가 오는 것이다.
-    """
-    assert _log_body_verdict(scanner, 'logger.info( "{}", draft .stats .masked_total )') == "MISSED"
-
-
-def test_사슬_판정은_종결자를_열거하지_않는다(scanner: ModuleType) -> None:
-    """호출·첨자 뒤의 값은 **성질을 알 수 없으므로** 안전하다고 하지 않는다.
-
-    이것을 "`[`와 `(`도 종결자 목록에 넣는다"로 고치면 다음 표기에서 또 빠진다.
-    사슬을 끝까지 읽는 쪽이 열거보다 좁다.
-    """
-    assert scanner.safe_access_chain("draft.stats.masked_total", len("draft")) is True
-    assert scanner.safe_access_chain("draft.stats.masked_total[0]", len("draft")) is False
-    assert scanner.safe_access_chain("draft.stats.count()", len("draft")) is False
-    assert scanner.safe_access_chain("draft", len("draft")) is False
-
-
-# ── 게이트 09 M-09 — 중첩 괄호에서 인자가 잘리지 않는다 ─────────────────────────────
-
-
-def test_메시지_안의_괄호가_인자_구간을_끊지_않는다(scanner: ModuleType) -> None:
-    """`[^)]*`는 첫 `)`에서 끊겨 그 뒤 인자를 못 봤다."""
-    assert _log_body_verdict(scanner, 'logger.info("완료(1단계)", draft.value)') == "CAUGHT"
-    assert scanner.balanced_arguments('f("a(b)", x)', 1) == '"a(b)", x'
 
 
 # ── 게이트 09 M-03 — 논리 줄 조립의 fail-closed·상태 유지 ───────────────────────────
@@ -704,32 +538,41 @@ PROBE_MULTI_CALL = PROBE_DIR / "MultiCallProbe.kt"
 PROBE_NESTED_COMMENT = PROBE_DIR / "NestedCommentProbe.kt"
 
 
-def test_한_줄의_두_번째_호출도_판정한다(scanner: ModuleType) -> None:
-    """세 함수 전부 잡혀야 한다 — 앞이 안전한 둘과, 순서를 뒤집은 대조군."""
+def test_한_줄의_적중을_전부_판정한다(scanner: ModuleType) -> None:
+    """호출마다 **따로** 판정한다.
+
+    §4-octies 로 `LOG-BODY` 의 2차 판정이 사라진 뒤로는 이 규칙에서 "앞이 뒤를 가린다"가
+    재현되지 않는다 — 누를 것이 없으면 첫 적중에서 이미 후보다. 그래서 R-1 의 성질은
+    **2차 판정이 남아 있는 규칙**에서 잰다(아래 `test_2차_판정이_있는_규칙에서…`).
+    여기서는 각 호출이 독립적으로 후보가 되는지만 본다.
+    """
     result = scanner.scan([PROBE_MULTI_CALL], {"LOG-BODY"})
     found = [number for _p, number, _t in result.hits.get("LOG-BODY", [])]
 
-    assert len(found) == 3, (
-        f"3건이 잡혀야 하는데 {len(found)}건이다 (줄 {found}). "
-        "줄 안의 적중을 전부 판정하는지(finditer) 확인하라."
-    )
+    # 한 줄 분기 1 + `.also` 두 줄 2 + 순서뒤집기 1 = 4.
+    # `.also` 두 줄이 각각 논리 줄이라 둘 다 후보다 — 훅이 있던 시절에는 앞 하나가 눌렸다.
+    assert len(found) == 4, f"4건이 잡혀야 하는데 {len(found)}건이다 (줄 {found})."
 
 
-def test_순서를_뒤집으면_잡히던_것이_결함의_증거다(scanner: ModuleType) -> None:
-    """**이 단언이 위 테스트의 값어치를 증명한다.**
+def test_2차_판정이_있는_규칙에서_앞이_뒤를_가리지_않는다(scanner: ModuleType) -> None:
+    """**R-1 의 성질은 여기서 산다.**
 
-    "위험한 호출이 앞이면 잡히고 뒤면 안 잡힌다"가 곧 "첫 적중 하나만 본다"이다.
-    이것이 없으면 위 3건이 원래부터 잡히던 것인지 구분할 수 없다.
+    `SECRET-LITERAL` 은 판별식을 통과해 `refine` 을 유지한 규칙이다(§4-octies.7 —
+    자기 완결적 캡처 그룹의 값만 보고 괄호·주석 경계를 보지 않는다). 한 줄에 리터럴이
+    둘이고 **앞이 픽스처 낱말**이면, `search` 하나만 넘기던 시절에는 뒤의 진짜 난수 키가
+    통째로 검사되지 않았다.
     """
-    safe_first = (
-        'if (ok) logger.info("건수 {}", draft.stats.count) else logger.info("본문 {}", draft.value)'
-    )
-    risky_first = (
-        'if (ok) logger.info("본문 {}", draft.value) else logger.info("건수 {}", draft.stats.count)'
-    )
+    rule = _rule(scanner, "SECRET-LITERAL")
+    line = 'password = "wrongpassword"; api_key = "aG9uZ2dpbGRvbmc5OTk5MTIzNDU2Nzg5MA=="'
 
-    assert _log_body_verdict(scanner, safe_first) == "CAUGHT"
-    assert _log_body_verdict(scanner, risky_first) == "CAUGHT"
+    matches = list(rule.pattern.finditer(line))  # type: ignore[attr-defined]
+    assert len(matches) == 2, "탐침이 두 적중을 내지 않는다 (전제 확인)"
+    assert rule.refine(matches[0]) is False, "앞 리터럴이 픽스처 낱말이어야 한다"  # type: ignore[attr-defined]
+    assert rule.refine(matches[1]) is True, "뒤 리터럴이 난수꼴이어야 한다"  # type: ignore[attr-defined]
+
+    dropped: list[str] = []
+    assert scanner._is_candidate(rule, line, [line], 1, lambda _r, reason: dropped.append(reason))
+    assert len(dropped) == 1, "앞 적중이 2차 판정으로 빠진 뒤 뒤 적중까지 봐야 한다"
 
 
 # ── 게이트 10 R-2 — 블록 주석 중첩 ─────────────────────────────────────────────────
@@ -768,7 +611,7 @@ def test_중첩_주석_안의_호출은_잡지_않는다(scanner: ModuleType) ->
 def test_블록_주석_깊이가_상태로_유지된다(scanner: ModuleType) -> None:
     """`LexState.block_depth`가 Boolean이 아니라 수인지 직접 본다."""
     state = scanner.LexState()
-    state, _code = scanner._advance("/* 바깥 /* 안쪽", state, False)
+    state, _code, _comment = scanner._advance("/* 바깥 /* 안쪽", state, False)
 
     assert state.block_depth == 2, f"중첩 깊이를 세지 않는다: {state}"
     assert state.open
@@ -826,3 +669,217 @@ def test_탐지기_클래스가_개별_스텝으로_선언돼_있다() -> None:
             f"한 스텝이 --tests를 {count}개 준다 — 집합 의미론이라 하나만 지워도 통과한다.\n"
             f"  스텝: {step.splitlines()[0].strip()}"
         )
+
+
+# ── privacy-gate §4-octies — 억제 층을 호출 지점 가시 표기로 갈아탔다 ───────────────
+#
+# 중앙 휴리스틱(`refine`)이 다섯 갈래를 냈다. 그 훅은 "경로가 아니라 값"이라는 원칙을
+# 끝까지 지켰고 목록이 넓어져 샌 갈래는 하나도 없었다 — **고른 축이 틀렸다.**
+# 위험을 가르는 축은 **"억제가 아래 층의 정확성에 의존하는가"**이고, 의존하면 그 층의
+# 모든 결함을 **조용한 통과로 상속한다.**
+#
+# 아래 단언들은 표기가 새 면제 목록이 되지 않게 거는 방어 a~f를 각각 잰다.
+
+
+def _scan_source(scanner: ModuleType, tmp_path: Path, source: str, suffix: str = ".kt") -> Any:
+    """합성 소스 한 벌을 스캔한다.
+
+    반환을 `Any`로 두는 이유: `ScanResult`는 스캐너 모듈 안의 dataclass라 이 파일에서
+    이름으로 가져올 수 없다(모듈을 `importlib`으로 적재한다). 구조를 다시 선언하면
+    그 사본이 원본과 갈린다.
+    """
+    probe = tmp_path / f"probe{suffix}"
+    probe.write_text(source, encoding="utf-8")
+    return scanner.scan([probe], set())
+
+
+LOGGING_LEAK = 'fun f(draft: Any) { logger.info("본문 {}", draft.value) }'
+
+
+def test_표기가_없으면_억제_층은_항등_함수다(scanner: ModuleType) -> None:
+    """**불변량: `suppress(hits, ∅) == hits`.**
+
+    앞선 판에서는 이 명제를 쓸 수조차 없었다 — 검출과 억제가 같은 루프에 있어 억제가
+    검출을 **가로챘다**(첫 적중이 눌리면 나머지가 탐색되지 않았다. R-1의 직접 원인).
+    층을 나눈 이유가 이것이다.
+    """
+    hits = {
+        "LOG-BODY": [(Path("a.kt"), 1, "x"), (Path("b.kt"), 7, "y")],
+        "EXC-BODY": [(Path("c.py"), 3, "z")],
+    }
+
+    kept, removed = scanner.suppress(hits, {})
+
+    assert kept == hits
+    assert removed == []
+
+
+@pytest.mark.parametrize("seed", range(12))
+def test_속성_무작위_적중에도_항등이다(scanner: ModuleType, seed: int) -> None:
+    """속성 테스트 — 어떤 모양의 적중 목록에도 빈 색인은 아무것도 바꾸지 않는다."""
+    rng = random.Random(seed)
+    hits = {
+        rng.choice(["LOG-BODY", "EXC-BODY", "XML-DTD"]): [
+            (Path(f"f{rng.randrange(5)}.kt"), rng.randrange(1, 50), "text")
+            for _ in range(rng.randrange(1, 6))
+        ]
+        for _ in range(rng.randrange(1, 4))
+    }
+
+    kept, removed = scanner.suppress(hits, {})
+
+    assert kept == hits
+    assert removed == []
+
+
+def test_표기가_자기_줄_자기_규칙만_누른다(scanner: ModuleType, tmp_path: Path) -> None:
+    """방어 d·e — 와일드카드도, 파일·블록 범위도 없다."""
+    source = f"{LOGGING_LEAK}  // privacy-allow: EXC-BODY — 다른 규칙\n{LOGGING_LEAK}\n"
+    result = _scan_source(scanner, tmp_path, source)
+
+    # 첫 줄은 **다른 규칙** 표기라 눌리지 않고, 둘째 줄은 표기가 없어 눌리지 않는다.
+    assert len(result.hits.get("LOG-BODY", [])) == 2
+    assert result.marker_problems, "규칙이 어긋난 표기는 고아로 잡혀야 한다"
+
+
+def test_사유가_비면_누르지_못하고_실패한다(scanner: ModuleType, tmp_path: Path) -> None:
+    """방어 c — `type: ignore` 사유 주석 규약과 같은 형태."""
+    result = _scan_source(scanner, tmp_path, f"{LOGGING_LEAK}  // privacy-allow: LOG-BODY —\n")
+
+    assert result.hits.get("LOG-BODY"), "사유 없는 표기가 적중을 눌렀다"
+    assert any("사유가 비었다" in problem for problem in result.marker_problems)
+
+
+def test_알_수_없는_규칙_id_는_실패한다(scanner: ModuleType, tmp_path: Path) -> None:
+    result = _scan_source(scanner, tmp_path, f"{LOGGING_LEAK}  // privacy-allow: NOPE — 사유\n")
+
+    assert any("알 수 없는 규칙" in problem for problem in result.marker_problems)
+
+
+def test_고아_표기는_실패한다(scanner: ModuleType, tmp_path: Path) -> None:
+    """방어 f — **휴리스틱에는 없던 자가 정리 기제.**
+
+    코드가 바뀌어 위험이 사라졌는데 표기만 남는 것을 막는다. 중앙 목록은 죽은 항목을
+    영원히 품는다 — 어느 이름이 지금 무엇을 누르는지 아무도 모른다.
+    """
+    result = _scan_source(scanner, tmp_path, "val x = 1  // privacy-allow: LOG-BODY — 적중 없음\n")
+
+    assert any("고아 표기" in problem for problem in result.marker_problems)
+
+
+def test_markable_이_아닌_규칙은_표기로_눌리지_않는다(scanner: ModuleType, tmp_path: Path) -> None:
+    """§4-octies.3 — 이 여섯에서 "오탐이니 눌러 달라"는 표기가 아니라 **판정 요청**이다."""
+    source = (
+        "fun f(t: String) { provider.complete(sourceText, opts) }"
+        "  // privacy-allow: LLM-RAW-INPUT — 눌러 달라\n"
+    )
+    result = _scan_source(scanner, tmp_path, source)
+
+    assert result.hits.get("LLM-RAW-INPUT"), "markable=False 규칙이 표기로 눌렸다"
+    assert any("누를 수 없다" in problem for problem in result.marker_problems)
+
+
+def test_바로_위_단독_주석_표기만_아래_줄에_닿는다(scanner: ModuleType, tmp_path: Path) -> None:
+    """표기 위치는 **같은 줄 끝**이거나 **바로 위 단독 주석** 둘뿐이다."""
+    above = f"// privacy-allow: LOG-BODY — 위 줄 단독\n{LOGGING_LEAK}\n"
+    two_above = f"// privacy-allow: LOG-BODY — 두 줄 위\nval x = 1\n{LOGGING_LEAK}\n"
+
+    assert not _scan_source(scanner, tmp_path, above).hits.get("LOG-BODY")
+    assert _scan_source(scanner, tmp_path, two_above).hits.get("LOG-BODY"), "두 줄 위 표기가 닿았다"
+
+
+def test_예산_상한을_넘으면_실패한다(
+    scanner: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """방어 a — 상한을 올리는 것은 그 자체가 diff이고 리뷰 대상이다."""
+    monkeypatch.setattr(scanner, "MARKER_BUDGET", 1)
+    source = f"{LOGGING_LEAK}  // privacy-allow: LOG-BODY — 하나\n" * 2
+    result = _scan_source(scanner, tmp_path, source)
+
+    assert any("상한" in problem for problem in result.marker_problems)
+
+
+def test_눌린_적중이_리포트에_위치와_사유로_전건_실린다(
+    scanner: ModuleType, tmp_path: Path
+) -> None:
+    """**불변량 1.** 앞선 판은 개수만 남겼고, 그래서 R-1이 리포트 *안에서* 보이지 않았다."""
+    result = _scan_source(
+        scanner, tmp_path, f"{LOGGING_LEAK}  // privacy-allow: LOG-BODY — 집계만 보간\n"
+    )
+    report, _blocking = scanner.render(result, 1, "테스트")
+
+    assert not result.hits.get("LOG-BODY")
+    assert "집계만 보간" in report, "사유가 리포트에 없다"
+    assert "LOG-BODY" in report
+    assert ":1" in report, "위치(줄 번호)가 리포트에 없다"
+
+
+def test_표기를_전부_지우면_이관된_적중이_되살아난다(scanner: ModuleType) -> None:
+    """**표기가 하중을 지고 있음의 증명.**
+
+    지지 않는다면 그것은 억제 층이 아니라 장식이다. 저장소의 실제 표기를 지운 사본으로 잰다.
+    """
+    files, _scope = scanner.iter_files(False)
+    marked = [
+        path
+        for path in files
+        if scanner.MARKER_PREFIX in path.read_text(encoding="utf-8", errors="replace")
+    ]
+    assert marked, "저장소에 표기가 하나도 없다 — 이 테스트가 0건을 검사한다"
+
+    with_markers = scanner.scan(marked, {"LOG-BODY"})
+    assert not with_markers.hits.get("LOG-BODY"), "표기가 있는데도 적중이 남는다"
+    assert with_markers.suppressions, "표기가 아무것도 누르지 않았다"
+
+    # 같은 파일에서 표기 줄만 지운 사본. 적중이 **되살아나야** 표기가 하중을 진 것이다.
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmp:
+        stripped_paths: list[Path] = []
+        for path in marked:
+            body = "\n".join(
+                line
+                for line in path.read_text(encoding="utf-8").splitlines()
+                if scanner.MARKER_PREFIX not in line
+            )
+            twin = Path(tmp) / f"twin{len(stripped_paths)}{path.suffix}"
+            twin.write_text(body, encoding="utf-8")
+            stripped_paths.append(twin)
+        without = scanner.scan(stripped_paths, {"LOG-BODY"})
+
+    assert without.hits.get("LOG-BODY"), (
+        "표기를 지웠는데도 적중이 없다 — 표기가 하중을 지고 있지 않다(장식이다)."
+    )
+    assert len(without.hits["LOG-BODY"]) == len(with_markers.suppressions), (
+        "지운 표기 수와 되살아난 적중 수가 다르다"
+    )
+
+
+def test_판별식이_지켜진다_refine_은_SECRET_LITERAL_뿐(scanner: ModuleType) -> None:
+    """§4-octies.7 — 어휘·구문 층의 정확성에 의존하는 `refine`은 두지 않는다.
+
+    새 `refine`이 늘면 그 판별식을 통과했는지 사람이 봐야 하므로, 늘어나는 것 자체를
+    신호로 만든다.
+    """
+    with_refine = [rule.id for rule in scanner.RULES if rule.refine is not None]
+
+    assert with_refine == ["SECRET-LITERAL"], (
+        f"refine 을 가진 규칙이 {with_refine} 다. 새로 더했다면 Rule.refine KDoc 의 "
+        "판별식을 통과했는지 확인하라 — 인자 구간·괄호·주석 경계를 읽어야 판정되는 것은 "
+        "호출 지점 표기로 처리한다."
+    )
+
+
+def test_markable_배정이_설계대로다(scanner: ModuleType) -> None:
+    """§4-octies.3의 배정. 여섯은 표기로 누를 수 없어야 한다."""
+    markable = {rule.id for rule in scanner.RULES if rule.markable}
+
+    assert markable == {
+        "LOG-BODY",
+        "LOG-FSTRING",
+        "EXC-BODY",
+        "ZIP-NO-BUDGET",
+        "CACHE-HEADER",
+        "RETENTION-PURGE",
+    }
+    assert not (markable & scanner.UNMARKABLE_RULES)

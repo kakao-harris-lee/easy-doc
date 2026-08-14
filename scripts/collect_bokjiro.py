@@ -104,6 +104,7 @@ def report(draft: GoldenDraft, serv_id: str, path: Path | None) -> None:
     # 메일을 그대로 실어 오므로 가려지는 자리가 가장 많다(수집 방안 4.2 실측). 값은 담지
     # 않고 건수만 낸다 — 초안 파일에서 갈래 표시를 보고 사람이 합성값으로 되돌린다.
     연락처 = sum(draft.stats.contact_counts.values())
+    # privacy-allow: LOG-BODY — 문서 id·글자 수·건수·분류값만 보간한다. 본문은 담지 않는다.
     print(
         f"    id {draft.document.id} | servId {serv_id}"
         f" | 본문 {draft.stats.source_chars:,}자"
@@ -190,6 +191,7 @@ def main() -> int:
                 if draft.stats.source_chars < args.min_chars:
                     # 사유를 남긴다: 서술 필드가 비어 있는 레코드는 API 쪽 데이터 품질
                     # 문제라 다시 받아도 같다 — 사람이 다른 서비스를 고르면 된다.
+                    # privacy-allow: LOG-BODY — 글자 수만 보간한다(건너뛴 사유 안내).
                     print(
                         f"  건너뜀: servId {serv_id}"
                         f" | 본문 {draft.stats.source_chars:,}자 < 최소 {args.min_chars:,}자"

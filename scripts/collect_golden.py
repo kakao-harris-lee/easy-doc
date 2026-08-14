@@ -123,12 +123,14 @@ def report_preview(preview: PreviewReport) -> None:
 def report(draft: GoldenDraft, path: Path | None) -> None:
     """통계와 다음 단계만 출력한다 (본문·제목·마스킹 원문은 출력하지 않는다)."""
     print(f"초안 저장: {path}" if path is not None else "초안 저장 안 함 (--dry-run)")
+    # privacy-allow: LOG-BODY — 문서 id 와 글자 수만 보간한다. 본문·제목은 출력하지 않는다.
     print(f"문서 id: {draft.document.id} | 마스킹 후 본문 {draft.stats.source_chars:,}자")
 
     if draft.stats.masked_counts:
         detail = ", ".join(
             f"{category.value} {count}건" for category, count in draft.stats.masked_counts.items()
         )
+        # privacy-allow: LOG-BODY — 범주별 건수 합계만 보간한다. 가려진 원문은 담지 않는다.
         print(f"마스킹: {detail} (총 {draft.stats.masked_total}건 — 초안에서 직접 확인하세요)")
     else:
         print("마스킹: 없음 (개인정보 패턴이 없거나 놓쳤을 수 있으니 초안을 확인하세요)")
@@ -146,8 +148,10 @@ def report(draft: GoldenDraft, path: Path | None) -> None:
         )
 
     if draft.stats.auto_category is not None:
+        # privacy-allow: LOG-BODY — 분류값(열거형)만 보간한다.
         print(f"자동 분류: {draft.stats.auto_category} (규칙 기반 추정 — 사람 확인 필요)")
     if draft.stats.suggested_facts:
+        # privacy-allow: LOG-BODY — 추출 후보 **개수**만 보간한다. 팩트 문면은 담지 않는다.
         print(
             f"required_facts 자동 추출 후보 {draft.stats.suggested_facts}개 "
             "— 반드시 사람이 검증·수정하세요 (정확성·중요도 판단은 사람 몫)"
