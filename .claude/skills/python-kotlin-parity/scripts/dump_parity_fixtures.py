@@ -1235,10 +1235,21 @@ def build_style() -> FixtureSpec:
                 },
                 **{
                     "assert": [
+                        # 산출물이 보고한 문장에 규칙을 다시 적용한다 (양방향·정확 일치).
                         _assert(
                             "equals_derived", rule="style_length_rule", path="length_violations"
                         ),
                         _assert("equals_derived", rule="style_comma_rule", path="comma_violations"),
+                        # **유도의 입력까지 독립으로**(X-4 리더 판정). 위 둘은 산출물이 보고한
+                        # `sentences`를 입력으로 쓰므로, 생산자가 문장을 통째로 버리면 양쪽이
+                        # 사이좋게 0이 되어 통과한다. 아래 둘은 **fixture 입력**에서 비교기가
+                        # 직접 가른 "더 쪼갤 수 없는 구간"을 하한으로 요구하므로 그 경로가 막힌다.
+                        _assert(
+                            "contains_derived", rule="style_length_floor", path="length_violations"
+                        ),
+                        _assert(
+                            "contains_derived", rule="style_comma_floor", path="comma_violations"
+                        ),
                     ]
                 },
             )
@@ -1292,7 +1303,17 @@ def build_style_tables() -> FixtureSpec:
         _assert("equals_field", path="MAX_SENTENCE_CHARS", value=sr.MAX_SENTENCE_CHARS),
         _assert("equals_field", path="MAX_COMMAS_PER_SENTENCE", value=sr.MAX_COMMAS_PER_SENTENCE),
     ]
+    # C-4 — 표제어만 보면 뜻풀이를 통째로 바꿔도 통과한다. 사전은 **값이 곧 자산**이고
+    # (246개 실측 큐레이션) 그 값이 프롬프트에 그대로 실려 모델에게 간다. 값 축을 따로 건다.
     curated = [
+        _assert(
+            "contains_entries",
+            path="DIFFICULT_WORD_REPLACEMENTS",
+            required=[
+                [key, value] for key, value in sorted(sr.DIFFICULT_WORD_REPLACEMENTS.items())
+            ],
+        ),
+    ] + [
         _assert("contains_all", path=key, required=required)
         for key, required in (
             ("DIFFICULT_WORD_REPLACEMENTS", sorted(sr.DIFFICULT_WORD_REPLACEMENTS)),

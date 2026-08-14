@@ -653,6 +653,85 @@ def check_contains_all(call: CheckCall) -> list[str]:
     return []
 
 
+def check_contains_derived(call: CheckCall) -> list[str]:
+    """산출물의 목록이 **입력에서 유도한 항목 전부를 담아야** 한다 (하한, under 방향).
+
+    `contains_all` 과 다른 점은 요구 목록이 fixture 리터럴이 아니라 **비교기가 입력에서
+    계산한 값**이라는 것이다. 그래서 생산자가 무엇을 보고하든 요구가 흔들리지 않는다.
+
+    담김 판정은 **부분 문자열**이다. 유도된 조각은 종결부호를 뗀 형태라, 구현이 보고하는
+    문장(종결부호·머리말 포함)과 글자 단위로 같지 않다. 같기를 요구하면 문장 분리 방식을
+    판정하게 되는데 그것은 이 도메인이 명시적으로 판정하지 않기로 한 자리다.
+    """
+    rule = str(call.arg("rule", ""))
+    if rule not in DERIVATIONS:
+        return [f"알 수 없는 유도 규칙: {rule!r} (가능: {', '.join(DERIVATIONS)})"]
+    required, problems = DERIVATIONS[rule](call)
+    if problems:
+        return problems
+    if not isinstance(required, list):
+        return [f"유도 규칙 `{rule}` 이 목록을 내지 않았다"]
+    path = str(call.arg("path", "$"))
+    got = call.target()
+    if got is _MISSING:
+        return [f"경로 `{path}` 가 산출물에 없다"]
+    if not isinstance(got, list):
+        return [f"경로 `{path}` 가 배열이 아니다"]
+    reported = [call.text(str(item)) for item in got]
+    missing = [
+        item for item in required if not any(call.text(str(item)) in one for one in reported)
+    ]
+    if missing:
+        shown = ", ".join(repr(item[:40]) for item in missing[:MAX_REPORTED_CASE_DIFFS])
+        return [
+            f"`{path}` 가 규칙 `{rule}` 이 요구하는 {len(missing)}건을 담지 않았다: {shown}"
+            " — 이 조각들은 **더 쪼갤 수 없는 구간**(안에 문장 종결부호가 없다)이라 어떤 "
+            "문장 분리 방식으로도 상한 아래로 내려가지 않는다. 보고하지 않았다면 누락이다"
+        ]
+    return []
+
+
+def check_contains_entries(call: CheckCall) -> list[str]:
+    """사전의 **표제어와 값이 함께** 보존돼야 한다 (C-4, under 방향).
+
+    `contains_all` 은 표제어만 본다. 그래서 뜻풀이를 통째로 바꿔도 통과했다 — 쉬운 말 사전은
+    **값이 곧 자산**이고(246개 실측 큐레이션) 그 값이 프롬프트에 그대로 실려 모델에게 간다.
+    표제어만 지키는 검사는 "사전이 있다"만 말할 뿐 "사전이 그 사전인가"를 말하지 못한다.
+
+    추가는 허용한다(포함 관계) — 값을 **바꾸는 것**만 막는다.
+    """
+    path = str(call.arg("path", "$"))
+    got = call.target()
+    if got is _MISSING:
+        return [f"경로 `{path}` 가 산출물에 없다"]
+    if not isinstance(got, dict):
+        return [f"경로 `{path}` 가 객체가 아니다"]
+    required = call.arg("required", [])
+    if not isinstance(required, list):
+        return ["`required` 는 [표제어, 값] 쌍의 배열이어야 한다"]
+    missing: list[str] = []
+    changed: list[str] = []
+    for entry in required:
+        if not isinstance(entry, list) or len(entry) != 2:
+            return [f"`required` 항목이 [표제어, 값] 쌍이 아니다: {entry!r}"]
+        key, value = str(entry[0]), entry[1]
+        if key not in got:
+            missing.append(key)
+        elif not equal(call.text(value), call.text(got[key]), DEFAULT_FLOAT_TOL):
+            changed.append(f"{key}: {value!r} → {got[key]!r}")
+    reasons: list[str] = []
+    if missing:
+        shown = ", ".join(repr(k) for k in missing[:MAX_REPORTED_CASE_DIFFS])
+        reasons.append(f"`{path}` 에서 표제어 {len(missing)}건이 빠졌다: {shown}")
+    if changed:
+        shown = "; ".join(changed[:MAX_REPORTED_CASE_DIFFS])
+        reasons.append(
+            f"`{path}` 에서 뜻풀이 {len(changed)}건이 달라졌다: {shown} — 값은 프롬프트에 "
+            "그대로 실려 모델에게 간다. 표제어만 지키면 사전이 바뀐 것을 못 본다"
+        )
+    return reasons
+
+
 def _derive_control_strip(call: CheckCall) -> tuple[Any, list[str]]:
     source = at_path(call.payload, str(call.arg("source", "text")))
     if not isinstance(source, str):
@@ -711,6 +790,61 @@ def _reported_sentences(call: CheckCall) -> tuple[list[str] | None, list[str]]:
     return ([str(s) for s in sentences], [])
 
 
+#: 문장 종결부호. 어떤 문장 분리 방식이든 **이 문자가 없는 구간은 더 쪼갤 수 없다** —
+#: 그 성질이 아래 하한 유도의 근거다.
+SENTENCE_TERMINATORS = ".!?\n"
+
+
+def _indivisible_segments(call: CheckCall) -> tuple[list[str] | None, list[str]]:
+    """**fixture 입력**에서 더 쪼갤 수 없는 구간을 뽑는다 (X-4 — 유도의 입력을 독립으로).
+
+    예전에는 산출물이 보고한 `sentences` 를 유도의 입력으로 썼다. 유도 **로직**은 독립이었으나
+    **입력**이 자기 보고라, 생산자가 문장을 통째로 버리면(`sentences: []`) 유도값도 비어
+    양쪽이 사이좋게 0이 되어 통과했다. 리더 판정이 그 자리를 닫으라고 했다.
+
+    그래서 여기서는 fixture 입력 텍스트를 **비교기가 직접** 종결부호로 가른다. 이 분리는
+    구현의 분리와 같지 않아도 된다 — 목적이 "같은 문장을 얻는 것"이 아니라 **"어떤 분리
+    방식으로도 상한 아래로 내려갈 수 없는 구간"**을 얻는 것이기 때문이다. 구간 안에 종결부호가
+    없으므로 어떤 분리기도 이보다 잘게 쪼갤 수 없고, 따라서 이 구간이 상한을 넘으면 **반드시**
+    위반으로 보고돼야 한다. 하한(lower bound)이지 정답이 아니다 — 문장 분리 경계는 여전히
+    판정하지 않는다.
+    """
+    source = at_path(call.payload, "text")
+    if not isinstance(source, str):
+        return (None, ["fixture 입력에 `text` 문자열이 없다 — 하한 유도의 입력이다"])
+    segments: list[str] = []
+    current = ""
+    for char in source:
+        if char in SENTENCE_TERMINATORS:
+            segments.append(current)
+            current = ""
+        else:
+            current += char
+    segments.append(current)
+    return ([piece.strip() for piece in segments if piece.strip()], [])
+
+
+def _derive_length_floor(call: CheckCall) -> tuple[Any, list[str]]:
+    """더 쪼갤 수 없는데 길이 상한을 넘는 구간 — **반드시** 보고돼야 한다."""
+    segments, problems = _indivisible_segments(call)
+    if problems:
+        return (None, problems)
+    assert segments is not None
+    return ([s for s in segments if len(s) > MAX_SENTENCE_CHARS], [])
+
+
+def _derive_comma_floor(call: CheckCall) -> tuple[Any, list[str]]:
+    """더 쪼갤 수 없는데 쉼표 상한을 넘는 구간 — **반드시** 보고돼야 한다."""
+    segments, problems = _indivisible_segments(call)
+    if problems:
+        return (None, problems)
+    assert segments is not None
+    return (
+        [s for s in segments if sum(s.count(ch) for ch in COMMA_CHARS) > MAX_COMMAS_PER_SENTENCE],
+        [],
+    )
+
+
 def _derive_length_rule(call: CheckCall) -> tuple[Any, list[str]]:
     """길이 상한을 넘는 문장 전부, 그리고 그것만."""
     sentences, problems = _reported_sentences(call)
@@ -738,6 +872,8 @@ DERIVATIONS: dict[str, Callable[[CheckCall], tuple[Any, list[str]]]] = {
     "repair_policy": _derive_repair_policy,
     "style_length_rule": _derive_length_rule,
     "style_comma_rule": _derive_comma_rule,
+    "style_length_floor": _derive_length_floor,
+    "style_comma_floor": _derive_comma_floor,
 }
 
 
@@ -792,6 +928,16 @@ CHECKS: dict[str, Check] = {
     ),
     "equals_derived": Check(
         check_equals_derived, frozenset({"under", "over"}), "입력에서 규칙으로 유도한 값과 같다"
+    ),
+    "contains_derived": Check(
+        check_contains_derived,
+        frozenset({"under"}),
+        "입력에서 유도한 하한 항목을 전부 담는다 (추가 허용)",
+    ),
+    "contains_entries": Check(
+        check_contains_entries,
+        frozenset({"under"}),
+        "사전의 표제어와 값이 함께 보존된다 (추가 허용)",
     ),
 }
 
@@ -959,7 +1105,37 @@ def verdict_pending_problems(case: dict[str, Any]) -> list[str]:
     return []
 
 
-def case_floor_problems(pairs: list[Pair], scoped: bool) -> list[str]:
+def floor_scope(fixture_root: Path, pairs: list[Pair]) -> dict[str, set[str]]:
+    """하한이 대조할 **fixture 실물** — 비교 범위가 아니라 디스크에 있는 전부다 (X-2).
+
+    예전에는 `pairs`(= `--only-domain` 으로 좁혀진 비교 대상)를 그대로 썼다. 그래서 부분
+    게이트에서 **선언 151건 중 139건만 도달**했다 — 선언하지 않은 도메인(`export` 12건)의
+    케이스는 지워도 아무 데서도 걸리지 않았다. 하한은 "무엇을 비교했는가"가 아니라
+    "무엇이 남아 있는가"의 검사이므로, 비교 범위와 **다른 축**으로 읽어야 한다.
+
+    `pending` 도메인도 여기 들어온다. 생산자가 없어 값 비교는 못 해도 **케이스가 사라지는
+    것**은 지금 막을 수 있고, 그것이 X-2 가 지적한 자리다.
+    """
+    if fixture_root.is_dir():
+        present: dict[str, set[str]] = {}
+        for path in sorted(fixture_root.rglob("*.json")):
+            try:
+                fixture = load(path)
+            except SystemExit:
+                continue
+            domain = domain_of(path, fixture)
+            ids = {
+                str(case.get("id")) for case in fixture.get("cases", []) if isinstance(case, dict)
+            }
+            present.setdefault(domain, set()).update(ids)
+        return present
+    # 단일 파일 지정은 그 파일이 곧 범위 선언이다.
+    return {pair.domain: set(pair.case_ids) for pair in pairs}
+
+
+def case_floor_problems(
+    pairs: list[Pair], scoped: bool, fixture_root: Path | None = None
+) -> list[str]:
     """케이스 **정체성** 하한 — 삭제·개명을 막는다 (J-1+J-3).
 
     개수가 아니라 id 로 본다. 총개수 하한은 순소실만 막아서, 케이스 하나를 지우고 아무거나
@@ -969,6 +1145,9 @@ def case_floor_problems(pairs: list[Pair], scoped: bool) -> list[str]:
     비대칭이다. **추가는 자유**(검증이 늘어난 것이라 무해하고, 하한에 없으면 이름만 찍는다),
     **삭제·개명은 차단**(그 케이스가 지키던 성질이 조용히 사라진다). 개명이 삭제로 잡히는
     것은 의도다 — id 는 리포트·원장·명세 문서가 함께 쓰는 키라 바꾸면 그것들이 전부 어긋난다.
+
+    대조 대상은 **fixture 실물 전체**다(`floor_scope`). 비교 범위로 좁히면 선언하지 않은
+    도메인의 케이스가 하한 밖으로 빠진다 — X-2 가 그 상태였다.
 
     `scoped` 는 `--only` 로 케이스를 골라 돌린 실행이다. 그때는 관측 범위가 fixture 전체가
     아니므로 이 검사를 건너뛴다 — 켜 두면 정상적인 단일 케이스 재현이 매번 빨개진다.
@@ -1007,21 +1186,45 @@ def case_floor_problems(pairs: list[Pair], scoped: bool) -> list[str]:
             "하한이 비면 무엇을 지우든 통과한다. 파일을 지우는 것과 같은 취급이다"
         ]
     problems: list[str] = []
-    for pair in pairs:
-        required = floor.get(pair.domain)
+    scope = (
+        floor_scope(fixture_root, pairs)
+        if fixture_root is not None
+        else {pair.domain: set(pair.case_ids) for pair in pairs}
+    )
+    # 하한이 **실물에 없는 도메인**을 선언하고 있으면 그 줄은 아무것도 지키지 않는다.
+    # codex 가 연 사각이 정확히 이것이다 — `bogus/placeholder` 한 줄을 넣어도 지적 0건이라
+    # "하한이 비어 있지 않다"가 "하한이 무언가를 지킨다"를 뜻하지 않았다. 빈 선언을 막는
+    # 검사는 있는데(`floor_count == 0`) **무의미한 선언**을 막는 검사가 없었다.
+    unknown_domains = sorted(set(floor) - set(scope))
+    if unknown_domains:
+        problems.append(
+            f"- **하한이 없는 도메인을 선언한다**: {', '.join(unknown_domains)}\n"
+            f"  - `{CASE_FLOOR_PATH.name}` 의 그 줄들은 fixture 실물에 대응이 없어 **아무것도 "
+            "지키지 않는다**. 하한이 비어 있지 않다는 것이 무언가를 지킨다는 뜻이 되려면 "
+            "선언이 실물과 대응해야 한다\n"
+            "  - 도메인을 지웠다면 그 줄도 지우고, 오타라면 고친다"
+        )
+    for domain in sorted(scope):
+        required = floor.get(domain)
         if not required:
             continue
-        present = set(pair.case_ids)
-        deferred_required = deferred_floor.get(pair.domain, set())
+        present = scope[domain]
+        deferred_required = deferred_floor.get(domain, set())
         now_deferred = {
             str(case.get("id"))
+            for pair in pairs
+            if pair.domain == domain
             for case in pair.fixture.get("cases", [])
             if isinstance(case, dict) and isinstance(case.get("verdict_pending"), dict)
         }
+        if not any(pair.domain == domain for pair in pairs):
+            # 비교 범위 밖 도메인은 케이스 **존재**만 본다. 보류 마커 대조는 fixture 를
+            # 이미 읽은 도메인에서만 하고, 여기서는 마커 상태를 판단할 근거가 없다.
+            now_deferred = deferred_required & present
         closed = sorted((deferred_required & present) - now_deferred)
         if closed:
             problems.append(
-                f"- `{pair.domain}` **보류 마커가 사라졌다**: {', '.join(closed)}\n"
+                f"- `{domain}` **보류 마커가 사라졌다**: {', '.join(closed)}\n"
                 f"  - 하한이 이 케이스를 `{DEFERRED_FLOOR_SUFFIX.strip()}` 로 기억하고 있는데 "
                 "fixture 에 `verdict_pending` 이 없다. 마커만 떼면 그 케이스는 조용히 "
                 "`성질 판정` 수로 넘어간다 — **판정된 적 없는 자리가 판정 수를 채운다**\n"
@@ -1031,7 +1234,7 @@ def case_floor_problems(pairs: list[Pair], scoped: bool) -> list[str]:
         vanished = sorted(required - present)
         if vanished:
             problems.append(
-                f"- `{pair.domain}` **케이스가 사라졌다**: {', '.join(vanished)}\n"
+                f"- `{domain}` **케이스가 사라졌다**: {', '.join(vanished)}\n"
                 f"  - 하한 `{CASE_FLOOR_PATH.name}` 은 이 도메인에서 {len(required)}건을 "
                 f"요구하는데 fixture 에는 {len(present)}건이 있다. 개명도 여기서 삭제로 "
                 "잡힌다 — id 는 리포트·원장·명세가 함께 쓰는 키다\n"
@@ -1077,11 +1280,18 @@ def spec_shape_problems(pair: Pair) -> list[str]:
        손편집으로 들어오는 경로는 정본 대조가 이미 막는다. 이 검사가 받는 것은 **생성기에
        중복이 들어오는 경로**다 — 그때 fixture는 자기 정본과 일치하므로 정본 대조는 조용하다.
     """
-    if pair.mode != MODE_SPEC or pair.pending_spec:
+    if pair.mode != MODE_SPEC:
         return []
     cases = pair.fixture.get("cases")
     if not isinstance(cases, list) or not cases:
         return []
+    # `pending` 도메인도 **형태 검증은 받는다**(X-3). 예전에는 여기서 통째로 빠져나가
+    # `export` 12케이스가 하한·형태·값 어느 것도 안 받는 상태였다. 성질이 아직 안 적힌 것과
+    # 케이스가 **깨진 것**은 다른 문제다 — 앞은 미검증으로 세면 되고 뒤는 지금 막을 수 있다.
+    #
+    # 다만 단언을 **전제로 하는** 두 검사는 빼야 한다. `pending` 은 정의상 단언이 없으므로
+    # "단언 없는 케이스"와 "방향 가드 결손"을 걸면 pending 이라는 상태 자체가 결함이 된다.
+    pending = pair.pending_spec
     problems: list[str] = []
     directions: set[str] = set()
     seen_inputs: dict[str, str] = {}
@@ -1105,16 +1315,19 @@ def spec_shape_problems(pair: Pair) -> list[str]:
         problems += verdict_pending_problems(case)
         entries = case.get("assert")
         if not isinstance(entries, list) or not entries:
-            problems.append(
-                f"- `{case.get('id')}` **단언 없는 spec 케이스** — 판정할 성질이 없다. "
-                "값 비교도 하지 않으므로 이 케이스는 아무것도 검증하지 않는다"
-            )
+            if not pending:
+                problems.append(
+                    f"- `{case.get('id')}` **단언 없는 spec 케이스** — 판정할 성질이 없다. "
+                    "값 비교도 하지 않으므로 이 케이스는 아무것도 검증하지 않는다"
+                )
             continue
         for entry in entries:
             name = str(entry.get("check", "")) if isinstance(entry, dict) else ""
             if name in CHECKS:
                 directions |= CHECKS[name].directions
     for missing, meaning in (("under", "덜 한 것(누락)"), ("over", "더 한 것(과잉)")):
+        if pending:
+            break
         if missing not in directions:
             problems.append(
                 f"- **방향 가드 결손** — 이 도메인에 `{missing}` 방향 검사가 하나도 없다"
@@ -1777,7 +1990,9 @@ def main() -> int:
     ledger_findings: dict[str, list[str]] = {}
     #: 도메인 전체를 판정했는가(결과 파일이 다 있었는가). 낡은 원장 항목 판정의 전제다.
     fully_compared: dict[str, bool] = {}
-    floor_problems = case_floor_problems(pairs, scoped=args.only is not None)
+    floor_problems = case_floor_problems(
+        pairs, scoped=args.only is not None, fixture_root=args.fixture
+    )
     if floor_problems:
         total_problems += len(floor_problems)
         sections.append("## 케이스 정체성 하한\n\n" + "\n".join(floor_problems))

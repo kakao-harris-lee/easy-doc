@@ -30,6 +30,20 @@
             "rule": "style_comma_rule",
             "path": "comma_violations"
           }
+        },
+        {
+          "check": "contains_derived",
+          "args": {
+            "rule": "style_length_floor",
+            "path": "length_violations"
+          }
+        },
+        {
+          "check": "contains_derived",
+          "args": {
+            "rule": "style_comma_floor",
+            "path": "comma_violations"
+          }
         }
       ],
       "reference": {
@@ -65,6 +79,20 @@
           "check": "equals_derived",
           "args": {
             "rule": "style_comma_rule",
+            "path": "comma_violations"
+          }
+        },
+        {
+          "check": "contains_derived",
+          "args": {
+            "rule": "style_length_floor",
+            "path": "length_violations"
+          }
+        },
+        {
+          "check": "contains_derived",
+          "args": {
+            "rule": "style_comma_floor",
             "path": "comma_violations"
           }
         }
@@ -118,6 +146,20 @@
             "rule": "style_comma_rule",
             "path": "comma_violations"
           }
+        },
+        {
+          "check": "contains_derived",
+          "args": {
+            "rule": "style_length_floor",
+            "path": "length_violations"
+          }
+        },
+        {
+          "check": "contains_derived",
+          "args": {
+            "rule": "style_comma_floor",
+            "path": "comma_violations"
+          }
         }
       ],
       "reference": {
@@ -162,6 +204,20 @@
             "rule": "style_comma_rule",
             "path": "comma_violations"
           }
+        },
+        {
+          "check": "contains_derived",
+          "args": {
+            "rule": "style_length_floor",
+            "path": "length_violations"
+          }
+        },
+        {
+          "check": "contains_derived",
+          "args": {
+            "rule": "style_comma_floor",
+            "path": "comma_violations"
+          }
         }
       ],
       "reference": {
@@ -202,6 +258,20 @@
           "check": "equals_derived",
           "args": {
             "rule": "style_comma_rule",
+            "path": "comma_violations"
+          }
+        },
+        {
+          "check": "contains_derived",
+          "args": {
+            "rule": "style_length_floor",
+            "path": "length_violations"
+          }
+        },
+        {
+          "check": "contains_derived",
+          "args": {
+            "rule": "style_comma_floor",
             "path": "comma_violations"
           }
         }
@@ -254,6 +324,20 @@
             "rule": "style_comma_rule",
             "path": "comma_violations"
           }
+        },
+        {
+          "check": "contains_derived",
+          "args": {
+            "rule": "style_length_floor",
+            "path": "length_violations"
+          }
+        },
+        {
+          "check": "contains_derived",
+          "args": {
+            "rule": "style_comma_floor",
+            "path": "comma_violations"
+          }
         }
       ],
       "reference": {
@@ -288,6 +372,20 @@
           "check": "equals_derived",
           "args": {
             "rule": "style_comma_rule",
+            "path": "comma_violations"
+          }
+        },
+        {
+          "check": "contains_derived",
+          "args": {
+            "rule": "style_length_floor",
+            "path": "length_violations"
+          }
+        },
+        {
+          "check": "contains_derived",
+          "args": {
+            "rule": "style_comma_floor",
             "path": "comma_violations"
           }
         }
@@ -325,6 +423,20 @@
           "check": "equals_derived",
           "args": {
             "rule": "style_comma_rule",
+            "path": "comma_violations"
+          }
+        },
+        {
+          "check": "contains_derived",
+          "args": {
+            "rule": "style_length_floor",
+            "path": "length_violations"
+          }
+        },
+        {
+          "check": "contains_derived",
+          "args": {
+            "rule": "style_comma_floor",
             "path": "comma_violations"
           }
         }
@@ -371,6 +483,20 @@
             "rule": "style_comma_rule",
             "path": "comma_violations"
           }
+        },
+        {
+          "check": "contains_derived",
+          "args": {
+            "rule": "style_length_floor",
+            "path": "length_violations"
+          }
+        },
+        {
+          "check": "contains_derived",
+          "args": {
+            "rule": "style_comma_floor",
+            "path": "comma_violations"
+          }
         }
       ],
       "reference": {
@@ -409,6 +535,20 @@
             "rule": "style_comma_rule",
             "path": "comma_violations"
           }
+        },
+        {
+          "check": "contains_derived",
+          "args": {
+            "rule": "style_length_floor",
+            "path": "length_violations"
+          }
+        },
+        {
+          "check": "contains_derived",
+          "args": {
+            "rule": "style_comma_floor",
+            "path": "comma_violations"
+          }
         }
       ],
       "reference": {
@@ -424,5 +564,5 @@
       }
     }
   ],
-  "generated_at": "2026-08-14T03:06:08Z"
+  "generated_at": "2026-08-14T07:19:25Z"
 }
