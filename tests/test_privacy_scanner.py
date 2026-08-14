@@ -1187,23 +1187,75 @@ def test_로그_호출_형태_목록(scanner: ModuleType, name: str, source: str
     assert pattern.search(source), f"{name} 형태가 LOG-BODY 규칙에 안 잡힌다"
 
 
+#: 체인 호출이 걸쳐 있는 물리 줄 수. 실물이 3줄이다.
+CHAIN_BLOCK_LINES = 3
+
+
+def _chain_call_block(text: str) -> str:
+    """실물 체인 호출 **한 덩어리**를 한 줄로 이어 돌려준다. 못 찾으면 빈 문자열.
+
+    ## `split("LoggerFactory")[1]` 로는 왜 안 되나 (직접 겪었다)
+
+    처음엔 그렇게 썼다. 그런데 파일 맨 위에 `import org.slf4j.LoggerFactory` 가 있어
+    **첫 조각이 import 뒤 200자**였고, 검사 대상이 호출부가 아니라 import·클래스 선언
+    구간이었다. 음성 대조(탐지 패턴을 체인까지 넓혀 보기)를 돌렸을 때 `xpass` 가 나지 않아
+    드러났다 — 강제자가 **엉뚱한 곳을 가리키고 있으면 고쳐도 안 울린다.**
+
+    존재 단언과 도달 단언이 **이 함수 하나**를 공유한다. 두 벌로 두면 "있다고 확인한 것"과
+    "못 잡는다고 확인한 것"이 서로 다른 대상이 될 수 있다.
+    """
+    lines = text.splitlines()
+    for index, line in enumerate(lines):
+        stripped = line.strip()
+        if stripped.startswith("import") or "LoggerFactory" not in stripped:
+            continue
+        block = lines[index : index + CHAIN_BLOCK_LINES]
+        if any(".getLogger(" in item for item in block):
+            return " ".join(item.strip() for item in block)
+    return ""
+
+
+def test_실물_체인_호출이_아직_거기_있다(scanner: ModuleType) -> None:
+    """**결속 단언 — xfail 이 가리키는 실물이 사라지면 여기서 실패한다.**
+
+    아래 xfail 테스트 안에 이 확인을 두면 안 된다. `xfail(strict=True)` 아래에서는 **어떤
+    실패도 '예상된 실패'로 흡수**되므로, 대상이 사라져 0건을 검사하게 된 상태와 대상이
+    있는데 못 잡는 상태가 **로그에서 구분되지 않는다.** 그것이 선언된 0을 다시 조용한 0으로
+    되돌리는 경로다(게이트 12 N-08).
+
+    앞선 판은 `pytest.xfail(...)` **명령형**이라 더 나빴다 — 호출 즉시 테스트가 중단되므로
+    탐지가 체인을 보게 되어도 `xpass` 가 나지 않고 조용히 통과했다. "누가 그 형태를 도입하면
+    시끄러워진다"는 이 장치의 존재 이유가 그 한 줄로 무력화돼 있었다.
+    """
+    assert CHAIN_CALL_FILE.is_file(), f"실물이 없다: {CHAIN_CALL_FILE} — 옮겼다면 경로를 고쳐라"
+    block = _chain_call_block(CHAIN_CALL_FILE.read_text(encoding="utf-8"))
+
+    assert block, (
+        "실물 체인 호출이 사라졌다. 아래 xfail 이 0건을 검사하는 상태이므로 "
+        "형태 목록의 `체인 팩터리` 항목이 근거를 잃었다 — 다른 실물을 가리키거나 항목을 지워라."
+    )
+    assert scanner.LOGGER_SHAPED.search(block) is None, (
+        "도달 정의가 체인을 보게 됐다 — 형태 목록과 아래 xfail 을 함께 다시 보라"
+    )
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="체인 형태 미도달 (X-5) — 탐지가 이름 붙은 수신자를 가정한다",
+)
 def test_실물_체인_호출이_탐지에_잡힌다(scanner: ModuleType) -> None:
     """**이 표의 유일한 실물 미도달** — `ContractErrorReportValve.kt:104-106`.
 
     합성 탐침이 아니라 저장소의 그 줄들을 읽는다. 지금 그 자리에 `exception.message` 를
     넣어도 아무것도 빨개지지 않는다 — 유출은 없지만(인자가 예외 **타입 이름**뿐이다)
     **그 줄이 탐지 밖**이라는 것이 결함이다.
-    """
-    assert CHAIN_CALL_FILE.is_file(), f"실물이 없다: {CHAIN_CALL_FILE} — 옮겼다면 경로를 고쳐라"
-    lines = CHAIN_CALL_FILE.read_text(encoding="utf-8").splitlines()
-    chain = [line for line in lines if ".getLogger(" in line or "LoggerFactory" in line]
-    assert chain, "실물 체인 호출이 사라졌다 — 이 xfail 이 0건을 검사하고 있다"
 
-    joined = " ".join(line.strip() for line in lines)
-    if not re.compile(scanner.LOG_CALL).search(joined.split("LoggerFactory")[1][:200]):
-        pytest.xfail("체인 형태 미도달 (X-5) — 탐지 정의가 이름 붙은 수신자를 가정한다")
-    # 여기 도달했다면 탐지가 체인을 보게 된 것이다. 형태 목록의 `체인 팩터리` 를
-    # `reached=True` 로 옮기고 이 함수를 평범한 단언으로 바꿔라.
+    `strict=True` 라 탐지가 체인을 보게 되면 `xpass` 로 **실패**한다. 그때 형태 목록의
+    `체인 팩터리` 를 `reached=True` 로 옮기고 이 표시를 떼라.
+    """
+    block = _chain_call_block(CHAIN_CALL_FILE.read_text(encoding="utf-8"))
+
+    assert re.compile(scanner.LOG_CALL).search(block), "체인 형태가 탐지 밖이다 (X-5)"
 
 
 def test_축1_논리_줄_결합만으로는_체인이_닫히지_않는다(scanner: ModuleType) -> None:

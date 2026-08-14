@@ -79,6 +79,37 @@ class ExportTest {
             assertThat(exportFilename("보고서", ExportFormat.DOCX)).isEqualTo("보고서.docx")
             assertThat(exportFilename("보고서", ExportFormat.HWPX)).isEqualTo("보고서.hwpx")
         }
+
+        @Test
+        @DisplayName("보충 평면 문자를 서로게이트 한가운데서 자르지 않는다")
+        fun `코드포인트로 자른다`() {
+            // 이모지는 UTF-16 두 칸이다. 코드 유닛으로 80을 세면 40번째 이모지가 반으로
+            // 잘려 짝 없는 서로게이트가 파일명에 남는다 — 그 뒤 RFC 5987 인코딩이 그것을
+            // UTF-8 로 바꾸면 대체 문자 바이트가 헤더로 나간다.
+            // **홀수 자리에서 잘리게 만든다.** 이모지만 100개면 각 2칸이라 80칸이 정확히
+            // 40개로 떨어져 쪼개지지 않는다 — 그 입력으로는 결함이 재현되지 않는다.
+            // 앞에 BMP 문자 하나를 두어 경계를 서로게이트 쌍 한가운데로 민다.
+            val name = exportFilename("가" + "\uD83D\uDE00".repeat(100), ExportFormat.TXT)
+            val stem = name.removeSuffix(".txt")
+
+            assertThat(stem.codePointCount(0, stem.length))
+                .describedAs("코드포인트 상한을 넘었다")
+                .isLessThanOrEqualTo(80)
+            assertThat(String(stem.toByteArray(Charsets.UTF_8), Charsets.UTF_8))
+                .describedAs("UTF-8 왕복에서 값이 바뀌었다 — 짝 없는 서로게이트의 증거다")
+                .isEqualTo(stem)
+        }
+
+        @ParameterizedTest(name = "{0}")
+        @ValueSource(strings = ["\u0000", "\u001F", "\u007F", "\u0080", "\u009F"])
+        @DisplayName("C0·DEL·C1 제어문자가 파일명에 남지 않는다")
+        fun `제어문자가 남지 않는다`(control: String) {
+            val name = exportFilename("제${control}목", ExportFormat.TXT)
+
+            assertThat(name)
+                .describedAs("보이지 않는 제어문자가 Content-Disposition 값으로 나간다")
+                .doesNotContain(control)
+        }
     }
 
     @Nested

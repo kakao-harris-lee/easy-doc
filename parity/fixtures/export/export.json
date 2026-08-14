@@ -67,6 +67,13 @@
           }
         },
         {
+          "check": "contains_derived",
+          "args": {
+            "rule": "export_title_markers",
+            "path": "docx.filename"
+          }
+        },
+        {
           "check": "absent",
           "args": {
             "path": "txt.filename",
@@ -116,6 +123,13 @@
           }
         },
         {
+          "check": "contains_derived",
+          "args": {
+            "rule": "export_title_markers",
+            "path": "txt.filename"
+          }
+        },
+        {
           "check": "absent",
           "args": {
             "path": "hwpx.filename",
@@ -162,6 +176,13 @@
           "check": "ascii_only",
           "args": {
             "path": "hwpx.content_disposition"
+          }
+        },
+        {
+          "check": "contains_derived",
+          "args": {
+            "rule": "export_title_markers",
+            "path": "hwpx.filename"
           }
         }
       ],
@@ -237,6 +258,13 @@
           }
         },
         {
+          "check": "contains_derived",
+          "args": {
+            "rule": "export_title_markers",
+            "path": "docx.filename"
+          }
+        },
+        {
           "check": "absent",
           "args": {
             "path": "txt.filename",
@@ -286,6 +314,13 @@
           }
         },
         {
+          "check": "contains_derived",
+          "args": {
+            "rule": "export_title_markers",
+            "path": "txt.filename"
+          }
+        },
+        {
           "check": "absent",
           "args": {
             "path": "hwpx.filename",
@@ -332,6 +367,13 @@
           "check": "ascii_only",
           "args": {
             "path": "hwpx.content_disposition"
+          }
+        },
+        {
+          "check": "contains_derived",
+          "args": {
+            "rule": "export_title_markers",
+            "path": "hwpx.filename"
           }
         }
       ],
@@ -407,6 +449,13 @@
           }
         },
         {
+          "check": "contains_derived",
+          "args": {
+            "rule": "export_title_markers",
+            "path": "docx.filename"
+          }
+        },
+        {
           "check": "absent",
           "args": {
             "path": "txt.filename",
@@ -456,6 +505,13 @@
           }
         },
         {
+          "check": "contains_derived",
+          "args": {
+            "rule": "export_title_markers",
+            "path": "txt.filename"
+          }
+        },
+        {
           "check": "absent",
           "args": {
             "path": "hwpx.filename",
@@ -502,6 +558,13 @@
           "check": "ascii_only",
           "args": {
             "path": "hwpx.content_disposition"
+          }
+        },
+        {
+          "check": "contains_derived",
+          "args": {
+            "rule": "export_title_markers",
+            "path": "hwpx.filename"
           }
         }
       ],
@@ -577,6 +640,13 @@
           }
         },
         {
+          "check": "contains_derived",
+          "args": {
+            "rule": "export_title_markers",
+            "path": "docx.filename"
+          }
+        },
+        {
           "check": "absent",
           "args": {
             "path": "txt.filename",
@@ -626,6 +696,13 @@
           }
         },
         {
+          "check": "contains_derived",
+          "args": {
+            "rule": "export_title_markers",
+            "path": "txt.filename"
+          }
+        },
+        {
           "check": "absent",
           "args": {
             "path": "hwpx.filename",
@@ -672,6 +749,13 @@
           "check": "ascii_only",
           "args": {
             "path": "hwpx.content_disposition"
+          }
+        },
+        {
+          "check": "contains_derived",
+          "args": {
+            "rule": "export_title_markers",
+            "path": "hwpx.filename"
           }
         }
       ],
@@ -747,6 +831,13 @@
           }
         },
         {
+          "check": "contains_derived",
+          "args": {
+            "rule": "export_title_markers",
+            "path": "docx.filename"
+          }
+        },
+        {
           "check": "absent",
           "args": {
             "path": "txt.filename",
@@ -796,6 +887,13 @@
           }
         },
         {
+          "check": "contains_derived",
+          "args": {
+            "rule": "export_title_markers",
+            "path": "txt.filename"
+          }
+        },
+        {
           "check": "absent",
           "args": {
             "path": "hwpx.filename",
@@ -842,6 +940,40 @@
           "check": "ascii_only",
           "args": {
             "path": "hwpx.content_disposition"
+          }
+        },
+        {
+          "check": "contains_derived",
+          "args": {
+            "rule": "export_title_markers",
+            "path": "hwpx.filename"
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "docx.filename",
+            "needles": [
+              "쉬운 글"
+            ]
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "txt.filename",
+            "needles": [
+              "쉬운 글"
+            ]
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "hwpx.filename",
+            "needles": [
+              "쉬운 글"
+            ]
           }
         }
       ],
@@ -917,6 +1049,13 @@
           }
         },
         {
+          "check": "contains_derived",
+          "args": {
+            "rule": "export_title_markers",
+            "path": "docx.filename"
+          }
+        },
+        {
           "check": "absent",
           "args": {
             "path": "txt.filename",
@@ -966,6 +1105,13 @@
           }
         },
         {
+          "check": "contains_derived",
+          "args": {
+            "rule": "export_title_markers",
+            "path": "txt.filename"
+          }
+        },
+        {
           "check": "absent",
           "args": {
             "path": "hwpx.filename",
@@ -1012,6 +1158,13 @@
           "check": "ascii_only",
           "args": {
             "path": "hwpx.content_disposition"
+          }
+        },
+        {
+          "check": "contains_derived",
+          "args": {
+            "rule": "export_title_markers",
+            "path": "hwpx.filename"
           }
         }
       ],
@@ -1087,6 +1240,13 @@
           }
         },
         {
+          "check": "contains_derived",
+          "args": {
+            "rule": "export_title_markers",
+            "path": "docx.filename"
+          }
+        },
+        {
           "check": "absent",
           "args": {
             "path": "txt.filename",
@@ -1136,6 +1296,13 @@
           }
         },
         {
+          "check": "contains_derived",
+          "args": {
+            "rule": "export_title_markers",
+            "path": "txt.filename"
+          }
+        },
+        {
           "check": "absent",
           "args": {
             "path": "hwpx.filename",
@@ -1182,6 +1349,13 @@
           "check": "ascii_only",
           "args": {
             "path": "hwpx.content_disposition"
+          }
+        },
+        {
+          "check": "contains_derived",
+          "args": {
+            "rule": "export_title_markers",
+            "path": "hwpx.filename"
           }
         }
       ],
@@ -1385,5 +1559,5 @@
       }
     }
   ],
-  "generated_at": "2026-08-14T08:01:29Z"
+  "generated_at": "2026-08-14T19:29:58Z"
 }

@@ -1973,6 +1973,7 @@ def build_repair_adoption() -> FixtureSpec:
 def build_export() -> FixtureSpec:
     """내보내기 — 파일명 정제, RFC 5987 헤더, 자리표시자 복원, TXT 바이트"""
     from app.easyread.export import (
+        _FALLBACK_NAME,
         _MAX_FILENAME_STEM,
         MEDIA_TYPES,
         ExportFormat,
@@ -2053,7 +2054,36 @@ def build_export() -> FixtureSpec:
                             needles=["attachment;", "filename*=UTF-8''"],
                         ),
                         _assert("ascii_only", path=f"{fmt.value}.content_disposition"),
+                        # **over 방향 차단 (게이트 12 #4 / N-01).** 위 단언들은 전부 "무엇이
+                        # 없어야 하는가"라, 확장자만 맞으면 파일명을 통째로 대체 이름으로 바꿔도
+                        # 통과했다 — 사용자 제목이 사라져도 게이트가 초록이었다(실측 재현:
+                        # 21개 전부 대체 이름 주입 → 성질 불충족 0건).
+                        #
+                        # `equals_field` 로 정제 **결과**를 못박는 처방은 쓰지 않는다(§7.1) —
+                        # 공백 접기·앞뒤 점 깎기 규칙까지 값으로 고정돼 규칙 개선이 회귀로 잡힌다.
+                        # 대신 X-4의 **입력 유도 하한**을 그대로 적용한다: 제목에서 어떤 정제
+                        # 규칙으로도 사라질 수 없는 조각을 비교기가 직접 뽑아 남아 있기만 요구한다.
+                        _assert(
+                            "contains_derived",
+                            rule="export_title_markers",
+                            path=f"{fmt.value}.filename",
+                        ),
                     )
+                ]
+                # 제목이 전부 금지 문자인 표본(`all-forbidden`)은 표지 하한이 **빈 목록**이라
+                # 위 `contains_derived` 가 아무것도 요구하지 않는다. 그 자리에서 지켜야 할 것은
+                # "사용자에게 보일 이름을 대신 쓴다"이므로 여기서 따로 못박는다 — 확장자만 남은
+                # 이름이나 빈 이름을 내보내면 사용자는 무슨 파일인지 알 수 없다.
+                #
+                # **별도 케이스로 만들지 않았다**: 입력이 같으면 같은 산출물을 두 번 재는 것이라
+                # M-08 중복 검사가 막는다. 실제로 막혔고, 그 지적이 옳아 단언을 합쳤다.
+                #
+                # 한계: 대체 이름 문자열은 계약에 없고 **구현 상수**가 기준이다. Kotlin 이 다른
+                # 이름을 쓰면 걸리므로 제약은 실재하나 "그 이름이 옳은가"는 판정하지 않는다.
+                + [
+                    _assert("present", path=f"{fmt.value}.filename", needles=[_FALLBACK_NAME])
+                    for fmt in ExportFormat
+                    if name == "all-forbidden"
                 ]
             },
         )

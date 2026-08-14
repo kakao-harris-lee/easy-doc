@@ -47,11 +47,17 @@ enum class ExportFormat(
 /**
  * 파일명에서 걷어낼 문자.
  *
- * 제어문자(C0·DEL)와 경로 구분자·따옴표·윈도우 예약 문자다. 제목은 **본문 첫 줄에서 유도한
+ * 제어문자와 경로 구분자·따옴표·윈도우 예약 문자다. 제목은 **본문 첫 줄에서 유도한
  * 사용자 입력**이므로, 이것을 그대로 파일명에 쓰면 디렉터리를 벗어나거나(`../`) 저장이
  * 실패하는 이름이 된다.
+ *
+ * **C0(`U+0000`–`U+001F`)·DEL 뿐 아니라 C1(`U+0080`–`U+009F`) 도 뺀다.** C1 은 눈에 보이지
+ * 않으면서 일부 터미널·파일 관리자에서 제어 시퀀스로 해석된다 — 앞선 판은 C0 와 DEL 만
+ * 봤고, `Content-Disposition` 헤더 값으로 나가는 이름이라 그 자리에 보이지 않는 제어문자가
+ * 남는 것은 선언("금지 문자를 뺀다")과 도달이 어긋난 자리였다(게이트 12 C-6).
  */
-private val FORBIDDEN_IN_FILENAME = Regex("""[\u0000-\u001F\u007F"\\/:*?<>|]""")
+private val FORBIDDEN_IN_FILENAME =
+    Regex("""[\u0000-\u001F\u007F-\u009F"\\/:*?<>|]""")
 
 /** 제목이 통째로 지워졌을 때 쓸 이름. */
 private const val FALLBACK_NAME = "쉬운 글"
@@ -59,9 +65,15 @@ private const val FALLBACK_NAME = "쉬운 글"
 /**
  * 확장자를 뺀 파일명 길이 상한.
  *
- * **문자 수로 센다.** 파일 시스템 상한은 바이트지만(대개 255), 한글은 UTF-8 로 3바이트라
- * 여기서 바이트로 세면 사용자가 보는 길이와 어긋난다. 80자면 한글이어도 240바이트라
- * 확장자를 붙여도 상한 안이다.
+ * **문자 수로 센다 — 코드포인트다.** 파일 시스템 상한은 바이트지만(대개 255), 한글은
+ * UTF-8 로 3바이트라 여기서 바이트로 세면 사용자가 보는 길이와 어긋난다. 80자면 한글이어도
+ * 240바이트라 확장자를 붙여도 상한 안이다.
+ *
+ * 계수 단위가 **코드포인트**인 것이 중요하다. `String.take` 는 UTF-16 코드 유닛을 세므로
+ * 보충 평면 문자(이모지 등)를 **서로게이트 쌍 한가운데서 자른다** — 그러면 짝 없는
+ * 서로게이트가 파일명에 남고, RFC 5987 퍼센트 인코딩이 그것을 UTF-8 로 바꿀 때 대체 문자
+ * 바이트가 나간다. `Masking.kt` 가 두 번 겪은 것과 같은 종류다: **패턴은 코드포인트로 세고
+ * 가드는 `Char` 로 세는** 계수 단위 불일치(게이트 12 C-6).
  */
 private const val MAX_FILENAME_STEM = 80
 
@@ -99,7 +111,7 @@ fun exportFilename(
     val stem =
         cleaned
             .trim { it in TRIMMED_EDGE_CHARS }
-            .take(MAX_FILENAME_STEM)
+            .takeCodePoints(MAX_FILENAME_STEM)
             .trim { it in TRIMMED_EDGE_CHARS }
     return "${stem.ifEmpty { FALLBACK_NAME }}.${format.extension}"
 }
@@ -202,3 +214,14 @@ fun renderTxt(
         mediaType = ExportFormat.TXT.mediaType,
         content = stripControlChars(body).toByteArray(StandardCharsets.UTF_8),
     )
+
+/**
+ * 앞에서 [limit] **코드포인트**만 남긴다.
+ *
+ * `take` 를 쓰지 않는 이유는 [MAX_FILENAME_STEM] KDoc 에 있다 — 서로게이트 쌍을 반으로
+ * 자르지 않기 위해서다.
+ */
+private fun String.takeCodePoints(limit: Int): String {
+    if (codePointCount(0, length) <= limit) return this
+    return substring(0, offsetByCodePoints(0, limit))
+}

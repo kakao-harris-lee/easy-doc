@@ -234,6 +234,19 @@ DEFAULT_LEDGER = REPO_ROOT / "parity" / "reference-ledger"
 #: 개수는 정체성의 대리 지표이고, 대리 지표로 실물을 판정하는 것이 이 하네스가 금지하는 그것이다.
 CASE_FLOOR_PATH = REPO_ROOT / ".github" / "parity-case-floor.txt"
 
+#: **전체 게이트 도달 표시.** 이 파일이 있으면 "선언이 정본 전부를 덮은 적이 있다"는 뜻이고,
+#: 그 뒤로 부분 게이트로 내려가는 것은 **강등**이라 차단한다.
+#:
+#: 왜 필요한가 (게이트 12 #3): 전체/부분 판정이 `declared == canonical` 이라는 **오늘의 상태**로
+#: 계산된다. 그래서 생성기에 builder 를 하나 더하면 그 순간 등식이 깨져 부분 게이트로 내려가고,
+#: 부분 게이트의 사면(종료 코드 3 통과)이 되살아난다. 8/8 은 **강제된 성질이 아니라 오늘 참인
+#: 상태**였다. 이 파일이 그 상태를 하한으로 고정한다.
+#:
+#: 자기 무장(self-arming): 아직 도달하지 않았으면 이 파일은 없고 아무것도 막지 않는다. 도달하는
+#: **순간**(선언이 정본 전부를 덮는 실행) 비교기가 "하한을 고정하라"며 막으므로, 만들어 두는 것을
+#: 잊을 수 없다. 도달 0 인 채로 잠들어 있는 장치를 만들지 않으려고 이렇게 했다.
+FULL_GATE_PATH = REPO_ROOT / ".github" / "parity-full-gate.txt"
+
 #: `verdict_pending` 이 반드시 담아야 하는 것. 없으면 **탐지되지 않는 보류**가 된다 —
 #: 마커만 붙여 두고 아무도 읽지 않던 옛 `known_gap` 이 정확히 그 상태였다(R-4).
 #: 넷은 각각 다른 질문에 답한다: 무엇이 열려 있나 / 누가 닫나 / 언제까지 / 누가 회부했나.
@@ -722,9 +735,15 @@ def check_contains_derived(call: CheckCall) -> list[str]:
     got = call.target()
     if got is _MISSING:
         return [f"경로 `{path}` 가 산출물에 없다"]
-    if not isinstance(got, list):
-        return [f"경로 `{path}` 가 배열이 아니다"]
-    reported = [call.text(str(item)) for item in got]
+    # 배열이면 원소 하나가 조각을 품으면 되고(문장 목록), 문자열이면 그 안에 있으면 된다
+    # (파일명). 둘 다 **부분 문자열**로 본다 — 유도된 조각은 경계가 잘린 형태라 글자 단위로
+    # 같기를 요구하면 정제·분리 방식을 판정하게 되고, 그것이 이 하한이 피하려는 자리다.
+    if isinstance(got, str):
+        reported = [call.text(got)]
+    elif isinstance(got, list):
+        reported = [call.text(str(item)) for item in got]
+    else:
+        return [f"경로 `{path}` 가 배열도 문자열도 아니다"]
     missing = [
         item for item in required if not any(call.text(str(item)) in one for one in reported)
     ]
@@ -732,8 +751,8 @@ def check_contains_derived(call: CheckCall) -> list[str]:
         shown = ", ".join(repr(item[:40]) for item in missing[:MAX_REPORTED_CASE_DIFFS])
         return [
             f"`{path}` 가 규칙 `{rule}` 이 요구하는 {len(missing)}건을 담지 않았다: {shown}"
-            " — 이 조각들은 **더 쪼갤 수 없는 구간**(안에 문장 종결부호가 없다)이라 어떤 "
-            "문장 분리 방식으로도 상한 아래로 내려가지 않는다. 보고하지 않았다면 누락이다"
+            " — 이 조각들은 **입력에서 유도한 하한**이다. 어떤 구현 방식으로도 사라질 수 "
+            "없는 것만 요구하므로, 없다면 규칙 차이가 아니라 누락이다"
         ]
     return []
 
@@ -892,6 +911,58 @@ def _derive_comma_floor(call: CheckCall) -> tuple[Any, list[str]]:
     )
 
 
+#: 파일명에서 **반드시 제거돼야 하는** 문자. 요구사항이 지목한 집합이고 구현에서 읽지 않는다.
+FILENAME_FORBIDDEN = (
+    set('\x00\x01\x02\x03\x04\x05\x06\x07\x08\t\n\x0b\x0c\r"\\/:*?<>|')
+    | {chr(code) for code in range(0x0E, 0x20)}
+    | {"\x7f"}
+)
+
+#: 제목에서 표지를 뽑을 때 보는 앞부분 길이. 정제는 **길이를 줄이기만** 하므로(금지 문자 제거·
+#: 공백 접기·앞뒤 깎기) 제목 앞 40자는 줄기 상한 80자 안에 반드시 들어온다. 잘림 때문에
+#: 사라질 수 있는 뒷부분은 하한에서 뺀다 — 하한은 **틀림없이 남아야 하는 것**만 요구한다.
+TITLE_MARKER_WINDOW = 40
+#: 표지 하나의 최대 길이. 앞부분이므로 잘림에 안전하다.
+TITLE_MARKER_LENGTH = 8
+
+
+def _derive_title_markers(call: CheckCall) -> tuple[Any, list[str]]:
+    """**fixture 입력 제목**에서 파일명에 남아야 할 표지를 뽑는다 (N-01).
+
+    파일명 축에는 `over` 방향(필수 정보 유지) 차단 단언이 **하나도 없었다.** `present` 니들이
+    확장자뿐이라 파일명 21개를 전부 대체 이름으로 바꿔도 성질 불충족 0건이었다 — 사용자가
+    올린 제목이 통째로 사라져도 게이트가 초록이다. 실측으로 재현했다.
+
+    `equals_field` 로 정제 **결과**를 못박는 처방은 쓰지 않는다 — 공백 접기·앞뒤 점 깎기 같은
+    규칙까지 값으로 고정돼 규칙 개선이 회귀로 잡힌다(§7.1). 대신 X-4에서 쓴 **입력 유도
+    하한**을 그대로 적용한다: 제목에서 **어떤 정제 규칙으로도 사라질 수 없는 조각**을 뽑아
+    그것이 파일명에 남아 있기만 요구한다.
+
+    "사라질 수 없다"의 근거 둘.
+      - 금지 문자·공백·점으로 **가른 뒤**의 조각이라, 어떤 정제도 그 조각 **안**을 건드리지
+        않는다(정제 대상이 경계에만 있다).
+      - 제목 앞 40자에서만 뽑고 조각도 8자로 자른다. 정제는 길이를 줄이기만 하므로 그 앞부분은
+        줄기 상한 80자 안에 반드시 들어온다.
+
+    제목이 전부 금지 문자면 표지가 없다(빈 목록) — 그 자리는 대체 이름 단언이 따로 받는다.
+    """
+    title = at_path(call.payload, "title")
+    if not isinstance(title, str):
+        return (None, ["fixture 입력에 `title` 문자열이 없다 — 표지 유도의 입력이다"])
+    markers: list[str] = []
+    current = ""
+    for char in title[:TITLE_MARKER_WINDOW]:
+        if char in FILENAME_FORBIDDEN or char.isspace() or char == ".":
+            if len(current) >= 2:
+                markers.append(current[:TITLE_MARKER_LENGTH])
+            current = ""
+        else:
+            current += char
+    if len(current) >= 2:
+        markers.append(current[:TITLE_MARKER_LENGTH])
+    return (markers, [])
+
+
 def _derive_length_rule(call: CheckCall) -> tuple[Any, list[str]]:
     """길이 상한을 넘는 문장 전부, 그리고 그것만."""
     sentences, problems = _reported_sentences(call)
@@ -919,6 +990,7 @@ DERIVATIONS: dict[str, Callable[[CheckCall], tuple[Any, list[str]]]] = {
     "repair_policy": _derive_repair_policy,
     "style_length_rule": _derive_length_rule,
     "style_comma_rule": _derive_comma_rule,
+    "export_title_markers": _derive_title_markers,
     "style_length_floor": _derive_length_floor,
     "style_comma_floor": _derive_comma_floor,
 }
@@ -1182,6 +1254,49 @@ def floor_scope(fixture_root: Path, pairs: list[Pair]) -> dict[str, set[str]]:
         return present
     # 단일 파일 지정은 그 파일이 곧 범위 선언이다.
     return {pair.domain: set(pair.case_ids) for pair in pairs}
+
+
+def full_gate_floor_problems(selected: list[str], scoped: bool) -> list[str]:
+    """전체 게이트 상태를 **하한**으로 본다 (게이트 12 #3 — 차단②).
+
+    `selected` 는 실행이 명시적으로 선언한 판정 범위(`--only-domain`)다. CI 는 Kotlin 이
+    구현했다고 선언한 도메인을 그대로 넘기므로, 이 목록이 곧 "지금 무엇을 검증하는가"다.
+
+    두 방향을 본다.
+      - **도달했는데 고정하지 않았다** → 막는다. 선언이 정본 전부를 덮은 실행인데 표시 파일이
+        없으면, 다음에 builder 가 하나 늘어날 때 조용히 부분 게이트로 내려간다.
+      - **고정했는데 내려갔다** → 막는다. 정본이 늘었든 선언이 줄었든 결과는 같다 — 전체
+        게이트였던 것이 부분 게이트가 되고 종료 코드 3 사면이 되살아난다.
+
+    `--only` 로 케이스를 골라 돌린 실행과 `--only-domain` 없이 돌린 실행에서는 보지 않는다.
+    앞은 범위 선언이 아니고, 뒤는 이미 정의상 전체 게이트다.
+    """
+    if scoped or not selected:
+        return []
+    scope = set(selected)
+    canonical = set(BUILDERS)
+    marked = FULL_GATE_PATH.exists()
+    if scope >= canonical and not marked:
+        return [
+            f"- **전체 게이트에 도달했다 — 하한을 고정하라**: 선언 {len(scope)}개가 정본 "
+            f"{len(canonical)}개를 전부 덮었다\n"
+            f"  - `{FULL_GATE_PATH}` 를 만들어 이 상태를 하한으로 고정한다. 없으면 다음에 "
+            "생성기에 builder 가 하나 늘어나는 순간 **조용히 부분 게이트로 내려가** 종료 "
+            "코드 3 사면이 되살아난다 — 8/8 은 강제된 성질이 아니라 오늘 참인 상태일 뿐이다\n"
+            "  - 그 파일을 만든 뒤에는 범위를 줄이는 편집이 여기서 막힌다"
+        ]
+    if marked and not scope >= canonical:
+        missing = sorted(canonical - scope)
+        return [
+            f"- **전체 게이트에서 내려왔다**: {', '.join(missing)} 이(가) 판정 범위 밖이다\n"
+            f"  - `{FULL_GATE_PATH.name}` 이 이 저장소가 전체 게이트에 **도달한 적 있음**을 "
+            "기록하고 있다. 정본이 늘었거나 선언이 줄었고, 어느 쪽이든 결과는 같다 — "
+            "부분 게이트가 되어 종료 코드 3 이 통과로 읽힌다\n"
+            "  - 새 도메인을 더했다면 **같은 커밋에서 선언한다**. 선언할 수 없는 상태라면 "
+            f"(구현 전) `{FULL_GATE_PATH.name}` 을 지우고 PR 에 근거를 적는다 — 그 diff 가 "
+            "'전체 게이트를 내렸다'는 신호다"
+        ]
+    return []
 
 
 def case_floor_problems(
@@ -2049,6 +2164,7 @@ def main() -> int:
     floor_problems = case_floor_problems(
         pairs, scoped=args.only is not None, fixture_root=args.fixture
     )
+    floor_problems += full_gate_floor_problems(selected, scoped=args.only is not None)
     if floor_problems:
         total_problems += len(floor_problems)
         sections.append("## 케이스 정체성 하한\n\n" + "\n".join(floor_problems))

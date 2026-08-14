@@ -184,6 +184,68 @@ class MaskingTest {
             assertThat(maskText(text).maskedText.value).isEqualTo(text)
         }
 
+        // ── 거부된 매치가 커서를 전진시키는가 (게이트 12 차단①) ──────────────────
+        //
+        // `findAll(...).filter(accept)` 는 필터가 **findAll 뒤**라, 거부된 매치도 이미
+        // 커서를 전진시킨 뒤다. 그래서 거부된 구간과 **겹치는** 유효 카드가 탐색조차 되지
+        // 않는다. Luhn 도입 전에는 앞 16자리가 그냥 가려졌으므로, 이 결함은 §4-decies.4
+        // 배치가 **만든 회귀**다 — 재현율이 도입 전보다 낮아지면 안 된다는 조건을 깼다.
+
+        @ParameterizedTest(name = "{0}")
+        @ValueSource(
+            strings = [
+                // 5그룹 — 카드가 그룹 2~5 에 있다. 그룹 1~4 는 Luhn 실패라 거부된다.
+                "0000-4111-1111-1111-1111",
+                "0000 4111 1111 1111 1111",
+                "1234-4111-1111-1111-1111",
+                // 6그룹 — 거부가 두 번 일어난 뒤에도 찾아야 한다.
+                "0000-0000-4111-1111-1111-1111",
+            ],
+        )
+        @DisplayName("거부된 매치와 겹친 유효 카드를 놓치지 않는다")
+        fun `겹친 유효 카드를 찾는다`(text: String) {
+            val result = maskText("카드 $text 확인")
+
+            assertThat(result.maskedText.value)
+                .describedAs("거부된 매치가 커서를 전진시켜 겹친 유효 카드를 삼켰다")
+                .contains("[[카드번호1]]")
+            assertThat(
+                result.items
+                    .single()
+                    .original
+                    .reveal(),
+            ).describedAs("가린 구간이 유효 카드 16자리와 일치하지 않는다")
+                .endsWith("4111-1111-1111-1111".replace("-", text.substring(4, 5)))
+        }
+
+        @Test
+        @DisplayName("재현율은 Luhn 도입 전보다 낮아지지 않는다")
+        fun `재현율이 낮아지지 않는다`() {
+            // **focus ① 의 조건을 직접 잰다.** Luhn 은 정밀도를 올리는 장치이지 재현율을
+            // 깎는 장치가 아니다. 유효 카드가 들어 있는 입력에서 가려진 숫자 수가 0이면
+            // 도입 전(앞 16자리를 무조건 가리던 때)보다 **나빠진 것**이다.
+            val text = "카드 0000-4111-1111-1111-1111 확인"
+            val masked = maskText(text).maskedText.value
+
+            val remainingDigits = masked.count { it.isDigit() }
+            val originalDigits = text.count { it.isDigit() }
+
+            assertThat(remainingDigits)
+                .describedAs("가려진 자리가 하나도 없다 — Luhn 도입 전에는 16자리가 가려졌다")
+                .isLessThan(originalDigits)
+        }
+
+        @Test
+        @DisplayName("자가치유 경계 — 4의 배수 정렬이면 거부 뒤에도 정렬이 맞는다")
+        fun `4의 배수 정렬은 스스로 회복한다`() {
+            // 그룹 수가 4의 배수만큼 앞서면 거부된 매치의 끝이 다음 카드의 시작과 맞아
+            // 재탐색 없이도 찾아진다. **이 경우가 통과한다는 사실이 결함을 가렸다** —
+            // 경계를 케이스로 고정해 두지 않으면 다음에 또 "되던데"로 넘어간다.
+            val aligned = maskText("카드 0000-0000-0000-0000-4111-1111-1111-1111 확인")
+
+            assertThat(aligned.maskedText.value).contains("[[카드번호1]]")
+        }
+
         @Test
         @DisplayName("거부된 카드 매치가 구간을 점유하지 않는다")
         fun `거부는 구간을 점유하지 않는다`() {

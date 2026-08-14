@@ -620,6 +620,48 @@ private fun searchView(text: String): Pair<String, IntArray?> {
 }
 
 /**
+ * `accept` 를 통과한 매치만 낸다. **거부된 매치는 구간을 점유하지 않는다.**
+ *
+ * ## `findAll(...).filter(accept)` 가 왜 틀렸나 (게이트 12 차단①)
+ *
+ * `filter` 는 `findAll` **뒤**에 온다. 그래서 거부 판정이 나올 때는 이미 커서가 그 매치의
+ * 끝까지 전진한 뒤이고, **거부된 구간과 겹치는 유효 카드는 탐색조차 되지 않는다.**
+ *
+ *     0000-4111-1111-1111-1111
+ *     └──────16자리──────┘        ← Luhn 실패 → 거부. 커서는 여기 끝으로 간다
+ *          └──────16자리──────┘   ← 유효 카드. 앞이 삼켰으므로 **찾지 않는다**
+ *
+ * Luhn 도입 전에는 앞 매치가 그냥 채택돼 16자리가 가려졌다. 즉 이것은 **§4-decies.4 배치가
+ * 만든 회귀**이고, "Luhn 은 정밀도를 올리는 장치이지 재현율을 깎는 장치가 아니다"라는
+ * 그 판정의 전제를 깬 것이다.
+ *
+ * **4의 배수 정렬이면 스스로 낫는다** — 앞선 거부 구간의 끝이 다음 카드의 시작과 맞아
+ * 떨어지기 때문이다. 결함이 늦게 드러난 이유가 이것이라 회귀 케이스로 함께 고정했다.
+ *
+ * 고친 방향: 거부하면 **그 매치의 시작 + 1** 부터 다시 찾는다. 채택하면 끝 다음부터 찾는다
+ * (겹치는 마스킹은 만들지 않는다). 재탐색 비용은 `(?<!\d)` 룩비하인드가 대부분의 시작
+ * 위치를 즉시 탈락시켜 흡수한다.
+ */
+private fun acceptedMatches(
+    pattern: MaskPattern,
+    text: String,
+): Sequence<MatchResult> =
+    sequence {
+        var from = 0
+        while (from <= text.length) {
+            val match = pattern.regex.find(text, from) ?: break
+            if (pattern.accept(match)) {
+                yield(match)
+                // 빈 매치는 이 파일의 패턴에서 나올 수 없지만, 나오면 무한 루프다.
+                // 전진을 최소 1 로 묶어 그 가능성 자체를 없앤다.
+                from = maxOf(match.range.last + 1, match.range.first + 1)
+            } else {
+                from = match.range.first + 1
+            }
+        }
+    }
+
+/**
  * 원문 직접 매칭 + 뷰 매칭(원문 좌표로 환원)의 **합집합**을 돌려준다.
  *
  * ## 합집합인 이유 — 두 축은 역할이 달라 판정 규칙도 다르다
@@ -688,20 +730,14 @@ private fun candidateSpans(
     offsets: IntArray?,
 ): List<Pair<Int, Int>> {
     val spans = LinkedHashSet<Pair<Int, Int>>()
-    pattern.regex
-        .findAll(text)
-        .filter(pattern.accept)
-        .forEach { spans += it.range.first to it.range.last + 1 }
+    acceptedMatches(pattern, text).forEach { spans += it.range.first to it.range.last + 1 }
 
     if (offsets != null) {
-        pattern.regex
-            .findAll(view)
-            .filter(pattern.accept)
-            .forEach { match ->
-                // 끝 좌표는 마지막으로 **매칭된 문자**의 원문 인덱스 + 1 이다. offsets[end] 를
-                // 쓰면 매치 뒤에 붙은 보이지 않는 문자까지 삼켜 경계가 과잉 잠식된다.
-                spans += offsets[match.range.first] to offsets[match.range.last] + 1
-            }
+        acceptedMatches(pattern, view).forEach { match ->
+            // 끝 좌표는 마지막으로 **매칭된 문자**의 원문 인덱스 + 1 이다. offsets[end] 를
+            // 쓰면 매치 뒤에 붙은 보이지 않는 문자까지 삼켜 경계가 과잉 잠식된다.
+            spans += offsets[match.range.first] to offsets[match.range.last] + 1
+        }
     }
     return spans.sortedWith(compareBy({ it.first }, { -it.second }))
 }
