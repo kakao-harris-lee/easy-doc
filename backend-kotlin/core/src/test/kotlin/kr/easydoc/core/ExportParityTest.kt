@@ -21,29 +21,23 @@ import kr.easydoc.core.privacy.restoreForExport
 import kr.easydoc.core.security.Secret
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.DisplayName
+import org.junit.jupiter.api.Tag
 import org.junit.jupiter.api.Test
 import java.security.MessageDigest
 
 /**
  * `export` 도메인 parity 산출물 생산자.
  *
- * ## 아직 `@Tag("parity")` 가 없다 — 정본이 성질을 아직 안 적었기 때문이다
+ * ## 선언까지 한 박자 늦은 이유 (이력 — 지우지 말 것)
  *
- * `parity/fixtures/export/export.json` 은 `spec_status=pending` 이고 12건 전부 `assert` 가
- * 없다(`reference` 만 있다). 이 상태에서 `parity-domains.txt` 에 `export` 를 적으면 비교기가
- * **종료 코드 2(미검증)** 를 내고 CI 가 붉어진다 — 실측했다:
+ * 이 생산자를 다 만든 시점에 `parity/fixtures/export/export.json` 은 `spec_status=pending`
+ * 이었고 12건 전부 `assert` 가 없었다. 그 상태에서 선언하면 비교기가 **종료 코드 2(미검증)**
+ * 를 내고 CI 가 붉어진다 — 추정이 아니라 실측이다. 그래서 태그 없이 두고, 정본이 `ready` 로
+ * 바뀌는 날을 알리는 탐지기([kr.easydoc.core.ParityDeclarationSyncTest])를 함께 뒀다.
  *
- * ```
- * [미검증] 도메인 8/8 / 성질 판정 137건 / 미검증 1건 / 불충족 0건 (종료 코드 2)
- * ```
- *
- * 그래서 태그 없이 둔다. 태그가 없으면 `parityHarness` 가 이 산출물을 저장소 루트에 쓰지
- * 않으므로 `parityManifestCheck` 의 "산출 O / 선언 X" 도 나지 않고, 그러면서도 일반 `test`
- * 에서는 그대로 돌아 생산자가 실제로 12건을 만들어 낸다는 것이 매 실행 확인된다.
- *
- * 정본이 `ready` 로 바뀌는 순간 [ParityDeclarationSyncTest] 가 빨개져 세 줄(여기 `@Tag`,
- * `parity-domains.txt`, `.github/parity-declared-floor.txt`)을 요구한다. 주석이 아니라
- * 탐지기로 둔 이유는 주석은 아무 날에도 알리지 않기 때문이다.
+ * **그 탐지기가 실제로 물었다** — 정본이 `ready` 로 승격된 직후 `ready 인데 미선언` 으로
+ * 빨개졌고, 그래서 이 태그와 선언 두 줄이 붙었다. 주석이었다면 아무 날에도 알리지 않았을
+ * 자리다. 같은 일이 남은 도메인에서 반복되므로 탐지기를 지우지 마라.
  *
  * ## 케이스 세 갈래
  *
@@ -70,8 +64,8 @@ class ExportParityTest {
         val FILENAME_FORMATS = listOf(ExportFormat.DOCX, ExportFormat.TXT, ExportFormat.HWPX)
     }
 
-    // @Tag("parity") — 정본이 ready 가 되면 붙인다. 위 KDoc 과 ParityDeclarationSyncTest 참고.
     @Test
+    @Tag("parity")
     @DisplayName("export fixture 전건을 돌려 parity/actual 에 산출물을 쓴다")
     fun `산출물을 만든다`() {
         val cases = ParityFixtures.cases(DOMAIN)

@@ -1004,3 +1004,93 @@ BLOCK 은 0으로 같다. 줄이려면 억제가 필요한데, 그 억제가 바
 계약 변경과 표기 7건 이전은 **같은 커밋이어야 한다.** 앞의 것만 넣으면 기존 표기가 전부
 지문 없음이 되어 스캔이 BLOCK 14건으로 붉어지고(실측), 뒤의 것만 넣으면 붙일 곳이 없다.
 X-5·Z-1 부분은 논리적으로는 분리 가능하나 같은 두 파일에 얽혀 있어 함께 넣는다.
+
+---
+
+## 13. §4-decies.4 별건 — CARD 패턴에 Luhn 체크디짓 (2026-08-14)
+
+### 13.1 넣은 것
+
+`Masking.kt::acceptsLuhn` + `MaskPattern(category = CARD, ..., accept = ::acceptsLuhn)`.
+RRN 성별코드 `1..8` 판정과 **같은 종류·같은 훅**이다 — CARD 에만 없던 것은 결정이 아니라
+비대칭이었다는 §4-decies.4 의 논증을 그대로 따랐다.
+
+판정은 **구분자를 걷어낸 숫자열**에 대해 하고, 값은 `Character.digit` 으로 얻는다 —
+`acceptsRrnGenderCode` 와 같은 계수 단위 규율이다(§4-ter.1). 전각·아라비아-인도 숫자를
+`'0'` 빼기로 계산하면 값이 음수가 되어 **Luhn 이 조용히 틀린 답**을 낸다.
+
+패턴이 16자리를 보장하지만 함수가 다시 센다 — 패턴이 바뀌었을 때 길이가 다른 입력에
+**정의되지 않은 답**을 내는 것보다 거부하는 편이 닫히는 쪽이다.
+
+KDoc 에 판정 근거(실문서 30건 중 Luhn 통과 1건 · 오탐 29건 해소)와 **재판정 조건**(OCR 로
+한 자리 깨진 카드번호는 Luhn 을 못 통과해 빠져나간다 — 관측 0이라 감수하되 파일럿에서 카드
+유입 관측 시 privacy-gate 재판정)을 함께 적었다.
+
+### 13.2 합성 카드번호 교체 — 회부가 "가장 놓치기 쉬운 자리"로 지목한 곳
+
+`1234-5678-9012-3456` 은 Luhn 실패다. **교체 없이 훅만 넣으면 카드 케이스가 전건
+무력화된다** — 그리고 그 무력화는 "테스트가 여전히 통과하는" 모양으로 오지 않고 빨간
+실패로 왔다. Kotlin 테스트에서 걸린 자리는 12곳이고 전부 `4111…`(Visa 테스트 번호) 계열로
+바꿨다. 특히 **구분자 변형 케이스 전부**(전각 하이픈·en dash·ideographic space·탭·NBSP·
+개행 등)가 같은 값을 쓰고 있어 한 곳만 고치면 나머지가 조용히 죽는다.
+
+교체하지 **않은** 한 곳: Luhn 실패 음성 케이스가 예전 값을 그대로 쓴다. 그 자리에서는
+"Luhn 실패라 안 잡힌다"가 재는 대상이다.
+
+### 13.3 양방향 단언
+
+| 방향 | 단언 |
+|---|---|
+| 훅이 무는가 | Luhn 실패 카드형(`4111-1111-1111-1112`·`1234-5678-9012-3456`) 미검출 |
+| 훅이 무는가 | 연도 4열(`2021 2022 2023 2024`·탭 구분) 미검출 — 실문서 오탐 29건의 모양 |
+| 과하게 무는가 | 표준 테스트 카드 3종(`4111…`·`5555…`·`4242…`) 검출 |
+| 과하게 무는가 | 구분자 변형(하이픈·공백·무구분자·NBSP 복합) 전부 검출 |
+| 부작용 없는가 | 거부된 카드 매치가 구간을 점유하지 않아 같은 문장의 RRN 이 그대로 가려진다 |
+
+한쪽만 재면 두 실패 모드 중 하나가 조용히 통과한다 — 안 물면 오탐 29건이 그대로고,
+너무 물면 진짜 카드가 샌다.
+
+### 13.4 parity 인계 — 원장 15건은 내 몫이 아니다
+
+masking 도메인의 **성질 판정은 전건 충족**이다(`[충족] masking`). 남은 것은 **참고 갈림
+원장** 15건이고 `--record-reference` 로 `parity/reference-ledger/masking.json` 을 갱신해야
+닫힌다. 원장은 parity-verifier 소유라 손대지 않았다.
+
+Python 에는 Luhn 이 없으므로 이 갈림은 **개선의 결과**이지 결함이 아니다(기준은 요구사항).
+
+| 갈래 | 케이스 id |
+|---|---|
+| 갈림의 내용이 바뀌었다 (11) | `masking-card-spaced-hyphen` · `masking-card-nbsp-around-hyphen` · `masking-card-sep-hyphen` · `masking-card-sep-minus` · `masking-card-sep-en-dash` · `masking-card-sep-em-dash` · `masking-card-sep-fullwidth-hyphen` · `masking-card-sep-nbsp` · `masking-card-sep-narrow-nbsp` · `masking-card-sep-ideographic-space` · `masking-card-sep-figure-space` |
+| 기록되지 않은 참고 갈림 (3) | `masking-keeps-card-luhn-invalid` · `masking-keeps-four-groups-single-space` · `masking-keeps-five-groups-single-space` |
+| 낡은 원장 항목 (1) | `masking-deferred-five-groups-single-space` · `masking-deferred-four-groups-single-space` |
+
+뒤의 둘은 parity-verifier 가 이미 §4-decies.4 지시대로 `verdict_pending` → `present` 로
+전환하며 이름을 바꾼 것이다. **내 구현이 그 전환을 실제로 만족시킨다** — 연도 4열이 이제
+가려지지 않는다.
+
+> **CI 영향을 감추지 않는다.** 이 커밋 시점의 parity 전체 게이트는 **종료 코드 1**이다.
+> 불충족 15건은 전부 원장 기록이고 성질 불충족은 0건이지만, 비교기 계약상 그것도 1이다.
+> parity-verifier 가 `--record-reference` 를 돌려 원장 diff 를 올리면 닫힌다.
+
+### 13.5 export 선언 — 탐지기가 실제로 물었다
+
+이 배치 도중 parity-verifier 가 export 정본을 `ready` 로 승격했고(단언 117개),
+§12 에서 만든 `ParityDeclarationSyncTest` 가 **`ready 인데 미선언`으로 빨개졌다.**
+그래서 세 줄이 붙었다 — 생산자 `@Tag("parity")` · `parity-domains.txt` · declared-floor.
+
+주석이었다면 아무 날에도 알리지 않았을 자리다. 설계 의도가 실제 사건으로 확인된 것이라
+생산자 KDoc 에 이력으로 남겼다.
+
+**선언이 정본 8개를 전부 덮었다.** 이 시점부터 CI 는 부분 게이트가 아니라 **전체 게이트**로
+돌고 통과 조건이 종료 코드 0 이다 — 3(부분 검증)은 이제 실패다. 사면 장치가 스스로
+사라졌다. declared-floor 주석에 그 사실을 적었다.
+
+### 13.6 검사 결과
+
+| 검사 | 결과 |
+|---|---|
+| `./gradlew build` (ktlint·detekt·전체 테스트) | **BUILD SUCCESSFUL** |
+| `./gradlew parityHarness` + manifest | **선언 8개 전부 산출물 확인** |
+| parity 전체 게이트 | **종료 1** — 성질 충족 8/8, 원장 15건 미기록(인계) |
+| `scan_privacy_invariants.py` | **종료 0** |
+| `pytest` 전체 | **1143 passed · 5 xfailed** |

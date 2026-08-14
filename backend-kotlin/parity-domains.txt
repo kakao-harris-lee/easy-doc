@@ -53,3 +53,4 @@ style            # 문장 분리 + 길이·쉼표 규칙
 style-tables     # 정책 상수와 큐레이션 표
 prompts          # 시스템·사용자·보정 프롬프트
 postprocess      # 껍데기 제거
+export           # 파일명 정제 · RFC 5987 · TXT 바이트

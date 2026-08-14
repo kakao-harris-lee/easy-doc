@@ -93,9 +93,12 @@ class MaskingTest {
         @ParameterizedTest(name = "{0}")
         @ValueSource(
             strings = [
-                "1234-5678-9012-3456",
-                "1234 5678 9012 3456",
-                "1234567890123456",
+                // **Luhn 유효 값이어야 한다.** `1234-5678-9012-3456` 은 Luhn 실패라
+                // CARD 의 accept 훅이 거부한다 — 그대로 두면 이 케이스가 무력화된다
+                // (privacy-gate §4-decies.4 가 "가장 놓치기 쉬운 자리"로 지목한 곳).
+                "4111-1111-1111-1111",
+                "4111 1111 1111 1111",
+                "4111111111111111",
             ],
         )
         @DisplayName("구분자 변형을 가린다")
@@ -114,6 +117,82 @@ class MaskingTest {
         fun `자릿수 경계를 지킨다`(notCard: String) {
             val text = "번호 $notCard 입니다."
             assertThat(maskText(text).maskedText.value).isEqualTo(text)
+        }
+
+        // ── Luhn 체크디짓 (privacy-gate §4-decies.4) ──────────────────────────────
+        //
+        // **양방향으로 잰다.** 한쪽만 재면 두 실패 모드 중 하나가 조용히 통과한다 —
+        // 훅이 아무것도 안 물면 오탐 29건이 그대로고, 너무 물면 진짜 카드가 샌다.
+        // 후자가 훨씬 무거우므로 양성 쪽을 표준 테스트 카드번호로 고정한다.
+
+        @ParameterizedTest(name = "{0}")
+        @ValueSource(
+            strings = [
+                "4111-1111-1111-1111", // Visa 테스트 번호
+                "5555-5555-5555-4444", // Mastercard 테스트 번호
+                "4242-4242-4242-4242", // 널리 쓰이는 테스트 번호
+            ],
+        )
+        @DisplayName("Luhn 유효 카드는 여전히 가려진다")
+        fun `유효 카드는 가려진다`(card: String) {
+            assertThat(maskText("결제 $card 완료").maskedText.value)
+                .isEqualTo("결제 [[카드번호1]] 완료")
+        }
+
+        @ParameterizedTest(name = "{0}")
+        @ValueSource(
+            strings = [
+                "4111-1111-1111-1111",
+                "4111 1111 1111 1111",
+                "4111111111111111",
+                "4111\u00A0-\u00A01111\u00A0-\u00A01111\u00A0-\u00A01111",
+            ],
+        )
+        @DisplayName("Luhn 판정은 구분자를 걷어낸 숫자열로 한다")
+        fun `구분자가 Luhn 판정을 바꾸지 않는다`(card: String) {
+            assertThat(maskText("카드 $card").maskedText.value).isEqualTo("카드 [[카드번호1]]")
+        }
+
+        @ParameterizedTest(name = "{0}")
+        @ValueSource(
+            strings = [
+                // 한 자리만 틀린 카드형 — 체크디짓이 맞지 않는다.
+                "4111-1111-1111-1112",
+                // 예전 합성 카드번호. Luhn 실패다.
+                "1234-5678-9012-3456",
+            ],
+        )
+        @DisplayName("Luhn 실패 카드형은 카드번호가 아니다")
+        fun `Luhn 실패는 가리지 않는다`(notCard: String) {
+            val text = "번호 $notCard 입니다."
+            assertThat(maskText(text).maskedText.value).isEqualTo(text)
+        }
+
+        @ParameterizedTest(name = "{0}")
+        @ValueSource(
+            strings = [
+                "2021 2022 2023 2024",
+                "1998 1999 2000 2001",
+                "2021\t2022\t2023\t2024",
+            ],
+        )
+        @DisplayName("연도 4열 표는 카드번호가 아니다 — 훅이 실제로 무는 자리")
+        fun `연도 배열을 가리지 않는다`(years: String) {
+            // 실문서 카드형 적중 30건 중 29건이 이 모양이었다. 연도가 `[[카드번호1]]` 로
+            // 바뀐 안내문은 **실패로 보고되지 않고 그대로 배포된다** — 조용한 손해다.
+            val text = "연도별 예산 $years 입니다."
+            assertThat(maskText(text).maskedText.value).isEqualTo(text)
+        }
+
+        @Test
+        @DisplayName("거부된 카드 매치가 구간을 점유하지 않는다")
+        fun `거부는 구간을 점유하지 않는다`() {
+            // `accept` 가 거부한 매치는 `spans` 에 들어가지 않아야 한다. 점유하면 같은 자리에
+            // 겹치는 다른 판정이 사라진다 — `acceptsRrnGenderCode` 와 같은 성질이다.
+            val result = maskText("표 2021 2022 2023 2024 신청자 900101-1234567")
+
+            assertThat(result.maskedText.value)
+                .isEqualTo("표 2021 2022 2023 2024 신청자 [[주민등록번호1]]")
         }
     }
 
@@ -158,7 +237,7 @@ class MaskingTest {
                 "900101\u3000\u3000\u30001234567",
                 "900101\u0020\u0020\u0020\u0020\u00201234567",
                 "900101\u0020\u00201234567",
-                "1234\u3000\u3000\u30005678\u3000\u3000\u30009012\u3000\u3000\u30003456",
+                "4111\u3000\u3000\u30001111\u3000\u3000\u30001111\u3000\u3000\u30001111",
             ],
         )
         @DisplayName("과잉 4종 — 같은 자리에 공백 2개 이상은 구분이 아니라 정렬이다")
@@ -173,9 +252,9 @@ class MaskingTest {
         @ValueSource(
             strings = [
                 // 이전 판 CARD 패턴은 구분자가 **한 문자**뿐이라 이 둘을 놓쳤다(C-01②).
-                "1234\u0020-\u00205678\u0020-\u00209012\u0020-\u00203456",
-                "1234\u00A0-\u00A05678\u00A0-\u00A09012\u00A0-\u00A03456",
-                "1234-5678-9012-3456",
+                "4111\u0020-\u00201111\u0020-\u00201111\u0020-\u00201111",
+                "4111\u00A0-\u00A01111\u00A0-\u00A01111\u00A0-\u00A01111",
+                "4111-1111-1111-1111",
             ],
         )
         @DisplayName("누락 2종 + 기존 1종 — 복합 구분자 카드번호를 가린다")
@@ -199,9 +278,9 @@ class MaskingTest {
             // C-01②(카드만 좁음)를 만들었으므로, 같은 입력 모양에서 두 범주가 같이
             // 움직이는지를 값으로 확인한다.
             val rrnSpaced = maskText("번호 900101\u0020-\u00201234567 확인.")
-            val cardSpaced = maskText("카드 1234\u0020-\u00205678\u0020-\u00209012\u0020-\u00203456 확인.")
+            val cardSpaced = maskText("카드 4111\u0020-\u00201111\u0020-\u00201111\u0020-\u00201111 확인.")
             val rrnAligned = maskText("번호 900101\u0020\u00201234567 확인.")
-            val cardAligned = maskText("카드 1234\u0020\u00205678\u0020\u00209012\u0020\u00203456 확인.")
+            val cardAligned = maskText("카드 4111\u0020\u00201111\u0020\u00201111\u0020\u00201111 확인.")
 
             assertThat(rrnSpaced.items).hasSize(1)
             assertThat(cardSpaced.items).hasSize(1)
@@ -374,11 +453,11 @@ class MaskingTest {
             strings = [
                 // 카드번호에는 종류 A 가 없다(숫자 자리가 전부 `\d`). 뚫려 있던 것은 구분자뿐이고,
                 // 두 리뷰 어디도 카드번호를 보지 않아 privacy-gate 실측이 처음 찾은 자리다.
-                "1234\uFF0D5678\uFF0D9012\uFF0D3456",
-                "1234\u00A05678\u00A09012\u00A03456",
-                "1234\u30005678\u30009012\u30003456",
-                "1234\u20135678\u20139012\u20133456",
-                "１２３４\uFF0D５６７８\uFF0D９０１２\uFF0D３４５６",
+                "4111\uFF0D1111\uFF0D1111\uFF0D1111",
+                "4111\u00A01111\u00A01111\u00A01111",
+                "4111\u30001111\u30001111\u30001111",
+                "4111\u20131111\u20131111\u20131111",
+                "４１１１\uFF0D１１１１\uFF0D１１１１\uFF0D１１１１",
             ],
         )
         @DisplayName("종류 B — 구분자가 ASCII 하이픈·공백이 아니어도 가린다 (CARD)")
@@ -400,7 +479,7 @@ class MaskingTest {
             strings = [
                 "900101\u000A1234567",
                 "900101\u000D1234567",
-                "1234\u000A5678\u000A9012\u000A3456",
+                "4111\u000A1111\u000A1111\u000A1111",
             ],
         )
         @DisplayName("과잉 마스킹 가드 — 개행·캐리지리턴은 구분자가 아니다")
@@ -483,7 +562,7 @@ class MaskingTest {
         @ValueSource(
             strings = [
                 "900101\u00091234567",
-                "1234\u00095678\u00099012\u00093456",
+                "4111\u00091111\u00091111\u00091111",
                 "1200\u00093400\u00095600\u00097800",
                 "900101\u0009-\u00091234567",
             ],
@@ -553,8 +632,8 @@ class MaskingTest {
         @Test
         @DisplayName("앞 경계 — CARD (범주 대칭)")
         fun `카드번호에서도 같다`() {
-            assertThat(masked("1\u200B1234-5678-9012-3456")).isEqualTo(1)
-            assertThat(masked("11234-5678-9012-3456")).isZero()
+            assertThat(masked("1\u200B4111-1111-1111-1111")).isEqualTo(1)
+            assertThat(masked("14111-1111-1111-1111")).isZero()
         }
 
         @Test
@@ -610,7 +689,7 @@ class MaskingTest {
         @DisplayName("범주별로 1부터 번호를 매긴다")
         fun `범주별 일련번호를 매긴다`() {
             val result =
-                maskText("주민 900101-1234567 카드 1234-5678-9012-3456 주민 800101-2345678")
+                maskText("주민 900101-1234567 카드 4111-1111-1111-1111 주민 800101-2345678")
 
             assertThat(result.maskedText.value)
                 .isEqualTo("주민 [[주민등록번호1]] 카드 [[카드번호1]] 주민 [[주민등록번호2]]")
@@ -627,7 +706,7 @@ class MaskingTest {
                 "[[카드번호1]] 만 있고 개인정보는 없다",
                 "이미 탈출된 모양 [[!주민등록번호1]] 과 900101-1234567",
                 "자리표시자 안에 13자리가 든 경우 [[주민등록번호1234567890123]]",
-                "주민 900101-1234567 카드 1234-5678-9012-3456",
+                "주민 900101-1234567 카드 4111-1111-1111-1111",
                 "900101\u00AD1234567 과 1\u200B900101-1234567",
                 "",
             ],

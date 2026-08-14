@@ -62,11 +62,17 @@
 # 한 줄에 도메인 하나. `#` 뒤는 주석. 현재 선언 확인:
 #   sed 's/#.*//' backend-kotlin/parity-domains.txt | tr -d '[:blank:]' | grep -v '^$'
 #
-# ── 현재 스냅샷: 7개 (2026-08-14 기준) ─────────────────────────────────────
+# ── 현재 스냅샷: 8개 = 정본 전부 (2026-08-14 기준) ─────────────────────────
 # masking          — 생산자 core/src/test/.../privacy/MaskingParityTest.kt
 # repair-adoption  — 생산자 application/src/test/.../conversion/ConversionParityTest.kt
 # text·style·style-tables·prompts·postprocess
 #                  — 생산자 core/src/test/kotlin/kr/easydoc/core/CoreDomainsParityTest.kt
+# export           — 생산자 core/src/test/kotlin/kr/easydoc/core/ExportParityTest.kt
+#
+# 선언이 정본(parity-canonical-floor.txt) 8개를 **전부 덮었다.** 이 시점부터 CI 는 부분
+# 게이트가 아니라 **전체 게이트**로 돌고 통과 조건이 종료 코드 0 이다 — 3(부분 검증)은
+# 이제 실패다. 사면 장치가 스스로 사라지는 지점이다.
+export
 masking
 postprocess
 prompts

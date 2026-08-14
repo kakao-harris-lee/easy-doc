@@ -360,6 +360,82 @@ private fun acceptsRrnGenderCode(match: MatchResult): Boolean {
     return Character.digit(genderCode.codePointAt(0), DECIMAL_RADIX) in RRN_GENDER_CODES
 }
 
+/** 카드번호 자릿수. 이 패턴이 보는 4×4 표기의 숫자 개수다. */
+private const val CARD_DIGITS = 16
+
+/** Luhn 은 **뒤에서 짝수 번째** 자리를 두 배 한다. 0-기반 인덱스에서 홀수 위치다. */
+private const val LUHN_DOUBLE_EVERY = 2
+
+/** 두 배 해서 한 자리를 넘으면 자릿수 합으로 되돌린다 — `12 → 1+2 = 3` 은 `12 - 9` 와 같다. */
+private const val LUHN_WRAP = 9
+
+/**
+ * 카드번호의 Luhn 체크디짓이 맞는지 본다. **RRN 성별코드 검사와 같은 종류·같은 훅이다.**
+ *
+ * ## 왜 넣는가 (privacy-gate 판정 §4-decies.4, 2026-08-14 리더 승인)
+ *
+ * 골든 코퍼스·초안·fixture 등 실문서 계열에서 카드형 16자리를 전수 측정한 결과다.
+ *
+ * | 관측 | 값 |
+ * |---|---|
+ * | 카드형 16자리 적중 | 30건 |
+ * | 그중 Luhn 통과 | **1건** (유일하게 카드 IIN 대역에서 시작하는 후보) |
+ * | Luhn 도입으로 풀리는 오탐 | **29건** |
+ *
+ * 오탐 29건의 대부분은 **연도·금액 4열 표**다(`2021 2022 2023 2024` 같은 단일 공백 4×4).
+ * 연도가 `[[카드번호1]]` 로 바뀐 안내문은 **실패로 보고되지 않고 그대로 배포된다** — 과잉
+ * 마스킹은 조용하고, 쉬운 글의 절대 팩트축을 깬다.
+ *
+ * ## 왜 이것이 "덜 잡기로 하는 결정"이 아닌가
+ *
+ * 진짜 카드번호가 Luhn 을 통과하는 것은 경험칙이 아니라 **구성상 보장**이다(마지막 자리가
+ * 체크디짓이다). 그래서 이 검사는 재현율을 깎는 것이 아니라 **카드일 수 없는 것을 카드라고
+ * 부르지 않는 것**이다. 같은 형태의 선례가 바로 위에 있다 — RRN 의 성별코드 `1..8` 판정이
+ * 정확히 같은 종류의 구조적 유효성 검사이고, [MaskPattern.accept] 훅이 **그 목적으로 이미
+ * 존재한다.** CARD 에만 없던 것은 결정이 아니라 비대칭이었다.
+ *
+ * 이 파일이 선언한 *"누락보다 과잉 마스킹이 안전하다"* 는 **패턴 넓이**에 대한 원칙이지
+ * 유효성 검사를 금지한 것이 아니다 — 금지였다면 성별코드 검사부터 위반이다.
+ *
+ * ## 재판정 조건 — 닫은 척하지 않는다
+ *
+ * **OCR·오탈자로 한 자리가 깨진 카드번호는 Luhn 을 통과하지 못해 마스킹을 빠져나간다.**
+ * 이 프로젝트의 입력이 hwpx·pdf 추출본이라 가설상 실재하는 경로다. 다만 코퍼스에서
+ * **관측되지 않았고**(카드 후보 자체가 1건), 측정된 손해 29건과 가설적 손해 0건을 같은
+ * 무게로 놓지 않는다.
+ *
+ * **파일럿에서 카드 유입이 실제로 관측되면 재판정한다(privacy-gate).** 그때 고려할 갈래는
+ * "Luhn 실패 + IIN 대역 시작"을 별도 신호로 잡는 것이다 — 이 주석을 지우지 말고 그 판정
+ * 결과로 갱신하라.
+ */
+private fun acceptsLuhn(match: MatchResult): Boolean {
+    // **구분자를 뺀 숫자열로 판정한다.** 값은 `Character.digit` 으로 얻는다 —
+    // `acceptsRrnGenderCode` 와 같은 계수 단위 규율이다(§4-ter.1). 전각·아라비아-인도
+    // 숫자를 `'0'` 빼기로 계산하면 값이 음수가 되어 **Luhn 이 조용히 틀린 답**을 낸다.
+    val digits = mutableListOf<Int>()
+    var index = 0
+    while (index < match.value.length) {
+        val codePoint = match.value.codePointAt(index)
+        val value = Character.digit(codePoint, DECIMAL_RADIX)
+        if (value >= 0) digits.add(value)
+        index += Character.charCount(codePoint)
+    }
+    // 패턴이 16자리를 보장하지만 여기서 다시 센다 — 패턴이 바뀌었을 때 이 함수가 **길이가
+    // 다른 입력에 대해 정의되지 않은 답**을 내는 것보다 거부하는 편이 닫히는 쪽이다.
+    if (digits.size != CARD_DIGITS) return false
+
+    var sum = 0
+    for ((position, value) in digits.asReversed().withIndex()) {
+        var contribution = value
+        if (position % LUHN_DOUBLE_EVERY == 1) {
+            contribution *= LUHN_DOUBLE_EVERY
+            if (contribution > LUHN_WRAP) contribution -= LUHN_WRAP
+        }
+        sum += contribution
+    }
+    return sum % DECIMAL_RADIX == 0
+}
+
 /**
  * 우선순위 순서 — 먼저 매칭된 구간이 이후 패턴보다 우선한다.
  *
@@ -379,6 +455,7 @@ private val PATTERNS: List<MaskPattern> =
         MaskPattern(
             category = MaskCategory.CARD,
             regex = unicodeRegex("""(?<!\d)\d{4}$SEP\d{4}$SEP\d{4}$SEP\d{4}(?!\d)"""),
+            accept = ::acceptsLuhn,
         ),
     )
 
@@ -567,9 +644,9 @@ private fun searchView(text: String): Pair<String, IntArray?> {
  * 갈리는 조합이 **90건이고 전부 한 종류**다.
  *
  * > **폭 0인 문자 한 개가 "긴 숫자열의 일부"라는 거부 근거를 무효화한다.**
- * > `1<ZWSP>900101-1234567` · `900101-1234567<ZWSP>8` · `1<ZWSP>1234-5678-9012-3456` 은
+ * > `1<ZWSP>900101-1234567` · `900101-1234567<ZWSP>8` · `1<ZWSP>4111-1111-1111-1111` 은
  * > 전부 가려지고, **그 문자만 뺀** `1900101-1234567` · `900101-12345678` ·
- * > `11234-5678-9012-3456` 은 전부 가려지지 않는다.
+ * > `14111-1111-1111-1111` 은 전부 가려지지 않는다.
  *
  * 그 여분을 남기는 쪽을 택한 근거는 정책이다 — `master-plan.md` 의 *"누락보다 과잉 마스킹이
  * 안전하다"* 가 남은 2종(주민등록번호·카드번호)에 그대로 적용되고, 두 실패가 비대칭이다:
