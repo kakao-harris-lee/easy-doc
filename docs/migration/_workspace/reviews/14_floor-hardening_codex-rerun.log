@@ -1,0 +1,120 @@
+[2026-08-15T12:38:05.518Z] Starting Codex Adversarial Review.
+[2026-08-15T12:38:06.879Z] Starting Codex task thread.
+[2026-08-15T12:38:07.277Z] Thread ready (01a0056d-f45c-7493-a596-0850d378a59b).
+[2026-08-15T12:38:07.577Z] Turn started (01a0056d-f5d5-79e3-bd60-94929aeb6797).
+[2026-08-15T12:38:19.329Z] Assistant message captured: {"verdict":"approve","summary":"검토를 시작합니다. 먼저 이전 easy-doc 하네스 리뷰 기억에서 이번 축과 직접 겹치는 근거만 확인한 뒤,...
+
+[2026-08-15T12:38:19.330Z] Assistant message
+{"verdict":"approve","summary":"검토를 시작합니다. 먼저 이전 easy-doc 하네스 리뷰 기억에서 이번 축과 직접 겹치는 근거만 확인한 뒤, 4dafde5 대비 실제 diff·CI 호출 경로·테스트를 따라가며 각 우회 문자열을 실행해 판정을 측정하겠습니다.","findings":[],"next_steps":["메모리 관련 근거를 짧게 조회","대상 diff와 CI 도달 경로 추적","반례 문자열 및 종료 코드 실측","파일·라인별 차단 사유 정리"]}
+[2026-08-15T12:38:21.779Z] Running command: /bin/zsh -lc 'rg -n -C 3 "parity|full_gate_floor|privacy|suppression|allow_empty|easy-doc" /U...
+[2026-08-15T12:38:22.093Z] Command completed: /bin/zsh -lc 'rg -n -C 3 "parity|full_gate_floor|privacy|suppression|allow_empty|easy-doc" /U... (exit 0)
+[2026-08-15T12:38:30.377Z] Running command: /bin/zsh -lc "wc -l /Users/harris/.codex/memories/skills/easy-doc-parity-stop-gate-review/SKI...
+[2026-08-15T12:38:30.377Z] Command completed: /bin/zsh -lc "wc -l /Users/harris/.codex/memories/skills/easy-doc-parity-stop-gate-review/SKI... (exit 0)
+[2026-08-15T12:38:42.787Z] Assistant message captured: {"verdict":"approve","summary":"easy-doc parity stop-gate review 지침이 이번 변경과 직접 일치해 적용합니다. 이 지...
+
+[2026-08-15T12:38:42.787Z] Assistant message
+{"verdict":"approve","summary":"easy-doc parity stop-gate review 지침이 이번 변경과 직접 일치해 적용합니다. 이 지침 때문에 정본 완전성의 empty/partial 경로와 실제 CI 소비자를 우선 확인하며, 과거 결론은 현재 증거로 재검증합니다.","findings":[],"next_steps":["현재 SHA·작업트리·4dafde5 diff 확인","정본/선언/표시 파일 변이 실측","파일명·privacy 반례 실행"]}
+[2026-08-15T12:38:45.716Z] Running command: /bin/zsh -lc "git status --short && git rev-parse HEAD 4dafde5 && git diff --name-status 4daf...
+[2026-08-15T12:38:45.850Z] Command completed: /bin/zsh -lc "git status --short && git rev-parse HEAD 4dafde5 && git diff --name-status 4daf... (exit 0)
+[2026-08-15T12:38:52.881Z] Running command: /bin/zsh -lc 'git diff --unified=80 4dafde5..HEAD -- .claude/skills/python-kotlin-parity/scri...
+[2026-08-15T12:38:53.209Z] Command completed: /bin/zsh -lc 'git diff --unified=80 4dafde5..HEAD -- .claude/skills/python-kotlin-parity/scri... (exit 0)
+[2026-08-15T12:39:00.440Z] Running command: /bin/zsh -lc 'rg -n "''^(def |BUILDERS|FILENAME_FORBIDDEN|EXIT_|FULL_|DECLARED_|CANONICAL_|CA...
+[2026-08-15T12:39:00.770Z] Command completed: /bin/zsh -lc 'rg -n "''^(def |BUILDERS|FILENAME_FORBIDDEN|EXIT_|FULL_|DECLARED_|CANONICAL_|CA... (exit 0)
+[2026-08-15T12:39:06.053Z] Running command: /bin/zsh -lc "nl -ba .claude/skills/python-kotlin-parity/scripts/compare_parity.py | sed -n '...
+[2026-08-15T12:39:06.055Z] Command completed: /bin/zsh -lc "nl -ba .claude/skills/python-kotlin-parity/scripts/compare_parity.py | sed -n '... (exit 0)
+[2026-08-15T12:39:13.224Z] Running command: /bin/zsh -lc "nl -ba .claude/skills/python-kotlin-parity/scripts/compare_parity.py | sed -n '...
+[2026-08-15T12:39:13.226Z] Command completed: /bin/zsh -lc "nl -ba .claude/skills/python-kotlin-parity/scripts/compare_parity.py | sed -n '... (exit 0)
+[2026-08-15T12:39:20.559Z] Running command: /bin/zsh -lc "nl -ba .github/workflows/ci.yml | sed -n '216,360p'; nl -ba .github/parity-full...
+[2026-08-15T12:39:20.560Z] Command completed: /bin/zsh -lc "nl -ba .github/workflows/ci.yml | sed -n '216,360p'; nl -ba .github/parity-full... (exit 0)
+[2026-08-15T12:39:29.607Z] Running command: /bin/zsh -lc "nl -ba .github/workflows/ci.yml | sed -n '345,470p'; nl -ba backend-kotlin/pari...
+[2026-08-15T12:39:29.916Z] Command completed: /bin/zsh -lc "nl -ba .github/workflows/ci.yml | sed -n '345,470p'; nl -ba backend-kotlin/pari... (exit 0)
+[2026-08-15T12:39:49.105Z] Running command: /bin/zsh -lc 'rg -n "''^(def |BUILDERS|FILENAME_FORBIDDEN|TITLE_MARKER|EXPORT_CASES)|build_ex...
+[2026-08-15T12:39:49.433Z] Command completed: /bin/zsh -lc 'rg -n "''^(def |BUILDERS|FILENAME_FORBIDDEN|TITLE_MARKER|EXPORT_CASES)|build_ex... (exit 0)
+[2026-08-15T12:40:05.575Z] Running command: /bin/zsh -lc "nl -ba .claude/skills/python-kotlin-parity/scripts/dump_parity_fixtures.py | se...
+[2026-08-15T12:40:05.576Z] Command completed: /bin/zsh -lc "nl -ba .claude/skills/python-kotlin-parity/scripts/dump_parity_fixtures.py | se... (exit 0)
+[2026-08-15T12:40:49.989Z] Assistant message captured: {"verdict":"approve","summary":"현재까지 전체 하한은 CI의 8/8 경로에서 실제 비교기까지 도달하지만, 표시 파일의 `reached` 값은 ...
+
+[2026-08-15T12:40:49.990Z] Assistant message
+{"verdict":"approve","summary":"현재까지 전체 하한은 CI의 8/8 경로에서 실제 비교기까지 도달하지만, 표시 파일의 `reached` 값은 비어 있지 않기만 하면 되어 의미 없는 기록도 통과합니다. 파일명 두 갈래는 집합상 상충 조건을 만드는지 실제 표지 집합과 checker 판정으로 확인 중이며, 규칙 두 벌의 드리프트는 방향별로 따로 검증합니다.","findings":[],"next_steps":["표지 집합·상충 여부 계산","privacy Unicode/regex 반례 실행","대상 테스트와 실제 CI 호출 연결 검증"]}
+[2026-08-15T12:41:15.438Z] Running command: /bin/zsh -lc "ls -ld .venv .venv/bin/python* 2>/dev/null || true; python3 -c 'import json,pat...
+[2026-08-15T12:41:15.738Z] Command completed: /bin/zsh -lc "ls -ld .venv .venv/bin/python* 2>/dev/null || true; python3 -c 'import json,pat... (exit 0)
+[2026-08-15T12:41:38.047Z] Running command: /bin/zsh -lc "python3 -c 'import importlib.util,sys,json,pathlib,copy; p=pathlib.Path(\".clau...
+[2026-08-15T12:41:38.370Z] Command completed: /bin/zsh -lc "python3 -c 'import importlib.util,sys,json,pathlib,copy; p=pathlib.Path(\".clau... (exit 0)
+[2026-08-15T12:41:56.135Z] Running command: /bin/zsh -lc "rg -n \"MARKER_RE|_INVISIBLE|MIN_REASON|visible_length|has_visible_reason|def p...
+[2026-08-15T12:41:56.135Z] Command completed: /bin/zsh -lc "rg -n \"MARKER_RE|_INVISIBLE|MIN_REASON|visible_length|has_visible_reason|def p... (exit 0)
+[2026-08-15T12:42:05.632Z] Running command: /bin/zsh -lc "nl -ba .claude/skills/migration-safety-gate/scripts/scan_privacy_invariants.py ...
+[2026-08-15T12:42:05.920Z] Command completed: /bin/zsh -lc "nl -ba .claude/skills/migration-safety-gate/scripts/scan_privacy_invariants.py ... (exit 0)
+[2026-08-15T12:43:39.983Z] Running command: /bin/zsh -lc 'rg -n "allow_empty|contains_derived|title_markers|export_title_markers|FILENAME...
+[2026-08-15T12:43:39.983Z] Command completed: /bin/zsh -lc 'rg -n "allow_empty|contains_derived|title_markers|export_title_markers|FILENAME... (exit 0)
+[2026-08-15T12:43:47.415Z] Running command: /bin/zsh -lc "nl -ba .claude/skills/python-kotlin-parity/scripts/compare_parity.py | sed -n '...
+[2026-08-15T12:43:47.751Z] Command completed: /bin/zsh -lc "nl -ba .claude/skills/python-kotlin-parity/scripts/compare_parity.py | sed -n '... (exit 0)
+[2026-08-15T12:43:59.018Z] Running command: /bin/zsh -lc "python3 -c 'import importlib.util,sys,pathlib,unicodedata; p=pathlib.Path(\".cl...
+[2026-08-15T12:43:59.059Z] Command completed: /bin/zsh -lc "python3 -c 'import importlib.util,sys,pathlib,unicodedata; p=pathlib.Path(\".cl... (exit 0)
+[2026-08-15T12:44:28.203Z] Running command: /bin/zsh -lc "python3 -c 'import importlib.util,sys,pathlib; p=pathlib.Path(\".claude/skills/...
+[2026-08-15T12:44:28.238Z] Command completed: /bin/zsh -lc "python3 -c 'import importlib.util,sys,pathlib; p=pathlib.Path(\".claude/skills/... (exit 0)
+[2026-08-15T12:44:38.547Z] Running command: /bin/zsh -lc "nl -ba tests/test_parity_ci_gate.py | sed -n '1,380p'"
+[2026-08-15T12:44:38.860Z] Command completed: /bin/zsh -lc "nl -ba tests/test_parity_ci_gate.py | sed -n '1,380p'" (exit 0)
+[2026-08-15T12:45:04.857Z] Running command: /bin/zsh -lc "find parity/actual -maxdepth 2 -type f -name '*.json' -print 2>/dev/null | LC_A...
+[2026-08-15T12:45:05.493Z] Command completed: /bin/zsh -lc "find parity/actual -maxdepth 2 -type f -name '*.json' -print 2>/dev/null | LC_A... (exit 0)
+[2026-08-15T12:45:24.659Z] Running command: /bin/zsh -lc "python3 -c 'import importlib.util,sys,json,pathlib,copy; p=pathlib.Path(\".clau...
+[2026-08-15T12:45:24.692Z] Command completed: /bin/zsh -lc "python3 -c 'import importlib.util,sys,json,pathlib,copy; p=pathlib.Path(\".clau... (exit 0)
+[2026-08-15T12:46:31.363Z] Running command: /bin/zsh -lc "python3 -c 'import importlib.util,sys,json,pathlib; p=pathlib.Path(\".claude/sk...
+[2026-08-15T12:46:31.396Z] Command completed: /bin/zsh -lc "python3 -c 'import importlib.util,sys,json,pathlib; p=pathlib.Path(\".claude/sk... (exit 0)
+[2026-08-15T12:46:56.808Z] Running command: /bin/zsh -lc "python3 -c 'import importlib.util,sys,json,pathlib; p=pathlib.Path(\".claude/sk...
+[2026-08-15T12:46:56.835Z] Command completed: /bin/zsh -lc "python3 -c 'import importlib.util,sys,json,pathlib; p=pathlib.Path(\".claude/sk... (exit 0)
+[2026-08-15T12:47:09.877Z] Running command: /bin/zsh -lc "python3 -c 'import importlib.util,sys,json,pathlib; p=pathlib.Path(\".claude/sk...
+[2026-08-15T12:47:09.877Z] Command completed: /bin/zsh -lc "python3 -c 'import importlib.util,sys,json,pathlib; p=pathlib.Path(\".claude/sk... (exit 0)
+[2026-08-15T12:48:11.635Z] Running command: /bin/zsh -lc 'rg -n "test_parity_ci_gate|parity_ci|full_gate|parity-full|test_privacy_scanner...
+[2026-08-15T12:48:11.982Z] Command completed: /bin/zsh -lc 'rg -n "test_parity_ci_gate|parity_ci|full_gate|parity-full|test_privacy_scanner... (exit 0)
+[2026-08-15T12:48:34.866Z] Running command: /bin/zsh -lc "python3 -c 'import importlib.util,sys,pathlib; p=pathlib.Path(\".claude/skills/...
+[2026-08-15T12:48:35.179Z] Command completed: /bin/zsh -lc "python3 -c 'import importlib.util,sys,pathlib; p=pathlib.Path(\".claude/skills/... (exit 0)
+[2026-08-15T12:49:56.119Z] Running command: /bin/zsh -lc "rg -n \"export-filename|exclusive_by_case|contains_derived|단언 608|608|export_ti...
+[2026-08-15T12:49:56.434Z] Command completed: /bin/zsh -lc "rg -n \"export-filename|exclusive_by_case|contains_derived|단언 608|608|export_ti... (exit 0)
+[2026-08-15T12:50:12.652Z] Running command: /bin/zsh -lc "python3 -c 'import importlib.util,sys,json,pathlib,copy; p=pathlib.Path(\".clau...
+[2026-08-15T12:50:12.674Z] Command completed: /bin/zsh -lc "python3 -c 'import importlib.util,sys,json,pathlib,copy; p=pathlib.Path(\".clau... (exit 0)
+[2026-08-15T12:50:45.447Z] Assistant message captured: {"verdict":"needs-attention","summary":"실측 반례가 확보됐습니다. 현재 8/40 표지 규칙 자체는 union·순서 변경·절단 상수를 막...
+
+[2026-08-15T12:50:45.448Z] Assistant message
+{"verdict":"needs-attention","summary":"실측 반례가 확보됐습니다. 현재 8/40 표지 규칙 자체는 union·순서 변경·절단 상수를 막지만, 금지 파일명 문자를 직접 검사하지 않고, 생성기/비교기 규칙 드리프트와 `allow_empty`가 독립 하한을 무효화할 수 있습니다. privacy 사유는 `!!`와 Mc 결합부호 두 자로 실제 적중을 억제하면서 진단 0건이었습니다. 마지막으로 CI 하한 함수의 유일한 호출선은 새 테스트가 통합 경로로 실행하지 않습니다.","findings":[{"severity":"high","title":"파일명 금지 집합이 산출물 검사에 연결되지 않음","body":"직접 checker를 호출했을 때 `?`, `*`, `<`, `>`, U+0085를 기존 정상 파일명에 삽입해도 실패 목록이 모두 비었습니다.","file":".claude/skills/python-kotlin-parity/scripts/dump_parity_fixtures.py","line_start":2040,"line_end":2059,"confidence":0.99,"recommendation":"비교기 소유 금지 집합을 산출물에 직접 적용하는 단언을 추가하십시오."}],"next_steps":["남은 반례를 파일·라인과 CI 영향으로 압축","정적 연결과 diff 무결성 최종 확인","차단 JSON 확정"]}
+[2026-08-15T12:50:45.726Z] Running command: /bin/zsh -lc "git diff --check 4dafde5..HEAD; python3 -c 'import ast,pathlib; paths=[pathlib....
+[2026-08-15T12:50:45.821Z] Command completed: /bin/zsh -lc "git diff --check 4dafde5..HEAD; python3 -c 'import ast,pathlib; paths=[pathlib.... (exit 0)
+[2026-08-15T12:52:45.407Z] Assistant message captured: {"verdict":"needs-attention","summary":"No-ship: 하네스가 금지 파일명, 의미 없는 privacy 억제, 정본 자기채점, 독립 하...
+
+[2026-08-15T12:52:45.408Z] Assistant message
+{"verdict":"needs-attention","summary":"No-ship: 하네스가 금지 파일명, 의미 없는 privacy 억제, 정본 자기채점, 독립 하한 제거를 초록으로 만들 수 있고 전체 게이트의 실제 호출선도 테스트로 고정되지 않았다.","findings":[{"severity":"high","title":"금지 파일명 집합의 상당 부분이 산출물 검사에 도달하지 않는다","body":"`dangerous`는 `*`, `?`, `<`, `>`와 대부분의 C0/C1 문자를 누락한다. 비교기의 `FILENAME_FORBIDDEN`도 제목 표지를 자르는 데만 쓰이고 실제 파일명을 거부하지 않는다. 기존 정상 결과의 `docx.filename`에 각각 `?`, `*`, `<`, `>`, U+0085를 삽입해 `run_assertions`를 실행한 결과 모두 실패 목록 `[]`였다. 따라서 선언된 파일명 안전 요구를 위반해도 parity가 초록이다.","file":".claude/skills/python-kotlin-parity/scripts/dump_parity_fixtures.py","line_start":2040,"line_end":2059,"confidence":0.99,"recommendation":"비교기 소유의 전체 금지 집합을 실제 `filename`에 직접 적용하는 checker를 추가하고, 각 C0/C1 및 `*?<>` 반례를 Kotlin 산출물 대상으로 고정하라."},{"severity":"high","title":"파일명 두 갈래는 생성기를 함께 약화하면 자기채점으로 사라진다","body":"현재 8/40 규칙에서는 union·역순·7자 절단·40자 경계 상수가 실패하고, 표지가 빈 `all-forbidden`도 fallback과 모든 외부 표지 absent가 남는다. 그러나 이 양성/음성 단언의 존재 기준이 모두 `build_export` 자신이다. `contains_derived`와 외부표지 `absent` 블록을 제거하고 fixture를 재생성하면 케이스 ID와 도메인 under/over 형태 검사는 그대로 통과한다. 직접 해당 단언들만 제거한 fixture에 상수 `쉬운 글.<fmt>`와 상수 헤더를 넣었더니 7개 파일명 케이스가 전부 `[]`로 통과했다. 또한 비교기 쪽 `TITLE_MARKER_LENGTH`만 1로 갈라 놓으면 `쉬운 글_기_신_안_e_p_보_최_가_입.<fmt>`가 7개 모두 통과해, '두 규칙이 갈리면 자기 신고된다'는 주석도 성립하지 않는다.","file":".claude/skills/python-kotlin-parity/scripts/dump_parity_fixtures.py","line_start":2076,"line_end":2164,"confidence":0.99,"recommendation":"제품 구현과 독립된 단일 파일명 요구 모듈을 생성기와 비교기가 공유하게 하고, 각 export 케이스에 필수 checker 종류가 존재한다는 독립 invariant와 규칙 한쪽만 변이하는 회귀 테스트를 추가하라."},{"severity":"high","title":"의미 없는 문장부호가 개인정보 적중을 진단 없이 억제한다","body":"`visible_length`는 제외 목록에 없는 모든 카테고리를 정보로 센다. 실제 일치하는 `LOG-BODY` Marker/Hit에 사유 `!!` 또는 `..`를 주자 visible length 2, `has_visible_reason=True`, 억제 후 남은 hit `{}`, `marker_problems=[]`였다. Mc 결합부호 U+093E 두 개와 이모지 두 개도 같은 결과다. 반면 RTL 제어(Cf), 태그 문자(Cf), 이형태 선택자(Mn), 미할당(Cn), 서로게이트(Cs)는 올바르게 억제 실패와 진단을 내며, 억제와 진단은 같은 함수를 사용한다. `MARKER_RE`도 줄 끝까지 사유를 잡고 블록 주석 종료를 제외하며 한 줄 다중 표기를 분리하지만, 그 결과 `privacy-allow: LOG-BODY @deadbeef — !!` 자체가 CI에서 유효한 면제가 된다.","file":".claude/skills/migration-safety-gate/scripts/scan_privacy_invariants.py","line_start":154,"line_end":204,"confidence":1.0,"recommendation":"사유에 최소 하나 이상의 Unicode Letter 또는 Number를 요구하고, 문장부호·기호·Mc 단독 사유가 적중을 보존하면서 marker 진단도 발생시키는 통합 테스트를 추가하라."},{"severity":"high","title":"전체 게이트 하한의 유일한 실제 호출선을 새 테스트가 검증하지 않는다","body":"새 테스트는 명시적으로 실제 비교 구간을 보지 않고 `full_gate_floor_problems`를 직접 호출한다. 실제 CI 도달은 `compare_parity.main`의 한 줄뿐이다. 그 호출을 제거해도 `tests/test_parity_ci_gate.py`의 새 테스트는 전부 그대로 통과하고, 워크플로 추출 테스트도 배너 이후 반환 코드를 의도적으로 무시한다. CI에서는 현재 8/8 분기가 비교기를 호출하지만, 이 연결을 떼거나 비교 분기를 배너 뒤에서 종료해도 저장소 테스트가 깨지지 않는다. 테스트 파일 자체도 quality 잡의 일반 `pytest` 수집에만 의존해 삭제 시 조용히 사라진다.","file":"tests/test_parity_ci_gate.py","line_start":10,"line_end":28,"confidence":0.99,"recommendation":"실제 `main` 또는 추출한 전체 CI step을 실행해 표시 파일 삭제 시 비제로 종료를 확인하고, `tests/test_parity_ci_gate.py`를 CI에서 경로 지정으로 별도 실행하라."},{"severity":"high","title":"`allow_empty`가 반드시 비어서는 안 되는 style 하한까지 면제한다","body":"두 style floor 단언 모두 모든 케이스에 `allow_empty=True`가 붙는다. `style-too-long`의 현재 독립 length floor는 실제로 1개지만, 유도 함수를 빈 목록으로 변이하고 산출물을 `sentences=[]`, `length_violations=[]`, `comma_violations=[]`로 주자 전체 단언이 `[]`로 통과했다. 변이 전에는 `contains_derived`가 정확히 실패했다. 즉 독립 입력 하한을 제거해도 self-reported sentences 기반 검사만 남아 생산자의 전량 누락을 함께 0으로 채점한다. `allow_empty`의 허용 규칙·케이스를 고정하는 테스트도 없다.","file":".claude/skills/python-kotlin-parity/scripts/dump_parity_fixtures.py","line_start":1262,"line_end":1275,"confidence":0.99,"recommendation":"실제로 빈 하한인 케이스에만 예외를 붙이고, `allow_empty`를 허용할 rule/case 조합을 비교기에서 제한하라. `too-long`·`too-many-commas`에 빈 producer 결과를 넣는 음성 테스트도 추가하라."},{"severity":"medium","title":"전체 게이트 표시는 보이지 않는 날짜를 받아들이고 `--only`에서는 아예 검사되지 않는다","body":"`reached`는 `strip()` 후 truthy인지밖에 보지 않아 `reached: U+200B`, `domains: 8`을 넣은 직접 호출이 문제 `[]`로 통과했다. 또한 `scoped=True`는 표시와 선언을 읽기 전에 즉시 반환하며, 이 우회는 테스트가 정상 동작으로 고정한다. 현재 CI는 `--only`를 쓰지 않으므로 표시만 삭제하면 빨개지고, 선언 하한의 삭제·공백·단독 축소도 각각 CI 또는 비교기에서 빨개진다. 다만 실제 선언과 선언 하한을 함께 줄이고 표시 파일을 삭제하면 부분 분기로 내려가 종료 코드 3이 다시 성공으로 읽힌다. BUILDERS 축소는 canonical floor를 함께 고치지 않으면 빨개지지만, 모든 기준 파일을 동반 수정하는 강등에는 기계적으로 요구되는 근거가 없다.","file":".claude/skills/python-kotlin-parity/scripts/compare_parity.py","line_start":1297,"line_end":1367,"confidence":0.97,"recommendation":"`reached`를 실제 ISO 날짜로 검증하고 저장소 상태 하한은 `--only` 여부와 무관하게 항상 실행하라. 전체 게이트 강등에는 변경 불가능한 CI 정책이나 별도 승인 증거를 요구하라."}],"next_steps":["privacy 사유를 Letter/Number 기반으로 닫고 문장부호·Mc 반례를 추가한다.","파일명 금지 집합을 실제 산출물에 직접 적용하고 제목 규칙을 단일 독립 출처로 만든다.","export checker 존재와 style 비공백 하한을 독립 mutation test로 고정한다.","전체 parity CI 분기와 `compare_parity.main`을 실행하는 통합 테스트를 명시적으로 배선한다.","전체 게이트 표시·강등 계약을 invocation-independent하고 검증 가능한 증거로 바꾼다."]}
+[2026-08-15T12:52:45.765Z] Turn completion inferred after the main thread finished and subagent work drained.
+
+[2026-08-15T12:52:46.009Z] Final output
+# Codex Adversarial Review
+
+Target: branch diff against 4dafde5
+Verdict: needs-attention
+
+No-ship: 하네스가 금지 파일명, 의미 없는 privacy 억제, 정본 자기채점, 독립 하한 제거를 초록으로 만들 수 있고 전체 게이트의 실제 호출선도 테스트로 고정되지 않았다.
+
+Findings:
+- [high] 금지 파일명 집합의 상당 부분이 산출물 검사에 도달하지 않는다 (.claude/skills/python-kotlin-parity/scripts/dump_parity_fixtures.py:2040-2059)
+  `dangerous`는 `*`, `?`, `<`, `>`와 대부분의 C0/C1 문자를 누락한다. 비교기의 `FILENAME_FORBIDDEN`도 제목 표지를 자르는 데만 쓰이고 실제 파일명을 거부하지 않는다. 기존 정상 결과의 `docx.filename`에 각각 `?`, `*`, `<`, `>`, U+0085를 삽입해 `run_assertions`를 실행한 결과 모두 실패 목록 `[]`였다. 따라서 선언된 파일명 안전 요구를 위반해도 parity가 초록이다.
+  Recommendation: 비교기 소유의 전체 금지 집합을 실제 `filename`에 직접 적용하는 checker를 추가하고, 각 C0/C1 및 `*?<>` 반례를 Kotlin 산출물 대상으로 고정하라.
+- [high] 파일명 두 갈래는 생성기를 함께 약화하면 자기채점으로 사라진다 (.claude/skills/python-kotlin-parity/scripts/dump_parity_fixtures.py:2076-2164)
+  현재 8/40 규칙에서는 union·역순·7자 절단·40자 경계 상수가 실패하고, 표지가 빈 `all-forbidden`도 fallback과 모든 외부 표지 absent가 남는다. 그러나 이 양성/음성 단언의 존재 기준이 모두 `build_export` 자신이다. `contains_derived`와 외부표지 `absent` 블록을 제거하고 fixture를 재생성하면 케이스 ID와 도메인 under/over 형태 검사는 그대로 통과한다. 직접 해당 단언들만 제거한 fixture에 상수 `쉬운 글.<fmt>`와 상수 헤더를 넣었더니 7개 파일명 케이스가 전부 `[]`로 통과했다. 또한 비교기 쪽 `TITLE_MARKER_LENGTH`만 1로 갈라 놓으면 `쉬운 글_기_신_안_e_p_보_최_가_입.<fmt>`가 7개 모두 통과해, '두 규칙이 갈리면 자기 신고된다'는 주석도 성립하지 않는다.
+  Recommendation: 제품 구현과 독립된 단일 파일명 요구 모듈을 생성기와 비교기가 공유하게 하고, 각 export 케이스에 필수 checker 종류가 존재한다는 독립 invariant와 규칙 한쪽만 변이하는 회귀 테스트를 추가하라.
+- [high] 의미 없는 문장부호가 개인정보 적중을 진단 없이 억제한다 (.claude/skills/migration-safety-gate/scripts/scan_privacy_invariants.py:154-204)
+  `visible_length`는 제외 목록에 없는 모든 카테고리를 정보로 센다. 실제 일치하는 `LOG-BODY` Marker/Hit에 사유 `!!` 또는 `..`를 주자 visible length 2, `has_visible_reason=True`, 억제 후 남은 hit `{}`, `marker_problems=[]`였다. Mc 결합부호 U+093E 두 개와 이모지 두 개도 같은 결과다. 반면 RTL 제어(Cf), 태그 문자(Cf), 이형태 선택자(Mn), 미할당(Cn), 서로게이트(Cs)는 올바르게 억제 실패와 진단을 내며, 억제와 진단은 같은 함수를 사용한다. `MARKER_RE`도 줄 끝까지 사유를 잡고 블록 주석 종료를 제외하며 한 줄 다중 표기를 분리하지만, 그 결과 `privacy-allow: LOG-BODY @deadbeef — !!` 자체가 CI에서 유효한 면제가 된다.
+  Recommendation: 사유에 최소 하나 이상의 Unicode Letter 또는 Number를 요구하고, 문장부호·기호·Mc 단독 사유가 적중을 보존하면서 marker 진단도 발생시키는 통합 테스트를 추가하라.
+- [high] 전체 게이트 하한의 유일한 실제 호출선을 새 테스트가 검증하지 않는다 (tests/test_parity_ci_gate.py:10-28)
+  새 테스트는 명시적으로 실제 비교 구간을 보지 않고 `full_gate_floor_problems`를 직접 호출한다. 실제 CI 도달은 `compare_parity.main`의 한 줄뿐이다. 그 호출을 제거해도 `tests/test_parity_ci_gate.py`의 새 테스트는 전부 그대로 통과하고, 워크플로 추출 테스트도 배너 이후 반환 코드를 의도적으로 무시한다. CI에서는 현재 8/8 분기가 비교기를 호출하지만, 이 연결을 떼거나 비교 분기를 배너 뒤에서 종료해도 저장소 테스트가 깨지지 않는다. 테스트 파일 자체도 quality 잡의 일반 `pytest` 수집에만 의존해 삭제 시 조용히 사라진다.
+  Recommendation: 실제 `main` 또는 추출한 전체 CI step을 실행해 표시 파일 삭제 시 비제로 종료를 확인하고, `tests/test_parity_ci_gate.py`를 CI에서 경로 지정으로 별도 실행하라.
+- [high] `allow_empty`가 반드시 비어서는 안 되는 style 하한까지 면제한다 (.claude/skills/python-kotlin-parity/scripts/dump_parity_fixtures.py:1262-1275)
+  두 style floor 단언 모두 모든 케이스에 `allow_empty=True`가 붙는다. `style-too-long`의 현재 독립 length floor는 실제로 1개지만, 유도 함수를 빈 목록으로 변이하고 산출물을 `sentences=[]`, `length_violations=[]`, `comma_violations=[]`로 주자 전체 단언이 `[]`로 통과했다. 변이 전에는 `contains_derived`가 정확히 실패했다. 즉 독립 입력 하한을 제거해도 self-reported sentences 기반 검사만 남아 생산자의 전량 누락을 함께 0으로 채점한다. `allow_empty`의 허용 규칙·케이스를 고정하는 테스트도 없다.
+  Recommendation: 실제로 빈 하한인 케이스에만 예외를 붙이고, `allow_empty`를 허용할 rule/case 조합을 비교기에서 제한하라. `too-long`·`too-many-commas`에 빈 producer 결과를 넣는 음성 테스트도 추가하라.
+- [medium] 전체 게이트 표시는 보이지 않는 날짜를 받아들이고 `--only`에서는 아예 검사되지 않는다 (.claude/skills/python-kotlin-parity/scripts/compare_parity.py:1297-1367)
+  `reached`는 `strip()` 후 truthy인지밖에 보지 않아 `reached: U+200B`, `domains: 8`을 넣은 직접 호출이 문제 `[]`로 통과했다. 또한 `scoped=True`는 표시와 선언을 읽기 전에 즉시 반환하며, 이 우회는 테스트가 정상 동작으로 고정한다. 현재 CI는 `--only`를 쓰지 않으므로 표시만 삭제하면 빨개지고, 선언 하한의 삭제·공백·단독 축소도 각각 CI 또는 비교기에서 빨개진다. 다만 실제 선언과 선언 하한을 함께 줄이고 표시 파일을 삭제하면 부분 분기로 내려가 종료 코드 3이 다시 성공으로 읽힌다. BUILDERS 축소는 canonical floor를 함께 고치지 않으면 빨개지지만, 모든 기준 파일을 동반 수정하는 강등에는 기계적으로 요구되는 근거가 없다.
+  Recommendation: `reached`를 실제 ISO 날짜로 검증하고 저장소 상태 하한은 `--only` 여부와 무관하게 항상 실행하라. 전체 게이트 강등에는 변경 불가능한 CI 정책이나 별도 승인 증거를 요구하라.
+
+Next steps:
+- privacy 사유를 Letter/Number 기반으로 닫고 문장부호·Mc 반례를 추가한다.
+- 파일명 금지 집합을 실제 산출물에 직접 적용하고 제목 규칙을 단일 독립 출처로 만든다.
+- export checker 존재와 style 비공백 하한을 독립 mutation test로 고정한다.
+- 전체 parity CI 분기와 `compare_parity.main`을 실행하는 통합 테스트를 명시적으로 배선한다.
+- 전체 게이트 표시·강등 계약을 invocation-independent하고 검증 가능한 증거로 바꾼다.
