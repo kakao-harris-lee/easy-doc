@@ -355,10 +355,14 @@ Python 게이트 820 passed 가 업그레이드 전과 동일하다. Kotlin 2.3.
 
 **재개발 조각 순서** (사용자 방향 전환 2026-08-12 이후): ① core 도메인+LLM 경계(커밋 `c11a404..f73879b`, 5건 — 사전·스타일·마스킹·복원·프롬프트·주입방어·후처리·LlmProvider·Anthropic 어댑터) → ② application 변환 유스케이스+parity 배선(`f73879b..6d8e88c`, 6건) → ③ 후속 수정(`bed5300` toString 3종, `3934f06` masking fixture 4차). 다음 조각: **api 엔드포인트**.
 
-**리뷰 게이트 이력** (어간은 기존 관례(순번_주제)를 따랐다 — SKILL.md `{scope}` 정본 표와의 정합은 하네스 점검 별건):
+**리뷰 게이트 이력** (어간은 기존 관례(순번_주제)를 따랐다 — SKILL.md `{scope}` 정본 표와의 정합은 하네스 점검 별건. 게이트 13 지적으로 03~06 역사 행을 소급 기재 — 그 회차들은 재개발 코딩 전 하네스·계획 점검이라 이 표 신설 전에 끝났다):
 
 | 어간 | 대상 | 상태 | 정본 |
 |---|---|---|---|
+| `03_rebuild-plan` | 재개발 전환 계획(추출 목록·progress) | 계획 심사(codex-plan-reviewer 단독) — needs-attention, 지적은 계획에 반영 | `reviews/03_rebuild-plan_codex-plan-reviewer.md` |
+| `04_quality-gate` | 품질 합격선 계측기 | 3단계 완주 | `reviews/04_quality-gate_cross.md` |
+| `05_scope-reach` | 실행 경로 규약·표기 검사기 | 3단계 완주 | `reviews/05_scope-reach_cross.md` |
+| `06_baseline-guard` | 골든셋 하한선 가드 | 3단계 완주 | `reviews/06_baseline-guard_cross.md` |
 | `07_core-rebuild` | `c11a404..f73879b` | **3단계 완주.** 합의 4·codex 단독 2·Claude 단독 12·상충 2(리더가 privacy-gate 회부로 처분). 조치 18항 중 이번 조각에서 X-1·X-2·X-5탐지기·X-6·X-7·X-8·X-16·X-17 처리, X-9(스냅샷 생성기)·X-4(모듈 경계) 등 잔여는 §6 마감대로 | `reviews/07_core-rebuild_cross.md` |
 | `08_conversion-usecase` | `f73879b..6d8e88c` | **3단계 완주.** 27건 → 24행: 합의 2 · 부분 합의 1 · 충돌 1(C-09) · codex 단독 7 · Claude 단독 13 — **24행 중 21행이 한쪽만 봤다**(두 모델의 관심 표면이 거의 안 겹침). **종합 차단 성립**: ①사건 C-01(보충 평면 숫자·복합 카드 구분자 실측 통과) + ②장치 3건(C-02 parity 선언 0 exit 0 · C-03 스캐너 다중 줄 미탐지 · C-04 루트 부재 무시 — **별개 결함, 병합 안 함**). 한쪽이 닫은 자리를 다른 쪽이 연 곳 4건(X-8·CNV-02/04·X-5·모듈 경계) 재개방. `bed5300`·`3934f06` 해소 검증은 다음 회차(C-06·C-12 구현분) | `reviews/08_conversion-usecase_cross.md` (정본) |
 | `09_masking-grammar` | `6d8e88c..c61c94e` | **3단계 완주** (2026-08-14). 합의 2 · 충돌 3 · codex 단독 3 · Claude 단독 17 — 24행 중 20행이 한쪽만 봄(**한쪽 레인만 돌렸으면 게이트가 닫혔을 구성**). **§4-ter 문법 본체는 두 레인 합의로 해제**(방법 비겹침 — 12탐침 재구성 vs 301조합 전수). **차단 ②장치 3건**: M-01(`_SAFE_ACCESS`가 점 연속만 — ktlint 표준 표기가 안전 판정) · M-02(`--tests` 집합 의미론) · M-03(논리 줄 40줄 fail-open·raw string). 평문 로그 탐지기 우회 세 갈래(M-01·M-03·M-09) → 탐지기 단위 재설계 배치 진행 중. K-1(탐색 뷰×SEP 합집합)은 KDoc이 의도된 설계로 명시 — 결함 통보가 아니라 **privacy-gate 방향 판정**(M-06 TAB과 묶음, 진행 중). 리더 판정: M-04 승격(감시 집합 자기 파생 — 수정, M-02와 같은 배치) · M-07 = C-09 재적용(변경 없음, M-08만 분리 → parity-verifier). codex 미언급 6건(C-06·C-12구현분·C-18 등)은 Claude 단독 근거 해제로 표기 | `reviews/09_masking-grammar_cross.md` (정본) |
@@ -374,6 +378,12 @@ Python 게이트 820 passed 가 업그레이드 전과 동일하다. Kotlin 2.3.
 ~~**하네스 미결**: known_gap 정의 어긋남~~ → **해소**(`ad6ab92` — `verdict_pending` 전환: owner·deadline·referred_by 필수·분리 집계·`!deferred` 하한 꼬리표).
 
 **게이트 11(`11_suppression-and-domains`) 3단계 완주(2026-08-14)** — 대상 `56a70c1..cd23aec`. **두 번째 차단급 독립 합의 X-1**(C-1≡N-01): 적중 입도(논리 줄×규칙) vs 표기 키(파일×물리 줄×규칙) 불일치로 표기 하나가 논리 줄 전체를 억제 — §4-octies 중심 주장("조용한 억제 불가") 반증, **설계 결함 선행 판정** → privacy-gate 재판정(§4-novies 예정) → kotlin-implementer 수정. 합의 X-2·X-3(export가 하한·형태·값 어느 검사도 안 받음), 충돌 확정 X-5(LoggerFactory 체인 — 탐지·도달 양쪽 도달 0, 두 정의가 "이름 붙은 수신자" 가정 공유 = Z-1), 충돌 X-4(style 유도 입력 — 리더 판정: 비교기가 출력 본문에서 독립 유도). R-1 해소는 층 한정 표기(검출 층 해소/억제 층 재도입). Claude 단독 판정 6건 교차 0회 — **prompts 왕복(마스킹 선행)·예산 3→7이 다음 회차 1순위**. 게이트 10 차단 4건 중 R-1~R-3 해소·R-4 부분 해소(id축 대체 적정). 정본 `reviews/11_suppression-and-domains_cross.md`. **후속 3레인**: privacy-gate(§4-octies 재판정 X-1·X-5·Z-1) · parity-verifier(X-2·X-3·X-4·C-4 비교기 강화) · kotlin-implementer(export 조각 — 스캐너 동결).
+
+**게이트 12(`12_export-luhn-suppression`) 3단계 완주(2026-08-15)** — 대상 `cd23aec..516c0e9`. 차단 2건 추가: **#1 CARD 겹침 삼킴 = ①사건**(Luhn 배치가 만든 회귀 — 도입 전 14자리 가림 → 0자리, `findAll` 뒤 `filter`) · **#3 부분 게이트 사면 부활 = ②장치**("8/8은 강제된 성질이 아니라 오늘 참인 상태"). **도달 0 처방 정정** — 푸시는 이미 완료였고 트리거가 `push: main`뿐이라 **PR이 유일한 러너 실행 경로**. Phase 2 저지 A(#1)·B(PR)·C(#4 export over 단언)·D(원장) 확정. 집행: `2cf862a`(#1+C-6+N-08, ⚠비교기 변경 혼입)·`6e6fbbf`(full-gate 표시)·`8972c36`(#6 선언 정정)·§4-undecies·§4-duodecies(최종 감사 — 4조합 차분, Security 게이트 통과). **draft PR #1 생성(사용자 승인) → CI 러너 첫 실행**: kotlin·frontend 통과, quality는 ruff format 2파일로 실패 → 리더 수정(`4dafde5`) → 2차 실행 quality 포함 통과. 정본 `reviews/12_export-luhn-suppression_cross.md`.
+
+**게이트 13(`13_regression-and-pins`) 3단계 완주(2026-08-15)** — 대상 `516c0e9..14b9d92`. **세 번째 차단급 독립 합의 X-1**(전체 게이트 하한 검사가 CI의 8/8 경로에서 완전 비활성 — `not selected` 즉시 반환, 리더 판정: 차단② 승격). X-5 충돌(#4 해소 기준)은 **목적 축 채택**(규칙 1 정합). D(원장 신규 오류)·B 정정(7커밋 미푸시)도 확정. 집행: 리더 레인(푸시·PR·원장 L-1) 선행 후 배치 — `142dac6`(N-20 `has_visible_reason`·U-3)·`496319d`(B2·B3 음성 7테스트 상시화)·`bbbdb6b`(B1 선언 하한 기준 재설계+내용 파싱 · B4 두 갈래 · B5 거부-겹침 fixture+N-03 동일 커밋 · U-2·U-3) + §4-terdecies(P1 지표 항진명제 정정 · P2 규약 축소 · P3). 전체 게이트 exit 0(성질 153·단언 630). 사고 2건 기록: 테스트가 제품 파일 덮어씀(4번째 오염, 새 형태 — 격리 수정) · 스테이징 경합 재발(→ `git commit -- <경로>` 규율). 정본 `reviews/13_regression-and-pins_cross.md`.
+
+**게이트 14(`14_floor-hardening`) 1단계 진행 중(2026-08-15)** — 대상 `4dafde5..bbbdb6b`(게이트 13 배치). **Phase 2 종료 판정 직전 마지막 리뷰.**
 
 **열린 판정 — 처분 완료분(2026-08-14~15)**: ① **보정 채택 판정식의 본문 손실 축 — 사용자 결정(2026-08-15): ⓒ Phase 5 프롬프트 작업으로 이월.** 채택 판정식은 현행 2축(자리표시자·위반 건수) 유지, 본문 손실 기준 신설 여부는 Phase 5 프롬프트·긴문서 작업에서 골든셋 절대 팩트축과 함께 판정. Phase 2 종료를 막지 않는다 ③ absent/present 문언 — **종결**(§4-decies.3 정정) ④ 연도 배열 — **종결**(§4-decies.4: Luhn 별건 회부 → 리더 승인 → `2839ec8`·`516c0e9` 집행, present 방향).
 
