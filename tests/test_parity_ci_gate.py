@@ -208,3 +208,143 @@ def test_하한까지_함께_줄이면_가드를_통과한다(tmp_path: Path, sc
 
     assert BANNER in result.stdout
     assert "선언에서 사라졌다" not in result.stdout
+
+
+# ---------------------------------------------------------------------------
+# 전체 게이트 하한 (게이트 13 X-1)
+#
+# 위 테스트들이 CI **셸**을 보는 것과 달리 아래는 **비교기 함수**를 직접 부른다. X-1 이
+# 정확히 그 경계에서 났기 때문이다 — 셸은 8/8 일 때 `--only-domain` 을 빼고 부르고, 비교기는
+# 그 빈 목록을 보고 하한을 통째로 건너뛰었다. 두 쪽 다 자기 몫은 했는데 이음매가 비어 있었다.
+#
+# 그래서 여기서는 fixture·산출물을 세우지 않는다. 세우면 느려지고, 무엇보다 **판정 범위와
+# 표시 파일**이라는 이 하한의 두 입력만 보면 되는데 그 밖의 것이 실패에 섞인다.
+# ---------------------------------------------------------------------------
+
+import importlib.util  # noqa: E402
+import sys  # noqa: E402
+from types import ModuleType  # noqa: E402
+
+_COMPARE_PATH = REPO / ".claude/skills/python-kotlin-parity/scripts/compare_parity.py"
+
+
+def _load_comparer() -> ModuleType:
+    """비교기를 모듈로 적재한다. 경로가 바뀌면 **건너뛰지 않고 실패**한다."""
+    assert _COMPARE_PATH.exists(), (
+        f"{_COMPARE_PATH} 가 없다 — 비교기가 옮겨졌거나 사라졌다. 어느 쪽이든 이 하한이 "
+        "무엇을 지키는지 사람이 다시 확인해야 하므로 조용히 건너뛰지 않는다."
+    )
+    name = "compare_parity_under_test"
+    spec = importlib.util.spec_from_file_location(name, _COMPARE_PATH)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    # `dataclass` 는 정의 시점에 `sys.modules[cls.__module__]` 를 되찾는다. 등록 전에
+    # 실행하면 그 조회가 `None` 을 얻어 적재가 죽는다 — 실제로 그렇게 죽었다.
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+@pytest.fixture(scope="module")
+def comparer() -> ModuleType:
+    return _load_comparer()
+
+
+@pytest.fixture
+def marker(comparer: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """표시 파일과 **선언 하한**을 tmp 로 돌린다 — 저장소의 실물을 건드리지 않는다.
+
+    선언 하한 격리를 빠뜨렸다가 강등 테스트가 **저장소의 실물 파일을 덮어썼다.** 테스트가
+    제품 파일을 쓰는 것은 그 자체로 결함이라 둘 다 여기서 묶어 돌린다 — 하나만 격리하면
+    다음 사람이 나머지를 그대로 쓴다.
+
+    기본값은 **정본 전부**(= 도달 상태)이고, 좁혀야 하는 테스트만 이 파일을 다시 쓴다.
+    """
+    path = tmp_path / "parity-full-gate.txt"
+    monkeypatch.setattr(comparer, "FULL_GATE_PATH", path)
+    floor = tmp_path / "parity-declared-floor.txt"
+    floor.write_text("".join(f"{name}\n" for name in sorted(comparer.BUILDERS)), encoding="utf-8")
+    monkeypatch.setattr(comparer, "DECLARED_FLOOR_PATH", floor)
+    return path
+
+
+def _canonical(comparer: ModuleType) -> set[str]:
+    return set(comparer.BUILDERS)
+
+
+def test_전체_경로에서도_하한이_돈다(comparer: ModuleType, marker: Path) -> None:
+    """X-1 본체. `--only-domain` 없이 도는 CI 의 8/8 경로에서 표시를 지우면 막아야 한다.
+
+    옛 서명은 `selected`(`--only-domain` 목록)를 받아 비어 있으면 즉시 반환했다. CI 는
+    선언이 정본을 덮으면 그 인자를 **주지 않으므로**, 하한이 서야 할 바로 그 경로에서
+    통째로 잠들어 있었다. 표시 파일을 지워도 조용했다.
+    """
+    assert not marker.exists()
+
+    problems = comparer.full_gate_floor_problems(scoped=False)
+
+    assert problems, "전체 경로에서 표시가 없는데 아무 말도 하지 않았다 — X-1 재발이다"
+    assert "하한을 고정하라" in problems[0]
+
+
+def test_선언_경로에서_표시가_없으면_막는다(comparer: ModuleType, marker: Path) -> None:
+    """같은 상태를 `--only-domain` 으로 선언해 도는 경로에서도 막는다."""
+    problems = comparer.full_gate_floor_problems(scoped=False)
+
+    assert problems
+    assert "하한을 고정하라" in problems[0]
+
+
+def test_표시가_있어도_내용이_없으면_막는다(comparer: ModuleType, marker: Path) -> None:
+    """`exists()` 만 보던 시절에는 `touch` 한 빈 파일이 하한을 세웠다.
+
+    선언 파일이 실물과 대조되는지 보는 것이 이 저장소의 규율인데(케이스 하한의 무의미 선언
+    검사가 같은 자리다) 이 파일만 예외였다.
+    """
+    marker.write_text("# 주석만 있다\n", encoding="utf-8")
+
+    problems = comparer.full_gate_floor_problems(scoped=False)
+
+    assert problems
+    assert "표시가 비어 있다" in problems[0]
+
+
+def test_표시의_도메인_수가_정본과_다르면_막는다(comparer: ModuleType, marker: Path) -> None:
+    """`domains` 는 도달 **시점의 정본 크기**다. 지금과 다르면 표시가 낡은 것이다."""
+    marker.write_text("reached: 2026-08-15\ndomains: 3\n", encoding="utf-8")
+
+    problems = comparer.full_gate_floor_problems(scoped=False)
+
+    assert problems
+    assert "표시가 낡았다" in problems[0]
+
+
+def test_고정한_뒤_범위가_줄면_막는다(comparer: ModuleType, marker: Path) -> None:
+    """강등. 정본이 늘었든 선언이 줄었든 결과는 같다 — 부분 게이트가 되어 종료 코드 3이
+    통과로 읽힌다."""
+    canonical = _canonical(comparer)
+    marker.write_text(f"reached: 2026-08-15\ndomains: {len(canonical)}\n", encoding="utf-8")
+    # 선언 하한에서 한 도메인을 뺀다 = 검증 범위가 내려갔다.
+    comparer.DECLARED_FLOOR_PATH.write_text(
+        "".join(f"{d}\n" for d in sorted(canonical)[:-1]), encoding="utf-8"
+    )
+
+    problems = comparer.full_gate_floor_problems(scoped=False)
+
+    assert problems
+    assert "내려왔다" in problems[0]
+
+
+def test_정상_상태는_통과한다(comparer: ModuleType, marker: Path) -> None:
+    """대조군. 이것이 없으면 위 다섯이 **무엇 때문에** 실패했는지 알 수 없다."""
+    canonical = _canonical(comparer)
+    marker.write_text(f"reached: 2026-08-15\ndomains: {len(canonical)}\n", encoding="utf-8")
+
+    assert comparer.full_gate_floor_problems(scoped=False) == []
+
+
+def test_케이스를_골라_돌린_실행에서는_보지_않는다(comparer: ModuleType, marker: Path) -> None:
+    """`--only` 는 범위 선언이 아니다. 켜 두면 단일 케이스 재현이 매번 빨개진다."""
+    assert not marker.exists()
+
+    assert comparer.full_gate_floor_problems(scoped=True) == []
