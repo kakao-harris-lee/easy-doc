@@ -234,7 +234,6 @@ val parityManifestCheck =
         }
     }
 
-
 // ── 모듈 의존 방향 강제 (Phase 3 착수 전 · 2회차 codex #5) ────────────────────────────
 //
 // `CoreModuleBoundaryTest` 는 **core 의 테스트 런타임에 클래스가 있는가**만 본다. 그래서
@@ -257,10 +256,11 @@ val parityManifestCheck =
 //      (다른 모듈을 통한 전이 노출 등)를 여기서 잡는다.
 //
 // `check` 에 걸어 두므로 `./gradlew build` 가 이 판정을 지난다.
-//: 소비 모듈 → 그 모듈이 `:infrastructure` 를 선언해도 되는 configuration.
-//:
-//: `testImplementation` 이 허용인 이유: 테스트는 어댑터의 test fixture 를 직접 쓴다.
-//: 그것은 프로덕션 의존 방향과 무관하고, 막으면 Testcontainers 테스트가 불가능해진다.
+
+// 소비 모듈 → 그 모듈이 `:infrastructure` 를 선언해도 되는 configuration.
+//
+// `testImplementation` 이 허용인 이유: 테스트는 어댑터의 test fixture 를 직접 쓴다.
+// 그것은 프로덕션 의존 방향과 무관하고, 막으면 Testcontainers 테스트가 불가능해진다.
 val boundaryAllowedConfigurations: Map<String, Set<String>> =
     mapOf(
         "api" to setOf("runtimeOnly", "testImplementation", "testRuntimeOnly"),
@@ -296,7 +296,8 @@ val moduleBoundaryChecks =
             val compileClasspath = project.configurations.named("compileClasspath")
             inputs.files(compileClasspath)
             val compileIds =
-                compileClasspath.flatMap { it.incoming.artifacts.resolvedArtifacts }
+                compileClasspath
+                    .flatMap { it.incoming.artifacts.resolvedArtifacts }
                     .map { artifacts -> artifacts.map { it.id.componentIdentifier.displayName } }
 
             doLast {
