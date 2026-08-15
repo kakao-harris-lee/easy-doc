@@ -155,6 +155,15 @@ jobs:
       # 파일을 지워도 exit 0 이다 — 수집이 줄고 스위트는 초록이다.
       - name: parity 게이트 회귀 실재 확인 (경로 명시)
         run: uv run pytest tests/test_parity_ci_gate.py
+      # 같은 규약을 스냅샷 가드 회귀에도 적용한다 (게이트 15 리더 판정 — 가드 성격
+      # 테스트의 경로 명시는 이 저장소가 세 번 적용한 규약이고, 미적용은 X2 의 CI 축을
+      # 새 파일에서 재생산한다). 이 파일이 지키는 것은 위 스냅샷 재생성 diff 검사
+      # (dump_python_snapshots.py --check)의 **삭제 탐지력** 전부다 — 케이스 하한
+      # PROMPT_CASE_FLOOR 와 파생 키 무조건 재생성이 다시 무력해지면 여기가 빨개진다.
+      # 전체 수집만 있으면 이 파일을 지워도 exit 0 이다 — 수집이 줄고 스위트는 초록이다.
+      # (§6.2 "열거 유지 vs 구조 유도"의 구조 판정은 다음 게이트 이월 — 지금은 규약 적용만.)
+      - name: 스냅샷 가드 회귀 실재 확인 (경로 명시)
+        run: uv run pytest tests/test_python_snapshot_guard.py
       - run: uv run pytest
       # 골든셋 LLM 평가(-m llm)는 API 키 시크릿 등록 후 별도 잡으로 활성화한다.
 
