@@ -315,11 +315,119 @@ x-input-limits:
     구버전 `.doc`(OLE2)은 전용 안내 문구와 함께 422다 —
     "구버전 doc 형식은 지원하지 않습니다 (docx로 다시 저장해 올려주세요)".
   rejected_pdf: "텍스트 레이어 없는 스캔 PDF·암호화 PDF는 422"
-  list_limit: { min: 1, max: 100, default: 20 }   # 범위 밖은 422
-  list_offset: { min: 0, default: 0 }             # 범위 밖은 422
-  max_workspace_name_length: 50      # 초과 시 422 (자르지 않고 거절)
+  list_limit: { min: 1, max: 100, default: 20 }   # 범위 밖은 422 — **스키마 층**이라 배열 detail
+  list_offset: { min: 0, default: 0 }             # 범위 밖은 422 — **스키마 층**이라 배열 detail
+  max_workspace_name_length: 50      # 초과 시 422 (자르지 않고 거절) — 서비스 층, 문자열 detail
+  max_email_length: 255              # 초과 시 422 — 서비스 층, 문자열 detail
+  min_password_length: 8             # 미만 시 422 — 서비스 층, 문자열 detail
   max_title_length: 255              # 사용자가 준 제목은 자른다(거절하지 않는다)
   retention_days: 30
+
+# -----------------------------------------------------------------------------
+# 요청 본문 필드의 길이·형식 제약 — **어느 층이 재는가 · 무엇을 재는가**
+#
+# 이 절이 F3(교차 리뷰 C-5)의 판정 결과이자 요구의 정본이다.
+# 상한 값 자체는 위 `x-input-limits`에, 그 값을 **어떻게 적용하는가**는 여기에 있다.
+# -----------------------------------------------------------------------------
+x-request-field-constraints:
+  x-why-this-section-exists: |
+    초판은 다섯 요청 필드에 OpenAPI `maxLength`/`minLength`를 달았다. 그것은 **스키마 층
+    제약을 선언한 것**이고, 이 계약 자신의 오류 본문 규칙에 따르면 스키마 실패는 422
+    **배열** `detail`이다. 그런데 실제로 이 다섯을 판정하는 것은 스키마가 아니라 서비스
+    층이고 결과는 422 **문자열** `detail`이다. **계약이 자기 자신과 충돌했다.**
+
+    실측(2026-08-13): 다섯 필드의 Pydantic 모델에는 길이 제약이 **하나도 없다**
+    (`SignupRequest`·`DocumentTextRequest`·`ConversionReviewRequest`·`WorkspaceNameRequest`
+    전부 `model_json_schema()`에 `maxLength`/`minLength` 0건). 전부
+    `InvalidInputError` → 422 문자열이다.
+
+    더 나쁜 것은 **경계까지 달랐다**는 점이다. 서비스는 정규화한 **뒤**의 길이를 재는데
+    스키마 제약은 **원시 값**에 걸리므로, 셋은 계약이 코드보다 엄격했다. 실측한 갈림 입력:
+
+      - `email` 원시 260자(앞 공백 10) → 정규화 후 250자. **코드 통과 / 스키마 거절**
+      - `edited_text` 원시 4,010자(제어문자 11) → 정규화 후 3,999자. **코드 통과 / 스키마 거절**
+      - `name` 원시 55자(제어문자 10) → 정규화 후 45자. **코드 통과 / 스키마 거절**
+
+    반대 방향도 있다 — `name`의 `minLength: 1`은 `"   "`(공백 3자)를 통과시키지만 서비스는
+    거절한다. 한 필드에서 두 방향으로 갈렸다.
+
+  x-decision: |
+    **다섯 전부 서비스 층 규칙으로 유지한다. OpenAPI 길이 키워드를 제거한다.**
+    (판정 2026-08-13, contract-keeper. 근거 **G1**(계약이 사실과 다름) + **G4**(계약의 두
+    조항이 서로 모순이라 양쪽을 동시에 만족시킬 수 없음).)
+
+    반대 방향(코드를 스키마 층으로 옮기기)을 택하지 않은 이유가 셋이다.
+
+    1. **요구가 정규화 후 판정을 지정했다.** "제어문자를 걷어내고 앞뒤 공백을 턴 뒤
+       검사한다"는 이 계약 자신의 문장이고(`POST /workspaces` 설명), 제어문자를 먼저
+       걷어내는 이유도 명시돼 있다 — 남겨 두면 docx 내보내기 시점에 터져 사용자가 원인을
+       알 수 없는 500을 받는다. 스키마 층은 정규화 전에 돌므로 **이 요구를 표현할 수 없다.**
+    2. **사용자에게 보이는 문구가 한국어에서 영어로 바뀐다.** React `readErrorMessage`
+       (`frontend/src/api/client.ts:83-90`)는 배열 `detail`에서 `msg`만 뽑아 그대로 화면에
+       올린다. 스키마 층으로 옮기면 `"작업 공간 이름은 50자 이하여야 합니다"` 대신
+       Bean Validation의 영문 문구가 사용자에게 나간다. **상태 코드는 그대로라 테스트로도
+       잡히지 않는 종류의 품질 저하다.**
+    3. **한 API 안에서 길이 위반의 응답 모양이 둘로 갈린다.** 다섯 중 둘(`password`·`text`)은
+       경계가 코드와 같아 옮겨도 값 동작이 안 바뀌지만, 옮기면 같은 "길이 위반"이 필드에
+       따라 배열/문자열로 갈려 클라이언트 분기가 예측 불가능해진다.
+
+    **이것은 계약을 느슨하게 만드는 변경이 아니다.** 상한은 그대로이고, 강제하는 층과
+    재는 대상이 사실과 맞게 적혔을 뿐이다.
+
+  x-contrast-case: |
+    **모든 제약을 걷어낸 것이 아니다.** `GET /documents`의 `limit`·`offset`은 진짜 스키마
+    제약이고 그대로 둔다 — 구현이 `Annotated[int, Query(ge=1, le=100)]`로 **실제로 스키마
+    층에서** 판정하며 422 배열이 나간다(`ValidationFailed.examples.query_range`가 그 예시다).
+
+    계약이 통째로 틀렸던 것이 아니라, **코드가 스키마 층에서 재는 자리에서는 맞았고 아닌
+    자리에서 틀렸다.** 이 대비가 판정의 근거다 — 규칙을 일괄 적용한 것이 아니라 자리마다
+    실제 강제 지점을 확인했다.
+
+  fields:
+    - field: "SignupRequest.email"
+      layer: service            # 위반 시 422 **문자열** detail
+      limit: 255
+      measured_on: "정규화 후 — 앞뒤 공백 제거 + 소문자화(app/services/auth.py:192-194)"
+      detail: "이메일 형식이 올바르지 않습니다"    # 길이 초과와 형식 오류가 같은 문구다(입력값 비반향)
+    - field: "SignupRequest.password"
+      layer: service
+      limit: 8                  # 하한. 상한 없음 — argon2는 입력 길이에 비용이 좌우되지 않는다
+      measured_on: "원시 값 — 정규화하지 않는다"
+      detail: "비밀번호는 8자 이상이어야 합니다"
+    - field: "DocumentTextRequest.text"
+      layer: service
+      limit: 4000
+      measured_on: "원시 값 — 정규화하지 않는다. ⚠ `edited_text`와 비대칭이다(아래 x-open-asymmetry)"
+      detail: "현재는 4,000자 이하 문서만 변환할 수 있습니다 (긴 문서 분할 변환은 준비 중입니다)"
+    - field: "ConversionReviewRequest.edited_text"
+      layer: service
+      limit: 4000
+      measured_on: "정규화 후 — 제어문자 제거(app/services/documents.py:399-402)"
+      detail: "수정본은 4,000자 이하여야 합니다 (긴 문서 분할 변환은 준비 중입니다)"
+    - field: "WorkspaceNameRequest.name"
+      layer: service
+      limit: 50                 # 하한은 "정규화 후 비어 있지 않을 것"이며 minLength로 표현되지 않는다
+      measured_on: "정규화 후 — 제어문자 제거 + 앞뒤 공백 제거(app/services/workspaces.py:136-140)"
+      detail: ["작업 공간 이름을 입력해 주세요", "작업 공간 이름은 50자 이하여야 합니다"]
+
+  x-open-asymmetry: |
+    **미결 — Phase 4, `kotlin-implementer`·`parity-verifier` 공동.**
+    `edited_text`는 제어문자를 걷어낸 뒤 길이를 재는데 `text`(붙여넣기)는 그러지 않는다
+    (`create_from_text`가 `strip_control_chars`를 부르지 않는다 — 2026-08-13 실측).
+    그런데 제어문자를 먼저 걷어내는 **이유**로 계약이 든 것(docx 내보내기가 담지 못해
+    500이 된다)은 두 경로에 똑같이 적용된다. 즉 붙여넣기 본문의 제어문자는 지금 저장까지
+    도달한다.
+
+    **이 계약은 그 비대칭을 해소하지 않는다** — 정규화 범위를 넓히는 것은 계약 문구가 아니라
+    변환 파이프라인의 판단이고, 텍스트 정규화 명세는 parity 레인이 소유한다. 계약은 현재
+    요구되는 측정 기준을 **있는 그대로** 적고 이 자리를 미결로 표시한다. 해소되면
+    `measured_on`을 함께 고친다.
+
+  x-openapi-expressibility: |
+    이 절의 요구는 OpenAPI 문법으로 끝까지 표현되지 않는다. `maxLength`는 "원시 값의
+    길이"만 말할 수 있고 "정규화 후 길이"를 말할 수 없다. 그래서 값을 스키마 키워드가
+    아니라 이 확장 절에 둔다 — **생성기가 조용히 틀린 검증기를 만드는 것**이
+    상한을 기계가독으로 잃는 것보다 나쁘다(`x-error-body-universality`와 같은 판단).
 
 # -----------------------------------------------------------------------------
 # 오류 본문의 보편성 — "어떤 경로로 만들어진 오류 응답이든"
@@ -1396,6 +1504,18 @@ components:
 
         배열 항목에는 `loc`·`msg`·`type`만 있다. `input`·`ctx`는 금지 —
         비밀번호가 응답 본문과 액세스 로그에 남는 경로다.
+
+        **어느 모양이 나오는지는 구현 재량이 아니라 계약이다.** 경계는 이렇다:
+
+          - **배열** — 필드 누락·타입 불일치·enum 밖 값, 그리고 스키마에 실제로 제약이
+            선언된 쿼리 파라미터(`limit`·`offset`)
+          - **문자열** — 요청 본문 필드의 길이·형식·빈 값 규칙 **전부**.
+            정본은 `x-request-field-constraints`이며 그 다섯 필드에는 `maxLength`/
+            `minLength`가 **의도적으로 없다**
+
+        길이 위반을 Bean Validation(`@Size`·`@NotBlank`)으로 구현하면 배열이 나가고
+        문구가 영문으로 바뀌어 **계약 위반**이다. 상태 코드가 같아 눈에 띄지 않으므로
+        contract test가 `detail`의 **타입까지** 단언한다.
       content:
         application/json:
           schema: { $ref: '#/components/schemas/ErrorResponse' }
@@ -1542,14 +1662,20 @@ components:
       properties:
         email:
           type: string
-          maxLength: 255
-          description: 공백 제거 + 소문자로 정규화한 뒤 형식을 검사한다. 위반은 422 문자열 detail.
+          x-service-constraint: { max_length: 255, measured_on: normalized }
+          description: |
+            공백 제거 + 소문자로 정규화한 뒤 **그 결과의** 길이(≤255)와 형식을 검사한다.
+            위반은 422 **문자열** detail이다.
+            **`maxLength`를 쓰지 않는다** — 스키마 키워드는 원시 값에 걸려 정규화로 줄어드는
+            입력을 잘못 거절하고, 오류 모양도 배열로 바뀐다(`x-request-field-constraints`).
           examples: ["user@example.test"]
         password:
           type: string
-          minLength: 8
+          x-service-constraint: { min_length: 8, measured_on: raw }
           description: |
             최소 8자. 상한은 두지 않는다(argon2는 입력 길이에 비용이 좌우되지 않는다).
+            원시 값으로 재지만 판정은 **서비스 층**이라 위반은 422 **문자열** detail이다 —
+            경계가 스키마와 같아도 오류 모양이 다르므로 `minLength`를 쓰지 않는다.
             **이 값은 응답 본문·로그 어디에도 반향되지 않는다.**
 
     LoginRequest:
@@ -1597,11 +1723,14 @@ components:
       properties:
         text:
           type: string
-          maxLength: 4000
+          x-service-constraint: { max_length: 4000, measured_on: raw }
           description: |
             공백만 있으면 422("본문이 비어 있습니다").
             4,000자 초과도 422. **바이트가 아니라 문자 수**로 잰다 — 한국어는 UTF-8에서
             글자당 3바이트라 바이트 기준이면 실제 분량의 1/3에서 잘린다.
+            둘 다 **서비스 층** 판정이라 422 **문자열** detail이다(`maxLength` 미사용 사유는
+            `x-request-field-constraints`). ⚠ 이 필드는 `edited_text`와 달리 **원시 길이**로
+            잰다 — 그 비대칭은 미결이다(같은 절 `x-open-asymmetry`).
         title:
           anyOf: [{ type: string }, { type: 'null' }]
           description: |
@@ -1691,10 +1820,14 @@ components:
       properties:
         edited_text:
           type: string
-          maxLength: 4000
+          x-service-constraint: { max_length: 4000, measured_on: normalized }
           description: |
-            제어문자를 걷어낸 뒤 빈 값·길이를 판정한다. 원문과 **같은 4,000자 상한**을
-            쓴다 — 검수는 초안을 다듬는 자리이지 새 문서를 쓰는 자리가 아니다.
+            제어문자를 걷어낸 뒤 **그 결과로** 빈 값·길이를 판정한다. 원문과 **같은 4,000자
+            상한**을 쓴다 — 검수는 초안을 다듬는 자리이지 새 문서를 쓰는 자리가 아니다.
+            먼저 걷어내는 이유는 docx(XML)가 담지 못하는 문자를 저장해 두면 **내보내기
+            시점에** 터져 사용자가 원인을 알 수 없는 500을 받기 때문이다.
+            위반은 422 **문자열** detail이며, 그래서 `maxLength`를 쓰지 않는다 — 스키마
+            키워드는 정규화 전 원시 값에 걸린다(`x-request-field-constraints`).
 
     ConversionResponse:
       type: object
@@ -1820,9 +1953,13 @@ components:
       properties:
         name:
           type: string
-          minLength: 1
-          maxLength: 50
-          description: 제어문자를 걷어내고 앞뒤 공백을 턴 뒤 판정한다.
+          x-service-constraint: { max_length: 50, non_empty: true, measured_on: normalized }
+          description: |
+            제어문자를 걷어내고 앞뒤 공백을 턴 뒤 **그 결과로** 판정한다 — 비어 있으면 422,
+            50자를 넘으면 422이며 **자르지 않고 거절한다**. 둘 다 문자열 detail이다.
+            `minLength`/`maxLength`를 쓰지 않는 이유가 **양방향**이다: `maxLength: 50`은
+            제어문자를 포함한 원시 55자를 잘못 거절하고, `minLength: 1`은 서비스가 거절하는
+            `"   "`(공백만)를 통과시킨다(`x-request-field-constraints`).
 
     WorkspaceResponse:
       type: object
@@ -1889,6 +2026,61 @@ components:
 # 변경 이력
 # =============================================================================
 x-changelog:
+  - version: "1.1.0"
+    date: "2026-08-15"
+    revision: "F3"
+    author: contract-keeper
+    change: |
+      **요청 본문 필드 5개의 길이 제약을 스키마 키워드에서 서비스 층 규칙으로 정정.**
+      (F3 = 교차 리뷰 C-5. Phase 3 착수 전 판정 항목.)
+        - `SignupRequest.email` `maxLength: 255` 제거 → `x-service-constraint`
+        - `SignupRequest.password` `minLength: 8` 제거 → `x-service-constraint`
+        - `DocumentTextRequest.text` `maxLength: 4000` 제거 → `x-service-constraint`
+        - `ConversionReviewRequest.edited_text` `maxLength: 4000` 제거 → `x-service-constraint`
+        - `WorkspaceNameRequest.name` `minLength: 1`·`maxLength: 50` 제거 → `x-service-constraint`
+        - **`x-request-field-constraints` 신설** — 판정문·근거·필드별 측정 기준의 정본
+        - `x-input-limits`에 `max_email_length`·`min_password_length` 추가,
+          `list_limit`·`list_offset`에 "스키마 층" 표시
+        - `components/responses/ValidationFailed` — 배열/문자열의 **경계 규칙**을 명시
+    basis: |
+      근거 **G1**(계약이 사실과 다름) + **G4**(계약의 두 조항이 서로 모순이라 동시에
+      만족시킬 수 없음). 계약은 스키마 실패를 422 **배열**로 못박았는데 이 다섯을 판정하는
+      것은 스키마가 아니라 서비스 층이고 결과는 422 **문자열**이다.
+
+      실측(2026-08-13): 다섯 필드의 Pydantic 모델에 길이 제약 **0건**. 셋은 계약이 코드보다
+      엄격했다 — 서비스가 **정규화 후** 길이를 재기 때문이다. 갈림 입력 실측:
+      email 원시 260→정규화 250 / edited_text 원시 4,010→3,999 / name 원시 55→45.
+      셋 다 **코드 통과·스키마 거절**. 반대로 `name`의 `minLength: 1`은 `"   "`를
+      통과시키는데 서비스는 거절한다 — 한 필드가 양방향으로 갈렸다.
+
+      **반대 방향(코드를 스키마 층으로)을 택하지 않은 이유**: ① 요구가 정규화 후 판정을
+      지정했고(제어문자를 남기면 docx 내보내기에서 500) 스키마 층은 정규화 전에 돌아 이를
+      표현할 수 없다, ② React `readErrorMessage`가 배열의 `msg`를 그대로 화면에 올리므로
+      한국어 문구가 Bean Validation 영문으로 바뀐다 — 상태 코드가 같아 테스트로 안 잡히는
+      품질 저하다, ③ 같은 "길이 위반"이 필드마다 배열/문자열로 갈려 클라이언트 분기가
+      예측 불가능해진다.
+
+      **일괄 삭제가 아니다** — `limit`·`offset`(`Annotated[int, Query(ge=1, le=100)]`)은
+      진짜 스키마 제약이라 그대로 뒀다. 자리마다 실제 강제 지점을 확인한 결과다.
+
+      **`info.version`은 올리지 않는다** — 올바르게 구현한 런타임이 내보내는 바이트가
+      달라지지 않는다. 계약의 산문(`POST /auth/signup` 설명)은 이미 "도메인 예외 → 422
+      문자열"이라고 적고 있었고, 이번 변경은 그 산문과 충돌하던 스키마 키워드를 걷어낸
+      **오기 정정**이다(R-1·U-1·OQ-1·H-1과 같은 판단).
+
+      React 영향: **없음.** 문자열 `detail`은 `client.ts:79-81`이 이미 처리하는 경로이고,
+      이번 판정은 그 경로를 **유지**하는 쪽이다. 스키마 층으로 옮겼다면 오히려 화면 문구가
+      바뀌었을 것이다.
+
+      미결로 남긴 것: `text`(원시 길이)와 `edited_text`(정규화 후 길이)의 **비대칭**.
+      정규화 범위 확대는 계약 문구가 아니라 변환 파이프라인 판단이라
+      `x-request-field-constraints.x-open-asymmetry`에 Phase 4 미결로 표시했다.
+
+      영향받는 검증: X-F1·X-F2에 **`detail` 타입 단언 추가**(문자열이어야 한다),
+      X-F9 신설(정규화 후 경계 — 원시 초과·정규화 후 이하인 입력이 **통과**한다),
+      X-F10 신설(`name`이 `"   "`를 문자열 detail로 거절한다).
+      통보 대상: kotlin-implementer(Phase 3에서 바로 걸린다 — `@Size`/`@NotBlank` 금지),
+      parity-verifier(다섯 필드의 `detail` 전문 일치는 계약이다), 리더.
   - version: "1.0.0"
     date: "2026-08-12"
     author: contract-keeper
