@@ -394,7 +394,7 @@ EXPECTED_MET_YES_KEYS: Final[frozenset[tuple[str, str]]] = frozenset(
         # 2026-08-15 2차: X-9 해소(ef7b4a8 — 스냅샷 생성기, 재생성 diff 0)와
         # C-3·C-4 해소(f73b8bd)로 L344·L345 를 예로 올렸다.
         ("Phase 2 — 순수 도메인 로직 포팅", "프롬프트 렌더링과 동적 어려운 말 목록 포팅"),
-        ("Phase 2 — 순수 도메인 로직 포팅", "스타일 규칙 포팅 (`app/easyread/style_rules.py"),
+        ("Phase 2 — 순수 도메인 로직 포팅", "스타일 규칙 포팅 (`app/easyread/style_rules.py`"),
     }
 )
 
