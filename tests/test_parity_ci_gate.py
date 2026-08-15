@@ -28,6 +28,7 @@
 1·2 는 이 저장소 안에서 닫을 수 없다. 최종 방어선은 첫 push 의 실제 러너 실행이다.
 """
 
+import json
 import os
 import shutil
 import subprocess
@@ -349,3 +350,147 @@ def test_케이스를_골라_돌린_실행에서는_보지_않는다(comparer: M
     assert not marker.exists()
 
     assert comparer.full_gate_floor_problems(scoped=True) == []
+
+
+# ---------------------------------------------------------------------------
+# 게이트 우회 시나리오 (codex #2 / X-3 별건 — Phase 3 착수 전 마감)
+#
+# 하네스를 세울 때 손으로 여섯 가지 우회를 뚫어 보고 "막힌다"를 확인했다. 그 확인은
+# **일회성**이라 가드가 다시 무력해져도 아무 데서도 빨개지지 않았다. 여기서 상시화한다.
+#
+# 여섯 중 하나(역방향 패딩)는 **대상 자체가 없어졌다** — 역방향 외부 검증(Kotlin 이 만든
+# 토큰을 Python 검증기가 읽는 경로)은 2026-08-12 재개발 전환으로 crypto·jwt·argon2 도메인과
+# 함께 제거됐다. 없는 가드에 테스트를 붙이면 "검사하는 척"이 되므로 만들지 않고 여기 적는다.
+#
+# 시나리오 → 가드 대응표는 산출물 문서에 있다.
+# ---------------------------------------------------------------------------
+
+
+def _fixture_document(comparer: ModuleType, domain: str) -> dict:
+    path = REPO / f"parity/fixtures/{domain}/{domain}.json"
+    assert path.exists(), f"{path} 가 없다 — fixture 가 옮겨졌는지 확인하라"
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def test_runtime이_kotlin이_아니면_막는다(comparer: ModuleType) -> None:
+    """`runtime` 위조. 이 필드는 손으로 적을 수 있어 **단독 방어선이 아니지만**, 예전 비교기가
+    그것을 **한 번도 읽지 않아** `not-kotlin` 결과가 그대로 통과했다(X-11)."""
+    problem = comparer.runtime_problem({"runtime": "python", "cases": []}, Path("x.json"))
+
+    assert problem is not None
+    assert "kotlin" in problem
+
+
+def test_runtime_선언이_없으면_막는다(comparer: ModuleType) -> None:
+    """손으로 쓴 산출물의 가장 흔한 형태 — 케이스만 적고 런타임 선언을 빠뜨린 파일."""
+    problem = comparer.runtime_problem({"cases": []}, Path("x.json"))
+
+    assert problem is not None
+    assert "미선언" in problem
+
+
+def test_정상_산출물은_runtime에서_막히지_않는다(comparer: ModuleType) -> None:
+    """대조군. 없으면 위 둘이 **무엇 때문에** 걸렸는지 알 수 없다."""
+    assert comparer.runtime_problem({"runtime": "kotlin", "cases": []}, Path("x.json")) is None
+
+
+def test_축소된_fixture는_정본_대조에서_막힌다(comparer: ModuleType) -> None:
+    """케이스를 덜어 낸 fixture. 정본 생성기를 다시 돌려 대조하므로 손편집이 드러난다.
+
+    이것이 이 하네스의 **가장 값싼 우회**였다 — 빨간 케이스를 지우면 초록이 된다.
+    """
+    domain = "text"
+    document = _fixture_document(comparer, domain)
+    document["cases"] = document["cases"][:2]
+    pair = comparer.Pair(
+        fixture_path=REPO / f"parity/fixtures/{domain}/{domain}.json",
+        actual_path=REPO / f"parity/actual/{domain}/{domain}.json",
+        domain=domain,
+        fixture=document,
+        mode=comparer.MODE_SPEC,
+        spec_status="ready",
+    )
+
+    problems = comparer.provenance_problems(pair)
+
+    assert problems, "케이스를 덜어 냈는데 정본 대조가 조용하다"
+    assert any("정본" in problem for problem in problems)
+
+
+def test_손대지_않은_fixture는_정본_대조를_통과한다(comparer: ModuleType) -> None:
+    """대조군. 정본 대조가 **아무 fixture나** 빨갛게 만드는 검사가 아님을 고정한다."""
+    domain = "text"
+    pair = comparer.Pair(
+        fixture_path=REPO / f"parity/fixtures/{domain}/{domain}.json",
+        actual_path=REPO / f"parity/actual/{domain}/{domain}.json",
+        domain=domain,
+        fixture=_fixture_document(comparer, domain),
+        mode=comparer.MODE_SPEC,
+        spec_status="ready",
+    )
+
+    assert comparer.provenance_problems(pair) == []
+
+
+# --- 정본(BUILDERS) 쪽 우회는 CI 셸이 막는다 -------------------------------
+#
+# 위 넷은 비교기 함수를 직접 부르지만, 정본 개수는 셸이 `--list` 출력으로 센다. 그래서
+# 이 둘만 셸 경로로 검증한다 — 생성기를 **출력만 바꾼 대역**으로 갈아 끼워 재현한다.
+
+
+def _stub_generator(root: Path, domains: list[str]) -> None:
+    """`--list` 가 주어진 도메인만 출력하는 대역으로 생성기를 갈아 끼운다."""
+    target = root / ".claude/skills/python-kotlin-parity/scripts/dump_parity_fixtures.py"
+    listing = "".join(f"{name} 설명\n" for name in domains)
+    target.write_text(
+        f"import sys\nif '--list' in sys.argv:\n    sys.stdout.write({listing!r})\nsys.exit(0)\n",
+        encoding="utf-8",
+    )
+
+
+def test_정본이_0개면_실패한다(tmp_path: Path, script: str) -> None:
+    """정본이 비면 "몇 개를 안 봤다"를 셀 수 없어 경고가 스스로 무의미해진다.
+
+    이 검사가 없으면 무검증이 **더 자랑스러운 로그**와 함께 통과한다 — "정본 0개 /
+    검증하지 않음 0개".
+    """
+    root = _tree(tmp_path)
+    _stub_generator(root, [])
+
+    result = _run(root, script)
+
+    assert result.returncode != 0
+    assert "정본 도메인이 0개다" in result.stdout
+
+
+def test_정본이_부분_삭제되면_실패한다(tmp_path: Path, script: str) -> None:
+    """0개까지 가지 않는 축소. 정본 하한(`parity-canonical-floor.txt`)이 그 자리를 받는다.
+
+    `canonical_count == 0` 검사만 있던 시절에는 8개를 3개로 줄이는 편집이 그대로 통과했고,
+    선언까지 3개로 맞추면 **축소가 "전체 게이트 통과"로 위장**됐다.
+    """
+    root = _tree(tmp_path)
+    _stub_generator(root, ["masking", "text", "style"])
+
+    result = _run(root, script)
+
+    assert result.returncode != 0
+    assert "정본에서 도메인이 사라졌다" in result.stdout
+
+
+def test_정본이_온전하면_셸_가드를_통과한다(tmp_path: Path, script: str) -> None:
+    """대조군. 대역 생성기 자체가 셸을 깨뜨리는 것이 아님을 고정한다."""
+    root = _tree(tmp_path)
+    floor = (root / ".github/parity-canonical-floor.txt").read_text(encoding="utf-8")
+    domains = [
+        line.split("#", 1)[0].strip()
+        for line in floor.splitlines()
+        if line.split("#", 1)[0].strip()
+    ]
+    _stub_generator(root, domains)
+
+    result = _run(root, script)
+
+    assert BANNER in result.stdout, result.stdout
+    assert "정본 도메인이 0개다" not in result.stdout
+    assert "정본에서 도메인이 사라졌다" not in result.stdout
