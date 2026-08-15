@@ -1426,9 +1426,27 @@ def build_prompts() -> FixtureSpec:
     # 문안을 되돌린다.
     # 비교기의 `export_title_markers` 와 **같은 규칙**으로 표지를 뽑는다. 두 벌이 되는 것은
     # 맞지만 역할이 다르다 — 비교기 쪽은 **판정**이고 여기 것은 **어느 단언을 붙일지 고르는
-    # 선택**이다. 그리고 갈리면 조용하지 않다: 규칙이 어긋나 여기서 표지를 만들었는데 비교기가
-    # 못 만들면 `contains_derived` 가 빈 요구로 떨어져 `allow_empty` 없이 실패한다(B4-A).
-    # 그래서 드리프트가 자기 신고된다.
+    # 선택**이다.
+    #
+    # **드리프트 자기 신고는 한쪽 방향뿐이다 (게이트 14 충돌③ — 앞선 서술 정정).**
+    # 전에 여기 "갈리면 조용하지 않다"고 적었는데 **절반만 참이었다.**
+    #
+    #   여기 표지 있음 / 비교기 표지 없음 → `contains_derived` 가 빈 요구로 떨어져
+    #     `allow_empty` 없이 **실패한다**(B4-A). 신고된다.
+    #   여기 표지 **없음** / 비교기 표지 있음 → 아래 조건이 `contains_derived` 를 **아예 붙이지
+    #     않고** 대체 이름 단언으로 갈아탄다. 비교기의 규칙은 **호출되지도 않으므로** 조용하다.
+    #
+    # 뒤엣것이 남은 구멍이다. 여기 규칙이 비교기보다 **좁아지는** 편집(가르는 문자를 더하거나
+    # 최소 길이를 올리는 것)은 표지를 비워 하한을 통째로 대체 이름 단언으로 바꿔치우는데,
+    # 그 케이스는 여전히 초록이다. 두 규칙을 한 곳에서 읽게 하면 닫히지만 그러면 비교기가
+    # 생성기를 신뢰하게 되어 X-4형 순환이 된다 — **지금은 닫지 않고 한계로 적는다.**
+    # 실질 방어는 이 두 블록이 같은 파일 안에서 나란히 보인다는 것과 리뷰다.
+    #
+    # **`allow_empty` 는 어디에 사는가 (F-10)**: 단언 인자다(`_assert(..., allow_empty=True)`).
+    # 규칙이 아니라 **그 규칙을 쓰는 자리**가 선언한다 — 같은 유도 규칙이라도 도메인마다
+    # "비어도 되는가"가 다르기 때문이다. `style` 의 길이·쉼표 하한은 위반 없는 본문에서
+    # 정당하게 비고(그 경우에도 `equals_derived` 가 정확 일치로 판정한다), `export` 의 표지
+    # 하한은 비면 그 케이스가 아무것도 재지 않으므로 비면 안 된다.
     cases: list[Case] = []
     for name, masked in masked_samples:
         issues = check_style(masked).issues
@@ -2074,21 +2092,40 @@ def build_export() -> FixtureSpec:
         return pieces
 
     markers_by_case = {name: title_markers(title) for name, title in titles}
+
     #: 다른 표본에만 있는 표지. 파일명이 **그 케이스의 것**임을 요구한다.
     #:
     #: 왜 필요한가(게이트 13 X-4): 위 하한은 "제목의 조각이 남아 있는가"만 본다. 그래서
     #: 모든 제목의 표지를 이어 붙인 **상수 하나**를 늘 돌려주는 구현이 7케이스 21자리를
     #: 전부 통과한다 — 하한이 케이스를 구별하지 못한다. 남의 표지가 **없어야** 한다는
     #: 반대 방향을 함께 걸어야 그 상수가 걸린다.
+    def cleaned_title(title: str) -> str:
+        """정제가 지나간 뒤 남을 문자만 — 배타 판정의 기준 본문."""
+        swapped = "".join(" " if ch in _FORBIDDEN_IN_FILENAME_SET else ch for ch in title)
+        return " ".join(swapped.split())
+
     exclusive_by_case = {
         name: sorted(
-            {
-                marker
-                for other, others in markers_by_case.items()
-                if other != name
-                for marker in others
-            }
-            - set(markers_by_case[name])
+            marker
+            for marker in (
+                {
+                    other_marker
+                    for other, others in markers_by_case.items()
+                    if other != name
+                    for other_marker in others
+                }
+                - set(markers_by_case[name])
+            )
+            # **접두·부분 문자열 거짓 실패를 막는다 (게이트 14 F-9).** 표지는 8자로 잘린
+            # 조각이라 남의 표지가 이 제목 안에 **부분 문자열로** 들어 있을 수 있다
+            # (예: 남의 표지 `etc` / 이 제목 `etcetera`). 그때 `absent` 는 정상 산출물을
+            # 거짓 실패로 만든다. 자기 표지 집합만 빼는 것으로는 부족하다 — 표지는 잘려
+            # 있고 제목은 잘려 있지 않기 때문이다.
+            #
+            # 현재 7표본에서는 충돌이 **0건**이라 이 필터가 걸러 내는 것이 지금은 없다.
+            # 그래도 넣는다: 이 목록은 표본이 늘 때마다 조합이 커지고, 걸리는 날 증상은
+            # "정상 구현인데 게이트가 빨갛다"라 원인을 찾기 어렵다.
+            if marker not in cleaned_title(dict(titles)[name])
         )
         for name, _ in titles
     }
