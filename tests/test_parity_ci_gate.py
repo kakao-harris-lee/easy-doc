@@ -437,6 +437,179 @@ def test_손대지_않은_fixture는_정본_대조를_통과한다(comparer: Mod
     assert comparer.provenance_problems(pair) == []
 
 
+# ---------------------------------------------------------------------------
+# 게이트 우회 회귀 — **본류 배선** (게이트 15 X2 / codex C15-6)
+#
+# 위 헬퍼 직접 호출 테스트들은 helper **내부의 탐지력**만 잰다. helper 가 본류에
+# 배선돼 있는지는 재지 않았다 — `runtime_problem` 의 본류 호출부는 `compare_file` 에,
+# `provenance_problems` 의 본류 호출부는 `main` 에 **각각 정확히 한 곳씩**이고, 그
+# 한 줄을 지우면 비교기가 위조 runtime·축소 fixture 를 다시 승인하는데 헬퍼 테스트
+# 여섯은 전부 초록이었다(게이트 15 교차 §2 전제 ④ 실측).
+#
+# 그래서 아래는 `main()` 을 그대로 실행한다 — CI 셸이 부르는 바로 그 경로다.
+# tmp_path 합성 트리에 위조/축소 산출물을 두고, 본류가 낸 **리포트 문구**로 단언한다.
+# 종료 코드만 보면 안 된다 — 합성 트리는 도메인 하나뿐이라 도메인 누락만으로도 1이
+# 나온다(아래 대조군이 그 사실을 고정한다). 문구는 각 helper 만 낼 수 있으므로,
+# 호출부를 지우면 문구가 사라져 이 테스트가 빨개진다.
+# ---------------------------------------------------------------------------
+
+
+def _mainline_tree(
+    comparer: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    mutate: Any = None,
+    actual: dict[str, Any] | None = None,
+) -> Path:
+    """본류 실행용 합성 트리. 하한·표시 파일 3종을 함께 격리한다.
+
+    격리 이유는 `marker` fixture 와 같다 — 실물을 건드리지 않기 위해서이자, 실물
+    하한의 상태 변화가 이 테스트의 판정에 섞이지 않게 하기 위해서다. 케이스 하한은
+    **트리에 실제로 있는 케이스**로 쓴다. 축소 시나리오에서 실물 하한을 그대로 쓰면
+    케이스 하한 검사도 함께 빨개져서, 본류 정본 대조(`:2282`)를 지워도 종료 코드가
+    빨간 채 남는다 — 그 겹침을 여기서 미리 걷어낸다.
+    """
+    root = tmp_path / "mainline"
+    fixture_dir = root / "fixtures/text"
+    fixture_dir.mkdir(parents=True)
+    document = _fixture_document(comparer, "text")
+    if mutate is not None:
+        mutate(document)
+    (fixture_dir / "text.json").write_text(
+        json.dumps(document, ensure_ascii=False), encoding="utf-8"
+    )
+    actual_dir = root / "actual/text"
+    actual_dir.mkdir(parents=True)
+    if actual is not None:
+        (actual_dir / "text.json").write_text(
+            json.dumps(actual, ensure_ascii=False), encoding="utf-8"
+        )
+    case_floor = tmp_path / "parity-case-floor.txt"
+    _write_lines(case_floor, [f"text/{case['id']}" for case in document["cases"]])
+    monkeypatch.setattr(comparer, "CASE_FLOOR_PATH", case_floor)
+    declared = tmp_path / "parity-declared-floor.txt"
+    _write_lines(declared, sorted(comparer.BUILDERS))
+    monkeypatch.setattr(comparer, "DECLARED_FLOOR_PATH", declared)
+    mark = tmp_path / "parity-full-gate.txt"
+    mark.write_text(f"reached: 2026-08-15\ndomains: {len(comparer.BUILDERS)}\n", encoding="utf-8")
+    monkeypatch.setattr(comparer, "FULL_GATE_PATH", mark)
+    return root
+
+
+def _run_mainline(
+    comparer: ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    root: Path,
+) -> tuple[int, str]:
+    """`main()` 을 CI 와 같은 인자 형태(--fixture/--actual 루트)로 실행한다."""
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "compare_parity.py",
+            "--fixture",
+            str(root / "fixtures"),
+            "--actual",
+            str(root / "actual"),
+            "--ledger",
+            str(root / "ledger"),
+        ],
+    )
+    code = comparer.main()
+    captured = capsys.readouterr()
+    return code, captured.out + captured.err
+
+
+def test_본류가_위조_runtime을_막는다(
+    comparer: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """`runtime: python` 결과 파일을 **본류가** 잡는지. helper 가 아니라 배선을 잰다."""
+    root = _mainline_tree(
+        comparer, tmp_path, monkeypatch, actual={"runtime": "python", "cases": []}
+    )
+
+    code, output = _run_mainline(comparer, monkeypatch, capsys, root)
+
+    assert code != 0
+    assert "runtime 이 `kotlin` 이 아니다" in output, (
+        "위조 runtime 이 본류에서 잡히지 않았다 — compare_file 의 runtime_problem "
+        f"호출부가 사라졌는지 확인하라\n{output}"
+    )
+
+
+def test_본류가_runtime_미선언을_막는다(
+    comparer: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """런타임 선언을 빠뜨린 손편집 결과 파일을 **본류가** 잡는지."""
+    root = _mainline_tree(comparer, tmp_path, monkeypatch, actual={"cases": []})
+
+    code, output = _run_mainline(comparer, monkeypatch, capsys, root)
+
+    assert code != 0
+    assert "runtime 미선언" in output, (
+        "runtime 미선언이 본류에서 잡히지 않았다 — compare_file 의 runtime_problem "
+        f"호출부가 사라졌는지 확인하라\n{output}"
+    )
+
+
+def test_본류가_축소_fixture를_막는다(
+    comparer: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """케이스를 덜어 낸 fixture 를 **본류가** 정본 대조로 잡는지.
+
+    actual 을 두지 않는다 — 정본 대조는 actual 유무와 무관하게 돌아야 한다
+    (`main` 의 해당 주석: "fixture가 위조됐다면 actual이 없어도 결함이다").
+    """
+
+    def truncate(document: dict[str, Any]) -> None:
+        document["cases"] = document["cases"][:2]
+
+    root = _mainline_tree(comparer, tmp_path, monkeypatch, mutate=truncate)
+
+    code, output = _run_mainline(comparer, monkeypatch, capsys, root)
+
+    assert code != 0
+    assert "정본에서 사라졌다" in output, (
+        "축소된 fixture 가 본류에서 잡히지 않았다 — main 의 provenance_problems "
+        f"호출부가 사라졌는지 확인하라\n{output}"
+    )
+
+
+def test_본류_대조군은_위조_문구_없이_실패한다(
+    comparer: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """대조군 — 위 세 문구가 조작 **때문에** 나왔음을 고정한다.
+
+    손대지 않은 fixture + actual 없음이면 실패 사유는 '결과 파일 없음'과 도메인
+    누락뿐이어야 한다. 종료 코드는 여기서도 0이 아니다 — 그래서 위 테스트들이
+    종료 코드가 아니라 문구로 단언하는 것이고, 이 대조군이 그 귀속을 증명한다.
+    """
+    root = _mainline_tree(comparer, tmp_path, monkeypatch)
+
+    code, output = _run_mainline(comparer, monkeypatch, capsys, root)
+
+    assert code != 0
+    assert "결과 파일 없음" in output
+    assert "runtime 미선언" not in output
+    assert "runtime 이 `kotlin` 이 아니다" not in output
+    assert "정본에서 사라졌다" not in output
+    assert "위조 의심" not in output
+
+
 # --- 정본(BUILDERS) 쪽 우회는 CI 셸이 막는다 -------------------------------
 #
 # 위 넷은 비교기 함수를 직접 부르지만, 정본 개수는 셸이 `--list` 출력으로 센다. 그래서

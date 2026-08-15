@@ -102,6 +102,26 @@ jobs:
       # 올라가는 것이다 — 한 칸 더 옮기지 않는다.
       - name: 데이터 보호 불변식 스캔 (BLOCK 후보 0건 유지)
         run: uv run python .claude/skills/migration-safety-gate/scripts/scan_privacy_invariants.py
+      # Python 정본 스냅샷 재생성 diff 검사 (X-9 마감의 뒤 조각 — 게이트 15 X1 · P-B·C15-5).
+      #
+      # 이 생성기는 Kotlin 프롬프트·스타일 포팅 판정의 정본 스냅샷을 app/easyread 에서
+      # 재생성해 커밋본과 대조한다. 배선 전 도달이 0 이었다 — 부르는 곳이 자기 docstring
+      # 뿐이라(실측 grep 2줄) 한 번 손으로 돌린 diff 0 이 승격(L344·L345)의 근거로 쓰였고,
+      # 그 뒤 app/easyread 가 바뀌어도 아무 데서도 빨개지지 않았다. 리더 판정: 승격은
+      # 마감 축소가 아니라 **CI 배선 완성**으로 유지한다 — 이 스텝이 그 배선이다.
+      #
+      # **kotlin 잡이 아니라 여기다.** 생성기가 필요로 하는 것은 JDK 가 아니라 이 잡의
+      # Python 환경(uv sync --locked)이다. app/** 가 지워지면 이 스텝은 exit 2 로 죽는다 —
+      # 그것이 X-9 가 "되돌릴 수 없는 창"이라 부른 상태이고, 조용히 지나가면 안 되는
+      # 자리라 사면을 붙이지 않는다(스냅샷의 삭제 후 지위는 P-C 판정 대상으로 열려 있다).
+      #
+      # 음성 대조(실측, tmp 사본): 케이스 45→4 축소 → SnapshotError·exit 2 /
+      # 파생 키(GLOSS_COLLISION_PATTERN_GLOSSES) 단독 삭제 → [갈림]·exit 1.
+      # 그 탐지력 자체의 회귀는 tests/test_python_snapshot_guard.py 가 고정한다.
+      # 이 스텝 자체의 삭제는 이 스텝이 막지 못한다 — 그 diff 가 리뷰에 올라가는 것이
+      # 최종 방어선이다.
+      - name: Python 정본 스냅샷 재생성 diff 검사 (X-9 뒤 조각)
+        run: uv run python .claude/skills/migration-safety-gate/scripts/dump_python_snapshots.py --check
       - run: uv run alembic upgrade head
       # 아래 `uv run pytest` 가 이 파일도 수집하는데 왜 경로를 또 적는가 —
       # **자기 안의 단언은 파일과 함께 사라지기 때문이다.**
@@ -127,6 +147,14 @@ jobs:
       # 이 파일이 지키는 것은 CI BLOCK 게이트(scan_privacy_invariants.py)의 동작 전부다.
       - name: 스캐너 회귀 실재 확인 (경로 명시)
         run: uv run pytest tests/test_privacy_scanner.py
+      # 같은 규약을 parity 게이트 회귀에도 적용한다 (게이트 15 X2 — 두 파일에 적용된
+      # 규약의 세 번째 대상인데 이 파일만 빠져 있었다, codex C15-6 (c) 축).
+      # 이 파일이 지키는 것은 parity 비교기의 게이트 우회 회귀 — runtime 위조·fixture
+      # 축소를 helper 층과 **본류 배선**(compare_file·main 의 호출부) 양쪽에서 잡는
+      # 테스트 — 와 CI 셸 가드(선언·정본·하한) 검증 전부다. 전체 수집만 있으면 이
+      # 파일을 지워도 exit 0 이다 — 수집이 줄고 스위트는 초록이다.
+      - name: parity 게이트 회귀 실재 확인 (경로 명시)
+        run: uv run pytest tests/test_parity_ci_gate.py
       - run: uv run pytest
       # 골든셋 LLM 평가(-m llm)는 API 키 시크릿 등록 후 별도 잡으로 활성화한다.
 

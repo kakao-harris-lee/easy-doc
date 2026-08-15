@@ -21,8 +21,13 @@
 | 케이스 **입력**(name·source_text·raw 등) | 기존 스냅샷에서 그대로 가져온다 |
 
 마지막 줄이 중요하다. 케이스 입력은 Python 에서 유도되는 값이 아니라 **사람이 고른
-큐레이션**이다. 그래서 이 생성기는 기존 스냅샷을 **케이스 원장으로 읽고** 출력만 다시
-계산한다. 그 결과 재생성 diff 가 0 이면 "지금 Python 이 이 값을 낸다"가 증명된다.
+큐레이션**이다. 그래서 이 생성기는 케이스 **입력값**을 기존 스냅샷에서 가져오고 출력만
+다시 계산한다. 그 결과 재생성 diff 가 0 이면 "지금 Python 이 이 값을 낸다"가 증명된다.
+
+단, **케이스 열거의 정본은 기존 스냅샷이 아니라 `PROMPT_CASE_FLOOR` 다** (게이트 15 X1).
+예전에는 previous 를 케이스 원장으로 그대로 믿어서, 케이스를 덜어 낸 스냅샷(실측 45→4)을
+넣으면 그 축소분을 그대로 재생산하고 diff 0 을 보고했다 — 검사기가 위조를 승인했다.
+지금은 하한 튜플에 있는 케이스가 previous 에 없으면 `SnapshotError` 로 끝난다.
 
 ## 실패는 명시적이다 (N-13 전례)
 
@@ -96,6 +101,71 @@ PROMPT_CONSTANTS = (
 #: 스냅샷 키 → 모듈 안의 실제 이름. 비공개(밑줄) 상수를 공개 키로 싣는 자리다.
 STYLE_NAME_ALIASES = {"COMMA_CHARS": "_COMMA_CHARS"}
 
+#: 프롬프트 스냅샷의 **케이스 하한** — 케이스 열거의 정본은 previous 스냅샷이 아니라
+#: 이 튜플이다 (게이트 15 X1 · P-A). 케이스 입력은 큐레이션이라 `app/**` 에서 재계산할
+#: 수 없으므로 값은 previous 에서 가져오되, 어떤 케이스가 있어야 하는지는 여기가 정한다 —
+#: `STYLE_CONSTANTS` 가 상수 이름 축을 끊는 것과 같은 층에서 케이스 축을 끊는다
+#: (P-A: "상수 이름 축은 `SnapshotError` 로 끊었는데 케이스 축은 끊지 않았다").
+#:
+#: 비대칭 하한이다. **삭제·개명은 `SnapshotError`**(그 케이스가 지키던 성질이 조용히
+#: 사라진다), **추가는 허용** — 스냅샷에 새 케이스를 넣으면 같은 커밋에서 여기에도 적는다.
+#: 적는 것을 잊으면 그 케이스는 하한의 보호 밖이다(추가 자체는 막지 않는다).
+PROMPT_CASE_FLOOR: dict[str, tuple[str, ...]] = {
+    "system_prompts": (
+        "empty",
+        "no_difficult_words",
+        "scattered_difficult_words",
+        "prompt_only_word_present",
+        "compound_interior_only",
+        "masked_placeholder_survives",
+    ),
+    "user_prompts": (
+        "plain",
+        "empty",
+        "multiline",
+        "tag_injection_attempt",
+        "masked_placeholder_survives",
+    ),
+    "repair_prompts": (
+        "empty_violations",
+        "single_sentence_multiple_reasons",
+        "two_sentences_grouped",
+        "word_not_in_dictionary",
+        "gloss_sort_order",
+    ),
+    "postprocess": (
+        "plain_body",
+        "empty",
+        "whitespace_only",
+        "surrounding_whitespace",
+        "nbsp_padding",
+        "fence_plain",
+        "fence_with_language",
+        "fence_markdown",
+        "fence_open_only",
+        "fence_close_only",
+        "fence_close_trailing_spaces",
+        "fence_inner_preserved",
+        "preamble_colon",
+        "preamble_conversion_result",
+        "preamble_changed_result",
+        "preamble_easy_text",
+        "preamble_colon_with_spaces",
+        "preamble_then_fence",
+        "fence_then_preamble",
+        "keep_review_result",
+        "keep_application_method",
+        "keep_required_items",
+        "keep_mid_line_colon",
+        "keep_signal_without_start",
+        "keep_start_without_signal",
+        "keep_single_line_preamble",
+        "keep_preamble_not_first",
+        "keep_body_mentions_easy_text",
+        "double_preamble_both_removed",
+    ),
+}
+
 
 class SnapshotError(RuntimeError):
     """추출에 실패했다. **부분 결과를 쓰지 않는다.**"""
@@ -122,23 +192,29 @@ def _jsonable(value: Any) -> Any:
 
 
 def build_style_snapshot(previous: dict[str, Any]) -> dict[str, Any]:
-    """스타일 규칙 표. 파생 표(`GLOSS_COLLISION_PATTERN_GLOSSES`)도 함수로 다시 만든다."""
+    """스타일 규칙 표. 파생 표(`GLOSS_COLLISION_PATTERN_GLOSSES`)도 함수로 다시 만든다.
+
+    `previous` 는 더 이상 읽지 않는다 — 스타일 쪽은 전 키가 `app` 상수에서 재계산되므로
+    previous 를 믿을 이유가 없다(믿었던 자리가 X1 의 파생 키 구멍이었다). 인자는 두
+    빌더의 서명을 맞추기 위해서만 남아 있다(`main` 의 targets 루프가 같은 형태로 부른다).
+    """
     from app.easyread import style_rules
 
     built: dict[str, Any] = {}
     for name in STYLE_CONSTANTS:
         built[name] = _jsonable(_attr(style_rules, STYLE_NAME_ALIASES.get(name, name)))
 
+    # 파생 표는 **무조건** 다시 만든다. 예전에는 `if derived in previous:` 뒤에 있어서
+    # 그 한 키를 지운 스냅샷이 재생성 diff 0 이었다(게이트 15 X1 — 123 항목이 조용히
+    # 사라질 수 있었다). 지금은 항상 다시 만들므로 키를 지우면 재생성본에는 있고
+    # 파일에는 없어 `--check` 가 [갈림]으로 잡는다.
+    # `GLOSS_COLLISION_PATTERNS` 는 **(글로스, 컴파일된 정규식)** 쌍의 표다.
+    # 스냅샷이 싣는 것은 글로스 문면이고, 그것이 Kotlin 쪽 대조 대상이다.
+    # 정규식 객체는 직렬화되지 않으므로 여기서 반드시 걸러야 한다 — 순서를 반대로
+    # 읽었더니 `Pattern is not JSON serializable` 로 죽었다(실측).
     derived = "GLOSS_COLLISION_PATTERN_GLOSSES"
-    if derived in previous:
-        # 이 표는 상수가 아니라 다른 표에서 파생된다. 이름이 있으면 그것을 쓰고,
-        # 없으면 파생 규칙(명사형 글로스 ∪ 수식 검사 글로스)을 그대로 적용한다.
-        # `GLOSS_COLLISION_PATTERNS` 는 **(글로스, 컴파일된 정규식)** 쌍의 표다.
-        # 스냅샷이 싣는 것은 글로스 문면이고, 그것이 Kotlin 쪽 대조 대상이다.
-        # 정규식 객체는 직렬화되지 않으므로 여기서 반드시 걸러야 한다 — 순서를 반대로
-        # 읽었더니 `Pattern is not JSON serializable` 로 죽었다(실측).
-        patterns = _attr(style_rules, "GLOSS_COLLISION_PATTERNS")
-        built[derived] = [gloss for gloss, _regex in patterns]
+    patterns = _attr(style_rules, "GLOSS_COLLISION_PATTERNS")
+    built[derived] = [gloss for gloss, _regex in patterns]
     return built
 
 
@@ -185,6 +261,32 @@ def build_prompt_snapshot(previous: dict[str, Any]) -> dict[str, Any]:
         secrets.token_hex = original_token_hex
 
 
+def _floor_checked_cases(previous: dict[str, Any], section: str) -> list[dict[str, Any]]:
+    """케이스 목록을 `PROMPT_CASE_FLOOR` 와 대조해 넘긴다 — 축소된 previous 를 정본으로
+    재사용하지 않는다 (게이트 15 X1).
+
+    입력값은 previous 에서 오지만 열거의 정본은 하한 튜플이다. 하한에 있는 케이스가
+    previous 에 없으면 그 입력은 큐레이션이라 재계산할 수 없으므로, 부분 결과를 쓰지
+    않고 `SnapshotError` 로 끝난다(N-13 전례와 같은 원칙이다).
+    """
+    raw = previous.get(section)
+    if not isinstance(raw, list):
+        raise SnapshotError(
+            f"`{section}` 케이스 배열이 스냅샷에 없다 — 스냅샷이 잘렸거나 형식이 바뀌었다. "
+            "축소된 스냅샷을 정본으로 재사용하지 않는다"
+        )
+    cases = [case for case in raw if isinstance(case, dict)]
+    present = {str(case.get("name")) for case in cases}
+    missing = [name for name in PROMPT_CASE_FLOOR[section] if name not in present]
+    if missing:
+        raise SnapshotError(
+            f"`{section}` 에서 케이스 {len(missing)}건이 사라졌다: {', '.join(missing)} — "
+            "케이스 입력은 큐레이션이라 재계산할 수 없다. 삭제·개명이 의도라면 "
+            "`PROMPT_CASE_FLOOR` 를 같은 커밋에서 고치고 근거를 리뷰에 올린다"
+        )
+    return cases
+
+
 def _build_prompt_cases(
     built: dict[str, Any],
     previous: dict[str, Any],
@@ -196,17 +298,19 @@ def _build_prompt_cases(
     """케이스별 출력을 채운다. 문서 id 가 고정된 상태에서만 불린다."""
     built["system_prompts"] = [
         {**case, "expected": build_system_prompt(case["masked_text"])}
-        for case in previous["system_prompts"]
+        for case in _floor_checked_cases(previous, "system_prompts")
     ]
     built["user_prompts"] = [
         {**case, "expected": build_user_prompt(case["masked_text"])}
-        for case in previous["user_prompts"]
+        for case in _floor_checked_cases(previous, "user_prompts")
     ]
     built["repair_prompts"] = [
-        _repair_case(case, build_repair_prompt) for case in previous["repair_prompts"]
+        _repair_case(case, build_repair_prompt)
+        for case in _floor_checked_cases(previous, "repair_prompts")
     ]
     built["postprocess"] = [
-        {**case, "expected": postprocess(case["raw"])} for case in previous["postprocess"]
+        {**case, "expected": postprocess(case["raw"])}
+        for case in _floor_checked_cases(previous, "postprocess")
     ]
     return built
 
