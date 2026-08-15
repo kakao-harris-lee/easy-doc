@@ -79,7 +79,7 @@ Python 폐기·재개발과 롤백 포기로 그 요구가 사라졌다(parity �
 
 | # | 엔드포인트 | ① 성공 | ② 401 | ③ 404 | ④ 422 | 추가 | 고정하는 계약 조항 |
 |---|---|---|---|---|---|---|---|
-| 1 | `POST /auth/signup` | 201 + no-store/nosniff + `{id,email}` | — (인증 불필요) | — | 이메일 형식(문자열 detail) · 필드 누락(배열 detail) | **409** 이메일 중복 | `paths./auth/signup`, `x-private-response-headers` |
+| 1 | `POST /auth/signup` | 201 + no-store/nosniff + `{id,email}` | — (인증 불필요) | — | 이메일 형식 · **이메일 255 초과(X-F13)** · **비밀번호 8자 미만(X-F11)** → 전부 **문자열 detail** / 필드 누락 → **배열 detail** | **409** 이메일 중복 | `paths./auth/signup`, `x-private-response-headers`, `x-request-field-constraints.fields[0]`·`[1]` |
 | 2 | `POST /auth/login` | 200 + no-store/nosniff + `{access_token,token_type,expires_in}` | — | — | 필드 누락 | **401** 자격증명 실패 + `WWW-Authenticate` | `components/responses/Unauthorized` |
 | 3 | `GET /auth/me` | 200 + no-store/nosniff + `{id,email}` | ✔ | — | — | — | `paths./auth/me` |
 | 4 | `POST /documents` | **202** + **`Location`** + `{document_id,conversion_id,status,char_count}` | ✔ | 남의 `workspace_id` | 빈 본문·4,000자 초과·미지원 형식·추출 실패·잘못된 JSON | **413** 10MB 초과 · **502** 큐 등록 실패 · **503** 큐 미배선 · **multipart 경로 별도** | `paths./documents.post`, `x-input-limits`, `components/responses/PayloadTooLarge`, `.../BadGateway`, `.../ServiceUnavailable` |
@@ -134,6 +134,9 @@ Python 폐기·재개발과 롤백 포기로 그 요구가 사라졌다(parity �
 | **X-F2** | 검수 수정본도 같은 4,000자 상한 + **`detail`이 문자열이다** | C | `.max_review_chars`, `x-request-field-constraints` | 상한이 갈리면 사용자에게 설명할 수 없다. **F3 개정** — 위와 같은 이유 |
 | **X-F9** | **정규화 후 경계** — 원시 길이는 상한 초과이나 정규화 후에는 이하인 입력이 **통과한다**. 실측 3케이스: `email` 원시 260(앞 공백 10)→250 · `edited_text` 원시 4,010(제어문자 11)→3,999 · `name` 원시 55(제어문자 10)→45 | C | `x-request-field-constraints.fields[].measured_on` | **F3 신설.** 이 단언이 없으면 `@Size` 구현이 전부 통과한다 — 계약이 코드보다 엄격했던 자리가 그대로 재발한다. 세 케이스가 곧 F3의 실측 증거다 |
 | **X-F10** | `WorkspaceNameRequest.name`이 `"   "`(공백만)를 **422 문자열** `"작업 공간 이름을 입력해 주세요"`로 거절한다 | C | 같음 (`non_empty: true`) | **F3 신설.** 옛 `minLength: 1`이 이것을 **통과**시켰다 — 한 필드가 양방향으로 갈렸던 자리의 반대쪽이다 |
+| **X-F11** | **`SignupRequest.password` 하한 — 8자 미만 → 422이고 `detail`이 문자열 타입이다**(배열이 아님을 명시 단언) / 정확히 8자 → 통과 (**경계값 양쪽**) | C | `x-request-field-constraints.fields[1]`(`:392-396`) · `SignupRequest.password.x-service-constraint`(`:1674`) · `components/responses/ValidationFailed`(`:1516-1518`) | **게이트 15 X5 신설.** F3 판정 뒤에도 `password`를 덮는 행이 이 표에 **하나도 없었다** — 하한을 아예 구현하지 않아도, `@Size(min=8)`로 구현해 배열 `detail`을 내도 전건 통과한다. 계약은 그 구현을 **계약 위반**이라 부르고 "contract test가 `detail`의 **타입까지** 단언한다"고 스스로 적어 두었는데(`:1516-1518`) 그 단언의 자리가 없었다. `password`는 X-F9(정규화 후 3필드)에도 X-F1(`text`)에도 들어가지 않아 **다른 어느 항목도 대신 덮지 못한다** |
+| **X-F12** | **원시 측정의 반대 축** — 앞 공백 7자 + 문자 1자(원시 8자 · trim 후 1자)인 비밀번호가 **통과한다** | C | `fields[1].measured_on`(`:395` — "원시 값 — 정규화하지 않는다") · `x-service-constraint.measured_on: raw`(`:1674`) | **게이트 15 X5 신설.** X-F9는 *정규화 후*를 재는 3필드를 고정하고 이 항목은 *원시*를 재는 필드를 고정한다. **한쪽만 있으면 구현이 다섯 필드에 같은 측정 기준을 일괄 적용해도 아무 데서도 안 걸린다** — 자리마다 실제 강제 지점을 확인해 갈라 놓은 F3의 판정(`x-contrast-case` `:377-384`)이 통째로 무너지는 경로다. ⚠️ 이 행의 기대값은 **게이트 15 X13(리더 판정 대기)에 종속**된다 — `measured_on`이 바뀌면 이 행도 함께 바뀐다. **바뀌기 전까지는 현행 조항이 기준이다** |
+| **X-F13** | **`SignupRequest.email` 상한의 거절 쪽** — 정규화 후 255자 초과 → 422 + **문자열** `detail` / 정확히 255자 → 통과. `detail` 문구가 **형식 오류와 같은 문자열**임도 함께 단언한다 | C | `fields[0]`(`:387-391`, `detail` 주석: "길이 초과와 형식 오류가 같은 문구다(입력값 비반향)") · `SignupRequest.email`(`:1663-1670`) | **게이트 15 X5 · 1회차 C-B.** 현재 `email` 255는 **통과 쪽만**(X-F9의 원시 260→250) 덮여 있어 **상한을 아예 구현하지 않아도 전건 통과한다.** 문구를 갈라 두는 구현("이메일이 255자를 초과합니다")도 계약 위반이다 — 계약이 두 위반에 같은 문구를 지정한 것 자체가 조항이므로 **문구의 동일성까지** 본다 |
 | **X-F3** | 10MB 초과 파일 → **413**(422 아님) / 정확히 10MB → 통과 | C | `.max_upload_bytes` | 계획 §2.2에 없는 코드다. 놓치면 422로 구현된다 |
 | **X-F4** | 확장자 `docx`·`pdf`·`hwpx` 통과(**대소문자 무시**), 그 밖은 422 | C | `.supported_upload_formats` | `.DOCX`가 거부되면 사용자 경로가 막힌다 |
 | **X-F5** | 구버전 `.doc`(OLE2)은 **전용 안내 문구**와 함께 422 | C | `.legacy_doc_policy` | 안내가 같으면 사용자가 있지도 않은 암호를 찾아 헤맨다 |
@@ -158,6 +161,28 @@ Python 폐기·재개발과 롤백 포기로 그 요구가 사라졌다(parity �
 > **없어진 것은 "Python과 같은가"이지 "올바른가"가 아니다** — 그래서 지우지 않고
 > 계약 준수 항목으로 바꿔 달았다. 계층도 **X(교차 런타임) → C·U**로 내려온다.
 > 두 항목을 함께 지우면 Phase 0에서 실측으로 찾은 결함 둘이 검증 없이 되살아난다.
+
+> **X-F11·X-F12·X-F13은 2026-08-15 신설이다 (게이트 15 X5 / 1회차 C-B).** F3 판정
+> (2026-08-13)이 다섯 필드를 서비스 층으로 확정했는데, 그때 함께 만든 검증은 X-F9·X-F10과
+> X-F1·X-F2의 `detail` 타입 단언까지였다. **다섯 중 `password`는 어느 행에도 들어가지
+> 않았고 `email`은 통과 쪽만 들어갔다.** 아래가 F3 다섯 필드의 커버리지이고, 이 표가
+> 비면 그 자리가 곧 회귀 통로다.
+>
+> | F3 필드 (`x-request-field-constraints.fields`) | 거절 쪽 | 통과 쪽 | 측정 축(원시/정규화) |
+> |---|---|---|---|
+> | `[0]` `SignupRequest.email` | **X-F13** (신설) | X-F13 · X-F9 | X-F9 (정규화 후) |
+> | `[1]` `SignupRequest.password` | **X-F11** (신설) | **X-F11** (신설) | **X-F12** (신설, 원시) |
+> | `[2]` `DocumentTextRequest.text` | X-F1 | X-F1 | — (원시 · X13 미결) |
+> | `[3]` `ConversionReviewRequest.edited_text` | X-F2 | X-F9 | X-F9 (정규화 후) |
+> | `[4]` `WorkspaceNameRequest.name` | X-F10 | X-F9 | X-F9 (정규화 후) |
+>
+> **근거 표기 규약** — 이 세 행의 「고정하는 계약 조항」 열은 **키 경로 + 행 번호(2026-08-15
+> 실측)**를 함께 적었다. 키 경로만으로는 지금 당장 대조가 안 되고, 행 번호만 적으면 파일이
+> 움직이는 순간 틀린 값이 된다(§0 머리). **계약 문구·상한 값·`detail` 전문은 여기에 옮겨
+> 적지 않는다** — 게이트 15 별건 1이 실측한 그대로, 손으로 옮긴 계약 요약은 원본과 갈린다.
+> 기대값은 **X-J2(계약 파일 직접 파싱)**로 계약에서 읽는다. X-F11의 `detail` 문자열/배열은
+> **타입 단언**이라 값 복제가 필요 없고, X-F13의 문구 동일성은 계약에서 읽은 두 값을 서로
+> 비교하는 형태로 쓴다.
 
 ---
 
@@ -265,7 +290,7 @@ Phase 3에서 Kotlin 테스트를 쓸 때 "이미 선례가 있어 조항이 확
 |---|---|---|
 | 0 (지금) | **아무것도 실행하지 않는다.** 계약 파일과 이 목록을 만든다 | — |
 | 2 | **이 문서가 소유한 항목 없음** (2026-08-12 2차) — 종전 X-I1·X-I2가 여기 있었으나 계약 준수 항목이 되어 Phase 3으로 옮겼다. Crypto 게이트의 나머지 증거는 privacy-gate·parity-verifier 소관이다 | Crypto |
-| 3 | #1·#2·#3 **+ #10~#13(작업 공간)** + X-A*·X-B*·X-C*·X-D1·X-D2·X-D3·X-E1 + **X-I1·X-I2** + **X-J2**(직접 파싱 — 위 현행화) + **X-F10**(작업 공간 이름 공백) | Contract, DB |
+| 3 | #1·#2·#3 **+ #10~#13(작업 공간)** + X-A*·X-B*·X-C*·X-D1·X-D2·X-D3·X-E1 + **X-I1·X-I2** + **X-J2**(직접 파싱 — 위 현행화) + **X-F10**(작업 공간 이름 공백) + **X-F11·X-F12·X-F13**(signup 두 필드 — 2026-08-15 신설) + **X-F9의 `email` 케이스**(아래 단서) | Contract, DB |
 | 4 | #4~#9 + X-D4·X-D5·X-D6·X-E2~X-E4·X-F*(**X-F9 포함**)·X-G* + **X-J1·X-J3**(OQ-2·OQ-4 조항 확정 후 — 함께 판정) | Contract, Document, Security |
 | 5 | #4의 502/503 경로 (큐 전환 후 재확인) + **X-J4**(OQ-5 값 집합 확정 후) | Worker |
 | 6 | #10~#14 + X-H1~X-H4 + **X-H5·X-H6(브라우저)** | E2E |
@@ -283,6 +308,14 @@ Phase 3에서 Kotlin 테스트를 쓸 때 "이미 선례가 있어 조항이 확
 > 엔드포인트(#10~#13)가 Phase 3 범위(인증·작업 공간)에 들어오면서 종전 Phase 6 배치가
 > 실물과 어긋났다. `/health`(#14)는 이미 `HealthContractTest`로 덮여 있어 Phase 6에
 > 남은 것은 브라우저 계층(X-H5·X-H6)과 CORS 실동작이다.
+
+> **단서 — X-F9는 한 Phase에 다 실리지 않는다 (2026-08-15).** X-F9의 실측 3케이스는
+> `email`(#1 signup) · `edited_text`(#8) · `name`(#11·#12)에 흩어져 있는데, signup·작업
+> 공간은 **Phase 3**이고 검수 저장은 **Phase 4**다. `email` 케이스만 Phase 4로 미루면
+> **X-F13(거절 쪽)과 X-F9(통과 쪽)가 갈라져** 한 Phase 동안 상한이 한쪽만 고정된다 —
+> 경계를 한쪽만 거는 것을 금지하는 X-F1의 이유가 그대로 적용되는 자리다. 따라서 X-F9의
+> `email`·`name` 케이스는 Phase 3에서, `edited_text` 케이스는 Phase 4에서 돈다.
+> Phase 4 행의 "X-F9 포함"은 남은 `edited_text` 케이스를 가리킨다.
 
 ---
 
@@ -324,3 +357,11 @@ UUID 값. 이것들은 값이 아니라 **형식**만 같으면 된다.
 | `kotlin-implementer` | **X-J2 공동 담당**(OQ-3) — 계약 값을 테스트가 계약 파일에서 읽는 기제. 지금 새로 쓰는 Kotlin 테스트에 계약 값을 **더 복제하지 마라**(복제가 늘수록 기제 전환 비용이 는다). **X-J4 전제**(OQ-5) — `failure_code` 값 집합이 확정되기 전에는 Python 예외 클래스 이름(`LLMTruncatedError` 등)을 Kotlin 예외 이름이나 와이어 값으로 굳히지 않는다 |
 | `parity-verifier` | **X-J4**: `failure_kind` 3종은 계약 확정 전까지의 임시 이름이다. 확정 시 fixture를 재생성하되 **실제 값은 다섯**(`ProviderUnavailable`·`EnqueueFailed` 포함)이라는 점을 함께 판정한다. **X-J3**: 마스킹 본문 채널은 현재 계약 밖이라 그 채널의 차이를 계약 위반으로 올릴 근거가 없다 |
 | 리더 | **X-J1**(내보내기 409 추가는 사용자에게 보이는 동작 변경)과 **X-J4**(React 런타임 `failureMessages.ts` 의존)가 계약 소유자 단독 판정 범위 밖이다 |
+
+**2026-08-15 추가 — X-F11·X-F12·X-F13(게이트 15 X5) 통보**
+
+| 대상 | 내용 |
+|---|---|
+| `kotlin-implementer` | **다섯 필드에 `@Size`/`@NotBlank`/`@Email`을 쓰지 마라**(F3). 전파본은 `03_kotlin-implementer_phase3-preflight.md` §5 — 금지 내용·계약 근거(파일·행)·걸리는 검증이 거기 연결돼 있다. **Phase 3 첫 작업이 그 다섯 DTO 중 셋**(`SignupRequest.email`·`.password`, `WorkspaceNameRequest.name`)이라 착수 후 첫 커밋에서 걸린다. 신규 세 행은 signup DTO를 **구현하는 그 커밋**에 함께 들어간다 — 나중에 넣으면 그사이 배열 `detail`이 지나간다. 기대값은 하드코딩하지 말고 X-J2(계약 파일 직접 파싱)로 읽는다 |
+| `parity-verifier` | `password`·`email`의 `detail` **전문 일치**가 계약이다(다섯 필드 공통). 추가로 `email`은 **길이 초과와 형식 오류의 문구가 서로 같아야** 한다(`fields[0].detail` 주석) — 두 값이 갈리면 불일치로 올린다 |
+| 리더 | **X-F12의 기대값이 게이트 15 X13 판정에 종속된다.** `password`의 `measured_on: raw`를 유지하면 현행대로, 정규화 후로 바꾸면 X-F12와 계약 `:395`·`:1674`를 같은 변경 단위로 고친다. **계약 소유자는 현행 조항을 유지한 채 검증만 채웠다** — 조항을 바꾸는 판정은 X13에 걸려 있고, 그것을 검증 신설로 앞질러 확정하지 않았다 |
