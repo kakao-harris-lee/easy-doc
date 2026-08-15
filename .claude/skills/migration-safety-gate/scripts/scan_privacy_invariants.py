@@ -31,6 +31,7 @@ import os
 import re
 import subprocess
 import sys
+import unicodedata
 from collections import Counter
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -112,8 +113,9 @@ DIGEST_LENGTH = 8
 
 #: 표기 문법: `privacy-allow: <RULE-ID> @<지문8자> — <사유>`.
 #: 규칙 id·지문·사유가 **모두 필수**다. 구분자는 em dash 또는 하이픈 둘 다 받는다
-#: (편집기·키보드에 따라 갈리는 것을 규칙으로 만들지 않는다). 사유가 비면 억제하지 않고
-#: 스캔도 실패한다(방어 c).
+#: (편집기·키보드에 따라 갈리는 것을 규칙으로 만들지 않는다).
+#: 사유에 **보이는 문자가 [MIN_REASON_VISIBLE] 개 미만**이면 억제하지 않고 스캔도
+#: 실패한다(방어 c — 판정은 [has_visible_reason]).
 #:
 #: ## 지문이 왜 문법에 들어왔는가 (X-1 — §4-octies 설계의 결함)
 #:
@@ -149,6 +151,59 @@ MARKER_RE = re.compile(
 MARKER_BUDGET = 7
 
 
+#: **보이는 문자**로 치지 않는 유니코드 카테고리.
+#:
+#: 제어(`Cc`)·형식(`Cf`)·서로게이트(`Cs`)·사용자 영역(`Co`)·미할당(`Cn`)·구분자(`Zs`·`Zl`·
+#: `Zp`)와 결합 표시(`Mn`·`Me`)다. 결합 표시를 빼는 이유는 그것만으로 이루어진 문자열이
+#: 화면에 아무것도 남기지 않기 때문이고, 실제 사유에서는 앞의 기저 문자가 이미 세어진다.
+_INVISIBLE_CATEGORIES = frozenset({"Cc", "Cf", "Cs", "Co", "Cn", "Zs", "Zl", "Zp", "Mn", "Me"})
+
+#: 사유로 인정할 **보이는 문자**의 최소 개수.
+#:
+#: ## 이 수를 왜 2로 두는가 (근거를 넘지 않는 자리)
+#:
+#: 실측한 결함은 **보이는 문자 0개**다(ZWSP 단독). 그러니 근거만 따르면 하한은 1이고,
+#: 2는 한 칸의 여유다. 그 한 칸이 공짜인 것을 확인하고 골랐다 — 저장소의 실제 표기 7건은
+#: 보이는 문자가 **최소 14개**이고, 가장 짧은 합성 사유(테스트)도 2개다. 즉 이 값이
+#: 무엇도 건드리지 않으면서 "글자 하나"라는 다음 갈래를 함께 막는다.
+#:
+#: **더 올리는 것은 별개의 판단이고 근거가 없다.** "사유가 얼마나 길어야 하는가"는 이번에
+#: 관측된 결함이 아니며, 올리면 정당한 짧은 사유를 막는 쪽으로 틀린다.
+MIN_REASON_VISIBLE = 2
+
+
+def visible_length(value: str) -> int:
+    """화면에 자리를 차지하는 문자의 개수.
+
+    `len(value.strip())` 이 아니다. 파이썬 `str.strip` 은 유니코드 **공백**을 지우지만
+    **형식 문자(`Cf`)는 지우지 않는다** — ZWSP·WORD JOINER·ZWNJ 가 그대로 남아 길이 1이
+    된다. 그래서 "사유가 비었는가"를 truthy 로 물으면 **보이지 않는 사유가 통과한다.**
+
+    실측(2026-08-15):
+
+        "\u200b".strip() -> 길이 1, truthy   (카테고리 Cf)
+        "\u2060".strip() -> 길이 1, truthy   (카테고리 Cf)
+        " ".strip()       -> 길이 0, falsy    (카테고리 Zs — 이쪽은 원래 걸렸다)
+
+    ## 이 함수가 잡지 않는 것 (선언과 도달을 맞춘다)
+
+    **문장부호만으로 된 사유**(`"...."`)는 통과한다. 카테고리가 `Po` 라 보이는 문자이기
+    때문이다. 정보가 없다는 점에서는 같은 부류지만 **관측된 결함이 아니고**, 막으려면
+    "글자·숫자가 하나 이상"이라는 다른 기제를 더해야 한다. 여기 적어 두는 이유는 이 함수가
+    막는 범위를 실제보다 넓게 읽지 않게 하기 위해서다.
+    """
+    return sum(1 for char in value if unicodedata.category(char) not in _INVISIBLE_CATEGORIES)
+
+
+def has_visible_reason(reason: str) -> bool:
+    """사유가 사람이 읽을 수 있는 내용을 담았는가. **판정은 여기 한 곳뿐이다.**
+
+    억제([_marker_touches])와 표기 진단([marker_problems])이 같은 함수를 쓴다. 두 벌로 두면
+    "억제는 됐는데 진단은 문제없다고 한" 상태가 만들어지고, 그 갈림이 조용한 쪽은 늘 억제다.
+    """
+    return visible_length(reason) >= MIN_REASON_VISIBLE
+
+
 @dataclass(frozen=True)
 class Marker:
     """한 줄에 달린 억제 표기.
@@ -156,7 +211,12 @@ class Marker:
     @param line 표기가 **적힌** 물리 줄. 표기를 **찾을 자리**이지 키가 아니다(e′).
     @param rule_id 이 표기가 누르는 규칙. **그 규칙만** 누른다(방어 d) — 와일드카드가 없다.
     @param digest 누를 호출의 인자 구간 지문 8자. 비면 억제하지 않는다(4′ — 닫힘).
-    @param reason 사람이 적은 사유. 비면 억제하지 않는다(방어 c).
+    @param reason 사람이 적은 사유. **보이는 문자**가 모자라면 억제하지 않는다
+        (방어 c — [has_visible_reason]). 앞선 판은 이 자리에 *"비면 억제하지 않는다"* 라고
+        적혀 있었고 검사도 `str.strip()` 뒤 truthy 였다. 그런데 파이썬의 `strip` 은
+        **형식 문자(카테고리 `Cf`)를 지우지 않는다** — ZWSP(`U+200B`) 하나뿐인 사유가
+        "비어 있지 않다"로 통과했다. 결함을 설계 의도처럼 적어 두면 다음 수정 때
+        되돌려지므로(게이트 13 U-3) 규칙과 문장을 함께 고쳤다.
     @param standalone 그 줄에 코드가 없는가. `True` 면 **바로 아래 줄**의 적중을 누른다.
     """
 
@@ -1100,7 +1160,7 @@ def _marker_touches(marker: Marker, rule_id: str, hit: Hit) -> bool:
     비교하는 것은 **규칙 id · 사유 유무 · 지문 존재 · 지문 일치 · 물리 줄 근접** 다섯이다.
     `hit.call_ref` 는 **여기서 비교하지 않는다** — 사유는 [suppress] docstring 의 e′ 정정문.
     """
-    if marker.rule_id != rule_id or not marker.reason:
+    if marker.rule_id != rule_id or not has_visible_reason(marker.reason):
         return False  # 방어 c·d
     if not marker.digest or not hit.digest:
         return False  # 4′ — 지문 없는 쪽은 억제에 참여하지 않는다
@@ -1137,9 +1197,12 @@ def marker_problems(
             if marker.rule_id not in known:
                 problems.append(f"{where} — 알 수 없는 규칙 id `{marker.rule_id}`")
                 continue
-            if not marker.reason:
+            if not has_visible_reason(marker.reason):
                 problems.append(
-                    f"{where} — 사유가 비었다 (`privacy-allow: {marker.rule_id} — 사유`)"
+                    f"{where} — 사유에 보이는 문자가 {visible_length(marker.reason)}개다"
+                    f"(최소 {MIN_REASON_VISIBLE}). "
+                    f"`privacy-allow: {marker.rule_id} @지문8자 — 사유`. "
+                    "공백·ZWSP 같은 보이지 않는 문자는 사유가 아니다"
                 )
                 continue
             if marker.rule_id not in markable:

@@ -20,6 +20,7 @@
 from __future__ import annotations
 
 import importlib.util
+import inspect
 import random
 import re
 import sys
@@ -782,7 +783,7 @@ def test_사유가_비면_누르지_못하고_실패한다(scanner: ModuleType, 
     result = _scan_source(scanner, tmp_path, f"{LOGGING_LEAK}  // privacy-allow: LOG-BODY —\n")
 
     assert result.hits.get("LOG-BODY"), "사유 없는 표기가 적중을 눌렀다"
-    assert any("사유가 비었다" in problem for problem in result.marker_problems)
+    assert any("보이는 문자" in problem for problem in result.marker_problems)
 
 
 def test_알_수_없는_규칙_id_는_실패한다(scanner: ModuleType, tmp_path: Path) -> None:
@@ -1317,3 +1318,66 @@ def test_어떤_워크플로도_지문_갱신을_돌리지_않는다() -> None:
         f"{offenders} 가 지문 갱신을 돌린다. CI 가 지문을 고칠 수 있으면 "
         "게이트가 자기를 통과시킨다."
     )
+
+
+# ── N-20 — 필수 사유 검사가 보이지 않는 문자를 사유로 받던 자리 ──────────────────────
+#
+# `str.strip()` 뒤 truthy 로 물으면 **형식 문자(카테고리 Cf)가 통과한다.** 파이썬의 strip
+# 은 유니코드 **공백**은 지우지만 ZWSP·WORD JOINER·ZWNJ 는 지우지 않는다. 그래서 보이지
+# 않는 사유 하나로 억제가 성립했다 — 표기 설계가 "사유를 사람이 쓴다"에 걸어 둔 하중이
+# 통째로 빠지는 자리다. 게이트 11 에서 지적됐다가 회차 사이에서 소멸했던 항목이다.
+
+
+@pytest.mark.parametrize(
+    ("name", "reason", "accepted"),
+    [
+        ("ZWSP 단독", "\u200b", False),
+        ("WORD JOINER 단독", "\u2060", False),
+        ("ZWNJ 단독", "\u200c", False),
+        ("공백 단독", "   ", False),
+        ("NBSP 단독", "\u00a0", False),
+        ("보이는 문자 1개", "x", False),
+        ("정상 사유", "집계만 보간", True),
+        ("보이지 않는 문자가 섞인 정상 사유", "집계만\u200b보간", True),
+    ],
+)
+def test_사유_유효성_3방향(
+    scanner: ModuleType, tmp_path: Path, name: str, reason: str, accepted: bool
+) -> None:
+    """**보이는 문자로 센다.** 세 방향(보이지 않는 것 / 공백 / 정상)을 상시로 둔다.
+
+    한 방향만 재면 반대쪽이 조용히 깨진다 — 거절만 재면 정상 사유까지 막는 회귀를 못 보고,
+    수락만 재면 이 결함이 그대로 돌아온다.
+    """
+    mark = _digest_for(scanner, tmp_path, LOGGING_LEAK + "\n")
+    source = f"{LOGGING_LEAK}  // privacy-allow: LOG-BODY @{mark} — {reason}\n"
+    result = _scan_source(scanner, tmp_path, source)
+
+    if accepted:
+        assert not result.hits.get("LOG-BODY"), f"{name}: 정상 사유인데 억제되지 않았다"
+        assert not result.marker_problems, f"{name}: 정상 사유가 문제로 잡혔다"
+    else:
+        assert result.hits.get("LOG-BODY"), f"{name}: 사유 없이 억제가 성립했다"
+        assert any("보이는 문자" in problem for problem in result.marker_problems), (
+            f"{name}: 조용히 통과했다 — 스캔이 실패로 알려야 한다"
+        )
+
+
+def test_보이는_문자_계수가_strip_과_다르다(scanner: ModuleType) -> None:
+    """**결함의 기제 자체를 고정한다.** 이 차이가 사라지면 위 탐침의 근거가 사라진다."""
+    zwsp = "\u200b"
+
+    assert zwsp.strip() == zwsp, "파이썬 strip 이 ZWSP 를 지우게 바뀌었다 — 탐침을 다시 보라"
+    assert bool(zwsp.strip()) is True, "strip 기반 truthy 검사가 통과시키던 값이다"
+    assert scanner.visible_length(zwsp) == 0, "보이는 문자 계수가 ZWSP 를 세고 있다"
+    assert scanner.visible_length("집계만 보간") == 5, "공백을 빼고 세야 한다"
+
+
+def test_사유_판정이_한_곳에서만_난다(scanner: ModuleType) -> None:
+    """억제와 진단이 같은 함수를 쓰는가. 두 벌이면 조용한 쪽은 늘 억제다."""
+    source = inspect.getsource(scanner)
+
+    assert source.count("def has_visible_reason") == 1, "판정 함수가 하나가 아니다"
+    for user in ("_marker_touches", "marker_problems"):
+        body = source.split(f"def {user}(")[1].split("\ndef ")[0]
+        assert "has_visible_reason" in body, f"{user} 가 자기 판정을 갖고 있다"
