@@ -234,6 +234,117 @@ val parityManifestCheck =
         }
     }
 
+
+// ── 모듈 의존 방향 강제 (Phase 3 착수 전 · 2회차 codex #5) ────────────────────────────
+//
+// `CoreModuleBoundaryTest` 는 **core 의 테스트 런타임에 클래스가 있는가**만 본다. 그래서
+// 두 가지가 통째로 빠져 있었다.
+//
+//   1. `compileOnly` 로 넣으면 런타임에 없으므로 통과한다.
+//   2. 그 목록에 없는 타입이면 무엇이든 통과한다.
+//   3. **`api`·`worker` 가 `infrastructure` 를 어떻게 붙이는지는 아무도 안 본다** —
+//      `runtimeOnly` 를 `implementation` 으로 바꾸는 **한 글자 변경**에 깨지는 테스트가
+//      0건이었다. 그 순간 api 소스가 infrastructure 타입을 직접 import 할 수 있게 되고,
+//      계획 §3.2 가 정한 의존 방향(어댑터는 런타임에만 붙는다)이 조용히 사라진다.
+//
+// 클래스 존재 검사로는 3번을 볼 수 없다 — 런타임에는 **어느 쪽이든 있기 때문**이다.
+// 그래서 판정 대상을 클래스패스가 아니라 **Gradle configuration 자체**로 옮긴다.
+//
+// 두 축을 함께 본다. 하나만으로는 닫히지 않는다.
+//   ⓐ **선언 종류** — `:infrastructure` 를 선언한 configuration 이 허용 목록 안인가.
+//      선언을 읽는 것이라 해석(resolve)이 필요 없고, 빌드 순서에 영향을 주지 않는다.
+//   ⓑ **compileClasspath 부재** — 실제로 컴파일 시점에 안 보이는가. ⓐ 를 우회하는 경로
+//      (다른 모듈을 통한 전이 노출 등)를 여기서 잡는다.
+//
+// `check` 에 걸어 두므로 `./gradlew build` 가 이 판정을 지난다.
+//: 소비 모듈 → 그 모듈이 `:infrastructure` 를 선언해도 되는 configuration.
+//:
+//: `testImplementation` 이 허용인 이유: 테스트는 어댑터의 test fixture 를 직접 쓴다.
+//: 그것은 프로덕션 의존 방향과 무관하고, 막으면 Testcontainers 테스트가 불가능해진다.
+val boundaryAllowedConfigurations: Map<String, Set<String>> =
+    mapOf(
+        "api" to setOf("runtimeOnly", "testImplementation", "testRuntimeOnly"),
+        "worker" to setOf("runtimeOnly", "testImplementation", "testRuntimeOnly"),
+    )
+val allowedBoundaryConsumers: Set<String> = boundaryAllowedConfigurations.keys
+
+// 판정은 **각 소비 모듈 안에서** 돈다. 다른 프로젝트의 configuration 을 바깥 태스크에서
+// 해석하면 Gradle 이 "exclusive lock 없이 해석했다"로 거부한다(실측). 자기 것을 자기가
+// 해석하면 그 문제가 없고, 모듈 하나만 빌드해도 그 모듈의 판정이 함께 돈다.
+val moduleBoundaryChecks =
+    boundaryAllowedConfigurations.map { (name, permitted) ->
+        project(":$name").tasks.register("moduleBoundaryCheck") {
+            group = "verification"
+            description = "이 모듈이 infrastructure 를 런타임에만 붙이는지 확인한다 (계획 §3.2)"
+            outputs.upToDateWhen { false }
+
+            val module = name
+            val declarations =
+                project.configurations
+                    .filter { it.dependencies.isNotEmpty() }
+                    .associate { configuration ->
+                        configuration.name to
+                            configuration.dependencies
+                                .filterIsInstance<ProjectDependency>()
+                                .map { it.path }
+                                .toSet()
+                    }
+            // 해석 결과를 **입력으로 선언**한다. `dependsOn` 없이 실행 중에 물으면
+            // "`:application:jar` 가 끝나기 전에 mapped value 를 물었다" 로 거부된다(실측) —
+            // 클래스패스 해석이 상류 모듈의 jar 를 요구하기 때문이다. 파일 컬렉션을 입력으로
+            // 걸면 Gradle 이 그 산출을 먼저 만들어 준다.
+            val compileClasspath = project.configurations.named("compileClasspath")
+            inputs.files(compileClasspath)
+            val compileIds =
+                compileClasspath.flatMap { it.incoming.artifacts.resolvedArtifacts }
+                    .map { artifacts -> artifacts.map { it.id.componentIdentifier.displayName } }
+
+            doLast {
+                val problems = mutableListOf<String>()
+
+                declarations
+                    .filterValues { ":infrastructure" in it }
+                    .keys
+                    .filterNot { it in permitted }
+                    .sorted()
+                    .forEach { configuration ->
+                        problems +=
+                            "  - `:infrastructure` 를 `$configuration` 으로 선언했다. " +
+                            "허용: ${permitted.sorted().joinToString(", ")}. " +
+                            "컴파일 시점에 보이면 $module 소스가 어댑터 타입을 직접 import 할 수 있고, " +
+                            "그러면 계획 §3.2 의 의존 방향이 사라진다."
+                    }
+
+                if (compileIds.get().any { it == "project :infrastructure" }) {
+                    problems +=
+                        "  - compileClasspath 에 infrastructure 가 있다. 선언 종류를 고쳐도 " +
+                        "다른 모듈이 전이로 노출하고 있을 수 있다 — " +
+                        "`./gradlew :$module:dependencies --configuration compileClasspath` 로 경로를 확인하라."
+                }
+
+                if (problems.isNotEmpty()) {
+                    error(
+                        buildString {
+                            appendLine("[$module] 모듈 의존 방향이 어긋난다 (계획 §3.2 — 어댑터는 런타임에만 붙는다).")
+                            problems.forEach { appendLine(it) }
+                        },
+                    )
+                }
+                logger.lifecycle("[$module] 모듈 경계 확인: 선언 종류 + compileClasspath 양쪽 통과.")
+            }
+        }
+    }
+
+boundaryAllowedConfigurations.keys.forEach { name ->
+    project(":$name").tasks.named("check") { dependsOn("moduleBoundaryCheck") }
+}
+
+tasks.register("moduleBoundaryCheck") {
+    group = "verification"
+    description = "api·worker 의 모듈 경계 판정을 한 번에 돌린다"
+    dependsOn(moduleBoundaryChecks)
+}
+
 // 루트에서 한 번에 도는 편의 태스크.
 tasks.register("parityHarness") {
     group = "verification"

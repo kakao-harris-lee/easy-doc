@@ -7,6 +7,8 @@ import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.flywaydb.core.Flyway
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
+import java.util.concurrent.Callable
+import java.util.concurrent.Executors
 
 /**
  * 계획 §4.2-4 "기존 DB는 schema checksum이 일치할 때만 baseline version 1을 기록한다"의
@@ -21,6 +23,11 @@ import org.junit.jupiter.api.Test
  * V1 ≡ Alembic 을 이미 증명하므로 이 대역은 정당하다.
  */
 class FlywayBaselineGuardTest {
+    private companion object {
+        /** 동시 기동 탐침의 스레드 수. 프로필 셋(api·worker·migrate)을 흉내 낸다. */
+        const val CONCURRENT_STARTS = 3
+    }
+
     private val guard = FlywayBaselineGuard()
 
     @Test
@@ -84,6 +91,93 @@ class FlywayBaselineGuardTest {
         assertThat(appliedVersions(database)).containsExactly("1", "2")
     }
 
+    @Test
+    @DisplayName("Alembic head 가 0006 이 아니면 baseline 하지 않고 실패한다")
+    fun `리비전이 다르면 실패한다`() {
+        val database = PostgresTestSupport.createEmptyDatabase("guard_alembic_head")
+        givenAlembicManagedSchema(database)
+        // **지문은 그대로다.** 값만 바꾸는 리비전(백필 등)은 스키마 모양을 안 건드리므로
+        // 지문 대조를 통과한다 — 그 축만으로는 이 상태를 가려낼 수 없다는 것이 요점이다.
+        database.execute("UPDATE alembic_version SET version_num = '0007'")
+
+        assertThatThrownBy { guard.flywayMigrationStrategy().migrate(flywayFor(database)) }
+            .isInstanceOf(IllegalStateException::class.java)
+            .hasMessageContaining("Alembic 리비전이 기준선의 가정과 다르다")
+            .hasMessageContaining("0007")
+
+        assertThat(hasFlywayHistoryTable(database)).isFalse()
+    }
+
+    @Test
+    @DisplayName("지문만으로는 리비전 차이를 못 잡는다 — 새 검사가 필요한 이유")
+    fun `지문은 리비전 변경에 반응하지 않는다`() {
+        val database = PostgresTestSupport.createEmptyDatabase("guard_head_axis")
+        givenAlembicManagedSchema(database)
+        val before = fingerprintOf(database)
+
+        database.execute("UPDATE alembic_version SET version_num = '0007'")
+
+        assertThat(fingerprintOf(database))
+            .describedAs("지문이 리비전에 반응한다면 이 검사가 중복이라는 뜻이다")
+            .isEqualTo(before)
+    }
+
+    @Test
+    @DisplayName("alembic_version 이 없는 DB 에서도 baseline 이 된다")
+    fun `alembic 테이블이 없어도 통과한다`() {
+        val database = PostgresTestSupport.createEmptyDatabase("guard_no_alembic")
+        givenAlembicManagedSchema(database)
+        database.execute("DROP TABLE alembic_version")
+
+        guard.flywayMigrationStrategy().migrate(flywayFor(database))
+
+        assertThat(appliedVersions(database)).containsExactly("1", "2")
+    }
+
+    @Test
+    @DisplayName("baseline 을 마쳐도 alembic_version 은 그대로다 — 읽기만 한다")
+    fun `alembic_version 을 쓰지 않는다`() {
+        val database = PostgresTestSupport.createEmptyDatabase("guard_alembic_readonly")
+        givenAlembicManagedSchema(database)
+
+        guard.flywayMigrationStrategy().migrate(flywayFor(database))
+
+        assertThat(alembicVersion(database)).isEqualTo("0006")
+    }
+
+    @Test
+    @DisplayName("동시 기동에서도 baseline 이 한 번만 찍힌다")
+    fun `동시 기동이 직렬화된다`() {
+        val database = PostgresTestSupport.createEmptyDatabase("guard_concurrent")
+        givenAlembicManagedSchema(database)
+
+        // api·worker·migrate 프로필이 함께 뜨는 상황. 앞선 판은 판정과 baseline 이 서로
+        // 다른 연결이라 셋이 같은 판정을 동시에 하고 각자 baseline 을 시도했다.
+        val pool = Executors.newFixedThreadPool(CONCURRENT_STARTS)
+        try {
+            val failures =
+                pool
+                    .invokeAll(
+                        (1..CONCURRENT_STARTS).map {
+                            Callable {
+                                runCatching {
+                                    guard.flywayMigrationStrategy().migrate(flywayFor(database))
+                                }.exceptionOrNull()
+                            }
+                        },
+                    ).mapNotNull { it.get() }
+
+            assertThat(failures)
+                .describedAs("동시 기동 중 하나라도 실패하면 잠금이 늦거나 없다")
+                .isEmpty()
+        } finally {
+            pool.shutdownNow()
+        }
+
+        assertThat(appliedVersions(database)).containsExactly("1", "2")
+        assertThat(migrationTypes(database).first()).isEqualTo("BASELINE")
+    }
+
     // --- 준비 ---------------------------------------------------------------
 
     /**
@@ -126,6 +220,11 @@ class FlywayBaselineGuardTest {
 
     private fun migrationTypes(database: DatabaseHandle): List<String> =
         query(database, "SELECT type FROM flyway_schema_history ORDER BY installed_rank")
+
+    private fun fingerprintOf(database: DatabaseHandle): String =
+        java.sql.DriverManager
+            .getConnection(database.jdbcUrl, database.username, database.password)
+            .use { SchemaFingerprint.of(it) }
 
     private fun alembicVersion(database: DatabaseHandle): String? =
         query(database, "SELECT version_num FROM alembic_version").firstOrNull()
