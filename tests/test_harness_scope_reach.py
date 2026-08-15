@@ -378,6 +378,19 @@ EXPECTED_MET_YES_KEYS: Final[frozenset[tuple[str, str]]] = frozenset(
         #   근거: reviews/08_conversion-usecase_cross.md §10.
         ("Phase 2 — 순수 도메인 로직 포팅", "placeholder 보존 검사 포팅"),
         ("Phase 2 — 순수 도메인 로직 포팅", "보정 채택 판정 포팅"),
+        # 2026-08-15 Phase 2 조건부 종료 판정(리더): 6행을 예로 올렸다.
+        # 근거: 전체 parity 게이트 8/8 exit 0 러너 실측(run 31854263996·31868504346),
+        # 게이트 14 §6.3 권고 + A 목록(F-1·F-2·F-12·N-13·N-14·R-10) 전건 해소.
+        # L344·L345(X-9)·L348(F-3·F-4)은 아니오 유지 — 마감은 원장 종료 판정 절.
+        ("Phase 2 — 순수 도메인 로직 포팅", "개인정보 마스킹 포팅 (`app/privacy/masking.py`)"),
+        ("Phase 2 — 순수 도메인 로직 포팅", "텍스트 정규화·제어문자 제거 포팅"),
+        ("Phase 2 — 순수 도메인 로직 포팅", "LLM 응답 후처리 포팅"),
+        ("Phase 2 — 순수 도메인 로직 포팅", "Python/Kotlin 공용 JSON fixture 생성 (`parit"),
+        ("Phase 2 — 순수 도메인 로직 포팅", "도메인마다 `backend-kotlin/parity-domains.txt"),
+        (
+            "Phase 2 — 순수 도메인 로직 포팅",
+            "종료 조건: 외부 API·DB 없이 도는 parity suite 가 양쪽",
+        ),
     }
 )
 
