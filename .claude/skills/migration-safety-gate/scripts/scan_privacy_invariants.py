@@ -898,6 +898,7 @@ class Hit:
     digest: str
     text: str
 
+
 #: 파일별 표기 색인. **어휘 층(①)이 만든다.**
 MarkerIndex = dict[Path, list[Marker]]
 
@@ -1436,9 +1437,7 @@ def render(result: ScanResult, scanned: int, scope: str) -> tuple[str, int]:
         )
         for hit in found[:40]:
             shown = (
-                hit.path.relative_to(REPO_ROOT)
-                if hit.path.is_relative_to(REPO_ROOT)
-                else hit.path
+                hit.path.relative_to(REPO_ROOT) if hit.path.is_relative_to(REPO_ROOT) else hit.path
             )
             mark = hit.digest or "지문없음"
             lines.append(f"- `{shown}:{hit.line}` @{mark} — `{hit.text}`")

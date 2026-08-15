@@ -722,7 +722,6 @@ def _digest_for(
     return digest
 
 
-
 def test_표기가_없으면_억제_층은_항등_함수다(scanner: ModuleType) -> None:
     """**불변량: `suppress(hits, ∅) == hits`.**
 
@@ -937,9 +936,7 @@ SAFE_CALL = 'logger.info("건수 {}", draft.stats.count)'
 LEAK_CALL = 'logger.info("본문 {}", draft.value)'
 
 
-def test_a_같은_줄의_두_번째_호출은_눌리지_않는다(
-    scanner: ModuleType, tmp_path: Path
-) -> None:
+def test_a_같은_줄의_두_번째_호출은_눌리지_않는다(scanner: ModuleType, tmp_path: Path) -> None:
     """**X-1 실측 ⓐ의 회귀.**
 
     표기 단 호출과 같은 논리 줄에 두 번째 개인정보 호출을 더한다. 줄 단위 억제에서는
@@ -948,7 +945,7 @@ def test_a_같은_줄의_두_번째_호출은_눌리지_않는다(
     one = f"fun f(draft: Any) {{ {LEAK_CALL} }}\n"
     mark = _digest_for(scanner, tmp_path, one)
 
-    two = f"fun f(draft: Any) {{ {LEAK_CALL}; logger.info(\"제목 {{}}\", draft.title) }}\n"
+    two = f'fun f(draft: Any) {{ {LEAK_CALL}; logger.info("제목 {{}}", draft.title) }}\n'
     marked = two.replace("}\n", f"}}  // privacy-allow: LOG-BODY @{mark} — 첫 호출만\n")
     result = _scan_source(scanner, tmp_path, marked)
 
@@ -982,9 +979,7 @@ def test_b_인자가_바뀌면_표기가_어긋난다(scanner: ModuleType, tmp_p
     )
 
 
-def test_표기는_같은_줄의_다른_호출을_누르지_않는다(
-    scanner: ModuleType, tmp_path: Path
-) -> None:
+def test_표기는_같은_줄의_다른_호출을_누르지_않는다(scanner: ModuleType, tmp_path: Path) -> None:
     """다른 호출의 지문을 단 표기는 이 줄의 어떤 호출도 누르지 않는다.
 
     ⓐ가 "표기 단 호출 **말고 다른 것**이 눌리는가"를 재는 반면, 여기서는 표기가 가리키는
@@ -997,7 +992,7 @@ def test_표기는_같은_줄의_다른_호출을_누르지_않는다(
     """
     absent = _digest_for(scanner, tmp_path, f"fun f(draft: Any) {{ {LEAK_CALL} }}\n")
     mixed = (
-        f"fun f(draft: Any) {{ {SAFE_CALL}; logger.info(\"제목 {{}}\", draft.title) }}"
+        f'fun f(draft: Any) {{ {SAFE_CALL}; logger.info("제목 {{}}", draft.title) }}'
         f"  // privacy-allow: LOG-BODY @{absent} — 이 줄에 없는 호출의 지문\n"
     )
     result = _scan_source(scanner, tmp_path, mixed)
@@ -1008,9 +1003,7 @@ def test_표기는_같은_줄의_다른_호출을_누르지_않는다(
     assert any("고아 표기" in problem for problem in result.marker_problems)
 
 
-def test_지문이_같아도_규칙_id_가_다르면_눌리지_않는다(
-    scanner: ModuleType, tmp_path: Path
-) -> None:
+def test_지문이_같아도_규칙_id_가_다르면_눌리지_않는다(scanner: ModuleType, tmp_path: Path) -> None:
     """방어 d — 와일드카드가 없다. 지문은 규칙을 가로지르지 않는다."""
     source = f"fun f(draft: Any) {{ {LEAK_CALL} }}\n"
     mark = _digest_for(scanner, tmp_path, source)
@@ -1032,9 +1025,7 @@ def test_호출_순서를_바꿔도_같은_호출이_눌린다(scanner: ModuleTy
     other = 'logger.info("제목 {}", draft.title)'
     tail = f"  // privacy-allow: LOG-BODY @{mark} — 본문 호출만\n"
 
-    forward = _scan_source(
-        scanner, tmp_path, f"fun f(draft: Any) {{ {LEAK_CALL}; {other} }}{tail}"
-    )
+    forward = _scan_source(scanner, tmp_path, f"fun f(draft: Any) {{ {LEAK_CALL}; {other} }}{tail}")
     backward = _scan_source(
         scanner, tmp_path, f"fun f(draft: Any) {{ {other}; {LEAK_CALL} }}{tail}"
     )
@@ -1114,9 +1105,7 @@ def test_update_markers_는_CI_에서_거부된다(scanner: ModuleType, monkeypa
     assert scanner.running_in_ci(), "CI 판정이 환경 변수를 보지 않는다"
 
 
-def test_update_markers_는_지문만_바꾸고_사유를_남긴다(
-    scanner: ModuleType, tmp_path: Path
-) -> None:
+def test_update_markers_는_지문만_바꾸고_사유를_남긴다(scanner: ModuleType, tmp_path: Path) -> None:
     """사유가 그대로 남아야 리뷰어가 '이 사유가 새 내용에도 맞나'를 판단할 수 있다."""
     probe = tmp_path / "probe.kt"
     probe.write_text(
@@ -1321,9 +1310,7 @@ def test_어떤_워크플로도_지문_갱신을_돌리지_않는다() -> None:
     assert workflows, "워크플로를 하나도 못 찾았다 — 이 검사가 0건을 보고 있다"
 
     offenders = [
-        path.name
-        for path in workflows
-        if "--update-markers" in path.read_text(encoding="utf-8")
+        path.name for path in workflows if "--update-markers" in path.read_text(encoding="utf-8")
     ]
 
     assert not offenders, (
