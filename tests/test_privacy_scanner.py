@@ -1337,6 +1337,11 @@ def test_어떤_워크플로도_지문_갱신을_돌리지_않는다() -> None:
         ("공백 단독", "   ", False),
         ("NBSP 단독", "\u00a0", False),
         ("보이는 문자 1개", "x", False),
+        # §4-quaterdecies — 부정 목록 시절 목록 밖이라 통과하던 네 갈래.
+        ("Mc 간격 결합 표시", "\u0903\u0903", False),
+        ("Po 문장부호만", "....", False),
+        ("Sm 수학 기호만", "+=<>", False),
+        ("So 기타 기호만", "\u2600\u2601", False),
         ("정상 사유", "집계만 보간", True),
         ("보이지 않는 문자가 섞인 정상 사유", "집계만\u200b보간", True),
     ],
@@ -1371,6 +1376,31 @@ def test_보이는_문자_계수가_strip_과_다르다(scanner: ModuleType) -> 
     assert bool(zwsp.strip()) is True, "strip 기반 truthy 검사가 통과시키던 값이다"
     assert scanner.visible_length(zwsp) == 0, "보이는 문자 계수가 ZWSP 를 세고 있다"
     assert scanner.visible_length("집계만 보간") == 5, "공백을 빼고 세야 한다"
+    assert scanner.visible_length("건수2") == 3, "숫자도 내용이다(N*)"
+
+
+def test_보이는_문자가_긍정_목록으로_정의된다(scanner: ModuleType) -> None:
+    """**구조로 확인한다** (§4-quaterdecies 재검증 기준).
+
+    부정 목록은 "목록에 없는 모든 카테고리"라는 다음 갈래를 남긴다 — 열거를 넓히는 것으로
+    닫히지 않는 형태다. 값 탐침만 두면 목록이 부정형으로 되돌아가도 그때 통과하던 갈래만
+    안 뚫릴 뿐 구조는 되돌아간다. 그래서 값이 아니라 **정의의 모양**을 본다.
+    """
+    source = inspect.getsource(scanner)
+
+    assert "_INVISIBLE_CATEGORIES" not in source, (
+        "부정 목록이 남아 있다 — 받을 것을 정하는 긍정 목록이어야 한다"
+    )
+    assert scanner._CONTENT_CATEGORY_PREFIXES == ("L", "N"), (
+        "내용으로 치는 카테고리가 글자·숫자가 아니다"
+    )
+    # 유니코드 카테고리 30종 중 L*/N* 밖은 전부 거부돼야 한다. 열거하지 않고 전수로 본다.
+    import unicodedata
+
+    probes = "".join(
+        chr(code) for code in range(0x21, 0x3000) if unicodedata.category(chr(code))[0] not in "LN"
+    )
+    assert scanner.visible_length(probes) == 0, "L*/N* 밖의 문자가 내용으로 세어졌다"
 
 
 def test_사유_판정이_한_곳에서만_난다(scanner: ModuleType) -> None:

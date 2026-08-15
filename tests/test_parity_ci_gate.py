@@ -278,20 +278,21 @@ def test_전체_경로에서도_하한이_돈다(comparer: ModuleType, marker: P
     옛 서명은 `selected`(`--only-domain` 목록)를 받아 비어 있으면 즉시 반환했다. CI 는
     선언이 정본을 덮으면 그 인자를 **주지 않으므로**, 하한이 서야 할 바로 그 경로에서
     통째로 잠들어 있었다. 표시 파일을 지워도 조용했다.
+
+    ## 「선언 경로」 짝 테스트를 지웠다 (게이트 14 F-8)
+
+    옆에 `test_선언_경로에서_표시가_없으면_막는다` 가 있었고, 이름은 `--only-domain` 으로
+    도는 경로를 따로 잰다고 말했다. 그런데 **호출도 단언도 이 테스트와 같았다** — 서명에서
+    `selected` 가 빠지면서 두 경로의 구분이 사라졌기 때문이다(그 제거가 곧 X-1 수정이다).
+    남겨 두면 「음성 7종」이라는 수가 실제로 재는 축의 **대리 지표**가 된다. 다시 넣지 마라 —
+    두 경로를 정말로 가르려면 `scoped` 인자를 달리 주어야 하고, 그 축은 아래
+    `--only` 관련 테스트가 이미 덮는다.
     """
     assert not marker.exists()
 
     problems = comparer.full_gate_floor_problems(scoped=False)
 
     assert problems, "전체 경로에서 표시가 없는데 아무 말도 하지 않았다 — X-1 재발이다"
-    assert "하한을 고정하라" in problems[0]
-
-
-def test_선언_경로에서_표시가_없으면_막는다(comparer: ModuleType, marker: Path) -> None:
-    """같은 상태를 `--only-domain` 으로 선언해 도는 경로에서도 막는다."""
-    problems = comparer.full_gate_floor_problems(scoped=False)
-
-    assert problems
     assert "하한을 고정하라" in problems[0]
 
 

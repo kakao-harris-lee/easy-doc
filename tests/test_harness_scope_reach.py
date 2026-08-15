@@ -214,6 +214,12 @@ _MET_BOUNDARY: Final = r"(?=[\s—(]|$)"
 _MET_YES_PATTERN: Final = re.compile(rf"^{_MET_YES}{_MET_BOUNDARY}")
 _MET_NO_PATTERN: Final = re.compile(rf"^{_MET_NO}{_MET_BOUNDARY}")
 
+#: 미해결 항목 열의 이름과, 그 칸이 "없음"을 뜻하는 표기들.
+#: 대시 세 종을 다 받는 이유는 이 문서가 세 가지를 섞어 쓰기 때문이고, 늘리는 것은
+#: 곧 **비어 있음의 정의를 넓히는 것**이라 근거 없이 늘리지 않는다.
+_UNRESOLVED_HEADER: Final = "미해결 항목"
+_UNRESOLVED_EMPTY: Final = frozenset({"", "-", "—", "–"})
+
 #: 실행 경로 칸이 "아직 안 적음" 인 상태. 표기가 아니므로 어휘 검사 대상이 아니다.
 _BLANK_MARKS: Final = frozenset({"", "-"})
 
@@ -252,6 +258,71 @@ _KEY_CLIP: Final = 40
 _PAIR_ARROW: Final = "▸"
 
 _BR_TAG: Final = re.compile(r"<br\s*/?>", re.IGNORECASE)
+#: `미해결 항목` 을 담은 행의 **정체성 집합** (게이트 14 R-10).
+#:
+#: ## 왜 이것이 따로 필요한가
+#:
+#: `EXPECTED_MET_YES_KEYS` 는 **주장을 담은 행**(`충족 = 예`)을 지킨다. 그런데 이 문서에서
+#: 조용히 사라져서 가장 곤란한 것은 주장이 아니라 **아직 안 끝난 것의 목록**이다 — 행은
+#: 그대로 두고 `미해결 항목` 칸만 비우면, 그 행은 여전히 세어지고 정체성 집합에도 남아
+#: 있으며 실행 경로 표기 수도 그대로다. **어느 축도 걸리지 않는다.**
+#:
+#: 이 항목(R-10)은 게이트 13 산출물에 사양이 적혔다가 **회차 사이에서 소멸**했다.
+#: 조용히 사라지는 것을 막는 장치가 조용히 사라진 것이고, 그것이 두 번 되지 않게 하는 것이
+#: 이 상수의 존재 이유다.
+#:
+#: ## 무엇을 잡고 무엇을 못 잡는가
+#:
+#: 키는 `(표, 제목)` 쌍이고 값은 **그 칸이 비었는지 아닌지**다. 그래서 잡는 것은 행이
+#: "미해결 있음 → 없음"으로 뒤집히는 사건이고, **칸 안의 항목 하나가 줄어드는 것은 못
+#: 잡는다**(ⓐ~ⓓ 중 ⓑ만 지우는 편집). 후자까지 보려면 항목 문면을 키로 삼아야 하는데,
+#: 그러면 문구를 다듬을 때마다 상수가 갈려 다음 사람이 규칙을 느슨하게 만든다 —
+#: `_clip` 이 같은 이유로 앞 40자만 보는 것과 같은 맞바꿈이다. 여기 적어 두는 이유는 이
+#: 장치가 막는 범위를 실제보다 넓게 읽지 않게 하기 위해서다.
+#:
+#: 값은 **실측**이다. 항목이 실제로 해소되면 이 집합에서 그 줄을 지우고, 그 diff 가
+#: "무엇을 닫았다"는 신고가 된다.
+EXPECTED_UNRESOLVED_KEYS: Final[frozenset[tuple[str, str]]] = frozenset(
+    {
+        # Phase 0 — 범위·계약 동결
+        ("Phase 0 — 범위·계약 동결", "Argon2 PHC 검증 spike"),
+        ("Phase 0 — 범위·계약 동결", "DOCX/PDF/HWPX 라이브러리 spike"),
+        ("Phase 0 — 범위·계약 동결", "FastAPI OpenAPI·계약 파일·React 타입 3자 대조"),
+        ("Phase 0 — 범위·계약 동결", "Fernet JVM 호환 spike"),
+        ("Phase 0 — 범위·계약 동결", "JWT 양방향 호환 spike"),
+        ("Phase 0 — 범위·계약 동결", "`contracts/easy-doc-v1.yaml` 작성"),
+        ("Phase 0 — 범위·계약 동결", "리뷰 게이트 Critical 0건"),
+        ("Phase 0 — 범위·계약 동결", "응답·헤더·오류·인증·권한·입력 상한을 contract test로 고정"),
+        ("Phase 0 — 범위·계약 동결", "전역 요구사항 인벤토리 1차본 작성·승인 (계획 §5 Phase 0 · "),
+        ("Phase 0 — 범위·계약 동결", "품질 합격선 기제 확정·승인 (계획 §5 Phase 0 · §4.6 게이"),
+        # Phase 1 — Kotlin 골격과 CI
+        ("Phase 1 — Kotlin 골격과 CI", "CI에 Kotlin build/test 추가 + 기존 Python/Rea"),
+        ("Phase 1 — Kotlin 골격과 CI", "Dockerfile·compose Kotlin profile 추가 (기존"),
+        ("Phase 1 — Kotlin 골격과 CI", "Testcontainers PostgreSQL + Flyway basel"),
+        ("Phase 1 — Kotlin 골격과 CI", "`backend-kotlin` Gradle 멀티모듈 생성 (§3.2의 5"),
+        ("Phase 1 — Kotlin 골격과 CI", "toolchain·dependency locking·version cat"),
+        ("Phase 1 — Kotlin 골격과 CI", "리뷰 차단 C-1·C-2·C-3 — 오류 계약의 HTTP 경계 검증과 C"),
+        ("Phase 1 — Kotlin 골격과 CI", "설정 바인딩·구조화 로그·비밀값 마스킹"),
+        ("Phase 1 — Kotlin 골격과 CI", "필수 조치 D — `encryption_scheme` additive 추"),
+        ("Phase 1 — Kotlin 골격과 CI", "필수 조치 E — Kotlin 테스트가 `parity/actual/` 을"),
+        # Phase 2 — 순수 도메인 로직 포팅
+        ("Phase 2 — 순수 도메인 로직 포팅", "LLM 응답 후처리 포팅"),
+        ("Phase 2 — 순수 도메인 로직 포팅", "Python/Kotlin 공용 JSON fixture 생성 (`parit"),
+        ("Phase 2 — 순수 도메인 로직 포팅", "placeholder 보존 검사 포팅"),
+        ("Phase 2 — 순수 도메인 로직 포팅", "개인정보 마스킹 포팅 (`app/privacy/masking.py`)"),
+        ("Phase 2 — 순수 도메인 로직 포팅", "내보내기 파일명·`Content-Disposition` 생성 포팅"),
+        ("Phase 2 — 순수 도메인 로직 포팅", "도메인마다 `backend-kotlin/parity-domains.txt"),
+        ("Phase 2 — 순수 도메인 로직 포팅", "보정 채택 판정 포팅"),
+        ("Phase 2 — 순수 도메인 로직 포팅", "스타일 규칙 포팅 (`app/easyread/style_rules.py`"),
+        (
+            "Phase 2 — 순수 도메인 로직 포팅",
+            "종료 조건: 외부 API·DB 없이 도는 parity suite 가 양쪽",
+        ),
+        ("Phase 2 — 순수 도메인 로직 포팅", "텍스트 정규화·제어문자 제거 포팅"),
+        ("Phase 2 — 순수 도메인 로직 포팅", "프롬프트 렌더링과 동적 어려운 말 목록 포팅"),
+    }
+)
+
 _EMPHASIS: Final = re.compile(r"\*+")
 _WHITESPACE: Final = re.compile(r"\s+")
 
@@ -739,6 +810,7 @@ def census_problems(
     *,
     expected_rows: int,
     expected_met_yes_keys: frozenset[tuple[str, str]],
+    expected_unresolved_keys: frozenset[tuple[str, str]],
     expected_reach_tokens: int,
 ) -> list[str]:
     """대상 표의 **규모와 정체성**을 기대값에 대조한다. 통과면 빈 목록이다.
@@ -756,6 +828,7 @@ def census_problems(
     """
     rows = sum(len(table.rows) for table in tables)
     met_yes_keys: list[tuple[str, str]] = []
+    unresolved_keys: list[tuple[str, str]] = []
     table_keys: list[str] = []
     nameless: list[str] = []
     tokens = 0
@@ -768,6 +841,9 @@ def census_problems(
             continue
         reach_index = table.headers.index(_REACH_HEADER)
         met_index = table.headers.index(_MET_HEADER) if _MET_HEADER in table.headers else None
+        open_index = (
+            table.headers.index(_UNRESOLVED_HEADER) if _UNRESOLVED_HEADER in table.headers else None
+        )
         for row in table.rows:
             if len(row) != len(table.headers):
                 continue
@@ -776,6 +852,8 @@ def census_problems(
                 # `(caption_key, identity_key(...))` 를 손으로 짜지 않고 `identity_pair` 를
                 # 부른다 — 그래야 아래 단위 검사가 **실물이 쓰는 그 함수**를 검사한다.
                 met_yes_keys.append(identity_pair(table.caption, row[0]))
+            if open_index is not None and row[open_index].strip() not in _UNRESOLVED_EMPTY:
+                unresolved_keys.append(identity_pair(table.caption, row[0]))
 
     problems: list[str] = []
     if rows != expected_rows:
@@ -821,6 +899,19 @@ def census_problems(
             f"     없어진 행: {[_render_pair(key) for key in missing] if missing else '없음'}\n"
             f"     새로 생긴 행: {[_render_pair(key) for key in added] if added else '없음'}\n"
             f"     (`표 {_PAIR_ARROW} 제목` 이다 — 제목이 같은데 표만 다르면 **표 간 이동**이다)"
+        )
+
+    actual_unresolved = frozenset(unresolved_keys)
+    lost = sorted(expected_unresolved_keys - actual_unresolved)
+    gained = sorted(actual_unresolved - expected_unresolved_keys)
+    if lost or gained:
+        problems.append(
+            f"`{_UNRESOLVED_HEADER}` 을 담은 행의 {_IDENTITY_MISMATCH_MARK} "
+            f"(기대 {len(expected_unresolved_keys)}개 / 실제 {len(actual_unresolved)}개).\n"
+            f"     칸이 비워진 행: {[_render_pair(key) for key in lost] if lost else '없음'}\n"
+            f"     새로 생긴 행: {[_render_pair(key) for key in gained] if gained else '없음'}\n"
+            f"     (항목을 실제로 닫았다면 `EXPECTED_UNRESOLVED_KEYS` 에서 그 줄을 지운다 — "
+            "그 diff 가 '무엇을 닫았다'는 신고다)"
         )
 
     if tokens != expected_reach_tokens:
@@ -938,6 +1029,7 @@ def test_판정이_실제로_행을_보고_있다(target_tables: list[Table]) ->
         target_tables,
         expected_rows=EXPECTED_ROWS,
         expected_met_yes_keys=EXPECTED_MET_YES_KEYS,
+        expected_unresolved_keys=EXPECTED_UNRESOLVED_KEYS,
         expected_reach_tokens=EXPECTED_REACH_TOKENS,
     )
     rendered = "\n".join(f"  {number}. {problem}" for number, problem in enumerate(problems, 1))
@@ -1299,12 +1391,18 @@ def _census(
     tables: Sequence[_SyntheticTable],
     *,
     keys: frozenset[tuple[str, str]] = _IDENTITY_KEYS,
+    unresolved: frozenset[tuple[str, str]] | None = None,
 ) -> list[str]:
-    """합성 표를 **실물과 같은 함수**로 판정한다 — 닮은 검사가 아니라 그 검사여야 한다."""
+    """합성 표를 **실물과 같은 함수**로 판정한다 — 닮은 검사가 아니라 그 검사여야 한다.
+
+    합성 표에는 `미해결 항목` 열이 없다. 그래서 기본 기대값은 빈 집합이고, R-10 축을
+    재는 탐침만 값을 준다 — 다른 탐침이 이 축의 잡음에 걸리지 않게 한다.
+    """
     return census_problems(
         select_target_tables(parse_tables(_identity_markdown(tables))),
         expected_rows=_IDENTITY_ROW_COUNT,
         expected_met_yes_keys=keys,
+        expected_unresolved_keys=unresolved if unresolved is not None else frozenset(),
         expected_reach_tokens=_IDENTITY_TOKEN_COUNT,
     )
 
@@ -1598,3 +1696,69 @@ def test_ci_잡_이름은_YAML_파싱으로_읽는다() -> None:
     for broken in ("[]\n", "name: CI\n", "name: CI\njobs: {}\n"):
         with pytest.raises(AssertionError):
             read_ci_job_names(broken)
+
+
+# ── R-10 음성 대조 — 미해결 항목이 조용히 비워지는가 ─────────────────────────────────
+#
+# 다른 축은 전부 보존된다: 행 총수도, `충족 = 예` 정체성도, 실행 경로 표기 수도. 칸 하나를
+# 비우는 편집이라 diff 도 작다. **이 축이 없으면 어디에도 안 걸린다.**
+
+
+def _blank_one_unresolved_cell(markdown: str) -> tuple[str, str]:
+    """실물에서 `미해결 항목` 칸 하나를 비운 사본과, 비운 행의 제목."""
+    lines = markdown.splitlines()
+    for index, line in enumerate(lines):
+        if not line.startswith("|") or _UNRESOLVED_HEADER in line:
+            continue
+        cells = _split_row(line)
+        if len(cells) < 6 or _is_separator_row(cells):
+            continue
+        # 대상 표의 열 구성(종료 조건 … 미해결 항목 … blocked-by … 갱신 주체)에서
+        # 미해결 항목은 뒤에서 세 번째다. 열 이름으로 찾지 않는 이유는 이 함수가
+        # **한 줄만** 보기 때문이고, 잘못 고르면 아래 단언이 그것을 알려 준다.
+        target = len(cells) - 3
+        if cells[target].strip() in _UNRESOLVED_EMPTY:
+            continue
+        blanked = list(cells)
+        blanked[target] = " - "
+        lines[index] = "|" + "|".join(blanked) + "|"
+        return "\n".join(lines), cells[0].strip()
+    raise AssertionError("비울 미해결 항목 칸을 찾지 못했다 — 문서 구조가 바뀌었다")
+
+
+def test_R10_미해결_항목을_비우면_잡힌다() -> None:
+    """**칸만 비우는 편집은 다른 어떤 축에도 안 걸린다.** 그것이 이 축의 존재 이유다."""
+    original = _PROGRESS_PATH.read_text(encoding="utf-8")
+    tampered, title = _blank_one_unresolved_cell(original)
+    assert tampered != original, "변조가 일어나지 않았다"
+
+    tables = select_target_tables(parse_tables(tampered))
+    problems = census_problems(
+        tables,
+        expected_rows=EXPECTED_ROWS,
+        expected_met_yes_keys=EXPECTED_MET_YES_KEYS,
+        expected_unresolved_keys=EXPECTED_UNRESOLVED_KEYS,
+        expected_reach_tokens=EXPECTED_REACH_TOKENS,
+    )
+
+    assert any(_UNRESOLVED_HEADER in problem for problem in problems), (
+        f"`{title}` 의 미해결 항목을 비웠는데 아무 축도 걸리지 않았다"
+    )
+    # 다른 축은 그대로여야 한다 — 그래야 "이 축이 잡았다"가 성립한다.
+    assert not any(problem for problem in problems if _UNRESOLVED_HEADER not in problem), (
+        f"다른 축이 함께 걸렸다 — 이 탐침이 무엇을 재는지 흐려진다: {problems}"
+    )
+
+
+def test_R10_실물에서는_통과한다() -> None:
+    """오경보가 없어야 한다. 기대 집합이 실물과 어긋나면 여기서 먼저 빨개진다."""
+    tables = select_target_tables(parse_tables(_PROGRESS_PATH.read_text(encoding="utf-8")))
+    problems = census_problems(
+        tables,
+        expected_rows=EXPECTED_ROWS,
+        expected_met_yes_keys=EXPECTED_MET_YES_KEYS,
+        expected_unresolved_keys=EXPECTED_UNRESOLVED_KEYS,
+        expected_reach_tokens=EXPECTED_REACH_TOKENS,
+    )
+
+    assert not problems, f"실물이 기대값과 어긋난다: {problems}"
