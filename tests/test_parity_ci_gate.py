@@ -225,6 +225,7 @@ def test_하한까지_함께_줄이면_가드를_통과한다(tmp_path: Path, sc
 import importlib.util  # noqa: E402
 import sys  # noqa: E402
 from types import ModuleType  # noqa: E402
+from typing import Any  # noqa: E402
 
 _COMPARE_PATH = REPO / ".claude/skills/python-kotlin-parity/scripts/compare_parity.py"
 
@@ -366,10 +367,14 @@ def test_케이스를_골라_돌린_실행에서는_보지_않는다(comparer: M
 # ---------------------------------------------------------------------------
 
 
-def _fixture_document(comparer: ModuleType, domain: str) -> dict:
+def _fixture_document(comparer: ModuleType, domain: str) -> dict[str, Any]:
     path = REPO / f"parity/fixtures/{domain}/{domain}.json"
     assert path.exists(), f"{path} 가 없다 — fixture 가 옮겨졌는지 확인하라"
-    return json.loads(path.read_text(encoding="utf-8"))
+    document = json.loads(path.read_text(encoding="utf-8"))
+    # `json.loads` 는 `Any` 를 준다. 객체가 아니면 아래 케이스 조작이 조용히 엉뚱한 것을
+    # 만지므로 여기서 형태를 확인하고 넘긴다.
+    assert isinstance(document, dict), f"{path} 가 JSON 객체가 아니다"
+    return document
 
 
 def test_runtime이_kotlin이_아니면_막는다(comparer: ModuleType) -> None:
