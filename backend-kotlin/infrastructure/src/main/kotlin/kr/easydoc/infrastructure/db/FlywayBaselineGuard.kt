@@ -2,10 +2,10 @@ package kr.easydoc.infrastructure.db
 
 import org.flywaydb.core.Flyway
 import org.slf4j.LoggerFactory
-import java.sql.Connection
 import org.springframework.boot.flyway.autoconfigure.FlywayMigrationStrategy
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
+import java.sql.Connection
 
 /**
  * Flyway 기동 전략. 계획 §4.2-4의 "schema checksum이 일치할 때만 baseline version 1을
@@ -188,7 +188,13 @@ class FlywayBaselineGuard {
         )
     }
 
-    private companion object {
+    /**
+     * `private` 이 아니라 `internal` 인 이유는 하나뿐이다 — **테스트가 같은 잠금을 잡아야
+     * 한다.** TOCTOU 탐침(`FlywayBaselineGuardTest`)은 잠금을 존중하는 경쟁 액터를 흉내 내
+     * 판정 직전에 스키마를 바꾸려 든다. 그 액터가 키를 따로 적어 두면 키가 바뀌는 날
+     * 탐침은 아무것도 막지 않으면서 초록으로 남는다.
+     */
+    internal companion object {
         /**
          * advisory lock 키. 이 저장소가 이 목적으로만 쓰는 임의의 상수다.
          *

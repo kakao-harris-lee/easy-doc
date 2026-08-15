@@ -127,17 +127,57 @@ class FrameworkErrorContractTest {
         assertThat(result.response.contentAsString).doesNotContain("열개")
     }
 
+    /**
+     * **이 단언은 계약의 다섯 요청 필드에 적용되지 않는다.** 리뷰 C-A(X6)가 지적한 자리다.
+     *
+     * 종전 판은 `email` 을 `NotBlank` 로 거절하고 그 응답을 정상이라 단언했다. 계약
+     * `x-request-field-constraints`(`contracts/easy-doc-v1.yaml:332-411`)의 F3 판정은
+     * 정확히 그 조합을 금지한다 — `SignupRequest.email`·`SignupRequest.password`·
+     * `DocumentTextRequest.text`·`ConversionReviewRequest.edited_text`·
+     * `WorkspaceNameRequest.name` 다섯은 **서비스 층에서 정규화한 뒤** 판정하고
+     * 위반은 422 **문자열** detail 이며, `@Size`·`@NotBlank`·`@Email` 을 쓰면 배열이
+     * 나가고 사용자 문구가 영문으로 바뀌어 계약 위반이다(`:1513-1518`).
+     *
+     * 그래서 프로브 필드를 계약에 없는 `probe` 로 바꿨다. 여기서 고정하는 것은
+     * **프레임워크 매핑**뿐이다 — `MethodArgumentNotValidException` 이 Spring 기본
+     * 400 + ProblemDetail 로 새지 않고 계약의 422 + 배열로 나가는가.
+     *
+     * 다섯 필드가 내야 하는 모양은 바로 아래 [`서비스 층 길이 위반은 422 문자열이다`] 가
+     * 잡는다. 두 단언을 나란히 둔 이유는 **상태 코드가 둘 다 422 라 눈으로는 구분되지
+     * 않기 때문**이다.
+     */
     @Test
-    @DisplayName("Bean Validation 실패 → 422 + loc=[body, 필드] (Spring 기본 400 이 아니다)")
+    @DisplayName("스키마 층 검증 실패 → 422 + detail 배열 (Spring 기본 400 이 아니다)")
     fun `Bean Validation 실패는 422 배열이다`() {
         mockMvc.post("/__probe/bean-validation").andExpect {
             status { isUnprocessableContent() }
+            jsonPath("$.detail") { isArray() }
             jsonPath("$.detail[0].loc[0]") { value("body") }
-            jsonPath("$.detail[0].loc[1]") { value("email") }
+            // 계약의 다섯 필드 중 어느 것도 아니다 — F3 이 금지한 조합을 재현하지 않는다.
+            jsonPath("$.detail[0].loc[1]") { value("probe") }
             jsonPath("$.detail[0].msg") { value("must not be blank") }
+            jsonPath("$.detail[0].type") { value("missing") }
             // input·ctx 는 금지 — FieldError 가 들고 있는 rejectedValue 를 직렬화하지 않는다.
             jsonPath("$.detail[0].input") { doesNotExist() }
             jsonPath("$.detail[0].ctx") { doesNotExist() }
+        }
+    }
+
+    /**
+     * F3 이 요구하는 반대쪽 모양. 계약의 다섯 필드는 길이·형식 위반도 **도메인 예외**로
+     * 올라오므로 `detail` 이 배열이 아니라 **한국어 문자열 하나**여야 한다.
+     *
+     * React `readErrorMessage`(`frontend/src/api/client.ts`)가 배열이면 `msg` 를, 문자열이면
+     * 그 자체를 화면에 올린다. 두 모양이 뒤바뀌어도 상태 코드는 422 그대로라 화면이 조용히
+     * 영문으로 바뀐다 — 그래서 `detail` 의 **타입까지** 단언한다(계약 `:1516-1518`).
+     */
+    @Test
+    @DisplayName("서비스 층 입력 규칙 위반 → 422 + detail 문자열 (배열이 아니다)")
+    fun `서비스 층 길이 위반은 422 문자열이다`() {
+        mockMvc.get("/__probe/domain/invalid-input").andExpect {
+            status { isUnprocessableContent() }
+            jsonPath("$.detail") { isString() }
+            content { json("""{"detail":"제목이 너무 깁니다"}""", JsonCompareMode.STRICT) }
         }
     }
 

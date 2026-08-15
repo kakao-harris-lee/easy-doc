@@ -130,23 +130,42 @@ class ErrorProbeController {
     /**
      * Bean Validation 실패를 HTTP 경계에서 재현한다.
      *
-     * `spring-boot-starter-validation` 은 아직 의존성에 없다(Phase 3 에서 입력 상한을
-     * 붙일 때 들어온다). 검증기 없이도 **핸들러가 실제로 타는 경로**를 확인하려고 예외를
-     * 직접 만들어 던진다 — 예외가 DispatcherServlet 의 해결 경로를 그대로 통과하므로
-     * 핸들러 직접 호출과 달리 상태 코드·헤더·직렬화가 모두 경계에서 결정된다.
+     * `spring-boot-starter-validation` 은 아직 의존성에 없다(Phase 3 에서 들어올 수 있다).
+     * 검증기 없이도 **핸들러가 실제로 타는 경로**를 확인하려고 예외를 직접 만들어 던진다 —
+     * 예외가 DispatcherServlet 의 해결 경로를 그대로 통과하므로 핸들러 직접 호출과 달리
+     * 상태 코드·헤더·직렬화가 모두 경계에서 결정된다.
+     *
+     * ## 필드 이름이 `probe` 인 이유 (계약 F3)
+     *
+     * 종전 판은 이 자리에서 `email` 을 `NotBlank` 로 거절했다. 그런데 계약의
+     * `x-request-field-constraints` 는 `SignupRequest.email` 을 포함한 **다섯 필드에
+     * `@Size`·`@NotBlank`·`@Email` 을 쓰지 말라**고 못박았고(`contracts/easy-doc-v1.yaml`
+     * `:332-411`·`:1513-1518`·`:1665-1680`), 그 다섯의 위반은 422 **문자열** detail 이다.
+     * 즉 종전 프로브는 계약이 금지한 조합을 그대로 세워 두고 그 응답을 정상이라 단언하는
+     * 모양이었다. 이름을 계약에 없는 `probe` 로 바꿔 **그 조합을 재현하지 않는다.**
+     *
+     * 검증하려는 것은 그대로 남는다 — `MethodArgumentNotValidException` 이 Spring 기본
+     * 400 + ProblemDetail 이 아니라 계약의 422 + 배열 detail 로 나가는가, 그리고
+     * `rejectedValue` 가 응답에 새지 않는가.
      */
     @PostMapping("/bean-validation")
     fun beanValidationFailure(): ResponseEntity<Void> {
-        val target = ProbePayload(email = "")
-        val binding = BeanPropertyBindingResult(target, "probePayload")
+        val target = ProbeValidationPayload(probe = "")
+        val binding = BeanPropertyBindingResult(target, "probeValidationPayload")
         // rejectedValue 는 FieldError 안에 남는다 — 응답에 실리지 않는지가 이 프로브의 요점이다.
-        binding.rejectValue("email", "NotBlank", "must not be blank")
+        binding.rejectValue("probe", "NotBlank", "must not be blank")
         val parameter = MethodParameter(javaClass.getDeclaredMethod("beanValidationFailure"), -1)
         throw MethodArgumentNotValidException(parameter, binding)
     }
 
     /** 요청/응답 본문 자리표시자. 필드 이름은 계약대로 snake_case 다. */
     data class ProbePayload(val email: String)
+
+    /**
+     * 스키마 층 검증 프로브 전용 본문. **계약의 어떤 필드도 흉내 내지 않는다** —
+     * 이름이 계약 필드와 겹치면 그 필드가 스키마 층에서 검증돼도 된다는 뜻으로 읽힌다.
+     */
+    data class ProbeValidationPayload(val probe: String)
 
     private companion object {
         /**
