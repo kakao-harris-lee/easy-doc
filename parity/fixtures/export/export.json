@@ -76,6 +76,20 @@
         {
           "check": "absent",
           "args": {
+            "path": "docx.filename",
+            "needles": [
+              "etc",
+              "passwd",
+              "가가가가가가가가",
+              "보고서",
+              "입니다",
+              "최종"
+            ]
+          }
+        },
+        {
+          "check": "absent",
+          "args": {
             "path": "txt.filename",
             "needles": [
               "/",
@@ -132,6 +146,20 @@
         {
           "check": "absent",
           "args": {
+            "path": "txt.filename",
+            "needles": [
+              "etc",
+              "passwd",
+              "가가가가가가가가",
+              "보고서",
+              "입니다",
+              "최종"
+            ]
+          }
+        },
+        {
+          "check": "absent",
+          "args": {
             "path": "hwpx.filename",
             "needles": [
               "/",
@@ -183,6 +211,20 @@
           "args": {
             "rule": "export_title_markers",
             "path": "hwpx.filename"
+          }
+        },
+        {
+          "check": "absent",
+          "args": {
+            "path": "hwpx.filename",
+            "needles": [
+              "etc",
+              "passwd",
+              "가가가가가가가가",
+              "보고서",
+              "입니다",
+              "최종"
+            ]
           }
         }
       ],
@@ -267,6 +309,21 @@
         {
           "check": "absent",
           "args": {
+            "path": "docx.filename",
+            "needles": [
+              "가가가가가가가가",
+              "기초연금",
+              "보고서",
+              "신청",
+              "안내",
+              "입니다",
+              "최종"
+            ]
+          }
+        },
+        {
+          "check": "absent",
+          "args": {
             "path": "txt.filename",
             "needles": [
               "/",
@@ -323,6 +380,21 @@
         {
           "check": "absent",
           "args": {
+            "path": "txt.filename",
+            "needles": [
+              "가가가가가가가가",
+              "기초연금",
+              "보고서",
+              "신청",
+              "안내",
+              "입니다",
+              "최종"
+            ]
+          }
+        },
+        {
+          "check": "absent",
+          "args": {
             "path": "hwpx.filename",
             "needles": [
               "/",
@@ -374,6 +446,21 @@
           "args": {
             "rule": "export_title_markers",
             "path": "hwpx.filename"
+          }
+        },
+        {
+          "check": "absent",
+          "args": {
+            "path": "hwpx.filename",
+            "needles": [
+              "가가가가가가가가",
+              "기초연금",
+              "보고서",
+              "신청",
+              "안내",
+              "입니다",
+              "최종"
+            ]
           }
         }
       ],
@@ -458,6 +545,21 @@
         {
           "check": "absent",
           "args": {
+            "path": "docx.filename",
+            "needles": [
+              "etc",
+              "passwd",
+              "가가가가가가가가",
+              "기초연금",
+              "신청",
+              "안내",
+              "입니다"
+            ]
+          }
+        },
+        {
+          "check": "absent",
+          "args": {
             "path": "txt.filename",
             "needles": [
               "/",
@@ -514,6 +616,21 @@
         {
           "check": "absent",
           "args": {
+            "path": "txt.filename",
+            "needles": [
+              "etc",
+              "passwd",
+              "가가가가가가가가",
+              "기초연금",
+              "신청",
+              "안내",
+              "입니다"
+            ]
+          }
+        },
+        {
+          "check": "absent",
+          "args": {
             "path": "hwpx.filename",
             "needles": [
               "/",
@@ -565,6 +682,21 @@
           "args": {
             "rule": "export_title_markers",
             "path": "hwpx.filename"
+          }
+        },
+        {
+          "check": "absent",
+          "args": {
+            "path": "hwpx.filename",
+            "needles": [
+              "etc",
+              "passwd",
+              "가가가가가가가가",
+              "기초연금",
+              "신청",
+              "안내",
+              "입니다"
+            ]
           }
         }
       ],
@@ -649,6 +781,22 @@
         {
           "check": "absent",
           "args": {
+            "path": "docx.filename",
+            "needles": [
+              "etc",
+              "passwd",
+              "가가가가가가가가",
+              "기초연금",
+              "신청",
+              "안내",
+              "입니다",
+              "최종"
+            ]
+          }
+        },
+        {
+          "check": "absent",
+          "args": {
             "path": "txt.filename",
             "needles": [
               "/",
@@ -705,6 +853,22 @@
         {
           "check": "absent",
           "args": {
+            "path": "txt.filename",
+            "needles": [
+              "etc",
+              "passwd",
+              "가가가가가가가가",
+              "기초연금",
+              "신청",
+              "안내",
+              "입니다",
+              "최종"
+            ]
+          }
+        },
+        {
+          "check": "absent",
+          "args": {
             "path": "hwpx.filename",
             "needles": [
               "/",
@@ -756,6 +920,22 @@
           "args": {
             "rule": "export_title_markers",
             "path": "hwpx.filename"
+          }
+        },
+        {
+          "check": "absent",
+          "args": {
+            "path": "hwpx.filename",
+            "needles": [
+              "etc",
+              "passwd",
+              "가가가가가가가가",
+              "기초연금",
+              "신청",
+              "안내",
+              "입니다",
+              "최종"
+            ]
           }
         }
       ],
@@ -831,10 +1011,20 @@
           }
         },
         {
-          "check": "contains_derived",
+          "check": "absent",
           "args": {
-            "rule": "export_title_markers",
-            "path": "docx.filename"
+            "path": "docx.filename",
+            "needles": [
+              "etc",
+              "passwd",
+              "가가가가가가가가",
+              "기초연금",
+              "보고서",
+              "신청",
+              "안내",
+              "입니다",
+              "최종"
+            ]
           }
         },
         {
@@ -887,10 +1077,20 @@
           }
         },
         {
-          "check": "contains_derived",
+          "check": "absent",
           "args": {
-            "rule": "export_title_markers",
-            "path": "txt.filename"
+            "path": "txt.filename",
+            "needles": [
+              "etc",
+              "passwd",
+              "가가가가가가가가",
+              "기초연금",
+              "보고서",
+              "신청",
+              "안내",
+              "입니다",
+              "최종"
+            ]
           }
         },
         {
@@ -943,10 +1143,20 @@
           }
         },
         {
-          "check": "contains_derived",
+          "check": "absent",
           "args": {
-            "rule": "export_title_markers",
-            "path": "hwpx.filename"
+            "path": "hwpx.filename",
+            "needles": [
+              "etc",
+              "passwd",
+              "가가가가가가가가",
+              "기초연금",
+              "보고서",
+              "신청",
+              "안내",
+              "입니다",
+              "최종"
+            ]
           }
         },
         {
@@ -1058,6 +1268,22 @@
         {
           "check": "absent",
           "args": {
+            "path": "docx.filename",
+            "needles": [
+              "etc",
+              "passwd",
+              "기초연금",
+              "보고서",
+              "신청",
+              "안내",
+              "입니다",
+              "최종"
+            ]
+          }
+        },
+        {
+          "check": "absent",
+          "args": {
             "path": "txt.filename",
             "needles": [
               "/",
@@ -1114,6 +1340,22 @@
         {
           "check": "absent",
           "args": {
+            "path": "txt.filename",
+            "needles": [
+              "etc",
+              "passwd",
+              "기초연금",
+              "보고서",
+              "신청",
+              "안내",
+              "입니다",
+              "최종"
+            ]
+          }
+        },
+        {
+          "check": "absent",
+          "args": {
             "path": "hwpx.filename",
             "needles": [
               "/",
@@ -1165,6 +1407,22 @@
           "args": {
             "rule": "export_title_markers",
             "path": "hwpx.filename"
+          }
+        },
+        {
+          "check": "absent",
+          "args": {
+            "path": "hwpx.filename",
+            "needles": [
+              "etc",
+              "passwd",
+              "기초연금",
+              "보고서",
+              "신청",
+              "안내",
+              "입니다",
+              "최종"
+            ]
           }
         }
       ],
@@ -1249,6 +1507,22 @@
         {
           "check": "absent",
           "args": {
+            "path": "docx.filename",
+            "needles": [
+              "etc",
+              "passwd",
+              "가가가가가가가가",
+              "기초연금",
+              "보고서",
+              "신청",
+              "안내",
+              "최종"
+            ]
+          }
+        },
+        {
+          "check": "absent",
+          "args": {
             "path": "txt.filename",
             "needles": [
               "/",
@@ -1305,6 +1579,22 @@
         {
           "check": "absent",
           "args": {
+            "path": "txt.filename",
+            "needles": [
+              "etc",
+              "passwd",
+              "가가가가가가가가",
+              "기초연금",
+              "보고서",
+              "신청",
+              "안내",
+              "최종"
+            ]
+          }
+        },
+        {
+          "check": "absent",
+          "args": {
             "path": "hwpx.filename",
             "needles": [
               "/",
@@ -1356,6 +1646,22 @@
           "args": {
             "rule": "export_title_markers",
             "path": "hwpx.filename"
+          }
+        },
+        {
+          "check": "absent",
+          "args": {
+            "path": "hwpx.filename",
+            "needles": [
+              "etc",
+              "passwd",
+              "가가가가가가가가",
+              "기초연금",
+              "보고서",
+              "신청",
+              "안내",
+              "최종"
+            ]
           }
         }
       ],
@@ -1559,5 +1865,5 @@
       }
     }
   ],
-  "generated_at": "2026-08-14T19:29:58Z"
+  "generated_at": "2026-08-15T00:34:59Z"
 }

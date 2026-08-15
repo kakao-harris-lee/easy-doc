@@ -35,14 +35,16 @@
           "check": "contains_derived",
           "args": {
             "rule": "style_length_floor",
-            "path": "length_violations"
+            "path": "length_violations",
+            "allow_empty": true
           }
         },
         {
           "check": "contains_derived",
           "args": {
             "rule": "style_comma_floor",
-            "path": "comma_violations"
+            "path": "comma_violations",
+            "allow_empty": true
           }
         }
       ],
@@ -86,14 +88,16 @@
           "check": "contains_derived",
           "args": {
             "rule": "style_length_floor",
-            "path": "length_violations"
+            "path": "length_violations",
+            "allow_empty": true
           }
         },
         {
           "check": "contains_derived",
           "args": {
             "rule": "style_comma_floor",
-            "path": "comma_violations"
+            "path": "comma_violations",
+            "allow_empty": true
           }
         }
       ],
@@ -151,14 +155,16 @@
           "check": "contains_derived",
           "args": {
             "rule": "style_length_floor",
-            "path": "length_violations"
+            "path": "length_violations",
+            "allow_empty": true
           }
         },
         {
           "check": "contains_derived",
           "args": {
             "rule": "style_comma_floor",
-            "path": "comma_violations"
+            "path": "comma_violations",
+            "allow_empty": true
           }
         }
       ],
@@ -209,14 +215,16 @@
           "check": "contains_derived",
           "args": {
             "rule": "style_length_floor",
-            "path": "length_violations"
+            "path": "length_violations",
+            "allow_empty": true
           }
         },
         {
           "check": "contains_derived",
           "args": {
             "rule": "style_comma_floor",
-            "path": "comma_violations"
+            "path": "comma_violations",
+            "allow_empty": true
           }
         }
       ],
@@ -265,14 +273,16 @@
           "check": "contains_derived",
           "args": {
             "rule": "style_length_floor",
-            "path": "length_violations"
+            "path": "length_violations",
+            "allow_empty": true
           }
         },
         {
           "check": "contains_derived",
           "args": {
             "rule": "style_comma_floor",
-            "path": "comma_violations"
+            "path": "comma_violations",
+            "allow_empty": true
           }
         }
       ],
@@ -329,14 +339,16 @@
           "check": "contains_derived",
           "args": {
             "rule": "style_length_floor",
-            "path": "length_violations"
+            "path": "length_violations",
+            "allow_empty": true
           }
         },
         {
           "check": "contains_derived",
           "args": {
             "rule": "style_comma_floor",
-            "path": "comma_violations"
+            "path": "comma_violations",
+            "allow_empty": true
           }
         }
       ],
@@ -379,14 +391,16 @@
           "check": "contains_derived",
           "args": {
             "rule": "style_length_floor",
-            "path": "length_violations"
+            "path": "length_violations",
+            "allow_empty": true
           }
         },
         {
           "check": "contains_derived",
           "args": {
             "rule": "style_comma_floor",
-            "path": "comma_violations"
+            "path": "comma_violations",
+            "allow_empty": true
           }
         }
       ],
@@ -430,14 +444,16 @@
           "check": "contains_derived",
           "args": {
             "rule": "style_length_floor",
-            "path": "length_violations"
+            "path": "length_violations",
+            "allow_empty": true
           }
         },
         {
           "check": "contains_derived",
           "args": {
             "rule": "style_comma_floor",
-            "path": "comma_violations"
+            "path": "comma_violations",
+            "allow_empty": true
           }
         }
       ],
@@ -488,14 +504,16 @@
           "check": "contains_derived",
           "args": {
             "rule": "style_length_floor",
-            "path": "length_violations"
+            "path": "length_violations",
+            "allow_empty": true
           }
         },
         {
           "check": "contains_derived",
           "args": {
             "rule": "style_comma_floor",
-            "path": "comma_violations"
+            "path": "comma_violations",
+            "allow_empty": true
           }
         }
       ],
@@ -540,14 +558,16 @@
           "check": "contains_derived",
           "args": {
             "rule": "style_length_floor",
-            "path": "length_violations"
+            "path": "length_violations",
+            "allow_empty": true
           }
         },
         {
           "check": "contains_derived",
           "args": {
             "rule": "style_comma_floor",
-            "path": "comma_violations"
+            "path": "comma_violations",
+            "allow_empty": true
           }
         }
       ],
@@ -564,5 +584,5 @@
       }
     }
   ],
-  "generated_at": "2026-08-14T07:19:25Z"
+  "generated_at": "2026-08-15T00:34:59Z"
 }

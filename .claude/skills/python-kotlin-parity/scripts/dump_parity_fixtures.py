@@ -1083,6 +1083,23 @@ def build_masking() -> FixtureSpec:
             _assert("present", path="masked_text", needles=["2020 2021 2022 2023 2024"]),
             reference_divergence="expected",
         ),
+        # 거부-겹침 회귀 (게이트 13 — 차단① 재게). 후보 하나가 Luhn 으로 **거부**될 때 그
+        # 구간을 점유해 버리면, 그 안에 겹쳐 있던 **유효한** 카드번호를 함께 삼킨다. 거부는
+        # "여기는 카드가 아니다"이지 "여기는 더 볼 것이 없다"가 아니다 — 실제로 그 회귀가
+        # 났고(`2cf862a` 에서 수정), 게이트에는 그것을 재는 케이스가 없었다.
+        #
+        # 표본은 다섯 그룹이다. 앞 네 그룹(`9353…2961`)은 Luhn 실패이고 뒤 네 그룹
+        # (`5054…1688`)은 통과한다. 거부가 구간을 점유하면 뒤엣것을 못 찾아 **가려야 할
+        # 카드번호가 평문으로 나간다.**
+        case(
+            "card-rejected-overlaps-valid",
+            "번호 9353-5054-9179-2961-1688 을 확인하세요.",
+            f"Luhn 으로 거부된 후보에 **겹쳐 있는 유효한 카드번호**를 삼키면 안 된다. "
+            f"{hidden} — 거부는 '여기는 카드가 아니다'이지 '여기는 더 볼 것이 없다'가 아니다. "
+            "앞 네 그룹은 체크디짓이 틀리고 뒤 네 그룹은 맞는다",
+            _assert("absent", path="masked_text", needles=["5054-9179-2961-1688"]),
+            reference_divergence="expected",
+        ),
         # Luhn 음성 — 체크디짓이 틀린 16자리는 카드번호가 아니다.
         # **이 케이스가 없으면 Luhn 도입이 아무것도 바꾸지 않은 것처럼 보인다.** 양성 쪽은
         # 전부 Luhn 유효 값으로 교체돼 도입 전후가 같기 때문이다(그것이 교체의 목적이다).
@@ -1243,10 +1260,19 @@ def build_style() -> FixtureSpec:
                         # 사이좋게 0이 되어 통과한다. 아래 둘은 **fixture 입력**에서 비교기가
                         # 직접 가른 "더 쪼갤 수 없는 구간"을 하한으로 요구하므로 그 경로가 막힌다.
                         _assert(
-                            "contains_derived", rule="style_length_floor", path="length_violations"
+                            "contains_derived",
+                            rule="style_length_floor",
+                            path="length_violations",
+                            # 위반이 없는 본문에서는 하한이 정당하게 빈다. 그 경우에도 위
+                            # `equals_derived` 가 **정확 일치**로 판정하므로 케이스가 비는
+                            # 것은 아니다 — 이 자리만 요구가 없을 뿐이다.
+                            allow_empty=True,
                         ),
                         _assert(
-                            "contains_derived", rule="style_comma_floor", path="comma_violations"
+                            "contains_derived",
+                            rule="style_comma_floor",
+                            path="comma_violations",
+                            allow_empty=True,
                         ),
                     ]
                 },
@@ -1398,6 +1424,11 @@ def build_prompts() -> FixtureSpec:
     # (X-15 에서 선언한 경계와 같은 모양이다 — 두 장치가 다른 것을 본다). 여기서 전문을
     # 값으로 걸면 문안을 고치는 순간 두 곳이 함께 빨개지고, 그때 사람은 fixture 를 맞추려고
     # 문안을 되돌린다.
+    # 비교기의 `export_title_markers` 와 **같은 규칙**으로 표지를 뽑는다. 두 벌이 되는 것은
+    # 맞지만 역할이 다르다 — 비교기 쪽은 **판정**이고 여기 것은 **어느 단언을 붙일지 고르는
+    # 선택**이다. 그리고 갈리면 조용하지 않다: 규칙이 어긋나 여기서 표지를 만들었는데 비교기가
+    # 못 만들면 `contains_derived` 가 빈 요구로 떨어져 `allow_empty` 없이 실패한다(B4-A).
+    # 그래서 드리프트가 자기 신고된다.
     cases: list[Case] = []
     for name, masked in masked_samples:
         issues = check_style(masked).issues
@@ -2017,6 +2048,50 @@ def build_export() -> FixtureSpec:
         ":",
         "|",
     ]
+    # 비교기 `FILENAME_FORBIDDEN` 과 **같은 집합**이다. 구현(`export.py`·`Export.kt`)에서
+    # 읽지 않는 이유는 X-4형 순환(구현이 자기 자신을 채점)을 피하려는 것이고, 그 대가로
+    # 두 선언이 갈릴 수 있다 — 게이트 13 N-03 이 그 사고였다. 갈리면 조용하지 않게 해
+    # 두었다: 표지 규칙이 어긋나면 `contains_derived` 가 빈 요구로 떨어져 실패한다.
+    _FORBIDDEN_IN_FILENAME_SET = (
+        {chr(code) for code in range(0x00, 0x20)}
+        | {chr(code) for code in range(0x7F, 0xA0)}
+        | set('"\\/:*?<>|')
+    )
+    marker_window, marker_length = 40, 8
+
+    def title_markers(title: str) -> list[str]:
+        pieces: list[str] = []
+        current = ""
+        for char in title[:marker_window]:
+            if char in _FORBIDDEN_IN_FILENAME_SET or char.isspace() or char == ".":
+                if len(current) >= 2:
+                    pieces.append(current[:marker_length])
+                current = ""
+            else:
+                current += char
+        if len(current) >= 2:
+            pieces.append(current[:marker_length])
+        return pieces
+
+    markers_by_case = {name: title_markers(title) for name, title in titles}
+    #: 다른 표본에만 있는 표지. 파일명이 **그 케이스의 것**임을 요구한다.
+    #:
+    #: 왜 필요한가(게이트 13 X-4): 위 하한은 "제목의 조각이 남아 있는가"만 본다. 그래서
+    #: 모든 제목의 표지를 이어 붙인 **상수 하나**를 늘 돌려주는 구현이 7케이스 21자리를
+    #: 전부 통과한다 — 하한이 케이스를 구별하지 못한다. 남의 표지가 **없어야** 한다는
+    #: 반대 방향을 함께 걸어야 그 상수가 걸린다.
+    exclusive_by_case = {
+        name: sorted(
+            {
+                marker
+                for other, others in markers_by_case.items()
+                if other != name
+                for marker in others
+            }
+            - set(markers_by_case[name])
+        )
+        for name, _ in titles
+    }
     cases: list[Case] = [
         _case(
             f"export-filename-{name}",
@@ -2063,14 +2138,39 @@ def build_export() -> FixtureSpec:
                         # 공백 접기·앞뒤 점 깎기 규칙까지 값으로 고정돼 규칙 개선이 회귀로 잡힌다.
                         # 대신 X-4의 **입력 유도 하한**을 그대로 적용한다: 제목에서 어떤 정제
                         # 규칙으로도 사라질 수 없는 조각을 비교기가 직접 뽑아 남아 있기만 요구한다.
-                        _assert(
-                            "contains_derived",
-                            rule="export_title_markers",
-                            path=f"{fmt.value}.filename",
+                        *(
+                            [
+                                _assert(
+                                    "contains_derived",
+                                    rule="export_title_markers",
+                                    path=f"{fmt.value}.filename",
+                                )
+                            ]
+                            if markers_by_case[name]
+                            else []
+                        ),
+                        # **케이스 간 구별 (게이트 13 X-4).** 남의 제목에만 있는 표지는
+                        # 이 파일명에 있으면 안 된다. 이것이 없으면 모든 제목의 표지를 이어
+                        # 붙인 상수 하나가 21자리를 전부 통과한다.
+                        *(
+                            [
+                                _assert(
+                                    "absent",
+                                    path=f"{fmt.value}.filename",
+                                    needles=exclusive_by_case[name],
+                                )
+                            ]
+                            if exclusive_by_case[name]
+                            else []
                         ),
                     )
                 ]
-                # 제목이 전부 금지 문자인 표본(`all-forbidden`)은 표지 하한이 **빈 목록**이라
+                # 제목에서 살릴 표지가 **하나도 나오지 않는** 표본은 위 하한을 아예 붙이지
+                # 않는다(붙이면 빈 요구가 되어 B4-A 가 막는다). 조건을 **케이스 이름이 아니라
+                # 유도 결과**로 쓴 것이 게이트 13 X-3 의 처방이다 — 이름으로 고르면 비슷한
+                # 표본을 새로 넣는 사람이 그 자리를 조용히 비운다.
+                #
+                # 그 자리에서 지켜야 할 것은
                 # 위 `contains_derived` 가 아무것도 요구하지 않는다. 그 자리에서 지켜야 할 것은
                 # "사용자에게 보일 이름을 대신 쓴다"이므로 여기서 따로 못박는다 — 확장자만 남은
                 # 이름이나 빈 이름을 내보내면 사용자는 무슨 파일인지 알 수 없다.
@@ -2083,7 +2183,7 @@ def build_export() -> FixtureSpec:
                 + [
                     _assert("present", path=f"{fmt.value}.filename", needles=[_FALLBACK_NAME])
                     for fmt in ExportFormat
-                    if name == "all-forbidden"
+                    if not markers_by_case[name]
                 ]
             },
         )

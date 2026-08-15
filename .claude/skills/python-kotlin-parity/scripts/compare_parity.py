@@ -247,6 +247,9 @@ CASE_FLOOR_PATH = REPO_ROOT / ".github" / "parity-case-floor.txt"
 #: 잊을 수 없다. 도달 0 인 채로 잠들어 있는 장치를 만들지 않으려고 이렇게 했다.
 FULL_GATE_PATH = REPO_ROOT / ".github" / "parity-full-gate.txt"
 
+#: Kotlin 이 구현했다고 선언한 도메인의 하한. CI 셸이 읽던 것을 비교기도 읽는다(U-2).
+DECLARED_FLOOR_PATH = REPO_ROOT / ".github" / "parity-declared-floor.txt"
+
 #: `verdict_pending` 이 반드시 담아야 하는 것. 없으면 **탐지되지 않는 보류**가 된다 —
 #: 마커만 붙여 두고 아무도 읽지 않던 옛 `known_gap` 이 정확히 그 상태였다(R-4).
 #: 넷은 각각 다른 질문에 답한다: 무엇이 열려 있나 / 누가 닫나 / 언제까지 / 누가 회부했나.
@@ -731,6 +734,17 @@ def check_contains_derived(call: CheckCall) -> list[str]:
         return problems
     if not isinstance(required, list):
         return [f"유도 규칙 `{rule}` 이 목록을 내지 않았다"]
+    # **빈 요구는 기본적으로 결함이다** (게이트 13 X-3). 유도가 아무것도 내지 않으면 이
+    # 단언은 케이스에 붙어 있으면서 아무것도 재지 않는다 — 단언 수는 늘고 판정은 그대로다.
+    # 정당하게 빌 수 있는 규칙(위반이 없는 본문의 하한 등)만 `allow_empty` 로 선언한다.
+    # 그 선언을 **케이스가 아니라 규칙 쓰는 쪽이** 하게 해서, 새 케이스가 조용히 빈 요구로
+    # 통과하는 경로를 막는다.
+    if not required and not call.arg("allow_empty", False):
+        return [
+            f"유도 규칙 `{rule}` 이 요구 항목을 하나도 내지 않았다 — 이 단언은 아무것도 "
+            "재지 않는다. 입력이 이 규칙의 대상이 아니라면 단언을 붙이지 말고, 비어도 되는 "
+            "규칙이라면 `allow_empty` 를 명시한다"
+        ]
     path = str(call.arg("path", "$"))
     got = call.target()
     if got is _MISSING:
@@ -912,10 +926,17 @@ def _derive_comma_floor(call: CheckCall) -> tuple[Any, list[str]]:
 
 
 #: 파일명에서 **반드시 제거돼야 하는** 문자. 요구사항이 지목한 집합이고 구현에서 읽지 않는다.
+#:
+#: **C1(U+0080–U+009F)을 포함한다 (게이트 13 N-03).** 이 집합이 한때 C0+DEL 까지만 담아
+#: `Export.kt` 와 갈렸고, 그 드리프트는 **거짓 실패**를 만든다 — 비교기는 C1 에서 표지를
+#: 가르지 않아 C1 을 품은 표지를 요구하는데 구현은 C1 을 지우므로 그 표지가 산출물에 없다.
+#: 두 선언이 갈릴 때 아무도 대조하지 않던 자리이고, 넓은 쪽(C1 포함)이 요구사항에 맞다 —
+#: C1 도 제어문자이고 파일명에 남으면 같은 위험이다. **Python `export.py` 는 아직 좁다**
+#: (C0+DEL). 그 차이는 참고 갈림이지 이 집합의 기준이 아니다.
 FILENAME_FORBIDDEN = (
-    set('\x00\x01\x02\x03\x04\x05\x06\x07\x08\t\n\x0b\x0c\r"\\/:*?<>|')
-    | {chr(code) for code in range(0x0E, 0x20)}
-    | {"\x7f"}
+    {chr(code) for code in range(0x00, 0x20)}  # C0
+    | {chr(code) for code in range(0x7F, 0xA0)}  # DEL + C1
+    | set('"\\/:*?<>|')  # 경로·인용 구분자
 )
 
 #: 제목에서 표지를 뽑을 때 보는 앞부분 길이. 정제는 **길이를 줄이기만** 하므로(금지 문자 제거·
@@ -1256,45 +1277,129 @@ def floor_scope(fixture_root: Path, pairs: list[Pair]) -> dict[str, set[str]]:
     return {pair.domain: set(pair.case_ids) for pair in pairs}
 
 
-def full_gate_floor_problems(selected: list[str], scoped: bool) -> list[str]:
-    """전체 게이트 상태를 **하한**으로 본다 (게이트 12 #3 — 차단②).
+def declared_floor_domains() -> set[str]:
+    """선언 하한이 담은 도메인 집합. **CI 셸과 같은 파일을 비교기도 읽는다** (U-2).
 
-    `selected` 는 실행이 명시적으로 선언한 판정 범위(`--only-domain`)다. CI 는 Kotlin 이
-    구현했다고 선언한 도메인을 그대로 넘기므로, 이 목록이 곧 "지금 무엇을 검증하는가"다.
+    이 파일은 그동안 CI 셸에서만 읽혔다. 셸은 "선언이 하한보다 줄었는가"를 보고, 비교기는
+    그 값을 아예 보지 않았다 — 같은 파일을 두 곳이 다른 목적으로 쓰되 한 곳만 읽는 상태였다.
+    전체 게이트 하한이 이 값을 판단 근거로 쓰면서 비교기 쪽에서도 실제로 읽힌다.
+    """
+    if not DECLARED_FLOOR_PATH.exists():
+        return set()
+    domains: set[str] = set()
+    for raw in DECLARED_FLOOR_PATH.read_text(encoding="utf-8").splitlines():
+        line = raw.split("#", 1)[0].strip()
+        if line:
+            domains.add(line)
+    return domains
+
+
+def read_full_gate_mark() -> tuple[dict[str, str] | None, list[str]]:
+    """전체 게이트 표시 파일을 **읽는다.** 존재만 보지 않는다 (게이트 13 X-1 ②).
+
+    예전에는 `FULL_GATE_PATH.exists()` 하나였다. 그래서 **빈 파일·주석만 있는 파일·엉뚱한
+    내용**이 전부 "도달했다"로 통과했다 — `touch` 한 번이면 하한이 서는 것처럼 보인다.
+    선언 파일이 실물과 대조되는지 보는 것이 이 저장소의 규율인데(케이스 하한의 무의미 선언
+    검사가 같은 자리다) 이 파일만 예외였다.
+
+    두 줄을 요구한다. `reached: <날짜>` 는 언제 도달했는지, `domains: <수>` 는 그때 정본이
+    몇 개였는지다. 뒤엣것이 **대조되는 값**이다 — 정본이 늘었는데 표시가 옛 수를 들고 있으면
+    그 표시는 지금 상태를 기록한 것이 아니다.
+    """
+    if not FULL_GATE_PATH.exists():
+        return (None, [])
+    fields: dict[str, str] = {}
+    for raw in FULL_GATE_PATH.read_text(encoding="utf-8").splitlines():
+        line = raw.split("#", 1)[0].strip()
+        if not line or ":" not in line:
+            continue
+        key, _, value = line.partition(":")
+        fields[key.strip()] = value.strip()
+    missing = [name for name in ("reached", "domains") if not fields.get(name)]
+    if missing:
+        return (
+            None,
+            [
+                f"- **전체 게이트 표시가 비어 있다**: `{FULL_GATE_PATH.name}` 에 "
+                f"{', '.join(f'`{name}`' for name in missing)} 가 없다\n"
+                "  - 이 파일은 **존재만으로 하한이 되지 않는다.** `touch` 한 번으로 서는 "
+                "표시는 아무것도 기록하지 않는다 — 언제 도달했고(`reached`) 그때 정본이 몇 "
+                "개였는지(`domains`)를 적어야 다음 사람이 지금 상태와 대조할 수 있다\n"
+                "  - 형식: `reached: 2026-08-15` · `domains: 8`"
+            ],
+        )
+    if not fields["domains"].isdigit():
+        return (
+            None,
+            [
+                f"- **전체 게이트 표시의 `domains` 가 수가 아니다**: "
+                f"{fields['domains']!r} — 정본 개수와 대조할 수 없다"
+            ],
+        )
+    return (fields, [])
+
+
+def full_gate_floor_problems(scoped: bool) -> list[str]:
+    """전체 게이트 상태를 **하한**으로 본다 (게이트 12 #3 · 게이트 13 X-1).
+
+    보는 것은 이 실행의 판정 범위가 아니라 **선언 하한**(`parity-declared-floor.txt`)이다.
+    그것이 "이 저장소가 무엇을 검증하기로 했는가"의 기록이고, 특정 실행이 무엇을 골라
+    돌렸는지와 무관하다.
+
+    > **왜 판정 범위가 아닌가 — 두 번 갈아탔다.**
+    > ① 처음에는 `--only-domain` 목록을 봤다. CI 는 선언이 정본을 덮으면 그 인자를 **주지
+    >   않으므로**, 하한이 서야 할 바로 그 경로에서 통째로 잠들었다(게이트 13 X-1).
+    > ② 그래서 "판정 범위"로 넓혔더니, 개발 중 `--only-domain masking` 이나 원장 기록
+    >   실행처럼 **정상적으로 좁힌 실행**이 전부 강등으로 걸렸다. 실측으로 확인했다.
+    > 두 실패의 원인이 같다 — **실행이 무엇을 골랐는가로 저장소의 상태를 판정하려 했다.**
+    > 선언 하한은 실행과 무관한 값이라 두 방향이 함께 닫힌다.
 
     두 방향을 본다.
-      - **도달했는데 고정하지 않았다** → 막는다. 선언이 정본 전부를 덮은 실행인데 표시 파일이
+      - **도달했는데 고정하지 않았다** → 막는다. 선언 하한이 정본 전부를 덮는데 표시 파일이
         없으면, 다음에 builder 가 하나 늘어날 때 조용히 부분 게이트로 내려간다.
-      - **고정했는데 내려갔다** → 막는다. 정본이 늘었든 선언이 줄었든 결과는 같다 — 전체
-        게이트였던 것이 부분 게이트가 되고 종료 코드 3 사면이 되살아난다.
+      - **고정했는데 내려갔다** → 막는다. 정본이 늘었든 선언 하한이 줄었든 결과는 같다 —
+        CI 가 부분 게이트로 돌게 되고 종료 코드 3 사면이 되살아난다.
 
-    `--only` 로 케이스를 골라 돌린 실행과 `--only-domain` 없이 돌린 실행에서는 보지 않는다.
-    앞은 범위 선언이 아니고, 뒤는 이미 정의상 전체 게이트다.
+    `--only` 로 케이스를 골라 돌린 실행에서는 보지 않는다. 그때는 fixture 를 전부 읽지
+    않으므로 판단 근거가 갖춰지지 않는다.
     """
-    if scoped or not selected:
+    if scoped:
         return []
-    scope = set(selected)
     canonical = set(BUILDERS)
-    marked = FULL_GATE_PATH.exists()
-    if scope >= canonical and not marked:
+    declared = declared_floor_domains()
+    fields, problems = read_full_gate_mark()
+    if problems:
+        return problems
+    marked = fields is not None
+    covers = declared >= canonical
+    if covers and not marked:
         return [
-            f"- **전체 게이트에 도달했다 — 하한을 고정하라**: 선언 {len(scope)}개가 정본 "
-            f"{len(canonical)}개를 전부 덮었다\n"
+            f"- **전체 게이트에 도달했다 — 하한을 고정하라**: 선언 하한 {len(declared)}개가 "
+            f"정본 {len(canonical)}개를 전부 덮었다\n"
             f"  - `{FULL_GATE_PATH}` 를 만들어 이 상태를 하한으로 고정한다. 없으면 다음에 "
             "생성기에 builder 가 하나 늘어나는 순간 **조용히 부분 게이트로 내려가** 종료 "
             "코드 3 사면이 되살아난다 — 8/8 은 강제된 성질이 아니라 오늘 참인 상태일 뿐이다\n"
-            "  - 그 파일을 만든 뒤에는 범위를 줄이는 편집이 여기서 막힌다"
+            f"  - 형식: `reached: <날짜>` 와 `domains: {len(canonical)}` 두 줄"
         ]
-    if marked and not scope >= canonical:
-        missing = sorted(canonical - scope)
+    if marked and not covers:
+        missing = sorted(canonical - declared)
         return [
-            f"- **전체 게이트에서 내려왔다**: {', '.join(missing)} 이(가) 판정 범위 밖이다\n"
+            f"- **전체 게이트에서 내려왔다**: {', '.join(missing)} 이(가) 선언 하한에 없다\n"
             f"  - `{FULL_GATE_PATH.name}` 이 이 저장소가 전체 게이트에 **도달한 적 있음**을 "
-            "기록하고 있다. 정본이 늘었거나 선언이 줄었고, 어느 쪽이든 결과는 같다 — "
-            "부분 게이트가 되어 종료 코드 3 이 통과로 읽힌다\n"
+            "기록하고 있다. 정본이 늘었거나 선언 하한이 줄었고, 어느 쪽이든 결과는 같다 — "
+            "CI 가 부분 게이트로 돌아 종료 코드 3 이 통과로 읽힌다\n"
             "  - 새 도메인을 더했다면 **같은 커밋에서 선언한다**. 선언할 수 없는 상태라면 "
             f"(구현 전) `{FULL_GATE_PATH.name}` 을 지우고 PR 에 근거를 적는다 — 그 diff 가 "
             "'전체 게이트를 내렸다'는 신호다"
+        ]
+    if marked and fields is not None and int(fields["domains"]) != len(canonical):
+        return [
+            f"- **전체 게이트 표시가 낡았다**: 기록 `domains: {fields['domains']}` / 현재 정본 "
+            f"{len(canonical)}개\n"
+            f"  - `{FULL_GATE_PATH.name}` 은 도달 **시점의 정본 크기**를 기록한다. 그 수가 지금과 "
+            "다르면 도메인이 늘거나 줄었다는 뜻이고, 표시는 더 이상 지금 상태를 말하지 않는다\n"
+            "  - 늘었다면 새 도메인이 선언에 들어갔는지 확인하고 이 수를 갱신한다. 줄였다면 "
+            "그 삭제가 검토를 받았는지 PR 에 근거를 적는다"
         ]
     return []
 
@@ -2164,7 +2269,9 @@ def main() -> int:
     floor_problems = case_floor_problems(
         pairs, scoped=args.only is not None, fixture_root=args.fixture
     )
-    floor_problems += full_gate_floor_problems(selected, scoped=args.only is not None)
+    # 전체 게이트 하한은 **실행의 판정 범위가 아니라 선언 하한**을 본다 — 실행이 무엇을
+    # 골랐는가로 저장소 상태를 판정하려다 두 번 실패했다(함수 docstring 참고).
+    floor_problems += full_gate_floor_problems(scoped=args.only is not None)
     if floor_problems:
         total_problems += len(floor_problems)
         sections.append("## 케이스 정체성 하한\n\n" + "\n".join(floor_problems))

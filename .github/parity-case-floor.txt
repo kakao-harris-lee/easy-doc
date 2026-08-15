@@ -132,6 +132,7 @@ masking/masking-keeps-vt-split-digits
 masking/masking-keeps-ff-split-digits
 masking/masking-keeps-four-groups-single-space
 masking/masking-keeps-five-groups-single-space
+masking/masking-card-rejected-overlaps-valid
 masking/masking-keeps-card-luhn-invalid
 postprocess/postprocess-plain
 postprocess/postprocess-fence

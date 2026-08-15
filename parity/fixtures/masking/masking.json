@@ -3618,6 +3618,57 @@
       }
     },
     {
+      "id": "masking-card-rejected-overlaps-valid",
+      "description": "Luhn 으로 거부된 후보에 **겹쳐 있는 유효한 카드번호**를 삼키면 안 된다. 가려야 한다 — 남으면 개인정보가 그대로 외부 LLM으로 나간다 — 거부는 '여기는 카드가 아니다'이지 '여기는 더 볼 것이 없다'가 아니다. 앞 네 그룹은 체크디짓이 틀리고 뒤 네 그룹은 맞는다",
+      "input": {
+        "text": "번호 9353-5054-9179-2961-1688 을 확인하세요."
+      },
+      "assert": [
+        {
+          "check": "restores_input"
+        },
+        {
+          "check": "placeholder_scheme",
+          "args": {
+            "categories": [
+              "주민등록번호",
+              "카드번호"
+            ]
+          }
+        },
+        {
+          "check": "absent",
+          "args": {
+            "path": "masked_text",
+            "needles": [
+              "5054-9179-2961-1688"
+            ]
+          }
+        },
+        {
+          "check": "present",
+          "args": {
+            "path": "masked_text",
+            "needles": [
+              "번호 9353-",
+              "을 확인하세요."
+            ]
+          }
+        }
+      ],
+      "reference_divergence": "expected",
+      "reference": {
+        "masked_text": "번호 [[카드번호1]]-1688 을 확인하세요.",
+        "items": [
+          {
+            "category": "카드번호",
+            "placeholder": "[[카드번호1]]",
+            "original": "9353-5054-9179-2961"
+          }
+        ]
+      }
+    },
+    {
       "id": "masking-keeps-card-luhn-invalid",
       "description": "체크디짓이 맞지 않는 16자리는 카드번호가 아니다. 가리면 안 된다 — 범위 밖이거나 개인정보가 아니다. 과잉 마스킹은 팩트를 지운다 — 이 값은 이 fixture 가 오랫동안 **카드번호 표본으로 쓰던 것**이고 Luhn 을 통과하지 못한다. 양성 케이스를 전부 Luhn 유효 값으로 옮긴 지금, 도입 전후를 가르는 것은 이 음성 케이스 하나다",
       "input": {
@@ -3659,5 +3710,5 @@
       }
     }
   ],
-  "generated_at": "2026-08-14T08:09:06Z"
+  "generated_at": "2026-08-15T00:34:59Z"
 }

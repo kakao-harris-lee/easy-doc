@@ -1,7 +1,7 @@
 {
   "domain": "masking",
   "note": "Kotlin 산출물과 Python 참고값이 갈린 자리의 기록이다. 판정 근거가 아니라 리뷰에 올리기 위한 원장이며, 본문 없이 경로와 SHA-256만 남긴다. 갱신: compare_parity.py --record-reference",
-  "recorded_at": "2026-08-14T08:08:08Z",
+  "recorded_at": "2026-08-15T00:30:41Z",
   "cases": {
     "masking-boundary-fold-card-head": {
       "status": "agree",
@@ -44,6 +44,13 @@
       "first_diff_path": "",
       "reference_sha256": "2bfa3897c45cc1b831165d7e29ff6f9998782252b3ddf5be9e1b9b16908ef411",
       "actual_sha256": "2bfa3897c45cc1b831165d7e29ff6f9998782252b3ddf5be9e1b9b16908ef411"
+    },
+    "masking-card-rejected-overlaps-valid": {
+      "status": "diverge",
+      "declared": true,
+      "first_diff_path": "$.masked_text",
+      "reference_sha256": "d192f0c49f68b1b5ea27c73e461a03328bab2ca074b20a99dfa7c0c052507f1b",
+      "actual_sha256": "ceb42b04a122a6033ff2a822347589bc36bb5be4e5d7612d4d04cbac1128a5cb"
     },
     "masking-card-sep-em-dash": {
       "status": "diverge",
