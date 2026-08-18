@@ -275,9 +275,20 @@ def _floor_checked_cases(previous: dict[str, Any], section: str) -> list[dict[st
             f"`{section}` 케이스 배열이 스냅샷에 없다 — 스냅샷이 잘렸거나 형식이 바뀌었다. "
             "축소된 스냅샷을 정본으로 재사용하지 않는다"
         )
+    # **빈 하한은 실패다** (게이트 16 E — 범위 선언형은 빈 선언에서 통과하면 안 된다).
+    # 하한이 `()` 면 위 대조는 요구하는 것이 없어 어떤 축소도 통과했다(실측: postprocess
+    # 29→1 / system_prompts 6→1 이 각각 exit 0). 하한을 비우는 편집은 하한을 지우는
+    # 편집과 같은 일이므로 같은 방식으로 막는다 — 섹션을 정말 없앨 거면 `PROMPT_CASE_FLOOR`
+    # 에서 키째로 지우고, 그 diff 를 리뷰에 올린다(가드 테스트가 그룹 대조로 잡는다).
+    required = PROMPT_CASE_FLOOR.get(section)
+    if not required:
+        raise SnapshotError(
+            f"`{section}` 의 케이스 하한이 비어 있다 — 하한이 비면 무엇을 지우든 통과한다. "
+            "비우는 것은 지우는 것과 같은 일이므로 똑같이 실패로 판정한다"
+        )
     cases = [case for case in raw if isinstance(case, dict)]
     present = {str(case.get("name")) for case in cases}
-    missing = [name for name in PROMPT_CASE_FLOOR[section] if name not in present]
+    missing = [name for name in required if name not in present]
     if missing:
         raise SnapshotError(
             f"`{section}` 에서 케이스 {len(missing)}건이 사라졌다: {', '.join(missing)} — "

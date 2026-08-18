@@ -438,7 +438,7 @@ def test_손대지_않은_fixture는_정본_대조를_통과한다(comparer: Mod
 
 
 # ---------------------------------------------------------------------------
-# 게이트 우회 회귀 — **본류 배선** (게이트 15 X2 / codex C15-6)
+# 게이트 우회 회귀 — **본류 배선** (게이트 15 X2 / codex C15-6 → 게이트 16 Q / T-D⑵)
 #
 # 위 헬퍼 직접 호출 테스트들은 helper **내부의 탐지력**만 잰다. helper 가 본류에
 # 배선돼 있는지는 재지 않았다 — `runtime_problem` 의 본류 호출부는 `compare_file` 에,
@@ -451,6 +451,24 @@ def test_손대지_않은_fixture는_정본_대조를_통과한다(comparer: Mod
 # 종료 코드만 보면 안 된다 — 합성 트리는 도메인 하나뿐이라 도메인 누락만으로도 1이
 # 나온다(아래 대조군이 그 사실을 고정한다). 문구는 각 helper 만 낼 수 있으므로,
 # 호출부를 지우면 문구가 사라져 이 테스트가 빨개진다.
+#
+# ## 종류로 닫는다 (게이트 16 리더 판정 — T-D⑵)
+#
+# 게이트 15 는 두 helper(runtime·provenance)에만 이것을 걸었다. 그런데 "본류 호출부가
+# 한 곳뿐인 게이트 helper" 는 **종류로 댈 수 있는 자리**이고 여덟이며, 그중 하나
+# (`full_gate_floor_problems`, `main` 의 `floor_problems += ...` 한 줄)는 게이트 14 가
+# **지워도 25 passed / 1191 passed** 를 변이로 실측한 실사 결함이었다(R-4⑴, Y-7). 규칙 4 —
+# 판정 기준은 횟수가 아니라 결함의 구조 — 에 따라 여덟 자리 전부에 건다. 아래
+# `_MAINLINE_HELPERS` 가 그 여덟의 목록이고, 끝의 완전성 테스트가 이 목록을 비교기 코드와
+# 대조한다 — 아홉째 helper 가 생기면 회귀 없이는 통과하지 못하게.
+#
+# ## Z-b — 자기 눈을 가리지 않는다 (게이트 14 cross §R.9)
+#
+# 처음 판의 `_mainline_tree` 는 전체 게이트 하한(표시 파일·선언 하한)을 **항상 통과하는
+# 값**으로 격리했다. 격리 자체는 옳지만(실물 오염 방지) 그 결과 본류 배선 테스트를 아무리
+# 늘려도 `full_gate_floor_problems` 호출선만은 영구히 보이지 않았다. 그래서 격리는
+# 유지하되 **상태를 인자로 받는다** — 기본은 통과 상태(다른 helper 를 잴 때 겹치지 않도록),
+# 그 helper 를 잴 때만 표시를 없애거나 선언을 줄인다.
 # ---------------------------------------------------------------------------
 
 
@@ -461,19 +479,36 @@ def _mainline_tree(
     *,
     mutate: Any = None,
     actual: dict[str, Any] | None = None,
+    actual_from_reference: bool = False,
+    case_floor: str = "present",
+    full_gate_mark: str = "valid",
+    declared_floor: str = "full",
+    ledger: dict[str, Any] | None = None,
 ) -> Path:
-    """본류 실행용 합성 트리. 하한·표시 파일 3종을 함께 격리한다.
+    """본류 실행용 합성 트리. 하한·표시 파일 3종과 원장을 함께 격리한다.
 
     격리 이유는 `marker` fixture 와 같다 — 실물을 건드리지 않기 위해서이자, 실물
     하한의 상태 변화가 이 테스트의 판정에 섞이지 않게 하기 위해서다. 케이스 하한은
     **트리에 실제로 있는 케이스**로 쓴다. 축소 시나리오에서 실물 하한을 그대로 쓰면
     케이스 하한 검사도 함께 빨개져서, 본류 정본 대조(`:2282`)를 지워도 종료 코드가
     빨간 채 남는다 — 그 겹침을 여기서 미리 걷어낸다.
+
+    격리 파일의 **상태**는 인자다(Z-b). 기본값은 전부 "통과" 상태라 다른 helper 를 잴 때
+    이 파일들이 실패 사유에 섞이지 않고, 그 파일을 읽는 helper 를 잴 때만 값을 바꾼다.
+
+    - `case_floor`: `present`(트리 케이스 전부) / `partial`(마지막 케이스 미등재) / `absent`
+    - `full_gate_mark`: `valid`(reached+domains) / `absent`
+    - `declared_floor`: `full`(BUILDERS 전부) / `short`(하나 부족)
+    - `actual_from_reference`: fixture 의 `reference` 값을 그대로 Kotlin 산출물로 쓴다 —
+      성질을 지키고 원장이 `agree` 가 되는 **정상 산출물**이다. `parity/actual/` 실물을
+      읽지 않는다(그것은 .gitignore 대상이라 있는지 여부로 결과가 갈리면 회귀로 못 쓴다).
+    - `ledger`: 도메인 원장 파일 내용(없으면 원장 없음).
     """
     root = tmp_path / "mainline"
     fixture_dir = root / "fixtures/text"
     fixture_dir.mkdir(parents=True)
     document = _fixture_document(comparer, "text")
+    original_ids = [str(case["id"]) for case in document["cases"]]
     if mutate is not None:
         mutate(document)
     (fixture_dir / "text.json").write_text(
@@ -481,19 +516,41 @@ def _mainline_tree(
     )
     actual_dir = root / "actual/text"
     actual_dir.mkdir(parents=True)
+    if actual_from_reference:
+        actual = {
+            "runtime": "kotlin",
+            "cases": [
+                {"id": case["id"], "actual": case["reference"]} for case in document["cases"]
+            ],
+        }
     if actual is not None:
         (actual_dir / "text.json").write_text(
             json.dumps(actual, ensure_ascii=False), encoding="utf-8"
         )
-    case_floor = tmp_path / "parity-case-floor.txt"
-    _write_lines(case_floor, [f"text/{case['id']}" for case in document["cases"]])
-    monkeypatch.setattr(comparer, "CASE_FLOOR_PATH", case_floor)
+    case_floor_path = tmp_path / "parity-case-floor.txt"
+    if case_floor == "present":
+        _write_lines(case_floor_path, [f"text/{cid}" for cid in original_ids])
+    elif case_floor == "partial":
+        _write_lines(case_floor_path, [f"text/{cid}" for cid in original_ids[:-1]])
+    else:
+        assert case_floor == "absent", case_floor
+    monkeypatch.setattr(comparer, "CASE_FLOOR_PATH", case_floor_path)
     declared = tmp_path / "parity-declared-floor.txt"
-    _write_lines(declared, sorted(comparer.BUILDERS))
+    domains = sorted(comparer.BUILDERS)
+    _write_lines(declared, domains if declared_floor == "full" else domains[:-1])
     monkeypatch.setattr(comparer, "DECLARED_FLOOR_PATH", declared)
     mark = tmp_path / "parity-full-gate.txt"
-    mark.write_text(f"reached: 2026-08-15\ndomains: {len(comparer.BUILDERS)}\n", encoding="utf-8")
+    if full_gate_mark == "valid":
+        mark.write_text(f"reached: 2026-08-15\ndomains: {len(domains)}\n", encoding="utf-8")
+    else:
+        assert full_gate_mark == "absent", full_gate_mark
     monkeypatch.setattr(comparer, "FULL_GATE_PATH", mark)
+    ledger_dir = root / "ledger"
+    ledger_dir.mkdir()
+    if ledger is not None:
+        (ledger_dir / "text.json").write_text(
+            json.dumps(ledger, ensure_ascii=False), encoding="utf-8"
+        )
     return root
 
 
@@ -502,6 +559,7 @@ def _run_mainline(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
     root: Path,
+    *extra_args: str,
 ) -> tuple[int, str]:
     """`main()` 을 CI 와 같은 인자 형태(--fixture/--actual 루트)로 실행한다."""
     monkeypatch.setattr(
@@ -515,11 +573,38 @@ def _run_mainline(
             str(root / "actual"),
             "--ledger",
             str(root / "ledger"),
+            *extra_args,
         ],
     )
     code = comparer.main()
     captured = capsys.readouterr()
     return code, captured.out + captured.err
+
+
+#: 본류 호출부가 **한 곳뿐**인 게이트 helper 와, 각각을 본류에서 재는 테스트 이름.
+#: 이 표가 "종류"의 열거다 — 끝의 완전성 테스트가 비교기 코드에서 `*_problem(s)`·
+#: `*_additions` 이름을 수집해 이 표와 대조하므로, 새 helper 는 여기 한 줄 + 본류 테스트
+#: 하나 없이는 통과하지 못한다. 값은 그 helper **만** 낼 수 있는 리포트 문구다.
+#:
+#: 게이트 16 §6.1 표는 8자리였다. 아래 완전성 테스트를 처음 돌리자 **아홉째**가 바로
+#: 나왔다 — `structural_problems`(`main` 의 `problems = structural_problems(...)`, 유일
+#: 호출부). 표를 손으로 셌을 때 빠진 자리를 기계 열거가 잡은 것이라, 이 표는 9자리다.
+_MAINLINE_HELPERS: dict[str, tuple[str, str]] = {
+    "runtime_problem": ("test_본류가_위조_runtime을_막는다", "runtime 이 `kotlin` 이 아니다"),
+    "provenance_problems": ("test_본류가_축소_fixture를_막는다", "정본에서 사라졌다"),
+    "structural_problems": ("test_본류가_빈_fixture를_막는다", "빈 fixture"),
+    "spec_shape_problems": ("test_본류가_단언_없는_케이스를_막는다", "단언 없는 spec 케이스"),
+    "case_floor_problems": ("test_본류가_케이스_하한_부재를_막는다", "케이스 하한 파일 없음"),
+    "full_gate_floor_problems": ("test_본류가_전체_게이트_미고정을_막는다", "하한을 고정하라"),
+    "stale_ledger_problems": ("test_본류가_낡은_원장_항목을_막는다", "낡은 원장 항목"),
+    "ledger_write_problems": ("test_본류가_원장_기록_변경을_알린다", "원장을 새로 만든다"),
+    "case_floor_additions": ("test_본류가_하한_미등재_케이스를_알린다", "케이스 하한 미등재"),
+}
+
+#: 본류에서 helper 를 통해서만 나오는 문구 — 대조군은 이 중 어느 것도 내면 안 된다.
+_MAINLINE_PHRASES: tuple[str, ...] = tuple(
+    phrase for _test, phrase in _MAINLINE_HELPERS.values()
+) + ("runtime 미선언", "위조 의심", "내려왔다")
 
 
 def test_본류가_위조_runtime을_막는다(
@@ -604,10 +689,268 @@ def test_본류_대조군은_위조_문구_없이_실패한다(
 
     assert code != 0
     assert "결과 파일 없음" in output
-    assert "runtime 미선언" not in output
-    assert "runtime 이 `kotlin` 이 아니다" not in output
-    assert "정본에서 사라졌다" not in output
-    assert "위조 의심" not in output
+    for phrase in _MAINLINE_PHRASES:
+        assert phrase not in output, f"대조군에서 helper 문구가 나왔다: {phrase!r}\n{output}"
+
+
+def test_본류_정상_산출물_대조군은_helper_문구를_내지_않는다(
+    comparer: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """둘째 대조군 — **정상 산출물**(reference 그대로)이 있어도 helper 문구가 없음을 고정한다.
+
+    아래 원장 두 테스트(낡은 항목·기록 변경)는 actual 이 있어야 원장 경로에 들어가므로,
+    "그 문구가 actual 을 뒀기 때문에 나온 것이 아님"을 이 대조군이 증명한다.
+    """
+    root = _mainline_tree(comparer, tmp_path, monkeypatch, actual_from_reference=True)
+
+    _code, output = _run_mainline(comparer, monkeypatch, capsys, root)
+
+    assert "[충족] text" in output, output
+    for phrase in _MAINLINE_PHRASES:
+        assert phrase not in output, f"정상 대조군에서 helper 문구가 나왔다: {phrase!r}\n{output}"
+
+
+def test_본류가_빈_fixture를_막는다(
+    comparer: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """`structural_problems` — 유일 호출부는 `main` 의 `problems = structural_problems(...)` 다.
+
+    게이트 16 §6.1 표의 8자리에 없던 **아홉째** — 아래 완전성 테스트가 첫 실행에서 잡았다.
+    케이스를 전부 비우면 "빈 fixture" 는 이 helper 만 낸다(케이스 하한은 "케이스가
+    사라졌다", 정본 대조는 "정본에서 사라졌다" 로 각각 다른 문구를 낸다).
+    """
+
+    def empty(document: dict[str, Any]) -> None:
+        document["cases"] = []
+
+    root = _mainline_tree(comparer, tmp_path, monkeypatch, mutate=empty)
+
+    code, output = _run_mainline(comparer, monkeypatch, capsys, root)
+
+    assert code != 0
+    assert "빈 fixture" in output, (
+        "빈 fixture 가 본류에서 잡히지 않았다 — main 의 structural_problems "
+        f"호출부가 사라졌는지 확인하라\n{output}"
+    )
+
+
+def test_본류가_단언_없는_케이스를_막는다(
+    comparer: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """`spec_shape_problems` — 유일 호출부는 `structural_problems` 안이다.
+
+    케이스 하나에서 `assert` 를 떼면 "단언 없는 spec 케이스"는 이 helper 만 낸다
+    (정본 대조는 같은 케이스를 "정본과 다르다"로 따로 잡는다 — 문구가 다르다).
+    """
+
+    def drop_assert(document: dict[str, Any]) -> None:
+        document["cases"][0].pop("assert")
+
+    root = _mainline_tree(comparer, tmp_path, monkeypatch, mutate=drop_assert)
+
+    code, output = _run_mainline(comparer, monkeypatch, capsys, root)
+
+    assert code != 0
+    assert "단언 없는 spec 케이스" in output, (
+        "단언 없는 케이스가 본류에서 잡히지 않았다 — structural_problems 의 "
+        f"spec_shape_problems 호출부가 사라졌는지 확인하라\n{output}"
+    )
+
+
+def test_본류가_케이스_하한_부재를_막는다(
+    comparer: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """`case_floor_problems` — 유일 호출부는 `main` 의 `floor_problems = ...` 다."""
+    root = _mainline_tree(comparer, tmp_path, monkeypatch, case_floor="absent")
+
+    code, output = _run_mainline(comparer, monkeypatch, capsys, root)
+
+    assert code != 0
+    assert "케이스 하한 파일 없음" in output, (
+        "케이스 하한 부재가 본류에서 잡히지 않았다 — main 의 case_floor_problems "
+        f"호출부가 사라졌는지 확인하라\n{output}"
+    )
+
+
+def test_본류가_전체_게이트_미고정을_막는다(
+    comparer: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """`full_gate_floor_problems` — 유일 호출부는 `main` 의 `floor_problems += ...` 다.
+
+    **게이트 14 R-4⑴ / Y-7 이 변이로 증명한 자리다** — 그 한 줄을 지워도 이 파일
+    25 passed, 전체 1191 passed 였다. 이 저장소의 그 helper 테스트 6건이 전부 직접
+    호출이었고, 본류 테스트는 표시 파일을 항상 유효하게 써 둬서(Z-b) 이 줄을 영영
+    보지 못했다. 여기서는 표시를 **없앤다** — 선언 하한이 정본을 덮는데 표시가 없으면
+    "하한을 고정하라"가 나와야 하고, 그 문구는 이 helper 만 낸다.
+    """
+    root = _mainline_tree(comparer, tmp_path, monkeypatch, full_gate_mark="absent")
+
+    code, output = _run_mainline(comparer, monkeypatch, capsys, root)
+
+    assert code != 0
+    assert "하한을 고정하라" in output, (
+        "전체 게이트 미고정이 본류에서 잡히지 않았다 — main 의 full_gate_floor_problems "
+        f"호출부가 사라졌는지 확인하라 (게이트 14 R-4⑴ 재발)\n{output}"
+    )
+
+
+def test_본류가_전체_게이트_강등을_막는다(
+    comparer: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """같은 helper 의 반대 방향 — 표시는 있는데 선언 하한이 줄었다."""
+    root = _mainline_tree(comparer, tmp_path, monkeypatch, declared_floor="short")
+
+    code, output = _run_mainline(comparer, monkeypatch, capsys, root)
+
+    assert code != 0
+    assert "내려왔다" in output, output
+
+
+def test_본류가_낡은_원장_항목을_막는다(
+    comparer: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """`stale_ledger_problems` — 유일 호출부는 `main` 의 도메인 단위 루프다.
+
+    fixture 에 없는 케이스를 원장이 들고 있으면 "낡은 원장 항목"이 나와야 한다. 이
+    helper 는 도메인을 **완전히 대조한 실행**에서만 불리므로 정상 산출물을 함께 둔다.
+    """
+    ghost = {
+        "domain": "text",
+        "note": "합성",
+        "recorded_at": "2026-08-15T00:00:00Z",
+        "cases": {
+            "ghost-case": {
+                "status": "agree",
+                "declared": False,
+                "first_diff_path": "",
+                "reference_sha256": "0",
+                "actual_sha256": "0",
+            }
+        },
+    }
+    root = _mainline_tree(comparer, tmp_path, monkeypatch, actual_from_reference=True, ledger=ghost)
+
+    code, output = _run_mainline(comparer, monkeypatch, capsys, root)
+
+    assert code != 0
+    assert "낡은 원장 항목" in output, (
+        "낡은 원장 항목이 본류에서 잡히지 않았다 — main 의 stale_ledger_problems "
+        f"호출부가 사라졌는지 확인하라\n{output}"
+    )
+
+
+def test_본류가_원장_기록_변경을_알린다(
+    comparer: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """`ledger_write_problems` — 유일 호출부는 `main` 의 `--record-reference` 분기다.
+
+    원장이 없는 상태에서 기록 실행을 하면 "원장을 새로 만든다"가 나와야 한다 — 없음 →
+    있음도 변경이다(X-12). 원장은 tmp 트리 안에만 쓰인다.
+    """
+    root = _mainline_tree(comparer, tmp_path, monkeypatch, actual_from_reference=True)
+
+    _code, output = _run_mainline(comparer, monkeypatch, capsys, root, "--record-reference")
+
+    assert "원장을 새로 만든다" in output, (
+        "원장 기록 변경이 본류에서 보고되지 않았다 — main 의 ledger_write_problems "
+        f"호출부가 사라졌는지 확인하라\n{output}"
+    )
+    assert (root / "ledger/text.json").exists(), "원장이 tmp 트리에 쓰이지 않았다"
+
+
+def test_본류가_하한_미등재_케이스를_알린다(
+    comparer: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """`case_floor_additions` — 유일 호출부는 `main` 의 리포트 조립부다.
+
+    막지 않고 이름만 남기는 helper 라 종료 코드로는 잴 수 없다 — 문구로만 잰다.
+    """
+    root = _mainline_tree(comparer, tmp_path, monkeypatch, case_floor="partial")
+
+    _code, output = _run_mainline(comparer, monkeypatch, capsys, root)
+
+    assert "케이스 하한 미등재" in output, (
+        "하한 미등재 케이스가 본류에서 보고되지 않았다 — main 의 case_floor_additions "
+        f"호출부가 사라졌는지 확인하라\n{output}"
+    )
+    assert "text: 1건" in output, output
+
+
+def test_본류_회귀_목록이_비교기의_게이트_helper_전부를_덮는다(comparer: ModuleType) -> None:
+    """완전성 — `_MAINLINE_HELPERS` 를 비교기 코드에서 **자동 열거**한 이름과 대조한다.
+
+    "게이트 helper" 의 기계적 정의: 비교기 모듈의 최상위 함수 중 이름이 `_problem`·
+    `_problems`·`_additions` 로 끝나는 것. 이 저장소가 게이트 판정 문구를 내는 함수에
+    붙여 온 이름 규약이고, 게이트 16 §6.1 표의 8자리가 정확히 이 집합이다.
+
+    이 정의가 잡지 못하는 것 — 규약을 따르지 않는 이름의 helper. 그것은 이름 규약 자체가
+    막을 일이라 여기서 더 넓히지 않는다(넓히면 `_rules`·`load` 같은 비판정 함수가 섞여
+    표가 의미를 잃는다).
+
+    두 방향을 본다. 코드에 있는데 표에 없으면 "아홉째 helper 가 회귀 없이 들어왔다",
+    표에 있는데 코드에 없으면 "helper 가 사라졌거나 개명됐는데 표가 낡았다".
+    또 표의 테스트 이름이 이 모듈에 실재하는지도 본다 — 표가 존재하지 않는 테스트를
+    가리키면 그것은 회귀가 아니라 문장이다.
+    """
+    import inspect
+
+    discovered = {
+        name
+        for name, member in vars(comparer).items()
+        if inspect.isfunction(member)
+        and member.__module__ == comparer.__name__
+        and not name.startswith("_")
+        and (name.endswith(("_problem", "_problems", "_additions")))
+    }
+    # `reference_problems` 와 `verdict_pending_problems` 는 다른 helper **안에서만** 불린다
+    # (각각 compare_file → reference_problems / spec_shape_problems → verdict_pending_problems).
+    # 본류 호출부가 helper 자신이라 "본류 호출선 한 줄 제거"의 대상이 아니고, 그 helper 의
+    # 본류 회귀가 도달을 함께 덮는다. 여기서 이름을 대고 뺀다 — 목록에 없는 이름이 새로
+    # 생기면 위 집합에 남아 아래 대조에서 걸린다.
+    nested = {"reference_problems", "verdict_pending_problems"}
+    for name in nested:
+        assert name in discovered, f"중첩 helper 목록이 낡았다 — {name} 이 비교기에 없다"
+    top_level = discovered - nested
+
+    missing = sorted(top_level - set(_MAINLINE_HELPERS))
+    stale = sorted(set(_MAINLINE_HELPERS) - top_level)
+    assert not missing, (
+        f"비교기에 본류 회귀 없는 게이트 helper 가 있다: {missing} — "
+        "_MAINLINE_HELPERS 에 한 줄 더하고 본류 테스트를 하나 붙여라"
+    )
+    assert not stale, f"_MAINLINE_HELPERS 가 비교기에 없는 이름을 가리킨다: {stale}"
+    module_tests = {name for name in globals() if name.startswith("test_")}
+    for helper, (test_name, _phrase) in _MAINLINE_HELPERS.items():
+        assert test_name in module_tests, (
+            f"{helper} 의 본류 테스트 `{test_name}` 이 이 모듈에 없다 — 표가 문장이 됐다"
+        )
 
 
 # --- 정본(BUILDERS) 쪽 우회는 CI 셸이 막는다 -------------------------------

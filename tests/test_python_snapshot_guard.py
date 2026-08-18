@@ -9,6 +9,11 @@
 검사기가 위조를 승인했다(교차 종합 X1, P-A·C15-5 양쪽 독립 실측). 그 수정(케이스 하한
 `PROMPT_CASE_FLOOR` + 파생 키 무조건 재생성)이 다시 무력해지면 여기가 빨개진다.
 
+게이트 16(E·G)이 그 수정의 두 구멍을 실측했다 — 빈 섹션 하한이 통과하고, 하한 미등재
+케이스를 아무도 탐지하지 않았다. 아래 「케이스 이름 입도」 절이 그 둘을 닫는다: 하한은
+생성기 안에 두되(리더 판정 — 상류 없음, 제2 정본 금지) **이 파일이 생성기 밖에서**
+하한과 실물 스냅샷의 케이스 이름 집합을 섹션마다 동등으로 대조한다.
+
 ## 파일 격리 (절대 규칙)
 
 모든 테스트는 tmp_path 사본으로만 돈다. 실물 스냅샷·하한 파일에 쓰는 테스트를 만들지
@@ -173,3 +178,114 @@ def test_하한_그룹이_스냅샷_그룹과_같다(generator: ModuleType) -> N
         "실물 스냅샷의 케이스 그룹이 하한의 그룹과 다르다 — 새 그룹을 더했다면 "
         "PROMPT_CASE_FLOOR 와 이 테스트의 _SECTIONS 에도 같은 커밋에서 적어라"
     )
+
+
+# ---------------------------------------------------------------------------
+# 케이스 **이름** 입도 (게이트 16 E·G — 충돌 F 리더 판정: Claude 처방)
+#
+# 위 그룹 대조는 "섹션 키가 같다"까지만 봤다. 그래서 두 구멍이 남았다(양 관점 실측 합의):
+#   E. 하한 한 섹션을 `()` 로 비우면 그 섹션은 요구하는 것이 없어 어떤 축소도 통과했다
+#      (postprocess 29→1 / system_prompts 6→1 이 각각 --check exit 0).
+#   G. 실물에 있는데 하한에 없는 케이스는 아무도 탐지하지 않았다 — 하한의 보호 밖에
+#      조용히 살다가, 지워져도 아무 데서도 빨개지지 않는다.
+#
+# 리더 판정: `PROMPT_CASE_FLOOR` 는 생성기 안에 그대로 둔다(케이스 입력은 큐레이션이라
+# 재계산할 상류가 없음이 두 관점에서 재현됨). 제2 정본 파일을 만들지 않는다 — 그것은
+# 이중 기재 드리프트를 새로 여는 방향이다. 대신 **생성기 밖의 이 테스트**가 하한을 실물
+# 스냅샷의 케이스 이름 집합과 **양방향 동등**으로 대조한다. 방향을 명시한다:
+#   하한 ⊆ 실물 은 생성기 자신이 강제한다(`_floor_checked_cases` → SnapshotError).
+#   실물 ⊆ 하한 은 **여기서** 강제한다 — 실물이 하한을 초과하면 그 케이스가 보호 밖이라는
+#   뜻이고, 같은 커밋에서 하한을 갱신하라고 여기서 빨개진다.
+# 둘을 합쳐 동등이다. 하한이 비면(E) 실물과 같을 수 없으니 여기서도 걸리고, 생성기 쪽도
+# 빈 하한을 별도로 실패시킨다(범위 선언형 — 빈 선언에서 통과하면 안 된다).
+# ---------------------------------------------------------------------------
+
+
+def test_하한이_실물_케이스_이름과_섹션마다_같다(generator: ModuleType) -> None:
+    """케이스 이름 입도의 정체성 고정 — 실물 스냅샷은 손대지 않고 읽기만 한다."""
+    document = json.loads(generator.PROMPT_SNAPSHOT.read_text(encoding="utf-8"))
+    for section in _SECTIONS:
+        floor = generator.PROMPT_CASE_FLOOR[section]
+        assert floor, f"`{section}` 의 하한이 비어 있다 — 비면 무엇을 지우든 통과한다"
+        assert len(set(floor)) == len(floor), f"`{section}` 하한에 중복 이름이 있다: {floor}"
+        actual_names = {str(case["name"]) for case in document[section]}
+        unprotected = sorted(actual_names - set(floor))
+        assert not unprotected, (
+            f"`{section}` 에 하한이 모르는 케이스가 있다: {unprotected} — 그 케이스는 보호 "
+            "밖이라 지워져도 아무 데서도 빨개지지 않는다. PROMPT_CASE_FLOOR 에 같은 커밋에서 적어라"
+        )
+        vanished = sorted(set(floor) - actual_names)
+        assert not vanished, (
+            f"`{section}` 하한이 요구하는 케이스가 실물에 없다: {vanished} — "
+            "생성기 --check 도 같은 자리를 SnapshotError 로 막는다"
+        )
+
+
+def test_빈_섹션_하한은_check가_막는다(
+    generator: ModuleType,
+    snapshots: tuple[Path, Path],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """E 본체 — 하한 한 섹션을 `()` 로 비우고 그 섹션을 축소해도 예전에는 exit 0 이었다.
+
+    하한 상수는 monkeypatch 로 **테스트 안에서만** 바꾼다. 스냅샷 사본의 postprocess 를
+    29→1 로 줄인다(Claude 실측 시나리오 그대로).
+    """
+    prompt, _style = snapshots
+    floor = dict(generator.PROMPT_CASE_FLOOR)
+    floor["postprocess"] = ()
+    monkeypatch.setattr(generator, "PROMPT_CASE_FLOOR", floor)
+
+    def shrink_postprocess(document: dict[str, Any]) -> None:
+        document["postprocess"] = document["postprocess"][:1]
+
+    _rewrite(prompt, shrink_postprocess)
+
+    code = generator.main(["--check"])
+
+    captured = capsys.readouterr()
+    assert code != 0, "빈 섹션 하한 + 29→1 축소가 --check 를 통과했다 — 게이트 16 E 재발이다"
+    assert "하한이 비어 있다" in captured.err, captured.err
+
+
+def test_빈_섹션_하한은_축소_없이도_check가_막는다(
+    generator: ModuleType,
+    snapshots: tuple[Path, Path],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """빈 선언은 실물이 온전해도 실패다 — 범위 선언형은 빈 선언에서 통과하면 안 된다."""
+    floor = dict(generator.PROMPT_CASE_FLOOR)
+    floor["system_prompts"] = ()
+    monkeypatch.setattr(generator, "PROMPT_CASE_FLOOR", floor)
+
+    code = generator.main(["--check"])
+
+    captured = capsys.readouterr()
+    assert code != 0
+    assert "하한이 비어 있다" in captured.err, captured.err
+
+
+def test_하한에_없는_케이스가_실물에_생기면_가드가_막는다(
+    generator: ModuleType,
+    snapshots: tuple[Path, Path],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """G 본체 — 실물이 하한을 초과하는 케이스를 **탐지**한다.
+
+    실물 스냅샷을 건드리지 않으려고 `PROMPT_SNAPSHOT` 은 이미 사본을 가리킨다(`snapshots`
+    fixture). 사본에 하한이 모르는 케이스를 하나 더한 뒤 위 동등 테스트의 본체를 그대로
+    부른다 — 같은 함수가 실물에서는 초록이고 여기서는 빨개져야 그 함수가 실제로 재는 것이다.
+    """
+    prompt, _style = snapshots
+
+    def add_unlisted(document: dict[str, Any]) -> None:
+        document["postprocess"].append(
+            {"name": "unlisted_case", "raw": "본문", "note": "하한 미등재", "expected": "본문"}
+        )
+
+    _rewrite(prompt, add_unlisted)
+
+    with pytest.raises(AssertionError, match="unlisted_case"):
+        test_하한이_실물_케이스_이름과_섹션마다_같다(generator)
