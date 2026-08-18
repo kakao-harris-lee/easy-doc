@@ -224,6 +224,7 @@ def test_하한까지_함께_줄이면_가드를_통과한다(tmp_path: Path, sc
 
 import importlib.util  # noqa: E402
 import sys  # noqa: E402
+from collections.abc import Callable  # noqa: E402
 from types import ModuleType  # noqa: E402
 from typing import Any  # noqa: E402
 
@@ -631,6 +632,12 @@ _MAINLINE_PHRASES: tuple[str, ...] = tuple(
     "내려왔다",
 )
 
+#: 위 문구 목록의 길이 — 표 파생 10 + 하드코딩 5. **정확 일치**(게이트 18 X1). 이 상수는
+#: 소비처가 대조군 두 곳뿐이고 어떤 단언도 붙어 있지 않아, `= ()` 로 직접 편집하면 대조군이
+#: 아무것도 부정하지 않은 채 36/37 passed 였다(codex 경로 — 표가 온전한 채 파생 상수만 빈다).
+#: `EXPECTED_MAINLINE_HELPERS` 와 같은 방식이다: 편집하면 통과하지만 그 편집이 diff 로 드러난다.
+EXPECTED_MAINLINE_PHRASES = EXPECTED_MAINLINE_HELPERS + 5
+
 
 def test_본류가_위조_runtime을_막는다(
     comparer: ModuleType,
@@ -998,6 +1005,113 @@ def _call_sites(comparer: ModuleType, names: set[str]) -> dict[str, list[str]]:
     return sites
 
 
+_HELPER_SUFFIXES: tuple[str, ...] = ("_problem", "_problems", "_additions")
+
+#: 본류 함수 안에서 helper 를 **이름이 아닌 경로**로 얻는 형태 — 있으면 위 AST 대조가
+#: 그 helper 를 못 보므로, 없음을 단언한다(탐지형 · 게이트 18 X2a).
+_DYNAMIC_LOOKUP_NAMES: frozenset[str] = frozenset(
+    {"getattr", "__import__", "globals", "locals", "vars", "eval", "exec"}
+)
+
+
+def _root_helper_calls(comparer: ModuleType) -> tuple[dict[str, list[str]], list[str]]:
+    """`_call_sites` 를 **호출 측**에서 뒤집는다 (게이트 18 X2a).
+
+    `_call_sites` 는 "이 정의가 어디서 불리나"를 본다 — 정의를 비교기 모듈에서 찾으므로
+    **다른 모듈에 정의한 helper** 를 `main` 에 배선하면 보이지 않았다(codex 재현: 36 passed).
+    여기서는 본류 함수(`_MAINLINE_ROOTS`) 안의 **모든** `ast.Call` 을 훑어, 이름이 helper 규약
+    (`*_problem`·`*_problems`·`*_additions`)에 맞는 호출을 정의 모듈과 무관하게 모은다 —
+    `name(...)` 과 `module.name(...)` 둘 다.
+
+    함께 돌려주는 둘째 값은 본류 함수 안의 **동적 조회**(`getattr`·`__import__`·`importlib.
+    import_module`·함수 안 `import` 문)다. 그런 형태가 있으면 이 AST 대조 자체가 helper 를
+    못 보므로, 호출자는 그 목록이 비어 있음을 단언한다.
+    """
+    import ast
+    import inspect
+
+    tree = ast.parse(inspect.getsource(comparer))
+    calls: dict[str, list[str]] = {}
+    dynamic: list[str] = []
+    for node in tree.body:
+        if not isinstance(node, ast.FunctionDef) or node.name not in _MAINLINE_ROOTS:
+            continue
+        for sub in ast.walk(node):
+            if isinstance(sub, (ast.Import, ast.ImportFrom)):
+                dynamic.append(f"{node.name}: 함수 안 import 문")
+                continue
+            if not isinstance(sub, ast.Call):
+                continue
+            func = sub.func
+            if isinstance(func, ast.Name):
+                called = func.id
+                if called in _DYNAMIC_LOOKUP_NAMES:
+                    dynamic.append(f"{node.name}: {called}(...)")
+            elif isinstance(func, ast.Attribute):
+                called = func.attr
+                if called == "import_module":
+                    dynamic.append(f"{node.name}: importlib.import_module(...)")
+            else:
+                continue
+            if called.endswith(_HELPER_SUFFIXES):
+                calls.setdefault(called, []).append(node.name)
+    return calls, dynamic
+
+
+def _asserted_output_phrases(test_fn: Callable[..., object]) -> set[str]:
+    """테스트 함수 AST 에서 `assert "<문구>" in output` 형태의 **문자열 상수**만 모은다.
+
+    게이트 17 ④ 의 결속은 문자열 grep 이라 주석 한 줄(`# assert "…" in output`)로 충족됐다
+    (게이트 18 T1). AST 에는 주석이 없으므로 그 경로가 자동으로 닫힌다.
+    """
+    import ast
+    import inspect
+    import textwrap
+
+    tree = ast.parse(textwrap.dedent(inspect.getsource(test_fn)))
+    phrases: set[str] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Assert) or not isinstance(node.test, ast.Compare):
+            continue
+        compare = node.test
+        if (
+            isinstance(compare.left, ast.Constant)
+            and isinstance(compare.left.value, str)
+            and len(compare.ops) == 1
+            and isinstance(compare.ops[0], ast.In)
+            and isinstance(compare.comparators[0], ast.Name)
+            and compare.comparators[0].id == "output"
+        ):
+            phrases.add(compare.left.value)
+    return phrases
+
+
+def _string_constants(source: str) -> list[str]:
+    """소스 AST 의 문자열 상수 전부 — **docstring 은 뺀다**(모듈·함수·클래스 본문의 첫 문장).
+    f-string 조각(`JoinedStr` 안의 `Constant`)은 들어간다. 주석은 AST 에 없어 자동으로 빠진다."""
+    import ast
+
+    tree = ast.parse(source)
+    docstrings: set[int] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Module, ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            body = node.body
+            if (
+                body
+                and isinstance(body[0], ast.Expr)
+                and isinstance(body[0].value, ast.Constant)
+                and isinstance(body[0].value.value, str)
+            ):
+                docstrings.add(id(body[0].value))
+    return [
+        node.value
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Constant)
+        and isinstance(node.value, str)
+        and id(node) not in docstrings
+    ]
+
+
 def test_본류_회귀_목록이_비교기의_게이트_helper_전부를_덮는다(comparer: ModuleType) -> None:
     """완전성 — `_MAINLINE_HELPERS` 를 비교기 코드에서 **자동 열거**한 이름과 대조한다.
 
@@ -1016,14 +1130,27 @@ def test_본류_회귀_목록이_비교기의_게이트_helper_전부를_덮는�
        면제 한 줄로는 통과하지 못한다 — 그 성질을 실제로 만족해야 한다. 이 전환이 곧
        `reference_problems` 를 열째로 드러냈다(그것은 `compare_file` 에서 불린다).
     ② **테스트 이름 재사용 승인** → 표의 테스트 이름이 서로 다르고(유일성), 각 테스트의
-       소스가 그 helper 이름을 담는다(결속).
-    ④ **판정 문구 미대조** → 표의 문구가 그 테스트 소스의 `"…" in output` 단언에 실제로
-       있고, 비교기 소스에도 있어야 한다(가짜 문구·낡은 문구 둘 다 막는다).
+       **문자열 상수**가 그 helper 이름을 담는다(결속).
+    ④ **판정 문구 미대조** → 표의 문구가 그 테스트의 `assert "…" in output` **단언 노드**에
+       있고, 비교기의 **문자열 상수**에도 있어야 한다(가짜 문구·낡은 문구 둘 다 막는다).
 
     또 표의 각 helper 가 **정말 본류 호출부가 한 곳뿐인지**를 AST 로 센다 — 이 파일 머리
     주석이 그렇게 선언하고 있고, 선언은 실행으로 대조한다(규칙 4).
+
+    ## 게이트 18 이 잡은 빈자리 3건 — 각각 어디서 닫히는가
+
+    **X1** 파생 상수 `_MAINLINE_PHRASES` 를 `= ()` 로 직접 편집하면 대조군 두 곳이 아무것도
+       부정하지 않은 채 통과했다(표는 온전해서 ⑤ 가 막지 못한다) → 개수 **정확 일치**
+       (`EXPECTED_MAINLINE_PHRASES`). ⑤ 와 같은 방식이다.
+    **X2a** 위 `discovered` 는 **비교기 모듈에 정의된** 함수만 훑으므로, 외부 모듈에 정의한
+       helper 를 `main` 에 배선하면 어떤 단언도 그것을 보지 못했다 → 같은 AST 대조를 **호출
+       측**에서 뒤집어(`_root_helper_calls`) 본류 함수 안의 helper 규약 호출은 **정의 모듈과
+       무관하게** 표에 있어야 한다. 이 대조를 무력화하는 동적 조회는 **없음을 단언**한다(탐지형).
+    **T1** ②④ 의 결속이 문자열 grep 이라 단언을 **주석 한 줄**로 바꿔도 통과했다 — ③ 에서
+       이미 버린 방법이 여기 남아 있었다 → AST 로 교체. 주석은 AST 에 없어 자동으로 빠진다.
     """
     import inspect
+    import textwrap
 
     discovered = {
         name
@@ -1031,12 +1158,19 @@ def test_본류_회귀_목록이_비교기의_게이트_helper_전부를_덮는�
         if inspect.isfunction(member)
         and member.__module__ == comparer.__name__
         and not name.startswith("_")
-        and (name.endswith(("_problem", "_problems", "_additions")))
+        and name.endswith(_HELPER_SUFFIXES)
     }
     # ⑤ 정확 일치. 하한이 아니다 — 여유는 그만큼 조용히 줄어들 수 있는 폭이다.
     assert len(_MAINLINE_HELPERS) == EXPECTED_MAINLINE_HELPERS, (
         f"본류 회귀 표가 {len(_MAINLINE_HELPERS)}행인데 기대는 {EXPECTED_MAINLINE_HELPERS}행이다 — "
         "helper 를 더했거나 뺐다면 이 상수도 같은 커밋에서 고쳐 diff 를 리뷰에 올린다"
+    )
+    # X1 정확 일치. 대조군 두 곳이 재는 문구 수는 표에서 파생되므로 표가 줄면 같이 줄지만,
+    # `_MAINLINE_PHRASES` 를 **직접** 비우거나 깎으면 여기서 홀로 빨개진다.
+    assert len(_MAINLINE_PHRASES) == EXPECTED_MAINLINE_PHRASES, (
+        f"대조군 문구 목록이 {len(_MAINLINE_PHRASES)}개인데 기대는 "
+        f"{EXPECTED_MAINLINE_PHRASES}개다 — 문구를 더했거나 뺐다면 이 상수도 같은 커밋에서 "
+        "고쳐 diff 를 리뷰에 올린다"
     )
     assert discovered, "비교기에서 게이트 helper 를 하나도 찾지 못했다 — 적재·이름 규약을 확인하라"
 
@@ -1044,6 +1178,24 @@ def test_본류_회귀_목록이_비교기의_게이트_helper_전부를_덮는�
     table = set(_MAINLINE_HELPERS)
     stale = sorted(table - discovered)
     assert not stale, f"_MAINLINE_HELPERS 가 비교기에 없는 이름을 가리킨다: {stale}"
+
+    # X2a 같은 AST 대조를 **호출 측**에서 뒤집는다. 위 `discovered` 는 정의가 비교기 모듈에
+    # 있는 것만 보므로 외부 모듈 helper 를 본류에 배선하면 통과했다(게이트 18 X2a).
+    root_calls, dynamic_lookups = _root_helper_calls(comparer)
+    assert root_calls, (
+        "본류 함수에서 helper 규약 호출을 하나도 찾지 못했다 — `_MAINLINE_ROOTS` 가 비었거나 "
+        "본류 함수 이름이 바뀌었거나 배선이 통째로 사라졌다"
+    )
+    assert not dynamic_lookups, (
+        f"본류 함수가 helper 를 이름 아닌 경로로 얻을 수 있는 형태를 쓴다: {dynamic_lookups} — "
+        "그 경로는 이 AST 대조가 보지 못하므로 정적 호출로 되돌려라"
+    )
+    off_table = sorted(set(root_calls) - table)
+    assert not off_table, (
+        f"본류 함수가 표에 없는 게이트 helper 를 부른다: "
+        f"{[(name, root_calls[name]) for name in off_table]} — 정의가 다른 모듈에 있어도 "
+        "_MAINLINE_HELPERS 에 한 줄 더하고 본류 테스트를 하나 붙여라"
+    )
 
     # ③ 표에 없는 helper 는 **중첩 전용**이어야 한다 — 이름을 대고 빼지 않고 성질로 판정한다.
     for name in sorted(discovered - table):
@@ -1080,24 +1232,27 @@ def test_본류_회귀_목록이_비교기의_게이트_helper_전부를_덮는�
     assert len(set(test_names)) == len(test_names), (
         f"표의 테스트 이름이 겹친다 — 한 테스트가 두 helper 를 대표할 수 없다: {test_names}"
     )
-    comparer_source = inspect.getsource(comparer)
+    # T1 — 아래 세 결속은 **AST 의 문자열 상수**만 본다. 소스 문자열 grep 이던 시절에는
+    # 단언을 주석 처리해도 텍스트가 남아 통과했다(게이트 18 T1).
+    comparer_constants = _string_constants(inspect.getsource(comparer))
     for helper, (test_name, phrase) in _MAINLINE_HELPERS.items():
         test_fn = globals().get(test_name)
         assert callable(test_fn), (
             f"{helper} 의 본류 테스트 `{test_name}` 이 이 모듈에 없다 — 표가 문장이 됐다"
         )
-        test_source = inspect.getsource(test_fn)
-        assert helper in test_source, (
-            f"`{test_name}` 의 소스에 `{helper}` 가 없다 — 이 테스트가 그 helper 를 겨냥한다는 "
-            "결속이 없다(실패 메시지에 helper 이름을 적어라)"
+        test_constants = _string_constants(textwrap.dedent(inspect.getsource(test_fn)))
+        assert any(helper in constant for constant in test_constants), (
+            f"`{test_name}` 의 **문자열 상수**에 `{helper}` 가 없다 — 이 테스트가 그 helper 를 "
+            "겨냥한다는 결속이 없다(실패 메시지에 helper 이름을 적어라). "
+            "주석·docstring 은 세지 않는다"
         )
-        assert f'"{phrase}" in output' in test_source, (
-            f"`{test_name}` 이 표의 문구 {phrase!r} 를 `in output` 으로 단언하지 않는다 — "
-            "표의 문구와 실제 단언이 갈렸다"
+        assert phrase in _asserted_output_phrases(test_fn), (
+            f'`{test_name}` 이 표의 문구 {phrase!r} 를 `assert "…" in output` 으로 단언하지 '
+            "않는다 — 표의 문구와 실제 단언이 갈렸다. 주석 처리된 단언은 AST 에 없어 세지 않는다"
         )
-        assert phrase in comparer_source, (
-            f"표의 문구 {phrase!r} 가 비교기 소스에 없다 — 비교기가 낼 수 없는 문구를 표가 "
-            "적고 있다"
+        assert any(phrase in constant for constant in comparer_constants), (
+            f"표의 문구 {phrase!r} 가 비교기의 **문자열 상수**에 없다 — 비교기가 낼 수 없는 "
+            "문구를 표가 적고 있다(주석·docstring 은 세지 않는다)"
         )
 
 
