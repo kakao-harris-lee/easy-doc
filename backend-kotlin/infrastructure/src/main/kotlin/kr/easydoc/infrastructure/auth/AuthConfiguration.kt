@@ -48,12 +48,12 @@ import java.time.Duration
  */
 @ConfigurationProperties(prefix = "easydoc.auth")
 data class AuthProperties(
-        val jwtSecret: Secret = Secret.EMPTY,
-        val jwtExpireMinutes: Long = 60,
-        val minSecretBytes: Int = 32,
-        val maxConcurrentHashes: Int = 4,
-        val argon2: Argon2Properties = Argon2Properties(),
-    )
+    val jwtSecret: Secret = Secret.EMPTY,
+    val jwtExpireMinutes: Long = 60,
+    val minSecretBytes: Int = 32,
+    val maxConcurrentHashes: Int = 4,
+    val argon2: Argon2Properties = Argon2Properties(),
+)
 
 /**
  * Argon2id 파라미터. 기본값은 계약 `x-auth.password_hash` 가 적은 조합이다.
@@ -66,12 +66,12 @@ data class AuthProperties(
  * 모든 로그인이 매번 재해시 대상이 되므로 조립 시점에 끊는다.
  */
 data class Argon2Properties(
-        val memoryKib: Int = 65536,
-        val iterations: Int = 3,
-        val parallelism: Int = 4,
-        val saltLength: Int = 16,
-        val hashLength: Int = 32,
-    )
+    val memoryKib: Int = 65536,
+    val iterations: Int = 3,
+    val parallelism: Int = 4,
+    val saltLength: Int = 16,
+    val hashLength: Int = 32,
+)
 
 /**
  * 인증 빈 조립.
