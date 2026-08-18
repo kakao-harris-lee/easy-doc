@@ -54,11 +54,11 @@ import org.springframework.context.annotation.Configuration
  */
 @ConfigurationProperties(prefix = "easydoc.llm")
 data class LlmProperties(
-    val provider: String = ANTHROPIC_PROVIDER_NAME,
-    val model: String? = null,
-    val effort: String? = null,
-    val anthropicApiKey: Secret = Secret.EMPTY,
-)
+        val provider: String = ANTHROPIC_PROVIDER_NAME,
+        val model: String? = null,
+        val effort: String? = null,
+        val anthropicApiKey: Secret = Secret.EMPTY,
+    )
 
 /**
  * 설정에서 [LlmProvider] 구현체를 고른다.
