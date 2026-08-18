@@ -1013,12 +1013,14 @@ _DYNAMIC_LOOKUP_NAMES: frozenset[str] = frozenset(
     {"getattr", "__import__", "globals", "locals", "vars", "eval", "exec"}
 )
 
-#: 위 집합이 반드시 담아야 하는 핵심 — **내용 결속**(게이트 19 R19-1). 형제 상수
-#: `_MAINLINE_ROOTS`·`_HELPER_SUFFIXES` 는 비우면 다른 단언이 빨개지지만 이 집합은 비워도
-#: "동적 조회 없음" 단언이 공허하게 참이었다. 개수만 고정하면 같은 개수의 다른 이름으로 치환해
-#: 같은 공허함을 만들 수 있으므로(stop-time 게이트 지적) 이름으로 묶는다.
-_REQUIRED_DYNAMIC_LOOKUP_NAMES: frozenset[str] = frozenset(
-    {"getattr", "__import__", "eval", "exec"}
+#: 위 집합의 기대 **내용** — 정확 일치(게이트 19 R19-1). 형제 상수 `_MAINLINE_ROOTS`·
+#: `_HELPER_SUFFIXES` 는 비우면 다른 단언이 빨개지지만 이 집합은 비워도 "동적 조회 없음" 단언이
+#: 공허하게 참이었다. 개수 고정은 같은 개수의 다른 이름으로, 핵심 부분집합은 나머지 이름을 다른
+#: builtin 으로 치환하는 자유 영역을 남겼다(stop-time 게이트가 두 번 지적). 자유 영역을 없애는
+#: 것은 `test_harness_scope_reach.py` 의 정체성 키 집합과 같은 **내용 정확 일치**뿐이다 —
+#: 어떤 치환도 이 집합을 함께 고쳐야 통과하고, 그 편집이 diff 로 리뷰에 올라간다.
+EXPECTED_DYNAMIC_LOOKUP_NAMES: frozenset[str] = frozenset(
+    {"getattr", "__import__", "globals", "locals", "vars", "eval", "exec"}
 )
 
 
@@ -1210,13 +1212,14 @@ def test_본류_회귀_목록이_비교기의_게이트_helper_전부를_덮는�
     assert len(set(_MAINLINE_PHRASES)) == len(_MAINLINE_PHRASES), (
         "대조군 문구 목록에 중복이 있다 — 개수를 채우는 복사본은 아무것도 더 부정하지 않는다"
     )
-    # R19-1 내용 결속. 이 집합을 비우거나 다른 이름으로 치환하면 아래 "동적 조회 없음" 단언이
-    # 공허하게 참이 된다. 핵심 4종은 반드시 있어야 하고, 나머지도 **실재하는 builtin** 이어야
-    # 한다 — 없는 이름은 아무 호출과도 일치하지 않아 자리만 차지한다.
-    missing_lookup_names = sorted(_REQUIRED_DYNAMIC_LOOKUP_NAMES - _DYNAMIC_LOOKUP_NAMES)
-    assert not missing_lookup_names, (
-        f"동적 조회 이름 집합에 핵심 이름이 없다: {missing_lookup_names} — 이 집합이 비거나 "
-        "치환되면 X2a 우회(getattr·__import__ 경유)가 다시 열린다"
+    # R19-1 내용 정확 일치. 이 집합을 비우거나 어떤 이름이든 치환하면 아래 "동적 조회 없음"
+    # 단언이 그만큼 공허해진다 — 개수·부분집합은 자유 영역을 남겼으므로 집합 전체를 묶는다.
+    # 실재하지 않는 이름은 어떤 호출과도 일치하지 않아 자리만 차지하므로 builtin 실재도 본다.
+    assert _DYNAMIC_LOOKUP_NAMES == EXPECTED_DYNAMIC_LOOKUP_NAMES, (
+        f"동적 조회 이름 집합이 기대와 다르다 — 빠짐 "
+        f"{sorted(EXPECTED_DYNAMIC_LOOKUP_NAMES - _DYNAMIC_LOOKUP_NAMES)} / 추가 "
+        f"{sorted(_DYNAMIC_LOOKUP_NAMES - EXPECTED_DYNAMIC_LOOKUP_NAMES)}. 이름을 더했거나 "
+        "뺐다면 기대 집합도 같은 커밋에서 고쳐 diff 를 리뷰에 올린다"
     )
     unknown_lookup_names = sorted(
         name for name in _DYNAMIC_LOOKUP_NAMES if not hasattr(builtins, name)
