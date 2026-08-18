@@ -14,6 +14,8 @@ dependencies {
     // infrastructure 는 구현체 제공용이라 runtimeOnly 로 붙인다 — api 소스가
     // JDBC·암호화·LLM SDK 타입을 컴파일 시점에 볼 수 없게 막는다(계획 §3.2 의존 방향).
     runtimeOnly(project(":infrastructure"))
+    // 설정 바인딩이 Kotlin 주 생성자를 찾으려면 필요하다 (EasyDocProperties KDoc).
+    runtimeOnly(libs.kotlin.reflect)
 
     implementation(libs.spring.boot.starter.web)
     annotationProcessor(platform(libs.spring.boot.bom))

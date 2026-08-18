@@ -12,6 +12,8 @@ dependencies {
     implementation(platform(libs.spring.boot.bom))
     implementation(project(":application"))
     runtimeOnly(project(":infrastructure"))
+    // 설정 바인딩이 Kotlin 주 생성자를 찾으려면 필요하다 (EasyDocProperties KDoc).
+    runtimeOnly(libs.kotlin.reflect)
 
     implementation(libs.spring.boot.starter)
     annotationProcessor(platform(libs.spring.boot.bom))

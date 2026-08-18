@@ -24,6 +24,13 @@ dependencies {
     // spring-web 만 쓴다 — infrastructure 는 요청을 받는 쪽이 아니라 보내는 쪽이다.
     implementation(libs.spring.web)
     implementation(libs.jackson.databind)
+    // 인증 — Argon2id 해시(검증된 인코더 + PHC 인코딩)와 HS256 토큰.
+    // 두 라이브러리 모두 이 모듈 밖으로 새지 않는다: api·worker 는 infrastructure 를
+    // runtimeOnly 로만 의존하므로 컴파일 시점에 `com.nimbusds.*` 를 볼 수 없다.
+    implementation(libs.spring.security.crypto)
+    implementation(libs.nimbus.jose.jwt)
+    // Argon2PasswordEncoder 가 런타임에 요구한다. 우리 코드는 BC 타입을 import 하지 않는다.
+    runtimeOnly(libs.bouncycastle.bcprov)
     runtimeOnly(libs.flyway.postgresql)
     runtimeOnly(libs.postgresql)
 
@@ -37,6 +44,8 @@ dependencies {
     testImplementation(libs.spring.boot.starter.flyway)
     testImplementation(testFixtures(project(":core")))
     testRuntimeOnly(libs.junit.platform.launcher)
+    // 설정 바인딩 회귀 테스트가 실행 환경과 같은 조건에서 돌아야 한다.
+    testRuntimeOnly(libs.kotlin.reflect)
     testRuntimeOnly(libs.postgresql)
     testRuntimeOnly(libs.flyway.postgresql)
 }

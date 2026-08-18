@@ -51,6 +51,27 @@ ktlintPlugin = "14.2.0"
 ktlintCli = "1.8.0"
 detekt = "1.23.8"
 
+# --- 인증(Phase 3) — Boot BOM 이 관리하지 않는 둘 -------------------------------
+#
+# 두 좌표 모두 spring-boot-dependencies 4.1.0 의 `<properties>`·`dependencyManagement`
+# 에 **없다**(실측: `nimbus`·`bouncycastle`·`bcprov` grep 0건). BOM 밖이라 여기서 고른다.
+# 고른 방식은 "최신을 집는다"가 아니라 **이미 검증된 조합에 정렬한다** 이다(계획 §3.1).
+#
+# - nimbus-jose-jwt: Boot 4.1.0 이 관리하는 spring-security-bom 7.1.0 의
+#   `spring-security-oauth2-jose` 가 의존하는 값과 **같은 10.9** 로 맞춘다(실측: 해당
+#   POM 의 `<version>10.9</version>`). 최신은 10.9.1 이지만, Spring Security 가 실제로
+#   테스트한 조합에 맞추는 편이 "각자 임의 버전으로 섞지 않는다"에 부합한다. JWT 를 직접
+#   조립하지 않는 이유는 알고리즘 혼동·base64url 처리처럼 손으로 쓰면 틀리는 자리가
+#   많고, 그 취약점 유형이 `migration-safety-gate` I-9 검증 1 의 항목이기 때문이다.
+#   다만 **만료 검증기는 쓰지 않는다** — Nimbus 기본 허용 오차가 60초라 계약(skew 0)과
+#   어긋난다. 그 판정은 `JwtAccessTokens` 가 직접 한다.
+# - bcprov-jdk18on: `spring-security-crypto` 의 `Argon2PasswordEncoder` 가 요구하는
+#   런타임 의존이다. 그쪽 POM 은 이 좌표를 선언하지 않으므로(실측: 모듈 메타데이터의
+#   apiElements·runtimeElements 가 비어 있다) 우리가 넣어야 한다. Argon2 프리미티브는
+#   여기서 오고 우리 코드는 BC 타입을 import 하지 않는다 — 그래서 `runtimeOnly` 다.
+nimbusJoseJwt = "10.9"
+bouncycastle = "1.85.2"
+
 [libraries]
 # --- Spring Boot BOM ---------------------------------------------------------
 # platform()으로 적용해 아래 좌표들의 버전을 BOM이 결정하게 한다.
@@ -77,6 +98,19 @@ flyway-postgresql = { module = "org.flywaydb:flyway-database-postgresql" }
 
 # --- DB ----------------------------------------------------------------------
 postgresql = { module = "org.postgresql:postgresql" }
+
+# --- 인증 --------------------------------------------------------------------
+# Argon2id 는 spring-security-crypto 의 인코더를 쓴다. 이 모듈은 Spring Security 의
+# **암호 유틸만** 들어 있고 필터 체인·SecurityContext 를 끌고 오지 않는다 —
+# `spring-boot-starter-security` 가 아니라 이것을 고르는 이유다. 인증 흐름은 계약이
+# 정한 대로 우리가 조립하고(인터셉터 + JWT), 라이브러리에서 가져오는 것은 검증된
+# 해시 구현과 PHC 인코딩뿐이다.
+#
+# 버전은 Boot BOM 이 관리한다(spring-security-bom 7.1.0 을 import 한다).
+spring-security-crypto = { module = "org.springframework.security:spring-security-crypto" }
+# 위 인코더가 실제 Argon2 계산에 쓰는 프리미티브. 우리 코드는 이 타입을 import 하지 않는다.
+bouncycastle-bcprov = { module = "org.bouncycastle:bcprov-jdk18on", version.ref = "bouncycastle" }
+nimbus-jose-jwt = { module = "com.nimbusds:nimbus-jose-jwt", version.ref = "nimbusJoseJwt" }
 
 # --- LLM provider 어댑터 ------------------------------------------------------
 # **벤더 SDK(anthropic-sdk-java)를 쓰지 않는다.** 이유는 격리다 — SDK 를 들이면 그 전이
@@ -116,6 +150,19 @@ assertj-core = { module = "org.assertj:assertj-core" }
 # 결론은 바뀌지 않는다 — **여기서 고르지 않고 BOM 에 맡긴다**. 갈림을 막은 것은 버전을
 # 잘 고른 것이 아니라 고르지 않은 것이다.
 kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json" }
+
+# --- 로깅 --------------------------------------------------------------------
+# `application` 이 쓰는 파사드. 구현체(logback)는 실행 모듈(api·worker)의 starter 가
+# 가져온다 — 유스케이스 모듈은 파사드만 알아야 로그 백엔드 교체가 그 모듈에 닿지 않는다.
+# 버전은 Boot BOM 이 관리한다.
+slf4j-api = { module = "org.slf4j:slf4j-api" }
+
+# --- Kotlin 런타임 리플렉션 ---------------------------------------------------
+# **설정 바인딩의 전제다.** Spring 이 Kotlin 주 생성자를 찾는 경로가 이것을 요구하고,
+# 없으면 모든 @ConfigurationProperties 가 JavaBean 바인딩으로 떨어져 기본값과 다른 값을
+# 넣는 순간 기동이 깨진다(사유 전문: EasyDocProperties KDoc, 2026-08-19 실측).
+# 버전은 Boot BOM 이 import 하는 kotlin-bom 이 관리한다 — 컴파일러(2.3.21)와 갈리지 않는다.
+kotlin-reflect = { module = "org.jetbrains.kotlin:kotlin-reflect" }
 
 # --- detekt 규칙 -------------------------------------------------------------
 detekt-formatting = { module = "io.gitlab.arturbosch.detekt:detekt-formatting", version.ref = "detekt" }
