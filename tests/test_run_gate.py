@@ -6,8 +6,9 @@
 첫 판에는 그 러너의 계약을 고정하는 테스트가 0건이었다. 그래서 세 결함이 아무 데서도
 빨개지지 않았다 — 빈/공백 인자가 아무것도 실행하지 않고 exit 0(C, 차단②), argv 재조립으로
 인용 경계 소실(D), 러너 밖 파이프가 실패를 다시 삼킴(B). 셋 다 3줄 테스트로 잡혔을 결함이다.
-그 다음 판에서도 같은 형태가 하나 더 나왔다 — 인자는 비지 않았는데 확장 후 실행 명령이 0건이면
-exit 0(게이트 17 X17-1 zero-work). 여기서는 실제 스크립트를 subprocess 로 불러 그 계약을 못박는다.
+그 다음 판에서도 같은 형태가 하나 더 나왔다 — 인자는 비지 않았는데 어떤 명령도 실행 단계에
+들어가지 않으면 exit 0(게이트 17 X17-1). 여기서는 실제 스크립트를 subprocess 로 불러 그 계약을
+못박는다.
 
 ## 계약 문장 ↔ 테스트 대응 (게이트 17 자기 감사 — 머리 주석의 문장마다 검사가 있어야 한다)
 
@@ -17,13 +18,17 @@ exit 0(게이트 17 X17-1 zero-work). 여기서는 실제 스크립트를 subpro
   → `test_argv_nested_form_is_rejected_not_mangled` · `test_single_string_preserves_inner_quoting`
 - ⒜ 비었거나 공백뿐이면 exit 2
   → `test_empty_string_arg_exits_2` · `test_whitespace_only_arg_exits_2`
-- ⒝ 해석 후 실행 명령 0건이면 exit 2 (주석 전용·백슬래시-개행)
+- ⒝ 어떤 명령도 실행 단계에 안 들어가면 exit 2 (주석 전용·백슬래시-개행 — 잡는 두 형태)
   → `test_comment_only_arg_exits_2` · `test_backslash_newline_only_arg_exits_2`
-- ⒝ functrace — 서브셸 안 명령은 zero-work 가 아니다
+- ⒝ functrace — 서브셸 안 명령은 진입으로 센다 / 명령 치환은 functrace 와 무관하게 진입
   → `test_subshell_command_is_work_not_zero_work`
-- ⒝ 잔여 — 설정됐지만 빈 값인 변수 하나(`'$V'`, V="")는 못 잡는다 / `${V:?}` 권장
-  → `test_LIMIT_set_but_empty_variable_expansion_is_not_caught_rc_is_0`
-  · `test_recommended_required_expansion_fails_on_empty_value`
+  · `test_LIMIT_enters_execution_but_zero_external_work_rc_is_0[$(echo)]`
+- ⒝ 잔여 (가) 진입은 하지만 외부 작업 0 — 종류의 대표 입력마다 rc 0 을 단언 (못 잡는다)
+  → `test_LIMIT_enters_execution_but_zero_external_work_rc_is_0`
+- ⒝ 잔여 (나) 호출자가 계약을 능동적으로 무력화 — 대표 입력마다 rc 0 을 단언 (못 잡는다)
+  → `test_LIMIT_caller_neutralizes_contract_rc_is_0` · `test_LIMIT_bash_env_preempts_marker_rc_is_0`
+- ⒝ `${V:?}` 권장 — 잔여 (가) 의 `'$V'`(V="") 를 호출 측이 닫는 길
+  → `test_recommended_required_expansion_fails_on_empty_value`
 - ⒞ 미설정 변수 참조는 비-0 / `${VAR:-}` 는 통과
   → `test_unset_variable_reference_is_non_zero` · `test_default_expansion_of_unset_var_passes`
 - 종료 코드 무가공 전파 · 파이프 안 실패 비-0
@@ -35,73 +40,61 @@ exit 0(게이트 17 X17-1 zero-work). 여기서는 실제 스크립트를 subpro
   → `test_LIMIT_pipe_outside_runner_is_not_caught_outer_status_is_0`
 - 실행 경로 local · 러너 자신의 CI 배선 0 · 계약 테스트는 ci:quality
   → `test_runner_itself_has_no_ci_wiring_but_this_file_does`
-- (테스트 손잡이) 기본 검사 대상은 저장소의 추적 실물이다
-  → `test_default_target_is_the_tracked_repo_file`
 
 ## 지금 어디서 도는가
 
 `ci:quality` — `.github/workflows/ci.yml` 의 quality 잡이 이 파일을 **경로 명시**로 호출한다
 (전체 수집만 있으면 파일을 지워도 exit 0 이라 자기 안의 단언은 파일과 함께 사라진다).
 
-## 음성 대조용 손잡이
+## 검사 대상은 추적 실물뿐 — 손잡이 없음 (게이트 18 X4 리더 판정)
 
-`RUN_GATE_PATH` 환경변수로 검사 대상 스크립트를 바꿀 수 있다. 목적은 하나 — 수정 전 판
-(`git show <옛 커밋>:...`)에 같은 테스트를 돌려 결함이 실제로 빨개지는지 실측하는 것.
-기본값은 저장소의 실물이며, CI 는 기본값으로 돈다(`test_default_target_is_the_tracked_repo_file`).
+모든 테스트는 이 저장소의 추적 실물 `_RUNNER` 를 겨눈다. 환경변수로 대상을 바꾸는 손잡이는
+없다 — 있던 `RUN_GATE_PATH` 는 추적 실물이 망가진 채로도 온전한 사본을 가리켜 전건 초록을
+만들 수 있었다(codex X18-4, cross 제3 근거로 재현). 옛 판 음성 대조가 필요하면 **옛 커밋의
+일회용 `git worktree` 안에 이 파일을 두고 그 안에서 pytest 를 돌려라** — 그러면 그 worktree 의
+추적 실물이 대상이 된다. 프로세스를 띄우는 헬퍼 `_invoke` 는 경로를 명시 인자로 받지만, 이
+파일 안의 호출은 전부 `_RUNNER` 다.
 """
 
-import hashlib
 import os
 import shutil
 import subprocess
 from pathlib import Path
 
 import pytest
+import yaml
 
 REPO = Path(__file__).resolve().parents[1]
 _RUNNER_REL = Path(".claude/skills/kotlin-migration/scripts/run_gate.sh")
-_DEFAULT_RUNNER = REPO / _RUNNER_REL
+_RUNNER = REPO / _RUNNER_REL
 
 
-def _runner() -> Path:
-    override = os.environ.get("RUN_GATE_PATH")
-    return Path(override).resolve() if override else _DEFAULT_RUNNER
+def _invoke(
+    runner: Path, *args: str, env: dict[str, str] | None = None
+) -> subprocess.CompletedProcess[str]:
+    """`runner` 를 argv 그대로 호출한다 — 셸을 거치지 않으므로 인용은 여기서 안 깨진다.
 
-
-def _run(*args: str, unset: tuple[str, ...] = ()) -> subprocess.CompletedProcess[str]:
-    """러너를 argv 그대로 호출한다 — 셸을 거치지 않으므로 인용은 여기서 안 깨진다."""
-    env = {k: v for k, v in os.environ.items() if k not in unset}
+    경로는 명시 인자다(환경변수 아님). 이 파일의 테스트는 전부 `_RUNNER` 를 넘긴다.
+    """
     return subprocess.run(
-        ["bash", str(_runner()), *args],
+        ["bash", str(runner), *args],
         capture_output=True,
         text=True,
         check=False,
         cwd=REPO,
-        env=env,
+        env=os.environ.copy() if env is None else env,
     )
 
 
-def test_runner_exists_and_parses() -> None:
-    """실물이 있고 `bash -n` 을 통과한다 — 셸 린트 0 이던 자리를 최소로 메운다."""
-    runner = _runner()
-    assert runner.is_file(), runner
-    syntax = subprocess.run(
-        ["bash", "-n", str(runner)], capture_output=True, text=True, check=False
-    )
-    assert syntax.returncode == 0, syntax.stderr
+def _run(*args: str, unset: tuple[str, ...] = ()) -> subprocess.CompletedProcess[str]:
+    """추적 실물 러너를 부른다. `unset` 의 변수는 자식 환경에서 뺀다."""
+    env = {k: v for k, v in os.environ.items() if k not in unset}
+    return _invoke(_RUNNER, *args, env=env)
 
 
-def test_default_target_is_the_tracked_repo_file(monkeypatch: pytest.MonkeyPatch) -> None:
-    """(T17-7) 손잡이가 없을 때 검사 대상은 저장소의 **추적 실물**이다.
-
-    `RUN_GATE_PATH` 는 음성 대조용이지 기본 경로가 아니다. 이 단언이 없으면 환경에 그 변수가
-    남아 있는 채 CI 가 다른 파일을 통과시켜도 아무도 모른다. sha256 은 기본 경로의 바이트와
-    추적 상대 경로로 다시 읽은 바이트가 같은지(심볼릭 링크·경로 치환이 없는지)를 잰다.
-    """
-    monkeypatch.delenv("RUN_GATE_PATH", raising=False)
-    target = _runner()
-    assert target == _DEFAULT_RUNNER
-    assert REPO in target.parents
+def test_runner_exists_tracked_and_parses() -> None:
+    """실물이 있고 git 추적 파일이며 `bash -n` 을 통과한다 — 셸 린트 0 이던 자리를 최소로 메운다."""
+    assert _RUNNER.is_file(), _RUNNER
     tracked = subprocess.run(
         ["git", "ls-files", "--error-unmatch", str(_RUNNER_REL)],
         capture_output=True,
@@ -110,9 +103,10 @@ def test_default_target_is_the_tracked_repo_file(monkeypatch: pytest.MonkeyPatch
         cwd=REPO,
     )
     assert tracked.returncode == 0, f"추적 파일이 아니다: {tracked.stderr}"
-    sha_default = hashlib.sha256(target.read_bytes()).hexdigest()
-    sha_tracked_path = hashlib.sha256((REPO / _RUNNER_REL).read_bytes()).hexdigest()
-    assert sha_default == sha_tracked_path, (sha_default, sha_tracked_path)
+    syntax = subprocess.run(
+        ["bash", "-n", str(_RUNNER)], capture_output=True, text=True, check=False
+    )
+    assert syntax.returncode == 0, syntax.stderr
 
 
 # ── C (T-E, 차단②): 빈 호출은 통과가 아니라 실패다 — ⒜ 원문이 비었거나 공백뿐 ──────────
@@ -148,46 +142,99 @@ def test_comment_only_arg_exits_2() -> None:
     """
     result = _run("# only a comment")
     assert result.returncode == 2, result
-    assert "0건" in result.stderr, result.stderr
+    assert "실행 단계에 들어가지 않았다" in result.stderr, result.stderr
 
 
 def test_backslash_newline_only_arg_exits_2() -> None:
     """백슬래시-개행만 — 줄 이음 뒤 남는 명령이 없다. 옛 판 exit 0."""
     result = _run("\\\n")
     assert result.returncode == 2, result
-    assert "0건" in result.stderr, result.stderr
+    assert "실행 단계에 들어가지 않았다" in result.stderr, result.stderr
 
 
-def test_LIMIT_set_but_empty_variable_expansion_is_not_caught_rc_is_0() -> None:
-    """잔여 문서화 — `'$GATE_CMD'` 인데 값이 **빈 문자열로 설정**된 경우는 못 잡는다(rc 0).
+#: 잔여 (가) — "실행 단계에는 진입하지만 외부 작업이 0" 인 종류의 대표 입력. 마커가 재는 것은
+#: 진입이지 작업이 아니라서 전부 rc 0 이다(게이트 18 X3 · 마커 행렬 15종의 rc 0 부분집합).
+#: 열거는 종류의 **대표**이지 잔여의 전부가 아니다 — 같은 종류의 다른 형태도 같은 결과다.
+_KIND_A_ENTERS_BUT_ZERO_WORK: tuple[tuple[str, str, dict[str, str]], ...] = (
+    ("$(echo)", "빈 명령 치환", {}),
+    ("`true`", "백틱 치환", {}),
+    ("eval ''", "빈 eval", {}),
+    (":", "null 명령", {}),
+    ("if false; then echo x; fi", "몸체가 안 도는 if", {}),
+    ("X=1", "대입만", {}),
+    ('bash -c ""', "빈 자식 셸", {}),
+    ("$GATE_CMD", "값이 빈 문자열로 설정된 변수만", {"GATE_CMD": ""}),
+    (": <<EOF\nignored\nEOF", "here-doc 을 : 에 먹임", {}),
+)
 
-    문법상 단순 명령이라 DEBUG trap 이 발화한 뒤 확장 결과가 비어 0건 실행·rc 0 이 된다.
-    이 기제로는 구조적으로 못 본다 — 머리 주석 ⒝ 의 잔여 항목. 이 단언이 어느 날 깨지면
-    (rc 가 비-0 이 되면) 러너가 이 잔여를 닫은 것이므로 그때 문서화를 갱신한다. 이름의 LIMIT 이
-    그 뜻이다. 미설정은 nounset 이 잡고(아래), 권장 형태 `${V:?}` 는 그 다음 테스트가 고정한다.
+
+@pytest.mark.parametrize(
+    ("cmd", "label", "env_extra"),
+    _KIND_A_ENTERS_BUT_ZERO_WORK,
+    ids=[cmd for cmd, _label, _env in _KIND_A_ENTERS_BUT_ZERO_WORK],
+)
+def test_LIMIT_enters_execution_but_zero_external_work_rc_is_0(
+    cmd: str, label: str, env_extra: dict[str, str]
+) -> None:
+    """잔여 (가) 문서화 — 실행 단계에 진입만 하고 외부 작업이 0인 명령은 **못 잡는다**(rc 0).
+
+    DEBUG trap 은 "명령이 실행 단계에 들어갔다"에 발화하고, 그 뒤 실제로 무엇을 했는지는
+    묻지 않는다. 이 종류를 잡으려면 다른 기제가 필요하고, 그 기제는 세 회차 연속 자기
+    빈자리를 낳았으므로 만들지 않는다(리더 제약). 이 단언이 어느 날 깨지면(rc 비-0) 러너가
+    이 종류를 닫은 것이므로 그때 문서화를 갱신한다. 이름의 LIMIT 이 그 뜻이다.
     """
-    result = subprocess.run(
-        ["bash", str(_runner()), "$GATE_CMD"],
-        capture_output=True,
-        text=True,
-        check=False,
-        cwd=REPO,
-        env={**os.environ, "GATE_CMD": ""},
+    result = _invoke(_RUNNER, cmd, env={**os.environ, **env_extra})
+    assert result.returncode == 0, (label, result)
+    assert "[run_gate] exit: 0" in result.stdout, (label, result.stdout)
+
+
+#: 잔여 (나) — "호출자가 러너 계약을 능동적으로 무력화" 하는 종류의 대표 입력. 러너는 협조하는
+#: 호출자를 위한 장치이지 적대적 호출자를 막는 장치가 아니다 — 전부 rc 0.
+_KIND_B_CALLER_NEUTRALIZES: tuple[tuple[str, str, tuple[str, ...]], ...] = (
+    ("trap - DEBUG", "마커 trap 을 앞세워 해제(해제 명령 자체가 진입으로 찍힌다)", ()),
+    (
+        'set +u; echo "$RUN_GATE_UNSET_PROBE"',
+        "nounset 해제 뒤 미설정 참조 — 옛 동작으로 되돌림",
+        ("RUN_GATE_UNSET_PROBE",),
+    ),
+)
+
+
+@pytest.mark.parametrize(
+    ("cmd", "label", "unset"),
+    _KIND_B_CALLER_NEUTRALIZES,
+    ids=[cmd.split(";")[0] for cmd, _label, _unset in _KIND_B_CALLER_NEUTRALIZES],
+)
+def test_LIMIT_caller_neutralizes_contract_rc_is_0(
+    cmd: str, label: str, unset: tuple[str, ...]
+) -> None:
+    """잔여 (나) 문서화 — 호출자가 계약(마커 trap·nounset)을 스스로 끄면 **못 잡는다**(rc 0)."""
+    result = _run(cmd, unset=unset)
+    assert result.returncode == 0, (label, result)
+    assert "[run_gate] exit: 0" in result.stdout, (label, result.stdout)
+
+
+def test_LIMIT_bash_env_preempts_marker_rc_is_0(tmp_path: Path) -> None:
+    """잔여 (나) 문서화 — `BASH_ENV` 가 자식 기동 시 마커를 선점 기록하면 주석 전용 입력이 rc 0.
+
+    (게이트 18 X5 · cross §1.1 ⑺ 완주 확인.) BASH_ENV 는 preamble 보다 먼저 source 되고
+    `RUN_GATE_MARKER` 가 보인다. outer bash 도 같은 파일을 읽지만 그때는 마커 변수가 없어
+    가드에 걸린다(Y-1 — 가드 없이 쓰면 stderr 에 흔적이 남는다). 대조군: BASH_ENV 없이는 rc 2.
+    """
+    hijack = tmp_path / "bash_env.sh"
+    hijack.write_text(
+        '[ -n "${RUN_GATE_MARKER:-}" ] && echo hijack >> "$RUN_GATE_MARKER"\n', encoding="utf-8"
     )
-    assert result.returncode == 0, result
-    assert "[run_gate] exit: 0" in result.stdout, result.stdout
+    control = _run("# only a comment")
+    assert control.returncode == 2, control
+    hijacked = _invoke(_RUNNER, "# only a comment", env={**os.environ, "BASH_ENV": str(hijack)})
+    assert hijacked.returncode == 0, hijacked
+    assert "[run_gate] exit: 0" in hijacked.stdout, hijacked.stdout
 
 
 def test_recommended_required_expansion_fails_on_empty_value() -> None:
-    """머리 주석이 권장한 `${V:?}` — 값이 비면 자식이 비-0 을 낸다. 잔여를 호출 측이 닫는 길."""
-    result = subprocess.run(
-        ["bash", str(_runner()), "${GATE_CMD:?}"],
-        capture_output=True,
-        text=True,
-        check=False,
-        cwd=REPO,
-        env={**os.environ, "GATE_CMD": ""},
-    )
+    """머리 주석이 권장한 `${V:?}` — 값이 비면 자식이 비-0. 잔여 (가) 를 호출 측이 닫는 길."""
+    result = _invoke(_RUNNER, "${GATE_CMD:?}", env={**os.environ, "GATE_CMD": ""})
     assert result.returncode != 0, result
 
 
@@ -209,9 +256,11 @@ def test_default_expansion_of_unset_var_passes() -> None:
 
 
 def test_subshell_command_is_work_not_zero_work() -> None:
-    """functrace 가 없으면 `(echo sub)` 의 명령이 DEBUG trap 에 안 잡혀 zero-work 오탐이 난다(실측).
+    """functrace 가 없으면 `(echo sub)` 의 명령이 DEBUG trap 에 안 잡혀 오탐(rc 2)이 난다(실측).
 
-    이 테스트가 빨개지면 누군가 `-o functrace` 를 뗀 것이다.
+    서브셸만 그렇다 — 명령 치환 `$(…)` 은 functrace 유무와 무관하게 부모 단순 명령이 발화한다
+    (게이트 18 R18-1 실측; 위 LIMIT (가) 의 `$(echo)` 가 그 형태). 이 테스트가 빨개지면 누군가
+    `-o functrace` 를 뗀 것이다.
     """
     result = _run("(echo sub)")
     assert result.returncode == 0, result
@@ -290,13 +339,29 @@ def test_runner_itself_has_no_ci_wiring_but_this_file_does() -> None:
 
     러너가 어느 날 CI 에 배선되면 그건 좋은 일이지만 머리 주석이 낡는다 — 그때 이 테스트가
     그 사실을 드러낸다. 반대로 이 파일의 경로 명시 스텝이 사라지면 "ci:quality" 선언이 거짓이 된다.
+
+    문자열 grep 이 아니라 YAML 파싱이다(게이트 18 T2 — `run:` 로 시작하는 줄만 보던 옛 판은
+    `- run:` 12줄과 블록 스칼라(`run: |`) 본문에 도달하지 못해, 블록 안에 러너를 심어도 통과했다).
+    옆 `tests/test_harness_scope_reach.py` 의 `read_ci_job_names` 와 같은 방식 — 모든 잡의
+    모든 스텝에서 `run` 값을 통째로 읽는다.
     """
-    ci = (REPO / ".github/workflows/ci.yml").read_text(encoding="utf-8")
-    run_lines = [line for line in ci.splitlines() if line.lstrip().startswith("run:")]
-    assert not any("run_gate.sh" in line for line in run_lines), (
+    document = yaml.safe_load((REPO / ".github/workflows/ci.yml").read_text(encoding="utf-8"))
+    assert isinstance(document, dict), "ci.yml 최상위가 매핑이 아니다"
+    jobs = document.get("jobs")
+    assert isinstance(jobs, dict) and jobs, "ci.yml 에 jobs 가 없다"
+    run_values: list[str] = []
+    for job in jobs.values():
+        assert isinstance(job, dict), job
+        for step in job.get("steps", []):
+            assert isinstance(step, dict), step
+            run = step.get("run")
+            if run is not None:
+                run_values.append(str(run))
+    assert run_values, "run 스텝이 하나도 없다 — 워크플로 파일이 아니거나 파싱이 깨졌다"
+    assert not any("run_gate.sh" in value for value in run_values), (
         "러너가 CI 에 배선됐다 — 머리 주석 갱신 필요"
     )
-    assert any("tests/test_run_gate.py" in line for line in run_lines), (
+    assert any("tests/test_run_gate.py" in value for value in run_values), (
         "이 파일의 경로 명시 스텝이 없다"
     )
 
@@ -317,7 +382,7 @@ def test_LIMIT_pipe_outside_runner_is_not_caught_outer_status_is_0(shell: str) -
     if shutil.which(shell) is None:
         pytest.skip(f"{shell} 이 이 환경에 없다")
     outer = subprocess.run(
-        [shell, "-c", f"bash {_runner()} 'false' | tail -1"],
+        [shell, "-c", f"bash {_RUNNER} 'false' | tail -1"],
         capture_output=True,
         text=True,
         check=False,
