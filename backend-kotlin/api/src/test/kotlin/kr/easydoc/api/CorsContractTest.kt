@@ -32,7 +32,7 @@ import org.springframework.test.web.servlet.options
  * 사항이므로(`x-cors.x-known-limitation`), 어느 쪽으로도 테스트로 고정하지 않는다.
  */
 @WebMvcTest
-@Import(CorsConfig::class)
+@Import(CorsConfig::class, kr.easydoc.api.support.AuthSliceBeans::class)
 class CorsContractTest {
     @Autowired
     private lateinit var mockMvc: MockMvc

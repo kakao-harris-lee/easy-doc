@@ -34,7 +34,7 @@ import org.springframework.test.web.servlet.post
  * **500 + 고정 문자열**이 된다. 그래서 검증 실패 계열도 여기서 함께 고정한다.
  */
 @WebMvcTest
-@Import(PrivateResponseHeadersConfig::class)
+@Import(PrivateResponseHeadersConfig::class, kr.easydoc.api.support.AuthSliceBeans::class)
 class FrameworkErrorContractTest {
     @Autowired
     private lateinit var mockMvc: MockMvc

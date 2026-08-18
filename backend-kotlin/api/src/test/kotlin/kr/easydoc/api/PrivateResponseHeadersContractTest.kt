@@ -33,7 +33,7 @@ import org.springframework.test.web.servlet.post
  * 단언을 함께 붙인다 — 전역 필터가 있어도 지우지 않는다(리더 판정 부수 결정 1).
  */
 @WebMvcTest
-@Import(PrivateResponseHeadersConfig::class, CorsConfig::class)
+@Import(PrivateResponseHeadersConfig::class, CorsConfig::class, kr.easydoc.api.support.AuthSliceBeans::class)
 class PrivateResponseHeadersContractTest {
     @Autowired
     private lateinit var mockMvc: MockMvc

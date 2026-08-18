@@ -21,7 +21,7 @@ import org.springframework.test.web.servlet.get
  * 실제 DB 위에서의 기동 확인은 [ApiStartupWithDatabaseTest] 가 맡는다.
  */
 @WebMvcTest(HealthController::class)
-@Import(PrivateResponseHeadersConfig::class)
+@Import(PrivateResponseHeadersConfig::class, kr.easydoc.api.support.AuthSliceBeans::class)
 class HealthContractTest {
     @Autowired
     private lateinit var mockMvc: MockMvc

@@ -37,7 +37,7 @@ import org.springframework.test.web.servlet.get
  * 명시적으로 들여와야 실제 체인과 같은 필터가 붙는다 — `CorsContractTest` 와 같은 이유다.
  */
 @WebMvcTest
-@Import(PrivateResponseHeadersConfig::class)
+@Import(PrivateResponseHeadersConfig::class, kr.easydoc.api.support.AuthSliceBeans::class)
 class ErrorContractTest {
     @Autowired
     private lateinit var mockMvc: MockMvc
