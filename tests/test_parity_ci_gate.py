@@ -1157,6 +1157,7 @@ def test_본류_회귀_목록이_비교기의_게이트_helper_전부를_덮는�
     **T1** ②④ 의 결속이 문자열 grep 이라 단언을 **주석 한 줄**로 바꿔도 통과했다 — ③ 에서
        이미 버린 방법이 여기 남아 있었다 → AST 로 교체. 주석은 AST 에 없어 자동으로 빠진다.
     """
+    import builtins
     import inspect
     import textwrap
 
@@ -1204,12 +1205,25 @@ def test_본류_회귀_목록이_비교기의_게이트_helper_전부를_덮는�
         f"대조군 문구가 어떤 테스트 단언에도 비교기 문자열 상수에도 없다: {unbound_phrases} — "
         "관측되지 않는 문구는 대조군이 아무것도 부정하지 않는다"
     )
+    # 튜플은 중복을 허용하므로, 하드코딩 문구를 표 문구의 **복사본**으로 바꾸면 개수·결속·
+    # 부분집합이 전부 참인 채 대조군이 그만큼 조용히 좁아진다 — 문구는 유일해야 한다.
+    assert len(set(_MAINLINE_PHRASES)) == len(_MAINLINE_PHRASES), (
+        "대조군 문구 목록에 중복이 있다 — 개수를 채우는 복사본은 아무것도 더 부정하지 않는다"
+    )
     # R19-1 내용 결속. 이 집합을 비우거나 다른 이름으로 치환하면 아래 "동적 조회 없음" 단언이
-    # 공허하게 참이 된다.
+    # 공허하게 참이 된다. 핵심 4종은 반드시 있어야 하고, 나머지도 **실재하는 builtin** 이어야
+    # 한다 — 없는 이름은 아무 호출과도 일치하지 않아 자리만 차지한다.
     missing_lookup_names = sorted(_REQUIRED_DYNAMIC_LOOKUP_NAMES - _DYNAMIC_LOOKUP_NAMES)
     assert not missing_lookup_names, (
         f"동적 조회 이름 집합에 핵심 이름이 없다: {missing_lookup_names} — 이 집합이 비거나 "
         "치환되면 X2a 우회(getattr·__import__ 경유)가 다시 열린다"
+    )
+    unknown_lookup_names = sorted(
+        name for name in _DYNAMIC_LOOKUP_NAMES if not hasattr(builtins, name)
+    )
+    assert not unknown_lookup_names, (
+        f"동적 조회 이름 집합에 builtin 이 아닌 이름이 있다: {unknown_lookup_names} — "
+        "실재하지 않는 이름은 어떤 호출도 잡지 못한다"
     )
     assert discovered, "비교기에서 게이트 helper 를 하나도 찾지 못했다 — 적재·이름 규약을 확인하라"
 
