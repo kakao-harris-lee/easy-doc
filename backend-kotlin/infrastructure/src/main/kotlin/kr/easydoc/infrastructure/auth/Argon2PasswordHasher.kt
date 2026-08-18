@@ -79,7 +79,8 @@ class Argon2PasswordHasher(
             policy.iterations,
         )
 
-    private val permits = Semaphore(maxConcurrentHashes, /* fair = */ true)
+    private val permits = // 공정 모드: 대기가 길어져도 굶는 요청이 없게 한다.
+        Semaphore(maxConcurrentHashes, true)
 
     override fun hash(rawPassword: String): PasswordHash {
         // `encode` 의 반환 타입은 nullable 로 선언돼 있다(Spring Security 7 의 JSpecify
