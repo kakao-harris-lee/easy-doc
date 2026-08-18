@@ -588,23 +588,48 @@ def _run_mainline(
 #:
 #: 게이트 16 §6.1 표는 8자리였다. 아래 완전성 테스트를 처음 돌리자 **아홉째**가 바로
 #: 나왔다 — `structural_problems`(`main` 의 `problems = structural_problems(...)`, 유일
-#: 호출부). 표를 손으로 셌을 때 빠진 자리를 기계 열거가 잡은 것이라, 이 표는 9자리다.
+#: 호출부). 게이트 17 이 그 완전성 테스트의 면제 목록(`nested`)을 은폐형으로 지적해
+#: 탐지형(AST 호출부 대조)으로 갈아타자 **열째**가 나왔다 — `reference_problems` 는 내가
+#: "다른 helper 안에서만 불린다"고 면제했지만 실제 호출부는 `compare_file`(본류 함수)이고,
+#: 그것은 `runtime_problem` 과 구조가 같다. 면제 목록이 가린 것을 탐지가 드러냈다.
+#: 표는 10자리이고, 그 수를 아래 `EXPECTED_MAINLINE_HELPERS` 가 **정확 일치**로 고정한다.
 _MAINLINE_HELPERS: dict[str, tuple[str, str]] = {
-    "runtime_problem": ("test_본류가_위조_runtime을_막는다", "runtime 이 `kotlin` 이 아니다"),
+    "runtime_problem": (
+        "test_본류가_위조_runtime을_막는다",
+        "Kotlin이 낸 결과가 아니면 비교 대상이 아니다",
+    ),
     "provenance_problems": ("test_본류가_축소_fixture를_막는다", "정본에서 사라졌다"),
     "structural_problems": ("test_본류가_빈_fixture를_막는다", "빈 fixture"),
+    "reference_problems": ("test_본류가_낡은_원장_기록을_막는다", "원장이 낡았다"),
     "spec_shape_problems": ("test_본류가_단언_없는_케이스를_막는다", "단언 없는 spec 케이스"),
     "case_floor_problems": ("test_본류가_케이스_하한_부재를_막는다", "케이스 하한 파일 없음"),
     "full_gate_floor_problems": ("test_본류가_전체_게이트_미고정을_막는다", "하한을 고정하라"),
     "stale_ledger_problems": ("test_본류가_낡은_원장_항목을_막는다", "낡은 원장 항목"),
-    "ledger_write_problems": ("test_본류가_원장_기록_변경을_알린다", "원장을 새로 만든다"),
+    "ledger_write_problems": ("test_본류가_원장_기록_변경을_알린다", "**원장을 "),
     "case_floor_additions": ("test_본류가_하한_미등재_케이스를_알린다", "케이스 하한 미등재"),
 }
+
+#: 표의 행 수 — **하한이 아니라 정확 일치다** (게이트 17 T17-4 · `test_harness_scope_reach.py`
+#: `EXPECTED_ROW_COUNT` 전례). 완전성 테스트가 검사 대상 0건(빈 표)에서 통과하는 것을 막는다:
+#: 비교기 적재 실패·대량 개명으로 발견 집합이 비면 `missing`·`stale` 이 둘 다 공집합이라
+#: 아래 대조는 전부 참이 되는데, 이 수는 그때 홀로 빨개진다. 열한째 helper 가 생기면 이
+#: 수를 올려야 통과한다 — 그것이 의도다(표를 고치는 diff 가 리뷰에 올라간다).
+EXPECTED_MAINLINE_HELPERS = 10
+
+#: 비교기의 **본류 함수** — CI 셸이 부르는 `main` 과 그것이 파일마다 부르는 `compare_file`.
+#: "본류 호출부"의 정의는 이 두 함수 또는 표의 helper 안에서 불리는 것이다.
+_MAINLINE_ROOTS: tuple[str, ...] = ("main", "compare_file")
 
 #: 본류에서 helper 를 통해서만 나오는 문구 — 대조군은 이 중 어느 것도 내면 안 된다.
 _MAINLINE_PHRASES: tuple[str, ...] = tuple(
     phrase for _test, phrase in _MAINLINE_HELPERS.values()
-) + ("runtime 미선언", "위조 의심", "내려왔다")
+) + (
+    "runtime 미선언",
+    "runtime 이 `kotlin` 이 아니다",
+    "원장을 새로 만든다",
+    "위조 의심",
+    "내려왔다",
+)
 
 
 def test_본류가_위조_runtime을_막는다(
@@ -621,7 +646,10 @@ def test_본류가_위조_runtime을_막는다(
     code, output = _run_mainline(comparer, monkeypatch, capsys, root)
 
     assert code != 0
-    assert "runtime 이 `kotlin` 이 아니다" in output, (
+    assert "runtime 이 `kotlin` 이 아니다" in output, output
+    # 표(`_MAINLINE_HELPERS`)와 결속되는 문구는 아래 것이다 — 위 줄의 문구는 비교기
+    # 소스에서 f-string(`{KOTLIN_RUNTIME}`)이라 정적 대조가 안 되고, 이 줄은 리터럴이다.
+    assert "Kotlin이 낸 결과가 아니면 비교 대상이 아니다" in output, (
         "위조 runtime 이 본류에서 잡히지 않았다 — compare_file 의 runtime_problem "
         f"호출부가 사라졌는지 확인하라\n{output}"
     )
@@ -875,7 +903,10 @@ def test_본류가_원장_기록_변경을_알린다(
 
     _code, output = _run_mainline(comparer, monkeypatch, capsys, root, "--record-reference")
 
-    assert "원장을 새로 만든다" in output, (
+    assert "원장을 새로 만든다" in output, output
+    # 표와 결속되는 리터럴 접두(위 줄 전체는 f-string `**원장을 {what}**` 이라 정적 대조가
+    # 안 되고, 둘째 줄은 본류가 `splitlines()[0]` 만 찍어 출력에 없다).
+    assert "**원장을 " in output, (
         "원장 기록 변경이 본류에서 보고되지 않았다 — main 의 ledger_write_problems "
         f"호출부가 사라졌는지 확인하라\n{output}"
     )
@@ -903,21 +934,94 @@ def test_본류가_하한_미등재_케이스를_알린다(
     assert "text: 1건" in output, output
 
 
+def test_본류가_낡은_원장_기록을_막는다(
+    comparer: ModuleType,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """`reference_problems` — 유일 호출부는 `compare_file` 의 참고 대조 블록이다.
+
+    게이트 16 완전성 테스트가 이 helper 를 "다른 helper 안에서만 불린다"고 **면제**했는데
+    틀렸다 — 호출부는 `compare_file`(본류 함수)이고 `runtime_problem` 과 같은 자리다.
+    면제 목록을 탐지형으로 바꾸자 드러났다(게이트 17 ③). 원장이 어떤 케이스를 `diverge` 로
+    기록했는데 관측이 `agree` 면 "원장이 낡았다"가 나와야 한다 — 그 문구는 이 helper 만 낸다.
+    """
+    document = _fixture_document(comparer, "text")
+    first_case = str(document["cases"][0]["id"])
+    stale_status = {
+        "domain": "text",
+        "note": "합성",
+        "recorded_at": "2026-08-15T00:00:00Z",
+        "cases": {
+            first_case: {
+                "status": "diverge",
+                "declared": False,
+                "first_diff_path": "$.text",
+                "reference_sha256": "0",
+                "actual_sha256": "0",
+            }
+        },
+    }
+    root = _mainline_tree(
+        comparer, tmp_path, monkeypatch, actual_from_reference=True, ledger=stale_status
+    )
+
+    code, output = _run_mainline(comparer, monkeypatch, capsys, root)
+
+    assert code != 0
+    assert "원장이 낡았다" in output, (
+        "낡은 원장 기록이 본류에서 잡히지 않았다 — compare_file 의 reference_problems "
+        f"호출부가 사라졌는지 확인하라\n{output}"
+    )
+
+
+def _call_sites(comparer: ModuleType, names: set[str]) -> dict[str, list[str]]:
+    """비교기 소스를 AST 로 읽어 `names` 의 각 함수가 **어느 최상위 함수 안에서** 불리는지
+    돌려준다. 문자열 grep 이 아니다 — 주석·docstring 의 `reference_problems()` 같은 언급은
+    호출이 아니고, 여기서는 세지 않는다."""
+    import ast
+    import inspect
+
+    tree = ast.parse(inspect.getsource(comparer))
+    sites: dict[str, list[str]] = {name: [] for name in names}
+    for node in tree.body:
+        if not isinstance(node, ast.FunctionDef):
+            continue
+        for call in ast.walk(node):
+            if (
+                isinstance(call, ast.Call)
+                and isinstance(call.func, ast.Name)
+                and call.func.id in sites
+            ):
+                sites[call.func.id].append(node.name)
+    return sites
+
+
 def test_본류_회귀_목록이_비교기의_게이트_helper_전부를_덮는다(comparer: ModuleType) -> None:
     """완전성 — `_MAINLINE_HELPERS` 를 비교기 코드에서 **자동 열거**한 이름과 대조한다.
 
     "게이트 helper" 의 기계적 정의: 비교기 모듈의 최상위 함수 중 이름이 `_problem`·
     `_problems`·`_additions` 로 끝나는 것. 이 저장소가 게이트 판정 문구를 내는 함수에
-    붙여 온 이름 규약이고, 게이트 16 §6.1 표의 8자리가 정확히 이 집합이다.
+    붙여 온 이름 규약이다. 이 정의가 잡지 못하는 것 — 규약을 따르지 않는 이름의 helper.
+    그것은 이름 규약 자체가 막을 일이라 여기서 더 넓히지 않는다(넓히면 `_rules`·`load`
+    같은 비판정 함수가 섞여 표가 의미를 잃는다).
 
-    이 정의가 잡지 못하는 것 — 규약을 따르지 않는 이름의 helper. 그것은 이름 규약 자체가
-    막을 일이라 여기서 더 넓히지 않는다(넓히면 `_rules`·`load` 같은 비판정 함수가 섞여
-    표가 의미를 잃는다).
+    ## 게이트 17 이 잡은 이 테스트 자신의 빈자리 4건 — 각각 어디서 닫히는가
 
-    두 방향을 본다. 코드에 있는데 표에 없으면 "아홉째 helper 가 회귀 없이 들어왔다",
-    표에 있는데 코드에 없으면 "helper 가 사라졌거나 개명됐는데 표가 낡았다".
-    또 표의 테스트 이름이 이 모듈에 실재하는지도 본다 — 표가 존재하지 않는 테스트를
-    가리키면 그것은 회귀가 아니라 문장이다.
+    ⑤ **빈 표에서 통과** → 표 크기 **정확 일치**(`EXPECTED_MAINLINE_HELPERS`). 발견 집합이
+       비어도(비교기 적재 실패·대량 개명) 이 단언 하나가 빨개진다.
+    ③ **`nested` 면제 목록(은폐형)** → 탐지형. 표에 없는 helper 는 "본류 함수(`main`·
+       `compare_file`)에서 불리지 않고, 표의 helper 안에서만 불린다"를 **AST 로 단언**한다.
+       면제 한 줄로는 통과하지 못한다 — 그 성질을 실제로 만족해야 한다. 이 전환이 곧
+       `reference_problems` 를 열째로 드러냈다(그것은 `compare_file` 에서 불린다).
+    ② **테스트 이름 재사용 승인** → 표의 테스트 이름이 서로 다르고(유일성), 각 테스트의
+       소스가 그 helper 이름을 담는다(결속).
+    ④ **판정 문구 미대조** → 표의 문구가 그 테스트 소스의 `"…" in output` 단언에 실제로
+       있고, 비교기 소스에도 있어야 한다(가짜 문구·낡은 문구 둘 다 막는다).
+
+    또 표의 각 helper 가 **정말 본류 호출부가 한 곳뿐인지**를 AST 로 센다 — 이 파일 머리
+    주석이 그렇게 선언하고 있고, 선언은 실행으로 대조한다(규칙 4).
     """
     import inspect
 
@@ -929,27 +1033,71 @@ def test_본류_회귀_목록이_비교기의_게이트_helper_전부를_덮는�
         and not name.startswith("_")
         and (name.endswith(("_problem", "_problems", "_additions")))
     }
-    # `reference_problems` 와 `verdict_pending_problems` 는 다른 helper **안에서만** 불린다
-    # (각각 compare_file → reference_problems / spec_shape_problems → verdict_pending_problems).
-    # 본류 호출부가 helper 자신이라 "본류 호출선 한 줄 제거"의 대상이 아니고, 그 helper 의
-    # 본류 회귀가 도달을 함께 덮는다. 여기서 이름을 대고 뺀다 — 목록에 없는 이름이 새로
-    # 생기면 위 집합에 남아 아래 대조에서 걸린다.
-    nested = {"reference_problems", "verdict_pending_problems"}
-    for name in nested:
-        assert name in discovered, f"중첩 helper 목록이 낡았다 — {name} 이 비교기에 없다"
-    top_level = discovered - nested
-
-    missing = sorted(top_level - set(_MAINLINE_HELPERS))
-    stale = sorted(set(_MAINLINE_HELPERS) - top_level)
-    assert not missing, (
-        f"비교기에 본류 회귀 없는 게이트 helper 가 있다: {missing} — "
-        "_MAINLINE_HELPERS 에 한 줄 더하고 본류 테스트를 하나 붙여라"
+    # ⑤ 정확 일치. 하한이 아니다 — 여유는 그만큼 조용히 줄어들 수 있는 폭이다.
+    assert len(_MAINLINE_HELPERS) == EXPECTED_MAINLINE_HELPERS, (
+        f"본류 회귀 표가 {len(_MAINLINE_HELPERS)}행인데 기대는 {EXPECTED_MAINLINE_HELPERS}행이다 — "
+        "helper 를 더했거나 뺐다면 이 상수도 같은 커밋에서 고쳐 diff 를 리뷰에 올린다"
     )
+    assert discovered, "비교기에서 게이트 helper 를 하나도 찾지 못했다 — 적재·이름 규약을 확인하라"
+
+    sites = _call_sites(comparer, discovered)
+    table = set(_MAINLINE_HELPERS)
+    stale = sorted(table - discovered)
     assert not stale, f"_MAINLINE_HELPERS 가 비교기에 없는 이름을 가리킨다: {stale}"
-    module_tests = {name for name in globals() if name.startswith("test_")}
-    for helper, (test_name, _phrase) in _MAINLINE_HELPERS.items():
-        assert test_name in module_tests, (
+
+    # ③ 표에 없는 helper 는 **중첩 전용**이어야 한다 — 이름을 대고 빼지 않고 성질로 판정한다.
+    for name in sorted(discovered - table):
+        callers = sites[name]
+        assert callers, (
+            f"`{name}` 은 어디서도 불리지 않는다 — 죽은 helper 거나 호출 형태가 바뀌었다"
+        )
+        in_roots = [caller for caller in callers if caller in _MAINLINE_ROOTS]
+        assert not in_roots, (
+            f"`{name}` 은 본류 함수 {in_roots} 에서 불리는데 본류 회귀 표에 없다 — "
+            "_MAINLINE_HELPERS 에 한 줄 더하고 본류 테스트를 하나 붙여라"
+        )
+        outside = [caller for caller in callers if caller not in table]
+        assert not outside, (
+            f"`{name}` 이 표의 helper 가 아닌 {outside} 에서 불린다 — 중첩 전용이 아니므로 "
+            "본류 회귀가 필요하다"
+        )
+
+    # 표의 helper 는 **본류 호출부가 정확히 한 곳**이어야 한다(이 파일의 선언). 호출부는
+    # 본류 함수이거나 표의 다른 helper 여야 한다(spec_shape ← structural 처럼).
+    for name in sorted(table):
+        callers = sites[name]
+        assert len(callers) == 1, (
+            f"`{name}` 의 호출부가 {len(callers)}곳이다({callers}) — '한 곳뿐' 선언이 낡았다. "
+            "호출부가 늘었다면 회귀 설계를 다시 보라(한 줄 제거 실험이 더 이상 그 helper 를 "
+            "덮지 않는다)"
+        )
+        assert callers[0] in _MAINLINE_ROOTS or callers[0] in table, (
+            f"`{name}` 의 호출부 `{callers[0]}` 는 본류 함수도 표의 helper 도 아니다"
+        )
+
+    # ② 유일성 + 결속 / ④ 문구 결속.
+    test_names = [test_name for test_name, _phrase in _MAINLINE_HELPERS.values()]
+    assert len(set(test_names)) == len(test_names), (
+        f"표의 테스트 이름이 겹친다 — 한 테스트가 두 helper 를 대표할 수 없다: {test_names}"
+    )
+    comparer_source = inspect.getsource(comparer)
+    for helper, (test_name, phrase) in _MAINLINE_HELPERS.items():
+        test_fn = globals().get(test_name)
+        assert callable(test_fn), (
             f"{helper} 의 본류 테스트 `{test_name}` 이 이 모듈에 없다 — 표가 문장이 됐다"
+        )
+        test_source = inspect.getsource(test_fn)
+        assert helper in test_source, (
+            f"`{test_name}` 의 소스에 `{helper}` 가 없다 — 이 테스트가 그 helper 를 겨냥한다는 "
+            "결속이 없다(실패 메시지에 helper 이름을 적어라)"
+        )
+        assert f'"{phrase}" in output' in test_source, (
+            f"`{test_name}` 이 표의 문구 {phrase!r} 를 `in output` 으로 단언하지 않는다 — "
+            "표의 문구와 실제 단언이 갈렸다"
+        )
+        assert phrase in comparer_source, (
+            f"표의 문구 {phrase!r} 가 비교기 소스에 없다 — 비교기가 낼 수 없는 문구를 표가 "
+            "적고 있다"
         )
 
 

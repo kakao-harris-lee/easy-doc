@@ -208,7 +208,17 @@ def test_하한이_실물_케이스_이름과_섹션마다_같다(generator: Mod
         floor = generator.PROMPT_CASE_FLOOR[section]
         assert floor, f"`{section}` 의 하한이 비어 있다 — 비면 무엇을 지우든 통과한다"
         assert len(set(floor)) == len(floor), f"`{section}` 하한에 중복 이름이 있다: {floor}"
-        actual_names = {str(case["name"]) for case in document[section]}
+        # 실물도 **목록**으로 본다 — 집합으로 접으면 같은 이름 둘이 하나로 보여, 케이스를
+        # 지우고 다른 케이스를 복제해 수를 맞춘 편집이 "동등"으로 통과한다(게이트 17 X17-3).
+        # 하한⊆실물·실물⊆하한 이 이름 집합 수준에서만 성립하고 개수 수준에서는 아니었다.
+        name_list = [str(case["name"]) for case in document[section]]
+        duplicated = sorted({name for name in name_list if name_list.count(name) > 1})
+        assert not duplicated, (
+            f"`{section}` 실물에 같은 이름의 케이스가 둘 이상 있다: {duplicated} — 이름은 "
+            "케이스의 정체성이다. 생성기 --check 도 같은 자리를 SnapshotError 로 막는다"
+        )
+        # 중복이 없고 아래 두 포함이 성립하면 개수 동등은 따라온다 — 따로 세지 않는다.
+        actual_names = set(name_list)
         unprotected = sorted(actual_names - set(floor))
         assert not unprotected, (
             f"`{section}` 에 하한이 모르는 케이스가 있다: {unprotected} — 그 케이스는 보호 "
@@ -289,3 +299,65 @@ def test_하한에_없는_케이스가_실물에_생기면_가드가_막는다(
 
     with pytest.raises(AssertionError, match="unlisted_case"):
         test_하한이_실물_케이스_이름과_섹션마다_같다(generator)
+
+
+# ---------------------------------------------------------------------------
+# 케이스 이름 **중복** (게이트 17 X17-3) · 하한 키 누락 메시지 갈래 (P17-3)
+#
+# 위 동등 검사는 이름을 집합으로 접었다. 그래서 케이스 하나를 지우고 다른 케이스를 복제해
+# 수를 맞추면 — 이름 집합은 그대로라 — 하한⊆실물·실물⊆하한 이 둘 다 성립했고 생성기 --check
+# 도 재생성 diff 0 이었다. 이름은 케이스의 정체성이므로 겹치면 개수를 잃는다. 가드와 생성기
+# 양쪽에서 실패로 만든다 — 어느 한쪽만 고치면 다음 사람이 나머지를 그대로 쓴다.
+# ---------------------------------------------------------------------------
+
+
+def _duplicate_case(document: dict[str, Any]) -> None:
+    """postprocess 의 마지막 케이스를 지우고 첫 케이스를 복제한다 — 개수는 29 그대로다."""
+    cases = document["postprocess"]
+    cases.pop()
+    cases.append(dict(cases[0]))
+
+
+def test_실물_케이스_이름_중복을_가드가_막는다(
+    generator: ModuleType, snapshots: tuple[Path, Path]
+) -> None:
+    prompt, _style = snapshots
+    _rewrite(prompt, _duplicate_case)
+
+    with pytest.raises(AssertionError, match="같은 이름의 케이스"):
+        test_하한이_실물_케이스_이름과_섹션마다_같다(generator)
+
+
+def test_실물_케이스_이름_중복을_check가_막는다(
+    generator: ModuleType,
+    snapshots: tuple[Path, Path],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """예전 생성기는 복제 케이스를 그대로 재생산해 diff 0·exit 0 이었다(codex 실행 확인)."""
+    prompt, _style = snapshots
+    _rewrite(prompt, _duplicate_case)
+
+    code = generator.main(["--check"])
+
+    captured = capsys.readouterr()
+    assert code != 0, "복제 케이스로 수를 맞춘 스냅샷이 --check 를 통과했다 — X17-3 재발이다"
+    assert "같은 이름의 케이스" in captured.err, captured.err
+
+
+def test_하한_키_누락과_빈_하한은_메시지가_다르다(
+    generator: ModuleType,
+    snapshots: tuple[Path, Path],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """P17-3 — 둘 다 exit 2 지만 원인이 다르다. 진단이 같으면 사람이 엉뚱한 자리를 고친다."""
+    floor = dict(generator.PROMPT_CASE_FLOOR)
+    del floor["repair_prompts"]
+    monkeypatch.setattr(generator, "PROMPT_CASE_FLOOR", floor)
+
+    code = generator.main(["--check"])
+
+    captured = capsys.readouterr()
+    assert code != 0
+    assert "케이스 하한 `PROMPT_CASE_FLOOR` 에 없다" in captured.err, captured.err
+    assert "하한이 비어 있다" not in captured.err, captured.err

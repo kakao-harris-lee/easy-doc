@@ -280,14 +280,32 @@ def _floor_checked_cases(previous: dict[str, Any], section: str) -> list[dict[st
     # 29→1 / system_prompts 6→1 이 각각 exit 0). 하한을 비우는 편집은 하한을 지우는
     # 편집과 같은 일이므로 같은 방식으로 막는다 — 섹션을 정말 없앨 거면 `PROMPT_CASE_FLOOR`
     # 에서 키째로 지우고, 그 diff 를 리뷰에 올린다(가드 테스트가 그룹 대조로 잡는다).
-    required = PROMPT_CASE_FLOOR.get(section)
+    # 키 누락과 빈 튜플은 **갈래를 나눠** 보고한다 (게이트 17 P17-3). 결과는 둘 다 실패지만
+    # 원인이 다르다 — 앞은 스냅샷에 새 섹션이 생겼거나 하한에서 키째로 지운 것이고, 뒤는
+    # 하한을 비운 편집이다. 진단이 같으면 사람이 엉뚱한 자리를 고친다.
+    if section not in PROMPT_CASE_FLOOR:
+        raise SnapshotError(
+            f"`{section}` 이 케이스 하한 `PROMPT_CASE_FLOOR` 에 없다 — 스냅샷에 새 섹션이 "
+            "생겼거나 하한에서 키째로 지웠다. 하한이 모르는 섹션은 보호 밖이므로 통과시키지 않는다"
+        )
+    required = PROMPT_CASE_FLOOR[section]
     if not required:
         raise SnapshotError(
             f"`{section}` 의 케이스 하한이 비어 있다 — 하한이 비면 무엇을 지우든 통과한다. "
             "비우는 것은 지우는 것과 같은 일이므로 똑같이 실패로 판정한다"
         )
     cases = [case for case in raw if isinstance(case, dict)]
-    present = {str(case.get("name")) for case in cases}
+    names = [str(case.get("name")) for case in cases]
+    # **중복 이름은 실패다** (게이트 17 X17-3). 집합으로 접으면 같은 이름 둘이 하나로
+    # 보여 개수 축의 위조 — 한 케이스를 지우고 다른 케이스를 복제해 수를 맞추는 편집 —
+    # 가 통과한다. 이 자리는 CLAUDE.md 가 "유일한 영구 손실 위험"이라 부른 큐레이션이다.
+    duplicated = sorted({name for name in names if names.count(name) > 1})
+    if duplicated:
+        raise SnapshotError(
+            f"`{section}` 에 같은 이름의 케이스가 둘 이상 있다: {', '.join(duplicated)} — "
+            "이름은 케이스의 정체성이라 겹치면 하한 대조가 개수를 잃는다"
+        )
+    present = set(names)
     missing = [name for name in required if name not in present]
     if missing:
         raise SnapshotError(
