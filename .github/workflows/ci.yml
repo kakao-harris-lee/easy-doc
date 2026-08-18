@@ -164,6 +164,16 @@ jobs:
       # (§6.2 "열거 유지 vs 구조 유도"의 구조 판정은 다음 게이트 이월 — 지금은 규약 적용만.)
       - name: 스냅샷 가드 회귀 실재 확인 (경로 명시)
         run: uv run pytest tests/test_python_snapshot_guard.py
+      # 같은 규약을 게이트 러너 계약 테스트에도 적용한다 (게이트 16 A — T-G·K16-1 후단 합의).
+      # 이 파일이 지키는 것은 `.claude/skills/kotlin-migration/scripts/run_gate.sh` 의 계약
+      # 전부다 — 빈/공백 인자 exit 2(C, 차단②), 단일 문자열 인자만 수용해 인용 경계
+      # 보존(D), 파이프 안 실패 비-0 전파(게이트 15 X3 본래 목적), 그리고 러너 밖 파이프는
+      # 못 잡는다는 한계(B)의 문서화. 첫 판에는 이 테스트가 0건이라 세 결함이 아무 데서도
+      # 빨개지지 않았다. 전체 수집만 있으면 이 파일을 지워도 exit 0 이다 — 수집이 줄고
+      # 스위트는 초록이다. 러너 자신을 CI 가 부르는 배선은 여전히 0 이다(local) — 이 스텝이
+      # 배선하는 것은 러너가 아니라 러너의 계약 테스트다.
+      - name: 게이트 러너 계약 실재 확인 (경로 명시)
+        run: uv run pytest tests/test_run_gate.py
       - run: uv run pytest
       # 골든셋 LLM 평가(-m llm)는 API 키 시크릿 등록 후 별도 잡으로 활성화한다.
 
