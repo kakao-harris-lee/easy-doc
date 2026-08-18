@@ -1,0 +1,150 @@
+package kr.easydoc.application.auth
+
+import kr.easydoc.core.exceptions.InvalidCredentialsException
+import kr.easydoc.core.user.StoredUser
+import kr.easydoc.core.user.User
+import kr.easydoc.core.workspace.DEFAULT_WORKSPACE_NAME
+import org.slf4j.LoggerFactory
+import java.util.UUID
+
+/**
+ * 인증 유스케이스 — 가입 · 로그인 · 내 정보.
+ *
+ * 요구 정본: 계약 `contracts/easy-doc-v1.yaml` 의 `/auth` 세 경로·`x-auth`,
+ * 그리고 `migration-safety-gate` I-8(Argon2)·I-9(JWT).
+ *
+ * **Python `app/services/auth.py` 를 옮긴 것이 아니다.** 인증·비밀번호는 명세에서 새로
+ * 만든다는 결정(`CLAUDE.md` — "명세가 있는 것을 확인하겠다고 Python 코드 읽기" 금지)에
+ * 따라 위 두 정본만 보고 썼다.
+ *
+ * ## 실패를 구분하지 않는다
+ *
+ * 이메일 부재·비밀번호 불일치·계정 삭제가 전부 같은 401, 같은 문구다
+ * (계약 `x-auth.failure_uniformity`). 구분하면 "이 이메일은 가입돼 있다"가 새어 나가
+ * 계정 열거 공격의 단서가 된다.
+ *
+ * ## 로그에 이메일을 남기지 않는다
+ *
+ * 로깅은 사용자 **ID** 와 상태까지다(`CLAUDE.md` 보안 규칙 — 이메일도 개인정보다).
+ * 예외 객체를 그대로 로거에 넘기지 않는다 — 메시지에 무엇이 실릴지 이 지점에서 알 수 없다.
+ */
+class AuthService(
+    private val users: UserRepository,
+    private val workspaces: WorkspaceRepository,
+    private val passwords: PasswordHasher,
+    private val accessTokens: AccessTokens,
+    private val transaction: TransactionRunner,
+) {
+    private val log = LoggerFactory.getLogger(AuthService::class.java)
+
+    /**
+     * 계정과 **기본 작업 공간**을 같은 트랜잭션에서 만든다.
+     *
+     * 나눠 커밋하면 계정만 있고 작업 공간이 없는 사용자가 생겨 첫 업로드가 갈 곳을 잃는다
+     * (계약 `paths./auth/signup`).
+     *
+     * **해시 계산은 트랜잭션 밖에서 한다.** Argon2 한 번이 64MiB 를 수십 밀리초 동안
+     * 붙들고 있는데, 그 시간만큼 DB 커넥션을 쥐고 있을 이유가 없다.
+     */
+    fun signup(
+        email: String,
+        password: String,
+    ): User {
+        // 인증이 배선되지 않았으면 여기서 끊는다 — 로그인할 수 없는 계정을 만들지 않는다.
+        // 값비싼 Argon2 계산 전이기도 하다.
+        accessTokens.ensureConfigured()
+
+        val normalizedEmail = normalizeEmail(email)
+        requireValidEmail(normalizedEmail)
+        requireValidPassword(password)
+
+        val passwordHash = passwords.hash(password)
+
+        return transaction.inTransaction {
+            val created = users.create(normalizedEmail, passwordHash)
+            workspaces.createDefault(created.id)
+            created
+        }
+    }
+
+    /**
+     * 자격증명을 확인하고 액세스 토큰을 발급한다.
+     *
+     * **가입 입력 규칙을 다시 적용하지 않는다.** 로그인에서 길이·형식을 422 로 거절하면
+     * "이 이메일은 규칙을 통과하는 형태다" 같은 정보가 401 과 다른 코드로 새고, 규칙을
+     * 조인 뒤에 가입한 기존 계정이 로그인하지 못한다. 계약도 `/auth/login` 의 422 를
+     * **필드 누락**으로만 적었다.
+     */
+    fun login(
+        email: String,
+        password: String,
+    ): IssuedAccessToken {
+        // 자격증명을 확인하기 전에 끊는다. 설정 문제를 401 로 감추면 배포 사고가
+        // "사용자가 비밀번호를 틀렸다"로 둔갑하고, 해시 계산도 헛되이 돈다.
+        accessTokens.ensureConfigured()
+
+        val stored =
+            users.findByEmail(normalizeEmail(email))
+                ?: throw InvalidCredentialsException(INVALID_CREDENTIALS_MESSAGE)
+
+        if (!passwords.verify(password, stored.passwordHash)) {
+            throw InvalidCredentialsException(INVALID_CREDENTIALS_MESSAGE)
+        }
+
+        // 재해시는 **성공한 뒤에만** 한다. 실패한 로그인에서 재해시하면 오프라인 공격자에게
+        // 계산 자원을 태워 준다(I-8 검증 2).
+        rehashIfOutdated(stored, password)
+
+        return accessTokens.issue(stored.user.id)
+    }
+
+    /**
+     * 토큰이 가리키는 사용자를 읽는다.
+     *
+     * 토큰은 유효한데 계정이 지워진 경우도 **같은 401** 이다 — 삭제 여부가 새면 안 된다
+     * (계약 `x-auth.failure_uniformity`, 검증 X-A2).
+     */
+    fun readUser(userId: UUID): User =
+        users.findById(userId)
+            ?: throw InvalidCredentialsException(INVALID_CREDENTIALS_MESSAGE)
+
+    /** 액세스 토큰을 검증하고 사용자 식별자를 돌려준다. 실패는 [InvalidCredentialsException]. */
+    fun authenticate(token: String): UUID = accessTokens.verify(token)
+
+    /**
+     * 저장된 해시의 파라미터가 현행 정책과 다르면 올린다 — **best-effort**.
+     *
+     * 실패해도 로그인을 막지 않는다(I-8 검증 3). 여기서 예외가 새면 파라미터를 올린 날
+     * 전 사용자가 로그인하지 못한다.
+     */
+    private fun rehashIfOutdated(
+        stored: StoredUser,
+        rawPassword: String,
+    ) {
+        try {
+            if (!passwords.needsRehash(stored.passwordHash)) {
+                return
+            }
+            users.updatePasswordHash(stored.user.id, passwords.hash(rawPassword))
+            log.info("비밀번호 해시를 현행 파라미터로 올렸다: userId={}", stored.user.id)
+        } catch (
+            @Suppress("TooGenericExceptionCaught") failure: RuntimeException,
+        ) {
+            // 예외 객체를 넘기지 않는다 — 메시지·원인 체인에 무엇이 실릴지 알 수 없다.
+            // 남기는 것은 사용자 ID 와 예외 **타입 이름**뿐이다.
+            log.warn(
+                "비밀번호 재해시에 실패했다(로그인은 계속한다): userId={} 예외={}",
+                stored.user.id,
+                failure::class.java.simpleName,
+            )
+        }
+    }
+
+    private companion object {
+        /**
+         * 인증 실패 문구. 계약 `components/responses/Unauthorized` 의 `invalid_token` 예시와
+         * 같은 값이며, 로그인 실패·토큰 무효·계정 삭제가 **전부 이 하나**를 쓴다.
+         */
+        const val INVALID_CREDENTIALS_MESSAGE = "이메일 또는 비밀번호가 올바르지 않습니다"
+    }
+}
