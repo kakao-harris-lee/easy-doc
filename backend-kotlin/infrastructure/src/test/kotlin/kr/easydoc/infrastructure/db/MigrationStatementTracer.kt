@@ -32,9 +32,11 @@ import javax.sql.DataSource
  *
  * ## 무엇을 재는가
  *
- * 실행된 모든 SQL 의 (스레드, 시작 시각, 종료 시각)을 남긴다. 여기서 **동기화 문장을
- * 걷어낸 나머지**가 임계 구간이다 — 잠금을 기다리는 시간은 임계 구간이 아니고, 잠금
- * 안에서 하는 일이 임계 구간이다. 잠금을 떼면 동기화 문장이 아예 사라지고 판정 질의들이
+ * [TracingDataSource] 를 지나 열린 커넥션에서 실행된 SQL 의 (스레드, 시작 시각, 종료
+ * 시각)을 남긴다 — **"실행된 모든 SQL" 이 아니라 그 경로의 것**이고, 정확한 도달 범위와
+ * 그 밖에 남는 두 자리는 [TracingDataSource] 에 적었다. 여기서 **동기화 문장을 걷어낸
+ * 나머지**가 임계 구간이다 — 잠금을 기다리는 시간은 임계 구간이 아니고, 잠금 안에서
+ * 하는 일이 임계 구간이다. 잠금을 떼면 동기화 문장이 아예 사라지고 판정 질의들이
  * 그대로 겹쳐 드러난다.
  *
  * 스레드 귀속이 성립하는 근거: Flyway 는 `info()`·`baseline()`·`migrate()` 를 **호출한
@@ -129,8 +131,22 @@ data class CriticalWindow(
 /**
  * [MigrationStatementTracer] 에 기록을 남기는 `DataSource`.
  *
- * Flyway 설정에 URL 대신 이것을 넘기면 가드가 직접 여는 커넥션과 Flyway 가 내부에서
- * 여는 커넥션이 **모두** 이 자리를 지난다.
+ * ## 도달 범위 — "모두" 가 아니다
+ *
+ * Flyway 설정에 URL 대신 이것을 넘기면 **`getConnection()` 으로 나간 커넥션이 직접 만든**
+ * `Statement`·`PreparedStatement` 의 `execute*` 가 기록된다. 가드가 직접 여는 커넥션과
+ * Flyway 가 내부에서 여는 커넥션이 둘 다 그 경로를 지나므로 임계 구간 측정은 성립한다.
+ *
+ * 그 밖 두 자리는 지나지 않는다 (리뷰 K-C).
+ *
+ *   1. `Statement.getConnection()`·`DatabaseMetaData.getConnection()` 이 돌려주는 것은
+ *      프록시가 아니라 **원본 커넥션**이다. 거기서 만든 문장은 추적 밖이다.
+ *   2. `prepareCall` 의 `CallableStatement` 는 `PreparedStatement` 계약으로만 프록시된다.
+ *      호출부가 `CallableStatement` 로 캐스팅하면 `ClassCastException` 이 난다.
+ *
+ * 현재 Flyway·가드 경로는 둘 다 쓰지 않아 측정에 구멍이 없다. 그래도 적어 두는 이유는
+ * **"모두" 라고 쓰면 다음 사람이 그 밖을 확인하지 않기 때문**이다 — 이 하네스가 잡으려는
+ * 바로 그 형태다.
  */
 class TracingDataSource(
     private val database: DatabaseHandle,
@@ -158,7 +174,10 @@ class TracingDataSource(
     override fun isWrapperFor(iface: Class<*>?): Boolean = false
 }
 
-/** 커넥션이 만들어 내는 `Statement` 를 전부 추적판으로 바꿔 돌려준다. */
+/**
+ * 이 커넥션의 `createStatement`·`prepareStatement`·`prepareCall` 이 돌려주는 `Statement` 를
+ * 추적판으로 바꾼다. **이 커넥션이 직접 만든 것에 한한다** — 도달 범위는 [TracingDataSource] 참고.
+ */
 private fun traceStatements(
     connection: Connection,
     tracer: MigrationStatementTracer,

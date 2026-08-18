@@ -134,9 +134,14 @@ class FrameworkErrorContractTest {
      * `x-request-field-constraints`(`contracts/easy-doc-v1.yaml:332-411`)의 F3 판정은
      * 정확히 그 조합을 금지한다 — `SignupRequest.email`·`SignupRequest.password`·
      * `DocumentTextRequest.text`·`ConversionReviewRequest.edited_text`·
-     * `WorkspaceNameRequest.name` 다섯은 **서비스 층에서 정규화한 뒤** 판정하고
-     * 위반은 422 **문자열** detail 이며, `@Size`·`@NotBlank`·`@Email` 을 쓰면 배열이
-     * 나가고 사용자 문구가 영문으로 바뀌어 계약 위반이다(`:1513-1518`).
+     * `WorkspaceNameRequest.name` 다섯은 **서비스 층에서** 판정하고 위반은 422
+     * **문자열** detail 이며, `@Size`·`@NotBlank`·`@Email` 을 쓰면 배열이 나가고
+     * 사용자 문구가 영문으로 바뀌어 계약 위반이다(`:1513-1518`).
+     *
+     * **무엇을 재는지 — 원시 값인가 정규화한 뒤인가 — 는 필드마다 다르다.** 그 축의
+     * 정본은 계약 `x-request-field-constraints` 의 `fields[].measured_on` 이고, 여기
+     * 옮겨 적지 않는다. 종전 kdoc 은 다섯을 한데 묶어 "정규화한 뒤"라고 적었다가
+     * 정본과 어긋났다(게이트 16 표 I).
      *
      * 그래서 프로브 필드를 계약에 없는 `probe` 로 바꿨다. 여기서 고정하는 것은
      * **프레임워크 매핑**뿐이다 — `MethodArgumentNotValidException` 이 Spring 기본
