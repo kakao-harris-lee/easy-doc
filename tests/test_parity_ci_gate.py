@@ -1013,6 +1013,14 @@ _DYNAMIC_LOOKUP_NAMES: frozenset[str] = frozenset(
     {"getattr", "__import__", "globals", "locals", "vars", "eval", "exec"}
 )
 
+#: 위 집합이 반드시 담아야 하는 핵심 — **내용 결속**(게이트 19 R19-1). 형제 상수
+#: `_MAINLINE_ROOTS`·`_HELPER_SUFFIXES` 는 비우면 다른 단언이 빨개지지만 이 집합은 비워도
+#: "동적 조회 없음" 단언이 공허하게 참이었다. 개수만 고정하면 같은 개수의 다른 이름으로 치환해
+#: 같은 공허함을 만들 수 있으므로(stop-time 게이트 지적) 이름으로 묶는다.
+_REQUIRED_DYNAMIC_LOOKUP_NAMES: frozenset[str] = frozenset(
+    {"getattr", "__import__", "eval", "exec"}
+)
+
 
 def _root_helper_calls(comparer: ModuleType) -> tuple[dict[str, list[str]], list[str]]:
     """`_call_sites` 를 **호출 측**에서 뒤집는다 (게이트 18 X2a).
@@ -1172,6 +1180,37 @@ def test_본류_회귀_목록이_비교기의_게이트_helper_전부를_덮는�
         f"{EXPECTED_MAINLINE_PHRASES}개다 — 문구를 더했거나 뺐다면 이 상수도 같은 커밋에서 "
         "고쳐 diff 를 리뷰에 올린다"
     )
+    # 개수만으로는 같은 길이의 다른 문구로 통째 바꿔도 통과한다(게이트 19 R19-4≡X19-5) —
+    # 표에서 파생되는 문구는 실제로 목록 안에 있어야 하고, 목록의 **모든** 문구는 이 모듈의
+    # 어떤 테스트가 `assert "…" in output` 으로 실제 관측했거나 비교기 문자열 상수에 있어야
+    # 한다(하드코딩 5문구까지 내용으로 묶는다 — 어느 한쪽만으로는 f-string 조각·합성 문구가 빠진다).
+    derived_phrases = {phrase for _test, phrase in _MAINLINE_HELPERS.values()}
+    missing_phrases = sorted(derived_phrases - set(_MAINLINE_PHRASES))
+    assert not missing_phrases, f"표의 문구가 대조군 목록에 없다: {missing_phrases}"
+    module_asserted = {
+        phrase
+        for name, member in globals().items()
+        if name.startswith("test_") and callable(member)
+        for phrase in _asserted_output_phrases(member)
+    }
+    comparer_constants = _string_constants(inspect.getsource(comparer))
+    unbound_phrases = sorted(
+        phrase
+        for phrase in _MAINLINE_PHRASES
+        if phrase not in module_asserted
+        and not any(phrase in constant for constant in comparer_constants)
+    )
+    assert not unbound_phrases, (
+        f"대조군 문구가 어떤 테스트 단언에도 비교기 문자열 상수에도 없다: {unbound_phrases} — "
+        "관측되지 않는 문구는 대조군이 아무것도 부정하지 않는다"
+    )
+    # R19-1 내용 결속. 이 집합을 비우거나 다른 이름으로 치환하면 아래 "동적 조회 없음" 단언이
+    # 공허하게 참이 된다.
+    missing_lookup_names = sorted(_REQUIRED_DYNAMIC_LOOKUP_NAMES - _DYNAMIC_LOOKUP_NAMES)
+    assert not missing_lookup_names, (
+        f"동적 조회 이름 집합에 핵심 이름이 없다: {missing_lookup_names} — 이 집합이 비거나 "
+        "치환되면 X2a 우회(getattr·__import__ 경유)가 다시 열린다"
+    )
     assert discovered, "비교기에서 게이트 helper 를 하나도 찾지 못했다 — 적재·이름 규약을 확인하라"
 
     sites = _call_sites(comparer, discovered)
@@ -1233,8 +1272,8 @@ def test_본류_회귀_목록이_비교기의_게이트_helper_전부를_덮는�
         f"표의 테스트 이름이 겹친다 — 한 테스트가 두 helper 를 대표할 수 없다: {test_names}"
     )
     # T1 — 아래 세 결속은 **AST 의 문자열 상수**만 본다. 소스 문자열 grep 이던 시절에는
-    # 단언을 주석 처리해도 텍스트가 남아 통과했다(게이트 18 T1).
-    comparer_constants = _string_constants(inspect.getsource(comparer))
+    # 단언을 주석 처리해도 텍스트가 남아 통과했다(게이트 18 T1). `comparer_constants` 는 위에서
+    # 이미 모았다.
     for helper, (test_name, phrase) in _MAINLINE_HELPERS.items():
         test_fn = globals().get(test_name)
         assert callable(test_fn), (
