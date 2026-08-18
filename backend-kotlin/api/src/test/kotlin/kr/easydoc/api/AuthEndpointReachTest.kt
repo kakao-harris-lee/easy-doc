@@ -183,6 +183,27 @@ class AuthEndpointReachTest {
         assertThat(get("/auth/me", expired).statusCode()).isEqualTo(UNAUTHORIZED)
     }
 
+    /**
+     * **허용 오차 그 자체를 재는 자리.**
+     *
+     * M-6 은 `skew + 1` 만 보므로 계약의 오차가 0에서 120으로 바뀌어도 여전히 만료라
+     * **통과해 버린다**(음성 대조 N4 실측). 오차 경계 **안쪽**을 함께 재야 값이 코드에
+     * 결속된다 — `exp` 를 정확히 `skew` 만큼 지난 토큰은 오차가 0이면 거절, 0보다 크면
+     * 수용이어야 한다. 기대값을 계약에서 **유도**하므로 오차를 바꾸면 이 케이스가 뒤집힌다.
+     */
+    @Test
+    @DisplayName("M-6b exp 를 계약의 허용 오차만큼 지난 토큰의 판정이 그 오차와 맞물린다")
+    fun `허용 오차 경계 안쪽을 재다`() {
+        val skew = ContractSpec.authNumber("clock_skew_seconds").toLong()
+        val atTolerance = forgedToken(expiresAt = Instant.now().minusSeconds(skew))
+        val expected =
+            if (skew > 0) ContractSpec.successStatus("/auth/me", "get") else UNAUTHORIZED
+
+        assertThat(get("/auth/me", atTolerance).statusCode())
+            .withFailMessage("허용 오차 %d 초에서 기대한 상태(%d)가 나오지 않았다", skew, expected)
+            .isEqualTo(expected)
+    }
+
     @Test
     @DisplayName("M-7 exp 가 아직 지나지 않은 토큰은 통과한다 — M-6 의 반대쪽")
     fun `만료 전 토큰은 통과한다`() {
@@ -273,12 +294,23 @@ class AuthEndpointReachTest {
 
     private fun bodyOf(response: HttpResponse<String>): Map<*, *> = json.readValue(response.body(), Map::class.java)
 
-    /** X-D1 하한선 + X-D2b 중복 부착 부재. 값과 개수를 모두 계약에서 읽어 본다. */
+    /**
+     * X-D1 하한선 + X-D2b 중복 부착 부재. 값과 개수를 모두 계약에서 읽어 본다.
+     *
+     * 값은 **헤더 컴포넌트의 `const`** 에서 읽는다(P-3). 전역 절
+     * (`x-global-response-headers.headers`)의 값만 읽으면 컴포넌트 `const` 가 바뀌어도
+     * 이 테스트가 반응하지 않는다 — 음성 대조 N3 에서 실측으로 드러난 자리다.
+     * 두 곳이 갈리지 않는지도 함께 본다.
+     */
     private fun assertPrivateHeaders(response: HttpResponse<String>) {
-        ContractSpec.globalResponseHeaders().forEach { (header, value) ->
+        ContractSpec.globalResponseHeaders().forEach { (header, globalValue) ->
+            val declared = ContractSpec.headerConst(HEADER_COMPONENTS.getValue(header))
+            assertThat(declared)
+                .withFailMessage("계약 안에서 %s 의 값이 두 절에 다르게 적혀 있다", header)
+                .isEqualTo(globalValue)
             assertThat(response.headers().allValues(header))
                 .withFailMessage("%s 가 %s 로 나갔다 — 값 또는 부착 개수가 계약과 다르다", header, response.headers().allValues(header))
-                .containsExactly(value)
+                .containsExactly(declared)
         }
     }
 
@@ -289,6 +321,13 @@ class AuthEndpointReachTest {
         private const val WWW_AUTHENTICATE = "WWW-Authenticate"
         private const val VALID_PASSWORD = "correct horse battery"
         private const val NOT_YET_EXPIRED_SECONDS = 600L
+
+        /** 헤더 이름 → 그 값을 `const` 로 든 계약 컴포넌트 이름. */
+        private val HEADER_COMPONENTS =
+            mapOf(
+                "Cache-Control" to "CacheControlNoStore",
+                "X-Content-Type-Options" to "XContentTypeOptions",
+            )
 
         private var counter = 0
 
