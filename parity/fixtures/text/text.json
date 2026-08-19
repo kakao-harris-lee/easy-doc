@@ -74,7 +74,7 @@
       "id": "text-drops-del",
       "description": "XML(docx)에 담을 수 없는 제어문자만 사라지고, 탭·개행·복귀와 나머지 문자는 순서까지 그대로 남는다. 지우면 문단 구조가 무너지고, 남기면 내보내기가 lxml ValueError로 500이 된다",
       "input": {
-        "text": "가나"
+        "text": "가\u007f나"
       },
       "assert": [
         {
@@ -171,5 +171,5 @@
       }
     }
   ],
-  "generated_at": "2026-08-14T03:06:08Z"
+  "generated_at": "2026-08-19T15:05:32Z"
 }

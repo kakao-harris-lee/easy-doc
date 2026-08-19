@@ -71,6 +71,59 @@ CONTRACT_PATH = REPO_ROOT / "contracts" / "easy-doc-v1.yaml"
 #: 이 목록을 늘릴 때는 반드시 왜 그 차이가 무해한지 근거를 함께 남긴다.
 BASE_NORMALIZATION = ["nfc", "lf"]
 
+
+# --------------------------------------------------- 직렬화 (원시 제어문자 차단)
+#
+# 왜 표준 `json.dumps` 로 충분하지 않은가: 파이썬의 인코더는 C0(0x00~0x1F)만 이스케이프하고
+# **DEL(0x7F)은 원시 바이트로 흘려보낸다** — `ensure_ascii=True` 여도 그렇다(DEL 은 ASCII 라
+# 비-ASCII 이스케이프 경로에 걸리지 않고, JSON 규격상 문자열 안에서 합법이라 필수 이스케이프
+# 대상도 아니다). 그 결과 fixture 가 제어문자를 **데이터로** 들 때 그 자리만 원시 바이트가 된다.
+#
+# 실측된 피해(게이트 26): `parity/fixtures/export/export.json` 은 같은 배열의 형제들이
+# `\u0000`·`\u001f` 로 이스케이프돼 있는데 DEL 21개만 원시 바이트였다. 파일 자신의 표기가
+# 일관되지 않으므로 ⑴ 재생성하는 사람이 그 바이트를 재현하지 못하면 조용히 갈리고
+# ⑵ `grep`·`diff`·`file` 같은 도구가 파일을 잘못 분류하며 ⑶ 리뷰 diff 가 그 자리를 보여주지
+# 못한다. 같은 기제가 다섯 게이트에 걸쳐 재발해 `tests/test_raw_control_chars.py` 가
+# **전수 탐지형** 장치로 신설됐다 — 그것이 탐지이고, 여기가 **발생 차단**이다.
+#
+# 값은 바뀌지 않는다. JSON 파서에게 `\u007f` 와 원시 0x7F 는 같은 문자다.
+
+#: 파일에 **원시 바이트로 남으면 안 되는** 제어문자. C0 전부에서 TAB·LF·CR 을 빼고
+#: DEL(0x7F)을 더한다 — `tests/test_raw_control_chars.py` 의 `CONTROL_BYTES` 와 같은 집합이다.
+#: TAB·LF·CR 을 빼는 이유는 두 가지다: 문자열 안에서는 인코더가 이미 `\t`·`\n`·`\r` 로 바꾸고,
+#: 들여쓰기가 만드는 **구조상의 개행**은 이스케이프하면 파일이 깨진다.
+CONTROL_CODEPOINTS = frozenset(set(range(0x00, 0x20)) - {0x09, 0x0A, 0x0D} | {0x7F})
+
+#: 위 코드포인트 → `\uXXXX`. `str.translate` 에 그대로 넘긴다.
+_CONTROL_ESCAPES = {code: f"\\u{code:04x}" for code in sorted(CONTROL_CODEPOINTS)}
+
+
+def dump_json(payload: Any) -> str:
+    """이 하네스가 파일에 쓰는 JSON 의 **유일한 직렬화 경로**. 끝에 개행을 붙여 돌려준다.
+
+    치환을 인코더 출력 **전체**에 걸어도 안전하다 — JSON 구조 문자(`{`·`,`·`"`·들여쓰기)는
+    전부 이 집합 밖이고, 문자열 안의 제어문자는 이 시점에 이미 인코더가 이스케이프했거나
+    (C0) 원시로 남아 있다(DEL). 즉 여기서 바뀌는 것은 **문자열 리터럴 안의 원시 제어문자**뿐이다.
+
+    끝에서 결과를 되짚는다. 치환표가 조용히 좁아지는 경로를 막기 위해서다 —
+    이 함수가 통과시킨 문자열은 `tests/test_raw_control_chars.py` 가 다시 훑는다.
+    """
+    rendered = (
+        json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=False).translate(
+            _CONTROL_ESCAPES
+        )
+        + "\n"
+    )
+    residue = sorted({ord(char) for char in rendered if ord(char) in CONTROL_CODEPOINTS})
+    if residue:
+        raise RuntimeError(
+            "직렬화 결과에 원시 제어문자가 남았다 "
+            f"({', '.join(f'0x{code:02x}' for code in residue)}) — 치환표가 좁아졌다는 뜻이다. "
+            "이 상태로 쓰면 tests/test_raw_control_chars.py 가 잡는다"
+        )
+    return rendered
+
+
 Case = dict[str, Any]
 
 
@@ -2373,10 +2426,7 @@ def dump(domains: list[str], out_root: Path) -> int:
         payload["generated_at"] = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
         target = out_root / domain / f"{domain}.json"
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(
-            json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=False) + "\n",
-            encoding="utf-8",
-        )
+        target.write_text(dump_json(payload), encoding="utf-8")
         shown = target.relative_to(REPO_ROOT) if target.is_relative_to(REPO_ROOT) else target
         mark = f"{spec.mode}/{spec.spec_status}"
         print(f"[생성] {shown} — {len(spec.cases)}건 [{mark}] (source: {spec.source})")

@@ -164,6 +164,7 @@ from dump_parity_fixtures import (  # noqa: E402 — sys.path 주입 뒤에만 i
     REPO_ROOT,
     STATUS_PENDING,
     ContractError,
+    dump_json,
     mask_contract,
 )
 
@@ -1882,10 +1883,10 @@ def write_ledger(root: Path, domain: str, entries: dict[str, dict[str, Any]]) ->
         "recorded_at": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "cases": body["cases"],
     }
-    path.write_text(
-        json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=False) + "\n",
-        encoding="utf-8",
-    )
+    # 원장도 같은 직렬화 경로를 쓴다 — 지금은 경로·해시만 담아 제어문자가 들어올 자리가
+    # 없지만, `note`·`domain` 이 그것을 들면 fixture 와 똑같이 원시 바이트가 된다.
+    # 두 벌로 적으면 한쪽만 고쳐지고, 조용해지는 쪽은 늘 안 고쳐진 쪽이다.
+    path.write_text(dump_json(payload), encoding="utf-8")
     return path
 
 
