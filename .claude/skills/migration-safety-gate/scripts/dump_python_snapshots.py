@@ -60,6 +60,35 @@ SNAPSHOT_DIR = REPO_ROOT / "backend-kotlin/core/src/test/resources/kr/easydoc/co
 PROMPT_SNAPSHOT = SNAPSHOT_DIR / "python-prompt-snapshot.json"
 STYLE_SNAPSHOT = SNAPSHOT_DIR / "python-style-rules-snapshot.json"
 
+# --------------------------------------------------- 직렬화 (원시 제어문자 차단)
+#
+# 왜 표준 `json.dumps` 로 충분하지 않은가: 파이썬의 인코더는 C0(0x00~0x1F)만 이스케이프하고
+# **DEL(0x7F)은 원시 바이트로 흘려보낸다** — `ensure_ascii=True` 여도 그렇다(DEL 은 ASCII 라
+# 비-ASCII 이스케이프 경로에 걸리지 않고, JSON 규격상 문자열 안에서 합법이라 필수 이스케이프
+# 대상도 아니다). 그래서 스냅샷 데이터에 제어문자가 한 글자만 들어오면 **생성기가 정상
+# 동작해도** 그 자리는 반드시 원시 바이트가 된다.
+#
+# 오늘 이 두 스냅샷에는 제어문자가 0개라 초록이다. 그러나 이 파일이 담는 것은 프롬프트
+# 문면과 246개 어려운 말 사전이고, 그 데이터는 **문서에서 온다** — 게이트 26 에서
+# `parity/fixtures/export/export.json` 이 DEL 21개를 원시 바이트로 들고 있던 것과 **같은
+# 기제이고 같은 종류의 자리**다. 그쪽은 사고가 났고 여기는 아직 안 났을 뿐이다.
+#
+# 피해는 값이 아니라 **심사 가능성**이다: 원시 제어문자가 들어가면 `git diff` 가 그 파일을
+# 바이너리로 잡거나 표기가 형제와 갈리고, 재생성하는 사람이 그 바이트를 재현하지 못하면
+# `--check` 가 조용히 갈린다. `tests/test_raw_control_chars.py` 가 **전수 탐지**이고
+# 여기가 **발생 차단**이다.
+#
+# 값은 바뀌지 않는다. JSON 파서에게 `\u007f` 와 원시 0x7F 는 같은 문자다.
+
+#: 파일에 **원시 바이트로 남으면 안 되는** 제어문자. C0 전부에서 TAB·LF·CR 을 빼고
+#: DEL(0x7F)을 더한다 — `tests/test_raw_control_chars.py` 의 `CONTROL_BYTES`,
+#: `dump_parity_fixtures.py` 의 `CONTROL_CODEPOINTS` 와 **같은 집합**이다.
+#: 세 벌이 갈리는 것을 `tests/test_raw_control_chars.py` 의 결속 테스트가 막는다.
+CONTROL_CODEPOINTS = frozenset(set(range(0x00, 0x20)) - {0x09, 0x0A, 0x0D} | {0x7F})
+
+#: 위 코드포인트 -> `\uXXXX`. `str.translate` 에 그대로 넘긴다.
+_CONTROL_ESCAPES = {code: f"\\u{code:04x}" for code in sorted(CONTROL_CODEPOINTS)}
+
 #: `style_rules` 에서 이름으로 읽어 오는 상수. **순서까지 스냅샷의 일부**다 —
 #: 사전 순서가 바뀌면 프롬프트의 낱말 나열 순서가 바뀐다.
 STYLE_CONSTANTS = (
@@ -360,8 +389,25 @@ def _repair_case(case: dict[str, Any], builder: Any) -> dict[str, Any]:
 
 
 def _dump(value: dict[str, Any]) -> str:
-    """정본과 **같은 직렬화**여야 diff 가 의미를 갖는다."""
-    return json.dumps(value, ensure_ascii=False, indent=2) + "\n"
+    """정본과 **같은 직렬화**여야 diff 가 의미를 갖는다. 원시 제어문자는 남기지 않는다.
+
+    치환을 인코더 출력 **전체**에 걸어도 안전하다 — JSON 구조 문자(`{`·`,`·`"`·들여쓰기)는
+    전부 이 집합 밖이고, 문자열 안의 제어문자는 이 시점에 이미 인코더가 이스케이프했거나
+    (C0) 원시로 남아 있다(DEL). 즉 여기서 바뀌는 것은 **문자열 리터럴 안의 원시 제어문자**뿐이다.
+
+    끝에서 결과를 되짚는다. 치환표가 조용히 좁아지는 경로를 막기 위해서다 — 좁아지면
+    다음 `--write` 가 원시 바이트를 정본에 심고, 그 상태는 `--check` 로는 드러나지 않는다
+    (재생성이 같은 바이트를 다시 만들기 때문에 diff 가 0 이다).
+    """
+    rendered = json.dumps(value, ensure_ascii=False, indent=2).translate(_CONTROL_ESCAPES) + "\n"
+    residue = sorted({ord(char) for char in rendered if ord(char) in CONTROL_CODEPOINTS})
+    if residue:
+        raise RuntimeError(
+            "직렬화 결과에 원시 제어문자가 남았다 "
+            f"({', '.join(f'0x{code:02x}' for code in residue)}) — 치환표가 좁아졌다는 뜻이다. "
+            "이 상태로 쓰면 tests/test_raw_control_chars.py 가 잡는다"
+        )
+    return rendered
 
 
 def main(argv: list[str] | None = None) -> int:

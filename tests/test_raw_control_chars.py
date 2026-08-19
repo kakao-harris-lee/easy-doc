@@ -71,9 +71,13 @@
 
 from __future__ import annotations
 
+import importlib.util
 import subprocess
+import sys
 from pathlib import Path
+from types import ModuleType
 
+import pytest
 import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -223,3 +227,164 @@ def test_CI_가_이_검사를_경로_명시로_배선했다() -> None:
         f"ci.yml 이 {THIS_TEST_PATH} 를 경로로 명시해 돌리지 않는다 — 이 파일을 지우면 "
         "아무 데서도 신고되지 않는다. quality 잡의 「경로 명시」 계열에 두어라."
     )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 발생 차단 쪽 — **탐지만으로는 늦다**
+#
+# 위 검사는 **결과**를 본다. 원시 제어문자가 이미 파일에 들어간 뒤에 잡는다는 뜻이고,
+# 그 시점이면 커밋·리뷰·재생성이 한 바퀴 돌았을 수 있다. 그래서 저장소에는 **발생을
+# 막는 쪽**이 따로 있다 — 추적 파일에 JSON 을 쓰는 생성기들이 직렬화 시점에 치환한다.
+#
+# 왜 표준 `json.dumps` 로 부족한가: 파이썬 인코더는 C0(0x00~0x1F)만 이스케이프하고
+# **DEL(0x7F)은 `ensure_ascii=True` 여도 원시 바이트로 흘려보낸다.** 즉 생성기가 정상
+# 동작해도 그 자리는 반드시 원시 바이트가 된다 — 게이트 26 의
+# `parity/fixtures/export/export.json`(DEL 21개)이 그 실측 사례다.
+#
+# ## 왜 공용 모듈로 빼지 않고 **복사본 + 결속 테스트** 인가 (게이트 26 판정)
+#
+# 이 저장소는 정본을 복제했다가 갈린 전례가 여럿이라 복사본이 기본 선택지는 아니다.
+# 그런데도 이쪽을 고른 근거는 셋이다.
+#
+# 1. **런타임 결합이 수명을 거꾸로 잇는다.** 세 생성기는 각각 `python-kotlin-parity`
+#    스킬(폐기 예정 하네스) · `migration-safety-gate` 스킬(차단 게이트) · `tests/golden`
+#    에 산다. 어느 하나를 정본으로 삼아 나머지가 import 하면, 차단 게이트가 폐기 예정
+#    하네스에 의존하거나 생성기가 테스트 트리에 의존하게 된다.
+# 2. **위험한 방향의 드리프트가 조용하지 않다.** 치환표가 좁아지면 그 결과물을 위
+#    전수 탐지가 잡는다. 그리고 아래 결속 테스트가 **좁아진 순간** 잡는다 —
+#    `_403_TOKEN` 을 열거에서 파생으로 바꿀 때 이 저장소가 쓴 것과 같은 처방이다.
+# 3. **공용 모듈은 「새 생성기가 그것을 쓰는가」를 보장하지 못한다.** 보장하는 것은
+#    결과를 보는 전수 탐지뿐이고, 그것은 이미 위에 있다.
+#
+# **닫지 않는 것(적어 둔다):** 아래 선언 목록에 없는 **새 생성기**는 이 결속이 보지
+# 못한다. 그 자리를 지키는 것은 위 전수 탐지 하나뿐이다 — 즉 새 생성기의 결함은
+# **발생 시점이 아니라 결과 시점**에 드러난다.
+#
+# **`parity/actual/**` 는 분모 밖이다.** `.gitignore:36` 이 그 디렉터리를 무시하므로
+# `git ls-files` 에 나오지 않는다(2026-08-20 실측: 추적 0개). 실행할 때마다 생기는
+# 산출물이라 그 자체는 옳은 판단이지만, **추적으로 바뀌면 이 검사의 분모가 달라진다** —
+# 그때 다시 봐야 한다.
+
+#: 추적 파일에 JSON 을 쓰는 생성기의 **직렬화 함수** 선언. (표시 이름, 파일, 심볼)
+#:
+#: 여기 없는 생성기는 결속되지 않는다 — 새로 만들면 여기에 넣어라. 목록이 비면
+#: 아래 테스트가 실패한다(빈 선언 통과 금지, SKILL.md 규칙 4 ⑶).
+ESCAPING_SERIALIZERS: tuple[tuple[str, str, str], ...] = (
+    (
+        "parity fixture 생성기",
+        ".claude/skills/python-kotlin-parity/scripts/dump_parity_fixtures.py",
+        "dump_json",
+    ),
+    (
+        "Python 정본 스냅샷 생성기",
+        ".claude/skills/migration-safety-gate/scripts/dump_python_snapshots.py",
+        "_dump",
+    ),
+    ("골든셋 기준선 기록기", "tests/golden/baseline.py", "dump_json"),
+)
+
+
+def _load_module(relative: str) -> ModuleType:
+    """저장소 안의 파일 하나를 모듈로 적재한다.
+
+    `sys.modules` 에 먼저 등록하는 이유: 모듈 안의 `@dataclass` 가 데코레이터 실행 중
+    `sys.modules[cls.__module__]` 를 조회하므로, 등록하지 않으면 `AttributeError` 로 죽는다.
+    스킬 스크립트는 같은 디렉터리의 형제를 import 하므로 그 디렉터리도 경로에 넣는다.
+    """
+    path = REPO_ROOT / relative
+    name = f"_rawctl_{path.stem}"
+    if name in sys.modules:
+        return sys.modules[name]
+    spec = importlib.util.spec_from_file_location(name, path)
+    if spec is None or spec.loader is None:  # pragma: no cover - 경로가 맞으면 성립한다
+        raise AssertionError(f"모듈을 적재할 수 없다: {relative}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    for extra in (str(REPO_ROOT), str(path.parent)):
+        if extra not in sys.path:
+            sys.path.insert(0, extra)
+    spec.loader.exec_module(module)
+    return module
+
+
+#: 결속 탐침. **모든 제어문자를 데이터로** 담는다 — 치환표에서 하나만 빠져도 갈린다.
+def _probe_payload() -> dict[str, object]:
+    return {
+        "설명": "제어문자를 데이터로 담는다",
+        "문자들": ["".join(chr(code) for code in sorted(CONTROL_BYTES))],
+        "중첩": {"값": "앞" + chr(0x7F) + "뒤"},
+    }
+
+
+def test_직렬화_선언이_비어_있지_않다() -> None:
+    """**빈 선언에서 통과하면 안 된다** (SKILL.md 규칙 4 ⑶)."""
+    assert ESCAPING_SERIALIZERS, (
+        "직렬화 선언이 비었다 — 아래 결속이 전부 0건 검사가 된다. 발생 차단 쪽이 통째로 "
+        "사라져도 아무도 신고하지 않는 상태다."
+    )
+
+
+@pytest.mark.parametrize(
+    ("label", "relative", "symbol"),
+    [pytest.param(*entry, id=entry[1]) for entry in ESCAPING_SERIALIZERS],
+)
+def test_생성기가_원시_제어문자를_남기지_않는다(label: str, relative: str, symbol: str) -> None:
+    """선언한 생성기마다 **제어문자를 데이터로 넣어** 출력에 원시 바이트가 없는지 본다.
+
+    상수만 대조하면 「이름은 같은데 쓰이지 않는」 상태를 통과시킨다. 그래서 함수를
+    **실제로 부른다** — 치환이 배선에서 빠지면 여기서 빨개진다.
+    """
+    module = _load_module(relative)
+    serializer = getattr(module, symbol, None)
+    assert callable(serializer), (
+        f"{label}({relative})에 `{symbol}` 이 없다 — 직렬화 경로가 사라졌거나 이름이 바뀌었다."
+    )
+    rendered = serializer(_probe_payload())
+    residue = sorted({ord(char) for char in rendered if ord(char) in CONTROL_BYTES})
+    assert not residue, (
+        f"{label}({relative})의 직렬화가 원시 제어문자를 남긴다: "
+        f"{', '.join(f'0x{code:02x}' for code in residue)}\n"
+        "  파이썬 인코더는 DEL(0x7f)을 `ensure_ascii=True` 여도 원시로 흘려보낸다 — "
+        "치환을 인코더 출력에 걸어라. 그러지 않으면 다음 재생성이 추적 파일에 원시 "
+        "바이트를 심고, 위 전수 탐지가 그때서야 잡는다."
+    )
+
+
+def test_생성기들의_치환_결과가_서로_같다() -> None:
+    """**세 벌이 갈리는 것이 이 저장소가 겪은 형태다.** 같은 입력에 같은 출력을 요구한다.
+
+    상수 이름이 아니라 **결과**로 묶는다 — 이름을 맞춰도 배선이 다르면 갈리고, 이름이
+    달라도 결과가 같으면 갈리지 않는다. 들여쓰기·키 순서까지 같아야 하므로 직렬화 옵션이
+    한쪽만 바뀌어도 여기서 드러난다.
+    """
+    payload = _probe_payload()
+    rendered = {
+        relative: getattr(_load_module(relative), symbol)(payload)
+        for _label, relative, symbol in ESCAPING_SERIALIZERS
+    }
+    distinct = set(rendered.values())
+    assert len(distinct) == 1, (
+        "선언한 생성기들의 직렬화 결과가 갈렸다:\n"
+        + "\n".join(f"  - {relative}: {value!r}" for relative, value in sorted(rendered.items()))
+        + "\n  한쪽만 고치면 조용해지는 쪽은 늘 안 고쳐진 쪽이다 — 세 벌을 함께 맞춰라."
+    )
+
+
+@pytest.mark.parametrize(
+    ("label", "relative", "symbol"),
+    [pytest.param(*entry, id=entry[1]) for entry in ESCAPING_SERIALIZERS],
+)
+def test_치환표가_좁아지면_생성기가_죽는다(
+    monkeypatch: pytest.MonkeyPatch, label: str, relative: str, symbol: str
+) -> None:
+    """**되짚기가 장식이 아님을 보인다** (음성 대조를 상시 회귀로 고정한다).
+
+    치환표를 비우면 파이썬 인코더가 C0 는 그대로 이스케이프하지만 DEL 은 원시로 남는다.
+    그때 생성기가 조용히 쓰면 원시 바이트가 정본에 심기고, 그 상태는 `--check` 류의
+    재생성 대조로도 드러나지 않는다(재생성이 같은 바이트를 다시 만든다). 그래서 각
+    생성기는 자기 출력을 되짚어 죽어야 한다.
+    """
+    module = _load_module(relative)
+    monkeypatch.setattr(module, "_CONTROL_ESCAPES", {}, raising=True)
+    with pytest.raises(RuntimeError, match="원시 제어문자"):
+        getattr(module, symbol)(_probe_payload())

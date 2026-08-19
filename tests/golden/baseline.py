@@ -103,6 +103,52 @@ BASELINE_PATH = Path(__file__).parent / "baseline.json"
 #: 기록 모드 스위치. 이 값이 켜진 실행은 **판정이 아니다**(모듈 docstring 1번).
 RECORD_ENV = "GOLDEN_RECORD_BASELINE"
 
+#: 기준선 파일에 **원시 바이트로 남으면 안 되는** 제어문자. C0 전부에서 TAB·LF·CR 을 빼고
+#: DEL(0x7F)을 더한다 — `tests/test_raw_control_chars.py` 의 `CONTROL_BYTES`,
+#: `dump_parity_fixtures.py`·`dump_python_snapshots.py` 의 `CONTROL_CODEPOINTS` 와
+#: **같은 집합**이다. 세 벌이 갈리는 것은 그 파일의 결속 테스트가 막는다.
+#:
+#: 왜 필요한가: 파이썬 인코더는 C0 만 이스케이프하고 **DEL 은 원시 바이트로 흘려보낸다**
+#: (`ensure_ascii=True` 여도 그렇다 — DEL 은 ASCII 라 비-ASCII 경로에 안 걸리고 JSON
+#: 규격상 문자열 안에서 합법이다). 그래서 `note`·`observed_models` 같은 문자열 필드에
+#: 제어문자가 한 글자만 들어오면 **정상 동작으로도** 그 자리가 원시 바이트가 된다.
+#: 게이트 26 에서 `parity/fixtures/export/export.json` 이 그 상태였고, 이 파일은 같은
+#: 종류의 자리이면서 아직 사고가 안 났을 뿐이다. 값은 바뀌지 않는다 — JSON 파서에게
+#: `\u007f` 와 원시 0x7F 는 같은 문자다.
+CONTROL_CODEPOINTS = frozenset(set(range(0x00, 0x20)) - {0x09, 0x0A, 0x0D} | {0x7F})
+
+#: 위 코드포인트 -> `\uXXXX`. `str.translate` 에 그대로 넘긴다.
+_CONTROL_ESCAPES = {code: f"\\u{code:04x}" for code in sorted(CONTROL_CODEPOINTS)}
+
+
+def dump_json(payload: dict[str, Any]) -> str:
+    """기준선 파일에 쓰는 **유일한 직렬화 경로**. 끝에 개행을 붙여 돌려준다.
+
+    치환을 인코더 출력 **전체**에 걸어도 안전하다 — JSON 구조 문자(`{`·`,`·`"`·들여쓰기)는
+    전부 이 집합 밖이고, 문자열 안의 제어문자는 이 시점에 이미 인코더가 이스케이프했거나
+    (C0) 원시로 남아 있다(DEL). 즉 여기서 바뀌는 것은 **문자열 리터럴 안의 원시 제어문자**뿐이다.
+
+    **지문 계산에는 쓰지 않는다.** `_canonical`(sort_keys=True)이 지문의 입력이고, 그
+    직렬화를 건드리면 커밋된 지문이 통째로 갈린다. 이 함수는 **파일에 쓰는 자리 전용**이다.
+
+    끝에서 결과를 되짚는다 — 치환표가 조용히 좁아지는 경로를 막는다.
+    """
+    rendered = (
+        json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=False).translate(
+            _CONTROL_ESCAPES
+        )
+        + "\n"
+    )
+    residue = sorted({ord(char) for char in rendered if ord(char) in CONTROL_CODEPOINTS})
+    if residue:
+        raise RuntimeError(
+            "직렬화 결과에 원시 제어문자가 남았다 "
+            f"({', '.join(f'0x{code:02x}' for code in residue)}) — 치환표가 좁아졌다는 뜻이다. "
+            "이 상태로 쓰면 tests/test_raw_control_chars.py 가 잡는다"
+        )
+    return rendered
+
+
 #: 기준선 파일에서 **내용이 아닌** 필드. 변경 판정에서 뺀다.
 #: 여기에 실제 내용을 넣으면 그 변경이 조용해지고, 시각을 빼지 않으면 기록 실행이 **항상**
 #: 변경으로 잡혀 아무것도 닫지 못한다 — 양쪽 다 게이트를 무력화한다(모듈 docstring 4번).
@@ -1003,10 +1049,7 @@ def write_baseline(body: dict[str, Any], path: Path = BASELINE_PATH) -> Path:
     _write할_수_있는_측정치인가(body)
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = {**body, "recorded_at": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")}
-    path.write_text(
-        json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=False) + "\n",
-        encoding="utf-8",
-    )
+    path.write_text(dump_json(payload), encoding="utf-8")
     return path
 
 
