@@ -85,6 +85,35 @@ class EncryptionSchemeSchemaTest {
     }
 
     @Test
+    @DisplayName("X8 V4 — `key_version` 이 0 이하인 행은 저장되지 않는다 (두 테이블 모두)")
+    fun `키 세대 도메인이 제약을 지난다`() {
+        // 실측으로 열려 있던 자리다(privacy-gate F-4): `key_version = -1` 로 INSERT 가
+        // 성공했다. 그 행의 암호문은 설정에 있을 수 없는 세대를 가리키므로 열리지 않는다.
+        // 코드 쪽 검증(`CryptoConfiguration`·`EncryptedContent`)은 발견 시점을 당길 뿐이고,
+        // 앱을 거치지 않는 쓰기까지 막는 마지막 방어선이 여기다.
+        database.execute(documentInsert(DOCUMENT_VERSION_OK, EncryptionScheme.AES_256_GCM_V1, keyVersion = 1))
+
+        listOf("0" to 0, "음수" to -1).forEach { (label, version) ->
+            assertThatThrownBy {
+                database.execute(documentInsert(DOCUMENT_VERSION_BAD, EncryptionScheme.AES_256_GCM_V1, version))
+            }.describedAs("documents 에 key_version=%s(%d) 가 들어갔다", label, version)
+                .isInstanceOf(SQLException::class.java)
+
+            assertThatThrownBy {
+                database.execute(
+                    conversionInsert(
+                        CONVERSION_VERSION_BAD,
+                        DOCUMENT_VERSION_OK,
+                        EncryptionScheme.AES_256_GCM_V1,
+                        version,
+                    ),
+                )
+            }.describedAs("conversions 에 key_version=%s(%d) 가 들어갔다 — 한 테이블만 고친 회귀다", label, version)
+                .isInstanceOf(SQLException::class.java)
+        }
+    }
+
+    @Test
     @DisplayName("V3 SQL 리터럴이 코드 상수와 같다 — 적용된 DB 만 보면 안 잡히는 축")
     fun `마이그레이션 리터럴이 코드 상수와 같다`() {
         // 위 케이스는 **적용된 DB** 의 CHECK 를 읽는다. 그것만으로는 스크립트에 적힌 리터럴이
@@ -171,6 +200,9 @@ class EncryptionSchemeSchemaTest {
         const val DOCUMENT_REJECTED = "44444444-4444-4444-4444-444444444444"
         const val CONVERSION_ACCEPTED = "55555555-5555-5555-5555-555555555555"
         const val CONVERSION_REJECTED = "66666666-6666-6666-6666-666666666666"
+        const val DOCUMENT_VERSION_OK = "77777777-7777-7777-7777-777777777777"
+        const val DOCUMENT_VERSION_BAD = "88888888-8888-8888-8888-888888888888"
+        const val CONVERSION_VERSION_BAD = "99999999-9999-9999-9999-999999999999"
 
         val OWNER_ROWS_SQL =
             """
@@ -183,22 +215,24 @@ class EncryptionSchemeSchemaTest {
         fun documentInsert(
             id: String,
             scheme: String,
+            keyVersion: Int = 1,
         ): String =
             """
             INSERT INTO documents
                 (id, user_id, title, source_format, source_text_encrypted, char_count, workspace_id,
                  encryption_scheme, key_version)
-            VALUES ('$id', '$USER_ID', '안내문', 'docx', '\x00'::bytea, 10, '$WORKSPACE_ID', '$scheme', 1);
+            VALUES ('$id', '$USER_ID', '안내문', 'docx', '\x00'::bytea, 10, '$WORKSPACE_ID', '$scheme', $keyVersion);
             """.trimIndent()
 
         fun conversionInsert(
             id: String,
             documentId: String,
             scheme: String,
+            keyVersion: Int = 1,
         ): String =
             """
             INSERT INTO conversions (id, document_id, encryption_scheme, key_version)
-            VALUES ('$id', '$documentId', '$scheme', 1);
+            VALUES ('$id', '$documentId', '$scheme', $keyVersion);
             """.trimIndent()
     }
 }
