@@ -150,26 +150,69 @@ object ContractSpec {
      * 바꿔도 따라가지 않고, 새 헤더가 생겨도 검사 범위가 늘지 않는다. `paths` 아래
      * 응답 선언이 이미 `$ref: '#/components/headers/…'` 로 둘을 잇고 있으므로 그것을 읽는다.
      *
-     * 같은 이름이 서로 다른 컴포넌트를 가리키면 실패한다 — 그 상태에서는 「이 헤더의
-     * 계약 값」이 하나로 정해지지 않는다.
+     * 컴포넌트 갈래만 돌려준다. **인라인 갈래를 버리지는 않는다** — [headerDeclarations] 가
+     * 둘을 함께 세고, 인라인은 [inlineHeaderNames] 로 나온다. 사유는 그쪽 KDoc.
      */
     fun headerComponentsByName(): Map<String, String> {
-        val found = mutableMapOf<String, String>()
-        map("paths").values.filterIsInstance<Map<*, *>>().forEach { operations ->
-            operations
-                .filterKeys { it.toString() in HTTP_METHODS }
-                .values
-                .filterIsInstance<Map<*, *>>()
-                .forEach { operation ->
-                    (operation["responses"] as? Map<*, *>)
-                        ?.values
-                        ?.filterIsInstance<Map<*, *>>()
-                        ?.forEach { response -> collectHeaderRefs(response, found) }
-                }
+        val components =
+            headerDeclarations()
+                .mapNotNull { (name, declaration) ->
+                    (declaration as? ContractHeaderDeclaration.Component)?.let { name to it.component }
+                }.toMap()
+        require(components.isNotEmpty()) { "계약의 응답 선언에서 헤더 \$ref 를 하나도 찾지 못했다" }
+        return components
+    }
+
+    /**
+     * **계약이 응답에 선언한 헤더 전부** — 이름 → 선언 갈래(`$ref` 컴포넌트 / 인라인).
+     *
+     * ## 왜 인라인을 함께 세는가 (게이트 24 codex X24-5)
+     *
+     * 종전 판은 `$ref` 가 없는 헤더 선언을 `?: return@forEach` 로 **조용히 버렸다.** 그래서
+     * "계약의 `$ref` 에서 유도하므로 새 헤더가 생겨도 검사 범위가 저절로 는다"는 이 접근자의
+     * 선언이 인라인 헤더에 대해서는 거짓이었다 — **선언한 범위와 실제 도달이 어긋난다.**
+     *
+     * **오늘 계약에 인라인 헤더는 0건이 아니라 2건이다**(실측 2026-08-19):
+     * `POST /documents` 202 의 `Location`, `GET /conversions/{id}/export` 200 의
+     * `Content-Disposition`. 둘 다 값이 **계산되는** 헤더라 `const` 로 못박을 수 없어 경로에
+     * 직접 적혀 있다. 그러므로 "`$ref` 가 없으면 무조건 실패"는 오늘 바로 빨간불이 되고,
+     * 그것은 계약이 잘못돼서가 아니라 이 파서가 갈래를 하나만 알기 때문이다.
+     *
+     * 그래서 **버리는 대신 갈래로 나눠 센다.** fail-closed 는 다음 네 자리에 건다.
+     *
+     * 1. 응답·오퍼레이션·헤더 노드가 매핑이 아니면 끊는다(파서가 읽을 줄 모르는 모양).
+     * 2. 응답이 `$ref` 면 `components/responses/…` 를 **따라 들어간다.** 종전에는 따라가지
+     *    않아 `Unauthorized` 가 든 `WWW-Authenticate` 선언이 이 표에 한 번도 오르지 못했다.
+     * 3. 인라인 선언에 `schema` 가 없으면 끊는다 — 값의 계약이 없는 헤더는 검사할 수 없다.
+     * 4. 같은 이름이 계약 안에서 서로 다르게 선언되면 끊는다(컴포넌트 ↔ 인라인 혼재 포함).
+     *    그 상태에서는 「이 헤더의 계약 값」이 하나로 정해지지 않는다.
+     *
+     * 그리고 인라인 **집합 자체**를 [inlineHeaderNames] 로 열어, 새 인라인 헤더가 들어오는
+     * 커밋이 실패하도록 계약 테스트가 그 집합을 고정한다 — codex 가 지적한 「마감의 강제자」다.
+     */
+    fun headerDeclarations(): Map<String, ContractHeaderDeclaration> {
+        val found = linkedMapOf<String, ContractHeaderDeclaration>()
+        operations().forEach { (path, method) ->
+            val responses = map("paths", path, method, "responses")
+            responses.forEach { (status, response) ->
+                val where = "$method $path $status"
+                collectHeaders(resolveResponse(response, where), where, found)
+            }
         }
-        require(found.isNotEmpty()) { "계약의 응답 선언에서 헤더 \$ref 를 하나도 찾지 못했다" }
         return found
     }
+
+    /**
+     * `$ref` 컴포넌트가 아니라 **경로에 직접 적힌** 헤더 선언의 이름.
+     *
+     * 계약 테스트가 이 집합을 고정한다. 새 인라인 헤더가 생기면 그 커밋이 실패하고,
+     * 그때 정해야 하는 것은 둘 중 하나다 — 값이 고정이면 `components/headers` 로 옮겨
+     * `const` 를 주고, 계산되는 값이면 그 형식을 재는 테스트를 함께 넣는다.
+     */
+    fun inlineHeaderNames(): Set<String> =
+        headerDeclarations()
+            .filterValues { it is ContractHeaderDeclaration.Inline }
+            .keys
 
     /**
      * P-4b. 전역 부착 헤더의 **이름 → 계약이 `const` 로 못박은 값**.
@@ -177,29 +220,74 @@ object ContractSpec {
      * 값을 `x-global-response-headers.headers` 가 아니라 **컴포넌트 `const`** 에서 읽는다.
      * 전역 절의 값만 읽으면 컴포넌트 `const` 를 바꿔도 테스트가 반응하지 않는다 —
      * 음성 대조 N-3 이 실측으로 드러낸 자리다.
+     *
+     * 전역 헤더가 인라인으로 선언돼 있으면 **끊는다.** 전역 부착 헤더는 값이 고정이라는 것이
+     * 계약의 요지이므로, 그 값이 `const` 밖에 있으면 정본이 사라진 것이다.
      */
     fun globalHeaderValues(): Map<String, String> {
-        val components = headerComponentsByName()
+        val declarations = headerDeclarations()
         return globalResponseHeaders().keys.associateWith { header ->
-            headerConst(
-                components[header]
-                    ?: error("전역 헤더 $header 를 `\$ref` 로 가리키는 응답 선언이 없다 — 값의 정본을 찾을 수 없다"),
-            )
+            when (val declaration = declarations[header]) {
+                is ContractHeaderDeclaration.Component -> {
+                    headerConst(declaration.component)
+                }
+
+                is ContractHeaderDeclaration.Inline -> {
+                    error("전역 헤더 $header 가 인라인으로 선언돼 있다($declaration) — 값의 정본이 컴포넌트 `const` 가 아니다")
+                }
+
+                null -> {
+                    error("전역 헤더 $header 를 선언한 응답이 계약에 하나도 없다 — 값의 정본을 찾을 수 없다")
+                }
+            }
         }
     }
 
-    private fun collectHeaderRefs(
+    /** 응답이 `$ref` 면 `components/responses` 를 따라간다. 매핑이 아니면 끊는다. */
+    private fun resolveResponse(
+        response: Any?,
+        where: String,
+    ): Map<*, *> {
+        val node =
+            response as? Map<*, *>
+                ?: error("$where 의 응답이 매핑이 아니다 — 이 파서가 읽을 수 있는 형태가 아니다: $response")
+        val ref = node["\$ref"]?.toString() ?: return node
+        return map("components", "responses", ref.substringAfterLast('/'))
+    }
+
+    private fun collectHeaders(
         response: Map<*, *>,
-        into: MutableMap<String, String>,
+        where: String,
+        into: MutableMap<String, ContractHeaderDeclaration>,
     ) {
-        (response["headers"] as? Map<*, *>)?.forEach { (name, declaration) ->
-            val ref = (declaration as? Map<*, *>)?.get("\$ref")?.toString() ?: return@forEach
-            val component = ref.substringAfterLast('/')
-            val previous = into.put(name.toString(), component)
-            require(previous == null || previous == component) {
-                "헤더 $name 이 서로 다른 컴포넌트를 가리킨다: $previous / $component"
+        val declared = response["headers"] ?: return
+        val headers =
+            declared as? Map<*, *>
+                ?: error("$where 의 headers 가 매핑이 아니다 — 이 파서가 읽을 수 있는 형태가 아니다: $declared")
+        headers.forEach { (name, declaration) ->
+            val parsed = parseHeader(declaration, "$where 의 헤더 $name")
+            val previous = into.put(name.toString(), parsed)
+            require(previous == null || previous == parsed) {
+                "헤더 $name 이 계약 안에서 서로 다르게 선언됐다: $previous / $parsed ($where)"
             }
         }
+    }
+
+    private fun parseHeader(
+        declaration: Any?,
+        where: String,
+    ): ContractHeaderDeclaration {
+        val node =
+            declaration as? Map<*, *>
+                ?: error("$where 선언이 매핑이 아니다 — 이 파서가 읽을 수 있는 형태가 아니다: $declaration")
+        val ref = node["\$ref"]?.toString()
+        if (ref != null) {
+            return ContractHeaderDeclaration.Component(ref.substringAfterLast('/'))
+        }
+        val schema =
+            node["schema"]
+                ?: error("$where 가 인라인 선언인데 schema 가 없다 — 값의 계약이 없는 헤더는 검사할 수 없다")
+        return ContractHeaderDeclaration.Inline(schema.toString())
     }
 
     /**
@@ -531,6 +619,21 @@ data class RequestFieldConstraint(
     val measuresNormalized: Boolean get() = axis == MeasurementAxis.NORMALIZED
 
     val measuresRaw: Boolean get() = axis == MeasurementAxis.RAW
+}
+
+/**
+ * 계약이 응답 헤더 하나를 선언한 **방식**.
+ *
+ * 갈래를 타입으로 가르는 이유는 소비자가 둘을 섞지 못하게 하기 위해서다 — 인라인 갈래에는
+ * `const` 정본이 없으므로 [ContractSpec.headerConst] 로 값을 물을 수 없고, 물으려 하면
+ * 컴파일이 아니라 실행에서 끊긴다는 것이 종전 결함(조용한 무시)과의 차이다.
+ */
+sealed interface ContractHeaderDeclaration {
+    /** `$ref: '#/components/headers/<X>'`. 값의 정본은 그 컴포넌트의 `schema.const`. */
+    data class Component(val component: String) : ContractHeaderDeclaration
+
+    /** 경로에 직접 적힌 선언. 값이 계산되는 헤더라 `const` 정본이 없고 [schema] 만 있다. */
+    data class Inline(val schema: String) : ContractHeaderDeclaration
 }
 
 /** 계약 경로 수준 `parameters` 한 항목. */
