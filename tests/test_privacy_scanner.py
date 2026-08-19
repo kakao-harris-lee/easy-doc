@@ -1480,6 +1480,40 @@ OWNERSHIP_403_SHAPES: list[tuple[str, str, str, bool]] = [
         '@DisplayName("403 이 아니다") fun y() = r.status(403)',
         True,
     ),
+    # ── 게이트 23 ⓐ 정정 — 「토큰 없는 이름」 네 형태 (codex C-1 ≡ Claude B-1) ──
+    #
+    # 앞선 판의 ③ 은 식별자 자리가 `\w+` 라 **이름에 아무 제약이 없었다.** 그래서 상수의
+    # 이름이 403·FORBIDDEN 어느 토큰도 품지 않으면 선언은 제외되고 **사용처에도 토큰이
+    # 없어** 아무 데서도 안 잡혔다. 옛 스캐너 `exit 1` → 새 스캐너 `exit 0` 으로 실측된
+    # 네 형태이며, N11 이 이 자리를 덮지 못한 이유는 그 이름이 하필 `FORBIDDEN` 이라
+    # ③ 을 정당화한 KDoc 예시를 그대로 재현한 것이었기 때문이다.
+    #
+    # **여기가 `blocks=True` 인 것이 정정의 본체다** — `False` 로 뒤집히면 미검출이 다시
+    # 회귀로 고정된다(옛 표가 `P4 백틱 함수명 → blocks=False` 로 하던 일).
+    (
+        "N14 토큰 없는 상수 이름 + 사용처",
+        ".kt",
+        "    private const val OWNER_MISMATCH = 403\n"
+        "    fun deny() = ResponseEntity.status(OWNER_MISMATCH).build()",
+        True,
+    ),
+    (
+        "N15 난수꼴 이름 val + 사용처",
+        ".kt",
+        "    val q7x9k2 = 403\n    fun deny() = ResponseEntity.status(q7x9k2).build()",
+        True,
+    ),
+    (
+        "N16 타입 명시 private val + 사용처",
+        ".kt",
+        "    private val zk4m1p: Int = 403\n    fun deny() = ResponseEntity.status(zk4m1p).build()",
+        True,
+    ),
+    # 백틱은 이제 **`fun` 자리**에서만 불활성이다. 호출 인자의 백틱 식별자는 진짜 반환이다.
+    ("N17 백틱 식별자 사용처", ".kt", "fun deny() = ResponseEntity.status(`403`).build()", True),
+    # 밑줄로 이어 붙인 이름은 사용처가 `\b` 경계 때문에 안 잡히므로 **선언이 남아야** 한다.
+    ("N18 밑줄 결합 이름 상수 선언", ".kt", "    private const val HTTP_FORBIDDEN = 403", True),
+    ("N19 파이썬 밑줄 결합 상수", ".py", "FORBIDDEN_STATUS = 403", True),
     # ── 빠져야 하는 것: 403 을 만들어 낼 수 없는 세 형태 ──
     ("P1 부호 반전 단언", ".kt", "assertThat(r.statusCode()).isNotEqualTo(FORBIDDEN)", False),
     ("P2 assertNotEquals 첫 인자", ".kt", "assertNotEquals(403, r.statusCode())", False),
@@ -1487,6 +1521,10 @@ OWNERSHIP_403_SHAPES: list[tuple[str, str, str, bool]] = [
     ("P4 백틱 함수명", ".kt", "fun `타인 자원은 404 이고 403 이 아니다`() {", False),
     ("P5 상수 선언 단독", ".kt", "        private const val FORBIDDEN = 403", False),
     ("P6 파이썬 대문자 상수 선언", ".py", "FORBIDDEN = 403", False),
+    # ② 를 `fun` 자리로 좁혀도 KDoc 인라인 코드는 영향받지 않는다 — 그 줄은 `*` 로 시작해
+    #    규칙에 닿기 전에 이미 빠진다. 저장소의 실제 오탐 두 자리가 이 형태였다
+    #    (`AuthContractTest.kt:324` · `AuthEndpointReachTest.kt:527`).
+    ("P7 KDoc 인라인 코드 백틱", ".kt", "    /**\n     * 실측 (`'401'`→`'403'`).\n     */", False),
 ]
 
 #: **선언된 미도달.** `\b` 경계 때문에 밑줄에 둘러싸인 토큰은 잡히지 않는다 —
@@ -1540,6 +1578,36 @@ def test_ownership_403_알려진_미도달(
     빼라는 신호이고, 동시에 새로 생기는 오탐 무리를 함께 보라는 신호다.
     """
     assert _ownership_403_blocks(scanner, tmp_path, suffix, source)
+
+
+def test_불활성_상수_제외는_탐지와_같은_토큰_조각을_쓴다(scanner: ModuleType) -> None:
+    """③ 의 이름 관문과 탐지 토큰이 **한 조각**에서 나오는가 (게이트 23 ⓐ 정정의 구조 고정).
+
+    ③ 의 제외가 무손실인 근거는 *"선언을 빼도 사용처가 토큰으로 잡힌다"* 하나다. 그 문장은
+    **선언된 이름이 탐지 토큰과 같은 것일 때만** 참이다. 두 자리가 따로 적히면 갈리고,
+    갈린 순간 근거가 조용히 거짓이 된다 — 실제로 `\\w+` 로 적혀 네 형태가 새어 나갔다.
+
+    형태 목록(N14~N19)이 결과를 재고, 이 테스트는 **결과가 그렇게 나오는 이유**를 재서
+    누가 이름 관문을 다시 `\\w+` 로 넓히면 형태 목록보다 먼저 시끄러워지게 한다.
+    """
+    token = scanner._403_TOKEN  # 동적 적재 모듈
+    inert = scanner.OWNERSHIP_403_INERT  # 동적 적재 모듈
+    rule = _rule(scanner, "OWNERSHIP-403")
+
+    assert rule.pattern.pattern.endswith(rf"\b{token}\b"), (  # type: ignore[attr-defined]
+        "탐지 토큰이 공유 조각(_403_TOKEN)에서 나오지 않는다 — ③ 의 이름 관문과 갈린다."
+    )
+    # 이름 자리(`va[lr]`/`let` 바로 뒤, 파이썬 상수 자리)가 공유 조각이어야 한다.
+    assert rf"(?:va[lr]|let)\s+{token}\b" in inert, (
+        "③ 의 Kotlin 이름 관문이 공유 토큰이 아니다 — `\\w+` 로 되돌아가면 "
+        "`const val OWNER_MISMATCH = 403` 이 다시 조용히 빠진다."
+    )
+    assert rf"|^\s*{token}\b" in inert, "③ 의 Python 이름 관문이 공유 토큰이 아니다."
+    # ② 의 백틱은 `fun` 자리 한정이어야 한다 — 자리를 묻지 않으면 `status(`403`)` 을 삼킨다.
+    assert rf"\bfun\s+`[^`\n]*{token}" in inert, (
+        "② 의 백틱이 `fun` 자리로 한정돼 있지 않다 — 호출 인자의 백틱 식별자까지 소비하면 "
+        "진짜 403 반환이 사라진다(N17 이 재는 성질)."
+    )
 
 
 def test_정밀화가_소비형이라_줄_전체를_누르지_않는다(scanner: ModuleType) -> None:
