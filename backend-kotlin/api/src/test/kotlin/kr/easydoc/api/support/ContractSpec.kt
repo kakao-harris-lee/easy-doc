@@ -253,6 +253,90 @@ object ContractSpec {
     /** 스키마의 `required` 키 목록. */
     fun schemaRequired(schema: String): Set<String> = strings("components", "schemas", schema, "required").toSet()
 
+    /**
+     * **P-16 — `allOf` 합성 스키마의 `required` 를 합쳐 읽는다.**
+     *
+     * [schemaRequired] 는 `components.schemas.X.required` 하나만 읽으므로 `allOf` 로 조립된
+     * 스키마(`WorkspaceListItem`)에서는 **실패한다**. 손으로 합치면 키 집합이 코드에 복제되고,
+     * 계약이 갈래를 옮기거나 지워도 테스트가 옛 집합을 요구한다.
+     *
+     * 갈래 하나만 읽고 나머지를 무시하는 배선은 **하드코딩보다 나쁘다** — "계약에서 읽었다"는
+     * 외양이 붙기 때문이다. 그래서 `$ref` 해석까지가 이 접근자의 범위이고, 아무 갈래에서도
+     * `required` 를 얻지 못하면 실패한다.
+     */
+    fun schemaRequiredComposed(schema: String): Set<String> {
+        val composed = requiredOf(map("components", "schemas", schema), schema)
+        require(composed.isNotEmpty()) { "$schema 에서 required 를 하나도 찾지 못했다 — allOf 합성이 서지 않았다" }
+        return composed
+    }
+
+    private fun requiredOf(
+        node: Map<*, *>,
+        label: String,
+    ): Set<String> {
+        val own = (node["required"] as? List<*>)?.map { it.toString() }?.toSet() ?: emptySet()
+        val branches = node["allOf"] as? List<*> ?: return own
+        require(branches.isNotEmpty()) { "$label 의 allOf 가 비었다" }
+        val fromBranches =
+            branches.filterIsInstance<Map<*, *>>().flatMap { branch ->
+                val ref = branch["\$ref"]?.toString()
+                if (ref == null) {
+                    requiredOf(branch, label)
+                } else {
+                    val referenced = ref.substringAfterLast('/')
+                    requiredOf(map("components", "schemas", referenced), referenced)
+                }
+            }
+        return own + fromBranches
+    }
+
+    /**
+     * **P-17 — 경로에 인라인으로 적힌 응답 예시의 `detail`.**
+     *
+     * [responseExampleDetail] 은 `components/responses/<컴포넌트>` 만 읽는다. 작업 공간의
+     * 문구 예시는 **전부 경로 인라인**이라 그 접근자로는 한 건도 못 읽고, 그러면 문구가
+     * 코드에 복제된다 — 규약이 막으려는 바로 그것이다.
+     */
+    fun pathExampleDetail(
+        path: String,
+        method: String,
+        status: Int,
+        example: String,
+    ): String {
+        val label = "$method $path $status.examples.$example"
+        val json = map("paths", path, method, "responses", status.toString(), "content", "application/json")
+        val examples = json["examples"] as? Map<*, *> ?: error("$label — examples 가 없다")
+        val value = (examples[example] as? Map<*, *>)?.get("value") as? Map<*, *> ?: error("$label — value 가 없다")
+        return value["detail"]?.toString() ?: error("$label — detail 이 없다")
+    }
+
+    /**
+     * **P-20 — 스키마 속성에 붙은 `x-service-constraint` 표식.**
+     *
+     * 같은 상한이 계약 안에 **세 벌** 있다(`x-input-limits` · `fields[].limit` · 이 표식).
+     * 셋을 대조하지 않으면 한쪽만 고쳐도 아무 데서도 걸리지 않는다.
+     */
+    fun serviceConstraint(
+        schema: String,
+        property: String,
+    ): Map<*, *> = map("components", "schemas", schema, "properties", property, "x-service-constraint")
+
+    /**
+     * **P-21 — 경로 수준 `parameters` 선언.**
+     *
+     * 경로 변수 이름을 코드에 복제하면 계약이 이름이나 형식을 바꿔도 테스트가 옛 이름으로
+     * URL 을 만든다. 그러면 **엉뚱한 매핑을 재거나 404 를 「소유권 은닉」으로 오독한다.**
+     */
+    fun pathParameters(path: String): List<ContractPathParameter> =
+        list("paths", path, "parameters").filterIsInstance<Map<*, *>>().map { declaration ->
+            ContractPathParameter(
+                name = declaration["name"]?.toString() ?: error("$path 의 parameters 에 name 이 없다"),
+                location = declaration["in"]?.toString() ?: error("$path 의 parameters 에 in 이 없다"),
+                format = (declaration["schema"] as? Map<*, *>)?.get("format")?.toString()
+                    ?: error("$path 의 parameters 에 schema.format 이 없다"),
+            )
+        }
+
     /** 스키마의 `additionalProperties`. 「정확히 이 키들뿐」 단언의 근거다. */
     fun schemaAllowsAdditionalProperties(schema: String): Boolean =
         at("components", "schemas", schema, "additionalProperties") as? Boolean
@@ -271,6 +355,38 @@ object ContractSpec {
     ): String = text("components", "schemas", schema, "properties", property, "const")
 
     // ------------------------------------------------------------------ P-12
+
+    /**
+     * **파싱 단계에서 거절돼 필터에 닿지 않는 응답들** — 계약이 열거한 갈래 이름 집합.
+     *
+     * 이 목록과 [ContainerRejectedRequest] 열거자를 **집합으로** 대조한다. 개수만 맞추면
+     * 항목이 맞바뀌어도 통과한다 — 계약이 한 갈래를 빼고 다른 갈래를 넣으면 열거자는
+     * 옛 갈래를 계속 재면서 초록이다.
+     */
+    fun containerRejectedCases(): Set<String> =
+        strings(
+            "x-global-response-headers",
+            "x-phase3-measurement",
+            "unreachable_by_filter",
+            "cases",
+        ).toSet()
+
+    /**
+     * 가입이 함께 만드는 작업 공간의 이름.
+     *
+     * **계약이 이 값을 산문 안에 적었다**(`paths./auth/signup.post.description`) — 전용 노드가
+     * 없다. 그래서 앵커 문구로 찾아 백틱 안의 값을 읽는다. 계약이 그 문장을 고치면 이
+     * 접근자가 **실패한다** — 조용히 기본값을 돌려주면 계약이 값을 바꿔도 테스트가 옛 값을
+     * 요구하고, 그 순간 계약이 되는 것은 테스트다.
+     */
+    fun defaultWorkspaceName(): String {
+        val description = text("paths", "/auth/signup", "post", "description")
+        return DEFAULT_WORKSPACE_NAME_PATTERN.find(description)?.groupValues?.get(1)
+            ?: error("계약 `/auth/signup` 설명에서 기본 작업 공간 이름을 찾지 못했다 — 앵커 문구가 바뀌었다")
+    }
+
+    /** 위 산문에서 값을 집어내는 앵커. 값이 아니라 **찾는 방법**이라 여기 있어도 된다. */
+    private val DEFAULT_WORKSPACE_NAME_PATTERN = Regex("이름은 `([^`]+)`")
 
     /** P-12. `x-auth` 아래 스칼라 값. */
     fun authText(key: String): String = text("x-auth", key)
@@ -306,8 +422,67 @@ data class RequestFieldConstraint(
     val singleDetail: String
         get() = detail as? String ?: error("${this.field} 의 detail 이 문자열 하나가 아니다: $detail")
 
-    /** `measured_on` 이 정규화 후를 가리키는가. 계약은 산문으로 적으므로 앞머리로 가른다. */
-    val measuresNormalized: Boolean get() = measuredOn.startsWith("정규화 후")
+    /**
+     * **P-18 — 문구가 여럿인 필드**(`WorkspaceNameRequest.name` 은 빈 값·상한 초과 둘을 든다).
+     *
+     * [singleDetail] 은 이 자리에서 **설계대로 실패한다.** 목록 접근자가 없으면 이 필드의
+     * 문구를 계약에서 읽을 길이 없어 코드에 복제하게 된다.
+     */
+    val detailList: List<String>
+        get() = (detail as? List<*>)?.map { it.toString() } ?: error("${this.field} 의 detail 이 목록이 아니다: $detail")
 
-    val measuresRaw: Boolean get() = measuredOn.startsWith("원시")
+    /** `measured_on` 이 가리키는 측정 축. 어휘 해석은 [MeasurementAxis] 한 곳에서 한다. */
+    val axis: MeasurementAxis get() = MeasurementAxis.ofProse(measuredOn, this.field)
+
+    val measuresNormalized: Boolean get() = axis == MeasurementAxis.NORMALIZED
+
+    val measuresRaw: Boolean get() = axis == MeasurementAxis.RAW
+}
+
+/** 계약 경로 수준 `parameters` 한 항목. */
+data class ContractPathParameter(
+    val name: String,
+    val location: String,
+    val format: String,
+)
+
+/**
+ * 무엇을 재는가 — 정규화한 뒤인가 원시 값인가.
+ *
+ * **계약이 이 축을 두 어휘로 적는다.** `x-request-field-constraints.fields[].measured_on` 은
+ * 한국어 산문이고 스키마의 `x-service-constraint.measured_on` 은 토큰(`normalized`/`raw`)이다.
+ * 두 자리를 대조하려면 **매핑을 거쳐야** 하고, 그 매핑이 두 벌이 되면 어휘가 늘어난 날
+ * 한쪽만 따라간다. 그래서 여기 한 곳에 둔다.
+ *
+ * **매핑에 없는 값은 실패다.** 조용히 「다르다」로 떨어뜨리면 계약이 어휘를 넓혔을 때 대조가
+ * 거짓 양성을 낸다 — 두 자리가 같은 뜻인데 다르다고 보고하는 쪽이 더 나쁘다.
+ */
+enum class MeasurementAxis {
+    NORMALIZED,
+    RAW,
+    ;
+
+    companion object {
+        /** 한국어 산문 쪽(`fields[].measured_on`). 앞머리로 가른다 — 뒤는 근거 주석이다. */
+        fun ofProse(
+            prose: String,
+            label: String,
+        ): MeasurementAxis =
+            when {
+                prose.startsWith("정규화 후") -> NORMALIZED
+                prose.startsWith("원시") -> RAW
+                else -> error("$label 의 measured_on 산문이 매핑에 없다: $prose")
+            }
+
+        /** 토큰 쪽(`x-service-constraint.measured_on`). */
+        fun ofToken(
+            token: String,
+            label: String,
+        ): MeasurementAxis =
+            when (token) {
+                "normalized" -> NORMALIZED
+                "raw" -> RAW
+                else -> error("$label 의 measured_on 토큰이 매핑에 없다: $token")
+            }
+    }
 }

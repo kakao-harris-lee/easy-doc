@@ -69,6 +69,19 @@ class AuthUnavailableContractTest {
     }
 
     @Test
+    @DisplayName("WL-7 보호 자원(작업 공간 목록)도 503 이다 — 401 로 감추지 않는다")
+    fun `작업 공간 목록이 503 이다`() {
+        // 인증 인터셉터가 토큰을 검증하려다 설정 문제로 끊긴다. 401 로 내면 배포 사고가
+        // "사용자가 토큰을 잘못 냈다"로 둔갑한다 — `/auth/me` 와 같은 자리이고,
+        // 계약이 작업 공간 네 오퍼레이션에도 503 을 선언한다.
+        // 나머지 셋은 같은 구성에서 같은 경로(인터셉터)를 지나므로 대표 1건으로 둔다.
+        val response =
+            send(HttpRequest.newBuilder(uri("/workspaces")).header("Authorization", "Bearer any.token.value").GET())
+
+        assertServiceUnavailable(response, "/workspaces", "get")
+    }
+
+    @Test
     @DisplayName("같은 구성에서 /health 는 200 이다 — 기동을 막지 않는다")
     fun `기동은 막지 않는다`() {
         assertThat(send(HttpRequest.newBuilder(uri("/health")).GET()).statusCode()).isEqualTo(OK)
