@@ -6,12 +6,19 @@ import kr.easydoc.application.auth.IssuedAccessToken
 import kr.easydoc.application.auth.PasswordHasher
 import kr.easydoc.application.auth.TransactionRunner
 import kr.easydoc.application.auth.UserRepository
+import kr.easydoc.application.auth.WorkspaceDeletionState
 import kr.easydoc.application.auth.WorkspaceRepository
+import kr.easydoc.application.workspace.DUPLICATE_WORKSPACE_NAME_MESSAGE
+import kr.easydoc.application.workspace.WorkspaceService
+import kr.easydoc.core.exceptions.ConflictException
 import kr.easydoc.core.exceptions.EmailAlreadyRegisteredException
 import kr.easydoc.core.exceptions.InvalidCredentialsException
 import kr.easydoc.core.user.PasswordHash
 import kr.easydoc.core.user.StoredUser
 import kr.easydoc.core.user.User
+import kr.easydoc.core.workspace.DEFAULT_WORKSPACE_NAME
+import kr.easydoc.core.workspace.Workspace
+import kr.easydoc.core.workspace.WorkspaceListing
 import org.springframework.boot.test.context.TestConfiguration
 import org.springframework.context.annotation.Bean
 import java.time.Instant
@@ -75,6 +82,18 @@ class AuthSliceBeans {
         tokens: StubAccessTokens,
         transaction: TransactionRunner,
     ): AuthService = AuthService(users, workspaces, hasher, tokens, transaction)
+
+    /**
+     * `@WebMvcTest` 는 컨트롤러를 **전부** 슬라이스에 넣는다. `WorkspaceController` 가
+     * 생긴 순간부터 이 빈이 없으면 `/auth` 만 겨누는 테스트도 컨텍스트 조립에서 멈춘다.
+     *
+     * 여기서도 유스케이스는 **실물**이다 — 가짜인 것은 저장소와 트랜잭션뿐이다.
+     */
+    @Bean
+    fun workspaceService(
+        workspaces: InMemoryWorkspaceRepository,
+        transaction: TransactionRunner,
+    ): WorkspaceService = WorkspaceService(workspaces, transaction)
 }
 
 /** 유일성을 **키 일치**로 판정한다 — `ix_users_email` 과 같은 축이다. */
@@ -115,14 +134,100 @@ class InMemoryUserRepository : UserRepository {
     }
 }
 
-/** 만들어진 기본 작업 공간을 세어 둔다 — 가입 한 건에 하나가 붙는지 확인하는 자리다. */
+/**
+ * 작업 공간 저장소의 가짜.
+ *
+ * ## 규칙은 진짜다
+ *
+ * 가짜인 것은 **저장 매체**뿐이다. 소유 조건(모든 조회가 `ownerId` 로 걸린다)과 유일성
+ * (같은 소유자 안에서 이름이 겹치면 409)은 실물과 같은 축으로 판정한다 — 그러지 않으면
+ * 슬라이스 테스트가 「구현이 소유자를 안 봐도 초록」이 된다.
+ *
+ * **잠금은 흉내 내지 않는다.** 「마지막 하나」 판정의 동시성은 실제 트랜잭션과 행 잠금이
+ * 있어야 잴 수 있으므로 `WorkspaceRepositoryTest`(Testcontainers)가 맡는다.
+ * `createdAt` 은 삽입 순서대로 1초씩 벌려 둔다 — 목록 순서가 정해지지 않으면
+ * 「첫 번째가 기본 작업 공간」을 잴 수 없다.
+ */
 class InMemoryWorkspaceRepository : WorkspaceRepository {
-    val created: MutableList<UUID> = mutableListOf()
+    private data class Row(
+        val id: UUID,
+        val ownerId: UUID,
+        val name: String,
+        val createdAt: Instant,
+    )
 
-    override fun createDefault(userId: UUID): UUID {
-        created += userId
-        return UUID.randomUUID()
+    private val rows = mutableListOf<Row>()
+
+    /** 테스트가 문서 수를 심는 자리. 실물에서는 `documents` 테이블이 답한다. */
+    val documentCounts: MutableMap<UUID, Int> = mutableMapOf()
+
+    override fun createDefault(userId: UUID): UUID = insert(userId, DEFAULT_WORKSPACE_NAME).id
+
+    override fun listOwned(ownerId: UUID): List<WorkspaceListing> =
+        rows
+            .filter { it.ownerId == ownerId }
+            .sortedWith(compareBy({ it.createdAt }, { it.id }))
+            .map { WorkspaceListing(it.toWorkspace(), documentCounts[it.id] ?: 0) }
+
+    override fun create(
+        ownerId: UUID,
+        name: String,
+    ): Workspace = insert(ownerId, name).toWorkspace()
+
+    override fun rename(
+        ownerId: UUID,
+        workspaceId: UUID,
+        name: String,
+    ): Workspace? {
+        val index = rows.indexOfFirst { it.id == workspaceId && it.ownerId == ownerId }
+        // 없는 것과 남의 것을 가르지 않는다 — 조건 하나로 끝난다.
+        if (index < 0) {
+            return null
+        }
+        requireUniqueName(ownerId, name, exceptId = workspaceId)
+        val renamed = rows[index].copy(name = name)
+        rows[index] = renamed
+        return renamed.toWorkspace()
     }
+
+    override fun lockForDeletion(
+        ownerId: UUID,
+        workspaceId: UUID,
+    ): WorkspaceDeletionState? {
+        val owned = rows.filter { it.ownerId == ownerId }
+        if (owned.none { it.id == workspaceId }) {
+            return null
+        }
+        return WorkspaceDeletionState(owned.size, documentCounts[workspaceId] ?: 0)
+    }
+
+    override fun delete(
+        ownerId: UUID,
+        workspaceId: UUID,
+    ): Boolean = rows.removeIf { it.id == workspaceId && it.ownerId == ownerId }
+
+    private fun insert(
+        ownerId: UUID,
+        name: String,
+    ): Row {
+        requireUniqueName(ownerId, name, exceptId = null)
+        val row = Row(UUID.randomUUID(), ownerId, name, Instant.EPOCH.plusSeconds(rows.size.toLong()))
+        rows += row
+        return row
+    }
+
+    /** `uq_workspaces_user_id_name` 과 같은 축이다. */
+    private fun requireUniqueName(
+        ownerId: UUID,
+        name: String,
+        exceptId: UUID?,
+    ) {
+        if (rows.any { it.ownerId == ownerId && it.name == name && it.id != exceptId }) {
+            throw ConflictException(DUPLICATE_WORKSPACE_NAME_MESSAGE)
+        }
+    }
+
+    private fun Row.toWorkspace(): Workspace = Workspace(id, name, createdAt)
 }
 
 /**

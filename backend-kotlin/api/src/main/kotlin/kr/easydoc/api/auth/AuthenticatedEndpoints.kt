@@ -29,8 +29,13 @@ object AuthenticatedEndpoints {
     /**
      * 계약이 `security: [{ HTTPBearer: [] }]` 로 선언한 경로들.
      *
-     * Phase 3 의 `auth` 작업 단위에서는 `/auth/me` 하나다. 작업 공간·문서 단위가
-     * 자기 경로를 여기에 더한다 — **엔드포인트를 만드는 그 커밋에서** 더한다.
+     * 각 작업 단위가 **엔드포인트를 만드는 그 커밋에서** 자기 경로를 더한다. 문서·변환
+     * 경로는 Phase 4 단위가 더한다.
      */
-    val PROTECTED_PATH_PATTERNS: List<String> = listOf("/auth/me")
+    val PROTECTED_PATH_PATTERNS: List<String> =
+        listOf(
+            "/auth/me",
+            "/workspaces",
+            "/workspaces/{workspace_id}",
+        )
 }
