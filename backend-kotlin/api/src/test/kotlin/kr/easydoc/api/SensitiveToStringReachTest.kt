@@ -135,21 +135,26 @@ class SensitiveToStringReachTest {
     @DisplayName("소스에 선언된 data·value class 가 전부 탐지 범위에 든다 — 제외가 검사받는다")
     fun `소스에 선언된 타입이 전부 탐지 범위에 든다`() {
         val declared = ProductClasses.declaredInMainSources()
-        val loaded = ProductClasses.onTestRuntimeClasspath().mapNotNull { it.simpleName }.toSet()
-        val missing = declared.filterNot { it.simpleName in loaded }
+        // **바이너리 이름**으로 맞춘다. 단순 이름으로 맞추면 다른 모듈의 동명 타입이 대신
+        // 맞아 미적재가 통과한다 — 게이트 25 가 고친 빈자리이고, 실측은 `worker` 에 `api` 와
+        // 같은 이름의 DTO 를 넣어 확인했다(옛 판 초록 / 새 판 빨강).
+        val loaded = ProductClasses.onTestRuntimeClasspath().map { it.java.name }.toSet()
+        val missing = declared.filterNot { it.binaryName in loaded }
 
         assertThat(declared)
             .withFailMessage { "`*/src/main/kotlin` 에서 선언을 하나도 찾지 못했다 — 소스 대조가 0건을 훑고 통과한다" }
             .hasSizeGreaterThanOrEqualTo(MIN_SOURCE_DECLARATIONS)
 
-        assertThat(missing.map { "${it.kind} class ${it.simpleName} (${it.path})" })
+        assertThat(missing.map { "${it.kind} class ${it.binaryName} (${it.path})" })
             .withFailMessage {
                 "아래 타입이 소스에는 선언돼 있는데 이 탐지기의 클래스패스에는 없다:\n" +
-                    missing.joinToString("\n") { "  - ${it.kind} class ${it.simpleName} — ${it.path}" } +
-                    "\n  탐지 범위가 **선언보다 좁다.** 원인은 둘 중 하나다 —\n" +
+                    missing.joinToString("\n") { "  - ${it.kind} class ${it.sourceName} — ${it.path}" } +
+                    "\n  탐지 범위가 **선언보다 좁다.** 원인은 셋 중 하나다 —\n" +
                     "  ⑴ 그 모듈이 `api` 테스트 런타임에 없다(오늘 `worker` 가 그렇다). 그러면 이 테스트를 " +
                     "그 모듈에서도 돌게 만들어라. 제외 목록에 적어 넘기지 않는다.\n" +
-                    "  ⑵ 클래스패스 필터가 제품 산출물을 걸렀다. `ProductClasses` 의 표식을 확인하라."
+                    "  ⑵ 클래스패스 필터가 제품 산출물을 걸렀다. `ProductClasses` 의 표식을 확인하라.\n" +
+                    "  ⑶ 소스 파서가 중첩 사슬을 잘못 이었다(함수 본문 안의 지역 `data class` 가 그렇다). " +
+                    "`ProductClasses` KDoc 「못 잡는 것」 ⑷ 를 보라."
             }.isEmpty()
     }
 

@@ -195,3 +195,112 @@ privacy-gate 레인이 같은 시각 스캐너(`.claude/skills/migration-safety-
    그 엔드포인트를 만들 때 재야 한다. 오늘 확인한 것은 「계약이 `schema` 로 형식을 적어 두었다」까지다.
 4. **`Secret`·`PasswordHash`** — `Secret` 은 도달로 검사 범위에 들어왔다(§1.3). `PasswordHash` 는
    오늘 어떤 `data class` 의 필드도 아니라 **닿지 않는다**. 그쪽은 여전히 개별 KDoc 규율뿐이다.
+
+---
+
+## 6. 게이트 25 — 소스↔적재 대조 키를 **바이너리 이름**으로 (stop-time 지적 반영)
+
+§1.4 가 세운 「소스에 선언된 타입이 전부 탐지 범위에 든다」는 **공허하게 통과할 수 있었다.**
+지적을 받고 확인·수정한 내용이다. §1~§5 는 그대로 두고 여기 덧붙인다.
+
+### 6.1 무엇이 틀렸었나
+
+대조가 **단순 이름**으로 이뤄졌다 —
+`declared.filterNot { it.simpleName in loaded }`(`loaded` 는 `KClass.simpleName` 집합).
+그래서 `worker` 모듈의 DTO 가 다른 모듈의 **같은 단순 이름** 클래스와 충돌하면,
+클래스패스에 `worker` 가 통째로 없는데도 「발견됨」으로 통과한다.
+
+이것은 §1.4 가 막으려던 것과 정확히 같은 형태의 결함이다. §1.4 는 「제외 사유가 검사받지
+않는다」를 고쳤는데, 그 검사 자체가 **키 충돌로 무력화**될 수 있었다.
+
+### 6.2 고친 방식
+
+- 소스 쪽에서 `package` 선언과 **중첩 사슬**을 읽어 JVM 바이너리 이름을 만든다
+  (`kr.easydoc.application.conversion.Outcome$Body`). 적재 쪽은 `KClass.java.name`.
+- 중첩 판정은 **중괄호를 세어서** 한다. 그러려면 주석·문자열이 먼저 지워져야 해서
+  (`"{"` 한 글자, `"http://…"` 안의 `//`, `"${f { it }}"` 템플릿이 전부 깊이를 어긋낸다)
+  중첩 블록 주석·원시 문자열·문자열 템플릿 안 코드까지 다루는 렉서를 넣었다.
+- `companion object` 는 컴파일러가 넣는 `Companion` 칸을 그대로 반영한다
+  (`Named$Factory$Made` 처럼 이름 붙은 것도).
+- **읽어 내지 못하면 끊는다** — `package` 없음, 짝 안 맞는 중괄호, 안 닫힌 문자열은 예외다.
+  조용히 넘기면 그 파일의 선언이 전부 검사 밖으로 나간다.
+
+### 6.3 고치다 드러난 **부수 결함 1건** — 중첩 3건이 최상위로 잘못 나왔다
+
+바이너리 이름을 붙이자마자 셋이 빨개졌다. 원인은 파서가 **주 생성자 파라미터를 멤버 선언으로
+셌기** 때문이다 — 파라미터가 여러 줄로 펴지면 `val` 이 줄 머리에 오고, 그것을 멤버로 세면
+본문을 기다리던 바깥 타입이 파라미터 목록에서 지워진다. 처방은 「괄호 안에서는 선언 머리를
+보지 않는다」. 실측으로 드러난 세 건:
+
+| 선언 | 잘못 낸 이름 | 고친 뒤 |
+|---|---|---|
+| `EasyDocProperties.CryptoProperties` | `kr.easydoc.api.config.CryptoProperties` | `…EasyDocProperties$CryptoProperties` |
+| `Argon2Phc.Costs` | `kr.easydoc.infrastructure.auth.Costs` | `…Argon2Phc$Costs` |
+| `Argon2Phc.Header` | `kr.easydoc.infrastructure.auth.Header` | `…Argon2Phc$Header` |
+
+단순 이름 대조에서는 이 셋이 **전부 조용히 통과**했다. 키를 좁히지 않았다면 드러나지 않았을
+결함이라, 게이트를 좁힌 값어치가 이 셋에 그대로 나온다.
+
+### 6.4 지적 ③ — 파서의 다른 공허 경로를 **실측**했다
+
+「잡는 것/못 잡는 것」을 KDoc 산문으로만 두면 파서가 바뀌어도 산문은 그대로 남는다. 그래서
+합성 소스로 재는 `SourceScanFormsProbe`(api 테스트, 4건)를 새로 넣고 KDoc 은 그 결과를 적는다.
+
+**잡는다** — `internal`/`private` 등 수식어 · 앞 줄 애너테이션(인자 있어도) · **같은 줄**
+애너테이션(`@JvmInline value class`, `@Suppress("x") data class`) · `data object` ·
+클래스/`sealed interface`/`object`/`enum class`/`companion object` 안의 중첩 ·
+주 생성자를 `@JsonCreator constructor(…)` 로 분리한 형태(`AuthDtos.kt`) ·
+주 생성자 파라미터가 여러 줄인 형태(§6.3) · 주석·문자열 **안**의 `data class` 는 세지 않는다(과잉 탐지 0).
+
+**못 잡는다** — ⑴ 애너테이션 인자가 여러 줄에 걸친 뒤 같은 줄에 오는 선언, ⑵ 줄 머리가 아닌
+선언(`val x = 1; data class Y`), ⑶ use-site target 이 붙은 같은 줄 애너테이션
+(`@field:Suppress("x") data class Y`), ⑷ 함수 본문 안의 **지역** `data class`(이름은 뽑지만
+사슬을 함수 몸통까지 따라가지 못한다).
+⑴~⑶ 은 미탐지라 조용하고, ⑷ 는 틀린 이름을 내 시끄럽게 깨진다. 넷 다 오늘 main 소스 **0건**.
+넓히지 않은 이유: 넷 다 이 저장소의 선언 형태가 아니고, 파서를 늘리는 비용이 선언 형태를
+바꾸는 비용보다 크다. **미탐지 방향이라 과잉 차단을 만들지도 않는다.**
+
+### 6.5 음성 대조 (일회용 worktree 3개, `git worktree add --detach` / `cp` 미사용)
+
+`worker/src/main/kotlin/kr/easydoc/worker/CollisionProbe.kt` 에
+`data class HealthResponse(val status: String)` 를 넣었다 — `api` 의
+`kr.easydoc.api.health.HealthResponse` 와 **단순 이름이 같다**.
+
+| # | 대조 | 결과 |
+|---|---|---|
+| ⑴ | 옛 판(`44eec3f`) + 충돌 DTO | **exit 0 (초록)** — 미적재인데 통과. 지적이 실재한다 |
+| ⑴′ | 새 판 + 충돌 DTO | **exit 1 (빨강)** — `data class kr.easydoc.worker.HealthResponse` 로 지목 |
+| ⑵ | 새 판, 충돌 DTO 없음 | **선언 44 · 미매치 0** — 기존 전건 매치, 과잉 탐지 0 (`grep` 실측 44 와 일치) |
+| ⑶ | 새 판 + 충돌 DTO + `worker` 산출물을 테스트 런타임에 얹음 | **exit 0 (초록)** |
+| ⑶′ | 다시 `worker` 제외 | **exit 1 (빨강)** — 빨강이 클래스패스 소속을 따라간다 |
+
+⑶ 은 「빨강이 우연이 아니라 클래스패스 미포함 때문」임을 가른다. ⑵ 의 44 건에는 §6.3 의 중첩
+셋이 올바른 바이너리 이름으로 들어 있다.
+
+### 6.6 검사 표
+
+**주의** — 이 배치를 재는 동안 같은 작업 트리에서 다른 레인이 AEAD 저장 암호화
+(`core/crypto/`·`infrastructure/crypto/`·`V3__…sql`)를 진행 중이었고, 그 미완성 코드가
+전체 빌드를 빨갛게 만든다(`StoredContent.kt` ktlint 5건, `AesGcmContentCipher.kt` detekt
+`ReturnCount`, Flyway V2/V3 관련 테스트 실패). **그것은 이 배치의 회귀가 아니다.** 그래서
+검사는 `HEAD(7fb47ee)` + **이 배치의 3파일만** 얹은 일회용 worktree에서 쟀다.
+
+| 검사 | 명령 | 결과 |
+|---|---|---|
+| api 단독 | `./gradlew :api:test --rerun-tasks` | **exit 0** |
+| Kotlin 전 구간 | `./gradlew ktlintCheck detekt build --continue` | **exit 0** (81 tasks) |
+| 스캐너(CI 명령) | `uv run python .claude/skills/migration-safety-gate/scripts/scan_privacy_invariants.py` | **exit 0** |
+| 무접촉 | 커밋 대상 | `backend-kotlin/api/src/test/**` 3파일뿐 — `00_progress.md`·`contracts/`·`.claude/`·`app/` **0건** |
+
+Python 게이트(`ruff`/`mypy`/`pytest`)는 **이번에 실행하지 않았다** — 이 배치는 Python 0줄
+변경이고, 같은 트리에서 다른 레인이 `contracts/`·`.claude/` 를 동시에 고치고 있어 그 결과가
+이 배치의 것이 아니게 된다. §4 의 기록이 마지막 실측이다. **미실행이지 통과가 아니다.**
+
+### 6.7 남은 것
+
+- §5-2(`worker` 모듈 도달)는 **그대로 남아 있다.** 이번 수정은 「충돌로 못 잡던 것을 잡게」
+  만들었을 뿐, worker 를 검사 범위에 넣지 않았다. Phase 5 가 worker 에 DTO 를 만들면
+  이 테스트가 빨개지고, 그때 그 모듈에서도 돌게 배선해야 한다(§6.5 ⑶ 이 그 배선이
+  실제로 초록을 만든다는 것까지 재 두었다).
+- 파서의 미탐지 ⑴~⑶(§6.4)은 넓히지 않았다. main 소스에 그 형태가 들어오면
+  `SourceScanFormsProbe` 를 함께 고친다.
