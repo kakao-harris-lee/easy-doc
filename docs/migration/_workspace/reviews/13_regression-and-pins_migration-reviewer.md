@@ -57,7 +57,7 @@
 
 | ID | 지적 | 근거 | 심각도 | 마감 |
 |---|---|---|---|---|
-| **N-01** | **해소 확인** — C-6. `Export.kt:53-54` 금지 문자에 `-` 포함(C1), `Export.kt:114` `takeCodePoints`, `Export.kt:224-227` 구현. `Content-Disposition` 값으로 나가는 이름에서 보이지 않는 제어문자가 사라졌고 서로게이트 반토막이 막혔다. 경계는 `ExportTest.kt:84-111` 로 고정 | `Export.kt:47-57,60-77,111-116,217-227` | — | 닫힘 |
+| **N-01** | **해소 확인** — C-6. `Export.kt:53-54` 금지 문자에 `\x7f-` 포함(C1), `Export.kt:114` `takeCodePoints`, `Export.kt:224-227` 구현. `Content-Disposition` 값으로 나가는 이름에서 보이지 않는 제어문자가 사라졌고 서로게이트 반토막이 막혔다. 경계는 `ExportTest.kt:84-111` 로 고정 | `Export.kt:47-57,60-77,111-116,217-227` | — | 닫힘 |
 | **N-02** | **게이트 12 #5 처방의 fixture 절반이 미집행.** 처방은 *"C1·보충평면·예약어 케이스 추가"* 였는데 추가된 것은 Kotlin 단위 테스트뿐이다. `export.json` 파일명 7케이스의 입력은 여전히 C0(`U+0000`·`U+001F`)와 BMP 한글뿐 — **parity 게이트는 C1·서로게이트 절단을 0건 측정한다** | `parity/fixtures/export/export.json`(7 filename 케이스 입력) | **수정 필요** | Phase 4 착수 전(#5와 동일) |
 | **N-03** | **비교기의 금지 문자 집합이 `Export.kt` 와 같은 커밋에서 갈렸다.** `compare_parity.py:915-919` `FILENAME_FORBIDDEN` 은 C0+DEL 까지이고 **C1 이 없다.** 실측: `_derive_title_markers("보고서최종")` → `['보고서최종']` 을 요구하는데 고쳐진 Kotlin 산출은 `보고 서최종` 이다. **N-02 를 집행하는 순간 거짓 실패가 난다.** 게다가 같은 커밋이 실패 메시지를 *"어떤 구현 방식으로도 사라질 수 없는 것만 요구한다"* 로 바꿨는데, **그 문장이 이 자리에서 거짓**이다 — 사라지게 만든 것이 바로 같은 커밋의 `Export.kt` 다 | `compare_parity.py:915-919` ↔ `Export.kt:53-54` · `compare_parity.py:752-756` | **수정 필요** | N-02 와 동시 |
 | **N-04** | `export-txt-bytes` 에 `content_sha256_hex` 단언이 없다. 케이스 이름은 "bytes" 인데 단언은 전부 `content_utf8`(디코드된 문자열) 위에 있다 — 바이트 보장은 여전히 미검증(게이트 12 #11 미해소) | `parity/fixtures/export/export.json` `export-txt-bytes` | 권고 | Phase 4 착수 전 |

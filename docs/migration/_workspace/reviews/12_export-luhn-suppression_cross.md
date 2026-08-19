@@ -28,7 +28,7 @@
 | V-2 | Luhn 값 직접 계산 | `0000411111111111` **invalid** · `4111111111111111` **valid** — codex 반례가 성립한다 |
 | V-3 | Luhn 도입 전 CARD `accept` (`git show 2839ec8~1`) | `accept` 인자 **없음** = 기본 `{ true }`. **도입 전에는 전건 채택** |
 | V-4 | `_marker_touches` (`scan_privacy_invariants.py:1062-1072`) | 비교 대상 = `rule_id` · `reason` 비어있지 않음 · `digest` · **물리 줄**. `call_ref` **없음** |
-| V-5 | `FORBIDDEN_IN_FILENAME` (`Export.kt:54`) | `[\x00-"\\/:*?<>\|]` — **C0·DEL만. C1(U+0080–U+009F) 없음** |
+| V-5 | `FORBIDDEN_IN_FILENAME` (`Export.kt:54`) | `[\x00-\x1f\x7f"\\/:*?<>\|]` — **C0·DEL만. C1(U+0080–U+009F) 없음** |
 | V-6 | `MAX_FILENAME_STEM` 적용 (`Export.kt:98`) | `.take(80)` = **UTF-16 코드 유닛**. KDoc은 *"**문자 수로 센다**"*로 선언 |
 | V-7 | export fixture 파일명 7케이스 입력 실측 | 제어문자 케이스는 `U+0000`·`U+001F`뿐, 길이 케이스는 **BMP 한글만**. C1·보충평면 입력 0건 |
 | V-8 | `canonical_count` 산출 (`ci.yml:281-284`) | `dump_parity_fixtures.py --list` = **BUILDERS 키**. fixture 디렉터리가 아니다 |
@@ -254,7 +254,7 @@ codex C-3의 *"그 인자를 exception.message나 문서 본문으로 바꿔도 
 
 **C-6의 두 주장 모두 실측으로 확인했다.**
 
-- **C1 제어문자**: `FORBIDDEN_IN_FILENAME = Regex("""[\x00-"\\/:*?<>|]""")` — C0(U+0000–U+001F)와 DEL(U+007F)뿐. U+0080–U+009F 미포함(V-5). 다만 이 문자들은 `filename*` 쪽에서 퍼센트 인코딩되므로 **헤더 ASCII 계약은 깨지지 않는다** — 피해는 파일명 훼손에 한정된다. Claude가 §2.9에서 확인한 RFC 5987 정합은 유효하다.
+- **C1 제어문자**: `FORBIDDEN_IN_FILENAME = Regex("""[\x00-\x1f\x7f"\\/:*?<>|]""")` — C0(U+0000–U+001F)와 DEL(U+007F)뿐. U+0080–U+009F 미포함(V-5). 다만 이 문자들은 `filename*` 쪽에서 퍼센트 인코딩되므로 **헤더 ASCII 계약은 깨지지 않는다** — 피해는 파일명 훼손에 한정된다. Claude가 §2.9에서 확인한 RFC 5987 정합은 유효하다.
 - **UTF-16 절단**: `.take(80)`은 Kotlin `String.take`이므로 **코드 유닛** 단위다. **그런데 바로 위 KDoc은 *"**문자 수로 센다.** 파일 시스템 상한은 바이트지만 … 여기서 바이트로 세면 사용자가 보는 길이와 어긋난다"*로 선언한다**(V-6). 즉 이 항목은 단순 버그가 아니라 **선언한 범위와 실제 도달이 갈린 자리**다 — 그래서 표에서 축을 `도달 범위(계약 준수)`로 잡았다. BMP 79자 뒤에 보충평면 문자가 오면 상위 서로게이트만 남고 UTF-8 변환에서 대체문자가 된다.
 - **fixture 공백**: 파일명 7케이스 입력을 직접 열었다(V-7). 제어문자 케이스는 `제\x00목\x1f입니다`, 길이 케이스는 `가` 반복(전부 BMP). **C1·보충평면·결합문자·윈도우 예약 basename 입력이 0건이다.**
 
