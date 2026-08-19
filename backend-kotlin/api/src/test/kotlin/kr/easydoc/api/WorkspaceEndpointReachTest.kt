@@ -257,8 +257,9 @@ class WorkspaceEndpointReachTest {
     @Test
     @DisplayName("WR-8 위조 토큰 + UUID 가 아닌 경로 변수 → 401 (422 가 아니다) — X-A3")
     fun `인증이 경로 변수 변환보다 먼저다`() {
-        val response =
-            send(jsonRequest(itemPath(NOT_A_UUID), FORGED_TOKEN).method(PATCH.uppercase(), bodyPublisher(nameBody("가"))))
+        val forged = jsonRequest(itemPath(NOT_A_UUID), FORGED_TOKEN)
+
+        val response = send(forged.method(PATCH.uppercase(), bodyPublisher(nameBody("가"))))
 
         assertDeclaredStatus(response, UNAUTHORIZED, ITEM_PATH, PATCH)
     }
@@ -333,7 +334,8 @@ class WorkspaceEndpointReachTest {
         val lastOne = ContractSpec.pathExampleDetail(ITEM_PATH, DELETE, CONFLICT, LAST_ONE_EXAMPLE)
         assertThat(bodyOf(response)["detail"]).isEqualTo(lastOne)
         // 두 갈래를 한 문구로 합치면 사용자가 무엇을 해야 하는지 알 수 없다.
-        assertThat(lastOne).isNotEqualTo(ContractSpec.pathExampleDetail(ITEM_PATH, DELETE, CONFLICT, HAS_DOCUMENTS_EXAMPLE))
+        val hasDocuments = ContractSpec.pathExampleDetail(ITEM_PATH, DELETE, CONFLICT, HAS_DOCUMENTS_EXAMPLE)
+        assertThat(lastOne).isNotEqualTo(hasDocuments)
     }
 
     @Test
@@ -425,7 +427,11 @@ class WorkspaceEndpointReachTest {
         path: String,
         token: String?,
     ): HttpRequest.Builder {
-        val builder = HttpRequest.newBuilder(URI.create("http://localhost:$port$path")).header("Content-Type", "application/json")
+        val builder =
+            HttpRequest
+                .newBuilder(
+                    URI.create("http://localhost:$port$path"),
+                ).header("Content-Type", "application/json")
         token?.let { builder.header("Authorization", "Bearer $it") }
         return builder
     }

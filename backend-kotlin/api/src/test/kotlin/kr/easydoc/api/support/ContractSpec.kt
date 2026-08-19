@@ -332,8 +332,9 @@ object ContractSpec {
             ContractPathParameter(
                 name = declaration["name"]?.toString() ?: error("$path 의 parameters 에 name 이 없다"),
                 location = declaration["in"]?.toString() ?: error("$path 의 parameters 에 in 이 없다"),
-                format = (declaration["schema"] as? Map<*, *>)?.get("format")?.toString()
-                    ?: error("$path 의 parameters 에 schema.format 이 없다"),
+                format =
+                    (declaration["schema"] as? Map<*, *>)?.get("format")?.toString()
+                        ?: error("$path 의 parameters 에 schema.format 이 없다"),
             )
         }
 

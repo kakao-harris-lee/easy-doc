@@ -1,6 +1,7 @@
 package kr.easydoc.application.workspace
 
 import kr.easydoc.application.auth.TransactionRunner
+import kr.easydoc.application.auth.WorkspaceDeletionState
 import kr.easydoc.application.auth.WorkspaceRepository
 import kr.easydoc.core.exceptions.ConflictException
 import kr.easydoc.core.exceptions.NotFoundException
@@ -90,12 +91,7 @@ class WorkspaceService(
                 workspaces.lockForDeletion(ownerId, workspaceId)
                     ?: throw NotFoundException(WORKSPACE_NOT_FOUND_MESSAGE)
 
-            if (state.ownedWorkspaceCount <= 1) {
-                throw ConflictException(LAST_WORKSPACE_MESSAGE)
-            }
-            if (state.documentCount > 0) {
-                throw ConflictException(WORKSPACE_HAS_DOCUMENTS_MESSAGE)
-            }
+            refusalFor(state)?.let { throw ConflictException(it) }
 
             // 잠금을 쥔 채 지운다. `false` 는 위 판정과 이 삭제 사이에 행이 사라졌다는
             // 뜻인데, 같은 트랜잭션에서 잠근 행이므로 일어날 수 없다 — 일어났다면 잠금
@@ -103,6 +99,19 @@ class WorkspaceService(
             check(workspaces.delete(ownerId, workspaceId)) { "잠근 작업 공간이 삭제되지 않았다" }
         }
     }
+
+    /**
+     * 삭제를 거절해야 하면 그 사유 문구, 아니면 `null`.
+     *
+     * **판정을 한 함수에 모은 이유**는 두 갈래의 **순서가 규칙이기 때문**이다. 호출부에
+     * 흩어 놓으면 순서가 코드 배치의 부산물처럼 보이고, 다음 사람이 별생각 없이 뒤집는다.
+     */
+    private fun refusalFor(state: WorkspaceDeletionState): String? =
+        when {
+            state.ownedWorkspaceCount <= 1 -> LAST_WORKSPACE_MESSAGE
+            state.documentCount > 0 -> WORKSPACE_HAS_DOCUMENTS_MESSAGE
+            else -> null
+        }
 
     private fun validName(rawName: String): String = requireValidWorkspaceName(normalizeWorkspaceName(rawName))
 }

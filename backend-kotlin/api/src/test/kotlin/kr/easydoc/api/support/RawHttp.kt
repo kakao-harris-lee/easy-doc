@@ -252,7 +252,10 @@ private fun readLine(input: InputStream): String {
  * [expectedStatus] 는 이 요청이 어떤 상태 코드로 거절되는지다. 그 값이 달라지면 측정의
  * 전제가 깨진 것이므로 테스트가 먼저 그것을 알린다.
  */
-enum class ContainerRejectedRequest(val expectedStatus: Int, val contractCase: String) {
+enum class ContainerRejectedRequest(
+    val expectedStatus: Int,
+    val contractCase: String,
+) {
     /**
      * 요청 대상에 금지 문자(`<`).
      *

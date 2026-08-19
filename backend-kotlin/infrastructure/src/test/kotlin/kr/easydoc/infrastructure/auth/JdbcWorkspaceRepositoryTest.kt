@@ -119,7 +119,12 @@ class JdbcWorkspaceRepositoryTest {
         assertThat(workspaces.rename(stranger, mine.id, "빼앗기")).isNull()
         assertThat(workspaces.rename(stranger, UUID.randomUUID(), "빼앗기")).isNull()
         // 남의 것은 바뀌지 않았다.
-        assertThat(workspaces.listOwned(owner).single().workspace.name).isEqualTo("내 것")
+        assertThat(
+            workspaces
+                .listOwned(owner)
+                .single()
+                .workspace.name,
+        ).isEqualTo("내 것")
     }
 
     @Test
@@ -216,7 +221,7 @@ class JdbcWorkspaceRepositoryTest {
 
     // ================================================================ 픽스처
 
-    private fun newUser(): UUID = users.create(uniqueEmail(), PasswordHash("\$argon2id\$v=19\$m=1,t=1,p=1\$c2FsdA\$aGFzaA")).id
+    private fun newUser(): UUID = users.create(uniqueEmail(), FIXTURE_HASH).id
 
     private fun uniqueEmail(): String = "workspace-repo${counter++}@example.test"
 
@@ -243,6 +248,9 @@ class JdbcWorkspaceRepositoryTest {
 
     private companion object {
         var counter = 0
+
+        /** 형태만 맞으면 되는 더미 PHC — 이 파일은 비밀번호 검증을 재지 않는다. */
+        val FIXTURE_HASH = PasswordHash("\$argon2id\$v=19\$m=1,t=1,p=1\$c2FsdA\$aGFzaA")
 
         const val CONCURRENT_DELETERS = 2
         const val BARRIER_TIMEOUT_SECONDS = 10L
