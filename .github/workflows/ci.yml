@@ -174,6 +174,13 @@ jobs:
       # 배선하는 것은 러너가 아니라 러너의 계약 테스트다.
       - name: 게이트 러너 계약 실재 확인 (경로 명시)
         run: uv run pytest tests/test_run_gate.py
+      # 같은 규약을 Kotlin 가드 클래스 대조에도 적용한다 (게이트 25 H4).
+      # 여기서 도는 것은 **선언 ↔ 트리 정확 일치**와 내용 결속뿐이다 — 가드 파일을
+      # 지우면 kotlin 잡을 기다리지 않고 이 값싼 잡에서 먼저 빨개진다.
+      # **실행 대조(리포트 XML)는 여기서 돌지 않는다** — 이 잡에는 Gradle 리포트가 없어
+      # skip 으로 넘어간다. 그 절반은 아래 kotlin 잡이 요구 모드로 켠다.
+      - name: Kotlin 가드 클래스 실재 확인 (경로 명시)
+        run: uv run pytest tests/test_kotlin_gate_reach.py
       - run: uv run pytest
       # 골든셋 LLM 평가(-m llm)는 API 키 시크릿 등록 후 별도 잡으로 활성화한다.
 
@@ -266,6 +273,27 @@ jobs:
         run: ./gradlew :core:test --no-daemon --tests kr.easydoc.core.privacy.ProvenanceCreationSitesTest
       - name: 탐지기 존재 확인 — MaskedText 생성 통로 (단독 삭제 시 실패)
         run: ./gradlew :core:test --no-daemon --tests kr.easydoc.core.privacy.MaskedTextGatewayTest
+
+      # 가드 클래스 **전체**의 실행 대조 (게이트 25 H4 — codex 단독 지적).
+      #
+      # 위 두 스텝은 클래스를 **손으로 적어** 둘만 지킨다. 그 사이 Phase 3~4 에서 가드가
+      # 여럿 늘었고, 늘어난 것들은 지워도 CI 가 통과하는 상태였다. 여기서는 목록을 손으로
+      # 적지 않고 `tests/test_kotlin_gate_reach.py` 가 트리와 **정확 일치**로 대조한다.
+      #
+      # 이 스텝이 위 `build` **뒤에** 있어야 하는 이유: 대조의 절반이 방금 만들어진
+      # `build/test-results/test/*.xml` 을 읽어 "그 클래스가 실제로 돌았는가"를 본다.
+      # 리포트가 없으면 그 절반은 skip 이 되므로, 여기서 요구 모드를 켜서 **건너뛰기
+      # 자체를 실패로** 만든다 — 아티팩트가 없을 때 조용히 초록이 되는 것이 이 종류의
+      # 전형적인 빈자리다.
+      #
+      # `working-directory: .` 인 이유는 이 잡의 기본값이 `backend-kotlin` 이기 때문이다.
+      # 이 스텝 자체의 삭제는 이 스텝이 막지 못한다 — 다만 그 삭제는 quality 잡의
+      # `test_CI_가_이_대조를_경로_명시로_배선했다` 에서 빨개진다(장치 밖 단언).
+      - name: Kotlin 가드 클래스 실행 대조 (리포트 XML — 삭제·미실행 시 실패)
+        working-directory: .
+        env:
+          KOTLIN_GATE_REACH_REQUIRE_REPORT: "1"
+        run: uv run pytest tests/test_kotlin_gate_reach.py
 
       # --- parity 게이트 배선 (Phase 0 필수 조치 E) ---------------------------
       # 산출물(parity/actual/)을 **Kotlin 테스트가** 만든다는 것을 CI에서 보장한다.
