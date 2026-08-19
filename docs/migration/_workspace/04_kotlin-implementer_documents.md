@@ -1,6 +1,6 @@
 # Phase 4 `documents` 작업 단위 — 구현 산출물
 
-**작성:** kotlin-implementer / **일자:** 2026-08-20 / **상태:** **진행 중 — 계획 §7.2 의 C1 까지.**
+**작성:** kotlin-implementer / **일자:** 2026-08-20 / **상태:** **진행 중 — 계획 §7.2 의 C2 까지.**
 **계획(정본):** `04_kotlin-implementer_documents-plan.md` (커밋 `5261cfe`, §9.2 는 이 배치에서 추가).
 
 > 이 문서는 단위가 끝날 때까지 **이어 쓴다.** 계획 §7.2 의 C8 이 가리키는 파일이 이것이다 —
@@ -8,16 +8,14 @@
 
 ---
 
-## 0. 이번 세션이 한 것 / 하지 않은 것 (한눈에)
+## 0. 지금까지 한 것 / 하지 않은 것 (한눈에)
 
 | | |
 |---|---|
-| **끝난 것** | **C1 — 문서 추출기(docx·pdf·hwpx)와 파서 방어.** version catalog + 락파일 5개, `core/document`, `application/document` 포트, `infrastructure/ingest` 9개 파일, fixture 12개 이관 + README, 테스트 클래스 8개(케이스 70), 게이트 핀 갱신 |
-| **하지 않은 것 (이 단위 잔여)** | C2~C8 전부. 그리고 **표 18 TRACE 카나리 회귀**(계획 §9.2 D-f — C1 이 아니라 C3 이전으로 옮겼다, **리더 확인 필요**) |
-| **검사** | Kotlin build/ktlint/detekt/moduleBoundaryCheck **통과** · Python ruff/mypy/pytest **통과** · 개인정보 스캐너 **통과(BLOCK 0)** · parity harness **§6 참고** |
-| **워킹 트리** | 커밋 뒤 clean (§7) |
-
----
+| **끝난 것** | **C1 — 문서 추출기(docx·pdf·hwpx)와 파서 방어** (§1~§6) · **C2 — 문서·변환 저장 경로**(§A~§F, 아래) |
+| **하지 않은 것 (이 단위 잔여)** | C3~C8. 그리고 **표 18 TRACE 카나리 회귀**(계획 §9.2 D-f — C3 이전, **리더 확인 필요**) |
+| **검사** | C1·C2 모두 Kotlin build/ktlint/detekt/moduleBoundaryCheck **통과** · Python ruff/mypy/pytest **통과** · 개인정보 스캐너 **통과(BLOCK 0)** · parity harness **통과** |
+| **워킹 트리** | 커밋 뒤 clean |
 
 ## 1. C1 이 만든 것 — 모듈별
 
@@ -206,3 +204,157 @@ xmlbeans 5.3.0 · log4j-to-slf4j(BOM). 다섯 모듈 락파일을 **같은 커�
 5. **리더 판정 L-1(계약 `EnqueueFailed`/502 를 lease 큐에 맞게 개정)** 이 계약 레인에 내려갔다.
    C2 의 큐 등록은 그 판정을 전제로 **같은 트랜잭션**에 둔다 — 계획 §9 질문 ② 의 잠정 전제
    (원자성을 일부러 버림)는 **쓰지 않는다.**
+
+
+---
+
+# C2 — 문서·변환 저장 경로 (2026-08-20)
+
+> 계획 §7.2 의 두 번째 커밋. **HTTP 표면은 만들지 않는다** — 컨트롤러·DTO 는 C3 이다.
+> 계획에서 벗어난 지점은 **계획 문서 §9.2-bis 에 먼저 적고** 코드가 그대로 들어갔다.
+
+## A. C2 가 만든 것 — 모듈별
+
+### A.1 `core/document`
+
+| 파일 | 내용 | 원본(참고) |
+|---|---|---|
+| `DocumentLimits.kt` | `MAX_CONVERTIBLE_CHARS`·`MAX_UPLOAD_BYTES`·`MAX_TITLE_LENGTH` · `charCountOf` · `takeCodePoints` | `app/services/documents.py` 모듈 상수, `app/ingest/extractors.py::MAX_UPLOAD_BYTES` |
+| `ConversionStatus.kt` | 상태 enum + `wireName` + `ofWireName`(모르는 값은 5xx) | `app/models/conversion.py::ConversionStatus` |
+| `Document.kt` | `Document` · `DocumentListing` (둘 다 손으로 쓴 `toString`) | `app/models/document.py`, `app/repositories/documents.py::DocumentPage` |
+| `Conversion.kt` | `Conversion`(6필드) · `MaskedItemView` | `app/models/conversion.py`, `app/services/documents.py::MaskedItemView` |
+| `TitleRules.kt` | `resolveTitle` — 첫 줄 유도 · 어절 경계 · 말줄임 · 상한 자르기 · 대체 제목 | `_resolve_title`·`_shorten_derived_title` |
+
+`SourceFormat.kt` 에 `ofWireName` 을 더했다(C1 이 만든 파일의 additive 확장).
+
+### A.2 `application/document`
+
+| 파일 | 내용 | 원본(참고) |
+|---|---|---|
+| `DocumentPorts.kt` | `DocumentDraft` · `DocumentRepository` · `ConversionCiphertexts` · `ConversionEnvelope` · `ConversionRepository` · `ConversionQueue` · `DocumentStorage` · `WorkspaceLookup` | `app/services/documents.py` 의 세 `Protocol`, `app/repositories/*` |
+| `DocumentMessages.kt` | 사용자 문구 6종(계약 예시 자리를 각 상수에 적었다) | 같은 파일의 예외 문구 |
+| `DocumentService.kt` | 업로드(붙여넣기·파일)·목록 · `AcceptedUpload` | `DocumentService.create_from_text`·`create_from_file`·`list_documents` |
+| `EnvelopeRotation.kt` | 행 단위 재암호화 유스케이스 · `RotationOutcome` | 대응 없음 — Python 은 회전을 범위 밖으로 뒀다 |
+
+### A.3 `infrastructure/document` · `infrastructure/queue`
+
+| 파일 | 내용 |
+|---|---|
+| `JdbcDocumentRepository.kt` | INSERT(봉투 2값 명시) · `LEFT JOIN LATERAL` 목록 · 원문 읽기 · 단일 UPDATE 회전 |
+| `JdbcConversionRepository.kt` | 대기 변환 INSERT(봉투 2값 명시) · 봉투 읽기 · **세 열 단일 UPDATE** 회전 |
+| `JdbcWorkspaceLookup.kt` | 소유 조건을 WHERE 에 합친 작업 공간 읽기 둘 |
+| `MaskedItemCodec.kt` | 마스킹 대응표 **저장 형식**(평문 JSON → 통째 AEAD) 인코더·디코더 |
+| `DocumentStorageLog.kt` | 저장소가 남기는 **유일한** 로그 — SQLSTATE·형식 오류 사유 토큰만 |
+| `DocumentConfiguration.kt` | 조립(`@Profile("!migrate")`) |
+| `JdbcConversionQueue.kt` | `conversion_jobs` 등록(멱등 · 같은 트랜잭션) |
+| `V5__conversion_jobs.sql` | lease 기반 큐 테이블 + 제약 4 + 부분 인덱스 2 |
+
+## B. 원장 마감 항목의 처분
+
+| 항목 | 처분 |
+|---|---|
+| **X9/F-6** 조립된 빈을 **실제 키**로 쓰는 통합 테스트 | **닫았다** — `DocumentStorageContextTest`. 실행 시점 난수 키 + `KeyCheckValue.of()` 로 계산한 KCV 를 넣은 컨텍스트가 자기점검을 **통과해** 뜨고, 그 `DocumentService` 빈이 실제 PostgreSQL 에 INSERT 하고 `ContentCipher` 빈이 그 행을 다시 연다. **2세대 키 회전 왕복**도 조립된 빈으로 돈다(쓰기 세대 1 컨텍스트가 쓴 행을 쓰기 세대 2 컨텍스트가 회전) |
+| **자기점검이 정말 돌았는가** | 같은 파일에서 **검사값이 틀린 키를 주면 컨텍스트가 뜨지 않음**을 단언한다 — 이것이 없으면 위 초록이 「자기점검이 꺼진 채 통과」와 구분되지 않는다 |
+| **X5/F-5** 재암호화 4조건 | **닫았다** — 포트 형태로 구조 강제 + `EnvelopeRotationTest`(유스케이스 축 11건) + `JdbcDocumentStoreTest`(문장 수·NULL 보존·낙관적 조건, 실제 DB) |
+| **K-2** `CountingDataSource` 의 `JdbcClient` 전제 | **닫았다** — `StatementCountingPremiseTest` 가 `application` 포트를 구현한 `infrastructure` 구상 클래스를 **종류로** 훑어, 누구도 raw JDBC 손잡이를 들지 않음을 확인한다. 분모가 비면 빨개진다(0건 통과 방지). `CountingDataSource` KDoc 이 그 파일을 가리킨다 |
+| **X2** `PlainBody` 웹 직렬화 fail-closed | **C3** (응답 DTO 가 생기는 커밋) — 지시대로 손대지 않았다 |
+| **표 18** TRACE 로거 3종 | **C3 이전** — 계획 §9.2 D-f, 리더 확인 대기 |
+| **타이밍 X3 의 codex A-6 처방** | **미배정** — 이 커밋 범위 밖 |
+
+## C. 계획에서 벗어난 지점 (전건, 계획 §9.2-bis 와 같은 내용)
+
+**D-g** D-1 의 L1(서비스 층 바이트 상한)만 C2 로 · **D-h** C-P 503 을 두 케이스로 분해(조립 경로에서 도달 불가) ·
+**D-i** `Conversion` 6필드로 축소 · **D-j** `Document` 에서 `workspaceId` 제거 · **D-k** `DocumentStorage` 묶음 신설 ·
+**D-l** `JdbcWorkspaceLookup` 별도 클래스 · **D-m** 큐 등록을 같은 트랜잭션(리더 지시, §9 질문 ② 잠정 전제 폐기) ·
+**D-n** 문자 수·자르기를 코드 포인트 단위로.
+
+사유는 계획 문서 §9.2-bis 표에 실측과 함께 있다. **여기 옮겨 적지 않는다** — 두 벌이 되면 갈린다.
+
+## D. 원본과 **의도적으로 다르게** 구현한 지점 (C2 몫)
+
+| # | 자리 | Python | Kotlin | 왜 |
+|---|---|---|---|---|
+| **B-1** | 저장 → 커밋 → 큐 등록 | `INSERT → commit → enqueue`. 등록 실패 시 `failure_code = "EnqueueFailed"` + 502 | **세 행이 한 트랜잭션** | 큐가 같은 PostgreSQL 이라 「커밋 전에 넣으면 워커가 없는 행을 읽는다」는 이유가 사라졌다. 계획 §4.4 가 정한 구조이고 리더 지시다. **계약 502 조항의 처분은 계약 레인 몫** |
+| **B-2** | `key_version` | 컬럼 DEFAULT 로만 찍고 이후 UPDATE 가 갱신하지 않는다 — 회전이 그 사이에 일어나면 컬럼과 실제 키가 갈린다(실측: `app/repositories/**` 에 `key_version` 이 한 번도 안 나온다) | `EncryptedContent` 가 세 값을 묶고 **UPDATE 가 봉투를 함께 쓴다** | 포팅이 아니라 **다른 설계**다. `V3` 가 DEFAULT 를 없앤 것과 짝을 이룬다 |
+| **B-3** | 마스킹 대응표 범주 | 저장 JSON 에 `MaskCategory.value`(한국어)를 그대로 적는다 | **안정된 저장 키**(`rrn`·`card`) ↔ 응답은 계약 enum 값 | 한국어 값이 **그대로 화면 문구**다(React 가 `<td>{item.category}</td>`). 저장 형식으로 쓰면 문구를 다듬는 날 옛 행이 안 읽힌다. 매핑은 `MaskedItemCodec.CATEGORY_KEYS` 한 곳 |
+| **B-4** | 문자 수 | `len()` = 코드 포인트 | `charCountOf` = 코드 포인트(`String.length` 가 아니다) | 값은 Python 과 같고 **Kotlin 기본과 다르다**. 코드 단위로 세면 이모지 문서가 두 배로 환산되고, 자를 때 서로게이트 쌍이 쪼개진다 |
+| **B-5** | 저장소 예외 로그 | 없음(예외를 그대로 올린다) | **SQLSTATE 다섯 글자만** 남긴다 | PostgreSQL 이 제약 위반 `DETAIL` 에 실패한 행 전체(암호문·제목)를 담는다. SQLSTATE 로 **갈래를 나누지도 않는다**(계획 §9.1) |
+| **B-6** | 회전 시 `updated_at` | 대응 없음 | **건드리지 않는다** | 재암호화는 내용의 변경이 아니다. 회전 배치가 전 행의 `updated_at` 을 오늘로 밀면 그 컬럼의 뜻이 사라진다 |
+
+## E. 이 커밋이 **열지 못한** 도달 / 미포팅 잔여
+
+- **X1(짝 없는 서로게이트)의 도달은 여전히 0 이다.** 저장 경로가 `PlainBody` 를 지나게 됐지만
+  (`DocumentService.store`), 그 경로에 **고아 서로게이트를 넣을 입력이 없다** — 붙여넣기 JSON 은
+  C3 이고, C2 의 테스트는 전부 정상 문자열이다. 제목 쪽은 `takeCodePoints` 가 **쪼개지 않음**을
+  단언하지만 그것은 「우리가 만들지 않는다」이지 「들어온 것을 거부한다」가 아니다.
+  **계획 §6.4 가 요구한 「제목에도 같은 정의역 판정」은 아직 하지 않았다** — 사용자가 준 제목에
+  고아 서로게이트가 있으면 그대로 JDBC 로 간다. C3(입력 표면)이 그 판정을 붙여야 한다.
+- **Q-12(Jackson 3 의 짝 없는 서로게이트 이스케이프) 여전히 미확인.** 계획대로 C3 착수 전 실측이다.
+- **`Conversion` 의 결과 필드 미포팅**(§C D-i) — `missing_placeholders`·`provider_name`·`model`·
+  토큰 수·`reviewed_at`. C6 이 더한다. `DocumentListing.reviewedAt` 은 목록 질의가 직접 읽으므로
+  영향이 없다.
+- **`conversion_jobs` 소비 경로 0** — `FOR UPDATE SKIP LOCKED` 획득·lease 회수·backoff·재시도
+  상한은 Phase 5 다. V5 는 **자리와 제약**만 만든다.
+- **`EnvelopeRotation` 의 호출자 0** — 운영 CLI·스케줄 중 무엇인지가 계획 §9 질문 ⑦ 의 열린 판정이다.
+  빈으로는 조립되므로 「조립조차 안 되는 코드」는 아니다.
+- **`MaskedItemCodec` 의 쓰기 호출자 0** — 쓰는 쪽은 Phase 5 워커다. 그래서 **양방향**을 지금 못박았다.
+
+## F. 검사 결과 (미실행은 「미실행」으로 적는다)
+
+| 검사 | 명령 | 결과 |
+|---|---|---|
+| Kotlin 품질·빌드·테스트 | `./gradlew ktlintCheck detekt build --continue --rerun-tasks` | **통과 (exit 0)** · warning 0(`allWarningsAsErrors`) |
+| 모듈 경계 | `./gradlew moduleBoundaryCheck` | **통과 (exit 0)** — api·worker 양쪽 |
+| parity | `./gradlew parityHarness` | **통과 (exit 0)** — 선언 8개 전부 산출물 확인. C2 는 parity 도메인을 건드리지 않았다 |
+| 개인정보 스캐너 | `uv run python .claude/skills/migration-safety-gate/scripts/scan_privacy_invariants.py` | **통과 (exit 0, BLOCK 0)** |
+| Python 게이트 | `uv run ruff check .` | **통과 (exit 0)** |
+| | `uv run mypy . .claude` | **통과 (exit 0)** — 139 files |
+| | `uv run pytest` | **통과 (exit 0)** — 1408 passed, 68 skipped, 5 deselected, 5 xfailed |
+| Kotlin 게이트 도달 | `uv run pytest tests/test_kotlin_gate_reach.py tests/test_raw_control_chars.py` | **통과 (exit 0)** — 101 passed |
+| 골든셋 | — | **해당 없음** — 프롬프트·스타일 규칙·LLM 설정을 건드리지 않았다 |
+| 계약 음성 대조 N-23~N-28 | — | **미실행.** 전부 C3 이후 몫이다(계획 §8.5) |
+| compose 스모크 | — | **미실행** (이 배치). 선결 P4 는 리더가 이번 회차에 닫았다 — `04_leader_compose-smoke.md` |
+
+**게이트 명령에 파이프를 쓰지 않았다** — 출력은 파일로 받고 종료 코드를 별도로 읽었다.
+
+**전체 Kotlin 테스트**: 115 클래스 / 910 케이스(C1 시점 대비 **+7 클래스 / +79 케이스**).
+C2 가 더한 것 — `TitleRulesTest`(15) · `DocumentServiceTest`(18) · `EnvelopeRotationTest`(11) ·
+`MaskedItemCodecTest`(9) · `JdbcDocumentStoreTest`(20) · `DocumentStorageContextTest`(4) ·
+`StatementCountingPremiseTest`(2). `tests/test_kotlin_gate_reach.py` 의 핀을 78 → **85** 로 갱신했다.
+
+### F.1 구현 중 **실측으로 뒤집힌 것 셋** (다음 사람이 같은 자리를 밟지 않도록)
+
+1. **한 구상 클래스가 두 포트를 겸하면 Spring 주입이 모호해진다.** `JdbcWorkspaceRepository` 가
+   `WorkspaceLookup` 을 함께 구현하게 하자 `api`·`worker` 기동 테스트가 전건 빨개졌다
+   (`NoUniqueBeanDefinitionException: found 2: workspaceRepository, workspaceLookup`).
+   → 포트 하나당 구상 클래스 하나(`JdbcWorkspaceLookup`).
+2. **저장소와 트랜잭션 관리자가 같은 `DataSource` 인스턴스를 봐야 한다.** 다른 것을 주면 저장소가
+   autocommit 커넥션을 잡아 **롤백이 아무것도 되돌리지 않는다** — 「등록 실패는 저장을 되돌린다」가
+   처음에 초록이 아니라 **거짓 빨강**으로 드러났다(문서가 남아 있었다). 테스트 헬퍼가 인자를
+   `DataSource` 하나로 좁혀 그 갈림을 구조적으로 막는다.
+3. **Jackson 3 의 `JsonNode.map(Function)` 이 Kotlin `Iterable.map` 을 가린다.** 그대로 쓰면
+   반환 타입이 조용히 갈린다(컴파일 오류로 드러났다). `values()` 로 원소 컬렉션을 먼저 꺼낸다.
+
+## G. `parity-verifier` 에게 (모듈 완료 통보)
+
+**완료 모듈**: `core/document`(제목 규칙·상한·상태) · `application/document`(업로드·목록·회전 유스케이스) ·
+`infrastructure/document`·`infrastructure/queue`(JDBC 저장·큐 등록·대응표 코덱).
+
+**대응 Python 원본**: `app/services/documents.py`(업로드·목록·제목) · `app/repositories/documents.py`·
+`conversions.py` · `app/queue.py`. **포팅하지 않은 것**: `save_review`·`get_conversion`·`export_conversion`
+(각각 C7·C6·`export` 단위) · `deserialize_masked_items` 의 응답 매핑(C6).
+
+**요청**: `parity/fixtures/` 에 문서 저장 도메인을 신설할 필요는 없다고 본다 — 이 단위가 재는 것은
+값이 아니라 **성질**(원자성·봉투·소유 범위·회전)이고 그것은 실제 DB 없이 재현되지 않는다.
+계획 §9 질문 ⑨(`ingest` 도메인)와 함께 판단이 필요하면 알려 달라.
+
+## H. 다음(C3)이 이어받을 것
+
+- 컨트롤러·DTO · multipart 설정(L0) · **D-2 상한 초과 예외 매핑** · **D-3 초과분 삼키기**
+- **X2** `PlainBody`·`MaskedText`·`ModelDraft`·`ReviewedBody`·`EncryptedContent` 가 응답 DTO 주 생성자에
+  **없음**을 단언(계획 §4.5) — DTO 가 생기는 그 커밋이다
+- **§6.4 제목의 정의역 판정**(위 §E) — 사용자가 준 제목에 고아 서로게이트가 있는 경로
+- **Q-12 실측** 후 X1 첫 도달 배치
+- **표 18 TRACE 카나리**(계획 §9.2 D-f, 리더 확인 뒤)
+- `AuthenticatedEndpoints` 에 새 경로 등재 · **P-23~P-37 파서 노드** · **DC-1~DC-23**
+- 계약 레인 **L-1 잔여 두 갈래**(502 매핑·DC-19)와 **L-2 tie-break** 를 같은 변경 단위로

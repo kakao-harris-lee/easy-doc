@@ -287,8 +287,15 @@ class SensitiveToStringReachTest {
          *
          * 정확 일치의 비용은 새 타입을 더할 때 이 숫자를 함께 고치는 것이다. 그 한 줄이
          * 리뷰에 「이번에 무엇이 검사 범위에 들어왔는가」를 드러내므로 비용이 아니라 값이다.
+         *
+         * 46 → 48 (2026-08-20, 문서 저장 경로 커밋): `core.document.MaskedItemView` 와
+         * `application.document.AcceptedUpload` 둘이다. 나머지 문서 도메인 타입
+         * (`Document`·`Conversion`·`DocumentListing`·`DocumentDraft`·`ConversionCiphertexts`·
+         * `ConversionEnvelope`·`DocumentStorage`)은 **일반 class** 라 이 수에 들어오지 않고,
+         * 그중 사용자 콘텐츠를 든 것은 손으로 쓴 `toString()` 을 갖는다 — 그쪽은 위
+         * 「R-10 일반 class 축」이 잰다.
          */
-        const val EXPECTED_SOURCE_DECLARATIONS = 46
+        const val EXPECTED_SOURCE_DECLARATIONS = 48
 
         /**
          * 민감 판정이 반드시 닿아야 하는 타입 — **바닥**이다.

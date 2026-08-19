@@ -1,5 +1,7 @@
 package kr.easydoc.core.document
 
+import kr.easydoc.core.exceptions.StorageException
+
 /**
  * 문서가 어디서 왔는가 — 붙여넣기(`text`)이거나 업로드한 파일의 소문자 확장자다.
  *
@@ -52,6 +54,18 @@ enum class SourceFormat(val wireName: String) {
          * (`지원 형식: docx, pdf, hwpx` 안내 문구가 이 순서를 그대로 쓴다).
          */
         val UPLOAD_FORMATS: List<SourceFormat> = listOf(DOCX, PDF, HWPX)
+
+        /**
+         * 저장된 컬럼 값(`documents.source_format`)을 형식으로 되읽는다.
+         *
+         * 모르는 값은 [kr.easydoc.core.exceptions.StorageException] 이다 — 사용자 입력
+         * 문제가 아니라 **DB 에 우리가 모르는 형식이 들어 있다**는 뜻이고, 조용히 [TEXT]
+         * 같은 값으로 접으면 목록이 거짓을 보여 준다. [ConversionStatus.ofWireName] 과
+         * 같은 규약이고 문구도 같다.
+         */
+        fun ofWireName(value: String): SourceFormat =
+            entries.firstOrNull { it.wireName == value }
+                ?: throw StorageException(ConversionStatus.UNKNOWN_STATUS_MESSAGE)
 
         /**
          * 파일 이름의 확장자로 업로드 형식을 가린다. 대소문자를 가리지 않는다.

@@ -153,6 +153,8 @@ TEST_CLASSES: tuple[str, ...] = (
     "kr.easydoc.application.conversion.ConversionParityTest",
     "kr.easydoc.application.conversion.ConvertDocumentUseCaseTest",
     "kr.easydoc.application.conversion.RepairDecisionTest",
+    "kr.easydoc.application.document.DocumentServiceTest",
+    "kr.easydoc.application.document.EnvelopeRotationTest",
     "kr.easydoc.core.CoreDomainsParityTest",
     "kr.easydoc.core.CoreModuleBoundaryTest",
     "kr.easydoc.core.ExportParityTest",
@@ -161,6 +163,7 @@ TEST_CLASSES: tuple[str, ...] = (
     "kr.easydoc.core.SecretTest",
     "kr.easydoc.core.WorkspaceNameLeakTest",
     "kr.easydoc.core.crypto.PlainBodyTest",
+    "kr.easydoc.core.document.TitleRulesTest",
     "kr.easydoc.core.easyread.ExportTest",
     "kr.easydoc.core.easyread.GlossCollisionTest",
     "kr.easydoc.core.easyread.PostprocessTest",
@@ -188,6 +191,10 @@ TEST_CLASSES: tuple[str, ...] = (
     "kr.easydoc.infrastructure.crypto.EncryptionSchemeSchemaTest",
     "kr.easydoc.infrastructure.db.FlywayBaselineGuardTest",
     "kr.easydoc.infrastructure.db.PythonSchemaBaselineTest",
+    "kr.easydoc.infrastructure.db.StatementCountingPremiseTest",
+    "kr.easydoc.infrastructure.document.DocumentStorageContextTest",
+    "kr.easydoc.infrastructure.document.JdbcDocumentStoreTest",
+    "kr.easydoc.infrastructure.document.MaskedItemCodecTest",
     "kr.easydoc.infrastructure.ingest.DocumentExtractorsTest",
     "kr.easydoc.infrastructure.ingest.DocxExtractorTest",
     "kr.easydoc.infrastructure.ingest.ExtractedTextBuilderTest",
@@ -204,7 +211,7 @@ TEST_CLASSES: tuple[str, ...] = (
 
 #: 선언 **개수**를 목록과 따로 적는다. 파일과 선언을 함께 지우는 편집이 두 자리에
 #: 흔적을 남기게 하는 장치다. 목록을 고쳤으면 여기도 고쳐야 한다.
-TEST_CLASS_COUNT = 78
+TEST_CLASS_COUNT = 85
 
 
 def _kotlin_test_sources() -> list[Path]:

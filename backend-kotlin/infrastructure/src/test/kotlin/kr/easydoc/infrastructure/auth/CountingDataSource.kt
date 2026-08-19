@@ -36,7 +36,13 @@ import javax.sql.DataSource
  * 본다. 그 우회는 `JdbcClient` 를 버리고 raw JDBC 로 내려가야 성립한다 — `JdbcClient` 는
  * SQL 문자열 하나당 `PreparedStatement` 하나를 만들고 한 `PreparedStatement` 에 다른 SQL 을
  * 태울 수 없기 때문이다. **저장소가 `JdbcClient` 를 벗어나는 순간 이 계수기의 전제가
- * 깨진다** — 그때 이 KDoc 을 함께 고쳐야 한다. 오늘 그 전제는 코드로 참이다.
+ * 깨진다** — 그때 이 KDoc 을 함께 고쳐야 한다.
+ *
+ * **그 전제는 이제 산문이 아니라 장치다**(원장 K-2, 문서 저장소 커밋에서 닫았다):
+ * [kr.easydoc.infrastructure.db.StatementCountingPremiseTest] 가 `application` 포트를
+ * 구현한 `infrastructure` 클래스를 **종류로** 훑어, 그중 누구도 raw JDBC 손잡이
+ * (`DataSource`·`Connection`·`JdbcTemplate` 계열)를 들지 않음을 상시로 확인한다.
+ * 그 파일의 KDoc 에 **이 장치가 막지 못하는 것**도 함께 적혀 있다.
  *
  * ## 계측이 들어가는 자리 — **서비스 경계다** (게이트 23 F-4)
  *
