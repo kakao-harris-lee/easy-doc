@@ -1514,6 +1514,39 @@ OWNERSHIP_403_SHAPES: list[tuple[str, str, str, bool]] = [
     # 밑줄로 이어 붙인 이름은 사용처가 `\b` 경계 때문에 안 잡히므로 **선언이 남아야** 한다.
     ("N18 밑줄 결합 이름 상수 선언", ".kt", "    private const val HTTP_FORBIDDEN = 403", True),
     ("N19 파이썬 밑줄 결합 상수", ".py", "FORBIDDEN_STATUS = 403", True),
+    # ── 게이트 24 ⓐ — 밑줄 결합 상수 두 이름을 명시 토큰으로 더했다 (리더 재판정) ──
+    #
+    # 아래 둘은 앞선 판에서 `xfail(strict=True)` 의 **선언된 0** 이었다. 그 판정은
+    # 「`\b` 경계를 푸는 갈래」에 대한 기각이었고 — 그 기각은 지금도 유효하다(P8·P9) —
+    # 「명시 토큰 추가」 갈래는 그 판정의 대상이 아니었다. 3관점 실측(codex 게이트 23·24,
+    # Claude S-2 · CI 동일 명령 exit 0) 뒤 리더가 후자를 별개 처방으로 채택했다.
+    #
+    # **여기가 `blocks=True` 인 것이 채택의 본체다** — `False` 로 되돌리면 진짜 403 을 내는
+    # 두 줄이 다시 조용해진다.
+    (
+        "N20 서블릿 상수 sendError",
+        ".kt",
+        "response.sendError(HttpServletResponse.SC_FORBIDDEN)",
+        True,
+    ),
+    ("N21 FastAPI status 상수", ".py", "raise HTTPException(status.HTTP_403_FORBIDDEN)", True),
+    # `sendError` 관용구 — 맨 `sendError` 를 토큰으로 올리지 **않고도** 전건 잡힌다는 증거.
+    # (올리면 `sendError(404)`·`sendError(500)` 까지 출구 없는 규칙의 후보가 된다.)
+    ("N22 sendError 상수 직접", ".kt", "response.sendError(SC_FORBIDDEN)", True),
+    ("N23 sendError + 메시지 인자", ".kt", 'response.sendError(SC_FORBIDDEN, "denied")', True),
+    (
+        "N24 sendError HttpStatus 값",
+        ".kt",
+        "response.sendError(HttpStatus.FORBIDDEN.value())",
+        True,
+    ),
+    # 확장 뒤에도 ③ 의 전제("이름이 토큰일 때만 뺀다")가 성립하는가 — 선언은 빠지고 사용처가 잡힌다.
+    (
+        "N25 밑줄 결합 상수 선언 + 사용처",
+        ".kt",
+        "    private const val SC_FORBIDDEN = 403\n    fun deny() = r.sendError(SC_FORBIDDEN)",
+        True,
+    ),
     # ── 빠져야 하는 것: 403 을 만들어 낼 수 없는 세 형태 ──
     ("P1 부호 반전 단언", ".kt", "assertThat(r.statusCode()).isNotEqualTo(FORBIDDEN)", False),
     ("P2 assertNotEquals 첫 인자", ".kt", "assertNotEquals(403, r.statusCode())", False),
@@ -1525,16 +1558,23 @@ OWNERSHIP_403_SHAPES: list[tuple[str, str, str, bool]] = [
     #    규칙에 닿기 전에 이미 빠진다. 저장소의 실제 오탐 두 자리가 이 형태였다
     #    (`AuthContractTest.kt:324` · `AuthEndpointReachTest.kt:527`).
     ("P7 KDoc 인라인 코드 백틱", ".kt", "    /**\n     * 실측 (`'401'`→`'403'`).\n     */", False),
-]
-
-#: **선언된 미도달.** `\b` 경계 때문에 밑줄에 둘러싸인 토큰은 잡히지 않는다 —
-#: 정밀화 이전부터 그랬고(옛 패턴으로 실측: 무적중) 이번 변경과 무관하다. 넓히지 않은 이유는
-#: 경계를 풀면 `FORBIDDEN_IN_FILENAME`(파일명 정화)·`FORBIDDEN_ANNOTATIONS`(계약 검사) 같은
-#: **HTTP 와 무관한 이름**이 전부 BLOCK 이 되어, 출구 없는 규칙에 새 오탐 무리를 들이기
-#: 때문이다. 조용한 0 대신 **선언된 0** 으로 둔다 — 탐지에 넣는 순간 `xpass` 로 뒤집힌다.
-OWNERSHIP_403_KNOWN_MISSES: list[tuple[str, str, str]] = [
-    ("FastAPI status 상수", ".py", "raise HTTPException(status.HTTP_403_FORBIDDEN)"),
-    ("서블릿 상수", ".kt", "response.sendError(HttpServletResponse.SC_FORBIDDEN)"),
+    # ── 기각을 유지한 갈래의 회귀 — `\b` 경계는 그대로다 (게이트 24 ⓐ 리더 재판정) ──
+    #
+    # 명시 토큰 두 개를 더했다고 경계까지 푼 것이 아니다. 경계를 풀면 아래 두 이름처럼
+    # **HTTP 와 무관한 밑줄 결합 이름**이 전부 BLOCK 이 되는데, 이 규칙은 표기로 누를 수
+    # 없어(`UNMARKABLE_RULES`) 그 오탐에 출구가 없다. 두 갈래가 뒤섞이지 않도록 여기서 잰다.
+    (
+        "P8 HTTP 무관 이름(파일명 정화)",
+        ".kt",
+        '    private val FORBIDDEN_IN_FILENAME = setOf("/")',
+        False,
+    ),
+    (
+        "P9 HTTP 무관 이름(계약 검사)",
+        ".kt",
+        '    private val FORBIDDEN_ANNOTATIONS = listOf("@Deprecated")',
+        False,
+    ),
 ]
 
 
@@ -1564,20 +1604,31 @@ def test_ownership_403_형태_목록(
     assert _ownership_403_blocks(scanner, tmp_path, suffix, source) is blocks
 
 
-@pytest.mark.parametrize(
-    ("name", "suffix", "source"),
-    [pytest.param(*shape, id=shape[0]) for shape in OWNERSHIP_403_KNOWN_MISSES],
-)
-@pytest.mark.xfail(strict=True, reason="알려진 미도달 — `\\b` 경계와 밑줄 (선언된 0)")
-def test_ownership_403_알려진_미도달(
-    scanner: ModuleType, tmp_path: Path, name: str, suffix: str, source: str
-) -> None:
-    """밑줄에 둘러싸인 `403`·`FORBIDDEN` 은 경계 때문에 잡히지 않는다.
+def test_밑줄_결합_상수_두_이름이_명시_토큰이다(scanner: ModuleType) -> None:
+    """**옛 `xfail(strict)` 2건이 정상 통과로 바뀐 이유의 구조 고정** (게이트 24 ⓐ).
 
-    `xfail(strict=True)` 라 누가 경계를 풀면 `xpass` 로 **실패**한다 — 그때 이 목록에서
-    빼라는 신호이고, 동시에 새로 생기는 오탐 무리를 함께 보라는 신호다.
+    앞선 판은 `HTTP_403_FORBIDDEN`·`SC_FORBIDDEN` 을 `OWNERSHIP_403_KNOWN_MISSES` +
+    `xfail(strict=True)` 로 **선언된 0** 에 두었다. 그 판정은 「`\\b` 경계를 푸는 갈래」에
+    대한 기각이었고 — 그 기각은 지금도 유효하다(P8·P9) — 「명시 토큰 추가」갈래는 그
+    판정의 대상이 아니었다. 3관점 실측 뒤 리더가 후자를 별개 처방으로 채택했다.
+
+    형태 목록(N20~N25)이 결과를 재고, 이 테스트는 **결과가 그렇게 나오는 이유**를 잰다 —
+    누가 두 이름을 토큰에서 빼면 형태 목록보다 먼저 시끄러워진다. 동시에 맨 `sendError`
+    가 토큰으로 올라가지 않았음을 못 박는다: 올리면 `sendError(404)`·`sendError(500)`
+    처럼 403 과 무관한 호출이 **출구 없는 규칙**의 후보가 되는데 그 확장에 근거가 없다.
     """
-    assert _ownership_403_blocks(scanner, tmp_path, suffix, source)
+    token = scanner._403_TOKEN  # 동적 적재 모듈
+
+    for name in ("HTTP_403_FORBIDDEN", "SC_FORBIDDEN"):
+        assert name in token, (
+            f"{name} 이 탐지 토큰에서 빠졌다 — 밑줄 결합 상수가 다시 조용한 0 이 된다. "
+            "이름 관문(불활성 ③)도 같은 조각에서 파생되므로 함께 되돌아간다."
+        )
+    assert "sendError" not in token, (
+        "맨 `sendError` 가 토큰으로 올라갔다 — 403 과 무관한 `sendError(404)` 까지 "
+        "출구 없는 규칙의 후보가 된다. 관용구는 `403`·`SC_FORBIDDEN` 토큰으로 이미 "
+        "전건 잡힌다(N5·N20·N22·N23)."
+    )
 
 
 def test_불활성_상수_제외는_탐지와_같은_토큰_조각을_쓴다(scanner: ModuleType) -> None:
