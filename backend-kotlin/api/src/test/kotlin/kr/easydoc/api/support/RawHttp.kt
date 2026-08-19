@@ -231,39 +231,46 @@ private fun readLine(input: InputStream): String {
  * 검사, 요청 줄 형식, 헤더 줄 형식, 헤더 크기 상한, `Host` 검증, 프로토콜 버전. 한 갈래만
  * 두면 다른 갈래에서 도달 경로가 달라져도 모른다.
  *
- * ## 계약이 든 7종 중 여기 없는 하나 (게이트 21 · contract-keeper §3-4)
+ * ## 계약과 **집합으로** 대조한다 (게이트 22)
  *
- * 계약 `x-global-response-headers.x-phase3-measurement.unreachable_by_filter.cases` 는
- * 이 자리를 **7종**으로 열거하는데 이 열거자는 **6개**다. 빠진 하나는 「알 수 없는 메서드
- * → 405」인데, 원시 소켓 실측 결과 **그것은 컨테이너가 거절하는 자리가 아니다** —
- * `FROB /health` 는 서블릿까지 도달해 Spring MVC 가 405 를 만든다(`Allow: GET` 이 붙고
- * 본문이 우리 `{"detail":"Method Not Allowed"}` 이며 Content-Type 에 밸브가 붙이는
- * `;charset=UTF-8` 이 없다). 즉 `reachable_by_filter` 소속이고 계약 쪽 분류가 사실과
- * 다르다. 계약 수정 권한은 `contract-keeper` 에 있으므로 여기서는 **열거자를 넣지 않고**
- * 그 경로를 [kr.easydoc.api.PrivateResponseHeadersReachTest] 의 도달 케이스로 따로 잰다.
+ * 각 상수가 자기가 재는 계약 갈래 이름([contractCase])을 든다. 그 이름 집합이 계약
+ * `x-global-response-headers.x-phase3-measurement.unreachable_by_filter.cases` 와 정확히
+ * 같은지를 [kr.easydoc.api.ContainerRejectionCoverageContractTest] 가 판정한다.
+ *
+ * **개수로 대조하지 않는 이유**: 계약이 한 갈래를 빼고 다른 갈래를 넣으면 개수는 그대로다.
+ * 그 상태에서 이 열거자는 **없어진 갈래를 계속 재면서** 초록으로 남고, 새로 생긴 갈래는
+ * 아무도 재지 않는다. 집합 대조는 양쪽 방향을 함께 잡는다.
+ *
+ * 갈래 이름 문자열이 코드와 계약 양쪽에 있는 것은 **중복이 아니라 대조의 조건**이다 —
+ * 한쪽만 바뀌면 그 사실이 빨강으로 드러나야 하고, 그러려면 두 벌이 있어야 한다.
+ *
+ * 종전에 이 열거자가 6개인데 계약이 7종을 셌던 자리는 **계약 쪽 정정으로 닫혔다**
+ * (`4a25a7c` · `x-405-reclassification`) — 「알 수 없는 메서드 → 405」는 서블릿까지 도달해
+ * Spring MVC 가 만드는 응답이라 `reachable_by_filter` 소속이고, 그 경로는
+ * [kr.easydoc.api.PrivateResponseHeadersReachTest] 가 도달 케이스로 따로 잰다.
  *
  * [expectedStatus] 는 이 요청이 어떤 상태 코드로 거절되는지다. 그 값이 달라지면 측정의
  * 전제가 깨진 것이므로 테스트가 먼저 그것을 알린다.
  */
-enum class ContainerRejectedRequest(val expectedStatus: Int) {
+enum class ContainerRejectedRequest(val expectedStatus: Int, val contractCase: String) {
     /**
      * 요청 대상에 금지 문자(`<`).
      *
      * Tomcat 의 `relaxedPathChars` 기본값이 비어 있어 거절된다
      * ("Invalid character found in the request target" — `Http11InputBuffer.parseRequestLine`).
      */
-    INVALID_REQUEST_TARGET(BAD_REQUEST) {
+    INVALID_REQUEST_TARGET(BAD_REQUEST, "요청 대상(request target) 금지 문자 → 400") {
         override fun build(port: Int): ByteArray =
             RawHttp.raw("GET /health<bad> HTTP/1.1\r\nHost: 127.0.0.1:$port\r\nConnection: close\r\n\r\n")
     },
 
     /** 요청 줄이 HTTP 로 보이지도 않는다 — 평문 포트에 TLS 핸드셰이크가 들어온 상황이 실제 사례다. */
-    GARBAGE_REQUEST_LINE(BAD_REQUEST) {
+    GARBAGE_REQUEST_LINE(BAD_REQUEST, "요청 줄 파손(malformed request line) → 400") {
         override fun build(port: Int): ByteArray = RawHttp.raw(" ÿ garbage\r\n\r\n")
     },
 
     /** 헤더 블록이 `server.max-http-request-header-size`(기본 8KB)를 넘는다. */
-    OVERSIZED_HEADER(BAD_REQUEST) {
+    OVERSIZED_HEADER(BAD_REQUEST, "헤더 상한 초과 → 400") {
         override fun build(port: Int): ByteArray =
             RawHttp.raw(
                 "GET /health HTTP/1.1\r\nHost: 127.0.0.1:$port\r\n" +
@@ -277,7 +284,7 @@ enum class ContainerRejectedRequest(val expectedStatus: Int) {
      * 실측: 400 이고 본문 Content-Type 이 `application/json;charset=UTF-8` — 밸브가 만드는
      * 형태다(서블릿 경로는 charset 을 붙이지 않는다).
      */
-    HEADER_WITHOUT_COLON(BAD_REQUEST) {
+    HEADER_WITHOUT_COLON(BAD_REQUEST, "콜론 없는 헤더 줄 → 400") {
         override fun build(port: Int): ByteArray =
             RawHttp.raw(
                 "GET /health HTTP/1.1\r\nHost: 127.0.0.1:$port\r\n" +
@@ -286,12 +293,12 @@ enum class ContainerRejectedRequest(val expectedStatus: Int) {
     },
 
     /** HTTP/1.1 인데 `Host` 가 없다. 요청 줄은 멀쩡하지만 헤더 검증에서 거절된다. */
-    MISSING_HOST(BAD_REQUEST) {
+    MISSING_HOST(BAD_REQUEST, "`Host` 헤더 없음 → 400") {
         override fun build(port: Int): ByteArray = RawHttp.raw("GET /health HTTP/1.1\r\nConnection: close\r\n\r\n")
     },
 
     /** 알 수 없는 프로토콜 버전 — 505 다. 400 과 다른 코드로도 같은 자리를 지나는지 본다. */
-    UNKNOWN_PROTOCOL(HTTP_VERSION_NOT_SUPPORTED) {
+    UNKNOWN_PROTOCOL(HTTP_VERSION_NOT_SUPPORTED, "알 수 없는 HTTP 버전 → 505") {
         override fun build(port: Int): ByteArray =
             RawHttp.raw("GET /health HTTP/9.9\r\nHost: 127.0.0.1:$port\r\nConnection: close\r\n\r\n")
     },
