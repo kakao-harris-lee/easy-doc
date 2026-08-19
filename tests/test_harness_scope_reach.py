@@ -19,7 +19,7 @@
 
 강제하는 것:
 
-1. 대상 표 4개 전부에 `실행 경로` 열이 있다.
+1. 대상 표 5개 전부에 `실행 경로` 열이 있다.
 2. **모든 행**이 비어 있지 않은 실행 경로를 갖는다 — `충족` 열의 유무·값과 무관하다.
    빈 칸·`-` 는 어디서든 위반이다.
 3. `충족 = 예` 인 행의 실행 경로는 **실행을 가리킨다** (`안 돎`·`미배선` 불가).
@@ -226,8 +226,9 @@ _BLANK_MARKS: Final = frozenset({"", "-"})
 #: 여러 경로가 함께 도는 행을 잇는 구분자.
 _TOKEN_SEPARATOR: Final = "·"
 
-#: 대상 표 개수 — Phase 0·1·2 종료 조건 표 + 「아직 돌리지 않은 검증 게이트」 표.
-EXPECTED_TARGET_TABLES: Final = 4
+#: 대상 표 개수 — Phase 0·1·2·3 종료 조건 표 + 「아직 돌리지 않은 검증 게이트」 표.
+#: 2026-08-19 게이트 20(`03_auth`): Phase 3 종료 조건 표 신설로 4 → **5**.
+EXPECTED_TARGET_TABLES: Final = 5
 
 #: 판정이 **0건 검사로 통과**하는 것을 막는 기대 개수. **하한이 아니라 정확 일치다.**
 #:
@@ -249,13 +250,19 @@ EXPECTED_TARGET_TABLES: Final = 4
 #: (스냅샷 재생성 diff)을 `ci.yml` **quality 잡**에 배선한 것이고, 그 배선이 두 행의 승격을
 #: 유지시키는 근거다(리더 판정 — 마감 축소가 아니라 CI 배선 완성). 표기가 **는** 방향이라
 #: 이 diff 는 "판정 범위를 넓혔다"는 신고다.
-EXPECTED_ROWS: Final = 45
-EXPECTED_REACH_TOKENS: Final = 54
+#: 2026-08-19 게이트 20(`03_auth`): 행 45 → **52**, 표기 54 → **62**. Phase 3 종료 조건 표를
+#: 신설해 계획 §5 Phase 3 의 다섯 항목 + 종료 조건 두 조각을 **항목당 한 행**으로 옮겼다
+#: (7행 · 표기 8 = `ci:kotlin`×3 · `안 돎`×2 · `ci:kotlin · ci:frontend` · `1회성:…`).
+#: **정체성 집합은 `EXPECTED_MET_YES_KEYS` 쪽이 무변동**이다 — 7행 전건이 `충족 = 아니오` 라
+#: 그 집합에 들어가지 않는다. 대신 7행 전부가 `EXPECTED_UNRESOLVED_KEYS` 에 들어갔다.
+#: 이 diff 가 "판정 범위를 **넓혔다**"는 신고다.
+EXPECTED_ROWS: Final = 52
+EXPECTED_REACH_TOKENS: Final = 62
 
 #: 제목·caption 에서 키를 뽑을 때 자르는 길이. 길수록 사소한 문구 수정마다 상수가 갈리고,
 #: 짧을수록 서로 다른 행이 같은 키로 뭉쳐 삭제가 숨는다. 40자는 현재 18개 행이 전부
 #: 구분되면서(키 충돌 검사가 이를 강제한다) 꼬리말 편집에는 둔감한 지점이다. 표 caption
-#: 에도 같은 값을 쓴다 — 현재 대상 표 4개의 caption 은 전부 40자 미만이라 클립이 걸리지
+#: 에도 같은 값을 쓴다 — 현재 대상 표 5개의 caption 은 전부 40자 미만이라 클립이 걸리지
 #: 않고, 걸려서 두 caption 이 뭉치면 caption 중복 검사가 그것을 위반으로 잡는다.
 _KEY_CLIP: Final = 40
 
@@ -326,6 +333,26 @@ EXPECTED_UNRESOLVED_KEYS: Final[frozenset[tuple[str, str]]] = frozenset(
         ),
         ("Phase 2 — 순수 도메인 로직 포팅", "텍스트 정규화·제어문자 제거 포팅"),
         ("Phase 2 — 순수 도메인 로직 포팅", "프롬프트 렌더링과 동적 어려운 말 목록 포팅"),
+        # Phase 3 — 데이터·인증·작업 공간 API (2026-08-19 신설 · 게이트 20 `03_auth`)
+        #   7행 **전부** 미해결 항목을 들고 있다. 첫 단위 `auth` 로 닫힌 근거가 있어도
+        #   `충족` 은 전건 `아니오` 다 — 보안 축 정본이 차단 B-1 을 냈고 그 판정이
+        #   "B-1 해제 전까지 종료 조건을 닫을 수 없다"이기 때문이다.
+        ("Phase 3 — 데이터·인증·작업 공간 API", "Spring JDBC repository 와 트랜잭션 경계"),
+        ("Phase 3 — 데이터·인증·작업 공간 API", "Argon2·JWT·가입과 기본 작업 공간 원자 생성"),
+        ("Phase 3 — 데이터·인증·작업 공간 API", "`/auth/` · `/workspaces/` 엔드포인트"),
+        ("Phase 3 — 데이터·인증·작업 공간 API", "소유권을 숨기는 404와 unique/check/FK 오류 매핑"),
+        (
+            "Phase 3 — 데이터·인증·작업 공간 API",
+            "React 를 Kotlin API 에 연결한 로그인·작업 공간 E2E",
+        ),
+        (
+            "Phase 3 — 데이터·인증·작업 공간 API",
+            "종료 조건: contract test 와 React 테스트가 Kotlin",
+        ),
+        (
+            "Phase 3 — 데이터·인증·작업 공간 API",
+            "종료 조건: 계약 개선이 있었다면 계약 파일·Kotlin·React 가 ",
+        ),
     }
 )
 
@@ -1005,7 +1032,7 @@ def repo_context() -> JudgeContext:
     )
 
 
-def test_규약_대상_표_네_개를_찾는다(target_tables: list[Table]) -> None:
+def test_규약_대상_표_다섯_개를_찾는다(target_tables: list[Table]) -> None:
     """표를 못 찾으면 아래 판정이 조용히 0건 검사로 바뀐다 — 그 경로를 먼저 막는다."""
     captions = [table.caption for table in target_tables]
     assert len(target_tables) == EXPECTED_TARGET_TABLES, (
