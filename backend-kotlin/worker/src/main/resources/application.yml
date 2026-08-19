@@ -31,6 +31,9 @@ easydoc:
   # worker 도 같은 키를 갖는다 — 변환 결과·마스킹 대응표를 쓰는 쪽이 여기다(Phase 5).
   # api 와 **같은 환경변수 이름**을 읽는다. 두 프로세스가 다른 키를 들면 한쪽이 쓴 행을
   # 다른 쪽이 열지 못하고, 그 실패는 단일 예외라 원인이 드러나지 않는다.
+  #
+  # **값이 비면 worker 도 뜨지 않는다** — api 와 같은 기동 자기점검을 지난다.
+  # 면제되는 프로필은 `migrate` 하나뿐이고 worker 는 거기에 들지 않는다.
   encryption:
     write-key-version: ${EASYDOC_ENCRYPTION_WRITE_KEY_VERSION:1}
     keys:

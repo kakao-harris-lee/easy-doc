@@ -54,7 +54,13 @@ easydoc:
   #
   # 회전 절차: 새 세대를 keys 에 **더하고** write-key-version 을 올린다. 옛 세대를
   # 목록에 남겨 두는 한 그 세대로 쓴 행은 계속 읽힌다(key_version 컬럼이 가리킨다).
-  # 값이 비면 그 세대는 적재되지 않고, 문서 저장 요청만 503 이 된다(기동은 막지 않는다).
+  #
+  # **쓰기 세대의 값이 비면 앱이 뜨지 않는다.** 게이트 25 F-2·F-3 리더 판정으로 기동
+  # 자기점검이 붙었다 — 오설정을 첫 업로드까지 미루면 그 사이에 쓴 행을 되돌릴 수
+  # 없기 때문이다. 자기점검을 끄는 설정은 없다 — 있으면 그것이 곧 배포 시점 우회다.
+  #
+  # 예외는 `migrate` 프로필 하나다. 스키마만 옮기는 실행은 본문 암호화 키를 쥐지 않는다
+  # (아래 migrate 문서 참고).
   encryption:
     write-key-version: ${EASYDOC_ENCRYPTION_WRITE_KEY_VERSION:1}
     keys:
@@ -82,6 +88,14 @@ logging:
 
 ---
 # migrate profile — 스키마만 적용하고 종료한다. compose 의 kotlin-migrate 가 쓴다.
+#
+# **본문 암호화 키를 요구하지 않는다** (게이트 26 조치 2). CryptoConfiguration 이
+# `@Profile("!migrate")` 라 이 프로필에서는 조립되지 않으므로, 키가 비어 있어도 뜨고
+# 키가 있어도 그것을 SecretKey 로 만들지 않는다 — 스키마만 옮기는 잡이 본문 키를
+# 쥘 이유가 없다(privacy-gate R-2 최소 권한).
+#
+# 자기 전제(DB 도달·Flyway 적용)에 대해서는 그대로 fail-fast 다. 면제된 것은
+# 「본문 암호화 키」 하나뿐이고, 그 경계를 CryptoProfileExemptionTest 가 고정한다.
 spring:
   config:
     activate:

@@ -1,0 +1,7 @@
+# 테스트 Spring 컨텍스트에 **진짜** 저장 암호화 키를 넣는다 (게이트 26 조치 1).
+#
+# 이 파일은 testFixtures 소스셋에만 있으므로 bootJar 의 runtimeClasspath 에 실리지 않는다.
+# 키 값은 실행 시점 난수이고, 등록된 프로퍼티 소스는 addLast 라 실제 환경변수와
+# @TestPropertySource 가 언제나 이긴다. 사유 전문은 TestEncryptionKeys KDoc.
+org.springframework.boot.EnvironmentPostProcessor=\
+kr.easydoc.infrastructure.crypto.TestEncryptionKeyEnvironmentPostProcessor

@@ -10,7 +10,6 @@ import org.assertj.core.api.Assertions.assertThatCode
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
-import java.io.File
 import java.security.SecureRandom
 import java.util.Base64
 import java.util.UUID
@@ -158,41 +157,21 @@ class CryptoStartupVerificationTest {
             .doesNotThrowAnyException()
     }
 
-    // ================================================================ 면제 스위치의 도달
-
-    @Test
-    @DisplayName("자기점검은 **기본이 켜짐**이다 — 끄는 것이 기본이면 이 게이트는 아무 데도 없다")
-    fun `자기점검이 기본으로 켜져 있다`() {
-        assertThat(EncryptionProperties().verifyOnStartup).isTrue()
-    }
-
-    @Test
-    @DisplayName("면제 스위치가 **제품 설정에 새지 않았다** — 끄는 자리는 빌드 스크립트 하나뿐이다")
-    fun `면제 스위치가 제품 설정에 없다`() {
-        // 스위치를 두면서 그 스위치가 제품에 닿지 않는지 보는 탐지기를 함께 둔다
-        // (`CLAUDE.md` 규칙 4 — 은폐형은 탐지형으로 갈아탄다).
-        val (leaked, scanned) = productConfigsMentioning(SWITCH_TOKENS)
-
-        assertThat(scanned)
-            .describedAs("제품 설정 파일을 하나도 찾지 못했다 — 이 대조가 0건을 훑고 통과한다")
-            .isNotEmpty()
-        assertThat(leaked)
-            .withFailMessage {
-                "저장 암호화 자기점검 스위치가 제품 설정에 적혔다:\n" +
-                    leaked.joinToString("\n") { "  - $it" } +
-                    "\n  이 스위치를 끌 수 있는 자리는 `build.gradle.kts` 의 테스트 태스크 하나뿐이다.\n" +
-                    "  제품에서 끄면 오설정이 첫 업로드까지 조용해지고, 그때 쓴 행은 되돌릴 수 없다."
-            }.isEmpty()
-    }
-
     // ---------------------------------------------------------------- 도구
 
-    /** `CryptoConfiguration` 을 **실제로 불러** 빈을 만든다. 자기점검은 항상 켠 채로 잰다. */
+    /**
+     * `CryptoConfiguration` 을 **실제로 불러** 빈을 만든다.
+     *
+     * 자기점검을 끄는 인자가 **없다** — 게이트 26 조치 1로 그 설정 자체를 없앴다.
+     * 자기점검 없이 cipher 만 만들어 보고 싶으면 `AesGcmContentCipher` 생성자를 직접
+     * 부르면 된다(`AesGcmContentCipherTest` 가 그렇게 한다). 조립을 지나면서 검사만
+     * 건너뛰는 경로는 두지 않는다.
+     */
     private fun assemble(
         keys: List<EncryptionKeyProperties>,
         writeKeyVersion: Int = 1,
     ) = CryptoConfiguration().contentCipher(
-        EncryptionProperties(writeKeyVersion = writeKeyVersion, keys = keys, verifyOnStartup = true),
+        EncryptionProperties(writeKeyVersion = writeKeyVersion, keys = keys),
     )
 
     private fun entryFor(
@@ -203,33 +182,6 @@ class CryptoStartupVerificationTest {
     /** 설정에 적어야 할 검사값. 제품과 같은 계산을 쓴다 — 여기서 다시 만들면 두 값이 갈린다. */
     private fun kcvOf(key: Secret): String =
         KeyCheckValue.of(SecretKeySpec(Base64.getDecoder().decode(key.reveal()), "AES"))
-
-    /**
-     * 제품 설정 파일 중 [tokens] 를 언급하는 것. 파일 목록을 열거하지 않고 **훑는다** —
-     * 배포 매니페스트가 하나 늘 때 이 대조가 조용히 좁아지지 않게 한다.
-     */
-    private fun productConfigsMentioning(tokens: List<String>): Pair<List<String>, List<File>> {
-        val kotlinRoot =
-            File(
-                System.getProperty("easydoc.kotlin.source.root")
-                    ?: error("easydoc.kotlin.source.root 이 없다 — 제품 설정을 찾을 기준점이 없다"),
-            )
-        val repositoryRoot = kotlinRoot.parentFile
-        val scanned =
-            (
-                kotlinRoot
-                    .walkTopDown()
-                    .filter { it.isFile && it.path.contains("/src/main/resources/") && it.extension == "yml" }
-                    .toList() +
-                    listOfNotNull(
-                        repositoryRoot.resolve("docker-compose.yml").takeIf { it.isFile },
-                        repositoryRoot.resolve(".env.example").takeIf { it.isFile },
-                        kotlinRoot.resolve("Dockerfile").takeIf { it.isFile },
-                    )
-            ).distinct()
-        val leaked = scanned.filter { file -> tokens.any { it in file.readText() } }.map { it.path }
-        return leaked to scanned
-    }
 
     private companion object {
         val RECORD: UUID = UUID.fromString("11111111-1111-4111-8111-111111111111")
@@ -244,9 +196,6 @@ class CryptoStartupVerificationTest {
 
         /** 메시지 누출 검사에서 볼 키 조각 길이. 짧으면 우연히 겹친다. */
         const val KEY_FRAGMENT_LENGTH = 12
-
-        /** 제품 설정에 있으면 안 되는 표기. 설정 키와 환경변수 표기를 함께 본다. */
-        val SWITCH_TOKENS = listOf("verify-on-startup", "verifyOnStartup", "VERIFY_ON_STARTUP")
 
         /** 실행 시점에 만드는 32바이트 키 두 개. 소스에 키 리터럴을 적지 않는다. */
         val KEY_GEN_1: Secret = randomKey()

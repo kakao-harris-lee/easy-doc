@@ -138,17 +138,15 @@ subprojects {
         // 모듈 디렉터리라, 코드에서 상대 경로로 거슬러 올라가면 모듈이 늘 때 조용히 어긋난다.
         systemProperty("easydoc.kotlin.source.root", rootDir.absolutePath)
 
-        // 저장 암호화 기동 자기점검을 테스트 실행에서만 끈다 (게이트 25 F-2·F-3 리더 판정
-        // 「기동 시 fail-fast, 테스트 프로파일 제외」).
+        // 저장 암호화 기동 자기점검을 끄는 시스템 속성이 **여기 없다.** 게이트 26 조치 1로
+        // 그 프로퍼티(`easydoc.encryption.verify-on-startup`) 자체를 없앴다 — 평범한
+        // `@ConfigurationProperties` 필드라 JVM `-D`·환경변수·`SPRING_APPLICATION_JSON`·
+        // 저장소 밖 매니페스트에서 배포 시점에 끌 수 있었고, 그것을 지키던 탐지기는
+        // 저장소 안 파일만 훑어 그 경로 어디에도 닿지 못했다(codex A-1).
         //
-        // **이 한 줄이 스위치를 끄는 유일한 자리다.** 제품 설정(api·worker 의
-        // application.yml, compose, 배포 매니페스트)에는 이 키가 없어야 하고,
-        // `CryptoStartupVerificationTest` 가 ⑴ 기본값이 켜짐인지 ⑵ 제품 설정에 이 키가
-        // 새지 않았는지를 검사한다 — 면제 조항을 두면서 **그 면제가 제품에 닿지 않는지
-        // 보는 탐지기**를 함께 두는 것이 이 저장소가 요구하는 형태다(CLAUDE.md 규칙 4).
-        //
-        // 자기점검을 실제로 지나는 조합은 그 테스트가 빈을 직접 조립해 확인한다.
-        systemProperty("easydoc.encryption.verify-on-startup", "false")
+        // 테스트 Spring 컨텍스트는 이제 자기점검을 **끄지 않고 지난다** — infrastructure
+        // testFixtures 의 `TestEncryptionKeys` 가 실행 시점 난수 키와 그 검사값을
+        // 넣어 준다. 여기 그 스위치를 다시 더하지 마라.
 
         // 계약 파일을 **선언 입력**으로 건다. 지금은 api 만 읽지만 모든 테스트 태스크에
         // 거는 이유는 도달 범위다 — 다음 모듈이 계약을 읽기 시작할 때 이 선언을 함께

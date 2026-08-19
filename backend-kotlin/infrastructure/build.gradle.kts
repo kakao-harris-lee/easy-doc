@@ -36,6 +36,11 @@ dependencies {
 
     testFixturesImplementation(platform(libs.spring.boot.bom))
     testFixturesApi(libs.testcontainers.postgresql)
+    // 테스트 Spring 컨텍스트에 실제 암호화 키를 넣는 EnvironmentPostProcessor
+    // (`TestEncryptionKeys`)가 `org.springframework.boot.EnvironmentPostProcessor` 를
+    // 구현한다. testFixtures 산출물은 `testFixtures(project(...))` 로 명시적으로 당긴
+    // 테스트 클래스패스에만 올라가므로 bootJar 의 runtimeClasspath 에는 실리지 않는다.
+    testFixturesImplementation(libs.spring.boot.starter)
     testFixturesRuntimeOnly(libs.postgresql)
 
     testImplementation(platform(libs.spring.boot.bom))
