@@ -202,6 +202,17 @@ object ContractSpec {
         }
     }
 
+    /**
+     * 응답 컴포넌트가 예시로 못박은 `detail` 문구.
+     *
+     * 고정 문구를 테스트에 복제하지 않기 위한 자리다 — 복제하면 계약에서 문구가 바뀌어도
+     * 옛 값으로 통과한다.
+     */
+    fun responseExampleDetail(
+        component: String,
+        example: String,
+    ): String = text("components", "responses", component, "content", "application/json", "examples", example, "value", "detail")
+
     /** P-5. 고위험 하한선 목록. `"POST /auth/signup"` 형태의 문자열이다. */
     fun privateResponseHeaderTargets(): List<String> = strings("x-private-response-headers", "applies_to")
 

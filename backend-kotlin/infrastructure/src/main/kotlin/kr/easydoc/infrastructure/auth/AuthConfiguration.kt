@@ -46,9 +46,15 @@ import java.time.Duration
  *   `argon2.memoryKib` 만큼을 계산이 끝날 때까지 붙들고 있어, 상한이 없으면 로그인
  *   폭주가 그대로 OOM 이 된다(I-8 검증 5).
  * @property maxHashWaitMillis 세마포어 **대기**의 상한. 무기한 대기는 요청 스레드를
- *   영원히 반납하지 않아 과부하가 다른 API 까지 멈추게 한다. 기본값은 한산할 때의 해시
- *   1회 비용(~0.1초)의 수십 배라 정상 부하에서는 닿지 않고, 스레드 풀이 마를 만큼 줄이
- *   길어졌을 때만 걸린다.
+ *   영원히 반납하지 않아 과부하가 다른 API 까지 멈추게 한다.
+ *
+ *   **기본값의 유도**(privacy-gate R-2 · Claude KTL-2). 대기 상한 `W` 는 곧 「대기 줄의
+ *   길이」다 — 해시 1회가 `H`(실측 ~100ms), 자리가 `P` 개면 줄에서 통과할 수 있는 요청
+ *   수는 `W × P / H` 다. 종전 기본값 5000ms 는 `5000 × 4 / 100 = 200` 건으로,
+ *   **Tomcat 기본 스레드 수(200)와 같다.** 즉 상한에 닿기 전에 스레드가 먼저 마른다 —
+ *   240 동시 실측에서 `/health` 가 최대 1244ms 까지 늘어난 원인이 permit 이 아니라 이
+ *   대기 상한 자체였다. 250ms 는 같은 식으로 **약 10건**이고, 그 이상은 기다리게 하지
+ *   않고 즉시 배압으로 돌린다(고정 문구 500 — 계약이 선언한 코드다).
  */
 @ConfigurationProperties(prefix = "easydoc.auth")
 data class AuthProperties(
@@ -56,7 +62,7 @@ data class AuthProperties(
     val jwtExpireMinutes: Long = 60,
     val minSecretBytes: Int = 32,
     val maxConcurrentHashes: Int = 4,
-    val maxHashWaitMillis: Long = 5_000,
+    val maxHashWaitMillis: Long = 250,
     val argon2: Argon2Properties = Argon2Properties(),
 )
 
