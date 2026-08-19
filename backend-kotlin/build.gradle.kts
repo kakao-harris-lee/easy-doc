@@ -24,6 +24,13 @@ val parityFixturesDir: File = File(rootDir.parentFile, "parity/fixtures")
 // Kotlin 이 포팅을 끝냈다고 선언한 parity 도메인 목록. 파일 자체의 설명은 그 안에 있다.
 val parityDomainsFile: File = rootProject.file("parity-domains.txt")
 
+// 계약 정본. 테스트가 실행 시점에 시스템 속성으로 경로를 만들어 읽으므로 Gradle 의 입력
+// 지문에 잡히지 않았고, 그래서 **계약만 바꾼 변경이 계약 테스트를 한 번도 돌리지 않고**
+// UP-TO-DATE / FROM-CACHE 로 초록이 됐다(contract-keeper 6ece404 §5 실측).
+// X-J2 가 요구한 「계약 값을 바꾸면 테스트가 깨진다」는 테스트가 돌 때만 참이므로,
+// 파일을 선언 입력으로 걸어 그 전제를 빌드가 지키게 한다.
+val apiContractFile: File = File(rootDir.parentFile, "contracts/easy-doc-v1.yaml")
+
 /** 선언 파일을 읽어 도메인 이름만 남긴다 (`#` 뒤 주석·빈 줄 제거). */
 fun declaredParityDomains(file: File): List<String> =
     file
@@ -130,6 +137,16 @@ subprojects {
         // 소스 전수를 훑는 탐지기(허용목록 가드 등)가 쓰는 루트. 테스트 작업 디렉터리는
         // 모듈 디렉터리라, 코드에서 상대 경로로 거슬러 올라가면 모듈이 늘 때 조용히 어긋난다.
         systemProperty("easydoc.kotlin.source.root", rootDir.absolutePath)
+
+        // 계약 파일을 **선언 입력**으로 건다. 지금은 api 만 읽지만 모든 테스트 태스크에
+        // 거는 이유는 도달 범위다 — 다음 모듈이 계약을 읽기 시작할 때 이 선언을 함께
+        // 옮겨 적어야 한다면, 옮겨 적지 않은 채로 같은 결함이 되살아난다.
+        // 경로 민감도를 NONE 으로 둔다: 절대 경로가 지문에 들어가면 기계가 다른 CI 에서
+        // 빌드 캐시가 재사용되지 않아, 캐시를 끄는 것과 같아진다.
+        inputs
+            .file(apiContractFile)
+            .withPropertyName("apiContract")
+            .withPathSensitivity(PathSensitivity.NONE)
     }
 
     // 일반 `test` 는 게이트 디렉터리를 건드리지 않는다. parity 산출물은 모듈 build/ 안에
