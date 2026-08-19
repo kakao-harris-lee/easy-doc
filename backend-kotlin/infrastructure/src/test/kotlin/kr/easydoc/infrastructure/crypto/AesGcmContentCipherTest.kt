@@ -18,6 +18,7 @@ import org.junit.jupiter.api.Test
 import org.slf4j.LoggerFactory
 import java.security.GeneralSecurityException
 import java.security.SecureRandom
+import java.security.Security
 import java.util.Base64
 import java.util.UUID
 import javax.crypto.Cipher
@@ -608,6 +609,38 @@ class AesGcmContentCipherTest {
             .isEqualTo(EncryptedContent(bytes.copyOf(), EncryptionScheme.AES_256_GCM_V1, 1).hashCode())
         assertThat(EncryptedContent(bytes.copyOf(), EncryptionScheme.AES_256_GCM_V1, 1))
             .isNotEqualTo(EncryptedContent(bytes.copyOf(), EncryptionScheme.AES_256_GCM_V1, 2))
+    }
+
+    @Test
+    @DisplayName("R-4 공급자의 **비검사** 실패도 밖으로 새지 않는다 — 예외 타입 축의 oracle 을 막는다")
+    fun `공급자의 비검사 실패도 단일 예외가 된다`() {
+        // `open` 의 두 번째 catch(`RuntimeException`)에 음성 통제가 없다는 codex D-3 지적의
+        // 통제다. 이 케이스를 두면 그 catch 를 지웠을 때 `ProviderException` 이 그대로 올라와
+        // 빨개진다. 사유와 이 방법을 고른 이유는 `ProviderExceptionProvider` KDoc.
+        val cipher = cipherWith(mapOf(1 to KEY_GEN_1), writeKeyVersion = 1)
+        val sealed = cipher.encrypt(PlainBody(TIMING_PROBE_BODY), RECORD, EncryptedField.DOCUMENT_SOURCE_TEXT)
+
+        ProviderExceptionProvider.reachedCount = 0
+        val probe = ProviderExceptionProvider()
+        Security.insertProviderAt(probe, 1)
+        try {
+            assertThatThrownBy { cipher.decrypt(sealed, RECORD, EncryptedField.DOCUMENT_SOURCE_TEXT) }
+                .describedAs("공급자의 RuntimeException 이 그대로 올라왔다 — 호출자가 갈래를 구분할 수 있게 된다")
+                .isInstanceOf(DecryptionFailedException::class.java)
+                .hasNoCause()
+        } finally {
+            Security.removeProvider(ProviderExceptionProvider.NAME)
+        }
+
+        assertThat(ProviderExceptionProvider.reachedCount)
+            .describedAs("바꿔치기한 공급자가 한 번도 선택되지 않았다 — 이 케이스는 **아무것도 재지 않았다**")
+            .isPositive()
+
+        // 공급자를 되돌린 뒤 정상 경로가 살아 있는지도 본다. 전역 상태를 건드린 케이스가
+        // 뒤 테스트를 조용히 망가뜨리는 것을 여기서 끊는다.
+        assertThat(cipher.decrypt(sealed, RECORD, EncryptedField.DOCUMENT_SOURCE_TEXT).value)
+            .describedAs("테스트 공급자가 JVM 에 남았다")
+            .isEqualTo(TIMING_PROBE_BODY)
     }
 
     // ---------------------------------------------------------------- 도구
