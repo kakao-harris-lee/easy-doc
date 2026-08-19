@@ -32,6 +32,35 @@ class SourceScanFormsProbe {
         assertForms(CAUGHT)
     }
 
+    /**
+     * **합성 소스가 아니라 실제 컴파일 산출물과 대조한다** (게이트 25 H-1).
+     *
+     * 위 [CAUGHT] 의 기대값은 손으로 적은 문자열이다. 그것만으로는 **파서가 내는 이름이
+     * 컴파일러가 실제로 붙이는 이름과 같은지** 알 수 없다 — 둘이 갈리면
+     * `SensitiveToStringReachTest` 의 「선언 ↔ 적재」 대조가 통째로 헛돈다.
+     *
+     * 그래서 **이 파일 자신**에 `fun interface` 안의 중첩 선언([NestingProbe.Spec])을 두고,
+     * 파서가 이 파일을 훑어 낸 이름을 [Class.getName] 과 맞춘다. `fun` 이 [ProductClasses]
+     * 의 수식어 목록에서 빠져 있으면 파서가 바깥 타입을 잃고 `kr.easydoc.api.Spec` 을 내므로
+     * 여기가 빨개진다(음성 대조로 확인).
+     *
+     * 제품 실례는 `core/easyread/Prompts.kt` 의 `fun interface DocumentIdGenerator` 다 —
+     * 오늘 그 안에 `data class` 가 없어 잠복이고, 하나 생기는 순간 도달한다.
+     */
+    @Test
+    @DisplayName("`fun interface` 안의 중첩 이름이 컴파일러가 붙인 바이너리 이름과 같다 (H-1)")
+    fun `fun interface 안의 중첩 이름이 적재와 일치한다`() {
+        val declared = ProductClasses.declarationsIn(ownSourceFile()).map { it.binaryName }
+
+        assertThat(declared)
+            .withFailMessage {
+                "파서가 이 파일의 `fun interface` 중첩 선언을 컴파일러와 다른 이름으로 냈다.\n" +
+                    "  기대(적재): ${NestingProbe.Spec::class.java.name}\n" +
+                    "  실제(파서): $declared\n" +
+                    "  `ProductClasses.MODIFIERS` 에 `fun` 이 있는지 보라 — 없으면 바깥 타입을 잃는다."
+            }.contains(NestingProbe.Spec::class.java.name)
+    }
+
     @Test
     @DisplayName("파서가 놓치는 선언 형태 — 놓친다는 사실 자체를 못박는다")
     fun `놓치는 형태`() {
@@ -76,6 +105,18 @@ class SourceScanFormsProbe {
     private fun scan(source: String) =
         ProductClasses.declarationsIn(File(temp, "Probe${source.hashCode()}.kt").apply { writeText(source) })
 
+    /** 이 테스트 파일 자신. 파서 산출을 **같은 파일의 컴파일 결과**와 맞추기 위한 것이다. */
+    private fun ownSourceFile(): File {
+        val root =
+            File(
+                System.getProperty("easydoc.kotlin.source.root")
+                    ?: error("시스템 속성 easydoc.kotlin.source.root 이 없다 — 이 파일을 찾을 기준점이 없다"),
+            )
+        val file = File(root, OWN_SOURCE_PATH)
+        check(file.isFile) { "$file 이 없다 — 이 테스트가 옮겨졌다면 OWN_SOURCE_PATH 를 함께 고쳐라" }
+        return file
+    }
+
     private data class Form(
         val label: String,
         val source: String,
@@ -84,6 +125,9 @@ class SourceScanFormsProbe {
 
     private companion object {
         private const val PKG = "kr.easydoc.probe"
+
+        /** 이 파일의 저장소 상대 경로. 클래스를 옮기면 여기가 먼저 끊긴다(조용히 통과하지 않는다). */
+        private const val OWN_SOURCE_PATH = "api/src/test/kotlin/kr/easydoc/api/SourceScanFormsProbe.kt"
 
         private val CAUGHT =
             listOf(
@@ -149,6 +193,29 @@ class SourceScanFormsProbe {
                         "$PKG.Reg${'$'}Entry",
                         "$PKG.E${'$'}Row",
                     ),
+                ),
+                Form(
+                    // 게이트 25 H-1. `fun` 이 수식어 목록에 없던 종전 판은 `fun interface` 를
+                    // **멤버 머리**로 읽어 바깥 타입을 잃었고, `kr.easydoc.probe.Spec` 이라는
+                    // 있지도 않은 이름을 냈다. 위 「적재와 일치한다」 케이스가 같은 축을
+                    // 이 파일 자신의 컴파일 결과로 확인한다.
+                    "fun interface 안의 중첩 — 수식어 fun",
+                    """
+                    package $PKG
+
+                    fun interface Gen {
+                        fun make(spec: Spec): String
+
+                        data class Spec(val a: String)
+                    }
+
+                    private fun interface Quiet {
+                        fun go()
+                    }
+
+                    data class After(val a: String)
+                    """.trimIndent(),
+                    listOf("$PKG.Gen${'$'}Spec", "$PKG.After"),
                 ),
                 Form(
                     "companion object 는 컴파일러가 넣는 Companion 칸을 그대로 반영한다",
@@ -289,4 +356,20 @@ class SourceScanFormsProbe {
                 ),
             )
     }
+}
+
+/**
+ * `fun interface` 안에 중첩된 `data class` — **이 파일이 스스로 갖는 실례**다.
+ *
+ * 합성 소스로만 재면 「파서가 무엇을 내는가」만 알 수 있고 「그 이름이 맞는가」는 모른다.
+ * 이 선언이 있어야 파서 산출을 컴파일러의 [Class.getName] 과 직접 맞출 수 있다
+ * (`SourceScanFormsProbe.fun interface 안의 중첩 이름이 적재와 일치한다`).
+ *
+ * 제품에서 같은 형태를 쓰는 자리는 `core/easyread/Prompts.kt` 의 `DocumentIdGenerator` 다.
+ */
+fun interface NestingProbe {
+    fun make(spec: Spec): String
+
+    /** 중첩된 `data class`. 바이너리 이름은 `kr.easydoc.api.NestingProbe$Spec` 이다. */
+    data class Spec(val label: String)
 }

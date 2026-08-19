@@ -40,6 +40,9 @@ import kotlin.reflect.KClass
  * 그대로 남고, 그때부터 이 문단이 거짓말을 시작한다.
  *
  * 잡는다 — `data class` · `value class` · `data object` · `internal`/`private` 등 [MODIFIERS] ·
+ * `fun interface` 안의 중첩(수식어 `fun` — 제품 실례가 `core/easyread/Prompts.kt` 의
+ * `DocumentIdGenerator` 다. 게이트 25 H-1 에서 더했고, 그전에는 바깥 타입 이름을 잃어
+ * **틀린 바이너리 이름**을 냈다) ·
  * **앞 줄**에 놓인 애너테이션(`@ConfigurationProperties(prefix = "easydoc")` 처럼 인자가 있어도) ·
  * **같은 줄** 애너테이션(`@JvmInline value class`, `@Suppress("x") data class`) ·
  * 클래스/인터페이스/`object`/`enum class`/`companion object` 안의 중첩(사슬을 그대로 이어 붙인다) ·
@@ -300,7 +303,7 @@ private class KotlinSourceFile(private val file: File) {
          */
         private const val MODIFIERS =
             "public|private|internal|protected|open|final|abstract|sealed|inner|enum|annotation|" +
-                "expect|actual|external|override|lateinit|const|suspend|operator|infix|inline|tailrec"
+                "expect|actual|external|override|lateinit|const|suspend|operator|infix|inline|tailrec|fun"
 
         /** 같은 줄에 붙은 애너테이션(`@JvmInline`, `@Suppress("x")`). 인자는 한 줄 안에서만 읽는다. */
         private const val ANNOTATION = """@[A-Za-z_][\w.]*(?:\([^\n]*?\))?"""
