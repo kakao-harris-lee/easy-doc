@@ -304,3 +304,34 @@ Python 게이트(`ruff`/`mypy`/`pytest`)는 **이번에 실행하지 않았다**
   실제로 초록을 만든다는 것까지 재 두었다).
 - 파서의 미탐지 ⑴~⑶(§6.4)은 넓히지 않았다. main 소스에 그 형태가 들어오면
   `SourceScanFormsProbe` 를 함께 고친다.
+
+### 6.8 후속 지적 — FQCN 대조에 남아 있던 **완전 동일 이름** 갈래
+
+§6.2 는 **단순 이름** 충돌을 막았을 뿐, 두 모듈이 **같은 `package` + 같은 이름**을 선언하는
+경우는 그대로 통과했다. 적재 집합은 이름당 한 건이므로, 선언 두 건이 **둘 다 그 한 건에
+매치**돼 실제로는 하나만 적재됐는데 `missing` 이 비었다.
+
+처방은 대조 전에 선언 쪽을 **다중집합**으로 세는 것이다 — 같은 바이너리 이름이 2건 이상이면
+그 자체를 실패로 본다. 우회가 아니라 정면이다: JVM 에서 같은 FQCN 이 둘이면 클래스패스
+순서가 승자를 정하는 **모호성 결함**이고, 진 쪽의 `toString()` 은 어떤 게이트도 보지 못한다.
+중복이 0 임을 확인한 뒤라야 「선언 건수 ↔ 적재 건수」가 1:1 로 대응한다.
+
+**음성 대조** (일회용 worktree 2개, `cp` 미사용). `worker` 모듈에 `package kr.easydoc.api.health`
++ `data class HealthResponse(val status: String)` 주입 — `api` 의 것과 **package·이름이 모두 같다**:
+
+| # | 대조 | 결과 |
+|---|---|---|
+| ⑴ | 옛 판(`eb075f1`) + 동일 FQCN 충돌 | **exit 0 (초록)** — 지적이 실재한다 |
+| ⑴′ | 새 판 + 동일 FQCN 충돌 | **exit 1 (빨강)** — `kr.easydoc.api.health.HealthResponse` 와 **선언 두 자리**(`HealthController.kt` / `FqcnCollisionProbe.kt`)를 지목 |
+| ⑵ | 새 판, 충돌 없음 | **선언 44 · 고유 FQCN 44 · 중복 0 · 미매치 0** — §6.5 ⑵ 에서 무변동, 과잉 탐지 0 |
+
+**검사** (HEAD `eb075f1` + 이 배치 파일만 얹은 일회용 worktree — `crypto` 레인 미완성 코드 분리):
+
+| 검사 | 명령 | 결과 |
+|---|---|---|
+| api 단독 | `./gradlew :api:test --rerun-tasks` | **exit 0** |
+| Kotlin 전 구간 | `./gradlew ktlintCheck detekt build --continue` | **exit 0** |
+| 스캐너(CI 명령) | `uv run python .claude/skills/migration-safety-gate/scripts/scan_privacy_invariants.py` | **exit 0** |
+
+Python 게이트는 §6.6 과 같은 사유로 **미실행**(Python 0줄 변경, 동시 레인이 `contracts/`·`.claude/`
+를 고치는 중). 미실행이지 통과가 아니다.

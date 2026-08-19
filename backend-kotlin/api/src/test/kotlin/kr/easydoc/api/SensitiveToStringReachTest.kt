@@ -139,11 +139,36 @@ class SensitiveToStringReachTest {
         // 맞아 미적재가 통과한다 — 게이트 25 가 고친 빈자리이고, 실측은 `worker` 에 `api` 와
         // 같은 이름의 DTO 를 넣어 확인했다(옛 판 초록 / 새 판 빨강).
         val loaded = ProductClasses.onTestRuntimeClasspath().map { it.java.name }.toSet()
-        val missing = declared.filterNot { it.binaryName in loaded }
 
         assertThat(declared)
             .withFailMessage { "`*/src/main/kotlin` 에서 선언을 하나도 찾지 못했다 — 소스 대조가 0건을 훑고 통과한다" }
             .hasSizeGreaterThanOrEqualTo(MIN_SOURCE_DECLARATIONS)
+
+        // ── 선언 쪽을 **다중집합**으로 센다 (게이트 25 후속) ────────────────────────
+        //
+        // 적재 집합은 이름 하나당 한 건뿐이다. 그래서 **두 모듈이 같은 바이너리 이름**
+        // (같은 `package` + 같은 이름)을 선언하면 아래 `missing` 대조에서 **둘 다** 그 한
+        // 건에 매치돼, 실제로는 하나만 적재됐는데 통과한다. 키를 FQCN 으로 좁힌 것만으로는
+        // 이 갈래가 남아 있었다 — 단순 이름 충돌을 막았을 뿐 **완전 동일 FQCN 충돌**은 그대로였다.
+        //
+        // 그래서 중복 선언 자체를 실패로 본다. 우회가 아니라 정면이다: JVM 에서 같은 FQCN 이
+        // 둘이면 클래스패스 순서가 어느 쪽을 이기는지 정하는 **모호성 결함**이고, 이긴 쪽만
+        // 적재되므로 진 쪽의 `toString()` 은 어떤 게이트도 보지 못한다.
+        val duplicated = declared.groupBy { it.binaryName }.filterValues { it.size > 1 }
+
+        assertThat(duplicated.keys)
+            .withFailMessage {
+                "같은 바이너리 이름이 두 곳 이상에서 선언됐다:\n" +
+                    duplicated.entries.joinToString("\n") { (name, sites) ->
+                        "  - $name\n" + sites.joinToString("\n") { "      ${it.path}" }
+                    } +
+                    "\n  JVM 은 이 중 **클래스패스에서 이긴 하나만** 적재한다. 진 쪽은 이 게이트가 볼 수 없고,\n" +
+                    "  아래 「클래스패스에 없다」 대조도 이긴 쪽에 함께 매치돼 **조용히 통과한다**.\n" +
+                    "  이름을 갈라라 — 모듈이 다르다고 같은 `package` 를 쓰는 것이 원인인 경우가 대부분이다."
+            }.isEmpty()
+
+        // 중복이 없음을 확인한 뒤라, 여기서는 선언 **건수**와 적재 **건수**가 1:1 로 대응한다.
+        val missing = declared.filterNot { it.binaryName in loaded }
 
         assertThat(missing.map { "${it.kind} class ${it.binaryName} (${it.path})" })
             .withFailMessage {
