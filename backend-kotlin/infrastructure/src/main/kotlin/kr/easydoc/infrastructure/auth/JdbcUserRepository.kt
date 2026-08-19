@@ -47,6 +47,20 @@ class JdbcUserRepository(private val jdbc: JdbcClient) : UserRepository {
             .orElse(null)
 
     /**
+     * 존재만 본다 — 보호된 요청마다 도는 질의라 **어떤 컬럼도 읽지 않는다**.
+     *
+     * `SELECT 1` 이라 기본 키 인덱스만 타고 힙 접근이 없다(index-only scan). 이메일을
+     * 함께 읽는 [findById] 로 대신하면 매 요청 개인정보를 힙에 올리게 된다.
+     */
+    override fun exists(id: UUID): Boolean =
+        jdbc
+            .sql("SELECT 1 FROM users WHERE id = :id")
+            .param("id", id)
+            .query { _, _ -> true }
+            .optional()
+            .orElse(false)
+
+    /**
      * 새 사용자를 만든다.
      *
      * `created_at` 은 DB `DEFAULT now()` 가 채우고 `RETURNING` 으로 되읽는다 — 앱 시계와

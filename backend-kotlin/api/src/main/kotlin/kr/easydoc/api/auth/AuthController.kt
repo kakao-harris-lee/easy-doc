@@ -61,7 +61,10 @@ class AuthController(private val authService: AuthService) {
      * 토큰이 가리키는 사용자.
      *
      * [AuthenticatedUser] 는 [AuthenticationInterceptor] 가 검증한 결과다. 토큰은
-     * 유효한데 계정이 지워졌으면 [AuthService.readUser] 가 같은 401 을 던진다.
+     * 유효한데 계정이 지워졌으면 **인증 경계**([AuthService.authenticate])가 이미 401 로
+     * 끊었으므로 여기까지 오지 않는다. [AuthService.readUser] 의 같은 401 갈래는 그대로
+     * 두지만, 그 갈래가 이 경로를 지키는 유일한 장치였을 때가 X-1 의 자리였다 — 나머지
+     * 보호 경로들이 그 확인을 지나지 않았다.
      */
     @GetMapping("/me")
     fun me(user: AuthenticatedUser): ResponseEntity<UserResponse> =

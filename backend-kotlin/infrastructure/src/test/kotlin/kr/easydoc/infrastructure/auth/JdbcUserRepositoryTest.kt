@@ -72,6 +72,16 @@ class JdbcUserRepositoryTest {
         assertThat(users.findById(UUID.randomUUID())).isNull()
     }
 
+    /** X-1 — 인증 경계가 매 요청 부르는 질의다. 양쪽 갈래를 다 잰다. */
+    @Test
+    @DisplayName("exists 가 있는 계정에 true, 없는 계정에 false 다")
+    fun `존재 확인이 양쪽으로 갈린다`() {
+        val created = users.create(uniqueEmail(), HASH)
+
+        assertThat(users.exists(created.id)).isTrue()
+        assertThat(users.exists(UUID.randomUUID())).isFalse()
+    }
+
     @Test
     @DisplayName("같은 이메일을 두 번 넣으면 도메인 예외다 — 유일 인덱스가 판정한다")
     fun `중복 이메일은 도메인 예외다`() {

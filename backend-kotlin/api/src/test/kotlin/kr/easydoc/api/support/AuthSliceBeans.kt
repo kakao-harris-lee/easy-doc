@@ -105,6 +105,8 @@ class InMemoryUserRepository : UserRepository {
 
     override fun findById(id: UUID): User? = byId[id]?.user
 
+    override fun exists(id: UUID): Boolean = byId.containsKey(id)
+
     override fun create(
         email: String,
         passwordHash: PasswordHash,

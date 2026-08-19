@@ -183,6 +183,30 @@ class AuthServiceTest {
             .isInstanceOf(InvalidCredentialsException::class.java)
     }
 
+    // ---------------------------------------------------------------- 인증 경계
+
+    /**
+     * X-1 — 서명이 유효해도 계정이 없으면 인증 경계가 끊는다.
+     *
+     * 이 단언이 [AuthService.readUser] 가 아니라 [AuthService.authenticate] 에 걸려 있는
+     * 것이 요점이다. 보호된 경로는 인터셉터를 지나 각자의 컨트롤러로 흩어지므로,
+     * 확인이 `/auth/me` 쪽에만 있으면 나머지 경로가 전부 통과한다.
+     */
+    @Test
+    @DisplayName("서명은 유효한데 계정이 지워진 토큰은 인증 경계에서 끊긴다 (X-1)")
+    fun `삭제된 계정의 토큰은 인증되지 않는다`() {
+        val world = World()
+        val user = world.service.signup(uniqueEmail(), VALID_PASSWORD)
+        val token = world.tokens.issue(user.id).token
+        // 살아 있는 동안은 통과한다 — 이 반대쪽이 없으면 「늘 실패하는 구현」과 구분되지 않는다.
+        assertThat(world.service.authenticate(token)).isEqualTo(user.id)
+
+        world.users.saved.remove(user.email)
+
+        assertThatThrownBy { world.service.authenticate(token) }
+            .isInstanceOf(InvalidCredentialsException::class.java)
+    }
+
     private fun uniqueEmail(): String = "svc${counter++}@example.test"
 
     private companion object {
@@ -259,6 +283,8 @@ private class RecordingUserRepository(private val rehashFails: Boolean) : UserRe
     override fun findByEmail(email: String): StoredUser? = saved[email]
 
     override fun findById(id: UUID): User? = saved.values.firstOrNull { it.user.id == id }?.user
+
+    override fun exists(id: UUID): Boolean = saved.values.any { it.user.id == id }
 
     override fun create(
         email: String,

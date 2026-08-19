@@ -55,6 +55,12 @@ data class AuthenticatedUser(val id: UUID)
  * 토큰이 있으나 유효하지 않으면 다른 하나. `failure_uniformity` 가 요구하는 것은
  * **무효 사유를 구분하지 않는 것**이지 두 갈래의 통합이 아니다. 그래서 만료·위조·
  * 클레임 누락·용도 불일치·계정 삭제는 전부 같은 문구로 모인다.
+ *
+ * **「계정 삭제」가 이 목록에 있는 근거는 [AuthService.authenticate] 다** — 그 함수가
+ * 서명 검증 직후 사용자 존재를 확인한다. 종전에는 이 KDoc 이 계정 삭제까지 선언하면서
+ * 실제로는 서명만 봤고, 그래서 폐기된 토큰이 여기를 지나 경로마다 다른 코드
+ * (200·500·404)로 갈렸다. 선언과 도달을 맞춘 자리이므로, 확인을 걷어내려면 이 문장도
+ * 함께 지워야 한다(`DeletedAccountTokenReachTest` 가 그 전에 먼저 깨진다).
  */
 @Component
 class AuthenticationInterceptor(private val authService: AuthService) : HandlerInterceptor {

@@ -107,13 +107,50 @@ class AuthService(
      *
      * 토큰은 유효한데 계정이 지워진 경우도 **같은 401** 이다 — 삭제 여부가 새면 안 된다
      * (계약 `x-auth.failure_uniformity`, 검증 X-A2).
+     *
+     * [authenticate] 가 이미 존재를 확인하므로 여기 `null` 갈래는 **오늘 도달하지 않는다**.
+     * 그래도 남겨 둔다 — 이 함수는 인터셉터 밖에서도 불릴 수 있고, 존재 확인이 인증
+     * 경계에 있다는 사실에 기대어 여기서 `!!` 를 쓰면 두 자리의 결합이 타입에서 사라진다.
      */
     fun readUser(userId: UUID): User =
         users.findById(userId)
             ?: throw InvalidCredentialsException(INVALID_CREDENTIALS_MESSAGE)
 
-    /** 액세스 토큰을 검증하고 사용자 식별자를 돌려준다. 실패는 [InvalidCredentialsException]. */
-    fun authenticate(token: String): UUID = accessTokens.verify(token)
+    /**
+     * 액세스 토큰을 검증하고 사용자 식별자를 돌려준다. 실패는 [InvalidCredentialsException].
+     *
+     * ## 계정이 지워졌으면 여기서 끊는다
+     *
+     * 계약 `x-auth.failure_uniformity`(`:299-302`)가 **계정 삭제**를 이메일 부재·비밀번호
+     * 불일치·토큰 만료·위조와 **같은 줄에서** 401 사유로 열거한다. 로그인 시점의 삭제는
+     * 「이메일 부재」가 이미 덮으므로, 「계정 삭제」를 따로 세운 것은 **토큰이 아직 유효한
+     * 요청 시점**을 가리킬 때만 뜻이 있다 — 즉 이 자리다.
+     *
+     * 서명 검증만 하고 넘기면 폐기된 자격증명이 승인되고, 그 뒤 경로마다 결과가 갈린다:
+     * 실측으로 `GET /workspaces` 200 빈 목록 · `POST` 500(사용자 FK 위반) ·
+     * `PATCH`·`DELETE` 404 · `GET /auth/me` 401. **네 갈래가 곧 삭제 여부를 알려 주는
+     * 상태 코드 채널**이다.
+     *
+     * ## 확인을 여기 **한 곳**에만 둔다
+     *
+     * 컨트롤러마다 확인하면 새 엔드포인트가 빠뜨린다 — 그 형태로 이미 한 번 샜다.
+     * 인터셉터가 부르는 이 함수가 보호된 모든 요청이 지나는 유일한 목이다
+     * (`AuthenticatedEndpoints.PROTECTED_PATH_PATTERNS` ↔ 계약 `security` 대조가 그
+     * 「유일함」을 지킨다).
+     *
+     * ## 결과를 캐시하지 않는다
+     *
+     * 캐시하면 삭제가 캐시 수명만큼 늦게 반영돼 「탈퇴했는데 아직 쓸 수 있다」가 그대로
+     * 남는다. 매 요청 조회 비용은 그 대가로 받아들인 것이다(질의 하나, [UserRepository.exists]).
+     */
+    fun authenticate(token: String): UUID {
+        val userId = accessTokens.verify(token)
+        // 사유를 가르지 않는다 — 위조 토큰과 삭제 계정이 같은 예외·같은 문구로 나간다.
+        if (!users.exists(userId)) {
+            throw InvalidCredentialsException(INVALID_CREDENTIALS_MESSAGE)
+        }
+        return userId
+    }
 
     /**
      * 계정이 없는 경로가 치르는 해시 비용.

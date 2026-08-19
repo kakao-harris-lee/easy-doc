@@ -30,6 +30,15 @@ interface UserRepository {
     fun findById(id: UUID): User?
 
     /**
+     * 그 식별자의 계정이 **아직 있는지**만 본다.
+     *
+     * [findById] 로도 같은 판정이 되지만 그쪽은 이메일을 함께 읽어 온다. 이 질의는
+     * **보호된 요청마다** 돌므로(`AuthService.authenticate`), 쓰지 않을 개인정보를 매
+     * 요청 힙에 올릴 이유가 없다. 돌려주는 것은 불리언 하나다.
+     */
+    fun exists(id: UUID): Boolean
+
+    /**
      * 새 사용자를 만든다.
      *
      * 같은 이메일이 이미 있으면 `EmailAlreadyRegisteredException`.
