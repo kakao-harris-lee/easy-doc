@@ -493,10 +493,20 @@ x-error-body-universality:
       check: "오류 응답의 `Content-Type`이 `application/json`이다 (`text/html`·`application/problem+json` 아님)"
       how: "기존 X-C4를 ②·③·④ 경로로 확장한다"
   x-unmeasured: |
-    **④(컨테이너 생성 응답)의 본문 모양은 아직 측정되지 않았다.** 2026-08-12 실측이 다룬
-    것은 그 7종의 **헤더**뿐이다(`x-phase3-measurement.residual`).
-    파싱 단계에서 거절되는 400·405·505가 어떤 본문을 내는지 보지 않았으므로,
-    **이 자리를 "충족"으로도 "위반"으로도 적지 않는다.**
+    **④(컨테이너 생성 응답)의 본문 모양은 아직 대부분 측정되지 않았다.** 2026-08-12 실측이
+    다룬 것은 그 응답들의 **헤더**뿐이었다(`x-phase3-measurement.residual`).
+
+    **2026-08-19 현행화 — 대상이 6종이 됐고 그중 1종이 측정됐다.**
+      - **대상 축소**: 「알 수 없는 메서드 → 405」는 ④가 아니라 ①이다
+        (`x-phase3-measurement.x-405-reclassification`). 그 응답의 본문은 우리 고정 문구이며
+        **이 절의 미측정 목록에서 빠진다** — 다른 ① 응답과 같은 요구를 받는다.
+      - **1종 측정**: 「콜론 없는 헤더 줄 → 400」의 본문이 원시 소켓 실측에서
+        최상위 키 `detail` 하나로 관측됐다(`03_kotlin-implementer_auth-fixes2.md` §4).
+        **이 한 건으로 E-4를 닫지 않는다** — 나머지 5종(요청 대상 금지 문자·요청 줄 파손·
+        헤더 상한 초과·`Host` 없음 400 · 알 수 없는 HTTP 버전 505)은 여전히 보지 않았다.
+
+    **남은 5종을 "충족"으로도 "위반"으로도 적지 않는다.** 측정 결과 만족시킬 수 없는 자리가
+    남으면 계약을 좁히지 말고 리더에게 올린다 — 헤더 쪽에서 밟은 순서와 같다.
     측정 결과 계약을 만족시킬 수 없는 자리가 남으면 **계약을 좁히지 말고** 목록·실측 근거와
     함께 리더에게 올린다(`x-change-policy.escalate_to_leader` 1번). 헤더 쪽에서 밟은 순서와
     같다 — ① 닿게 만들어 본다 → ② 그래도 남으면 재심.
@@ -542,7 +552,7 @@ x-global-response-headers:
     따라서 이 조항은 적어 두면 지켜지는 종류가 아니다.
 
     **2026-08-12 실측으로 이 자리는 닫혔다**(`x-phase3-measurement`) — 그리고 그 실측이
-    바로 이 서술을 정당화했다. 필터 하나만으로는 7종이 비었고, 목록 대조로는 그것이
+    바로 이 서술을 정당화했다. 필터 하나만으로는 6종이 비었고, 목록 대조로는 그것이
     보이지 않았으며, MockMvc로는 **통과했다는 잘못된 근거**까지 나왔다.
     이 절을 "이제 끝난 이야기"로 지우지 않는 이유가 그것이다 — 강제 수단을 건드리는 변경
     (필터 순서, 밸브 제거, 컨테이너 교체)은 매번 같은 방식으로 다시 재야 한다.
@@ -558,7 +568,7 @@ x-global-response-headers:
        `sendError` → `/error` ERROR 디스패치.
     ② **Tomcat Engine 밸브** — 요청 줄·헤더 블록 **파싱 단계**에서 거절되는 응답은 서블릿에
        매핑되지 않아 **필터 체인이 시작조차 하지 않는다.** 필터로는 물리적으로 닿을 수 없는
-       자리이고, Engine 밸브는 그보다 앞이라 닿는다. 실측으로 7종 전부를 덮는 것을 확인했다
+       자리이고, Engine 밸브는 그보다 앞이라 닿는다. 실측으로 6종 전부를 덮는 것을 확인했다
        (목록은 `x-phase3-measurement.unreachable_by_filter`).
 
     두 층 모두 헤더를 `add`가 아니라 **`set`**으로 쓴다 — 컨트롤러 `ResponseEntity`가 같은
@@ -578,7 +588,7 @@ x-global-response-headers:
     **컨테이너를 바꾸면(Jetty·Undertow·Netty) 이 층은 조용히 사라지지 않고 기동 시점에
     깨진다** — 밸브 등록은 `TomcatServletWebServerFactory`에 붙는 구성이라 그 팩토리가
     없으면 컨텍스트 조립이 실패한다. 이것은 결함이 아니라 **의도된 성질**이다.
-    조용히 사라지는 쪽이었다면 파싱 단계 거절 응답 7종이 헤더 없이 나가는 것을 아무도
+    조용히 사라지는 쪽이었다면 파싱 단계 거절 응답 6종이 헤더 없이 나가는 것을 아무도
     모르게 된다. 컨테이너 교체는 이 조항의 재설계를 동반해야 하며, 그 판단은
     `x-change-policy.escalate_to_leader` 4번(배포·운영 동작이 달라지는 변경)이다.
   x-openapi-expressibility: |
@@ -601,7 +611,7 @@ x-global-response-headers:
        G4가 지목한 실패 양상(사람이 기억해야 지켜지는 목록)을 스펙 안에 복제하는 셈이고,
        그러고도 ②·③·④는 여전히 못 덮는다. 그래서 `paths` 아래 선언을 늘리지 않았다.
     ⑥ **강제 수단의 계층 구조에 문법상의 자리가 없다.** OpenAPI는 "무엇이 나가야 하는가"를
-       적는 문법이고 "무엇이 그것을 붙이는가"를 적는 문법이 아니다. 필터 1층으로는 7종이
+       적는 문법이고 "무엇이 그것을 붙이는가"를 적는 문법이 아니다. 필터 1층으로는 6종이
        비고 밸브가 그 자리를 덮는다는 사실, 그리고 그 밸브가 Tomcat 결합이라는 사실은
        `x-` 확장의 산문으로만 남는다(`enforcement`·`x-container-coupling`).
        **이것이 실제 위험이다** — 스펙만 읽은 구현자는 "필터 하나면 이 요구를 만족한다"는
@@ -646,11 +656,29 @@ x-global-response-headers:
       - "413 (요청 본문 상한 초과)"
       - "CORS 프리플라이트 OPTIONS 200"
       - "`sendError` → `/error` ERROR 디스패치 503"
+      - "알 수 없는 메서드 → 405 (2026-08-19 재분류 — `x-405-reclassification`)"
+    x-405-reclassification: |
+      **2026-08-19 정정 — 근거 G1(계약이 사실과 달랐다).** 초판은 「알 수 없는 메서드 → 405」를
+      아래 `unreachable_by_filter`에 넣어 미도달을 7종으로 셌다. 원시 소켓 실측(`FROB /health`,
+      실기동 `@SpringBootTest(RANDOM_PORT)` · `03_kotlin-implementer_auth-fixes2.md` §4)에서
+      **그 응답은 서블릿까지 도달한다.** 판별 근거 셋이 모두 같은 방향을 가리킨다.
+
+        ① `Allow: GET`이 붙는다 — 매핑을 알아야만 만들 수 있는 헤더다.
+        ② `Content-Type`에 `;charset=UTF-8`이 **없다.** 밸브가 만든 응답(콜론 없는 헤더 줄 400)
+           에는 붙는다 — 두 응답의 생성자가 다르다는 표시다.
+        ③ 본문이 **우리 고정 문구**다 — 컨테이너 기본 본문이 아니다.
+
+      **별도 응답 조항을 만들지 않는다.** 이 405는 컨테이너가 아니라 프레임워크 오류 핸들러가
+      만든 응답이므로 `x-error-body-universality`의 ④가 아니라 **①**에 속하고, 그 절이 이미
+      요구를 건다. `paths` 아래에 선언할 자리는 여전히 없다 — 경로는 있으나 그 메서드의
+      오퍼레이션이 없어 삼중키가 성립하지 않는다(`x-openapi-expressibility` ②와 같은 자리).
+      **재분류로 바뀌는 것은 「무엇이 어느 층에 닿는가」이지 「무엇이 나가야 하는가」가 아니다.**
     unreachable_by_filter:
       note: |
-        **요청 줄·헤더 블록 파싱 단계에서 거절되는 응답 7종.** 서블릿에 매핑되지 않아
+        **요청 줄·헤더 블록 파싱 단계에서 거절되는 응답 6종.** 서블릿에 매핑되지 않아
         필터 체인이 **시작조차 하지 않는다.** 필터 배치를 어떻게 고쳐도 닿지 않는다 —
         배치 문제가 아니라 서블릿 컨테이너의 처리 순서 문제다.
+        (2026-08-19까지 7종이었다. 하나가 사실과 달라 위 `x-405-reclassification`으로 옮겼다.)
       cases:
         - "요청 대상(request target) 금지 문자 → 400"
         - "콜론 없는 헤더 줄 → 400"
@@ -658,10 +686,9 @@ x-global-response-headers:
         - "헤더 상한 초과 → 400"
         - "`Host` 헤더 없음 → 400"
         - "알 수 없는 HTTP 버전 → 505"
-        - "알 수 없는 메서드 → 405"
     resolution: |
       **계약을 좁히지 않고 강제 수단을 넓혔다**(`x-change-policy.escalate_to_leader` 1번의
-      순서 ① — 먼저 닿게 만든다). Tomcat Engine 밸브가 위 7종 **전부**를 덮는 것을 계측으로
+      순서 ① — 먼저 닿게 만든다). Tomcat Engine 밸브가 위 6종 **전부**를 덮는 것을 계측으로
       확인하고 구현했다. 리더 재심(순서 ②)은 필요하지 않았다 — 물리적으로 닿지 않는 자리가
       남지 않았기 때문이다. 밸브의 컨테이너 결합은 `x-container-coupling`에 명시했다.
     negative_control: |
@@ -677,7 +704,7 @@ x-global-response-headers:
       **후보를 사실로 적지 않았던 것이 여기서 값어치를 했다** — 사실로 적었다면 기각을
       기록할 자리가 없었다.
     residual: |
-      이 실측이 다룬 것은 **두 헤더의 유무**뿐이다. 같은 7종 응답의 **본문 모양**은 아직
+      이 실측이 다룬 것은 **두 헤더의 유무**뿐이다. 같은 6종 응답의 **본문 모양**은 아직
       측정되지 않았다 — `x-error-body-universality.x-unmeasured`가 그 자리다.
   x-superseded: |
     이 절은 종전 `x-private-response-headers.does_not_apply_to`("DELETE 204 · /health ·
@@ -2026,6 +2053,48 @@ components:
 # 변경 이력
 # =============================================================================
 x-changelog:
+  - version: "1.1.0"
+    date: "2026-08-19"
+    revision: "M-405"
+    author: contract-keeper
+    change: |
+      **파싱 단계 거절 응답의 분류 정정 — 7종 → 6종.**
+      「알 수 없는 메서드 → 405」를 `x-phase3-measurement.unreachable_by_filter.cases`에서
+      `reachable_by_filter`로 옮겼다.
+        - `unreachable_by_filter.note`·`cases` — 7종 → **6종**, 405 항목 제거
+        - `reachable_by_filter` — 405 항목 추가
+        - `x-405-reclassification` **신설** — 판별 근거 셋(실측)과 「별도 조항을 만들지 않는
+          이유」를 적는다
+        - 같은 수를 인용하던 네 자리 정정: `x-failure-mode-shift`·`enforcement`·
+          `x-container-coupling`·`x-openapi-expressibility` ⑥ (전부 7 → 6)
+        - `resolution`("밸브가 위 N종 **전부**를 덮는다")·`residual` — 7 → 6
+        - `x-error-body-universality.x-unmeasured` — 대상에서 405 제외(④가 아니라 ①이다) +
+          「콜론 없는 헤더 줄 400」 본문 1종 측정 등재. **E-4는 닫지 않는다**(5종 미측정)
+      **`x-changelog`의 옛 항목은 고치지 않았다** — 그 항목들은 당시에 무엇을 적었는지의
+      기록이고, 사후 편집하면 판정의 근거가 사라진다.
+    basis: |
+      근거 **G1**(계약이 사실과 다름). 원시 소켓 실측(실기동 `@SpringBootTest(RANDOM_PORT)`,
+      `FROB /health`)에서 그 405는 **서블릿까지 도달한다** — `Allow: GET`이 붙고,
+      `Content-Type`에 `;charset=UTF-8`이 없으며, 본문이 우리 고정 문구다.
+      측정 전문은 `03_kotlin-implementer_auth-fixes2.md` §4.
+
+      **G4가 아니다.** 조항이 지킬 수 없는 형태였던 것이 아니라 **한 항목의 소속이 틀렸다.**
+      **요구는 하나도 바뀌지 않았다** — 그 응답에도 두 헤더가 붙어야 하고 본문은
+      `ErrorResponse`여야 한다. 바뀐 것은 「무엇이 그것을 붙이는가」의 서술뿐이다.
+
+      **`info.version`은 올리지 않는다** — 올바르게 구현한 런타임이 내보내는 바이트가
+      달라지지 않는다.
+    react_impact: |
+      **없다.** `frontend/src/api/client.ts`는 405를 분기하지 않고(401 하나만 분기한다)
+      나머지는 `ApiError(status, message)`로 감싼다. 이 재분류는 응답 자체를 바꾸지 않는다.
+    affected_tests: |
+      - `ContainerRejectedRequest` 열거자 — 계약 6종과 **집합으로** 같아야 한다.
+        정정 전에는 열거자 6 vs 계약 7이라 대조 장치를 넣으면 빨간 채 커밋해야 했다.
+        **이제 6 = 6이므로 열거자↔계약 대조를 빌드에 넣을 수 있다**(구현 레인 몫).
+      - 405 도달 응답 — `PrivateResponseHeadersReachTest`의 **도달 케이스**로 붙든다.
+      - `00_contract-keeper_test-plan.md` §3 **X-D2c** 행의 7종 열거 — 별도 문서 커밋에서 정정.
+    notified: [kotlin-implementer, parity-verifier, migration-reviewer, 리더]
+
   - version: "1.1.0"
     date: "2026-08-15"
     revision: "F3"

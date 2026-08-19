@@ -798,3 +798,84 @@ WorkspaceNameRequest       길이 제약: 없음
 | `kotlin-implementer` | **Phase 3에서 즉시 걸린다.** 다섯 필드에 `@Size`·`@NotBlank`·`@Email`을 **쓰지 마라** — 서비스 층에서 정규화한 뒤 재고 도메인 예외로 던진다. 정본은 `x-request-field-constraints`이고 `detail` 문구 전문이 거기 있다. 반대로 `limit`·`offset`은 **스키마 층이 맞다**(Bean Validation 사용) |
 | `parity-verifier` | 다섯 필드의 `detail` **문자열 전문**이 계약이다(§6의 "오류 detail 전문 일치" 범위에 포함). `detail`의 **타입**(문자열/배열)도 값 동일성 대상이다 |
 | 리더 | **F3 판정 완료 — 미결 원장에서 닫아도 된다.** 리더 판정이 필요한 항목에 해당하지 않아 단독 처리했다: 리더가 판정한 조항을 뒤집지 않고, React 런타임 동작을 바꾸지 않으며(오히려 유지), 보안 불변식을 좁히지 않고, 배포·운영 동작이 그대로다 |
+
+---
+
+## 2026-08-19 · M-405 · 파싱 단계 거절 응답의 분류 정정 (7종 → 6종)
+
+| 항목 | 값 |
+|------|-----|
+| 계기 | `kotlin-implementer`가 상시 회귀 열거자(`ContainerRejectedRequest`)를 계약 목록과 맞추려다 **빠진 둘을 원시 소켓으로 먼저 쟀고**, 그중 하나가 계약 분류와 갈렸다 (`03_kotlin-implementer_auth-fixes2.md` §4) |
+| 근거 | **G1** (계약이 사실과 다름) |
+| `info.version` | **올리지 않는다** (1.1.0 유지) — 올바르게 구현한 런타임이 내보내는 바이트가 달라지지 않는다 |
+| React 영향 | **없음.** `client.ts`는 405를 분기하지 않는다(401 하나만 분기하고 나머지는 `ApiError`로 감싼다). 이 재분류는 응답 자체를 바꾸지 않는다 |
+| 통보 대상 | `kotlin-implementer`, `parity-verifier`, `migration-reviewer`, 리더 |
+
+### 무엇이 틀렸나
+
+계약 `x-phase3-measurement`는 「요청 줄·헤더 블록 **파싱 단계**에서 거절되어 서블릿에
+매핑되지 않는 응답」을 **7종**으로 열거하고, `resolution`이 「밸브가 7종 **전부**를 덮는다」고
+적었다. 그 7종 중 **「알 수 없는 메서드 → 405」는 파싱 단계 거절이 아니다.**
+
+**판별 근거 셋 — 전부 실측이고 모두 같은 방향이다.**
+
+| # | 관측 | 무엇을 말하는가 |
+|---|---|---|
+| ① | `Allow: GET`이 붙는다 | 매핑을 **알아야만** 만들 수 있는 헤더다. 파싱 단계에서 거절된 요청에는 매핑 정보가 없다 |
+| ② | `Content-Type`에 `;charset=UTF-8`이 **없다** | 밸브가 만든 응답(콜론 없는 헤더 줄 400)에는 붙는다. **두 응답의 생성자가 다르다** |
+| ③ | 본문이 우리 고정 문구다 | 컨테이너 기본 본문이 아니다 — 프레임워크 오류 핸들러를 지났다 |
+
+측정 방법은 실기동 `@SpringBootTest(RANDOM_PORT)` + 원시 소켓(`FROB /health`)이다.
+**MockMvc로는 이 축을 잴 수 없다**는 기존 판정이 그대로 적용된다.
+
+### 왜 G1이고 G4가 아닌가
+
+조항이 지킬 수 없는 형태였던 것이 아니라 **한 항목의 소속이 틀렸다.** 그리고 **요구는 하나도
+바뀌지 않았다** — 그 405 응답에도 두 헤더가 붙어야 하고 본문은 `ErrorResponse`여야 한다.
+바뀐 것은 「무엇이 그것을 붙이는가」의 서술뿐이다. 불변식 축소가 아니므로 리더 재심 사유
+(`x-change-policy.escalate_to_leader` ①~④) 어디에도 해당하지 않아 단독 처리했다.
+
+### 별도 응답 조항을 만들지 않았다
+
+이 405는 컨테이너가 아니라 **프레임워크 오류 핸들러**가 만든 응답이므로
+`x-error-body-universality`의 ④가 아니라 **①**에 속하고, 그 절이 이미 요구를 건다.
+`paths` 아래 선언할 자리는 여전히 없다 — 경로는 있으나 그 메서드의 오퍼레이션이 없어
+(경로, 오퍼레이션, 상태 코드) 삼중키가 성립하지 않는다(`x-openapi-expressibility` ②와 같은
+자리다). **조항을 새로 만들면 이미 걸려 있는 요구를 두 벌로 만들 뿐이다.**
+
+### 바뀐 조항 (`contracts/easy-doc-v1.yaml`)
+
+- `x-phase3-measurement.unreachable_by_filter` — `note`의 수를 **6종**으로, `cases`에서 405 제거
+- 같은 절 `reachable_by_filter` — 405 항목 추가
+- **`x-phase3-measurement.x-405-reclassification` 신설** — 판별 근거 셋과 「별도 조항을 만들지
+  않는 이유」
+- `resolution`·`residual` — 7 → 6
+- 같은 수를 인용하던 네 자리: `x-global-response-headers`의 `x-failure-mode-shift` ·
+  `enforcement` · `x-container-coupling` · `x-openapi-expressibility` ⑥
+- `x-error-body-universality.x-unmeasured` — 대상에서 405 제외 + **「콜론 없는 헤더 줄 400」의
+  본문 1종 측정 등재**(최상위 키 `detail` 하나로 관측). **E-4는 닫지 않는다** — 나머지 5종은
+  여전히 보지 않았다
+- `x-changelog`에 M-405 항목
+
+**옛 `x-changelog` 항목은 고치지 않았다.** 그 항목들은 당시에 무엇을 적었는지의 기록이고,
+사후 편집하면 판정의 근거가 사라진다(구현 레인이 `03_kotlin-implementer_auth-fixes2.md` §5에서
+밟은 것과 같은 처리다).
+
+검증: `uvx --from openapi-spec-validator openapi-spec-validator contracts/easy-doc-v1.yaml`
+
+### 영향받는 검증
+
+| 대상 | 조치 |
+|---|---|
+| `ContainerRejectedRequest` 열거자 | 정정 전에는 **열거자 6 vs 계약 7**이라 대조 장치를 넣으면 빨간 채 커밋해야 했고, 면제 조항으로 통과시키는 것은 이 하네스가 금지한 은폐형이다. **이제 6 = 6이므로 열거자↔계약 대조를 빌드에 넣을 수 있다** — 구현 레인 몫이며, 이 정정이 그 전제였다 |
+| 405 도달 응답 | `PrivateResponseHeadersReachTest`의 **도달 케이스**로 붙든다(구현 레인이 이미 신설 계획으로 들고 있다) |
+| `00_contract-keeper_test-plan.md` §3 **X-D2c** 행 | 7종 열거가 사실과 갈렸다. **별도 문서 커밋에서 정정한다**(계약 개정 커밋은 계약 파일과 이 changelog만 담는다) |
+
+### 통보
+
+| 대상 | 내용 |
+|---|---|
+| `kotlin-implementer` | **정정 완료 — 열거자↔계약 대조 장치를 넣을 수 있다.** 계약 목록은 이제 6종이고 열거자와 집합으로 같다. 대조는 **개수가 아니라 집합**으로 걸어라 — 개수만 맞추면 항목이 맞바뀌어도 통과한다. 405 도달 응답은 도달 케이스로 별도로 붙든다 |
+| `parity-verifier` | 이 정정은 **나간 바이트를 바꾸지 않는다.** 405 응답의 상태·헤더·본문 요구는 그대로이므로 대조 범위 변경 없음 |
+| `migration-reviewer` | 게이트 20 판정 §3-4의 「범위 인접 결함 1건」이 이 개정으로 닫혔다 |
+| 리더 | 단독 처리 사유: 요구 무변경 · 불변식 무축소 · React 무영향 · 리더 판정 조항 무접촉. **재심 대상 아님** |
