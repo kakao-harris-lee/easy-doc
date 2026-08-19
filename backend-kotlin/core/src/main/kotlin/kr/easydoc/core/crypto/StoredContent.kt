@@ -135,6 +135,15 @@ class EncryptedContent(
     val scheme: String,
     val keyVersion: Int,
 ) {
+    init {
+        // 도메인 타입이 컬럼보다 넓으면 그 틈이 조용히 저장된다(게이트 25 X8 — `key_version = -1`
+        // 이 실제로 INSERT 에 성공했다). 마지막 방어선은 `V4` 의 CHECK 이고, 여기는 **그 값이
+        // DB 까지 가기 전에** 끊는 자리다. 값 자체는 비밀이 아니므로 메시지에 넣는다.
+        require(keyVersion in KEY_VERSION_RANGE) {
+            "키 세대 번호가 스키마 도메인($KEY_VERSION_RANGE) 밖이다: $keyVersion"
+        }
+    }
+
     override fun equals(other: Any?): Boolean {
         if (other !is EncryptedContent) return false
         return bytes.contentEquals(other.bytes) && scheme == other.scheme && keyVersion == other.keyVersion
@@ -149,8 +158,18 @@ class EncryptedContent(
     /** 바이트 수·방식·키 세대만 남긴다. 암호문 자체는 나가지 않는다. */
     override fun toString(): String = "EncryptedContent(${bytes.size}바이트, $scheme, v$keyVersion)"
 
-    private companion object {
-        const val HASH_MULTIPLIER = 31
+    companion object {
+        /**
+         * 세대 번호가 들어갈 수 있는 범위 — **정본은 여기 하나다.**
+         *
+         * 상한은 `key_version` 컬럼이 `smallint` 라 그 최대값이고, 하한 1 은
+         * `V4__key_version_domain.sql` 의 `CHECK (key_version > 0)` 과 같은 값이다.
+         * 조립 시점 검증(`CryptoConfiguration`)도 이 상수를 쓴다 — 같은 사실을 두 곳에
+         * 적으면 갈린다.
+         */
+        val KEY_VERSION_RANGE: IntRange = 1..Short.MAX_VALUE.toInt()
+
+        private const val HASH_MULTIPLIER = 31
     }
 }
 
