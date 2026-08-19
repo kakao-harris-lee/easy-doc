@@ -630,11 +630,93 @@ jobs:
       - run: npm ci
         working-directory: frontend
 
+      # ── Playwright 설치 — apt 와 CDN 다운로드를 나눈다 ────────────────────
+      #
+      # 왜 나눴나. run 32225305372(2026-08-19)이 `npx playwright install --with-deps
+      # chromium` 한 스텝에서 **28분 매달려** 잡 타임아웃(30분)으로 취소됐다. 로그가
+      # 지목하는 자리는 apt 다 — `azure.archive.ubuntu.com` 이 `Ign:` 으로 네 번
+      # 튕긴 뒤 `archive.ubuntu.com` 으로 넘어가 `noble-security InRelease` 에서 멈췄고
+      # (06:55:43 → 07:23:21 무출력), **브라우저 다운로드는 시작조차 못 했다**.
+      # 첫 실행(32222249150)은 같은 명령이 azure 미러에 붙어 3분 37초에 끝났다.
+      # 즉 결함은 명령이 아니라 **미러 장애에 상한이 없다는 것**이다.
+      #
+      # 한 스텝에 묶여 있으면 (1) 어느 쪽이 멈췄는지 로그를 파야 알고 (2) 캐시가
+      # 맞아도 apt 를 또 타고 (3) 상한을 한쪽에만 걸 수 없다. 그래서 셋을 나눈다.
+
+      # 브라우저 빌드는 Playwright 버전에 묶인다. lock 이 올라가면 캐시도 반드시
+      # 갈려야 하므로 키에 **실제로 설치된** 버전을 넣는다(`^1.62.1` 같은 범위 표기가
+      # 아니라 `npm ci` 가 깐 값).
+      - name: Playwright 버전 확인 (캐시 키용)
+        id: pw
+        working-directory: frontend
+        run: |
+          set -euo pipefail
+          version=$(node -p "require('@playwright/test/package.json').version")
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "Playwright ${version}"
+
+      # `restore-keys` 를 두지 않는다. 다른 버전의 부분 복원은 못 쓰는 브라우저 디렉터리를
+      # 남기면서 `cache-hit` 은 false 라 어차피 다시 받는다 — 이득 없이 상태만 흐려진다.
+      - name: Playwright 브라우저 캐시
+        id: pw-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ms-playwright-${{ runner.os }}-chromium-${{ steps.pw.outputs.version }}
+
+      # apt 단계. **캐시와 무관하게 매번 돈다** — 시스템 패키지는 `~/.cache/ms-playwright`
+      # 에 없고 러너가 새로 뜨면 사라진다. 캐시는 다운로드를 줄일 뿐 이 스텝을 없애지 못한다.
+      #
+      # 잡을 세우지 않는 이유(은폐가 아니라 탐지 위치의 선택이다). 첫 성공 실행에서 이
+      # 명령이 실제로 깐 것은 **폰트뿐이었다** — fonts-ipafont-gothic·fonts-freefont-ttf·
+      # fonts-tlwg-loma-otf·fonts-unifont·fonts-wqy-zenhei·xfonts-*. 공유 라이브러리는
+      # 한 개도 없었다(ubuntu-latest 이미지가 이미 갖고 있다). 그리고 이 스위트에는
+      # 스크린샷·픽셀 단언이 0 건이라(`toHaveScreenshot`·`toMatchSnapshot` 부재) 폰트가
+      # 합격/불합격을 가르지 않는다. 반대로 언젠가 Playwright 가 러너에 없는 `.so` 를
+      # 요구하게 되면 chromium 이 기동에 실패하고 아래 `Playwright 실행` 스텝이
+      # **시끄럽게** 깨진다 — 탐지기를 없앤 게 아니라 뒤로 옮긴 것이다.
+      # `continue-on-error` 는 스텝을 실패로 표시한 채 잡을 잇는다(UI 에 남는다).
+      - name: Playwright 시스템 의존성 (apt)
+        id: pw-deps
+        timeout-minutes: 6
+        continue-on-error: true
+        working-directory: frontend
+        run: |
+          set -uo pipefail
+          # apt 자신에게 상한을 준다. 이것이 없으면 멈춘 미러를 붙들고 `timeout-minutes`
+          # 가 스텝을 죽일 때까지 6분을 통째로 버린다 — 원 사고가 정확히 그 형태였다.
+          printf 'Acquire::http::Timeout "20";\nAcquire::https::Timeout "20";\nAcquire::ftp::Timeout "20";\nAcquire::Retries "2";\n' \
+            | sudo tee /etc/apt/apt.conf.d/99-e2e-acquire-timeout > /dev/null
+          for attempt in 1 2; do
+            if npx playwright install-deps chromium; then
+              echo "시스템 의존성 설치 완료 (시도 ${attempt}/2)"
+              exit 0
+            fi
+            echo "::warning::playwright install-deps chromium 실패 (시도 ${attempt}/2)"
+            sleep 10
+          done
+          echo "::warning::시스템 의존성을 설치하지 못했다 — 폰트만 빠진 것이라면 이 스위트는 통과한다. chromium 이 기동하지 못하면 아래 Playwright 실행 스텝이 실패한다."
+          exit 1
+
       # chromium 하나만 받는다. firefox·webkit 은 이 단계에서 재는 것(계약·CORS·헤더)에
       # 아무것도 더하지 않으면서 설치 시간만 세 배가 된다.
+      # 이쪽은 **치명적**이다 — 브라우저가 없으면 잴 것이 없다.
       - name: Playwright 브라우저 설치 (chromium)
+        if: steps.pw-cache.outputs.cache-hit != 'true'
+        timeout-minutes: 8
         working-directory: frontend
-        run: npx playwright install --with-deps chromium
+        run: |
+          set -uo pipefail
+          for attempt in 1 2; do
+            if npx playwright install chromium; then
+              echo "chromium 설치 완료 (시도 ${attempt}/2)"
+              exit 0
+            fi
+            echo "::warning::playwright install chromium 실패 (시도 ${attempt}/2)"
+            sleep 10
+          done
+          echo "::error::chromium 을 받지 못했다 — CDN 장애이거나 캐시 키가 잘못됐다."
+          exit 1
 
       # 비밀을 저장소에 적지 않는다. 이 실행에서만 사는 임의값이고, 붙는 DB 도 이 잡과
       # 함께 사라진다. 계약 `x-auth.min_secret_bytes` 가 32바이트를 요구한다.

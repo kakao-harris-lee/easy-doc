@@ -98,7 +98,10 @@
 ```
 postgres 서비스 컨테이너(pgvector/pgvector:pg16, DB easydoc_kotlin)
  → setup-java 21 + setup-gradle → ./gradlew :api:bootJar --no-daemon
- → setup-node 20 + npm ci + npx playwright install --with-deps chromium
+ → setup-node 20 + npm ci
+ → Playwright 버전 확인 → 브라우저 캐시(~/.cache/ms-playwright)
+   → install-deps chromium (apt · 6분 상한 · 비치명)
+   → install chromium     (캐시 미적중일 때만 · 8분 상한 · 치명)   ← §3-5
  → JWT 서명 키 생성(openssl rand -hex 32 → $GITHUB_ENV, 값 미출력)
  → java -jar … --spring.profiles.active=migrate
  → java -jar … --spring.profiles.active=api (백그라운드) + /health 대기 60초
@@ -169,6 +172,114 @@ Phase 3 범위 엔드포인트가 Fernet 키를 쓰지 않는다. Spring 완화 
   12 passed
 [e2e] 통과                                                   # 종료 코드 0
 ```
+
+### 3-5. `ci:e2e` 안정화 — 2차 실행 취소(28분 매달림)의 원인과 조치
+
+**도달은 있었으나 안정성이 없었다.** 잡 신설(`a1e1925`) 뒤 두 번째 실행에서 취소됐다.
+
+| 실행 | headSha | e2e 결과 | 설치 스텝 |
+|---|---|---|---|
+| [32222249150](https://github.com/kakao-harris-lee/easy-doc/actions/runs/32222249150) | `a1e1925` | ✅ success (3분 37초) | azure 미러 정상 → 폰트 설치 → CDN 다운로드 06:12:33 |
+| [32225305372](https://github.com/kakao-harris-lee/easy-doc/actions/runs/32225305372) | `2a4523d` | ❌ **cancelled** (30분 16초 — 잡 타임아웃) | **apt 에서 27분 38초 무출력** |
+
+#### 원인 — apt 다. CDN 다운로드가 아니다
+
+실패 실행 로그(`gh run view --job 95983704513 --log`)의 시각열이 자리를 특정한다.
+
+```
+06:55:06  Installing dependencies... / Switching to root user...
+06:55:36  Ign:2..5  http://azure.archive.ubuntu.com/ubuntu noble{,-updates,-backports,-security} InRelease
+06:55:37  Ign:2..5  (재시도 2)
+06:55:39  Ign:2..5  (재시도 3)
+06:55:43  Ign:2..5  (재시도 4) → https://archive.ubuntu.com 으로 폴백
+06:55:43.8  Get:5 https://archive.ubuntu.com/ubuntu noble-security InRelease [126 kB]
+            ↓ 무출력 27분 38초
+07:23:21  ##[error]The operation was canceled.
+07:23:22  Terminate orphan process: pid (3592) (npm exec playwright install --with-deps chromium)
+```
+
+`Downloading Chrome for Testing …` 줄이 **한 번도 나오지 않았다** — 성공 실행에는 있다
+(06:12:33). 브라우저 다운로드는 시작조차 못 했고, 멈춘 것은 apt 의 `InRelease` 취득이다.
+GitHub 러너의 `/etc/apt/apt-mirrors.txt` 는 azure 미러를 먼저 보고 `archive.ubuntu.com` 으로
+폴백하는데, **apt 에 취득 타임아웃이 걸려 있지 않아** 폴백처가 멈추자 상한 없이 기다렸다.
+
+결함은 명령이 아니라 **미러 장애에 상한이 없다는 것**이다. 같은 명령이 첫 실행에서는
+3분 37초에 끝났다 — 이것이 "도달은 있으나 안정성이 없다"의 내용이다.
+
+#### 조치 — 셋으로 나누고 각각에 상한을 준다
+
+| 스텝 | 상한 | 실패 시 | 왜 |
+|---|---|---|---|
+| `Playwright 버전 확인` (id `pw`) | — | 치명 | `npm ci` 가 **실제로 깐** 버전(`1.62.1`)을 캐시 키에 넣는다. `package.json` 의 `^1.62.1` 범위 표기가 아니다 |
+| `Playwright 브라우저 캐시` (id `pw-cache`) | — | — | `~/.cache/ms-playwright`, 키 `ms-playwright-<os>-chromium-<version>`. `restore-keys` 없음 |
+| `Playwright 시스템 의존성 (apt)` | **6분** | **비치명** (`continue-on-error`) | 재시도 2회 + `Acquire::{http,https,ftp}::Timeout "20"` · `Acquire::Retries "2"` |
+| `Playwright 브라우저 설치 (chromium)` | **8분** | 치명 | 캐시 미적중일 때만 실행. 재시도 2회 |
+
+잡 전체 `timeout-minutes: 30` 은 **그대로 두었다**. 최악(캐시 미적중 + 양쪽 재시도 소진)이
+6 + 8 = 14분이고 나머지 절차가 실측 약 2분이라 예산 안에 든다.
+
+**apt 는 캐시와 무관하게 매번 돈다.** 시스템 패키지는 `~/.cache/ms-playwright` 에 없고
+러너가 새로 뜨면 사라진다 — 캐시가 줄이는 것은 CDN 다운로드지 apt 가 아니다. 그래서
+캐시만으로는 이 사고가 재발한다. **상한이 본 조치이고 캐시는 부수 효과다.**
+
+`Acquire::*::Timeout` 을 apt 자신에게 거는 것이 `timeout-minutes` 와 겹쳐 보이지만 겹치지
+않는다. 스텝 타임아웃만 있으면 멈춘 미러를 붙들고 **6분을 통째로 버린 뒤** 죽는다.
+apt 타임아웃이 있으면 URI 당 20초에 포기하고 다음으로 넘어가 대개 그 안에 끝난다.
+
+#### apt 를 비치명으로 둔 근거 — 은폐가 아니라 탐지 위치를 뒤로 옮긴 것
+
+무시 패턴을 하나 늘리는 모양이라 근거를 적는다(CLAUDE.md 규칙 4 — 은폐형은 넓히지 않는다).
+
+1. **이 명령이 실제로 까는 것은 폰트뿐이다.** 성공 실행 로그의 설치 목록 전량 —
+   `fonts-ipafont-gothic` · `fonts-freefont-ttf` · `fonts-tlwg-loma-otf` · `fonts-unifont` ·
+   `fonts-wqy-zenhei` · `xfonts-{encodings,utils,cyrillic,scalable}`. **공유 라이브러리는 0개**다.
+   chromium 이 요구하는 `.so` 는 `ubuntu-latest` 이미지가 이미 갖고 있다.
+2. **이 스위트는 폰트로 갈리지 않는다.** `frontend/e2e/` 에 `toHaveScreenshot` ·
+   `toMatchSnapshot` · 픽셀 비교가 **0건**이다(전량 DOM·헤더·상태 코드 단언). 한국어 문자열도
+   접근성 트리에서 읽지 렌더된 픽셀에서 읽지 않는다.
+3. **탐지기는 살아 있다.** 언젠가 Playwright 가 러너에 없는 `.so` 를 요구하면 chromium 이
+   기동에 실패하고 `Playwright 실행 (12건)` 스텝이 시끄럽게 깨진다. 그 스텝은 치명이다.
+   즉 탐지를 없앤 것이 아니라 **한 스텝 뒤로 옮겼고**, 옮긴 자리가 원래 그 결함이
+   드러나야 할 자리다.
+4. `continue-on-error` 는 스텝을 **실패로 표시한 채** 잡을 잇는다 — 실행 UI 와 로그에 남는다.
+   `|| true` 로 셸 안에서 삼키지 않은 이유가 이것이다.
+
+**뒤집히는 조건**(그때는 컨테이너 잡으로 간다): ⑴ `install-deps` 가 폰트 외의 것을 깔기
+시작하거나, ⑵ 이 스텝의 실패가 10회 중 2회 이상으로 잦아지거나, ⑶ 스위트에 픽셀 단언이 생기면.
+
+#### 대안 검토 — `mcr.microsoft.com/playwright` 컨테이너 잡: **채택하지 않았다**
+
+apt 를 없애는 가장 곧은 수단이고(의존성이 이미지에 구워져 있다) 원인을 정면으로 지운다.
+그럼에도 이번에는 쓰지 않는다.
+
+- **서비스 컨테이너의 호스트 이름이 갈린다.** 컨테이너 잡에서는 `localhost:5432` 가 아니라
+  서비스 이름(`postgres:5432`)으로 붙어야 한다. `SPRING_DATASOURCE_URL` 이 CI 에서만
+  달라지고, 그러면 **`frontend/e2e/run-local.sh` 가 재현하는 절차와 CI 절차가 갈린다** —
+  이 잡의 값어치가 "로컬 러너가 같은 절차를 재현한다"는 데 있으므로(§3-1) 그것을 깨면 손해다.
+- **JDK 를 다시 조달해야 한다.** 이 잡은 `bootJar` 를 빌드하고 `java -jar` 로 두 번 띄운다.
+  playwright 이미지에 JDK 21 이 없어 컨테이너 안에서 `setup-java` 를 다시 태우거나 잡을
+  둘로 쪼개 아티팩트로 넘겨야 한다 — 원인 대비 개편 폭이 크다.
+- **공급망을 늘린다.** 이 저장소는 서드파티 액션도 쓰지 않는 방침이다(`llm-lane` 주석 —
+  「공공기관 문서를 다루는 저장소라 공급망을 늘리지 않는다」). 외부 컨테이너 이미지를
+  실행 기반으로 고정하는 것은 그보다 넓은 노출이다.
+- **이미지를 Playwright 버전에 못 박게 된다.** `npm ci` 가 올린 버전과 이미지 태그가
+  갈리면 조용히 어긋난다 — 지금은 캐시 키가 그 어긋남을 드러낸다.
+
+위 「뒤집히는 조건」 셋 중 하나라도 서면 이 판단을 다시 연다.
+
+#### 검증
+
+- `yaml.safe_load` 파싱 통과, e2e 스텝 15개 구조 확인(상한·`if`·`continue-on-error`).
+- 전 잡 전 `run` 스텝 `bash -n` 문법 검사 통과.
+- `uv run pytest tests/test_harness_scope_reach.py tests/test_run_gate.py` → **70 passed**, exit 0.
+  (두 검사기는 `ci.yml` 의 잡 이름과 모든 `run` 값을 YAML 로 읽는다 — 잡 이름 `e2e` 불변,
+  추가한 `run` 값에 `run_gate.sh` 없음, `tests/test_run_gate.py` 경로 명시 스텝 유지.)
+- `frontend/e2e/run-local.sh` **무변경** — 로컬 재현 경로를 그대로 둔다.
+- 푸시 후 CI 실행 관측: 아래 표.
+
+| 실행 | headSha | e2e | 비고 |
+|---|---|---|---|
+| (관측 결과 기록) | | | |
 
 ---
 
