@@ -1,5 +1,7 @@
 package kr.easydoc.core.crypto
 
+import kr.easydoc.core.exceptions.InvalidInputException
+
 // 저장 암호화가 다루는 값들 — **평문 래퍼 · 암호문 봉투 · 결속 대상 · 방식 이름**.
 //
 // ## 여기가 `core` 인 이유
@@ -32,11 +34,76 @@ package kr.easydoc.core.crypto
  * `toString()` 재정의 사유는 `core/privacy/Masking.kt` 의 「value class 와 toString」 절과
  * 같다 — `@JvmInline value class` 는 컴파일러가 `toString()` 을 만들어 주므로 재정의가
  * 없으면 본문이 로그 한 줄에 그대로 실린다. 길이만 남긴다.
+ *
+ * ## 짝 없는 서로게이트를 **생성 시점에 거부한다** (게이트 25 X1)
+ *
+ * 저장 경로는 `String` → UTF-8 바이트 → AES-GCM → 바이트 → `String` 이다. 그런데
+ * `String.toByteArray(UTF_8)` 는 **짝 없는 UTF-16 서로게이트를 인코딩할 수 없어 `?`(U+003F)로
+ * 바꿔 버린다**(JDK `CharsetEncoder` 의 REPLACE 동작). 실측(JDK 21.0.4): `"x\uD800y"` 를
+ * 왕복시키면 `"x?y"` 가 나오고 `equals` 는 거짓이다. 태그 검증은 통과하므로 **인증에는
+ * 성공하면서 사용자 문서가 조용히 영구 손상된다.**
+ *
+ * 이것은 AEAD 의 결함이 아니다 — 손실은 암호화 **이전**, 문자열을 바이트로 바꾸는 자리에서
+ * 일어난다. 그래서 고치는 자리도 AEAD 가 아니라 **평문의 정의역**이다. 여기서 거부하면
+ * `ContentCipher` 의 round-trip 불변식이 *"[PlainBody] 로 만들 수 있는 모든 값"* 에 대해
+ * 전건으로 참이 된다. 거부하지 않으면 그 불변식은 "표본으로 확인한 값들에 대해서만" 참이고,
+ * 반례는 손상된 docx/hwpx 를 파서가 훑는 순간(= Phase 4 문서 추출) 들어온다.
+ *
+ * 대안이었던 「치환을 수용하고 기록한다」를 고르지 않은 이유: 치환은 **비가역**이라
+ * 나중에 되돌릴 수 없고, 그 사이에 저장된 행은 원문을 잃은 채 남는다.
+ *
+ * 왜 [InvalidInputException] 인가: 서버 설정이나 저장 상태의 문제가 아니라 **입력이 텍스트로
+ * 성립하지 않는다**는 판정이다. HTTP 매핑(422)과 사용자 문구를 어떻게 낼지는 문서 업로드
+ * 경로가 생기는 단위에서 계약과 맞춘다 — 지금 고정하는 것은 예외 타입과 메시지뿐이다.
  */
 @JvmInline
 value class PlainBody(val value: String) {
+    init {
+        // 정상 문자열에서는 `Char.isSurrogate()` 가 전부 거짓이라 한 번의 선형 훑기로 끝난다.
+        if (hasUnpairedSurrogate(value)) throw InvalidInputException(UNPAIRED_SURROGATE_MESSAGE)
+    }
+
     /** 길이만 남긴다. 본문은 개인정보 포함 여부와 무관하게 로그 금지다(프로젝트 `CLAUDE.md`). */
     override fun toString(): String = "PlainBody(${value.length}자)"
+
+    companion object {
+        /**
+         * 거부 문구. **입력값도 위치도 넣지 않는다** — 예외 메시지에 입력을 넣지 않는다는
+         * `DomainExceptions.kt` 의 규약이다(그 규약이 메시지를 응답 detail 에 그대로 담아도
+         * 되는 근거다).
+         */
+        const val UNPAIRED_SURROGATE_MESSAGE: String = "문서 본문에 텍스트로 저장할 수 없는 문자가 있습니다"
+    }
+}
+
+/**
+ * 짝을 이루지 않은 UTF-16 서로게이트가 하나라도 있는가.
+ *
+ * 상위 서로게이트 뒤에 하위 서로게이트가 오지 않거나, 하위 서로게이트가 홀로 나오면 참이다.
+ * 이 둘이 곧 `String.toByteArray(UTF_8)` 가 `?` 로 바꿔 버리는 값의 전부다.
+ */
+private fun hasUnpairedSurrogate(value: String): Boolean {
+    var index = 0
+    var unpaired = false
+    while (index < value.length && !unpaired) {
+        val character = value[index]
+        when {
+            // 상위 + 하위가 이어지면 정상 쌍이다. 두 칸을 함께 건너뛴다.
+            character.isHighSurrogate() && index + 1 < value.length && value[index + 1].isLowSurrogate() -> {
+                index += 2
+            }
+
+            // 남은 서로게이트는 전부 짝이 없다 — 짝 없는 상위, 홀로 나온 하위, 끝에서 잘린 상위.
+            character.isSurrogate() -> {
+                unpaired = true
+            }
+
+            else -> {
+                index++
+            }
+        }
+    }
+    return unpaired
 }
 
 /**
