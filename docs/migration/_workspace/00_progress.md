@@ -1747,8 +1747,12 @@ C3 의 선결로 적었다. **계약 레인 C1 커밋이 documents 첫 계약 �
 `V5__conversion_jobs.sql`. 정본은 `04_kotlin-implementer_documents-plan.md` §4·§7.2, 진행 기록은
 `04_kotlin-implementer_documents.md` §7.
 
-- **선결: compose 기동 스모크(계획 P4)가 미실행이다.** 게이트 26 이 `@Profile("!migrate")` 로
-  기동 조건을 바꿨는데 그 뒤 compose 를 띄운 적이 없다.
+- ~~**선결: compose 기동 스모크(계획 P4)가 미실행이다.**~~ **2026-08-20 실행·닫힘 (리더).**
+  산출물 `04_leader_compose-smoke.md`. 네 갈래 전건 기대대로 — `migrate` 는 키 없이 exit 0 이고
+  암호 빈이 조립되지 않으며(자기점검 로그 0회), `api` 는 키 없이 exit 1, kcv 를 비우면 계산값을
+  알려 주고 멈추며, 키·kcv 를 채우면 api `healthy`·worker `running`·`/health` 200 이다.
+  **도중에 찾은 것**: 로컬 볼륨이 오래되면 V2 체크섬 불일치로 `kotlin-migrate` 가 멈춘다
+  (V2 diff 는 주석뿐 — 비주석 변경 0줄을 실측하고 체크섬 정정으로 닫았다). 그 문서 §3 을 읽어라.
 - **큐 등록은 같은 트랜잭션에 둔다**(리더 판정 L-1 전제). 계획 §9 질문 ② 의 「원자성을 일부러
   버리는」 잠정 전제는 **쓰지 않는다**.
 - `DocumentPorts.kt` 를 만들 때 `DocumentTextExtractor` 를 합치지 마라 — 이미 별도 파일로 있다.
@@ -1759,7 +1763,7 @@ C3 의 선결로 적었다. **계약 레인 C1 커밋이 documents 첫 계약 �
 |---|---|---|
 | **1** | **L-1 잔여 두 갈래** — ⑴ `QueueUnavailableException`→502 **매핑**을 함께 내리는가(안 내리면 `BadGateway` 고아) ⑵ `ServiceUnavailable:1680`(둘째 Redis 전제)과 DC-19 를 어떻게 하는가. **리더 권고: 계약·구현·테스트를 한 변경 단위로 묶어 한 게이트에서 처리한다** — 계약만 먼저 고치면 `GlobalExceptionHandler.kt:381-386` 구현이 그 순간 계약 밖이 된다(`ErrorContractTest.kt:57` 이 초록으로 고정 중) | C2 의 `POST /documents` 의미 |
 | **2** | **§9.2 D-f 마감 해석** — 표 18 TRACE 카나리를 C1 이 아니라 C3 이전으로 옮겼다. 원장 마감은 「문서 본문 진입 전」인데 **C1 은 HTTP 표면을 만들지 않는다.** C1 에 넣으면 「문서 본문」 축이 빈 채로 조건 18 이 닫힌다(**닫힌 것처럼 보이는 미도달**) | C3 이전 |
-| **3** | **§9.2 D-a 사후 승인** — commons-compress/commons-io 를 spike 값(1.27.1/2.18.0)이 아니라 그래프 합의값(1.28.0/2.20.0)으로 올렸다. 실측 사유: spike 값으로 락을 뜨니 `testcontainers:2.0.5` 경유로 **compileClasspath 와 testClasspath 가 갈렸다** | 이미 집행됨 — 확인만 |
+| **3** | **§9.2 D-a 사후 승인** — commons-compress/commons-io 를 spike 값(1.27.1/2.18.0)이 아니라 그래프 합의값(1.28.0/2.20.0)으로 올렸다. 실측 사유: spike 값으로 락을 뜨니 `testcontainers:2.0.5` 경유로 **compileClasspath 와 testClasspath 가 갈렸다** | **닫힘 — 리더 승인 2026-08-20.** 그래프 합의값을 유지한다. 되돌리면 파서 테스트가 배포본과 다른 라이브러리를 시험하게 되고, `strictly` 로 끌어내리는 갈래는 검증되지 않은 새 조합을 만들 뿐이다 |
 | **4** | **L-2 tie-break 신설** — 편집 지점 확정(`:2051` `items.description`). 단독 커밋하면 C3(DL-12·DL-13)과 갈라지므로 **C3 와 같은 커밋** | C3 |
 | **5** | **site 6 — `app/easyread/collection.py::write_draft`** 가 골든 문서 초안 **본문 텍스트**를 추적 디렉터리(`docs/golden-drafts/`, `.gitignore` 가 일부러 안 덮는다)에 원시 제어문자로 쓸 수 있다. export fixture 의 DEL 이 나온 출처와 같은 종류. **리더 권고: 닫는다** — 「Python 은 폐기 대상」은 사유가 안 된다(폐기는 Phase 8·9 이고 초안은 그 전에 커밋될 수 있다) | 초안이 커밋되기 전 |
 | **6** | **`llm-lane` 타임아웃** — 위 「게이트 26 후속」 §4-① . 품질 차단축 3개의 CI 도달이 0인데 배선돼 있어 도달한 것처럼 보인다 | Quality 게이트를 근거로 쓰기 전 |
@@ -1795,7 +1799,9 @@ C3 의 선결로 적었다. **계약 레인 C1 커밋이 documents 첫 계약 �
 
 ### §6 — 미실행 (돌린 것처럼 적지 않는다)
 
-- **compose 기동 스모크** (C2 선결) · **계약 음성 대조 N-23~N-28**(C3 이후) ·
+- ~~**compose 기동 스모크** (C2 선결)~~ **닫힘 2026-08-20** — `04_leader_compose-smoke.md`.
+  실행 경로는 `local:docker compose --profile kotlin up` 이고 **CI 도달은 0이다**(어느 잡도 안 돌린다).
+  · **계약 음성 대조 N-23~N-28**(C3 이후) ·
   `ParserNodeRegistryTest` 미작성과 그 음성 대조 N-R1~4 — 계약 레인 §1 의 「첫날 도달」은
   **논증이지 실측이 아니다** · L-2 React 재측정
 - **타이밍 X3 의 codex A-6 처방(다중 실행·절대 격차·분포)이 아직 어느 커밋에도 배정되지 않았다**
