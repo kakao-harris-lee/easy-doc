@@ -211,7 +211,14 @@ object ContractSpec {
     fun responseExampleDetail(
         component: String,
         example: String,
-    ): String = text("components", "responses", component, "content", "application/json", "examples", example, "value", "detail")
+    ): String {
+        val json = map("components", "responses", component, "content", "application/json")
+        val examples = json["examples"] as? Map<*, *> ?: error("$component 에 examples 가 없다")
+        val value =
+            (examples[example] as? Map<*, *>)?.get("value") as? Map<*, *>
+                ?: error("$component.examples.$example.value 가 없다")
+        return value["detail"]?.toString() ?: error("$component.examples.$example 에 detail 이 없다")
+    }
 
     /** P-5. 고위험 하한선 목록. `"POST /auth/signup"` 형태의 문자열이다. */
     fun privateResponseHeaderTargets(): List<String> = strings("x-private-response-headers", "applies_to")

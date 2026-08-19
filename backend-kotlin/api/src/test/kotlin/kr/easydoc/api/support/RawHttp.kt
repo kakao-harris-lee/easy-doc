@@ -228,8 +228,19 @@ private fun readLine(input: InputStream): String {
 
 /**
  * 서블릿에 매핑되지 않는 요청들. **파싱이 실패하는 단계가 서로 다르다** — 요청 대상 문자
- * 검사, 요청 줄 형식, 헤더 크기 상한, 프로토콜 버전, 메서드 토큰. 한 갈래만 두면 다른
- * 갈래에서 도달 경로가 달라져도 모른다.
+ * 검사, 요청 줄 형식, 헤더 줄 형식, 헤더 크기 상한, `Host` 검증, 프로토콜 버전. 한 갈래만
+ * 두면 다른 갈래에서 도달 경로가 달라져도 모른다.
+ *
+ * ## 계약이 든 7종 중 여기 없는 하나 (게이트 21 · contract-keeper §3-4)
+ *
+ * 계약 `x-global-response-headers.x-phase3-measurement.unreachable_by_filter.cases` 는
+ * 이 자리를 **7종**으로 열거하는데 이 열거자는 **6개**다. 빠진 하나는 「알 수 없는 메서드
+ * → 405」인데, 원시 소켓 실측 결과 **그것은 컨테이너가 거절하는 자리가 아니다** —
+ * `FROB /health` 는 서블릿까지 도달해 Spring MVC 가 405 를 만든다(`Allow: GET` 이 붙고
+ * 본문이 우리 `{"detail":"Method Not Allowed"}` 이며 Content-Type 에 밸브가 붙이는
+ * `;charset=UTF-8` 이 없다). 즉 `reachable_by_filter` 소속이고 계약 쪽 분류가 사실과
+ * 다르다. 계약 수정 권한은 `contract-keeper` 에 있으므로 여기서는 **열거자를 넣지 않고**
+ * 그 경로를 [kr.easydoc.api.PrivateResponseHeadersReachTest] 의 도달 케이스로 따로 잰다.
  *
  * [expectedStatus] 는 이 요청이 어떤 상태 코드로 거절되는지다. 그 값이 달라지면 측정의
  * 전제가 깨진 것이므로 테스트가 먼저 그것을 알린다.
@@ -257,6 +268,20 @@ enum class ContainerRejectedRequest(val expectedStatus: Int) {
             RawHttp.raw(
                 "GET /health HTTP/1.1\r\nHost: 127.0.0.1:$port\r\n" +
                     "X-Big: ${"a".repeat(OVERSIZED_HEADER_BYTES)}\r\nConnection: close\r\n\r\n",
+            )
+    },
+
+    /**
+     * 헤더 줄에 콜론이 없다. 요청 줄은 멀쩡하고 **헤더 블록 파싱**에서 거절된다.
+     *
+     * 실측: 400 이고 본문 Content-Type 이 `application/json;charset=UTF-8` — 밸브가 만드는
+     * 형태다(서블릿 경로는 charset 을 붙이지 않는다).
+     */
+    HEADER_WITHOUT_COLON(BAD_REQUEST) {
+        override fun build(port: Int): ByteArray =
+            RawHttp.raw(
+                "GET /health HTTP/1.1\r\nHost: 127.0.0.1:$port\r\n" +
+                    "BrokenHeaderLine\r\nConnection: close\r\n\r\n",
             )
     },
 

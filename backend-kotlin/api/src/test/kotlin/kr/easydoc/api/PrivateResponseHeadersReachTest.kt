@@ -108,6 +108,31 @@ class PrivateResponseHeadersReachTest {
         assertPrivateHeaders(response)
     }
 
+    /**
+     * **알 수 없는 HTTP 메서드는 컨테이너가 거절하지 않는다** (게이트 21 · contract-keeper §3-4).
+     *
+     * 계약은 이 자리를 「필터가 닿지 않는 7종」에 넣어 두었는데, 원시 소켓 실측은 반대다 —
+     * `FROB /health` 는 서블릿까지 도달해 Spring MVC 가 405 를 만든다(`Allow: GET` 이
+     * 붙고 본문이 우리 고정 문구다). 즉 **필터가 닿는 자리**이고, 그렇다면 밸브가 아니라
+     * 필터가 헤더를 붙여야 한다. 그 사실을 여기서 고정한다 — 계약 문면 정정은
+     * `contract-keeper` 몫이지만, 어느 쪽으로 분류되든 **응답은 이 케이스가 붙든다.**
+     */
+    @Test
+    @DisplayName("알 수 없는 메서드 405(서블릿까지 도달)에 두 헤더가 있다")
+    fun `알 수 없는 메서드에 닿는다`() {
+        val request = "FROB /health HTTP/1.1\r\nHost: 127.0.0.1:$port\r\nConnection: close\r\n\r\n"
+        val response = exchange(RawHttp.raw(request))
+
+        assertThat(response.statusCode)
+            .withFailMessage("알 수 없는 메서드가 %d 로 나갔다 — 거절 단계가 바뀌었으면 계약 분류를 다시 본다", response.statusCode)
+            .isEqualTo(METHOD_NOT_ALLOWED)
+        // 서블릿까지 갔다는 증거. 컨테이너가 앞에서 끊으면 이 헤더가 없다.
+        assertThat(response.values("allow"))
+            .withFailMessage("405 에 Allow 가 없다 — 서블릿이 만든 응답이 아니다(계약의 unreachable 분류가 맞을 수 있다)")
+            .isNotEmpty()
+        assertPrivateHeaders(response)
+    }
+
     @Test
     @DisplayName("CORS 프리플라이트(OPTIONS) 응답에 두 헤더가 있다")
     fun `프리플라이트에 닿는다`() {
@@ -196,6 +221,7 @@ class PrivateResponseHeadersReachTest {
 
         private const val OK = 200
         private const val NOT_FOUND = 404
+        private const val METHOD_NOT_ALLOWED = 405
         private const val PAYLOAD_TOO_LARGE = 413
         private const val UNSUPPORTED_MEDIA_TYPE = 415
         private const val SERVICE_UNAVAILABLE = 503
