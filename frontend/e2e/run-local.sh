@@ -1,0 +1,163 @@
+#!/usr/bin/env bash
+# Phase 3 브라우저 E2E 로컬 러너 — CI 잡 `e2e` 와 **같은 절차**를 한 명령으로 재현한다.
+#
+#   frontend/e2e/run-local.sh              # 전체
+#   frontend/e2e/run-local.sh --grep E11   # 인자는 그대로 playwright 로 넘어간다
+#
+# 세우는 것: 일회용 PostgreSQL 컨테이너 → Flyway 마이그레이션 → Kotlin API(bootJar) →
+# Vite dev 서버(Playwright 의 webServer 가 띄운다) → Playwright.
+#
+# ## 게이트 러너 규약
+#
+# 종료 코드를 삼키지 않는다. 파이프로 잇지 않고(`| tee` 는 파이프라인 마지막 명령의
+# 코드를 내놓는다), Playwright 의 코드를 변수에 받아 그대로 `exit` 한다.
+# `set -euo pipefail` 을 걸고, 정리는 `trap` 이 맡아 실패 경로에서도 컨테이너가 남지 않는다.
+#
+# ## 왜 compose 가 아닌가
+#
+# 계획 §3-4 는 `local:` 을 compose 경로로 적었으나, 리더 판정(OQ-E1)이 CI 실행 경로를
+# **새 잡 `e2e`** 로 정했고 그 잡은 서비스 컨테이너 + bootJar 로 돈다. 로컬과 CI 가 다른
+# 절차를 밟으면 "로컬에서는 되는데" 가 구조적으로 생기므로, 이 스크립트가 CI 절차를 그대로
+# 따라간다. compose 경로(`docker compose --profile kotlin up -d`)도 여전히 유효하고,
+# 그때는 `E2E_SKIP_STACK=1 E2E_API_BASE_URL=http://localhost:8100` 로 이 스크립트를 부른다.
+
+set -euo pipefail
+
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+frontend_dir="$(dirname "$here")"
+repo_root="$(dirname "$frontend_dir")"
+
+# --- 설정 --------------------------------------------------------------------
+PG_PORT="${E2E_PG_PORT:-55432}"
+PG_CONTAINER="${E2E_PG_CONTAINER:-easydoc-e2e-pg}"
+PG_IMAGE="${E2E_PG_IMAGE:-pgvector/pgvector:pg16}"
+PG_DB="${E2E_PG_DB:-easydoc_kotlin}"
+API_PORT="${E2E_API_PORT:-8100}"
+API_BASE_URL="${E2E_API_BASE_URL:-http://localhost:${API_PORT}}"
+# 브라우저 출처. 계약 `x-cors.allow_origins` 의 값과 같아야 프리플라이트가 통과한다.
+FRONTEND_ORIGIN="${E2E_FRONTEND_ORIGIN:-http://localhost:5173}"
+LOG_DIR="${E2E_LOG_DIR:-${frontend_dir}/test-results}"
+API_JAR="${repo_root}/backend-kotlin/api/build/libs/easy-doc-api.jar"
+
+# 스택을 이미 띄워 두었으면(compose 등) 이 스크립트는 Playwright 만 돌린다.
+SKIP_STACK="${E2E_SKIP_STACK:-0}"
+SKIP_BUILD="${E2E_SKIP_BUILD:-0}"
+
+api_pid=""
+
+cleanup() {
+  local status=$?
+  if [ -n "$api_pid" ] && kill -0 "$api_pid" 2>/dev/null; then
+    kill "$api_pid" 2>/dev/null || true
+    wait "$api_pid" 2>/dev/null || true
+  fi
+  if [ "$SKIP_STACK" != "1" ]; then
+    docker rm -f "$PG_CONTAINER" >/dev/null 2>&1 || true
+  fi
+  return $status
+}
+trap cleanup EXIT
+
+log() { printf '[e2e] %s\n' "$*"; }
+
+if [ "$SKIP_STACK" = "1" ]; then
+  log "스택 기동을 건너뛴다 (E2E_SKIP_STACK=1). API=${API_BASE_URL}"
+else
+  # --- ① 일회용 PostgreSQL ---------------------------------------------------
+  # Testcontainers 를 쓰지 않는다 — 그것은 Kotlin 테스트 프로세스의 수명에 묶여 있고,
+  # 여기서는 별도 프로세스로 뜨는 API 가 붙을 DB 가 필요하다.
+  log "PostgreSQL 컨테이너 기동 (${PG_IMAGE}, 127.0.0.1:${PG_PORT})"
+  docker rm -f "$PG_CONTAINER" >/dev/null 2>&1 || true
+  docker run -d --name "$PG_CONTAINER" \
+    -e POSTGRES_DB="$PG_DB" \
+    -e POSTGRES_USER=postgres \
+    -e POSTGRES_PASSWORD=postgres \
+    -p "127.0.0.1:${PG_PORT}:5432" \
+    "$PG_IMAGE" >/dev/null
+
+  ready=0
+  for _ in $(seq 1 60); do
+    if docker exec "$PG_CONTAINER" pg_isready -h 127.0.0.1 -p 5432 -U postgres -d "$PG_DB" \
+      >/dev/null 2>&1; then
+      ready=1
+      break
+    fi
+    sleep 1
+  done
+  if [ "$ready" -ne 1 ]; then
+    echo "::error::PostgreSQL 이 60초 안에 준비되지 않았다." >&2
+    docker logs "$PG_CONTAINER" >&2 || true
+    exit 1
+  fi
+  log "PostgreSQL 준비 완료"
+
+  # --- ② bootJar -------------------------------------------------------------
+  if [ "$SKIP_BUILD" = "1" ] && [ -f "$API_JAR" ]; then
+    log "bootJar 빌드를 건너뛴다 (E2E_SKIP_BUILD=1)"
+  else
+    log "Kotlin API bootJar 빌드"
+    (cd "${repo_root}/backend-kotlin" && ./gradlew :api:bootJar --no-daemon -q)
+  fi
+  if [ ! -f "$API_JAR" ]; then
+    echo "::error::${API_JAR} 이 없다 — bootJar 가 만들어지지 않았다." >&2
+    exit 1
+  fi
+
+  # --- ③ 기동 환경 ------------------------------------------------------------
+  # 비밀은 **매 실행 새로 만든다.** 저장소에 고정 값을 적으면 그것이 곧 커밋된 비밀이 되고,
+  # 테스트용이라는 사실은 파일을 읽는 사람에게만 보인다. 계약 `x-auth.min_secret_bytes`
+  # 가 32바이트를 요구하므로 hex 64자를 만든다.
+  jwt_secret="$(openssl rand -hex 32)"
+
+  export SPRING_DATASOURCE_URL="jdbc:postgresql://localhost:${PG_PORT}/${PG_DB}"
+  export SPRING_DATASOURCE_USERNAME=postgres
+  export SPRING_DATASOURCE_PASSWORD=postgres
+  export SERVER_PORT="$API_PORT"
+  export EASYDOC_AUTH_JWT_SECRET="$jwt_secret"
+
+  mkdir -p "$LOG_DIR"
+
+  # --- ④ 마이그레이션 ---------------------------------------------------------
+  log "Flyway 마이그레이션 (profile=migrate)"
+  java -jar "$API_JAR" --spring.profiles.active=migrate >"${LOG_DIR}/kotlin-migrate.log" 2>&1
+
+  # --- ⑤ API 기동 -------------------------------------------------------------
+  log "Kotlin API 기동 (profile=api, ${API_BASE_URL})"
+  java -jar "$API_JAR" --spring.profiles.active=api >"${LOG_DIR}/kotlin-api.log" 2>&1 &
+  api_pid=$!
+
+  healthy=0
+  for _ in $(seq 1 60); do
+    if curl --fail --silent --output /dev/null "${API_BASE_URL}/health"; then
+      healthy=1
+      break
+    fi
+    if ! kill -0 "$api_pid" 2>/dev/null; then
+      echo "::error::Kotlin API 프로세스가 죽었다. ${LOG_DIR}/kotlin-api.log 를 보라." >&2
+      exit 1
+    fi
+    sleep 1
+  done
+  if [ "$healthy" -ne 1 ]; then
+    echo "::error::Kotlin API 가 60초 안에 /health 200 을 내지 않았다." >&2
+    exit 1
+  fi
+  log "Kotlin API 준비 완료"
+fi
+
+# --- ⑥ Playwright -------------------------------------------------------------
+# Vite dev 서버는 Playwright 의 `webServer` 가 띄운다 — 설정이 한 곳에 있어야
+# CI 와 로컬이 같은 출처·같은 `VITE_API_BASE_URL` 로 돈다.
+export E2E_API_BASE_URL="$API_BASE_URL"
+export E2E_FRONTEND_ORIGIN="$FRONTEND_ORIGIN"
+
+log "Playwright 실행"
+status=0
+(cd "$frontend_dir" && npx playwright test "$@") || status=$?
+
+if [ "$status" -ne 0 ]; then
+  log "실패 (종료 코드 ${status}). 보고서: ${frontend_dir}/playwright-report"
+else
+  log "통과"
+fi
+exit "$status"

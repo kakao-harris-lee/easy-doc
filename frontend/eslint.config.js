@@ -9,7 +9,8 @@ import tseslint from 'typescript-eslint'
 // jsx-a11y는 KWCAG 기본 원칙(label·키보드 조작·대체 텍스트)의 자동 검사 축이다.
 // 사람이 봐야 하는 항목(대비, 초점 순서)까지 잡아주지는 않으므로 최소선으로만 쓴다.
 export default tseslint.config(
-  { ignores: ['dist', 'coverage'] },
+  // playwright-report·test-results 는 실행 산출물이다(추적하지 않는다).
+  { ignores: ['dist', 'coverage', 'playwright-report', 'test-results'] },
   {
     files: ['**/*.{ts,tsx}'],
     extends: [
@@ -33,7 +34,8 @@ export default tseslint.config(
   },
   {
     // 테스트 파일은 node 전역(process 등)과 vitest 전역을 함께 쓴다.
-    files: ['**/*.test.{ts,tsx}', 'src/test/**/*.ts'],
+    // 브라우저 E2E(`e2e/`)도 같다 — node 에서 돌지만 `page.evaluate` 본문은 브라우저다.
+    files: ['**/*.test.{ts,tsx}', 'src/test/**/*.ts', 'e2e/**/*.ts', 'playwright.config.ts'],
     languageOptions: { globals: { ...globals.browser, ...globals.node } },
   },
 )
