@@ -33,7 +33,15 @@ data class WorkspaceNameRequest
     @JsonCreator
     constructor(
         @param:JsonProperty("name") val name: String,
-    )
+    ) {
+        /**
+         * **이름을 찍지 않는다** — [Workspace.toString] 과 같은 이유(A-3).
+         *
+         * 요청 DTO 는 특히 위험하다. 역직렬화 실패·검증 실패의 진단 로그가 요청 객체를
+         * 통째로 찍는 것이 가장 흔한 형태이고, 여기 담긴 것은 **사용자가 방금 적은 문자열**이다.
+         */
+        override fun toString(): String = "WorkspaceNameRequest(name=${Workspace.NAME_MASK})"
+    }
 
 /**
  * 작업 공간 한 건. 계약 `components/schemas/WorkspaceResponse` — `POST`·`PATCH` 응답이다.
@@ -54,6 +62,9 @@ data class WorkspaceResponse(
     @get:JsonProperty("name") val name: String,
     @get:JsonProperty("created_at") val createdAt: String,
 ) {
+    /** 이름을 찍지 않는다 — [Workspace.toString] 과 같은 이유(A-3). */
+    override fun toString(): String = "WorkspaceResponse(id=$id, name=${Workspace.NAME_MASK}, createdAt=$createdAt)"
+
     companion object {
         fun of(workspace: Workspace): WorkspaceResponse =
             WorkspaceResponse(
@@ -77,6 +88,11 @@ data class WorkspaceListItemResponse(
     @get:JsonProperty("created_at") val createdAt: String,
     @get:JsonProperty("document_count") val documentCount: Int,
 ) {
+    /** 이름을 찍지 않는다 — [Workspace.toString] 과 같은 이유(A-3). */
+    override fun toString(): String =
+        "WorkspaceListItemResponse(id=$id, name=${Workspace.NAME_MASK}, " +
+            "createdAt=$createdAt, documentCount=$documentCount)"
+
     companion object {
         fun of(listing: WorkspaceListing): WorkspaceListItemResponse {
             val workspace = WorkspaceResponse.of(listing.workspace)

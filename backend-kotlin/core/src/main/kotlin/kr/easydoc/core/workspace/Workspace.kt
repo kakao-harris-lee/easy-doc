@@ -28,7 +28,30 @@ data class Workspace(
     val id: UUID,
     val name: String,
     val createdAt: Instant,
-)
+) {
+    /**
+     * **이름을 찍지 않는다.**
+     *
+     * 계약 자신이 작업 공간 이름을 사적 응답 헤더 대상으로 분류했다
+     * (`x-private-response-headers.applies_to` — *"작업 공간 이름도 사용자가 적은
+     * 콘텐츠"*). 그런데 `data class` 의 기본 `toString()` 은 모든 필드를 찍는다 —
+     * `Secret` 이 막는 것과 **같은 기본 동작**이고, 이 자리에서는 KDoc 이 소유자를
+     * 담지 않는 근거로 *"담아 두면 `toString()`·직렬화 어디로든 새는 경로가 생긴다"* 를
+     * 들면서 `name` 자신에는 같은 규율을 적용하지 않은 비대칭이 있었다(A-3).
+     *
+     * 오늘 이 경로에 로거가 0개라 **도달은 0**이다. 그래도 지금 막는 이유는, 막는 비용이
+     * 한 줄인데 새는 순간은 **로깅이 처음 들어오는 커밋**이고 그때 아무도 이 클래스를
+     * 다시 보지 않기 때문이다.
+     *
+     * 진단에 필요한 것은 남긴다 — 식별자와 생성 시각으로 행을 특정할 수 있다.
+     */
+    override fun toString(): String = "Workspace(id=$id, name=$NAME_MASK, createdAt=$createdAt)"
+
+    companion object {
+        /** 이름 자리에 대신 찍히는 표식. 테스트가 이 값으로 「가려졌음」을 확인한다. */
+        const val NAME_MASK: String = "***"
+    }
+}
 
 /**
  * 목록 한 줄 — 작업 공간 + 그 안의 문서 수.

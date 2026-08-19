@@ -173,6 +173,43 @@ class JdbcWorkspaceRepositoryTest {
     }
 
     /**
+     * **A-2 — `delete` 의 「터질 수 있는 제약은 하나뿐」 전제를 지키는 장치.**
+     *
+     * `JdbcWorkspaceRepository.delete` 는 `DataIntegrityViolationException` 을 메시지도
+     * SQLState 도 읽지 않고 곧장 「작업 공간에 문서가 남아 있습니다」 409 로 옮긴다.
+     * 근거는 *"이 DELETE 에서 터질 수 있는 제약은 그 FK 하나뿐"* 이고, 오늘 참이다.
+     *
+     * **그 전제를 지키는 장치가 0이었다.** Phase 4·5 가 `workspaces` 를 참조하는 테이블을
+     * 하나만 더 만들면 그 위반이 조용히 같은 409 로 둔갑한다 — 사용자는 문서를 다 지워도
+     * 계속 거절당하고 원인을 알 수 없다. 참조가 늘어나는 **그 마이그레이션 커밋에서**
+     * 빨개지게 둔다.
+     *
+     * 스키마를 직접 묻는다(`pg_constraint`). 마이그레이션 파일을 문자열로 읽으면 Flyway 가
+     * 실제로 적용한 것이 아니라 **적힌 것**을 재게 된다.
+     */
+    @Test
+    @DisplayName("workspaces 를 참조하는 외래 키가 정확히 하나다 — delete 의 409 단정이 서는 전제")
+    fun `작업 공간을 참조하는 제약이 하나뿐이다`() {
+        val referencing =
+            jdbcClient
+                .sql(
+                    """
+                    SELECT conname FROM pg_constraint
+                    WHERE contype = 'f' AND confrelid = 'workspaces'::regclass
+                    """.trimIndent(),
+                ).query { rs, _ -> rs.getString("conname") }
+                .list()
+
+        assertThat(referencing)
+            .withFailMessage(
+                "workspaces 를 참조하는 FK 가 %s 다. delete 는 무결성 위반을 메시지도 보지 않고 " +
+                    "「문서가 남아 있습니다」 409 로 옮기므로, 참조가 늘면 다른 위반이 그 문구로 둔갑한다. " +
+                    "제약을 늘렸다면 delete 의 예외 분류를 함께 고친다.",
+                referencing,
+            ).containsExactly(DOCUMENTS_WORKSPACE_FK)
+    }
+
+    /**
      * **X-3ⓒ — 「같은 DB 왕복 구조」를 구조로 강제한다.**
      *
      * 소유권 은닉의 시간 축 게이트가 잡지 못하는 것이 여기 있다. 소유 조건을 SQL `WHERE`
@@ -314,6 +351,9 @@ class JdbcWorkspaceRepositoryTest {
 
         /** 이름 변경이 도는 SQL 문 수. 소유 판정과 갱신이 한 문장이라 1 이다. */
         const val RENAME_STATEMENTS = 1
+
+        /** `V1__python_schema_baseline.sql` 이 준 제약 **이름**이다. 값이 아니라 이름이다. */
+        const val DOCUMENTS_WORKSPACE_FK = "fk_documents_workspace_id_workspaces"
 
         const val CONCURRENT_DELETERS = 2
         const val BARRIER_TIMEOUT_SECONDS = 10L
