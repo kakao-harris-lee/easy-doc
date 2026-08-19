@@ -142,9 +142,40 @@ class AuthService(
      *
      * 캐시하면 삭제가 캐시 수명만큼 늦게 반영돼 「탈퇴했는데 아직 쓸 수 있다」가 그대로
      * 남는다. 매 요청 조회 비용은 그 대가로 받아들인 것이다(질의 하나, [UserRepository.exists]).
+     *
+     * ## 토큰이 든 세 갈래가 **같은 양의 일**을 한다
+     *
+     * 계약 `x-auth.failure_uniformity` 는 *"토큰 만료·위조·계정 삭제를 모두 같은 401 과 같은
+     * 메시지"* 로 묶고 바로 다음 문장에서 *"응답 시간으로도 새지 않게 한다"* 를 적는다.
+     * 바이트 축은 같은 예외 하나로 성립하지만 시간 축은 아니었다 — 서명이 깨진 토큰은
+     * [AccessTokens.verify] 에서 끊겨 DB 를 아예 타지 않고, 서명이 유효한 삭제 계정 토큰만
+     * `exists` 왕복을 돌았다. privacy-gate 실측(게이트 23 기록 ①, 표본 각 101, 교차 순서):
+     * 삭제 계정 p50 **1.067ms** / 위조 0.539 / 만료 0.547 — **비 1.95~1.98**.
+     * 저장소가 같은 성질에 쓰는 문턱은 1.5 다(로그인 B-1 · 소유권 X-3ⓑ).
+     *
+     * 그래서 실패 갈래도 **같은 왕복 한 번**을 치른다. 로그인 경로가 계정이 없을 때
+     * [verifyAgainstDummy] 로 해시 비용을 치르는 것과 **같은 형태**이고, 값도 같은 성격이다 —
+     * 결과를 쓰지 않으며 안전성은 제어 흐름이 진다.
+     *
+     * **헤더가 아예 없는 요청은 이 균일화의 대상이 아니다.** 그 갈래는 인터셉터가 여기 닿기
+     * 전에 끊고, 계약이 **다른 문구**(`no_header`)를 주므로 바이트 축에서 이미 구분된다 —
+     * 시간을 맞춰도 얻을 것이 없고, 맞추려면 인증 헤더 없는 트래픽 전부에 DB 부하를 얹게 된다.
+     * 균일화의 대상은 계약이 한 줄에 묶은 **토큰이 든 세 갈래**다.
+     *
+     * **예외를 삼키지 않는다.** DB 가 죽으면 유효 토큰 경로와 실패 갈래가 **똑같이** 500 이
+     * 된다. 여기서 조회 실패를 삼켜 401 로 바꾸면 그 대칭이 깨져 「DB 장애 중에는 위조만
+     * 401」이라는 새 채널이 생긴다.
      */
     fun authenticate(token: String): UUID {
-        val userId = accessTokens.verify(token)
+        val userId =
+            try {
+                accessTokens.verify(token)
+            } catch (failure: InvalidCredentialsException) {
+                // 만료·위조·클레임 누락도 삭제 계정과 같은 DB 왕복 하나를 돈다.
+                // 결과는 쓰지 않는다 — 이 갈래는 무조건 실패로 끝난다.
+                users.exists(ABSENT_USER_PROBE_ID)
+                throw failure
+            }
         // 사유를 가르지 않는다 — 위조 토큰과 삭제 계정이 같은 예외·같은 문구로 나간다.
         if (!users.exists(userId)) {
             throw InvalidCredentialsException(INVALID_CREDENTIALS_MESSAGE)
@@ -203,5 +234,15 @@ class AuthService(
          * 같은 값이며, 로그인 실패·토큰 무효·계정 삭제가 **전부 이 하나**를 쓴다.
          */
         const val INVALID_CREDENTIALS_MESSAGE = "이메일 또는 비밀번호가 올바르지 않습니다"
+
+        /**
+         * 토큰 검증이 실패한 갈래가 비용을 맞추려고 조회하는 식별자.
+         *
+         * **절대 존재하지 않는 값**이어야 한다 — 계정 식별자는 `UUID.randomUUID()`(버전 4)로
+         * 만들어지므로 nil UUID 는 나올 수 없다. 검증에 실패한 토큰의 `sub` 를 대신 쓰지
+         * 않는 이유는 둘이다: 서명이 확인되지 않은 입력을 파싱해 질의 인자로 쓰게 되고,
+         * 「그 식별자가 있는가」를 공격자가 고른 값으로 물어보는 통로가 열린다.
+         */
+        val ABSENT_USER_PROBE_ID: UUID = UUID(0L, 0L)
     }
 }
