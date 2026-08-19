@@ -33,7 +33,7 @@
 `export-filename-control-chars` 도 같다: Python 도 제어문자를 지우지 않고 **공백으로 바꾼다**.
 
 > 기록용 주의 하나. `renderTxt` 와 `exportFilename` 은 제어문자를 다르게 다루고 **그것이 의도다** —
-> `renderTxt` 는 `stripControlChars` 로 **지운 뒤** 파일명을 만들고(`"제목"` → `"제목"`),
+> `renderTxt` 는 `stripControlChars` 로 **지운 뒤** 파일명을 만들고(`"제\u0001목"` → `"제목"`),
 > `exportFilename` 을 직접 부르면 **공백으로 바뀐다**(`"제 목"`). 정본의 filename 케이스는
 > `exportFilename` 을 직접 부르므로 후자와 대조되며, 그래서 12/12 가 성립한다. 두 경로가 다른
 > 값을 낸다는 사실은 `ExportTest` 가 **양쪽 다** 단언해 고정해 두었다.
