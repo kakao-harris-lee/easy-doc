@@ -184,10 +184,18 @@ class AuthEndpointReachTest {
         return medianOf(samples, ABSENT_ACCOUNT) to medianOf(samples, KNOWN_ACCOUNT)
     }
 
+    /**
+     * 그 그룹 표본의 중앙값. **index 를 그룹 크기에서 유도한다** — 표본 수를 상수로 박아 두면
+     * 표본 수가 다른 측정을 여기 붙일 때 조용히 중앙이 아닌 값을 읽는다(홀수라 표본 하나로 정해진다).
+     */
     private fun medianOf(
         samples: List<Pair<String, Double>>,
         group: String,
-    ): Double = samples.filter { it.first == group }.map { it.second }.sorted()[TIMING_SAMPLES / 2]
+    ): Double {
+        val ordered = samples.filter { it.first == group }.map { it.second }.sorted()
+        check(ordered.size % 2 == 1) { "$group 표본이 ${ordered.size} 개다 — 짝수면 중앙값이 표본 하나로 정해지지 않는다" }
+        return ordered[ordered.size / 2]
+    }
 
     /** 실패하는 로그인 한 건의 왕복 시간. 401 이 아니면 잰 것이 다른 경로다. */
     private fun failedLoginMillis(
@@ -354,6 +362,107 @@ class AuthEndpointReachTest {
         assertThat(distinct.distinct())
             .withFailMessage("무효 갈래의 응답이 서로 다르다 — 어디서 실패했는지가 새어 나간다: %s", distinct)
             .hasSize(1)
+    }
+
+    /**
+     * **M-3b — 토큰이 든 세 갈래의 401 응답 시간이 갈리지 않는다** (게이트 24 잔여 X24-2).
+     *
+     * ## 왜 M-3 만으로 닫히지 않았나
+     *
+     * M-3 은 **본문·헤더가 같다**를 재고, 그것은 시간 축의 **대리값**이다. codex 가 지적한 것이
+     * 정확히 이 자리다: 구조가 같아도 지연·CPU·캐시 온도 변이는 그대로 통과한다. 실제로
+     * 균일화를 넣기 전 실측은 **2.18배**였고(privacy-gate, `GET /workspaces`, 표본 각 101),
+     * 그때도 본문과 헤더는 같았다.
+     *
+     * 고친 뒤의 실측(1.007~1.036 / privacy-gate **1.003**)은 **그날 한 번 잰 값**이라
+     * 회귀가 아니다. 리더 판정이 그 잔여를 *"3갈래 비율 회귀(문턱 1.5)를 Phase 4 착수 전에
+     * 추가한다"* 로 남겼고(원장 「Phase 3 종료 판정」 §1 ③ · §2 9), 이 케이스가 그것이다.
+     *
+     * ## 대상이 셋인 이유 — 무헤더는 균일화 대상이 아니다
+     *
+     * 계약 `x-auth.failure_uniformity` 가 한 줄에 묶은 것은 **토큰이 제시된 세 갈래**다.
+     * 헤더가 아예 없는 요청은 인터셉터가 `AuthService.authenticate` 에 닿기 전에 끊고 계약이
+     * 다른 문구(`no_header`)를 주므로 **바이트 축에서 이미 구분된다** — 시간을 맞춰도 얻을
+     * 것이 없고, 맞추려면 인증 헤더 없는 트래픽 전부에 DB 부하를 얹게 된다.
+     * 게이트 24 에서 3관점이 「제외가 옳다」로 수렴했다.
+     *
+     * ## 측정 방법을 privacy-gate 재실측에 맞춘다
+     *
+     * 표본 각 [UNIFORMITY_SAMPLES] · 워밍업 [UNIFORMITY_WARMUP_ROUNDS] 라운드 폐기 ·
+     * 고정 시드 교차 순서 · 중앙값. **이 저장소는 시간 축 게이트가 흔들려 꺼진 선례를 갖고
+     * 있으므로**(원장 §1 ③) 방법을 임의로 줄이지 않는다. 순서를 섞는 이유는 L-3b 와 같다 —
+     * JIT·커넥션 풀이 진행형으로 데워지므로 뒤에 몰린 그룹이 유리하고, 그 편향은 격차를
+     * **줄이는** 방향이라 마스킹이 된다.
+     *
+     * 토큰 셋은 **측정 전에 한 번** 만든다. 매 요청마다 서명하면 클라이언트 쪽 HMAC 비용이
+     * 측정에 섞인다.
+     *
+     * ## 이 케이스가 막지 못하는 것
+     *
+     * 세 갈래가 **함께** 느려지거나 함께 빨라지는 변경은 비가 1 에 가까워 통과한다. 그 축은
+     * 구조 단언(M-3)과 `AuthenticationWorkUniformityTest` 의 DB 왕복 계수가 지킨다 —
+     * 이 케이스는 그것들을 대체하지 않고 **더한다**.
+     */
+    @Test
+    @DisplayName("M-3b 삭제 계정·위조·만료 401 의 응답 시간이 갈리지 않는다 (X24-2)")
+    fun `토큰 무효 세 갈래의 응답 시간이 갈리지 않는다`() {
+        // 조항이 시간 축을 요구한다는 사실 자체를 계약에서 읽는다(L-3b 와 같은 이유).
+        assertThat(ContractSpec.authText("failure_uniformity"))
+            .withFailMessage("계약의 failure_uniformity 가 응답 시간 축을 더는 요구하지 않는다 — 이 케이스를 재판정하라")
+            .contains(RESPONSE_TIME_CLAUSE)
+
+        val tokens =
+            mapOf(
+                DELETED_ACCOUNT to issueToken().also { deleteUserOf(it) },
+                FORGED_SIGNATURE to TestJwt.withBrokenSignature(issueToken()),
+                EXPIRED_TOKEN to forgedToken(expiresAt = Instant.now().minusSeconds(1)),
+            )
+
+        val medians = unauthorizedMedians(tokens)
+        val ratio = medians.values.max() / medians.values.min().coerceAtLeast(MIN_MEASURABLE_MILLIS)
+        // 초록일 때도 수치를 남긴다 — 문턱까지의 여유가 보이지 않으면 서서히 벌어지는
+        // 드리프트를 아무도 모른 채 지나간다(L-3b 와 같은 규율).
+        println(
+            "M-3b %s → 비 %.3f (문턱 %.1f · 표본 각 %d · 워밍업 %d라운드)".format(
+                medians.entries.joinToString(" / ") { "%s %.2fms".format(it.key, it.value) },
+                ratio,
+                MAX_TIMING_RATIO,
+                UNIFORMITY_SAMPLES,
+                UNIFORMITY_WARMUP_ROUNDS,
+            ),
+        )
+
+        assertThat(ratio)
+            .withFailMessage(
+                "토큰 무효 갈래의 응답 시간이 갈린다 (비 %.2f배 · 문턱 %.1f): %s.\n" +
+                    "  본문·헤더가 같아도 시간이 갈리면 「어디서 실패했는지」가 그대로 새어 나간다.\n" +
+                    "  균일화(AuthService.authenticate 의 ABSENT_USER_PROBE_ID 왕복)가 빠졌는지 먼저 보라.",
+                ratio,
+                MAX_TIMING_RATIO,
+                medians,
+            ).isLessThanOrEqualTo(MAX_TIMING_RATIO)
+    }
+
+    /** 세 갈래를 섞어 재고 각각의 중앙값(밀리초)을 낸다. */
+    private fun unauthorizedMedians(tokens: Map<String, String>): Map<String, Double> {
+        val plan =
+            (1..UNIFORMITY_SAMPLES)
+                .flatMap { tokens.keys }
+                .shuffled(Random(TIMING_SEED))
+        // 워밍업 — 세 갈래 각 UNIFORMITY_WARMUP_ROUNDS 회. 버린다(클래스 적재·JIT·풀 데우기).
+        repeat(UNIFORMITY_WARMUP_ROUNDS) { tokens.forEach { (_, token) -> unauthorizedMillis(token) } }
+
+        val samples = plan.map { branch -> branch to unauthorizedMillis(tokens.getValue(branch)) }
+        return tokens.keys.associateWith { medianOf(samples, it) }
+    }
+
+    /** 401 이 나오는 `/auth/me` 한 건의 왕복 시간. 401 이 아니면 잰 것이 다른 경로다. */
+    private fun unauthorizedMillis(token: String): Double {
+        val started = System.nanoTime()
+        val response = get("/auth/me", token)
+        val elapsed = (System.nanoTime() - started) / NANOS_PER_MILLI
+        assertThat(response.statusCode()).isEqualTo(UNAUTHORIZED)
+        return elapsed
     }
 
     @Test
@@ -567,6 +676,31 @@ class AuthEndpointReachTest {
 
         private const val ABSENT_ACCOUNT = "absent"
         private const val KNOWN_ACCOUNT = "known"
+
+        /**
+         * M-3b 의 세 갈래 이름. 계약 `x-auth.failure_uniformity` 가 한 줄에 묶은 것과 같은 셋이고,
+         * **무헤더는 여기 없다**(사유는 그 케이스 KDoc).
+         */
+        private const val DELETED_ACCOUNT = "삭제 계정"
+        private const val FORGED_SIGNATURE = "위조 서명"
+        private const val EXPIRED_TOKEN = "만료"
+
+        /**
+         * M-3b 의 경로당 표본 수와 폐기할 워밍업 라운드.
+         *
+         * privacy-gate 재실측이 쓴 값(표본 101 · 워밍업 20)을 그대로 쓴다 — 이 저장소는 시간 축
+         * 게이트가 흔들려 꺼진 선례가 있어(원장 §1 ③) 방법을 임의로 줄이지 않는다.
+         * 홀수라 중앙값이 표본 하나로 정해진다.
+         */
+        private const val UNIFORMITY_SAMPLES = 101
+        private const val UNIFORMITY_WARMUP_ROUNDS = 20
+
+        /**
+         * 비를 낼 때 분모의 하한(밀리초). 0 으로 나누는 것을 막을 뿐 판정을 바꾸지 않는다 —
+         * L-3b 가 `coerceAtLeast(1.0)` 을 쓰는 것과 달리 401 경로는 해시가 없어 1ms 미만이
+         * 정상이므로, 1.0 을 쓰면 빠른 기계에서 비가 인위적으로 눌린다.
+         */
+        private const val MIN_MEASURABLE_MILLIS = 0.001
 
         /**
          * 두 경로 중앙값의 허용 비.
