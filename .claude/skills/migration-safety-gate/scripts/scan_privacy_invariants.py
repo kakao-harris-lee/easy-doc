@@ -448,7 +448,107 @@ class Rule:
 #: 이름 관문(불활성 ③)이 **같은 조각에서 파생되므로** 두 이름은 선언 제외에도 함께 따라온다 —
 #: `const val SC_FORBIDDEN = 403` 은 빠지고 사용처 `sendError(SC_FORBIDDEN)` 는 잡힌다(N25).
 #: "이름이 토큰일 때만 뺀다"는 ③ 의 전제가 확장 뒤에도 그대로 성립한다.
+#:
+#: ## [2026-08-19 게이트 25] 이 조각은 **불활성 판정 전용**으로 물러났다
+#:
+#: 아래 `_403_NAME`(종류) + `_403_STATUS_SITE`(자리)가 식별자 갈래의 탐지를 맡는다.
+#: 이 조각은 여전히 ①②③ 이 소비할 형태를 고르는 **이름 관문**이고, 숫자 리터럴
+#: 갈래(`\b403\b`)의 근거이기도 하다. ③ 의 무손실 전제는 이제 **더 강하게** 성립한다 —
+#: 이 조각에 잡히는 이름은 전부 `_403_NAME` 에도 잡히므로(아래 포함 관계 자기검사),
+#: 선언을 빼도 응답 자리의 사용처는 반드시 잡힌다.
 _403_TOKEN = r"(?:403|HTTP_403_FORBIDDEN|SC_FORBIDDEN|FORBIDDEN|Forbidden)"
+
+#: **403 을 뜻하는 식별자 — 인스턴스가 아니라 종류로 받는다** (게이트 25 H6·H7, 리더 판정).
+#:
+#: ## 왜 열거를 버렸나
+#:
+#: 앞선 판은 `_403_TOKEN` 에 이름을 하나씩 더하는 방식이었다. 게이트 23 이 두 이름을
+#: 더했고(`HTTP_403_FORBIDDEN`·`SC_FORBIDDEN`), 게이트 25 에서 **그 다음 라이브러리 상수**
+#: (`HttpURLConnection.HTTP_FORBIDDEN`)가 곧바로 무적중으로 드러났다(Claude L-3 실측).
+#: `CLAUDE.md` 규칙 4 로 보면 **구조적 재발**이다 — 빈자리를 만드는 기제(이름 열거)가
+#: 지금 열거할 수 없는 자리(**앞으로 들어올 모든 HTTP 라이브러리의 403 상수 이름**)까지
+#: 닿는다. 종류를 댈 수 있으므로 그 종류만큼 넓힌다.
+#:
+#: 같은 열거가 **반대 방향으로도** 샜다 — 열거된 이름이 문자열·후행 주석 안에 있어도
+#: BLOCK 이었다(codex B-7: `val x = "HTTP_403_FORBIDDEN"` · `val x = 1 // SC_FORBIDDEN 설명`).
+#: **두 결함은 같은 원인의 두 얼굴이다** — 어휘를 보지 않는 이름 열거는 열거 안에서
+#: 과잉 적중하고 열거 밖에서 무적중한다. 두 관점(codex·Claude)이 서로를 읽지 않은 채
+#: **같은 구조적 처방**에 도달했다: 이름을 넓히되 **자리로 값을 치른다.**
+#:
+#: 그래서 이 조각은 `FORBIDDEN`/`Forbidden` 을 품은 식별자 **전체**를 받는다.
+#: `FORBIDDEN` · `SC_FORBIDDEN` · `HTTP_403_FORBIDDEN` · `HttpStatus.FORBIDDEN` ·
+#: `HttpURLConnection.HTTP_FORBIDDEN` · `HttpResponseForbidden` 이 한 조각에 들어온다.
+#: 대가는 아래 `_403_STATUS_SITE` 다 — **이 조각은 그 자리에서만 본다.**
+_403_NAME = r"(?:[A-Za-z_]\w*\.)*\w*(?:FORBIDDEN|Forbidden)\w*"
+
+#: **응답 상태가 만들어지는 자리** — `_403_NAME` 은 여기서만 읽는다.
+#:
+#: 두 갈래다.
+#:
+#: | 갈래 | 예 | 왜 응답 자리인가 |
+#: |---|---|---|
+#: | ⓐ 호출 인자 | `sendError(SC_FORBIDDEN)` · `status(HttpStatus.FORBIDDEN)` |
+#:   그 인자가 곧 나가는 상태 코드다 |
+#: | ⓑ 값 산출 | `return HttpStatus.FORBIDDEN` · `val deny = HttpStatus.FORBIDDEN` ·
+#:   `throw ForbiddenException()` | 그 값이 상태로 흘러간다 |
+#:
+#: **ⓑ 가 없으면 좁아진다.** `fun deny(): HttpStatus = HttpStatus.FORBIDDEN` 처럼 호출을
+#: 거치지 않고 값을 내는 형태가 있고, 앞선 판은 그것을 잡고 있었다. 자리 제한이
+#: **순수한 넓힘**이 되려면 ⓑ 를 함께 둬야 한다. ⓑ 는 변수 경유 한 단계도 닫는다 —
+#: `val deny = HttpStatus.FORBIDDEN` 이 선언에서 잡히므로 `sendError(deny)` 를 굳이
+#: 추적하지 않아도 된다.
+#:
+#: **자리 밖 식별자는 보지 않는다.** 그래서 `FORBIDDEN_IN_FILENAME`(파일명 정화) ·
+#: `FORBIDDEN_ANNOTATIONS`(계약 검사) · 문자열 안의 이름 · 후행 주석 안의 이름이
+#: **자연 해소**된다 — 면제 목록도, 경로 예외도, 심각도 강등도 없이. 이것이 이 처방이
+#: 은폐형이 아니라 탐지형인 이유다: 뺀 것은 "신호"가 아니라 **신호가 아닌 자리**다.
+#:
+#: 부호가 **양성**인 단언(`isEqualTo(FORBIDDEN)`)을 자리에 넣은 이유 — 그 줄은 제품이
+#: 403 을 낸다고 **기대**하는 단언이고, 이 불변식에서는 진짜 위반 신호다(N6). 부호 반전
+#: (`isNotEqualTo`)은 목록에 없으므로 자연히 빠진다 — ① 의 소비와 **두 겹**으로 닫힌다.
+_403_STATUS_SITE = (
+    # ⓐ 호출 인자 자리. 이름 바로 뒤가 `(` 여야 한다.
+    #    왼쪽 경계는 이 갈래**에만** 붙인다 — ⓑ 의 `=` 앞은 식별자일 수 있어(`x=FORBIDDEN`)
+    #    공통으로 걸면 그 자리가 조용히 빠진다.
+    r"(?<![A-Za-z0-9_])"
+    r"(?:sendError|send_error|setStatus|set_status|status|statusCode|status_code"
+    r"|ResponseEntity|ResponseStatusException|ResponseStatus"
+    r"|HTTPException|HttpResponse"
+    r"|isEqualTo|isSameAs|isIn|assertEquals|assertSame)"
+    rf"\s*\(\s*(?:[A-Za-z_]\w*\s*=\s*)?{_403_NAME}\b"
+    # ⓑ 값 산출 자리. `return`/`throw`/`raise`/`->`/초기화 `=` 바로 뒤.
+    #    `==`·`!=`·`<=`·`>=` 를 배제해 **비교**는 자리로 치지 않는다 — 비교는 값을
+    #    내보내는 것이 아니라 읽는 것이다.
+    rf"|(?:\b(?:return|throw|raise)\b|->|(?<![=!<>+\-*/%])=(?!=))\s*{_403_NAME}\b"
+)
+
+#: 불활성 ③ 의 **무손실 전제를 패턴이 강제한다.**
+#:
+#: ③ 은 "선언된 이름 자신이 `_403_TOKEN` 일 때만" 선언을 뺀다. 그 제외가 무손실인 근거는
+#: **사용처가 반드시 잡힌다**는 것인데, 게이트 25 부터 사용처 탐지는 `_403_NAME` +
+#: 응답 자리로 옮겨 갔다. 두 조각이 갈리는 순간 "선언은 뺐는데 사용처도 안 잡힌다"가
+#: **조용히** 성립한다 — 정확히 게이트 23 ⓐ 가 겪은 형태다.
+#:
+#: 그래서 이름 목록을 다시 적지 않고 `_403_TOKEN` 에서 **뽑아** 대조한다. 여기에 손으로
+#: 목록을 적으면 그 사본이 갈리고, 갈린 사본은 늘 조용한 쪽이었다.
+_403_TOKEN_NAMES = tuple(
+    alternative
+    for alternative in _403_TOKEN.removeprefix("(?:").removesuffix(")").split("|")
+    if not alternative.isdigit()
+)
+if not _403_TOKEN_NAMES:
+    raise AssertionError(
+        "_403_TOKEN 에서 이름 대안을 뽑지 못했다 — 조각 문법이 바뀌었으면 이 자기검사도 "
+        "함께 고쳐라. 빈 목록으로 통과하면 아래 포함 관계 검사가 0건 검사가 된다."
+    )
+for _403_name in _403_TOKEN_NAMES:
+    if not re.search(_403_STATUS_SITE, f"sendError({_403_name})"):
+        raise AssertionError(
+            f"불활성 ③ 이 이름 `{_403_name}` 의 선언을 빼는데, 그 이름의 사용처가 응답 "
+            "자리에서 잡히지 않는다 — 제외가 무손실이 아니다. `_403_NAME` 을 넓히거나 "
+            "`_403_TOKEN` 에서 그 이름을 빼라."
+        )
+del _403_name
 
 #: `OWNERSHIP-403` 이 만나는 자리 중 **403 을 만들어 낼 수 없는** 형태들.
 #:
@@ -616,11 +716,19 @@ RULES: tuple[Rule, ...] = (
         # **불활성 형태를 먼저 소비한다**(`OWNERSHIP_403_INERT`). 소비된 구간 안의 토큰은
         # 따로 매치되지 않으므로 그 자리만 빠지고, **같은 줄의 다른 403 은 그대로 잡힌다.**
         # 창(`hardened`)으로 눌렀다면 줄 전체가 통째로 빠졌을 자리다.
-        re.compile(rf"(?P<inert>{OWNERSHIP_403_INERT})|\b{_403_TOKEN}\b"),
+        #
+        # 남은 두 갈래가 **비대칭**인 것이 게이트 25 의 처방이다:
+        #   · 식별자(`_403_NAME`)는 **응답 자리**(`_403_STATUS_SITE`)에서만 본다 — 종류로
+        #     넓히는 대가를 자리로 치른다.
+        #   · 숫자 리터럴 `403` 은 **어디서든** 본다 — 이름이 403 을 안 품은 상수
+        #     (`const val OWNER_MISMATCH = 403`)를 잡는 유일한 통로가 그 선언 줄이고,
+        #     자리를 요구하면 그 갈래가 통째로 사라진다(N14~N17 이 재는 성질).
+        re.compile(rf"(?P<inert>{OWNERSHIP_403_INERT})|{_403_STATUS_SITE}|\b403\b"),
         "403은 '있지만 네 것이 아니다'를 알린다 — 자원 존재 자체가 유출이다.",
         "CORS·인증 미들웨어·프런트 문구·테스트의 403 기대값이면 오탐. 소유권 분기인지만 확인. "
         "불변식을 **집행**하는 세 형태(부호 반전 단언·테스트 이름·상수 선언)는 "
-        "`OWNERSHIP_403_INERT` 가 뺀다 — 그 셋 밖은 전부 후보로 남는다.",
+        "`OWNERSHIP_403_INERT` 가 뺀다. 403 을 뜻하는 **식별자**는 응답 자리"
+        "(`_403_STATUS_SITE`)에서만 본다 — 그 밖의 `FORBIDDEN` 이름은 후보가 아니다.",
         None,
         (),
         lambda match: match.group("inert") is None,

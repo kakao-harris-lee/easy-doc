@@ -1575,6 +1575,63 @@ OWNERSHIP_403_SHAPES: list[tuple[str, str, str, bool]] = [
         '    private val FORBIDDEN_ANNOTATIONS = listOf("@Deprecated")',
         False,
     ),
+    # ── 게이트 25 — 열거를 버리고 **종류**로 닫았다 (H6·H7, 리더 판정) ──────────────
+    #
+    # 게이트 23 이 두 이름을 더했고, 게이트 25 에서 **그 다음 라이브러리 상수**가 곧바로
+    # 무적중으로 드러났다(`HttpURLConnection.HTTP_FORBIDDEN`, Claude L-3). 열거는 다음
+    # 라이브러리에서 또 빈다 — 구조적 재발이고, 종류를 댈 수 있으므로 종류만큼 넓혔다.
+    # 아래 G 는 그 넓힘을, 이어지는 Q 는 그 대가로 치른 **자리 제한**을 잰다.
+    (
+        "G1 라이브러리 상수 sendError",
+        ".kt",
+        "response.sendError(HttpURLConnection.HTTP_FORBIDDEN)",
+        True,
+    ),
+    (
+        "G2 라이브러리 상수 status",
+        ".kt",
+        "fun deny() = ResponseEntity.status(HttpURLConnection.HTTP_FORBIDDEN).build()",
+        True,
+    ),
+    # 값 산출 자리. 호출을 거치지 않고 값을 그대로 내는 형태 — 자리 제한이 **순수한 넓힘**
+    # 이려면 이 갈래가 함께 있어야 한다(없으면 옛 판보다 좁아진다).
+    ("G3 반환 값이 곧 상태", ".kt", "fun deny(): HttpStatus = HttpStatus.FORBIDDEN", True),
+    ("G4 변수 경유 한 단계", ".kt", "    val deny = HttpURLConnection.HTTP_FORBIDDEN", True),
+    ("G5 when 분기 값", ".kt", "        else -> HttpStatus.FORBIDDEN", True),
+    ("G6 예외 타입 이름", ".kt", "throw ForbiddenException()", True),
+    ("G7 Django 응답 생성자", ".py", "    return HttpResponseForbidden()", True),
+    # ── 자리 제한이 해소한 오탐 (codex B-7 · 게이트 25) ────────────────────────────
+    #
+    # 앞선 판은 어휘 분석 없이 원시 줄에 이름을 맞췄다. 그래서 **열거 안의 이름**이
+    # 문자열·후행 주석에 있어도 출구 없는 BLOCK 이었다. 이름을 종류로 넓히면 그 오탐도
+    # 종류만큼 늘어난다 — 그 대가를 자리로 치른 것이 아래다. 면제 목록도, 경로 예외도,
+    # 심각도 강등도 쓰지 않았다: 뺀 것은 신호가 아니라 **신호가 아닌 자리**다.
+    ("Q1 문자열 리터럴 안의 이름", ".kt", '    val label = "HTTP_403_FORBIDDEN"', False),
+    ("Q2 후행 주석 안의 이름", ".kt", "    val order = 1 // SC_FORBIDDEN 설명", False),
+    ("Q3 파일명 정화 상수 사용처", ".kt", "        FORBIDDEN_IN_FILENAME", False),
+    (
+        "Q4 계약 검사 상수 in 연산",
+        ".kt",
+        "        annotations.filter { it in FORBIDDEN_ANNOTATIONS }",
+        False,
+    ),
+    # 비교는 값을 **읽는** 자리다 — 내보내는 자리가 아니다. `==` 를 자리로 치면
+    # 불변식을 집행하는 코드가 다시 빨개진다.
+    ("Q5 비교 연산", ".kt", "        if (r.statusCode() == HttpStatus.FORBIDDEN) fail()", False),
+    ("Q6 토큰을 품은 합법 함수명", ".kt", "fun `FORBIDDEN 이 아니다`() {", False),
+]
+
+#: **닫지 않은 종류를 선언한다** (게이트 25 · 조용한 0 금지).
+#:
+#: 여기 있는 형태는 오늘 잡히지 않는다. `xfail(strict=True)` 라 누가 탐지에 넣으면
+#: `xpass` 로 뒤집혀 **시끄러워진다** — 조용한 0 이 아니라 선언된 0 이다.
+OWNERSHIP_403_DECLARED_MISSES: list[tuple[str, str, str]] = [
+    # 문면에 403 표지가 전혀 없다. 완전한 해소는 정의-사용 추적(파서)이 필요하고 근거가 없다.
+    # 계산의 출처가 `= 403` 리터럴이면 그 선언 줄이 BLOCK 으로 남는다(N14~N16).
+    ("D1 계산값 상태 코드", ".kt", "        response.sendError(base + 3)"),
+    # 응답 자리가 아닌 호출의 인자. 자리 제한의 정확한 대가다 — 넓히려면 그 호출이
+    # 왜 응답 자리인지를 실측으로 대야 한다.
+    ("D2 응답 자리 밖 호출 인자", ".kt", "        statuses.add(HttpStatus.FORBIDDEN)"),
 ]
 
 
@@ -1604,31 +1661,63 @@ def test_ownership_403_형태_목록(
     assert _ownership_403_blocks(scanner, tmp_path, suffix, source) is blocks
 
 
-def test_밑줄_결합_상수_두_이름이_명시_토큰이다(scanner: ModuleType) -> None:
-    """**옛 `xfail(strict)` 2건이 정상 통과로 바뀐 이유의 구조 고정** (게이트 24 ⓐ).
+@pytest.mark.parametrize(
+    ("name", "suffix", "source"),
+    [pytest.param(*shape, id=shape[0]) for shape in OWNERSHIP_403_DECLARED_MISSES],
+)
+@pytest.mark.xfail(strict=True, reason="게이트 25 에서 닫지 않은 종류 — 선언된 0")
+def test_ownership_403_선언된_미도달(
+    scanner: ModuleType, tmp_path: Path, name: str, suffix: str, source: str
+) -> None:
+    """닫지 않은 종류를 **시끄럽게** 남긴다.
 
-    앞선 판은 `HTTP_403_FORBIDDEN`·`SC_FORBIDDEN` 을 `OWNERSHIP_403_KNOWN_MISSES` +
-    `xfail(strict=True)` 로 **선언된 0** 에 두었다. 그 판정은 「`\\b` 경계를 푸는 갈래」에
-    대한 기각이었고 — 그 기각은 지금도 유효하다(P8·P9) — 「명시 토큰 추가」갈래는 그
-    판정의 대상이 아니었다. 3관점 실측 뒤 리더가 후자를 별개 처방으로 채택했다.
-
-    형태 목록(N20~N25)이 결과를 재고, 이 테스트는 **결과가 그렇게 나오는 이유**를 잰다 —
-    누가 두 이름을 토큰에서 빼면 형태 목록보다 먼저 시끄러워진다. 동시에 맨 `sendError`
-    가 토큰으로 올라가지 않았음을 못 박는다: 올리면 `sendError(404)`·`sendError(500)`
-    처럼 403 과 무관한 호출이 **출구 없는 규칙**의 후보가 되는데 그 확장에 근거가 없다.
+    `strict=True` 라 누가 이 형태를 탐지에 넣으면 `xpass` 로 뒤집혀 실패한다 — 잔여가
+    조용히 사라지지도, 조용히 남지도 않는다. 게이트 23 이 잔여를 선언 없이 남겼다가
+    게이트 25 에서 같은 자리가 다시 발견된 것이 이 장치를 세운 이유다.
     """
-    token = scanner._403_TOKEN  # 동적 적재 모듈
+    assert _ownership_403_blocks(scanner, tmp_path, suffix, source)
 
-    for name in ("HTTP_403_FORBIDDEN", "SC_FORBIDDEN"):
-        assert name in token, (
-            f"{name} 이 탐지 토큰에서 빠졌다 — 밑줄 결합 상수가 다시 조용한 0 이 된다. "
-            "이름 관문(불활성 ③)도 같은 조각에서 파생되므로 함께 되돌아간다."
-        )
-    assert "sendError" not in token, (
-        "맨 `sendError` 가 토큰으로 올라갔다 — 403 과 무관한 `sendError(404)` 까지 "
-        "출구 없는 규칙의 후보가 된다. 관용구는 `403`·`SC_FORBIDDEN` 토큰으로 이미 "
-        "전건 잡힌다(N5·N20·N22·N23)."
+
+def test_403_식별자_탐지가_이름_열거가_아니다(scanner: ModuleType, tmp_path: Path) -> None:
+    """**열거였다면 통과하지 못하는 이름**으로 잰다 (게이트 25 H7 — 종류 처방).
+
+    앞선 두 판은 `_403_TOKEN` 에 이름을 하나씩 더했다. 게이트 23 이 두 개를 더했고
+    게이트 25 에서 **그 다음 라이브러리 상수**가 곧바로 무적중이었다 — 열거는 다음
+    라이브러리에서 또 빈다. 그래서 결과가 아니라 **기제**를 잰다: 이 저장소 어디에도
+    없고 어떤 목록에도 적히지 않은 이름이 응답 자리에서 잡혀야 한다. 누가 종류를
+    다시 열거로 되돌리면 형태 목록(G1·G2)보다 **먼저** 여기서 빨개진다.
+    """
+    unseen = "ZZ_UNSEEN_LIB_FORBIDDEN_STATUS"
+    assert unseen not in scanner._403_TOKEN, "탐침 이름이 이미 열거에 있다 — 탐침이 무의미하다"
+
+    assert _ownership_403_blocks(scanner, tmp_path, ".kt", f"response.sendError({unseen})"), (
+        "탐지가 이름 열거로 되돌아갔다 — 목록 밖 라이브러리 상수가 다시 조용한 0 이 된다."
     )
+    # 그리고 그 넓힘의 **대가**가 실제로 치러졌는가 — 자리 밖에서는 보지 않는다.
+    assert not _ownership_403_blocks(scanner, tmp_path, ".kt", f'    val label = "{unseen}"'), (
+        "자리 제한이 사라졌다 — 종류로 넓힌 이름이 문자열·주석에서까지 BLOCK 이 되어 "
+        "출구 없는 규칙에 오탐 무리가 들어온다(codex B-7 이 잰 형태)."
+    )
+
+
+def test_응답_자리_목록이_403_과_무관한_호출을_삼키지_않는다(scanner: ModuleType) -> None:
+    """자리 목록이 **관용구 열거**로 부풀지 않았는가 — 범위는 근거를 넘지 않는다.
+
+    맨 `sendError` 를 403 표지로 올리면 `sendError(404)`·`sendError(500)` 까지 출구 없는
+    규칙의 후보가 된다. 자리는 **인자를 읽을 위치**일 뿐이고, 후보 여부는 그 인자가
+    403 값인지(`_403_NAME` 또는 숫자 `403`)로 갈린다 — 그 성질을 여기서 못 박는다.
+    """
+    rule = _rule(scanner, "OWNERSHIP-403")
+    site = scanner._403_STATUS_SITE  # 동적 적재 모듈
+
+    assert f"|{site}|" in rule.pattern.pattern, (  # type: ignore[attr-defined]  # 동적 적재 모듈
+        "규칙이 공유 자리 조각(_403_STATUS_SITE)을 쓰지 않는다 — 자리 정의가 두 벌이 되면 갈린다."
+    )
+    for unrelated in ("response.sendError(404)", "res.status(500).send()", "return HttpStatus.OK"):
+        assert not rule.pattern.search(unrelated), (  # type: ignore[attr-defined]  # 동적 적재 모듈
+            f"403 과 무관한 응답 호출이 후보가 됐다: {unrelated!r} — 자리 자체를 표지로 "
+            "삼으면 이 규칙은 모든 상태 코드 반환을 잡는다."
+        )
 
 
 def test_불활성_상수_제외는_탐지와_같은_토큰_조각을_쓴다(scanner: ModuleType) -> None:
@@ -1645,9 +1734,22 @@ def test_불활성_상수_제외는_탐지와_같은_토큰_조각을_쓴다(sca
     inert = scanner.OWNERSHIP_403_INERT  # 동적 적재 모듈
     rule = _rule(scanner, "OWNERSHIP-403")
 
-    assert rule.pattern.pattern.endswith(rf"\b{token}\b"), (  # type: ignore[attr-defined]
-        "탐지 토큰이 공유 조각(_403_TOKEN)에서 나오지 않는다 — ③ 의 이름 관문과 갈린다."
+    # 게이트 25 부터 **갈래가 둘**이다. 숫자 리터럴은 자리를 묻지 않고(이름이 403 을 안
+    # 품은 상수를 잡는 유일한 통로가 그 선언 줄이다), 식별자는 응답 자리에서만 본다.
+    assert rule.pattern.pattern.endswith(r"|\b403\b"), (  # type: ignore[attr-defined]
+        "숫자 리터럴 갈래가 사라졌다 — `const val OWNER_MISMATCH = 403` 처럼 이름이 "
+        "403 을 품지 않은 상수가 선언에서도 사용처에서도 안 잡힌다(N14~N17)."
     )
+    # ③ 이 이름으로 빼는 것들은 **전부** 응답 자리 탐지에 다시 잡혀야 무손실이다.
+    # 스캐너가 같은 성질을 적재 시점 자기검사로도 강제한다 — 여기서는 그 자기검사가
+    # 실재하고 실제로 이름을 뽑았는지를 잰다(빈 목록이면 그 검사가 0건 검사가 된다).
+    names = scanner._403_TOKEN_NAMES  # 동적 적재 모듈
+    assert names, "이름 관문에서 뽑은 목록이 비었다 — 포함 관계 자기검사가 0건 검사가 된다."
+    for name in names:
+        assert re.search(scanner._403_STATUS_SITE, f"sendError({name})"), (
+            f"③ 이 `{name}` 의 선언을 빼는데 그 이름의 사용처가 응답 자리에서 안 잡힌다 — "
+            "제외가 무손실이 아니다."
+        )
     # 이름 자리(`va[lr]`/`let` 바로 뒤, 파이썬 상수 자리)가 공유 조각이어야 한다.
     assert rf"(?:va[lr]|let)\s+{token}\b" in inert, (
         "③ 의 Kotlin 이름 관문이 공유 토큰이 아니다 — `\\w+` 로 되돌아가면 "
