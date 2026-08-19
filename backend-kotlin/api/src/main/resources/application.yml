@@ -56,10 +56,13 @@ logging:
     kr.easydoc: INFO
     # 요청 본문을 찍는 로거는 절대 DEBUG 로 내리지 않는다 — 문서 본문이 로그에 남는다.
     org.springframework.web: INFO
-    # 우리 통제 밖에서 찍는 자리다. Argon2PasswordEncoder 가 깨진 해시를 만나면
-    # WARN + 전체 스택트레이스를 남긴다(privacy-gate 기록 L-1). 지금 메시지는 상수라
-    # 값 유출이 없지만, 라이브러리 판올림이 메시지에 해시를 싣기 시작하면 조용히 샌다.
-    # 레벨을 여기 고정해 두면 그 변화가 기본값을 따라 내려오지 않는다.
+    # 이 고정이 막는 것은 **DEBUG/TRACE 가 기본값을 따라 내려오는 경로 하나**다.
+    # L-1 이 걱정한 유출(Argon2PasswordEncoder 가 깨진 해시에 내는 WARN + 스택트레이스)은
+    # WARN 이 INFO 위라 **여기서 막히지 않는다** — privacy-gate 가 깨진 PHC 를 주입해
+    # 실측했다. 그 자리는 레벨이 아니라 회귀가 지킨다:
+    # api/src/test/.../PasswordHashLogLeakReachTest — 깨진 PHC 를 주입한 로그인의 전체
+    # 로그에 PHC·평문 비밀번호·이메일이 0건인지 본다. 로거를 ERROR 로 올려 닫지 않는다
+    # (진단이 사라지고, 다른 로거가 같은 것을 흘리면 아무도 모른다).
     org.springframework.security: INFO
     org.flywaydb: INFO
 
