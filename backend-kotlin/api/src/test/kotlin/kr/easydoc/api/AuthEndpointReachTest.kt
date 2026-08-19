@@ -19,6 +19,7 @@ import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import java.time.Instant
 import java.util.UUID
+import kotlin.random.Random
 
 /**
  * `/auth` 의 **실측** 계약 — 명세 §5 의 C-R 계층.
@@ -113,12 +114,24 @@ class AuthEndpointReachTest {
      * `AuthContractTest` L-3 이 앞의 둘을 재고, 셋째는 실물 Argon2 가 도는 이 계층에서만
      * 잴 수 있다(슬라이스의 가짜 해시는 비용이 0 이라 격차가 나타나지 않는다).
      *
-     * ## 절대값이 아니라 **비**로 판정한다
+     * ## 비 **와** 절대 하한을 함께 본다 (게이트 21 TST-1 ≡ codex C-3)
      *
      * 기계·부하에 따라 Argon2 1회 비용이 달라지므로 "몇 밀리초 이하"는 재현되지 않는다.
      * 두 경로의 중앙값 비는 그 변동을 함께 타므로 남는다 — 수정 전 실측은 **약 42배**였고
      * (privacy-gate B-1: 2.3ms vs 97ms) 더미 검증을 넣으면 1 에 가까워진다.
-     * 워밍업 1건은 버린다(첫 요청은 클래스 적재·JIT 을 함께 문다).
+     *
+     * 그런데 **비만 보면 두 경로가 함께 싸질 때 초록**이다. 테스트 프로파일에서
+     * `argon2.memory-kib` 를 낮추거나 `PasswordHasher` 를 스텁으로 바꾸면 비용이 0 에
+     * 수렴하고 격차도 함께 사라진다 — 그 상태에서 이 케이스는 「갈리지 않는다」를 계속
+     * 주장하지만 아무것도 지키지 않는다. 그래서 **실물 Argon2 가 돈다**는 자기 전제를
+     * [MIN_REAL_HASH_MILLIS] 로 함께 건다(스텁·초소형 파라미터는 1~2ms 대라 깨끗이 갈린다).
+     *
+     * ## 두 경로를 **교차**로 잰다
+     *
+     * 종전에는 없는 이메일 표본을 전부 잰 뒤 있는 이메일 표본을 쟀다. JIT·커넥션 풀·쿼리
+     * 계획이 진행형으로 데워지므로 나중 그룹이 유리하고, 그것은 격차를 **줄이는** 방향이라
+     * 마스킹이 된다. 순서를 고정 시드로 섞어 지터가 한 집단에 몰리지 않게 한다.
+     * 워밍업은 두 경로 각 1건씩 버린다.
      */
     @Test
     @DisplayName("L-3b 없는 이메일과 있는 이메일의 로그인 응답 시간이 갈리지 않는다 (계약 x-auth 3번째 축)")
@@ -132,13 +145,25 @@ class AuthEndpointReachTest {
         val known = uniqueEmail()
         post("/auth/signup", credentials(known, VALID_PASSWORD))
 
-        val absent = medianLoginMillis { uniqueEmail() }
-        val wrongPassword = medianLoginMillis { known }
-
+        val (absent, wrongPassword) = interleavedLoginMedians(known)
         val ratio = maxOf(absent, wrongPassword) / minOf(absent, wrongPassword).coerceAtLeast(1.0)
+        // 초록일 때도 수치를 남긴다 — 문턱까지의 여유가 보이지 않으면 서서히 벌어지는
+        // 드리프트를 아무도 모른 채 지나간다.
+        println(
+            "L-3b 없는 이메일 %.1fms / 틀린 비밀번호 %.1fms → 비 %.3f (문턱 %.1f)"
+                .format(absent, wrongPassword, ratio, MAX_TIMING_RATIO),
+        )
+
+        assertThat(minOf(absent, wrongPassword))
+            .withFailMessage(
+                "로그인 한 건이 %.1fms 다 — 실물 Argon2 가 도는 비용이 아니다(스텁·초소형 파라미터). " +
+                    "그 상태에서는 두 경로가 함께 싸져 비 판정이 공허해진다",
+                minOf(absent, wrongPassword),
+            ).isGreaterThan(MIN_REAL_HASH_MILLIS)
+
         assertThat(ratio)
             .withFailMessage(
-                "로그인 응답 시간이 계정 존재 여부로 갈린다 — 없는 이메일 %.1fms / 틀린 비밀번호 %.1fms (비 %.1f배). " +
+                "로그인 응답 시간이 계정 존재 여부로 갈린다 — 없는 이메일 %.1fms / 틀린 비밀번호 %.1fms (비 %.2f배). " +
                     "계정이 없을 때도 더미 PHC 로 같은 검증 비용을 치러야 한다",
                 absent,
                 wrongPassword,
@@ -146,18 +171,35 @@ class AuthEndpointReachTest {
             ).isLessThan(MAX_TIMING_RATIO)
     }
 
-    /** 워밍업 1건을 버리고 [TIMING_SAMPLES] 건의 중앙값(밀리초)을 낸다. */
-    private fun medianLoginMillis(email: () -> String): Double {
-        post("/auth/login", credentials(email(), WRONG_PASSWORD))
-        val samples =
-            (1..TIMING_SAMPLES).map {
-                val started = System.nanoTime()
-                val response = post("/auth/login", credentials(email(), WRONG_PASSWORD))
-                val elapsed = (System.nanoTime() - started) / NANOS_PER_MILLI
-                assertThat(response.statusCode()).isEqualTo(UNAUTHORIZED)
-                elapsed
-            }
-        return samples.sorted()[TIMING_SAMPLES / 2]
+    /** 두 경로를 섞어 재고 각각의 중앙값(밀리초)을 낸다. 반환은 (없는 이메일, 틀린 비밀번호). */
+    private fun interleavedLoginMedians(known: String): Pair<Double, Double> {
+        val plan =
+            (1..TIMING_SAMPLES)
+                .flatMap { listOf(ABSENT_ACCOUNT, KNOWN_ACCOUNT) }
+                .shuffled(Random(TIMING_SEED))
+        // 워밍업 — 두 경로 각 1건. 첫 요청은 클래스 적재·JIT 을 함께 문다.
+        listOf(ABSENT_ACCOUNT, KNOWN_ACCOUNT).forEach { failedLoginMillis(it, known) }
+
+        val samples = plan.map { it to failedLoginMillis(it, known) }
+        return medianOf(samples, ABSENT_ACCOUNT) to medianOf(samples, KNOWN_ACCOUNT)
+    }
+
+    private fun medianOf(
+        samples: List<Pair<String, Double>>,
+        group: String,
+    ): Double = samples.filter { it.first == group }.map { it.second }.sorted()[TIMING_SAMPLES / 2]
+
+    /** 실패하는 로그인 한 건의 왕복 시간. 401 이 아니면 잰 것이 다른 경로다. */
+    private fun failedLoginMillis(
+        group: String,
+        known: String,
+    ): Double {
+        val email = if (group == ABSENT_ACCOUNT) uniqueEmail() else known
+        val started = System.nanoTime()
+        val response = post("/auth/login", credentials(email, WRONG_PASSWORD))
+        val elapsed = (System.nanoTime() - started) / NANOS_PER_MILLI
+        assertThat(response.statusCode()).isEqualTo(UNAUTHORIZED)
+        return elapsed
     }
 
     /**
@@ -517,14 +559,33 @@ class AuthEndpointReachTest {
          */
         private const val RESPONSE_TIME_CLAUSE = "응답 시간"
 
-        /** 워밍업 뒤 표본 수. 홀수라 중앙값이 표본 하나로 정해진다. */
-        private const val TIMING_SAMPLES = 5
+        /** 경로당 표본 수. 홀수라 중앙값이 표본 하나로 정해진다. */
+        private const val TIMING_SAMPLES = 11
+
+        /** 두 경로를 섞는 순서. 고정 시드라 실패가 재현된다. */
+        private const val TIMING_SEED = 20260819L
+
+        private const val ABSENT_ACCOUNT = "absent"
+        private const val KNOWN_ACCOUNT = "known"
 
         /**
-         * 두 경로 중앙값의 허용 비. 수정 전 실측이 **42배**였고 수정 후 기대는 1 근처다 —
-         * 이 값은 기계 지터를 넉넉히 덮으면서 그 사이 어디에도 닿지 않는 자리에 둔다.
+         * 두 경로 중앙값의 허용 비.
+         *
+         * 종전 값 4.0 은 **너무 넓었다**(codex C-3) — 현행 해시 비용 ~100ms 기준으로
+         * 26ms 대 100ms 의 반복 관측 가능한 열거 신호도 3.85배라 초록이었다. 교차 측정과
+         * 표본 11 로 지터를 줄인 뒤 문턱을 좁힌다. 실측 기준선은 privacy-gate 의
+         * **1.017배**(절대 격차 1.72ms)이고, 1.5 는 그 위 여유이면서 「의미 있는 격차」에는
+         * 닿지 않는다. 수정 전 실측은 42배였다.
          */
-        private const val MAX_TIMING_RATIO = 4.0
+        private const val MAX_TIMING_RATIO = 1.5
+
+        /**
+         * 로그인 한 건이 이보다 빠르면 **실물 Argon2 가 도는 것이 아니다.**
+         *
+         * 운영 파라미터(m=64MiB·t=3·p=4) 실측이 90~100ms 대이고, 스텁이나 초소형 파라미터는
+         * 1~2ms 대다. 두 세계 사이에 두어 어느 쪽에서도 아슬아슬하지 않게 한다.
+         */
+        private const val MIN_REAL_HASH_MILLIS = 15.0
 
         private const val NANOS_PER_MILLI = 1_000_000.0
 
