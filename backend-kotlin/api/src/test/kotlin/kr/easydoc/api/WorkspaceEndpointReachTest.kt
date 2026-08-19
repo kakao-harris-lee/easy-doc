@@ -1,6 +1,7 @@
 package kr.easydoc.api
 
 import kr.easydoc.api.support.ContractSpec
+import kr.easydoc.core.crypto.EncryptionScheme
 import kr.easydoc.infrastructure.DatabaseHandle
 import kr.easydoc.infrastructure.PostgresTestSupport
 import org.assertj.core.api.Assertions.assertThat
@@ -526,8 +527,11 @@ class WorkspaceEndpointReachTest {
     ) {
         database.execute(
             """
-            INSERT INTO documents (id, user_id, title, source_format, source_text_encrypted, char_count, workspace_id)
-            VALUES ('${UUID.randomUUID()}', '$userId', 'fixture', 'docx', '\x00'::bytea, 1, '$workspaceId')
+            INSERT INTO documents
+                (id, user_id, title, source_format, source_text_encrypted, char_count, workspace_id,
+                 encryption_scheme, key_version)
+            VALUES ('${UUID.randomUUID()}', '$userId', 'fixture', 'docx', '\x00'::bytea, 1, '$workspaceId',
+                    '${EncryptionScheme.AES_256_GCM_V1}', 1)
             """.trimIndent(),
         )
     }

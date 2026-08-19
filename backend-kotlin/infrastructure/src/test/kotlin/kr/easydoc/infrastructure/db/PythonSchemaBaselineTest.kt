@@ -2,9 +2,11 @@ package kr.easydoc.infrastructure.db
 
 import kr.easydoc.infrastructure.PostgresTestSupport
 import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.flywaydb.core.Flyway
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
+import java.sql.SQLException
 
 /**
  * `V1__python_schema_baseline.sql` 이 Alembic `0001~0006` 의 결과를 정말 재현하는지 본다.
@@ -81,9 +83,9 @@ class PythonSchemaBaselineTest {
     }
 
     @Test
-    @DisplayName("V2 는 encryption_scheme 을 additive 로 추가한다")
-    fun `V2 가 encryption_scheme 을 기본값과 함께 추가한다`() {
-        val database = PostgresTestSupport.createEmptyDatabase("baseline_v2")
+    @DisplayName("전 버전을 적용해도 Python 컬럼이 하나도 사라지지 않는다 (additive)")
+    fun `마이그레이션은 기존 컬럼을 지우지 않는다`() {
+        val database = PostgresTestSupport.createEmptyDatabase("baseline_additive")
 
         Flyway
             .configure()
@@ -94,32 +96,39 @@ class PythonSchemaBaselineTest {
 
         val fingerprint = database.connect().use { SchemaFingerprint.of(it) }
 
-        // Phase 0 필수 조치 D — 대상은 documents·conversions 둘이고 기본값은 'fernet-v1'.
-        assertThat(fingerprint).contains(
-            "column documents 11 encryption_scheme character varying(16) NOT NULL " +
-                "default='fernet-v1'::character varying",
-        )
-        assertThat(fingerprint).contains(
-            "column conversions 17 encryption_scheme character varying(16) NOT NULL " +
-                "default='fernet-v1'::character varying",
-        )
+        // V2 가 더한 컬럼은 두 테이블 모두에 있다(Phase 0 필수 조치 D).
+        assertThat(fingerprint).contains("column documents 11 encryption_scheme character varying(16) NOT NULL")
+        assertThat(fingerprint).contains("column conversions 17 encryption_scheme character varying(16) NOT NULL")
 
         // additive 규칙: 기존 컬럼이 하나도 사라지지 않았다.
+        //
+        // **줄 전체가 아니라 컬럼 이름·서수·타입으로 대조한다.** V3 가 `key_version` 의
+        // DEFAULT 를 없애 그 두 줄의 `default=` 조각이 달라졌기 때문이다. 계획 §4.2 가
+        // 금지한 것은 컬럼을 지우거나 이름을 바꾸거나 타입을 좁히는 것이고, DEFAULT 는
+        // 그 목록에 없다 — 여기서 재는 축을 그 조항에 맞춘다.
         val baselineColumns =
             SchemaFingerprint
                 .expectedPythonBaseline()
                 .lines()
                 .filter { it.startsWith("column ") }
-        assertThat(fingerprint.lines()).containsAll(baselineColumns)
+                .map { it.substringBefore(" default=") }
+        assertThat(fingerprint.lines().map { it.substringBefore(" default=") }).containsAll(baselineColumns)
     }
 
     @Test
-    @DisplayName("V2 적용 후에도 Python 이 쓰던 INSERT 가 그대로 동작한다")
-    fun `Python 컬럼만 지정한 INSERT 가 성공한다`() {
-        // Phase 7 관찰 기간의 롤백 조건 — Kotlin이 만든 스키마 위에서 Python이 이어서 쓸 수
-        // 있어야 한다. SQLAlchemy 모델에 없는 encryption_scheme 은 INSERT 문에 나타나지
-        // 않으므로 DEFAULT 가 채워야 한다.
-        val database = PostgresTestSupport.createEmptyDatabase("baseline_python_write")
+    @DisplayName("V3 는 encryption_scheme·key_version 의 DEFAULT 를 없앤다 — 값을 적지 않은 쓰기가 실패한다")
+    fun `방식과 키 세대를 적지 않은 INSERT 는 실패한다`() {
+        // ## 이 케이스가 대체한 것
+        //
+        // 여기 있던 것은 *"V2 적용 후에도 Python 이 쓰던 INSERT 가 그대로 동작한다"* 였고,
+        // 근거는 **Phase 7 관찰 기간의 롤백 조건**이었다. 2026-08-12 결정으로 Python 은
+        // 폐기 대상이 되고 롤백이 사라져(master-plan 6.2 · §9 결정 2·3) 그 요구가 없어졌다.
+        //
+        // 자리를 비우지 않고 **정반대 성질**을 넣는다. privacy-gate 03 §5-4 가 지목한 위험이
+        // 정확히 이것이었다 — 컬럼을 명시하지 않은 INSERT 에 DEFAULT 가 조용히 값을 채우면
+        // 그 값이 데이터에 대해 거짓이 된다(암호문은 AEAD 인데 이름은 Fernet). DEFAULT 를
+        // 없앴으므로 이제 그런 INSERT 는 NOT NULL 위반으로 즉시 실패해야 한다.
+        val database = PostgresTestSupport.createEmptyDatabase("baseline_no_default")
 
         Flyway
             .configure()
@@ -130,32 +139,41 @@ class PythonSchemaBaselineTest {
 
         database.connect().use { connection ->
             connection.createStatement().use { statement ->
-                statement.executeUpdate(
-                    """
-                    INSERT INTO users (id, email, password_hash)
-                    VALUES ('11111111-1111-1111-1111-111111111111', 'a@example.kr', 'phc');
-                    INSERT INTO workspaces (id, user_id, name)
-                    VALUES ('22222222-2222-2222-2222-222222222222',
-                            '11111111-1111-1111-1111-111111111111', '기본 작업 공간');
-                    INSERT INTO documents
-                        (id, user_id, title, source_format, source_text_encrypted, char_count, workspace_id)
-                    VALUES ('33333333-3333-3333-3333-333333333333',
-                            '11111111-1111-1111-1111-111111111111', '안내문', 'docx',
-                            '\x00'::bytea, 10, '22222222-2222-2222-2222-222222222222');
-                    """.trimIndent(),
-                )
+                statement.executeUpdate(OWNER_ROWS_SQL)
             }
 
-            connection.createStatement().use { statement ->
-                statement
-                    .executeQuery(
-                        "SELECT encryption_scheme, key_version FROM documents",
-                    ).use { rows ->
-                        assertThat(rows.next()).isTrue()
-                        assertThat(rows.getString("encryption_scheme")).isEqualTo("fernet-v1")
-                        assertThat(rows.getInt("key_version")).isEqualTo(1)
-                    }
-            }
+            assertThatThrownBy {
+                connection.createStatement().use { statement ->
+                    statement.executeUpdate(DOCUMENT_WITHOUT_CRYPTO_COLUMNS_SQL)
+                }
+            }.describedAs("DEFAULT 가 남아 있어 거짓 방식 이름·키 세대가 조용히 채워졌다")
+                .isInstanceOf(SQLException::class.java)
+                // 두 컬럼 중 **어느 쪽을 먼저 지목하든** 통과다. PostgreSQL 은 NOT NULL 위반을
+                // 만나는 즉시 끊으므로 컬럼 서수(key_version 6 · encryption_scheme 11)에 따라
+                // 메시지가 갈린다 — 어느 하나를 못박으면 컬럼 순서에 묶인 단언이 된다.
+                .satisfies({ failure -> assertThat(failure.message).containsAnyOf("encryption_scheme", "key_version") })
         }
+    }
+
+    private companion object {
+        /** 문서 행이 참조해야 하는 사용자·작업 공간. 암호화와 무관한 배경이다. */
+        val OWNER_ROWS_SQL =
+            """
+            INSERT INTO users (id, email, password_hash)
+            VALUES ('11111111-1111-1111-1111-111111111111', 'a@example.kr', 'phc');
+            INSERT INTO workspaces (id, user_id, name)
+            VALUES ('22222222-2222-2222-2222-222222222222',
+                    '11111111-1111-1111-1111-111111111111', '기본 작업 공간');
+            """.trimIndent()
+
+        /** `encryption_scheme`·`key_version` 을 빠뜨린 INSERT. V3 이후로는 실패해야 한다. */
+        val DOCUMENT_WITHOUT_CRYPTO_COLUMNS_SQL =
+            """
+            INSERT INTO documents
+                (id, user_id, title, source_format, source_text_encrypted, char_count, workspace_id)
+            VALUES ('33333333-3333-3333-3333-333333333333',
+                    '11111111-1111-1111-1111-111111111111', '안내문', 'docx',
+                    '\x00'::bytea, 10, '22222222-2222-2222-2222-222222222222');
+            """.trimIndent()
     }
 }

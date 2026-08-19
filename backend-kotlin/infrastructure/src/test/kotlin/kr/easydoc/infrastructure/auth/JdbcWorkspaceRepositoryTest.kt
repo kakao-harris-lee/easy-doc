@@ -1,6 +1,7 @@
 package kr.easydoc.infrastructure.auth
 
 import kr.easydoc.application.workspace.WorkspaceService
+import kr.easydoc.core.crypto.EncryptionScheme
 import kr.easydoc.core.exceptions.ConflictException
 import kr.easydoc.core.exceptions.NotFoundException
 import kr.easydoc.core.user.PasswordHash
@@ -419,13 +420,16 @@ class JdbcWorkspaceRepositoryTest {
         jdbcClient
             .sql(
                 """
-                INSERT INTO documents (id, user_id, title, source_format, source_text_encrypted, char_count, workspace_id)
-                VALUES (:id, :userId, 'fixture', 'docx', :bytes, 1, :workspaceId)
+                INSERT INTO documents
+                    (id, user_id, title, source_format, source_text_encrypted, char_count, workspace_id,
+                     encryption_scheme, key_version)
+                VALUES (:id, :userId, 'fixture', 'docx', :bytes, 1, :workspaceId, :scheme, 1)
                 """.trimIndent(),
             ).param("id", UUID.randomUUID())
             .param("userId", ownerId)
             .param("bytes", byteArrayOf(0))
             .param("workspaceId", workspaceId)
+            .param("scheme", EncryptionScheme.AES_256_GCM_V1)
             .update()
     }
 

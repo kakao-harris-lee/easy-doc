@@ -1,6 +1,7 @@
 package kr.easydoc.infrastructure.db
 
 import kr.easydoc.infrastructure.DatabaseHandle
+import kr.easydoc.infrastructure.MigrationCatalog
 import kr.easydoc.infrastructure.PostgresTestSupport
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
@@ -20,7 +21,7 @@ import javax.sql.DataSource
  *
  * 세 갈래를 모두 본다.
  * - 빈 DB → baseline 없이 V1부터 적용
- * - Python 기준선과 같은 기존 스키마 → baseline 기록 후 V2만 적용
+ * - Python 기준선과 같은 기존 스키마 → baseline 기록 후 V1 을 제외한 나머지만 적용
  * - 기준선과 다른 기존 스키마 → **기동 실패** (조용히 얹지 않는다)
  *
  * "Python이 만든 기존 스키마"는 V1을 적용해 만든다. [PythonSchemaBaselineTest] 가
@@ -61,25 +62,26 @@ class FlywayBaselineGuardTest {
 
         guard.flywayMigrationStrategy().migrate(flywayFor(database))
 
-        assertThat(appliedVersions(database)).containsExactly("1", "2")
+        assertThat(appliedVersions(database)).containsExactlyElementsOf(MigrationCatalog.versions)
     }
 
     @Test
-    @DisplayName("기존 Python 스키마 — baseline 을 기록하고 V2만 적용한다")
+    @DisplayName("기존 Python 스키마 — baseline 을 기록하고 V1 뒤의 마이그레이션만 적용한다")
     fun `기존 Python 스키마를 baseline 한다`() {
         val database = PostgresTestSupport.createEmptyDatabase("guard_existing")
         givenAlembicManagedSchema(database)
 
         guard.flywayMigrationStrategy().migrate(flywayFor(database))
 
-        // baseline(1) 이 기록되고 V1은 재적용되지 않는다. V2만 새로 적용된다.
-        assertThat(appliedVersions(database)).containsExactly("1", "2")
-        assertThat(migrationTypes(database)).containsExactly("BASELINE", "SQL")
+        // baseline(1) 이 기록되고 V1은 재적용되지 않는다. 그 뒤 버전만 새로 적용된다.
+        // 기대값은 손으로 세지 않는다 — 근거는 MigrationCatalog KDoc.
+        assertThat(appliedVersions(database)).containsExactlyElementsOf(MigrationCatalog.versions)
+        assertThat(migrationTypes(database)).containsExactlyElementsOf(MigrationCatalog.typesAfterPythonBaseline)
 
         // alembic_version 은 손대지 않았다 (계획 §4.2-7).
         assertThat(alembicVersion(database)).isEqualTo("0006")
 
-        // V2는 실제로 적용됐다.
+        // V1 뒤의 마이그레이션이 실제로 적용됐다(V2 가 더한 컬럼이 있다).
         assertThat(database.connect().use { SchemaFingerprint.of(it) })
             .contains("column documents 11 encryption_scheme")
     }
@@ -112,7 +114,7 @@ class FlywayBaselineGuardTest {
         guard.flywayMigrationStrategy().migrate(flywayFor(database))
         guard.flywayMigrationStrategy().migrate(flywayFor(database))
 
-        assertThat(appliedVersions(database)).containsExactly("1", "2")
+        assertThat(appliedVersions(database)).containsExactlyElementsOf(MigrationCatalog.versions)
     }
 
     @Test
@@ -155,7 +157,7 @@ class FlywayBaselineGuardTest {
 
         guard.flywayMigrationStrategy().migrate(flywayFor(database))
 
-        assertThat(appliedVersions(database)).containsExactly("1", "2")
+        assertThat(appliedVersions(database)).containsExactlyElementsOf(MigrationCatalog.versions)
     }
 
     @Test
@@ -230,8 +232,8 @@ class FlywayBaselineGuardTest {
 
         // ⑶ 결과: baseline 은 정확히 한 번이고, 아무도 실패하지 않았다.
         //     (실패 없음은 직렬화의 증거가 아니라 부작용이 없었다는 확인이다.)
-        assertThat(migrationTypes(database)).containsExactly("BASELINE", "SQL")
-        assertThat(appliedVersions(database)).containsExactly("1", "2")
+        assertThat(migrationTypes(database)).containsExactlyElementsOf(MigrationCatalog.typesAfterPythonBaseline)
+        assertThat(appliedVersions(database)).containsExactlyElementsOf(MigrationCatalog.versions)
         assertThat(failures).describedAs("동시 기동 중 하나가 실패했다").isEmpty()
     }
 

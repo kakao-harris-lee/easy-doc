@@ -1,6 +1,7 @@
 package kr.easydoc.api
 
 import kr.easydoc.infrastructure.DatabaseHandle
+import kr.easydoc.infrastructure.MigrationCatalog
 import kr.easydoc.infrastructure.PostgresTestSupport
 import org.assertj.core.api.Assertions.assertThat
 import org.flywaydb.core.Flyway
@@ -43,7 +44,7 @@ class ApiStartupOnEmptyDatabaseTest {
     @DisplayName("Flyway 가 V1·V2 를 적용했다")
     fun `스키마가 적용됐다`() {
         assertThat(StartupDatabases.appliedVersions(StartupDatabases.empty))
-            .containsExactly("1", "2")
+            .containsExactlyElementsOf(MigrationCatalog.versions)
     }
 
     companion object {
@@ -79,7 +80,7 @@ class ApiStartupOnPythonSnapshotTest {
     @DisplayName("baseline 이 기록되고 alembic_version 은 그대로다")
     fun `baseline 을 기록하고 alembic_version 을 건드리지 않는다`() {
         assertThat(StartupDatabases.appliedVersions(StartupDatabases.pythonSnapshot))
-            .containsExactly("1", "2")
+            .containsExactlyElementsOf(MigrationCatalog.versions)
 
         // 계획 §4.2-7: Python 제거 전까지 alembic_version 은 보존하고 Kotlin이 수정하지 않는다.
         val alembicVersion =
