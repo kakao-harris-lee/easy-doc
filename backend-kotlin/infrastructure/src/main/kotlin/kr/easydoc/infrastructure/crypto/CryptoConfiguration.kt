@@ -89,6 +89,8 @@ data class EncryptionProperties(
  *   [Secret] 으로 받아 `toString()`·설정 덤프 어디에도 평문이 실리지 않게 한다.
  * @property kcv [KeyCheckValue] 12자리 hex. **비밀이 아니다** — 배포 파이프라인이 대조할 수
  *   있어야 하므로 키와 **다른 자리**에 적는다. 비어 있으면 기동 자기점검이 실패한다.
+ *   [value] 가 비어 있는데 이 값만 적힌 세대도 기동 실패다 — 사유는 [CryptoConfiguration]
+ *   KDoc 의 「값이 빈 세대」 절.
  */
 data class EncryptionKeyProperties(
     val version: Int = 0,
@@ -112,9 +114,21 @@ data class EncryptionKeyProperties(
  *
  * 1. 세대 번호가 스키마 도메인 안인가([EncryptedContent.KEY_VERSION_RANGE]) — `V4` 의 CHECK 와 같은 범위.
  * 2. 쓰기 세대의 키가 실제로 적재됐는가(F-2).
- * 3. 적재된 세대마다 설정의 [EncryptionKeyProperties.kcv] 가 계산값과 같은가(F-3).
+ * 3. 설정에 적힌 세대마다 값과 [EncryptionKeyProperties.kcv] 가 실제 키와 맞는가(F-3·S-2).
  *
  * **끄는 설정은 없다.** 사유는 [EncryptionProperties] KDoc 의 「자기점검을 끄는 설정은 없다」 절.
+ *
+ * ## 값이 빈 세대 (게이트 26 조치 3 — privacy-gate S-2)
+ *
+ * 종전 판은 값이 빈 세대를 kcv 대조에서 **조용히 뺐다**. 그래서 회전 뒤 옛 세대의
+ * 환경변수가 비밀 저장소에서 빠지거나 오타로 비면 **앱은 정상 기동하고 옛 행 전량이
+ * 읽히지 않았다.** 증상은 첫 조회의 `DecryptionFailedException` 하나뿐이고, 그 사이에
+ * 아무 신호가 없다. 지금은 값이 빈 세대를 기동에서 끊는다 — 세대를 설정에 적었다는 것
+ * 자체가 「이 세대는 실재해야 한다」는 선언이기 때문이다.
+ *
+ * 값도 kcv 도 둘 다 빈 세대**도** 끊는다. 「내용 없는 세대 선언」을 허용하면 위 사고
+ * (옛 세대가 비었다)와 「아직 안 채운 자리」가 설정만 보고는 구분되지 않는다. 자리를
+ * 미리 잡아 두고 싶으면 세대 항목 자체를 값이 생길 때 더한다.
  *
  * ## `migrate` 프로필은 이 조립에서 빠진다 (게이트 26 조치 2 — 리더 판정 ④)
  *
@@ -226,7 +240,6 @@ class CryptoConfiguration {
         cipher: AesGcmContentCipher,
     ): List<String> =
         properties.keys
-            .filterNot { it.value.isBlank() }
             .distinctBy { it.version }
             .mapNotNull { entry -> checkValueProblem(entry, cipher) }
 
@@ -234,6 +247,14 @@ class CryptoConfiguration {
         entry: EncryptionKeyProperties,
         cipher: AesGcmContentCipher,
     ): String? {
+        // **값이 빈 세대를 여기서 빼지 않는다** (게이트 26 조치 3 / privacy-gate S-2).
+        // 종전에는 `filterNot { it.value.isBlank() }` 로 걸러 냈고, 그래서 회전 뒤 옛 세대의
+        // 환경변수가 비면 앱이 정상 기동한 채 그 세대의 행 전량이 읽히지 않았다.
+        // 관대함의 원래 근거(자리표시자만으로 뜨는 개발 기동)는 쓰기 키 fail-fast 로 이미 소멸했다.
+        if (entry.value.isBlank()) {
+            return blankValueProblem(entry)
+        }
+
         // 값이 비어 있지 않은데 적재되지 않았다(computed == null) = base64 가 아니거나 길이가
         // 다르다. 종전에는 경고 한 줄이었고, 그래서 오설정이 첫 업로드까지 조용했다.
         val computed = cipher.checkValueOf(entry.version)
@@ -258,4 +279,22 @@ class CryptoConfiguration {
             }
         }
     }
+
+    /**
+     * 값이 빈 세대. 두 갈래를 **다른 문구로** 알린다 — 운영자가 무엇을 잃었는지가 다르다.
+     *
+     * - kcv 는 적혀 있는데 값이 비었다 = 「이 세대는 실재해야 한다」는 선언이 살아 있는데
+     *   재료가 사라졌다. 회전 뒤 옛 세대 환경변수가 빠진 전형적인 모습이다.
+     * - 둘 다 비었다 = 아무것도 말하지 않는 세대 선언. 위 사고와 설정만 보고는 구분되지
+     *   않으므로 함께 끊는다.
+     */
+    private fun blankValueProblem(entry: EncryptionKeyProperties): String =
+        if (entry.kcv.isBlank()) {
+            "키 v${entry.version} 에 값도 kcv 도 없다 — 내용 없는 세대 선언은 두지 않는다. " +
+                "이 세대를 설정에서 지우거나 값과 kcv 를 함께 채워라"
+        } else {
+            "키 v${entry.version} 의 kcv(${entry.kcv.trim()})는 적혀 있는데 값이 비었다 — " +
+                "이 세대는 적재되지 않고, 이 세대로 쓴 행은 한 건도 읽히지 않는다. " +
+                "환경변수가 빠졌는지 확인하라"
+        }
 }

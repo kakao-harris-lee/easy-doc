@@ -157,6 +157,33 @@ class CryptoStartupVerificationTest {
             .doesNotThrowAnyException()
     }
 
+    // ================================================================ S-2 값이 빈 세대
+
+    @Test
+    @DisplayName("S-2 kcv 는 적혀 있는데 **값이 빈** 세대는 기동을 막는다 — 옛 행이 조용히 안 읽히는 자리")
+    fun `값이 빈 세대는 기동을 막는다`() {
+        // privacy-gate 실측(P3): 종전 판은 이 조합에서 `loadedKeyVersions=[1]` 로 정상 기동하고
+        // 경고를 한 줄도 남기지 않았다. 회전 절차는 옛 세대를 목록에 남기는 것이므로, 옛 세대의
+        // 환경변수가 빠지면 **그 세대로 쓴 행 전량**이 첫 조회에서야 실패한다.
+        val lostOldGeneration = EncryptionKeyProperties(version = 2, value = Secret.EMPTY, kcv = kcvOf(KEY_GEN_2))
+
+        assertThatThrownBy { assemble(listOf(entryFor(1, KEY_GEN_1), lostOldGeneration)) }
+            .describedAs("값이 빈 세대가 조용히 빠졌다 — 그 세대로 쓴 행은 한 건도 읽히지 않는다")
+            .isInstanceOf(ConfigurationException::class.java)
+            .hasMessageContaining("키 v2")
+            .hasMessageContaining("값이 비었다")
+    }
+
+    @Test
+    @DisplayName("S-2 값도 kcv 도 없는 세대 선언도 기동을 막는다 — 사고와 「아직 안 채움」이 구분되지 않는다")
+    fun `내용 없는 세대 선언은 기동을 막는다`() {
+        val emptyDeclaration = EncryptionKeyProperties(version = 2, value = Secret.EMPTY, kcv = "")
+
+        assertThatThrownBy { assemble(listOf(entryFor(1, KEY_GEN_1), emptyDeclaration)) }
+            .isInstanceOf(ConfigurationException::class.java)
+            .hasMessageContaining("값도 kcv 도 없다")
+    }
+
     // ---------------------------------------------------------------- 도구
 
     /**
