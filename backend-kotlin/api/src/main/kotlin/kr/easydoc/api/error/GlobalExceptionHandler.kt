@@ -34,6 +34,7 @@ import org.springframework.web.method.annotation.HandlerMethodValidationExceptio
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException
 import org.springframework.web.multipart.support.MissingServletRequestPartException
 import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler
+import tools.jackson.databind.exc.InvalidNullException
 import tools.jackson.databind.exc.MismatchedInputException
 
 /**
@@ -112,8 +113,16 @@ class GlobalExceptionHandler : ResponseEntityExceptionHandler() {
      * 도메인 밖 예외의 마지막 백스톱.
      *
      * [ResponseEntityExceptionHandler] 가 등록한 프레임워크 예외 20종은 여기까지 오지
-     * 않는다 — 그쪽이 더 구체적인 매핑이라 먼저 이긴다. 여기 오는 것은 라이브러리 오류처럼
-     * 우리가 예상하지 못한 예외뿐이고, 메시지는 고정 문자열이다.
+     * 않는다 — 그쪽이 더 구체적인 매핑이라 먼저 이긴다. 메시지는 고정 문자열이다.
+     *
+     * **여기 오는 것이 「예상하지 못한 예외」뿐이라고 적을 수 없다** (게이트 21 SEC-4 ·
+     * contract-keeper §1-3). `PasswordHashingOverloadedException` 은 **우리가 설계해서
+     * 던지는 배압**인데 도메인 예외가 아니라서 이 백스톱으로 떨어진다. 즉 이 자리의 ERROR
+     * 로그는 「장애」와 「용량 압력」 둘을 같은 줄로 찍는다 — 운영에서 경보가 갈리지 않는
+     * 자리다. 응답 코드를 500 에서 옮길지(503 + 전용 문구)는 **계약 개정 사안**이라
+     * 리더 재심에 올라가 있고, 그 판정 전까지 여기 형태를 바꾸지 않는다.
+     * 판정이 어느 쪽으로 나든 응답 자체는
+     * [kr.easydoc.api.PasswordHashingBackpressureReachTest] 가 붙들고 있다.
      */
     @ExceptionHandler(Exception::class)
     fun handleUnexpected(exception: Exception): ResponseEntity<Any> {
@@ -291,16 +300,22 @@ private val UNSPECIFIED_VALIDATION_ITEM =
 private val SNAKE_BOUNDARY = Regex("([a-z0-9])([A-Z])")
 
 /**
- * 본문을 읽지 못한 원인을 **두 갈래**로 가른다 (게이트 20 codex C4).
+ * 본문을 읽지 못한 원인을 **세 갈래**로 가른다 (게이트 20 codex C4 · 게이트 21 codex C-2).
  *
+ * - **필드 누락·명시적 `null`** — [InvalidNullException]. 계약 `ValidationFailed` 의
+ *   `field_missing` 예시가 정한 모양(`type: "missing"`)으로 낸다. 종전에는 이 갈래가
+ *   Kotlin 생성자 널 검사의 NPE 로 새어 나가 **깨진 JSON 과 바이트 동일한 응답**이
+ *   됐다 — 필드를 빠뜨린 사용자가 화면에서 "JSON decode error" 를 봤다. 두 경우를
+ *   하나로 묶는 것은 [kr.easydoc.api.config.JsonRequestStrictnessConfig] 의 전역
+ *   `Nulls.FAIL` 이고, 갈래를 **예외 타입**으로 가르므로 메시지 문면에 기대지 않는다.
  * - **타입 불일치** — JSON 은 멀쩡히 파싱됐고 값의 모양이 필드 타입과 다르다.
- *   스칼라 강제 변환을 끈 뒤([kr.easydoc.api.config.JsonCoercionConfig]) 이 갈래가
+ *   스칼라 강제 변환을 끈 뒤([kr.easydoc.api.config.JsonRequestStrictnessConfig]) 이 갈래가
  *   생겼다. 계약이 `ValidationFailed` 에서 「타입 불일치」를 **배열 detail** 로 정했고,
  *   항목이 어느 필드인지 말해 주어야 클라이언트가 고칠 수 있다.
  * - **파싱 실패** — 깨진 JSON. 종전 동작 그대로다.
  *
  * **예외 메시지를 쓰지 않는다.** Jackson 의 메시지에는 거절된 값이 그대로 실린다.
- * 여기서 읽는 것은 **경로(프로퍼티 이름)와 목표 타입**뿐이다.
+ * 여기서 읽는 것은 **예외 타입과 경로(프로퍼티 이름)와 목표 타입**뿐이다.
  */
 private fun bodyReadItem(exception: HttpMessageNotReadableException): ValidationErrorItem {
     val mismatch =
@@ -309,10 +324,13 @@ private fun bodyReadItem(exception: HttpMessageNotReadableException): Validation
             .firstOrNull()
             ?: return ValidationErrorItem(listOf(BODY), "JSON decode error", "json_invalid")
 
-    val path = mismatch.path.mapNotNull { it.propertyName }
+    val loc = listOf(BODY) + mismatch.path.mapNotNull { it.propertyName }
+    if (mismatch is InvalidNullException) {
+        return ValidationErrorItem(loc, FIELD_REQUIRED_MESSAGE, "missing")
+    }
     val label = typeLabelOf(mismatch.targetType)
     return ValidationErrorItem(
-        loc = listOf(BODY) + path,
+        loc = loc,
         msg = "Input should be a valid ${label.second}",
         type = "${label.first}_type",
     )
@@ -424,16 +442,22 @@ private fun locationOf(parameter: MethodParameter): String =
         else -> QUERY
     }
 
-/** (토큰, 사람이 읽을 이름). Pydantic 의 `int_parsing` / "valid integer" 어휘에 맞춘다. */
+/**
+ * (토큰, 사람이 읽을 이름). Pydantic 의 `int_parsing` / "valid integer" 어휘에 맞춘다.
+ *
+ * **모르는 타입에 클래스 이름을 싣지 않는다** (게이트 21 codex C-2 후단). 종전 마지막
+ * 갈래가 `requiredType.simpleName` 이라, 루트에 배열·스칼라를 보내면 응답 `msg` 에
+ * `"Input should be a valid SignupRequest"` 처럼 **내부 DTO 이름**이 실렸다. 값 유출은
+ * 아니지만 내부 구조를 밖에 알려 줄 이유가 없고, 계약이 그런 어휘를 정한 적도 없다.
+ */
 private fun typeLabelOf(requiredType: Class<*>?): Pair<String, String> =
     when (requiredType?.simpleName?.lowercase()) {
-        null -> "value" to "value"
         "string" -> "string" to "string"
         "int", "integer", "long", "short" -> "int" to "integer"
         "double", "float", "bigdecimal" -> "float" to "number"
         "boolean" -> "bool" to "boolean"
         "uuid" -> "uuid" to "UUID"
-        else -> "value" to requiredType.simpleName
+        else -> "value" to "value"
     }
 
 /**

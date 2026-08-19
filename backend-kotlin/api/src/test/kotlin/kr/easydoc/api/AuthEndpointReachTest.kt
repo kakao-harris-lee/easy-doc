@@ -174,25 +174,96 @@ class AuthEndpointReachTest {
     @Test
     @DisplayName("S-9b 숫자·불리언을 문자열 필드에 넣으면 422 배열 — 강제 변환으로 통과하지 않는다")
     fun `타입 불일치는 422 배열이다`() {
-        val required = ContractSpec.schemaRequired("ValidationErrorItem")
         listOf(
-            "숫자 비밀번호" to """{"email":"coerce1@example.test","password":12345678}""",
-            "불리언 이메일" to """{"email":true,"password":"$VALID_PASSWORD"}""",
-            "불리언 비밀번호" to """{"email":"coerce3@example.test","password":true}""",
-        ).forEach { (label, payload) ->
+            Triple("숫자 비밀번호", """{"email":"coerce1@example.test","password":12345678}""", "password"),
+            Triple("불리언 이메일", """{"email":true,"password":"$VALID_PASSWORD"}""", "email"),
+            Triple("불리언 비밀번호", """{"email":"coerce3@example.test","password":true}""", "password"),
+        ).forEach { (label, payload, field) ->
             val response = post("/auth/signup", payload)
 
             assertDeclaredStatus(response, UNPROCESSABLE_CONTENT, SIGNUP_PATH, POST, label)
-            val detail = bodyOf(response)["detail"]
-            assertThat(detail)
-                .withFailMessage("%s 의 detail 이 배열이 아니다: %s", label, detail)
-                .isInstanceOf(List::class.java)
-            (detail as List<*>).forEach { item ->
-                assertThat((item as Map<*, *>).keys.map { it.toString() }.toSet()).isEqualTo(required)
-            }
+            // TST-3 — 키 집합만 보면 「언제나 `["body"]`」를 내는 회귀가 초록이다. 값까지 건다.
+            val item = singleValidationItem(response, label)
+            assertThat(item["loc"])
+                .withFailMessage("%s 의 loc 이 문제 필드를 가리키지 않는다: %s", label, item["loc"])
+                .isEqualTo(listOf("body", field))
+            assertThat(item["type"]).isEqualTo("string_type")
+            assertThat(item["msg"]).isEqualTo("Input should be a valid string")
             // 거절된 값이 응답으로 되돌아오지 않는다 — 비밀번호가 그 자리에 있을 수 있다.
             assertThat(response.body()).doesNotContain("12345678")
         }
+    }
+
+    /**
+     * **S-9c — 필드 누락·명시적 `null` 이 깨진 JSON 과 구분되고 어느 필드인지 가리킨다**
+     * (게이트 21 codex C-2 (i), contract-keeper §2-3).
+     *
+     * 종전에는 셋이 **바이트 동일**했다(`loc:["body"]`·`"JSON decode error"`·`json_invalid`).
+     * 필드를 빠뜨린 사용자가 화면에서 "JSON decode error" 를 봤고, 계약 예시
+     * `field_missing`(`type: "missing"`)은 **어떤 요청에서도 나오지 않았다.**
+     */
+    @Test
+    @DisplayName("S-9c 필드 누락·명시적 null 은 그 필드를 지목하는 missing 항목이고, 깨진 JSON 과 구분된다")
+    fun `누락과 null 이 필드를 지목한다`() {
+        listOf(
+            Triple("비밀번호 누락", """{"email":"missing1@example.test"}""", "password"),
+            Triple("이메일 누락", """{"password":"$VALID_PASSWORD"}""", "email"),
+            Triple("명시적 null", """{"email":"missing3@example.test","password":null}""", "password"),
+        ).forEach { (label, payload, field) ->
+            val response = post("/auth/signup", payload)
+
+            assertDeclaredStatus(response, UNPROCESSABLE_CONTENT, SIGNUP_PATH, POST, label)
+            val item = singleValidationItem(response, label)
+            assertThat(item["loc"])
+                .withFailMessage("%s 이 어느 필드인지 지목하지 않는다: %s", label, item["loc"])
+                .isEqualTo(listOf("body", field))
+            assertThat(item["type"])
+                .withFailMessage("%s 의 type 이 계약 예시(field_missing)와 다르다: %s", label, item["type"])
+                .isEqualTo("missing")
+            assertThat(item["msg"]).isEqualTo("Field required")
+        }
+
+        // 깨진 JSON 은 여전히 파싱 실패 갈래다 — 세 경우가 다시 한 모양으로 뭉치면 여기서 깨진다.
+        val broken = singleValidationItem(post("/auth/signup", """{"email":"""), "깨진 JSON")
+        assertThat(broken["type"]).isEqualTo("json_invalid")
+        assertThat(broken["loc"]).isEqualTo(listOf("body"))
+    }
+
+    /**
+     * **S-9d — 루트에 배열·스칼라를 보내도 내부 클래스 이름이 새지 않는다**
+     * (게이트 21 codex C-2 (ii) — HTTP 경계 실측이 0관점이던 자리).
+     */
+    @Test
+    @DisplayName("S-9d 루트 배열·스칼라 본문의 msg 에 내부 DTO 클래스 이름이 실리지 않는다")
+    fun `루트 타입 불일치가 클래스 이름을 노출하지 않는다`() {
+        listOf("루트 배열" to "[]", "루트 스칼라" to "5").forEach { (label, payload) ->
+            val response = post("/auth/signup", payload)
+
+            assertDeclaredStatus(response, UNPROCESSABLE_CONTENT, SIGNUP_PATH, POST, label)
+            assertThat(response.body())
+                .withFailMessage("%s 응답에 내부 DTO 이름이 실렸다: %s", label, response.body())
+                .doesNotContain("SignupRequest", "kr.easydoc")
+            val item = singleValidationItem(response, label)
+            assertThat(item["loc"]).isEqualTo(listOf("body"))
+            assertThat(item["type"]).isEqualTo("value_type")
+        }
+    }
+
+    /** 422 배열 detail 에서 항목 하나를 꺼낸다. 배열 여부와 키 집합(계약 required)을 함께 건다. */
+    private fun singleValidationItem(
+        response: HttpResponse<String>,
+        label: String,
+    ): Map<*, *> {
+        val detail = bodyOf(response)["detail"]
+        assertThat(detail)
+            .withFailMessage("%s 의 detail 이 배열이 아니다: %s", label, detail)
+            .isInstanceOf(List::class.java)
+        val items = detail as List<*>
+        assertThat(items).withFailMessage("%s 의 detail 항목이 하나가 아니다: %s", label, items).hasSize(1)
+        val item = items.first() as Map<*, *>
+        assertThat(item.keys.map { it.toString() }.toSet())
+            .isEqualTo(ContractSpec.schemaRequired("ValidationErrorItem"))
+        return item
     }
 
     // ================================================================ 인증 실패 (C-R 의 요점)
