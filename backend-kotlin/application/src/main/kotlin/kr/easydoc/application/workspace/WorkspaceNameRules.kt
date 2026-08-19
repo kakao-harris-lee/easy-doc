@@ -42,7 +42,7 @@ private const val NAME_TOO_LONG_MESSAGE = "작업 공간 이름은 50자 이하�
 /**
  * 이름 정규화 — **제어문자 제거 + 앞뒤 공백 제거**. 계약 `fields[4].measured_on` 그대로다.
  *
- * 순서가 뒤집히면 안 된다. 공백을 먼저 털면 `" 이름 "` 같은 입력에서 제어문자가
+ * 순서가 뒤집히면 안 된다. 공백을 먼저 털면 `"\u0001 이름 \u0001"` 같은 입력에서 제어문자가
  * 바깥을 막아 공백이 남고, 그 공백이 저장된다.
  */
 fun normalizeWorkspaceName(raw: String): String = stripControlChars(raw).trim()
