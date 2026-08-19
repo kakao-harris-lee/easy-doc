@@ -160,6 +160,41 @@ class AuthEndpointReachTest {
         return samples.sorted()[TIMING_SAMPLES / 2]
     }
 
+    /**
+     * **S-9b — 타입 불일치가 계약이 정한 모양으로 거절된다** (게이트 20 codex C4).
+     *
+     * Jackson 기본 설정은 숫자·불리언을 문자열 필드에 **말없이 변환한다.** 실측(수정 전):
+     * `password: 12345678` 은 **201** 이었고, `email: true` 는 형식 오류 문자열 detail 로
+     * 둔갑했다. 계약 `ValidationFailed` 는 타입 불일치를 **배열 detail** 로 정한다.
+     *
+     * 슬라이스가 아니라 이 계층에서 재는 이유: 강제 변환을 끄는 것은 `JsonMapperBuilderCustomizer`
+     * 빈이고 `@WebMvcTest` 는 평범한 `@Configuration` 을 슬라이스에 넣지 않는다. 슬라이스에서
+     * 재면 **테스트가 직접 들여온 배선**을 재게 되고, 실물 컨텍스트가 그 빈을 줍는지는 재지 못한다.
+     */
+    @Test
+    @DisplayName("S-9b 숫자·불리언을 문자열 필드에 넣으면 422 배열 — 강제 변환으로 통과하지 않는다")
+    fun `타입 불일치는 422 배열이다`() {
+        val required = ContractSpec.schemaRequired("ValidationErrorItem")
+        listOf(
+            "숫자 비밀번호" to """{"email":"coerce1@example.test","password":12345678}""",
+            "불리언 이메일" to """{"email":true,"password":"$VALID_PASSWORD"}""",
+            "불리언 비밀번호" to """{"email":"coerce3@example.test","password":true}""",
+        ).forEach { (label, payload) ->
+            val response = post("/auth/signup", payload)
+
+            assertDeclaredStatus(response, UNPROCESSABLE_CONTENT, SIGNUP_PATH, POST, label)
+            val detail = bodyOf(response)["detail"]
+            assertThat(detail)
+                .withFailMessage("%s 의 detail 이 배열이 아니다: %s", label, detail)
+                .isInstanceOf(List::class.java)
+            (detail as List<*>).forEach { item ->
+                assertThat((item as Map<*, *>).keys.map { it.toString() }.toSet()).isEqualTo(required)
+            }
+            // 거절된 값이 응답으로 되돌아오지 않는다 — 비밀번호가 그 자리에 있을 수 있다.
+            assertThat(response.body()).doesNotContain("12345678")
+        }
+    }
+
     // ================================================================ 인증 실패 (C-R 의 요점)
 
     @Test
@@ -395,6 +430,9 @@ class AuthEndpointReachTest {
 
     companion object {
         private const val UNAUTHORIZED = 401
+        private const val UNPROCESSABLE_CONTENT = 422
+        private const val SIGNUP_PATH = "/auth/signup"
+        private const val POST = "post"
         private const val ME_PATH = "/auth/me"
         private const val GET = "get"
         private const val WWW_AUTHENTICATE = "WWW-Authenticate"

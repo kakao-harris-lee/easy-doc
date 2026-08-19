@@ -34,6 +34,7 @@ import org.springframework.web.method.annotation.HandlerMethodValidationExceptio
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException
 import org.springframework.web.multipart.support.MissingServletRequestPartException
 import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler
+import tools.jackson.databind.exc.MismatchedInputException
 
 /**
  * 도메인 예외·프레임워크 예외 → HTTP 응답 매핑. `app/api/errors.py` 를 그대로 옮긴 것이다.
@@ -180,13 +181,7 @@ class GlobalExceptionHandler : ResponseEntityExceptionHandler() {
         headers: HttpHeaders,
         status: HttpStatusCode,
         request: WebRequest,
-    ): ResponseEntity<Any>? =
-        validationError(
-            ex,
-            listOf(ValidationErrorItem(listOf(BODY), "JSON decode error", "json_invalid")),
-            headers,
-            request,
-        )
+    ): ResponseEntity<Any>? = validationError(ex, listOf(bodyReadItem(ex)), headers, request)
 
     override fun handleMissingServletRequestParameter(
         ex: MissingServletRequestParameterException,
@@ -294,6 +289,34 @@ private val UNSPECIFIED_VALIDATION_ITEM =
     ValidationErrorItem(listOf(BODY), INVALID_INPUT_MESSAGE, "value_error")
 
 private val SNAKE_BOUNDARY = Regex("([a-z0-9])([A-Z])")
+
+/**
+ * 본문을 읽지 못한 원인을 **두 갈래**로 가른다 (게이트 20 codex C4).
+ *
+ * - **타입 불일치** — JSON 은 멀쩡히 파싱됐고 값의 모양이 필드 타입과 다르다.
+ *   스칼라 강제 변환을 끈 뒤([kr.easydoc.api.config.JsonCoercionConfig]) 이 갈래가
+ *   생겼다. 계약이 `ValidationFailed` 에서 「타입 불일치」를 **배열 detail** 로 정했고,
+ *   항목이 어느 필드인지 말해 주어야 클라이언트가 고칠 수 있다.
+ * - **파싱 실패** — 깨진 JSON. 종전 동작 그대로다.
+ *
+ * **예외 메시지를 쓰지 않는다.** Jackson 의 메시지에는 거절된 값이 그대로 실린다.
+ * 여기서 읽는 것은 **경로(프로퍼티 이름)와 목표 타입**뿐이다.
+ */
+private fun bodyReadItem(exception: HttpMessageNotReadableException): ValidationErrorItem {
+    val mismatch =
+        generateSequence(exception.cause) { it.cause }
+            .filterIsInstance<MismatchedInputException>()
+            .firstOrNull()
+            ?: return ValidationErrorItem(listOf(BODY), "JSON decode error", "json_invalid")
+
+    val path = mismatch.path.mapNotNull { it.propertyName }
+    val label = typeLabelOf(mismatch.targetType)
+    return ValidationErrorItem(
+        loc = listOf(BODY) + path,
+        msg = "Input should be a valid ${label.second}",
+        type = "${label.first}_type",
+    )
+}
 
 /**
  * 도메인 예외 → (상태 코드, 추가 헤더). `app/api/errors.py` 의 `_MAPPINGS` 그대로다.
@@ -405,6 +428,7 @@ private fun locationOf(parameter: MethodParameter): String =
 private fun typeLabelOf(requiredType: Class<*>?): Pair<String, String> =
     when (requiredType?.simpleName?.lowercase()) {
         null -> "value" to "value"
+        "string" -> "string" to "string"
         "int", "integer", "long", "short" -> "int" to "integer"
         "double", "float", "bigdecimal" -> "float" to "number"
         "boolean" -> "bool" to "boolean"
