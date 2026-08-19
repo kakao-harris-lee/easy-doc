@@ -118,9 +118,14 @@ class AuthService(
     /**
      * 계정이 없는 경로가 치르는 해시 비용.
      *
-     * 결과를 쓰지 않는다 — 더미 PHC 는 어떤 비밀번호와도 일치하지 않으므로 언제나 `false`
-     * 다([PasswordHasher.dummyHash]). **재해시를 걸지 않는 것**도 여기서 성립한다:
-     * [rehashIfOutdated] 는 검증 성공 뒤에만 불리고 이 경로는 그 앞에서 끊긴다.
+     * **결과를 쓰지 않는다.** 호출자가 무조건 실패를 던지므로 `true` 가 나와도 인증이
+     * 되지 않는다 — 이 경로의 안전성은 검증 결과가 아니라 **제어 흐름**이 진다.
+     * **재해시를 걸지 않는 것**도 같은 이유로 성립한다: [rehashIfOutdated] 는 검증 성공
+     * 뒤에만 불리고 이 경로는 그 앞에서 끊긴다.
+     *
+     * 더미가 어떤 비밀번호와도 일치하지 않는다는 성질은 [PasswordHasher.dummyHash] 가
+     * 따로 요구한다(원문이 난수라 성립한다). 여기서 그 성질에 기대지 않는다 — 기대면
+     * 두 분기를 합치는 변경이 조용히 안전해 보인다.
      */
     private fun verifyAgainstDummy(rawPassword: String) {
         passwords.verify(rawPassword, passwords.dummyHash())

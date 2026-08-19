@@ -5,6 +5,7 @@ import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
+import java.lang.reflect.Modifier
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CyclicBarrier
 
@@ -171,16 +172,54 @@ class Argon2PasswordHasherTest {
         assertThat(hasher.needsRehash(hasher.dummyHash()))
             .withFailMessage("더미 해시의 파라미터가 현행 정책과 다르다")
             .isFalse()
+        // **조립 1회 생성**이어야 한다. 부를 때마다 새로 만들면 첫 「없는 이메일」 요청이
+        // 생성+검증으로 두 배를 쓰고, 그 한 건이 타이밍 측정의 표본이 된다.
+        assertThat(hasher.dummyHash().reveal()).isEqualTo(hasher.dummyHash().reveal())
     }
 
+    /**
+     * **privacy-gate M-1 — 선언된 불변식이 참인지 실제로 잰다.**
+     *
+     * 종전 회귀는 임의의 두 값(`"correct horse battery"`·`""`)만 넣었다. 그런데 그
+     * 선언을 깨뜨리는 유일한 입력은 **20줄 옆 프로덕션 파일의 `const`** 였고
+     * (`DUMMY_PHC_SOURCE`), 그 값을 넣으면 `verify` 가 `true` 였다. 이름이 주장하는
+     * 성질에 대해 공허한 회귀였다.
+     *
+     * 그래서 추측을 늘리는 대신 **탐지 방식**을 바꾼다 — 프로덕션 클래스가 들고 있는
+     * 문자열 상수 전부를 입력으로 넣는다. 원문을 상수로 되돌리는 순간 그 상수가 여기
+     * 입력으로 들어와 빨개진다. 난수 원문이 유지되는 한 어떤 상수도 맞지 않는다.
+     */
     @Test
-    @DisplayName("더미 PHC 는 어떤 비밀번호와도 일치하지 않는다 — 재해시 경로에 닿지 않는다")
+    @DisplayName("더미 PHC 의 원문이 코드 상수가 아니다 — 아는 값으로 verify 가 통과하지 않는다")
     fun `더미 해시로는 통과하지 못한다`() {
         val hasher = hasher(policy())
+        val dummy = hasher.dummyHash()
 
-        assertThat(hasher.verify(PASSWORD, hasher.dummyHash())).isFalse()
-        assertThat(hasher.verify("", hasher.dummyHash())).isFalse()
+        assertThat(hasher.verify(PASSWORD, dummy)).isFalse()
+        assertThat(hasher.verify("", dummy)).isFalse()
+
+        val constants = stringConstantsOf(Argon2PasswordHasher::class.java)
+        // 상수를 하나도 읽지 못하면 아래 반복이 0회라 이 탐지가 공허해진다.
+        assertThat(constants)
+            .withFailMessage("프로덕션 클래스에서 문자열 상수를 하나도 읽지 못했다 — 탐지가 공허하다")
+            .isNotEmpty()
+        constants.forEach { constant ->
+            assertThat(hasher.verify(constant, dummy))
+                .withFailMessage("더미 PHC 의 원문이 코드 상수(%s)다 — 아는 값으로 통과하는 해시다", constant)
+                .isFalse()
+        }
     }
+
+    /** 클래스와 그 중첩 타입이 들고 있는 **정적 문자열 값** 전부. `private const` 도 읽는다. */
+    private fun stringConstantsOf(type: Class<*>): List<String> =
+        (type.declaredFields.asSequence() + type.declaredClasses.asSequence().flatMap { it.declaredFields.asSequence() })
+            .filter { Modifier.isStatic(it.modifiers) && it.type == String::class.java }
+            .mapNotNull { field ->
+                runCatching {
+                    field.isAccessible = true
+                    field.get(null) as? String
+                }.getOrNull()
+            }.toList()
 
     private fun hasher(policy: Argon2Policy) =
         Argon2PasswordHasher(policy, maxConcurrentHashes = 2, maxWaitMillis = WAIT_MILLIS)

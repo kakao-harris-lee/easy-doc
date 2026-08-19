@@ -3,6 +3,8 @@ package kr.easydoc.infrastructure.auth
 import kr.easydoc.application.auth.PasswordHasher
 import kr.easydoc.core.user.PasswordHash
 import org.springframework.security.crypto.argon2.Argon2PasswordEncoder
+import java.security.SecureRandom
+import java.util.Base64
 import java.util.concurrent.Semaphore
 import java.util.concurrent.TimeUnit
 
@@ -101,12 +103,19 @@ class Argon2PasswordHasher(
      * 지연 생성하지 않는 이유: 첫 「없는 이메일」 로그인이 해시 생성 + 검증으로 **두 배**를
      * 쓰게 되고, 그 한 건이 타이밍 회귀 측정의 첫 표본이 될 수 있다.
      *
-     * 상수 문자열을 쓰지 않는 이유: 계약이 요구하는 것은 「같은 검증 비용」이고 비용은
-     * PHC 안의 파라미터가 정한다. 정책을 올리면 이 값도 함께 올라가야 한다.
+     * PHC 를 상수 문자열로 두지 않는 이유: 계약이 요구하는 것은 「같은 검증 비용」이고
+     * 비용은 PHC 안의 파라미터가 정한다. 정책을 올리면 이 값도 함께 올라가야 한다.
+     *
+     * **해시의 원문도 상수가 아니다 — 기동 시 난수다** (privacy-gate M-1). 종전에는
+     * 사람이 읽는 `const` 를 해시했는데, 그러면 [PasswordHasher.dummyHash] 가 선언한
+     * *"어떤 비밀번호와도 일치하지 않는다"* 가 **거짓**이 된다: 그 상수를 넣으면
+     * `verify` 가 `true` 다(실측). 지금 악용 경로는 없지만 재해시 미도달의 근거로
+     * 적힌 성질이라, 다음 사람이 그 근거에 기대 두 분기를 합치면 실제로 필요해진다.
+     * 난수 원문은 아무도 모르므로 선언이 참이 되고, 조립 1회·비용 동일은 그대로다.
      */
     private val dummy: PasswordHash =
         PasswordHash(
-            checkNotNull(encoder.encode(DUMMY_PHC_SOURCE)) { "더미 해시를 만들지 못했습니다" },
+            checkNotNull(encoder.encode(randomDummySource())) { "더미 해시를 만들지 못했습니다" },
         )
 
     override fun hash(rawPassword: String): PasswordHash {
@@ -159,12 +168,21 @@ class Argon2PasswordHasher(
         /** `Argon2Parameters.ARGON2_VERSION_13`. 인코더가 만드는 PHC 의 `v=` 값이다. */
         const val ENCODER_VERSION = 19
 
+        /** 더미 원문의 길이. 추측 대상이 되지 않을 만큼이면 충분하고, 비용은 원문 길이와 무관하다. */
+        const val DUMMY_SOURCE_BYTES = 32
+
         /**
-         * 더미 PHC 를 만들 때 넣는 입력. **비밀이 아니다** — 이 값으로 로그인할 수 있는
-         * 계정은 없고(가입은 이 해시를 저장하지 않는다), 값이 알려져도 얻는 것이 없다.
-         * 사람이 읽을 수 있는 낱말꼴로 둔다: 난수꼴이면 유출된 키로 오인된다.
+         * 더미 PHC 의 원문 — **기동마다 새로 뽑는 난수**다.
+         *
+         * 어디에도 저장하지 않고 밖으로 내보내지 않는다. 이 값을 아무도 모른다는 것이
+         * *"더미는 어떤 비밀번호와도 일치하지 않는다"* 를 참으로 만든다. 상수로 되돌리면
+         * `Argon2PasswordHasherTest` 의 「더미 원문이 코드 상수가 아니다」가 깨진다.
          */
-        const val DUMMY_PHC_SOURCE = "absent-account-uniform-cost"
+        fun randomDummySource(): String {
+            val bytes = ByteArray(DUMMY_SOURCE_BYTES)
+            SecureRandom().nextBytes(bytes)
+            return Base64.getEncoder().encodeToString(bytes)
+        }
     }
 }
 
