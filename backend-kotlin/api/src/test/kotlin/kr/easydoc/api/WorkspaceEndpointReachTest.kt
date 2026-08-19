@@ -314,6 +314,42 @@ class WorkspaceEndpointReachTest {
         assertPrivateHeaders(response)
     }
 
+    /**
+     * **WD-9 — 거절 두 갈래가 동시에 해당하는 상태.**
+     *
+     * 「작업 공간이 하나뿐이고 그 안에 문서가 있다」는 드문 자리가 아니라 **가입 후 문서를
+     * 올리고 두 번째 공간을 만들지 않은 모든 사용자**의 상태다. 그런데 이 상태를 지나는
+     * 케이스가 0건이었다 — WD-4 는 공간을 하나 더 만들어 두고, WD-5 는 문서를 안 넣는다.
+     *
+     * **기대값을 계약에서 읽는다.** 어느 갈래가 이기는지는 2026-08-19 신설 조항(D-2)이
+     * 정했고, [ContractSpec.deletionRefusalPrecedenceExample] 이 그 조항을 앵커로 집어
+     * 예시 **이름**을 돌려준다. 이름을 여기 적으면 계약이 순서를 뒤집어도 이 테스트가 옛
+     * 순서로 통과한다 — 그러면 계약이 되는 것은 계약 파일이 아니라 이 파일이다.
+     */
+    @Test
+    @DisplayName("WD-9 마지막 하나 + 문서 있음이 겹치면 계약이 정한 갈래를 낸다 (D-2)")
+    fun `거절 두 갈래가 겹치면 계약이 정한 순서를 따른다`() {
+        val token = newAccount()
+        // 가입이 만든 기본 작업 공간 하나뿐인 상태에 문서를 넣는다.
+        val onlyWorkspace = itemsOf(get(COLLECTION_PATH, token)).single()["id"].toString()
+        insertDocument(subjectOf(token), onlyWorkspace)
+
+        val response = delete(token, onlyWorkspace)
+
+        assertDeclaredStatus(response, CONFLICT, ITEM_PATH, DELETE)
+        val expected = ContractSpec.deletionRefusalPrecedenceExample()
+        assertThat(bodyOf(response)["detail"])
+            .withFailMessage(
+                "겹치는 상태의 거절 문구가 계약 D-2 조항이 가리키는 갈래(%s)와 다르다: %s",
+                expected,
+                response.body(),
+            ).isEqualTo(ContractSpec.pathExampleDetail(ITEM_PATH, DELETE, CONFLICT, expected))
+        // 두 갈래의 문구가 실제로 다를 때만 이 단언이 순서를 잰다.
+        assertThat(ContractSpec.pathExampleDetail(ITEM_PATH, DELETE, CONFLICT, LAST_ONE_EXAMPLE))
+            .isNotEqualTo(ContractSpec.pathExampleDetail(ITEM_PATH, DELETE, CONFLICT, HAS_DOCUMENTS_EXAMPLE))
+        assertThat(itemsOf(get(COLLECTION_PATH, token))).hasSize(1)
+    }
+
     @Test
     @DisplayName("WD-2·WD-3 타인 자원 삭제 → 404(403 아님)이고 없는 자원과 응답이 같다")
     fun `타인 자원 삭제가 없는 자원과 구분되지 않는다`() {

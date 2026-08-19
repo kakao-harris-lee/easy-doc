@@ -318,6 +318,34 @@ object ContractSpec {
     }
 
     /**
+     * **P-22 — D-2. 삭제 거절 두 갈래가 **동시에** 해당할 때 계약이 어느 쪽을 내라고 했는가.**
+     *
+     * 계약이 2026-08-19 에 신설한 조항(`paths./workspaces/{workspace_id}.delete.description`)이다.
+     * 종전에는 계약이 침묵해 두 순서가 다 허용됐고, 그중 하나가 조항이 지키겠다고 적은
+     * 것을 정확히 깨뜨렸다.
+     *
+     * 조항은 산문 안에 있으므로 앵커로 집어낸다. **조항이 사라지면 실패한다** — 기본값을
+     * 돌려주면 계약에서 순서가 지워져도 테스트가 옛 순서로 통과한다. 매치가 둘 이상이어도
+     * 실패한다(`defaultWorkspaceName` 이 `find` 첫 매치를 쓰는 자리에서 관찰된 위험 —
+     * 같은 모양의 문장이 앞에 하나 더 생기면 조용히 다른 값을 읽는다).
+     *
+     * 돌려주는 것은 **예시 이름**이다(값이 아니라 이름 — 규약 §0). 문구 자체는 그 이름으로
+     * [pathExampleDetail] 이 읽는다.
+     */
+    fun deletionRefusalPrecedenceExample(): String {
+        val description = text("paths", WORKSPACE_ITEM_PATH, "delete", "description")
+        val matches = PRECEDENCE_PATTERN.findAll(description).toList()
+        require(matches.size == 1) {
+            "delete.description 의 「둘 다 해당하면 N」 조항이 ${matches.size} 건이다 — D-2 가 사라졌거나 둘로 갈렸다"
+        }
+        return when (val choice = matches.single().groupValues[1]) {
+            "1" -> HAS_DOCUMENTS_EXAMPLE
+            "2" -> LAST_ONE_EXAMPLE
+            else -> error("D-2 조항이 가리키는 갈래 번호가 1·2 가 아니다: $choice")
+        }
+    }
+
+    /**
      * **P-20 — 스키마 속성에 붙은 `x-service-constraint` 표식.**
      *
      * 같은 상한이 계약 안에 **세 벌** 있다(`x-input-limits` · `fields[].limit` · 이 표식).
@@ -399,6 +427,16 @@ object ContractSpec {
 
     /** 위 산문에서 값을 집어내는 앵커. 값이 아니라 **찾는 방법**이라 여기 있어도 된다. */
     private val DEFAULT_WORKSPACE_NAME_PATTERN = Regex("이름은 `([^`]+)`")
+
+    /** D-2 조항의 앵커. 마찬가지로 값이 아니라 찾는 방법이다. */
+    private val PRECEDENCE_PATTERN = Regex("둘 다 해당하면\\s*\\**\\s*(\\d)")
+
+    /** 계약이 삭제 409 예시에 붙인 **이름**들. 값은 [pathExampleDetail] 이 읽는다. */
+    private const val HAS_DOCUMENTS_EXAMPLE = "has_documents"
+    private const val LAST_ONE_EXAMPLE = "last_one"
+
+    /** D-2 조항이 사는 경로. 이 파일 안에서만 쓰는 키다. */
+    private const val WORKSPACE_ITEM_PATH = "/workspaces/{workspace_id}"
 
     /** P-12. `x-auth` 아래 스칼라 값. */
     fun authText(key: String): String = text("x-auth", key)
