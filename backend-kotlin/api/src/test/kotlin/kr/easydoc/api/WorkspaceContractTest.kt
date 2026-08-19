@@ -3,7 +3,9 @@ package kr.easydoc.api
 import kr.easydoc.api.config.PrivateResponseHeadersConfig
 import kr.easydoc.api.support.AuthSliceBeans
 import kr.easydoc.api.support.ContractSpec
+import kr.easydoc.api.support.InMemoryUserRepository
 import kr.easydoc.api.support.MeasurementAxis
+import kr.easydoc.core.user.PasswordHash
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
@@ -48,6 +50,10 @@ class WorkspaceContractTest {
     @Autowired
     private lateinit var mockMvc: MockMvc
 
+    /** 소유자 계정을 실재하게 만들 자리. 인증 경계가 사용자 존재를 확인한다(X-1). */
+    @Autowired
+    private lateinit var users: InMemoryUserRepository
+
     private val json = ObjectMapper()
 
     // ================================================================ 계약 안 대조 (P-16 · P-19 · P-20)
@@ -88,7 +94,7 @@ class WorkspaceContractTest {
     @Test
     @DisplayName("WL-1 목록 성공 — 계약의 성공 상태 · 사적 헤더 2종(개수까지) · 최상위 키가 정확히 required")
     fun `목록 응답이 계약과 같다`() {
-        val owner = UUID.randomUUID()
+        val owner = newOwner()
         createWorkspace(owner, "가")
 
         val response = listWorkspaces(owner)
@@ -101,7 +107,7 @@ class WorkspaceContractTest {
     @Test
     @DisplayName("WL-2 목록 항목의 키 집합이 정확히 allOf 합성 required 다 (추가 키 0)")
     fun `목록 항목의 키 집합이 계약과 같다`() {
-        val owner = UUID.randomUUID()
+        val owner = newOwner()
         createWorkspace(owner, "가")
         createWorkspace(owner, "나")
 
@@ -120,7 +126,7 @@ class WorkspaceContractTest {
     @Test
     @DisplayName("WC-1 생성 성공 — 계약의 성공 상태(200 아님) · 사적 헤더 2종(개수까지) · 키가 정확히 단건 required")
     fun `생성 응답이 계약과 같다`() {
-        val response = createWorkspace(UUID.randomUUID(), "가")
+        val response = createWorkspace(newOwner(), "가")
 
         assertThat(response.status).isEqualTo(ContractSpec.successStatus(COLLECTION_PATH, POST))
         assertPrivateHeaders(response)
@@ -131,7 +137,7 @@ class WorkspaceContractTest {
     @Test
     @DisplayName("WC-4 공백만인 이름 → 422 · detail 이 **문자열 타입** · 값이 계약의 빈 이름 예시와 같다 (X-F10)")
     fun `공백만인 이름은 422 문자열이다`() {
-        val response = createWorkspace(UUID.randomUUID(), "   ")
+        val response = createWorkspace(newOwner(), "   ")
 
         assertDeclaredStatus(response, UNPROCESSABLE_CONTENT, COLLECTION_PATH, POST)
         // 배열이면 `@Size`/`@NotBlank` 로 구현한 것이다 — 상태 코드는 같아 여기서만 갈린다.
@@ -143,7 +149,7 @@ class WorkspaceContractTest {
     @DisplayName("WC-5 정규화 후 상한을 넘는 이름 → 422 문자열 · 자르지 않고 거절")
     fun `상한을 넘는 이름은 거절한다`() {
         val limit = ContractSpec.requestFieldConstraint(NAME_FIELD).limit
-        val response = createWorkspace(UUID.randomUUID(), "가".repeat(limit + 1))
+        val response = createWorkspace(newOwner(), "가".repeat(limit + 1))
 
         assertDeclaredStatus(response, UNPROCESSABLE_CONTENT, COLLECTION_PATH, POST)
         assertThat(detailText(response)).isEqualTo(tooLongNameDetail())
@@ -156,7 +162,7 @@ class WorkspaceContractTest {
     fun `상한과 같은 이름은 통과한다`() {
         val limit = ContractSpec.requestFieldConstraint(NAME_FIELD).limit
 
-        val response = createWorkspace(UUID.randomUUID(), "가".repeat(limit))
+        val response = createWorkspace(newOwner(), "가".repeat(limit))
 
         assertThat(response.status).isEqualTo(ContractSpec.successStatus(COLLECTION_PATH, POST))
     }
@@ -169,7 +175,7 @@ class WorkspaceContractTest {
         // 스키마 층 maxLength 로 구현하면 원시 길이로 재므로 여기서 깨진다.
         val raw = "가".repeat(constraint.limit) + CONTROL_CHAR.repeat(CONTROL_CHARS)
 
-        val response = createWorkspace(UUID.randomUUID(), raw)
+        val response = createWorkspace(newOwner(), raw)
 
         assertThat(response.status).isEqualTo(ContractSpec.successStatus(COLLECTION_PATH, POST))
     }
@@ -178,7 +184,7 @@ class WorkspaceContractTest {
     @DisplayName("WC-8 앞뒤 공백은 저장까지 털린다 — 응답 name 이 정규화된 값이다")
     fun `정규화가 저장까지 간다`() {
         // WC-7 만으로는 판정에만 쓰고 버리는 구현이 통과한다.
-        val response = createWorkspace(UUID.randomUUID(), "  가나다  ")
+        val response = createWorkspace(newOwner(), "  가나다  ")
 
         assertThat(bodyOf(response)[NAME_PROPERTY]).isEqualTo("가나다")
     }
@@ -186,7 +192,7 @@ class WorkspaceContractTest {
     @Test
     @DisplayName("WC-9 name 필드 누락 → 422 · detail 이 **배열** · 항목 키가 정확히 ValidationErrorItem.required")
     fun `필드 누락은 422 배열이다`() {
-        val response = postJson(COLLECTION_PATH, UUID.randomUUID(), "{}")
+        val response = postJson(COLLECTION_PATH, newOwner(), "{}")
 
         assertDeclaredStatus(response, UNPROCESSABLE_CONTENT, COLLECTION_PATH, POST)
         assertValidationArray(response)
@@ -197,8 +203,8 @@ class WorkspaceContractTest {
     fun `422 의 두 모양이 모두 나온다`() {
         val union = ContractSpec.errorDetailUnionTypes()
 
-        val stringShaped = createWorkspace(UUID.randomUUID(), "   ")
-        val arrayShaped = postJson(COLLECTION_PATH, UUID.randomUUID(), "{}")
+        val stringShaped = createWorkspace(newOwner(), "   ")
+        val arrayShaped = postJson(COLLECTION_PATH, newOwner(), "{}")
 
         assertThat(union).hasSize(2)
         assertThat(detailOf(stringShaped)).isInstanceOf(String::class.java)
@@ -208,8 +214,8 @@ class WorkspaceContractTest {
     @Test
     @DisplayName("WC-11 오류 응답의 Content-Type 이 JSON 이다 (X-C4 / E-3)")
     fun `오류 응답이 JSON 이다`() {
-        assertJsonContentType(createWorkspace(UUID.randomUUID(), "   "))
-        assertJsonContentType(postJson(COLLECTION_PATH, UUID.randomUUID(), "{}"))
+        assertJsonContentType(createWorkspace(newOwner(), "   "))
+        assertJsonContentType(postJson(COLLECTION_PATH, newOwner(), "{}"))
     }
 
     // ================================================================ PATCH · DELETE
@@ -217,7 +223,7 @@ class WorkspaceContractTest {
     @Test
     @DisplayName("WR-6 이름 규칙 네 경계가 PATCH 에서도 같다 — 같은 계약 노드에서 읽어 두 곳에 건다")
     fun `이름 규칙이 두 엔드포인트에서 같다`() {
-        val owner = UUID.randomUUID()
+        val owner = newOwner()
         val limit = ContractSpec.requestFieldConstraint(NAME_FIELD).limit
         val id = bodyOf(createWorkspace(owner, "처음")).required("id").toString()
 
@@ -235,7 +241,7 @@ class WorkspaceContractTest {
         // 계약이 이 자리를 `format: uuid` 로만 적는다 — 제약 애너테이션이 아니라 타입 변환이다.
         assertThat(pathParameter().format).isEqualTo(UUID_FORMAT)
 
-        val response = rename(UUID.randomUUID(), NOT_A_UUID, "가")
+        val response = rename(newOwner(), NOT_A_UUID, "가")
 
         assertDeclaredStatus(response, UNPROCESSABLE_CONTENT, ITEM_PATH, PATCH)
         assertValidationArray(response)
@@ -246,7 +252,7 @@ class WorkspaceContractTest {
     fun `삭제의 경로 변수 형식 위반도 422 배열이다`() {
         val response =
             mockMvc
-                .delete(itemPath(NOT_A_UUID)) { header(HttpHeaders.AUTHORIZATION, bearer(UUID.randomUUID())) }
+                .delete(itemPath(NOT_A_UUID)) { header(HttpHeaders.AUTHORIZATION, bearer(newOwner())) }
                 .andReturn()
                 .response
 
@@ -294,6 +300,17 @@ class WorkspaceContractTest {
 
     /** [kr.easydoc.api.support.StubAccessTokens] 가 읽는 형식. 서명·만료는 이 계층에서 재지 않는다. */
     private fun bearer(owner: UUID): String = "Bearer stub-token:$owner"
+
+    /**
+     * 계정을 **실제로 만들고** 그 식별자를 쓴다.
+     *
+     * 종전에는 `UUID.randomUUID()` 를 바로 소유자로 썼다 — 토큰이 가리키는 계정이 없어도
+     * 인증 경계를 지났기 때문이다. X-1 이후 그 상태는 401 이므로(계약
+     * `x-auth.failure_uniformity` 의 「계정 삭제」), 여기서도 계정이 실재해야 한다.
+     * **이 변경이 필요했다는 사실 자체가 X-1 의 도달 증거다** — 슬라이스 테스트가
+     * 종전 구현에서 유령 계정으로 16번 통과하고 있었다.
+     */
+    private fun newOwner(): UUID = users.create("slice-${UUID.randomUUID()}@example.test", STUB_HASH).id
 
     /**
      * **P-21 — 경로 변수 이름을 계약에서 읽어 URL 을 조립한다.**
@@ -371,6 +388,9 @@ class WorkspaceContractTest {
     private fun detailText(response: MockHttpServletResponse): String = detailOf(response).toString()
 
     private companion object {
+        /** 소유자 계정을 심을 때만 쓰는 더미 해시. 이 파일은 비밀번호 검증을 재지 않는다. */
+        val STUB_HASH = PasswordHash("stub-hash")
+
         const val COLLECTION_PATH = "/workspaces"
         const val ITEM_PATH = "/workspaces/{workspace_id}"
         const val GET = "get"
