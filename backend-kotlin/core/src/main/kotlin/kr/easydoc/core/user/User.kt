@@ -1,5 +1,6 @@
 package kr.easydoc.core.user
 
+import kr.easydoc.core.privacy.CONTENT_MASK
 import java.time.Instant
 import java.util.UUID
 
@@ -20,7 +21,25 @@ data class User(
     val id: UUID,
     val email: String,
     val createdAt: Instant,
-)
+) {
+    /**
+     * **이메일을 찍지 않는다.**
+     *
+     * 이 KDoc 의 첫 절이 비밀번호 해시를 담지 않는 근거로 *"담아 두면 `toString()`·직렬화·
+     * 로그 어디에서든 새는 경로가 생긴다"* 를 들면서, 정작 **이메일 자신에는 같은 규율이
+     * 적용되지 않은 비대칭**이 있었다(게이트 23 privacy-gate 3a — `/auth/me` 는 요청마다
+     * 이 객체를 힙에 올린다). `Workspace.name` 이 같은 이유로 먼저 고쳐졌고 이메일만
+     * 남아 있었으므로, 비대칭은 사라진 것이 아니라 **옮겨간** 상태였다.
+     *
+     * 이메일은 개인정보다(`CLAUDE.md` 보안 규칙 — 로깅은 문서 ID·길이·처리 상태까지).
+     * 마스킹 범주가 2종으로 좁아진 것은 **LLM 전송 경계**의 결정이고 로그 경계와 무관하다.
+     *
+     * 오늘 이 경로에 로거가 0개라 **도달은 0**이다. 그래도 지금 막는 이유는 `Workspace`
+     * 와 같다 — 막는 비용이 한 줄인데 새는 순간은 로깅이 처음 들어오는 커밋이다.
+     * **직렬화는 가리지 않는다** — 계약 `UserResponse.email` 은 required 다.
+     */
+    override fun toString(): String = "User(id=$id, email=$CONTENT_MASK, createdAt=$createdAt)"
+}
 
 /**
  * 저장소에서 읽어 온 사용자 — 검증에 쓸 비밀번호 해시를 함께 든다.

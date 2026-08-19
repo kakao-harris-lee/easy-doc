@@ -2,6 +2,7 @@ package kr.easydoc.core.easyread
 
 import kr.easydoc.core.privacy.MaskedText
 import kr.easydoc.core.privacy.ModelDraft
+import kr.easydoc.core.privacy.UserContent
 import java.security.SecureRandom
 import java.util.HexFormat
 
@@ -236,11 +237,26 @@ object SecureDocumentIds : DocumentIdGenerator {
     }
 }
 
-/** 보정 패스에 필요한 (system, user) 쌍. */
+/**
+ * 보정 패스에 필요한 (system, user) 쌍.
+ *
+ * **[UserContent] 를 붙인 이유**: 두 필드 다 프롬프트 **전문**을 담고 거기에는 마스킹된
+ * 문서 본문과 위반 문장이 그대로 실린다. 그런데 필드 **이름**(`system`·`user`)에는 그
+ * 사실이 어디에도 없어서, `SensitiveToStringReachTest` 의 이름 규약이 이 타입에 닿지
+ * 않는다. 규약을 넓혀 잡으려면 `user` 같은 흔한 토큰을 민감 목록에 넣어야 하고 그러면
+ * 범위가 근거를 넘는다 — 그래서 선언으로 적는다.
+ */
+@UserContent
 data class RepairPrompt(
     val system: String,
     val user: String,
-)
+) {
+    /**
+     * **프롬프트 본문을 찍지 않는다.** `LlmPrompt` 가 같은 이유로 이미 같은 처리를 받고
+     * 있었고 이 타입만 빠져 있었다(게이트 23 codex C-4). 길이만 남긴다.
+     */
+    override fun toString(): String = "RepairPrompt(system=${system.length}자, user=${user.length}자)"
+}
 
 /**
  * 지정한 낱말만 `- 어려운말 (뜻: 풀이)` 줄로 렌더링한다.

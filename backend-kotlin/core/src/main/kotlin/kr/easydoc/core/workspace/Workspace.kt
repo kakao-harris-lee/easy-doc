@@ -1,5 +1,6 @@
 package kr.easydoc.core.workspace
 
+import kr.easydoc.core.privacy.CONTENT_MASK
 import java.time.Instant
 import java.util.UUID
 
@@ -48,8 +49,13 @@ data class Workspace(
     override fun toString(): String = "Workspace(id=$id, name=$NAME_MASK, createdAt=$createdAt)"
 
     companion object {
-        /** 이름 자리에 대신 찍히는 표식. 테스트가 이 값으로 「가려졌음」을 확인한다. */
-        const val NAME_MASK: String = "***"
+        /**
+         * 이름 자리에 대신 찍히는 표식. 테스트가 이 값으로 「가려졌음」을 확인한다.
+         *
+         * 값은 [kr.easydoc.core.privacy.CONTENT_MASK] 하나에서 온다 — 타입마다 다른
+         * 문자열을 쓰면 확인하는 쪽이 타입마다 다른 상수를 알아야 한다.
+         */
+        const val NAME_MASK: String = CONTENT_MASK
     }
 }
 

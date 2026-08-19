@@ -167,7 +167,13 @@ private class Pass(
 /** 완성 요청 1건의 결과. 실패 사유는 **호출 위치와 무관하게** 같은 어휘로 낸다. */
 private sealed interface Outcome {
     /** 후처리를 마쳐 쓸 수 있는 본문이 남았다. */
-    data class Body(val text: String) : Outcome
+    data class Body(val text: String) : Outcome {
+        /**
+         * **본문을 찍지 않는다.** 여기 담긴 것은 후처리를 마친 변환 결과 전문이다
+         * (`Masking.kt` 「`toString()` 과 본문」 — 개인정보가 없어도 본문은 금지).
+         */
+        override fun toString(): String = "Body(${text.length}자)"
+    }
 
     /** 쓸 수 없는 응답이다. 이것을 변환 실패로 볼지 삼킬지는 **호출 위치**가 정한다. */
     data class Rejected(val kind: ConversionFailureKind) : Outcome
@@ -184,6 +190,12 @@ private data class Adoption(
     val text: String,
     val repaired: Boolean,
 ) {
+    /**
+     * **본문을 찍지 않는다.** [text] 는 사용자에게 나갈 최종 본문이다 — `Body` 와 같은 이유.
+     * [repaired] 는 남긴다: 어느 갈래를 채택했는지가 이 타입의 진단 값어치 전부다.
+     */
+    override fun toString(): String = "Adoption(text=${text.length}자, repaired=$repaired)"
+
     companion object {
         /** 1차 결과를 그대로 쓴다 — 보정을 부르지 않았거나 기각했다. */
         fun keep(draft: String) = Adoption(draft, repaired = false)

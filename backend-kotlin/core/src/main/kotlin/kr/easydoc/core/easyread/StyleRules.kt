@@ -1,5 +1,6 @@
 package kr.easydoc.core.easyread
 
+import kr.easydoc.core.privacy.CONTENT_MASK
 import kr.easydoc.core.text.isTextWhitespace
 import kr.easydoc.core.text.unicodeRegex
 
@@ -159,7 +160,22 @@ data class SentenceIssue(
     val kind: StyleRuleKind,
     val reason: String,
     val word: String? = null,
-)
+) {
+    /**
+     * **문장과 낱말을 찍지 않는다.**
+     *
+     * [sentence] 는 문서 본문에서 잘라 낸 조각이고 [word] 는 그 안에 실제로 나타난 낱말이다.
+     * `Masking.kt` 의 「`toString()` 과 본문」 절이 정본이다 — *"개인정보가 한 글자도 없어도
+     * 본문은 금지"* 이고, 마스킹된 본문이라 해도 가려지는 것은 2종뿐이다.
+     *
+     * 진단에 필요한 것은 남긴다 — 어떤 규칙이 왜 걸렸는지([kind]·[reason])는 우리가 만든
+     * 고정 문구이고, 길이가 있으면 어느 문장인지 대조할 수 있다.
+     */
+    override fun toString(): String {
+        val wordSlot = if (word == null) "없음" else CONTENT_MASK
+        return "SentenceIssue(kind=$kind, reason=$reason, sentence=${sentence.length}자, word=$wordSlot)"
+    }
+}
 
 /** 규칙 기반 검사 결과. */
 data class StyleCheckResult(

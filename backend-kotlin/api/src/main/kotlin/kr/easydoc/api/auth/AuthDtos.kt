@@ -2,6 +2,7 @@ package kr.easydoc.api.auth
 
 import com.fasterxml.jackson.annotation.JsonCreator
 import com.fasterxml.jackson.annotation.JsonProperty
+import kr.easydoc.core.privacy.CONTENT_MASK
 import kr.easydoc.core.user.User
 
 /**
@@ -61,6 +62,16 @@ data class UserResponse(
     @get:JsonProperty("id") val id: String,
     @get:JsonProperty("email") val email: String,
 ) {
+    /**
+     * **이메일을 찍지 않는다.** 형제 요청 DTO 둘(`SignupRequest`·`LoginRequest`)이 같은
+     * 이유로 이미 가리고 있는데 응답 DTO 만 빠져 있었다(게이트 23 privacy-gate 3a).
+     * `/auth/me` 는 요청마다 이 객체를 만든다.
+     *
+     * **가리는 것은 `toString()` 뿐이다** — 계약 `UserResponse` 의 `required` 가
+     * `id`·`email` 이므로 직렬화 값은 그대로여야 한다. 두 축을 섞지 않는다.
+     */
+    override fun toString(): String = "UserResponse(id=$id, email=$CONTENT_MASK)"
+
     companion object {
         fun of(user: User): UserResponse = UserResponse(id = user.id.toString(), email = user.email)
     }
