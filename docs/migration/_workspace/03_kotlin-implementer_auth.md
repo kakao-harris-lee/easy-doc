@@ -180,7 +180,17 @@ worktree 는 제거했고 `git worktree list` 는 본 저장소 하나다.
 | `JwtAccessTokens` 만료 판정에 **60초 허용 오차 주입** | 1 | `JwtAccessTokensTest` 「exp 를 1초 지나면 거부한다」·「exp 와 정확히 같은 시각도 거부한다」 |
 | `needsRehash` 를 **`upgradeEncoding()` 의 「미만」 비교로 교체** | 1 | 「파라미터를 **낮춘** 정책도 재해시 대상」·「parallelism · salt 길이 · hash 길이만 달라도 재해시 대상」 |
 | `SignupRequest.email` 에 **`@Size` 부착** | 1 | `RequestFieldConstraintLayerTest` 「다섯 필드에 길이·형식 Bean Validation 애너테이션이 없다」 |
-| `AuthenticatedEndpoints` 목록 **비우기** | 1 | `AuthenticationCoverageContractTest` 「보호 경로 목록이 계약의 security 선언과 정확히 같다」 |
+| ~~`AuthenticatedEndpoints` 목록 **비우기**~~ → **정정, 아래 참조** | 1 | (재기술) |
+| **계약이 보호로 선언한 경로를 구현하되 목록에 넣지 않는다** | 1 | `AuthenticationCoverageContractTest` 「보호로 분류된 매핑이 전부 인증 목록에 있고…」 — *계약이 보호로 선언했는데 인증이 걸리지 않은 경로: [/workspaces]* |
+| **계약에 없는 경로를 서비스한다** | 1 | 같은 클래스 「서비스 중인 모든 매핑이 계약의 공개·보호 둘 중 하나로 분류된다」 |
+
+> **정정 (2026-08-19, 게이트 20 T-7).** 위 표의 원래 마지막 행 「목록 **비우기** → exit 1」은
+> **겨눈 방향의 반대를 잰다.** Spring `addPathPatterns(emptyList())` 는 include 패턴이 없다는
+> 뜻이라 인터셉터가 **모든 요청**에 걸린다 — 실측 api 117건 중 65건 실패이고 대부분이
+> `/health` 가 401 이 되는 **과잉 보호 부수 피해**다. 「장치가 미보호를 잡는다」를 보이지 않는다.
+> 미보호 방향의 실제 사고 형태(컨트롤러를 만들면서 계약 분류도 인증 목록도 빠뜨림)는
+> 종전 장치에서 **초록**이었고(리뷰 B-6), 그 결함은 게이트 20 조치로 닫혔다. 위 두 행이
+> 그 방향을 실제로 겨눈 재실측이다(`03_kotlin-implementer_auth-fixes.md` §3).
 
 > **F3 부수 관찰 — 지금은 두 층이 막고 있다.** `jakarta.validation` 이 `api` 클래스패스에
 > **아예 없어서**(`spring-boot-starter-validation` 미추가) 금지 애너테이션이 컴파일조차
