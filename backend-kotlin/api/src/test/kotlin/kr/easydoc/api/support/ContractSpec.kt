@@ -143,6 +143,65 @@ object ContractSpec {
     fun globalResponseHeaders(): Map<String, String> =
         map("x-global-response-headers", "headers").entries.associate { (k, v) -> k.toString() to v.toString() }
 
+    /**
+     * P-3b. **헤더 이름 → 컴포넌트 이름**을 계약의 `$ref` 에서 유도한다.
+     *
+     * 이 표를 테스트마다 손으로 적으면(종전에 두 곳에 있었다) 계약이 컴포넌트 이름을
+     * 바꿔도 따라가지 않고, 새 헤더가 생겨도 검사 범위가 늘지 않는다. `paths` 아래
+     * 응답 선언이 이미 `$ref: '#/components/headers/…'` 로 둘을 잇고 있으므로 그것을 읽는다.
+     *
+     * 같은 이름이 서로 다른 컴포넌트를 가리키면 실패한다 — 그 상태에서는 「이 헤더의
+     * 계약 값」이 하나로 정해지지 않는다.
+     */
+    fun headerComponentsByName(): Map<String, String> {
+        val found = mutableMapOf<String, String>()
+        map("paths").values.filterIsInstance<Map<*, *>>().forEach { operations ->
+            operations
+                .filterKeys { it.toString() in HTTP_METHODS }
+                .values
+                .filterIsInstance<Map<*, *>>()
+                .forEach { operation ->
+                    (operation["responses"] as? Map<*, *>)
+                        ?.values
+                        ?.filterIsInstance<Map<*, *>>()
+                        ?.forEach { response -> collectHeaderRefs(response, found) }
+                }
+        }
+        require(found.isNotEmpty()) { "계약의 응답 선언에서 헤더 \$ref 를 하나도 찾지 못했다" }
+        return found
+    }
+
+    /**
+     * P-4b. 전역 부착 헤더의 **이름 → 계약이 `const` 로 못박은 값**.
+     *
+     * 값을 `x-global-response-headers.headers` 가 아니라 **컴포넌트 `const`** 에서 읽는다.
+     * 전역 절의 값만 읽으면 컴포넌트 `const` 를 바꿔도 테스트가 반응하지 않는다 —
+     * 음성 대조 N-3 이 실측으로 드러낸 자리다.
+     */
+    fun globalHeaderValues(): Map<String, String> {
+        val components = headerComponentsByName()
+        return globalResponseHeaders().keys.associateWith { header ->
+            headerConst(
+                components[header]
+                    ?: error("전역 헤더 $header 를 `\$ref` 로 가리키는 응답 선언이 없다 — 값의 정본을 찾을 수 없다"),
+            )
+        }
+    }
+
+    private fun collectHeaderRefs(
+        response: Map<*, *>,
+        into: MutableMap<String, String>,
+    ) {
+        (response["headers"] as? Map<*, *>)?.forEach { (name, declaration) ->
+            val ref = (declaration as? Map<*, *>)?.get("\$ref")?.toString() ?: return@forEach
+            val component = ref.substringAfterLast('/')
+            val previous = into.put(name.toString(), component)
+            require(previous == null || previous == component) {
+                "헤더 $name 이 서로 다른 컴포넌트를 가리킨다: $previous / $component"
+            }
+        }
+    }
+
     /** P-5. 고위험 하한선 목록. `"POST /auth/signup"` 형태의 문자열이다. */
     fun privateResponseHeaderTargets(): List<String> = strings("x-private-response-headers", "applies_to")
 

@@ -2,6 +2,7 @@ package kr.easydoc.api
 
 import kr.easydoc.api.config.PrivateResponseHeadersConfig
 import kr.easydoc.api.health.HealthController
+import kr.easydoc.api.support.ContractSpec
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
@@ -57,8 +58,11 @@ class HealthContractTest {
         // 되돌아간다.
         val response = mockMvc.get("/health").andReturn().response
 
-        assertThat(response.getHeader(HttpHeaders.CACHE_CONTROL)).isEqualTo("no-store")
-        assertThat(response.getHeader("X-Content-Type-Options")).isEqualTo("nosniff")
+        ContractSpec.globalHeaderValues().forEach { (header, value) ->
+            assertThat(response.getHeader(header))
+                .withFailMessage("/health 응답에 %s 가 계약값으로 붙지 않았다", header)
+                .isEqualTo(value)
+        }
     }
 
     @Test

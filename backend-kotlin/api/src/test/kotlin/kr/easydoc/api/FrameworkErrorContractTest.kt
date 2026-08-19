@@ -1,6 +1,7 @@
 package kr.easydoc.api
 
 import kr.easydoc.api.config.PrivateResponseHeadersConfig
+import kr.easydoc.api.support.ContractSpec
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
@@ -206,12 +207,12 @@ class FrameworkErrorContractTest {
             mockMvc.post("/__probe/get-only").andReturn(),
             mockMvc.get("/__probe/query").andReturn(),
         ).forEach { result ->
-            assertThat(result.response.getHeader(HttpHeaders.CACHE_CONTROL))
-                .withFailMessage("프레임워크 오류 응답에 Cache-Control 이 없다 — 계약은 모든 응답에 no-store 를 요구한다")
-                .isEqualTo("no-store")
-            assertThat(result.response.getHeader("X-Content-Type-Options"))
-                .withFailMessage("프레임워크 오류 응답에 X-Content-Type-Options 가 없다")
-                .isEqualTo("nosniff")
+            // 값의 정본은 계약 컴포넌트 `const` 다(P-3b · 게이트 20 C-6).
+            ContractSpec.globalHeaderValues().forEach { (header, value) ->
+                assertThat(result.response.getHeader(header))
+                    .withFailMessage("프레임워크 오류 응답에 %s 가 계약값으로 붙지 않았다", header)
+                    .isEqualTo(value)
+            }
         }
     }
 

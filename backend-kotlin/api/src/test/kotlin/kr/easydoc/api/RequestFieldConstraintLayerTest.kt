@@ -47,12 +47,21 @@ class RequestFieldConstraintLayerTest {
         val classes = apiClasses()
         val violations = mutableListOf<String>()
         val covered = mutableListOf<String>()
+        val unmatched = mutableListOf<String>()
 
         fields.forEach { qualified ->
             val (simpleName, property) = qualified.split('.', limit = 2)
             val target = classes.firstOrNull { it.simpleName == simpleName } ?: return@forEach
-            covered += qualified
-            violations += forbiddenAnnotationsOn(target, property).map { "$qualified 에 @$it 가 붙어 있다" }
+            val inspected = inspect(target, property)
+            // **클래스를 찾은 것은 도달이 아니다.** 프로퍼티를 실제로 찾았을 때만 센다 —
+            // 클래스만 세면 계약 필드 이름이 어느 프로퍼티와도 맞지 않아 0건을 훑어도
+            // 「도달했다」가 참이 된다(게이트 20 T-1).
+            if (inspected.matchedProperty) {
+                covered += qualified
+            } else {
+                unmatched += "$qualified — 클래스는 있으나 그 이름의 프로퍼티를 찾지 못했다"
+            }
+            violations += inspected.forbidden.map { "$qualified 에 @$it 가 붙어 있다" }
         }
 
         assertThat(violations)
@@ -60,6 +69,11 @@ class RequestFieldConstraintLayerTest {
                 "계약 F3 위반 — 이 다섯은 서비스 층에서 판정하고 위반은 422 **문자열** detail 이다.\n%s",
                 violations.joinToString("\n"),
             ).isEmpty()
+
+        // 클래스는 있는데 프로퍼티를 못 찾았다면 그 필드의 금지는 아무 데서도 강제되지 않는다.
+        assertThat(unmatched)
+            .withFailMessage("계약 필드와 프로퍼티가 맞지 않는다 — 이 필드들은 검사되지 않았다:\n%s", unmatched.joinToString("\n"))
+            .isEmpty()
 
         // 도달을 결과에 드러낸다. 0 이면 이 테스트는 아무것도 검사하지 않은 것이다.
         assertThat(covered)
@@ -120,27 +134,70 @@ class RequestFieldConstraintLayerTest {
             .filterIsInstance<Map<*, *>>()
             .map { it["field"]?.toString() ?: error("fields[] 항목에 field 가 없다") }
 
-    /** 필드·생성자 파라미터·getter 어디에 붙어도 잡는다 — Kotlin 은 붙는 자리가 여럿이다. */
-    private fun forbiddenAnnotationsOn(
+    /**
+     * 필드·getter·생성자 파라미터 어디에 붙어도 잡는다 — Kotlin 은 붙는 자리가 여럿이다.
+     *
+     * ## 계약의 이름과 Kotlin 프로퍼티 이름은 표기가 다르다 (게이트 20 T-1)
+     *
+     * 계약의 `field` 는 **snake_case** 이고(`ConversionReviewRequest.edited_text`) Kotlin
+     * 프로퍼티는 `editedText` 다. 종전 판은 `edited_text`·`getEdited_text` 만 찾아 앞의 두
+     * 갈래가 **0건**이 됐고, 실제로 잡는 것은 「그 클래스의 모든 생성자 파라미터를 쓸어
+     * 담는」 세 번째 갈래뿐이었다. 그러면 검사는 (아마) 성립하지만 **코드가 적은 이유로
+     * 성립하지 않고**, 위반 메시지가 엉뚱한 필드를 지목한다.
+     *
+     * 지금 걸린 두 필드(`email`·`password`)는 우연히 camelCase 와 같아 이 갈림이 드러나지
+     * 않았다. 다음 세 필드가 만들어지는 순간 드러날 자리를 미리 닫는다.
+     *
+     * 생성자 파라미터는 이름으로 거른다 — 이름을 못 읽는 컴파일 산출물이면(`-parameters`
+     * 부재) 그 클래스 전체를 훑던 종전 동작을 유지해 **놓치는 쪽보다 시끄러운 쪽**으로 둔다.
+     */
+    private fun inspect(
         target: Class<*>,
         property: String,
-    ): List<String> {
+    ): Inspection {
+        val candidates = setOf(property, camelCase(property))
+        val getters = candidates.map { "get${it.replaceFirstChar(Char::titlecase)}" }
+        var matched = false
         val annotations =
             buildList {
                 target.declaredFields
-                    .filter { it.name == property }
-                    .forEach { addAll(it.annotations.map { annotation -> annotation.annotationClass.java.simpleName }) }
-                target.declaredMethods
-                    .filter { it.name.equals("get${property.replaceFirstChar(Char::titlecase)}", ignoreCase = true) }
-                    .forEach { addAll(it.annotations.map { annotation -> annotation.annotationClass.java.simpleName }) }
-                target.declaredConstructors.forEach { constructor ->
-                    constructor.parameterAnnotations.flatMap { it.toList() }.forEach { annotation ->
-                        add(annotation.annotationClass.java.simpleName)
+                    .filter { it.name in candidates }
+                    .forEach {
+                        matched = true
+                        addAll(it.annotations.map { annotation -> annotation.annotationClass.java.simpleName })
                     }
+                target.declaredMethods
+                    .filter { method -> getters.any { method.name.equals(it, ignoreCase = true) } }
+                    .forEach {
+                        matched = true
+                        addAll(it.annotations.map { annotation -> annotation.annotationClass.java.simpleName })
+                    }
+                target.declaredConstructors.forEach { constructor ->
+                    val named = constructor.parameters.any { it.isNamePresent && it.name in candidates }
+                    constructor.parameters.forEach { parameter ->
+                        if (!named || parameter.name in candidates) {
+                            addAll(parameter.annotations.map { it.annotationClass.java.simpleName })
+                        }
+                    }
+                    matched = matched || named
                 }
             }
-        return annotations.filter { it in FORBIDDEN_ANNOTATIONS }.distinct()
+        return Inspection(matched, annotations.filter { it in FORBIDDEN_ANNOTATIONS }.distinct())
     }
+
+    /** `edited_text` → `editedText`. 계약 표기와 Kotlin 표기 사이의 유일한 변환이다. */
+    private fun camelCase(snake: String): String =
+        snake
+            .split('_')
+            .filter { it.isNotEmpty() }
+            .mapIndexed { index, part -> if (index == 0) part else part.replaceFirstChar(Char::titlecase) }
+            .joinToString("")
+
+    /** 프로퍼티를 실제로 찾았는가와, 거기서 발견한 금지 애너테이션. */
+    private data class Inspection(
+        val matchedProperty: Boolean,
+        val forbidden: List<String>,
+    )
 
     /**
      * `api` 모듈의 컴파일 산출물을 전수 적재한다.

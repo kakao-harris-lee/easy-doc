@@ -167,7 +167,10 @@ class AuthEndpointReachTest {
     fun `헤더가 없으면 401 이고 본문이 계약 형태다`() {
         val response = get("/auth/me", token = null)
 
-        assertThat(response.statusCode()).isEqualTo(UNAUTHORIZED)
+        assertDeclaredStatus(response, UNAUTHORIZED, ME_PATH, GET)
+        // X-D2 — 컨테이너·인터셉터가 만드는 401 에도 전역 헤더가 붙는가. 「실행해 봐야만
+        // 잡힌다」고 계약이 적은 성질이고(x-failure-mode-shift), 그 자리를 재는 케이스가 여기다.
+        assertPrivateHeaders(response)
         assertThat(response.headers().firstValue(WWW_AUTHENTICATE).orElse(null))
             .isEqualTo(ContractSpec.headerConst("WWWAuthenticateBearer"))
         // `sendError` → `/error` 로 나가면 timestamp·status·error·path 가 함께 실린다.
@@ -193,7 +196,7 @@ class AuthEndpointReachTest {
             )
 
         responses.forEach { (label, response) ->
-            assertThat(response.statusCode()).withFailMessage("%s 가 401 이 아니다", label).isEqualTo(UNAUTHORIZED)
+            assertDeclaredStatus(response, UNAUTHORIZED, ME_PATH, GET, label)
         }
         val distinct =
             responses.map { (_, response) ->
@@ -357,8 +360,9 @@ class AuthEndpointReachTest {
      * 두 곳이 갈리지 않는지도 함께 본다.
      */
     private fun assertPrivateHeaders(response: HttpResponse<String>) {
+        val byComponent = ContractSpec.globalHeaderValues()
         ContractSpec.globalResponseHeaders().forEach { (header, globalValue) ->
-            val declared = ContractSpec.headerConst(HEADER_COMPONENTS.getValue(header))
+            val declared = byComponent.getValue(header)
             assertThat(declared)
                 .withFailMessage("계약 안에서 %s 의 값이 두 절에 다르게 적혀 있다", header)
                 .isEqualTo(globalValue)
@@ -368,10 +372,31 @@ class AuthEndpointReachTest {
         }
     }
 
+    /**
+     * 상태 코드를 **응답과 계약 양쪽에** 건다 (C-1).
+     *
+     * `/auth/me` 의 401 은 계약 대조 없이 상수만 썼다 — 계약에서 그 선언을 지워도 빨강이
+     * 0 이었다(실측 `'401'`→`'403'`).
+     */
+    private fun assertDeclaredStatus(
+        response: HttpResponse<String>,
+        status: Int,
+        path: String,
+        method: String,
+        label: String = path,
+    ) {
+        assertThat(response.statusCode()).withFailMessage("%s 가 %d 이 아니다", label, status).isEqualTo(status)
+        assertThat(ContractSpec.responseStatuses(path, method))
+            .withFailMessage("계약이 %s %s 에 %d 를 선언하지 않는다", method, path, status)
+            .contains(status.toString())
+    }
+
     private fun uniqueEmail(): String = "reach${counter++}@example.test"
 
     companion object {
         private const val UNAUTHORIZED = 401
+        private const val ME_PATH = "/auth/me"
+        private const val GET = "get"
         private const val WWW_AUTHENTICATE = "WWW-Authenticate"
         private const val VALID_PASSWORD = "correct horse battery"
         private const val WRONG_PASSWORD = "correct horse batteryX"
@@ -393,13 +418,6 @@ class AuthEndpointReachTest {
         private const val MAX_TIMING_RATIO = 4.0
 
         private const val NANOS_PER_MILLI = 1_000_000.0
-
-        /** 헤더 이름 → 그 값을 `const` 로 든 계약 컴포넌트 이름. */
-        private val HEADER_COMPONENTS =
-            mapOf(
-                "Cache-Control" to "CacheControlNoStore",
-                "X-Content-Type-Options" to "XContentTypeOptions",
-            )
 
         private var counter = 0
 

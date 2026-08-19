@@ -2,6 +2,7 @@ package kr.easydoc.api
 
 import kr.easydoc.api.config.CorsConfig
 import kr.easydoc.api.config.PrivateResponseHeadersConfig
+import kr.easydoc.api.support.ContractSpec
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
@@ -38,13 +39,41 @@ class PrivateResponseHeadersContractTest {
     @Autowired
     private lateinit var mockMvc: MockMvc
 
+    /**
+     * **값을 코드에 적지 않는다** (게이트 20 C-6).
+     *
+     * 종전 판은 이름이 「계약의 `const` 와 같다」인데 그 값을 계약이 아니라 코드 리터럴에서
+     * 가져왔다. 음성 대조 N-3(`CacheControlNoStore.schema.const` 를 바꾼다)에서 api 117건
+     * 중 빨강이 셋뿐이었고 **전역을 담당하는 이 테스트가 초록으로 남은** 이유가 그것이다.
+     * 전역 조항의 값 강제자가 auth 3곳으로 한정돼 있었다.
+     */
     @Test
-    @DisplayName("G-D 값이 정확히 no-store / nosniff 다")
+    @DisplayName("G-D 값이 계약 컴포넌트의 const 와 정확히 같다")
     fun `헤더 값이 계약의 const 와 같다`() {
         val response = mockMvc.get("/health").andReturn().response
 
-        assertThat(response.getHeader(HttpHeaders.CACHE_CONTROL)).isEqualTo("no-store")
-        assertThat(response.getHeader(X_CONTENT_TYPE_OPTIONS)).isEqualTo("nosniff")
+        val expected = ContractSpec.globalHeaderValues()
+        assertThat(expected).isNotEmpty()
+        expected.forEach { (header, value) ->
+            assertThat(response.getHeader(header))
+                .withFailMessage("%s 가 계약 컴포넌트 const 와 다르다", header)
+                .isEqualTo(value)
+        }
+    }
+
+    /**
+     * 계약 **안**의 두 절이 갈리지 않았는지 본다.
+     *
+     * `x-global-response-headers.headers` 의 값과 각 헤더 컴포넌트의 `schema.const` 는
+     * 같은 것을 두 번 적는다. 갈리면 어느 쪽이 정본인지 정해지지 않고, 한쪽만 읽는 테스트는
+     * 다른 쪽 변경에 반응하지 않는다.
+     */
+    @Test
+    @DisplayName("계약 안 두 절(전역 절 · 컴포넌트 const)의 값이 서로 같다")
+    fun `계약 내부의 헤더 값 이중 선언이 일치한다`() {
+        assertThat(ContractSpec.globalHeaderValues())
+            .withFailMessage("전역 절의 값과 컴포넌트 const 가 갈렸다")
+            .isEqualTo(ContractSpec.globalResponseHeaders())
     }
 
     /**
@@ -71,8 +100,9 @@ class PrivateResponseHeadersContractTest {
         val response = mockMvc.get("/__probe/get-only").andReturn().response
 
         assertThat(response.status).isEqualTo(204)
-        assertThat(response.getHeader(HttpHeaders.CACHE_CONTROL)).isEqualTo("no-store")
-        assertThat(response.getHeader(X_CONTENT_TYPE_OPTIONS)).isEqualTo("nosniff")
+        ContractSpec.globalHeaderValues().forEach { (header, value) ->
+            assertThat(response.getHeader(header)).isEqualTo(value)
+        }
     }
 
     /**
@@ -96,10 +126,11 @@ class PrivateResponseHeadersContractTest {
         assertThat(response.getHeader(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN))
             .withFailMessage("프리플라이트가 CORS 필터에서 처리되지 않았다 — 이 테스트의 전제가 깨졌다")
             .isEqualTo(ALLOWED_ORIGIN)
-        assertThat(response.getHeader(HttpHeaders.CACHE_CONTROL))
-            .withFailMessage("프리플라이트 응답에 no-store 가 없다 — 헤더 필터가 CORS 필터보다 뒤에 등록됐는지 확인한다")
-            .isEqualTo("no-store")
-        assertThat(response.getHeader(X_CONTENT_TYPE_OPTIONS)).isEqualTo("nosniff")
+        ContractSpec.globalHeaderValues().forEach { (header, value) ->
+            assertThat(response.getHeader(header))
+                .withFailMessage("프리플라이트 응답에 %s 가 없다 — 헤더 필터가 CORS 필터보다 뒤에 등록됐는지 확인한다", header)
+                .isEqualTo(value)
+        }
     }
 
     /**
@@ -116,19 +147,18 @@ class PrivateResponseHeadersContractTest {
     }
 
     private fun assertSingleValued(response: MockHttpServletResponse) {
-        assertThat(response.getHeaders(HttpHeaders.CACHE_CONTROL))
-            .withFailMessage(
-                "Cache-Control 이 %s 로 나갔다 — 필터가 add 를 쓰거나 컨트롤러와 이중 부착됐다",
-                response.getHeaders(HttpHeaders.CACHE_CONTROL),
-            ).containsExactly("no-store")
-        assertThat(response.getHeaders(X_CONTENT_TYPE_OPTIONS)).containsExactly("nosniff")
+        ContractSpec.globalHeaderValues().forEach { (header, value) ->
+            assertThat(response.getHeaders(header))
+                .withFailMessage(
+                    "%s 가 %s 로 나갔다 — 필터가 add 를 쓰거나 컨트롤러와 이중 부착됐다",
+                    header,
+                    response.getHeaders(header),
+                ).containsExactly(value)
+        }
     }
 
     private companion object {
         /** `app/config.py` 의 `cors_origins` 기본값이자 `application.yml` 의 설정값. */
         const val ALLOWED_ORIGIN = "http://localhost:5173"
-
-        /** Spring `HttpHeaders` 에 상수가 없다. */
-        const val X_CONTENT_TYPE_OPTIONS = "X-Content-Type-Options"
     }
 }

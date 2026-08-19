@@ -1,6 +1,7 @@
 package kr.easydoc.api
 
 import kr.easydoc.api.config.PrivateResponseHeadersConfig
+import kr.easydoc.api.support.ContractSpec
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
@@ -150,11 +151,11 @@ class ErrorContractTest {
      * 자리에 아무 검사도 남지 않는다(`api-contract-freeze` §5.1 G-B).
      */
     private fun assertPrivateHeaders(result: MvcResult) {
-        assertThat(result.response.getHeader(HttpHeaders.CACHE_CONTROL))
-            .withFailMessage("오류 응답에 Cache-Control 이 없다 — 계약은 모든 응답에 no-store 를 요구한다")
-            .isEqualTo("no-store")
-        assertThat(result.response.getHeader("X-Content-Type-Options"))
-            .withFailMessage("오류 응답에 X-Content-Type-Options 가 없다 — 계약은 모든 응답에 nosniff 를 요구한다")
-            .isEqualTo("nosniff")
+        // 값을 코드에 적지 않는다 — 계약 컴포넌트 `const` 에서 읽는다(P-3b · 게이트 20 C-6).
+        ContractSpec.globalHeaderValues().forEach { (header, value) ->
+            assertThat(result.response.getHeader(header))
+                .withFailMessage("오류 응답에 %s 가 계약값으로 붙지 않았다 — 계약은 모든 응답에 요구한다", header)
+                .isEqualTo(value)
+        }
     }
 }

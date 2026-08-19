@@ -64,8 +64,7 @@ class AuthContractTest {
 
         val response = signup(email, VALID_PASSWORD)
 
-        assertThat(response.status).isEqualTo(CONFLICT)
-        assertThat(ContractSpec.responseStatuses(SIGNUP_PATH, POST)).contains(CONFLICT.toString())
+        assertDeclaredStatus(response, CONFLICT, SIGNUP_PATH, POST)
         assertDetailIsString(response)
         assertGlobalHeaders(response)
         assertJsonContentType(response)
@@ -80,7 +79,7 @@ class AuthContractTest {
         val email = uniqueEmail()
         signup(email, VALID_PASSWORD)
 
-        assertThat(signup(email.uppercase(), VALID_PASSWORD).status).isEqualTo(CONFLICT)
+        assertDeclaredStatus(signup(email.uppercase(), VALID_PASSWORD), CONFLICT, SIGNUP_PATH, POST)
     }
 
     @Test
@@ -88,8 +87,9 @@ class AuthContractTest {
     fun `잘못된 이메일 형식은 422 문자열이다`() {
         val response = signup("not-an-email", VALID_PASSWORD)
 
-        assertThat(response.status).isEqualTo(UNPROCESSABLE_CONTENT)
+        assertDeclaredStatus(response, UNPROCESSABLE_CONTENT, SIGNUP_PATH, POST)
         assertThat(detailText(response)).isEqualTo(ContractSpec.requestFieldConstraint(EMAIL_FIELD).singleDetail)
+        assertGlobalHeaders(response)
     }
 
     @Test
@@ -98,7 +98,7 @@ class AuthContractTest {
         val constraint = ContractSpec.requestFieldConstraint(EMAIL_FIELD)
         val response = signup(emailOfNormalizedLength(constraint.limit + 1), VALID_PASSWORD)
 
-        assertThat(response.status).isEqualTo(UNPROCESSABLE_CONTENT)
+        assertDeclaredStatus(response, UNPROCESSABLE_CONTENT, SIGNUP_PATH, POST)
         assertThat(detailText(response)).isEqualTo(constraint.singleDetail)
         // 길이 위반과 형식 오류가 **같은 문구**라는 것 자체가 조항이다.
         assertThat(detailText(response)).isEqualTo(detailText(signup("not-an-email", VALID_PASSWORD)))
@@ -120,7 +120,7 @@ class AuthContractTest {
         val constraint = ContractSpec.requestFieldConstraint(PASSWORD_FIELD)
         val response = signup(uniqueEmail(), "a".repeat(constraint.limit - 1))
 
-        assertThat(response.status).isEqualTo(UNPROCESSABLE_CONTENT)
+        assertDeclaredStatus(response, UNPROCESSABLE_CONTENT, SIGNUP_PATH, POST)
         assertDetailIsString(response)
         assertThat(detailText(response)).isEqualTo(constraint.singleDetail)
     }
@@ -152,9 +152,10 @@ class AuthContractTest {
     fun `필드 누락은 422 배열이다`() {
         val response = postJson(SIGNUP_PATH, """{"email":"user@example.test"}""")
 
-        assertThat(response.status).isEqualTo(UNPROCESSABLE_CONTENT)
+        assertDeclaredStatus(response, UNPROCESSABLE_CONTENT, SIGNUP_PATH, POST)
         assertThat(detailOf(response)).isInstanceOf(List::class.java)
         assertValidationItemKeys(response)
+        assertGlobalHeaders(response)
     }
 
     @Test
@@ -176,8 +177,8 @@ class AuthContractTest {
         val domainRule = signup("not-an-email", VALID_PASSWORD)
         val schemaLayer = postJson(SIGNUP_PATH, """{"email":"user@example.test"}""")
 
-        assertThat(domainRule.status).isEqualTo(UNPROCESSABLE_CONTENT)
-        assertThat(schemaLayer.status).isEqualTo(UNPROCESSABLE_CONTENT)
+        assertDeclaredStatus(domainRule, UNPROCESSABLE_CONTENT, SIGNUP_PATH, POST)
+        assertDeclaredStatus(schemaLayer, UNPROCESSABLE_CONTENT, SIGNUP_PATH, POST)
         // 계약이 union 으로 선언한 두 갈래가 실제로 둘 다 관측된다.
         assertThat(ContractSpec.errorDetailUnionTypes()).containsExactlyInAnyOrder("string", "array")
         val shapes = listOf(detailOf(domainRule), detailOf(schemaLayer))
@@ -208,8 +209,7 @@ class AuthContractTest {
 
         val response = login(email, "${VALID_PASSWORD}x")
 
-        assertThat(response.status).isEqualTo(UNAUTHORIZED)
-        assertThat(ContractSpec.responseStatuses(LOGIN_PATH, POST)).contains(UNAUTHORIZED.toString())
+        assertDeclaredStatus(response, UNAUTHORIZED, LOGIN_PATH, POST)
         assertThat(response.getHeader(WWW_AUTHENTICATE)).isEqualTo(ContractSpec.headerConst("WWWAuthenticateBearer"))
         assertDetailIsString(response)
         assertGlobalHeaders(response)
@@ -234,9 +234,10 @@ class AuthContractTest {
     fun `로그인 필드 누락은 422 배열이다`() {
         val response = postJson(LOGIN_PATH, """{"email":"user@example.test"}""")
 
-        assertThat(response.status).isEqualTo(UNPROCESSABLE_CONTENT)
+        assertDeclaredStatus(response, UNPROCESSABLE_CONTENT, LOGIN_PATH, POST)
         assertThat(detailOf(response)).isInstanceOf(List::class.java)
         assertValidationItemKeys(response)
+        assertGlobalHeaders(response)
     }
 
     @Test
@@ -316,6 +317,25 @@ class AuthContractTest {
     private fun detailItems(response: MockHttpServletResponse): List<*> =
         detailOf(response) as? List<*> ?: error("detail 이 배열이 아니다: ${detailOf(response)}")
 
+    /**
+     * 상태 코드를 **응답과 계약 양쪽에** 건다 (C-1 · 명세 §0 · §4 P-1).
+     *
+     * 응답만 단언하면 계약에서 그 상태 선언이 지워져도 아무 테스트가 깨지지 않는다 —
+     * 실측으로 확인된 자리다(`'422'`→`'400'`, `/auth/me` `'401'`→`'403'` 변이에서 빨강 0).
+     * 잡히는 것은 구현 회귀뿐이고 **계약 조항의 소실**은 조용히 지나갔다.
+     */
+    private fun assertDeclaredStatus(
+        response: MockHttpServletResponse,
+        status: Int,
+        path: String,
+        method: String,
+    ) {
+        assertThat(response.status).isEqualTo(status)
+        assertThat(ContractSpec.responseStatuses(path, method))
+            .withFailMessage("계약이 %s %s 에 %d 를 선언하지 않는다 — 구현이 내는 상태와 계약이 갈렸다", method, path, status)
+            .contains(status.toString())
+    }
+
     private fun assertDetailIsString(response: MockHttpServletResponse) {
         // 상태 코드가 같아 모양을 안 보면 갈린 것을 놓친다 — 계약이 detail 의 **타입**을 조항으로 둔 이유다.
         assertThat(detailOf(response))
@@ -342,16 +362,17 @@ class AuthContractTest {
     ) {
         val declared = ContractSpec.responseHeaderNames(path, method, ContractSpec.successStatus(path, method))
         assertThat(declared).containsExactlyInAnyOrderElementsOf(ContractSpec.globalResponseHeaders().keys)
+        val expected = ContractSpec.globalHeaderValues()
         declared.forEach { header ->
             assertThat(response.getHeaders(header))
                 .withFailMessage("%s 가 %s 로 나갔다 — 값 또는 부착 개수가 계약과 다르다", header, response.getHeaders(header))
-                .containsExactly(ContractSpec.headerConst(HEADER_COMPONENTS.getValue(header)))
+                .containsExactly(expected.getValue(header))
         }
     }
 
-    /** X-D2: 오류 응답에도 전역 헤더가 붙는다. */
+    /** X-D2: 오류 응답에도 전역 헤더가 붙는다. 값은 컴포넌트 `const` 에서 읽는다(P-3b). */
     private fun assertGlobalHeaders(response: MockHttpServletResponse) {
-        ContractSpec.globalResponseHeaders().forEach { (header, value) ->
+        ContractSpec.globalHeaderValues().forEach { (header, value) ->
             assertThat(response.getHeaders(header)).containsExactly(value)
         }
     }
@@ -409,13 +430,6 @@ class AuthContractTest {
 
         /** S-5 가 원시 길이를 상한 위로 올리는 데 쓰는 앞 공백 수. */
         const val LEADING_SPACES = 10
-
-        /** 헤더 이름 → 그 값을 `const` 로 든 계약 컴포넌트 이름. */
-        val HEADER_COMPONENTS =
-            mapOf(
-                "Cache-Control" to "CacheControlNoStore",
-                "X-Content-Type-Options" to "XContentTypeOptions",
-            )
 
         var counter = 0
     }

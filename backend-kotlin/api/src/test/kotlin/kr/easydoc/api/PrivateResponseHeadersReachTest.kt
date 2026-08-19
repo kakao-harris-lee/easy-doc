@@ -1,6 +1,7 @@
 package kr.easydoc.api
 
 import kr.easydoc.api.support.ContainerRejectedRequest
+import kr.easydoc.api.support.ContractSpec
 import kr.easydoc.api.support.RawHttp
 import kr.easydoc.api.support.RawHttpResponse
 import kr.easydoc.infrastructure.PostgresTestSupport
@@ -172,12 +173,13 @@ class PrivateResponseHeadersReachTest {
 
     private fun assertPrivateHeaders(response: RawHttpResponse) {
         // 값이 아니라 개수까지 본다 — 이중 부착(`no-store, no-store`)은 값만 보면 통과한다.
-        assertThat(response.values(CACHE_CONTROL))
-            .withFailMessage("Cache-Control 이 %s 다 — 계약은 no-store 하나를 요구한다", response.values(CACHE_CONTROL))
-            .containsExactly("no-store")
-        assertThat(response.values(X_CONTENT_TYPE_OPTIONS))
-            .withFailMessage("X-Content-Type-Options 가 %s 다", response.values(X_CONTENT_TYPE_OPTIONS))
-            .containsExactly("nosniff")
+        // 값 자체는 계약 컴포넌트 `const` 에서 읽는다(P-3b · 게이트 20 C-6).
+        ContractSpec.globalHeaderValues().forEach { (header, value) ->
+            val observed = response.values(header.lowercase())
+            assertThat(observed)
+                .withFailMessage("%s 가 %s 다 — 계약은 그 값 하나를 요구한다", header, observed)
+                .containsExactly(value)
+        }
     }
 
     /**
@@ -190,8 +192,6 @@ class PrivateResponseHeadersReachTest {
     private fun exchange(request: ByteArray): RawHttpResponse = RawHttp.exchange(port, request)
 
     companion object {
-        private const val CACHE_CONTROL = "cache-control"
-        private const val X_CONTENT_TYPE_OPTIONS = "x-content-type-options"
         private const val ALLOWED_ORIGIN = "http://localhost:5173"
 
         private const val OK = 200
