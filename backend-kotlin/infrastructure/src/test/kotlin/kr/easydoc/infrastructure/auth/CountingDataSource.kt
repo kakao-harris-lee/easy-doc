@@ -28,6 +28,25 @@ import javax.sql.DataSource
  *
  * 반사 호출의 [InvocationTargetException] 은 **원인을 벗겨서** 다시 던진다. 그대로 두면
  * `DuplicateKeyException` 을 기대하는 다른 단언이 껍데기 예외를 보게 된다.
+ *
+ * ## 세지 **않는** 것 — 그리고 왜 그것이 오늘 문제가 되지 않는가 (게이트 23 codex C-3)
+ *
+ * 돌려준 `Statement` 를 다시 감싸지 않으므로 `executeQuery`·`executeUpdate` 는 계측 대상이
+ * 아니다. 즉 **`createStatement()` 로 얻은 문장 하나에 SQL 둘을 태우면** 이 계수기는 1 을
+ * 본다. 그 우회는 `JdbcClient` 를 버리고 raw JDBC 로 내려가야 성립한다 — `JdbcClient` 는
+ * SQL 문자열 하나당 `PreparedStatement` 하나를 만들고 한 `PreparedStatement` 에 다른 SQL 을
+ * 태울 수 없기 때문이다. **저장소가 `JdbcClient` 를 벗어나는 순간 이 계수기의 전제가
+ * 깨진다** — 그때 이 KDoc 을 함께 고쳐야 한다. 오늘 그 전제는 코드로 참이다.
+ *
+ * ## 계측이 들어가는 자리 — **서비스 경계다** (게이트 23 F-4)
+ *
+ * 종전에는 `JdbcWorkspaceRepository.rename` 한 메서드를 감쌌다. 그러면 「소유 조건이 SQL 을
+ * 떠났는가」라는 선언된 주제가 **한 층 위에서는 검사되지 않는다** — 소유 판정을
+ * `WorkspaceService` 로 올린 변이(서비스가 `listOwned()` 로 먼저 확인하고 저장소는 그대로)가
+ * 구조 축 11/11 · 시간 축 22/22 전부 초록으로 빠져나갔다(migration-reviewer F-4 실증).
+ *
+ * 그래서 계측 진입점을 **유스케이스 한 번 = 요청 한 번**으로 올리고, 「셋이 같다」가 아니라
+ * **문장 수 자체를 못박는다.** 어느 층에 조회가 하나 늘든 그 정수가 움직인다.
  */
 class CountingDataSource(private val delegate: DataSource) : DataSource by delegate {
     private val statements = AtomicInteger()

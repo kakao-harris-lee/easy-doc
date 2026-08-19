@@ -48,7 +48,7 @@ class JdbcWorkspaceRepositoryTest {
     private lateinit var service: WorkspaceService
     private lateinit var jdbcClient: JdbcClient
     private lateinit var counting: CountingDataSource
-    private lateinit var countedWorkspaces: JdbcWorkspaceRepository
+    private lateinit var countedService: WorkspaceService
 
     @BeforeAll
     fun prepare() {
@@ -67,9 +67,17 @@ class JdbcWorkspaceRepositoryTest {
         transaction = SpringTransactionRunner(TransactionTemplate(DataSourceTransactionManager(dataSource)))
         service = WorkspaceService(workspaces, transaction)
 
-        // 구조 축 계측용 두 번째 저장소. 같은 DB 를 보되 나가는 SQL 문 수를 센다.
+        // 구조 축 계측용 두 번째 배선. 같은 DB 를 보되 나가는 SQL 문 수를 센다.
+        //
+        // **트랜잭션 관리자도 같은 DataSource 를 받아야 한다.** 다른 것을 주면
+        // `delete` 의 `inTransaction` 이 계측되지 않은 커넥션을 잡아 `FOR UPDATE` 가
+        // 유스케이스 밖에서 돌고, 그러면 세는 대상과 도는 대상이 갈린다.
         counting = CountingDataSource(dataSource())
-        countedWorkspaces = JdbcWorkspaceRepository(JdbcClient.create(counting))
+        countedService =
+            WorkspaceService(
+                JdbcWorkspaceRepository(JdbcClient.create(counting)),
+                SpringTransactionRunner(TransactionTemplate(DataSourceTransactionManager(counting))),
+            )
     }
 
     // ================================================================ 소유 범위
@@ -210,7 +218,7 @@ class JdbcWorkspaceRepositoryTest {
     }
 
     /**
-     * **X-3ⓒ — 「같은 DB 왕복 구조」를 구조로 강제한다.**
+     * **X-3ⓒ + F-4 — 「같은 DB 왕복 구조」를 요청 하나 단위로 강제한다.**
      *
      * 소유권 은닉의 시간 축 게이트가 잡지 못하는 것이 여기 있다. 소유 조건을 SQL `WHERE`
      * 에서 빼고 **읽은 뒤 Kotlin 에서 비교**하도록 바꾼 변이를 일회용 worktree 에서 돌린
@@ -219,31 +227,112 @@ class JdbcWorkspaceRepositoryTest {
      *
      * 그 변이가 실제로 바꾸는 것은 **문장의 수**다. 지금 구현은 소유 판정과 갱신을
      * `UPDATE … WHERE id = ? AND user_id = ? RETURNING …` **한 문장**으로 끝내므로,
-     * 없는 자원·남의 자원·내 자원 셋이 전부 같은 왕복을 돈다. 변이는 내 자원에서만
-     * 두 문장이 되어(SELECT 로 소유자를 읽고 UPDATE) 이 단언이 빨개진다.
+     * 없는 자원·남의 자원·내 자원 셋이 전부 같은 왕복을 돈다.
      *
-     * **셋이 같다」만으로는 부족해 개수 자체를 못박는다** — 셋 다 두 문장이 되는 구현도
+     * ## 계측이 **서비스 경계**에서 들어간다 (게이트 23 F-4)
+     *
+     * 종전 판은 `JdbcWorkspaceRepository.rename` 을 직접 감쌌고, 그래서 소유 판정을
+     * `WorkspaceService` 로 올린 변이(서비스가 `listOwned()` 로 먼저 확인)가 구조 축
+     * 11/11 · 시간 축 22/22 로 **두 게이트를 모두 빠져나갔다**. 선언된 주제(「소유 조건이
+     * SQL 을 떠났는가」)가 한 층 위에서 검사되지 않았던 것이다.
+     *
+     * 지금은 [WorkspaceService] 호출 한 번 — 즉 **요청 하나** — 이 내는 문장 수를 센다.
+     * 조회가 어느 층에 늘든 그 정수가 움직인다.
+     *
+     * **「셋이 같다」만으로는 부족해 개수 자체를 못박는다** — 셋 다 두 문장이 되는 구현도
      * 「같다」를 만족한다. 그 형태는 소유 판정이 갱신과 분리됐다는 뜻이라 잡아야 한다.
      */
     @Test
-    @DisplayName("이름 변경이 소유 결과와 무관하게 같은 수의 SQL 문을 낸다 — 「같은 DB 왕복 구조」")
+    @DisplayName("이름 변경 요청 하나가 소유 결과와 무관하게 같은 수의 SQL 문을 낸다 — 서비스 경계 기준")
     fun `이름 변경의 왕복 구조가 소유 여부로 갈리지 않는다`() {
         val owner = newUser()
         val stranger = newUser()
         val mine = workspaces.create(owner, "내 것")
         val others = workspaces.create(stranger, "남의 것")
 
-        val absentCount = counting.countStatements { countedWorkspaces.rename(owner, UUID.randomUUID(), "새 이름 1") }
-        val othersCount = counting.countStatements { countedWorkspaces.rename(owner, others.id, "새 이름 2") }
-        val mineCount = counting.countStatements { countedWorkspaces.rename(owner, mine.id, "새 이름 3") }
+        val absentCount = countRequest { countedService.rename(owner, UUID.randomUUID(), "새 이름 1") }
+        val othersCount = countRequest { countedService.rename(owner, others.id, "새 이름 2") }
+        val mineCount = countRequest { countedService.rename(owner, mine.id, "새 이름 3") }
 
         assertThat(listOf(absentCount, othersCount, mineCount))
             .withFailMessage(
-                "소유 결과에 따라 SQL 문 수가 갈린다 — 없음=%d 타인=%d 내것=%d. 소유 조건이 WHERE 를 떠났다는 신호다",
+                "이름 변경 요청의 SQL 문 수가 소유 결과에 따라 갈리거나 %d 가 아니다 — 없음=%d 타인=%d 내것=%d. " +
+                    "소유 조건이 WHERE 를 떠났거나(저장소), 유스케이스가 선행 조회를 얹었다(서비스).",
+                RENAME_STATEMENTS,
                 absentCount,
                 othersCount,
                 mineCount,
             ).containsExactly(RENAME_STATEMENTS, RENAME_STATEMENTS, RENAME_STATEMENTS)
+    }
+
+    /**
+     * **삭제 거절 두 갈래의 왕복 구조** — `lockForDeletion` 이 도는 자리다.
+     *
+     * 없는 자원과 남의 자원은 [WorkspaceService.delete] 안에서 같은 `NotFoundException`
+     * 으로 끝나는데, **끝나기까지 하는 일의 양**도 같아야 숨김이 성립한다. 오늘 그것은
+     * `SELECT id … WHERE user_id = :ownerId … FOR UPDATE` 한 문장이고, 문서 수 질의는
+     * 소유가 확인된 뒤에만 돈다.
+     *
+     * 소유한 자원의 삭제는 **일부러 다른 수**를 못박는다([DELETE_OWNED_STATEMENTS]) —
+     * 성공 경로가 더 일하는 것은 정상이고, 숨겨야 하는 것은 「없음 ↔ 타인」이기 때문이다.
+     * 그 수를 함께 고정해 두는 이유는 F-4 가 실증한 우회의 형태가 **내 자원일 때만 조회를
+     * 하나 더 내는 것**이라, 성공 경로의 정수를 놓아 두면 그 자리가 그대로 열려 있어서다.
+     */
+    @Test
+    @DisplayName("삭제 거절 두 갈래가 같은 수의 SQL 문을 내고, 성공 경로의 수도 못박힌다")
+    fun `삭제의 왕복 구조가 소유 여부로 갈리지 않는다`() {
+        val owner = newUser()
+        val stranger = newUser()
+        val others = workspaces.create(stranger, "남의 것")
+        workspaces.create(owner, "내 것 1")
+        val target = workspaces.create(owner, "내 것 2")
+
+        val absentCount = countRequest { countedService.delete(owner, UUID.randomUUID()) }
+        val othersCount = countRequest { countedService.delete(owner, others.id) }
+        val ownedCount = countRequest { countedService.delete(owner, target.id) }
+
+        assertThat(listOf(absentCount, othersCount))
+            .withFailMessage(
+                "삭제 거절 두 갈래의 SQL 문 수가 갈리거나 %d 가 아니다 — 없음=%d 타인=%d. " +
+                    "존재 여부가 일하는 양으로 샌다.",
+                DELETE_MISS_STATEMENTS,
+                absentCount,
+                othersCount,
+            ).containsExactly(DELETE_MISS_STATEMENTS, DELETE_MISS_STATEMENTS)
+        assertThat(ownedCount)
+            .withFailMessage(
+                "소유 자원 삭제가 %d 문장이 아니라 %d 문장이다 — 잠금·문서 수·삭제 말고 무엇이 늘었는지 확인하라.",
+                DELETE_OWNED_STATEMENTS,
+                ownedCount,
+            ).isEqualTo(DELETE_OWNED_STATEMENTS)
+    }
+
+    /**
+     * **목록 한 번이 질의 한 번이다.**
+     *
+     * 문서 수를 `LEFT JOIN` + `count` 로 같은 질의에 담는다는 성질이 여기 걸린다. 줄마다
+     * COUNT 를 따로 내는 N+1 구현은 기능 테스트를 전부 통과하고 이 정수에서만 무너진다 —
+     * 「빈 작업 공간의 문서 수가 0 이다」가 값을 재는 반면 이쪽은 **몇 번 물었는가**를 잰다.
+     *
+     * 소유 자원 수와 무관하게 1 이어야 하므로 두 건을 만들어 놓고 잰다. 하나만 두면 N+1
+     * 구현도 2 가 아니라 2 를 내지만, 두 건이면 3 이 되어 격차가 커진다.
+     */
+    @Test
+    @DisplayName("목록 요청 하나가 소유 자원 수와 무관하게 한 문장이다 — N+1 금지")
+    fun `목록의 왕복 구조가 자원 수로 갈리지 않는다`() {
+        val owner = newUser()
+        val first = workspaces.create(owner, "목록 1")
+        workspaces.create(owner, "목록 2")
+        insertDocument(owner, first.id)
+
+        val listed = countRequest { countedService.list(owner) }
+
+        assertThat(listed)
+            .withFailMessage(
+                "목록이 %d 문장이 아니라 %d 문장이다 — 줄마다 COUNT 를 따로 내는 N+1 이 들어왔는지 확인하라.",
+                LIST_STATEMENTS,
+                listed,
+            ).isEqualTo(LIST_STATEMENTS)
     }
 
     @Test
@@ -343,14 +432,33 @@ class JdbcWorkspaceRepositoryTest {
     private fun dataSource(): DataSource =
         DriverManagerDataSource(database.jdbcUrl, database.username, database.password)
 
+    /**
+     * 유스케이스 호출 **한 번**이 내는 SQL 문 수.
+     *
+     * 거절 경로는 예외로 끝나므로 [runCatching] 으로 받는다 — 예외를 흘리면 계측 자체가
+     * 중단돼 「거절 경로가 몇 문장을 도는가」를 영영 잴 수 없다. 결과를 쓰지 않는 것은
+     * 의도적이다: 이 단언이 재는 것은 **결과가 아니라 일한 양**이고, 결과 쪽은 같은 파일의
+     * 다른 케이스들이 이미 못박는다.
+     */
+    private fun countRequest(request: () -> Unit): Int = counting.countStatements { runCatching(request) }
+
     private companion object {
         var counter = 0
 
         /** 형태만 맞으면 되는 더미 PHC — 이 파일은 비밀번호 검증을 재지 않는다. */
         val FIXTURE_HASH = PasswordHash("\$argon2id\$v=19\$m=1,t=1,p=1\$c2FsdA\$aGFzaA")
 
-        /** 이름 변경이 도는 SQL 문 수. 소유 판정과 갱신이 한 문장이라 1 이다. */
+        /** 이름 변경 **요청 하나**가 도는 SQL 문 수. 소유 판정과 갱신이 한 문장이라 1 이다. */
         const val RENAME_STATEMENTS = 1
+
+        /** 삭제가 거절되는 두 갈래(없음·타인)가 도는 SQL 문 수 — `lockForDeletion` 의 잠금 질의 하나. */
+        const val DELETE_MISS_STATEMENTS = 1
+
+        /** 소유 자원 삭제가 도는 SQL 문 수 — 잠금 + 문서 수 + DELETE. */
+        const val DELETE_OWNED_STATEMENTS = 3
+
+        /** 목록 **요청 하나**가 도는 SQL 문 수. 문서 수가 같은 질의에 담기므로 1 이다. */
+        const val LIST_STATEMENTS = 1
 
         /** `V1__python_schema_baseline.sql` 이 준 제약 **이름**이다. 값이 아니라 이름이다. */
         const val DOCUMENTS_WORKSPACE_FK = "fk_documents_workspace_id_workspaces"
