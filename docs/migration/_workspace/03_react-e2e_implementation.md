@@ -275,11 +275,29 @@ apt 를 없애는 가장 곧은 수단이고(의존성이 이미지에 구워져
   (두 검사기는 `ci.yml` 의 잡 이름과 모든 `run` 값을 YAML 로 읽는다 — 잡 이름 `e2e` 불변,
   추가한 `run` 값에 `run_gate.sh` 없음, `tests/test_run_gate.py` 경로 명시 스텝 유지.)
 - `frontend/e2e/run-local.sh` **무변경** — 로컬 재현 경로를 그대로 둔다.
-- 푸시 후 CI 실행 관측: 아래 표.
+- 푸시 후 CI 실행 관측 — [32229496368](https://github.com/kakao-harris-lee/easy-doc/actions/runs/32229496368) (`f3de501`):
+  **e2e ✅ success, 3분 53초** (17개 스텝 전량 success · `Playwright 실행 (12건)` 12/12).
+  `kotlin`·`frontend`·`quality` 도 success.
 
-| 실행 | headSha | e2e | 비고 |
+| 스텝 | 소요 | 결과 |
+|---|---|---|
+| Playwright 버전 확인 | 0초 | `1.62.1` |
+| Playwright 브라우저 캐시 | 1초 | **미적중**(이 키의 첫 실행) |
+| Playwright 시스템 의존성 (apt) | **39초** | success — 6분 상한의 11%, `continue-on-error` 발동 없음 |
+| Playwright 브라우저 설치 (chromium) | **14초** | success — 캐시 미적중이라 실제로 받았다 |
+| Playwright 실행 (12건) | 27초 | 12 passed |
+
+설치 두 스텝 합계 **53초**. 취소된 실행에서 같은 작업이 27분 38초 무출력으로 매달렸다.
+
+**아직 도달하지 않은 갈래 — 캐시 적중.** 위 실행은 이 캐시 키의 첫 실행이라 미적중이었고,
+`if: steps.pw-cache.outputs.cache-hit != 'true'` 의 **참** 갈래만 돌았다. 캐시는 저장됐다
+(`Post Playwright 브라우저 캐시` success). 적중 갈래(= 브라우저 설치 스텝 skipped)는
+Playwright 버전이 그대로인 **다음 실행**에서 관측한다 — 그 결과를 아래에 적는다.
+
+| 실행 | 캐시 | 브라우저 설치 스텝 | e2e |
 |---|---|---|---|
-| (관측 결과 기록) | | | |
+| [32229496368](https://github.com/kakao-harris-lee/easy-doc/actions/runs/32229496368) | 미적중 | 실행 (14초) | ✅ success |
+| (다음 실행 — 적중 갈래 관측 대기) | | | |
 
 ---
 
