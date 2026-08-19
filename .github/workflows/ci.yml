@@ -552,6 +552,139 @@ jobs:
               ;;
           esac
 
+  # ── 브라우저 E2E 레인 (React ↔ Kotlin API ↔ PostgreSQL) ────────────────────
+  #
+  # 계획 정본: `docs/migration/_workspace/03_contract-keeper_react-e2e-plan.md`.
+  # 원장 Phase 3 표 행 5 「React 를 Kotlin API 에 연결한 로그인·작업 공간 E2E」의
+  # 실행 경로가 이 잡이다. 리더 판정(OQ-E1): `local:` 로 닫지 않고 CI 잡을 신설한다.
+  #
+  # ## 왜 `frontend` 잡을 키우지 않는가 (계획 §3-4 (a) vs (b))
+  #
+  # 순수 프런트 게이트에 DB·JVM 을 넣으면 **프런트 회귀가 인프라 실패로 빨강**이 된다.
+  # 신호가 섞이고 잡 시간이 늘어난다. 기존 네 잡(`quality`·`frontend`·`kotlin`·`llm-lane`)은
+  # 이 잡이 생겨도 한 줄도 바뀌지 않는다.
+  #
+  # ## 왜 compose 가 아니라 서비스 컨테이너 + bootJar 인가
+  #
+  # 계획 §3-4 는 compose 경로를 적었으나, 그러면 러너 안에서 이미지를 빌드하느라
+  # Gradle 캐시가 안 먹고(컨테이너 빌드 컨텍스트가 따로다) 실패 시 로그가 컨테이너 안에
+  # 갇힌다. 서비스 컨테이너 + `bootJar` 는 `kotlin` 잡이 이미 쓰는 조합이고,
+  # 로컬 러너(`frontend/e2e/run-local.sh`)가 **같은 절차**를 그대로 재현한다.
+  #
+  # ## 이 잡이 막지 못하는 것
+  #
+  # 이 잡 자체의 삭제. 저장소 안의 어떤 파일도 자기 자신에 대한 절대 기준이 될 수 없다 —
+  # 최종 방어선은 그 diff 가 리뷰에 올라가는 것이다.
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    services:
+      # `kotlin-migrate`/`kotlin-api` 가 쓰는 DB 와 같은 이름. Alembic(Python)이 관리하는
+      # `easydoc` 과 갈라 둔다 — 한 환경에서 Alembic 과 Flyway 를 함께 돌리지 않는다.
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_DB: easydoc_kotlin
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d easydoc_kotlin"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://localhost:5432/easydoc_kotlin
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: postgres
+      # Python api(8000)와 포트를 나눈다 — compose 의 `kotlin-api` 와 같은 값이다.
+      SERVER_PORT: "8100"
+      E2E_API_BASE_URL: http://localhost:8100
+      # 브라우저 출처. 계약 `x-cors.allow_origins` 의 기본값과 같아야 프리플라이트가
+      # 통과한다 — **계약 기본값을 여기서 덮어쓰지 않는다.** 덮어쓰면 계약이 정한
+      # 값이 한 번도 실행되지 않는다.
+      E2E_FRONTEND_ORIGIN: http://localhost:5173
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          # build.gradle.kts 의 jvmToolchain(21)과 같은 값.
+          distribution: temurin
+          java-version: "21"
+      - uses: gradle/actions/setup-gradle@v4
+
+      # 테스트는 `kotlin` 잡이 돌린다 — 여기서는 실행 가능한 JAR 만 만든다.
+      - name: Kotlin API bootJar 빌드
+        working-directory: backend-kotlin
+        run: ./gradlew :api:bootJar --no-daemon
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+        working-directory: frontend
+
+      # chromium 하나만 받는다. firefox·webkit 은 이 단계에서 재는 것(계약·CORS·헤더)에
+      # 아무것도 더하지 않으면서 설치 시간만 세 배가 된다.
+      - name: Playwright 브라우저 설치 (chromium)
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+
+      # 비밀을 저장소에 적지 않는다. 이 실행에서만 사는 임의값이고, 붙는 DB 도 이 잡과
+      # 함께 사라진다. 계약 `x-auth.min_secret_bytes` 가 32바이트를 요구한다.
+      # **값을 찍지 않는다** — `$GITHUB_ENV` 로만 넘긴다.
+      - name: JWT 서명 키 생성 (이 실행 한정 임의값)
+        run: echo "EASYDOC_AUTH_JWT_SECRET=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
+
+      - name: Flyway 마이그레이션 (profile=migrate)
+        run: java -jar backend-kotlin/api/build/libs/easy-doc-api.jar --spring.profiles.active=migrate
+
+      # 백그라운드 기동. 표준 출력·오류를 파일로 돌리고 표준 입력을 끊는다 —
+      # 그러지 않으면 러너가 스텝 종료를 기다리며 매달린다.
+      - name: Kotlin API 기동 + /health 대기
+        run: |
+          set -euo pipefail
+          mkdir -p frontend/test-results
+          nohup java -jar backend-kotlin/api/build/libs/easy-doc-api.jar \
+            --spring.profiles.active=api \
+            > frontend/test-results/kotlin-api.log 2>&1 < /dev/null &
+          for _ in $(seq 1 60); do
+            if curl --fail --silent --output /dev/null "${E2E_API_BASE_URL}/health"; then
+              echo "Kotlin API 준비 완료 (${E2E_API_BASE_URL})"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::Kotlin API 가 60초 안에 /health 200 을 내지 않았다."
+          cat frontend/test-results/kotlin-api.log
+          exit 1
+
+      # Vite dev 서버는 Playwright 의 `webServer` 가 띄운다 — 설정이 한 곳에 있어야
+      # 로컬과 CI 가 같은 출처·같은 `VITE_API_BASE_URL` 로 돈다.
+      - name: Playwright 실행 (12건)
+        working-directory: frontend
+        run: npx playwright test
+
+      # 실패했을 때 볼 것이 남아야 한다. 추적에는 화면 스냅샷이 들어가지만 이 스위트의
+      # 계정·작업 공간 이름은 전부 합성값이라(`e2e-<uuid>@example.test`) 개인정보가 없고,
+      # 서버 로그는 문서 본문·개인정보를 애초에 남기지 않는다(프로젝트 보안 규칙).
+      - name: 아티팩트 업로드 (보고서·추적·서버 로그)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-artifacts
+          path: |
+            frontend/playwright-report
+            frontend/test-results
+          retention-days: 7
+          if-no-files-found: warn
+
   # ── LLM 레인 (실제 API 호출 — 관련 변경일 때만 돈다) ──────────────────────
   #
   # 배경: `-m llm` 마커가 붙은 테스트는 실제 Anthropic/OpenAI API 를 호출한다.
