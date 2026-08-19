@@ -73,6 +73,22 @@ import javax.crypto.spec.SecretKeySpec
  * `cause` 로 잇지 않는다 — 트레이스백에 어느 단계에서 깨졌는지가 남고, 그것이 로그로 나가면
  * 복호화 oracle 이 된다. `JwtAccessTokens` 의 「실패를 구분하지 않는다」 절과 같은 규율이다.
  *
+ * ## 실패 **시간**도 구분하지 않는다 (게이트 25 X3 · F-1)
+ *
+ * 타입·메시지·`cause` 를 같게 만들어도 **처리량이 다르면 갈래가 새어 나간다.** 종전 판은
+ * 모르는 방식·없는 키 세대·길이 미달을 AEAD 에 닿기 전에 `throw` 로 끊었고, 그래서 그 셋은
+ * 태그 검증 실패보다 훨씬 빨랐다(측정 방법에 따라 2.84~6.5배). 그 격차가 알려 주는 것은
+ * 공격자가 넣은 값이 아니라 **서버에 어떤 키 세대가 설정돼 있는지**다 — `key_version` 을
+ * 1,2,3… 으로 넣어 보면 빠른 응답과 느린 응답이 갈리므로 설정을 셀 수 있다.
+ *
+ * 그래서 조기 분기를 없애지 않고 **같은 비용을 치르게** 했다: 어느 갈래든 [open] 이 정확히
+ * 한 번 돌고, 판정은 그 뒤에 한 번에 한다. 없는 키 세대에는 기동 시 만든 더미 키를,
+ * 길이가 모자란 바이트에는 최소 길이 더미 바이트를 넣는다 — 둘 다 태그 검증에서 실패하므로
+ * 결과는 같고, 드는 시간만 같아진다.
+ *
+ * 「빠른 갈래를 느리게 만드는」 방향인 것은 의도적이다. 반대로 느린 갈래를 빠르게 만들려면
+ * AEAD 검증을 건너뛰어야 하는데 그것이 곧 인증 없는 복호화다.
+ *
  * ## 로그
  *
  * 평문·암호문·키 재료는 **한 조각도 로그에 넣지 않는다.** 기동 시 남기는 것은 적재한 키
@@ -99,6 +115,17 @@ class AesGcmContentCipher(
             .mapNotNull { (version, material) -> keyOf(version, material) }
             .toMap()
 
+    /**
+     * **비용을 맞추기 위한 더미 키.** 설정에 없는 키 세대를 가리키는 봉투를 만났을 때 이
+     * 키로 AEAD 를 한 번 돌린다 — 반드시 실패하므로 결과는 바뀌지 않고 시간만 같아진다.
+     *
+     * 기동 시 난수 32바이트로 한 번 만든다. 고정 상수로 두지 않는 이유: 상수 키는 소스에
+     * 적히는 키 재료이고(스캐너 `SECRET-LITERAL`), 무엇보다 **어떤 실제 키와도 절대 같지
+     * 않아야** 이 키로 무언가가 열리는 사고가 없다.
+     */
+    private val uniformCostKey: SecretKey =
+        SecretKeySpec(ByteArray(KEY_BYTES).also { random.nextBytes(it) }, KEY_ALGORITHM)
+
     init {
         logger.info("저장 암호화 키 {}세대를 적재했다. 쓰기 세대=v{}", keys.size, writeKeyVersion)
     }
@@ -124,25 +151,62 @@ class AesGcmContentCipher(
         field: EncryptedField,
     ): PlainBody {
         // 아래 세 갈래(모르는 방식 · 없는 키 세대 · 길이 미달)와 태그 검증 실패가 **같은
-        // 예외**여야 한다. 하나라도 다른 신호를 내면 그것이 oracle 이다.
-        if (content.scheme != EncryptionScheme.AES_256_GCM_V1) throw DecryptionFailedException()
-        val key = keys[content.keyVersion] ?: throw DecryptionFailedException()
-        if (content.bytes.size < NONCE_BYTES + TAG_BYTES) throw DecryptionFailedException()
-        return try {
-            val cipher = Cipher.getInstance(TRANSFORMATION)
-            cipher.init(
-                Cipher.DECRYPT_MODE,
-                key,
-                GCMParameterSpec(TAG_BITS, content.bytes, 0, NONCE_BYTES),
+        // 예외**여야 하고(I-7 검증 3), **같은 시간**을 써야 한다(게이트 25 X3).
+        // 그래서 여기서 끊지 않고 판정만 모아 둔다 — 실제 끊는 자리는 아래 한 곳이다.
+        val key = keys[content.keyVersion]
+        val longEnough = content.bytes.size >= NONCE_BYTES + TAG_BYTES
+        val rejected =
+            content.scheme != EncryptionScheme.AES_256_GCM_V1 || key == null || !longEnough
+
+        // 어느 갈래로 들어와도 AEAD 를 정확히 한 번 시도한다. 더미 키·더미 바이트는 태그
+        // 검증에서 반드시 실패하므로 결과를 바꾸지 않고 **비용만** 맞춘다.
+        val opened =
+            open(
+                key = key ?: uniformCostKey,
+                bytes = if (longEnough) content.bytes else UNIFORM_COST_BYTES,
+                aad = associatedData(content.scheme, content.keyVersion, record, field),
             )
-            cipher.updateAAD(associatedData(content.scheme, content.keyVersion, record, field))
-            val opened = cipher.doFinal(content.bytes, NONCE_BYTES, content.bytes.size - NONCE_BYTES)
-            PlainBody(String(opened, Charsets.UTF_8))
+
+        if (rejected || opened == null) throw DecryptionFailedException()
+        return PlainBody(String(opened, Charsets.UTF_8))
+    }
+
+    /**
+     * AEAD 를 한 번 시도하고 **열리면 평문 바이트, 아니면 null** 을 돌려준다. 예외를 밖으로
+     * 내보내지 않는다.
+     *
+     * ## 왜 [RuntimeException] 까지 잡는가 (게이트 25 R-4)
+     *
+     * 종전 판은 [GeneralSecurityException] 만 잡았다. 그런데 JCA 공급자가 내는 실패의 일부는
+     * **검사 예외가 아니다** — `java.security.ProviderException` 이 대표적이고(공급자 내부
+     * 오류), 하드웨어 토큰·FIPS 공급자·손상된 정책 파일에서 나온다. 그것이 그대로 올라가면
+     * 호출자는 [DecryptionFailedException] 이 아닌 다른 타입·다른 메시지·스택트레이스를 보고,
+     * 그 순간 **어느 갈래에서 깨졌는지가 구분된다** — 없애려던 oracle 이 예외 타입 축으로
+     * 되살아난다.
+     *
+     * 이름을 열거해 막지 않는 이유는 그 열거가 다음 공급자에서 또 비기 때문이다(`CLAUDE.md`
+     * 규칙 4 — 넓힘은 인스턴스가 아니라 **종류**만큼). 대가는 우리 쪽 프로그래밍 오류(NPE 등)도
+     * 복호화 실패로 보이는 것인데, 그 진단은 회귀 테스트가 지고 여기서는 **밖으로 새지 않는
+     * 것**이 우선이다.
+     */
+    @Suppress("TooGenericExceptionCaught")
+    private fun open(
+        key: SecretKey,
+        bytes: ByteArray,
+        aad: ByteArray,
+    ): ByteArray? =
+        try {
+            val cipher = Cipher.getInstance(TRANSFORMATION)
+            cipher.init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(TAG_BITS, bytes, 0, NONCE_BYTES))
+            cipher.updateAAD(aad)
+            cipher.doFinal(bytes, NONCE_BYTES, bytes.size - NONCE_BYTES)
         } catch (ignored: GeneralSecurityException) {
             // 원인을 잇지 않는다(I-7 검증 3). 어느 단계에서 깨졌는지가 남으면 oracle 이다.
-            throw DecryptionFailedException()
+            null
+        } catch (ignored: RuntimeException) {
+            // JCA 공급자의 비검사 실패(`ProviderException` 등). 위 KDoc 참고.
+            null
         }
-    }
 
     /** base64 32바이트만 키로 받는다. 아니면 경고 한 줄을 남기고 그 세대를 뺀다. */
     private fun keyOf(
@@ -204,6 +268,14 @@ class AesGcmContentCipher(
         const val TAG_BITS = 128
 
         const val TAG_BYTES = TAG_BITS / 8
+
+        /**
+         * 길이가 모자란 봉투를 만났을 때 **대신 돌리는** 최소 길이 바이트(nonce + 태그).
+         *
+         * 내용은 전부 0 이라 태그 검증이 반드시 실패한다. 읽기만 하고 쓰지 않는다 —
+         * `Cipher.doFinal` 은 입력 배열을 수정하지 않는다.
+         */
+        val UNIFORM_COST_BYTES = ByteArray(NONCE_BYTES + TAG_BYTES)
 
         /** associated data 의 고정 머리. 다른 용도의 AEAD 가 생겨도 서로 섞이지 않는다. */
         const val AAD_PREFIX = "easydoc-aead"
