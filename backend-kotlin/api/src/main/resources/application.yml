@@ -56,6 +56,11 @@ logging:
     kr.easydoc: INFO
     # 요청 본문을 찍는 로거는 절대 DEBUG 로 내리지 않는다 — 문서 본문이 로그에 남는다.
     org.springframework.web: INFO
+    # 우리 통제 밖에서 찍는 자리다. Argon2PasswordEncoder 가 깨진 해시를 만나면
+    # WARN + 전체 스택트레이스를 남긴다(privacy-gate 기록 L-1). 지금 메시지는 상수라
+    # 값 유출이 없지만, 라이브러리 판올림이 메시지에 해시를 싣기 시작하면 조용히 샌다.
+    # 레벨을 여기 고정해 두면 그 변화가 기본값을 따라 내려오지 않는다.
+    org.springframework.security: INFO
     org.flywaydb: INFO
 
 ---
