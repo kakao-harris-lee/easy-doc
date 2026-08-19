@@ -37,8 +37,7 @@ object MigrationCatalog {
 
     /** 적용 순서대로의 버전 문자열(`"1"`, `"2"`, …). Flyway 이력 테이블의 `version` 값과 같은 표기다. */
     val versions: List<String> by lazy {
-        val directory = File(sourceRoot(), MIGRATION_PATH)
-        require(directory.isDirectory) { "마이그레이션 디렉터리가 없다: $directory — 기대값을 유도할 근거가 없다" }
+        val directory = directory()
         val numbers =
             (directory.listFiles() ?: emptyArray())
                 .mapNotNull { file ->
@@ -65,6 +64,28 @@ object MigrationCatalog {
      * `SQL` 이다. 이 구분이 곧 "V1 은 재적용되지 않았다"의 증거다.
      */
     val typesAfterPythonBaseline: List<String> get() = listOf("BASELINE") + List(versions.size - 1) { "SQL" }
+
+    /**
+     * 마이그레이션 스크립트 **원문**. 스크립트 안의 리터럴을 코드 상수와 대조할 때 쓴다.
+     *
+     * 적용된 DB 만 보면 잡히지 않는 갈래가 있다 — 예를 들어 `encryption_scheme` 의 CHECK 는
+     * DB 에서 읽어 대조할 수 있지만, **그 값을 적어 넣은 SQL 리터럴**이 코드 상수와 같은지는
+     * 파일을 읽어야 안다. 둘이 갈리면 다음 마이그레이션을 쓸 때 어느 쪽을 베낄지가 갈린다.
+     */
+    fun sourceOf(version: String): String {
+        val prefix = "V${version}__"
+        val file =
+            (directory().listFiles() ?: emptyArray())
+                .singleOrNull { it.name.startsWith(prefix) && it.name.endsWith(".sql") }
+        requireNotNull(file) { "V$version 마이그레이션 파일을 찾지 못했다 — 원문을 대조할 근거가 없다" }
+        return file.readText()
+    }
+
+    private fun directory(): File {
+        val directory = File(sourceRoot(), MIGRATION_PATH)
+        require(directory.isDirectory) { "마이그레이션 디렉터리가 없다: $directory — 기대값을 유도할 근거가 없다" }
+        return directory
+    }
 
     private fun sourceRoot(): File =
         File(
