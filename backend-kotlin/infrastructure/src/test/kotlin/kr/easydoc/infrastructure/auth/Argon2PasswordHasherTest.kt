@@ -5,6 +5,8 @@ import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
+import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.CyclicBarrier
 
 /**
  * **X-I2 — Argon2 재해시 판정** (`migration-safety-gate` I-8).
@@ -111,11 +113,77 @@ class Argon2PasswordHasherTest {
     @DisplayName("동시 실행 상한이 0 이하면 조립에서 막힌다")
     fun `동시 실행 상한이 있어야 한다`() {
         // 상한이 없으면 로그인 폭주가 그대로 OOM 이 된다(I-8 검증 5).
-        assertThatThrownBy { Argon2PasswordHasher(policy(), maxConcurrentHashes = 0) }
+        assertThatThrownBy { Argon2PasswordHasher(policy(), maxConcurrentHashes = 0, maxWaitMillis = WAIT_MILLIS) }
             .isInstanceOf(IllegalArgumentException::class.java)
     }
 
-    private fun hasher(policy: Argon2Policy) = Argon2PasswordHasher(policy, maxConcurrentHashes = 2)
+    @Test
+    @DisplayName("대기 상한이 0 이하면 조립에서 막힌다")
+    fun `대기 상한이 있어야 한다`() {
+        // 무기한 대기는 요청 스레드를 영원히 반납하지 않아 과부하가 가용성 사고가 된다.
+        assertThatThrownBy { Argon2PasswordHasher(policy(), maxConcurrentHashes = 1, maxWaitMillis = 0) }
+            .isInstanceOf(IllegalArgumentException::class.java)
+    }
+
+    @Test
+    @DisplayName("대기 상한을 넘기면 무한 대기 대신 배압 예외를 던진다")
+    fun `대기 상한을 넘기면 예외다`() {
+        // 자리는 하나, 대기 상한은 1밀리초, 해시 1건은 그보다 훨씬 오래 걸리는 파라미터.
+        // 네 스레드를 **같은 시점에** 풀어 놓으면 자리를 못 잡은 쪽은 상한에 걸린다.
+        val blocking =
+            Argon2PasswordHasher(
+                policy(memoryKib = CONTENDED_MEMORY_KIB),
+                maxConcurrentHashes = 1,
+                maxWaitMillis = TINY_WAIT_MILLIS,
+            )
+        val start = CyclicBarrier(CONTENDERS)
+        val failures = CopyOnWriteArrayList<Throwable>()
+        val threads =
+            (1..CONTENDERS).map {
+                Thread {
+                    start.await()
+                    runCatching { blocking.hash(PASSWORD) }.onFailure { failure -> failures += failure }
+                }
+            }
+
+        threads.forEach { it.start() }
+        threads.forEach { it.join() }
+
+        // 종전 `acquire()` 였다면 전부 성공하고 목록이 비어 있다.
+        assertThat(failures)
+            .withFailMessage("대기가 상한 없이 흘러갔다 — 무한 대기로 되돌아갔는지 확인한다")
+            .isNotEmpty()
+        assertThat(failures).allMatch { it is PasswordHashingOverloadedException }
+    }
+
+    @Test
+    @DisplayName("더미 PHC 가 현행 정책 파라미터로 만들어진다 — 비용이 같아야 격차가 없어진다")
+    fun `더미 해시가 현행 정책을 따른다`() {
+        val policy = policy()
+        val hasher = hasher(policy)
+
+        val parsed = Argon2Phc.parse(hasher.dummyHash().reveal())
+
+        assertThat(parsed)
+            .withFailMessage("더미 해시가 PHC 형식이 아니다 — 상수 문자열을 돌려주면 비용이 0 이 된다")
+            .isNotNull()
+        // 파라미터가 다르면 검증 비용이 달라져 응답 시간 격차가 그대로 남는다(계약 x-auth).
+        assertThat(hasher.needsRehash(hasher.dummyHash()))
+            .withFailMessage("더미 해시의 파라미터가 현행 정책과 다르다")
+            .isFalse()
+    }
+
+    @Test
+    @DisplayName("더미 PHC 는 어떤 비밀번호와도 일치하지 않는다 — 재해시 경로에 닿지 않는다")
+    fun `더미 해시로는 통과하지 못한다`() {
+        val hasher = hasher(policy())
+
+        assertThat(hasher.verify(PASSWORD, hasher.dummyHash())).isFalse()
+        assertThat(hasher.verify("", hasher.dummyHash())).isFalse()
+    }
+
+    private fun hasher(policy: Argon2Policy) =
+        Argon2PasswordHasher(policy, maxConcurrentHashes = 2, maxWaitMillis = WAIT_MILLIS)
 
     private fun policy(
         memoryKib: Int = MEMORY_KIB,
@@ -136,6 +204,18 @@ class Argon2PasswordHasherTest {
         const val MEMORY_KIB = 1024
         const val ITERATIONS = 2
         const val PARALLELISM = 1
+
+        /** 정상 경로가 대기 상한에 걸리지 않을 만큼 넉넉한 값. 여기서 재는 것은 상한이 아니다. */
+        const val WAIT_MILLIS = 30_000L
+
+        /** 배압 케이스 전용 — 한 건이라도 앞에 있으면 반드시 넘긴다. */
+        const val TINY_WAIT_MILLIS = 1L
+
+        /** 배압 케이스에서 해시 1건이 대기 상한보다 확실히 오래 걸리게 하는 메모리. */
+        const val CONTENDED_MEMORY_KIB = 8192
+
+        /** 자리(1개)보다 많아야 대기가 생긴다. */
+        const val CONTENDERS = 4
         const val SALT_LENGTH = 16
         const val HASH_LENGTH = 32
 

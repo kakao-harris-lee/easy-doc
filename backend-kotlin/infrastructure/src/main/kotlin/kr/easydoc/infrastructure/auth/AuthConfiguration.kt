@@ -45,6 +45,10 @@ import java.time.Duration
  * @property maxConcurrentHashes 동시에 도는 Argon2 계산 수의 상한. 1건당
  *   `argon2.memoryKib` 만큼을 계산이 끝날 때까지 붙들고 있어, 상한이 없으면 로그인
  *   폭주가 그대로 OOM 이 된다(I-8 검증 5).
+ * @property maxHashWaitMillis 세마포어 **대기**의 상한. 무기한 대기는 요청 스레드를
+ *   영원히 반납하지 않아 과부하가 다른 API 까지 멈추게 한다. 기본값은 한산할 때의 해시
+ *   1회 비용(~0.1초)의 수십 배라 정상 부하에서는 닿지 않고, 스레드 풀이 마를 만큼 줄이
+ *   길어졌을 때만 걸린다.
  */
 @ConfigurationProperties(prefix = "easydoc.auth")
 data class AuthProperties(
@@ -52,6 +56,7 @@ data class AuthProperties(
     val jwtExpireMinutes: Long = 60,
     val minSecretBytes: Int = 32,
     val maxConcurrentHashes: Int = 4,
+    val maxHashWaitMillis: Long = 5_000,
     val argon2: Argon2Properties = Argon2Properties(),
 )
 
@@ -95,6 +100,7 @@ class AuthConfiguration {
                     hashLength = properties.argon2.hashLength,
                 ),
             maxConcurrentHashes = properties.maxConcurrentHashes,
+            maxWaitMillis = properties.maxHashWaitMillis,
         )
 
     /**

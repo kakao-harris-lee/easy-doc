@@ -106,6 +106,60 @@ class AuthEndpointReachTest {
             .isEqualTo(ContractSpec.schemaRequired("UserResponse"))
     }
 
+    /**
+     * **L-3b — 자격증명 실패의 세 번째 축: 응답 시간.**
+     *
+     * 계약 `x-auth.failure_uniformity` 는 축이 셋이다 — 상태 코드·본문·**응답 시간**.
+     * `AuthContractTest` L-3 이 앞의 둘을 재고, 셋째는 실물 Argon2 가 도는 이 계층에서만
+     * 잴 수 있다(슬라이스의 가짜 해시는 비용이 0 이라 격차가 나타나지 않는다).
+     *
+     * ## 절대값이 아니라 **비**로 판정한다
+     *
+     * 기계·부하에 따라 Argon2 1회 비용이 달라지므로 "몇 밀리초 이하"는 재현되지 않는다.
+     * 두 경로의 중앙값 비는 그 변동을 함께 타므로 남는다 — 수정 전 실측은 **약 42배**였고
+     * (privacy-gate B-1: 2.3ms vs 97ms) 더미 검증을 넣으면 1 에 가까워진다.
+     * 워밍업 1건은 버린다(첫 요청은 클래스 적재·JIT 을 함께 문다).
+     */
+    @Test
+    @DisplayName("L-3b 없는 이메일과 있는 이메일의 로그인 응답 시간이 갈리지 않는다 (계약 x-auth 3번째 축)")
+    fun `자격증명 실패의 응답 시간이 갈리지 않는다`() {
+        // 조항이 시간 축을 요구한다는 사실 자체를 계약에서 읽는다 — 그 문장이 지워지면
+        // 이 케이스가 무엇을 지키는지부터 다시 판단해야 한다.
+        assertThat(ContractSpec.authText("failure_uniformity"))
+            .withFailMessage("계약의 failure_uniformity 가 응답 시간 축을 더는 요구하지 않는다 — 이 케이스를 재판정하라")
+            .contains(RESPONSE_TIME_CLAUSE)
+
+        val known = uniqueEmail()
+        post("/auth/signup", credentials(known, VALID_PASSWORD))
+
+        val absent = medianLoginMillis { uniqueEmail() }
+        val wrongPassword = medianLoginMillis { known }
+
+        val ratio = maxOf(absent, wrongPassword) / minOf(absent, wrongPassword).coerceAtLeast(1.0)
+        assertThat(ratio)
+            .withFailMessage(
+                "로그인 응답 시간이 계정 존재 여부로 갈린다 — 없는 이메일 %.1fms / 틀린 비밀번호 %.1fms (비 %.1f배). " +
+                    "계정이 없을 때도 더미 PHC 로 같은 검증 비용을 치러야 한다",
+                absent,
+                wrongPassword,
+                ratio,
+            ).isLessThan(MAX_TIMING_RATIO)
+    }
+
+    /** 워밍업 1건을 버리고 [TIMING_SAMPLES] 건의 중앙값(밀리초)을 낸다. */
+    private fun medianLoginMillis(email: () -> String): Double {
+        post("/auth/login", credentials(email(), WRONG_PASSWORD))
+        val samples =
+            (1..TIMING_SAMPLES).map {
+                val started = System.nanoTime()
+                val response = post("/auth/login", credentials(email(), WRONG_PASSWORD))
+                val elapsed = (System.nanoTime() - started) / NANOS_PER_MILLI
+                assertThat(response.statusCode()).isEqualTo(UNAUTHORIZED)
+                elapsed
+            }
+        return samples.sorted()[TIMING_SAMPLES / 2]
+    }
+
     // ================================================================ 인증 실패 (C-R 의 요점)
 
     @Test
@@ -320,7 +374,25 @@ class AuthEndpointReachTest {
         private const val UNAUTHORIZED = 401
         private const val WWW_AUTHENTICATE = "WWW-Authenticate"
         private const val VALID_PASSWORD = "correct horse battery"
+        private const val WRONG_PASSWORD = "correct horse batteryX"
         private const val NOT_YET_EXPIRED_SECONDS = 600L
+
+        /**
+         * 계약 조항이 시간 축을 요구한다는 표식. 문구 전문을 옮겨 적지 않는다 — 그러면
+         * 계약을 코드에 복제하는 것이고, 조항이 조금만 다듬어져도 무관한 실패가 난다.
+         */
+        private const val RESPONSE_TIME_CLAUSE = "응답 시간"
+
+        /** 워밍업 뒤 표본 수. 홀수라 중앙값이 표본 하나로 정해진다. */
+        private const val TIMING_SAMPLES = 5
+
+        /**
+         * 두 경로 중앙값의 허용 비. 수정 전 실측이 **42배**였고 수정 후 기대는 1 근처다 —
+         * 이 값은 기계 지터를 넉넉히 덮으면서 그 사이 어디에도 닿지 않는 자리에 둔다.
+         */
+        private const val MAX_TIMING_RATIO = 4.0
+
+        private const val NANOS_PER_MILLI = 1_000_000.0
 
         /** 헤더 이름 → 그 값을 `const` 로 든 계약 컴포넌트 이름. */
         private val HEADER_COMPONENTS =

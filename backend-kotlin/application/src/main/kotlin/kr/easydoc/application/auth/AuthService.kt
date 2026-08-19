@@ -83,9 +83,13 @@ class AuthService(
         // "사용자가 비밀번호를 틀렸다"로 둔갑하고, 해시 계산도 헛되이 돈다.
         accessTokens.ensureConfigured()
 
-        val stored =
-            users.findByEmail(normalizeEmail(email))
-                ?: throw InvalidCredentialsException(INVALID_CREDENTIALS_MESSAGE)
+        val stored = users.findByEmail(normalizeEmail(email))
+        if (stored == null) {
+            // 계정이 없어도 **같은 검증 비용**을 치른다 — 계약 `x-auth.failure_uniformity` 3행.
+            // 여기서 바로 던지면 응답 시간이 계정 존재 여부를 알려 준다(실측 42배).
+            verifyAgainstDummy(password)
+            throw InvalidCredentialsException(INVALID_CREDENTIALS_MESSAGE)
+        }
 
         if (!passwords.verify(password, stored.passwordHash)) {
             throw InvalidCredentialsException(INVALID_CREDENTIALS_MESSAGE)
@@ -110,6 +114,17 @@ class AuthService(
 
     /** 액세스 토큰을 검증하고 사용자 식별자를 돌려준다. 실패는 [InvalidCredentialsException]. */
     fun authenticate(token: String): UUID = accessTokens.verify(token)
+
+    /**
+     * 계정이 없는 경로가 치르는 해시 비용.
+     *
+     * 결과를 쓰지 않는다 — 더미 PHC 는 어떤 비밀번호와도 일치하지 않으므로 언제나 `false`
+     * 다([PasswordHasher.dummyHash]). **재해시를 걸지 않는 것**도 여기서 성립한다:
+     * [rehashIfOutdated] 는 검증 성공 뒤에만 불리고 이 경로는 그 앞에서 끊긴다.
+     */
+    private fun verifyAgainstDummy(rawPassword: String) {
+        passwords.verify(rawPassword, passwords.dummyHash())
+    }
 
     /**
      * 저장된 해시의 파라미터가 현행 정책과 다르면 올린다 — **best-effort**.

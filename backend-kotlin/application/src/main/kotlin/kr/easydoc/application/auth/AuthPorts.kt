@@ -73,6 +73,21 @@ interface PasswordHasher {
      * 변형·버전·메모리·반복·병렬도·salt 길이·hash 길이 중 **하나라도 다르면** `true`.
      */
     fun needsRehash(stored: PasswordHash): Boolean
+
+    /**
+     * 계정이 없을 때 [verify] 에 먹일 **더미 PHC**.
+     *
+     * 계약 `x-auth.failure_uniformity` 가 *"사용자가 없을 때도 더미 해시로 같은 검증 비용을
+     * 치러 응답 시간으로도 새지 않게 한다"* 고 정한다. 이 값이 없으면 로그인 응답 시간이
+     * 계정 존재 여부를 알려 준다 — 실측 42배(privacy-gate B-1).
+     *
+     * 구현이 지켜야 하는 것 둘.
+     * ⑴ **현행 정책 파라미터로 만든다.** 파라미터가 다르면 계산 비용이 달라져 격차가 그대로
+     *    남는다. 그래서 상수 문자열을 돌려주면 안 된다.
+     * ⑵ **어떤 비밀번호와도 일치하지 않는다.** [verify] 가 언제나 `false` 여야 하고, 그래야
+     *    재해시 경로에 닿지 않는다(I-8 검증 2 — 실패한 로그인에서 재해시 금지).
+     */
+    fun dummyHash(): PasswordHash
 }
 
 /**

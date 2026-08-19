@@ -127,6 +127,37 @@ class AuthServiceTest {
     }
 
     @Test
+    @DisplayName("계정이 없어도 해시 검증을 **거른다** — 더미 PHC 로 같은 비용을 치른다")
+    fun `계정 부재도 해시 검증을 지난다`() {
+        // 계약 `x-auth.failure_uniformity` 3행. 여기서 검증을 건너뛰면 응답 시간이 계정
+        // 존재 여부를 알려 준다 — 시간 축은 `AuthEndpointReachTest` L-3b 가 실측으로 잰다.
+        val world = World()
+
+        assertThatThrownBy { world.service.login(uniqueEmail(), VALID_PASSWORD) }
+            .isInstanceOf(InvalidCredentialsException::class.java)
+
+        assertThat(world.hasher.verifiedHashes)
+            .withFailMessage("계정 부재 경로가 검증을 한 번도 거치지 않았다")
+            .containsExactly(world.hasher.dummyHash())
+        // 실패한 검증에서 재해시하지 않는다(I-8 검증 2) — 더미에도 걸리면 안 된다.
+        assertThat(world.users.rehashed).isEmpty()
+    }
+
+    @Test
+    @DisplayName("계정이 있는 경로는 더미가 아니라 저장된 해시로 검증한다")
+    fun `계정이 있으면 저장된 해시로 검증한다`() {
+        val world = World()
+        val email = uniqueEmail()
+        world.service.signup(email, VALID_PASSWORD)
+
+        assertThatThrownBy { world.service.login(email, "${VALID_PASSWORD}x") }
+            .isInstanceOf(InvalidCredentialsException::class.java)
+
+        // 더미로 「검증한 척」하고 실제 자격증명을 안 보는 구현이면 여기서 깨진다.
+        assertThat(world.hasher.verifiedHashes).doesNotContain(world.hasher.dummyHash())
+    }
+
+    @Test
     @DisplayName("로그인에는 가입 입력 규칙을 다시 적용하지 않는다")
     fun `로그인은 길이 규칙으로 거절하지 않는다`() {
         val world = World()
@@ -196,6 +227,9 @@ private class RecordingHasher(
     var depthAtHash = -1
         private set
 
+    /** [verify] 에 들어온 해시를 순서대로 남긴다 — 계정 부재 경로가 검증을 지나는지의 근거. */
+    val verifiedHashes: MutableList<PasswordHash> = mutableListOf()
+
     override fun hash(rawPassword: String): PasswordHash {
         hashCount++
         depthAtHash = transaction.depth
@@ -205,9 +239,15 @@ private class RecordingHasher(
     override fun verify(
         rawPassword: String,
         stored: PasswordHash,
-    ): Boolean = stored.reveal() == "hashed:$rawPassword"
+    ): Boolean {
+        verifiedHashes += stored
+        return stored.reveal() == "hashed:$rawPassword"
+    }
 
     override fun needsRehash(stored: PasswordHash): Boolean = needsRehash
+
+    /** `"hashed:"` 접두사가 없으므로 어떤 비밀번호와도 일치하지 않는다. */
+    override fun dummyHash(): PasswordHash = PasswordHash("dummy")
 }
 
 private class RecordingUserRepository(private val rehashFails: Boolean) : UserRepository {

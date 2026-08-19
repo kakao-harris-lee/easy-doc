@@ -141,6 +141,16 @@ class StubPasswordHasher : PasswordHasher {
     ): Boolean = stored.reveal() == "stub:$rawPassword"
 
     override fun needsRehash(stored: PasswordHash): Boolean = false
+
+    /**
+     * 어떤 비밀번호와도 일치하지 않는 값. [verify] 가 `"stub:"` 접두사를 요구하므로 이
+     * 값으로는 절대 통과하지 않는다 — 계정 부재 경로가 실제 검증을 지나가는지를 슬라이스
+     * 에서도 재려면 「일치하지 않음」이 성질로 성립해야 한다.
+     *
+     * 비용은 흉내 내지 않는다. 시간 축 회귀는 실물 Argon2 가 도는 `AuthEndpointReachTest`
+     * 가 잰다.
+     */
+    override fun dummyHash(): PasswordHash = PasswordHash("stub-dummy")
 }
 
 /** 토큰 문자열을 사용자 id 그대로 쓴다. 서명·만료는 여기서 재지 않는다. */
