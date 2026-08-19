@@ -3,6 +3,7 @@ package kr.easydoc.api
 import kr.easydoc.api.config.EasyDocProperties
 import kr.easydoc.core.security.Secret
 import kr.easydoc.infrastructure.auth.AuthProperties
+import kr.easydoc.infrastructure.crypto.EncryptionProperties
 import kr.easydoc.infrastructure.llm.LlmProperties
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.DisplayName
@@ -34,13 +35,13 @@ import org.springframework.core.convert.support.DefaultConversionService
  *
  * ## 도달 범위
  *
- * 세 설정 클래스 전부를 건다. 결함은 클래스 하나의 문제가 아니라 **Kotlin data class +
+ * 설정 클래스 전부를 건다. 결함은 클래스 하나의 문제가 아니라 **Kotlin data class +
  * 전 파라미터 기본값**이라는 형태 전체의 문제이므로, 한 곳만 걸면 나머지가 같은 함정에
  * 그대로 남는다.
  */
 class ConfigurationPropertiesBindingTest {
     @Test
-    @DisplayName("세 설정 클래스가 기본값과 **다른** 값을 실제로 바인딩한다")
+    @DisplayName("설정 클래스 전부가 기본값과 **다른** 값을 실제로 바인딩한다")
     fun `설정이 기본값과 다른 값을 싣는다`() {
         val auth =
             bind(
@@ -67,6 +68,28 @@ class ConfigurationPropertiesBindingTest {
                 mapOf("easydoc.cors-origins[0]" to "https://example.test"),
             )
         assertThat(easyDoc.corsOrigins).containsExactly("https://example.test")
+
+        // 저장 암호화 설정. **목록 + 중첩 value object** 라 같은 함정을 두 겹으로 지난다 —
+        // `keys[0]` 원소 자체가 전 파라미터 기본값을 가진 data class 다.
+        val encryption =
+            bind(
+                "easydoc.encryption",
+                EncryptionProperties::class.java,
+                mapOf(
+                    "easydoc.encryption.write-key-version" to "3",
+                    "easydoc.encryption.keys[0].version" to "3",
+                    "easydoc.encryption.keys[0].value" to SECRET_VALUE,
+                ),
+            )
+        assertThat(encryption.writeKeyVersion).isEqualTo(3)
+        assertThat(encryption.keys).hasSize(1)
+        assertThat(encryption.keys.first().version).isEqualTo(3)
+        assertThat(
+            encryption.keys
+                .first()
+                .value
+                .reveal(),
+        ).isEqualTo(SECRET_VALUE)
     }
 
     private fun <T : Any> bind(

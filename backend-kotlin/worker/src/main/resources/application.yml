@@ -27,6 +27,16 @@ spring:
     # 여럿이 동시에 migrate 하면 Flyway 잠금 경합과 부분 적용 상태가 생긴다.
     enabled: false
 
+easydoc:
+  # worker 도 같은 키를 갖는다 — 변환 결과·마스킹 대응표를 쓰는 쪽이 여기다(Phase 5).
+  # api 와 **같은 환경변수 이름**을 읽는다. 두 프로세스가 다른 키를 들면 한쪽이 쓴 행을
+  # 다른 쪽이 열지 못하고, 그 실패는 단일 예외라 원인이 드러나지 않는다.
+  encryption:
+    write-key-version: ${EASYDOC_ENCRYPTION_WRITE_KEY_VERSION:1}
+    keys:
+      - version: 1
+        value: ${EASYDOC_ENCRYPTION_KEY_V1:}
+
 logging:
   level:
     root: INFO

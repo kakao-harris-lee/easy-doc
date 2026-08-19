@@ -10,13 +10,13 @@ import org.springframework.boot.context.properties.ConfigurationProperties
  *
  * pydantic 은 `SecretStr` 로 `repr`/`model_dump` 에서 자동 마스킹한다. Kotlin 데이터
  * 클래스의 기본 `toString()` 은 정반대로 모든 필드를 그대로 찍는다 — 설정 객체를
- * 기동 로그에 한 줄 남기는 순간 JWT 시크릿과 Fernet 키가 로그 수집기로 흘러간다.
+ * 기동 로그에 한 줄 남기는 순간 JWT 시크릿과 저장 암호화 키가 로그 수집기로 흘러간다.
  * 그래서 비밀값 필드의 타입을 `String` 이 아니라 [Secret] 으로 두어 **타입이 실수를
  * 막게** 한다.
  *
  * ## 기동은 막지 않는다
  *
- * `jwtSecret`·`fernetKey` 가 없어도 앱은 뜬다. Python 이 그렇게 동작하고
+ * 비밀값(`easydoc.auth.jwt-secret`·`easydoc.encryption.keys`)이 없어도 앱은 뜬다. Python 이 그렇게 동작하고
  * (`app/main.py` lifespan 주석: "DB가 떠 있지 않아도 기동은 되고 /health로 진단할 수
  * 있다"), 그 값이 필요한 요청만 503(`ConfigurationError`)으로 거절한다. 기동을 막으면
  * 배포 상태를 `/health` 로 진단한다는 설계 의도가 깨진다.
@@ -57,10 +57,21 @@ import org.springframework.boot.context.properties.ConfigurationProperties
 data class EasyDocProperties(
     /** 브라우저에서 API를 부를 수 있는 오리진 목록. Python 기본값과 같다. */
     val corsOrigins: List<String> = listOf("http://localhost:5173"),
-    val crypto: CryptoProperties = CryptoProperties(),
 ) {
-    /** 문서 본문 암호화(Fernet) 키. 미설정 시 문서 저장 불가. */
-    data class CryptoProperties(val fernetKey: Secret = Secret.EMPTY)
+    // ── `easydoc.crypto.fernet-key` 는 여기 없다 — 설정 자체가 사라졌다 ────────────
+    //
+    // 종전에 `CryptoProperties(fernetKey: Secret)` 이 있었다. 두 가지가 함께 무너졌다.
+    //
+    // ⑴ **가리키던 것이 없어졌다.** 저장 암호화는 Fernet 호환이 아니라 표준 AEAD 신규
+    //    구현이다(master-plan 6.2 · 계획 §4.3 2차 개정 · `migration-safety-gate` I-7).
+    //    Fernet 키를 담을 자리가 필요 없다.
+    // ⑵ **아무도 조립할 수 없는 설정이었다** — `easydoc.auth.*`·`easydoc.llm.*` 이 아래
+    //    두 문단에서 옮겨 간 것과 같은 이유다.
+    //
+    // 대체물은 `infrastructure/crypto/CryptoConfiguration.kt` 의 `EncryptionProperties`
+    // (접두사 `easydoc.encryption`)다. **접두사를 물려받지 않는다** — 옛 이름을 재사용하면
+    // 기존 배포의 Fernet 키가 AEAD 키로 읽히고, 32바이트가 아니므로 조용히 버려진다.
+    // ────────────────────────────────────────────────────────────────────────────
 
     // ── `easydoc.auth.*` 은 여기 없다 — infrastructure 가 소유한다 ────────────────
     //

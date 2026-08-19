@@ -49,6 +49,17 @@ easydoc:
     - http://localhost:5173
   auth:
     jwt-expire-minutes: 60
+  # 저장 암호화(AES-256-GCM). 키는 base64 32바이트이고 **환경변수로만** 준다 —
+  # 값을 이 파일에 적지 않는다(프로젝트 CLAUDE.md 보안 규칙).
+  #
+  # 회전 절차: 새 세대를 keys 에 **더하고** write-key-version 을 올린다. 옛 세대를
+  # 목록에 남겨 두는 한 그 세대로 쓴 행은 계속 읽힌다(key_version 컬럼이 가리킨다).
+  # 값이 비면 그 세대는 적재되지 않고, 문서 저장 요청만 503 이 된다(기동은 막지 않는다).
+  encryption:
+    write-key-version: ${EASYDOC_ENCRYPTION_WRITE_KEY_VERSION:1}
+    keys:
+      - version: 1
+        value: ${EASYDOC_ENCRYPTION_KEY_V1:}
 
 logging:
   level:
