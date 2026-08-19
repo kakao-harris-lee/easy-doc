@@ -80,8 +80,9 @@
   `ci.yml:263-264` 가 같은 자리에서 같은 문장을 적었다. **한 칸 더 옮기지 않는다.**
 - **발견 파서는 최상위 선언을 열 0 의 `class`/`object` 로 찾는다.** 여러 줄 문자열
   안에 열 0 짜리 선언 모양이 들어 있으면 유령 선언이 생긴다 — 그때는 discovered 에만
-  남아 **빨개진다**(조용하지 않다). 실측: 현재 트리에서 발견 68건이 Gradle 리포트의
-  클래스 집합과 **정확히 일치**한다.
+  남아 **빨개진다**(조용하지 않다). 도입 시점 실측: 발견 집합이 Gradle 리포트의 클래스
+  집합과 **정확히 일치**했다(양쪽 차집합 0). 개수를 여기 적지 않는 이유는 그것이 다음
+  커밋에 곧바로 거짓이 되기 때문이다 — 개수는 `TEST_CLASS_COUNT` 가 진다.
 """
 
 from __future__ import annotations
@@ -137,6 +138,7 @@ TEST_CLASSES: tuple[str, ...] = (
     "kr.easydoc.api.ErrorContractTest",
     "kr.easydoc.api.FrameworkErrorContractTest",
     "kr.easydoc.api.HealthContractTest",
+    "kr.easydoc.api.MigrateProfileWithoutEncryptionKeyTest",
     "kr.easydoc.api.PasswordHashLogLeakReachTest",
     "kr.easydoc.api.PasswordHashingBackpressureReachTest",
     "kr.easydoc.api.PrivateResponseHeadersContractTest",
@@ -181,6 +183,7 @@ TEST_CLASSES: tuple[str, ...] = (
     "kr.easydoc.infrastructure.auth.JdbcWorkspaceRepositoryTest",
     "kr.easydoc.infrastructure.auth.JwtAccessTokensTest",
     "kr.easydoc.infrastructure.crypto.AesGcmContentCipherTest",
+    "kr.easydoc.infrastructure.crypto.CryptoProfileExemptionTest",
     "kr.easydoc.infrastructure.crypto.CryptoStartupVerificationTest",
     "kr.easydoc.infrastructure.crypto.EncryptionSchemeSchemaTest",
     "kr.easydoc.infrastructure.db.FlywayBaselineGuardTest",
@@ -193,7 +196,7 @@ TEST_CLASSES: tuple[str, ...] = (
 
 #: 선언 **개수**를 목록과 따로 적는다. 파일과 선언을 함께 지우는 편집이 두 자리에
 #: 흔적을 남기게 하는 장치다. 목록을 고쳤으면 여기도 고쳐야 한다.
-TEST_CLASS_COUNT = 68
+TEST_CLASS_COUNT = 70
 
 
 def _kotlin_test_sources() -> list[Path]:
