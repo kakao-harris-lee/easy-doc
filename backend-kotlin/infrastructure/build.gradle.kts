@@ -29,6 +29,21 @@ dependencies {
     // runtimeOnly 로만 의존하므로 컴파일 시점에 `com.nimbusds.*` 를 볼 수 없다.
     implementation(libs.spring.security.crypto)
     implementation(libs.nimbus.jose.jwt)
+    // 문서 추출(Phase 4). 파서 라이브러리도 이 모듈 밖으로 새지 않는다 — api·worker 는
+    // infrastructure 를 runtimeOnly 로만 의존하므로 `org.apache.poi.*`·`org.apache.pdfbox.*`
+    // 를 컴파일 시점에 볼 수 없다.
+    implementation(libs.poi.ooxml)
+    implementation(libs.pdfbox)
+    // POI 전이지만 직접 쓴다(zip 예산 방어). 전이에 기대면 POI 업그레이드가 API 를 바꾼다.
+    implementation(libs.commons.compress)
+    // POI 전이 둘. `implementation` 으로 선언하는 이유는 **컴파일과 런타임이 같은 버전을
+    // 보게** 하기 위해서다 — `runtimeOnly` 로 고정하면 compileClasspath 는 POI 가 끌고 온
+    // 값으로, runtimeClasspath 는 여기 값으로 갈린다. xmlbeans 는 실제로 import 한다
+    // (`XmlObject.getDomNode()` — DOCX DOM 순회의 기반, spike S-1).
+    implementation(libs.commons.io)
+    implementation(libs.xmlbeans)
+    // POI 의 log4j-api 를 slf4j 로 잇는다(spike S-10). 우리 코드는 log4j 타입을 모른다.
+    runtimeOnly(libs.log4j.to.slf4j)
     // Argon2PasswordEncoder 가 런타임에 요구한다. 우리 코드는 BC 타입을 import 하지 않는다.
     runtimeOnly(libs.bouncycastle.bcprov)
     runtimeOnly(libs.flyway.postgresql)

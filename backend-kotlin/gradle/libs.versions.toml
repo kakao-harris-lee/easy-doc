@@ -72,6 +72,51 @@ detekt = "1.23.8"
 nimbusJoseJwt = "10.9"
 bouncycastle = "1.85.2"
 
+# --- 문서 추출(Phase 4) — Boot BOM 이 관리하지 않는 넷 -------------------------
+#
+# 네 좌표 전부 spring-boot-dependencies 4.1.0 의 `<properties>`·`dependencyManagement`
+# 에 **없다**(실측: `poi`·`pdfbox`·`commons-compress`·`commons-io`·`xmlbeans` grep 0건).
+# BOM 밖이라 여기서 고르며, 고르는 방식은 **Phase 0 문서 spike 가 통과시킨 조합에
+# 정렬한다** 이다(`00_kotlin-implementer_doc-spike.md` §8). 임의 최신을 집지 않는다.
+#
+# - poi-ooxml / pdfbox: spike 조합 그대로. spike 는 Kotlin 2.2.0 위에서 통과했고
+#   현재 카탈로그는 2.3.21 이라, **좌표가 아니라 동작을 다시 확인**했다 —
+#   그 재확인이 `DocxExtractorTest`·`PdfExtractorTest` 의 spike 동등성 항목이다.
+# - commons-compress: POI 의 전이 의존이지만 **직접 고정한다.** zip 예산 방어가
+#   `ZipFile` + `SeekableInMemoryByteChannel` API 에 직접 의존하므로, 전이에 맡기면
+#   POI 업그레이드가 이 API 를 조용히 바꾼다.
+# - commons-io / xmlbeans: POI 전이. **BOM 관리 대상이 아니므로** 고정하지 않으면
+#   해석 결과가 스택마다 갈린다(계획 §3.1 "각자 임의 버전으로 섞지 않는다").
+#
+# ## commons-compress·commons-io 는 spike 값(1.27.1 / 2.18.0)이 **아니다** — 실측 근거
+#
+# 계획 §1.3 은 둘 다 "spike 조합에 정렬" 로 적었다. 그대로 넣고 락을 떠 보니
+# **compileClasspath 와 testClasspath 가 갈렸다**(2026-08-20 실측):
+#
+#     commons-io:2.18.0        = compileClasspath, runtimeClasspath
+#     commons-io:2.20.0        = testCompileClasspath, testRuntimeClasspath, testFixtures*
+#     commons-compress:1.27.1  = compileClasspath, runtimeClasspath
+#     commons-compress:1.28.0  = testCompileClasspath, testRuntimeClasspath, testFixtures*
+#
+# 원인은 `testcontainers:2.0.5` → `commons-compress:1.28.0` → `commons-io:2.20.0` 이고,
+# 충돌 해소가 높은 쪽을 고른다. 이 상태로 두면 **파서 테스트가 배포본과 다른 라이브러리를
+# 시험한다** — zip 경계 읽기처럼 바이트가 곧 결과인 자리에서 최악의 형태다.
+#
+# 그래서 **그래프 전체가 동의하는 값**으로 올린다. 이 파일의 kotlinx-serialization 주석이
+# 적은 판단과 같다 — *"갈림을 막은 것은 버전을 잘 고른 것이 아니라 고르지 않은 것이다."*
+# `strictly` 로 1.27.1 을 강제해 testcontainers 를 끌어내리는 갈래는 고르지 않았다:
+# 우리가 검증하지 않은 조합(testcontainers 2.0.5 + commons-compress 1.27.1)을 새로
+# 만드는 일이라 위험을 옮길 뿐이다.
+#
+# spike 값을 버려도 되는 근거: spike 가 준 것은 **동작 검증**이고, 그 검증은 이 커밋의
+# 추출기 테스트가 **이 조합 위에서 다시 돈다**(DOCX 동등성 9항목 · zip 예산 · DTD 거부).
+# 버전 숫자를 물려받는 것이 목적이 아니다.
+poi = "5.4.1"
+pdfbox = "3.0.5"
+commonsCompress = "1.28.0"
+commonsIo = "2.20.0"
+xmlbeans = "5.3.0"
+
 [libraries]
 # --- Spring Boot BOM ---------------------------------------------------------
 # platform()으로 적용해 아래 좌표들의 버전을 BOM이 결정하게 한다.
@@ -166,6 +211,25 @@ kotlin-reflect = { module = "org.jetbrains.kotlin:kotlin-reflect" }
 
 # --- detekt 규칙 -------------------------------------------------------------
 detekt-formatting = { module = "io.gitlab.arturbosch.detekt:detekt-formatting", version.ref = "detekt" }
+
+# --- 문서 추출 ---------------------------------------------------------------
+# **infrastructure 에서만** 선언한다. api·worker 는 infrastructure 를 runtimeOnly 로
+# 붙이므로 POI·PDFBox 타입을 컴파일 시점에 볼 수 없다(계획 §3.2 의존 방향).
+poi-ooxml = { module = "org.apache.poi:poi-ooxml", version.ref = "poi" }
+pdfbox = { module = "org.apache.pdfbox:pdfbox", version.ref = "pdfbox" }
+commons-compress = { module = "org.apache.commons:commons-compress", version.ref = "commonsCompress" }
+commons-io = { module = "commons-io:commons-io", version.ref = "commonsIo" }
+xmlbeans = { module = "org.apache.xmlbeans:xmlbeans", version.ref = "xmlbeans" }
+
+# POI 가 끌고 오는 `log4j-api` 는 **API 만**이라 바인딩이 없으면
+# `Log4j API could not find a logging provider` 경고가 난다(spike S-10).
+# slf4j 로 잇는다 — 버전은 Boot BOM 이 관리한다(log4j 2.25.2).
+#
+# **commons-logging(PDFBox 쪽)은 exclude 하지 않는다.** Spring Framework 7 이
+# `spring-jcl` 을 제거했으므로 Boot 3 시절의 관용적 exclude 를 그대로 옮기면
+# `NoClassDefFoundError` 가 난다. 잇고 싶으면 `jcl-over-slf4j` 를 **더하는**
+# 방향으로만 한다.
+log4j-to-slf4j = { module = "org.apache.logging.log4j:log4j-to-slf4j" }
 
 [plugins]
 kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }

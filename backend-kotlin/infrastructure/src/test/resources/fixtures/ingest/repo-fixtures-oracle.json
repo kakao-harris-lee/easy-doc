@@ -1,0 +1,93 @@
+{
+  "sample.docx": {
+    "ok": true,
+    "text": "쉬운 글 변환 안내\n이 문서는 추출 테스트용 예시입니다."
+  },
+  "sample_table.docx": {
+    "ok": true,
+    "text": "쉬운 글 변환 안내\n구분\n내용\n접수 기간\n3월 1일부터 3월 31일까지"
+  },
+  "sample_rich.docx": {
+    "ok": true,
+    "text": "첫 문단입니다.\n바깥 표 셀\n중첩 표 셀\n표 뒤에 오는 문단입니다.\n텍스트 상자 안 문장입니다.\n변경 추적으로 삽입된 문장입니다.\n둘째 구역 본문입니다.\n머리글 문구\n바닥글 문구"
+  },
+  "sample.pdf": {
+    "ok": true,
+    "text": "첫째 쪽 안내문입니다.\n둘째 쪽 안내문입니다."
+  },
+  "empty.pdf": {
+    "ok": false,
+    "error_type": "DocumentExtractionError",
+    "error": "텍스트를 추출할 수 없습니다 (스캔 PDF는 지원 예정)"
+  },
+  "sample.hwpx": {
+    "ok": true,
+    "text": "한글 문서 추출 확인\n문단 하나가 여러 조각으로 나뉘어도 이어 붙는다.\n둘째 구역의 문장입니다."
+  },
+  "_raw_docx_blocks": {
+    "sample.docx": [
+      "",
+      "쉬운 글 변환 안내",
+      "   ",
+      "이 문서는 추출 테스트용 예시입니다."
+    ],
+    "sample.docx::sections": [
+      {
+        "header_linked": true,
+        "footer_linked": true
+      }
+    ],
+    "sample_table.docx": [
+      "",
+      "쉬운 글 변환 안내",
+      "구분",
+      "내용",
+      "접수 기간",
+      "3월 1일부터 3월 31일까지"
+    ],
+    "sample_table.docx::sections": [
+      {
+        "header_linked": true,
+        "footer_linked": true
+      }
+    ],
+    "sample_rich.docx": [
+      "",
+      "첫 문단입니다.",
+      "바깥 표 셀",
+      "중첩 표 셀",
+      "",
+      "표 뒤에 오는 문단입니다.",
+      "",
+      "텍스트 상자 안 문장입니다.",
+      "변경 추적으로 삽입된 문장입니다.",
+      "",
+      "둘째 구역 본문입니다.",
+      "",
+      "머리글 문구",
+      "",
+      "바닥글 문구"
+    ],
+    "sample_rich.docx::sections": [
+      {
+        "header_linked": false,
+        "footer_linked": false
+      },
+      {
+        "header_linked": true,
+        "footer_linked": true
+      }
+    ]
+  },
+  "_hwpx_roundtrip": {
+    "paragraphs": [
+      "첫째 문단 & 특수문자 <검증>",
+      "둘째 문단입니다.",
+      "  ",
+      "셋째 문단."
+    ],
+    "package_sha256": "d414068964330accd32064380d795c48af58098f00fd1de0f24219467116b770",
+    "package_size": 3072,
+    "extracted": "첫째 문단 & 특수문자 <검증>\n둘째 문단입니다.\n셋째 문단."
+  }
+}
