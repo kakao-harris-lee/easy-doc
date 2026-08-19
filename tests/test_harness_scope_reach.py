@@ -256,8 +256,25 @@ EXPECTED_TARGET_TABLES: Final = 5
 #: **정체성 집합은 `EXPECTED_MET_YES_KEYS` 쪽이 무변동**이다 — 7행 전건이 `충족 = 아니오` 라
 #: 그 집합에 들어가지 않는다. 대신 7행 전부가 `EXPECTED_UNRESOLVED_KEYS` 에 들어갔다.
 #: 이 diff 가 "판정 범위를 **넓혔다**"는 신고다.
+#: 2026-08-19 게이트 22·23 + React E2E: 표기 62 → **65**. **행 수·정체성 집합은 무변동**이다 —
+#: Phase 3 표의 7행이 그대로이고 `충족` 도 전건 `아니오` 유지다. 늘어난 것은 표기 셋뿐이고 **셋 다
+#: 「없던 실행이 생겼다」**라 이 diff 는 판정 범위를 **넓혔다**는 신고다.
+#:   ⑴ 행 5(React E2E) `안 돎` → `ci:e2e` · `local:frontend/e2e/run-local.sh` (**+1**).
+#:      근거 `203831d`(Playwright 하네스 12케이스)·`a1e1925`(잡 `e2e` 신설)·`b3f76b2`(산출물),
+#:      로컬 12/12 · 음성 대조 6/6 · CI 첫 실행 run `32222249150` 의 `e2e` 잡 success.
+#:   ⑵ 행 6(contract·React 테스트) `ci:kotlin · ci:frontend` → `· ci:e2e` 추가 (**+1**).
+#:      그 행의 종료 조건 후반("React 테스트가 Kotlin API 에서 통과")을 겨냥해 도는 잡이
+#:      생겼으므로, 행 5 만 선언하고 여기서 침묵하면 **축소해 적는 쪽**의 과장이 된다.
+#:   ⑶ 행 7(계약 개선 3자 동일) 에 `1회성:…03_contract-keeper_workspaces-verification.md`
+#:      추가 (**+1**). 이 단위의 계약 개선(`4a25a7c` 파싱 거절 6종 정정 · `0fe654c` D-2 조항)의
+#:      근거 산출물이 auth 것과 **다른 파일**이라, 한 파일만 적으면 근거가 실제보다 좁다.
+#:   ⑷ 행 4(소유권 404) `안 돎` → `ci:kotlin` (**±0** — 표기 수는 그대로다). 게이트 22 에서
+#:      `WorkspaceContractTest` WR-3·WD-2 와 `JdbcWorkspaceRepositoryTest` 가 이 행을 처음
+#:      겨냥해 돌았으므로 `안 돎` 이 사실과 달라졌다. `ci:quality`(스캐너 `OWNERSHIP-403`)를
+#:      **함께 적지 않은** 이유는 그 게이트가 이 배치에서 네 형태의 탐지를 잃어 조치 대기
+#:      중이라, 지금 적으면 근거를 넘는 선언이 되기 때문이다.
 EXPECTED_ROWS: Final = 52
-EXPECTED_REACH_TOKENS: Final = 62
+EXPECTED_REACH_TOKENS: Final = 65
 
 #: 제목·caption 에서 키를 뽑을 때 자르는 길이. 길수록 사소한 문구 수정마다 상수가 갈리고,
 #: 짧을수록 서로 다른 행이 같은 키로 뭉쳐 삭제가 숨는다. 40자는 현재 18개 행이 전부
@@ -428,6 +445,19 @@ EXPECTED_MET_YES_KEYS: Final[frozenset[tuple[str, str]]] = frozenset(
         # C-3·C-4 해소(f73b8bd)로 L344·L345 를 예로 올렸다.
         ("Phase 2 — 순수 도메인 로직 포팅", "프롬프트 렌더링과 동적 어려운 말 목록 포팅"),
         ("Phase 2 — 순수 도메인 로직 포팅", "스타일 규칙 포팅 (`app/easyread/style_rules.py`"),
+        # Phase 3 — 데이터·인증·작업 공간 API
+        # 2026-08-19 리더 판정: 「React ↔ Kotlin E2E」 한 행만 예로 올렸다. 나머지 여섯 행은
+        # `아니오` 유지다 — 게이트 23 이 연 차단(스캐너 `OWNERSHIP-403`)의 복원 `01d78a1` 이
+        # 리뷰 미수령이고 조치 배치 2 가 남아 있다.
+        # 근거: 로컬 12/12(실 Chromium ↔ 실 Kotlin bootJar ↔ 실 PostgreSQL) · **CI 도달 관측**
+        # (run 32222249150 · headSha `b3f76b2` · 잡 `e2e` success) · 음성 대조 6/6 ·
+        # 제품 코드 변경 0.
+        # 이 행은 같은 커밋에서 `안 돎` → `ci:e2e · local:frontend/e2e/run-local.sh` 로도 움직였다 —
+        # **승격과 실행 경로 신설이 같은 diff 에 있는 것이 이 상수가 노리는 신고 형태**다.
+        (
+            "Phase 3 — 데이터·인증·작업 공간 API",
+            "React 를 Kotlin API 에 연결한 로그인·작업 공간 E2E",
+        ),
     }
 )
 
