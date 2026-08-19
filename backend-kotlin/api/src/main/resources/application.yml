@@ -60,6 +60,9 @@ easydoc:
     keys:
       - version: 1
         value: ${EASYDOC_ENCRYPTION_KEY_V1:}
+        # 키 검사값(12자리 hex). **비밀이 아니다** — 키와 다른 자리에서 받아야 대조가 뜻을
+        # 가진다. 값을 모르면 비워 둔 채 한 번 띄워라. 기동이 실패하면서 계산값을 알려 준다.
+        kcv: ${EASYDOC_ENCRYPTION_KCV_V1:}
 
 logging:
   level:

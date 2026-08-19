@@ -104,16 +104,31 @@ class AesGcmContentCipher(
     override val writeScheme: String = EncryptionScheme.AES_256_GCM_V1
 
     /**
-     * 세대 → 키. 못 읽는 재료는 **조용히 빼고 경고만 남긴다.**
+     * 세대 → 키. 못 읽는 재료는 **여기서는** 빼고 경고만 남긴다.
      *
-     * 여기서 기동을 끊지 않는 이유는 `AuthProperties` 「기동은 막지 않는다」와 같다 —
-     * 설정이 비거나 잘못돼도 앱은 뜨고 `/health` 로 배포 상태를 진단할 수 있어야 하며,
-     * 그 값이 필요한 요청만 거절된다(암호화는 503, 복호화는 아래 단일 예외).
+     * 이 클래스가 기동을 끊지 않는 이유는 하나다 — 끊을지 말지는 조립의 판단이고, 이 타입은
+     * 단위 테스트에서 오설정 조합을 그대로 만들어 볼 수 있어야 한다. **제품 조립은 끊는다**:
+     * [CryptoConfiguration] 이 [loadedKeyVersions]·[checkValueOf] 로 기동 자기점검을 돌리고,
+     * 어긋나면 앱을 띄우지 않는다(게이트 25 F-2·F-3).
      */
     private val keys: Map<Int, SecretKey> =
         keyMaterial
             .mapNotNull { (version, material) -> keyOf(version, material) }
             .toMap()
+
+    /**
+     * 실제로 **적재에 성공한** 키 세대. 기동 자기점검이 「설정에 적힌 것」이 아니라
+     * 「실린 것」을 묻는 통로다 — 둘이 갈리는 자리가 곧 조용한 오설정이다.
+     */
+    val loadedKeyVersions: Set<Int> get() = keys.keys
+
+    /**
+     * 세대의 키 검사값([KeyCheckValue]). 적재되지 않은 세대면 null.
+     *
+     * 키 자체를 밖으로 내보내지 않으면서 「이 자리에 어떤 키가 들어와 있는가」를 대조하게
+     * 하는 유일한 통로다.
+     */
+    fun checkValueOf(version: Int): String? = keys[version]?.let { KeyCheckValue.of(it) }
 
     /**
      * **비용을 맞추기 위한 더미 키.** 설정에 없는 키 세대를 가리키는 봉투를 만났을 때 이

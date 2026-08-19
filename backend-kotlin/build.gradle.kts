@@ -138,6 +138,18 @@ subprojects {
         // 모듈 디렉터리라, 코드에서 상대 경로로 거슬러 올라가면 모듈이 늘 때 조용히 어긋난다.
         systemProperty("easydoc.kotlin.source.root", rootDir.absolutePath)
 
+        // 저장 암호화 기동 자기점검을 테스트 실행에서만 끈다 (게이트 25 F-2·F-3 리더 판정
+        // 「기동 시 fail-fast, 테스트 프로파일 제외」).
+        //
+        // **이 한 줄이 스위치를 끄는 유일한 자리다.** 제품 설정(api·worker 의
+        // application.yml, compose, 배포 매니페스트)에는 이 키가 없어야 하고,
+        // `CryptoStartupVerificationTest` 가 ⑴ 기본값이 켜짐인지 ⑵ 제품 설정에 이 키가
+        // 새지 않았는지를 검사한다 — 면제 조항을 두면서 **그 면제가 제품에 닿지 않는지
+        // 보는 탐지기**를 함께 두는 것이 이 저장소가 요구하는 형태다(CLAUDE.md 규칙 4).
+        //
+        // 자기점검을 실제로 지나는 조합은 그 테스트가 빈을 직접 조립해 확인한다.
+        systemProperty("easydoc.encryption.verify-on-startup", "false")
+
         // 계약 파일을 **선언 입력**으로 건다. 지금은 api 만 읽지만 모든 테스트 태스크에
         // 거는 이유는 도달 범위다 — 다음 모듈이 계약을 읽기 시작할 때 이 선언을 함께
         // 옮겨 적어야 한다면, 옮겨 적지 않은 채로 같은 결함이 되살아난다.
