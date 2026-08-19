@@ -91,7 +91,39 @@ class ConflictException(message: String) : EasyDocException(message)
  * 원본 DB 예외를 그대로 올리지 않는다 — PostgreSQL이 제약 위반 DETAIL에 실패한 행 전체를
  * 담기 때문이다(`app/repositories/users.py` 참고).
  */
-class StorageException(message: String) : EasyDocException(message)
+open class StorageException(message: String) : EasyDocException(message)
+
+/**
+ * 저장된 암호문을 열지 못했다 — **실패 원인을 구분하지 않는 단 하나의 예외**.
+ *
+ * ## 왜 갈래를 만들지 않는가 (`migration-safety-gate` I-7 검증 3)
+ *
+ * 태그 불일치·키 세대 부재·길이 부족·형식 오류·associated data 불일치가 전부 이 예외
+ * 하나다. 원인이 응답·로그·지연 어느 축으로든 구분돼 나가면 그것이 **복호화 oracle** 이고,
+ * 공격자는 바이트를 조금씩 바꿔 가며 그 신호만으로 암호를 푼다. 그래서
+ *
+ * - 메시지를 **고정 상수 하나**로 둔다(호출자가 상황별 문구를 넣지 못하게 인자를 받지 않는다),
+ * - **원인 예외를 잇지 않는다** — `GeneralSecurityException` 을 `cause` 로 달면 스택
+ *   트레이스에 어느 단계에서 깨졌는지가 그대로 남고, 그것이 로그로 나가면 같은 oracle 이다.
+ *
+ * ## 왜 [StorageException] 하위인가
+ *
+ * 사용자가 고칠 수 있는 입력 문제가 아니라 **저장된 데이터가 열리지 않는 상태**다.
+ * `app/privacy/crypto.py` 도 `InvalidToken` 을 `StorageError` 로 올렸고, HTTP 매핑은
+ * 500 이다(`app/api/errors.py`). 4xx 로 감싸면 서버 사고가 "사용자가 뭘 잘못했다"로
+ * 둔갑해 조용히 묻힌다.
+ */
+class DecryptionFailedException : StorageException(MESSAGE) {
+    companion object {
+        /**
+         * 응답 detail 로 그대로 나가는 문구. 어떤 실패든 **같은 문자열**이어야 한다.
+         *
+         * 입력값·파일명·바이트 수를 넣지 않는다 — 예외 메시지에 입력을 넣지 않는다는
+         * 이 파일의 규약이자, 여기서는 oracle 금지 조건이기도 하다.
+         */
+        const val MESSAGE: String = "저장된 문서를 읽을 수 없습니다"
+    }
+}
 
 /**
  * 서버 설정이 비어 있어 기능을 제공할 수 없다 (예: JWT 비밀키 미설정).
