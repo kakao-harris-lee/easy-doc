@@ -506,21 +506,29 @@ _403_NAME = r"(?:[A-Za-z_]\w*\.)*\w*(?:FORBIDDEN|Forbidden)\w*"
 #: 부호가 **양성**인 단언(`isEqualTo(FORBIDDEN)`)을 자리에 넣은 이유 — 그 줄은 제품이
 #: 403 을 낸다고 **기대**하는 단언이고, 이 불변식에서는 진짜 위반 신호다(N6). 부호 반전
 #: (`isNotEqualTo`)은 목록에 없으므로 자연히 빠진다 — ① 의 소비와 **두 겹**으로 닫힌다.
-_403_STATUS_SITE = (
-    # ⓐ 호출 인자 자리. 이름 바로 뒤가 `(` 여야 한다.
-    #    왼쪽 경계는 이 갈래**에만** 붙인다 — ⓑ 의 `=` 앞은 식별자일 수 있어(`x=FORBIDDEN`)
-    #    공통으로 걸면 그 자리가 조용히 빠진다.
-    r"(?<![A-Za-z0-9_])"
+#: ⓐ 가 보는 **호출 이름**. 아래 자리 패턴과 `_403_CALL_OPENER` 가 **같은 조각**을 쓴다 —
+#: 목록을 두 벌 적으면 사본이 갈리고, 갈린 사본은 늘 조용한 쪽이었다(게이트 23 ⓐ).
+_403_CALL = (
     r"(?:sendError|send_error|setStatus|set_status|status|statusCode|status_code"
     r"|ResponseEntity|ResponseStatusException|ResponseStatus"
     r"|HTTPException|HttpResponse"
     r"|isEqualTo|isSameAs|isIn|assertEquals|assertSame)"
-    rf"\s*\(\s*(?:[A-Za-z_]\w*\s*=\s*)?{_403_NAME}\b"
+)
+
+_403_STATUS_SITE = (
+    # ⓐ 호출 인자 자리. 이름 바로 뒤가 `(` 여야 한다.
+    #    왼쪽 경계는 이 갈래**에만** 붙인다 — ⓑ 의 `=` 앞은 식별자일 수 있어(`x=FORBIDDEN`)
+    #    공통으로 걸면 그 자리가 조용히 빠진다.
+    r"(?<![A-Za-z0-9_])" + _403_CALL + rf"\s*\(\s*(?:[A-Za-z_]\w*\s*=\s*)?{_403_NAME}\b"
     # ⓑ 값 산출 자리. `return`/`throw`/`raise`/`->`/초기화 `=` 바로 뒤.
     #    `==`·`!=`·`<=`·`>=` 를 배제해 **비교**는 자리로 치지 않는다 — 비교는 값을
     #    내보내는 것이 아니라 읽는 것이다.
     rf"|(?:\b(?:return|throw|raise)\b|->|(?<![=!<>+\-*/%])=(?!=))\s*{_403_NAME}\b"
 )
+
+#: 끊긴 논리 줄이 ⓐ 를 가렸는지 판정하는 **호출 시작 모양**(`Rule.opener` 계약).
+#: `multiline` 규칙은 반드시 이것을 가져야 fail-closed 밖으로 빠지지 않는다.
+_403_CALL_OPENER = re.compile(r"(?<![A-Za-z0-9_])" + _403_CALL + r"\s*\(")
 
 #: 불활성 ③ 의 **무손실 전제를 패턴이 강제한다.**
 #:
@@ -733,6 +741,28 @@ RULES: tuple[Rule, ...] = (
         (),
         lambda match: match.group("inert") is None,
         refine_reason="불변식을 집행·명명하는 형태(403 을 만들어 낼 수 없는 자리)",
+        # **논리 줄에서 판정한다** (게이트 26 S-1, 리더 판정 = privacy-gate 해제 조건 ⓐ).
+        #
+        # 게이트 25 가 자리(`_403_STATUS_SITE`)를 도입하면서 두 갈래가 모두 **인접성**을
+        # 요구하게 됐다 — ⓐ 는 호출 토큰 바로 뒤의 `(`, ⓑ 는 키워드 바로 뒤. 그런데 이
+        # 저장소는 `ktlintCheck` 를 CI 에서 강제하고, 그 서식은 인자를 다음 줄로 내린다:
+        #
+        #     return ResponseEntity.status(
+        #         HttpStatus.FORBIDDEN,
+        #     ).build()
+        #
+        # 물리 줄 판정에서는 어느 줄에도 `status(` 와 이름이 함께 있지 않다. 옛 판
+        # (`aad5ca5~1`)은 토큰만 보았기에 우연히 잡았고, 새 판은 **놓쳤다** — 즉
+        # **이 저장소의 표준 서식으로 쓴 소유권 403 이 BLOCK 규칙을 조용히 지나갔다.**
+        #
+        # 해제 조건은 ⓐ(논리 줄) 또는 ⓑ(잔여를 `xfail(strict)` 로 선언) 였고 리더가 ⓐ 를
+        # 골랐다 — codex B-3 이 그 `xfail` 을 **은폐형**으로 판정했고(떼어도 아무것도 안
+        # 깨진다) `CLAUDE.md` 규칙 4 ⑵ 가 은폐형 확장을 금지한다.
+        #
+        # 대가는 없다. 논리 줄은 **주석을 뺀 코드만** 잇고(`_advance`), 한 줄로 끝나는
+        # 문장은 그 자체로 논리 줄 하나다 — Q1·Q2·P1·P5·P7 이 잰 자리 제한은 그대로다.
+        multiline=True,
+        opener=_403_CALL_OPENER,
     ),
     Rule(
         "PLAINTEXT-PERSIST",

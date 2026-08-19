@@ -23,6 +23,7 @@ import importlib.util
 import inspect
 import random
 import re
+import subprocess
 import sys
 from pathlib import Path
 from types import ModuleType
@@ -1619,19 +1620,90 @@ OWNERSHIP_403_SHAPES: list[tuple[str, str, str, bool]] = [
     # 불변식을 집행하는 코드가 다시 빨개진다.
     ("Q5 비교 연산", ".kt", "        if (r.statusCode() == HttpStatus.FORBIDDEN) fail()", False),
     ("Q6 토큰을 품은 합법 함수명", ".kt", "fun `FORBIDDEN 이 아니다`() {", False),
-]
-
-#: **닫지 않은 종류를 선언한다** (게이트 25 · 조용한 0 금지).
-#:
-#: 여기 있는 형태는 오늘 잡히지 않는다. `xfail(strict=True)` 라 누가 탐지에 넣으면
-#: `xpass` 로 뒤집혀 **시끄러워진다** — 조용한 0 이 아니라 선언된 0 이다.
-OWNERSHIP_403_DECLARED_MISSES: list[tuple[str, str, str]] = [
-    # 문면에 403 표지가 전혀 없다. 완전한 해소는 정의-사용 추적(파서)이 필요하고 근거가 없다.
-    # 계산의 출처가 `= 403` 리터럴이면 그 선언 줄이 BLOCK 으로 남는다(N14~N16).
-    ("D1 계산값 상태 코드", ".kt", "        response.sendError(base + 3)"),
-    # 응답 자리가 아닌 호출의 인자. 자리 제한의 정확한 대가다 — 넓히려면 그 호출이
-    # 왜 응답 자리인지를 실측으로 대야 한다.
-    ("D2 응답 자리 밖 호출 인자", ".kt", "        statuses.add(HttpStatus.FORBIDDEN)"),
+    # ── 게이트 26 S-1 — 줄바꿈된 응답 자리 (privacy-gate 해제 조건 ⓐ, 리더 판정) ─────
+    #
+    # 게이트 25 가 자리를 도입하면서 두 갈래가 모두 **인접성**을 요구하게 됐고, 그
+    # 인접성을 `ktlintCheck` 가 강제하는 후행 쉼표 다중 줄 서식이 끊었다. 옛 판
+    # (`aad5ca5~1`)은 토큰만 봐서 우연히 잡았고 새 판은 놓쳤다 — **이 저장소의 표준
+    # 서식으로 쓴 소유권 403 이 조용히 지나갔다**(privacy-gate S-1, 옛 판/새 판 동시
+    # 적재로 실측). 규칙을 **논리 줄**에서 판정하게 바꿔 닫았다.
+    #
+    # **양방향으로 잰다.** L1~L4 는 되찾은 것, L5~L7 은 되찾지 **않아야** 하는 것이다 —
+    # 논리 줄로 바꾸면서 자리 제한까지 함께 풀리면 그것은 옛 판으로의 후퇴다.
+    (
+        "L1 줄바꿈 status 인자(후행 쉼표)",
+        ".kt",
+        "return ResponseEntity.status(\n    HttpStatus.FORBIDDEN,\n).build()",
+        True,
+    ),
+    (
+        "L2 줄바꿈 sendError 인자",
+        ".kt",
+        "response.sendError(\n    HttpServletResponse.SC_FORBIDDEN,\n)",
+        True,
+    ),
+    (
+        "L3 줄바꿈 예외 생성자 인자",
+        ".kt",
+        'throw ResponseStatusException(\n    HttpStatus.FORBIDDEN,\n    "denied",\n)',
+        True,
+    ),
+    (
+        "L4 줄바꿈 양성 단언 인자",
+        ".kt",
+        "assertThat(r.statusCode()).isEqualTo(\n    HttpStatus.FORBIDDEN,\n)",
+        True,
+    ),
+    (
+        "L5 줄바꿈 부호 반전 단언",
+        ".kt",
+        "assertThat(r.statusCode()).isNotEqualTo(\n    HttpStatus.FORBIDDEN,\n)",
+        False,
+    ),
+    (
+        "L6 줄바꿈 문자열 인자",
+        ".kt",
+        'val label = listOf(\n    "HTTP_403_FORBIDDEN",\n)',
+        False,
+    ),
+    (
+        "L7 줄바꿈 주석 안의 이름",
+        ".kt",
+        "val order = listOf(\n    1, // SC_FORBIDDEN 설명\n)",
+        False,
+    ),
+    # ── 닫지 않은 종류 — **승인이 아니다** (게이트 26: `xfail(strict)` 에서 옮겨 왔다) ──
+    #
+    # 게이트 25 는 이 둘을 `xfail(strict=True)` 로 선언했다. codex B-3 이 그 형태를
+    # **은폐형**으로 판정했고(*"알려진 실패를 성공 종료로 바꾼다"*) 교차 종합 §5.3 이
+    # 확정했다 — 떼어도 아무것도 깨지지 않으므로 탐지형이 아니고, `CLAUDE.md` 규칙 4 ⑵ 는
+    # 은폐형을 넓히지 말고 갈아타라고 한다.
+    #
+    # 그래서 **같은 사실을 은폐 없이 적는 자리로 옮겼다.** 이 표의 항목은 "지금 이렇게
+    # 판정한다"를 그대로 적을 뿐 실패를 성공으로 바꾸지 않는다. 성질은 보존된다 —
+    # 누가 탐지를 넓혀 이 둘이 잡히기 시작하면 `blocks=False` 가 뒤집혀 **여기서
+    # 빨개지고**, 그때 이 주석을 읽고 판단하게 된다.
+    #
+    # **읽는 법: 아래 둘은 "빠져야 하는 것"이 아니라 "아직 못 잡는 것"이다.**
+    # - **D1 계산값** — 문면에 403 표지가 없다. 완전한 해소는 정의-사용 추적(파서)이
+    #   필요하고 그 근거가 없다. **보상 통제가 실재하고 그것은 결속돼 있다** — 계산의
+    #   출처가 `= 403` 리터럴이면 그 선언 줄이 BLOCK 으로 남고, N14~N16 이 그 성질을
+    #   `blocks=True` 로 고정한다. 즉 D1 은 "전면 미탐"이 아니라 "선언 줄 경유 탐지"다.
+    # - **D2 응답 자리 밖 호출 인자** — 자리 제한의 정확한 대가다. 넓히려면 그 호출이
+    #   왜 응답 자리인지 실측 근거가 있어야 하고, 근거 없이 넓히면 Q3·Q4 가 되돌아온다.
+    ("D1 계산값 상태 코드(닫지 않음)", ".kt", "        response.sendError(base + 3)", False),
+    (
+        "D2 응답 자리 밖 호출 인자(닫지 않음)",
+        ".kt",
+        "        statuses.add(HttpStatus.FORBIDDEN)",
+        False,
+    ),
+    # `return` 뒤 줄바꿈은 **이 저장소가 쓰는 어느 언어에서도 403 자리가 아니다.**
+    # Kotlin·Python 은 그 자리에서 문장이 끝나고(Unit/None 반환) 다음 줄은 죽은 식이며,
+    # TypeScript 는 ASI 로 같다. 옛 판이 이것을 BLOCK 한 것은 탐지가 아니라 **토큰을
+    # 아무 데서나 본** 부작용이었다. 실제 자리가 되는 언어는 Java 하나이고, 그 조건은
+    # 아래 `test_java_소스가_들어오면_return_줄바꿈_판정을_다시_한다` 가 기계로 지킨다.
+    ("L8 return 뒤 줄바꿈(언어상 자리가 아니다)", ".kt", "return\n    HttpStatus.FORBIDDEN", False),
 ]
 
 
@@ -1661,21 +1733,59 @@ def test_ownership_403_형태_목록(
     assert _ownership_403_blocks(scanner, tmp_path, suffix, source) is blocks
 
 
-@pytest.mark.parametrize(
-    ("name", "suffix", "source"),
-    [pytest.param(*shape, id=shape[0]) for shape in OWNERSHIP_403_DECLARED_MISSES],
-)
-@pytest.mark.xfail(strict=True, reason="게이트 25 에서 닫지 않은 종류 — 선언된 0")
-def test_ownership_403_선언된_미도달(
-    scanner: ModuleType, tmp_path: Path, name: str, suffix: str, source: str
-) -> None:
-    """닫지 않은 종류를 **시끄럽게** 남긴다.
+def test_ownership_403_은_논리_줄에서_판정한다(scanner: ModuleType) -> None:
+    """**기제를 잰다** (게이트 26 S-1 — 형태 목록 L1~L4 보다 앞에서 빨개진다).
 
-    `strict=True` 라 누가 이 형태를 탐지에 넣으면 `xpass` 로 뒤집혀 실패한다 — 잔여가
-    조용히 사라지지도, 조용히 남지도 않는다. 게이트 23 이 잔여를 선언 없이 남겼다가
-    게이트 25 에서 같은 자리가 다시 발견된 것이 이 장치를 세운 이유다.
+    L1~L4 는 결과를 잰다. 결과는 다른 방식으로도 우연히 맞을 수 있으므로, 규칙이
+    실제로 논리 줄 배선을 타고 있는지를 여기서 따로 고정한다. `multiline` 이 꺼지면
+    인접성 요구가 되살아나 `ktlint` 서식의 403 이 다시 조용해진다.
+
+    `opener` 결속도 함께 본다 — `multiline` 규칙이 `opener` 를 잃으면 **끊긴 논리 줄**
+    (상한 초과)에서 이 규칙만 fail-closed 밖으로 빠진다. 스캐너 적재 시점 자기검사가
+    이미 그것을 막지만, 그 자기검사가 지워지는 편집을 여기서 되짚는다.
     """
-    assert _ownership_403_blocks(scanner, tmp_path, suffix, source)
+    rule = _rule(scanner, "OWNERSHIP-403")
+    assert rule.multiline is True, (  # type: ignore[attr-defined]  # Rule 은 스캐너의 dataclass다
+        "OWNERSHIP-403 이 물리 줄 판정으로 돌아갔다 — ktlint 가 강제하는 다중 줄 인자에서 "
+        "호출 토큰과 상태 이름이 서로 다른 줄에 놓여 인접성이 끊긴다(privacy-gate S-1)."
+    )
+    assert rule.opener is not None, (  # type: ignore[attr-defined]  # 같은 dataclass다
+        "multiline 규칙에서 opener 가 사라졌다 — 끊긴 논리 줄이 이 규칙에 대해서만 조용히 지나간다."
+    )
+    assert scanner._403_CALL in scanner._403_STATUS_SITE, (
+        "opener 와 자리 패턴이 호출 이름 목록의 **사본**을 각각 들게 됐다 — 갈리면 "
+        "늘 조용한 쪽으로 갈린다(게이트 23 ⓐ 가 겪은 형태)."
+    )
+    assert rule.opener.search("ResponseEntity.status("), (  # type: ignore[attr-defined]
+        "opener 가 이 규칙이 보는 호출을 못 알아본다 — 끊긴 논리 줄 판정이 무의미해진다."
+    )
+
+
+def test_java_소스가_들어오면_return_줄바꿈_판정을_다시_한다() -> None:
+    """형태 목록 L8 의 **전제를 기계로 지킨다** (산문 판단을 트리거로 바꾼다).
+
+    `return` 뒤 줄바꿈이 403 자리인지는 **언어에 달렸다.** Kotlin·Python 은 그 자리에서
+    문장이 끝나고(Unit/None), TypeScript 는 ASI 로 같다 — 셋 다 다음 줄은 죽은 식이다.
+    Java 만 다르다: `return\\n  HttpStatus.FORBIDDEN;` 은 진짜 403 자리다.
+
+    스캐너의 `SUFFIXES` 는 `.java` 를 포함하지만 저장소에 `.java` 소스는 **0개**다.
+    그래서 L8 을 `blocks=False` 로 둔 것이고, 그 근거가 사라지는 순간(첫 `.java` 가
+    들어오는 순간) 이 테스트가 빨개져 판정을 다시 하게 만든다. 근거를 주석으로만
+    남기면 다음 사람은 그 조건이 바뀐 줄 모른다.
+    """
+    java_sources = subprocess.run(
+        ["git", "ls-files", "*.java"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.split()
+    assert not java_sources, (
+        f"저장소에 Java 소스가 들어왔다: {java_sources}\n"
+        "  Java 에서는 `return` 뒤 줄바꿈이 **실제 403 자리**다(Kotlin·Python·TS 와 다르다). "
+        "형태 목록 L8 의 `blocks=False` 근거가 사라졌으므로 그 판정을 다시 하라 — "
+        "닫으려면 논리 줄 결합기가 값 산출 키워드 뒤에서도 이어 붙여야 한다."
+    )
 
 
 def test_403_식별자_탐지가_이름_열거가_아니다(scanner: ModuleType, tmp_path: Path) -> None:
