@@ -340,10 +340,10 @@ Phase 3에서 Kotlin 테스트를 쓸 때 "이미 선례가 있어 조항이 확
 > |---|---|---|
 > | **X-J2**(계약 파일 직접 파싱) | **실행 소스 실재** | `support/ContractSpec.kt` — 명세 §4-1 의 12개 노드 전부 호출, 계약 값 하드코딩 0 |
 > | **X-F11·X-F12·X-F13** | **실행 소스 실재** | `AuthContractTest` S-4~S-8. 원장 X6 강제자 축의 마감 조건(해당 DTO 구현 커밋)도 충족 |
-> | **X-F9** | **부분** — `email` 케이스만 | 같은 파일 S-5. `name` 은 작업 공간 단위, `edited_text` 는 Phase 4 |
+> | **X-F9** | **부분** — `email`·`name` | `AuthContractTest` S-5 · `WorkspaceContractTest` WC-7(+WC-8). `edited_text` 는 Phase 4 |
 > | #1·#2·#3 · X-A1·A2·A4·A5 · X-C1~C4·C8 · X-D1·D2·D2b · X-E1·E2 · X-I1·I2 | **실행 소스 실재** | `AuthContractTest` · `AuthEndpointReachTest` · `AuthUnavailableContractTest` · `Argon2PasswordHasherTest` |
-> | **X-A3 · X-B1 · X-B2** | **대상 없음** — auth 이월 | 인증이 필요하면서 입력·소유권이 있는 엔드포인트가 auth 셋에 없다. 작업 공간 단위로 |
-> | #10~#13(작업 공간) · X-F10 | **계획** | 해당 엔드포인트 미구현 |
+> | **X-A3 · X-B1 · X-B2** | **실행 소스 실재** (2026-08-19 작업 공간 단위에서 마감) | `WorkspaceEndpointReachTest` — X-A3 는 **두 축**(WC-12 본문 · WR-8 경로 변수), X-B1 은 WR-3·WD-2(`403 아님`을 명시 단언), X-B2 는 WR-4·WD-3 |
+> | #10~#13(작업 공간) · X-F10 | **실행 소스 실재** | `WorkspaceContractTest`(C-M) · `WorkspaceEndpointReachTest`(C-R·C-I) · `AuthUnavailableContractTest`(WL-7). 명세 36케이스 전건 대응 — X-F10 은 WC-4 |
 >
 > **음성 대조로 결속을 확인했다**(계약 값을 바꾸면 해당 케이스가 빨강 — 9회 전건).
 > 다만 **계약 파일이 Gradle 테스트 태스크의 선언 입력이 아니어서** 계약만 바뀐 변경은 태스크가
