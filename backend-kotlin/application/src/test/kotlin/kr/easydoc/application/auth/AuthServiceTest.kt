@@ -6,6 +6,8 @@ import kr.easydoc.core.exceptions.InvalidInputException
 import kr.easydoc.core.user.PasswordHash
 import kr.easydoc.core.user.StoredUser
 import kr.easydoc.core.user.User
+import kr.easydoc.core.workspace.Workspace
+import kr.easydoc.core.workspace.WorkspaceListing
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.DisplayName
@@ -289,6 +291,36 @@ private class RecordingWorkspaceRepository(private val transaction: RecordingTra
         createdFor += userId
         depthAtCreation = transaction.depth
         return UUID.randomUUID()
+    }
+
+    // 아래 다섯은 작업 공간 유스케이스의 것이고 인증은 부르지 않는다. `null`·빈 목록을
+    // 돌려주는 대신 **끊는다** — 조용한 기본값을 두면 인증 코드가 이것들을 부르기
+    // 시작해도 이 테스트가 초록으로 남는다.
+    override fun listOwned(ownerId: UUID): List<WorkspaceListing> = error(NOT_AUTH_SCOPE)
+
+    override fun create(
+        ownerId: UUID,
+        name: String,
+    ): Workspace = error(NOT_AUTH_SCOPE)
+
+    override fun rename(
+        ownerId: UUID,
+        workspaceId: UUID,
+        name: String,
+    ): Workspace = error(NOT_AUTH_SCOPE)
+
+    override fun lockForDeletion(
+        ownerId: UUID,
+        workspaceId: UUID,
+    ): WorkspaceDeletionState = error(NOT_AUTH_SCOPE)
+
+    override fun delete(
+        ownerId: UUID,
+        workspaceId: UUID,
+    ): Boolean = error(NOT_AUTH_SCOPE)
+
+    private companion object {
+        const val NOT_AUTH_SCOPE = "인증 유스케이스가 부르지 않는 작업 공간 연산이다"
     }
 }
 

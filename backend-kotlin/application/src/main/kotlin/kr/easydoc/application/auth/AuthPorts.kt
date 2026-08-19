@@ -3,14 +3,23 @@ package kr.easydoc.application.auth
 import kr.easydoc.core.user.PasswordHash
 import kr.easydoc.core.user.StoredUser
 import kr.easydoc.core.user.User
+import kr.easydoc.core.workspace.Workspace
+import kr.easydoc.core.workspace.WorkspaceListing
 import java.util.UUID
 
-// 인증 유스케이스가 바깥 세계에 요구하는 것들 — **포트 선언**.
+// 유스케이스가 바깥 세계에 요구하는 것들 — **포트 선언**.
 //
 // `application` 은 `infrastructure` 를 의존하지 않는다(계획 §3.2). 구현은 JDBC·Argon2·
 // JWT 를 아는 `infrastructure` 가 제공하고, 이 모듈은 인터페이스만 안다. Python 이
 // `app/services` 가 `Protocol` 로 저장소 계약을 선언하고 `app/repositories`
 // 가 그것을 만족시키던 구조와 같은 자리다.
+//
+// **인증 전용 파일이 아니다.** [WorkspaceRepository]·[TransactionRunner] 는 작업 공간
+// 유스케이스도 함께 쓴다. 파일이 `auth` 패키지에 남은 것은 auth 단위가 이 자리를
+// *"목록·이름 변경·삭제는 다음 작업 단위에서 이 인터페이스에 붙는다"* 로 예고했기
+// 때문이고, 그 예고를 따르는 대신 파일 이름이 담는 범위를 여기서 넓혀 적는다 — 선언한
+// 범위와 실제 내용이 갈리는 것이 이 저장소가 반복해 고쳐 온 형태다. 패키지 재배치는
+// 개선 후보로 남긴다(리뷰를 마친 auth 코드의 import 를 흔들 값어치가 지금은 없다).
 
 /** 사용자 저장소. 이메일은 **정규화된 값**으로만 들어온다([EmailNormalization]). */
 interface UserRepository {
@@ -40,15 +49,79 @@ interface UserRepository {
 }
 
 /**
- * 작업 공간 저장소 — 지금은 가입이 쓰는 기본 작업 공간 생성 하나뿐이다.
+ * 작업 공간 저장소.
  *
- * 목록·이름 변경·삭제는 다음 작업 단위에서 이 인터페이스에 붙는다. 별도 포트를 새로
- * 만들지 않는 이유는 같은 테이블의 소유자가 둘이 되는 것을 막기 위해서다.
+ * **소유자 조건이 인터페이스에 박혀 있다.** 모든 메서드가 `ownerId` 를 받고 구현은 그것을
+ * `WHERE` 절에 넣는다 — "먼저 조회하고 나서 소유자를 비교한다"는 형태를 아예 만들 수
+ * 없게 하려는 것이다. 그 형태는 비교를 잊으면 조용히 남의 자원을 내주고, 잊지 않아도
+ * 존재 여부가 응답 시간으로 새는 경로를 연다(계약 소유권 은닉 조항).
  */
 interface WorkspaceRepository {
     /** 가입 트랜잭션 안에서 기본 작업 공간을 만든다. */
     fun createDefault(userId: UUID): UUID
+
+    /**
+     * 소유한 작업 공간을 **만든 순서로** 돌려준다 — 계약이 *"첫 번째 항목이 기본 작업
+     * 공간이다(가장 먼저 만든 것). 이 순서가 계약이다"* 로 못박았다.
+     */
+    fun listOwned(ownerId: UUID): List<WorkspaceListing>
+
+    /**
+     * 새 작업 공간을 만든다. 같은 사용자 안에서 이름이 겹치면 `ConflictException`.
+     *
+     * **선조회로 중복을 판정하지 않는다** — 조회와 삽입 사이에 다른 요청이 끼어들 수 있고,
+     * 유일성을 지키는 것은 결국 `uq_workspaces_user_id_name` 이다.
+     */
+    fun create(
+        ownerId: UUID,
+        name: String,
+    ): Workspace
+
+    /**
+     * 이름을 바꾼다. **내 것이 아니거나 없으면 `null`** — 둘을 구분하지 않는다.
+     *
+     * 구분하면 호출자가 그 차이를 응답에 실을 수 있게 되고, 계약이 숨기라고 한 것이
+     * 정확히 그 차이다. 이름이 겹치면 `ConflictException` 이다 — 소유 조건이 `WHERE` 에
+     * 있으므로 남의 자원에서는 유일성 위반이 애초에 일어나지 않고 `null` 이 나간다.
+     */
+    fun rename(
+        ownerId: UUID,
+        workspaceId: UUID,
+        name: String,
+    ): Workspace?
+
+    /**
+     * 삭제 판정에 필요한 상태를 읽고 **그 사용자의 작업 공간 행을 잠근다**.
+     *
+     * 잠그는 이유는 「마지막 하나」 판정이 행 하나가 아니라 **집합**에 걸리기 때문이다.
+     * 대상 행만 잠그면 같은 사용자의 다른 작업 공간을 지우는 요청과 동시에 돌아 둘 다
+     * "아직 둘 있다"를 보고 통과하고, 결과가 0 개가 된다. 없거나 내 것이 아니면 `null`.
+     *
+     * 호출자가 트랜잭션 안에서 불러야 한다 — 밖에서 부르면 잠금이 즉시 풀려 아무것도
+     * 지키지 못한다.
+     */
+    fun lockForDeletion(
+        ownerId: UUID,
+        workspaceId: UUID,
+    ): WorkspaceDeletionState?
+
+    /** 지운다. 지운 행이 없으면 `false`. */
+    fun delete(
+        ownerId: UUID,
+        workspaceId: UUID,
+    ): Boolean
 }
+
+/**
+ * 삭제를 거절해야 하는지 판정할 재료. 계약 `DELETE /workspaces/{workspace_id}` 의 409 두 갈래다.
+ *
+ * @property ownedWorkspaceCount 그 사용자의 작업 공간 수. 1 이면 대상이 마지막 하나다.
+ * @property documentCount 대상 작업 공간에 남은 문서 수.
+ */
+data class WorkspaceDeletionState(
+    val ownedWorkspaceCount: Int,
+    val documentCount: Int,
+)
 
 /**
  * 비밀번호 해시 계산·검증·재해시 판정.
