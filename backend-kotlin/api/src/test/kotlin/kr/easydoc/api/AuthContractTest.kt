@@ -179,11 +179,21 @@ class AuthContractTest {
 
         assertDeclaredStatus(domainRule, UNPROCESSABLE_CONTENT, SIGNUP_PATH, POST)
         assertDeclaredStatus(schemaLayer, UNPROCESSABLE_CONTENT, SIGNUP_PATH, POST)
-        // 계약이 union 으로 선언한 두 갈래가 실제로 둘 다 관측된다.
-        assertThat(ContractSpec.errorDetailUnionTypes()).containsExactlyInAnyOrder("string", "array")
-        val shapes = listOf(detailOf(domainRule), detailOf(schemaLayer))
-        assertThat(shapes.count { it is String }).isEqualTo(1)
-        assertThat(shapes.count { it is List<*> }).isEqualTo(1)
+
+        // 계약이 union 으로 선언한 갈래를 **읽어서** 기대값으로 쓴다. 「string·array」를 코드에
+        // 적으면 계약이 갈래를 바꿔도 복제본이 옛 값으로 통과한다(게이트 23 C-5).
+        val declared = ContractSpec.errorDetailUnionTypes()
+        val observed = listOf(detailOf(domainRule), detailOf(schemaLayer)).map { ContractSpec.observedDetailType(it) }
+
+        assertThat(declared)
+            .withFailMessage("계약이 같은 갈래를 두 번 선언했다: %s", declared)
+            .doesNotHaveDuplicates()
+        assertThat(observed)
+            .withFailMessage(
+                "계약이 선언한 갈래 %s 와 실제 관측 %s 가 다르다 — 선언한 갈래가 관측되지 않거나, 선언에 없는 모양이 나갔다.",
+                declared,
+                observed,
+            ).containsExactlyInAnyOrderElementsOf(declared)
     }
 
     @Test

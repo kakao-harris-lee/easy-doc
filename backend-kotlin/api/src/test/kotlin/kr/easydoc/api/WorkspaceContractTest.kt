@@ -201,14 +201,24 @@ class WorkspaceContractTest {
     @Test
     @DisplayName("WC-10 같은 422 에서 문자열 모양과 배열 모양이 모두 나온다 (X-C3)")
     fun `422 의 두 모양이 모두 나온다`() {
-        val union = ContractSpec.errorDetailUnionTypes()
+        // 종전 판은 `hasSize(2)` 였다. 개수만 보면 계약이 `string` 을 `integer` 로 바꿔도
+        // 통과하고, 파서가 미지원 갈래를 버리던 시절에는 갈래 **추가**도 통과했다(C-5).
+        // 선언 집합과 관측 집합을 그대로 맞댄다.
+        val declared = ContractSpec.errorDetailUnionTypes()
 
         val stringShaped = createWorkspace(newOwner(), "   ")
         val arrayShaped = postJson(COLLECTION_PATH, newOwner(), "{}")
+        val observed = listOf(detailOf(stringShaped), detailOf(arrayShaped)).map { ContractSpec.observedDetailType(it) }
 
-        assertThat(union).hasSize(2)
-        assertThat(detailOf(stringShaped)).isInstanceOf(String::class.java)
-        assertThat(detailOf(arrayShaped)).isInstanceOf(List::class.java)
+        assertThat(declared)
+            .withFailMessage("계약이 같은 갈래를 두 번 선언했다: %s", declared)
+            .doesNotHaveDuplicates()
+        assertThat(observed)
+            .withFailMessage(
+                "계약이 선언한 갈래 %s 와 실제 관측 %s 가 다르다 — 선언한 갈래가 관측되지 않거나, 선언에 없는 모양이 나갔다.",
+                declared,
+                observed,
+            ).containsExactlyInAnyOrderElementsOf(declared)
     }
 
     @Test

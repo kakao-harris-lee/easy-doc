@@ -382,11 +382,55 @@ object ContractSpec {
         at("components", "schemas", schema, "additionalProperties") as? Boolean
             ?: error("$schema 의 additionalProperties 가 불리언이 아니다")
 
-    /** P-10. `ErrorResponse.detail` union 의 두 갈래 `type`. */
+    /**
+     * P-10. `ErrorResponse.detail` union 이 선언한 갈래의 `type` — **선언된 순서 그대로, 전부**.
+     *
+     * 종전 판은 `filterIsInstance<Map<*, *>>()` 로 **읽을 줄 모르는 갈래를 조용히 버렸다.**
+     * 그 방향은 소비자 단언으로 막히지 않는다(게이트 23 codex C-5): 갈래가 **사라지는**
+     * 손상은 개수가 줄어 잡히지만, 스칼라 같은 미지원 노드를 **더하는** 손상은 그 갈래만
+     * 조용히 없어져 목록이 그대로라 통과한다. `requiredOf`·`pathParameters` 가 X-4 에서
+     * 받은 처방과 같은 형태로 끊는다 — 몇 번째 갈래인지와 실제 노드를 메시지에 담는다.
+     */
     fun errorDetailUnionTypes(): List<String> =
         list("components", "schemas", "ErrorResponse", "properties", "detail", "oneOf")
-            .filterIsInstance<Map<*, *>>()
-            .map { it["type"]?.toString() ?: error("oneOf 갈래에 type 이 없다") }
+            .mapIndexed { index, branch ->
+                val declaration =
+                    branch as? Map<*, *>
+                        ?: error(
+                            "ErrorResponse.detail 의 oneOf[$index] 가 매핑이 아니다 — " +
+                                "이 파서가 읽을 수 있는 형태가 아니다: $branch",
+                        )
+                declaration["type"]?.toString()
+                    ?: error("ErrorResponse.detail 의 oneOf[$index] 에 type 이 없다: $declaration")
+            }
+
+    /**
+     * JSON 값 하나가 **어느 OpenAPI 타입 갈래로 관측됐는지**.
+     *
+     * 계약이 선언한 갈래 이름과 **같은 어휘**로 돌려주는 것이 요점이다. 소비자가
+     * `isInstanceOf(String::class.java)` 로 단언하면 「string 갈래」라는 계약의 말과 JVM
+     * 타입의 대응이 테스트 코드에 복제되고, 계약이 갈래를 바꿔도 그 복제본은 따라가지 않는다.
+     *
+     * **모르는 모양이면 끊는다.** 새 갈래가 계약에 생겼는데 여기 대응이 없으면 조용히
+     * 통과시키는 대신 실패해서, 대응을 적는 diff 가 리뷰에 올라가게 한다.
+     */
+    fun observedDetailType(value: Any?): String =
+        when (value) {
+            is String -> {
+                "string"
+            }
+
+            is List<*> -> {
+                "array"
+            }
+
+            else -> {
+                error(
+                    "detail 이 계약의 어느 갈래로도 읽히지 않는다: ${value?.let { "${it::class.java.name}" } ?: "null"}. " +
+                        "계약에 갈래가 늘었다면 이 대응도 함께 늘려라.",
+                )
+            }
+        }
 
     /** P-11. 스키마 속성의 `const`. */
     fun schemaPropertyConst(
