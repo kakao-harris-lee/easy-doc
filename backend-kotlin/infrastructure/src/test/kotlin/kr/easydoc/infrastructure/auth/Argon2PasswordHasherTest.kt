@@ -212,8 +212,10 @@ class Argon2PasswordHasherTest {
 
     /** 클래스와 그 중첩 타입이 들고 있는 **정적 문자열 값** 전부. `private const` 도 읽는다. */
     private fun stringConstantsOf(type: Class<*>): List<String> =
-        (type.declaredFields.asSequence() + type.declaredClasses.asSequence().flatMap { it.declaredFields.asSequence() })
-            .filter { Modifier.isStatic(it.modifiers) && it.type == String::class.java }
+        (
+            type.declaredFields.asSequence() +
+                type.declaredClasses.asSequence().flatMap { it.declaredFields.asSequence() }
+        ).filter { Modifier.isStatic(it.modifiers) && it.type == String::class.java }
             .mapNotNull { field ->
                 runCatching {
                     field.isAccessible = true

@@ -325,15 +325,12 @@ private fun bodyReadItem(exception: HttpMessageNotReadableException): Validation
             ?: return ValidationErrorItem(listOf(BODY), "JSON decode error", "json_invalid")
 
     val loc = listOf(BODY) + mismatch.path.mapNotNull { it.propertyName }
-    if (mismatch is InvalidNullException) {
-        return ValidationErrorItem(loc, FIELD_REQUIRED_MESSAGE, "missing")
+    return if (mismatch is InvalidNullException) {
+        ValidationErrorItem(loc, FIELD_REQUIRED_MESSAGE, "missing")
+    } else {
+        val label = typeLabelOf(mismatch.targetType)
+        ValidationErrorItem(loc = loc, msg = "Input should be a valid ${label.second}", type = "${label.first}_type")
     }
-    val label = typeLabelOf(mismatch.targetType)
-    return ValidationErrorItem(
-        loc = loc,
-        msg = "Input should be a valid ${label.second}",
-        type = "${label.first}_type",
-    )
 }
 
 /**
