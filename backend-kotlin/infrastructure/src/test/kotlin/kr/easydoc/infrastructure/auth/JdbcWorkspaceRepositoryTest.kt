@@ -47,6 +47,8 @@ class JdbcWorkspaceRepositoryTest {
     private lateinit var transaction: SpringTransactionRunner
     private lateinit var service: WorkspaceService
     private lateinit var jdbcClient: JdbcClient
+    private lateinit var counting: CountingDataSource
+    private lateinit var countedWorkspaces: JdbcWorkspaceRepository
 
     @BeforeAll
     fun prepare() {
@@ -64,6 +66,10 @@ class JdbcWorkspaceRepositoryTest {
         workspaces = JdbcWorkspaceRepository(jdbcClient)
         transaction = SpringTransactionRunner(TransactionTemplate(DataSourceTransactionManager(dataSource)))
         service = WorkspaceService(workspaces, transaction)
+
+        // 구조 축 계측용 두 번째 저장소. 같은 DB 를 보되 나가는 SQL 문 수를 센다.
+        counting = CountingDataSource(dataSource())
+        countedWorkspaces = JdbcWorkspaceRepository(JdbcClient.create(counting))
     }
 
     // ================================================================ 소유 범위
@@ -166,6 +172,43 @@ class JdbcWorkspaceRepositoryTest {
         assertThat(workspaces.listOwned(owner)).hasSize(1)
     }
 
+    /**
+     * **X-3ⓒ — 「같은 DB 왕복 구조」를 구조로 강제한다.**
+     *
+     * 소유권 은닉의 시간 축 게이트가 잡지 못하는 것이 여기 있다. 소유 조건을 SQL `WHERE`
+     * 에서 빼고 **읽은 뒤 Kotlin 에서 비교**하도록 바꾼 변이를 일회용 worktree 에서 돌린
+     * 실측: 응답 시간 비 1.013 · 1.090 · 1.051 — 문턱 1.5 는 물론 종전 2.0 에도 닿지
+     * 않았다. 인덱스 적중과 불발의 차이가 밀리초 응답의 잡음에 묻힌다.
+     *
+     * 그 변이가 실제로 바꾸는 것은 **문장의 수**다. 지금 구현은 소유 판정과 갱신을
+     * `UPDATE … WHERE id = ? AND user_id = ? RETURNING …` **한 문장**으로 끝내므로,
+     * 없는 자원·남의 자원·내 자원 셋이 전부 같은 왕복을 돈다. 변이는 내 자원에서만
+     * 두 문장이 되어(SELECT 로 소유자를 읽고 UPDATE) 이 단언이 빨개진다.
+     *
+     * **셋이 같다」만으로는 부족해 개수 자체를 못박는다** — 셋 다 두 문장이 되는 구현도
+     * 「같다」를 만족한다. 그 형태는 소유 판정이 갱신과 분리됐다는 뜻이라 잡아야 한다.
+     */
+    @Test
+    @DisplayName("이름 변경이 소유 결과와 무관하게 같은 수의 SQL 문을 낸다 — 「같은 DB 왕복 구조」")
+    fun `이름 변경의 왕복 구조가 소유 여부로 갈리지 않는다`() {
+        val owner = newUser()
+        val stranger = newUser()
+        val mine = workspaces.create(owner, "내 것")
+        val others = workspaces.create(stranger, "남의 것")
+
+        val absentCount = counting.countStatements { countedWorkspaces.rename(owner, UUID.randomUUID(), "새 이름 1") }
+        val othersCount = counting.countStatements { countedWorkspaces.rename(owner, others.id, "새 이름 2") }
+        val mineCount = counting.countStatements { countedWorkspaces.rename(owner, mine.id, "새 이름 3") }
+
+        assertThat(listOf(absentCount, othersCount, mineCount))
+            .withFailMessage(
+                "소유 결과에 따라 SQL 문 수가 갈린다 — 없음=%d 타인=%d 내것=%d. 소유 조건이 WHERE 를 떠났다는 신호다",
+                absentCount,
+                othersCount,
+                mineCount,
+            ).containsExactly(RENAME_STATEMENTS, RENAME_STATEMENTS, RENAME_STATEMENTS)
+    }
+
     @Test
     @DisplayName("없는 자원과 남의 자원이 같은 NotFound 로 끝난다")
     fun `삭제도 소유권을 숨긴다`() {
@@ -251,6 +294,9 @@ class JdbcWorkspaceRepositoryTest {
 
         /** 형태만 맞으면 되는 더미 PHC — 이 파일은 비밀번호 검증을 재지 않는다. */
         val FIXTURE_HASH = PasswordHash("\$argon2id\$v=19\$m=1,t=1,p=1\$c2FsdA\$aGFzaA")
+
+        /** 이름 변경이 도는 SQL 문 수. 소유 판정과 갱신이 한 문장이라 1 이다. */
+        const val RENAME_STATEMENTS = 1
 
         const val CONCURRENT_DELETERS = 2
         const val BARRIER_TIMEOUT_SECONDS = 10L
