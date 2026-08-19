@@ -261,7 +261,14 @@ object ContractSpec {
 
     fun authStrings(key: String): List<String> = strings("x-auth", key)
 
-    private val HTTP_METHODS = setOf("get", "post", "put", "patch", "delete", "head", "options", "trace")
+    /**
+     * 계약이 오퍼레이션 키로 쓰는 HTTP 메서드 어휘(소문자).
+     *
+     * 밖으로 여는 이유는 하나다 — 구현 쪽 매핑을 계약과 **같은 단위**로 투영하려면 그
+     * 어휘가 한 곳에서 와야 한다. 두 벌이 되면 계약에 메서드가 늘어난 날 구현 쪽 투영이
+     * 조용히 옛 어휘로 남는다(codex C-1 과 같은 형태의 결함이다).
+     */
+    val HTTP_METHODS: Set<String> = setOf("get", "post", "put", "patch", "delete", "head", "options", "trace")
 }
 
 /** 계약이 요청 필드 하나에 정한 것 — 어느 층이 어느 축으로 무엇을 재고 무슨 문구를 내는가. */
