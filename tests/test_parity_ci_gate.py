@@ -1312,6 +1312,50 @@ def test_본류_회귀_목록이_비교기의_게이트_helper_전부를_덮는�
         )
 
 
+def test_동적_조회_탐지가_실제로_잡는다(tmp_path: Path) -> None:
+    """탐지기의 **양성 경로** — `getattr` 를 넣은 모듈을 먹이면 목록이 비지 않는다 (게이트 20 H-1).
+
+    위 본류 테스트는 `_root_helper_calls` 의 둘째 값을 **오직 비어 있음으로만** 단언한다.
+    그래서 AST 순회에 결함이 있어 **무엇도 잡지 못해도** 그 단언이 공허하게 참이다 —
+    집합의 내용은 `EXPECTED_DYNAMIC_LOOKUP_NAMES` 가 고정하지만, 그 집합을 쓰는 기제가
+    발화하는지는 아무 데서도 재지 않았다.
+
+    새 기제를 더하는 것이 아니라 **이미 있는 탐지기가 작동하는지**를 한 번 재는 것이다.
+    비교기 자체를 고치지 않고, 같은 본류 함수 이름을 가진 대역 모듈을 만들어 먹인다.
+    """
+    probe = tmp_path / "dynamic_lookup_probe.py"
+    probe.write_text(
+        "def main():\n"
+        "    handler = getattr(main, '없는이름', None)\n"
+        "    return handler\n"
+        "\n"
+        "def compare_file():\n"
+        "    import json\n"
+        "    return json\n",
+        encoding="utf-8",
+    )
+    spec = importlib.util.spec_from_file_location("dynamic_lookup_probe", probe)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules["dynamic_lookup_probe"] = module
+    spec.loader.exec_module(module)
+
+    _calls, dynamic = _root_helper_calls(module)
+
+    # 두 형태를 **둘 다** 잡아야 한다. 하나만 잡으면 나머지 형태로 우회할 수 있다.
+    assert any("getattr" in entry for entry in dynamic), (
+        f"`getattr(...)` 를 담은 본류 함수에서 동적 조회를 잡지 못했다: {dynamic} — "
+        "탐지 집합은 고정돼 있는데 그 집합을 쓰는 기제가 발화하지 않는다"
+    )
+    assert any("import" in entry for entry in dynamic), (
+        f"함수 안 `import` 문을 잡지 못했다: {dynamic}"
+    )
+    # 본류 함수가 아닌 자리는 대상이 아니다 — 잡는 범위가 넓어지면 오탐으로 무력해진다.
+    assert all(entry.startswith(("main:", "compare_file:")) for entry in dynamic), (
+        f"본류 함수 밖의 형태까지 잡았다: {dynamic}"
+    )
+
+
 # --- 정본(BUILDERS) 쪽 우회는 CI 셸이 막는다 -------------------------------
 #
 # 위 넷은 비교기 함수를 직접 부르지만, 정본 개수는 셸이 `--list` 출력으로 센다. 그래서
