@@ -132,6 +132,50 @@ class SensitiveToStringReachTest {
     }
 
     @Test
+    @DisplayName("`toString()` 을 손으로 쓴 **일반 class** 도 값을 찍지 않는다 (R-10)")
+    fun `일반 class 의 손으로 쓴 toString 이 값을 찍지 않는다`() {
+        // ## 왜 이 갈래가 따로 있는가 (게이트 25 R-10)
+        //
+        // 위 두 케이스는 **컴파일러가 `toString()` 을 만들어 주는 선언**만 본다. 그 경계 밖의
+        // 일반 class 는 재정의가 없으면 `Any.toString()`(클래스명@해시)이라 **샐 수 없고**,
+        // 재정의가 있으면 그 안에서 무엇을 찍는지 아무도 안 보고 있었다. `EncryptedContent` 가
+        // 첫 사례다. 그래서 후보를 「재정의를 **선언한** 일반 class」로 좁힌다 — 좁힘의 근거가
+        // 사유가 아니라 구조라 면제 조항이 아니다.
+        val probes = probes()
+
+        // 분모가 0 이면 이 갈래는 아무 데도 도달하지 않는다. 오늘 실제로 훑는 수를 함께 남긴다.
+        assertThat(probes.generalClassesWithCustomToString)
+            .withFailMessage {
+                "`toString()` 을 손으로 쓴 일반 class 를 하나도 찾지 못했다 — 이 케이스가 0건을 훑고 통과한다.\n" +
+                    "  적재 필터나 후보 선정이 조용히 좁아졌는지 보라."
+            }.isNotEmpty()
+
+        assertThat(probes.undecidableGeneralClasses)
+            .withFailMessage {
+                "아래 일반 class 는 후보인데 표본을 만들지 못했다 — **판정 불가는 통과가 아니다**:\n" +
+                    probes.undecidableGeneralClasses.joinToString("\n") { "  - $it" } +
+                    "\n  `GeneratedToStringProbes.slotFor` 에 갈래를 더하거나, 그 타입의 생성자를 " +
+                    "표본으로 만들 수 있는 형태로 바꿔라."
+            }.isEmpty()
+
+        val leaking = probes.generalClassProbes.filter { it.leaks() }
+        assertThat(leaking.map { it.type.qualifiedName })
+            .withFailMessage {
+                "아래 일반 class 의 손으로 쓴 toString() 이 사용자 콘텐츠·개인정보를 그대로 찍는다:\n" +
+                    leaking.joinToString("\n") { "  - $it" } +
+                    "\n  값 대신 길이·표식을 내라(`Secret`·`EncryptedContent` 가 예시다)."
+            }.isEmpty()
+
+        // **오늘 민감 후보가 몇 건인지**를 기록으로 남긴다. 0 이어도 위 단언은 살아 있고,
+        // 민감 필드를 든 일반 class 가 하나 생기는 순간 여기에 들어와 검사받는다.
+        println(
+            "R-10 일반 class 축 — 재정의 선언 ${probes.generalClassesWithCustomToString.size}건 중 " +
+                "민감 후보 ${probes.generalClassProbes.size}건: " +
+                probes.generalClassProbes.map { it.type.simpleName },
+        )
+    }
+
+    @Test
     @DisplayName("소스에 선언된 data·value class 가 전부 탐지 범위에 든다 — 제외가 검사받는다")
     fun `소스에 선언된 타입이 전부 탐지 범위에 든다`() {
         val declared = ProductClasses.declaredInMainSources()
@@ -140,9 +184,17 @@ class SensitiveToStringReachTest {
         // 같은 이름의 DTO 를 넣어 확인했다(옛 판 초록 / 새 판 빨강).
         val loaded = ProductClasses.onTestRuntimeClasspath().map { it.java.name }.toSet()
 
-        assertThat(declared)
-            .withFailMessage { "`*/src/main/kotlin` 에서 선언을 하나도 찾지 못했다 — 소스 대조가 0건을 훑고 통과한다" }
-            .hasSizeGreaterThanOrEqualTo(MIN_SOURCE_DECLARATIONS)
+        assertThat(declared.size)
+            .withFailMessage {
+                "`*/src/main/kotlin` 의 `data`/`value class` 선언 수가 기록과 다르다 " +
+                    "(기대 $EXPECTED_SOURCE_DECLARATIONS / 실제 ${declared.size}).\n" +
+                    "  **늘었다면** 새 타입을 더한 것이다 — 이 숫자를 함께 올려라. 그 한 줄이 " +
+                    "「이번에 무엇이 검사 범위에 들어왔는가」를 리뷰에 드러낸다.\n" +
+                    "  **줄었다면** 파서가 선언을 놓치기 시작했거나 모듈이 스캔에서 빠진 것이다. " +
+                    "숫자를 내리기 전에 `SourceScanFormsProbe` 부터 보라.\n" +
+                    "  현재 선언 목록:\n" +
+                    declared.sortedBy { it.binaryName }.joinToString("\n") { "    ${it.binaryName}" }
+            }.isEqualTo(EXPECTED_SOURCE_DECLARATIONS)
 
         // ── 선언 쪽을 **다중집합**으로 센다 (게이트 25 후속) ────────────────────────
         //
@@ -221,8 +273,22 @@ class SensitiveToStringReachTest {
          */
         const val MIN_PRODUCTION_CLASSES = 60
 
-        /** 같은 이유의 소스 쪽 하한. 실측 44 건(2026-08-19) 기준으로 절반쯤에 둔다. */
-        const val MIN_SOURCE_DECLARATIONS = 20
+        /**
+         * 소스 쪽은 **하한이 아니라 정확 일치**다 (게이트 25 U-1).
+         *
+         * 종전 값은 하한 20 인데 실측이 44~46 이었다 — **24건까지 조용히 잃어도** 울리지 않는다는
+         * 뜻이고, 그 여유가 정확히 파서 미탐(`fun interface`·비ASCII 이름·중첩 모듈)이
+         * 겹쳐 쌓일 수 있는 크기였다. 하한은 「0 에 가까운 상태」만 막고, 이 게이트가 실제로
+         * 겪은 실패는 **0 이 아니라 조금 줄어드는 것**이었다.
+         *
+         * 값 46 은 2026-08-19 게이트 25 조치 시점의 실측이다. 리뷰 산출물이 적은 44 는 crypto
+         * 커밋(`9c7aa03`) 이전 시점의 수라 오늘 값과 다르다 — 그 차이 자체가 이 상수를 하한이
+         * 아니라 정확 일치로 두는 이유다(그때는 「44 이상」이라 아무도 눈치채지 못했다).
+         *
+         * 정확 일치의 비용은 새 타입을 더할 때 이 숫자를 함께 고치는 것이다. 그 한 줄이
+         * 리뷰에 「이번에 무엇이 검사 범위에 들어왔는가」를 드러내므로 비용이 아니라 값이다.
+         */
+        const val EXPECTED_SOURCE_DECLARATIONS = 46
 
         /**
          * 민감 판정이 반드시 닿아야 하는 타입 — **바닥**이다.

@@ -1,6 +1,7 @@
 package kr.easydoc.api.support
 
 import kr.easydoc.core.privacy.UserContent
+import java.lang.reflect.Modifier
 import java.math.BigDecimal
 import java.time.Duration
 import java.time.Instant
@@ -79,6 +80,52 @@ class GeneratedToStringProbes(
             .mapNotNull(::wrapperProbe)
     }
 
+    /**
+     * **`data`/`value` 가 아닌 일반 class 중 `toString()` 을 손으로 쓴 것** (게이트 25 R-10).
+     *
+     * ## 왜 이 갈래가 따로 있는가
+     *
+     * 위 두 목록은 **컴파일러가 `toString()` 을 만들어 주는 선언**만 본다. 그 경계 밖에도
+     * 사용자 콘텐츠를 든 타입이 있고(`EncryptedContent` 가 첫 사례다), 그쪽은 재정의가
+     * 있느냐 없느냐로 위험이 갈린다.
+     *
+     * - **재정의가 없으면 샐 수 없다** — `Any.toString()` 은 `클래스명@해시` 만 낸다.
+     * - **재정의가 있으면 그 안에서 무엇을 찍는지는 아무도 안 보고 있었다.**
+     *
+     * 그래서 후보를 「재정의를 **선언한** 일반 class」로 좁힌다. 좁힘이 사유가 아니라 성질에
+     * 근거하므로 면제 조항이 아니다 — 재정의 없는 클래스는 **구조적으로** 값을 낼 수 없다.
+     *
+     * ## 판정 불가를 통과로 세지 않는다
+     *
+     * 표본을 만들 수 없는 후보는 [undecidableGeneralClasses] 에 남고, 호출자가 그 목록이
+     * 비어 있는지 함께 단언한다. 조용히 건너뛰면 그 타입은 검사받은 것과 구분되지 않는다.
+     */
+    val generalClassProbes: List<ToStringProbe> by lazy {
+        generalClassCandidates.mapNotNull { it.probe }
+    }
+
+    /** 후보이긴 한데 표본을 만들지 못한 일반 class 와 그 사유. **비어 있어야 한다.** */
+    val undecidableGeneralClasses: List<String> by lazy {
+        generalClassCandidates.mapNotNull { it.failure }
+    }
+
+    /**
+     * 「`toString()` 을 손으로 쓴 일반 class」 전부. 후보 선정이 실제로 무언가를 훑는지
+     * 확인하는 분모다 — 0 이면 이 갈래는 아무 데도 도달하지 않는다.
+     */
+    val generalClassesWithCustomToString: List<KClass<*>> by lazy {
+        classes
+            .filter { !it.isData && !it.isValue }
+            // 자바 반사로 거른다. `KClass.objectInstance` 는 접근 제한 필드에서 예외를 던진다.
+            .filter { !it.java.isEnum && !it.java.isInterface && !Modifier.isAbstract(it.java.modifiers) }
+            .filter { declaresToString(it) }
+            .sortedBy { it.qualifiedName }
+    }
+
+    private val generalClassCandidates: List<GeneralCandidate> by lazy {
+        generalClassesWithCustomToString.mapNotNull(::generalCandidate)
+    }
+
     // ---------------------------------------------------------------- 후보
 
     private fun dataClassProbe(type: KClass<*>): ToStringProbe? {
@@ -109,6 +156,39 @@ class GeneratedToStringProbes(
             }
         }
     }
+
+    /**
+     * 일반 class 하나를 후보로 만든다. 민감 자리가 없으면 null(대상 아님), 표본을 만들 수
+     * 없으면 [GeneralCandidate.failure] 로 남긴다 — **통과로 세지 않는다.**
+     */
+    private fun generalCandidate(type: KClass<*>): GeneralCandidate? {
+        val parameters = type.primaryConstructor?.parameters
+        return when {
+            // 주 생성자가 없으면 파라미터를 알 수 없다 — 판정 불가는 통과가 아니다.
+            parameters == null -> {
+                GeneralCandidate.undecidable(type, "주 생성자가 없다")
+            }
+
+            // 파라미터가 없으면 담을 값이 없다(`object` 나 무인자 클래스). 대상 아님.
+            parameters.isEmpty() -> {
+                null
+            }
+
+            else -> {
+                runCatching { dataClassProbe(type) }
+                    .fold(
+                        onSuccess = { probe -> probe?.let { GeneralCandidate(it, null) } },
+                        onFailure = { failure ->
+                            GeneralCandidate.undecidable(type, failure.message ?: "표본 생성 실패")
+                        },
+                    )
+            }
+        }
+    }
+
+    /** `toString()` 을 스스로 선언했는가. 물려받기만 했으면 `Any.toString()` 이라 값이 나올 수 없다. */
+    private fun declaresToString(type: KClass<*>): Boolean =
+        type.java.declaredMethods.any { it.name == "toString" && it.parameterCount == 0 }
 
     private fun isSensitiveName(name: String): Boolean {
         val lowered = name.lowercase()
@@ -278,6 +358,19 @@ class GeneratedToStringProbes(
                 Iterable::class to { element: Any? -> listOf(element) },
                 Set::class to { element: Any? -> setOf(element) },
             )
+    }
+}
+
+/** 일반 class 후보 하나 — 표본을 만들었거나([probe]), 만들지 못했거나([failure]) 둘 중 하나다. */
+class GeneralCandidate(
+    val probe: ToStringProbe?,
+    val failure: String?,
+) {
+    companion object {
+        fun undecidable(
+            type: KClass<*>,
+            reason: String,
+        ) = GeneralCandidate(null, "${type.qualifiedName}: $reason")
     }
 }
 

@@ -170,7 +170,14 @@ class ExportFile(
     val mediaType: String,
     val content: ByteArray,
 ) {
-    override fun toString(): String = "ExportFile(filename=$filename, mediaType=$mediaType, content=${content.size}바이트)"
+    /**
+     * **파일명을 찍지 않는다** (게이트 25 R-10 — 이 재정의가 실제로 새고 있었다).
+     *
+     * 파일명은 문서 제목에서 만들어지고, 계약이 제목을 사용자 콘텐츠로 분류한다
+     * (`x-private-response-headers.applies_to`). 그래서 길이만 남긴다 — `PlainBody`·
+     * `MaskedText` 와 같은 규율이다. 미디어 타입은 고정 상수 셋 중 하나라 남긴다.
+     */
+    override fun toString(): String = "ExportFile(파일명 ${filename.length}자, $mediaType, ${content.size}바이트)"
 
     override fun equals(other: Any?): Boolean =
         this === other ||
