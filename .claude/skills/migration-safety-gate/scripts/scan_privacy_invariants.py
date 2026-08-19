@@ -369,6 +369,9 @@ class Rule:
     #: 엔트로피·문자 클래스로 판정하고 괄호·주석·인자 경계를 보지 않는다. 유지한다.
     #:
     #: **판별식을 여기 적어 두지 않으면 다음 사람이 `LOG-BODY` 와 같은 형태를 다시 만든다.**
+    #:
+    #: `OWNERSHIP-403` 의 훅도 후자다 — 자기 패턴이 직접 소비한 캡처 그룹(`inert`)이
+    #: 참여했는지만 보고, 바깥 텍스트도 어휘 층 산출물도 읽지 않는다.
     refine: Callable[[re.Match[str]], bool] | None = None
     #: 같은 창(window) 안에 이 패턴이 있으면 "완화 조치가 붙어 있다"로 보고 후보에서 뺀다.
     #: 규칙의 `false_positive` 주석이 사람에게 시키던 "주변 줄 확인"을 기계화한 것이다.
@@ -399,6 +402,10 @@ class Rule:
     #: 달라"가 나오면 그것은 표기가 아니라 **판정 요청**이어야 한다(§4-octies.3).
     #: 기본값이 `False` 인 것은 의도다: 새 규칙은 **누를 수 없는 쪽**에서 시작한다.
     markable: bool = False
+    #: `refine` 이 후보를 뺐을 때 리포트에 적는 사유. 규칙마다 빼는 근거가 다르므로
+    #: 규칙이 스스로 말하게 한다 — 한 문장을 공용으로 쓰면 리포트가 "무엇을 눈감았는가"를
+    #: 잘못 적고, 그 리포트가 다음 감사의 입력이 된다.
+    refine_reason: str = "값의 모양이 불변식 대상이 아님"
 
     # ── 필드를 더할 때 ──────────────────────────────────────────────────────────
     # **끝에 더한다.** 아래 규칙들 중 일부가 위치 인자로 구성돼 있어(`XML-DTD` 의
@@ -407,6 +414,60 @@ class Rule:
     # 넣었다가 `XML-DTD` 의 `hardened` 정규식이 `markable` 로 들어가 자기검사가 터졌다.
     # 그 자기검사가 없었다면 XML-DTD 의 완화 창이 조용히 사라졌을 것이다.
 
+
+#: `OWNERSHIP-403` 이 만나는 자리 중 **403 을 만들어 낼 수 없는** 형태들.
+#:
+#: ## 왜 정밀화이고 은폐가 아닌가 (privacy-gate 판정, 2026-08-19 · CLAUDE.md 규칙 4)
+#:
+#: 앞선 판의 패턴은 `\b(?:403|FORBIDDEN|Forbidden)\b` 하나였다 — **토큰이 보이면 무조건**
+#: BLOCK 이라, 불변식을 **집행하는 코드**(`isNotEqualTo(FORBIDDEN)`)와 그 코드가 쓰는 상수·
+#: 테스트 이름까지 전부 차단했다. 규칙의 `false_positive` 주석이 *"테스트의 403 기대값이면
+#: 오탐"* 이라고 이미 적고 있었는데 심각도는 BLOCK 이고 표기로 누를 수도 없으니
+#: (`UNMARKABLE_RULES`), **정당한 오탐에 출구가 없는 게이트**였다. 그 상태에서 CI 가 빨개지면
+#: 남는 선택지는 무시·면제뿐이고, 그것이 규칙 4 가 금지하는 은폐형이다.
+#:
+#: 그래서 **탐지 정확도**를 올린다. 세 형태를 뺀 근거는 셋 다 같은 문장이다:
+#:
+#: > **그 자리는 403 응답을 보낼 수 없고, 보낼 수 있는 자리는 여전히 전부 잡힌다.**
+#:
+#: | 형태 | 예 | 왜 보낼 수 없나 |
+#: |---|---|---|
+#: | ① 부호 반전 단언 | `isNotEqualTo(FORBIDDEN)` | **403 이 아님을 강제**한다. 부호가 반대다 |
+#: | ② 테스트 이름 | `@DisplayName("… 403 이 아니다")` · 백틱 함수명 | 라벨·식별자다. 값이 아니다 |
+#: | ③ 상수 선언 | `const val FORBIDDEN = 403` | 묶기만 한다. **쓰는 자리는 그대로 잡힌다** |
+#:
+#: ③ 이 특히 무손실이다 — 선언을 빼도 `status(FORBIDDEN)` 같은 사용처는 `FORBIDDEN` 토큰으로
+#: 여전히 매치된다. ① 은 인자 **첫 자리**가 403 토큰일 때만이라 `isEqualTo(FORBIDDEN)`
+#: (403 을 **기대**하는 단언 — 진짜 위반 신호다)은 그대로 남는다.
+#:
+#: ## 기각한 더 넓은 갈래 (근거를 넘지 않는다)
+#:
+#: - **문자열 리터럴 전체 제외** — "상태 코드는 세 스택 모두에서 정수·열거값이지 문자열이
+#:   아니다"는 참이지만, `@ApiResponse(responseCode = "403")`·`responses={"403": …}` 같은
+#:   **403 응답 선언**을 조용히 삼킨다. 그것은 이 불변식이 봐야 할 신호다.
+#: - **경로 면제(`tests/` 통째로)** — 은폐형. `SECRET_LITERAL` 이 같은 이유로 이미 거부했다.
+#: - **심각도 강등(BLOCK → WARN)** — 은폐형. 탐지가 아니라 표현을 낮추는 조치다.
+#: - **`hardened` 창** — 창 안의 다른 403 까지 통째로 눌러 줄 단위 부수 피해가 난다.
+#:   소비형 대안은 **그 자리만** 뺀다.
+#:
+#: 세 형태 밖은 전부 후보로 남는다 — 모르는 형태에서 닫히는 쪽이다.
+OWNERSHIP_403_INERT = (
+    # ① 부호 반전 단언. 403 토큰이 **첫 인자**일 때만 — `isEqualTo` 는 걸리지 않는다.
+    r"(?:isNotEqualTo|assertNotEquals|assertNotSame|isNotIn)"
+    r"\s*\(\s*(?:[\w.]+\.)?(?:403|FORBIDDEN|Forbidden)\s*[,)]"
+    # ② 테스트 이름 — JUnit 이 이름을 담는 두 자리(라벨 애너테이션 · 백틱 식별자)다.
+    #    **토큰을 품은 것만** 매치시킨다. 품지 않은 라벨·백틱까지 소비하면 뺀 것이 없는데도
+    #    "2차 판정으로 제외" 집계가 폭증해(실측 1446건) 규칙이 눈감은 양을 재는 그 숫자가
+    #    거짓이 된다 — 리포트가 다음 감사의 입력이므로 그 거짓이 그대로 굴러간다.
+    r"|@DisplayName\s*\(\s*\"[^\"\n]*(?:403|FORBIDDEN|Forbidden)[^\"\n]*\""
+    r"|`[^`\n]*(?:403|FORBIDDEN|Forbidden)[^`\n]*`"
+    # ③ 상수 선언. 키워드(`val`/`var`/`const`/`let`)를 요구하거나, Python 은 모듈·클래스
+    #    수준의 **대문자 상수**만 받는다 — `response.status_code = 403` 같은 대입은
+    #    점·소문자라 여기 걸리지 않고 후보로 남는다.
+    r"|^\s*(?:(?:private|internal|public|protected|open|companion)\s+)*"
+    r"(?:const\s+)?(?:va[lr]|let)\s+\w+\s*(?::\s*[\w<>?.\[\]]+\s*)?=\s*403\b"
+    r"|^\s*[A-Z][A-Z0-9_]*\s*(?::\s*[\w\[\].]+\s*)?=\s*403\b"
+)
 
 RULES: tuple[Rule, ...] = (
     Rule(
@@ -482,9 +543,18 @@ RULES: tuple[Rule, ...] = (
         "OWNERSHIP-403",
         "BLOCK",
         "다른 사용자 자원은 404로 은닉한다",
-        re.compile(r"\b(?:403|FORBIDDEN|Forbidden)\b"),
+        # **불활성 형태를 먼저 소비한다**(`OWNERSHIP_403_INERT`). 소비된 구간 안의 토큰은
+        # 따로 매치되지 않으므로 그 자리만 빠지고, **같은 줄의 다른 403 은 그대로 잡힌다.**
+        # 창(`hardened`)으로 눌렀다면 줄 전체가 통째로 빠졌을 자리다.
+        re.compile(rf"(?P<inert>{OWNERSHIP_403_INERT})|\b(?:403|FORBIDDEN|Forbidden)\b"),
         "403은 '있지만 네 것이 아니다'를 알린다 — 자원 존재 자체가 유출이다.",
-        "CORS·인증 미들웨어·프런트 문구·테스트의 403 기대값이면 오탐. 소유권 분기인지만 확인.",
+        "CORS·인증 미들웨어·프런트 문구·테스트의 403 기대값이면 오탐. 소유권 분기인지만 확인. "
+        "불변식을 **집행**하는 세 형태(부호 반전 단언·테스트 이름·상수 선언)는 "
+        "`OWNERSHIP_403_INERT` 가 뺀다 — 그 셋 밖은 전부 후보로 남는다.",
+        None,
+        (),
+        lambda match: match.group("inert") is None,
+        refine_reason="불변식을 집행·명명하는 형태(403 을 만들어 낼 수 없는 자리)",
     ),
     Rule(
         "PLAINTEXT-PERSIST",
@@ -1299,7 +1369,7 @@ def _candidates(
     found: list[tuple[str, str, str]] = []
     for match in rule.pattern.finditer(line):
         if rule.refine is not None and not rule.refine(match):
-            drop(rule.id, "값의 모양이 불변식 대상이 아님")
+            drop(rule.id, rule.refine_reason)
             continue
         if rule.hardened is not None:
             index = number - 1

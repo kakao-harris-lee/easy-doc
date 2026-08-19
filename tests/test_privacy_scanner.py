@@ -896,19 +896,38 @@ def test_표기를_전부_지우면_이관된_적중이_되살아난다(scanner:
     )
 
 
-def test_판별식이_지켜진다_refine_은_SECRET_LITERAL_뿐(scanner: ModuleType) -> None:
+def test_판별식이_지켜진다_refine_은_자기완결_규칙뿐(scanner: ModuleType) -> None:
     """§4-octies.7 — 어휘·구문 층의 정확성에 의존하는 `refine`은 두지 않는다.
 
     새 `refine`이 늘면 그 판별식을 통과했는지 사람이 봐야 하므로, 늘어나는 것 자체를
-    신호로 만든다.
+    신호로 만든다. **이 목록을 늘리는 것 자체가 diff 이고 리뷰 대상이다.**
+
+    현재 둘이며 **둘 다 후자(자기 완결)** 다:
+
+    - `SECRET-LITERAL` — 자기 캡처 그룹의 리터럴 하나를 엔트로피·문자 클래스로 본다.
+    - `OWNERSHIP-403` (2026-08-19 추가) — 자기 패턴이 **직접 소비한** 캡처 그룹(`inert`)이
+      참여했는지만 본다. 바깥 텍스트도, `_advance`·`_argument_span` 의 산출물도 읽지 않는다.
+      전자였다면 금지 대상이다.
     """
     with_refine = [rule.id for rule in scanner.RULES if rule.refine is not None]
 
-    assert with_refine == ["SECRET-LITERAL"], (
+    assert with_refine == ["OWNERSHIP-403", "SECRET-LITERAL"], (
         f"refine 을 가진 규칙이 {with_refine} 다. 새로 더했다면 Rule.refine KDoc 의 "
         "판별식을 통과했는지 확인하라 — 인자 구간·괄호·주석 경계를 읽어야 판정되는 것은 "
         "호출 지점 표기로 처리한다."
     )
+
+
+def test_refine_사유가_규칙마다_다르다(scanner: ModuleType) -> None:
+    """리포트의 「2차 판정으로 제외」 사유는 **그 규칙이 무엇을 눈감았는지**를 적어야 한다.
+
+    한 문장을 공용으로 쓰면 `OWNERSHIP-403` 의 제외가 "값의 모양이 불변식 대상이 아님"으로
+    적히는데, 그 규칙은 값의 모양을 보지 않는다. 리포트는 다음 감사의 입력이므로 그 거짓이
+    그대로 굴러간다.
+    """
+    reasons = {rule.id: rule.refine_reason for rule in scanner.RULES if rule.refine is not None}
+
+    assert len(set(reasons.values())) == len(reasons), f"제외 사유가 겹친다: {reasons}"
 
 
 def test_markable_배정이_설계대로다(scanner: ModuleType) -> None:
@@ -1411,3 +1430,131 @@ def test_사유_판정이_한_곳에서만_난다(scanner: ModuleType) -> None:
     for user in ("_marker_touches", "marker_problems"):
         body = source.split(f"def {user}(")[1].split("\ndef ")[0]
         assert "has_visible_reason" in body, f"{user} 가 자기 판정을 갖고 있다"
+
+
+# ── OWNERSHIP-403 정밀화 (privacy-gate 판정, 2026-08-19) ──────────────────────────────
+#
+# 앞선 판의 패턴은 `\b(?:403|FORBIDDEN|Forbidden)\b` 하나였다. 토큰이 보이면 무조건
+# BLOCK 이라 **불변식을 집행하는 코드**(`isNotEqualTo(FORBIDDEN)`)와 그것이 쓰는 상수·
+# 테스트 이름까지 차단했고, 그 규칙은 표기로 누를 수도 없어(`UNMARKABLE_RULES`) 정당한
+# 오탐에 출구가 없었다 — 그 상태의 CI 빨강은 무시·면제로만 풀리고, 그것이 규칙 4 가
+# 금지하는 은폐형이다.
+#
+# 그래서 **탐지 정확도**를 올렸다. 정밀화의 값은 "무엇을 뺐는가"가 아니라
+# **"무엇을 여전히 잡는가"** 로만 증명된다. 아래 표의 `blocks=True` 행이 그 증명이고,
+# 하나라도 `False` 로 뒤집히면 정밀화가 탐지를 먹은 것이다.
+
+#: (이름, 확장자, 소스, BLOCK 기대) — `blocks=False` 는 **집행·명명 형태**라 빠지는 자리다.
+OWNERSHIP_403_SHAPES: list[tuple[str, str, str, bool]] = [
+    # ── 여전히 잡아야 하는 것: 진짜 403 을 만들어 내는 자리 ──
+    ("N1 Spring status(403) 반환", ".kt", "fun deny() = ResponseEntity.status(403).build()", True),
+    ("N2 HttpStatus.FORBIDDEN 반환", ".kt", "fun deny() = r.status(HttpStatus.FORBIDDEN)", True),
+    ("N3 ResponseStatusException", ".kt", "throw ResponseStatusException(FORBIDDEN)", True),
+    ("N4 @ResponseStatus", ".kt", "@ResponseStatus(HttpStatus.FORBIDDEN)", True),
+    ("N5 sendError(403)", ".kt", "response.sendError(403)", True),
+    # 부호가 **양성**인 단언. 403 을 기대하는 테스트는 진짜 위반 신호다.
+    ("N6 양성 단언 isEqualTo", ".kt", "assertThat(r.statusCode()).isEqualTo(FORBIDDEN)", True),
+    ("N7 FastAPI HTTPException", ".py", "raise HTTPException(status_code=403)", True),
+    # 속성 대입은 상수 선언이 아니다 — 점·소문자라 ③ 에 걸리지 않고 후보로 남아야 한다.
+    ("N8 파이썬 속성 대입", ".py", "    response.status_code = 403", True),
+    ("N9 TS res.status(403)", ".ts", "res.status(403).send();", True),
+    # 문자열 리터럴을 통째로 빼지 않았다는 증거. 403 **응답 선언**은 이 불변식이 볼 신호다.
+    ("N10 @ApiResponse 선언", ".kt", '@ApiResponse(responseCode = "403")', True),
+    # ③ 이 무손실인 이유의 증명 — 선언은 빠져도 **쓰는 자리**가 잡힌다.
+    (
+        "N11 상수 선언 + 사용처",
+        ".kt",
+        "        private const val FORBIDDEN = 403\n        fun deny() = r.status(FORBIDDEN)",
+        True,
+    ),
+    # 소비형이라 **그 자리만** 빠진다. `hardened` 창이었으면 줄 전체가 눌렸을 자리다.
+    (
+        "N12 불활성 형태와 같은 줄의 진짜 반환",
+        ".kt",
+        "fun x() { assertThat(a).isNotEqualTo(FORBIDDEN); return r.status(403) }",
+        True,
+    ),
+    (
+        "N13 테스트 이름과 같은 줄의 진짜 반환",
+        ".kt",
+        '@DisplayName("403 이 아니다") fun y() = r.status(403)',
+        True,
+    ),
+    # ── 빠져야 하는 것: 403 을 만들어 낼 수 없는 세 형태 ──
+    ("P1 부호 반전 단언", ".kt", "assertThat(r.statusCode()).isNotEqualTo(FORBIDDEN)", False),
+    ("P2 assertNotEquals 첫 인자", ".kt", "assertNotEquals(403, r.statusCode())", False),
+    ("P3 @DisplayName 라벨", ".kt", '@DisplayName("타인 소유 → 404 이고 403 이 아니다")', False),
+    ("P4 백틱 함수명", ".kt", "fun `타인 자원은 404 이고 403 이 아니다`() {", False),
+    ("P5 상수 선언 단독", ".kt", "        private const val FORBIDDEN = 403", False),
+    ("P6 파이썬 대문자 상수 선언", ".py", "FORBIDDEN = 403", False),
+]
+
+#: **선언된 미도달.** `\b` 경계 때문에 밑줄에 둘러싸인 토큰은 잡히지 않는다 —
+#: 정밀화 이전부터 그랬고(옛 패턴으로 실측: 무적중) 이번 변경과 무관하다. 넓히지 않은 이유는
+#: 경계를 풀면 `FORBIDDEN_IN_FILENAME`(파일명 정화)·`FORBIDDEN_ANNOTATIONS`(계약 검사) 같은
+#: **HTTP 와 무관한 이름**이 전부 BLOCK 이 되어, 출구 없는 규칙에 새 오탐 무리를 들이기
+#: 때문이다. 조용한 0 대신 **선언된 0** 으로 둔다 — 탐지에 넣는 순간 `xpass` 로 뒤집힌다.
+OWNERSHIP_403_KNOWN_MISSES: list[tuple[str, str, str]] = [
+    ("FastAPI status 상수", ".py", "raise HTTPException(status.HTTP_403_FORBIDDEN)"),
+    ("서블릿 상수", ".kt", "response.sendError(HttpServletResponse.SC_FORBIDDEN)"),
+]
+
+
+def _ownership_403_blocks(scanner: ModuleType, tmp_path: Path, suffix: str, source: str) -> bool:
+    """합성 소스 한 조각을 `OWNERSHIP-403` 에 넣어 BLOCK 후보가 되는지 본다.
+
+    **스캐너의 본류(`scan`)를 그대로 부른다.** 패턴만 직접 돌리면 `refine` 을 건너뛰어
+    정밀화가 실제로 어떻게 작동하는지가 아니라 정규식의 성질만 재게 된다.
+    """
+    probe = tmp_path / f"Probe{suffix}"
+    probe.write_text(source + "\n", encoding="utf-8")
+    return bool(scanner.scan([probe], {"OWNERSHIP-403"}).hits.get("OWNERSHIP-403"))
+
+
+@pytest.mark.parametrize(
+    ("name", "suffix", "source", "blocks"),
+    [pytest.param(*shape, id=shape[0]) for shape in OWNERSHIP_403_SHAPES],
+)
+def test_ownership_403_형태_목록(
+    scanner: ModuleType, tmp_path: Path, name: str, suffix: str, source: str, blocks: bool
+) -> None:
+    """정밀화가 **집행 형태만** 빼고 생산 형태는 전부 잡는가.
+
+    `blocks=True` 가 하나라도 뒤집히면 정밀화가 탐지를 먹은 것이다 — 그때는 정밀화를
+    되돌려야지 이 표를 고쳐서는 안 된다.
+    """
+    assert _ownership_403_blocks(scanner, tmp_path, suffix, source) is blocks
+
+
+@pytest.mark.parametrize(
+    ("name", "suffix", "source"),
+    [pytest.param(*shape, id=shape[0]) for shape in OWNERSHIP_403_KNOWN_MISSES],
+)
+@pytest.mark.xfail(strict=True, reason="알려진 미도달 — `\\b` 경계와 밑줄 (선언된 0)")
+def test_ownership_403_알려진_미도달(
+    scanner: ModuleType, tmp_path: Path, name: str, suffix: str, source: str
+) -> None:
+    """밑줄에 둘러싸인 `403`·`FORBIDDEN` 은 경계 때문에 잡히지 않는다.
+
+    `xfail(strict=True)` 라 누가 경계를 풀면 `xpass` 로 **실패**한다 — 그때 이 목록에서
+    빼라는 신호이고, 동시에 새로 생기는 오탐 무리를 함께 보라는 신호다.
+    """
+    assert _ownership_403_blocks(scanner, tmp_path, suffix, source)
+
+
+def test_정밀화가_소비형이라_줄_전체를_누르지_않는다(scanner: ModuleType) -> None:
+    """`hardened` 창이 아니라 **소비형 대안**을 쓴 이유의 회귀.
+
+    창으로 눌렀다면 같은 줄의 다른 403 까지 통째로 빠진다. 규칙이 창을 갖게 되면 이
+    성질이 조용히 사라지므로 여기서 고정한다.
+    """
+    rule = _rule(scanner, "OWNERSHIP-403")
+
+    assert rule.hardened is None, (  # type: ignore[attr-defined]  # 동적 적재 모듈
+        "OWNERSHIP-403 이 창 억제를 갖게 됐다 — 창은 같은 줄의 다른 403 까지 누른다. "
+        "정밀화는 그 자리만 빼는 소비형이어야 한다(N12·N13 이 재는 성질)."
+    )
+    assert not rule.sanctioned, (  # type: ignore[attr-defined]  # 동적 적재 모듈
+        "경로 면제가 붙었다 — 은폐형이다. 값이 아니라 위치로 거르면 그 경로 안의 진짜 "
+        "위반까지 사라진다(SECRET-LITERAL 이 같은 이유로 이미 거부한 갈래)."
+    )
