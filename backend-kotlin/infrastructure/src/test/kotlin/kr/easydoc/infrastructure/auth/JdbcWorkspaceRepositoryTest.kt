@@ -232,6 +232,14 @@ class JdbcWorkspaceRepositoryTest {
      *
      * 배리어로 두 스레드를 같은 순간에 풀어 잠금 구간이 실제로 겹치게 만든다. 겹치지
      * 않으면 이 테스트는 순차 실행과 같아져 아무것도 재지 않는다.
+     *
+     * ## 「실패했다」가 아니라 **어떻게** 실패했는지를 단언한다
+     *
+     * 종전에는 `runCatching { … }.isSuccess` 로 불리언 하나만 남겼다. 그러면 둘째 요청이
+     * [ConflictException] 이 아니라 **교착·타임아웃·[kr.easydoc.core.exceptions.StorageException]**
+     * 으로 실패해도 `false` 가 되어 같은 단언을 만족한다 — 잠금이 퇴행해 500 을 내기
+     * 시작해도 초록이다(codex #7). 결과 객체를 보존해 **정확히 한 건 성공 + 한 건
+     * `ConflictException`** 을 단언한다.
      */
     @Test
     @DisplayName("같은 사용자의 두 작업 공간을 동시에 지워도 하나는 남는다")
@@ -242,14 +250,14 @@ class JdbcWorkspaceRepositoryTest {
         val barrier = CyclicBarrier(CONCURRENT_DELETERS)
         val pool = Executors.newFixedThreadPool(CONCURRENT_DELETERS)
 
-        val outcomes =
+        val outcomes: List<Result<Unit>> =
             try {
                 pool
                     .invokeAll(
                         listOf(first.id, second.id).map { id ->
                             Callable {
                                 barrier.await(BARRIER_TIMEOUT_SECONDS, TimeUnit.SECONDS)
-                                runCatching { service.delete(owner, id) }.isSuccess
+                                runCatching { service.delete(owner, id) }
                             }
                         },
                     ).map { it.get(TASK_TIMEOUT_SECONDS, TimeUnit.SECONDS) }
@@ -257,8 +265,17 @@ class JdbcWorkspaceRepositoryTest {
                 pool.shutdownNow()
             }
 
-        // 하나는 성공하고 하나는 거절돼야 한다. 둘 다 성공하면 잠금이 집합에 걸리지 않은 것이다.
-        assertThat(outcomes).containsExactlyInAnyOrder(true, false)
+        // 하나는 성공한다. 둘 다 성공하면 잠금이 집합에 걸리지 않은 것이다.
+        val failures = outcomes.mapNotNull { it.exceptionOrNull() }
+        assertThat(outcomes.count { it.isSuccess })
+            .withFailMessage("성공이 정확히 한 건이 아니다 — 결과: %s", outcomes)
+            .isEqualTo(1)
+        // 나머지 하나는 **거절**이어야 한다. 교착·타임아웃·StorageException 은 거절이 아니라
+        // 결함이고, 여기서 통과시키면 잠금 퇴행이 500 으로 나가는 동안에도 초록이다.
+        assertThat(failures)
+            .withFailMessage("둘째 요청이 ConflictException 이 아닌 것으로 실패했다: %s", failures)
+            .singleElement()
+            .isInstanceOf(ConflictException::class.java)
         assertThat(workspaces.listOwned(owner)).hasSize(1)
     }
 

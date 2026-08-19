@@ -123,6 +123,11 @@ class GlobalExceptionHandler : ResponseEntityExceptionHandler() {
      * 리더 재심에 올라가 있고, 그 판정 전까지 여기 형태를 바꾸지 않는다.
      * 판정이 어느 쪽으로 나든 응답 자체는
      * [kr.easydoc.api.PasswordHashingBackpressureReachTest] 가 붙들고 있다.
+     *
+     * **비율을 적어 둔다** — 배압 요청 **한 건마다 ERROR 한 줄**이다. privacy-gate 4b 의
+     * 240 동시 실측에서 로그인 성공률이 6.7% 였으므로, 그 부하에서 나머지 93.3% 가 전부
+     * 이 줄을 찍는다. 「드물게 섞인다」가 아니라 **부하 시 로그의 대부분**이라는 뜻이고,
+     * 그것이 이 자리를 계약 개정 대상으로 올린 이유다(escalate ④).
      */
     @ExceptionHandler(Exception::class)
     fun handleUnexpected(exception: Exception): ResponseEntity<Any> {

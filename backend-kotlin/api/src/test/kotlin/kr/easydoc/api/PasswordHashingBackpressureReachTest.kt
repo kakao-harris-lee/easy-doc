@@ -110,7 +110,21 @@ class PasswordHashingBackpressureReachTest {
         }
 
         // ⑶ 계정이 있든 없든 같은 바이트다.
+        //
+        // **먼저 두 집단이 과부하 부분집합에 다 들어 있는지부터 본다.** 종전에는 본문
+        // distinct 개수만 봤는데, 그러면 한 집단만 전부 500 이고 다른 집단은 전부 401 이어도
+        // 본문이 하나뿐이라 통과한다 — 그리고 **바로 그 상태 코드 분포가 계정 존재 열거
+        // 신호다.** 「균일하다」를 재려면 비교 대상이 둘 다 있어야 한다(codex #6).
         val byAccount = overloaded.groupBy({ it.first }, { it.second.body() })
+        assertThat(byAccount.keys)
+            .withFailMessage(
+                "과부하가 한 계정 집단에만 걸렸다 — 균일성을 잴 대상이 없다. 집단별 개수: %s",
+                overloaded.groupingBy { it.first }.eachCount(),
+            ).containsExactlyInAnyOrder(ABSENT_LABEL, KNOWN_LABEL)
+        assertThat(byAccount.values)
+            .withFailMessage("한 집단의 과부하 표본이 0 건이다: %s", byAccount.mapValues { it.value.size })
+            .allSatisfy { assertThat(it).isNotEmpty() }
+
         assertThat(byAccount.values.flatten().distinct())
             .withFailMessage("배압 응답이 계정 존재 여부로 갈린다 — 새 열거 채널이다: %s", byAccount)
             .hasSize(1)
@@ -124,7 +138,7 @@ class PasswordHashingBackpressureReachTest {
             (1..CONTENDERS).map { index ->
                 val absent = index % 2 == 0
                 val email = if (absent) uniqueEmail() else known
-                val label = if (absent) "없는 이메일" else "있는 이메일"
+                val label = if (absent) ABSENT_LABEL else KNOWN_LABEL
                 Thread {
                     start.await()
                     collected += label to post("/auth/login", credentials(email, WRONG_PASSWORD))
@@ -177,6 +191,10 @@ class PasswordHashingBackpressureReachTest {
 
         /** 자리(1개)보다 충분히 많아야 대기가 생기고, 절반씩 갈라야 두 라벨이 다 나온다. */
         private const val CONTENDERS = 12
+
+        /** 계정 집단의 라벨. 「양쪽이 다 과부하됐는가」 단언이 이 두 값을 이름으로 쓴다. */
+        private const val ABSENT_LABEL = "없는 이메일"
+        private const val KNOWN_LABEL = "있는 이메일"
 
         private var counter = 0
 

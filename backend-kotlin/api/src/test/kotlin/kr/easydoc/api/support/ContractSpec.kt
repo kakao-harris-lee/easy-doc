@@ -277,11 +277,18 @@ object ContractSpec {
         val own = (node["required"] as? List<*>)?.map { it.toString() }?.toSet() ?: emptySet()
         val branches = node["allOf"] as? List<*> ?: return own
         require(branches.isNotEmpty()) { "$label 의 allOf 가 비었다" }
+        // **버리지 않고 끊는다.** 종전에는 `filterIsInstance<Map<*, *>>()` 로 걸렀는데,
+        // 그러면 이 파서가 읽을 줄 모르는 갈래(스칼라 등)가 조용히 사라진다. 남은 갈래가
+        // `required` 를 하나라도 주면 아래 non-empty 방어도 통과해, **계약이 손상돼도
+        // 게이트가 초록**이다. "아무 갈래도 무시하지 않는다"는 주장의 반대였다.
         val fromBranches =
-            branches.filterIsInstance<Map<*, *>>().flatMap { branch ->
-                val ref = branch["\$ref"]?.toString()
+            branches.flatMapIndexed { index, branch ->
+                val mapping =
+                    branch as? Map<*, *>
+                        ?: error("$label 의 allOf[$index] 가 매핑이 아니다 — 이 파서가 읽을 수 있는 형태가 아니다: $branch")
+                val ref = mapping["\$ref"]?.toString()
                 if (ref == null) {
-                    requiredOf(branch, label)
+                    requiredOf(mapping, label)
                 } else {
                     val referenced = ref.substringAfterLast('/')
                     requiredOf(map("components", "schemas", referenced), referenced)
@@ -328,7 +335,11 @@ object ContractSpec {
      * URL 을 만든다. 그러면 **엉뚱한 매핑을 재거나 404 를 「소유권 은닉」으로 오독한다.**
      */
     fun pathParameters(path: String): List<ContractPathParameter> =
-        list("paths", path, "parameters").filterIsInstance<Map<*, *>>().map { declaration ->
+        list("paths", path, "parameters").mapIndexed { index, entry ->
+            // 개별 필드는 `error()` 로 끊으면서 **항목 자체를 버리던** 자리다(같은 fail-open).
+            val declaration =
+                entry as? Map<*, *>
+                    ?: error("$path 의 parameters[$index] 가 매핑이 아니다 — 이 파서가 읽을 수 있는 형태가 아니다: $entry")
             ContractPathParameter(
                 name = declaration["name"]?.toString() ?: error("$path 의 parameters 에 name 이 없다"),
                 location = declaration["in"]?.toString() ?: error("$path 의 parameters 에 in 이 없다"),
