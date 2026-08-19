@@ -25,11 +25,27 @@ object PostgresTestSupport {
 
     private var counter = 0
 
+    /**
+     * `max_connections` 를 기본 100 에서 올린다.
+     *
+     * 컨테이너가 JVM 하나에 하나뿐인데 커넥션을 쓰는 것은 **캐시된 Spring 컨텍스트마다
+     * 하나씩**인 HikariCP 풀(기본 최대 10)이다. `@SpringBootTest` 는 프로퍼티 조합이
+     * 다르면 컨텍스트를 새로 만들어 캐시에 남기므로, 그런 테스트 클래스가 하나 늘 때마다
+     * 상한이 10 씩 깎인다.
+     *
+     * 실제로 넘겼다 — `DeletedAccountTokenReachTest`(X-1) 를 더하자 전체 빌드에서
+     * `FATAL: sorry, too many clients already` 로 3건이 빨개졌다(개별 실행은 전건 통과).
+     * **테스트가 잰 성질과 무관한 실패**라 여기서 막는다. 값을 올리는 편이 풀 크기를
+     * 테스트마다 손으로 줄이는 것보다 낫다 — 후자는 다음에 추가되는 테스트가 또 빠뜨린다.
+     */
+    private const val MAX_CONNECTIONS = 400
+
     val container: PostgreSQLContainer by lazy {
         PostgreSQLContainer(IMAGE)
             .withDatabaseName("easydoc_template")
             .withUsername("postgres")
             .withPassword("postgres")
+            .withCommand("postgres", "-c", "max_connections=$MAX_CONNECTIONS")
             .also { it.start() }
     }
 
