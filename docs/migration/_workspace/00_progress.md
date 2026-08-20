@@ -173,7 +173,7 @@ Phase 1 착수를 막지는 않는다. 4는 Phase 5(작업 큐)에서, 5는 Phas
 | Testcontainers PostgreSQL + Flyway baseline 구축 | 예 | `ci:kotlin` | `V1__python_schema_baseline.sql` 을 **Alembic 을 실제로 돌려**(`uv run alembic upgrade head` → `alembic_version=0006`) 뽑은 스키마로 작성. 지문 대조 **전건 일치**(extension 1 · table 4 · column 32(서수 포함) · constraint 11 · index 11). 회귀는 `PythonSchemaBaselineTest` 4건 + `FlywayBaselineGuardTest` 4건. `baseline-on-migrate=true` 를 쓰지 않고 **지문이 일치할 때만** baseline 하는 `FlywayBaselineGuard` 를 만들었다(§4.2-4). `alembic_version` 은 만들지도 읽지도 쓰지도 않는다(§4.2-7) | Testcontainers 컨테이너가 모듈마다 따로 뜬다(`withReuse` 미적용). 로컬 전체 16초라 지금은 무해 | - | kotlin-implementer |
 | **필수 조치 D** — `encryption_scheme` additive 추가 | 예 | `ci:kotlin` | **V2에 배치**(V1 아님). 근거: ① V1은 "Python 스키마 재현"이라 신규 컬럼이 들어가면 지문 대조가 성립하지 않는다 ② **결정적** — baseline 은 V1을 건너뛰므로 V1에 넣으면 기존 Alembic DB에서 컬럼이 영원히 안 생긴다 ③ §4.2-5가 "Kotlin 전용 변경은 V2부터"라고 명시. 대상 `documents`·`conversions`, 기본값 `'fernet-v1'`, CHECK 제약 동반. `V2 는 encryption_scheme 을 additive 로 추가한다`·`Python 컬럼만 지정한 INSERT 가 성공한다` 테스트 통과 | 관찰 기간 내내 `fernet-v1` 고정. AEAD 전환은 Phase 8 이후 별건 | - | kotlin-implementer |
 | Dockerfile·compose Kotlin profile 추가 (기존 Python 서비스 유지) | 예 | `1회성:docs/migration/_workspace/01_kotlin-implementer_skeleton.md` | `backend-kotlin/Dockerfile`(멀티스테이지, api·worker bootJar 한 이미지). compose에 `kotlin-migrate`·`kotlin-api`(8100)·`kotlin-worker` 를 `profiles:["kotlin"]` 뒤에 추가 — **기존 Python 서비스 정의를 하나도 바꾸지 않았고** 기본 `docker compose up` 동작이 그대로다. 실측: 두 스택 동시 기동, Kotlin 8100·Python 8000 양쪽 `/health` 200. `kotlin-migrate` exit 0. §4.2-6대로 **DB를 갈랐다**(`easydoc` / `easydoc_kotlin`) — Python DB에 `flyway_schema_history` 0개 확인 | `easydoc_kotlin` 은 기존 볼륨에서 자동 생성되지 않는다(initdb 는 빈 데이터 디렉터리에서만 실행) — 수동 절차 문서화. compose 실행 중 **worker 즉시 종료**를 발견해 `spring.main.keep-alive: true` 로 고쳤다(산출물 §9.5) | - | kotlin-implementer |
-| CI에 Kotlin build/test 추가 + 기존 Python/React gate 유지 | 아니오 | `ci:kotlin` · `ci:quality` · `ci:frontend` | `.github/workflows/ci.yml` 에 `kotlin` 잡 추가(9 steps: setup-java 21 · setup-gradle · setup-uv · 이미지 pull · `./gradlew build` · `parityHarness` · 배선 확인 · parity 비교). **기존 `quality`(8 steps)·`frontend`(6 steps) 잡을 건드리지 않았다** — 로컬에서 `ruff`·`ruff format`·`mypy`·`pytest`(820 passed, 68 skipped) 전부 통과 확인 | **CI가 실제 GitHub Actions 에서 도는 것을 확인하지 못했다.** YAML 파싱과 로컬 동등 명령만 검증했다. `gradle/actions/setup-gradle@v4`·러너 Docker 데몬 위 Testcontainers 는 **첫 push 에서 처음 검증된다**. 이 행은 그때 닫는다 | 첫 PR 실행 | kotlin-implementer |
+| CI에 Kotlin build/test 추가 + 기존 Python/React gate 유지 | **예** (2026-08-20, 리더 · 게이트 28 후속) | `ci:kotlin` · `ci:quality` · `ci:frontend` | `.github/workflows/ci.yml` 에 `kotlin` 잡 추가(9 steps: setup-java 21 · setup-gradle · setup-uv · 이미지 pull · `./gradlew build` · `parityHarness` · 배선 확인 · parity 비교). **기존 `quality`(8 steps)·`frontend`(6 steps) 잡을 건드리지 않았다** — 로컬에서 `ruff`·`ruff format`·`mypy`·`pytest`(820 passed, 68 skipped) 전부 통과 확인 | ~~**CI가 실제 GitHub Actions 에서 도는 것을 확인하지 못했다**~~ → **닫는다.** 실행 `32356589642`(headSha `90aff42`)에서 **`kotlin`·`quality`·`frontend`·`e2e` 네 잡 전부 `success`**. `setup-gradle@v4` 와 러너 Docker 데몬 위 Testcontainers 가 실제로 돌았다. **단서 하나**: run 전체 결론은 `cancelled` 다 — `llm-lane` 이 30분 타임아웃에 걸린다(아래 L-⑫). **이 행이 지는 것은 「Kotlin build/test 가 CI 에서 돈다」이고 그것은 충족됐다** | ~~첫 PR 실행~~ → **충족** | leader (2026-08-20, 게이트 28 후속) |
 | **필수 조치 E** — Kotlin 테스트가 `parity/actual/` 을 쓰도록 CI 배선 | 아니오 | `ci:kotlin` | 배선 구조 완성: `ParityActual`(경로를 시스템 프로퍼티로만 받고 **없으면 던진다**) + `parityHarness` Gradle 태스크(`@Tag("parity")` 만, 저장소 루트로 출력) + 일반 `test` 는 모듈 `build/` 로 격리 + CI 3단계(생성·선언 대조 → 존재·`runtime:kotlin` 확인 → 비교). `ParityActualTest` 5건이 산출물 형식·경로·한글 비이스케이프·거부 조건을 고정. 실측 산출물 `parity/_harness-selfcheck/kotlin.json`(`runtime:kotlin`, JVM 21.0.4 Temurin, Kotlin 2.2.21).<br>**2026-08-12 X-1·X-2 수정 (`01_kotlin-implementer_parity-ci-fix.md`)** — 판정 범위를 디렉터리 유무가 아니라 버전 관리 선언 `backend-kotlin/parity-domains.txt` 에서 가져오고, 그 선언을 Gradle `parityManifestCheck` 가 실제 산출물과 **양방향 대조**한다(선언 O/산출 X·선언 X/산출 O·json 0건 전부 빌드 실패). `parityActualClean` 이 매 실행 전 `parity/actual/` 을 비워 stale 산출물 통과를 막는다. **종료 코드 2 사면은 제거**했고(실측: exit 2 는 "선언한 도메인의 역방향 산출물 미생성"일 때만 난다), 사면은 `--only-domain` 부분 검증(exit 3)으로 옮겨 **탐지(Gradle 단계)와 사면(비교 단계)을 다른 CI 단계에 분리**했다. 선언이 정본 11개를 덮으면 좁히기가 자동으로 사라진다. 실증 14종(CI 셸 8 + Gradle 6): 현재 상태 exit 0 / Phase 2 흉내 exit 0(값 21건 대조) / 선언했는데 산출물 없음 exit 1 / 값 불일치 exit 1 / fixture 트리 삭제 exit 1 / 전체 게이트 exit 0(값 101건 + 외부 2건). Python 게이트 무손상(820 passed).<br>**2026-08-12 가드 2종 추가 (`01_parity-canonical-floor.md`)** — ① **정본 0개 가드**: `canonical_count == 0`이면 exit 1(`ci.yml:197`). `--list`가 exit 0인데 출력만 비는 경로는 `pipefail`이 못 잡고, 그대로 두면 "11개를 안 봤다"는 경고가 "0개를 안 봤다"로 바뀌어 무검증이 통과한다. ② **정본 하한**: `.github/parity-canonical-floor.txt`(초기값 정본 11개) + **비대칭 검사**(현재 정본 ⊇ 스냅샷). 추가는 통과시키고 **삭제만 막는다** — 축소가 "전체 게이트 통과"로 위장되던 경로가 닫혔다. 실증 12종: 11→3 축소가 선언 0개·선언 3개 양쪽에서 exit 1, 가드 제거 변형 4종은 전부 exit 0(막고 있는 것이 정확히 이 비교임을 확인), 하한 파일 삭제·비움도 exit 1 | **채우지 못한 것**: `parity/fixtures/` 는 여전히 저장소에 없다(Phase 2 산출물). 실증에 쓴 Kotlin 산출물은 Python 스탠드인이며 실제 Kotlin 구현으로 도는 것은 Phase 2 첫 도메인에서 처음 확인된다. **GitHub Actions 러너 실행 미검증**(로컬 bash 3.2 재현). `parityManifestCheck` 는 도메인 입도까지만 봐서 **X-5 의 모듈↔도메인 대응 단언은 열려 있다**. 하한도 도메인 **이름**만 보므로 도메인 안의 케이스 축소는 잡지 못하고, 같은 커밋에서 정본과 하한을 함께 줄이는 것은 원리적으로 막을 수 없다(최종 방어선은 `.github/` diff 를 사람이 읽는 리뷰 게이트다). 미결 원장 `P1-2`(종료 코드 2 완화)는 **해소 확인**(아래 사실 정정) | Phase 2 (fixture 생성 · 첫 push 에서 러너 검증) | kotlin-implementer (2026-08-12) |
 | 종료 조건: 빈 DB와 기존 schema snapshot 양쪽에서 기동 + `/health` 응답 | 예 | `ci:kotlin` | `ApiStartupOnEmptyDatabaseTest` 2건 + `ApiStartupOnPythonSnapshotTest` 2건. `@SpringBootTest(RANDOM_PORT)` + JDK `HttpClient` 로 **실제 소켓**을 친다. 빈 DB → `flyway_schema_history=[1,2]`, 200 `{"status":"ok"}`. 기존 스냅샷(Alembic 0006 상태) → `[1(BASELINE), 2(SQL)]`, `alembic_version=0006` 불변, 200 `{"status":"ok"}`. compose 실측으로도 재확인(산출물 §9).<br>**2026-08-12 Boot 4.1.0 업그레이드 후 재확인** — 같은 4건이 그대로 통과하고, Flyway 11→12(유일한 메이저 상승)에 대해 **11.14.1이 쓴 `flyway_schema_history` 를 12.4.0이 `Successfully validated 2 migrations` 로 수용**하는 것까지 compose 로그로 확인했다(체크섬 재계산 요구 없음). 근거 `01_kotlin-implementer_boot41-upgrade.md` §5·§8-4·§8-5 | - | - | kotlin-implementer (2026-08-12) |
 
@@ -1937,6 +1937,66 @@ J-1 표 18 TRACE 카나리 마감 해석(계획 §9.2 D-f) · J-2 리포트 기�
 
 **해제 조건 ⒝ 는 음성 대조 N-1~N-4 의 실행 결과 없이 닫히지 않는다.** 감사는 넷 전부 **미실행**으로
 표기했다(장치 부재 + 제품 코드 변조 필요 — 감사자는 코드를 고치지 않는다). 실행은 구현 레인의 몫이다.
+
+### L-⑫ P-1 조치가 **실제 CI 로 확인됐다** — 이 하네스의 첫 GitHub Actions 근거
+
+푸시 `c983549`(조치 전) · `90aff42`(조치 후). **두 실행을 대조한 것이라 진단 확인이 성립한다.**
+
+| 잡 | 조치 전 `32352323462` | 조치 후 `32356589642` | 게이트 28 진단 |
+|---|---|---|---|
+| `kotlin` | **failure** | **success** | **C-2 확정** |
+| `e2e` | **failure** | **success** | **C-3 확정** |
+| `frontend` | success | success | 조치 레인의 「flaky · 뿌리가 다르다」 판정이 맞았다 |
+| `quality` | success | success | — |
+| `llm-lane` | cancelled | **cancelled** | 원장 항목 23 |
+
+**C-2 의 실패 문면이 기제를 그대로 말한다**(조치 전 로그 실측):
+
+> `AssertionError: 선언한 테스트 클래스가 리포트에 **실행된** 기록이 없다: [… 'kr.easydoc.core.privacy.**ProvenanceCreationSitesTest**' …]`
+
+미실행 목록이 **core 모듈 25건 전부**이고 그 안에 **`ProvenanceCreationSitesTest` 자신**이 있다 —
+바로 앞 스텝이 그 클래스를 명시적으로 돌렸는데도. 리포트가 마지막 `--tests` 필터 하나로 덮였다는 것
+외에 설명이 없다.
+
+**`frontend` 를 고치지 않은 판단이 실측으로 확인됐다.** 조치 레인이 「원인 미확인 · flaky」로 보고
+**손대지 않았고**, 같은 커밋의 다음 실행에서 초록이었다. 고쳤다면 **flaky 를 「고쳤다」로 오인**하고
+근거 없는 변경이 원장에 남았을 것이다.
+
+### L-⑬ `llm-lane` — 다음 배치로 올린다 (사용자 지시 2026-08-20)
+
+**관측**: 09:58:30 → 10:28:45 = **정확히 30분** 뒤 「`-m llm` 레인 실행 (실제 API 호출)」 스텝이
+`cancelled`(잡 타임아웃). 「건너뜀 사유 기록」이 `skipped` 이므로 **건너뛴 것이 아니라 실제로 실행했다** —
+이번 변경이 `.github/llm-lane-paths.txt` 판정에 걸렸다. **이번 변경은 프롬프트·스타일 규칙·LLM 설정을
+건드리지 않았다**(구현 레인 신고 · 리더 확인) — 경로 목록이 근거보다 넓을 가능성이 있으나 **미확인**이다.
+
+**왜 그냥 두면 안 되는가**: 네 잡이 전부 초록인데 **run 전체 결론이 `cancelled` 다.** 즉
+**`success` 가 영영 나오지 않는다.** 병합 차단 상태로 쓸 수 없고, 더 나쁘게는 **「빨간 것과 구분되지 않는
+상태」가 상시화**된다 — 이 세션이 방금 겪은 C-1 이 정확히 그 형태였다(원장이 「도달 0」이라 적어
+아무도 안 봤고 그 사이 빨갰다).
+
+**사용자 지시**: 다음 배치로 올리고 **「CI 에서 제외」도 검토 대상에 넣는다.**
+
+| 후보 | 대가 · 성질 |
+|---|---|
+| **(a) CI 에서 제외** | **규칙 4 근거 6 이 고친 바로 그 결함으로 되돌아간다** — *"품질 합격선을 CI가 강제한다 / 차단축 3개가 전부 `-m llm` 인데 CI에 그 잡이 없다 — **도달이 0**이었다"*. `llm-lane` 은 그 처방으로 생긴 잡이다. **방향이 은폐형이므로 고르려면 「Quality 게이트의 차단축 도달을 0으로 되돌린다」를 명시적으로 승인해야 한다** |
+| **(b) 타임아웃 상향** | 근본 원인 미해결 · 비용 증가. 왜 30분을 넘는지 먼저 알아야 한다 |
+| **(c) 경로 목록을 근거에 맞게 좁힌다** | **선결은 「이번에 어느 경로가 걸렸는가」 확인**이다. 근거 없이 좁히면 그것도 은폐형이다 |
+| **(d) 별도 워크플로·스케줄로 분리** | run 결론 오염은 없애고 **도달은 유지**한다. 다만 「차단축」이 PR 을 차단하지 못하게 된다 |
+| **(e) `continue-on-error`** | **은폐형 — 빨간 것을 초록으로 보이게 한다. 배제한다** |
+
+**리더 권고는 (c) 의 선결(어느 경로가 걸렸는지 실측)을 먼저 하는 것**이다. 그 답 없이는 (a)~(d)
+어느 것도 근거를 갖지 못한다. **판정은 다음 배치.**
+
+### L-⑭ 정정 — 서브에이전트 정지의 원인은 작업 크기가 아니었다
+
+이 세션에 서브에이전트가 **다섯 번** 무진행 정지했고 리더는 그것을 **「한 번에 크게 잡아서」로 진단**해
+C3 을 커밋 둘로 갈랐다. **사용자가 원인을 알려 주었다 — 인터넷 불안정이다.** 진단이 틀렸다.
+
+**분할 자체는 유지한다** — 명세 §6 대조를 붙여 각 커밋이 자기 기능과 자기 단언을 지게 갈랐고, 그
+근거는 정지와 무관하게 성립한다. **그러나 「크기 때문에 갈랐다」는 서술은 거짓이므로 여기 정정한다.**
+정지 5건은 전부 재개로 살아났고 **작업 손실 0**이다. 다만 매 재개마다 리더가 트리 상태를 직접
+확인해야 했고, **첫 정지 때 복원 성립을 확인하지 않고 재개했다면 변조된 제품 코드 위에서 검사 표를
+돌릴 뻔했다** — 그 규율은 원인과 무관하게 남긴다.
 
 ### L-⑩ 게이트 28 — 원장의 CI 문면이 **거짓이었다** (C-1). 리더 오류를 함께 적는다
 
