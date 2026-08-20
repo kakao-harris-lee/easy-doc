@@ -264,7 +264,9 @@ TEST_CLASS_COUNT = 104
 #: 91 → 99 (2026-08-21, 리더): `GET /documents` 커밋 **직전**의 실측이 99 다. 앞 항목과
 #: 같은 규율이고, 라쳇을 올리지 않으면 그 사이 늘어난 8개를 조용히 지워도 이 축이
 #: 울리지 않는다.
-MIN_TEST_CLASSES = 99
+#:
+#: 99 → 103 (2026-08-21, 리더): F3 조치 커밋 `dc67ba5` **직전**의 실측이 103 이다.
+MIN_TEST_CLASSES = 103
 
 #: **바닥 목록** — 사라지면 다른 게이트의 결론이 함께 무너지는 탐지기들.
 #:
@@ -294,7 +296,16 @@ FLOOR_TEST_CLASSES: tuple[str, ...] = (
     #   이 목록의 기준(「다른 판정의 근거로 인용되는 탐지기」)에 정면으로 든다.
     #   형제 `DocumentListHeaderFloorTest` 는 넣지 않았다: 그 레인이 범위를 「이 커밋이
     #   만든 한 자리」로 명시해 뒀고, 바닥에 넣는 것은 재지 않은 범위를 선점하는 편집이다.
+    # 2026-08-21 (리더, C4 R-1~R-4): 아래 둘을 함께 넣는다. F3 은 이제 **세 장치가 각각
+    #   다른 구멍**을 덮고 그 분담이 실측으로 확인됐다 — `RequestFieldConstraintLayerTest`
+    #   만 「경계가 계약보다 느슨한 제약」을 잡고(바이트 축의 관측창은 경계 ±1 이라
+    #   `@CodePointLength(max=100)` 대 계약 상한 50 에서 발화하지 않는다),
+    #   `RequestFieldRejectionReachTest` 만 임포트 안 된 `@Configuration` 의 `@Bean`
+    #   필터와 톰캣 밸브를 본다(슬라이스 축은 못 본다 — C4-R1 도달 표). 어느 하나가
+    #   사라지면 나머지 둘이 덮지 않는 자리가 조용히 열린다.
+    "kr.easydoc.api.RequestFieldConstraintLayerTest",
     "kr.easydoc.api.RequestFieldRejectionLayerTest",
+    "kr.easydoc.api.RequestFieldRejectionReachTest",
     "kr.easydoc.api.SensitiveToStringReachTest",
     "kr.easydoc.api.SourceScanFormsProbe",
     "kr.easydoc.core.CoreModuleBoundaryTest",
