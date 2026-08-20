@@ -49,11 +49,39 @@ import kotlin.io.path.readText
  * - 저장 프로시저·마이그레이션 밖의 손 SQL·DB 클라이언트에서 직접 친 UPDATE.
  * - 이 파일 자신의 삭제. 최종 방어선은 `tests/test_kotlin_gate_reach.py` 의 선언 대조다.
  *
- * ## 주석·KDoc 안의 SQL 도 분모다
+ * ## 주석은 **방향에 따라 다르게** 다룬다
  *
- * 문자열 리터럴만 골라내는 렉서를 쓰지 않는다. KDoc 이 위반 예시를 적어 두면 그것도
- * 잡힌다 — **과잉 탐지 방향이라 fail-closed 다.** 예시를 적고 싶으면 규약을 지키는 예시를
- * 적거나 테이블 이름을 조립해 쓰라.
+ * 하나의 정규화를 두 방향에 같이 쓰면 한쪽은 반드시 뒤집힌다. 실제로 뒤집혀 있었다 —
+ * 초판은 **원시 SET 절에 봉투 열 정규식을 그대로** 걸어서
+ * `SET 암호문열 = :value -- , encryption_scheme = :s, key_version = :v` 를 **준수로 통과**
+ * 시켰다(실측). PostgreSQL 은 `--` 뒤와 블록 주석 안을 무시하므로 실제로는 암호문만
+ * 바뀌고 세대는 그대로다 — 이 파일이 막으라고 세워진 바로 그 행, **영원히 열리지 않는 행**을
+ * 가드가 승인한 것이다. 형제 장치 [OwnershipPredicateGuardTest] 가 같은 결함을 같은 날
+ * 같은 기제로 갖고 있었고(소유 술어 쪽), 처방도 같다.
+ *
+ * **⑴ 문장 발견(분모)** — 이 UPDATE 가 암호문 쓰기인가. 주석을 **그대로 둔다**: Kotlin
+ * 주석·KDoc 이 품은 SQL 도 센다. 분모를 넓히는 쪽이라 **fail-closed** 다. 문자열 리터럴만
+ * 골라내는 렉서를 쓰지 않는 이유도 여기다 — 렉서 자신이 조용히 놓치는 표면이 된다. 예시를
+ * 적고 싶으면 규약을 지키는 예시를 적거나 테이블 이름을 조립해 쓰라.
+ *
+ * **⑵ 준수 판정** — 이 문장이 봉투 두 열을 **썼는가**. **SQL 주석을 걷어낸 뒤** 판정한다
+ * ([SqlComments.strip]). 죽은 대입을 「썼다」로 세면 **fail-open** 이다. 걷어내면
+ * fail-closed — 대입이 사라진 문장은 위반으로 올라온다.
+ *
+ * **이 둘을 하나로 합치지 마라.** ⑴ 의 근거(**분모는 넓을수록 안전하다**)를 ⑵ 에 옮겨
+ * 적는 순간 이 결함이 그대로 되살아난다 — ⑵ 에서는 넓은 쪽이 **위험한 쪽**이다.
+ *
+ * ## 이 갈라치기가 **남기는 것** (정직하게 적는다)
+ *
+ * [Scanner.setClauseOf] 의 경계 찾기(`SET`·`WHERE` 키워드)는 여전히 **원시** 문장을 본다.
+ * 주석에 든 `WHERE` 가 절을 일찍 끊으면 뒤의 진짜 봉투 대입이 잘려 **위반으로** 올라오고
+ * (과잉 탐지 = fail-closed), 주석에 든 `SET` 은 절을 넓게 잡지만 넓어진 부분은 준수 판정
+ * 직전에 걷어내기가 지운다. 둘 다 fail-open 이 아니라 그대로 둔다 — 경계 찾기를 걷어낸
+ * 사본으로 옮기면 인덱스가 원문과 어긋나 [Scanner.CiphertextWrite.setClause] 가 실패
+ * 메시지에서 엉뚱한 조각을 가리킨다.
+ *
+ * Kotlin 블록 주석·KDoc 은 문법이 블록 주석이라 걷어내기가 함께 지운다 — KDoc 이 품은
+ * 예시 SQL 은 분모에 남고 봉투 대입은 잃어 **위반으로** 올라온다. 과잉 탐지 방향이다.
  */
 class EnvelopeColumnWriteGuardTest {
     @TempDir
@@ -124,6 +152,53 @@ class EnvelopeColumnWriteGuardTest {
 
         assertThat(lower.single().setsEnvelope).isFalse()
         assertThat(other).isEmpty()
+    }
+
+    @Test
+    @DisplayName("**주석에 든 봉투 열은 쓴 것이 아니다** — `--` 로 죽은 대입을 준수로 세지 않는다")
+    fun `줄 주석에 든 봉투 대입은 준수가 아니다`() {
+        val commented =
+            probe(
+                "line-commented",
+                "UPDATE $target SET $column = :value -- , encryption_scheme = :s, key_version = :v\n" +
+                    "WHERE id = :id",
+            )
+
+        assertThat(commented.single().setsEnvelope)
+            .describedAs(
+                "`--` 뒤는 PostgreSQL 이 무시한다. 실제 UPDATE 는 암호문만 바꾸고 세대는 그대로라 " +
+                    "그 행은 영원히 열리지 않는데, 가드가 준수로 읽으면 그것을 승인한다 — fail-open 이다",
+            ).isFalse()
+    }
+
+    @Test
+    @DisplayName("**블록 주석에 든 봉투 열도 쓴 것이 아니다** — 중첩까지 끝까지 걷어낸다")
+    fun `블록 주석에 든 봉투 대입은 준수가 아니다`() {
+        val commented =
+            probe(
+                "block-commented",
+                "UPDATE $target SET $column = :value, /* 보류 /* 사유 */ encryption_scheme = :s, " +
+                    "key_version = :v */ status = :status WHERE id = :id",
+            )
+
+        assertThat(commented.single().setsEnvelope)
+            .describedAs("블록 주석 안도 PostgreSQL 이 무시한다 — 중첩이라 첫 닫힘에서 끊으면 잔여가 남는다")
+            .isFalse()
+    }
+
+    @Test
+    @DisplayName("주석 제거가 **참인 대입을 깨뜨리지 않는다** — 대입 뒤에 붙은 설명 주석은 무해하다")
+    fun `살아 있는 봉투 대입 뒤의 주석은 대입을 죽이지 않는다`() {
+        val compliant =
+            probe(
+                "trailing-comment",
+                "UPDATE $target SET $column = :value, encryption_scheme = :s, key_version = :v " +
+                    "-- 세대를 함께 올린다\nWHERE id = :id",
+            )
+
+        assertThat(compliant.single().setsEnvelope)
+            .describedAs("주석 제거는 죽은 대입만 지워야 한다 — 살아 있는 대입까지 지우면 과잉 탐지로 뒤집힌다")
+            .isTrue()
     }
 
     @Test
@@ -226,13 +301,21 @@ class EnvelopeColumnWriteGuardTest {
                 .findAll(text)
                 .mapNotNull { match ->
                     val setClause = setClauseOf(file, text, match.range.last + 1)
+                    // 분모는 **원시** SET 절로 판정한다 — 주석에 든 암호문 대입까지 대상에 넣는 쪽이
+                    // 넓은 쪽이고, 넓은 쪽이 fail-closed 다.
                     if (CIPHERTEXT_COLUMNS.none { assignsColumn(setClause, it) }) {
                         null
                     } else {
                         CiphertextWrite(
                             file = file,
                             setClause = setClause,
-                            setsEnvelope = ENVELOPE_COLUMNS.all { assignsColumn(setClause, it) },
+                            // 준수 판정은 **주석을 걷어낸** SET 절로 한다. 여기서는 넓은 쪽이 위험한
+                            // 쪽이다 — 주석에 든 봉투 대입을 「썼다」로 세면 세대가 안 오른 행을
+                            // 준수로 승인한다. 클래스 KDoc 「주석은 방향에 따라 다르게 다룬다」.
+                            setsEnvelope =
+                                SqlComments.strip(setClause).let { live ->
+                                    ENVELOPE_COLUMNS.all { assignsColumn(live, it) }
+                                },
                         )
                     }
                 }.toList()

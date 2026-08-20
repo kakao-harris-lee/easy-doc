@@ -68,10 +68,38 @@ import kotlin.io.path.readText
  * - **한 문자열 리터럴에 문장을 여럿 담으면 한 문장으로 읽는다.**
  * - **이 파일 자신의 삭제.** 최종 방어선은 `tests/test_kotlin_gate_reach.py` 의 선언 대조다.
  *
- * ## 주석·KDoc 안의 SQL 도 분모다
+ * ## 주석은 **방향에 따라 다르게** 다룬다
  *
- * 문자열 리터럴만 골라내는 렉서를 쓰지 않는다 — 형제 장치와 같은 판단이다. **과잉 탐지
- * 방향이라 fail-closed** 이고, 렉서 자신이 조용히 놓치는 표면이 된다.
+ * 하나의 정규화를 두 방향에 같이 쓰면 한쪽은 반드시 뒤집힌다. 실제로 뒤집혀 있었다 —
+ * 초판은 **원시 청크에 소유 술어 정규식을 그대로** 걸어서
+ * `WHERE c.id = :id -- AND d.user_id = :ownerId` 를 **방어가 있는 것으로 통과**시켰다(실측).
+ * PostgreSQL 은 `--` 뒤와 `/* */` 안을 무시하므로 실제 질의에는 소유 조건이 없다. 소유권
+ * 우회를 잡으라고 세운 장치가 **소유권 우회를 승인**한 것이다 — 프로젝트 규칙 2 가 겨누는
+ * 「잘못된 근거를 만드는 도구」다.
+ *
+ * **⑴ 문장 발견(분모)** — 이 문장이 검사 대상인가. 주석을 **그대로 둔다**: Kotlin 주석·KDoc
+ * 이 품은 SQL 도 센다. 분모를 넓히는 쪽이라 **fail-closed** 다. 문자열 리터럴만 골라내는
+ * 렉서를 쓰지 않는 이유도 여기다 — 렉서 자신이 조용히 놓치는 표면이 된다.
+ *
+ * **⑵ 소유 술어 판정** — 이 문장에 방어가 **있는가**. **SQL 주석을 걷어낸 뒤** 판정한다
+ * ([SqlComments.strip]). 죽은 술어를 방어로 세면 **fail-open** 이다. 걷어내면 fail-closed —
+ * 술어가 사라진 문장은 「소유 술어 없음」으로 핀에 올라온다.
+ *
+ * **이 둘을 하나로 합치지 마라.** ⑴ 의 근거(**분모는 넓을수록 안전하다**)를 ⑵ 에 옮겨
+ * 적는 순간 이 결함이 그대로 되살아난다 — ⑵ 에서는 넓은 쪽이 **위험한 쪽**이다.
+ *
+ * 걷어내기는 살아 있는 술어를 깨뜨리지 않는다:
+ * `… AND d.user_id = :ownerId -- 소유자로 좁힌다` 는 여전히 통과다
+ * ([`살아 있는 술어 뒤의 주석은 술어를 죽이지 않는다`] 가 그 방향을 고정한다).
+ *
+ * ## 이 갈라치기가 **남기는 것** (정직하게 적는다)
+ *
+ * Kotlin 블록 주석·KDoc 은 문법이 `/* */` 라 걷어내기가 **함께 지운다.** 그래서 KDoc 이
+ * 품은 SQL 은 **분모에는 남고 술어는 잃는다** — 「소유 술어 없음」으로 읽혀 핀이 늘어난다.
+ * 과잉 탐지 방향이라 fail-closed 이고, 늘어난 핀은 diff 로 리뷰에 올라온다.
+ * 반대로 Kotlin `//` 줄 주석은 **지우지 않는다** — SQL 주석이 아니기 때문이다. 그 안의
+ * SQL 은 분모에도 들고 술어도 산 채로 읽힌다. `//` 까지 지우면 문자열 리터럴 안의 URL 이
+ * 실제 술어를 잘라내므로, 이 비대칭은 알고 남긴 것이다.
  */
 class OwnershipPredicateGuardTest {
     @TempDir
@@ -131,6 +159,70 @@ class OwnershipPredicateGuardTest {
 
         assertThat(unguarded.single().hasOwnerPredicate).isFalse()
         assertThat(guarded.single().hasOwnerPredicate).isTrue()
+    }
+
+    @Test
+    @DisplayName("**주석에 든 소유 술어는 방어가 아니다** — `--` 로 죽은 술어를 방어로 세지 않는다")
+    fun `줄 주석에 든 소유 술어는 방어가 아니다`() {
+        val commented =
+            probe(
+                "line-commented",
+                "SELECT c.$column FROM $conversions c JOIN $documents d ON d.id = c.document_id " +
+                    "WHERE c.id = :id -- AND d.user_id = :ownerId",
+            )
+
+        assertThat(commented.single().hasOwnerPredicate)
+            .describedAs(
+                "`--` 뒤는 PostgreSQL 이 무시한다. 실제 질의에 소유 조건이 없는데 방어가 있다고 읽으면 " +
+                    "이 가드가 소유권 우회를 승인한다 — fail-open 이다",
+            ).isFalse()
+    }
+
+    @Test
+    @DisplayName("**블록 주석에 든 소유 술어도 방어가 아니다** — `/* */` 안은 질의가 아니다")
+    fun `블록 주석에 든 소유 술어는 방어가 아니다`() {
+        val commented =
+            probe(
+                "block-commented",
+                "SELECT c.$column FROM $conversions c JOIN $documents d ON d.id = c.document_id " +
+                    "WHERE c.id = :id /* AND d.user_id = :ownerId */",
+            )
+
+        assertThat(commented.single().hasOwnerPredicate)
+            .describedAs("`/* */` 안도 PostgreSQL 이 무시한다 — 줄 주석과 같은 fail-open 이다")
+            .isFalse()
+    }
+
+    @Test
+    @DisplayName("**중첩 블록 주석**도 끝까지 걷어낸다 — 첫 닫힘에서 끊으면 죽은 술어가 되살아난다")
+    fun `중첩 블록 주석에 든 소유 술어는 방어가 아니다`() {
+        val nested =
+            probe(
+                "nested-comment",
+                "SELECT c.$column FROM $conversions c JOIN $documents d ON d.id = c.document_id " +
+                    "WHERE c.id = :id /* 보류 /* 사유 */ AND d.user_id = :ownerId */",
+            )
+
+        assertThat(nested.single().hasOwnerPredicate)
+            .describedAs(
+                "PostgreSQL 블록 주석은 중첩한다 — 첫 닫힘에서 끊는 비탐욕 정규식이라면 " +
+                    "`AND d.user_id = :ownerId` 를 주석 밖으로 남겨 fail-open 이 된다",
+            ).isFalse()
+    }
+
+    @Test
+    @DisplayName("주석 제거가 **참인 술어를 깨뜨리지 않는다** — 술어 뒤에 붙은 설명 주석은 무해하다")
+    fun `살아 있는 술어 뒤의 주석은 술어를 죽이지 않는다`() {
+        val guarded =
+            probe(
+                "trailing-comment",
+                "SELECT c.$column FROM $conversions c JOIN $documents d ON d.id = c.document_id " +
+                    "WHERE c.id = :id AND d.user_id = :ownerId -- 소유자로 좁힌다",
+            )
+
+        assertThat(guarded.single().hasOwnerPredicate)
+            .describedAs("주석 제거는 죽은 술어만 지워야 한다 — 살아 있는 술어까지 지우면 과잉 탐지로 뒤집힌다")
+            .isTrue()
     }
 
     @Test
@@ -343,7 +435,10 @@ class OwnershipPredicateGuardTest {
                 verb = verbOf(file, chunk, excerpt),
                 tables = tables,
                 statement = excerpt,
-                hasOwnerPredicate = OWNER_PREDICATE.containsMatchIn(chunk),
+                // **원시 청크가 아니라 주석을 걷어낸 사본에 건다.** 방향이 다르면 정규화도 다르다 —
+                // 위 `tables` 는 원시 청크를 쓰고(분모, fail-closed), 이 판정은 걷어낸 사본을
+                // 쓴다(방어 존재, fail-open 방지). 클래스 KDoc 「주석은 방향에 따라 다르게 다룬다」.
+                hasOwnerPredicate = OWNER_PREDICATE.containsMatchIn(SqlComments.strip(chunk)),
             )
         }
 
