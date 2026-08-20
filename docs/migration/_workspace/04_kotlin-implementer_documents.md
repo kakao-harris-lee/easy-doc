@@ -547,3 +547,176 @@ PDFBox 3.0.5 는 **U+FFFD 로 치환한다**(추출 결과 코드 포인트를 �
 - **DC-24 의 「저장되지 않음」을 목록 API 로도 재기**(§III D-x).
 - `P-25`(오퍼레이션 수준 `limit`/`offset` 파라미터 접근자) · `P-35` · `N-24`.
 - `AuthenticatedEndpoints` 는 그대로 — `/documents` 는 이미 있고 `/conversions/**` 는 C6·C7 이 더한다.
+
+---
+
+# C4 — `GET /documents` (목록과 페이지 파라미터)
+
+**커밋:** `feat(kotlin): GET /documents — 목록과 페이지 파라미터` / **일자:** 2026-08-21 / **게이트 덩어리:** G-β
+**기준 HEAD:** `81ba9fa` / **정본:** 계획 §7.2 C4 행 · §9.1 · 명세 DL-1~DL-11 · P-25 · N-24 · X-C2 · 계약 v1.4.0
+
+## C4-I. 만든 것
+
+| 파일 | 무엇 |
+|---|---|
+| `backend-kotlin/gradle/libs.versions.toml` | `spring-boot-starter-validation` 좌표(버전은 **BOM**). 주석에 「무엇을 켜는가 + F3 방벽 소멸」을 적었다 |
+| `backend-kotlin/api/build.gradle.kts` | 위 좌표를 `implementation` 으로 |
+| `backend-kotlin/api/gradle.lockfile` | 락 갱신 — **6줄 추가, 클래스패스 갈림 0** (아래 C4-II) |
+| `api/.../document/ListPageLimits.kt` | **신규.** `limit`/`offset` 의 하한·상한·기본값 상수 + 「왜 값이 코드에 복제되는가」와 대조 셋 |
+| `api/.../document/DocumentController.kt` | `GET /documents` 매핑 · `@Min`/`@Max` · 사적 헤더 개별 부착 · 클래스 KDoc 갱신(하한선이 **오퍼레이션마다 갈린다**) |
+| `api/.../document/DocumentDtos.kt` | `DocumentListItemResponse`(제목 가린 `toString`) · `DocumentListResponse`(`of` 가 `limit+1` 을 잘라 `has_more` 판정) |
+| `api/src/test/.../support/ContractSpec.kt` | **P-25** 접근자 `inputLimitRange`(min/max?/default) · `queryParameters(path, method)` + 두 값 타입 |
+| `api/src/test/.../DocumentListContractTest.kt` | **신규 (C-M)** — DL-1 · DL-5 · DL-6 · DL-7 (9 케이스) |
+| `api/src/test/.../DocumentListReachTest.kt` | **신규 (C-R·C-I)** — DL-2 · DL-3 · DL-4 · DL-8 · DL-9 · DL-10 · DL-11 (10 케이스) |
+| `api/src/test/.../RequestFieldRejectionLayerTest.kt` | **신규 — F3 대체 강제자** (아래 C4-III) |
+| `api/src/test/.../DocumentListHeaderFloorTest.kt` | **신규 — X-D1 하한선 탐지기** (아래 C4-VI) |
+| `api/src/test/.../DocumentContractNodeTest.kt` | **P-25** 두 케이스(코드 상수 대조 + 계약 내부 이중 선언) · **P-33** 목록 두 스키마 |
+| `api/src/test/.../DocumentEndpointReachTest.kt` | **DC-24 의 목록 축 마감** — C3 이 「목록이 생기면 그쪽으로도 잰다」로 남긴 것 |
+| `api/src/test/.../SensitiveToStringReachTest.kt` | `EXPECTED_SOURCE_DECLARATIONS` 50 → **52**(사유 주석 포함) |
+| `tests/test_kotlin_gate_reach.py` | `TEST_CLASSES` +4 · `TEST_CLASS_COUNT` 99 → **103** |
+
+**계약 파일은 한 줄도 고치지 않았다.** N-24 음성 대조의 일시 변조만 있었고 복원 후 sha256 이 일치한다(C4-V).
+
+## C4-II. 의존성 도입 — 무엇을 확인했나
+
+**락파일 diff 6줄, 전부 BOM 관리 버전이고 compile/test 클래스패스가 갈리지 않았다.**
+
+```
+com.fasterxml:classmate:1.7.3                          = compile,production,runtime,testCompile,testRuntime
+jakarta.validation:jakarta.validation-api:3.1.1        = (같음)
+org.hibernate.validator:hibernate-validator:9.1.0.Final= (같음)
+org.jboss.logging:jboss-logging:3.6.3.Final            = (같음)
+org.springframework.boot:spring-boot-starter-validation:4.1.0 = (같음)
+org.springframework.boot:spring-boot-validation:4.1.0  = (같음)
+```
+
+D-a(commons-compress/io)에서 겪은 **compileClasspath ↔ testClasspath 갈림이 여기서는 0** 이다. EL 구현체도 새로 들어오지 않았다 — `tomcat-embed-el:11.0.22` 가 `spring-boot-starter-web` 경유로 이미 있었다(실측: 락파일 104행).
+
+**「무엇이 켜지는지」 확인 — 의도하지 않은 자리에 검증이 켜지지 않았다.** 공식 문서(Spring Framework reference, `web/webmvc/mvc-controller/ann-validation`)로 확인한 규칙은 둘이다.
+
+1. **컨트롤러 메서드 파라미터에 제약 애너테이션이 있으면** 내장 메서드 검증이 돌고 `HandlerMethodValidationException` 이 난다. 그래서 `limit`/`offset` 에만 켜진다.
+2. **요청 본문(`@RequestBody`)은 `@Valid`/`@Validated` 가 없으면 검증되지 않는다.** F3 다섯 필드가 사는 자리이고, 우리 컨트롤러 어디에도 `@Valid` 가 없다.
+
+> **`@Validated` 를 클래스에 붙이지 않았다.** 붙이면 AOP 기반 메서드 검증이 대신 서고
+> `ConstraintViolationException` 이 나가는데, 우리 매퍼가 계약 모양으로 옮기는 예외는
+> `HandlerMethodValidationException` 이다. 이 갈림은 문서로 확인했고 실측(DL-5 초록)이 뒷받침한다.
+
+`GlobalExceptionHandler.handleHandlerMethodValidationException` 은 **이미 있었다**(Phase 3에 오버라이드해 두고 「의존성이 붙어야 실제로 발생한다」고 적어 둔 것). 이 커밋이 그 경로에 처음 실제 요청을 흘렸고, `loc` 이 계약 `ValidationFailed.examples.query_range` 와 같은 모양(`["query","limit"]`)으로 나가는 것을 확인했다 — 파라미터 이름은 `kotlin-reflect` 경유로 해석된다(실측: DL-5 의 `loc` 단언 초록).
+
+## C4-III. F3 대체 강제자 — 무엇을 골랐고 왜
+
+### 고른 것
+
+**`RequestFieldRejectionLayerTest` — 「그 다섯 필드의 거절이 어느 층에서 일어나는가」를 응답 `detail` 의 모양으로 재는 탐지기.** 케이스를 계약에서 유도한다: 필드 목록은 `x-request-field-constraints.fields[].field`, 경계는 그 필드의 `limit`, 기대 문구는 같은 항목의 `detail`.
+
+프로브는 `limit` 하나에서 세 값을 만든다 — 길이 `limit`, `limit-1`, `limit+1`. 단언은 넷이다.
+
+1. 길이 **정확히 `limit`** 은 통과한다(다섯 필드 전부 경계 포함이다 — 상한이면 「이하」, 하한이면 「이상」).
+2. 이웃 두 값 중 **정확히 하나**가 거절된다. **방향을 코드에 적지 않는다** — `password` 만 하한이고 나머지 넷은 상한인데, 이 형태면 그 비대칭을 알 필요가 없다.
+3. 그 거절은 422 이고 `detail` 이 **문자열**이며 값이 계약 선언 문구 중 하나다.
+4. **어떤 프로브도 배열 `detail` 을 내지 않는다.**
+
+더해서 ⑸ 이메일 형식 위반(`@Email`·`@Pattern` 이 옮겨 갈 축)도 문자열이어야 하고, ⑹ 도달 범위 대조 — 프로브 키 집합 == 「계약 필드 − DTO 없는 필드」, 그리고 **DTO 없는 필드 집합의 정확 열거 핀**(`ConversionReviewRequest.edited_text` 하나. C7 이 비운다).
+
+### 왜 열거를 넓히지 않았나 — 규칙 4 분류
+
+`RequestFieldConstraintLayerTest.FORBIDDEN_ANNOTATIONS`(9개)는 **범위 선언형**이고 규칙 ⑶ 이 걸린다(불완전한 선언에서 통과하면 안 된다). 그리고 그 목록은 **닫히지 않는다** — `@CodePointLength`·`@Range`·`@DecimalMin`·직접 만든 `ConstraintValidator`·중첩 빈의 `@Valid`·커스텀 인자 리졸버가 전부 같은 일을 한다. 열거를 넓히는 것은 **다음 항목이 생길 때까지만** 참인 조치다. 그래서 **탐지형으로 갈아탔다**: 나간 바이트를 재는 축은 「무엇이 앞단에서 거절했는지」를 묻지 않는다.
+
+**두 강제자를 함께 둔다(대체가 아니라 추가).** 애너테이션 스캔은 엔드포인트가 없어도 클래스가 생기는 즉시 돈다(`edited_text` 가 그 상태다). 새 탐지기는 요청을 보내야 하므로 엔드포인트를 요구한다. 도달 범위가 달라서 어느 쪽도 다른 쪽을 덮지 못한다.
+
+### 실측이 뒤집은 것 — **F3 의 실제 강제 지점은 애너테이션이 아니다**
+
+음성 대조 NC-A 를 돌리다 확인했다. `DocumentTextRequest.text` 에 `@CodePointLength(max=4000)` 를 붙여도 **두 강제자 모두 초록**이었다. 원인은 위 C4-II 의 규칙 2 다 — `@RequestBody` 는 `@Valid` 가 없으면 검증되지 않으므로 애너테이션이 **무음**이다.
+
+그러므로 F3 위반은 **`@Valid` + 제약 애너테이션의 합성**이고, 애너테이션 스캔은 그 합성의 한쪽만 본다. 새 탐지기는 합성 결과(나간 바이트)를 본다. 이 사실을 두 테스트의 KDoc과 아래 표에 남긴다.
+
+| 변이 | `RequestFieldRejectionLayerTest`(새 탐지기) | `RequestFieldConstraintLayerTest`(애너테이션 스캔) |
+|---|---|---|
+| `@CodePointLength` 만 | 초록 | 초록 |
+| **`@Valid` + `@CodePointLength`**(열거 **밖**) | **빨강** — 「배열 detail 로 나갔다」 | 초록 ← **열거의 구멍** |
+| `@Valid` + `@Size`(열거 **안**) | **빨강** | **빨강** |
+
+**둘째 줄이 이 커밋의 근거다.** 열거 스캔 단독으로는 그 편집이 통과한다.
+
+## C4-IV. §9.1 이 못박은 것의 처분
+
+| §9.1 항목 | 이 커밋의 처분 |
+|---|---|
+| 정렬 `created_at DESC, id DESC` | **C2 가 이미 SQL 에 넣었다**(`JdbcDocumentRepository.listSql`). 이 커밋은 HTTP 층이 그 순서를 흐트리지 않는지만 잰다(`목록이 최신순이다`) |
+| `has_more` 를 `limit+1` 로, 전수 `COUNT` 금지 | `DocumentService.list` 가 `limit+1` 을 읽고 `DocumentListResponse.of` 가 자른다. DL-8 이 참·거짓 양쪽 + **요청 개수보다 많이 실리지 않음**을 잰다. `COUNT` 는 어느 SQL 에도 없다 |
+| `workspace_id` 를 줘도 `user_id` 조건 유지 | 새 질의를 만들지 않고 **`listOwned` 를 그대로 쓴다**. 소유 술어는 그 SQL `WHERE` 안에 있고 `OwnershipPredicateGuardTest` 의 핀은 **건드리지 않았다**(핀 diff 0) |
+| 목록의 검수 표시는 `status` 가 아니라 `reviewed_at` | `DocumentListItem.reviewed_at` 을 응답에 싣고 DL-2 가 **완료 전 항목에서도 키가 있는지**를 잰다 |
+
+## C4-V. 음성 대조 (전건 실측 2026-08-21 · 복원은 `Path.write_bytes` + sha256)
+
+| # | 변이 | 결과 | 겨눈 장치가 그 자리를 지목했나 |
+|---|---|---|---|
+| **NC-A** | `text` 에 `@CodePointLength` (열거 밖, `@Valid` 없음) | 두 강제자 **초록** | **아니다 — 그리고 그것이 정답이다.** 행동이 안 바뀐다(C4-III) |
+| **NC-A′** | **`@Valid` + `@CodePointLength`** | 새 탐지기 **1건 빨강** / 스캔 초록 | **그렇다** — 「배열 detail 로 나갔다」로 필드를 지목 |
+| **NC-B** | `@Valid` + `@Size`(열거 안) | **양쪽 빨강**(각 1건) | 그렇다 — 두 축이 겹치는 자리 확인 |
+| **NC-C** | `limit` 의 `@Min`·`@Max` 제거 | `DocumentListContractTest` **3건 빨강** | 그렇다 — DL-5 하한·상한 두 케이스 + `loc` 케이스 |
+| **NC-D↓** | 계약 `list_limit.max` 100 → **50** | 목록 1건 + 노드 2건 빨강 | 그렇다 — **DL-5 상한초과** + P-25 코드 상수 + P-25 계약 내부 이중 선언 |
+| **NC-D↑** | 계약 `list_limit.max` 100 → **200** | 목록 1건 + 노드 2건 빨강 | 그렇다 — **DL-6** + P-25 두 대조 |
+| **NC-E** | `DocumentListItemResponse` 에 `@JsonInclude(NON_NULL)` | `DocumentListReachTest` **1건 빨강** | 그렇다 — DL-2(키 생략 금지, X-E2) |
+| **NC-F1** | 슬라이스에서 전역 헤더 장치 제거 | DL-1 **초록**(9/9) | **의도한 초록** — 컨트롤러 개별 부착이 응답을 든다는 관측 |
+| **NC-F2** | 컨트롤러 개별 부착만 제거(전역 유지) | DL-1 **초록** | **아니다 — 빈자리였다.** 아래 C4-VI 로 닫았다 |
+| **NC-F3** | 같은 변이, 새 탐지기 포함 | `DocumentListHeaderFloorTest` **빨강** / DL-1 초록 | 그렇다 |
+
+> **N-24 는 방향마다 다른 케이스가 깨진다.** 상한을 **낮추면** DL-5(상한 초과 값이 통과)가, **올리면**
+> DL-6(정확히 상한인 값이 거절)이 깨진다 — 명세가 「DL-5·DL-6」을 함께 적은 것은 **두 방향을 합친
+> 서술**이고, 한 방향만 재면 하나는 초록이다. 그래서 양방향을 다 돌렸다.
+
+**복원 확인** — 변조한 파일 전부 sha256 일치. 계약 파일: `5963dc5b89b13b91e44a9bb2da2b35edcd58692a60c9ae5588c739510a9576da`(양방향 변조 후 각각 일치), `git status contracts/` 무변경. `cp`·`git stash` 를 쓰지 않았다.
+
+## C4-VI. 음성 대조가 만든 것 — X-D1 하한선 탐지기
+
+NC-F2 가 드러낸 것: **전역 필터가 살아 있는 컨텍스트에서는 컨트롤러의 개별 부착을 지워도 아무것도 빨개지지 않는다.** 하한선의 근거는 「전역이 없을 때도 나간다」인데 그 성질이 무너지는 편집을 잡는 장치가 없었다 — C3 의 D-d(POI zip 설정)와 같은 형태, 「관측했는데 장치가 없다」다.
+
+`DocumentListHeaderFloorTest` 로 닫았다. `@Import` 에서 `PrivateResponseHeadersConfig` 를 **빼고** 목록 응답에 두 헤더가 있는지 잰다. 케이스가 둘인 이유: 전제(「이 컨텍스트에 전역 장치가 실제로 없다」)가 조용히 깨지는 경로가 있어서다 — 누군가 그 설정을 슬라이스 기본 포함으로 옮기면 첫 케이스는 초록인 채 **전역을 재게 된다**. `/health` 에 헤더가 붙지 않는 것으로 그 전제를 단언한다.
+
+**범위를 이 오퍼레이션 하나로 뒀다.** 같은 빈자리가 하한선의 다른 아홉 자리에도 있지만 **이 커밋이 만든 자리는 `GET /documents` 하나**다(범위는 근거를 넘지 않는다). 열 자리를 한 번에 덮는 형태(계약 `applies_to` 를 읽어 오퍼레이션을 유도)는 개선 백로그에 후보로 적었다.
+
+## C4-VII. 계획·명세에서 갈라진 판단
+
+| # | 계획·명세가 적은 것 | 실제로 한 것 | 사유 |
+|---|---|---|---|
+| **D-A** | 「계약 값을 코드에 옮겨 적지 않는다」 | `ListPageLimits.kt` 에 **다섯 값을 복제**했다 | Bean Validation 은 애너테이션 인자라 **컴파일 시점 상수만** 받는다 — 계약 파일을 읽을 자리가 문법상 없다. `MAX_UPLOAD_BYTES`(P-24)와 같은 사정·같은 처방(복제를 **셋의 대조**로 지킨다: P-25 코드 상수 · P-25 계약 내부 이중 선언 · DL-5·DL-6·DL-7 의 나간 바이트) |
+| **D-B** | (§8.5) N-24 를 「값 변경」 한 번 | **양방향**으로 돌렸다 | 위 표의 주석 — 한 방향만 재면 DL-5·DL-6 중 하나는 초록이라 명세가 요구한 짝이 성립하지 않는다 |
+| **D-C** | (C4 범위) DL 케이스 · P-25 · N-24 · F3 강화 | **DC-24 의 목록 축**을 함께 마감했다 | C3 산출물 §III D-x 가 C4 로 넘긴 항목이고 `DocumentEndpointReachTest` KDoc 이 「목록이 생기면 그쪽으로도 잰다」고 적어 두었다. 미루면 그 문장이 강제자 없는 선언으로 남는다 |
+| **D-D** | (C4 범위) — | `DocumentListHeaderFloorTest` 를 **더했다** | C4-VI. 음성 대조가 이 커밋이 만든 자리의 빈 강제자를 드러냈다 |
+| **D-E** | 명세 DL-5 는 「422 · 배열 · 항목 키 3」 | 거기에 **`loc` 이 파라미터를 지목하는지**를 더했다 | 계약 `ValidationFailed.examples.query_range` 가 `loc: ["query","limit"]` 을 선언한다. 항목 키만 재면 `loc` 이 `["query"]` 로 비어도 통과하고, 그러면 클라이언트가 어느 파라미터를 고쳐야 하는지 알 수 없다. 파라미터 **이름도 계약에서 읽는다** |
+
+## C4-VIII. 이 커밋이 **닫지 못한** 자리 (「미측정」으로 적는다)
+
+1. **`created_at` 동률의 `id DESC` 타이브레이크에는 장치가 없다.** §9.1 이 요구한 성질이고 SQL 에 들어 있지만(C2), 그것을 재는 테스트가 없다 — 오늘 `JdbcDocumentStoreTest` 의 정렬 케이스는 **동률을 만들지 않는다**(실측: 두 문서를 별 트랜잭션에서 만든다). 동률을 만들어 재는 갈래도 성립하지 않는다: 타이브레이크가 없어도 PostgreSQL 의 정렬은 같은 입력에서 **결정적**이라 페이지를 넘겨 읽어도 중복·누락이 나오지 않고, 그러면 그 테스트는 **재지 않은 초록**이 된다. 구조 단언(SQL `ORDER BY` 에 기본 키가 있는지)이 후보이며 개선 백로그에 적었다. **이 커밋은 그 성질을 「측정했다」고 주장하지 않는다.**
+2. **X-D1 하한선의 나머지 아홉 자리**(auth 3 · workspaces 3 · 아직 없는 3)는 NC-F2 와 같은 빈자리를 그대로 갖는다. 이 커밋의 근거 밖이다(C4-VI).
+3. **DC-24 의 목록 축에 음성 대조를 돌리지 않았다.** 「거절했는데 목록에 보인다」를 만들려면 거절 전 커밋 경로를 합성해야 하고, 그 변이는 저장 경로를 통째로 바꾼다. 단언은 **추가**이고 행 수 축이 이미 있다.
+4. **DL-3 은 두 형식(`text`·`docx`)만 관측한다.** enum 넷 중 `pdf`·`hwpx` 는 이 케이스가 아니라 `UploadFormatContractTest`(P-26)가 형식 집합을 계약에서 유도해 덮는다.
+5. **compose 기동 스모크**(계획 P4) — 이 배치에서도 돌리지 않았다.
+
+## C4-IX. 검사 표
+
+| 검사 | 명령 | 결과 |
+|---|---|---|
+| Kotlin | `./gradlew ktlintCheck detekt build moduleBoundaryCheck parityHarness --continue --rerun-tasks` | **BUILD SUCCESSFUL** (경고 0 — `allWarningsAsErrors`) |
+| 개인정보 스캐너 | `uv run python .claude/skills/migration-safety-gate/scripts/scan_privacy_invariants.py` | exit 0 (**BLOCK 0**). 새 적중 3건은 전부 `DocumentController` 의 하한선 헤더 부착 줄 — `CACHE-HEADER` 규칙이 **분포 확인**용이라 의도한 적중이다 |
+| 하네스 핀 | `uv run pytest tests/test_kotlin_gate_reach.py tests/test_harness_scope_reach.py` | 148 passed |
+| Python 린트 | `uv run ruff check .` | All checks passed |
+| Python 타입 | `uv run mypy . .claude` | Success: 139 source files |
+| Python 테스트 | `uv run pytest` | 1440 passed, 68 skipped, 5 deselected, 5 xfailed |
+| 골든셋 | — | **해당 없음** — 프롬프트·스타일 규칙·LLM 설정을 건드리지 않았다 |
+
+**`app/**` 는 한 줄도 건드리지 않았다.**
+
+## C4-X. 계약 레인·리더에게 올리는 것
+
+계약을 고쳐야 할 자리는 **없었다.** 아래는 사실 통보다.
+
+1. **`ValidationFailed.examples.query_range` 의 `msg`·`type` 은 바이트 동일할 수 없다.** 계약 예시는 Pydantic 어휘(`"Input should be greater than or equal to 1"` / `greater_than_equal`)이고 Bean Validation 은 다른 문구·코드를 낸다. 계약이 동결한 것은 상태 코드·키 구성·입력값 미노출이므로(계약 `ValidationFailed` description) 이 커밋은 **`loc` 과 키 집합만** 단언한다. 조항 변경은 요청하지 않는다 — 지금 문면이 이미 그 한계를 적고 있다.
+2. **F3 의 실제 강제 지점이 「`@Valid` + 제약 애너테이션」의 합성이라는 사실**(C4-III)은 계약 산문(`x-request-field-constraints.x-decision`)이 다루지 않는다. 계약이 정하는 것은 나간 바이트이므로 **조항 수정은 불필요**하다고 판단했다. 다만 구현 레인의 강제자 설계에 직결되므로 통보한다.
+
+## C4-XI. 다음(C5)이 이어받을 것
+
+- `DELETE /documents/{document_id}` — **DD-1~DD-7** · FK CASCADE 로 변환 동시 파기(그 SQL 은 C2 가 이미 세웠고 `JdbcDocumentStoreTest` 가 잰다).
+- DD-3(X-B2) 은 **없는 것과 남의 것의 응답 바이트가 같다**를 요구한다 — 이 커밋의 DL-9 두 번째 케이스와 같은 형태를 쓰면 된다.
+- `PINNED_WITHOUT_DTO`(F3 새 탐지기)는 **C7 이 비운다** — `ConversionReviewRequest` 가 생기는 커밋이 프로브를 배선하고 핀에서 지우면 F3 다섯 필드가 이 축에서 마감된다.

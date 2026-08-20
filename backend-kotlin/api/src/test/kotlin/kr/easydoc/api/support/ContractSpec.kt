@@ -336,6 +336,60 @@ object ContractSpec {
     /** P-7. `x-input-limits` 쪽 값. 같은 상한이 계약 안에 두 벌 있다. */
     fun inputLimit(name: String): Int = number("x-input-limits", name)
 
+    /**
+     * **P-25 — `x-input-limits` 아래의 `{min, max, default}` 매핑 노드.**
+     *
+     * `list_limit`·`list_offset` 은 스칼라가 아니라 매핑이라 [inputLimit] 으로 못 읽는다.
+     * **기본값까지 읽어야** DL-7(파라미터를 아예 주지 않은 요청)이 성립한다 — 기본값을
+     * 코드에 적으면 계약이 그것을 바꿔도 테스트가 옛 값을 요구한다.
+     *
+     * `max` 는 **없을 수 있다**(`list_offset` 에 상한이 없다). 없는 것을 0 이나
+     * `Int.MAX_VALUE` 로 메우지 않고 `null` 로 남긴다 — 메우면 「상한이 사라진 것」과
+     * 「상한이 원래 없는 것」이 구분되지 않는다.
+     */
+    fun inputLimitRange(name: String): InputLimitRange {
+        val node = map("x-input-limits", name)
+
+        fun intAt(key: String): Int? = (node[key] as? Number)?.toInt()
+
+        return InputLimitRange(
+            name = name,
+            min = intAt("min") ?: error("x-input-limits.$name 에 min 이 없다"),
+            max = intAt("max"),
+            default = intAt("default") ?: error("x-input-limits.$name 에 default 가 없다"),
+        )
+    }
+
+    /**
+     * 오퍼레이션에 인라인으로 선언된 쿼리 파라미터들 — **`in: query` 만** 골라 온다.
+     *
+     * [pathParameters] 와 별개인 이유가 둘이다. ⑴ 그쪽은 **경로 수준**
+     * `paths.<path>.parameters` 를 읽고 이쪽은 **오퍼레이션 수준**이다. ⑵ 그쪽은
+     * `schema.format` 을 필수로 요구하는데 정수 파라미터에는 `format` 이 없다 — 그 접근자로
+     * 읽으면 「계약이 형식을 안 적었다」로 끊긴다.
+     *
+     * 스키마를 매핑째로 돌려준다. 여기서 `minimum`·`maximum`·`default` 만 꺼내 두면
+     * 계약이 그 자리에 다른 키(`multipleOf` 등)를 더했을 때 이 파서가 조용히 무시한다.
+     */
+    fun queryParameters(
+        path: String,
+        method: String,
+    ): List<ContractQueryParameter> =
+        list("paths", path, method, "parameters")
+            .mapIndexed { index, entry ->
+                val declaration =
+                    entry as? Map<*, *>
+                        ?: error("$method $path 의 parameters[$index] 가 매핑이 아니다: $entry")
+                ContractQueryParameter(
+                    name = declaration["name"]?.toString() ?: error("$method $path 의 parameters[$index] 에 name 이 없다"),
+                    location = declaration["in"]?.toString() ?: error("$method $path 의 parameters[$index] 에 in 이 없다"),
+                    required = declaration["required"] as? Boolean ?: false,
+                    schema =
+                        declaration["schema"] as? Map<*, *>
+                            ?: error("$method $path 의 parameters[$index] 에 schema 가 없다"),
+                )
+            }.filter { it.location == QUERY_LOCATION }
+
     // ------------------------------------------------------------------ P-8 ~ P-11
 
     /** 스키마의 `required` 키 목록. */
@@ -668,6 +722,42 @@ object ContractSpec {
      * 조용히 옛 어휘로 남는다(codex C-1 과 같은 형태의 결함이다).
      */
     val HTTP_METHODS: Set<String> = setOf("get", "post", "put", "patch", "delete", "head", "options", "trace")
+
+    /** OpenAPI 파라미터 `in` 값 중 쿼리. [queryParameters] 가 이것으로 고른다. */
+    private const val QUERY_LOCATION = "query"
+}
+
+/**
+ * 계약 `x-input-limits` 의 범위 노드 하나 — 하한·상한·기본값.
+ *
+ * [max] 가 `null` 이면 **계약이 상한을 두지 않았다**는 뜻이다(`list_offset`).
+ */
+data class InputLimitRange(
+    val name: String,
+    val min: Int,
+    val max: Int?,
+    val default: Int,
+) {
+    /** 하한 미만의 값 하나. 「거절돼야 하는 쪽」의 케이스를 이 값으로 유도한다. */
+    val belowMin: Int get() = min - 1
+
+    /** 상한 초과의 값 하나. 상한이 없으면 만들 수 없으므로 `null` 이다. */
+    val aboveMax: Int? get() = max?.plus(1)
+}
+
+/**
+ * 오퍼레이션에 인라인 선언된 쿼리 파라미터 하나.
+ *
+ * [schema] 를 매핑째로 든다 — 계약이 그 안에 무엇을 적었는지는 소비자가 정한다.
+ */
+data class ContractQueryParameter(
+    val name: String,
+    val location: String,
+    val required: Boolean,
+    val schema: Map<*, *>,
+) {
+    /** 스키마 키워드 하나를 정수로 읽는다. 없으면 `null` — 없는 것과 0 을 섞지 않는다. */
+    fun intKeyword(keyword: String): Int? = (schema[keyword] as? Number)?.toInt()
 }
 
 /** 계약이 요청 필드 하나에 정한 것 — 어느 층이 어느 축으로 무엇을 재고 무슨 문구를 내는가. */

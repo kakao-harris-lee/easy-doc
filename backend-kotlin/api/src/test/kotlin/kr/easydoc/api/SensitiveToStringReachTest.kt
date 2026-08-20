@@ -300,8 +300,14 @@ class SensitiveToStringReachTest {
          * 실제 문서 본문을 든 요청 DTO** 를 잡는 자리다(`text`·`title` 두 토큰이 함께 걸린다) —
          * `SENSITIVE_NAME_TOKENS` 의 `text`·`title` 이 "Phase 4 의 문서 DTO 를 겨냥해 미리
          * 둔다" 고 적힌 채 대상 0건이던 상태가 여기서 닫힌다.
+         *
+         * 50 → 52 (2026-08-21, `GET /documents` 커밋): `api.document.DocumentListItemResponse` 와
+         * `api.document.DocumentListResponse` 둘이다. 앞엣것이 **응답 쪽에서 처음으로 제목을
+         * 든 data class** 이고(`title` 토큰), 목록은 한 번에 스무 건이 오므로 컴파일러가 만든
+         * `toString()` 을 그대로 두면 한 줄이 제목 스무 개를 로그에 남긴다. 뒤엣것은 민감
+         * 토큰이 없지만 이 수는 **선언 전수**라 함께 오른다.
          */
-        const val EXPECTED_SOURCE_DECLARATIONS = 50
+        const val EXPECTED_SOURCE_DECLARATIONS = 52
 
         /**
          * 민감 판정이 반드시 닿아야 하는 타입 — **바닥**이다.

@@ -1,7 +1,14 @@
 package kr.easydoc.api
 
 import kr.easydoc.api.document.DocumentCreatedResponse
+import kr.easydoc.api.document.DocumentListItemResponse
+import kr.easydoc.api.document.DocumentListResponse
 import kr.easydoc.api.document.DocumentTextRequest
+import kr.easydoc.api.document.LIST_LIMIT_DEFAULT
+import kr.easydoc.api.document.LIST_LIMIT_MAX
+import kr.easydoc.api.document.LIST_LIMIT_MIN
+import kr.easydoc.api.document.LIST_OFFSET_DEFAULT
+import kr.easydoc.api.document.LIST_OFFSET_MIN
 import kr.easydoc.api.support.ContractSpec
 import kr.easydoc.api.support.MeasurementAxis
 import kr.easydoc.application.document.MISSING_FILE_PART_MESSAGE
@@ -15,10 +22,14 @@ import kotlin.reflect.full.memberProperties
 import kotlin.reflect.full.primaryConstructor
 
 /**
- * **`POST /documents` 가 기대는 계약 노드를 계약 파일에서 읽는다** — Spring 없이 돈다.
+ * **문서 오퍼레이션이 기대는 계약 노드를 계약 파일에서 읽는다** — Spring 없이 돈다.
  *
- * 명세 §4 의 파서 노드 중 이 커밋 몫: **P-24 · P-27 · P-33 · P-34 · P-36 · P-38 · P-39**.
+ * 명세 §4 의 파서 노드 중 이 파일 몫: **P-24 · P-25 · P-27 · P-33 · P-34 · P-36 · P-38 · P-39**.
  * (P-26 은 `UploadFormatContractTest`, P-40 은 `TitlePolicyContractTest` 가 이미 진다.)
+ *
+ * **P-25 는 `GET /documents` 커밋이 더했다.** 이름이 `POST` 로만 좁혀져 있었는데 페이지
+ * 파라미터 노드가 들어오면서 대상이 오퍼레이션 둘이 됐다 — 파일을 가르지 않은 이유는 여기
+ * 있는 것이 전부 「계약 안 대조 + 계약↔코드 상수 대조」라는 **한 종류**이기 때문이다.
  *
  * ## 왜 별도 클래스인가
  *
@@ -51,6 +62,55 @@ class DocumentContractNodeTest {
         assertThat(ContractSpec.inputLimit(MAX_EXTRACTED_CHARS_KEY)).isPositive()
     }
 
+    // ================================================================ P-25 — 페이지 파라미터 경계
+
+    @Test
+    @DisplayName("P-25 limit·offset 의 하한·상한·기본값이 계약에 있고, **코드 상수와 같다**")
+    fun `페이지 경계가 계약에서 온다`() {
+        val limit = ContractSpec.inputLimitRange(LIST_LIMIT_KEY)
+        val offset = ContractSpec.inputLimitRange(LIST_OFFSET_KEY)
+
+        // Bean Validation 애너테이션 인자는 컴파일 시점 상수만 받아 계약을 읽을 자리가 없다
+        // (`ListPageLimits.kt`). 그래서 **복제를 대조로 지킨다** — MAX_UPLOAD_BYTES(P-24) 와
+        // 같은 처방이고, 값이 갈리면 N-24 가 이 자리에서 먼저 빨개진다.
+        assertThat(LIST_LIMIT_MIN).isEqualTo(limit.min.toLong())
+        assertThat(LIST_LIMIT_MAX).isEqualTo(requireNotNull(limit.max) { "계약이 list_limit 에 상한을 두지 않았다" }.toLong())
+        assertThat(LIST_LIMIT_DEFAULT.toInt()).isEqualTo(limit.default)
+        assertThat(LIST_OFFSET_MIN).isEqualTo(offset.min.toLong())
+        assertThat(LIST_OFFSET_DEFAULT.toInt()).isEqualTo(offset.default)
+
+        // **상한이 없는 것과 상한이 사라진 것을 구분한다.** offset 에는 계약이 상한을 두지
+        // 않았고, 그 사실이 이 단언으로 남는다 — 나중에 상한이 생기면 여기서 드러난다.
+        assertThat(offset.max)
+            .withFailMessage("계약이 list_offset 에 상한을 뒀다 — 컨트롤러에 @Max 를 걸어야 한다")
+            .isNull()
+    }
+
+    @Test
+    @DisplayName("P-25 계약 **안**의 이중 선언이 일치한다 — x-input-limits 와 오퍼레이션 인라인 parameters")
+    fun `계약 내부의 페이지 경계 이중 선언이 일치한다`() {
+        val declared = ContractSpec.queryParameters(DOCUMENTS_PATH, GET).associateBy { it.name }
+
+        // 같은 경계가 계약 안에 두 벌 있다(`x-input-limits` 와 파라미터 `schema`). 한쪽만
+        // 고치는 편집이 이 저장소에서 가장 흔한 드리프트이므로 합치지 않고 **대조로** 지킨다
+        // (P-7 과 같은 형태). N-24 는 `x-input-limits` 만 바꾸는 변이라 여기서도 깨진다.
+        listOf(LIST_LIMIT_KEY to LIMIT_PARAM, LIST_OFFSET_KEY to OFFSET_PARAM).forEach { (node, parameter) ->
+            val range = ContractSpec.inputLimitRange(node)
+            val schema = declared[parameter] ?: error("계약 GET $DOCUMENTS_PATH 에 쿼리 파라미터 $parameter 가 없다")
+            assertThat(schema.intKeyword(MINIMUM_KEYWORD))
+                .withFailMessage("%s 의 하한이 x-input-limits(%d) 와 파라미터 스키마에서 갈렸다", parameter, range.min)
+                .isEqualTo(range.min)
+            assertThat(schema.intKeyword(MAXIMUM_KEYWORD))
+                .withFailMessage("%s 의 상한이 두 자리에서 갈렸다", parameter)
+                .isEqualTo(range.max)
+            assertThat(schema.intKeyword(DEFAULT_KEYWORD))
+                .withFailMessage("%s 의 기본값이 두 자리에서 갈렸다", parameter)
+                .isEqualTo(range.default)
+            // 계약이 둘 다 선택 파라미터로 두었다 — 필수가 되면 DL-7(생략)이 성립하지 않는다.
+            assertThat(schema.required).isFalse()
+        }
+    }
+
     // ================================================================ P-33 — 응답 키 집합
 
     @Test
@@ -62,6 +122,16 @@ class DocumentContractNodeTest {
         // 실제 응답 바이트로도 재지만(DC-1), 그쪽은 엔드포인트가 살아 있어야 돌고
         // 이 대조는 DTO 가 생기는 즉시 돈다.
         assertThat(jsonPropertyNames(DocumentCreatedResponse::class)).isEqualTo(declared)
+    }
+
+    @Test
+    @DisplayName("P-33 목록 두 스키마의 required 와 DTO 의 JSON 키가 정확히 같다 (DL-1·DL-2 의 오라클)")
+    fun `목록 DTO 의 키가 계약 required 와 같다`() {
+        // DL-1·DL-2 는 응답 바이트로 재지만 컨텍스트·DB 가 서야 돈다. 이 대조는 DTO 가
+        // 생기는 즉시 돌고, snake_case 누락(`hasMore` 가 그대로 나가는 것)을 먼저 잡는다.
+        assertThat(jsonPropertyNames(DocumentListResponse::class)).isEqualTo(ContractSpec.schemaRequired(LIST_SCHEMA))
+        assertThat(jsonPropertyNames(DocumentListItemResponse::class))
+            .isEqualTo(ContractSpec.schemaRequired(LIST_ITEM_SCHEMA))
     }
 
     // ================================================================ P-34 — 본문 길이 축
@@ -227,6 +297,7 @@ class DocumentContractNodeTest {
     private companion object {
         const val DOCUMENTS_PATH = "/documents"
         const val POST = "post"
+        const val GET = "get"
         const val UNPROCESSABLE = 422
         const val STATUS_CODE_LENGTH = 3
 
@@ -244,6 +315,21 @@ class DocumentContractNodeTest {
         const val REJECTED_PDF_KEY = "rejected_pdf"
 
         const val CREATED_SCHEMA = "DocumentCreatedResponse"
+        const val LIST_SCHEMA = "DocumentListResponse"
+        const val LIST_ITEM_SCHEMA = "DocumentListItem"
+
+        /** 계약 `x-input-limits` 의 노드 이름. 값이 아니라 **자리**다. */
+        const val LIST_LIMIT_KEY = "list_limit"
+        const val LIST_OFFSET_KEY = "list_offset"
+
+        /** 계약 `paths./documents.get.parameters` 의 이름. */
+        const val LIMIT_PARAM = "limit"
+        const val OFFSET_PARAM = "offset"
+
+        /** JSON Schema 키워드 이름. 계약이 파라미터 스키마에 쓰는 것들이다. */
+        const val MINIMUM_KEYWORD = "minimum"
+        const val MAXIMUM_KEYWORD = "maximum"
+        const val DEFAULT_KEYWORD = "default"
         const val TEXT_REQUEST_SCHEMA = "DocumentTextRequest"
         const val FILE_REQUEST_SCHEMA = "DocumentFileRequest"
 

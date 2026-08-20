@@ -38,11 +38,12 @@ import java.util.UUID
  * **C-I** — 소유권 404 는 두 사용자와 두 자원이 실제로 있어야 뜻이 있고, 「저장되지 않았다」는
  * 실 DB 에서만 확인된다.
  *
- * ## 「저장되지 않았다」를 목록 API 가 아니라 DB 로 잰다
+ * ## 「저장되지 않았다」를 **두 축으로** 잰다
  *
- * 명세는 DC-24 의 후속 확인을 `GET /documents` **0건**으로 적었는데 그 엔드포인트는 아직
- * 없다(다음 커밋). 그래서 같은 사실을 **`documents` 행 수**로 잰다 — 목록 API 보다 오히려
- * 좁은 축이다(목록 구현의 필터링이 끼어들지 않는다). 목록이 생기면 그쪽으로도 잰다.
+ * 명세는 DC-24 의 후속 확인을 `GET /documents` **0건**으로 적었다. 그 엔드포인트가 없던
+ * 동안은 같은 사실을 **`documents` 행 수**로만 재고 「목록이 생기면 그쪽으로도 잰다」고
+ * 적어 두었는데, 목록이 생겼으므로 **둘 다** 잰다(2026-08-21). 두 축이 겹치는 것이 아니다 —
+ * 행 수는 「저장되지 않았다」이고 목록은 「사용자에게 보이지 않는다」다.
  *
  * ## 기대값은 계약 파일에서 읽는다
  *
@@ -319,6 +320,12 @@ class DocumentEndpointReachTest {
         assertThat(documentCount(token))
             .withFailMessage("거절된 업로드가 저장됐다 — 422 를 내기 전에 커밋된 경로가 있다")
             .isEqualTo(before)
+        // **사용자가 보는 축으로도 잰다** — 명세가 적은 후속 확인이 `GET /documents` 0건이고,
+        // 그 엔드포인트가 `GET /documents` 커밋에서 생겼다(위 KDoc 「목록이 생기면 그쪽으로도
+        // 잰다」의 마감). 행 수만 재면 목록 구현이 지워진 행을 캐시해 내보내는 형태를 못 본다.
+        assertThat(listedDocumentIds(token))
+            .withFailMessage("거절된 업로드가 목록에 보인다 — DB 행은 없는데 응답이 만들어졌다")
+            .isEmpty()
     }
 
     @Test
@@ -425,6 +432,25 @@ class DocumentEndpointReachTest {
 
     // ================================================================ DB 확인
 
+    /**
+     * `GET /documents` 가 내놓는 문서 식별자들. 「저장되지 않았다」의 **사용자 축**이다.
+     *
+     * [documentCount] 와 겹치는 것이 아니라 다른 것을 잰다 — 저쪽은 행이 없다는 사실이고
+     * 이쪽은 **사용자에게 보이지 않는다**는 사실이다. 둘이 갈리는 형태(캐시·중간 뷰)가
+     * 실제로 있을 수 있으므로 둘을 함께 둔다.
+     */
+    private fun listedDocumentIds(token: String): List<String> {
+        val response =
+            send(
+                HttpRequest
+                    .newBuilder(URI.create("http://localhost:$port$DOCUMENTS_PATH"))
+                    .header("Authorization", "Bearer $token")
+                    .GET(),
+            )
+        assertThat(response.statusCode()).isEqualTo(ContractSpec.successStatus(DOCUMENTS_PATH, GET))
+        return (bodyOf(response)["items"] as List<*>).map { (it as Map<*, *>)["id"].toString() }
+    }
+
     /** 그 사용자 소유 문서 수. 「저장되지 않았다」를 목록 API 없이 재는 자리다. */
     private fun documentCount(token: String): Int =
         database.queryInt("SELECT count(*) FROM documents WHERE user_id = '${subjectOf(token)}'")
@@ -480,6 +506,7 @@ class DocumentEndpointReachTest {
     companion object {
         private const val DOCUMENTS_PATH = "/documents"
         private const val POST = "post"
+        private const val GET = "get"
         private const val DETAIL = "detail"
 
         private const val UNAUTHORIZED = 401

@@ -5,6 +5,7 @@ import com.fasterxml.jackson.annotation.JsonProperty
 import com.fasterxml.jackson.annotation.JsonSetter
 import com.fasterxml.jackson.annotation.Nulls
 import kr.easydoc.application.document.AcceptedUpload
+import kr.easydoc.core.document.DocumentListing
 import kr.easydoc.core.privacy.CONTENT_MASK
 import java.util.UUID
 
@@ -92,6 +93,104 @@ data class DocumentCreatedResponse(
                 conversionId = accepted.conversionId.toString(),
                 status = accepted.status.wireName,
                 charCount = accepted.charCount,
+            )
+    }
+}
+
+/**
+ * 목록 한 줄. 계약 `components/schemas/DocumentListItem` — 아홉 필드가 전부다.
+ *
+ * ## 널이어야 하는 넷을 **널로 둔다** (X-E2)
+ *
+ * `conversion_id`·`status`·`reviewed_at` 은 변환이 없으면 `null` 이고, 계약은 그 셋을
+ * `required` 에 넣어 두었다 — 즉 **값이 없어도 키는 나가야 한다.** Jackson 기본 포함 정책이
+ * `ALWAYS` 라 널도 실리지만, 그 사실에 기대지 않도록 계약 테스트가 「완료 전 항목에서도
+ * 키가 하나도 생략되지 않는다」를 단언한다(DL-2).
+ *
+ * ## `status` 가 enum 이 아니라 문자열이다
+ *
+ * [DocumentCreatedResponse] 와 같은 판단이다 — enum 이름을 바꾸는 순간 응답 바이트가 바뀌는데
+ * 그 사실이 DTO 에는 안 보인다. 시각도 [java.time.Instant.toString] 결과를 문자열로 굳힌다
+ * (`WorkspaceResponse.created_at` 과 같은 사유).
+ *
+ * ## `data class` 이지만 [toString] 을 손으로 쓴다
+ *
+ * [title] 이 사용자가 적어 준 문자열이다. 컴파일러가 만드는 `toString()` 은 그것을 그대로
+ * 찍고, 목록 응답은 스무 건이 한 번에 오므로 한 줄이 스무 개의 제목을 로그에 남긴다.
+ * `SensitiveToStringReachTest` 의 「민감 필드를 든 data class」 축이 이 재정의를 시험한다.
+ */
+data class DocumentListItemResponse(
+    @get:JsonProperty("id") val id: String,
+    @get:JsonProperty("title") val title: String,
+    @get:JsonProperty("source_format") val sourceFormat: String,
+    @get:JsonProperty("char_count") val charCount: Int,
+    @get:JsonProperty("created_at") val createdAt: String,
+    @get:JsonProperty("retention_expires_at") val retentionExpiresAt: String,
+    @get:JsonProperty("conversion_id") val conversionId: String?,
+    @get:JsonProperty("status") val status: String?,
+    @get:JsonProperty("reviewed_at") val reviewedAt: String?,
+) {
+    /** 제목은 표식과 길이만 남긴다. `Document.toString` 과 같은 형태다. */
+    override fun toString(): String =
+        "DocumentListItemResponse(id=$id, title=$CONTENT_MASK ${title.length}자, sourceFormat=$sourceFormat, " +
+            "charCount=$charCount, createdAt=$createdAt, retentionExpiresAt=$retentionExpiresAt, " +
+            "conversionId=$conversionId, status=$status, reviewedAt=$reviewedAt)"
+
+    companion object {
+        fun of(listing: DocumentListing): DocumentListItemResponse =
+            DocumentListItemResponse(
+                id = listing.document.id.toString(),
+                title = listing.document.title,
+                sourceFormat = listing.document.sourceFormat.wireName,
+                charCount = listing.document.charCount,
+                createdAt = listing.document.createdAt.toString(),
+                retentionExpiresAt = listing.document.retentionExpiresAt.toString(),
+                conversionId = listing.conversionId?.toString(),
+                status = listing.status?.wireName,
+                reviewedAt = listing.reviewedAt?.toString(),
+            )
+    }
+}
+
+/**
+ * `GET /documents` 응답. 계약 `components/schemas/DocumentListResponse` — 네 필드다.
+ *
+ * ## 총 개수 필드가 **없다**
+ *
+ * 계약이 그 이유를 적었다 — 전수 `COUNT` 는 목록 조회마다 비싸고 화면은 다음 쪽 유무만
+ * 쓴다. 그래서 `has_more` 를 **한 건 더 읽어**(`limit + 1`) 판정한다. 계약에 없는 필드를
+ * 더하는 것도 위반이라(계약 테스트가 키 집합을 정확히 대조한다) 편의로 `total` 을 붙이지
+ * 않는다 — 계약 `x-change-policy` O-16 이 그 추가를 이미 판정해 두었다.
+ *
+ * `limit`·`offset` 은 **요청에 쓰인 값을 그대로 되돌려준다.** 클라이언트가 다음 쪽을
+ * 조립할 때 자기가 보낸 값을 기억하지 않아도 되게 하는 값이다.
+ *
+ * `toString()` 을 재정의하지 않는다 — 담긴 것이 수·불리언과 [DocumentListItemResponse] 뿐이고,
+ * 그 항목이 스스로 제목을 가린다.
+ */
+data class DocumentListResponse(
+    @get:JsonProperty("items") val items: List<DocumentListItemResponse>,
+    @get:JsonProperty("limit") val limit: Int,
+    @get:JsonProperty("offset") val offset: Int,
+    @get:JsonProperty("has_more") val hasMore: Boolean,
+) {
+    companion object {
+        /**
+         * 한 건 더 읽어 온 목록을 응답으로 자른다.
+         *
+         * [fetched] 는 `limit + 1` 건까지 들어 있다. 그 한 건은 **다음 쪽의 존재를 알리는
+         * 데만** 쓰고 응답에 싣지 않는다 — 실으면 사용자가 요청한 개수보다 많이 나간다.
+         */
+        fun of(
+            fetched: List<DocumentListing>,
+            limit: Int,
+            offset: Int,
+        ): DocumentListResponse =
+            DocumentListResponse(
+                items = fetched.take(limit).map(DocumentListItemResponse::of),
+                limit = limit,
+                offset = offset,
+                hasMore = fetched.size > limit,
             )
     }
 }

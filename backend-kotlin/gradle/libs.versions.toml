@@ -126,6 +126,28 @@ spring-boot-bom = { module = "org.springframework.boot:spring-boot-dependencies"
 spring-boot-starter = { module = "org.springframework.boot:spring-boot-starter" }
 spring-boot-starter-web = { module = "org.springframework.boot:spring-boot-starter-web" }
 spring-boot-starter-jdbc = { module = "org.springframework.boot:spring-boot-starter-jdbc" }
+# Bean Validation(Hibernate Validator + jakarta.validation API). 버전은 BOM 이 정한다.
+#
+# ## 왜 들이는가 — 계약이 **딱 두 자리**에 스키마 층 판정을 요구한다
+#
+# `GET /documents` 의 `limit`·`offset` 이다(계약 `x-request-field-constraints.x-contrast-case`).
+# 그 둘은 "진짜 스키마 제약"이라 위반이 422 **배열** `detail` 이어야 하고, 그 모양을 내는
+# 것이 컨트롤러 파라미터의 제약 애너테이션 → `HandlerMethodValidationException` 경로다.
+# 검증기가 클래스패스에 없으면 Spring 은 그 예외를 **만들지 않으므로** 애너테이션이 무음이 된다.
+#
+# ## 무엇이 함께 켜지는가 — F3 의 1차 방벽이 여기서 사라진다
+#
+# 계약은 **다른** 다섯 요청 필드(`SignupRequest.email`·`password`·`DocumentTextRequest.text`·
+# `ConversionReviewRequest.edited_text`·`WorkspaceNameRequest.name`)에 길이·형식 Bean
+# Validation 을 **금지**했다(F3). 이 좌표가 들어오기 전까지 그 금지를 지킨 것은
+# `RequestFieldConstraintLayerTest` **더하기** 「애너테이션을 달 수조차 없다」는 사실이었다.
+# 이 줄이 그 두 번째를 없앤다.
+#
+# 그래서 같은 커밋에 대체 강제자를 세웠다 — `RequestFieldRejectionLayerTest` 가
+# 「그 필드의 거절이 어느 층에서 일어나는가」를 **응답 `detail` 모양**으로 잰다.
+# 금지 애너테이션 열거에 의존하지 않는 축이고, 사유는
+# `docs/migration/_workspace/04_kotlin-implementer_documents.md` 「C4」 절에 있다.
+spring-boot-starter-validation = { module = "org.springframework.boot:spring-boot-starter-validation" }
 spring-boot-starter-test = { module = "org.springframework.boot:spring-boot-starter-test" }
 # Spring Boot 4는 테스트 슬라이스도 기술별 모듈로 쪼갰다. @WebMvcTest·MockMvc 는
 # spring-boot-starter-test 가 아니라 여기에 있다.

@@ -18,6 +18,9 @@ dependencies {
     runtimeOnly(libs.kotlin.reflect)
 
     implementation(libs.spring.boot.starter.web)
+    // 계약이 스키마 층 판정을 요구하는 **두 자리**(`GET /documents` 의 limit·offset)를 위해
+    // 들인다. 함께 켜지는 것과 그것이 F3 에 무슨 뜻인지는 version catalog 의 주석에 있다.
+    implementation(libs.spring.boot.starter.validation)
     annotationProcessor(platform(libs.spring.boot.bom))
     annotationProcessor(libs.spring.boot.configuration.processor)
 
