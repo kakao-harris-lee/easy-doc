@@ -40,7 +40,18 @@
 검토했으나 채택하지 않았다 — 그것은 `CLAUDE.md` 규칙 4 ⑵ 가 금지하는 **은폐형**(면제
 조항)이고, 그 목록이 커질수록 이 장치가 보는 것이 줄어든다.
 
-## 재는 것 다섯
+## [2026-08-20 게이트 27] codex C-5 — **하한이 없어 동시 축소가 통과했다**
+
+`TEST_CLASS_COUNT` 는 `TEST_CLASSES` 와 **서로** 맞는지만 보는 상수였다. 그래서 탐지기
+파일을 지우면서 목록과 개수를 **함께** 줄이면 모든 대조가 통과했다 — 85 라는 정확 일치는
+독립 분모가 아니라 **같은 수기 선언의 자기 일치**였다. 게다가 실패 안내문이 그 우회
+경로를 그대로 안내하고 있었다(*"파일을 지웠다면 … 도 함께 고쳐야 하고"*).
+
+처방은 같은 저장소의 `SensitiveToStringReachTest` 형태다 — **하한 상수**
+(`MIN_TEST_CLASSES`)와 **바닥 목록**(`FLOOR_TEST_CLASSES`)을 둘 다 둔다. 안내문도 "선언을
+줄이는 것은 이 대조를 통과시키는 방법이지 결함을 고치는 방법이 아니다"로 고쳤다.
+
+## 재는 것 일곱
 
 1. **선언 ↔ 발견 정확 일치.** 종류로 훑어 나온 집합이 `TEST_CLASSES` 와 **양방향으로**
    같아야 한다. 파일을 지우면 declared 쪽이 남고, 테스트를 새로 넣고 선언을 빠뜨리면
@@ -49,6 +60,11 @@
    파일이 **정확히 하나** 있어야 한다.
 3. **개수 상수.** 파일과 선언을 **함께** 지우는 편집은 위 1·2 로 잡히지 않는다.
    그때 `TEST_CLASS_COUNT` 를 같이 고쳐야 하므로 diff 가 두 자리에서 난다.
+3-a. **개수 하한.** 3 은 두 수기 선언 사이의 일관성일 뿐이라 **함께 줄이면 통과한다.**
+   `MIN_TEST_CLASSES` 는 그 축을 밖에서 되짚는다.
+3-b. **바닥 목록.** 다른 판정이 근거로 인용하는 탐지기는 `FLOOR_TEST_CLASSES` 에 있고,
+   그것이 선언에서 빠지면 빨개진다. **바닥이지 천장이 아니다** — 새 테스트를 여기 적을
+   필요는 없다.
 4. **실행 대조.** Gradle 리포트 XML 의 **`testcase@classname`** 으로 집계하고
    **`<skipped>` 는 실행으로 세지 않는다.** `testsuite@name` 은 `@DisplayName` 이라
    FQCN 이 아니다(B-1). `tests` 속성은 skipped 를 포함한다(T-1).
@@ -146,6 +162,7 @@ TEST_CLASSES: tuple[str, ...] = (
     "kr.easydoc.api.RequestFieldConstraintLayerTest",
     "kr.easydoc.api.SensitiveToStringReachTest",
     "kr.easydoc.api.SourceScanFormsProbe",
+    "kr.easydoc.api.UploadFormatContractTest",
     "kr.easydoc.api.WorkspaceContractTest",
     "kr.easydoc.api.WorkspaceDtoLeakTest",
     "kr.easydoc.api.WorkspaceEndpointReachTest",
@@ -213,7 +230,47 @@ TEST_CLASSES: tuple[str, ...] = (
 
 #: 선언 **개수**를 목록과 따로 적는다. 파일과 선언을 함께 지우는 편집이 두 자리에
 #: 흔적을 남기게 하는 장치다. 목록을 고쳤으면 여기도 고쳐야 한다.
-TEST_CLASS_COUNT = 87
+TEST_CLASS_COUNT = 88
+
+#: 선언 개수의 **하한**. `TEST_CLASS_COUNT` 와 역할이 다르다 — 저쪽은 "목록과 개수가
+#: 서로 맞는가"(두 수기 선언 사이의 일관성)이고, 이쪽은 "그 수가 **얼마 아래로는 내려갈 수
+#: 없는가**"다. 게이트 27 codex C-5 가 지적한 것이 정확히 그 빈자리였다: 탐지기 파일을
+#: 지우면서 목록과 개수를 **함께** 줄이면 모든 대조가 통과했다.
+#:
+#: 값의 근거는 실측이다 — 게이트 27 의 대상 리비전 `6515548` 에서 이 저장소가 가졌던 수가
+#: 85 다. 그 아래로 내려가는 것은 「정리」가 아니라 **축소**이므로, 낮추려면 이 상수를 고치는
+#: 별도의 diff 와 사유가 필요하다.
+MIN_TEST_CLASSES = 85
+
+#: **바닥 목록** — 사라지면 다른 게이트의 결론이 함께 무너지는 탐지기들.
+#:
+#: `TEST_CLASSES` 전체와 달리 이 목록은 `containsAll` 방향으로만 쓰인다: 새 테스트를 여기
+#: 적을 필요는 없고, **여기 있는 것이 빠지는 것만** 막는다. `SensitiveToStringReachTest` 의
+#: `KNOWN_SENSITIVE_TYPES` 와 같은 규율이고, 그 파일의 표현을 그대로 쓴다 — "이 목록은
+#: 바닥이지 천장이 아니다".
+#:
+#: 고르는 기준은 「가드다움」이 아니다(그것은 이름으로 판정할 수 없다). **다른 판정의 근거로
+#: 인용되는 탐지기**다 — 개인정보 노출면·암호 불변식·계약 본문·범위 도달을 재는 것들.
+FLOOR_TEST_CLASSES: tuple[str, ...] = (
+    "kr.easydoc.api.AuthenticationCoverageContractTest",
+    "kr.easydoc.api.ContractErrorBodyReachTest",
+    "kr.easydoc.api.PrivateResponseHeadersReachTest",
+    "kr.easydoc.api.SensitiveToStringReachTest",
+    "kr.easydoc.api.SourceScanFormsProbe",
+    "kr.easydoc.core.CoreModuleBoundaryTest",
+    "kr.easydoc.core.ParityDeclarationSyncTest",
+    "kr.easydoc.core.crypto.PlainBodyTest",
+    "kr.easydoc.core.privacy.MaskedTextGatewayTest",
+    "kr.easydoc.core.privacy.ProvenanceCreationSitesTest",
+    "kr.easydoc.infrastructure.crypto.AesGcmContentCipherTest",
+    "kr.easydoc.infrastructure.crypto.CryptoStartupVerificationTest",
+    "kr.easydoc.infrastructure.db.EnvelopeColumnWriteGuardTest",
+    "kr.easydoc.infrastructure.db.FlywayBaselineGuardTest",
+    "kr.easydoc.infrastructure.db.StatementCountingPremiseTest",
+    "kr.easydoc.infrastructure.document.EnvelopeRotationConcurrencyTest",
+    "kr.easydoc.infrastructure.document.JdbcDocumentStoreTest",
+    "kr.easydoc.infrastructure.ingest.IngestDefensesTest",
+)
 
 
 def _kotlin_test_sources() -> list[Path]:
@@ -272,6 +329,39 @@ def test_테스트_클래스_선언이_비어_있지_않다() -> None:
     )
 
 
+def test_선언_개수가_하한_아래로_내려가지_않는다() -> None:
+    """**두 수기 선언의 자기 일치만으로는 부족하다** (게이트 27 codex C-5).
+
+    위 대조는 `TEST_CLASSES` 와 `TEST_CLASS_COUNT` 가 **서로** 맞는지만 본다. 그래서 탐지기
+    파일을 지우면서 둘을 **함께** 줄이면 전부 통과했다 — 85 라는 정확 일치는 독립 분모가
+    아니라 같은 수기 선언의 자기 일치였다.
+
+    하한은 그 축을 밖에서 되짚는다. 값을 낮추려면 **이 상수를 고치는 별도의 diff** 가 필요하고,
+    그 diff 는 "검사 범위를 줄였다"는 신고다.
+    """
+    assert len(TEST_CLASSES) >= MIN_TEST_CLASSES, (
+        f"선언한 테스트 클래스가 {len(TEST_CLASSES)} 개다 — 하한 {MIN_TEST_CLASSES} 아래다.\n"
+        "  탐지기와 선언을 함께 줄이는 편집은 위 대조를 통과하지만 여기서 걸린다.\n"
+        "  줄인 것이 정당하다면 MIN_TEST_CLASSES 를 고치는 diff 와 그 사유를 함께 남겨라."
+    )
+
+
+def test_바닥_목록의_탐지기가_선언에_남아_있다() -> None:
+    """**다른 판정이 근거로 인용하는 탐지기**는 조용히 사라질 수 없다.
+
+    `SensitiveToStringReachTest` 가 `KNOWN_SENSITIVE_TYPES` 로 하는 것과 같은 규율이다.
+    이 목록은 **바닥이지 천장이 아니다** — 새 테스트를 여기 적을 필요는 없고, 여기 있는 것이
+    빠지는 것만 막는다.
+    """
+    missing = sorted(set(FLOOR_TEST_CLASSES) - set(TEST_CLASSES))
+    assert not missing, (
+        f"바닥 목록의 탐지기가 선언에서 빠졌다: {missing}\n"
+        "  이 탐지기들은 개인정보 노출면·암호 불변식·계약 본문·범위 도달 판정의 근거로 "
+        "인용된다 — 사라지면 그 판정들이 함께 무너진다.\n"
+        "  정말 지웠거나 이름을 바꿨다면 FLOOR_TEST_CLASSES 도 함께 고쳐라."
+    )
+
+
 def test_선언한_테스트_클래스와_트리에서_발견한_것이_정확히_일치한다() -> None:
     """**정확 일치**다. 하한도 부분집합도 아니다.
 
@@ -292,8 +382,11 @@ def test_선언한_테스트_클래스와_트리에서_발견한_것이_정확�
         "선언한 테스트 클래스와 트리에서 발견한 것이 다르다.\n"
         f"  선언에만 있다(파일이 사라졌다): {missing or '없음'}\n"
         f"  트리에만 있다(선언이 빠졌다): {extra or '없음'}\n"
-        "  파일을 지웠다면 TEST_CLASSES 와 TEST_CLASS_COUNT 도 함께 고쳐야 하고, "
-        "그 diff 가 '테스트를 뺐다'는 신고로 리뷰에 올라간다."
+        "  **선언 쪽이 남았다면 먼저 '왜 그 파일이 사라졌는가'를 답하라.** 선언을 지우는 것은\n"
+        "  이 대조를 통과시키는 방법이지 결함을 고치는 방법이 아니다 — 탐지기와 선언을 함께\n"
+        "  줄이는 편집이 게이트 27 codex C-5 가 지목한 우회 경로이고, MIN_TEST_CLASSES 와\n"
+        "  FLOOR_TEST_CLASSES 가 그 경로를 밖에서 되짚는다.\n"
+        "  트리 쪽이 남았다면 새 테스트를 선언에 더하라 — 검사 범위가 조용히 늘지 않게 하는 쪽이다."
     )
 
 

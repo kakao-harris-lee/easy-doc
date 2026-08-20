@@ -64,8 +64,12 @@ class DocumentExtractorsTest {
     }
 
     @Test
-    @DisplayName("업로드 형식 집합이 계약 enum 과 같다 (docx·pdf·hwpx, text 제외)")
-    fun `업로드 형식 집합이 계약과 같다`() {
+    @DisplayName("업로드 형식 집합이 **손으로 적은 값**과 같다 — 계약 대조는 UploadFormatContractTest 가 한다")
+    fun `업로드 형식 집합이 못박은 값과 같다`() {
+        // **이 케이스가 재지 못하는 것**: 계약(`x-input-limits.supported_upload_formats`)이
+        // 바뀌어도 여기는 초록이다. 아래 기대값은 계약 파일에서 온 것이 아니라 손으로 적은
+        // 리터럴이다 — enum 이 **조용히** 바뀌는 것만 막는다(게이트 27 M-1).
+        // 계약과의 대조는 `api` 모듈의 `UploadFormatContractTest` 가 계약 파일을 읽어서 한다.
         assertThat(SourceFormat.UPLOAD_FORMATS.map { it.wireName }).containsExactly("docx", "pdf", "hwpx")
         assertThat(SourceFormat.entries.map { it.wireName }).containsExactly("text", "docx", "pdf", "hwpx")
         assertThat(SourceFormat.UPLOAD_FORMATS).doesNotContain(SourceFormat.TEXT)

@@ -19,8 +19,13 @@ import kr.easydoc.core.exceptions.StorageException
  * ## 지원 형식을 늘릴 때
  *
  * 계약이 *"이 enum 과 `x-input-limits.supported_upload_formats` 를 같은 변경 단위에서
- * 함께 늘린다"* 고 적었다. 이 파일과 계약이 갈리면 `DocumentExtractors` 의 계약 대조
- * 테스트가 빨개진다 — 집합이 늘어도 검사가 안 늘면 새 형식이 **검사 자체를 받지 않는다**.
+ * 함께 늘린다"* 고 적었다. 이 파일과 계약이 갈리면 **`api` 모듈의
+ * `UploadFormatContractTest`** 가 빨개진다 — 그 테스트는 계약 파일을 **읽어서** 대조한다
+ * (계획 §5 D-13 의 P-26). 집합이 늘어도 검사가 안 늘면 새 형식이 **검사 자체를 받지 않는다.**
+ *
+ * `infrastructure` 의 `DocumentExtractorsTest` 에도 형식 집합 케이스가 있지만 그쪽은 **손으로
+ * 적은 값**과 대조한다 — enum 이 조용히 바뀌는 것만 잡고 계약 드리프트는 못 잡는다. 두
+ * 케이스의 역할이 다르므로 각자의 `@DisplayName` 이 그 차이를 적는다.
  */
 enum class SourceFormat(val wireName: String) {
     /** 붙여넣기. 파일이 아니므로 추출기를 지나지 않는다. */
