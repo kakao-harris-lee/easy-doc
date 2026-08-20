@@ -7,9 +7,7 @@ import kr.easydoc.core.exceptions.EasyDocException
 import kr.easydoc.core.exceptions.EmailAlreadyRegisteredException
 import kr.easydoc.core.exceptions.InvalidCredentialsException
 import kr.easydoc.core.exceptions.InvalidInputException
-import kr.easydoc.core.exceptions.LlmProviderException
 import kr.easydoc.core.exceptions.NotFoundException
-import kr.easydoc.core.exceptions.QueueUnavailableException
 import kr.easydoc.core.exceptions.StorageException
 import kr.easydoc.core.exceptions.UnsupportedFormatException
 import kr.easydoc.core.exceptions.UploadTooLargeException
@@ -38,7 +36,8 @@ import tools.jackson.databind.exc.InvalidNullException
 import tools.jackson.databind.exc.MismatchedInputException
 
 /**
- * 도메인 예외·프레임워크 예외 → HTTP 응답 매핑. `app/api/errors.py` 를 그대로 옮긴 것이다.
+ * 도메인 예외·프레임워크 예외 → HTTP 응답 매핑. **정본은 `contracts/easy-doc-v1.yaml` 이다**
+ * — 출발점은 `app/api/errors.py` 였으나 계약이 갈린 자리에서는 계약을 따른다(예: 502 폐기).
  *
  * ## 왜 [ResponseEntityExceptionHandler] 를 상속하는가 (리뷰 C-1)
  *
@@ -339,12 +338,17 @@ private fun bodyReadItem(exception: HttpMessageNotReadableException): Validation
 }
 
 /**
- * 도메인 예외 → (상태 코드, 추가 헤더). `app/api/errors.py` 의 `_MAPPINGS` 그대로다.
+ * 도메인 예외 → (상태 코드, 추가 헤더). **정본은 `contracts/easy-doc-v1.yaml` 이다.**
  *
- * Python 은 Starlette 가 예외 MRO 를 따라 핸들러를 찾는다. Kotlin/Spring 에는 그런 탐색이
- * 없으므로 상위 예외 하나를 잡아 `when` 으로 가른다 — 결과는 같다. `is` 검사는 하위 타입에도
- * 걸리므로 `LlmTruncatedException` 이 `LlmProviderException` 매핑을 타고 502가 되는 동작이
- * 그대로 유지된다. **검사 순서가 중요하다**: 하위 타입을 상위 타입보다 먼저 둔다.
+ * 상위 예외 하나를 잡아 `when` 으로 가른다. `is` 검사는 하위 타입에도 걸리므로
+ * `DecryptionFailedException` 이 `StorageException` 매핑을 타고 500 이 되는 동작이 그대로
+ * 유지된다. **검사 순서가 중요하다**: 하위 타입을 상위 타입보다 먼저 둔다.
+ *
+ * **502 는 이 표에 없다** (계약 v1.3.0, `x-retired-responses`). 계약이 502 를 선언하는
+ * 오퍼레이션이 0개이므로 어떤 응답도 502 여서는 안 된다. 표에 없는 도메인 예외
+ * (`LlmProviderException` 계열 포함)는 `else -> null` 로 떨어져 500 [UNMAPPED_DOMAIN_MESSAGE]
+ * 가 되고, 그 문구는 계약 `InternalError` 의 선언된 예시다. LLM 실패는 HTTP 상태가 아니라
+ * `ConversionResponse.failure_code` 로 사용자에게 간다 — 동기로 LLM 을 부르는 오퍼레이션이 없다.
  */
 private fun mappingFor(exception: EasyDocException): Pair<HttpStatus, HttpHeaders?>? =
     when (exception) {
@@ -376,13 +380,6 @@ private fun mappingFor(exception: EasyDocException): Pair<HttpStatus, HttpHeader
 
         is NotFoundException -> {
             HttpStatus.NOT_FOUND to null
-        }
-
-        // LLM·큐 장애 → 502. 재시도하면 되는 상황임을 알린다.
-        is LlmProviderException,
-        is QueueUnavailableException,
-        -> {
-            HttpStatus.BAD_GATEWAY to null
         }
 
         is ConfigurationException -> {

@@ -18,8 +18,9 @@ import org.springframework.test.web.servlet.MvcResult
 import org.springframework.test.web.servlet.get
 
 /**
- * 도메인 예외 → HTTP 응답 계약. `app/api/errors.py` 의 `_MAPPINGS` 를 그대로 옮겼는지
- * **HTTP 경계에서** 확인한다.
+ * 도메인 예외 → HTTP 응답 계약. **`contracts/easy-doc-v1.yaml` 이 선언한 상태 코드**로
+ * 나가는지 **HTTP 경계에서** 확인한다. Python 의 `_MAPPINGS` 는 정본이 아니다 — 폐기
+ * 대상이고, 계약 v1.3.0 은 그것이 쓰던 502 를 폐기했다(`x-retired-responses`).
  *
  * ## 왜 핸들러 직접 호출이 아닌가 (리뷰 C-2)
  *
@@ -45,7 +46,7 @@ class ErrorContractTest {
 
     @ParameterizedTest(name = "{0} → {1}")
     @CsvSource(
-        // app/api/errors.py 의 _MAPPINGS 순서 그대로.
+        // 정본은 contracts/easy-doc-v1.yaml 이다 — Python 의 _MAPPINGS 가 아니다.
         "invalid-input,       422",
         "unsupported-format,  422",
         "extraction,          422",
@@ -54,12 +55,14 @@ class ErrorContractTest {
         "conflict,            409",
         "credentials,         401",
         "not-found,           404",
-        "queue,               502",
-        "llm-truncated,       502",
+        // 502 는 계약 v1.3.0 이 폐기했다(x-retired-responses). LlmProviderException 계열은
+        // 매핑 표에 없어 500 unmapped_domain 으로 떨어진다 — 이 행이 그 낙하를 붙든다.
+        // 502 매핑을 되살리면 여기가 빨개진다(판정 §5-2 R-2).
+        "llm-truncated,       500",
         "configuration,       503",
         "storage,             500",
     )
-    @DisplayName("도메인 예외가 _MAPPINGS 의 상태 코드로 나간다")
+    @DisplayName("도메인 예외가 계약이 선언한 상태 코드로 나간다")
     fun `도메인 예외 상태 코드 매핑`(
         kind: String,
         expectedStatus: Int,
@@ -68,7 +71,7 @@ class ErrorContractTest {
 
         assertThat(result.response.status)
             .withFailMessage(
-                "%s 는 %d 여야 한다 (app/api/errors.py 의 _MAPPINGS)",
+                "%s 는 %d 여야 한다 (contracts/easy-doc-v1.yaml)",
                 kind,
                 expectedStatus,
             ).isEqualTo(expectedStatus)

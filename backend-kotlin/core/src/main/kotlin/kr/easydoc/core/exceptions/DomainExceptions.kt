@@ -3,9 +3,14 @@ package kr.easydoc.core.exceptions
 /**
  * 도메인 예외 정의. `app/exceptions.py` 를 그대로 옮긴 것이다.
  *
- * 계층 구조를 Python 그대로 유지한다 — `app/api/errors.py` 의 매핑이 상위 예외 하나에
- * 걸리면 하위 예외가 같은 응답을 받는 것에 의존하기 때문이다(예: `LLMTruncatedError` 가
- * `LLMProviderError` 매핑을 타고 502가 된다).
+ * 계층 구조를 유지한다 — `GlobalExceptionHandler` 의 매핑이 상위 예외 하나에 걸리면 하위
+ * 예외가 같은 응답을 받는 것에 의존하기 때문이다(예: `DecryptionFailedException` 이
+ * `StorageException` 매핑을 타고 500 이 된다).
+ *
+ * **매핑 표에 없는 예외는 500 `unmapped_domain` 이다.** `LlmProviderException` 계열이
+ * 그렇다 — 계약 v1.3.0 이 502 를 폐기해(`x-retired-responses`) 매핑이 없어졌고, LLM 실패는
+ * HTTP 상태가 아니라 `ConversionResponse.failure_code` 로 나간다(워커의 일이다).
+ * **다시 매핑을 세우지 마라** — 502 를 선언하는 오퍼레이션이 계약에 0개다.
  *
  * **의도적으로 옮기지 않은 것**: `GoldenCollectionError`·`WelfareApiError`.
  * 둘은 운영자용 오프라인 스크립트(`scripts/collect_golden.py`, `app/easyread/bokjiro.py`)
@@ -64,13 +69,6 @@ class DocumentExtractionException(message: String) : EasyDocException(message)
  * 다르기 때문이다.
  */
 class UploadTooLargeException(message: String) : EasyDocException(message)
-
-/**
- * 비동기 작업 큐에 작업을 등록하지 못했다.
- *
- * 우리 잘못도 사용자 잘못도 아닌 하위 시스템 장애이므로 502로 매핑한다.
- */
-class QueueUnavailableException(message: String) : EasyDocException(message)
 
 /** 요청한 리소스가 없다. */
 class NotFoundException(message: String) : EasyDocException(message)

@@ -231,7 +231,7 @@ class CryptoConfiguration {
             listOf(
                 "쓰기 세대 v${properties.writeKeyVersion} 의 키가 적재되지 않았다 " +
                     "(설정된 세대: ${cipher.loadedKeyVersions.sorted()}). " +
-                    "값이 비었거나 base64 32바이트가 아니다 — 이대로 뜨면 첫 업로드가 503 이 된다",
+                    "값이 비었거나 base64 32바이트가 아니다 — 이대로는 첫 업로드가 실패하므로 띄우지 않는다",
             )
         }
 

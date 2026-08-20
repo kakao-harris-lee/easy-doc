@@ -16,7 +16,6 @@ import kr.easydoc.core.exceptions.InvalidCredentialsException
 import kr.easydoc.core.exceptions.InvalidInputException
 import kr.easydoc.core.exceptions.LlmTruncatedException
 import kr.easydoc.core.exceptions.NotFoundException
-import kr.easydoc.core.exceptions.QueueUnavailableException
 import kr.easydoc.core.exceptions.StorageException
 import kr.easydoc.core.exceptions.UnsupportedFormatException
 import kr.easydoc.core.exceptions.UploadTooLargeException
@@ -184,7 +183,6 @@ class ErrorProbeController {
                 "conflict" to { ConflictException("아직 완료되지 않았습니다") },
                 "credentials" to { InvalidCredentialsException("이메일 또는 비밀번호가 올바르지 않습니다") },
                 "not-found" to { NotFoundException("문서를 찾을 수 없습니다") },
-                "queue" to { QueueUnavailableException("변환 요청을 등록하지 못했습니다") },
                 "llm-truncated" to { LlmTruncatedException("응답이 잘렸습니다") },
                 "configuration" to { ConfigurationException("JWT 비밀키가 설정되지 않았습니다") },
                 "storage" to { StorageException("저장된 변환 결과를 읽을 수 없습니다") },
