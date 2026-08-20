@@ -115,14 +115,19 @@ fixture 가 생기면 다시 봐야 한다.
 
 ---
 
-## B-9. 확장자 판별을 계약에서 **읽어** 유도하기
+## ~~B-9. 확장자 판별을 계약에서 **읽어** 유도하기~~ → **해소(2026-08-20, 게이트 27 M-1)**
 
-**무엇** — `SourceFormat.UPLOAD_FORMATS` 는 코드 상수다. 계약
-`x-input-limits.supported_upload_formats` 와 대조하는 테스트가 아직 없다.
+**이 항목은 애초에 백로그에 있어서는 안 됐다.** 계획 §5 **D-13** 이 요구한 장치(P-26)를
+「선택적 개선」으로 옮긴 것이고, 그렇게 옮기면 그 미구축은 영영 닫히지 않는다. 게다가
+그동안 `SourceFormat` KDoc 과 `DocumentExtractorsTest` 의 `@DisplayName` 은 **그 장치가
+있다고 적고 있었다** — 전수 grep 결과 `supported_upload_formats` 를 읽는 코드·테스트가
+0건인데도.
 
-**왜 지금 넣지 않았나** — 그것이 계획 §5 **D-13** 의 P-26 이고 **C3 몫**이다. C1 은 계약
-파서를 건드리지 않기로 했다(계약 레인 선결 K5 때문).
+**지금 상태** — `backend-kotlin/api/src/test/kotlin/kr/easydoc/api/UploadFormatContractTest.kt`
+가 `ContractSpec` 으로 계약 파일을 **읽어** `SourceFormat.UPLOAD_FORMATS` 와 대조한다.
+문면 셋(`SourceFormat` KDoc · `DocumentExtractorsTest` 의 `@DisplayName` · 이 항목)도
+사실에 맞게 고쳤다. 자세한 사유와 남은 것(N-26 미실행)은 계획 §9.2-quater **D-t** 다.
 
-**잔여 위험** — 지금은 계약과 코드가 **손으로 맞춰져 있다.** C3 이 P-26 을 세울 때까지
-계약에서 형식을 늘려도 코드가 따라가지 않는 것을 아무도 신고하지 않는다.
-`DocumentExtractorsTest` 가 값을 못박아 두어 최소한 **조용히 바뀌지는** 않는다.
+**원문(기록용)** — *"`SourceFormat.UPLOAD_FORMATS` 는 코드 상수다. 계약
+`x-input-limits.supported_upload_formats` 와 대조하는 테스트가 아직 없다. … 그것이 계획
+§5 D-13 의 P-26 이고 **C3 몫**이다."*
