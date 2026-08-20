@@ -269,6 +269,13 @@ MIN_TEST_CLASSES = 91
 FLOOR_TEST_CLASSES: tuple[str, ...] = (
     "kr.easydoc.api.AuthenticationCoverageContractTest",
     "kr.easydoc.api.ContractErrorBodyReachTest",
+    # 2026-08-20 (리더, 게이트 28 P-2): 원장 조건 18(강제 TRACE 에서 문서 본문 유출 0)을
+    #   닫는 근거이고 리더 판정 P-2 가 그것을 인용한다 — 이 목록의 기준(「다른 판정의
+    #   근거로 인용되는 탐지기」)에 정면으로 든다. 형제 `CanaryProbeRedactionTest` 는
+    #   넣지 않았다: 그것은 판정의 근거가 아니라 **근거의 보호막**이고, 보호막까지 넣으면
+    #   기준이 이 파일이 명시적으로 배제한 「가드다움」으로 슬며시 바뀐다. 잔여 성질은
+    #   이 항목이 계속 진다 — 그 케이스가 `residualCanaryFragments()` 를 직접 단언한다.
+    "kr.easydoc.api.DocumentBodyLogLeakReachTest",
     "kr.easydoc.api.PrivateResponseHeadersReachTest",
     "kr.easydoc.api.SensitiveToStringReachTest",
     "kr.easydoc.api.SourceScanFormsProbe",
