@@ -259,7 +259,11 @@ TEST_CLASS_COUNT = 103
 #: 85 → 91 (2026-08-20, `POST /documents` 커밋): 그 커밋 **직전**의 실측이 91 이다.
 #: 하한은 라쳇이라 올리기만 한다 — 옛 값을 그대로 두면 그 사이 13개를 조용히 지워도
 #: 이 축이 울리지 않는다. 올리는 것은 「이만큼은 이미 있었다」는 사실의 기록이다.
-MIN_TEST_CLASSES = 91
+#:
+#: 91 → 99 (2026-08-21, 리더): `GET /documents` 커밋 **직전**의 실측이 99 다. 앞 항목과
+#: 같은 규율이고, 라쳇을 올리지 않으면 그 사이 늘어난 8개를 조용히 지워도 이 축이
+#: 울리지 않는다.
+MIN_TEST_CLASSES = 99
 
 #: **바닥 목록** — 사라지면 다른 게이트의 결론이 함께 무너지는 탐지기들.
 #:
@@ -281,6 +285,15 @@ FLOOR_TEST_CLASSES: tuple[str, ...] = (
     #   이 항목이 계속 진다 — 그 케이스가 `residualCanaryFragments()` 를 직접 단언한다.
     "kr.easydoc.api.DocumentBodyLogLeakReachTest",
     "kr.easydoc.api.PrivateResponseHeadersReachTest",
+    # 2026-08-21 (리더, C4): F3(요청 다섯 필드에 Bean Validation 금지)을 지킨 것은 둘이었다 —
+    #   `RequestFieldConstraintLayerTest` 의 애너테이션 부재 스캔과, 「`validation` 이
+    #   클래스패스에 없어 **달 수조차 없다**」는 사실. C4 가 그 의존성을 들여 **두 번째를
+    #   영구히 없앴고**, 같은 커밋의 음성 대조가 첫 번째의 구멍을 실측했다(`@Valid` +
+    #   열거 밖 제약 → 스캔 초록). 그래서 이 파일이 사라지면 F3 의 결론이 함께 무너진다 —
+    #   이 목록의 기준(「다른 판정의 근거로 인용되는 탐지기」)에 정면으로 든다.
+    #   형제 `DocumentListHeaderFloorTest` 는 넣지 않았다: 그 레인이 범위를 「이 커밋이
+    #   만든 한 자리」로 명시해 뒀고, 바닥에 넣는 것은 재지 않은 범위를 선점하는 편집이다.
+    "kr.easydoc.api.RequestFieldRejectionLayerTest",
     "kr.easydoc.api.SensitiveToStringReachTest",
     "kr.easydoc.api.SourceScanFormsProbe",
     "kr.easydoc.core.CoreModuleBoundaryTest",
