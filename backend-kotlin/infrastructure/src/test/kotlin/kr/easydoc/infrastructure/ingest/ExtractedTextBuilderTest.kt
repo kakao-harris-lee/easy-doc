@@ -66,6 +66,44 @@ class ExtractedTextBuilderTest {
     }
 
     @Test
+    @DisplayName("아직 블록이 아닌 **조립 중 조각**도 상한이 진다 — 붙이기 전에 끊는다")
+    fun `조립 중 조각을 예산에 넣는다`() {
+        val builder = ExtractedTextBuilder(SourceFormat.HWPX, UPLOAD_SIZE)
+
+        // 확정 결과가 절반, 조립 중 조각이 절반 하고 한 글자 — 합치면 상한을 넘는다.
+        builder.add("가".repeat(MAX_EXTRACTED_CHARS / 2))
+        builder.ensureRoomFor(MAX_EXTRACTED_CHARS / 2)
+
+        assertThatThrownBy { builder.ensureRoomFor(MAX_EXTRACTED_CHARS / 2 + 1) }
+            .isInstanceOf(DocumentExtractionException::class.java)
+            .hasMessage(ExtractionMessages.EXTRACTED_TOO_LONG)
+    }
+
+    @Test
+    @DisplayName("조각 길이를 더할 때 `Int` 로 넘치지 않는다 — 넘치면 음수가 되어 검사가 통과한다")
+    fun `조각 길이가 넘치지 않는다`() {
+        val builder = ExtractedTextBuilder(SourceFormat.DOCX, UPLOAD_SIZE)
+
+        builder.add("가".repeat(MAX_EXTRACTED_CHARS))
+
+        assertThatThrownBy { builder.ensureRoomFor(Int.MAX_VALUE) }
+            .isInstanceOf(DocumentExtractionException::class.java)
+    }
+
+    @Test
+    @DisplayName("대조용 BlockList 도 **같은 예산**을 진다 — 예산 없는 sink 를 두지 않는다")
+    fun `블록 목록도 예산을 진다`() {
+        val collected = BlockList(SourceFormat.DOCX, UPLOAD_SIZE)
+
+        collected.add("가".repeat(MAX_EXTRACTED_CHARS))
+        assertThat(collected.blocks).hasSize(1)
+
+        assertThatThrownBy { collected.add("나") }
+            .isInstanceOf(DocumentExtractionException::class.java)
+            .hasMessage(ExtractionMessages.EXTRACTED_TOO_LONG)
+    }
+
+    @Test
     @DisplayName("빈 입력은 빈 결과다 — 형식별 추출기가 '텍스트 없음'을 스스로 판정한다")
     fun `빈 입력은 빈 결과다`() {
         val builder = ExtractedTextBuilder(SourceFormat.PDF, UPLOAD_SIZE)

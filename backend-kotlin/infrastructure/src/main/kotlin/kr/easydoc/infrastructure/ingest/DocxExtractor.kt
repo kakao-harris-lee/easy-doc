@@ -35,7 +35,7 @@ internal class DocxExtractor {
     /** 이어 붙인 본문. */
     fun extract(data: ByteArray): String {
         val builder = ExtractedTextBuilder(SourceFormat.DOCX, data.size)
-        blocks(data).forEach(builder::add)
+        collectInto(data, builder)
         return builder.build()
     }
 
@@ -45,21 +45,53 @@ internal class DocxExtractor {
      * spike 가 Python 과 대조한 단위가 이것이다 — `_join_blocks` 뒤에 대조하면 정규화가
      * 차이를 덮는다. 회귀 테스트가 `repo-fixtures-oracle.json` 의 `_raw_docx_blocks` 와
      * 이 값을 비교한다.
+     *
+     * **예산은 [extract] 와 같다** — [BlockList] 도 [MAX_EXTRACTED_CHARS] 를 진다. 대조용이라고
+     * 예산 없는 경로를 두면 그것이 제품 코드 안의 무제한 통로가 된다.
+     */
+    fun blocks(data: ByteArray): List<String> {
+        val collected = BlockList(SourceFormat.DOCX, data.size)
+        collectInto(data, collected)
+        return collected.blocks
+    }
+
+    /**
+     * 문서를 열어 블록을 [sink] 로 흘려보낸다.
+     *
+     * **목록을 먼저 만들지 않는다** (게이트 27 지적 ②). 이전 판은 블록 전부를 `List<String>`
+     * 으로 만든 뒤 [ExtractedTextBuilder] 에 넘겼고, 그래서 500,000자 상한이 누적 중단이 아니라
+     * 사후 검사였다. 지금은 문단이 끝날 때마다 넘기고, 조립 중인 문단도
+     * [BlockSink.ensureRoomFor] 로 예산 안에 가둔다.
      */
     @Suppress("TooGenericExceptionCaught")
-    fun blocks(data: ByteArray): List<String> =
-        try {
-            XWPFDocument(ByteArrayInputStream(data)).use { document -> collect(document) }
-        } catch (cause: IOException) {
-            throw broken(data.size, cause)
-        } catch (cause: RuntimeException) {
-            // POI 는 `POIXMLException`·`EmptyFileException`·`NotOfficeXmlFileException` 등
-            // 비검사 예외로도 실패한다. 원본이 `except Exception` 으로 잡던 자리와 같다.
-            throw broken(data.size, cause)
-        }
+    private fun collectInto(
+        data: ByteArray,
+        sink: BlockSink,
+    ) {
+        // `PdfExtractor.guarded` 와 같은 모양이다 — 잡은 예외를 값으로 받아 **한 자리에서**
+        // 던진다. 갈래마다 던지면 "어떤 예외가 어떤 문구가 되는가"가 흩어진다.
+        val failure: Throwable =
+            try {
+                XWPFDocument(ByteArrayInputStream(data)).use { document -> collect(document, sink) }
+                return
+            } catch (cause: DocumentExtractionException) {
+                // 우리 예외(길이 상한)는 **변환하지 않는다.** 아래 `RuntimeException` 갈래가
+                // 먼저 잡으면 "파일이 손상되었습니다"로 둔갑해 사용자가 취할 조치가 달라진다.
+                throw cause
+            } catch (cause: IOException) {
+                cause
+            } catch (cause: RuntimeException) {
+                // POI 는 `POIXMLException`·`EmptyFileException`·`NotOfficeXmlFileException` 등
+                // 비검사 예외로도 실패한다. 원본이 `except Exception` 으로 잡던 자리와 같다.
+                cause
+            }
+        throw broken(data.size, failure)
+    }
 
-    private fun collect(document: XWPFDocument): List<String> {
-        val sink = mutableListOf<String>()
+    private fun collect(
+        document: XWPFDocument,
+        sink: BlockSink,
+    ) {
         val body = document.document.body.domNode
         elementBlocks(body, sink)
         for (sectionProperties in sectionPropertiesInDocumentOrder(body)) {
@@ -68,7 +100,6 @@ internal class DocxExtractor {
                 elementBlocks(part, sink)
             }
         }
-        return sink
     }
 
     /**
@@ -89,7 +120,7 @@ internal class DocxExtractor {
      */
     private fun elementBlocks(
         root: Node,
-        sink: MutableList<String>,
+        sink: BlockSink,
     ) {
         val current = StringBuilder()
         val stack = ArrayDeque<Node>()
@@ -99,18 +130,21 @@ internal class DocxExtractor {
             if (isAlternateContentFallback(node)) continue
             when (OoxmlDom.localName(node)) {
                 "p" -> {
-                    sink += current.toString()
+                    sink.add(current.toString())
                     current.setLength(0)
                 }
 
                 "t" -> {
-                    current.append(OoxmlDom.leadingText(node))
+                    val text = OoxmlDom.leadingText(node)
+                    // 붙이기 **전에** 예산을 묻는다 — 문단 하나가 통째로 거대한 입력을 막는다.
+                    sink.ensureRoomFor(current.length + text.length)
+                    current.append(text)
                 }
             }
             // 자식을 역순으로 쌓아야 pop 순서가 문서 순서가 된다.
             OoxmlDom.childElements(node).asReversed().forEach(stack::addLast)
         }
-        sink += current.toString()
+        sink.add(current.toString())
     }
 
     /**

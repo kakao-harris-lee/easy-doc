@@ -28,8 +28,12 @@ import org.apache.poi.openxml4j.util.ZipSecureFile
  *
  * 업로드는 [ZipBudget.ensureWithinBudget] 를 **먼저** 지나고, 그 검사는 POI 를 부르기 전에
  * 압축 폭탄을 거절한다. 따라서 여기 설정을 지워도 zip bomb fixture 는 여전히 거부된다 —
- * 즉 **행동 음성 대조가 성립하지 않는다.** 이 자리의 회귀는 「설정이 실제로 걸려 있는가」를
- * 재는 구조 단언이고, 그 사실을 `PoiZipDefensesTest` 가 KDoc 으로 다시 적는다.
+ * 즉 **「폭탄이 막히는가」축의 행동 음성 대조는 성립하지 않는다.**
+ *
+ * **다만 「조립이 이 값을 설치하는가」축은 음성 대조가 성립한다**(게이트 27 codex C-10).
+ * `IngestDefensesTest` 가 전역 값을 일부러 어긋뜨린 뒤 [IngestConfiguration] 의 빈 생성만
+ * 부르고 값이 돌아오는지 본다 — [apply] 호출을 지우면 빨개진다. 이전 판은 테스트가
+ * **스스로** [apply] 를 불러 그 축마저 재지 못했다.
  *
  * 그럼에도 두는 이유: [ZipBudget] 을 지나지 않는 경로가 생기는 날(예: POI 로 여는 다른
  * 형식을 더할 때) 그 경로가 4GiB 짜리 무방비로 시작하지 않게 한다.

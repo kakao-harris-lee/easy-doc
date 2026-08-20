@@ -5,6 +5,8 @@ import kr.easydoc.application.document.ExtractedDocument
 import kr.easydoc.core.document.SourceFormat
 import org.apache.poi.openxml4j.util.ZipSecureFile
 import org.assertj.core.api.Assertions.assertThat
+import org.junit.jupiter.api.AfterEach
+import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
 import java.util.concurrent.CountDownLatch
@@ -19,15 +21,55 @@ import javax.xml.stream.XMLInputFactory
  *
  * 셋 다 **행동 음성 대조가 성립하지 않거나 비싸다.** 그 사실을 숨기지 않고, 각 케이스가
  * 무엇을 재고 무엇을 못 재는지 함께 적는다.
+ *
+ * ## POI 축을 **제품 배선에서** 잰다 (게이트 27 codex C-10)
+ *
+ * 이전 판은 테스트 첫 줄에서 `PoiZipDefenses.apply()` 를 **스스로 불렀다.** 그래서
+ * `IngestConfiguration` 에서 그 호출을 지워도 이 파일이 원하는 값을 직접 설치해 초록이었고
+ * — 즉 **제품 조립이 방어를 설치하는지 재지 않았다.** 게다가 `ZipSecureFile` 의 값은
+ * **JVM 전역 static** 이라 복원 없이 두면 뒤에 도는 테스트까지 오염된다.
+ *
+ * 지금은 ⑴ 값을 일부러 **틀리게 어긋뜨린 뒤** ⑵ 제품 조립 지점만 부르고 ⑶ 값이 우리 것으로
+ * 돌아왔는지 본다. `IngestConfiguration` 에서 `apply()` 를 지우면 이 케이스가 빨개진다.
+ * [`@AfterEach`][restoreGlobalDefenses] 가 **원래 값**으로 되돌린다.
  */
 class IngestDefensesTest {
-    @Test
-    @DisplayName("POI 전역 zip 방어값이 우리 예산으로 낮춰져 있다 (계획 §5 D-8)")
-    fun `POI 전역 zip 방어가 걸려 있다`() {
-        PoiZipDefenses.apply()
+    private var savedMaxEntrySize: Long = 0
+    private var savedMinInflateRatio: Double = 0.0
+    private var savedMaxFileCount: Long = 0
 
-        // 기본값은 항목 하나에 4GiB-1 을 허용한다. 그 상태를 그대로 두지 않는다.
-        assertThat(ZipSecureFile.getMaxEntrySize()).isEqualTo(ZIP_UNCOMPRESSED_BUDGET_BYTES)
+    @BeforeEach
+    fun rememberGlobalDefenses() {
+        savedMaxEntrySize = ZipSecureFile.getMaxEntrySize()
+        savedMinInflateRatio = ZipSecureFile.getMinInflateRatio()
+        savedMaxFileCount = ZipSecureFile.getMaxFileCount()
+    }
+
+    @AfterEach
+    fun restoreGlobalDefenses() {
+        // JVM 전역이므로 반드시 되돌린다 — 되돌리지 않으면 이 파일이 다른 테스트의 전제를
+        // 바꾼다(순서·병렬에 따라 결과가 갈리는, 가장 찾기 어려운 실패다).
+        ZipSecureFile.setMaxEntrySize(savedMaxEntrySize)
+        ZipSecureFile.setMinInflateRatio(savedMinInflateRatio)
+        ZipSecureFile.setMaxFileCount(savedMaxFileCount)
+    }
+
+    @Test
+    @DisplayName("**제품 조립**이 POI 전역 zip 방어값을 우리 예산으로 되돌린다 (계획 §5 D-8)")
+    fun `조립이 POI 전역 zip 방어를 설치한다`() {
+        // 어긋뜨린다 — 이 값들이 그대로 남으면 조립이 아무것도 설치하지 않은 것이다.
+        ZipSecureFile.setMaxEntrySize(WRONG_MAX_ENTRY_SIZE)
+        ZipSecureFile.setMinInflateRatio(WRONG_MIN_INFLATE_RATIO)
+        ZipSecureFile.setMaxFileCount(WRONG_MAX_FILE_COUNT)
+
+        // **제품 조립 지점만** 부른다. `PoiZipDefenses.apply()` 를 여기서 직접 부르지 않는다.
+        IngestConfiguration().documentTextExtractor()
+
+        assertThat(ZipSecureFile.getMaxEntrySize())
+            .withFailMessage(
+                "조립이 maxEntrySize 를 설치하지 않았다 — IngestConfiguration 의 " +
+                    "PoiZipDefenses.apply() 호출이 사라졌는지 보라. 기본값은 항목 하나에 4GiB-1 이다.",
+            ).isEqualTo(ZIP_UNCOMPRESSED_BUDGET_BYTES)
         assertThat(ZipSecureFile.getMinInflateRatio()).isEqualTo(PoiZipDefenses.MIN_INFLATE_RATIO)
         assertThat(ZipSecureFile.getMaxFileCount()).isEqualTo(PoiZipDefenses.MAX_FILE_COUNT)
     }
@@ -35,9 +77,13 @@ class IngestDefensesTest {
     @Test
     @DisplayName("이 설정은 backstop 이다 — 1차 방어는 ZipBudget 이고 순서가 그렇다")
     fun `POI 설정은 backstop 임을 명시한다`() {
-        // **이 케이스가 재지 못하는 것**: `PoiZipDefenses.apply()` 를 지워도 압축 폭탄은
-        // 여전히 거부된다(ZipBudget 이 POI 를 부르기 전에 끊는다). 그래서 위 케이스는
-        // 행동이 아니라 **구조**를 재는 단언이고, 이 주석이 그 한계의 기록이다.
+        // **이 파일이 재지 **못하는** 것 (둘을 구분해 적는다)**
+        //
+        // ⑴ **압축 폭탄에 대한 행동 음성 대조**: `PoiZipDefenses.apply()` 를 지워도 폭탄은
+        //    여전히 거부된다 — `ZipBudget` 이 POI 를 부르기 전에 끊기 때문이다. 그래서 위
+        //    케이스는 「폭탄이 막히는가」가 아니라 **「조립이 값을 설치하는가」**를 잰다.
+        // ⑵ **조립 지점이 하나뿐인가**: 다른 곳에서 `ZipSecureFile` 을 다시 설정하면
+        //    마지막에 부른 쪽이 이긴다. 그 자리를 세는 탐지기는 없다.
         assertThat(PoiZipDefenses.MAX_ENTRY_SIZE).isEqualTo(ZIP_UNCOMPRESSED_BUDGET_BYTES)
     }
 
@@ -113,5 +159,13 @@ class IngestDefensesTest {
     private companion object {
         const val CALLERS = 12
         const val AWAIT_SECONDS = 10L
+
+        /**
+         * 일부러 어긋뜨리는 값. 우리 값과 **달라야** 음성 대조가 성립한다 — 같은 값을 심으면
+         * 조립이 아무것도 하지 않아도 통과한다.
+         */
+        const val WRONG_MAX_ENTRY_SIZE = 7L
+        const val WRONG_MIN_INFLATE_RATIO = 0.99
+        const val WRONG_MAX_FILE_COUNT = 3L
     }
 }

@@ -79,6 +79,50 @@ class HwpxExtractorTest {
     }
 
     @Test
+    @DisplayName("문단 하나가 상한을 넘으면 **문서 끝에 닿기 전에** 끊는다 (게이트 27 지적 ②)")
+    fun `상한을 문단 조립 중에 건다`() {
+        // ## 이 케이스가 「사후 검사」와 「누적 중단」을 어떻게 가르는가
+        //
+        // 두 구현 모두 이 입력을 거절하므로 **거절 여부로는 갈리지 않는다.** 그래서 구역
+        // 끝에 **깨진 꼬리**를 둔다 — 파서가 거기까지 읽으면 `XMLStreamException` 이 나고
+        // 사용자 문구가 "파일이 손상되었습니다"로 바뀐다.
+        //
+        // - 누적 중단(지금) → 첫 문단에서 예산이 터져 **꼬리에 닿지 않는다** → "너무 깁니다"
+        // - 사후 검사(이전) → 구역 전체를 다 읽은 뒤에야 길이를 재므로 **꼬리에 먼저 닿는다**
+        //   → "손상되었습니다"
+        //
+        // 즉 이 단언은 「어디까지 읽고 멈췄는가」를 사용자 문구로 관측한다.
+        val oversized = hwpxWithSection(oversizedParagraphWithBrokenTail().toByteArray(StandardCharsets.UTF_8))
+
+        assertThatThrownBy { extractor.extract(oversized) }
+            .isInstanceOf(DocumentExtractionException::class.java)
+            .hasMessage(ExtractionMessages.EXTRACTED_TOO_LONG)
+    }
+
+    @Test
+    @DisplayName("**리더 생성 시점**의 XML 실패도 정화된 422 로 나간다 (게이트 27 codex C-4/C-9)")
+    fun `리더 생성 실패도 정화된다`() {
+        // `createXMLStreamReader` 는 잘못된 인코딩 선언을 **읽기 전에** 거부한다. 그 호출이
+        // `try` 밖에 있으면 라이브러리 예외가 그대로 올라가 계약이 못박은 422 대신 500 이
+        // 나가고, 라이브러리 메시지가 로그 규약(형식·바이트·타입만)을 우회한다.
+        val bogus =
+            """<?xml version="1.0" encoding="BOGUS-ENCODING"?>
+            |<hs:sec xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section"
+            | xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph">
+            |<hp:p><hp:run><hp:t>본문</hp:t></hp:run></hp:p></hs:sec>
+            """.trimMargin()
+
+        val thrown =
+            runCatching { extractor.extract(hwpxWithSection(bogus.toByteArray(StandardCharsets.UTF_8))) }
+                .exceptionOrNull()
+
+        assertThat(thrown)
+            .withFailMessage("리더 생성 예외가 도메인 예외로 바뀌지 않았다 — 계약상 422 가 500 이 된다.")
+            .isInstanceOf(DocumentExtractionException::class.java)
+        assertThat(thrown?.message).isEqualTo(ExtractionMessages.broken(SourceFormat.HWPX))
+    }
+
+    @Test
     @DisplayName("본문 구역이 없으면 전용 문구로 거절한다")
     fun `구역 없는 패키지를 거절한다`() {
         val empty = IngestFixtures.zipOf(mapOf("mimetype" to "application/hwp+zip".toByteArray()))
@@ -101,6 +145,20 @@ class HwpxExtractorTest {
     private fun hwpxWithSection(section: ByteArray): ByteArray =
         IngestFixtures.withEntryReplaced(IngestFixtures.bytes("sample.hwpx"), "Contents/section0.xml", section)
 
+    /**
+     * 문단 **하나**가 상한을 넘고, 그 뒤에 **닫히지 않은 태그**가 오는 구역 XML.
+     *
+     * 꼬리를 닫지 않는 것이 이 fixture 의 핵심이다 — 파서가 거기까지 읽으면 실패 문구가
+     * 달라지므로, 「어디서 멈췄는가」가 관측 가능해진다.
+     */
+    private fun oversizedParagraphWithBrokenTail(): String =
+        """<?xml version="1.0" encoding="UTF-8"?>
+        |<hs:sec xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section"
+        | xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph">
+        |<hp:p><hp:run><hp:t>${"가".repeat(OVERSIZED_PARAGRAPH_CHARS)}</hp:t></hp:run></hp:p>
+        |<hp:p><hp:run><hp:t>꼬리
+        """.trimMargin()
+
     private fun billionLaughs(encoding: String = "UTF-8"): String =
         """<?xml version="1.0" encoding="$encoding"?>
         |<!DOCTYPE hs:sec [
@@ -113,4 +171,9 @@ class HwpxExtractorTest {
         | xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph">
         |<hp:p><hp:run><hp:t>&d;</hp:t></hp:run></hp:p></hs:sec>
         """.trimMargin()
+
+    private companion object {
+        /** 상한을 확실히 넘기되 fixture 가 불필요하게 커지지 않을 만큼만. */
+        const val OVERSIZED_PARAGRAPH_CHARS = MAX_EXTRACTED_CHARS + 20_000
+    }
 }
