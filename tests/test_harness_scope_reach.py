@@ -463,6 +463,11 @@ EXPECTED_MET_YES_KEYS: Final[frozenset[tuple[str, str]]] = frozenset(
         ("Phase 0 — 범위·계약 동결", "범위 승인: 런타임만 Kotlin화 vs 오프라인 도구까지 Python "),
         ("Phase 0 — 범위·계약 동결", "품질 합격선 기제 확정·승인 (계획 §5 Phase 0 · §4.6 게이"),
         # Phase 1 — Kotlin 골격과 CI
+        # 2026-08-20 (리더, 게이트 28 후속): 「CI에 Kotlin build/test 추가」를 예로 올렸다.
+        #   blocked-by 「첫 PR 실행」이 실행 32356589642(headSha 90aff42)로 충족됐다 —
+        #   kotlin·quality·frontend·e2e 네 잡 전부 success. 이 핀이 그 승격을 잡아 주었다
+        #   (기대 30 / 실제 31 로 빨강). `충족 = 예` 는 조용히 늘 수 없다.
+        ("Phase 1 — Kotlin 골격과 CI", "CI에 Kotlin build/test 추가 + 기존 Python/Rea"),
         ("Phase 1 — Kotlin 골격과 CI", "Dockerfile·compose Kotlin profile 추가 (기존"),
         ("Phase 1 — Kotlin 골격과 CI", "Testcontainers PostgreSQL + Flyway basel"),
         ("Phase 1 — Kotlin 골격과 CI", '`/health` 가 계약대로 응답 (상수 `{"status":"ok"}'),
