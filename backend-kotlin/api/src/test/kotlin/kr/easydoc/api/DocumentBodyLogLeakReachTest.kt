@@ -137,9 +137,9 @@ class DocumentBodyLogLeakReachTest {
     fun `문서 본문이 강제 TRACE 로그로도 새지 않는다`() {
         val root = LoggerFactory.getLogger(org.slf4j.Logger.ROOT_LOGGER_NAME) as ch.qos.logback.classic.Logger
         val probe = CanaryProbe(RETRO_CONTROL_MARKER)
-        probe.addCanary("본문", BODY_CANARY)
-        probe.addCanary("제목", TITLE_CANARY)
-        probe.addCanary("자격증명(비밀번호)", PASSWORD_CANARY)
+        probe.addCanary(BODY_AXIS, BODY_CANARY)
+        probe.addCanary(TITLE_AXIS, TITLE_CANARY)
+        probe.addCanary(PASSWORD_AXIS, PASSWORD_CANARY)
 
         // 콘솔 appender 를 잠시 떼어 둔다 — 강제 TRACE 의 방출량이 빌드 로그를 덮는 것을
         // 막을 뿐이고, **판정은 probe 가 받은 전량으로 한다**(신호를 줄이지 않는다).
@@ -161,7 +161,7 @@ class DocumentBodyLogLeakReachTest {
             // ⑴ 계정 생성 — 평문 비밀번호가 요청 바이트·Argon2·JDBC 를 지난다. 이 구간만
             //    보관해 두고, 토큰을 손에 쥔 직후 소급 대조한다.
             val token = newAccount()
-            probe.addCanary("자격증명(액세스 토큰)", token)
+            probe.addCanary(TOKEN_AXIS, token)
             // 토큰과 **같은 자리에서 같은 방식으로** 등록한다 — 이 줄이 토큰 등록과 함께
             // 움직이지 않으면 아래 통제 단언이 그 사실을 잡는다.
             probe.addControlCanary(RETRO_CONTROL_AXIS, RETRO_CANARY_VALUE)
@@ -193,6 +193,7 @@ class DocumentBodyLogLeakReachTest {
      * 잘림·소급 대조·적중)이라 한 함수에 두면 「무엇을 재는 함수인가」가 흐려진다.
      */
     private fun assertNoCanaryInLogs(probe: CanaryProbe) {
+        assertMeasuredAxisInventory(probe)
         // 양성 대조 ⑴ — 캡처가 살아 있는가.
         assertThat(probe.sawPositiveControl())
             .withFailMessage("표식이 캡처에 없다 — 이 케이스는 아무 로그도 보고 있지 않다")
@@ -237,6 +238,53 @@ class DocumentBodyLogLeakReachTest {
                     "허용 목록은 CLAUDE.md 규칙 4 ⑵ 가 금지한 면제 조항이다.",
                 probe.report(),
             ).isEmpty()
+    }
+
+    /**
+     * **재고 핀** — 재고 있는 축의 집합이 선언과 **정확히 일치**하고, 그 선언이 **비어 있지 않다**.
+     *
+     * 앞의 장치들이 지킨 것은 **기제**다(늦은 등록이 작동하는가 · 소급이 카나리 집합을 지나는가).
+     * **재고**는 아무도 지키지 않았다 — 축 등록을 통째로 지우면 통제 카나리는 별개 값이라 그대로
+     * 적중하고, `pendingRetroMatches()` 는 등록되지 않은 축에 항목을 만들지 않아 비울 것이 없다.
+     * 그래서 토큰 축을 지워도 **전부 초록**이었다(게이트 28 stop-time codex, 같은 종류 네 번째).
+     *
+     * 등록부는 `CLAUDE.md` 규칙 4 의 **범위 선언형**이다 — 무엇을 검사할지 스스로 열거한다.
+     * 규칙 4 ⑶: *"범위 선언형은 빈 선언에서 통과하면 안 된다. 최대 위험은 좁게 선언되는 것이
+     * 아니라 아무것도 선언되지 않은 채 초록이 되는 것이다."* 그래서 두 방향을 함께 단언한다:
+     *
+     * - **부분집합만** 보면 축이 지워져도 통과한다 → 없어진 축을 잡는다.
+     * - **상위집합만** 보면 축이 조용히 늘어난다 → 새로 생긴 축을 잡는다.
+     * - **비면** 0개 검사가 된다 → 선언 자체가 비었는지 먼저 본다.
+     *
+     * 형태는 이 저장소가 이미 쓰는 정확 열거 핀이다(`TEST_CLASSES`·`EXPECTED_STATEMENTS`·
+     * `EXPECTED_DEFINITION_ROWS`) — 핀이 늘거나 줄면 **그 diff 가 리뷰에 올라오는 것**이 작동
+     * 방식이다. 패턴 면제(축 이름 접두 예외)로 만들지 않았다: 그것이 규칙 4 ⑵ 다.
+     *
+     * **통제 축도 함께 덮는다** — 그 축이 지워지면 다른 단언의 근거가 사라지므로 그것도 결함이다.
+     * 축 **이름**만 다루고 needle **값**은 다루지 않는다(이름은 비밀이 아니고 값은 비밀이다).
+     */
+    private fun assertMeasuredAxisInventory(probe: CanaryProbe) {
+        // ⑴ 선언이 비어 있지 않은가 — 규칙 4 ⑶. 이것이 없으면 아래 대조가 0건 검사로 통과한다.
+        assertThat(EXPECTED_AXES)
+            .withFailMessage(
+                "재는 축의 선언이 비었다 — 아래 대조가 0건 검사가 된다(CLAUDE.md 규칙 4 ⑶). " +
+                    "축을 정말 다 뺐다면 이 케이스를 지워야 하고, 그 diff 가 신고다.",
+            ).isNotEmpty()
+        // ⑵ 개수도 함께 못박는다 — 목록에서 하나 빼고 하나 넣는 편집이 집합 대조를 통과하지
+        //    못하게 두 자리에서 diff 가 나게 한다(`TEST_CLASSES`/`TEST_CLASS_COUNT` 와 같은 규율).
+        assertThat(EXPECTED_AXES)
+            .withFailMessage("선언 개수(%d)가 상수(%d)와 다르다 — 둘을 함께 고쳐라", EXPECTED_AXES.size, EXPECTED_AXIS_COUNT)
+            .hasSize(EXPECTED_AXIS_COUNT)
+        // ⑶ 실제 재고와 **정확 일치**. 양방향이라 삭제도 추가도 잡힌다.
+        assertThat(probe.registeredAxes())
+            .withFailMessage(
+                "재고 있는 축이 선언과 다르다.%n  없어진 축(선언에만): %s%n  새로 생긴 축(실제에만): %s%n" +
+                    "  축 등록이 지워지면 그 축은 **조용히 안 재진다** — 통제 카나리도 " +
+                    "`pendingRetroMatches()` 도 그것을 보지 못한다. 정말 뺐다면 EXPECTED_AXES 와 " +
+                    "EXPECTED_AXIS_COUNT 를 함께 고쳐라(그 diff 가 신고다).",
+                (EXPECTED_AXES - probe.registeredAxes()).ifEmpty { setOf("없음") },
+                (probe.registeredAxes() - EXPECTED_AXES).ifEmpty { setOf("없음") },
+            ).isEqualTo(EXPECTED_AXES)
     }
 
     /**
@@ -332,6 +380,28 @@ class DocumentBodyLogLeakReachTest {
 
         /** 소급 대조 통제 축의 이름. 유출 축이 아니라 **통제 집합**에 등록된다. */
         private const val RETRO_CONTROL_AXIS = "소급 대조 통제"
+
+        private const val BODY_AXIS = "본문"
+        private const val TITLE_AXIS = "제목"
+        private const val PASSWORD_AXIS = "자격증명(비밀번호)"
+        private const val TOKEN_AXIS = "자격증명(액세스 토큰)"
+
+        /**
+         * **이 케이스가 재는 축의 정본 재고.** `CanaryProbe.registeredAxes()` 와 정확히 일치해야
+         * 한다. 접두 `유출`/`통제` 는 등록 레지스트리를 뜻한다 — 통제 축은 유출 축의 예외가 아니라
+         * 다른 집합이다(`CanaryProbe` KDoc 참고).
+         */
+        private val EXPECTED_AXES =
+            setOf(
+                "유출 $BODY_AXIS",
+                "유출 $TITLE_AXIS",
+                "유출 $PASSWORD_AXIS",
+                "유출 $TOKEN_AXIS",
+                "통제 $RETRO_CONTROL_AXIS",
+            )
+
+        /** 목록과 **함께** 고쳐야 하는 개수 핀. 한 축을 빼고 다른 축을 넣는 편집을 드러낸다. */
+        private const val EXPECTED_AXIS_COUNT = 5
 
         /** 계약 상한을 확실히 넘기는 길이. 정확한 경계는 DC-9·DC-10 이 잰다. */
         private const val OVER_LIMIT_CHARS = 5_000

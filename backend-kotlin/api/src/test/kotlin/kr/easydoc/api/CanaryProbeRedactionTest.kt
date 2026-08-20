@@ -172,6 +172,48 @@ class CanaryProbeRedactionTest {
         assertNoFragment(probe)
     }
 
+    @Test
+    @DisplayName("재고는 등록한 축을 유출·통제 양쪽 다 정확히 담는다")
+    fun `재고가 등록한 축을 정확히 담는다`() {
+        val probe = probe()
+        probe.addCanary(BODY_AXIS, BODY)
+        probe.addCanary(TOKEN_AXIS, TOKEN)
+        probe.addControlCanary(CONTROL_AXIS, CONTROL_VALUE)
+
+        assertThat(probe.registeredAxes())
+            .withFailMessage("재고가 등록과 다르다 — 이 접근자가 정확하지 않으면 재고 핀이 무의미하다")
+            .containsExactlyInAnyOrder("유출 $BODY_AXIS", "유출 $TOKEN_AXIS", "통제 $CONTROL_AXIS")
+    }
+
+    @Test
+    @DisplayName("등록하지 않은 축은 재고에 없다 — 삭제를 핀이 잡을 수 있는 근거")
+    fun `등록하지 않은 축은 재고에 없다`() {
+        val probe = probe()
+        probe.addCanary(BODY_AXIS, BODY)
+        // 토큰 축을 등록하지 않는다 — 이것이 네 번째 결함의 변이 그 자체다.
+
+        assertThat(probe.registeredAxes())
+            .withFailMessage(
+                "등록하지 않은 축이 재고에 있다 — 재고가 등록을 반영하지 않으면 " +
+                    "「축이 지워졌다」를 핀이 볼 수 없다.",
+            ).doesNotContain("유출 $TOKEN_AXIS")
+        assertThat(probe.registeredAxes()).containsExactly("유출 $BODY_AXIS")
+    }
+
+    @Test
+    @DisplayName("재고는 축 이름만 담고 needle 값은 담지 않는다")
+    fun `재고에 값이 섞이지 않는다`() {
+        val probe = probe()
+        probe.addCanary(TOKEN_AXIS, TOKEN)
+        probe.addControlCanary(CONTROL_AXIS, CONTROL_VALUE)
+
+        val inventory = probe.registeredAxes().joinToString(" ")
+        assertThat(inventory)
+            .withFailMessage("재고 문자열에 needle 값이 섞였다 — 재고는 이름만 다뤄야 한다: %s", inventory)
+            .doesNotContain(TOKEN)
+            .doesNotContain(CONTROL_VALUE)
+    }
+
     // ================================================================ 도구
 
     /**
