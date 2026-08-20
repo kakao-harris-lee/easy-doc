@@ -2,6 +2,7 @@ package kr.easydoc.infrastructure.document
 
 import kr.easydoc.application.crypto.ContentCipher
 import kr.easydoc.application.document.ConversionCiphertexts
+import kr.easydoc.application.document.ConversionEnvelope
 import kr.easydoc.application.document.ConversionQueue
 import kr.easydoc.application.document.DocumentService
 import kr.easydoc.application.document.DocumentStorage
@@ -56,7 +57,8 @@ import javax.sql.DataSource
  * ⑷ **FK CASCADE** — 문서를 지우면 변환과 작업이 함께 사라진다.
  * ⑸ **문장 수** — 소유권 은닉의 **구조 축**(시간 축으로는 못 잡는다는 실측이
  *    `CountingDataSource` KDoc 에 있다)과 재암호화의 「단일 UPDATE」.
- * ⑹ **낙관적 조건** — 두 프로세스가 같은 행을 회전할 때 뒤엣것이 0행을 갱신한다.
+ * ⑹ **낙관적 조건** — 낡은 기대로 쓰면 0행이 갱신된다. **동시 실행 축은 여기가 아니다** —
+ *    두 트랜잭션을 실제로 겹치는 것은 `EnvelopeRotationConcurrencyTest` 다(게이트 27 ①).
  *
  * ## 암호는 **실제 AES-GCM** 이다
  *
@@ -184,7 +186,7 @@ class JdbcDocumentStoreTest {
 
         val accepted = service.createFromText(owner, body, null, workspace)
 
-        val stored = documents.loadSourceText(accepted.documentId)
+        val stored = documents.lockSourceText(accepted.documentId)
         checkNotNull(stored)
         assertThat(String(stored.bytes, Charsets.UTF_8)).doesNotContain(body)
         assertThat(cipher.decrypt(stored, accepted.documentId, EncryptedField.DOCUMENT_SOURCE_TEXT).value)
@@ -404,7 +406,7 @@ class JdbcDocumentStoreTest {
 
         assertThat(rotation.rotateConversion(accepted.conversionId)).isEqualTo(RotationOutcome.ROTATED)
 
-        val envelope = conversions.loadEnvelope(accepted.conversionId)
+        val envelope = conversions.lockEnvelope(accepted.conversionId)
         checkNotNull(envelope)
         assertThat(envelope.keyVersion).isEqualTo(2)
         val rotatedCipher = cipherWith(writeKeyVersion = 2)
@@ -428,22 +430,31 @@ class JdbcDocumentStoreTest {
     }
 
     @Test
-    @DisplayName("**낙관적 조건** — 이미 회전된 행을 옛 세대로 다시 회전하면 0행이 갱신된다")
-    fun `낙관적 조건이 경합을 가른다`() {
+    @DisplayName("**낙관적 조건** — 낡은 기대로 쓰면 0행이 갱신된다 (SQL 축)")
+    fun `낙관적 조건이 낡은 기대를 거른다`() {
+        // 이 케이스가 재는 것은 **저장소 SQL 이 조건을 건다**는 사실뿐이다. 회전과 내용 쓰기가
+        // 실제로 겹칠 때 무슨 일이 벌어지는지는 여기서 재지 못한다(두 트랜잭션이 필요하다) —
+        // 그것은 `EnvelopeRotationConcurrencyTest` 다. 그 갈래가 여기 없어서 게이트 27 ① 이
+        // 오래 잠복했다.
         val owner = newUser()
         val workspace = workspaces.create(owner, "회전4").id
         val accepted = service.createFromText(owner, "본문", null, workspace)
         rotation.rotateConversion(accepted.conversionId)
 
-        // 다른 프로세스가 먼저 회전한 상태를 그대로 재현한다 — 세대 1 을 기대하고 UPDATE 한다.
+        // 이미 회전된 행에 **낡은 기대**로 쓴다 — 세대 1 과 그때의 암호문(전부 NULL)을 조건으로 건다.
+        val stale =
+            ConversionEnvelope(
+                conversionId = accepted.conversionId,
+                scheme = EncryptionScheme.AES_256_GCM_V1,
+                keyVersion = 1,
+                ciphertexts = ConversionCiphertexts(null, null, null),
+            )
         val updated =
             conversions.rewriteEnvelope(
-                conversionId = accepted.conversionId,
-                expectedKeyVersion = 1,
+                expected = stale,
                 scheme = EncryptionScheme.AES_256_GCM_V1,
                 keyVersion = 2,
-                ciphertexts =
-                    ConversionCiphertexts(null, null, null),
+                ciphertexts = ConversionCiphertexts(null, null, null),
             )
 
         assertThat(updated).isFalse()
@@ -459,7 +470,7 @@ class JdbcDocumentStoreTest {
 
         assertThat(rotation.rotateDocument(accepted.documentId)).isEqualTo(RotationOutcome.ROTATED)
 
-        val stored = documents.loadSourceText(accepted.documentId)
+        val stored = documents.lockSourceText(accepted.documentId)
         checkNotNull(stored)
         assertThat(stored.keyVersion).isEqualTo(2)
         val reopened =
@@ -600,9 +611,11 @@ class JdbcDocumentStoreTest {
     private fun fillConversionResult(conversionId: UUID) {
         val writer = cipherWith(writeKeyVersion = 1)
         val codec = MaskedItemCodec()
+        // 쓰기 조건이 「읽은 행 그 자체」라 먼저 읽어야 한다. 픽스처라 트랜잭션 없이 돈다 —
+        // 경합이 없는 자리이므로 잠금이 문장 끝에 풀려도 잃는 것이 없다.
+        val current = checkNotNull(conversions.lockEnvelope(conversionId)) { "변환 행이 없다" }
         conversions.rewriteEnvelope(
-            conversionId = conversionId,
-            expectedKeyVersion = 1,
+            expected = current,
             scheme = EncryptionScheme.AES_256_GCM_V1,
             keyVersion = 1,
             ciphertexts =

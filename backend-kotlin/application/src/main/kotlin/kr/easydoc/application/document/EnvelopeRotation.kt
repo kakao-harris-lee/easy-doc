@@ -24,10 +24,18 @@ enum class RotationOutcome {
     MISSING,
 
     /**
-     * 낙관적 조건(`WHERE key_version = :expected`)이 맞지 않아 0행이 갱신됐다.
+     * **잠근 채 읽은 그 행이 쓰기 시점에 그대로가 아니었다** — 0행이 갱신됐다.
      *
-     * 다른 프로세스가 같은 행을 먼저 회전했다는 뜻이다. 잠금 없이 경합을 안전하게 만드는
-     * 대가이며, 호출자는 다시 읽어 재시도하거나 다음 행으로 넘어간다.
+     * ## 뜻이 바뀌었다 (게이트 27 ① · 계획 §9.2-ter)
+     *
+     * 종전에는 「다른 프로세스가 같은 행을 먼저 회전했다」였다. 이제 회전의 읽기가 행을
+     * 잠그므로 그 사정은 [ALREADY_CURRENT] 로 나온다 — 뒤엣 회전은 자기 읽기에서 기다렸다가
+     * **갱신된 행(새 세대)**을 받기 때문이다.
+     *
+     * 남은 이 값은 **잠금 전제가 성립하지 않았다**는 신호다. 잠금이 서 있으면 낙관적 조건은
+     * 깨질 수 없으므로, 이것이 나왔다면 배선이 트랜잭션을 열지 않았거나(자동 커밋) 읽기가
+     * 잠금을 잃은 것이다. 조용한 덮어쓰기 대신 이 값이 나오는 것이 요점이다 — 호출자는
+     * 재시도하기 전에 **배선을 의심해야 한다.**
      */
     CONTENDED,
 }
@@ -51,7 +59,23 @@ enum class RotationOutcome {
  * - **평문 체류 최소화** — 평문을 컬렉션·필드·로그 어디에도 두지 않는다. 지역 변수로만 들고
  *   한 함수 안에서 끝낸다.
  *
- * 덤으로 **동시 회전**이 안전하다 — 낙관적 조건이 두 프로세스 중 뒤엣것을 0행으로 만든다.
+ * ## 동시 쓰기 — **잠금이 직렬화하고, 낙관적 조건이 그 전제를 감시한다** (게이트 27 ①)
+ *
+ * 종전 KDoc 은 *"덤으로 동시 회전이 안전하다 — 낙관적 조건이 잠금 없이 경합을 안전하게
+ * 만든다"* 라고 적었는데, **실제 도달은 회전끼리뿐이었다.** `key_version` 은 회전만 바꾸는
+ * 열이라 암호문 열을 쓰는 트랜잭션은 그것을 건드리지 않고, 그래서 회전의 읽기와 쓰기 사이에
+ * 끼어든 내용 쓰기가 `WHERE key_version = :expected` 를 그대로 통과시킨 뒤 **낡은 값으로
+ * 덮였다**(계획 §9.2-ter 에 실측 3건).
+ *
+ * 지금은 둘이 함께 선다.
+ *
+ * - **행 잠금** — 읽기가 `FOR NO KEY UPDATE` 로 행을 잠근다. 회전이 커밋할 때까지 다른
+ *   트랜잭션은 그 행을 쓰지 못하므로 끼어들 창 자체가 없다. 대가는 **사용자 쓰기가 회전
+ *   뒤에 줄 선다**는 것이고, 회전 트랜잭션이 품는 것은 복호·재암호(메모리 연산)뿐이라
+ *   구간이 짧다.
+ * - **낙관적 조건** — 쓰기 조건이 잠근 채 읽은 **암호문 전부와 봉투 두 값**이다. 잠금이
+ *   서 있으면 깨질 수 없으므로, 깨졌다면 잠금 전제가 성립하지 않은 것이다
+ *   ([RotationOutcome.CONTENDED]). **조용히 덮는 갈래를 남기지 않는 것**이 이 조건의 몫이다.
  *
  * ## 이 클래스가 **누구에게 불리는가는 아직 정해지지 않았다**
  *
@@ -78,11 +102,11 @@ class EnvelopeRotation(
      */
     fun rotateDocument(documentId: UUID): RotationOutcome =
         transaction.inTransaction {
-            val current = documents.loadSourceText(documentId) ?: return@inTransaction RotationOutcome.MISSING
+            val current = documents.lockSourceText(documentId) ?: return@inTransaction RotationOutcome.MISSING
             if (isCurrent(current.scheme, current.keyVersion)) return@inTransaction RotationOutcome.ALREADY_CURRENT
 
             val resealed = reseal(current, documentId, EncryptedField.DOCUMENT_SOURCE_TEXT)
-            val updated = documents.rewriteEnvelope(documentId, current.keyVersion, resealed)
+            val updated = documents.rewriteEnvelope(documentId, current, resealed)
             if (updated) RotationOutcome.ROTATED else RotationOutcome.CONTENDED
         }
 
@@ -95,7 +119,7 @@ class EnvelopeRotation(
      */
     fun rotateConversion(conversionId: UUID): RotationOutcome =
         transaction.inTransaction {
-            val envelope = conversions.loadEnvelope(conversionId) ?: return@inTransaction RotationOutcome.MISSING
+            val envelope = conversions.lockEnvelope(conversionId) ?: return@inTransaction RotationOutcome.MISSING
             if (isCurrent(envelope.scheme, envelope.keyVersion)) return@inTransaction RotationOutcome.ALREADY_CURRENT
 
             val columns = envelope.ciphertexts
@@ -121,8 +145,9 @@ class EnvelopeRotation(
 
             val updated =
                 conversions.rewriteEnvelope(
-                    conversionId = conversionId,
-                    expectedKeyVersion = envelope.keyVersion,
+                    // 잠근 채 읽은 그 행이 그대로 쓰기 조건이다. 정수 하나를 넘기면 조건을
+                    // 좁게 쓰는 갈래가 생기고, 그 자유가 게이트 27 ① 의 결함이었다.
+                    expected = envelope,
                     scheme = cipher.writeScheme,
                     keyVersion = cipher.writeKeyVersion,
                     ciphertexts = resealed,

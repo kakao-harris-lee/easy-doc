@@ -189,10 +189,12 @@ TEST_CLASSES: tuple[str, ...] = (
     "kr.easydoc.infrastructure.crypto.CryptoProfileExemptionTest",
     "kr.easydoc.infrastructure.crypto.CryptoStartupVerificationTest",
     "kr.easydoc.infrastructure.crypto.EncryptionSchemeSchemaTest",
+    "kr.easydoc.infrastructure.db.EnvelopeColumnWriteGuardTest",
     "kr.easydoc.infrastructure.db.FlywayBaselineGuardTest",
     "kr.easydoc.infrastructure.db.PythonSchemaBaselineTest",
     "kr.easydoc.infrastructure.db.StatementCountingPremiseTest",
     "kr.easydoc.infrastructure.document.DocumentStorageContextTest",
+    "kr.easydoc.infrastructure.document.EnvelopeRotationConcurrencyTest",
     "kr.easydoc.infrastructure.document.JdbcDocumentStoreTest",
     "kr.easydoc.infrastructure.document.MaskedItemCodecTest",
     "kr.easydoc.infrastructure.ingest.DocumentExtractorsTest",
@@ -211,7 +213,7 @@ TEST_CLASSES: tuple[str, ...] = (
 
 #: 선언 **개수**를 목록과 따로 적는다. 파일과 선언을 함께 지우는 편집이 두 자리에
 #: 흔적을 남기게 하는 장치다. 목록을 고쳤으면 여기도 고쳐야 한다.
-TEST_CLASS_COUNT = 85
+TEST_CLASS_COUNT = 87
 
 
 def _kotlin_test_sources() -> list[Path]:

@@ -236,7 +236,7 @@ class DocumentStorageContextTest {
     }
 
     private fun readSourceText(documentId: UUID) =
-        checkNotNull(JdbcDocumentRepository(JdbcClient.create(dataSource())).loadSourceText(documentId)) {
+        checkNotNull(JdbcDocumentRepository(JdbcClient.create(dataSource())).lockSourceText(documentId)) {
             "문서 행이 없다 — 저장이 실제로 일어나지 않았다"
         }
 

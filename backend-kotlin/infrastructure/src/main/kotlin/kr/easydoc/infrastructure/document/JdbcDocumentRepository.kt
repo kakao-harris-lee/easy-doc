@@ -78,12 +78,27 @@ class JdbcDocumentRepository(private val jdbc: JdbcClient) : DocumentRepository 
         return statement.query { rs, _ -> toListing(rs) }.list()
     }
 
-    override fun loadSourceText(documentId: UUID): EncryptedContent? =
+    /**
+     * 원문 암호문과 봉투를 읽고 **행을 잠근다**(`FOR NO KEY UPDATE`).
+     *
+     * `FOR UPDATE` 가 아닌 이유: PostgreSQL 16 문서 13.3 표 13.3 에서 `FOR UPDATE` 는
+     * `FOR KEY SHARE` 와도 충돌하는데, 그것은 **이 행을 참조하는 외래 키 검사**가 잡는
+     * 잠금이다(`conversions.document_id` → `documents.id`). 회전은 키 열을 바꾸지도 행을
+     * 지우지도 않으므로 그만큼 강한 잠금이 필요 없다. `FOR NO KEY UPDATE` 는 평범한
+     * UPDATE·DELETE·`FOR UPDATE`·`FOR SHARE`·다른 `FOR NO KEY UPDATE` 와는 그대로 충돌하므로
+     * 내용 쓰기와의 직렬화는 잃지 않는다. (`JdbcWorkspaceRepository.lockForDeletion` 이
+     * `FOR UPDATE` 인 것은 그쪽이 **DELETE** 를 하기 때문이라 같은 자리가 아니다.)
+     *
+     * **트랜잭션 밖에서 부르면 아무것도 지키지 못한다** — 잠금이 문장 끝에서 풀린다.
+     * 그 상태를 조용한 덮어쓰기가 아니라 실패로 드러내는 것이 [rewriteEnvelope] 의 조건이다.
+     */
+    override fun lockSourceText(documentId: UUID): EncryptedContent? =
         jdbc
             .sql(
                 """
                 SELECT source_text_encrypted, encryption_scheme, key_version
                 FROM documents WHERE id = :id
+                FOR NO KEY UPDATE
                 """.trimIndent(),
             ).param("id", documentId)
             .query { rs, _ ->
@@ -95,9 +110,19 @@ class JdbcDocumentRepository(private val jdbc: JdbcClient) : DocumentRepository 
             }.optional()
             .orElse(null)
 
+    /**
+     * 봉투와 암호문을 한 UPDATE 로 바꾼다. 조건은 **잠근 채 읽은 행 그 자체**다.
+     *
+     * `key_version` 만 조건으로 두면 그 열을 건드리지 않는 내용 쓰기가 조건을 통과해
+     * 조용히 덮인다(게이트 27 ①). 암호문 바이트를 조건에 넣으면 그 갈래가 0행이 되고,
+     * 유스케이스가 `CONTENDED` 를 돌려준다.
+     *
+     * `CAST(… AS bytea)` 를 명시하는 이유: 파라미터 타입을 연산자 해석에 맡기지 않는다.
+     * 널이 섞일 수 있는 비교에서 타입을 못 정하면 드라이버·서버 조합마다 다르게 실패한다.
+     */
     override fun rewriteEnvelope(
         documentId: UUID,
-        expectedKeyVersion: Int,
+        expected: EncryptedContent,
         sourceText: EncryptedContent,
     ): Boolean =
         jdbc
@@ -107,13 +132,18 @@ class JdbcDocumentRepository(private val jdbc: JdbcClient) : DocumentRepository 
                 SET source_text_encrypted = :sourceText,
                     encryption_scheme = :scheme,
                     key_version = :keyVersion
-                WHERE id = :id AND key_version = :expectedKeyVersion
+                WHERE id = :id
+                  AND encryption_scheme = :expectedScheme
+                  AND key_version = :expectedKeyVersion
+                  AND source_text_encrypted IS NOT DISTINCT FROM CAST(:expectedSourceText AS bytea)
                 """.trimIndent(),
             ).param("sourceText", sourceText.bytes)
             .param("scheme", sourceText.scheme)
             .param("keyVersion", sourceText.keyVersion)
             .param("id", documentId)
-            .param("expectedKeyVersion", expectedKeyVersion)
+            .param("expectedScheme", expected.scheme)
+            .param("expectedKeyVersion", expected.keyVersion)
+            .param("expectedSourceText", expected.bytes)
             .update() > 0
 
     private fun storageFailure(failure: DataIntegrityViolationException): StorageException {

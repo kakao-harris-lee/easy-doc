@@ -419,11 +419,11 @@ class DocumentServiceTest {
             return emptyList()
         }
 
-        override fun loadSourceText(documentId: UUID): EncryptedContent? = null
+        override fun lockSourceText(documentId: UUID): EncryptedContent? = null
 
         override fun rewriteEnvelope(
             documentId: UUID,
-            expectedKeyVersion: Int,
+            expected: EncryptedContent,
             sourceText: EncryptedContent,
         ): Boolean = false
     }
@@ -450,11 +450,10 @@ class DocumentServiceTest {
             )
         }
 
-        override fun loadEnvelope(conversionId: UUID): ConversionEnvelope? = null
+        override fun lockEnvelope(conversionId: UUID): ConversionEnvelope? = null
 
         override fun rewriteEnvelope(
-            conversionId: UUID,
-            expectedKeyVersion: Int,
+            expected: ConversionEnvelope,
             scheme: String,
             keyVersion: Int,
             ciphertexts: ConversionCiphertexts,

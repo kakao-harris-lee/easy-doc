@@ -89,23 +89,33 @@ interface DocumentRepository {
     ): List<DocumentListing>
 
     /**
-     * 원문 암호문과 그 봉투를 읽는다. 없으면 `null`.
+     * 원문 암호문과 그 봉투를 읽고 **그 행을 잠근다**. 없으면 `null`.
+     *
+     * **`load` 가 아니라 `lock` 인 이유**: 이 읽기는 부수 효과가 있고 **트랜잭션 안에서만**
+     * 뜻이 있다. 잠금이 없으면 읽기와 [rewriteEnvelope] 사이에 다른 트랜잭션의 내용 쓰기가
+     * 끼어들고, 회전이 그것을 낡은 값으로 덮는다(게이트 27 ① · 계획 §9.2-ter).
      *
      * **소유자를 받지 않는다** — 키 회전은 사용자 요청 경로가 아니라 운영 배치의 일이고,
      * 그 배치에는 「내 것」이 없다. 사용자 경로가 이 메서드로 남의 문서를 읽는 일이 없도록
      * 호출자는 회전 유스케이스 하나로 제한한다.
      */
-    fun loadSourceText(documentId: UUID): EncryptedContent?
+    fun lockSourceText(documentId: UUID): EncryptedContent?
 
     /**
      * 원문 암호문과 봉투 두 값을 **한 UPDATE 로** 바꾼다. 갱신됐으면 `true`.
      *
-     * [expectedKeyVersion] 은 낙관적 조건이다(`WHERE key_version = :expected`). 두 프로세스가
-     * 같은 행을 잡으면 뒤엣것이 0행을 갱신하고 재시도한다 — 잠금 없이 경합을 안전하게 만든다.
+     * [expected] 는 **[lockSourceText] 가 잠근 채 돌려준 그 값**이고, 그대로 낙관적 조건이
+     * 된다 — 봉투 두 값뿐 아니라 **암호문 바이트까지** 비교한다. 정수 하나(`key_version`)만
+     * 조건으로 두면 `key_version` 을 건드리지 않는 내용 쓰기가 조건을 통과해 **조용히
+     * 사라진다**(계획 §9.2-ter 실측).
+     *
+     * 잠금이 서 있으면 이 조건은 깨질 수 없다. 그래서 `false` 는 「누가 먼저 회전했다」가
+     * 아니라 **「잠금 전제가 성립하지 않았다」**는 신호다 — 자동 커밋으로 도는 배선처럼
+     * 잠금이 문장 끝에서 풀리는 상태를 조용한 덮어쓰기가 아니라 실패로 드러낸다.
      */
     fun rewriteEnvelope(
         documentId: UUID,
-        expectedKeyVersion: Int,
+        expected: EncryptedContent,
         sourceText: EncryptedContent,
     ): Boolean
 }
@@ -116,6 +126,11 @@ interface DocumentRepository {
  * 열 하나짜리 갱신 메서드를 만들지 않는 이유: 행당 키 세대가 하나라 두 문장으로 나누면
  * "세대는 v2 인데 한 열은 v1 암호문" 인 중간 상태가 생기고, 그 행은 **영원히 열리지 않는다**
  * (AAD 에 세대가 실리므로 태그 검증부터 실패한다).
+ *
+ * **이 규약을 지키는 것은 「지금 그런 메서드가 없다」가 아니다** — `EnvelopeColumnWriteGuardTest`
+ * 가 소스 전수에서 `documents`·`conversions` 를 UPDATE 하는 SQL 을 뽑아, 암호문 열을 SET 하는
+ * 문장이 `encryption_scheme`·`key_version` 도 **같은 문장에서** SET 하는지 단언한다. 산문으로
+ * 두었더니 탐지기가 0개였다(게이트 27 ② · 계획 §9.2-ter D-r).
  *
  * `null` 은 **"그 열이 비어 있다"** 이지 "바꾸지 않는다"가 아니다. 대기 중 변환은 세 열이
  * 전부 NULL 이고, 그것을 빈 문자열로 암호화하면 **없던 내용을 지어낸 것**이라 되돌릴 수 없다.
@@ -154,22 +169,29 @@ interface ConversionRepository {
     ): Conversion
 
     /**
-     * 회전 대상 행의 암호문과 봉투를 읽는다. 없으면 `null`.
+     * 회전 대상 행의 암호문과 봉투를 읽고 **그 행을 잠근다**. 없으면 `null`.
      *
-     * 소유자를 받지 않는 이유는 [DocumentRepository.loadSourceText] 와 같다.
+     * 잠그는 이유와 이름이 `lock` 인 이유는 [DocumentRepository.lockSourceText] 와 같다.
+     * 소유자를 받지 않는 이유도 같다.
      */
-    fun loadEnvelope(conversionId: UUID): ConversionEnvelope?
+    fun lockEnvelope(conversionId: UUID): ConversionEnvelope?
 
     /**
      * 암호문 세 열과 봉투 두 값을 **한 UPDATE 로** 바꾼다. 갱신됐으면 `true`.
      *
+     * [expected] 는 **[lockEnvelope] 가 잠근 채 돌려준 그 행**이고 그대로 낙관적 조건이
+     * 된다 — 봉투 두 값과 **암호문 세 열 전부**를 비교한다. 세 열의 `null` 도 조건에
+     * 포함된다(`IS NOT DISTINCT FROM`): 「비어 있었다」가 「누가 채웠다」로 바뀐 것이
+     * 정확히 이 조건이 잡아야 할 사건이다. 사유는 [DocumentRepository.rewriteEnvelope].
+     *
      * `updated_at` 을 건드리지 않는다 — 재암호화는 **내용의 변경이 아니다.** 그 컬럼은
      * 워커와 화면이 "이 변환에 무슨 일이 있었나"를 읽는 값이라, 회전 배치가 전 행의
-     * `updated_at` 을 오늘로 밀어 버리면 그 뜻이 사라진다.
+     * `updated_at` 을 오늘로 밀어 버리면 그 뜻이 사라진다. 경합 판정에도 쓰지 않는다 —
+     * 대리 지표라 쓰기가 깜빡하면 조용히 무력해지고, 지켜야 하는 값(암호문) 자체를 조건에
+     * 넣을 수 있다. 게다가 `documents` 에는 그 컬럼이 아예 없다(계획 §9.2-ter).
      */
     fun rewriteEnvelope(
-        conversionId: UUID,
-        expectedKeyVersion: Int,
+        expected: ConversionEnvelope,
         scheme: String,
         keyVersion: Int,
         ciphertexts: ConversionCiphertexts,

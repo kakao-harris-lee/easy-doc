@@ -45,7 +45,7 @@ class EnvelopeRotationTest {
         assertThat(outcome).isEqualTo(RotationOutcome.ROTATED)
         assertThat(world.conversions.rewrites).hasSize(1)
         val rewrite = world.conversions.rewrites.single()
-        assertThat(rewrite.expectedKeyVersion).isEqualTo(OLD_VERSION)
+        assertThat(rewrite.expected.keyVersion).isEqualTo(OLD_VERSION)
         assertThat(rewrite.keyVersion).isEqualTo(NEW_VERSION)
         assertThat(rewrite.ciphertexts.easyText?.keyVersion).isEqualTo(NEW_VERSION)
         assertThat(rewrite.ciphertexts.maskedItems?.keyVersion).isEqualTo(NEW_VERSION)
@@ -124,13 +124,41 @@ class EnvelopeRotationTest {
     }
 
     @Test
-    @DisplayName("**낙관적 조건**에서 지면 CONTENDED — 다른 프로세스가 먼저 회전했다는 뜻이다")
+    @DisplayName("**낙관적 조건**에서 지면 CONTENDED — 잠금 전제가 성립하지 않았다는 신호다")
     fun `경합에서 지면 CONTENDED 다`() {
+        // 뜻이 바뀌었다(게이트 27 ①). 잠금이 서면 「다른 프로세스가 먼저 회전했다」는 사정은
+        // ALREADY_CURRENT 로 나온다 — 뒤엣 회전이 읽기에서 기다렸다가 갱신된 행을 받기 때문이다.
+        // 남은 이 값은 「잠근 채 읽은 그 행이 쓰기 시점에 그대로가 아니었다」이고, 잠금이 서 있으면
+        // 일어날 수 없으므로 배선을 의심하라는 신호다.
         val world = World()
         world.conversions.envelope = envelopeOf(OLD_VERSION, "초안", null, null)
         world.conversions.updated = false
 
         assertThat(world.rotation.rotateConversion(CONVERSION)).isEqualTo(RotationOutcome.CONTENDED)
+    }
+
+    @Test
+    @DisplayName("쓰기 조건이 **읽어 온 행 그 자체**다 — 세대 정수 하나로 좁혀지지 않는다")
+    fun `쓰기 조건이 읽은 행 전부다`() {
+        // 게이트 27 ①. 조건이 `key_version` 하나였을 때, 그 열을 건드리지 않는 내용 쓰기가
+        // 조건을 통과해 조용히 사라졌다. 유스케이스가 **읽은 행을 통째로** 넘기는지 여기서 잰다 —
+        // 넘기지 않으면 저장소가 조건에 넣을 암호문 자체를 갖지 못한다.
+        val world = World()
+        val loaded = envelopeOf(OLD_VERSION, "초안", "대응표", null)
+        world.conversions.envelope = loaded
+
+        world.rotation.rotateConversion(CONVERSION)
+
+        val expected =
+            world.conversions.rewrites
+                .single()
+                .expected
+        assertThat(expected).isSameAs(loaded)
+        assertThat(expected.ciphertexts.easyText).isEqualTo(loaded.ciphertexts.easyText)
+        assertThat(expected.ciphertexts.maskedItems).isEqualTo(loaded.ciphertexts.maskedItems)
+        assertThat(expected.ciphertexts.editedText)
+            .describedAs("비어 있던 열의 `null` 도 조건이다 — 「비었다」가 「채워졌다」로 바뀐 것이 잡아야 할 사건이다")
+            .isNull()
     }
 
     @Test
@@ -160,7 +188,10 @@ class EnvelopeRotationTest {
 
         assertThat(outcome).isEqualTo(RotationOutcome.ROTATED)
         val rewrite = world.documents.rewrites.single()
-        assertThat(rewrite.first).isEqualTo(OLD_VERSION)
+        assertThat(rewrite.first)
+            .describedAs("쓰기 조건은 읽어 온 암호문 그 자체다 — 세대 정수 하나가 아니다")
+            .isEqualTo(world.documents.sourceText)
+        assertThat(rewrite.first.keyVersion).isEqualTo(OLD_VERSION)
         assertThat(rewrite.second.keyVersion).isEqualTo(NEW_VERSION)
         assertThat(world.cipher.bindings).containsExactly(DOCUMENT to EncryptedField.DOCUMENT_SOURCE_TEXT)
     }
@@ -287,7 +318,7 @@ class EnvelopeRotationTest {
 
     private class FakeDocumentRepository : DocumentRepository {
         var sourceText: EncryptedContent? = null
-        val rewrites = mutableListOf<Pair<Int, EncryptedContent>>()
+        val rewrites = mutableListOf<Pair<EncryptedContent, EncryptedContent>>()
 
         override fun insert(
             ownerId: UUID,
@@ -302,20 +333,20 @@ class EnvelopeRotationTest {
             offset: Int,
         ): List<DocumentListing> = error("회전 경로가 목록을 읽지 않는다")
 
-        override fun loadSourceText(documentId: UUID): EncryptedContent? = sourceText
+        override fun lockSourceText(documentId: UUID): EncryptedContent? = sourceText
 
         override fun rewriteEnvelope(
             documentId: UUID,
-            expectedKeyVersion: Int,
+            expected: EncryptedContent,
             sourceText: EncryptedContent,
         ): Boolean {
-            rewrites += expectedKeyVersion to sourceText
+            rewrites += expected to sourceText
             return true
         }
     }
 
     private class Rewrite(
-        val expectedKeyVersion: Int,
+        val expected: ConversionEnvelope,
         val keyVersion: Int,
         val ciphertexts: ConversionCiphertexts,
     )
@@ -332,16 +363,15 @@ class EnvelopeRotationTest {
             keyVersion: Int,
         ): Conversion = error("회전 경로가 변환을 만들지 않는다")
 
-        override fun loadEnvelope(conversionId: UUID): ConversionEnvelope? = envelope
+        override fun lockEnvelope(conversionId: UUID): ConversionEnvelope? = envelope
 
         override fun rewriteEnvelope(
-            conversionId: UUID,
-            expectedKeyVersion: Int,
+            expected: ConversionEnvelope,
             scheme: String,
             keyVersion: Int,
             ciphertexts: ConversionCiphertexts,
         ): Boolean {
-            rewrites += Rewrite(expectedKeyVersion, keyVersion, ciphertexts)
+            rewrites += Rewrite(expected, keyVersion, ciphertexts)
             return updated
         }
     }

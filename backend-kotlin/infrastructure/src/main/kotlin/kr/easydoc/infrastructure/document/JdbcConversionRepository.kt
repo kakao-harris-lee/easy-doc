@@ -53,13 +53,21 @@ class JdbcConversionRepository(private val jdbc: JdbcClient) : ConversionReposit
             throw StorageException(STORAGE_FAILURE_MESSAGE)
         }
 
-    override fun loadEnvelope(conversionId: UUID): ConversionEnvelope? =
+    /**
+     * 암호문 세 열과 봉투를 읽고 **행을 잠근다**(`FOR NO KEY UPDATE`).
+     *
+     * 잠금 모드를 고른 사유는 [JdbcDocumentRepository.lockSourceText] KDoc 에 있다 —
+     * 여기서는 `conversion_jobs.conversion_id` 가 이 행을 참조하므로, `FOR UPDATE` 로 잡으면
+     * 회전이 도는 동안 작업 등록의 외래 키 검사까지 멈춘다.
+     */
+    override fun lockEnvelope(conversionId: UUID): ConversionEnvelope? =
         jdbc
             .sql(
                 """
                 SELECT id, easy_text_encrypted, masked_items_encrypted, edited_text_encrypted,
                        encryption_scheme, key_version
                 FROM conversions WHERE id = :id
+                FOR NO KEY UPDATE
                 """.trimIndent(),
             ).param("id", conversionId)
             .query { rs, _ -> toEnvelope(rs) }
@@ -71,13 +79,18 @@ class JdbcConversionRepository(private val jdbc: JdbcClient) : ConversionReposit
      *
      * 열별 갱신 메서드를 두지 않는 것이 이 설계의 요점이다 — 두 문장으로 나누면 "세대는 v2
      * 인데 한 열은 v1 암호문" 인 중간 상태가 생기고 그 행은 영원히 열리지 않는다. 그 성질을
-     * 재는 것은 문장 수 계측이다(`CountingDataSource`).
+     * 재는 것은 문장 수 계측이다(`CountingDataSource`). **그리고 그 규약을 소스 전수에서
+     * 강제하는 것은 `EnvelopeColumnWriteGuardTest` 다**(게이트 27 ②).
+     *
+     * 조건은 [expected] — **잠근 채 읽은 그 행 전부**다. 세 열의 `null` 도
+     * `IS NOT DISTINCT FROM` 으로 비교한다: 「비어 있었다」가 「누가 채웠다」로 바뀐 것이
+     * 이 조건이 잡아야 할 사건이라, `=` 로 두면 널이 널을 만나 조건이 통째로 UNKNOWN 이 되고
+     * 그 행은 **영영 회전되지 않는다.**
      *
      * `updated_at` 을 건드리지 않는다 — 재암호화는 내용의 변경이 아니다. 사유는 포트 KDoc.
      */
     override fun rewriteEnvelope(
-        conversionId: UUID,
-        expectedKeyVersion: Int,
+        expected: ConversionEnvelope,
         scheme: String,
         keyVersion: Int,
         ciphertexts: ConversionCiphertexts,
@@ -91,15 +104,24 @@ class JdbcConversionRepository(private val jdbc: JdbcClient) : ConversionReposit
                     edited_text_encrypted = :editedText,
                     encryption_scheme = :scheme,
                     key_version = :keyVersion
-                WHERE id = :id AND key_version = :expectedKeyVersion
+                WHERE id = :id
+                  AND encryption_scheme = :expectedScheme
+                  AND key_version = :expectedKeyVersion
+                  AND easy_text_encrypted IS NOT DISTINCT FROM CAST(:expectedEasyText AS bytea)
+                  AND masked_items_encrypted IS NOT DISTINCT FROM CAST(:expectedMaskedItems AS bytea)
+                  AND edited_text_encrypted IS NOT DISTINCT FROM CAST(:expectedEditedText AS bytea)
                 """.trimIndent(),
             ).param("easyText", ciphertexts.easyText?.bytes)
             .param("maskedItems", ciphertexts.maskedItems?.bytes)
             .param("editedText", ciphertexts.editedText?.bytes)
             .param("scheme", scheme)
             .param("keyVersion", keyVersion)
-            .param("id", conversionId)
-            .param("expectedKeyVersion", expectedKeyVersion)
+            .param("id", expected.conversionId)
+            .param("expectedScheme", expected.scheme)
+            .param("expectedKeyVersion", expected.keyVersion)
+            .param("expectedEasyText", expected.ciphertexts.easyText?.bytes)
+            .param("expectedMaskedItems", expected.ciphertexts.maskedItems?.bytes)
+            .param("expectedEditedText", expected.ciphertexts.editedText?.bytes)
             .update() > 0
 
     private fun toConversion(rs: ResultSet): Conversion =
