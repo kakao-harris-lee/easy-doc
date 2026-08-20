@@ -202,6 +202,79 @@ import java.net.http.HttpResponse
  * 즉시 버리며, **파싱 예외도 버린다** — Jackson 예외 메시지에는 문제가 된 입력 조각이 들어
  * 있다. `residualCanaryFragments()` 와 같은 요구를 다른 기제로 막는다(검사가 아니라 구조다).
  *
+ * ## 성공 팔은 **응답이 아니라 저장 상태**로 잰다
+ *
+ * `202/NONE` 은 **「컨트롤러가 접수하기로 했다」는 응답 사실**이고 **「본문이 암호화돼
+ * Postgres 행으로 써졌다」는 저장 사실이 아니다.** 지속화를 건너뛰는 변경(단축·스텁·플래그·
+ * 트랜잭션 경계 이동)이 들어오면 카나리는 JDBC 에 닿지 않는데 응답은 그대로 202 이고,
+ * 「로그에 카나리 0건」이 다시 **동어반복**이 된다.
+ *
+ * `88e55b1` 까지의 판단은 *"성공 상태는 이른 거절로 위조할 수 없으므로 ⑵·⑶ 는 저장 경로를
+ * 진다"* 였다. **뒷문장은 참이고 앞문장으로 이어지지 않는다** — 「이른 거절이 아님」과
+ * 「저장 경로를 지났음」은 다른 명제다. 실측이 그것을 확인했다: 서비스에서 삽입 세 건만
+ * 건너뛰게 하자 두 팔 다 202 를 내고 행은 하나도 생기지 않았는데 **핀은 초록**이었다
+ * (실패 0건). 같은 종류 일곱 번째이고, 앞의 여섯과 달리 **장치가 아니라 판단의 근거**가
+ * 성질을 겨누지 못한 경우다.
+ *
+ * 그래서 [assertPersistedByStorageState] 가 **DB 쪽에서** 본다. 응답 본문의 식별자를 근거로
+ * 쓰지 않는다 — 그것도 응답 사실이다. 이 저장소가 이미 쓰는 기법이다(DC-24 가 「저장 안 됨」을
+ * `documents` 행 수로 잰다).
+ *
+ * | 저장 사실 | 왜 그것인가 |
+ * |---|---|
+ * | `documents` 를 `source_format` 별로 센다 | **팔이 1:1 로 갈린다** — 아래 ⑴ |
+ * | `conversions`·`conversion_jobs` 도 2 씩 | **한 트랜잭션**인지 본다 — 아래 ⑵ |
+ * | 암호문이 자리표시자가 아니다 | 아래 「평문을 꺼내지 않는다」 |
+ * | 제목 카나리가 실린 행이 정확히 1 | 제목 축도 저장까지 갔는지 본다 — 아래 ⑶ |
+ *
+ * ⑴ `text`=⑵ 붙여넣기 · `docx`=⑶ 파일 업로드다. 한 팔만 빠지면 없어진 항목이 **그 팔을
+ * 지목한다.** 총 2 라는 사실이 거절된 세 갈래가 저장되지 않았음도 함께 잰다.
+ *
+ * ⑵ 문서·변환·작업 세 행이 같은 트랜잭션에서 확정된다(계획 §4.4). 문서 행만 쓰고 큐 등록이
+ * 빠지는 경계 이동은 ⑴ 로는 보이지 않는다.
+ *
+ * ⑶ ⑵ 의 주석이 *"본문·제목이 저장 경로 전체를 지난다"* 라고 적었으므로 **제목도** 재야 그
+ * 문장이 참이 된다. ⑶ 은 제목을 주지 않아 대체 제목이므로 카나리가 실린 행은 1 이다.
+ *
+ * ### 평문을 꺼내 비교하지 않는다 — **성질**로 본다
+ *
+ * 행이 있어도 본문이 빈 값이면 카나리는 암호화 경로를 지나지 않았다. 그렇다고 평문을 꺼내
+ * 대조하면 **이 장치가 막으려는 것과 같은 노출**이다. 그래서 두 열의 **관계**로 본다:
+ *
+ * > `octet_length(source_text_encrypted) > char_count` 이고 `char_count > 0`
+ *
+ * AEAD 는 길이를 줄이지 않고(nonce + 암호문 + 태그), 평문의 UTF-8 바이트 수는 코드 포인트
+ * 수(`charCountOf`)보다 작을 수 없다. 그러므로 **진짜 암호문은 언제나 `char_count` 를
+ * 넘는다.** 한 바이트 자리표시자나 빈 배열은 넘지 못한다. 위반 행 수를 세어 **0** 을
+ * 단언하므로 실패 메시지에도 값이 실리지 않는다(마법 상수도 없다 — 두 열의 관계다).
+ *
+ * 제목은 `documents.title` 이 **평문 열**이라 값 대조가 가능한데, **needle 을 SQL 에 넣지
+ * 않는다**: 제목을 읽어 와 **테스트 안에서** 세고 `Int` 만 남긴다. SQL 에 카나리를 실으면
+ * 그 문장이 JDBC 로거를 타는 날 이 케이스가 **스스로** 빨개진다.
+ *
+ * ### DC 케이스와 같은 것을 두 번 재는 것인가
+ *
+ * 아니다 — 세 번째로 같은 답이다. DC-24 는 **거절된** 업로드가 저장되지 않음을 재고, 이쪽은
+ * **접수된** 업로드가 저장됨을 잰다(반대 방향). 그리고 DC 케이스는 그 케이스의 트래픽에
+ * 대해서만 말한다 — **카나리를 실어 보낸 이 요청들이 저장에 닿았는지**는 여기서만 잰다.
+ *
+ * ### 실행 시간 — **컨테이너가 새로 붙지는 않는다**
+ *
+ * 이 케이스는 저장 핀이 붙기 **전부터** Testcontainers 를 썼다(아래 `database` — 클래스마다
+ * 빈 데이터베이스를 하나 만든다). 그래서 이번 변경으로 **컨테이너 기동이 늘지 않고**, 더해진
+ * 것은 판정 구간의 `SELECT` **다섯 건**뿐이고, **그 다섯이라는 사실 자체가 단언으로 고정돼
+ * 있다**(`EXPECTED_STORAGE_QUERIES`). `withFailMessage` 의 인자는 **성공 경로에서도**
+ * 평가되므로 단언 안에서 질의를 호출하면 같은 질의가 두세 번 나간다 — 초판이 그래서 다섯 건이
+ * 아니라 **열한 건**을 쏘고 있었다. 「한 번씩만 돌린다」를 관측으로만 두면 다시 늘어도 아무것도
+ * 빨개지지 않으므로 계수기를 붙였다.
+ *
+ * **증분을 수치로 주장하지 않는다.** 실측이 핀 이전 1.012s · 이후 1.371s · 전체 빌드 안에서
+ * 0.856s 였다 — **회차 간 흔들림이 더해진 비용보다 크다.** 다섯 건의 `SELECT` 를 「측정된
+ * 증분」으로 적으면 없는 정밀도를 주장하는 것이므로, 확실한 것만 적는다: 컨테이너는 늘지
+ * 않았고 질의 다섯 건이 늘었다.
+ *
+ * 개발용 `easydoc_kotlin` 은 건드리지 않는다 — 그 DB 를 쓰면 Flyway 가 무대를 바꾼다.
+ *
  * ## 양성 대조 셋
  *
  * ⑴ 「0건」은 **캡처가 비어 있어도** 참이다. 요청 전에 표식을 직접 찍고 그것이 캡처에
@@ -281,18 +354,25 @@ class DocumentBodyLogLeakReachTest {
     }
 
     /**
-     * 판정부. 트래픽을 태우는 부분과 분리해 둔다 — 단언이 여섯 축(**도달**·캡처·레벨 상향·
-     * 보관 잘림·소급 대조·적중)이라 한 함수에 두면 「무엇을 재는 함수인가」가 흐려진다.
+     * 판정부. 트래픽을 태우는 부분과 분리해 둔다 — 단언이 일곱 축(**도달**·**저장**·캡처·
+     * 레벨 상향·보관 잘림·소급 대조·적중)이라 한 함수에 두면 「무엇을 재는 함수인가」가
+     * 흐려진다.
      *
-     * **도달이 맨 앞이다.** 자극이 의도한 층에 닿지 않았으면 나머지 다섯 축의 결론이 전부
-     * 무의미하므로, 진단이 그 사실부터 말하게 한다. 앞 회차가 잔여 단언을 지목 단언보다 앞에
-     * 둔 것과 같은 이유다.
+     * **자극 축이 맨 앞이다.** 자극이 의도한 층에 닿지 않았거나 저장까지 가지 않았으면 나머지
+     * 다섯 축의 결론이 전부 무의미하므로, 진단이 그 사실부터 말하게 한다. 앞 회차가 잔여
+     * 단언을 지목 단언보다 앞에 둔 것과 같은 이유다. 둘 사이의 순서는 인과다 — 응답이 먼저
+     * 어긋나면 저장 개수는 뒤따라 어긋나므로, 응답 쪽 진단이 먼저 나가야 원인이 보인다.
+     *
+     * **저장 단언은 캡처 구간이 닫힌 뒤에 돈다.** 이 함수는 `finally` 가 probe 를 떼어낸 뒤에
+     * 불리므로 그 조건이 이미 성립한다 — **여기 있는 단언을 캡처 구간 안으로 옮기지 마라.**
+     * 옮기면 조회 SQL 자체가 강제 TRACE 로 캡처되어 이 케이스가 스스로 빨개진다.
      */
     private fun assertNoCanaryInLogs(
         probe: CanaryProbe,
         reach: ReachLog,
     ) {
         assertReachedIntendedLayers(reach)
+        assertPersistedByStorageState()
         assertMeasuredAxisInventory(probe)
         // 양성 대조 ⑴ — 캡처가 살아 있는가.
         assertThat(probe.sawPositiveControl())
@@ -322,12 +402,17 @@ class DocumentBodyLogLeakReachTest {
         // 이 케이스의 실패 메시지는 CI 로그로 나간다. 그 메시지에 카나리 **원문 조각**이
         // 실리면 자격증명 유출을 막으려던 장치가 유출 경로가 된다 — 실제 카나리(150자 JWT)와
         // 실제 프레임워크 로그 줄로 재는 자리는 여기뿐이다(단위 케이스는 합성 입력으로 잰다).
-        assertThat(probe.residualCanaryFragments())
+        // **한 번만 계산한다.** `residualCanaryFragments()` 는 등록된 카나리 × 길이 12 이상
+        // 부분 문자열 전부를 지목 줄 전량과 대조하므로 이 파일에서 가장 비싼 호출이고, 종전에는
+        // 단언 주체와 메시지 인자에서 **두 번** 돌았다(`withFailMessage` 인자는 성공 경로에서도
+        // 평가된다). 저장 질의와 같은 결함이고 같은 처방을 쓴다.
+        val residual = probe.residualCanaryFragments()
+        assertThat(residual)
             .withFailMessage(
                 "실패 메시지가 카나리 원문 조각을 실어 나른다 — 일치한 자리 %s. " +
                     "조각 값은 찍지 않는다. `CanaryProbe.snippet` 의 치환이 **자르기와 등록 " +
                     "양쪽보다 먼저**인지 보라(같은 결함이 두 번 났다).",
-                probe.residualCanaryFragments().take(5),
+                residual.take(5),
             ).isEmpty()
 
         assertThat(probe.hits())
@@ -418,6 +503,140 @@ class DocumentBodyLogLeakReachTest {
             lines += "    실제 ${observed.map { it.step }}"
         }
         return lines.joinToString(System.lineSeparator())
+    }
+
+    /**
+     * **저장 핀** — 접수된 두 팔이 실제로 **Postgres 행**이 됐다.
+     *
+     * 왜 응답이 아니라 저장 상태인지 · 무엇을 저장 증거로 골랐는지 · 평문을 꺼내지 않는 방법은
+     * 클래스 KDoc 의 「성공 팔은 **응답이 아니라 저장 상태**로 잰다」에 있다.
+     *
+     * 이 함수는 **캡처 구간이 닫힌 뒤에만** 불려야 한다([assertNoCanaryInLogs] 참고).
+     */
+    private fun assertPersistedByStorageState() {
+        // 질의를 **먼저 한 번씩만** 돌린다. `withFailMessage` 의 인자는 **성공 경로에서도
+        // 평가되므로**(AssertJ 는 지연 평가가 아니다) 단언 안에서 호출하면 같은 질의가 회차마다
+        // 두세 번 나간다 — 초판이 그래서 다섯 건이 아니라 열한 건을 쏘고 있었다.
+        val documentRows = documentRowsByFormat()
+        val conversionRows = rowCount(CONVERSIONS_TABLE)
+        val jobRows = rowCount(JOBS_TABLE)
+        val placeholderRows = placeholderCipherRows()
+        val titleCanaryRows = storedTitleCanaryRows()
+
+        // ⑴ 선언이 비어 있지 않은가 — 규칙 4 ⑶.
+        assertThat(EXPECTED_DOCUMENT_ROWS)
+            .withFailMessage("저장 기대의 선언이 비었다 — 아래 대조가 0건 검사가 된다(CLAUDE.md 규칙 4 ⑶).")
+            .isNotEmpty()
+        // ⑵ 어느 팔이 저장됐는지 **정확 열거**. `source_format` 이 팔과 1:1 이라 지목이 된다.
+        assertThat(documentRows)
+            .withFailMessage(
+                "저장된 문서 행이 선언과 다르다.%n  없어진 것(선언에만): %s%n  새로 생긴 것(실제에만): %s%n" +
+                    "  `text` 는 ⑵ 붙여넣기, `docx` 는 ⑶ 파일 업로드다 — **없어진 쪽이 저장 경로에 닿지 " +
+                    "않은 팔**이고, 그 팔의 카나리는 암호화·JDBC 를 지나지 않았다. 202 는 「접수하기로 " +
+                    "했다」는 응답 사실이지 「행이 써졌다」는 저장 사실이 아니다.",
+                (EXPECTED_DOCUMENT_ROWS - documentRows.toSet()).ifEmpty { listOf("없음") },
+                (documentRows - EXPECTED_DOCUMENT_ROWS.toSet()).ifEmpty { listOf("없음") },
+            ).isEqualTo(EXPECTED_DOCUMENT_ROWS)
+        // ⑶ 세 행이 **한 트랜잭션**에서 확정됐는가(계획 §4.4). 문서만 쓰고 큐가 빠지는 경계
+        //    이동은 위 ⑵ 로는 보이지 않는다.
+        assertThat(listOf(conversionRows, jobRows))
+            .withFailMessage(
+                "변환·작업 행 수가 문서 행 수와 어긋난다(변환 %d · 작업 %d, 둘 다 %d 이어야 한다) — " +
+                    "문서·변환·작업이 한 트랜잭션에서 확정된다는 계획 §4.4 가 깨졌다.",
+                conversionRows,
+                jobRows,
+                EXPECTED_DOCUMENT_ROWS.size,
+            ).containsOnly(EXPECTED_DOCUMENT_ROWS.size)
+        // ⑷ 암호문이 자리표시자가 아닌가 — **평문을 꺼내지 않고 두 열의 관계**로 본다.
+        assertThat(placeholderRows)
+            .withFailMessage(
+                "본문이 행에 실제로 들어가지 않은 문서 행이 %d 건이다 — `char_count <= 0` 이거나 " +
+                    "암호문 길이가 `char_count` 이하다. AEAD 는 길이를 줄이지 않고 평문의 UTF-8 " +
+                    "바이트 수는 코드 포인트 수보다 작을 수 없으므로, 진짜 암호문은 언제나 " +
+                    "`char_count` 를 넘는다. 넘지 못하면 카나리가 암호화 경로를 지나지 않았다.",
+                placeholderRows,
+            ).isEqualTo(EXPECTED_PLACEHOLDER_ROWS)
+        // ⑸ 제목 축도 저장까지 갔는가. ⑵ 의 주석이 「본문·제목이 저장 경로 전체를 지난다」라고
+        //    적었으므로 제목을 재지 않으면 그 문장이 근거 없이 남는다.
+        assertThat(titleCanaryRows)
+            .withFailMessage(
+                "제목 카나리가 실린 문서 행이 %d 건이다(%d 이어야 한다) — 제목이 저장 경로를 " +
+                    "지나지 않았거나 다른 값으로 바뀌었다. **값은 찍지 않는다.**",
+                titleCanaryRows,
+                EXPECTED_TITLE_CANARY_ROWS,
+            ).isEqualTo(EXPECTED_TITLE_CANARY_ROWS)
+        assertStorageQueriesRanOnce()
+    }
+
+    /**
+     * **질의 횟수 핀** — 판정 구간에서 저장 질의가 정확히 [EXPECTED_STORAGE_QUERIES] 번 나갔다.
+     *
+     * 「한 번씩만 돌린다」를 관측으로만 두면 다시 늘어도 아무것도 빨개지지 않는다 — 이 세션이
+     * 일곱 번 겪은 「관측은 했는데 장치가 없다」다.
+     *
+     * **이 단언은 반드시 판정부의 맨 뒤여야 한다.** 처음에는 다섯 줄을 읽은 **직후**에 두었는데,
+     * 그 자리에서는 계수기가 아직 5 라서 **되돌린 즉시 평가를 잡지 못했다**(음성 대조 NC-D 가
+     * 초록으로 나와 그 사실을 드러냈다). 재-인라인된 질의는 **뒤 단언의 메시지 인자가 평가될
+     * 때** 나가므로, 그때보다 뒤에서 세야 보인다.
+     *
+     * 맞바꾼 것: 앞 단언이 실패하면 이 단언은 평가되지 않는다. 그것을 받아들이는 이유는 이 핀이
+     * 지키려는 것이 **초록 회차의 실행 시간**이기 때문이다 — 이미 빨간 회차에서는 앞의 진단이
+     * 더 중요하다.
+     */
+    private fun assertStorageQueriesRanOnce() {
+        assertThat(storageQueries)
+            .withFailMessage(
+                "저장 질의가 %d 번 나갔다(%d 이어야 한다). `withFailMessage` 의 인자는 **성공 " +
+                    "경로에서도** 평가되므로 단언 안에서 질의를 호출하면 회차마다 두세 번 나간다 — " +
+                    "값을 **먼저 한 번** 읽어 지역 변수로 써라. 실 DB 왕복이라 Testcontainers " +
+                    "실행 시간에 그대로 실린다.",
+                storageQueries,
+                EXPECTED_STORAGE_QUERIES,
+            ).isEqualTo(EXPECTED_STORAGE_QUERIES)
+    }
+
+    /**
+     * 저장 질의가 나간 횟수. **「한 번씩만」을 단언으로 만드는 계수기**다.
+     *
+     * 네 헬퍼가 각자 증가시키고 [EXPECTED_STORAGE_QUERIES] 와 대조된다 — 누가 질의를 다시
+     * `withFailMessage` 인자로 옮기면 그 회차에서 개수가 어긋난다.
+     */
+    private var storageQueries = 0
+
+    /** `형식=행수` 목록. 형식 이름과 개수만 나오므로 값이 실리지 않는다. */
+    private fun documentRowsByFormat(): List<String> {
+        storageQueries++
+        return database.queryFirstColumn(
+            "SELECT source_format || '=' || count(*)::text FROM documents GROUP BY source_format ORDER BY 1",
+        )
+    }
+
+    private fun rowCount(table: String): Int {
+        storageQueries++
+        return database.queryInt("SELECT count(*) FROM $table")
+    }
+
+    /**
+     * 암호문이 자리표시자인 행 수. **평문을 꺼내지 않는다** — 두 열의 관계만 본다.
+     */
+    private fun placeholderCipherRows(): Int {
+        storageQueries++
+        return database.queryInt(
+            "SELECT count(*) FROM documents " +
+                "WHERE char_count <= 0 OR octet_length(source_text_encrypted) <= char_count",
+        )
+    }
+
+    /**
+     * 제목 카나리가 실린 행 수.
+     *
+     * **needle 을 SQL 에 넣지 않는다** — 제목을 읽어 와 테스트 안에서 센다. SQL 에 카나리를
+     * 실으면 그 문장이 JDBC 로거를 타는 날 이 케이스가 스스로 빨개진다. 반환형이 `Int` 라
+     * 읽어 온 값이 호출자에게 넘어가지 않는다([ReachLog] 와 같은 규율).
+     */
+    private fun storedTitleCanaryRows(): Int {
+        storageQueries++
+        return database.queryFirstColumn("SELECT title FROM documents").count { it == TITLE_CANARY }
     }
 
     /**
@@ -744,6 +963,33 @@ class DocumentBodyLogLeakReachTest {
 
         /** 목록과 **함께** 고쳐야 하는 개수 핀. 한 갈래를 빼고 다른 갈래를 넣는 편집을 드러낸다. */
         private const val EXPECTED_REACH_COUNT = 7
+
+        private const val CONVERSIONS_TABLE = "conversions"
+        private const val JOBS_TABLE = "conversion_jobs"
+
+        /**
+         * **저장 상태 기대.** 응답이 아니라 **DB 쪽에서** 보는 값들이다.
+         *
+         * `source_format` 이 팔과 1:1 이다 — `text`=⑵ 붙여넣기, `docx`=⑶ 파일 업로드. 그래서
+         * 한 팔만 저장되지 않으면 없어진 항목이 **그 팔을 지목한다.** 총 2 라는 사실이 거절된
+         * 세 갈래가 저장되지 않았음도 함께 잰다. `ORDER BY 1` 이라 사전순이다.
+         */
+        private val EXPECTED_DOCUMENT_ROWS = listOf("docx=1", "text=1")
+
+        /** 암호문이 자리표시자인 행은 하나도 없어야 한다. */
+        private const val EXPECTED_PLACEHOLDER_ROWS = 0
+
+        /** 제목 카나리가 실린 행 — ⑵ 뿐이다(⑶ 은 제목을 주지 않아 대체 제목이다). */
+        private const val EXPECTED_TITLE_CANARY_ROWS = 1
+
+        /**
+         * 판정 구간에서 나가야 하는 저장 질의 수.
+         *
+         * 형식별 문서 행 1 + 변환 행 1 + 작업 행 1 + 자리표시자 1 + 제목 1 = **5**. 질의를
+         * 늘리는 것이 정당하면 이 값을 함께 고쳐라 — 그 diff 가 「실 DB 왕복이 늘었다」를
+         * 리뷰에 올린다(Testcontainers 실행 시간에 직결된다).
+         */
+        private const val EXPECTED_STORAGE_QUERIES = 5
 
         /** 계약 상한을 확실히 넘기는 길이. 정확한 경계는 DC-9·DC-10 이 잰다. */
         private const val OVER_LIMIT_CHARS = 5_000
