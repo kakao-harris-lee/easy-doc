@@ -115,6 +115,31 @@ logging:
     kr.easydoc: INFO
     # 요청 본문을 찍는 로거는 절대 DEBUG 로 내리지 않는다 — 문서 본문이 로그에 남는다.
     org.springframework.web: INFO
+    # ── 요청 값을 실제로 찍는 프레임워크 로거 3종 (게이트 28 P-2 / 원장 조건 18) ──
+    #
+    # 위 주석은 「요청 본문을 찍는 로거」라고 **복수로 선언**하면서 실제로는
+    # org.springframework.web 하나만 가리키고 있었다. 그런데 강제 TRACE 에서 값을 찍는
+    # 로거는 아래 셋이고 그중 어느 것도 그 한 줄에 걸리지 않는다 — 지금까지 조용했던 것은
+    # 우리 고정 덕이 아니라 root: INFO 상속 덕이었다(privacy-gate 기록 ③ 실측:
+    # reviews/03_security-workspaces-fixes_privacy-gate.md).
+    #
+    # 실측으로 확인한 각 로거가 흘리는 것:
+    #   Http11InputBuffer      원시 요청 바이트 — 본문·제목·평문 비밀번호·Bearer 토큰 전부
+    #   StatementCreatorUtils  JDBC 바인딩 파라미터 — 평문으로 저장되는 열(제목·이메일)
+    #   QueryExecutorImpl      PostgreSQL 와이어 프로토콜 — 같은 파라미터의 전송 형태
+    #
+    # 이 고정은 **강제·표현형**이다(방출 자체를 막는다). 은폐형이 아니다 — 은폐형은
+    # 신호를 줄이는 것(무시 패턴·억제·면제 조항)이고, 여기서 줄어드는 신호는 없다.
+    #
+    # **한계: 이것은 열거다.** 다음 판올림이 **네 번째 로거**로 같은 값을 흘리면 이 세 줄은
+    # 아무것도 못 잡는다. 그 빈자리는 목록이 아니라 **실제 방출을 재는 탐지**가 덮는다:
+    # api/src/test/.../DocumentBodyLogLeakReachTest — 루트만 TRACE 로 올리고 로거 이름을
+    # 모른 채 방출 전량을 훑어 카나리 0건인지 본다. 그러므로 ⑴ 이 세 줄을 지우면 ⑵ 네 번째
+    # 로거가 생기면 ⑶ 방어가 사라지면 그 커밋에서 빨개진다. 두 겹을 함께 지운 채로 통과하는
+    # 경로는 없다. 세 줄을 지울 때는 그 회귀부터 돌려라.
+    org.apache.coyote.http11.Http11InputBuffer: INFO
+    org.springframework.jdbc.core.StatementCreatorUtils: INFO
+    org.postgresql.core.v3.QueryExecutorImpl: INFO
     # 이 고정이 막는 것은 **DEBUG/TRACE 가 기본값을 따라 내려오는 경로 하나**다.
     # L-1 이 걱정한 유출(Argon2PasswordEncoder 가 깨진 해시에 내는 WARN + 스택트레이스)은
     # WARN 이 INFO 위라 **여기서 막히지 않는다** — privacy-gate 가 깨진 PHC 를 주입해
