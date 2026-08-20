@@ -111,6 +111,53 @@ import java.net.http.HttpResponse
  * 그래서 거절되는 요청 셋 — 상한 초과 본문 · 손상 파일 · 저장할 수 없는 문자 — 도 같은
  * 캡처 구간에서 돌린다.
  *
+ * ## 요청이 **의도한 층**까지 갔음을 단언한다
+ *
+ * 종전에는 요청 일곱 갈래를 태우고 **응답을 하나도 보지 않았다**(이 파일에 `statusCode()`
+ * 적중 0건). 그래서 `POST /documents` 가 어떤 이유로든 이른 단계에서 거절하기 시작하면 —
+ * 계약 변경 · 인증 회귀 · 미디어 타입 불일치 · 경로 변경 — 본문과 제목이 **저장 경로에 닿지
+ * 않고**, 로그에 카나리가 없는 것은 **동어반복**이 된다. 양성 대조 ⑴⑵ 는 캡처와 레벨 상향을
+ * 증명하지만 **트래픽이 처리됐다는 것은 증명하지 않는다**(게이트 28 P-2 다섯 번째 조치 —
+ * 같은 종류 다섯 번째이고 blast radius 가 가장 크다: 다른 열두 성질이 전부 참이어도 결론이
+ * 무의미해진다).
+ *
+ * 단언은 **「성공했음」이 아니다.** 일곱 중 셋은 거절이 정상이다(상한 초과 · 손상 파일 ·
+ * 저장 불가 문자). 거절 자체는 문제가 아니고 **거절된 층이 의도한 층인지**가 문제다 — 상한
+ * 초과가 서비스 층에서 422 로 끊기면 본문이 그 층까지 간 것이고, 같은 요청이 401(인증
+ * 깨짐)이나 415(미디어 타입 협상)로 끊기면 본문은 아무 데도 가지 않았다. 그래서 못박는 것은
+ * 「거절되지 않았음」이 아니라 **「그 요청이 낸 상태 코드가 의도한 층의 것」**이다.
+ *
+ * **일곱이다(다섯이 아니다).** 문서 요청은 다섯이지만 계정 생성·로그인 두 갈래도 함께
+ * 못박는다 — **비밀번호 축**이 요청 바이트·Argon2·JDBC 를 지나는 자리가 그 둘이고, 거기서
+ * 끊기면 그 축이 조용히 죽는다.
+ *
+ * ### 기대값을 계약에서 읽지 않은 이유
+ *
+ * [kr.easydoc.api.support.ContractSpec] 이 있고 이 저장소 규약은 「계약이 소유한 값을 옮겨
+ * 적지 않는다」다. 그런데 여기서는 **코드 상수**를 골랐다. 사유 셋:
+ *
+ * 1. **목적이 다르다.** 이 핀이 재는 것은 계약 준수가 아니라 **자극 도달**이다. 계약 준수는
+ *    DC-1(성공 상태)·DC-9(상한 초과 422 문자열)·컨테이너 거절 케이스가 이미 잰다. 계약에서
+ *    읽으면 같은 것을 두 번 재면서 이 핀의 고유 기능은 오히려 얇아진다.
+ * 2. **계약에는 이 일곱 갈래를 가릴 노드가 없다.** `POST /documents` 는
+ *    202·401·404·413·415·422·500·503 을 **모두** 선언한다(실측). 「선언된 상태 코드 집합」과
+ *    대조하면 401 도 그 집합에 있으므로 **음성 대조 NC-A(전건 401)가 잡히지 않는다** — 이
+ *    조치의 목적을 정확히 못 이룬다.
+ * 3. **계약 변경이 결함 원인 목록에 들어 있다.** 기대를 계약에서 읽는 핀은 계약 변경을
+ *    **구조적으로** 탐지할 수 없다. 코드에 못박으면 계약이 성공 상태를 옮기는 순간 이 핀이
+ *    빨개지고, 그 diff 가 「도달 기대가 바뀌었다」를 리뷰에 올린다(`TEST_CLASSES` 규율).
+ *
+ * 갈래마다 **허용 집합이 아니라 코드 하나**를 못박은 것도 같은 이유다 — 일곱 갈래 전부 층이
+ * 하나로 정해져 있고, 집합을 두면 층이 바뀌어도 통과한다.
+ *
+ * 이 핀이 **가리지 못하는 것**도 적어 둔다: 422 는 스키마 층(배열 `detail`)과 서비스 층
+ * (문자열 `detail`) 양쪽에서 나오므로, 상태 코드만으로는 **422 안에서 어느 층인지** 갈리지
+ * 않는다. 그 축은 DC-9·DC-22·DC-23 이 `detail` 모양으로 잰다.
+ *
+ * 실패 메시지에 응답 **본문**을 싣지 않는다 — 값이 흘러들 통로 자체가 없다. [ReachLog] 가
+ * 보관하는 것은 `Int` 이고 라벨은 컴파일 상수다. `residualCanaryFragments()` 와 같은 요구를
+ * 다른 기제로 막는다(검사가 아니라 구조다).
+ *
  * ## 양성 대조 셋
  *
  * ⑴ 「0건」은 **캡처가 비어 있어도** 참이다. 요청 전에 표식을 직접 찍고 그것이 캡처에
@@ -137,6 +184,7 @@ class DocumentBodyLogLeakReachTest {
     fun `문서 본문이 강제 TRACE 로그로도 새지 않는다`() {
         val root = LoggerFactory.getLogger(org.slf4j.Logger.ROOT_LOGGER_NAME) as ch.qos.logback.classic.Logger
         val probe = CanaryProbe(RETRO_CONTROL_MARKER)
+        val reach = ReachLog()
         probe.addCanary(BODY_AXIS, BODY_CANARY)
         probe.addCanary(TITLE_AXIS, TITLE_CANARY)
         probe.addCanary(PASSWORD_AXIS, PASSWORD_CANARY)
@@ -160,7 +208,7 @@ class DocumentBodyLogLeakReachTest {
 
             // ⑴ 계정 생성 — 평문 비밀번호가 요청 바이트·Argon2·JDBC 를 지난다. 이 구간만
             //    보관해 두고, 토큰을 손에 쥔 직후 소급 대조한다.
-            val token = newAccount()
+            val token = newAccount(reach)
             probe.addCanary(TOKEN_AXIS, token)
             // 토큰과 **같은 자리에서 같은 방식으로** 등록한다 — 이 줄이 토큰 등록과 함께
             // 움직이지 않으면 아래 통제 단언이 그 사실을 잡는다.
@@ -169,15 +217,15 @@ class DocumentBodyLogLeakReachTest {
             probe.stopRetaining()
 
             // ⑵ 성공 — 본문·제목이 저장 경로 전체(암호화·JDBC·트랜잭션)를 지난다.
-            createFromText(token, textBody("$BODY_CANARY 안내 본문입니다", TITLE_CANARY))
+            createFromText(reach, STEP_TEXT, token, textBody("$BODY_CANARY 안내 본문입니다", TITLE_CANARY))
             // ⑶ 파일 모드 — multipart 파싱과 파서까지 지난다.
-            upload(token, MultipartBody().file("file", "$TITLE_CANARY.docx", UploadFixtures.sampleDocx()))
+            upload(reach, STEP_FILE, token, docxPart(UploadFixtures.sampleDocx()))
             // ⑷ 상한 초과 — 서비스 층 거절.
-            createFromText(token, textBody(BODY_CANARY + "가".repeat(OVER_LIMIT_CHARS), TITLE_CANARY))
+            createFromText(reach, STEP_OVER_LIMIT, token, overLimitBody())
             // ⑸ 손상 파일 — 파서 예외가 도메인 예외로 바뀌는 경로.
-            upload(token, MultipartBody().file("file", "$TITLE_CANARY.docx", BODY_CANARY.toByteArray(Charsets.UTF_8)))
+            upload(reach, STEP_BROKEN_FILE, token, docxPart(BODY_CANARY.toByteArray(Charsets.UTF_8)))
             // ⑹ 저장할 수 없는 문자 — `PlainBody` 거절 경로.
-            send(post(token, """{"text":"$BODY_CANARY\ud800"}"""))
+            createFromText(reach, STEP_UNSAVABLE, token, """{"text":"$BODY_CANARY\ud800"}""")
         } finally {
             root.level = restoreLevel
             root.detachAppender(probe)
@@ -185,14 +233,22 @@ class DocumentBodyLogLeakReachTest {
             probe.stop()
         }
 
-        assertNoCanaryInLogs(probe)
+        assertNoCanaryInLogs(probe, reach)
     }
 
     /**
-     * 판정부. 트래픽을 태우는 부분과 분리해 둔다 — 단언이 다섯 축(캡처·레벨 상향·보관
-     * 잘림·소급 대조·적중)이라 한 함수에 두면 「무엇을 재는 함수인가」가 흐려진다.
+     * 판정부. 트래픽을 태우는 부분과 분리해 둔다 — 단언이 여섯 축(**도달**·캡처·레벨 상향·
+     * 보관 잘림·소급 대조·적중)이라 한 함수에 두면 「무엇을 재는 함수인가」가 흐려진다.
+     *
+     * **도달이 맨 앞이다.** 자극이 의도한 층에 닿지 않았으면 나머지 다섯 축의 결론이 전부
+     * 무의미하므로, 진단이 그 사실부터 말하게 한다. 앞 회차가 잔여 단언을 지목 단언보다 앞에
+     * 둔 것과 같은 이유다.
      */
-    private fun assertNoCanaryInLogs(probe: CanaryProbe) {
+    private fun assertNoCanaryInLogs(
+        probe: CanaryProbe,
+        reach: ReachLog,
+    ) {
+        assertReachedIntendedLayers(reach)
         assertMeasuredAxisInventory(probe)
         // 양성 대조 ⑴ — 캡처가 살아 있는가.
         assertThat(probe.sawPositiveControl())
@@ -238,6 +294,79 @@ class DocumentBodyLogLeakReachTest {
                     "허용 목록은 CLAUDE.md 규칙 4 ⑵ 가 금지한 면제 조항이다.",
                 probe.report(),
             ).isEmpty()
+    }
+
+    /**
+     * **도달 핀** — 요청 일곱 갈래가 각각 **의도한 층**의 상태 코드를 냈다.
+     *
+     * 지켜야 할 성질은 「성공했음」이 아니라 **「그 요청이 낸 상태 코드가 의도한 층의 것」**이다.
+     * 왜 그 형태인지·기대값을 계약에서 읽지 않은 이유·이 핀이 가리지 못하는 것은 클래스 KDoc
+     * 의 「요청이 **의도한 층**까지 갔음을 단언한다」에 있다.
+     *
+     * 형태는 재고 핀과 같은 **정확 열거 핀**이고 세 방향을 함께 잰다:
+     *
+     * - **비면** 0건 검사가 된다 → 선언 자체가 비었는지 먼저 본다(`CLAUDE.md` 규칙 4 ⑶).
+     * - **부분집합만** 보면 요청이 사라져도 통과한다 → 없어진 요청을 잡는다.
+     * - **상위집합만** 보면 요청이 조용히 늘어난다 → 새로 생긴 요청을 잡는다.
+     *
+     * 순서까지 못박는다(집합이 아니라 목록으로 대조한다) — 보관 구간이 계정 생성 두 갈래로
+     * 한정되어 있어 **요청 순서가 바뀌면 토큰 축의 소급 대조 범위가 달라진다.**
+     */
+    private fun assertReachedIntendedLayers(reach: ReachLog) {
+        val observed = reach.observed()
+        // ⑴ 선언이 비어 있지 않은가 — 규칙 4 ⑶. 이것이 없으면 아래 대조가 0건 검사로 통과한다.
+        assertThat(EXPECTED_REACH)
+            .withFailMessage(
+                "도달 기대의 선언이 비었다 — 아래 대조가 0건 검사가 된다(CLAUDE.md 규칙 4 ⑶). " +
+                    "요청을 정말 다 뺐다면 이 케이스를 지워야 하고, 그 diff 가 신고다.",
+            ).isNotEmpty()
+        // ⑵ 개수도 함께 못박는다 — 한 갈래를 빼고 다른 갈래를 넣는 편집이 두 자리에서 난다.
+        assertThat(EXPECTED_REACH)
+            .withFailMessage(
+                "선언 개수(%d)가 상수(%d)와 다르다 — 둘을 함께 고쳐라",
+                EXPECTED_REACH.size,
+                EXPECTED_REACH_COUNT,
+            ).hasSize(EXPECTED_REACH_COUNT)
+        // ⑶ 실제 관측과 **정확 일치**(순서 포함). 삭제·추가·층 변경이 모두 잡힌다.
+        assertThat(observed)
+            .withFailMessage(
+                "카나리가 **의도한 층**에 도달하지 않았다 — 아래가 지목이다.%n%s%n" +
+                    "이 상태의 「유출 0건」은 **동어반복**이다: 본문·제목이 그 층에 닿지 않았으니 " +
+                    "로그에 없는 것이 당연하다. 다른 열두 성질이 전부 참이어도 결론이 없다.%n" +
+                    "거절 자체는 결함이 아니다(셋은 거절이 정상이다) — **거절된 층이 다른 것**이 " +
+                    "결함이다. 401 은 인증이, 415 는 미디어 타입 협상이, 404·405 는 경로·메서드가 " +
+                    "끊었다는 뜻이고 그 어디서도 본문은 제품 경로를 지나지 않는다. " +
+                    "**기대값을 실제에 맞춰 덮지 마라** — 그러면 이 핀이 아무것도 재지 않는다.",
+                reachDiff(observed),
+            ).isEqualTo(EXPECTED_REACH)
+    }
+
+    /**
+     * 도달 지목. **라벨과 정수만** 담는다 — 응답 본문은 [ReachLog] 가 애초에 들고 있지 않다.
+     *
+     * 한 갈래만 어긋나면 **그 한 줄만** 나오게 만든다. 뭉개지면 「어느 요청이 층을 잃었는지」가
+     * 사라지고, 그것을 잃으면 이 핀은 「어딘가 틀렸다」밖에 말하지 못한다.
+     */
+    private fun reachDiff(observed: List<Pair<String, Int>>): String {
+        val actualByStep = observed.toMap()
+        val lines = mutableListOf<String>()
+        EXPECTED_REACH.forEach { (step, expected) ->
+            val actual = actualByStep[step]
+            when {
+                actual == null -> lines += "  · $step — 이 요청이 나가지 않았다(기대 $expected)"
+                actual != expected -> lines += "  · $step — 기대 $expected · 실제 $actual"
+            }
+        }
+        (actualByStep.keys - EXPECTED_REACH.map { it.first }.toSet()).sorted().forEach { step ->
+            lines += "  · $step — 선언에 없는 요청이 늘었다(실제 ${actualByStep[step]})"
+        }
+        if (lines.isEmpty()) {
+            // 코드는 다 맞는데 목록이 다르다 = 순서가 바뀌었거나 같은 갈래가 두 번 나갔다.
+            lines += "  · 상태 코드는 전부 같고 **순서**가 다르다(또는 같은 갈래가 두 번 나갔다)."
+            lines += "    기대 ${EXPECTED_REACH.map { it.first }}"
+            lines += "    실제 ${observed.map { it.first }}"
+        }
+        return lines.joinToString(System.lineSeparator())
     }
 
     /**
@@ -322,31 +451,55 @@ class DocumentBodyLogLeakReachTest {
 
     // ================================================================ 요청 조립
 
-    private fun newAccount(): String {
+    /**
+     * 계정을 만들고 토큰을 받는다. **두 요청 다 도달 핀에 기록한다** — 비밀번호 축이 요청
+     * 바이트·Argon2·JDBC 를 지나는 자리가 이 둘이고, 여기서 끊기면 그 축이 조용히 죽는다.
+     *
+     * 로그인이 실패하면 `access_token` 이 없어 토큰 축의 needle 이 `"null"` 이 되고, 그 값은
+     * 거의 모든 로그 줄에 들어 지목이 수천 건으로 번진다. 도달 단언을 판정부 **맨 앞**에 둔
+     * 이유 하나가 이것이다 — 그 난장판보다 「로그인이 200 이 아니다」가 먼저 나간다.
+     */
+    private fun newAccount(reach: ReachLog): String {
         val credentials =
             json.writeValueAsString(mapOf("email" to "canary@example.test", "password" to PASSWORD_CANARY))
-        send(post(null, credentials, "/auth/signup"))
-        return json
-            .readValue(send(post(null, credentials, "/auth/login")).body(), Map::class.java)["access_token"]
-            .toString()
+        reach.record(STEP_SIGNUP, send(post(null, credentials, SIGNUP_PATH)))
+        val login = send(post(null, credentials, LOGIN_PATH))
+        reach.record(STEP_LOGIN, login)
+        return json.readValue(login.body(), Map::class.java)["access_token"].toString()
     }
 
     private fun createFromText(
+        reach: ReachLog,
+        step: String,
         token: String,
         body: String,
-    ): HttpResponse<String> = send(post(token, body))
+    ) {
+        reach.record(step, send(post(token, body)))
+    }
 
     private fun upload(
+        reach: ReachLog,
+        step: String,
         token: String,
         body: MultipartBody,
-    ): HttpResponse<String> =
-        send(
-            HttpRequest
-                .newBuilder(URI.create("http://localhost:$port$DOCUMENTS_PATH"))
-                .header("Content-Type", body.contentType())
-                .header("Authorization", "Bearer $token")
-                .POST(HttpRequest.BodyPublishers.ofByteArray(body.build())),
+    ) {
+        reach.record(
+            step,
+            send(
+                HttpRequest
+                    .newBuilder(URI.create("http://localhost:$port$DOCUMENTS_PATH"))
+                    .header("Content-Type", body.contentType())
+                    .header("Authorization", "Bearer $token")
+                    .POST(HttpRequest.BodyPublishers.ofByteArray(body.build())),
+            ),
         )
+    }
+
+    /** 파일 파트. **파일 이름이 제목 카나리를 나른다** — 이름이 새는지도 같이 잰다. */
+    private fun docxPart(bytes: ByteArray): MultipartBody = MultipartBody().file(FILE_PART, "$TITLE_CANARY.docx", bytes)
+
+    /** 상한을 확실히 넘기는 본문. 호출부를 한 줄에 두려고 뺐다 — 값은 그대로다. */
+    private fun overLimitBody(): String = textBody(BODY_CANARY + "가".repeat(OVER_LIMIT_CHARS), TITLE_CANARY)
 
     private fun textBody(
         text: String,
@@ -370,8 +523,37 @@ class DocumentBodyLogLeakReachTest {
     private fun send(builder: HttpRequest.Builder): HttpResponse<String> =
         HttpClient.newHttpClient().send(builder.build(), HttpResponse.BodyHandlers.ofString(Charsets.UTF_8))
 
+    /**
+     * 요청 하나가 낸 **상태 코드만** 순서대로 모은다.
+     *
+     * 지켜야 할 성질이 타입에 들어 있다 — **응답 본문을 보관하지 않는다.** [record] 는
+     * `HttpResponse` 를 받아 `Int` 하나만 남기므로 실패 메시지에 응답 본문이 실릴 통로가 아예
+     * 없다. `CanaryProbe.residualCanaryFragments()` 가 지목 줄에 대해 **검사로** 지키는 것을
+     * 이쪽은 **구조로** 막는다.
+     *
+     * 동시 구조가 필요 없다 — 요청은 Tomcat 워커에서 처리되지만 기록은 요청을 **보낸 쪽**,
+     * 곧 테스트 스레드에서 순차로 한다.
+     */
+    private class ReachLog {
+        private val steps = mutableListOf<Pair<String, Int>>()
+
+        fun record(
+            step: String,
+            response: HttpResponse<String>,
+        ) {
+            steps += step to response.statusCode()
+        }
+
+        fun observed(): List<Pair<String, Int>> = steps.toList()
+    }
+
     companion object {
         private const val DOCUMENTS_PATH = "/documents"
+        private const val SIGNUP_PATH = "/auth/signup"
+        private const val LOGIN_PATH = "/auth/login"
+
+        /** 계약 `DocumentFileRequest.properties` 의 파일 파트 이름. */
+        private const val FILE_PART = "file"
 
         /** 자연 발생하지 않는 값이어야 「없다」가 뜻을 갖는다. */
         private const val BODY_CANARY = "CANARY-DOCUMENT-BODY-7Q2XZ"
@@ -402,6 +584,46 @@ class DocumentBodyLogLeakReachTest {
 
         /** 목록과 **함께** 고쳐야 하는 개수 핀. 한 축을 빼고 다른 축을 넣는 편집을 드러낸다. */
         private const val EXPECTED_AXIS_COUNT = 5
+
+        /**
+         * 도달 핀의 요청 라벨. **컴파일 상수이고 응답에서 온 값이 아니다** — 실패 메시지가
+         * CI 로그로 나가므로 라벨에 런타임 문자열을 섞지 않는다.
+         *
+         * 번호는 테스트 본문의 주석 번호와 같다. `⑴` 은 HTTP 요청이 둘이라 `-a`·`-b` 로 나눴다.
+         */
+        private const val STEP_SIGNUP = "⑴-a 계정 생성"
+        private const val STEP_LOGIN = "⑴-b 로그인"
+        private const val STEP_TEXT = "⑵ 붙여넣기 성공"
+        private const val STEP_FILE = "⑶ 파일 업로드 성공"
+        private const val STEP_OVER_LIMIT = "⑷ 본문 상한 초과"
+        private const val STEP_BROKEN_FILE = "⑸ 손상 파일"
+        private const val STEP_UNSAVABLE = "⑹ 저장할 수 없는 문자"
+
+        /**
+         * **이 케이스가 태우는 요청과, 각 요청이 닿아야 하는 층의 상태 코드.**
+         *
+         * 계약에서 읽지 않았다 — 사유 셋은 클래스 KDoc 「기대값을 계약에서 읽지 않은 이유」에
+         * 있다. 요약: ⑴ 이 핀의 목적은 계약 준수가 아니라 **자극 도달**이고 계약 준수는 DC
+         * 케이스가 이미 잰다, ⑵ 계약은 이 경로에 202·401·404·413·415·422·500·503 을 **모두**
+         * 선언해서 「선언된 집합」과 대조하면 전건 401 이 통과한다, ⑶ **계약 변경**이 도달
+         * 상실의 원인 목록에 있으므로 기대를 계약에서 읽으면 그 원인을 구조적으로 못 본다.
+         *
+         * 202 = 접수(저장 경로 전체를 지났다) · 422 = **서비스·도메인 층**의 거절
+         * (본문이 그 층까지 갔다). 401·415·404·405 는 **도달 실패**다.
+         */
+        private val EXPECTED_REACH: List<Pair<String, Int>> =
+            listOf(
+                STEP_SIGNUP to 201,
+                STEP_LOGIN to 200,
+                STEP_TEXT to 202,
+                STEP_FILE to 202,
+                STEP_OVER_LIMIT to 422,
+                STEP_BROKEN_FILE to 422,
+                STEP_UNSAVABLE to 422,
+            )
+
+        /** 목록과 **함께** 고쳐야 하는 개수 핀. 한 갈래를 빼고 다른 갈래를 넣는 편집을 드러낸다. */
+        private const val EXPECTED_REACH_COUNT = 7
 
         /** 계약 상한을 확실히 넘기는 길이. 정확한 경계는 DC-9·DC-10 이 잰다. */
         private const val OVER_LIMIT_CHARS = 5_000
