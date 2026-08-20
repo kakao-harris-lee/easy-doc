@@ -338,7 +338,13 @@ class RequestFieldConstraintLayerTest {
         const val SIGNUP_EMAIL_FIELD = "SignupRequest.email"
         const val SIGNUP_PASSWORD_FIELD = "SignupRequest.password"
 
-        // **금지 애너테이션 목록은 없다.** 판정은 `isConstraint` 의 성질 검사다(R-4).
+        // **금지 애너테이션 목록은 없다.** 판정은 엔진 질의다 — `ConstraintMetadata` 가
+        // Bean Validation 자신의 메타데이터에 묻는다(R-5).
+        //
+        // 두 단계를 거쳤다. R-4 가 **이름의 열거**를 없애고 (전이적) `@Constraint` 보유라는
+        // 성질 검사(`isConstraint`)로 갈았고, R-5 가 거기 남아 있던 **자리의 열거**까지
+        // 없애며 그 함수를 지웠다 — 아래 사유는 두 단계에서 그대로 유효하나, **판정하는
+        // 코드는 이제 `isConstraint` 가 아니다.** 없는 함수를 근거로 가리키지 않는다.
         //
         // 종전에는 이름 아홉 개를 열거했고, 그 목록 밖의 제약(`@CodePointLength`)이 실측으로
         // 통과했다. 목록을 넓히는 것은 다음 항목이 생길 때까지만 참인 조치다.
