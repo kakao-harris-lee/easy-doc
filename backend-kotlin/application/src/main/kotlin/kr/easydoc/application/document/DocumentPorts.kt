@@ -54,10 +54,27 @@ class DocumentDraft(
 /**
  * `documents` 저장소.
  *
- * **소유자 조건이 인터페이스에 박혀 있다** — 읽기 메서드가 전부 `ownerId` 를 받고 구현은
- * 그것을 `WHERE` 절에 넣는다. "먼저 조회하고 나서 소유자를 비교한다"는 형태를 아예 만들 수
- * 없게 하려는 것이다(`WorkspaceRepository` 와 같은 규칙). 그 형태는 비교를 잊으면 조용히
- * 남의 자원을 내주고, 잊지 않아도 존재 여부가 응답 시간으로 샌다.
+ * ## 소유 조건은 SQL `WHERE` 안에 둔다 — 다만 **이 인터페이스가 그것을 강제하지는 않는다**
+ *
+ * 사용자 요청 경로의 읽기([listOwned])는 `ownerId` 를 받고 구현이 그것을 `WHERE` 절에 넣는다.
+ * "먼저 조회하고 나서 소유자를 비교한다"는 형태를 만들지 않으려는 것이다
+ * (`WorkspaceRepository` 와 같은 규칙) — 그 형태는 비교를 잊으면 조용히 남의 자원을 내주고,
+ * 잊지 않아도 존재 여부가 응답 시간으로 샌다.
+ *
+ * **유지보수 경로의 [lockSourceText] 는 `ownerId` 를 받지 않는다.** 그래서 이 규약을
+ * 「읽기 메서드가 전부 받는다」로 적으면 거짓이 된다 — 실제로 그렇게 적혀 있었고, 같은 파일
+ * 아래쪽이 예외를 적고 있어 문면이 자기와 모순이었다(게이트 27 M-3 · `privacy-gate` 판정 §1.4).
+ *
+ * ## 무엇이 이 규약을 지키는가 — 시그니처가 아니라 **탐지기**다
+ *
+ * `OwnershipPredicateGuardTest` 가 제품 소스(`src/main`)를 훑어 `documents`·`conversions`
+ * 테이블에 닿는 SQL 을 뽑고, 소유 매개변수가 걸리지 않은 문장을 **정확 열거 핀**과 대조한다.
+ * 핀에 든 항목이 늘거나 줄면 그 diff 가 리뷰에 올라온다(수는 여기 적지 않는다 — 두 자리에
+ * 적으면 갈린다. 목록의 정본은 그 파일이다). 그 장치가 재지 못하는 것(문자열 조립 SQL,
+ * 매개변수의 결속 대상 등)도 그 파일 KDoc 에 적혀 있다.
+ *
+ * 사용자 경로가 변환·문서 암호문을 읽을 때 쓸 **소유자 인자 필수 포트는 아직 없다** —
+ * `privacy-gate` 해제 조건 ⒜ 이고 C6 단위의 몫이다.
  */
 interface DocumentRepository {
     /**
@@ -96,8 +113,13 @@ interface DocumentRepository {
      * 끼어들고, 회전이 그것을 낡은 값으로 덮는다(게이트 27 ① · 계획 §9.2-ter).
      *
      * **소유자를 받지 않는다** — 키 회전은 사용자 요청 경로가 아니라 운영 배치의 일이고,
-     * 그 배치에는 「내 것」이 없다. 사용자 경로가 이 메서드로 남의 문서를 읽는 일이 없도록
-     * 호출자는 회전 유스케이스 하나로 제한한다.
+     * 그 배치에는 「내 것」이 없다. 그래서 호출자를 회전 유스케이스로 제한하는데, **그 제한을
+     * 강제하는 장치는 없다.** 오늘 그것을 지키는 것은 이 문장과 「제품 호출자가 `EnvelopeRotation`
+     * 둘뿐」이라는 사실뿐이며, 그 사실은 커밋 하나로 바뀐다(`privacy-gate` 판정 §4.1 — 강제자 0).
+     *
+     * 그 대신 이 메서드가 소유 술어 없이 사는 것은 `OwnershipPredicateGuardTest` 의 정확 열거
+     * 핀에 **항목으로 올라 있다.** 사용자 경로가 원문 암호문을 읽어야 하면 이 메서드를 쓰지 말고
+     * 소유자 인자를 받는 포트를 만들어라 — `privacy-gate` 해제 조건 ⒜, C6 단위다.
      */
     fun lockSourceText(documentId: UUID): EncryptedContent?
 
@@ -152,7 +174,30 @@ class ConversionEnvelope(
     val ciphertexts: ConversionCiphertexts,
 )
 
-/** `conversions` 저장소. */
+/**
+ * `conversions` 저장소.
+ *
+ * ## 소유 조건 규약 — [DocumentRepository] 와 같은 규칙이고, 여기엔 **적혀 있지도 않았다**
+ *
+ * 게이트 27 M-3 이 지적한 자리다. 이쪽은 「거짓 선언」이 아니라 **무선언**이었고, 강제자가
+ * 0인 것은 같았다(`privacy-gate` 판정 §1.5).
+ *
+ * `conversions` 에는 소유자 컬럼이 없다 — 소유는 `conversions.document_id` 를 거쳐
+ * `documents.user_id` 로만 닿는다(`V1__python_schema_baseline.sql`). 그래서 사용자 경로가
+ * 변환 한 건을 읽으려면 **조인을 품은 단일 질의**여야 한다. 읽고 나서 소유자를 비교하는 형태는
+ * 만들지 않는다 — [ConversionEnvelope] 에는 애초에 비교할 재료(`documentId`)가 없어서 질의를
+ * 한 번 더 던지게 되고, 그 순간 [DocumentRepository] KDoc 이 금지한 형태가 확정된다.
+ *
+ * ## 오늘 여기에 사용자 경로용 읽기 포트는 없다
+ *
+ * [lockEnvelope] 는 유지보수(키 회전)용이라 소유자를 받지 않는다. **`GET /conversions/{id}` 를
+ * 만들 때 이 메서드를 쓰지 마라** — 소유자 인자를 받고 조인을 SQL `WHERE` 안에 넣는 새 포트가
+ * 필요하다(`privacy-gate` 해제 조건 ⒜, C6 단위).
+ *
+ * 이 규약을 지키는 것도 시그니처가 아니라 탐지기다 — `OwnershipPredicateGuardTest` 가 제품
+ * 소스에서 이 테이블에 닿는 SQL 을 뽑아 정확 열거 핀과 대조한다. 오늘 이 인터페이스가 내는
+ * SQL 은 그 핀에 항목으로 올라 있다 — 목록의 정본은 그 파일이지 이 문장이 아니다.
+ */
 interface ConversionRepository {
     /**
      * 대기 상태 변환을 만든다. **커밋하지 않는다.**
