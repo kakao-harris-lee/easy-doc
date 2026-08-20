@@ -1,0 +1,154 @@
+package kr.easydoc.api
+
+import ch.qos.logback.classic.Level
+import ch.qos.logback.classic.LoggerContext
+import kr.easydoc.api.support.CanaryProbe
+import kr.easydoc.api.support.RETRO_CONTROL_MARKER
+import org.assertj.core.api.Assertions.assertThat
+import org.junit.jupiter.api.DisplayName
+import org.junit.jupiter.api.Test
+
+/**
+ * **실패 메시지에 원시 카나리가 실리지 않는다** — `CanaryProbe.report()` 자체를 재는 장치.
+ *
+ * ## 이 장치가 왜 생겼는가
+ *
+ * 같은 결함이 **두 번** 났다. 둘 다 기제가 **순서**다:
+ * 1. **축을 넘는 누출**(게이트 28 stop-time codex ②) — 치환이 **자르기보다 뒤**여서, 창
+ *    경계에 걸린 카나리 토막이 남았다. 토큰 축이 아닌 **본문 축** 조각의 앞 문맥에 Bearer
+ *    토큰 꼬리가 딸려 나왔다.
+ * 2. **시간축 누출**(같은 게이트, 다음 회차) — 치환이 **등록보다 앞**설 수 있어서, 토큰이
+ *    등록되기 전에 만들어진 조각에 **토큰 원문이 동결**됐다. `rescanRetained()` 로 다시
+ *    훑어도 `pinned` 가 재등록을 막아 되돌리지 못했다.
+ *
+ * 두 번 다 「구현이 조심해서」 지키는 성질이었고 **장치는 0개**였다. 그래서 성질을 직접
+ * 단언하는 이 케이스를 세운다:
+ *
+ * > **카나리 집합이 불완전한 상태에서 조각을 만들지 않는다.**
+ *
+ * ## 왜 「원문 포함」이 아니라 「조각 포함」을 재는가
+ *
+ * 창은 ±60자라 긴 카나리(액세스 토큰은 150자 내외)는 **통째로 들어오지 않는다**. 그래서
+ * `report.contains(token)` 은 유출을 놓친다 — 실제로 놓쳤다. 1번 결함의 실측 조각은
+ * `-_uItImvEwdgfyU` 15자였고 `eyJ`(JWT 머리)도 `Bearer <값>` 도 걸리지 않았다.
+ * 그래서 **needle 의 모든 길이 `FRAGMENT`(12) 부분 문자열**을 훑는다.
+ *
+ * ## 실패 메시지가 유출을 되풀이하지 않게
+ *
+ * 이 케이스가 실패할 때도 **조각 자체를 찍지 않는다** — 어느 축의 몇 번째 오프셋인지만
+ * 말한다. 유출을 재는 장치가 유출하면 아무 의미가 없다.
+ *
+ * Spring 도 DB 도 쓰지 않는다 — `report()` 는 순수 함수에 가깝고, 그래서 이 성질은
+ * 컨테이너 없이 잴 수 있다.
+ */
+class CanaryProbeRedactionTest {
+    @Test
+    @DisplayName("인접한 다른 축의 카나리가 조각에 남지 않는다 (축을 넘는 누출)")
+    fun `축을 넘는 누출이 없다`() {
+        val probe = probe()
+        probe.addCanary(BODY_AXIS, BODY)
+        probe.addCanary(TOKEN_AXIS, TOKEN)
+
+        log(probe, "Authorization: Bearer $TOKEN\r\n\r\n{\"text\":\"$BODY\"}")
+
+        assertNoFragment(probe)
+    }
+
+    @Test
+    @DisplayName("적중 뒤에 등록된 카나리도 조각에 남지 않는다 (시간축 누출)")
+    fun `늦게 등록한 카나리도 조각에 남지 않는다`() {
+        val probe = probe()
+        // 토큰은 발급 전이라 아직 값을 모른다 — 등록된 것은 본문뿐이다.
+        probe.addCanary(BODY_AXIS, BODY)
+
+        // 이 줄이 본문 축으로 적중한다. 같은 줄에 토큰이 있지만 **아직 등록되지 않았다.**
+        log(probe, "Authorization: Bearer $TOKEN\r\n\r\n{\"text\":\"$BODY\"}")
+
+        // 발급 뒤 등록하고, 보관분을 소급 대조한다 — 종전 구현은 여기서 되돌리지 못했다
+        // (`pinned` 가 같은 로거·축의 재등록을 막고, 동결된 문자열을 다시 치환하는 경로가 없었다).
+        probe.addCanary(TOKEN_AXIS, TOKEN)
+        probe.rescanRetained()
+
+        assertNoFragment(probe)
+    }
+
+    @Test
+    @DisplayName("지목은 유지된다 — 로거·레벨·축이 메시지에 있고 축 표식이 값을 대신한다")
+    fun `치환해도 지목은 남는다`() {
+        val probe = probe()
+        probe.addCanary(BODY_AXIS, BODY)
+        probe.addCanary(TOKEN_AXIS, TOKEN)
+        log(probe, "Authorization: Bearer $TOKEN\r\n\r\n{\"text\":\"$BODY\"}")
+
+        val report = probe.report()
+        assertThat(report)
+            .withFailMessage("지목이 사라졌다 — 치환이 문맥까지 지웠다면 이 장치는 쓸모가 없다:%n%s", report)
+            .contains(LOGGER_NAME)
+            .contains(BODY_AXIS)
+            .contains(TOKEN_AXIS)
+            .contains("«$BODY_AXIS»")
+            .contains("«$TOKEN_AXIS»")
+    }
+
+    @Test
+    @DisplayName("조각을 읽은 뒤의 카나리 등록은 거절된다 — 불완전한 집합으로 렌더할 길을 막는다")
+    fun `읽은 뒤에는 등록할 수 없다`() {
+        val probe = probe()
+        probe.addCanary(BODY_AXIS, BODY)
+        log(probe, "{\"text\":\"$BODY\"}")
+        probe.report()
+
+        assertThat(runCatching { probe.addCanary(TOKEN_AXIS, TOKEN) }.exceptionOrNull())
+            .withFailMessage(
+                "조각을 읽은 뒤에도 카나리를 등록할 수 있다 — 「불완전한 집합으로 만든 조각」이 " +
+                    "다시 가능해진다. 이 빗장이 성질을 구조로 세우는 부분이다.",
+            ).isInstanceOf(IllegalStateException::class.java)
+    }
+
+    // ================================================================ 도구
+
+    /**
+     * 잔여 판정은 [CanaryProbe.residualCanaryFragments] 가 **정본**이다 — 여기서 다시 정의하면
+     * 실제 도달 케이스와 갈린다. 이 케이스는 그 정본을 **적대적 입력에 물려** 재는 쪽이다.
+     */
+    private fun assertNoFragment(probe: CanaryProbe) {
+        val residue = probe.residualCanaryFragments()
+        assertThat(residue)
+            .withFailMessage(
+                "실패 메시지에 카나리 원문 조각이 남았다 — 일치한 자리 %d곳 중 앞 %d곳: %s%n" +
+                    "조각 값은 일부러 찍지 않는다. 치환이 **자르기와 등록 양쪽보다 먼저**인지 보라.",
+                residue.size,
+                RESIDUE_SHOWN,
+                residue.take(RESIDUE_SHOWN),
+            ).isEmpty()
+    }
+
+    private fun probe(): CanaryProbe = CanaryProbe(RETRO_CONTROL_MARKER)
+
+    private fun log(
+        probe: CanaryProbe,
+        message: String,
+    ) {
+        val context = LoggerContext()
+        val logger = context.getLogger(LOGGER_NAME)
+        logger.level = Level.TRACE
+        logger.addAppender(probe)
+        logger.trace(message)
+        logger.detachAppender(probe)
+        context.stop()
+    }
+
+    private companion object {
+        const val LOGGER_NAME = "org.example.probe.RequestBuffer"
+        const val BODY_AXIS = "본문"
+        const val TOKEN_AXIS = "자격증명(액세스 토큰)"
+        const val BODY = "CANARY-UNIT-BODY-5H1KP"
+
+        /** 실제 JWT 와 같은 모양·길이여야 「창에 통째로 안 들어온다」는 조건이 재현된다. */
+        const val TOKEN =
+            "eyJhbGciOiJIUzI1NiJ9.eyJleHAiOjE3ODcyMzQ4ODMsInN1YiI6ImRkYmI2ZGU2LTU3OTktNDc2OC04N2E4" +
+                "LTg0ODI3NzFkYTUwYSIsInR5cCI6ImFjY2VzcyJ9.bH3FatoLEsih-XynssEk1NMiEFmcrACdrffrBT5EGBg"
+
+        const val RESIDUE_SHOWN = 5
+    }
+}
