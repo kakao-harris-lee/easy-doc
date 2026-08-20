@@ -85,18 +85,42 @@ import java.util.concurrent.atomic.AtomicLong
  * 로거가 있으면 그 자리에서 잡힌다. 문서 요청 구간은 보관 없이 흐름 대조만 한다(강제 TRACE
  * 의 방출량이 힙을 넘길 수 있다).
  *
+ * **그 보관·소급 경로는 fail-closed 다.** 종전에는 보관 상한을 넘기면 토큰 축 커버리지를
+ * 잃는데도 `hits()` 가 비어 초록이었고, 소급 대조가 빈 큐를 훑어도 초록이었다 — 즉 축이
+ * **조용히 죽는** 경로가 둘 있었다(게이트 28 stop-time codex ①). 이제 ⑴ 잘림은 **실패**이고
+ * ⑵ 소급 대조가 실제로 무언가를 봤음을 **양성 통제**로 단언한다.
+ *
+ * ## 실패 메시지에 카나리 값을 절대 싣지 않는다
+ *
+ * 지목은 CI 로그로 나간다. 그런데 **토큰 축의 카나리는 곧 발급된 액세스 토큰**이므로, 잘라낸
+ * 조각을 그대로 실으면 **자격증명 유출을 막으려고 세운 이 케이스가 실패하는 순간 자격증명을
+ * 로그에 쓴다** — 실패는 「누가 로거 레벨을 내렸을 때」 나므로 가장 나쁜 순간에 정확히 그
+ * 일이 벌어진다(게이트 28 stop-time codex ②). 종전에는 그것뿐 아니라 **본문 축 조각의 앞
+ * 문맥에 Bearer 토큰의 꼬리가 딸려 나오기까지** 했다(N-A 실측).
+ *
+ * 그래서 조각을 **자르기 전에 등록된 카나리 전부를** 축 이름 표식(`«축»`)으로 치환한다.
+ * 자르고 나서 치환하면 창 경계에 걸린 **토막**은 그대로 남으므로 순서가 뒤바뀌면 안 된다.
+ * 지목에 필요한 것은 로거·레벨·축·**문맥**이고 카나리 값 자체는 필요하지 않다.
+ *
+ * **축별 예외를 두지 않는다.** 본문·제목 카나리는 합성 문자열이라 실어도 무해하지만, 예외를
+ * 두면 그것이 면제 목록이 되어 다음에 실제 비밀이 새 축으로 들어올 때 조용히 새어 나간다
+ * (`CLAUDE.md` 규칙 4 ⑵).
+ *
  * ## 실패 경로를 함께 태운다
  *
  * 유출은 성공 경로보다 **오류 경로**에서 난다(예외 메시지·스택트레이스가 입력을 담는다).
  * 그래서 거절되는 요청 셋 — 상한 초과 본문 · 손상 파일 · 저장할 수 없는 문자 — 도 같은
  * 캡처 구간에서 돌린다.
  *
- * ## 양성 대조 둘
+ * ## 양성 대조 셋
  *
  * ⑴ 「0건」은 **캡처가 비어 있어도** 참이다. 요청 전에 표식을 직접 찍고 그것이 캡처에
  * 있는지 먼저 본다. ⑵ 강제 TRACE 축에서는 표식 하나로 부족하다 — **TRACE 이벤트가 실제로
  * 방출됐는지**(레벨 상향이 먹었는지)도 함께 단언한다. 레벨을 올리지 못한 채 「0건」을
  * 보고하는 것이 이 케이스의 가장 조용한 실패이고, 그것이 종전 형태의 결함이었다.
+ * ⑶ 앞의 둘은 **캡처와 레벨 상향**만 증명하고 **보관·소급 대조 경로**는 증명하지 않는다.
+ * 그래서 계정 생성 구간에 표식을 하나 더 방출해 두고 `rescanRetained()` 가 **그것을 찾는지**
+ * 단언한다 — 「빈 큐를 훑고도 초록」이 불가능해진다.
  */
 @SpringBootTest(
     webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
@@ -113,7 +137,7 @@ class DocumentBodyLogLeakReachTest {
     @DisplayName("문서 본문·제목·자격증명 카나리가 **강제 TRACE** 의 어느 로그에도 남지 않는다 (양성 대조 2종 포함)")
     fun `문서 본문이 강제 TRACE 로그로도 새지 않는다`() {
         val root = LoggerFactory.getLogger(org.slf4j.Logger.ROOT_LOGGER_NAME) as ch.qos.logback.classic.Logger
-        val probe = CanaryProbe()
+        val probe = CanaryProbe(RETRO_CONTROL_MARKER)
         probe.addCanary("본문", BODY_CANARY)
         probe.addCanary("제목", TITLE_CANARY)
         probe.addCanary("자격증명(비밀번호)", PASSWORD_CANARY)
@@ -128,6 +152,9 @@ class DocumentBodyLogLeakReachTest {
             root.level = Level.TRACE
 
             LoggerFactory.getLogger(javaClass).warn(POSITIVE_CONTROL_MARKER)
+            // 보관 구간에만 있는 표식 — `rescanRetained()` 가 이것을 찾아야 그 경로가
+            // 빈 큐를 훑지 않았음이 증명된다(양성 대조 ⑶).
+            LoggerFactory.getLogger(javaClass).warn(RETRO_CONTROL_MARKER)
 
             // ⑴ 계정 생성 — 평문 비밀번호가 요청 바이트·Argon2·JDBC 를 지난다. 이 구간만
             //    보관해 두고, 토큰을 손에 쥔 직후 소급 대조한다.
@@ -153,6 +180,14 @@ class DocumentBodyLogLeakReachTest {
             probe.stop()
         }
 
+        assertNoCanaryInLogs(probe)
+    }
+
+    /**
+     * 판정부. 트래픽을 태우는 부분과 분리해 둔다 — 단언이 다섯 축(캡처·레벨 상향·보관
+     * 잘림·소급 대조·적중)이라 한 함수에 두면 「무엇을 재는 함수인가」가 흐려진다.
+     */
+    private fun assertNoCanaryInLogs(probe: CanaryProbe) {
         // 양성 대조 ⑴ — 캡처가 살아 있는가.
         assertThat(probe.sawPositiveControl())
             .withFailMessage("표식이 캡처에 없다 — 이 케이스는 아무 로그도 보고 있지 않다")
@@ -165,6 +200,25 @@ class DocumentBodyLogLeakReachTest {
                     "이 상태의 「유출 0」은 억제이지 탐지가 아니다(총 %d 이벤트).",
                 probe.totalEvents(),
             ).isNotZero()
+
+        // 양성 대조 ⑶-a — 보관이 잘렸으면 토큰 축을 다 재지 못한 것이다. 「다 재지 못했다」는
+        // 통과 사유가 아니므로 **실패**로 만든다(종전에는 초록이었다).
+        assertThat(probe.retainTruncated())
+            .withFailMessage(
+                "보관이 잘렸다 — 계정 생성 구간 %d자가 상한 %d자를 넘겨 소급 대조가 전량이 아니다. " +
+                    "이 상태에서는 **토큰 축 커버리지를 잃는다**. 상한을 올려 미루기 전에 " +
+                    "보관 구간이 왜 그만큼 커졌는지 답하라.",
+                probe.retainedCharsSeen(),
+                probe.retainCharLimit(),
+            ).isFalse()
+        // 양성 대조 ⑶-b — 소급 대조 경로가 실제로 무언가를 봤는가.
+        assertThat(probe.sawRetroControl())
+            .withFailMessage(
+                "소급 대조가 보관 구간의 표식을 찾지 못했다 — 보관·소급 경로가 죽었고 " +
+                    "**토큰 축이 조용히 안 재지고 있다**(보관 %d건 관측, %d자).",
+                probe.retainedEvents(),
+                probe.retainedCharsSeen(),
+            ).isTrue()
 
         assertThat(probe.hits())
             .withFailMessage(
@@ -252,6 +306,9 @@ class DocumentBodyLogLeakReachTest {
 /** 이 문자열이 캡처에 없으면 「유출 0건」은 캡처가 비었다는 뜻이다. */
 private const val POSITIVE_CONTROL_MARKER = "T18-LOG-CAPTURE-ALIVE"
 
+/** 보관 구간에만 방출되는 표식 — 소급 대조가 빈 큐를 훑었는지 가른다. */
+private const val RETRO_CONTROL_MARKER = "T18-RETAIN-RESCAN-ALIVE"
+
 /**
  * 방출된 로그 이벤트를 **그 자리에서 훑는** appender.
  *
@@ -261,16 +318,27 @@ private const val POSITIVE_CONTROL_MARKER = "T18-LOG-CAPTURE-ALIVE"
  *
  * **보관 구간**은 예외다 — 발급 전에는 값을 모르는 카나리(액세스 토큰)를 소급 대조해야 하므로,
  * `stopRetaining()` 호출 전까지는 렌더링 결과를 상한(`RETAIN_CHAR_LIMIT`) 안에서 들고 있는다.
- * 상한을 넘기면 보관을 포기하고 그 사실을 `retainTruncated` 로 남긴다 — 조용히 버리지 않는다.
+ * 상한을 넘기면 보관을 포기하고 `retainTruncated` 를 세우는데, **그 깃발은 호출자가 단언한다**
+ * — 잘림은 기록이 아니라 **실패**다. 종전 문면은 *"조용히 버리지 않는다"* 라고 적으면서
+ * 실제로는 초록 경로에서 정확히 조용히 버렸다(`report()` 는 `hits()` 가 비면 렌더되지 않는다).
+ *
+ * **적중 조각은 카나리 값을 담지 않는다** — `snippet` 이 자르기 **전에** 등록된 카나리 전부를
+ * 축 표식으로 치환한다. 토큰 축의 카나리가 곧 실제 자격증명이기 때문이고, 축별 예외는 두지
+ * 않는다(클래스 KDoc 참고).
  *
  * 요청은 Tomcat 워커 스레드에서 처리되므로 수집 구조는 동시 접근을 견뎌야 한다.
  */
-private class CanaryProbe : AppenderBase<ILoggingEvent>() {
+private class CanaryProbe(private val retroControl: String) : AppenderBase<ILoggingEvent>() {
     private val canaries = ConcurrentLinkedQueue<Pair<String, String>>()
     private val found = ConcurrentLinkedQueue<String>()
     private val pinned = ConcurrentHashMap.newKeySet<String>()
     private val retained = ConcurrentLinkedQueue<Pair<String, String>>()
+
+    /** 보관 **시도** 총량. 상한을 넘긴 뒤에도 계속 센다 — 실패 메시지가 실제 규모를 말해야 한다. */
     private val retainedChars = AtomicLong()
+
+    /** `stopRetaining()` 이 큐를 비우기 전에 옮겨 둔 보관 건수. */
+    private val retainedEvents = AtomicLong()
     private val total = AtomicLong()
     private val trace = AtomicLong()
 
@@ -279,6 +347,9 @@ private class CanaryProbe : AppenderBase<ILoggingEvent>() {
     @Volatile private var retainTruncated = false
 
     @Volatile private var positiveControl = false
+
+    /** `rescanRetained()` **안에서만** 세워진다 — 그래서 그 경로가 죽으면 거짓으로 남는다. */
+    @Volatile private var retroControlSeen = false
 
     init {
         name = "canary-probe"
@@ -295,14 +366,19 @@ private class CanaryProbe : AppenderBase<ILoggingEvent>() {
 
     /** 보관분을 현재 카나리 전체로 다시 훑는다. 늦게 등록한 축의 과거 방출을 잡는 유일한 길이다. */
     fun rescanRetained() {
-        retained.forEach { (logger, rendered) -> match(logger, rendered) }
+        retained.forEach { (logger, rendered) ->
+            if (rendered.contains(retroControl)) retroControlSeen = true
+            match(logger, rendered)
+        }
     }
 
     /** 보관을 끝내고 힙을 놓는다. 이후 구간은 흐름 대조만 한다. */
     fun stopRetaining() {
         retaining = false
+        // 건수는 실패 메시지가 쓰므로 비우기 전에 옮겨 둔다. 문자 수는 **줄이지 않는다** —
+        // 0 으로 되돌리면 잘림 메시지가 규모를 거짓으로 말한다.
+        retainedEvents.set(retained.size.toLong())
         retained.clear()
-        retainedChars.set(0)
     }
 
     override fun append(event: ILoggingEvent) {
@@ -329,7 +405,7 @@ private class CanaryProbe : AppenderBase<ILoggingEvent>() {
             if (rendered.contains(needle)) {
                 // 로거·축 조합당 한 줄만 남긴다 — 같은 로거가 수천 번 찍어도 지목은 한 번이면 된다.
                 if (pinned.add("$label|$axis")) {
-                    found += "  · $label — $axis 축: …${snippet(rendered, needle)}…"
+                    found += "  · $label — $axis 축: …${snippet(rendered, axis)}…"
                 }
             }
         }
@@ -337,16 +413,19 @@ private class CanaryProbe : AppenderBase<ILoggingEvent>() {
 
     fun hits(): List<String> = found.toList().sorted()
 
-    fun report(): String =
-        buildString {
-            append(hits().joinToString(System.lineSeparator()).ifEmpty { "  (지목 없음)" })
-            if (retainTruncated) {
-                append(System.lineSeparator())
-                append("  ※ 보관 상한 초과 — 계정 생성 구간의 소급 대조가 전량이 아니다.")
-            }
-        }
+    fun report(): String = hits().joinToString(System.lineSeparator()).ifEmpty { "  (지목 없음)" }
 
     fun sawPositiveControl(): Boolean = positiveControl
+
+    fun sawRetroControl(): Boolean = retroControlSeen
+
+    fun retainTruncated(): Boolean = retainTruncated
+
+    fun retainedCharsSeen(): Long = retainedChars.get()
+
+    fun retainedEvents(): Long = if (retaining) retained.size.toLong() else retainedEvents.get()
+
+    fun retainCharLimit(): Long = RETAIN_CHAR_LIMIT
 
     fun totalEvents(): Long = total.get()
 
@@ -364,18 +443,37 @@ private class CanaryProbe : AppenderBase<ILoggingEvent>() {
             }
         }
 
+    /**
+     * 적중 지점의 **문맥만** 돌려준다 — 카나리 값은 한 글자도 담지 않는다.
+     *
+     * 치환이 **자르기보다 먼저**여야 한다. 나중에 치환하면 창 경계에 걸린 카나리 **토막**이
+     * 그대로 남는다(N-A 실측에서 본문 축 조각의 앞 문맥에 Bearer 토큰 꼬리가 딸려 나왔다).
+     * 긴 needle 부터 치환하는 이유는 한 카나리가 다른 카나리의 부분 문자열일 때 짧은 쪽이
+     * 먼저 먹어 긴 쪽의 잔여가 남는 것을 막기 위해서다.
+     */
     private fun snippet(
         text: String,
-        needle: String,
+        axis: String,
     ): String {
-        val at = text.indexOf(needle)
+        var redacted = text
+        canaries
+            .sortedByDescending { (_, needle) -> needle.length }
+            .forEach { (each, needle) -> redacted = redacted.replace(needle, marker(each)) }
+        val at = redacted.indexOf(marker(axis)).coerceAtLeast(0)
         val from = (at - CONTEXT_CHARS).coerceAtLeast(0)
-        val to = (at + needle.length + CONTEXT_CHARS).coerceAtMost(text.length)
-        return text.substring(from, to).replace('\n', '⏎').replace('\r', '⏎')
+        val to = (at + marker(axis).length + CONTEXT_CHARS).coerceAtMost(redacted.length)
+        return redacted.substring(from, to).replace('\n', '⏎').replace('\r', '⏎')
     }
 
+    private fun marker(axis: String): String = "«$axis»"
+
     private companion object {
-        /** 계정 생성 구간만 보관한다 — 그 구간의 실측 방출량(기록 ③ 기준 수백~수천 건)의 여유분. */
+        /**
+         * 계정 생성 구간만 보관한다. **실측 25,749자 / 83건**(음성 대조에서 상한을 1자로 낮춰
+         * 잰 값이다 — 추정이 아니다). 상한은 그 1,300배쯤으로 잡아 두었고, **넘기면 통과가
+         * 아니라 실패**다. 그래서 상한은 「조용히 잘릴 여유」가 아니라 「이만큼 커졌으면
+         * 무언가 변했다」는 경보선이다.
+         */
         const val RETAIN_CHAR_LIMIT = 32L * 1024 * 1024
         const val CONTEXT_CHARS = 60
     }
