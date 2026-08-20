@@ -194,6 +194,57 @@ class JdbcDocumentStoreTest {
     }
 
     @Test
+    @DisplayName("본문 표식이 문서 행의 **어느 열에도** 남지 않는다 — 열 목록을 카탈로그에서 파생한다")
+    fun `본문 표식이 평문 열에 남지 않는다`() {
+        // ## 왜 「원문이 평문으로 저장되지 않는다」로 부족했나 (게이트 27 Critical ① 둘째 절반)
+        //
+        // 그 케이스는 `source_text_encrypted` **한 열만** 본다. 그래서 본문 조각이 `title`
+        // 로 복제돼도 초록이었다 — 실제로 그런 갈래가 있었고(제목을 본문 첫 줄에서 유도),
+        // 두 방어(암호화·마스킹)를 동시에 우회했다.
+        //
+        // ## 분모를 열거하지 않는다
+        //
+        // 검사할 열을 손으로 적으면 **다음에 늘어나는 열이 영영 밖**이다. `information_schema`
+        // 에서 그 행의 열 전부를 받아 하나씩 텍스트로 읽는다. bytea 도 뺀 것이 아니라 함께
+        // 본다(`::text` 는 `\x…` 16진이라 평문 표식이 있을 수 없다 — 있다면 그것이 사건이다).
+        //
+        // ## 표식을 **짧게, 첫 줄 맨 앞에** 둔다
+        //
+        // 되살아날 갈래는 본문을 **잘라서** 옮긴다(옛 판은 첫 줄 30자였다). 표식이 그보다
+        // 길면 잘려 나가 검사가 통과해 버린다 — 그러면 이 케이스는 음성 대조에서 초록이
+        // 되고, 그것이 바로 이 케이스가 없애려는 상태다.
+        val owner = newUser()
+        val workspace = workspaces.create(owner, "표식").id
+        val marker = "EDPROBE" + UUID.randomUUID().toString().take(MARKER_HEX_CHARS)
+        val body = "$marker 로 시작하는 안내문\n둘째 줄에도 $marker 가 있다"
+
+        // **제목을 주지 않는다.** 본문 유도 갈래가 되살아나면 정확히 여기서 빨개진다.
+        val accepted = service.createFromText(owner, body, null, workspace)
+
+        val columns = columnsOf("documents")
+        assertThat(columns)
+            .withFailMessage("`documents` 의 열을 하나도 읽지 못했다 — 검사 대상 0건은 통과가 아니라 미검사다.")
+            .isNotEmpty()
+        assertThat(columns)
+            .describedAs("바닥 목록 — 이 열들이 분모에서 빠지면 이 검사는 껍데기가 된다")
+            .containsAll(DOCUMENT_COLUMN_FLOOR)
+        assertThat(columns)
+            .describedAs("열 수 하한 — 카탈로그 조회가 조용히 좁아지는 것을 막는다")
+            .hasSizeGreaterThanOrEqualTo(MIN_DOCUMENT_COLUMNS)
+
+        val offenders = columns.filter { marker in columnTextOf("documents", it, accepted.documentId) }
+
+        assertThat(offenders)
+            .withFailMessage {
+                "본문 표식이 문서 행의 평문 열에 남았다: $offenders\n" +
+                    "  `documents` 의 모든 열은 사용자 본문을 담지 않는다 — 본문은 " +
+                    "`source_text_encrypted` 에 AEAD 로만 들어간다.\n" +
+                    "  업로드 시점에는 마스킹이 돌지 않으므로(마스킹은 워커의 일이다) " +
+                    "본문에서 유도한 값은 아무 방어도 받지 않는다."
+            }.isEmpty()
+    }
+
+    @Test
     @DisplayName("`encryption_scheme` 을 빠뜨린 INSERT 는 **NOT NULL 위반으로 즉시** 실패한다 (V3 의 설계 의도)")
     fun `봉투를 빠뜨린 쓰기는 실패한다`() {
         val owner = newUser()
@@ -585,6 +636,41 @@ class JdbcDocumentStoreTest {
             .query { rs, _ -> rs.getInt(1) }
             .single()
 
+    /**
+     * 그 테이블의 **열 이름 전부**를 DB 카탈로그에서 받는다.
+     *
+     * 손으로 적은 목록이 아니라 카탈로그라, 마이그레이션이 열을 더하면 검사 분모가 **저절로**
+     * 늘어난다. 0건이면 호출 측이 실패로 판정한다(빈 분모는 통과가 아니다).
+     */
+    private fun columnsOf(table: String): List<String> =
+        jdbc
+            .sql(
+                """
+                SELECT column_name FROM information_schema.columns
+                WHERE table_schema = current_schema() AND table_name = :table
+                ORDER BY ordinal_position
+                """.trimIndent(),
+            ).param("table", table)
+            .query { rs, _ -> rs.getString(1) }
+            .list()
+
+    /**
+     * 열 하나를 **텍스트로** 읽는다. `NULL` 은 빈 문자열이다 — 표식 검사에서 둘은 같다.
+     *
+     * 열 이름은 사용자 입력이 아니라 카탈로그에서 온 값이고, 큰따옴표로 감싸 식별자로만
+     * 해석되게 한다.
+     */
+    private fun columnTextOf(
+        table: String,
+        column: String,
+        id: UUID,
+    ): String =
+        jdbc
+            .sql("""SELECT coalesce("$column"::text, '') FROM $table WHERE id = :id""")
+            .param("id", id)
+            .query { rs, _ -> rs.getString(1) }
+            .single()
+
     private fun envelopeOf(
         table: String,
         id: UUID,
@@ -659,6 +745,23 @@ class JdbcDocumentStoreTest {
     private companion object {
         /** 계약 `x-input-limits.retention_days`. */
         const val RETENTION_DAYS = 30
+
+        /**
+         * 표식 검사가 반드시 덮어야 하는 열. **면제 목록의 반대다** — 여기 있는 열이
+         * 분모에서 빠지면 검사가 껍데기이므로 빨개진다. 새 열을 여기 적을 필요는 없다
+         * (분모는 카탈로그가 정한다).
+         */
+        val DOCUMENT_COLUMN_FLOOR =
+            listOf("title", "source_format", "char_count", "source_text_encrypted")
+
+        /** `V1`~`V5` 이후 `documents` 의 열 수. 카탈로그 조회가 조용히 좁아지는 것을 막는 하한이다. */
+        const val MIN_DOCUMENT_COLUMNS = 11
+
+        /**
+         * 표식에 붙이는 난수 자릿수. 표식 전체 길이가 **잘라 옮기는 갈래의 창(옛 판 30자)보다
+         * 짧아야** 음성 대조가 성립한다 — 길면 잘려서 검사가 통과한다.
+         */
+        const val MARKER_HEX_CHARS = 8
 
         /** 작업 공간 소유 판정 1 + 문서 INSERT 1 + 변환 INSERT 1 + 작업 INSERT 1. */
         const val UPLOAD_STATEMENTS = 4

@@ -7,17 +7,45 @@ import org.junit.jupiter.api.Test
 /**
  * 제목 규칙과 문자 수 세기 — **Spring 도 DB 도 없이 돈다**(계획 §3.2).
  *
- * 원본: `app/services/documents.py::_resolve_title`·`_shorten_derived_title`.
+ * ## 이 파일의 중심 축: **본문이 제목이 되지 않는다** (게이트 27 Critical ①)
  *
- * ## 여기서 재는 것 중 원본에 **없던** 축
+ * `documents.title` 은 평문 컬럼이고 업로드 경로에는 마스킹이 없다. 본문 첫 줄을 제목으로
+ * 삼으면 원문 조각이 평문으로 남는다. 그래서 제목의 바탕은 **사용자가 이름으로 준 값**뿐이고,
+ * 아래 케이스들이 그 성질을 각각 다른 방향에서 잰다. 저장 층의 대응 회귀는
+ * `JdbcDocumentStoreTest` 의 「본문 표식이 평문 열에 남지 않는다」다 — 이쪽은 순수 규칙,
+ * 저쪽은 실 DB 의 **행 전체**를 본다.
  *
- * 코드 포인트 경계다. Python `len`·슬라이스는 코드 포인트 단위라 서로게이트 쌍을 쪼갤 수
- * 없지만 Kotlin `String.length`·`take` 는 UTF-16 코드 단위라 **쪼갤 수 있다.** 쪼개진
- * 문자열은 짝 없는 서로게이트를 갖고, 그것이 UTF-8 로 인코딩될 때 `?` 로 바뀐다 —
- * 즉 우리가 만든 손상이다(게이트 25 X1 과 같은 자리). 제목은 암호화 경로를 지나지 않아
- * `PlainBody` 검사도 받지 못하므로 여기서 막지 않으면 아무 데서도 막히지 않는다.
+ * ## 여기서 재는 또 하나의 축 — 코드 포인트 경계
+ *
+ * Python `len`·슬라이스는 코드 포인트 단위라 서로게이트 쌍을 쪼갤 수 없지만 Kotlin
+ * `String.length`·`take` 는 UTF-16 코드 단위라 **쪼갤 수 있다.** 쪼개진 문자열은 짝 없는
+ * 서로게이트를 갖고, 그것이 UTF-8 로 인코딩될 때 `?` 로 바뀐다 — 즉 우리가 만든 손상이다
+ * (게이트 25 X1 과 같은 자리). 제목은 암호화 경로를 지나지 않아 `PlainBody` 검사도 받지
+ * 못하므로 여기서 막지 않으면 아무 데서도 막히지 않는다.
  */
 class TitleRulesTest {
+    // ============================================================ 본문을 쓰지 않는다
+
+    @Test
+    @DisplayName("제목도 파일 이름도 없으면 **대체 제목**이다 — 본문에서 만들지 않는다")
+    fun `근거가 없으면 대체 제목이다`() {
+        assertThat(resolveTitle(null, null)).isEqualTo(FALLBACK_TITLE)
+        assertThat(resolveTitle("   ", null)).isEqualTo(FALLBACK_TITLE)
+    }
+
+    @Test
+    @DisplayName("제목 자리에 본문을 넘길 통로 자체가 없다 — 인자는 이름 둘뿐이다")
+    fun `본문을 받을 자리가 없다`() {
+        // 이 케이스가 재는 것은 **시그니처**다. 본문 유도 갈래가 되살아나려면 이 호출이
+        // 컴파일되지 않게 되거나(인자 추가) 두 인자 중 하나가 본문을 받게 되어야 하고,
+        // 둘 다 diff 에 드러난다. 값 단언은 위 케이스가 진다.
+        val bodyLikeInput = "복지 급여 안내\n둘째 줄"
+
+        assertThat(resolveTitle(null, null)).isEqualTo(FALLBACK_TITLE)
+        // 같은 문자열을 **파일 이름 자리**에 주면 이름으로 다뤄진다(경로·확장자 규칙만 적용).
+        assertThat(resolveTitle(null, bodyLikeInput)).isNotEqualTo(FALLBACK_TITLE)
+    }
+
     // ============================================================ 사용자가 준 제목
 
     @Test
@@ -25,7 +53,7 @@ class TitleRulesTest {
     fun `사용자 제목은 그대로 쓴다`() {
         val given = "  2026년 상반기 복지 안내문 발송 계획 알림 문서입니다  "
 
-        assertThat(resolveTitle(given, "본문 첫 줄")).isEqualTo(given.trim())
+        assertThat(resolveTitle(given, "무관.docx")).isEqualTo(given.trim())
     }
 
     @Test
@@ -34,90 +62,74 @@ class TitleRulesTest {
         // 제어문자는 **이스케이프로만** 적는다. 원시 바이트를 소스에 넣으면
         // `tests/test_raw_control_chars.py` 가 잡는다 — 이 저장소에서 반복해 재발한 자리다.
         val control = "\u0000".repeat(10)
-        val body = "가".repeat(MAX_TITLE_LENGTH)
+        val name = "가".repeat(MAX_TITLE_LENGTH)
 
-        val resolved = resolveTitle(control + body, "무관")
+        val resolved = resolveTitle(control + name, "무관.docx")
 
-        assertThat(resolved).isEqualTo(body)
+        assertThat(resolved).isEqualTo(name)
         assertThat(resolved).hasSize(MAX_TITLE_LENGTH)
     }
 
     @Test
     @DisplayName("사용자 제목이 상한을 넘으면 **거절하지 않고 자른다** (계약 x-input-limits.max_title_length)")
     fun `사용자 제목은 상한에서 잘린다`() {
-        val resolved = resolveTitle("나".repeat(MAX_TITLE_LENGTH + 50), "무관")
+        val resolved = resolveTitle("나".repeat(MAX_TITLE_LENGTH + 50), "무관.docx")
 
         assertThat(charCountOf(resolved)).isEqualTo(MAX_TITLE_LENGTH)
     }
 
     @Test
-    @DisplayName("제어문자만 적어 준 제목은 대체 제목이 된다 — 본문으로 덮지 않는다")
+    @DisplayName("제어문자만 적어 준 제목은 대체 제목이다 — 파일 이름으로 덮지 않는다")
     fun `제어문자뿐인 제목은 대체 제목이다`() {
-        assertThat(resolveTitle("\u0001\u0002\u0003", "본문 첫 줄")).isEqualTo(FALLBACK_TITLE)
-    }
-
-    // ============================================================ 본문에서 유도
-
-    @Test
-    @DisplayName("제목이 없으면 본문의 **첫 번째 내용 있는 줄**에서 유도한다")
-    fun `첫 내용 줄에서 유도한다`() {
-        val body = "\n   \n복지 급여 안내\n둘째 줄"
-
-        assertThat(resolveTitle(null, body)).isEqualTo("복지 급여 안내")
+        assertThat(resolveTitle("\u0001\u0002\u0003", "안내문.docx")).isEqualTo(FALLBACK_TITLE)
     }
 
     @Test
-    @DisplayName("빈 제목 문자열은 미지정과 같게 다룬다")
+    @DisplayName("빈 제목 문자열은 미지정과 같게 다룬다 — 파일 이름으로 넘어간다")
     fun `빈 제목은 미지정이다`() {
-        assertThat(resolveTitle("   ", "복지 급여 안내")).isEqualTo("복지 급여 안내")
+        assertThat(resolveTitle("   ", "복지급여안내.hwpx")).isEqualTo("복지급여안내")
+    }
+
+    // ============================================================ 파일 이름
+
+    @Test
+    @DisplayName("제목이 없으면 **파일 이름**에서 확장자를 떼고 쓴다")
+    fun `파일 이름에서 확장자를 뗀다`() {
+        assertThat(resolveTitle(null, "2026년 복지 안내문.docx")).isEqualTo("2026년 복지 안내문")
     }
 
     @Test
-    @DisplayName("본문에 내용 있는 줄이 없으면 대체 제목이다")
-    fun `빈 본문은 대체 제목이다`() {
-        assertThat(resolveTitle(null, "\n \t \n")).isEqualTo(FALLBACK_TITLE)
+    @DisplayName("경로가 실려 와도 **마지막 조각만** 쓴다 — 로컬 디렉터리 구조를 저장하지 않는다")
+    fun `경로를 떼고 마지막 조각만 쓴다`() {
+        // 보낸 쪽 OS 가 구분자를 정한다 — 서버가 POSIX 라도 백슬래시가 온다.
+        assertThat(resolveTitle(null, "C:\\Users\\hong\\문서\\안내문.docx")).isEqualTo("안내문")
+        assertThat(resolveTitle(null, "/home/hong/문서/안내문.pdf")).isEqualTo("안내문")
     }
 
     @Test
-    @DisplayName("유도한 제목이 목표 길이 이하면 말줄임표를 붙이지 않는다")
-    fun `짧은 유도 제목은 그대로다`() {
-        val line = "가".repeat(AUTO_TITLE_TARGET_LENGTH)
-
-        assertThat(resolveTitle(null, line)).isEqualTo(line)
+    @DisplayName("점이 여럿이면 **마지막 하나만** 떼고, 맨 앞의 점은 확장자가 아니라 이름이다")
+    fun `점 처리 규칙`() {
+        assertThat(resolveTitle(null, "보고서.최종.docx")).isEqualTo("보고서.최종")
+        assertThat(resolveTitle(null, "안내문.")).isEqualTo("안내문")
+        // 맨 앞의 점은 떼지 않는다 — 그때는 확장자가 아니라 이름 전체다.
+        assertThat(resolveTitle(null, ".gitignore")).isEqualTo(".gitignore")
+        assertThat(resolveTitle(null, ".docx")).isEqualTo(".docx")
     }
 
     @Test
-    @DisplayName("긴 유도 제목은 **어절 경계**에서 자르고 말줄임표를 붙인다 — 어절 중간이 잘리면 다른 말로 읽힌다")
-    fun `유도 제목은 어절 경계에서 잘린다`() {
-        // 30자 창 안의 마지막 공백에서 자른다.
-        val line = "복지 급여 신청 안내문 배포 일정 변경 알림 드립니다 추가 문단"
-
-        val resolved = resolveTitle(null, line)
-
-        assertThat(resolved).endsWith(TITLE_ELLIPSIS)
-        assertThat(resolved.removeSuffix(TITLE_ELLIPSIS)).doesNotEndWith(" ")
-        assertThat(line).startsWith(resolved.removeSuffix(TITLE_ELLIPSIS))
-        assertThat(charCountOf(resolved)).isLessThanOrEqualTo(AUTO_TITLE_TARGET_LENGTH + 1)
+    @DisplayName("이름 조각이 남지 않으면 대체 제목이다 — 빈 제목을 만들지 않는다")
+    fun `이름이 남지 않으면 대체 제목이다`() {
+        assertThat(resolveTitle(null, "   ")).isEqualTo(FALLBACK_TITLE)
+        assertThat(resolveTitle(null, "/")).isEqualTo(FALLBACK_TITLE)
+        assertThat(resolveTitle(null, "폴더/")).isEqualTo(FALLBACK_TITLE)
     }
 
     @Test
-    @DisplayName("목표 길이 안에 어절 경계가 없으면 하드컷 한다 — 한 줄을 통째로 남기지 않는다")
-    fun `경계가 없으면 하드컷 한다`() {
-        val line = "가".repeat(AUTO_TITLE_TARGET_LENGTH + 20)
-
-        val resolved = resolveTitle(null, line)
-
-        assertThat(resolved).isEqualTo("가".repeat(AUTO_TITLE_TARGET_LENGTH) + TITLE_ELLIPSIS)
-    }
-
-    @Test
-    @DisplayName("어절이 정확히 목표 길이에서 끝나면 그 경계를 살린다 — 한 어절을 통째로 잃지 않는다")
-    fun `경계가 목표 길이에 걸리면 살린다`() {
-        val head = "가".repeat(AUTO_TITLE_TARGET_LENGTH)
-
-        val resolved = resolveTitle(null, "$head 뒤에 더 있다")
-
-        assertThat(resolved).isEqualTo(head + TITLE_ELLIPSIS)
+    @DisplayName("파일 이름도 제어문자를 걷어내고 상한에서 자른다 — 적어 준 제목과 같은 규칙이다")
+    fun `파일 이름도 같은 규칙으로 다듬는다`() {
+        assertThat(resolveTitle(null, "안\u0000내\u0001문.docx")).isEqualTo("안내문")
+        assertThat(charCountOf(resolveTitle(null, "다".repeat(MAX_TITLE_LENGTH + 50) + ".pdf")))
+            .isEqualTo(MAX_TITLE_LENGTH)
     }
 
     // ============================================================ 코드 포인트 경계
@@ -129,7 +141,7 @@ class TitleRulesTest {
         val astral = "𝓐"
         val given = astral.repeat(MAX_TITLE_LENGTH + 10)
 
-        val resolved = resolveTitle(given, "무관")
+        val resolved = resolveTitle(given, "무관.docx")
 
         assertThat(charCountOf(resolved)).isEqualTo(MAX_TITLE_LENGTH)
         assertThat(resolved.any { it.isSurrogate() })
@@ -141,14 +153,13 @@ class TitleRulesTest {
     }
 
     @Test
-    @DisplayName("유도 제목의 하드컷도 서로게이트 쌍을 쪼개지 않는다")
-    fun `유도 하드컷이 서로게이트 쌍을 쪼개지 않는다`() {
+    @DisplayName("파일 이름을 자를 때도 서로게이트 쌍을 쪼개지 않는다")
+    fun `파일 이름 자르기가 서로게이트 쌍을 쪼개지 않는다`() {
         val astral = "𝓐"
-        val line = astral.repeat(AUTO_TITLE_TARGET_LENGTH + 10)
 
-        val resolved = resolveTitle(null, line)
+        val resolved = resolveTitle(null, astral.repeat(MAX_TITLE_LENGTH + 10) + ".docx")
 
-        assertThat(resolved).isEqualTo(astral.repeat(AUTO_TITLE_TARGET_LENGTH) + TITLE_ELLIPSIS)
+        assertThat(charCountOf(resolved)).isEqualTo(MAX_TITLE_LENGTH)
         assertThat(resolved.toByteArray(Charsets.UTF_8).toString(Charsets.UTF_8)).isEqualTo(resolved)
     }
 

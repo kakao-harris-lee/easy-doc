@@ -10,6 +10,7 @@ import kr.easydoc.core.document.Conversion
 import kr.easydoc.core.document.ConversionStatus
 import kr.easydoc.core.document.Document
 import kr.easydoc.core.document.DocumentListing
+import kr.easydoc.core.document.FALLBACK_TITLE
 import kr.easydoc.core.document.MAX_CONVERTIBLE_CHARS
 import kr.easydoc.core.document.MAX_UPLOAD_BYTES
 import kr.easydoc.core.document.SourceFormat
@@ -202,17 +203,48 @@ class DocumentServiceTest {
     }
 
     @Test
-    @DisplayName("제목이 없으면 본문 첫 줄에서 유도한다 — 파일 이름은 쓰지 않는다")
-    fun `제목을 본문에서 유도한다`() {
+    @DisplayName("제목이 없으면 **파일 이름**을 쓴다 — 본문은 제목이 되지 않는다 (게이트 27 Critical ①)")
+    fun `파일 모드는 제목을 파일 이름에서 만든다`() {
         val world = World(extracted = "복지 급여 안내\n둘째 줄")
 
-        world.service.createFromFile(OWNER, "홍길동_주민등록등본.docx", ByteArray(1), null, null)
+        world.service.createFromFile(OWNER, "2026년 복지 안내.docx", ByteArray(1), null, null)
+
+        val title =
+            world.documents.inserted
+                .single()
+                .first.title
+        assertThat(title).isEqualTo("2026년 복지 안내")
+        assertThat(title)
+            .describedAs("본문 조각이 평문 title 로 새면 암호화·마스킹 두 방어를 동시에 우회한다")
+            .doesNotContain("복지 급여 안내")
+    }
+
+    @Test
+    @DisplayName("붙여넣기에서 제목을 생략하면 **대체 제목**이다 — 첫 줄을 옮겨 적지 않는다")
+    fun `붙여넣기는 제목을 생략하면 대체 제목이다`() {
+        val world = World()
+
+        world.service.createFromText(OWNER, "주민등록번호 안내 첫 줄\n둘째 줄", null, null)
 
         assertThat(
             world.documents.inserted
                 .single()
                 .first.title,
-        ).isEqualTo("복지 급여 안내")
+        ).isEqualTo(FALLBACK_TITLE)
+    }
+
+    @Test
+    @DisplayName("파일 이름이 없거나 비면 대체 제목이다 — 그때도 본문으로 넘어가지 않는다")
+    fun `파일 이름이 없으면 대체 제목이다`() {
+        val world = World(extracted = "복지 급여 안내\n둘째 줄")
+
+        world.service.createFromFile(OWNER, null, ByteArray(1), null, null)
+
+        assertThat(
+            world.documents.inserted
+                .single()
+                .first.title,
+        ).isEqualTo(FALLBACK_TITLE)
     }
 
     @Test
@@ -257,11 +289,11 @@ class DocumentServiceTest {
     }
 
     @Test
-    @DisplayName("유도한 제목은 첫 줄의 앞뒤 공백을 턴 값이다")
-    fun `유도 제목의 공백을 턴다`() {
+    @DisplayName("사용자가 준 제목은 그대로 저장된다 — 앞뒤 공백만 턴다")
+    fun `사용자 제목이 그대로 저장된다`() {
         val world = World()
 
-        world.service.createFromText(OWNER, "   복지 급여 안내   \n둘째 줄", null, null)
+        world.service.createFromText(OWNER, "본문 첫 줄\n둘째 줄", "  복지 급여 안내  ", null)
 
         assertThat(
             world.documents.inserted

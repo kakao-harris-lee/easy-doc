@@ -63,11 +63,16 @@ data class AcceptedUpload(
  * 않는다.** 이 클래스는 아무것도 로깅하지 않는다: 남길 만한 것이 식별자와 상태뿐인데 그것은
  * 접근 로그가 이미 든다.
  *
- * ## 마스킹은 여기 없다
+ * ## 마스킹은 여기 없다 — 그래서 **평문 컬럼에 본문을 옮기지 않는다**
  *
  * 업로드 경로에 마스킹이 없다(원본도 `mask_text` 를 import 하지 않는다). 마스킹 선행
  * 불변식의 대상은 **LLM 전송**이고 그것은 워커의 일이다. 이 경로가 지키는 선행은
  * **암호화 선행**이다.
+ *
+ * 그 사실의 직접적인 귀결이 제목 규칙이다 — `documents.title` 은 평문 컬럼이고 이 시점에는
+ * 마스킹도 돌지 않으므로, **본문에서 제목을 만들면** 원문 조각이 아무 방어도 없이 평문으로
+ * 남는다(게이트 27 Critical ①). [kr.easydoc.core.document.resolveTitle] 은 사용자가 이름으로
+ * 준 값만 쓰고, 이 클래스는 본문을 그 함수에 넘기지 않는다.
  */
 class DocumentService(
     private val storage: DocumentStorage,
@@ -89,14 +94,17 @@ class DocumentService(
         workspaceId: UUID?,
     ): AcceptedUpload {
         if (text.isBlank()) throw InvalidInputException(EMPTY_BODY_MESSAGE)
-        return store(ownerId, text, SourceFormat.TEXT, title, workspaceId)
+        // 붙여넣기에는 파일 이름이 없다. 제목을 안 주면 대체 제목이고, 본문은 쓰지 않는다.
+        return store(ownerId, text, SourceFormat.TEXT, TitleSources(title, filename = null), workspaceId)
     }
 
     /**
      * 업로드 파일에서 본문을 뽑아 문서를 만들고 변환을 요청한다.
      *
-     * [filename] 은 **형식 판별에만** 쓰이고 버려진다 — 저장하지도 로그에 남기지도 않는다.
-     * 파일 이름 자체가 개인정보일 수 있다.
+     * [filename] 은 **형식 판별**에 쓰이고, 제목을 주지 않았을 때 **제목의 바탕**이 된다
+     * (2026-08-20 사용자 결정). 로그에는 여전히 남기지 않는다. 이전 판은 파일 이름을 통째로
+     * 버리고 본문 첫 줄에서 제목을 유도했는데, 그 갈래가 평문 컬럼에 원문 조각을 남겼다 —
+     * 규칙과 남는 위험은 [kr.easydoc.core.document.resolveTitle] KDoc 에 있다.
      *
      * @throws UploadTooLargeException 파일이 크기 상한을 넘었다 → 413.
      * @throws kr.easydoc.core.exceptions.UnsupportedFormatException 지원하지 않는 확장자 → 422.
@@ -117,7 +125,7 @@ class DocumentService(
         val extracted = extractor.extract(filename, bytes)
         // 빈 docx·hwpx 는 예외 없이 빈 문자열을 돌려준다 — 빈 문서 판정은 추출 결과로 한다.
         if (extracted.text.isBlank()) throw DocumentExtractionException(NO_TEXT_IN_DOCUMENT_MESSAGE)
-        return store(ownerId, extracted.text, extracted.format, title, workspaceId)
+        return store(ownerId, extracted.text, extracted.format, TitleSources(title, filename), workspaceId)
     }
 
     /**
@@ -146,12 +154,16 @@ class DocumentService(
      * 식별자를 트랜잭션 **밖에서** 만들지 않는다 — 만들어도 되지만, 암호화가 트랜잭션 안에
      * 있어야 실패 시 평문이 든 중간 상태가 남지 않는다. 암호화 비용은 4,000자 한 건이라
      * 트랜잭션을 오래 붙잡지 않는다.
+     *
+     * [names] 는 제목을 정할 때만 쓴다. **컨트롤러 배선(multipart 파트의 실제 `filename` 을
+     * [createFromFile] 에 넘기는 일)은 C3 의 몫이고**, 이 통로는 그때 값이 흐를 자리를 미리 연
+     * 것이다 — 뒤로 미루면 C3 이 유스케이스를 다시 열어야 한다.
      */
     private fun store(
         ownerId: UUID,
         text: String,
         sourceFormat: SourceFormat,
-        title: String?,
+        names: TitleSources,
         workspaceId: UUID?,
     ): AcceptedUpload {
         val charCount = charCountOf(text)
@@ -166,7 +178,9 @@ class DocumentService(
                 DocumentDraft(
                     id = documentId,
                     workspaceId = resolvedWorkspaceId,
-                    title = resolveTitle(title, text),
+                    // **본문(`text`)을 넘기지 않는다.** 제목은 평문 컬럼이고 이 시점에는
+                    // 마스킹이 돌지 않았다 — 게이트 27 Critical ①.
+                    title = resolveTitle(names.given, names.filename),
                     sourceFormat = sourceFormat,
                     charCount = charCount,
                 )
@@ -208,6 +222,22 @@ class DocumentService(
         } else {
             requireOwnedWorkspace(ownerId, workspaceId)
         }
+
+    /**
+     * 제목의 바탕이 될 수 있는 값 둘. 둘 다 **사용자가 이름으로 준 것**이고 우선순위는
+     * [kr.easydoc.core.document.resolveTitle] 이 정한다.
+     *
+     * 묶는 이유는 파라미터 수를 줄이려는 것이 아니라 **함께 정해지는 값이기 때문**이다 —
+     * 붙여넣기면 (제목, `null`), 파일이면 (제목, 파일 이름)이고 둘을 따로 흘려보낼 자리가 없다.
+     *
+     * **`data class` 로 두지 않는다.** 컴파일러가 만드는 `toString()` 이 사용자가 준 문자열을
+     * 그대로 찍는다(`SensitiveToStringReachTest` 가 잡는 바로 그 종류다). 일반 class 는
+     * `Any.toString()` 을 물려받아 식별 해시만 낸다.
+     */
+    private class TitleSources(
+        val given: String?,
+        val filename: String?,
+    )
 
     private fun requireOwnedWorkspace(
         ownerId: UUID,
