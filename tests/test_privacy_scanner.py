@@ -1672,6 +1672,45 @@ OWNERSHIP_403_SHAPES: list[tuple[str, str, str, bool]] = [
         "val order = listOf(\n    1, // SC_FORBIDDEN 설명\n)",
         False,
     ),
+    # ── 게이트 28 — ⓑ 의 **수신자**를 떨어뜨렸다 (리더 판정: 오탐, `_403_RECEIVER_TAIL`) ──
+    #
+    # 저장소의 실제 줄이 BLOCK 후보가 됐다:
+    #
+    #     .filter { candidate -> FORBIDDEN_HANDLES.any { it.isAssignableFrom(candidate) } }
+    #
+    # `FORBIDDEN_HANDLES` 는 raw JDBC 손잡이 목록이고 HTTP 와 무관한데, ⓑ 가 `->` 뒤의
+    # **식의 머리**를 산출값으로 오인해 잡았다. 같은 오인이 `FORBIDDEN_IN_FILENAME` ·
+    # `FORBIDDEN_ANNOTATIONS` 도 자리 안에 들어오는 순간 잡는다 — 즉 게이트 25 의 KDoc 이
+    # 적은 *"자리 밖 식별자는 보지 않으니 그 둘은 자연 해소"* 는 **자리 안에서 거짓**이었다.
+    #
+    # 처방은 ⓑ 자신의 계약으로의 복귀다: 이름 뒤에 멤버 접근·첨자가 이어지면 나가는 값은
+    # 그 이름이 아니라 체인의 결과다. **개명으로 피하지 않았다** — 도구를 고쳤다.
+    #
+    # **아래 R 은 양방향이다.** R1~R4 는 닫힌 것, R5~R7 은 **잃지 않았어야** 하는 것이다.
+    # R5~R7 이 `False` 로 뒤집히면 꼬리표가 값 산출 자리를 먹은 것이다.
+    (
+        "R1 저장소 실제 줄(수신자 + 람다 호출)",
+        ".kt",
+        "            .filter { candidate -> FORBIDDEN_HANDLES.any "
+        "{ it.isAssignableFrom(candidate) } }",
+        False,
+    ),
+    ("R2 = 뒤 수신자", ".kt", "        val hit = FORBIDDEN_HANDLES.any { it == x }", False),
+    (
+        "R3 return 뒤 수신자(파일명 정화 상수)",
+        ".kt",
+        "        return FORBIDDEN_IN_FILENAME.contains(ch)",
+        False,
+    ),
+    (
+        "R4 -> 뒤 첨자(계약 검사 상수)",
+        ".kt",
+        "        .map { k -> FORBIDDEN_ANNOTATIONS[k] }",
+        False,
+    ),
+    ("R5 맨 return 값 산출", ".kt", "    return HttpStatus.FORBIDDEN", True),
+    ("R6 지역 변수 초기화", ".kt", "    val deny = HttpStatus.FORBIDDEN", True),
+    ("R7 람다 값 산출", ".kt", "    val f = { _ -> HttpStatus.FORBIDDEN }", True),
     # ── 닫지 않은 종류 — **승인이 아니다** (게이트 26: `xfail(strict)` 에서 옮겨 왔다) ──
     #
     # 게이트 25 는 이 둘을 `xfail(strict=True)` 로 선언했다. codex B-3 이 그 형태를
@@ -1691,11 +1730,24 @@ OWNERSHIP_403_SHAPES: list[tuple[str, str, str, bool]] = [
     #   `blocks=True` 로 고정한다. 즉 D1 은 "전면 미탐"이 아니라 "선언 줄 경유 탐지"다.
     # - **D2 응답 자리 밖 호출 인자** — 자리 제한의 정확한 대가다. 넓히려면 그 호출이
     #   왜 응답 자리인지 실측 근거가 있어야 하고, 근거 없이 넓히면 Q3·Q4 가 되돌아온다.
+    # - **D3 값 자리의 체인 산출** — 게이트 28 의 수신자 꼬리표가 치른 **대가**다. 옛 판은
+    #   `.value()` 가 무엇을 돌려주는지 모른 채 식의 머리만 보고 잡았고, 그 오인이
+    #   `FORBIDDEN_HANDLES` 오탐과 **같은 한 가지**다. 오인을 고치면 오인이 우연히 맞히던
+    #   자리도 함께 빠진다 — 숨기지 않고 여기 적는다. **보상 통제가 실재하고 결속돼 있다** —
+    #   같은 식이 인자 자리에 오면(`sendError(HttpStatus.FORBIDDEN.value())`) ⓐ 가 그대로
+    #   잡고, N24 가 그것을 `blocks=True` 로 고정한다. 넓히려면 체인의 결과가 상태임을
+    #   문면으로 아는 방법이 필요하고(정의-사용 추적), 그 근거는 아직 없다.
     ("D1 계산값 상태 코드(닫지 않음)", ".kt", "        response.sendError(base + 3)", False),
     (
         "D2 응답 자리 밖 호출 인자(닫지 않음)",
         ".kt",
         "        statuses.add(HttpStatus.FORBIDDEN)",
+        False,
+    ),
+    (
+        "D3 값 자리의 체인 산출(닫지 않음)",
+        ".kt",
+        "    return HttpStatus.FORBIDDEN.value()",
         False,
     ),
     # `return` 뒤 줄바꿈은 **이 저장소가 쓰는 어느 언어에서도 403 자리가 아니다.**
@@ -1759,6 +1811,47 @@ def test_ownership_403_은_논리_줄에서_판정한다(scanner: ModuleType) ->
     assert rule.opener.search("ResponseEntity.status("), (  # type: ignore[attr-defined]
         "opener 가 이 규칙이 보는 호출을 못 알아본다 — 끊긴 논리 줄 판정이 무의미해진다."
     )
+
+
+def test_수신자_꼬리표를_떼면_오탐이_되살아난다(scanner: ModuleType) -> None:
+    """**좁힘 장치 자신을 잰다** (게이트 28 — 형태 목록 R1~R4 보다 앞에서 빨개진다).
+
+    R1~R4 는 "지금 안 잡힌다"는 결과를 잰다. 결과는 다른 이유로도 참일 수 있으므로
+    (누가 규칙을 통째로 약화시켜도 R1~R4 는 초록이다), **그 결과를 만든 것이 이 꼬리표
+    맞는지**를 여기서 따로 고정한다. 꼬리표를 떼면 오탐이 되살아나야 한다 — 안 되살아나면
+    꼬리표는 아무 일도 안 하는 장식이고, 그 상태에서 R1~R4 의 초록은 근거가 없다.
+
+    **패턴 사본을 적지 않는다.** 규칙이 실제로 들고 있는 문자열에서 꼬리표만 떼어
+    다시 컴파일한다 — 사본을 적으면 갈리고, 갈린 사본은 늘 조용한 쪽이었다.
+    """
+    rule = _rule(scanner, "OWNERSHIP-403")
+    tail = scanner._403_RECEIVER_TAIL
+    pattern = rule.pattern.pattern  # type: ignore[attr-defined]  # Rule 은 스캐너의 dataclass다
+
+    assert tail in pattern, (
+        "규칙 패턴에 수신자 꼬리표가 없다 — 좁힘이 사라졌거나 다른 기제로 갈렸다. "
+        "R1~R4 가 초록이어도 그 초록의 출처가 이 꼬리표가 아니게 된다."
+    )
+
+    weakened = re.compile(pattern.replace(tail, ""))
+    fp_line = (
+        "            .filter { candidate -> FORBIDDEN_HANDLES.any "
+        "{ it.isAssignableFrom(candidate) } }"
+    )
+
+    assert weakened.search(fp_line), (
+        "꼬리표를 떼도 오탐이 되살아나지 않는다 — 꼬리표가 아닌 다른 것이 R1 을 막고 있다. "
+        "그 다른 것이 무엇인지 확인하기 전에는 이 좁힘의 근거가 성립하지 않는다."
+    )
+    assert not rule.pattern.search(fp_line), (  # type: ignore[attr-defined]  # 같은 dataclass다
+        "꼬리표가 붙어 있는데도 오탐이 그대로다 — 좁힘이 실제로는 도달하지 않는다."
+    )
+
+    # 되찾은 쪽도 같은 자리에서 본다: 꼬리표가 값 산출을 먹지 않았는가(R5~R7 의 기제).
+    for kept in ("    return HttpStatus.FORBIDDEN", "    val f = { _ -> HttpStatus.FORBIDDEN }"):
+        assert rule.pattern.search(kept), (  # type: ignore[attr-defined]  # 같은 dataclass다
+            f"꼬리표가 값 산출 자리를 먹었다: {kept!r} — 좁힘을 되돌려야지 표를 고쳐서는 안 된다."
+        )
 
 
 def test_java_소스가_들어오면_return_줄바꿈_판정을_다시_한다() -> None:

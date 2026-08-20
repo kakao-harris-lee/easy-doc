@@ -201,7 +201,7 @@ class StatementCountingPremiseTest {
                 .filterNot { it.isSynthetic }
                 .flatMap { it.parameterTypes.asList() }
         return (fields + constructorParameters.asSequence())
-            .filter { candidate -> FORBIDDEN_HANDLES.any { it.isAssignableFrom(candidate) } }
+            .filter { candidate -> RAW_JDBC_HANDLES.any { it.isAssignableFrom(candidate) } }
             .map { it.name }
             .distinct()
             .toList()
@@ -256,8 +256,13 @@ class StatementCountingPremiseTest {
          *
          * `JdbcTemplate` 계열도 넣는다. 그쪽은 `execute(ConnectionCallback)` 로 `Connection`
          * 을 통째로 내주므로 `JdbcClient` 가 주는 「SQL 하나당 문장 하나」 성질이 없다.
+         *
+         * 이름은 **무엇인지**를 말한다(raw JDBC 손잡이). **왜 금지인지**는 위 KDoc 과 이
+         * 목록을 소비하는 단언이 말한다 — 옛 이름 `FORBIDDEN_HANDLES` 는 "금지"만 말하고
+         * 무엇이 왜 금지인지는 말하지 않았다. 개명은 개인정보 스캐너를 고친 **뒤**의
+         * 선택이지 그것을 피한 수단이 아니다(게이트 28).
          */
-        val FORBIDDEN_HANDLES: Set<Class<*>> =
+        val RAW_JDBC_HANDLES: Set<Class<*>> =
             setOf(
                 javax.sql.DataSource::class.java,
                 java.sql.Connection::class.java,
