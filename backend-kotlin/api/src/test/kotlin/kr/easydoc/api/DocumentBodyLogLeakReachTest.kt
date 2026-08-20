@@ -150,13 +150,57 @@ import java.net.http.HttpResponse
  * 갈래마다 **허용 집합이 아니라 코드 하나**를 못박은 것도 같은 이유다 — 일곱 갈래 전부 층이
  * 하나로 정해져 있고, 집합을 두면 층이 바뀌어도 통과한다.
  *
- * 이 핀이 **가리지 못하는 것**도 적어 둔다: 422 는 스키마 층(배열 `detail`)과 서비스 층
- * (문자열 `detail`) 양쪽에서 나오므로, 상태 코드만으로는 **422 안에서 어느 층인지** 갈리지
- * 않는다. 그 축은 DC-9·DC-22·DC-23 이 `detail` 모양으로 잰다.
+ * ### 상태 코드만으로는 **422 안의 층**이 갈리지 않는다 — 그래서 `detail` 모양을 함께 잰다
+ *
+ * 첫 판(`3a3333e`)은 상태 코드만 못박고 이 한계를 KDoc 에 적어 두었다. **적은 것은 옳았고,
+ * 그 한계가 성질 11 을 열어 두었다**(게이트 28 stop-time codex 판정). 일곱 중 **셋이 422**
+ * 다. 앞단 검증이 그 셋을 전부 거절하기 시작하면 — 요청 스키마가 좁아지거나 컨트롤러에 앞단
+ * 검증이 들어오면 — **본문은 도메인에 닿지 않는데 상태 코드는 여전히 422 이고 핀은 초록이다.**
+ * 막으려던 동어반복이 **422 팔에서만 그대로 남아 있었다.**
+ *
+ * 판별자는 이 저장소가 이미 쓰는 것이다:
+ *
+ * | 거절 층 | `detail` 모양 | 만드는 자리 |
+ * |---|---|---|
+ * | 스키마·프레임워크 바인딩 | **배열** | `GlobalExceptionHandler.validationError` |
+ * | 서비스·도메인 | **문자열** | `mappingFor(EasyDocException)` → `ErrorResponse` |
+ *
+ * 배열 쪽으로 오는 것은 Jackson 역직렬화 실패 · 누락 파트 · 누락 파라미터 · 타입 불일치 —
+ * 곧 **요청이 도메인에 닿기 전에 끊긴 갈래 전부**다.
+ *
+ * 계약이 `detail` 을 union 으로 둔 이유가 그것이고, 그래서 **각 422 갈래가 낸 `detail` 의
+ * 모양**이 도달 증거가 된다. 세 갈래의 의도 층은 **코드로 확정했다**(추측이 아니다):
+ *
+ * - ⑷ 상한 초과 → `DocumentService.store` 의 `charCount > MAX_CONVERTIBLE_CHARS`
+ *   → `InvalidInputException` → **문자열**. 이 필드에 Bean Validation 을 달지 않는 것은
+ *   계약 F3 이고 `RequestFieldConstraintLayerTest` 가 애너테이션 부재로 강제한다.
+ * - ⑸ 손상 파일 → `DocxExtractor` → `DocumentExtractionException` → **문자열**.
+ * - ⑹ 저장 불가 문자 → `PlainBody.init` → `InvalidInputException` → **문자열**.
+ *
+ * 셋 다 문자열이므로 **배열이 나오면 그 갈래는 도메인에 닿지 않았다.**
+ *
+ * ### 이것이 DC 케이스·F3 강제자와 같은 것을 두 번 재는 것인가
+ *
+ * 아니다 — **재는 대상이 같고 재는 장소가 다르다.** DC-9 는 계약 준수를(그리고 MockMvc
+ * 슬라이스에서, 가짜 저장소로) 재고, `RequestFieldConstraintLayerTest` 는 **애너테이션 부재**
+ * 라는 정적 상태를 잰다. 둘 다 **이 케이스의 트래픽이 도메인에 닿았는지**는 말하지 않는다.
+ * 도달 증거는 **카나리를 실어 보낸 그 요청들에서** 나와야 하고, 다른 테스트의 결론을 빌리는
+ * 것이 이 하네스가 반복해 겪은 「선언한 범위와 실제 도달」의 어긋남이다. 또 F3 강제자는
+ * 금지 애너테이션 **열거**라 목록에 없는 앞단 검증(컨트롤러 가드·Jackson 설정·인터셉터)은
+ * 보지 못한다 — 음성 대조 NC-A 가 그 빈자리를 통과해 들어온 변이다.
+ *
+ * ### 여전히 가리지 못하는 것 (성질 11 의 잔여)
+ *
+ * 모양은 **스키마 층과 도메인 층**을 가르지만 **도메인 안에서 어느 지점인지**는 가르지
+ * 않는다. 컨트롤러가 던지는 `InvalidInputException`(`MISSING_FILE_PART_MESSAGE` ·
+ * `INVALID_WORKSPACE_ID_MESSAGE`)도 문자열이므로, ⑸ 가 파서 대신 **컨트롤러**에서 끊기면
+ * 바이트는 추출기에 닿지 않는데 모양은 그대로 문자열이다. `CanaryProbe` 성질 표에 그 잔여를
+ * 적어 두었다 — 표가 거짓이면 그 표가 다음 빈 칸을 가린다.
  *
  * 실패 메시지에 응답 **본문**을 싣지 않는다 — 값이 흘러들 통로 자체가 없다. [ReachLog] 가
- * 보관하는 것은 `Int` 이고 라벨은 컴파일 상수다. `residualCanaryFragments()` 와 같은 요구를
- * 다른 기제로 막는다(검사가 아니라 구조다).
+ * 보관하는 것은 `Int` 와 [DetailShape] 열거값이고 라벨은 컴파일 상수다. 본문은 모양을 뽑는
+ * 즉시 버리며, **파싱 예외도 버린다** — Jackson 예외 메시지에는 문제가 된 입력 조각이 들어
+ * 있다. `residualCanaryFragments()` 와 같은 요구를 다른 기제로 막는다(검사가 아니라 구조다).
  *
  * ## 양성 대조 셋
  *
@@ -184,7 +228,7 @@ class DocumentBodyLogLeakReachTest {
     fun `문서 본문이 강제 TRACE 로그로도 새지 않는다`() {
         val root = LoggerFactory.getLogger(org.slf4j.Logger.ROOT_LOGGER_NAME) as ch.qos.logback.classic.Logger
         val probe = CanaryProbe(RETRO_CONTROL_MARKER)
-        val reach = ReachLog()
+        val reach = ReachLog(json)
         probe.addCanary(BODY_AXIS, BODY_CANARY)
         probe.addCanary(TITLE_AXIS, TITLE_CANARY)
         probe.addCanary(PASSWORD_AXIS, PASSWORD_CANARY)
@@ -297,11 +341,13 @@ class DocumentBodyLogLeakReachTest {
     }
 
     /**
-     * **도달 핀** — 요청 일곱 갈래가 각각 **의도한 층**의 상태 코드를 냈다.
+     * **도달 핀** — 요청 일곱 갈래가 각각 **의도한 층**에서 처리·거절됐다.
      *
-     * 지켜야 할 성질은 「성공했음」이 아니라 **「그 요청이 낸 상태 코드가 의도한 층의 것」**이다.
-     * 왜 그 형태인지·기대값을 계약에서 읽지 않은 이유·이 핀이 가리지 못하는 것은 클래스 KDoc
-     * 의 「요청이 **의도한 층**까지 갔음을 단언한다」에 있다.
+     * 축이 둘이다: **상태 코드**와 **`detail` 모양**. 상태 코드만으로는 셋이 같은 422 라
+     * 「422 안에서 어느 층인지」가 갈리지 않고, 그 빈자리가 성질 11 을 열어 두었다
+     * (게이트 28 stop-time codex). 왜 그 형태인지·기대값을 계약에서 읽지 않은 이유·세 갈래의
+     * 의도 층을 무엇으로 확정했는지·여전히 가리지 못하는 것은 클래스 KDoc 의 「요청이
+     * **의도한 층**까지 갔음을 단언한다」에 있다.
      *
      * 형태는 재고 핀과 같은 **정확 열거 핀**이고 세 방향을 함께 잰다:
      *
@@ -330,41 +376,46 @@ class DocumentBodyLogLeakReachTest {
         // ⑶ 실제 관측과 **정확 일치**(순서 포함). 삭제·추가·층 변경이 모두 잡힌다.
         assertThat(observed)
             .withFailMessage(
-                "카나리가 **의도한 층**에 도달하지 않았다 — 아래가 지목이다.%n%s%n" +
+                "카나리가 **의도한 층**에 도달하지 않았다 — 아래가 지목이다(상태/모양).%n%s%n" +
                     "이 상태의 「유출 0건」은 **동어반복**이다: 본문·제목이 그 층에 닿지 않았으니 " +
                     "로그에 없는 것이 당연하다. 다른 열두 성질이 전부 참이어도 결론이 없다.%n" +
                     "거절 자체는 결함이 아니다(셋은 거절이 정상이다) — **거절된 층이 다른 것**이 " +
                     "결함이다. 401 은 인증이, 415 는 미디어 타입 협상이, 404·405 는 경로·메서드가 " +
-                    "끊었다는 뜻이고 그 어디서도 본문은 제품 경로를 지나지 않는다. " +
-                    "**기대값을 실제에 맞춰 덮지 마라** — 그러면 이 핀이 아무것도 재지 않는다.",
+                    "끊었다는 뜻이고 그 어디서도 본문은 제품 경로를 지나지 않는다.%n" +
+                    "**모양이 %s 로 바뀌었으면 스키마·프레임워크 바인딩 층이 먼저 물었다는 뜻**이고, " +
+                    "그 갈래의 본문은 도메인에 닿지 않았다 — 앞단 검증·요청 스키마 제약이 들어왔는지 " +
+                    "보라(계약 F3). **기대값을 실제에 맞춰 덮지 마라** — 그러면 이 핀이 아무것도 " +
+                    "재지 않는다.",
                 reachDiff(observed),
+                DetailShape.ARRAY,
             ).isEqualTo(EXPECTED_REACH)
     }
 
     /**
-     * 도달 지목. **라벨과 정수만** 담는다 — 응답 본문은 [ReachLog] 가 애초에 들고 있지 않다.
+     * 도달 지목. **라벨·정수·열거값만** 담는다 — 응답 본문은 [ReachLog] 가 애초에 들고 있지 않다.
      *
      * 한 갈래만 어긋나면 **그 한 줄만** 나오게 만든다. 뭉개지면 「어느 요청이 층을 잃었는지」가
-     * 사라지고, 그것을 잃으면 이 핀은 「어딘가 틀렸다」밖에 말하지 못한다.
+     * 사라지고, 그것을 잃으면 이 핀은 「어딘가 틀렸다」밖에 말하지 못한다. 두 축을
+     * `상태/모양` 한 쌍으로 찍는 이유도 같다 — 어느 축이 어긋났는지가 한눈에 보여야 한다.
      */
-    private fun reachDiff(observed: List<Pair<String, Int>>): String {
-        val actualByStep = observed.toMap()
+    private fun reachDiff(observed: List<Reached>): String {
+        val actualByStep = observed.associateBy { it.step }
         val lines = mutableListOf<String>()
-        EXPECTED_REACH.forEach { (step, expected) ->
-            val actual = actualByStep[step]
+        EXPECTED_REACH.forEach { expected ->
+            val actual = actualByStep[expected.step]
             when {
-                actual == null -> lines += "  · $step — 이 요청이 나가지 않았다(기대 $expected)"
-                actual != expected -> lines += "  · $step — 기대 $expected · 실제 $actual"
+                actual == null -> lines += "  · ${expected.step} — 이 요청이 나가지 않았다(기대 ${expected.mark()})"
+                actual != expected -> lines += "  · ${expected.step} — 기대 ${expected.mark()} · 실제 ${actual.mark()}"
             }
         }
-        (actualByStep.keys - EXPECTED_REACH.map { it.first }.toSet()).sorted().forEach { step ->
-            lines += "  · $step — 선언에 없는 요청이 늘었다(실제 ${actualByStep[step]})"
+        (actualByStep.keys - EXPECTED_REACH.map { it.step }.toSet()).sorted().forEach { step ->
+            lines += "  · $step — 선언에 없는 요청이 늘었다(실제 ${actualByStep[step]?.mark()})"
         }
         if (lines.isEmpty()) {
-            // 코드는 다 맞는데 목록이 다르다 = 순서가 바뀌었거나 같은 갈래가 두 번 나갔다.
-            lines += "  · 상태 코드는 전부 같고 **순서**가 다르다(또는 같은 갈래가 두 번 나갔다)."
-            lines += "    기대 ${EXPECTED_REACH.map { it.first }}"
-            lines += "    실제 ${observed.map { it.first }}"
+            // 두 축이 다 맞는데 목록이 다르다 = 순서가 바뀌었거나 같은 갈래가 두 번 나갔다.
+            lines += "  · 상태·모양은 전부 같고 **순서**가 다르다(또는 같은 갈래가 두 번 나갔다)."
+            lines += "    기대 ${EXPECTED_REACH.map { it.step }}"
+            lines += "    실제 ${observed.map { it.step }}"
         }
         return lines.joinToString(System.lineSeparator())
     }
@@ -524,27 +575,89 @@ class DocumentBodyLogLeakReachTest {
         HttpClient.newHttpClient().send(builder.build(), HttpResponse.BodyHandlers.ofString(Charsets.UTF_8))
 
     /**
-     * 요청 하나가 낸 **상태 코드만** 순서대로 모은다.
+     * 오류 본문 `detail` 의 **모양**. 값이 아니라 모양만 남기는 것이 이 열거의 존재 이유다.
+     *
+     * 이 저장소에서 모양은 **거절 층의 지문**이다 — 스키마·프레임워크 바인딩은 배열,
+     * 서비스·도메인은 문자열(클래스 KDoc 의 표). [OTHER]·[UNREADABLE] 은 우리 일곱 갈래에
+     * 나오지 않아야 하는 값이고, 나오면 「모양을 못 읽었다」가 초록으로 새는 것을 막는다.
+     */
+    private enum class DetailShape {
+        /** `detail` 키가 없다(2xx 본문) — 또는 값이 JSON `null` 이다. 우리 계약에 후자는 없다. */
+        NONE,
+
+        /** 문자열 `detail` — 도메인 예외 매핑(`ErrorResponse`). */
+        STRING,
+
+        /** 배열 `detail` — 검증 경로(`ValidationErrorResponse`). */
+        ARRAY,
+
+        /** 숫자·객체·불리언. 계약에 없는 모양이다. */
+        OTHER,
+
+        /** 본문이 비었거나 JSON 이 아니다. */
+        UNREADABLE,
+    }
+
+    /**
+     * 요청 하나의 도달 지문. **본문을 담지 않는다** — 상태 코드와 모양 열거값뿐이다.
+     *
+     * `data class` 지만 `toString()` 을 손대지 않는다: [step] 은 컴파일 상수, 나머지는
+     * `Int` 와 열거값이라 찍혀도 샐 것이 없다.
+     */
+    private data class Reached(
+        val step: String,
+        val status: Int,
+        val detail: DetailShape,
+    ) {
+        /** 지목 줄에 쓰는 표기. 두 축을 한 쌍으로 붙여 어느 축이 어긋났는지 바로 보이게 한다. */
+        fun mark(): String = "$status/$detail"
+    }
+
+    /**
+     * 요청 하나가 낸 **상태 코드와 `detail` 모양만** 순서대로 모은다.
      *
      * 지켜야 할 성질이 타입에 들어 있다 — **응답 본문을 보관하지 않는다.** [record] 는
-     * `HttpResponse` 를 받아 `Int` 하나만 남기므로 실패 메시지에 응답 본문이 실릴 통로가 아예
-     * 없다. `CanaryProbe.residualCanaryFragments()` 가 지목 줄에 대해 **검사로** 지키는 것을
-     * 이쪽은 **구조로** 막는다.
+     * `HttpResponse` 를 받아 `Int` 와 [DetailShape] 만 남기므로 실패 메시지에 응답 본문이
+     * 실릴 통로가 아예 없다. `CanaryProbe.residualCanaryFragments()` 가 지목 줄에 대해
+     * **검사로** 지키는 것을 이쪽은 **구조로** 막는다.
      *
      * 동시 구조가 필요 없다 — 요청은 Tomcat 워커에서 처리되지만 기록은 요청을 **보낸 쪽**,
      * 곧 테스트 스레드에서 순차로 한다.
      */
-    private class ReachLog {
-        private val steps = mutableListOf<Pair<String, Int>>()
+    private class ReachLog(private val json: ObjectMapper) {
+        private val steps = mutableListOf<Reached>()
 
         fun record(
             step: String,
             response: HttpResponse<String>,
         ) {
-            steps += step to response.statusCode()
+            steps += Reached(step, response.statusCode(), shapeOf(response.body()))
         }
 
-        fun observed(): List<Pair<String, Int>> = steps.toList()
+        fun observed(): List<Reached> = steps.toList()
+
+        /**
+         * 본문에서 **모양만** 뽑고 본문은 즉시 버린다.
+         *
+         * **파싱 예외도 버린다.** Jackson 의 파싱 예외 메시지에는 문제가 된 입력 조각이 들어
+         * 있어서, 그것을 들고 있으면 실패 메시지로 응답 본문이 흘러나가는 통로가 되살아난다.
+         * 「읽지 못했다」는 사실만 [DetailShape.UNREADABLE] 로 남기고 이유는 남기지 않는다.
+         */
+        private fun shapeOf(body: String?): DetailShape {
+            // 빈 본문과 「JSON 이 아니다」를 한 자리에서 접는다 — 둘 다 「모양을 못 읽었다」이고,
+            // 갈래를 늘리면 detekt ReturnCount 를 넘기면서 얻는 것이 없다.
+            val parsed =
+                body
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let { text -> runCatching { json.readValue(text, Map::class.java) }.getOrNull() }
+                    ?: return DetailShape.UNREADABLE
+            return when (parsed[DETAIL_KEY]) {
+                null -> DetailShape.NONE
+                is String -> DetailShape.STRING
+                is List<*> -> DetailShape.ARRAY
+                else -> DetailShape.OTHER
+            }
+        }
     }
 
     companion object {
@@ -599,27 +712,34 @@ class DocumentBodyLogLeakReachTest {
         private const val STEP_BROKEN_FILE = "⑸ 손상 파일"
         private const val STEP_UNSAVABLE = "⑹ 저장할 수 없는 문자"
 
+        /** 오류 본문의 유일한 키. 계약 `{"detail": …}`. */
+        private const val DETAIL_KEY = "detail"
+
         /**
-         * **이 케이스가 태우는 요청과, 각 요청이 닿아야 하는 층의 상태 코드.**
+         * **이 케이스가 태우는 요청과, 각 요청이 닿아야 하는 층의 지문(상태 코드 + `detail` 모양).**
          *
          * 계약에서 읽지 않았다 — 사유 셋은 클래스 KDoc 「기대값을 계약에서 읽지 않은 이유」에
          * 있다. 요약: ⑴ 이 핀의 목적은 계약 준수가 아니라 **자극 도달**이고 계약 준수는 DC
          * 케이스가 이미 잰다, ⑵ 계약은 이 경로에 202·401·404·413·415·422·500·503 을 **모두**
          * 선언해서 「선언된 집합」과 대조하면 전건 401 이 통과한다, ⑶ **계약 변경**이 도달
          * 상실의 원인 목록에 있으므로 기대를 계약에서 읽으면 그 원인을 구조적으로 못 본다.
+         * 모양 축도 같은 사유로 코드에 둔다 — 계약은 `detail` 을 **union** 으로 선언하므로
+         * 「계약이 허용하는 모양」과 대조하면 배열도 문자열도 통과한다.
          *
-         * 202 = 접수(저장 경로 전체를 지났다) · 422 = **서비스·도메인 층**의 거절
-         * (본문이 그 층까지 갔다). 401·415·404·405 는 **도달 실패**다.
+         * - `202/NONE` = 접수(저장 경로 전체를 지났다)
+         * - `422/STRING` = **서비스·도메인 층**의 거절 — 본문이 그 층까지 갔다
+         * - `422/ARRAY` = **스키마·프레임워크 바인딩** 층의 거절 — **도달 실패**다
+         * - `401·415·404·405` = 도달 실패
          */
-        private val EXPECTED_REACH: List<Pair<String, Int>> =
+        private val EXPECTED_REACH: List<Reached> =
             listOf(
-                STEP_SIGNUP to 201,
-                STEP_LOGIN to 200,
-                STEP_TEXT to 202,
-                STEP_FILE to 202,
-                STEP_OVER_LIMIT to 422,
-                STEP_BROKEN_FILE to 422,
-                STEP_UNSAVABLE to 422,
+                Reached(STEP_SIGNUP, 201, DetailShape.NONE),
+                Reached(STEP_LOGIN, 200, DetailShape.NONE),
+                Reached(STEP_TEXT, 202, DetailShape.NONE),
+                Reached(STEP_FILE, 202, DetailShape.NONE),
+                Reached(STEP_OVER_LIMIT, 422, DetailShape.STRING),
+                Reached(STEP_BROKEN_FILE, 422, DetailShape.STRING),
+                Reached(STEP_UNSAVABLE, 422, DetailShape.STRING),
             )
 
         /** 목록과 **함께** 고쳐야 하는 개수 핀. 한 갈래를 빼고 다른 갈래를 넣는 편집을 드러낸다. */
