@@ -194,12 +194,26 @@ class ParserNodeRegistryTest {
         const val FIRST_NODE = 1
 
         /**
-         * 세 명세 §4 표의 정의 행 총수 — **auth 15 · workspaces 6 · documents 18**.
+         * 세 명세 §4 표의 정의 행 총수 — **auth 15 · workspaces 6 · documents 22**.
          *
          * documents 가 15 → 18 로 늘어난 것은 계약 v1.3.0 이 `x-stored-text-domain`(P-38)·
          * `x-retired-responses`(P-39)·`x-title-policy`(P-40)를 신설했기 때문이다.
+         *
+         * **18 → 22 (2026-08-20 · 리더, 게이트 28 P-5 판정 커밋 `39f7c1d` 수령)**. 계약 v1.4.0 이
+         * 더한 네 노드다 — 각각 이 게이트의 판정 하나에 대응하는 **탐지형** 추가다:
+         * **P-41** `x-retired-503-configurations` 의 `id`·`revision`(P-5 — 서수로 세다 다섯 자리가
+         * 갈린 사고. **`id` 를 읽어야 목록이 줄 때 재발하지 않는다**) · **P-42** 415 선언 집합을
+         * 계약에서 **계산**(판정 3 — 리더는 셋을 지목했으나 실측은 **다섯**이었다. 열거하면
+         * 본문을 받는 오퍼레이션이 새로 생길 때 누락이 조용히 지난다) · **P-43** 검사 순서 목록
+         * (P-4 — 순서가 테스트 코드에 복제되면 계약이 순서를 바꿔도 옛 순서를 요구하는 테스트가
+         * 초록이다) · **P-44** `x-status-vocabulary` 의 닫힌 어휘(P-12 — 오타 하나가 팔을 조용히
+         * 강등시켰다).
+         *
+         * **이 수는 「선언」을 센다. 네 노드의 강제자는 아직 없다** — 명세가 그것을
+         * 「신설 전역 단언」으로 적어 두었고 구현은 별 커밋이다. 이 핀이 초록인 것을
+         * 「그 단언들이 존재한다」로 읽지 마라.
          */
-        const val EXPECTED_DEFINITION_ROWS = 39
+        const val EXPECTED_DEFINITION_ROWS = 43
 
         /**
          * 정의 행 없이 `ContractSpec.kt` 라벨로만 사는 번호 — **P-22 하나**.
@@ -209,7 +223,7 @@ class ParserNodeRegistryTest {
          */
         const val EXPECTED_CONTRACT_SPEC_ONLY = 1
 
-        /** 합집합 — `P-1`~`P-40` 연속. */
-        const val EXPECTED_UNION = 40
+        /** 합집합 — `P-1`~`P-44` 연속. */
+        const val EXPECTED_UNION = 44
     }
 }
