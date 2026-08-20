@@ -810,3 +810,84 @@ NC-F2 가 드러낸 것: **전역 필터가 살아 있는 컨텍스트에서는 
 | `uv run pytest` | **1441 passed**, 68 skipped, 5 deselected, 5 xfailed |
 
 **핀 처분** — `TEST_CLASSES` 에 `RequestFieldRejectionReachTest` **하나만** 더했고 `TEST_CLASS_COUNT` 103 → **104**. `RequestFieldProbes` 는 `@Test` 가 없어 탐지 분모에 들지 않는다(그 파일의 종류 정의). **`FLOOR_TEST_CLASSES`·`MIN_TEST_CLASSES` 는 건드리지 않았다** — 리더 몫이다. `reviews/**`·`00_progress.md`·`contracts/**` 무변경(N-24·R-4 의 일시 변조는 복원 확인).
+
+---
+
+# C4-R5 — F3 구조 가드: **자리의 열거**도 없앴다 (엔진에게 묻는다)
+
+**일자:** 2026-08-21 / **계기:** stop-time codex 게이트 — *"F3 구조 가드에 클래스 수준 Bean Validation 거짓 초록이 남습니다."* 옳았다.
+
+## 무엇이 남아 있었나
+
+R-4 는 애너테이션 **이름**의 열거를 없앴다. 그런데 판정 함수 `inspect(target, property)` 가 보는 자리는 `declaredFields` · getter · 생성자 파라미터 **셋**이었다 — **자리의 열거**가 남아 있었고 규칙 ⑶ 이 그대로 걸렸다. Bean Validation 이 제약을 선언할 수 있는 자리는 그보다 많다:
+
+- **클래스 수준 제약**(커스텀 `ConstraintValidator<A, WorkspaceNameRequest>`) — 교차 필드 검증의 표준 수법.
+- **메서드 파라미터 제약** — 컨트롤러에 `@Validated` + `@RequestBody @Size(...) DTO`. `@Validated` 를 안 붙인 것은 **현재의 사실이지 강제자가 아니다.**
+- **컨테이너 원소 제약** — `List<@Size String>` 같은 type-use 자리.
+- **애너테이션이 아예 없는 선언** — `META-INF/validation.xml` 의 XML 매핑, Hibernate Validator 의 프로그램적 `ConstraintMapping`. **리플렉션으로는 원리적으로 보이지 않는다.**
+
+## 처방 — 자리를 열거하지 않고 **엔진에 묻는다**
+
+`jakarta.validation.Validator.getConstraintsForClass(clazz)` 가 돌려주는 `BeanDescriptor` 트리를 훑는다. 애너테이션을 훑은 결과가 아니라 **엔진 자신의 메타데이터**다. 새 판정자는 `api/src/test/kotlin/kr/easydoc/api/support/ConstraintMetadata.kt` 하나이고, 두 관측 층이 그것을 공유한다(R-1 에서 세운 패턴 그대로).
+
+훑는 갈래는 「자리 목록」이 아니라 **`BeanDescriptor` API 표면 전체**다 — 클래스 수준(`getConstraintDescriptors`) · 프로퍼티(`constrainedProperties`, 그 `constrainedContainerElementTypes`) · 메서드(`getConstrainedMethods(GETTER, NON_GETTER)` 의 파라미터·반환) · 생성자(`constrainedConstructors`).
+
+## 실측 — 형태 × 장치 (2026-08-21)
+
+변이 대상은 `WorkspaceNameRequest.name`(계약 상한 50). 심는 제약은 전부 상한 10 으로 두어 **경계가 계약보다 엄격**하게 했다(바이트 축이 발화할 수 있는 조건이어도 구조 축을 재는 데는 무관하다).
+
+| 심는 것 | 종전 리플렉션 스캔 | **L1** standalone 엔진 | **L2** 스프링 엔진 |
+|---|---|---|---|
+| P0 기준선(변이 없음) | GREEN | GREEN | GREEN |
+| **P1 DTO 클래스에 클래스 수준 커스텀 제약** | **GREEN** | **RED** | **RED** |
+| **P2 컨트롤러에 `@Validated` + 메서드 파라미터 제약** | **GREEN** | **RED** | **RED** |
+| **P3 `META-INF/validation.xml` 로 선언한 제약** | **GREEN** | **RED** | **RED** |
+| P4 프로그램적 `ConstraintMapping`(스프링 검증기 빈) | GREEN | **GREEN** | **RED** |
+| P5 `@param:` 생성자 파라미터 제약 | RED | **RED** | **RED** |
+| P6 `@field:` 프로퍼티 제약(기준선 형태) | RED | **RED** | **RED** |
+
+**리더가 요구한 3칸 표(P1·P2·P3)는 왼쪽 GREEN / 오른쪽 RED 로 채워졌다 — R-5 가 닫혔다.** 과장하지 않는다: 왼쪽이 빨개진 줄은 P5·P6 둘이고, 그것은 종전 가드가 **이미 덮던** 자리다.
+
+## 두 층이 각각 덮는 것
+
+| 선언 형태 | L1 `Validation.buildDefaultValidatorFactory()` | L2 스프링이 구성한 `Validator` 빈 |
+|---|---|---|
+| 애너테이션 — 프로퍼티·생성자 파라미터·클래스 수준·메서드 파라미터 | 본다 (P1·P2·P5·P6) | 본다 |
+| `META-INF/validation.xml` | 본다 (P3) | 본다 |
+| 프로그램적 `ConstraintMapping` | **못 본다** (P4) | **본다** (P4) |
+| 컨테이너 원소(type-use) | **증명하지 못했다**(아래) | 같음 |
+
+L1 을 남기는 이유는 **컨텍스트 없이 돌아 클래스가 생기는 즉시 도는** 축이라서다(이 가드의 원래 장점). L2 는 프로그램적 매핑을 덮는 유일한 층이고, 그 층이 앞 층을 그냥 다시 재는 것이 아님을 **전제 단언**으로 고정했다 — 두 검증기가 같은 인스턴스면 실패한다.
+
+## 대체인가 추가인가 — **대체다**
+
+R-4 에서는 두 강제자를 함께 뒀고 그 판단이 옳았다(도달 범위가 **달랐다**). 여기서는 재 봤더니 **다르지 않다**: 엔진 질의가 RED 인 형태의 집합이 리플렉션 스캔의 상위집합이고, **리플렉션만 잡고 엔진이 놓치는 형태는 P0~P6 중 하나도 없었다.** 그래서 리플렉션 판정(`inspect`·`isConstraint`·`Inspection`)을 **지웠다.**
+
+**대체를 안전하게 만드는 것은 엔진 생존 확인이다.** 판정을 엔진에 맡기면 「엔진이 아무것도 못 보는 상태」가 곧 거짓 초록이므로, 두 층 각각에 확인을 뒀다 — ⑴ **제품 코드의 실물**: `DocumentController` 의 `limit`·`offset` 파라미터 제약(계약 지침 3 이 **요구한** 것)이 관측되는지, ⑵ **합성 표본**: 클래스 수준 제약을 지목하는지, ⑶ 과잉 탐지 0: 제약 없는 표본을 비어 있다고 보는지.
+
+**남긴 리플렉션 하나** — 계약의 snake_case 필드 이름이 실재하는 Kotlin 프로퍼티를 가리키는지 보는 `hasProperty` 다. 제약 판정이 아니라 **이름 대응**이라는 다른 질문이고, 엔진 API 로는 물을 수 없다(`constrainedProperties` 는 제약이 **있는** 프로퍼티만 낸다). 이 대조가 없으면 계약 필드 이름이 드리프트했을 때 R-5 케이스가 「그 필드」가 아니라 엉뚱한 것을 본다(게이트 20 T-1).
+
+## 그래도 무엇을 증명하지 못하는가
+
+**엔진이 아는 것까지만 안다.** 세 자리를 명시한다.
+
+1. **컨테이너 원소 제약(type-use)은 덮는다고 적지 않았다.** Kotlin 으로 `List<@MetadataProbe String>` 을 생성자 프로퍼티·본문 프로퍼티 두 형태로 선언해 봤고 엔진 메타데이터가 **0건**이었다(실측). Kotlin 이 그 자리의 애너테이션을 제네릭 시그니처로 내보내지 않는 것으로 보인다 — 즉 **위협이 재현되지 않아 방어도 증명되지 않았다.** 단언 대신 관측값을 `println` 으로 남겨, 언젠가 0 이 아니게 되면 그때 단언으로 올릴 수 있게 했다(백로그 B-15).
+2. **Bean Validation 밖의 앞단 가드는 이 축의 대상이 아니다.** 손으로 쓴 필터·밸브·인터셉터가 길이를 재는 갈래는 **바이트 축**(C4-R1)이 잡는다. 두 축은 그렇게 갈린다 — 구조 축은 「엔진이 제약을 안다」를, 바이트 축은 「나간 바이트가 배열이다」를 본다.
+3. **`@Valid` 자체는 금지하지 않는다.** 제약이 아니라 「이 객체를 검증하라」는 지시이고, DTO 에 제약이 0 개임을 위 축이 보장하므로 무해하다. 다만 그 보장이 깨지는 편집과 `@Valid` 추가가 **다른 커밋**에 나뉘면, 앞 커밋만으로는 아무것도 빨개지지 않는다(둘째 커밋에서 빨개진다).
+
+## 관측한 이상 하나 — 전이 실패 1회 (숨기지 않는다)
+
+측정 직후의 전체 게이트 한 번에서 `ContractErrorBodyReachTest` 가 **14/16 실패**했다. 증상은 *"상태 코드가 500 가 아니라 404"*, *"오류 본문 Content-Type 이 null"* 로, 컨테이너 밸브가 안 걸린 응답의 모양이다. 같은 클래스를 **단독으로** 돌리면 통과했고, 이후 전체 게이트를 **두 번 연속** 돌려 둘 다 통과했다. 원인을 확정하지 못했다 — 임시 측정 코드(`probemeta` 패키지·`META-INF/validation.xml`)를 심고 지우는 반복 직후였으므로 **빌드 산출물의 잔재를 의심**하지만, 지운 뒤 `api/build` 에서 그 흔적을 찾지 못했다. **재현되지 않았다는 사실과 함께 기록만 남긴다** — 「무관하다」고 적지 않는다(백로그 B-16).
+
+## C4-R5 검사 표
+
+| 검사 | 결과 |
+|---|---|
+| `./gradlew ktlintCheck detekt build moduleBoundaryCheck parityHarness --continue --rerun-tasks` | **BUILD SUCCESSFUL** (경고 0) · 이어서 `build --rerun-tasks` **재확인 SUCCESSFUL** |
+| 개인정보 스캐너 | exit 0 (**BLOCK 0**) |
+| `KOTLIN_GATE_REACH_REQUIRE_REPORT=1 uv run pytest tests/test_kotlin_gate_reach.py` | **112 passed** |
+| `uv run ruff check .` | All checks passed |
+| `uv run mypy . .claude` | Success: 139 source files |
+| `uv run pytest` | **1441 passed**, 68 skipped, 5 deselected, 5 xfailed |
+
+**핀 처분** — **새 테스트 클래스가 없다.** `ConstraintMetadata.kt` 는 `@Test` 가 없어 탐지 분모 밖이고, 케이스는 기존 두 클래스 안에서 늘었다. `TEST_CLASSES`·`TEST_CLASS_COUNT`(104) **무변경**. **`FLOOR_TEST_CLASSES`·`MIN_TEST_CLASSES` 는 건드리지 않았다.** `contracts/**`·`reviews/**`·`00_progress.md` 무변경 — 측정용 일시 변조는 전건 복원 후 sha256 일치(`WorkspaceDtos.kt` `bd2b6222…6566`, `WorkspaceController.kt` `afa60fef…9234`), 임시 파일(`probemeta/**`, `api/src/main/resources/META-INF/**`)은 삭제 확인.

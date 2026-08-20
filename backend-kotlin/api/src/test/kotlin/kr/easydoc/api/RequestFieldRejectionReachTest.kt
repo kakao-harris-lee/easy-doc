@@ -1,14 +1,23 @@
 package kr.easydoc.api
 
+import jakarta.validation.Validator
+import kr.easydoc.api.auth.AuthController
+import kr.easydoc.api.auth.SignupRequest
+import kr.easydoc.api.document.DocumentController
+import kr.easydoc.api.document.DocumentTextRequest
+import kr.easydoc.api.support.ConstraintMetadata
 import kr.easydoc.api.support.ContractSpec
 import kr.easydoc.api.support.RequestFieldProbes
 import kr.easydoc.api.support.RequestFieldProbes.Observed
+import kr.easydoc.api.workspace.WorkspaceController
+import kr.easydoc.api.workspace.WorkspaceNameRequest
 import kr.easydoc.infrastructure.DatabaseHandle
 import kr.easydoc.infrastructure.PostgresTestSupport
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
+import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.boot.test.web.server.LocalServerPort
 import org.springframework.test.context.DynamicPropertyRegistry
@@ -62,6 +71,15 @@ class RequestFieldRejectionReachTest {
     @LocalServerPort
     private var port: Int = 0
 
+    /**
+     * **스프링이 구성한** 검증기. [ConstraintMetadata.standalone] 과 다른 인스턴스다.
+     *
+     * 프로그램적 `ConstraintMapping` 은 이 빈에만 배선되므로 그 선언 형태는 **여기서만** 보인다
+     * (실측 표는 [ConstraintMetadata] KDoc).
+     */
+    @Autowired
+    private lateinit var springValidator: Validator
+
     private val json = ObjectMapper()
 
     @Test
@@ -103,6 +121,60 @@ class RequestFieldRejectionReachTest {
             .withFailMessage("실제 소켓 응답에서 배열 detail 을 보지 못했다 — 위 케이스의 초록은 아무 뜻이 없다")
             .isTrue()
     }
+
+    // ================================================================ R-5 — 엔진 질의(컨테이너 축)
+
+    @Test
+    @DisplayName("R-5 스프링이 구성한 엔진도 계약 다섯 필드의 DTO 에서 제약을 0 개 본다 — 프로그램적 매핑까지 덮는 층이다")
+    fun `스프링 엔진 메타데이터에 DTO 제약이 없다`() {
+        // 이 층이 따로 있는 이유는 하나다 — 프로그램적 `ConstraintMapping` 은 **스프링 빈에만**
+        // 배선되므로 컨텍스트 없는 `standalone` 엔진이 모른다(실측: `ConstraintMetadata` 표).
+        // 전제부터 단언한다: 두 엔진이 **같은 인스턴스가 아니어야** 이 층이 뜻을 갖는다.
+        assertThat(springValidator)
+            .withFailMessage("스프링 검증기가 standalone 과 같은 인스턴스다 — 이 층은 앞 층을 다시 재고 있을 뿐이다")
+            .isNotSameAs(ConstraintMetadata.standalone)
+
+        val targets = contractDtoClasses()
+        assertThat(targets)
+            .withFailMessage("계약 필드의 DTO 를 하나도 찾지 못했다 — 이 대조는 아무것도 재지 않는다")
+            .isNotEmpty()
+
+        val findings =
+            targets.flatMap { ConstraintMetadata.constraintsOf(springValidator, it) } +
+                targets.flatMap {
+                    ConstraintMetadata.parameterConstraintsOn(springValidator, it, targets.toSet())
+                } +
+                CONTROLLERS.flatMap {
+                    ConstraintMetadata.parameterConstraintsOn(springValidator, it, targets.toSet())
+                }
+
+        assertThat(findings.map { it.toString() })
+            .withFailMessage(
+                "스프링이 구성한 엔진이 계약 다섯 필드의 DTO 에서 제약을 발견했다 — F3 위반이다.\n" +
+                    "  애너테이션·XML 매핑뿐 아니라 **프로그램적 ConstraintMapping** 도 이 층에서 보인다.\n%s",
+                findings.joinToString("\n") { "  - $it" },
+            ).isEmpty()
+    }
+
+    @Test
+    @DisplayName("R-5 스프링 엔진 질의도 **실제로 제약을 본다** — 제품 코드의 파라미터 제약으로 확인한다")
+    fun `스프링 엔진 질의가 제약을 지목한다`() {
+        // `GET /documents` 의 `limit`·`offset` 은 계약이 요구한 스키마 층 제약이다.
+        // 이 층이 그것을 본다는 확인이 없으면 위 케이스의 0건은 아무 뜻이 없다.
+        val observed = ConstraintMetadata.constraintsOf(springValidator, DocumentController::class.java)
+
+        assertThat(observed.map { it.toString() })
+            .withFailMessage("스프링 엔진 질의가 DocumentController 의 파라미터 제약을 보지 못했다")
+            .isNotEmpty()
+    }
+
+    /** 계약 다섯 필드가 사는 DTO 클래스 중 **실재하는 것**. 없는 것은 조용히 빠진다(핀은 슬라이스 축이 진다). */
+    private fun contractDtoClasses(): List<Class<*>> =
+        RequestFieldProbes
+            .contractFields()
+            .map { it.substringBefore('.') }
+            .distinct()
+            .mapNotNull { simpleName -> DTO_CLASSES.firstOrNull { it.simpleName == simpleName } }
 
     // ================================================================ 프로브
 
@@ -171,6 +243,28 @@ class RequestFieldRejectionReachTest {
     }
 
     companion object {
+        /**
+         * 계약 다섯 필드가 사는 DTO 후보. **컴파일 시점 참조**라 이름이 바뀌면 컴파일이 먼저 깨진다.
+         *
+         * 문자열 목록으로 두지 않는 이유는 그것이 조용히 아무것도 겨누지 않게 되기 때문이다.
+         * 아직 없는 `ConversionReviewRequest` 는 여기 없고, 그 사실의 강제자는 슬라이스 축의
+         * 정확 열거 핀(`PINNED_WITHOUT_DTO`)이다.
+         */
+        private val DTO_CLASSES: List<Class<*>> =
+            listOf(
+                SignupRequest::class.java,
+                DocumentTextRequest::class.java,
+                WorkspaceNameRequest::class.java,
+            )
+
+        /** 그 DTO 를 파라미터로 받는 컨트롤러들. 파라미터 자리 제약 갈래를 재는 대상이다. */
+        private val CONTROLLERS: List<Class<*>> =
+            listOf(
+                AuthController::class.java,
+                DocumentController::class.java,
+                WorkspaceController::class.java,
+            )
+
         private const val SIGNUP_PATH = "/auth/signup"
         private const val DOCUMENTS_PATH = "/documents"
         private const val WORKSPACES_PATH = "/workspaces"

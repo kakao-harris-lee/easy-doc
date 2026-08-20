@@ -1,58 +1,60 @@
 package kr.easydoc.api
 
 import jakarta.validation.Constraint
+import jakarta.validation.ConstraintValidator
+import jakarta.validation.ConstraintValidatorContext
+import jakarta.validation.Payload
+import kr.easydoc.api.document.DocumentController
+import kr.easydoc.api.support.ConstraintMetadata
 import kr.easydoc.api.support.ContractSpec
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
 import java.io.File
+import kotlin.reflect.KClass
 
 /**
- * **F3 강제자 — 계약이 지목한 다섯 요청 필드에 길이·형식 Bean Validation 을 달지 않는다.**
+ * **F3 구조 강제자 — 계약이 지목한 다섯 요청 필드에 스키마 층 제약이 걸려 있지 않다.**
  *
  * ## 왜 테스트로 만드는가
  *
- * 이 금지는 2026-08-13 에 판정됐지만 **어디에서도 강제되지 않았다.** 원장의 X6 「강제자
- * 축」이 `안 돎` 이었던 이유이고, 마감이 바로 이 커밋이다. 금지를 산문으로만 두면 다음
- * 사람이 `@Size` 를 붙이고, 상태 코드는 그대로 422 라 아무 테스트도 깨지지 않는다 —
+ * 이 금지는 2026-08-13 에 판정됐지만 **어디에서도 강제되지 않았다.** 금지를 산문으로만 두면
+ * 다음 사람이 제약을 붙이고, 상태 코드는 그대로 422 라 아무 테스트도 깨지지 않는다 —
  * 바뀌는 것은 `detail` 의 **모양(배열)** 과 **문구(영문)** 뿐이다.
- *
- * `AuthContractTest` 의 S-3·S-6 이 `detail` 타입을 단언하므로 **지금 있는 두 필드**는
- * 그쪽에서도 잡힌다. 이 테스트가 따로 있는 이유는 나머지 셋
- * (`DocumentTextRequest.text`·`ConversionReviewRequest.edited_text`·
- * `WorkspaceNameRequest.name`)이 **만들어지는 순간** 같은 금지를 받게 하기 위해서다.
- * 응답을 재는 테스트는 그 엔드포인트가 생겨야 쓸 수 있지만, 이 검사는 클래스가 생기는
- * 즉시 자동으로 적용된다.
  *
  * ## 무엇을 대조하는가
  *
- * 금지 대상 필드 목록을 **계약에서 읽는다**(`x-request-field-constraints.fields[].field`).
- * 목록을 코드에 적으면 계약에 필드가 추가돼도 검사 범위가 늘지 않는다 — 이 하네스가
- * 반복해 겪은 「선언한 범위와 실제 도달」의 어긋남이다.
+ * 대상 필드 목록을 **계약에서 읽는다**(`x-request-field-constraints.fields[].field`).
+ * 목록을 코드에 적으면 계약에 필드가 추가돼도 검사 범위가 늘지 않는다.
  *
- * ## 금지 애너테이션을 **열거하지 않는다** (2026-08-21, R-4)
+ * ## 판정은 **엔진에게 묻는다** — 이름도, 자리도 열거하지 않는다
  *
- * 종전 판은 이름 아홉 개(`Size`·`NotBlank`·…)를 열거했다. **범위 선언형이고 규칙 ⑶ 이
- * 걸렸다** — 그 목록은 닫히지 않는다(`@CodePointLength`·`@Range`·`@DecimalMin`·직접 만든
- * `ConstraintValidator` 가 전부 같은 일을 한다). 실측으로 확인했다: `@Valid` +
- * `@CodePointLength` 를 심으면 이 스캔이 **초록**이었다.
+ * 이 파일의 판정은 두 번 갈렸고 그 경위가 그대로 규칙 4 의 사례다.
  *
- * 그리고 열거의 구멍은 바이트 축(`RequestFieldRejectionLayerTest`·
- * `RequestFieldRejectionReachTest`)으로도 메워지지 않는다. 그쪽의 관측창은 경계 ±1 근처라,
- * **계약보다 느슨한 경계**를 가진 제약(`@CodePointLength(max = 100)` 대 계약 상한 50)은
- * 어느 프로브에서도 발화하지 않는다. 두 강제자가 각각 인정한 구멍이 **합성되면 통과**한다.
+ * 1. **초판 — 애너테이션 *이름* 아홉 개 열거.** 범위 선언형이고 규칙 ⑶ 이 걸렸다. 실측:
+ *    `@Valid` + `@CodePointLength`(목록 밖)를 심으면 **초록**이었다(R-4).
+ * 2. **둘째 판 — (전이적) `@Constraint` 보유라는 성질 검사.** 이름 열거는 사라졌지만
+ *    **자리의 열거**가 남았다(`declaredFields`·getter·생성자 파라미터 셋). 실측: 클래스 수준
+ *    커스텀 제약·`@Validated` + 메서드 파라미터 제약·`META-INF/validation.xml` 세 형태가
+ *    모두 **초록**이었다(R-5, stop-time codex 게이트 지적).
+ * 3. **현재 — [kr.easydoc.api.support.ConstraintMetadata] 로 엔진 메타데이터를 묻는다.**
+ *    `Validator.getConstraintsForClass` 의 서술자 트리는 애너테이션을 훑은 결과가 아니라
+ *    **엔진 자신이 아는 제약**이라, 위 세 형태와 컨테이너 원소·프로그램적 매핑까지 포함한다.
  *
- * 그래서 열거를 **없앴다.** Bean Validation 제약에는 정의적 성질이 있다 — 그 애너테이션
- * 타입 자신이 [Constraint] 로 (합성 제약이면 전이적으로) 메타 애너테이트돼 있다. 그 성질이
- * 없으면 Bean Validation 이 그것을 제약으로 취급하지 않으므로 **예외가 원리적으로 없다.**
- * 제약 애너테이션은 명세상 `RUNTIME` 유지라 리플렉션으로 보인다.
+ * **리플렉션 스캔은 지웠다(대체).** 실측에서 그것이 잡던 두 형태(`@field:`·`@param:` 제약)를
+ * 엔진 질의가 **둘 다** 잡았고, 엔진이 놓치고 리플렉션만 잡는 형태는 **하나도 없었다**.
+ * 도달 범위가 진부분집합이므로 함께 둘 근거가 없다 — R-4 에서 두 강제자를 함께 둔 것은
+ * 그때 범위가 **달랐기** 때문이다. 표와 절차는 산출물 「C4-R5」 절이다.
  *
- * 그러므로 이 검사는 「이름이 목록에 있는가」가 아니라 **「(전이적으로) `@Constraint` 를
- * 지녔는가」**를 묻는다. 범위 선언형이 탐지형으로 바뀐 자리다.
+ * 남은 리플렉션은 **이름 대응 확인** 하나다([hasProperty]) — 계약의 snake_case 필드 이름이
+ * 실재하는 Kotlin 프로퍼티를 가리키는지 보는 것이고, 제약 판정과는 다른 질문이다.
  *
- * **`@Valid` 는 대상이 아니다.** 그것은 제약이 아니라 「이 객체를 검증하라」는 지시이고,
- * 계약이 금지한 것은 제약 애너테이션 자체다. `@Valid` 없는 제약이 무해하다는 실측은
- * 「왜 종전 스캔이 초록이었나」의 설명이지 금지 범위를 좁히는 근거가 아니다.
+ * ## 대체가 안전한 이유 — **엔진 생존 확인**을 함께 둔다
+ *
+ * 판정을 엔진에 맡기면 「엔진이 아무것도 못 보는 상태」가 곧 거짓 초록이다. 그래서
+ * [`엔진 질의가 제약을 지목한다`] 가 **제품 코드의 실물**(`DocumentController` 의
+ * `limit`·`offset` 파라미터 제약 — 계약이 요구한 것)과 **합성 표본**(클래스 수준 제약)을
+ * 함께 확인한다. 컨테이너 축의 같은 확인은 `RequestFieldRejectionReachTest` 에 있다.
  *
  * ## 도달 범위
  *
@@ -62,49 +64,34 @@ import java.io.File
  */
 class RequestFieldConstraintLayerTest {
     @Test
-    @DisplayName("계약이 지목한 다섯 필드에 (전이적으로) @Constraint 를 지닌 애너테이션이 0 개다")
-    fun `다섯 필드에 스키마 층 제약이 없다`() {
+    @DisplayName("계약 필드 이름이 api DTO 의 **실재하는 프로퍼티**를 가리킨다 (도달 대조, 게이트 20 T-1)")
+    fun `계약 필드 이름이 프로퍼티에 대응한다`() {
         val fields = contractFieldNames()
         assertThat(fields)
             .withFailMessage("계약의 x-request-field-constraints.fields 가 비었다 — 검사 대상이 없다")
             .isNotEmpty()
 
         val classes = apiClasses()
-        val violations = mutableListOf<String>()
-        val covered = mutableListOf<String>()
+        val matched = mutableListOf<String>()
         val unmatched = mutableListOf<String>()
 
         fields.forEach { qualified ->
             val (simpleName, property) = qualified.split('.', limit = 2)
             val target = classes.firstOrNull { it.simpleName == simpleName } ?: return@forEach
-            val inspected = inspect(target, property)
-            // **클래스를 찾은 것은 도달이 아니다.** 프로퍼티를 실제로 찾았을 때만 센다 —
-            // 클래스만 세면 계약 필드 이름이 어느 프로퍼티와도 맞지 않아 0건을 훑어도
-            // 「도달했다」가 참이 된다(게이트 20 T-1).
-            if (inspected.matchedProperty) {
-                covered += qualified
+            if (hasProperty(target, property)) {
+                matched += qualified
             } else {
                 unmatched += "$qualified — 클래스는 있으나 그 이름의 프로퍼티를 찾지 못했다"
             }
-            violations += inspected.forbidden.map { "$qualified 에 @$it 가 붙어 있다" }
         }
 
-        assertThat(violations)
-            .withFailMessage(
-                "계약 F3 위반 — 이 다섯은 서비스 층에서 판정하고 위반은 422 **문자열** detail 이다.\n" +
-                    "  이름이 아니라 **(전이적) @Constraint 보유**로 판정한다 — 경계가 계약보다 느슨해서 " +
-                    "바이트 축의 경계 프로브가 발화하지 않는 제약도 여기서 잡힌다.\n%s",
-                violations.joinToString("\n"),
-            ).isEmpty()
-
-        // 클래스는 있는데 프로퍼티를 못 찾았다면 그 필드의 금지는 아무 데서도 강제되지 않는다.
+        // **클래스를 찾은 것은 도달이 아니다.** 계약 필드 이름이 어느 프로퍼티와도 맞지 않으면
+        // 아래 R-5 케이스가 「그 필드」가 아니라 엉뚱한 것을 보고 있게 된다(게이트 20 T-1).
         assertThat(unmatched)
-            .withFailMessage("계약 필드와 프로퍼티가 맞지 않는다 — 이 필드들은 검사되지 않았다:\n%s", unmatched.joinToString("\n"))
+            .withFailMessage("계약 필드와 프로퍼티가 맞지 않는다:\n%s", unmatched.joinToString("\n"))
             .isEmpty()
-
-        // 도달을 결과에 드러낸다. 0 이면 이 테스트는 아무것도 검사하지 않은 것이다.
-        assertThat(covered)
-            .withFailMessage("계약의 다섯 필드 중 어느 것도 api 모듈에서 찾지 못했다 — 검사 도달이 0 이다")
+        assertThat(matched)
+            .withFailMessage("계약의 다섯 필드 중 어느 것도 api 모듈에서 찾지 못했다 — 도달이 0 이다")
             .isNotEmpty()
     }
 
@@ -142,6 +129,121 @@ class RequestFieldConstraintLayerTest {
             .isEqualTo(ContractSpec.inputLimit("min_password_length"))
     }
 
+    // ================================================================ R-5 — 엔진에게 직접 묻는다
+
+    @Test
+    @DisplayName("R-5 엔진이 아는 제약이 계약 다섯 필드의 DTO 에 **0 개**다 (클래스 수준·XML 매핑 포함)")
+    fun `엔진 메타데이터에 DTO 제약이 없다`() {
+        val targets = contractDtoClasses()
+        assertThat(targets)
+            .withFailMessage("계약 필드의 DTO 를 api 모듈에서 하나도 찾지 못했다 — 이 대조는 아무것도 재지 않는다")
+            .isNotEmpty()
+
+        // **필드 하나로 좁혀 묻지 않는다** — 클래스 전체에 제약이 0 개인지 묻는 편이
+        // fail-closed 다. 다른 프로퍼티에 제약이 정당하게 필요해지면 이 단언이 깨져
+        // **명시적 판정을 강제**하고, 그것이 옳은 방향이다.
+        val findings = targets.flatMap { ConstraintMetadata.constraintsOf(ConstraintMetadata.standalone, it) }
+
+        assertThat(findings.map { it.toString() })
+            .withFailMessage(
+                "엔진이 계약 다섯 필드의 DTO 에서 제약을 발견했다 — F3 위반이다.\n" +
+                    "  이 질의는 애너테이션을 훑지 않는다: 클래스 수준 제약·컨테이너 원소·" +
+                    "`META-INF/validation.xml` 매핑까지 **엔진 메타데이터**로 본다.\n%s",
+                findings.joinToString("\n") { "  - $it" },
+            ).isEmpty()
+    }
+
+    @Test
+    @DisplayName("R-5 그 DTO 를 **파라미터로 받는 자리**에도 제약이 0 개다 (컨트롤러 메서드 파라미터 갈래)")
+    fun `엔진 메타데이터에 파라미터 제약이 없다`() {
+        val targets = contractDtoClasses().toSet()
+        val owners = classesTakingParameterOf(targets)
+
+        // 분모가 0 이면 이 케이스는 아무것도 훑지 않는다. 컨트롤러가 그 DTO 를 받고 있으므로
+        // 0 이 될 수 없고, 0 이면 적재·필터가 조용히 좁아진 것이다.
+        assertThat(owners)
+            .withFailMessage("계약 DTO 를 파라미터로 받는 api 클래스를 하나도 찾지 못했다 — 컨트롤러가 사라졌거나 적재가 좁아졌다")
+            .isNotEmpty()
+
+        val findings =
+            owners.flatMap { ConstraintMetadata.parameterConstraintsOn(ConstraintMetadata.standalone, it, targets) }
+
+        assertThat(findings.map { it.toString() })
+            .withFailMessage(
+                "계약 DTO 를 받는 파라미터에 제약이 붙어 있다 — `@Validated` + 파라미터 제약 갈래이고 F3 위반이다.\n%s",
+                findings.joinToString("\n") { "  - $it" },
+            ).isEmpty()
+    }
+
+    @Test
+    @DisplayName("R-5 엔진 질의가 **실제로 제약을 본다** — 제품 코드의 실물과 합성 표본으로 확인한다")
+    fun `엔진 질의가 제약을 지목한다`() {
+        // ⑴ **제품 코드의 실물.** `GET /documents` 의 `limit`·`offset` 은 계약이 요구한
+        //    스키마 층 제약이다(지침 3). 즉 이 저장소에는 「메서드 파라미터 제약」이 실제로
+        //    있고, 엔진 질의가 그것을 본다는 것을 합성 표본 없이 확인할 수 있다.
+        val controller = ConstraintMetadata.constraintsOf(ConstraintMetadata.standalone, DocumentController::class.java)
+        assertThat(controller.map { it.toString() })
+            .withFailMessage("엔진 질의가 DocumentController 의 파라미터 제약을 보지 못했다 — 위 두 케이스의 0건은 아무 뜻이 없다")
+            .isNotEmpty()
+
+        // ⑵ **클래스 수준 제약** — 제품 코드에 표본이 없으므로 합성한다. 리플렉션 스캔이
+        //    보지 못하는 자리이고, codex 가 지목한 거짓 초록의 자리다.
+        assertThat(ConstraintMetadata.constraintsOf(ConstraintMetadata.standalone, ClassLevelProbe::class.java))
+            .withFailMessage("클래스 수준 제약을 보지 못했다 — R-5 가 겨눈 자리가 그대로 남는다")
+            .isNotEmpty()
+
+        // ⑶ **컨테이너 원소 제약(type-use)은 단언하지 않는다 — 재현하지 못했다.**
+        //
+        // Kotlin 으로 `List<@MetadataProbe String>` 을 선언해 보니(생성자 프로퍼티·본문
+        // 프로퍼티 두 형태) 엔진 메타데이터에 **0건**으로 나왔다(2026-08-21 실측). Kotlin 이
+        // 그 자리의 type-use 애너테이션을 제네릭 시그니처로 내보내지 않는 것으로 보인다.
+        //
+        // 그래서 **엔진 질의가 컨테이너 원소 제약을 덮는지 증명하지 못했다.** 덮는다고
+        // 적지 않고, 관측값을 기록으로 남긴다 — 언젠가 Kotlin 이나 엔진이 그것을 내보내기
+        // 시작하면 이 수가 0 이 아니게 되고, 그때 단언으로 올리면 된다.
+        println(
+            "R-5 컨테이너 원소 제약 관측: " +
+                ConstraintMetadata.constraintsOf(ConstraintMetadata.standalone, ContainerElementProbe::class.java),
+        )
+
+        // 과잉 탐지 0 — 제약 없는 DTO 를 제약 있다고 하지 않는다.
+        assertThat(ConstraintMetadata.constraintsOf(ConstraintMetadata.standalone, UnconstrainedProbe::class.java))
+            .isEmpty()
+    }
+
+    /** 계약 다섯 필드가 사는 DTO 클래스 중 **api 모듈에 실재하는 것**. */
+    private fun contractDtoClasses(): List<Class<*>> {
+        val declared = contractFieldNames().map { it.substringBefore('.') }.toSet()
+        return apiClasses().filter { it.simpleName in declared }
+    }
+
+    /**
+     * [targets] 중 하나를 **파라미터 타입으로 받는** api 클래스들.
+     *
+     * 엔진 질의를 api 전수에 돌리지 않는 이유는 비용이 아니라 **원인 분리**다 — 무관한
+     * 클래스의 메타데이터 조립 실패가 이 케이스의 실패로 섞인다. 그 DTO 를 파라미터로 받지
+     * 않는 클래스는 그 DTO 의 파라미터 제약을 가질 수 없으므로 좁힘이 근거를 넘지 않는다.
+     */
+    private fun classesTakingParameterOf(targets: Set<Class<*>>): List<Class<*>> {
+        val undecidable = mutableListOf<String>()
+        val owners =
+            apiClasses().filter { candidate ->
+                runCatching {
+                    val methods = candidate.declaredMethods.flatMap { it.parameterTypes.asList() }
+                    val constructors = candidate.declaredConstructors.flatMap { it.parameterTypes.asList() }
+                    (methods + constructors).any { it in targets }
+                }.getOrElse {
+                    undecidable += candidate.name
+                    false
+                }
+            }
+        // **판정 불가는 통과가 아니다.**
+        assertThat(undecidable)
+            .withFailMessage("파라미터 타입을 읽지 못한 클래스가 있다 — 이 클래스들은 검사받지 않았다: %s", undecidable)
+            .isEmpty()
+        return owners
+    }
+
     /**
      * **P-5 — 고위험 하한선 목록이 auth 세 곳을 여전히 지목한다.**
      *
@@ -162,78 +264,32 @@ class RequestFieldConstraintLayerTest {
             .map { it["field"]?.toString() ?: error("fields[] 항목에 field 가 없다") }
 
     /**
-     * 필드·getter·생성자 파라미터 어디에 붙어도 잡는다 — Kotlin 은 붙는 자리가 여럿이다.
+     * 계약이 적은 필드 이름에 해당하는 프로퍼티가 [target] 에 **실재하는가**.
      *
      * ## 계약의 이름과 Kotlin 프로퍼티 이름은 표기가 다르다 (게이트 20 T-1)
      *
      * 계약의 `field` 는 **snake_case** 이고(`ConversionReviewRequest.edited_text`) Kotlin
      * 프로퍼티는 `editedText` 다. 종전 판은 `edited_text`·`getEdited_text` 만 찾아 앞의 두
-     * 갈래가 **0건**이 됐고, 실제로 잡는 것은 「그 클래스의 모든 생성자 파라미터를 쓸어
-     * 담는」 세 번째 갈래뿐이었다. 그러면 검사는 (아마) 성립하지만 **코드가 적은 이유로
-     * 성립하지 않고**, 위반 메시지가 엉뚱한 필드를 지목한다.
+     * 갈래가 **0건**이 됐다. 여기서 재는 것은 **이름 대응**뿐이다 — 제약이 붙어 있는지는
+     * [kr.easydoc.api.support.ConstraintMetadata] 가 엔진에게 묻는다(R-5).
      *
-     * 지금 걸린 두 필드(`email`·`password`)는 우연히 camelCase 와 같아 이 갈림이 드러나지
-     * 않았다. 다음 세 필드가 만들어지는 순간 드러날 자리를 미리 닫는다.
-     *
-     * 생성자 파라미터는 이름으로 거른다 — 이름을 못 읽는 컴파일 산출물이면(`-parameters`
-     * 부재) 그 클래스 전체를 훑던 종전 동작을 유지해 **놓치는 쪽보다 시끄러운 쪽**으로 둔다.
+     * 생성자 파라미터는 이름을 읽을 수 있을 때만 센다. 읽지 못하는 산출물이면
+     * (`-parameters` 부재) 필드·getter 갈래가 남는다.
      */
-    private fun inspect(
+    private fun hasProperty(
         target: Class<*>,
         property: String,
-    ): Inspection {
+    ): Boolean {
         val candidates = setOf(property, camelCase(property))
         val getters = candidates.map { "get${it.replaceFirstChar(Char::titlecase)}" }
-        var matched = false
-        val annotations =
-            buildList<Class<out Annotation>> {
-                target.declaredFields
-                    .filter { it.name in candidates }
-                    .forEach {
-                        matched = true
-                        addAll(it.annotations.map { annotation -> annotation.annotationClass.java })
-                    }
-                target.declaredMethods
-                    .filter { method -> getters.any { method.name.equals(it, ignoreCase = true) } }
-                    .forEach {
-                        matched = true
-                        addAll(it.annotations.map { annotation -> annotation.annotationClass.java })
-                    }
-                target.declaredConstructors.forEach { constructor ->
-                    val named = constructor.parameters.any { it.isNamePresent && it.name in candidates }
-                    constructor.parameters.forEach { parameter ->
-                        if (!named || parameter.name in candidates) {
-                            addAll(parameter.annotations.map { it.annotationClass.java })
-                        }
-                    }
-                    matched = matched || named
-                }
+        val inFields = target.declaredFields.any { it.name in candidates }
+        val inGetters = target.declaredMethods.any { method -> getters.any { method.name.equals(it, true) } }
+        val inConstructors =
+            target.declaredConstructors.any { constructor ->
+                constructor.parameters.any { it.isNamePresent && it.name in candidates }
             }
-        return Inspection(matched, annotations.filter { isConstraint(it) }.map { it.simpleName }.distinct())
+        return inFields || inGetters || inConstructors
     }
-
-    /**
-     * **이 애너테이션이 Bean Validation 제약인가** — 이름을 보지 않고 성질을 본다.
-     *
-     * 제약 애너테이션은 자기 타입에 [Constraint] 를 달고 있다(`@Size`·`@Email`·직접 만든
-     * 것 전부). **합성 제약**(`@Range` 처럼 다른 제약을 모아 만든 것)은 그 성질이 메타
-     * 애너테이션을 한 단계 더 거쳐 나타나므로 전이적으로 따라간다.
-     *
-     * 순환을 [seen] 으로 끊는다 — `java.lang.annotation` 의 메타 애너테이션들이 서로를
-     * 가리켜 재귀가 돌아온다.
-     */
-    private fun isConstraint(
-        type: Class<out Annotation>,
-        seen: MutableSet<Class<*>> = mutableSetOf(),
-    ): Boolean =
-        when {
-            // 순환을 끊는다 — 이미 본 타입은 여기서 새 근거를 주지 않는다.
-            !seen.add(type) -> false
-
-            type.isAnnotationPresent(Constraint::class.java) -> true
-
-            else -> type.annotations.any { isConstraint(it.annotationClass.java, seen) }
-        }
 
     /** `edited_text` → `editedText`. 계약 표기와 Kotlin 표기 사이의 유일한 변환이다. */
     private fun camelCase(snake: String): String =
@@ -242,12 +298,6 @@ class RequestFieldConstraintLayerTest {
             .filter { it.isNotEmpty() }
             .mapIndexed { index, part -> if (index == 0) part else part.replaceFirstChar(Char::titlecase) }
             .joinToString("")
-
-    /** 프로퍼티를 실제로 찾았는가와, 거기서 발견한 금지 애너테이션. */
-    private data class Inspection(
-        val matchedProperty: Boolean,
-        val forbidden: List<String>,
-    )
 
     /**
      * `api` 모듈의 컴파일 산출물을 전수 적재한다.
@@ -303,3 +353,38 @@ class RequestFieldConstraintLayerTest {
         // 붙어 있지 않다는 것을 이 케이스가 확인한다.**
     }
 }
+
+/**
+ * R-5 합성 표본용 **커스텀 제약**. 제품 코드가 아니라 이 파일에 산다 — 분모를 오염시키지 않는다.
+ *
+ * `@Constraint` 를 지니므로 [kr.easydoc.api.RequestFieldConstraintLayerTest] 의 성질 검사와
+ * [kr.easydoc.api.support.ConstraintMetadata] 의 엔진 질의가 **둘 다** 이것을 제약으로 본다.
+ */
+@Target(AnnotationTarget.CLASS, AnnotationTarget.FIELD, AnnotationTarget.TYPE)
+@Retention(AnnotationRetention.RUNTIME)
+@Constraint(validatedBy = [MetadataProbeValidator::class])
+annotation class MetadataProbe(
+    val message: String = "probe",
+    val groups: Array<KClass<*>> = [],
+    val payload: Array<KClass<out Payload>> = [],
+)
+
+/** 언제나 통과한다 — 재는 것은 **메타데이터**이고 검증 결과가 아니다. */
+class MetadataProbeValidator : ConstraintValidator<MetadataProbe, Any> {
+    override fun isValid(
+        value: Any?,
+        context: ConstraintValidatorContext?,
+    ): Boolean = true
+}
+
+/** **클래스 수준** 제약 표본. 리플렉션 스캔이 보지 못하는 자리다. */
+@MetadataProbe
+class ClassLevelProbe(val name: String)
+
+/** **컨테이너 원소** 제약 표본(type-use 자리). */
+class ContainerElementProbe {
+    val names: List<@MetadataProbe String> = emptyList()
+}
+
+/** 제약이 하나도 없는 표본. 과잉 탐지 0 을 재는 자리다. */
+class UnconstrainedProbe(val name: String)
