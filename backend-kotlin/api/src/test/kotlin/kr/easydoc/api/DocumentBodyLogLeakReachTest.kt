@@ -6,6 +6,7 @@ import ch.qos.logback.core.Appender
 import kr.easydoc.api.support.CanaryProbe
 import kr.easydoc.api.support.MultipartBody
 import kr.easydoc.api.support.POSITIVE_CONTROL_MARKER
+import kr.easydoc.api.support.RETRO_CANARY_VALUE
 import kr.easydoc.api.support.RETRO_CONTROL_MARKER
 import kr.easydoc.api.support.UploadFixtures
 import kr.easydoc.infrastructure.DatabaseHandle
@@ -153,11 +154,17 @@ class DocumentBodyLogLeakReachTest {
             // 보관 구간에만 있는 표식 — `rescanRetained()` 가 이것을 찾아야 그 경로가
             // 빈 큐를 훑지 않았음이 증명된다(양성 대조 ⑶).
             LoggerFactory.getLogger(javaClass).warn(RETRO_CONTROL_MARKER)
+            // 보관 구간에만 방출하고 **구간이 끝난 뒤 토큰과 같은 방식으로** 등록한다.
+            // 그래야 「늦게 등록된 카나리가 보관분에 대해 적중을 낸다」가 단언 가능해진다.
+            LoggerFactory.getLogger(javaClass).warn("late canary $RETRO_CANARY_VALUE emitted")
 
             // ⑴ 계정 생성 — 평문 비밀번호가 요청 바이트·Argon2·JDBC 를 지난다. 이 구간만
             //    보관해 두고, 토큰을 손에 쥔 직후 소급 대조한다.
             val token = newAccount()
             probe.addCanary("자격증명(액세스 토큰)", token)
+            // 토큰과 **같은 자리에서 같은 방식으로** 등록한다 — 이 줄이 토큰 등록과 함께
+            // 움직이지 않으면 아래 통제 단언이 그 사실을 잡는다.
+            probe.addControlCanary(RETRO_CONTROL_AXIS, RETRO_CANARY_VALUE)
             probe.rescanRetained()
             probe.stopRetaining()
 
@@ -209,14 +216,7 @@ class DocumentBodyLogLeakReachTest {
                 probe.retainedCharsSeen(),
                 probe.retainCharLimit(),
             ).isFalse()
-        // 양성 대조 ⑶-b — 소급 대조 경로가 실제로 무언가를 봤는가.
-        assertThat(probe.sawRetroControl())
-            .withFailMessage(
-                "소급 대조가 보관 구간의 표식을 찾지 못했다 — 보관·소급 경로가 죽었고 " +
-                    "**토큰 축이 조용히 안 재지고 있다**(보관 %d건 관측, %d자).",
-                probe.retainedEvents(),
-                probe.retainedCharsSeen(),
-            ).isTrue()
+        assertRetroMatchIsMeasured(probe)
 
         // 이 케이스의 실패 메시지는 CI 로그로 나간다. 그 메시지에 카나리 **원문 조각**이
         // 실리면 자격증명 유출을 막으려던 장치가 유출 경로가 된다 — 실제 카나리(150자 JWT)와
@@ -236,6 +236,39 @@ class DocumentBodyLogLeakReachTest {
                     "이름으로 더하고(강제), 이 케이스는 그대로 둔다(탐지). **기대값을 낮춰 덮지 마라** — " +
                     "허용 목록은 CLAUDE.md 규칙 4 ⑵ 가 금지한 면제 조항이다.",
                 probe.report(),
+            ).isEmpty()
+    }
+
+    /**
+     * 소급 대조 축의 통제. **세 단언이 겨누는 것이 각각 다르다** — 하나로 줄이면 그 차이가
+     * 사라지고, 그 차이를 못 본 것이 이 세션의 세 번째 같은 결함이었다.
+     */
+    private fun assertRetroMatchIsMeasured(probe: CanaryProbe) {
+        // ⑴ 소급 **루프**가 보관분을 훑었는가. 이것만으로는 부족하다 — `canaries` 집합을
+        //    우회해 직접 검사하므로, 루프가 돌면서 대조를 안 해도 참이다.
+        assertThat(probe.sawRetroControl())
+            .withFailMessage(
+                "소급 루프가 보관 구간의 표식을 보지 못했다 — 보관이 비었거나 루프가 죽었다" +
+                    "(보관 %d건 관측, %d자).",
+                probe.retainedEvents(),
+                probe.retainedCharsSeen(),
+            ).isTrue()
+        // ⑵ **늦게 등록된 카나리가 보관분에 대해 적중을 냈는가.** 이것이 지켜야 할 성질이고,
+        //    ⑴ 과 달리 `canaries`/`controls` 집합과 `match()` 를 실제로 지난다.
+        assertThat(probe.controlHitAxes())
+            .withFailMessage(
+                "늦게 등록된 통제 카나리가 보관분에 대해 적중을 내지 않았다 — 소급 대조가 " +
+                    "카나리 집합을 지나지 않는다는 뜻이고, **토큰 축도 같이 죽어 있다**. " +
+                    "`sawRetroControl()` 은 %s 였다 — 두 통제가 겨누는 것이 다른 이유가 이것이다.",
+                probe.sawRetroControl(),
+            ).contains(RETRO_CONTROL_AXIS)
+        // ⑶ 늦은 등록이 **빠짐없이** 소급 대조를 지났는가. 등록이 `rescanRetained()` 뒤로
+        //    밀리거나 보관이 이미 비워진 뒤면 여기 남는다.
+        assertThat(probe.pendingRetroMatches())
+            .withFailMessage(
+                "소급 대조를 지나지 않은 늦은 등록이 있다: %s. 그 축은 보관 구간을 재지 못했다 — " +
+                    "등록을 `rescanRetained()` **앞**으로 두거나, 등록 뒤에 한 번 더 대조하라.",
+                probe.pendingRetroMatches(),
             ).isEmpty()
     }
 
@@ -296,6 +329,9 @@ class DocumentBodyLogLeakReachTest {
         private const val BODY_CANARY = "CANARY-DOCUMENT-BODY-7Q2XZ"
         private const val TITLE_CANARY = "CANARY-DOCUMENT-TITLE-4M8VW"
         private const val PASSWORD_CANARY = "CANARY-CREDENTIAL-9L3RT-correct-horse"
+
+        /** 소급 대조 통제 축의 이름. 유출 축이 아니라 **통제 집합**에 등록된다. */
+        private const val RETRO_CONTROL_AXIS = "소급 대조 통제"
 
         /** 계약 상한을 확실히 넘기는 길이. 정확한 경계는 DC-9·DC-10 이 잰다. */
         private const val OVER_LIMIT_CHARS = 5_000

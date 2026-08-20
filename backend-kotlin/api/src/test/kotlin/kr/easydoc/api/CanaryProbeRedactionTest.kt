@@ -105,6 +105,73 @@ class CanaryProbeRedactionTest {
             ).isInstanceOf(IllegalStateException::class.java)
     }
 
+    @Test
+    @DisplayName("늦게 등록된 카나리가 보관분에 대해 적중을 낸다 — 소급 대조가 카나리 집합을 지난다")
+    fun `늦게 등록해도 보관분에서 적중한다`() {
+        val probe = probe()
+        // 등록 전에 방출된다 — 토큰이 발급 전인 상황과 같다.
+        log(probe, "Authorization: Bearer $TOKEN")
+
+        probe.addCanary(TOKEN_AXIS, TOKEN)
+        probe.rescanRetained()
+
+        assertThat(probe.hits())
+            .withFailMessage(
+                "늦게 등록한 축이 보관분에서 적중하지 않았다 — `sawRetroControl()` 류의 " +
+                    "「루프가 돌았다」 통제로는 이 상태를 못 본다.",
+            ).isNotEmpty()
+        assertThat(probe.pendingRetroMatches()).isEmpty()
+    }
+
+    @Test
+    @DisplayName("등록이 소급 대조 뒤로 밀리면 그 축이 미대조로 지목된다")
+    fun `소급 대조 뒤의 등록은 미대조로 남는다`() {
+        val probe = probe()
+        log(probe, "Authorization: Bearer $TOKEN")
+
+        // 순서가 뒤집힌다 — 이 축은 보관 구간을 한 번도 재지 못한다.
+        probe.rescanRetained()
+        probe.addCanary(TOKEN_AXIS, TOKEN)
+
+        assertThat(probe.pendingRetroMatches())
+            .withFailMessage(
+                "등록을 소급 대조 뒤로 옮겼는데 아무 축도 미대조로 남지 않았다 — " +
+                    "그 축은 조용히 안 재진다(이 세션의 세 번째 같은 결함).",
+            ).anyMatch { it.contains(TOKEN_AXIS) }
+    }
+
+    @Test
+    @DisplayName("소급 대조를 아예 건너뛰면 통제 축이 적중을 내지 못한다")
+    fun `소급 대조를 건너뛰면 통제가 빨개진다`() {
+        val probe = probe()
+        log(probe, "late canary $CONTROL_VALUE emitted")
+        probe.addControlCanary(CONTROL_AXIS, CONTROL_VALUE)
+        // rescanRetained() 를 부르지 않는다.
+
+        assertThat(probe.controlHitAxes())
+            .withFailMessage("소급 대조를 건너뛰었는데 통제 축이 적중했다 — 통제가 무엇을 재는지 흐려진다")
+            .doesNotContain(CONTROL_AXIS)
+        assertThat(probe.pendingRetroMatches()).isNotEmpty()
+    }
+
+    @Test
+    @DisplayName("통제 적중은 유출로 세지 않는다 — 걸러서가 아니라 다른 집합이기 때문")
+    fun `통제 적중은 유출 목록에 들어가지 않는다`() {
+        val probe = probe()
+        log(probe, "late canary $CONTROL_VALUE emitted")
+        probe.addControlCanary(CONTROL_AXIS, CONTROL_VALUE)
+        probe.rescanRetained()
+
+        assertThat(probe.controlHitAxes())
+            .withFailMessage("통제 축이 적중하지 않았다 — 이 케이스의 전제가 성립하지 않는다")
+            .contains(CONTROL_AXIS)
+        assertThat(probe.hits())
+            .withFailMessage("통제 적중이 유출 지목에 섞였다 — 두 집합이 갈리지 않았다:%n%s", probe.report())
+            .isEmpty()
+        // 통제값도 치환된다 — 축별 예외를 두지 않는다.
+        assertNoFragment(probe)
+    }
+
     // ================================================================ 도구
 
     /**
@@ -143,6 +210,8 @@ class CanaryProbeRedactionTest {
         const val BODY_AXIS = "본문"
         const val TOKEN_AXIS = "자격증명(액세스 토큰)"
         const val BODY = "CANARY-UNIT-BODY-5H1KP"
+        const val CONTROL_AXIS = "소급 대조 통제"
+        const val CONTROL_VALUE = "CANARY-UNIT-CONTROL-8T4JD"
 
         /** 실제 JWT 와 같은 모양·길이여야 「창에 통째로 안 들어온다」는 조건이 재현된다. */
         const val TOKEN =
