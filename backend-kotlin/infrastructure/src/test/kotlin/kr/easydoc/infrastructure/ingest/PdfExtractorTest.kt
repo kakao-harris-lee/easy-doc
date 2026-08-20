@@ -1,6 +1,7 @@
 package kr.easydoc.infrastructure.ingest
 
 import kr.easydoc.core.exceptions.DocumentExtractionException
+import kr.easydoc.core.text.hasUnpairedSurrogate
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.DisplayName
@@ -28,6 +29,23 @@ class PdfExtractorTest {
     fun `다단 레이아웃이 참고값과 같다`() {
         assertThat(extractor.extract(IngestFixtures.bytes("layout.pdf")))
             .isEqualTo(IngestFixtures.expectedText(IngestFixtures.spikeOracle, "layout.pdf"))
+    }
+
+    @Test
+    @DisplayName("깨진 ToUnicode CMap 의 짝 없는 서로게이트를 PDFBox 가 U+FFFD 로 **치환한다** (2026-08-20 실측)")
+    fun `PDF 는 짝 없는 서로게이트를 내지 않는다`() {
+        // 계약 `x-stored-text-domain.applies_to` 는 파일 모드를 「PDF 가 가장 그럴듯한 유입
+        // 경로」로 적고 그 팔을 `measured` 로 두었다. **오늘 조합에서는 참이 아니다** —
+        // 추출 결과의 코드 포인트가 `U+FFFD` 하나다. 그 사실을 회귀로 붙들어 둔다:
+        // 판올림이 치환을 그만두면 여기가 빨개지고, 그때 파일 모드 팔이 실제로 열린다.
+        val text = extractor.extract(SurrogatePdf.bytes())
+
+        assertThat(text).isEqualTo(SurrogatePdf.SUBSTITUTED_TEXT)
+        assertThat(hasUnpairedSurrogate(text))
+            .withFailMessage(
+                "PDFBox 가 더는 치환하지 않는다 — 저장 정의역의 **파일 모드 팔이 열렸다**. " +
+                    "계약 x-stored-text-domain 의 그 팔과 DC-24 를 다시 판정해야 한다.",
+            ).isFalse()
     }
 
     @Test

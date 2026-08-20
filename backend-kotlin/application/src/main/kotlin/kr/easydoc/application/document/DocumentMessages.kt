@@ -45,6 +45,30 @@ const val NO_TEXT_IN_DOCUMENT_MESSAGE: String = "문서에서 텍스트를 찾�
 val UPLOAD_TOO_LARGE_MESSAGE: String = "파일이 너무 큽니다 (최대 ${MAX_UPLOAD_BYTES / (1024 * 1024)}MB)"
 
 /**
+ * multipart 요청에 `file` 파트가 없거나 그 파트가 **파일이 아닐** 때.
+ *
+ * 계약 `DocumentFileRequest.properties.file` — *"파트가 없거나 파일이 아니면 422"* 이고
+ * **문자열** `detail` 이다. Spring 의 `MissingServletRequestPartException` 을 타면 계약
+ * `ValidationFailed` 의 **배열** 모양이 나가므로 컨트롤러가 이 문구로 도메인 예외를 던진다
+ * (사유 전문은 `DocumentController` KDoc).
+ *
+ * 문구를 다른 문서 문구와 같은 파일에 두는 이유: **던지는 자리가 어느 층인가와 무관하게
+ * 문구는 응답 바이트**이고, 한 곳에 모아 두어야 계약과 대조할 자리가 하나로 남는다.
+ */
+const val MISSING_FILE_PART_MESSAGE: String = "업로드할 파일(file)이 필요합니다"
+
+/**
+ * multipart 폼의 `workspace_id` 가 UUID 형식이 아닐 때.
+ *
+ * 계약 `DocumentFileRequest.properties.workspace_id` — *"UUID 형식이 아니면 422 … **값
+ * 자체는 메시지에 담지 않는다**"*. 그 금지가 이 상수를 값 없는 고정 문구로 두는 이유다.
+ * JSON 모드에서는 Jackson 이 같은 판정을 하고 계약 `ValidationFailed` 의 배열 모양으로
+ * 나간다 — 두 모드의 응답 모양이 갈리는 것은 **입력 형식이 다르기 때문**이고,
+ * 계약이 두 자리에 각각 적어 두었다.
+ */
+const val INVALID_WORKSPACE_ID_MESSAGE: String = "작업 공간 식별자 형식이 올바르지 않습니다"
+
+/**
  * 계약 `POST /documents` 404 예시 `workspace_not_found`.
  *
  * `WorkspaceMessages.WORKSPACE_NOT_FOUND_MESSAGE` 와 **같은 문자열**이지만 상수를 공유하지

@@ -294,8 +294,14 @@ class SensitiveToStringReachTest {
          * `ConversionEnvelope`·`DocumentStorage`)은 **일반 class** 라 이 수에 들어오지 않고,
          * 그중 사용자 콘텐츠를 든 것은 손으로 쓴 `toString()` 을 갖는다 — 그쪽은 위
          * 「R-10 일반 class 축」이 잰다.
+         *
+         * 48 → 50 (2026-08-20, `POST /documents` 커밋): `api.document.DocumentTextRequest` 와
+         * `api.document.DocumentCreatedResponse` 둘이다. 앞엣것이 이 게이트가 **처음으로
+         * 실제 문서 본문을 든 요청 DTO** 를 잡는 자리다(`text`·`title` 두 토큰이 함께 걸린다) —
+         * `SENSITIVE_NAME_TOKENS` 의 `text`·`title` 이 "Phase 4 의 문서 DTO 를 겨냥해 미리
+         * 둔다" 고 적힌 채 대상 0건이던 상태가 여기서 닫힌다.
          */
-        const val EXPECTED_SOURCE_DECLARATIONS = 48
+        const val EXPECTED_SOURCE_DECLARATIONS = 50
 
         /**
          * 민감 판정이 반드시 닿아야 하는 타입 — **바닥**이다.

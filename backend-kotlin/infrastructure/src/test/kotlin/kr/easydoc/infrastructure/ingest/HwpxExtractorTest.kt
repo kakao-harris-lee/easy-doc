@@ -51,6 +51,36 @@ class HwpxExtractorTest {
     }
 
     @Test
+    @DisplayName("내부 서브셋이 없는 DOCTYPE 은 **거절되지 않는다** — SUPPORT_DTD=false 의 실제 범위 (2026-08-20 실측)")
+    fun `내부 서브셋 없는 DOCTYPE 은 그대로 파싱된다`() {
+        // `SUPPORT_DTD = false` 가 「DOCTYPE 을 만나는 즉시 끊는다」로 읽히기 쉬우나,
+        // JDK StAX 는 **펼칠 것이 없는 DOCTYPE**(외부 DTD 참조만)을 조용히 무시하고
+        // 문서를 그대로 파싱한다. 보안 성질은 그대로다 — `ACCESS_EXTERNAL_DTD=""` 와
+        // `IS_SUPPORTING_EXTERNAL_ENTITIES=false` 때문에 외부 DTD 를 **가져오지 않으므로**
+        // 엔터티도 없고 확장도 없다. 위 두 폭탄 케이스가 거절되는 것은 내부 서브셋에
+        // 엔터티가 **선언·참조**되기 때문이다.
+        //
+        // 이 사실을 회귀로 붙들어 두는 이유: 계약 케이스가 「XML 외부 엔터티 선언 → 422」를
+        // 잴 때 **이 모양을 쓰면 아무것도 재지 못한다.** 원본(Python `expat`)은 DOCTYPE
+        // 자체를 거절했으므로 여기서 동작이 갈린다 — 요구(I-10 검증 2)가 요구하는 것은
+        // 「파서 수준에서 엔터티 확장이 시작되지 않는다」이고 그것은 만족된다.
+        val section =
+            """<?xml version="1.0" encoding="UTF-8"?>
+            |<!DOCTYPE sec SYSTEM "http://127.0.0.1/nope.dtd">
+            |<sec><p><run><t>안내</t></run></p></sec>
+            """.trimMargin()
+
+        // 구역 하나만 든 패키지를 만든다 — sample.hwpx 를 고쳐 쓰면 그 파일의 다른 구역이
+        // 결과에 섞여 「이 입력이 어떻게 읽혔는가」가 흐려진다.
+        val onlySection =
+            IngestFixtures.zipOf(
+                mapOf("Contents/section0.xml" to section.toByteArray(StandardCharsets.UTF_8)),
+            )
+
+        assertThat(extractor.extract(onlySection)).isEqualTo("안내")
+    }
+
+    @Test
     @DisplayName("외부 엔터티(XXE)로 파일을 읽어 오지 못한다 — 유출 0")
     fun `외부 엔터티를 확장하지 않는다`() {
         val secret = Files.createTempFile("easydoc-xxe", ".txt")

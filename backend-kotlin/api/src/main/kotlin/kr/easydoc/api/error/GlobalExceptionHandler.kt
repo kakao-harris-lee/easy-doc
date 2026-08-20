@@ -1,5 +1,6 @@
 package kr.easydoc.api.error
 
+import kr.easydoc.application.document.UPLOAD_TOO_LARGE_MESSAGE
 import kr.easydoc.core.exceptions.ConfigurationException
 import kr.easydoc.core.exceptions.ConflictException
 import kr.easydoc.core.exceptions.DocumentExtractionException
@@ -30,6 +31,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice
 import org.springframework.web.context.request.WebRequest
 import org.springframework.web.method.annotation.HandlerMethodValidationException
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException
+import org.springframework.web.multipart.MaxUploadSizeExceededException
 import org.springframework.web.multipart.support.MissingServletRequestPartException
 import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler
 import tools.jackson.databind.exc.InvalidNullException
@@ -87,51 +89,62 @@ class GlobalExceptionHandler : ResponseEntityExceptionHandler() {
     private val log = LoggerFactory.getLogger(GlobalExceptionHandler::class.java)
 
     /**
-     * 매핑된 도메인 예외. 상태 코드 표는 최하단 `mappingFor` 에 있다.
+     * **프레임워크 20종이 가져가지 않은 예외 전부** — 도메인 예외와 그 밖의 것.
      *
-     * 매핑이 없으면 고정 문자열 500 으로 떨어진다 — Python `_handle_unmapped_domain_error`
-     * 와 같은 동작이다.
-     */
-    @ExceptionHandler(EasyDocException::class)
-    fun handleDomainException(exception: EasyDocException): ResponseEntity<Any> {
-        val mapping = mappingFor(exception)
-        if (mapping == null) {
-            // 새 도메인 예외를 만들고 매핑 등록을 잊어도 응답 모양이 유지된다.
-            // 조용히 500만 내보내면 매핑 누락을 아무도 모른 채 지나가므로 타입을 남긴다.
-            // 메시지 인자로 예외 메시지를 넣지 않는다 — 무엇이 담길지 이 지점에서는 알 수 없다.
-            log.error("매핑되지 않은 도메인 예외: {}", exception::class.java.simpleName)
-            return jsonError(HttpStatus.INTERNAL_SERVER_ERROR, ErrorResponse(UNMAPPED_DOMAIN_MESSAGE))
-        }
-        val (status, headers) = mapping
-        // detail 에는 도메인 예외가 스스로 만든 메시지만 담는다. 예외 메시지에 입력값을
-        // 넣지 않는다는 규약(application 계층)과 짝을 이뤄 개인정보 유출을 막는다.
-        return jsonError(status, ErrorResponse(exception.message ?: UNMAPPED_DOMAIN_MESSAGE), headers)
-    }
-
-    /**
-     * 도메인 밖 예외의 마지막 백스톱.
+     * ## 왜 갈래 둘이 한 메서드인가
      *
-     * [ResponseEntityExceptionHandler] 가 등록한 프레임워크 예외 20종은 여기까지 오지
-     * 않는다 — 그쪽이 더 구체적인 매핑이라 먼저 이긴다. 메시지는 고정 문자열이다.
+     * 종전에는 `@ExceptionHandler(EasyDocException)` 과 `@ExceptionHandler(Exception)` 두
+     * 메서드였다. 하나로 합친 것은 **동작이 아니라 구조**의 변경이다 —
+     * `ExceptionHandlerMethodResolver` 는 예외 계층에서 가장 가까운 핸들러를 고르므로,
+     * 상위 클래스가 명시 등록한 프레임워크 예외 20종은 어느 쪽이든 그쪽이 이긴다. 남는
+     * 것은 「도메인 예외인가 아닌가」 한 갈래뿐이고, 그 판정을 여기서 한다.
      *
-     * **여기 오는 것이 「예상하지 못한 예외」뿐이라고 적을 수 없다** (게이트 21 SEC-4 ·
-     * contract-keeper §1-3). `PasswordHashingOverloadedException` 은 **우리가 설계해서
-     * 던지는 배압**인데 도메인 예외가 아니라서 이 백스톱으로 떨어진다. 즉 이 자리의 ERROR
-     * 로그는 「장애」와 「용량 압력」 둘을 같은 줄로 찍는다 — 운영에서 경보가 갈리지 않는
-     * 자리다. 응답 코드를 500 에서 옮길지(503 + 전용 문구)는 **계약 개정 사안**이라
-     * 리더 재심에 올라가 있고, 그 판정 전까지 여기 형태를 바꾸지 않는다.
-     * 판정이 어느 쪽으로 나든 응답 자체는
+     * 합친 계기는 detekt `TooManyFunctions`(임계값 11) 였다. **임계값을 올리지 않았다** —
+     * 신호가 가리킨 것이 실제로 「이 클래스가 두 일을 한다」였고, 그중 하나(프레임워크 예외
+     * 정규화)는 상위 클래스 오버라이드로 고정돼 있어 줄일 수 없다. 줄일 수 있는 쪽은 우리가
+     * 더한 두 `@ExceptionHandler` 였고, 둘은 애초에 같은 질문의 두 답이다.
+     *
+     * ## 매핑이 없으면 고정 문자열 500
+     *
+     * 새 도메인 예외를 만들고 매핑 등록을 잊어도 응답 모양이 유지된다. 조용히 500 만
+     * 내보내면 매핑 누락을 아무도 모른 채 지나가므로 **예외 타입**을 로그에 남긴다 —
+     * 메시지는 남기지 않는다(무엇이 담길지 이 지점에서는 알 수 없다).
+     *
+     * ## 도메인 밖 예외가 「예상하지 못한 예외」뿐이라고 적을 수 없다
+     *
+     * (게이트 21 SEC-4 · contract-keeper §1-3) `PasswordHashingOverloadedException` 은
+     * **우리가 설계해서 던지는 배압**인데 도메인 예외가 아니라서 이 갈래로 떨어진다. 즉
+     * 이 자리의 ERROR 로그는 「장애」와 「용량 압력」 둘을 같은 줄로 찍는다 — 운영에서 경보가
+     * 갈리지 않는 자리다. 응답 코드를 503 + 전용 문구로 옮길지는 **계약 개정 사안**이라
+     * 리더 재심에 올라가 있고, 그 판정 전까지 형태를 바꾸지 않는다. 응답 자체는
      * [kr.easydoc.api.PasswordHashingBackpressureReachTest] 가 붙들고 있다.
      *
      * **비율을 적어 둔다** — 배압 요청 **한 건마다 ERROR 한 줄**이다. privacy-gate 4b 의
      * 240 동시 실측에서 로그인 성공률이 6.7% 였으므로, 그 부하에서 나머지 93.3% 가 전부
-     * 이 줄을 찍는다. 「드물게 섞인다」가 아니라 **부하 시 로그의 대부분**이라는 뜻이고,
-     * 그것이 이 자리를 계약 개정 대상으로 올린 이유다(escalate ④).
+     * 이 줄을 찍는다. 「드물게 섞인다」가 아니라 **부하 시 로그의 대부분**이라는 뜻이다.
      */
     @ExceptionHandler(Exception::class)
-    fun handleUnexpected(exception: Exception): ResponseEntity<Any> {
-        log.error("처리하지 못한 예외: {}", exception::class.java.simpleName)
-        return jsonError(HttpStatus.INTERNAL_SERVER_ERROR, ErrorResponse(UNEXPECTED_MESSAGE))
+    fun handleUnmapped(exception: Exception): ResponseEntity<Any> {
+        val mapping = (exception as? EasyDocException)?.let(::mappingFor)
+        if (mapping != null) {
+            val (status, headers) = mapping
+            // detail 에는 도메인 예외가 스스로 만든 메시지만 담는다. 예외 메시지에 입력값을
+            // 넣지 않는다는 규약(application 계층)과 짝을 이뤄 개인정보 유출을 막는다.
+            return jsonError(status, ErrorResponse(exception.message ?: UNMAPPED_DOMAIN_MESSAGE), headers)
+        }
+        // **두 갈래를 서로 다른 줄로 찍는다.** 운영에서 「매핑을 빠뜨렸다」와 「예상 못 한
+        // 예외가 났다」는 다른 사건이고, 한 줄로 합치면 그 구분이 로그에서 사라진다.
+        // 메시지 인자로 예외 메시지를 넣지 않는다 — 무엇이 담길지 이 지점에서는 알 수 없다.
+        val type = exception::class.java.simpleName
+        val message =
+            if (exception is EasyDocException) {
+                log.error("매핑되지 않은 도메인 예외: {}", type)
+                UNMAPPED_DOMAIN_MESSAGE
+            } else {
+                log.error("처리하지 못한 예외: {}", type)
+                UNEXPECTED_MESSAGE
+            }
+        return jsonError(HttpStatus.INTERNAL_SERVER_ERROR, ErrorResponse(message))
     }
 
     // ------------------------------------------------------------------ 검증 실패 → 422 배열
@@ -201,26 +214,14 @@ class GlobalExceptionHandler : ResponseEntityExceptionHandler() {
         headers: HttpHeaders,
         status: HttpStatusCode,
         request: WebRequest,
-    ): ResponseEntity<Any>? =
-        validationError(
-            ex,
-            listOf(ValidationErrorItem(listOf(QUERY, ex.parameterName), FIELD_REQUIRED_MESSAGE, "missing")),
-            headers,
-            request,
-        )
+    ): ResponseEntity<Any>? = validationError(ex, listOf(missingItem(QUERY, ex.parameterName)), headers, request)
 
     override fun handleMissingServletRequestPart(
         ex: MissingServletRequestPartException,
         headers: HttpHeaders,
         status: HttpStatusCode,
         request: WebRequest,
-    ): ResponseEntity<Any>? =
-        validationError(
-            ex,
-            listOf(ValidationErrorItem(listOf(BODY, ex.requestPartName), FIELD_REQUIRED_MESSAGE, "missing")),
-            headers,
-            request,
-        )
+    ): ResponseEntity<Any>? = validationError(ex, listOf(missingItem(BODY, ex.requestPartName)), headers, request)
 
     /**
      * 경로·쿼리 파라미터의 타입 변환 실패 (`?limit=열개`, 잘못된 UUID 등).
@@ -247,6 +248,46 @@ class GlobalExceptionHandler : ResponseEntityExceptionHandler() {
     }
 
     /**
+     * 컨테이너 multipart 상한 초과 → **413 + 계약 문구** (계획 §5 D-2).
+     *
+     * ## 오버라이드가 필요한 이유
+     *
+     * 상위 클래스가 이 예외를 이미 처리 목록에 갖고 있어 **상태는 413 이 나간다.** 그러나
+     * 본문은 [createResponseEntity] 가 만드는 **영어 reason phrase**(`Content Too Large`)라
+     * 계약 `PayloadTooLarge` 의 문구가 아니다. 즉 손대지 않으면 「상태는 맞고 본문은 틀린」
+     * 응답이 나가고, 상태만 재는 테스트는 그것을 통과시킨다.
+     *
+     * 새 `@ExceptionHandler` 를 더하지 않고 **메서드를 오버라이드한다** — 같은 advice 안에
+     * 같은 예외 타입을 겨눈 핸들러가 둘이면 Spring 이 기동 시점에
+     * `Ambiguous @ExceptionHandler` 로 끊는다.
+     *
+     * ## 이것은 backstop 이고 정확 경계는 서비스가 잰다
+     *
+     * 계약 상한의 판정은 `DocumentService` 가 `MAX_UPLOAD_BYTES` 로 한다. 컨테이너 상한은
+     * 그보다 넉넉하게 두었으므로(`application.yml`) 이 자리는 **컨테이너 상한마저 넘은
+     * 요청**에서만 돈다. 컨테이너 판정에 계약을 걸지 않는 이유는 Spring 이 Tomcat 의 초과를
+     * 알아내는 방식이 **예외 메시지 문자열 매칭**이라, 메시지가 바뀌거나 번역되면 413 이
+     * 조용히 500 이 되기 때문이다(계획 §1.5 설계 지점 2 ⑵).
+     *
+     * 두 자리가 같은 문구를 쓰는 것은 사용자에게 같은 사건이기 때문이다 — 문구의 정본은
+     * [UPLOAD_TOO_LARGE_MESSAGE] 하나이고 계약 `PayloadTooLarge.examples.too_large` 와
+     * 같은지는 계약 케이스가 잰다.
+     */
+    override fun handleMaxUploadSizeExceededException(
+        ex: MaxUploadSizeExceededException,
+        headers: HttpHeaders,
+        status: HttpStatusCode,
+        request: WebRequest,
+    ): ResponseEntity<Any>? =
+        handleExceptionInternal(
+            ex,
+            ErrorResponse(UPLOAD_TOO_LARGE_MESSAGE),
+            headers,
+            HttpStatus.PAYLOAD_TOO_LARGE,
+            request,
+        )
+
+    /**
      * 상위 클래스의 모든 프레임워크 핸들러가 마지막에 지나가는 자리.
      *
      * 상위 구현이 넘겨주는 `body` 는 `ProblemDetail` 이다. 계약 본문([ContractErrorBody])이
@@ -265,6 +306,13 @@ class GlobalExceptionHandler : ResponseEntityExceptionHandler() {
             .contentType(MediaType.APPLICATION_JSON)
             .body(body as? ContractErrorBody ?: ErrorResponse(reasonPhraseOf(statusCode)))
 
+    /**
+     * 검증 실패 응답 조립.
+     *
+     * 상위 클래스의 `protected handleExceptionInternal` 을 불러야 해서 **멤버로 남는다** —
+     * 최상위 함수로 내리면 그 메서드에 닿지 못한다. 나머지 조립 헬퍼는 파일 하단의 최상위
+     * 함수들이다(이 클래스의 공개 표면을 프레임워크 핸들러로만 유지한다).
+     */
     private fun validationError(
         exception: Exception,
         items: List<ValidationErrorItem>,
@@ -280,6 +328,12 @@ class GlobalExceptionHandler : ResponseEntityExceptionHandler() {
             request,
         )
 }
+
+/** 필수 값이 없다 — 위치(`body`·`query`)만 갈린다. 두 핸들러가 같은 모양을 만든다. */
+private fun missingItem(
+    location: String,
+    name: String,
+): ValidationErrorItem = ValidationErrorItem(listOf(location, name), FIELD_REQUIRED_MESSAGE, "missing")
 
 /** Python `_handle_unmapped_domain_error` 의 고정 문자열. 문구를 바꾸면 화면 문구가 바뀐다. */
 internal const val UNMAPPED_DOMAIN_MESSAGE: String = "요청을 처리하지 못했습니다"

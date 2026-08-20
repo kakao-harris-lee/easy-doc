@@ -151,10 +151,17 @@ TEST_CLASSES: tuple[str, ...] = (
     "kr.easydoc.api.ContractHeaderDeclarationTest",
     "kr.easydoc.api.CorsContractTest",
     "kr.easydoc.api.DeletedAccountTokenReachTest",
+    "kr.easydoc.api.DocumentBodyLogLeakReachTest",
+    "kr.easydoc.api.DocumentContractNodeTest",
+    "kr.easydoc.api.DocumentContractTest",
+    "kr.easydoc.api.DocumentDtoLeakTest",
+    "kr.easydoc.api.DocumentEndpointReachTest",
+    "kr.easydoc.api.DocumentEnqueueFailureReachTest",
     "kr.easydoc.api.ErrorContractTest",
     "kr.easydoc.api.FrameworkErrorContractTest",
     "kr.easydoc.api.HealthContractTest",
     "kr.easydoc.api.MigrateProfileWithoutEncryptionKeyTest",
+    "kr.easydoc.api.ParserNodeRegistryTest",
     "kr.easydoc.api.PasswordHashLogLeakReachTest",
     "kr.easydoc.api.PasswordHashingBackpressureReachTest",
     "kr.easydoc.api.PrivateResponseHeadersContractTest",
@@ -233,7 +240,7 @@ TEST_CLASSES: tuple[str, ...] = (
 
 #: 선언 **개수**를 목록과 따로 적는다. 파일과 선언을 함께 지우는 편집이 두 자리에
 #: 흔적을 남기게 하는 장치다. 목록을 고쳤으면 여기도 고쳐야 한다.
-TEST_CLASS_COUNT = 91
+TEST_CLASS_COUNT = 98
 
 #: 선언 개수의 **하한**. `TEST_CLASS_COUNT` 와 역할이 다르다 — 저쪽은 "목록과 개수가
 #: 서로 맞는가"(두 수기 선언 사이의 일관성)이고, 이쪽은 "그 수가 **얼마 아래로는 내려갈 수
@@ -243,7 +250,11 @@ TEST_CLASS_COUNT = 91
 #: 값의 근거는 실측이다 — 게이트 27 의 대상 리비전 `6515548` 에서 이 저장소가 가졌던 수가
 #: 85 다. 그 아래로 내려가는 것은 「정리」가 아니라 **축소**이므로, 낮추려면 이 상수를 고치는
 #: 별도의 diff 와 사유가 필요하다.
-MIN_TEST_CLASSES = 85
+#:
+#: 85 → 91 (2026-08-20, `POST /documents` 커밋): 그 커밋 **직전**의 실측이 91 이다.
+#: 하한은 라쳇이라 올리기만 한다 — 옛 값을 그대로 두면 그 사이 13개를 조용히 지워도
+#: 이 축이 울리지 않는다. 올리는 것은 「이만큼은 이미 있었다」는 사실의 기록이다.
+MIN_TEST_CLASSES = 91
 
 #: **바닥 목록** — 사라지면 다른 게이트의 결론이 함께 무너지는 탐지기들.
 #:

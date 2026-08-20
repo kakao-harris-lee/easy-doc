@@ -8,6 +8,11 @@ import kr.easydoc.application.auth.TransactionRunner
 import kr.easydoc.application.auth.UserRepository
 import kr.easydoc.application.auth.WorkspaceDeletionState
 import kr.easydoc.application.auth.WorkspaceRepository
+import kr.easydoc.application.crypto.ContentCipher
+import kr.easydoc.application.document.DocumentService
+import kr.easydoc.application.document.DocumentStorage
+import kr.easydoc.application.document.DocumentTextExtractor
+import kr.easydoc.application.document.WorkspaceLookup
 import kr.easydoc.application.workspace.DUPLICATE_WORKSPACE_NAME_MESSAGE
 import kr.easydoc.application.workspace.WorkspaceService
 import kr.easydoc.core.exceptions.ConflictException
@@ -94,6 +99,60 @@ class AuthSliceBeans {
         workspaces: InMemoryWorkspaceRepository,
         transaction: TransactionRunner,
     ): WorkspaceService = WorkspaceService(workspaces, transaction)
+
+    // ── 문서 경로 ────────────────────────────────────────────────────────────
+    //
+    // `DocumentController` 가 생긴 순간부터 이 빈들이 없으면 `/documents` 를 겨누지 않는
+    // 슬라이스 테스트도 컨텍스트 조립에서 멈춘다 — `workspaceService` 와 같은 이유다.
+    // 대역의 범위와 그 경계는 `DocumentSliceFakes.kt` KDoc 에 있다.
+
+    @Bean
+    fun inMemoryDocuments(): InMemoryDocumentRepository = InMemoryDocumentRepository()
+
+    @Bean
+    fun inMemoryConversions(): InMemoryConversionRepository = InMemoryConversionRepository()
+
+    @Bean
+    fun recordingQueue(): RecordingConversionQueue = RecordingConversionQueue()
+
+    @Bean
+    fun inMemoryWorkspaceLookup(workspaces: InMemoryWorkspaceRepository): WorkspaceLookup =
+        InMemoryWorkspaceLookup(workspaces)
+
+    @Bean
+    fun stubContentCipher(): ContentCipher = StubContentCipher()
+
+    @Bean
+    fun stubTextExtractor(): DocumentTextExtractor = StubDocumentTextExtractor()
+
+    /**
+     * 업로드가 한 트랜잭션에서 쓰는 세 저장소를 **제품 조립과 같은 모양**으로 묶는다
+     * (`DocumentConfiguration.documentStorage`). 셋을 유스케이스에 따로 넘기면 그중
+     * 하나만 다른 경계에 두는 배선이 타입으로 막히지 않는다.
+     */
+    @Bean
+    fun documentStorage(
+        documents: InMemoryDocumentRepository,
+        conversions: InMemoryConversionRepository,
+        queue: RecordingConversionQueue,
+    ): DocumentStorage = DocumentStorage(documents = documents, conversions = conversions, queue = queue)
+
+    /** 유스케이스는 **실물**이다 — 계약이 정한 검사 순서를 슬라이스가 실제로 밟아야 한다. */
+    @Bean
+    fun documentService(
+        storage: DocumentStorage,
+        workspaceLookup: WorkspaceLookup,
+        cipher: ContentCipher,
+        extractor: DocumentTextExtractor,
+        transaction: TransactionRunner,
+    ): DocumentService =
+        DocumentService(
+            storage = storage,
+            workspaces = workspaceLookup,
+            cipher = cipher,
+            extractor = extractor,
+            transaction = transaction,
+        )
 }
 
 /** 유일성을 **키 일치**로 판정한다 — `ix_users_email` 과 같은 축이다. */

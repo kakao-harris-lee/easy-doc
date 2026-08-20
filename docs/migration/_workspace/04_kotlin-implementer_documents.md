@@ -1,6 +1,6 @@
 # Phase 4 `documents` 작업 단위 — 구현 산출물
 
-**작성:** kotlin-implementer / **일자:** 2026-08-20 / **상태:** **진행 중 — 계획 §7.2 의 C2 까지.**
+**작성:** kotlin-implementer / **일자:** 2026-08-20 / **상태:** **진행 중 — 계획 §7.2 의 C3 까지.**
 **계획(정본):** `04_kotlin-implementer_documents-plan.md` (커밋 `5261cfe`, §9.2 는 이 배치에서 추가).
 
 > 이 문서는 단위가 끝날 때까지 **이어 쓴다.** 계획 §7.2 의 C8 이 가리키는 파일이 이것이다 —
@@ -12,8 +12,8 @@
 
 | | |
 |---|---|
-| **끝난 것** | **C1 — 문서 추출기(docx·pdf·hwpx)와 파서 방어** (§1~§6) · **C2 — 문서·변환 저장 경로**(§A~§F, 아래) |
-| **하지 않은 것 (이 단위 잔여)** | C3~C8. 그리고 **표 18 TRACE 카나리 회귀**(계획 §9.2 D-f — C3 이전, **리더 확인 필요**) |
+| **끝난 것** | **C1 — 문서 추출기(docx·pdf·hwpx)와 파서 방어** (§1~§6) · **C2 — 문서·변환 저장 경로**(§A~§F) · **C3 — `POST /documents`**(아래 「C3」 절) |
+| **하지 않은 것 (이 단위 잔여)** | ~~C3~~C4~C8. **표 18 TRACE 카나리 회귀**는 리더 판정 1 로 **C3 에 넣었고 실행했다**(아래 「C3」 §III-3) |
 | **검사** | C1·C2 모두 Kotlin build/ktlint/detekt/moduleBoundaryCheck **통과** · Python ruff/mypy/pytest **통과** · 개인정보 스캐너 **통과(BLOCK 0)** · parity harness **통과** |
 | **워킹 트리** | 커밋 뒤 clean |
 
@@ -358,3 +358,192 @@ C2 가 더한 것 — `TitleRulesTest`(15) · `DocumentServiceTest`(18) · `Enve
 - **표 18 TRACE 카나리**(계획 §9.2 D-f, 리더 확인 뒤)
 - `AuthenticatedEndpoints` 에 새 경로 등재 · **P-23~P-37 파서 노드** · **DC-1~DC-23**
 - 계약 레인 **L-1 잔여 두 갈래**(502 매핑·DC-19)와 **L-2 tie-break** 를 같은 변경 단위로
+
+---
+
+# C3 — `POST /documents`: 두 입력 갈래와 접수 (2026-08-20)
+
+**기준 HEAD:** `8e94847` (앞 배치의 K-14 커밋). **이 배치의 커밋은 하나다.**
+**지시 정본:** 계획 §7.2 C3 행 · `04_contract-keeper_l1-residual-verdict.md` §4 의
+**K-5·K-6·K-8·K-9·K-10·K-11·K-12·K-13·K-15** 아홉. (K-1~K-4·K-7 은 `cd127ea`, K-14 는 `8e94847` 에서 끝났다.)
+
+## I. 한눈에
+
+| | |
+|---|---|
+| **만든 것** | `api/document/**`(컨트롤러·DTO) · multipart 설정(L0) · D-2 상한 초과 매핑 · D-3 초과분 삼키기 · `AuthenticatedEndpoints` 등재 · **DC-1~DC-25**(DC-2·DC-3 포함) · **P-24·P-27·P-33·P-34·P-36·P-38·P-39** · **K-15 `ParserNodeRegistryTest` 신설** · **X2** · **표 18 TRACE 카나리** |
+| **검사** | Kotlin `ktlintCheck detekt build moduleBoundaryCheck --rerun-tasks` **통과(경고 0)** · `parityHarness` 통과 · 개인정보 스캐너 **BLOCK 0** · Python `ruff`/`mypy . .claude`/`pytest` **통과** |
+| **음성 대조** | **11건 실행, 전건 실측**(§VI). 복원은 전부 **바이트 백업 + `Path.write_bytes` + sha256 대조** — `cp` 도 `git checkout --` 도 쓰지 않았다 |
+| **미실행/미측정** | §VII |
+
+## II. 지시별 처분 (K-5·K-6·K-8~K-13·K-15)
+
+| # | 무엇을 했나 | 자리 |
+|---|---|---|
+| **K-5** | `ConversionQueue` KDoc 의 *"계약 조항의 처분은 계약 레인의 판정 사항이다"* 를 **판정 결과를 가리키게** 고쳤다 — 502 폐기(`x-retired-responses`)와 그 대체(500 + 전량 롤백), 그리고 그것을 재는 장치 이름까지 적는다 | `application/document/DocumentPorts.kt` |
+| **K-6** | `PROTECTED_PATH_PATTERNS` 에 **`/documents` 만** 더했다. 판단 근거는 §III-1 | `api/auth/AuthenticatedEndpoints.kt` |
+| **K-8** | **P-39 전역 단언** — `x-retired-responses[].status` 전건이 `paths` 의 어느 `responses` 키에도 없다 + **목록이 비어 있지 않다** + **분모(`paths` 응답 선언)가 비어 있지 않다** + 항목이 실제 상태 코드 모양인지 | `DocumentContractNodeTest` |
+| **K-9** | **P-38 배선** — `x-stored-text-domain` 의 `detail`·`detail_shape`·`status`·`applies_to`(측정 상태 표식 포함). `detail` 이 `POST /documents` 422 예시 `undecodable_text` 와 같은지, 그리고 구현 상수 `PlainBody.UNPAIRED_SURROGATE_MESSAGE` 와 같은지 **세 자리 대조** | 같음 + `ContractSpec.storedTextDomain()` |
+| **K-10** | **DC-24** — JSON `\uD800` 이스케이프 본문 → 422 · `detail` **문자열**(모양도 계약에서 읽는다) · 값이 계약과 같음 · **저장되지 않음**. 「저장되지 않음」은 목록 API 가 아직 없어 **`documents` 행 수**로 잰다(§III-3) | `DocumentEndpointReachTest` |
+| **K-11** | **DC-25** — 서로게이트가 든 제목 + 정상 본문 → **접수됨**(422 아님) · 저장된 제목에 그 문자 없음 · 정제 후 남는 것이 없으면 계약 `x-title-policy.fallback_title` | 같음 |
+| **K-12** | **DC-18** — 큐 등록 실패 → **500**(502·503 아님) · 문자열 `detail`(값도 계약에서) · **문서·변환 모두 0건**. 빈 교체 대신 **작업 테이블을 지워 실제 어댑터가 실제 오류를 내게** 했다(§III-2) | `DocumentEnqueueFailureReachTest`(전용 DB) |
+| **K-13** | **DC-19** — `AuthUnavailableContractTest`(짧은 서명 키)에 `POST /documents` 를 한 경로 더했다. 503 · 문자열 `detail` · 계약이 그 경로에 503 을 선언했는지 · **401 이 아님** | `AuthUnavailableContractTest` |
+| **K-15** | **`ParserNodeRegistryTest` 신설.** 실제로 세어 확인한 값이 리더가 준 숫자와 **같다** — 정의 행 **39**(auth 15 · workspaces 6 · documents 18) · `ContractSpec.kt` 전용 등재 **1**(P-22) · 합집합 **40** · `P-1`~`P-40` 연속 | `ParserNodeRegistryTest` |
+
+## III. 계획·지시에서 갈라진 판단 (D-v ~ D-z)
+
+| # | 계획·지시가 적은 것 | 실제로 한 것 | 사유 |
+|---|---|---|---|
+| **D-v** | K-6 — 「문서·변환 경로를 더한다」 | **`/documents` 만 더했다.** `/conversions/{conversion_id}` 는 그 엔드포인트를 만드는 커밋(C6·C7)이 더한다 | 리더 판정 4 를 그대로 집행했다. 대조 테스트는 목록이 계약 보호 경로의 **부분집합**이면 통과하고, 서비스 중인 보호 경로가 전부 목록에 있는지는 **매핑 표에서 발견**해 본다. 즉 미구현 경로를 미리 넣어도 **아무것도 강제하지 않으면서** 「목록에 있으니 인증이 걸렸다」는 잘못된 신호만 남긴다. `AuthenticatedEndpoints` KDoc 자신의 규약(*엔드포인트를 만드는 그 커밋에서 자기 경로를 더한다*)과도 그쪽이 맞다 |
+| **D-w** | K-12 — 「`ConversionQueue` 빈을 갈아 끼우고 `DataAccessException` 하위를 던진다」 | **전용 DB 에서 `conversion_jobs` 테이블을 지웠다.** 실제 어댑터가 실제 SQL 을 던지고 PostgreSQL 이 실제 오류를 낸다 | 흉내 낸 빈은 「우리가 만든 예외가 어떻게 매핑되는가」를 재고, 이 방식은 **어댑터·트랜잭션·매핑을 한 줄로 꿴 실제 경로**를 잰다. 대가(전용 DB 를 망가뜨린다)는 클래스 KDoc 에 적었다 |
+| **D-x** | K-10 — 「후속 목록에서 그 문서 0건」 | **`documents` 행 수 0** 으로 잰다 | `GET /documents` 가 아직 없다(다음 커밋). DB 직접 확인은 목록 API 보다 **좁은 축**이다 — 목록 구현의 필터링이 끼어들지 않는다. 목록이 생기면 그쪽으로도 잰다 |
+| **D-y** | 계획 §5.1 — fixture 를 Kotlin test resources 로 **복사**한다 | **복사하지 않고 `infrastructure/src/test/resources` → `src/testFixtures/resources` 로 옮겼다** | `api` 가 이미 `testFixtures(project(":infrastructure"))` 를 당기므로 **두 모듈이 같은 파일을 본다**. 복사하면 두 벌이 되고, 파서 테스트와 계약 테스트가 서로 다른 입력을 재는 날이 온다. 옮긴 뒤 `infrastructure` 의 추출기 테스트 전건이 그대로 통과하는 것을 확인했다 |
+| **D-z** | (없음) | `DocumentController` 에 **`@Profile("!migrate")`** 를 달았다 | 면제가 아니라 의존성이다 — `DocumentConfiguration` 이 같은 조건으로 빠져 있어(게이트 26 조치 2) 그 프로필에서 컨트롤러가 남으면 **기동이 "DocumentService 빈이 없다"로 실패한다.** 실측으로 밟았다: `MigrateProfileWithoutEncryptionKeyTest` 2건이 그 자리에서 빨개졌다 |
+
+### III-1. `GlobalExceptionHandler` 를 구조로 줄였다 (임계값을 올리지 않았다)
+
+D-2(413 매핑)를 더하자 detekt `TooManyFunctions`(기본 임계값 11)가 울렸다. **임계값을 올리지 않았다** —
+그 설정은 이 저장소에서 한 번도 손댄 적이 없어 신호가 진짜였다. 우리가 더한 두 `@ExceptionHandler`
+(`EasyDocException` · `Exception`)를 **하나로 합쳤다**: 프레임워크 예외 20종은 상위 클래스가 명시
+등록해 어느 쪽이든 그쪽이 이기므로, 남는 판정은 「도메인 예외인가」 한 갈래뿐이다.
+
+**로그는 두 줄 그대로 둔다.** 합치면서 한 줄로 만들었더니 `tests/test_privacy_scanner.py` 의
+「전역 예외 핸들러의 로그가 검사 대상이다」(로그 호출 ≥ 2)가 빨개졌다 — 그 핀이 재는 것은 스캐너의
+**도달**이고, 동시에 「매핑 누락」과 「예상 못 한 예외」는 운영에서 **다른 사건**이다. 갈래별 로그를
+되살려 둘 다 지켰다.
+
+### III-2. multipart 설정과 그 값의 강제자
+
+`spring.servlet.multipart.max-file-size: 11MB` · `max-request-size: 12MB` ·
+`strict-servlet-compliance: true` · `resolve-lazily: false` · `server.tomcat.max-swallow-size: 16MB`.
+
+- **두 상한이 계약 상한 이상인지를 손으로 지키지 않는다** — `DocumentEndpointReachTest` 가
+  `MultipartProperties` 빈을 주입받아 계약 `x-input-limits.max_upload_bytes` 와 대조한다.
+- **`strict-servlet-compliance` 는 DC-5 에 영향이 없다.** 바이트코드로 확인했다:
+  `StandardServletMultipartResolver.isMultipart` 가 `startsWithIgnoreCase` 로 비교하고, 이 플래그는
+  비교 **대상 문자열**만 `multipart/` → `multipart/form-data` 로 좁힌다.
+- **`max-swallow-size: -1`(무제한)을 쓰지 않는다.** 무제한은 거절한 요청의 나머지를 끝까지 읽어 주는
+  것이라 거절이 곧 방어가 되지 못한다. 유한하되 `max-request-size` 보다 큰 값이면 정상 초과 요청은
+  본문을 받아 보고 악의적 무한 본문은 리셋된다.
+
+### III-3. 표 18 TRACE 카나리 — **탐지형**으로 세웠다
+
+`DocumentBodyLogLeakReachTest`. 로거 이름을 **열거하지 않는다**(원장이 지목한 3종을 `application.yml`
+에 못박는 처방은 열거이자 은폐형이고, `CLAUDE.md` 규칙 4 ⑵ 가 그 방향을 금한다).
+
+- **제품 기본 로그 구성 그대로** 앱을 띄우고 `POST /documents` 를 다섯 번 태운다 —
+  성공(붙여넣기) · 파일 모드 · 상한 초과 · 손상 파일 · 저장 불가 문자. **오류 경로를 함께 태우는 것이
+  요점이다**(유출은 예외 메시지·스택트레이스에서 난다).
+- 캡처는 ROOT 로거의 `ListAppender` 이고, 메시지뿐 아니라 **예외 체인과 스택 프레임까지** 훑는다.
+- 카나리는 **본문·제목·자격증명(비밀번호·액세스 토큰)** 네 값이다. 축을 나누지 않으면 실패 메시지에서
+  「무엇이 샜는가」가 사라진다.
+- **양성 대조** — 요청 전에 표식을 직접 찍고 그것이 캡처에 있는지 먼저 본다.
+- **음성 대조 실측**: `application.yml` 의 로거 한 줄을 `org.apache.coyote: TRACE` 로 바꾸자
+  이 케이스가 **빨개졌다**(§VI). 원장 기록 ③ 이 지목한 세 로거 중 하나이고, 곧 「누가 레벨을 내리면
+  그 커밋에서 빨개진다」가 실행으로 성립한다.
+
+## IV. 실측으로 확인한 사실 셋 — 문서·계약과 갈리는 자리
+
+### IV-1. **PDF 는 짝 없는 서로게이트를 내지 않는다** (계약 `applies_to` 의 파일 팔이 미도달)
+
+계약 `x-stored-text-domain.applies_to` 는 파일 모드를 *"PDF 가 가장 그럴듯한 유입 경로다 — 깨진
+`ToUnicode` CMap 이 홀로 있는 상위 서로게이트를 그대로 내놓을 수 있다"* 로 적고 그 팔을
+**`status: measured`** 로 두었다.
+
+**확인하려고 fixture 를 만들었고(`SurrogatePdf`, `bfchar` 목적값 `D8 00`), 실측은 반대였다** —
+PDFBox 3.0.5 는 **U+FFFD 로 치환한다**(추출 결과 코드 포인트를 그대로 찍어 확인: `["U+FFFD"]`).
+즉 **오늘 조합에서 저장 정의역 위반이 도달하는 경로는 붙여넣기(JSON 이스케이프) 하나뿐**이다.
+
+- fixture 와 회귀는 지우지 않고 **「라이브러리가 치환한다」는 사실을 붙드는 쪽으로** 돌렸다
+  (`PdfExtractorTest` — 판올림이 치환을 그만두면 빨개지고, 그때 파일 팔이 실제로 열린다).
+- **계약 레인에 올린다**: `applies_to` 의 파일 팔 `status` 가 `measured` 인 것은 오늘 사실과 다르다.
+  docx·hwpx 는 well-formed UTF-8 XML 이라 **인코딩 자체로 불가능**하고 PDF 는 위와 같다.
+
+### IV-2. **`SUPPORT_DTD = false` 는 「DOCTYPE 을 만나면 끊는다」가 아니다**
+
+내부 서브셋이 **없는** DOCTYPE(외부 DTD 참조만)은 JDK StAX 가 **조용히 무시하고 문서를 그대로
+파싱한다**. 거절되는 것은 내부 서브셋에 엔터티가 **선언·참조**된 경우다(billion laughs·XXE).
+
+- **보안 성질은 그대로다** — `ACCESS_EXTERNAL_DTD=""`·`IS_SUPPORTING_EXTERNAL_ENTITIES=false` 라
+  외부 DTD 를 가져오지 않으므로 펼칠 엔터티가 없다. I-10 검증 2 가 요구하는 「파서 수준에서 엔터티
+  확장이 시작되지 않는다」는 만족된다.
+- **그러나 계약 케이스의 입력 모양이 갈린다** — 처음에 DC-15 의 「외부 엔터티 선언」 갈래를 그 모양으로
+  썼더니 **202 가 나왔다**(아무것도 재지 못했다). 실제 공격 모양(내부 서브셋 + 참조)으로 바꿨다.
+- 사실 자체는 `HwpxExtractorTest` 의 「내부 서브셋 없는 DOCTYPE 은 그대로 파싱된다」가 회귀로 붙든다.
+  **원본(Python `expat.StartDoctypeDeclHandler`)은 DOCTYPE 자체를 거절했으므로 여기서 동작이 갈린다** —
+  기준은 요구사항이고 요구는 만족되므로 갈림으로 기록한다.
+
+### IV-3. **DC-11 의 기대값이 계약에서 오지 않고 있었다** (음성 대조가 잡았다)
+
+첫 판의 DC-11 은 「422」를 못박아 두어, 계약 `fields[?text].measured_on` 을 정규화 후로 바꿔도
+**깨지지 않았다**(N-25 실측). 기대 자체를 `ContractSpec.requestFieldConstraint(...).measuresRaw` 에서
+읽어 축이 뒤집히면 기대도 뒤집히게 고쳤다. 고친 뒤 N-25 에서 DC-11 이 빨개진다.
+
+## V. 계약 레인·리더에게 올리는 것 (계약 파일은 **한 줄도 고치지 않았다**)
+
+1. **`x-stored-text-domain.applies_to` 의 파일 모드 팔 `status: measured`** — 오늘 도달하지 않는다(§IV-1).
+   `pending` 이 맞는지, 아니면 「도달 불가」를 뜻하는 표식이 필요한지는 계약 레인 판정이다.
+2. **`POST /documents` 에 415 선언이 없다.** 두 `consumes` 매핑 밖의 `Content-Type`(예: `text/plain`)은
+   Spring 이 415 로 끊는데 계약이 그 상태를 선언하지 않는다. **`POST`·`PATCH /workspaces` 도 같은
+   모양이라 이 커밋이 만든 빈자리가 아니다** — 그래서 고치지 않고 올린다.
+3. **DC-15 의 「XML 외부 엔터티 선언」 갈래**는 내부 서브셋이 있어야 실제로 거절된다(§IV-2).
+   계약 산문이 그 구분을 적을 필요가 있는지 판정을 요청한다.
+
+## VI. 음성 대조 — 11건 전건 실측 (2026-08-20)
+
+복원은 전부 **바이트 백업 → `Path.write_bytes` → sha256 대조**다. `cp` 도 `git checkout --` 도 쓰지
+않았다(후자는 이 트리에 미커밋 작업이 있어 게이트 27 회차의 사고를 되풀이할 수 있다).
+**전건 복원 sha256 일치**를 확인했고, 실행 후 `contracts/**` 는 `git status` 에서 무변경이다.
+
+| # | 변조 | **빨개진 것** | 판정 |
+|---|---|---|---|
+| **N-23** | `x-input-limits.max_upload_bytes` 값 변경 | `P-24 업로드 상한이 계약에서 온다` · `DC-12` | ✅ 상한이 코드에 복제돼 있지 않다. **DC-13 은 이 방향(상한을 낮춤)에서는 깨지지 않는다** — 그 방향은 P-24 가 먼저 잡는다 |
+| **N-25** | `fields[?text].measured_on` → 정규화 후 | `P-34`(2건) · **`DC-11`** | ✅ 고친 뒤(§IV-3). **CU-6 은 아직 없다**(C7) |
+| **N-28** | `/conversions/{conversion_id}` 경로 템플릿 변경 | **`DC-2` 만** | ✅ 과잉 결합 0 |
+| **N-31** | `x-stored-text-domain.detail` 문구 변경 | `P-38`(2건) · `DC-24` | ✅ 문구가 코드에서 오지 않는다 |
+| **N-32** | `detail_shape` → `array` | `P-38`(모양 축) · `DC-24` | ✅ **상태 코드 단언은 살아 있다** — 모양과 코드가 한 값으로 묶여 있지 않다 |
+| **N-33** | `x-retired-responses` 에 아직 쓰는 코드(503) 추가 | **`P-39` 만** | ✅ 폐기가 문장이 아니라 실행이다 |
+| **R-3** | K-14 되돌리기(제목 정제에서 서로게이트 제거를 뺀다) | **`DC-25` 2건만. `DC-24` 초록 유지** | ✅ **본문 거절과 제목 정제가 실제로 분리돼 있다** |
+| **R-5** | K-6 되돌리기(`PROTECTED_PATH_PATTERNS` 에서 `/documents` 제거) | `DC-19`·`DC-20`·`DC-21` + `AuthenticationCoverageContractTest` + 업로드 케이스 대부분 | ✅ 지시가 예고한 셋을 포함해 훨씬 넓게 빨개진다(인증 인터셉터가 없으면 `AuthenticatedUser` 해석이 끊긴다) |
+| **표 18** | `application.yml` 의 로거 한 줄을 `org.apache.coyote: TRACE` 로 | **카나리 케이스** | ✅ 「레벨을 내리면 빨개진다」가 실행으로 성립 |
+| **N-R2** | `ContractSpec.kt` 에 미등재 라벨(`**P-99`) 주입 | 규칙 2·3·4 | ✅ **P-22 가 태어난 자리를 정확히 막는다** |
+| **N-R4** | documents 명세에 정의 행 하나 추가 | **규칙 4 만** | ✅ 총수 핀이 diff 를 강제한다 |
+
+## VII. 미실행·미측정 — 「미실행」으로 적는다
+
+1. **`x-stored-text-domain` 의 `edited_text` 팔(`status: pending`)** — `PUT /conversions/{id}` 가 없다(C7).
+   `P-38` 이 그 팔을 **목록으로 출력**해 마감이 남았다는 사실이 테스트에서 사라지지 않게 했다.
+2. **DC-24 의 파일 모드 팔** — 오늘 도달하지 않는다(§IV-1). 재지 못한 것이 아니라 **무대가 없다**.
+3. **DC-13 의 반대 방향 음성 대조**(계약 상한을 **올려** DC-13 을 깨뜨리는 변이) — 실행하지 않았다.
+   P-24 가 그 방향을 먼저 잡는 것을 N-23 에서 확인했으므로 중복이라고 판단했으나, **재지 않았다는
+   사실은 사실이다.**
+4. **N-26·N-27**(마스킹 범주 enum·`ConversionResponse.required`) — C6·C7 몫이다.
+5. **R-1·R-2·R-4** — R-1(계약에 502 를 되살린다)은 `x-retired-responses` 를 건드리지 않고 `paths` 를
+   되살려야 해서 N-33 과 겹치는 축이라 대체했다. R-2·R-4 는 실행하지 않았다.
+6. **compose 기동 스모크**(계획 P4) — 이 배치에서 돌리지 않았다.
+7. **`GET /documents`·`DELETE /documents/{id}`·`GET·PUT /conversions/{id}`** — C4~C7.
+
+## VIII. 검사 표 (전부 실행했다)
+
+| 검사 | 명령 | 결과 |
+|---|---|---|
+| Kotlin | `./gradlew ktlintCheck detekt build moduleBoundaryCheck --continue --rerun-tasks` | **BUILD SUCCESSFUL** (경고 0 — `allWarningsAsErrors`) |
+| parity | `./gradlew parityHarness` | BUILD SUCCESSFUL |
+| 개인정보 스캐너 | `uv run python .claude/skills/migration-safety-gate/scripts/scan_privacy_invariants.py` | exit 0 (**BLOCK 0**) |
+| Python 린트 | `uv run ruff check .` | All checks passed |
+| Python 타입 | `uv run mypy . .claude` | Success: 139 source files |
+| Python 테스트 | `uv run pytest` | 1434 passed, 68 skipped, 5 deselected, 5 xfailed |
+| 골든셋 | — | **해당 없음** — 프롬프트·스타일 규칙·LLM 설정을 건드리지 않았다 |
+
+> **게이트가 한 번 잡아낸 것**: 개인정보 스캐너가 `OWNERSHIP-403` **BLOCK 1건**을 냈다. 내 실패
+> 메시지 문자열에 든 `403` 리터럴이었다(부호 반전 단언 `isNotEqualTo(FORBIDDEN)` 의 안내문). 스캐너를
+> 고치지 않고 **문면을 `WorkspaceEndpointReachTest` 와 같은 형태**(주석 + 단언)로 바꿔 해소했다 —
+> 무시 패턴을 넓히는 것은 은폐형이다.
+
+## IX. 다음(C4)이 이어받을 것
+
+- `GET /documents` — `spring-boot-starter-validation` 도입은 **그 커밋**이다(명세 §6: DL-5 의 `detail`
+  타입 단언이 의존성 도입과 같은 변경 단위여야 한다). 지금 미리 넣지 않았다.
+- **DC-24 의 「저장되지 않음」을 목록 API 로도 재기**(§III D-x).
+- `P-25`(오퍼레이션 수준 `limit`/`offset` 파라미터 접근자) · `P-35` · `N-24`.
+- `AuthenticatedEndpoints` 는 그대로 — `/documents` 는 이미 있고 `/conversions/**` 는 C6·C7 이 더한다.

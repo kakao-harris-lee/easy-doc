@@ -82,6 +82,30 @@ class AuthUnavailableContractTest {
     }
 
     @Test
+    @DisplayName("DC-19 업로드도 503 이다 — 500 도 401 도 아니다 (X-C6 의 둘째 팔)")
+    fun `업로드가 503 이다`() {
+        // **이 오퍼레이션에서 503 이 실재함을 한 번 보이는 자리**다. DC-18 이
+        // 「500 이지 503 이 아니다」를 단언하는데, 그 부정 단언이 **한 번도 나온 적 없는
+        // 코드**를 상대로 서면 계약의 503 선언 자체가 여기서 도달 0이 된다(명세 X-A5).
+        //
+        // 업로드 고유의 503 구성은 **없다** — 저장 암호화 키가 없는 배포는 뜨지 않고
+        // (`CryptoConfiguration` 기동 자기점검), 큐는 배선이라는 것을 갖지 않는다.
+        // 그래서 무대는 인증 서명 키이고, `/workspaces` 와 **같은 인터셉터 경로**를 지난다.
+        val response =
+            send(
+                HttpRequest
+                    .newBuilder(uri("/documents"))
+                    .header("Authorization", "Bearer any.token.value")
+                    .header("Content-Type", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofString("""{"text":"본문"}""", Charsets.UTF_8)),
+            )
+
+        assertServiceUnavailable(response, "/documents", "post")
+        // 401 로 감추면 배포 사고가 "사용자가 토큰을 잘못 냈다"로 둔갑한다.
+        assertThat(response.statusCode()).isNotEqualTo(UNAUTHORIZED)
+    }
+
+    @Test
     @DisplayName("같은 구성에서 /health 는 200 이다 — 기동을 막지 않는다")
     fun `기동은 막지 않는다`() {
         assertThat(send(HttpRequest.newBuilder(uri("/health")).GET()).statusCode()).isEqualTo(OK)
@@ -121,6 +145,7 @@ class AuthUnavailableContractTest {
     companion object {
         private const val OK = 200
         private const val SERVICE_UNAVAILABLE = 503
+        private const val UNAUTHORIZED = 401
 
         /** 이 테스트만 쓰는 DB. */
         val database: DatabaseHandle by lazy { PostgresTestSupport.createEmptyDatabase("auth_unavailable") }

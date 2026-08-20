@@ -520,6 +520,89 @@ object ContractSpec {
             }
         }
 
+    // ------------------------------------------------------------------ P-36 · P-38 · P-39
+
+    /**
+     * **P-36 — 요청 본문의 미디어 타입 키 집합.**
+     *
+     * `POST /documents` 는 **자동 생성물에 없는 유일한 요청 본문**이라(원본 라우터가
+     * `Request` 를 직접 읽는다) 계약 파일이 유일한 기록이다. 코드에 `"multipart/form-data"`
+     * 를 적으면 계약이 갈래를 바꿔도 컨트롤러의 `consumes` 가 옛 값으로 남는다.
+     */
+    fun requestBodyMediaTypes(
+        path: String,
+        method: String,
+    ): Set<String> = map("paths", path, method, "requestBody", "content").keys.map { it.toString() }.toSet()
+
+    /**
+     * **P-36 — 스키마가 선언한 속성 이름 집합.**
+     *
+     * multipart 파트 이름이 코드에 복제되는 것을 막는다. `required` 만 읽으면 선택 파트
+     * (`title`·`workspace_id`)가 대조 밖에 남는다.
+     */
+    fun schemaPropertyNames(schema: String): Set<String> =
+        map("components", "schemas", schema, "properties").keys.map { it.toString() }.toSet()
+
+    /**
+     * **P-38 — `x-stored-text-domain`**(2026-08-20 신설).
+     *
+     * 거절 문구를 테스트 코드에 복제하면 계약과 구현이 갈려도 자기 사본과 대조해 초록이다.
+     * [StoredTextDomain.detailShape] 까지 읽어야 **문자열이 배열로 뒤집히는 것**이 걸리고,
+     * [StoredTextDomain.appliesTo] 의 **측정 상태 표식**을 읽어야 "아직 안 잰 팔이 남아
+     * 있다"는 사실이 테스트에서 사라지지 않는다.
+     */
+    fun storedTextDomain(): StoredTextDomain {
+        val node = map("x-stored-text-domain")
+        val appliesTo =
+            (node["applies_to"] as? List<*> ?: error("x-stored-text-domain.applies_to 가 목록이 아니다"))
+                .mapIndexed { index, entry ->
+                    val arm =
+                        entry as? Map<*, *>
+                            ?: error("x-stored-text-domain.applies_to[$index] 가 매핑이 아니다: $entry")
+                    StoredTextArm(
+                        field = arm["field"]?.toString() ?: error("applies_to[$index] 에 field 가 없다"),
+                        measurementStatus =
+                            arm["status"]?.toString()
+                                ?: error("applies_to[$index] 에 status(측정 상태 표식)가 없다"),
+                    )
+                }
+        require(appliesTo.isNotEmpty()) { "x-stored-text-domain.applies_to 가 비었다 — 잴 팔이 없다" }
+        return StoredTextDomain(
+            detail = node["detail"]?.toString() ?: error("x-stored-text-domain 에 detail 이 없다"),
+            detailShape = node["detail_shape"]?.toString() ?: error("x-stored-text-domain 에 detail_shape 가 없다"),
+            status = (node["status"] as? Number)?.toInt() ?: error("x-stored-text-domain.status 가 정수가 아니다"),
+            appliesTo = appliesTo,
+        )
+    }
+
+    /**
+     * **P-39 — `x-retired-responses[].status`**(2026-08-20 신설).
+     *
+     * 폐기한 상태 코드를 코드에 적으면 폐기가 하나 늘어도 검사가 늘지 않는다(P-26·P-15 와
+     * 같은 형태). **빈 목록이면 실패한다** — 목록이 비면 「전건이 `paths` 에 없다」가
+     * 공허하게 참이 되고, 그것이 이 노드가 막으려는 바로 그 상태다.
+     */
+    fun retiredResponseStatuses(): List<String> {
+        val entries =
+            (at("x-retired-responses") as? List<*>) ?: error("x-retired-responses 가 목록이 아니다")
+        require(entries.isNotEmpty()) { "x-retired-responses 가 비었다 — 폐기 목록이 없으면 이 대조는 공허하다" }
+        return entries.mapIndexed { index, entry ->
+            val retired =
+                entry as? Map<*, *> ?: error("x-retired-responses[$index] 가 매핑이 아니다: $entry")
+            retired["status"]?.toString() ?: error("x-retired-responses[$index] 에 status 가 없다")
+        }
+    }
+
+    /**
+     * **P-39 — `paths` 전체가 선언한 응답 상태 코드**를 `(경로, 메서드, 상태)` 로 편다.
+     *
+     * 오퍼레이션 목록은 [operations] 에서 온다 — 여기서 다시 훑으면 어휘가 두 벌이 된다.
+     */
+    fun declaredResponseStatuses(): List<Triple<String, String, String>> =
+        operations().flatMap { (path, method) ->
+            responseStatuses(path, method).map { Triple(path, method, it) }
+        }
+
     /** P-11. 스키마 속성의 `const`. */
     fun schemaPropertyConst(
         schema: String,
@@ -635,6 +718,36 @@ sealed interface ContractHeaderDeclaration {
     /** 경로에 직접 적힌 선언. 값이 계산되는 헤더라 `const` 정본이 없고 [schema] 만 있다. */
     data class Inline(val schema: String) : ContractHeaderDeclaration
 }
+
+/**
+ * 계약 `x-stored-text-domain` — 저장되는 본문의 **정의역** 조항.
+ *
+ * 길이는 `x-request-field-constraints` 가, 정의역은 이 절이 정한다. **다른 축이다** —
+ * 길이는 "얼마나"이고 정의역은 "그 값이 텍스트로 성립하는가"다.
+ */
+data class StoredTextDomain(
+    val detail: String,
+    /** `string` 또는 `array`. [ContractSpec.observedDetailType] 과 **같은 어휘**다. */
+    val detailShape: String,
+    val status: Int,
+    val appliesTo: List<StoredTextArm>,
+) {
+    /** 오늘 실제로 재야 하는 팔 — `status: measured`. */
+    fun measuredArms(): List<StoredTextArm> = appliesTo.filter { it.measurementStatus == MEASURED }
+
+    /** 아직 재지 않은 팔. **비어 있지 않은 것 자체가 마감 목록**이라 지우지 않고 드러낸다. */
+    fun pendingArms(): List<StoredTextArm> = appliesTo.filterNot { it.measurementStatus == MEASURED }
+
+    private companion object {
+        const val MEASURED = "measured"
+    }
+}
+
+/** `x-stored-text-domain.applies_to` 한 항목. */
+data class StoredTextArm(
+    val field: String,
+    val measurementStatus: String,
+)
 
 /** 계약 경로 수준 `parameters` 한 항목. */
 data class ContractPathParameter(

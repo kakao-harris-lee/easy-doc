@@ -29,12 +29,19 @@ object AuthenticatedEndpoints {
     /**
      * 계약이 `security: [{ HTTPBearer: [] }]` 로 선언한 경로들.
      *
-     * 각 작업 단위가 **엔드포인트를 만드는 그 커밋에서** 자기 경로를 더한다. 문서·변환
-     * 경로는 Phase 4 단위가 더한다.
+     * 각 작업 단위가 **엔드포인트를 만드는 그 커밋에서** 자기 경로를 더한다.
+     *
+     * `/documents` 는 `POST /documents` 를 만든 커밋이 더했다. **`/conversions/…` 를 미리
+     * 더하지 않는다** — 대조 테스트는 이 목록이 계약 보호 경로의 부분집합이면 통과하고
+     * (서비스 중인 보호 경로가 전부 목록에 있는지는 매핑 표에서 발견해 본다), 그래서 아직
+     * 구현되지 않은 경로를 미리 넣어도 아무것도 강제하지 않는다. 오히려 「목록에 있으니
+     * 인증이 걸린 것」이라는 잘못된 신호를 남긴다. 위 규약(*엔드포인트를 만드는 그 커밋*)이
+     * 그대로 이유다.
      */
     val PROTECTED_PATH_PATTERNS: List<String> =
         listOf(
             "/auth/me",
+            "/documents",
             "/workspaces",
             "/workspaces/{workspace_id}",
         )
