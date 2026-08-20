@@ -203,20 +203,26 @@ class DocumentServiceTest {
     }
 
     @Test
-    @DisplayName("제목이 없으면 **파일 이름**을 쓴다 — 본문은 제목이 되지 않는다 (게이트 27 Critical ①)")
-    fun `파일 모드는 제목을 파일 이름에서 만든다`() {
+    @DisplayName("파일 모드에서 제목을 생략하면 **대체 제목**이다 — 본문도 파일 이름도 쓰지 않는다")
+    fun `파일 모드는 제목을 생략하면 대체 제목이다`() {
+        // 두 갈래를 한 케이스가 함께 잰다. 본문 유도(게이트 27 Critical ①)와 파일 이름
+        // 유도(2026-08-20 재판정) 중 어느 쪽이 되살아나도 여기서 빨개진다 — 되살아난 값이
+        // 무엇이든 `FALLBACK_TITLE` 이 아니기 때문이다.
         val world = World(extracted = "복지 급여 안내\n둘째 줄")
 
-        world.service.createFromFile(OWNER, "2026년 복지 안내.docx", ByteArray(1), null, null)
+        world.service.createFromFile(OWNER, "홍길동_주민등록등본.docx", ByteArray(1), null, null)
 
         val title =
             world.documents.inserted
                 .single()
                 .first.title
-        assertThat(title).isEqualTo("2026년 복지 안내")
+        assertThat(title).isEqualTo(FALLBACK_TITLE)
         assertThat(title)
             .describedAs("본문 조각이 평문 title 로 새면 암호화·마스킹 두 방어를 동시에 우회한다")
             .doesNotContain("복지 급여 안내")
+        assertThat(title)
+            .describedAs("파일 이름은 그 자체가 개인정보일 수 있다 — 계약과 게이트 I-4 가 저장을 금지한다")
+            .doesNotContain("홍길동")
     }
 
     @Test
@@ -234,8 +240,8 @@ class DocumentServiceTest {
     }
 
     @Test
-    @DisplayName("파일 이름이 없거나 비면 대체 제목이다 — 그때도 본문으로 넘어가지 않는다")
-    fun `파일 이름이 없으면 대체 제목이다`() {
+    @DisplayName("파일 이름이 아예 없어도 같은 결과다 — 이름 유무가 제목을 바꾸지 않는다")
+    fun `파일 이름이 없어도 대체 제목이다`() {
         val world = World(extracted = "복지 급여 안내\n둘째 줄")
 
         world.service.createFromFile(OWNER, null, ByteArray(1), null, null)

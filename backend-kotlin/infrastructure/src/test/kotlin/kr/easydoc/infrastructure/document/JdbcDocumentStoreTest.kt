@@ -6,7 +6,9 @@ import kr.easydoc.application.document.ConversionEnvelope
 import kr.easydoc.application.document.ConversionQueue
 import kr.easydoc.application.document.DocumentService
 import kr.easydoc.application.document.DocumentStorage
+import kr.easydoc.application.document.DocumentTextExtractor
 import kr.easydoc.application.document.EnvelopeRotation
+import kr.easydoc.application.document.ExtractedDocument
 import kr.easydoc.application.document.RotationOutcome
 import kr.easydoc.core.crypto.EncryptedContent
 import kr.easydoc.core.crypto.EncryptedField
@@ -133,7 +135,9 @@ class JdbcDocumentStoreTest {
     fun `등록 실패는 저장을 되돌린다`() {
         val owner = newUser()
         val workspace = workspaces.create(owner, "나").id
-        val failing = serviceOn(dataSource(), cipher) { ConversionQueue { error("큐 등록 실패") } }
+        // 이름을 붙여 넘긴다 — 뒤에 파라미터가 하나 더 있어 후행 람다는 그쪽으로 붙는다.
+        val failing =
+            serviceOn(dataSource(), cipher, conversionQueue = { ConversionQueue { error("큐 등록 실패") } })
         val jobsBefore = jobCount()
 
         assertThatThrownBy { failing.createFromText(owner, "본문", null, workspace) }
@@ -202,12 +206,6 @@ class JdbcDocumentStoreTest {
         // 로 복제돼도 초록이었다 — 실제로 그런 갈래가 있었고(제목을 본문 첫 줄에서 유도),
         // 두 방어(암호화·마스킹)를 동시에 우회했다.
         //
-        // ## 분모를 열거하지 않는다
-        //
-        // 검사할 열을 손으로 적으면 **다음에 늘어나는 열이 영영 밖**이다. `information_schema`
-        // 에서 그 행의 열 전부를 받아 하나씩 텍스트로 읽는다. bytea 도 뺀 것이 아니라 함께
-        // 본다(`::text` 는 `\x…` 16진이라 평문 표식이 있을 수 없다 — 있다면 그것이 사건이다).
-        //
         // ## 표식을 **짧게, 첫 줄 맨 앞에** 둔다
         //
         // 되살아날 갈래는 본문을 **잘라서** 옮긴다(옛 판은 첫 줄 30자였다). 표식이 그보다
@@ -215,33 +213,55 @@ class JdbcDocumentStoreTest {
         // 되고, 그것이 바로 이 케이스가 없애려는 상태다.
         val owner = newUser()
         val workspace = workspaces.create(owner, "표식").id
-        val marker = "EDPROBE" + UUID.randomUUID().toString().take(MARKER_HEX_CHARS)
+        val marker = newMarker()
         val body = "$marker 로 시작하는 안내문\n둘째 줄에도 $marker 가 있다"
 
         // **제목을 주지 않는다.** 본문 유도 갈래가 되살아나면 정확히 여기서 빨개진다.
         val accepted = service.createFromText(owner, body, null, workspace)
 
-        val columns = columnsOf("documents")
-        assertThat(columns)
-            .withFailMessage("`documents` 의 열을 하나도 읽지 못했다 — 검사 대상 0건은 통과가 아니라 미검사다.")
-            .isNotEmpty()
-        assertThat(columns)
-            .describedAs("바닥 목록 — 이 열들이 분모에서 빠지면 이 검사는 껍데기가 된다")
-            .containsAll(DOCUMENT_COLUMN_FLOOR)
-        assertThat(columns)
-            .describedAs("열 수 하한 — 카탈로그 조회가 조용히 좁아지는 것을 막는다")
-            .hasSizeGreaterThanOrEqualTo(MIN_DOCUMENT_COLUMNS)
-
-        val offenders = columns.filter { marker in columnTextOf("documents", it, accepted.documentId) }
-
-        assertThat(offenders)
-            .withFailMessage {
-                "본문 표식이 문서 행의 평문 열에 남았다: $offenders\n" +
-                    "  `documents` 의 모든 열은 사용자 본문을 담지 않는다 — 본문은 " +
+        assertNoMarkerInDocumentRow(
+            marker = marker,
+            documentId = accepted.documentId,
+            what = "본문",
+            why =
+                "`documents` 의 모든 열은 사용자 본문을 담지 않는다 — 본문은 " +
                     "`source_text_encrypted` 에 AEAD 로만 들어간다.\n" +
                     "  업로드 시점에는 마스킹이 돌지 않으므로(마스킹은 워커의 일이다) " +
-                    "본문에서 유도한 값은 아무 방어도 받지 않는다."
-            }.isEmpty()
+                    "본문에서 유도한 값은 아무 방어도 받지 않는다.",
+        )
+    }
+
+    @Test
+    @DisplayName("**파일 이름** 표식이 문서 행의 어느 열에도 남지 않는다 — I-4 를 문장이 아니라 실행으로 세운다")
+    fun `파일 이름 표식이 평문 열에 남지 않는다`() {
+        // ## 왜 본문 표식만으로 부족한가 (2026-08-20 재판정)
+        //
+        // 본문 유도 갈래를 닫으면서 그 자리를 **파일 이름**으로 메운 판이 있었다. 그 판에서
+        // 위 케이스는 초록이다 — 새어 나간 것이 본문이 아니라 파일 이름이기 때문이다.
+        // 계약(`DocumentTextRequest.title`)과 `migration-safety-gate` I-4 는 *"파일명은 아예
+        // 저장하지 않는다"* 고 적었는데, 그 보장을 **실행으로 되짚는 장치가 없었다.**
+        //
+        // 그래서 축을 하나 더 세운다. 분모는 위와 같은 방식으로 카탈로그에서 파생하고,
+        // 표식은 파일 이름의 **맨 앞**에 둔다 — 되살아날 갈래는 경로·확장자를 떼고 앞에서부터
+        // 자르므로, 뒤에 두면 잘려 나가 검사가 통과한다.
+        val owner = newUser()
+        val workspace = workspaces.create(owner, "이름 표식").id
+        val marker = newMarker()
+        val fileService = serviceOn(dataSource(), cipher, extractor = fixedExtractor(FILE_BODY))
+
+        // **제목을 주지 않는다.** 파일 이름 갈래가 되살아나면 정확히 여기서 빨개진다.
+        val accepted =
+            fileService.createFromFile(owner, "$marker-주민등록등본.docx", ByteArray(1), null, workspace)
+
+        assertNoMarkerInDocumentRow(
+            marker = marker,
+            documentId = accepted.documentId,
+            what = "파일 이름",
+            why =
+                "파일 이름은 그 자체가 개인정보일 수 있다(`홍길동_주민등록등본.docx`).\n" +
+                    "  계약 `DocumentTextRequest.title` 과 `migration-safety-gate` I-4 가 " +
+                    "저장을 금지한다 — 이름은 형식 판별에만 쓰이고 버려져야 한다.",
+        )
     }
 
     @Test
@@ -550,6 +570,53 @@ class JdbcDocumentStoreTest {
     // ================================================================ 도구
 
     /**
+     * 문서 행의 **어느 평문 열에도** [marker] 가 없음을 확인한다. 표식 검사 둘이 공유한다.
+     *
+     * ## 분모를 열거하지 않는다
+     *
+     * 검사할 열을 손으로 적으면 **다음에 늘어나는 열이 영영 밖**이다. `information_schema`
+     * 에서 그 행의 열 전부를 받아 하나씩 텍스트로 읽는다. bytea 도 뺀 것이 아니라 함께
+     * 본다(`::text` 는 `\x…` 16진이라 평문 표식이 있을 수 없다 — 있다면 그것이 사건이다).
+     *
+     * 세 가드가 「분모가 조용히 줄어드는 것」을 막는다 — 0건 거절 · 바닥 목록 · 열 수 하한.
+     * 함수로 묶었지만 가드는 **호출마다** 돈다. 한 곳에서만 재면 다른 축은 빈 분모로 초록이
+     * 될 수 있다.
+     *
+     * @param what 표식이 대신하는 값의 이름. 실패 메시지에만 쓴다.
+     * @param why 그 값이 평문 열에 있으면 안 되는 이유. 실패한 사람이 규정을 다시 찾지 않게 한다.
+     */
+    private fun assertNoMarkerInDocumentRow(
+        marker: String,
+        documentId: UUID,
+        what: String,
+        why: String,
+    ) {
+        val columns = columnsOf("documents")
+        assertThat(columns)
+            .withFailMessage("`documents` 의 열을 하나도 읽지 못했다 — 검사 대상 0건은 통과가 아니라 미검사다.")
+            .isNotEmpty()
+        assertThat(columns)
+            .describedAs("바닥 목록 — 이 열들이 분모에서 빠지면 이 검사는 껍데기가 된다")
+            .containsAll(DOCUMENT_COLUMN_FLOOR)
+        assertThat(columns)
+            .describedAs("열 수 하한 — 카탈로그 조회가 조용히 좁아지는 것을 막는다")
+            .hasSizeGreaterThanOrEqualTo(MIN_DOCUMENT_COLUMNS)
+
+        val offenders = columns.filter { marker in columnTextOf("documents", it, documentId) }
+
+        assertThat(offenders)
+            .withFailMessage { "$what 표식이 문서 행의 평문 열에 남았다: $offenders\n  $why" }
+            .isEmpty()
+    }
+
+    /** 실행마다 다른 표식. 앞자리가 고정이라 실패 메시지에서 눈에 띈다. */
+    private fun newMarker(): String = "EDPROBE" + UUID.randomUUID().toString().take(MARKER_HEX_CHARS)
+
+    /** 파일 경로를 쓰는 케이스용 추출기 대역. 이름을 보지 않고 정해진 본문을 돌려준다. */
+    private fun fixedExtractor(text: String): DocumentTextExtractor =
+        DocumentTextExtractor { _, _ -> ExtractedDocument(SourceFormat.DOCX, text) }
+
+    /**
      * 유스케이스 한 벌을 **하나의 [DataSource] 위에** 조립한다.
      *
      * 저장소와 트랜잭션 관리자가 **같은 DataSource 인스턴스**를 봐야 한다. Spring 은 트랜잭션
@@ -561,6 +628,7 @@ class JdbcDocumentStoreTest {
         dataSource: DataSource,
         contentCipher: ContentCipher,
         conversionQueue: (JdbcClient) -> ConversionQueue = { JdbcConversionQueue(it) },
+        extractor: DocumentTextExtractor = DocumentTextExtractor { _, _ -> error("이 배선은 파일 경로를 쓰지 않는다") },
     ): DocumentService {
         val client = JdbcClient.create(dataSource)
         return DocumentService(
@@ -572,7 +640,7 @@ class JdbcDocumentStoreTest {
                 ),
             workspaces = JdbcWorkspaceLookup(client),
             cipher = contentCipher,
-            extractor = { _, _ -> error("이 테스트는 파일 경로를 쓰지 않는다") },
+            extractor = extractor,
             transaction = SpringTransactionRunner(TransactionTemplate(DataSourceTransactionManager(dataSource))),
         )
     }
@@ -767,6 +835,9 @@ class JdbcDocumentStoreTest {
         const val UPLOAD_STATEMENTS = 4
 
         const val DRAFT_BODY = "쉬운 글 초안"
+
+        /** 파일 경로 케이스가 쓰는 본문. 표식은 **파일 이름**에 있고 본문에는 없다. */
+        const val FILE_BODY = "복지 급여 안내\n둘째 줄"
 
         /**
          * 사용자 행을 만들기 위한 자리 채움 PHC. 검증에 쓰이지 않으므로 실제 해시가 아니어도
