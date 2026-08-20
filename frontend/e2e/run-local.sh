@@ -44,12 +44,18 @@ SKIP_STACK="${E2E_SKIP_STACK:-0}"
 SKIP_BUILD="${E2E_SKIP_BUILD:-0}"
 
 api_pid=""
+# 저장 암호화 키가 잠깐 머무는 파일. 읽고 곧바로 지우지만, 실패 경로에서도 남지 않게
+# 정리 대상에 넣는다 — 비밀이 디스크에 남는 시간은 짧을수록 좋다.
+key_env_file=""
 
 cleanup() {
   local status=$?
   if [ -n "$api_pid" ] && kill -0 "$api_pid" 2>/dev/null; then
     kill "$api_pid" 2>/dev/null || true
     wait "$api_pid" 2>/dev/null || true
+  fi
+  if [ -n "$key_env_file" ]; then
+    rm -f "$key_env_file"
   fi
   if [ "$SKIP_STACK" != "1" ]; then
     docker rm -f "$PG_CONTAINER" >/dev/null 2>&1 || true
@@ -114,6 +120,23 @@ else
   export SPRING_DATASOURCE_PASSWORD=postgres
   export SERVER_PORT="$API_PORT"
   export EASYDOC_AUTH_JWT_SECRET="$jwt_secret"
+
+  # 저장 암호화 키도 매 실행 새로 만든다 (게이트 28 C-3). `CryptoConfiguration` 의 기동
+  # 자기점검이 키와 **검사값(KCV)** 을 함께 요구해서, 둘 중 하나만 있어도 API 가 뜨지 않는다.
+  # KCV 는 AES-256-GCM 인증 태그라 openssl 로 계산할 수 없고, 계산을 여기 옮겨 적으면
+  # 저장소에 KCV 계산이 둘이 된다. 그래서 **제품 코드를 실행한다** — CI `e2e` 잡이 부르는
+  # 것과 **같은 Gradle 태스크**이고, 그것이 제품 `KeyCheckValue.of` 로 검사값을 구한다.
+  log "저장 암호화 키 생성 (제품 KeyCheckValue 로 검사값 계산)"
+  key_env_file="$(mktemp)"
+  (cd "${repo_root}/backend-kotlin" \
+    && ./gradlew --no-daemon -q :infrastructure:writeEncryptionKeyEnv \
+      "-Peasydoc.encryptionEnvOut=${key_env_file}")
+  set -a
+  # shellcheck disable=SC1090 -- 실행 시점에 만들어지는 임시 파일이라 경로가 고정이 아니다.
+  . "$key_env_file"
+  set +a
+  rm -f "$key_env_file"
+  key_env_file=""
 
   mkdir -p "$LOG_DIR"
 

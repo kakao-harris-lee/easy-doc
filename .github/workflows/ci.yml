@@ -265,6 +265,41 @@ jobs:
       - name: Gradle build (ktlint · detekt · test)
         run: ./gradlew build --no-daemon
 
+      # 테스트 클래스 **전체**의 실행 대조 (게이트 25 H4 — codex 단독 지적 · 게이트 26).
+      #
+      # 아래 두 스텝은 클래스를 **손으로 적어** 둘만 지킨다. 그 사이 Phase 3~4 에서 가드가
+      # 여럿 늘었고, 늘어난 것들은 지워도 CI 가 통과하는 상태였다. 여기서는 목록을 손으로
+      # 적지 않고 `tests/test_kotlin_gate_reach.py` 가 트리와 **정확 일치**로 대조한다.
+      # 게이트 26 에서 분모가 「가드 이름 families」에서 「JUnit 애너테이션을 품은 최상위
+      # 선언 전부」로 바뀌었다 — 이름 열거를 없앤 것이 그 처방의 본체다.
+      #
+      # 이 스텝이 위 `build` **뒤에** 있어야 하는 이유: 대조의 한 축이 방금 만들어진
+      # `build/test-results/test/*.xml` 을 읽어 "그 클래스가 실제로 돌았는가"를 본다.
+      # 요구 모드를 켜면 ⑴ 리포트 부재 자체가 실패이고 ⑵ 대상이 **선언 전건**으로
+      # 넓어진다. 켜지 않으면 리포트에 실재하는 클래스만 재므로 조용히 좁아진다.
+      #
+      # **그리고 `build` 와 이 스텝 사이에 리포트를 덮는 것이 없어야 한다** (게이트 28 C-2).
+      # 앞선 판은 이 스텝을 아래 두 「탐지기 존재 확인」 **뒤에** 두었다. 그 둘은
+      # `:core:test --tests <클래스 하나>` 라서 core 모듈의 리포트를 그 하나로 통째로
+      # 덮어쓴다 — 요구 모드 대조가 **덮인 리포트를 읽어 결정론적으로 실패**했다
+      # (run 32333596159·32309434868 연속 빨강. 미실행 목록에 `ProvenanceCreationSitesTest`
+      # **자신**이 들어 있었던 것이 그 증거다).
+      #
+      # 순서를 고치는 것만으로는 부족하다 — 다음 사람이 사이에 스텝 하나를 끼우면 같은
+      # 일이 조용히 재발한다. 그래서 그 제약을 주석이 아니라 **탐지기**로 세웠다:
+      # `tests/test_kotlin_gate_reach.py::test_요구모드_대조_앞에_리포트를_덮는_스텝이_없다`
+      # 가 이 파일을 파싱해 `build` 와 이 스텝 **사이**에 `--tests` 필터를 건 gradlew 호출이
+      # 없는지 본다(이름 면제 없음). 그 테스트는 quality 잡에서도 도므로 Gradle 없이 빨개진다.
+      #
+      # `working-directory: .` 인 이유는 이 잡의 기본값이 `backend-kotlin` 이기 때문이다.
+      # 이 스텝 자체의 삭제는 이 스텝이 막지 못한다 — 다만 그 삭제는 quality 잡의
+      # `test_CI_가_이_대조를_경로_명시로_배선했다` 에서 빨개진다(장치 밖 단언).
+      - name: Kotlin 테스트 클래스 실행 대조 (리포트 XML — 삭제·미실행·skipped 시 실패)
+        working-directory: .
+        env:
+          KOTLIN_GATE_REACH_REQUIRE_REPORT: "1"
+        run: uv run pytest tests/test_kotlin_gate_reach.py
+
       # 보안 불변식 **탐지기 자신의 존재**를 확인한다 (교차 종합 C-05).
       #
       # 위 `build` 는 있는 테스트를 전부 돌리지만, **테스트 파일을 지우면 그대로 초록**이다.
@@ -281,34 +316,16 @@ jobs:
       # 그래서 **클래스마다 따로 돌린다.** 하나가 사라지면 그 스텝이
       # `No tests found for given includes` 로 실패한다.
       #
+      # **위 실행 대조보다 뒤에 둔다** (게이트 28 C-2). 이 둘은 core 리포트를 한 클래스로
+      # 덮으므로 앞에 두면 그 대조가 덮인 것을 읽는다. 여기서 재는 것(클래스가 사라지면
+      # `No tests found for given includes`)은 **순서와 무관**하므로 내려도 잃는 것이 없다.
+      #
       # 목록을 손으로 적는 것 자체는 이 스텝이 막지 못한다(줄을 지우면 그만이다).
       # 최종 방어선은 그 diff 가 리뷰에 올라가는 것이다 — 한 칸 더 옮기지 않는다.
       - name: 탐지기 존재 확인 — provenance 생성 지점 (단독 삭제 시 실패)
         run: ./gradlew :core:test --no-daemon --tests kr.easydoc.core.privacy.ProvenanceCreationSitesTest
       - name: 탐지기 존재 확인 — MaskedText 생성 통로 (단독 삭제 시 실패)
         run: ./gradlew :core:test --no-daemon --tests kr.easydoc.core.privacy.MaskedTextGatewayTest
-
-      # 테스트 클래스 **전체**의 실행 대조 (게이트 25 H4 — codex 단독 지적 · 게이트 26).
-      #
-      # 위 두 스텝은 클래스를 **손으로 적어** 둘만 지킨다. 그 사이 Phase 3~4 에서 가드가
-      # 여럿 늘었고, 늘어난 것들은 지워도 CI 가 통과하는 상태였다. 여기서는 목록을 손으로
-      # 적지 않고 `tests/test_kotlin_gate_reach.py` 가 트리와 **정확 일치**로 대조한다.
-      # 게이트 26 에서 분모가 「가드 이름 families」에서 「JUnit 애너테이션을 품은 최상위
-      # 선언 전부」로 바뀌었다 — 이름 열거를 없앤 것이 그 처방의 본체다.
-      #
-      # 이 스텝이 위 `build` **뒤에** 있어야 하는 이유: 대조의 한 축이 방금 만들어진
-      # `build/test-results/test/*.xml` 을 읽어 "그 클래스가 실제로 돌았는가"를 본다.
-      # 요구 모드를 켜면 ⑴ 리포트 부재 자체가 실패이고 ⑵ 대상이 **선언 전건**으로
-      # 넓어진다. 켜지 않으면 리포트에 실재하는 클래스만 재므로 조용히 좁아진다.
-      #
-      # `working-directory: .` 인 이유는 이 잡의 기본값이 `backend-kotlin` 이기 때문이다.
-      # 이 스텝 자체의 삭제는 이 스텝이 막지 못한다 — 다만 그 삭제는 quality 잡의
-      # `test_CI_가_이_대조를_경로_명시로_배선했다` 에서 빨개진다(장치 밖 단언).
-      - name: Kotlin 테스트 클래스 실행 대조 (리포트 XML — 삭제·미실행·skipped 시 실패)
-        working-directory: .
-        env:
-          KOTLIN_GATE_REACH_REQUIRE_REPORT: "1"
-        run: uv run pytest tests/test_kotlin_gate_reach.py
 
       # --- parity 게이트 배선 (Phase 0 필수 조치 E) ---------------------------
       # 산출물(parity/actual/)을 **Kotlin 테스트가** 만든다는 것을 CI에서 보장한다.
@@ -766,6 +783,28 @@ jobs:
       # **값을 찍지 않는다** — `$GITHUB_ENV` 로만 넘긴다.
       - name: JWT 서명 키 생성 (이 실행 한정 임의값)
         run: echo "EASYDOC_AUTH_JWT_SECRET=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
+
+      # 저장 암호화 키도 같은 원칙으로 **이 실행 한정 임의값**이다 (게이트 28 C-3).
+      #
+      # 없으면 어떻게 되는가: `CryptoConfiguration` 은 게이트 25 F-2·F-3 리더 판정으로
+      # **하나라도 어긋나면 앱을 띄우지 않는다.** 이 스텝이 없던 두 회차에서 API 가 기동하지
+      # 못해 `/health` 200 이 영영 오지 않았고, 잡은 60초 대기 뒤 죽었다
+      # (run 32333596159·32309434868).
+      #
+      # 왜 `openssl` 한 줄이 아닌가: 자기점검은 키와 **검사값(KCV)** 을 함께 요구한다.
+      # 키만 주면 "키 v1 에 kcv 가 없다"로 역시 기동이 거부된다. KCV 는 AES-256-GCM 인증
+      # 태그라 `openssl enc` 로 계산할 수 없다 — 태그를 내주지 않는다.
+      #
+      # 왜 계산을 여기 적지 않는가: 적으면 KCV 계산이 저장소에 둘이 되고, 한쪽만 고쳐지는
+      # 날 CI 는 조용히 초록인데 실제 배포는 뜨지 않는다. 그래서 **제품 코드를 실행한다** —
+      # 태스크가 도는 `EncryptionKeyEnv.kt` 는 `TestEncryptionKeys` 를 부르고 그것이 제품
+      # `KeyCheckValue.of` 로 검사값을 구한다. 계산하는 코드는 저장소에 한 곳뿐이다.
+      #
+      # **값을 찍지 않는다** — 태스크가 `$GITHUB_ENV` 에 직접 덧붙이고 표준출력에는 비밀이
+      # 아닌 검사값만 낸다. 로그에 남은 키는 회수 말고는 되돌릴 방법이 없다.
+      - name: 저장 암호화 키 생성 (이 실행 한정 임의값 — KCV 는 제품 KeyCheckValue 가 계산)
+        working-directory: backend-kotlin
+        run: ./gradlew --no-daemon -q :infrastructure:writeEncryptionKeyEnv "-Peasydoc.encryptionEnvOut=$GITHUB_ENV"
 
       - name: Flyway 마이그레이션 (profile=migrate)
         run: java -jar backend-kotlin/api/build/libs/easy-doc-api.jar --spring.profiles.active=migrate

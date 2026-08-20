@@ -69,3 +69,35 @@ dependencies {
     testRuntimeOnly(libs.postgresql)
     testRuntimeOnly(libs.flyway.postgresql)
 }
+
+// e2e 레인이 쓰는 저장 암호화 키 생성 실행 경로 (게이트 28 C-3).
+//
+// `e2e` 잡과 `frontend/e2e/run-local.sh` 는 매 실행 새 키로 API 를 띄운다. 그런데
+// `CryptoConfiguration` 의 기동 자기점검이 키와 **검사값(KCV)** 을 함께 요구하고, KCV 는
+// AES-256-GCM 인증 태그라 셸(`openssl enc`)로는 계산할 수 없다 — 태그를 내주지 않는다.
+//
+// **계산을 옮겨 적지 않고 제품 코드를 실행한다.** 이 태스크는 testFixtures 의
+// `EncryptionKeyEnv.kt` 를 도는데, 그것은 `TestEncryptionKeys` 를 부르고 그것이 제품
+// `KeyCheckValue.of` 로 검사값을 구한다. 저장소에서 KCV 를 계산하는 코드는 한 곳뿐이다.
+//
+// 출력 파일은 **인자로 받는다**(CI 는 `$GITHUB_ENV` 를 준다). 키를 표준출력으로 흘리면
+// 로그에 남고, 로그에 남은 키는 회수 말고는 되돌릴 방법이 없다.
+//
+// `bootJar` 는 영향을 받지 않는다 — testFixtures 산출물은 runtimeClasspath 에 없다.
+tasks.register<JavaExec>("writeEncryptionKeyEnv") {
+    group = "verification"
+    description = "저장 암호화 키 한 세대를 만들어 -Peasydoc.encryptionEnvOut 파일에 덧붙인다 (KCV 는 제품 KeyCheckValue 가 계산)."
+    mainClass.set("kr.easydoc.infrastructure.crypto.EncryptionKeyEnvKt")
+    classpath = sourceSets["testFixtures"].runtimeClasspath
+
+    val destination = providers.gradleProperty("easydoc.encryptionEnvOut")
+    argumentProviders.add {
+        listOf(
+            destination.orNull
+                ?: error("-Peasydoc.encryptionEnvOut=<환경변수를 덧붙일 파일> 을 준다."),
+        )
+    }
+
+    // 매번 새 키를 내야 한다. UP-TO-DATE 로 건너뛰면 파일이 비어 있는 채 통과한다.
+    outputs.upToDateWhen { false }
+}

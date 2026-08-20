@@ -514,8 +514,8 @@ def test_리포트에_나온_클래스는_전부_선언에_있다() -> None:
     )
 
 
-def _steps_running_this_file() -> list[tuple[str, dict[str, object]]]:
-    """`ci.yml` 에서 이 파일을 **경로로 명시해 돌리는** 스텝을 (잡 이름, 스텝) 으로 낸다.
+def _ci_jobs() -> dict[str, list[dict[str, object]]]:
+    """`ci.yml` 의 잡 이름 → 스텝 목록.
 
     **문자열 분할로 세지 않는다.** 첫 판이 그랬다가 곧바로 빈자리를 만들었다 —
     스텝 앞 주석 블록은 `- name:` 으로 자르면 **앞 스텝의 조각**에 붙는데, 그 주석이
@@ -524,12 +524,20 @@ def _steps_running_this_file() -> list[tuple[str, dict[str, object]]]:
     **YAML 로 파싱해 `run` 문자열만** 본다.
     """
     document = yaml.safe_load(CI_WORKFLOW.read_text(encoding="utf-8"))
-    found: list[tuple[str, dict[str, object]]] = []
+    jobs: dict[str, list[dict[str, object]]] = {}
     for job_name, job in (document.get("jobs") or {}).items():
-        for step in job.get("steps") or []:
-            if isinstance(step, dict) and THIS_TEST_PATH in str(step.get("run") or ""):
-                found.append((job_name, step))
-    return found
+        jobs[str(job_name)] = [step for step in (job.get("steps") or []) if isinstance(step, dict)]
+    return jobs
+
+
+def _steps_running_this_file() -> list[tuple[str, dict[str, object]]]:
+    """`ci.yml` 에서 이 파일을 **경로로 명시해 돌리는** 스텝을 (잡 이름, 스텝) 으로 낸다."""
+    return [
+        (job_name, step)
+        for job_name, steps in _ci_jobs().items()
+        for step in steps
+        if THIS_TEST_PATH in str(step.get("run") or "")
+    ]
 
 
 def _require_report_flag(step: dict[str, object]) -> str:
@@ -572,3 +580,99 @@ def test_CI_가_이_대조를_경로_명시로_배선했다() -> None:
         f"{THIS_TEST_PATH} 가 요구 모드 스텝에서만 돈다 — 선언 ↔ 트리 대조는 Gradle 없이도 "
         "되므로 quality 잡에도 경로 명시로 두어 삭제가 먼저 드러나게 하라."
     )
+
+
+#: 전체 빌드 호출. `./gradlew build` · `./gradlew :core:build` 처럼 **필터 없는 build 태스크**만
+#: 잡는다. `--build-cache`(앞이 `-`) · `build/test-results`(뒤가 `/`) 는 걸리지 않는다.
+GRADLE_FULL_BUILD = re.compile(r"gradlew\b[^\n]*?(?<![\w:.\-])(?::[\w.:\-]+:)?build(?![\w/\-])")
+
+#: **리포트를 덮어쓰는** Gradle 호출. `--tests` 필터가 붙은 test 태스크는 그 모듈의
+#: `build/test-results/test/` 를 필터에 걸린 클래스만으로 **다시 쓴다**(실측: `:core:test
+#: --tests X` 한 번이면 core 리포트가 통째로 그 하나로 바뀐다).
+GRADLE_TEST_FILTER = re.compile(r"gradlew\b.*--tests\b")
+
+
+def _report_overwriting_lines(run: str) -> list[str]:
+    """`run` 본문에서 리포트를 덮어쓰는 줄만 낸다. 이어 붙인 줄(`\\`)은 하나로 본다."""
+    joined = run.replace("\\\n", " ")
+    return [line.strip() for line in joined.splitlines() if GRADLE_TEST_FILTER.search(line)]
+
+
+def test_요구모드_대조_앞에_리포트를_덮는_스텝이_없다() -> None:
+    """**순서가 아니라 제약을 강제한다** (게이트 28 C-2).
+
+    ## 무엇이 났는가
+
+    `kotlin` 잡의 스텝 순서가 이랬다 — ⑴ `./gradlew build`(전 모듈 테스트, core 리포트를
+    전건으로 채움) ⑵ `:core:test --tests …ProvenanceCreationSitesTest` ⑶ `:core:test
+    --tests …MaskedTextGatewayTest` ⑷ 요구 모드 대조. ⑵⑶ 이 core 리포트를 **한 클래스로
+    덮어쓰므로** ⑷ 는 덮인 것을 읽고 **결정론적으로 실패**했다(run 32333596159·
+    32309434868 연속 빨강). 미실행 목록에 `ProvenanceCreationSitesTest` **자신**이 들어
+    있었던 것이 그 기제의 서명이다.
+
+    ## 왜 순서만 바꾸지 않는가
+
+    `ci.yml` 은 「이 스텝이 `build` **뒤에** 있어야 하는 이유」를 이미 적어 두었는데,
+    「그 사이에 리포트를 덮는 것이 없어야 한다」는 제약은 **적히지도 강제되지도 않았다.**
+    순서만 고치면 다음 사람이 스텝 하나를 사이에 끼워 같은 일을 조용히 되풀이한다.
+    그래서 제약 자체를 **탐지형**으로 세운다.
+
+    ## 이름 면제를 두지 않는다
+
+    「이 스텝 이름은 예외」 같은 패턴 면제는 `CLAUDE.md` 규칙 4 ⑵ 가 금지한 은폐형이고,
+    면제 하나가 곧 이 장치의 구멍이다. 사이에 `--tests` 필터를 건 gradlew 호출이 있으면
+    이름이 무엇이든 **실패**하고, 실패 메시지가 그 스텝을 잡 이름·번호·이름·해당 줄로
+    **지목**한다(판정 기준은 「빨개졌는가」가 아니라 「지목했는가」다).
+
+    ## 이 테스트가 닫지 않는 것
+
+    - `--tests` 없이 리포트를 지우는 스텝(`rm -rf build/test-results`·`clean`). 오늘
+      그런 스텝은 없고, 넓히려면 근거가 생긴 뒤에 넓힌다(규칙 4 ⑴ — 범위는 근거를
+      넘지 않는다).
+    - 이 테스트 자신의 삭제. 저장소 안의 어떤 파일도 자기 자신에 대한 절대 기준이 될 수
+      없다 — 다만 이 파일의 삭제는 `ci.yml` 의 두 경로 명시 스텝이 exit 4 로 신고한다.
+    """
+    require_steps = [
+        (job, step) for job, step in _steps_running_this_file() if _require_report_flag(step)
+    ]
+    assert require_steps, (
+        f"{REQUIRE_REPORT_ENV} 를 env 로 켜고 {THIS_TEST_PATH} 를 돌리는 스텝이 없다 — "
+        "제약을 걸 대상 자체가 사라졌다. kotlin 잡의 build 뒤에 배선하라."
+    )
+
+    jobs = _ci_jobs()
+    for job_name, require_step in require_steps:
+        steps = jobs[job_name]
+        require_index = steps.index(require_step)
+
+        build_indexes = [
+            index
+            for index, step in enumerate(steps[:require_index])
+            if GRADLE_FULL_BUILD.search(str(step.get("run") or ""))
+        ]
+        assert build_indexes, (
+            f"`{job_name}` 잡의 요구 모드 대조(스텝 {require_index + 1}: "
+            f"{require_step.get('name') or '(이름 없음)'}) **앞에** 전체 빌드가 없다.\n"
+            "  요구 모드는 리포트 부재를 실패로 판정한다 — 리포트를 만드는 `./gradlew build` "
+            "가 앞에 없으면 이 대조는 언제나 빨갛다."
+        )
+
+        offenders = [
+            (index, steps[index], line)
+            for index in range(build_indexes[-1] + 1, require_index)
+            for line in _report_overwriting_lines(str(steps[index].get("run") or ""))
+        ]
+        assert not offenders, (
+            f"`{job_name}` 잡에서 전체 빌드(스텝 {build_indexes[-1] + 1})와 요구 모드 대조"
+            f"(스텝 {require_index + 1}) **사이**에 테스트 리포트를 덮어쓰는 스텝이 있다:\n"
+            + "\n".join(
+                f"    스텝 {index + 1}: {step.get('name') or '(이름 없음)'}\n      {line}"
+                for index, step, line in offenders
+            )
+            + "\n  `--tests` 필터를 건 test 태스크는 그 모듈의 build/test-results 를 필터에 "
+            "걸린 클래스만으로 다시 쓴다.\n"
+            "  그 뒤에서 도는 실행 대조는 **덮인 리포트**를 읽어 선언 전건을 미실행으로 "
+            "신고한다(게이트 28 C-2, run 32333596159).\n"
+            "  고치는 방법: 그 스텝을 요구 모드 대조 **뒤로** 옮겨라. `No tests found for "
+            "given includes` 로 존재를 재는 목적은 순서와 무관하다."
+        )
