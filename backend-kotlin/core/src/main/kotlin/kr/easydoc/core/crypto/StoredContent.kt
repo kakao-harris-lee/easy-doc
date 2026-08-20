@@ -1,6 +1,7 @@
 package kr.easydoc.core.crypto
 
 import kr.easydoc.core.exceptions.InvalidInputException
+import kr.easydoc.core.text.hasUnpairedSurrogate
 
 // 저장 암호화가 다루는 값들 — **평문 래퍼 · 암호문 봉투 · 결속 대상 · 방식 이름**.
 //
@@ -52,6 +53,15 @@ import kr.easydoc.core.exceptions.InvalidInputException
  * 대안이었던 「치환을 수용하고 기록한다」를 고르지 않은 이유: 치환은 **비가역**이라
  * 나중에 되돌릴 수 없고, 그 사이에 저장된 행은 원문을 잃은 채 남는다.
  *
+ * ## 판정은 `core/text` 에 있고, **제목은 처분이 다르다**
+ *
+ * 「무엇이 짝 없는 서로게이트인가」는 [kr.easydoc.core.text.hasUnpairedSurrogate] 한 곳이
+ * 정한다. 같은 문자를 **제목**은 거절하지 않고 **걷어낸다**
+ * ([kr.easydoc.core.document.resolveTitle] — 계약 `x-title-policy.rule`). 처분이 갈리는
+ * 사유는 계약 `x-title-policy.x-surrogate-note` 가 적었다 — 제목에서 잃는 것은 라벨
+ * 하나이고 본문에서 잃는 것은 문서다. **판정은 하나, 처분은 둘**이며 그 분리를 계약
+ * 레인이 음성 대조 N-34·R-3 의 축으로 삼았다.
+ *
  * 왜 [InvalidInputException] 인가: 서버 설정이나 저장 상태의 문제가 아니라 **입력이 텍스트로
  * 성립하지 않는다**는 판정이다. HTTP 매핑(422)과 사용자 문구를 어떻게 낼지는 문서 업로드
  * 경로가 생기는 단위에서 계약과 맞춘다 — 지금 고정하는 것은 예외 타입과 메시지뿐이다.
@@ -59,7 +69,7 @@ import kr.easydoc.core.exceptions.InvalidInputException
 @JvmInline
 value class PlainBody(val value: String) {
     init {
-        // 정상 문자열에서는 `Char.isSurrogate()` 가 전부 거짓이라 한 번의 선형 훑기로 끝난다.
+        // 판정은 `core/text/Surrogates.kt` 한 곳이다 — 제목 정제도 **같은 훑기**를 쓴다.
         if (hasUnpairedSurrogate(value)) throw InvalidInputException(UNPAIRED_SURROGATE_MESSAGE)
     }
 
@@ -74,36 +84,6 @@ value class PlainBody(val value: String) {
          */
         const val UNPAIRED_SURROGATE_MESSAGE: String = "문서 본문에 텍스트로 저장할 수 없는 문자가 있습니다"
     }
-}
-
-/**
- * 짝을 이루지 않은 UTF-16 서로게이트가 하나라도 있는가.
- *
- * 상위 서로게이트 뒤에 하위 서로게이트가 오지 않거나, 하위 서로게이트가 홀로 나오면 참이다.
- * 이 둘이 곧 `String.toByteArray(UTF_8)` 가 `?` 로 바꿔 버리는 값의 전부다.
- */
-private fun hasUnpairedSurrogate(value: String): Boolean {
-    var index = 0
-    var unpaired = false
-    while (index < value.length && !unpaired) {
-        val character = value[index]
-        when {
-            // 상위 + 하위가 이어지면 정상 쌍이다. 두 칸을 함께 건너뛴다.
-            character.isHighSurrogate() && index + 1 < value.length && value[index + 1].isLowSurrogate() -> {
-                index += 2
-            }
-
-            // 남은 서로게이트는 전부 짝이 없다 — 짝 없는 상위, 홀로 나온 하위, 끝에서 잘린 상위.
-            character.isSurrogate() -> {
-                unpaired = true
-            }
-
-            else -> {
-                index++
-            }
-        }
-    }
-    return unpaired
 }
 
 /**

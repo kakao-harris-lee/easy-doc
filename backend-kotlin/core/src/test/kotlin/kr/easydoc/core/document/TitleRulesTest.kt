@@ -1,6 +1,10 @@
 package kr.easydoc.core.document
 
+import kr.easydoc.core.crypto.PlainBody
+import kr.easydoc.core.exceptions.InvalidInputException
 import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.assertThatCode
+import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
 
@@ -93,6 +97,73 @@ class TitleRulesTest {
         val resolved = resolveTitle("나".repeat(MAX_TITLE_LENGTH + 50))
 
         assertThat(charCountOf(resolved)).isEqualTo(MAX_TITLE_LENGTH)
+    }
+
+    // ============================================================ 짝 없는 서로게이트 — **걷어내고 접수한다**
+
+    /**
+     * **K-14 — 계약 `x-title-policy.rule` 이 요구하는 정제.**
+     *
+     * 이 절이 생긴 사유: 계약 v1.3.0(`dc9ef8e`)이 제목에서 짝 없는 서로게이트를 걷어내라고
+     * 요구했는데 구현에 그 처리가 한 줄도 없었다. `documents.title` 은 **평문 열**이라
+     * 짝 없는 서로게이트가 남으면 드라이버가 UTF-8 로 쓰는 시점에 갈린다 — 치환이면
+     * **조용한 손상**, 오류면 **원인을 알 수 없는 500** 이다(`x-title-policy.x-surrogate-note`).
+     *
+     * **이 케이스들이 없으면 K-14 는 검증되지 않는다.** 실측(2026-08-20): `sanitizeName` 에서
+     * `stripUnpairedSurrogates` 호출만 걷어내고 `:core:test` 를 돌렸더니 **exit 0** 이었다 —
+     * `SurrogatesTest` 는 판정 함수를 **직접** 재므로 `TitleRules` 가 그것을 *쓰는지* 는
+     * 아무도 재지 않았다. 아래 다섯이 그 자리를 닫는다.
+     */
+    @Test
+    @DisplayName("K-14 제목의 짝 없는 서로게이트를 **걷어낸다** — 나머지 글자는 그대로 남는다")
+    fun `제목의 짝 없는 서로게이트를 걷어낸다`() {
+        assertThat(resolveTitle("복지\uD800안내")).isEqualTo("복지안내")
+        assertThat(resolveTitle("안내문\uD83D")).isEqualTo("안내문")
+        assertThat(resolveTitle("x\uDC00y")).isEqualTo("xy")
+    }
+
+    @Test
+    @DisplayName("K-14 정제 후 남는 것이 없으면 **대체 제목**이다 — 거절이 아니다")
+    fun `서로게이트만 있는 제목은 대체 제목이다`() {
+        assertThat(resolveTitle("\uD800\uD800")).isEqualTo(FALLBACK_TITLE)
+    }
+
+    @Test
+    @DisplayName("K-14 정제된 제목은 UTF-8 로 왕복한다 — 평문 열에 쓰는 시점에 갈리지 않는다")
+    fun `정제된 제목이 UTF-8 로 왕복한다`() {
+        val resolved = resolveTitle("복지\uD800안내\uD83D")
+
+        assertThat(String(resolved.toByteArray(Charsets.UTF_8), Charsets.UTF_8))
+            .describedAs("UTF-8 왕복에서 값이 바뀌면 짝 없는 서로게이트가 남은 것이다")
+            .isEqualTo(resolved)
+    }
+
+    @Test
+    @DisplayName("K-14 **짝을 이룬 쌍은 그대로 남는다** — 정제가 BMP 밖 문자 전체로 번지지 않았다")
+    fun `짝 맞는 서로게이트는 제목에 남는다`() {
+        // 여기가 빨개지면 정제가 아니라 검열이다 — 사용자가 적은 제목이 이유 없이 훼손된다.
+        assertThat(resolveTitle("민원 안내 🙂")).isEqualTo("민원 안내 🙂")
+        assertThat(resolveTitle("𝓐 서식")).isEqualTo("𝓐 서식")
+    }
+
+    /**
+     * **본문과 갈리는 축** — 같은 문자에 제목은 정제, 본문은 거절이다.
+     *
+     * 계약이 일부러 가른 두 처분이다(`x-title-policy.x-surrogate-note` ·
+     * `x-stored-text-domain`). 두 처분을 한 함수로 합치면 이 두 단언 중 하나가 반드시
+     * 깨진다 — 계약 레인이 음성 대조 **N-34 · R-3** 를 이 축으로 설계했다.
+     */
+    @Test
+    @DisplayName("K-14 제목은 **던지지 않는다** — 같은 값이 저장 본문에서는 거절된다")
+    fun `제목은 던지지 않고 본문은 거절된다`() {
+        val broken = "복지\uD800안내"
+
+        assertThatCode { resolveTitle(broken) }
+            .describedAs("제목에서 잃는 것은 라벨 하나다 — 라벨 때문에 문서 접수를 거절하지 않는다")
+            .doesNotThrowAnyException()
+        assertThatThrownBy { PlainBody(broken) }
+            .describedAs("본문에서 잃는 것은 문서다 — 여기는 정제가 아니라 거절이다")
+            .isInstanceOf(InvalidInputException::class.java)
     }
 
     // ============================================================ 코드 포인트 경계

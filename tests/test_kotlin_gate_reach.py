@@ -197,6 +197,7 @@ TEST_CLASSES: tuple[str, ...] = (
     "kr.easydoc.core.privacy.MaskingParityTest",
     "kr.easydoc.core.privacy.MaskingTest",
     "kr.easydoc.core.privacy.ProvenanceCreationSitesTest",
+    "kr.easydoc.core.text.SurrogatesTest",
     "kr.easydoc.core.text.TextNormalizationTest",
     "kr.easydoc.infrastructure.auth.Argon2PasswordHasherTest",
     "kr.easydoc.infrastructure.auth.AuthenticationWorkUniformityTest",
@@ -232,7 +233,7 @@ TEST_CLASSES: tuple[str, ...] = (
 
 #: 선언 **개수**를 목록과 따로 적는다. 파일과 선언을 함께 지우는 편집이 두 자리에
 #: 흔적을 남기게 하는 장치다. 목록을 고쳤으면 여기도 고쳐야 한다.
-TEST_CLASS_COUNT = 90
+TEST_CLASS_COUNT = 91
 
 #: 선언 개수의 **하한**. `TEST_CLASS_COUNT` 와 역할이 다르다 — 저쪽은 "목록과 개수가
 #: 서로 맞는가"(두 수기 선언 사이의 일관성)이고, 이쪽은 "그 수가 **얼마 아래로는 내려갈 수
