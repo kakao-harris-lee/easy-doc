@@ -32,13 +32,14 @@ openapi: 3.1.0
 # FastAPI 자동 생성 OpenAPI(`docs/migration/_workspace/00_contract-keeper_openapi-fastapi.yaml`)는
 # 초안으로만 썼다. 자동 생성물에는 401·404·409·413·502·503, 모든 응답 헤더,
 # multipart 요청 본문, CORS, status enum이 빠져 있어 손으로 채웠다.
+# (이 줄은 **초판 작성 경위**다. 그중 502는 2026-08-20에 폐기됐다 — `x-retired-responses`.)
 #
 # 이 파일의 예시 값은 전부 합성이다. 실제 사용자 데이터·개인정보를 넣지 않는다.
 # =============================================================================
 
 info:
   title: Easy-Read AI API
-  version: "1.2.0"
+  version: "1.3.0"
   x-baselined-at: "2026-08-12"       # 초판 기준선을 뜬 날 (동결일이 아니다)
   x-rebased-at: "2026-08-12"         # 계약의 성격을 "개선 대상"으로 다시 정의한 날
   x-source-runtime: "Python 3.12 / FastAPI (app/main.py) — 기준선 출처이지 정답이 아니다"
@@ -188,6 +189,48 @@ x-change-policy:
     다른 조항에서는 Kotlin이 계약을 따르는 것이 옳고, parity 하네스는 그 차이를
     "의도된 차이"로 기록한다. 반대로 계약에 없는 자리에서 값이 갈리면 종전대로 차단이다.
     판정 권한은 계약 소유자에게 있다.
+
+# -----------------------------------------------------------------------------
+# 폐기된 응답 — **되살리지 않기 위해 이름을 남긴다**
+#
+# 조항을 지우기만 하면 다음 사람이 같은 자리를 "빠뜨린 것"으로 보고 되살린다.
+# `x-title-policy.x-superseded`와 같은 장치이며, 여기 적힌 상태 코드는
+# **어느 오퍼레이션의 `responses`에도 나타나서는 안 된다**(계약 테스트가 그것을 잰다).
+# -----------------------------------------------------------------------------
+x-retired-responses:
+  - status: "502"
+    component: BadGateway
+    retired_at: "2026-08-20"
+    ground: G1
+    retired_by: "리더 판정 L-1 (게이트 27 교차 종합 행 2) — 계약·구현·테스트를 한 변경 단위로"
+    was: |
+      "하위 시스템 장애 — 재시도할 값어치가 있다"로 두 사유를 담았다:
+      `QueueUnavailableError`(큐 등록 시도 실패)와 `LLMProviderError`(및 하위 둘).
+      선언 자리는 `POST /documents`의 `'502'` 하나뿐이었다.
+    why: |
+      **두 사유 모두 이 API에서 만들 수 없다.**
+
+      1. `QueueUnavailableError` — Redis/ARQ 전제였다. 큐가 같은 DB로 옮겨오면서 등록이
+         저장과 **같은 트랜잭션**에 들어갔고, "저장은 됐는데 등록은 실패"라는 상태가
+         구조적으로 성립하지 않는다. 등록이 실패하면 전량 롤백이고 그때 옳은 코드는
+         500이다. 실측(2026-08-20): 그 예외를 던지는 제품 코드가 **0곳**이었다.
+      2. `LLMProviderError` — **14개 오퍼레이션 중 동기로 LLM을 부르는 것이 없다.**
+         변환은 워커가 비동기로 하고, LLM 실패는 HTTP 상태가 아니라
+         `ConversionResponse.failure_code` 값으로 사용자에게 간다.
+
+      즉 502는 이 계약에서 **도달 0인 조항**이었다. 조항만 지우고 컴포넌트를 남기면
+      참조 없는 고아가 되고, 그것을 읽는 테스트는 자기 사본과 대조해 초록이 된다.
+    if_it_should_return: |
+      **동기로 하위 시스템을 부르는 오퍼레이션이 새로 생기면** 그때 다시 세운다.
+      그 변경은 조항 하나가 아니라 ⑴ 컴포넌트 ⑵ 그 오퍼레이션의 `responses`
+      ⑶ 502와 503과 500을 가르는 근거 ⑷ React 실패 안내를 한 단위로 갖춰야 한다.
+    consumer_debt: |
+      `frontend/src/conversion/failureMessages.ts`의 `EnqueueFailed` 항목은 이제 어떤
+      구현에서도 오지 않는 코드다(조회는 `MESSAGES[code] ?? UNKNOWN`이라 **런타임은
+      깨지지 않는다**). `frontend/src/pages/UploadPage.tsx`의 `502(변환 서비스)` 주석도
+      같다. 둘 다 Phase 6 타입 교체에서 회수한다.
+      `frontend/src/api/client.test.ts`의 502 픽스처는 **일반 오류 경로 검증**이라
+      이 조항과 무관하다 — 건드리지 않는다.
 
 # -----------------------------------------------------------------------------
 # CORS 정책 — OpenAPI로 표현할 수 없어 확장 필드로 둔다.
@@ -357,10 +400,21 @@ x-title-policy:
   forbidden_sources: [body_text, upload_filename]
   fallback_title: "제목 없음"             # 고정 문구. 계약 테스트는 이 값을 코드에 복제하지 말고 여기서 읽는다
   rule: |
-    `title`을 주면 그것이 제목이다 — 제어문자를 걷어내고
-    `x-input-limits.max_title_length`에서 **자른다**(거절하지 않는다).
+    `title`을 주면 그것이 제목이다 — 제어문자와 **짝을 이루지 않은 UTF-16 서로게이트**를
+    걷어내고 `x-input-limits.max_title_length`에서 **자른다**(거절하지 않는다).
     주지 않았거나 정제 후 남는 것이 없으면 제목은 **고정 문구 `fallback_title`**이다.
     **본문에서도 업로드 파일 이름에서도 유도하지 않는다.**
+  x-surrogate-note: |
+    **서로게이트를 걷어내는 조항은 2026-08-20에 더했다**(근거 **G2**).
+    제목은 평문 열에 그대로 저장되므로, 짝 없는 서로게이트가 남으면 드라이버가 UTF-8로
+    쓰는 시점에 갈린다 — 치환(`?`)이면 **조용한 손상**, 오류면 **원인을 알 수 없는 500**이다.
+    둘 다 요구를 어긴다.
+
+    **거절이 아니라 정제인 이유**: 이 절의 처분은 이미 정제다(제어문자를 걷어내고
+    상한에서 자른다). 같은 필드에서 「길이는 자르고 문자는 거절한다」로 갈리면 사용자가
+    **라벨 하나 때문에 문서 접수를 거절당한다.** 저장되는 **본문**은 반대다 —
+    거기서는 잃는 것이 라벨이 아니라 문서이므로 정제가 아니라 거절이며,
+    그 조항이 `x-stored-text-domain`이다. **두 처분이 다른 것은 실수가 아니다.**
   x-superseded: |
     이 절 이전의 계약은 *"생략하면 본문 첫 줄에서 유도한다(30자 목표, 어절 경계에서
     자르고 `…` 부착)"*였다(`DocumentTextRequest.title` · `DocumentFileRequest.title`).
@@ -391,6 +445,66 @@ x-title-policy:
 
     **계약이 정하는 것은 응답에 실리는 `title` 값과 그 값의 출처다.** 어느 층에서
     `fallback_title`을 채우는지(요청 파싱·서비스·저장)는 구현 판단이다.
+
+# -----------------------------------------------------------------------------
+# 저장되는 본문의 정의역 — **텍스트로 왕복하지 않는 값은 받지 않는다**
+# (2026-08-20 신설. 근거 G2 — `migration-safety-gate` I-7의 round-trip 요구)
+#
+# 이 절이 정본이다. 길이는 `x-request-field-constraints`가, **정의역**은 여기가 정한다.
+# 둘은 다른 축이다 — 길이는 "얼마나"이고 정의역은 "그 값이 텍스트로 성립하는가"다.
+# -----------------------------------------------------------------------------
+x-stored-text-domain:
+  ground: G2
+  decided_at: "2026-08-20"
+  requirement: |
+    `migration-safety-gate` **I-7** — 저장 암호화의 round-trip 불변식
+    ("봉인한 것을 열면 같은 값이 나온다")이 **저장 가능한 모든 값에 대해** 참이어야 한다.
+  layer: service            # 위반 시 422 **문자열** detail — `x-request-field-constraints`의 다섯 필드와 같은 모양
+  status: 422
+  detail_shape: string
+  detail: "문서 본문에 텍스트로 저장할 수 없는 문자가 있습니다"   # 고정 문구. 입력값을 담지 않는다. 계약 테스트는 이 값을 여기서 읽는다
+  rule: |
+    저장되는 본문은 **UTF-8로 왕복해야 한다.** 짝을 이루지 않은 UTF-16 서로게이트는
+    UTF-8로 인코딩되지 않고 `?`(U+003F)로 **비가역 치환**된다. 그런 값을 받으면
+    복호화는 성공하는데 사용자 문서만 조용히 영구 손상된다 — 암호가 깨지는 것이 아니라
+    암호화 **이전**, 문자열을 바이트로 바꾸는 자리에서 잃는다.
+
+    그래서 **받지 않고 거절한다.** 치환을 수용하는 대안을 고르지 않은 이유는 치환이
+    비가역이라 나중에 되돌릴 수 없고, 그사이 저장된 행은 원문을 잃은 채 남기 때문이다.
+  applies_to:
+    - field: "DocumentTextRequest.text"
+      reached_from: "POST /documents (붙여넣기 모드)"
+      status: measured           # 이 조항이 실물로 서는 첫 자리
+    - field: "DocumentFileRequest.file에서 추출한 본문"
+      reached_from: "POST /documents (파일 모드)"
+      status: measured
+      note: |
+        docx·hwpx는 well-formed UTF-8 XML을 거치므로 거의 들어오지 않는다.
+        **PDF가 가장 그럴듯한 유입 경로다** — 깨진 `ToUnicode` CMap이 홀로 있는
+        상위 서로게이트를 그대로 내놓을 수 있다.
+    - field: "ConversionReviewRequest.edited_text"
+      reached_from: "PUT /conversions/{conversion_id}"
+      status: pending            # 같은 저장 경로를 지난다. 마감은 #8을 구현하는 단위다
+      note: |
+        검수본도 봉인해 저장하므로 같은 정의역이 걸린다. **오늘 이 팔은 측정되지 않았다** —
+        `status`가 그 사실을 담는다. 빈 선언으로 통과하지 않게 하려면 계약 테스트가
+        `measured`인 팔에 대해서만 케이스를 요구하고, `pending`이 남아 있다는 것 자체를
+        마감 목록으로 읽어야 한다.
+  x-not-the-title: |
+    **제목은 이 절의 대상이 아니다.** 제목은 봉인되지 않는 평문 열이고, `x-title-policy`가
+    **정제** 처분을 정했다(제어문자·짝 없는 서로게이트를 걷어내고 상한에서 자른다).
+    같은 문자 때문에 본문은 거절하고 제목은 정제하는 것이 이 계약의 판정이다 —
+    사유는 `x-title-policy.x-surrogate-note`에 있다.
+  x-why-not-schema: |
+    OpenAPI `pattern`으로 표현되지 않는다. JSON Schema의 정규식은 **코드포인트 시퀀스**를
+    전제하는데 짝 없는 서로게이트는 그 전제를 벗어난 UTF-16 코드유닛이고, 애초에 유효한
+    JSON 문서라도 `\uD800` 이스케이프로 실려 올 수 있다. `maxLength`가 "정규화 후 길이"를
+    말하지 못한 것과 같은 종류의 한계이므로 같은 처방을 쓴다 —
+    `x-request-field-constraints.x-openapi-expressibility` 참조.
+  x-what-this-does-not-say: |
+    **어느 층에서 거르는지는 구현 판단이다.** 계약이 정하는 것은 나간 바이트뿐이다 —
+    이 정의역을 벗어난 본문에 422와 `detail` 문자열이 나가고, **그 문서가 저장되지
+    않는다**는 것. 요청 파싱에서 막든 저장 직전 타입에서 막든 계약은 가리지 않는다.
 
 # -----------------------------------------------------------------------------
 # 요청 본문 필드의 길이·형식 제약 — **어느 층이 재는가 · 무엇을 재는가**
@@ -974,12 +1088,24 @@ paths:
         남의 `workspace_id`는 **404**다 — 빈 목록으로 답하면 남의 작업 공간 존재를
         확인하는 수단이 된다.
 
-        검사 순서(app/services/documents.py): 파일 크기(413) → 추출(422) →
-        본문 길이(422) → 작업 공간 소유권(404) → 저장 → 커밋 → 큐 등록(502).
+        검사 순서: 파일 크기(413) → 추출(422) → 본문 길이(422) → 작업 공간 소유권(404) →
+        **저장 정의역(422)** → **저장과 큐 등록(한 트랜잭션)** → 커밋.
         작업 공간 확인이 저장보다 **먼저**여야 거절당한 업로드가 기본 공간에 남지 않는다.
 
-        큐 등록에 실패하면 이미 커밋된 변환을 `failure_code = "EnqueueFailed"`로
-        표시한 뒤 **502**를 낸다. 등록은 작업 id를 변환 id로 고정해 멱등하다.
+        **저장 정의역이 소유권 뒤에 오는 것은 의도다**(`x-stored-text-domain`). 그것은 요청
+        필드의 형식 규칙이 아니라 **저장 경로의 정의역**이고, 판정하는 자리가 곧 봉인 직전이다.
+        앞의 세 검사와 달리 트랜잭션 **안**에서 나므로 거절되면 함께 롤백된다 — 어느 쪽이든
+        **거절된 업로드는 아무 데도 남지 않는다.**
+
+        **저장과 큐 등록은 한 트랜잭션이고 커밋이 마지막이다.** 큐가 별도 저장소가 아니라
+        같은 DB이므로 "문서·변환은 커밋됐는데 작업만 없다"는 상태가 **구조적으로 생기지
+        않는다**. 등록이 실패하면 문서·변환도 함께 롤백되어 **아무것도 접수되지 않으며**,
+        그때 나가는 것은 **500**(`InternalError`)이다 — 되돌릴 것이 없는 실패에 재시도
+        신호(502)를 붙이지 않는다. 등록은 작업 id를 변환 id로 고정해 **멱등**하다.
+
+        이 문단은 2026-08-20에 개정됐다. 옛 조항(*"큐 등록에 실패하면 이미 커밋된 변환을
+        `failure_code = "EnqueueFailed"`로 표시한 뒤 502"*)은 **Redis/ARQ 전제**였고,
+        PostgreSQL lease 큐에는 그 상태를 만들 무대가 없다 — `x-retired-responses` 참조.
       requestBody:
         required: true
         content:
@@ -1021,9 +1147,12 @@ paths:
         '413': { $ref: '#/components/responses/PayloadTooLarge' }
         '422':
           description: |
-            빈 본문 · 4,000자 초과 · 지원하지 않는 형식 · 추출 실패 · 잘못된 JSON ·
+            빈 본문 · 4,000자 초과 · 지원하지 않는 형식 · 추출 실패 ·
+            **텍스트로 저장할 수 없는 문자**(`x-stored-text-domain`) · 잘못된 JSON ·
             `workspace_id` 형식 오류 · 필드 누락.
             앞의 것들은 문자열 detail, 마지막은 배열 detail이다.
+            **이 목록도 `examples`도 전칭이 아니다** — 새 거절 갈래가 생기면 그 갈래의
+            조항과 예시를 같은 변경 단위에서 더한다.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
@@ -1034,10 +1163,13 @@ paths:
                   value: { detail: "현재는 4,000자 이하 문서만 변환할 수 있습니다 (긴 문서 분할 변환은 준비 중입니다)" }
                 unsupported_format:
                   value: { detail: "지원 형식: docx, pdf, hwpx" }
+                undecodable_text:
+                  # 값의 정본은 `x-stored-text-domain.detail`이다. 여기 있는 것은 그 값의 예시이며,
+                  # 계약 테스트는 두 자리가 같은지도 함께 본다 — 두 벌이 갈리면 오라클이 둘이 된다.
+                  value: { detail: "문서 본문에 텍스트로 저장할 수 없는 문자가 있습니다" }
                 missing_field:
                   value: { detail: [{ loc: ["body", "text"], msg: "Field required", type: "missing" }] }
         '500': { $ref: '#/components/responses/InternalError' }
-        '502': { $ref: '#/components/responses/BadGateway' }
         '503': { $ref: '#/components/responses/ServiceUnavailable' }
 
     # =========================================================================
@@ -1709,42 +1841,48 @@ components:
             unexpected: { value: { detail: "서버 오류가 발생했습니다" } }
             storage: { value: { detail: "저장된 변환 결과를 읽을 수 없습니다" } }
 
-    BadGateway:
-      description: |
-        하위 시스템 장애 — 재시도할 값어치가 있다.
-          - `LLMProviderError`(및 하위 `LLMTruncatedError`·`LLMEmptyResultError`)
-          - `QueueUnavailableError` — 큐에 **등록을 시도했다가 실패**한 경우
-
-        **503과 반드시 구분한다.** 503은 큐·설정이 아예 배선되지 않은 상태다.
-        둘을 하나로 합치면 "일시적 장애라 재시도할 값어치가 있는가"라는 클라이언트
-        판단이 무너진다.
-      content:
-        application/json:
-          schema: { $ref: '#/components/schemas/ErrorResponse' }
-          examples:
-            enqueue_failed: { value: { detail: "변환 요청을 등록하지 못했습니다" } }
+    # BadGateway(502)는 2026-08-20에 **폐기**됐다. 되살리기 전에 `x-retired-responses`를 읽어라 —
+    # 어느 오퍼레이션도 502를 선언하지 않는다는 것이 지금의 조항이고, 그것을 재는 단언이 있다.
 
     ServiceUnavailable:
       description: |
         운영 설정 문제(`ConfigurationError`). 사용자 잘못이 아니다.
-        기동 자체는 막지 않는다 — 설정이 비어도 `/health`로 배포 상태를 진단할 수
-        있어야 하므로, 그 설정이 필요한 요청만 503이 된다.
-          - JWT 비밀키 미설정 또는 32바이트 미만 → 인증 API 전체
-          - **저장 암호화 키 미설정 → 문서 API 전체**
-          - 큐(Redis) 미배선 → 업로드
-          - DB 세션 팩토리 미배선 → 전체
+        **이 상태가 되는 구성은 하나뿐이다.**
+          - **JWT 서명 키 미설정 또는 32바이트 미만 → 인증이 필요한 모든 요청**
+            (인증 API 셋만이 아니다 — 보호 자원 전체가 같은 인증 경로를 지난다.
+            그래서 `ServiceUnavailable`을 인증이 걸린 모든 오퍼레이션이 선언한다.)
 
-        둘째 줄은 2026-08-12 2차 개정으로 이름만 바뀌었다("Fernet 키" → "저장 암호화 키").
-        재개발에서 표준 AEAD를 처음부터 쓰기로 해 **스킴 이름이 Fernet에 묶이지 않는다** —
-        계약이 정하는 것은 "원문 저장 암호화 키가 없으면 문서 API가 실패한다"이지 어떤
-        암호 스킴을 쓰는가가 아니다. **상태 코드(503)와 동작·`detail` 문구는 그대로다.**
+        **기동 자체는 막지 않는다** — 설정이 비어도 `/health`로 배포 상태를 진단할 수
+        있어야 하므로, 그 설정이 필요한 요청만 503이 된다. 401로 감추지 않는 것도 조항이다:
+        배포 사고가 "사용자가 토큰을 잘못 냈다"로 둔갑하면 안 된다.
+
+        **2026-08-20에 세 줄을 내렸다**(근거 **G1** — 셋 다 이 상태를 만들 수 없다).
+
+          1. ~~큐(Redis) 미배선 → 업로드~~ — PostgreSQL lease 큐에서 큐는 **별도 배선을
+             갖지 않는다.** 작업 테이블은 Flyway 마이그레이션이고 접속은 같은 DataSource다.
+             "큐만 미배선"은 독립한 구성 상태로 **존재하지 않는다.** 예시 `no_queue`도 함께 내렸다.
+          2. ~~저장 암호화 키 미설정 → 문서 API 전체~~ — **2026-08-19 리더 판정(게이트 25
+             F-2·F-3·X8)이 이 자리의 규약을 뒤집었다.** 저장 암호화는 오설정이 드러나는
+             시점이 다르다(키가 틀리면 **성공한 채 열 수 없는 행**을 남기고 그것은 되돌릴 수
+             없다). 그래서 **기동 자기점검이 앱을 띄우지 않는다.** 즉 "키가 없는데 서비스 중"인
+             상태가 존재하지 않으므로 그 503은 도달 0이었다. 계약이 그 판정을 반영하지 못한 채
+             남아 있었다. 예시 `no_cipher`도 함께 내렸다 — 실측하면 그 문구는 구현의 방어
+             상수와도 달랐고(둘 다 나가지 않으므로 아무 데서도 걸리지 않았다), 그것이
+             **도달 0인 조항이 조용히 갈리는 방식**이다.
+          3. ~~DB 세션 팩토리 미배선 → 전체~~ — **내리지 않았다. 재지 않았기 때문이다.**
+             같은 계열로 의심되나(DataSource가 없으면 컨텍스트 조립이 실패한다) 기동 동작을
+             실제로 돌려 확인하지 않았다. **재지 않은 것을 지우지 않는다.**
+             처분은 `/health` description의 Redis 문면과 함께 리더가 단위를 지정한다.
+
+        **그래서 `POST /documents`의 503은 어디서 오는가**: 위 유일한 줄, 곧 **인증 경로**다.
+        업로드 고유의 503 구성은 **없다** — 저장 암호화가 없는 배포는 뜨지 않고, 큐는
+        배선이라는 것을 갖지 않는다. 큐 등록이 **실패**하는 것은 구성 문제가 아니라 실행
+        실패이고 그때는 500이다(`POST /documents` 설명).
       content:
         application/json:
           schema: { $ref: '#/components/schemas/ErrorResponse' }
           examples:
             no_jwt: { value: { detail: "인증이 설정되지 않았습니다" } }
-            no_cipher: { value: { detail: "문서 저장이 설정되지 않았습니다" } }
-            no_queue: { value: { detail: "작업 큐가 준비되지 않았습니다" } }
             short_secret: { value: { detail: "인증 서명 키는 32바이트 이상이어야 합니다" } }
 
   schemas:
@@ -1896,6 +2034,8 @@ components:
             둘 다 **서비스 층** 판정이라 422 **문자열** detail이다(`maxLength` 미사용 사유는
             `x-request-field-constraints`). ⚠ 이 필드는 `edited_text`와 달리 **원시 길이**로
             잰다 — 그 비대칭은 미결이다(같은 절 `x-open-asymmetry`).
+            길이와 **별개의 축**으로 **정의역**이 걸린다 — 텍스트로 왕복하지 않는 값은
+            길이와 무관하게 422다(`x-stored-text-domain`).
         title:
           anyOf: [{ type: string }, { type: 'null' }]
           description: |
@@ -2004,6 +2144,8 @@ components:
             시점에** 터져 사용자가 원인을 알 수 없는 500을 받기 때문이다.
             위반은 422 **문자열** detail이며, 그래서 `maxLength`를 쓰지 않는다 — 스키마
             키워드는 정규화 전 원시 값에 걸린다(`x-request-field-constraints`).
+            이 필드도 봉인해 저장하므로 **정의역**이 함께 걸린다(`x-stored-text-domain`) —
+            길이와는 다른 축이고, 그 팔의 마감은 이 오퍼레이션을 구현하는 단위다.
 
     ConversionResponse:
       type: object
@@ -2060,7 +2202,11 @@ components:
           maxLength: 64
           description: |
             실패 사유 코드 = 예외 클래스명. **문서 본문·모델 응답은 절대 담기지 않는다.**
-            큐 등록 실패는 예외 클래스명이 아닌 `"EnqueueFailed"`를 쓴다.
+            **변환이 접수된 뒤의 실패만 여기 실린다.** 접수 자체가 실패하면 저장과 큐
+            등록이 함께 롤백되어 변환 행이 남지 않으므로(`POST /documents` 설명) 이
+            필드로 알릴 대상이 없다.
+            `"EnqueueFailed"`는 **2026-08-20에 폐기된 값**이다 — Redis/ARQ 전제였고,
+            어떤 구현에서도 더는 나오지 않는다(`x-retired-responses`).
 
     DocumentListItem:
       type: object
@@ -2209,6 +2355,87 @@ components:
 # 변경 이력
 # =============================================================================
 x-changelog:
+  - version: "1.3.0"
+    date: "2026-08-20"
+    revision: "G27-C3"   # 리더 판정 L-1 잔여 ⑴⑵ + 구현 계획 §9 질문 ④
+    author: contract-keeper
+    change: |
+      **판정 셋을 한 변경 단위로 집행했다 — 502 폐기 · 503 큐 줄 폐기 · 저장 정의역 신설.**
+
+      ⑴ **502(`BadGateway`)를 폐기했다** (근거 **G1**).
+         - `POST /documents`의 `'502'` 선언 삭제 — 계약 전체에서 502를 선언한 유일한 자리였다.
+         - `components/responses/BadGateway` **삭제**(참조가 그 하나였으므로 남기면 고아다).
+         - `POST /documents` description의 **검사 순서 문장**과 **`EnqueueFailed`/502 문단** 재서술 —
+           저장과 큐 등록이 한 트랜잭션이고, 등록 실패는 전량 롤백 + **500**임을 명시.
+         - `ConversionResponse.failure_code.description`에서 `"EnqueueFailed"` 요구 삭제.
+         - **`x-retired-responses` 신설** — 폐기 사실·사유·되살릴 조건·소비자 부채를 남긴다.
+      ⑵ **`ServiceUnavailable`에서 도달 0인 **두 줄**과 대응 예시를 내렸다** (근거 **G1** ×2).
+         - 「큐(Redis) 미배선 → 업로드」 + `no_queue` — lease 큐에 별도 배선이 없다.
+         - **「저장 암호화 키 미설정 → 문서 API 전체」 + `no_cipher`** — **큐 줄을 재다가
+           형제 줄도 죽어 있음을 발견했다.** 2026-08-19 리더 판정(게이트 25 F-2·F-3·X8)이
+           저장 암호화를 **기동 fail-fast**로 바꿨으므로 "키가 없는데 서비스 중"인 상태가
+           없다. 계약이 그 판정을 반영하지 못한 채 남아 있었다.
+         - 남은 유일한 줄(**인증 서명 키**)의 적용 범위를 「인증 API 전체」에서
+           **「인증이 필요한 모든 요청」**으로 정정했다 — 보호 자원 전체가 같은 경로를 지나고,
+           그것이 이 컴포넌트를 13개 오퍼레이션이 선언하는 근거다.
+         - 넷째 줄(DB 세션 팩토리)은 **재지 않았으므로 그대로 두었다.**
+      ⑶ **`x-stored-text-domain` 신설** (근거 **G2**) — 저장되는 본문의 **정의역**.
+         짝 없는 UTF-16 서로게이트는 422 **문자열** `detail`로 거절한다.
+         `POST /documents` 422 `examples`에 `undecodable_text` 추가,
+         `DocumentTextRequest.text`·`ConversionReviewRequest.edited_text` 설명에 포인터 추가.
+      ⑷ **`x-title-policy.rule`에 서로게이트 제거를 더했다** (근거 **G2**).
+         제목은 **정제**이고 본문은 **거절**이다 — 다른 처분인 사유를 `x-surrogate-note`에 적었다.
+    ground: "G1(⑴⑵) · G2(⑶⑷)"
+    rationale: |
+      **⑴⑵의 공통 사유: 두 조항 모두 Redis/ARQ 아키텍처의 잔재였다.**
+      큐가 PostgreSQL의 테이블이 되면서 ⓐ "커밋은 됐는데 등록만 실패"라는 상태와
+      ⓑ "큐만 미배선"이라는 구성이 **둘 다 존재할 수 없게** 됐다. 실측(2026-08-20):
+      `QueueUnavailableException`을 던지는 제품 코드 **0곳**, 큐 배선에 대한
+      `ConfigurationException` **0곳**. 계약이 두 자리에서 **도달 0인 조항**을 들고 있었다.
+
+      **한 판정에서 함께 처분한 이유**: 두 조항은 documents 명세의 X-C6 축(「502 ≠ 503」)의
+      두 팔이었다. 한 팔만 내리면 다른 팔이 무대 없는 케이스로 남는다.
+      축은 **「503 ≠ 500」**으로 다시 세웠다 — 두 팔 모두 도달이 실재한다
+      (503 = **인증 서명 키가 하한 미만인 구성** / 500 = 큐 등록 실패로 전량 롤백).
+
+      **재는 김에 형제 줄을 재지 않았으면 같은 실수를 반복할 뻔했다.** 503의 무대를 처음에는
+      「저장 암호화 키 미배선」으로 옮기려 했는데 **그 구성도 존재하지 않는다**(위 ⑵ 둘째 항목).
+      계약 문면만 보고 「어느 구성이 실재하는가」를 고르면 무대 없는 케이스가 다시 생긴다.
+
+      **⑶의 사유**: 성질은 이미 구현에 있었고 **없던 것은 오라클**이다.
+      계약에 기계가독 문구가 없으면 경계 테스트가 그 문구를 **코드에 복제**하고,
+      그러면 계약과 구현이 갈려도 테스트는 자기 사본과 대조해 초록이다
+      (`x-filename-charset` 신설과 같은 갈래). 이 갈래는 C3에서 처음 실물로 열린다.
+    react_impact: |
+      **런타임 파손 0건**(실측 2026-08-20).
+        - `frontend/src/conversion/failureMessages.ts:43` `EnqueueFailed` — 조회가
+          `MESSAGES[code] ?? UNKNOWN`이라 값이 오지 않아도 예외가 없다. **사용되지 않는 항목 1**.
+        - `frontend/src/pages/UploadPage.tsx:74` 주석의 `502(변환 서비스)` — 주석이다.
+        - `frontend/src/api/client.test.ts:121` 502 픽스처 — **일반 오류 경로** 검증이라
+          이 조항과 무관하다. 건드리지 않는다.
+        - `frontend/src/api/types.ts` — `failure_code: string | null`. **타입 변화 없음.**
+        - ⑶⑷는 422 갈래가 하나 느는 것이고 React는 `detail` 문자열을 그대로 화면에
+          올린다(`readErrorMessage`). **분기 추가 없음.**
+      Phase 6 회수 대상 **2건**(위 첫 둘) — `x-retired-responses.consumer_debt`가 정본.
+    version_note: |
+      **`info.version`을 1.2.0 → 1.3.0으로 올린다.** 나가는 바이트가 바뀐다 —
+      `POST /documents`가 더는 502를 낼 수 없고, 422 갈래가 하나 는다.
+      **비파괴다**: 응답 상태 집합의 **축소**는 소비자가 받는 값의 부분집합화이고,
+      422 갈래 추가는 이미 선언된 상태 안에서 일어난다. 필드·타입·헤더 변화 0.
+
+      ⚠ **버전 규칙 자체는 아직 계약에 없다.** `x-change-policy`에 `versioning` 키가
+      없고 그 신설은 별도 작업(C6)이다. 이 bump는 **직전 개정(G27-C1)이 세운 선례**
+      —「나가는 바이트가 바뀌면 올린다」— 를 따른 것이며, 규칙이 서면 **이 항목과
+      G27-C1을 소급 대조**해야 한다. 규칙보다 먼저 굳히지 않기 위해 그 사실을 적는다.
+    affected_tests: |
+      **계약 명세**(`04_contract-keeper_documents-test-spec.md`): DC-18 재정의(500) ·
+      DC-19 재정의(503의 무대 교체) · X-C6 재정의(「503 ≠ 500」) · DC-24·DC-25 신설 ·
+      파서 노드 P-38·P-39 신설 · 음성 대조 N-31~N-34 신설.
+      **Kotlin**: `ErrorContractTest`의 502 두 행 · `GlobalExceptionHandler.mappingFor`의
+      `BAD_GATEWAY` 갈래 · `ErrorProbeController`의 `queue` 항목 ·
+      `QueueUnavailableException` 자체(던지는 곳 0).
+    notified: [kotlin-implementer, parity-verifier, privacy-gate, 리더]
+
   - version: "1.2.0"
     date: "2026-08-20"
     revision: "G27-C1"   # 게이트 27 codex Critical ① 의 계약 레인 몫
