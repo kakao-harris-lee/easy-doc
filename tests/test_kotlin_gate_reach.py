@@ -391,6 +391,13 @@ FLOOR_TEST_CLASSES: tuple[str, ...] = (
     #   남기는 사유는 따로 있다: **DL-4·DL-9 가 목록 오퍼레이션의 소유권 은닉을 잰다** —
     #   타인 소유 항목 0건, 남의 작업 공간에 404(빈 목록 아님), 그리고 「없는 것과 남의 것의
     #   응답 바이트가 같다」(X-B2). `privacy-gate` 의 소유 술어 감사가 그 결론을 인용한다.
+    # 2026-08-21 (리더, G-β X2 — **판정을 뒤집었다**): 종전에 넣지 않은 근거는 「레인이
+    #   범위를 한 자리로 좁혔으니 재지 않은 범위를 선점하지 않는다」였다. **그 논리가 두
+    #   가지를 뒤섞었다** — 바닥은 **파일이 지워지는 것**을 막고, 속성의 **주장 범위**를
+    #   넓히는 것과 별개다. 그리고 codex 가 `build.gradle.kts` 의 태그 제외로 이 파일이
+    #   **한 줄에 침묵할 수 있음**을 짚었다(β-20 이 그 축을 이름 축으로 닫았다).
+    #   두 인자 기준의 차단 칸(한 줄 × 탐지 0)이므로 넣는다.
+    "kr.easydoc.api.DocumentListHeaderFloorTest",
     "kr.easydoc.api.DocumentListReachTest",
     # 2026-08-21 (리더, C5 P-9): 「주석·KDoc·설정이 이름으로 지목한 테스트·클래스·계약
     #   문면이 실재하는가」 — 그 **종류**의 유일한 강제자다. L-③ 이 걸어 둔 재개봉 조건이
@@ -404,8 +411,12 @@ FLOOR_TEST_CLASSES: tuple[str, ...] = (
     #   영구히 없앴고**, 같은 커밋의 음성 대조가 첫 번째의 구멍을 실측했다(`@Valid` +
     #   열거 밖 제약 → 스캔 초록). 그래서 이 파일이 사라지면 F3 의 결론이 함께 무너진다 —
     #   이 목록의 기준(「다른 판정의 근거로 인용되는 탐지기」)에 정면으로 든다.
-    #   형제 `DocumentListHeaderFloorTest` 는 넣지 않았다: 그 레인이 범위를 「이 커밋이
-    #   만든 한 자리」로 명시해 뒀고, 바닥에 넣는 것은 재지 않은 범위를 선점하는 편집이다.
+    #   (종전 이 자리에 「형제 `DocumentListHeaderFloorTest` 는 넣지 않았다 — 레인이 범위를
+    #   한 자리로 좁혔으니 재지 않은 범위를 선점하지 않는다」가 있었다. **G-β X2 에서 그
+    #   판정을 뒤집었고 그 문장은 이제 거짓이라 지웠다.** 사유는 이 목록에서
+    #   `DocumentListHeaderFloorTest` **바로 앞** 주석에 있다 — 바닥은 파일이 지워지는 것을
+    #   막고, 속성의 주장 범위를 넓히는 것과
+    #   별개다. 편입만 하고 이 선언을 그대로 두었더니 stop-time 게이트가 그 모순을 잡았다.)
     # 2026-08-21 (리더, C4 R-1~R-4): 아래 둘을 함께 넣는다. F3 은 이제 **세 장치가 각각
     #   다른 구멍**을 덮고 그 분담이 실측으로 확인됐다 — `RequestFieldConstraintLayerTest`
     #   만 「경계가 계약보다 느슨한 제약」을 잡고(바이트 축의 관측창은 경계 ±1 이라
@@ -534,13 +545,16 @@ FLOOR_TEST_CLASSES: tuple[str, ...] = (
 #: 와 같은 **라쳇**이라 올리기만 하고, 낮추려면 별도의 diff 와 사유가 필요하다.
 #:
 #: 26 → 28 (2026-08-21, 리더, C5): `DocumentDeleteReachTest`·`NamedReferenceGuardTest` 편입.
-MIN_FLOOR_CLASSES = 28
+#:
+#: 28 → 29 (2026-08-21, 리더, G-β X2): `DocumentListHeaderFloorTest` 편입.
+MIN_FLOOR_CLASSES = 29
 
 MIN_TESTS_IN_FLOOR_CLASS: dict[str, int] = {
     "kr.easydoc.api.AuthenticationCoverageContractTest": 5,
     "kr.easydoc.api.ContractErrorBodyReachTest": 11,
     "kr.easydoc.api.DocumentBodyLogLeakReachTest": 1,
     "kr.easydoc.api.DocumentDeleteReachTest": 14,
+    "kr.easydoc.api.DocumentListHeaderFloorTest": 2,
     "kr.easydoc.api.DocumentListReachTest": 10,
     "kr.easydoc.api.NamedReferenceGuardTest": 16,
     "kr.easydoc.api.PrivateResponseHeadersReachTest": 7,
