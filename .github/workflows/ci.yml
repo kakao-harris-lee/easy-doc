@@ -224,6 +224,17 @@ jobs:
       # 분모는 `git ls-files` 전수이고 면제 목록은 없다. 훑은 수가 0이면 실패한다.
       - name: 원시 제어문자 전수 검사 (경로 명시 — 추적 파일 전건)
         run: uv run pytest tests/test_raw_control_chars.py
+      # 아래 셋은 2026-08-22 하네스 개조에서 신설됐고, **처음엔 경로 명시가 빠져 있었다**
+      # (`xx_harness-fixes` F-4). blanket `uv run pytest` 가 수집하므로 통과는 했지만,
+      # 그 상태로 파일을 지우면 **99 passed EXIT=0** 이었다 — 이 저장소가 다른 게이트
+      # 네 곳에 전부 붙여 둔 규약(파일 소실을 개수 아닌 배선으로 잡는다)을 새 셋에는
+      # 안 붙인 것이다. 같은 빈자리가 신설 파일마다 재발하므로 여기 명시로 고정한다.
+      - name: 커밋 게이트 사슬 도달 (경로 명시 — ruff 가 pytest 안에서 돈다)
+        run: uv run pytest tests/test_commit_gate_chain_reach.py
+      - name: Kotlin 테스트 클래스 정체성 스냅샷 (경로 명시)
+        run: uv run pytest tests/test_kotlin_class_snapshot_reach.py
+      - name: 리뷰 커버리지 (경로 명시 — 비면제 커밋이 리뷰·장부 중 하나에 드는가)
+        run: uv run pytest tests/test_review_coverage_reach.py
       - run: uv run pytest
       # 골든셋 LLM 평가(-m llm)는 API 키 시크릿 등록 후 별도 잡으로 활성화한다.
 

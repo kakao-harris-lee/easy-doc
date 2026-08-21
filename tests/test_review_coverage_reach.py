@@ -142,9 +142,57 @@ def _reviewed_shas(coverage: str) -> frozenset[str]:
     return frozenset(shas)
 
 
+#: 장부 `상태` 칸에 허용되는 값. 그 밖의 값은 행을 무효로 만든다.
+_LEDGER_STATES: Final = ("대기", "이연")
+
+#: 장부 표의 열 수(`커밋 · 무엇을 바꿨나 · 상태 · 왜 4축이 아닌가 · 리뷰할 회차 · 닫힘`).
+_LEDGER_COLUMNS: Final = 6
+
+
 def _recorded_shas(ledger: str) -> tuple[str, ...]:
-    """이연 장부에 적힌 SHA 토큰. 짧은 SHA 가 허용되므로 접두 비교용으로 그대로 돌려준다."""
-    return tuple(match.group(1) for match in _SHA_IN_BACKTICKS.finditer(ledger))
+    """이연 장부의 **표 행**에서만 SHA 를 읽는다.
+
+    ## 절 전체 정규식에서 구조적 표 파싱으로 갈아탔다 (F-2 / codex Finding 3, 2026-08-22)
+
+    초판은 절 전체에서 백틱 SHA 를 정규식으로 긁었다. 두 리뷰 레인이 **독립적으로** 같은
+    자리에 닿았고 둘 다 실행으로 재현했다:
+
+      * codex — 설명 문단의 ``deadbee`` 가 기록된 SHA 로 반환됐다.
+      * Claude — 산문 한 줄 ``(여담: `bd4def464` …)`` 로 새 비면제 커밋이 초록이 됐고,
+        **그 시점 HEAD 에서 이미 그 경로로 통과 중**이었다(`e7faccc` 가 표 행이 아니라
+        산문 인용으로 계상됨).
+
+    즉 「적혔다」의 하한이 **「절 어딘가에 SHA 가 언급됐다」**로 내려가 있었다. 그러면 `대기`/
+    `이연` 어휘도, `리뷰할 회차` 도 강제되지 않는다 — 어휘를 갈라 적어 놓고 그것을 재는 코드가
+    0 이었다.
+
+    ## 행이 유효할 조건 (셋 다)
+
+      1. 열이 [_LEDGER_COLUMNS] 개이고 첫 칸이 백틱 SHA 다.
+      2. `상태` 칸이 [_LEDGER_STATES] 중 하나다(굵게 표시는 벗겨 낸다).
+      3. `리뷰할 회차` 칸이 비어 있지 않다(`-` 도 빈 것으로 본다).
+
+    표 밖 산문·구분선·머리행은 열 수나 SHA 형식에서 걸러진다. **이 함수가 「멈추고 장부에
+    적는다」라는 선택지의 하한을 정한다** — 그래서 하한을 산문이 아니라 행에 둔다.
+    """
+    recorded: list[str] = []
+    for line in ledger.splitlines():
+        stripped = line.strip()
+        if not stripped.startswith("|"):
+            continue
+        cells = [cell.strip() for cell in stripped.strip("|").split("|")]
+        if len(cells) != _LEDGER_COLUMNS:
+            continue
+        sha_match = _SHA_IN_BACKTICKS.fullmatch(cells[0])
+        if sha_match is None:
+            continue
+        state = cells[2].replace("*", "").strip()
+        if state not in _LEDGER_STATES:
+            continue
+        if not cells[4] or cells[4] == "-":
+            continue
+        recorded.append(sha_match.group(1))
+    return tuple(recorded)
 
 
 def _judged_commits() -> tuple[tuple[str, str], ...]:
