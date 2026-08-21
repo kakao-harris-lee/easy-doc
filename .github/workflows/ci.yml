@@ -195,6 +195,21 @@ jobs:
       # kotlin 잡이 요구 모드로 켠다.
       - name: Kotlin 테스트 클래스 실재 확인 (경로 명시)
         run: uv run pytest tests/test_kotlin_gate_reach.py
+      # 같은 규약을 로컬 검증 러너 계약에도 적용한다 (β-01 의 장치 절반).
+      #
+      # 리더가 「전건 초록」을 보고했는데 이 잡이 빨갰다. 원인은 검증 집합이 이 잡의
+      # **부분집합**이었던 것이다 — 빠진 것: `ruff format --check` ·
+      # `dump_python_snapshots.py --check` · 개별 경로 pytest 8종. 같은 형태가 이 세션에서
+      # 세 번 났고, 인스턴스는 `94440d8` 로 닫혔지만 **재발 방지 장치가 0** 이었다.
+      #
+      # 이 파일이 지키는 것은 `.claude/skills/kotlin-migration/scripts/quality_gate_local.py`
+      # 의 계약 전부다 — ⑴ 명령 목록이 이 워크플로에서 **유도**된다(하드코딩이면 「워크플로를
+      # 고치면 목록이 따라 바뀐다」 대조가 빨개진다) ⑵ 라벨이 명령 단위로 분해된다
+      # (`ruff check` 와 `ruff format --check` 가 각각 한 줄) ⑶ 트리가 더럽거나 HEAD 가
+      # 움직이면 「전건 초록」을 찍지 않는다 ⑷ 명령이 0개면 통과가 아니다.
+      # 전체 수집만 있으면 이 파일을 지워도 exit 0 이다 — 수집이 줄고 스위트는 초록이다.
+      - name: 로컬 검증 러너 계약 실재 확인 (경로 명시)
+        run: uv run pytest tests/test_quality_gate_local.py
       # 원시 제어문자 전수 검사 (게이트 26 — privacy-gate 처방 · 교차 종합 §7 양립 확인).
       #
       # 추적 파일에 원시 제어문자가 들어가는 사고가 게이트 2·12·13·25·26 에 걸쳐 반복됐고,
@@ -278,10 +293,38 @@ jobs:
       - name: PostgreSQL 이미지 미리 받기
         run: docker pull pgvector/pgvector:pg16
 
+      # 이번 실행의 표식 (β-02 — 「돌았다」와 「이번에 돌았다」를 가른다).
+      #
+      # 아래 실행 대조는 `build/test-results/test/*.xml` 을 읽는다. 그 XML 은 Gradle
+      # 태스크의 **출력**이라 `UP-TO-DATE` 면 그대로 남고 `FROM-CACHE` 면 복원된다.
+      # 실측(2026-08-21): `--rerun-tasks` 로 만든 XML 의 `timestamp="…T08:06:19.523Z"` 가
+      # 리포트 디렉터리 삭제 뒤 `FROM-CACHE` 복원에서 **글자 그대로 되살아났다**. 파일
+      # mtime 만 복원 시각으로 갱신되므로 mtime 은 신선도의 근거가 될 수 없다.
+      #
+      # 그래서 빌드 **앞에서** 현재 UTC 시각을 박고, 대조가 모든 리포트의 `timestamp` 가
+      # 그보다 나중인지 본다. **순서가 이 축의 전부다** — 표식이 빌드 뒤로 가면 복원된
+      # 리포트도 표식보다 나중이 되어 언제나 초록이 된다. 그 순서는
+      # `tests/test_kotlin_gate_reach.py::test_CI_가_이번_실행_표식과_캐시_금지를_배선했다`
+      # 가 이 파일을 파싱해 고정한다(그 테스트는 quality 잡에서도 돈다).
+      #
+      # 요구 모드에서 이 표식이 없으면 대조가 **실패**한다(fail-closed) — 표식이 조용히
+      # 사라지면 그 축이 존재만 하고 도달이 0 이 되기 때문이다.
+      - name: 이번 실행 표식 (리포트 신선도 판정의 기준 시각)
+        working-directory: .
+        run: echo "KOTLIN_GATE_REACH_RUN_STARTED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_ENV"
+
       # build = 컴파일 + ktlintCheck + detekt + test (Testcontainers 포함).
       # 락파일과 어긋나면 실패시킨다 — 전이 의존성이 조용히 올라가는 것을 막는 지점이다.
+      #
+      # `--no-build-cache` (β-02): 이 저장소는 `gradle.properties` 에 `org.gradle.caching=true`
+      # 다. CI 는 매번 새 체크아웃이라 프로젝트 `build/` 는 없지만 `setup-gradle` 이
+      # `~/.gradle` 을 캐시하므로 **빌드 캐시**가 남는다. 그 경로로 테스트 태스크가
+      # `FROM-CACHE` 가 되면 이 잡은 테스트를 한 건도 돌리지 않고 초록이 되고, 그 리포트가
+      # 「게이트가 CI 에서 실제로 돌았다」의 근거로 인용된다. 캐시를 끊어 그 경로를 없앤다.
+      # `--rerun-tasks` 를 쓰지 않는 이유는 비용이다(컴파일까지 전부 다시 돈다) — 그리고
+      # 신선한지는 선언이 아니라 위 표식이 **실행마다 측정**한다.
       - name: Gradle build (ktlint · detekt · test)
-        run: ./gradlew build --no-daemon
+        run: ./gradlew build --no-daemon --no-build-cache
 
       # 테스트 클래스 **전체**의 실행 대조 (게이트 25 H4 — codex 단독 지적 · 게이트 26).
       #

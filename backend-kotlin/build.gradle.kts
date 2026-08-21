@@ -157,6 +157,42 @@ subprojects {
             .file(apiContractFile)
             .withPropertyName("apiContract")
             .withPathSensitivity(PathSensitivity.NONE)
+
+        // 소스 전수를 훑는 탐지기가 **실행 시점에 읽는 것**을 선언 입력으로 건다 (β-02).
+        //
+        // 위 계약 파일만 걸어 두어 **비대칭**이었다. 같은 블록이 `easydoc.kotlin.source.root`
+        // 로 rootDir 을 넘겨 주는데, 그 루트 아래 파일들은 선언 입력이 아니었다.
+        // 실측(2026-08-21): `ParityDeclarationSyncTest` 가 실행 시점에 읽는
+        // `backend-kotlin/parity-domains.txt` 에서 도메인 한 줄을 지웠는데
+        // `./gradlew :core:test` 가 **UP-TO-DATE** 로 끝났다(그 상태에서 `--rerun-tasks` 를
+        // 주면 그 테스트가 `["export"]` 를 지목하며 실패한다 — 양성 대조). 즉 스캐너가
+        // 재는 대상이 바뀌어도 스캐너가 돌지 않았고, 그 실행의 초록은 그 변경에 대해
+        // 아무 의미가 없었다.
+        //
+        // 왜 `inputs.dir(rootDir)` 이 아닌가: 그러면 `build/` 산출물이 입력에 들어가
+        // 순환이 생기고 매 실행이 out-of-date 가 된다. 그래서 **소스 트리와 선언 파일만**
+        // 건다. 모듈 자기 소스는 이미 컴파일 산출물로 입력이지만, 다른 모듈의 소스는
+        // 아니었다 — 그 자리가 이 선언의 값이다.
+        //
+        // 비용: 어느 모듈의 소스를 고쳐도 모든 테스트 태스크가 다시 돈다. CI 는 매번 새
+        // 체크아웃이라 추가 비용이 0 이고, 로컬에서는 「스캐너가 재는 것이 바뀌면 스캐너가
+        // 돈다」를 사는 값이다.
+        inputs
+            .files(
+                rootProject.fileTree(rootDir) {
+                    include("**/src/**")
+                    include("parity-domains.txt")
+                    exclude("**/build/**")
+                    exclude("**/.gradle/**")
+                },
+            ).withPropertyName("scannedSourceTree")
+            .withPathSensitivity(PathSensitivity.RELATIVE)
+
+        // parity fixture(정본 입력)도 테스트가 실행 시점에 읽는다. 같은 사유다.
+        inputs
+            .dir(parityFixturesDir)
+            .withPropertyName("parityFixtures")
+            .withPathSensitivity(PathSensitivity.RELATIVE)
     }
 
     // 일반 `test` 는 게이트 디렉터리를 건드리지 않는다. parity 산출물은 모듈 build/ 안에
