@@ -44,6 +44,8 @@
 """
 
 import os
+import sys
+import time
 import warnings
 from collections.abc import AsyncIterator
 
@@ -271,6 +273,38 @@ def run_context(observed_models: list[str]) -> RunContext:
     )
 
 
+def log_progress(
+    phase: str, index: int, total: int, document_id: str, outcome_code: str, started: float
+) -> None:
+    """레인이 **어디까지 갔는지**를 한 줄씩 남긴다.
+
+    이 함수가 있는 이유는 실제 사고 하나다. CI 의 `llm-lane` 잡이 30분 한도에 걸려
+    죽었는데, collection 이후 **출력이 한 줄도 없어** 어디서 시간을 쓰는지 로그만으로는
+    알 수 없었다. 원인 규명에 CI 로그가 아니라 저장소 고고학(실측 소요가 적힌 원장)이
+    필요했고, 그건 로그가 제 일을 못 했다는 뜻이다.
+
+    시간이 전부 module-scoped fixture(`outcomes`) 안에서 소모되는 구조라 **테스트 결과
+    줄이 하나도 나오기 전에** 한도가 끝난다. 그래서 진행 신호는 테스트 경계가 아니라
+    루프 안에서 나와야 한다.
+
+    **문서 id·순번·경과 초만 찍는다.** 본문·문장·팩트 리터럴은 절대 싣지 않는다
+    (CLAUDE.md 보안 규칙 — 로그에 문서 본문·개인정보 금지). `outcome_code` 도 사유
+    코드이지 내용이 아니다.
+
+    `sys.stdout` 에 `flush=True` 로 쓴다. 버퍼에 남으면 프로세스가 kill 될 때 통째로
+    사라져 이 함수가 존재하는 이유가 없어진다. **다만 pytest 의 기본 캡처는 실패한
+    테스트에만 출력을 재생하고, 타임아웃으로 죽은 프로세스는 재생 자체를 못 한다** —
+    그래서 CI 는 이 레인을 `-s` 로 돌린다(`.github/workflows/ci.yml`). 한쪽만 있으면
+    이 로그는 다시 안 보인다.
+    """
+    elapsed = time.monotonic() - started
+    print(
+        f"[골든 {phase}] {index}/{total} {document_id} {outcome_code} (누적 {elapsed:.0f}초)",
+        file=sys.stdout,
+        flush=True,
+    )
+
+
 async def convert_all(provider: LLMProvider) -> dict[str, ConversionOutcome | None]:
     """전 문서를 변환한다. 변환 실패는 None으로 기록하고 계속 진행한다.
 
@@ -280,12 +314,16 @@ async def convert_all(provider: LLMProvider) -> dict[str, ConversionOutcome | No
     """
     service = ConversionService(provider=provider)
     results: dict[str, ConversionOutcome | None] = {}
-    for document in DOCUMENTS:
+    started = time.monotonic()
+    for index, document in enumerate(DOCUMENTS, start=1):
         try:
             results[document.id] = await service.convert(document.source_text)
+            outcome_code = "ok"
         except LLMProviderError:
             # 예외 메시지에도 본문이 없도록 설계되어 있으나, 출력은 사유 코드로만 남긴다.
             results[document.id] = None
+            outcome_code = "변환실패"
+        log_progress("변환", index, len(DOCUMENTS), document.id, outcome_code, started)
     return results
 
 
@@ -369,17 +407,23 @@ async def test_judge_점수를_기록한다(
     """
     scores: dict[str, JudgeScore] = {}
     notes: list[str] = []
-    for document in evaluation.documents:
+    started = time.monotonic()
+    total = len(evaluation.documents)
+    for index, document in enumerate(evaluation.documents, start=1):
         outcome = evaluation.outcomes.get(document.id)
         if outcome is None:
             notes.append(f"{document.id}: 변환실패")
+            log_progress("채점", index, total, document.id, "변환실패건너뜀", started)
             continue
         try:
             scores[document.id] = await judge_conversion(
                 judge_provider, source=document.source_text, converted=outcome.easy_text
             )
+            outcome_code = "ok"
         except LLMProviderError:
             notes.append(f"{document.id}: 채점실패")
+            outcome_code = "채점실패"
+        log_progress("채점", index, total, document.id, outcome_code, started)
 
     observation = summarize_judge(evaluation, scores)
     coverage = observation.scored / observation.documents if observation.documents else 0.0
