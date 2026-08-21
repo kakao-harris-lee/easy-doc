@@ -17,18 +17,27 @@
 
 | # | 사실 | 근거 |
 |---|---|---|
-| F1 | `llm-lane` 잡 한도는 30분 | `.github/workflows/ci.yml:878` `timeout-minutes: 30` |
+| F1 | `llm-lane` 잡 한도는 30분 | `81ba9fa:.github/workflows/ci.yml:878` `timeout-minutes: 30` |
 | F2 | 최신 실행이 정확히 30m14s 에서 죽음. conclusion 은 `failed` 가 아니라 **`cancelled`** | Actions job 96537327841 (18:30:49 → 19:01:03) |
 | F3 | 죽기까지 **출력 0줄** — collection 이후 30분간 진행 신호 없음 | 잡 로그: `collected 1514 items / 1509 deselected / 5 selected` (18:31:05) → `##[error]The operation was canceled.` (19:01:02) |
 | F4 | 이 레인의 **로컬 실측 소요는 35분 20초** | `docs/migration/_workspace/04_goldenset-first-run.md:4` |
-| F5 | 변환은 56문서 **직렬 `await`** | `tests/golden/test_golden_eval.py:283` `for document in DOCUMENTS:` |
-| F6 | judge 채점도 **직렬 `await`**, 최대 56회 추가 | `tests/golden/test_golden_eval.py:373` `for document in evaluation.documents:` |
-| F7 | 시간이 전부 **module-scoped fixture(`outcomes`) 안**에서 소모됨 → 첫 테스트 결과가 찍히기 전에 한도 초과 | `tests/golden/test_golden_eval.py:170-180` |
-| F8 | provider 호출당 타임아웃 60초 · SDK 재시도 2회 | `app/llm/provider.py:21-22` |
+| F5 | 변환은 56문서 **직렬 `await`** | `test_golden_eval.py` `convert_all` 의 `for … in DOCUMENTS` |
+| F6 | judge 채점도 **직렬 `await`**, 최대 56회 추가 | `test_golden_eval.py` `test_judge_점수를_기록한다` 의 `for … in evaluation.documents` |
+| F7 | **한도를 넘긴 구간이 module-scoped fixture(`outcomes`) 안**이라 첫 테스트 결과가 찍히기 전에 끝났다 | `test_golden_eval.py` `outcomes` fixture → `convert_all` |
+| F8 | Anthropic 논리 호출 하나의 최악 소요는 **6분** — 타임아웃 **120초** × `max_retries=2`(최초 포함 최대 3회) | `app/llm/anthropic_provider.py` `ANTHROPIC_TIMEOUT_SECONDS` |
 | F9 | `pytest-timeout` **미설치**, pytest 타임아웃 설정 **없음** | `pyproject.toml` `[tool.pytest.ini_options]`, `uv.lock` 무매치 |
 | F10 | 브랜치의 방해받지 않은 실행 2건이 **둘 다** ~30분 타임아웃(`81ba9fa` 30m14s, `79447cd` 30m22s). 나머지는 다음 푸시가 `cancel-in-progress` 로 끊음 | Actions runs 32403598822 · 32387207214 외 |
 
 **F4 가 이 문제의 전부다.** 35분짜리 작업에 30분 한도를 걸었다. 플래키가 아니라 구조다.
+
+> **인용 규약 (2026-08-21 codex C-2 로 고침).** 이 표는 처음에 `파일:줄` 로 인용했는데,
+> 같은 커밋이 그 파일들을 고치는 바람에 **인용이 곧바로 실물과 갈렸다**(F5 283→347,
+> F6 373→441 등). 줄번호는 이 문서가 겨냥하는 변경 자신에 의해 움직이므로 여기서는
+> **심볼 이름으로** 가리킨다. 특정 시점을 가리켜야 하면 `81ba9fa:path:line` 처럼 SHA 에
+> 결속한다. 같은 지적에서 F7·F8 은 줄번호가 아니라 **서술이 틀려** 함께 고쳤다 —
+> F7 은 judge 호출이 fixture 가 아니라 **테스트 본문**에서 돌므로 "시간이 전부 fixture
+> 안"이 거짓이었고(한도를 넘긴 구간이 fixture 안이었던 것은 맞다), F8 은 공용 상수
+> 60초를 인용했으나 **이 레인은 Anthropic 전용 120초**를 쓴다.
 
 ---
 
@@ -37,7 +46,8 @@
 바퀴를 다시 만들지 않기 위해 먼저 확인한 것들.
 
 - **재시도는 이미 있고, 소유 계층이 정해져 있다.** SDK 레벨 `max_retries=2`
-  (`app/llm/anthropic_provider.py:59`). `migration-safety-gate/SKILL.md:40` 이
+  (`app/llm/anthropic_provider.py` 의 `AsyncAnthropic(…, max_retries=DEFAULT_MAX_RETRIES)`).
+  `migration-safety-gate/SKILL.md:40` 이
   **재시도 책임은 한 계층만 갖는다**고 못박았다 → 이 계획은 새 재시도 계층을 **만들지 않는다.**
 - **레이트리밋은 이 레인에서 실제로 터진 적이 있다.** `docs/plans/2026-08-08-sprint-4.md:65` —
   "56건 중 31건이 `LLMProviderError` 로 실패… API 레이트리밋/과부하로 인한 일시적 현상".
@@ -46,7 +56,8 @@
 - **표본 축소 스위치는 없다.** `GOLDEN_PROVIDER`·`GOLDEN_JUDGE_PROVIDER`·`GOLDEN_RECORD_BASELINE`
   뿐이고, 문서 수를 줄이는 스위치는 **의도적으로 없다** — 분모를 줄이면 통과율이 실력과
   무관하게 오르고, 그 우회를 `test_규칙_기반_통과율이…` 가 `measured == len(DOCUMENTS)` 로
-  직접 막는다(`tests/golden/test_golden_eval.py:441`). **표본 축소는 선택지가 아니다.**
+  직접 막는다(`test_golden_eval.py` `test_규칙_기반_통과율이…` 의 `measured == len(DOCUMENTS)`).
+  **표본 축소는 선택지가 아니다.**
 - **직렬이 의도된 결정이라는 기록은 찾지 못했다.** 동시성을 금지하는 주석·원장 항목 없음.
   다만 위 레이트리밋 기록이 사실상의 제약으로 작동한다. (근거 없음을 근거 있음으로 쓰지 않는다.)
 
@@ -56,13 +67,13 @@
 
 ### A. 잡 한도를 올린다 — **권고**
 
-`.github/workflows/ci.yml:878` `timeout-minutes: 30` → **`60`**.
+`81ba9fa:.github/workflows/ci.yml:878` `timeout-minutes: 30` → **`60`**.
 
 - **근거:** F4 의 35분 20초에 여유 70%. 러너 성능 편차·재시도를 흡수한다.
 - **바꾸지 않는 것:** 호출 패턴·호출 수·측정 조건. 즉 **측정치의 의미가 안 변한다.**
   기준선(`tests/golden/baseline.json`, 33/56)과 비교 가능성이 그대로 유지된다.
 - **비용:** 골든 경로를 건드린 커밋에서 잡이 ~35분. `concurrency.cancel-in-progress: true`
-  (`ci.yml:883-885`)가 이미 붙어 있어 연속 푸시로 쌓이지는 않는다.
+  (`81ba9fa:.github/workflows/ci.yml:883-885`)가 이미 붙어 있어 연속 푸시로 쌓이지는 않는다.
 - **위험:** 낮음. 되돌리기 1줄.
 
 ### B. `convert_all`·judge 루프에 동시성 상한을 넣는다 — **지금은 권고하지 않음**
@@ -73,7 +84,7 @@
 - **막는 이유 (하나면 충분하다):** §2 의 레이트리밋 기록이 **직렬에서** 난 일이다.
   동시성을 올려 429 가 늘면 `LLMProviderError` → 변환 실패가 늘고, 변환 실패는
   **차단축 1을 직격한다** — `assert not evaluation.conversion_failures`
-  (`tests/golden/test_golden_eval.py:315`). 즉 **속도를 얻으려다 판정을 잃는 형태**다.
+  (`test_golden_eval.py` `test_필수_정보가_보존된다`). 즉 **속도를 얻으려다 판정을 잃는 형태**다.
 - **판단:** 성능 최적화를 **판정을 한 번도 못 받아 본 상태에서** 하지 않는다.
   A 로 완주시켜 CI 실측을 먼저 얻고, 그 숫자를 보고 B 를 별건으로 결정한다.
 
@@ -113,14 +124,16 @@ F3 이 진짜 문제다. 30분을 **아무 출력 없이** 죽어서, 이번 원
 이 계획은 레인을 **완주**시킨다. **통과**시키지 않는다. 완주 후 빨강이 나올 근거가 둘 있다.
 
 1. **차단축 1(필수 정보 보존)에 여유가 0이다.** `REQUIRED_FACT_LOSS_LIMIT = 0`
-   (`test_golden_eval.py:104`) — 절대 기준이고 완화 대상이 아니라고 코드가 명시한다.
+   (`test_golden_eval.py` 의 `REQUIRED_FACT_LOSS_LIMIT`) — 절대 기준이고 완화 대상이
+   아니라고 코드가 명시한다.
    마지막으로 기록된 전건 실행은 **2 failed / 1 passed** 였다
-   (`04_goldenset-first-run.md:5`).
+   (`04_goldenset-first-run.md:4`).
 2. **상대 하한선이 CI 에서 "비교 불가"로 떨어질 공산이 크다.** 기준선의 producer 축은
    `provider=anthropic · model=claude-sonnet-5 · effort=low` 인데
    (`tests/golden/baseline.json`), `llm-lane` 스텝은 `ANTHROPIC_API_KEY` 만 주고
-   `LLM_MODEL`·`LLM_EFFORT` 를 **주지 않는다**(`ci.yml:1024-1029`). 두 설정의 기본값은
-   `None` 이다(`app/config.py:44,51`). 지문이 갈리면 하한선이 판정을 **하지 않는다** —
+   `LLM_MODEL`·`LLM_EFFORT` 를 **주지 않는다**(`81ba9fa:.github/workflows/ci.yml:1024-1029`).
+   두 설정의 기본값은 `None` 이다(`app/config.py` `llm_model`·`llm_effort`).
+   지문이 갈리면 하한선이 판정을 **하지 않는다** —
    이 저장소가 반복해서 결함으로 지목해 온 "도달 0인데 초록" 형태다.
 
 **②는 이번에 함께 고쳤다** (2026-08-21 운영자 판단 — "지문까지 한 번에").
