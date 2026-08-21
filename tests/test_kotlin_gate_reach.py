@@ -376,12 +376,35 @@ FLOOR_TEST_CLASSES: tuple[str, ...] = (
 #: `FLOOR_TEST_CLASSES` 와 **정확히 일치**해야 한다 — 바닥에 클래스를 더하면서 개수를
 #: 빠뜨리면 그 항목이 다시 「클래스만 지켜지는」 상태가 되고, 그것이 이 장치가 겨눈 결함이다.
 #:
+#: ## 이 표를 읽는 축이 **둘**이다 (C4 R-8)
+#:
+#: 같은 하한을 두 관측면이 쓴다. 무엇을 덮는지가 다르므로 둘 다 있다.
+#:
+#: | 축 | 세는 것 | 덮는 것 | 덮지 못하는 것 |
+#: |---|---|---|---|
+#: | **소스 축** | 소스의 `@Test` 애너테이션 수 | **선언이 사라지는 편집**(메서드 삭제). |
+#: |  | | Gradle 없이 돌아 `quality` 잡에서도 잡는다 |
+#: |  | | (덮지 못함: 선언은 남고 **안 도는** 편집) |
+#: | **리포트 축** | Gradle JUnit XML 의 **실행된** 케이스 수 | **안 도는 편집 전부** — |
+#: |  | | `@Disabled`·`assumeTrue`·태그 제외·`--tests` 필터·JVM 인자. |
+#: |  | | 기제를 하나도 열거하지 않는다 |
+#: |  | | (덮지 못함: 리포트가 없는 실행 경로 — `quality` 잡) |
+#:
+#: 소스 축은 `test_바닥_클래스의_테스트_개수가_하한_아래로_내려가지_않는다`,
+#: 리포트 축은 `test_바닥_클래스가_리포트에서_하한만큼_실제로_돌았다` 다.
+#:
+#: **소스 축을 남긴 이유**가 마지막 칸이다 — `quality` 잡에는 Gradle 이 없어 리포트가 없고,
+#: 그 잡에서도 「메서드가 사라졌다」는 잡혀야 한다.
+#:
 #: ## 잡지 못하는 것 (정직하게)
 #:
-#: **메서드 껍데기를 남기고 단언만 비우는 편집**은 개수가 그대로라 통과한다. 그 자리를 덮는
-#: 진짜 답은 **변이 테스트(pitest)** 다 — 「이 가드를 변이시켰을 때 죽이는 테스트가 어딘가에
-#: 있는가」를 물으므로 어느 클래스·메서드가 그것을 담는지 알 필요가 없다. 도입은 이 회차의
-#: 범위 밖이고 개선 백로그 B-19 에 있다.
+#: **메서드 껍데기를 남기고 단언만 비우는 편집**은 두 축 모두 통과한다(개수도 그대로, 실행도
+#: 된다). 그 자리를 덮는 진짜 답은 **변이 테스트(pitest)** 다 — 「이 가드를 변이시켰을 때
+#: 죽이는 테스트가 어딘가에 있는가」를 물으므로 어느 클래스·메서드가 그것을 담는지 알 필요가
+#: 없다. 도입은 범위 밖이고 개선 백로그 B-19 에 있다.
+#:
+#: **종전에 여기 적혀 있던 「`@Disabled` 를 구분하지 않는다」는 이제 거짓이다** — 리포트 축이
+#: 그것을 덮는다. 그 문면을 지우지 않고 갱신한 이유는 죽은 포인터를 남기지 않기 위해서다.
 #: **바닥 목록의 크기 하한** — 규칙 4 ⑶ 의 뿌리를 막는다.
 #:
 #: `FLOOR_TEST_CLASSES` 도 `MIN_TESTS_IN_FLOOR_CLASS` 도 **범위 선언형**이고, 그 최대 위험은
@@ -580,7 +603,8 @@ def test_바닥_목록이_비지_않는다() -> None:
     """
     assert len(FLOOR_TEST_CLASSES) >= MIN_FLOOR_CLASSES, (
         f"바닥 목록이 {len(FLOOR_TEST_CLASSES)} 개다 — 하한 {MIN_FLOOR_CLASSES} 아래다.\n"
-        "  바닥에서 항목을 빼는 것은 「정리」가 아니라 **다른 판정의 근거를 무보호로 두는 일**이다.\n"
+        "  바닥에서 항목을 빼는 것은 「정리」가 아니라\n"
+        "  **다른 판정의 근거를 무보호로 두는 일**이다.\n"
         "  줄여야 한다면 MIN_FLOOR_CLASSES 를 고치는 별도의 diff 와 사유가 필요하다."
     )
     assert len(set(FLOOR_TEST_CLASSES)) == len(FLOOR_TEST_CLASSES), "바닥 목록에 중복이 있다"
@@ -669,7 +693,19 @@ def _report_execution() -> tuple[dict[str, int], set[str]]:
 
     중첩 클래스(`@Nested`)의 `classname` 은 `FQCN$Inner` 이므로 `$` 앞으로 접는다.
     """
+    executed, _, seen = _report_counts()
+    return executed, seen
+
+
+def _report_counts() -> tuple[dict[str, int], dict[str, int], set[str]]:
+    """(FQCN → **실행된** 케이스 수, FQCN → **건너뛴** 케이스 수, 리포트에 나온 FQCN 전부).
+
+    **파서를 한 벌만 둔다.** 실행 수와 건너뜀 수를 각각 훑는 함수를 만들면 한쪽만 고쳐지는
+    날 서로 다른 것을 세면서 둘 다 초록이 된다 — 이 저장소가 반복해 겪은 형태다.
+    [_report_execution] 은 이 함수에 위임한다.
+    """
     executed: dict[str, int] = {}
+    skipped: dict[str, int] = {}
     seen: set[str] = set()
     for report_dir in _test_report_dirs():
         for report in report_dir.glob("TEST-*.xml"):
@@ -680,7 +716,9 @@ def _report_execution() -> tuple[dict[str, int], set[str]]:
                 seen.add(outer)
                 if case.find("skipped") is None:
                     executed[outer] = executed.get(outer, 0) + 1
-    return executed, seen
+                else:
+                    skipped[outer] = skipped.get(outer, 0) + 1
+    return executed, skipped, seen
 
 
 def test_리포트가_선언한_클래스를_실제로_실행했다() -> None:
@@ -714,6 +752,84 @@ def test_리포트가_선언한_클래스를_실제로_실행했다() -> None:
         f"  리포트 디렉터리: {[str(d) for d in _test_report_dirs()]}\n"
         "  파일은 있는데 아무도 돌리지 않았거나(`--tests` 필터·태그), 돌긴 했는데 전건이 "
         "skipped 다(`@Disabled`·`assumeTrue(false)`). 둘 다 게이트가 존재만 하고 도달이 0 이다."
+    )
+
+
+def test_바닥_클래스가_리포트에서_하한만큼_실제로_돌았다() -> None:
+    """**개수를 「선언된 것」이 아니라 「실제로 돈 것」으로 센다** (C4 R-8).
+
+    소스 축(`test_바닥_클래스의_테스트_개수가...`)은 애너테이션을 세므로 **`@Disabled` 한 줄로
+    끈 메서드를 그대로 센다.** 실측(2026-08-21, 고치기 전): 바닥 클래스의 케이스 하나에
+    `@Disabled` 를 달거나 `assumeTrue(false)` 를 넣어도 `build` **exit 0** · 이 게이트
+    **141 passed** 였다. 개수도 클래스도 그대로이므로 어느 축도 울리지 않는다.
+
+    **비활성화 기제를 열거하지 않는다.** `@Disabled`·`@DisabledIf*`·`@EnabledOnOs`·
+    `assumeTrue`/`assumeFalse`·태그 제외·`--tests` 필터·JVM 인자가 전부 같은 일을 하는데,
+    그 목록은 닫히지 않는다(규칙 4 ⑵ — 은폐형은 넓히지 말고 탐지형으로 갈아탄다).
+    결과는 **「그 테스트가 안 돌았다」 하나로 수렴**하므로 리포트에서 그것만 본다.
+
+    요구 모드가 켜지면 대상이 **바닥 전건**으로 넓어진다. 꺼져 있으면 리포트에 실재하는
+    것만 보되, **판정하지 못한 목록을 출력한다** — 조용히 건너뛰면 그 플래그가 은폐형이 된다.
+    """
+    executed, _, seen = _report_counts()
+    require_all = bool(os.environ.get(REQUIRE_REPORT_ENV))
+    floor = sorted(MIN_TESTS_IN_FLOOR_CLASS)
+
+    if require_all:
+        assert seen, (
+            f"{REQUIRE_REPORT_ENV} 가 켜져 있는데 Gradle 테스트 리포트가 없다.\n"
+            f"  리포트 디렉터리: {[str(d) for d in _test_report_dirs()]}\n"
+            "  이 스텝은 Kotlin 테스트 뒤에 돌아야 한다."
+        )
+        targets = floor
+    else:
+        targets = [fqcn for fqcn in floor if fqcn in seen]
+        unjudged = [fqcn for fqcn in floor if fqcn not in seen]
+        print(
+            f"리포트 축 — 이번 리포트로 판정하지 못한 바닥 클래스 "
+            f"{len(unjudged)}개: {unjudged or '없음'}"
+        )
+
+    # **요구 모드에서 분모가 비면 공허 통과다.** 바닥 목록이 비는 편집은 리더 핀이 막지만,
+    # 이 축의 분모가 0 이 되는 경로를 여기서도 되짚는다.
+    if require_all:
+        assert targets, "요구 모드인데 판정 대상이 0 이다 — 바닥 개수표가 비었다."
+
+    short = {fqcn: (executed.get(fqcn, 0), MIN_TESTS_IN_FLOOR_CLASS[fqcn]) for fqcn in targets}
+    short = {k: v for k, v in short.items() if v[0] < v[1]}
+    assert not short, (
+        "바닥 클래스가 리포트에서 하한만큼 **돌지 않았다**:\n"
+        + "\n".join(f"  - {k}: 실행 {v[0]} / 하한 {v[1]}" for k, v in sorted(short.items()))
+        + "\n  메서드가 사라졌거나(소스 축도 함께 빨개진다),\n"
+        "  남아 있는데 **안 돌았다**\n"
+        "  (`@Disabled`·`assumeTrue`·태그 제외·`--tests` 필터). 뒤쪽이 이 축의 몫이다.\n"
+        "  줄인 것이 정당하다면 MIN_TESTS_IN_FLOOR_CLASS 를 고치는 diff 와 사유를 함께 남겨라."
+    )
+
+
+def test_리포트에_건너뛴_테스트가_없다() -> None:
+    """**건너뜀 0** — 바닥뿐 아니라 리포트에 나온 **전부**에 건다.
+
+    범위를 바닥으로 좁히지 않은 근거는 실측이다: 신선한 전체 `build` 의 Kotlin 리포트에서
+    실행 1,062 · 건너뜀 **0** 이었다(2026-08-21). `@Tag("llm")` 제외는 발견 단계에서
+    빠지므로 리포트에 아예 나오지 않는다 — 즉 오늘 이 저장소에 **정당한 건너뜀이 없다.**
+    근거가 그러하므로 범위도 그만큼이다.
+
+    이 단언은 **하한 표가 필요 없다** — 어떤 기제로 껐든 건너뜀으로 나타나기 때문이다.
+    정말 하나를 끄고 싶으면 이 단언을 고치는 diff 와 사유가 남는다(그것이 이 축의 값이다).
+    """
+    _, skipped, seen = _report_counts()
+    if not seen:
+        # 리포트가 없으면 이 축은 판정하지 못한다. 요구 모드의 부재 판정은 위 케이스가 진다.
+        print("건너뜀 대조 — Gradle 리포트가 없어 판정하지 못했다.")
+        return
+
+    assert not skipped, (
+        "Gradle 리포트에 **건너뛴** 테스트가 있다:\n"
+        + "\n".join(f"  - {k}: {v}건" for k, v in sorted(skipped.items()))
+        + "\n  `@Disabled`·`assumeTrue`/`assumeFalse`·`@EnabledOnOs`·태그 제외가\n"
+        "  전부 여기 나타난다.\n"
+        "  강제자를 끄는 가장 값싼 편집이 한 줄이므로, 그 한 줄이 게이트에 보여야 한다."
     )
 
 
