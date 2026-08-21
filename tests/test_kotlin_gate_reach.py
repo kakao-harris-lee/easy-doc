@@ -273,7 +273,9 @@ TEST_CLASS_COUNT = 108
 #: 99 → 103 (2026-08-21, 리더): F3 조치 커밋 `dc67ba5` **직전**의 실측이 103 이다.
 #:
 #: 103 → 104 (2026-08-21, 리더): R-6 커밋 `276e2a5` **직전**의 실측이 104 다.
-MIN_TEST_CLASSES = 104
+#:
+#: 104 → 105 (2026-08-21, 리더): C5 커밋 `a687de8` **직전**의 실측이 105 다.
+MIN_TEST_CLASSES = 105
 
 #: **바닥 목록** — 사라지면 다른 게이트의 결론이 함께 무너지는 탐지기들.
 #:
@@ -294,6 +296,10 @@ FLOOR_TEST_CLASSES: tuple[str, ...] = (
     #   기준이 이 파일이 명시적으로 배제한 「가드다움」으로 슬며시 바뀐다. 잔여 성질은
     #   이 항목이 계속 진다 — 그 케이스가 `residualCanaryFragments()` 를 직접 단언한다.
     "kr.easydoc.api.DocumentBodyLogLeakReachTest",
+    # 2026-08-21 (리더, C5): **즉시 파기 경로의 소유권 은닉 정본**이고 결과가 **복구 불가**다.
+    #   되돌릴 수 없는 연산의 은닉이 무보호로 남는 것은 이 목록의 기준에 정면으로 든다.
+    #   바이트·헤더 이름 집합·응답 시간 세 축을 실 소켓 + 실 PostgreSQL 에서 잰다.
+    "kr.easydoc.api.DocumentDeleteReachTest",
     # 2026-08-21 (구현 레인, C4 R-7): **등재 사유가 바뀌었다.** 종전 사유는 「값 자리 불변식의
     #   유일한 강제자」였는데, 그 불변식은 이제 `ValueSlotInvariantReachTest` 가 진다 —
     #   이 항목에 그렇게 적어 두면 **죽은 포인터**가 된다(클래스는 남고 메서드만 지우면
@@ -302,6 +308,11 @@ FLOOR_TEST_CLASSES: tuple[str, ...] = (
     #   타인 소유 항목 0건, 남의 작업 공간에 404(빈 목록 아님), 그리고 「없는 것과 남의 것의
     #   응답 바이트가 같다」(X-B2). `privacy-gate` 의 소유 술어 감사가 그 결론을 인용한다.
     "kr.easydoc.api.DocumentListReachTest",
+    # 2026-08-21 (리더, C5 P-9): 「주석·KDoc·설정이 이름으로 지목한 테스트·클래스·계약
+    #   문면이 실재하는가」 — 그 **종류**의 유일한 강제자다. L-③ 이 걸어 둔 재개봉 조건이
+    #   실제로 발동해 승격된 종류이고, 이 세션이 다섯 자리 → 여덟 자리로 늘렸다.
+    #   오늘 4자리를 짚어 전부 실 결함이었다(이 세션이 만든 하나 포함).
+    "kr.easydoc.api.NamedReferenceGuardTest",
     "kr.easydoc.api.PrivateResponseHeadersReachTest",
     # 2026-08-21 (리더, C4): F3(요청 다섯 필드에 Bean Validation 금지)을 지킨 것은 둘이었다 —
     #   `RequestFieldConstraintLayerTest` 의 애너테이션 부재 스캔과, 「`validation` 이
@@ -428,13 +439,17 @@ FLOOR_TEST_CLASSES: tuple[str, ...] = (
 #:
 #: 값의 근거는 실측이다 — R-7 커밋 `ea32728` 시점의 바닥 항목 수가 26 다. `MIN_TEST_CLASSES`
 #: 와 같은 **라쳇**이라 올리기만 하고, 낮추려면 별도의 diff 와 사유가 필요하다.
-MIN_FLOOR_CLASSES = 26
+#:
+#: 26 → 28 (2026-08-21, 리더, C5): `DocumentDeleteReachTest`·`NamedReferenceGuardTest` 편입.
+MIN_FLOOR_CLASSES = 28
 
 MIN_TESTS_IN_FLOOR_CLASS: dict[str, int] = {
     "kr.easydoc.api.AuthenticationCoverageContractTest": 5,
     "kr.easydoc.api.ContractErrorBodyReachTest": 11,
     "kr.easydoc.api.DocumentBodyLogLeakReachTest": 1,
+    "kr.easydoc.api.DocumentDeleteReachTest": 14,
     "kr.easydoc.api.DocumentListReachTest": 10,
+    "kr.easydoc.api.NamedReferenceGuardTest": 12,
     "kr.easydoc.api.PrivateResponseHeadersReachTest": 7,
     "kr.easydoc.api.RequestFieldConstraintLayerTest": 7,
     "kr.easydoc.api.RequestFieldRejectionLayerTest": 5,
