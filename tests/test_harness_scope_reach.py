@@ -190,7 +190,50 @@ import pytest
 import yaml
 
 _REPO_ROOT: Final = Path(__file__).resolve().parents[1]
-_PROGRESS_PATH: Final = _REPO_ROOT / "docs" / "migration" / "_workspace" / "00_progress.md"
+_WORKSPACE: Final = _REPO_ROOT / "docs" / "migration" / "_workspace"
+
+#: 원장 **현행** 파일. 판정에 쓰이는 Phase 종료 조건 표는 항상 여기 있다.
+_PROGRESS_PATH: Final = _WORKSPACE / "00_progress.md"
+
+#: 원장 **역사** 파일 (2026-08-21 2단 분리). 종결된 게이트 후속·세션 일지가 여기로 간다.
+#:
+#: **이 상수가 있는 이유는 도달이다.** 분리 전 이 검사기는 `00_progress.md` **한 파일**만
+#: 읽었다. 그 상태로 표를 아카이브로 옮기면 옮긴 표가 **판정 밖으로 나간다** — 근거 #5
+#: (`mypy .` 가 점 디렉터리를 건너뛰어 하네스 2파일을 한 번도 안 봤다)와 **같은 형태**이고,
+#: 분리 자체가 규칙 3 위반을 만드는 셈이 된다. 그래서 분리의 **선행 조치**로 이 축을 넓혔다.
+#:
+#: **[2026-08-21 정정] 「`EXPECTED_TARGET_TABLES` 가 아카이브 소실을 잡는다」는 거짓이었다.**
+#: 초판 주석이 그렇게 적고 별도의 존재 단언을 생략했다. 음성 대조가 그것을 반박했다 —
+#: 아카이브를 **완전히 지운 상태**에서 이 파일의 스위트가 `37 passed · EXIT=0` 으로
+#: **조용히 통과했다.** 이유는 단순하다: 아카이브에는 규약 대상 표가 **0 개**여서(실측)
+#: 그것이 사라져도 표 개수가 6 에서 변하지 않는다. 겨냥한 축이 대상에 닿지 않았다.
+#:
+#: 그래서 [test_원장_파일이_전부_실재한다] 로 존재를 직접 단언한다. 이것은 게이트 층을
+#: 더하는 것이 아니라 **`_PROGRESS_PATHS` 라는 범위 선언이 참임을 재는 것**이다 —
+#: 선언한 경로가 없으면 [read_progress_markdown] 이 그것을 건너뛰고, 건너뛴 사실은
+#: 아무 데서도 드러나지 않는다(규칙 4 ⑶ · 규칙 3).
+_PROGRESS_ARCHIVE_PATH: Final = _WORKSPACE / "00_progress-archive.md"
+
+#: 판정 대상 원장 전체. 순서는 현행 → 역사다.
+_PROGRESS_PATHS: Final = (_PROGRESS_PATH, _PROGRESS_ARCHIVE_PATH)
+
+
+def read_progress_markdown() -> str:
+    """원장 전체를 하나의 마크다운으로 읽는다.
+
+    **표를 어느 파일에 두었는지가 판정을 바꾸지 않게 하는 것이 이 함수의 일이다.**
+    현행과 역사를 이어 붙여 넘기므로, 표를 아카이브로 옮겨도 대상 표 개수·행 인구조사·
+    어휘 판정이 그대로 성립한다.
+
+    없는 파일은 건너뛴다. **그 건너뜀은 여기서 조용하다** — 그래서 존재 여부는 이 함수가
+    아니라 [test_원장_파일이_전부_실재한다] 가 따로 단언한다. 초판은 그 단언을 생략하고
+    「파일이 사라지면 표가 줄어 `EXPECTED_TARGET_TABLES` 가 잡는다」고 적었는데, 음성 대조가
+    그것을 반박했다: 아카이브에는 대상 표가 0 개라 지워도 표 개수가 변하지 않았고 스위트가
+    `37 passed` 로 통과했다.
+    """
+    return "\n\n".join(
+        path.read_text(encoding="utf-8") for path in _PROGRESS_PATHS if path.exists()
+    )
 _CI_WORKFLOW_PATH: Final = _REPO_ROOT / ".github" / "workflows" / "ci.yml"
 
 #: 규약이 걸린 표를 고르는 열 이름. `실행 경로` 가 아니라 이 셋으로 고르는 이유는,
@@ -1113,10 +1156,88 @@ def _render(violations: Sequence[Violation]) -> str:
 # --- 저장소 실물 판정 ---------------------------------------------------------
 
 
+def test_원장_파일이_전부_실재한다() -> None:
+    """**선언한 원장 경로가 실제로 있는가** — [read_progress_markdown] 의 건너뜀을 밖에서 잡는다.
+
+    이 케이스는 초판에 **없었고**, 그 빈자리를 음성 대조가 찾았다: 아카이브를 완전히 지운
+    상태에서 이 파일의 스위트가 `37 passed · EXIT=0` 으로 통과했다. 겨냥했던 축
+    (`EXPECTED_TARGET_TABLES`)이 닿지 않았기 때문이다 — 아카이브의 대상 표가 **0 개**라
+    사라져도 개수가 6 에서 변하지 않는다.
+
+    그러므로 존재는 **개수로 유추하지 않고 직접 단언한다.** 원장을 옮기거나 이름을 바꾸려면
+    이 상수를 고치는 diff 가 필요하고, 그 diff 가 "판정 대상 범위를 바꿨다"는 신고다.
+    """
+    missing = [str(path.relative_to(_REPO_ROOT)) for path in _PROGRESS_PATHS if not path.exists()]
+    assert not missing, (
+        f"선언한 원장 파일이 없다: {missing}\n"
+        "  read_progress_markdown() 은 없는 파일을 조용히 건너뛴다 — 그 상태로는 그 파일에\n"
+        "  있던 표가 판정 밖으로 나가고, 표 개수 축은 그것을 알아채지 못한다.\n"
+        "  파일을 옮겼다면 _PROGRESS_PATHS 를 함께 고쳐라."
+    )
+
+
+#: 아카이브 분량의 **하한**. 존재 단언만으로는 「0바이트로 비우기」·「한 줄로 전량 교체」가
+#: 통과한다 — 실측(2026-08-21, `xx_harness` 교차 리뷰 C-4): 두 변조 모두 `38 passed · EXIT=0`
+#: 이었다. 존재 축이 겨눈 피해(그 파일의 내용이 판정 밖으로 나간다)가 **똑같이 일어나는데
+#: 잡히지 않았다.**
+#:
+#: 이것은 4층이 아니다(규칙 7) — 존재 축과 **같은 층의 다른 관측면**이다. 존재는 「파일이
+#: 있는가」, 이 하한은 「그 안에 역사가 남아 있는가」를 본다. 하나가 다른 하나를 함의하지 않는다.
+#:
+#: 값의 근거는 실측이다 — 분리 직후 `00_progress-archive.md` 가 1,884줄이다. **라쳇이라
+#: 올리기만 하고, 인상 시점은 Phase 경계다**(규칙 8 — 라쳇 상환). 낮추려면 이 상수를 고치는
+#: 별도의 diff 와 사유가 필요하고, 그 diff 가 "역사를 버렸다"는 신고다.
+MIN_ARCHIVE_LINES: Final = 1800
+
+
+def test_아카이브가_비워지지_않는다() -> None:
+    """**「append-only」 규약의 강제자.** 존재 단언 옆에 분량 하한을 둔다.
+
+    아카이브는 규약상 append-only 인데(SKILL.md 작업 추적 절 2번) 그 규약의 강제자가
+    **0개**였다. 실측으로 확인된 두 조용한 경로:
+
+      * 아카이브를 0바이트로 비움 → `38 passed · EXIT=0`
+      * 아카이브를 `# (비었음)` 한 줄로 교체(역사 1,884줄 소실) → `38 passed · EXIT=0`
+
+    둘 다 「범위 선언형이 빈 선언에서 통과한 것」이라 규칙 4 ⑶ 위반이다.
+    """
+    lines = len(_PROGRESS_ARCHIVE_PATH.read_text(encoding="utf-8").splitlines())
+    assert lines >= MIN_ARCHIVE_LINES, (
+        f"아카이브가 {lines} 줄이다 — 하한 {MIN_ARCHIVE_LINES} 아래다.\n"
+        "  아카이브는 append-only 다. 줄어드는 것은 「정리」가 아니라 **역사 소실**이고,\n"
+        "  그 역사는 다른 판정이 근거로 인용한다(예: stop-time 게이트 30건 인용).\n"
+        "  정당하게 줄였다면 MIN_ARCHIVE_LINES 를 고치는 diff 와 사유를 함께 남겨라."
+    )
+
+
+def test_판정_대상_표는_현행_원장에만_있다() -> None:
+    """**규칙 1(「Phase 종료 조건 표는 옮기지 않는다」)의 강제자.** 종전에 0개였다.
+
+    합본 읽기는 표가 **어느 파일에 있는지 구별하지 않는다.** 그것이 도달을 지키는 이유이면서
+    동시에 구멍이다 — 실측(C-4 NC-1): `Phase 0` 종료 조건 표(30줄)를 아카이브로 옮겼는데
+    `38 passed · EXIT=0` 으로 조용했다.
+
+    그런데 같은 절 규칙 3이 「읽을 때는 현행만 읽는다 · 위임 프롬프트에 아카이브를 싣지
+    않는다」고 규정한다. 두 규칙을 합치면 표가 아카이브로 흘러가면 **판정에는 남고 읽기에서는
+    사라진다** — 그 대상이 "리더와 6개 에이전트가 공유하는 유일한 진실"이다. 분리 전에는
+    파일이 하나였으므로 성립 불가능한 상태였다.
+    """
+    in_archive = select_target_tables(
+        parse_tables(_PROGRESS_ARCHIVE_PATH.read_text(encoding="utf-8"))
+    )
+    assert not in_archive, (
+        "판정 대상 표가 아카이브에 있다: "
+        f"{[table.caption for table in in_archive]}\n"
+        "  합본 읽기라 판정에는 잡히지만, 규칙 3 이 아카이브를 읽기 범위에서 뺀다 —\n"
+        "  즉 이 표는 **판정에는 남고 읽는 사람에게는 사라진다.**\n"
+        "  종료 조건 표는 현행 원장(00_progress.md)으로 되돌려라."
+    )
+
+
 @pytest.fixture(scope="module")
 def target_tables() -> list[Table]:
-    """`00_progress.md` 에서 규약 대상 표만 골라 온다."""
-    return select_target_tables(parse_tables(_PROGRESS_PATH.read_text(encoding="utf-8")))
+    """원장(현행 + 역사)에서 규약 대상 표만 골라 온다."""
+    return select_target_tables(parse_tables(read_progress_markdown()))
 
 
 @pytest.fixture(scope="module")
@@ -1879,7 +2000,7 @@ def _blank_one_unresolved_cell(markdown: str) -> tuple[str, str]:
 
 def test_R10_미해결_항목을_비우면_잡힌다() -> None:
     """**칸만 비우는 편집은 다른 어떤 축에도 안 걸린다.** 그것이 이 축의 존재 이유다."""
-    original = _PROGRESS_PATH.read_text(encoding="utf-8")
+    original = read_progress_markdown()
     tampered, title = _blank_one_unresolved_cell(original)
     assert tampered != original, "변조가 일어나지 않았다"
 
@@ -1903,7 +2024,7 @@ def test_R10_미해결_항목을_비우면_잡힌다() -> None:
 
 def test_R10_실물에서는_통과한다() -> None:
     """오경보가 없어야 한다. 기대 집합이 실물과 어긋나면 여기서 먼저 빨개진다."""
-    tables = select_target_tables(parse_tables(_PROGRESS_PATH.read_text(encoding="utf-8")))
+    tables = select_target_tables(parse_tables(read_progress_markdown()))
     problems = census_problems(
         tables,
         expected_rows=EXPECTED_ROWS,
