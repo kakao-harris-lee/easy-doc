@@ -266,7 +266,9 @@ TEST_CLASS_COUNT = 104
 #: 울리지 않는다.
 #:
 #: 99 → 103 (2026-08-21, 리더): F3 조치 커밋 `dc67ba5` **직전**의 실측이 103 이다.
-MIN_TEST_CLASSES = 103
+#:
+#: 103 → 104 (2026-08-21, 리더): R-6 커밋 `276e2a5` **직전**의 실측이 104 다.
+MIN_TEST_CLASSES = 104
 
 #: **바닥 목록** — 사라지면 다른 게이트의 결론이 함께 무너지는 탐지기들.
 #:
@@ -287,6 +289,11 @@ FLOOR_TEST_CLASSES: tuple[str, ...] = (
     #   기준이 이 파일이 명시적으로 배제한 「가드다움」으로 슬며시 바뀐다. 잔여 성질은
     #   이 항목이 계속 진다 — 그 케이스가 `residualCanaryFragments()` 를 직접 단언한다.
     "kr.easydoc.api.DocumentBodyLogLeakReachTest",
+    # 2026-08-21 (리더, C4 R-6): 「성공 응답은 요청이 지정한 값을 반영한다 — 반영할 것이
+    #   없으면 성공하지 못한다」는 불변식의 **유일한** 강제자다. 그것이 사라지면
+    #   `TypedValueSlotInterceptor` 를 지워도 아무도 모르고, `?limit=` 이 조용히
+    #   기본값으로 흡수되던 상태로 되돌아간다(스키마 층 우회).
+    "kr.easydoc.api.DocumentListReachTest",
     "kr.easydoc.api.PrivateResponseHeadersReachTest",
     # 2026-08-21 (리더, C4): F3(요청 다섯 필드에 Bean Validation 금지)을 지킨 것은 둘이었다 —
     #   `RequestFieldConstraintLayerTest` 의 애너테이션 부재 스캔과, 「`validation` 이
@@ -308,6 +315,12 @@ FLOOR_TEST_CLASSES: tuple[str, ...] = (
     "kr.easydoc.api.RequestFieldRejectionReachTest",
     "kr.easydoc.api.SensitiveToStringReachTest",
     "kr.easydoc.api.SourceScanFormsProbe",
+    # 2026-08-21 (리더, C4 R-6 ⒞): 「계약이 선언하지 않은 상태 코드가 나가지 않는다」의
+    #   유일한 강제자다. 실측으로 `PATCH`·`DELETE /workspaces/%20` 이 **400** 을 내보내고
+    #   있었고 계약 전체의 `'400'` 선언은 **0건**이었다 — 기존 계약 테스트의 도달이 경로
+    #   변수 변환 실패를 덮지 않았다는 뜻이다. 인스턴스는 닫혔고 **종류**는 게이트 28 로
+    #   올렸다.
+    "kr.easydoc.api.WorkspaceEndpointReachTest",
     "kr.easydoc.core.CoreModuleBoundaryTest",
     "kr.easydoc.core.ParityDeclarationSyncTest",
     "kr.easydoc.core.crypto.PlainBodyTest",
