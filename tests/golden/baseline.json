@@ -74,7 +74,7 @@
   "measurement": {
     "overall": {
       "documents": 56,
-      "passed": 33,
+      "passed": 35,
       "unmeasured": 0
     },
     "synthetic": {
@@ -84,7 +84,7 @@
     },
     "collected": {
       "documents": 36,
-      "passed": 17,
+      "passed": 19,
       "unmeasured": 0
     }
   },
@@ -98,5 +98,5 @@
     "effort": "low"
   },
   "note": "골든셋 규칙 기반 통과 측정치의 직전 기록이다. 합격 기준은 절대 수치가 아니라 '이 수치보다 낮아지지 않는다'이며, fingerprint가 다르면 비교 자체가 성립하지 않는다. 갱신: GOLDEN_RECORD_BASELINE=1 로 tests/golden 을 -m llm 으로 실행한 뒤 diff를 커밋한다.",
-  "recorded_at": "2026-08-13T04:59:24Z"
+  "recorded_at": "2026-08-21T07:09:05Z"
 }
