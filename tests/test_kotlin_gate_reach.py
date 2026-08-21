@@ -382,6 +382,27 @@ FLOOR_TEST_CLASSES: tuple[str, ...] = (
 #: 진짜 답은 **변이 테스트(pitest)** 다 — 「이 가드를 변이시켰을 때 죽이는 테스트가 어딘가에
 #: 있는가」를 물으므로 어느 클래스·메서드가 그것을 담는지 알 필요가 없다. 도입은 이 회차의
 #: 범위 밖이고 개선 백로그 B-19 에 있다.
+#: **바닥 목록의 크기 하한** — 규칙 4 ⑶ 의 뿌리를 막는다.
+#:
+#: `FLOOR_TEST_CLASSES` 도 `MIN_TESTS_IN_FLOOR_CLASS` 도 **범위 선언형**이고, 그 최대 위험은
+#: 좁게 선언되는 것이 아니라 **아무것도 선언되지 않은 채 초록이 되는 것**이다. 실측(2026-08-21,
+#: 리더): 두 표를 **함께 비우면** 세 대조가 전부 통과했다 —
+#:
+#:   1. `set(FLOOR) - set(TEST_CLASSES)` 는 빈 바닥에서 차집합이 비어 통과
+#:   2. 키 집합 정확 일치는 **둘 다 비면** 통과
+#:   3. `parametrize(sorted(MIN_TESTS_IN_FLOOR_CLASS))` 는 **빈 딕셔너리면 케이스가 0개**라
+#:      그 테스트가 아예 돌지 않는다
+#:
+#: 이 저장소의 선례가 그대로다 — parity 게이트는 선언 도메인 0개에서 exit 0 이었고, 표
+#: 판정기는 대상 표가 0개일 때 위반 0건을 냈다.
+#:
+#: 키 집합이 바닥과 정확히 일치하도록 이미 묶여 있으므로, **바닥이 비지 않음을 보장하면
+#: 개수표도 함께 비지 못한다.** 그래서 하한은 여기 하나만 둔다.
+#:
+#: 값의 근거는 실측이다 — R-7 커밋 `ea32728` 시점의 바닥 항목 수가 26 다. `MIN_TEST_CLASSES`
+#: 와 같은 **라쳇**이라 올리기만 하고, 낮추려면 별도의 diff 와 사유가 필요하다.
+MIN_FLOOR_CLASSES = 26
+
 MIN_TESTS_IN_FLOOR_CLASS: dict[str, int] = {
     "kr.easydoc.api.AuthenticationCoverageContractTest": 5,
     "kr.easydoc.api.ContractErrorBodyReachTest": 11,
@@ -548,6 +569,21 @@ def _declared_test_count(fqcn: str) -> int | None:
         return len(TEST_ANNOTATION.findall(text[mark.start() : end]))
     return None
 
+
+
+def test_바닥_목록이_비지_않는다() -> None:
+    """바닥 목록의 크기가 하한 아래로 내려가지 않는다 — 규칙 4 ⑶.
+
+    이 케이스가 없으면 `FLOOR_TEST_CLASSES` 와 `MIN_TESTS_IN_FLOOR_CLASS` 를 **함께 비우는**
+    편집이 모든 대조를 통과한다(실측). 범위 선언형이 빈 선언에서 초록이 되는 것을 막는
+    자리이고, 근거는 `MIN_FLOOR_CLASSES` 의 주석에 있다.
+    """
+    assert len(FLOOR_TEST_CLASSES) >= MIN_FLOOR_CLASSES, (
+        f"바닥 목록이 {len(FLOOR_TEST_CLASSES)} 개다 — 하한 {MIN_FLOOR_CLASSES} 아래다.\n"
+        "  바닥에서 항목을 빼는 것은 「정리」가 아니라 **다른 판정의 근거를 무보호로 두는 일**이다.\n"
+        "  줄여야 한다면 MIN_FLOOR_CLASSES 를 고치는 별도의 diff 와 사유가 필요하다."
+    )
+    assert len(set(FLOOR_TEST_CLASSES)) == len(FLOOR_TEST_CLASSES), "바닥 목록에 중복이 있다"
 
 def test_바닥_개수_하한이_바닥_목록과_같은_집합을_덮는다() -> None:
     """**키 집합 정확 일치.** 바닥에 클래스를 더하면서 개수를 빠뜨리면 그 항목은 다시
