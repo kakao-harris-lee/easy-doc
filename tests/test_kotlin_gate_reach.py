@@ -555,7 +555,7 @@ MIN_TESTS_IN_FLOOR_CLASS: dict[str, int] = {
     "kr.easydoc.api.DocumentBodyLogLeakReachTest": 1,
     "kr.easydoc.api.DocumentDeleteReachTest": 14,
     "kr.easydoc.api.DocumentListHeaderFloorTest": 2,
-    "kr.easydoc.api.DocumentListReachTest": 10,
+    "kr.easydoc.api.DocumentListReachTest": 11,
     "kr.easydoc.api.NamedReferenceGuardTest": 16,
     "kr.easydoc.api.PrivateResponseHeadersReachTest": 7,
     "kr.easydoc.api.RequestFieldConstraintLayerTest": 7,
@@ -733,7 +733,7 @@ MIN_ASSERTIONS_BY_CLASS: dict[str, int] = {
     "kr.easydoc.api.DocumentDtoLeakTest": 15,
     "kr.easydoc.api.DocumentListContractTest": 30,
     "kr.easydoc.api.DocumentListHeaderFloorTest": 4,
-    "kr.easydoc.api.DocumentListReachTest": 28,
+    "kr.easydoc.api.DocumentListReachTest": 29,
     "kr.easydoc.api.HealthContractTest": 13,
     "kr.easydoc.api.MigrateProfileWithoutEncryptionKeyTest": 4,
     "kr.easydoc.api.NamedReferenceGuardTest": 30,
@@ -1160,15 +1160,26 @@ NAMED_REFERENCE = re.compile(
 NAMED_ENFORCER_SUFFIXES = ("Test", "Probe")
 
 #: Kotlin 선언 머리. 인구조사에서 **제품 타입**(테스트가 아닌 것)을 가려내는 데 쓴다.
-KOTLIN_DECLARATION = re.compile(
-    r"^\s*(?:[\w@\[\]().,\s]*?\b)?(?:class|interface|object|enum class|annotation class)\s+(\w+)",
-    re.MULTILINE,
-)
+#:
+#: ## 수식어를 매칭하지 않는다 — **파국적 백트래킹**을 실측으로 밟았다
+#:
+#: 첫 판은 선언 앞의 수식어를 `^\s*(?:[\w@\[\]().,\s]*?\b)?…` 로 받았다. 게으른 문자
+#: 클래스가 줄바꿈을 포함한 `\s` 를 담은 채 `re.MULTILINE` 로 걸려, **모든 줄머리에서 파일
+#: 끝까지 되짚었다.** 실측(2026-08-21): 이 파일의 게이트 전체가 **7.93s → 656.74s**(83배),
+#: `DocumentBodyLogLeakReachTest.kt`(41,699바이트) 한 파일의 `findall` 하나가 **205.9s**.
+#: CI `quality` 잡의 예산은 15분이므로 그대로 두면 그 잡을 이 검사 하나가 먹는다.
+#:
+#: 그래서 **키워드와 이름만** 본다. 수식어를 읽을 필요가 없다 — 필요한 것은 「이 이름이
+#: 저장소에 선언돼 있는가」뿐이고, `enum class`·`annotation class`·`data class` 도 그 안의
+#: `class <이름>` 으로 잡힌다. `::class.java` 는 `class` 뒤가 `.` 이라 걸리지 않고, 주석과
+#: 문자열은 [_blanked] 가 이미 비웠다.
+KOTLIN_DECLARATION = re.compile(r"\b(?:class|interface|object)\s+(\w+)")
 
 #: 단언 토큰의 **모양** — `assert` 로 시작하는 식별자 + 여는 괄호. 목록이 아니라 모양이다.
 ASSERTION_TOKEN = re.compile(r"\bassert[A-Za-z]*\s*\(")
 
 
+@functools.cache
 def _kotlin_main_sources() -> list[Path]:
     """`backend-kotlin/**/src/main/**` 의 Kotlin 소스. 빌드 산출물은 뺀다."""
     return sorted(
@@ -1224,6 +1235,7 @@ def _comment_text(text: str) -> str:
     return "\n".join(out)
 
 
+@functools.cache
 def _kotlin_declared_names() -> set[str]:
     """저장소 Kotlin 소스(main·test)가 선언한 타입 이름 전부 — 단순 이름."""
     names: set[str] = set()
@@ -1232,8 +1244,12 @@ def _kotlin_declared_names() -> set[str]:
     return names
 
 
+@functools.cache
 def _named_enforcer_census() -> tuple[dict[str, list[str]], list[str]]:
     """제품 주석이 이름으로 지목한 **테스트 클래스** 인구조사.
+
+    **결과를 캐시한다** — 두 케이스가 각각 부르므로 캐시가 없으면 전수 스캔이 두 번 돈다
+    (형제 `_discovered_test_classes` 와 같은 규율). 소비자는 읽기만 한다.
 
     돌려주는 것은 `(fqcn → 지목한 파일들, 해소되지 않은 이름들)` 이다. 두 번째가 비어 있지
     않으면 그 이름은 테스트 클래스도 제품 선언도 아니다 — 죽은 포인터이므로 **빨강**이다

@@ -7,6 +7,7 @@ import kr.easydoc.api.support.UploadFixtures
 import kr.easydoc.infrastructure.DatabaseHandle
 import kr.easydoc.infrastructure.PostgresTestSupport
 import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
@@ -213,6 +214,59 @@ class DocumentListReachTest {
         OwnershipConcealment.assertIndistinguishable("GET $DOCUMENTS_PATH?$WORKSPACE_ID_PARAM=", missing, someoneElse)
     }
 
+    /**
+     * **공유 판정이 세 축 모두에서 빨개질 수 있다** — [OwnershipConcealment] 의 대조 프로브.
+     *
+     * ## 왜 필요한가
+     *
+     * X1-1 이 판정을 한 벌로 합치게 했고(다섯 자리가 같은 성질을 서로 다른 강도로 재고
+     * 있었다), 그 합침이 **새 단일 실패점**을 만든다 — 그 한 벌을 비우는 한 줄이 다섯 자리를
+     * 동시에 무력화한다. 그런데 `OwnershipConcealment` 는 JUnit 애너테이션이 없어 **테스트
+     * 클래스가 아니고**, 그래서 하네스의 개수·단언 하한 표 분모 밖이다(실측). 즉 그 한 줄에
+     * 자동 신호가 0 이 된다.
+     *
+     * 이 케이스가 그 자리를 받는다. 형제 관용과 같은 형태다 —
+     * `RequestFieldRejectionReachTest` 의 「판정 함수가 배열을 지목한다」.
+     *
+     * ## 세 축을 **각각** 재는 이유
+     *
+     * 판정이 상태 → 바이트 → 헤더 순으로 단언하므로, 앞 축이 먼저 깨지면 뒤 축은 한 번도
+     * 실행되지 않는다. 실제 HTTP 응답으로는 「상태는 같고 바이트만 다른」 조합을 만들 수
+     * 없으므로 관측값 갈래([OwnershipConcealment.Observation])로 축마다 하나씩 먹인다.
+     */
+    @Test
+    @DisplayName("공유 판정이 상태·바이트·헤더 **세 축 모두에서** 구별한다 (대조 프로브)")
+    fun `공유 판정이 세 축 모두에서 구별한다`() {
+        val base =
+            OwnershipConcealment.Observation(
+                status = NOT_FOUND,
+                body = PROBE_BODY.toByteArray(Charsets.UTF_8),
+                headerNames = setOf("content-type"),
+            )
+        val differing =
+            mapOf(
+                "상태" to OwnershipConcealment.Observation(UNAUTHORIZED, base.body, base.headerNames),
+                "바이트" to
+                    OwnershipConcealment.Observation(
+                        base.status,
+                        PROBE_OTHER_BODY.toByteArray(Charsets.UTF_8),
+                        base.headerNames,
+                    ),
+                "헤더" to
+                    OwnershipConcealment.Observation(
+                        base.status,
+                        base.body,
+                        base.headerNames + "x-probe",
+                    ),
+            )
+
+        differing.forEach { (axis, other) ->
+            assertThatThrownBy { OwnershipConcealment.assertIndistinguishable("대조 프로브", base, other) }
+                .withFailMessage("공유 판정이 %s 축의 차이를 구별하지 못한다 — 그 축의 초록은 아무 뜻이 없다", axis)
+                .isInstanceOf(AssertionError::class.java)
+        }
+    }
+
     // ================================================================ DL-10 · DL-11 — 인증
 
     @Test
@@ -401,6 +455,10 @@ class DocumentListReachTest {
 
         private const val WWW_AUTHENTICATE = "WWW-Authenticate"
         private const val WWW_AUTHENTICATE_COMPONENT = "WWWAuthenticateBearer"
+
+        /** 대조 프로브의 합성 본문 둘. 길이가 달라 바이트 축이 반드시 갈린다. */
+        private const val PROBE_BODY = "{\"detail\":\"가\"}"
+        private const val PROBE_OTHER_BODY = "{\"detail\":\"가나\"}"
 
         private const val FORGED_TOKEN = "forged.token.value"
         private const val VALID_PASSWORD = "correct horse battery"
