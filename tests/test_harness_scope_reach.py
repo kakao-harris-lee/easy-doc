@@ -1176,37 +1176,56 @@ def test_원장_파일이_전부_실재한다() -> None:
     )
 
 
-#: 아카이브 분량의 **하한**. 존재 단언만으로는 「0바이트로 비우기」·「한 줄로 전량 교체」가
-#: 통과한다 — 실측(2026-08-21, `xx_harness` 교차 리뷰 C-4): 두 변조 모두 `38 passed · EXIT=0`
-#: 이었다. 존재 축이 겨눈 피해(그 파일의 내용이 판정 밖으로 나간다)가 **똑같이 일어나는데
-#: 잡히지 않았다.**
+#: 아카이브 append-only 의 **기준 리비전**. 이 커밋의 바이트가 현재 파일의 **정확한 prefix**
+#: 여야 한다.
 #:
-#: 이것은 4층이 아니다(규칙 7) — 존재 축과 **같은 층의 다른 관측면**이다. 존재는 「파일이
-#: 있는가」, 이 하한은 「그 안에 역사가 남아 있는가」를 본다. 하나가 다른 하나를 함의하지 않는다.
+#: ## 줄 수 하한에서 prefix 대조로 갈아탔다 (codex 지적 medium, 2026-08-21)
 #:
-#: 값의 근거는 실측이다 — 분리 직후 `00_progress-archive.md` 가 1,884줄이다. **라쳇이라
-#: 올리기만 하고, 인상 시점은 Phase 경계다**(규칙 8 — 라쳇 상환). 낮추려면 이 상수를 고치는
-#: 별도의 diff 와 사유가 필요하고, 그 diff 가 "역사를 버렸다"는 신고다.
-MIN_ARCHIVE_LINES: Final = 1800
+#: 초판은 `MIN_ARCHIVE_LINES = 1800` 이라는 **줄 수 하한**이었다. codex 독립 리뷰가 그것이
+#: append-only 를 강제하지 못한다고 지적했고 옳았다 — 아카이브가 1,884줄이므로 **84줄 삭제**,
+#: **기존 근거의 임의 개작**, **1,800줄 이상의 무관한 내용으로 전량 교체**가 전부 통과했다.
+#: 내가 붙인 음성 대조는 0바이트와 한 줄 교체만 봤고(둘 다 하한 아래) **하한 위의 훼손을 보지
+#: 않았다.** 같은 형태의 세 번째 재발이다(§3-b → C-4 → 여기).
+#:
+#: prefix 대조는 그 전부를 막는다. 그리고 **기준 저장소가 git 이라 새 파일이 필요 없다** —
+#: 기준 바이트를 따로 두면 그 사본이 또 갈릴 자리가 된다.
+#:
+#: 갱신 시점: 아카이브에 정당하게 **덧붙인** 뒤에는 그대로 둔다(prefix 는 계속 성립한다).
+#: 이 상수를 올리는 것은 **기존 내용을 고쳤을 때뿐**이고, 그때는 사유를 남긴다.
+_ARCHIVE_BASELINE_REV: Final = "0d632f9"
 
 
-def test_아카이브가_비워지지_않는다() -> None:
-    """**「append-only」 규약의 강제자.** 존재 단언 옆에 분량 하한을 둔다.
+def test_아카이브가_append_only_다() -> None:
+    """**「append-only」 규약의 강제자.** 기준 리비전 바이트가 현재 파일의 prefix 인가.
 
     아카이브는 규약상 append-only 인데(SKILL.md 작업 추적 절 2번) 그 규약의 강제자가
-    **0개**였다. 실측으로 확인된 두 조용한 경로:
+    **0개**였다. 초판 강제자(줄 수 하한)는 하한 위의 훼손을 통과시켰다 — codex 지적.
 
-      * 아카이브를 0바이트로 비움 → `38 passed · EXIT=0`
-      * 아카이브를 `# (비었음)` 한 줄로 교체(역사 1,884줄 소실) → `38 passed · EXIT=0`
-
-    둘 다 「범위 선언형이 빈 선언에서 통과한 것」이라 규칙 4 ⑶ 위반이다.
+    prefix 대조가 막는 것: 앞부분 삭제 · 중간 삽입 · 기존 문면 개작 · 전량 교체 · 잘라내기.
+    통과시키는 것: **끝에 덧붙이기 하나뿐**이고 그것이 append-only 의 정의다.
     """
-    lines = len(_PROGRESS_ARCHIVE_PATH.read_text(encoding="utf-8").splitlines())
-    assert lines >= MIN_ARCHIVE_LINES, (
-        f"아카이브가 {lines} 줄이다 — 하한 {MIN_ARCHIVE_LINES} 아래다.\n"
-        "  아카이브는 append-only 다. 줄어드는 것은 「정리」가 아니라 **역사 소실**이고,\n"
-        "  그 역사는 다른 판정이 근거로 인용한다(예: stop-time 게이트 30건 인용).\n"
-        "  정당하게 줄였다면 MIN_ARCHIVE_LINES 를 고치는 diff 와 사유를 함께 남겨라."
+    baseline = subprocess.run(
+        ["git", "show", f"{_ARCHIVE_BASELINE_REV}:docs/migration/_workspace/00_progress-archive.md"],
+        cwd=_REPO_ROOT,
+        capture_output=True,
+        check=False,
+    )
+    assert baseline.returncode == 0, (
+        f"기준 리비전 {_ARCHIVE_BASELINE_REV} 에서 아카이브를 읽지 못했다.\n"
+        f"  stderr: {baseline.stderr.decode('utf-8', 'replace').strip()}\n"
+        "  얕은 클론이거나 리비전이 사라졌다 — 조용히 건너뛰지 않는다(규칙 3)."
+    )
+    base_bytes = baseline.stdout
+    assert base_bytes, "기준 리비전의 아카이브가 비었다 — 기준으로 쓸 수 없다."
+
+    current = _PROGRESS_ARCHIVE_PATH.read_bytes()
+    assert current.startswith(base_bytes), (
+        f"아카이브가 append-only 를 어겼다 — 기준({_ARCHIVE_BASELINE_REV}, {len(base_bytes)}B)이 "
+        f"현재 파일({len(current)}B)의 prefix 가 아니다.\n"
+        "  줄어들었거나, 기존 문면이 고쳐졌거나, 중간에 끼워 넣어졌다.\n"
+        "  아카이브의 역사는 다른 판정이 **줄 번호로** 인용한다(예: stop-time 게이트 30건) —\n"
+        "  앞부분이 밀리면 그 인용이 전부 어긋난다.\n"
+        "  기존 내용을 정당하게 고쳤다면 _ARCHIVE_BASELINE_REV 를 그 커밋으로 올리고 사유를 남겨라."
     )
 
 
@@ -1251,6 +1270,39 @@ _AXIS_NAMES: Final = (
 
 #: `CLAUDE.md` 가 가리켜야 하는 정본 경로.
 _AXIS_CANON_POINTER: Final = ".claude/skills/kotlin-migration/SKILL.md"
+
+
+#: `CLAUDE.md` 리뷰 게이트 절의 머리. 이 절 **안에서** 4축 이름과 정본 포인터를 찾는다.
+_REVIEW_GATE_HEADING: Final = "**리뷰 게이트:**"
+
+
+def _claude_md_review_gate_section() -> str:
+    """`CLAUDE.md` 의 리뷰 게이트 절만 떼어 온다. 못 찾으면 빈 문자열.
+
+    ## 왜 절 단위인가 (codex 지적 medium, 2026-08-21)
+
+    초판은 4축 이름과 정본 포인터를 **파일 전체**에서 찾았다. codex 독립 리뷰가 그것이 거짓
+    초록을 만든다고 지적했고 옳았다 — 정본 경로는 `CLAUDE.md` 의 **다른 절에도 이미 있어서**
+    (실측: 3곳 — 「구현 전 리서치」·리뷰 게이트·「범위 대조」), 리뷰 게이트 문단에서 포인터를
+    지워 그 문단을 **독립 사본**으로 만들어도 파일 전체 검색은 통과했다. 축 이름도 같다 —
+    변경 이력 표에 이름이 남으면 이름 검사가 같은 방식으로 거짓 초록이 된다.
+
+    내 음성 대조(NC-C·NC-D)는 포인터와 이름을 **전부** 지워서 잡힌 것이라 이 경로를 못 봤다.
+    """
+    lines = _CLAUDE_MD_PATH.read_text(encoding="utf-8").splitlines()
+    start = next((i for i, line in enumerate(lines) if line.startswith(_REVIEW_GATE_HEADING)), None)
+    if start is None:
+        return ""
+    # 다음 굵은 머리(`**…:**`)나 절 헤더까지가 이 절이다.
+    end = next(
+        (
+            i
+            for i, line in enumerate(lines[start + 1 :], start + 1)
+            if line.startswith("**") or line.startswith("#")
+        ),
+        len(lines),
+    )
+    return "\n".join(lines[start:end])
 
 
 def _extract_axis_block(markdown: str) -> str:
@@ -1304,15 +1356,20 @@ def test_리뷰_4축_사본이_갈리지_않는다() -> None:
             "  정본은 kotlin-migration 이다."
         )
 
-    claude_md = _CLAUDE_MD_PATH.read_text(encoding="utf-8")
-    missing_names = [name for name in _AXIS_NAMES if name not in claude_md]
+    section = _claude_md_review_gate_section()
+    assert section, (
+        "CLAUDE.md 에서 리뷰 게이트 절을 찾지 못했다 — 절 머리가 바뀌었거나 절이 사라졌다.\n"
+        "  이 검사가 빈 절에서 통과하면 절 자체를 지우는 편집이 조용해진다(규칙 4 ⑶)."
+    )
+    missing_names = [name for name in _AXIS_NAMES if name not in section]
     assert not missing_names, (
-        f"CLAUDE.md 에 4축 이름이 빠졌다: {missing_names}\n"
+        f"CLAUDE.md **리뷰 게이트 절**에 4축 이름이 빠졌다: {missing_names}\n"
         "  값을 복제하라는 뜻이 아니다 — 이름 넷과 정본 경로만 있으면 된다."
     )
-    assert _AXIS_CANON_POINTER in claude_md, (
-        f"CLAUDE.md 가 4축 정본 경로({_AXIS_CANON_POINTER})를 가리키지 않는다.\n"
-        "  포인터가 없으면 그 문면이 스스로 정본이 되어 복사본이 하나 더 생긴다."
+    assert _AXIS_CANON_POINTER in section, (
+        f"CLAUDE.md **리뷰 게이트 절**이 4축 정본 경로({_AXIS_CANON_POINTER})를 가리키지 않는다.\n"
+        "  포인터가 없으면 그 절이 스스로 정본이 되어 복사본이 하나 더 생긴다.\n"
+        "  파일 다른 곳의 포인터로는 대신할 수 없다 — 그것이 이 검사가 절 단위인 이유다."
     )
 
 
