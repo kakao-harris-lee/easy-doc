@@ -685,7 +685,6 @@ def _declared_test_count(fqcn: str) -> int | None:
     return None
 
 
-
 def test_바닥_목록이_비지_않는다() -> None:
     """바닥 목록의 크기가 하한 아래로 내려가지 않는다 — 규칙 4 ⑶.
 
@@ -700,6 +699,7 @@ def test_바닥_목록이_비지_않는다() -> None:
         "  줄여야 한다면 MIN_FLOOR_CLASSES 를 고치는 별도의 diff 와 사유가 필요하다."
     )
     assert len(set(FLOOR_TEST_CLASSES)) == len(FLOOR_TEST_CLASSES), "바닥 목록에 중복이 있다"
+
 
 def test_바닥_개수_하한이_바닥_목록과_같은_집합을_덮는다() -> None:
     """**키 집합 정확 일치.** 바닥에 클래스를 더하면서 개수를 빠뜨리면 그 항목은 다시
@@ -929,7 +929,10 @@ def _git_revisions(rel_path: str) -> list[str]:
     """`rel_path` 를 건드린 리비전들. 이력이 없으면 빈 목록."""
     result = subprocess.run(
         ["git", "rev-list", "HEAD", "--", rel_path],
-        cwd=REPO_ROOT, capture_output=True, text=True, check=False,
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
     )
     return result.stdout.split() if result.returncode == 0 else []
 
@@ -938,7 +941,10 @@ def _blob_at(rev: str, rel_path: str) -> str:
     """그 리비전의 파일 내용. 그 리비전에 파일이 없으면 빈 문자열."""
     result = subprocess.run(
         ["git", "show", f"{rev}:{rel_path}"],
-        cwd=REPO_ROOT, capture_output=True, text=True, check=False,
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
     )
     return result.stdout if result.returncode == 0 else ""
 
