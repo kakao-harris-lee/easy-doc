@@ -1297,6 +1297,7 @@ Phase 0 착수 전에 하네스 구축 과정에서 발견해 처리한 항목�
 | `3ba7e04` | codex 지적 high #1 — 리뷰 축 4 → 7, 즉시 중단 기준 전부 매핑. `.claude/skills/{kotlin-migration,codex-review}/SKILL.md` · `CLAUDE.md` · `tests/test_harness_scope_reach.py` | **대기** | 필수 축③에 닿는다 — 이연이 아니라 미리뷰 | `xx_harness 2회차` | - |
 | `e7faccc` | codex 지적 high #2 — 리뷰 커버리지 강제자 신설. `tests/test_review_coverage_reach.py` · 이 원장 | **대기** | 필수 축③에 닿는다 — 이연이 아니라 미리뷰 | `xx_harness-fixes` | - |
 | `87457e6` | ruff E501 2건 수정 — 이 범위가 CI `quality` 잡 전체를 껐다(F-5). `tests/test_harness_scope_reach.py` | **대기** | 필수 축③에 닿는다 — 이연이 아니라 미리뷰 | `xx_harness-fixes 후속` | - |
+| `73f9f4c` | F-2 차단 해소(장부 하한을 산문 → 표 행) + 커밋 게이트 사슬을 pytest 안으로(반복 실패 b) + `ci.yml` 신설 3파일 경로 명시(F-4 CI 부분) | **대기** | 필수 축③에 닿는다 — 이연이 아니라 미리뷰 | `xx_harness-fixes 후속` | - |
 
 **`상태` 어휘는 둘이다.** `이연` = 필수 축에 닿지 않아 묶기로 판정한 것. `대기` = **필수 축에
 닿는데 아직 리뷰를 못 받은 것** — 이연이 아니라 빚이다. 위 세 줄은 전부 `대기`다(축③ =
