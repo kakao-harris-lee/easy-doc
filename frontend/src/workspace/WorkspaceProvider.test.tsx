@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -26,6 +26,23 @@ function authValue(status: AuthStatus): AuthContextValue {
     signUp: () => Promise.resolve(),
     signOut: () => undefined,
   }
+}
+
+/**
+ * 고른 작업 공간이 화면에 나타나기를 기다린다.
+ *
+ * `findByTestId`로 기다리면 안 된다 — `current` 문단은 첫 렌더부터(`없음`으로) 이미
+ * 붙어 있어서 그 조회는 첫 동기 검사에서 곧바로 성공하고, **본문이 바뀌기를 기다리지
+ * 않는다.** 그러면 단언이 통과하는 근거는 오직 "React가 커밋을 제때 끝냈는가"라는
+ * 우연이 된다: 목록 응답은 마이크로태스크로 풀리지만 커밋은 React 스케줄러의
+ * `setImmediate`에 실리고, Testing Library는 `setTimeout(…, 0)` 한 칸만 배수한 뒤
+ * 돌아온다. 둘의 도착 순서는 Node가 보장하지 않아 러너가 바쁘면 뒤집힌다
+ * (CI run 32451895280 실패: `Received: 없음`).
+ */
+async function expectCurrent(workspaceId: string): Promise<void> {
+  await waitFor(() => {
+    expect(screen.getByTestId('current')).toHaveTextContent(workspaceId)
+  })
 }
 
 /** 컨텍스트 값을 그대로 화면에 드러내는 관찰용 컴포넌트. */
@@ -66,7 +83,7 @@ describe('작업 공간 상태', () => {
     renderProvider()
 
     // 첫 번째가 기본 작업 공간이다(서버가 만든 순서로 준다).
-    expect(await screen.findByTestId('current')).toHaveTextContent('w1')
+    await expectCurrent('w1')
     expect(screen.getByTestId('names')).toHaveTextContent('기본 작업 공간,민원 안내')
   })
 
@@ -77,7 +94,7 @@ describe('작업 공간 상태', () => {
     })
     renderProvider()
 
-    expect(await screen.findByTestId('current')).toHaveTextContent('w2')
+    await expectCurrent('w2')
   })
 
   it('기억해 둔 선택이 목록에 없으면 기본 작업 공간으로 되돌아간다', async () => {
@@ -86,7 +103,7 @@ describe('작업 공간 상태', () => {
     vi.mocked(listWorkspaces).mockResolvedValue({ items: [workspaceItem({ id: 'w1' })] })
     renderProvider()
 
-    expect(await screen.findByTestId('current')).toHaveTextContent('w1')
+    await expectCurrent('w1')
   })
 
   it('로그인하지 않았으면 목록을 읽지 않는다', () => {
@@ -115,7 +132,7 @@ describe('작업 공간 상태', () => {
     await user.click(screen.getByRole('button', { name: '만들기' }))
 
     // 방금 만든 곳에 바로 올릴 수 있어야 한다.
-    expect(await screen.findByTestId('current')).toHaveTextContent('w2')
+    await expectCurrent('w2')
     expect(window.localStorage.getItem(STORAGE_KEY)).toBe('w2')
   })
 })
