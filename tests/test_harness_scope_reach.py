@@ -234,6 +234,8 @@ def read_progress_markdown() -> str:
     return "\n\n".join(
         path.read_text(encoding="utf-8") for path in _PROGRESS_PATHS if path.exists()
     )
+
+
 _CI_WORKFLOW_PATH: Final = _REPO_ROOT / ".github" / "workflows" / "ci.yml"
 
 #: 규약이 걸린 표를 고르는 열 이름. `실행 경로` 가 아니라 이 셋으로 고르는 이유는,
@@ -1204,8 +1206,9 @@ def test_아카이브가_append_only_다() -> None:
     prefix 대조가 막는 것: 앞부분 삭제 · 중간 삽입 · 기존 문면 개작 · 전량 교체 · 잘라내기.
     통과시키는 것: **끝에 덧붙이기 하나뿐**이고 그것이 append-only 의 정의다.
     """
+    archive_rel = "docs/migration/_workspace/00_progress-archive.md"
     baseline = subprocess.run(
-        ["git", "show", f"{_ARCHIVE_BASELINE_REV}:docs/migration/_workspace/00_progress-archive.md"],
+        ["git", "show", f"{_ARCHIVE_BASELINE_REV}:{archive_rel}"],
         cwd=_REPO_ROOT,
         capture_output=True,
         check=False,
@@ -1309,6 +1312,7 @@ def _plan_stop_criteria() -> list[str]:
         elif criteria and line.strip():
             break
     return criteria
+
 
 #: `CLAUDE.md` 가 가리켜야 하는 정본 경로.
 _AXIS_CANON_POINTER: Final = ".claude/skills/kotlin-migration/SKILL.md"
@@ -1426,7 +1430,9 @@ def test_리뷰_4축_사본이_갈리지_않는다() -> None:
     빈 선언에서 통과하지 않는다(규칙 4 ⑶) — 블록을 못 찾으면 실패한다. 이것은 1층 장치이고
     라쳇을 두지 않는다(규칙 7 — 층을 더하지 않는다).
     """
-    blocks = {path: _extract_axis_block(path.read_text(encoding="utf-8")) for path in _AXIS_SKILL_PATHS}
+    blocks = {
+        path: _extract_axis_block(path.read_text(encoding="utf-8")) for path in _AXIS_SKILL_PATHS
+    }
 
     empty = [str(path.relative_to(_REPO_ROOT)) for path, block in blocks.items() if not block]
     assert not empty, (
