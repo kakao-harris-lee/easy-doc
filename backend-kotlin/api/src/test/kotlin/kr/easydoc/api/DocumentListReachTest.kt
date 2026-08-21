@@ -1,5 +1,6 @@
 package kr.easydoc.api
 
+import kr.easydoc.api.support.ContractQueryParameter
 import kr.easydoc.api.support.ContractSpec
 import kr.easydoc.api.support.MultipartBody
 import kr.easydoc.api.support.UploadFixtures
@@ -164,6 +165,144 @@ class DocumentListReachTest {
         )
     }
 
+    // ================================================================ R-6 — 값 자리 불변식
+
+    @Test
+    @DisplayName("R-6 불변식(긍정) — 성공 응답은 요청이 **지정한 값을 반영한다**")
+    fun `지정한 값이 응답에 반영된다`() {
+        val token = newAccount()
+        createFromText(token, textBody("기본 공간 문서"))
+        val second = createWorkspace(token, "둘째 공간")
+        createFromText(token, textBody("둘째 공간 문서", workspaceId = second))
+
+        ContractSpec.queryParameters(DOCUMENTS_PATH, GET).forEach { parameter ->
+            if (parameter.name in ContractSpec.schemaRequired(LIST_SCHEMA)) {
+                // **응답에 그 이름의 필드가 있는 파라미터**는 되돌려주는 값으로 반영을 잰다.
+                // 「어느 파라미터가 메아리를 갖는가」를 코드에 적지 않고 응답 스키마에서 읽는다.
+                val sent = ContractSpec.inputLimitRange(limitNodeOf(parameter.name)).min
+                val body = bodyOf(list(token, raw = "${parameter.name}=$sent"))
+                assertThat(body[parameter.name])
+                    .withFailMessage(
+                        "%s=%d 를 보냈는데 응답이 %s 를 되돌려준다 — 지정한 값이 반영되지 않았다",
+                        parameter.name,
+                        sent,
+                        body[parameter.name],
+                    ).isEqualTo(sent)
+                // 부호가 붙은 형태도 **해석되는** 입력이다 — 같은 값으로 반영돼야 한다.
+                assertThat(bodyOf(list(token, raw = "${parameter.name}=%2B$sent"))[parameter.name]).isEqualTo(sent)
+                // 되돌려준 값이 **실제로 쓰였는지**도 본다 — 메아리만 맞추고 무시하는 구현을
+                // 배제한다. 실린 항목 수는 되돌려준 페이지 크기를 넘을 수 없다.
+                assertThat((body[ITEMS_PROPERTY] as List<*>).size).isLessThanOrEqualTo(body[LIMIT_PROPERTY] as Int)
+            } else {
+                // 메아리 필드가 없는 파라미터는 **효과**로 잰다. `workspace_id` 가 그것이고,
+                // 효과는 「그 작업 공간의 문서만」이다.
+                val filtered = itemsOf(list(token, raw = "${parameter.name}=$second"))
+                val all = itemsOf(list(token))
+                assertThat(all.size)
+                    .withFailMessage("전체 목록이 2건 미만이라 필터 효과를 구별할 수 없다 — 이 케이스의 전제가 깨졌다")
+                    .isGreaterThan(filtered.size)
+                assertThat(filtered).hasSize(1)
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("R-6 불변식(부정) — **값 자리가 있으나 선언 타입으로 해석되지 않는 입력**은 성공 응답을 만들지 못한다")
+    fun `해석되지 않는 값 자리는 성공하지 못한다`() {
+        val token = newAccount()
+        createFromText(token, textBody("문서"))
+        val declared = ContractSpec.queryParameters(DOCUMENTS_PATH, GET)
+        assertThat(declared)
+            .withFailMessage("계약이 이 오퍼레이션에 쿼리 파라미터를 하나도 선언하지 않았다 — 이 케이스는 아무것도 재지 않는다")
+            .isNotEmpty()
+
+        val slips = mutableListOf<String>()
+        declared.forEach { parameter ->
+            uninterpretableSamples(parameter).forEach { (label, encoded) ->
+                val response = list(token, raw = "${parameter.name}=$encoded")
+                if (response.statusCode() in SUCCESS_RANGE) {
+                    slips += "${parameter.name} $label → ${response.statusCode()} ${response.body().take(120)}"
+                    return@forEach
+                }
+                // 거절이면 **계약이 선언한 상태**여야 하고 모양은 스키마 층(배열)이어야 한다.
+                assertThat(ContractSpec.responseStatuses(DOCUMENTS_PATH, GET))
+                    .withFailMessage(
+                        "%s %s 의 거절 상태 %d 를 계약이 선언하지 않는다",
+                        parameter.name,
+                        label,
+                        response.statusCode(),
+                    ).contains(response.statusCode().toString())
+                assertValidationArrayFor(response, parameter.name)
+            }
+        }
+
+        assertThat(slips)
+            .withFailMessage(
+                "값 자리가 있으나 선언 타입으로 해석되지 않는 입력이 **성공 응답**을 받았다 — " +
+                    "프레임워크가 그것을 기본값·미지정으로 흡수했다는 뜻이고, 계약이 스키마 층 판정을 " +
+                    "요구한 자리에서 그 층을 우회한 것이다.\n%s",
+                slips.joinToString("\n") { "  - $it" },
+            ).isEmpty()
+    }
+
+    /**
+     * 그 파라미터의 **선언 타입으로 해석되지 않는** 표본들 — 동치류로 덮는다.
+     *
+     * 열거하는 것은 값이 아니라 **동치류**다: 빈 자리 · 공백뿐 · 그 타입의 문법이 아님 ·
+     * (정수면) 표현 범위 초과. 이 넷이 「값 자리가 있으나 그 타입으로 해석되지 않는다」는
+     * 종류를 덮는다 — 자리가 비었거나(앞 둘), 문법이 아니거나(셋째), 문법이지만 담기지
+     * 않는다(넷째).
+     *
+     * **부호가 붙은 형태(`+5`)는 여기 없다.** 그것은 해석되는 입력이므로 긍정 케이스가
+     * 「반영된다」로 잰다 — 동치류를 값 목록으로 다루면 이 구별이 사라진다.
+     *
+     * 선언 타입은 계약에서 읽는다. 모르는 타입이면 **끊는다** — 조용히 표본 0건이 되면
+     * 그 파라미터는 검사받지 않는다.
+     */
+    private fun uninterpretableSamples(parameter: ContractQueryParameter): List<Pair<String, String>> {
+        val common = listOf("빈 자리" to "", "공백뿐" to "%20")
+        return when (declaredKindOf(parameter)) {
+            INTEGER_KIND -> common + listOf("정수 문법 아님" to "abc", "표현 범위 초과" to "99999999999999999999")
+            UUID_KIND -> common + listOf("UUID 문법 아님" to "abc")
+            else -> error("계약이 ${parameter.name} 에 선언한 타입을 이 표본 생성기가 모른다: ${parameter.schema}")
+        }
+    }
+
+    /** 계약 파라미터 스키마의 선언 타입. `anyOf` 는 널이 아닌 갈래를 읽는다. */
+    private fun declaredKindOf(parameter: ContractQueryParameter): String {
+        val direct = parameter.schema["type"]?.toString()?.takeIf { it != NULL_TYPE }
+        val branch =
+            (parameter.schema["anyOf"] as? List<*>)
+                ?.filterIsInstance<Map<*, *>>()
+                ?.firstOrNull { it["type"]?.toString() != NULL_TYPE }
+        return direct
+            ?: branch?.get("format")?.toString()
+            ?: branch?.get("type")?.toString()
+            ?: UNKNOWN_KIND
+    }
+
+    /** 그 파라미터의 경계가 사는 `x-input-limits` 노드 이름. 계약이 `list_` 접두로 둔다. */
+    private fun limitNodeOf(parameterName: String): String = "list_$parameterName"
+
+    private fun assertValidationArrayFor(
+        response: HttpResponse<String>,
+        parameterName: String,
+    ) {
+        val detail = bodyOf(response)[DETAIL]
+        assertThat(detail)
+            .withFailMessage("%s 의 거절 detail 이 배열이 아니다 — 스키마 층 실패는 배열이다: %s", parameterName, detail)
+            .isInstanceOf(List::class.java)
+        val items = (detail as List<*>).map { it as Map<*, *> }
+        assertThat(items).isNotEmpty()
+        val declaredKeys = ContractSpec.schemaRequired(VALIDATION_ITEM_SCHEMA)
+        items.forEach { item ->
+            assertThat(item.keys.map { it.toString() }.toSet()).isEqualTo(declaredKeys)
+        }
+        assertThat(items.map { it[LOC_KEY] })
+            .withFailMessage("거절 항목이 %s 를 지목하지 않는다: %s", parameterName, items)
+            .contains(listOf(QUERY_LOCATION, parameterName))
+    }
+
     // ================================================================ DL-9 — 남의 작업 공간
 
     @Test
@@ -248,19 +387,41 @@ class DocumentListReachTest {
         body: MultipartBody,
     ): HttpResponse<String> = send(post(token, body.contentType(), body.build(), DOCUMENTS_PATH))
 
-    private fun textBody(text: String): String = json.writeValueAsString(mapOf("text" to text))
+    private fun textBody(
+        text: String,
+        workspaceId: String? = null,
+    ): String =
+        json.writeValueAsString(
+            buildMap {
+                put("text", text)
+                if (workspaceId != null) put("workspace_id", workspaceId)
+            },
+        )
+
+    private fun createWorkspace(
+        token: String,
+        name: String,
+    ): String {
+        val body = json.writeValueAsString(mapOf("name" to name))
+        val response = send(post(token, JSON_MEDIA_TYPE, body.toByteArray(Charsets.UTF_8), "/workspaces"))
+        return bodyOf(response).required("id").toString()
+    }
 
     private fun list(
         token: String,
         limit: Int? = null,
         offset: Int? = null,
         workspaceId: String? = null,
+        raw: String? = null,
     ): HttpResponse<String> {
         val query =
             buildList {
                 if (limit != null) add("$LIST_LIMIT_PARAM=$limit")
                 if (offset != null) add("$LIST_OFFSET_PARAM=$offset")
                 if (workspaceId != null) add("$WORKSPACE_ID_PARAM=$workspaceId")
+                // **이미 인코딩된 조각**을 그대로 싣는다. R-6 표본은 빈 값·공백처럼 인코딩
+                // 자체가 재는 대상이라, 값을 다시 인코딩하면 그 대상이 바뀐다.
+                if (raw != null) add(raw)
             }.joinToString("&")
         return send(get(token, if (query.isEmpty()) DOCUMENTS_PATH else "$DOCUMENTS_PATH?$query"))
     }
@@ -362,6 +523,21 @@ class DocumentListReachTest {
 
         /** 페이지 경계를 여러 번 넘기려면 셋 이상이어야 한다. 값 자체는 계약과 무관하다. */
         private const val DOCUMENTS_FOR_PAGING = 3
+
+        private const val LIMIT_PROPERTY = "limit"
+        private const val VALIDATION_ITEM_SCHEMA = "ValidationErrorItem"
+        private const val LOC_KEY = "loc"
+
+        /** 계약 `ValidationFailed.examples.query_range` 의 `loc` 첫 칸. */
+        private const val QUERY_LOCATION = "query"
+
+        /** OpenAPI 타입·형식 어휘. 표본 생성기가 선언 타입을 가르는 데 쓴다. */
+        private const val INTEGER_KIND = "integer"
+        private const val UUID_KIND = "uuid"
+        private const val NULL_TYPE = "null"
+        private const val UNKNOWN_KIND = "?"
+
+        private val SUCCESS_RANGE = 200..299
 
         private var counter = 0
 

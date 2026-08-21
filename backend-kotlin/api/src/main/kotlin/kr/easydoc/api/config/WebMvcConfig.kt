@@ -34,10 +34,18 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer
  * 해석(경로 변수 변환·쿼리 범위 검사·본문 역직렬화)보다 앞이라 그 순서가 성립하고,
  * 핸들러를 찾은 뒤에만 돌아 계약 밖 경로가 404 로 남는다. 사유 전문은
  * [AuthenticationInterceptor] KDoc 에 있다.
+ *
+ * ## 값 자리 가드도 인터셉터다 (R-6)
+ *
+ * [TypedValueSlotInterceptor] 가 **공백뿐인 쿼리·경로 값**을 형식 오류와 같은 예외로 끊는다.
+ * 바인딩보다 앞이어야 하는 이유와, 다른 두 후보(애너테이션 기본값 제거·커스텀 변환기)가
+ * 실측에서 듣지 않은 경위는 그 클래스 KDoc 에 있다. **인증 뒤에 등재한다** — 순서가 뒤집히면
+ * 토큰 없이 파라미터 형태를 탐색할 수 있고 그것이 X-A3 위반이다.
  */
 @Configuration(proxyBeanMethods = false)
 class WebMvcConfig(
     private val authenticationInterceptor: AuthenticationInterceptor,
+    private val typedValueSlotInterceptor: TypedValueSlotInterceptor,
     private val authenticatedUserArgumentResolver: AuthenticatedUserArgumentResolver,
 ) : WebMvcConfigurer {
     override fun configureContentNegotiation(configurer: ContentNegotiationConfigurer) {
@@ -54,6 +62,11 @@ class WebMvcConfig(
         registry
             .addInterceptor(authenticationInterceptor)
             .addPathPatterns(AuthenticatedEndpoints.PROTECTED_PATH_PATTERNS)
+        // **인증 뒤**에 등재한다 — 계약이 인증을 입력 검증보다 먼저로 못박았고(X-A3),
+        // 인터셉터는 등재 순서대로 돈다. 경로 패턴을 좁히지 않는 이유는 이 가드의 대상이
+        // 「값 자리가 있으나 그 타입으로 해석되지 않는 입력」이라는 **종류**이고, 그 종류는
+        // 특정 경로에 속하지 않기 때문이다(사유 전문은 그 클래스 KDoc).
+        registry.addInterceptor(typedValueSlotInterceptor)
     }
 
     override fun addArgumentResolvers(resolvers: MutableList<HandlerMethodArgumentResolver>) {

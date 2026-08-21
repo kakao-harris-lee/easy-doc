@@ -891,3 +891,107 @@ R-4 에서는 두 강제자를 함께 뒀고 그 판단이 옳았다(도달 범�
 | `uv run pytest` | **1441 passed**, 68 skipped, 5 deselected, 5 xfailed |
 
 **핀 처분** — **새 테스트 클래스가 없다.** `ConstraintMetadata.kt` 는 `@Test` 가 없어 탐지 분모 밖이고, 케이스는 기존 두 클래스 안에서 늘었다. `TEST_CLASSES`·`TEST_CLASS_COUNT`(104) **무변경**. **`FLOOR_TEST_CLASSES`·`MIN_TEST_CLASSES` 는 건드리지 않았다.** `contracts/**`·`reviews/**`·`00_progress.md` 무변경 — 측정용 일시 변조는 전건 복원 후 sha256 일치(`WorkspaceDtos.kt` `bd2b6222…6566`, `WorkspaceController.kt` `afa60fef…9234`), 임시 파일(`probemeta/**`, `api/src/main/resources/META-INF/**`)은 삭제 확인.
+
+---
+
+# C4-R6 — 빈 쿼리·경로 값이 「미지정」으로 흡수되던 것을 막는다 (제품 동작)
+
+**일자:** 2026-08-21 / **계기:** stop-time codex 게이트 — *"빈 쿼리 값이 기본값·미지정으로 흡수되어 `GET /documents` 계약을 우회합니다."* 옳았다. 앞의 두 회차와 달리 **탐지기가 아니라 제품 동작**이다.
+
+## C4-R6-1. 기제 — 리더 가설 둘 다 **맞았고**, 하나는 범위가 더 넓었다
+
+실제 소켓으로 관측했다(임시 프로브, 커밋하지 않음).
+
+| 요청 | 관측 | 기제 |
+|---|---|---|
+| `?limit=` (빈) | **200 · `limit: 20`** | ⒜ 인자 해석기의 **빈 문자열 → `defaultValue`** 분기. `null` 일 때와 **별개 분기**라 가설대로다 |
+| `?limit=%20` (공백) | 422 배열 | ⒜ 분기는 `""` 만 본다 — 공백은 변환까지 가서 거절됐다 |
+| `?offset=` / `?offset=%20` | 200 / 422 | `limit` 과 같다 |
+| `?workspace_id=` · `=%20` | **200 · 필터가 사라져 items 2건**(유효 값은 1건) | ⒝ 널 허용 타입에 바인딩되는 공백 값이 `null` 이 된다. **가설보다 넓다** — 빈 값과 공백 **둘 다** 삼킨다 |
+| `?workspace_id=abc` | 422 배열 `uuid_parsing` | 정상 |
+| `PATCH`·`DELETE /workspaces/%20` | **400 `{"detail":"Bad Request"}`** | ⒞ **리더의 grep 밖에 있던 자리.** 같은 널화 뒤 경로 변수가 널일 수 없어 `MissingPathVariableException` |
+
+⒝ 가 확인한 것이 **범위의 조용한 확대**다 — 한 작업 공간으로 좁히려던 요청이 전체를 받는다. 소유자 술어는 SQL `WHERE` 에 남으므로 **타 사용자 노출은 아니다**(그 사실도 관측했다: 유효 값 1건 / 빈 값 2건, 둘 다 그 사용자 문서).
+
+⒞ 는 계약 위반이 하나 더 있다 — **계약 전체에 `'400'` 선언이 0건**인데(실측) 그 상태 코드가 나가고 있었다.
+
+## C4-R6-2. 도달 — 그 셋 말고 또 있는지 쟀다
+
+전 모듈 `src/main` 전수 grep(`@RequestParam`·`@PathVariable`·`defaultValue`·`required = false`): **`DocumentController.list` 의 셋 + `WorkspaceController` 의 `@PathVariable` 둘**이 전부다. 다른 컨트롤러·모듈에 쿼리·경로 파라미터가 없다. 리더의 grep 은 `api/src/main` 한정이었는데 결과가 같았고, **경로 변수 둘이 추가로 걸렸다.**
+
+## C4-R6-3. 처분 — 계약에서 유도했다 (발명하지 않았다)
+
+- 계약이 `limit`·`offset` 을 **진짜 스키마 제약**으로 못박았다(`x-request-field-constraints.x-contrast-case`). 스키마 층 실패는 **422 배열** `detail` 이다(`ValidationFailed`). 빈 문자열은 `type: integer` 가 아니므로 거절이고, **기본값으로 갈아치우는 것은 그 층을 우회하는 것**이다.
+- `workspace_id` 는 `anyOf: [{string, format: uuid}, {type: null}]` 이다. 공백뿐인 문자열은 **uuid 형식 문자열도 아니고 `null` 도 아니다** → 같은 422 배열.
+- 경로 변수도 같은 논리다. 그리고 **형식이 틀린 값이 이미 422 배열**이므로(`?workspace_id=abc`) 공백을 다른 상태로 내면 같은 종류에 두 모양이 생긴다.
+
+**상태 코드를 발명하지 않았다** — 계약이 이미 쓰는 갈래(422 배열) 하나를 골랐고, 그 근거는 위 세 줄이다.
+
+### 계약 레인에 올릴 것 (계약 파일 **무수정**)
+
+1. **계약이 「빈 값」을 명시하지 않는다.** 쿼리 파라미터 셋 어디에도 빈 문자열의 처분이 없다. 위 독해는 스키마 선언에서 **유도한 것**이므로 조항으로 못박는 편이 낫다.
+2. **같은 이름이 두 곳에서 다른 처분을 갖는다.** `DocumentFileRequest.workspace_id`(multipart 파트)는 *"빈 문자열은 미지정과 같다"* 를 **명시**하는데, `GET /documents` 의 쿼리 `workspace_id` 에는 그 조항이 없다. 이 비대칭이 의도인지 판정이 필요하다. 이 레인의 판단은 「명시된 자리에만 적용한다」이고(폼 파트는 클라이언트가 파트를 빼기 어렵지만 쿼리는 생략이 자연스럽다), 그 판단을 조항으로 확정해 달라는 것이 요청이다.
+3. **`'400'` 이 계약에 0건인데 나가고 있었다** — 이 커밋이 그 자리를 422 로 옮겨 해소했다. 컨테이너가 만드는 malformed-HTTP 400 은 별개이고(계약 `x-openapi-expressibility` 가 인정한 자리), 이번 것은 **디스패처를 통과한 요청**이었다.
+
+## C4-R6-4. 고친 방법 — 후보 둘은 **재 봤더니 듣지 않았다**
+
+| 후보 | 결과 |
+|---|---|
+| ⑴ `@RequestParam(defaultValue = …)` 제거 + 널 허용 `Int?` + 본문 기본값 | **더 나빠졌다.** `?limit=` 은 여전히 200 이고 **`?limit=%20` 이 422 → 200 으로 퇴행**했다 — 널 허용 타입에서는 공백도 널이 되므로 흡수 범위가 넓어진다 |
+| ⑵ 공백을 거절하는 `Converter<String, UUID>` 빈 | **불리지 않았다.** 유효한 UUID 에도 실패하도록 사보타주했는데 요청이 성공했다(200) — 그 변환기가 MVC 변환 서비스에 등재되지 않거나 흡수가 변환보다 앞선다 |
+
+그래서 **바인딩 앞**에서 막는다 — `TypedValueSlotInterceptor`(`preHandle`). 두 후보를 되돌리고(HEAD 내용으로 복원, sha256 확인) 이 하나만 남겼다.
+
+**열거하지 않는다.** 이름 목록 대신 **매칭된 핸들러의 파라미터 선언**을 읽어, **문자열이 아닌 타입**으로 선언된 `@RequestParam`·`@PathVariable` 의 값 자리가 공백뿐이면 끊는다. 그 자리에서만 프레임워크가 강제 변환을 하고 흡수가 일어난다. 다음에 추가되는 쿼리·경로 파라미터는 **자동으로** 이 가드 안에 든다.
+
+**던지는 예외가 `MethodArgumentTypeMismatchException` 이다** — 형식 오류가 이미 밟는 예외다. 그래서 전역 매퍼를 한 줄도 고치지 않고 422 배열 + `loc: ["query"|"path", 이름]` 이 나가며, **공백과 형식 오류의 응답 바이트가 같아진다.** 같은 종류에 두 모양을 만들지 않는 것이 요점이다.
+
+**인증 뒤에 등재했다** — 순서가 뒤집히면 토큰 없이 파라미터 형태를 탐색할 수 있고 그것이 X-A3 위반이다.
+
+### 고친 뒤 실측 (다섯 자리 전부)
+
+`?limit=`·`?limit=%20`·`?offset=`·`?offset=%20` → 422 배열 `int_parsing` / `?workspace_id=`·`=%20` → 422 배열 `uuid_parsing` / `PATCH`·`DELETE /workspaces/%20` → **422 배열**(`loc: ["path","workspace_id"]`, 400 이 사라졌다). 유효 입력은 그대로다 — 기준선 2건, `workspace_id=<유효>` 1건, `limit=20` 200, **`limit=+5` → 200 · `limit: 5`**.
+
+## C4-R6-5. 탐지기 — **불변식으로 바꿨다** (동치류는 그 음성 표본이 됐다)
+
+리더가 제안한 ⑵ 가 성립했다. 불변식: **「성공 응답은 요청이 지정한 값을 반영한다 — 반영할 것이 없으면 성공하지 못한다.」**
+
+**긍정 절반**은 계약에서 관측면을 유도한다. 파라미터 이름이 `DocumentListResponse.required` 안에 있으면(=`limit`·`offset`) **되돌려준 값**으로, 없으면(=`workspace_id`) **효과**(그 작업 공간의 문서만)로 잰다. 「어느 파라미터가 메아리를 갖는가」를 코드에 적지 않는다. 더해서 **실린 항목 수가 되돌려준 페이지 크기를 넘지 않음**을 본다 — 메아리만 맞추고 값을 무시하는 구현을 배제한다.
+
+**부정 절반**은 「값 자리가 있으나 선언 타입으로 해석되지 않는 입력은 2xx 를 받지 못한다」이고, 거절이면 **계약이 선언한 상태**인지와 배열 `detail` · `loc` 지목까지 본다. 표본은 **동치류**로 만든다 — 빈 자리 · 공백뿐 · 그 타입의 문법이 아님 · (정수면) 표현 범위 초과. 넷이 그 종류를 덮는 근거: 자리가 비었거나(앞 둘), 문법이 아니거나(셋째), 문법이지만 담기지 않는다(넷째). 선언 타입은 계약 파라미터 스키마에서 읽고 **모르는 타입이면 끊는다**(표본 0건으로 조용히 통과하지 않는다).
+
+**`+5` 는 동치류에 없다.** 해석되는 입력이므로 **긍정** 절반이 「반영된다」로 잰다 — 동치류를 값 목록으로 다루면 이 구별이 사라진다. 이것이 불변식이 열거보다 강한 지점이다.
+
+경로 변수 자리는 `WorkspaceEndpointReachTest` 에 같은 형태로 한 케이스를 뒀다(계약 선언 상태 + 배열 `detail` + `loc: ["path", …]`).
+
+## C4-R6-6. 음성 대조 — ⒜ ⒝ ⒞ 를 **별도 칸으로** 쟀다
+
+| 변이 | ⒜ 쿼리 부정 불변식 | ⒜ 쿼리 긍정 불변식 | ⒞ 경로 변수 |
+|---|---|---|---|
+| 가드 **미등재**(고치기 전 동작) | **RED** — 지목: `limit`·`offset`·`workspace_id` | GREEN | **RED** — *"응답 400 를 계약이 선언하지 않는다"* |
+| 가드가 **`limit`·`offset` 만 건너뛴다** | **RED** — 지목: **`limit`, `offset`** 정확히 둘 | GREEN | GREEN |
+| 가드가 **`workspace_id` 만 건너뛴다** | **RED** — 지목: **`workspace_id`** 정확히 하나 | GREEN | GREEN |
+| 가드 전체 등재(고친 상태) | GREEN | GREEN | GREEN |
+
+가운데 두 줄이 리더가 요구한 분리다 — **한쪽만 고쳐도 통과하는 상태가 없다.** 긍정 불변식이 네 줄 모두 GREEN 인 것도 뜻이 있다: 이 수정이 **유효 입력의 동작을 바꾸지 않았다**는 관측이다.
+
+복원 sha256 전건 일치 — `WebMvcConfig.kt` `b7ec9609…cea7`, `TypedValueSlotInterceptor.kt` `d57a9e77…3246`, 되돌린 후보 셋(`DocumentController.kt` `10a26c96…0af6` · `ListPageLimits.kt` `4509a07a…2d3e` · `DocumentContractNodeTest.kt` `a4dce5f1…e587`). `cp`·`git stash` 미사용.
+
+## C4-R6-7. 그래도 무엇을 증명하지 못하는가
+
+**「공백뿐」만 잡는다 — 그 타입으로 해석되지 않는 값 중 프레임워크가 *조용히* 삼키는 다른 형태가 또 있는지는 재지 않았다.** 오늘 관측한 흡수는 전부 공백류였고(빈·`%20`), 비공백 입력은 예외 없이 422 로 나갔다. 그러나 그것은 **오늘의 다섯 자리와 두 타입(정수·UUID)에서** 참일 뿐이다 — 새 타입(`LocalDate`·enum·`List<T>`)이 파라미터로 들어오면 그 타입의 변환기가 어떤 값을 널로 접는지 다시 재야 하고, 그때까지 그 자리는 **무방비이며 무방비인 줄도 모른다**(백로그 B-17). 부정 불변식은 계약이 선언한 타입에서 표본을 만들므로 새 타입에는 `error()` 로 끊긴다 — 즉 **조용히 통과하지는 않지만**, 끊긴 자리를 사람이 채워야 한다.
+
+부수 잔여 둘: ⑴ 긍정 절반이 쓰는 `x-input-limits` 노드 이름을 `"list_" + 파라미터이름` 규칙으로 유도한다 — 계약이 그 이름 규칙을 바꾸면 접근자가 `error()` 로 끊긴다(조용하지 않지만 손이 필요하다). ⑵ 이 가드는 **핸들러를 찾은 뒤** 돈다. 매핑되지 않는 요청에는 적용되지 않으며, 그쪽은 계약 밖 경로이므로 404 가 맞다.
+
+## C4-R6-8 검사 표
+
+| 검사 | 결과 |
+|---|---|
+| `./gradlew ktlintCheck detekt build moduleBoundaryCheck parityHarness --continue --rerun-tasks` | **BUILD SUCCESSFUL** (경고 0) |
+| 개인정보 스캐너 | exit 0 (**BLOCK 0**) |
+| `KOTLIN_GATE_REACH_REQUIRE_REPORT=1 uv run pytest tests/test_kotlin_gate_reach.py` | **112 passed** |
+| `uv run ruff check .` | All checks passed |
+| `uv run mypy . .claude` | Success: 139 source files |
+| `uv run pytest` | **1441 passed**, 68 skipped, 5 deselected, 5 xfailed |
+
+**핀 처분** — **새 테스트 클래스가 없다.** 케이스는 기존 두 클래스(`DocumentListReachTest`·`WorkspaceEndpointReachTest`) 안에서 늘었고, 새 제품 클래스 하나(`TypedValueSlotInterceptor`)는 탐지 분모(테스트 클래스)가 아니다. `TEST_CLASSES`·`TEST_CLASS_COUNT`(104) **무변경**, `FLOOR_TEST_CLASSES`·`MIN_TEST_CLASSES` **무변경**. `contracts/**`·`reviews/**`·`00_progress.md` 무변경. 임시 프로브(`R6Probe.kt`)는 삭제 확인.

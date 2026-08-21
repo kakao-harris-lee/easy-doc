@@ -288,6 +288,43 @@ class WorkspaceEndpointReachTest {
     }
 
     @Test
+    @DisplayName("R-6 공백뿐인 **경로 변수**가 미지정으로 흡수되지 않는다 — 계약이 선언한 상태 · 배열 detail")
+    fun `공백 경로 변수가 흡수되지 않는다`() {
+        // 고치기 전 실측: `%20` 이 UUID 변환에서 널이 되고, 경로 변수는 널일 수 없어
+        // `MissingPathVariableException` → **400** 이 나갔다. 계약은 `'400'` 을 어느
+        // 오퍼레이션에도 선언하지 않는다(실측: 계약 전체 0건). 즉 계약 밖 상태 코드가
+        // 나가고 있었다 — 쿼리 파라미터 흡수(R-6)와 **같은 뿌리**다.
+        val token = newAccount()
+
+        listOf(PATCH, DELETE).forEach { method ->
+            val request = jsonRequest(itemPath(BLANK_PATH_SEGMENT), token)
+            val response =
+                if (method == PATCH) {
+                    send(request.method(PATCH.uppercase(), bodyPublisher(nameBody("가"))))
+                } else {
+                    send(request.DELETE())
+                }
+
+            assertThat(ContractSpec.responseStatuses(ITEM_PATH, method))
+                .withFailMessage(
+                    "%s %s 의 공백 경로 변수 응답 %d 를 계약이 선언하지 않는다 — 계약 밖 상태 코드가 나갔다",
+                    method,
+                    ITEM_PATH,
+                    response.statusCode(),
+                ).contains(response.statusCode().toString())
+
+            val detail = bodyOf(response)[DETAIL]
+            assertThat(detail)
+                .withFailMessage("%s 의 공백 경로 변수 detail 이 배열이 아니다 — 타입 해석 실패는 스키마 층이다: %s", method, detail)
+                .isInstanceOf(List::class.java)
+            val parameter = ContractSpec.pathParameters(ITEM_PATH).single { it.location == "path" }
+            assertThat((detail as List<*>).map { (it as Map<*, *>)[LOC_KEY] })
+                .withFailMessage("거절 항목이 경로 변수를 지목하지 않는다: %s", detail)
+                .contains(listOf(PATH_LOCATION, parameter.name))
+        }
+    }
+
+    @Test
     @DisplayName("WR-9 토큰 없음 → 401 · WWW-Authenticate · 본문 키가 정확히 ErrorResponse.required")
     fun `토큰 없는 이름 변경은 401 이다`() {
         val response = patch(token = null, workspaceId = UUID.randomUUID().toString(), name = "가")
@@ -609,6 +646,14 @@ class WorkspaceEndpointReachTest {
         private const val LAST_ONE_EXAMPLE = "last_one"
 
         private const val NOT_A_UUID = "not-a-uuid"
+
+        /** R-6 표본 — **값 자리는 있고 UUID 로 해석되지 않는** 경로 조각. 인코딩된 공백이다. */
+        private const val BLANK_PATH_SEGMENT = "%20"
+        private const val DETAIL = "detail"
+        private const val LOC_KEY = "loc"
+
+        /** 계약 `ValidationFailed` 항목의 `loc` 첫 칸 중 경로 갈래. */
+        private const val PATH_LOCATION = "path"
         private const val FORGED_TOKEN = "forged.token.value"
         private const val VALID_PASSWORD = "correct horse battery"
 
