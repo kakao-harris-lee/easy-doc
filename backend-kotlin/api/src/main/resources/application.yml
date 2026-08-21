@@ -45,7 +45,10 @@ spring:
   # 파트 헤더 오버헤드 때문에 요청 전체로는 상한을 넘는다. 그래서 **둘 다** 올린다.
   #
   # 두 값이 계약 `x-input-limits.max_upload_bytes` 이상인지는 손으로 지키지 않는다 —
-  # `MultipartLimitContractTest` 가 계약 파일을 읽어 대조한다.
+  # `DocumentEndpointReachTest` 의 「컨테이너 multipart 상한이 계약 업로드 상한 이상이다」가
+  # 실기동 컨텍스트에서 `MultipartProperties` 를 읽어 계약과 대조한다.
+  # (2026-08-21 정정 — 종전 문면은 저장소에 없는 이름을 지목했다. 그 종류는 이제
+  # `NamedReferenceGuardTest` 축 A 가 잰다.)
   servlet:
     multipart:
       max-file-size: 11MB

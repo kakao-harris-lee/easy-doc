@@ -331,6 +331,55 @@ class DocumentServiceTest {
         assertThat(world.documents.listQueries).isEmpty()
     }
 
+    // ============================================================ 즉시 파기
+
+    @Test
+    @DisplayName("삭제가 **소유자를 저장소까지** 넘기고 트랜잭션 안에서 돈다")
+    fun `삭제가 소유자와 트랜잭션 경계를 지킨다`() {
+        val world = World()
+        val documentId = UUID.randomUUID()
+        world.documents.deletable += documentId
+
+        world.service.delete(OWNER, documentId)
+
+        // 소유자가 저장소 인자에 실제로 실린다 — 유스케이스가 그것을 흘리면 구현이
+        // 소유 술어를 SQL 에 넣을 재료 자체가 없다.
+        assertThat(world.documents.deleteQueries.single()).isEqualTo(DeleteQuery(OWNER, documentId))
+        // 깊이 1 = 커밋 안에서 불렸다. 0 이면 경계 밖이다.
+        assertThat(world.documents.depthWhenDeleted).containsExactly(1)
+        assertThat(world.transaction.committed).isEqualTo(1)
+    }
+
+    @Test
+    @DisplayName("지울 것이 없으면 **404** 다 — 조용한 성공(멱등 204)이 아니다")
+    fun `지울 것이 없으면 404 다`() {
+        val world = World()
+
+        assertThatThrownBy { world.service.delete(OWNER, UUID.randomUUID()) }
+            .isInstanceOf(NotFoundException::class.java)
+            .hasMessage(DOCUMENT_NOT_FOUND_MESSAGE)
+
+        // 저장소는 **불렸다** — 「없다」 판정을 유스케이스가 미리 하지 않는다. 미리 하면
+        // 그 조회와 삭제 사이가 갈라지고, 소유 판정이 삭제문 밖으로 나간다.
+        assertThat(world.documents.deleteQueries).hasSize(1)
+        assertThat(world.transaction.failed).isEqualTo(1)
+    }
+
+    @Test
+    @DisplayName("삭제 경로가 **변환 저장소·큐를 건드리지 않는다** — 연쇄는 FK 의 일이다")
+    fun `삭제가 변환을 따로 지우지 않는다`() {
+        val world = World()
+        val documentId = UUID.randomUUID()
+        world.documents.deletable += documentId
+
+        world.service.delete(OWNER, documentId)
+
+        // 앱이 변환을 별도로 지우면 ⑴ 두 삭제 경로가 생기고 ⑵ 그 문장에 소유 조건 사본이
+        // 필요해진다. 대역이 「불리지 않았다」를 재는 것이 그 부재의 직접 관측이다.
+        assertThat(world.conversions.inserted).isEmpty()
+        assertThat(world.queue.enqueued).isEmpty()
+    }
+
     // ============================================================ 대역
 
     private companion object {
@@ -425,10 +474,21 @@ class DocumentServiceTest {
         val offset: Int,
     )
 
+    /** 삭제 요청 한 건. **소유자가 실제로 저장소까지 갔는가**를 재는 재료다. */
+    private data class DeleteQuery(
+        val ownerId: UUID,
+        val documentId: UUID,
+    )
+
     private class FakeDocumentRepository(private val transaction: RecordingTransactionRunner) : DocumentRepository {
         val inserted = mutableListOf<Pair<DocumentDraft, EncryptedContent>>()
         val depthWhenInserted = mutableListOf<Int>()
         val listQueries = mutableListOf<ListQuery>()
+        val deleteQueries = mutableListOf<DeleteQuery>()
+        val depthWhenDeleted = mutableListOf<Int>()
+
+        /** 여기 있는 식별자만 지워진다. 「없는 문서」 갈래를 만드는 스위치다. */
+        val deletable = mutableSetOf<UUID>()
 
         override fun insert(
             ownerId: UUID,
@@ -464,6 +524,16 @@ class DocumentServiceTest {
             expected: EncryptedContent,
             sourceText: EncryptedContent,
         ): Boolean = false
+
+        /** 삭제 요청을 기록한다. **소유자 인자가 실제로 전달되는지**를 잴 재료다. */
+        override fun deleteOwned(
+            ownerId: UUID,
+            documentId: UUID,
+        ): Boolean {
+            deleteQueries += DeleteQuery(ownerId, documentId)
+            depthWhenDeleted += transaction.depth
+            return deletable.remove(documentId)
+        }
     }
 
     private class FakeConversionRepository(private val transaction: RecordingTransactionRunner) : ConversionRepository {

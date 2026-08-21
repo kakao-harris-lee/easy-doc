@@ -15,7 +15,9 @@ import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
+import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
+import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestParam
@@ -26,6 +28,7 @@ import java.util.UUID
 
 /**
  * `POST /documents` — **한 경로가 두 입력을 받는다.** 그리고 같은 경로의 `GET` — 목록.
+ * 그리고 `DELETE /documents/{document_id}` — 즉시 파기.
  *
  * ## `Content-Type` 으로 가르되 대소문자를 가리지 않는다 (DC-5)
  *
@@ -68,11 +71,11 @@ import java.util.UUID
  * 남긴 **하한선 10곳**(`x-private-response-headers.applies_to`)에는 개별 부착을 더한다 —
  * 전역 장치가 빠지거나 체인 순서가 어긋났을 때 거기서 먼저 깨져야 하기 때문이다.
  *
- * 이 컨트롤러의 두 오퍼레이션이 그 목록에서 갈린다: **`GET /documents` 는 있고
- * `POST /documents` 는 없다.** 그래서 `GET` 만 개별로 붙인다. 빠뜨린 것이 아니라
- * **하한선 목록을 계약대로 옮긴 것**이고, `WorkspaceController` 가 `GET`·`POST`·`PATCH` 에
- * 붙이면서 `DELETE` 204 에는 붙이지 않는 것과 같은 판단이다. 두 응답 모두 헤더가 실제로
- * 나가는지는 계약 케이스가 **개수까지** 단언한다.
+ * 이 컨트롤러의 세 오퍼레이션이 그 목록에서 갈린다: **`GET /documents` 는 있고
+ * `POST /documents` 와 `DELETE /documents/{document_id}` 는 없다.** 그래서 `GET` 만 개별로
+ * 붙인다. 빠뜨린 것이 아니라 **하한선 목록을 계약대로 옮긴 것**이고, `WorkspaceController` 가
+ * `GET`·`POST`·`PATCH` 에 붙이면서 `DELETE` 204 에는 붙이지 않는 것과 같은 판단이다.
+ * 세 응답 모두 헤더가 실제로 나가는지는 계약 케이스가 **개수까지** 단언한다.
  *
  * ## `migrate` 프로필에서는 조립되지 않는다
  *
@@ -194,6 +197,50 @@ class DocumentController(private val documentService: DocumentService) {
     }
 
     /**
+     * `DELETE /documents/{document_id}` — 즉시 파기. **204 이고 본문이 없다.**
+     *
+     * ## 본문을 주지 않는다
+     *
+     * 계약이 사유를 적었다 — *"지운 내용을 되돌려 주면 방금 파기한 문서를 다시 밖으로
+     * 내보내는 셈"*. 그래서 `Content-Type` 도 붙이지 않는다: 본문 없는 응답에 그것을 실으면
+     * 「길이 0 의 JSON」이라는 없는 표현을 선언하는 것이 된다(`WorkspaceController.delete`
+     * 와 같은 판단).
+     *
+     * ## 사적 응답 헤더를 **개별로 붙이지 않는다** — 그런데도 나간다
+     *
+     * 계약이 남긴 하한선 10곳(`x-private-response-headers.applies_to`)에 이 오퍼레이션이
+     * 없다. 전역 부착(`x-global-response-headers`)이 요구의 정본이므로 헤더는 실제로
+     * 나가고, 계약 케이스가 그것을 **개수까지** 단언한다. 빠뜨린 것이 아니라 하한선 목록을
+     * 계약대로 옮긴 것이며 `DELETE /workspaces/{workspace_id}` 와 같은 자리다.
+     *
+     * **204 에 헤더가 있다는 것은 부호가 반전된 단언이다**(X-D2) — 「본문이 없으니 캐시될
+     * 것도 없다」는 사실이더라도 2026-08-12 리더 판정으로 부착이 전역 규칙이 됐다.
+     * 「204 니까 헤더도 없다」로 테스트를 쓰면 틀린다.
+     *
+     * ## 경로 변수를 `UUID` 로 받는다
+     *
+     * 형식이 틀리면 Spring 이 변환 단계에서 끊고 그 단계는 **인증 인터셉터보다 뒤다** —
+     * 토큰 없이 잘못된 UUID 를 보내면 422 가 아니라 401 이다(계약 `info.description`,
+     * X-A3). 공백뿐인 경로 조각은 [kr.easydoc.api.config.TypedValueSlotInterceptor] 가
+     * 형식 오류와 **같은 예외**로 끊는다 — 그 인터셉터는 비문자열 `@PathVariable` 을
+     * 선언에서 유도하므로 이 파라미터가 자동으로 대상에 든다.
+     *
+     * ## 소유권은 여기서 보지 않는다
+     *
+     * 없는 문서와 남의 문서를 구분하지 않고 404 로 합치는 것은 [DocumentService] 의 일이다.
+     * 라우터가 「내 것인가」를 물으면 그 판정이 HTTP 층에 하나 더 생기고, 두 판정이 갈리는
+     * 날 어느 쪽이 계약인지 알 수 없다(`CLAUDE.md` 아키텍처 규칙 3).
+     */
+    @DeleteMapping(DOCUMENT_ITEM_PATH)
+    fun delete(
+        user: AuthenticatedUser,
+        @PathVariable(DOCUMENT_ID_VARIABLE) documentId: UUID,
+    ): ResponseEntity<Void> {
+        documentService.delete(ownerId = user.id, documentId = documentId)
+        return ResponseEntity.noContent().build()
+    }
+
+    /**
      * 상한 **+1 바이트**까지만 읽는다.
      *
      * 「상한을 넘었다」는 판정에는 한 바이트면 충분하고, 그 이상 읽는 것은 거절할 파일을
@@ -235,6 +282,16 @@ class DocumentController(private val documentService: DocumentService) {
 
     private companion object {
         const val DOCUMENTS_PATH = "/documents"
+
+        /**
+         * 계약 `paths./documents/{document_id}` — 경로 문자열과 **변수 이름**.
+         *
+         * Spring `PathPattern` 의 `{...}` 가 OpenAPI 의 그것과 문법이 같으므로 계약 경로를
+         * 그대로 쓴다. [kr.easydoc.api.auth.AuthenticatedEndpoints] 가 같은 문자열을 들고
+         * 대조 테스트가 두 값을 정규화 없이 비교할 수 있는 것이 그 선택의 요점이다.
+         */
+        const val DOCUMENT_ITEM_PATH = "/documents/{document_id}"
+        const val DOCUMENT_ID_VARIABLE = "document_id"
 
         /** 계약 `DocumentFileRequest.properties` 의 파트 이름 셋. */
         const val FILE_PART = "file"

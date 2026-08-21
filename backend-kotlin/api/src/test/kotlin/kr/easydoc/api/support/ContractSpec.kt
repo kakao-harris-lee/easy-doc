@@ -505,7 +505,42 @@ object ContractSpec {
      * URL 을 만든다. 그러면 **엉뚱한 매핑을 재거나 404 를 「소유권 은닉」으로 오독한다.**
      */
     fun pathParameters(path: String): List<ContractPathParameter> =
-        list("paths", path, "parameters").mapIndexed { index, entry ->
+        parametersOf(path, list("paths", path, "parameters"))
+
+    /**
+     * **그 오퍼레이션의 경로 변수 하나** — 경로 수준과 오퍼레이션 수준을 **둘 다** 본다.
+     *
+     * [pathParameters] 는 경로 수준(`paths.<경로>.parameters`)만 읽는다. 계약이 두 관용을
+     * 함께 쓰기 때문에 그것만으로는 부족하다 — 작업 공간·변환 경로는 경로 수준에 적고,
+     * `/documents/{document_id}` 는 **오퍼레이션(`delete`) 안에** 적는다. OpenAPI 의 의미도
+     * 그렇다: 경로 수준 선언은 그 경로의 모든 오퍼레이션에 적용되고 오퍼레이션 수준이 더한다.
+     *
+     * 그래서 「이 오퍼레이션의 경로 변수 이름」을 묻는 호출자는 어느 수준에 적혀 있는지
+     * 알 필요가 없어야 한다. 수준을 **골라 읽게 하면** 계약이 선언 자리를 옮기는 날 그
+     * 호출자만 빨개지고, 고치는 사람은 「테스트가 낡았다」로 읽는다.
+     *
+     * **정확히 하나**여야 한다. 0개면 URL 을 조립할 재료가 없고, 둘 이상이면 어느 것을
+     * 치환해야 하는지 이 함수가 정할 수 없다 — 어느 쪽도 조용히 첫 번째를 고르지 않는다.
+     */
+    fun pathVariable(
+        path: String,
+        method: String,
+    ): ContractPathParameter {
+        val atPath = (at("paths", path) as? Map<*, *>)?.get("parameters") as? List<*> ?: emptyList<Any?>()
+        val atOperation = (at("paths", path, method) as? Map<*, *>)?.get("parameters") as? List<*> ?: emptyList<Any?>()
+        val declared = parametersOf(path, atPath + atOperation).filter { it.location == "path" }
+        require(declared.size == 1) {
+            "$method $path 의 경로 변수가 하나가 아니다: ${declared.map { it.name }} — " +
+                "0개면 URL 을 조립할 재료가 없고, 둘 이상이면 어느 것을 치환할지 정할 수 없다"
+        }
+        return declared.single()
+    }
+
+    private fun parametersOf(
+        path: String,
+        entries: List<Any?>,
+    ): List<ContractPathParameter> =
+        entries.mapIndexed { index, entry ->
             // 개별 필드는 `error()` 로 끊으면서 **항목 자체를 버리던** 자리다(같은 fail-open).
             val declaration =
                 entry as? Map<*, *>
@@ -656,6 +691,72 @@ object ContractSpec {
         operations().flatMap { (path, method) ->
             responseStatuses(path, method).map { Triple(path, method, it) }
         }
+
+    /**
+     * 계약 파일 **어디에든** 있는 확장 노드 이름(`x-…`) 전수.
+     *
+     * `paths`·`components` 아래든 최상위든 깊이를 가리지 않고 재귀로 모은다. 주석·산문이
+     * `x-…` 를 **이름으로 지목**할 때 그 이름이 실재하는지 대조할 집합이고, 쓰는 쪽은
+     * [kr.easydoc.api.NamedReferenceGuardTest] 축 B 다.
+     *
+     * 열거하지 않는 것이 요점이다 — 계약이 확장 노드를 더하거나 이름을 바꾸면 이 집합이
+     * 저절로 따라간다. **비면 실패한다**: 빈 집합과 대조하면 모든 참조가 미해결로 뒤집혀
+     * 그 축이 신호가 아니라 잡음이 된다.
+     */
+    fun extensionNodeNames(): Set<String> {
+        val names = mutableSetOf<String>()
+        collectExtensionNames(root, names)
+        require(names.isNotEmpty()) { "계약에서 `x-` 확장 노드를 하나도 찾지 못했다 — 대조가 공허하다" }
+        return names
+    }
+
+    private fun collectExtensionNames(
+        node: Any?,
+        into: MutableSet<String>,
+    ) {
+        when (node) {
+            is Map<*, *> -> {
+                node.forEach { (key, value) ->
+                    val name = key?.toString()
+                    if (name != null && name.startsWith("x-")) into += name
+                    collectExtensionNames(value, into)
+                }
+            }
+
+            is List<*> -> {
+                node.forEach { collectExtensionNames(it, into) }
+            }
+
+            else -> {
+                Unit
+            }
+        }
+    }
+
+    /**
+     * `HealthResponse.checks` 가 정의한 **의존 서비스 키 집합** — 예시 노드에서 파생한다.
+     *
+     * 계약은 이 집합을 두 자리에 적었다: 산문(*"현재 정의된 키: `database`, `queue`"*)과
+     * `examples` 둘. **기계가 읽을 수 있는 것은 후자**라 그쪽에서 뽑는다 — 산문을 정규식으로
+     * 긁으면 문장이 다듬어질 때마다 흔들린다.
+     *
+     * 예시 **전체의 합집합**을 쓴다. 하나만 보면 그 예시가 우연히 좁을 때 검사도 좁아지고,
+     * 계약이 키를 추가하면서 예시 하나만 고치는 편집이 조용히 지난다.
+     *
+     * 비면 **실패한다** — 빈 집합과 대조하면 「구현이 아무 키도 내지 않는다」가 통과한다.
+     */
+    fun healthCheckKeys(): Set<String> {
+        val examples =
+            list("components", "schemas", "HealthResponse", "properties", "checks", "examples")
+        val keys =
+            examples
+                .flatMapIndexed { index, example ->
+                    val entry = example as? Map<*, *> ?: error("HealthResponse.checks.examples[$index] 가 매핑이 아니다")
+                    entry.keys.map { it.toString() }
+                }.toSet()
+        require(keys.isNotEmpty()) { "HealthResponse.checks.examples 에서 키를 하나도 얻지 못했다 — 대조가 공허하다" }
+        return keys
+    }
 
     /** P-11. 스키마 속성의 `const`. */
     fun schemaPropertyConst(

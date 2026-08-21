@@ -28,8 +28,13 @@ import org.springframework.test.web.servlet.options
  *
  * **미처리 500 응답에 CORS 헤더가 붙는지는 단언하지 않는다.** Python 은
  * `ServerErrorMiddleware` 가 CORS 미들웨어 바깥이라 구조적으로 붙이지 못하고, React 가
- * 그 동작(`NETWORK_ERROR_STATUS = 0`)에 의존한다. 재현할지 개선할지는 리더 미결
- * 사항이므로(`x-cors.x-known-limitation`), 어느 쪽으로도 테스트로 고정하지 않는다.
+ * 그 동작(`NETWORK_ERROR_STATUS = 0`)에 의존한다. 처분의 정본은
+ * `x-cors.x-unhandled-500-cors` 이며, 그 절이 정하기 전까지 어느 쪽으로도 테스트로
+ * 고정하지 않는다.
+ * (2026-08-21 정정 — 종전 문면은 계약이 2026-08-20 에 더 구체적인 이름으로 갈아 치운 옛
+ * 노드를 지목하고 있었다. 옛 이름을 여기 백틱으로 다시 적지 않는다 — 그 형태가 곧
+ * 「이름으로 지목한다」이고 `NamedReferenceGuardTest` 축 B 가 잡는 대상이다. 이력이 필요하면
+ * 계약 `x-changelog` 를 보라.)
  */
 @WebMvcTest
 @Import(CorsConfig::class, kr.easydoc.api.support.AuthSliceBeans::class)

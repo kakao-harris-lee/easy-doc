@@ -146,6 +146,35 @@ class JdbcDocumentRepository(private val jdbc: JdbcClient) : DocumentRepository 
             .param("expectedSourceText", expected.bytes)
             .update() > 0
 
+    /**
+     * 내 문서를 지운다. **소유 조건이 같은 문장 안에 있다.**
+     *
+     * 잠그고 나서 지우지 않는다 — `JdbcWorkspaceRepository` 는 `lockForDeletion` 뒤에
+     * 지우는데, 그쪽은 **삭제 전에 판정할 것이 둘**(문서 잔존·마지막 하나)이라 판정과 삭제
+     * 사이를 직렬화해야 했다. 여기서는 판정할 것이 소유 여부뿐이고 그것이 삭제문의 조건
+     * 자체라, 잠금을 따로 잡으면 같은 조건을 두 번 적는 일이 된다.
+     *
+     * `RETURNING` 을 쓰지 않는다 — 지운 행의 내용을 돌려받을 이유가 없고(계약이 204 무본문),
+     * 돌려받으면 **방금 파기한 제목과 암호문이 JVM 힙에 올라온다.** 필요한 것은
+     * 「몇 행이 지워졌나」뿐이다.
+     *
+     * 변환·작업 행은 FK CASCADE 가 지운다. 사유는 포트 KDoc([kr.easydoc.application.document.DocumentRepository.deleteOwned])에 있다.
+     *
+     * 무결성 위반을 잡지 않는다 — `documents` 를 참조하는 FK 는 `conversions` 하나이고 그것이
+     * CASCADE 이므로 이 문장이 제약으로 막힐 자리가 없다. 새 참조를 CASCADE 없이 더하면
+     * 여기서 `DataIntegrityViolationException` 이 올라와 500 이 되고, 그것이 옳다 —
+     * 파기가 조용히 실패해 사용자에게 204 를 주는 것보다 시끄러운 실패가 낫다.
+     */
+    override fun deleteOwned(
+        ownerId: UUID,
+        documentId: UUID,
+    ): Boolean =
+        jdbc
+            .sql("DELETE FROM documents WHERE id = :id AND user_id = :ownerId")
+            .param("id", documentId)
+            .param("ownerId", ownerId)
+            .update() > 0
+
     private fun storageFailure(failure: DataIntegrityViolationException): StorageException {
         // 예외 **메시지**를 로그에 넣지 않는다 — 그 안에 실패한 행 전체가 들어 있다.
         DocumentStorageLog.constraintViolation("documents", failure)

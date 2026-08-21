@@ -205,7 +205,9 @@ class InMemoryUserRepository : UserRepository {
  * 슬라이스 테스트가 「구현이 소유자를 안 봐도 초록」이 된다.
  *
  * **잠금은 흉내 내지 않는다.** 「마지막 하나」 판정의 동시성은 실제 트랜잭션과 행 잠금이
- * 있어야 잴 수 있으므로 `WorkspaceRepositoryTest`(Testcontainers)가 맡는다.
+ * 있어야 잴 수 있으므로 `JdbcWorkspaceRepositoryTest`(Testcontainers)가 맡는다.
+ * (2026-08-21 정정 — 종전 문면은 저장소에 없는 이름을 지목했다. 그 종류는 이제
+ * `NamedReferenceGuardTest` 축 A 가 잰다.)
  * `createdAt` 은 삽입 순서대로 1초씩 벌려 둔다 — 목록 순서가 정해지지 않으면
  * 「첫 번째가 기본 작업 공간」을 잴 수 없다.
  */

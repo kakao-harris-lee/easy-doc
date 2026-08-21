@@ -42,6 +42,8 @@ object AuthenticatedEndpoints {
         listOf(
             "/auth/me",
             "/documents",
+            // `DELETE /documents/{document_id}` 를 만든 커밋이 더했다(위 규약).
+            "/documents/{document_id}",
             "/workspaces",
             "/workspaces/{workspace_id}",
         )

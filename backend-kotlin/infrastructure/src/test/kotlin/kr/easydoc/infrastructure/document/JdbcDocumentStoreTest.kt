@@ -347,6 +347,61 @@ class JdbcDocumentStoreTest {
             .isNull()
     }
 
+    /**
+     * **제품 포트로 지운다 + 그것이 한 문장이다.**
+     *
+     * 위 케이스는 손 SQL 이라 배선을 재지 않는다(스키마의 성질만 잰다). 여기서는 유스케이스가
+     * 실제로 내는 문장을 세므로 **「애플리케이션이 두 번 지우지 않는다」의 직접 관측**이 된다 —
+     * 변환 삭제문을 더하면 2, 「읽고 나서 지운다」로 바꾸면 2 다. 연쇄는 서버 안에서 일어나
+     * 클라이언트가 보내는 문장 수에 나타나지 않으며, 그것이 CASCADE 를 고른 이유다.
+     */
+    @Test
+    @DisplayName("포트 경유 삭제가 **한 문장**으로 변환·작업까지 연쇄한다")
+    fun `포트 경유 삭제가 한 문장으로 연쇄한다`() {
+        val owner = newUser()
+        val workspace = workspaces.create(owner, "카").id
+        val accepted = countedService.createFromText(owner, "본문", null, workspace)
+
+        val statements = counting.countStatements { countedService.delete(owner, accepted.documentId) }
+
+        assertThat(statements).describedAs("DELETE 1").isEqualTo(1)
+        assertThat(documentRow(accepted.documentId)).isNull()
+        assertThat(conversionStatus(accepted.conversionId)).isNull()
+        assertThat(jobState(accepted.conversionId)).isNull()
+    }
+
+    /**
+     * **소유 술어가 실제로 좁힌다 + 문장 수가 소유 결과와 무관하다.**
+     *
+     * 뒷부분이 소유권 은닉의 **구조 축**이다 — 시간 축으로는 이 종류의 변이를 못 잡는다는
+     * 실측이 `CountingDataSource` KDoc 에 있다.
+     */
+    @Test
+    @DisplayName("남의 문서·없는 문서 삭제가 0행이고, 두 거절의 문장 수가 같다")
+    fun `삭제가 소유 술어로 좁혀지고 거절 비용이 같다`() {
+        val owner = newUser()
+        val stranger = newUser()
+        val workspace = workspaces.create(owner, "타").id
+        workspaces.create(stranger, "남의 것 4")
+        val accepted = countedService.createFromText(owner, "본문", null, workspace)
+
+        assertThat(documents.deleteOwned(stranger, accepted.documentId))
+            .describedAs("0행이 아니라 성공이면 남의 문서를 지운 것이다 — 복구 수단이 없다")
+            .isFalse()
+        assertThat(documents.deleteOwned(owner, UUID.randomUUID())).isFalse()
+
+        val missing = counting.countStatements { runCatching { countedService.delete(owner, UUID.randomUUID()) } }
+        val notMine = counting.countStatements { runCatching { countedService.delete(stranger, accepted.documentId) } }
+
+        assertThat(missing).isEqualTo(1)
+        assertThat(notMine)
+            .describedAs("없는 것과 남의 것이 다른 만큼 일하면 그 차이가 시간에 남는다")
+            .isEqualTo(missing)
+        // 어느 거절도 파기하지 않았다.
+        assertThat(documentRow(accepted.documentId)).isNotNull()
+        assertThat(conversionStatus(accepted.conversionId)).isEqualTo(ConversionStatus.PENDING.wireName)
+    }
+
     // ================================================================ 목록
 
     @Test

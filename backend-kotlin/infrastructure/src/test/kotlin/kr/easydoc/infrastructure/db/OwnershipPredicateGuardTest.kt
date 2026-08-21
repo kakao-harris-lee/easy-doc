@@ -58,8 +58,16 @@ import kotlin.io.path.readText
  *   한계를 이미 문서화했고, **이 파일의 probe 가 바로 그 형태**라 probe 가 실제 스캔의 분모를
  *   오염시키지 않는다 — 우회 통로이자 이 파일이 쓰는 통로다.
  * - **소유 매개변수가 무엇에 결속되는지는 증명하지 않는다.** 문장 안에 소유 열과 매개변수를
- *   `=` 로 묶은 자리가 있으면 통과다. 그것이 목표 테이블을 실제로 좁히는지는 판정하지 않는다 —
- *   작업 공간 목록 질의가 문서를 **작업 공간 소유로 간접 좁히는** 형태가 그 예다.
+ *   `=` 로 묶은 자리가 **어디든** 있으면 통과다. 그것이 목표 테이블의 행을 실제로 좁히는지는
+ *   판정하지 않는다 — 작업 공간 목록 질의가 문서를 **작업 공간 소유로 간접 좁히는** 형태가
+ *   그 예다. 게이트 28 codex F-2 가 이 한계의 갈래 넷을 실제 입력으로 제시했고, 그 넷이
+ *   **이 항목이 이미 선언하고 있던 범위**다(리더 판정 P-7 — 그래서 Major 이고 차단이 아니다).
+ *   갈래를 여기 적어 둔다: ⑴ `WHERE` 밖(`SELECT` 목록·`ORDER BY`·`UNION` 의 한쪽 갈래)에
+ *   놓인 술어, ⑵ 별칭 재정의로 소유 열이 **다른 테이블**을 가리키는 형태, ⑶ `OR TRUE` 로
+ *   무력화된 술어, ⑷ `CROSS JOIN` 등으로 결속 대상이 목표 테이블이 아닌 형태.
+ *   **⑸ 문자열 리터럴 안의 텍스트는 이 목록에 없었고, 2026-08-21 에 판정 쪽에서 닫혔다**
+ *   ([LiveSql.redactLiterals] · `문자열 리터럴에 든 소유 술어는 방어가 아니다`).
+ *   ⑴~⑷ 를 닫으려면 훑개가 아니라 파서가 필요하고, 그 판단은 이 단위 밖이다.
  * - **`=` 이 아닌 비교 형태**(`IN`·`ANY`)는 소유 술어 없음으로 읽는다. 과잉 탐지 방향이라
  *   fail-closed 다.
  * - **분모가 제품 소스(`src/main`)다.** 테스트 SQL 은 요청을 처리할 수 없어 세지 않는다.
@@ -77,13 +85,15 @@ import kotlin.io.path.readText
  * 우회를 잡으라고 세운 장치가 **소유권 우회를 승인**한 것이다 — 프로젝트 규칙 2 가 겨누는
  * 「잘못된 근거를 만드는 도구」다.
  *
- * **⑴ 문장 발견(분모)** — 이 문장이 검사 대상인가. 주석을 **그대로 둔다**: Kotlin 주석·KDoc
- * 이 품은 SQL 도 센다. 분모를 넓히는 쪽이라 **fail-closed** 다. 문자열 리터럴만 골라내는
- * 렉서를 쓰지 않는 이유도 여기다 — 렉서 자신이 조용히 놓치는 표면이 된다.
+ * **⑴ 문장 발견(분모)** — 이 문장이 검사 대상인가. 주석·문자열 리터럴을 **그대로 둔다**:
+ * Kotlin 주석·KDoc 이 품은 SQL 도 센다. 분모를 넓히는 쪽이라 **fail-closed** 다. 문장 전체를
+ * 토큰화하는 렉서를 쓰지 않는 이유도 여기다 — 렉서 자신이 조용히 놓치는 표면이 된다.
  *
- * **⑵ 소유 술어 판정** — 이 문장에 방어가 **있는가**. **SQL 주석을 걷어낸 뒤** 판정한다
- * ([SqlComments.strip]). 죽은 술어를 방어로 세면 **fail-open** 이다. 걷어내면 fail-closed —
- * 술어가 사라진 문장은 「소유 술어 없음」으로 핀에 올라온다.
+ * **⑵ 소유 술어 판정** — 이 문장에 방어가 **있는가**. **주석과 문자열 리터럴을 걷어낸 뒤**
+ * 판정한다 ([LiveSql.of]). 죽은 술어를 방어로 세면 **fail-open** 이다 — 그 자리가 두 번
+ * 뚫렸다: 주석에 든 술어(`d1ce78e` 가 수정)와 **문자열 리터럴에 든 술어**
+ * (게이트 28 P-7 #3 의 미선언 갈래). 걷어내면 fail-closed — 술어가 사라진 문장은
+ * 「소유 술어 없음」으로 핀에 올라온다.
  *
  * **이 둘을 하나로 합치지 마라.** ⑴ 의 근거(**분모는 넓을수록 안전하다**)를 ⑵ 에 옮겨
  * 적는 순간 이 결함이 그대로 되살아난다 — ⑵ 에서는 넓은 쪽이 **위험한 쪽**이다.
@@ -222,6 +232,37 @@ class OwnershipPredicateGuardTest {
 
         assertThat(guarded.single().hasOwnerPredicate)
             .describedAs("주석 제거는 죽은 술어만 지워야 한다 — 살아 있는 술어까지 지우면 과잉 탐지로 뒤집힌다")
+            .isTrue()
+    }
+
+    @Test
+    @DisplayName("**문자열 리터럴에 든 소유 술어는 방어가 아니다** — 게이트 28 P-7 #3 의 미선언 갈래")
+    fun `문자열 리터럴에 든 소유 술어는 방어가 아니다`() {
+        val literal =
+            probe(
+                "literal",
+                "SELECT 'user_id = :ownerId' AS note, c.$column FROM $conversions c WHERE c.id = :id",
+            )
+
+        assertThat(literal.single().hasOwnerPredicate)
+            .describedAs(
+                "작은따옴표 안은 **값**이다 — 실제 질의에 소유 조건이 없다. 반례 5종 중 넷은 이미 " +
+                    "「막지 못하는 것」에 선언돼 있었고 이 갈래만 미선언이었다(리더 판정 P-7)",
+            ).isFalse()
+    }
+
+    @Test
+    @DisplayName("리터럴 걷어내기가 **참인 술어를 깨뜨리지 않는다** — 리터럴과 술어가 한 문장에 있어도")
+    fun `리터럴 뒤의 살아 있는 술어는 살아 남는다`() {
+        val guarded =
+            probe(
+                "literal-then-predicate",
+                "SELECT c.$column FROM $conversions c JOIN $documents d ON d.id = c.document_id " +
+                    "WHERE c.status = 'done' AND d.user_id = :ownerId",
+            )
+
+        assertThat(guarded.single().hasOwnerPredicate)
+            .describedAs("리터럴 걷어내기가 리터럴 **밖**을 지우면 과잉 탐지로 뒤집힌다 — 이 방향을 고정한다")
             .isTrue()
     }
 
@@ -435,10 +476,11 @@ class OwnershipPredicateGuardTest {
                 verb = verbOf(file, chunk, excerpt),
                 tables = tables,
                 statement = excerpt,
-                // **원시 청크가 아니라 주석을 걷어낸 사본에 건다.** 방향이 다르면 정규화도 다르다 —
-                // 위 `tables` 는 원시 청크를 쓰고(분모, fail-closed), 이 판정은 걷어낸 사본을
-                // 쓴다(방어 존재, fail-open 방지). 클래스 KDoc 「주석은 방향에 따라 다르게 다룬다」.
-                hasOwnerPredicate = OWNER_PREDICATE.containsMatchIn(SqlComments.strip(chunk)),
+                // **원시 청크가 아니라 걷어낸 사본에 건다.** 방향이 다르면 정규화도 다르다 —
+                // 위 `tables` 는 원시 청크를 쓰고(분모, fail-closed), 이 판정은 주석과 문자열
+                // 리터럴을 지운 사본을 쓴다(방어 존재, fail-open 방지). 클래스 KDoc
+                // 「주석은 방향에 따라 다르게 다룬다」.
+                hasOwnerPredicate = OWNER_PREDICATE.containsMatchIn(LiveSql.of(chunk)),
             )
         }
 
@@ -487,6 +529,9 @@ class OwnershipPredicateGuardTest {
                 "$DOCUMENT/JdbcConversionRepository.kt | INSERT [conversions]",
                 "$DOCUMENT/JdbcDocumentRepository.kt | SELECT [documents]",
                 "$DOCUMENT/JdbcDocumentRepository.kt | UPDATE [documents]",
+                // 즉시 파기(C5). **소유 술어가 있어** 아래 [EXPECTED_UNGUARDED] 에는 없다 —
+                // 두 목록이 서로 다른 사건을 잡는다는 것이 여기서 관측된다.
+                "$DOCUMENT/JdbcDocumentRepository.kt | DELETE [documents]",
                 "$DOCUMENT/JdbcDocumentRepository.kt | INSERT [documents]",
                 "$DOCUMENT/JdbcDocumentRepository.kt | SELECT [conversions, documents]",
             )

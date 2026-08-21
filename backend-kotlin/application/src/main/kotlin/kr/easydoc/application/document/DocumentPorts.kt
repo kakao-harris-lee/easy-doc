@@ -56,10 +56,10 @@ class DocumentDraft(
  *
  * ## 소유 조건은 SQL `WHERE` 안에 둔다 — 다만 **이 인터페이스가 그것을 강제하지는 않는다**
  *
- * 사용자 요청 경로의 읽기([listOwned])는 `ownerId` 를 받고 구현이 그것을 `WHERE` 절에 넣는다.
- * "먼저 조회하고 나서 소유자를 비교한다"는 형태를 만들지 않으려는 것이다
- * (`WorkspaceRepository` 와 같은 규칙) — 그 형태는 비교를 잊으면 조용히 남의 자원을 내주고,
- * 잊지 않아도 존재 여부가 응답 시간으로 샌다.
+ * 사용자 요청 경로의 두 메서드 — 읽기 [listOwned] 와 **삭제 [deleteOwned]** — 는 `ownerId` 를
+ * 받고 구현이 그것을 `WHERE` 절에 넣는다. "먼저 조회하고 나서 소유자를 비교한다"는 형태를
+ * 만들지 않으려는 것이다 (`WorkspaceRepository` 와 같은 규칙) — 그 형태는 비교를 잊으면
+ * 조용히 남의 자원을 내주고, 잊지 않아도 존재 여부가 응답 시간으로 샌다.
  *
  * **유지보수 경로의 [lockSourceText] 는 `ownerId` 를 받지 않는다.** 그래서 이 규약을
  * 「읽기 메서드가 전부 받는다」로 적으면 거짓이 된다 — 실제로 그렇게 적혀 있었고, 같은 파일
@@ -139,6 +139,43 @@ interface DocumentRepository {
         documentId: UUID,
         expected: EncryptedContent,
         sourceText: EncryptedContent,
+    ): Boolean
+
+    /**
+     * 내 문서 한 건을 **지운다**. 지웠으면 `true`, 없거나 내 것이 아니면 `false`.
+     *
+     * ## 소유 조건이 `WHERE` 안에 있다 — 이 메서드가 그 규약의 첫 쓰기 적용이다
+     *
+     * 지금까지 소유 술어를 SQL 에 넣는 규약은 **읽기**([listOwned])에서만 실제로 도는
+     * 자리를 가졌다. 여기서는 잘못 쓰면 잃는 것이 다르다 — 읽기의 실패는 남의 문서를
+     * 보여 주는 것이고, 이 메서드의 실패는 **남의 문서를 지우는 것**이며 복구 수단이 없다.
+     *
+     * 그래서 「먼저 읽어 소유자를 비교하고 나서 지운다」를 만들지 않는다. 두 문장 사이에서
+     * 소유자가 바뀔 여지가 있을 뿐 아니라(작업 공간 이전 같은 미래 기능), 비교를 잊은
+     * 코드가 조용히 통과한다. **한 문장 안에 조건이 있으면 잊을 자리가 없다.**
+     *
+     * ## 반환이 `Unit` 이 아니라 `Boolean` 인 이유
+     *
+     * 「지울 것이 없었다」와 「지웠다」는 **응답이 갈리는** 사건이다(404 대 204). 저장소가
+     * 그것을 삼키면 유스케이스가 그 둘을 구분할 방법이 없고, 계약이 요구한 **비멱등**
+     * 동작(삭제 직후 재요청은 204 가 아니라 404)이 성립하지 않는다.
+     *
+     * ## 변환·작업 행을 **여기서 지우지 않는다**
+     *
+     * `conversions.document_id → documents.id ON DELETE CASCADE`(`V1`)와
+     * `conversion_jobs.conversion_id → conversions.id ON DELETE CASCADE`(`V5`)가 이어져
+     * 있으므로 이 한 문장이 세 테이블을 비운다. **애플리케이션이 같은 일을 한 번 더 하면
+     * 그 자체가 결함이다** — ⑴ 두 경로가 생기면 어느 쪽이 실제로 지웠는지 알 수 없고,
+     * ⑵ 앱 삭제문에는 소유 조건을 다시 적어야 하는데 그 사본이 원본과 갈리는 날이 오고,
+     * ⑶ `conversions` 에는 소유자 컬럼이 없어(그 사실은 [ConversionRepository] KDoc)
+     * 조건을 조인으로 조립하게 된다. CASCADE 는 그 세 위험을 전부 스키마로 옮긴다.
+     *
+     * 연쇄가 실제로 도는지는 `JdbcDocumentStoreTest` 가 실 PostgreSQL 에서 잰다 —
+     * 문장 수까지 세므로 앱이 몰래 한 문장 더 넣으면 그쪽이 빨개진다.
+     */
+    fun deleteOwned(
+        ownerId: UUID,
+        documentId: UUID,
     ): Boolean
 }
 
@@ -260,7 +297,9 @@ interface ConversionRepository {
  * **계약 조항의 처분은 끝났다** — 502 는 2026-08-20 에 폐기됐고(계약 `x-retired-responses`,
  * 리더 판정 L-1) 그 자리를 대신하는 것은 **500 + 전량 롤백**이다(`POST /documents`
  * description). 폐기한 상태 코드가 어느 오퍼레이션에도 되살아나지 않는지는
- * `RetiredResponseContractTest` 가 계약 파일을 읽어 전역으로 잰다.
+ * `DocumentContractNodeTest` 의 P-39 케이스가 계약 파일을 읽어 전역으로 잰다.
+ * (2026-08-21 정정 — 종전 문면은 저장소에 없는 이름을 지목했다. 그 종류는 이제
+ * `NamedReferenceGuardTest` 축 A 가 잰다.)
  *
  * ## 멱등하다
  *

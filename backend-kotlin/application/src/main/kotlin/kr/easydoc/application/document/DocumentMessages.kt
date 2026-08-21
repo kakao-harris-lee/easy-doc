@@ -79,6 +79,16 @@ const val INVALID_WORKSPACE_ID_MESSAGE: String = "작업 공간 식별자 형식
 const val WORKSPACE_NOT_FOUND_FOR_DOCUMENT_MESSAGE: String = "작업 공간을 찾을 수 없습니다"
 
 /**
+ * 계약 `DELETE /documents/{document_id}` 404 예시 `not_found`.
+ *
+ * **없는 문서와 남의 문서가 같은 문구를 받는다** — 그것이 소유권 은닉이다. 문구를 갈래별로
+ * 나누면(예: "권한이 없습니다") 존재 여부가 응답 바이트로 새고, 그때 상태 코드를 404 로
+ * 통일한 것이 무의미해진다. 계약이 404 설명에 *"없거나 내 것이 아니다 (403 아님 — 존재
+ * 자체를 숨긴다)"* 로 그 뜻을 적었다.
+ */
+const val DOCUMENT_NOT_FOUND_MESSAGE: String = "문서를 찾을 수 없습니다"
+
+/**
  * 작업 공간이 **하나도 없다** — 사용자 입력 문제가 아니라 우리 불변식이 깨진 것이다.
  *
  * 가입이 기본 작업 공간을 하나 만들고(`AuthService`) 마지막 하나는 지울 수 없으므로

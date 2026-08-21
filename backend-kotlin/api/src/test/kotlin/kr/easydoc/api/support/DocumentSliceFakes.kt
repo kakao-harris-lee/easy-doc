@@ -100,6 +100,23 @@ class InMemoryDocumentRepository : DocumentRepository {
         return row != null
     }
 
+    /**
+     * 소유 조건을 **실물과 같은 축으로** 본다 — 두 조건이 한 판정에 함께 든다.
+     *
+     * 여기서 `ownerId` 를 흉내만 내면(예: 식별자만 보고 지운다) 슬라이스가 「구현이 소유자를
+     * 안 봐도 초록」이 되고, 그것이 이 파일 KDoc 이 [InMemoryWorkspaceLookup] 에 대해 적은
+     * 것과 같은 이유다.
+     *
+     * **연쇄는 흉내 내지 않는다.** 대역에는 변환 저장소가 따로 있고 FK 가 없으므로 이 삭제가
+     * 변환 행을 건드리지 않는다 — 그것이 실물과 다르다는 사실을 여기 적어 둔다. 연쇄는
+     * 스키마의 성질이라 실 PostgreSQL 만 잴 수 있고 `JdbcDocumentStoreTest` 와
+     * `DocumentDeleteReachTest` 가 맡는다.
+     */
+    override fun deleteOwned(
+        ownerId: UUID,
+        documentId: UUID,
+    ): Boolean = rows.removeIf { it.ownerId == ownerId && it.document.id == documentId }
+
     private companion object {
         /** 계약 `x-input-limits.retention_days`. 슬라이스는 이 값을 단언하지 않는다 — 실물 DB 가 잰다. */
         const val RETENTION_DAYS = 30L

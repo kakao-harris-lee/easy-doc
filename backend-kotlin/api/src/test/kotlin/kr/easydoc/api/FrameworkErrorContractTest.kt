@@ -76,7 +76,12 @@ class FrameworkErrorContractTest {
             }.andExpect {
                 status { isOk() }
                 content { contentTypeCompatibleWith(MediaType.APPLICATION_JSON) }
-                content { json("""{"status":"ok"}""", JsonCompareMode.STRICT) }
+                // 여기서 재는 것은 **내용 협상이 없다**는 것뿐이다 — 상태·타입·본문이
+                // `Accept` 와 무관하게 그대로 나간다. 본문의 **모양**은 계약을 읽는
+                // `HealthContractTest` 가 잰다: 여기 리터럴을 적으면 계약이 필드를 더할 때
+                // 이 파일이 함께 빨개지고(실측: `checks` 신설 커밋에서 그랬다), 고치는 사람은
+                // 협상 축과 스키마 축을 한 자리에서 판단해야 한다.
+                content { json("""{"status":"ok"}""", JsonCompareMode.LENIENT) }
             }
     }
 

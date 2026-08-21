@@ -64,9 +64,15 @@ import kotlin.io.path.readText
  * 골라내는 렉서를 쓰지 않는 이유도 여기다 — 렉서 자신이 조용히 놓치는 표면이 된다. 예시를
  * 적고 싶으면 규약을 지키는 예시를 적거나 테이블 이름을 조립해 쓰라.
  *
- * **⑵ 준수 판정** — 이 문장이 봉투 두 열을 **썼는가**. **SQL 주석을 걷어낸 뒤** 판정한다
- * ([SqlComments.strip]). 죽은 대입을 「썼다」로 세면 **fail-open** 이다. 걷어내면
+ * **⑵ 준수 판정** — 이 문장이 봉투 두 열을 **썼는가**. **주석과 문자열 리터럴을 걷어낸 뒤**
+ * 판정한다 ([LiveSql.of]). 죽은 대입을 「썼다」로 세면 **fail-open** 이다. 걷어내면
  * fail-closed — 대입이 사라진 문장은 위반으로 올라온다.
+ *
+ * 리터럴 갈래는 **2026-08-21 게이트 28 P-7 #5** 로 닫혔다. 그때까지
+ * `SET source_text_encrypted = :c, title = 'encryption_scheme = :s, key_version = :v'` 가
+ * 준수로 통과했고, 그 갈래는 아래 「막지 못하는 것」 어디에도 **적혀 있지 않았다** —
+ * 형제 장치의 같은 결함이 부분적으로 선언돼 있던 것과 갈리는 지점이고, 그래서 리더 판정이
+ * 이쪽을 차단으로 두고 저쪽을 Major 로 내렸다.
  *
  * **이 둘을 하나로 합치지 마라.** ⑴ 의 근거(**분모는 넓을수록 안전하다**)를 ⑵ 에 옮겨
  * 적는 순간 이 결함이 그대로 되살아난다 — ⑵ 에서는 넓은 쪽이 **위험한 쪽**이다.
@@ -202,6 +208,54 @@ class EnvelopeColumnWriteGuardTest {
     }
 
     @Test
+    @DisplayName("**문자열 리터럴에 든 봉투 열은 쓴 것이 아니다** — 게이트 28 P-7 #5 (미선언 fail-open)")
+    fun `문자열 리터럴에 든 봉투 대입은 준수가 아니다`() {
+        val literal =
+            probe(
+                "literal",
+                "UPDATE $target SET $column = :value, " +
+                    "status = 'encryption_scheme = :s, key_version = :v' WHERE id = :id",
+            )
+
+        assertThat(literal.single().setsEnvelope)
+            .describedAs(
+                "작은따옴표 안은 **값**이다 — PostgreSQL 은 봉투 열을 하나도 대입하지 않는다. " +
+                    "가드가 준수로 읽으면 세대가 오르지 않은 암호문을 승인하고, AAD 에 세대가 실리므로 " +
+                    "그 행은 영원히 열리지 않는다. 이 갈래는 아래 「막지 못하는 것」에 적혀 있지 않았다",
+            ).isFalse()
+    }
+
+    @Test
+    @DisplayName("리터럴 걷어내기가 **참인 대입을 깨뜨리지 않는다** — 리터럴과 살아 있는 대입이 한 문장에 있어도")
+    fun `리터럴 뒤의 살아 있는 봉투 대입은 살아 남는다`() {
+        val compliant =
+            probe(
+                "literal-then-envelope",
+                "UPDATE $target SET status = 'done', $column = :value, " +
+                    "encryption_scheme = :s, key_version = :v WHERE id = :id",
+            )
+
+        assertThat(compliant.single().setsEnvelope)
+            .describedAs("리터럴 걷어내기가 리터럴 **밖**을 지우면 과잉 탐지로 뒤집힌다 — 이 방향을 고정한다")
+            .isTrue()
+    }
+
+    @Test
+    @DisplayName("리터럴 안의 `''` 를 리터럴 종료로 읽지 않는다 — 짧게 읽으면 뒤가 술어로 되살아난다")
+    fun `escaped quote 는 리터럴을 닫지 않는다`() {
+        val literal =
+            probe(
+                "escaped-quote",
+                "UPDATE $target SET $column = :value, " +
+                    "status = 'a''b encryption_scheme = :s, key_version = :v' WHERE id = :id",
+            )
+
+        assertThat(literal.single().setsEnvelope)
+            .describedAs("`''` 는 escaped quote 라 리터럴이 계속된다 — 여기서 끊으면 뒤의 텍스트가 대입으로 읽힌다")
+            .isFalse()
+    }
+
+    @Test
     @DisplayName("SET 절이 없는 UPDATE 는 조용히 넘기지 않고 끊는다")
     fun `해석할 수 없는 UPDATE 는 끊는다`() {
         assertThatThrownBy { probe("broken", "UPDATE $target WHERE id = :id") }
@@ -313,7 +367,7 @@ class EnvelopeColumnWriteGuardTest {
                             // 쪽이다 — 주석에 든 봉투 대입을 「썼다」로 세면 세대가 안 오른 행을
                             // 준수로 승인한다. 클래스 KDoc 「주석은 방향에 따라 다르게 다룬다」.
                             setsEnvelope =
-                                SqlComments.strip(setClause).let { live ->
+                                LiveSql.of(setClause).let { live ->
                                     ENVELOPE_COLUMNS.all { assignsColumn(live, it) }
                                 },
                         )

@@ -343,6 +343,11 @@ class EnvelopeRotationTest {
             rewrites += expected to sourceText
             return true
         }
+
+        override fun deleteOwned(
+            ownerId: UUID,
+            documentId: UUID,
+        ): Boolean = error("회전 경로가 문서를 지우지 않는다")
     }
 
     private class Rewrite(

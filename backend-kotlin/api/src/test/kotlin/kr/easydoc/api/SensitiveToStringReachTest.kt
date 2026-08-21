@@ -306,8 +306,16 @@ class SensitiveToStringReachTest {
          * 든 data class** 이고(`title` 토큰), 목록은 한 번에 스무 건이 오므로 컴파일러가 만든
          * `toString()` 을 그대로 두면 한 줄이 제목 스무 개를 로그에 남긴다. 뒤엣것은 민감
          * 토큰이 없지만 이 수는 **선언 전수**라 함께 오른다.
+         *
+         * 52 → 53 (2026-08-21, `/health` 진단 커밋 — 게이트 28 P-8): `application.health.HealthReport`
+         * 하나다(`api.health.HealthResponse` 는 이미 세어져 있었다 — 필드가 늘었을 뿐이다).
+         * 민감 토큰은 없지만 **이 커밋이 이 탐지기의 갈래를 하나 늘렸다**: `checks` 가
+         * 저장소 최초의 `Map` 필드라 `GeneratedToStringProbes.slotFor` 가 「모르는 타입」으로
+         * 끊었고, 그래서 맵 갈래(`mapSlot` — 키와 값 **양쪽**에 표본을 심는다)를 더했다.
+         * 그 끊김이 설계대로 동작한 것이다: 새 타입이 들어오면 조용히 검사 밖에 남는 대신
+         * 게이트가 빨개진다.
          */
-        const val EXPECTED_SOURCE_DECLARATIONS = 52
+        const val EXPECTED_SOURCE_DECLARATIONS = 53
 
         /**
          * 민감 판정이 반드시 닿아야 하는 타입 — **바닥**이다.

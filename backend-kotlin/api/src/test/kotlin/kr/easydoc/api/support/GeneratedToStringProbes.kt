@@ -229,6 +229,10 @@ class GeneratedToStringProbes(
                 collectionSlot(classifier, type, where, visiting)
             }
 
+            classifier == Map::class -> {
+                mapSlot(type, where, visiting)
+            }
+
             classifier.qualifiedName?.startsWith(PRODUCT_PACKAGE) == true -> {
                 productSlot(classifier, where, visiting)
             }
@@ -254,6 +258,32 @@ class GeneratedToStringProbes(
         val element = slotFor(argument, "$where[]", visiting)
         val factory = COLLECTION_FACTORIES.getValue(classifier)
         return ProbeSlot(element.carriesText) { planting -> factory(element.value(planting)) }
+    }
+
+    /**
+     * 맵 한 자리. **키와 값 양쪽에** 표본을 심는다.
+     *
+     * `toString()` 은 `{키=값}` 으로 둘을 함께 찍으므로 어느 쪽이 텍스트를 담아도 새어 나간다.
+     * 한쪽만 심으면 나머지 쪽 타입이 검사 밖에 남고, 그것이 이 탐지기가 「모르는 타입은
+     * 끊는다」로 막으려는 상태다.
+     *
+     * [collectionSlot] 을 재사용하지 못하는 이유는 타입 인자 수다 — 그쪽은 `singleOrNull` 로
+     * 하나를 요구하므로 맵에서는 언제나 끊긴다.
+     */
+    private fun mapSlot(
+        type: KType,
+        where: String,
+        visiting: List<KClass<*>>,
+    ): ProbeSlot {
+        val arguments = type.arguments.map { it.type }
+        require(arguments.size == 2 && arguments.all { it != null }) {
+            "$where — 키·값 타입을 읽을 수 없는 맵이다($type). star projection 은 판정 불가라 끊는다"
+        }
+        val key = slotFor(requireNotNull(arguments[0]), "$where{key}", visiting)
+        val value = slotFor(requireNotNull(arguments[1]), "$where{value}", visiting)
+        return ProbeSlot(key.carriesText || value.carriesText) { planting ->
+            mapOf(key.value(planting) to value.value(planting))
+        }
     }
 
     /**

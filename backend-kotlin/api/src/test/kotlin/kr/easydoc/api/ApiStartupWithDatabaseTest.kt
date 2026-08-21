@@ -1,5 +1,7 @@
 package kr.easydoc.api
 
+import kr.easydoc.api.support.ContractSpec
+import kr.easydoc.application.health.HealthDiagnosis
 import kr.easydoc.infrastructure.DatabaseHandle
 import kr.easydoc.infrastructure.MigrationCatalog
 import kr.easydoc.infrastructure.PostgresTestSupport
@@ -11,6 +13,7 @@ import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.boot.test.web.server.LocalServerPort
 import org.springframework.test.context.DynamicPropertyRegistry
 import org.springframework.test.context.DynamicPropertySource
+import tools.jackson.databind.ObjectMapper
 import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
@@ -31,13 +34,15 @@ class ApiStartupOnEmptyDatabaseTest {
     private var port: Int = 0
 
     @Test
-    @DisplayName("빈 DB 에서 기동하고 /health 가 200 ok 를 돌려준다")
+    @DisplayName("빈 DB 에서 기동하고 /health 가 200 · 두 의존 서비스 진단이 **참**이다")
     fun `빈 DB 에서 기동한다`() {
         val response = StartupDatabases.httpGet(port, "/health")
 
         assertThat(port).isGreaterThan(0)
         assertThat(response.statusCode()).isEqualTo(200)
-        assertThat(response.body()).isEqualTo("""{"status":"ok"}""")
+        // 실 배선 팔이다 — `HealthContractTest` 는 DataSource 가 없는 팔(`{}`·ok)을 잰다.
+        // 여기서 두 키가 참이어야 「진단한다」가 실제로 도는 것이 증명된다(게이트 28 P-8).
+        StartupDatabases.assertDependenciesUp(response)
     }
 
     @Test
@@ -68,12 +73,14 @@ class ApiStartupOnPythonSnapshotTest {
     private var port: Int = 0
 
     @Test
-    @DisplayName("기존 Python 스키마 위에서 기동하고 /health 가 200 ok 를 돌려준다")
+    @DisplayName("기존 Python 스키마 위에서 기동하고 /health 가 200 · 두 의존 서비스 진단이 **참**이다")
     fun `기존 스키마에서 기동한다`() {
         val response = StartupDatabases.httpGet(port, "/health")
 
         assertThat(response.statusCode()).isEqualTo(200)
-        assertThat(response.body()).isEqualTo("""{"status":"ok"}""")
+        // 이 갈래가 특히 값지다 — `conversion_jobs` 는 baseline(V1) 이 아니라 V5 가 만든다.
+        // 인수 경로에서 후속 마이그레이션이 밀리면 `queue: false` 로 드러난다.
+        StartupDatabases.assertDependenciesUp(response)
     }
 
     @Test
@@ -157,4 +164,35 @@ private object StartupDatabases {
 
     fun appliedVersions(database: DatabaseHandle): List<String> =
         database.queryFirstColumn("SELECT version FROM flyway_schema_history ORDER BY installed_rank")
+
+    /**
+     * `/health` 가 **실 배선에서** 의존 서비스를 진단했음을 단언한다.
+     *
+     * 키 이름을 여기 적지 않고 **계약에서 읽는다** — 계약이 정의된 키를 산문으로 적고
+     * (`HealthResponse.properties.checks.description`) 예시 노드가 그 집합을 기계가 읽을 수
+     * 있게 담는다. 이름을 여기 적으면 계약이 키를 바꿔도 옛 이름을 재고, 그 순간 계약이
+     * 되는 것은 이 파일이다.
+     *
+     * 「비어 있지 않다」까지 함께 본다 — `{}` 도 계약상 유효한 응답이지만(`HealthContractTest`
+     * 가 그 팔을 잰다) **이 컨텍스트에서는** DataSource 가 있으므로 빈 `checks` 는 진단이
+     * 배선되지 않았다는 뜻이다.
+     */
+    fun assertDependenciesUp(response: HttpResponse<String>) {
+        val body = ObjectMapper().readValue(response.body(), Map::class.java)
+        assertThat(body.keys.map { it.toString() }.toSet())
+            .isEqualTo(ContractSpec.schemaRequired(HEALTH_SCHEMA))
+
+        val checks = body[CHECKS_PROPERTY] as Map<*, *>
+        assertThat(checks)
+            .describedAs("DataSource 가 있는 컨텍스트인데 진단이 비어 있다 — probe 빈이 조립되지 않았다")
+            .isNotEmpty()
+        assertThat(checks.keys.map { it.toString() }.toSet())
+            .isEqualTo(ContractSpec.healthCheckKeys())
+        assertThat(checks.values).allSatisfy { assertThat(it).isEqualTo(true) }
+        assertThat(body[STATUS_PROPERTY]).isEqualTo(HealthDiagnosis.STATUS_OK)
+    }
+
+    private const val HEALTH_SCHEMA = "HealthResponse"
+    private const val STATUS_PROPERTY = "status"
+    private const val CHECKS_PROPERTY = "checks"
 }
