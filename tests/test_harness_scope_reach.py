@@ -1234,6 +1234,88 @@ def test_판정_대상_표는_현행_원장에만_있다() -> None:
     )
 
 
+#: 리뷰 회차 트리거 4축을 담은 파일들. `kotlin-migration` 이 정본이다.
+_AXIS_SKILL_PATHS: Final = (
+    _REPO_ROOT / ".claude" / "skills" / "kotlin-migration" / "SKILL.md",
+    _REPO_ROOT / ".claude" / "skills" / "codex-review" / "SKILL.md",
+)
+_CLAUDE_MD_PATH: Final = _REPO_ROOT / "CLAUDE.md"
+
+#: 4축의 이름. `CLAUDE.md` 는 **값을 복제하지 않고** 이 이름과 정본 경로만 갖는다.
+_AXIS_NAMES: Final = (
+    "보안·개인정보 불변식",
+    "외부 HTTP 계약",
+    "게이트·탐지기 자신",
+    "Phase 종료·착수 판정",
+)
+
+#: `CLAUDE.md` 가 가리켜야 하는 정본 경로.
+_AXIS_CANON_POINTER: Final = ".claude/skills/kotlin-migration/SKILL.md"
+
+
+def _extract_axis_block(markdown: str) -> str:
+    """4축 열거 블록(`1.` ~ `4.`)만 떼어 온다. 못 찾으면 빈 문자열."""
+    lines = markdown.splitlines()
+    start = next(
+        (i for i, line in enumerate(lines) if line.startswith(f"1. **{_AXIS_NAMES[0]}**")),
+        None,
+    )
+    if start is None:
+        return ""
+    end = next(
+        (i for i, line in enumerate(lines[start:], start) if line.startswith(f"4. **{_AXIS_NAMES[3]}**")),
+        None,
+    )
+    return "" if end is None else "\n".join(lines[start : end + 1])
+
+
+def test_리뷰_4축_사본이_갈리지_않는다() -> None:
+    """**M-2 의 강제자.** 「두 곳은 항상 같은 내용이어야 한다」에 재는 장치가 0이었다.
+
+    실측(2026-08-21): 두 스킬의 4축 블록은 byte-identical 이었고 `CLAUDE.md` 사본은
+    **glob 이 0건**이었다 — 라우팅을 실제로 정하는 디테일이 빠진 채 복제됐으니 **태어날 때
+    이미 갈렸다.** 게다가 `CLAUDE.md` 는 4축 값을 옮겨 적은 **같은 문장 안에서** "여기에 값을
+    옮겨 적지 않는다(옮겨 적으면 갈린다)"고 쓴다.
+
+    그래서 축을 나눠 잰다 — **`CLAUDE.md` 에 블록 복제를 요구하지 않는다.** 요구하면 그 파일이
+    스스로 금지한 복제를 게이트가 강제하게 되고 드리프트 표면이 오히려 늘어난다.
+
+      * **두 스킬**: 4축 블록이 byte-identical. 둘 다 운영 문서라 갈리면 라우팅이 갈린다.
+      * **`CLAUDE.md`**: 4축 **이름 넷**과 **정본 경로**만 있으면 된다(값은 정본에서 읽는다).
+
+    빈 선언에서 통과하지 않는다(규칙 4 ⑶) — 블록을 못 찾으면 실패한다. 이것은 1층 장치이고
+    라쳇을 두지 않는다(규칙 7 — 층을 더하지 않는다).
+    """
+    blocks = {path: _extract_axis_block(path.read_text(encoding="utf-8")) for path in _AXIS_SKILL_PATHS}
+
+    empty = [str(path.relative_to(_REPO_ROOT)) for path, block in blocks.items() if not block]
+    assert not empty, (
+        f"4축 열거 블록을 찾지 못했다: {empty}\n"
+        "  이 검사가 빈 선언에서 통과하면 블록을 지우는 편집이 조용해진다(규칙 4 ⑶).\n"
+        "  블록을 옮겼거나 문면을 바꿨다면 _extract_axis_block 도 함께 고쳐라."
+    )
+
+    canon, *rest = blocks.items()
+    for path, block in rest:
+        assert block == canon[1], (
+            f"4축 블록이 갈렸다 — {path.relative_to(_REPO_ROOT)} vs "
+            f"{canon[0].relative_to(_REPO_ROOT)}(정본).\n"
+            "  두 곳 다 리뷰 라우팅을 정하므로 갈리면 어느 변경이 필수인지가 파일마다 달라진다.\n"
+            "  정본은 kotlin-migration 이다."
+        )
+
+    claude_md = _CLAUDE_MD_PATH.read_text(encoding="utf-8")
+    missing_names = [name for name in _AXIS_NAMES if name not in claude_md]
+    assert not missing_names, (
+        f"CLAUDE.md 에 4축 이름이 빠졌다: {missing_names}\n"
+        "  값을 복제하라는 뜻이 아니다 — 이름 넷과 정본 경로만 있으면 된다."
+    )
+    assert _AXIS_CANON_POINTER in claude_md, (
+        f"CLAUDE.md 가 4축 정본 경로({_AXIS_CANON_POINTER})를 가리키지 않는다.\n"
+        "  포인터가 없으면 그 문면이 스스로 정본이 되어 복사본이 하나 더 생긴다."
+    )
+
+
 @pytest.fixture(scope="module")
 def target_tables() -> list[Table]:
     """원장(현행 + 역사)에서 규약 대상 표만 골라 온다."""
