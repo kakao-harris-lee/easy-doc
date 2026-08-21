@@ -1295,12 +1295,29 @@ Phase 0 착수 전에 하네스 구축 과정에서 발견해 처리한 항목�
 | `ed3df31` | 4축 사본의 동기화 강제자 (M-1·M-2) — `CLAUDE.md` · `tests/test_harness_scope_reach.py` | **대기** | 필수 축③에 닿는다 — 이연이 아니라 미리뷰 | `xx_harness 2회차` | - |
 | `7efc7c4` | codex 지적 medium 3건 — `.claude/skills/kotlin-migration/SKILL.md` · `tests/test_harness_scope_reach.py` · `tests/test_kotlin_class_snapshot_reach.py` | **대기** | 필수 축③에 닿는다 — 이연이 아니라 미리뷰 | `xx_harness 2회차` | - |
 | `3ba7e04` | codex 지적 high #1 — 리뷰 축 4 → 7, 즉시 중단 기준 전부 매핑. `.claude/skills/{kotlin-migration,codex-review}/SKILL.md` · `CLAUDE.md` · `tests/test_harness_scope_reach.py` | **대기** | 필수 축③에 닿는다 — 이연이 아니라 미리뷰 | `xx_harness 2회차` | - |
+| `e7faccc` | codex 지적 high #2 — 리뷰 커버리지 강제자 신설. `tests/test_review_coverage_reach.py` · 이 원장 | **대기** | 필수 축③에 닿는다 — 이연이 아니라 미리뷰 | `xx_harness-fixes` | - |
 
 **`상태` 어휘는 둘이다.** `이연` = 필수 축에 닿지 않아 묶기로 판정한 것. `대기` = **필수 축에
 닿는데 아직 리뷰를 못 받은 것** — 이연이 아니라 빚이다. 위 세 줄은 전부 `대기`다(축③ =
 게이트·탐지기 자신). 거짓으로 「비필수」라고 적지 않는다. **`tests/test_review_coverage_reach.py`
 는 이 둘을 구분하지 않는다** — 둘 다 「적혔다」로 세므로, 급한 것이 묻히지 않게 하는 것은 이
 칸을 읽는 사람이다.
+
+**부트스트랩 제약 — 자기 SHA 는 자기 커밋 안에 적을 수 없다** (2026-08-22 실측, stop-time
+게이트가 잡았다). 커밋하기 전에는 SHA 를 모르므로, 비면제 변경을 담은 커밋은 **구조상 자기
+자신을 이 표에 기록할 수 없고** 그 순간 `tests/test_review_coverage_reach.py` 가 빨개진다.
+실제로 그 검사를 도입한 `e7faccc` 가 자기 자신 때문에 실패했다 — 커밋 **전에** 돌린 전체
+스위트는 초록이었고, 커밋이 바로 그 조건을 깨뜨렸다.
+
+풀이는 이 원장이 `docs/` 아래라는 사실에 있다 — **원장만 고치는 커밋은 「바꾼 경로가 전부
+`docs/`」라 면제**다. 그래서 「작업 커밋(비면제) → 기록 커밋(`docs/` 전용, 면제)」 두 단계로
+가면 자기참조가 풀리고 검사가 지속적으로 초록을 유지한다. 이 줄 자신이 그 두 번째 단계다.
+
+> **이 풀이는 아직 검증되지 않았다.** `xx_harness-fixes` 회차에 두 리뷰 레인 모두에게 ⑴ 이
+> 해법이 성립하는지 ⑵ 면제 규칙이 `docs/` **전부**를 덮는 것이 옳은지를 물었다 — 특히
+> **`docs/plans/**` 는 계획 문서이고 그것을 고치는 것은 축④(Phase 종료·착수 판정)에 닿을 수
+> 있는데 `docs/` 라서 면제된다.** 그것이 참이면 이 풀이가 새 구멍을 하나 만든 것이다.
+> 판정이 나오기 전에는 위 문단을 **규약이 아니라 관측된 기제**로 읽어라.
 
 **운용:** 회차를 열 때 이 표에서 이연분을 꺼내 리뷰 대상에 넣고, 넣은 줄의 `닫힘` 칸에 회차
 번호(`{phase}_{scope}`)를 적는다. **강제자의 한계 — 지우지 마라:** 이 표 자체의 규약 위반은
