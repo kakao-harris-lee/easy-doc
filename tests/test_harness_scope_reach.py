@@ -1260,13 +1260,55 @@ _AXIS_SKILL_PATHS: Final = (
 )
 _CLAUDE_MD_PATH: Final = _REPO_ROOT / "CLAUDE.md"
 
-#: 4축의 이름. `CLAUDE.md` 는 **값을 복제하지 않고** 이 이름과 정본 경로만 갖는다.
+#: 리뷰 트리거 축의 이름. `CLAUDE.md` 는 **값을 복제하지 않고** 이 이름과 정본 경로만 갖는다.
+#:
+#: 5·6·7 은 codex 독립 리뷰 지적으로 신설(2026-08-21) — 초판 4축이 계획 §5 즉시 중단 기준
+#: 7개 중 4개를 담지 못했다.
 _AXIS_NAMES: Final = (
     "보안·개인정보 불변식",
     "외부 HTTP 계약",
     "게이트·탐지기 자신",
     "Phase 종료·착수 판정",
+    "작업 큐·LLM 호출 규약",
+    "문서 추출·내보내기 무결성",
+    "골든 품질 합격선",
 )
+
+_PLAN_PATH: Final = _REPO_ROOT / "docs" / "plans" / "2026-08-11-kotlin-react-migration.md"
+
+#: 계획 §5 **즉시 중단 기준 → 리뷰 트리거 축** 매핑.
+#:
+#: 키는 그 기준 항목을 식별하는 **안정 부분문자열**이고, 값은 그것을 「반드시」쪽에 두는 축
+#: 이름이다. 아래 판정이 계획 문서에서 기준 목록을 **읽어** 매핑되지 않은 항목이 있으면
+#: 실패하므로, **계획에 기준이 늘면 여기도 늘어야 한다.**
+_STOP_CRITERION_TO_AXIS: Final = {
+    "AEAD 복호화 round-trip 실패": "보안·개인정보 불변식",
+    "다른 사용자 데이터 노출": "보안·개인정보 불변식",
+    "마스킹 전 본문": "보안·개인정보 불변식",
+    "중복 LLM 호출": "작업 큐·LLM 호출 규약",
+    "문서 추출·내보내기에서 필수 정보 누락": "문서 추출·내보내기 무결성",
+    "골든 품질이": "골든 품질 합격선",
+    "최대 2회 호출 요구 위반": "작업 큐·LLM 호출 규약",
+}
+
+
+def _plan_stop_criteria() -> list[str]:
+    """계획 §5 「즉시 중단 기준」의 항목(`- ` 불릿)만 떼어 온다.
+
+    머리글을 찾은 뒤 연속한 불릿 블록만 취한다. 못 찾으면 빈 목록 — 그러면 아래 판정이
+    실패한다(규칙 4 ⑶: 빈 선언에서 통과하지 않는다).
+    """
+    lines = _PLAN_PATH.read_text(encoding="utf-8").splitlines()
+    start = next((i for i, line in enumerate(lines) if line.startswith("즉시 중단 기준(")), None)
+    if start is None:
+        return []
+    criteria: list[str] = []
+    for line in lines[start + 1 :]:
+        if line.startswith("- "):
+            criteria.append(line[2:].strip())
+        elif criteria and line.strip():
+            break
+    return criteria
 
 #: `CLAUDE.md` 가 가리켜야 하는 정본 경로.
 _AXIS_CANON_POINTER: Final = ".claude/skills/kotlin-migration/SKILL.md"
@@ -1306,19 +1348,65 @@ def _claude_md_review_gate_section() -> str:
 
 
 def _extract_axis_block(markdown: str) -> str:
-    """4축 열거 블록(`1.` ~ `4.`)만 떼어 온다. 못 찾으면 빈 문자열."""
+    """축 열거 블록(`1.` ~ 마지막 축)만 떼어 온다. 못 찾으면 빈 문자열."""
     lines = markdown.splitlines()
-    start = next(
-        (i for i, line in enumerate(lines) if line.startswith(f"1. **{_AXIS_NAMES[0]}**")),
-        None,
-    )
+    first, last = _AXIS_NAMES[0], _AXIS_NAMES[-1]
+    start = next((i for i, line in enumerate(lines) if line.startswith(f"1. **{first}**")), None)
     if start is None:
         return ""
     end = next(
-        (i for i, line in enumerate(lines[start:], start) if line.startswith(f"4. **{_AXIS_NAMES[3]}**")),
+        (
+            i
+            for i, line in enumerate(lines[start:], start)
+            if line.startswith(f"{len(_AXIS_NAMES)}. **{last}**")
+        ),
         None,
     )
     return "" if end is None else "\n".join(lines[start : end + 1])
+
+
+def test_즉시_중단_기준이_전부_필수_축에_매핑된다() -> None:
+    """**codex 지적(high)의 강제자.** 초판 4축이 계획 §5 기준 7개 중 **4개를 담지 못했다.**
+
+    담지 못한 것: 중복 LLM 호출·작업 영구 유실·pending 무한 체류 / 문서 추출·내보내기 손상 /
+    골든 합격선 미달 / 최대 2회 호출 위반. 그 부류는 「일곱 중 어디에도 닿지 않는 변경」으로
+    분류돼 **최대 한 Phase 동안 리뷰 없이 하류에 누적**될 수 있었다. 초판이 적은 *"위험이
+    실재하는 축(1·2)을 「반드시」쪽에 두었다"* 는 그래서 거짓이었다.
+
+    이 판정은 **계획 문서를 읽는다.** 그래서 계획에 기준이 늘면(또는 문면이 바뀌면) 매핑을
+    고치기 전까지 실패한다 — 축 목록만 보는 검사로는 그 드리프트가 잡히지 않는다.
+    """
+    criteria = _plan_stop_criteria()
+    assert criteria, (
+        f"계획 §5 「즉시 중단 기준」 목록을 찾지 못했다: {_PLAN_PATH.relative_to(_REPO_ROOT)}\n"
+        "  머리글이 바뀌었으면 _plan_stop_criteria 를 함께 고쳐라.\n"
+        "  빈 목록에서 통과하면 이 검사가 0건 검사가 된다(규칙 4 ⑶)."
+    )
+
+    unmapped = [
+        criterion
+        for criterion in criteria
+        if not any(key in criterion for key in _STOP_CRITERION_TO_AXIS)
+    ]
+    assert not unmapped, (
+        f"계획 §5 즉시 중단 기준 {len(unmapped)} 개가 필수 리뷰 축에 매핑되지 않았다:\n"
+        + "\n".join(f"    - {criterion[:90]}" for criterion in unmapped)
+        + "\n  매핑되지 않은 기준은 「축에 닿지 않는 변경」으로 분류돼 묶음으로 이연된다 —\n"
+        "  즉 즉시 중단 사유가 최대 한 Phase 동안 리뷰를 받지 않는다.\n"
+        "  _STOP_CRITERION_TO_AXIS 에 항목을 더하고, 필요하면 축 자체를 신설하라."
+    )
+
+    unknown = sorted(set(_STOP_CRITERION_TO_AXIS.values()) - set(_AXIS_NAMES))
+    assert not unknown, (
+        f"매핑이 존재하지 않는 축을 가리킨다: {unknown}\n"
+        "  축 이름을 바꿨다면 _AXIS_NAMES 와 두 SKILL.md 블록도 함께 고쳐라."
+    )
+
+    stale = [key for key in _STOP_CRITERION_TO_AXIS if not any(key in c for c in criteria)]
+    assert not stale, (
+        f"계획 문서에서 사라진 기준을 매핑이 아직 가리킨다: {stale}\n"
+        "  죽은 매핑은 「전부 매핑됐다」를 거짓으로 만든다 — 계획이 바뀌었으면 함께 지워라."
+    )
 
 
 def test_리뷰_4축_사본이_갈리지_않는다() -> None:
