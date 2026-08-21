@@ -695,36 +695,69 @@ object ContractSpec {
     /**
      * 계약 파일 **어디에든** 있는 확장 노드 이름(`x-…`) 전수.
      *
-     * `paths`·`components` 아래든 최상위든 깊이를 가리지 않고 재귀로 모은다. 주석·산문이
-     * `x-…` 를 **이름으로 지목**할 때 그 이름이 실재하는지 대조할 집합이고, 쓰는 쪽은
-     * [kr.easydoc.api.NamedReferenceGuardTest] 축 B 다.
+     * [keyChains] 에서 **점이 없는 것**만 골라 낸다 — 훑기를 두 벌 두지 않는다. 두 벌이면
+     * 한쪽만 고쳐지는 날 서로 다른 것을 세면서 둘 다 초록이 된다
+     * (`_declared_test_count` 가 받은 것과 같은 처방).
      *
-     * 열거하지 않는 것이 요점이다 — 계약이 확장 노드를 더하거나 이름을 바꾸면 이 집합이
-     * 저절로 따라간다. **비면 실패한다**: 빈 집합과 대조하면 모든 참조가 미해결로 뒤집혀
-     * 그 축이 신호가 아니라 잡음이 된다.
+     * **비면 실패한다**: 빈 집합과 대조하면 모든 참조가 미해결로 뒤집혀 그 축이 신호가
+     * 아니라 잡음이 된다.
      */
     fun extensionNodeNames(): Set<String> {
-        val names = mutableSetOf<String>()
-        collectExtensionNames(root, names)
+        val names = keyChains().filterTo(mutableSetOf()) { !it.contains('.') && it.startsWith("x-") }
         require(names.isNotEmpty()) { "계약에서 `x-` 확장 노드를 하나도 찾지 못했다 — 대조가 공허하다" }
         return names
     }
 
-    private fun collectExtensionNames(
+    /**
+     * 계약의 **연속된 키 경로** 전수 — `"a"`·`"a.b"`·`"b.c"` 처럼 **어느 깊이에서 시작해도** 된다.
+     *
+     * ## 왜 이름 집합이 아니라 경로여야 하나 (R-10-①)
+     *
+     * 부모·자식으로 이어진 참조를 조각으로 나눠 **평탄한 이름 집합**에 대조하면 자식이
+     * **계약 어디에든** 있으면 통과한다 — 그 부모 아래에 없어도 초록이다.
+     * 실측(2026-08-21): 실재하는 노드 둘을 이어 붙인 가짜 경로(조각은 둘 다 실재하지만 그
+     * 부모 아래에 그 자식이 없다)를 주석에 심었더니 **축 B 가 초록**이었다. **노드 이름의 변경·이동이
+     * 이 종류의 가장 흔한 형태**이므로, 부모가 살아 있고 자식이 옮겨 간 참조가 정확히
+     * 그 구멍으로 빠진다.
+     *
+     * ## 「어느 깊이에서 시작해도」인 이유
+     *
+     * 주석은 정본을 가리킬 때 **절대 경로를 적지 않는다** — `x-service-constraint.measured_on`
+     * 처럼 중간 노드에서 시작한다(그 노드는 `components.schemas.*.properties.*` 아래 산다).
+     * 루트부터의 경로만 모으면 그런 참조가 전부 미해결로 뒤집힌다. 그래서 각 노드의 전체
+     * 경로에 대해 **모든 접미사**를 넣는다.
+     *
+     * ## 배열은 키 층이 아니다
+     *
+     * 리스트를 지날 때 경로 조각을 **더하지 않는다.** OpenAPI 의 배열은 이름 있는 층이 아니고,
+     * 이 저장소의 주석은 리스트 원소를 `fields[].limit`·`fields[0].limit` 로 적는다. 호출자가
+     * 그 대괄호를 지우고 물으면 `fields.limit` 로 맞는다(그 정규화는 호출자 몫 —
+     * 무엇이 대괄호인지는 참조 문법의 문제이고 계약 구조의 문제가 아니다).
+     */
+    fun keyChains(): Set<String> {
+        val chains = mutableSetOf<String>()
+        collectKeyChains(root, emptyList(), chains)
+        require(chains.isNotEmpty()) { "계약에서 키 경로를 하나도 찾지 못했다 — 대조가 공허하다" }
+        return chains
+    }
+
+    private fun collectKeyChains(
         node: Any?,
+        prefix: List<String>,
         into: MutableSet<String>,
     ) {
         when (node) {
             is Map<*, *> -> {
                 node.forEach { (key, value) ->
-                    val name = key?.toString()
-                    if (name != null && name.startsWith("x-")) into += name
-                    collectExtensionNames(value, into)
+                    val path = prefix + (key?.toString() ?: return@forEach)
+                    path.indices.forEach { start -> into += path.subList(start, path.size).joinToString(".") }
+                    collectKeyChains(value, path, into)
                 }
             }
 
             is List<*> -> {
-                node.forEach { collectExtensionNames(it, into) }
+                // 경로 조각을 더하지 않는다 — 배열은 이름 있는 층이 아니다(KDoc).
+                node.forEach { collectKeyChains(it, prefix, into) }
             }
 
             else -> {

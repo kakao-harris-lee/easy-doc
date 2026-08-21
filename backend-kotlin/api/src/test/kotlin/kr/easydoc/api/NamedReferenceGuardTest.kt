@@ -38,10 +38,19 @@ import kotlin.io.path.readText
  *
  * ## 두 축 — 둘 다 **모양으로** 정의한다
  *
- * | 축 | 후보 모양 | 해소 집합 |
- * |---|---|---|
- * | **A** 테스트·프로브 지목 | [TEST_SUFFIXES] 로 끝나는 PascalCase | 저장소 Kotlin 선언 ∪ 파일 이름 |
- * | **B** 계약 확장 노드 지목 | `x-` + 소문자·숫자·붙임표 | [ContractSpec.extensionNodeNames] 전수 |
+ * | 축 | 후보 모양 | 무엇을 묻나 | 해소 집합 |
+ * |---|---|---|---|
+ * | **A** 테스트·프로브 지목 | [TEST_SUFFIXES] 로 끝나는 PascalCase | **머리 이름** | 저장소 Kotlin 선언 ∪ 파일 이름 |
+ * | **B** 계약 확장 노드 지목 | `x-` + 소문자·숫자·붙임표 | **점으로 이어진 경로 전체** | [ContractSpec.keyChains] 전수 |
+ *
+ * **축 B 가 경로를 묻는 것은 R-10-① 의 처방이다.** 초판은 참조를 조각으로 나눠 **평탄한
+ * 이름 집합**에 대조했고, 그러면 `x-cors.x-note` 에서 `x-note` 가 **계약 어디에든** 있으면
+ * 통과했다 — 부모 아래에 없어도 초록이다. 실측(2026-08-21): 실재하는 최상위 노드 둘을
+ * 부모·자식으로 이어 붙인 가짜 경로(조각은 둘 다 실재하나 그 부모 아래에 그 자식이 없다)를
+ * 주석에 심었더니 **exit 0** 이었다. **가짜 경로를 여기 참조 형태로 적지 않는다** —
+ * 적는 순간 이 가드가 자기 KDoc 을 짚는다(실측으로 밟았다). 케이스는 그 조합을 계약에서
+ * 찾아 쓴다([fakeExtensionPath]). **노드 이름의 변경·이동이 이 종류의 가장 흔한 형태**이므로,
+ * 부모가 살아 있고 자식이 옮겨 간 참조가 정확히 그 구멍으로 빠진다.
  *
  * 축 A 의 해소 집합에 **파일 이름**을 넣는 이유: `[…Test]` 가 파일을 가리키는 관용이 이
  * 저장소에 있다(한 파일이 클래스 둘을 담고 파일 이름이 그 묶음의 이름인 자리 — 기동 테스트).
@@ -64,6 +73,18 @@ import kotlin.io.path.readText
  *   손으로 걷어냈고, 그 KDoc 이 주장했던 성질은 이제 [HealthContractTest] 가 계약을 읽어
  *   잰다 — **문면이 아니라 성질**이 측정 대상이 됐다. 기계화하려면 인용에 앵커를 붙이는
  *   규약이 필요하고 그 신설은 이 단위 밖이다.
+ * - **축 A 의 멤버 참조**(`CanaryProbe.report`·`DocumentContractTest.newOwner` 형태).
+ *   머리 이름만 묻고 **멤버의 실재는 검사하지 않는다.** 조용히 뺀 것이 아니라 판단한 것이고,
+ *   근거 셋이다. ⑴ P-9 가 승격한 종류는 「이름으로 지목한 **테스트·클래스**」이고 머리가
+ *   해소되면 읽는 사람은 그 파일에 도달한다 — 죽은 멤버 포인터는 「자리를 못 찾는다」가
+ *   아니라 「그 파일 안에서 못 찾는다」로 약하다. ⑵ 멤버 해소에는 Kotlin 선언 형태의
+ *   **어휘**가 필요하다(`fun`·`val`·`var`·중첩 클래스·`companion`·백틱 한국어 식별자) —
+ *   그 어휘가 곧 규칙 4 ⑵ 가 금지한 열거이고, 빠뜨린 형태마다 오탐이 된다.
+ *   ⑶ 실측(2026-08-21): 오늘 이 형태가 **9종**이고 그중 최소 둘은 산문 조각이다
+ *   (`SourceScanFormsProbe.fun`·`JdbcDocumentStoreTest.쓰기` — 한국어 산문과 키워드가
+ *   점 뒤에 붙은 것). 오탐 22% 로 시작하는 축은 곧 면제 목록을 부른다.
+ *   **머리 검사는 멤버가 붙어도 그대로 돈다** — 그 사실을 [`멤버가 붙은 참조도 머리를 검사한다`]
+ *   가 실행으로 고정한다.
  * - **이름이 실재하지만 그 주장이 거짓인 경우.** `X 가 이것을 강제한다` 에서 X 가 존재하되
  *   그 성질을 재지 않는 상태는 여기서 보이지 않는다. 그 축은 변이 테스트의 몫이다
  *   (개선 백로그 B-19).
@@ -108,7 +129,7 @@ class NamedReferenceGuardTest {
     @DisplayName("축 B — 주석이 이름으로 지목한 계약 확장 노드가 **전부 계약에 있다**")
     fun `지목된 계약 확장 노드가 전부 실재한다`() {
         val references = Scanner.scan(sourceRoot())
-        val declared = ContractSpec.extensionNodeNames()
+        val declared = ContractSpec.keyChains()
         val dangling = Scanner.danglingExtensionNodes(references, declared)
 
         assertThat(dangling)
@@ -194,13 +215,72 @@ class NamedReferenceGuardTest {
     }
 
     @Test
+    @DisplayName("축 B 는 **경로**를 묻는다 — 부모·자식이 각자 실재해도 그 부모 아래가 아니면 짚는다 (R-10-①)")
+    fun `축 B 가 조각이 아니라 경로를 해소한다`() {
+        val fake = fakeExtensionPath()
+        val references = probe("axis-b-path", "/** 근거는 계약 `$fake` 다. */\nval x = 1\n")
+
+        // 두 조각이 **각자** 계약에 있다는 것을 먼저 확인한다 — 그러지 않으면 이 케이스가
+        // 「이름이 없어서 빨개진」 것과 구분되지 않고, 초판의 구멍을 재지 못한다.
+        val names = ContractSpec.extensionNodeNames()
+        fake.split('.').forEach { segment ->
+            assertThat(names)
+                .describedAs("가짜 경로의 조각 %s 가 계약에 없다 — 이 케이스가 경로 축을 재지 못한다", segment)
+                .contains(segment)
+        }
+        assertThat(ContractSpec.keyChains())
+            .describedAs("가짜 경로가 실제로 계약에 있으면 이 케이스가 성립하지 않는다")
+            .doesNotContain(fake)
+
+        assertThat(Scanner.danglingExtensionNodes(references, ContractSpec.keyChains()).map { it.chain })
+            .contains(fake)
+    }
+
+    @Test
+    @DisplayName("**점 참조 분모가 0이면 통과가 아니다** — 경로 해소가 실제로 도는 자리가 있어야 한다")
+    fun `점으로 이어진 참조가 실재한다`() {
+        val dotted = Scanner.scan(sourceRoot()).filter { Scanner.isExtensionNode(it.name) && it.hasTail }
+
+        // 저장소의 x- 참조가 전부 한 조각이면 위 케이스의 경로 판정이 **한 번도 돌지 않는다** —
+        // 그 상태에서 축 B 가 초록인 것은 「경로가 옳다」가 아니라 「경로를 안 봤다」다.
+        assertThat(dotted)
+            .describedAs("점으로 이어진 계약 확장 노드 참조 — 경로 해소가 도는 분모다")
+            .isNotEmpty()
+    }
+
+    @Test
+    @DisplayName("멤버가 붙은 참조도 **머리를 검사한다** — 멤버를 안 보는 것이 머리를 안 보는 것은 아니다")
+    fun `멤버가 붙은 참조도 머리를 검사한다`() {
+        val absent = syntheticTestName()
+        val references = probe("axis-a-member", "/** 사유는 `$absent.someMember` 에 있다. */\nval x = 1\n")
+
+        assertThat(Scanner.danglingTestNames(references, Scanner.declaredNames(sourceRoot())).map { it.name })
+            .containsExactly(absent)
+    }
+
+    @Test
+    @DisplayName("배열 첨자는 키 층이 아니다 — `fields[0].limit` 형태를 오탐하지 않는다")
+    fun `배열 첨자가 붙은 경로를 오탐하지 않는다`() {
+        val chain =
+            ContractSpec.keyChains().first { candidate ->
+                candidate.startsWith(EXTENSION_PREFIX) && candidate.count { it == '.' } == 1
+            }
+        val (head, tail) = chain.split('.').let { it[0] to it[1] }
+        val references = probe("axis-b-index", "/** 계약 `$head[0].$tail` 참고. */\nval x = 1\n")
+
+        // 대괄호를 지우지 않으면 이 참조가 미해결로 뒤집힌다. 실측: 정규화 없이는 점 참조
+        // 43종 중 6종이 오탐이었고 여섯 다 이 형태였다.
+        assertThat(Scanner.danglingExtensionNodes(references, ContractSpec.keyChains())).isEmpty()
+    }
+
+    @Test
     @DisplayName("음성 대조 — 실재하지 않는 계약 확장 노드를 심으면 축 B 가 짚고, 실재하는 노드는 통과시킨다")
     fun `축 B 가 실재 여부를 가른다`() {
         val absent = syntheticExtensionNode()
         val present = ContractSpec.extensionNodeNames().first()
         val references = probe("axis-b", "/** 계약 `$absent` · `$present` 참고. */\nval x = 1\n")
 
-        assertThat(Scanner.danglingExtensionNodes(references, ContractSpec.extensionNodeNames()).map { it.name })
+        assertThat(Scanner.danglingExtensionNodes(references, ContractSpec.keyChains()).map { it.name })
             .containsExactly(absent)
     }
 
@@ -210,7 +290,7 @@ class NamedReferenceGuardTest {
         val references = probe("both", "/** `${syntheticTestName()}` · `${syntheticExtensionNode()}` */\nval x = 1\n")
 
         val axisA = Scanner.danglingTestNames(references, Scanner.declaredNames(sourceRoot()))
-        val axisB = Scanner.danglingExtensionNodes(references, ContractSpec.extensionNodeNames())
+        val axisB = Scanner.danglingExtensionNodes(references, ContractSpec.keyChains())
 
         assertThat(axisA).hasSize(1)
         assertThat(axisB).hasSize(1)
@@ -257,6 +337,23 @@ class NamedReferenceGuardTest {
         val name = "Absent" + "Named" + "Reference" + TEST_SUFFIXES.first()
         check(name !in Scanner.declaredNames(sourceRoot())) { "합성 이름이 실재한다: $name" }
         return name
+    }
+
+    /**
+     * **조각은 전부 실재하지만 그 경로로는 없는** 확장 노드 경로를 계약에서 **찾아낸다**.
+     *
+     * 리터럴로 적지 않는다 — 계약이 노드를 옮기면 그 리터럴이 우연히 참이 되어 케이스가
+     * 조용히 무력해진다. 실재하는 x- 이름 둘을 짝지어 **경로로는 없는 조합**을 고르고,
+     * 못 찾으면 **끊는다**(그 상태에서는 이 케이스가 아무것도 재지 않는다).
+     */
+    private fun fakeExtensionPath(): String {
+        val names = ContractSpec.extensionNodeNames().sorted()
+        val chains = ContractSpec.keyChains()
+        return names
+            .asSequence()
+            .flatMap { parent -> names.asSequence().map { child -> "$parent.$child" } }
+            .firstOrNull { it.split('.').let { parts -> parts[0] != parts[1] } && it !in chains }
+            ?: error("조각은 실재하나 경로로는 없는 조합을 찾지 못했다 — 이 케이스가 경로 축을 재지 못한다")
     }
 
     /** 계약에 **없는** 확장 노드 이름. 조립하는 이유는 [syntheticTestName] 과 같다. */
@@ -314,12 +411,21 @@ class NamedReferenceGuardTest {
             "  ⑵ 재는 장치가 없으면 그 주장을 지우고 무엇이 미측정인지 적는다.\n" +
             "  이름을 이 파일의 예외 목록에 넣는 길은 없다 — 그것이 은폐형이다."
 
+    /**
+     * 축 B 실패 메시지. **머리가 아니라 경로를 찍는다.**
+     *
+     * 실측으로 밟았다 — 머리만 찍으니 실재하는 부모 이름(`x-cors`)이 세 번 나열되고, 정작
+     * 없는 것은 그 아래의 자식이었다. 「무엇이 없는가」를 잘못 가리키는 메시지는 고치는
+     * 사람을 엉뚱한 자리로 보낸다.
+     */
     private fun danglingNodeFailure(dangling: List<Scanner.NamedReference>): String =
-        "주석·KDoc·설정이 이름으로 지목한 계약 확장 노드가 계약 파일에 없다.\n" +
-            dangling.joinToString("\n") { "  - ${it.name}  ← ${it.file}" } +
-            "\n  계약이 노드 이름을 바꾸거나 지웠는데 인용만 남은 상태다(실측 선례: 계약이\n" +
-            "  한 노드를 더 구체적인 이름으로 갈았고 옛 이름을 든 주석이 남았다).\n" +
-            "  현재 계약의 노드 이름으로 고쳐라. 노드가 정말 없어졌다면 그 주장 자체를 지운다."
+        "주석·KDoc·설정이 이름으로 지목한 계약 확장 노드 **경로**가 계약 파일에 없다.\n" +
+            dangling.joinToString("\n") { "  - ${it.chain}  ← ${it.file}" } +
+            "\n  둘 중 하나다: ⑴ 계약이 노드 이름을 바꾸거나 지웠는데 인용만 남았다(실측 선례:\n" +
+            "  계약이 한 노드를 더 구체적인 이름으로 갈았고 옛 이름을 든 주석이 남았다), 또는\n" +
+            "  ⑵ **자식이 다른 부모 아래로 옮겨 갔다** — 조각은 둘 다 실재하지만 그 경로로는 없다.\n" +
+            "  ⑵ 가 이 축이 경로를 묻는 이유다(R-10-①). 현재 계약의 경로로 고쳐라.\n" +
+            "  노드가 정말 없어졌다면 그 주장 자체를 지운다."
 
     private fun sourceRoot(): Path {
         val configured =
@@ -340,11 +446,21 @@ class NamedReferenceGuardTest {
      * 표면이 된다).
      */
     private object Scanner {
-        /** 참조 하나. 실패 메시지가 자리를 가리켜야 하므로 파일을 함께 든다. */
+        /**
+         * 참조 하나. 실패 메시지가 자리를 가리켜야 하므로 파일을 함께 든다.
+         *
+         * [name] 은 후보 모양에 맞는 **머리 조각**, [chain] 은 그 조각에서 참조 끝까지의
+         * **점으로 이어진 경로**다(머리뿐이면 둘이 같다). 축 A 는 [name] 으로 판정하고
+         * 축 B 는 [chain] 으로 판정한다 — 두 축이 필요로 하는 알갱이가 다르다(클래스 KDoc).
+         */
         data class NamedReference(
             val file: String,
             val name: String,
-        )
+            val chain: String,
+        ) {
+            /** 머리에 꼬리가 붙어 있는가. 「경로 해소가 실제로 도는가」를 재는 재료다. */
+            val hasTail: Boolean get() = chain != name
+        }
 
         /** Kotlin 블록 주석·KDoc. `.*?` 가 아니라 최단 일치로 잡되 줄바꿈을 포함한다. */
         private val BLOCK_COMMENT = Regex("""/\*.*?\*/""", RegexOption.DOT_MATCHES_ALL)
@@ -395,15 +511,25 @@ class NamedReferenceGuardTest {
             return names
         }
 
+        /**
+         * 축 A — **머리 조각만** 본다. `CanaryProbe.report` 에서 묻는 것은 `CanaryProbe` 다.
+         *
+         * 멤버를 검사 범위에 넣지 않은 사유는 클래스 KDoc 「막지 못하는 것」에 있다.
+         */
         fun danglingTestNames(
             references: List<NamedReference>,
             declared: Set<String>,
         ): List<NamedReference> = references.filter { isTestName(it.name) && it.name !in declared }
 
+        /**
+         * 축 B — **경로로** 해소한다. [declared] 는 [ContractSpec.keyChains] 다.
+         *
+         * `it.name` 이 아니라 `it.chain` 을 묻는 것이 R-10-① 의 처방 전부다.
+         */
         fun danglingExtensionNodes(
             references: List<NamedReference>,
             declared: Set<String>,
-        ): List<NamedReference> = references.filter { isExtensionNode(it.name) && it.name !in declared }
+        ): List<NamedReference> = references.filter { isExtensionNode(it.name) && it.chain !in declared }
 
         fun isTestName(name: String): Boolean =
             PASCAL.matches(name) && TEST_SUFFIXES.any { suffix -> name.length > suffix.length && name.endsWith(suffix) }
@@ -428,15 +554,44 @@ class NamedReferenceGuardTest {
                 .findAll(claims)
                 .flatMap { match ->
                     val raw = (1..3).firstNotNullOfOrNull { match.groupValues[it].ifEmpty { null } } ?: ""
-                    // `Foo.bar` · `kr.easydoc.Foo` · `x-cors.x-note` 처럼 점으로 이어진 참조를
-                    // 조각으로 나눈다. 한 조각만 보면 정본을 가리키는 긴 참조가 통째로 밖이다.
-                    raw
-                        .substringBefore('(')
-                        .split('.', ' ', '/')
-                        .map { it.trim('`', '[', ']', '*', ',', ':', ';', '?', '!', ')') }
-                        .filter { candidate -> isTestName(candidate) || isExtensionNode(candidate) }
-                        .map { candidate -> NamedReference(file, candidate) }
+                    raw.substringBefore('(').split(' ', '/').flatMap { token -> referencesInToken(file, token) }
                 }.toList()
+
+        /**
+         * 점으로 이어진 한 토큰에서 참조를 뽑는다 — **머리와 꼬리를 함께** 든다.
+         *
+         * 부모·자식으로 이어진 참조를 조각 둘로 흘려보내면 축 B 가 자식을 **계약 어디에든**
+         * 있는 것으로 해소해 초록이 된다(R-10-① 실측). 그래서 후보 모양에 맞는 조각이
+         * 나오면 **그 자리에서 끝까지**를 한 참조로 만든다.
+         *
+         * 머리가 여럿일 수 있다 — 두 조각이 다 x- 모양인 참조가 계약에 실재한다. 그때는
+         * 조각마다 「그 자리에서 끝까지」를 하나씩 내어 **둘 다** 판정한다. 각각이 독립으로
+         * 해소돼야 하는 주장이므로 줄이지 않는다 — fail-closed 다.
+         *
+         * 각 조각에서 대괄호와 그 뒤를 지운다(`fields[0]` → `fields`). **배열은 이름 있는
+         * 키 층이 아니고**([ContractSpec.keyChains] 가 같은 규약으로 경로를 모은다), 이
+         * 저장소의 주석은 리스트 원소를 `fields[].limit`·`fields[0].limit` 로 적는다.
+         * 실측(2026-08-21): 이 정규화 없이는 점 참조 43종 중 **6종이 오탐**이고 여섯 다
+         * 대괄호 형태 하나였다.
+         */
+        private fun referencesInToken(
+            file: String,
+            token: String,
+        ): List<NamedReference> {
+            val segments =
+                token
+                    .split('.')
+                    .map { it.trim('`', '[', ']', '*', ',', ':', ';', '?', '!', ')').substringBefore('[') }
+                    .filter { it.isNotEmpty() }
+            return segments.indices.mapNotNull { index ->
+                val head = segments[index]
+                if (!isTestName(head) && !isExtensionNode(head)) {
+                    null
+                } else {
+                    NamedReference(file, head, segments.subList(index, segments.size).joinToString("."))
+                }
+            }
+        }
 
         private fun sources(root: Path): List<Path> =
             walk(root) { path -> path.extension == KOTLIN_EXTENSION || path.extension in CONFIG_EXTENSIONS }
