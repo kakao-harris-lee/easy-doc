@@ -3,34 +3,11 @@ package kr.easydoc.infrastructure.db
 import java.sql.Connection
 import javax.sql.DataSource
 
-/**
- * PostgreSQL public 스키마의 구조를 결정적인 텍스트로 뽑는다.
- *
- * 계획 §4.2-2·§4.2-4가 요구하는 두 가지를 같은 도구로 처리하기 위한 것이다.
- *
- * 1. **V1이 Alembic 결과를 정말 재현하는가** — 빈 DB에 V1만 적용한 지문이
- *    Alembic `0001~0006` 을 적용한 지문과 같아야 한다. `PythonSchemaBaselineTest` 가 본다.
- * 2. **기존 DB를 baseline 해도 되는가** — Flyway 이력이 없는 기존 스키마의 지문이
- *    기준선과 같을 때만 baseline 을 기록한다. [FlywayBaselineGuard] 가 본다.
- *
- * 해시가 아니라 **여러 줄 텍스트**를 쓴다. 해시는 "다르다"만 알려주지만 텍스트는
- * 어디가 다른지 diff 로 바로 보여준다. 스키마가 어긋난 상황은 대개 급할 때 발견되고,
- * 그때 필요한 것은 값이 아니라 원인이다.
- *
- * ## 제외 대상
- *
- * `alembic_version` 과 `flyway_schema_history` 는 지문에서 뺀다. 둘은 마이그레이션 도구의
- * 장부이지 애플리케이션 스키마가 아니고, 두 경로(Alembic 적용 / Flyway 적용)에서
- * 정확히 한쪽에만 존재하므로 넣으면 지문이 절대 일치할 수 없다.
- */
+// Python 기준선 검증: `PythonSchemaBaselineTest`.
+
+/** PostgreSQL public 스키마의 구조를 결정적인 텍스트로 뽑는다. */
 object SchemaFingerprint {
-    /**
-     * 지문 질의.
-     *
-     * 컬럼 **서수**(`a.attnum`)까지 담는 이유: Alembic 은 `0004`·`0006` 에서 `ADD COLUMN`
-     * 으로 컬럼을 붙였고 그 컬럼들이 뒤쪽 서수를 갖는다. 서수를 빼면 V1 이 컬럼을 다른
-     * 순서로 선언해도 지문이 같아져, `SELECT *` 순서와 COPY 형식이 조용히 달라진다.
-     */
+    /** 지문 질의. */
     private val FINGERPRINT_SQL =
         """
         WITH t AS (
@@ -100,13 +77,7 @@ object SchemaFingerprint {
             }
         }
 
-    /**
-     * 저장소에 기록된 Python 기준선 지문.
-     *
-     * 이 파일은 빈 DB에 `uv run alembic upgrade head` 를 실제로 돌려 뽑았다.
-     * 사람이 손으로 적은 값이 아니다. `#` 로 시작하는 줄은 생성 절차를 적은 주석이라
-     * 지문에서 뺀다.
-     */
+    /** 저장소에 기록된 Python 기준선 지문. */
     fun expectedPythonBaseline(): String {
         val resource =
             SchemaFingerprint::class.java
@@ -119,12 +90,7 @@ object SchemaFingerprint {
             .joinToString(separator = "\n", postfix = "\n")
     }
 
-    /**
-     * 두 지문의 차이를 사람이 읽을 수 있게 만든다.
-     *
-     * 순서가 결정적이라 집합 차이만으로 충분하다 — 어느 줄이 없어졌고 어느 줄이 늘었는지가
-     * 곧 원인이다.
-     */
+    /** 두 지문의 차이를 사람이 읽을 수 있게 만든다. */
     fun describeDifference(
         expected: String,
         actual: String,

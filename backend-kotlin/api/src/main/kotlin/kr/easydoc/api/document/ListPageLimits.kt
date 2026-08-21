@@ -24,23 +24,13 @@ package kr.easydoc.api.document
 // 계약이 쿼리 파라미터에 건 스키마 제약이다. `core` 에 두면 도메인이 「한 번에 100건」이라는
 // 전송 계층의 판단을 알게 된다.
 
-/**
- * `limit` 의 하한. 계약 `x-input-limits.list_limit.min`.
- *
- * `Long` 인 것은 `@jakarta.validation.constraints.Min` 의 인자 타입이 `long` 이기 때문이다.
- */
+/** `limit` 의 하한. 계약 `x-input-limits.list_limit.min`. */
 const val LIST_LIMIT_MIN: Long = 1
 
 /** `limit` 의 상한. 계약 `x-input-limits.list_limit.max`. */
 const val LIST_LIMIT_MAX: Long = 100
 
-/**
- * `limit` 의 기본값. 계약 `x-input-limits.list_limit.default`.
- *
- * **문자열이다** — `@RequestParam(defaultValue = ...)` 가 문자열만 받는다(바인딩 전 단계라
- * 타입이 정해지지 않았다). 숫자와 문자열 두 벌을 두지 않는 이유는 두 벌이 갈리기 때문이고,
- * 대조 테스트가 이 문자열을 정수로 읽어 계약과 맞춘다.
- */
+/** `limit` 의 기본값. 계약 `x-input-limits.list_limit.default`. */
 const val LIST_LIMIT_DEFAULT: String = "20"
 
 /** `offset` 의 하한. 계약 `x-input-limits.list_offset.min`. **상한은 계약에 없다.** */

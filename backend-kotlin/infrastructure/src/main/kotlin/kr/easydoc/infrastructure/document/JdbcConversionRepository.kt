@@ -13,24 +13,7 @@ import java.sql.ResultSet
 import java.time.OffsetDateTime
 import java.util.UUID
 
-/**
- * `conversions` 테이블 접근. 스키마는 `V1__python_schema_baseline.sql` + `V3`·`V4` 가 정한다.
- *
- * ## 대기 중 변환도 **봉투 두 값을 적는다**
- *
- * 암호문 세 열이 전부 NULL 인 채로 태어나지만 `encryption_scheme`·`key_version` 은 적힌다.
- * `V3` 주석의 판단 그대로다 — *"암호문이 아직 없는 행도 앞으로 쓸 세대를 적어 두는 편이,
- * 나중에 NULL 을 해석하는 규칙을 만드는 것보다 낫다."* 그리고 `V3` 가 DEFAULT 를 없앴으므로
- * **빠뜨리면 NOT NULL 위반으로 즉시 실패한다.**
- *
- * `missing_placeholders` 는 DEFAULT `'[]'` 를 그대로 쓴다. 봉투 두 값과 달리 이 기본값은
- * 데이터에 대해 **참**이기 때문이다 — 아직 변환하지 않은 행에 유실된 자리표시자는 없다.
- *
- * ## 예외 처리는 [JdbcDocumentRepository] 와 같은 규약이다
- *
- * 원인 체인을 끊고 로그에는 SQLSTATE 만 남긴다 — 변환 행의 제약 위반 `DETAIL` 에는
- * **암호문 세 열이 통째로** 실린다.
- */
+/** `conversions` 테이블 접근. 스키마는 `V1__python_schema_baseline.sql` + `V3`·`V4` 가 정한다. */
 class JdbcConversionRepository(private val jdbc: JdbcClient) : ConversionRepository {
     override fun insertPending(
         id: UUID,
@@ -74,21 +57,7 @@ class JdbcConversionRepository(private val jdbc: JdbcClient) : ConversionReposit
             .optional()
             .orElse(null)
 
-    /**
-     * 세 열과 봉투 두 값을 **한 UPDATE 로** 바꾼다.
-     *
-     * 열별 갱신 메서드를 두지 않는 것이 이 설계의 요점이다 — 두 문장으로 나누면 "세대는 v2
-     * 인데 한 열은 v1 암호문" 인 중간 상태가 생기고 그 행은 영원히 열리지 않는다. 그 성질을
-     * 재는 것은 문장 수 계측이다(`CountingDataSource`). **그리고 그 규약을 소스 전수에서
-     * 강제하는 것은 `EnvelopeColumnWriteGuardTest` 다**(게이트 27 ②).
-     *
-     * 조건은 [expected] — **잠근 채 읽은 그 행 전부**다. 세 열의 `null` 도
-     * `IS NOT DISTINCT FROM` 으로 비교한다: 「비어 있었다」가 「누가 채웠다」로 바뀐 것이
-     * 이 조건이 잡아야 할 사건이라, `=` 로 두면 널이 널을 만나 조건이 통째로 UNKNOWN 이 되고
-     * 그 행은 **영영 회전되지 않는다.**
-     *
-     * `updated_at` 을 건드리지 않는다 — 재암호화는 내용의 변경이 아니다. 사유는 포트 KDoc.
-     */
+    /** 세 열과 봉투 두 값을 **한 UPDATE 로** 바꾼다. */
     override fun rewriteEnvelope(
         expected: ConversionEnvelope,
         scheme: String,
@@ -152,11 +121,7 @@ class JdbcConversionRepository(private val jdbc: JdbcClient) : ConversionReposit
         )
     }
 
-    /**
-     * 열 하나를 봉투와 묶어 읽는다. NULL 이면 `null` — **빈 바이트 배열로 바꾸지 않는다.**
-     *
-     * 「값이 없다」와 「빈 값이다」를 섞으면 회전이 없던 내용을 지어내게 된다.
-     */
+    /** 열 하나를 봉투와 묶어 읽는다. NULL 이면 `null` — **빈 바이트 배열로 바꾸지 않는다.** */
     private fun sealedOrNull(
         rs: ResultSet,
         column: String,

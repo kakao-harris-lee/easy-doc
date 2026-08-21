@@ -21,30 +21,7 @@ import tools.jackson.databind.ObjectMapper
 import java.nio.charset.StandardCharsets
 import java.util.UUID
 
-/**
- * `POST /documents` 의 계약 — 명세 `04_contract-keeper_documents-test-spec.md` 의 **C-M 계층**.
- *
- * 여기 있는 것: **DC-1 · DC-2 · DC-3 · DC-8 · DC-9 · DC-10 · DC-11 · DC-22 · DC-23**.
- *
- * ## 기대값을 코드에 적지 않는다
- *
- * 상태 코드·헤더 값·상한·`detail` 문구·스키마 키 집합을 **전부 [ContractSpec] 이 계약
- * 파일에서 읽는다**. 값을 여기 적으면 계약이 바뀌어도 테스트가 옛 값으로 통과한다 —
- * 그 순간 계약이 되는 것은 계약 파일이 아니라 이 파일이다.
- *
- * ## 계층 (명세 §5)
- *
- * `@WebMvcTest` 다. 여기서 재는 응답은 전부 **디스패처를 통과해** 만들어진다 — 202 성공
- * 응답과 `@RestControllerAdvice` 가 만든 422 다.
- *
- * **업로드(multipart)는 여기 없다.** 명세 §5-1 이 그것을 금지한다 — MockMvc 는 컨테이너가
- * 만드는 응답과 파트 파싱을 **재현하지 못하면서 통과한다**. DC-4~DC-7·DC-12~DC-15 와
- * 401 갈래(DC-20·DC-21), 소유권 404(DC-16·DC-17)는 [DocumentEndpointReachTest] 가 실제
- * 소켓과 실 PostgreSQL 로 잰다.
- *
- * 저장소는 [AuthSliceBeans] 의 대역이지만 **유스케이스는 실물**이라, 계약이 못박은 검사
- * 순서(크기 → 추출 → 길이 → 소유권 → 저장)를 이 슬라이스가 실제로 밟는다.
- */
+/** `POST /documents` 의 계약 — 명세 `04_contract-keeper_documents-test-spec.md` 의 C-M 계층. */
 @WebMvcTest
 @Import(PrivateResponseHeadersConfig::class, AuthSliceBeans::class)
 class DocumentContractTest {
@@ -58,8 +35,6 @@ class DocumentContractTest {
     private lateinit var workspaces: InMemoryWorkspaceRepository
 
     private val json = ObjectMapper()
-
-    // ================================================================ 성공 (DC-1 · DC-2 · DC-3)
 
     @Test
     @DisplayName("DC-1 붙여넣기 성공 — 계약의 성공 상태 · 사적 헤더 2종(개수까지) · 최상위 키가 정확히 required")
@@ -76,8 +51,6 @@ class DocumentContractTest {
     fun `Location 이 본문 식별자를 가리킨다`() {
         val response = createFromText(newOwner(), textBody("안내문 본문입니다"))
 
-        // 형식 문자열을 코드에 적지 않는다 — **경로 템플릿과 변수 이름을 계약에서 읽어**
-        // 조립한다. 계약이 경로를 옮기면 이 단언이 새 경로를 요구한다(N-28 이 재는 축).
         val parameter = ContractSpec.pathParameters(CONVERSION_ITEM_PATH).single { it.location == PATH_LOCATION }
         val conversionId = bodyOf(response).required(CONVERSION_ID_PROPERTY).toString()
         val expected = CONVERSION_ITEM_PATH.replace("{${parameter.name}}", conversionId)
@@ -85,7 +58,7 @@ class DocumentContractTest {
         assertThat(response.getHeader(HttpHeaders.LOCATION))
             .withFailMessage("Location 이 본문의 conversion_id 를 가리키지 않는다")
             .isEqualTo(expected)
-        // 식별자가 실제로 UUID 형식인지도 본다 — 계약이 그 형식을 선언했다.
+
         assertThat(parameter.format).isEqualTo(UUID_FORMAT)
         assertThat(runCatching { UUID.fromString(conversionId) }.isSuccess).isTrue()
     }
@@ -100,8 +73,6 @@ class DocumentContractTest {
                 ContractSpec.successStatus(DOCUMENTS_PATH, POST),
             )
 
-        // **선언이 비어 있으면 실패다.** `Location` 이 계약에서 지워지면 DC-2 는 여전히
-        // `paths` 에서 템플릿을 읽어 통과할 수 있으므로, 그 손상을 먼저 잡는 자리가 여기다.
         assertThat(declared)
             .withFailMessage("계약이 성공 응답에 헤더를 하나도 선언하지 않았다 — 대조할 대상이 없다")
             .isNotEmpty()
@@ -113,8 +84,6 @@ class DocumentContractTest {
                 .isNotNull()
         }
     }
-
-    // ================================================================ 본문 길이·정의역 (DC-8 ~ DC-11)
 
     @Test
     @DisplayName("DC-8 본문이 공백뿐 → 422 · detail 문자열 · 값이 계약 422 예시 empty_body 와 같다")
@@ -134,7 +103,7 @@ class DocumentContractTest {
         val response = createFromText(newOwner(), textBody("가".repeat(limit + 1)))
 
         assertDeclaredStatus(response, UNPROCESSABLE, DOCUMENTS_PATH, POST)
-        // 스키마 층(`@Size`)으로 구현하면 여기서 **배열**이 나간다 — F3 이 금지한 형태다.
+
         assertDetailIsString(response)
         assertThat(detailText(response)).isEqualTo(ContractSpec.requestFieldConstraint(TEXT_FIELD).singleDetail)
         assertThat(detailText(response)).isEqualTo(example(TOO_LONG_EXAMPLE))
@@ -154,12 +123,6 @@ class DocumentContractTest {
     @Test
     @DisplayName("DC-11 원시 길이는 초과인데 제어문자를 걷어내면 상한 이하 → **422 다**(통과가 아니다)")
     fun `본문은 정규화 전 길이로 잰다`() {
-        // **기대값을 계약에서 읽는다.** 계약이 `text` 를 원시 값으로, `edited_text` 를 정규화
-        // 후로 재라고 정했고(`x-request-field-constraints`, 미결 항목 x-open-asymmetry 의
-        // 현행 (가)), 그 축이 뒤집히면 이 케이스의 **기대 자체가 뒤집혀야** 한다.
-        //
-        // 축을 코드에 적어 두면 계약이 바뀌어도 이 케이스가 옛 축을 요구한다 — 실측으로
-        // 확인했다: 처음 판은 「422」를 못박아 두어 N-25(축 변경)에서 **깨지지 않았다**.
         val constraint = ContractSpec.requestFieldConstraint(TEXT_FIELD)
         val body = "가".repeat(constraint.limit) + CONTROL_CHAR.repeat(CONTROL_CHARS)
 
@@ -169,14 +132,11 @@ class DocumentContractTest {
             assertDeclaredStatus(response, UNPROCESSABLE, DOCUMENTS_PATH, POST)
             assertThat(detailText(response)).isEqualTo(example(TOO_LONG_EXAMPLE))
         } else {
-            // 정규화 후로 재라고 계약이 정하면 이 본문은 상한 이하이므로 **통과해야** 한다.
             assertThat(response.status)
                 .withFailMessage("계약이 정규화 후 측정을 지정했는데 원시 길이로 거절했다")
                 .isEqualTo(ContractSpec.successStatus(DOCUMENTS_PATH, POST))
         }
     }
-
-    // ================================================================ 검증 실패 모양 (DC-22 · DC-23)
 
     @Test
     @DisplayName("DC-22 필수 필드 누락 → 422 · detail 배열 · 항목 키가 정확히 ValidationErrorItem.required (X-C2)")
@@ -208,9 +168,6 @@ class DocumentContractTest {
     @Test
     @DisplayName("생략한 title·workspace_id 가 명시적 null 로 와도 접수된다 — 전역 Nulls.FAIL 을 이 두 필드에서 연다")
     fun `널 제목과 널 작업 공간을 받는다`() {
-        // React `createDocumentFromText` 가 제목이 없을 때 **`title: null` 을 언제나 싣는다.**
-        // 전역 기본값이 `Nulls.FAIL` 이라 여는 애너테이션이 없으면 이 요청이 통째로 422 가
-        // 되고, 그 사고는 계약(anyOf[string, null])에도 어긋난다.
         val explicitNulls =
             json.writeValueAsString(
                 mapOf(
@@ -223,8 +180,6 @@ class DocumentContractTest {
         assertThat(createFromText(newOwner(), explicitNulls).status)
             .isEqualTo(ContractSpec.successStatus(DOCUMENTS_PATH, POST))
     }
-
-    // ================================================================ 요청 조립
 
     private fun createFromText(
         owner: UUID,
@@ -245,20 +200,12 @@ class DocumentContractTest {
 
     private fun textBody(text: String): String = json.writeValueAsString(mapOf(TEXT_PROPERTY to text))
 
-    /**
-     * 계정과 **기본 작업 공간**을 함께 만든다.
-     *
-     * 작업 공간이 하나도 없으면 업로드가 `StorageException`(500) 이 된다 — 그것은 우리
-     * 불변식이 깨진 상태를 가리키는 갈래이고, 가입이 언제나 하나를 만들기 때문에 실제로는
-     * 나오지 않는다. 여기서 함께 만들지 않으면 계약 케이스가 전부 그 500 을 재게 된다.
-     */
+    /** 계정과 기본 작업 공간을 함께 만든다. */
     private fun newOwner(): UUID {
         val id = users.create("doc-${UUID.randomUUID()}@example.test", STUB_HASH).id
         workspaces.createDefault(id)
         return id
     }
-
-    // ================================================================ 단언 도구
 
     private fun assertPrivateHeaders(response: MockHttpServletResponse) {
         ContractSpec.globalHeaderValues().forEach { (header, value) ->
@@ -334,12 +281,7 @@ class DocumentContractTest {
         const val EMPTY_BODY_EXAMPLE = "empty_body"
         const val TOO_LONG_EXAMPLE = "too_long"
 
-        /**
-         * 정규화(`stripControlChars`)하면 사라지지만 **원시 길이에는 세어지는** 문자.
-         *
-         * 이스케이프로 적는다 — 소스에 원시 제어 바이트를 싣지 않는다(쓰기 도구가 실제로
-         * 그것을 실어 이 파일을 한 번 깨뜨렸다). `WorkspaceContractTest` 와 같은 값이다.
-         */
+        /** 정규화(`stripControlChars`)하면 사라지지만 원시 길이에는 세어지는 문자. */
         const val CONTROL_CHAR = "\u0001"
         const val CONTROL_CHARS = 5
     }

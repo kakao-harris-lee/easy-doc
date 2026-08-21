@@ -16,21 +16,7 @@ import org.springframework.test.web.servlet.get
 import tools.jackson.databind.ObjectMapper
 import java.nio.charset.StandardCharsets
 
-/**
- * `GET /health` 가 계약(`contracts/easy-doc-v1.yaml`)대로 응답하는지 확인한다.
- *
- * `@WebMvcTest` 라 DataSource·Flyway 없이 돈다 — **그리고 그 상태 자체가 계약 조항이다**:
- * *"의존 서비스가 하나도 배선되지 않았으면 `{}` 이고 `status` 는 `ok` 다"*. 여기서 재는 것이
- * 그 팔이고, 실제 배선(두 키가 참)은 `ApiStartupOnEmptyDatabaseTest` 와
- * `ApiStartupOnPythonSnapshotTest` 가 실 PostgreSQL 위에서 잰다.
- *
- * ## 기대값을 코드에 적지 않는다
- *
- * 키 집합·상태 값 집합을 [ContractSpec] 이 계약 파일에서 읽는다. 종전 판은
- * `json("""{"status":"ok"}""", STRICT)` 였고, 그 리터럴이 **계약이 요구하는 `checks` 필드가
- * 없다는 사실을 가리고 있었다** — 계약을 읽지 않는 단언은 계약이 바뀌어도 옛 값으로
- * 통과한다(게이트 28 P-8).
- */
+/** `GET /health` 가 계약(`contracts/easy-doc-v1.yaml`)대로 응답하는지 확인한다. */
 @WebMvcTest(HealthController::class)
 @Import(PrivateResponseHeadersConfig::class, kr.easydoc.api.support.AuthSliceBeans::class)
 class HealthContractTest {
@@ -71,8 +57,6 @@ class HealthContractTest {
     fun `배선이 없으면 빈 검사와 ok 다`() {
         val body = bodyOf(health())
 
-        // 이 컨텍스트에는 DataSource 도 Flyway 도 없다. 「확인 안 했다」를 `false` 로 적으면
-        // 진단이 거짓말이 되므로 **키 자체가 없어야** 한다(계약).
         assertThat(body[CHECKS_PROPERTY]).isInstanceOf(Map::class.java)
         assertThat(body[CHECKS_PROPERTY] as Map<*, *>).isEmpty()
         assertThat(body[STATUS_PROPERTY]).isEqualTo(OK_STATUS)
@@ -92,9 +76,6 @@ class HealthContractTest {
                 "type",
             )
 
-        // 오늘 이 슬라이스에서는 `checks` 가 비어 있어 값 자체를 관측할 수 없다. 그래서 재는
-        // 것은 **계약이 무엇을 요구하는가**와, 응답 타입이 그것을 담을 수 있는가다. 실제 값의
-        // 타입은 기동 테스트가 실 배선에서 잰다.
         assertThat(declaredType).isEqualTo("boolean")
         (bodyOf(health())[CHECKS_PROPERTY] as Map<*, *>).values.forEach {
             assertThat(it).isInstanceOf(Boolean::class.javaObjectType)
@@ -111,13 +92,6 @@ class HealthContractTest {
     @Test
     @DisplayName("사적 응답 헤더를 붙인다 (전역 부착 — 계약이 `GET /health` 를 명시적으로 포함한다)")
     fun `health 응답에도 사적 응답 헤더가 있다`() {
-        // 2026-08-12 리더 판정(OQ-1 종결)으로 **부호가 뒤집힌 단언**이다. 종전 판은
-        // "/health 는 열거 10곳에 없으므로 헤더가 없다"였고, 그 주석은 "무심코 no-store 를
-        // 전역으로 붙이는 것"을 회귀로 규정했다. 이제 전역 부착이 계약이므로 방향이 반대다.
-        //
-        // /health 는 이 저장소에서 전역 부착을 가장 값싸게 지키는 자리다. 개인정보도
-        // 자격증명도 없어 "얻는 것이 없다"고 빼기 쉬운데, 그렇게 빼기 시작하면 열거식으로
-        // 되돌아간다.
         val response = health()
 
         ContractSpec.globalHeaderValues().forEach { (header, value) ->

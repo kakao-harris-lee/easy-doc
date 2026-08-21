@@ -20,36 +20,7 @@ import java.net.http.HttpResponse
 import java.util.UUID
 import kotlin.random.Random
 
-/**
- * `DELETE /documents/{document_id}` 의 **실측** 계약 — 명세 §5 의 C-R·C-I 계층.
- *
- * 여기 있는 것: **DD-1 · DD-2 · DD-3 · DD-4 · DD-5 · DD-6 · DD-7** + 소유권 은닉의 시간 축
- * + 공백 경로 조각.
- *
- * ## 왜 MockMvc 가 아닌가 (명세 §5-1)
- *
- * **C-R** — DD-7 은 **인증 실패 응답**이다. 인증이 경로 변수 변환보다 먼저인지를 목으로
- * 재면 컨테이너·필터 체인이 빠진 배선을 재게 되고, **그런데도 통과한다.** 이 저장소는
- * 헤더 쪽에서 이미 그 형태의 거짓 초록을 겪었다(계약 `x-phase3-measurement`).
- *
- * **C-I** — DD-2·DD-3·DD-4 는 두 사용자와 실제 행이 있어야 뜻이 있고, DD-5 는 **FK 연쇄가
- * 실제로 도는지**를 재므로 실 PostgreSQL 밖에서는 성립하지 않는다.
- *
- * ## 문서를 API 로 만든다
- *
- * `INSERT` 를 직접 쓰지 않는다 — 그러면 삭제가 지우는 행의 모양을 테스트가 정하게 되고,
- * 저장 경로가 실제로 쓰는 컬럼 조합(변환 행·작업 행까지)과 갈릴 수 있다.
- * `POST /documents` 를 거치면 삭제가 지우는 것이 **제품이 쓴 행**이다
- * ([DocumentListReachTest] 와 같은 규칙).
- *
- * ## DD-5 의 HTTP 팔은 **여기서 닫히지 않는다**
- *
- * 명세 DD-5 는 *"삭제 후 그 문서의 변환 조회 → 404"* 로 적었고 `GET /conversions/{id}` 는
- * **C6** 다. 구현이 없는 자리를 404 로 재면 「핸들러가 없어서 404」가 「파기됐으니 404」로
- * 둔갑하므로 그 팔을 쓰지 않는다. 대신 같은 성질을 **저장 상태**로 잰다 — 변환 행과 작업
- * 행이 DB 에서 사라졌음을 직접 관측한다. 그쪽이 응답보다 강한 근거이기도 하다(계약이
- * 약속한 것은 조회 실패가 아니라 파기다).
- */
+/** `DELETE /documents/{document_id}` 의 실측 계약 — 명세 §5 의 C-R·C-I 계층. */
 @SpringBootTest(
     webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
     properties = ["easydoc.auth.jwt-secret=$DOCUMENT_DELETE_TEST_SECRET"],
@@ -60,8 +31,6 @@ class DocumentDeleteReachTest {
     private var port: Int = 0
 
     private val json = ObjectMapper()
-
-    // ================================================================ DD-1 — 성공
 
     @Test
     @DisplayName("DD-1 내 문서 삭제 → 204 · **본문 길이 0** · 사적 헤더 2종 **있음**(전역 부착으로 부호 반전, X-D2)")
@@ -75,9 +44,7 @@ class DocumentDeleteReachTest {
         assertThat(response.body())
             .describedAs("지운 내용을 되돌려 주면 방금 파기한 문서를 다시 밖으로 내보내는 셈이다")
             .isEmpty()
-        // 「204 니까 헤더도 없다」로 쓰면 틀린다 — 2026-08-12 리더 판정으로 전역 부착이
-        // 요구가 됐고, 이 오퍼레이션은 하한선 10곳에 없으므로 **전역 장치만이** 헤더를 붙인다.
-        // 즉 이 단언은 전역 부착이 실제로 도는지를 가장 직접적으로 재는 자리다.
+
         assertPrivateHeaders(response)
     }
 
@@ -91,8 +58,6 @@ class DocumentDeleteReachTest {
         assertThat(response.headers().firstValue(CONTENT_TYPE)).isEmpty
     }
 
-    // ================================================================ DD-5 — 파기의 저장 상태 근거
-
     @Test
     @DisplayName("DD-5 삭제가 문서·**변환**·**작업** 행을 함께 없앤다 — FK CASCADE 연쇄(저장 상태로 관측)")
     fun `삭제가 변환과 작업 행까지 파기한다`() {
@@ -100,8 +65,6 @@ class DocumentDeleteReachTest {
         val subject = subjectOf(token)
         val documentId = createDocument(token)
 
-        // 파기 전 — 세 테이블에 행이 있고, 원문 암호문이 비어 있지 않다. 이 단언이 없으면
-        // 「삭제 후 0건」이 「애초에 0건」과 구분되지 않는다.
         assertThat(documentRows(subject)).isEqualTo(1)
         assertThat(conversionRows(documentId)).isEqualTo(1)
         assertThat(jobRows(documentId)).isEqualTo(1)
@@ -109,8 +72,6 @@ class DocumentDeleteReachTest {
 
         delete(token, documentId).also { assertDeclaredStatus(it, ContractSpec.successStatus(ITEM_PATH, DELETE)) }
 
-        // 파기 후 — **표시가 아니라 파기다.** 암호문과 봉투가 실제로 사라졌는지는 행이 없다는
-        // 것으로만 확인할 수 있다(열이 남아 있으면 아래 첫 단언이 1 이다).
         assertThat(documentRows(subject)).describedAs("문서 행이 남았다 — 표시만 하고 지우지 않았다").isZero()
         assertThat(conversionRows(documentId)).describedAs("변환 행이 남았다 — CASCADE 가 끊겼다").isZero()
         assertThat(jobRows(documentId))
@@ -133,8 +94,6 @@ class DocumentDeleteReachTest {
         assertThat(jobRows(theirDocument)).isEqualTo(1)
     }
 
-    // ================================================================ DD-2 · DD-3 — 소유권 은닉
-
     @Test
     @DisplayName("DD-2 타인 소유 문서 → **404 이고 403 이 아니다** · detail 이 계약 404 예시와 같다 (X-B1)")
     fun `타인 문서 삭제는 404 이고 403 이 아니다`() {
@@ -142,7 +101,6 @@ class DocumentDeleteReachTest {
 
         val response = delete(newAccount(), theirDocument)
 
-        // "404 가 맞다"만 단언하면 구현이 403 을 내도 다른 테스트가 안 잡을 수 있다.
         assertThat(response.statusCode()).isNotEqualTo(FORBIDDEN)
         assertDeclaredStatus(response, NOT_FOUND)
         assertThat(bodyOf(response)[DETAIL])
@@ -161,13 +119,7 @@ class DocumentDeleteReachTest {
         assertThat(conversionRows(theirDocument)).isEqualTo(1)
     }
 
-    /**
-     * **성질 P1 — 응답 구별 불가.** 판정은 [OwnershipConcealment] 한 벌이 진다.
-     *
-     * 종전 이 케이스는 본문을 **디코딩된 문자열**로 비교했다 — `privacy-gate` 회차 2 X1-1 이
-     * 「형제 셋이 전부 바이트가 아니라 문자열을 본다」로 지목한 자리다. 은닉의 요구는
-     * 「같은 글자가 나간다」가 아니라 **「나간 바이트가 같다」**다.
-     */
+    /** 성질 P1 — 응답 구별 불가. 판정은 [OwnershipConcealment] 한 벌이 진다. */
     @Test
     @DisplayName("DD-3 없는 식별자와 타인 식별자의 **상태·본문 원시 바이트·헤더 이름 집합이 완전히 같다** (X-B2)")
     fun `없는 것과 남의 것이 구분되지 않는다`() {
@@ -180,68 +132,7 @@ class DocumentDeleteReachTest {
         OwnershipConcealment.assertIndistinguishable("DELETE $ITEM_PATH", absent, others)
     }
 
-    /**
-     * **소유권 은닉의 셋째 축 — 응답 시간.**
-     *
-     * 상태 코드와 본문이 같아도 **일하는 양**이 다르면 존재 여부가 새어 나간다. 「먼저 읽고
-     * 나서 소유자를 비교한다」는 구현은 타인 자원일 때만 행을 읽으므로 그 차이가 시간에
-     * 남는다 — `WorkspaceEndpointReachTest` 의 같은 축과 동일한 형태이고, **문턱도 같은
-     * 값(1.5)** 이다. 두 게이트가 같은 성질을 재는데 문턱이 다르면 다음 사람이 어느 쪽을
-     * 기준으로 삼을지 알 수 없다.
-     *
-     * ## 이 축은 **빨개질 수 있다** — 양성 대조로 확인했다 (R-10-②)
-     *
-     * 초판에는 이 축에 대한 증거가 「성질이 성립할 때 초록」과 「성질이 깨졌을 때도 초록」
-     * 둘뿐이었다. **빨개진 관측이 하나도 없는 축은 초록이 아무 뜻이 없고**, 그런데도
-     * 소유권 은닉의 「세 축」 중 하나로 세어져 덮는 범위를 부풀린다. 그래서 크기를 정한
-     * 비대칭을 주입해 잰다 — `deleteOwned` 가 두 팔 모두 존재 여부 SELECT 를 돌리고
-     * **행이 있을 때만** 정해진 시간만큼 멈추게 한 변이다(2026-08-21, `--rerun-tasks`).
-     *
-     * | 주입 | 없음 팔 | 타인 팔 | 비 | 결과 |
-     * |---|---|---|---|---|
-     * | 20.0ms | 6.85ms | 33.85ms | 4.94 | **빨강** |
-     * | 4.0ms | 3.78ms | 9.25ms | 2.45 | **빨강** |
-     * | 2.0ms | 3.77ms | 6.78ms | 1.80 | **빨강** |
-     * | 1.5ms | 3.67ms | 5.76ms | 1.57 | **빨강** |
-     * | 1.0ms | 3.40ms | 5.17ms | 1.52 | **빨강** |
-     * | 0.5ms | — | — | — | 초록 |
-     * | 0.25ms | — | — | — | 초록 |
-     *
-     * **탐지 하한은 0.5~1.0ms 사이**이고, 오늘 기준선(없음 팔 중앙값) 약 3ms 에서 그것은
-     * 곧 **문턱 그대로 = 1.5배 이상의 격차**다. 즉 이 축의 선언은 **「1.5배 이상의 격차를
-     * 잡는다」**이고 그 아래는 잡지 않는다.
-     *
-     * **하한은 배수로 고정되고 절대값은 기준선에 따라 커진다.** 응답이 느려지면 잡는 절대
-     * 격차도 같은 비율로 커진다 — 그 사실이 이 축의 알려진 한계이고, 그래서 여기 적는 것은
-     * 절대 밀리초가 아니라 **배수**다.
-     *
-     * ## 거짓 양성은 관측되지 않았다
-     *
-     * 주입 없는 기준선 실행 **7회**(통과 확인 3회 + 문턱을 1.0 으로 낮춰 수치를 읽은 4회)에서
-     * 비가 1.018·1.039·1.062·1.110 이었다 — **최대 1.110**, 문턱 1.5 까지 여유 약 26%.
-     * 그보다 여유가 줄면 그것은 깜박임이 아니라 **재야 할 회귀**다.
-     *
-     * ## 이 문턱이 무엇을 잡지 **못하는지**를 함께 적는다
-     *
-     * 형제 게이트가 실측으로 남긴 결론이 그대로 적용된다 — 소유 조건을 SQL `WHERE` 에서
-     * 빼고 「행을 읽은 뒤 Kotlin 에서 비교」하도록 바꾼 변이는 이 테스트를 **통과한다**
-     * (일회용 worktree 3회 실측 비 1.013·1.090·1.051). 이 회차의 M1 음성 대조에서도 이 축은
-     * **침묵했다.** 인덱스 적중과 불발의 차이는 밀리초 응답의 잡음에 묻힌다 — 위 표로
-     * 말하면 그 변이가 만드는 격차가 **1.5배에 못 미친다.**
-     *
-     * **그러므로 이 게이트는 「소유 조건이 SQL 을 떠났는가」를 재지 않는다.** 그것을 재는
-     * 것은 구조 축이다 — `OwnershipPredicateGuardTest` 의 정확 열거 핀이 그 변이에서
-     * 빨개지고(`DELETE` 문이 핀의 미방어 목록으로 옮겨간다), `JdbcDocumentStoreTest` 의
-     * 문장 수 단언이 「읽고 나서 지운다」를 잡는다. 이 테스트가 남는 이유는 **그 구조가
-     * 옳아도 시간이 갈릴 수 있기** 때문이고, 잡는 크기가 1.5배라는 사실을 여기 적어 둔다.
-     *
-     * 두 경로를 **교차**로 잰다 — 한 그룹을 몰아 재면 JIT·풀·계획 캐시가 진행형으로 데워져
-     * 나중 그룹이 유리해지고, 그것은 격차를 **줄이는** 방향이라 마스킹이 된다.
-     *
-     * 삭제는 **파괴적**이므로 형제 게이트와 달리 같은 자원을 반복해 두드릴 수 없다. 두 경로
-     * 모두 **404 로 끝나는 요청**만 쓰는 것이 그 해결이다 — 아무것도 지워지지 않으므로 표본이
-     * 서로를 오염시키지 않는다. 재려는 것이 정확히 그 두 404 의 차이이기도 하다.
-     */
+    /** 소유권 은닉의 셋째 축 — 응답 시간. */
     @Test
     @DisplayName("소유권 404 의 응답 시간이 「없음」과 「타인 것」 사이에서 갈리지 않는다")
     fun `소유권 404 의 응답 시간이 갈리지 않는다`() {
@@ -262,8 +153,6 @@ class DocumentDeleteReachTest {
             ).isLessThan(MAX_TIMING_RATIO)
     }
 
-    // ================================================================ DD-4 — 비멱등
-
     @Test
     @DisplayName("DD-4 삭제 성공 직후 같은 식별자로 재요청 → **404**(204 가 아니다) — 멱등 구현이 여기서 갈린다")
     fun `이미 지운 문서는 404 다`() {
@@ -273,14 +162,10 @@ class DocumentDeleteReachTest {
 
         val again = delete(token, documentId)
 
-        // 멱등 204 를 내는 구현은 DD-2·DD-3 의 소유권 은닉과도 충돌한다 — 타인 자원에 204 를
-        // 주면 존재를 흘린다. 즉 이 케이스와 소유권 케이스는 같은 성질의 두 관측면이다.
         assertDeclaredStatus(again, NOT_FOUND)
         assertThat(bodyOf(again)[DETAIL])
             .isEqualTo(ContractSpec.pathExampleDetail(ITEM_PATH, DELETE, NOT_FOUND, NOT_FOUND_EXAMPLE))
     }
-
-    // ================================================================ DD-6 — 경로 변수
 
     @Test
     @DisplayName("DD-6 UUID 가 아닌 경로 변수 → 422 · detail **배열** · 항목 키 정확히 `ValidationErrorItem.required`")
@@ -296,15 +181,9 @@ class DocumentDeleteReachTest {
     fun `공백 경로 조각이 흡수되지 않는다`() {
         val response = delete(newAccount(), BLANK_SEGMENT)
 
-        // 널화 뒤 경로 변수가 널일 수 없어 `MissingPathVariableException` → 계약에 선언이 **0건**인
-        // 400 이 나가던 자리다(`TypedValueSlotInterceptor` KDoc 의 실측 표 셋째 줄). 그 인터셉터는
-        // 비문자열 `@PathVariable` 을 선언에서 유도하므로 이 새 엔드포인트가 자동으로 대상에 든다 —
-        // 이 케이스가 그 「자동으로」를 실제 요청으로 확인한다.
         assertDeclaredStatus(response, UNPROCESSABLE)
         assertValidationArray(response)
     }
-
-    // ================================================================ DD-7 — 인증
 
     @Test
     @DisplayName("DD-7 Authorization 이 없으면 401 이고 `WWW-Authenticate` 가 붙는다 (X-A1)")
@@ -322,7 +201,6 @@ class DocumentDeleteReachTest {
     fun `인증이 경로 변수 변환보다 먼저다`() {
         val response = delete(FORGED_TOKEN, NOT_A_UUID)
 
-        // 변환이 먼저 돌면 **토큰 없이 API 표면을 탐색**할 수 있다.
         assertDeclaredStatus(response, UNAUTHORIZED)
         assertThat(bodyOf(response)[DETAIL])
             .withFailMessage("위조 토큰 응답의 detail 이 문자열이 아니다 — 검증 실패 배열이 새어 나왔다")
@@ -340,8 +218,6 @@ class DocumentDeleteReachTest {
         assertThat(documentRows(subjectOf(token))).isEqualTo(1)
     }
 
-    // ================================================================ 측정
-
     private fun interleavedNotFoundMedians(
         token: String,
         othersId: String,
@@ -355,7 +231,7 @@ class DocumentDeleteReachTest {
         order.forEach { path ->
             val target = if (path == ABSENT) UUID.randomUUID().toString() else othersId
             val elapsed = measureMillis { delete(token, target) }
-            // 경로마다 첫 건은 버린다 — 커넥션·계획 캐시가 그 한 건에 몰린다.
+
             if (warmed.add(path)) return@forEach
             samples.getValue(path) += elapsed
         }
@@ -369,8 +245,6 @@ class DocumentDeleteReachTest {
     }
 
     private fun median(values: List<Double>): Double = values.sorted()[values.size / 2]
-
-    // ================================================================ 요청 조립
 
     private fun newAccount(): String {
         val email = "documentdelete${counter++}@example.test"
@@ -394,7 +268,7 @@ class DocumentDeleteReachTest {
         documentId: String,
     ): HttpResponse<String> = send(deleteRequest(token, documentId))
 
-    /** 같은 요청을 **바이트로** 받는다 — P1 만 디코딩을 지나지 않는 팔을 쓴다. */
+    /** 같은 요청을 바이트로 받는다 — P1 만 디코딩을 지나지 않는 팔을 쓴다. */
     private fun deleteBytes(
         token: String?,
         documentId: String,
@@ -404,7 +278,7 @@ class DocumentDeleteReachTest {
             HttpResponse.BodyHandlers.ofByteArray(),
         )
 
-    /** 두 팔이 **같은 요청 조립**을 쓰게 한다 — 조립이 갈리면 두 팔의 차이가 요청 차이가 된다. */
+    /** 두 팔이 같은 요청 조립을 쓰게 한다 — 조립이 갈리면 두 팔의 차이가 요청 차이가 된다. */
     private fun deleteRequest(
         token: String?,
         documentId: String,
@@ -431,13 +305,7 @@ class DocumentDeleteReachTest {
     private fun send(builder: HttpRequest.Builder): HttpResponse<String> =
         HttpClient.newHttpClient().send(builder.build(), HttpResponse.BodyHandlers.ofString(Charsets.UTF_8))
 
-    /**
-     * **P-21 — 경로 변수 이름을 계약에서 읽어 URL 을 조립한다.**
-     *
-     * [ContractSpec.pathVariable] 을 쓴다 — 계약이 이 경로의 변수를 **오퍼레이션 안에**
-     * 선언하고(작업 공간·변환 경로는 경로 수준에 적는다) 두 관용을 호출자가 알아야 할 이유가
-     * 없다. 사유는 그 접근자의 KDoc.
-     */
+    /** P-21 — 경로 변수 이름을 계약에서 읽어 URL 을 조립한다. */
     private fun itemPath(documentId: String): String =
         ITEM_PATH.replace("{${ContractSpec.pathVariable(ITEM_PATH, DELETE).name}}", documentId)
 
@@ -446,8 +314,6 @@ class DocumentDeleteReachTest {
             .payload(token)["sub"]
             .toString()
 
-    // ================================================================ 저장 상태 관측
-
     private fun documentRows(subject: String): Int =
         database.queryInt("SELECT count(*) FROM documents WHERE user_id = '$subject'")
 
@@ -455,7 +321,7 @@ class DocumentDeleteReachTest {
         database.queryInt("SELECT count(*) FROM conversions WHERE document_id = '$documentId'")
 
     /**
-     * 그 문서의 변환을 가리키는 작업 행 수. **조인으로 센다** — 작업 테이블에는 문서 식별자가
+     * 그 문서의 변환을 가리키는 작업 행 수. 조인으로 센다 — 작업 테이블에는 문서 식별자가
      * 없고(작업 id 가 변환 id 다), 변환 행이 함께 사라지므로 삭제 후에는 조인 결과가 0 이다.
      */
     private fun jobRows(documentId: String): Int =
@@ -467,8 +333,6 @@ class DocumentDeleteReachTest {
     /** 원문 암호문의 길이. 0 보다 커야 「지울 것이 실제로 있었다」가 성립한다. */
     private fun sourceCiphertextBytes(documentId: String): Int =
         database.queryInt("SELECT octet_length(source_text_encrypted) FROM documents WHERE id = '$documentId'")
-
-    // ================================================================ 단언 도구
 
     private fun assertPrivateHeaders(response: HttpResponse<String>) {
         ContractSpec.globalHeaderValues().forEach { (header, value) ->
@@ -493,7 +357,7 @@ class DocumentDeleteReachTest {
             .contains(status.toString())
     }
 
-    /** `detail` 이 **배열**이고 항목 키 집합이 정확히 `ValidationErrorItem.required` 다. */
+    /** `detail` 이 배열이고 항목 키 집합이 정확히 `ValidationErrorItem.required` 다. */
     private fun assertValidationArray(response: HttpResponse<String>) {
         val items = bodyOf(response)[DETAIL]
         assertThat(items)
@@ -528,7 +392,7 @@ class DocumentDeleteReachTest {
         private const val DOCUMENT_ID_PROPERTY = "document_id"
         private const val VALIDATION_ITEM_SCHEMA = "ValidationErrorItem"
 
-        /** 계약이 이 경로 404 의 인라인 예시에 붙인 이름. 값이 아니라 **이름**이라 여기 적는다. */
+        /** 계약이 이 경로 404 의 인라인 예시에 붙인 이름. 값이 아니라 이름이라 여기 적는다. */
         private const val NOT_FOUND_EXAMPLE = "not_found"
 
         private const val CONTENT_TYPE = "Content-Type"
@@ -553,7 +417,7 @@ class DocumentDeleteReachTest {
         /** 두 경로를 섞는 순서. 고정 시드라 실패가 재현된다. */
         private const val TIMING_SEED = 20260821L
 
-        /** 명세는 KDoc 에 있다 — `WorkspaceEndpointReachTest` 와 **같은 값**이다. */
+        /** 명세는 KDoc 에 있다 — `WorkspaceEndpointReachTest` 와 같은 값이다. */
         private const val MAX_TIMING_RATIO = 1.5
 
         /** 0 으로 나누지 않기 위한 바닥. 이보다 짧은 응답은 측정 분해능 밖이다. */

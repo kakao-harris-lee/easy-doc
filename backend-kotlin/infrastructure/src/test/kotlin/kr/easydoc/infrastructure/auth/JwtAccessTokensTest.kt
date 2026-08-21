@@ -17,18 +17,7 @@ import java.util.UUID
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
 
-/**
- * **HS256 토큰의 발급·검증** (`migration-safety-gate` I-9, 계약 `x-auth`).
- *
- * ## 만료 경계를 시계로 잰다
- *
- * `Clock` 을 주입해 `exp` 직전·직후를 결정적으로 만든다. `Thread.sleep` 으로 재면 CI 부하에
- * 따라 결과가 흔들리고, 흔들리는 테스트는 곧 꺼진다.
- *
- * **허용 오차 0 이 이 파일의 요점이다.** Nimbus 의 `DefaultJWTClaimsVerifier` 와 Spring 의
- * `JwtTimestampValidator` 는 기본 60초를 허용한다. 그 검증기를 쓰는 구현으로 바꾸면
- * `만료 직후 1초` 케이스가 통과해 버리고, 이 테스트가 그것을 잡는 유일한 자리다.
- */
+/** HS256 토큰의 발급·검증 (`migration-safety-gate` I-9, 계약 `x-auth`). */
 class JwtAccessTokensTest {
     @Test
     @DisplayName("발급한 토큰을 검증하면 sub 가 돌아온다")
@@ -54,8 +43,6 @@ class JwtAccessTokensTest {
         assertThat(claimsOf(token).keys).containsExactlyInAnyOrder("sub", "exp", "typ")
     }
 
-    // ---------------------------------------------------------------- 만료 (skew 0)
-
     @Test
     @DisplayName("exp 직전 1초에는 통과한다")
     fun `만료 직전에는 통과한다`() {
@@ -73,7 +60,6 @@ class JwtAccessTokensTest {
         val issuedAt = Instant.parse("2026-08-19T00:00:00Z")
         val token = tokens(clock = fixed(issuedAt)).issue(UUID.randomUUID()).token
 
-        // Nimbus·Spring 기본값(60초)을 그대로 쓰면 여기서 통과해 버린다.
         val justAfter = tokens(clock = fixed(issuedAt.plus(LIFETIME).plusSeconds(1)))
 
         assertThatThrownBy { justAfter.verify(token) }.isInstanceOf(InvalidCredentialsException::class.java)
@@ -89,8 +75,6 @@ class JwtAccessTokensTest {
 
         assertThatThrownBy { atExpiry.verify(token) }.isInstanceOf(InvalidCredentialsException::class.java)
     }
-
-    // ---------------------------------------------------------------- 위조
 
     @Test
     @DisplayName("다른 키로 서명된 토큰을 거부한다")

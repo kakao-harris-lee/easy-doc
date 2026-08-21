@@ -26,39 +26,8 @@ import javax.crypto.spec.GCMParameterSpec
 import javax.crypto.spec.SecretKeySpec
 import kotlin.random.Random
 
-/**
- * 저장 암호화 AEAD 의 정확성 — `migration-safety-gate` **I-7 전건**.
- *
- * ## 왜 parity 하네스가 아니라 여기인가
- *
- * I-7 검증 1 이 못박은 자리다: *"Kotlin 자체 테스트로 확인한다 — parity 하네스로는 못 본다.
- * 암호문이 불투명해 비교기가 열 수 없고, 산출물의 `"tamper_rejected": true` 같은 필드는
- * 하네스의 자기 신고라 증거가 아니다."* 2026-08-12 재개발 전환으로 parity 의 `crypto`
- * 도메인이 사라졌고, 그 요구가 통째로 이 파일로 왔다.
- *
- * ## I-7 항목 ↔ 케이스
- *
- * | I-7 | 무엇을 요구하나 | 케이스 |
- * |---|---|---|
- * | 1 | round-trip (한글·ASCII·빈 값·긴 값·개행/탭) | `round-trip 이 성립한다` |
- * | 2 | 변조·다른 키·형식 아닌 바이트가 **전건 실패** | `변조된 바이트를 거부한다` · `다른 키를 거부한다` · `형식이 아닌 바이트를 거부한다` |
- * | 3 | 복호화 oracle 금지 (단일 예외·같은 메시지·원인 미노출) | `실패 갈래가 서로 구분되지 않는다` |
- * | 4 | nonce 재사용 금지 | `같은 평문을 두 번 암호화하면 결과가 다르다` + 음성 대조 `난수원을 고정하면 nonce 가 반복된다` |
- * | 5 | `encryption_scheme`·`key_version` 이 실제로 쓰인다(키 회전) | `키를 회전해도 옛 세대를 읽는다` · `결속값이 어긋나면 거부한다` |
- * | 6 | 즉흥 암호 금지(표준 AEAD) | `표준 AES-256-GCM 으로 열린다` |
- *
- * 여기에 저장소 공통 규율 둘을 더한다 — **로그에 평문·키·암호문이 0건**(`CLAUDE.md` 보안
- * 규칙, `PasswordHashLogLeakReachTest` 와 같은 방식)과 **쓰기 키 미설정은 503 갈래**.
- *
- * ## 키는 소스에 적지 않는다
- *
- * 실행 시점에 난수로 만든다. 테스트용이라도 난수꼴 리터럴은 스캐너 `SECRET-LITERAL` 의
- * 차단 대상이고(*"경로가 아니라 값의 모양이 기준"*), 무엇보다 **키를 소스에 적는 습관**
- * 자체가 이 저장소가 금지한 것이다.
- */
+/** 저장 암호화 AEAD 의 정확성 — `migration-safety-gate` I-7 전건. */
 class AesGcmContentCipherTest {
-    // ================================================================ I-7 검증 1
-
     @Test
     @DisplayName("I-7-1 round-trip — 한글·ASCII·빈 값·긴 값·개행/탭이 그대로 돌아온다")
     fun `round-trip 이 성립한다`() {
@@ -69,8 +38,7 @@ class AesGcmContentCipherTest {
             val opened = cipher.decrypt(sealed, RECORD, EncryptedField.DOCUMENT_SOURCE_TEXT)
 
             assertThat(opened.value).describedAs("round-trip 실패: %s", label).isEqualTo(plain)
-            // 암호문이 평문을 그대로 담고 있지 않다는 최소 확인. 「암호화했다」의 자기 신고를
-            // 믿지 않는 자리다 — 실수로 통과 구현(identity)을 넣으면 여기서 걸린다.
+
             assertThat(String(sealed.bytes, Charsets.UTF_8))
                 .describedAs("암호문에 평문이 보인다: %s", label)
                 .doesNotContain(plain.take(MIN_VISIBLE_LENGTH).ifEmpty { "\u0000없는값" })
@@ -80,17 +48,11 @@ class AesGcmContentCipherTest {
     @Test
     @DisplayName("I-7-1 왕복이 깨질 값은 **저장 전에 거부된다** — round-trip 이 정의역 전체에서 참이다 (X1)")
     fun `왕복이 깨질 값은 평문으로 만들어지지 않는다`() {
-        // 게이트 25 X1: `String.toByteArray(UTF_8)` 가 짝 없는 서로게이트를 `?` 로 바꾼다.
-        // 그 값이 암호화 경로에 들어오면 태그는 통과하는데 본문이 달라진다 — 인증된 손상이다.
-        // 고치는 자리는 AEAD 가 아니라 **평문의 정의역**이고(`PlainBody` init), 그래서 여기서
-        // 재는 것은 「cipher 가 거부한다」가 아니라 **「cipher 에 닿지 못한다」**이다.
         assertThatThrownBy { PlainBody(LONE_SURROGATE_BODY) }
             .describedAs("짝 없는 서로게이트가 평문 래퍼를 통과했다 — 저장하면 본문이 조용히 바뀐다")
             .isInstanceOf(InvalidInputException::class.java)
             .hasMessage(PlainBody.UNPAIRED_SURROGATE_MESSAGE)
 
-        // 왜 그 값이 위험한지를 여기서도 붙잡아 둔다. 이 단언이 빨개지면(= JDK 가 보존하기
-        // 시작하면) 위 거부의 근거가 사라진 것이고, 그때 다시 판정해야 한다.
         assertThat(String(LONE_SURROGATE_BODY.toByteArray(Charsets.UTF_8), Charsets.UTF_8))
             .isNotEqualTo(LONE_SURROGATE_BODY)
     }
@@ -106,11 +68,9 @@ class AesGcmContentCipherTest {
         assertThat(sealed.keyVersion).isEqualTo(7)
         assertThat(cipher.writeScheme).isEqualTo(EncryptionScheme.AES_256_GCM_V1)
         assertThat(cipher.writeKeyVersion).isEqualTo(7)
-        // nonce(12) + 태그(16) 는 평문이 비어도 붙는다.
+
         assertThat(sealed.bytes.size).isGreaterThanOrEqualTo(NONCE_BYTES + TAG_BYTES)
     }
-
-    // ================================================================ I-7 검증 4
 
     @Test
     @DisplayName("I-7-4 같은 평문을 두 번 암호화하면 nonce 도 암호문도 다르다")
@@ -125,16 +85,13 @@ class AesGcmContentCipherTest {
             .describedAs("nonce 가 같다 — AES-GCM 에서 같은 키로 nonce 가 겹치면 평문이 복원된다")
             .isNotEqualTo(second.bytes.copyOf(NONCE_BYTES))
         assertThat(first.bytes).isNotEqualTo(second.bytes)
-        // 둘 다 열려야 한다 — 「다르기만 하면 된다」가 아니다.
+
         assertThat(cipher.decrypt(second, RECORD, EncryptedField.DOCUMENT_SOURCE_TEXT).value).isEqualTo(plain.value)
     }
 
     @Test
     @DisplayName("음성 대조 — 난수원을 고정하면 nonce 가 반복된다 (위 케이스가 무엇을 재는지 확인)")
     fun `난수원을 고정하면 nonce 가 반복된다`() {
-        // **이 케이스가 없으면 위 단언이 무엇 때문에 초록인지 알 수 없다.** nonce 가 매번
-        // 다른 이유가 난수원이라는 것을 여기서 고정한다 — 구현이 난수원을 무시하고 다른
-        // 방식으로 바이트를 다르게 만들고 있다면 여기가 초록이 아니라 빨개진다.
         val cipher = cipherWith(mapOf(1 to KEY_GEN_1), writeKeyVersion = 1, random = FixedNonceRandom())
         val plain = PlainBody("같은 문장을 두 번 올린다")
 
@@ -146,8 +103,6 @@ class AesGcmContentCipherTest {
             .describedAs("nonce 를 고정했는데도 암호문이 다르다 — 난수가 nonce 말고 다른 곳에서 들어가고 있다")
             .isEqualTo(second.bytes)
     }
-
-    // ================================================================ I-7 검증 2
 
     @Test
     @DisplayName("I-7-2 nonce·암호문·태그 어느 한 바이트를 뒤집어도 거부한다")
@@ -208,8 +163,6 @@ class AesGcmContentCipherTest {
         }
     }
 
-    // ================================================================ I-7 검증 5 (결속)
-
     @Test
     @DisplayName("I-7-5 결속값(행·컬럼·방식·키 세대)이 하나라도 다르면 거부한다 — 바꿔치기 방어")
     fun `결속값이 어긋나면 거부한다`() {
@@ -239,23 +192,15 @@ class AesGcmContentCipherTest {
     @Test
     @DisplayName("I-7-5 AAD 가 **키 세대**를 결속한다 — 두 세대가 같은 키 재료여도 라벨을 바꾸면 안 열린다 (X4)")
     fun `AAD 가 키 세대를 결속한다`() {
-        // ## 이 구성이 왜 필요한가 (게이트 25 X4 · R-1)
-        //
-        // 위 `결속값이 어긋나면 거부한다` 의 「키 세대 컬럼 조작」은 v1↔v2 의 **키가 달라서**도
-        // 실패한다. 그래서 AAD 에서 `keyVersion` 축을 통째로 빼도 그 케이스는 초록이었다
-        // (MUT-B 17/17 GREEN). 여기서는 **두 세대에 같은 키 재료**를 넣어 그 설명을 없앤다 —
-        // 남는 설명은 AAD 의 세대 축뿐이다. 오설정으로 실제로 일어날 수 있는 형태이기도 하다.
         val shared = cipherWith(mapOf(1 to KEY_GEN_1, 2 to KEY_GEN_1), writeKeyVersion = 1)
         val sealedAtV1 = shared.encrypt(PlainBody("회전 라벨 결속"), RECORD, EncryptedField.DOCUMENT_SOURCE_TEXT)
 
-        // 대조군 — 두 세대의 키가 실제로 같다. v2 로 쓴 봉투는 v2 로 열린다.
         val writerAtV2 = cipherWith(mapOf(1 to KEY_GEN_1, 2 to KEY_GEN_1), writeKeyVersion = 2)
         val sealedAtV2 = writerAtV2.encrypt(PlainBody("회전 라벨 결속"), RECORD, EncryptedField.DOCUMENT_SOURCE_TEXT)
         assertThat(shared.decrypt(sealedAtV2, RECORD, EncryptedField.DOCUMENT_SOURCE_TEXT).value)
             .describedAs("두 세대의 키가 서로 다르다 — 이 케이스는 AAD 가 아니라 키 차이를 재고 있다")
             .isEqualTo("회전 라벨 결속")
 
-        // 본 단언 — 세대 라벨만 v1 → v2 로 바꾼다. 키는 같으므로 AAD 만이 둘을 가른다.
         assertThatThrownBy {
             shared.decrypt(
                 EncryptedContent(sealedAtV1.bytes, sealedAtV1.scheme, 2),
@@ -269,9 +214,6 @@ class AesGcmContentCipherTest {
     @Test
     @DisplayName("I-7-5 AAD 문자열에 **방식·키 세대가 실제로 실린다** — JCA 로 직접 조립해 확인 (X4)")
     fun `AAD 가 방식과 키 세대를 싣는다`() {
-        // 방식 축은 제품 경로로 잴 수 없다 — `decrypt` 의 이른 관문이 AAD 에 닿기 전에 끊는다.
-        // 그래서 봉투를 **JCA 로 직접** 연다. 아래 첫 단언(정본 AAD 로 열린다)이 「두 축이 AAD
-        // 안에 있다」의 탐지자다: AAD 에서 축 하나를 빼면 조립이 어긋나 여기가 빨개진다.
         val cipher = cipherWith(mapOf(AAD_PROBE_VERSION to KEY_GEN_1), writeKeyVersion = AAD_PROBE_VERSION)
         val plain = "결속 대상 본문"
         val sealed = cipher.encrypt(PlainBody(plain), RECORD, EncryptedField.CONVERSION_EASY_TEXT)
@@ -297,7 +239,6 @@ class AesGcmContentCipherTest {
         val oldRow = before.encrypt(PlainBody("회전 전에 저장한 본문"), RECORD, EncryptedField.DOCUMENT_SOURCE_TEXT)
         assertThat(oldRow.keyVersion).isEqualTo(1)
 
-        // 회전 = 새 세대를 설정에 더하고 쓰기 세대를 올린다. 옛 세대는 목록에 남긴다.
         val after = cipherWith(mapOf(1 to KEY_GEN_1, 2 to KEY_GEN_2), writeKeyVersion = 2)
 
         assertThat(after.decrypt(oldRow, RECORD, EncryptedField.DOCUMENT_SOURCE_TEXT).value)
@@ -323,8 +264,6 @@ class AesGcmContentCipherTest {
             )
         }.isInstanceOf(DecryptionFailedException::class.java)
     }
-
-    // ================================================================ I-7 검증 3 (oracle)
 
     @Test
     @DisplayName("I-7-3 실패 갈래가 서로 구분되지 않는다 — 같은 타입·같은 메시지·원인 없음")
@@ -382,33 +321,7 @@ class AesGcmContentCipherTest {
         assertThat(observed.first().second.second).isEqualTo(DecryptionFailedException.MESSAGE)
     }
 
-    /**
-     * **실패 갈래의 소요 시간이 갈리지 않는다** — 게이트 25 X3(codex 6.5배 · privacy-gate 2.84배).
-     *
-     * ## 이 케이스가 상설 회귀인 이유
-     *
-     * 타입·메시지·`cause` 가 같아도 **처리량이 다르면** 갈래가 새어 나간다. 종전 판은
-     * 모르는 방식·없는 키 세대·길이 미달을 AEAD 에 닿기 전에 끊어, 그 셋이 태그 검증 실패보다
-     * 몇 배 빨랐다. 위 `실패 갈래가 서로 구분되지 않는다` 는 그 상태를 **초록으로 통과시켰다** —
-     * 바이트 축만 보기 때문이다. 그래서 시간 축을 따로 잰다.
-     *
-     * ## 측정 방법을 `AuthEndpointReachTest` M-3b 에 맞춘다
-     *
-     * 워밍업 [TIMING_WARMUP_ROUNDS] 라운드 폐기 · 고정 시드 교차 순서 · 표본 각
-     * [TIMING_SAMPLES] · 중앙값 · 문턱 [MAX_TIMING_RATIO]. **이 저장소는 시간 축 게이트가
-     * 흔들려 꺼진 선례를 갖고 있으므로** 방법을 임의로 줄이지 않는다. 순서를 섞는 이유도 같다 —
-     * JIT 가 진행형으로 데워지므로 뒤에 몰린 갈래가 유리하고, 그 편향은 격차를 **줄이는**
-     * 방향이라 마스킹이 된다.
-     *
-     * 본문을 짧게 두는 이유: 길이 미달 갈래는 최소 길이 더미 바이트로 대체되므로, 정상 봉투가
-     * 길면 **AEAD 자신의 길이 비례 비용**이 비에 섞인다. 그 축은 이 케이스가 재는 것이 아니다.
-     *
-     * ## 이 케이스가 막지 못하는 것
-     *
-     * 네 갈래가 **함께** 느려지거나 빨라지는 변경은 비가 1 에 가까워 통과한다. 그 축은
-     * `decrypt` 가 어느 갈래에서도 AEAD 를 정확히 한 번 부른다는 구조와 위 oracle 케이스가
-     * 함께 지킨다 — 이 케이스는 그것들을 대체하지 않고 **더한다**.
-     */
+    /** 실패 갈래의 소요 시간이 갈리지 않는다 — 게이트 25 X3(codex 6.5배 · privacy-gate 2.84배). */
     @Test
     @DisplayName("I-7-3 조기 분기와 태그 검증 실패의 소요 시간이 갈리지 않는다 (X3 상설 회귀)")
     fun `실패 갈래의 소요 시간이 갈리지 않는다`() {
@@ -426,8 +339,7 @@ class AesGcmContentCipherTest {
 
         val medians = failureMedians(cipher, branches)
         val ratio = medians.values.max() / medians.values.min().coerceAtLeast(MIN_MEASURABLE_NANOS)
-        // 초록일 때도 수치를 남긴다 — 문턱까지의 여유가 보이지 않으면 서서히 벌어지는
-        // 드리프트를 아무도 모른 채 지나간다(M-3b 와 같은 규율).
+
         println(
             "X3 %s → 비 %.3f (문턱 %.1f · 표본 각 %d · 워밍업 %d라운드)".format(
                 medians.entries.joinToString(" / ") { "%s %.0fns".format(it.key, it.value) },
@@ -475,7 +387,7 @@ class AesGcmContentCipherTest {
         return sorted[sorted.size / 2]
     }
 
-    /** 실패 한 건에 걸리는 시간(나노초). **실패하지 않으면 잰 것이 다른 경로다.** */
+    /** 실패 한 건에 걸리는 시간(나노초). 실패하지 않으면 잰 것이 다른 경로다. */
     private fun failureNanos(
         cipher: AesGcmContentCipher,
         content: EncryptedContent,
@@ -490,15 +402,9 @@ class AesGcmContentCipherTest {
         return elapsed.toDouble()
     }
 
-    // ================================================================ I-7 검증 6
-
     @Test
     @DisplayName("I-7-6 표준 AES-256-GCM 으로 열린다 — 이 테스트가 독립적으로 재조립한다")
     fun `표준 AES-256-GCM 으로 열린다`() {
-        // **제품 코드를 부르지 않고** JCA 로 직접 연다. 이것이 "즉흥 암호가 아니다"의 증거다 —
-        // 프리미티브를 손으로 조립한 구현은 여기서 열리지 않는다. 형식(nonce 12 || 암호문 ||
-        // 태그 16)과 associated data 문자열도 여기서 다시 만들므로, 어느 하나가 조용히
-        // 바뀌면 이 케이스가 빨개진다.
         val cipher = cipherWith(mapOf(3 to KEY_GEN_1), writeKeyVersion = 3)
         val plain = "표준 AEAD 로 열려야 한다"
         val sealed = cipher.encrypt(PlainBody(plain), RECORD, EncryptedField.CONVERSION_MASKED_ITEMS)
@@ -511,8 +417,6 @@ class AesGcmContentCipherTest {
 
         assertThat(opened).isEqualTo(plain)
     }
-
-    // ================================================================ 설정·로그
 
     @Test
     @DisplayName("쓰기 키가 없으면 503 갈래(설정 오류)로 끊고, 복호화 실패와 섞이지 않는다")
@@ -527,7 +431,6 @@ class AesGcmContentCipherTest {
     @Test
     @DisplayName("잘못된 키 재료는 기동을 막지 않고 그 세대만 뺀다 (값은 로그에 없다)")
     fun `잘못된 키 재료는 그 세대만 뺀다`() {
-        // base64 가 아닌 값과 길이가 다른 값. 기동을 끊지 않는 규약은 AuthProperties 와 같다.
         val cipher =
             cipherWith(
                 mapOf(
@@ -538,10 +441,9 @@ class AesGcmContentCipherTest {
                 writeKeyVersion = 3,
             )
 
-        // 살아 있는 세대로는 정상 동작한다.
         val sealed = cipher.encrypt(PlainBody("본문"), RECORD, EncryptedField.DOCUMENT_SOURCE_TEXT)
         assertThat(cipher.decrypt(sealed, RECORD, EncryptedField.DOCUMENT_SOURCE_TEXT).value).isEqualTo("본문")
-        // 버려진 세대를 가리키는 행은 단일 예외로 실패한다(oracle 금지 규칙과 같은 갈래).
+
         val droppedGeneration = EncryptedContent(sealed.bytes, sealed.scheme, 1)
         assertThatThrownBy {
             cipher.decrypt(droppedGeneration, RECORD, EncryptedField.DOCUMENT_SOURCE_TEXT)
@@ -556,7 +458,7 @@ class AesGcmContentCipherTest {
         root.addAppender(appender)
         try {
             LoggerFactory.getLogger(javaClass).warn(POSITIVE_CONTROL_MARKER)
-            // 잘못된 키 재료가 섞인 조립까지 포함한다 — 경고를 찍는 유일한 경로가 거기다.
+
             val cipher =
                 cipherWith(
                     mapOf(1 to Secret("!!not-base64!!"), 2 to KEY_GEN_1),
@@ -614,9 +516,6 @@ class AesGcmContentCipherTest {
     @Test
     @DisplayName("R-4 공급자의 **비검사** 실패도 밖으로 새지 않는다 — 예외 타입 축의 oracle 을 막는다")
     fun `공급자의 비검사 실패도 단일 예외가 된다`() {
-        // `open` 의 두 번째 catch(`RuntimeException`)에 음성 통제가 없다는 codex D-3 지적의
-        // 통제다. 이 케이스를 두면 그 catch 를 지웠을 때 `ProviderException` 이 그대로 올라와
-        // 빨개진다. 사유와 이 방법을 고른 이유는 `ProviderExceptionProvider` KDoc.
         val cipher = cipherWith(mapOf(1 to KEY_GEN_1), writeKeyVersion = 1)
         val sealed = cipher.encrypt(PlainBody(TIMING_PROBE_BODY), RECORD, EncryptedField.DOCUMENT_SOURCE_TEXT)
 
@@ -636,14 +535,10 @@ class AesGcmContentCipherTest {
             .describedAs("바꿔치기한 공급자가 한 번도 선택되지 않았다 — 이 케이스는 **아무것도 재지 않았다**")
             .isPositive()
 
-        // 공급자를 되돌린 뒤 정상 경로가 살아 있는지도 본다. 전역 상태를 건드린 케이스가
-        // 뒤 테스트를 조용히 망가뜨리는 것을 여기서 끊는다.
         assertThat(cipher.decrypt(sealed, RECORD, EncryptedField.DOCUMENT_SOURCE_TEXT).value)
             .describedAs("테스트 공급자가 JVM 에 남았다")
             .isEqualTo(TIMING_PROBE_BODY)
     }
-
-    // ---------------------------------------------------------------- 도구
 
     private fun cipherWith(
         material: Map<Int, Secret>,
@@ -651,12 +546,7 @@ class AesGcmContentCipherTest {
         random: SecureRandom = SecureRandom(),
     ) = AesGcmContentCipher(material, writeKeyVersion, random)
 
-    /**
-     * associated data 를 **제품 코드와 독립적으로** 다시 만든다.
-     *
-     * 형식이 한 조각이라도 바뀌면(축 삭제·구분자 변경·순서 변경) 이것으로 조립한 AAD 가
-     * 어긋나 [openWithJca] 가 실패한다 — 그것이 「방식·키 세대가 AAD 에 실린다」의 탐지자다.
-     */
+    /** associated data 를 제품 코드와 독립적으로 다시 만든다. */
     private fun aadOf(
         scheme: String,
         keyVersion: Int,
@@ -664,7 +554,7 @@ class AesGcmContentCipherTest {
         record: UUID = RECORD,
     ): ByteArray = "easydoc-aead|$scheme|$keyVersion|${field.wireName}|$record".toByteArray(Charsets.UTF_8)
 
-    /** 봉투를 **JCA 로 직접** 연다. 제품의 `decrypt` 를 부르지 않으므로 이른 관문을 지나지 않는다. */
+    /** 봉투를 JCA 로 직접 연다. 제품의 `decrypt` 를 부르지 않으므로 이른 관문을 지나지 않는다. */
     private fun openWithJca(
         sealed: EncryptedContent,
         aad: ByteArray,
@@ -722,11 +612,6 @@ class AesGcmContentCipherTest {
          */
         const val LONE_SURROGATE_BODY = "x\uD800y"
 
-        // ── 시간 축 회귀 상수 ───────────────────────────────────────────────
-        //
-        // 방법과 문턱을 `AuthEndpointReachTest` M-3b 와 맞춘다. 값을 임의로 줄이면
-        // 케이스가 흔들리고, 흔들린 시간 축 게이트는 꺼지는 것으로 끝난다(원장 §1 ③).
-
         /** 각 갈래의 표본 수. 홀수라 중앙값이 실제 표본 하나다. */
         const val TIMING_SAMPLES = 2_001
 
@@ -743,7 +628,7 @@ class AesGcmContentCipherTest {
         const val MIN_MEASURABLE_NANOS = 1.0
 
         /**
-         * 시간 축 케이스의 본문. **짧게 둔다** — 길이 미달 갈래는 최소 길이 더미로 대체되므로,
+         * 시간 축 케이스의 본문. 짧게 둔다 — 길이 미달 갈래는 최소 길이 더미로 대체되므로,
          * 정상 봉투가 길면 AEAD 의 길이 비례 비용이 비에 섞인다.
          */
         const val TIMING_PROBE_BODY = "안내"
@@ -756,9 +641,7 @@ class AesGcmContentCipherTest {
         /** 로그에 있으면 안 되는 평문. 합성값이다. */
         const val LEAK_PROBE_BODY = "민원인 홍길동 900101-1234567 안내"
 
-        /**
-         * 실행 시점에 만드는 32바이트 키 두 개. 소스에 키 리터럴을 적지 않는다.
-         */
+        /** 실행 시점에 만드는 32바이트 키 두 개. 소스에 키 리터럴을 적지 않는다. */
         val KEY_GEN_1: Secret = randomKey()
         val KEY_GEN_2: Secret = randomKey()
 

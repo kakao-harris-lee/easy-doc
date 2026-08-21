@@ -18,15 +18,7 @@ import kr.easydoc.core.exceptions.StorageException
 import kr.easydoc.core.exceptions.UploadTooLargeException
 import java.util.UUID
 
-/**
- * 업로드 접수 결과. 계약 `DocumentCreatedResponse` 의 네 필드 그대로다.
- *
- * `status` 가 언제나 [ConversionStatus.PENDING] 인데도 실어 보내는 이유는 계약이 그렇게
- * 정했기 때문이다 — 202 는 "접수됐고 변환은 아직 시작 전"이라는 뜻이고, 그 사실을 응답이
- * 스스로 말한다.
- *
- * 문자열 필드가 하나도 없어 `data class` 로 두어도 `toString()` 이 샐 것이 없다.
- */
+/** 업로드 접수 결과. 계약 `DocumentCreatedResponse` 의 네 필드 그대로다. */
 data class AcceptedUpload(
     val documentId: UUID,
     val conversionId: UUID,
@@ -34,47 +26,7 @@ data class AcceptedUpload(
     val charCount: Int,
 )
 
-/**
- * 문서 등록 유스케이스 — 붙여넣기·파일 두 입력을 받아 **저장하고 작업을 등록한다.**
- *
- * 요구 정본: 계약 `paths./documents.post`·`get`, `x-input-limits`,
- * `migration-safety-gate` I-4·I-7·I-10.
- *
- * ## 검사 순서를 계약이 정한다
- *
- * *"파일 크기(413) → 추출(422) → 본문 길이(422) → 작업 공간 소유권(404) → 저장"*.
- * 마지막 순서에 이유가 붙어 있다 — **작업 공간 확인이 저장보다 먼저여야** 거절당한 업로드가
- * 기본 공간에 남지 않는다.
- *
- * 길이 판정을 두 입력이 **만나는 자리**에 둔 것도 요구다. 입력 방식에 따라 변환 가능
- * 여부가 달라지면 사용자에게 설명할 수 없다.
- *
- * ## 저장·등록이 한 트랜잭션이다
- *
- * 문서 행 · 변환 행 · 작업 행이 같은 트랜잭션에서 확정된다(계획 §4.4). 큐가 같은
- * PostgreSQL 이므로 "DB 커밋 성공, 큐 등록 실패" 간극이 **구조적으로** 생기지 않는다.
- * 원본은 `INSERT → commit → enqueue` 였고 그 순서가 필요했던 이유(워커가 다른 저장소를
- * 본다)가 사라졌다. [ConversionQueue] KDoc 에 계약 조항과의 관계를 적어 두었다.
- *
- * ## 평문이 이 클래스 밖으로 나가지 않는다
- *
- * 본문은 [PlainBody] 로 감싼 뒤 [ContentCipher] 를 지나야만 저장소에 닿는다 — 저장소 포트가
- * [kr.easydoc.core.crypto.EncryptedContent] 만 받으므로 **암호화를 빠뜨린 호출은 컴파일되지
- * 않는다.** 이 클래스는 아무것도 로깅하지 않는다: 남길 만한 것이 식별자와 상태뿐인데 그것은
- * 접근 로그가 이미 든다.
- *
- * ## 마스킹은 여기 없다 — 그래서 **평문 컬럼에 본문을 옮기지 않는다**
- *
- * 업로드 경로에 마스킹이 없다(원본도 `mask_text` 를 import 하지 않는다). 마스킹 선행
- * 불변식의 대상은 **LLM 전송**이고 그것은 워커의 일이다. 이 경로가 지키는 선행은
- * **암호화 선행**이다.
- *
- * 그 사실의 직접적인 귀결이 제목 규칙이다 — `documents.title` 은 평문 컬럼이고 이 시점에는
- * 마스킹도 돌지 않으므로, **본문에서 제목을 만들면** 원문 조각이 아무 방어도 없이 평문으로
- * 남는다(게이트 27 Critical ①). [kr.easydoc.core.document.resolveTitle] 은 사용자가 제목
- * 칸에 적어 준 값만 쓰고, 이 클래스는 본문도 **파일 이름도** 그 함수에 넘기지 않는다
- * (2026-08-20 재판정 — 파일 이름 갈래를 되돌린 사유는 그 함수의 KDoc ⑵ 다).
- */
+/** 문서 등록 유스케이스 — 붙여넣기·파일 두 입력을 받아 **저장하고 작업을 등록한다.** */
 class DocumentService(
     private val storage: DocumentStorage,
     private val workspaces: WorkspaceLookup,
@@ -82,12 +34,7 @@ class DocumentService(
     private val extractor: DocumentTextExtractor,
     private val transaction: TransactionRunner,
 ) {
-    /**
-     * 붙여넣은 본문으로 문서를 만들고 변환을 요청한다.
-     *
-     * @throws InvalidInputException 본문이 비었거나 길이 상한을 넘었다 → 422.
-     * @throws NotFoundException 지정한 작업 공간이 없거나 내 것이 아니다 → 404.
-     */
+    /** 붙여넣은 본문으로 문서를 만들고 변환을 요청한다. */
     fun createFromText(
         ownerId: UUID,
         text: String,
@@ -99,20 +46,7 @@ class DocumentService(
         return store(ownerId, text, SourceFormat.TEXT, title, workspaceId)
     }
 
-    /**
-     * 업로드 파일에서 본문을 뽑아 문서를 만들고 변환을 요청한다.
-     *
-     * [filename] 은 **형식 판별에만** 쓰이고 버려진다 — 저장하지도 로그에 남기지도 않는다
-     * (계약 `DocumentTextRequest.title`, `migration-safety-gate` I-4). 중간에 이 값을 제목의
-     * 바탕으로 쓰는 판이 있었고 2026-08-20 재판정으로 되돌렸다. 사유는
-     * [kr.easydoc.core.document.resolveTitle] KDoc ⑵ 에 있다.
-     *
-     * @throws UploadTooLargeException 파일이 크기 상한을 넘었다 → 413.
-     * @throws kr.easydoc.core.exceptions.UnsupportedFormatException 지원하지 않는 확장자 → 422.
-     * @throws DocumentExtractionException 텍스트를 뽑지 못했거나 결과가 비었다 → 422.
-     * @throws InvalidInputException 본문 길이 상한을 넘었다 → 422.
-     * @throws NotFoundException 지정한 작업 공간이 없거나 내 것이 아니다 → 404.
-     */
+    /** 업로드 파일에서 본문을 뽑아 문서를 만들고 변환을 요청한다. */
     fun createFromFile(
         ownerId: UUID,
         filename: String?,
@@ -130,16 +64,7 @@ class DocumentService(
         return store(ownerId, extracted.text, extracted.format, title, workspaceId)
     }
 
-    /**
-     * 내 문서 목록을 최신순으로 돌려준다. 작업 공간을 주면 그 안만 본다.
-     *
-     * **남의 작업 공간 식별자에는 빈 목록이 아니라 404 다** — 빈 목록은 "그 작업 공간은
-     * 비어 있다"는 사실을 알려 주는 셈이라, 남의 공간이 존재하는지 확인하는 수단이 된다.
-     *
-     * 다음 쪽 유무를 판정할 수 있도록 **한 건 더 읽어** 돌려준다. 총 개수를 세지 않는
-     * 이유는 계약이 적었다(전수 count 는 목록 조회마다 비싸다). 잘라내기와 `has_more`
-     * 판정은 응답을 만드는 층의 일이다.
-     */
+    /** 내 문서 목록을 최신순으로 돌려준다. 작업 공간을 주면 그 안만 본다. */
     fun list(
         ownerId: UUID,
         workspaceId: UUID?,
@@ -150,30 +75,7 @@ class DocumentService(
         return storage.documents.listOwned(ownerId, workspaceId, limit + 1, offset)
     }
 
-    /**
-     * 문서 한 건을 **즉시 파기한다.** 보존 기간(30일)을 기다리지 않는 경로이고 복구 수단이 없다.
-     *
-     * ## 「표시」가 아니라 파기다
-     *
-     * 지운 표시를 남기고 조회에서 감추는 형태를 만들지 않는다. 계약이 *"복구 수단은 없다"*
-     * 로 적었고, master-plan 3.2 의 즉시 파기는 **사용자가 자기 원문을 서버에서 없애는
-     * 수단**이다. 표시만 남기면 암호문과 봉투가 그대로 살아 있어 그 약속이 거짓이 된다 —
-     * 지연 파기 배치를 두는 설계도 같은 이유로 고르지 않았다(약속과 상태 사이에 창이 생긴다).
-     *
-     * ## 변환 결과도 함께 사라진다 — 그러나 **이 함수가 지우지 않는다**
-     *
-     * FK CASCADE 가 `documents` → `conversions` → `conversion_jobs` 로 잇는다. 사유는
-     * [DocumentRepository.deleteOwned] KDoc 에 있다. 여기서 변환 저장소를 부르지 않는 것이
-     * 그 설계의 관측 가능한 결과다 — [storage] 의 `conversions` 는 이 경로에서 쓰이지 않는다.
-     *
-     * ## 트랜잭션을 여는 이유
-     *
-     * 문장이 하나라 자동 커밋으로도 원자적이다. 그래도 경계를 유스케이스가 여는 것은
-     * 규약이고(계획 §6.2 — 유스케이스 하나 = 트랜잭션 하나), 여기서는 실질적인 값도 있다:
-     * 이 경로에 문장이 하나 더 늘어나는 날 그 둘이 **자동으로** 같은 경계에 든다.
-     *
-     * @throws NotFoundException 문서가 없거나 내 것이 아니다 → 404. **두 경우를 구분하지 않는다.**
-     */
+    /** 문서 한 건을 **즉시 파기한다.** 보존 기간(30일)을 기다리지 않는 경로이고 복구 수단이 없다. */
     fun delete(
         ownerId: UUID,
         documentId: UUID,
@@ -187,17 +89,7 @@ class DocumentService(
         }
     }
 
-    /**
-     * 길이를 판정하고, 한 트랜잭션 안에서 **소유권 확인 → 문서 → 변환 → 작업**을 만든다.
-     *
-     * 식별자를 트랜잭션 **밖에서** 만들지 않는다 — 만들어도 되지만, 암호화가 트랜잭션 안에
-     * 있어야 실패 시 평문이 든 중간 상태가 남지 않는다. 암호화 비용은 4,000자 한 건이라
-     * 트랜잭션을 오래 붙잡지 않는다.
-     *
-     * 인자가 [givenTitle] **하나**인 것이 이 함수의 성질이다 — 두 입력(붙여넣기·파일)이 제목에
-     * 대해 같은 것을 넘긴다. 파일 이름이 흐를 통로를 한때 여기 뚫었다가 2026-08-20 재판정으로
-     * 막았다. 통로가 없으면 되살리는 편집이 시그니처에 드러난다.
-     */
+    /** 길이를 판정하고, 한 트랜잭션 안에서 **소유권 확인 → 문서 → 변환 → 작업**을 만든다. */
     private fun store(
         ownerId: UUID,
         text: String,
@@ -246,12 +138,7 @@ class DocumentService(
         }
     }
 
-    /**
-     * 문서를 담을 작업 공간을 정한다. 지정이 없으면 기본(가장 먼저 만든) 공간이다.
-     *
-     * @throws NotFoundException 지정한 작업 공간이 없거나 내 것이 아니다.
-     * @throws StorageException 작업 공간이 하나도 없다 — 우리 불변식이 깨진 상태다.
-     */
+    /** 문서를 담을 작업 공간을 정한다. 지정이 없으면 기본(가장 먼저 만든) 공간이다. */
     private fun resolveWorkspaceId(
         ownerId: UUID,
         workspaceId: UUID?,

@@ -5,22 +5,7 @@ import kr.easydoc.application.document.ExtractedDocument
 import kr.easydoc.core.document.SourceFormat
 import kr.easydoc.core.exceptions.UnsupportedFormatException
 
-/**
- * 확장자로 형식을 가려 형식별 추출기로 넘기는 **디스패치 한 곳**.
- *
- * 원본: `app/ingest/extractors.py::extract_text` + `_FORMATS`.
- *
- * ## 압축 폭탄 방어가 여기 있는 이유
- *
- * 형식별 파서가 **스스로 압축을 푸는** 경우(POI)에는 파서에 넘기기 전이 유일한 방어선이다.
- * 그리고 방어를 디스패치에 모아 두면 새 zip 계열 형식을 [SourceFormat] 에 더하는 것만으로
- * 방어가 따라온다 — 형식마다 붙이면 하나를 빠뜨리는 날 그 형식만 무방비가 된다.
- *
- * ## 내용 스니핑을 하지 않는다
- *
- * 확장자로만 판별한다(원본과 같다). 확장자를 속인 파일은 파서가 손상으로 거절하거나,
- * zip 이어야 할 자리에 OLE2 가 오면 [Ole2Diagnosis] 가 세 갈래 안내를 낸다.
- */
+/** 확장자로 형식을 가려 형식별 추출기로 넘기는 **디스패치 한 곳**. */
 class DocumentExtractors internal constructor(
     private val docx: DocxExtractor,
     private val pdf: PdfExtractor,

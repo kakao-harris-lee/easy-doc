@@ -5,25 +5,7 @@ import java.net.InetSocketAddress
 import java.net.Socket
 import java.nio.charset.StandardCharsets
 
-/**
- * 원시 소켓 HTTP 측정 도구. **전역 응답 계약이 어디까지 닿는지 재는 유일한 수단이다.**
- *
- * ## 왜 MockMvc 도 HTTP 클라이언트도 아닌가
- *
- * MockMvc 는 서블릿 컨테이너를 띄우지 않는다. 필터를 손으로 체인에 끼워 넣고 디스패처를
- * 부를 뿐이라 **컨테이너가 필터 앞이나 바깥에서 만드는 응답**을 재현하지 못한다. 그래서
- * MockMvc 로 재면 *측정한 것처럼 보이는 통과*가 나온다 — 전역 선언은 초록인데 실제 도달은
- * 일부뿐인 상태가 그대로 남는다.
- *
- * HTTP 클라이언트 라이브러리도 쓸 수 없다. 요청 줄이 깨진 요청을 만들어야 하는데
- * 클라이언트는 그것을 교정하거나 아예 보내기를 거부한다.
- *
- * ## 두 측정이 같은 도구를 쓴다
- *
- * [kr.easydoc.api.PrivateResponseHeadersReachTest] (헤더)와
- * [kr.easydoc.api.ContractErrorBodyReachTest] (본문)가 이 파일을 공유한다. 도구가 갈리면
- * "헤더는 닿는데 본문은 안 닿는다"가 도구 차이인지 실제 차이인지 가릴 수 없다.
- */
+/** 원시 소켓 HTTP 측정 도구. 전역 응답 계약이 어디까지 닿는지 재는 유일한 수단이다. */
 object RawHttp {
     private const val CRLF = "\r\n"
     private const val BOUNDARY = "easydocboundary"

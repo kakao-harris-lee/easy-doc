@@ -7,13 +7,7 @@ import kr.easydoc.core.security.Secret
 import tools.jackson.databind.JsonNode
 import tools.jackson.databind.json.JsonMapper
 
-/**
- * 어댑터 테스트가 공유하는 재료.
- *
- * **실제 Anthropic API 를 부르는 테스트는 하나도 없다.** 전부 [StubAnthropicServer] 로
- * 향한다(비용·재현성). 실제 호출이 필요해지면 `@Tag("llm")` 을 붙여 기본 실행에서
- * 제외해야 한다(루트 build.gradle.kts 의 `excludeTags("llm")`).
- */
+/** 어댑터 테스트가 공유하는 재료. */
 internal object AnthropicTestSupport {
     /** 테스트용 API 키. 요청·예외·로그 어디에도 이 문자열이 새면 안 된다. */
     const val TEST_API_KEY: String = "sk-ant-test-DO-NOT-LEAK-0123456789"

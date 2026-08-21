@@ -38,20 +38,7 @@ import org.springframework.context.annotation.Configuration
 // 「설정 표면에 호출 대상(엔드포인트)을 여는 필드가 없다」가 상시 확인한다 —
 // 주석으로만 두면 다음 회차에 필드가 하나 늘어난다.
 
-/**
- * LLM 벤더 설정. 바인딩 접두사는 `easydoc.llm`.
- *
- * `provider` 기본값이 anthropic 인 것은 선택이 아니라 미확정 상태를 그대로 둔 것이다 —
- * 벤더는 골든셋 벤치마크로 확정한다(master-plan 3.1).
- *
- * `openaiApiKey` 가 없는 이유: OpenAI 어댑터가 아직 없다. 값이 닿을 곳이 없는 설정 필드는
- * "설정했는데 아무 일도 일어나지 않는" 자리를 만든다 — `LlmOptions` 가 `temperature`·
- * `effort` 를 뺀 것과 같은 판단이다. 어댑터가 생기는 조각에서 함께 들어온다.
- *
- * @property model `null` 이면 어댑터의 기본 모델을 쓴다. 모델 선택은 품질 결정이므로
- *   코드가 아니라 설정으로 바꾼다([DEFAULT_ANTHROPIC_MODEL] KDoc).
- * @property effort Anthropic 전용 사고 깊이. `null`·공백이면 파라미터를 보내지 않는다.
- */
+/** LLM 벤더 설정. 바인딩 접두사는 `easydoc.llm`. */
 @ConfigurationProperties(prefix = "easydoc.llm")
 data class LlmProperties(
     val provider: String = ANTHROPIC_PROVIDER_NAME,
@@ -60,20 +47,7 @@ data class LlmProperties(
     val anthropicApiKey: Secret = Secret.EMPTY,
 )
 
-/**
- * 설정에서 [LlmProvider] 구현체를 고른다.
- *
- * ## 잘못된 벤더 이름에서 **기동을 막는** 이유
- *
- * `EasyDocProperties` 의 "기동은 막지 않는다"는 **비밀값 누락**에 대한 규칙이다 —
- * 키가 없어도 앱은 뜨고 그 값이 필요한 요청만 503 으로 거절한다(그래야 `/health` 로
- * 배포 상태를 진단할 수 있다). [AnthropicProvider] 가 API 키 검사를 생성자가 아니라
- * 호출 시점에 하는 것이 그 규칙의 구현이다.
- *
- * 반면 **열거값 오타는 배포 설정 오류**다. 지금 던지지 않으면 모든 변환이 런타임에 실패하고
- * 운영자는 첫 변환이 실패한 뒤에야 알게 된다. `AnthropicEffort.from` 이 같은 판단으로
- * 이미 생성 시점에 던지고 있어, 두 자리의 규칙을 같게 둔다.
- */
+/** 설정에서 [LlmProvider] 구현체를 고른다. */
 @Configuration(proxyBeanMethods = false)
 class LlmProviderConfiguration {
     @Bean

@@ -20,27 +20,15 @@ const val MAX_SENTENCE_CHARS = 50
 /** 한 문장에 허용하는 쉼표 개수. 초과하면 '한 문장 한 정보' 위반으로 본다. */
 const val MAX_COMMAS_PER_SENTENCE = 2
 
-/**
- * 한 문장 한 정보 검사에 쓰는 쉼표(반각·전각·모점).
- *
- * 전각·모점까지 세는 이유: hwpx/pdf 추출본에 그대로 섞여 들어오고, 사람이 읽을 때는
- * 똑같이 문장을 끊는 구실을 한다. 반각만 세면 같은 문장이 입력 경로에 따라 다르게
- * 판정된다.
- */
+/** 한 문장 한 정보 검사에 쓰는 쉼표(반각·전각·모점). */
 internal val COMMA_CHARS: List<Char> = listOf(',', '，', '、')
 
-/**
- * 이중 피동 등 피해야 할 서술 패턴.
- *
- * 원본: `app/easyread/style_rules.py::DOUBLE_PASSIVE_PATTERNS`.
- */
+/** 이중 피동 등 피해야 할 서술 패턴. */
 val DOUBLE_PASSIVE_PATTERNS: List<String> = listOf("되어지", "보여지", "쓰여지", "믿겨지", "잊혀지")
 
 /**
  * 원칙 문구. **프롬프트 소스이기도 하다** — 검사 임계값을 문구에 보간해 모델이 지켜야
  * 할 수치와 채점 수치가 갈라지지 않게 한다(수치 자체는 위 상수가 SSOT).
- *
- * 원본: `app/easyread/style_rules.py::STYLE_PRINCIPLES`.
  */
 val STYLE_PRINCIPLES: List<String> =
     listOf(
@@ -58,39 +46,17 @@ private val SENTENCE_SPLIT = unicodeRegex("""(?<=[.!?])\s+|\n+""")
 /**
  * 개조식 항목 마커("1.", "가.", "①)")는 문장이 아니라 번호다.
  * 분리 후 남는 마커 조각을 버려야 문장 수·평균 길이가 왜곡되지 않는다.
- *
- * 원본의 `^`·`$` 앵커는 빼고 [Regex.matches] 로 전체 일치를 요구한다 — 같은 판정이면서
- * Kotlin 문자열에서 `$` 를 이스케이프할 일이 없다(입력은 이미 양끝이 다듬어져 있다).
  */
 private val LIST_MARKER = unicodeRegex("""(?:\d+|[가-힣]|[①-⑳])\s*[.)]""")
 
-/**
- * 마침표·물음표·느낌표·줄바꿈 기준의 단순 문장 분리.
- *
- * 원본: `app/easyread/style_rules.py::split_sentences`.
- *
- * 개조식 항목 마커 조각은 문장으로 세지 않는다.
- */
+/** 마침표·물음표·느낌표·줄바꿈 기준의 단순 문장 분리. */
 fun splitSentences(text: String): List<String> =
     SENTENCE_SPLIT
         .split(text)
         .map { candidate -> candidate.trim { it.isTextWhitespace() } }
         .filter { it.isNotEmpty() && !LIST_MARKER.matches(it) }
 
-/**
- * [word] 가 낱말 시작 위치에 한 번이라도 나타나는가.
- *
- * 원본: `app/easyread/style_rules.py::_appears_at_word_start`.
- *
- * 바로 앞 글자가 한글 음절이면 더 긴 낱말의 일부로 보고 건너뛴다("소득인정액"의 '정액',
- * "통장사본"의 '사본'). 뒤 글자는 보지 않는다 — 조사·어미가 붙은 "감면을"은 잡아야 할
- * 진짜 위반이다.
- *
- * 한국어에는 낱말 경계 표시가 없어, 완전한 형태소 분석 없이는 이것이 최선의 근사다.
- * 복합어 **끝**에 붙은 낱말("행정조치"의 '조치')은 놓치지만(과소 검출), 모델이 제도
- * 이름을 옳게 지켰는데 위반으로 세는 과잉 검출보다 게이트 신뢰에 낫다. 놓친 몫의
- * 이해도 판정은 골든셋 LLM judge 가 보완한다.
- */
+/** [word] 가 낱말 시작 위치에 한 번이라도 나타나는가. */
 private fun appearsAtWordStart(
     word: String,
     text: String,
@@ -103,29 +69,11 @@ private fun appearsAtWordStart(
     return false
 }
 
-/**
- * 치환 목록에 있는 어려운 표현 중 본문에 낱말로 남아 있는 것을 찾는다.
- *
- * 원본: `app/easyread/style_rules.py::find_difficult_words`.
- *
- * [PROMPT_ONLY_WORDS] 는 오탐이 많아 자동 채점 대상에서 제외한다.
- * 결과 순서는 [DIFFICULT_WORD_REPLACEMENTS] 의 선언 순서다 — 그 순서가 보정 프롬프트에
- * 그대로 실린다.
- */
+/** 치환 목록에 있는 어려운 표현 중 본문에 낱말로 남아 있는 것을 찾는다. */
 fun findDifficultWords(text: String): List<String> =
     DIFFICULT_WORD_REPLACEMENTS.keys.filter { it !in PROMPT_ONLY_WORDS && appearsAtWordStart(it, text) }
 
-/**
- * 어떤 규칙이 걸렸는가. **사유 문구가 아니라 값으로 든다.**
- *
- * [SentenceIssue.reason] 은 사람이 읽는 한국어 문장이고 보정 프롬프트에 그대로 실린다 —
- * 문구를 다듬는 것은 품질 작업이라 앞으로도 일어난다. 그 문자열을 되파싱해 규칙을 가르면
- * 문구를 손대는 순간 조용히 깨진다. [SentenceIssue.word] 를 값으로 든 것과 같은 이유다.
- *
- * 지금 이 값을 실제로 읽는 곳은 parity 생산자다(`style` 도메인이 길이·쉼표 위반을 **각각**
- * 보고해야 한다 — 비교기가 그 둘에 서로 다른 유도 규칙을 건다). 읽는 곳이 하나뿐이라고
- * 사유 문자열 파싱으로 대신하지 않는 이유가 위 문장이다.
- */
+/** 어떤 규칙이 걸렸는가. **사유 문구가 아니라 값으로 든다.** */
 enum class StyleRuleKind {
     /** 문장 길이 상한 초과. */
     LENGTH,
@@ -143,34 +91,14 @@ enum class StyleRuleKind {
     GLOSS_COLLISION,
 }
 
-/**
- * 규칙 위반 문장과 사유.
- *
- * [kind] 는 **기계가 읽는 축**이고 [reason] 은 사람이 읽는 문장이다. 둘을 섞지 않는다.
- *
- * [word] 는 **어려운 표현 잔존** 위반일 때만 채워지는 사전 키다. 보정 프롬프트가 그
- * 낱말의 뜻풀이를 함께 실으려면 사전 키가 필요한데, [reason] 문자열을 되파싱하면 사유
- * 문구를 손댈 때마다 조용히 깨진다 — 값으로 들고 다닌다.
- *
- * 치환 비문(뜻풀이 축자 삽입) 위반은 [word] 를 비운다. 처방이 사전값 조회가 아니라
- * 문장 재서술이라 보정 프롬프트가 사유 문구만 그대로 전달하면 된다.
- */
+/** 규칙 위반 문장과 사유. */
 data class SentenceIssue(
     val sentence: String,
     val kind: StyleRuleKind,
     val reason: String,
     val word: String? = null,
 ) {
-    /**
-     * **문장과 낱말을 찍지 않는다.**
-     *
-     * [sentence] 는 문서 본문에서 잘라 낸 조각이고 [word] 는 그 안에 실제로 나타난 낱말이다.
-     * `Masking.kt` 의 「`toString()` 과 본문」 절이 정본이다 — *"개인정보가 한 글자도 없어도
-     * 본문은 금지"* 이고, 마스킹된 본문이라 해도 가려지는 것은 2종뿐이다.
-     *
-     * 진단에 필요한 것은 남긴다 — 어떤 규칙이 왜 걸렸는지([kind]·[reason])는 우리가 만든
-     * 고정 문구이고, 길이가 있으면 어느 문장인지 대조할 수 있다.
-     */
+    /** **문장과 낱말을 찍지 않는다.** */
     override fun toString(): String {
         val wordSlot = if (word == null) "없음" else CONTENT_MASK
         return "SentenceIssue(kind=$kind, reason=$reason, sentence=${sentence.length}자, word=$wordSlot)"
@@ -185,11 +113,7 @@ data class StyleCheckResult(
     val passed: Boolean get() = issues.isEmpty()
 }
 
-/**
- * 문장 길이·쉼표 수·이중 피동·어려운 표현·치환 비문을 검사한다.
- *
- * 원본: `app/easyread/style_rules.py::check_style`.
- */
+/** 문장 길이·쉼표 수·이중 피동·어려운 표현·치환 비문을 검사한다. */
 fun checkStyle(text: String): StyleCheckResult {
     val sentences = splitSentences(text)
     val issues =

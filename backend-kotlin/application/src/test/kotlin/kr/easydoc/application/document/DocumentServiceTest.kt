@@ -26,27 +26,8 @@ import org.junit.jupiter.api.Test
 import java.time.Instant
 import java.util.UUID
 
-/**
- * 문서 등록 유스케이스 — **Spring 도 DB 도 없이** 대역으로 돈다.
- *
- * ## 여기서 재는 것과 재지 않는 것
- *
- * 재는 것은 **순서와 경계**다 — 계약이 못박은 검사 순서(파일 크기 → 추출 → 본문 길이 →
- * 작업 공간 소유권 → 저장), 그리고 저장·큐 등록이 **한 트랜잭션 안**이라는 사실.
- *
- * 재지 않는 것은 SQL 이 실제로 무엇을 하는가다 — 원자성·제약·CASCADE 는 실제 PostgreSQL 이
- * 있어야 잴 수 있고 `JdbcDocumentStoreTest` 가 맡는다. 두 파일이 같은 것을 두 번 재면
- * 어느 쪽이 무엇을 지키는지가 흐려진다.
- *
- * ## 트랜잭션 경계를 **깊이로** 잰다
- *
- * 「같은 트랜잭션인가」를 대역 호출 순서로 재면 순서만 맞고 경계는 밖일 수 있다. 그래서
- * [RecordingTransactionRunner] 가 진행 중 깊이를 세고, 저장소·큐 대역이 **불린 시점의
- * 깊이**를 기록한다. 등록이 커밋 밖으로 나가면 그 값이 0 이 되어 빨개진다.
- */
+/** 문서 등록 유스케이스 — Spring 도 DB 도 없이 대역으로 돈다. */
 class DocumentServiceTest {
-    // ============================================================ 검사 순서
-
     @Test
     @DisplayName("파일 크기 판정이 추출보다 먼저다 — 상한을 넘는 바이트를 파서에 넘기지 않는다")
     fun `크기 판정이 추출보다 먼저다`() {
@@ -109,7 +90,7 @@ class DocumentServiceTest {
     @DisplayName("길이는 **코드 포인트**로 잰다 — 상한 정확히면 통과한다")
     fun `길이는 코드 포인트로 잰다`() {
         val world = World()
-        // BMP 밖 문자 4,000개 = 코드 단위 8,000개. 코드 단위로 재는 구현이면 여기서 거절된다.
+
         val body = "𝓐".repeat(MAX_CONVERTIBLE_CHARS)
 
         val accepted = world.service.createFromText(OWNER, body, null, null)
@@ -140,8 +121,6 @@ class DocumentServiceTest {
             .isInstanceOf(StorageException::class.java)
             .hasMessage(NO_WORKSPACE_MESSAGE)
     }
-
-    // ============================================================ 저장과 등록
 
     @Test
     @DisplayName("문서·변환·작업 등록이 **같은 트랜잭션 안**이다 (계획 §4.4)")
@@ -205,9 +184,6 @@ class DocumentServiceTest {
     @Test
     @DisplayName("파일 모드에서 제목을 생략하면 **대체 제목**이다 — 본문도 파일 이름도 쓰지 않는다")
     fun `파일 모드는 제목을 생략하면 대체 제목이다`() {
-        // 두 갈래를 한 케이스가 함께 잰다. 본문 유도(게이트 27 Critical ①)와 파일 이름
-        // 유도(2026-08-20 재판정) 중 어느 쪽이 되살아나도 여기서 빨개진다 — 되살아난 값이
-        // 무엇이든 `FALLBACK_TITLE` 이 아니기 때문이다.
         val world = World(extracted = "복지 급여 안내\n둘째 줄")
 
         world.service.createFromFile(OWNER, "홍길동_주민등록등본.docx", ByteArray(1), null, null)
@@ -308,8 +284,6 @@ class DocumentServiceTest {
         ).isEqualTo("복지 급여 안내")
     }
 
-    // ============================================================ 목록
-
     @Test
     @DisplayName("목록은 **한 건 더** 읽는다 — 다음 쪽 유무를 전수 count 없이 판정하기 위해서다")
     fun `목록은 한 건 더 읽는다`() {
@@ -331,8 +305,6 @@ class DocumentServiceTest {
         assertThat(world.documents.listQueries).isEmpty()
     }
 
-    // ============================================================ 즉시 파기
-
     @Test
     @DisplayName("삭제가 **소유자를 저장소까지** 넘기고 트랜잭션 안에서 돈다")
     fun `삭제가 소유자와 트랜잭션 경계를 지킨다`() {
@@ -342,10 +314,8 @@ class DocumentServiceTest {
 
         world.service.delete(OWNER, documentId)
 
-        // 소유자가 저장소 인자에 실제로 실린다 — 유스케이스가 그것을 흘리면 구현이
-        // 소유 술어를 SQL 에 넣을 재료 자체가 없다.
         assertThat(world.documents.deleteQueries.single()).isEqualTo(DeleteQuery(OWNER, documentId))
-        // 깊이 1 = 커밋 안에서 불렸다. 0 이면 경계 밖이다.
+
         assertThat(world.documents.depthWhenDeleted).containsExactly(1)
         assertThat(world.transaction.committed).isEqualTo(1)
     }
@@ -359,8 +329,6 @@ class DocumentServiceTest {
             .isInstanceOf(NotFoundException::class.java)
             .hasMessage(DOCUMENT_NOT_FOUND_MESSAGE)
 
-        // 저장소는 **불렸다** — 「없다」 판정을 유스케이스가 미리 하지 않는다. 미리 하면
-        // 그 조회와 삭제 사이가 갈라지고, 소유 판정이 삭제문 밖으로 나간다.
         assertThat(world.documents.deleteQueries).hasSize(1)
         assertThat(world.transaction.failed).isEqualTo(1)
     }
@@ -374,13 +342,9 @@ class DocumentServiceTest {
 
         world.service.delete(OWNER, documentId)
 
-        // 앱이 변환을 별도로 지우면 ⑴ 두 삭제 경로가 생기고 ⑵ 그 문장에 소유 조건 사본이
-        // 필요해진다. 대역이 「불리지 않았다」를 재는 것이 그 부재의 직접 관측이다.
         assertThat(world.conversions.inserted).isEmpty()
         assertThat(world.queue.enqueued).isEmpty()
     }
-
-    // ============================================================ 대역
 
     private companion object {
         val OWNER: UUID = UUID.fromString("00000000-0000-4000-8000-0000000000a1")
@@ -474,7 +438,7 @@ class DocumentServiceTest {
         val offset: Int,
     )
 
-    /** 삭제 요청 한 건. **소유자가 실제로 저장소까지 갔는가**를 재는 재료다. */
+    /** 삭제 요청 한 건. 소유자가 실제로 저장소까지 갔는가를 재는 재료다. */
     private data class DeleteQuery(
         val ownerId: UUID,
         val documentId: UUID,
@@ -525,7 +489,7 @@ class DocumentServiceTest {
             sourceText: EncryptedContent,
         ): Boolean = false
 
-        /** 삭제 요청을 기록한다. **소유자 인자가 실제로 전달되는지**를 잴 재료다. */
+        /** 삭제 요청을 기록한다. 소유자 인자가 실제로 전달되는지를 잴 재료다. */
         override fun deleteOwned(
             ownerId: UUID,
             documentId: UUID,

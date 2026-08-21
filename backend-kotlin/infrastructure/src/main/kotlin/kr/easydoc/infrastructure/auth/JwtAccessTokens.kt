@@ -18,40 +18,7 @@ import java.time.Duration
 import java.util.Date
 import java.util.UUID
 
-/**
- * HS256 액세스 토큰 발급·검증 — `migration-safety-gate` I-9 와 계약 `x-auth` 의 구현.
- *
- * ## 클레임은 셋뿐이다
- *
- * `sub`(사용자 UUID) · `exp` · `typ`. 이메일 등 개인정보를 **넣지 않는다**
- * (`x-change-policy.invariants`). JWT 는 서명될 뿐 암호화되지 않아 누구나 읽을 수 있고,
- * 토큰은 브라우저 저장소·프록시 로그·오류 리포트를 거쳐 다닌다.
- *
- * ## clock skew 0 (필수조치 B)
- *
- * Nimbus `DefaultJWTClaimsVerifier` 의 기본 허용 오차는 **60초**이고 Spring Security
- * `JwtTimestampValidator` 도 같다. 그대로 두면 만료된 토큰이 **+59초까지 통과한다.**
- * 그래서 그 검증기들을 **쓰지 않고** 만료를 직접 판정한다 — `exp` 를 1초라도 지나면 401.
- * `exp` 없는 토큰을 금지한 조항과 같은 목적이다(만료가 강제되지 않으면 클레임을 요구한
- * 의미가 없다).
- *
- * ## 알고리즘 혼동 방어
- *
- * 서명을 검증하기 **전에** 헤더의 `alg` 가 HS256 인지 본다. `alg: none` 이나 HS256 키를
- * RS256 공개키처럼 쓰게 만드는 위조는 JVM JWT 라이브러리에서 반복적으로 나온 취약점
- * 유형이다(I-9 검증 1). [MACVerifier] 자신도 알고리즘을 확인하지만, **우리가 기대하는
- * 알고리즘을 명시적으로 못박는 자리**를 코드에 남긴다 — 검증기를 바꾸는 날 이 조건이
- * 함께 사라지지 않게 하기 위해서다.
- *
- * ## 실패를 구분하지 않는다
- *
- * 만료·위조·클레임 누락·용도 불일치가 전부 같은 [InvalidCredentialsException] 이다
- * (계약 `x-auth.failure_uniformity`). 예외에 원인을 담지 않고 원인 체인도 잇지 않는다 —
- * 스택 트레이스에 토큰 조각이 실릴 수 있다.
- *
- * 서명 키 문제만 [ConfigurationException] 으로 갈라 나간다(→ 503). 호출자 잘못이 아니라
- * 운영 설정 문제이고, 401 로 감추면 배포 사고가 "사용자가 토큰을 잘못 냈다"로 둔갑한다.
- */
+/** HS256 액세스 토큰 발급·검증 — `migration-safety-gate` I-9 와 계약 `x-auth` 의 구현. */
 class JwtAccessTokens(
     private val secret: Secret,
     private val lifetime: Duration,
@@ -144,13 +111,7 @@ class JwtAccessTokens(
         }
     }
 
-    /**
-     * 서명 키 바이트. 미설정이거나 [minSecretBytes] 미만이면 [ConfigurationException].
-     *
-     * **경고가 아니라 설정 오류로 끊는다**(I-9 검증 3). HS256 의 보안 강도는 키 길이에
-     * 직접 걸려 있어, 짧은 키로 조용히 도는 배포는 위조 가능한 세션을 발급한다.
-     * 기동은 막지 않는다 — 계약이 `/health` 로 배포 상태를 진단할 수 있어야 한다고 정했다.
-     */
+    /** 서명 키 바이트. 미설정이거나 [minSecretBytes] 미만이면 [ConfigurationException]. */
     private fun signingKey(): ByteArray {
         if (secret.isBlank()) {
             throw ConfigurationException(AUTH_NOT_CONFIGURED_MESSAGE)

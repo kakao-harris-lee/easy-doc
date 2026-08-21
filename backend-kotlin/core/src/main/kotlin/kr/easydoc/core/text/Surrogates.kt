@@ -38,30 +38,13 @@ package kr.easydoc.core.text
 // 둘 다 요구 위반이다. `stripControlChars` 는 이 문자를 **지우지 않는다**(그 패턴은 C0·DEL·
 // C1 만 본다) — 그래서 별도 판정이 필요하다.
 
-/**
- * 짝을 이루지 않은 UTF-16 서로게이트가 **하나라도** 있는가.
- *
- * 상위 서로게이트 뒤에 하위가 오지 않거나, 하위가 홀로 나오면 참이다. 이 둘이 곧
- * `String.toByteArray(UTF_8)` 가 `?` 로 바꿔 버리는 값의 전부다.
- *
- * 정상 문자열에서는 `Char.isSurrogate()` 가 전부 거짓이라 한 번의 선형 훑기로 끝난다.
- */
+/** 짝을 이루지 않은 UTF-16 서로게이트가 **하나라도** 있는가. */
 fun hasUnpairedSurrogate(text: String): Boolean {
     forEachUnpairedSurrogateIndex(text) { return true }
     return false
 }
 
-/**
- * 짝을 이루지 않은 서로게이트만 **걷어낸다**. 나머지 문자는 하나도 건드리지 않는다.
- *
- * **짝을 이룬 쌍(이모지·BMP 밖 문자)은 그대로 남는다** — 그것은 UTF-8 로 손실 없이
- * 왕복하는 정상 텍스트다. 여기서 BMP 밖 문자 전체를 지우면 정제가 아니라 검열이 된다.
- *
- * 걷어낸 뒤 남는 것이 없을 수 있다. 그때 무엇을 쓸지는 **호출자**가 정한다 — 제목은
- * 계약 `x-title-policy.fallback_title` 이고, 그 판단은 이 함수의 것이 아니다.
- *
- * 흔한 경우(짝 없는 서로게이트 0건)에는 원래 인스턴스를 그대로 돌려준다.
- */
+/** 짝을 이루지 않은 서로게이트만 **걷어낸다**. 나머지 문자는 하나도 건드리지 않는다. */
 fun stripUnpairedSurrogates(text: String): String {
     // 판정은 언제나 위 함수를 거친다 — 여기서 다시 훑기를 적으면 두 벌이 된다.
     if (!hasUnpairedSurrogate(text)) return text
@@ -70,13 +53,7 @@ fun stripUnpairedSurrogates(text: String): String {
     return text.filterIndexed { index, _ -> index !in doomed }
 }
 
-/**
- * 짝 없는 서로게이트가 놓인 **코드 단위 인덱스**를 앞에서부터 넘긴다.
- *
- * 이 파일의 두 공개 함수가 공유하는 유일한 판정이다. 걷는 규칙은 셋뿐이다 —
- * ⑴ 상위+하위가 이어지면 정상 쌍이라 두 칸을 건너뛴다 ⑵ 남은 서로게이트는 전부 짝이
- * 없다(짝 없는 상위 · 홀로 나온 하위 · 끝에서 잘린 상위) ⑶ 나머지는 그냥 지난다.
- */
+/** 짝 없는 서로게이트가 놓인 **코드 단위 인덱스**를 앞에서부터 넘긴다. */
 private inline fun forEachUnpairedSurrogateIndex(
     text: String,
     action: (Int) -> Unit,

@@ -39,22 +39,10 @@ private const val EMPTY_NAME_MESSAGE = "작업 공간 이름을 입력해 주세
 /** 상한 초과 문구. 같은 자리의 **두 번째** 값이자 `examples.too_long` 이다. */
 private const val NAME_TOO_LONG_MESSAGE = "작업 공간 이름은 50자 이하여야 합니다"
 
-/**
- * 이름 정규화 — **제어문자 제거 + 앞뒤 공백 제거**. 계약 `fields[4].measured_on` 그대로다.
- *
- * 순서가 뒤집히면 안 된다. 공백을 먼저 털면 `"\u0001 이름 \u0001"` 같은 입력에서 제어문자가
- * 바깥을 막아 공백이 남고, 그 공백이 저장된다.
- */
+/** 이름 정규화 — **제어문자 제거 + 앞뒤 공백 제거**. 계약 `fields[4].measured_on` 그대로다. */
 fun normalizeWorkspaceName(raw: String): String = stripControlChars(raw).trim()
 
-/**
- * 정규화된 이름이 규칙을 만족하는지 본다. 만족하면 그 값을 그대로 돌려준다.
- *
- * **길이를 코드 포인트로 잰다.** `String.length` 는 UTF-16 단위라 보조 평면 문자(이모지 등)를
- * 2로 세는데 `varchar(50)` 은 문자 수를 센다. 두 단위가 갈리면 규칙을 통과한 이름이 DB 에서
- * 잘리거나 거절되고, 그것은 사용자가 원인을 알 수 없는 실패다. 이름에는 이모지가 흔히
- * 들어오므로 이 자리는 이론이 아니다.
- */
+/** 정규화된 이름이 규칙을 만족하는지 본다. 만족하면 그 값을 그대로 돌려준다. */
 fun requireValidWorkspaceName(normalizedName: String): String {
     if (normalizedName.isEmpty()) {
         // 입력값을 메시지에 넣지 않는다 — 이 문자열이 그대로 응답 detail 이 된다.

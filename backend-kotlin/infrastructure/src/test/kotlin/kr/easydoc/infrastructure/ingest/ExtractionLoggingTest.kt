@@ -10,20 +10,7 @@ import org.junit.jupiter.api.Test
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 
-/**
- * 추출 실패 로그 규약 (계획 §5 D-16·D-17 · 프로젝트 `CLAUDE.md` 보안 규칙 · I-4).
- *
- * 남기는 것은 **형식명 · 바이트 길이 · 사유 코드** 뿐이다. 막으려는 것 셋:
- *
- * - **파일 이름** — 그 자체가 개인정보일 수 있다(`홍길동_주민등록등본.pdf`).
- * - **문서 본문** — 개인정보 포함 여부와 무관하게 금지.
- * - **라이브러리 예외 메시지** — 임시 경로·원문 조각이 섞이고 로케일에 따라 번역된다.
- *   그래서 사유는 언제나 우리가 정한 코드이거나 예외 **타입 이름**이다.
- *
- * ## 「0건」이 캡처가 비어서 참이 되지 않게 한다
- *
- * 각 케이스가 **실패 로그가 실제로 찍혔는지 먼저 확인**하고 그다음에 부재를 단언한다.
- */
+/** 추출 실패 로그 규약 (계획 §5 D-16·D-17 · 프로젝트 `CLAUDE.md` 보안 규칙 · I-4). */
 class ExtractionLoggingTest {
     private val extractors = DocumentExtractors()
 
@@ -57,8 +44,7 @@ class ExtractionLoggingTest {
 
         val message = render(events)
         assertThat(message).contains("reason=")
-        // 라이브러리 예외 **메시지**가 아니라 타입 이름만 나가야 한다. 메시지에는 임시 경로가
-        // 섞이고 로케일에 따라 번역된다(spike S-5 실측).
+
         assertThat(message).doesNotContain("Exception:")
     }
 
@@ -98,7 +84,7 @@ class ExtractionLoggingTest {
         val appender = ListAppender<ILoggingEvent>().apply { start() }
         val previousLevel = root.level
         root.addAppender(appender)
-        // 억제 때문에 0건이 되는 상태와 "찍히지 않는다"를 구분하려면 전부 받아야 한다.
+
         root.level = Level.TRACE
         try {
             block()

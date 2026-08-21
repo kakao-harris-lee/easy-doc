@@ -16,24 +16,8 @@ import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
 import java.util.UUID
 
-/**
- * 행 단위 재암호화의 **네 조건** — 게이트 25 X5 / privacy-gate F-5.
- *
- * 원장이 연 조건은 **단일 UPDATE · NULL 보존 · 실패 시 전체 중단 · 평문 체류 최소화**이고,
- * 여기에 덤으로 **낙관적 조건**이 붙는다. 이 파일은 그 다섯을 유스케이스 층에서 잰다 —
- * 실제 SQL 이 정말 한 문장인지는 `JdbcDocumentStoreTest` 가 문장 수로 잰다(구조 축).
- *
- * ## 「평문 체류 최소화」를 어떻게 재는가 — **재지 않는다고 적는다**
- *
- * 평문이 컬렉션·필드·로그에 남지 않는다는 성질은 지역 변수 수명이라 단위 테스트로 관측할
- * 수 없다. 여기서 대신 재는 것은 **관측 가능한 대리 지표**다 — 회전이 아무것도 로깅하지
- * 않는다는 것(대역이 로거를 갖지 않으므로 구조적으로 참)과, 복호화 결과가 저장소 포트로
- * 넘어가지 않는다는 것(포트가 `EncryptedContent` 만 받으므로 **컴파일러가 강제**한다).
- * 대리 지표라는 사실을 적어 두지 않으면 다음 사람이 이 파일을 「네 조건 전부 측정됨」으로 읽는다.
- */
+/** 행 단위 재암호화의 네 조건 — 게이트 25 X5 / privacy-gate F-5. */
 class EnvelopeRotationTest {
-    // ============================================================ 변환 행
-
     @Test
     @DisplayName("옛 세대 행을 새 세대로 다시 봉인한다 — 세 열이 **한 번의** 갱신으로 바뀐다")
     fun `옛 세대를 회전한다`() {
@@ -126,10 +110,6 @@ class EnvelopeRotationTest {
     @Test
     @DisplayName("**낙관적 조건**에서 지면 CONTENDED — 잠금 전제가 성립하지 않았다는 신호다")
     fun `경합에서 지면 CONTENDED 다`() {
-        // 뜻이 바뀌었다(게이트 27 ①). 잠금이 서면 「다른 프로세스가 먼저 회전했다」는 사정은
-        // ALREADY_CURRENT 로 나온다 — 뒤엣 회전이 읽기에서 기다렸다가 갱신된 행을 받기 때문이다.
-        // 남은 이 값은 「잠근 채 읽은 그 행이 쓰기 시점에 그대로가 아니었다」이고, 잠금이 서 있으면
-        // 일어날 수 없으므로 배선을 의심하라는 신호다.
         val world = World()
         world.conversions.envelope = envelopeOf(OLD_VERSION, "초안", null, null)
         world.conversions.updated = false
@@ -140,9 +120,6 @@ class EnvelopeRotationTest {
     @Test
     @DisplayName("쓰기 조건이 **읽어 온 행 그 자체**다 — 세대 정수 하나로 좁혀지지 않는다")
     fun `쓰기 조건이 읽은 행 전부다`() {
-        // 게이트 27 ①. 조건이 `key_version` 하나였을 때, 그 열을 건드리지 않는 내용 쓰기가
-        // 조건을 통과해 조용히 사라졌다. 유스케이스가 **읽은 행을 통째로** 넘기는지 여기서 잰다 —
-        // 넘기지 않으면 저장소가 조건에 넣을 암호문 자체를 갖지 못한다.
         val world = World()
         val loaded = envelopeOf(OLD_VERSION, "초안", "대응표", null)
         world.conversions.envelope = loaded
@@ -175,8 +152,6 @@ class EnvelopeRotationTest {
             CONVERSION to EncryptedField.CONVERSION_EDITED_TEXT,
         )
     }
-
-    // ============================================================ 문서 행
 
     @Test
     @DisplayName("문서 원문도 같은 규칙으로 회전한다 — 컬럼이 하나라 NULL 보존 조건이 없다")
@@ -221,8 +196,6 @@ class EnvelopeRotationTest {
         assertThat(world.documents.rewrites).isEmpty()
         assertThat(world.transaction.failed).isEqualTo(1)
     }
-
-    // ============================================================ 대역
 
     private companion object {
         val CONVERSION: UUID = UUID.fromString("00000000-0000-4000-8000-0000000000c1")
@@ -282,12 +255,7 @@ class EnvelopeRotationTest {
         }
     }
 
-    /**
-     * 쓰기 세대가 [NEW_VERSION] 인 암호 대역.
-     *
-     * [unopenable] 로 지정한 컬럼은 열리지 않는다 — 「한 열이 실패하면 전체 중단」을 재려면
-     * **열 단위로** 실패를 만들 수 있어야 한다.
-     */
+    /** 쓰기 세대가 [NEW_VERSION] 인 암호 대역. */
     private class FakeRotatingCipher(private val unopenable: EncryptedField?) : ContentCipher {
         override val writeScheme: String = EncryptionScheme.AES_256_GCM_V1
         override val writeKeyVersion: Int = NEW_VERSION

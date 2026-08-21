@@ -25,23 +25,7 @@ import java.time.Instant
 import java.time.temporal.ChronoUnit
 import java.util.UUID
 
-/**
- * `@WebMvcTest` 슬라이스가 쓰는 **문서 경로 대역**.
- *
- * ## 가짜인 것은 저장소·암호·파서뿐이다
- *
- * `DocumentService` 는 **실물**이다(`AuthSliceBeans` 의 `WorkspaceService` 와 같은 규칙).
- * 그래야 계약이 못박은 검사 순서 — 크기 → 추출 → 길이 → 소유권 → 저장 — 를 이 슬라이스가
- * 실제로 밟는다. 유스케이스까지 대역으로 두면 재는 것이 계약이 아니라 "내가 만든 대역이
- * 계약처럼 답하는가"가 된다.
- *
- * ## 여기서 재지 **않는** 것
- *
- * 실제 암호화·트랜잭션 원자성·소유 조건이 SQL `WHERE` 안에 있는지·FK CASCADE 는 전부
- * 실 PostgreSQL 이 필요하다 — `DocumentEndpointReachTest` 와 `infrastructure` 의 저장소
- * 테스트가 맡는다. 다만 **소유 판정 자체**([InMemoryWorkspaceLookup])는 실물과 같은 축으로
- * 둔다. 그러지 않으면 슬라이스가 「구현이 소유자를 안 봐도 초록」이 된다.
- */
+/** `@WebMvcTest` 슬라이스가 쓰는 문서 경로 대역. */
 class InMemoryDocumentRepository : DocumentRepository {
     private class Row(
         val ownerId: UUID,
@@ -57,8 +41,6 @@ class InMemoryDocumentRepository : DocumentRepository {
         draft: DocumentDraft,
         sourceText: EncryptedContent,
     ): Document {
-        // 실물에서 DB `DEFAULT` 가 채우는 두 값을 여기서 만든다. 순서가 정해져야 목록
-        // 정렬(`created_at DESC, id DESC`)을 잴 수 있으므로 1초씩 벌린다.
         val createdAt = Instant.EPOCH.plusSeconds(rows.size.toLong())
         val document =
             Document(
@@ -94,24 +76,12 @@ class InMemoryDocumentRepository : DocumentRepository {
         expected: EncryptedContent,
         sourceText: EncryptedContent,
     ): Boolean {
-        // 낙관적 조건 — **읽어 온 암호문 그대로**여야 한다. 실물은 이것을 SQL `WHERE` 로 건다.
         val row = rows.firstOrNull { it.document.id == documentId && it.sourceText == expected }
         row?.sourceText = sourceText
         return row != null
     }
 
-    /**
-     * 소유 조건을 **실물과 같은 축으로** 본다 — 두 조건이 한 판정에 함께 든다.
-     *
-     * 여기서 `ownerId` 를 흉내만 내면(예: 식별자만 보고 지운다) 슬라이스가 「구현이 소유자를
-     * 안 봐도 초록」이 되고, 그것이 이 파일 KDoc 이 [InMemoryWorkspaceLookup] 에 대해 적은
-     * 것과 같은 이유다.
-     *
-     * **연쇄는 흉내 내지 않는다.** 대역에는 변환 저장소가 따로 있고 FK 가 없으므로 이 삭제가
-     * 변환 행을 건드리지 않는다 — 그것이 실물과 다르다는 사실을 여기 적어 둔다. 연쇄는
-     * 스키마의 성질이라 실 PostgreSQL 만 잴 수 있고 `JdbcDocumentStoreTest` 와
-     * `DocumentDeleteReachTest` 가 맡는다.
-     */
+    /** 소유 조건을 실물과 같은 축으로 본다 — 두 조건이 한 판정에 함께 든다. */
     override fun deleteOwned(
         ownerId: UUID,
         documentId: UUID,
@@ -182,12 +152,7 @@ class RecordingConversionQueue : ConversionQueue {
     }
 }
 
-/**
- * 작업 공간 읽기 대역 — 실물처럼 **[InMemoryWorkspaceRepository] 를 소유 조건과 함께** 본다.
- *
- * 소유 판정을 흉내만 내면(예: 언제나 찾음) DC-16·DC-17 이 재는 것이 사라진다. 여기서는
- * 저장소를 그대로 읽되 소유자 조건을 함께 건다.
- */
+/** 작업 공간 읽기 대역 — 실물처럼 [InMemoryWorkspaceRepository] 를 소유 조건과 함께 본다. */
 class InMemoryWorkspaceLookup(private val workspaces: InMemoryWorkspaceRepository) : WorkspaceLookup {
     override fun findOwnedId(
         ownerId: UUID,
@@ -207,16 +172,7 @@ class InMemoryWorkspaceLookup(private val workspaces: InMemoryWorkspaceRepositor
             ?.id
 }
 
-/**
- * 암호화를 흉내만 낸다 — **AES 를 슬라이스에서 돌리지 않는다.**
- *
- * 봉인의 정확성(round-trip·변조 거부·nonce 재사용 금지·AAD 결속)은 `migration-safety-gate`
- * I-7 의 대상이고 `infrastructure` 의 `AesGcmContentCipher` 테스트가 잰다. 여기서 재는 것은
- * **HTTP 계약**이다.
- *
- * 그래도 **평문을 그대로 바이트로 두지 않는다** — 그러면 이 대역을 쓰는 테스트에서
- * "암호문이 평문과 같다"가 참이 되고, 그 상태를 실수로 실측 근거로 삼을 수 있다.
- */
+/** 암호화를 흉내만 낸다 — AES 를 슬라이스에서 돌리지 않는다. */
 class StubContentCipher : ContentCipher {
     override val writeScheme: String = EncryptionScheme.AES_256_GCM_V1
     override val writeKeyVersion: Int = 1
@@ -243,7 +199,7 @@ class StubContentCipher : ContentCipher {
     ): PlainBody = PlainBody(String(content.bytes.map { (it.toInt() xor MASK).toByte() }.toByteArray(), Charsets.UTF_8))
 
     private companion object {
-        /** 대칭 변환 하나. **암호가 아니다** — 평문과 바이트가 같아지는 상태만 막는다. */
+        /** 대칭 변환 하나. 암호가 아니다 — 평문과 바이트가 같아지는 상태만 막는다. */
         const val MASK = 0x5A
     }
 }

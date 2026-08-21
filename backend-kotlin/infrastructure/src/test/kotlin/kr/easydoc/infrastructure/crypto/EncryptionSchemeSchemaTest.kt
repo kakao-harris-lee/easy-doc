@@ -13,24 +13,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import java.sql.SQLException
 
-/**
- * **코드 상수와 스키마 CHECK 가 같은 값을 말하는가** — `migration-safety-gate` I-7 검증 5.
- *
- * ## 왜 따로 재는가
- *
- * `EncryptionScheme.AES_256_GCM_V1` 과 `V3__encryption_scheme_aead.sql` 의 CHECK 목록은
- * **같은 사실을 두 곳에 적은 것**이다. 두 곳에 적힌 사실은 갈린다 — 이 저장소가 반복해
- * 고쳐 온 형태다. 갈리면 첫 INSERT 가 제약 위반으로 죽는데, 그 시점은 Phase 4 의 문서
- * 저장 단위이고 원인은 이 파일과 저 파일 사이에 있다.
- *
- * 그래서 **DB 를 실제로 띄워** 상수로 쓰고 읽는다. 갈리는 순간 여기가 빨개진다.
- *
- * ## `fernet-v1` 이 거부되는지도 함께 본다
- *
- * privacy-gate 03 §5-4 의 해제 조건 ⑴ 이 *"CHECK 도메인을 넓히고 DEFAULT 를 바꾸거나
- * 없앤다"* 였다. 새 값이 통과하는 것만 재면 **옛 값도 함께 통과하는 상태**를 구분하지
- * 못한다 — I-7 이 금지한 것은 정확히 그 값이므로 거부까지 재야 조건이 닫힌다.
- */
+/** 코드 상수와 스키마 CHECK 가 같은 값을 말하는가 — `migration-safety-gate` I-7 검증 5. */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class EncryptionSchemeSchemaTest {
     private val database: DatabaseHandle by lazy {
@@ -69,7 +52,6 @@ class EncryptionSchemeSchemaTest {
             .describedAs("Fernet 이름이 여전히 들어간다")
             .isInstanceOf(SQLException::class.java)
 
-        // conversions 쪽도 같은 제약을 진다 — 두 테이블 중 하나만 고치는 회귀를 막는다.
         database.execute(conversionInsert(CONVERSION_ACCEPTED, DOCUMENT_ACCEPTED, EncryptionScheme.AES_256_GCM_V1))
         assertThatThrownBy {
             database.execute(conversionInsert(CONVERSION_REJECTED, DOCUMENT_ACCEPTED, "fernet-v1"))
@@ -87,10 +69,6 @@ class EncryptionSchemeSchemaTest {
     @Test
     @DisplayName("X8 V4 — `key_version` 이 0 이하인 행은 저장되지 않는다 (두 테이블 모두)")
     fun `키 세대 도메인이 제약을 지난다`() {
-        // 실측으로 열려 있던 자리다(privacy-gate F-4): `key_version = -1` 로 INSERT 가
-        // 성공했다. 그 행의 암호문은 설정에 있을 수 없는 세대를 가리키므로 열리지 않는다.
-        // 코드 쪽 검증(`CryptoConfiguration`·`EncryptedContent`)은 발견 시점을 당길 뿐이고,
-        // 앱을 거치지 않는 쓰기까지 막는 마지막 방어선이 여기다.
         database.execute(documentInsert(DOCUMENT_VERSION_OK, EncryptionScheme.AES_256_GCM_V1, keyVersion = 1))
 
         listOf("0" to 0, "음수" to -1).forEach { (label, version) ->
@@ -116,9 +94,6 @@ class EncryptionSchemeSchemaTest {
     @Test
     @DisplayName("V3 SQL 리터럴이 코드 상수와 같다 — 적용된 DB 만 보면 안 잡히는 축")
     fun `마이그레이션 리터럴이 코드 상수와 같다`() {
-        // 위 케이스는 **적용된 DB** 의 CHECK 를 읽는다. 그것만으로는 스크립트에 적힌 리터럴이
-        // 코드 상수와 같은지 알 수 없고, 갈리면 다음 마이그레이션을 쓸 때 어느 쪽을 베낄지가
-        // 갈린다. 그래서 파일 원문을 직접 읽어 대조한다.
         val sql = MigrationCatalog.sourceOf("3")
 
         assertThat(sql)
@@ -129,16 +104,6 @@ class EncryptionSchemeSchemaTest {
     @Test
     @DisplayName("X10 `EncryptedField.wireName` 이 실제 컬럼을 가리킨다 — 양방향으로 대조한다")
     fun `결속 이름이 실제 컬럼과 일치한다`() {
-        // ## 왜 이 대조가 필요한가 (게이트 25 X10)
-        //
-        // `wireName` 은 AEAD 의 associated data 에 실린다. 문자열을 한 글자 바꾸면 **이미 저장된
-        // 모든 행이 영원히 열리지 않는다.** 그런데 이 문자열을 지키는 장치는 KDoc 의 「이름만
-        // 다듬는 변경을 하지 않는다」 한 줄뿐이었고, 실제로 바꿔 보면 729건 전건이 초록이었다.
-        // 산문은 **범위 선언형**이라 빈 선언에서 통과한다(`CLAUDE.md` 규칙 4).
-        //
-        // 두 방향을 함께 본다. 한 방향만 보면 각각 다른 것이 새어 나간다 —
-        //   선언 → 스키마 : 이름을 바꾸거나 오타를 내면 가리키는 컬럼이 없어진다.
-        //   스키마 → 선언 : 새 암호문 컬럼이 생겼는데 아무도 결속하지 않은 상태를 잡는다.
         val declared = EncryptedField.entries.map { it.wireName }.toSet()
         val actual = encryptedColumnsInSchema()
 
@@ -158,7 +123,7 @@ class EncryptionSchemeSchemaTest {
             }.isEqualTo(actual)
     }
 
-    /** `public` 스키마의 **모든 bytea 컬럼**을 `테이블.컬럼` 으로. 열거하지 않고 DB 에서 읽는다. */
+    /** `public` 스키마의 모든 bytea 컬럼을 `테이블.컬럼` 으로. 열거하지 않고 DB 에서 읽는다. */
     private fun encryptedColumnsInSchema(): Set<String> =
         database.connect().use { connection ->
             connection.prepareStatement(BYTEA_COLUMNS_SQL).use { statement ->
@@ -183,7 +148,7 @@ class EncryptionSchemeSchemaTest {
         const val SCHEME_COLUMN_WIDTH = 16
 
         /**
-         * 암호문이 들어갈 수 있는 컬럼 전부. **이름 규칙이 아니라 타입**으로 고른다 —
+         * 암호문이 들어갈 수 있는 컬럼 전부. 이름 규칙이 아니라 타입으로 고른다 —
          * `%_encrypted` 로 고르면 이름을 안 지킨 컬럼이 조용히 빠진다.
          * Flyway 자신의 이력 테이블은 `public` 에 있지만 bytea 컬럼이 없어 걸리지 않는다.
          */

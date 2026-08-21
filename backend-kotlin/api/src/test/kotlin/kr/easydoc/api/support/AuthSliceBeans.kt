@@ -30,35 +30,7 @@ import java.time.Instant
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
-/**
- * `@WebMvcTest` 슬라이스가 쓰는 인증 배선.
- *
- * ## 왜 슬라이스 테스트 전부가 이것을 들여와야 하는가
- *
- * `WebMvcConfig` 가 인증 인터셉터를 등록하면서 `AuthService` 를 요구하게 됐다. 그리고
- * `@WebMvcTest` 는 `WebMvcConfigurer`·`HandlerInterceptor`·`HandlerMethodArgumentResolver`
- * 를 슬라이스에 **자동 포함**하지만 `@Component` 인 서비스는 포함하지 않는다. 그래서
- * `/auth` 를 건드리지 않는 테스트도 이 빈이 없으면 컨텍스트 조립에서 멈춘다.
- *
- * 빈을 조용히 없어도 되게(예: `ObjectProvider.getIfAvailable()`) 만들지 않은 것이 의도다 —
- * 그렇게 하면 배선이 빠진 채 **인증 없이 도는 컨텍스트**가 통과한다.
- *
- * ## 저장소는 가짜지만 규칙은 진짜다
- *
- * [AuthService] 와 `CredentialRules` 는 실물이다. 가짜인 것은 **DB·해시·토큰**뿐이고,
- * 그중 유일성 판정은 `Map` 키 일치로 둔다 — 유일 인덱스와 같은 축이다. 서비스가 이메일을
- * 정규화하지 않으면 키가 갈려 중복 판정이 깨지므로, 정규화 선행(S-2b)을 여기서도 잰다.
- *
- * **암호와 토큰은 여기서 재지 않는다.** Argon2 파라미터·JWT 만료·서명은
- * `infrastructure` 의 단위 테스트와 `AuthEndpointReachTest`(실물 스택)가 잰다.
- *
- * ## `@Configuration` 이 아니라 `@TestConfiguration` 이다
- *
- * 실행 진입점이 `kr.easydoc` 전체를 스캔하므로(`ApiApplication`), 평범한
- * `@Configuration` 이면 **`@SpringBootTest` 컨텍스트가 이 파일을 함께 주워** 실물
- * `AuthConfiguration.authService` 와 빈 이름이 부딪힌다(실측: `BeanDefinitionOverride`).
- * `@TestConfiguration` 은 스캔에서 제외되고 `@Import` 로 부를 때만 들어온다.
- */
+/** `@WebMvcTest` 슬라이스가 쓰는 인증 배선. */
 @TestConfiguration(proxyBeanMethods = false)
 class AuthSliceBeans {
     @Bean
@@ -89,22 +61,14 @@ class AuthSliceBeans {
     ): AuthService = AuthService(users, workspaces, hasher, tokens, transaction)
 
     /**
-     * `@WebMvcTest` 는 컨트롤러를 **전부** 슬라이스에 넣는다. `WorkspaceController` 가
+     * `@WebMvcTest` 는 컨트롤러를 전부 슬라이스에 넣는다. `WorkspaceController` 가
      * 생긴 순간부터 이 빈이 없으면 `/auth` 만 겨누는 테스트도 컨텍스트 조립에서 멈춘다.
-     *
-     * 여기서도 유스케이스는 **실물**이다 — 가짜인 것은 저장소와 트랜잭션뿐이다.
      */
     @Bean
     fun workspaceService(
         workspaces: InMemoryWorkspaceRepository,
         transaction: TransactionRunner,
     ): WorkspaceService = WorkspaceService(workspaces, transaction)
-
-    // ── 문서 경로 ────────────────────────────────────────────────────────────
-    //
-    // `DocumentController` 가 생긴 순간부터 이 빈들이 없으면 `/documents` 를 겨누지 않는
-    // 슬라이스 테스트도 컨텍스트 조립에서 멈춘다 — `workspaceService` 와 같은 이유다.
-    // 대역의 범위와 그 경계는 `DocumentSliceFakes.kt` KDoc 에 있다.
 
     @Bean
     fun inMemoryDocuments(): InMemoryDocumentRepository = InMemoryDocumentRepository()
@@ -126,7 +90,7 @@ class AuthSliceBeans {
     fun stubTextExtractor(): DocumentTextExtractor = StubDocumentTextExtractor()
 
     /**
-     * 업로드가 한 트랜잭션에서 쓰는 세 저장소를 **제품 조립과 같은 모양**으로 묶는다
+     * 업로드가 한 트랜잭션에서 쓰는 세 저장소를 제품 조립과 같은 모양으로 묶는다
      * (`DocumentConfiguration.documentStorage`). 셋을 유스케이스에 따로 넘기면 그중
      * 하나만 다른 경계에 두는 배선이 타입으로 막히지 않는다.
      */
@@ -137,7 +101,7 @@ class AuthSliceBeans {
         queue: RecordingConversionQueue,
     ): DocumentStorage = DocumentStorage(documents = documents, conversions = conversions, queue = queue)
 
-    /** 유스케이스는 **실물**이다 — 계약이 정한 검사 순서를 슬라이스가 실제로 밟아야 한다. */
+    /** 유스케이스는 실물이다 — 계약이 정한 검사 순서를 슬라이스가 실제로 밟아야 한다. */
     @Bean
     fun documentService(
         storage: DocumentStorage,
@@ -155,7 +119,7 @@ class AuthSliceBeans {
         )
 }
 
-/** 유일성을 **키 일치**로 판정한다 — `ix_users_email` 과 같은 축이다. */
+/** 유일성을 키 일치로 판정한다 — `ix_users_email` 과 같은 축이다. */
 class InMemoryUserRepository : UserRepository {
     private val byEmail = ConcurrentHashMap<String, StoredUser>()
     private val byId = ConcurrentHashMap<UUID, StoredUser>()
@@ -195,22 +159,7 @@ class InMemoryUserRepository : UserRepository {
     }
 }
 
-/**
- * 작업 공간 저장소의 가짜.
- *
- * ## 규칙은 진짜다
- *
- * 가짜인 것은 **저장 매체**뿐이다. 소유 조건(모든 조회가 `ownerId` 로 걸린다)과 유일성
- * (같은 소유자 안에서 이름이 겹치면 409)은 실물과 같은 축으로 판정한다 — 그러지 않으면
- * 슬라이스 테스트가 「구현이 소유자를 안 봐도 초록」이 된다.
- *
- * **잠금은 흉내 내지 않는다.** 「마지막 하나」 판정의 동시성은 실제 트랜잭션과 행 잠금이
- * 있어야 잴 수 있으므로 `JdbcWorkspaceRepositoryTest`(Testcontainers)가 맡는다.
- * (2026-08-21 정정 — 종전 문면은 저장소에 없는 이름을 지목했다. 그 종류는 이제
- * `NamedReferenceGuardTest` 축 A 가 잰다.)
- * `createdAt` 은 삽입 순서대로 1초씩 벌려 둔다 — 목록 순서가 정해지지 않으면
- * 「첫 번째가 기본 작업 공간」을 잴 수 없다.
- */
+/** 작업 공간 저장소의 가짜. */
 class InMemoryWorkspaceRepository : WorkspaceRepository {
     private data class Row(
         val id: UUID,
@@ -243,7 +192,7 @@ class InMemoryWorkspaceRepository : WorkspaceRepository {
         name: String,
     ): Workspace? {
         val index = rows.indexOfFirst { it.id == workspaceId && it.ownerId == ownerId }
-        // 없는 것과 남의 것을 가르지 않는다 — 조건 하나로 끝난다.
+
         if (index < 0) {
             return null
         }
@@ -293,13 +242,7 @@ class InMemoryWorkspaceRepository : WorkspaceRepository {
     private fun Row.toWorkspace(): Workspace = Workspace(id, name, createdAt)
 }
 
-/**
- * 해시를 흉내만 낸다 — **Argon2 를 슬라이스 테스트에서 돌리지 않는다.**
- *
- * 파라미터 조합이 1건당 64MiB 를 수십 밀리초 붙들고 있어, 계약 케이스 20여 건마다 그것을
- * 돌리면 슬라이스가 초 단위로 느려진다. 해시의 정확성은 `infrastructure` 단위 테스트가
- * 재고 여기서 재는 것은 **HTTP 계약**이다.
- */
+/** 해시를 흉내만 낸다 — Argon2 를 슬라이스 테스트에서 돌리지 않는다. */
 class StubPasswordHasher : PasswordHasher {
     override fun hash(rawPassword: String): PasswordHash = PasswordHash("stub:$rawPassword")
 
@@ -314,9 +257,6 @@ class StubPasswordHasher : PasswordHasher {
      * 어떤 비밀번호와도 일치하지 않는 값. [verify] 가 `"stub:"` 접두사를 요구하므로 이
      * 값으로는 절대 통과하지 않는다 — 계정 부재 경로가 실제 검증을 지나가는지를 슬라이스
      * 에서도 재려면 「일치하지 않음」이 성질로 성립해야 한다.
-     *
-     * 비용은 흉내 내지 않는다. 시간 축 회귀는 실물 Argon2 가 도는 `AuthEndpointReachTest`
-     * 가 잰다.
      */
     override fun dummyHash(): PasswordHash = PasswordHash("stub-dummy")
 }
@@ -336,7 +276,7 @@ class StubAccessTokens : AccessTokens {
 
     private companion object {
         /**
-         * 계약값이 아니다. `expires_in` 의 계약 준수는 **실물 설정에서** 재야 하므로
+         * 계약값이 아니다. `expires_in` 의 계약 준수는 실물 설정에서 재야 하므로
          * `AuthEndpointReachTest` 가 맡는다 — 테스트 배선이 값을 정해 놓고 그 값을
          * 단언하면 아무것도 검증하지 않는 것이다.
          */

@@ -6,43 +6,7 @@ import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
 import java.io.File
 
-/**
- * **계약 파서 노드(`P-*`)의 레지스트리 강제자** — 계약 계획 §3-3.
- *
- * ## 왜 이 장치가 있는가
- *
- * `P-*` 는 「계약의 이 노드를 테스트가 **읽어서** 쓴다」는 표식이고, 세 배치 명세의 §4 표와
- * `ContractSpec.kt` 의 KDoc 라벨 **두 곳**에서 붙는다. **단일 소유 문서가 없다.** 그래서
- * 같은 번호가 두 뜻을 갖는 사고가 실제로 났다 — 구현 레인이 D-2 판정 커밋에서 `P-22` 를
- * 선점했는데 문서 배치 명세가 같은 번호를 다른 노드에 배정했다(게이트 26 K5).
- *
- * 번호만 고치면 같은 사고가 다음 배치에서 다시 난다. 원인이 「레지스트리에 소유자가
- * 없다」이므로 **탐지기**를 세운다.
- *
- * ## 재는 것 넷
- *
- * 1. **중복 정의 없음** — 같은 ID 가 둘 이상의 명세에서 **정의 행**으로 나오면 실패.
- * 2. **미등재 라벨 없음** — `ContractSpec.kt` 의 라벨이 어느 명세에도 등재돼 있지 않으면
- *    실패. *P-22 가 태어난 자리를 정확히 막는다.*
- * 3. **번호 연속** — 정의된 ID 의 합집합이 `1..max` 연속이어야 한다. 구멍은 「번호를
- *    뽑아 놓고 등재를 안 했다」의 흔적이므로 그 자체가 신호다.
- * 4. **총수 고정** — 정의 행 수와 「`ContractSpec.kt` 전용 등재」 수를 **정확 일치**로
- *    못박는다. 새 노드를 더하면 이 숫자가 diff 로 올라온다.
- *
- * ## 「정의」와 「등재」를 가른다
- *
- * - **정의 행** — 명세 §4 표의 `| **P-N** | …` 한 줄. 그 노드가 무엇을 읽고 어느 케이스를
- *   먹이는지를 적는 자리다.
- * - **등재** — 명세 안 **어디서든** 그 ID 가 불린 것. `P-22` 는 정의 행이 아니라 documents
- *   명세 §4 서문의 **사후 등재** 문단으로 살아 있다. 구현이 먼저 선점한 번호를 명세가
- *   나중에 받아들인 형태이고, 그 형태를 정의 행으로 옮기면 **이미 도는 식별자를 바꾸는**
- *   편집이 되어 K5 가 막으려던 것을 「같은 뜻이 두 이름」으로 바꿀 뿐이다.
- *
- * ## 빈 분모는 통과가 아니다
- *
- * 명세 파일을 못 찾거나 정의 행이 0건이면 **실패한다**. 저장소의 parity 게이트가
- * 「선언 도메인 0개에서 exit 0」이었던 것이 정확히 이 결함이라 같은 자리를 만들지 않는다.
- */
+/** 계약 파서 노드(`P-*`)의 레지스트리 강제자 — 계약 계획 §3-3. */
 class ParserNodeRegistryTest {
     @Test
     @DisplayName("규칙 1 — 같은 P- 번호가 둘 이상의 명세에서 정의되지 않는다 (분모 비어 있지 않음 포함)")
@@ -142,9 +106,7 @@ class ParserNodeRegistryTest {
         }
     }
 
-    // ================================================================ 훑기
-
-    /** `| **P-N** | …` 형태의 **정의 행**만 뽑는다. 산문 안의 언급은 세지 않는다. */
+    /** `| P-N | …` 형태의 정의 행만 뽑는다. 산문 안의 언급은 세지 않는다. */
     private fun definitionsByFile(): Map<File, List<Int>> =
         specFiles().associateWith { file ->
             file.readLines().mapNotNull { line ->
@@ -156,11 +118,11 @@ class ParserNodeRegistryTest {
             }
         }
 
-    /** 파일 안 **어디서든** 불린 번호. 정의 행이 아닌 사후 등재(P-22)를 함께 본다. */
+    /** 파일 안 어디서든 불린 번호. 정의 행이 아닌 사후 등재(P-22)를 함께 본다. */
     private fun mentionedIds(file: File): Set<Int> =
         ANY_NODE.findAll(file.readText()).map { it.groupValues[1].toInt() }.toSet()
 
-    /** `ContractSpec.kt` KDoc 의 **굵은** 라벨(`**P-N`). 평문 주석 번호는 세지 않는다. */
+    /** `ContractSpec.kt` KDoc 의 굵은 라벨(`P-N`). 평문 주석 번호는 세지 않는다. */
     private fun contractSpecLabels(): Set<Int> =
         BOLD_LABEL
             .findAll(repositoryRoot().resolve(CONTRACT_SPEC_FILE).readText())
@@ -171,7 +133,7 @@ class ParserNodeRegistryTest {
 
     private fun specFiles(): List<File> = SPEC_PATHS.map { repositoryRoot().resolve(it) }
 
-    /** 계약 파일과 **같은 기준점**을 쓴다 — 상대 경로를 손으로 조립하면 기계마다 갈린다. */
+    /** 계약 파일과 같은 기준점을 쓴다 — 상대 경로를 손으로 조립하면 기계마다 갈린다. */
     private fun repositoryRoot(): File =
         ContractSpec.file.parentFile.parentFile
             ?: error("계약 파일의 저장소 루트를 찾지 못했다")
@@ -193,34 +155,10 @@ class ParserNodeRegistryTest {
         const val EXPECTED_SPEC_FILES = 3
         const val FIRST_NODE = 1
 
-        /**
-         * 세 명세 §4 표의 정의 행 총수 — **auth 15 · workspaces 6 · documents 22**.
-         *
-         * documents 가 15 → 18 로 늘어난 것은 계약 v1.3.0 이 `x-stored-text-domain`(P-38)·
-         * `x-retired-responses`(P-39)·`x-title-policy`(P-40)를 신설했기 때문이다.
-         *
-         * **18 → 22 (2026-08-20 · 리더, 게이트 28 P-5 판정 커밋 `39f7c1d` 수령)**. 계약 v1.4.0 이
-         * 더한 네 노드다 — 각각 이 게이트의 판정 하나에 대응하는 **탐지형** 추가다:
-         * **P-41** `x-retired-503-configurations` 의 `id`·`revision`(P-5 — 서수로 세다 다섯 자리가
-         * 갈린 사고. **`id` 를 읽어야 목록이 줄 때 재발하지 않는다**) · **P-42** 415 선언 집합을
-         * 계약에서 **계산**(판정 3 — 리더는 셋을 지목했으나 실측은 **다섯**이었다. 열거하면
-         * 본문을 받는 오퍼레이션이 새로 생길 때 누락이 조용히 지난다) · **P-43** 검사 순서 목록
-         * (P-4 — 순서가 테스트 코드에 복제되면 계약이 순서를 바꿔도 옛 순서를 요구하는 테스트가
-         * 초록이다) · **P-44** `x-status-vocabulary` 의 닫힌 어휘(P-12 — 오타 하나가 팔을 조용히
-         * 강등시켰다).
-         *
-         * **이 수는 「선언」을 센다. 네 노드의 강제자는 아직 없다** — 명세가 그것을
-         * 「신설 전역 단언」으로 적어 두었고 구현은 별 커밋이다. 이 핀이 초록인 것을
-         * 「그 단언들이 존재한다」로 읽지 마라.
-         */
+        /** 세 명세 §4 표의 정의 행 총수 — auth 15 · workspaces 6 · documents 22. */
         const val EXPECTED_DEFINITION_ROWS = 43
 
-        /**
-         * 정의 행 없이 `ContractSpec.kt` 라벨로만 사는 번호 — **P-22 하나**.
-         *
-         * 구현 레인이 D-2 판정 커밋에서 선점했고 documents 명세 §4 서문이 **사후 등재**했다.
-         * 이 수가 늘면 같은 사고가 다시 난 것이다.
-         */
+        /** 정의 행 없이 `ContractSpec.kt` 라벨로만 사는 번호 — P-22 하나. */
         const val EXPECTED_CONTRACT_SPEC_ONLY = 1
 
         /** 합집합 — `P-1`~`P-44` 연속. */

@@ -21,13 +21,7 @@ import org.springframework.transaction.support.TransactionTemplate
 import java.util.UUID
 import javax.sql.DataSource
 
-/**
- * `users`·`workspaces` 저장소 — **실제 PostgreSQL 에서** 잰다.
- *
- * 여기서 재는 것은 스키마가 실제로 강제하는 것들이다. 인메모리 대역으로는 **유일 인덱스가
- * 던지는 예외의 종류**도, **CHECK 제약**도, **트랜잭션 원자성**도 잴 수 없다 — 그 셋이
- * 이 파일의 이유다.
- */
+/** `users`·`workspaces` 저장소 — 실제 PostgreSQL 에서 잰다. */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class JdbcUserRepositoryTest {
     private lateinit var database: DatabaseHandle
@@ -61,7 +55,7 @@ class JdbcUserRepositoryTest {
 
         assertThat(users.findByEmail(email)?.user).isEqualTo(created)
         assertThat(users.findById(created.id)).isEqualTo(created)
-        // created_at 은 DB DEFAULT now() 가 채운다 — 앱 시계와 갈리는 자리를 만들지 않는다.
+
         assertThat(created.createdAt).isNotNull()
     }
 
@@ -100,8 +94,6 @@ class JdbcUserRepositoryTest {
 
         val failure = runCatching { users.create(email, HASH) }.exceptionOrNull()
 
-        // PostgreSQL 은 제약 위반 DETAIL 에 실패한 행 전체를 담는다. 원인을 이으면
-        // 트레이스백을 통해 이메일과 해시가 로그로 나간다.
         assertThat(failure?.message).doesNotContain(email).doesNotContain(HASH.reveal())
         assertThat(failure?.cause).isNull()
     }
@@ -109,8 +101,6 @@ class JdbcUserRepositoryTest {
     @Test
     @DisplayName("대문자가 섞인 이메일은 CHECK 제약에 걸려 500 계열로 끊긴다")
     fun `정규화되지 않은 이메일은 저장소 오류다`() {
-        // 서비스가 정규화를 건너뛰면 여기까지 온다. 사용자 잘못이 아니라 코드 버그이므로
-        // 4xx 로 감싸지 않는다 — 감싸면 서버 버그가 조용히 묻힌다.
         assertThatThrownBy { users.create("Mixed@Example.Test", HASH) }
             .isInstanceOf(StorageException::class.java)
     }
@@ -138,12 +128,7 @@ class JdbcUserRepositoryTest {
             .containsExactly(DEFAULT_WORKSPACE_NAME)
     }
 
-    /**
-     * 가입의 원자성 — **계정만 남는 상태를 만들지 않는다.**
-     *
-     * 작업 공간 생성이 실패하면 사용자 행도 함께 사라져야 한다. 나눠 커밋하면 첫 업로드가
-     * 갈 곳 없는 계정이 생기고, 그 계정은 스스로 복구되지 않는다.
-     */
+    /** 가입의 원자성 — 계정만 남는 상태를 만들지 않는다. */
     @Test
     @DisplayName("작업 공간 생성이 실패하면 사용자도 저장되지 않는다")
     fun `가입 트랜잭션이 원자적이다`() {
@@ -153,7 +138,7 @@ class JdbcUserRepositoryTest {
             runCatching {
                 transaction.inTransaction {
                     users.create(email, HASH)
-                    // 없는 사용자를 가리켜 FK 위반을 만든다 — 두 번째 문장이 실패하는 상황이다.
+
                     workspaces.createDefault(UUID.randomUUID())
                 }
             }.exceptionOrNull()
@@ -162,12 +147,7 @@ class JdbcUserRepositoryTest {
         assertThat(users.findByEmail(email)).isNull()
     }
 
-    /**
-     * URL 만으로 만든다 — 드라이버 **클래스**를 이름으로도 타입으로도 붙잡지 않는다.
-     *
-     * `postgresql` 은 이 모듈의 `runtimeOnly` 의존이라 테스트 컴파일 클래스패스에 없다.
-     * 그 경계는 사고가 아니라 설계이므로 우회하려고 의존성을 올리지 않는다.
-     */
+    /** URL 만으로 만든다 — 드라이버 클래스를 이름으로도 타입으로도 붙잡지 않는다. */
     private fun dataSource(): DataSource =
         DriverManagerDataSource(database.jdbcUrl, database.username, database.password)
 

@@ -69,8 +69,8 @@ worker ─┘        └─> infrastructure ─> core
   파서처럼 **바이트가 곧 결과인 지점**에서 재현 불가능한 차이가 난다. 락파일이 있으면
   "어제는 통과했는데 오늘 실패"의 원인 후보에서 의존성 드리프트를 제거할 수 있다.
 - 버전은 **직접 고르지 않는다.** 계획 §3.1대로 구현 시작 시 호환성 spike를 돌려
-  통과한 조합만 catalog에 적고, 근거(어떤 spike가 무엇을 확인했는지)를 catalog의
-  주석이나 `docs/migration/_workspace/`에 남긴다. 임의로 최신 버전을 올려 쓰지 않는다.
+  통과한 조합만 catalog에 적고, 근거(어떤 spike가 무엇을 확인했는지)는
+  `docs/migration/_workspace/`에 남긴다. 임의로 최신 버전을 올려 쓰지 않는다.
 
 ## 2. Python → Kotlin 모듈 매핑
 
@@ -279,6 +279,11 @@ RETURNING j.conversion_id;
 - **주석·KDoc·사용자 노출 문자열은 한국어, 코드 식별자는 영어**(프로젝트 `CLAUDE.md`).
   오류 메시지의 한국어 문구는 React가 그대로 화면에 뿌리므로(`client.ts`) Python 문구를
   그대로 옮긴다. 문구를 "개선"하면 사용자에게 보이는 계약이 바뀐다.
+- **소스 주석은 현재 상태만 짧게 설명한다.** 코드로 표현할 수 없는 불변식·외부 계약·함정만
+  가장 가까운 선언에 둔다. 리뷰 ID·날짜·커밋·실측 로그·이전 실패·기각한 대안·사건 이력은
+  `docs/migration/_workspace/`에 둔다. 설명이 바뀌면 기존 KDoc을 교체·압축하며 회고 절을
+  누적하지 않는다. 테스트는 `@DisplayName`·함수명·단언을 우선한다. Kotlin 변경 후
+  `uv run pytest -q tests/test_kotlin_comment_budget.py`를 실행한다.
 - **`!!` 금지.** 예외는 없다. null이 올 수 없음을 아는 자리라면 타입을 non-null로 바꾸고,
   모르는 자리라면 `?:`로 도메인 예외를 던진다. `!!`는 "여기서 NPE가 나면 원인을 알 수
   없다"는 선언과 같다. detekt에서 오류로 설정한다.

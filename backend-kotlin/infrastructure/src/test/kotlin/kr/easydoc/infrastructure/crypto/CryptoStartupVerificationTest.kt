@@ -15,25 +15,8 @@ import java.util.Base64
 import java.util.UUID
 import javax.crypto.spec.SecretKeySpec
 
-/**
- * **저장 암호화 조립과 기동 자기점검** — 게이트 25 F-2·F-3·X8·X9.
- *
- * ## 왜 이 파일이 필요한가
- *
- * `CryptoConfiguration` 은 조립 코드인데 **테스트가 0건**이었다(R-2·F-6). 게다가 저장소의
- * 모든 Spring 컨텍스트가 키 0세대로 떴으므로, 통합 테스트가 붙어도 「초록인데 암호를 한 번도
- * 안 탔다」가 성립하는 구조였다. 여기서 그 두 빈자리를 함께 메운다 — 조립을 직접 부르고,
- * **실제 키로 왕복까지** 시킨다.
- *
- * ## 세 갈래가 같은 성질을 공유한다
- *
- * F-2(쓰기 키 부재) · F-3(키 값이 틀림) · X8(세대 번호가 도메인 밖)은 전부
- * **오설정이 쓰기 시점에는 조용하고 읽기 시점에 나타나는** 종류다. 그 사이에 저장된 행은
- * 되돌릴 수 없다. 그래서 셋 다 기동에서 끊는다.
- */
+/** 저장 암호화 조립과 기동 자기점검 — 게이트 25 F-2·F-3·X8·X9. */
 class CryptoStartupVerificationTest {
-    // ================================================================ 정상 조립
-
     @Test
     @DisplayName("검사값이 맞는 설정은 조립되고, 그 빈으로 실제 왕복이 된다 (X9 — 실제 키 통합)")
     fun `올바른 설정은 조립되고 왕복한다`() {
@@ -54,31 +37,21 @@ class CryptoStartupVerificationTest {
         assertThat(cipher.decrypt(sealed, RECORD, EncryptedField.CONVERSION_EASY_TEXT).value).isEqualTo(PROBE_BODY)
     }
 
-    // ================================================================ F-2 쓰기 키 부재
-
     @Test
     @DisplayName("F-2 쓰기 세대의 키가 없으면 **기동이 실패한다** — 첫 업로드까지 조용하지 않다")
     fun `쓰기 키가 없으면 기동이 실패한다`() {
-        // 종전에는 그대로 떴고 첫 업로드가 503 이 됐다. 그 503 은 사용자 화면에 나오고,
-        // 배포 파이프라인은 아무것도 보지 못한다. `keys` 에 쓰기 세대가 없다는 것은
-        // **기동 시점에 이미 아는 사실**이다.
         assertThatThrownBy { assemble(keys = emptyList()) }
             .isInstanceOf(ConfigurationException::class.java)
             .hasMessageContaining("쓰기 세대 v1")
 
-        // 세대는 있는데 쓰기 세대만 없는 갈래도 같다.
         assertThatThrownBy { assemble(listOf(entryFor(1, KEY_GEN_1)), writeKeyVersion = 2) }
             .isInstanceOf(ConfigurationException::class.java)
             .hasMessageContaining("쓰기 세대 v2")
     }
 
-    // ================================================================ F-3 KCV
-
     @Test
     @DisplayName("F-3 오타 키 — 값이 틀린 32바이트 키는 **기동에서** 잡힌다 (privacy-gate 「가장 위험」)")
     fun `값이 틀린 키는 기동에서 잡힌다`() {
-        // 이 조합이 종전에 **아무 경고 없이** 실렸다. base64 32바이트이기만 하면 통과했고,
-        // 그 키로 쓴 행은 옛 키로 열리지 않는다. 되돌릴 수 없는 종류다.
         val wrongKeyInV1Slot = EncryptionKeyProperties(version = 1, value = KEY_GEN_2, kcv = kcvOf(KEY_GEN_1))
 
         assertThatThrownBy { assemble(listOf(wrongKeyInV1Slot)) }
@@ -129,8 +102,6 @@ class CryptoStartupVerificationTest {
         }
     }
 
-    // ================================================================ X8 세대 번호 도메인
-
     @Test
     @DisplayName("X8 스키마 도메인 밖 세대 번호는 기동에서 잡힌다 (0·음수·smallint 초과)")
     fun `도메인 밖 세대 번호는 기동을 막는다`() {
@@ -157,14 +128,9 @@ class CryptoStartupVerificationTest {
             .doesNotThrowAnyException()
     }
 
-    // ================================================================ S-2 값이 빈 세대
-
     @Test
     @DisplayName("S-2 kcv 는 적혀 있는데 **값이 빈** 세대는 기동을 막는다 — 옛 행이 조용히 안 읽히는 자리")
     fun `값이 빈 세대는 기동을 막는다`() {
-        // privacy-gate 실측(P3): 종전 판은 이 조합에서 `loadedKeyVersions=[1]` 로 정상 기동하고
-        // 경고를 한 줄도 남기지 않았다. 회전 절차는 옛 세대를 목록에 남기는 것이므로, 옛 세대의
-        // 환경변수가 빠지면 **그 세대로 쓴 행 전량**이 첫 조회에서야 실패한다.
         val lostOldGeneration = EncryptionKeyProperties(version = 2, value = Secret.EMPTY, kcv = kcvOf(KEY_GEN_2))
 
         assertThatThrownBy { assemble(listOf(entryFor(1, KEY_GEN_1), lostOldGeneration)) }
@@ -184,16 +150,7 @@ class CryptoStartupVerificationTest {
             .hasMessageContaining("값도 kcv 도 없다")
     }
 
-    // ---------------------------------------------------------------- 도구
-
-    /**
-     * `CryptoConfiguration` 을 **실제로 불러** 빈을 만든다.
-     *
-     * 자기점검을 끄는 인자가 **없다** — 게이트 26 조치 1로 그 설정 자체를 없앴다.
-     * 자기점검 없이 cipher 만 만들어 보고 싶으면 `AesGcmContentCipher` 생성자를 직접
-     * 부르면 된다(`AesGcmContentCipherTest` 가 그렇게 한다). 조립을 지나면서 검사만
-     * 건너뛰는 경로는 두지 않는다.
-     */
+    /** `CryptoConfiguration` 을 실제로 불러 빈을 만든다. */
     private fun assemble(
         keys: List<EncryptionKeyProperties>,
         writeKeyVersion: Int = 1,

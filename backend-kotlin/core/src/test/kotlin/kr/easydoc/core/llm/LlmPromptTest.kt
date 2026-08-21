@@ -10,21 +10,13 @@ import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
 import java.lang.reflect.Modifier
 
-/**
- * [LlmPrompt] 가 마스킹 선행 불변식을 **타입으로** 지키는지 확인한다.
- *
- * "원문 String 오버로드를 만들지 않았다"는 컴파일러가 이미 강제하므로 테스트할 것이 없다.
- * 여기서 실행으로 확인하는 것은 **그 강제가 우회 가능한 형태로 바뀌지 않았는가**다 —
- * 생성자가 언젠가 public 으로 열리면 컴파일은 그대로 통과하고 불변식만 조용히 사라진다.
- */
+/** [LlmPrompt] 가 마스킹 선행 불변식을 타입으로 지키는지 확인한다. */
 class LlmPromptTest {
     private val fixedIds = DocumentIdGenerator { "0123456789ab" }
 
     @Test
     @DisplayName("LlmPrompt 를 만드는 통로는 마스킹을 거치는 것뿐이다")
     fun `생성자가 열려 있지 않다`() {
-        // 합성(synthetic) 생성자는 제외한다. Kotlin 은 companion 이 private 생성자를 부를 수
-        // 있도록 접근 브리지를 하나 더 만드는데, 그것은 소스에 없는 것이라 우회 통로가 아니다.
         val declared =
             LlmPrompt::class.java.declaredConstructors
                 .filterNot { it.isSynthetic }

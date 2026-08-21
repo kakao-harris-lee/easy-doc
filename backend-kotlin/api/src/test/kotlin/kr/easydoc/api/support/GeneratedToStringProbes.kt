@@ -13,48 +13,12 @@ import kotlin.reflect.KType
 import kotlin.reflect.full.primaryConstructor
 import kotlin.reflect.jvm.isAccessible
 
-/**
- * **컴파일러가 `toString()` 을 만들어 주는 타입에 표식을 심고, 그 표식이 나오는지 본다.**
- *
- * ## 왜 Java 반사가 아니라 Kotlin 반사인가 (게이트 24 privacy-gate A-3′)
- *
- * 종전 판은 `componentN()` 접근자를 `Regex("component\d+")` 로 세어 필드 목록을 만들었다.
- * `@JvmInline value class` 파라미터의 `componentN()` 은 JVM 에서 **이름이 맹글링**되므로
- * 그 정규식에 걸리지 않고, 계수가 어긋나면 생성자 타입 비교가 실패해 클래스가 통째로
- * `?: return null` 로 빠졌다. 실례가 `core.privacy.MaskingResult` 였다 — **마스킹 대응표를
- * 든 타입이 탐지 밖**이었고, 그때 초록이던 이유는 게이트가 아니라 그 타입이 스스로
- * 재정의를 갖고 있었기 때문이다.
- *
- * 이 저장소의 규약이 **본문·비밀을 value class 로 감싸는 것**(`MaskedText`·`ModelDraft`·
- * `ReviewedBody`·`Secret`)이라, 가장 위험한 DTO 가 정확히 그 구멍에 놓였다. 그래서 판정
- * 근거를 JVM 시그니처에서 **주 생성자 파라미터**(`primaryConstructor.parameters`)로 옮겼다 —
- * 맹글링·박싱과 무관하게 소스에 적힌 그대로를 읽는다.
- *
- * ## 판정 불가는 통과가 아니다
- *
- * 파라미터 타입을 만들 줄 모르면 **끊는다**(`error`). 종전의 두 `return null` 갈래는
- * 없앴다 — 조용히 빠진 클래스는 검사받은 것과 구분되지 않는다(`CLAUDE.md` 규칙 4 ⑶).
- *
- * ## 무엇을 어디에 심는가
- *
- * - **표식을 심는 자리**: 사용자 텍스트를 담을 수 있는 파라미터 중, 이름이
- *   민감 토큰을 품거나 클래스에 [UserContent] 가 붙은 것.
- * - **[FILLER] 를 넣는 자리**: 나머지. 표식과 섞이면 판정이 흐려진다.
- * - **텍스트를 담을 수 있는가**는 타입을 **따라 들어가서** 정한다 — `String`, 그것을 감싼
- *   value class, 그 둘을 담은 컬렉션, 그리고 그런 것을 든 제품 타입까지. 종전에는
- *   `String` 이 아니면 그 자리에서 「대상 아님」으로 끝났고, 그것이 R-5 가 지적한
- *   **강제되지 않는 제외 사유**였다.
- */
+/** 컴파일러가 `toString()` 을 만들어 주는 타입에 표식을 심고, 그 표식이 나오는지 본다. */
 class GeneratedToStringProbes(
     private val classes: List<KClass<*>>,
     private val sensitiveNameTokens: List<String>,
 ) {
-    /**
-     * 「값을 감싸는 타입」으로 닿은 것 — 파라미터 하나짜리이고 그 하나가 텍스트를 담는다.
-     *
-     * [dataClassProbes] 를 계산하는 동안 채워진다. 열거가 아니라 **도달 기록**이라, 새
-     * 래퍼를 만들어 DTO 에 넣으면 목록에 손대지 않아도 검사 대상이 된다.
-     */
+    /** 「값을 감싸는 타입」으로 닿은 것 — 파라미터 하나짜리이고 그 하나가 텍스트를 담는다. */
     private val reachedWrappers = linkedSetOf<KClass<*>>()
 
     /** 민감 파라미터를 든 제품 `data class` 마다 하나. */
@@ -63,16 +27,11 @@ class GeneratedToStringProbes(
     }
 
     /**
-     * **값을 감싸는 타입** — `@JvmInline value class` 전부와, `data class` 필드로 닿은
+     * 값을 감싸는 타입 — `@JvmInline value class` 전부와, `data class` 필드로 닿은
      * 1-파라미터 래퍼.
-     *
-     * 종전 KDoc 은 *"`Secret`·`MaskedText` 처럼 값을 감싸는 타입이 자기 `toString()` 에서
-     * 이미 가리기 때문"* 을 제외 사유로 적었다. 참이었지만 **그 성질을 강제하는 장치가
-     * 없었다** — 새 래퍼가 재정의를 빠뜨리면 래퍼도 그것을 든 DTO 도 둘 다 검사 밖이다
-     * (Claude R-5 ⓐⓑ, 음성 대조로 실측). 사유를 주석에서 **단언**으로 옮긴 자리다.
      */
     val wrapperProbes: List<ToStringProbe> by lazy {
-        // 도달 기록은 `data class` 해석 과정에서 채워진다 — 먼저 훑고, 훑은 결과가 비면 끊는다.
+
         check(dataClassProbes.isNotEmpty()) { "제품 data class 후보가 0건이라 래퍼 도달 기록을 신뢰할 수 없다" }
         (classes.filter { it.isValue } + reachedWrappers)
             .distinct()
@@ -80,31 +39,12 @@ class GeneratedToStringProbes(
             .mapNotNull(::wrapperProbe)
     }
 
-    /**
-     * **`data`/`value` 가 아닌 일반 class 중 `toString()` 을 손으로 쓴 것** (게이트 25 R-10).
-     *
-     * ## 왜 이 갈래가 따로 있는가
-     *
-     * 위 두 목록은 **컴파일러가 `toString()` 을 만들어 주는 선언**만 본다. 그 경계 밖에도
-     * 사용자 콘텐츠를 든 타입이 있고(`EncryptedContent` 가 첫 사례다), 그쪽은 재정의가
-     * 있느냐 없느냐로 위험이 갈린다.
-     *
-     * - **재정의가 없으면 샐 수 없다** — `Any.toString()` 은 `클래스명@해시` 만 낸다.
-     * - **재정의가 있으면 그 안에서 무엇을 찍는지는 아무도 안 보고 있었다.**
-     *
-     * 그래서 후보를 「재정의를 **선언한** 일반 class」로 좁힌다. 좁힘이 사유가 아니라 성질에
-     * 근거하므로 면제 조항이 아니다 — 재정의 없는 클래스는 **구조적으로** 값을 낼 수 없다.
-     *
-     * ## 판정 불가를 통과로 세지 않는다
-     *
-     * 표본을 만들 수 없는 후보는 [undecidableGeneralClasses] 에 남고, 호출자가 그 목록이
-     * 비어 있는지 함께 단언한다. 조용히 건너뛰면 그 타입은 검사받은 것과 구분되지 않는다.
-     */
+    /** `data`/`value` 가 아닌 일반 class 중 `toString()` 을 손으로 쓴 것 (게이트 25 R-10). */
     val generalClassProbes: List<ToStringProbe> by lazy {
         generalClassCandidates.mapNotNull { it.probe }
     }
 
-    /** 후보이긴 한데 표본을 만들지 못한 일반 class 와 그 사유. **비어 있어야 한다.** */
+    /** 후보이긴 한데 표본을 만들지 못한 일반 class 와 그 사유. 비어 있어야 한다. */
     val undecidableGeneralClasses: List<String> by lazy {
         generalClassCandidates.mapNotNull { it.failure }
     }
@@ -116,7 +56,6 @@ class GeneratedToStringProbes(
     val generalClassesWithCustomToString: List<KClass<*>> by lazy {
         classes
             .filter { !it.isData && !it.isValue }
-            // 자바 반사로 거른다. `KClass.objectInstance` 는 접근 제한 필드에서 예외를 던진다.
             .filter { !it.java.isEnum && !it.java.isInterface && !Modifier.isAbstract(it.java.modifiers) }
             .filter { declaresToString(it) }
             .sortedBy { it.qualifiedName }
@@ -125,8 +64,6 @@ class GeneratedToStringProbes(
     private val generalClassCandidates: List<GeneralCandidate> by lazy {
         generalClassesWithCustomToString.mapNotNull(::generalCandidate)
     }
-
-    // ---------------------------------------------------------------- 후보
 
     private fun dataClassProbe(type: KClass<*>): ToStringProbe? {
         val constructor = primaryConstructorOf(type)
@@ -159,17 +96,15 @@ class GeneratedToStringProbes(
 
     /**
      * 일반 class 하나를 후보로 만든다. 민감 자리가 없으면 null(대상 아님), 표본을 만들 수
-     * 없으면 [GeneralCandidate.failure] 로 남긴다 — **통과로 세지 않는다.**
+     * 없으면 [GeneralCandidate.failure] 로 남긴다 — 통과로 세지 않는다.
      */
     private fun generalCandidate(type: KClass<*>): GeneralCandidate? {
         val parameters = type.primaryConstructor?.parameters
         return when {
-            // 주 생성자가 없으면 파라미터를 알 수 없다 — 판정 불가는 통과가 아니다.
             parameters == null -> {
                 GeneralCandidate.undecidable(type, "주 생성자가 없다")
             }
 
-            // 파라미터가 없으면 담을 값이 없다(`object` 나 무인자 클래스). 대상 아님.
             parameters.isEmpty() -> {
                 null
             }
@@ -195,14 +130,7 @@ class GeneratedToStringProbes(
         return sensitiveNameTokens.any { it in lowered }
     }
 
-    // ---------------------------------------------------------------- 값 만들기
-
-    /**
-     * 파라미터 한 자리를 어떻게 채울지 정한다. **모르는 타입은 끊는다.**
-     *
-     * 갈래를 늘려야 할 상황이 곧 새 DTO 가 생기는 상황이므로, 조용히 건너뛰면 그 타입을
-     * 쓰는 DTO 가 통째로 검사 밖에 남는다.
-     */
+    /** 파라미터 한 자리를 어떻게 채울지 정한다. 모르는 타입은 끊는다. */
     private fun slotFor(
         type: KType,
         where: String,
@@ -260,16 +188,7 @@ class GeneratedToStringProbes(
         return ProbeSlot(element.carriesText) { planting -> factory(element.value(planting)) }
     }
 
-    /**
-     * 맵 한 자리. **키와 값 양쪽에** 표본을 심는다.
-     *
-     * `toString()` 은 `{키=값}` 으로 둘을 함께 찍으므로 어느 쪽이 텍스트를 담아도 새어 나간다.
-     * 한쪽만 심으면 나머지 쪽 타입이 검사 밖에 남고, 그것이 이 탐지기가 「모르는 타입은
-     * 끊는다」로 막으려는 상태다.
-     *
-     * [collectionSlot] 을 재사용하지 못하는 이유는 타입 인자 수다 — 그쪽은 `singleOrNull` 로
-     * 하나를 요구하므로 맵에서는 언제나 끊긴다.
-     */
+    /** 맵 한 자리. 키와 값 양쪽에 표본을 심는다. */
     private fun mapSlot(
         type: KType,
         where: String,
@@ -288,7 +207,7 @@ class GeneratedToStringProbes(
 
     /**
      * 제품 타입 하나를 만든다. 파라미터가 하나뿐이고 그 하나가 텍스트를 담으면
-     * **값을 감싸는 타입**으로 기록해 [wrapperProbes] 가 따로 검사한다.
+     * 값을 감싸는 타입으로 기록해 [wrapperProbes] 가 따로 검사한다.
      */
     private fun productSlot(
         type: KClass<*>,
@@ -357,12 +276,7 @@ class GeneratedToStringProbes(
 
         private val FIXED_UUID: UUID = UUID.fromString("00000000-0000-4000-8000-000000000001")
 
-        /**
-         * **구조적으로 사용자 텍스트를 담지 못하는 타입**과 그 표본값.
-         *
-         * 「담지 못한다」가 이 목록의 유일한 입장권이다. 문자열을 담을 수 있는 타입을 여기
-         * 넣으면 그것이 곧 면제 조항이 된다.
-         */
+        /** 구조적으로 사용자 텍스트를 담지 못하는 타입과 그 표본값. */
         private val INERT_VALUES: Map<KClass<*>, Any> =
             mapOf(
                 Int::class to 0,

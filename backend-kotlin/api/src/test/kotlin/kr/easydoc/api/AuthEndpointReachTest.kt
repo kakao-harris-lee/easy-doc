@@ -21,22 +21,7 @@ import java.time.Instant
 import java.util.UUID
 import kotlin.random.Random
 
-/**
- * `/auth` 의 **실측** 계약 — 명세 §5 의 C-R 계층.
- *
- * ## 왜 MockMvc 가 아닌가
- *
- * 인증 실패 401(M-2~M-7)은 **필터·인터셉터·컨테이너가 얽힌 자리**에서 만들어진다. MockMvc 는
- * 서블릿 컨테이너를 띄우지 않고 필터를 손으로 체인에 끼워 부르므로, 인증 401 을
- * `sendError` 로 내는 구현(가장 흔한 형태)이 `/error` 재디스패치를 지나며 Spring 기본
- * 본문을 내보내는 것을 **재현하지 못한다.** 계약이 그 자리를 E-2 로 따로 지목했고,
- * 헤더 쪽에서 이미 "측정한 것처럼 보이는 통과"를 겪었다.
- *
- * 함께 여기 두는 것들 — **실물 설정에서만 잴 수 있는 값**이다.
- * `expires_in`(설정에서 온다)·`token_type`·발급 토큰의 클레임 집합, 그리고 가입이 기본
- * 작업 공간을 같은 트랜잭션에서 만드는지. 이것들을 슬라이스에서 재면 테스트 배선이 정한
- * 값을 테스트가 다시 단언하는 꼴이 된다.
- */
+/** `/auth` 의 실측 계약 — 명세 §5 의 C-R 계층. */
 @SpringBootTest(
     webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
     properties = ["easydoc.auth.jwt-secret=$AUTH_REACH_TEST_SECRET"],
@@ -48,8 +33,6 @@ class AuthEndpointReachTest {
 
     private val json = ObjectMapper()
 
-    // ================================================================ 성공 경로
-
     @Test
     @DisplayName("S-1 가입이 계정과 기본 작업 공간을 함께 만든다 (같은 트랜잭션)")
     fun `가입은 기본 작업 공간까지 만든다`() {
@@ -59,7 +42,7 @@ class AuthEndpointReachTest {
 
         assertThat(response.statusCode()).isEqualTo(ContractSpec.successStatus("/auth/signup", "post"))
         val userId = UUID.fromString(bodyOf(response)["id"].toString())
-        // 계정만 있고 작업 공간이 없는 사용자가 생기면 첫 업로드가 갈 곳을 잃는다.
+
         assertThat(database.queryInt("SELECT count(*) FROM workspaces WHERE user_id = '$userId'")).isEqualTo(1)
     }
 
@@ -73,7 +56,7 @@ class AuthEndpointReachTest {
 
         assertThat(response.statusCode()).isEqualTo(ContractSpec.successStatus("/auth/login", "post"))
         val body = bodyOf(response)
-        // X-E1/X-E2 — snake_case 회귀와 키 누락·추가를 「정확히」 하나로 잡는다.
+
         assertThat(body.keys.map { it.toString() }.toSet()).isEqualTo(ContractSpec.schemaRequired("TokenResponse"))
         assertThat(body["token_type"]).isEqualTo(ContractSpec.schemaPropertyConst("TokenResponse", "token_type"))
         assertThat((body["expires_in"] as Number).toLong())
@@ -107,37 +90,10 @@ class AuthEndpointReachTest {
             .isEqualTo(ContractSpec.schemaRequired("UserResponse"))
     }
 
-    /**
-     * **L-3b — 자격증명 실패의 세 번째 축: 응답 시간.**
-     *
-     * 계약 `x-auth.failure_uniformity` 는 축이 셋이다 — 상태 코드·본문·**응답 시간**.
-     * `AuthContractTest` L-3 이 앞의 둘을 재고, 셋째는 실물 Argon2 가 도는 이 계층에서만
-     * 잴 수 있다(슬라이스의 가짜 해시는 비용이 0 이라 격차가 나타나지 않는다).
-     *
-     * ## 비 **와** 절대 하한을 함께 본다 (게이트 21 TST-1 ≡ codex C-3)
-     *
-     * 기계·부하에 따라 Argon2 1회 비용이 달라지므로 "몇 밀리초 이하"는 재현되지 않는다.
-     * 두 경로의 중앙값 비는 그 변동을 함께 타므로 남는다 — 수정 전 실측은 **약 42배**였고
-     * (privacy-gate B-1: 2.3ms vs 97ms) 더미 검증을 넣으면 1 에 가까워진다.
-     *
-     * 그런데 **비만 보면 두 경로가 함께 싸질 때 초록**이다. 테스트 프로파일에서
-     * `argon2.memory-kib` 를 낮추거나 `PasswordHasher` 를 스텁으로 바꾸면 비용이 0 에
-     * 수렴하고 격차도 함께 사라진다 — 그 상태에서 이 케이스는 「갈리지 않는다」를 계속
-     * 주장하지만 아무것도 지키지 않는다. 그래서 **실물 Argon2 가 돈다**는 자기 전제를
-     * [MIN_REAL_HASH_MILLIS] 로 함께 건다(스텁·초소형 파라미터는 1~2ms 대라 깨끗이 갈린다).
-     *
-     * ## 두 경로를 **교차**로 잰다
-     *
-     * 종전에는 없는 이메일 표본을 전부 잰 뒤 있는 이메일 표본을 쟀다. JIT·커넥션 풀·쿼리
-     * 계획이 진행형으로 데워지므로 나중 그룹이 유리하고, 그것은 격차를 **줄이는** 방향이라
-     * 마스킹이 된다. 순서를 고정 시드로 섞어 지터가 한 집단에 몰리지 않게 한다.
-     * 워밍업은 두 경로 각 1건씩 버린다.
-     */
+    /** L-3b — 자격증명 실패의 세 번째 축: 응답 시간. */
     @Test
     @DisplayName("L-3b 없는 이메일과 있는 이메일의 로그인 응답 시간이 갈리지 않는다 (계약 x-auth 3번째 축)")
     fun `자격증명 실패의 응답 시간이 갈리지 않는다`() {
-        // 조항이 시간 축을 요구한다는 사실 자체를 계약에서 읽는다 — 그 문장이 지워지면
-        // 이 케이스가 무엇을 지키는지부터 다시 판단해야 한다.
         assertThat(ContractSpec.authText("failure_uniformity"))
             .withFailMessage("계약의 failure_uniformity 가 응답 시간 축을 더는 요구하지 않는다 — 이 케이스를 재판정하라")
             .contains(RESPONSE_TIME_CLAUSE)
@@ -147,8 +103,7 @@ class AuthEndpointReachTest {
 
         val (absent, wrongPassword) = interleavedLoginMedians(known)
         val ratio = maxOf(absent, wrongPassword) / minOf(absent, wrongPassword).coerceAtLeast(1.0)
-        // 초록일 때도 수치를 남긴다 — 문턱까지의 여유가 보이지 않으면 서서히 벌어지는
-        // 드리프트를 아무도 모른 채 지나간다.
+
         println(
             "L-3b 없는 이메일 %.1fms / 틀린 비밀번호 %.1fms → 비 %.3f (문턱 %.1f)"
                 .format(absent, wrongPassword, ratio, MAX_TIMING_RATIO),
@@ -177,7 +132,7 @@ class AuthEndpointReachTest {
             (1..TIMING_SAMPLES)
                 .flatMap { listOf(ABSENT_ACCOUNT, KNOWN_ACCOUNT) }
                 .shuffled(Random(TIMING_SEED))
-        // 워밍업 — 두 경로 각 1건. 첫 요청은 클래스 적재·JIT 을 함께 문다.
+
         listOf(ABSENT_ACCOUNT, KNOWN_ACCOUNT).forEach { failedLoginMillis(it, known) }
 
         val samples = plan.map { it to failedLoginMillis(it, known) }
@@ -185,7 +140,7 @@ class AuthEndpointReachTest {
     }
 
     /**
-     * 그 그룹 표본의 중앙값. **index 를 그룹 크기에서 유도한다** — 표본 수를 상수로 박아 두면
+     * 그 그룹 표본의 중앙값. index 를 그룹 크기에서 유도한다 — 표본 수를 상수로 박아 두면
      * 표본 수가 다른 측정을 여기 붙일 때 조용히 중앙이 아닌 값을 읽는다(홀수라 표본 하나로 정해진다).
      */
     private fun medianOf(
@@ -210,17 +165,7 @@ class AuthEndpointReachTest {
         return elapsed
     }
 
-    /**
-     * **S-9b — 타입 불일치가 계약이 정한 모양으로 거절된다** (게이트 20 codex C4).
-     *
-     * Jackson 기본 설정은 숫자·불리언을 문자열 필드에 **말없이 변환한다.** 실측(수정 전):
-     * `password: 12345678` 은 **201** 이었고, `email: true` 는 형식 오류 문자열 detail 로
-     * 둔갑했다. 계약 `ValidationFailed` 는 타입 불일치를 **배열 detail** 로 정한다.
-     *
-     * 슬라이스가 아니라 이 계층에서 재는 이유: 강제 변환을 끄는 것은 `JsonMapperBuilderCustomizer`
-     * 빈이고 `@WebMvcTest` 는 평범한 `@Configuration` 을 슬라이스에 넣지 않는다. 슬라이스에서
-     * 재면 **테스트가 직접 들여온 배선**을 재게 되고, 실물 컨텍스트가 그 빈을 줍는지는 재지 못한다.
-     */
+    /** S-9b — 타입 불일치가 계약이 정한 모양으로 거절된다 (게이트 20 codex C4). */
     @Test
     @DisplayName("S-9b 숫자·불리언을 문자열 필드에 넣으면 422 배열 — 강제 변환으로 통과하지 않는다")
     fun `타입 불일치는 422 배열이다`() {
@@ -232,25 +177,21 @@ class AuthEndpointReachTest {
             val response = post("/auth/signup", payload)
 
             assertDeclaredStatus(response, UNPROCESSABLE_CONTENT, SIGNUP_PATH, POST, label)
-            // TST-3 — 키 집합만 보면 「언제나 `["body"]`」를 내는 회귀가 초록이다. 값까지 건다.
+
             val item = singleValidationItem(response, label)
             assertThat(item["loc"])
                 .withFailMessage("%s 의 loc 이 문제 필드를 가리키지 않는다: %s", label, item["loc"])
                 .isEqualTo(listOf("body", field))
             assertThat(item["type"]).isEqualTo("string_type")
             assertThat(item["msg"]).isEqualTo("Input should be a valid string")
-            // 거절된 값이 응답으로 되돌아오지 않는다 — 비밀번호가 그 자리에 있을 수 있다.
+
             assertThat(response.body()).doesNotContain("12345678")
         }
     }
 
     /**
-     * **S-9c — 필드 누락·명시적 `null` 이 깨진 JSON 과 구분되고 어느 필드인지 가리킨다**
+     * S-9c — 필드 누락·명시적 `null` 이 깨진 JSON 과 구분되고 어느 필드인지 가리킨다
      * (게이트 21 codex C-2 (i), contract-keeper §2-3).
-     *
-     * 종전에는 셋이 **바이트 동일**했다(`loc:["body"]`·`"JSON decode error"`·`json_invalid`).
-     * 필드를 빠뜨린 사용자가 화면에서 "JSON decode error" 를 봤고, 계약 예시
-     * `field_missing`(`type: "missing"`)은 **어떤 요청에서도 나오지 않았다.**
      */
     @Test
     @DisplayName("S-9c 필드 누락·명시적 null 은 그 필드를 지목하는 missing 항목이고, 깨진 JSON 과 구분된다")
@@ -273,14 +214,13 @@ class AuthEndpointReachTest {
             assertThat(item["msg"]).isEqualTo("Field required")
         }
 
-        // 깨진 JSON 은 여전히 파싱 실패 갈래다 — 세 경우가 다시 한 모양으로 뭉치면 여기서 깨진다.
         val broken = singleValidationItem(post("/auth/signup", """{"email":"""), "깨진 JSON")
         assertThat(broken["type"]).isEqualTo("json_invalid")
         assertThat(broken["loc"]).isEqualTo(listOf("body"))
     }
 
     /**
-     * **S-9d — 루트에 배열·스칼라를 보내도 내부 클래스 이름이 새지 않는다**
+     * S-9d — 루트에 배열·스칼라를 보내도 내부 클래스 이름이 새지 않는다
      * (게이트 21 codex C-2 (ii) — HTTP 경계 실측이 0관점이던 자리).
      */
     @Test
@@ -316,21 +256,17 @@ class AuthEndpointReachTest {
         return item
     }
 
-    // ================================================================ 인증 실패 (C-R 의 요점)
-
     @Test
     @DisplayName("M-2 Authorization 헤더 없음 → 401 · WWW-Authenticate · 본문 최상위 키가 정확히 계약의 required")
     fun `헤더가 없으면 401 이고 본문이 계약 형태다`() {
         val response = get("/auth/me", token = null)
 
         assertDeclaredStatus(response, UNAUTHORIZED, ME_PATH, GET)
-        // X-D2 — 컨테이너·인터셉터가 만드는 401 에도 전역 헤더가 붙는가. 「실행해 봐야만
-        // 잡힌다」고 계약이 적은 성질이고(x-failure-mode-shift), 그 자리를 재는 케이스가 여기다.
+
         assertPrivateHeaders(response)
         assertThat(response.headers().firstValue(WWW_AUTHENTICATE).orElse(null))
             .isEqualTo(ContractSpec.headerConst("WWWAuthenticateBearer"))
-        // `sendError` → `/error` 로 나가면 timestamp·status·error·path 가 함께 실린다.
-        // 금지 키를 열거하지 않고 「정확히 같다」로 잡는다 — 그 목록은 계약 산문에만 있다.
+
         assertThat(ContractSpec.schemaAllowsAdditionalProperties("ErrorResponse")).isFalse()
         assertThat(bodyOf(response).keys.map { it.toString() }.toSet())
             .isEqualTo(ContractSpec.schemaRequired("ErrorResponse"))
@@ -364,64 +300,10 @@ class AuthEndpointReachTest {
             .hasSize(1)
     }
 
-    /**
-     * **M-3b — 토큰이 든 세 갈래의 401 응답 시간이 갈리지 않는다** (게이트 24 잔여 X24-2).
-     *
-     * ## 왜 M-3 만으로 닫히지 않았나
-     *
-     * M-3 은 **본문·헤더가 같다**를 재고, 그것은 시간 축의 **대리값**이다. codex 가 지적한 것이
-     * 정확히 이 자리다: 구조가 같아도 지연·CPU·캐시 온도 변이는 그대로 통과한다. 실제로
-     * 균일화를 넣기 전 실측은 **2.18배**였고(privacy-gate, `GET /workspaces`, 표본 각 101),
-     * 그때도 본문과 헤더는 같았다.
-     *
-     * 고친 뒤의 실측(1.007~1.036 / privacy-gate **1.003**)은 **그날 한 번 잰 값**이라
-     * 회귀가 아니다. 리더 판정이 그 잔여를 *"3갈래 비율 회귀(문턱 1.5)를 Phase 4 착수 전에
-     * 추가한다"* 로 남겼고(원장 「Phase 3 종료 판정」 §1 ③ · §2 9), 이 케이스가 그것이다.
-     *
-     * ## 대상이 셋인 이유 — 무헤더는 균일화 대상이 아니다
-     *
-     * 계약 `x-auth.failure_uniformity` 가 한 줄에 묶은 것은 **토큰이 제시된 세 갈래**다.
-     * 헤더가 아예 없는 요청은 인터셉터가 `AuthService.authenticate` 에 닿기 전에 끊고 계약이
-     * 다른 문구(`no_header`)를 주므로 **바이트 축에서 이미 구분된다** — 시간을 맞춰도 얻을
-     * 것이 없고, 맞추려면 인증 헤더 없는 트래픽 전부에 DB 부하를 얹게 된다.
-     * 게이트 24 에서 3관점이 「제외가 옳다」로 수렴했다.
-     *
-     * ## 측정 방법을 privacy-gate 재실측에 맞춘다
-     *
-     * 표본 각 [UNIFORMITY_SAMPLES] · 워밍업 [UNIFORMITY_WARMUP_ROUNDS] 라운드 폐기 ·
-     * 고정 시드 교차 순서 · 중앙값. **이 저장소는 시간 축 게이트가 흔들려 꺼진 선례를 갖고
-     * 있으므로**(원장 §1 ③) 방법을 임의로 줄이지 않는다. 순서를 섞는 이유는 L-3b 와 같다 —
-     * JIT·커넥션 풀이 진행형으로 데워지므로 뒤에 몰린 그룹이 유리하고, 그 편향은 격차를
-     * **줄이는** 방향이라 마스킹이 된다.
-     *
-     * 토큰 셋은 **측정 전에 한 번** 만든다. 매 요청마다 서명하면 클라이언트 쪽 HMAC 비용이
-     * 측정에 섞인다.
-     *
-     * ## 이것은 **상설 회귀**다 — 일회성 음성 대조가 아니다 (게이트 25 codex A-6)
-     *
-     * 이 케이스는 매 실행마다 돈다. 균일화(`AuthService.authenticate` 의
-     * `ABSENT_USER_PROBE_ID` 왕복)를 지우면 비가 문턱을 넘어 빨개진다 — 그 음성 대조는
-     * 도입 시점(2.399)과 게이트 25 조치 시점 두 번 실행해 확인했다.
-     *
-     * ## 이 케이스가 막지 못하는 것
-     *
-     * ⑴ 세 갈래가 **함께** 느려지거나 함께 빨라지는 변경은 비가 1 에 가까워 통과한다. 그 축은
-     * 구조 단언(M-3)과 `AuthenticationWorkUniformityTest` 의 DB 왕복 계수가 지킨다 —
-     * 이 케이스는 그것들을 대체하지 않고 **더한다**.
-     *
-     * ⑵ **판정이 통계적 분리 가능성이 아니라 중앙값 비 한 번이다**(codex A-6). 1.49배는
-     * 통과하는데, 반복 요청을 충분히 모으면 그 정도도 구분될 수 있다. 문턱을 더 죄는 대신
-     * 이 한계를 여기 적어 두는 이유는 둘이다 — ⓐ **이 저장소는 시간 축 게이트가 흔들려 꺼진
-     * 선례를 갖고 있고**(원장 §1 ③), 문턱을 죄면 잡음이 실패로 올라와 그 선례가 반복된다.
-     * ⓑ 같은 문턱 1.5 를 `privacy-gate` 가 복호화 타이밍(F-1) 판정의 자로 썼고,
-     * `AesGcmContentCipherTest` 의 X3 회귀도 같은 값을 쓴다 — **저장소 안에서 하나의 자**여야
-     * 판정이 비교 가능하다. 격리 환경 다중 실행·절대 격차·분포를 보는 쪽으로 옮길지는
-     * 리더 판정 사항이고, 옮긴다면 세 자리를 함께 옮긴다.
-     */
+    /** M-3b — 토큰이 든 세 갈래의 401 응답 시간이 갈리지 않는다 (게이트 24 잔여 X24-2). */
     @Test
     @DisplayName("M-3b 삭제 계정·위조·만료 401 의 응답 시간이 갈리지 않는다 (X24-2)")
     fun `토큰 무효 세 갈래의 응답 시간이 갈리지 않는다`() {
-        // 조항이 시간 축을 요구한다는 사실 자체를 계약에서 읽는다(L-3b 와 같은 이유).
         assertThat(ContractSpec.authText("failure_uniformity"))
             .withFailMessage("계약의 failure_uniformity 가 응답 시간 축을 더는 요구하지 않는다 — 이 케이스를 재판정하라")
             .contains(RESPONSE_TIME_CLAUSE)
@@ -435,8 +317,7 @@ class AuthEndpointReachTest {
 
         val medians = unauthorizedMedians(tokens)
         val ratio = medians.values.max() / medians.values.min().coerceAtLeast(MIN_MEASURABLE_MILLIS)
-        // 초록일 때도 수치를 남긴다 — 문턱까지의 여유가 보이지 않으면 서서히 벌어지는
-        // 드리프트를 아무도 모른 채 지나간다(L-3b 와 같은 규율).
+
         println(
             "M-3b %s → 비 %.3f (문턱 %.1f · 표본 각 %d · 워밍업 %d라운드)".format(
                 medians.entries.joinToString(" / ") { "%s %.2fms".format(it.key, it.value) },
@@ -464,7 +345,7 @@ class AuthEndpointReachTest {
             (1..UNIFORMITY_SAMPLES)
                 .flatMap { tokens.keys }
                 .shuffled(Random(TIMING_SEED))
-        // 워밍업 — 세 갈래 각 UNIFORMITY_WARMUP_ROUNDS 회. 버린다(클래스 적재·JIT·풀 데우기).
+
         repeat(UNIFORMITY_WARMUP_ROUNDS) { tokens.forEach { (_, token) -> unauthorizedMillis(token) } }
 
         val samples = plan.map { branch -> branch to unauthorizedMillis(tokens.getValue(branch)) }
@@ -506,20 +387,13 @@ class AuthEndpointReachTest {
     @DisplayName("M-6 exp 를 계약의 허용 오차 + 1초 지난 토큰은 401 (skew 를 계약에서 읽어 유도한다)")
     fun `만료 직후 토큰을 거부한다`() {
         val skew = ContractSpec.authNumber("clock_skew_seconds").toLong()
-        // 허용 오차가 0 이면 exp 가 1초 전인 토큰이다. 오차가 바뀌면 이 값도 따라 바뀐다.
+
         val expired = forgedToken(expiresAt = Instant.now().minusSeconds(skew + 1))
 
         assertThat(get("/auth/me", expired).statusCode()).isEqualTo(UNAUTHORIZED)
     }
 
-    /**
-     * **허용 오차 그 자체를 재는 자리.**
-     *
-     * M-6 은 `skew + 1` 만 보므로 계약의 오차가 0에서 120으로 바뀌어도 여전히 만료라
-     * **통과해 버린다**(음성 대조 N4 실측). 오차 경계 **안쪽**을 함께 재야 값이 코드에
-     * 결속된다 — `exp` 를 정확히 `skew` 만큼 지난 토큰은 오차가 0이면 거절, 0보다 크면
-     * 수용이어야 한다. 기대값을 계약에서 **유도**하므로 오차를 바꾸면 이 케이스가 뒤집힌다.
-     */
+    /** 허용 오차 그 자체를 재는 자리. */
     @Test
     @DisplayName("M-6b exp 를 계약의 허용 오차만큼 지난 토큰의 판정이 그 오차와 맞물린다")
     fun `허용 오차 경계 안쪽을 재다`() {
@@ -536,13 +410,10 @@ class AuthEndpointReachTest {
     @Test
     @DisplayName("M-7 exp 가 아직 지나지 않은 토큰은 통과한다 — M-6 의 반대쪽")
     fun `만료 전 토큰은 통과한다`() {
-        // 한쪽만 걸면 「전부 거절」 구현이 M-6 을 통과한다.
         val valid = forgedToken(expiresAt = Instant.now().plusSeconds(NOT_YET_EXPIRED_SECONDS))
 
         assertThat(get("/auth/me", valid).statusCode()).isEqualTo(ContractSpec.successStatus("/auth/me", "get"))
     }
-
-    // ================================================================ 도구
 
     /** 실제로 가입·로그인해 얻은 토큰. 위조 케이스의 `sub` 도 여기서 온다. */
     private fun issueToken(): String {
@@ -551,21 +422,12 @@ class AuthEndpointReachTest {
         return bodyOf(post("/auth/login", credentials(email, VALID_PASSWORD)))["access_token"].toString()
     }
 
-    /**
-     * 위조 케이스가 공유하는 **실재하는** 사용자.
-     *
-     * `sub` 를 아무 UUID 로 두면 M-7(만료 전 토큰은 통과한다)이 "계정 없음"으로 401 이 되어
-     * 그 케이스가 재려던 것을 재지 못한다 — 통과 쪽 단언은 다른 이유로 막히면 안 된다.
-     */
+    /** 위조 케이스가 공유하는 실재하는 사용자. */
     private val registeredUserId: String by lazy {
         bodyOf(post("/auth/signup", credentials(uniqueEmail(), VALID_PASSWORD)))["id"].toString()
     }
 
-    /**
-     * 계약의 클레임 이름으로 토큰을 조립한다. 이름은 계약에서 읽고 값만 여기서 정한다.
-     *
-     * [omit] 은 그 클레임을 아예 빼고, [subject]·[typ] 은 값을 바꾼다.
-     */
+    /** 계약의 클레임 이름으로 토큰을 조립한다. 이름은 계약에서 읽고 값만 여기서 정한다. */
     private fun forgedToken(
         subject: String? = registeredUserId,
         typ: String = ContractSpec.authText("claim_typ"),
@@ -623,14 +485,7 @@ class AuthEndpointReachTest {
 
     private fun bodyOf(response: HttpResponse<String>): Map<*, *> = json.readValue(response.body(), Map::class.java)
 
-    /**
-     * X-D1 하한선 + X-D2b 중복 부착 부재. 값과 개수를 모두 계약에서 읽어 본다.
-     *
-     * 값은 **헤더 컴포넌트의 `const`** 에서 읽는다(P-3). 전역 절
-     * (`x-global-response-headers.headers`)의 값만 읽으면 컴포넌트 `const` 가 바뀌어도
-     * 이 테스트가 반응하지 않는다 — 음성 대조 N3 에서 실측으로 드러난 자리다.
-     * 두 곳이 갈리지 않는지도 함께 본다.
-     */
+    /** X-D1 하한선 + X-D2b 중복 부착 부재. 값과 개수를 모두 계약에서 읽어 본다. */
     private fun assertPrivateHeaders(response: HttpResponse<String>) {
         val byComponent = ContractSpec.globalHeaderValues()
         ContractSpec.globalResponseHeaders().forEach { (header, globalValue) ->
@@ -644,12 +499,7 @@ class AuthEndpointReachTest {
         }
     }
 
-    /**
-     * 상태 코드를 **응답과 계약 양쪽에** 건다 (C-1).
-     *
-     * `/auth/me` 의 401 은 계약 대조 없이 상수만 썼다 — 계약에서 그 선언을 지워도 빨강이
-     * 0 이었다(실측 `'401'`→`'403'`).
-     */
+    /** 상태 코드를 응답과 계약 양쪽에 건다 (C-1). */
     private fun assertDeclaredStatus(
         response: HttpResponse<String>,
         status: Int,
@@ -694,19 +544,13 @@ class AuthEndpointReachTest {
 
         /**
          * M-3b 의 세 갈래 이름. 계약 `x-auth.failure_uniformity` 가 한 줄에 묶은 것과 같은 셋이고,
-         * **무헤더는 여기 없다**(사유는 그 케이스 KDoc).
+         * 무헤더는 여기 없다(사유는 그 케이스 KDoc).
          */
         private const val DELETED_ACCOUNT = "삭제 계정"
         private const val FORGED_SIGNATURE = "위조 서명"
         private const val EXPIRED_TOKEN = "만료"
 
-        /**
-         * M-3b 의 경로당 표본 수와 폐기할 워밍업 라운드.
-         *
-         * privacy-gate 재실측이 쓴 값(표본 101 · 워밍업 20)을 그대로 쓴다 — 이 저장소는 시간 축
-         * 게이트가 흔들려 꺼진 선례가 있어(원장 §1 ③) 방법을 임의로 줄이지 않는다.
-         * 홀수라 중앙값이 표본 하나로 정해진다.
-         */
+        /** M-3b 의 경로당 표본 수와 폐기할 워밍업 라운드. */
         private const val UNIFORMITY_SAMPLES = 101
         private const val UNIFORMITY_WARMUP_ROUNDS = 20
 
@@ -717,23 +561,10 @@ class AuthEndpointReachTest {
          */
         private const val MIN_MEASURABLE_MILLIS = 0.001
 
-        /**
-         * 두 경로 중앙값의 허용 비.
-         *
-         * 종전 값 4.0 은 **너무 넓었다**(codex C-3) — 현행 해시 비용 ~100ms 기준으로
-         * 26ms 대 100ms 의 반복 관측 가능한 열거 신호도 3.85배라 초록이었다. 교차 측정과
-         * 표본 11 로 지터를 줄인 뒤 문턱을 좁힌다. 실측 기준선은 privacy-gate 의
-         * **1.017배**(절대 격차 1.72ms)이고, 1.5 는 그 위 여유이면서 「의미 있는 격차」에는
-         * 닿지 않는다. 수정 전 실측은 42배였다.
-         */
+        /** 두 경로 중앙값의 허용 비. */
         private const val MAX_TIMING_RATIO = 1.5
 
-        /**
-         * 로그인 한 건이 이보다 빠르면 **실물 Argon2 가 도는 것이 아니다.**
-         *
-         * 운영 파라미터(m=64MiB·t=3·p=4) 실측이 90~100ms 대이고, 스텁이나 초소형 파라미터는
-         * 1~2ms 대다. 두 세계 사이에 두어 어느 쪽에서도 아슬아슬하지 않게 한다.
-         */
+        /** 로그인 한 건이 이보다 빠르면 실물 Argon2 가 도는 것이 아니다. */
         private const val MIN_REAL_HASH_MILLIS = 15.0
 
         private const val NANOS_PER_MILLI = 1_000_000.0
@@ -753,11 +584,5 @@ class AuthEndpointReachTest {
     }
 }
 
-/**
- * 이 테스트가 쓰는 서명 키.
- *
- * 32바이트 이상이어야 한다 — 계약 `x-auth.min_secret_bytes` 미만이면 인증 API 전체가
- * 503 이 되고, 그 상태는 [AuthUnavailableContractTest] 가 따로 잰다. 값이
- * `@SpringBootTest(properties=...)` 안에 들어가야 해서 컴파일 상수여야 한다.
- */
+/** 이 테스트가 쓰는 서명 키. */
 const val AUTH_REACH_TEST_SECRET: String = "test-only-signing-key-0123456789-abcdef"

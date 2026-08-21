@@ -6,20 +6,7 @@ import java.util.Base64
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
 
-/**
- * 테스트가 토큰을 **직접 만들고 읽는** 도구.
- *
- * ## 왜 제품이 쓰는 라이브러리를 쓰지 않는가
- *
- * 검증기와 위조기가 같은 라이브러리를 쓰면 그 라이브러리의 해석이 곧 기준이 된다 —
- * 예를 들어 두 쪽 모두 `exp` 를 같은 방식으로 반올림하면 만료 경계가 어긋나 있어도
- * 서로 맞는다. 여기서는 JDK 의 `Mac`·`Base64` 만 써서 **바이트로** 토큰을 조립하고,
- * 그것을 제품 코드(Nimbus 경유)가 어떻게 판정하는지를 잰다.
- *
- * 또 한 가지 — `nimbus-jose-jwt` 는 `infrastructure` 의 `implementation` 의존이라
- * `api` 테스트의 컴파일 클래스패스에 올라오지 않는다. 어댑터 격리가 이 자리에서도
- * 지켜지고 있다는 뜻이고, 그것을 우회하려고 의존성을 늘리지 않는다.
- */
+/** 테스트가 토큰을 직접 만들고 읽는 도구. */
 object TestJwt {
     private val encoder: Base64.Encoder = Base64.getUrlEncoder().withoutPadding()
     private val decoder: Base64.Decoder = Base64.getUrlDecoder()

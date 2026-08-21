@@ -20,28 +20,7 @@ import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 
-/**
- * **깨진 PHC 를 만난 로그에 해시·비밀번호·이메일이 실리지 않는다** — privacy-gate L-1 / 게이트 21 B1.
- *
- * ## 왜 레벨 고정이 아니라 이 회귀인가
- *
- * L-1 의 종전 처방은 `application.yml` 에 `org.springframework.security: INFO` 를 못박는
- * 것이었다. 그런데 지목받은 유출 후보는 `Argon2PasswordEncoder` 가 깨진 해시를 만났을 때
- * 내는 **WARN + 전체 스택트레이스**이고, **WARN 은 INFO 위라 그 고정이 억제하지 못한다**
- * (privacy-gate 가 깨진 PHC 2건을 주입해 실측했다 — 그 자리는 그대로 열려 있었다).
- * 레벨을 `ERROR` 로 올려 닫는 것은 **은폐**다: 진단이 사라지고, 다음 라이브러리가 다른
- * 로거로 같은 것을 흘리면 아무도 모른다.
- *
- * 그래서 **탐지**로 바꾼다 — 깨진 PHC 를 실제로 주입하고 로그인한 뒤, 그 사이에 찍힌
- * **모든 로그**(메시지 + 예외 체인 + 스택 프레임)를 훑어 유출 후보 문자열이 0건인지 본다.
- * 어느 로거가 찍든, 레벨이 무엇이든 잡힌다. 라이브러리 판올림이 메시지에 해시를 싣기
- * 시작하면 그때 이 케이스가 빨개진다 — 그것이 L-1 이 걱정한 바로 그 사건이다.
- *
- * ## 양성 대조
- *
- * 「0건」은 **캡처가 비어 있어도** 참이다. 그래서 요청 직전에 표식을 직접 찍고 그것이
- * 캡처에 있는지 먼저 본다. 표식이 없으면 이 케이스는 아무것도 재지 않은 것이다.
- */
+/** 깨진 PHC 를 만난 로그에 해시·비밀번호·이메일이 실리지 않는다 — privacy-gate L-1 / 게이트 21 B1. */
 @SpringBootTest(
     webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
     properties = ["easydoc.auth.jwt-secret=$AUTH_REACH_TEST_SECRET"],
@@ -68,7 +47,6 @@ class PasswordHashLogLeakReachTest {
                 LoggerFactory.getLogger(javaClass).warn(POSITIVE_CONTROL_MARKER)
                 val response = post("/auth/login", credentials(email, PASSWORD))
 
-                // 깨진 해시는 「검증 실패」이지 서버 오류가 아니다 — 401 이어야 한다.
                 assertThat(response.statusCode())
                     .withFailMessage("깨진 PHC 로그인이 %d 로 나갔다 — 실패 갈래가 구분된다", response.statusCode())
                     .isEqualTo(UNAUTHORIZED)
@@ -76,7 +54,6 @@ class PasswordHashLogLeakReachTest {
 
             val captured = appender.list.joinToString("\n") { render(it) }
 
-            // 양성 대조 — 캡처가 살아 있는가.
             assertThat(captured)
                 .withFailMessage("표식이 캡처에 없다 — 이 케이스는 아무 로그도 보고 있지 않다")
                 .contains(POSITIVE_CONTROL_MARKER)

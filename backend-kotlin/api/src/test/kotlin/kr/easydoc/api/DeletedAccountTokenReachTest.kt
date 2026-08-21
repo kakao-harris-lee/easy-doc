@@ -20,43 +20,7 @@ import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import java.util.UUID
 
-/**
- * **X-1 — 계정이 지워진 뒤에도 유효한 토큰이 무엇을 할 수 있는가.**
- *
- * 계약 `x-auth.failure_uniformity`(`:299-302`)가 계정 삭제를 이메일 부재·비밀번호 불일치·
- * 토큰 만료·위조와 **같은 줄에서** 401 사유로 열거한다. 그 열거는 `/auth/me` 절이 아니라
- * 최상위 `x-auth` 아래 있고, 로그인 시점의 삭제는 「이메일 부재」가 이미 덮으므로
- * 「계정 삭제」를 따로 세운 것은 **토큰이 아직 유효한 요청 시점**을 가리킨다.
- *
- * ## 고치기 전에 네 갈래가 있었다
- *
- * 서명만 검증하던 시절의 실측(privacy-gate R-3):
- *
- * | 경로 | 그때 | 지금 |
- * |---|---|---|
- * | `GET /auth/me` | 401 | 401 |
- * | `GET /workspaces` | **200 `{"items":[]}`** | 401 |
- * | `POST /workspaces` | **500** (사용자 FK 위반) | 401 |
- * | `PATCH /workspaces/{id}` | **404** | 401 |
- * | `DELETE /workspaces/{id}` | **404** | 401 |
- *
- * 네 갈래가 갈렸다는 것 자체가 **삭제 여부를 알려 주는 상태 코드 채널**이었다. 그래서 이
- * 테스트는 「401 이 나온다」가 아니라 **「다섯이 서로 구분되지 않는다」**를 단언한다 —
- * 다섯이 각각 401 을 내면서 본문이나 헤더가 갈리면 채널은 그대로 살아 있다.
- *
- * ## 위조 토큰과도 구분되지 않아야 한다
- *
- * 삭제 계정의 401 과 위조 토큰의 401 이 바이트로 갈리면, 「이 토큰은 한때 유효했다」가
- * 새어 나간다. 그것도 계약이 같은 줄에서 금지한 구분이다.
- *
- * ## 왜 HTTP 경계인가
- *
- * 확인이 도는 자리는 인터셉터이고, 인터셉터가 **실제로 그 경로에 걸려 있는지**는
- * 유스케이스 단위 테스트가 재지 못한다. 계정 행은 SQL 로 지운다 — 계약에 계정 삭제
- * 엔드포인트가 없어(`/auth` 는 signup·login·me 셋뿐) HTTP 로는 이 상태를 만들 수 없다.
- * `users` 삭제는 `fk_workspaces_user_id_users`(ON DELETE CASCADE)를 타고 작업 공간까지
- * 지우므로, 실제 탈퇴가 남길 상태와 같다.
- */
+/** X-1 — 계정이 지워진 뒤에도 유효한 토큰이 무엇을 할 수 있는가. */
 @SpringBootTest(
     webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
     properties = ["easydoc.auth.jwt-secret=$DELETED_ACCOUNT_TEST_SECRET"],
@@ -73,8 +37,6 @@ class DeletedAccountTokenReachTest {
     fun `삭제된 계정의 토큰이 어디서도 통과하지 않는다`() {
         val account = liveAccount()
 
-        // 살아 있는 동안 다섯 경로가 실제로 통하는지 먼저 본다. 이 반대쪽이 없으면
-        // 「무엇을 보내도 401 인 구현」과 구분되지 않는다.
         val alive = allProtectedCalls(account).map { it.first to it.second.statusCode() }
         assertThat(alive.map { it.second })
             .withFailMessage("계정이 살아 있는데 보호 경로가 401 을 냈다 — 이 측정의 전제가 깨졌다: %s", alive)
@@ -98,7 +60,6 @@ class DeletedAccountTokenReachTest {
             assertPrivateHeaders(label, response)
         }
 
-        // 다섯이 **서로** 구분되지 않는다 — 바이트 하나가 갈려도 채널이다.
         assertThat(responses.map { it.second.body() }.distinct())
             .withFailMessage("경로마다 401 본문이 갈린다: %s", responses.map { it.first to it.second.body() })
             .hasSize(1)
@@ -123,8 +84,6 @@ class DeletedAccountTokenReachTest {
         assertThat(headerNames(deleted)).isEqualTo(headerNames(forged))
     }
 
-    // ================================================================ 호출 조립
-
     /** 계약이 보호한다고 선언한 다섯 자리를 전부 친다. 반환은 (라벨, 응답). */
     private fun allProtectedCalls(account: LiveAccount): List<Pair<String, HttpResponse<String>>> =
         listOf(
@@ -140,13 +99,7 @@ class DeletedAccountTokenReachTest {
             "DELETE $ITEM_PATH" to send(jsonRequest(itemPath(account.secondWorkspaceId), account.token).DELETE()),
         )
 
-    /**
-     * 가입 → 로그인 → 작업 공간 하나 더.
-     *
-     * 두 번째 작업 공간을 만드는 이유: 살아 있는 동안의 대조에서 DELETE 가 「마지막 하나」
-     * 409 로 떨어지면 안 되고, PATCH·DELETE 가 **실재하는 내 자원**을 가리켜야 404 와
-     * 401 을 구분해 읽을 수 있다.
-     */
+    /** 가입 → 로그인 → 작업 공간 하나 더. */
     private fun liveAccount(): LiveAccount {
         val email = "deleted-account${counter++}@example.test"
         val credentials = json.writeValueAsString(mapOf("email" to email, "password" to VALID_PASSWORD))
@@ -167,7 +120,7 @@ class DeletedAccountTokenReachTest {
         val secondWorkspaceId: String,
     )
 
-    /** **P-21 — 경로 변수 이름을 계약에서 읽어 URL 을 조립한다.** */
+    /** P-21 — 경로 변수 이름을 계약에서 읽어 URL 을 조립한다. */
     private fun itemPath(workspaceId: String): String {
         val parameter = ContractSpec.pathParameters(ITEM_PATH).single { it.location == "path" }
         return ITEM_PATH.replace("{${parameter.name}}", workspaceId)
@@ -203,8 +156,8 @@ class DeletedAccountTokenReachTest {
     private fun uniqueName(): String = "삭제계정${counter++}"
 
     /**
-     * **여기서 재는 것은 자원 소유권 은닉이 아니다** — 401 다섯 갈래의 구별 불가다.
-     * 그래서 판정은 이 파일이 지고, **제외 헤더 집합만** [OwnershipConcealment] 와 공유한다.
+     * 여기서 재는 것은 자원 소유권 은닉이 아니다 — 401 다섯 갈래의 구별 불가다.
+     * 그래서 판정은 이 파일이 지고, 제외 헤더 집합만 [OwnershipConcealment] 와 공유한다.
      * 집합이 갈리면 「헤더 이름 집합이 같다」의 뜻이 자리마다 달라진다.
      */
     private fun headerNames(response: HttpResponse<String>): Set<String> = OwnershipConcealment.headerNames(response)
@@ -228,7 +181,7 @@ class DeletedAccountTokenReachTest {
         private const val WWW_AUTHENTICATE = "WWW-Authenticate"
         private const val WWW_AUTHENTICATE_COMPONENT = "WWWAuthenticateBearer"
 
-        /** 계약이 응답 컴포넌트·예시에 붙인 **이름**이다. 값이 아니라 이름이라 여기 적는다. */
+        /** 계약이 응답 컴포넌트·예시에 붙인 이름이다. 값이 아니라 이름이라 여기 적는다. */
         private const val UNAUTHORIZED_COMPONENT = "Unauthorized"
         private const val INVALID_TOKEN_EXAMPLE = "invalid_token"
 

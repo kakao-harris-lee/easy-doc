@@ -43,40 +43,7 @@ import java.util.concurrent.Future
 import java.util.concurrent.TimeUnit
 import javax.sql.DataSource
 
-/**
- * **회전과 내용 쓰기가 실제로 겹칠 때** 무슨 일이 벌어지는가 — 게이트 27 지적 ①.
- *
- * ## 무엇이 잡히지 않고 있었나
- *
- * 회전은 `lockEnvelope`(읽기) → 복호 → 재암호 → `rewriteEnvelope`(쓰기) 로 두 문장이다.
- * 그 사이에 다른 트랜잭션이 암호문 열을 바꾸고 커밋해도, 낙관적 조건이
- * `WHERE key_version = :expected` 하나뿐이면 **조건이 여전히 참이다** — `key_version` 은
- * 회전만 바꾸는 열이라 내용 쓰기가 건드리지 않기 때문이다. PostgreSQL READ COMMITTED 는
- * 잠금을 얻은 뒤 `WHERE` 를 **갱신된 행 버전으로 다시 평가**하고, 조건이 여전히 맞으면
- * *"the second updater proceeds with its operation using the updated version of the row"*
- * (PostgreSQL 16 문서 13.2.1). 그래서 회전이 **자기가 1단계에서 읽은 낡은 값으로 세 열을
- * 통째로 덮고** `updated = true` 를 받아 `ROTATED` 를 돌려준다. 사용자의 쓰기가 아무 신호
- * 없이 사라진다.
- *
- * 기존 「낙관적 조건」 케이스(`JdbcDocumentStoreTest`)는 **회전 대 회전**만 잰다 —
- * 이미 회전된 행을 옛 세대로 다시 쓰면 0행이라는 것. 그것은 이 갈래를 밟지 않는다.
- *
- * ## 이 파일이 겹치게 만드는 방법
- *
- * 회전의 두 문장 **사이**에 다른 커넥션의 트랜잭션을 끼워 넣는다. 저장소 포트를 감싼
- * 대역([HookedConversions]·[HookedDocuments])이 읽기 직후에 방해 쓰기를 다른 스레드로
- * 띄우고 **[INTERFERENCE_GRACE_MILLIS] 만큼만** 기다린다 — 기다림이 무한이면 잠금이 선
- * 뒤에는 교착이고, 0이면 겹침이 확실하지 않다. 잠금이 서 있으면 방해 쓰기는 그 시간
- * 안에 끝나지 못하고, 회전이 커밋한 **뒤에** 풀려 자기 일을 마친다.
- *
- * ## 방해 쓰기는 **준수 쓰기**다
- *
- * 원시 SQL 로 쓰되 C7(검수 저장)·Phase 5 워커가 가져야 할 모양 그대로다 — 행을 잠근 채
- * 읽고, **그 행의 세대로** 봉인하고, 암호문 열과 봉투 두 값을 **한 문장에서** 함께 쓴다.
- * 잠그지 않는 쓰기를 대역으로 쓰면 이 파일이 재는 것이 「회전의 결함」인지 「쓰기의 결함」인지
- * 갈리지 않는다. 봉투를 함께 쓴다는 조건은 `EnvelopeColumnWriteGuardTest` 가 소스 전수로
- * 강제하고, 여기 세 문장도 그 분모 안에 있다.
- */
+/** 회전과 내용 쓰기가 실제로 겹칠 때 무슨 일이 벌어지는가 — 게이트 27 지적 ①. */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class EnvelopeRotationConcurrencyTest {
     private lateinit var database: DatabaseHandle
@@ -128,17 +95,13 @@ class EnvelopeRotationConcurrencyTest {
                 row.keyVersion,
             ).isNotNull()
         assertThat(openedEditedText(row)).isEqualTo(EDITED_BODY)
-        // 세 열과 봉투가 어긋나면 행이 부분적으로만 열린다 — 초안 쪽도 함께 확인한다.
+
         assertThat(openedEasyText(row)).isEqualTo(DRAFT_BODY)
     }
 
     @Test
     @DisplayName("**잠금 전제가 깨지면 CONTENDED 로 드러난다** — 조용히 덮는 갈래가 남지 않는다")
     fun `잠금이 서지 않으면 CONTENDED 다`() {
-        // 회전을 트랜잭션 없이(자동 커밋) 돌린다. 그러면 읽기가 얻은 행 잠금이 문장이
-        // 끝나는 순간 풀려 방해 쓰기가 그대로 끼어든다 — 잠금 전제가 깨진 상태의 재현이다.
-        // 그 상태에서도 **덮지 않고 지는 것**이 요구다. 낙관적 조건이 암호문까지 보지 않으면
-        // 여기가 조용히 ROTATED 로 통과한다.
         val conversionId = seededConversion()
         val writer = Holder()
         val rotation =
@@ -161,9 +124,6 @@ class EnvelopeRotationConcurrencyTest {
     @Test
     @DisplayName("문서 원문 회전도 같은 잠금을 든다 — 동시 원문 쓰기가 사라지지 않는다")
     fun `문서 회전이 동시 원문 쓰기를 삼키지 않는다`() {
-        // `documents.source_text_encrypted` 를 다시 쓰는 제품 경로는 **아직 없다.** 그래도
-        // 같은 형태를 재는 이유는 회전 코드가 두 테이블에 대칭으로 서 있기 때문이다 —
-        // 한쪽만 고치면 다음에 그 경로가 생기는 순간 같은 결함이 되살아난다.
         val documentId = seededDocument()
         val writer = Holder()
         val rotation = rotationWith(documentHook = { writer.start { rewriteSourceText(documentId, REWRITTEN_BODY) } })
@@ -177,13 +137,7 @@ class EnvelopeRotationConcurrencyTest {
             .isEqualTo(REWRITTEN_BODY)
     }
 
-    // ================================================================ 방해 쓰기
-
-    /**
-     * C7(검수 저장)이 가질 모양 — **행을 잠근 채 읽고, 그 행의 세대로 봉인해, 봉투와 함께 쓴다.**
-     *
-     * 자기 커넥션에서 자기 트랜잭션으로 돈다. 회전이 행을 잠그고 있으면 첫 문장에서 멈춘다.
-     */
+    /** C7(검수 저장)이 가질 모양 — 행을 잠근 채 읽고, 그 행의 세대로 봉인해, 봉투와 함께 쓴다. */
     private fun saveEditedText(
         conversionId: UUID,
         body: String,
@@ -236,7 +190,7 @@ class EnvelopeRotationConcurrencyTest {
         table: String,
         id: UUID,
     ): Pair<String, Int> =
-        // 테이블 이름은 이 파일 안의 상수 둘 중 하나이고 식별자는 파라미터다 — 주입면이 없다.
+
         connection
             .prepareStatement("SELECT encryption_scheme, key_version FROM $table WHERE id = ? FOR NO KEY UPDATE")
             .use { statement ->
@@ -260,13 +214,7 @@ class EnvelopeRotationConcurrencyTest {
         }
     }
 
-    // ================================================================ 조립
-
-    /**
-     * 회전 한 벌. [conversionHook]·[documentHook] 은 **저장소가 행을 읽어 온 직후** 불린다.
-     *
-     * 훅을 저장소 대역에 다는 이유: 두 문장 사이에 끼어들 수 있는 자리가 거기뿐이다.
-     */
+    /** 회전 한 벌. [conversionHook]·[documentHook] 은 저장소가 행을 읽어 온 직후 불린다. */
     private fun rotationWith(
         conversionHook: () -> Unit = {},
         documentHook: () -> Unit = {},
@@ -299,8 +247,6 @@ class EnvelopeRotationConcurrencyTest {
             transaction = SpringTransactionRunner(TransactionTemplate(DataSourceTransactionManager(dataSource))),
         )
     }
-
-    // ================================================================ 픽스처
 
     /** 초안·대응표가 채워진 옛 세대 변환 하나. 검수본은 비어 있다. */
     private fun seededConversion(): UUID {
@@ -368,12 +314,7 @@ class EnvelopeRotationConcurrencyTest {
 
     private val reader: ContentCipher by lazy { cipherWith(NEW_GENERATION) }
 
-    /**
-     * 방해 쓰기 하나를 띄우고 **정해진 시간만** 기다린다.
-     *
-     * 무한히 기다리면 잠금이 선 뒤에는 회전 스레드와 서로를 물고 멈춘다. 기다리지 않으면
-     * 잠금이 없을 때 겹침이 확실하지 않다. 그래서 「끝났으면 좋고, 안 끝났으면 두고 간다」다.
-     */
+    /** 방해 쓰기 하나를 띄우고 정해진 시간만 기다린다. */
     private inner class Holder {
         private var future: Future<*>? = null
 
@@ -388,8 +329,6 @@ class EnvelopeRotationConcurrencyTest {
                 .get(TASK_TIMEOUT_SECONDS, TimeUnit.SECONDS)
         }
     }
-
-    // ================================================================ 대역
 
     /** 읽기 직후에 [hook] 을 부르는 것 말고는 [delegate] 그대로다. */
     private class HookedConversions(

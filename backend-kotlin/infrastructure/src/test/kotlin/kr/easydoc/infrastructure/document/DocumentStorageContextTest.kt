@@ -40,40 +40,7 @@ import java.util.function.Supplier
 import javax.crypto.spec.SecretKeySpec
 import javax.sql.DataSource
 
-/**
- * **조립된 빈이 실제 키로 실제 DB 에 쓴다** — 게이트 25 X9 / privacy-gate F-6.
- *
- * ## 무엇이 비어 있었나
- *
- * 원장은 이 항목을 *"조립된 빈을 **실제 키**로 쓰는 통합 테스트 0"* 으로 열어 두었다.
- * 게이트 26 이 절반을 닫았고(자기점검 우회 스위치를 없애 모든 테스트 컨텍스트가 실제 키로
- * 자기점검을 **통과**하게 됐다), 남은 절반이 **실제 INSERT/SELECT** 다. 그 자리가 여기다.
- *
- * 이것이 없으면 §4.2·§4.3 의 모든 초록이 「503 을 잘 낸다」의 초록일 수 있다 — 저장 경로가
- * 조립된 적이 없으면 통합 테스트가 붙어도 오설정 갈래만 밟기 때문이다.
- *
- * ## 왜 `ApplicationContextRunner` 인가
- *
- * 기동 **실패 자체**를 재야 한다. `@SpringBootTest` 로는 컨텍스트 적재 실패가 곧 테스트
- * 오류라 「실패해야 한다」를 표현할 수 없다. 이 러너는 실패를 값으로 돌려준다
- * (`CryptoProfileExemptionTest` 와 같은 판단).
- *
- * `@DynamicPropertySource` 대신 [EncryptionProperties] 를 **빈으로 직접** 준다. 바인딩
- * (placeholder·`Secret` 변환)이 실제로 도는지는 `ConfigurationPropertiesBindingTest` 가
- * 이미 잰다 — 여기서 재려는 것은 **조립과 저장**이므로 축을 섞지 않는다. 키는 어느 쪽이든
- * **실행 시점 난수**이고 KCV 는 제품 코드 [KeyCheckValue] 로 계산한다(소스에 키 리터럴을
- * 적지 않는다 — 스캐너 `SECRET-LITERAL`).
- *
- * ## 「키를 빼면 503」은 **이 층에서 재지 않는다** (계획 §4.4-5 에서 바뀐 지점)
- *
- * 계획은 *"키를 빼면 업로드가 503 이 되는 케이스를 별도 컨텍스트(C-P)로 둔다"* 였다. 그
- * 갈래는 **게이트 26 이후 조립 경로에서 도달할 수 없다** — 자기점검이 기동을 끊으므로 키
- * 없는 컨텍스트는 애초에 뜨지 않고, 뜨지 않는 컨텍스트에는 업로드를 시킬 빈이 없다.
- * 그래서 여기서는 **「키 없는 컨텍스트는 기동을 거부한다」**를 재고(아래), 503 이 되는
- * 갈래 자체는 빈 층에서 잰다
- * (`JdbcDocumentStoreTest.쓰기 키가 없으면 아무것도 남지 않는다` — `ConfigurationException`
- * 이고 `GlobalExceptionHandler` 가 그것을 503 으로 옮긴다). 이 변경은 산출물에 기록했다.
- */
+/** 조립된 빈이 실제 키로 실제 DB 에 쓴다 — 게이트 25 X9 / privacy-gate F-6. */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class DocumentStorageContextTest {
     private lateinit var database: DatabaseHandle
@@ -162,7 +129,6 @@ class DocumentStorageContextTest {
         var documentId: UUID? = null
         var conversionId: UUID? = null
 
-        // ⑴ 쓰기 세대 1 로 저장한다.
         runner(keys = bothGenerations, writeKeyVersion = 1)
             .run(
                 ContextConsumer { context: AssertableApplicationContext ->
@@ -179,7 +145,6 @@ class DocumentStorageContextTest {
         val storedDocument = checkNotNull(documentId)
         val storedConversion = checkNotNull(conversionId)
 
-        // ⑵ 쓰기 세대를 2 로 올린 **다른 컨텍스트**가 그 행을 회전한다.
         runner(keys = bothGenerations, writeKeyVersion = 2)
             .run(
                 ContextConsumer { context: AssertableApplicationContext ->
@@ -204,15 +169,7 @@ class DocumentStorageContextTest {
             )
     }
 
-    // ---------------------------------------------------------------- 도구
-
-    /**
-     * 저장 경로 조립 — 제품 `@Configuration` 셋을 그대로 쓴다.
-     *
-     * `DataSource`·`JdbcClient`·`TransactionRunner` 는 실행 모듈(`api`·`worker`)이 Boot
-     * 자동 설정으로 얻는 것이라 여기서 손으로 준다. 그 밖의 빈(저장소·큐·코덱·유스케이스·
-     * 암호기)은 **제품 설정 클래스가 만든다** — 그것이 이 테스트가 재려는 대상이다.
-     */
+    /** 저장 경로 조립 — 제품 `@Configuration` 셋을 그대로 쓴다. */
     private fun runner(
         keys: List<EncryptionKeyProperties>,
         writeKeyVersion: Int,

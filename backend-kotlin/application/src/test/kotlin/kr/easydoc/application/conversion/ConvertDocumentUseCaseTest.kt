@@ -14,16 +14,7 @@ import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 
-/**
- * 변환 오케스트레이션 — CNV-01(호출 상한)·CNV-02(4대 예외)·CNV-04(보정 채택).
- *
- * 요구 정본은 `00_requirements-inventory.md` §3.1 이고, 같은 성질을 fixture 25건이
- * `ConversionParityTest` 에서 값으로 판정한다. **이 파일은 그 중복이 아니다** — parity 는
- * "만족하는가"를, 여기서는 "왜 그런가"와 fixture 가 못 담는 것(예산 초과 시 터지는가,
- * 관대한 provider 를 줘도 멈추는가)을 본다.
- *
- * **실제 LLM API 를 부르지 않는다.** 전부 `FakeLlmProvider` 다.
- */
+/** 변환 오케스트레이션 — CNV-01(호출 상한)·CNV-02(4대 예외)·CNV-04(보정 채택). */
 class ConvertDocumentUseCaseTest {
     private val fixedIds = DocumentIdGenerator { "0123456789ab" }
 
@@ -56,8 +47,6 @@ class ConvertDocumentUseCaseTest {
     @Test
     @DisplayName("전제 확인 — 이 파일이 쓰는 두 본문의 위반 유무")
     fun `테스트 전제가 성립한다`() {
-        // 이 전제가 깨지면 아래 케이스들이 "보정을 부르지 않아서" 우연히 통과한다.
-        // 어려운 말 사전이 바뀌면 여기서 먼저 빨개져야 원인을 찾을 수 있다.
         assertThat(checkStyle(draftWithIssue).issues)
             .withFailMessage("'$draftWithIssue' 에 위반이 없다 — 보정 경로를 타지 않는다")
             .isNotEmpty()
@@ -72,7 +61,6 @@ class ConvertDocumentUseCaseTest {
         @Test
         @DisplayName("위반이 없으면 보정을 부르지 않는다 — 정확히 1회")
         fun `깨끗하면 한 번만 부른다`() {
-            // '항상 2회'는 상한을 지키면서 요구를 어긴다 — 크레딧 원가 산정이 두 배로 어긋난다.
             val provider = FakeLlmProvider(listOf(reply(cleanText)))
 
             val result = useCase(provider).convert(source)
@@ -84,9 +72,6 @@ class ConvertDocumentUseCaseTest {
         @Test
         @DisplayName("보정 결과에 위반이 남아 있어도 다시 부르지 않는다 — 관대한 provider 로 잰다")
         fun `루프가 아니다`() {
-            // **엄격한 fake 로는 이 성질을 못 잰다.** 대본을 2건만 주면 3번째 호출에서
-            // 하네스가 죽어 "터졌다"는 사실만 남고 몇 번 불렀는지는 알 수 없다. 응답을 넉넉히
-            // 주고 남은 수를 보는 것이 "루프가 아니다"의 직접 증거다.
             val provider = FakeLlmProvider(List(10) { reply(draftWithIssue) })
 
             val result = useCase(provider).convert(source)
@@ -99,8 +84,6 @@ class ConvertDocumentUseCaseTest {
         @Test
         @DisplayName("전송 재전송은 완성 요청 수에 들어가지 않는다 — 분리 계측")
         fun `전송 시도와 완성 요청을 따로 센다`() {
-            // 계측 지점을 HTTP 요청으로 잡으면 상한이 어댑터 재시도 설정에 따라 흔들리고,
-            // 모델에게 실제로 몇 번 물었는지도 잃는다.
             val provider = FakeLlmProvider(listOf(reply(cleanText)), transportAttemptsPerCall = 3)
 
             val result = useCase(provider).convert(source)
@@ -134,7 +117,7 @@ class ConvertDocumentUseCaseTest {
 
             assertThat(result).isInstanceOf(ConversionResult.Failed::class.java)
             assertThat((result as ConversionResult.Failed).kind).isEqualTo(ConversionFailureKind.TRUNCATED)
-            // 보정으로 덮지 않는다 — 1차가 잘렸는데 보정을 부르면 잘린 본문을 다듬는 셈이다.
+
             assertThat(result.usage.llmCalls).isEqualTo(1)
         }
 
@@ -185,7 +168,7 @@ class ConvertDocumentUseCaseTest {
 
             assertThat(result.easyText.value).isEqualTo(draftWithIssue)
             assertThat(result.repaired).isFalse()
-            // 실패한 보정 호출도 상한에는 센다 — 다시 부르지 않는다.
+
             assertThat(result.usage.llmCalls).isEqualTo(2)
         }
 
@@ -216,13 +199,6 @@ class ConvertDocumentUseCaseTest {
     @Nested
     @DisplayName("빈 본문 응답의 분류 — 교차 종합 C-08")
     inner class EmptyBodyClassification {
-        // 어댑터가 빈 본문에서 예외를 던지던 시절에는 LlmCompletion 이 만들어지지 않아
-        // finishReason 과 usage 가 함께 사라졌다. 그 결과 **잘려서 비어 온 응답이
-        // EMPTY_RESULT 로 기록**되고(사용자가 취할 조치가 달라진다) 토큰도 누계에서 빠졌다.
-        //
-        // 이제 어댑터는 사실만 보고하고 분류는 이 계층이 한다. **1차와 보정 두 위치에서
-        // 모두 확인한다** — 같은 사건이라도 위치에 따라 처분이 정반대이기 때문이다.
-
         private fun emptyReply(
             truncated: Boolean = false,
             refusal: Boolean = false,
@@ -248,7 +224,7 @@ class ConvertDocumentUseCaseTest {
             val result = useCase(provider).convert(source)
 
             assertThat((result as ConversionResult.Failed).kind).isEqualTo(ConversionFailureKind.TRUNCATED)
-            // 예외 경로로 나가면 이 토큰이 통째로 사라진다.
+
             assertThat(result.usage.inputTokens).isEqualTo(40)
         }
 
@@ -266,7 +242,6 @@ class ConvertDocumentUseCaseTest {
         @Test
         @DisplayName("1차: REFUSAL 은 빈 결과와 구분한다 — 값으로 가른다")
         fun `거절은 빈 결과가 아니다`() {
-            // 우리 쪽 버그 후보(빈 응답)와 입력 특성(거절)은 사용자가 취할 조치가 다르다.
             val provider = FakeLlmProvider(listOf(emptyReply(refusal = true)))
 
             val result = useCase(provider).convert(source)
@@ -289,8 +264,7 @@ class ConvertDocumentUseCaseTest {
 
             assertThat(result.easyText.value).isEqualTo(draftWithIssue)
             assertThat(result.repaired).isFalse()
-            // **부른 순간 비용은 발생했다.** 예외 경로에서는 이 80/30 이 빠져 최종 사용량이
-            // 두 호출의 합보다 적게 보고됐다.
+
             assertThat(result.usage.inputTokens).isEqualTo(200)
             assertThat(result.usage.outputTokens).isEqualTo(75)
         }
@@ -320,8 +294,6 @@ class ConvertDocumentUseCaseTest {
         @Test
         @DisplayName("자리표시자를 지키며 위반을 줄이면 보정문을 채택한다")
         fun `개선하면 채택한다`() {
-            // 이 케이스가 없으면 '보정을 항상 버리는' 구현이 나머지를 전부 통과한다 —
-            // 보정 호출 비용만 치르고 품질은 그대로인 상태다.
             val provider =
                 FakeLlmProvider(
                     listOf(
@@ -341,7 +313,6 @@ class ConvertDocumentUseCaseTest {
         @Test
         @DisplayName("악화되면 1차 결과를 채택하되 토큰은 두 호출의 합이다")
         fun `악화되면 기각하고 토큰은 합산한다`() {
-            // 부른 순간 비용은 발생했다. 버린 호출의 토큰을 빼면 원가가 실제보다 적게 잡힌다.
             val provider =
                 FakeLlmProvider(
                     listOf(
@@ -374,7 +345,7 @@ class ConvertDocumentUseCaseTest {
 
             assertThat(result.easyText.value).isEqualTo("금일 [[주민등록번호1]]을 확인하세요.")
             assertThat(result.repaired).isFalse()
-            // 1차 결과에 대고 산출하면 여기서 유실이 잘못 보고돼 내보내기가 409 로 막힌다.
+
             assertThat(result.missingPlaceholders).isEmpty()
         }
     }
@@ -387,8 +358,6 @@ class ConvertDocumentUseCaseTest {
         @Test
         @DisplayName("지워지면 라벨을 담되 예외로 막지 않는다")
         fun `유실은 보고하되 실패시키지 않는다`() {
-            // 개인정보가 새는 방향이 아니라 표시가 사라지는 방향이다. 여기서 실패로 처리하면
-            // 쓸 만한 결과를 통째로 버린다 — 사람이 원문과 대조하도록 검수 화면으로 넘긴다.
             val provider = FakeLlmProvider(listOf(reply("오늘 번호를 확인하세요.")))
 
             val result = converted(useCase(provider).convert(withRrn))

@@ -2,29 +2,7 @@ package kr.easydoc.infrastructure.auth
 
 import java.util.Base64
 
-/**
- * Argon2 PHC 문자열의 파라미터 집합.
- *
- * ## 왜 직접 파싱하는가
- *
- * 재해시 판정(`migration-safety-gate` I-8 검증 4)이 요구하는 것은 **전체 파라미터
- * 동등성**이다. Spring Security `Argon2PasswordEncoder.upgradeEncoding()` 은 `memory` 와
- * `iterations` 의 **"미만"만** 본다 — 파라미터를 **낮춘** 경우와 `parallelism`·salt 길이·
- * hash 길이만 바뀐 경우를 "최신"으로 오판한다(Phase 0 탐침 7건 중 5건 불일치).
- * 지금은 무해해도 파라미터를 바꾸는 날 **이관이 조용히 멈춘다.**
- *
- * Spring Security 의 `Argon2EncodingUtils` 는 **패키지 전용**이라 밖에서 부를 수 없다
- * (7.1.0 실측: `final class`, `static` 메서드에 접근 제어자 없음). 그래서 판정에 필요한
- * 만큼만 여기서 읽는다. **해시 계산·검증은 여전히 라이브러리가 한다** — 여기서 하는 것은
- * 문자열 파싱뿐이고 암호 프리미티브를 조립하지 않는다(I-7·I-8 의 "즉흥 암호 금지"와 같은
- * 선).
- *
- * ## 형식
- *
- * `$argon2id$v=19$m=65536,t=3,p=4$<salt>$<hash>` — salt·hash 는 **패딩 없는 base64**.
- * `v=` 는 생략될 수 있고(초기 Argon2 명세), 그때 버전은 0x10 = 16 이다. `m,t,p` 뒤에
- * `keyid`·`data` 같은 선택 항목이 붙을 수 있어 **필요한 키만 골라 읽는다**.
- */
+/** Argon2 PHC 문자열의 파라미터 집합. */
 internal data class Argon2Phc(
     val variant: String,
     val version: Int,
@@ -55,13 +33,7 @@ internal data class Argon2Phc(
 
         private val BASE64_DECODER: Base64.Decoder = Base64.getDecoder()
 
-        /**
-         * PHC 문자열을 읽는다. 형식이 아니면 `null` — **예외를 던지지 않는다.**
-         *
-         * 호출자(재해시 판정)는 읽지 못한 해시를 "현행 정책과 다르다"로 다루면 되고,
-         * 여기서 예외를 던지면 로그인 경로에 새 실패 지점이 생긴다. 실패 원인을 갈라
-         * 알려 주지 않는 것은 복호화 oracle 을 만들지 않는 것과 같은 이유다.
-         */
+        /** PHC 문자열을 읽는다. 형식이 아니면 `null` — **예외를 던지지 않는다.** */
         fun parse(encoded: String): Argon2Phc? {
             // `$argon2id$...` 이므로 첫 조각은 빈 문자열이다.
             val segments = encoded.split('$')
@@ -111,13 +83,7 @@ internal data class Argon2Phc(
             }
         }
 
-        /**
-         * `m=65536,t=3,p=4[,keyid=...]` 에서 비용 셋을 읽는다. 하나라도 없으면 `null`.
-         *
-         * 셋을 한 타입으로 묶는 이유는 **부분적으로 읽힌 상태를 만들지 않기 위해서**다.
-         * 개별 `Int?` 로 들고 다니면 호출부마다 같은 널 검사를 되풀이하게 되고, 한 곳에서
-         * 빠뜨려도 컴파일된다.
-         */
+        /** `m=65536,t=3,p=4[,keyid=...]` 에서 비용 셋을 읽는다. 하나라도 없으면 `null`. */
         private fun readCosts(segment: String?): Costs? {
             val values = readKeyValues(segment)
             val memory = values[MEMORY_KEY]
@@ -141,12 +107,7 @@ internal data class Argon2Phc(
                     if (separator <= 0 || value == null) null else entry.take(separator) to value
                 }.toMap()
 
-        /**
-         * 패딩 없는 base64 를 풀어 **바이트 길이만** 돌려준다.
-         *
-         * 내용은 쓰지 않는다 — 필요한 것은 salt·hash 의 길이뿐이고, 값을 들고 다니면
-         * 로그로 샐 자리가 하나 는다.
-         */
+        /** 패딩 없는 base64 를 풀어 **바이트 길이만** 돌려준다. */
         private fun decodedLength(segment: String?): Int? {
             if (segment.isNullOrEmpty()) {
                 return null

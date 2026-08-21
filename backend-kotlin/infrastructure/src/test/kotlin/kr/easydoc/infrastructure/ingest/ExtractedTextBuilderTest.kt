@@ -7,13 +7,7 @@ import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
 
-/**
- * 블록 정규화와 **추출 길이 상한**(계획 §5 D-4).
- *
- * 상한을 **누적 중에** 거는 것이 원본과 다른 지점이다. 사후 검사는 이미 수백만 자가 힙에
- * 올라온 뒤라 "거절"만 하고 "소모"는 막지 못한다. 재는 대상(이어 붙인 결과의 길이)이 같아
- * **같은 입력에 같은 판정**이 나오는지도 함께 본다.
- */
+/** 블록 정규화와 추출 길이 상한(계획 §5 D-4). */
 class ExtractedTextBuilderTest {
     @Test
     @DisplayName("줄 단위로 좌우 공백을 털고 빈 줄을 버린 뒤 개행 하나로 잇는다")
@@ -52,14 +46,13 @@ class ExtractedTextBuilderTest {
     @DisplayName("여러 블록에 걸쳐 누적된 길이도 함께 센다")
     fun `블록에 걸친 누적을 센다`() {
         val builder = ExtractedTextBuilder(SourceFormat.HWPX, UPLOAD_SIZE)
-        // 두 블록 + 그 사이 개행 하나가 정확히 상한이 되게 잡는다.
+
         val half = (MAX_EXTRACTED_CHARS - 1) / 2
 
         builder.add("가".repeat(half))
         builder.add("나".repeat(half))
         assertThat(builder.build()).hasSize(half * 2 + 1)
 
-        // 여기서 개행 + 한 글자가 더해져 상한을 넘는다.
         assertThatThrownBy { builder.add("다") }
             .isInstanceOf(DocumentExtractionException::class.java)
             .hasMessage(ExtractionMessages.EXTRACTED_TOO_LONG)
@@ -70,7 +63,6 @@ class ExtractedTextBuilderTest {
     fun `조립 중 조각을 예산에 넣는다`() {
         val builder = ExtractedTextBuilder(SourceFormat.HWPX, UPLOAD_SIZE)
 
-        // 확정 결과가 절반, 조립 중 조각이 절반 하고 한 글자 — 합치면 상한을 넘는다.
         builder.add("가".repeat(MAX_EXTRACTED_CHARS / 2))
         builder.ensureRoomFor(MAX_EXTRACTED_CHARS / 2)
 

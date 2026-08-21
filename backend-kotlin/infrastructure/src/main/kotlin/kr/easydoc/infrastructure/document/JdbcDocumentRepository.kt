@@ -14,30 +14,7 @@ import java.sql.ResultSet
 import java.time.OffsetDateTime
 import java.util.UUID
 
-/**
- * `documents` 테이블 접근. 스키마는 `V1__python_schema_baseline.sql` + `V3`·`V4` 가 정한다.
- *
- * ## 봉투 두 값을 **INSERT 문에 명시한다**
- *
- * `V3__encryption_scheme_aead.sql` 이 `encryption_scheme`·`key_version` 의 DEFAULT 를
- * 없앴다. 그래서 컬럼을 빠뜨린 INSERT 는 NOT NULL 위반으로 **즉시 시끄럽게** 실패한다 —
- * 그것이 `V3` 의 설계 의도다(DEFAULT 는 데이터에 대해 **거짓인** 값을 조용히 채운다).
- * 값은 [EncryptedContent] 가 암호문과 함께 들고 온 것이라 "암호문은 v2 인데 컬럼은 v1" 이
- * 되지 않는다.
- *
- * ## 소유 조건이 SQL 안에 있다
- *
- * 읽기 질의가 `WHERE ... AND user_id = :ownerId` 를 든다. 읽은 뒤에 Kotlin 에서 소유자를
- * 비교하지 않는 이유는 `JdbcWorkspaceRepository` 와 같다 — 비교를 잊으면 조용히 남의
- * 자원을 내주고, 잊지 않아도 **남의 자원일 때만 행을 읽으므로 그 차이가 응답 시간에 남는다.**
- *
- * ## 원본 DB 예외를 올리지 않고, 메시지를 로그에도 넣지 않는다
- *
- * PostgreSQL 은 제약 위반의 `DETAIL` 에 **실패한 행 전체**를 담는다 — 여기서는 문서 제목과
- * **원문 암호문**이 그 문자열에 실린다. 그래서 원인 체인을 끊고, 로그에도
- * **SQLSTATE 다섯 글자만** 남긴다(계획 §9.1 · I-4). SQLSTATE 로 갈래를 나누지도 않는다 —
- * 여기서 터질 수 있는 제약은 전부 코드·스키마 버그라 사용자에게 다르게 안내할 것이 없다.
- */
+/** `documents` 테이블 접근. 스키마는 `V1__python_schema_baseline.sql` + `V3`·`V4` 가 정한다. */
 class JdbcDocumentRepository(private val jdbc: JdbcClient) : DocumentRepository {
     override fun insert(
         ownerId: UUID,
@@ -78,20 +55,7 @@ class JdbcDocumentRepository(private val jdbc: JdbcClient) : DocumentRepository 
         return statement.query { rs, _ -> toListing(rs) }.list()
     }
 
-    /**
-     * 원문 암호문과 봉투를 읽고 **행을 잠근다**(`FOR NO KEY UPDATE`).
-     *
-     * `FOR UPDATE` 가 아닌 이유: PostgreSQL 16 문서 13.3 표 13.3 에서 `FOR UPDATE` 는
-     * `FOR KEY SHARE` 와도 충돌하는데, 그것은 **이 행을 참조하는 외래 키 검사**가 잡는
-     * 잠금이다(`conversions.document_id` → `documents.id`). 회전은 키 열을 바꾸지도 행을
-     * 지우지도 않으므로 그만큼 강한 잠금이 필요 없다. `FOR NO KEY UPDATE` 는 평범한
-     * UPDATE·DELETE·`FOR UPDATE`·`FOR SHARE`·다른 `FOR NO KEY UPDATE` 와는 그대로 충돌하므로
-     * 내용 쓰기와의 직렬화는 잃지 않는다. (`JdbcWorkspaceRepository.lockForDeletion` 이
-     * `FOR UPDATE` 인 것은 그쪽이 **DELETE** 를 하기 때문이라 같은 자리가 아니다.)
-     *
-     * **트랜잭션 밖에서 부르면 아무것도 지키지 못한다** — 잠금이 문장 끝에서 풀린다.
-     * 그 상태를 조용한 덮어쓰기가 아니라 실패로 드러내는 것이 [rewriteEnvelope] 의 조건이다.
-     */
+    /** 원문 암호문과 봉투를 읽고 **행을 잠근다**(`FOR NO KEY UPDATE`). */
     override fun lockSourceText(documentId: UUID): EncryptedContent? =
         jdbc
             .sql(
@@ -110,16 +74,7 @@ class JdbcDocumentRepository(private val jdbc: JdbcClient) : DocumentRepository 
             }.optional()
             .orElse(null)
 
-    /**
-     * 봉투와 암호문을 한 UPDATE 로 바꾼다. 조건은 **잠근 채 읽은 행 그 자체**다.
-     *
-     * `key_version` 만 조건으로 두면 그 열을 건드리지 않는 내용 쓰기가 조건을 통과해
-     * 조용히 덮인다(게이트 27 ①). 암호문 바이트를 조건에 넣으면 그 갈래가 0행이 되고,
-     * 유스케이스가 `CONTENDED` 를 돌려준다.
-     *
-     * `CAST(… AS bytea)` 를 명시하는 이유: 파라미터 타입을 연산자 해석에 맡기지 않는다.
-     * 널이 섞일 수 있는 비교에서 타입을 못 정하면 드라이버·서버 조합마다 다르게 실패한다.
-     */
+    /** 봉투와 암호문을 한 UPDATE 로 바꾼다. 조건은 **잠근 채 읽은 행 그 자체**다. */
     override fun rewriteEnvelope(
         documentId: UUID,
         expected: EncryptedContent,
@@ -146,25 +101,7 @@ class JdbcDocumentRepository(private val jdbc: JdbcClient) : DocumentRepository 
             .param("expectedSourceText", expected.bytes)
             .update() > 0
 
-    /**
-     * 내 문서를 지운다. **소유 조건이 같은 문장 안에 있다.**
-     *
-     * 잠그고 나서 지우지 않는다 — `JdbcWorkspaceRepository` 는 `lockForDeletion` 뒤에
-     * 지우는데, 그쪽은 **삭제 전에 판정할 것이 둘**(문서 잔존·마지막 하나)이라 판정과 삭제
-     * 사이를 직렬화해야 했다. 여기서는 판정할 것이 소유 여부뿐이고 그것이 삭제문의 조건
-     * 자체라, 잠금을 따로 잡으면 같은 조건을 두 번 적는 일이 된다.
-     *
-     * `RETURNING` 을 쓰지 않는다 — 지운 행의 내용을 돌려받을 이유가 없고(계약이 204 무본문),
-     * 돌려받으면 **방금 파기한 제목과 암호문이 JVM 힙에 올라온다.** 필요한 것은
-     * 「몇 행이 지워졌나」뿐이다.
-     *
-     * 변환·작업 행은 FK CASCADE 가 지운다. 사유는 포트 KDoc([kr.easydoc.application.document.DocumentRepository.deleteOwned])에 있다.
-     *
-     * 무결성 위반을 잡지 않는다 — `documents` 를 참조하는 FK 는 `conversions` 하나이고 그것이
-     * CASCADE 이므로 이 문장이 제약으로 막힐 자리가 없다. 새 참조를 CASCADE 없이 더하면
-     * 여기서 `DataIntegrityViolationException` 이 올라와 500 이 되고, 그것이 옳다 —
-     * 파기가 조용히 실패해 사용자에게 204 를 주는 것보다 시끄러운 실패가 낫다.
-     */
+    /** 내 문서를 지운다. **소유 조건이 같은 문장 안에 있다.** */
     override fun deleteOwned(
         ownerId: UUID,
         documentId: UUID,
@@ -218,26 +155,7 @@ class JdbcDocumentRepository(private val jdbc: JdbcClient) : DocumentRepository 
             RETURNING id, title, source_format, char_count, created_at, retention_expires_at
             """.trimIndent()
 
-        /**
-         * 목록 질의. 작업 공간 필터 유무로 **두 형태**가 있다.
-         *
-         * 조각을 문자열로 이어 붙이지만 주입면이 없다 — 붙이는 값이 사용자 입력이 아니라
-         * **컴파일 시점 상수 두 개 중 하나**이고, 식별자·값은 전부 이름 붙은 파라미터다.
-         * `:workspaceId::uuid IS NULL` 같은 한 형태로 합치는 갈래를 고르지 않은 이유는
-         * 널 파라미터에 JDBC 타입 힌트가 필요해지고, 그 힌트가 빠지면 드라이버마다 다르게
-         * 실패하기 때문이다.
-         *
-         * ## 최신 변환 한 건을 `LEFT JOIN LATERAL` 로 붙인다
-         *
-         * 문서마다 변환이 여럿일 수 있고(재시도) 목록이 원하는 것은 **최신 하나**다.
-         * 상관 서브쿼리를 컬럼마다 쓰면 세 번 돌고, 일반 `LEFT JOIN` 은 행을 부풀린다.
-         *
-         * ## 정렬이 `created_at DESC, id DESC` 인 이유
-         *
-         * `created_at` 은 트랜잭션 시각이라 같은 트랜잭션에서 만든 행끼리 동률이 난다.
-         * 동률의 순서가 정해지지 않으면 **페이지 경계에서 같은 문서가 두 번 보이거나 아예
-         * 빠진다** — `id` 가 뜻 있는 순서를 주지는 않지만 흔들리지 않게는 한다.
-         */
+        /** 목록 질의. 작업 공간 필터 유무로 **두 형태**가 있다. */
         fun listSql(filterWorkspace: Boolean): String =
             """
             SELECT d.id, d.title, d.source_format, d.char_count,

@@ -16,13 +16,7 @@ import org.junit.jupiter.api.Test
 import java.nio.file.Files
 import kotlin.io.path.readText
 
-/**
- * parity 산출 하네스가 `compare_parity.py` 가 읽는 모양 그대로 쓰는지 확인한다.
- *
- * 값 판정이 아니라 **형식과 경로**의 검증이다. 형식이 틀리면 Phase 3·4에서 crypto·jwt
- * 산출물을 만들어도 비교기가 "runtime 미선언"·"읽기 실패"로 종료 코드 1을 내며,
- * 그때는 원인이 암호 구현인지 하네스인지 가리는 데 시간이 든다.
- */
+/** parity 산출 하네스가 `compare_parity.py` 가 읽는 모양 그대로 쓰는지 확인한다. */
 class ParityActualTest {
     @Test
     fun `산출물은 runtime kotlin 과 cases 배열을 갖는다`() {
@@ -53,7 +47,6 @@ class ParityActualTest {
                 ?.content,
         ).isEqualTo("[주민등록번호]")
 
-        // 한글이 유니코드 이스케이프로 뭉개지지 않아야 Python 쪽 비교에서 그대로 짝지어진다.
         assertThat(written.readText()).contains("[주민등록번호]")
 
         Files.deleteIfExists(written)
@@ -89,13 +82,7 @@ class ParityActualTest {
         }.isInstanceOf(IllegalArgumentException::class.java)
     }
 
-    /**
-     * Phase 0 필수 조치 E의 배선 증명.
-     *
-     * `@Tag("parity")` 가 붙어 있으므로 `./gradlew parityHarness` 가 이 테스트를 고르고,
-     * 그때만 저장소 루트 `parity/_harness-selfcheck/kotlin.json` 이 갱신된다.
-     * 일반 `./gradlew test` 에서는 모듈 `build/` 안에만 쓴다.
-     */
+    /** Phase 0 필수 조치 E의 배선 증명. */
     @Test
     @Tag("parity")
     fun `parityHarness 태스크가 저장소 루트에 산출물을 쓴다`() {
@@ -105,7 +92,7 @@ class ParityActualTest {
 
         val document = Json.parseToJsonElement(written.readText()).jsonObject
         assertThat(document["runtime"]?.jsonPrimitive?.content).isEqualTo("kotlin")
-        // Python 하네스로는 만들 수 없는 값 — 이 파일이 JVM 실행의 산물임을 뒷받침한다.
+
         assertThat(
             document["jvm"]
                 ?.jsonObject

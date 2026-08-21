@@ -13,22 +13,7 @@ import java.sql.ResultSet
 import java.time.OffsetDateTime
 import java.util.UUID
 
-/**
- * `users` 테이블 접근. 스키마는 `V1__python_schema_baseline.sql` 이 정한다.
- *
- * ## JPA 가 아니라 [JdbcClient] 인 이유
- *
- * 스키마·컬럼·제약 이름을 코드가 아니라 마이그레이션이 정한다(계획 §4.2). JPA 는 엔티티가
- * 스키마를 주도하려 하고, 소유권 조건(`WHERE ... AND user_id = ?`)이 SQL 에 눈에 보이는
- * 편이 안전하다(kotlin-spring-conventions §3).
- *
- * ## 원본 DB 예외를 올리지 않는다
- *
- * PostgreSQL 은 제약 위반의 `DETAIL` 에 **실패한 행 전체**를 담는다 — 유일성 위반이면
- * 이메일이, CHECK 위반이면 비밀번호 해시까지 그 문자열에 실린다. 그것을 그대로 감싸
- * 올리면 로그와 응답 어디로든 새므로, 여기서 **도메인 예외로 갈아 끼우고 원인 체인을
- * 끊는다**(`app/repositories/users.py` 가 같은 이유로 하던 일이다).
- */
+/** `users` 테이블 접근. 스키마는 `V1__python_schema_baseline.sql` 이 정한다. */
 class JdbcUserRepository(private val jdbc: JdbcClient) : UserRepository {
     override fun findByEmail(email: String): StoredUser? =
         jdbc
@@ -46,12 +31,7 @@ class JdbcUserRepository(private val jdbc: JdbcClient) : UserRepository {
             .optional()
             .orElse(null)
 
-    /**
-     * 존재만 본다 — 보호된 요청마다 도는 질의라 **어떤 컬럼도 읽지 않는다**.
-     *
-     * `SELECT 1` 이라 기본 키 인덱스만 타고 힙 접근이 없다(index-only scan). 이메일을
-     * 함께 읽는 [findById] 로 대신하면 매 요청 개인정보를 힙에 올리게 된다.
-     */
+    /** 존재만 본다 — 보호된 요청마다 도는 질의라 **어떤 컬럼도 읽지 않는다**. */
     override fun exists(id: UUID): Boolean =
         jdbc
             .sql("SELECT 1 FROM users WHERE id = :id")
@@ -60,16 +40,7 @@ class JdbcUserRepository(private val jdbc: JdbcClient) : UserRepository {
             .optional()
             .orElse(false)
 
-    /**
-     * 새 사용자를 만든다.
-     *
-     * `created_at` 은 DB `DEFAULT now()` 가 채우고 `RETURNING` 으로 되읽는다 — 앱 시계와
-     * DB 시계가 갈리는 자리를 만들지 않는다.
-     *
-     * **선조회로 중복을 판정하지 않는다.** 조회와 삽입 사이에 다른 요청이 끼어들면 두 번째
-     * 삽입이 인덱스에서 터지는데, 그때 나오는 것이 이 예외다. 유일성을 지키는 것은
-     * `ix_users_email` 이고 여기서는 그 결과를 번역하기만 한다.
-     */
+    /** 새 사용자를 만든다. */
     override fun create(
         email: String,
         passwordHash: PasswordHash,

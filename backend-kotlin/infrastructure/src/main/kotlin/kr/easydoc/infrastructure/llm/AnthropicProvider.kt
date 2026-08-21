@@ -50,41 +50,16 @@ internal const val ANTHROPIC_BASE_URL: String = "https://api.anthropic.com"
 
 internal const val ANTHROPIC_MESSAGES_PATH: String = "/v1/messages"
 
-/**
- * 기본 모델. 원본: `app/llm/anthropic_provider.py` 의 `model: str = "claude-sonnet-5"`.
- *
- * **여기서 모델을 고르지 않는다.** 벤더·모델 선택은 골든셋 벤치마크가 정하는 품질
- * 결정이고(master-plan 3.1), 지금 값을 바꾸면 그것은 포팅이 아니라 품질 변경이라
- * 통과율 비교의 기준선이 흔들린다. 운영에서 바꿀 때는 코드가 아니라 설정
- * (`easydoc.llm.model`)으로 덮어쓴다.
- */
+/** 기본 모델. 원본: `app/llm/anthropic_provider.py` 의 `model: str = "claude-sonnet-5"`. */
 const val DEFAULT_ANTHROPIC_MODEL: String = "claude-sonnet-5"
 
-/**
- * Anthropic 전용 읽기 타임아웃.
- *
- * 원본: `ANTHROPIC_TIMEOUT_SECONDS = 120.0`. 공용 기본값(Python `provider.py` 의 60초)은
- * 사고 토큰을 쓰는 현행 Claude 모델에 짧다 — 1차 벤치마크 실측 지연이 중앙값 33.5초·
- * 최대 61.1초였고, `max_tokens` 를 16,000 으로 올려 사고 여유가 늘면 더 길어질 수 있다.
- * OpenAI 는 같은 골든셋에서 중앙값 7.4초라 이 값은 **Anthropic 어댑터에만** 둔다.
- */
+/** Anthropic 전용 읽기 타임아웃. */
 val ANTHROPIC_READ_TIMEOUT: Duration = Duration.ofSeconds(120)
 
 /** 연결 타임아웃. 연결 자체가 10초 넘게 안 되면 재시도가 답이지 기다림이 답이 아니다. */
 val ANTHROPIC_CONNECT_TIMEOUT: Duration = Duration.ofSeconds(10)
 
-/**
- * `output_config.effort` 가 받는 값. 미설정 시 API 기본은 high 다.
- *
- * 원본: `app/llm/anthropic_provider.py::Effort`. 낮출수록 사고 토큰·지연이 줄고,
- * 높일수록 는다.
- *
- * **effort 는 Anthropic 에만 있는 파라미터다** — OpenAI 구현체에는 인자 자체가 없어
- * 설정값이 모델에 닿지 않는다(`app/llm/factory.py::applied_effort`). 그래서 공통
- * [LlmOptions] 가 아니라 이 어댑터의 설정으로 둔다. 무엇으로 잰 수치인지를 기록하는
- * 쪽(골든셋 기준선 지문)도 같은 구분을 필요로 하므로, "적용되는 경우"의 정의가 이 타입의
- * 존재 자체와 일치한다.
- */
+/** `output_config.effort` 가 받는 값. 미설정 시 API 기본은 high 다. */
 enum class AnthropicEffort {
     LOW,
     MEDIUM,
@@ -97,13 +72,7 @@ enum class AnthropicEffort {
     internal val wire: String get() = name.lowercase()
 
     companion object {
-        /**
-         * 설정 문자열을 enum 으로 바꾼다. `null`·공백이면 `null`(= 파라미터를 보내지 않음).
-         *
-         * 잘못된 값은 **호출 시점의 HTTP 400 이 아니라 여기서** 막는다 — 원본이 생성자에서
-         * 막은 것과 같은 이유다. 워커·벤치마크가 전건 실패한 뒤에야 오타를 알게 되는
-         * 상황을 피한다.
-         */
+        /** 설정 문자열을 enum 으로 바꾼다. `null`·공백이면 `null`(= 파라미터를 보내지 않음). */
         fun from(value: String?): AnthropicEffort? {
             if (value.isNullOrBlank()) return null
             return entries.firstOrNull { it.wire == value.lowercase() }
@@ -114,12 +83,7 @@ enum class AnthropicEffort {
     }
 }
 
-/**
- * [AnthropicProvider] 설정.
- *
- * `data class` 인데도 [apiKey] 가 안전한 이유는 타입이 [Secret] 이기 때문이다 —
- * 기본 `toString()` 이 모든 필드를 찍어도 키 자리에는 마스킹 문자열만 나온다.
- */
+/** [AnthropicProvider] 설정. */
 data class AnthropicSettings(
     val apiKey: Secret = Secret.EMPTY,
     val model: String = DEFAULT_ANTHROPIC_MODEL,
@@ -129,35 +93,7 @@ data class AnthropicSettings(
     val readTimeout: Duration = ANTHROPIC_READ_TIMEOUT,
 )
 
-/**
- * Anthropic Messages API 구현체.
- *
- * ## 보내지 않는 것들 (실측으로 확정된 결정)
- *
- * - **temperature 를 보내지 않는다.** 현행 Claude 모델은 샘플링 파라미터
- *   (temperature/top_p/top_k)를 지원하지 않아 기본값 외 값을 보내면 400 을 돌려준다.
- *   출력 성향은 프롬프트로 제어한다.
- * - **thinking 을 보내지 않는다.** 미지정은 '사고 끄기'가 아니라 **적응형 사고 기본
- *   켜기**를 뜻하고, 이 모델 계열은 `budget_tokens` 를 받으면 400 이다. 사고 깊이는
- *   `output_config.effort` 로 조절하고, 사고 토큰이 쓸 여유는 `max_tokens` 로 준다
- *   (그래서 기본 상한이 16,000 이다 — `DEFAULT_MAX_TOKENS` KDoc).
- * - **output_config 는 effort 가 설정됐을 때만 보낸다.** 미설정이면 필드 자체를 빼서
- *   API 기본값(high)을 그대로 쓴다.
- *
- * ## 재시도하지 않는다 — 책임은 한 계층만 갖는다
- *
- * 원본은 SDK 에 `max_retries=2` 를 넘겼고, 워커도 따로 재시도했다. 계획 §4.6 이 지적한
- * 겹침이 정확히 그 형태다: 두 계층이 각자 재시도하면 "문서당 최대 2회"라는 제품 계약
- * (`MAX_LLM_CALLS_PER_CONVERSION`)이 메트릭에서 사라지고, §5 Phase 7 의 즉시 중단 기준인
- * **중복 LLM 호출**에 그대로 걸린다. 그래서 이 어댑터는 **한 번 부르고 실패는 그대로
- * 올린다.** 재시도 정책은 작업 큐(worker)가 소유한다.
- *
- * ## 로그를 남기지 않는다
- *
- * 이 클래스에는 로거가 없다. 여기서 로그를 남기면 남길 수 있는 것이 프롬프트·응답·헤더뿐인데
- * 그것이 전부 금지 대상이다(CLAUDE.md: 로그에 문서 본문·개인정보 금지). 관측은 호출부가
- * conversion id·상태·시도 횟수·failure code 로 한다(계획 §4.4).
- */
+/** Anthropic Messages API 구현체. */
 class AnthropicProvider(private val settings: AnthropicSettings) : LlmProvider {
     override val name: String = ANTHROPIC_PROVIDER_NAME
 
@@ -194,14 +130,7 @@ class AnthropicProvider(private val settings: AnthropicSettings) : LlmProvider {
         return parse(raw)
     }
 
-    /**
-     * 본문을 **UTF-8 바이트로 직접** 실어 보낸다.
-     *
-     * `String` 으로 넘기면 `StringHttpMessageConverter` 의 기본 charset 에 결과가 달려
-     * 있는데, 그 값은 Spring 버전에 따라 달라진 이력이 있다. 한국어가 본문의 전부인
-     * 페이로드에서 그 불확실성은 "어느 날 조용히 깨지는" 종류의 위험이다. JSON 은 규격상
-     * UTF-8 이므로 여기서 못 박는다.
-     */
+    /** 본문을 **UTF-8 바이트로 직접** 실어 보낸다. */
     private fun post(payload: String): String =
         execute(payload)?.toString(StandardCharsets.UTF_8) ?: throw failure("응답 본문 없음")
 
@@ -249,27 +178,7 @@ class AnthropicProvider(private val settings: AnthropicSettings) : LlmProvider {
         return root
     }
 
-    /**
-     * 응답을 공통 타입으로 옮긴다. **관측을 먼저 끝내고 그다음에 만든다.**
-     *
-     * ## 인자 안에서 던지지 않는다 (게이트 09 M-10)
-     *
-     * 이전 판은 `requireModel(node)` 를 [LlmCompletion] **생성자 인자 자리에서** 불렀다.
-     * 모델 이름이 없으면 그 인자를 평가하다 던지므로 **이미 읽어 둔 usage 가 통째로
-     * 사라진다.** 어느 인자가 먼저 평가되는지에 결과가 달린 코드였고, 그것은 설계가 아니라
-     * 우연이다. 지금은 관측치를 전부 지역 변수로 확정한 뒤 마지막에 조립한다.
-     *
-     * ## 없는 값과 0을 구분한다 (게이트 09 M-11 · codex K-5)
-     *
-     * 이전 판은 `usage.path("input_tokens").asInt(0)` 으로 **누락·null·비정수를 전부 0으로**
-     * 받았고, `stop_reason` 누락도 `OTHER` 로 접었다. 둘 다 "관측하지 못했다"를
-     * "관측했더니 그 값이더라"로 바꿔 적는 형태다. 토큰이 0으로 접히면 크레딧 원가가
-     * 조용히 적게 잡히고(master-plan 5장), 그 수는 아무도 다시 세지 않는다.
-     *
-     * **남는 한계**: 스키마 위반으로 던질 때는 그때까지 읽은 usage 도 함께 사라진다.
-     * 예외에 토큰 수를 실으려면 도메인 예외 계층을 넓혀야 하고, 그것은 C-08 처방 2절
-     * (M-12)로 Phase 5 에 배정돼 있다. 여기서는 **던지는 자리를 줄이는 것**까지 한다.
-     */
+    /** 응답을 공통 타입으로 옮긴다. **관측을 먼저 끝내고 그다음에 만든다.** */
     private fun parse(raw: String): LlmCompletion {
         val node = readTree(raw)
         // 관측 먼저. 이 셋이 확정된 뒤에야 조립한다.
@@ -304,42 +213,10 @@ class AnthropicProvider(private val settings: AnthropicSettings) : LlmProvider {
 // "설정도 HTTP 클라이언트도 보지 않는다"는 선언이라, 응답 해석 규칙을 읽을 때 확인할 범위가
 // 좁아진다.
 
-/**
- * 실패 사유를 도메인 예외로 만든다.
- *
- * 메시지에 담기는 것은 **벤더명과 사유 요약까지**다. 응답 본문·헤더·URL 은 담지 않는다 —
- * 벤더가 오류 본문에 우리가 보낸 프롬프트를 되비추는 경우가 있어, 그것을 메시지에 실으면
- * 문서 본문이 예외를 타고 로그로 나간다.
- */
+/** 실패 사유를 도메인 예외로 만든다. */
 private fun failure(reason: String) = LlmProviderException("anthropic 호출 실패 ($reason)")
 
-/**
- * 본문을 꺼낸다. **비어 있어도 던지지 않는다.**
- *
- * ## 던지던 것을 그만둔 이유 (교차 종합 C-08)
- *
- * 이전 판은 본문이 비면 여기서 [LlmEmptyResultException] 을 던졌다. 그런데 그 순간
- * **[LlmCompletion] 이 만들어지지 않아 `finishReason` 과 `usage` 가 함께 사라진다.**
- * 결과가 둘이었다.
- *
- * 1. **출력 상한에서 잘려 본문이 비어 온 응답**(`stop_reason=max_tokens` + 빈 content)이
- *    변환 계층에 `EMPTY_RESULT` 로 보고됐다. 요구는 `TRUNCATED` 다 — 사용자가 취할 조치가
- *    다르다(문서를 나눠 올리기 vs 다시 시도).
- * 2. 예외에는 토큰 수가 실리지 않아 **최종 사용량이 두 호출의 합보다 적게** 보고됐다.
- *    보정 호출이 그렇게 끝나면 그 비용이 원가에서 통째로 빠진다.
- *
- * 그래서 어댑터는 **사실만 보고한다** — 본문(빈 문자열일 수 있음)·종료 사유·사용량.
- * 그것을 실패로 볼지, 어떤 실패로 볼지는 변환 계층의 정책이다. `truncated` 를 두고 이미
- * 같은 규약을 적어 두었는데(*"provider 가 보고하는 것은 사실뿐이고 정책은 변환 쪽이
- * 정한다"*), 빈 본문만 그 규약 밖에 있었다.
- *
- * **거절(`refusal`)의 구분은 사라지지 않는다.** 어댑터가 던져서 가르던 것을
- * [LlmFinishReason.REFUSAL] 이 값으로 나른다 — 오히려 이쪽이 더 낫다. 예외 메시지는
- * 문자열이라 분기 조건으로 쓸 수 없었고, 실제로 변환 계층은 그것을 읽지 못했다.
- *
- * 사고(thinking) 블록만 온 경우도 같다 — 빈 본문 + `end_turn` 으로 나가고, 변환 계층이
- * 후처리 뒤 비었음을 보고 `EMPTY_RESULT` 로 판정한다.
- */
+/** 본문을 꺼낸다. **비어 있어도 던지지 않는다.** */
 private fun extractText(node: JsonNode): String =
     node
         .path("content")
@@ -353,16 +230,7 @@ private fun extractText(node: JsonNode): String =
 private fun requireModel(node: JsonNode): String =
     node.path("model").stringValue("").ifEmpty { throw failure("응답에 모델 이름이 없습니다") }
 
-/**
- * 토큰 수를 **필수로** 읽는다. 누락·null·비정수·음수는 전부 실패다.
- *
- * `asInt(0)` 을 쓰지 않는 이유(게이트 09 M-11): 그 기본값은 **"관측하지 못했다"를
- * "0이더라"로 바꿔 적는다.** 사용량은 크레딧 원가의 근거이고(master-plan 5장), 0으로
- * 접힌 수는 아무도 다시 세지 않는다. 없는 것과 0인 것은 다르다 — 출력 토큰 0은 실제로
- * 있을 수 있는 관측이고(빈 응답), 그때는 필드가 `0` 으로 **실려 온다**.
- *
- * 실패 메시지에는 필드 이름만 담는다. 값·본문은 담지 않는다.
- */
+/** 토큰 수를 **필수로** 읽는다. 누락·null·비정수·음수는 전부 실패다. */
 private fun requireTokenCount(
     node: JsonNode,
     field: String,
@@ -374,14 +242,7 @@ private fun requireTokenCount(
     return count
 }
 
-/**
- * 종료 사유를 **필수로** 읽는다.
- *
- * 누락을 [LlmFinishReason.OTHER] 로 접지 않는다(게이트 09 M-11). `OTHER` 의 뜻은
- * *"벤더가 우리가 모르는 값을 줬다"* 이지 *"벤더가 아무 값도 안 줬다"* 가 아니다. 둘을
- * 뭉뚱그리면 절단 판정(`truncated`)이 조용히 거짓이 되는 응답을 성공으로 넘긴다 —
- * C-08 이 닫은 자리와 같은 종류의 결함이다.
- */
+/** 종료 사유를 **필수로** 읽는다. */
 private fun requireFinishReason(node: JsonNode): LlmFinishReason {
     val raw = node.path("stop_reason").stringValue("")
     if (raw.isEmpty()) throw failure("응답에 stop_reason 이 없습니다")

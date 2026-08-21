@@ -25,59 +25,8 @@ import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 
 /**
- * **값 자리 불변식의 전용 강제자** — 「성공 응답은 요청이 지정한 값을 반영한다. 반영할 것이
+ * 값 자리 불변식의 전용 강제자 — 「성공 응답은 요청이 지정한 값을 반영한다. 반영할 것이
  * 없으면 성공하지 못한다.」
- *
- * ## 왜 전용 클래스인가 (R-7)
- *
- * 이 불변식은 처음에 `DocumentListReachTest`·`WorkspaceEndpointReachTest` 안의 **메서드
- * 몇 개**로 살았고, 그 두 클래스가 바닥 목록(`FLOOR_TEST_CLASSES`)에 「이 불변식의 유일한
- * 강제자」로 등재됐다. **핀의 알갱이가 보호 대상의 알갱이보다 굵었다** — 바닥은 클래스
- * **이름**을 지키는데 보호 대상은 **메서드**였다.
- *
- * 실측했다(2026-08-21): 그 메서드들과 전용 보조만 지우고 서식을 정리한 뒤
- * `ktlintCheck detekt build moduleBoundaryCheck parityHarness --continue --rerun-tasks` 가
- * **exit 0 BUILD SUCCESSFUL**, 핀 게이트가 **112 passed** 였다. 클래스도, 선언 개수도,
- * 트리 스캔도, 바닥 목록도 전부 초록인 채 **`TypedValueSlotInterceptor` 를 지워도 아무도
- * 모르는 상태**로 돌아간다.
- *
- * 그래서 불변식을 자기 클래스로 뽑았다. 이제 **클래스 알갱이 == 속성 알갱이**이고, 이미
- * 있는 바닥 기제가 실제로 선언된 것을 지킨다. 클래스 이름이 그 속성의 이름인 것도 이득이다.
- *
- * ## 케이스가 한 클래스에 있는 이유
- *
- * 전부 **한 속성**의 관측면이다 — 값 자리의 긍정·부정, 그리고 그 가드가 **인증 뒤에** 도는가.
- * 뒤엣것을 여기 두는 이유는 겨누는 대상이 같기 때문이다: [TypedValueSlotInterceptor] 하나이고,
- * 그것이 **어디에** 등재됐는지가 X-A3 을 정한다. 속성 하나에 클래스 하나가 R-7 의 요점이므로
- * 가르지 않는다. 한 컨텍스트로 `/documents` 와 `/workspaces` 를 모두 부를 수 있어 스프링
- * 컨텍스트도 하나만 늘어난다.
- *
- * ## 관측 지점은 **컨테이너**다
- *
- * 흡수가 인자 해석기·타입 변환기에서 일어나므로 실제 요청이 그 층을 지나야 한다. 슬라이스로
- * 재면 앞단 장치가 만든 응답을 보지 못한다(C4-R1 도달 표).
- *
- * ## 분모는 **계약 × 실제 매핑**이다 (β-05)
- *
- * 종전 KDoc 은 *"계약이 파라미터를 더하면 이 불변식이 **자동으로** 그것을 덮는다"* 고
- * 선언했으나, **부정 팔의 분모는 경로 두 개가 하드코딩**돼 있었다(`/documents` GET 과
- * `/workspaces/{workspace_id}`). 계약이 다른 오퍼레이션에 값 자리를 더하면 그 자리는 이
- * 불변식 밖에서 태어난다 — 실측: `DELETE /documents/{document_id}` 의 경로 변수와
- * `GET /conversions/{conversion_id}/export` 의 `format` 이 그 밖이었다.
- *
- * 그래서 분모를 둘의 곱으로 바꿨다 — 계약이 선언한 값 자리 전수([ContractSpec.valueSlots])
- * × 스프링이 실제로 매핑한 오퍼레이션([ServedOperations]). 계약에만 있고 아직 매핑되지 않은
- * 자리는 **「미구현」으로 분류해 출력**하고, 그 오퍼레이션이 생기는 커밋에서 자동으로 분모에
- * 든다. 분류를 세 번째 통(면제)에 담지 않는다 — 정확 분할이라야 새 자리가 조용히 빠지지 않는다.
- *
- * **긍정 팔은 여전히 `/documents` GET 하나다.** 반영을 재려면 그 오퍼레이션의 의미(메아리·
- * 필터 효과)를 알아야 하므로 일반화되지 않는다. 그 사실을 여기 적어 두는 것이 β-05 의 절반이고,
- * 나머지 절반이 위 분모다.
- *
- * ## 표본을 만들 수 없으면 **끊는다**
- *
- * 선언 타입을 모르면 `error()`, 값 자리가 사는 URL 을 조립할 수 없으면 `error()`, 요청 본문
- * 스키마를 모르면 `error()` 다. 표본 0건으로 조용히 통과하는 길을 두지 않는다.
  */
 @SpringBootTest(
     webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
@@ -114,11 +63,7 @@ class ValueSlotInvariantReachTest {
         }
     }
 
-    /**
-     * 응답에 그 이름의 필드가 있는 파라미터는 **되돌려주는 값**으로 반영을 잰다.
-     *
-     * 「어느 파라미터가 메아리를 갖는가」를 코드에 적지 않고 응답 스키마에서 읽는다.
-     */
+    /** 응답에 그 이름의 필드가 있는 파라미터는 되돌려주는 값으로 반영을 잰다. */
     private fun assertEchoed(
         token: String,
         parameter: ContractQueryParameter,
@@ -133,13 +78,13 @@ class ValueSlotInvariantReachTest {
                 sent,
                 body[parameter.name],
             ).isEqualTo(sent)
-        // 부호가 붙은 형태도 **해석되는** 입력이다 — 같은 값으로 반영돼야 한다.
+
         assertThat(bodyOf(list(token, "${parameter.name}=%2B$sent"))[parameter.name]).isEqualTo(sent)
-        // 되돌려준 값이 **실제로 쓰였는지**도 본다 — 메아리만 맞추고 무시하는 구현을 배제한다.
+
         assertThat((body[ITEMS_PROPERTY] as List<*>).size).isLessThanOrEqualTo(body[LIMIT_PROPERTY] as Int)
     }
 
-    /** 메아리 필드가 없는 파라미터는 **효과**로 잰다. `workspace_id` 의 효과는 「그 작업 공간의 문서만」이다. */
+    /** 메아리 필드가 없는 파라미터는 효과로 잰다. `workspace_id` 의 효과는 「그 작업 공간의 문서만」이다. */
     private fun assertFiltered(
         token: String,
         parameter: ContractQueryParameter,
@@ -190,10 +135,6 @@ class ValueSlotInvariantReachTest {
     @Test
     @DisplayName("부정(경로 변수) — 매핑된 **모든** 오퍼레이션에서 공백뿐인 경로 조각이 흡수되지 않고, 계약이 선언한 상태로 거절된다")
     fun `해석되지 않는 경로 값 자리는 성공하지 못한다`() {
-        // 실측(고치기 전): `%20` 이 UUID 변환에서 널이 되고, 경로 변수는 널일 수 없어
-        // `MissingPathVariableException` → **400** 이 나갔다. 계약은 `'400'` 을 어느
-        // 오퍼레이션에도 선언하지 않는다 — 계약 밖 상태 코드였다. 쿼리 파라미터 흡수와
-        // **같은 뿌리**이므로 같은 불변식이 덮는다.
         val token = newAccount()
         val live = liveSlots().filter { it.slot.location == PATH_LOCATION }
         assertThat(live)
@@ -211,15 +152,9 @@ class ValueSlotInvariantReachTest {
         }
     }
 
-    // ================================================================ 분모 (β-05)
-
     /**
-     * **분모 정확 분할** — 계약이 선언한 값 자리는 「매핑됨(위 두 케이스가 잰다)」과
-     * 「아직 매핑 안 됨」 둘 중 **정확히 하나**다.
-     *
-     * 세 번째 통(면제)을 두지 않는다. 두면 새 자리가 그리로 흘러 조용히 빠진다 — 그것이
-     * 이 저장소가 규칙 4 ⑵ 로 금지한 은폐형이다. 미구현 목록은 **출력**되므로 그 오퍼레이션을
-     * 만드는 커밋이 자기 자리를 본다.
+     * 분모 정확 분할 — 계약이 선언한 값 자리는 「매핑됨(위 두 케이스가 잰다)」과
+     * 「아직 매핑 안 됨」 둘 중 정확히 하나다.
      */
     @Test
     @DisplayName("분모 — 계약의 값 자리 전수가 「매핑됨」과 「미구현」으로 정확히 갈리고, 매핑된 쪽이 비어 있지 않다")
@@ -236,7 +171,7 @@ class ValueSlotInvariantReachTest {
         assertThat(liveSlotSet)
             .withFailMessage("매핑된 값 자리가 0건이다 — 두 부정 케이스가 표본 0건으로 통과한다")
             .isNotEmpty()
-        // 정확 분할: 두 통의 합이 선언 전수와 같다. 분류되지 않은 자리가 남으면 실패한다.
+
         assertThat(liveSlotSet.size + unmapped.size)
             .withFailMessage(
                 "값 자리 %d 개 중 매핑됨 %d + 미구현 %d 로 갈리지 않는다 — 분류가 겹치거나 빠졌다",
@@ -244,27 +179,11 @@ class ValueSlotInvariantReachTest {
                 liveSlotSet.size,
                 unmapped.size,
             ).isEqualTo(declared.size)
-        // 미구현 목록은 마감 목록이다. 지금은 변환 오퍼레이션(C6·C7)의 자리들이다.
+
         println("[값 자리 분모] 매핑됨 ${liveSlotSet.size} · 미구현 ${unmapped.size}: ${unmapped.map { it.label }}")
     }
 
-    // ================================================================ 순서 — X-A3 (β-10)
-
-    /**
-     * **인증이 이 가드보다 먼저다.**
-     *
-     * [kr.easydoc.api.config.WebMvcConfig] 가 *"**인증 뒤**에 등재한다 — 순서가 뒤집히면 토큰
-     * 없이 파라미터 형태를 탐색할 수 있고 그것이 X-A3 위반이다"* 라고 선언했는데 그 선언에
-     * **강제자가 0건**이었다(교차 종합 β-10). 두 `addInterceptor` 줄의 순서만 바꾸면 토큰 없는
-     * 공백 값 자리 요청이 401 대신 422 를 받고 **전 게이트가 초록**이었다.
-     *
-     * 기존 X-A3 케이스들(`DL-11`·`WC-12`)이 이것을 덮지 못하는 이유: 그쪽은 **범위 밖 정수**와
-     * **빈 이름 본문**을 쓴다. 둘 다 이 가드의 대상이 아니라 스키마 층·서비스 층 판정이므로,
-     * 순서를 뒤집어도 응답이 401 에서 움직이지 않는다.
-     *
-     * 두 갈래(쿼리·경로)를 함께 재는 이유는 이 가드가 그 둘을 **다른 코드로** 판정하기
-     * 때문이다([TypedValueSlotInterceptor] 의 `queryName`·`pathName`).
-     */
+    /** 인증이 이 가드보다 먼저다. */
     @Test
     @DisplayName("순서 — 토큰 없는 **공백 쿼리 값 자리**는 422 가 아니라 401 이다 (X-A3)")
     fun `인증이 공백 쿼리 값 자리 거절보다 먼저다`() {
@@ -308,20 +227,13 @@ class ValueSlotInvariantReachTest {
             .isInstanceOf(String::class.java)
     }
 
-    // ================================================================ 분모 유도
-
     /** 계약 값 자리 하나와, 그것이 실제로 걸리는 매핑된 메서드 하나. */
     private data class LiveSlot(
         val slot: ContractValueSlot,
         val method: String,
     )
 
-    /**
-     * **계약 × 실제 매핑.** 경로 수준 선언은 그 경로의 매핑된 메서드마다 하나씩 펼친다.
-     *
-     * 계약이 선언하지 않은 메서드가 매핑돼 있는 상태는 여기서 판정하지 않는다 —
-     * `AuthenticationCoverageContractTest` 가 그 축을 이미 진다. 여기서는 교집합만 본다.
-     */
+    /** 계약 × 실제 매핑. 경로 수준 선언은 그 경로의 매핑된 메서드마다 하나씩 펼친다. */
     private fun liveSlots(): List<LiveSlot> {
         val served = ServedOperations.of(handlerMapping, environment)
         return ContractSpec.valueSlots().flatMap { slot ->
@@ -348,12 +260,8 @@ class ValueSlotInvariantReachTest {
         )
 
     /**
-     * 그 값 자리를 겨눈 요청 하나. **경로 값 자리는 공백 조각으로**, 쿼리 값 자리는
+     * 그 값 자리를 겨눈 요청 하나. 경로 값 자리는 공백 조각으로, 쿼리 값 자리는
      * [rawQuery] 를 그대로 실어 보낸다.
-     *
-     * URL 을 조립할 수 없으면 **끊는다** — 경로에 이 값 자리가 아닌 다른 경로 변수가 남으면
-     * 그 자리를 채울 자원이 필요하고, 그 fixture 는 이 케이스가 만들 수 없다. 조용히 건너뛰면
-     * 그 오퍼레이션이 생기는 날 분모에서 빠진 채 초록이 된다.
      */
     private fun sendToSlot(
         token: String?,
@@ -377,12 +285,7 @@ class ValueSlotInvariantReachTest {
         return send(request.method(method.uppercase(), publisher))
     }
 
-    /**
-     * 그 오퍼레이션이 요구하는 **최소 유효 본문**. 본문을 선언하지 않으면 `null`.
-     *
-     * 모르는 스키마면 **끊는다.** 본문 없이 보내면 거절 사유가 「본문 없음」으로 바뀌어,
-     * 값 자리 거절을 재는 이 케이스가 **다른 이유로 통과**한다.
-     */
+    /** 그 오퍼레이션이 요구하는 최소 유효 본문. 본문을 선언하지 않으면 `null`. */
     private fun requestBodyFor(
         path: String,
         method: String,
@@ -392,20 +295,7 @@ class ValueSlotInvariantReachTest {
             ?: error("$method $path 의 요청 본문 스키마 $schema 의 최소 유효 본문이 이 케이스에 없다 — MINIMAL_BODIES 에 더해라")
     }
 
-    // ================================================================ 표본
-
-    /**
-     * 그 파라미터의 **선언 타입으로 해석되지 않는** 표본들 — 동치류로 덮는다.
-     *
-     * 열거하는 것은 값이 아니라 **동치류**다: 빈 자리 · 공백뿐 · 그 타입의 문법이 아님 ·
-     * (정수면) 표현 범위 초과. 넷이 「값 자리가 있으나 그 타입으로 해석되지 않는다」는 종류를
-     * 덮는다 — 자리가 비었거나(앞 둘), 문법이 아니거나(셋째), 문법이지만 담기지 않는다(넷째).
-     *
-     * **부호가 붙은 형태(`+5`)는 여기 없다.** 해석되는 입력이므로 긍정 케이스가 「반영된다」로
-     * 잰다 — 동치류를 값 목록으로 다루면 이 구별이 사라진다.
-     *
-     * 선언 타입은 계약에서 읽고, 모르는 타입이면 **끊는다**.
-     */
+    /** 그 파라미터의 선언 타입으로 해석되지 않는 표본들 — 동치류로 덮는다. */
     private fun uninterpretableSamples(parameter: ContractQueryParameter): List<Pair<String, String>> {
         val common = listOf("빈 자리" to "", "공백뿐" to BLANK_SEGMENT)
         return when (declaredKindOf(parameter)) {
@@ -415,15 +305,7 @@ class ValueSlotInvariantReachTest {
         }
     }
 
-    /**
-     * 계약 파라미터 스키마의 선언 타입. `anyOf` 는 널이 아닌 갈래를 읽는다.
-     *
-     * **`format` 이 `type` 보다 먼저다.** OpenAPI 에서 UUID 는 `{type: string, format: uuid}` 이므로
-     * `type` 만 보면 `string` 으로 읽히고 표본 생성기가 그 이름을 모른다. 실측(β-05 음성 대조):
-     * 계약이 **직접 형태**로 쓴 uuid 파라미터를 더했을 때 이 접근자가 `string` 을 내 표본
-     * 생성기가 `error()` 로 끊겼다 — fail-closed 이긴 하나 메시지가 실제 결함을 가린다.
-     * (`anyOf` 갈래는 종전부터 `format` 을 먼저 읽었다. 두 형태의 규칙이 갈려 있었다.)
-     */
+    /** 계약 파라미터 스키마의 선언 타입. `anyOf` 는 널이 아닌 갈래를 읽는다. */
     private fun declaredKindOf(parameter: ContractQueryParameter): String {
         val direct =
             parameter.schema["format"]?.toString()
@@ -438,15 +320,8 @@ class ValueSlotInvariantReachTest {
             ?: UNKNOWN_KIND
     }
 
-    /**
-     * 그 파라미터의 경계가 사는 `x-input-limits` 노드 이름. 계약이 `list_` 접두로 둔다.
-     *
-     * 이름 규칙이 암묵 계약이라는 사실은 개선 백로그 B-18 이다 — 계약이 규칙을 바꾸면
-     * 접근자가 `error()` 로 끊긴다(조용하지 않지만 손이 필요하다).
-     */
+    /** 그 파라미터의 경계가 사는 `x-input-limits` 노드 이름. 계약이 `list_` 접두로 둔다. */
     private fun limitNodeOf(parameterName: String): String = "list_$parameterName"
-
-    // ================================================================ 단언 도구
 
     private fun assertDeclaredStatus(
         response: HttpResponse<String>,
@@ -466,7 +341,7 @@ class ValueSlotInvariantReachTest {
             ).contains(response.statusCode().toString())
     }
 
-    /** 거절 본문이 스키마 층 모양(**배열**)이고 그 자리를 지목하는가. */
+    /** 거절 본문이 스키마 층 모양(배열)이고 그 자리를 지목하는가. */
     private fun assertValidationArray(
         response: HttpResponse<String>,
         location: String,
@@ -486,8 +361,6 @@ class ValueSlotInvariantReachTest {
             .withFailMessage("거절 항목이 %s 를 지목하지 않는다: %s", parameterName, items)
             .contains(listOf(location, parameterName))
     }
-
-    // ================================================================ 요청 조립
 
     private fun newAccount(): String {
         val email = "valueslot${counter++}@example.test"
@@ -520,11 +393,7 @@ class ValueSlotInvariantReachTest {
         send(jsonRequest(DOCUMENTS_PATH, token).POST(HttpRequest.BodyPublishers.ofString(payload)))
     }
 
-    /**
-     * 목록을 부른다. [rawQuery] 는 **이미 인코딩된 조각**을 그대로 싣는다.
-     *
-     * 다시 인코딩하지 않는 이유: R-6 표본은 빈 값·공백처럼 **인코딩 자체가 재는 대상**이다.
-     */
+    /** 목록을 부른다. [rawQuery] 는 이미 인코딩된 조각을 그대로 싣는다. */
     private fun list(
         token: String,
         rawQuery: String?,
@@ -561,13 +430,7 @@ class ValueSlotInvariantReachTest {
         private const val DOCUMENTS_PATH = "/documents"
         private const val GET = "get"
 
-        /**
-         * 오퍼레이션이 요청 본문을 요구할 때 쓰는 **최소 유효 본문** — 스키마 이름별.
-         *
-         * 열거이지만 **fail-closed 한 열거**다: 모르는 스키마를 만나면 `error()` 로 끊으므로
-         * 계약이 본문 있는 오퍼레이션을 더하면 그 커밋이 빨개진다. 본문을 생략하는 길을 두면
-         * 거절 사유가 「본문 없음」으로 바뀌어 이 케이스가 다른 이유로 통과한다.
-         */
+        /** 오퍼레이션이 요청 본문을 요구할 때 쓰는 최소 유효 본문 — 스키마 이름별. */
         private val MINIMAL_BODIES = mapOf("WorkspaceNameRequest" to """{"name":"가"}""")
 
         private const val LIST_SCHEMA = "DocumentListResponse"
@@ -588,7 +451,7 @@ class ValueSlotInvariantReachTest {
         private const val NULL_TYPE = "null"
         private const val UNKNOWN_KIND = "?"
 
-        /** **값 자리는 있고 어떤 타입으로도 해석되지 않는** 조각. 인코딩된 공백이다. */
+        /** 값 자리는 있고 어떤 타입으로도 해석되지 않는 조각. 인코딩된 공백이다. */
         private const val BLANK_SEGMENT = "%20"
         private const val VALID_PASSWORD = "correct horse battery"
 

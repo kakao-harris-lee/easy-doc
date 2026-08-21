@@ -7,13 +7,7 @@ import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
 
-/**
- * PDF 추출의 참고값 대조와 **재현성 고정**.
- *
- * 재현성이 이 클래스의 핵심이다 — `PDFTextStripper` 의 줄 구분자 기본값이
- * `System.lineSeparator()` 라, 고정하지 않으면 Linux CI 와 다른 OS 개발기가 **서로 다른
- * 추출 텍스트**를 낸다. 그 갈림은 값 비교 테스트가 아니라 **문자 존재 단언**으로만 잡힌다.
- */
+/** PDF 추출의 참고값 대조와 재현성 고정. */
 class PdfExtractorTest {
     private val extractor = PdfExtractor()
 
@@ -34,10 +28,6 @@ class PdfExtractorTest {
     @Test
     @DisplayName("깨진 ToUnicode CMap 의 짝 없는 서로게이트를 PDFBox 가 U+FFFD 로 **치환한다** (2026-08-20 실측)")
     fun `PDF 는 짝 없는 서로게이트를 내지 않는다`() {
-        // 계약 `x-stored-text-domain.applies_to` 는 파일 모드를 「PDF 가 가장 그럴듯한 유입
-        // 경로」로 적고 그 팔을 `measured` 로 두었다. **오늘 조합에서는 참이 아니다** —
-        // 추출 결과의 코드 포인트가 `U+FFFD` 하나다. 그 사실을 회귀로 붙들어 둔다:
-        // 판올림이 치환을 그만두면 여기가 빨개지고, 그때 파일 모드 팔이 실제로 열린다.
         val text = extractor.extract(SurrogatePdf.bytes())
 
         assertThat(text).isEqualTo(SurrogatePdf.SUBSTITUTED_TEXT)
@@ -61,8 +51,6 @@ class PdfExtractorTest {
     fun `줄 구분자가 플랫폼에 좌우되지 않는다`() {
         val text = extractor.extract(IngestFixtures.bytes("sample.pdf"))
 
-        // 고정이 없으면 Windows 개발기에서 CRLF 가 나오고, `stripControlChars` 는
-        // `\u000D` 를 지우지 않으므로 그 문자가 저장·응답까지 그대로 간다.
         assertThat(text)
             .withFailMessage {
                 "추출 결과에 `\\u000D` 가 있다 — `PDFTextStripper.lineSeparator`/`pageEnd` 고정이 풀렸다."
@@ -72,8 +60,6 @@ class PdfExtractorTest {
     @Test
     @DisplayName("재현성에 걸리는 설정이 상수로 고정돼 있다")
     fun `추출 설정이 고정돼 있다`() {
-        // 이 단언이 막는 것은 "기본값이 마침 맞아서 통과하는" 상태다. 값을 바꾸면 여기가
-        // 먼저 빨개져 그 변경이 리뷰에 드러난다.
         assertThat(PdfExtractor.SORT_BY_POSITION).isFalse()
         assertThat(PdfExtractor.LINE_SEPARATOR).isEqualTo("\n")
         assertThat(PdfExtractor.WORD_SEPARATOR).isEqualTo(" ")

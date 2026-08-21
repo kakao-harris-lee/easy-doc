@@ -52,9 +52,6 @@ class MaskedItemCodec {
     /**
      * 저장용 평문 JSON 을 만든다. **결과는 반드시 암호화해서 저장한다** — 여기에는 가려졌던
      * 개인정보가 그대로 들어 있다.
-     *
-     * 돌려주는 타입이 [PlainBody] 인 것이 그 강제다: 저장소 포트는 `EncryptedContent` 만
-     * 받으므로 이 값을 그대로 컬럼에 넣는 경로가 **컴파일되지 않는다.**
      */
     fun encode(items: List<MaskedItem>): PlainBody {
         val array = json.createArrayNode()
@@ -119,12 +116,7 @@ class MaskedItemCodec {
     }
 
     companion object {
-        /**
-         * **저장 형식의 범주 키.** 계약 enum 값(한국어)이 아니라 이 값이 컬럼에 들어간다.
-         *
-         * 값을 바꾸는 것은 **스키마 변경만큼 무겁다** — 이미 저장된 행이 안 읽힌다.
-         * 범주가 늘면 이 표에 줄을 더해야 하고, 안 더하면 [encode] 가 끊는다.
-         */
+        /** **저장 형식의 범주 키.** 계약 enum 값(한국어)이 아니라 이 값이 컬럼에 들어간다. */
         val CATEGORY_KEYS: Map<MaskCategory, String> =
             mapOf(
                 MaskCategory.RRN to "rrn",

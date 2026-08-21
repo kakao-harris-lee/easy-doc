@@ -14,100 +14,8 @@ import kotlin.io.path.extension
 import kotlin.io.path.readText
 
 /**
- * **주석·KDoc·설정 파일이 이름으로 지목한 것이 저장소에 실재하는지 잰다** —
- * 게이트 28 리더 판정 **P-9**(L-③ 판정 1 의 재개봉 조건이 발동해 종류째 승격됐다).
- *
- * ## 무엇이 결함인가
- *
- * *"이것은 X 가 강제한다"* 는 문장에서 X 가 저장소에 없으면, 그 문장은 **잘못된 근거**다.
- * 읽는 사람은 그 자리가 지켜지고 있다고 믿고 넘어가는데 재는 것이 아무것도 없다.
- * 「전부 `ownerId` 를 받는다」 같은 거짓 전칭과 같은 형태이며(둘 다 저장소에 없는 것을
- * 근거로 든다), L-③ 판정 1 이 *"같은 형태가 다른 파일에서 한 번 더 나오면 종류째
- * 승격한다"* 는 조건을 걸어 두었다. **다섯 자리·세 커밋**이 실측되어 조건이 발동했다.
- *
- * ## 이름을 열거하지 않는다 — **참조 형태**에서 뽑는다
- *
- * 감시 대상 이름을 상수로 적으면 새 거짓 지목이 그 목록 밖에서 조용히 태어난다(형제 장치
- * `kr.easydoc.infrastructure.db.OwnershipPredicateGuardTest` KDoc 의 「핀은 면제 목록이
- * 아니라 인구조사다」와 같은 규율). 여기서 뽑는 것은 **형태**다 — 백틱 인용, `[대괄호]`
- * KDoc 링크, `@see`. 새 파일·새 주석이 자동으로 분모에 든다.
- *
- * 분모는 **주장이 사는 자리**다: `.kt` 의 주석·KDoc 과 `.yml` 의 주석 줄. 코드 본문은 보지
- * 않는다 — 거기서 이름이 틀리면 컴파일러가 먼저 잡고, 그것이 이 결함이 주석에서만 살아
- * 남는 이유다.
- *
- * ## 두 축 — 둘 다 **모양으로** 정의한다
- *
- * | 축 | 후보 모양 | 무엇을 묻나 | 해소 집합 |
- * |---|---|---|---|
- * | **A** 테스트·프로브 지목 | [TEST_SUFFIXES] 로 끝나는 PascalCase | **머리 이름** | 저장소 Kotlin 선언 ∪ 파일 이름 |
- * | **B** 계약 확장 노드 지목 | `x-` + 소문자·숫자·붙임표 | **점으로 이어진 경로 전체** | [ContractSpec.keyChains] 전수 |
- *
- * **축 B 가 경로를 묻는 것은 R-10-① 의 처방이다.** 초판은 참조를 조각으로 나눠 **평탄한
- * 이름 집합**에 대조했고, 그러면 `x-cors.x-note` 에서 `x-note` 가 **계약 어디에든** 있으면
- * 통과했다 — 부모 아래에 없어도 초록이다. 실측(2026-08-21): 실재하는 최상위 노드 둘을
- * 부모·자식으로 이어 붙인 가짜 경로(조각은 둘 다 실재하나 그 부모 아래에 그 자식이 없다)를
- * 주석에 심었더니 **exit 0** 이었다. **가짜 경로를 여기 참조 형태로 적지 않는다** —
- * 적는 순간 이 가드가 자기 KDoc 을 짚는다(실측으로 밟았다). 케이스는 그 조합을 계약에서
- * 찾아 쓴다([fakeExtensionPath]). **노드 이름의 변경·이동이 이 종류의 가장 흔한 형태**이므로,
- * 부모가 살아 있고 자식이 옮겨 간 참조가 정확히 그 구멍으로 빠진다.
- *
- * 축 A 의 해소 집합에 **파일 이름**을 넣는 이유: `[…Test]` 가 파일을 가리키는 관용이 이
- * 저장소에 있다(한 파일이 클래스 둘을 담고 파일 이름이 그 묶음의 이름인 자리 — 기동 테스트).
- * 읽는 사람이 그 이름으로 파일을 찾을 수 있으면 포인터는 죽지 않았다.
- *
- * ## 왜 범위를 이만큼으로 좁혔나 — **실측이 근거다**
- *
- * 후보를 「참조 형태 안의 모든 PascalCase」로 넓히면 미해결이 **147개**가 되고 그중 실제
- * 결함은 **3개**다. 나머지 144는 전부 정당한 참조다 — 외부 라이브러리 타입, 계약 스키마·
- * 컴포넌트 이름, Python 원본 심볼 이름, detekt 규칙 id, HTTP 헤더 이름, Kotlin/JDK 기본형,
- * 백틱에 든 산문 조각. 오탐 98% 인 탐지기는 곧 **면제 목록**을 낳고, 그것이 규칙 4 ⑵ 가
- * 금지한 은폐형이다. 그래서 **목록을 좁히지 않고 모양을 좁혔다.**
- *
- * ## 이 장치가 **막지 못하는 것** (정직하게 적는다 — 적지 않으면 이것이 다음 거짓 전칭이 된다)
- *
- * - **계약 산문의 인용.** *"계약이 …라고 적었다"* 며 문장을 따온 자리가 계약에 실제로
- *   있는지는 재지 않는다. 측정: KDoc 인용 블록은 저장소 전체에 **9자리**이고 그중 8은
- *   자기 정의의 재기술이라 대조할 외부 앵커가 없다. 나쁜 자리 하나
- *   (`kr.easydoc.api.health.HealthController` — 폐기된 문면을 인용했다)는 게이트 28 P-8 에서
- *   손으로 걷어냈고, 그 KDoc 이 주장했던 성질은 이제 [HealthContractTest] 가 계약을 읽어
- *   잰다 — **문면이 아니라 성질**이 측정 대상이 됐다. 기계화하려면 인용에 앵커를 붙이는
- *   규약이 필요하고 그 신설은 이 단위 밖이다.
- * - **축 A 의 멤버 참조**(`CanaryProbe.report`·`DocumentContractTest.newOwner` 형태).
- *   머리 이름만 묻고 **멤버의 실재는 검사하지 않는다.** 조용히 뺀 것이 아니라 판단한 것이고,
- *   근거 셋이다. ⑴ P-9 가 승격한 종류는 「이름으로 지목한 **테스트·클래스**」이고 머리가
- *   해소되면 읽는 사람은 그 파일에 도달한다 — 죽은 멤버 포인터는 「자리를 못 찾는다」가
- *   아니라 「그 파일 안에서 못 찾는다」로 약하다. ⑵ 멤버 해소에는 Kotlin 선언 형태의
- *   **어휘**가 필요하다(`fun`·`val`·`var`·중첩 클래스·`companion`·백틱 한국어 식별자) —
- *   그 어휘가 곧 규칙 4 ⑵ 가 금지한 열거이고, 빠뜨린 형태마다 오탐이 된다.
- *   ⑶ 실측(2026-08-21): 오늘 이 형태가 **9종**이고 그중 최소 둘은 산문 조각이다
- *   (`SourceScanFormsProbe.fun`·`JdbcDocumentStoreTest.쓰기` — 한국어 산문과 키워드가
- *   점 뒤에 붙은 것). 오탐 22% 로 시작하는 축은 곧 면제 목록을 부른다.
- *   **머리 검사는 멤버가 붙어도 그대로 돈다** — 그 사실을 [`멤버가 붙은 참조도 머리를 검사한다`]
- *   가 실행으로 고정한다.
- * - **이름이 실재하지만 그 주장이 거짓인 경우.** `X 가 이것을 강제한다` 에서 X 가 존재하되
- *   그 성질을 재지 않는 상태는 여기서 보이지 않는다. 그 축은 변이 테스트의 몫이다
- *   (개선 백로그 B-19).
- * - **SCREAMING_CASE 상수 이름**(`MIN_TEST_CLASSES` 등)과 **함수·프로퍼티 이름**. 후보
- *   모양에서 뺐다 — 넓히면 위 147 의 잡음으로 되돌아간다.
- * - **`docs` 디렉터리의 산문.** 분모는 `backend-kotlin` 아래뿐이다. 문서는 그 시점의 판단
- *   기록이라 과거 이름을 인용하는 것이 정상이고, 거기에 이 검사를 걸면 이력을 고치게 만든다.
- *   (경로를 별표 두 개로 적지 않는다 — Kotlin 블록 주석은 중첩하므로 슬래시 뒤에 별표 둘이
- *   오는 순간 그 자리에서 새 주석이 열려 파일이 컴파일되지 않는다. 실측으로 밟았다.)
- * - **이 파일 자신의 삭제.** 최종 방어선은 `tests/test_kotlin_gate_reach.py` 의 선언 대조다.
- *
- * ## 폐기된 이름을 **이력으로** 적을 때
- *
- * 백틱·대괄호·`@see` 는 「이름으로 지목한다」의 형태다. 그래서 *"종전 문면은 `X` 를 가리켰다"*
- * 처럼 옛 이름을 그 형태로 다시 적으면 이 가드가 정당하게 잡는다 — 읽는 사람에게는 그것도
- * 「저장소에 없는 것을 가리키는 참조」이기 때문이다(실측: 이 가드를 세운 커밋의 정정 주석
- * 하나가 그 자리에서 빨개졌다). 이력은 **참조 형태 없이** 산문으로 적거나 계약
- * `x-changelog` 를 가리켜라.
- *
- * ## 빈 분모는 통과가 아니다
- *
- * 두 축의 후보가 0건이면 **빨강**이다(규칙 4 ⑶). 형제 가드와 같은 규율이고,
- * [`빈 분모는 통과가 아니다`] 가 그것을 합성 인자와 실제 훑기 양쪽으로 확인한다.
+ * 주석·KDoc·설정 파일이 이름으로 지목한 것이 저장소에 실재하는지 잰다 —
+ * 게이트 28 리더 판정 P-9(L-③ 판정 1 의 재개봉 조건이 발동해 종류째 승격됐다).
  */
 class NamedReferenceGuardTest {
     @TempDir
@@ -142,8 +50,6 @@ class NamedReferenceGuardTest {
     fun `빈 분모는 통과가 아니다`() {
         val references = Scanner.scan(sourceRoot())
 
-        // 축별로 따로 센다. 한쪽이 0 이면 그 축은 「위반 0건」으로 초록인데 실제로는 아무것도
-        // 재지 않은 것이다 — 형제 가드가 같은 규율을 쓴다.
         assertThat(references.count { Scanner.isTestName(it.name) })
             .describedAs("축 A 후보(테스트·프로브 이름 지목)")
             .isPositive()
@@ -151,7 +57,6 @@ class NamedReferenceGuardTest {
             .describedAs("축 B 후보(계약 확장 노드 지목)")
             .isPositive()
 
-        // 그리고 「0건이면 실패한다」는 판정 자체를 두 방향으로 확인한다.
         assertThatThrownBy { Scanner.requireNonEmpty(emptyList()) }
             .hasMessageContaining("한 건도 찾지 못했다")
         assertThatThrownBy { Scanner.requireNonEmpty(Scanner.scan(emptyRoot())) }
@@ -220,8 +125,6 @@ class NamedReferenceGuardTest {
         val fake = fakeExtensionPath()
         val references = probe("axis-b-path", "/** 근거는 계약 `$fake` 다. */\nval x = 1\n")
 
-        // 두 조각이 **각자** 계약에 있다는 것을 먼저 확인한다 — 그러지 않으면 이 케이스가
-        // 「이름이 없어서 빨개진」 것과 구분되지 않고, 초판의 구멍을 재지 못한다.
         val names = ContractSpec.extensionNodeNames()
         fake.split('.').forEach { segment ->
             assertThat(names)
@@ -241,8 +144,6 @@ class NamedReferenceGuardTest {
     fun `점으로 이어진 참조가 실재한다`() {
         val dotted = Scanner.scan(sourceRoot()).filter { Scanner.isExtensionNode(it.name) && it.hasTail }
 
-        // 저장소의 x- 참조가 전부 한 조각이면 위 케이스의 경로 판정이 **한 번도 돌지 않는다** —
-        // 그 상태에서 축 B 가 초록인 것은 「경로가 옳다」가 아니라 「경로를 안 봤다」다.
         assertThat(dotted)
             .describedAs("점으로 이어진 계약 확장 노드 참조 — 경로 해소가 도는 분모다")
             .isNotEmpty()
@@ -268,8 +169,6 @@ class NamedReferenceGuardTest {
         val (head, tail) = chain.split('.').let { it[0] to it[1] }
         val references = probe("axis-b-index", "/** 계약 `$head[0].$tail` 참고. */\nval x = 1\n")
 
-        // 대괄호를 지우지 않으면 이 참조가 미해결로 뒤집힌다. 실측: 정규화 없이는 점 참조
-        // 43종 중 6종이 오탐이었고 여섯 다 이 형태였다.
         assertThat(Scanner.danglingExtensionNodes(references, ContractSpec.keyChains())).isEmpty()
     }
 
@@ -302,8 +201,6 @@ class NamedReferenceGuardTest {
     fun `파일 이름도 해소한다`() {
         val declared = Scanner.declaredNames(sourceRoot())
 
-        // 이 저장소의 실제 자리: 기동 테스트 두 클래스가 한 파일에 살고 KDoc 이 파일 이름으로
-        // 서로를 가리킨다. 파일 이름을 해소 집합에 넣지 않으면 그 관용이 전부 오탐이 된다.
         assertThat(declared)
             .describedAs("파일 이름이 해소 집합에 없다 — 클래스 선언만 모으고 있다")
             .contains(STARTUP_FILE_NAME)
@@ -321,31 +218,14 @@ class NamedReferenceGuardTest {
         assertThat(Scanner.isExtensionNode("X-Content-Type-Options")).isFalse()
     }
 
-    // ================================================================ 합성 이름
-
-    /**
-     * 저장소에 **없는** 테스트 이름을 만든다.
-     *
-     * 리터럴로 적지 않고 조립하는 이유는 형제 가드의 probe 와 같다 — 리터럴로 적으면
-     * **이 파일 자신의 주석·문자열이 실제 스캔의 분모를 오염시킨다.** 여기서는 그 오염이
-     * 곧 「이 파일이 자기 자신을 위반으로 잡는다」가 된다(실제로 그 형태를 피해 조립한다).
-     *
-     * 조립한 이름이 정말 저장소에 없는지도 **확인한다** — 우연히 실재하면 음성 대조가
-     * 조용히 무력해진다.
-     */
+    /** 저장소에 없는 테스트 이름을 만든다. */
     private fun syntheticTestName(): String {
         val name = "Absent" + "Named" + "Reference" + TEST_SUFFIXES.first()
         check(name !in Scanner.declaredNames(sourceRoot())) { "합성 이름이 실재한다: $name" }
         return name
     }
 
-    /**
-     * **조각은 전부 실재하지만 그 경로로는 없는** 확장 노드 경로를 계약에서 **찾아낸다**.
-     *
-     * 리터럴로 적지 않는다 — 계약이 노드를 옮기면 그 리터럴이 우연히 참이 되어 케이스가
-     * 조용히 무력해진다. 실재하는 x- 이름 둘을 짝지어 **경로로는 없는 조합**을 고르고,
-     * 못 찾으면 **끊는다**(그 상태에서는 이 케이스가 아무것도 재지 않는다).
-     */
+    /** 조각은 전부 실재하지만 그 경로로는 없는 확장 노드 경로를 계약에서 찾아낸다. */
     private fun fakeExtensionPath(): String {
         val names = ContractSpec.extensionNodeNames().sorted()
         val chains = ContractSpec.keyChains()
@@ -356,21 +236,14 @@ class NamedReferenceGuardTest {
             ?: error("조각은 실재하나 경로로는 없는 조합을 찾지 못했다 — 이 케이스가 경로 축을 재지 못한다")
     }
 
-    /** 계약에 **없는** 확장 노드 이름. 조립하는 이유는 [syntheticTestName] 과 같다. */
+    /** 계약에 없는 확장 노드 이름. 조립하는 이유는 [syntheticTestName] 과 같다. */
     private fun syntheticExtensionNode(): String {
         val name = EXTENSION_PREFIX + "absent-" + "named-reference"
         check(name !in ContractSpec.extensionNodeNames()) { "합성 노드 이름이 실재한다: $name" }
         return name
     }
 
-    // ================================================================ probe
-
-    /**
-     * 합성 Kotlin 소스 하나를 스캐너에 먹인다.
-     *
-     * **probe 마다 독립 디렉터리**를 준다 — 같은 디렉터리에 쌓으면 뒤 probe 의 결과에 앞
-     * probe 의 참조가 섞인다(형제 가드가 실측으로 밟은 자리다).
-     */
+    /** 합성 Kotlin 소스 하나를 스캐너에 먹인다. */
     private fun probe(
         name: String,
         source: String,
@@ -390,18 +263,11 @@ class NamedReferenceGuardTest {
         return Scanner.scan(File(temp, name).toPath())
     }
 
-    /**
-     * 아무 소스도 없는 루트. 「분모 0」을 합성 인자가 아니라 **실제 훑기**로 만든다.
-     *
-     * `src/main` 뼈대까지 만들어 둔다 — 디렉터리가 아예 없어서 0건인 것과, 훑을 자리는
-     * 있는데 대상이 0건인 것은 다른 상태이고 재야 하는 것은 후자다.
-     */
+    /** 아무 소스도 없는 루트. 「분모 0」을 합성 인자가 아니라 실제 훑기로 만든다. */
     private fun emptyRoot(): Path {
         File(temp, "empty/src/main/kotlin").mkdirs()
         return File(temp, "empty").toPath()
     }
-
-    // ================================================================ 실패 메시지
 
     private fun danglingNameFailure(dangling: List<Scanner.NamedReference>): String =
         "주석·KDoc·설정이 이름으로 지목한 테스트·프로브가 저장소에 없다.\n" +
@@ -411,13 +277,7 @@ class NamedReferenceGuardTest {
             "  ⑵ 재는 장치가 없으면 그 주장을 지우고 무엇이 미측정인지 적는다.\n" +
             "  이름을 이 파일의 예외 목록에 넣는 길은 없다 — 그것이 은폐형이다."
 
-    /**
-     * 축 B 실패 메시지. **머리가 아니라 경로를 찍는다.**
-     *
-     * 실측으로 밟았다 — 머리만 찍으니 실재하는 부모 이름(`x-cors`)이 세 번 나열되고, 정작
-     * 없는 것은 그 아래의 자식이었다. 「무엇이 없는가」를 잘못 가리키는 메시지는 고치는
-     * 사람을 엉뚱한 자리로 보낸다.
-     */
+    /** 축 B 실패 메시지. 머리가 아니라 경로를 찍는다. */
     private fun danglingNodeFailure(dangling: List<Scanner.NamedReference>): String =
         "주석·KDoc·설정이 이름으로 지목한 계약 확장 노드 **경로**가 계약 파일에 없다.\n" +
             dangling.joinToString("\n") { "  - ${it.chain}  ← ${it.file}" } +
@@ -439,20 +299,9 @@ class NamedReferenceGuardTest {
         return root
     }
 
-    /**
-     * 주석·KDoc·설정 주석에서 **이름으로 지목된 참조**를 뽑는다.
-     *
-     * 파서가 아니라 훑개다 — 형제 가드와 같은 판단이고 사유도 같다(파싱 실패가 새 무성
-     * 표면이 된다).
-     */
+    /** 주석·KDoc·설정 주석에서 이름으로 지목된 참조를 뽑는다. */
     private object Scanner {
-        /**
-         * 참조 하나. 실패 메시지가 자리를 가리켜야 하므로 파일을 함께 든다.
-         *
-         * [name] 은 후보 모양에 맞는 **머리 조각**, [chain] 은 그 조각에서 참조 끝까지의
-         * **점으로 이어진 경로**다(머리뿐이면 둘이 같다). 축 A 는 [name] 으로 판정하고
-         * 축 B 는 [chain] 으로 판정한다 — 두 축이 필요로 하는 알갱이가 다르다(클래스 KDoc).
-         */
+        /** 참조 하나. 실패 메시지가 자리를 가리켜야 하므로 파일을 함께 든다. */
         data class NamedReference(
             val file: String,
             val name: String,
@@ -467,15 +316,11 @@ class NamedReferenceGuardTest {
         private val LINE_COMMENT = Regex("""//[^\n]*""")
         private val YAML_COMMENT = Regex("""#[^\n]*""")
 
-        /** 참조 **형태** 셋. 어느 하나만 읽으면 나머지 형태가 통째로 분모 밖이다. */
+        /** 참조 형태 셋. 어느 하나만 읽으면 나머지 형태가 통째로 분모 밖이다. */
         private val REFERENCE =
             Regex("""`([^`\n]{1,160})`|\[([^\]\n]{1,160})\]|@see\s+([\w.\[\]]{1,160})""")
 
-        /**
-         * PascalCase — **대문자로 시작하고 소문자를 하나 이상 담는다.**
-         *
-         * 소문자를 요구하는 것이 SCREAMING_CASE 와 SQL 키워드(`AND`·`ANY`)를 가르는 조건이다.
-         */
+        /** PascalCase — 대문자로 시작하고 소문자를 하나 이상 담는다. */
         private val PASCAL = Regex("""^[A-Z][A-Za-z0-9]*[a-z][A-Za-z0-9]*$""")
 
         /** 계약 확장 노드 이름의 모양. 대문자 헤더 이름(`X-…`)과 가른다. */
@@ -491,7 +336,7 @@ class NamedReferenceGuardTest {
             }
 
         /**
-         * **한 건도 없으면 끊는다.** 「위반 0건」과 「대상 0건」은 완전히 다른 상태이고,
+         * 한 건도 없으면 끊는다. 「위반 0건」과 「대상 0건」은 완전히 다른 상태이고,
          * 후자를 초록으로 두면 이 파일은 아무것도 재지 않으면서 재는 척한다.
          */
         fun requireNonEmpty(references: List<NamedReference>) {
@@ -501,7 +346,7 @@ class NamedReferenceGuardTest {
             }
         }
 
-        /** 저장소가 선언한 이름 — 클래스·객체·인터페이스 ∪ **파일 이름**. */
+        /** 저장소가 선언한 이름 — 클래스·객체·인터페이스 ∪ 파일 이름. */
         fun declaredNames(root: Path): Set<String> {
             val names = mutableSetOf<String>()
             kotlinFiles(root).forEach { file ->
@@ -511,21 +356,13 @@ class NamedReferenceGuardTest {
             return names
         }
 
-        /**
-         * 축 A — **머리 조각만** 본다. `CanaryProbe.report` 에서 묻는 것은 `CanaryProbe` 다.
-         *
-         * 멤버를 검사 범위에 넣지 않은 사유는 클래스 KDoc 「막지 못하는 것」에 있다.
-         */
+        /** 축 A — 머리 조각만 본다. `CanaryProbe.report` 에서 묻는 것은 `CanaryProbe` 다. */
         fun danglingTestNames(
             references: List<NamedReference>,
             declared: Set<String>,
         ): List<NamedReference> = references.filter { isTestName(it.name) && it.name !in declared }
 
-        /**
-         * 축 B — **경로로** 해소한다. [declared] 는 [ContractSpec.keyChains] 다.
-         *
-         * `it.name` 이 아니라 `it.chain` 을 묻는 것이 R-10-① 의 처방 전부다.
-         */
+        /** 축 B — 경로로 해소한다. [declared] 는 [ContractSpec.keyChains] 다. */
         fun danglingExtensionNodes(
             references: List<NamedReference>,
             declared: Set<String>,
@@ -536,7 +373,7 @@ class NamedReferenceGuardTest {
 
         fun isExtensionNode(name: String): Boolean = EXTENSION.matches(name)
 
-        /** 그 파일에서 **주장이 사는 부분**만 남긴다. */
+        /** 그 파일에서 주장이 사는 부분만 남긴다. */
         private fun claimsOf(file: Path): String {
             val text = file.readText()
             return if (file.extension == KOTLIN_EXTENSION) {
@@ -557,23 +394,7 @@ class NamedReferenceGuardTest {
                     raw.substringBefore('(').split(' ', '/').flatMap { token -> referencesInToken(file, token) }
                 }.toList()
 
-        /**
-         * 점으로 이어진 한 토큰에서 참조를 뽑는다 — **머리와 꼬리를 함께** 든다.
-         *
-         * 부모·자식으로 이어진 참조를 조각 둘로 흘려보내면 축 B 가 자식을 **계약 어디에든**
-         * 있는 것으로 해소해 초록이 된다(R-10-① 실측). 그래서 후보 모양에 맞는 조각이
-         * 나오면 **그 자리에서 끝까지**를 한 참조로 만든다.
-         *
-         * 머리가 여럿일 수 있다 — 두 조각이 다 x- 모양인 참조가 계약에 실재한다. 그때는
-         * 조각마다 「그 자리에서 끝까지」를 하나씩 내어 **둘 다** 판정한다. 각각이 독립으로
-         * 해소돼야 하는 주장이므로 줄이지 않는다 — fail-closed 다.
-         *
-         * 각 조각에서 대괄호와 그 뒤를 지운다(`fields[0]` → `fields`). **배열은 이름 있는
-         * 키 층이 아니고**([ContractSpec.keyChains] 가 같은 규약으로 경로를 모은다), 이
-         * 저장소의 주석은 리스트 원소를 `fields[].limit`·`fields[0].limit` 로 적는다.
-         * 실측(2026-08-21): 이 정규화 없이는 점 참조 43종 중 **6종이 오탐**이고 여섯 다
-         * 대괄호 형태 하나였다.
-         */
+        /** 점으로 이어진 한 토큰에서 참조를 뽑는다 — 머리와 꼬리를 함께 든다. */
         private fun referencesInToken(
             file: String,
             token: String,
@@ -618,24 +439,13 @@ class NamedReferenceGuardTest {
     private companion object {
         const val SOURCE_ROOT_PROPERTY = "easydoc.kotlin.source.root"
 
-        /**
-         * 축 A 의 후보 접미사 — **이 저장소의 테스트 클래스 명명 관용**이다.
-         *
-         * 열거처럼 보이지만 이것은 이름 목록이 아니라 **모양**이다: 새 테스트 클래스는 이름을
-         * 여기 적지 않아도 자동으로 후보에 든다. 관용이 늘면(새 접미사) 여기 한 줄이 늘고,
-         * 그 diff 는 「탐지 범위를 넓혔다」로 리뷰에 올라온다.
-         */
+        /** 축 A 의 후보 접미사 — 이 저장소의 테스트 클래스 명명 관용이다. */
         val TEST_SUFFIXES = listOf("Test", "Probe")
 
         /** 축 B 의 접두. 리터럴로 적으면 이 파일이 자기 분모를 오염시키므로 상수로 접는다. */
         const val EXTENSION_PREFIX = "x-"
 
-        /**
-         * 파일 하나가 클래스 둘을 담고 KDoc 이 **파일 이름**으로 그것을 가리키는 실제 자리.
-         *
-         * 이름을 조립하지 않고 그대로 적는다 — 이 값은 해소 **집합에 있어야** 하는 이름이라,
-         * 오염이 아니라 그 반대다(이 파일의 이 문장 자신도 축 A 후보가 되고 통과한다).
-         */
+        /** 파일 하나가 클래스 둘을 담고 KDoc 이 파일 이름으로 그것을 가리키는 실제 자리. */
         const val STARTUP_FILE_NAME = "ApiStartupWithDatabaseTest"
     }
 }

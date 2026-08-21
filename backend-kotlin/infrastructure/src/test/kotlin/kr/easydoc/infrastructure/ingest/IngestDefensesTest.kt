@@ -16,23 +16,7 @@ import java.util.concurrent.atomic.AtomicInteger
 import javax.xml.XMLConstants
 import javax.xml.stream.XMLInputFactory
 
-/**
- * 배선으로만 확인할 수 있는 방어 셋 — POI 전역 설정 · StAX 속성 · 동시 추출 제한.
- *
- * 셋 다 **행동 음성 대조가 성립하지 않거나 비싸다.** 그 사실을 숨기지 않고, 각 케이스가
- * 무엇을 재고 무엇을 못 재는지 함께 적는다.
- *
- * ## POI 축을 **제품 배선에서** 잰다 (게이트 27 codex C-10)
- *
- * 이전 판은 테스트 첫 줄에서 `PoiZipDefenses.apply()` 를 **스스로 불렀다.** 그래서
- * `IngestConfiguration` 에서 그 호출을 지워도 이 파일이 원하는 값을 직접 설치해 초록이었고
- * — 즉 **제품 조립이 방어를 설치하는지 재지 않았다.** 게다가 `ZipSecureFile` 의 값은
- * **JVM 전역 static** 이라 복원 없이 두면 뒤에 도는 테스트까지 오염된다.
- *
- * 지금은 ⑴ 값을 일부러 **틀리게 어긋뜨린 뒤** ⑵ 제품 조립 지점만 부르고 ⑶ 값이 우리 것으로
- * 돌아왔는지 본다. `IngestConfiguration` 에서 `apply()` 를 지우면 이 케이스가 빨개진다.
- * [`@AfterEach`][restoreGlobalDefenses] 가 **원래 값**으로 되돌린다.
- */
+/** 배선으로만 확인할 수 있는 방어 셋 — POI 전역 설정 · StAX 속성 · 동시 추출 제한. */
 class IngestDefensesTest {
     private var savedMaxEntrySize: Long = 0
     private var savedMinInflateRatio: Double = 0.0
@@ -47,8 +31,6 @@ class IngestDefensesTest {
 
     @AfterEach
     fun restoreGlobalDefenses() {
-        // JVM 전역이므로 반드시 되돌린다 — 되돌리지 않으면 이 파일이 다른 테스트의 전제를
-        // 바꾼다(순서·병렬에 따라 결과가 갈리는, 가장 찾기 어려운 실패다).
         ZipSecureFile.setMaxEntrySize(savedMaxEntrySize)
         ZipSecureFile.setMinInflateRatio(savedMinInflateRatio)
         ZipSecureFile.setMaxFileCount(savedMaxFileCount)
@@ -57,12 +39,10 @@ class IngestDefensesTest {
     @Test
     @DisplayName("**제품 조립**이 POI 전역 zip 방어값을 우리 예산으로 되돌린다 (계획 §5 D-8)")
     fun `조립이 POI 전역 zip 방어를 설치한다`() {
-        // 어긋뜨린다 — 이 값들이 그대로 남으면 조립이 아무것도 설치하지 않은 것이다.
         ZipSecureFile.setMaxEntrySize(WRONG_MAX_ENTRY_SIZE)
         ZipSecureFile.setMinInflateRatio(WRONG_MIN_INFLATE_RATIO)
         ZipSecureFile.setMaxFileCount(WRONG_MAX_FILE_COUNT)
 
-        // **제품 조립 지점만** 부른다. `PoiZipDefenses.apply()` 를 여기서 직접 부르지 않는다.
         IngestConfiguration().documentTextExtractor()
 
         assertThat(ZipSecureFile.getMaxEntrySize())
@@ -77,13 +57,6 @@ class IngestDefensesTest {
     @Test
     @DisplayName("이 설정은 backstop 이다 — 1차 방어는 ZipBudget 이고 순서가 그렇다")
     fun `POI 설정은 backstop 임을 명시한다`() {
-        // **이 파일이 재지 **못하는** 것 (둘을 구분해 적는다)**
-        //
-        // ⑴ **압축 폭탄에 대한 행동 음성 대조**: `PoiZipDefenses.apply()` 를 지워도 폭탄은
-        //    여전히 거부된다 — `ZipBudget` 이 POI 를 부르기 전에 끊기 때문이다. 그래서 위
-        //    케이스는 「폭탄이 막히는가」가 아니라 **「조립이 값을 설치하는가」**를 잰다.
-        // ⑵ **조립 지점이 하나뿐인가**: 다른 곳에서 `ZipSecureFile` 을 다시 설정하면
-        //    마지막에 부른 쪽이 이긴다. 그 자리를 세는 탐지기는 없다.
         assertThat(PoiZipDefenses.MAX_ENTRY_SIZE).isEqualTo(ZIP_UNCOMPRESSED_BUDGET_BYTES)
     }
 
@@ -117,7 +90,7 @@ class IngestDefensesTest {
                     val now = inFlight.incrementAndGet()
                     peak.accumulateAndGet(now, ::maxOf)
                     entered.countDown()
-                    // 자리를 붙잡고 있어야 상한이 실제로 발화한다.
+
                     release.await(AWAIT_SECONDS, TimeUnit.SECONDS)
                     inFlight.decrementAndGet()
                     ExtractedDocument(SourceFormat.DOCX, "")
@@ -161,7 +134,7 @@ class IngestDefensesTest {
         const val AWAIT_SECONDS = 10L
 
         /**
-         * 일부러 어긋뜨리는 값. 우리 값과 **달라야** 음성 대조가 성립한다 — 같은 값을 심으면
+         * 일부러 어긋뜨리는 값. 우리 값과 달라야 음성 대조가 성립한다 — 같은 값을 심으면
          * 조립이 아무것도 하지 않아도 통과한다.
          */
         const val WRONG_MAX_ENTRY_SIZE = 7L

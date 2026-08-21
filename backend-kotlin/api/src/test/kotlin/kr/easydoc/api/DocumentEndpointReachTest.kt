@@ -24,32 +24,7 @@ import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import java.util.UUID
 
-/**
- * `POST /documents` 의 **실측** 계약 — 명세 §5 의 C-R·C-I 계층.
- *
- * 여기 있는 것: **DC-4 · DC-5 · DC-6 · DC-7 · DC-12 · DC-13 · DC-14 · DC-15 · DC-16 ·
- * DC-17 · DC-20 · DC-21 · DC-24 · DC-25**.
- *
- * ## 왜 MockMvc 가 아닌가 (명세 §5-1)
- *
- * **C-R** — 업로드·401·multipart 파싱·상한 초과 응답은 컨테이너가 만드는 것이라 목으로
- * **재현되지 않으면서 통과한다**. 이 저장소는 헤더 쪽에서 이미 그 형태의 거짓 초록을 겪었다
- * (계약 `x-phase3-measurement.method`).
- *
- * **C-I** — 소유권 404 는 두 사용자와 두 자원이 실제로 있어야 뜻이 있고, 「저장되지 않았다」는
- * 실 DB 에서만 확인된다.
- *
- * ## 「저장되지 않았다」를 **두 축으로** 잰다
- *
- * 명세는 DC-24 의 후속 확인을 `GET /documents` **0건**으로 적었다. 그 엔드포인트가 없던
- * 동안은 같은 사실을 **`documents` 행 수**로만 재고 「목록이 생기면 그쪽으로도 잰다」고
- * 적어 두었는데, 목록이 생겼으므로 **둘 다** 잰다(2026-08-21). 두 축이 겹치는 것이 아니다 —
- * 행 수는 「저장되지 않았다」이고 목록은 「사용자에게 보이지 않는다」다.
- *
- * ## 기대값은 계약 파일에서 읽는다
- *
- * 상태 코드·문구·헤더 값·상한·지원 형식 집합 전부 [ContractSpec] 경유다.
- */
+/** `POST /documents` 의 실측 계약 — 명세 §5 의 C-R·C-I 계층. */
 @SpringBootTest(
     webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
     properties = ["easydoc.auth.jwt-secret=$DOCUMENT_REACH_TEST_SECRET"],
@@ -65,16 +40,11 @@ class DocumentEndpointReachTest {
 
     private val json = ObjectMapper()
 
-    // ================================================================ 컨테이너 상한 (D-1 의 L0)
-
     @Test
     @DisplayName("컨테이너 multipart 상한이 계약 업로드 상한 **이상**이다 — 경계 판정을 서비스가 지게 하는 전제")
     fun `컨테이너 상한이 계약 상한보다 넉넉하다`() {
         val contractLimit = ContractSpec.inputLimit(MAX_UPLOAD_BYTES_KEY).toLong()
 
-        // 이 전제가 깨지면 DC-13(정확히 상한인 파일)이 **컨테이너에서** 잘린다.
-        // 그때 나가는 413 은 우리 문구가 아니라 컨테이너 판정의 결과이고, Spring 이 그것을
-        // 알아내는 방식이 Tomcat 예외 **메시지 문자열 매칭**이라 조용히 500 이 되기도 한다.
         assertThat(multipart.maxFileSize.toBytes())
             .withFailMessage("max-file-size 가 계약 상한보다 작다 — 경계 판정이 컨테이너로 넘어간다")
             .isGreaterThan(contractLimit)
@@ -82,8 +52,6 @@ class DocumentEndpointReachTest {
             .withFailMessage("max-request-size 가 max-file-size 이하다 — 파트 헤더 오버헤드만큼 경계가 어긋난다")
             .isGreaterThan(multipart.maxFileSize.toBytes())
     }
-
-    // ================================================================ 파일 모드 (DC-4 ~ DC-7)
 
     @Test
     @DisplayName("DC-4 파일 업로드 성공 — JSON 경로와 **같은** 성공 상태·같은 키 집합 (X-G1)")
@@ -114,13 +82,12 @@ class DocumentEndpointReachTest {
     fun `파일 파트가 없으면 422 문자열이다`() {
         val token = newAccount()
 
-        // ⑴ 이름이 틀린 파일 파트 ⑵ 이름은 맞는데 **파일이 아닌** 값 파트.
         val wrongName = upload(token, MultipartBody().file("upload", "안내문.docx", UploadFixtures.sampleDocx()))
         val notAFile = upload(token, MultipartBody().value(FILE_PART, "본문 문자열"))
 
         listOf(wrongName, notAFile).forEach { response ->
             assertDeclaredStatus(response, UNPROCESSABLE)
-            // `@RequestPart` 로 받으면 여기서 **배열**이 나간다 — 계약은 문자열이다.
+
             assertThat(bodyOf(response)[DETAIL]).isInstanceOf(String::class.java)
         }
     }
@@ -146,13 +113,11 @@ class DocumentEndpointReachTest {
             )
         assertDeclaredStatus(malformed, UNPROCESSABLE)
         assertThat(bodyOf(malformed)[DETAIL]).isInstanceOf(String::class.java)
-        // 입력값 비반향 — 계약이 「값 자체는 메시지에 담지 않는다」고 못박았다.
+
         assertThat(malformed.body())
             .withFailMessage("제출한 작업 공간 식별자가 응답에 그대로 실렸다")
             .doesNotContain(SUBMITTED_BAD_WORKSPACE)
     }
-
-    // ================================================================ 업로드 상한 (DC-12 · DC-13)
 
     @Test
     @DisplayName("DC-12 업로드 바이트가 상한 초과 → **413**(422 아님) · detail 문자열 · 값이 계약 예시와 같다 · 사적 헤더 2종 (X-F3)")
@@ -166,8 +131,7 @@ class DocumentEndpointReachTest {
         assertThat(bodyOf(response)[DETAIL]).isInstanceOf(String::class.java)
         assertThat(bodyOf(response)[DETAIL])
             .isEqualTo(ContractSpec.responseExampleDetail(PAYLOAD_TOO_LARGE_COMPONENT, TOO_LARGE_EXAMPLE))
-        // D-3 — 초과분을 삼키지 않으면 연결이 리셋돼 **본문 자체가 오지 않는다.**
-        // 위 단언이 그것을 함께 잡는다(본문이 없으면 파싱에서 끊긴다).
+
         assertPrivateHeaders(response)
     }
 
@@ -177,7 +141,6 @@ class DocumentEndpointReachTest {
         val token = newAccount()
         val exact = UploadFixtures.docxOfExactSize(ContractSpec.inputLimit(MAX_UPLOAD_BYTES_KEY))
 
-        // 전제 — 만든 파일이 실제로 그 크기다. 어긋나면 아래 통과가 다른 이유의 통과다.
         assertThat(exact.size).isEqualTo(ContractSpec.inputLimit(MAX_UPLOAD_BYTES_KEY))
 
         val response = upload(token, MultipartBody().file(FILE_PART, "안내문.docx", exact))
@@ -187,15 +150,11 @@ class DocumentEndpointReachTest {
             .isEqualTo(ContractSpec.successStatus(DOCUMENTS_PATH, POST))
     }
 
-    // ================================================================ 형식 (DC-14 · DC-15)
-
     @Test
     @DisplayName("DC-14 계약이 든 지원 형식 **각각**을, 대소문자를 섞은 확장자로 보내도 전부 통과한다 (X-F4)")
     fun `지원 형식 전부가 대소문자와 무관하게 통과한다`() {
         val declared = ContractSpec.strings(INPUT_LIMITS, SUPPORTED_FORMATS_KEY)
 
-        // 케이스를 계약에서 **유도한다** — 집합이 늘어도 검사가 안 늘면 새 형식이
-        // 검사 자체를 받지 않는다(P-26 과 같은 형태).
         assertThat(declared).isNotEmpty()
         declared.forEach { format ->
             val token = newAccount()
@@ -240,14 +199,10 @@ class DocumentEndpointReachTest {
 
         val response = upload(token, MultipartBody().file(FILE_PART, "안내문.docx", UploadFixtures.legacyWordContainer()))
 
-        // 문구의 출처는 계약 `x-input-limits.legacy_doc_policy` 산문이다. 값을 코드에 적지
-        // 않고 **그 산문이 우리 문구를 담고 있는지**로 묶는다.
         assertThat(ContractSpec.text(INPUT_LIMITS, LEGACY_DOC_POLICY_KEY))
             .withFailMessage("계약의 구버전 doc 조항과 나간 문구가 갈렸다")
             .contains(bodyOf(response)[DETAIL].toString())
     }
-
-    // ================================================================ 소유권 (DC-16 · DC-17)
 
     @Test
     @DisplayName("DC-16 남의 작업 공간 식별자 → **404**(403 아님) · detail 이 계약 404 예시와 같다 (X-B1)")
@@ -258,20 +213,13 @@ class DocumentEndpointReachTest {
         val response = createFromText(mine, textBody("본문", workspaceId = othersWorkspace))
 
         assertDeclaredStatus(response, NOT_FOUND)
-        // 「404 가 맞다」만 단언하면 구현이 금지 응답을 내도 다른 테스트가 안 잡을 수 있다.
-        // 소유권을 숨기지 않으면 남의 작업 공간 **존재 자체**가 드러난다.
+
         assertThat(response.statusCode()).isNotEqualTo(FORBIDDEN)
         assertThat(bodyOf(response)[DETAIL])
             .isEqualTo(ContractSpec.pathExampleDetail(DOCUMENTS_PATH, POST, NOT_FOUND, WORKSPACE_NOT_FOUND_EXAMPLE))
     }
 
-    /**
-     * **성질 P1 — 응답 구별 불가.** 판정은 [OwnershipConcealment] 한 벌이 진다.
-     *
-     * `privacy-gate` 회차 2 X1-1 이 지목한 형제는 셋이었으나(`DL-9`·`DD-3`·`WR-4`) 같은 성질을
-     * 재는 자리는 **넷**이다 — 이것이 넷째다. 판정을 한 벌로 합칠 때 이 자리를 빼면 그 순간
-     * 「한 벌」이 거짓 전칭이 된다.
-     */
+    /** 성질 P1 — 응답 구별 불가. 판정은 [OwnershipConcealment] 한 벌이 진다. */
     @Test
     @DisplayName("DC-17 없는 작업 공간과 남의 작업 공간의 상태·본문 **원시 바이트**·헤더 이름 집합이 **완전히 같다** (X-B2)")
     fun `없는 것과 남의 것이 구분되지 않는다`() {
@@ -281,8 +229,6 @@ class DocumentEndpointReachTest {
 
         OwnershipConcealment.assertIndistinguishable("POST $DOCUMENTS_PATH", absent, others)
     }
-
-    // ================================================================ 인증 (DC-20 · DC-21)
 
     @Test
     @DisplayName("DC-20 토큰 없이 업로드 → 401 · WWW-Authenticate · 본문 키가 정확히 ErrorResponse.required (X-A1 · X-C8)")
@@ -299,14 +245,10 @@ class DocumentEndpointReachTest {
     @Test
     @DisplayName("DC-21 위조 토큰 + 빈 본문 → **401**(422 가 아니다) — 인증이 입력 검증보다 먼저다 (X-A3)")
     fun `인증이 입력 검증보다 먼저다`() {
-        // 이 순서가 뒤집히면 토큰 없이 API 표면을 탐색할 수 있다. 인터셉터가 인자 해석보다
-        // 앞이라는 배치의 성질이라 **실제 체인에서만** 잰다.
         val response = send(post(FORGED_TOKEN, JSON_MEDIA_TYPE, "{}".toByteArray(Charsets.UTF_8)))
 
         assertDeclaredStatus(response, UNAUTHORIZED)
     }
-
-    // ================================================================ 저장 정의역 (DC-24 · DC-25)
 
     @Test
     @DisplayName("DC-24 짝 없는 서로게이트 본문(JSON 이스케이프) → 422 · detail 문자열 · 계약 값과 같음 · **저장되지 않음** (X-K1)")
@@ -315,20 +257,16 @@ class DocumentEndpointReachTest {
         val domain = ContractSpec.storedTextDomain()
         val before = documentCount(token)
 
-        // Jackson 3 은 짝 없는 서로게이트 이스케이프를 **통과시킨다**(2026-08-20 실측).
-        // 그래서 이 경로가 저장 정의역 위반의 실물 무대다.
         val response = send(post(token, JSON_MEDIA_TYPE, surrogateBodyBytes()))
 
         assertThat(response.statusCode()).isEqualTo(domain.status)
         assertThat(ContractSpec.observedDetailType(bodyOf(response)[DETAIL])).isEqualTo(domain.detailShape)
         assertThat(bodyOf(response)[DETAIL]).isEqualTo(domain.detail)
-        // **상태 코드만 재면 「422 는 냈는데 이미 넣었다」가 지나간다.**
+
         assertThat(documentCount(token))
             .withFailMessage("거절된 업로드가 저장됐다 — 422 를 내기 전에 커밋된 경로가 있다")
             .isEqualTo(before)
-        // **사용자가 보는 축으로도 잰다** — 명세가 적은 후속 확인이 `GET /documents` 0건이고,
-        // 그 엔드포인트가 `GET /documents` 커밋에서 생겼다(위 KDoc 「목록이 생기면 그쪽으로도
-        // 잰다」의 마감). 행 수만 재면 목록 구현이 지워진 행을 캐시해 내보내는 형태를 못 본다.
+
         assertThat(listedDocumentIds(token))
             .withFailMessage("거절된 업로드가 목록에 보인다 — DB 행은 없는데 응답이 만들어졌다")
             .isEmpty()
@@ -339,8 +277,6 @@ class DocumentEndpointReachTest {
     fun `제목의 서로게이트는 걷어내고 접수한다`() {
         val token = newAccount()
 
-        // DC-24 의 대비 쌍이다. 같은 문자인데 본문은 거절, 제목은 정제 — 두 처분이 한
-        // 코드로 묶이면 둘 중 하나가 반드시 뒤집힌다(N-34 · R-3 이 재는 축).
         val response = send(post(token, JSON_MEDIA_TYPE, surrogateTitleBodyBytes()))
 
         assertThat(response.statusCode()).isEqualTo(ContractSpec.successStatus(DOCUMENTS_PATH, POST))
@@ -361,8 +297,6 @@ class DocumentEndpointReachTest {
         assertThat(storedTitles(token).single()).isEqualTo(ContractSpec.text(TITLE_POLICY, FALLBACK_TITLE_KEY))
     }
 
-    // ================================================================ 요청 조립
-
     private fun newAccount(): String {
         val email = "document${counter++}@example.test"
         val credentials = json.writeValueAsString(mapOf("email" to email, "password" to VALID_PASSWORD))
@@ -381,7 +315,7 @@ class DocumentEndpointReachTest {
         body: String,
     ): HttpResponse<String> = send(post(token, JSON_MEDIA_TYPE, body.toByteArray(Charsets.UTF_8)))
 
-    /** 같은 요청을 **바이트로** 받는다 — P1 만 디코딩을 지나지 않는 팔을 쓴다. */
+    /** 같은 요청을 바이트로 받는다 — P1 만 디코딩을 지나지 않는 팔을 쓴다. */
     private fun createFromTextBytes(
         token: String?,
         body: String,
@@ -402,12 +336,7 @@ class DocumentEndpointReachTest {
             },
         )
 
-    /**
-     * 짝 없는 서로게이트를 **JSON `\u` 이스케이프**로 실은 본문 바이트.
-     *
-     * Jackson 으로 직렬화하면 우리 쪽 인코더가 그 문자를 만나 치환하거나 끊을 수 있어,
-     * **바이트를 직접 적는다** — 재는 것은 서버가 그 이스케이프를 어떻게 다루는가다.
-     */
+    /** 짝 없는 서로게이트를 JSON `\u` 이스케이프로 실은 본문 바이트. */
     private fun surrogateBodyBytes(): ByteArray = """{"text":"안내$SURROGATE_ESCAPE 문"}""".toByteArray(Charsets.UTF_8)
 
     private fun surrogateTitleBodyBytes(): ByteArray =
@@ -434,7 +363,7 @@ class DocumentEndpointReachTest {
     private fun send(builder: HttpRequest.Builder): HttpResponse<String> =
         HttpClient.newHttpClient().send(builder.build(), HttpResponse.BodyHandlers.ofString(Charsets.UTF_8))
 
-    /** 계약이 든 형식 이름에 해당하는 정상 fixture. 모르는 형식이면 **끊는다**. */
+    /** 계약이 든 형식 이름에 해당하는 정상 fixture. 모르는 형식이면 끊는다. */
     private fun sampleFor(format: String): ByteArray =
         when (format) {
             SourceFormat.DOCX.wireName -> UploadFixtures.sampleDocx()
@@ -446,15 +375,7 @@ class DocumentEndpointReachTest {
     /** 첫 글자만 대문자로 — 확장자 비교가 대소문자를 가리는지 보는 값이다. */
     private fun mixedCase(format: String): String = format.replaceFirstChar(Char::uppercaseChar)
 
-    // ================================================================ DB 확인
-
-    /**
-     * `GET /documents` 가 내놓는 문서 식별자들. 「저장되지 않았다」의 **사용자 축**이다.
-     *
-     * [documentCount] 와 겹치는 것이 아니라 다른 것을 잰다 — 저쪽은 행이 없다는 사실이고
-     * 이쪽은 **사용자에게 보이지 않는다**는 사실이다. 둘이 갈리는 형태(캐시·중간 뷰)가
-     * 실제로 있을 수 있으므로 둘을 함께 둔다.
-     */
+    /** `GET /documents` 가 내놓는 문서 식별자들. 「저장되지 않았다」의 사용자 축이다. */
     private fun listedDocumentIds(token: String): List<String> {
         val response =
             send(
@@ -486,8 +407,6 @@ class DocumentEndpointReachTest {
         kr.easydoc.api.support.TestJwt
             .payload(token)["sub"]
             .toString()
-
-    // ================================================================ 단언 도구
 
     private fun assertPrivateHeaders(response: HttpResponse<String>) {
         ContractSpec.globalHeaderValues().forEach { (header, value) ->
@@ -557,7 +476,7 @@ class DocumentEndpointReachTest {
         /** 상한 초과 파일을 채우는 바이트. 내용은 판정에 쓰이지 않는다(크기 검사가 먼저다). */
         private const val OVERSIZED_FILLER: Byte = 0x41
 
-        /** JSON 본문에 **문자로** 적는 이스케이프. 소스에 실제 서로게이트를 싣지 않는다. */
+        /** JSON 본문에 문자로 적는 이스케이프. 소스에 실제 서로게이트를 싣지 않는다. */
         private const val SURROGATE_ESCAPE = "\\ud800"
         private const val LONE_SURROGATE = "\uD800"
         private const val TITLE_PREFIX = "안내"

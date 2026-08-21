@@ -7,7 +7,7 @@ import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
 
 /**
- * 제어문자·보이지 않는 문자는 소스에 **리터럴로 적지 않는다** — diff 에서 보이지 않고,
+ * 제어문자·보이지 않는 문자는 소스에 리터럴로 적지 않는다 — diff 에서 보이지 않고,
  * 편집기나 붙여넣기가 조용히 지워도 테스트는 계속 통과한다(무엇을 검증하는지가 사라진다).
  * 전부 `\uXXXX` 로 적는다.
  */
@@ -49,9 +49,6 @@ class TextNormalizationTest {
     @Test
     @DisplayName("보이지 않지만 제어문자가 아닌 문자는 건드리지 않는다")
     fun `제어문자가 아닌 보이지 않는 문자는 유지한다`() {
-        // 소프트하이픈·ZWSP·BOM 은 XML 이 담을 수 있다. 마스킹이 탐색용 뷰에서만 걷어내고
-        // 원문은 보존하는 문자들이라, 여기서 지우면 자리표시자 복원이 깨진다
-        // (kr.easydoc.core.privacy.maskText 의 "입력을 정확히 복원한다" 성질).
         val text = "소프트하이픈\u00AD폭없는공백\u200B비오엠\uFEFF"
         assertThat(stripControlChars(text)).isEqualTo(text)
     }

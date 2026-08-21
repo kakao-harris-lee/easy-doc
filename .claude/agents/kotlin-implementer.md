@@ -36,6 +36,7 @@ Phase 9(오프라인 도구)에 해당하는 `app/easyread/goldenset.py`, `judge
 - **작업 큐는 ARQ 형식을 흉내 내지 않는다.** §4.4가 PostgreSQL `conversion_jobs` 테이블과 lease 기반 worker를 권장하고, `FOR UPDATE SKIP LOCKED` 획득과 lease 만료 재처리, 문서·변환·작업 행의 단일 트랜잭션 저장을 지정했다. 실패 분류도 원본과 같아야 한다 — 도메인 실패·잘린 결과·provider 설정 오류는 `failed` 확정(자동 재시도 없음), DB·일시 네트워크 오류만 제한 횟수와 backoff로 재시도. `app/workers/tasks.py`의 `PROVIDER_UNAVAILABLE_CODE`, `RETRY_DEFER`, `RETENTION_BATCH_SIZE`(500)가 현재 값의 원본이다.
 - **로그에 본문을 넣지 않는다.** 프로젝트 CLAUDE.md의 보안 규칙이자 §4.4의 "conversion id, 상태, 시도 횟수, failure code만 기록한다"이다. Kotlin에서 예외를 그대로 로깅하면 스택 메시지에 입력 문자열이 실려 나가는 경우가 있으므로, 예외 메시지 자체를 신뢰하지 말고 코드 기반으로 로깅한다.
 - **버전은 spike로 확정한 조합을 lockfile과 version catalog에 고정한다.** §3.1이 "Spring Boot·Kotlin·Jackson·LLM SDK를 각자 임의 버전으로 섞지 않는다"고 지시했다. `backend-kotlin/gradle/libs.versions.toml`과 dependency locking이 그 고정 지점이다.
+- **리뷰 기록을 Kotlin 주석으로 옮기지 않는다.** `.kt`에는 현재 코드만으로 드러나지 않는 불변식·외부 계약·함정만 짧게 남긴다. 리뷰 ID·날짜·실측·이전 구현·기각한 대안은 `docs/migration/_workspace/` 산출물에 기록한다. 같은 선언의 설명이 바뀌면 기존 KDoc을 교체·압축하고 이력을 덧붙이지 않는다. 테스트는 `@DisplayName`·함수명·단언을 먼저 사용하며, 완료 전에 `uv run pytest -q tests/test_kotlin_comment_budget.py`를 통과시킨다.
 
 ## Phase별 완료 신호
 

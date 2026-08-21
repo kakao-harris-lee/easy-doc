@@ -1,11 +1,6 @@
 package kr.easydoc.core.llm
 
-/**
- * [FakeLlmProvider] 가 돌려줄 한 차례의 결과.
- *
- * 원본: `app/llm/fake.py` 의 `responses: list[str | Exception]`. Python 은 문자열과 예외를
- * 같은 리스트에 섞었는데, Kotlin 에서는 sealed 로 갈라 어느 쪽인지 타입이 말하게 한다.
- */
+/** [FakeLlmProvider] 가 돌려줄 한 차례의 결과. */
 sealed interface FakeLlmTurn {
     /** 준비된 응답을 돌려준다. */
     data class Reply(
@@ -26,31 +21,10 @@ data class FakeLlmCall(
     val options: LlmOptions,
 )
 
-/**
- * 준비된 응답을 순서대로 돌려주는 테스트 대역.
- *
- * 원본: `app/llm/fake.py::FakeProvider`.
- *
- * **실제 API 를 부르지 않는다.** 단위 테스트에서 LLM 호출을 대체하는 것이 존재 이유이고,
- * `core` 가 Spring·DB·HTTP 없이 테스트 가능해야 한다는 조건(계획 §3.2)을 만족시킨다.
- *
- * `main` 이 아니라 `testFixtures` 에 두는 이유: 제품 런타임에 가짜 구현이 실려 있으면
- * 배선 실수 하나로 운영에서 고정 문자열이 변환 결과로 나간다. 여기 두면 제품 클래스패스에
- * 아예 올라오지 않고, `application`·`worker` 테스트는 `testFixtures(project(":core"))`
- * 로 가져다 쓸 수 있다.
- */
+/** 준비된 응답을 순서대로 돌려주는 테스트 대역. */
 class FakeLlmProvider(
     turns: List<FakeLlmTurn>,
-    /**
-     * 어댑터가 완성 요청 **1건**을 만들기 위해 실제로 전송하는 횟수.
-     *
-     * 실제 어댑터(`AnthropicProvider`)는 재시도하지 않으므로 기본값이 1이다. 이 값을 올리면
-     * "타임아웃·5xx 때문에 같은 요청을 여러 번 전송하는 어댑터"를 흉내 낸다.
-     *
-     * **이 수는 변환 쪽에 보이지 않아야 한다.** 호출 상한(문서당 2회)이 세는 단위는 완성
-     * 요청이지 전송 시도가 아니다 — 합쳐 세면 상한이 재시도 설정에 따라 흔들리고, 모델에게
-     * 실제로 몇 번 물었는지도 잃는다(요구사항 인벤토리 §3.1 (가) 4).
-     */
+    /** 어댑터가 완성 요청 **1건**을 만들기 위해 실제로 전송하는 횟수. */
     private val transportAttemptsPerCall: Int = 1,
 ) : LlmProvider {
     override val name: String = "fake"

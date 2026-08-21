@@ -13,82 +13,7 @@ import java.nio.file.Paths
 import kotlin.io.path.extension
 import kotlin.io.path.readText
 
-/**
- * **암호문 열을 쓰는 UPDATE 는 봉투 두 값도 같은 문장에서 써야 한다** — 게이트 27 지적 ②.
- *
- * ## 왜 산문으로는 부족했나
- *
- * `ConversionRepository`·`DocumentRepository` KDoc 은 *"열 하나짜리 갱신 메서드를 만들지
- * 않는다"* 를 단일 UPDATE 강제의 근거로 들었다. 그런데 그것을 지키던 것은 **「지금 그런
- * 메서드가 없다」는 사실뿐이고 탐지기가 0개였다.** Phase 5 워커가 `updateEasyText(id, bytes)`
- * 를 더하는 순간 세대 v1 로 라벨된 행에 v2 암호문이 들어가고, 그 행은 **영원히 열리지
- * 않는다** — AAD 에 세대가 실리므로 태그 검증부터 실패한다.
- *
- * 프로젝트 규칙 4 가 정한 처방은 「금지 선언」을 넓히는 것이 아니라 **탐지형으로 갈아타는
- * 것**이다. 그래서 이 파일은 소스 전수에서 SQL 을 뽑아 **깨지면 빨개지는** 단언을 건다.
- *
- * ## 분모를 열거하지 않는다
- *
- * 감시 대상 테이블·열을 손으로 적지 않는다 — [EncryptedField] 의 `wireName`(`테이블.컬럼`)
- * 에서 **파생**한다. 열거하면 다섯 번째 암호문 열이 생겼을 때 그 열만 영영 탐지 밖에
- * 남는다(`ProvenanceCreationSitesTest` 가 감시 대상을 소스 선언과 대조하는 것과 같은 구조).
- *
- * ## 빈 분모는 통과가 아니다
- *
- * 대상 문장을 하나도 못 찾으면 **빨강**이다(규칙 4 ⑶). 저장소의 parity 게이트가 「선언
- * 도메인 0개에서 exit 0」이었던 것이 정확히 이 결함이고, 같은 자리를 다시 만들지 않는다.
- * [Scanner.requireNonEmpty] 가 그 판정이고, [`빈 분모는 통과가 아니다`] 가 그것을 실행으로
- * 확인한다.
- *
- * ## 이 장치가 **막지 못하는 것** (정직하게 적는다)
- *
- * - 문자열을 조립해 만든 SQL(`"UPDATE ${'$'}table SET …"`). 스캐너가 테이블 이름을
- *   못 읽으므로 대상에서 빠진다. **이 파일의 합성 probe 가 바로 그 형태**이고, 그래서
- *   probe 가 실제 스캔의 분모를 오염시키지 않는다 — 우회 통로이자 이 파일이 쓰는 통로다.
- *   막으려면 SQL 조립을 금지해야 하는데 그 금지의 강제자가 또 없다. 한 칸 더 옮기지 않는다.
- * - 저장 프로시저·마이그레이션 밖의 손 SQL·DB 클라이언트에서 직접 친 UPDATE.
- * - 이 파일 자신의 삭제. 최종 방어선은 `tests/test_kotlin_gate_reach.py` 의 선언 대조다.
- *
- * ## 주석은 **방향에 따라 다르게** 다룬다
- *
- * 하나의 정규화를 두 방향에 같이 쓰면 한쪽은 반드시 뒤집힌다. 실제로 뒤집혀 있었다 —
- * 초판은 **원시 SET 절에 봉투 열 정규식을 그대로** 걸어서
- * `SET 암호문열 = :value -- , encryption_scheme = :s, key_version = :v` 를 **준수로 통과**
- * 시켰다(실측). PostgreSQL 은 `--` 뒤와 블록 주석 안을 무시하므로 실제로는 암호문만
- * 바뀌고 세대는 그대로다 — 이 파일이 막으라고 세워진 바로 그 행, **영원히 열리지 않는 행**을
- * 가드가 승인한 것이다. 형제 장치 [OwnershipPredicateGuardTest] 가 같은 결함을 같은 날
- * 같은 기제로 갖고 있었고(소유 술어 쪽), 처방도 같다.
- *
- * **⑴ 문장 발견(분모)** — 이 UPDATE 가 암호문 쓰기인가. 주석을 **그대로 둔다**: Kotlin
- * 주석·KDoc 이 품은 SQL 도 센다. 분모를 넓히는 쪽이라 **fail-closed** 다. 문자열 리터럴만
- * 골라내는 렉서를 쓰지 않는 이유도 여기다 — 렉서 자신이 조용히 놓치는 표면이 된다. 예시를
- * 적고 싶으면 규약을 지키는 예시를 적거나 테이블 이름을 조립해 쓰라.
- *
- * **⑵ 준수 판정** — 이 문장이 봉투 두 열을 **썼는가**. **주석과 문자열 리터럴을 걷어낸 뒤**
- * 판정한다 ([LiveSql.of]). 죽은 대입을 「썼다」로 세면 **fail-open** 이다. 걷어내면
- * fail-closed — 대입이 사라진 문장은 위반으로 올라온다.
- *
- * 리터럴 갈래는 **2026-08-21 게이트 28 P-7 #5** 로 닫혔다. 그때까지
- * `SET source_text_encrypted = :c, title = 'encryption_scheme = :s, key_version = :v'` 가
- * 준수로 통과했고, 그 갈래는 아래 「막지 못하는 것」 어디에도 **적혀 있지 않았다** —
- * 형제 장치의 같은 결함이 부분적으로 선언돼 있던 것과 갈리는 지점이고, 그래서 리더 판정이
- * 이쪽을 차단으로 두고 저쪽을 Major 로 내렸다.
- *
- * **이 둘을 하나로 합치지 마라.** ⑴ 의 근거(**분모는 넓을수록 안전하다**)를 ⑵ 에 옮겨
- * 적는 순간 이 결함이 그대로 되살아난다 — ⑵ 에서는 넓은 쪽이 **위험한 쪽**이다.
- *
- * ## 이 갈라치기가 **남기는 것** (정직하게 적는다)
- *
- * [Scanner.setClauseOf] 의 경계 찾기(`SET`·`WHERE` 키워드)는 여전히 **원시** 문장을 본다.
- * 주석에 든 `WHERE` 가 절을 일찍 끊으면 뒤의 진짜 봉투 대입이 잘려 **위반으로** 올라오고
- * (과잉 탐지 = fail-closed), 주석에 든 `SET` 은 절을 넓게 잡지만 넓어진 부분은 준수 판정
- * 직전에 걷어내기가 지운다. 둘 다 fail-open 이 아니라 그대로 둔다 — 경계 찾기를 걷어낸
- * 사본으로 옮기면 인덱스가 원문과 어긋나 [Scanner.CiphertextWrite.setClause] 가 실패
- * 메시지에서 엉뚱한 조각을 가리킨다.
- *
- * Kotlin 블록 주석·KDoc 은 문법이 블록 주석이라 걷어내기가 함께 지운다 — KDoc 이 품은
- * 예시 SQL 은 분모에 남고 봉투 대입은 잃어 **위반으로** 올라온다. 과잉 탐지 방향이다.
- */
+/** 암호문 열을 쓰는 UPDATE 는 봉투 두 값도 같은 문장에서 써야 한다 — 게이트 27 지적 ②. */
 class EnvelopeColumnWriteGuardTest {
     @TempDir
     lateinit var temp: File
@@ -114,8 +39,6 @@ class EnvelopeColumnWriteGuardTest {
     @Test
     @DisplayName("**빈 분모는 통과가 아니다** — 대상 SQL 을 하나도 못 찾으면 빨강이다")
     fun `빈 분모는 통과가 아니다`() {
-        // 실제 스캔의 분모부터 확인한다. 여기가 0이면 위 케이스는 「위반 0건」으로 초록인데
-        // 실제로는 아무것도 재지 않은 것이다.
         val writes = Scanner.scan(sourceRoot())
 
         assertThat(writes.map { it.file }.distinct())
@@ -125,7 +48,6 @@ class EnvelopeColumnWriteGuardTest {
             .describedAs("암호문 쓰기 문장 수 — 늘거나 줄면 그 diff 가 리뷰에 올라가야 한다")
             .hasSize(EXPECTED_STATEMENTS)
 
-        // 그리고 「0건이면 실패한다」는 판정 자체를 실행으로 확인한다.
         assertThatThrownBy { Scanner.requireNonEmpty(emptyList()) }
             .hasMessageContaining("한 건도 찾지 못했다")
     }
@@ -262,23 +184,11 @@ class EnvelopeColumnWriteGuardTest {
             .hasMessageContaining("SET")
     }
 
-    /**
-     * probe 가 쓰는 테이블·열 이름. **리터럴로 적지 않고 [EncryptedField] 에서 조립한다.**
-     *
-     * 조립하는 이유는 두 가지다. ⑴ 이름의 근거를 한 곳(enum)에 둔다. ⑵ 조립한 문자열은
-     * 스캐너가 읽지 못하므로 **이 파일의 probe 가 실제 스캔의 분모를 오염시키지 않는다** —
-     * 위반 SQL 을 리터럴로 적었더니 실제 스캔이 그것을 위반으로 잡았다(실측).
-     */
+    /** probe 가 쓰는 테이블·열 이름. 리터럴로 적지 않고 [EncryptedField] 에서 조립한다. */
     private val target: String get() = EncryptedField.CONVERSION_EASY_TEXT.wireName.substringBefore('.')
     private val column: String get() = EncryptedField.CONVERSION_EASY_TEXT.wireName.substringAfter('.')
 
-    /**
-     * 합성 소스 하나를 스캐너에 먹인다.
-     *
-     * **probe 마다 독립 디렉터리**를 준다. 같은 디렉터리에 쌓으면 뒤 probe 의 결과에 앞
-     * probe 의 문장이 섞여, 「대상 아닌 테이블은 잡히지 않는다」 같은 단언이 앞 케이스 때문에
-     * 빨개진다(실측으로 밟았다).
-     */
+    /** 합성 소스 하나를 스캐너에 먹인다. */
     private fun probe(
         name: String,
         sql: String,
@@ -300,12 +210,7 @@ class EnvelopeColumnWriteGuardTest {
         return root
     }
 
-    /**
-     * `documents`·`conversions` 를 UPDATE 하는 SQL 중 **암호문 열을 SET 하는 것**을 뽑는다.
-     *
-     * 파서가 아니라 훑개다. 문자열 리터럴만 골라내는 렉서를 두지 않는 이유는 KDoc 에 있다 —
-     * 과잉 탐지 방향이라 fail-closed 이고, 렉서는 그 자체가 조용히 놓치는 표면이 된다.
-     */
+    /** `documents`·`conversions` 를 UPDATE 하는 SQL 중 암호문 열을 SET 하는 것을 뽑는다. */
     private object Scanner {
         /** 암호문 열 한 곳을 쓰는 UPDATE 문 하나. */
         data class CiphertextWrite(
@@ -317,7 +222,7 @@ class EnvelopeColumnWriteGuardTest {
         /** 봉투 두 열. 이름이 스키마와 갈리면 `EncryptionSchemeSchemaTest` 가 먼저 빨개진다. */
         private val ENVELOPE_COLUMNS = listOf("encryption_scheme", "key_version")
 
-        /** 감시 대상 테이블·열. **열거가 아니라 [EncryptedField] 에서 파생한다.** */
+        /** 감시 대상 테이블·열. 열거가 아니라 [EncryptedField] 에서 파생한다. */
         private val TABLES: Set<String> = EncryptedField.entries.map { it.wireName.substringBefore('.') }.toSet()
         private val CIPHERTEXT_COLUMNS: Set<String> =
             EncryptedField.entries.map { it.wireName.substringAfter('.') }.toSet()
@@ -337,7 +242,7 @@ class EnvelopeColumnWriteGuardTest {
             }
 
         /**
-         * **한 건도 없으면 끊는다.** 「위반 0건」과 「대상 0건」은 완전히 다른 상태이고,
+         * 한 건도 없으면 끊는다. 「위반 0건」과 「대상 0건」은 완전히 다른 상태이고,
          * 후자를 초록으로 두면 이 파일은 아무것도 재지 않으면서 재는 척한다.
          */
         fun requireNonEmpty(writes: List<CiphertextWrite>) {
@@ -355,17 +260,13 @@ class EnvelopeColumnWriteGuardTest {
                 .findAll(text)
                 .mapNotNull { match ->
                     val setClause = setClauseOf(file, text, match.range.last + 1)
-                    // 분모는 **원시** SET 절로 판정한다 — 주석에 든 암호문 대입까지 대상에 넣는 쪽이
-                    // 넓은 쪽이고, 넓은 쪽이 fail-closed 다.
+
                     if (CIPHERTEXT_COLUMNS.none { assignsColumn(setClause, it) }) {
                         null
                     } else {
                         CiphertextWrite(
                             file = file,
                             setClause = setClause,
-                            // 준수 판정은 **주석을 걷어낸** SET 절로 한다. 여기서는 넓은 쪽이 위험한
-                            // 쪽이다 — 주석에 든 봉투 대입을 「썼다」로 세면 세대가 안 오른 행을
-                            // 준수로 승인한다. 클래스 KDoc 「주석은 방향에 따라 다르게 다룬다」.
                             setsEnvelope =
                                 LiveSql.of(setClause).let { live ->
                                     ENVELOPE_COLUMNS.all { assignsColumn(live, it) }
@@ -409,7 +310,7 @@ class EnvelopeColumnWriteGuardTest {
         const val SOURCE_ROOT_PROPERTY = "easydoc.kotlin.source.root"
 
         /**
-         * 암호문 열을 쓰는 SQL 이 사는 파일. **면제 목록이 아니라 인구조사다** — 여기 없는
+         * 암호문 열을 쓰는 SQL 이 사는 파일. 면제 목록이 아니라 인구조사다 — 여기 없는
          * 파일이 봐주는 것이 아니라, 목록이 바뀌면 그 diff 가 리뷰에 올라온다.
          */
         val EXPECTED_FILES =

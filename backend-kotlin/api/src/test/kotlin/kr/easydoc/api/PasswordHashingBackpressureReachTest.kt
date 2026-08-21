@@ -19,42 +19,15 @@ import java.net.http.HttpResponse
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CyclicBarrier
 
-/**
- * **해시 배압(세마포어 대기 상한 초과)의 HTTP 응답을 잰다** — 게이트 21 TST-2.
- *
- * ## 왜 필요한가
- *
- * `Argon2PasswordHasher` 가 대기 상한을 넘기면 [kr.easydoc.infrastructure.auth.PasswordHashingOverloadedException]
- * 을 던지고, 그것이 `GlobalExceptionHandler` 의 백스톱으로 떨어져 **계약이 든 500 + 고정
- * 문구**로 나간다. 그런데 그 선택을 재는 테스트가 **어느 계층에도 없었다** — 예외가
- * 던져지는지만 보는 infrastructure 단위 테스트 한 곳뿐이었고, 「클라이언트가 무엇을
- * 받는가」는 감사 1회가 봤을 뿐 빌드는 보지 않았다(실측 있음 ≠ 강제자 있음).
- *
- * 이 자리는 계약 소유자 판정이 걸려 있는 곳이기도 하다(500 유지 ↔ 503 개정, cross §4-1).
- * 어느 쪽으로 판정이 나든 **바뀌었는지를 빌드가 말해 주어야** 한다.
- *
- * ## 무엇을 재는가
- *
- * ⑴ 상태 코드가 **계약이 그 오퍼레이션에 선언한 것**인가 (상수 대조가 아니다),
- * ⑵ 본문이 계약 `InternalError` 예시의 고정 문구와 **정확히 같고** 최상위 키가 `detail` 하나인가,
- * ⑶ 계정이 있는 요청과 없는 요청의 배압 응답이 **같은 바이트**인가 (배압이 새 열거 채널이 되지 않는다),
- * ⑷ 사적 응답 헤더 2종이 배압 응답에도 붙는가,
- * ⑸ 대기 상한 값·예외 클래스 이름 같은 내부 사정이 본문에 실리지 않는가.
- *
- * ## 배선
- *
- * 자리 1개 · 대기 상한 1ms · 해시 비용은 낮춘 메모리로 수십 ms — 동시에 풀면 앞선 한 건을
- * 뺀 나머지가 반드시 상한에 걸린다. **부하를 만드는 것이 목적이 아니라 그 경로의 응답을
- * 고정하는 것이 목적**이므로, 실제 운영 파라미터로 240 동시를 만들지 않는다.
- */
+/** 해시 배압(세마포어 대기 상한 초과)의 HTTP 응답을 잰다 — 게이트 21 TST-2. */
 @SpringBootTest(
     webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
     properties = [
         "easydoc.auth.jwt-secret=$AUTH_REACH_TEST_SECRET",
-        // 자리 1개 + 대기 1ms → 동시 요청 대부분이 배압으로 떨어진다.
+
         "easydoc.auth.max-concurrent-hashes=1",
         "easydoc.auth.max-hash-wait-millis=1",
-        // 해시 1회가 대기 상한보다 확실히 오래 걸리면서도 스위트를 느리게 하지 않는 값.
+
         "easydoc.auth.argon2.memory-kib=16384",
     ],
 )
@@ -81,12 +54,11 @@ class PasswordHashingBackpressureReachTest {
                 "대기 상한을 넘긴 요청이 하나도 없다 — 무한 대기로 되돌아갔거나 배선이 바뀌었다. 관측된 코드: %s",
                 responses.map { it.second.statusCode() }.toSortedSet(),
             ).isNotEmpty()
-        // 반대쪽 — 전부 배압이면 「어떤 요청이든 500」과 구분되지 않는다.
+
         assertThat(responses.map { it.second.statusCode() }.toSet())
             .withFailMessage("모든 요청이 배압으로 떨어졌다 — 정상 경로가 살아 있는지 알 수 없다")
             .contains(UNAUTHORIZED)
 
-        // ⑴ 계약이 그 코드를 선언했는가.
         assertThat(ContractSpec.responseStatuses(LOGIN_PATH, POST))
             .withFailMessage("계약이 POST %s 에 %d 를 선언하지 않는다", LOGIN_PATH, OVERLOADED_STATUS)
             .contains(OVERLOADED_STATUS.toString())
@@ -94,27 +66,21 @@ class PasswordHashingBackpressureReachTest {
         val expectedDetail = ContractSpec.responseExampleDetail("InternalError", "unexpected")
         overloaded.forEach { (label, response) ->
             val body = json.readValue(response.body(), Map::class.java)
-            // ⑵ 최상위 키가 detail 하나, 값은 계약이 든 고정 문구.
+
             assertThat(body.keys.map { it.toString() }.toSet())
                 .withFailMessage("%s 의 배압 본문 최상위 키가 계약과 다르다: %s", label, body.keys)
                 .isEqualTo(ContractSpec.schemaRequired("ErrorResponse"))
             assertThat(body["detail"])
                 .withFailMessage("%s 의 배압 문구가 계약 예시와 다르다", label)
                 .isEqualTo(expectedDetail)
-            // ⑸ 내부 사정이 새지 않는다 — 대기 상한 값도 예외 이름도 본문에 없다.
+
             assertThat(response.body())
                 .withFailMessage("배압 응답이 내부 사정을 노출한다: %s", response.body())
                 .doesNotContain("Overloaded", "Semaphore", "argon", "Argon")
-            // ⑷ 사적 응답 헤더는 배압 응답에도 붙는다.
+
             assertPrivateHeaders(response)
         }
 
-        // ⑶ 계정이 있든 없든 같은 바이트다.
-        //
-        // **먼저 두 집단이 과부하 부분집합에 다 들어 있는지부터 본다.** 종전에는 본문
-        // distinct 개수만 봤는데, 그러면 한 집단만 전부 500 이고 다른 집단은 전부 401 이어도
-        // 본문이 하나뿐이라 통과한다 — 그리고 **바로 그 상태 코드 분포가 계정 존재 열거
-        // 신호다.** 「균일하다」를 재려면 비교 대상이 둘 다 있어야 한다(codex #6).
         val byAccount = overloaded.groupBy({ it.first }, { it.second.body() })
         assertThat(byAccount.keys)
             .withFailMessage(

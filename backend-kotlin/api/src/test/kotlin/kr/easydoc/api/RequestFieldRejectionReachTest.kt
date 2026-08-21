@@ -29,38 +29,8 @@ import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 
 /**
- * **F3 의 두 번째 강제자 (컨테이너 관측)** — 같은 판정([RequestFieldProbes])을 **실제 소켓**으로
+ * F3 의 두 번째 강제자 (컨테이너 관측) — 같은 판정([RequestFieldProbes])을 실제 소켓으로
  * 잰다. 재는 것은 「서버가 실제로 내보낸 바이트」다.
- *
- * ## 왜 슬라이스 축만으로는 부족한가 — 실측한 도달 경계 (2026-08-21)
- *
- * [RequestFieldRejectionLayerTest] 의 관측 지점은 `@WebMvcTest` 슬라이스다. 그래서 슬라이스에
- * 들어오지 않는 앞단 장치가 만든 응답은 **보이지 않는다.** 형태별로 길이 가드를 심어 재 봤다:
- *
- * | 앞단 장치 형태 | 슬라이스 축 | **이 축** |
- * |---|---|---|
- * | `@Component` 필터 | 본다 | 본다 |
- * | 임포트 안 된 `@Configuration` 의 `@Bean` 필터(= `CorsConfig` 형태) | **못 본다** | **본다** |
- * | 톰캣 Engine 밸브 | **못 본다**(톰캣이 없다) | **본다** |
- * | `WebMvcConfigurer.addInterceptors` 로 등록한 인터셉터 | 본다 | 본다 |
- * | `@Component` `HandlerInterceptor`(등록 없음) | 대상 아님 — **가드로 성립하지 않는다** | 같음 |
- * | `WebMvcConfigurer.addArgumentResolvers` 의 커스텀 리졸버 | 대상 아님 — **불리지 않는다** | 같음 |
- *
- * 가운데 두 줄이 이 파일의 존재 이유다. 이 저장소는 **요청 단계 장치를 바로 그 자리(Engine
- * 밸브)로 옮긴 전력이 있고**(사적 응답 헤더 — 필터 단층으로 6종이 비어 밸브를 더했다),
- * 그러므로 「앞단 가드가 MockMvc 가 못 보는 데 산다」는 것이 이 저장소의 가설이 아니라 선례다.
- *
- * 슬라이스 축을 지우지 않는 이유: 도커·DB 없이 돌고 DTO 가 생기는 즉시 돈다. 두 축은
- * **관측 지점만** 다르고 판정은 한 벌이다.
- *
- * ## 여전히 증명하지 못하는 것
- *
- * ⑴ 이 축도 **구현된 오퍼레이션만** 잰다 — `edited_text` 는 C7 까지 프로브가 없고 그 사실이
- *    슬라이스 축의 `PINNED_WITHOUT_DTO` 로 드러난다. ⑵ 프로브가 쓰는 「정규화가 걷어내는
- *    잡음」은 계약 `measured_on` **산문에서 손으로 옮긴 것**이라, 계약이 정규화 규칙을 바꾸면
- *    잡음 선택이 갈릴 수 있다. ⑶ **관측창이 경계 ±1 근처다** — 계약보다 느슨한 경계를 가진
- *    제약은 여기서도 발화하지 않는다. 그 자리는 [RequestFieldConstraintLayerTest] 가
- *    (전이적) `@Constraint` 보유로 덮는다(R-4). 세 잔여는 산출물에 적었다.
  */
 @SpringBootTest(
     webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
@@ -71,12 +41,7 @@ class RequestFieldRejectionReachTest {
     @LocalServerPort
     private var port: Int = 0
 
-    /**
-     * **스프링이 구성한** 검증기. [ConstraintMetadata.standalone] 과 다른 인스턴스다.
-     *
-     * 프로그램적 `ConstraintMapping` 은 이 빈에만 배선되므로 그 선언 형태는 **여기서만** 보인다
-     * (실측 표는 [ConstraintMetadata] KDoc).
-     */
+    /** 스프링이 구성한 검증기. [ConstraintMetadata.standalone] 과 다른 인스턴스다. */
     @Autowired
     private lateinit var springValidator: Validator
 
@@ -86,8 +51,7 @@ class RequestFieldRejectionReachTest {
     @DisplayName("실제 소켓으로도 길이·정규화·문구 갈래가 서비스 층에서 판정된다 — 앞단 장치가 만든 응답까지 본다 (F3)")
     fun `나간 바이트로 재도 스키마 층 거절이 없다`() {
         val probes = probes()
-        // 도달 대조는 슬라이스 축이 정확 열거 핀으로 진다. 여기서는 **분모가 비지 않았는지**만
-        // 본다 — 0건을 훑고 통과하는 상태를 막는 최소 단언이다.
+
         assertThat(probes.keys)
             .withFailMessage("프로브가 하나도 없다 — 이 축은 아무것도 재지 않는다")
             .isNotEmpty()
@@ -122,43 +86,7 @@ class RequestFieldRejectionReachTest {
             .isTrue()
     }
 
-    // ================================================================ 독립 oracle (β-22)
-
-    /**
-     * **이 축의 판정을 [RequestFieldProbes] 밖에서 한 번 더 한다.**
-     *
-     * ## 왜 필요한가 (교차 종합 β-22)
-     *
-     * 위 케이스와 형제 [RequestFieldRejectionLayerTest] 는 관측 지점만 다르고 **판정은
-     * `RequestFieldProbes.measure` 한 벌을 공유한다**. 판정 한 벌은 두 축이 서로 다른 것을
-     * 재는 것을 막지만, 그 판정 함수 자신이 오판하면 **두 축이 동시에 초록**이다 —
-     * 그러면 「두 관측이 뒷받침한다」가 독립 근거가 아니다.
-     *
-     * 그래서 이 케이스는 **계약을 직접 읽고 자기 논리로 판정한다.** 공유하는 것은
-     * 요청 전송([probes])과 값 조립([RequestFieldProbes.valueOf])이고, **판정은 공유하지 않는다** —
-     * 전송·조립은 오판할 대상이 아니고(요청이 안 나가면 세 단언이 전부 깨진다), 오판하는 것은
-     * 상태·본문을 계약과 대조하는 논리다.
-     *
-     * ## 무엇을 재는가 — 세 값
-     *
-     * 계약이 필드마다 `limit` 과 방향(`x-service-constraint` 의 `max_length`/`min_length`)을
-     * 정했으므로 길이 셋의 처분이 계약에서 곧바로 나온다.
-     *
-     * | 길이 | 기대 | 왜 |
-     * |---|---|---|
-     * | `limit` | **통과** | 다섯 필드 전부 경계 포함이다 |
-     * | 위반 쪽(상한이면 `limit+1`, 하한이면 `limit-1`) | **422 + 문자열 detail ∈ 계약 문구** | 서비스 층 판정 |
-     * | 준수 쪽(상한이면 `limit-1`, 하한이면 `limit+1`) | **통과** | 방향이 뒤집히면 여기가 깨진다 |
-     *
-     * 셋째 줄이 β-21 을 이 축에서도 되짚는다 — 최대↔최소를 뒤집으면 둘째와 셋째가 **함께**
-     * 깨지고, 그 판정이 `measure` 를 지나지 않는다.
-     *
-     * ## 증명하지 못하는 것
-     *
-     * 정규화 축(`measured_on`)은 여기서 재지 않는다 — 그 축은 「원시 길이와 정규화 후 길이가
-     * 갈리는 값」을 만들어야 하고, 그 조립 규칙이 곧 `measure` 가 쓰는 것과 같아진다.
-     * 독립성을 늘리는 대신 축을 좁혔다.
-     */
+    /** 이 축의 판정을 [RequestFieldProbes] 밖에서 한 번 더 한다. */
     @Test
     @DisplayName("β-22 계약을 직접 읽는 **독립 판정**으로도 경계·방향·문구가 맞다 — 공유 판정 함수를 지나지 않는다")
     fun `계약 직독 판정이 같은 결론을 낸다`() {
@@ -201,14 +129,9 @@ class RequestFieldRejectionReachTest {
             ).isEmpty()
     }
 
-    // ================================================================ R-5 — 엔진 질의(컨테이너 축)
-
     @Test
     @DisplayName("R-5 스프링이 구성한 엔진도 계약 다섯 필드의 DTO 에서 제약을 0 개 본다 — 프로그램적 매핑까지 덮는 층이다")
     fun `스프링 엔진 메타데이터에 DTO 제약이 없다`() {
-        // 이 층이 따로 있는 이유는 하나다 — 프로그램적 `ConstraintMapping` 은 **스프링 빈에만**
-        // 배선되므로 컨텍스트 없는 `standalone` 엔진이 모른다(실측: `ConstraintMetadata` 표).
-        // 전제부터 단언한다: 두 엔진이 **같은 인스턴스가 아니어야** 이 층이 뜻을 갖는다.
         assertThat(springValidator)
             .withFailMessage("스프링 검증기가 standalone 과 같은 인스턴스다 — 이 층은 앞 층을 다시 재고 있을 뿐이다")
             .isNotSameAs(ConstraintMetadata.standalone)
@@ -238,8 +161,6 @@ class RequestFieldRejectionReachTest {
     @Test
     @DisplayName("R-5 스프링 엔진 질의도 **실제로 제약을 본다** — 제품 코드의 파라미터 제약으로 확인한다")
     fun `스프링 엔진 질의가 제약을 지목한다`() {
-        // `GET /documents` 의 `limit`·`offset` 은 계약이 요구한 스키마 층 제약이다.
-        // 이 층이 그것을 본다는 확인이 없으면 위 케이스의 0건은 아무 뜻이 없다.
         val observed = ConstraintMetadata.constraintsOf(springValidator, DocumentController::class.java)
 
         assertThat(observed.map { it.toString() })
@@ -247,7 +168,7 @@ class RequestFieldRejectionReachTest {
             .isNotEmpty()
     }
 
-    /** 계약 다섯 필드가 사는 DTO 클래스 중 **실재하는 것**. 없는 것은 조용히 빠진다(핀은 슬라이스 축이 진다). */
+    /** 계약 다섯 필드가 사는 DTO 클래스 중 실재하는 것. 없는 것은 조용히 빠진다(핀은 슬라이스 축이 진다). */
     private fun contractDtoClasses(): List<Class<*>> =
         RequestFieldProbes
             .contractFields()
@@ -255,11 +176,7 @@ class RequestFieldRejectionReachTest {
             .distinct()
             .mapNotNull { simpleName -> DTO_CLASSES.firstOrNull { it.simpleName == simpleName } }
 
-    // ================================================================ 프로브
-
     private fun probes(): Map<String, (String) -> Observed> {
-        // 계정을 프로브마다 새로 만들지 않는다 — 실제 Argon2 해시가 도는 축이라 비싸다.
-        // 문서·작업 공간 프로브는 서로 다른 값을 보내므로 한 계정으로 충돌하지 않는다.
         val documentOwner = newAccount()
         val workspaceOwner = newAccount()
         return mapOf(
@@ -325,13 +242,7 @@ class RequestFieldRejectionReachTest {
         /** 2xx. 독립 oracle 이 「통과」를 판정하는 창이다. */
         private val ACCEPTED_RANGE = 200..299
 
-        /**
-         * 계약 다섯 필드가 사는 DTO 후보. **컴파일 시점 참조**라 이름이 바뀌면 컴파일이 먼저 깨진다.
-         *
-         * 문자열 목록으로 두지 않는 이유는 그것이 조용히 아무것도 겨누지 않게 되기 때문이다.
-         * 아직 없는 `ConversionReviewRequest` 는 여기 없고, 그 사실의 강제자는 슬라이스 축의
-         * 정확 열거 핀(`PINNED_WITHOUT_DTO`)이다.
-         */
+        /** 계약 다섯 필드가 사는 DTO 후보. 컴파일 시점 참조라 이름이 바뀌면 컴파일이 먼저 깨진다. */
         private val DTO_CLASSES: List<Class<*>> =
             listOf(
                 SignupRequest::class.java,

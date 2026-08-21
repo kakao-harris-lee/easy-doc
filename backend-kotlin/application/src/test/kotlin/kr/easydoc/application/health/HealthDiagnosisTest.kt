@@ -5,17 +5,7 @@ import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
 
-/**
- * `status` 유도 규칙 — **Spring 도 DB 도 없이** 돈다.
- *
- * 계약 `HealthResponse.description` 이 정한 것: *"`status` 는 `checks` 에서 유도한다 —
- * 별개로 계산하지 않는다. `checks` 의 값이 모두 true 면 `ok`, 하나라도 false 면 `degraded`
- * 다. 둘이 어긋난 응답은 계약 위반이다(단언하기 쉬운 조항이므로 contract test 로 고정한다)."*
- *
- * 여기서 재는 것은 **규칙**이고, 그 규칙이 실제 응답 바이트로 나가는지는
- * `kr.easydoc.api.HealthContractTest` 가 잰다. 두 축이 필요한 이유는 규칙이 옳아도 배선이
- * 다른 값을 실을 수 있기 때문이다.
- */
+/** `status` 유도 규칙 — Spring 도 DB 도 없이 돈다. */
 class HealthDiagnosisTest {
     @Test
     @DisplayName("전부 도달 가능하면 `ok`")
@@ -32,8 +22,7 @@ class HealthDiagnosisTest {
         val report = HealthDiagnosis.diagnose(listOf(probe("database", true), probe("queue", false)))
 
         assertThat(report.status).isEqualTo(HealthDiagnosis.STATUS_DEGRADED)
-        // 유도가 실제로 `checks` 를 보는지 확인한다 — 상수 `degraded` 를 내는 구현도 위 단언을
-        // 통과하므로, 두 값이 **서로 맞는지**까지 본다.
+
         assertThat(report.checks).containsExactly(entry("database", true), entry("queue", false))
     }
 
@@ -51,8 +40,6 @@ class HealthDiagnosisTest {
     fun `배선되지 않은 것은 키 자체가 없다`() {
         val report = HealthDiagnosis.diagnose(listOf(probe("database", true)))
 
-        // 「죽었다」와 「확인 안 했다」는 다른 말이다(계약). `queue: false` 를 채워 넣으면
-        // 진단이 거짓말이 되고, 배포 담당자가 없는 장애를 쫓는다.
         assertThat(report.checks).containsOnlyKeys("database")
         assertThat(report.status).isEqualTo(HealthDiagnosis.STATUS_OK)
     }
@@ -62,7 +49,6 @@ class HealthDiagnosisTest {
     fun `던지는 probe 는 false 로 접힌다`() {
         val report = HealthDiagnosis.diagnose(listOf(probe("database", true), throwing("queue")))
 
-        // 예외가 올라가면 `/health` 자신이 5xx 가 되고 계약의 「항상 200」이 깨진다.
         assertThat(report.checks).containsExactly(entry("database", true), entry("queue", false))
         assertThat(report.status).isEqualTo(HealthDiagnosis.STATUS_DEGRADED)
     }

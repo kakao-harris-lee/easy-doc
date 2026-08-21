@@ -18,7 +18,7 @@ import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
 
 /**
- * **와이어에 무엇이 실리는가**를 확인한다. 어댑터가 만든 실제 HTTP 요청을 스텁 서버가
+ * 와이어에 무엇이 실리는가를 확인한다. 어댑터가 만든 실제 HTTP 요청을 스텁 서버가
  * 받아 그대로 기록하므로, 직렬화·헤더 조립·문자 인코딩까지 전부 이 검사를 통과한다.
  */
 class AnthropicProviderRequestTest {
@@ -71,11 +71,11 @@ class AnthropicProviderRequestTest {
         provider().complete(conversionPrompt())
 
         val body = parse(server.singleRequest().body)
-        // temperature/top_p/top_k: 현행 Claude 모델이 지원하지 않아 보내면 400 이다.
+
         assertThat(body.has("temperature")).isFalse()
         assertThat(body.has("top_p")).isFalse()
         assertThat(body.has("top_k")).isFalse()
-        // thinking: 미지정이 '끄기'가 아니라 적응형 사고 기본 켜기다. budget_tokens 는 400.
+
         assertThat(body.has("thinking")).isFalse()
     }
 
@@ -154,8 +154,7 @@ class AnthropicProviderRequestTest {
         val request = server.singleRequest()
         assertThat(request.body).doesNotContain(TEST_API_KEY)
         assertThat(request.path).doesNotContain(TEST_API_KEY)
-        // 요청 전체(요청 라인 + 모든 헤더 + 본문)에서 키가 나타나는 횟수는 정확히 1이어야 한다 —
-        // 그 하나가 x-api-key 헤더다. 본문만 검사하면 다른 헤더로 새는 경로를 놓친다.
+
         assertThat(request.wireDump().split(TEST_API_KEY)).hasSize(2)
     }
 

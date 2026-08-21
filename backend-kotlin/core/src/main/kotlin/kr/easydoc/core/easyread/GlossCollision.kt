@@ -27,14 +27,7 @@ private const val HANGUL_BASE = 0xAC00
 private const val JONGSEONG_COUNT = 28
 private const val JONGSEONG_MIEUM = 16
 
-/**
- * 명사형(-ㅁ/-음) 값이지만 낱말로 굳어 자연스럽게 쓰이는 것 — 검출 대상에서 뺀다.
- *
- * 원본: `app/easyread/style_rules.py::LEXICALIZED_GLOSSES`.
- *
- * "알림 문자를 받으세요"·"돌봄 서비스"·"처음 하시는 분"·"이름 하나만"처럼 정상 표현이
- * 오탐되기 때문이다. **사전 값이 바뀌면 이 목록도 함께 갱신해야 한다.**
- */
+/** 명사형(-ㅁ/-음) 값이지만 낱말로 굳어 자연스럽게 쓰이는 것 — 검출 대상에서 뺀다. */
 val LEXICALIZED_GLOSSES: Set<String> =
     setOf(
         "이름",
@@ -62,38 +55,10 @@ val LEXICALIZED_GLOSSES: Set<String> =
         "줄임",
     )
 
-/**
- * 복합어 뒷자리에 자주 쓰이는 키("사용 기한"·"납부 기한"·"신청 기일").
- *
- * 원본: `app/easyread/style_rules.py::COMPOUND_TAIL_KEYS`.
- *
- * 값이 관형구라 앞 낱말과 조사 없이 이어지면 "사용 정해진 날짜"류 비문이 된다.
- */
+/** 복합어 뒷자리에 자주 쓰이는 키("사용 기한"·"납부 기한"·"신청 기일"). */
 val COMPOUND_TAIL_KEYS: Set<String> = setOf("기한", "기일", "정액")
 
-/**
- * [COMPOUND_TAIL_KEYS] 가 복합어를 이룰 때 앞자리에 오는 낱말.
- *
- * 원본: `app/easyread/style_rules.py::COMPOUND_HEAD_NOUNS`.
- *
- * **열거가 이 패턴의 주 방어선이다.** "앞에 조사 없는 낱말이 오면 비문"으로 잡으면
- * "매달 정해진 금액"·"미리 정해진 날짜"·"학생에게 정해진 금액"처럼 정상 문장이 무더기로
- * 걸린다(부사·시간명사·다음절 조사). 실제 비문은 원문에 "사용 기한"·"납부 기일" 같은
- * 복합어가 있던 자리에서만 생기므로, 그 앞자리에 실제로 오는 낱말만 열거해 재현율을
- * 거의 잃지 않고 오탐을 없앤다.
- *
- * ## 선정 원칙
- *
- * 1. '기한'·'기일'·'정액' 앞에 **복합어로 붙는 동작성 한자어 명사**만 넣는다
- *    ("신고 기한"·"결제 기한"·"심사 기한"처럼 실제로 쓰이는 복합어여야 한다).
- * 2. **부사·시간명사는 절대 넣지 않는다.** "매달·미리·이미·올해·해마다"가 오탐의
- *    원인이었다 — 이 부류는 관형구를 자연스럽게 앞에서 꾸미므로 넣는 순간 정상 문장이
- *    비문으로 판정된다.
- * 3. 복합어를 이루지 않는 낱말은 재현율을 못 늘리면서 오탐 표면만 넓힌다. 확신이 없으면
- *    넣지 않는다("교육 기한"은 쓰이지 않아 뺐다).
- *
- * 사전 키에서 유도할 수 없다 — 이 낱말들은 대부분 사전에 없는 일반 명사다.
- */
+/** [COMPOUND_TAIL_KEYS] 가 복합어를 이룰 때 앞자리에 오는 낱말. */
 val COMPOUND_HEAD_NOUNS: Set<String> =
     setOf(
         // 신청·접수 절차
@@ -148,25 +113,13 @@ private fun isNominalized(value: String): Boolean {
         (last.code - HANGUL_BASE) % JONGSEONG_COUNT == JONGSEONG_MIEUM
 }
 
-/**
- * 검출 대상 명사형 뜻풀이.
- *
- * 파생 규칙이 "종성 ㅁ − [LEXICALIZED_GLOSSES]"라 사전에 -ㅁ 값이 새로 들어오면 자동으로
- * 편입된다 — 그래서 `StyleRuleDataSnapshotTest` 가 이 집합을 스냅샷으로 고정한다
- * (사전 확장 시 반드시 제외 여부를 판단하게 만드는 장치).
- */
+/** 검출 대상 명사형 뜻풀이. */
 val NOMINAL_GLOSSES: Set<String> =
     DIFFICULT_WORD_REPLACEMENTS.values
         .filter { isNominalized(it) && it !in LEXICALIZED_GLOSSES }
         .toSet()
 
-/**
- * 패턴 ②(체언 수식) 대상.
- *
- * 한 낱말짜리만 본다 — 여러 낱말짜리 값은 "해당하는 사람 중"처럼 체언이 뒤따르는 정상
- * 표현이 있다. 다른 뜻풀이의 꼬리인 값도 뺀다: '갱신 → 새로 고침'을 따른 결과가
- * '정정 → 고침'에 걸리면 사전이 자기모순이다.
- */
+/** 패턴 ②(체언 수식) 대상. */
 val MODIFIER_CHECKED_GLOSSES: Set<String> =
     NOMINAL_GLOSSES
         .filter { gloss ->
@@ -197,16 +150,7 @@ private const val NOT_AFTER_HANGUL = """(?<![가-힣])"""
 private val COMPOUND_HEAD_ALTERNATION: String =
     COMPOUND_HEAD_NOUNS.sorted().joinToString("|") { Pattern.quote(it) }
 
-/**
- * 검출 패턴. **사전에서 유도한다** — 목록을 손으로 복제하면 사전과 기준이 갈라진다.
- *
- * 1. 명사형 뜻풀이 + 용언: "내어 줌 받아"
- * 2. 한 낱말짜리 명사형 뜻풀이 + 체언: "뽑음 결과"
- * 3. 복합어 앞자리 낱말 + 관형구 뜻풀이: "사용 정해진 날짜"
- *
- * 세 묶음의 **순서와 각 묶음 안의 정렬 순서가 [findGlossCollisions] 의 결과에 영향을
- * 준다** — 같은 길이의 매치가 겹칠 때 먼저 온 것이 남기 때문이다. 순서를 바꾸지 않는다.
- */
+/** 검출 패턴. **사전에서 유도한다** — 목록을 손으로 복제하면 사전과 기준이 갈라진다. */
 val GLOSS_COLLISION_PATTERNS: List<Pair<String, Regex>> =
     buildList {
         NOMINAL_GLOSSES.sorted().forEach { gloss ->
@@ -226,15 +170,7 @@ val GLOSS_COLLISION_PATTERNS: List<Pair<String, Regex>> =
         }
     }
 
-/**
- * 뜻풀이가 축자로 끼워져 비문이 된 자리의 뜻풀이 목록.
- *
- * 원본: `app/easyread/style_rules.py::find_gloss_collisions`.
- *
- * 한 자리가 여러 패턴에 걸리면("사용 정해진 날짜"의 '정해진 날'과 '정해진 날짜')
- * **가장 긴 매치 하나만** 남긴다 — 같은 결함을 여러 건으로 세면 보정 채택 판정(위반
- * 건수 비교)이 왜곡된다.
- */
+/** 뜻풀이가 축자로 끼워져 비문이 된 자리의 뜻풀이 목록. */
 fun findGlossCollisions(text: String): List<String> {
     val matches =
         GLOSS_COLLISION_PATTERNS.flatMap { (gloss, pattern) ->

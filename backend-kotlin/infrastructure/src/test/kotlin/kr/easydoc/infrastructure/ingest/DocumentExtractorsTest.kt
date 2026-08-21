@@ -12,13 +12,7 @@ import org.junit.jupiter.params.provider.CsvSource
 import org.junit.jupiter.params.provider.NullAndEmptySource
 import org.junit.jupiter.params.provider.ValueSource
 
-/**
- * 디스패치 · 확장자 판별 · OLE2 3분기.
- *
- * `MultipartFile.getOriginalFilename()` 은 **널일 수 있고, 빈 문자열일 수 있고, 브라우저에
- * 따라 경로가 섞여 들어온다.** 정제는 프레임워크가 하지 않으므로(계획 §1.2 Q-9) 네 갈래를
- * 전부 여기서 흡수하는지 본다.
- */
+/** 디스패치 · 확장자 판별 · OLE2 3분기. */
 class DocumentExtractorsTest {
     private val extractors = DocumentExtractors()
 
@@ -66,10 +60,6 @@ class DocumentExtractorsTest {
     @Test
     @DisplayName("업로드 형식 집합이 **손으로 적은 값**과 같다 — 계약 대조는 UploadFormatContractTest 가 한다")
     fun `업로드 형식 집합이 못박은 값과 같다`() {
-        // **이 케이스가 재지 못하는 것**: 계약(`x-input-limits.supported_upload_formats`)이
-        // 바뀌어도 여기는 초록이다. 아래 기대값은 계약 파일에서 온 것이 아니라 손으로 적은
-        // 리터럴이다 — enum 이 **조용히** 바뀌는 것만 막는다(게이트 27 M-1).
-        // 계약과의 대조는 `api` 모듈의 `UploadFormatContractTest` 가 계약 파일을 읽어서 한다.
         assertThat(SourceFormat.UPLOAD_FORMATS.map { it.wireName }).containsExactly("docx", "pdf", "hwpx")
         assertThat(SourceFormat.entries.map { it.wireName }).containsExactly("text", "docx", "pdf", "hwpx")
         assertThat(SourceFormat.UPLOAD_FORMATS).doesNotContain(SourceFormat.TEXT)
@@ -95,7 +85,6 @@ class DocumentExtractorsTest {
     @Test
     @DisplayName("구버전 doc 은 **전용 문구**로 거절한다 (OLE2 2분기 — 계약 legacy_doc_policy)")
     fun `구버전 doc 을 가려낸다`() {
-        // 안내가 같으면 이 사용자는 있지도 않은 암호를 찾아 헤맨다.
         assertThatThrownBy { extractors.extract("안내문.docx", ole2With("WordDocument")) }
             .isInstanceOf(DocumentExtractionException::class.java)
             .hasMessage(ExtractionMessages.LEGACY_DOC)

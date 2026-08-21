@@ -8,39 +8,7 @@ import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
 
-/**
- * **실패 메시지에 원시 카나리가 실리지 않는다** — `CanaryProbe.report()` 자체를 재는 장치.
- *
- * ## 이 장치가 왜 생겼는가
- *
- * 같은 결함이 **두 번** 났다. 둘 다 기제가 **순서**다:
- * 1. **축을 넘는 누출**(게이트 28 stop-time codex ②) — 치환이 **자르기보다 뒤**여서, 창
- *    경계에 걸린 카나리 토막이 남았다. 토큰 축이 아닌 **본문 축** 조각의 앞 문맥에 Bearer
- *    토큰 꼬리가 딸려 나왔다.
- * 2. **시간축 누출**(같은 게이트, 다음 회차) — 치환이 **등록보다 앞**설 수 있어서, 토큰이
- *    등록되기 전에 만들어진 조각에 **토큰 원문이 동결**됐다. `rescanRetained()` 로 다시
- *    훑어도 `pinned` 가 재등록을 막아 되돌리지 못했다.
- *
- * 두 번 다 「구현이 조심해서」 지키는 성질이었고 **장치는 0개**였다. 그래서 성질을 직접
- * 단언하는 이 케이스를 세운다:
- *
- * > **카나리 집합이 불완전한 상태에서 조각을 만들지 않는다.**
- *
- * ## 왜 「원문 포함」이 아니라 「조각 포함」을 재는가
- *
- * 창은 ±60자라 긴 카나리(액세스 토큰은 150자 내외)는 **통째로 들어오지 않는다**. 그래서
- * `report.contains(token)` 은 유출을 놓친다 — 실제로 놓쳤다. 1번 결함의 실측 조각은
- * `-_uItImvEwdgfyU` 15자였고 `eyJ`(JWT 머리)도 `Bearer <값>` 도 걸리지 않았다.
- * 그래서 **needle 의 모든 길이 `FRAGMENT`(12) 부분 문자열**을 훑는다.
- *
- * ## 실패 메시지가 유출을 되풀이하지 않게
- *
- * 이 케이스가 실패할 때도 **조각 자체를 찍지 않는다** — 어느 축의 몇 번째 오프셋인지만
- * 말한다. 유출을 재는 장치가 유출하면 아무 의미가 없다.
- *
- * Spring 도 DB 도 쓰지 않는다 — `report()` 는 순수 함수에 가깝고, 그래서 이 성질은
- * 컨테이너 없이 잴 수 있다.
- */
+/** 실패 메시지에 원시 카나리가 실리지 않는다 — `CanaryProbe.report()` 자체를 재는 장치. */
 class CanaryProbeRedactionTest {
     @Test
     @DisplayName("인접한 다른 축의 카나리가 조각에 남지 않는다 (축을 넘는 누출)")
@@ -58,14 +26,11 @@ class CanaryProbeRedactionTest {
     @DisplayName("적중 뒤에 등록된 카나리도 조각에 남지 않는다 (시간축 누출)")
     fun `늦게 등록한 카나리도 조각에 남지 않는다`() {
         val probe = probe()
-        // 토큰은 발급 전이라 아직 값을 모른다 — 등록된 것은 본문뿐이다.
+
         probe.addCanary(BODY_AXIS, BODY)
 
-        // 이 줄이 본문 축으로 적중한다. 같은 줄에 토큰이 있지만 **아직 등록되지 않았다.**
         log(probe, "Authorization: Bearer $TOKEN\r\n\r\n{\"text\":\"$BODY\"}")
 
-        // 발급 뒤 등록하고, 보관분을 소급 대조한다 — 종전 구현은 여기서 되돌리지 못했다
-        // (`pinned` 가 같은 로거·축의 재등록을 막고, 동결된 문자열을 다시 치환하는 경로가 없었다).
         probe.addCanary(TOKEN_AXIS, TOKEN)
         probe.rescanRetained()
 
@@ -109,7 +74,7 @@ class CanaryProbeRedactionTest {
     @DisplayName("늦게 등록된 카나리가 보관분에 대해 적중을 낸다 — 소급 대조가 카나리 집합을 지난다")
     fun `늦게 등록해도 보관분에서 적중한다`() {
         val probe = probe()
-        // 등록 전에 방출된다 — 토큰이 발급 전인 상황과 같다.
+
         log(probe, "Authorization: Bearer $TOKEN")
 
         probe.addCanary(TOKEN_AXIS, TOKEN)
@@ -129,7 +94,6 @@ class CanaryProbeRedactionTest {
         val probe = probe()
         log(probe, "Authorization: Bearer $TOKEN")
 
-        // 순서가 뒤집힌다 — 이 축은 보관 구간을 한 번도 재지 못한다.
         probe.rescanRetained()
         probe.addCanary(TOKEN_AXIS, TOKEN)
 
@@ -146,7 +110,6 @@ class CanaryProbeRedactionTest {
         val probe = probe()
         log(probe, "late canary $CONTROL_VALUE emitted")
         probe.addControlCanary(CONTROL_AXIS, CONTROL_VALUE)
-        // rescanRetained() 를 부르지 않는다.
 
         assertThat(probe.controlHitAxes())
             .withFailMessage("소급 대조를 건너뛰었는데 통제 축이 적중했다 — 통제가 무엇을 재는지 흐려진다")
@@ -168,7 +131,7 @@ class CanaryProbeRedactionTest {
         assertThat(probe.hits())
             .withFailMessage("통제 적중이 유출 지목에 섞였다 — 두 집합이 갈리지 않았다:%n%s", probe.report())
             .isEmpty()
-        // 통제값도 치환된다 — 축별 예외를 두지 않는다.
+
         assertNoFragment(probe)
     }
 
@@ -190,7 +153,6 @@ class CanaryProbeRedactionTest {
     fun `등록하지 않은 축은 재고에 없다`() {
         val probe = probe()
         probe.addCanary(BODY_AXIS, BODY)
-        // 토큰 축을 등록하지 않는다 — 이것이 네 번째 결함의 변이 그 자체다.
 
         assertThat(probe.registeredAxes())
             .withFailMessage(
@@ -214,11 +176,9 @@ class CanaryProbeRedactionTest {
             .doesNotContain(CONTROL_VALUE)
     }
 
-    // ================================================================ 도구
-
     /**
-     * 잔여 판정은 [CanaryProbe.residualCanaryFragments] 가 **정본**이다 — 여기서 다시 정의하면
-     * 실제 도달 케이스와 갈린다. 이 케이스는 그 정본을 **적대적 입력에 물려** 재는 쪽이다.
+     * 잔여 판정은 [CanaryProbe.residualCanaryFragments] 가 정본이다 — 여기서 다시 정의하면
+     * 실제 도달 케이스와 갈린다. 이 케이스는 그 정본을 적대적 입력에 물려 재는 쪽이다.
      */
     private fun assertNoFragment(probe: CanaryProbe) {
         val residue = probe.residualCanaryFragments()

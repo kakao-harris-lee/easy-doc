@@ -47,45 +47,10 @@ import kr.easydoc.core.text.stripUnpairedSurrogates
 /** 제목을 정할 근거가 하나도 없을 때 쓰는 이름. */
 const val FALLBACK_TITLE: String = "제목 없음"
 
-/**
- * 제목을 정한다. **사용자가 제목 칸에 적어 준 값만** 쓴다.
- *
- * 본문도 파일 이름도 쓰지 않는다 — 사유는 이 파일 머리말의 ⑴·⑵ 다. 적어 준 것이 없거나
- * 다듬고 나서 남는 것이 없으면 [FALLBACK_TITLE] 이다.
- *
- * ## 다듬는 규칙 — 정본은 계약 `x-title-policy.rule` 이다
- *
- * 앞뒤 공백을 털고, **제어문자와 짝을 이루지 않은 UTF-16 서로게이트를 걷어내고**,
- * [MAX_TITLE_LENGTH] 에서 **자른다(거절하지 않는다)**. 상한 초과를 거절하지 않는 것은
- * 계약이 정한 것이다(`x-input-limits.max_title_length`) — 목록에 보일 이름일 뿐이라
- * 업로드를 통째로 실패시킬 이유가 없다.
- *
- * **서로게이트도 같은 이유로 거절이 아니라 정제다.** 계약
- * `x-title-policy.x-surrogate-note` 가 그 판정을 적었다 — 같은 필드에서 「길이는 자르고
- * 문자는 거절한다」로 갈리면 사용자가 **라벨 하나 때문에 문서 접수를 거절당한다.**
- * 저장되는 **본문**은 반대다: 거기서 잃는 것은 라벨이 아니라 문서이므로 거절이며
- * (`x-stored-text-domain` · [kr.easydoc.core.crypto.PlainBody]), **두 처분이 다른 것은
- * 실수가 아니다.** 판정 자체는 한 곳에서 온다 —
- * [kr.easydoc.core.text.stripUnpairedSurrogates] 와 `PlainBody` 가 같은 훑기를 쓴다.
- *
- * 걷어내는 것이 자르기보다 **먼저**다. 순서를 뒤집으면 잘린 길이가 보이는 글자 수와
- * 어긋나고, 남은 제어문자가 내보내기(XML) 시점에 터진다. 서로게이트를 먼저 걷어내면
- * 자르기가 보는 문자열에 **온전한 쌍만** 남아, [takeCodePoints] 의 경계 계산이 실제로
- * 사람이 세는 글자 수와 같아진다.
- *
- * @param given 사용자가 적어 준 제목. 없거나 다듬고 남는 것이 없으면 [FALLBACK_TITLE] 이다.
- */
+/** 제목을 정한다. **사용자가 제목 칸에 적어 준 값만** 쓴다. */
 fun resolveTitle(given: String?): String = sanitizeName(given.orEmpty().trim()) ?: FALLBACK_TITLE
 
-/**
- * 이름을 저장할 수 있는 모양으로 다듬는다. 남는 것이 없으면 `null`.
- *
- * 앞뒤 공백은 **한 번 더** 턴다 — 제어문자를 지우면 가려져 있던 공백이 드러난다
- * (`"\u0000 안내"` → `" 안내"`).
- *
- * **던지지 않는다.** 모든 갈래가 값을 돌려주거나 `null` 이다 — 제목이 업로드를 실패시키는
- * 통로를 만들지 않는다. 그것이 이 규칙과 `PlainBody` 의 처분을 가르는 자리다.
- */
+/** 이름을 저장할 수 있는 모양으로 다듬는다. 남는 것이 없으면 `null`. */
 private fun sanitizeName(raw: String): String? =
     takeCodePoints(stripUnpairedSurrogates(stripControlChars(raw)), MAX_TITLE_LENGTH)
         .trim()

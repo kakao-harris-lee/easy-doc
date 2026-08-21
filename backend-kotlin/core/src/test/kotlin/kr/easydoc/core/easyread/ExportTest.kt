@@ -8,19 +8,7 @@ import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.CsvSource
 import org.junit.jupiter.params.provider.ValueSource
 
-/**
- * 내보내기 순수 로직 — 파일명 정제 · RFC 5987 헤더 · TXT 바이트.
- *
- * 검증 축이 셋이다.
- *
- * 1. **파일명이 파일 시스템을 벗어나지 않는다** — 경로 구분자·제어문자가 남으면 저장이
- *    실패하거나 디렉터리를 벗어난다.
- * 2. **헤더가 RFC 5987 로 해석된다** — 한글 이름이 깨지거나 헤더 인코딩 오류가 나면
- *    사용자는 내려받기 자체를 못 한다.
- * 3. **본문이 한 글자도 더 지워지지 않는다** — 제어문자만 빠진다. 과잉 제거는 조용하다.
- *
- * 제어문자는 소스에 리터럴로 적지 않는다 — 전부 `<E>`XXXX 다.
- */
+/** 내보내기 순수 로직 — 파일명 정제 · RFC 5987 헤더 · TXT 바이트. */
 class ExportTest {
     @Nested
     @DisplayName("파일명 정제")
@@ -44,7 +32,6 @@ class ExportTest {
         @Test
         @DisplayName("금지 문자는 지우지 않고 공백으로 바꾼다 — 지우면 낱말이 붙는다")
         fun `낱말을 붙이지 않는다`() {
-            // `가/나` 가 `가나` 가 되면 원래 없던 낱말이 만들어진다.
             assertThat(exportFilename("가/나", ExportFormat.TXT)).isEqualTo("가 나.txt")
         }
 
@@ -52,7 +39,6 @@ class ExportTest {
         @ValueSource(strings = ["///", "   ", "...", "\u0000\u001F"])
         @DisplayName("제목이 통째로 지워지면 기본 이름을 쓴다")
         fun `빈 제목은 기본 이름이다`(title: String) {
-            // 확장자만 남은 이름(`.txt`)은 숨김 파일이 된다.
             assertThat(exportFilename(title, ExportFormat.TXT)).isEqualTo("쉬운 글.txt")
         }
 
@@ -67,7 +53,6 @@ class ExportTest {
         @Test
         @DisplayName("자른 자리에 점이 남으면 한 번 더 깎는다")
         fun `자른 뒤에도 점을 남기지 않는다`() {
-            // 80번째 문자가 점이면 `name..txt` 가 되어 윈도우가 거부한다.
             val stem = exportFilename("가".repeat(79) + "." + "나".repeat(10), ExportFormat.TXT)
 
             assertThat(stem).isEqualTo("가".repeat(79) + ".txt")
@@ -83,12 +68,6 @@ class ExportTest {
         @Test
         @DisplayName("보충 평면 문자를 서로게이트 한가운데서 자르지 않는다")
         fun `코드포인트로 자른다`() {
-            // 이모지는 UTF-16 두 칸이다. 코드 유닛으로 80을 세면 40번째 이모지가 반으로
-            // 잘려 짝 없는 서로게이트가 파일명에 남는다 — 그 뒤 RFC 5987 인코딩이 그것을
-            // UTF-8 로 바꾸면 대체 문자 바이트가 헤더로 나간다.
-            // **홀수 자리에서 잘리게 만든다.** 이모지만 100개면 각 2칸이라 80칸이 정확히
-            // 40개로 떨어져 쪼개지지 않는다 — 그 입력으로는 결함이 재현되지 않는다.
-            // 앞에 BMP 문자 하나를 두어 경계를 서로게이트 쌍 한가운데로 민다.
             val name = exportFilename("가" + "\uD83D\uDE00".repeat(100), ExportFormat.TXT)
             val stem = name.removeSuffix(".txt")
 
@@ -130,8 +109,6 @@ class ExportTest {
         @Test
         @DisplayName("공백은 `+` 가 아니라 %20 이다 — form 인코딩과 다르다")
         fun `공백을 플러스로 쓰지 않는다`() {
-            // `java.net.URLEncoder` 를 그대로 쓰면 여기서 `+` 가 나온다. RFC 5987 의
-            // ext-value 는 form 인코딩이 아니다.
             assertThat(contentDisposition("a b.txt")).contains("filename*=UTF-8''a%20b.txt")
             assertThat(contentDisposition("a b.txt")).doesNotContain("+")
         }
@@ -145,8 +122,6 @@ class ExportTest {
         @Test
         @DisplayName("헤더 값은 latin-1 로 실려 나갈 수 있어야 한다")
         fun `헤더가 latin1 로 인코딩된다`() {
-            // 이것이 깨지면 서버가 헤더를 쓰는 순간 예외이거나 이름이 깨진다.
-            // 이 테스트가 없으면 "인코딩했다"는 주장만 남는다.
             val header = contentDisposition("기초연금.txt")
 
             assertThat(Charsets.ISO_8859_1.newEncoder().canEncode(header)).isTrue()
@@ -167,7 +142,6 @@ class ExportTest {
         fun `BOM 이 없다`() {
             val file = renderTxt("제목", "본문")
 
-            // BOM(EF BB BF)이 붙으면 그 세 바이트가 본문 첫 글자 앞에 보이는 편집기가 있다.
             assertThat(file.content.take(3)).isNotEqualTo(listOf(0xEF.toByte(), 0xBB.toByte(), 0xBF.toByte()))
             assertThat(String(file.content, Charsets.UTF_8)).isEqualTo("본문")
         }
@@ -192,12 +166,6 @@ class ExportTest {
         @Test
         @DisplayName("제목의 제어문자는 **지워진다** — 파일명 정제만 거칠 때와 다르다")
         fun `제목도 정규화한다`() {
-            // 두 진입점의 동작이 다르고, 그 차이가 의도된 것이다.
-            //   renderTxt      : stripControlChars 로 **지운 뒤** 파일명을 만든다 → "제목"
-            //   exportFilename : 금지 문자를 **공백으로 바꾼다**              → "제 목"
-            // 렌더링 경로가 먼저 지우는 이유는 docx·txt 가 같은 본문·같은 이름을 내야 하기
-            // 때문이다(제어문자 제거를 진입부 한 곳에서 한다). parity fixture 의 파일명
-            // 케이스는 `exportFilename` 을 직접 부르므로 공백 쪽을 기대한다.
             assertThat(renderTxt("제\u0000목", "본문").filename).isEqualTo("제목.txt")
             assertThat(exportFilename("제\u0000목", ExportFormat.TXT)).isEqualTo("제 목.txt")
         }
@@ -205,7 +173,6 @@ class ExportTest {
         @Test
         @DisplayName("미디어 타입이 charset 을 명시한다")
         fun `charset 을 명시한다`() {
-            // 없으면 브라우저가 로캘 기본 인코딩으로 열어 한글이 깨진다.
             assertThat(renderTxt("제목", "본문").mediaType).isEqualTo("text/plain; charset=utf-8")
         }
 

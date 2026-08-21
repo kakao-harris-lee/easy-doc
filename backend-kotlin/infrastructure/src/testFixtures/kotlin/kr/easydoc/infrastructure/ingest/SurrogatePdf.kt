@@ -1,37 +1,6 @@
 package kr.easydoc.infrastructure.ingest
 
-/**
- * **짝 없는 UTF-16 서로게이트를 `ToUnicode` 로 선언한 PDF** 를 즉석에서 만든다.
- *
- * ## 왜 이 fixture 가 있는가
- *
- * 계약 `x-stored-text-domain.applies_to` 가 파일 모드를 *"PDF 가 가장 그럴듯한 유입
- * 경로다 — 깨진 `ToUnicode` CMap 이 홀로 있는 상위 서로게이트를 그대로 내놓을 수 있다"*
- * 로 적고 그 팔을 `status: measured` 로 두었다. **그 주장을 실행으로 확인하려고 만들었다.**
- *
- * ## 실측 결과 — 그 주장은 오늘 조합에서 참이 아니다 (2026-08-20)
- *
- * PDFBox 3.0.5 는 이 PDF 에서 [DECLARED_UNICODE] 를 그대로 내지 않고
- * **[SUBSTITUTED_TEXT](U+FFFD)로 치환한다.** 추출 결과의 코드 포인트를 그대로 찍어
- * 확인했다(`["U+FFFD"]`). 즉 **파일 모드로는 저장 정의역 위반이 도달하지 않는다** —
- * 도달하는 것은 붙여넣기(JSON `\u` 이스케이프) 경로 하나뿐이다.
- *
- * 그래서 이 fixture 는 「위반을 만드는 입력」이 아니라 **「라이브러리가 치환한다」는 사실을
- * 붙들어 두는 회귀**다. PDFBox 판올림이 치환을 그만두면 `PdfExtractorTest` 의 케이스가
- * 빨개지고, 그때 파일 모드 팔이 실제로 열린다 — 계약의 `applies_to` 표식과 DC-24 의 그
- * 팔을 그 커밋에서 다시 판정해야 한다.
- *
- * ## 어떻게 만드는가
- *
- * `ToUnicode` CMap 의 `bfchar` 목적값을 **UTF-16BE 두 바이트 `D8 00`** 으로 둔다. 폰트는
- * 표준 14 폰트라 임베딩이 없다. 깨진 파일·폭탄을 커밋하지 않고 즉석 생성하는 것은 fixture
- * README 의 규약이고, 원본 `tests/ingest/` 도 같은 방식이다.
- *
- * ## `testFixtures` 에 두는 이유
- *
- * 두 모듈이 쓴다 — `infrastructure` 의 추출기 회귀와 `api` 의 계약 테스트. 두 벌로 만들면
- * 한쪽만 고쳐지는 날 두 테스트가 서로 다른 입력을 재게 된다.
- */
+/** **짝 없는 UTF-16 서로게이트를 `ToUnicode` 로 선언한 PDF** 를 즉석에서 만든다. */
 object SurrogatePdf {
     /** CMap 이 `A`(0x41)에 **대응시킨다고 선언한** 값 — 홀로 있는 상위 서로게이트. */
     const val DECLARED_UNICODE: String = "\uD800"
@@ -42,9 +11,6 @@ object SurrogatePdf {
     /**
      * 한 글자짜리 PDF 바이트. CMap 은 [DECLARED_UNICODE] 를 선언하지만 오늘 조합에서
      * 추출되는 값은 [SUBSTITUTED_TEXT] 다.
-     *
-     * `xref` 표를 정확히 적는다. 브루트포스 복구에 기대면 PDFBox 판올림에서 동작이 갈리고,
-     * 그때 이 fixture 가 「손상 파일」로 분류돼 **다른 갈래를 재게 된다.**
      */
     fun bytes(): ByteArray {
         val objects =
@@ -92,11 +58,7 @@ object SurrogatePdf {
     /** `xref` 항목 한 줄의 꼬리 — 세대 번호·사용 표시·**규격이 요구하는 공백**. */
     private const val XREF_ENTRY_SUFFIX = " 00000 n \n"
 
-    /**
-     * 목적값이 **두 바이트 `D8 00`** 이다 — 여기서 짝 없는 서로게이트가 태어난다.
-     *
-     * 나머지는 CMap 이 성립하기 위한 최소 골격이다(코드 공간 1바이트, `bfchar` 한 항목).
-     */
+    /** 목적값이 **두 바이트 `D8 00`** 이다 — 여기서 짝 없는 서로게이트가 태어난다. */
     private val TO_UNICODE_CMAP =
         """
         /CIDInit /ProcSet findresource begin

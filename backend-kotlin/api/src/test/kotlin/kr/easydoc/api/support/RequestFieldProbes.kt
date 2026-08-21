@@ -1,32 +1,6 @@
 package kr.easydoc.api.support
 
-/**
- * **F3 축의 프로브 조립과 판정** — 관측 지점(MockMvc / 실제 소켓)이 둘이라 여기 한 벌만 둔다.
- *
- * 계약은 다섯 요청 필드에 길이·형식 Bean Validation 을 금지했다(F3). 그 성질은
- * 「그 필드의 거절이 **스키마 층에서 일어나지 않는다**」이고, 관측면은 응답 `detail` 의
- * 모양이다 — 스키마·바인딩 층이 거절하면 **배열**, 서비스·도메인 층이 거절하면 **문자열**
- * (계약 `ValidationFailed` 가 그 경계를 명시했다).
- *
- * ## 왜 판정을 한 곳에 두는가
- *
- * 관측 지점이 둘인데(`RequestFieldRejectionLayerTest` = 슬라이스,
- * `RequestFieldRejectionReachTest` = 컨테이너) 판정을 두 벌로 두면 한쪽만 고쳐지는 날
- * **두 축이 서로 다른 것을 재면서 둘 다 초록**이 된다. 이 저장소가 반복해 겪은 형태다.
- *
- * ## 프로브를 계약에서 유도한다 — 방향도 **계약이 정한다** (β-21)
- *
- * 필드 목록은 `x-request-field-constraints.fields[].field`, 경계는 그 항목의 `limit`,
- * 기대 문구는 `detail`, 측정 축은 `measured_on`, **경계 방향은 스키마 속성의
- * `x-service-constraint` 키 이름**(`max_length` / `min_length`)에서 온다.
- *
- * 종전 판은 방향을 **검사 대상에서 추론**했다 — `limit-1`·`limit+1` 중 거절된 쪽으로 상한·하한을
- * 정했다. 그러면 **구현이 최대↔최소를 뒤집어도 이 강제자는 초록**이다(교차 종합 β-21):
- * 기준이 계약이 아니라 관측 자신이기 때문이다. 이제 방향은 계약에서 오고, 관측이 그 방향과
- * 어긋나면 그것이 결함으로 잡힌다.
- *
- * 그 방향이 **정규화 프로브의 모양까지 정한다**(아래 [divergentValue]).
- */
+/** F3 축의 프로브 조립과 판정 — 관측 지점(MockMvc / 실제 소켓)이 둘이라 여기 한 벌만 둔다. */
 object RequestFieldProbes {
     /** 한 프로브의 관측. 관측 지점이 무엇이든 이 두 값으로 환원된다. */
     data class Observed(
@@ -35,7 +9,7 @@ object RequestFieldProbes {
     ) {
         val accepted: Boolean get() = status in SUCCESS_RANGE
 
-        /** `detail` 이 배열인가. **F3 판정의 전부**다. */
+        /** `detail` 이 배열인가. F3 판정의 전부다. */
         val arrayShaped: Boolean get() = detail is List<*>
     }
 
@@ -52,26 +26,13 @@ object RequestFieldProbes {
     /** 정규화가 걷어내는 잡음의 종류. */
     enum class Noise { LEADING_SPACE, CONTROL_CHAR }
 
-    /**
-     * 필드마다 다른 두 가지 — **값의 모양**과 **정규화가 걷어내는 잡음**.
-     *
-     * 잡음의 출처는 그 필드의 계약 `measured_on` 산문이다. `email` 은 *"앞뒤 공백 제거 +
-     * 소문자화"*, `name` 은 *"제어문자 제거 + 앞뒤 공백 제거"*, `edited_text` 는
-     * *"제어문자 제거"* 다. 산문을 파싱하지 않고 여기 적는 이유는 파싱이 문면 한 글자에
-     * 묶이기 때문이고, 그 대가로 **잡음 선택이 계약 문면과 갈릴 수 있다**는 잔여를 안는다.
-     */
+    /** 필드마다 다른 두 가지 — 값의 모양과 정규화가 걷어내는 잡음. */
     data class FieldShape(
         val shape: ProbeShape,
         val noise: Noise,
     )
 
-    /**
-     * 계약 필드 → 값 조립 규칙.
-     *
-     * **이 열거의 완전성은 열거가 지키지 않는다** — 각 탐지기의 「계약 필드 전부가 다뤄진다」
-     * 케이스가 계약에서 읽은 집합과 정확 일치로 대조하고, 모르는 필드가 오면 [valueOf] 가
-     * `error()` 로 끊는다.
-     */
+    /** 계약 필드 → 값 조립 규칙. */
     val FIELD_SHAPES: Map<String, FieldShape> =
         mapOf(
             "SignupRequest.email" to FieldShape(ProbeShape.EMAIL, Noise.LEADING_SPACE),
@@ -107,16 +68,6 @@ object RequestFieldProbes {
                 "u${counter++}".padEnd(fillerLength, 'a').take(fillerLength) + EMAIL_DOMAIN
             }
 
-            // **길이를 지키면서 값은 매번 다르게** 만든다. 첫 글자만 회전시킨다.
-            //
-            // 왜 필요한가: `WorkspaceNameRequest.name` 은 같은 소유자 안에서 **이름이 유일**해야
-            // 한다. 경계 프로브(길이 50)와 정규화 프로브(정규화 후 길이 50)가 같은 문자열이면
-            // 두 번째가 409(이름 중복)로 거절되고, 그러면 이 축이 재려던 것 대신 **다른 계약
-            // 조항**을 재게 된다(실측: 컨테이너 축에서 정확히 그 일이 났다).
-            //
-            // 프로브마다 계정을 새로 만드는 갈래는 고르지 않았다 — 실제 Argon2 가 도는 축에서
-            // 비싸고, 무엇보다 「값이 겹치면 안 된다」를 계정 격리로 우회하면 그 전제가 조용히
-            // 사라진다(슬라이스 축이 그 상태였다).
             ProbeShape.PLAIN -> {
                 if (length <= 0) {
                     ""
@@ -127,44 +78,21 @@ object RequestFieldProbes {
             }
         }
 
-    /**
-     * **원시 길이는 `baseLength + noise`, 정규화 후 길이는 `baseLength`** 인 값.
-     *
-     * 계약이 필드마다 다른 측정 축을 정했고(`measured_on`), 이 값이 그 축을 **행동으로**
-     * 가른다 — 정규화 후를 재는 필드에서는 통과하고 원시 값을 재는 필드에서는 거절된다.
-     * 구현이 정규화를 한 곳에 몰아 두면 이 프로브만 뒤집히고 나머지는 전부 통과한다
-     * (계약 명세가 DC-11 을 「가장 조용히 깨지는 자리」로 부른 이유가 그것이다).
-     */
+    /** 원시 길이는 `baseLength + noise`, 정규화 후 길이는 `baseLength` 인 값. */
     fun divergentValue(
         field: String,
         baseLength: Int,
         noise: Int,
     ): String {
         val base = valueOf(field, baseLength)
-        // 이메일은 잡음을 **앞**에 붙인다 — 도메인부 뒤에 붙이면 형식이 깨져 길이 축이 아니라
-        // 형식 규칙이 먼저 걸린다(S-5 가 쓰는 형태와 같다).
+
         return when (shapeOf(field).noise) {
             Noise.LEADING_SPACE -> " ".repeat(noise) + base
             Noise.CONTROL_CHAR -> base + CONTROL_CHAR.repeat(noise)
         }
     }
 
-    /**
-     * 한 필드를 재고 [Finding] 을 만든다. [probe] 는 값으로 요청을 보내고 관측을 돌려준다.
-     *
-     * 판정 다섯 갈래를 한 곳에서 한다.
-     *
-     * 1. 길이 **정확히 `limit`** 은 통과한다(다섯 필드 전부 경계 포함이다 — 상한이면 「이하」,
-     *    하한이면 「이상」).
-     * 2. 이웃 두 값(`limit-1`·`limit+1`) 중 **정확히 하나**가 거절된다. 그 결과가 이 필드가
-     *    상한인지 하한인지를 알려 준다 — 방향을 코드에 적지 않는 이유다.
-     * 3. 그 거절은 422 이고 `detail` 이 **문자열**이며 값이 계약 선언 문구 중 하나다.
-     * 4. **정규화 프로브**가 계약 `measured_on` 축대로 갈린다(위 [divergentValue]).
-     * 5. 계약이 문구를 **둘 이상** 선언한 필드에서는 그만큼의 **서로 다른** 거절 문구가
-     *    실제로 관측된다 — 그러지 않으면 상한 위반에 빈 값 문구가 나가도 통과한다.
-     *
-     * 어느 프로브에서든 배열 `detail` 이 나오면 [Finding.arrayShaped] 에 남는다.
-     */
+    /** 한 필드를 재고 [Finding] 을 만든다. [probe] 는 값으로 요청을 보내고 관측을 돌려준다. */
     @Suppress("CyclomaticComplexMethod")
     fun measure(
         field: String,
@@ -213,9 +141,6 @@ object RequestFieldProbes {
                 "정확히 하나여야 한다(아래→${below.status}, 위→${above.status})"
         }
 
-        // ── 방향 축 (β-21) ────────────────────────────────────────────────
-        // **계약이 정한 방향과 관측된 방향이 같은가.** 종전에는 관측된 쪽을 그대로 방향으로
-        // 삼았으므로 최대↔최소를 뒤집어도 이 판정이 초록이었다.
         val expectedRejected = if (constraint.upperBound) ABOVE else BELOW
         if (rejected.size == 1 && rejected.single().first != expectedRejected) {
             problems +=
@@ -224,10 +149,6 @@ object RequestFieldProbes {
                 "$expectedRejected 쪽이 거절돼야 하는데 ${rejected.single().first} 쪽이 거절됐다"
         }
 
-        // ── 정규화 축 ──────────────────────────────────────────────────────
-        // 방향은 **계약에서** 온다. 상한 필드는 「경계 길이 + 잡음」이 원시로는 초과이고
-        // 정규화 후에는 경계라 축을 가른다. 하한 필드는 반대로 「경계-1 + 잡음 1」이
-        // 원시로는 경계이고 정규화 후에는 미달이라 축을 가른다.
         if (rejected.size == 1) {
             val upperBound = constraint.upperBound
             val baseLength = if (upperBound) constraint.limit else constraint.limit - 1
@@ -242,9 +163,6 @@ object RequestFieldProbes {
             }
         }
 
-        // ── 문구 갈래 ──────────────────────────────────────────────────────
-        // 계약이 문구를 둘 이상 선언했으면 그만큼의 **서로 다른** 거절이 관측돼야 한다.
-        // 빈 값 갈래가 그 두 번째다(`WorkspaceNameRequest.name`).
         if (declared.size > 1) {
             observe("빈 값", BLANK_VALUE)
             val distinct = rejectionDetails.toSet()
@@ -270,19 +188,10 @@ object RequestFieldProbes {
     /** 길이만 맞추는 채움 문자. BMP 라 코드 포인트 수와 길이가 같다. */
     const val FILLER_CHAR: String = "가"
 
-    /**
-     * 값을 매번 다르게 만드는 첫 글자 후보. 전부 BMP 한 글자라 **길이를 바꾸지 않는다.**
-     *
-     * [FILLER_CHAR] 를 넣지 않는다 — 넣으면 그 회차의 값이 이전 회차와 같아진다.
-     */
+    /** 값을 매번 다르게 만드는 첫 글자 후보. 전부 BMP 한 글자라 길이를 바꾸지 않는다. */
     private const val PLAIN_MARKERS: String = "나다라마바사아자차카타파하"
 
-    /**
-     * 정규화하면 사라지지만 원시 길이에는 세어지는 문자.
-     *
-     * 이스케이프로 적는다 — 소스에 원시 제어 바이트를 싣지 않는다(쓰기 도구가 실제로 그것을
-     * 실어 이 저장소의 파일을 한 번 깨뜨렸다). `WorkspaceContractTest` 와 같은 값이다.
-     */
+    /** 정규화하면 사라지지만 원시 길이에는 세어지는 문자. */
     const val CONTROL_CHAR: String = "\u0001"
 
     const val EMAIL_DOMAIN: String = "@example.test"

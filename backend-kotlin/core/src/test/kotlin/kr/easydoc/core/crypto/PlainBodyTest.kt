@@ -7,20 +7,7 @@ import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
 
-/**
- * **평문의 정의역** — `PlainBody` 로 만들 수 있는 값이 곧 저장 왕복이 보장되는 값이다.
- *
- * ## 이 파일이 재는 것
- *
- * 게이트 25 X1 이 든 반례는 `"x\uD800y"` 였다. `String.toByteArray(UTF_8)` 가 짝 없는
- * 서로게이트를 `?`(U+003F)로 바꿔 버리므로, 그 값을 저장하면 **인증은 통과하는데 본문이
- * 달라진다.** 아래 첫 케이스가 그 손실을 JDK 에서 직접 재현하고(즉 「고쳤으니 없어졌다」가
- * 아니라 **여전히 실재하는 위험**임을 붙잡아 둔다), 나머지가 그 값이 `PlainBody` 로
- * 들어오지 못한다는 것을 단언한다.
- *
- * 두 단언이 함께 있어야 의미가 있다 — 손실 재현만 있으면 「그래서 무엇을 했나」가 없고,
- * 거부 단언만 있으면 **왜 거부하는지**가 산문으로만 남아 다음 사람이 완화한다.
- */
+/** 평문의 정의역 — `PlainBody` 로 만들 수 있는 값이 곧 저장 왕복이 보장되는 값이다. */
 class PlainBodyTest {
     @Test
     @DisplayName("짝 없는 서로게이트는 UTF-8 왕복에서 `?` 로 바뀐다 — 거부의 근거를 재현한다")
@@ -73,11 +60,7 @@ class PlainBodyTest {
             "한글" to "행정복지센터에서 신청하세요.",
             "ASCII" to "Please visit the community center.",
             "개행·탭" to "첫째 줄\n\t들여쓴 둘째 줄\r\n셋째 줄",
-            // 짝을 이룬 서로게이트 쌍(이모지)은 정상 텍스트다. 여기가 빨개지면 거부가
-            // BMP 밖 문자 전체로 번진 것이다.
             "짝 맞는 서로게이트 쌍" to "이모지 🙂 와 결합 문자 각́",
-            // 제어문자·NUL 은 여기서 막지 않는다. UTF-8 로 손실 없이 왕복하므로 이 정의역의
-            // 문제가 아니고, 정규화는 `core/text` 의 몫이다(02 control-char 판정).
             "NUL 과 제어문자" to "\u0000앞\u0007뒤",
         ).forEach { (label, plain) ->
             assertThatCode { PlainBody(plain) }.describedAs("%s 가 거부됐다", label).doesNotThrowAnyException()

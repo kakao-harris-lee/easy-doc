@@ -8,18 +8,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
 
-/**
- * DOCX 추출의 **동등성 9항목**과 파서 방어를 고정한다.
- *
- * 항목은 Phase 0 spike §2 의 대조표 그대로다. spike 는 Kotlin **2.2.0** 위에서 통과했고
- * 현재 조합은 Kotlin 2.3.21 / Boot 4.1.0 / commons-compress 1.28.0 이라, 이 클래스가
- * 카탈로그 주석이 예고한 **재확인**(계획 §7.1 P2)이다.
- *
- * ## 대조 단위가 `blocks()` 인 이유
- *
- * 정규화(`_join_blocks`) 뒤에 대조하면 **정규화가 차이를 덮는다** — 빈 블록 하나가 사라지는
- * 회귀는 이어 붙인 문자열에서 보이지 않는다. spike 도 같은 이유로 raw 블록을 비교했다.
- */
+/** DOCX 추출의 동등성 9항목과 파서 방어를 고정한다. */
 class DocxExtractorTest {
     private val extractor = DocxExtractor()
 
@@ -62,8 +51,6 @@ class DocxExtractorTest {
     fun `mc Fallback 을 걷지 않아 중복이 없다`() {
         val text = extractor.extract(IngestFixtures.bytes("sample_rich.docx"))
 
-        // 하강을 막지 않으면 DrawingML(mc:Choice)과 VML(mc:Fallback)에서 두 번 수집돼
-        // 크레딧이 두 배로 청구되고 마스킹 결과까지 오염된다.
         assertThat(text.split("텍스트 상자 안 문장입니다.")).hasSize(2)
     }
 
@@ -81,10 +68,9 @@ class DocxExtractorTest {
     fun `물려받은 머리글을 건너뛴다`() {
         val text = extractor.extract(IngestFixtures.bytes("sample_rich.docx"))
 
-        // 구역이 둘인데 둘째 구역은 앞 구역을 물려받는다. 걷으면 문구가 두 번 나온다.
         assertThat(text.split("머리글 문구")).hasSize(2)
         assertThat(text.split("바닥글 문구")).hasSize(2)
-        // 머리글 → 바닥글 순서 (동등성 8)
+
         assertThat(text.indexOf("머리글 문구")).isLessThan(text.indexOf("바닥글 문구"))
     }
 
@@ -94,8 +80,6 @@ class DocxExtractorTest {
         val original = IngestFixtures.bytes("sample.docx")
         val document = requireNotNull(IngestFixtures.entriesOf(original)["word/document.xml"])
 
-        // 대조군: 내용은 그대로 두고 다시 포장만 한다. 이것이 통과해야 아래 거부가
-        // "재포장 탓"이 아님이 선다.
         assertThat(extractor.extract(IngestFixtures.repackaged(original))).isNotEmpty()
 
         val injected = injectDoctype(document.decodeToString()).toByteArray()
@@ -109,14 +93,13 @@ class DocxExtractorTest {
     @Test
     @DisplayName("걷지 않는 요소를 **선언 상수**로 둔다 — 조용한 누락 금지 (DOC-02)")
     fun `걷지 않는 요소 목록이 선언돼 있다`() {
-        // "문서화했다"는 자동 게이트가 아니다. 목록이 코드에 있어야 산출물·리뷰와 대조된다.
         assertThat(DocxExtractor.SKIPPED_PARTS)
             .withFailMessage("걷지 않는 요소 목록이 비었다 — DOC-02 의 판정 근거가 사라진다.")
             .isNotEmpty()
         assertThat(DocxExtractor.SKIPPED_PARTS).allSatisfy { entry -> assertThat(entry).isNotBlank() }
     }
 
-    /** 루트 요소 앞에 내부 DTD 를 끼운다. 확장을 시도하지 않고 **선언만** 넣어도 거부여야 한다. */
+    /** 루트 요소 앞에 내부 DTD 를 끼운다. 확장을 시도하지 않고 선언만 넣어도 거부여야 한다. */
     private fun injectDoctype(xml: String): String {
         val declarationEnd = xml.indexOf("?>")
         val head = if (declarationEnd >= 0) xml.substring(0, declarationEnd + 2) else ""

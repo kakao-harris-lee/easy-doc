@@ -18,25 +18,9 @@ import org.springframework.test.web.servlet.MvcResult
 import org.springframework.test.web.servlet.get
 
 /**
- * 도메인 예외 → HTTP 응답 계약. **`contracts/easy-doc-v1.yaml` 이 선언한 상태 코드**로
- * 나가는지 **HTTP 경계에서** 확인한다. Python 의 `_MAPPINGS` 는 정본이 아니다 — 폐기
+ * 도메인 예외 → HTTP 응답 계약. `contracts/easy-doc-v1.yaml` 이 선언한 상태 코드로
+ * 나가는지 HTTP 경계에서 확인한다. Python 의 `_MAPPINGS` 는 정본이 아니다 — 폐기
  * 대상이고, 계약 v1.3.0 은 그것이 쓰던 502 를 폐기했다(`x-retired-responses`).
- *
- * ## 왜 핸들러 직접 호출이 아닌가 (리뷰 C-2)
- *
- * 이 테스트의 1차 판은 `GlobalExceptionHandler` 를 직접 생성해 메서드를 불렀다. 그래서
- * 프레임워크 예외가 전부 500 으로 나가는 실제 이탈(C-1)이 존재하는 채로 10건이 전부
- * 초록이었다. `api-contract-freeze` 스킬 §5 가 못박은 대로 상태 코드 매핑·헤더 부착·
- * 직렬화는 전부 경계에서 결정되므로, 경계를 통과하지 않는 단언은 계약을 지키지 못한다.
- *
- * 예외를 던지는 자리는 [kr.easydoc.api.support.ErrorProbeController] 다 —
- * 테스트 소스셋에만 있고 운영 JAR 에 들어가지 않는다.
- *
- * ## 왜 [PrivateResponseHeadersConfig] 를 [Import] 하는가
- *
- * `@WebMvcTest` 슬라이스는 `@Bean` 으로 등록된 `FilterRegistrationBean` 을 자동으로
- * 끌어오지 않는다(`@Controller`·`@ControllerAdvice`·`Filter` 빈 등만 포함한다).
- * 명시적으로 들여와야 실제 체인과 같은 필터가 붙는다 — `CorsContractTest` 와 같은 이유다.
  */
 @WebMvcTest
 @Import(PrivateResponseHeadersConfig::class, kr.easydoc.api.support.AuthSliceBeans::class)
@@ -46,7 +30,6 @@ class ErrorContractTest {
 
     @ParameterizedTest(name = "{0} → {1}")
     @CsvSource(
-        // 정본은 contracts/easy-doc-v1.yaml 이다 — Python 의 _MAPPINGS 가 아니다.
         "invalid-input,       422",
         "unsupported-format,  422",
         "extraction,          422",
@@ -55,9 +38,6 @@ class ErrorContractTest {
         "conflict,            409",
         "credentials,         401",
         "not-found,           404",
-        // 502 는 계약 v1.3.0 이 폐기했다(x-retired-responses). LlmProviderException 계열은
-        // 매핑 표에 없어 500 unmapped_domain 으로 떨어진다 — 이 행이 그 낙하를 붙든다.
-        // 502 매핑을 되살리면 여기가 빨개진다(판정 §5-2 R-2).
         "llm-truncated,       500",
         "configuration,       503",
         "storage,             500",
@@ -83,7 +63,7 @@ class ErrorContractTest {
         mockMvc.get("/__probe/domain/not-found").andExpect {
             status { isNotFound() }
             content { contentTypeCompatibleWith(MediaType.APPLICATION_JSON) }
-            // 키는 detail 하나뿐이다 — type·title·instance 가 섞이면 ProblemDetail 이다.
+
             content { json("""{"detail":"문서를 찾을 수 없습니다"}""", JsonCompareMode.STRICT) }
         }
     }
@@ -116,14 +96,12 @@ class ErrorContractTest {
                     content { json("""{"detail":"요청을 처리하지 못했습니다"}""", JsonCompareMode.STRICT) }
                 }.andReturn()
 
-        // 예외 메시지에 무엇이 담길지 이 지점에서는 알 수 없다 — 그대로 노출하지 않는다.
         assertThat(result.response.contentAsString).doesNotContain("홍길동")
     }
 
     @Test
     @DisplayName("도메인 밖 예외 → 500 + 고정 문자열 (예외 메시지 미노출)")
     fun `예상하지 못한 예외는 고정 문자열로 500 이다`() {
-        // 프로브가 알지 못하는 종류를 주면 IllegalStateException 이 난다 — 도메인 밖 예외다.
         val result =
             mockMvc
                 .get("/__probe/domain/주민등록번호-900101-1234567")
@@ -146,15 +124,9 @@ class ErrorContractTest {
 
     /**
      * 계약 `x-global-response-headers`: *"성공 응답, 오류 응답(4xx·5xx), 본문 없는 204 …
-     * 전부 포함"*. 2026-08-12 리더 판정(OQ-1 종결)으로 **부호가 뒤집힌 단언**이다.
-     *
-     * 이 자리의 종전 판은 "오류 응답에 헤더가 **없다**"였고, 그 근거는 열거식 범위
-     * (성공 응답 10곳)였다. 그 범위가 이 저장소에서 두 번 누락된 것이 G4 근거가 되어
-     * 전역 부착으로 바뀌었다. **지우지 않고 반대 단언으로 바꾼다** — 지우기만 하면 이
-     * 자리에 아무 검사도 남지 않는다(`api-contract-freeze` §5.1 G-B).
+     * 전부 포함"*. 2026-08-12 리더 판정(OQ-1 종결)으로 부호가 뒤집힌 단언이다.
      */
     private fun assertPrivateHeaders(result: MvcResult) {
-        // 값을 코드에 적지 않는다 — 계약 컴포넌트 `const` 에서 읽는다(P-3b · 게이트 20 C-6).
         ContractSpec.globalHeaderValues().forEach { (header, value) ->
             assertThat(result.response.getHeader(header))
                 .withFailMessage("오류 응답에 %s 가 계약값으로 붙지 않았다 — 계약은 모든 응답에 요구한다", header)

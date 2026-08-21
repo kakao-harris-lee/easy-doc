@@ -8,13 +8,7 @@ import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import java.lang.reflect.Modifier
 
-/**
- * 프롬프트 생성의 **성질**을 고정한다. 문자열 전문 대조는 `PromptTextSnapshotTest` 가 한다.
- *
- * 여기서 보는 것은 스냅샷이 잡지 못하는 것들이다 — 스냅샷은 고른 케이스에서 값이 같음을
- * 보이지만, "왜 그 값인가"(어떤 규칙으로 목록이 좁혀지는가, 무엇이 무엇을 참조하는가)는
- * 케이스를 하나 더 늘려도 드러나지 않는다.
- */
+/** 프롬프트 생성의 성질을 고정한다. 문자열 전문 대조는 `PromptTextSnapshotTest` 가 한다. */
 class PromptsTest {
     private fun systemPromptOf(text: String): String = buildSystemPrompt(maskText(text).maskedText)
 
@@ -41,8 +35,6 @@ class PromptsTest {
         @Test
         @DisplayName("문서에 나온 낱말만 싣는다")
         fun `등장한 낱말만 실린다`() {
-            // 246개 전량은 입력과 무관한 고정 비용인데(실측 2026-08-08: 시스템 프롬프트
-            // 5,825자 중 2,927자) 문서 한 건이 쓰는 낱말은 그중 소수다.
             val listed = listedAlways(systemPromptOf("금일 중 서류를 지참하세요."))
 
             assertThat(listed).containsExactly("금일", "지참")
@@ -58,7 +50,6 @@ class PromptsTest {
         @Test
         @DisplayName("목록 순서는 등장 순서가 아니라 사전 정의 순서다")
         fun `사전 순서로 싣는다`() {
-            // 같은 낱말 집합이면 항상 같은 문자열이 나와야 프롬프트가 요청마다 흔들리지 않는다.
             val dictionaryOrder = listedAlways(systemPromptOf("금일 지참 제출"))
             val reversedAppearance = listedAlways(systemPromptOf("제출 지참 금일"))
 
@@ -69,15 +60,12 @@ class PromptsTest {
         @Test
         @DisplayName("낱말 시작 위치가 아니면 싣지 않는다")
         fun `복합어 안쪽은 싣지 않는다`() {
-            // '소득인정액'의 '정액', '대지급금'의 '지급'은 더 긴 낱말의 일부다.
-            // 이것을 실으면 모델이 제도 이름을 옳게 지킨 자리를 고치라고 시키게 된다.
             assertThat(listedAlways(systemPromptOf("소득인정액과 대지급금 안내"))).isEmpty()
         }
 
         @Test
         @DisplayName("문맥 판단 그룹은 입력과 무관하게 항상 싣는다")
         fun `PROMPT_ONLY_WORDS 는 항상 실린다`() {
-            // 5개뿐이라 걸러도 이득이 없고, 입력에 원형이 없어도 모델이 활용형으로 만들어 낸다.
             val absent = listedConditional(systemPromptOf("아무 상관 없는 본문입니다."))
             val present = listedConditional(systemPromptOf("상기 내용을 확인하기 바랍니다."))
 
@@ -88,8 +76,6 @@ class PromptsTest {
         @Test
         @DisplayName("문맥 판단 그룹은 치환 목록에 실리지 않는다")
         fun `PROMPT_ONLY_WORDS 는 치환 목록에 없다`() {
-            // 두 절이 같은 낱말을 다르게 지시한다("무조건 없애라" vs "문맥을 보고 판단하라").
-            // 양쪽에 실리면 모델에게 모순된 지시를 주는 것이다.
             val listed = listedAlways(systemPromptOf("상기 내용을 확인하기 바랍니다. 하자가 있으면 게시하세요."))
 
             assertThat(listed).doesNotContainAnyElementsOf(PROMPT_ONLY_WORDS)
@@ -98,8 +84,6 @@ class PromptsTest {
         @Test
         @DisplayName("목록을 좁혀도 출력 검사는 사전 전량 기준이다")
         fun `필터링이 검출력을 깎지 않는다`() {
-            // 입력에 없던 어려운 낱말을 모델이 새로 만들어 내는 경우가 이 최적화의 사각지대인데,
-            // checkStyle 이 246개 전체 기준으로 잡아 보정 패스로 넘긴다.
             val input = "오늘 신청을 받습니다."
             assertThat(listedAlways(systemPromptOf(input))).isEmpty()
 
@@ -115,8 +99,6 @@ class PromptsTest {
         @Test
         @DisplayName("변환·보정 프롬프트가 같은 원칙 목록을 1번부터 싣는다")
         fun `원칙 목록을 공유한다`() {
-            // 프롬프트에 규칙을 하드코딩하면 모델이 지키라고 들은 수치와 채점 수치가 갈라지고,
-            // 통과율이 모델 실력이 아니라 두 기준의 차이를 재게 된다(CLAUDE.md 아키텍처 규칙 4).
             val numbered =
                 STYLE_PRINCIPLES
                     .mapIndexed { index, principle -> "${index + 1}. $principle" }
@@ -144,7 +126,6 @@ class PromptsTest {
         @Test
         @DisplayName("한 문장의 여러 위반을 한 블록으로 접는다")
         fun `문장을 되풀이하지 않는다`() {
-            // 위반마다 문장을 되풀이하면 지시가 변환문보다 길어져 입력 토큰이 크게 는다.
             val violations = checkStyle(long).issues
             assertThat(violations.map { it.sentence }.distinct()).hasSize(1)
             assertThat(violations.size).isGreaterThan(1)
@@ -186,23 +167,7 @@ class PromptsTest {
     @Nested
     @DisplayName("마스킹 선행 강제")
     inner class MaskingPrecedence {
-        /**
-         * 원문 `String` 오버로드가 **생기지 않았는지** 실행으로 확인한다.
-         *
-         * ## 왜 이런 방식인가
-         *
-         * `MaskedText` 는 `@JvmInline value class` 라 JVM 시그니처에서는 `String` 으로
-         * 지워진다 — 파라미터 타입을 반사(reflection)로 봐도 두 경우를 구별할 수 없다.
-         * 대신 Kotlin 이 **인라인 클래스를 받는 함수의 JVM 이름을 변형**한다는 사실을 쓴다
-         * (`buildSystemPrompt` → `buildSystemPrompt-<hash>`). 생 `String` 을 받는 오버로드는
-         * 변형되지 않으므로 **이름이 그대로인 메서드가 나타나는 것**이 곧 우회의 증거다.
-         *
-         * ## 이 테스트가 증명하지 못하는 것
-         *
-         * 이름이 다른 새 함수(`buildSystemPromptRaw(String)`)는 잡지 못한다. 컴파일 자체를
-         * 막는 것은 `MaskedText` 의 생성 통로가 마스킹 하나뿐이라는 사실이고(`Masking.kt`),
-         * 이 테스트는 **가장 자연스러운 우회 한 가지**를 닫을 뿐이다.
-         */
+        /** 원문 `String` 오버로드가 생기지 않았는지 실행으로 확인한다. */
         @Test
         @DisplayName("본문을 받는 함수에 생 String 오버로드가 없다")
         fun `원문 String 오버로드가 없다`() {
