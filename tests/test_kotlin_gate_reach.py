@@ -177,6 +177,7 @@ TEST_CLASSES: tuple[str, ...] = (
     "kr.easydoc.api.SourceScanFormsProbe",
     "kr.easydoc.api.TitlePolicyContractTest",
     "kr.easydoc.api.UploadFormatContractTest",
+    "kr.easydoc.api.ValueSlotInvariantReachTest",
     "kr.easydoc.api.WorkspaceContractTest",
     "kr.easydoc.api.WorkspaceDtoLeakTest",
     "kr.easydoc.api.WorkspaceEndpointReachTest",
@@ -246,7 +247,7 @@ TEST_CLASSES: tuple[str, ...] = (
 
 #: 선언 **개수**를 목록과 따로 적는다. 파일과 선언을 함께 지우는 편집이 두 자리에
 #: 흔적을 남기게 하는 장치다. 목록을 고쳤으면 여기도 고쳐야 한다.
-TEST_CLASS_COUNT = 104
+TEST_CLASS_COUNT = 105
 
 #: 선언 개수의 **하한**. `TEST_CLASS_COUNT` 와 역할이 다르다 — 저쪽은 "목록과 개수가
 #: 서로 맞는가"(두 수기 선언 사이의 일관성)이고, 이쪽은 "그 수가 **얼마 아래로는 내려갈 수
@@ -289,10 +290,13 @@ FLOOR_TEST_CLASSES: tuple[str, ...] = (
     #   기준이 이 파일이 명시적으로 배제한 「가드다움」으로 슬며시 바뀐다. 잔여 성질은
     #   이 항목이 계속 진다 — 그 케이스가 `residualCanaryFragments()` 를 직접 단언한다.
     "kr.easydoc.api.DocumentBodyLogLeakReachTest",
-    # 2026-08-21 (리더, C4 R-6): 「성공 응답은 요청이 지정한 값을 반영한다 — 반영할 것이
-    #   없으면 성공하지 못한다」는 불변식의 **유일한** 강제자다. 그것이 사라지면
-    #   `TypedValueSlotInterceptor` 를 지워도 아무도 모르고, `?limit=` 이 조용히
-    #   기본값으로 흡수되던 상태로 되돌아간다(스키마 층 우회).
+    # 2026-08-21 (구현 레인, C4 R-7): **등재 사유가 바뀌었다.** 종전 사유는 「값 자리 불변식의
+    #   유일한 강제자」였는데, 그 불변식은 이제 `ValueSlotInvariantReachTest` 가 진다 —
+    #   이 항목에 그렇게 적어 두면 **죽은 포인터**가 된다(클래스는 남고 메서드만 지우면
+    #   모든 게이트가 초록이었다. 실측: R-7 첫 줄).
+    #   남기는 사유는 따로 있다: **DL-4·DL-9 가 목록 오퍼레이션의 소유권 은닉을 잰다** —
+    #   타인 소유 항목 0건, 남의 작업 공간에 404(빈 목록 아님), 그리고 「없는 것과 남의 것의
+    #   응답 바이트가 같다」(X-B2). `privacy-gate` 의 소유 술어 감사가 그 결론을 인용한다.
     "kr.easydoc.api.DocumentListReachTest",
     "kr.easydoc.api.PrivateResponseHeadersReachTest",
     # 2026-08-21 (리더, C4): F3(요청 다섯 필드에 Bean Validation 금지)을 지킨 것은 둘이었다 —
@@ -315,11 +319,20 @@ FLOOR_TEST_CLASSES: tuple[str, ...] = (
     "kr.easydoc.api.RequestFieldRejectionReachTest",
     "kr.easydoc.api.SensitiveToStringReachTest",
     "kr.easydoc.api.SourceScanFormsProbe",
-    # 2026-08-21 (리더, C4 R-6 ⒞): 「계약이 선언하지 않은 상태 코드가 나가지 않는다」의
-    #   유일한 강제자다. 실측으로 `PATCH`·`DELETE /workspaces/%20` 이 **400** 을 내보내고
-    #   있었고 계약 전체의 `'400'` 선언은 **0건**이었다 — 기존 계약 테스트의 도달이 경로
-    #   변수 변환 실패를 덮지 않았다는 뜻이다. 인스턴스는 닫혔고 **종류**는 게이트 28 로
-    #   올렸다.
+    # 2026-08-21 (구현 레인, C4 R-7 — 리더가 명시 허가한 추가): 「성공 응답은 요청이 지정한
+    #   값을 반영한다 — 반영할 것이 없으면 성공하지 못한다」의 **유일한** 강제자다. 사라지면
+    #   `TypedValueSlotInterceptor` 를 지워도 아무도 모르고, `?limit=` 이 조용히 기본값으로
+    #   흡수되며 `?workspace_id=` 이 작업 공간 필터를 지우던 상태로 되돌아간다.
+    #   **이 항목이 R-7 의 처방 자체다** — 종전에는 이 불변식이 두 클래스의 메서드로 살아
+    #   바닥의 알갱이(클래스)와 보호 대상의 알갱이(메서드)가 어긋나 있었고, 메서드만 지우는
+    #   편집이 전 게이트를 통과했다(실측).
+    "kr.easydoc.api.ValueSlotInvariantReachTest",
+    # 2026-08-21 (구현 레인, C4 R-7): **등재 사유가 바뀌었다.** 종전 사유(경로 변수의 계약
+    #   미선언 상태 코드)는 `ValueSlotInvariantReachTest` 로 옮겼다 — 여기 남겨 두면
+    #   죽은 포인터다(위 항목과 같은 이유).
+    #   남기는 사유: **WR-3·WR-4 가 소유권 은닉의 정본 케이스**다 — 404 이고 403 이 아니며,
+    #   없는 자원과 타인 자원의 응답이 상태·본문 바이트·헤더 이름 집합까지 같고, 그 차이가
+    #   **응답 시간으로도 새지 않는다**. 세 축 모두 `privacy-gate` 판정이 인용한다.
     "kr.easydoc.api.WorkspaceEndpointReachTest",
     "kr.easydoc.core.CoreModuleBoundaryTest",
     "kr.easydoc.core.ParityDeclarationSyncTest",
@@ -336,6 +349,67 @@ FLOOR_TEST_CLASSES: tuple[str, ...] = (
     "kr.easydoc.infrastructure.document.JdbcDocumentStoreTest",
     "kr.easydoc.infrastructure.ingest.IngestDefensesTest",
 )
+
+
+#: **바닥 클래스별 `@Test` 개수 하한** — 핀의 알갱이를 보호 대상의 알갱이에 맞춘다.
+#:
+#: ## 왜 있는가 (C4 R-7)
+#:
+#: `FLOOR_TEST_CLASSES` 는 **클래스 이름**을 지킨다. 그런데 그 항목들이 지키기로 선언한 것은
+#: 대개 클래스가 아니라 **그 안의 단언 몇 개**다. 알갱이가 어긋나면 **메서드만 지우는 편집이
+#: 전부 통과한다** — 2026-08-21 실측: 값 자리 불변식의 메서드와 전용 보조만 지우고 서식을
+#: 정리했더니 `ktlintCheck detekt build moduleBoundaryCheck parityHarness` 가
+#: **exit 0**, 이 파일의 게이트가 **112 passed** 였다.
+#:
+#: 그 결함은 R-6 만의 것이 아니라 **종류**다 — 「바닥이 클래스 단위인데 보호 대상이 메서드
+#: 단위인 모든 항목」. 위 목록에서 자기 클래스가 그 속성 하나만 담은 것은 소수다. 그래서
+#: 종류만큼 넓힌다.
+#:
+#: ## 이름을 열거하지 않는다
+#:
+#: 메서드 **이름**을 적는 길로 가지 않았다. 그것은 범위 선언형이고 이름을 바꿀 때마다
+#: 흔들린다. 여기 적는 것은 **개수**이고, 값은 현재 실측에서 유도했다.
+#:
+#: ## 라쳇 규율 — `MIN_TEST_CLASSES` 와 같다
+#:
+#: 올리는 것은 자유(사실의 기록)이고, **내리려면 그 diff 와 사유가 필요하다.** 키 집합은
+#: `FLOOR_TEST_CLASSES` 와 **정확히 일치**해야 한다 — 바닥에 클래스를 더하면서 개수를
+#: 빠뜨리면 그 항목이 다시 「클래스만 지켜지는」 상태가 되고, 그것이 이 장치가 겨눈 결함이다.
+#:
+#: ## 잡지 못하는 것 (정직하게)
+#:
+#: **메서드 껍데기를 남기고 단언만 비우는 편집**은 개수가 그대로라 통과한다. 그 자리를 덮는
+#: 진짜 답은 **변이 테스트(pitest)** 다 — 「이 가드를 변이시켰을 때 죽이는 테스트가 어딘가에
+#: 있는가」를 물으므로 어느 클래스·메서드가 그것을 담는지 알 필요가 없다. 도입은 이 회차의
+#: 범위 밖이고 개선 백로그 B-19 에 있다.
+MIN_TESTS_IN_FLOOR_CLASS: dict[str, int] = {
+    "kr.easydoc.api.AuthenticationCoverageContractTest": 5,
+    "kr.easydoc.api.ContractErrorBodyReachTest": 11,
+    "kr.easydoc.api.DocumentBodyLogLeakReachTest": 1,
+    "kr.easydoc.api.DocumentListReachTest": 10,
+    "kr.easydoc.api.PrivateResponseHeadersReachTest": 7,
+    "kr.easydoc.api.RequestFieldConstraintLayerTest": 7,
+    "kr.easydoc.api.RequestFieldRejectionLayerTest": 5,
+    "kr.easydoc.api.RequestFieldRejectionReachTest": 4,
+    "kr.easydoc.api.SensitiveToStringReachTest": 5,
+    "kr.easydoc.api.SourceScanFormsProbe": 5,
+    "kr.easydoc.api.ValueSlotInvariantReachTest": 3,
+    "kr.easydoc.api.WorkspaceEndpointReachTest": 22,
+    "kr.easydoc.core.CoreModuleBoundaryTest": 1,
+    "kr.easydoc.core.ParityDeclarationSyncTest": 4,
+    "kr.easydoc.core.crypto.PlainBodyTest": 5,
+    "kr.easydoc.core.privacy.MaskedTextGatewayTest": 4,
+    "kr.easydoc.core.privacy.ProvenanceCreationSitesTest": 6,
+    "kr.easydoc.infrastructure.crypto.AesGcmContentCipherTest": 22,
+    "kr.easydoc.infrastructure.crypto.CryptoStartupVerificationTest": 11,
+    "kr.easydoc.infrastructure.db.EnvelopeColumnWriteGuardTest": 9,
+    "kr.easydoc.infrastructure.db.FlywayBaselineGuardTest": 10,
+    "kr.easydoc.infrastructure.db.OwnershipPredicateGuardTest": 11,
+    "kr.easydoc.infrastructure.db.StatementCountingPremiseTest": 4,
+    "kr.easydoc.infrastructure.document.EnvelopeRotationConcurrencyTest": 3,
+    "kr.easydoc.infrastructure.document.JdbcDocumentStoreTest": 22,
+    "kr.easydoc.infrastructure.ingest.IngestDefensesTest": 6,
+}
 
 
 def _kotlin_test_sources() -> list[Path]:
@@ -452,6 +526,67 @@ def test_선언한_테스트_클래스와_트리에서_발견한_것이_정확�
         "  줄이는 편집이 게이트 27 codex C-5 가 지목한 우회 경로이고, MIN_TEST_CLASSES 와\n"
         "  FLOOR_TEST_CLASSES 가 그 경로를 밖에서 되짚는다.\n"
         "  트리 쪽이 남았다면 새 테스트를 선언에 더하라 — 검사 범위가 조용히 늘지 않게 하는 쪽이다."
+    )
+
+
+def _declared_test_count(fqcn: str) -> int | None:
+    """[fqcn] 선언 구간 안의 JUnit 테스트 애너테이션 수. 선언을 못 찾으면 `None`.
+
+    구간 정의는 [_discovered_test_classes] 와 **같다**(열 0 의 최상위 선언 사이). 두 벌이
+    되면 한쪽만 고쳐지는 날 서로 다른 것을 세면서 둘 다 초록이 된다.
+    """
+    paths = _discovered_test_classes().get(fqcn, [])
+    if not paths:
+        return None
+    text = paths[0].read_text(encoding="utf-8")
+    simple = fqcn.rsplit(".", 1)[1]
+    marks = list(TOP_LEVEL_DECLARATION.finditer(text))
+    for index, mark in enumerate(marks):
+        if mark.group(1) != simple:
+            continue
+        end = marks[index + 1].start() if index + 1 < len(marks) else len(text)
+        return len(TEST_ANNOTATION.findall(text[mark.start() : end]))
+    return None
+
+
+def test_바닥_개수_하한이_바닥_목록과_같은_집합을_덮는다() -> None:
+    """**키 집합 정확 일치.** 바닥에 클래스를 더하면서 개수를 빠뜨리면 그 항목은 다시
+    「클래스만 지켜지는」 상태가 되고, 그것이 이 장치가 겨눈 결함이다(C4 R-7).
+    """
+    floor = set(FLOOR_TEST_CLASSES)
+    counted = set(MIN_TESTS_IN_FLOOR_CLASS)
+
+    missing = sorted(floor - counted)
+    extra = sorted(counted - floor)
+    assert not missing and not extra, (
+        "바닥 목록과 개수 하한의 키 집합이 다르다.\n"
+        f"  개수 하한이 빠졌다(메서드 삭제가 잡히지 않는다): {missing or '없음'}\n"
+        f"  바닥에서 빠진 항목의 개수가 남았다: {extra or '없음'}\n"
+        "  바닥에 클래스를 더하면 그 클래스의 현재 `@Test` 수를 함께 적어라."
+    )
+
+
+@pytest.mark.parametrize("fqcn", sorted(MIN_TESTS_IN_FLOOR_CLASS))
+def test_바닥_클래스의_테스트_개수가_하한_아래로_내려가지_않는다(fqcn: str) -> None:
+    """**메서드만 지우는 편집**을 잡는다 — 클래스는 남고 단언이 사라지는 자리다.
+
+    잡지 못하는 것은 `MIN_TESTS_IN_FLOOR_CLASS` KDoc 에 적었다(껍데기를 남기고 단언만
+    비우는 편집 → pitest, 백로그 B-19).
+    """
+    expected = MIN_TESTS_IN_FLOOR_CLASS[fqcn]
+    actual = _declared_test_count(fqcn)
+
+    assert actual is not None, (
+        f"{fqcn} 의 선언을 찾지 못해 테스트 개수를 세지 못했다.\n"
+        "  파일이 사라졌거나 패키지가 바뀌었다. **판정 불가는 통과가 아니다.**"
+    )
+    assert actual >= expected, (
+        f"{fqcn} 의 테스트 개수가 {actual} 개다 — 하한 {expected} 아래다.\n"
+        "  **클래스가 남아 있어도 그 안의 단언이 사라지면**\n"
+        "  그 클래스가 지키기로 선언한 것이 사라진다.\n"
+        "  줄인 것이 정당하다면(예: 다른 클래스로 뽑아냈다) 이 숫자를 고치는\n"
+        "  diff 와 사유를 함께 남겨라 — 뽑아낸 쪽 클래스를 바닥과 이 표에\n"
+        "  함께 등재했는지도 확인하라."
     )
 
 

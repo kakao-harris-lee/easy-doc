@@ -995,3 +995,84 @@ R-4 에서는 두 강제자를 함께 뒀고 그 판단이 옳았다(도달 범�
 | `uv run pytest` | **1441 passed**, 68 skipped, 5 deselected, 5 xfailed |
 
 **핀 처분** — **새 테스트 클래스가 없다.** 케이스는 기존 두 클래스(`DocumentListReachTest`·`WorkspaceEndpointReachTest`) 안에서 늘었고, 새 제품 클래스 하나(`TypedValueSlotInterceptor`)는 탐지 분모(테스트 클래스)가 아니다. `TEST_CLASSES`·`TEST_CLASS_COUNT`(104) **무변경**, `FLOOR_TEST_CLASSES`·`MIN_TEST_CLASSES` **무변경**. `contracts/**`·`reviews/**`·`00_progress.md` 무변경. 임시 프로브(`R6Probe.kt`)는 삭제 확인.
+
+---
+
+# C4-R7 — 핀의 알갱이를 보호 대상의 알갱이에 맞춘다
+
+**일자:** 2026-08-21 / **계기:** stop-time codex 게이트 — *"R-6 강제자 바닥 핀이 테스트 메서드 삭제를 막지 못합니다."* 옳다.
+
+## C4-R7-1. 구멍을 **실측했다** (「구멍이 있었다」의 근거)
+
+`FLOOR_TEST_CLASSES` 는 클래스 **이름**을 지킨다. 그런데 「값 자리 불변식의 유일한 강제자」로 등재된 것은 `DocumentListReachTest` 라는 클래스가 아니라 **그 안의 메서드 몇 개**였다.
+
+R-6 불변식 메서드와 그 전용 보조만 지우고(클래스·파일·선언·개수 유지) **실제 삭제 커밋이 하듯 서식까지 정리**한 뒤 전 게이트를 돌렸다:
+
+| 게이트 | 결과 |
+|---|---|
+| `./gradlew ktlintCheck detekt build moduleBoundaryCheck parityHarness --continue --rerun-tasks` | **exit 0 · BUILD SUCCESSFUL** |
+| `KOTLIN_GATE_REACH_REQUIRE_REPORT=1 uv run pytest tests/test_kotlin_gate_reach.py` | **112 passed** |
+
+**전부 초록이다.** 바닥 목록·`TEST_CLASSES`·`TEST_CLASS_COUNT`·트리 스캔·Gradle 리포트 어느 것도 울리지 않았고, 그 상태에서 `TypedValueSlotInterceptor` 를 지워도 아무도 모른다.
+
+> **첫 시도 둘은 판정으로 쓰지 않았다.** ktlint 가 빨개졌는데 원인이 내 변이가 남긴 **고아 KDoc**(상수만 지우고 주석을 남긴 것)이었다 — 삭제를 잡은 것이 아니라 서식을 깬 것이다. 변이를 「선언 + 그 앞 주석 블록」 단위로 고쳐 서식이 깨끗해진 뒤의 결과가 위 표다. 「빨개졌는가」가 아니라 **「겨눈 장치가 그 자리를 지목했는가」**로 판정한다는 규율이 여기서 실제로 갈렸다.
+
+## C4-R7-2. ⑴ 보호 대상을 굵게 — 불변식을 자기 클래스로 뽑았다
+
+`ValueSlotInvariantReachTest`(신규, 컨테이너 축). 이제 **클래스 알갱이 == 속성 알갱이**이고, 이미 있는 바닥 기제가 실제로 선언된 것을 지킨다. 클래스 이름이 그 속성의 이름이다.
+
+**세 케이스를 한 클래스에 뒀다** — 긍정(쿼리) · 부정(쿼리) · 부정(경로 변수)은 **한 속성의 세 관측면**이고, 속성 하나에 클래스 하나가 R-7 의 요점이므로 가르지 않았다. 한 컨텍스트로 `/documents` 와 `/workspaces` 를 모두 부를 수 있어 스프링 컨텍스트도 하나만 늘었다.
+
+두 host 클래스에서 그 케이스와 전용 보조를 **지웠다**(중복으로 남기면 알갱이 문제가 그대로 남는다). `DocumentListReachTest` KDoc 에 「값 자리 불변식은 여기 없다」와 그 사유를 적었다.
+
+### 기존 바닥 두 항목 — **남긴다**
+
+| 항목 | 판단 | 사유 |
+|---|---|---|
+| `DocumentListReachTest` | **남긴다** | R-6 사유는 옮겨 갔지만 **DL-4·DL-9 가 목록 오퍼레이션의 소유권 은닉을 잰다** — 타인 항목 0건, 남의 작업 공간에 404(빈 목록 아님), 없는 것과 남의 것의 **응답 바이트 동일**(X-B2). `privacy-gate` 의 소유 술어 감사가 그 결론을 인용한다 |
+| `WorkspaceEndpointReachTest` | **남긴다** | **WR-3·WR-4 가 소유권 은닉의 정본 케이스**다 — 404·403 아님, 응답 바이트·헤더 이름 집합 동일, 그리고 그 차이가 **응답 시간으로도 새지 않는다** |
+
+**두 항목의 주석을 고쳤다.** 종전 주석이 「값 자리 불변식의 유일한 강제자」를 가리키고 있었는데 그 불변식이 옮겨 갔으므로 그대로 두면 **죽은 포인터**다(리더가 `7508be1` 로 고친 것과 같은 형태). 리더가 keep/delete 판단을 이 레인에 위임했으므로 그 판단의 근거를 같은 자리에 적었다. **`MIN_TEST_CLASSES` 는 건드리지 않았다.**
+
+## C4-R7-3. ⑵ 핀을 가늘게 — **세웠다** (사유)
+
+`MIN_TESTS_IN_FLOOR_CLASS` — 바닥 클래스별 `@Test` 개수 하한. 현재 실측값에서 유도하고 `MIN_TEST_CLASSES` 와 같은 라쳇 규율을 쓴다.
+
+**세운 사유.** ⑴ 만으로는 **R-6 의 두 자리**만 닫힌다. 결함은 **종류**다 — 「바닥이 클래스 단위인데 보호 대상이 메서드 단위인 모든 항목」. 바닥 26 항목 중 자기 클래스가 그 속성 하나만 담은 것은 소수이고(`DocumentBodyLogLeakReachTest` 1개·`CoreModuleBoundaryTest` 1개·`ValueSlotInvariantReachTest` 3개 정도), 나머지는 22개까지 담는다 — 그 안에서 메서드 하나가 사라지는 것을 오늘 아무것도 보지 못했다.
+
+**이름을 열거하지 않았다.** 메서드 이름 목록은 다시 범위 선언형이고 이름을 바꿀 때마다 흔들린다. 적는 것은 **개수**이고, 구간 정의는 기존 `_discovered_test_classes` 와 **같은 함수 계열**을 쓴다(두 벌이 되면 서로 다른 것을 세면서 둘 다 초록이 된다).
+
+**키 집합을 정확 일치로 묶었다.** 바닥에 클래스를 더하면서 개수를 빠뜨리면 그 항목이 다시 「클래스만 지켜지는」 상태가 되는데, 그것이 이 장치가 겨눈 결함 자체다.
+
+**잡지 못하는 것 (KDoc 에 적었다).** **메서드 껍데기를 남기고 단언만 비우는 편집**은 개수가 그대로라 통과한다. 그 자리의 진짜 답은 **변이 테스트(pitest)** — 「이 가드를 변이시켰을 때 죽이는 테스트가 어딘가에 있는가」를 물으므로 어느 클래스·메서드가 그것을 담는지 알 필요가 없다. 도입은 이 회차의 범위 밖이고 백로그 **B-19** 에 있다(마감은 리더 배정).
+
+## C4-R7-4. 음성 대조 (3줄 전건 실측)
+
+| 변이 | Gradle 게이트 | 핀 게이트 | 지목한 장치 |
+|---|---|---|---|
+| **1. 추출 전** — 불변식 **메서드만** 삭제(깔끔) | **exit 0** | **112 passed** | **없음 — 이것이 게이트가 지적한 구멍이다** |
+| **2. 추출 후** — 그 **클래스 전체** 삭제(파일 + `TEST_CLASSES` + 개수 함께) | — | **RED** | `바닥_목록의_탐지기가_선언에_남아_있다` · `바닥_클래스의_테스트_개수가_하한_아래로_내려가지_않는다` · `리포트에_나온_클래스는_전부_선언에_있다` |
+| **3. 추출 후** — 그 클래스 안 **메서드만** 삭제(깔끔) | **exit 0** | **RED** | **`바닥_클래스의_테스트_개수가_하한_아래로_내려가지_않는다` 하나** |
+
+3행이 ⑵ 가 있어야 하는 이유의 직접 증거다 — Gradle 은 조용하고(깔끔한 삭제라 미사용 잔재가 없다) **개수 하한만** 울린다. 2행에서 개수 하한도 함께 울리는 것은 키 집합 정확 일치 때문이며, 바닥 등재와 개수 등재가 **함께** 움직여야 한다는 규율의 관측이다.
+
+복원 sha256 전건 일치 — `DocumentListReachTest.kt` `bed63774…92ea` · `WorkspaceEndpointReachTest.kt` `768ff9cd…d575`(1행) · `ValueSlotInvariantReachTest.kt` `4a8a74e8…0e85` · `tests/test_kotlin_gate_reach.py` `d0ceb525…17f9`(2·3행). `cp`·`git stash` 미사용.
+
+## C4-R7-5. 그래도 무엇을 증명하지 못하는가
+
+**개수가 유지되는 편집은 전부 통과한다** — 메서드 껍데기를 남기고 단언만 비우기, 단언을 `isNotNull()` 처럼 무해한 것으로 바꾸기, 프로브 값을 위반이 아닌 값으로 갈아치우기, 또는 「케이스 하나를 지우고 무해한 케이스 하나를 더하기」. 이 셋 다 개수 하한과 바닥 목록에 보이지 않는다. **그 종류를 덮는 것은 변이 테스트뿐이고 이 회차는 그것을 들이지 않았다**(B-19). 즉 R-7 이 닫은 것은 「선언이 사라지는 편집」이고, 「선언이 남고 내용이 비는 편집」은 **여전히 열려 있다.**
+
+부수 잔여 하나: `MIN_TESTS_IN_FLOOR_CLASS` 는 `@Disabled` 를 구분하지 않는다 — 애너테이션 수를 세므로 케이스를 비활성화해도 수는 그대로다. 리포트 기반 대조(`test_리포트가_선언한_클래스를_실제로_실행했다`)가 **클래스 단위로는** 그것을 되짚지만 메서드 단위로는 아니다.
+
+## C4-R7-6 검사 표
+
+| 검사 | 결과 |
+|---|---|
+| `./gradlew ktlintCheck detekt build moduleBoundaryCheck parityHarness --continue --rerun-tasks` | **BUILD SUCCESSFUL** (경고 0) |
+| 개인정보 스캐너 | exit 0 (**BLOCK 0**) |
+| `KOTLIN_GATE_REACH_REQUIRE_REPORT=1 uv run pytest tests/test_kotlin_gate_reach.py` | **140 passed** (종전 112 → 개수 하한 27 케이스 추가) |
+| `uv run ruff check .` | All checks passed |
+| `uv run mypy . .claude` | Success: 139 source files |
+| `uv run pytest` | **1469 passed**, 68 skipped, 5 deselected, 5 xfailed |
+
+**핀 처분** — `TEST_CLASSES` +1(`ValueSlotInvariantReachTest`), `TEST_CLASS_COUNT` 104 → **105**, `FLOOR_TEST_CLASSES` +1(**리더가 이 회차에 명시 허가**), 기존 두 항목의 **주석만** 갱신(죽은 포인터 제거), `MIN_TESTS_IN_FLOOR_CLASS` **신설**. **`MIN_TEST_CLASSES` 무변경.** `contracts/**`·`reviews/**`·`00_progress.md` 무변경.
