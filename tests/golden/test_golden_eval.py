@@ -43,8 +43,8 @@
 목적이다 — 수치를 낮춰 맞추지 말고, 무엇이 빠지는지를 리포트로 보고 프롬프트를 고친다.
 """
 
+import logging
 import os
-import sys
 import time
 import warnings
 from collections.abc import AsyncIterator
@@ -80,6 +80,10 @@ from tests.golden.baseline import (
 from tests.golden.evaluation import DocumentEvaluation, RuleEvaluation, evaluate_all
 
 pytestmark = pytest.mark.llm
+
+#: 진행 로그 전용 로거. CI 는 `--log-cli-level=INFO` 로 이 레인을 돌린다 —
+#: 근거는 `log_progress` docstring 의 실측 표에 있다.
+logger = logging.getLogger(__name__)
 
 DEFAULT_PROVIDER = "anthropic"
 DEFAULT_JUDGE_PROVIDER = "anthropic"
@@ -291,17 +295,42 @@ def log_progress(
     (CLAUDE.md 보안 규칙 — 로그에 문서 본문·개인정보 금지). `outcome_code` 도 사유
     코드이지 내용이 아니다.
 
-    `sys.stdout` 에 `flush=True` 로 쓴다. 버퍼에 남으면 프로세스가 kill 될 때 통째로
-    사라져 이 함수가 존재하는 이유가 없어진다. **다만 pytest 의 기본 캡처는 실패한
-    테스트에만 출력을 재생하고, 타임아웃으로 죽은 프로세스는 재생 자체를 못 한다** —
-    그래서 CI 는 이 레인을 `-s` 로 돌린다(`.github/workflows/ci.yml`). 한쪽만 있으면
-    이 로그는 다시 안 보인다.
+    ## 왜 `print` + `-s` 가 아니라 로거 + `--log-cli-level=INFO` 인가
+
+    초판은 `print(..., flush=True)` 였고 CI 가 `-s`(캡처 끄기)로 짝을 맞췄다. 그 근거는
+    "캡처를 켜면 진행 줄이 버퍼에 갇혀 kill 때 사라진다" 였는데, **재보니 그 전제가
+    사실이 아니다.** CI 는 stdout 이 tty 가 아니므로 tty 실측은 근거가 되지 못한다.
+    그래서 비-tty 리다이렉트(`> out.txt 2>&1`) 상태로 프로세스를 `kill -9` 하고
+    파일에 남은 진행 줄을 셌다(2026-08-21, 같은 탐침 2회):
+
+    | 조합 | kill 뒤 파일에 남은 진행 줄 |
+    |---|---|
+    | (A) `--log-cli-level=INFO` — 캡처 유지 | **8줄 / 9줄** |
+    | (B) `-s` — 캡처 끔 | 9줄 / 8줄 |
+
+    **둘 다 살아남는다.** live log 는 pytest 가 레코드마다 스트림을 명시적으로 flush
+    하기 때문에 블록 버퍼링을 타지 않는다 — 남은 8줄이 약 440바이트로 4KB 블록 경계에
+    한참 못 미치는데도 파일에 있었다는 것이 그 증거다(버퍼가 차서 밀려 나온 것이 아니다).
+
+    생존이 갈리지 않으므로 판정은 **부수효과**로 넘어간다. `-s` 는 캡처를 통째로 끄고,
+    그러면 실패 리포트의 `Captured stdout/stderr` 섹션이 사라진다. 이 레인은 필수 정보
+    보존 축의 허용치가 **0** 이라 빨간색으로 끝날 공산이 크고, 그때 가장 필요한 것이
+    바로 그 캡처 섹션이다. `-s` 는 진행 로그를 얻는 대가로 실패 진단을 버리는 거래인데,
+    실측이 그 대가를 **치를 필요가 없다**고 말한다. 그래서 캡처를 켠 채 로그만 흘린다.
+
+    **한 쌍 규약은 그대로고 짝만 바뀐다.** `--log-cli-level=INFO` 가 없으면 이 로거의
+    출력은 아무 데도 가지 않는다 — 위 (B) 열에서 로그 줄이 **0** 이었다. 이 함수와
+    `.github/workflows/ci.yml` 실행 스텝의 플래그는 여전히 한쪽만으로는 무의미하다.
     """
     elapsed = time.monotonic() - started
-    print(
-        f"[골든 {phase}] {index}/{total} {document_id} {outcome_code} (누적 {elapsed:.0f}초)",
-        file=sys.stdout,
-        flush=True,
+    logger.info(
+        "[골든 %s] %d/%d %s %s (누적 %.0f초)",
+        phase,
+        index,
+        total,
+        document_id,
+        outcome_code,
+        elapsed,
     )
 
 

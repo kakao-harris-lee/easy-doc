@@ -172,3 +172,64 @@ F3 이 진짜 문제다. 30분을 **아무 출력 없이** 죽어서, 이번 원
 
 `-m llm` 은 로컬에서 돌리지 않았다 — 35분·실과금이고, 이 변경이 겨냥하는 것은 CI 실행이다.
 **CI 실측이 이 계획의 판정이다.**
+
+---
+
+## 8. 후속 (2026-08-21, 같은 날 · §6~§7 을 일부 대체한다)
+
+위 §6·§7 은 **그때의 기록으로 그대로 둔다.** 아래 두 자리가 그 뒤 실측으로 뒤집혔다.
+
+### 8-1. `-s` → `--log-cli-level=INFO` (§6 의 「한 쌍 규약」 대체)
+
+§6 이 `-s` 를 고른 근거는 *"캡처를 켜면 진행 줄이 버퍼에 갇혀 kill 때 사라진다"* 였는데
+**그 전제가 틀렸다.** 근거였던 관찰이 tty 에서 난 것이고 CI 는 stdout 이 tty 가 아니다.
+비-tty 리다이렉트(`> out.txt 2>&1`) 상태로 `kill -9` 한 뒤 파일에 남은 진행 줄을 셌다
+(module-scoped async fixture 탐침, 0.5초 × 60회, 5초에 kill, 2회 반복):
+
+| 조합 | kill 뒤 파일에 남은 진행 줄 |
+|---|---|
+| (A) `--log-cli-level=INFO` — 캡처 유지 | **8줄 / 9줄** |
+| (B) `-s` — 캡처 끔 | 9줄 / 8줄 |
+
+**둘 다 살아남는다.** live log 는 pytest 가 레코드마다 스트림을 명시적으로 flush 하므로
+블록 버퍼링을 타지 않는다 — 남은 8줄이 약 440바이트로 4KB 블록 경계에 한참 못 미치는데도
+파일에 있었다는 것이 그 증거다(버퍼가 차서 밀려 나온 것이 아니다).
+
+생존이 안 갈리므로 판정은 **부수효과**로 넘어간다. `-s` 는 캡처를 통째로 꺼서 실패 리포트의
+`Captured stdout/stderr` 섹션을 없앤다. 이 레인은 필수 정보 보존 축의 허용치가 **0** 이라
+빨간색으로 끝날 공산이 크고(§ 위 경고), 그때 가장 필요한 것이 그 섹션이다. 즉 `-s` 는
+진행 로그를 얻는 대가로 실패 진단을 버리는 거래인데, 실측이 그 대가를 **치를 필요가 없다**고
+말한다. 그래서 `log_progress` 를 `print` → 모듈 로거로 바꾸고 CI 를 `--log-cli-level=INFO`
+로 돌린다. **한 쌍 규약 자체는 그대로다 — 짝만 바뀐다**(플래그가 없으면 로거 출력은
+아무 데도 가지 않는다. 위 (B) 열의 로그 줄이 0이었다).
+
+### 8-2. 잡 타임아웃 → 스텝 타임아웃 (§6 의 `timeout-minutes: 60` 대체)
+
+§6 은 상한을 잡 레벨에만 걸었는데, **잡 타임아웃은 잡을 «취소»한다.** 그래서 conclusion 이
+`failure` 가 아니라 `cancelled` 가 되고 — 더 나쁘게는 — **후속 스텝이 통째로 skip 된다.**
+실측: run 32403598822 에서 한도에 걸리자 `실행 결과 요약` 스텝이 `skipped` 로 끝났다.
+정작 무엇이 돌았는지 알아야 할 그때 요약이 사라진 것이다.
+
+| 자리 | §6 | 후속 |
+|---|---|---|
+| `llm-lane` 잡 `timeout-minutes` | 60 | **70** (스텝 상한을 감싸는 바깥 안전망) |
+| `-m llm 레인 실행` 스텝 `timeout-minutes` | 없음 | **55** (실제 상한. 실측 35분 20초 대비 여유 56%) |
+| `실행 결과 요약` 스텝 `if` | `steps.scope.outputs.run == 'true'` | `${{ !cancelled() && steps.scope.outputs.run == 'true' }}` |
+
+스텝 타임아웃은 그 스텝만 실패시키므로 ⑴ 잡 conclusion 이 정직하게 `failure` 가 되고
+⑵ 요약 스텝이 실제로 돈다. 두 `timeout-minutes` 는 한 쌍이라 한쪽만 고치면 안 된다 —
+잡 상한이 스텝 상한보다 낮아지면 위의 skip 사고가 그대로 되살아난다.
+
+### 8-3. 검증 기록 (2026-08-21 후속)
+
+| 게이트 | 결과 |
+|---|---|
+| `uv run ruff check .` | All checks passed |
+| `uv run ruff format --check .` | 156 files already formatted |
+| `uv run mypy . .claude` | Success: no issues found in 139 source files |
+| `uv run pytest` (기본 `-m 'not llm'`) | **1436 passed**, 68 skipped, 5 deselected, 5 xfailed |
+| `python3 -m tests.test_llm_lane_scope --self-check` | 선언 28 / 도달 28 — 완전성 OK |
+| `ci.yml` YAML 파싱 | 잡 `timeout-minutes: 70` · 실행 스텝 `timeout-minutes: 55` · 요약 스텝 `if: ${{ !cancelled() && steps.scope.outputs.run == 'true' }}` · 명령 `uv run pytest -m llm --log-cli-level=INFO` |
+| `log_progress` 출력 형태 | `[골든 변환] 7/56 042 ok (누적 128초)` — **본문 미포함 확인**(형태 불변) |
+
+`-m llm` 은 이번에도 돌리지 않았다(35분·실과금). **CI 실측이 여전히 이 계획의 판정이다.**
