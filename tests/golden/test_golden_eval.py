@@ -43,7 +43,9 @@
 목적이다 — 수치를 낮춰 맞추지 말고, 무엇이 빠지는지를 리포트로 보고 프롬프트를 고친다.
 """
 
+import logging
 import os
+import time
 import warnings
 from collections.abc import AsyncIterator
 
@@ -78,6 +80,10 @@ from tests.golden.baseline import (
 from tests.golden.evaluation import DocumentEvaluation, RuleEvaluation, evaluate_all
 
 pytestmark = pytest.mark.llm
+
+#: 진행 로그 전용 로거. CI 는 `--log-cli-level=INFO` 로 이 레인을 돌린다 —
+#: 근거는 `log_progress` docstring 의 실측 표에 있다.
+logger = logging.getLogger(__name__)
 
 DEFAULT_PROVIDER = "anthropic"
 DEFAULT_JUDGE_PROVIDER = "anthropic"
@@ -271,6 +277,63 @@ def run_context(observed_models: list[str]) -> RunContext:
     )
 
 
+def log_progress(
+    phase: str, index: int, total: int, document_id: str, outcome_code: str, started: float
+) -> None:
+    """레인이 **어디까지 갔는지**를 한 줄씩 남긴다.
+
+    이 함수가 있는 이유는 실제 사고 하나다. CI 의 `llm-lane` 잡이 30분 한도에 걸려
+    죽었는데, collection 이후 **출력이 한 줄도 없어** 어디서 시간을 쓰는지 로그만으로는
+    알 수 없었다. 원인 규명에 CI 로그가 아니라 저장소 고고학(실측 소요가 적힌 원장)이
+    필요했고, 그건 로그가 제 일을 못 했다는 뜻이다.
+
+    시간이 전부 module-scoped fixture(`outcomes`) 안에서 소모되는 구조라 **테스트 결과
+    줄이 하나도 나오기 전에** 한도가 끝난다. 그래서 진행 신호는 테스트 경계가 아니라
+    루프 안에서 나와야 한다.
+
+    **문서 id·순번·경과 초만 찍는다.** 본문·문장·팩트 리터럴은 절대 싣지 않는다
+    (CLAUDE.md 보안 규칙 — 로그에 문서 본문·개인정보 금지). `outcome_code` 도 사유
+    코드이지 내용이 아니다.
+
+    ## 왜 `print` + `-s` 가 아니라 로거 + `--log-cli-level=INFO` 인가
+
+    초판은 `print(..., flush=True)` 였고 CI 가 `-s`(캡처 끄기)로 짝을 맞췄다. 그 근거는
+    "캡처를 켜면 진행 줄이 버퍼에 갇혀 kill 때 사라진다" 였는데, **재보니 그 전제가
+    사실이 아니다.** CI 는 stdout 이 tty 가 아니므로 tty 실측은 근거가 되지 못한다.
+    그래서 비-tty 리다이렉트(`> out.txt 2>&1`) 상태로 프로세스를 `kill -9` 하고
+    파일에 남은 진행 줄을 셌다(2026-08-21, 같은 탐침 2회):
+
+    | 조합 | kill 뒤 파일에 남은 진행 줄 |
+    |---|---|
+    | (A) `--log-cli-level=INFO` — 캡처 유지 | **8줄 / 9줄** |
+    | (B) `-s` — 캡처 끔 | 9줄 / 8줄 |
+
+    **둘 다 살아남는다.** live log 는 pytest 가 레코드마다 스트림을 명시적으로 flush
+    하기 때문에 블록 버퍼링을 타지 않는다 — 남은 8줄이 약 440바이트로 4KB 블록 경계에
+    한참 못 미치는데도 파일에 있었다는 것이 그 증거다(버퍼가 차서 밀려 나온 것이 아니다).
+
+    생존이 갈리지 않으므로 판정은 **부수효과**로 넘어간다. `-s` 는 캡처를 통째로 끄고,
+    그러면 실패 리포트의 `Captured stdout/stderr` 섹션이 사라진다. 이 레인은 필수 정보
+    보존 축의 허용치가 **0** 이라 빨간색으로 끝날 공산이 크고, 그때 가장 필요한 것이
+    바로 그 캡처 섹션이다. `-s` 는 진행 로그를 얻는 대가로 실패 진단을 버리는 거래인데,
+    실측이 그 대가를 **치를 필요가 없다**고 말한다. 그래서 캡처를 켠 채 로그만 흘린다.
+
+    **한 쌍 규약은 그대로고 짝만 바뀐다.** `--log-cli-level=INFO` 가 없으면 이 로거의
+    출력은 아무 데도 가지 않는다 — 위 (B) 열에서 로그 줄이 **0** 이었다. 이 함수와
+    `.github/workflows/ci.yml` 실행 스텝의 플래그는 여전히 한쪽만으로는 무의미하다.
+    """
+    elapsed = time.monotonic() - started
+    logger.info(
+        "[골든 %s] %d/%d %s %s (누적 %.0f초)",
+        phase,
+        index,
+        total,
+        document_id,
+        outcome_code,
+        elapsed,
+    )
+
+
 async def convert_all(provider: LLMProvider) -> dict[str, ConversionOutcome | None]:
     """전 문서를 변환한다. 변환 실패는 None으로 기록하고 계속 진행한다.
 
@@ -280,12 +343,16 @@ async def convert_all(provider: LLMProvider) -> dict[str, ConversionOutcome | No
     """
     service = ConversionService(provider=provider)
     results: dict[str, ConversionOutcome | None] = {}
-    for document in DOCUMENTS:
+    started = time.monotonic()
+    for index, document in enumerate(DOCUMENTS, start=1):
         try:
             results[document.id] = await service.convert(document.source_text)
+            outcome_code = "ok"
         except LLMProviderError:
             # 예외 메시지에도 본문이 없도록 설계되어 있으나, 출력은 사유 코드로만 남긴다.
             results[document.id] = None
+            outcome_code = "변환실패"
+        log_progress("변환", index, len(DOCUMENTS), document.id, outcome_code, started)
     return results
 
 
@@ -369,17 +436,23 @@ async def test_judge_점수를_기록한다(
     """
     scores: dict[str, JudgeScore] = {}
     notes: list[str] = []
-    for document in evaluation.documents:
+    started = time.monotonic()
+    total = len(evaluation.documents)
+    for index, document in enumerate(evaluation.documents, start=1):
         outcome = evaluation.outcomes.get(document.id)
         if outcome is None:
             notes.append(f"{document.id}: 변환실패")
+            log_progress("채점", index, total, document.id, "변환실패건너뜀", started)
             continue
         try:
             scores[document.id] = await judge_conversion(
                 judge_provider, source=document.source_text, converted=outcome.easy_text
             )
+            outcome_code = "ok"
         except LLMProviderError:
             notes.append(f"{document.id}: 채점실패")
+            outcome_code = "채점실패"
+        log_progress("채점", index, total, document.id, outcome_code, started)
 
     observation = summarize_judge(evaluation, scores)
     coverage = observation.scored / observation.documents if observation.documents else 0.0
