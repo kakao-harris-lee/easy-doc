@@ -560,10 +560,10 @@ MIN_TESTS_IN_FLOOR_CLASS: dict[str, int] = {
     "kr.easydoc.api.PrivateResponseHeadersReachTest": 7,
     "kr.easydoc.api.RequestFieldConstraintLayerTest": 7,
     "kr.easydoc.api.RequestFieldRejectionLayerTest": 5,
-    "kr.easydoc.api.RequestFieldRejectionReachTest": 4,
+    "kr.easydoc.api.RequestFieldRejectionReachTest": 5,
     "kr.easydoc.api.SensitiveToStringReachTest": 5,
     "kr.easydoc.api.SourceScanFormsProbe": 5,
-    "kr.easydoc.api.ValueSlotInvariantReachTest": 3,
+    "kr.easydoc.api.ValueSlotInvariantReachTest": 6,
     "kr.easydoc.api.WorkspaceEndpointReachTest": 22,
     "kr.easydoc.core.CoreModuleBoundaryTest": 1,
     "kr.easydoc.core.ParityDeclarationSyncTest": 4,
@@ -641,8 +641,147 @@ RATCHET_SCALAR_PINS: tuple[tuple[str, str], ...] = (
     ),
 )
 
+#: **제품 주석이 이름으로 지목한 테스트 클래스**의 `@Test` 개수 하한 (β-03 · β-24).
+#:
+#: ## 왜 있는가
+#:
+#: `FLOOR_TEST_CLASSES`·`MIN_TESTS_IN_FLOOR_CLASS` 는 「다른 판정의 근거로 인용되는 탐지기」를
+#: 지킨다. 그런데 **제품 소스의 주석이 이름으로 「이것이 그 성질을 잰다」고 지목한 클래스**는
+#: 그 목록과 다른 집합이고, 교차 종합이 실측으로 그 어긋남을 짚었다 —
+#: `DocumentListContractTest`(Claude β-03) · `DocumentContractNodeTest`·`HealthContractTest`
+#: (codex β-24) 가 두 표 밖이었다. 그 클래스에서 메서드만 지우면 제품 주석의 주장이 거짓이
+#: 되는데 **자동 신호가 0** 이었다(악용 비용 한 줄 × 자동 탐지 0 = 차단 칸).
+#:
+#: ## 목록이 아니라 **인구조사**다
+#:
+#: 키 집합을 손으로 정하지 않는다. `backend-kotlin/**/src/main/**` 의 주석·KDoc 에서
+#: 참조 형태(백틱 · 대괄호 · `@see`)로 지목된 `…Test`/`…Probe` 이름을 뽑아 그것이 실제
+#: 테스트 클래스로 해소되면 분모에 든다([_named_enforcer_census]). 그래서 **새 지목이
+#: 자동으로 분모에 들고**, 핀이 없으면 빨개진다(fail-closed).
+#:
+#: `MIN_TESTS_IN_FLOOR_CLASS` 와 **겹치지 않는 정확 분할**이다 — 바닥 표가 이미 지키는
+#: 클래스를 두 번 적지 않는다. 그 분할을
+#: `test_명명된_강제자가_전부_개수_핀을_갖는다` 가 양방향으로 대조한다.
+#:
+#: ## 잡지 못하는 것
+#:
+#: `MIN_TESTS_IN_FLOOR_CLASS` 와 같다 — 껍데기를 남기고 단언만 비우는 편집. 그 축은
+#: [MIN_ASSERTIONS_BY_CLASS] 가 부분적으로, 변이 테스트(백로그 B-19)가 온전히 진다.
+#:
+#: 값의 근거는 실측이다 — 2026-08-21 각 클래스의 현재 선언 수를 판정 장치
+#: ([_declared_test_count]) 에 직접 물어 적었다(`grep` 이 아니다 — 규칙 2).
+MIN_TESTS_BY_NAMED_ENFORCER: dict[str, int] = {
+    "kr.easydoc.api.ConfigurationPropertiesBindingTest": 1,
+    "kr.easydoc.api.DeletedAccountTokenReachTest": 2,
+    "kr.easydoc.api.DocumentContractNodeTest": 15,
+    "kr.easydoc.api.DocumentDtoLeakTest": 6,
+    "kr.easydoc.api.DocumentListContractTest": 9,
+    "kr.easydoc.api.HealthContractTest": 6,
+    "kr.easydoc.api.MigrateProfileWithoutEncryptionKeyTest": 2,
+    "kr.easydoc.api.PasswordHashingBackpressureReachTest": 1,
+    "kr.easydoc.api.UploadFormatContractTest": 3,
+    "kr.easydoc.core.easyread.PostprocessTest": 4,
+    "kr.easydoc.core.easyread.StyleRuleDataSnapshotTest": 7,
+    "kr.easydoc.core.privacy.MaskingTest": 62,
+    "kr.easydoc.infrastructure.auth.Argon2PasswordHasherTest": 14,
+    "kr.easydoc.infrastructure.auth.JdbcWorkspaceRepositoryTest": 13,
+    "kr.easydoc.infrastructure.crypto.CryptoProfileExemptionTest": 4,
+    "kr.easydoc.infrastructure.db.PythonSchemaBaselineTest": 4,
+    "kr.easydoc.infrastructure.document.MaskedItemCodecTest": 9,
+    "kr.easydoc.infrastructure.ingest.DocumentExtractorsTest": 12,
+    "kr.easydoc.infrastructure.llm.LlmProviderConfigurationTest": 6,
+}
+
+#: **클래스별 단언 토큰 수 하한** — 「껍데기를 남기고 단언만 비우는」 편집을 잡는다 (β-04).
+#:
+#: ## 왜 개수 표가 하나 더 필요한가
+#:
+#: `MIN_TESTS_IN_FLOOR_CLASS` 는 `@Test` **선언 수**만 본다. 그래서 교차 종합이 실측으로
+#: 세 갈래를 짚었다 — ⑴ 단언 비우기 ⑵ 무해한 단언으로 교체 ⑶ 위험 케이스 삭제 + 더미 추가.
+#: 셋 다 선언 수가 그대로다.
+#:
+#: 이 표는 그중 **⑴ 을 잡고 ⑶ 을 부분적으로** 잡는다. `assert…(` 모양의 토큰 수가 줄면
+#: 빨개지기 때문이다. **⑵ 는 잡지 못한다** — 단언을 무해한 것으로 바꾸면 개수가 그대로다.
+#: 그 잔여의 정공법은 변이 테스트이고, 사용자 결정으로 백로그 B-19(1순위)에 있다. 여기서
+#: 그것을 끌어오지 않는다.
+#:
+#: ## 어휘가 아니라 **모양**이다
+#:
+#: 금지·허용 목록을 두지 않는다. `assert` 로 시작하는 식별자 뒤에 여는 괄호가 오는 **모양**을
+#: 센다(`NamedReferenceGuardTest` 가 이름 목록 대신 모양을 고른 것과 같은 규율). 주석과 문자열은
+#: [_blanked] 가 이미 비웠으므로 `// assertThat(` 한 줄은 세어지지 않는다.
+#:
+#: ## 이 모양이 **보지 못하는** 자리 — 정직하게 적는다
+#:
+#: MockMvc DSL(`andExpect { status { isNotFound() } }`)은 `assert` 토큰이 없다. 그 형태만
+#: 쓰는 클래스에서는 이 축의 하한이 낮아 방어력이 약하다. 실측(2026-08-21): 저장소 853개
+#: `@Test` 본문 중 **86 개**가 직접 `assert` 토큰이 없고, 같은 파일 안 호출을 전이적으로
+#: 따라가도 **75 개**가 남는다. 그래서 「모든 본문이 단언에 도달한다」 축은 **오탐 8.8% 로
+#: 시작**하고, 오탐 축은 곧 면제 목록을 낳아 규칙 4 ⑵ 의 거부권에 걸린다 — 그 갈래를 버리고
+#: 클래스별 개수 하한을 골랐다. 아래 어느 클래스도 토큰 0 이 아니다(실측).
+#:
+#: 키 집합은 [MIN_TESTS_IN_FLOOR_CLASS] ∪ [MIN_TESTS_BY_NAMED_ENFORCER] 와 **정확히 같다** —
+#: 유도되는 집합이므로 새 클래스가 그 둘에 들면 여기에도 들어야 하고, 빠지면 빨개진다.
+MIN_ASSERTIONS_BY_CLASS: dict[str, int] = {
+    "kr.easydoc.api.AuthenticationCoverageContractTest": 8,
+    "kr.easydoc.api.ConfigurationPropertiesBindingTest": 9,
+    "kr.easydoc.api.ContractErrorBodyReachTest": 16,
+    "kr.easydoc.api.DeletedAccountTokenReachTest": 12,
+    "kr.easydoc.api.DocumentBodyLogLeakReachTest": 32,
+    "kr.easydoc.api.DocumentContractNodeTest": 40,
+    "kr.easydoc.api.DocumentDeleteReachTest": 43,
+    "kr.easydoc.api.DocumentDtoLeakTest": 15,
+    "kr.easydoc.api.DocumentListContractTest": 30,
+    "kr.easydoc.api.DocumentListHeaderFloorTest": 4,
+    "kr.easydoc.api.DocumentListReachTest": 28,
+    "kr.easydoc.api.HealthContractTest": 13,
+    "kr.easydoc.api.MigrateProfileWithoutEncryptionKeyTest": 4,
+    "kr.easydoc.api.NamedReferenceGuardTest": 30,
+    "kr.easydoc.api.PasswordHashingBackpressureReachTest": 14,
+    "kr.easydoc.api.PrivateResponseHeadersReachTest": 18,
+    "kr.easydoc.api.RequestFieldConstraintLayerTest": 15,
+    "kr.easydoc.api.RequestFieldRejectionLayerTest": 14,
+    "kr.easydoc.api.RequestFieldRejectionReachTest": 12,
+    "kr.easydoc.api.SensitiveToStringReachTest": 11,
+    "kr.easydoc.api.SourceScanFormsProbe": 6,
+    "kr.easydoc.api.UploadFormatContractTest": 4,
+    "kr.easydoc.api.ValueSlotInvariantReachTest": 35,
+    "kr.easydoc.api.WorkspaceEndpointReachTest": 57,
+    "kr.easydoc.core.CoreModuleBoundaryTest": 1,
+    "kr.easydoc.core.ParityDeclarationSyncTest": 9,
+    "kr.easydoc.core.crypto.PlainBodyTest": 7,
+    "kr.easydoc.core.easyread.PostprocessTest": 4,
+    "kr.easydoc.core.easyread.StyleRuleDataSnapshotTest": 18,
+    "kr.easydoc.core.privacy.MaskedTextGatewayTest": 5,
+    "kr.easydoc.core.privacy.MaskingTest": 123,
+    "kr.easydoc.core.privacy.ProvenanceCreationSitesTest": 6,
+    "kr.easydoc.infrastructure.auth.Argon2PasswordHasherTest": 22,
+    "kr.easydoc.infrastructure.auth.JdbcWorkspaceRepositoryTest": 19,
+    "kr.easydoc.infrastructure.crypto.AesGcmContentCipherTest": 35,
+    "kr.easydoc.infrastructure.crypto.CryptoProfileExemptionTest": 6,
+    "kr.easydoc.infrastructure.crypto.CryptoStartupVerificationTest": 6,
+    "kr.easydoc.infrastructure.db.EnvelopeColumnWriteGuardTest": 14,
+    "kr.easydoc.infrastructure.db.FlywayBaselineGuardTest": 18,
+    "kr.easydoc.infrastructure.db.OwnershipPredicateGuardTest": 15,
+    "kr.easydoc.infrastructure.db.PythonSchemaBaselineTest": 7,
+    "kr.easydoc.infrastructure.db.StatementCountingPremiseTest": 7,
+    "kr.easydoc.infrastructure.document.EnvelopeRotationConcurrencyTest": 7,
+    "kr.easydoc.infrastructure.document.JdbcDocumentStoreTest": 56,
+    "kr.easydoc.infrastructure.document.MaskedItemCodecTest": 14,
+    "kr.easydoc.infrastructure.ingest.DocumentExtractorsTest": 19,
+    "kr.easydoc.infrastructure.ingest.IngestDefensesTest": 13,
+    "kr.easydoc.infrastructure.llm.LlmProviderConfigurationTest": 7,
+}
+
 #: 표 형태의 라쳇 핀 — 값이 여럿이라 **키별로** 이력 최댓값과 대조한다.
-RATCHET_TABLE_PIN: tuple[str, str] = (THIS_TEST_PATH, "MIN_TESTS_IN_FLOOR_CLASS")
+#:
+#: 셋 다 「내려가면 보호가 줄어드는」 하한 표다. 새 표를 만들면서 여기 적지 않으면 그 표는
+#: 다시 「값 자신이 권위인」 상태가 되고, 그것이 라쳇 축이 겨눈 결함이다.
+RATCHET_TABLE_PINS: tuple[tuple[str, str], ...] = (
+    (THIS_TEST_PATH, "MIN_TESTS_IN_FLOOR_CLASS"),
+    (THIS_TEST_PATH, "MIN_TESTS_BY_NAMED_ENFORCER"),
+    (THIS_TEST_PATH, "MIN_ASSERTIONS_BY_CLASS"),
+)
 
 #: **이 파일의 수치 상수 중 라쳇이 아닌 것** — 그 사유를 값과 함께 남긴다.
 #:
@@ -1008,6 +1147,245 @@ def _declared_test_methods(fqcn: str) -> tuple[tuple[str, ...], int] | None:
         reported = _unescape_kotlin_string(display.group("name")) if display else name
         plain.extend([reported] * plain_count)
     return tuple(plain), generated
+
+
+#: 참조 형태 — 백틱 인용 · `[대괄호]` KDoc 링크 · `@see`. Kotlin 쪽 축 A 와 **같은 형태**를
+#: 본다(`NamedReferenceGuardTest` KDoc). 두 번째 판독기라는 사실은
+#: `test_명명된_강제자_인구조사가_해소된다` 가 「해소되지 않는 이름은 빨강」으로 되짚는다.
+NAMED_REFERENCE = re.compile(
+    r"(?:`([A-Za-z_][\w.]*)`|\[([A-Za-z_][\w.]*)\]|@see\s+([A-Za-z_][\w.]*))"
+)
+
+#: 테스트·프로브 이름의 접미. Kotlin 축 A 의 `TEST_SUFFIXES` 와 같은 값이다.
+NAMED_ENFORCER_SUFFIXES = ("Test", "Probe")
+
+#: Kotlin 선언 머리. 인구조사에서 **제품 타입**(테스트가 아닌 것)을 가려내는 데 쓴다.
+KOTLIN_DECLARATION = re.compile(
+    r"^\s*(?:[\w@\[\]().,\s]*?\b)?(?:class|interface|object|enum class|annotation class)\s+(\w+)",
+    re.MULTILINE,
+)
+
+#: 단언 토큰의 **모양** — `assert` 로 시작하는 식별자 + 여는 괄호. 목록이 아니라 모양이다.
+ASSERTION_TOKEN = re.compile(r"\bassert[A-Za-z]*\s*\(")
+
+
+def _kotlin_main_sources() -> list[Path]:
+    """`backend-kotlin/**/src/main/**` 의 Kotlin 소스. 빌드 산출물은 뺀다."""
+    return sorted(
+        path
+        for path in BACKEND_KOTLIN.rglob("*.kt")
+        if "build" not in path.parts and "src" in path.parts and "main" in path.parts
+    )
+
+
+def _comment_text(text: str) -> str:
+    """주석·KDoc **내용만** 남긴다. 코드 본문과 문자열 리터럴은 버린다.
+
+    분모를 주석으로 좁히는 이유는 Kotlin 축 A 와 같다 — 코드에서 이름이 틀리면 컴파일러가
+    먼저 잡고, 이 결함은 **주석에서만** 살아남는다.
+    """
+    out: list[str] = []
+    index = 0
+    length = len(text)
+    depth = 0
+    start = 0
+    while index < length:
+        if depth:
+            if text.startswith("/*", index):
+                depth += 1
+                index += 2
+                continue
+            if text.startswith("*/", index):
+                depth -= 1
+                if depth == 0:
+                    out.append(text[start:index])
+                index += 2
+                continue
+            index += 1
+            continue
+        if text.startswith("/*", index):
+            depth = 1
+            start = index + 2
+            index += 2
+            continue
+        if text.startswith("//", index):
+            stop = text.find("\n", index)
+            stop = length if stop < 0 else stop
+            out.append(text[index + 2 : stop])
+            index = stop
+            continue
+        if text[index] == '"':
+            index += 1
+            while index < length and text[index] != '"':
+                index += 2 if text[index] == "\\" else 1
+            index += 1
+            continue
+        index += 1
+    return "\n".join(out)
+
+
+def _kotlin_declared_names() -> set[str]:
+    """저장소 Kotlin 소스(main·test)가 선언한 타입 이름 전부 — 단순 이름."""
+    names: set[str] = set()
+    for path in _kotlin_main_sources() + _kotlin_test_sources():
+        names.update(KOTLIN_DECLARATION.findall(_blanked(path)))
+    return names
+
+
+def _named_enforcer_census() -> tuple[dict[str, list[str]], list[str]]:
+    """제품 주석이 이름으로 지목한 **테스트 클래스** 인구조사.
+
+    돌려주는 것은 `(fqcn → 지목한 파일들, 해소되지 않은 이름들)` 이다. 두 번째가 비어 있지
+    않으면 그 이름은 테스트 클래스도 제품 선언도 아니다 — 죽은 포인터이므로 **빨강**이다
+    (Kotlin 축 A 도 같은 자리를 짚는다. 두 판독기가 같은 결론을 내야 한다).
+    """
+    discovered = _discovered_test_classes()
+    by_simple: dict[str, list[str]] = {}
+    for fqcn in discovered:
+        by_simple.setdefault(fqcn.rsplit(".", 1)[1], []).append(fqcn)
+    declared = _kotlin_declared_names()
+
+    census: dict[str, list[str]] = {}
+    unresolved: list[str] = []
+    for path in _kotlin_main_sources():
+        for match in NAMED_REFERENCE.finditer(_comment_text(path.read_text(encoding="utf-8"))):
+            raw = match.group(1) or match.group(2) or match.group(3)
+            name = raw.split(".")[-1]
+            if not name[:1].isupper() or not name.endswith(NAMED_ENFORCER_SUFFIXES):
+                continue
+            candidates = by_simple.get(name, [])
+            if len(candidates) == 1:
+                census.setdefault(candidates[0], []).append(str(path.relative_to(REPO_ROOT)))
+            elif candidates:
+                unresolved.append(
+                    f"{name} — 같은 단순 이름의 테스트 클래스가 "
+                    f"{len(candidates)} 개다: {candidates}"
+                )
+            elif name not in declared:
+                unresolved.append(
+                    f"{name} — 저장소에 그 이름의 선언이 없다 ({path.relative_to(REPO_ROOT)})"
+                )
+            # 제품 타입으로 해소되는 이름(`DependencyProbe` 등)은 테스트가 아니므로 분모 밖이다.
+    return census, unresolved
+
+
+def _assertion_tokens(fqcn: str) -> int | None:
+    """[fqcn] 선언 구간 안의 단언 토큰 수. 선언을 못 찾으면 `None`.
+
+    구간은 [_declaration_region] 이 정한다 — 계수 축·이름 축과 **같은 파서**다.
+    """
+    region = _declaration_region(fqcn)
+    if region is None:
+        return None
+    path, start, end = region
+    return len(ASSERTION_TOKEN.findall(_blanked(path)[start:end]))
+
+
+def test_명명된_강제자_인구조사가_해소된다() -> None:
+    """제품 주석이 지목한 `…Test`/`…Probe` 이름이 **전부 해소된다** (β-03 · β-24).
+
+    해소되지 않는 이름은 죽은 포인터다. Kotlin 축 A(`NamedReferenceGuardTest`)도 같은 자리를
+    짚으므로 **두 판독기가 같은 결론**을 내야 하고, 갈리면 한쪽 파서가 틀린 것이다.
+
+    분모 0 은 통과가 아니다 — 인구조사가 비면 아래 두 케이스가 아무것도 재지 않는다.
+    """
+    census, unresolved = _named_enforcer_census()
+
+    assert not unresolved, (
+        "제품 주석이 지목한 테스트·프로브 이름이 해소되지 않았다:\n"
+        + "\n".join(f"  - {x}" for x in unresolved)
+        + "\n  주석이 없는 것을 근거로 들면 읽는 사람은 그 자리가 지켜진다고 믿고 넘어간다."
+    )
+    assert census, (
+        "제품 소스의 주석에서 테스트·프로브 지목을 하나도 찾지 못했다 — 인구조사가 비었으므로\n"
+        "  아래 두 케이스의 분모가 0 이다. 참조 형태 정규식이나 분모 경로가 틀렸다."
+    )
+
+
+def test_명명된_강제자가_전부_개수_핀을_갖는다() -> None:
+    """**정확 분할** — 지목된 클래스는 바닥 표나 명명 표 중 정확히 하나에 있다 (β-03 · β-24).
+
+    한쪽에만 있어야 하고 어느 쪽에도 없으면 빨강이다. 실측(2026-08-21, 고치기 전):
+    `DocumentListContractTest`·`DocumentContractNodeTest`·`HealthContractTest` 가 두 표 밖이라
+    그 클래스에서 메서드를 지워도 **자동 신호가 0** 이었다.
+    """
+    census, _ = _named_enforcer_census()
+    floor = set(MIN_TESTS_IN_FLOOR_CLASS)
+    named = set(MIN_TESTS_BY_NAMED_ENFORCER)
+
+    overlap = sorted(floor & named)
+    unpinned = sorted(set(census) - floor - named)
+    stale = sorted(named - set(census))
+
+    assert not overlap, (
+        f"두 개수 표에 같은 클래스가 있다: {overlap}\n"
+        "  분할이 겹치면 어느 표가 그 클래스를 지키는지가 흐려진다 — 바닥 표 쪽만 남겨라."
+    )
+    assert not unpinned, (
+        "제품 주석이 이름으로 지목했는데 개수 핀이 없는 클래스가 있다:\n"
+        + "\n".join(f"  - {x} — 지목한 파일: {census[x]}" for x in unpinned)
+        + "\n  그 주석은 「이것이 그 성질을 잰다」는 주장이다.\n"
+        "  메서드만 지우면 그 주장이 거짓이 되는데\n"
+        "  아무도 알아채지 못한다. MIN_TESTS_BY_NAMED_ENFORCER 에 현재 선언 수를 적어라\n"
+        "  (판정 장치에 물어서 — `grep` 이 아니다)."
+    )
+    assert not stale, (
+        f"명명 표에 있는데 제품 주석이 더는 지목하지 않는 클래스가 있다: {stale}\n"
+        "  주석이 사라졌거나 이름이 바뀌었다. 핀도 함께 정리해야 이 표가 실제 분모를 말한다."
+    )
+
+
+@pytest.mark.parametrize("fqcn", sorted(MIN_TESTS_BY_NAMED_ENFORCER))
+def test_명명된_강제자의_테스트_개수가_하한_아래로_내려가지_않는다(fqcn: str) -> None:
+    """지목된 클래스에서도 **메서드만 지우는 편집**을 잡는다 (β-03 · β-24)."""
+    expected = MIN_TESTS_BY_NAMED_ENFORCER[fqcn]
+    actual = _declared_test_count(fqcn)
+
+    assert actual is not None, (
+        f"{fqcn} 의 선언을 찾지 못해 테스트 개수를 세지 못했다. **판정 불가는 통과가 아니다.**"
+    )
+    assert actual >= expected, (
+        f"{fqcn} 의 테스트 개수가 {actual} 개다 — 하한 {expected} 아래다.\n"
+        "  제품 주석이 이 클래스를 이름으로 지목해 「그 성질을 잰다」고 적었다.\n"
+        "  줄인 것이 정당하다면 이 숫자를 고치는 diff 와 사유를 함께 남겨라."
+    )
+
+
+def test_단언_개수_표가_두_개수_표의_합집합과_같다() -> None:
+    """키 집합을 **유도**한다 — 새 클래스가 개수 표에 들면 단언 표에도 들어야 한다 (β-04)."""
+    expected = set(MIN_TESTS_IN_FLOOR_CLASS) | set(MIN_TESTS_BY_NAMED_ENFORCER)
+    actual = set(MIN_ASSERTIONS_BY_CLASS)
+    assert expected, "두 개수 표가 모두 비었다 — 이 대조는 아무것도 재지 않는다."
+
+    missing = sorted(expected - actual)
+    extra = sorted(actual - expected)
+    assert not missing and not extra, (
+        "단언 개수 표의 키 집합이 두 개수 표의 합집합과 다르다.\n"
+        f"  단언 하한이 빠졌다(단언 비우기가 잡히지 않는다): {missing or '없음'}\n"
+        f"  개수 표에서 빠진 항목의 단언 하한이 남았다: {extra or '없음'}\n"
+        "  개수 표에 클래스를 더하면 그 클래스의 현재 단언 토큰 수도 함께 적어라."
+    )
+
+
+@pytest.mark.parametrize("fqcn", sorted(MIN_ASSERTIONS_BY_CLASS))
+def test_단언_토큰_수가_하한_아래로_내려가지_않는다(fqcn: str) -> None:
+    """**껍데기를 남기고 단언만 비우는 편집**을 잡는다 (β-04).
+
+    잡지 못하는 것은 [MIN_ASSERTIONS_BY_CLASS] KDoc 에 적었다 — 무해한 단언으로 **교체**하는
+    편집은 개수가 그대로다(백로그 B-19, 변이 테스트).
+    """
+    expected = MIN_ASSERTIONS_BY_CLASS[fqcn]
+    actual = _assertion_tokens(fqcn)
+
+    assert actual is not None, (
+        f"{fqcn} 의 선언을 찾지 못해 단언을 세지 못했다. **판정 불가는 통과가 아니다.**"
+    )
+    assert actual >= expected, (
+        f"{fqcn} 의 단언 토큰이 {actual} 개다 — 하한 {expected} 아래다.\n"
+        "  `@Test` 개수가 그대로여도 단언이 사라지면 그 클래스는 껍데기다.\n"
+        "  단언을 다른 클래스·보조로 옮겼다면 옮긴 쪽 값을 올리고 이 값을 함께 고쳐라 —\n"
+        "  두 값을 같은 diff 에 두면 총합이 줄었는지 보인다."
+    )
 
 
 def test_바닥_목록이_비지_않는다() -> None:
@@ -1525,16 +1903,114 @@ def test_리포트에_건너뛴_테스트가_없다() -> None:
     )
 
 
-def _git_revisions(rel_path: str) -> list[str]:
-    """`rel_path` 를 건드린 리비전들. 이력이 없으면 빈 목록."""
+#: 이름 변경 판정의 유사도 문턱. git 기본값은 50% 다.
+#:
+#: 낮추는 이유는 실측이다 — `SqlComments.kt` → `LiveSql.kt` 의 유사도가 **38%** 라
+#: 기본값에서는 이름 변경으로 잡히지 않고 이력이 끊긴다(`R038` 로 확인).
+#:
+#: **틀리는 방향이 안전하다.** 이름 변경을 과잉 판정하면 무관한 파일의 이력이 섞여 라쳇 하한이
+#: **높아진다** — 거짓 빨강이고, 고치는 방법이 핀을 올리는 것(라쳇의 정상 동작)이다. 반대로
+#: 과소 판정하면 이력이 끊겨 **거짓 초록**이 되고 그것이 β-11 이 겨눈 결함이다.
+RENAME_SIMILARITY = "25%"
+
+
+def _git_revision_paths(rel_path: str) -> list[tuple[str, str]]:
+    """`(리비전, **그 리비전에서의 경로**)` 목록. 최신 순. 이력이 없으면 빈 목록.
+
+    ## 왜 경로를 함께 돌려주는가 (β-11)
+
+    옛 판은 `git rev-list HEAD -- <경로>` 로 리비전만 모으고 각 리비전의 내용을
+    **현재 경로**로 읽었다. 그래서 파일 이름이 바뀌면 두 번 끊긴다 — ⑴ 이름 변경 이전
+    리비전이 목록에 오지 않고 ⑵ 올랐더라도 `git show <rev>:<현재 경로>` 가 빈 문자열이다.
+    귀결: **이름 변경과 값 내리기를 한 커밋에 넣으면 라쳇이 초록**이다(교차 종합 β-11).
+
+    실측(2026-08-21): `LiveSql.kt` 의 `git rev-list` 리비전이 **1** 개이고, 그 파일은
+    `SqlComments.kt` 에서 이름이 바뀐 것이다.
+
+    `--follow` 는 경로 하나에만 쓸 수 있고 그것이 이 함수의 형태다. `--name-status` 를 함께
+    읽어 리비전마다의 **post-image 경로**를 잡는다(이름 변경 줄은 `R<유사도>  옛  새` 이므로
+    마지막 칸이 그 리비전의 경로다).
+    """
     result = subprocess.run(
-        ["git", "rev-list", "HEAD", "--", rel_path],
+        [
+            "git",
+            "log",
+            "--follow",
+            f"--find-renames={RENAME_SIMILARITY}",
+            "--format=%x00%H",
+            "--name-status",
+            "HEAD",
+            "--",
+            rel_path,
+        ],
         cwd=REPO_ROOT,
         capture_output=True,
         text=True,
         check=False,
     )
-    return result.stdout.split() if result.returncode == 0 else []
+    if result.returncode != 0:
+        return []
+    found: list[tuple[str, str]] = []
+    for chunk in result.stdout.split("\0")[1:]:
+        lines = [line for line in chunk.splitlines() if line.strip()]
+        if not lines:
+            continue
+        revision = lines[0].strip()
+        names = [line for line in lines[1:] if "\t" in line]
+        # 이름 줄이 없는 커밋(병합 등)은 직전에 알아낸 경로를 그대로 쓴다 — 가장 최근이
+        # 현재 이름이고, 이름 변경을 만나기 전까지는 바뀌지 않는다.
+        path = names[0].split("\t")[-1].strip() if names else (found[-1][1] if found else rel_path)
+        found.append((revision, path))
+    return found
+
+
+def _history_truncated(rel_path: str) -> str | None:
+    """이력이 **끊겼는지** 판정한다. 온전하면 `None`, 끊겼으면 사유.
+
+    가장 오래된 리비전에서 그 파일이 `A`(추가)로 나타나야 이력이 온전하다. 이름 변경(`R`)
+    으로 끝나면 `--follow` 가 그 이상 따라가지 못한 것이고, 그 상태의 최댓값은 **일부의
+    최댓값**이다. `_git_revision_paths` 가 이름 변경을 넘어가는 것과 별개의 방어다 —
+    유사도 문턱 아래의 이름 변경이 남아 있을 수 있다.
+    """
+    result = subprocess.run(
+        [
+            "git",
+            "log",
+            "--follow",
+            f"--find-renames={RENAME_SIMILARITY}",
+            "--format=%x00%H",
+            "--name-status",
+            "HEAD",
+            "--",
+            rel_path,
+        ],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        return f"{rel_path} 의 이력을 읽지 못했다: {result.stderr.strip()[:200]}"
+    chunks = [chunk for chunk in result.stdout.split("\0")[1:] if chunk.strip()]
+    if not chunks:
+        return f"{rel_path} 의 리비전이 0 이다"
+    oldest = [line for line in chunks[-1].splitlines() if "\t" in line]
+    if not oldest:
+        return f"{rel_path} 의 가장 오래된 리비전에 파일 상태 줄이 없다"
+    status = oldest[0].split("\t")[0].strip()
+    if not status.startswith("A"):
+        return (
+            f"{rel_path} 의 이력이 `{status}` 에서 끊겼다 — "
+            "가장 오래된 리비전이 「추가」가 아니다. "
+            f"유사도 {RENAME_SIMILARITY} 아래의 이름 변경이 남아 있으면 "
+            "이력 최댓값이 **일부의 최댓값**이다."
+        )
+    return None
+
+
+def _git_revisions(rel_path: str) -> list[str]:
+    """`rel_path` 를 건드린 리비전들. 이름 변경도 따라간다([_git_revision_paths])."""
+    return [revision for revision, _ in _git_revision_paths(rel_path)]
 
 
 def _blob_at(rev: str, rel_path: str) -> str:
@@ -1618,10 +2094,16 @@ def test_라쳇_상수가_이력_최댓값_아래로_내려가지_않는다() ->
         if current is None:
             unjudged.append(f"{rel_path}::{name} — 현재 파일에서 그 상수를 찾지 못했다")
             continue
+        truncated = _history_truncated(rel_path)
+        if truncated is not None:
+            unjudged.append(f"{rel_path}::{name} — {truncated}")
+            continue
+        # **리비전마다 그 시점의 경로로 읽는다** (β-11) — 현재 이름으로 읽으면 이름 변경
+        # 이전 리비전이 전부 빈 문자열이 되어 최댓값이 조용히 낮아진다.
         seen = [
             value
-            for rev in _git_revisions(rel_path)
-            if (value := _scalar_in(_blob_at(rev, rel_path), name)) is not None
+            for rev, path_at in _git_revision_paths(rel_path)
+            if (value := _scalar_in(_blob_at(rev, path_at), name)) is not None
         ]
         if not seen:
             unjudged.append(f"{rel_path}::{name} — 이력에서 그 상수를 한 번도 찾지 못했다")
@@ -1643,20 +2125,23 @@ def test_라쳇_상수가_이력_최댓값_아래로_내려가지_않는다() ->
     )
 
 
-def test_바닥_개수표의_값이_이력_최댓값_아래로_내려가지_않는다() -> None:
+@pytest.mark.parametrize("pin", RATCHET_TABLE_PINS, ids=lambda pin: pin[1])
+def test_바닥_개수표의_값이_이력_최댓값_아래로_내려가지_않는다(pin: tuple[str, str]) -> None:
     """표 형태의 라쳇도 **키별로** 되짚는다 — 값 하나만 내리는 편집이 같은 한 줄이다."""
     reason = _history_unavailable()
     if reason is not None:
         _report_or_fail_history(reason)
         return
 
-    rel_path, name = RATCHET_TABLE_PIN
+    rel_path, name = pin
+    truncated = _history_truncated(rel_path)
+    assert truncated is None, f"{rel_path}::{name} 의 이력을 끝까지 읽지 못했다 — {truncated}"
     current = _table_in((REPO_ROOT / rel_path).read_text(encoding="utf-8"), name)
     assert current, f"{rel_path}::{name} 표가 비었다 — 이 대조는 아무것도 재지 않는다."
 
     history: dict[str, int] = {}
-    for rev in _git_revisions(rel_path):
-        for key, value in _table_in(_blob_at(rev, rel_path), name).items():
+    for rev, path_at in _git_revision_paths(rel_path):
+        for key, value in _table_in(_blob_at(rev, path_at), name).items():
             history[key] = max(history.get(key, 0), value)
     assert history, (
         f"{rel_path}::{name} 을 이력에서 한 번도 찾지 못했다 — 판정 불가는 통과가 아니다."
@@ -1691,7 +2176,7 @@ def test_이_파일의_수치_상수가_전부_분류돼_있다() -> None:
     ratcheted = {name for path, name in RATCHET_SCALAR_PINS if path == THIS_TEST_PATH}
     classified = ratcheted | set(NON_RATCHET_PINS)
     missing = sorted(declared - classified)
-    stale = sorted(classified - declared - {RATCHET_TABLE_PIN[1]})
+    stale = sorted(classified - declared - {name for _, name in RATCHET_TABLE_PINS})
 
     assert not missing and not stale, (
         "이 파일의 수치 상수 분류가 어긋났다.\n"

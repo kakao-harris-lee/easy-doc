@@ -14,14 +14,18 @@ package kr.easydoc.api.support
  * `RequestFieldRejectionReachTest` = 컨테이너) 판정을 두 벌로 두면 한쪽만 고쳐지는 날
  * **두 축이 서로 다른 것을 재면서 둘 다 초록**이 된다. 이 저장소가 반복해 겪은 형태다.
  *
- * ## 프로브를 계약에서 유도한다 — 방향도 **측정한다**
+ * ## 프로브를 계약에서 유도한다 — 방향도 **계약이 정한다** (β-21)
  *
  * 필드 목록은 `x-request-field-constraints.fields[].field`, 경계는 그 항목의 `limit`,
- * 기대 문구는 `detail`, 측정 축은 `measured_on` 에서 온다. 그리고 **상한 필드인지 하한
- * 필드인지를 코드에 적지 않는다** — 길이 `limit-1`·`limit+1` 중 어느 쪽이 거절되는지를
- * 보고 판정한다(다섯 중 `password` 만 하한이고 나머지 넷은 상한이다).
+ * 기대 문구는 `detail`, 측정 축은 `measured_on`, **경계 방향은 스키마 속성의
+ * `x-service-constraint` 키 이름**(`max_length` / `min_length`)에서 온다.
  *
- * 그 측정된 방향이 **정규화 프로브의 모양까지 정한다**(아래 [divergentValue]).
+ * 종전 판은 방향을 **검사 대상에서 추론**했다 — `limit-1`·`limit+1` 중 거절된 쪽으로 상한·하한을
+ * 정했다. 그러면 **구현이 최대↔최소를 뒤집어도 이 강제자는 초록**이다(교차 종합 β-21):
+ * 기준이 계약이 아니라 관측 자신이기 때문이다. 이제 방향은 계약에서 오고, 관측이 그 방향과
+ * 어긋나면 그것이 결함으로 잡힌다.
+ *
+ * 그 방향이 **정규화 프로브의 모양까지 정한다**(아래 [divergentValue]).
  */
 object RequestFieldProbes {
     /** 한 프로브의 관측. 관측 지점이 무엇이든 이 두 값으로 환원된다. */
@@ -209,12 +213,23 @@ object RequestFieldProbes {
                 "정확히 하나여야 한다(아래→${below.status}, 위→${above.status})"
         }
 
+        // ── 방향 축 (β-21) ────────────────────────────────────────────────
+        // **계약이 정한 방향과 관측된 방향이 같은가.** 종전에는 관측된 쪽을 그대로 방향으로
+        // 삼았으므로 최대↔최소를 뒤집어도 이 판정이 초록이었다.
+        val expectedRejected = if (constraint.upperBound) ABOVE else BELOW
+        if (rejected.size == 1 && rejected.single().first != expectedRejected) {
+            problems +=
+                "경계 방향이 계약과 반대다 — 계약 x-service-constraint 는 " +
+                "${if (constraint.upperBound) "상한(max_length)" else "하한(min_length)"} 이라 " +
+                "$expectedRejected 쪽이 거절돼야 하는데 ${rejected.single().first} 쪽이 거절됐다"
+        }
+
         // ── 정규화 축 ──────────────────────────────────────────────────────
-        // 방향을 **측정 결과에서** 가져온다. 상한 필드는 「경계 길이 + 잡음」이 원시로는
-        // 초과이고 정규화 후에는 경계라 축을 가른다. 하한 필드는 반대로 「경계-1 + 잡음 1」이
+        // 방향은 **계약에서** 온다. 상한 필드는 「경계 길이 + 잡음」이 원시로는 초과이고
+        // 정규화 후에는 경계라 축을 가른다. 하한 필드는 반대로 「경계-1 + 잡음 1」이
         // 원시로는 경계이고 정규화 후에는 미달이라 축을 가른다.
         if (rejected.size == 1) {
-            val upperBound = rejected.single().first == ABOVE
+            val upperBound = constraint.upperBound
             val baseLength = if (upperBound) constraint.limit else constraint.limit - 1
             val noise = if (upperBound) DIVERGENCE_NOISE else 1
             val label = "정규화 프로브(원시 ${baseLength + noise} / 정규화 후 $baseLength)"

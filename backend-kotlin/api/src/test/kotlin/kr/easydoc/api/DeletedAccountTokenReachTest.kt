@@ -1,6 +1,7 @@
 package kr.easydoc.api
 
 import kr.easydoc.api.support.ContractSpec
+import kr.easydoc.api.support.OwnershipConcealment
 import kr.easydoc.api.support.TestJwt
 import kr.easydoc.infrastructure.DatabaseHandle
 import kr.easydoc.infrastructure.PostgresTestSupport
@@ -201,13 +202,12 @@ class DeletedAccountTokenReachTest {
 
     private fun uniqueName(): String = "삭제계정${counter++}"
 
-    private fun headerNames(response: HttpResponse<String>): Set<String> =
-        response
-            .headers()
-            .map()
-            .keys
-            .map { it.lowercase() }
-            .toSet() - VARIABLE_HEADERS
+    /**
+     * **여기서 재는 것은 자원 소유권 은닉이 아니다** — 401 다섯 갈래의 구별 불가다.
+     * 그래서 판정은 이 파일이 지고, **제외 헤더 집합만** [OwnershipConcealment] 와 공유한다.
+     * 집합이 갈리면 「헤더 이름 집합이 같다」의 뜻이 자리마다 달라진다.
+     */
+    private fun headerNames(response: HttpResponse<String>): Set<String> = OwnershipConcealment.headerNames(response)
 
     private fun assertPrivateHeaders(
         label: String,
@@ -233,7 +233,6 @@ class DeletedAccountTokenReachTest {
         private const val INVALID_TOKEN_EXAMPLE = "invalid_token"
 
         /** 응답마다 값이 달라지는 헤더 — 집합 비교에서 뺀다. */
-        private val VARIABLE_HEADERS = setOf("date")
 
         private var counter = 0
 

@@ -325,12 +325,70 @@ object ContractSpec {
                 .filterIsInstance<Map<*, *>>()
                 .firstOrNull { it["field"] == field }
                 ?: error("계약의 x-request-field-constraints.fields 에 없는 필드다: $field")
+        val limit = (entry["limit"] as? Number)?.toInt() ?: error("$field 의 limit 이 정수가 아니다")
         return RequestFieldConstraint(
             field = field,
-            limit = (entry["limit"] as? Number)?.toInt() ?: error("$field 의 limit 이 정수가 아니다"),
+            limit = limit,
             measuredOn = entry["measured_on"]?.toString() ?: error("$field 의 measured_on 이 없다"),
             detail = entry["detail"] ?: error("$field 의 detail 이 없다"),
+            bound = constraintBound(field, limit),
         )
+    }
+
+    /**
+     * **P-6b — 경계의 방향을 계약에서 읽는다** (β-21).
+     *
+     * 종전에 이 방향은 **검사 대상 구현에서 추론**됐다: `limit-1`·`limit+1` 중 거절된 쪽으로
+     * 상한·하한을 정했다. 그러면 구현이 최대↔최소를 뒤집어도 그 강제자는 초록이다 —
+     * 기준이 계약이 아니라 관측 자신이기 때문이다.
+     *
+     * 계약은 그 방향을 **이미 기계가독으로** 적었다. 스키마 속성의 `x-service-constraint` 의
+     * 키 이름이 `max_length` 인가 `min_length` 인가가 방향이다(P-20 이 읽는 같은 노드).
+     * `fields[].limit` 옆의 YAML 주석(*"하한. 상한 없음"*)은 사람만 읽을 수 있어 쓰지 않는다.
+     *
+     * fail-closed 세 자리: 둘 다 없으면 실패, 둘 다 있으면 실패(방향이 하나로 정해지지 않는다),
+     * 값이 `fields[].limit` 과 다르면 실패(계약 안의 두 벌이 갈렸다).
+     */
+    private fun constraintBound(
+        field: String,
+        limit: Int,
+    ): ConstraintBound {
+        val schema = field.substringBefore('.')
+        val property = field.substringAfter('.')
+        require(schema.isNotEmpty() && property.isNotEmpty() && !property.contains('.')) {
+            "x-request-field-constraints.fields[].field 가 `스키마.속성` 모양이 아니다: $field"
+        }
+        val node = serviceConstraint(schema, property)
+        val max = (node[MAX_LENGTH_KEY] as? Number)?.toInt()
+        val min = (node[MIN_LENGTH_KEY] as? Number)?.toInt()
+        val bound =
+            when {
+                max != null && min != null -> {
+                    error(
+                        "$field 의 x-service-constraint 가 $MAX_LENGTH_KEY 와 $MIN_LENGTH_KEY 를 함께 적었다 — 방향이 하나로 정해지지 않는다",
+                    )
+                }
+
+                max != null -> {
+                    ConstraintBound.UPPER
+                }
+
+                min != null -> {
+                    ConstraintBound.LOWER
+                }
+
+                else -> {
+                    error(
+                        "$field 의 x-service-constraint 에 $MAX_LENGTH_KEY 도 $MIN_LENGTH_KEY 도 없다 — " +
+                            "경계 방향을 읽을 수 없다: $node",
+                    )
+                }
+            }
+        val declared = max ?: min
+        require(declared == limit) {
+            "$field 의 경계가 계약 안에서 갈렸다 — x-service-constraint $declared 대 fields[].limit $limit"
+        }
+        return bound
     }
 
     /** P-7. `x-input-limits` 쪽 값. 같은 상한이 계약 안에 두 벌 있다. */
@@ -553,6 +611,87 @@ object ContractSpec {
                         ?: error("$path 의 parameters 에 schema.format 이 없다"),
             )
         }
+
+    /**
+     * **계약이 선언한 값 자리 전수** — 경로 수준과 오퍼레이션 수준을 **둘 다** 훑는다 (β-05).
+     *
+     * 「값 자리」는 요청이 값을 실을 수 있는 이름 하나다 — 쿼리 파라미터와 경로 변수. 값 자리
+     * 불변식(`kr.easydoc.api.ValueSlotInvariantReachTest`)이 *"계약이 파라미터를 더하면 자동으로
+     * 덮는다"* 고 선언했는데 그 분모는 **경로 두 개가 하드코딩**돼 있었다. 이 접근자가 그
+     * 선언만큼의 분모를 준다.
+     *
+     * `parameters` 노드가 없는 오퍼레이션은 **버리지 않고 건너뛴다** — 없는 것과 빈 목록을
+     * 섞지 않으려고 존재 여부만 본다. 노드가 있으면 그 안의 항목은 하나도 버리지 않는다
+     * (형태가 다르면 `error()` 로 끊는다 — [parametersOf] 와 같은 규율).
+     */
+    fun valueSlots(): List<ContractValueSlot> =
+        map("paths").entries.flatMap { (rawPath, node) ->
+            val path = rawPath.toString()
+            val operations =
+                node as? Map<*, *>
+                    ?: error("계약 paths.$path 가 매핑이 아니다: $node")
+            operations.entries.flatMap { (rawKey, child) ->
+                val key = rawKey.toString()
+                when {
+                    key == PARAMETERS_KEY -> {
+                        slotsIn(path, method = null, entries = child)
+                    }
+
+                    key in HTTP_METHODS -> {
+                        (child as? Map<*, *>)?.get(PARAMETERS_KEY)?.let { slotsIn(path, key, it) } ?: emptyList()
+                    }
+
+                    else -> {
+                        emptyList()
+                    }
+                }
+            }
+        }
+
+    private fun slotsIn(
+        path: String,
+        method: String?,
+        entries: Any?,
+    ): List<ContractValueSlot> {
+        val label = if (method == null) path else "$method $path"
+        val list = entries as? List<*> ?: error("계약 $label 의 parameters 가 목록이 아니다: $entries")
+        return list.mapIndexed { index, entry ->
+            val declaration =
+                entry as? Map<*, *>
+                    ?: error("$label 의 parameters[$index] 가 매핑이 아니다 — 이 파서가 읽을 수 있는 형태가 아니다: $entry")
+            ContractValueSlot(
+                path = path,
+                method = method,
+                name = declaration["name"]?.toString() ?: error("$label 의 parameters[$index] 에 name 이 없다"),
+                location = declaration["in"]?.toString() ?: error("$label 의 parameters[$index] 에 in 이 없다"),
+                schema =
+                    declaration["schema"] as? Map<*, *>
+                        ?: error("$label 의 parameters[$index] 에 schema 가 없다"),
+            )
+        }
+    }
+
+    /**
+     * 그 오퍼레이션의 요청 본문 스키마 이름. 본문을 선언하지 않으면 `null`.
+     *
+     * `$ref` 만 해석한다 — 인라인 스키마는 이름이 없어 부를 수 없으므로 `error()` 로 끊는다.
+     */
+    fun requestBodySchemaName(
+        path: String,
+        method: String,
+    ): String? {
+        val operation = map("paths", path, method)
+        val body = operation["requestBody"] as? Map<*, *> ?: return null
+        val content = body["content"] as? Map<*, *> ?: error("$method $path 의 requestBody 에 content 가 없다")
+        val first =
+            content.values.firstOrNull() as? Map<*, *>
+                ?: error("$method $path 의 requestBody.content 가 비었다")
+        val schema = first["schema"] as? Map<*, *> ?: error("$method $path 의 requestBody 에 schema 가 없다")
+        val ref =
+            schema["\$ref"]?.toString()
+                ?: error("$method $path 의 requestBody 스키마가 \$ref 가 아니다 — 이름으로 부를 수 없다: $schema")
+        return ref.substringAfterLast("/")
+    }
 
     /** 스키마의 `additionalProperties`. 「정확히 이 키들뿐」 단언의 근거다. */
     fun schemaAllowsAdditionalProperties(schema: String): Boolean =
@@ -859,6 +998,41 @@ object ContractSpec {
 
     /** OpenAPI 파라미터 `in` 값 중 쿼리. [queryParameters] 가 이것으로 고른다. */
     private const val QUERY_LOCATION = "query"
+
+    /** OpenAPI 의 파라미터 선언 키. 경로 수준과 오퍼레이션 수준에서 같은 이름이다. */
+    private const val PARAMETERS_KEY = "parameters"
+
+    /** `x-service-constraint` 의 방향 키 둘. **이 이름이 곧 경계 방향이다.** */
+    private const val MAX_LENGTH_KEY = "max_length"
+    private const val MIN_LENGTH_KEY = "min_length"
+}
+
+/** 요청 필드 경계의 방향. 계약 `x-service-constraint` 의 키 이름에서 온다. */
+enum class ConstraintBound {
+    /** 「이하」 — `limit` 을 넘으면 거절된다. */
+    UPPER,
+
+    /** 「이상」 — `limit` 미만이면 거절된다. */
+    LOWER,
+}
+
+/**
+ * 계약이 선언한 **값 자리** 하나 — 요청이 값을 실을 수 있는 이름.
+ *
+ * [method] 가 `null` 이면 **경로 수준** 선언이고, OpenAPI 의미대로 그 경로의 **모든**
+ * 오퍼레이션에 걸린다. 두 수준을 한 타입으로 다루는 이유는 소비자가 선언 자리를 알 필요가
+ * 없어야 하기 때문이다 — 계약이 자리를 옮기는 날 그 소비자만 빨개지고, 고치는 사람은
+ * 「테스트가 낡았다」로 읽는다.
+ */
+data class ContractValueSlot(
+    val path: String,
+    val method: String?,
+    val name: String,
+    val location: String,
+    val schema: Map<*, *>,
+) {
+    /** 실패 메시지용 표기. */
+    val label: String get() = "${method?.uppercase() ?: "(경로 수준)"} $path?$name [$location]"
 }
 
 /**
@@ -901,7 +1075,12 @@ data class RequestFieldConstraint(
     val measuredOn: String,
     /** 문자열 하나이거나 문자열 목록이다(`WorkspaceNameRequest.name` 은 둘을 든다). */
     val detail: Any,
+    /** 계약이 `x-service-constraint` 의 **키 이름**으로 적은 경계 방향 (β-21). */
+    val bound: ConstraintBound,
 ) {
+    /** 상한 필드인가. 관측에서 추론하지 않고 계약에서 읽은 값이다. */
+    val upperBound: Boolean get() = bound == ConstraintBound.UPPER
+
     /**
      * 단일 문구를 기대하는 자리. 목록이면 실패한다 — 어느 것을 고를지는 계약이 정하지 않았다.
      *

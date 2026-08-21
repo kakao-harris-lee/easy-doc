@@ -4,6 +4,7 @@ import kr.easydoc.api.auth.AuthenticatedEndpoints
 import kr.easydoc.api.config.PrivateResponseHeadersConfig
 import kr.easydoc.api.support.AuthSliceBeans
 import kr.easydoc.api.support.ContractSpec
+import kr.easydoc.api.support.ServedOperations
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
@@ -12,7 +13,6 @@ import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest
 import org.springframework.context.annotation.Import
 import org.springframework.core.env.Environment
 import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerMapping
-import java.io.File
 
 /**
  * **인증이 걸리는 경로 목록이 계약과 같은지 대조한다.**
@@ -167,44 +167,13 @@ class AuthenticationCoverageContractTest {
     /**
      * 실제로 서비스되는 **프로덕션 오퍼레이션** — `(경로 패턴, 소문자 HTTP 메서드)`.
      *
-     * 짝의 순서는 [ContractSpec.operations] 와 같다. 두 집합을 그대로 겹치기 때문에
-     * 순서가 갈리면 대조가 조용히 공허해진다.
-     *
-     * 걸러 내는 둘 —
-     * ⑴ 테스트 전용 컨트롤러: 핸들러의 선언 클래스가 `api` 모듈의 **main 컴파일 산출물**에
-     *    없으면 API 표면이 아니다. 클래스 이름 규칙이 아니라 산출물 위치로 가르는 이유는,
-     *    규칙은 다음 사람이 어기고 위치는 빌드가 정하기 때문이다.
-     * ⑵ 서블릿 오류 디스패치 경로: 컨테이너가 내부적으로 포워딩하는 자리이지 API 가 아니다.
-     *    값은 설정에서 읽는다([servletErrorPath]).
+     * 유도는 [ServedOperations] 한 벌이 진다. 종전에는 이 유도가 이 파일 안에만 있었고,
+     * `ValueSlotInvariantReachTest` 가 같은 표면을 필요로 하게 되면서(β-05) 두 벌이 될
+     * 위험이 생겼다 — 두 벌이면 한쪽만 고쳐지는 날 서로 다른 표면을 세면서 둘 다 초록이 된다.
      */
-    private fun servedOperations(): Set<Pair<String, String>> {
-        val errorPath = servletErrorPath()
-        return handlerMapping.handlerMethods
-            .filterValues { isProductionClass(it.beanType) }
-            .keys
-            .flatMap { info ->
-                // 메서드 조건이 비면 그 매핑은 **모든 메서드**를 받는다. 계약 어휘 전부로
-                // 펼쳐서, 계약이 선언하지 않은 메서드가 분류 실패로 드러나게 한다.
-                val methods =
-                    info.methodsCondition.methods
-                        .map { it.name.lowercase() }
-                        .ifEmpty { ContractSpec.HTTP_METHODS.toList() }
-                info.patternValues
-                    .filterNot { it == errorPath }
-                    .flatMap { path -> methods.map { method -> path to method } }
-            }.toSet()
-    }
+    private fun servedOperations(): Set<Pair<String, String>> = ServedOperations.of(handlerMapping, environment)
 
     private fun servletErrorPath(): String = environment.getProperty("server.error.path") ?: DEFAULT_ERROR_PATH
-
-    private fun isProductionClass(type: Class<*>): Boolean {
-        val root =
-            System.getProperty(SOURCE_ROOT_PROPERTY)
-                ?: error("시스템 속성 $SOURCE_ROOT_PROPERTY 이 없다 — 프로덕션 클래스를 가려낼 기준점이 없다")
-        val classesDir = File(root, MAIN_CLASSES_DIR)
-        require(classesDir.isDirectory) { "api 컴파일 산출물이 없다: $classesDir" }
-        return File(classesDir, type.name.replace('.', File.separatorChar) + ".class").isFile
-    }
 
     private fun contractOperationsBySecurity(requiresAuth: Boolean): Set<Pair<String, String>> =
         ContractSpec
@@ -226,11 +195,6 @@ class AuthenticationCoverageContractTest {
 
     private companion object {
         const val ME_PATH = "/auth/me"
-
-        /** 빌드가 주입하는 Gradle 루트(= `backend-kotlin/`). */
-        const val SOURCE_ROOT_PROPERTY = "easydoc.kotlin.source.root"
-
-        const val MAIN_CLASSES_DIR = "api/build/classes/kotlin/main"
 
         /** `server.error.path` 가 비었을 때 서블릿 컨테이너가 쓰는 값. */
         const val DEFAULT_ERROR_PATH = "/error"

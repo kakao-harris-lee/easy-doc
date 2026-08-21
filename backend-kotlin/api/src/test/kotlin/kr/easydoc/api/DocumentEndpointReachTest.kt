@@ -2,6 +2,7 @@ package kr.easydoc.api
 
 import kr.easydoc.api.support.ContractSpec
 import kr.easydoc.api.support.MultipartBody
+import kr.easydoc.api.support.OwnershipConcealment
 import kr.easydoc.api.support.UploadFixtures
 import kr.easydoc.core.document.SourceFormat
 import kr.easydoc.infrastructure.DatabaseHandle
@@ -264,16 +265,21 @@ class DocumentEndpointReachTest {
             .isEqualTo(ContractSpec.pathExampleDetail(DOCUMENTS_PATH, POST, NOT_FOUND, WORKSPACE_NOT_FOUND_EXAMPLE))
     }
 
+    /**
+     * **성질 P1 — 응답 구별 불가.** 판정은 [OwnershipConcealment] 한 벌이 진다.
+     *
+     * `privacy-gate` 회차 2 X1-1 이 지목한 형제는 셋이었으나(`DL-9`·`DD-3`·`WR-4`) 같은 성질을
+     * 재는 자리는 **넷**이다 — 이것이 넷째다. 판정을 한 벌로 합칠 때 이 자리를 빼면 그 순간
+     * 「한 벌」이 거짓 전칭이 된다.
+     */
     @Test
-    @DisplayName("DC-17 없는 작업 공간과 남의 작업 공간의 상태·본문 바이트·헤더 집합이 **완전히 같다** (X-B2)")
+    @DisplayName("DC-17 없는 작업 공간과 남의 작업 공간의 상태·본문 **원시 바이트**·헤더 이름 집합이 **완전히 같다** (X-B2)")
     fun `없는 것과 남의 것이 구분되지 않는다`() {
         val mine = newAccount()
-        val absent = createFromText(mine, textBody("본문", workspaceId = UUID.randomUUID().toString()))
-        val others = createFromText(mine, textBody("본문", workspaceId = defaultWorkspaceId(newAccount())))
+        val absent = createFromTextBytes(mine, textBody("본문", workspaceId = UUID.randomUUID().toString()))
+        val others = createFromTextBytes(mine, textBody("본문", workspaceId = defaultWorkspaceId(newAccount())))
 
-        assertThat(absent.statusCode()).isEqualTo(others.statusCode())
-        assertThat(absent.body()).isEqualTo(others.body())
-        assertThat(headerNames(absent)).isEqualTo(headerNames(others))
+        OwnershipConcealment.assertIndistinguishable("POST $DOCUMENTS_PATH", absent, others)
     }
 
     // ================================================================ 인증 (DC-20 · DC-21)
@@ -374,6 +380,16 @@ class DocumentEndpointReachTest {
         token: String?,
         body: String,
     ): HttpResponse<String> = send(post(token, JSON_MEDIA_TYPE, body.toByteArray(Charsets.UTF_8)))
+
+    /** 같은 요청을 **바이트로** 받는다 — P1 만 디코딩을 지나지 않는 팔을 쓴다. */
+    private fun createFromTextBytes(
+        token: String?,
+        body: String,
+    ): HttpResponse<ByteArray> =
+        HttpClient.newHttpClient().send(
+            post(token, JSON_MEDIA_TYPE, body.toByteArray(Charsets.UTF_8)).build(),
+            HttpResponse.BodyHandlers.ofByteArray(),
+        )
 
     private fun textBody(
         text: String,
@@ -491,14 +507,6 @@ class DocumentEndpointReachTest {
             .contains(status.toString())
     }
 
-    private fun headerNames(response: HttpResponse<String>): Set<String> =
-        response
-            .headers()
-            .map()
-            .keys
-            .map { it.lowercase() }
-            .toSet() - VARIABLE_HEADERS
-
     private fun bodyOf(response: HttpResponse<String>): Map<*, *> = json.readValue(response.body(), Map::class.java)
 
     private fun Map<*, *>.required(key: String): Any = this[key] ?: error("응답에 $key 가 없다")
@@ -554,8 +562,6 @@ class DocumentEndpointReachTest {
         private const val LONE_SURROGATE = "\uD800"
         private const val TITLE_PREFIX = "안내"
         private const val TITLE_SUFFIX = "문"
-
-        private val VARIABLE_HEADERS = setOf("date", "content-length")
 
         private var counter = 0
 

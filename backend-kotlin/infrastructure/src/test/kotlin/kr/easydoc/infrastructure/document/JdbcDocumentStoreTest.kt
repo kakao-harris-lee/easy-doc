@@ -45,6 +45,12 @@ import java.util.Base64
 import java.util.UUID
 import javax.sql.DataSource
 
+/** P2 목록 팔의 쪽 크기. 거절 경로는 여기까지 오지 않으므로 값 자체는 성질과 무관하다. */
+private const val LIST_LIMIT = 10
+
+/** P2 목록 팔이 **남의** 작업 공간에 심는 문서 수. 결정적 축이라 「0이 아니다」면 된다. */
+private const val FOREIGN_DOCUMENTS = 3
+
 /**
  * 문서·변환 저장 경로 — **실제 PostgreSQL 에서만 잴 수 있는 것들**.
  *
@@ -68,6 +74,7 @@ import javax.sql.DataSource
  * 「암호문이 실제로 평문과 다르다」와 「행을 다시 읽어 열 수 있다」를 함께 잴 수 있다.
  * 조립된 **Spring 빈**으로 같은 것을 재는 것은 `DocumentStorageContextTest` 다(X9/F-6).
  */
+
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class JdbcDocumentStoreTest {
     private lateinit var database: DatabaseHandle
@@ -478,25 +485,51 @@ class JdbcDocumentStoreTest {
             .isEqualTo(UPLOAD_STATEMENTS)
     }
 
+    /**
+     * **성질 P2 — 거절 비용의 무상관** (`privacy-gate` 회차 2, 처방 X1-2).
+     *
+     * 업로드 팔만으로는 P2 가 **목록에서** 성립하는지 말하지 못한다. 단건 거절은 대상이 한
+     * 행이라 P2 가 자동 성립하지만, 목록은 **성공 경로의 일이 내용량에 비례**하므로 거절
+     * 경로가 목록 질의에 한 번이라도 닿으면 새는 것이 존재 여부가 아니라 **남의 작업 공간의
+     * 크기**다. 실측 크기: 소유 술어를 뺀 변이에서 SQL 층 8.0배 · HTTP 층 2.59배(2,560행).
+     *
+     * **시간이 아니라 문장 수로 잰다.** 같은 회차가 시간 축을 기각했다 — 같은 변이가 40행에서
+     * 비 1.0955 로 **침묵**하고 2,560행에서만 발화한다. 모집단을 채우지 않은 시간 축은
+     * 태어나면서부터 거짓 초록이고, 문장 수는 모집단·잡음·문턱과 무관하게 결정적이다.
+     *
+     * **남의 작업 공간에 행을 심는다** — 심지 않으면 「질의가 돌았는데 행이 0이라 싸게 끝났다」
+     * 와 「질의가 아예 돌지 않았다」가 구분되지 않는다.
+     *
+     * **잡지 못하는 것**: 문장 *수*만 잰다. 한 문장이 하는 일이 내용량에 비례하게 되는 변이
+     * (소유 술어를 `WHERE` 에서 조인 조건으로 옮기는 형태)는 수가 그대로다 — 그 자리는
+     * [kr.easydoc.infrastructure.db.OwnershipPredicateGuardTest] 의 구조 축이 진다.
+     */
     @Test
-    @DisplayName("남의 작업 공간을 지목한 업로드는 **한 문장**에서 끝난다 — 존재 여부가 일한 양으로 새지 않는다")
+    @DisplayName("거절 경로가 **일한 양으로 존재를 흘리지 않는다** — 업로드는 한 문장, 목록은 남의 공간 크기와 무관")
     fun `거절 경로의 문장 수`() {
         val owner = newUser()
         val stranger = newUser()
         workspaces.create(owner, "하")
         val theirs = workspaces.create(stranger, "남의 것 3").id
 
-        val missing =
-            counting.countStatements {
-                runCatching { countedService.createFromText(owner, "본문", null, UUID.randomUUID()) }
-            }
-        val notMine =
-            counting.countStatements {
-                runCatching { countedService.createFromText(owner, "본문", null, theirs) }
-            }
+        fun upload(target: UUID) =
+            counting.countStatements { runCatching { countedService.createFromText(owner, "본문", null, target) } }
+
+        fun list(target: UUID) =
+            counting.countStatements { runCatching { countedService.list(owner, target, LIST_LIMIT, 0) } }
+
+        val missing = upload(UUID.randomUUID())
+        val notMine = upload(theirs)
+        val listMissing = list(UUID.randomUUID())
+        val listEmpty = list(theirs)
+        repeat(FOREIGN_DOCUMENTS) { service.createFromText(stranger, "남의 안내문 $it", null, theirs) }
+        val listFilled = list(theirs)
 
         assertThat(missing).isEqualTo(1)
         assertThat(notMine).describedAs("없는 것과 남의 것이 다른 만큼 일하면 그 차이가 시간에 남는다").isEqualTo(missing)
+        assertThat(listMissing).describedAs("목록 거절이 소유 판정 한 문장에서 끝나지 않았다").isEqualTo(1)
+        assertThat(listEmpty).describedAs("없는 공간과 남의 공간이 다른 만큼 일한다").isEqualTo(listMissing)
+        assertThat(listFilled).describedAs("남의 공간에 행이 있을 때 일이 는다 — 새는 것은 그 크기다").isEqualTo(listEmpty)
     }
 
     // ================================================================ 재암호화

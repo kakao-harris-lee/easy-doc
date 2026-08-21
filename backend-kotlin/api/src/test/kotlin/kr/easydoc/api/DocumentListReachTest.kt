@@ -2,6 +2,7 @@ package kr.easydoc.api
 
 import kr.easydoc.api.support.ContractSpec
 import kr.easydoc.api.support.MultipartBody
+import kr.easydoc.api.support.OwnershipConcealment
 import kr.easydoc.api.support.UploadFixtures
 import kr.easydoc.infrastructure.DatabaseHandle
 import kr.easydoc.infrastructure.PostgresTestSupport
@@ -187,17 +188,29 @@ class DocumentListReachTest {
         assertThat(bodyOf(response).keys.map { it.toString() }).doesNotContain(ITEMS_PROPERTY)
     }
 
+    /**
+     * **성질 P1 — 응답 구별 불가.** 판정은 [OwnershipConcealment] 한 벌이 진다.
+     *
+     * 종전 이 케이스는 상태와 **디코딩된 문자열**만 봤고 **헤더 단언이 0건**이었다
+     * (`privacy-gate` 회차 2 X1-1). 그래서 남의 작업 공간 팔에만 헤더가 하나 붙는 회귀가
+     * 이 자리에서 보이지 않았다 — 존재 여부가 본문이 아니라 헤더로 새는 형태다.
+     *
+     * **P2(거절 비용의 무상관)는 여기서 재지 않는다.** 목록에서는 그것이 새로 생기는 요구이고
+     * (성공 경로의 일이 내용량에 비례한다), 정본 도구는 시간이 아니라 **문장 수**다 —
+     * `kr.easydoc.infrastructure.document.JdbcDocumentStoreTest` 의 「거절 경로의 문장 수」가
+     * 목록 팔까지 잰다(X1-2). 시간 축을 여기 붙이지 않은 사유는 그 회차가 실측으로 정했다:
+     * 같은 변이가 남의 작업 공간 40행에서 비 1.0955 로 **침묵**하고 2,560행에서만 발화한다.
+     */
     @Test
-    @DisplayName("DL-9 없는 작업 공간과 **남의** 작업 공간의 응답 바이트가 같다 (X-B2)")
+    @DisplayName("DL-9 없는 작업 공간과 **남의** 작업 공간의 응답이 상태·본문 **원시 바이트**·헤더 이름 집합까지 같다 (X-B2)")
     fun `없는 것과 남의 것이 구분되지 않는다`() {
         val mine = newAccount()
         val theirs = newAccount()
 
-        val missing = list(mine, workspaceId = UUID.randomUUID().toString())
-        val someoneElse = list(mine, workspaceId = defaultWorkspaceId(theirs))
+        val missing = listBytes(mine, UUID.randomUUID().toString())
+        val someoneElse = listBytes(mine, defaultWorkspaceId(theirs))
 
-        assertThat(missing.statusCode()).isEqualTo(someoneElse.statusCode())
-        assertThat(missing.body()).isEqualTo(someoneElse.body())
+        OwnershipConcealment.assertIndistinguishable("GET $DOCUMENTS_PATH?$WORKSPACE_ID_PARAM=", missing, someoneElse)
     }
 
     // ================================================================ DL-10 · DL-11 — 인증
@@ -308,6 +321,21 @@ class DocumentListReachTest {
 
     private fun send(builder: HttpRequest.Builder): HttpResponse<String> =
         HttpClient.newHttpClient().send(builder.build(), HttpResponse.BodyHandlers.ofString(Charsets.UTF_8))
+
+    /**
+     * 같은 요청을 **바이트로** 받는다 — 디코딩을 지나지 않는 팔이다.
+     *
+     * 문자열 팔([send])과 함께 두는 이유: 다른 케이스들은 본문을 JSON 으로 읽어야 하고,
+     * P1 만 바이트가 필요하다. 두 팔이 **같은 요청 조립**을 쓰도록 [get] 을 공유한다.
+     */
+    private fun listBytes(
+        token: String,
+        workspaceId: String,
+    ): HttpResponse<ByteArray> =
+        HttpClient.newHttpClient().send(
+            get(token, "$DOCUMENTS_PATH?$WORKSPACE_ID_PARAM=$workspaceId").build(),
+            HttpResponse.BodyHandlers.ofByteArray(),
+        )
 
     // ================================================================ DB 확인
 

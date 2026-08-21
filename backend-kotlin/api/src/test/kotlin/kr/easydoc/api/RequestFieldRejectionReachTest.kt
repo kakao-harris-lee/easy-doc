@@ -122,6 +122,85 @@ class RequestFieldRejectionReachTest {
             .isTrue()
     }
 
+    // ================================================================ 독립 oracle (β-22)
+
+    /**
+     * **이 축의 판정을 [RequestFieldProbes] 밖에서 한 번 더 한다.**
+     *
+     * ## 왜 필요한가 (교차 종합 β-22)
+     *
+     * 위 케이스와 형제 [RequestFieldRejectionLayerTest] 는 관측 지점만 다르고 **판정은
+     * `RequestFieldProbes.measure` 한 벌을 공유한다**. 판정 한 벌은 두 축이 서로 다른 것을
+     * 재는 것을 막지만, 그 판정 함수 자신이 오판하면 **두 축이 동시에 초록**이다 —
+     * 그러면 「두 관측이 뒷받침한다」가 독립 근거가 아니다.
+     *
+     * 그래서 이 케이스는 **계약을 직접 읽고 자기 논리로 판정한다.** 공유하는 것은
+     * 요청 전송([probes])과 값 조립([RequestFieldProbes.valueOf])이고, **판정은 공유하지 않는다** —
+     * 전송·조립은 오판할 대상이 아니고(요청이 안 나가면 세 단언이 전부 깨진다), 오판하는 것은
+     * 상태·본문을 계약과 대조하는 논리다.
+     *
+     * ## 무엇을 재는가 — 세 값
+     *
+     * 계약이 필드마다 `limit` 과 방향(`x-service-constraint` 의 `max_length`/`min_length`)을
+     * 정했으므로 길이 셋의 처분이 계약에서 곧바로 나온다.
+     *
+     * | 길이 | 기대 | 왜 |
+     * |---|---|---|
+     * | `limit` | **통과** | 다섯 필드 전부 경계 포함이다 |
+     * | 위반 쪽(상한이면 `limit+1`, 하한이면 `limit-1`) | **422 + 문자열 detail ∈ 계약 문구** | 서비스 층 판정 |
+     * | 준수 쪽(상한이면 `limit-1`, 하한이면 `limit+1`) | **통과** | 방향이 뒤집히면 여기가 깨진다 |
+     *
+     * 셋째 줄이 β-21 을 이 축에서도 되짚는다 — 최대↔최소를 뒤집으면 둘째와 셋째가 **함께**
+     * 깨지고, 그 판정이 `measure` 를 지나지 않는다.
+     *
+     * ## 증명하지 못하는 것
+     *
+     * 정규화 축(`measured_on`)은 여기서 재지 않는다 — 그 축은 「원시 길이와 정규화 후 길이가
+     * 갈리는 값」을 만들어야 하고, 그 조립 규칙이 곧 `measure` 가 쓰는 것과 같아진다.
+     * 독립성을 늘리는 대신 축을 좁혔다.
+     */
+    @Test
+    @DisplayName("β-22 계약을 직접 읽는 **독립 판정**으로도 경계·방향·문구가 맞다 — 공유 판정 함수를 지나지 않는다")
+    fun `계약 직독 판정이 같은 결론을 낸다`() {
+        val probes = probes()
+        assertThat(probes.keys)
+            .withFailMessage("프로브가 하나도 없다 — 이 독립 축은 아무것도 재지 않는다")
+            .isNotEmpty()
+
+        val complaints = mutableListOf<String>()
+        probes.forEach { (field, probe) ->
+            val constraint = ContractSpec.requestFieldConstraint(field)
+            val violating = if (constraint.upperBound) constraint.limit + 1 else constraint.limit - 1
+            val compliant = if (constraint.upperBound) constraint.limit - 1 else constraint.limit + 1
+            val declared = RequestFieldProbes.declaredDetails(field)
+
+            listOf("경계" to constraint.limit, "준수 쪽" to compliant).forEach { (label, length) ->
+                val observed = probe(RequestFieldProbes.valueOf(field, length))
+                if (observed.status !in ACCEPTED_RANGE) {
+                    complaints += "$field $label(길이 $length) 이 거절됐다: ${observed.status} ${observed.detail}"
+                }
+            }
+
+            val rejected = probe(RequestFieldProbes.valueOf(field, violating))
+            if (rejected.status != RequestFieldProbes.UNPROCESSABLE) {
+                complaints += "$field 위반 쪽(길이 $violating) 이 ${rejected.status} 다 — 422 여야 한다"
+            }
+            val detail = rejected.detail
+            if (detail !is String) {
+                complaints += "$field 위반 쪽 detail 이 문자열이 아니다: $detail (스키마 층이 판정했다)"
+            } else if (detail !in declared) {
+                complaints += "$field 위반 쪽 문구가 계약 선언 밖이다: \"$detail\" (선언: $declared)"
+            }
+        }
+
+        assertThat(complaints)
+            .withFailMessage(
+                "계약을 직접 읽은 판정이 관측과 어긋났다 — 공유 판정 함수(`RequestFieldProbes.measure`)가 " +
+                    "초록이어도 이 축은 독립으로 판정한다.\n%s",
+                complaints.joinToString("\n") { "  - $it" },
+            ).isEmpty()
+    }
+
     // ================================================================ R-5 — 엔진 질의(컨테이너 축)
 
     @Test
@@ -243,6 +322,9 @@ class RequestFieldRejectionReachTest {
     }
 
     companion object {
+        /** 2xx. 독립 oracle 이 「통과」를 판정하는 창이다. */
+        private val ACCEPTED_RANGE = 200..299
+
         /**
          * 계약 다섯 필드가 사는 DTO 후보. **컴파일 시점 참조**라 이름이 바뀌면 컴파일이 먼저 깨진다.
          *

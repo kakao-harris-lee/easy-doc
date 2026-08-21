@@ -1,6 +1,7 @@
 package kr.easydoc.api
 
 import kr.easydoc.api.support.ContractSpec
+import kr.easydoc.api.support.OwnershipConcealment
 import kr.easydoc.core.crypto.EncryptionScheme
 import kr.easydoc.infrastructure.DatabaseHandle
 import kr.easydoc.infrastructure.PostgresTestSupport
@@ -193,20 +194,23 @@ class WorkspaceEndpointReachTest {
             .isEqualTo(ContractSpec.pathExampleDetail(ITEM_PATH, PATCH, NOT_FOUND, NOT_FOUND_EXAMPLE))
     }
 
+    /**
+     * **성질 P1 — 응답 구별 불가.** 판정은 [OwnershipConcealment] 한 벌이 진다.
+     *
+     * 종전 이 케이스는 본문을 **디코딩된 문자열**로 비교했다 — `privacy-gate` 회차 2 X1-1 이
+     * 「형제 셋이 전부 바이트가 아니라 문자열을 본다」로 지목한 자리다.
+     */
     @Test
-    @DisplayName("WR-4 없는 자원과 타인 자원의 응답이 상태·본문 바이트·헤더 이름 집합까지 같다 (X-B2)")
+    @DisplayName("WR-4 없는 자원과 타인 자원의 응답이 상태·본문 **원시 바이트**·헤더 이름 집합까지 같다 (X-B2)")
     fun `없는 자원과 타인 자원이 구분되지 않는다`() {
         val mine = newAccount()
         val othersId = idOf(create(newAccount(), uniqueName()))
         val name = uniqueName()
 
-        val absent = patch(mine, UUID.randomUUID().toString(), name)
-        val others = patch(mine, othersId, name)
+        val absent = patchBytes(mine, UUID.randomUUID().toString(), name)
+        val others = patchBytes(mine, othersId, name)
 
-        // 문구 차이 하나가 존재를 흘린다. 바이트로 본다.
-        assertThat(others.statusCode()).isEqualTo(absent.statusCode())
-        assertThat(others.body()).isEqualTo(absent.body())
-        assertThat(headerNames(others)).isEqualTo(headerNames(absent))
+        OwnershipConcealment.assertIndistinguishable("PATCH $ITEM_PATH", absent, others)
     }
 
     /**
@@ -357,13 +361,12 @@ class WorkspaceEndpointReachTest {
         val mine = newAccount()
         val othersId = idOf(create(newAccount(), uniqueName()))
 
-        val others = delete(mine, othersId)
-        val absent = delete(mine, UUID.randomUUID().toString())
+        val others = deleteBytes(mine, othersId)
+        val absent = deleteBytes(mine, UUID.randomUUID().toString())
 
         assertThat(others.statusCode()).isNotEqualTo(FORBIDDEN)
         assertDeclaredStatus(others, NOT_FOUND, ITEM_PATH, DELETE)
-        assertThat(others.body()).isEqualTo(absent.body())
-        assertThat(headerNames(others)).isEqualTo(headerNames(absent))
+        OwnershipConcealment.assertIndistinguishable("DELETE $ITEM_PATH", absent, others)
     }
 
     @Test
@@ -477,6 +480,27 @@ class WorkspaceEndpointReachTest {
         workspaceId: String,
     ): HttpResponse<String> = send(jsonRequest(itemPath(workspaceId), token).DELETE())
 
+    /**
+     * P1 이 쓰는 **바이트** 팔 둘. 다른 케이스는 본문을 JSON 으로 읽어야 해서 문자열 팔을 쓴다.
+     *
+     * 두 팔이 [jsonRequest]·[itemPath]·[nameBody] 를 공유한다 — 조립이 갈리면 두 팔의 차이가
+     * 응답 차이가 아니라 **요청 차이**가 된다.
+     */
+    private fun patchBytes(
+        token: String?,
+        workspaceId: String,
+        name: String,
+    ): HttpResponse<ByteArray> =
+        sendBytes(jsonRequest(itemPath(workspaceId), token).method(PATCH.uppercase(), bodyPublisher(nameBody(name))))
+
+    private fun deleteBytes(
+        token: String?,
+        workspaceId: String,
+    ): HttpResponse<ByteArray> = sendBytes(jsonRequest(itemPath(workspaceId), token).DELETE())
+
+    private fun sendBytes(builder: HttpRequest.Builder): HttpResponse<ByteArray> =
+        HttpClient.newHttpClient().send(builder.build(), HttpResponse.BodyHandlers.ofByteArray())
+
     private fun get(
         path: String,
         token: String?,
@@ -547,7 +571,7 @@ class WorkspaceEndpointReachTest {
     }
 
     private fun assertDeclaredStatus(
-        response: HttpResponse<String>,
+        response: HttpResponse<*>,
         status: Int,
         path: String,
         method: String,
@@ -563,14 +587,6 @@ class WorkspaceEndpointReachTest {
             .withFailMessage("오류 응답의 Content-Type 이 JSON 이 아니다")
             .contains("application/json")
     }
-
-    private fun headerNames(response: HttpResponse<String>): Set<String> =
-        response
-            .headers()
-            .map()
-            .keys
-            .map { it.lowercase() }
-            .toSet() - VARIABLE_HEADERS
 
     private fun bodyOf(response: HttpResponse<String>): Map<*, *> = json.readValue(response.body(), Map::class.java)
 
@@ -614,7 +630,6 @@ class WorkspaceEndpointReachTest {
         private const val VALID_PASSWORD = "correct horse battery"
 
         /** 응답마다 값이 달라지는 헤더 — 집합 비교에서 뺀다(길이·날짜는 존재 자체가 갈리지 않는다). */
-        private val VARIABLE_HEADERS = setOf("date")
 
         private const val ABSENT = "absent"
         private const val OTHERS = "others"

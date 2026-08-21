@@ -1,6 +1,7 @@
 package kr.easydoc.api
 
 import kr.easydoc.api.support.ContractSpec
+import kr.easydoc.api.support.OwnershipConcealment
 import kr.easydoc.infrastructure.DatabaseHandle
 import kr.easydoc.infrastructure.PostgresTestSupport
 import org.assertj.core.api.Assertions.assertThat
@@ -160,19 +161,23 @@ class DocumentDeleteReachTest {
         assertThat(conversionRows(theirDocument)).isEqualTo(1)
     }
 
+    /**
+     * **성질 P1 — 응답 구별 불가.** 판정은 [OwnershipConcealment] 한 벌이 진다.
+     *
+     * 종전 이 케이스는 본문을 **디코딩된 문자열**로 비교했다 — `privacy-gate` 회차 2 X1-1 이
+     * 「형제 셋이 전부 바이트가 아니라 문자열을 본다」로 지목한 자리다. 은닉의 요구는
+     * 「같은 글자가 나간다」가 아니라 **「나간 바이트가 같다」**다.
+     */
     @Test
-    @DisplayName("DD-3 없는 식별자와 타인 식별자의 **상태·본문 바이트·헤더 이름 집합이 완전히 같다** (X-B2)")
+    @DisplayName("DD-3 없는 식별자와 타인 식별자의 **상태·본문 원시 바이트·헤더 이름 집합이 완전히 같다** (X-B2)")
     fun `없는 것과 남의 것이 구분되지 않는다`() {
         val mine = newAccount()
         val theirDocument = createDocument(newAccount())
 
-        val absent = delete(mine, UUID.randomUUID().toString())
-        val others = delete(mine, theirDocument)
+        val absent = deleteBytes(mine, UUID.randomUUID().toString())
+        val others = deleteBytes(mine, theirDocument)
 
-        // 문구 차이 하나가 존재를 흘린다. 바이트로 본다.
-        assertThat(others.statusCode()).isEqualTo(absent.statusCode())
-        assertThat(others.body()).isEqualTo(absent.body())
-        assertThat(headerNames(others)).isEqualTo(headerNames(absent))
+        OwnershipConcealment.assertIndistinguishable("DELETE $ITEM_PATH", absent, others)
     }
 
     /**
@@ -387,10 +392,26 @@ class DocumentDeleteReachTest {
     private fun delete(
         token: String?,
         documentId: String,
-    ): HttpResponse<String> {
+    ): HttpResponse<String> = send(deleteRequest(token, documentId))
+
+    /** 같은 요청을 **바이트로** 받는다 — P1 만 디코딩을 지나지 않는 팔을 쓴다. */
+    private fun deleteBytes(
+        token: String?,
+        documentId: String,
+    ): HttpResponse<ByteArray> =
+        HttpClient.newHttpClient().send(
+            deleteRequest(token, documentId).build(),
+            HttpResponse.BodyHandlers.ofByteArray(),
+        )
+
+    /** 두 팔이 **같은 요청 조립**을 쓰게 한다 — 조립이 갈리면 두 팔의 차이가 요청 차이가 된다. */
+    private fun deleteRequest(
+        token: String?,
+        documentId: String,
+    ): HttpRequest.Builder {
         val builder = HttpRequest.newBuilder(URI.create("http://localhost:$port${itemPath(documentId)}")).DELETE()
         token?.let { builder.header("Authorization", "Bearer $it") }
-        return send(builder)
+        return builder
     }
 
     private fun post(
@@ -488,15 +509,6 @@ class DocumentDeleteReachTest {
         }
     }
 
-    /** 응답마다 값이 달라지는 헤더는 집합 비교에서 뺀다(길이·날짜는 존재 자체가 갈리지 않는다). */
-    private fun headerNames(response: HttpResponse<String>): Set<String> =
-        response
-            .headers()
-            .map()
-            .keys
-            .map { it.lowercase() }
-            .toSet() - VARIABLE_HEADERS
-
     private fun bodyOf(response: HttpResponse<String>): Map<*, *> = json.readValue(response.body(), Map::class.java)
 
     private fun Map<*, *>.required(key: String): Any = this[key] ?: error("응답에 $key 가 없다")
@@ -531,8 +543,6 @@ class DocumentDeleteReachTest {
 
         private const val FORGED_TOKEN = "forged.token.value"
         private const val VALID_PASSWORD = "correct horse battery"
-
-        private val VARIABLE_HEADERS = setOf("date")
 
         private const val ABSENT = "absent"
         private const val OTHERS = "others"
