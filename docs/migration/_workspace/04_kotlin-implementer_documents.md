@@ -1180,3 +1180,109 @@ run: uv run pytest tests/test_kotlin_gate_reach.py
 | `uv run pytest` | **1472 passed**, 68 skipped, 5 deselected, 5 xfailed |
 
 **핀 처분** — **`MIN_TEST_CLASSES`·`MIN_FLOOR_CLASSES`·`FLOOR_TEST_CLASSES` 무변경**(리더 핀). `MIN_TESTS_IN_FLOOR_CLASS` 값 무변경(KDoc 만 갱신 — 「`@Disabled` 를 구분하지 않는다」가 이제 거짓이라 죽은 포인터가 됐다). 새 테스트 클래스 없음 → `TEST_CLASSES`·`TEST_CLASS_COUNT` 무변경. `ci.yml` 무변경(플래그가 이미 켜져 있다). `contracts/**`·`reviews/**`·`00_progress.md` 무변경.
+
+---
+
+# C4-R9 — 라쳇 상수를 **외부 기준점(git 이력)**으로 되짚는다
+
+**일자:** 2026-08-21 / **계기:** 리더 판정 — R-8 보고의 악용 비용 표에서 「하한 값 내리기」를 B-20 으로 미룬 것이 오분류였다. 한 줄이고 자동 신호가 전부 초록이므로 `@Disabled` 와 같은 성질이다.
+
+## C4-R9-1. 무엇이 취약한지 **측정으로 갈랐다**
+
+라쳇 성질 후보를 전수로 뽑아(`MIN_*`·`EXPECTED_*`·`*_COUNT`) 각각 **1 씩 내리고** 소유 게이트를 돌렸다.
+
+| 상수 | 파일 | 내리면 | 판정 |
+|---|---|---|---|
+| `MIN_TEST_CLASSES` | 핀 파일 | **초록** | **취약** |
+| `MIN_FLOOR_CLASSES` | 핀 파일 | **초록** | **취약** |
+| `MIN_TESTS_IN_FLOOR_CLASS` 값 | 핀 파일 | **초록** | **취약** |
+| `MIN_PRODUCTION_CLASSES` | `SensitiveToStringReachTest` | **초록** | **취약** |
+| `MIN_PORT_ADAPTERS` | `StatementCountingPremiseTest` | **초록** | **취약** |
+| `MIN_CRITICAL_STATEMENTS` | `FlywayBaselineGuardTest` | **초록** | **취약** |
+| `MIN_NEGATIVE_CASES` | `PostprocessTest` | **초록** | **취약** |
+| `MIN_DOCUMENT_COLUMNS` | `JdbcDocumentStoreTest` | **초록** | **취약** |
+| `TEST_CLASS_COUNT` | 핀 파일 | **RED**(`테스트_클래스_선언이_비어_있지_않다`) | **제외** |
+| `EXPECTED_SOURCE_DECLARATIONS` | `SensitiveToStringReachTest` | **RED** | **제외** |
+
+**`TEST_CLASS_COUNT` 포함 여부 판단: 제외한다.** 그것은 `len(TEST_CLASSES)` 와 **정확 일치**로 비교되므로 **자기 권위가 아니라 목록이 권위**다 — 값만 내리면 즉시 빨개진다(위 실측). `EXPECTED_*` 계열이 같은 성질이라 함께 제외했고, 그 사실을 `NON_RATCHET_PINS` 에 **사유 문자열로** 남겼다(사유 없는 면제를 막는다).
+
+> **하네스가 나를 두 번 속였다 — 그것도 기록한다.** ⑴ 첫 판이 Kotlin 케이스를 세 모듈 `test` 태스크에 같은 `--tests` 로 걸었는데, Gradle 은 일치하는 테스트가 없는 모듈에서 「No tests found for given includes」로 **실패**한다 → 전부 RED 로 보였다. ⑵ 고친 뒤에는 Kotlin 케이스가 남긴 **부분 리포트**를 다음 파이썬 케이스가 물려받아 리포트 축이 무관한 이유로 RED 가 됐다. 프로토콜을 「전체 build → 파이썬 케이스 → Kotlin 케이스 → 전체 build」로 바꾼 뒤의 값이 위 표다. **「빨개졌는가」가 아니라 「겨눈 장치가 그 자리를 짚었는가」**가 왜 판정 기준인지의 세 번째 실례다.
+
+## C4-R9-2. 후보 둘을 재서 골랐다 — **채택: 이력 최댓값**
+
+**이 문제는 저장소 안에서 원리적으로 닫히지 않는다**(값이 권위다). 외부 기준점 후보 둘의 실측 비교:
+
+| | ⒜ **git 이력 최댓값**(채택) | ⒝ 기준 브랜치(`origin/main`) 대조(버림) |
+|---|---|---|
+| 도달 | **모든 이벤트**(push·PR) | **PR 이벤트만** — base ref 가 그때만 있다. 이 저장소 CI 는 `push: branches: [main]` + `pull_request` 이므로 main 으로의 push 에서는 무의미해진다 |
+| `실행 경로` 표기 | `ci:quality` · `ci:kotlin`(무조건) | `ci:<잡>(조건:PR 이벤트)` — 조건부를 표기해야 한다 |
+| 비용 | `fetch-depth: 0`(전체 클론). 실측 `.git` **112MB** · 커밋 **477개** · 이 대조가 읽는 리비전 **64개**(`git show` 64회, 1~2초) | `git fetch --depth=1 origin main`(작다) |
+| 약점 | 이력 재작성(force-push)으로 최댓값을 낮출 수 있다 | 조건부 도달 + base 를 따로 fetch 해야 한다 |
+
+**버린 이유는 비용이 아니라 도달이다.** ⒝ 가 더 싸지만 조건부이고, 이 저장소는 지금 기능 브랜치에 push 하며 main 으로의 push 에서도 CI 가 돈다 — 그 실행에서 검사가 무의미해지는 축을 「닫혔다」고 부를 수 없다.
+
+**오늘 값이 조건을 만족하는지 먼저 확인했다**(넣자마자 빨개지는 것을 피하려고): 8개 전부 **현재 == 이력 최댓값**, 위반 0.
+
+## C4-R9-3. CI 도달 — **실측 후 `ci.yml` 을 고쳤다**
+
+| 잡 | 이 게이트를 도는가 | 고치기 전 `fetch-depth` | 고친 뒤 |
+|---|---|---|---|
+| `quality` | 예 — `tests/test_kotlin_gate_reach.py` 명시 + 전체 pytest (**플래그 없음**) | **기본(1)** → 이력 없음 | **0** |
+| `kotlin` | 예 — **`KOTLIN_GATE_REACH_REQUIRE_REPORT=1`** | **기본(1)** → 이력 없음 | **0** |
+| `frontend` · `e2e` | 아니오(pytest 없음) | 기본(1) | 그대로 — 비용을 쓸 이유가 없다 |
+| `llm-lane` | 아니오 | 이미 0 | 그대로 |
+
+**고치기 전 두 잡 모두 이력이 없었다** — 즉 이 축을 넣기만 하고 `ci.yml` 을 두면 **CI 도달 0** 이었다(규칙 3 근거 6 의 형태). YAML 파싱으로 값이 실제로 들어갔음을 확인했다.
+
+**이력이 없을 때의 동작**: 요구 모드면 **실패**하고(메시지가 `fetch-depth` 를 지목한다), 꺼져 있으면 **판정하지 못한 사유를 출력**한다. R-8 에서 세운 구분과 같다 — 플래그는 **대상 범위를 넓히는 스위치**이지 검사를 켜는 스위치가 아니다. 얕은 클론은 `.git/shallow` 로 탐지한다.
+
+## C4-R9-4. 음성 대조 — 양방향
+
+| 상수 | **내리기(−1)** | **올리기(+1)** |
+|---|---|---|
+| `MIN_TEST_CLASSES` | **RED** — `라쳇_상수가_이력_최댓값_아래로_내려가지_않는다` | **초록** |
+| `MIN_FLOOR_CLASSES` | **RED** — 같은 장치 | RED — `바닥_목록이_비지_않는다`(실제 26 < 주장 27) |
+| `MIN_TESTS_IN_FLOOR_CLASS` 한 값 | **RED** — `바닥_개수표의_값이_이력_최댓값_아래로_내려가지_않는다` | RED — 개수 두 축(실제 3 < 주장 4) |
+| `MIN_PRODUCTION_CLASSES` | **RED** — 이력 장치 | **초록** |
+| `MIN_PORT_ADAPTERS` | **RED** — 이력 장치 | **초록** |
+| `MIN_CRITICAL_STATEMENTS` | **RED** — 이력 장치 | **초록** |
+| `MIN_NEGATIVE_CASES` | **RED** — 이력 장치 | **초록** |
+| `MIN_DOCUMENT_COLUMNS` | **RED** — 이력 장치 | **초록** |
+| `TEST_CLASS_COUNT`(대조군) | RED — **정확 일치 장치**(이력 장치 아님) | RED — 같은 장치 |
+
+**내리기 8/8 이 겨눈 장치에 걸렸다.** 올리기에서 빨간 두 줄은 **올바른 거절**이다 — 트리가 뒷받침하지 않는 값을 주장한 것이고(실제 26 인데 27, 실제 3 인데 4), 라쳇 상향은 「트리가 이미 그만큼일 때」만 정당하다. `MIN_TEST_CLASSES` 104→105 는 실제가 105 라 초록이다. **즉 이 장치는 라쳇을 못 쓰게 만들지 않는다.**
+
+대조군 줄이 뜻하는 것: `TEST_CLASS_COUNT` 는 이력 장치가 아니라 **기존 정확 일치**가 잡는다 — 제외 판단의 근거가 실측으로 남는다.
+
+복원 sha256 전건 일치(9개 대상 × 2방향, 스크립트가 매 회차 대조). `cp`·`git stash` 미사용.
+
+## C4-R9-5. 새 상수가 분류를 빠져나가지 못하게 했다
+
+`test_이_파일의_수치_상수가_전부_분류돼_있다` — 핀 파일의 모듈 수준 `NAME = <정수>` 전부가 `RATCHET_SCALAR_PINS` 아니면 `NON_RATCHET_PINS` 중 하나여야 한다(**정확 분할**, 양방향). 새 수치 핀을 더하면서 분류를 빠뜨리면 그 상수가 다시 「값 자신이 권위인」 상태가 되는데, 그것이 이 축이 겨눈 결함이다. `NON_RATCHET_PINS` 는 값이 **사유 문자열**이라 빈 사유가 실패한다.
+
+## C4-R9-6. 그래도 무엇을 증명하지 못하는가 — 남은 것의 악용 비용
+
+| 남은 우회 | 악용 비용 | 오늘 잡는 것 |
+|---|---|---|
+| **이력 재작성**(rebase·amend·force-push 로 그 상수가 높았던 커밋을 없애기) | **크다** — 브랜치 이력을 다시 쓰고 force-push 해야 하며, PR 에서 눈에 띈다 | **없다.** 이 축의 구조적 한계다 |
+| `RATCHET_SCALAR_PINS` 에서 항목을 **빼기** | **한 줄** | 부분적 — 핀 파일 상수는 정확 분할이 막지만, **Kotlin 쪽 다섯은 목록에서 빠지면 조용해진다** |
+| 분류를 `NON_RATCHET_PINS` 로 **옮기기**(사유를 지어서) | 두 줄 | **없다** — 사유의 진실성은 기계가 못 본다. 리뷰뿐 |
+| 하한 값 내리기 | 한 줄 | **이 회차가 닫았다** |
+| `fetch-depth: 0` 을 되돌리기 | 한 줄 | 요구 모드에서 **실패**한다(`kotlin` 잡) |
+| **단언만 비우기** | 한 줄(단언 자리에 diff) | **없다** → pitest(B-19) |
+
+**가장 값싼 남은 경로는 「Kotlin 쪽 라쳇 항목을 목록에서 빼기」(한 줄)** 다. 핀 파일 상수는 정확 분할이 되짚지만 Kotlin 상수에는 그런 되짚기가 없다 — 그 파일들의 수치 상수를 전수 분류하려면 Kotlin 소스를 파싱해 「라쳇인가」를 판정해야 하고, 그 판정은 사용 형태(`isGreaterThanOrEqualTo` 대 `isEqualTo`)를 읽어야 한다. **가능하지만 이 회차의 근거를 넘는다** — 백로그 **B-21** 로 올렸고, 그때까지 이 항목의 목록 삭제는 **리뷰가 유일한 방벽**이다.
+
+## C4-R9-7 검사 표
+
+| 검사 | 결과 |
+|---|---|
+| `./gradlew ktlintCheck detekt build moduleBoundaryCheck parityHarness --continue --rerun-tasks` | **BUILD SUCCESSFUL** (경고 0) |
+| 개인정보 스캐너 | exit 0 (**BLOCK 0**) |
+| `KOTLIN_GATE_REACH_REQUIRE_REPORT=1 uv run pytest tests/test_kotlin_gate_reach.py` | **146 passed** (143 → 이력 두 축 + 정확 분할) |
+| `uv run ruff check .` | All checks passed |
+| `uv run mypy . .claude` | Success: 139 source files |
+| `uv run pytest` | **1475 passed**, 68 skipped, 5 deselected, 5 xfailed |
+| `ci.yml` YAML 파싱 + `fetch-depth` 값 확인 | quality **0** · kotlin **0** · frontend·e2e 기본 · llm-lane 0 |
+
+**핀 처분** — **리더 핀 세 개의 값을 바꾸지 않았다**(읽어서 판정하는 코드만 썼다). `MIN_TESTS_IN_FLOOR_CLASS` 값도 무변경. 새 테스트 클래스 없음 → `TEST_CLASSES`·`TEST_CLASS_COUNT` 무변경. `ci.yml` 은 위 사유(허가 범위)에 한해 `fetch-depth: 0` 두 줄만 더했다. `contracts/**`·`reviews/**`·`00_progress.md` 무변경.

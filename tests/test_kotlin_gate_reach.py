@@ -105,6 +105,7 @@ from __future__ import annotations
 
 import os
 import re
+import subprocess
 from pathlib import Path
 from xml.etree import ElementTree
 
@@ -453,6 +454,79 @@ MIN_TESTS_IN_FLOOR_CLASS: dict[str, int] = {
     "kr.easydoc.infrastructure.document.EnvelopeRotationConcurrencyTest": 3,
     "kr.easydoc.infrastructure.document.JdbcDocumentStoreTest": 22,
     "kr.easydoc.infrastructure.ingest.IngestDefensesTest": 6,
+}
+
+
+#: **라쳇 성질을 가진 수치 핀** — 값 자신이 권위이므로 **값만 보고는 낮아졌는지 알 수 없다.**
+#:
+#: ## 왜 있는가 (C4 R-9)
+#:
+#: R-8 이 「한 줄로 강제자를 끄는」 경로를 닫았지만 하나가 남았다: **하한 값을 내리기.**
+#: 실측(2026-08-21, 신선한 리포트 기준): 아래 상수들을 **1 씩 내려도 전 게이트가 초록**이다.
+#: `@Disabled` 한 줄과 정확히 같은 성질이고(한 줄 · 자동 신호 전부 초록), 그것을 못 봐준
+#: 기준이 여기에도 적용된다.
+#:
+#: ## 외부 기준점이 필요하다 — **git 이력의 최댓값**을 쓴다
+#:
+#: 저장소 안에서는 원리적으로 닫히지 않는다(값이 권위다). 후보 둘을 재서 골랐다.
+#:
+#: - **채택: 이력 최댓값.** 「이 상수는 이 파일 이력에서 가졌던 최댓값보다 작을 수 없다」.
+#:   낮추려면 이력을 고쳐야 하므로 한 줄로는 안 된다. **모든 이벤트에서 돈다**(push·PR).
+#:   비용 실측: 대상 7개 파일의 관련 리비전 합 **64개**, `git show` 64회로 1~2초.
+#:   CI 비용은 `fetch-depth: 0`(전체 클론) — 이 저장소 `.git` 은 **112MB**, 커밋 477개다.
+#: - **버림: 기준 브랜치(`origin/main`) 대조.** 이력 전체가 필요 없어 더 싸지만 **도달이
+#:   조건부**다 — 이 저장소 CI 는 `push: branches: [main]` 과 `pull_request` 로 돌고,
+#:   base ref 는 PR 이벤트에만 있다. main 으로의 push 에서는 그 검사가 무의미해지므로
+#:   `실행 경로` 를 `ci:<잡>(조건:PR 이벤트)` 로 적어야 한다. 이력 축은 그 조건이 없다.
+#:
+#: ## 이력이 없을 때 — **조용히 건너뛰지 않는다**
+#:
+#: 얕은 클론이거나 그 경로의 리비전이 0 이면 판정할 수 없다. 요구 모드
+#: (`KOTLIN_GATE_REACH_REQUIRE_REPORT`)에서는 **실패**하고, 꺼져 있으면 **판정하지 못한
+#: 목록을 출력**한다. R-8 에서 세운 구분과 같다 — 플래그는 **대상 범위를 넓히는 스위치**이지
+#: 검사를 켜는 스위치가 아니다.
+#:
+#: ## 정당한 상향은 막지 않는다
+#:
+#: 조건이 「현재 ≥ 이력 최댓값」이므로 올리는 편집은 언제나 통과한다. 라쳇을 못 쓰게 만들면
+#: 이 장치가 지키려던 규율 자체를 없애는 것이다.
+RATCHET_SCALAR_PINS: tuple[tuple[str, str], ...] = (
+    (THIS_TEST_PATH, "MIN_TEST_CLASSES"),
+    (THIS_TEST_PATH, "MIN_FLOOR_CLASSES"),
+    (
+        "backend-kotlin/api/src/test/kotlin/kr/easydoc/api/SensitiveToStringReachTest.kt",
+        "MIN_PRODUCTION_CLASSES",
+    ),
+    (
+        "backend-kotlin/infrastructure/src/test/kotlin/kr/easydoc/infrastructure/db/"
+        "StatementCountingPremiseTest.kt",
+        "MIN_PORT_ADAPTERS",
+    ),
+    (
+        "backend-kotlin/infrastructure/src/test/kotlin/kr/easydoc/infrastructure/db/FlywayBaselineGuardTest.kt",
+        "MIN_CRITICAL_STATEMENTS",
+    ),
+    (
+        "backend-kotlin/core/src/test/kotlin/kr/easydoc/core/easyread/PostprocessTest.kt",
+        "MIN_NEGATIVE_CASES",
+    ),
+    (
+        "backend-kotlin/infrastructure/src/test/kotlin/kr/easydoc/infrastructure/document/JdbcDocumentStoreTest.kt",
+        "MIN_DOCUMENT_COLUMNS",
+    ),
+)
+
+#: 표 형태의 라쳇 핀 — 값이 여럿이라 **키별로** 이력 최댓값과 대조한다.
+RATCHET_TABLE_PIN: tuple[str, str] = (THIS_TEST_PATH, "MIN_TESTS_IN_FLOOR_CLASS")
+
+#: **이 파일의 수치 상수 중 라쳇이 아닌 것** — 그 사유를 값과 함께 남긴다.
+#:
+#: `TEST_CLASS_COUNT` 는 `len(TEST_CLASSES)` 와 **정확 일치**로 비교되므로 값만 내리면
+#: 즉시 빨개진다(실측: 1 내렸을 때 `test_테스트_클래스_선언이_비어_있지_않다` 가 지목).
+#: 그래서 이력 대조가 필요 없다 — **자기 권위가 아니라 목록이 권위**인 상수다.
+#: Kotlin 쪽 `EXPECTED_SOURCE_DECLARATIONS` 도 같은 성질이다(실측: 1 내리면 RED).
+NON_RATCHET_PINS: dict[str, str] = {
+    "TEST_CLASS_COUNT": "len(TEST_CLASSES) 와 정확 일치 — 값만 내리면 즉시 빨개진다",
 }
 
 
@@ -830,6 +904,167 @@ def test_리포트에_건너뛴_테스트가_없다() -> None:
         + "\n  `@Disabled`·`assumeTrue`/`assumeFalse`·`@EnabledOnOs`·태그 제외가\n"
         "  전부 여기 나타난다.\n"
         "  강제자를 끄는 가장 값싼 편집이 한 줄이므로, 그 한 줄이 게이트에 보여야 한다."
+    )
+
+
+def _git_revisions(rel_path: str) -> list[str]:
+    """`rel_path` 를 건드린 리비전들. 이력이 없으면 빈 목록."""
+    result = subprocess.run(
+        ["git", "rev-list", "HEAD", "--", rel_path],
+        cwd=REPO_ROOT, capture_output=True, text=True, check=False,
+    )
+    return result.stdout.split() if result.returncode == 0 else []
+
+
+def _blob_at(rev: str, rel_path: str) -> str:
+    """그 리비전의 파일 내용. 그 리비전에 파일이 없으면 빈 문자열."""
+    result = subprocess.run(
+        ["git", "show", f"{rev}:{rel_path}"],
+        cwd=REPO_ROOT, capture_output=True, text=True, check=False,
+    )
+    return result.stdout if result.returncode == 0 else ""
+
+
+def _scalar_in(text: str, name: str) -> int | None:
+    match = re.search(rf"\b{re.escape(name)}\s*=\s*(\d+)", text)
+    return int(match.group(1)) if match else None
+
+
+def _table_in(text: str, name: str) -> dict[str, int]:
+    block = re.search(rf"{re.escape(name)}[^=]*=\s*\{{(.*?)\n\}}", text, re.DOTALL)
+    if block is None:
+        return {}
+    return {key: int(value) for key, value in re.findall(r'"([^"]+)":\s*(\d+),', block.group(1))}
+
+
+def _history_unavailable() -> str | None:
+    """이력을 읽을 수 없는 사유. 읽을 수 있으면 `None`."""
+    if (REPO_ROOT / ".git" / "shallow").exists():
+        return "얕은 클론이다(.git/shallow 존재) — fetch-depth 가 0 이 아니다"
+    if not _git_revisions(THIS_TEST_PATH):
+        return f"{THIS_TEST_PATH} 의 리비전이 0 이다 — 이력이 없다"
+    return None
+
+
+def _require_mode() -> bool:
+    return bool(os.environ.get(REQUIRE_REPORT_ENV))
+
+
+def _report_or_fail_history(reason: str) -> None:
+    """이력이 없을 때의 처분. **조용히 건너뛰지 않는다.**"""
+    assert not _require_mode(), (
+        f"{REQUIRE_REPORT_ENV} 가 켜져 있는데 라쳇 이력 대조를 할 수 없다: {reason}\n"
+        "  이 검사의 기준점은 **git 이력**이다. CI 의 checkout 에 `fetch-depth: 0` 이 없으면\n"
+        "  기본값 1 로 이력이 없고, 그러면 이 축은 존재만 하고 도달이 0 이다."
+    )
+    print(f"라쳇 이력 대조 — 판정하지 못했다: {reason}")
+
+
+def test_라쳇_상수가_이력_최댓값_아래로_내려가지_않는다() -> None:
+    """**값 자신이 권위인 하한**을 외부 기준점(git 이력)으로 되짚는다 (C4 R-9).
+
+    실측(고치기 전): 아래 상수들을 1 씩 내려도 전 게이트가 초록이었다. `@Disabled` 한 줄과
+    같은 성질(한 줄 · 자동 신호 전부 초록)이므로 같은 기준으로 닫는다.
+
+    **정당한 상향은 통과한다** — 조건이 「현재 ≥ 이력 최댓값」이다.
+    """
+    reason = _history_unavailable()
+    if reason is not None:
+        _report_or_fail_history(reason)
+        return
+
+    assert RATCHET_SCALAR_PINS, "라쳇 핀 선언이 비었다 — 이 대조는 아무것도 재지 않는다."
+
+    lowered: list[str] = []
+    unjudged: list[str] = []
+    for rel_path, name in RATCHET_SCALAR_PINS:
+        current = _scalar_in((REPO_ROOT / rel_path).read_text(encoding="utf-8"), name)
+        if current is None:
+            unjudged.append(f"{rel_path}::{name} — 현재 파일에서 그 상수를 찾지 못했다")
+            continue
+        seen = [
+            value
+            for rev in _git_revisions(rel_path)
+            if (value := _scalar_in(_blob_at(rev, rel_path), name)) is not None
+        ]
+        if not seen:
+            unjudged.append(f"{rel_path}::{name} — 이력에서 그 상수를 한 번도 찾지 못했다")
+            continue
+        if current < max(seen):
+            lowered.append(f"{rel_path}::{name} — 현재 {current} < 이력 최댓값 {max(seen)}")
+
+    assert not unjudged, (
+        "라쳇 핀을 판정하지 못했다 — **판정 불가는 통과가 아니다**:\n"
+        + "\n".join(f"  - {x}" for x in unjudged)
+        + "\n  이름이 바뀌었거나 파일이 옮겨졌다면 RATCHET_SCALAR_PINS 도 함께 고쳐라."
+    )
+    assert not lowered, (
+        "라쳇 상수가 **이력 최댓값보다 낮다**:\n"
+        + "\n".join(f"  - {x}" for x in lowered)
+        + "\n  하한을 내리는 것은 그 클래스가 지키기로 선언한 것을 조용히 줄이는 일이다.\n"
+        "  정말 내려야 한다면 이 검사가 막는다 — 근거를 리뷰에 올려 이 표에서 그 항목을 빼거나,\n"
+        "  실측이 정말 줄었다는 사실을 커밋 메시지로 남겨라(이력은 고쳐지지 않는다)."
+    )
+
+
+def test_바닥_개수표의_값이_이력_최댓값_아래로_내려가지_않는다() -> None:
+    """표 형태의 라쳇도 **키별로** 되짚는다 — 값 하나만 내리는 편집이 같은 한 줄이다."""
+    reason = _history_unavailable()
+    if reason is not None:
+        _report_or_fail_history(reason)
+        return
+
+    rel_path, name = RATCHET_TABLE_PIN
+    current = _table_in((REPO_ROOT / rel_path).read_text(encoding="utf-8"), name)
+    assert current, f"{rel_path}::{name} 표가 비었다 — 이 대조는 아무것도 재지 않는다."
+
+    history: dict[str, int] = {}
+    for rev in _git_revisions(rel_path):
+        for key, value in _table_in(_blob_at(rev, rel_path), name).items():
+            history[key] = max(history.get(key, 0), value)
+    assert history, (
+        f"{rel_path}::{name} 을 이력에서 한 번도 찾지 못했다 — 판정 불가는 통과가 아니다."
+    )
+
+    lowered = {k: (current.get(k), v) for k, v in history.items() if current.get(k, 0) < v}
+    assert not lowered, (
+        f"{name} 의 값이 **이력 최댓값보다 낮다**:\n"
+        + "\n".join(f"  - {k}: 현재 {c} < 이력 최댓값 {h}" for k, (c, h) in sorted(lowered.items()))
+        + "\n  키가 사라진 경우도 여기 걸린다 —\n"
+        "  항목을 빼는 것은 그 클래스를 무보호로 두는 일이다."
+    )
+
+
+def test_이_파일의_수치_상수가_전부_분류돼_있다() -> None:
+    """**정확 분할** — 라쳇으로 지키는 것과 그렇지 않은 것 중 하나여야 한다.
+
+    새 수치 핀을 더하면서 분류를 빠뜨리면 그 상수는 다시 「값 자신이 권위인」 상태가 되고,
+    그것이 이 축이 겨눈 결함이다. 사유 없이 비라쳇으로 두는 길도 막는다 —
+    [NON_RATCHET_PINS] 는 값이 사유 문자열이다.
+    """
+    declared = {
+        match.group(1)
+        for match in re.finditer(
+            r"^([A-Z_]+)(?:: [^=]+)? = \d+$",
+            (REPO_ROOT / THIS_TEST_PATH).read_text(encoding="utf-8"),
+            re.MULTILINE,
+        )
+    }
+    assert declared, "이 파일에서 수치 상수를 하나도 찾지 못했다 — 이 대조는 아무것도 재지 않는다."
+
+    ratcheted = {name for path, name in RATCHET_SCALAR_PINS if path == THIS_TEST_PATH}
+    classified = ratcheted | set(NON_RATCHET_PINS)
+    missing = sorted(declared - classified)
+    stale = sorted(classified - declared - {RATCHET_TABLE_PIN[1]})
+
+    assert not missing and not stale, (
+        "이 파일의 수치 상수 분류가 어긋났다.\n"
+        f"  분류되지 않은 상수(라쳇인지 아닌지 적히지 않았다): {missing or '없음'}\n"
+        f"  분류에만 있고 파일에 없는 상수: {stale or '없음'}\n"
+        "  새 수치 핀은 RATCHET_SCALAR_PINS 나 NON_RATCHET_PINS 중 하나에 **사유와 함께** 넣어라."
+    )
+    assert all(NON_RATCHET_PINS.values()), (
+        "NON_RATCHET_PINS 의 사유가 빈 항목이 있다 — 사유 없는 면제는 이 저장소가 금지한 형태다."
     )
 
 

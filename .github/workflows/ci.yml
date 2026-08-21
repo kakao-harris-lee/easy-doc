@@ -49,7 +49,20 @@ jobs:
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/easydoc
       REDIS_URL: redis://localhost:6379/0
     steps:
+      # `fetch-depth: 0` — **라쳇 상수 대조의 기준점이 git 이력이다** (C4 R-9).
+      #
+      # `tests/test_kotlin_gate_reach.py` 의 라쳇 핀(`MIN_TEST_CLASSES`·`MIN_FLOOR_CLASSES`·
+      # `MIN_TESTS_IN_FLOOR_CLASS` 값들과 Kotlin 쪽 `MIN_*` 다섯)은 **값 자신이 권위**라
+      # 값만 보고는 낮아졌는지 알 수 없다. 그래서 「이 파일 이력의 최댓값보다 작을 수 없다」로
+      # 되짚는데, `actions/checkout` 의 기본 `fetch-depth` 는 **1** 이라 이력이 없다 —
+      # 그 상태에서는 그 축이 **존재만 하고 도달이 0** 이 된다(규칙 3 근거 6 의 형태).
+      #
+      # 비용: 전체 클론이다. 실측 `.git` 112MB · 커밋 477개 · 이 대조가 읽는 리비전 64개
+      # (`git show` 64회, 1~2초). 얕은 클론으로 되돌리면 요구 모드에서 **실패**하므로
+      # 조용히 사라지지 않는다.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: astral-sh/setup-uv@v5
         with:
           python-version: "3.12"
@@ -236,7 +249,12 @@ jobs:
       run:
         working-directory: backend-kotlin
     steps:
+      # 사유는 quality 잡의 같은 스텝 주석과 같다 — 라쳇 대조가 이력을 기준점으로 쓴다.
+      # 이 잡은 요구 모드(`KOTLIN_GATE_REACH_REQUIRE_REPORT=1`)로 그 대조를 돌리므로
+      # 이력이 없으면 **실패**한다.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-java@v4
         with:
           # build.gradle.kts 의 jvmToolchain(21)과 같은 값. Phase 0 spike 조합이기도 하다.
