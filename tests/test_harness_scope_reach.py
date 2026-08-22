@@ -1443,6 +1443,25 @@ def test_리뷰_4축_사본이_갈리지_않는다() -> None:
         "  블록을 옮겼거나 문면을 바꿨다면 _extract_axis_block 도 함께 고쳐라."
     )
 
+    # **중간 축 결손** — 위 두 단언(블록 실재 · byte-identical)으로는 안 잡힌다.
+    # [_extract_axis_block] 은 1번과 마지막 번호만 anchor 하므로, **양쪽 스킬에서 함께**
+    # 중간 축 한 줄을 지우고 번호를 그대로 두면(`1.2.3.4.6.7.`) 블록은 여전히 실재하고
+    # 여전히 byte-identical 이다. 마크다운 순서 목록은 첫 번호만 쓰고 나머지를 무시하므로
+    # 렌더링은 1~6 으로 정상 표시되어 **읽는 사람 눈에도 결손이 보이지 않는다.**
+    # 그 상태로 사라진 축에 닿는 변경은 「일곱에 닿지 않는 변경」으로 분류돼 묶여 이연된다.
+    dropped = {
+        str(path.relative_to(_REPO_ROOT)): [name for name in _AXIS_NAMES if name not in block]
+        for path, block in blocks.items()
+        if any(name not in block for name in _AXIS_NAMES)
+    }
+    assert not dropped, (
+        f"축 열거 블록에서 축 이름이 빠졌다: {dropped}\n"
+        "  블록 실재·사본 일치 두 단언은 이것을 못 잡는다 — 양쪽에서 함께 지우면\n"
+        "  블록은 남고 사본도 갈리지 않는다. 번호를 그대로 두면 렌더링도 멀쩡하다.\n"
+        "  축을 정말 없앤다면 _AXIS_NAMES 와 _STOP_CRITERION_TO_AXIS 도 함께 고쳐라 —\n"
+        "  그 diff 가 「리뷰 라우팅을 줄인다」는 리뷰 신호다."
+    )
+
     canon, *rest = blocks.items()
     for path, block in rest:
         assert block == canon[1], (
