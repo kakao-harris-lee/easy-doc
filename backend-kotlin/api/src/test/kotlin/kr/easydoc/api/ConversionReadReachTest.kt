@@ -92,6 +92,40 @@ class ConversionReadReachTest {
         }
     }
 
+    /** CR-3 의 팔은 결과 열이 NULL 인 행만 밟아 **공허하게 통과한다**. 이 케이스가 그 구멍을 메운다. */
+    @Test
+    @DisplayName("CR-3b 완료 전 상태가 결과 열을 **들고 있어도** 세 결과 필드가 비어 나간다 — 가려진 원값이 응답에 없다")
+    fun `완료 전 상태는 저장된 결과를 내보내지 않는다`() {
+        val token = newAccount()
+        val beforeDone = ContractSpec.schemaEnum(STATUS_SCHEMA).filterNot { it == DONE_STATUS }
+        assertThat(beforeDone).describedAs("완료 전 상태가 계약에 하나도 없다 — 이 케이스가 성립하지 않는다").isNotEmpty()
+        val label = ContractSpec.schemaPropertyEnum(MASKED_ITEM_SCHEMA, CATEGORY_PROPERTY).first()
+        val category = MaskCategory.entries.first { it.label == label }
+        val item = MaskedItem(category, "[[${label}1]]", Secret(HIDDEN_ORIGINAL))
+        val stored = DoneResult(STORED_DRAFT, STORED_EDITED, maskedItems = listOf(item))
+
+        beforeDone.forEach { status ->
+            val conversionId = createDocument(token).second
+            markDone(conversionId, stored)
+            forceStatus(conversionId, status)
+
+            val response = read(token, conversionId)
+
+            assertDeclaredStatus(response, ContractSpec.successStatus(CONVERSION_ITEM_PATH, GET))
+            val body = bodyOf(response)
+            assertThat(body[EASY_TEXT_PROPERTY]).describedAs("상태 %s 인데 저장된 초안이 실렸다", status).isNull()
+            assertThat(body[EDITED_TEXT_PROPERTY]).describedAs("상태 %s 인데 저장된 검수본이 실렸다", status).isNull()
+            assertThat(body[MASKED_ITEMS_PROPERTY])
+                .withFailMessage("상태 %s 의 %s 가 비어 있지 않다 — 가려진 원값이 완료 전에 나간다", status, MASKED_ITEMS_PROPERTY)
+                .isEqualTo(emptyList<Any>())
+            assertThat(response.body())
+                .withFailMessage("상태 %s 응답이 저장된 값을 담았다", status)
+                .doesNotContain(HIDDEN_ORIGINAL)
+                .doesNotContain(STORED_DRAFT)
+                .doesNotContain(STORED_EDITED)
+        }
+    }
+
     @Test
     @DisplayName("CR-4 실패 변환의 실패 코드가 비어 있지 않고 계약 `maxLength` 안이며, **본문·모델 응답이 담기지 않는다**")
     fun `실패 코드가 본문을 담지 않는다`() {
@@ -185,12 +219,9 @@ class ConversionReadReachTest {
         assertThat(body[EDITED_TEXT_PROPERTY]).isEqualTo("담당자가 다듬은 문장입니다.")
     }
 
-    /**
-     * 변조 팔. **문구가 계약 예시와 같은지는 판정하지 않는다** — `InternalError` 의 `example`
-     * 과 규범 서술이 갈리고 그 판정은 `contract-keeper` 몫이다.
-     */
+    /** 변조 팔. 문구는 코드에 박지 않고 **계약에서 읽어** 대조한다. */
     @Test
-    @DisplayName("변조된 암호문은 거절된다 — 계약이 선언한 상태 · 평문·암호문 미노출 · detail 이 입력을 담지 않는다")
+    @DisplayName("변조된 암호문은 거절된다 — 계약이 선언한 상태 · 평문·암호문 미노출 · detail 이 계약 `storage` 예시와 같다")
     fun `변조된 암호문은 거절된다`() {
         val token = newAccount()
         val conversionId = createDocument(token).second
@@ -208,6 +239,9 @@ class ConversionReadReachTest {
         assertThat(bodyOf(response)[DETAIL])
             .withFailMessage("변조 응답의 detail 이 문자열이 아니다 — 구현 수단이 응답으로 샐 자리다")
             .isInstanceOf(String::class.java)
+        assertThat(bodyOf(response)[DETAIL])
+            .withFailMessage("변조 응답의 detail 이 계약 %s.%s 와 다르다", INTERNAL_ERROR_COMPONENT, STORAGE_EXAMPLE)
+            .isEqualTo(ContractSpec.responseExampleDetail(INTERNAL_ERROR_COMPONENT, STORAGE_EXAMPLE))
         assertThat(response.body())
             .withFailMessage("변조 응답에 평문이 실렸다 — 거절 경로가 본문을 흘린다")
             .doesNotContain(plaintext)
@@ -510,6 +544,15 @@ class ConversionReadReachTest {
 
         /** 계약이 이 경로 404 의 인라인 예시에 붙인 이름. 값이 아니라 이름이다. */
         private const val NOT_FOUND_EXAMPLE = "not_found"
+
+        /** 500 문구를 읽을 좌표. 이름이지 값이 아니다. */
+        private const val INTERNAL_ERROR_COMPONENT = "InternalError"
+        private const val STORAGE_EXAMPLE = "storage"
+
+        /** CR-3b 가 심는 값들. 응답에 **나타나면 안 된다.** */
+        private const val HIDDEN_ORIGINAL = "900101-1234567"
+        private const val STORED_DRAFT = "완료 전인데 저장돼 있던 초안입니다."
+        private const val STORED_EDITED = "완료 전인데 저장돼 있던 검수본입니다."
 
         private const val CONTENT_TYPE = "Content-Type"
         private const val JSON_MEDIA_TYPE = "application/json"

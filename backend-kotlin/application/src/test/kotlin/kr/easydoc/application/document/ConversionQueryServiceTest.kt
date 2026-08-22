@@ -17,7 +17,7 @@ class ConversionQueryServiceTest {
     fun `조회가 소유자를 질의에 넘긴다`() {
         val world = World()
         val conversionId = UUID.randomUUID()
-        world.seedDone(conversionId, easyText = "쉬운 글 초안")
+        world.seedResults(conversionId, easyText = "쉬운 글 초안")
 
         world.service.read(OWNER, conversionId)
 
@@ -29,7 +29,7 @@ class ConversionQueryServiceTest {
     fun `남의 변환은 404 다`() {
         val world = World()
         val theirs = UUID.randomUUID()
-        world.seedDone(theirs, easyText = "쉬운 글 초안", owner = STRANGER)
+        world.seedResults(theirs, easyText = "쉬운 글 초안", owner = STRANGER)
 
         assertThatThrownBy { world.service.read(OWNER, theirs) }
             .isInstanceOf(NotFoundException::class.java)
@@ -45,7 +45,7 @@ class ConversionQueryServiceTest {
     fun `완료 변환의 본문이 복호화된다`() {
         val world = World()
         val conversionId = UUID.randomUUID()
-        world.seedDone(
+        world.seedResults(
             conversionId,
             easyText = "쉬운 글 초안",
             editedText = "검수본",
@@ -86,11 +86,40 @@ class ConversionQueryServiceTest {
     }
 
     @Test
+    @DisplayName("완료 전 변환이 결과 열을 들고 있어도 세 결과 필드가 비고 **복호화조차 하지 않는다** (계약 `get.description`)")
+    fun `완료 전 변환은 저장된 결과를 내보내지 않는다`() {
+        val beforeDone = ConversionStatus.entries.filterNot { it.exposesResult }
+        assertThat(beforeDone).describedAs("결과를 내보내지 않는 상태가 하나도 없다 — 이 케이스가 공허해진다").isNotEmpty()
+
+        beforeDone.forEach { status ->
+            val world = World()
+            val conversionId = UUID.randomUUID()
+            world.seedResults(
+                conversionId,
+                easyText = "완료 전인데 저장돼 있던 초안",
+                editedText = "완료 전인데 저장돼 있던 검수본",
+                maskedLabels = listOf("[[주민등록번호1]]"),
+            )
+            world.demoteTo(conversionId, status)
+
+            val view = world.service.read(OWNER, conversionId)
+
+            assertThat(view.status).isEqualTo(status)
+            assertThat(view.easyText).describedAs("상태 %s 인데 초안이 실렸다", status).isNull()
+            assertThat(view.editedText).describedAs("상태 %s 인데 검수본이 실렸다", status).isNull()
+            assertThat(view.maskedItems).describedAs("상태 %s 인데 마스킹 대응표가 실렸다", status).isEmpty()
+            assertThat(world.cipher.decryptions)
+                .describedAs("상태 %s 에서 복호화가 돌았다 — 버릴 값을 평문으로 만들었다", status)
+                .isEmpty()
+        }
+    }
+
+    @Test
     @DisplayName("읽기는 트랜잭션 **안**, 복호화는 **밖**이다 — 커넥션을 쥔 채 열지 않는다")
     fun `복호화가 트랜잭션 밖이다`() {
         val world = World()
         val conversionId = UUID.randomUUID()
-        world.seedDone(conversionId, easyText = "쉬운 글 초안")
+        world.seedResults(conversionId, easyText = "쉬운 글 초안")
 
         world.service.read(OWNER, conversionId)
 
@@ -103,7 +132,7 @@ class ConversionQueryServiceTest {
     fun `조회 결과의 toString 이 본문을 담지 않는다`() {
         val world = World()
         val conversionId = UUID.randomUUID()
-        world.seedDone(conversionId, easyText = "민감한 초안 본문", maskedLabels = listOf("[[카드번호1]]"))
+        world.seedResults(conversionId, easyText = "민감한 초안 본문", maskedLabels = listOf("[[카드번호1]]"))
 
         val rendered = world.service.read(OWNER, conversionId).toString()
 
@@ -152,11 +181,21 @@ class ConversionQueryServiceTest {
                 )
         }
 
+        /** 결과 열을 채운 뒤 상태만 되돌린다 — HTTP 팔의 `forceStatus` 와 같다. */
+        fun demoteTo(
+            conversionId: UUID,
+            status: ConversionStatus,
+            owner: UUID = OWNER,
+        ) {
+            val key = owner to conversionId
+            conversions.owned[key] = conversions.owned.getValue(key).copy(status = status)
+        }
+
         /**
-         * 완료 변환 한 건. 암호문은 [cipher] 를 거쳐 만든다 — 대역이라도 평문을 컬럼 자리에
-         * 그대로 두면 「복호화가 실제로 돌았는가」를 잴 수 없다.
+         * 결과 열을 채운 완료 변환 한 건. 암호문은 [cipher] 를 거쳐 만든다 — 대역이라도 평문을
+         * 컬럼 자리에 두면 「복호화가 실제로 돌았는가」를 잴 수 없다.
          */
-        fun seedDone(
+        fun seedResults(
             conversionId: UUID,
             easyText: String? = null,
             editedText: String? = null,

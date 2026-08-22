@@ -1,6 +1,7 @@
 package kr.easydoc.api
 
 import kr.easydoc.api.config.PrivateResponseHeadersConfig
+import kr.easydoc.api.document.ConversionResponse
 import kr.easydoc.api.support.AuthSliceBeans
 import kr.easydoc.api.support.ContractSpec
 import kr.easydoc.api.support.InMemoryConversionRepository
@@ -11,11 +12,14 @@ import kr.easydoc.application.crypto.ContentCipher
 import kr.easydoc.application.document.ConversionCiphertexts
 import kr.easydoc.core.crypto.EncryptedField
 import kr.easydoc.core.crypto.PlainBody
+import kr.easydoc.core.document.ConversionStatus
+import kr.easydoc.core.document.ConversionView
 import kr.easydoc.core.document.MaskedItemView
 import kr.easydoc.core.privacy.MaskCategory
 import kr.easydoc.core.security.Secret
 import kr.easydoc.core.user.PasswordHash
 import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
@@ -146,6 +150,45 @@ class ConversionReadContractTest {
                 header(HttpHeaders.AUTHORIZATION, "Bearer stub-token:$owner")
             }.andReturn()
             .response
+
+    @Test
+    @DisplayName("완료 전 변환의 결과를 담은 응답은 **조립되지 않는다** — 나가는 바이트를 만드는 자리가 막는다")
+    fun `완료 전 결과를 담은 응답은 조립되지 않는다`() {
+        val draft = "매퍼 가드가 막아야 하는 초안"
+        val hidden = "900101-1234567"
+        val item = MaskedItemView(MaskCategory.RRN, "[[주민등록번호1]]", Secret(hidden))
+
+        assertThatThrownBy { ConversionResponse.of(beforeDoneView(easyText = PlainBody(draft))) }
+            .isInstanceOf(IllegalArgumentException::class.java)
+            .hasMessageNotContaining(draft)
+        assertThatThrownBy { ConversionResponse.of(beforeDoneView(editedText = PlainBody(draft))) }
+            .isInstanceOf(IllegalArgumentException::class.java)
+        assertThatThrownBy { ConversionResponse.of(beforeDoneView(maskedItems = listOf(item))) }
+            .isInstanceOf(IllegalArgumentException::class.java)
+            .hasMessageNotContaining(hidden)
+    }
+
+    /** 계약이 「비어 있어야」 한다고 적은 조합. */
+    private fun beforeDoneView(
+        easyText: PlainBody? = null,
+        editedText: PlainBody? = null,
+        maskedItems: List<MaskedItemView> = emptyList(),
+    ): ConversionView =
+        ConversionView(
+            id = UUID.randomUUID(),
+            documentId = UUID.randomUUID(),
+            status = ConversionStatus.entries.first { !it.exposesResult },
+            easyText = easyText,
+            editedText = editedText,
+            reviewedAt = null,
+            maskedItems = maskedItems,
+            missingPlaceholders = emptyList(),
+            model = null,
+            providerName = null,
+            inputTokens = null,
+            outputTokens = null,
+            failureCode = null,
+        )
 
     /** P-21 — 경로 변수 이름을 계약에서 읽어 URL 을 조립한다. */
     private fun itemPath(conversionId: String): String =

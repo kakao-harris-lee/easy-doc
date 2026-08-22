@@ -57,8 +57,16 @@ data class ConversionResponse(
             "inputTokens=$inputTokens, outputTokens=$outputTokens, failureCode=$failureCode)"
 
     companion object {
-        fun of(view: ConversionView): ConversionResponse =
-            ConversionResponse(
+        /**
+         * 바이트를 만드는 **유일한** 자리라 노출 범위를 여기서 한 번 더 닫는다. 단언이 울리면
+         * 조립 지점이 `exposesResult` 를 지나지 않은 것이고, 그때는 500 이 유출보다 낫다.
+         */
+        fun of(view: ConversionView): ConversionResponse {
+            require(
+                view.status.exposesResult ||
+                    (view.easyText == null && view.editedText == null && view.maskedItems.isEmpty()),
+            ) { "완료 전 변환에 결과가 실렸다: ${view.status.wireName} masked=${view.maskedItems.size}" }
+            return ConversionResponse(
                 id = view.id.toString(),
                 documentId = view.documentId.toString(),
                 status = view.status.wireName,
@@ -74,5 +82,6 @@ data class ConversionResponse(
                 outputTokens = view.outputTokens,
                 failureCode = view.failureCode,
             )
+        }
     }
 }

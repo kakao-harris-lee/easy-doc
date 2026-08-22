@@ -39,11 +39,11 @@ class ConflictException(message: String) : EasyDocException(message)
 /** 저장 계층에서 예상하지 못한 제약을 위반했다 — 입력 문제가 아니라 코드 버그다. */
 open class StorageException(message: String) : EasyDocException(message)
 
-/** 저장된 암호문을 열지 못했다 — **실패 원인을 구분하지 않는 단 하나의 예외**. */
+/** 저장된 암호문을 열지 못했다 — **원인도 자원 종류도 구분하지 않는 단 하나의 예외**. */
 class DecryptionFailedException : StorageException(MESSAGE) {
     companion object {
-        /** 응답 detail 로 그대로 나가는 문구. 어떤 실패든 **같은 문자열**이어야 한다. */
-        const val MESSAGE: String = "저장된 문서를 읽을 수 없습니다"
+        /** 응답 detail 로 그대로 나간다. 계약 `InternalError.examples.storage` 와 같아야 한다. */
+        const val MESSAGE: String = "저장된 변환 결과를 읽을 수 없습니다"
     }
 }
 
