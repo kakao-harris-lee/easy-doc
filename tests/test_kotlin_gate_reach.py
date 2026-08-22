@@ -912,6 +912,50 @@ RATCHET_CEILING_DECIMAL_PINS: tuple[tuple[str, str], ...] = (
     ),
 )
 
+#: **Kotlin 테스트가 선언한 라쳇 성질 상수의 이름** — 세 핀 표의 Kotlin 쪽 분모다 (X-9).
+#:
+#: ## 무엇이 빈자리였나
+#:
+#: 세 핀 표(`RATCHET_SCALAR_PINS`·`RATCHET_CEILING_PINS`·`RATCHET_CEILING_DECIMAL_PINS`)의
+#: Kotlin 항목은 **정확 열거**다. 그래서 「같은 이름의 상수를 새 파일에 하나 더 만들고 핀을
+#: 적지 않는」 편집이 자동 신호 0 이었다 — 예컨대 다섯째 `MAX_TIMING_RATIO` 사본을 새
+#: 테스트에 두면 그 사본만 이력 대조 밖이고, 그 사본의 문턱은 한 낱말로 올릴 수 있다.
+#: 사본을 넷으로 유지하기로 한 판정([RATCHET_CEILING_DECIMAL_PINS] 주석)이 「넷 각각을
+#: 핀한다」에 기대므로, 다섯째가 조용히 생기면 그 판정 자신이 무효가 된다.
+#:
+#: ## 열거가 아니라 **인구조사**다
+#:
+#: [_kotlin_ratchet_constant_sites] 가 `backend-kotlin/**/src/test/**` 전수에서 이 이름들의
+#: `val` 선언을 찾아 **(경로, 이름) 짝**을 만들고, 그 집합이 세 핀 표의 Kotlin 부분집합과
+#: **양방향으로 같아야** 한다. 새 사본이 생기면 인구조사가 찾고 핀이 없어 빨개진다.
+#:
+#: ## 닫지 못하는 것 — 정직하게 적는다
+#:
+#: **이 목록에 없는 새 이름**으로 라쳇 성질의 Kotlin 상수를 만드는 경로는 자동 탐지가 0 이다.
+#: 사유 있는 면제표로 그 자리를 닫는 갈래는 버렸다 — [test_라쳇_핀_목록이_이력에서_줄지_않았다]
+#: 의 KDoc 이 같은 후보를 이미 기각했고(사유가 참인지 재는 실행이 다시 0), 규칙 4 ⑵ 의
+#: 은폐형 거부권에 걸린다. [_bound_direction] 은 이 파일의 Python AST 만 보므로 Kotlin 쪽
+#: 방향을 기계로 판정할 수단이 오늘 없다.
+#:
+#: 이 튜플 자신은 [RATCHET_NAME_TUPLE_PINS] 가 지킨다 — 한 낱말을 지우면 그 이름의 사본이
+#: 통째로 인구조사 밖으로 나가기 때문이다.
+KOTLIN_RATCHETED_CONSTANT_NAMES: tuple[str, ...] = (
+    "MAX_TIMING_RATIO",
+    "MAX_UNGUARDED_STATEMENTS",
+    "MAX_VARIABLE_HEADERS",
+    "MIN_CRITICAL_STATEMENTS",
+    "MIN_DOCUMENT_COLUMNS",
+    "MIN_NEGATIVE_CASES",
+    "MIN_PORT_ADAPTERS",
+    "MIN_PRODUCTION_CLASSES",
+)
+
+#: Kotlin `val` 선언의 머리. 수식어를 매칭하지 않는 이유는 [KOTLIN_DECLARATION] 과 같다 —
+#: 필요한 것은 「이 이름이 이 파일에서 선언되는가」뿐이고, 수식어를 게으르게 받으면 파국적
+#: 백트래킹의 표면이 된다.
+KOTLIN_VAL_DECLARATION = re.compile(r"\bval\s+(\w+)\s*[:=]")
+
+
 #: **이 파일의 수치 상수 중 라쳇이 아닌 것** — 방향이 **없는** 것들이다.
 #:
 #: `TEST_CLASS_COUNT` 는 `len(TEST_CLASSES)` 와 **정확 일치**로 비교되므로 값만 내리면
@@ -973,6 +1017,7 @@ TIMED_SCANNERS: tuple[str, ...] = (
     "_discovered_test_classes",
     "_kotlin_declared_names",
     "_named_enforcer_census",
+    "_kotlin_ratchet_constant_sites",
 )
 
 #: **캐시가 걸려 있어야 하는 함수** — [SCANNER_TIME_BUDGET_SECONDS] 축이 **원리적으로 못
@@ -1040,6 +1085,7 @@ RATCHET_NAME_TUPLE_PINS: tuple[tuple[str, str], ...] = (
     #   조용히 빠진다. `TIMED_SCANNERS`·`RATCHET_PIN_TABLES` 와 같은 종류이므로 같은 축에
     #   넣는다 — 리더 핀이라 조치 레인이 넣지 못했고 그것이 이 항목이 여기까지 온 이유다.
     (THIS_TEST_PATH, "FLOOR_TEST_CLASSES"),
+    (THIS_TEST_PATH, "KOTLIN_RATCHETED_CONSTANT_NAMES"),
 )
 
 
@@ -2840,6 +2886,68 @@ def test_이름_튜플_선언이_이력에서_줄지_않았다(pin: tuple[str, s
         "  상한 표의 이력 대조가 사라지거나, 캐시 인구조사의 분모가 줄어든다.\n"
         "  정말 지워야 한다면 그 대상이 사라졌기 때문일 것이다 — 그러면 대상과 이 항목을\n"
         "  **같은 커밋에서** 지우고 사유를 커밋 메시지에 남겨라(이력은 고쳐지지 않는다)."
+    )
+
+
+def _kotlin_ratchet_constant_sites() -> set[tuple[str, str]]:
+    """[KOTLIN_RATCHETED_CONSTANT_NAMES] 의 이름이 **실제로 선언된 자리** 전수.
+
+    돌려주는 것은 저장소 상대 경로와 상수 이름의 짝이다 — 세 핀 표의 항목과 같은 모양이라
+    그대로 겹칠 수 있다. 주석·문자열은 [_blanked] 가 이미 비웠으므로 KDoc 안의 이름은
+    세어지지 않는다.
+    """
+    wanted = set(KOTLIN_RATCHETED_CONSTANT_NAMES)
+    found: set[tuple[str, str]] = set()
+    for path in _kotlin_test_sources():
+        rel = str(path.relative_to(REPO_ROOT))
+        found.update(
+            (rel, name) for name in KOTLIN_VAL_DECLARATION.findall(_blanked(path)) if name in wanted
+        )
+    return found
+
+
+def test_Kotlin_라쳇_상수_선언이_전부_핀을_갖는다() -> None:
+    """**정확 일치** — 인구조사가 찾은 Kotlin 라쳇 상수와 세 핀 표의 Kotlin 항목이 같다 (X-9).
+
+    ## 무엇을 잡는가
+
+    세 핀 표의 Kotlin 쪽은 정확 열거라 **사본을 하나 더 만드는 편집**이 자동 신호 0 이었다.
+    다섯째 `MAX_TIMING_RATIO` 를 새 테스트에 두면 그 사본은 어느 이력 대조에도 없고, 그
+    문턱은 한 낱말로 올라간다. 인구조사가 그 사본을 찾으므로 이제 핀 없이는 빨개진다.
+
+    반대 방향도 본다 — 핀은 남았는데 선언이 사라진 항목은 이력 대조를 **판정 불가**로 만들고,
+    판정 불가는 통과가 아니다. 상수를 지웠다면 핀도 같은 커밋에서 지워야 한다.
+
+    분모의 범위는 [KOTLIN_RATCHETED_CONSTANT_NAMES] 가 정하고, 그 목록에 없는 **새 이름**은
+    이 축이 못 본다 — 그 잔여는 같은 상수의 주석에 적었다.
+    """
+    census = _kotlin_ratchet_constant_sites()
+    pinned = {
+        (path, name)
+        for table in (RATCHET_SCALAR_PINS, RATCHET_CEILING_PINS, RATCHET_CEILING_DECIMAL_PINS)
+        for path, name in table
+        if path.startswith("backend-kotlin/")
+    }
+
+    assert census, (
+        "Kotlin 라쳇 상수 선언을 하나도 찾지 못했다 — 인구조사가 비었으므로 이 대조는 "
+        "아무것도 재지 않는다. 이름 목록이나 선언 정규식이 틀렸다."
+    )
+    unpinned = sorted(census - pinned)
+    stale = sorted(pinned - census)
+
+    assert not unpinned, (
+        "라쳇 성질의 Kotlin 상수인데 핀 표에 없는 선언이 있다:\n"
+        + "\n".join(f"  - {path}::{name}" for path, name in unpinned)
+        + "\n  핀이 없으면 그 값은 **자기 권위**라 한 낱말로 무르게 만들 수 있다.\n"
+        "  하한이면 RATCHET_SCALAR_PINS, 정수 상한이면 RATCHET_CEILING_PINS,\n"
+        "  실수 상한이면 RATCHET_CEILING_DECIMAL_PINS 에 (경로, 이름) 을 적어라."
+    )
+    assert not stale, (
+        "핀 표에 있는데 그 선언을 찾지 못한 항목이 있다:\n"
+        + "\n".join(f"  - {path}::{name}" for path, name in stale)
+        + "\n  이력 대조가 **판정 불가**가 된다 — 판정 불가는 통과가 아니다.\n"
+        "  상수를 옮겼다면 핀의 경로를, 지웠다면 핀 자신을 같은 커밋에서 고쳐라."
     )
 
 
