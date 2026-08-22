@@ -597,6 +597,19 @@ def _unsettled(rows: tuple[LedgerRow, ...]) -> tuple[LedgerRow, ...]:
     return tuple(row for row in rows if row.state == _WAITING_STATE and row.closed in _LEDGER_BLANK)
 
 
+def _unsettled_deferred(
+    rows: tuple[LedgerRow, ...], reviewed: frozenset[str]
+) -> tuple[LedgerRow, ...]:
+    """**상환되지 않은 `이연` 행** — `닫힘` 이 비었고 리뷰 범위에도 들지 않은 행."""
+    return tuple(
+        row
+        for row in rows
+        if row.state == _DEFERRED_STATE
+        and row.closed in _LEDGER_BLANK
+        and not any(full.startswith(row.sha) for full in reviewed)
+    )
+
+
 def _recorded_shas(ledger: str) -> tuple[str, ...]:
     """장부에 「적힌」 SHA. 유효한 표 행의 첫 칸이다.
 
@@ -883,4 +896,63 @@ def test_출하_모드에서는_미상환_대기가_0_이어야_한다() -> None
         + "\n\n이 행들은 **필수 축에 닿는데 리뷰를 못 받은 변경**이다 — 이연이 아니라 빚이다.\n"
         "  해소는 하나뿐이다: 적힌 회차를 돌리고 `닫힘` 칸을 채운다.\n"
         f"  상태를 `{_DEFERRED_STATE}` 으로 내려 적어 통과시키지 마라 — 그것은 거짓 기록이다."
+    )
+
+
+def test_출하_모드에서는_이연_행도_상환돼_있다() -> None:
+    """**`이연` 면제를 닫는다** (codex ⑴) — 출하 판정에서만 켜는 축.
+
+    출하 모드에서 [_recorded_shas] 는 `이연` 행만 센다. 그 관용은 「비필수라 묶었다」를
+    존중하는 것인데, **`이연` 행의 `닫힘` 칸을 읽는 코드가 전 저장소에 0 이었다.** 그래서
+    `닫힘` 이 빈 `이연` 행 한 줄로 미리뷰 비면제 커밋이 출하 판정을 통과했다 — 실측:
+
+      * 합성 비면제 커밋을 `상태=이연` · `닫힘=-` 로 적고 출하 모드 → **`4 passed`, exit 0**.
+      * 같은 행의 `상태` 만 `대기` 로 → `2 failed`. **한 낱말이 exit 0 과 exit 1 을 갈랐다.**
+        커밋도, 미리뷰 사실도, 빈 `닫힘` 칸도 동일하다.
+
+    그리고 그 갈림의 실패 쪽이 출력하는 문장이
+    *"상태를 `이연` 으로 내려 적어 통과시키지 마라 — 그것은 거짓 기록이다"* 였다. 게이트가
+    자기 문면으로 금지한 행동에 강제자가 없었다(규칙 3 — 산문은 강제자가 아니다).
+
+    **상환의 두 형태를 다 받는다**: `닫힘` 칸이 찼거나, 그 커밋이 커버리지 범위에 들었거나.
+    묶어서 나중에 보기로 한 것은 언젠가 **실제로 봐야** 상환된다.
+
+    **오늘의 하중은 0 이다** — 장부에 `이연` 행이 한 건도 없다(전부 `대기`). 그것은
+    「이연한 것이 없다」는 정직한 상태이므로 빈 부분집합을 실패로 보지 않는다. X-3b 의 빈
+    부분집합(표기 훼손으로 **만들 수 있다**)과 성질이 다르다. 분모 방어는 장부 표 전체가
+    비면 실패하는 `assert rows` 가 진다. 이 축의 도달은 **첫 `이연` 행이 적히는 순간**이다.
+    """
+    coverage = _section(_COVERAGE_HEADING)
+    ledger = _section(_LEDGER_HEADING)
+    assert coverage is not None and ledger is not None, (
+        "판정 입력이 되는 두 절이 원장에 없다 —\n"
+        "  [test_원장에_리뷰_커버리지_절과_이연_장부가_있다] 를 먼저 보라."
+    )
+
+    rows = _ledger_rows(ledger)
+    assert rows, (
+        f"「{_LEDGER_HEADING}」 절에 유효한 표 행이 0 건이다.\n"
+        "  빈 분모에서 통과하면 안 된다(SKILL.md 규칙 4 ⑶) — 모드와 무관하게 실패한다."
+    )
+
+    unsettled = _unsettled_deferred(rows, _reviewed_shas(coverage))
+    if not _shippable_mode():
+        warnings.warn(
+            f"`{_DEFERRED_STATE}` 상환 축을 **판정하지 않았다** — `{SHIPPABLE_MODE_ENV}` 가"
+            f" 꺼져 있다. 현재 미상환 `{_DEFERRED_STATE}` {len(unsettled)} 건"
+            f" (장부의 `{_DEFERRED_STATE}` 행 {sum(1 for r in rows if r.state == _DEFERRED_STATE)}"
+            " 건). Phase 종료·출하 판정에서는 이 변수를 켜고 돌려라.",
+            stacklevel=2,
+        )
+        return
+
+    assert not unsettled, (
+        f"상환되지 않은 `{_DEFERRED_STATE}` 행 {len(unsettled)} 건이 남은 채로"
+        " 출하 판정을 시도했다:\n"
+        + "\n".join(f"  `{row.sha}`  (리뷰할 회차: {row.round_})" for row in unsettled)
+        + f"\n\n출하 모드는 `{_DEFERRED_STATE}` 행을 「적혔다」로 세어 커버리지를 만족시킨다.\n"
+        "  그 관용에 상환 요구가 없으면 **묶기로 판정하는 것만으로 리뷰가 면제된다** —\n"
+        f"  `{_WAITING_STATE}` 를 `{_DEFERRED_STATE}` 으로 내려 적는 한 낱말이 그 통로였다.\n"
+        "  해소는 둘 중 하나다: 그 회차를 돌려 커버리지 표에 범위를 적거나,\n"
+        "  이미 봤다면 `닫힘` 칸에 어느 회차가 언제 닫았는지 적는다."
     )

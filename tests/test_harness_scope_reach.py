@@ -2493,6 +2493,19 @@ _COVERAGE_AXIS_NAMES: Final = (
     "SHIPPABLE_MODE_ENV",
     "test_리뷰된_대기_행은_닫힘_칸이_적혀_있다",
     "test_출하_모드에서는_미상환_대기가_0_이어야_한다",
+    # 2026-08-23 (`xx_harness-r2` 차단 조치): 위 여덟이 판정 **술어**를 지키는 동안
+    #   아래 여섯은 **판정에 드는 행이 줄지 않는 것**을 지킨다. 종전 결함 셋이 전부
+    #   「행이 조용히 분모에서 빠진다」였고, 그 방어를 지우는 편집은 술어를 하나도
+    #   건드리지 않으므로 위 여덟으로는 잡히지 않는다.
+    "_table_data_lines",
+    "_table_header_cells",
+    "_header_drift",
+    "_coverage_verdicts",
+    "_ledger_verdicts",
+    "_unsettled_deferred",
+    "test_커버리지_표에_무효_행이_없다",
+    "test_장부_표의_모든_행이_판정에_든다",
+    "test_출하_모드에서는_이연_행도_상환돼_있다",
 )
 
 
