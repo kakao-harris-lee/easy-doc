@@ -223,6 +223,121 @@ def _path_in_rev(rev: str, workspace_path: str) -> bool:
     return completed.returncode == 0
 
 
+#: 마크다운 표 구분선의 칸(`---` · `:--` · `--:`).
+_SEPARATOR_CELL: Final = re.compile(r":?-{3,}:?")
+
+
+def _table_data_lines(section: str) -> tuple[str, ...]:
+    """절 안에서 **표의 데이터 행처럼 보이는 줄**을 전부 준다 (R-1, 2026-08-23).
+
+    ## 왜 이 함수가 필요한가
+
+    `_coverage_ranges` 와 `_ledger_rows` 는 형식이 어긋난 행을 **조용히 `continue`** 한다.
+    그래서 「표에 24 행이 있는데 판정은 20 행만 했다」가 아무 신호도 내지 않는다 —
+    실측(C-2): 리뷰된 `대기` 4행의 상태 칸을 `**대기**` → `**대기**(미리뷰)` 로 바꿨더니
+    그 4행이 분모에서 증발하고 `4 passed` 였다. 장부는 사람이 손으로 쓰는 마크다운이고
+    `대기` · `**대기**` · `대기(미리뷰)` 는 전부 자연스러운 인간 변형이다.
+
+    **머리행과 구분선만 뺀다.** 표처럼 보이는 것의 하한을 「`|` 로 시작한다」에 두는 이유는,
+    그보다 높은 하한(예: 「셀 수가 맞다」)을 쓰면 셀을 하나 지운 행이 다시 조용해지기
+    때문이다. 판정을 좁히는 모든 조건은 **파서가 아니라 그 뒤의 대조**가 져야 한다.
+
+    머리행의 정의는 「바로 다음 줄이 구분선인 `|` 줄」이다. 한 절에 표가 여럿이어도 각
+    머리행이 자기 구분선으로 판별되므로 그대로 성립한다.
+    """
+    stripped = [line.strip() for line in section.splitlines()]
+    is_separator = [
+        line.startswith("|")
+        and all(
+            _SEPARATOR_CELL.fullmatch(cell.strip()) is not None
+            for cell in line.strip("|").split("|")
+        )
+        for line in stripped
+    ]
+    return tuple(
+        line
+        for index, line in enumerate(stripped)
+        if line.startswith("|")
+        and not is_separator[index]
+        and not (index + 1 < len(stripped) and is_separator[index + 1])
+    )
+
+
+class CoverageVerdict(NamedTuple):
+    """커버리지 표 한 행의 판정. `reason` 이 `None` 일 때만 `span` 이 있다."""
+
+    line: str
+    span: tuple[str, str] | None
+    reason: str | None
+
+
+def _coverage_verdicts(coverage: str) -> tuple[CoverageVerdict, ...]:
+    """커버리지 표의 **데이터 행 전수**를 판정한다 — 무효 행도 사유와 함께 돌려준다.
+
+    ## 왜 「탈락」이 아니라 「사유를 들고 나온다」인가 (C-1, 2026-08-23)
+
+    종전 판은 무효 행을 `continue` 로 버렸다. 그러면 **그 행이 지탱하던 커밋이 없을 때
+    게이트 판정이 전혀 바뀌지 않는다** — 실측: 오늘 커버리지 4행 중 자기만이 지탱하는
+    커밋을 가진 행은 **1행뿐**이었고, 나머지 3행에 네 가지 위조(없는 산출물 경로 · 다른
+    회차의 실재 산출물 · codex 산출물 없는 역할 구성 · 과거 산출물로 미래 범위 승인)를
+    넣어도 전부 `4 passed, exit 0` 이었다.
+
+    하중 있는 행에서 잡히더라도 **지목되는 것이 위조된 행이 아니었다.** 메시지는 「리뷰도
+    장부도 없는 커밋 1건」이라 읽는 사람에게 제시되는 자연스러운 조치가 「그 커밋을 이연
+    장부에 적는다」가 되고, 그러면 위조된 커버리지 행은 영구히 보이지 않게 된다.
+
+    무효 행은 **선언이 규약을 어겼다는 사실 자체**다. 그것을 커밋 유무로 저울질하지 않는다.
+    """
+    verdicts: list[CoverageVerdict] = []
+    for line in _table_data_lines(coverage):
+        cells = [cell.strip() for cell in line.strip("|").split("|")]
+
+        def rejected(reason: str, row: str = line) -> None:
+            verdicts.append(CoverageVerdict(line=row, span=None, reason=reason))
+
+        if len(cells) != _COVERAGE_COLUMNS:
+            rejected(f"열이 {len(cells)} 개다 — {_COVERAGE_COLUMNS} 개여야 한다(회차·범위·산출물)")
+            continue
+        range_match = _RANGE_IN_BACKTICKS.fullmatch(cells[_COVERAGE_RANGE_CELL])
+        if range_match is None:
+            rejected("`범위` 칸이 백틱 `a..b` 가 아니다")
+            continue
+        round_match = re.fullmatch(r"`([^`]+)`", cells[_COVERAGE_ROUND_CELL])
+        if round_match is None:
+            rejected("`회차` 칸이 백틱 문자열 하나가 아니다")
+            continue
+        stem = round_match.group(1).strip()
+        artifacts = _declared_artifacts(cells[_COVERAGE_ARTIFACT_CELL], stem)
+        if not artifacts:
+            rejected(
+                f"`산출물` 칸이 규약을 어겼다 — 각 경로가 `{_ARTIFACT_PREFIX}{stem}_<리뷰어>.md` "
+                "여야 한다(다른 회차의 산출물로 이 행을 채울 수 없다)"
+            )
+            continue
+        missing_roles = _REQUIRED_ROLES - _declared_roles(artifacts, stem)
+        if missing_roles:
+            rejected(f"필수 역할이 선언되지 않았다: {sorted(missing_roles)}")
+            continue
+        start, end = range_match.group(1), range_match.group(2)
+        absent = [rev for rev in (start, end) if not _commit_exists(rev)]
+        if absent:
+            rejected(f"범위 끝이 실재하는 커밋이 아니다: {absent}")
+            continue
+        uncommitted = [path for path in artifacts if not _path_in_rev("HEAD", path)]
+        if uncommitted:
+            rejected(f"산출물이 `HEAD` 에 커밋돼 있지 않다: {uncommitted}")
+            continue
+        preexisting = [path for path in artifacts if _path_in_rev(start, path)]
+        if preexisting:
+            rejected(
+                f"산출물이 시작 커밋 `{start}` 에 이미 있었다 — "
+                f"범위가 시작되기 전의 산출물은 그 범위를 승인할 수 없다: {preexisting}"
+            )
+            continue
+        verdicts.append(CoverageVerdict(line=line, span=(start, end), reason=None))
+    return tuple(verdicts)
+
+
 def _coverage_ranges(coverage: str) -> tuple[tuple[str, str], ...]:
     """커버리지 **표 행**에서만 `a..b` 범위를 읽는다.
 
@@ -262,34 +377,11 @@ def _coverage_ranges(coverage: str) -> tuple[tuple[str, str], ...]:
     codex 원문은 0줄이었고, 그 사실은 `_cross.md` 머리 경고로만 남아 있다. **저자가 자기
     회차를 서명하는 구조 자체는 그대로다** — 좁힌 것은 「아무것도 없이 서명하는 것」과
     「남의 회차 산출물로 서명하는 것」이다.
+
+    판정 자체는 [_coverage_verdicts] 가 하고 여기서는 **유효한 행만 걸러 낸다.** 무효 행이
+    조용히 사라지지 않게 하는 것은 [test_커버리지_표에_무효_행이_없다] 의 몫이다.
     """
-    ranges: list[tuple[str, str]] = []
-    for line in coverage.splitlines():
-        stripped = line.strip()
-        if not stripped.startswith("|"):
-            continue
-        cells = [cell.strip() for cell in stripped.strip("|").split("|")]
-        if len(cells) != _COVERAGE_COLUMNS:
-            continue
-        range_match = _RANGE_IN_BACKTICKS.fullmatch(cells[_COVERAGE_RANGE_CELL])
-        if range_match is None:
-            continue
-        round_match = re.fullmatch(r"`([^`]+)`", cells[_COVERAGE_ROUND_CELL])
-        if round_match is None:
-            continue
-        stem = round_match.group(1).strip()
-        artifacts = _declared_artifacts(cells[_COVERAGE_ARTIFACT_CELL], stem)
-        if not _declared_roles(artifacts, stem) >= _REQUIRED_ROLES:
-            continue
-        start, end = range_match.group(1), range_match.group(2)
-        if not _commit_exists(start) or not _commit_exists(end):
-            continue
-        if not all(_path_in_rev("HEAD", path) for path in artifacts):
-            continue
-        if any(_path_in_rev(start, path) for path in artifacts):
-            continue
-        ranges.append((start, end))
-    return tuple(ranges)
+    return tuple(verdict.span for verdict in _coverage_verdicts(coverage) if verdict.span)
 
 
 def _commit_exists(rev: str) -> bool:
@@ -503,6 +595,40 @@ def test_원장에_리뷰_커버리지_절과_이연_장부가_있다() -> None:
             "  `상태` 는 `대기`(필수 축인데 미리뷰)와 `이연`(비필수라 묶음)을 가른다 —\n"
             "  칸이 없으면 둘이 한 덩어리가 되어 급한 것이 묻힌다."
         )
+
+
+def test_커버리지_표에_무효_행이_없다() -> None:
+    """**무효 행을 이름으로 지목한다** (C-1).
+
+    X-2a·X-2b·X-2c 가 세운 행 유효성 판정(경로 규약 · 역할 구성 · 시점 결속)은 종전에
+    **행을 탈락시키기만** 했다. 탈락한 행이 지탱하던 커밋이 없으면 게이트 판정은 바뀌지
+    않으므로, 커버리지 표의 위조는 **무하중 자리에서 영구히 조용하다.** 이 검사가 그
+    저울질을 끊는다 — 무효 행은 커밋 유무와 무관하게 그 자체로 실패다.
+
+    **못 재는 것**: 행이 규약을 지켰는지만 본다. 그 산출물 안의 리뷰가 참인지, 그 범위를
+    실제로 읽었는지는 여전히 재지 않는다(`_coverage_ranges` 머리 주석의 한계 그대로).
+    """
+    coverage = _section(_COVERAGE_HEADING)
+    assert coverage is not None, (
+        f"원장에 「{_COVERAGE_HEADING}」 절이 없다 —\n"
+        "  [test_원장에_리뷰_커버리지_절과_이연_장부가_있다] 를 먼저 보라."
+    )
+
+    verdicts = _coverage_verdicts(coverage)
+    assert verdicts, (
+        f"「{_COVERAGE_HEADING}」 절에 표 데이터 행이 0 건이다.\n"
+        "  빈 분모에서 통과하면 안 된다(SKILL.md 규칙 4 ⑶) — 표를 통째로 지우는 편집이\n"
+        "  여기서 죽는다."
+    )
+
+    invalid = [verdict for verdict in verdicts if verdict.reason is not None]
+    assert not invalid, (
+        f"커버리지 표에 무효 행 {len(invalid)} 건:\n"
+        + "\n".join(f"  {verdict.reason}\n    {verdict.line}" for verdict in invalid)
+        + "\n\n무효 행은 **그 행이 덮는다고 주장한 범위를 덮지 못한다.** 그런데 그 사실이\n"
+        "  조용하면, 그 범위 안 커밋이 다른 이유로 이미 설명될 때 아무 신호도 나지 않는다.\n"
+        "  행을 고치거나 지워라 — 지우면 그 범위의 커밋이 다시 미리뷰로 드러난다."
+    )
 
 
 def test_모든_비면제_커밋이_리뷰되거나_장부에_적혀_있다() -> None:
