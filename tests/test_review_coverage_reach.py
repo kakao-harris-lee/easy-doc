@@ -143,8 +143,14 @@ _WORKSPACE_REL: Final = "docs/migration/_workspace"
 #: 산출물 경로가 반드시 시작해야 하는 접두. 심판문은 여기에만 산다.
 _ARTIFACT_PREFIX: Final = "reviews/"
 
-#: 한 회차가 선언해야 하는 산출물의 최소 건수. 3단계 게이트는 두 레인 + 교차 종합이다.
-_MIN_ARTIFACTS_PER_ROUND: Final = 2
+#: 회차가 반드시 선언해야 하는 **역할**. 개수 하한(`>= 2`)을 대체한다 (X-2b).
+#:
+#: 개수는 **구성을 보지 않는다** — `migration-reviewer` + `cross` 두 건으로도 2 를 채우고,
+#: 그것은 codex 독립 레인 없이 완주했다고 서명하는 것이다. 게이트의 값어치는 저작자와
+#: 심판자가 다른 모델 계열이라는 데서 오므로, 그 레인의 산출물과 교차 종합을 **이름으로**
+#: 요구한다. `migration-reviewer` 를 함께 요구하지 않는 이유는 근거를 넘지 않기 위해서다 —
+#: 교차 종합(`cross`)은 정의상 두 레인을 입력으로 받으므로 그 자리를 이미 지고 있다.
+_REQUIRED_ROLES: Final = frozenset({"codex-reviewer", "cross"})
 
 #: 산출물 칸의 백틱 토큰. 중괄호 묶음(`{a,b,c}`)이 원장의 실제 표기다.
 _ARTIFACT_TOKEN: Final = re.compile(r"`([^`]+)`")
@@ -200,6 +206,23 @@ def _declared_artifacts(cell: str, stem: str) -> tuple[str, ...]:
     return tuple(declared)
 
 
+def _declared_roles(artifacts: tuple[str, ...], stem: str) -> frozenset[str]:
+    """선언된 경로에서 리뷰어 이름만 뽑는다. 어간은 [_declared_artifacts] 가 이미 고정했다."""
+    head = len(_ARTIFACT_PREFIX) + len(stem) + 1
+    return frozenset(path[head : -len(".md")] for path in artifacts)
+
+
+def _path_in_rev(rev: str, workspace_path: str) -> bool:
+    """`rev` 의 트리에 그 경로가 **추적된 상태로** 있는가."""
+    completed = subprocess.run(
+        ["git", "cat-file", "-e", f"{rev}:{_WORKSPACE_REL}/{workspace_path}"],
+        cwd=_REPO_ROOT,
+        capture_output=True,
+        check=False,
+    )
+    return completed.returncode == 0
+
+
 def _coverage_ranges(coverage: str) -> tuple[tuple[str, str], ...]:
     """커버리지 **표 행**에서만 `a..b` 범위를 읽는다.
 
@@ -217,9 +240,20 @@ def _coverage_ranges(coverage: str) -> tuple[tuple[str, str], ...]:
 
       1. 열이 [_COVERAGE_COLUMNS] 개다.
       2. `범위` 칸이 백틱 `a..b` 이고 **양 끝이 실재하는 커밋**이다(`git rev-parse --verify`).
-      3. `회차` 칸이 백틱 문자열이고, **`산출물` 칸이 선언한 경로가 규약을 지키며 최소 2건**
-         이다([_declared_artifacts]). 3단계 게이트는 두 레인 + 교차 종합이라 하나만 있는
-         회차는 완주하지 않은 것이다.
+      3. `회차` 칸이 백틱 문자열이고, **`산출물` 칸이 선언한 경로가 규약을 지킨다**
+         ([_declared_artifacts]).
+      4. 선언된 **역할**에 [_REQUIRED_ROLES] 가 전부 있다 — 개수가 아니라 구성이다.
+      5. 선언된 경로가 **`HEAD` 에 커밋돼 있고**, **`시작` 커밋에는 없다** ([_path_in_rev]).
+
+    ## 왜 시점 결속이 `<end>` 가 아니라 `HEAD` + `<start>` 인가 (X-2c, 2026-08-23)
+
+    문면대로 `<end>` 에 산출물을 요구하면 **오늘 4행 중 3행이 무효가 된다**(실측). 기제는
+    구조적이다 — **심판문은 심판 대상 범위가 끝난 뒤에 쓰인다.** 그러므로 `<end>` 결속은
+    규약이 요구할 수 없는 것을 요구한다. 같은 명령·같은 층으로 방향만 바꿔 두 가지를 잰다:
+
+      * `HEAD` 에 있는가 — **커밋됐는가.** `touch` 로 만든 미추적 파일은 여기서 죽는다.
+      * `<start>` 에 **없어야** 한다 — 범위가 시작되기도 전에 있던 산출물은 그 범위를
+        승인할 수 없다. 「과거 산출물로 미래 SHA 범위 승인」이 여기서 죽는다.
 
     ## 이 판정이 못 재는 것 (지우지 마라)
 
@@ -245,10 +279,14 @@ def _coverage_ranges(coverage: str) -> tuple[tuple[str, str], ...]:
             continue
         stem = round_match.group(1).strip()
         artifacts = _declared_artifacts(cells[_COVERAGE_ARTIFACT_CELL], stem)
-        if len(artifacts) < _MIN_ARTIFACTS_PER_ROUND:
+        if not _declared_roles(artifacts, stem) >= _REQUIRED_ROLES:
             continue
         start, end = range_match.group(1), range_match.group(2)
         if not _commit_exists(start) or not _commit_exists(end):
+            continue
+        if not all(_path_in_rev("HEAD", path) for path in artifacts):
+            continue
+        if any(_path_in_rev(start, path) for path in artifacts):
             continue
         ranges.append((start, end))
     return tuple(ranges)
