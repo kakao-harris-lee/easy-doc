@@ -1299,6 +1299,8 @@ pytest 사슬의 표적 실행 우회(`conftest.py` 이관을 착수했다가 **
 | 회차 | 범위 | 산출물 |
 |---|---|---|
 | `xx_harness` | `5b226b4..cbf6e8d` | `reviews/xx_harness_{codex-reviewer,migration-reviewer,cross}.md` |
+| `04_documents-c6` | `1fb5200..0075743` | `reviews/04_documents-c6_{codex-reviewer,migration-reviewer,cross}.md` |
+| `04_documents-c6` | `1d42c5d..318bd36` | `reviews/04_documents-c6_{codex-reviewer,migration-reviewer,cross}.md` |
 
 **이 표가 주장하는 것과 주장하지 않는 것.** 범위를 적는 것은 「그 구간을 리뷰했다」는
 **선언**이며, **그 선언이 참인지는 이 장치가 재지 않는다.** 산출물 파일의 실재는 방증일 뿐
@@ -1328,6 +1330,7 @@ pytest 사슬의 표적 실행 우회(`conftest.py` 이관을 착수했다가 **
 | `87457e6` | ruff E501 2건 수정 — 이 범위가 CI `quality` 잡 전체를 껐다(F-5). `tests/test_harness_scope_reach.py` | **대기** | 필수 축③에 닿는다 — 이연이 아니라 미리뷰 | `xx_harness-fixes 후속` | - |
 | `73f9f4c` | F-2 차단 해소(장부 하한을 산문 → 표 행) + 커밋 게이트 사슬을 pytest 안으로(반복 실패 b) + `ci.yml` 신설 3파일 경로 명시(F-4 CI 부분) | **대기** | 필수 축③에 닿는다 — 이연이 아니라 미리뷰 | `xx_harness-fixes 후속` | - |
 | `0fda906` | F-1 차단 해소 — 커버리지 표도 구조적 파싱 + 범위 양 끝 실재 + `reviews/<회차>_*.md` 최소 2건 요구. **F-2 만 닫는 것은 무의미했다**(가짜 장부 행 없이 커버리지 한 줄로 우회) | **대기** | 필수 축③에 닿는다 — 이연이 아니라 미리뷰 | **동결 (교체 계획 R-2 로 소멸 예정)** | - |
+| `b4c2fda` | G-γ 차단 6건 조치 — K-1(하한선 인구조사 신설) · G-1 · G-2 · S-1 · S-2 · S-5 · 층 ⓑ · **DC-26·DC-27 구현**(P-4). `tests/test_kotlin_gate_reach.py` · `PrivateHeaderFloorCensusTest` · `ContractCheckOrder` · `DocumentService` 외 | **대기** | 필수 축③(게이트·탐지기 자신)과 축②(외부 HTTP 계약)에 닿는다 — 이연이 아니라 미리뷰 | `04_documents-c6 2회차` | - |
 
 **`상태` 어휘는 둘이다.** `이연` = 필수 축에 닿지 않아 묶기로 판정한 것. `대기` = **필수 축에
 닿는데 아직 리뷰를 못 받은 것** — 이연이 아니라 빚이다. 위 세 줄은 전부 `대기`다(축③ =

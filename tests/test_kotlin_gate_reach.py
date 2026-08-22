@@ -394,7 +394,9 @@ TEST_CLASS_COUNT = 112
 #: 103 → 104 (2026-08-21, 리더): R-6 커밋 `276e2a5` **직전**의 실측이 104 다.
 #:
 #: 104 → 105 (2026-08-21, 리더): C5 커밋 `a687de8` **직전**의 실측이 105 다.
-MIN_TEST_CLASSES = 105
+#:
+#: 105 → 111 (2026-08-22, 리더): G-γ 조치 커밋 `b4c2fda` **직전**의 실측이 111 이다.
+MIN_TEST_CLASSES = 111
 
 #: **바닥 목록** — 사라지면 다른 게이트의 결론이 함께 무너지는 탐지기들.
 #:
@@ -439,6 +441,12 @@ FLOOR_TEST_CLASSES: tuple[str, ...] = (
     #   실제로 발동해 승격된 종류이고, 이 세션이 다섯 자리 → 여덟 자리로 늘렸다.
     #   오늘 4자리를 짚어 전부 실 결함이었다(이 세션이 만든 하나 포함).
     "kr.easydoc.api.NamedReferenceGuardTest",
+    # 2026-08-22 (리더, G-γ K-1): 사적 헤더 **하한선 10곳의 유일한 측정자**다. 종전에는
+    #   `DocumentListHeaderFloorTest` 한 자리만 실제로 하한선을 쟀고 나머지 아홉(`/auth` 셋 ·
+    #   `/workspaces` 셋 · DL-1 · CR-1)은 전역 필터를 태워 **재는 것이 0** 이었다(리더 실측:
+    #   컨트롤러 개별 부착 2줄을 지워도 초록). 분모를 계약
+    #   (`x-private-response-headers.applies_to`)에 두었으므로 새 자리가 생기면 빨개진다.
+    "kr.easydoc.api.PrivateHeaderFloorCensusTest",
     "kr.easydoc.api.PrivateResponseHeadersReachTest",
     # 2026-08-21 (리더, C4): F3(요청 다섯 필드에 Bean Validation 금지)을 지킨 것은 둘이었다 —
     #   `RequestFieldConstraintLayerTest` 의 애너테이션 부재 스캔과, 「`validation` 이
@@ -582,7 +590,9 @@ FLOOR_TEST_CLASSES: tuple[str, ...] = (
 #: 26 → 28 (2026-08-21, 리더, C5): `DocumentDeleteReachTest`·`NamedReferenceGuardTest` 편입.
 #:
 #: 28 → 29 (2026-08-21, 리더, G-β X2): `DocumentListHeaderFloorTest` 편입.
-MIN_FLOOR_CLASSES = 29
+#:
+#: 29 → 30 (2026-08-22, 리더, G-γ): `PrivateHeaderFloorCensusTest` 편입.
+MIN_FLOOR_CLASSES = 30
 
 MIN_TESTS_IN_FLOOR_CLASS: dict[str, int] = {
     "kr.easydoc.api.AuthenticationCoverageContractTest": 5,
@@ -592,6 +602,7 @@ MIN_TESTS_IN_FLOOR_CLASS: dict[str, int] = {
     "kr.easydoc.api.DocumentListHeaderFloorTest": 2,
     "kr.easydoc.api.DocumentListReachTest": 11,
     "kr.easydoc.api.NamedReferenceGuardTest": 16,
+    "kr.easydoc.api.PrivateHeaderFloorCensusTest": 3,
     "kr.easydoc.api.PrivateResponseHeadersReachTest": 7,
     "kr.easydoc.api.RequestFieldConstraintLayerTest": 7,
     "kr.easydoc.api.RequestFieldRejectionLayerTest": 5,
@@ -777,6 +788,7 @@ MIN_ASSERTIONS_BY_CLASS: dict[str, int] = {
     "kr.easydoc.api.MigrateProfileWithoutEncryptionKeyTest": 4,
     "kr.easydoc.api.NamedReferenceGuardTest": 30,
     "kr.easydoc.api.PasswordHashingBackpressureReachTest": 14,
+    "kr.easydoc.api.PrivateHeaderFloorCensusTest": 7,
     "kr.easydoc.api.PrivateResponseHeadersReachTest": 18,
     "kr.easydoc.api.RequestFieldConstraintLayerTest": 15,
     "kr.easydoc.api.RequestFieldRejectionLayerTest": 14,
@@ -1023,6 +1035,11 @@ RATCHET_NAME_TUPLE_PINS: tuple[tuple[str, str], ...] = (
     (THIS_TEST_PATH, "TIMED_SCANNERS"),
     (THIS_TEST_PATH, "CACHED_SCANNERS"),
     (THIS_TEST_PATH, "RATCHET_PIN_TABLES"),
+    # 2026-08-22 (리더, G-γ 보고 2): 조치 레인이 지적한 대로 `FLOOR_TEST_CLASSES` 자신도
+    #   평평한 문자열 튜플이라 정수 인구조사 밖이고, 한 낱말을 지우면 그 탐지기가 바닥에서
+    #   조용히 빠진다. `TIMED_SCANNERS`·`RATCHET_PIN_TABLES` 와 같은 종류이므로 같은 축에
+    #   넣는다 — 리더 핀이라 조치 레인이 넣지 못했고 그것이 이 항목이 여기까지 온 이유다.
+    (THIS_TEST_PATH, "FLOOR_TEST_CLASSES"),
 )
 
 
