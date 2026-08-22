@@ -137,6 +137,13 @@ _COVERAGE_ROUND_CELL: Final = 0
 _COVERAGE_RANGE_CELL: Final = 1
 _COVERAGE_ARTIFACT_CELL: Final = 2
 
+#: 커버리지 머리행이 **자리마다** 이고 있어야 하는 열 이름.
+_COVERAGE_HEADER_CELLS: Final = {
+    _COVERAGE_ROUND_CELL: "회차",
+    _COVERAGE_RANGE_CELL: "범위",
+    _COVERAGE_ARTIFACT_CELL: "산출물",
+}
+
 #: 산출물 칸이 쓰는 상대 경로의 기준 디렉터리(저장소 루트 기준).
 _WORKSPACE_REL: Final = "docs/migration/_workspace"
 
@@ -261,6 +268,42 @@ def _table_data_lines(section: str) -> tuple[str, ...]:
         and not is_separator[index]
         and not (index + 1 < len(stripped) and is_separator[index + 1])
     )
+
+
+def _table_header_cells(section: str) -> tuple[str, ...]:
+    """절에서 **첫 표의 머리행** 칸을 준다. 못 찾으면 빈 튜플."""
+    stripped = [line.strip() for line in section.splitlines()]
+    for index, line in enumerate(stripped[:-1]):
+        following = stripped[index + 1]
+        if not line.startswith("|") or not following.startswith("|"):
+            continue
+        cells = [cell.strip() for cell in following.strip("|").split("|")]
+        if cells and all(_SEPARATOR_CELL.fullmatch(cell) is not None for cell in cells):
+            return tuple(cell.strip() for cell in line.strip("|").split("|"))
+    return ()
+
+
+def _header_drift(section: str, expected: dict[int, str]) -> list[str]:
+    """머리행의 **자리마다** 기대한 열 이름이 있는지 본다.
+
+    ## 왜 「절 안에 그 낱말이 있다」가 아니라 자리인가 (2026-08-23)
+
+    종전 판은 `column in ledger` — 절 **본문 전체**에 대한 부분문자열 검사였다. 음성 대조로
+    그 도달이 드러났다: 머리행의 `닫힘` 을 `닫은 회차` 로 개명해도 **exit 0** 이었다.
+    데이터 칸이 `` `04_documents-c6r2` (닫힘, 2026-08-22) `` 처럼 같은 낱말을 품고 있어
+    부분문자열이 언제나 참이었기 때문이다. 즉 그 단언은 열 구성을 재지 못했다.
+
+    **자리를 함께 재는 이유**: 행을 읽는 코드가 위치 상수([_LEDGER_ROUND_CELL] 등)를 쓰므로
+    두 열을 통째로 맞바꾸면 이름은 다 남은 채 **의미만 뒤바뀐다.** 실측: 그 맞바꾸기에서
+    모든 행이 정상 파싱되고 `닫힘` 판정이 `리뷰할 회차` 값을 읽어 조용히 통과했다.
+    """
+    cells = _table_header_cells(section)
+    return [
+        f"자리 {index}: 기대 `{name}` · 실제 "
+        + (f"`{cells[index]}`" if index < len(cells) else "(열 없음)")
+        for index, name in sorted(expected.items())
+        if index >= len(cells) or cells[index] != name
+    ]
 
 
 class CoverageVerdict(NamedTuple):
@@ -418,6 +461,15 @@ _LEDGER_SHA_CELL: Final = 0
 _LEDGER_STATE_CELL: Final = 2
 _LEDGER_ROUND_CELL: Final = 4
 _LEDGER_CLOSED_CELL: Final = 5
+
+#: 장부 머리행이 **자리마다** 이고 있어야 하는 열 이름. 읽는 코드가 자리로 읽으므로
+#: 이름만 요구하면 두 열을 맞바꾸는 편집이 조용하다(실측 — [_header_drift] 참조).
+_LEDGER_HEADER_CELLS: Final = {
+    _LEDGER_SHA_CELL: "커밋",
+    _LEDGER_STATE_CELL: "상태",
+    _LEDGER_ROUND_CELL: "리뷰할 회차",
+    _LEDGER_CLOSED_CELL: "닫힘",
+}
 
 #: 칸이 「안 적음」을 뜻하는 표기. `리뷰할 회차` 와 `닫힘` 이 같은 정의를 쓴다.
 #: 대시 세 종을 받는 이유는 원장이 셋을 섞어 쓰기 때문이다(`test_harness_scope_reach.py`
@@ -618,22 +670,22 @@ def test_원장에_리뷰_커버리지_절과_이연_장부가_있다() -> None:
         "  범위가 뒤집혔거나(`b..a`) 같은 커밋을 가리킨다 — 적혀 있지만 아무것도 덮지 않는다."
     )
 
-    for column in ("회차", "범위", "산출물"):
-        assert column in coverage, (
-            f"「{_COVERAGE_HEADING}」 표에 `{column}` 열이 없다. 세 열이 있어야 어느 회차가\n"
-            "  어느 범위를 무슨 산출물로 덮었는지 사후에 되짚을 수 있다."
-        )
+    coverage_drift = _header_drift(coverage, _COVERAGE_HEADER_CELLS)
+    assert not coverage_drift, (
+        f"「{_COVERAGE_HEADING}」 표의 머리행이 규약과 다르다:\n"
+        + "\n".join(f"  {line}" for line in coverage_drift)
+        + "\n\n세 열이 있어야 어느 회차가 어느 범위를 무슨 산출물로 덮었는지 되짚을 수 있고,\n"
+        "  행을 읽는 코드가 **자리**로 읽으므로 순서가 바뀌면 값의 의미가 바뀐다."
+    )
 
-    # `닫힘` 은 2026-08-23 에 더했다 (C-2 / R-2). 그 열이 목록에 없어서 **열 구성 변경이
-    # 잡히지 않았다** — 실측(B3): `리뷰할 회차`↔`닫힘` 두 열을 맞바꾸면 출하 모드의
-    # 미상환 판정이 통과한다. X-3a·X-3b 가 둘 다 그 열에 의존하는데도 그랬다.
-    for column in ("커밋", "상태", "리뷰할 회차", "닫힘"):
-        assert column in ledger, (
-            f"「{_LEDGER_HEADING}」 표에 `{column}` 열이 없다.\n"
-            "  `상태` 는 `대기`(필수 축인데 미리뷰)와 `이연`(비필수라 묶음)을 가른다 —\n"
-            "  칸이 없으면 둘이 한 덩어리가 되어 급한 것이 묻힌다.\n"
-            "  `닫힘` 은 빚의 **출구**다 — 없으면 「갚은 빚」과 「안 갚은 빚」이 섞인다."
-        )
+    ledger_drift = _header_drift(ledger, _LEDGER_HEADER_CELLS)
+    assert not ledger_drift, (
+        f"「{_LEDGER_HEADING}」 표의 머리행이 규약과 다르다:\n"
+        + "\n".join(f"  {line}" for line in ledger_drift)
+        + "\n\n  `상태` 는 `대기`(필수 축인데 미리뷰)와 `이연`(비필수라 묶음)을 가른다 —\n"
+        "  칸이 없으면 둘이 한 덩어리가 되어 급한 것이 묻힌다.\n"
+        "  `닫힘` 은 빚의 **출구**다 — 없거나 자리가 바뀌면 「갚은 빚」과 「안 갚은 빚」이 섞인다."
+    )
 
 
 def test_장부_표의_모든_행이_판정에_든다() -> None:
