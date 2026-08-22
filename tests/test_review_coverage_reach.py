@@ -132,8 +132,72 @@ def _section(heading: str) -> str | None:
 #: 커버리지 표의 열 수(`회차 · 범위 · 산출물`).
 _COVERAGE_COLUMNS: Final = 3
 
-#: 심판 산출물이 사는 곳. 커버리지 행이 주장하는 회차의 실물이 여기 있어야 한다.
-_REVIEWS_DIR: Final = _REPO_ROOT / "docs" / "migration" / "_workspace" / "reviews"
+#: 커버리지 행에서 읽는 칸의 자리.
+_COVERAGE_ROUND_CELL: Final = 0
+_COVERAGE_RANGE_CELL: Final = 1
+_COVERAGE_ARTIFACT_CELL: Final = 2
+
+#: 산출물 칸이 쓰는 상대 경로의 기준 디렉터리(저장소 루트 기준).
+_WORKSPACE_REL: Final = "docs/migration/_workspace"
+
+#: 산출물 경로가 반드시 시작해야 하는 접두. 심판문은 여기에만 산다.
+_ARTIFACT_PREFIX: Final = "reviews/"
+
+#: 한 회차가 선언해야 하는 산출물의 최소 건수. 3단계 게이트는 두 레인 + 교차 종합이다.
+_MIN_ARTIFACTS_PER_ROUND: Final = 2
+
+#: 산출물 칸의 백틱 토큰. 중괄호 묶음(`{a,b,c}`)이 원장의 실제 표기다.
+_ARTIFACT_TOKEN: Final = re.compile(r"`([^`]+)`")
+
+#: 중괄호 묶음 하나. 가장 왼쪽 것부터 펼친다.
+_BRACE_GROUP: Final = re.compile(r"\{([^{}]*)\}")
+
+
+def _expand_braces(token: str) -> tuple[str, ...]:
+    """`a_{x,y}.md` 를 `a_x.md` · `a_y.md` 로 펼친다. 묶음이 없으면 그대로 한 건."""
+    match = _BRACE_GROUP.search(token)
+    if match is None:
+        return (token,)
+    head, tail = token[: match.start()], token[match.end() :]
+    expanded: list[str] = []
+    for choice in match.group(1).split(","):
+        expanded.extend(_expand_braces(f"{head}{choice.strip()}{tail}"))
+    return tuple(expanded)
+
+
+def _declared_artifacts(cell: str, stem: str) -> tuple[str, ...]:
+    """산출물 칸이 **선언한** 경로들. 규약을 어긴 경로가 하나라도 있으면 빈 튜플.
+
+    ## 왜 glob 이 아니라 선언된 칸에서 읽는가 (X-2a, 2026-08-23)
+
+    종전 판은 `회차` 칸만 읽어 `reviews/<회차>_*.md` 를 **glob 으로 세고** 2건 이상이면
+    행을 유효로 봤다. 그러면 **산출물 칸에 무엇을 적든 판정에 쓰이지 않는다** — 칸이
+    문자 그대로 `없음` 이어도, 다른 회차의 산출물을 적어도, 존재하지 않는 파일을 적어도
+    glob 이 대신 답을 냈다. 선언과 판정 근거가 서로 다른 곳에서 나오는 구조였다.
+
+    이제 **칸이 선언한 것으로 판정한다.** 각 경로는 셋을 만족해야 한다:
+
+      1. `reviews/` 아래다 — 심판문이 사는 곳 밖을 근거로 쓸 수 없다.
+      2. 파일명이 `<회차>_<리뷰어>.md` 이고 **어간이 `회차` 칸과 같다** — 다른 회차의
+         산출물로 이 행을 채울 수 없다.
+      3. 리뷰어 조각이 비어 있지 않다.
+
+    하나라도 어기면 **행 전체를 무효로 만든다.** 일부만 걸러 내면 나머지로 행이 서고,
+    그것은 「거짓을 섞어 적어도 통과한다」와 같다 — 틀리는 방향은 늘 「리뷰를 더
+    요구한다」 쪽이어야 한다.
+    """
+    if not stem:
+        return ()
+    declared: list[str] = []
+    for token in _ARTIFACT_TOKEN.findall(cell):
+        for path in _expand_braces(token.strip()):
+            if not path.startswith(_ARTIFACT_PREFIX) or not path.endswith(".md"):
+                return ()
+            name = path[len(_ARTIFACT_PREFIX) : -len(".md")]
+            if not name.startswith(f"{stem}_") or not name[len(stem) + 1 :]:
+                return ()
+            declared.append(path)
+    return tuple(declared)
 
 
 def _coverage_ranges(coverage: str) -> tuple[tuple[str, str], ...]:
@@ -153,15 +217,17 @@ def _coverage_ranges(coverage: str) -> tuple[tuple[str, str], ...]:
 
       1. 열이 [_COVERAGE_COLUMNS] 개다.
       2. `범위` 칸이 백틱 `a..b` 이고 **양 끝이 실재하는 커밋**이다(`git rev-parse --verify`).
-      3. `회차` 칸이 백틱 문자열이고, **`reviews/<회차>_*.md` 산출물이 최소 2건 실재**한다.
-         3단계 게이트는 두 레인 + 교차 종합이라 하나만 있는 회차는 완주하지 않은 것이다.
+      3. `회차` 칸이 백틱 문자열이고, **`산출물` 칸이 선언한 경로가 규약을 지키며 최소 2건**
+         이다([_declared_artifacts]). 3단계 게이트는 두 레인 + 교차 종합이라 하나만 있는
+         회차는 완주하지 않은 것이다.
 
     ## 이 판정이 못 재는 것 (지우지 마라)
 
-    산출물이 **실재하는지**만 본다 — 그 안의 리뷰가 참인지, 그 범위를 실제로 읽었는지는
-    재지 않는다. `xx_harness` 회차가 그 반례다: 산출물 3건이 남았는데 codex 원문은 0줄이었고,
-    그 사실은 `_cross.md` 머리 경고로만 남아 있다. **저자가 자기 회차를 서명하는 구조 자체는
-    그대로다** — 좁힌 것은 「아무것도 없이 서명하는 것」뿐이다.
+    산출물의 **내용이 참인지는 여전히 재지 않는다** — 그 안의 리뷰가 참인지, 그 범위를
+    실제로 읽었는지는 보지 않는다. `xx_harness` 회차가 그 반례다: 산출물 3건이 남았는데
+    codex 원문은 0줄이었고, 그 사실은 `_cross.md` 머리 경고로만 남아 있다. **저자가 자기
+    회차를 서명하는 구조 자체는 그대로다** — 좁힌 것은 「아무것도 없이 서명하는 것」과
+    「남의 회차 산출물로 서명하는 것」이다.
     """
     ranges: list[tuple[str, str]] = []
     for line in coverage.splitlines():
@@ -171,15 +237,15 @@ def _coverage_ranges(coverage: str) -> tuple[tuple[str, str], ...]:
         cells = [cell.strip() for cell in stripped.strip("|").split("|")]
         if len(cells) != _COVERAGE_COLUMNS:
             continue
-        range_match = _RANGE_IN_BACKTICKS.fullmatch(cells[1])
+        range_match = _RANGE_IN_BACKTICKS.fullmatch(cells[_COVERAGE_RANGE_CELL])
         if range_match is None:
             continue
-        round_match = re.fullmatch(r"`([^`]+)`", cells[0])
+        round_match = re.fullmatch(r"`([^`]+)`", cells[_COVERAGE_ROUND_CELL])
         if round_match is None:
             continue
         stem = round_match.group(1).strip()
-        artifacts = sorted(_REVIEWS_DIR.glob(f"{stem}_*.md")) if stem else []
-        if len(artifacts) < 2:
+        artifacts = _declared_artifacts(cells[_COVERAGE_ARTIFACT_CELL], stem)
+        if len(artifacts) < _MIN_ARTIFACTS_PER_ROUND:
             continue
         start, end = range_match.group(1), range_match.group(2)
         if not _commit_exists(start) or not _commit_exists(end):
