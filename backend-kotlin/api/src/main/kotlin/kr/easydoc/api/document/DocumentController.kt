@@ -58,6 +58,7 @@ class DocumentController(private val documentService: DocumentService) {
         val file = request.getFile(FILE_PART) ?: throw InvalidInputException(MISSING_FILE_PART_MESSAGE)
         // **`workspace_id` 를 여기서 파싱하지 않는다.** 인자 자리에서 파싱하면 Kotlin 의
         // 인자 평가 순서가 계약 검사 순서를 앞질러 상한 초과 요청에 422 가 나간다.
+        // 이 순서를 `DocumentEndpointReachTest` 가 잰다.
         return accepted(
             documentService.createFromFile(
                 ownerId = user.id,
