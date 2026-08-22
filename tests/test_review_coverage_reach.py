@@ -58,7 +58,7 @@ from __future__ import annotations
 import re
 import subprocess
 from pathlib import Path
-from typing import Final
+from typing import Final, NamedTuple
 
 _REPO_ROOT: Final = Path(__file__).resolve().parents[1]
 
@@ -204,15 +204,41 @@ def _reviewed_shas(coverage: str) -> frozenset[str]:
     return frozenset(shas)
 
 
+#: 장부 `상태` 칸의 두 값.
+#: `대기` = 필수 축에 닿는데 아직 리뷰를 못 받은 **빚**. `이연` = 비필수라 묶기로 판정한 것.
+_WAITING_STATE: Final = "대기"
+_DEFERRED_STATE: Final = "이연"
+
 #: 장부 `상태` 칸에 허용되는 값. 그 밖의 값은 행을 무효로 만든다.
-_LEDGER_STATES: Final = ("대기", "이연")
+_LEDGER_STATES: Final = (_WAITING_STATE, _DEFERRED_STATE)
 
 #: 장부 표의 열 수(`커밋 · 무엇을 바꿨나 · 상태 · 왜 4축이 아닌가 · 리뷰할 회차 · 닫힘`).
 _LEDGER_COLUMNS: Final = 6
 
+#: 장부 행에서 읽는 칸의 자리. 숫자를 코드 곳곳에 흩지 않는다 — 열이 늘면 여기만 고친다.
+_LEDGER_SHA_CELL: Final = 0
+_LEDGER_STATE_CELL: Final = 2
+_LEDGER_ROUND_CELL: Final = 4
+_LEDGER_CLOSED_CELL: Final = 5
 
-def _recorded_shas(ledger: str) -> tuple[str, ...]:
-    """이연 장부의 **표 행**에서만 SHA 를 읽는다.
+#: 칸이 「안 적음」을 뜻하는 표기. `리뷰할 회차` 와 `닫힘` 이 같은 정의를 쓴다.
+#: 대시 세 종을 받는 이유는 원장이 셋을 섞어 쓰기 때문이다(`test_harness_scope_reach.py`
+#: 의 `_UNRESOLVED_EMPTY` 와 같은 근거). 양쪽 소비자 모두 「비었다 → 더 요구한다」 방향이라
+#: 이 집합을 늘리는 것은 판정을 **좁히지 않고 조인다**. 그래도 근거 없이 늘리지 않는다.
+_LEDGER_BLANK: Final = frozenset({"", "-", "—", "–"})
+
+
+class LedgerRow(NamedTuple):
+    """이연 장부의 유효한 표 행 하나."""
+
+    sha: str
+    state: str
+    round_: str
+    closed: str
+
+
+def _ledger_rows(ledger: str) -> tuple[LedgerRow, ...]:
+    """이연 장부의 **표 행**만 구조적으로 읽는다.
 
     ## 절 전체 정규식에서 구조적 표 파싱으로 갈아탔다 (F-2 / codex Finding 3, 2026-08-22)
 
@@ -237,7 +263,7 @@ def _recorded_shas(ledger: str) -> tuple[str, ...]:
     표 밖 산문·구분선·머리행은 열 수나 SHA 형식에서 걸러진다. **이 함수가 「멈추고 장부에
     적는다」라는 선택지의 하한을 정한다** — 그래서 하한을 산문이 아니라 행에 둔다.
     """
-    recorded: list[str] = []
+    rows: list[LedgerRow] = []
     for line in ledger.splitlines():
         stripped = line.strip()
         if not stripped.startswith("|"):
@@ -245,16 +271,29 @@ def _recorded_shas(ledger: str) -> tuple[str, ...]:
         cells = [cell.strip() for cell in stripped.strip("|").split("|")]
         if len(cells) != _LEDGER_COLUMNS:
             continue
-        sha_match = _SHA_IN_BACKTICKS.fullmatch(cells[0])
+        sha_match = _SHA_IN_BACKTICKS.fullmatch(cells[_LEDGER_SHA_CELL])
         if sha_match is None:
             continue
-        state = cells[2].replace("*", "").strip()
+        state = cells[_LEDGER_STATE_CELL].replace("*", "").strip()
         if state not in _LEDGER_STATES:
             continue
-        if not cells[4] or cells[4] == "-":
+        round_ = cells[_LEDGER_ROUND_CELL]
+        if round_ in _LEDGER_BLANK:
             continue
-        recorded.append(sha_match.group(1))
-    return tuple(recorded)
+        rows.append(
+            LedgerRow(
+                sha=sha_match.group(1),
+                state=state,
+                round_=round_,
+                closed=cells[_LEDGER_CLOSED_CELL],
+            )
+        )
+    return tuple(rows)
+
+
+def _recorded_shas(ledger: str) -> tuple[str, ...]:
+    """장부에 「적힌」 SHA. 유효한 표 행의 첫 칸이다."""
+    return tuple(row.sha for row in _ledger_rows(ledger))
 
 
 def _judged_commits() -> tuple[tuple[str, str], ...]:
@@ -361,4 +400,49 @@ def test_모든_비면제_커밋이_리뷰되거나_장부에_적혀_있다() ->
         "     SHA·무엇을 바꿨나·상태·리뷰할 회차를 적는다\n"
         "\n적지 않고 묶는 것은 면제와 같다 — 그 커밋은 다음 묶음의 시작 SHA 에서도 빠져\n"
         "**영구히** 리뷰를 벗어난다(codex 지적 high #2)."
+    )
+
+
+def test_리뷰된_대기_행은_닫힘_칸이_적혀_있다() -> None:
+    """**장부의 출구를 잰다** (X-3b).
+
+    입구(「적혔다」)는 위 두 검사가 재는데 **출구를 재는 장치는 0 이었다.** `대기` 는
+    「필수 축에 닿는데 아직 리뷰를 못 받았다」는 **빚**이고, 그 빚은 그 커밋을 덮는 회차가
+    돌면 갚아진다. 그런데 회차가 돌아도 행은 `대기` 인 채로 남을 수 있었다 — 그러면 장부가
+    영구히 부풀고 「무엇이 아직 안 갚혔는가」가 다시 리더의 기억으로 돌아간다.
+
+    판정은 **커버리지 표와 장부를 맞대어** 한다: 어떤 `대기` 행의 SHA 가 이미 리뷰된 범위
+    안에 들면 그 행의 `닫힘` 칸이 비어 있으면 안 된다. 리뷰가 돌지 않은 `대기` 행은
+    건드리지 않는다 — 그것은 정상 상태이고, 그쪽을 재는 것은 출하 모드의 몫이다.
+
+    **못 재는 것**: `닫힘` 칸에 무엇이 적혔는지는 보지 않는다. 아무 글자나 적으면 통과한다.
+    이 검사가 좁히는 것은 「리뷰가 돌았는데 장부가 침묵하는 것」 하나다.
+    """
+    coverage = _section(_COVERAGE_HEADING)
+    ledger = _section(_LEDGER_HEADING)
+    assert coverage is not None and ledger is not None, (
+        "판정 입력이 되는 두 절이 원장에 없다 —\n"
+        "  [test_원장에_리뷰_커버리지_절과_이연_장부가_있다] 를 먼저 보라."
+    )
+
+    reviewed = _reviewed_shas(coverage)
+    rows = _ledger_rows(ledger)
+    assert rows, (
+        f"「{_LEDGER_HEADING}」 절에 유효한 표 행이 0 건이다.\n"
+        "  이 검사는 장부 행을 분모로 삼는다 — 빈 분모에서 통과하면 안 된다(SKILL.md 규칙 4 ⑶)."
+    )
+
+    unclosed = [
+        row
+        for row in rows
+        if row.state == _WAITING_STATE
+        and row.closed in _LEDGER_BLANK
+        and any(full.startswith(row.sha) for full in reviewed)
+    ]
+    assert not unclosed, (
+        f"리뷰를 이미 받았는데 `닫힘` 칸이 빈 `{_WAITING_STATE}` 행 {len(unclosed)} 건:\n"
+        + "\n".join(f"  `{row.sha}`  (리뷰할 회차: {row.round_})" for row in unclosed)
+        + "\n\n그 커밋은 커버리지 표의 어느 범위에 들어 있다 — 즉 빚이 갚혔다.\n"
+        "  `닫힘` 칸에 어느 회차가 언제 닫았는지 적어라. 적지 않으면 장부가\n"
+        "  「갚은 빚」과 「안 갚은 빚」을 구분하지 못해 다시 리더의 기억에 의존한다."
     )
