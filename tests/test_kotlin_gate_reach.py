@@ -158,6 +158,14 @@ CI_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "ci.yml"
 #: `ci.yml` 이 명시해야 하는 이 파일의 경로. 파일을 옮기면 여기도 함께 고쳐야 한다.
 THIS_TEST_PATH = "tests/test_kotlin_gate_reach.py"
 
+#: 계약 확장 열거의 하한 상수가 사는 곳. 핀 표가 이름으로 참조한다.
+CONTRACT_SPEC_PATH = (
+    "backend-kotlin/api/src/test/kotlin/kr/easydoc/api/support/ContractEnumerationFloors.kt"
+)
+CONTRACT_CHECK_ORDER_PATH = (
+    "backend-kotlin/api/src/test/kotlin/kr/easydoc/api/support/ContractCheckOrder.kt"
+)
+
 #: 리포트 **전건 요구**를 켜는 환경 변수. CI 의 kotlin 잡이 build 뒤에 켠다.
 REQUIRE_REPORT_ENV = "KOTLIN_GATE_REACH_REQUIRE_REPORT"
 
@@ -689,6 +697,14 @@ RATCHET_SCALAR_PINS: tuple[tuple[str, str], ...] = (
         "backend-kotlin/api/src/test/kotlin/kr/easydoc/api/PrivateHeaderFloorCensusTest.kt",
         "MIN_FLOOR_CENSUS_TARGETS",
     ),
+    # 계약 확장 열거를 읽는 **접근자 쪽** 하한 (P-3). 소비자 31개에 하한을 요구하면 오탐이
+    #   곧 면제 목록을 낳으므로(규칙 4 ⑵) 분모를 한 곳에 둔다.
+    (CONTRACT_SPEC_PATH, "MIN_GLOBAL_RESPONSE_HEADERS"),
+    (CONTRACT_SPEC_PATH, "MIN_PRIVATE_HEADER_TARGETS"),
+    (CONTRACT_SPEC_PATH, "MIN_RETIRED_RESPONSES"),
+    (CONTRACT_SPEC_PATH, "MIN_EXTENSION_NODES"),
+    (CONTRACT_SPEC_PATH, "MIN_CONTAINER_REJECTED_CASES"),
+    (CONTRACT_CHECK_ORDER_PATH, "MIN_CHECK_ORDER_STAGES"),
 )
 
 #: **제품 주석이 이름으로 지목한 테스트 클래스**의 `@Test` 개수 하한 (β-03 · β-24).
@@ -956,12 +972,18 @@ KOTLIN_RATCHETED_CONSTANT_NAMES: tuple[str, ...] = (
     "MAX_TIMING_RATIO",
     "MAX_UNGUARDED_STATEMENTS",
     "MAX_VARIABLE_HEADERS",
+    "MIN_CHECK_ORDER_STAGES",
+    "MIN_CONTAINER_REJECTED_CASES",
     "MIN_CRITICAL_STATEMENTS",
     "MIN_DOCUMENT_COLUMNS",
+    "MIN_EXTENSION_NODES",
     "MIN_FLOOR_CENSUS_TARGETS",
+    "MIN_GLOBAL_RESPONSE_HEADERS",
     "MIN_NEGATIVE_CASES",
     "MIN_PORT_ADAPTERS",
+    "MIN_PRIVATE_HEADER_TARGETS",
     "MIN_PRODUCTION_CLASSES",
+    "MIN_RETIRED_RESPONSES",
 )
 
 #: Kotlin `val` 선언의 머리. 수식어를 매칭하지 않는 이유는 [KOTLIN_DECLARATION] 과 같다 —
@@ -1032,6 +1054,7 @@ TIMED_SCANNERS: tuple[str, ...] = (
     "_kotlin_declared_names",
     "_named_enforcer_census",
     "_kotlin_ratchet_constant_sites",
+    "_contract_enumeration_accessors",
 )
 
 #: **캐시가 걸려 있어야 하는 함수** — [SCANNER_TIME_BUDGET_SECONDS] 축이 **원리적으로 못
@@ -1112,8 +1135,12 @@ def _kotlin_test_sources() -> list[Path]:
     )
 
 
-def _blank_comments_and_strings(text: str) -> str:
+def _blank_comments_and_strings(text: str, *, blank_strings: bool = True) -> str:
     """주석과 문자열 리터럴의 **내용을 공백으로** 지운다. 길이·줄 구조는 보존한다 (β-20).
+
+    `blank_strings=False` 면 **주석만** 비우고 문자열은 남긴다. 문자열 리터럴을 보고
+    판정하는 축(P-3 의 `"x-…"` 인구조사)이 주석 안의 같은 글자를 세지 않으려면 두 갈래를
+    가르는 판독이 필요하고, 어휘기를 복제하면 그 사본이 조용히 갈린다.
 
     ## 왜 삭제가 아니라 공백 치환인가
 
@@ -1168,7 +1195,8 @@ def _blank_comments_and_strings(text: str) -> str:
         if text.startswith('"""', index):
             stop = text.find('"""', index + 3)
             stop = length if stop < 0 else stop + 3
-            blank(index, stop)
+            if blank_strings:
+                blank(index, stop)
             index = stop
             continue
         char = text[index]
@@ -1179,7 +1207,8 @@ def _blank_comments_and_strings(text: str) -> str:
                     cursor += 1
                 cursor += 1
             stop = min(cursor + 1, length)
-            blank(index, stop)
+            if blank_strings:
+                blank(index, stop)
             index = stop
             continue
         index += 1
@@ -1187,14 +1216,18 @@ def _blank_comments_and_strings(text: str) -> str:
 
 
 @functools.cache
-def _source_pair(path_key: str) -> tuple[str, str]:
-    """(원문, 주석·문자열을 비운 텍스트). 오프셋이 서로 정확히 대응한다.
+def _source_pair(path_key: str) -> tuple[str, str, str]:
+    """(원문, 주석·문자열을 비운 텍스트, 주석만 비운 텍스트). 오프셋이 서로 정확히 대응한다.
 
     한 실행 안에서 파일은 바뀌지 않으므로 캐시한다 — 파라미터화 케이스가 108회 이상
     같은 트리를 훑기 때문에 캐시가 없으면 어휘 분석 비용이 그만큼 곱해진다.
     """
     raw = Path(path_key).read_text(encoding="utf-8")
-    return raw, _blank_comments_and_strings(raw)
+    return (
+        raw,
+        _blank_comments_and_strings(raw),
+        _blank_comments_and_strings(raw, blank_strings=False),
+    )
 
 
 def _blanked(path: Path) -> str:
@@ -1203,6 +1236,11 @@ def _blanked(path: Path) -> str:
 
 def _raw(path: Path) -> str:
     return _source_pair(str(path))[0]
+
+
+def _code_only(path: Path) -> str:
+    """주석만 비우고 **문자열은 남긴** 텍스트. 오프셋은 [_blanked] 와 같다."""
+    return _source_pair(str(path))[2]
 
 
 def _declared_package(path: Path) -> str | None:
@@ -2962,6 +3000,130 @@ def test_Kotlin_라쳇_상수_선언이_전부_핀을_갖는다() -> None:
         + "\n".join(f"  - {path}::{name}" for path, name in stale)
         + "\n  이력 대조가 **판정 불가**가 된다 — 판정 불가는 통과가 아니다.\n"
         "  상수를 옮겼다면 핀의 경로를, 지웠다면 핀 자신을 같은 커밋에서 고쳐라."
+    )
+
+
+#: **무인자 열거 접근자**의 머리 — `fun 이름(): List<…>|Set<…>|Map<…>`.
+#:
+#: **무인자가 구조적 판별자다.** `authStrings(key)`·`inputLimit(name)` 처럼 호출자가 키를
+#: 주는 조회는 계약 쪽 집합이 고정되지 않으므로 하한이 정의되지 않는다.
+CONTRACT_ENUMERATION_ACCESSOR = re.compile(r"\bfun\s+(\w+)\(\)\s*:\s*(?:List|Set|Map)\s*<")
+
+#: 계약 확장 노드를 가리키는 문자열 리터럴의 **모양**. 어휘 목록이 아니다.
+CONTRACT_EXTENSION_LITERAL = re.compile(r'"x-[a-z0-9-]*"')
+
+#: 접근자 본문이 참조하는 하한 상수의 **모양**.
+KOTLIN_FLOOR_CONSTANT = re.compile(r"\bMIN_[A-Z0-9_]+")
+
+_BODY_OPENERS = "([{"
+_BODY_CLOSERS = ")]}"
+
+
+def _body_span(blanked: str, after: int) -> tuple[int, int] | None:
+    """선언 머리 뒤의 **본문 구간**. 블록 본문(`{ … }`)과 식 본문(`= …`) 둘 다 받는다.
+
+    구간을 [_blanked] 에서 잡는 이유는 문자열·주석 안의 괄호가 세어지면 경계가 조용히
+    어긋나기 때문이다. 오프셋이 원문과 같으므로 잡은 구간을 [_code_only] 에 그대로 쓴다.
+    """
+    index = after
+    depth = 0
+    while index < len(blanked):  # 반환 타입의 홑화살괄호를 닫는다
+        if blanked[index] == "<":
+            depth += 1
+        elif blanked[index] == ">":
+            depth -= 1
+            if depth <= 0:
+                break
+        index += 1
+    while index < len(blanked) and blanked[index] not in "={":
+        index += 1
+    if index >= len(blanked):
+        return None
+    if blanked[index] == "{":
+        depth = 0
+        cursor = index
+        while cursor < len(blanked):
+            if blanked[cursor] == "{":
+                depth += 1
+            elif blanked[cursor] == "}":
+                depth -= 1
+                if depth == 0:
+                    return index, cursor + 1
+            cursor += 1
+        return None
+    cursor = index + 1
+    while cursor < len(blanked) and blanked[cursor] in " \t\n":
+        cursor += 1
+    depth = 0
+    while cursor < len(blanked):
+        char = blanked[cursor]
+        if char in _BODY_OPENERS:
+            depth += 1
+        elif char in _BODY_CLOSERS:
+            depth -= 1
+        elif char == "\n" and depth <= 0:
+            return index, cursor
+        cursor += 1
+    return index, len(blanked)
+
+
+def _contract_enumeration_accessors() -> dict[str, set[str]]:
+    """**계약 확장 열거를 읽는 무인자 접근자** 인구조사 → `"파일::함수"` → 본문의 `MIN_…` 이름들."""
+    found: dict[str, set[str]] = {}
+    for path in _kotlin_test_sources():
+        blanked = _blanked(path)
+        code = _code_only(path)
+        rel = str(path.relative_to(REPO_ROOT))
+        for match in CONTRACT_ENUMERATION_ACCESSOR.finditer(blanked):
+            span = _body_span(blanked, match.end())
+            if span is None:
+                continue
+            body = code[span[0] : span[1]]
+            if not CONTRACT_EXTENSION_LITERAL.search(body):
+                continue
+            found[f"{rel}::{match.group(1)}"] = set(KOTLIN_FLOOR_CONSTANT.findall(body))
+    return found
+
+
+def test_계약_열거_접근자가_전부_자기_하한을_갖는다() -> None:
+    """**계약에서 분모를 읽는 것의 안전 조건**을 기계로 요구한다 (P-3, 리더 판정).
+
+    ## 왜 접근자 쪽인가
+
+    계약 확장 열거를 읽는 테스트 파일은 31개까지 퍼져 있다(실측). 그 전부에 하한을 요구하면
+    오탐이 곧 면제 목록을 낳고 규칙 4 ⑵ 의 은폐형 거부권에 걸린다. 하한을 **접근자 한 곳**에
+    두면 계약 편집으로 집합이 깎일 때 소비자 전부가 한 번에 보호된다.
+
+    선례는 `ContractCheckOrder.MIN_CHECK_ORDER_STAGES` 이고, 그것만 있었다.
+
+    ## 열거가 아니라 인구조사다
+
+    **무인자** 열거 접근자 중 본문에 `"x-…"` 리터럴이 있는 것이 분모다. 새 접근자를 하한 없이
+    더하면 fail-closed 로 빨개진다. 하한 상수는 [KOTLIN_RATCHETED_CONSTANT_NAMES] 에 있어야
+    하므로 그 값 자신은 git 이력이 지킨다 — 하한을 붙이고 곧바로 1 로 낮추는 우회가 막힌다.
+
+    ## 닫지 못하는 것
+
+    열거를 읽고 **래퍼 타입**을 돌려주는 접근자(`storedTextDomain()`)는 반환 타입 모양으로
+    걸리지 않는다. 오늘 그쪽은 `require(isNotEmpty())` 만 있다.
+    """
+    census = _contract_enumeration_accessors()
+    assert census, (
+        "계약 확장 열거를 읽는 무인자 접근자를 하나도 찾지 못했다 — 인구조사가 비었으므로 "
+        "이 대조는 아무것도 재지 않는다. 접근자 정규식이나 본문 구간 판정이 틀렸다."
+    )
+
+    ratcheted = set(KOTLIN_RATCHETED_CONSTANT_NAMES)
+    unguarded = sorted(key for key, floors in census.items() if not (floors & ratcheted))
+    assert not unguarded, (
+        "계약 확장 열거를 읽는데 **자기 하한이 없는** 접근자가 있다:\n"
+        + "\n".join(
+            f"  - {key} — 본문의 MIN_ 참조: {sorted(census[key]) or '없음'}" for key in unguarded
+        )
+        + "\n  분모를 계약에서 읽는 것은 계약 쪽 집합에 하한이 붙어 있을 때만 안전하다.\n"
+        "  집합이 깎이면 이것을 쓰는 대조 전부가 조용히 좁아지고, 그 감소를 재는 것이 없다.\n"
+        "  같은 파일에 MIN_… 상수를 두고 KOTLIN_RATCHETED_CONSTANT_NAMES 에 이름을 적어라\n"
+        "  (그래야 그 하한 자신을 낮추는 편집을 git 이력이 막는다)."
     )
 
 

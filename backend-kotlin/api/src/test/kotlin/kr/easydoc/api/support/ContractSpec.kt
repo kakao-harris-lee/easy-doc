@@ -110,7 +110,9 @@ object ContractSpec {
 
     /** P-4. 전역 부착 대상 헤더(이름 → 값). */
     fun globalResponseHeaders(): Map<String, String> =
-        map("x-global-response-headers", "headers").entries.associate { (k, v) -> k.toString() to v.toString() }
+        atLeastFloor(map("x-global-response-headers", "headers"), MIN_GLOBAL_RESPONSE_HEADERS)
+            .entries
+            .associate { (k, v) -> k.toString() to v.toString() }
 
     /** P-3b. **헤더 이름 → 컴포넌트 이름**을 계약의 `$ref` 에서 유도한다. */
     fun headerComponentsByName(): Map<String, String> {
@@ -223,7 +225,8 @@ object ContractSpec {
     }
 
     /** P-5. 고위험 하한선 목록. `"POST /auth/signup"` 형태의 문자열이다. */
-    fun privateResponseHeaderTargets(): List<String> = strings("x-private-response-headers", "applies_to")
+    fun privateResponseHeaderTargets(): List<String> =
+        atLeastFloor(strings("x-private-response-headers", "applies_to"), MIN_PRIVATE_HEADER_TARGETS)
 
     // ------------------------------------------------------------------ P-6 · P-7
 
@@ -579,7 +582,7 @@ object ContractSpec {
     fun retiredResponseStatuses(): List<String> {
         val entries =
             (at("x-retired-responses") as? List<*>) ?: error("x-retired-responses 가 목록이 아니다")
-        require(entries.isNotEmpty()) { "x-retired-responses 가 비었다 — 폐기 목록이 없으면 이 대조는 공허하다" }
+        atLeastFloor(entries, MIN_RETIRED_RESPONSES)
         return entries.mapIndexed { index, entry ->
             val retired =
                 entry as? Map<*, *> ?: error("x-retired-responses[$index] 가 매핑이 아니다: $entry")
@@ -596,7 +599,7 @@ object ContractSpec {
     /** 계약 파일 **어디에든** 있는 확장 노드 이름(`x-…`) 전수. */
     fun extensionNodeNames(): Set<String> {
         val names = keyChains().filterTo(mutableSetOf()) { !it.contains('.') && it.startsWith("x-") }
-        require(names.isNotEmpty()) { "계약에서 `x-` 확장 노드를 하나도 찾지 못했다 — 대조가 공허하다" }
+        atLeastFloor(names, MIN_EXTENSION_NODES)
         return names
     }
 
@@ -687,11 +690,9 @@ object ContractSpec {
 
     /** **파싱 단계에서 거절돼 필터에 닿지 않는 응답들** — 계약이 열거한 갈래 이름 집합. */
     fun containerRejectedCases(): Set<String> =
-        strings(
-            "x-global-response-headers",
-            "x-phase3-measurement",
-            "unreachable_by_filter",
-            "cases",
+        atLeastFloor(
+            strings("x-global-response-headers", "x-phase3-measurement", "unreachable_by_filter", "cases"),
+            MIN_CONTAINER_REJECTED_CASES,
         ).toSet()
 
     /** 가입이 함께 만드는 작업 공간의 이름. */
