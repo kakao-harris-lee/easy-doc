@@ -62,10 +62,9 @@ data class ConversionResponse(
          * 조립 지점이 `exposesResult` 를 지나지 않은 것이고, 그때는 500 이 유출보다 낫다.
          */
         fun of(view: ConversionView): ConversionResponse {
-            require(
-                view.status.exposesResult ||
-                    (view.easyText == null && view.editedText == null && view.maskedItems.isEmpty()),
-            ) { "완료 전 변환에 결과가 실렸다: ${view.status.wireName} masked=${view.maskedItems.size}" }
+            require(view.status.exposesResult || !view.carriesResult) {
+                "완료 전 변환에 결과가 실렸다: ${view.status.wireName} masked=${view.maskedItems.size}"
+            }
             return ConversionResponse(
                 id = view.id.toString(),
                 documentId = view.documentId.toString(),

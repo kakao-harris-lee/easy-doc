@@ -20,6 +20,17 @@ data class ConversionView(
     val outputTokens: Int?,
     val failureCode: String?,
 ) {
+    /**
+     * 계약 `ConversionResponse.description` 의 **「결과 필드」 아홉** 중 하나라도 값을 들었는가.
+     * 완료 전에 나가는 것은 `id`·`document_id`·`status`·`failure_code` 넷뿐이다.
+     */
+    val carriesResult: Boolean
+        get() =
+            listOf(easyText, editedText, reviewedAt, model, providerName, inputTokens, outputTokens)
+                .any { it != null } ||
+                maskedItems.isNotEmpty() ||
+                missingPlaceholders.isNotEmpty()
+
     /** 로그 허용목록 그대로 — 식별자·상태·실패 코드와 **개수**뿐이다. */
     override fun toString(): String =
         "ConversionView($id, ${status.wireName}, failure=$failureCode, " +

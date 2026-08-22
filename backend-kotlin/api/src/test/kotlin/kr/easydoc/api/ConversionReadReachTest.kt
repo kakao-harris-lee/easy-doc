@@ -5,6 +5,7 @@ import kr.easydoc.api.support.OwnershipConcealment
 import kr.easydoc.application.crypto.ContentCipher
 import kr.easydoc.core.crypto.EncryptedField
 import kr.easydoc.core.crypto.PlainBody
+import kr.easydoc.core.document.ConversionStatus
 import kr.easydoc.core.privacy.MaskCategory
 import kr.easydoc.core.privacy.MaskedItem
 import kr.easydoc.core.security.Secret
@@ -92,17 +93,24 @@ class ConversionReadReachTest {
         }
     }
 
-    /** CR-3 의 팔은 결과 열이 NULL 인 행만 밟아 **공허하게 통과한다**. 이 케이스가 그 구멍을 메운다. */
+    /** CR-3 의 팔은 결과 열이 NULL 인 행만 밟아 **공허하게 통과한다**. 이 케이스가 메운다. */
     @Test
-    @DisplayName("CR-3b 완료 전 상태가 결과 열을 **들고 있어도** 세 결과 필드가 비어 나간다 — 가려진 원값이 응답에 없다")
+    @DisplayName("CR-3b 완료 전 상태가 결과 열을 **들고 있어도** 결과 필드 아홉이 비어 나가고 **키는 하나도 생략되지 않는다**")
     fun `완료 전 상태는 저장된 결과를 내보내지 않는다`() {
         val token = newAccount()
         val beforeDone = ContractSpec.schemaEnum(STATUS_SCHEMA).filterNot { it == DONE_STATUS }
         assertThat(beforeDone).describedAs("완료 전 상태가 계약에 하나도 없다 — 이 케이스가 성립하지 않는다").isNotEmpty()
+        // 분모가 계약 enum 이라 구현 상수가 좁히지 못한다. 그 상수 자체는 여기서 계약과 대조한다.
+        assertThat(ConversionStatus.entries.filter { it.exposesResult }.map { it.wireName })
+            .withFailMessage("결과를 내보내는 상태가 계약 `%s` 하나가 아니다", DONE_STATUS)
+            .containsExactly(DONE_STATUS)
         val label = ContractSpec.schemaPropertyEnum(MASKED_ITEM_SCHEMA, CATEGORY_PROPERTY).first()
         val category = MaskCategory.entries.first { it.label == label }
-        val item = MaskedItem(category, "[[${label}1]]", Secret(HIDDEN_ORIGINAL))
-        val stored = DoneResult(STORED_DRAFT, STORED_EDITED, maskedItems = listOf(item))
+        val placeholder = "[[${label}1]]"
+        val item = MaskedItem(category, placeholder, Secret(HIDDEN_ORIGINAL))
+        val stored =
+            DoneResult(STORED_DRAFT, STORED_EDITED, listOf(item), listOf(placeholder), reviewed = true)
+        val emptyArrays = setOf(MASKED_ITEMS_PROPERTY, MISSING_PLACEHOLDERS_PROPERTY)
 
         beforeDone.forEach { status ->
             val conversionId = createDocument(token).second
@@ -113,16 +121,25 @@ class ConversionReadReachTest {
 
             assertDeclaredStatus(response, ContractSpec.successStatus(CONVERSION_ITEM_PATH, GET))
             val body = bodyOf(response)
-            assertThat(body[EASY_TEXT_PROPERTY]).describedAs("상태 %s 인데 저장된 초안이 실렸다", status).isNull()
-            assertThat(body[EDITED_TEXT_PROPERTY]).describedAs("상태 %s 인데 저장된 검수본이 실렸다", status).isNull()
-            assertThat(body[MASKED_ITEMS_PROPERTY])
-                .withFailMessage("상태 %s 의 %s 가 비어 있지 않다 — 가려진 원값이 완료 전에 나간다", status, MASKED_ITEMS_PROPERTY)
-                .isEqualTo(emptyList<Any>())
+            // ② `required` 를 깨지 않는다 — 생략이 아니라 `null`·빈 배열이어야 한다.
+            assertThat(body.keys.map { it.toString() }.toSet())
+                .withFailMessage("상태 %s 응답이 키를 생략했다 — 계약 required 위반이다: %s", status, body.keys)
+                .isEqualTo(ContractSpec.schemaRequired(CONVERSION_SCHEMA))
+            // 첫 위반에서 멈추지 않고 **전부 모은다** — 무엇이 남았는지 한 번에 드러난다.
+            val carrying =
+                (ContractSpec.schemaRequired(CONVERSION_SCHEMA) - BEFORE_DONE_FIELDS).filter { field ->
+                    body[field] != (if (field in emptyArrays) emptyList<Any>() else null)
+                }
+            assertThat(carrying)
+                .withFailMessage("상태 %s 에서 비어 있지 않은 결과 필드: %s", status, carrying)
+                .isEmpty()
             assertThat(response.body())
                 .withFailMessage("상태 %s 응답이 저장된 값을 담았다", status)
                 .doesNotContain(HIDDEN_ORIGINAL)
                 .doesNotContain(STORED_DRAFT)
                 .doesNotContain(STORED_EDITED)
+                .doesNotContain(STORED_MODEL)
+                .doesNotContain(STORED_PROVIDER)
         }
     }
 
@@ -340,13 +357,9 @@ class ConversionReadReachTest {
         val masked = sealed(table, sealAs, EncryptedField.CONVERSION_MASKED_ITEMS)
         val labels = json.writeValueAsString(result.missingPlaceholders).replace("'", "''")
 
-        // SQL 은 **companion 의 상수**에 두고 조각만 채운다. 두 가지를 동시에 만족시켜야 한다:
-        // ⑴ `scan_privacy_invariants.py` 의 논리 줄 결합기는 호출부에 놓인 여러 줄 문자열에서
-        //    상태가 열린 채 40줄 상한에 닿아 그 구간을 **미검사**로 남긴다(실측: BLOCK).
-        // ⑵ `EnvelopeColumnWriteGuardTest` 는 **문자열 리터럴로 읽히는 SQL** 만 본다 —
-        //    조각을 `+` 로 이어 붙이면 「암호문 열을 SET 하는 UPDATE」가 그 가드의 눈에서
-        //    사라진다(실측: 그 파일이 인구조사에서 빠졌다).
-        // 상수로 옮기면 둘 다 선다 — `JdbcConversionRepository.FIND_OWNED_SQL` 과 같은 형태다.
+        // 규약: SQL 은 **companion 의 상수 리터럴**에 두고 조각만 채운다. 호출부에서 조립하면
+        // 스캐너와 `EnvelopeColumnWriteGuardTest` 가 함께 눈을 감는다 — 근거는
+        // `docs/migration/_workspace/04_kotlin-implementer_c6-test-sql-constraints.md`.
         database.execute(
             MARK_DONE_SQL.format(
                 easy,
@@ -355,6 +368,7 @@ class ConversionReadReachTest {
                 cipher.writeScheme,
                 cipher.writeKeyVersion,
                 labels,
+                if (result.reviewed) "now()" else "NULL",
                 conversionId,
             ),
         )
@@ -366,9 +380,7 @@ class ConversionReadReachTest {
         status: String,
         failureCode: String? = null,
     ) {
-        // 문자열 템플릿 **안에** 인용부호를 겹치지 않는다(`"'${'$'}{x.replace("'", "''")}'"` 형태).
-        // 사유는 [markDone] 의 주석과 같다 — 스캐너의 어휘 분석기가 그 겹침에서 문자열 상태를
-        // 열린 채로 두고, 그 구간이 미검사로 남는다(실측: 그 한 줄이 BLOCK 을 냈다).
+        // 규약: 문자열 템플릿 **안에** SQL 인용부호를 겹치지 않는다. 근거는 [markDone] 이 가리키는 문서.
         val escaped = failureCode?.replace(SINGLE_QUOTE, ESCAPED_QUOTE)
         val code = if (escaped == null) "NULL" else SINGLE_QUOTE + escaped + SINGLE_QUOTE
         database.execute(
@@ -497,6 +509,7 @@ class ConversionReadReachTest {
         val editedText: String? = null,
         val maskedItems: List<MaskedItem> = emptyList(),
         val missingPlaceholders: List<String> = emptyList(),
+        val reviewed: Boolean = false,
         val sealAs: UUID? = null,
     )
 
@@ -549,10 +562,15 @@ class ConversionReadReachTest {
         private const val INTERNAL_ERROR_COMPONENT = "InternalError"
         private const val STORAGE_EXAMPLE = "storage"
 
-        /** CR-3b 가 심는 값들. 응답에 **나타나면 안 된다.** */
+        /** CR-3b 가 심는 값들. 응답에 **나타나면 안 된다.** 뒤의 둘은 [MARK_DONE_SQL] 의 리터럴. */
         private const val HIDDEN_ORIGINAL = "900101-1234567"
         private const val STORED_DRAFT = "완료 전인데 저장돼 있던 초안입니다."
         private const val STORED_EDITED = "완료 전인데 저장돼 있던 검수본입니다."
+        private const val STORED_MODEL = "stored-model-probe"
+        private const val STORED_PROVIDER = "stored-provider"
+
+        /** 계약 `get.description` 이 완료 전에 나간다고 적은 것 — 앞의 둘은 자원 식별자다. */
+        private val BEFORE_DONE_FIELDS = setOf("id", "document_id", STATUS_PROPERTY, FAILURE_CODE_PROPERTY)
 
         private const val CONTENT_TYPE = "Content-Type"
         private const val JSON_MEDIA_TYPE = "application/json"
@@ -565,11 +583,8 @@ class ConversionReadReachTest {
         private const val VALID_PASSWORD = "correct horse battery"
 
         /**
-         * 결과 열을 채우는 UPDATE. **봉투 두 값을 같은 문장에서 함께 SET 한다** —
-         * `EnvelopeColumnWriteGuardTest` 가 소스 전수(테스트 포함)에서 그 규약을 강제하고,
-         * 첫 판이 그것을 어겨 실제로 빨개졌다. 워커가 할 UPDATE 도 같은 모양이어야 한다.
-         *
-         * `%s` 자리를 [markDone] 이 채운다. 상수로 둔 사유는 그 함수의 주석.
+         * 결과 열 아홉을 채우는 UPDATE. **봉투 두 값을 같은 문장에서 함께 SET 한다** —
+         * `EnvelopeColumnWriteGuardTest` 의 규약이다. `%s` 자리는 [markDone] 이 채운다.
          */
         val MARK_DONE_SQL =
             """
@@ -581,8 +596,9 @@ class ConversionReadReachTest {
                 encryption_scheme = '%s',
                 key_version = %s,
                 missing_placeholders = '%s'::jsonb,
-                model = 'test-model',
-                provider_name = 'test-provider',
+                reviewed_at = %s,
+                model = 'stored-model-probe',
+                provider_name = 'stored-provider',
                 input_tokens = 11,
                 output_tokens = 22
             WHERE id = '%s'

@@ -8,6 +8,7 @@ import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
+import java.time.Instant
 import java.util.UUID
 
 /** 변환 조회 유스케이스 — Spring 도 DB 도 없이 대역으로 돈다. */
@@ -86,10 +87,14 @@ class ConversionQueryServiceTest {
     }
 
     @Test
-    @DisplayName("완료 전 변환이 결과 열을 들고 있어도 세 결과 필드가 비고 **복호화조차 하지 않는다** (계약 `get.description`)")
+    @DisplayName("완료 전 변환이 결과 열을 들고 있어도 **결과 필드 아홉이 전부** 비고 복호화조차 하지 않는다")
     fun `완료 전 변환은 저장된 결과를 내보내지 않는다`() {
-        val beforeDone = ConversionStatus.entries.filterNot { it.exposesResult }
-        assertThat(beforeDone).describedAs("결과를 내보내지 않는 상태가 하나도 없다 — 이 케이스가 공허해진다").isNotEmpty()
+        // 분모를 `exposesResult` 로 잡으면 잘못 준 상태가 **빠진다** — 이름으로 잡고 값은 따로 잰다.
+        val beforeDone = ConversionStatus.entries - ConversionStatus.DONE
+        assertThat(beforeDone).describedAs("완료 아닌 상태가 하나도 없다 — 이 케이스가 공허해진다").isNotEmpty()
+        assertThat(ConversionStatus.entries.filter { it.exposesResult })
+            .describedAs("결과를 내보내는 상태가 `done` 하나가 아니다 — 노출 범위 규칙이 넓어졌다")
+            .containsExactly(ConversionStatus.DONE)
 
         beforeDone.forEach { status ->
             val world = World()
@@ -105,6 +110,16 @@ class ConversionQueryServiceTest {
             val view = world.service.read(OWNER, conversionId)
 
             assertThat(view.status).isEqualTo(status)
+            assertThat(view.carriesResult)
+                .describedAs("상태 %s 인데 결과 필드가 값을 들었다: %s", status, view)
+                .isFalse()
+            assertThat(view.failureCode).describedAs("완료 전에도 나가야 하는 넷 중 하나가 지워졌다").isNotNull()
+            assertThat(view.reviewedAt).describedAs("상태 %s 인데 검수 시각이 실렸다", status).isNull()
+            assertThat(view.model).isNull()
+            assertThat(view.providerName).isNull()
+            assertThat(view.inputTokens).isNull()
+            assertThat(view.outputTokens).isNull()
+            assertThat(view.missingPlaceholders).describedAs("배열은 `null` 이 아니라 **빈 목록**이다").isEmpty()
             assertThat(view.easyText).describedAs("상태 %s 인데 초안이 실렸다", status).isNull()
             assertThat(view.editedText).describedAs("상태 %s 인데 검수본이 실렸다", status).isNull()
             assertThat(view.maskedItems).describedAs("상태 %s 인데 마스킹 대응표가 실렸다", status).isEmpty()
@@ -222,13 +237,14 @@ class ConversionQueryServiceTest {
                                 ),
                             editedText = seal(editedText, EncryptedField.CONVERSION_EDITED_TEXT),
                         ),
-                    reviewedAt = null,
-                    missingPlaceholders = emptyList(),
+                    // 결과 필드 **아홉 전부**를 채운다 — 비워 두면 그 필드가 공허하게 통과한다.
+                    reviewedAt = Instant.EPOCH,
+                    missingPlaceholders = maskedLabels,
                     model = "claude-test",
                     providerName = "anthropic",
                     inputTokens = 11,
                     outputTokens = 22,
-                    failureCode = null,
+                    failureCode = "ProviderUnavailable",
                 )
         }
     }

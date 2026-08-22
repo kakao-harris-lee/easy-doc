@@ -33,6 +33,7 @@ import org.springframework.test.web.servlet.get
 import org.springframework.test.web.servlet.post
 import tools.jackson.databind.ObjectMapper
 import java.nio.charset.StandardCharsets
+import java.time.Instant
 import java.util.UUID
 
 /** `GET /conversions/{conversion_id}` 의 계약 — 명세 CR 표의 C-M 계층. */
@@ -151,43 +152,61 @@ class ConversionReadContractTest {
             }.andReturn()
             .response
 
+    /** 분모를 계약에서 읽는다 — `required` 에서 나가는 넷을 뺀 **아홉**이 「결과 필드」다. */
     @Test
-    @DisplayName("완료 전 변환의 결과를 담은 응답은 **조립되지 않는다** — 나가는 바이트를 만드는 자리가 막는다")
+    @DisplayName("완료 전 변환의 결과 필드 **아홉 전부**에 대해 응답이 조립되지 않는다 — 바이트를 만드는 자리가 막는다")
     fun `완료 전 결과를 담은 응답은 조립되지 않는다`() {
         val draft = "매퍼 가드가 막아야 하는 초안"
         val hidden = "900101-1234567"
-        val item = MaskedItemView(MaskCategory.RRN, "[[주민등록번호1]]", Secret(hidden))
+        val base = beforeDoneView()
+        val item = MaskedItemView(MaskCategory.RRN, PLACEHOLDER, Secret(hidden))
+        val carrying =
+            mapOf(
+                "easy_text" to base.copy(easyText = PlainBody(draft)),
+                "edited_text" to base.copy(editedText = PlainBody(draft)),
+                "masked_items" to base.copy(maskedItems = listOf(item)),
+                "reviewed_at" to base.copy(reviewedAt = Instant.EPOCH),
+                "missing_placeholders" to base.copy(missingPlaceholders = listOf(PLACEHOLDER)),
+                "model" to base.copy(model = "probe-model"),
+                "provider_name" to base.copy(providerName = "probe-provider"),
+                "input_tokens" to base.copy(inputTokens = 1),
+                "output_tokens" to base.copy(outputTokens = 2),
+            )
 
-        assertThatThrownBy { ConversionResponse.of(beforeDoneView(easyText = PlainBody(draft))) }
-            .isInstanceOf(IllegalArgumentException::class.java)
-            .hasMessageNotContaining(draft)
-        assertThatThrownBy { ConversionResponse.of(beforeDoneView(editedText = PlainBody(draft))) }
-            .isInstanceOf(IllegalArgumentException::class.java)
-        assertThatThrownBy { ConversionResponse.of(beforeDoneView(maskedItems = listOf(item))) }
-            .isInstanceOf(IllegalArgumentException::class.java)
-            .hasMessageNotContaining(hidden)
+        assertThat(carrying.keys)
+            .withFailMessage("케이스가 계약의 「결과 필드」 집합과 다르다 — 계약이 바뀌었으면 여기도 넓혀라")
+            .isEqualTo(ContractSpec.schemaRequired(CONVERSION_SCHEMA) - BEFORE_DONE_FIELDS)
+
+        val assembled =
+            carrying.filterValues { view ->
+                runCatching { ConversionResponse.of(view) }
+                    .exceptionOrNull()
+                    ?.let { it !is IllegalArgumentException || it.message.orEmpty().contains(draft) } ?: true
+            }
+        assertThat(assembled.keys)
+            .withFailMessage("완료 전인데 응답이 조립된(또는 가드 문구가 본문을 담은) 결과 필드: %s", assembled.keys)
+            .isEmpty()
+        assertThat(carrying.values.mapNotNull { runCatching { ConversionResponse.of(it) }.exceptionOrNull()?.message })
+            .allSatisfy { assertThat(it).doesNotContain(hidden) }
+        assertThat(ConversionResponse.of(base).status).isEqualTo(base.status.wireName)
     }
 
     /** 계약이 「비어 있어야」 한다고 적은 조합. */
-    private fun beforeDoneView(
-        easyText: PlainBody? = null,
-        editedText: PlainBody? = null,
-        maskedItems: List<MaskedItemView> = emptyList(),
-    ): ConversionView =
+    private fun beforeDoneView(): ConversionView =
         ConversionView(
             id = UUID.randomUUID(),
             documentId = UUID.randomUUID(),
             status = ConversionStatus.entries.first { !it.exposesResult },
-            easyText = easyText,
-            editedText = editedText,
+            easyText = null,
+            editedText = null,
             reviewedAt = null,
-            maskedItems = maskedItems,
+            maskedItems = emptyList(),
             missingPlaceholders = emptyList(),
             model = null,
             providerName = null,
             inputTokens = null,
             outputTokens = null,
-            failureCode = null,
+            failureCode = "ProviderUnavailable",
         )
 
     /** P-21 — 경로 변수 이름을 계약에서 읽어 URL 을 조립한다. */
@@ -305,6 +324,11 @@ class ConversionReadContractTest {
 
     private companion object {
         val STUB_HASH = PasswordHash("stub-hash")
+
+        /** 계약 `get.description` 이 완료 전에 나간다고 적은 것 — 앞의 둘은 자원 식별자다. */
+        val BEFORE_DONE_FIELDS = setOf("id", "document_id", "status", "failure_code")
+
+        const val PLACEHOLDER = "[[주민등록번호1]]"
 
         const val DOCUMENTS_PATH = "/documents"
         const val CONVERSION_ITEM_PATH = "/conversions/{conversion_id}"

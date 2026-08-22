@@ -3,9 +3,9 @@ package kr.easydoc.core.document
 import kr.easydoc.core.exceptions.StorageException
 
 /**
- * 변환 한 건의 상태. [exposesResult] 는 계약 `GET /conversions/{conversion_id}.description` 의
- * 노출 범위 규칙이다 — 완료 전에는 `easy_text`·`edited_text`·`masked_items` 가 비어 나간다.
- * 항목마다 값을 주므로 상태를 더하는 사람이 그 판정을 건너뛸 수 없다.
+ * 변환 한 건의 상태. [exposesResult] 는 계약이 규정한 노출 범위 규칙이고 그 대상 목록은
+ * `ConversionView.carriesResult` 다. 항목마다 값을 주므로 상태를 더하는 사람이 판정을
+ * 건너뛸 수 없다.
  */
 enum class ConversionStatus(
     val wireName: String,
