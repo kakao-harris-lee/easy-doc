@@ -55,8 +55,10 @@ codex 권고는 「각 리뷰 산출물에 시작·종료 SHA 를 기록」이�
 
 from __future__ import annotations
 
+import os
 import re
 import subprocess
+import warnings
 from pathlib import Path
 from typing import Final, NamedTuple
 
@@ -291,9 +293,39 @@ def _ledger_rows(ledger: str) -> tuple[LedgerRow, ...]:
     return tuple(rows)
 
 
+#: **출하 모드**를 켜는 환경 변수. 선례는 `KOTLIN_GATE_REACH_REQUIRE_REPORT` 다.
+#:
+#: 왜 모드인가: `대기` 는 정당한 중간 상태다(회차가 아직 안 돌았을 뿐). 그것을 상시 실패로
+#: 만들면 이 검사는 늘 빨간 채로 살고, 늘 빨간 검사는 아무도 읽지 않아 탐지 능력이 0 이 된다.
+#: 그렇다고 영원히 안 재면 「빚이 얼마나 쌓였는가」를 묻는 자리가 없다. 그래서 **Phase 종료·
+#: 출하 판정 시점에 리더가 켜는** 축으로 갈랐다.
+#:
+#: **이 모드의 도달은 「리더가 켠다」 하나다 — CI 배선 0.** 오늘 미상환 `대기` 가 여러 건이라
+#: 상시 배선은 모든 잡을 빨갛게 만든다. 이 사실을 지우지 마라(SKILL.md 규칙 3).
+SHIPPABLE_MODE_ENV: Final = "REVIEW_COVERAGE_REQUIRE_SETTLED"
+
+
+def _shippable_mode() -> bool:
+    return bool(os.environ.get(SHIPPABLE_MODE_ENV))
+
+
+def _unsettled(rows: tuple[LedgerRow, ...]) -> tuple[LedgerRow, ...]:
+    """**미상환 빚** — `대기` 인데 `닫힘` 칸이 빈 행."""
+    return tuple(row for row in rows if row.state == _WAITING_STATE and row.closed in _LEDGER_BLANK)
+
+
 def _recorded_shas(ledger: str) -> tuple[str, ...]:
-    """장부에 「적힌」 SHA. 유효한 표 행의 첫 칸이다."""
-    return tuple(row.sha for row in _ledger_rows(ledger))
+    """장부에 「적힌」 SHA. 유효한 표 행의 첫 칸이다.
+
+    **출하 모드에서는 `이연` 행만 센다.** 평시에 `대기` 를 「적혔다」로 세는 것은 옳다 —
+    빚을 진 사실이 기록됐다는 뜻이니까. 그런데 출하 판정에서까지 그렇게 세면 갚지 않은 빚이
+    커버리지를 만족시키는 것이 되어, 「모든 변경은 정확히 한 번 리뷰를 받는다」가 **적기만
+    하면 참**이 된다. 모드가 켜지면 그 관용을 거둔다.
+    """
+    rows = _ledger_rows(ledger)
+    if _shippable_mode():
+        rows = tuple(row for row in rows if row.state == _DEFERRED_STATE)
+    return tuple(row.sha for row in rows)
 
 
 def _judged_commits() -> tuple[tuple[str, str], ...]:
@@ -445,4 +477,48 @@ def test_리뷰된_대기_행은_닫힘_칸이_적혀_있다() -> None:
         + "\n\n그 커밋은 커버리지 표의 어느 범위에 들어 있다 — 즉 빚이 갚혔다.\n"
         "  `닫힘` 칸에 어느 회차가 언제 닫았는지 적어라. 적지 않으면 장부가\n"
         "  「갚은 빚」과 「안 갚은 빚」을 구분하지 못해 다시 리더의 기억에 의존한다."
+    )
+
+
+def test_출하_모드에서는_미상환_대기가_0_이어야_한다() -> None:
+    """**장부의 입구를 잰다** (X-3a) — Phase 종료·출하 판정에서만 켜는 축.
+
+    `대기` = 「필수 축에 닿는데 아직 리뷰를 못 받았다」이므로, 미상환 `대기` 가 남은 채로
+    Phase 를 닫는 것은 **리뷰받지 않은 필수 변경을 안고 닫는 것**이다. 평시에는 그것이 정상
+    중간 상태라 이 축을 판정하지 않고, [SHIPPABLE_MODE_ENV] 를 켤 때만 판정한다.
+
+    **끈 실행에서 조용히 초록이 되지 않는다.** 모드가 꺼져 있으면 「이 축을 판정하지 않았다」를
+    경고로 남긴다 — 통과 기록만 쌓이는 것이 이 종류의 빈자리다(SKILL.md 규칙 3).
+
+    **오늘의 정상 결과는 빨강이다.** 남은 미상환 `대기` 는 아직 회차가 안 돈 빚이고, 그것이
+    Phase 4 종료 판정을 막는 것이 이 축의 목적이다. 통과시키려고 상태를 `이연` 으로 내려
+    적지 마라 — 그것은 거짓이고, 정직한 해소는 회차를 도는 것이다.
+    """
+    ledger = _section(_LEDGER_HEADING)
+    assert ledger is not None, (
+        f"원장에 「{_LEDGER_HEADING}」 절이 없다 —\n"
+        "  [test_원장에_리뷰_커버리지_절과_이연_장부가_있다] 를 먼저 보라."
+    )
+    rows = _ledger_rows(ledger)
+    assert rows, (
+        f"「{_LEDGER_HEADING}」 절에 유효한 표 행이 0 건이다.\n"
+        "  빈 분모에서 통과하면 안 된다(SKILL.md 규칙 4 ⑶) — 모드와 무관하게 실패한다."
+    )
+
+    unsettled = _unsettled(rows)
+    if not _shippable_mode():
+        warnings.warn(
+            f"출하 축을 **판정하지 않았다** — `{SHIPPABLE_MODE_ENV}` 가 꺼져 있다."
+            f" 현재 미상환 `{_WAITING_STATE}` {len(unsettled)} 건."
+            " Phase 종료·출하 판정에서는 이 변수를 켜고 돌려라.",
+            stacklevel=2,
+        )
+        return
+
+    assert not unsettled, (
+        f"미상환 `{_WAITING_STATE}` 행 {len(unsettled)} 건이 남은 채로 출하 판정을 시도했다:\n"
+        + "\n".join(f"  `{row.sha}`  (리뷰할 회차: {row.round_})" for row in unsettled)
+        + "\n\n이 행들은 **필수 축에 닿는데 리뷰를 못 받은 변경**이다 — 이연이 아니라 빚이다.\n"
+        "  해소는 하나뿐이다: 적힌 회차를 돌리고 `닫힘` 칸을 채운다.\n"
+        f"  상태를 `{_DEFERRED_STATE}` 으로 내려 적어 통과시키지 마라 — 그것은 거짓 기록이다."
     )
