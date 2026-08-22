@@ -1743,6 +1743,14 @@ pytest 사슬의 표적 실행 우회(`conftest.py` 이관을 착수했다가 **
 | `0272d3b` | 레인 B #6 — X-4·X-4c·X-11 어간 문법 + 전수 강제 + 문법 이전 어간 핀 19종. `.claude/skills/kotlin-migration/SKILL.md` · `tests/test_harness_scope_reach.py` | **대기** | 필수 축③. 핀 19종은 은폐형 성분(계획 §6-3) — 이연이 아니라 미리뷰 | `xx_harness-r2` | `xx_harness-r2` (닫힘, 2026-08-23) |
 | `95979f3` | 레인 A C6 — P-3 계약 확장 열거 접근자 하한 인구조사. `ContractEnumerationFloors.kt`·`ContractSpec.kt` · 게이트 | **대기** | 필수 축③. 테스트 지원 코드만 — 이연이 아니라 미리뷰 | `xx_harness-r2` | `xx_harness-r2` (닫힘, 2026-08-23) |
 | `329a964` | 레인 B #7 — X-16 주석 예산 축 분리(제품/테스트) + 이력 표식 여유 0 상한 + 테스트 주석 규약. `CLAUDE.md` · `tests/test_kotlin_comment_budget.py` | **대기** | 필수 축③ — 이연이 아니라 미리뷰 | `xx_harness-r2` | `xx_harness-r2` (닫힘, 2026-08-23) |
+| `de689ff` | 조치 A-5·A-6 — 레인 A 계획의 없는 환경변수명 정정(M-1) · `tests/test_kotlin_comment_budget.py` CI 경로 명시 배선(M-2). `.github/workflows/ci.yml` · 레인 A 계획 | **대기** | 필수 축③ — `ci.yml` 은 모든 게이트가 도는지 여부를 정한다 — 이연이 아니라 미리뷰 | `xx_harness-r2-fixes` | - |
+| `d06f5c5` | 조치 A-3 — 4축 블록의 중간 축 결손 탐지(codex ⑵). `tests/test_harness_scope_reach.py` | **대기** | 필수 축③ — 이연이 아니라 미리뷰 | `xx_harness-r2-fixes` | - |
+| `545f706` | 조치 A-1 — 무효 커버리지 행을 이름으로 지목하고 게이트를 빨갛게(C-1). `tests/test_review_coverage_reach.py` | **대기** | 필수 축③ — 이연이 아니라 미리뷰 | `xx_harness-r2-fixes` | - |
+| `60fadff` | 조치 A-2 — X-3b 분모 무방비 해소(C-2·R-1·R-2). 같은 파일 | **대기** | 필수 축③ — 이연이 아니라 미리뷰 | `xx_harness-r2-fixes` | - |
+| `3b7ba16` | 조치 A-2 ⑵ 보강 — 열 단언을 부분문자열에서 자리로(도달 0 실측). 같은 파일 | **대기** | 필수 축③ — 이연이 아니라 미리뷰 | `xx_harness-r2-fixes` | - |
+| `fb7d01c` | 조치 A-4 — 출하 모드에서 `이연` 행도 상환 요구(codex ⑴). `tests/test_review_coverage_reach.py` · `tests/test_harness_scope_reach.py` | **대기** | 필수 축③ — 이연이 아니라 미리뷰 | `xx_harness-r2-fixes` | - |
+| `06ea048` | 리더 판정 P-1 — X-11 `리뷰할 회차` 칸 문법 강제자(R-4). `.claude/skills/kotlin-migration/SKILL.md` · `tests/test_harness_scope_reach.py` | **대기** | 필수 축③ — 이연이 아니라 미리뷰 | `xx_harness-r2-fixes` | - |
+| `a304cc1` | 리더 판정 P-3 ⑶ — 하한 라쳇의 커밋 전 빨강에 「미커밋 신규 상수 N건」 사유를 붙인다(레인 A 발견 ①). `tests/test_kotlin_gate_reach.py` | **대기** | 필수 축③ — 이연이 아니라 미리뷰 | `xx_harness-r2-fixes` | - |
 
 **`상태` 어휘는 둘이다.** `이연` = 필수 축에 닿지 않아 묶기로 판정한 것. `대기` = **필수 축에
 닿는데 아직 리뷰를 못 받은 것** — 이연이 아니라 빚이다. 위 세 줄은 전부 `대기`다(축③ =
