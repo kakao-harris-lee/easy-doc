@@ -1714,6 +1714,17 @@ pytest 사슬의 표적 실행 우회(`conftest.py` 이관을 착수했다가 **
 
 | `80f6761` | `codex-reviewer` 를 `model: opus` → `haiku` + 얇은 래퍼 사유 명문화. `CLAUDE.md` 가 이미 규정한 것을 에이전트 정의가 따라잡았다(사용자 결정 2026-08-22 — 이 판이 최종) | **대기** | 필수 축③(게이트·탐지기 자신)에 닿는다 — 리뷰 레인 자신의 정의다. 이연이 아니라 미리뷰. **그리고 이 변경은 §4(축② 전사 역전)의 마감을 더 급하게 만든다** — 긴 브리프를 요약하는 Haiku 래퍼에서 전사 충실도가 하중을 받는 성질이 되고, 그것이 바로 역전이 일어난 기제다 | `xx_harness 2회차` | - |
 | `f3398bc` | `codex-reviewer` 래퍼에 **입력** 전사 규약 — 리더 축·조건은 문면 그대로 인용, 극성 문장 재서술 금지(레인 B 계획 §4). `.claude/agents/codex-reviewer.md` | **대기** | 필수 축③(게이트·탐지기 자신)에 닿는다 — 리뷰 레인 자신의 정의. 탐지자 0인 문서 규약이라는 한계는 계획 §6-5 에 적혀 있다 | `xx_harness 2회차` | - |
+| `0265138` | 레인 A C2 — X-9 Kotlin 라쳇 상수 양방향 인구조사. `tests/test_kotlin_gate_reach.py` | **대기** | 필수 축③(게이트·탐지기 자신) — 이연이 아니라 미리뷰 | `xx_harness 2회차` | - |
+| `d7cecfe` | 레인 B #2 — X-3b 출구: 리뷰된 `대기` 행은 `닫힘` 칸 요구. `tests/test_review_coverage_reach.py` | **대기** | 필수 축③ — 이연이 아니라 미리뷰 | `xx_harness 2회차` | - |
+| `7966ff5` | 레인 A C3 — X-6(엔진 질의)·X-1b·X-1a 하한선 인구조사 세 결함. `PrivateHeaderFloorCensusTest.kt` · 게이트 | **대기** | 필수 축③. 테스트만 — 제품 코드 무변경 — 이연이 아니라 미리뷰 | `xx_harness 2회차` | - |
+| `aff00c9` | 레인 B #3 — X-3a 입구: 출하 모드에서 미상환 `대기` 0 요구. `tests/test_review_coverage_reach.py` | **대기** | 필수 축③ — 이연이 아니라 미리뷰 | `xx_harness 2회차` | - |
+| `a28ee47` | 레인 B #4 — X-2a 커버리지 행을 `산출물` 칸 선언으로 판정. 같은 파일 | **대기** | 필수 축③ — 이연이 아니라 미리뷰 | `xx_harness 2회차` | - |
+| `ee92455` | 레인 A C4 — X-7 DC-26·DC-27 강제자 이름 지목. `DocumentController.kt` · `FrameworkErrorContractTest.kt` · 게이트 | **대기** | 필수 축③ + **축②(외부 HTTP 계약)** — 제품 컨트롤러를 건드렸다. 리뷰에서 응답 불변 확인 필요 — 이연이 아니라 미리뷰 | `xx_harness 2회차` | - |
+| `62b76d3` | 레인 A C5 — X-10 하한 10행 실측 상향(여유 0). 게이트 | **대기** | 필수 축③ — 이연이 아니라 미리뷰 | `xx_harness 2회차` | - |
+| `df4d60c` | 레인 B #5 — X-2b 역할 구성(codex-reviewer+cross)·X-2c 시점 결속(HEAD 실재·`<start>` 부재). 같은 파일 | **대기** | 필수 축③ — 이연이 아니라 미리뷰 | `xx_harness 2회차` | - |
+| `0272d3b` | 레인 B #6 — X-4·X-4c·X-11 어간 문법 + 전수 강제 + 문법 이전 어간 핀 19종. `.claude/skills/kotlin-migration/SKILL.md` · `tests/test_harness_scope_reach.py` | **대기** | 필수 축③. 핀 19종은 은폐형 성분(계획 §6-3) — 이연이 아니라 미리뷰 | `xx_harness 2회차` | - |
+| `95979f3` | 레인 A C6 — P-3 계약 확장 열거 접근자 하한 인구조사. `ContractEnumerationFloors.kt`·`ContractSpec.kt` · 게이트 | **대기** | 필수 축③. 테스트 지원 코드만 — 이연이 아니라 미리뷰 | `xx_harness 2회차` | - |
+| `329a964` | 레인 B #7 — X-16 주석 예산 축 분리(제품/테스트) + 이력 표식 여유 0 상한 + 테스트 주석 규약. `CLAUDE.md` · `tests/test_kotlin_comment_budget.py` | **대기** | 필수 축③ — 이연이 아니라 미리뷰 | `xx_harness 2회차` | - |
 
 **`상태` 어휘는 둘이다.** `이연` = 필수 축에 닿지 않아 묶기로 판정한 것. `대기` = **필수 축에
 닿는데 아직 리뷰를 못 받은 것** — 이연이 아니라 빚이다. 위 세 줄은 전부 `대기`다(축③ =
