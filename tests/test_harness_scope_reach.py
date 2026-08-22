@@ -177,6 +177,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import re
 import subprocess
 from collections import Counter
@@ -184,6 +185,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
+from types import ModuleType
 from typing import Final
 
 import pytest
@@ -2267,3 +2269,229 @@ def test_R10_실물에서는_통과한다() -> None:
     )
 
     assert not problems, f"실물이 기대값과 어긋난다: {problems}"
+
+
+# ---------------------------------------------------------------------------
+# 리뷰 산출물 **어간 문법** (X-4 / X-4c, 2026-08-23)
+#
+# `{scope}` 정본 표는 값만 정했고 **어간이 어떤 모양이어야 하는지는 어디에도 없었다.**
+# 실사용 어간 44종 중 표의 값과 정확히 같은 것은 9종뿐이라, 나머지가 규약 위반인지 정당한
+# 회차 표기인지 판정할 근거가 없었다. 문법 전문은 SKILL.md 「어간 문법」 절이 정본이고
+# 여기에 값을 옮겨 적지 않는다 — 아래는 그 명세의 **두 번째 표현**이며 표는 읽어서 쓴다.
+# ---------------------------------------------------------------------------
+
+#: `{scope}` 정본 표의 머리행. 이 문자열로 표를 찾는다.
+_SCOPE_TABLE_HEADER: Final = "| Phase | `{scope}` 정본 |"
+
+#: 표의 `{scope}` 칸에서 값을 뽑을 때 쓰는 항목 구분자. 한 항목의 **첫 백틱 토큰**이 값이고
+#: 뒤따르는 백틱(주석 안의 `{phase}`·`00`·`xx` 따위)은 값이 아니다.
+_SCOPE_ITEM_SEPARATOR: Final = " · "
+
+#: `{phase}` 자리. 두 자리 숫자 또는 `xx`.
+_PHASE_PATTERN: Final = re.compile(r"\d{2}|xx")
+
+#: `phase-close` 값의 별형 — Phase 번호를 품은 꼴. 회차 열거가 아니라 **값 하나의 형태 규정**
+#: 이므로 표에 회차를 늘어놓지 않고 여기서 같은 값으로 읽는다.
+_PHASE_CLOSE_VALUE: Final = "phase-close"
+_PHASE_CLOSE_ALIAS: Final = re.compile(r"phase\d+-close")
+
+#: 리뷰 산출물이 사는 곳. 분모는 이 디렉터리 **전수**라 새 파일이 자동으로 든다.
+_REVIEWS_DIR: Final = _WORKSPACE / "reviews"
+
+#: 산출물 파일명의 토막 수 — `{phase}_{scope}[-{회차}]_{reviewer}.md`.
+_ARTIFACT_NAME_PARTS: Final = 3
+
+#: **문법 이전에 태어난 어간** (2026-08-23 실측 18종). 정확 일치이고 **축소 전용이다.**
+#:
+#: 이것은 장치 분류상 **은폐형 성분**을 갖는다(면제 목록). 그래서 규칙 4 ⑵ 를 따라
+#: **넓히지 않는다** — 새 산출물은 문법을 지켜야 하고, 여기 한 줄을 더하는 diff 는 그 자체가
+#: 리뷰 신호다. 개명으로 줄이는 것은 언제나 환영이고, 줄이면 이 집합에서 그 줄을 지워야
+#: 검사가 통과한다(정확 일치라 낡은 핀이 남지 않는다).
+#:
+#: 분류: 앞 17종은 `{scope}` 가 표에 없다. 마지막 하나는 `{phase}` 가 두 자리 숫자도 `xx` 도
+#: 아니다(날짜를 phase 자리에 썼다).
+PRE_GRAMMAR_STEMS: Final = frozenset(
+    {
+        "02_criteria-pivot",
+        "03_rebuild-plan",
+        "04_gate25-fixes",
+        "04_quality-gate",
+        "05_scope-reach",
+        "06_baseline-guard",
+        "07_core-rebuild",
+        "08_conversion-usecase",
+        "10_detector-redesign",
+        "11_suppression-and-domains",
+        "13_regression-and-pins",
+        "14_floor-hardening",
+        "15_phase3-preflight",
+        "16_gate15-fixes",
+        "17_gate16-fixes",
+        "18_gate17-fixes",
+        "19_gate18-fixes",
+        "2026-08-21_llm-lane-ci-timeout",
+    }
+)
+
+
+def scope_values() -> frozenset[str]:
+    """SKILL.md 의 `{scope}` 정본 표에서 값을 읽는다. 표가 없으면 빈 집합."""
+    lines = _AXIS_SKILL_PATHS[0].read_text(encoding="utf-8").splitlines()
+    start = next((i for i, line in enumerate(lines) if line.startswith(_SCOPE_TABLE_HEADER)), None)
+    if start is None:
+        return frozenset()
+    values: set[str] = set()
+    for line in lines[start + 2 :]:
+        if not line.startswith("|"):
+            break
+        cells = [cell.strip() for cell in line.strip("|").split("|")]
+        if len(cells) != 2:
+            break
+        for item in cells[1].split(_SCOPE_ITEM_SEPARATOR):
+            token = re.search(r"`([^`]+)`", item)
+            if token is not None:
+                values.add(token.group(1))
+    return frozenset(values)
+
+
+def _scope_matches(candidate: str, scopes: frozenset[str]) -> bool:
+    if candidate in scopes:
+        return True
+    return _PHASE_CLOSE_VALUE in scopes and _PHASE_CLOSE_ALIAS.fullmatch(candidate) is not None
+
+
+def stem_is_legal(stem: str, scopes: frozenset[str]) -> bool:
+    """어간이 `{phase}_{scope}[-{회차}]` 문법을 지키는가.
+
+    `{scope}` 집합이 닫혀 있으므로 `-` 가 여럿이어도 경계가 결정된다 — 표의 값과 맞는
+    **가장 긴 앞부분**이 scope 이고 나머지가 회차다. 회차는 비어 있으면 안 된다.
+    """
+    phase, separator, rest = stem.partition("_")
+    if not separator or _PHASE_PATTERN.fullmatch(phase) is None or not rest:
+        return False
+    if _scope_matches(rest, scopes):
+        return True
+    return any(
+        rest[cut] == "-" and rest[cut + 1 :] != "" and _scope_matches(rest[:cut], scopes)
+        for cut in range(len(rest) - 1, 0, -1)
+    )
+
+
+def artifact_stems() -> frozenset[str]:
+    """`reviews/*.md` **전수**에서 `{phase}_{scope}` 어간을 뽑는다."""
+    stems: set[str] = set()
+    for path in sorted(_REVIEWS_DIR.glob("*.md")):
+        parts = path.stem.split("_")
+        if len(parts) != _ARTIFACT_NAME_PARTS:
+            # 3토막이 아니면 어간을 정할 수 없다 — 그 자체가 위반이므로 이름 전체를 싣는다.
+            stems.add(path.stem)
+            continue
+        stems.add("_".join(parts[:2]))
+    return frozenset(stems)
+
+
+def test_scope_정본_표가_비지_않는다() -> None:
+    """**빈 선언에서 통과하지 않는다** (규칙 4 ⑶).
+
+    아래 문법 판정의 분모가 이 표다. 표가 사라지거나 머리행이 바뀌면 모든 어간이 위법이 되어
+    시끄럽게 실패해야 하는데, 파서가 빈 집합을 내고 그것을 아무도 보지 않으면 반대로 **모든
+    어간이 조용히 통과**하는 판이 나올 수 있다. 그 자리를 여기서 막는다.
+    """
+    scopes = scope_values()
+    assert scopes, (
+        f"{_AXIS_SKILL_PATHS[0].relative_to(_REPO_ROOT)} 에서 `{{scope}}` 정본 표를 못 읽었다.\n"
+        f"  머리행 `{_SCOPE_TABLE_HEADER}` 를 찾지 못했거나 표가 비었다.\n"
+        "  표를 옮겼으면 scope_values 도 함께 고쳐라 — 빈 집합에서 통과하면 문법 판정이\n"
+        "  0건 검사가 된다."
+    )
+    assert _PHASE_CLOSE_VALUE in scopes, (
+        f"`{_PHASE_CLOSE_VALUE}` 가 표에서 사라졌다.\n"
+        "  Phase 종료 판정 산출물은 재발하는 **종류**라 표에 값으로 있어야 한다 —\n"
+        "  없으면 `03_phase3-close` 부류가 전부 위법이 되고, 그것을 핀으로 덮으면\n"
+        "  은폐 목록이 넓어진다(규칙 4 ⑵)."
+    )
+
+
+def test_리뷰_산출물_어간이_문법을_지킨다() -> None:
+    """`reviews/*.md` 전수의 어간이 SKILL.md 「어간 문법」을 지키는지 본다.
+
+    **문법 이전에 태어난 어간**은 [PRE_GRAMMAR_STEMS] 에 정확 일치로 있고, 이 판정은 그
+    집합과 **정확히 같기**를 요구한다. 그래서 양방향으로 걸린다 — 문법을 어긴 새 파일이
+    생기면 지목되고, 옛 어간을 개명해 놓고 핀을 안 지우면 그것도 지목된다(낡은 핀이 남지
+    않는다). **개명을 요구하지 않는다**: 오늘 실물은 그대로 통과한다.
+
+    핀은 **넓히지 않는다.** 은폐형 성분을 가진 목록이라 규칙 4 ⑵ 의 거부권 아래 있다.
+    """
+    scopes = scope_values()
+    assert scopes, "[test_scope_정본_표가_비지_않는다] 를 먼저 보라 — 분모가 비었다."
+
+    stems = artifact_stems()
+    assert stems, (
+        f"{_REVIEWS_DIR.relative_to(_REPO_ROOT)} 에 산출물이 0건이다.\n"
+        "  분모가 비면 이 검사는 아무것도 재지 않는다(규칙 4 ⑶)."
+    )
+
+    illegal = frozenset(stem for stem in stems if not stem_is_legal(stem, scopes))
+
+    new_violations = sorted(illegal - PRE_GRAMMAR_STEMS)
+    assert not new_violations, (
+        f"문법을 어긴 어간 {len(new_violations)} 종:\n"
+        + "\n".join(f"    - {stem}" for stem in new_violations)
+        + "\n\n문법: `{phase}_{scope}[-{회차}]_{reviewer}.md`\n"
+        "  `{phase}` = 두 자리 숫자 또는 `xx` · `{scope}` = SKILL.md 정본 표의 값 ·\n"
+        "  `{회차}` = 비지 않은 꼬리(`_` 금지).\n"
+        "  새 대상이면 **표에 값을 먼저 추가**하라. 핀(PRE_GRAMMAR_STEMS)에 더하지 마라 —\n"
+        "  그 집합은 축소 전용이다."
+    )
+
+    stale_pins = sorted(PRE_GRAMMAR_STEMS - illegal)
+    assert not stale_pins, (
+        f"더 이상 위법이 아닌 핀 {len(stale_pins)} 종이 남아 있다:\n"
+        + "\n".join(f"    - {stem}" for stem in stale_pins)
+        + "\n\n개명했거나 표에 값이 생겼다 — 핀에서 그 줄을 지워라.\n"
+        "  낡은 핀을 두면 면제 목록이 실제보다 넓어진다."
+    )
+
+
+def _review_coverage_module() -> ModuleType:
+    """커버리지 강제자를 **경로로 불러온다**. 이름 실재를 소스 읽기가 아니라 import 로 잰다."""
+    path = _REPO_ROOT / "tests" / "test_review_coverage_reach.py"
+    spec = importlib.util.spec_from_file_location("_review_coverage_probe", path)
+    assert spec is not None and spec.loader is not None, f"{path} 를 모듈로 열 수 없다."
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+#: 커버리지 강제자가 반드시 갖고 있어야 하는 축의 이름. **값이 아니라 이름만** 옮긴다 —
+#: 값을 옮겨 적으면 사본이 갈린다.
+_COVERAGE_AXIS_NAMES: Final = (
+    "_declared_artifacts",
+    "_declared_roles",
+    "_path_in_rev",
+    "_REQUIRED_ROLES",
+    "_unsettled",
+    "SHIPPABLE_MODE_ENV",
+    "test_리뷰된_대기_행은_닫힘_칸이_적혀_있다",
+    "test_출하_모드에서는_미상환_대기가_0_이어야_한다",
+)
+
+
+def test_리뷰_커버리지_강제자의_축이_실재한다() -> None:
+    """**장치 밖에서 깨지게 한다** (규칙 6 · 규칙 5).
+
+    장치 **안**에 넣은 자기 단언은 그 장치와 함께 사라진다 — 상수나 테스트를 지우면 「그것이
+    있다」는 단언도 같이 지워지고 스위트는 초록으로 남는다. 그래서 커버리지 강제자의 축을
+    **다른 파일에서** 짚는다. 파일 전체가 사라지는 경우는 `.github/workflows/ci.yml` 의 경로
+    명시 스텝이 잡고, 축이 조용히 빠지는 경우를 이 검사가 잡는다.
+
+    **값을 옮겨 적지 않는다** — 이름만 본다. 값을 복제하면 그 사본이 갈리는 것이 이 하네스가
+    이미 겪은 실패다.
+    """
+    module = _review_coverage_module()
+    missing = [name for name in _COVERAGE_AXIS_NAMES if not hasattr(module, name)]
+    assert not missing, (
+        f"tests/test_review_coverage_reach.py 에서 축 {len(missing)} 개가 사라졌다: {missing}\n"
+        "  이 이름들은 커버리지·이연 장부 판정의 축이다 — 지우면 그 판정이 조용히 줄어든다.\n"
+        "  정당하게 이름을 바꿨다면 _COVERAGE_AXIS_NAMES 도 함께 고쳐라."
+    )
