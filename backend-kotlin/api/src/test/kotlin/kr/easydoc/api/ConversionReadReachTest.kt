@@ -131,7 +131,7 @@ class ConversionReadReachTest {
                 val category = MaskCategory.entries.first { it.label == label }
                 MaskedItem(category, "[[$label${index + 1}]]", Secret("가려진값${index + 1}"))
             }
-        markDone(conversionId, maskedItems = items)
+        markDone(conversionId, DoneResult(maskedItems = items))
 
         val body = bodyOf(read(token, conversionId))
         val responseItems = body[MASKED_ITEMS_PROPERTY] as List<*>
@@ -159,7 +159,7 @@ class ConversionReadReachTest {
         val token = newAccount()
         val conversionId = createDocument(token).second
         val labels = ContractSpec.schemaPropertyEnum(MASKED_ITEM_SCHEMA, CATEGORY_PROPERTY).map { "[[${it}1]]" }
-        markDone(conversionId, missingPlaceholders = labels)
+        markDone(conversionId, DoneResult(missingPlaceholders = labels))
 
         val body = bodyOf(read(token, conversionId))
 
@@ -177,12 +177,43 @@ class ConversionReadReachTest {
     fun `완료 변환의 본문이 왕복한다`() {
         val token = newAccount()
         val conversionId = createDocument(token).second
-        markDone(conversionId, easyText = "쉬운 글 초안입니다.", editedText = "담당자가 다듬은 문장입니다.")
+        markDone(conversionId, DoneResult(easyText = "쉬운 글 초안입니다.", editedText = "담당자가 다듬은 문장입니다."))
 
         val body = bodyOf(read(token, conversionId))
 
         assertThat(body[EASY_TEXT_PROPERTY]).isEqualTo("쉬운 글 초안입니다.")
         assertThat(body[EDITED_TEXT_PROPERTY]).isEqualTo("담당자가 다듬은 문장입니다.")
+    }
+
+    /**
+     * 변조 팔. **문구가 계약 예시와 같은지는 판정하지 않는다** — `InternalError` 의 `example`
+     * 과 규범 서술이 갈리고 그 판정은 `contract-keeper` 몫이다.
+     */
+    @Test
+    @DisplayName("변조된 암호문은 거절된다 — 계약이 선언한 상태 · 평문·암호문 미노출 · detail 이 입력을 담지 않는다")
+    fun `변조된 암호문은 거절된다`() {
+        val token = newAccount()
+        val conversionId = createDocument(token).second
+        val plaintext = "봉인 왕복 확인용 초안입니다."
+
+        // 결속을 깬다 — AAD 의 행 식별자만 다른 암호문을 넣는다(바이트를 뒤집는 UPDATE 는
+        // `EnvelopeColumnWriteGuardTest` 의 규약에 걸린다).
+        markDone(conversionId, DoneResult(easyText = plaintext, sealAs = UUID.randomUUID()))
+        val other = createDocument(token).second
+        markDone(other, DoneResult(easyText = "$plaintext 다른 행", sealAs = UUID.randomUUID()))
+
+        val response = read(token, conversionId)
+
+        assertDeclaredStatus(response, INTERNAL_ERROR)
+        assertThat(bodyOf(response)[DETAIL])
+            .withFailMessage("변조 응답의 detail 이 문자열이 아니다 — 구현 수단이 응답으로 샐 자리다")
+            .isInstanceOf(String::class.java)
+        assertThat(response.body())
+            .withFailMessage("변조 응답에 평문이 실렸다 — 거절 경로가 본문을 흘린다")
+            .doesNotContain(plaintext)
+        assertThat(bodyOf(read(token, other))[DETAIL])
+            .withFailMessage("두 변조 행의 detail 이 다르다 — 문구가 입력에 좌우된다는 뜻이다")
+            .isEqualTo(bodyOf(response)[DETAIL])
     }
 
     @Test
@@ -263,19 +294,17 @@ class ConversionReadReachTest {
     /** 결과 열을 채워 완료 상태로 만든다. 워커가 할 일을 SQL 로 대신한다. */
     private fun markDone(
         conversionId: UUID,
-        easyText: String? = "쉬운 글 초안입니다.",
-        editedText: String? = null,
-        maskedItems: List<MaskedItem> = emptyList(),
-        missingPlaceholders: List<String> = emptyList(),
+        result: DoneResult = DoneResult(),
     ) {
-        val easy = sealed(easyText, conversionId, EncryptedField.CONVERSION_EASY_TEXT)
-        val edited = sealed(editedText, conversionId, EncryptedField.CONVERSION_EDITED_TEXT)
+        val sealAs = result.sealAs ?: conversionId
+        val easy = sealed(result.easyText, sealAs, EncryptedField.CONVERSION_EASY_TEXT)
+        val edited = sealed(result.editedText, sealAs, EncryptedField.CONVERSION_EDITED_TEXT)
         val table =
-            maskedItems
+            result.maskedItems
                 .takeIf { it.isNotEmpty() }
                 ?.let { codec.encode(it).value }
-        val masked = sealed(table, conversionId, EncryptedField.CONVERSION_MASKED_ITEMS)
-        val labels = json.writeValueAsString(missingPlaceholders).replace("'", "''")
+        val masked = sealed(table, sealAs, EncryptedField.CONVERSION_MASKED_ITEMS)
+        val labels = json.writeValueAsString(result.missingPlaceholders).replace("'", "''")
 
         // SQL 은 **companion 의 상수**에 두고 조각만 채운다. 두 가지를 동시에 만족시켜야 한다:
         // ⑴ `scan_privacy_invariants.py` 의 논리 줄 결합기는 호출부에 놓인 여러 줄 문자열에서
@@ -428,6 +457,15 @@ class ConversionReadReachTest {
 
     private fun Map<*, *>.getValue(key: String): Any = this[key] ?: error("응답에 $key 가 없다: $this")
 
+    /** 완료 행에 채울 값. [sealAs] 는 AEAD 결속의 행 식별자 — 다르면 결속이 깨진다. */
+    private data class DoneResult(
+        val easyText: String? = "쉬운 글 초안입니다.",
+        val editedText: String? = null,
+        val maskedItems: List<MaskedItem> = emptyList(),
+        val missingPlaceholders: List<String> = emptyList(),
+        val sealAs: UUID? = null,
+    )
+
     companion object {
         /** 저장 형식의 정본. 제품 클래스다 — 사유는 클래스 KDoc. */
         private val codec = MaskedItemCodec()
@@ -444,6 +482,7 @@ class ConversionReadReachTest {
         private const val UNAUTHORIZED = 401
         private const val FORBIDDEN = 403
         private const val NOT_FOUND = 404
+        private const val INTERNAL_ERROR = 500
 
         private const val CONVERSION_SCHEMA = "ConversionResponse"
         private const val MASKED_ITEM_SCHEMA = "MaskedItemResponse"

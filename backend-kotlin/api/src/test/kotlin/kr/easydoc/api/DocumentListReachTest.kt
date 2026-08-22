@@ -18,9 +18,12 @@ import org.springframework.test.context.DynamicPropertySource
 import tools.jackson.databind.ObjectMapper
 import java.net.URI
 import java.net.http.HttpClient
+import java.net.http.HttpHeaders
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
+import java.util.Optional
 import java.util.UUID
+import javax.net.ssl.SSLSession
 
 /** `GET /documents` 의 실측 계약 — 명세 §5 의 C-R·C-I 계층. */
 @SpringBootTest(
@@ -194,6 +197,86 @@ class DocumentListReachTest {
             assertThatThrownBy { OwnershipConcealment.assertIndistinguishable("대조 프로브", base, other) }
                 .withFailMessage("공유 판정이 %s 축의 차이를 구별하지 못한다 — 그 축의 초록은 아무 뜻이 없다", axis)
                 .isInstanceOf(AssertionError::class.java)
+        }
+    }
+
+    /**
+     * 위 프로브는 `Observation` 을 직접 만든다. 실사용 여섯 자리는 `observe(response)` 를
+     * 지나므로, 그 어댑터가 뭉개지면 **두 팔이 대칭으로** 뭉개져 여섯 자리가 조용해진다.
+     */
+    @Test
+    @DisplayName("**`observe` 어댑터를 지나서도** 세 축이 구별된다 — 실사용 여섯 자리가 쓰는 갈래의 대조 프로브")
+    fun `어댑터를 지나는 판정도 세 축을 구별한다`() {
+        val base = probeResponse(NOT_FOUND, PROBE_BODY, mapOf(CONTENT_TYPE_HEADER to JSON_MEDIA_TYPE))
+
+        val differing =
+            mapOf(
+                "상태" to probeResponse(UNAUTHORIZED, PROBE_BODY, mapOf(CONTENT_TYPE_HEADER to JSON_MEDIA_TYPE)),
+                "바이트" to probeResponse(NOT_FOUND, PROBE_OTHER_BODY, mapOf(CONTENT_TYPE_HEADER to JSON_MEDIA_TYPE)),
+                "헤더" to
+                    probeResponse(
+                        NOT_FOUND,
+                        PROBE_BODY,
+                        mapOf(CONTENT_TYPE_HEADER to JSON_MEDIA_TYPE, PROBE_HEADER to PROBE_HEADER_VALUE),
+                    ),
+            )
+
+        differing.forEach { (axis, other) ->
+            assertThatThrownBy { OwnershipConcealment.assertIndistinguishable("어댑터 프로브", base, other) }
+                .withFailMessage(
+                    "`observe` 를 지나는 갈래가 %s 축의 차이를 구별하지 못한다 — 실사용 여섯 자리가 " +
+                        "그 축을 재지 않고 있다는 뜻이다",
+                    axis,
+                ).isInstanceOf(AssertionError::class.java)
+        }
+    }
+
+    /** 면제가 커지면 헤더 축의 분모가 깎인다. 상한 자신은 git 이력 라쳇이 진다. */
+    @Test
+    @DisplayName("은폐 목록(`VARIABLE_HEADERS`)이 상한 안이다 — 면제를 늘리는 편집이 조용히 통과하지 않는다")
+    fun `은폐 목록이 상한 안이다`() {
+        assertThat(OwnershipConcealment.VARIABLE_HEADERS)
+            .withFailMessage(
+                "헤더 이름 면제가 %d 개다 — 상한 %d 을 넘었다. 항목을 더하면 그 헤더로 「없는 것」과 " +
+                    "「남의 것」이 갈려도 초록이 된다. 실제 목록: %s",
+                OwnershipConcealment.VARIABLE_HEADERS.size,
+                OwnershipConcealment.MAX_VARIABLE_HEADERS,
+                OwnershipConcealment.VARIABLE_HEADERS,
+            ).hasSizeLessThanOrEqualTo(OwnershipConcealment.MAX_VARIABLE_HEADERS)
+    }
+
+    private fun probeResponse(
+        status: Int,
+        body: String,
+        headers: Map<String, String>,
+    ): HttpResponse<ByteArray> = ProbeResponse(status, body.toByteArray(Charsets.UTF_8), headers)
+
+    private class ProbeResponse(
+        private val status: Int,
+        private val bytes: ByteArray,
+        headers: Map<String, String>,
+    ) : HttpResponse<ByteArray> {
+        private val wrapped: HttpHeaders =
+            HttpHeaders.of(headers.mapValues { (_, value) -> listOf(value) }) { _, _ -> true }
+
+        override fun statusCode(): Int = status
+
+        override fun request(): HttpRequest = HttpRequest.newBuilder(PROBE_URI).build()
+
+        override fun previousResponse(): Optional<HttpResponse<ByteArray>> = Optional.empty()
+
+        override fun headers(): HttpHeaders = wrapped
+
+        override fun body(): ByteArray = bytes
+
+        override fun sslSession(): Optional<SSLSession> = Optional.empty()
+
+        override fun uri(): URI = PROBE_URI
+
+        override fun version(): HttpClient.Version = HttpClient.Version.HTTP_1_1
+
+        private companion object {
+            val PROBE_URI: URI = URI.create("http://ownership-probe.invalid/")
         }
     }
 
@@ -373,6 +456,10 @@ class DocumentListReachTest {
         /** 대조 프로브의 합성 본문 둘. 길이가 달라 바이트 축이 반드시 갈린다. */
         private const val PROBE_BODY = "{\"detail\":\"가\"}"
         private const val PROBE_OTHER_BODY = "{\"detail\":\"가나\"}"
+
+        private const val CONTENT_TYPE_HEADER = "Content-Type"
+        private const val PROBE_HEADER = "X-Ownership-Probe"
+        private const val PROBE_HEADER_VALUE = "1"
 
         private const val FORGED_TOKEN = "forged.token.value"
         private const val VALID_PASSWORD = "correct horse battery"

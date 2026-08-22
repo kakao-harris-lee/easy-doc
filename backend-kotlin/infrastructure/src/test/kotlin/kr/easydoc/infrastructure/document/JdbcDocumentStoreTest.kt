@@ -207,7 +207,7 @@ class JdbcDocumentStoreTest {
         val fileService = serviceOn(dataSource(), cipher, extractor = fixedExtractor(FILE_BODY))
 
         val accepted =
-            fileService.createFromFile(owner, "$marker-주민등록등본.docx", ByteArray(1), null, workspace)
+            fileService.createFromFile(owner, "$marker-주민등록등본.docx", ByteArray(1), null, workspace.toString())
 
         assertNoMarkerInDocumentRow(
             marker = marker,

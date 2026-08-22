@@ -6,7 +6,6 @@ import kr.easydoc.api.MIGRATE_PROFILE
 import kr.easydoc.api.auth.AuthenticatedUser
 import kr.easydoc.application.document.AcceptedUpload
 import kr.easydoc.application.document.DocumentService
-import kr.easydoc.application.document.INVALID_WORKSPACE_ID_MESSAGE
 import kr.easydoc.application.document.MISSING_FILE_PART_MESSAGE
 import kr.easydoc.core.document.MAX_UPLOAD_BYTES
 import kr.easydoc.core.exceptions.InvalidInputException
@@ -57,13 +56,15 @@ class DocumentController(private val documentService: DocumentService) {
         request: MultipartHttpServletRequest,
     ): ResponseEntity<DocumentCreatedResponse> {
         val file = request.getFile(FILE_PART) ?: throw InvalidInputException(MISSING_FILE_PART_MESSAGE)
+        // **`workspace_id` 를 여기서 파싱하지 않는다.** 인자 자리에서 파싱하면 Kotlin 의
+        // 인자 평가 순서가 계약 검사 순서를 앞질러 상한 초과 요청에 422 가 나간다.
         return accepted(
             documentService.createFromFile(
                 ownerId = user.id,
                 filename = file.originalFilename,
                 bytes = readBounded(file),
                 title = request.getParameter(TITLE_PART),
-                workspaceId = parseWorkspaceId(request.getParameter(WORKSPACE_ID_PART)),
+                rawWorkspaceId = request.getParameter(WORKSPACE_ID_PART),
             ),
         )
     }
@@ -102,13 +103,6 @@ class DocumentController(private val documentService: DocumentService) {
 
     /** 상한 **+1 바이트**까지만 읽는다. */
     private fun readBounded(file: MultipartFile): ByteArray = file.inputStream.use { it.readNBytes(BOUNDED_READ_BYTES) }
-
-    /** 폼의 `workspace_id` 를 식별자로 바꾼다. */
-    private fun parseWorkspaceId(value: String?): UUID? {
-        if (value.isNullOrEmpty()) return null
-        return runCatching { UUID.fromString(value) }
-            .getOrElse { throw InvalidInputException(INVALID_WORKSPACE_ID_MESSAGE) }
-    }
 
     /** **202 다(201 이 아니다)** — 자원은 생겼지만 변환은 아직 시작 전이다. */
     private fun accepted(upload: AcceptedUpload): ResponseEntity<DocumentCreatedResponse> =

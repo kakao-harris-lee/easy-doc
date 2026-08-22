@@ -36,7 +36,7 @@ class DocumentListContractTest {
     private val json = ObjectMapper()
 
     @Test
-    @DisplayName("DL-1 200 · 사적 헤더 2종(값·**개수**) · 최상위 키가 정확히 DocumentListResponse.required (X-D1 하한선)")
+    @DisplayName("DL-1 200 · 사적 헤더 2종의 **값과 부착 개수** · 최상위 키가 정확히 DocumentListResponse.required")
     fun `목록 성공 응답이 계약과 같다`() {
         val response = list(newOwner())
 

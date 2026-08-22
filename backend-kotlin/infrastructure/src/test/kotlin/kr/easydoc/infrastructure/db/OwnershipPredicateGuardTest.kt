@@ -34,6 +34,20 @@ class OwnershipPredicateGuardTest {
             .isEqualTo(EXPECTED_UNGUARDED)
     }
 
+    /** 열거 핀이 **자라는 것**을 막는다 — 「새 owner-less SQL + 핀 한 줄」이 통과하던 자리다. */
+    @Test
+    @DisplayName("소유 술어 없는 문장의 **개수 상한** — 핀을 늘리는 편집이 조용히 통과하지 않는다")
+    fun `미방어 문장 개수가 상한 안이다`() {
+        assertThat(EXPECTED_UNGUARDED)
+            .withFailMessage(
+                "미방어 문장 열거가 %d 개다 — 상한 %d 을 넘었다. 늘어난 문장에 소유 술어를 " +
+                    "붙이는 것이 답이고, 상한을 올리는 것은 이 가드가 승인하는 소유권 우회를 " +
+                    "늘리는 일이다(상한은 이력 라쳇이 지킨다).",
+                EXPECTED_UNGUARDED.size,
+                MAX_UNGUARDED_STATEMENTS,
+            ).hasSizeLessThanOrEqualTo(MAX_UNGUARDED_STATEMENTS)
+    }
+
     @Test
     @DisplayName("**빈 분모는 통과가 아니다** — 대상 문장을 하나도 못 찾으면 빨강이다")
     fun `빈 분모는 통과가 아니다`() {
@@ -404,5 +418,8 @@ class OwnershipPredicateGuardTest {
                 "$DOCUMENT/JdbcDocumentRepository.kt | UPDATE [documents]",
                 "$DOCUMENT/JdbcDocumentRepository.kt | INSERT [documents]",
             )
+
+        /** [EXPECTED_UNGUARDED] 의 **개수 상한**. 여유가 0 이고 상향은 이력 라쳇이 막는다. */
+        const val MAX_UNGUARDED_STATEMENTS = 7
     }
 }

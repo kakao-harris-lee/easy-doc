@@ -43,16 +43,21 @@ class DocumentService(
     ): AcceptedUpload {
         if (text.isBlank()) throw InvalidInputException(EMPTY_BODY_MESSAGE)
         // 제목을 안 주면 대체 제목이다. 본문은 제목이 되지 않는다.
-        return store(ownerId, text, SourceFormat.TEXT, title, workspaceId)
+        return store(ownerId, text, SourceFormat.TEXT, title) { workspaceId }
     }
 
-    /** 업로드 파일에서 본문을 뽑아 문서를 만들고 변환을 요청한다. */
+    /**
+     * 업로드 파일에서 본문을 뽑아 문서를 만들고 변환을 요청한다.
+     *
+     * **작업 공간 식별자를 파싱하지 않은 원문으로 받는다** — 인자 자리에서 파싱하면 언어의
+     * 인자 평가 순서가 계약 검사 순서를 앞지른다.
+     */
     fun createFromFile(
         ownerId: UUID,
         filename: String?,
         bytes: ByteArray,
         title: String?,
-        workspaceId: UUID?,
+        rawWorkspaceId: String?,
     ): AcceptedUpload {
         // 크기 판정이 추출보다 먼저다 — 계약이 정한 순서이고, 상한을 넘는 바이트를 파서에
         // 넘기지 않는 것이 압축 폭탄 방어의 첫 단계이기도 하다(I-10).
@@ -61,7 +66,7 @@ class DocumentService(
         // 빈 docx·hwpx 는 예외 없이 빈 문자열을 돌려준다 — 빈 문서 판정은 추출 결과로 한다.
         if (extracted.text.isBlank()) throw DocumentExtractionException(NO_TEXT_IN_DOCUMENT_MESSAGE)
         // `filename` 은 여기서 끝난다 — 추출기가 형식을 가리는 데 썼고, 그 아래로 흐르지 않는다.
-        return store(ownerId, extracted.text, extracted.format, title, workspaceId)
+        return store(ownerId, extracted.text, extracted.format, title) { parseWorkspaceId(rawWorkspaceId) }
     }
 
     /** 내 문서 목록을 최신순으로 돌려준다. 작업 공간을 주면 그 안만 본다. */
@@ -89,16 +94,23 @@ class DocumentService(
         }
     }
 
-    /** 길이를 판정하고, 한 트랜잭션 안에서 **소유권 확인 → 문서 → 변환 → 작업**을 만든다. */
+    /**
+     * 길이를 판정하고, 한 트랜잭션 안에서 **소유권 확인 → 문서 → 변환 → 작업**을 만든다.
+     *
+     * [requestedWorkspaceId] 는 **지연 평가다** — 형식 판정의 자리를 아래 한 줄로 못박는다.
+     */
     private fun store(
         ownerId: UUID,
         text: String,
         sourceFormat: SourceFormat,
         givenTitle: String?,
-        workspaceId: UUID?,
+        requestedWorkspaceId: () -> UUID?,
     ): AcceptedUpload {
         val charCount = charCountOf(text)
         if (charCount > MAX_CONVERTIBLE_CHARS) throw InvalidInputException(BODY_TOO_LONG_MESSAGE)
+
+        // 작업 공간 단계 — 형식(422) 다음 소유권(404). 형식은 여기, 소유권은 트랜잭션 안이다.
+        val workspaceId = requestedWorkspaceId()
 
         return transaction.inTransaction {
             val resolvedWorkspaceId = resolveWorkspaceId(ownerId, workspaceId)
@@ -136,6 +148,13 @@ class DocumentService(
                 charCount = charCount,
             )
         }
+    }
+
+    /** 폼의 `workspace_id` 를 식별자로 바꾼다. 빈 문자열·부재는 「지정 없음」이다. */
+    private fun parseWorkspaceId(value: String?): UUID? {
+        if (value.isNullOrEmpty()) return null
+        return runCatching { UUID.fromString(value) }
+            .getOrElse { throw InvalidInputException(INVALID_WORKSPACE_ID_MESSAGE) }
     }
 
     /** 문서를 담을 작업 공간을 정한다. 지정이 없으면 기본(가장 먼저 만든) 공간이다. */

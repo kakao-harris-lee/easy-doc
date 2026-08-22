@@ -40,6 +40,18 @@ object UploadFixtures {
         return padded
     }
 
+    /** 본문 글자 수가 [chars] 이상인 정상 docx. **업로드 상한에는 걸리지 않는다.** */
+    fun docxWithBodyChars(chars: Int): ByteArray {
+        val entries = readEntries(sampleDocx())
+        val document =
+            requireNotNull(entries[DOCUMENT_PART]) { "sample.docx 에 $DOCUMENT_PART 가 없다" }
+                .toString(Charsets.UTF_8)
+        val bodyEnd = document.indexOf(BODY_END)
+        require(bodyEnd >= 0) { "$DOCUMENT_PART 에 $BODY_END 가 없다 — 단락을 끼울 자리를 찾지 못했다" }
+        val paragraph = "<w:p><w:r><w:t>${LONG_TEXT_FILLER.repeat(chars)}</w:t></w:r></w:p>"
+        return rebuild(entries, document.substring(0, bodyEnd) + paragraph + document.substring(bodyEnd))
+    }
+
     /** 압축 해제량이 예산을 넘는 zip (DC-15 의 압축 폭탄 갈래). */
     fun zipOverBudget(uncompressedBytes: Int): ByteArray {
         val sink = ByteArrayOutputStream()
@@ -149,6 +161,10 @@ object UploadFixtures {
     private const val DOCUMENT_PART = "word/document.xml"
     private const val HWPX_SECTION_PART = "Contents/section0.xml"
     private const val DECLARATION_END = "?>"
+    private const val BODY_END = "</w:body>"
+
+    /** XML 이스케이프가 필요 없는 채움 글자. */
+    private const val LONG_TEXT_FILLER = "가"
 
     /** `<!--` + `-->` 일곱 바이트. 주석 자체가 차지하는 몫이라 채움 길이에서 뺀다. */
     private const val COMMENT_OVERHEAD = 7

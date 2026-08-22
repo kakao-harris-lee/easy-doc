@@ -53,7 +53,7 @@ class ConversionReadContractTest {
     private val json = ObjectMapper()
 
     @Test
-    @DisplayName("CR-1 200 · 사적 헤더 2종(값·**개수**) · 최상위 키가 정확히 ConversionResponse.required (X-D1 하한선 셋째 자리)")
+    @DisplayName("CR-1 200 · 사적 헤더 2종의 **값과 부착 개수** · 최상위 키가 정확히 ConversionResponse.required")
     fun `완료 변환 조회가 계약과 같다`() {
         val owner = newOwner()
         val conversionId = completedConversion(owner)
@@ -213,6 +213,7 @@ class ConversionReadContractTest {
         return id
     }
 
+    /** 값·부착 개수만 잰다(X-D2b). 하한선(X-D1)은 `PrivateHeaderFloorCensusTest` 가 진다. */
     private fun assertPrivateHeaders(response: MockHttpServletResponse) {
         ContractSpec.globalHeaderValues().forEach { (header, value) ->
             assertThat(response.getHeaders(header))

@@ -317,7 +317,7 @@ class AuthContractTest {
         }
     }
 
-    /** X-D1 하한선 + X-D2b 중복 부착 부재. 값과 개수를 모두 계약에서 읽어 본다. */
+    /** 값·부착 개수만 잰다(X-D2b). 하한선(X-D1)은 `PrivateHeaderFloorCensusTest` 가 진다. */
     private fun assertPrivateHeaders(
         response: MockHttpServletResponse,
         path: String,

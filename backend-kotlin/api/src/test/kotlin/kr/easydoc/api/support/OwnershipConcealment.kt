@@ -5,8 +5,14 @@ import java.net.http.HttpResponse
 
 /** 소유권 은닉의 성질 P1 — 「응답 구별 불가」의 판정 한 벌. */
 object OwnershipConcealment {
-    /** 응답마다 값이 달라지는 헤더 — 이름 집합 비교에서 뺀다. */
+    /**
+     * 응답마다 값이 달라지는 헤더 — 이름 집합 비교에서 뺀다. **면제 목록이라 커지면 이
+     * 판정이 보는 것이 줄어들고**, 그 증가는 [MAX_VARIABLE_HEADERS] 가 드러낸다.
+     */
     val VARIABLE_HEADERS: Set<String> = setOf("date")
+
+    /** [VARIABLE_HEADERS] 의 **개수 상한**. 여유가 0 이고 상향은 이력 라쳇이 막는다. */
+    const val MAX_VARIABLE_HEADERS = 1
 
     /** 한 응답에서 P1 이 보는 것 셋. 판정을 응답 객체에서 떼어 낸다. */
     class Observation(

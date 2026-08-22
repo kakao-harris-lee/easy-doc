@@ -1,5 +1,6 @@
 package kr.easydoc.api
 
+import kr.easydoc.api.support.ContractCheckOrder
 import kr.easydoc.api.support.ContractSpec
 import kr.easydoc.api.support.MultipartBody
 import kr.easydoc.api.support.OwnershipConcealment
@@ -133,6 +134,91 @@ class DocumentEndpointReachTest {
             .isEqualTo(ContractSpec.responseExampleDetail(PAYLOAD_TOO_LARGE_COMPONENT, TOO_LARGE_EXAMPLE))
 
         assertPrivateHeaders(response)
+    }
+
+    /** **복합 결함의 우선순위.** 기대값은 계약 검사 순서에서 유도한다. */
+    @Test
+    @DisplayName("DC-26 상한 초과 파일 + 형식이 잘못된 작업 공간 식별자 → **검사 순서에서 앞선 단계의 상태**(413·422 아님)")
+    fun `복합 결함에서 앞선 검사가 이긴다`() {
+        assertThat(ContractCheckOrder.declaresCompound(DOCUMENTS_PATH, POST))
+            .withFailMessage(
+                "계약이 검사 순서가 복합 결함에도 적용된다고 적지 않았다 — 이 케이스의 근거가 사라졌다. " +
+                    "조항이 사라지면 이 단언도 함께 무너져야 한다(N-42)",
+            ).isTrue()
+
+        val expected = earlierStageStatus(SIZE_STAGE, WORKSPACE_STAGE)
+        val token = newAccount()
+        val oversized = ByteArray(ContractSpec.inputLimit(MAX_UPLOAD_BYTES_KEY) + 1) { OVERSIZED_FILLER }
+
+        val response =
+            upload(
+                token,
+                MultipartBody()
+                    .file(FILE_PART, "안내문.docx", oversized)
+                    .value(WORKSPACE_ID_PART, SUBMITTED_BAD_WORKSPACE),
+            )
+
+        assertDeclaredStatus(response, expected)
+        assertThat(response.body())
+            .withFailMessage("제출한 작업 공간 식별자가 응답에 실렸다")
+            .doesNotContain(SUBMITTED_BAD_WORKSPACE)
+    }
+
+    /** 둘 다 422 라 상태로는 순서가 안 보인다 — 어느 단계의 `detail` 이 나갔는지까지 본다. */
+    @Test
+    @DisplayName("DC-27 추출 실패·본문 길이 초과가 각각 형식 오류를 이긴다 — 상태가 같으므로 `detail` 로 가른다")
+    fun `같은 상태끼리 겹친 복합 결함도 앞선 검사가 이긴다`() {
+        val token = newAccount()
+
+        val extraction =
+            upload(
+                token,
+                MultipartBody()
+                    .file(FILE_PART, "안내문.txt", "본문".toByteArray(Charsets.UTF_8))
+                    .value(WORKSPACE_ID_PART, SUBMITTED_BAD_WORKSPACE),
+            )
+        assertDeclaredStatus(extraction, earlierStageStatus(EXTRACTION_STAGE, WORKSPACE_STAGE))
+        assertThat(bodyOf(extraction)[DETAIL])
+            .withFailMessage(
+                "추출 단계보다 작업 공간 형식 단계가 먼저 나갔다 — detail 이 추출 거절의 것이 아니다: %s",
+                bodyOf(extraction)[DETAIL],
+            ).isEqualTo(
+                ContractSpec.pathExampleDetail(DOCUMENTS_PATH, POST, UNPROCESSABLE, UNSUPPORTED_FORMAT_EXAMPLE),
+            )
+
+        val tooLong =
+            upload(
+                token,
+                MultipartBody()
+                    .file(FILE_PART, "안내문.docx", UploadFixtures.docxWithBodyChars(OVER_BODY_LIMIT_CHARS))
+                    .value(WORKSPACE_ID_PART, SUBMITTED_BAD_WORKSPACE),
+            )
+        assertDeclaredStatus(tooLong, earlierStageStatus(BODY_LENGTH_STAGE, WORKSPACE_STAGE))
+        assertThat(bodyOf(tooLong)[DETAIL])
+            .withFailMessage(
+                "본문 길이 단계보다 작업 공간 형식 단계가 먼저 나갔다 — detail 이 길이 초과의 것이 아니다: %s",
+                bodyOf(tooLong)[DETAIL],
+            ).isEqualTo(ContractSpec.pathExampleDetail(DOCUMENTS_PATH, POST, UNPROCESSABLE, TOO_LONG_BODY_EXAMPLE))
+    }
+
+    /** 두 단계 중 **앞선 것의 상태 코드**. 계약이 순서를 바꾸면 이 값이 따라 바뀐다. */
+    private fun earlierStageStatus(
+        first: String,
+        second: String,
+    ): Int {
+        val stages = ContractCheckOrder.stages(DOCUMENTS_PATH, POST)
+        val firstIndex = stages.indexOfFirst { it.label.contains(first) }
+        val secondIndex = stages.indexOfFirst { it.label.contains(second) }
+        assertThat(listOf(firstIndex, secondIndex))
+            .withFailMessage(
+                "검사 순서 목록에서 단계를 찾지 못했다 — %s=%d · %s=%d · 읽은 목록 %s",
+                first,
+                firstIndex,
+                second,
+                secondIndex,
+                stages,
+            ).doesNotContain(-1)
+        return stages[minOf(firstIndex, secondIndex)].status
     }
 
     @Test
@@ -472,6 +558,18 @@ class DocumentEndpointReachTest {
 
         /** 제출값 비반향을 재는 값. UUID 가 아니면 무엇이든 된다. */
         private const val SUBMITTED_BAD_WORKSPACE = "not-a-uuid-1234"
+
+        /** 단계를 짚는 **표식**. 상태 코드는 적지 않는다. */
+        private const val SIZE_STAGE = "파일 크기"
+        private const val EXTRACTION_STAGE = "추출"
+        private const val BODY_LENGTH_STAGE = "본문 길이"
+        private const val WORKSPACE_STAGE = "작업 공간"
+
+        private const val UNSUPPORTED_FORMAT_EXAMPLE = "unsupported_format"
+        private const val TOO_LONG_BODY_EXAMPLE = "too_long"
+
+        /** 본문 길이 단계에 닿게 하는 글자 수. */
+        private const val OVER_BODY_LIMIT_CHARS = 5_000
 
         /** 상한 초과 파일을 채우는 바이트. 내용은 판정에 쓰이지 않는다(크기 검사가 먼저다). */
         private const val OVERSIZED_FILLER: Byte = 0x41

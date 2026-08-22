@@ -135,13 +135,16 @@ from __future__ import annotations
 
 import ast
 import functools
+import inspect
 import os
 import re
 import shlex
 import subprocess
 import time
 import warnings
+from collections.abc import Callable
 from datetime import UTC, datetime
+from decimal import Decimal
 from pathlib import Path
 from xml.etree import ElementTree
 
@@ -261,6 +264,7 @@ TEST_CLASSES: tuple[str, ...] = (
     "kr.easydoc.api.ParserNodeRegistryTest",
     "kr.easydoc.api.PasswordHashLogLeakReachTest",
     "kr.easydoc.api.PasswordHashingBackpressureReachTest",
+    "kr.easydoc.api.PrivateHeaderFloorCensusTest",
     "kr.easydoc.api.PrivateResponseHeadersContractTest",
     "kr.easydoc.api.PrivateResponseHeadersReachTest",
     "kr.easydoc.api.RequestFieldConstraintLayerTest",
@@ -360,7 +364,7 @@ TEST_CLASSES: tuple[str, ...] = (
 #: Phase 안에서 하한과 실측의 간격이 **자란다.** 그래서 이 정확 일치 축은 상환 규약과 함께
 #: 쓸 때 **덜** 필요해지는 게 아니라 **더** 필요해진다. 둘은 중복이 아니다:
 #: 하한은 「얼마 아래로는 못 간다」, 이 상수는 「한 개도 조용히 못 준다」.
-TEST_CLASS_COUNT = 111
+TEST_CLASS_COUNT = 112
 
 #: 선언 개수의 **하한**. 「목록과 개수가 서로 맞는가」(두 수기 선언 사이의 일관성)가 아니라
 #: "그 수가 **얼마 아래로는 내려갈 수 없는가**"를 본다. 게이트 27 codex C-5 가 지적한 것이
@@ -828,8 +832,72 @@ RATCHET_TABLE_PINS: tuple[tuple[str, str], ...] = (
 #:
 #: 방향은 손으로 적지 않는다 — [_bound_direction] 이 **AST 로** 판정하고,
 #: `test_이_파일의_수치_상수가_전부_분류돼_있다` 가 그 판정과 이 표를 대조한다.
+#: **Kotlin 쪽 항목의 방향은 [_bound_direction] 이 판정하지 않는다** — 그 판정기는 이
+#: 파일의 AST 만 본다. Kotlin 상수는 사람이 방향을 읽어 여기 넣고, 그 판단은 「그 상수가
+#: 커지면 보호가 줄어드는가」 하나다. 아래 셋은 전부 그렇다:
+#: 예산은 커지면 느린 검사를 통과시키고, 미방어 문장 상한은 커지면 소유권 우회 SQL 을
+#: 더 받아 주며, 은폐 헤더 상한은 커지면 「응답 구별 불가」의 분모를 깎는다.
 RATCHET_CEILING_PINS: tuple[tuple[str, str], ...] = (
     (THIS_TEST_PATH, "SCANNER_TIME_BUDGET_SECONDS"),
+    # 2026-08-22 (게이트 29 S-5): 지키는 것이 「테스트 개수」가 아니라 **소유권 우회 SQL
+    #   문장의 개수**다. 그 목록은 정확 열거 핀이라 「새 owner-less SELECT + 핀 한 줄」이
+    #   전건 초록이었다(실측: 게이트 281 passed · `:infrastructure:test` BUILD SUCCESSFUL).
+    (
+        "backend-kotlin/infrastructure/src/test/kotlin/kr/easydoc/infrastructure/db/"
+        "OwnershipPredicateGuardTest.kt",
+        "MAX_UNGUARDED_STATEMENTS",
+    ),
+    # 2026-08-22 (게이트 29 S-2): `VARIABLE_HEADERS` 는 **은폐형**(면제 목록)이고 규칙 4 ⑵
+    #   가 은폐형 확대를 금지한다. 목록을 넓히지 않고 **증가를 드러내는** 쪽으로 갔다 —
+    #   상한을 이력에 걸면 항목을 더하는 편집이 이력 대조에서 막힌다.
+    (
+        "backend-kotlin/api/src/test/kotlin/kr/easydoc/api/support/OwnershipConcealment.kt",
+        "MAX_VARIABLE_HEADERS",
+    ),
+)
+
+#: **실수 상한 라쳇 핀** — [RATCHET_CEILING_PINS] 와 방향은 같고 **읽는 방법이 다르다.**
+#:
+#: ## 왜 표를 따로 두는가
+#:
+#: [_scalar_in] 은 `(\d+)` 만 읽는다. `= 1.5` 를 먹이면 **`1` 을 읽는다** — 즉 1.5 → 1.9
+#: 처럼 소수부만 올리는 편집이 그 표에서 **조용히 통과한다**(정수부가 그대로다). 방향이
+#: 같아도 판정기가 다르므로 한 표에 섞으면 절반이 거짓 초록이 된다.
+#:
+#: ## 무엇이 여기 있는가 — `MAX_TIMING_RATIO` 사본 넷
+#:
+#: 게이트 29 의 **유일한 완전 합의**(Claude ⑵ · codex medium 마지막 문장): X5 가 상한 라쳇
+#: 기제를 만들고 항목을 하나 넣는 동안, **바로 그 회차에 거짓 양성이 관측된 문턱**
+#: (소유권·로그인·복호화의 응답 시간 비 1.5)은 어느 라쳇 표에도 없었다.
+#:
+#: ## 사본 넷을 합치지 않은 이유 (2026-08-22 판정)
+#:
+#: 합치는 쪽을 버렸다. 근거 둘 —
+#: ⑴ **영향 범위.** 한 곳으로 모으면 한 낱말 편집이 네 엔드포인트의 시간 축을 동시에
+#:    무르게 한다. 그것이 S-2 가 지적한 형태(X1-1 합침으로 영향 범위가 네 배)이고, 같은
+#:    회차에 그 형태를 차단으로 올려 두고 여기서 재현할 수는 없다.
+#: ⑵ **모듈 경계.** 사본 넷 중 하나(`AesGcmContentCipherTest`)는 `infrastructure` 이고
+#:    셋은 `api` 다. 공유 상수를 두려면 **새 테스트 픽스처 모듈**이 필요하고, 그것은 이
+#:    항목이 요구하지 않는 구조 변경이다.
+#: 대신 **넷을 각각 핀한다** — 한 사본만 올리는 편집도 그 사본의 이력에서 막힌다.
+RATCHET_CEILING_DECIMAL_PINS: tuple[tuple[str, str], ...] = (
+    (
+        "backend-kotlin/api/src/test/kotlin/kr/easydoc/api/AuthEndpointReachTest.kt",
+        "MAX_TIMING_RATIO",
+    ),
+    (
+        "backend-kotlin/api/src/test/kotlin/kr/easydoc/api/DocumentDeleteReachTest.kt",
+        "MAX_TIMING_RATIO",
+    ),
+    (
+        "backend-kotlin/api/src/test/kotlin/kr/easydoc/api/WorkspaceEndpointReachTest.kt",
+        "MAX_TIMING_RATIO",
+    ),
+    (
+        "backend-kotlin/infrastructure/src/test/kotlin/kr/easydoc/infrastructure/crypto/"
+        "AesGcmContentCipherTest.kt",
+        "MAX_TIMING_RATIO",
+    ),
 )
 
 #: **이 파일의 수치 상수 중 라쳇이 아닌 것** — 방향이 **없는** 것들이다.
@@ -893,6 +961,68 @@ TIMED_SCANNERS: tuple[str, ...] = (
     "_discovered_test_classes",
     "_kotlin_declared_names",
     "_named_enforcer_census",
+)
+
+#: **캐시가 걸려 있어야 하는 함수** — [SCANNER_TIME_BUDGET_SECONDS] 축이 **원리적으로 못
+#: 보는 절반**을 여기서 잡는다 (게이트 29 G-1).
+#:
+#: ## 왜 예산 축으로는 안 되는가
+#:
+#: `e2038dd` 가 고친 사고는 **두 부분**이었고 커밋 메시지가 스스로 그렇게 적는다:
+#: ⑴ 한 `findall` 이 205.9s — 예산 축이 잡는다. ⑵ 세 스캐너에 **캐시가 없어서 전수 스캔이
+#: 두 번 돌았다** — 예산 축은 캐시를 **일부러 비우고 각 스캐너를 한 번** 부른 시간의 합을
+#: 재므로, `@functools.cache` 한 줄을 지워도 **초록이다**. 실측(2026-08-22, 고치기 전):
+#: `_kotlin_main_sources` 의 데코레이터 한 줄을 지우고 `uv run pytest tests/…gate_reach.py`
+#: → **281 passed · exit 0 · 지목 없음.** 656.74s 중 205.9s 만 설명되던 잔여가 그 자리다.
+#:
+#: ## 목록이 아니라 **정확 분할**이다
+#:
+#: 이 표는 「여기 적힌 것만 본다」가 아니다 — [_functools_cached_functions] 가 이 파일의
+#: AST 에서 `functools.cache`/`lru_cache` 가 걸린 최상위 함수를 **전수로** 뽑고, 그 집합과
+#: 이 선언이 **양방향으로 같아야** 한다. 그래서 데코레이터를 지우면 분할이 어긋나 빨개지고,
+#: 데코레이터와 이 선언을 **함께** 지우면 아래 이름 튜플 이력 축이 잡는다(2층).
+#:
+#: ## 여기 없는 것 — `_kotlin_test_sources`
+#:
+#: [TIMED_SCANNERS] 다섯 중 하나는 오늘 캐시가 없다. **더하지 않았다** — 캐시를 새로 붙이는
+#: 것은 성능 개선이고, 이 회차의 일은 「있던 캐시가 조용히 사라지는 것」을 막는 것이다.
+#: 그 비대칭을 적어 두는 이유는, 적지 않으면 다음 사람이 이 표를 「전수」로 읽기 때문이다.
+CACHED_SCANNERS: tuple[str, ...] = (
+    "_source_pair",
+    "_discovered_test_classes",
+    "_kotlin_main_sources",
+    "_kotlin_declared_names",
+    "_named_enforcer_census",
+)
+
+#: **평평한 이름 튜플의 라쳇 핀** — 문자열 튜플 자신이 줄어드는 편집을 이력으로 막는다
+#: (게이트 29 G-2 · β-08 의 **재귀 형태**).
+#:
+#: ## 무엇이 빈자리였나 (실측 2026-08-22, 고치기 전)
+#:
+#: [TIMED_SCANNERS] 와 [RATCHET_PIN_TABLES] 는 **문자열 튜플**이라 정수 인구조사
+#: (`_module_int_constants`) 밖이고, 세 라쳇 표(스칼라·표·상한) 어디에도 없었다. 그래서
+#: 한 낱말을 지우면 — 스캐너 하나가 시간 축 밖으로 나가거나 상한 표의 이력 대조가
+#: 사라지는데 — 저장소 전체에서 빨개지는 것이 **없었다**: 두 항목을 동시에 지우고
+#: **280 passed · exit 0**(줄어든 1 은 파라미터화 케이스가 하나 사라진 것이고, 그 감소
+#: 자체를 재는 것이 없었다).
+#:
+#: ## 상호 보호가 닫히는 방식
+#:
+#: - `RATCHET_PIN_TABLES`(평평) ← 이 표가 지킨다.
+#: - `RATCHET_NAME_TUPLE_PINS`(2-튜플) ← 자기 이름이 `RATCHET_PIN_TABLES` 안에 있어
+#:   기존 `test_라쳇_핀_목록이_이력에서_줄지_않았다` 가 지킨다.
+#: 즉 어느 한쪽을 비우면 다른 쪽이 신고한다. 새 면제 조항을 만들지 않고(은폐형 회피)
+#: 분모를 **git 이력**에 두는 것은 β-08 이 고른 것과 같은 처방이다.
+#:
+#: ## 여기 없는 것 — `FLOOR_TEST_CLASSES`
+#:
+#: 그것도 평평한 문자열 튜플이고 같은 성질이지만 **리더 핀**이라 이 회차가 건드리지
+#: 않았다. 편입 여부는 리더 판정이고, 사유는 산출물에 보고했다.
+RATCHET_NAME_TUPLE_PINS: tuple[tuple[str, str], ...] = (
+    (THIS_TEST_PATH, "TIMED_SCANNERS"),
+    (THIS_TEST_PATH, "CACHED_SCANNERS"),
+    (THIS_TEST_PATH, "RATCHET_PIN_TABLES"),
 )
 
 
@@ -2153,6 +2283,86 @@ def _scalar_in(text: str, name: str) -> int | None:
     return int(match.group(1)) if match else None
 
 
+def _decimal_in(text: str, name: str) -> Decimal | None:
+    """`= 1.5` 같은 **실수** 상수를 읽는다. [_scalar_in] 의 실수 갈래다.
+
+    `Decimal` 인 이유: 이력 최솟값과의 비교가 `1.5 < 1.51` 처럼 소수 두 자리에서 갈릴 수
+    있고, 부동소수로 읽으면 그 비교가 표현 오차에 좌우된다. 문자열 그대로 십진수로 재면
+    그 자리가 없어진다.
+
+    정수 표기(`= 2`)도 받는다 — 사람이 `1.5` 를 `2` 로 고치는 편집을 「실수가 아니라서
+    못 읽었다」로 통과시키면 이 축이 겨눈 것을 그대로 놓친다.
+    """
+    match = re.search(rf"\b{re.escape(name)}\s*=\s*(\d+(?:\.\d+)?)", text)
+    return Decimal(match.group(1)) if match else None
+
+
+def _name_tuple_in(text: str, name: str) -> set[str]:
+    """**평평한 문자열 튜플**을 AST 로 읽는다 — `NAME: tuple[str, ...] = ("a", "b")`.
+
+    [_pin_tuples_in] 의 형제다. 저쪽은 2-튜플 표를, 이쪽은 이름 목록을 읽는다.
+    문자열이 아닌 원소(이름 참조 등)는 무시한다 — 오늘 그런 항목이 없고, 생기면 그
+    항목만 대조에서 빠지는 것이 아니라 이력 쪽에서도 빠지므로 판정이 기울지 않는다.
+
+    파싱할 수 없는 리비전은 빈 집합이다. 처분은 호출자가 「이력에서 못 찾았다」로 한다.
+    """
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        return set()
+
+    for node in tree.body:
+        if isinstance(node, ast.Assign):
+            targets: list[ast.expr] = list(node.targets)
+        elif isinstance(node, ast.AnnAssign):
+            targets = [node.target]
+        else:
+            continue
+        if not any(isinstance(t, ast.Name) and t.id == name for t in targets):
+            continue
+        value = node.value
+        if not isinstance(value, (ast.Tuple, ast.List)):
+            return set()
+        return {
+            element.value
+            for element in value.elts
+            if isinstance(element, ast.Constant) and isinstance(element.value, str)
+        }
+    return set()
+
+
+def _functools_cached_functions(path: str) -> set[str]:
+    """`functools.cache`·`functools.lru_cache` 가 걸린 **최상위 함수** 인구조사 (G-1).
+
+    데코레이터를 정규식으로 세지 않는 이유는 [_module_int_constants] 와 같다 — 주석 처리된
+    데코레이터와 문자열 안의 모양을 가리지 못한다. `ast` 는 그 함정을 전부 없앤다.
+
+    받는 형태: `@functools.cache` · `@functools.lru_cache` · `@functools.lru_cache(...)`
+    그리고 `from functools import cache` 뒤의 맨 이름 `@cache`.
+    """
+    tree = ast.parse((REPO_ROOT / path).read_text(encoding="utf-8"))
+    cached: set[str] = set()
+    for node in tree.body:
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        for decorator in node.decorator_list:
+            target = decorator.func if isinstance(decorator, ast.Call) else decorator
+            named = (
+                target.attr
+                if isinstance(target, ast.Attribute)
+                else target.id
+                if isinstance(target, ast.Name)
+                else None
+            )
+            if named in _CACHE_DECORATORS:
+                cached.add(node.name)
+    return cached
+
+
+#: 캐시 데코레이터의 이름. `functools` 경유든 맨 이름이든 같게 판정한다.
+_CACHE_DECORATORS = frozenset({"cache", "lru_cache"})
+
+
 def _table_in(text: str, name: str) -> dict[str, int]:
     block = re.search(rf"{re.escape(name)}[^=]*=\s*\{{(.*?)\n\}}", text, re.DOTALL)
     if block is None:
@@ -2452,7 +2662,18 @@ def _pin_tuples_in(text: str, name: str) -> set[tuple[str, str]]:
     return found
 
 
-RATCHET_PIN_TABLES = ("RATCHET_SCALAR_PINS", "RATCHET_CEILING_PINS", "RATCHET_TABLE_PINS")
+#: 이력 대조를 받는 **2-튜플 핀 표**의 이름. 새 핀 표를 만들면서 여기 적지 않으면 그 표는
+#: 「항목을 조용히 빼도 되는」 상태가 된다 — β-08 이 고친 것이 정확히 그 자리다.
+#:
+#: **이 튜플 자신은 [RATCHET_NAME_TUPLE_PINS] 가 지킨다**(게이트 29 G-2). 그 표의 항목은
+#: 다시 이 목록의 `RATCHET_NAME_TUPLE_PINS` 항목이 지키므로 두 표가 서로를 닫는다.
+RATCHET_PIN_TABLES = (
+    "RATCHET_SCALAR_PINS",
+    "RATCHET_CEILING_PINS",
+    "RATCHET_CEILING_DECIMAL_PINS",
+    "RATCHET_TABLE_PINS",
+    "RATCHET_NAME_TUPLE_PINS",
+)
 
 
 @pytest.mark.parametrize("table", RATCHET_PIN_TABLES)
@@ -2505,6 +2726,170 @@ def test_라쳇_핀_목록이_이력에서_줄지_않았다(table: str) -> None:
         "  정말 지워야 한다면 그 상수가 사라졌기 때문일 것이다 — 그러면 이 목록과 상수를\n"
         "  **같은 커밋에서** 지우고 사유를 커밋 메시지에 남겨라(이력은 고쳐지지 않는다)."
     )
+
+
+@pytest.mark.parametrize(
+    "pin",
+    RATCHET_CEILING_DECIMAL_PINS,
+    ids=lambda pin: f"{Path(pin[0]).stem}::{pin[1]}",
+)
+def test_실수_상한_상수가_이력_최솟값보다_높지_않다(pin: tuple[str, str]) -> None:
+    """**실수 문턱의 상한 라쳇** — [RATCHET_CEILING_PINS] 가 소수부를 못 읽는 자리를 잇는다.
+
+    ## 왜 정수 표에 넣지 않았나 (실측)
+
+    [_scalar_in] 의 `(\\d+)` 는 `MAX_TIMING_RATIO = 1.5` 에서 **`1` 을 읽는다.** 그 표에
+    넣으면 1.5 → 1.9 가 「1 ≤ 1」 로 통과한다 — 문턱을 무르게 하는 편집이 정확히 그
+    모양이다. 그래서 판정기를 [_decimal_in] 으로 갈랐다.
+
+    ## 무엇을 막는가
+
+    소유권 404·로그인 실패·복호화 실패의 응답 시간 비 문턱(1.5)이 **사본 넷**으로 있고
+    어느 라쳇 표에도 없었다. 한 사본만 올리는 편집은 diff 한 줄이고 자동 탐지가 0 이었다.
+    조건은 `현재 ≤ 이력 최솟값` 이므로 **조이는 편집은 언제나 통과한다.**
+    """
+    reason = _history_unavailable()
+    if reason is not None:
+        _report_or_fail_history(reason)
+        return
+
+    rel_path, name = pin
+    current = _decimal_in((REPO_ROOT / rel_path).read_text(encoding="utf-8"), name)
+    assert current is not None, f"{rel_path}::{name} — 현재 파일에서 그 상수를 찾지 못했다"
+    truncated = _history_truncated(rel_path)
+    assert truncated is None, f"{rel_path}::{name} 의 이력을 끝까지 읽지 못했다 — {truncated}"
+
+    seen = [
+        value
+        for rev, path_at in _git_revision_paths(rel_path)
+        if (value := _decimal_in(_blob_at(rev, path_at), name)) is not None
+    ]
+    if not seen:
+        pytest.skip(f"{rel_path}::{name} 이 이력에 아직 없다 — 이 커밋이 그것을 핀한다")
+
+    assert current <= min(seen), (
+        f"실수 문턱이 **이력 최솟값보다 높다**: {rel_path}::{name} — "
+        f"현재 {current} > 이력 최솟값 {min(seen)}.\n"
+        "  문턱을 올리는 것은 그 축이 재기로 선언한 성질을 조용히 줄이는 일이다.\n"
+        "  깜박임이 이유라면 고칠 것은 문턱이 아니라 측정이다(부하 독립·중위수 N회).\n"
+        "  정말 올려야 한다면 실측을 커밋 메시지로 남겨라 — 이력은 고쳐지지 않는다."
+    )
+
+
+@pytest.mark.parametrize("pin", RATCHET_NAME_TUPLE_PINS, ids=lambda pin: pin[1])
+def test_이름_튜플_선언이_이력에서_줄지_않았다(pin: tuple[str, str]) -> None:
+    """**문자열 튜플 자신이 줄어드는 편집을 잡는다** — 게이트 29 G-2 (β-08 의 재귀 형태).
+
+    ## 무엇이 빈자리였나 (실측 2026-08-22, 고치기 전)
+
+    `TIMED_SCANNERS` 에서 `"_named_enforcer_census"` 를, `RATCHET_PIN_TABLES` 에서
+    `"RATCHET_TABLE_PINS"` 를 **함께** 지우고 게이트를 돌렸다 → **exit 0 · 280 passed ·
+    지목 없음.** 281 → 280 은 파라미터화 케이스가 하나 사라진 것이고, **그 감소를 재는
+    것이 없었다.** 즉 한 낱말로 스캐너를 시간 축 밖에 내거나 상한 표의 이력 대조를
+    없앨 수 있었다.
+
+    ## 왜 개수 하한이 아니라 이력인가
+
+    개수 하한은 「함께 줄이기」를 막지 못한다(`TEST_CLASS_COUNT` 주석의 2026-08-21 기록이
+    같은 것을 실측으로 적는다). 여기 쓰는 분모는 **git 이력**이라 PR diff 안에서 고칠 수
+    없고 새 면제 조항을 만들지 않는다. 조건은 `현재 ⊇ 이력 합집합` — **더하는 편집은
+    언제나 통과한다.**
+    """
+    reason = _history_unavailable()
+    if reason is not None:
+        _report_or_fail_history(reason)
+        return
+
+    rel_path, name = pin
+    truncated = _history_truncated(rel_path)
+    assert truncated is None, f"{rel_path}::{name} 의 이력을 끝까지 읽지 못했다 — {truncated}"
+
+    current = _name_tuple_in((REPO_ROOT / rel_path).read_text(encoding="utf-8"), name)
+    assert current, (
+        f"{rel_path}::{name} 을 현재 파일에서 읽지 못했다(또는 비었다) — 표를 통째로 비우는 "
+        "편집이 이 대조를 공허하게 만들 수는 없다."
+    )
+
+    history: set[str] = set()
+    for rev, path_at in _git_revision_paths(rel_path):
+        history |= _name_tuple_in(_blob_at(rev, path_at), name)
+    if not history:
+        pytest.skip(f"{rel_path}::{name} 이 이력에 아직 없다 — 이 커밋이 그것을 만든다")
+
+    removed = sorted(history - current)
+    assert not removed, (
+        f"{name} 에서 **이력에 있던 항목이 사라졌다**: {removed}\n"
+        "  이 목록의 한 낱말이 축의 도달 범위다 — 스캐너 하나가 시간 축 밖으로 나가거나,\n"
+        "  상한 표의 이력 대조가 사라지거나, 캐시 인구조사의 분모가 줄어든다.\n"
+        "  정말 지워야 한다면 그 대상이 사라졌기 때문일 것이다 — 그러면 대상과 이 항목을\n"
+        "  **같은 커밋에서** 지우고 사유를 커밋 메시지에 남겨라(이력은 고쳐지지 않는다)."
+    )
+
+
+def test_전수_스캐너의_캐시가_선언과_정확히_같고_실제로_적중한다() -> None:
+    """**예산 축이 원리적으로 못 보는 절반** — 캐시 제거형을 잡는다 (게이트 29 G-1).
+
+    ## 예산 축과 무엇이 다른가
+
+    `test_게이트_스캐너의_실행_시간이_예산_안이다` 는 캐시를 **일부러 비우고** 각 스캐너를
+    **한 번** 부른다. 그래서 `@functools.cache` 한 줄을 지워도 총합이 그대로다 —
+    실측(2026-08-22, 고치기 전): `_kotlin_main_sources` 의 데코레이터를 지우고 게이트를
+    돌려 **281 passed · exit 0 · 지목 없음.** 그런데 `e2038dd` 가 실측한 사고의 나머지
+    절반이 바로 그것이었다(*"캐시도 붙였다 — 없어서 전수 스캔이 두 번 돌았다"*).
+    이 파일의 파라미터화 케이스는 같은 트리를 100회 이상 훑으므로, 캐시가 없으면 그 비용이
+    그만큼 곱해져 CI `quality`(15분)를 먹고 그 잡의 **모든** 가드가 안 돈다.
+
+    ## 두 축을 함께 잰다
+
+    ⑴ **정확 분할** — AST 인구조사 ↔ [CACHED_SCANNERS] 선언이 양방향으로 같아야 한다.
+       데코레이터만 지우면 여기서 어긋난다. 선언까지 함께 지우면
+       `test_이름_튜플_선언이_이력에서_줄지_않았다` 가 잡는다(2층).
+    ⑵ **실제 적중** — 비우고 두 번 불러 `cache_info().hits` 가 늘어야 한다. 데코레이터가
+       남아 있는데 캐시가 듣지 않는 형태(호출마다 다른 인자로 감싸기 등)를 여기서 끊는다.
+    """
+    declared = set(CACHED_SCANNERS)
+    census = _functools_cached_functions(THIS_TEST_PATH)
+    assert census, "이 파일에서 캐시 데코레이터를 찾지 못했다 — 이 대조는 아무것도 재지 않는다."
+    assert census == declared, (
+        "캐시 인구조사와 선언이 어긋난다:\n"
+        f"  선언에만: {sorted(declared - census)}\n"
+        f"  인구조사에만: {sorted(census - declared)}\n"
+        "  데코레이터를 지웠다면 그것이 이 축이 겨눈 편집이다 — 전수 스캔이 다시 여러 번\n"
+        "  돌고, 예산 축은 그것을 보지 못한다(캐시를 비우고 한 번만 부르므로).\n"
+        "  새 캐시를 붙였다면 CACHED_SCANNERS 에 이름을 더하라."
+    )
+
+    for name in sorted(declared):
+        function = globals().get(name)
+        assert function is not None, f"{name} 이 이 모듈에 없다 — 이름이 바뀌었거나 사라졌다."
+        info = getattr(function, "cache_info", None)
+        clear = getattr(function, "cache_clear", None)
+        assert info is not None and clear is not None, (
+            f"{name} 에 캐시 API 가 없다 — 데코레이터가 사라졌다는 뜻이다."
+        )
+        clear()
+        _call_twice(name, function)
+        assert info().hits >= 1, (
+            f"{name} 을 같은 인자로 두 번 불렀는데 캐시 적중이 0 이다 — 데코레이터는 있지만 "
+            "캐시가 듣지 않는다. 이 상태는 전수 스캔이 여러 번 도는 것과 같다."
+        )
+
+
+def _call_twice(name: str, function: Callable[..., object]) -> None:
+    """캐시 적중을 만들기 위해 **같은 인자로** 두 번 부른다.
+
+    인자를 받는 스캐너는 저장소의 실제 파일 하나를 준다. 인자 모양이 오늘과 달라지면
+    `TypeError` 로 **빨개진다** — 조용히 건너뛰지 않는 것이 이 함수의 규약이다.
+    """
+    if not inspect.signature(function).parameters:
+        function()
+        function()
+        return
+    sources = _kotlin_test_sources()
+    assert sources, f"{name} 에 먹일 표본 경로가 없다 — Kotlin 테스트 소스가 0 건이다."
+    sample = str(sources[0])
+    function(sample)
+    function(sample)
 
 
 def test_이_파일의_수치_상수가_전부_분류돼_있다() -> None:
