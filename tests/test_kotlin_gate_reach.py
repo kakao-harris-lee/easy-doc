@@ -2613,6 +2613,19 @@ def test_라쳇_상수가_이력_최댓값_아래로_내려가지_않는다() ->
     같은 성질(한 줄 · 자동 신호 전부 초록)이므로 같은 기준으로 닫는다.
 
     **정당한 상향은 통과한다** — 조건이 「현재 ≥ 이력 최댓값」이다.
+
+    ## 커밋 전 빨강의 **사유를 가른다** (레인 A 발견 ①, 2026-08-23)
+
+    상한 라쳇 축은 이력에 없는 새 상수를 `pytest.skip` 하는데 이 하한 축은 그것을 다른
+    판정 불가 사유들과 **한 덩어리로** 묶어 실패시킨다. 그래서 새 하한 상수는 커밋 전
+    작업 트리에서 반드시 빨갛고(C3·C6 관측), X-9 가 「상수가 있으면 즉시 핀 요구」라
+    "먼저 상수만 커밋" 우회도 막힌다 — 그 빨강 자체는 옳다.
+
+    **`skip` 으로 낮추지 않는다.** 그것은 규칙 4 ⑶(빈 선언에서 통과하지 않는다)과 정면
+    충돌하고 축을 무르게 하는 방향이다. 바꾼 것은 **강도가 아니라 사유의 가시성**이다 —
+    「미커밋 신규 상수 N건」을 이름으로 내고, 조치(이 커밋이 그것을 만든다 → 커밋하면
+    대조가 선다)를 함께 적는다. 이름·경로 드리프트와 섞이지 않으므로, 읽는 사람이
+    「고쳐야 할 빨강」과 「커밋하면 사라질 빨강」을 메시지에서 가른다.
     """
     reason = _history_unavailable()
     if reason is not None:
@@ -2623,6 +2636,7 @@ def test_라쳇_상수가_이력_최댓값_아래로_내려가지_않는다() ->
 
     lowered: list[str] = []
     unjudged: list[str] = []
+    uncommitted: list[str] = []
     for rel_path, name in RATCHET_SCALAR_PINS:
         current = _scalar_in((REPO_ROOT / rel_path).read_text(encoding="utf-8"), name)
         if current is None:
@@ -2640,7 +2654,7 @@ def test_라쳇_상수가_이력_최댓값_아래로_내려가지_않는다() ->
             if (value := _scalar_in(_blob_at(rev, path_at), name)) is not None
         ]
         if not seen:
-            unjudged.append(f"{rel_path}::{name} — 이력에서 그 상수를 한 번도 찾지 못했다")
+            uncommitted.append(f"{rel_path}::{name} = {current}")
             continue
         if current < max(seen):
             lowered.append(f"{rel_path}::{name} — 현재 {current} < 이력 최댓값 {max(seen)}")
@@ -2649,6 +2663,15 @@ def test_라쳇_상수가_이력_최댓값_아래로_내려가지_않는다() ->
         "라쳇 핀을 판정하지 못했다 — **판정 불가는 통과가 아니다**:\n"
         + "\n".join(f"  - {x}" for x in unjudged)
         + "\n  이름이 바뀌었거나 파일이 옮겨졌다면 RATCHET_SCALAR_PINS 도 함께 고쳐라."
+    )
+    assert not uncommitted, (
+        f"**미커밋 신규 상수 {len(uncommitted)} 건** — 이력에 아직 없어 대조할 기준점이 없다:\n"
+        + "\n".join(f"  - {x}" for x in uncommitted)
+        + "\n\n이 빨강의 사유는 결함이 아니라 **아직 커밋되지 않았다**는 것이다.\n"
+        "  조치: 이 커밋을 만들어라 — 그러면 다음 실행부터 그 값이 이력 최댓값이 되어\n"
+        "  대조가 선다. 새 하한 상수는 구조상 커밋 전 작업 트리에서 반드시 빨갛다.\n"
+        "  `pytest.skip` 으로 낮추지 않는다 — 그러면 「이력에 없는 값」이 통과하게 되어\n"
+        "  값을 내리면서 이름을 함께 바꾸는 편집이 조용해진다(규칙 4 ⑶)."
     )
     assert not lowered, (
         "라쳇 상수가 **이력 최댓값보다 낮다**:\n"
