@@ -127,11 +127,73 @@ def _section(heading: str) -> str | None:
     return None
 
 
+#: 커버리지 표의 열 수(`회차 · 범위 · 산출물`).
+_COVERAGE_COLUMNS: Final = 3
+
+#: 심판 산출물이 사는 곳. 커버리지 행이 주장하는 회차의 실물이 여기 있어야 한다.
+_REVIEWS_DIR: Final = _REPO_ROOT / "docs" / "migration" / "_workspace" / "reviews"
+
+
 def _coverage_ranges(coverage: str) -> tuple[tuple[str, str], ...]:
-    """커버리지 절에 적힌 `a..b` 범위 전건."""
-    return tuple(
-        (match.group(1), match.group(2)) for match in _RANGE_IN_BACKTICKS.finditer(coverage)
+    """커버리지 **표 행**에서만 `a..b` 범위를 읽는다.
+
+    ## 절 전체 정규식에서 구조적 표 파싱 + 산출물 실재 요구로 갈아탔다 (F-1, 2026-08-22)
+
+    초판은 절 전체에서 `a..b` 를 정규식으로 긁었다. 두 레인이 같은 구멍을 지적했고
+    Claude 레인이 실행으로 재현했다 — **`| 전부 | 0d632f9..HEAD | 없음 |` 한 줄을 적고
+    `대기` 4줄을 지웠더니 `EXIT=0 · 44 passed`.** 리뷰 0건으로 전 구간이 「리뷰됨」이 됐고,
+    산출물 칸이 문자 그대로 `없음` 인데 아무것도 반응하지 않았다.
+
+    **F-2(장부 하한을 표 행으로 올림)만 닫는 것은 무의미하다** — 가짜 장부 행을 만들 필요
+    없이 여기에 한 줄 적으면 되기 때문이다. 그래서 두 표를 같은 강도로 판정한다.
+
+    행이 유효할 조건 (셋 다):
+
+      1. 열이 [_COVERAGE_COLUMNS] 개다.
+      2. `범위` 칸이 백틱 `a..b` 이고 **양 끝이 실재하는 커밋**이다(`git rev-parse --verify`).
+      3. `회차` 칸이 백틱 문자열이고, **`reviews/<회차>_*.md` 산출물이 최소 2건 실재**한다.
+         3단계 게이트는 두 레인 + 교차 종합이라 하나만 있는 회차는 완주하지 않은 것이다.
+
+    ## 이 판정이 못 재는 것 (지우지 마라)
+
+    산출물이 **실재하는지**만 본다 — 그 안의 리뷰가 참인지, 그 범위를 실제로 읽었는지는
+    재지 않는다. `xx_harness` 회차가 그 반례다: 산출물 3건이 남았는데 codex 원문은 0줄이었고,
+    그 사실은 `_cross.md` 머리 경고로만 남아 있다. **저자가 자기 회차를 서명하는 구조 자체는
+    그대로다** — 좁힌 것은 「아무것도 없이 서명하는 것」뿐이다.
+    """
+    ranges: list[tuple[str, str]] = []
+    for line in coverage.splitlines():
+        stripped = line.strip()
+        if not stripped.startswith("|"):
+            continue
+        cells = [cell.strip() for cell in stripped.strip("|").split("|")]
+        if len(cells) != _COVERAGE_COLUMNS:
+            continue
+        range_match = _RANGE_IN_BACKTICKS.fullmatch(cells[1])
+        if range_match is None:
+            continue
+        round_match = re.fullmatch(r"`([^`]+)`", cells[0])
+        if round_match is None:
+            continue
+        stem = round_match.group(1).strip()
+        artifacts = sorted(_REVIEWS_DIR.glob(f"{stem}_*.md")) if stem else []
+        if len(artifacts) < 2:
+            continue
+        start, end = range_match.group(1), range_match.group(2)
+        if not _commit_exists(start) or not _commit_exists(end):
+            continue
+        ranges.append((start, end))
+    return tuple(ranges)
+
+
+def _commit_exists(rev: str) -> bool:
+    completed = subprocess.run(
+        ["git", "rev-parse", "--verify", f"{rev}^{{commit}}"],
+        cwd=_REPO_ROOT,
+        capture_output=True,
+        check=False,
     )
+    return completed.returncode == 0
 
 
 def _reviewed_shas(coverage: str) -> frozenset[str]:
