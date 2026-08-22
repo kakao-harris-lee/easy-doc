@@ -435,6 +435,62 @@ class LedgerRow(NamedTuple):
     closed: str
 
 
+class LedgerVerdict(NamedTuple):
+    """이연 장부 한 행의 판정. `reason` 이 `None` 일 때만 `row` 가 있다."""
+
+    line: str
+    row: LedgerRow | None
+    reason: str | None
+
+
+def _ledger_verdicts(ledger: str) -> tuple[LedgerVerdict, ...]:
+    """장부의 **데이터 행 전수**를 판정한다 — 버려진 행도 사유와 함께 돌려준다 (C-2).
+
+    [_ledger_rows] 는 형식이 어긋난 행을 조용히 버린다. 그 조용함이 **X-3b 의 분모를
+    무방비로** 만든다 — 실측: 리뷰된 `대기` 4행의 상태 칸만 `**대기**` → `**대기**(미리뷰)`
+    로 바꿨더니 네 행이 분모에서 증발하고 `4 passed`(평시), 출하 모드에서도 **훼손된 4행을
+    지목하지 않았다.** 그 4 커밋은 커버리지 범위 안이라 다른 검사도 초록으로 남았다.
+
+    악의가 필요 없다는 것이 이 결함의 성질이다 — 장부는 사람이 손으로 쓰고
+    `대기` · `**대기**` · `대기(미리뷰)` 는 전부 자연스러운 인간 변형이다.
+    """
+    verdicts: list[LedgerVerdict] = []
+    for line in _table_data_lines(ledger):
+        cells = [cell.strip() for cell in line.strip("|").split("|")]
+
+        def rejected(reason: str, row: str = line) -> None:
+            verdicts.append(LedgerVerdict(line=row, row=None, reason=reason))
+
+        if len(cells) != _LEDGER_COLUMNS:
+            rejected(f"열이 {len(cells)} 개다 — {_LEDGER_COLUMNS} 개여야 한다")
+            continue
+        sha_match = _SHA_IN_BACKTICKS.fullmatch(cells[_LEDGER_SHA_CELL])
+        if sha_match is None:
+            rejected("`커밋` 칸이 백틱 SHA 하나가 아니다")
+            continue
+        state = cells[_LEDGER_STATE_CELL].replace("*", "").strip()
+        if state not in _LEDGER_STATES:
+            rejected(f"`상태` 칸이 {list(_LEDGER_STATES)} 중 하나가 아니다: {state!r}")
+            continue
+        round_ = cells[_LEDGER_ROUND_CELL]
+        if round_ in _LEDGER_BLANK:
+            rejected("`리뷰할 회차` 칸이 비었다 — 「언제 갚는가」 없는 빚은 안 적힌 것과 같다")
+            continue
+        verdicts.append(
+            LedgerVerdict(
+                line=line,
+                row=LedgerRow(
+                    sha=sha_match.group(1),
+                    state=state,
+                    round_=round_,
+                    closed=cells[_LEDGER_CLOSED_CELL],
+                ),
+                reason=None,
+            )
+        )
+    return tuple(verdicts)
+
+
 def _ledger_rows(ledger: str) -> tuple[LedgerRow, ...]:
     """이연 장부의 **표 행**만 구조적으로 읽는다.
 
@@ -458,35 +514,14 @@ def _ledger_rows(ledger: str) -> tuple[LedgerRow, ...]:
       2. `상태` 칸이 [_LEDGER_STATES] 중 하나다(굵게 표시는 벗겨 낸다).
       3. `리뷰할 회차` 칸이 비어 있지 않다(`-` 도 빈 것으로 본다).
 
-    표 밖 산문·구분선·머리행은 열 수나 SHA 형식에서 걸러진다. **이 함수가 「멈추고 장부에
-    적는다」라는 선택지의 하한을 정한다** — 그래서 하한을 산문이 아니라 행에 둔다.
+    표 밖 산문·구분선·머리행은 [_table_data_lines] 와 열 수·SHA 형식에서 걸러진다. **이
+    함수가 「멈추고 장부에 적는다」라는 선택지의 하한을 정한다** — 그래서 하한을 산문이
+    아니라 행에 둔다.
+
+    판정은 [_ledger_verdicts] 가 하고 여기서는 유효한 행만 걸러 낸다. 버려진 행이 조용히
+    사라지지 않게 하는 것은 [test_장부_표의_모든_행이_판정에_든다] 의 몫이다.
     """
-    rows: list[LedgerRow] = []
-    for line in ledger.splitlines():
-        stripped = line.strip()
-        if not stripped.startswith("|"):
-            continue
-        cells = [cell.strip() for cell in stripped.strip("|").split("|")]
-        if len(cells) != _LEDGER_COLUMNS:
-            continue
-        sha_match = _SHA_IN_BACKTICKS.fullmatch(cells[_LEDGER_SHA_CELL])
-        if sha_match is None:
-            continue
-        state = cells[_LEDGER_STATE_CELL].replace("*", "").strip()
-        if state not in _LEDGER_STATES:
-            continue
-        round_ = cells[_LEDGER_ROUND_CELL]
-        if round_ in _LEDGER_BLANK:
-            continue
-        rows.append(
-            LedgerRow(
-                sha=sha_match.group(1),
-                state=state,
-                round_=round_,
-                closed=cells[_LEDGER_CLOSED_CELL],
-            )
-        )
-    return tuple(rows)
+    return tuple(verdict.row for verdict in _ledger_verdicts(ledger) if verdict.row is not None)
 
 
 #: **출하 모드**를 켜는 환경 변수. 선례는 `KOTLIN_GATE_REACH_REQUIRE_REPORT` 다.
@@ -589,12 +624,47 @@ def test_원장에_리뷰_커버리지_절과_이연_장부가_있다() -> None:
             "  어느 범위를 무슨 산출물로 덮었는지 사후에 되짚을 수 있다."
         )
 
-    for column in ("커밋", "상태", "리뷰할 회차"):
+    # `닫힘` 은 2026-08-23 에 더했다 (C-2 / R-2). 그 열이 목록에 없어서 **열 구성 변경이
+    # 잡히지 않았다** — 실측(B3): `리뷰할 회차`↔`닫힘` 두 열을 맞바꾸면 출하 모드의
+    # 미상환 판정이 통과한다. X-3a·X-3b 가 둘 다 그 열에 의존하는데도 그랬다.
+    for column in ("커밋", "상태", "리뷰할 회차", "닫힘"):
         assert column in ledger, (
             f"「{_LEDGER_HEADING}」 표에 `{column}` 열이 없다.\n"
             "  `상태` 는 `대기`(필수 축인데 미리뷰)와 `이연`(비필수라 묶음)을 가른다 —\n"
-            "  칸이 없으면 둘이 한 덩어리가 되어 급한 것이 묻힌다."
+            "  칸이 없으면 둘이 한 덩어리가 되어 급한 것이 묻힌다.\n"
+            "  `닫힘` 은 빚의 **출구**다 — 없으면 「갚은 빚」과 「안 갚은 빚」이 섞인다."
         )
+
+
+def test_장부_표의_모든_행이_판정에_든다() -> None:
+    """**표처럼 보이는 행 수 = 판정된 행 수** (C-2 / R-1).
+
+    파서가 형식이 어긋난 행을 조용히 버리면, 상태 칸 표기 하나로 그 행이 **분모에서
+    증발**하고 아무 검사도 발화하지 않는다. 이 검사가 그 증발을 소리 나게 만든다.
+
+    커버리지 표에는 같은 대조를 두지 않는다 — [test_커버리지_표에_무효_행이_없다] 가
+    같은 것을 **행과 사유까지** 지목하며 이미 진다. 같은 것을 두 번 선언하지 않는다(규칙 7).
+    """
+    ledger = _section(_LEDGER_HEADING)
+    assert ledger is not None, (
+        f"원장에 「{_LEDGER_HEADING}」 절이 없다 —\n"
+        "  [test_원장에_리뷰_커버리지_절과_이연_장부가_있다] 를 먼저 보라."
+    )
+
+    verdicts = _ledger_verdicts(ledger)
+    assert verdicts, (
+        f"「{_LEDGER_HEADING}」 절에 표 데이터 행이 0 건이다.\n"
+        "  빈 분모에서 통과하면 안 된다(SKILL.md 규칙 4 ⑶)."
+    )
+
+    dropped = [verdict for verdict in verdicts if verdict.reason is not None]
+    assert not dropped, (
+        f"장부 표에서 판정에 들지 못한 행 {len(dropped)} 건 "
+        f"(표 데이터 행 {len(verdicts)} · 판정 {len(verdicts) - len(dropped)}):\n"
+        + "\n".join(f"  {verdict.reason}\n    {verdict.line}" for verdict in dropped)
+        + "\n\n버려진 행은 **적히지 않은 것과 같다** — 그 커밋은 커버리지 판정의 분모에서\n"
+        "  빠지고, `닫힘`·출하 모드 판정에서도 빠진다. 칸 표기를 규약대로 되돌려라."
+    )
 
 
 def test_커버리지_표에_무효_행이_없다() -> None:
@@ -694,13 +764,23 @@ def test_리뷰된_대기_행은_닫힘_칸이_적혀_있다() -> None:
         "  이 검사는 장부 행을 분모로 삼는다 — 빈 분모에서 통과하면 안 된다(SKILL.md 규칙 4 ⑶)."
     )
 
-    unclosed = [
+    # **판정 부분집합이 이 검사의 실질 분모다** (C-2 ⑶, 2026-08-23). 종전의 빈 분모 방어는
+    # `assert rows`(장부 표 전체) 하나였고, 그것이 참인 채로 **실제로 판정하는 부분집합만
+    # 0 이 되는** 경로가 있었다 — 상태 칸 표기를 훼손하면 리뷰된 `대기` 행이 통째로
+    # 분모 밖으로 나가고 이 검사는 공허하게 초록이 된다(규칙 4 ⑶).
+    judged = [
         row
         for row in rows
-        if row.state == _WAITING_STATE
-        and row.closed in _LEDGER_BLANK
-        and any(full.startswith(row.sha) for full in reviewed)
+        if row.state == _WAITING_STATE and any(full.startswith(row.sha) for full in reviewed)
     ]
+    assert judged, (
+        f"리뷰 범위에 든 `{_WAITING_STATE}` 행이 0 건이다 — 이 검사가 아무것도 판정하지 않았다.\n"
+        f"  장부 표 행은 {len(rows)} 건이고 리뷰된 커밋은 {len(reviewed)} 건인데 교집합이 비었다.\n"
+        "  상태 칸 표기가 훼손됐거나 커버리지 표가 좁아졌다 —\n"
+        "  둘 다 이 검사를 **공허하게 초록**으로 만드는 편집이다(SKILL.md 규칙 4 ⑶)."
+    )
+
+    unclosed = [row for row in judged if row.closed in _LEDGER_BLANK]
     assert not unclosed, (
         f"리뷰를 이미 받았는데 `닫힘` 칸이 빈 `{_WAITING_STATE}` 행 {len(unclosed)} 건:\n"
         + "\n".join(f"  `{row.sha}`  (리뷰할 회차: {row.round_})" for row in unclosed)
