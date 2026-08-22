@@ -45,7 +45,7 @@ class DocumentController(private val documentService: DocumentService) {
                 ownerId = user.id,
                 text = request.text,
                 title = request.title,
-                workspaceId = request.workspaceId,
+                rawWorkspaceId = request.workspaceId,
             ),
         )
 

@@ -39,10 +39,23 @@ class ConflictException(message: String) : EasyDocException(message)
 /** 저장 계층에서 예상하지 못한 제약을 위반했다 — 입력 문제가 아니라 코드 버그다. */
 open class StorageException(message: String) : EasyDocException(message)
 
-/** 저장된 암호문을 열지 못했다 — **원인도 자원 종류도 구분하지 않는 단 하나의 예외**. */
+/**
+ * 저장된 암호문을 열지 못했다 — **원인을 구분하지 않는 단 하나의 예외**(무엇이 실패했는지가
+ * 문구로 새지 않게 한다).
+ *
+ * **문구는 자원을 특정한다.** 이 예외가 HTTP 경계에서 관측되는 자리가 변환 결과 조회·검수
+ * 저장·내보내기뿐이기 때문이다. 변환 결과가 **아닌** 봉투의 복호화 실패가 동기 응답으로 나가게
+ * 되면 이 문구를 다시 판정해야 한다 — 그때 조용히 고치지 않는다(계약 개정 사항).
+ */
 class DecryptionFailedException : StorageException(MESSAGE) {
     companion object {
-        /** 응답 detail 로 그대로 나간다. 계약 `InternalError.examples.storage` 와 같아야 한다. */
+        /**
+         * 응답 detail 로 그대로 나간다. 계약은 이 갈래의 값을 저장소에 **위임했고**
+         * (`InternalError.description` 이 셋째 갈래만 리터럴 없이 적는다), 규범은 값이 아니라
+         * 성질 넷이다 — 500 · 문자열 · **고정** · 최상위 키 `detail` 하나.
+         * 계약 `InternalError.examples.storage` 는 이 값의 **예시**이므로, 이 값을 바꾸면
+         * 계약 위반이 아니라 **예시가 낡는다.** 그때 예시를 함께 갱신한다.
+         */
         const val MESSAGE: String = "저장된 변환 결과를 읽을 수 없습니다"
     }
 }

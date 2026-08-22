@@ -252,7 +252,7 @@ class EnvelopeRotationConcurrencyTest {
     private fun seededConversion(): UUID {
         val owner = newUser()
         val workspace = workspaces.create(owner, "회전 경합 ${UUID.randomUUID()}").id
-        val accepted = service.createFromText(owner, "원문 본문", null, workspace)
+        val accepted = service.createFromText(owner, "원문 본문", null, workspace.toString())
         val writer = cipherWith(OLD_GENERATION)
         val conversionId = accepted.conversionId
         val draft = writer.encrypt(PlainBody(DRAFT_BODY), conversionId, EncryptedField.CONVERSION_EASY_TEXT)
@@ -280,7 +280,7 @@ class EnvelopeRotationConcurrencyTest {
     private fun seededDocument(): UUID {
         val owner = newUser()
         val workspace = workspaces.create(owner, "문서 경합 ${UUID.randomUUID()}").id
-        return service.createFromText(owner, "원문 본문", null, workspace).documentId
+        return service.createFromText(owner, "원문 본문", null, workspace.toString()).documentId
     }
 
     private fun readConversion(conversionId: UUID): ConversionEnvelope =

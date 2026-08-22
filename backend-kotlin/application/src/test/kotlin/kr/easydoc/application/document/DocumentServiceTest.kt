@@ -106,7 +106,7 @@ class DocumentServiceTest {
     fun `남의 작업 공간은 404 다`() {
         val world = World()
 
-        assertThatThrownBy { world.service.createFromText(OWNER, "본문", null, STRANGER_WORKSPACE) }
+        assertThatThrownBy { world.service.createFromText(OWNER, "본문", null, STRANGER_WORKSPACE.toString()) }
             .isInstanceOf(NotFoundException::class.java)
             .hasMessage(WORKSPACE_NOT_FOUND_FOR_DOCUMENT_MESSAGE)
 

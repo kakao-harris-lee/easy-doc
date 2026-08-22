@@ -3,6 +3,7 @@ package kr.easydoc.api
 import kr.easydoc.api.document.DocumentCreatedResponse
 import kr.easydoc.api.document.DocumentTextRequest
 import kr.easydoc.api.support.ProductClasses
+import kr.easydoc.application.document.AcceptedUpload
 import kr.easydoc.core.crypto.EncryptedContent
 import kr.easydoc.core.crypto.PlainBody
 import kr.easydoc.core.document.ConversionStatus
@@ -20,12 +21,14 @@ import kotlin.reflect.full.primaryConstructor
 /** 문서 DTO 의 두 축 — `toString()` 유출과 X2(저장·평문 타입이 웹 표현에 실리지 않음). */
 class DocumentDtoLeakTest {
     @Test
-    @DisplayName("요청 DTO 의 toString 이 본문도 제목도 노출하지 않는다")
+    @DisplayName("요청 DTO 의 toString 이 본문도 제목도 **작업 공간 원문도** 노출하지 않는다")
     fun `요청 DTO 가 본문을 가린다`() {
-        val rendered = DocumentTextRequest(BODY, TITLE, UUID.randomUUID()).toString()
+        val rendered = DocumentTextRequest(BODY, TITLE, RAW_WORKSPACE_ID).toString()
 
         assertThat(rendered).doesNotContain(BODY)
         assertThat(rendered).doesNotContain(TITLE)
+        // 파싱하지 않은 원문이라 UUID 라는 보장이 없다 — 사용자가 준 임의 문자열이 로그로 간다.
+        assertThat(rendered).doesNotContain(RAW_WORKSPACE_ID)
         assertThat(rendered).contains(CONTENT_MASK)
 
         assertThat(rendered).contains("${BODY.length}자")
@@ -43,12 +46,15 @@ class DocumentDtoLeakTest {
     @Test
     @DisplayName("응답 DTO 에는 가릴 것이 없다 — 식별자·상태·문자 수뿐이다")
     fun `응답 DTO 가 본문을 담지 않는다`() {
+        // `of` 가 유일한 조립 지점이다 — 주 생성자가 `private` 이라 테스트도 우회하지 못한다.
         val response =
-            DocumentCreatedResponse(
-                documentId = UUID.randomUUID().toString(),
-                conversionId = UUID.randomUUID().toString(),
-                status = ConversionStatus.PENDING.wireName,
-                charCount = BODY.length,
+            DocumentCreatedResponse.of(
+                AcceptedUpload(
+                    documentId = UUID.randomUUID(),
+                    conversionId = UUID.randomUUID(),
+                    status = ConversionStatus.PENDING,
+                    charCount = BODY.length,
+                ),
             )
 
         assertThat(response.toString()).doesNotContain(BODY)
@@ -124,6 +130,9 @@ class DocumentDtoLeakTest {
 
         const val BODY = "주민등록번호가 들어 있을 수도 있는 사용자 문서 본문"
         const val TITLE = "복지 안내문 초안"
+
+        /** UUID 가 **아닌** 값을 쓴다 — 이 필드가 파싱되지 않은 원문임을 표본이 함께 말한다. */
+        const val RAW_WORKSPACE_ID = "작업공간-원문-표본"
 
         /** 웹 표현에 실려서는 안 되는 타입들. */
         val FORBIDDEN_TYPES: Set<KClass<*>> =

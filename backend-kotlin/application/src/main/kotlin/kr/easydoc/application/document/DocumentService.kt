@@ -34,16 +34,21 @@ class DocumentService(
     private val extractor: DocumentTextExtractor,
     private val transaction: TransactionRunner,
 ) {
-    /** 붙여넣은 본문으로 문서를 만들고 변환을 요청한다. */
+    /**
+     * 붙여넣은 본문으로 문서를 만들고 변환을 요청한다.
+     *
+     * **작업 공간 식별자를 파싱하지 않은 원문으로 받는다** — 파일 팔과 같은 이유이고 같은
+     * 함수를 쓴다. 두 팔이 같은 결함에 다른 `detail` 모양을 내면 계약 위반이다.
+     */
     fun createFromText(
         ownerId: UUID,
         text: String,
         title: String?,
-        workspaceId: UUID?,
+        rawWorkspaceId: String?,
     ): AcceptedUpload {
         if (text.isBlank()) throw InvalidInputException(EMPTY_BODY_MESSAGE)
         // 제목을 안 주면 대체 제목이다. 본문은 제목이 되지 않는다.
-        return store(ownerId, text, SourceFormat.TEXT, title) { workspaceId }
+        return store(ownerId, text, SourceFormat.TEXT, title) { parseWorkspaceId(rawWorkspaceId) }
     }
 
     /**
@@ -150,7 +155,7 @@ class DocumentService(
         }
     }
 
-    /** 폼의 `workspace_id` 를 식별자로 바꾼다. 빈 문자열·부재는 「지정 없음」이다. */
+    /** 요청의 `workspace_id` 를 식별자로 바꾼다 — **두 입력 팔이 공유한다.** 빈 문자열·부재는 「지정 없음」이다. */
     private fun parseWorkspaceId(value: String?): UUID? {
         if (value.isNullOrEmpty()) return null
         return runCatching { UUID.fromString(value) }

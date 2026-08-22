@@ -680,6 +680,20 @@ object ContractSpec {
             ?: error("$schema.$property 에 pattern 이 없다(직접도 items 아래도) — 자리표시자 형식의 정본이 사라졌다")
     }
 
+    /**
+     * 스키마 속성의 `description` 산문. **값을 뽑지 않고 산문 그대로 준다** — 두 요청 팔이
+     * 같은 문구를 서로 다른 인용 문법으로 적고 있어 추출 규칙이 한쪽에서만 맞는다. 대조는
+     * 「구현 문구가 이 산문 안에 있는가」로 하고, 팔 사이의 값 일치는 응답끼리 직접 잰다.
+     */
+    fun schemaPropertyDescription(
+        schema: String,
+        property: String,
+    ): String {
+        val description = text("components", "schemas", schema, "properties", property, "description")
+        require(description.isNotBlank()) { "$schema.$property 에 description 이 없다 — 이 대조는 아무것도 재지 않는다." }
+        return description
+    }
+
     /** P-11. 스키마 속성의 `const`. */
     fun schemaPropertyConst(
         schema: String,

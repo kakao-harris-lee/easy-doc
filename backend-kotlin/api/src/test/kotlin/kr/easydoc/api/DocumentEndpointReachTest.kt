@@ -201,6 +201,73 @@ class DocumentEndpointReachTest {
             ).isEqualTo(ContractSpec.pathExampleDetail(DOCUMENTS_PATH, POST, UNPROCESSABLE, TOO_LONG_BODY_EXAMPLE))
     }
 
+    @Test
+    @DisplayName("DC-29 JSON 팔의 형식 오류 `workspace_id` → 422 · `detail` **문자열**(배열 아님) · 값이 계약 산문 안에 있다")
+    fun `JSON 팔의 잘못된 작업 공간 식별자가 문자열 detail 을 낸다`() {
+        val response = createFromText(newAccount(), textBody("본문입니다", SUBMITTED_BAD_WORKSPACE))
+
+        assertDeclaredStatus(response, UNPROCESSABLE)
+        val detail = bodyOf(response)[DETAIL]
+        assertThat(detail)
+            .withFailMessage(
+                "JSON 팔의 detail 이 문자열이 아니다 — 형식 판정이 역직렬화 층으로 올라가면 배열이 나가고, " +
+                    "그러면 같은 결함이 전송 팔에 따라 다른 모양을 낸다: %s",
+                detail,
+            ).isInstanceOf(String::class.java)
+        assertThat(ContractSpec.schemaPropertyDescription(TEXT_REQUEST_SCHEMA, WORKSPACE_ID_PART))
+            .withFailMessage("구현 문구가 계약 %s.%s 산문에 없다: %s", TEXT_REQUEST_SCHEMA, WORKSPACE_ID_PART, detail)
+            .contains(detail.toString())
+        assertThat(response.body())
+            .withFailMessage("제출한 작업 공간 식별자가 응답에 실렸다")
+            .doesNotContain(SUBMITTED_BAD_WORKSPACE)
+    }
+
+    @Test
+    @DisplayName("DC-30 JSON 팔의 복합 결함 — 본문 길이 초과 + 형식 오류 → **본문 길이 단계**의 detail")
+    fun `JSON 팔의 복합 결함에서도 앞선 검사가 이긴다`() {
+        val expected = earlierStageStatus(BODY_LENGTH_STAGE, WORKSPACE_STAGE)
+
+        val response =
+            createFromText(
+                newAccount(),
+                textBody("가".repeat(OVER_BODY_LIMIT_CHARS), SUBMITTED_BAD_WORKSPACE),
+            )
+
+        assertDeclaredStatus(response, expected)
+        assertThat(bodyOf(response)[DETAIL])
+            .withFailMessage(
+                "본문 길이 단계보다 작업 공간 형식 단계가 먼저 나갔다 — JSON 팔에서 형식 판정이 " +
+                    "역직렬화 시점으로 올라가면 서비스의 길이 검사가 **돌 기회조차 없다**: %s",
+                bodyOf(response)[DETAIL],
+            ).isEqualTo(ContractSpec.pathExampleDetail(DOCUMENTS_PATH, POST, UNPROCESSABLE, TOO_LONG_BODY_EXAMPLE))
+    }
+
+    /** 두 팔을 각자 계약과 대조하는 것으로는 부족하다 — **서로와** 대조해야 갈림이 드러난다. */
+    @Test
+    @DisplayName("DC-31 같은 형식 오류를 두 팔로 보내면 `detail` 의 **타입과 값이 같다** — 한 단언으로 잰다")
+    fun `두 입력 팔이 같은 결함에 같은 detail 을 낸다`() {
+        val token = newAccount()
+
+        val viaJson = createFromText(token, textBody("본문입니다", SUBMITTED_BAD_WORKSPACE))
+        val viaMultipart =
+            upload(
+                token,
+                MultipartBody()
+                    .file(FILE_PART, "안내문.docx", UploadFixtures.docxWithBodyChars(1))
+                    .value(WORKSPACE_ID_PART, SUBMITTED_BAD_WORKSPACE),
+            )
+
+        assertThat(viaJson.statusCode()).isEqualTo(viaMultipart.statusCode())
+        // 타입과 값을 **한 단언**에 담는다. 팔별로 따로 재면 갈림이 다시 조용히 들어온다.
+        assertThat(bodyOf(viaJson)[DETAIL])
+            .withFailMessage(
+                "같은 결함인데 두 전송 팔의 detail 이 다르다 — 계약이 `detail` 모양을 가르는 축은 " +
+                    "**결함의 종류**이고 전송 팔은 그 축에 없다. JSON: %s / multipart: %s",
+                bodyOf(viaJson)[DETAIL],
+                bodyOf(viaMultipart)[DETAIL],
+            ).isEqualTo(bodyOf(viaMultipart)[DETAIL])
+    }
+
     /** 두 단계 중 **앞선 것의 상태 코드**. 계약이 순서를 바꾸면 이 값이 따라 바뀐다. */
     private fun earlierStageStatus(
         first: String,
@@ -529,6 +596,7 @@ class DocumentEndpointReachTest {
         private const val UNPROCESSABLE = 422
 
         private const val CREATED_SCHEMA = "DocumentCreatedResponse"
+        private const val TEXT_REQUEST_SCHEMA = "DocumentTextRequest"
         private const val ERROR_SCHEMA = "ErrorResponse"
         private const val PAYLOAD_TOO_LARGE_COMPONENT = "PayloadTooLarge"
         private const val TOO_LARGE_EXAMPLE = "too_large"

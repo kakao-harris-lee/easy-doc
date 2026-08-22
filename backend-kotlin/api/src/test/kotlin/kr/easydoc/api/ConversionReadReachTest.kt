@@ -113,7 +113,7 @@ class ConversionReadReachTest {
         val emptyArrays = setOf(MASKED_ITEMS_PROPERTY, MISSING_PLACEHOLDERS_PROPERTY)
 
         beforeDone.forEach { status ->
-            val conversionId = createDocument(token).second
+            val (documentId, conversionId) = createDocument(token)
             markDone(conversionId, stored)
             forceStatus(conversionId, status)
 
@@ -121,6 +121,14 @@ class ConversionReadReachTest {
 
             assertDeclaredStatus(response, ContractSpec.successStatus(CONVERSION_ITEM_PATH, GET))
             val body = bodyOf(response)
+            // ① 완료 전에도 **나가는** 두 필드가 서로 뒤바뀌지 않았다. 둘 다 UUID 라 오배정이
+            // 타입으로 드러나지 않고, 아래 ②③ 은 값이 아니라 키·비어 있음만 본다.
+            assertThat(body[ID_PROPERTY])
+                .withFailMessage("상태 %s 응답의 id 가 변환 식별자가 아니다 — 문서 식별자와 뒤바뀌었는지 보라", status)
+                .isEqualTo(conversionId.toString())
+            assertThat(body[DOCUMENT_ID_PROPERTY])
+                .withFailMessage("상태 %s 응답의 document_id 가 문서 식별자가 아니다 — 변환 식별자와 뒤바뀌었는지 보라", status)
+                .isEqualTo(documentId.toString())
             // ② `required` 를 깨지 않는다 — 생략이 아니라 `null`·빈 배열이어야 한다.
             assertThat(body.keys.map { it.toString() }.toSet())
                 .withFailMessage("상태 %s 응답이 키를 생략했다 — 계약 required 위반이다: %s", status, body.keys)
@@ -234,11 +242,22 @@ class ConversionReadReachTest {
 
         assertThat(body[EASY_TEXT_PROPERTY]).isEqualTo("쉬운 글 초안입니다.")
         assertThat(body[EDITED_TEXT_PROPERTY]).isEqualTo("담당자가 다듬은 문장입니다.")
+        // 심은 값이 **실제로 나온다**는 것을 여기서 못박는다. 이 단언이 없으면 CR-3b 의
+        // `doesNotContain(STORED_MODEL)` 은 「그 열을 아무도 채우지 않아서」도 초록이다.
+        assertThat(body[MODEL_PROPERTY])
+            .withFailMessage("완료 변환이 심은 모델 이름을 내보내지 않는다 — CR-3b 의 미노출 단언이 공허해진다")
+            .isEqualTo(STORED_MODEL)
+        assertThat(body[PROVIDER_NAME_PROPERTY])
+            .withFailMessage("완료 변환이 심은 provider 이름을 내보내지 않는다 — 위와 같은 이유로 공허해진다")
+            .isEqualTo(STORED_PROVIDER)
     }
 
     /** 변조 팔. 문구는 코드에 박지 않고 **계약에서 읽어** 대조한다. */
     @Test
-    @DisplayName("변조된 암호문은 거절된다 — 계약이 선언한 상태 · 평문·암호문 미노출 · detail 이 계약 `storage` 예시와 같다")
+    @DisplayName(
+        "변조된 암호문은 거절된다 — 계약이 선언한 상태 · 평문·암호문 미노출 · " +
+            "저장 실패 문구가 바뀌면 계약 예시도 함께 갱신한다",
+    )
     fun `변조된 암호문은 거절된다`() {
         val token = newAccount()
         val conversionId = createDocument(token).second
@@ -256,9 +275,16 @@ class ConversionReadReachTest {
         assertThat(bodyOf(response)[DETAIL])
             .withFailMessage("변조 응답의 detail 이 문자열이 아니다 — 구현 수단이 응답으로 샐 자리다")
             .isInstanceOf(String::class.java)
+        // 계약은 이 갈래의 값을 저장소에 위임했다 — 규범은 값이 아니라 성질(500·문자열·고정·단일 키)이다.
+        // 그러므로 이 대조의 방향은 「예시가 코드를 따른다」이고, 갈리면 갱신 대상은 계약 예시다.
+        // 읽을 예시가 없으면 대조가 공허해지므로 `responseExampleDetail` 이 그 자리에서 끊는다.
         assertThat(bodyOf(response)[DETAIL])
-            .withFailMessage("변조 응답의 detail 이 계약 %s.%s 와 다르다", INTERNAL_ERROR_COMPONENT, STORAGE_EXAMPLE)
-            .isEqualTo(ContractSpec.responseExampleDetail(INTERNAL_ERROR_COMPONENT, STORAGE_EXAMPLE))
+            .withFailMessage(
+                "계약 예시 %s.%s 가 낡았다 — **예시를 갱신하라. 계약 위반이 아니다.** " +
+                    "이 갈래의 값은 계약이 저장소에 위임한 것이고, 규범은 500·문자열·고정·단일 키라는 성질뿐이다",
+                INTERNAL_ERROR_COMPONENT,
+                STORAGE_EXAMPLE,
+            ).isEqualTo(ContractSpec.responseExampleDetail(INTERNAL_ERROR_COMPONENT, STORAGE_EXAMPLE))
         assertThat(response.body())
             .withFailMessage("변조 응답에 평문이 실렸다 — 거절 경로가 본문을 흘린다")
             .doesNotContain(plaintext)
@@ -369,6 +395,8 @@ class ConversionReadReachTest {
                 cipher.writeKeyVersion,
                 labels,
                 if (result.reviewed) "now()" else "NULL",
+                STORED_MODEL,
+                STORED_PROVIDER,
                 conversionId,
             ),
         )
@@ -536,11 +564,15 @@ class ConversionReadReachTest {
         private const val STATUS_SCHEMA = "ConversionStatus"
         private const val ERROR_SCHEMA = "ErrorResponse"
 
+        private const val ID_PROPERTY = "id"
+        private const val DOCUMENT_ID_PROPERTY = "document_id"
         private const val STATUS_PROPERTY = "status"
         private const val EASY_TEXT_PROPERTY = "easy_text"
         private const val EDITED_TEXT_PROPERTY = "edited_text"
         private const val MASKED_ITEMS_PROPERTY = "masked_items"
         private const val MISSING_PLACEHOLDERS_PROPERTY = "missing_placeholders"
+        private const val MODEL_PROPERTY = "model"
+        private const val PROVIDER_NAME_PROPERTY = "provider_name"
         private const val FAILURE_CODE_PROPERTY = "failure_code"
         private const val CATEGORY_PROPERTY = "category"
         private const val PLACEHOLDER_PROPERTY = "placeholder"
@@ -562,7 +594,7 @@ class ConversionReadReachTest {
         private const val INTERNAL_ERROR_COMPONENT = "InternalError"
         private const val STORAGE_EXAMPLE = "storage"
 
-        /** CR-3b 가 심는 값들. 응답에 **나타나면 안 된다.** 뒤의 둘은 [MARK_DONE_SQL] 의 리터럴. */
+        /** CR-3b 가 심는 값들. 응답에 **나타나면 안 된다.** 뒤의 둘은 [MARK_DONE_SQL] 이 채워 넣는다. */
         private const val HIDDEN_ORIGINAL = "900101-1234567"
         private const val STORED_DRAFT = "완료 전인데 저장돼 있던 초안입니다."
         private const val STORED_EDITED = "완료 전인데 저장돼 있던 검수본입니다."
@@ -570,7 +602,8 @@ class ConversionReadReachTest {
         private const val STORED_PROVIDER = "stored-provider"
 
         /** 계약 `get.description` 이 완료 전에 나간다고 적은 것 — 앞의 둘은 자원 식별자다. */
-        private val BEFORE_DONE_FIELDS = setOf("id", "document_id", STATUS_PROPERTY, FAILURE_CODE_PROPERTY)
+        private val BEFORE_DONE_FIELDS =
+            setOf(ID_PROPERTY, DOCUMENT_ID_PROPERTY, STATUS_PROPERTY, FAILURE_CODE_PROPERTY)
 
         private const val CONTENT_TYPE = "Content-Type"
         private const val JSON_MEDIA_TYPE = "application/json"
@@ -597,8 +630,8 @@ class ConversionReadReachTest {
                 key_version = %s,
                 missing_placeholders = '%s'::jsonb,
                 reviewed_at = %s,
-                model = 'stored-model-probe',
-                provider_name = 'stored-provider',
+                model = '%s',
+                provider_name = '%s',
                 input_tokens = 11,
                 output_tokens = 22
             WHERE id = '%s'

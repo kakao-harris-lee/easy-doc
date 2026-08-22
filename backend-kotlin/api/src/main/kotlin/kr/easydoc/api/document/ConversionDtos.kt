@@ -30,10 +30,14 @@ data class MaskedItemResponse(
 }
 
 /**
- * `GET /conversions/{conversion_id}` 응답. 계약 `components/schemas/ConversionResponse` —
- * **열세 필드가 전부다.**
+ * `GET`·`PUT /conversions/{conversion_id}` 응답. 계약 `components/schemas/ConversionResponse` —
+ * **열세 필드가 전부다.** 두 오퍼레이션이 같은 스키마를 쓴다.
+ *
+ * 생성자와 `copy()` 가 `private` 인 것은 [of] 의 노출 판정을 우회하는 조립 지점이 생기지
+ * 않게 하려는 것이다 — 그 판정이 규율이 아니라 타입이 된다.
  */
-data class ConversionResponse(
+@ConsistentCopyVisibility
+data class ConversionResponse private constructor(
     @get:JsonProperty("id") val id: String,
     @get:JsonProperty("document_id") val documentId: String,
     @get:JsonProperty("status") val status: String,

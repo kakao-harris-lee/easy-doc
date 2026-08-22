@@ -7,7 +7,6 @@ import com.fasterxml.jackson.annotation.Nulls
 import kr.easydoc.application.document.AcceptedUpload
 import kr.easydoc.core.document.DocumentListing
 import kr.easydoc.core.privacy.CONTENT_MASK
-import java.util.UUID
 
 // 민감 필드 부재 검증: `DocumentDtoLeakTest`.
 
@@ -20,18 +19,30 @@ data class DocumentTextRequest
         @param:JsonProperty("title")
         @param:JsonSetter(nulls = Nulls.SET)
         val title: String?,
-        /** 담을 작업 공간. 생략·`null` 이면 기본(가장 먼저 만든) 공간이다. 여는 사유는 [title] 과 같다. */
+        /**
+         * 담을 작업 공간. 생략·`null` 이면 기본(가장 먼저 만든) 공간이다. 여는 사유는 [title] 과 같다.
+         *
+         * **파싱하지 않은 원문으로 받는다.** `UUID` 로 선언하면 형식 판정이 Jackson 역직렬화
+         * 시점에 일어나 배열 `detail` 이 나가고, 계약이 정한 검사 순서(본문 길이가 앞선다)보다
+         * 앞질러 버린다. multipart 팔과 **같은 함수**가 같은 문자열 `detail` 을 내야 한다.
+         */
         @param:JsonProperty("workspace_id")
         @param:JsonSetter(nulls = Nulls.SET)
-        val workspaceId: UUID?,
+        val workspaceId: String?,
     ) {
-        /** **본문도 제목도 찍지 않는다.** */
+        /** **본문도 제목도 작업 공간 원문도 찍지 않는다** — 셋 다 사용자가 준 임의 문자열이다. */
         override fun toString(): String =
-            "DocumentTextRequest(text=$CONTENT_MASK ${text.length}자, title=$CONTENT_MASK, workspaceId=$workspaceId)"
+            "DocumentTextRequest(text=$CONTENT_MASK ${text.length}자, title=$CONTENT_MASK, workspaceId=$CONTENT_MASK)"
     }
 
-/** 업로드 접수 응답. 계약 `components/schemas/DocumentCreatedResponse` — 네 필드가 전부다. */
-data class DocumentCreatedResponse(
+/**
+ * 업로드 접수 응답. 계약 `components/schemas/DocumentCreatedResponse` — 네 필드가 전부다.
+ *
+ * 생성자와 `copy()` 가 `private` 인 것은 **[of] 가 유일한 조립 지점**임을 컴파일러가 지키게
+ * 하려는 것이다. 규율로만 두면 우회가 눈에 띄지 않는다.
+ */
+@ConsistentCopyVisibility
+data class DocumentCreatedResponse private constructor(
     @get:JsonProperty("document_id") val documentId: String,
     @get:JsonProperty("conversion_id") val conversionId: String,
     @get:JsonProperty("status") val status: String,
@@ -48,8 +59,9 @@ data class DocumentCreatedResponse(
     }
 }
 
-/** 목록 한 줄. 계약 `components/schemas/DocumentListItem` — 아홉 필드가 전부다. */
-data class DocumentListItemResponse(
+/** 목록 한 줄. 계약 `components/schemas/DocumentListItem` — 아홉 필드가 전부다. 조립은 [of] 뿐이다. */
+@ConsistentCopyVisibility
+data class DocumentListItemResponse private constructor(
     @get:JsonProperty("id") val id: String,
     @get:JsonProperty("title") val title: String,
     @get:JsonProperty("source_format") val sourceFormat: String,

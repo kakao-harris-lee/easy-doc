@@ -33,7 +33,7 @@ val UPLOAD_TOO_LARGE_MESSAGE: String = "파일이 너무 큽니다 (최대 ${MAX
 /** multipart 요청에 `file` 파트가 없거나 그 파트가 **파일이 아닐** 때. */
 const val MISSING_FILE_PART_MESSAGE: String = "업로드할 파일(file)이 필요합니다"
 
-/** multipart 폼의 `workspace_id` 가 UUID 형식이 아닐 때. */
+/** `workspace_id` 가 UUID 형식이 아닐 때 — **두 입력 팔이 같은 문구를 낸다.** 값 자체는 담지 않는다. */
 const val INVALID_WORKSPACE_ID_MESSAGE: String = "작업 공간 식별자 형식이 올바르지 않습니다"
 
 /** 계약 `POST /documents` 404 예시 `workspace_not_found`. */

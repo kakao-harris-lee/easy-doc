@@ -71,7 +71,7 @@ class DocumentStorageContextTest {
                     assertThat(context).hasNotFailed()
                     val service = context.getBean(DocumentService::class.java)
 
-                    val accepted = service.createFromText(owner, PROBE_BODY, null, workspace)
+                    val accepted = service.createFromText(owner, PROBE_BODY, null, workspace.toString())
 
                     val stored = readSourceText(accepted.documentId)
                     assertThat(String(stored.bytes, Charsets.UTF_8))
@@ -135,7 +135,7 @@ class DocumentStorageContextTest {
                     val accepted =
                         context
                             .getBean(DocumentService::class.java)
-                            .createFromText(owner, ROTATION_BODY, null, workspace)
+                            .createFromText(owner, ROTATION_BODY, null, workspace.toString())
                     documentId = accepted.documentId
                     conversionId = accepted.conversionId
                     assertThat(readSourceText(accepted.documentId).keyVersion).isEqualTo(1)
