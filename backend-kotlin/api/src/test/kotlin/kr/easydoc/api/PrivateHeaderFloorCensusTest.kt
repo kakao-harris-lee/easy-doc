@@ -2,12 +2,14 @@ package kr.easydoc.api
 
 import kr.easydoc.api.support.AuthSliceBeans
 import kr.easydoc.api.support.ContractSpec
+import kr.easydoc.api.support.ServedOperations
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest
 import org.springframework.context.annotation.Import
+import org.springframework.core.env.Environment
 import org.springframework.http.HttpHeaders
 import org.springframework.http.MediaType
 import org.springframework.mock.web.MockHttpServletResponse
@@ -15,10 +17,9 @@ import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.get
 import org.springframework.test.web.servlet.patch
 import org.springframework.test.web.servlet.post
-import org.springframework.test.web.servlet.put
+import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerMapping
 import tools.jackson.databind.ObjectMapper
 import java.nio.charset.StandardCharsets
-import java.util.UUID
 
 /** 하한선 열거 **전건**의 X-D1 — 전역 부착 장치를 뺀 컨텍스트에서 잰다. 분모는 계약이다. */
 @WebMvcTest
@@ -27,7 +28,26 @@ class PrivateHeaderFloorCensusTest {
     @Autowired
     private lateinit var mockMvc: MockMvc
 
+    @Autowired
+    private lateinit var handlerMapping: RequestMappingHandlerMapping
+
+    @Autowired
+    private lateinit var environment: Environment
+
     private val json = ObjectMapper()
+
+    @Test
+    @DisplayName("하한선 목록이 계약의 applies_to 와 **정체성으로** 같다 — 같은 개수의 경로 치환도 잡는다")
+    fun `하한선 목록이 계약과 정체성으로 같다`() {
+        assertThat(ContractSpec.privateResponseHeaderTargets().toSet())
+            .withFailMessage(
+                "계약의 x-private-response-headers.applies_to 가 이 클래스가 선언한 하한선 정체성과 다르다. " +
+                    "개수만 고정하면 같은 개수의 경로 치환이 통과하므로 (메서드, 경로) 짝 자신을 고정한다. " +
+                    "계약에만 있는 것: %s / 선언에만 있는 것: %s",
+                ContractSpec.privateResponseHeaderTargets().toSet() - DECLARED_FLOOR_TARGETS,
+                DECLARED_FLOOR_TARGETS - ContractSpec.privateResponseHeaderTargets().toSet(),
+            ).isEqualTo(DECLARED_FLOOR_TARGETS)
+    }
 
     @Test
     @DisplayName("이 컨텍스트에 전역 부착 장치가 **실제로 없다** — 있으면 아래 두 케이스가 개별 부착을 재지 못한다")
@@ -53,8 +73,13 @@ class PrivateHeaderFloorCensusTest {
 
         val targets = implementedTargets()
         assertThat(targets)
-            .withFailMessage("하한선 목록에서 구현된 자리를 하나도 찾지 못했다 — 분모가 0 이면 초록이 아무 뜻이 없다")
-            .isNotEmpty()
+            .withFailMessage(
+                "하한선 목록에서 구현된 자리를 %d 개만 찾았다 — 하한 %d 아래다. 분모가 줄면 초록이 덮는 범위가 " +
+                    "조용히 좁아진다. 유보를 늘려 분모를 깎은 것이 아닌지 먼저 보라. 실제: %s",
+                targets.size,
+                MIN_FLOOR_CENSUS_TARGETS,
+                targets,
+            ).hasSizeGreaterThanOrEqualTo(MIN_FLOOR_CENSUS_TARGETS)
 
         targets.forEach { target ->
             val response = driveSuccess(target)
@@ -82,26 +107,44 @@ class PrivateHeaderFloorCensusTest {
     }
 
     @Test
-    @DisplayName("유보한 자리는 **실제로 핸들러가 없다** — 구현되면 이 케이스가 먼저 빨개져 유보를 끊는다")
-    fun `유보한 자리는 아직 핸들러가 없다`() {
+    @DisplayName("유보한 자리는 **엔진에 매핑이 없고** 구현된 자리는 있다 — 구현되는 순간 유보가 끊긴다")
+    fun `유보한 자리는 아직 매핑이 없다`() {
         val declared = floorTargets().map { it.toString() }.toSet()
+        assertThat(NOT_YET_IMPLEMENTED)
+            .withFailMessage(
+                "유보가 상한 %d 를 넘었다 — 유보를 늘리는 것은 위 케이스의 분모를 깎는 것과 같다: %s",
+                MAX_DEFERRED_FLOOR_TARGETS,
+                NOT_YET_IMPLEMENTED,
+            ).hasSizeLessThanOrEqualTo(MAX_DEFERRED_FLOOR_TARGETS)
         assertThat(declared)
             .withFailMessage("유보 목록이 계약에 없는 자리를 담고 있다 — 유보가 계약과 어긋났다: %s", NOT_YET_IMPLEMENTED)
             .containsAll(NOT_YET_IMPLEMENTED)
 
         NOT_YET_IMPLEMENTED.forEach { token ->
             val target = FloorTarget.parse(token)
-            val response = probeUnimplemented(target)
 
-            assertThat(response.status)
+            assertThat(servedMethods(target.path))
                 .withFailMessage(
-                    "%s 가 「핸들러 없음」이 아니다(실제 %d) — 구현됐다는 뜻이므로 유보를 지우고 " +
-                        "요청 조립을 더해 위 케이스의 분모에 넣어라",
+                    "%s 가 이미 매핑돼 있다 — 구현됐다는 뜻이므로 유보를 지우고 요청 조립을 더해 위 케이스의 " +
+                        "분모에 넣어라. HTTP 상태로 재지 않는 이유는 이 자리들이 소유권 은닉 404 를 계약이 " +
+                        "요구하는 자원이라, 구현된 뒤에도 404 라서 유보가 영영 열리지 않기 때문이다. 실제: %s",
                     target,
-                    response.status,
-                ).isIn(NO_HANDLER_STATUSES)
+                    servedMethods(target.path),
+                ).doesNotContain(target.method)
+        }
+
+        implementedTargets().forEach { target ->
+            assertThat(servedMethods(target.path))
+                .withFailMessage(
+                    "구현된 %s 가 엔진 매핑에 없다 — 질의가 언제나 빈 집합을 돌려주면 위의 유보 단언이 " +
+                        "공허하게 통과한다. 이 팔이 그 변이를 끊는다. 실제: %s",
+                    target,
+                    servedMethods(target.path),
+                ).contains(target.method)
         }
     }
+
+    private fun servedMethods(path: String): Set<String> = ServedOperations.methodsOn(handlerMapping, environment, path)
 
     private fun floorTargets(): List<FloorTarget> = ContractSpec.privateResponseHeaderTargets().map(FloorTarget::parse)
 
@@ -162,30 +205,6 @@ class PrivateHeaderFloorCensusTest {
                 )
             }
         }
-
-    private fun probeUnimplemented(target: FloorTarget): MockHttpServletResponse {
-        val token = newAccount()
-        val path = target.path.replace(PATH_VARIABLE, UUID.randomUUID().toString())
-        return when (target.method) {
-            PUT -> {
-                mockMvc
-                    .put(path) {
-                        header(HttpHeaders.AUTHORIZATION, bearer(token))
-                        contentType = MediaType.APPLICATION_JSON
-                        content = EMPTY_JSON_OBJECT
-                    }.andReturn()
-                    .response
-            }
-
-            GET -> {
-                authorizedGet(path, token)
-            }
-
-            else -> {
-                error("유보 자리의 메서드에 프로브가 없다: $target")
-            }
-        }
-    }
 
     private fun newAccount(): String {
         val email = uniqueEmail()
@@ -288,7 +307,24 @@ class PrivateHeaderFloorCensusTest {
         const val GET = "get"
         const val POST = "post"
         const val PATCH = "patch"
-        const val PUT = "put"
+
+        val DECLARED_FLOOR_TARGETS: Set<String> =
+            setOf(
+                "POST /auth/signup",
+                "POST /auth/login",
+                "GET /auth/me",
+                "GET /documents",
+                "GET /conversions/{conversion_id}",
+                "PUT /conversions/{conversion_id}",
+                "GET /conversions/{conversion_id}/export",
+                "GET /workspaces",
+                "POST /workspaces",
+                "PATCH /workspaces/{workspace_id}",
+            )
+
+        const val MAX_DEFERRED_FLOOR_TARGETS = 2
+
+        const val MIN_FLOOR_CENSUS_TARGETS = 8
 
         /** 아직 미구현인 자리. **면제가 아니라 유보다** — 구현하면 빨개진다. */
         val NOT_YET_IMPLEMENTED: Set<String> =
@@ -296,10 +332,6 @@ class PrivateHeaderFloorCensusTest {
                 "PUT /conversions/{conversion_id}",
                 "GET /conversions/{conversion_id}/export",
             )
-
-        val PATH_VARIABLE = Regex("\\{[^}]+}")
-
-        val NO_HANDLER_STATUSES: Set<Int> = setOf(404, 405)
 
         const val EMAIL_PROPERTY = "email"
         const val PASSWORD_PROPERTY = "password"
@@ -312,7 +344,6 @@ class PrivateHeaderFloorCensusTest {
 
         const val VALID_PASSWORD = "correct horse battery"
         const val SAMPLE_TEXT = "하한선 인구조사용 안내문 본문"
-        const val EMPTY_JSON_OBJECT = "{}"
 
         var counter = 0
     }

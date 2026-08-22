@@ -685,6 +685,10 @@ RATCHET_SCALAR_PINS: tuple[tuple[str, str], ...] = (
         "backend-kotlin/infrastructure/src/test/kotlin/kr/easydoc/infrastructure/document/JdbcDocumentStoreTest.kt",
         "MIN_DOCUMENT_COLUMNS",
     ),
+    (
+        "backend-kotlin/api/src/test/kotlin/kr/easydoc/api/PrivateHeaderFloorCensusTest.kt",
+        "MIN_FLOOR_CENSUS_TARGETS",
+    ),
 )
 
 #: **제품 주석이 이름으로 지목한 테스트 클래스**의 `@Test` 개수 하한 (β-03 · β-24).
@@ -866,6 +870,12 @@ RATCHET_CEILING_PINS: tuple[tuple[str, str], ...] = (
         "backend-kotlin/api/src/test/kotlin/kr/easydoc/api/support/OwnershipConcealment.kt",
         "MAX_VARIABLE_HEADERS",
     ),
+    # 유보 목록의 상한. 커지면 하한선 인구조사의 **분모가 깎인다** — 구현된 자리를 유보로
+    #   옮기는 것만으로 그 자리의 개별 헤더 부착이 측정 밖으로 나간다.
+    (
+        "backend-kotlin/api/src/test/kotlin/kr/easydoc/api/PrivateHeaderFloorCensusTest.kt",
+        "MAX_DEFERRED_FLOOR_TARGETS",
+    ),
 )
 
 #: **실수 상한 라쳇 핀** — [RATCHET_CEILING_PINS] 와 방향은 같고 **읽는 방법이 다르다.**
@@ -940,11 +950,13 @@ RATCHET_CEILING_DECIMAL_PINS: tuple[tuple[str, str], ...] = (
 #: 이 튜플 자신은 [RATCHET_NAME_TUPLE_PINS] 가 지킨다 — 한 낱말을 지우면 그 이름의 사본이
 #: 통째로 인구조사 밖으로 나가기 때문이다.
 KOTLIN_RATCHETED_CONSTANT_NAMES: tuple[str, ...] = (
+    "MAX_DEFERRED_FLOOR_TARGETS",
     "MAX_TIMING_RATIO",
     "MAX_UNGUARDED_STATEMENTS",
     "MAX_VARIABLE_HEADERS",
     "MIN_CRITICAL_STATEMENTS",
     "MIN_DOCUMENT_COLUMNS",
+    "MIN_FLOOR_CENSUS_TARGETS",
     "MIN_NEGATIVE_CASES",
     "MIN_PORT_ADAPTERS",
     "MIN_PRODUCTION_CLASSES",
