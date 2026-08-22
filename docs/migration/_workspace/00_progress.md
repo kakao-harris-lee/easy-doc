@@ -1700,31 +1700,31 @@ pytest 사슬의 표적 실행 우회(`conftest.py` 이관을 착수했다가 **
 
 | 커밋 | 무엇을 바꿨나 | 상태 | 왜 4축이 아닌가 | 리뷰할 회차 | 닫힘 |
 |---|---|---|---|---|---|
-| `ed3df31` | 4축 사본의 동기화 강제자 (M-1·M-2) — `CLAUDE.md` · `tests/test_harness_scope_reach.py` | **대기** | 필수 축③에 닿는다 — 이연이 아니라 미리뷰 | `xx_harness 2회차` | - |
-| `7efc7c4` | codex 지적 medium 3건 — `.claude/skills/kotlin-migration/SKILL.md` · `tests/test_harness_scope_reach.py` · `tests/test_kotlin_class_snapshot_reach.py` | **대기** | 필수 축③에 닿는다 — 이연이 아니라 미리뷰 | `xx_harness 2회차` | - |
-| `3ba7e04` | codex 지적 high #1 — 리뷰 축 4 → 7, 즉시 중단 기준 전부 매핑. `.claude/skills/{kotlin-migration,codex-review}/SKILL.md` · `CLAUDE.md` · `tests/test_harness_scope_reach.py` | **대기** | 필수 축③에 닿는다 — 이연이 아니라 미리뷰 | `xx_harness 2회차` | - |
-| `e7faccc` | codex 지적 high #2 — 리뷰 커버리지 강제자 신설. `tests/test_review_coverage_reach.py` · 이 원장 | **대기** | 필수 축③에 닿는다 — 이연이 아니라 미리뷰 | `xx_harness-fixes` | - |
-| `87457e6` | ruff E501 2건 수정 — 이 범위가 CI `quality` 잡 전체를 껐다(F-5). `tests/test_harness_scope_reach.py` | **대기** | 필수 축③에 닿는다 — 이연이 아니라 미리뷰 | `xx_harness-fixes 후속` | - |
-| `73f9f4c` | F-2 차단 해소(장부 하한을 산문 → 표 행) + 커밋 게이트 사슬을 pytest 안으로(반복 실패 b) + `ci.yml` 신설 3파일 경로 명시(F-4 CI 부분) | **대기** | 필수 축③에 닿는다 — 이연이 아니라 미리뷰 | `xx_harness-fixes 후속` | - |
-| `0fda906` | F-1 차단 해소 — 커버리지 표도 구조적 파싱 + 범위 양 끝 실재 + `reviews/<회차>_*.md` 최소 2건 요구. **F-2 만 닫는 것은 무의미했다**(가짜 장부 행 없이 커버리지 한 줄로 우회) | **대기** | 필수 축③에 닿는다 — 이연이 아니라 미리뷰 | **동결 (교체 계획 R-2 로 소멸 예정)** | - |
+| `ed3df31` | 4축 사본의 동기화 강제자 (M-1·M-2) — `CLAUDE.md` · `tests/test_harness_scope_reach.py` | **대기** | 필수 축③에 닿는다 — 이연이 아니라 미리뷰 | `xx_harness-r2` | - |
+| `7efc7c4` | codex 지적 medium 3건 — `.claude/skills/kotlin-migration/SKILL.md` · `tests/test_harness_scope_reach.py` · `tests/test_kotlin_class_snapshot_reach.py` | **대기** | 필수 축③에 닿는다 — 이연이 아니라 미리뷰 | `xx_harness-r2` | - |
+| `3ba7e04` | codex 지적 high #1 — 리뷰 축 4 → 7, 즉시 중단 기준 전부 매핑. `.claude/skills/{kotlin-migration,codex-review}/SKILL.md` · `CLAUDE.md` · `tests/test_harness_scope_reach.py` | **대기** | 필수 축③에 닿는다 — 이연이 아니라 미리뷰 | `xx_harness-r2` | - |
+| `e7faccc` | codex 지적 high #2 — 리뷰 커버리지 강제자 신설. `tests/test_review_coverage_reach.py` · 이 원장 | **대기** | 필수 축③에 닿는다 — 이연이 아니라 미리뷰 | `xx_harness-r2` | - |
+| `87457e6` | ruff E501 2건 수정 — 이 범위가 CI `quality` 잡 전체를 껐다(F-5). `tests/test_harness_scope_reach.py` | **대기** | 필수 축③에 닿는다 — 이연이 아니라 미리뷰 | `xx_harness-r2` | - |
+| `73f9f4c` | F-2 차단 해소(장부 하한을 산문 → 표 행) + 커밋 게이트 사슬을 pytest 안으로(반복 실패 b) + `ci.yml` 신설 3파일 경로 명시(F-4 CI 부분) | **대기** | 필수 축③에 닿는다 — 이연이 아니라 미리뷰 | `xx_harness-r2` | - |
+| `0fda906` | F-1 차단 해소 — 커버리지 표도 구조적 파싱 + 범위 양 끝 실재 + `reviews/<회차>_*.md` 최소 2건 요구. **F-2 만 닫는 것은 무의미했다**(가짜 장부 행 없이 커버리지 한 줄로 우회) | **대기** | 필수 축③에 닿는다 — 이연이 아니라 미리뷰 | `xx_harness-r2` | - |
 | `b4c2fda` | G-γ 차단 6건 조치 — K-1(하한선 인구조사 신설) · G-1 · G-2 · S-1 · S-2 · S-5 · 층 ⓑ · **DC-26·DC-27 구현**(P-4). `tests/test_kotlin_gate_reach.py` · `PrivateHeaderFloorCensusTest` · `ContractCheckOrder` · `DocumentService` 외 | **대기** | 필수 축③(게이트·탐지기 자신)과 축②(외부 HTTP 계약)에 닿는다 — 이연이 아니라 미리뷰 | `04_documents-c6r2` | `04_documents-c6r2` (닫힘, 2026-08-22) |
 | `6a9ca8b` | G-γ 리더 판정 — 바닥 편입(`PrivateHeaderFloorCensusTest`) · `FLOOR_TEST_CLASSES` 를 이름 튜플 이력 축에 · 라쳇 둘 · 단언 하한 표. `tests/test_kotlin_gate_reach.py` · 이 원장 | **대기** | 필수 축③(게이트·탐지기 자신)에 닿는다 — 이연이 아니라 미리뷰. **이 커밋이 커버리지를 적은 커밋 자신이라 강제자가 자기를 지목했다**(설계대로. `docs/` 만 바꾸는 커밋은 면제이므로 사슬은 원장 커밋에서 끝난다) | `04_documents-c6r2` | `04_documents-c6r2` (닫힘, 2026-08-22) |
 | `6c970b6` | stop-time 게이트가 잡은 C6 응답 계약 위반 둘 — ⑴ 「`done` 전에는 비어 있다」 규칙에 강제자 신설(`ConversionStatus.exposesResult` + 서비스 집행 + 매퍼 `require`) ⑵ 500 저장 문구를 계약 예시에 맞춤. `core/document`·`core/exceptions`·`application/document`·`api/document` + 테스트 | **대기** | 필수 축①(보안·개인정보 노출 범위)·②(외부 HTTP 계약)에 닿는다 — 이연이 아니라 미리뷰 | `04_documents-c6r2` | `04_documents-c6r2` (닫힘, 2026-08-22) |
 | `4ac13ec` | 위 `6c970b6` 이 셋만 닫고 남긴 여섯을 stop-time 게이트가 다시 잡았다 — 완료 전 결과 필드를 **셋 → 아홉**으로 넓힘(`ConversionView.carriesResult` 신설이 아홉의 단일 정의, 대상 집합은 계약 `required` 에서 계산). 분모 결함도 고침(단위 팔 분모를 `exposesResult` → 상태 이름, 상수 자체를 계약 enum 과 대조). `core/document`·`application/document`·`api/document` + 테스트 | **대기** | 필수 축②(외부 HTTP 계약)에 닿는다 — 이연이 아니라 미리뷰. 축① 은 **아니다**: 여섯은 사용자 본문·개인정보를 담지 않는다(그 판단으로 지난 회차가 범위를 좁혔고, 계약 문면 축에서 틀렸다 — 축 판정과 범위 판정을 섞지 않는다) | `04_documents-c6r2` | `04_documents-c6r2` (닫힘, 2026-08-22) |
 
-| `80f6761` | `codex-reviewer` 를 `model: opus` → `haiku` + 얇은 래퍼 사유 명문화. `CLAUDE.md` 가 이미 규정한 것을 에이전트 정의가 따라잡았다(사용자 결정 2026-08-22 — 이 판이 최종) | **대기** | 필수 축③(게이트·탐지기 자신)에 닿는다 — 리뷰 레인 자신의 정의다. 이연이 아니라 미리뷰. **그리고 이 변경은 §4(축② 전사 역전)의 마감을 더 급하게 만든다** — 긴 브리프를 요약하는 Haiku 래퍼에서 전사 충실도가 하중을 받는 성질이 되고, 그것이 바로 역전이 일어난 기제다 | `xx_harness 2회차` | - |
-| `f3398bc` | `codex-reviewer` 래퍼에 **입력** 전사 규약 — 리더 축·조건은 문면 그대로 인용, 극성 문장 재서술 금지(레인 B 계획 §4). `.claude/agents/codex-reviewer.md` | **대기** | 필수 축③(게이트·탐지기 자신)에 닿는다 — 리뷰 레인 자신의 정의. 탐지자 0인 문서 규약이라는 한계는 계획 §6-5 에 적혀 있다 | `xx_harness 2회차` | - |
-| `0265138` | 레인 A C2 — X-9 Kotlin 라쳇 상수 양방향 인구조사. `tests/test_kotlin_gate_reach.py` | **대기** | 필수 축③(게이트·탐지기 자신) — 이연이 아니라 미리뷰 | `xx_harness 2회차` | - |
-| `d7cecfe` | 레인 B #2 — X-3b 출구: 리뷰된 `대기` 행은 `닫힘` 칸 요구. `tests/test_review_coverage_reach.py` | **대기** | 필수 축③ — 이연이 아니라 미리뷰 | `xx_harness 2회차` | - |
-| `7966ff5` | 레인 A C3 — X-6(엔진 질의)·X-1b·X-1a 하한선 인구조사 세 결함. `PrivateHeaderFloorCensusTest.kt` · 게이트 | **대기** | 필수 축③. 테스트만 — 제품 코드 무변경 — 이연이 아니라 미리뷰 | `xx_harness 2회차` | - |
-| `aff00c9` | 레인 B #3 — X-3a 입구: 출하 모드에서 미상환 `대기` 0 요구. `tests/test_review_coverage_reach.py` | **대기** | 필수 축③ — 이연이 아니라 미리뷰 | `xx_harness 2회차` | - |
-| `a28ee47` | 레인 B #4 — X-2a 커버리지 행을 `산출물` 칸 선언으로 판정. 같은 파일 | **대기** | 필수 축③ — 이연이 아니라 미리뷰 | `xx_harness 2회차` | - |
-| `ee92455` | 레인 A C4 — X-7 DC-26·DC-27 강제자 이름 지목. `DocumentController.kt` · `FrameworkErrorContractTest.kt` · 게이트 | **대기** | 필수 축③ + **축②(외부 HTTP 계약)** — 제품 컨트롤러를 건드렸다. 리뷰에서 응답 불변 확인 필요 — 이연이 아니라 미리뷰 | `xx_harness 2회차` | - |
-| `62b76d3` | 레인 A C5 — X-10 하한 10행 실측 상향(여유 0). 게이트 | **대기** | 필수 축③ — 이연이 아니라 미리뷰 | `xx_harness 2회차` | - |
-| `df4d60c` | 레인 B #5 — X-2b 역할 구성(codex-reviewer+cross)·X-2c 시점 결속(HEAD 실재·`<start>` 부재). 같은 파일 | **대기** | 필수 축③ — 이연이 아니라 미리뷰 | `xx_harness 2회차` | - |
-| `0272d3b` | 레인 B #6 — X-4·X-4c·X-11 어간 문법 + 전수 강제 + 문법 이전 어간 핀 19종. `.claude/skills/kotlin-migration/SKILL.md` · `tests/test_harness_scope_reach.py` | **대기** | 필수 축③. 핀 19종은 은폐형 성분(계획 §6-3) — 이연이 아니라 미리뷰 | `xx_harness 2회차` | - |
-| `95979f3` | 레인 A C6 — P-3 계약 확장 열거 접근자 하한 인구조사. `ContractEnumerationFloors.kt`·`ContractSpec.kt` · 게이트 | **대기** | 필수 축③. 테스트 지원 코드만 — 이연이 아니라 미리뷰 | `xx_harness 2회차` | - |
-| `329a964` | 레인 B #7 — X-16 주석 예산 축 분리(제품/테스트) + 이력 표식 여유 0 상한 + 테스트 주석 규약. `CLAUDE.md` · `tests/test_kotlin_comment_budget.py` | **대기** | 필수 축③ — 이연이 아니라 미리뷰 | `xx_harness 2회차` | - |
+| `80f6761` | `codex-reviewer` 를 `model: opus` → `haiku` + 얇은 래퍼 사유 명문화. `CLAUDE.md` 가 이미 규정한 것을 에이전트 정의가 따라잡았다(사용자 결정 2026-08-22 — 이 판이 최종) | **대기** | 필수 축③(게이트·탐지기 자신)에 닿는다 — 리뷰 레인 자신의 정의다. 이연이 아니라 미리뷰. **그리고 이 변경은 §4(축② 전사 역전)의 마감을 더 급하게 만든다** — 긴 브리프를 요약하는 Haiku 래퍼에서 전사 충실도가 하중을 받는 성질이 되고, 그것이 바로 역전이 일어난 기제다 | `xx_harness-r2` | - |
+| `f3398bc` | `codex-reviewer` 래퍼에 **입력** 전사 규약 — 리더 축·조건은 문면 그대로 인용, 극성 문장 재서술 금지(레인 B 계획 §4). `.claude/agents/codex-reviewer.md` | **대기** | 필수 축③(게이트·탐지기 자신)에 닿는다 — 리뷰 레인 자신의 정의. 탐지자 0인 문서 규약이라는 한계는 계획 §6-5 에 적혀 있다 | `xx_harness-r2` | - |
+| `0265138` | 레인 A C2 — X-9 Kotlin 라쳇 상수 양방향 인구조사. `tests/test_kotlin_gate_reach.py` | **대기** | 필수 축③(게이트·탐지기 자신) — 이연이 아니라 미리뷰 | `xx_harness-r2` | - |
+| `d7cecfe` | 레인 B #2 — X-3b 출구: 리뷰된 `대기` 행은 `닫힘` 칸 요구. `tests/test_review_coverage_reach.py` | **대기** | 필수 축③ — 이연이 아니라 미리뷰 | `xx_harness-r2` | - |
+| `7966ff5` | 레인 A C3 — X-6(엔진 질의)·X-1b·X-1a 하한선 인구조사 세 결함. `PrivateHeaderFloorCensusTest.kt` · 게이트 | **대기** | 필수 축③. 테스트만 — 제품 코드 무변경 — 이연이 아니라 미리뷰 | `xx_harness-r2` | - |
+| `aff00c9` | 레인 B #3 — X-3a 입구: 출하 모드에서 미상환 `대기` 0 요구. `tests/test_review_coverage_reach.py` | **대기** | 필수 축③ — 이연이 아니라 미리뷰 | `xx_harness-r2` | - |
+| `a28ee47` | 레인 B #4 — X-2a 커버리지 행을 `산출물` 칸 선언으로 판정. 같은 파일 | **대기** | 필수 축③ — 이연이 아니라 미리뷰 | `xx_harness-r2` | - |
+| `ee92455` | 레인 A C4 — X-7 DC-26·DC-27 강제자 이름 지목. `DocumentController.kt` · `FrameworkErrorContractTest.kt` · 게이트 | **대기** | 필수 축③ + **축②(외부 HTTP 계약)** — 제품 컨트롤러를 건드렸다. 리뷰에서 응답 불변 확인 필요 — 이연이 아니라 미리뷰 | `xx_harness-r2` | - |
+| `62b76d3` | 레인 A C5 — X-10 하한 10행 실측 상향(여유 0). 게이트 | **대기** | 필수 축③ — 이연이 아니라 미리뷰 | `xx_harness-r2` | - |
+| `df4d60c` | 레인 B #5 — X-2b 역할 구성(codex-reviewer+cross)·X-2c 시점 결속(HEAD 실재·`<start>` 부재). 같은 파일 | **대기** | 필수 축③ — 이연이 아니라 미리뷰 | `xx_harness-r2` | - |
+| `0272d3b` | 레인 B #6 — X-4·X-4c·X-11 어간 문법 + 전수 강제 + 문법 이전 어간 핀 19종. `.claude/skills/kotlin-migration/SKILL.md` · `tests/test_harness_scope_reach.py` | **대기** | 필수 축③. 핀 19종은 은폐형 성분(계획 §6-3) — 이연이 아니라 미리뷰 | `xx_harness-r2` | - |
+| `95979f3` | 레인 A C6 — P-3 계약 확장 열거 접근자 하한 인구조사. `ContractEnumerationFloors.kt`·`ContractSpec.kt` · 게이트 | **대기** | 필수 축③. 테스트 지원 코드만 — 이연이 아니라 미리뷰 | `xx_harness-r2` | - |
+| `329a964` | 레인 B #7 — X-16 주석 예산 축 분리(제품/테스트) + 이력 표식 여유 0 상한 + 테스트 주석 규약. `CLAUDE.md` · `tests/test_kotlin_comment_budget.py` | **대기** | 필수 축③ — 이연이 아니라 미리뷰 | `xx_harness-r2` | - |
 
 **`상태` 어휘는 둘이다.** `이연` = 필수 축에 닿지 않아 묶기로 판정한 것. `대기` = **필수 축에
 닿는데 아직 리뷰를 못 받은 것** — 이연이 아니라 빚이다. 위 세 줄은 전부 `대기`다(축③ =
