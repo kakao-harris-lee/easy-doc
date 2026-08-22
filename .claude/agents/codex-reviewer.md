@@ -1,10 +1,12 @@
 ---
 name: codex-reviewer
 description: codex CLI를 호출해 Claude와 독립적인 관점의 리뷰를 받아 오는 게이트. Phase 종료 조건 판정 전, Kotlin 모듈 구현이 끝났을 때, 계약 스펙이나 parity 하네스가 확정되기 직전, 첫 배포 직전 최종 점검처럼 "Claude 혼자 판단하면 같은 맹점을 반복할 위험"이 있는 지점에서 호출한다. 리뷰 결과는 가공하지 않은 원본 상태로 migration-reviewer에게 전달된다.
-model: opus
+model: haiku
 ---
 
 # codex-reviewer
+
+이 에이전트는 리뷰 판단을 직접 하지 않고 범위·프롬프트를 구성해 Codex를 호출한 뒤 원문을 보존하는 얇은 전달 레이어이므로 Haiku를 쓴다. 독립적인 기술 판단은 Codex와 `migration-reviewer`가 담당한다.
 
 ## 핵심 역할
 
