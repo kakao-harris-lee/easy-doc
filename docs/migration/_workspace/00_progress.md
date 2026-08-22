@@ -1594,6 +1594,24 @@ S-2/S-5 상한 형태 · `_reviewed_shas ∩ _recorded_shas` · `_kotlin_test_so
 
 ---
 
+### L-㉞ 게이트 회차 `xx_harness-r2-fixes` 완주 — 직전 차단 4 닫힘 · 인접 변이 차단 2 · 충돌 0 (2026-08-23, 리더)
+
+**조치 레인** 8커밋(`de689ff`·`d06f5c5`·`545f706`·`60fadff`·`3b7ba16`·`fb7d01c`·`06ea048`·`a304cc1`) — 보고 원문 `xx_harness-r2-fixes-report.md`, 음성 대조 16건 전부 게이트 exit code 로 실측. 리더 실측 @ `103f565`: ruff·format·mypy 통과, pytest 1671 passed, 출하 모드 정상 빨강(8건 미리뷰 → 이 기재로 닫힘).
+
+**회차 `xx_harness-r2-fixes`** (범위 `37f2962..103f565`): 정본 `reviews/xx_harness-r2-fixes_cross.md`. **직전 회차 차단 4건(C-1·C-2·codex⑴·codex⑵)은 겨눈 변이 기준 전부 닫힘**(Claude 1차 재주입 실측 + 양 레인 합의). **새 차단 2건 — codex 단독 발견, 교차 종합이 독립 재현**: X-1 커버리지 행의 `end` 를 미래로 늘리면 과거 산출물이 새 커밋을 승인한다(provenance 결속 부재) · X-2 `이연` 행의 `닫힘` 이 자유 문자열이라 임의 값으로 상환 인정. 둘 다 ②장치, 마감 **첫 Phase 종료·출하 판정 전**. M-1·M-2·P-1·P-3 해소 합의. `codex-review` §5-5 에 따라 Phase 4 종료 미보고.
+
+**실증된 실패 형태** — 「겨눈 변이만 막고 축은 열어 둠」. 다음 처방은 codex 가 쓴 변이만이 아니라 **인접 변이**(교차 §5.2 ⚠)까지 재주입해 재검증한다.
+
+#### 리더 판정
+
+| # | 쟁점 | **리더 판정** |
+|---|---|---|
+| R-b | A-4/출하 모드 축의 CI 도달 0 을 「의도된 상태」로 연장할 것인가 | **연장한다 — 단 Phase 종료 판정 절차에 `REVIEW_COVERAGE_REQUIRE_SETTLED=1` 실행을 명시 항목으로 둔다.** 상시 배선은 미상환 행이 있는 한 모든 잡을 빨갛게 하고, 그것은 신호가 아니라 소음이다. 도달 경로 `local:REVIEW_COVERAGE_REQUIRE_SETTLED=1 uv run pytest tests/test_review_coverage_reach.py` 로 기록한다 |
+| 조치 4 | 「산출물 내용이 참인가」 미측정(`xx_harness` 반례) | **X-1·X-2 와 같은 회차로 묶어 처방한다** — 셋 다 커버리지 행의 신뢰 축이다. 최소 장치: codex 산출물의 「codex 원문」 구획이 비어 있지 않음(줄 수 하한, 여유 0)과 exit code 기록 실재. 내용의 참은 여전히 안 잰다 — 그것은 적는다 |
+| 래퍼 경계 2건 | §7.2①(심각도 부여)·§6.2ⓐ(교차 종합 자체 착수·이전 리뷰어 호출) — 같은 계열 「얇은 전달 레이어가 경계를 넘는다」, 탐지자 0 | **백로그 유지, 규약 문면 보강은 다음 하네스 회차.** 이번 회차 피해 0(리더 제지, sha256 대조). 기계 탐지는 산출물 쪽(「정리」 구획에 심각도 척도 토큰 금지)만 가능하고 통신 쪽은 리더 관찰뿐 — 그 한계를 적는다 |
+
+**다음 회차 후보(사용자 결정 대기 — 비용 판단)**: X-1·X-2·조치 4 묶음 처방(`xx_harness-r2-fixes2`). 권고 R-a·R-c·R-d, A-7(M-3), P-2 는 Phase 경계로 이월.
+
 ### L-㉝ 세션 재개 · 레인 A/B 완주 · 게이트 회차 `xx_harness-r2` 완주 — 차단 4 전부 ② 장치 (2026-08-23, 리더)
 
 **세션 사망(컴퓨터 다운) 뒤 재개.** 잃은 것은 레인 B #1(§4) 편집의 커밋뿐이었고 `f3398bc` 로 닫았다. 두 레인을 점진 커밋으로 재가동해 레인 A C2~C7(`0265138`·`7966ff5`·`ee92455`·`62b76d3`·`95979f3`)·레인 B #2~#7(`d7cecfe`·`aff00c9`·`a28ee47`·`df4d60c`·`0272d3b`·`329a964`) 완주. 보고 원문은 `04_kotlin-implementer_harness-unit-laneA-report.md`·`xx_harness-unit-laneB-report.md`. 리더 독립 실측 @ `01d3c48`: ruff·format·mypy 통과, pytest 1666 passed, Gradle `--no-build-cache --rerun-tasks build parityHarness` exit 0.
@@ -1696,6 +1714,7 @@ pytest 사슬의 표적 실행 우회(`conftest.py` 이관을 착수했다가 **
 | `04_documents-c6` | `1d42c5d..318bd36` | `reviews/04_documents-c6_{codex-reviewer,migration-reviewer,cross}.md` |
 | `04_documents-c6r2` | `318bd36..b4646ee` | `reviews/04_documents-c6r2_{codex-reviewer,migration-reviewer,cross}.md` |
 | `xx_harness-r2` | `cbf6e8d..01d3c48` | `reviews/xx_harness-r2_{codex-reviewer,migration-reviewer,cross}.md` |
+| `xx_harness-r2-fixes` | `37f2962..103f565` | `reviews/xx_harness-r2-fixes_{codex-reviewer,migration-reviewer,cross}.md` |
 
 **이 표가 주장하는 것과 주장하지 않는 것.** 범위를 적는 것은 「그 구간을 리뷰했다」는
 **선언**이며, **그 선언이 참인지는 이 장치가 재지 않는다.** 산출물 파일의 실재는 방증일 뿐
@@ -1742,14 +1761,14 @@ pytest 사슬의 표적 실행 우회(`conftest.py` 이관을 착수했다가 **
 | `0272d3b` | 레인 B #6 — X-4·X-4c·X-11 어간 문법 + 전수 강제 + 문법 이전 어간 핀 19종. `.claude/skills/kotlin-migration/SKILL.md` · `tests/test_harness_scope_reach.py` | **대기** | 필수 축③. 핀 19종은 은폐형 성분(계획 §6-3) — 이연이 아니라 미리뷰 | `xx_harness-r2` | `xx_harness-r2` (닫힘, 2026-08-23) |
 | `95979f3` | 레인 A C6 — P-3 계약 확장 열거 접근자 하한 인구조사. `ContractEnumerationFloors.kt`·`ContractSpec.kt` · 게이트 | **대기** | 필수 축③. 테스트 지원 코드만 — 이연이 아니라 미리뷰 | `xx_harness-r2` | `xx_harness-r2` (닫힘, 2026-08-23) |
 | `329a964` | 레인 B #7 — X-16 주석 예산 축 분리(제품/테스트) + 이력 표식 여유 0 상한 + 테스트 주석 규약. `CLAUDE.md` · `tests/test_kotlin_comment_budget.py` | **대기** | 필수 축③ — 이연이 아니라 미리뷰 | `xx_harness-r2` | `xx_harness-r2` (닫힘, 2026-08-23) |
-| `de689ff` | 조치 A-5·A-6 — 레인 A 계획의 없는 환경변수명 정정(M-1) · `tests/test_kotlin_comment_budget.py` CI 경로 명시 배선(M-2). `.github/workflows/ci.yml` · 레인 A 계획 | **대기** | 필수 축③ — `ci.yml` 은 모든 게이트가 도는지 여부를 정한다 — 이연이 아니라 미리뷰 | `xx_harness-r2-fixes` | - |
-| `d06f5c5` | 조치 A-3 — 4축 블록의 중간 축 결손 탐지(codex ⑵). `tests/test_harness_scope_reach.py` | **대기** | 필수 축③ — 이연이 아니라 미리뷰 | `xx_harness-r2-fixes` | - |
-| `545f706` | 조치 A-1 — 무효 커버리지 행을 이름으로 지목하고 게이트를 빨갛게(C-1). `tests/test_review_coverage_reach.py` | **대기** | 필수 축③ — 이연이 아니라 미리뷰 | `xx_harness-r2-fixes` | - |
-| `60fadff` | 조치 A-2 — X-3b 분모 무방비 해소(C-2·R-1·R-2). 같은 파일 | **대기** | 필수 축③ — 이연이 아니라 미리뷰 | `xx_harness-r2-fixes` | - |
-| `3b7ba16` | 조치 A-2 ⑵ 보강 — 열 단언을 부분문자열에서 자리로(도달 0 실측). 같은 파일 | **대기** | 필수 축③ — 이연이 아니라 미리뷰 | `xx_harness-r2-fixes` | - |
-| `fb7d01c` | 조치 A-4 — 출하 모드에서 `이연` 행도 상환 요구(codex ⑴). `tests/test_review_coverage_reach.py` · `tests/test_harness_scope_reach.py` | **대기** | 필수 축③ — 이연이 아니라 미리뷰 | `xx_harness-r2-fixes` | - |
-| `06ea048` | 리더 판정 P-1 — X-11 `리뷰할 회차` 칸 문법 강제자(R-4). `.claude/skills/kotlin-migration/SKILL.md` · `tests/test_harness_scope_reach.py` | **대기** | 필수 축③ — 이연이 아니라 미리뷰 | `xx_harness-r2-fixes` | - |
-| `a304cc1` | 리더 판정 P-3 ⑶ — 하한 라쳇의 커밋 전 빨강에 「미커밋 신규 상수 N건」 사유를 붙인다(레인 A 발견 ①). `tests/test_kotlin_gate_reach.py` | **대기** | 필수 축③ — 이연이 아니라 미리뷰 | `xx_harness-r2-fixes` | - |
+| `de689ff` | 조치 A-5·A-6 — 레인 A 계획의 없는 환경변수명 정정(M-1) · `tests/test_kotlin_comment_budget.py` CI 경로 명시 배선(M-2). `.github/workflows/ci.yml` · 레인 A 계획 | **대기** | 필수 축③ — `ci.yml` 은 모든 게이트가 도는지 여부를 정한다 — 이연이 아니라 미리뷰 | `xx_harness-r2-fixes` | `xx_harness-r2-fixes` (닫힘, 2026-08-23) |
+| `d06f5c5` | 조치 A-3 — 4축 블록의 중간 축 결손 탐지(codex ⑵). `tests/test_harness_scope_reach.py` | **대기** | 필수 축③ — 이연이 아니라 미리뷰 | `xx_harness-r2-fixes` | `xx_harness-r2-fixes` (닫힘, 2026-08-23) |
+| `545f706` | 조치 A-1 — 무효 커버리지 행을 이름으로 지목하고 게이트를 빨갛게(C-1). `tests/test_review_coverage_reach.py` | **대기** | 필수 축③ — 이연이 아니라 미리뷰 | `xx_harness-r2-fixes` | `xx_harness-r2-fixes` (닫힘, 2026-08-23) |
+| `60fadff` | 조치 A-2 — X-3b 분모 무방비 해소(C-2·R-1·R-2). 같은 파일 | **대기** | 필수 축③ — 이연이 아니라 미리뷰 | `xx_harness-r2-fixes` | `xx_harness-r2-fixes` (닫힘, 2026-08-23) |
+| `3b7ba16` | 조치 A-2 ⑵ 보강 — 열 단언을 부분문자열에서 자리로(도달 0 실측). 같은 파일 | **대기** | 필수 축③ — 이연이 아니라 미리뷰 | `xx_harness-r2-fixes` | `xx_harness-r2-fixes` (닫힘, 2026-08-23) |
+| `fb7d01c` | 조치 A-4 — 출하 모드에서 `이연` 행도 상환 요구(codex ⑴). `tests/test_review_coverage_reach.py` · `tests/test_harness_scope_reach.py` | **대기** | 필수 축③ — 이연이 아니라 미리뷰 | `xx_harness-r2-fixes` | `xx_harness-r2-fixes` (닫힘, 2026-08-23) |
+| `06ea048` | 리더 판정 P-1 — X-11 `리뷰할 회차` 칸 문법 강제자(R-4). `.claude/skills/kotlin-migration/SKILL.md` · `tests/test_harness_scope_reach.py` | **대기** | 필수 축③ — 이연이 아니라 미리뷰 | `xx_harness-r2-fixes` | `xx_harness-r2-fixes` (닫힘, 2026-08-23) |
+| `a304cc1` | 리더 판정 P-3 ⑶ — 하한 라쳇의 커밋 전 빨강에 「미커밋 신규 상수 N건」 사유를 붙인다(레인 A 발견 ①). `tests/test_kotlin_gate_reach.py` | **대기** | 필수 축③ — 이연이 아니라 미리뷰 | `xx_harness-r2-fixes` | `xx_harness-r2-fixes` (닫힘, 2026-08-23) |
 
 **`상태` 어휘는 둘이다.** `이연` = 필수 축에 닿지 않아 묶기로 판정한 것. `대기` = **필수 축에
 닿는데 아직 리뷰를 못 받은 것** — 이연이 아니라 빚이다. 위 세 줄은 전부 `대기`다(축③ =
