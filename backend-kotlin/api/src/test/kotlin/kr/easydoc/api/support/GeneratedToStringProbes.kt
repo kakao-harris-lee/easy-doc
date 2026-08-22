@@ -279,7 +279,7 @@ class GeneratedToStringProbes(
         /** 구조적으로 사용자 텍스트를 담지 못하는 타입과 그 표본값. */
         private val INERT_VALUES: Map<KClass<*>, Any> =
             mapOf(
-                Int::class to 0,
+                Int::class to 1,
                 Long::class to 0L,
                 Short::class to 0.toShort(),
                 Byte::class to 0.toByte(),

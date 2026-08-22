@@ -58,10 +58,11 @@
    discovered 쪽이 남는다. **빈 선언은 통과할 수 없다**(SKILL.md 규칙 4 ⑶).
 2. **내용 결속.** 선언한 FQCN 마다 `package` 줄과 타입 선언이 그 이름 그대로 있는
    파일이 **정확히 하나** 있어야 한다.
-3. **개수 상수.** 파일과 선언을 **함께** 지우는 편집은 위 1·2 로 잡히지 않는다.
-   그때 `TEST_CLASS_COUNT` 를 같이 고쳐야 하므로 diff 가 두 자리에서 난다.
-3-a. **개수 하한.** 3 은 두 수기 선언 사이의 일관성일 뿐이라 **함께 줄이면 통과한다.**
-   `MIN_TEST_CLASSES` 는 그 축을 밖에서 되짚는다.
+3. **개수 하한.** 파일과 선언을 **함께** 지우는 편집은 위 1·2 로 잡히지 않는다.
+   `MIN_TEST_CLASSES` 가 그 축을 **밖에서** 되짚는다 — 라쳇이라 「함께 줄이기」로
+   만족시킬 수 없다. **인상 시점은 Phase 경계다**(SKILL.md 규칙 8 — 라쳇 상환).
+   *[2026-08-21] 종전에는 이 앞에 「개수 상수」(`TEST_CLASS_COUNT`, 목록과 정확 일치)가
+   따로 있었다. 그것이 막는다고 적힌 것을 이 하한이 이미 막으므로 없앴다 — 규칙 7.*
 3-b. **바닥 목록.** 다른 판정이 근거로 인용하는 탐지기는 `FLOOR_TEST_CLASSES` 에 있고,
    그것이 선언에서 빠지면 빨개진다. **바닥이지 천장이 아니다** — 새 테스트를 여기 적을
    필요는 없다.
@@ -126,16 +127,19 @@
   안에 열 0 짜리 선언 모양이 들어 있으면 유령 선언이 생긴다 — 그때는 discovered 에만
   남아 **빨개진다**(조용하지 않다). 도입 시점 실측: 발견 집합이 Gradle 리포트의 클래스
   집합과 **정확히 일치**했다(양쪽 차집합 0). 개수를 여기 적지 않는 이유는 그것이 다음
-  커밋에 곧바로 거짓이 되기 때문이다 — 개수는 `TEST_CLASS_COUNT` 가 진다.
+  커밋에 곧바로 거짓이 되기 때문이다 — 개수 축은 `MIN_TEST_CLASSES` 하한이 진다
+  (2026-08-21 이전에는 `TEST_CLASS_COUNT` 정확 일치가 함께 있었고, 규칙 7 로 없앴다).
 """
 
 from __future__ import annotations
 
+import ast
 import functools
 import os
 import re
 import shlex
 import subprocess
+import time
 import warnings
 from datetime import UTC, datetime
 from pathlib import Path
@@ -235,6 +239,8 @@ TEST_CLASSES: tuple[str, ...] = (
     "kr.easydoc.api.ContainerRejectionCoverageContractTest",
     "kr.easydoc.api.ContractErrorBodyReachTest",
     "kr.easydoc.api.ContractHeaderDeclarationTest",
+    "kr.easydoc.api.ConversionReadContractTest",
+    "kr.easydoc.api.ConversionReadReachTest",
     "kr.easydoc.api.CorsContractTest",
     "kr.easydoc.api.DeletedAccountTokenReachTest",
     "kr.easydoc.api.DocumentBodyLogLeakReachTest",
@@ -271,6 +277,7 @@ TEST_CLASSES: tuple[str, ...] = (
     "kr.easydoc.application.auth.AuthServiceTest",
     "kr.easydoc.application.conversion.ConversionParityTest",
     "kr.easydoc.application.conversion.ConvertDocumentUseCaseTest",
+    "kr.easydoc.application.document.ConversionQueryServiceTest",
     "kr.easydoc.application.conversion.RepairDecisionTest",
     "kr.easydoc.application.document.DocumentServiceTest",
     "kr.easydoc.application.document.EnvelopeRotationTest",
@@ -335,12 +342,36 @@ TEST_CLASSES: tuple[str, ...] = (
 
 #: 선언 **개수**를 목록과 따로 적는다. 파일과 선언을 함께 지우는 편집이 두 자리에
 #: 흔적을 남기게 하는 장치다. 목록을 고쳤으면 여기도 고쳐야 한다.
-TEST_CLASS_COUNT = 108
+#:
+#: ## [2026-08-21] 이 상수를 없앴다가 **되돌렸다** — 하한은 이것을 대신하지 못한다
+#:
+#: 없앤 근거는 "`MIN_TEST_CLASSES` 라쳇이 「함께 줄이기」를 이미 막는다" 였다. **그 근거가
+#: 틀렸다.** 라쳇은 「함께 줄이기」를 막는 게 아니라 **하한 아래로 내려가는 것만** 막는다.
+#: 실측(2026-08-21): 선언 111 · 하한 105 → **6 개까지는 파일과 선언을 함께 지워도 라쳇이
+#: 울리지 않는다.** 그중 82 개는 `FLOOR_TEST_CLASSES` 에도 없어 바닥도 못 막는다.
+#:
+#: 음성 대조로 확인했다 — `AuthContractTest` 의 선언과 `.kt` 파일을 **함께** 지웠을 때 잡은
+#: 것은 라쳇도 바닥도 아니라 [test_리포트에_나온_클래스는_전부_선언에_있다] 하나였고, 그것은
+#: **Gradle 리포트 XML**, 즉 오래된 빌드 산출물이다. 재빌드하면 그 클래스가 리포트에서
+#: 사라져 **조용해진다.** 실제로 그 축은 같은 날 기준선에서 빨간 상태였다(리포트가 트리와
+#: 어긋나 있었다) — 가드가 아니라 우연이다.
+#:
+#: **SKILL.md 규칙 8(라쳇 상환)이 이 창을 넓힌다.** 하한을 Phase 경계에서만 올리므로
+#: Phase 안에서 하한과 실측의 간격이 **자란다.** 그래서 이 정확 일치 축은 상환 규약과 함께
+#: 쓸 때 **덜** 필요해지는 게 아니라 **더** 필요해진다. 둘은 중복이 아니다:
+#: 하한은 「얼마 아래로는 못 간다」, 이 상수는 「한 개도 조용히 못 준다」.
+TEST_CLASS_COUNT = 111
 
-#: 선언 개수의 **하한**. `TEST_CLASS_COUNT` 와 역할이 다르다 — 저쪽은 "목록과 개수가
-#: 서로 맞는가"(두 수기 선언 사이의 일관성)이고, 이쪽은 "그 수가 **얼마 아래로는 내려갈 수
-#: 없는가**"다. 게이트 27 codex C-5 가 지적한 것이 정확히 그 빈자리였다: 탐지기 파일을
-#: 지우면서 목록과 개수를 **함께** 줄이면 모든 대조가 통과했다.
+#: 선언 개수의 **하한**. 「목록과 개수가 서로 맞는가」(두 수기 선언 사이의 일관성)가 아니라
+#: "그 수가 **얼마 아래로는 내려갈 수 없는가**"를 본다. 게이트 27 codex C-5 가 지적한 것이
+#: 정확히 그 빈자리였다: 탐지기 파일을 지우면서 목록과 개수를 **함께** 줄이면 모든 대조가
+#: 통과했다.
+#:
+#: **인상 시점은 Phase 경계다** (2026-08-21, SKILL.md 규칙 8 — 라쳇 상환). 종전에는 제품
+#: 커밋마다 「그 커밋 직전 실측」으로 올렸고, 그 결과 아래 이력이 하루에 다섯 줄 늘었다.
+#: 목적(조용한 축소 차단)은 경계 재기준화로 보존되므로 **Phase 안의 제품 커밋은 이 값을
+#: 건드리지 않는다.** 방향은 여전히 [RATCHET_SCALAR_PINS] 가 git 이력 최댓값으로 강제한다 —
+#: 낮출 수 없고, 덜 자주 올리는 것은 그 축을 어기지 않는다.
 #:
 #: 값의 근거는 실측이다 — 게이트 27 의 대상 리비전 `6515548` 에서 이 저장소가 가졌던 수가
 #: 85 다. 그 아래로 내려가는 것은 「정리」가 아니라 **축소**이므로, 낮추려면 이 상수를 고치는
@@ -672,6 +703,8 @@ RATCHET_SCALAR_PINS: tuple[tuple[str, str], ...] = (
 #: ([_declared_test_count]) 에 직접 물어 적었다(`grep` 이 아니다 — 규칙 2).
 MIN_TESTS_BY_NAMED_ENFORCER: dict[str, int] = {
     "kr.easydoc.api.ConfigurationPropertiesBindingTest": 1,
+    "kr.easydoc.api.ConversionReadContractTest": 5,
+    "kr.easydoc.api.ConversionReadReachTest": 10,
     "kr.easydoc.api.DeletedAccountTokenReachTest": 2,
     "kr.easydoc.api.DocumentContractNodeTest": 15,
     "kr.easydoc.api.DocumentDtoLeakTest": 6,
@@ -726,10 +759,12 @@ MIN_ASSERTIONS_BY_CLASS: dict[str, int] = {
     "kr.easydoc.api.AuthenticationCoverageContractTest": 8,
     "kr.easydoc.api.ConfigurationPropertiesBindingTest": 9,
     "kr.easydoc.api.ContractErrorBodyReachTest": 16,
+    "kr.easydoc.api.ConversionReadContractTest": 21,
+    "kr.easydoc.api.ConversionReadReachTest": 34,
     "kr.easydoc.api.DeletedAccountTokenReachTest": 12,
     "kr.easydoc.api.DocumentBodyLogLeakReachTest": 32,
     "kr.easydoc.api.DocumentContractNodeTest": 40,
-    "kr.easydoc.api.DocumentDeleteReachTest": 43,
+    "kr.easydoc.api.DocumentDeleteReachTest": 44,
     "kr.easydoc.api.DocumentDtoLeakTest": 15,
     "kr.easydoc.api.DocumentListContractTest": 30,
     "kr.easydoc.api.DocumentListHeaderFloorTest": 4,
@@ -783,15 +818,82 @@ RATCHET_TABLE_PINS: tuple[tuple[str, str], ...] = (
     (THIS_TEST_PATH, "MIN_ASSERTIONS_BY_CLASS"),
 )
 
-#: **이 파일의 수치 상수 중 라쳇이 아닌 것** — 그 사유를 값과 함께 남긴다.
+#: **상한 라쳇 핀** — 값이 **올라가면** 보호가 줄어드는 상수. `현재 ≤ 이력 최솟값` 을 요구한다.
+#:
+#: ## [RATCHET_SCALAR_PINS] 와 방향이 반대다
+#:
+#: 저 표는 하한(`관측 ≥ 상수`)이라 **내리는** 편집이 보호를 줄인다. 여기 오는 것은
+#: 예산·문턱처럼 `관측 < 상수` 로 쓰이는 값이고, **올리는** 편집이 보호를 줄인다. 두 방향을
+#: 한 표에 섞으면 이력 대조가 절반을 반대로 판정하므로 표를 따로 둔다.
+#:
+#: 방향은 손으로 적지 않는다 — [_bound_direction] 이 **AST 로** 판정하고,
+#: `test_이_파일의_수치_상수가_전부_분류돼_있다` 가 그 판정과 이 표를 대조한다.
+RATCHET_CEILING_PINS: tuple[tuple[str, str], ...] = (
+    (THIS_TEST_PATH, "SCANNER_TIME_BUDGET_SECONDS"),
+)
+
+#: **이 파일의 수치 상수 중 라쳇이 아닌 것** — 방향이 **없는** 것들이다.
 #:
 #: `TEST_CLASS_COUNT` 는 `len(TEST_CLASSES)` 와 **정확 일치**로 비교되므로 값만 내리면
 #: 즉시 빨개진다(실측: 1 내렸을 때 `test_테스트_클래스_선언이_비어_있지_않다` 가 지목).
 #: 그래서 이력 대조가 필요 없다 — **자기 권위가 아니라 목록이 권위**인 상수다.
 #: Kotlin 쪽 `EXPECTED_SOURCE_DECLARATIONS` 도 같은 성질이다(실측: 1 내리면 RED).
+#:
+#: ## 사유 문장은 이제 **게이트가 아니다** (X5, 리더 판정 2026-08-21)
+#:
+#: 종전에는 이 표의 유일한 강제가 「사유가 비어 있지 않은가」였다. 그것은 **그 사유가 참인지
+#: 재는 실행이 0** 이라는 뜻이고, 실측으로 방향 있는 새 하한 상수를 그럴듯한 사유와 함께
+#: 여기 넣는 변이가 **두 줄에 197 passed** 였다(`c6-preconditions` §3.3).
+#:
+#: 그래서 판정을 **실행 성질**로 옮겼다 — [_bound_direction] 이 그 상수가 순서 비교(`< <= > >=`)에
+#: 쓰이는지를 AST 로 보고, 쓰이면 여기 둘 수 없다. 사유 문장은 남기지만 그것이 통과의 근거는
+#: 아니다. `ast` 프로토타입이 손으로 적은 분할을 **오차 없이 재현**한 것이 교체의 근거다.
 NON_RATCHET_PINS: dict[str, str] = {
     "TEST_CLASS_COUNT": "len(TEST_CLASSES) 와 정확 일치 — 값만 내리면 즉시 빨개진다",
 }
+
+#: **게이트 스캐너의 실행 시간 예산(초).** 상한이므로 [RATCHET_CEILING_PINS] 가 지킨다.
+#:
+#: ## 왜 있는가 (2026-08-21 리더 판정 ⑤ — 차단 칸)
+#:
+#: `c6-preconditions` §2.8 이 실측한 사고: 이 파일의 정규식 하나에 파국적 백트래킹이 들어가
+#: 게이트 전체가 **7.93s → 656.74s(83배)** 가 됐고, 한 `findall` 이 **205.9s** 였다. CI
+#: `quality` 잡 예산이 **15분**이므로 그대로 두면 **이 검사 하나가 그 잡을 먹어 다른 가드를
+#: 죽인다.** 악용 비용은 정규식 한 줄이고 그것을 잡는 자동 탐지는 **없었다** — 사람이 첫
+#: 실행 304.86s 를 보고도 결함으로 읽지 못했고, 병렬 레인이 656.74s 를 재서야 드러났다.
+#:
+#: 즉 이것은 「가드가 못 잡는다」가 아니라 **「가드가 예산을 먹어 다른 가드를 죽인다」**이고,
+#: 그래서 축을 세운다.
+#:
+#: ## 무엇을 재는가 — 그리고 **재지 않는 것**
+#:
+#: 이 파일의 **스캐너 원시 함수**(전수 훑기 다섯)만 잰다. 「pytest 파일 전체의 벽시계」를
+#: 파일 자신이 재려 하면 실행 순서·병렬 실행·캐시 상태에 따라 값이 흔들리고, 흔들리는 축은
+#: 곧 문턱을 올려 무력화된다. 스캐너를 직접 부르면 **결정적이고 원인이 지목된다.**
+#:
+#: **재지 않는 것**: git 이력 대조의 `subprocess` 왕복(`_blob_at` 등). 그쪽은 저장소 크기와
+#: 디스크에 좌우되고, 오늘 실측이 1~2초라 예산을 정할 근거가 얇다. 그 자리는 잔여로 남긴다.
+#:
+#: ## 값의 근거와 거짓 양성 대가
+#:
+#: 2026-08-21 실측 합계 **1.261s**(개별: 0.073 / 0.058 / 0.628 / 0.350 / 0.153). 예산을 30초로
+#: 두면 여유가 **약 24배**다. 부하가 큰 러너에서 전체가 5~10배 느려져도 예산 안이고, 위 사고의
+#: 좌표(한 함수 205.9s)는 **즉시** 걸린다. 반대로 예산을 실측에 가깝게 조이면 러너 부하가
+#: 곧 거짓 빨강이 되고, 그때 고치는 법은 예산을 올리는 것이라 축이 스스로 무력해진다 —
+#: R-10 이 시간 축에서 겪은 그 문제다. 그래서 **느슨하게 두고 라쳇으로 올림을 막는다.**
+SCANNER_TIME_BUDGET_SECONDS = 30
+
+#: 실행 시간을 재는 스캐너 이름. **캐시를 비우고** 한 번씩 부른다.
+#:
+#: 목록이 아니라 **모듈 속성 이름**으로 두는 이유: 함수를 여기 직접 참조하면 선언 순서에
+#: 묶이고, 이름으로 두면 그 함수가 사라졌을 때 `getattr` 이 끊어 **조용한 축소**가 안 된다.
+TIMED_SCANNERS: tuple[str, ...] = (
+    "_kotlin_test_sources",
+    "_kotlin_main_sources",
+    "_discovered_test_classes",
+    "_kotlin_declared_names",
+    "_named_enforcer_census",
+)
 
 
 def _kotlin_test_sources() -> list[Path]:
@@ -957,6 +1059,11 @@ def test_선언_개수가_하한_아래로_내려가지_않는다() -> None:
 
     하한은 그 축을 밖에서 되짚는다. 값을 낮추려면 **이 상수를 고치는 별도의 diff** 가 필요하고,
     그 diff 는 "검사 범위를 줄였다"는 신고다.
+
+    **두 축은 중복이 아니다** (2026-08-21, 없앴다 되돌린 뒤 적는다). 하한은 「얼마 아래로는
+    못 간다」를 보고 이 위의 정확 일치는 「한 개도 조용히 못 준다」를 본다. 하한만 남기면
+    실측과 하한 사이의 간격만큼(당시 6 개) 조용한 삭제 창이 열리고, SKILL.md 규칙 8 의
+    라쳇 상환은 그 간격을 Phase 안에서 **자라게** 한다.
     """
     assert len(TEST_CLASSES) >= MIN_TEST_CLASSES, (
         f"선언한 테스트 클래스가 {len(TEST_CLASSES)} 개다 — 하한 {MIN_TEST_CLASSES} 아래다.\n"
@@ -2053,6 +2160,92 @@ def _table_in(text: str, name: str) -> dict[str, int]:
     return {key: int(value) for key, value in re.findall(r'"([^"]+)":\s*(\d+),', block.group(1))}
 
 
+#: 순서 비교 연산자. 이 셋 중 하나가 걸린 비교는 **방향이 있다**.
+_LOWER_WHEN_RIGHT = (ast.GtE, ast.Gt)
+_UPPER_WHEN_RIGHT = (ast.LtE, ast.Lt)
+
+
+def _module_int_constants(path: str) -> dict[str, int]:
+    """모듈 최상위의 **정수 상수** 인구조사 — `UPPER_SNAKE = <정수>` 를 AST 로 찾는다.
+
+    정규식이 아니라 AST 인 이유(X5, 리더 판정 2026-08-21): 정규식은 ⑴ 주석 처리된 선언과
+    문자열 안의 모양을 구분하지 못하고 ⑵ `private const val` 같은 변형에 새 갈래를 요구하고
+    ⑶ 실수를 정수로 오인한다(`= 0.05` 에서 `0` 을 읽는다). 그 함정 넷은 `c6-preconditions`
+    §3.4 가 Kotlin 쪽에서 실측한 것이고, Python 쪽에서는 `ast` 가 그것을 **전부** 없앤다.
+
+    `bool` 은 뺀다 — 파이썬에서 `True` 는 `int` 의 인스턴스지만 하한·상한이 아니다.
+    """
+    tree = ast.parse((REPO_ROOT / path).read_text(encoding="utf-8"))
+    found: dict[str, int] = {}
+    for node in tree.body:
+        if isinstance(node, ast.Assign):
+            targets: list[ast.expr] = list(node.targets)
+        elif isinstance(node, ast.AnnAssign):
+            targets = [node.target]
+        else:
+            continue
+        value = node.value
+        if not isinstance(value, ast.Constant) or not isinstance(value.value, int):
+            continue
+        if isinstance(value.value, bool):
+            continue
+        for target in targets:
+            if isinstance(target, ast.Name) and re.fullmatch(r"[A-Z][A-Z0-9_]*", target.id):
+                found[target.id] = value.value
+    return found
+
+
+def _bound_direction(path: str) -> dict[str, str]:
+    """상수마다 `"lower"` / `"upper"` / `"none"` 을 **실행 성질로** 판정한다.
+
+    판정 규칙: 그 이름이 **순서 비교**(`< <= > >=`)의 한쪽에 나타나면 방향이 있다. 상수가
+    오른쪽이고 연산자가 `>=`·`>` 면 `관측 ≥ 상수` 이므로 **하한**, `<=`·`<` 면 **상한**이다.
+    왼쪽에 있으면 반대로 읽는다. `==`·`!=` 만 쓰이면 방향이 없다 — 값만 바꿔도 즉시 깨지므로
+    이력 대조가 필요 없다는 것이 그 뜻이다.
+
+    **한 상수가 두 방향으로 쓰이면 끊는다.** 그 상태에서 어느 쪽 라쳇을 걸어도 절반은 반대로
+    판정하므로, 조용히 한쪽을 고르지 않고 판정 불가로 드러낸다(규칙 4 ⑶ — 판정 불가는
+    통과가 아니다).
+    """
+    tree = ast.parse((REPO_ROOT / path).read_text(encoding="utf-8"))
+    names = set(_module_int_constants(path))
+    directions: dict[str, set[str]] = {}
+
+    def note(name: str, direction: str) -> None:
+        directions.setdefault(name, set()).add(direction)
+
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Compare):
+            continue
+        operands = [node.left, *node.comparators]
+        for index, op in enumerate(node.ops):
+            left, right = operands[index], operands[index + 1]
+            if isinstance(right, ast.Name) and right.id in names:
+                if isinstance(op, _LOWER_WHEN_RIGHT):
+                    note(right.id, "lower")
+                elif isinstance(op, _UPPER_WHEN_RIGHT):
+                    note(right.id, "upper")
+            if isinstance(left, ast.Name) and left.id in names:
+                if isinstance(op, _LOWER_WHEN_RIGHT):
+                    note(left.id, "upper")
+                elif isinstance(op, _UPPER_WHEN_RIGHT):
+                    note(left.id, "lower")
+
+    resolved: dict[str, str] = {}
+    for name in sorted(names):
+        found = directions.get(name, set())
+        if not found:
+            resolved[name] = "none"
+        elif len(found) == 1:
+            resolved[name] = next(iter(found))
+        else:
+            raise AssertionError(
+                f"{path}::{name} 이 하한과 상한 **양쪽**으로 쓰인다 — 어느 라쳇을 걸어도 "
+                "절반은 반대로 판정한다. 상수를 둘로 나누어라."
+            )
+    return resolved
+
+
 def _history_unavailable() -> str | None:
     """이력을 읽을 수 없는 사유. 읽을 수 있으면 `None`."""
     if (REPO_ROOT / ".git" / "shallow").exists():
@@ -2172,36 +2365,275 @@ def test_바닥_개수표의_값이_이력_최댓값_아래로_내려가지_않�
     )
 
 
-def test_이_파일의_수치_상수가_전부_분류돼_있다() -> None:
-    """**정확 분할** — 라쳇으로 지키는 것과 그렇지 않은 것 중 하나여야 한다.
+@pytest.mark.parametrize("pin", RATCHET_CEILING_PINS, ids=lambda pin: pin[1])
+def test_상한_상수가_이력_최솟값보다_높지_않다(pin: tuple[str, str]) -> None:
+    """**예산·문턱은 올라가면 보호가 줄어든다** — 하한 라쳇의 거울상이다.
 
-    새 수치 핀을 더하면서 분류를 빠뜨리면 그 상수는 다시 「값 자신이 권위인」 상태가 되고,
-    그것이 이 축이 겨눈 결함이다. 사유 없이 비라쳇으로 두는 길도 막는다 —
-    [NON_RATCHET_PINS] 는 값이 사유 문자열이다.
+    조건은 `현재 ≤ 이력 최솟값`. 정당한 하향(더 조이는 편집)은 언제나 통과한다.
     """
-    declared = {
-        match.group(1)
-        for match in re.finditer(
-            r"^([A-Z_]+)(?:: [^=]+)? = \d+$",
-            (REPO_ROOT / THIS_TEST_PATH).read_text(encoding="utf-8"),
-            re.MULTILINE,
-        )
-    }
+    reason = _history_unavailable()
+    if reason is not None:
+        _report_or_fail_history(reason)
+        return
+
+    rel_path, name = pin
+    current = _scalar_in((REPO_ROOT / rel_path).read_text(encoding="utf-8"), name)
+    assert current is not None, f"{rel_path}::{name} — 현재 파일에서 그 상수를 찾지 못했다"
+    truncated = _history_truncated(rel_path)
+    assert truncated is None, f"{rel_path}::{name} 의 이력을 끝까지 읽지 못했다 — {truncated}"
+
+    seen = [
+        value
+        for rev, path_at in _git_revision_paths(rel_path)
+        if (value := _scalar_in(_blob_at(rev, path_at), name)) is not None
+    ]
+    if not seen:
+        # 새로 만든 상한은 이력에 없다 — 커밋 뒤 HEAD 가 그것을 포함하면 대조가 선다.
+        # 기존 스칼라 핀과 같은 성질이므로 새 동작이 아니다(`c6-preconditions` §7-3).
+        pytest.skip(f"{rel_path}::{name} 이 이력에 아직 없다 — 이 커밋이 그것을 만든다")
+
+    assert current <= min(seen), (
+        f"상한 상수가 **이력 최솟값보다 높다**: {rel_path}::{name} — "
+        f"현재 {current} > 이력 최솟값 {min(seen)}.\n"
+        "  예산을 올리는 것은 그 축이 지키기로 선언한 것을 조용히 줄이는 일이다.\n"
+        "  정말 올려야 한다면 근거(실측)를 커밋 메시지로 남겨라 — 이력은 고쳐지지 않는다."
+    )
+
+
+def _pin_tuples_in(text: str, name: str) -> set[tuple[str, str]]:
+    """소스 텍스트에서 `(경로, 이름)` 튜플 표를 **AST 로** 읽는다.
+
+    정규식이 아닌 이유: 이 표의 항목은 줄바꿈으로 접히고 경로가 암시적 문자열 이어붙이기로
+    조립되며 첫 칸이 `THIS_TEST_PATH` 같은 **이름**이다. 세 형태를 정규식으로 받으면 그
+    정규식 자신이 조용히 놓치는 표면이 된다.
+
+    파싱할 수 없는 리비전(문법이 달랐던 옛 판 등)은 빈 집합이다 — 그 처분은 호출자가
+    「이력에서 한 번도 찾지 못했다」로 판정한다.
+    """
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        return set()
+
+    strings: dict[str, str] = {}
+    table: ast.expr | None = None
+    for node in tree.body:
+        if isinstance(node, ast.Assign):
+            targets: list[ast.expr] = list(node.targets)
+        elif isinstance(node, ast.AnnAssign):
+            targets = [node.target]
+        else:
+            continue
+        for target in targets:
+            if not isinstance(target, ast.Name):
+                continue
+            value = node.value
+            if target.id == name:
+                table = value
+            elif isinstance(value, ast.Constant) and isinstance(value.value, str):
+                strings[target.id] = value.value
+
+    def literal(node: ast.expr) -> str | None:
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            return node.value
+        if isinstance(node, ast.Name):
+            return strings.get(node.id)
+        return None
+
+    if not isinstance(table, (ast.Tuple, ast.List)):
+        return set()
+    found: set[tuple[str, str]] = set()
+    for element in table.elts:
+        if not isinstance(element, (ast.Tuple, ast.List)) or len(element.elts) != 2:
+            continue
+        left, right = literal(element.elts[0]), literal(element.elts[1])
+        if left is not None and right is not None:
+            found.add((left, right))
+    return found
+
+
+RATCHET_PIN_TABLES = ("RATCHET_SCALAR_PINS", "RATCHET_CEILING_PINS", "RATCHET_TABLE_PINS")
+
+
+@pytest.mark.parametrize("table", RATCHET_PIN_TABLES)
+def test_라쳇_핀_목록이_이력에서_줄지_않았다(table: str) -> None:
+    """**핀 튜플을 지우는 편집을 잡는다** — β-08 / B-21 (2026-08-21 리더 판정: 차단으로 확정).
+
+    ## 무엇이 빈자리였나 (실측)
+
+    라쳇 기제 전체가 이 파일 한 곳이고, `test_이_파일의_수치_상수가_전부_분류돼_있다` 의
+    정확 분할은 **자기 파일의 상수만** 되짚는다. 그래서 다른 파일(Kotlin)을 가리키는 튜플을
+    [RATCHET_SCALAR_PINS] 에서 지우면 저장소 전체에서 빨개지는 것이 **없었다** —
+    `c6-preconditions` §3.4 의 음성 대조: 튜플 삭제 `exit 0 · 196 passed`, 튜플 삭제 +
+    상수 하향도 `exit 0 · 196 passed`, **지목 없음**.
+
+    ## 왜 면제표가 아니라 이력인가
+
+    처방 후보였던 「Kotlin 상수 인구조사 + 사유 있는 면제표」는 침묵을 **diff 에 남는 허위
+    사유 문장**으로 바꿀 뿐이고, 그 사유가 참인지 재는 실행이 다시 0 이 된다(X5 가 방금
+    같은 형태를 걷어냈다). 여기서 쓰는 분모는 **git 이력**이다 — 공격자가 PR diff 안에서
+    고칠 수 없고, 새 면제 조항을 만들지 않으며(은폐형 회피), 판정이 실행이다.
+
+    조건은 `현재 ⊇ 이력 합집합`. 항목을 **더하는** 편집은 언제나 통과한다.
+    """
+    reason = _history_unavailable()
+    if reason is not None:
+        _report_or_fail_history(reason)
+        return
+
+    truncated = _history_truncated(THIS_TEST_PATH)
+    assert truncated is None, f"{THIS_TEST_PATH} 의 이력을 끝까지 읽지 못했다 — {truncated}"
+
+    current = _pin_tuples_in((REPO_ROOT / THIS_TEST_PATH).read_text(encoding="utf-8"), table)
+    assert current, (
+        f"{table} 를 현재 파일에서 읽지 못했다(또는 비었다) — 표를 통째로 비우는 편집이 "
+        "이 대조를 공허하게 만들 수는 없다."
+    )
+
+    history: set[tuple[str, str]] = set()
+    for rev, path_at in _git_revision_paths(THIS_TEST_PATH):
+        history |= _pin_tuples_in(_blob_at(rev, path_at), table)
+    if not history:
+        pytest.skip(f"{table} 이 이력에 아직 없다 — 이 커밋이 그것을 만든다")
+
+    removed = sorted(history - current)
+    assert not removed, (
+        f"{table} 에서 **이력에 있던 핀이 사라졌다**:\n"
+        + "\n".join(f"  - {path}::{name}" for path, name in removed)
+        + "\n  핀을 지우면 그 상수는 다시 「값 자신이 권위인」 상태가 되고, 같은 커밋에서\n"
+        "  값을 내려도 저장소 전체에서 빨개지는 것이 없다(β-08 실측: exit 0 · 196 passed).\n"
+        "  정말 지워야 한다면 그 상수가 사라졌기 때문일 것이다 — 그러면 이 목록과 상수를\n"
+        "  **같은 커밋에서** 지우고 사유를 커밋 메시지에 남겨라(이력은 고쳐지지 않는다)."
+    )
+
+
+def test_이_파일의_수치_상수가_전부_분류돼_있다() -> None:
+    """**정확 삼분할** — 하한 라쳇 / 상한 라쳇 / 방향 없음 중 하나여야 한다.
+
+    ## 판정이 사유 문장에서 **실행 성질**로 옮겨왔다 (X5, 2026-08-21 리더 판정)
+
+    종전 판정은 「[NON_RATCHET_PINS] 의 사유가 비어 있지 않은가」였다. 그 강제는 사유가
+    **참인지** 재지 않으므로, 방향 있는 새 하한 상수를 그럴듯한 사유와 함께 그 표에 넣는
+    변이가 **두 줄에 197 passed** 였다(`c6-preconditions` §3.3 실측).
+
+    이제 방향을 [_bound_direction] 이 AST 로 판정한다 — 그 상수가 `< <= > >=` 로 비교되는지를
+    **실제 코드에서** 본다. 그래서 위장 면제가 통과하지 못하고, 「오늘 방향 있는 면제가 0 건」
+    이라는 사실에 기대지도 않는다(규칙 3 — 「오늘 0건」으로 닫지 않는다).
+
+    교체 비용이 유지 비용보다 크지 않다는 것도 실측이다 — `ast` 프로토타입 35줄이 손으로 적은
+    분할을 **오차 없이 재현**했고 실행 성질로 대조 불가능한 항목은 **0 건**이었다.
+    """
+    declared = _module_int_constants(THIS_TEST_PATH)
     assert declared, "이 파일에서 수치 상수를 하나도 찾지 못했다 — 이 대조는 아무것도 재지 않는다."
 
-    ratcheted = {name for path, name in RATCHET_SCALAR_PINS if path == THIS_TEST_PATH}
-    classified = ratcheted | set(NON_RATCHET_PINS)
-    missing = sorted(declared - classified)
-    stale = sorted(classified - declared - {name for _, name in RATCHET_TABLE_PINS})
+    directions = _bound_direction(THIS_TEST_PATH)
+    by_direction = {
+        "lower": {name for name, kind in directions.items() if kind == "lower"},
+        "upper": {name for name, kind in directions.items() if kind == "upper"},
+        "none": {name for name, kind in directions.items() if kind == "none"},
+    }
+    classified = {
+        "lower": {name for path, name in RATCHET_SCALAR_PINS if path == THIS_TEST_PATH},
+        "upper": {name for path, name in RATCHET_CEILING_PINS if path == THIS_TEST_PATH},
+        "none": set(NON_RATCHET_PINS),
+    }
 
-    assert not missing and not stale, (
-        "이 파일의 수치 상수 분류가 어긋났다.\n"
-        f"  분류되지 않은 상수(라쳇인지 아닌지 적히지 않았다): {missing or '없음'}\n"
-        f"  분류에만 있고 파일에 없는 상수: {stale or '없음'}\n"
-        "  새 수치 핀은 RATCHET_SCALAR_PINS 나 NON_RATCHET_PINS 중 하나에 **사유와 함께** 넣어라."
+    mismatches = [
+        f"  {kind}: AST 판정 {sorted(by_direction[kind])} / 선언 {sorted(classified[kind])}"
+        for kind in ("lower", "upper", "none")
+        if by_direction[kind] != classified[kind]
+    ]
+    assert not mismatches, (
+        "이 파일의 수치 상수 분류가 **실행 판정과 어긋난다**:\n"
+        + "\n".join(mismatches)
+        + "\n  하한(`관측 ≥ 상수`)은 RATCHET_SCALAR_PINS, 상한(`관측 < 상수`)은\n"
+        "  RATCHET_CEILING_PINS, 방향 없는 것(`==` 로만 쓰임)은 NON_RATCHET_PINS 다.\n"
+        "  분류를 고치는 것이 아니라 **왜 방향이 그렇게 읽혔는지**를 먼저 보라."
     )
     assert all(NON_RATCHET_PINS.values()), (
-        "NON_RATCHET_PINS 의 사유가 빈 항목이 있다 — 사유 없는 면제는 이 저장소가 금지한 형태다."
+        "NON_RATCHET_PINS 의 사유가 빈 항목이 있다 — 사유는 이제 게이트가 아니지만 "
+        "다음 사람이 읽을 기록이므로 비워 두지 않는다."
+    )
+
+
+def test_방향_판정기가_하한과_상한과_무방향을_가른다(tmp_path: Path) -> None:
+    """**[_bound_direction] 자신의 음성 대조** — 판정기가 세 갈래를 실제로 가르는가.
+
+    이 케이스가 없으면 판정기가 언제나 `"none"` 을 돌려주는 변이에서 위 삼분할이
+    **조용히 통과한다**(모든 상수가 방향 없음 → NON_RATCHET_PINS 에 다 들어가면 초록).
+    합성 소스로 세 형태를 먹여 셋이 각각 발화함을 실행으로 고정한다.
+    """
+    probe = tmp_path / "probe.py"
+    probe.write_text(
+        "\n".join(
+            [
+                "LOWER = 3",
+                "UPPER = 9",
+                "EXACT = 5",
+                "def f(observed):",
+                "    assert observed >= LOWER",
+                "    assert observed < UPPER",
+                "    assert observed == EXACT",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    relative = str(probe.relative_to(probe.anchor)) if probe.is_absolute() else str(probe)
+    # `_bound_direction` 은 `REPO_ROOT` 기준 상대 경로를 받는다. 합성 파일을 그 밑에 두지
+    # 않으므로 `os.path.relpath` 로 되짚는다 — 판정 대상은 내용이고 위치가 아니다.
+    import os as _os
+
+    resolved = _os.path.relpath(probe, REPO_ROOT)
+    assert _module_int_constants(resolved) == {"LOWER": 3, "UPPER": 9, "EXACT": 5}
+    assert _bound_direction(resolved) == {"LOWER": "lower", "UPPER": "upper", "EXACT": "none"}, (
+        "판정기가 세 갈래를 가르지 못한다 — 이 상태에서는 위 삼분할이 공허하다."
+    )
+    del relative
+
+
+def test_게이트_스캐너의_실행_시간이_예산_안이다() -> None:
+    """**가드가 CI 예산을 먹어 다른 가드를 죽이는 것**을 잡는다 (2026-08-21 리더 판정 ⑤).
+
+    근거와 예산의 출처는 [SCANNER_TIME_BUDGET_SECONDS] 주석에 있다. 여기서 하는 일은
+    **캐시를 비우고** 스캐너 다섯을 한 번씩 부른 시간을 재는 것이다.
+
+    ## 상대 이상치 축은 **세우지 않았다** — 실측 근거
+
+    리더가 후보로 준 둘 중 하나를 실측으로 버렸다. 오늘 개별 스캐너의 퍼짐은
+    `최댓값/중앙값 = 0.628/0.153 ≈ 4.1` 이다. 문턱을 그 위(예: 20)에 두면 위 사고의 좌표
+    (한 함수 205.9s)는 잡지만 **그것은 예산 축이 이미 잡는다** — 즉 새로 잡는 것이 없다.
+    반대로 문턱을 조이면 스캐너가 하나 늘거나 줄 때 중앙값이 움직여 거짓 빨강이 나고,
+    그때 고치는 법은 문턱을 올리는 것이라 축이 스스로 무력해진다. **잡는 것이 없고 흔들리는
+    축은 덮는 범위만 부풀린다** — 그래서 세지 않았다.
+    """
+    scanners = []
+    for name in TIMED_SCANNERS:
+        function = globals().get(name)
+        assert function is not None, (
+            f"{name} 이 이 모듈에 없다 — 스캐너가 사라졌거나 이름이 바뀌었다. "
+            "TIMED_SCANNERS 를 조용히 줄이는 편집을 여기서 끊는다."
+        )
+        scanners.append((name, function))
+
+    elapsed: dict[str, float] = {}
+    for name, function in scanners:
+        cache_clear = getattr(function, "cache_clear", None)
+        if cache_clear is not None:
+            cache_clear()
+        started = time.perf_counter()
+        function()
+        elapsed[name] = time.perf_counter() - started
+
+    total = sum(elapsed.values())
+    assert total < SCANNER_TIME_BUDGET_SECONDS, (
+        f"게이트 스캐너가 {total:.2f}s 를 썼다 — 예산 {SCANNER_TIME_BUDGET_SECONDS}s 를 넘었다.\n"
+        + "\n".join(
+            f"  - {name}: {value:.2f}s"
+            for name, value in sorted(elapsed.items(), key=lambda item: -item[1])
+        )
+        + "\n  이 파일의 게이트는 CI `quality`(15분)·`kotlin`(25분) 두 잡의 스텝이다.\n"
+        "  느려진 검사는 조용히 **잡 타임아웃**으로만 나타난다 — 그때는 원인을 알 수 없다.\n"
+        "  가장 흔한 원인은 정규식의 파국적 백트래킹이다(실측: 7.93s → 656.74s)."
     )
 
 

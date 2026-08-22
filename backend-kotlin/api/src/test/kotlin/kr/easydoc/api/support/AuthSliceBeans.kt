@@ -9,9 +9,11 @@ import kr.easydoc.application.auth.UserRepository
 import kr.easydoc.application.auth.WorkspaceDeletionState
 import kr.easydoc.application.auth.WorkspaceRepository
 import kr.easydoc.application.crypto.ContentCipher
+import kr.easydoc.application.document.ConversionQueryService
 import kr.easydoc.application.document.DocumentService
 import kr.easydoc.application.document.DocumentStorage
 import kr.easydoc.application.document.DocumentTextExtractor
+import kr.easydoc.application.document.MaskedItemReader
 import kr.easydoc.application.document.WorkspaceLookup
 import kr.easydoc.application.workspace.DUPLICATE_WORKSPACE_NAME_MESSAGE
 import kr.easydoc.application.workspace.WorkspaceService
@@ -74,7 +76,8 @@ class AuthSliceBeans {
     fun inMemoryDocuments(): InMemoryDocumentRepository = InMemoryDocumentRepository()
 
     @Bean
-    fun inMemoryConversions(): InMemoryConversionRepository = InMemoryConversionRepository()
+    fun inMemoryConversions(documents: InMemoryDocumentRepository): InMemoryConversionRepository =
+        InMemoryConversionRepository(documents)
 
     @Bean
     fun recordingQueue(): RecordingConversionQueue = RecordingConversionQueue()
@@ -88,6 +91,10 @@ class AuthSliceBeans {
 
     @Bean
     fun stubTextExtractor(): DocumentTextExtractor = StubDocumentTextExtractor()
+
+    /** 마스킹 대응표 읽기 대역. 저장 형식을 흉내 내지 않는다 — 사유는 그 클래스 KDoc. */
+    @Bean
+    fun stubMaskedItemReader(): MaskedItemReader = StubMaskedItemReader()
 
     /**
      * 업로드가 한 트랜잭션에서 쓰는 세 저장소를 제품 조립과 같은 모양으로 묶는다
@@ -115,6 +122,21 @@ class AuthSliceBeans {
             workspaces = workspaceLookup,
             cipher = cipher,
             extractor = extractor,
+            transaction = transaction,
+        )
+
+    /** 조회 유스케이스도 실물이다 — 제품 조립과 같은 모양으로 나눈다. */
+    @Bean
+    fun conversionQueryService(
+        conversions: InMemoryConversionRepository,
+        cipher: ContentCipher,
+        maskedItems: MaskedItemReader,
+        transaction: TransactionRunner,
+    ): ConversionQueryService =
+        ConversionQueryService(
+            conversions = conversions,
+            cipher = cipher,
+            maskedItems = maskedItems,
             transaction = transaction,
         )
 }

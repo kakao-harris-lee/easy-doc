@@ -63,18 +63,20 @@ class DocumentDeleteReachTest {
     fun `삭제가 변환과 작업 행까지 파기한다`() {
         val token = newAccount()
         val subject = subjectOf(token)
-        val documentId = createDocument(token)
+        val (documentId, conversionId) = createDocumentAndConversion(token)
 
         assertThat(documentRows(subject)).isEqualTo(1)
         assertThat(conversionRows(documentId)).isEqualTo(1)
         assertThat(jobRows(documentId)).isEqualTo(1)
+        assertThat(orphanJobRows(conversionId)).isEqualTo(1)
         assertThat(sourceCiphertextBytes(documentId)).isPositive()
 
         delete(token, documentId).also { assertDeclaredStatus(it, ContractSpec.successStatus(ITEM_PATH, DELETE)) }
 
         assertThat(documentRows(subject)).describedAs("문서 행이 남았다 — 표시만 하고 지우지 않았다").isZero()
         assertThat(conversionRows(documentId)).describedAs("변환 행이 남았다 — CASCADE 가 끊겼다").isZero()
-        assertThat(jobRows(documentId))
+
+        assertThat(orphanJobRows(conversionId))
             .describedAs("작업 행이 남으면 워커가 매번 없는 변환을 읽으러 간다 — 연쇄 둘째 고리다")
             .isZero()
     }
@@ -254,13 +256,17 @@ class DocumentDeleteReachTest {
     }
 
     /** 붙여넣기 모드로 문서를 만들고 그 식별자를 돌려준다. */
-    private fun createDocument(token: String): String {
+    private fun createDocument(token: String): String = createDocumentAndConversion(token).first
+
+    /** 문서를 만들고 `(문서 id, 변환 id)` 를 돌려준다. */
+    private fun createDocumentAndConversion(token: String): Pair<String, String> {
         val body = json.writeValueAsString(mapOf("text" to "삭제 대상 안내문 본문"))
         val response = send(post(token, body, DOCUMENTS_PATH))
         check(response.statusCode() == ContractSpec.successStatus(DOCUMENTS_PATH, POST)) {
             "문서 접수가 실패했다: ${response.statusCode()} ${response.body()}"
         }
-        return bodyOf(response).required(DOCUMENT_ID_PROPERTY).toString()
+        val created = bodyOf(response)
+        return created.required(DOCUMENT_ID_PROPERTY).toString() to created.required(CONVERSION_ID_PROPERTY).toString()
     }
 
     private fun delete(
@@ -330,6 +336,10 @@ class DocumentDeleteReachTest {
                 "WHERE c.document_id = '$documentId'",
         )
 
+    /** X4 보강 — 변환 식별자로 작업 행을 직접 센다. 조인이 없다. */
+    private fun orphanJobRows(conversionId: String): Int =
+        database.queryInt("SELECT count(*) FROM conversion_jobs WHERE conversion_id = '$conversionId'")
+
     /** 원문 암호문의 길이. 0 보다 커야 「지울 것이 실제로 있었다」가 성립한다. */
     private fun sourceCiphertextBytes(documentId: String): Int =
         database.queryInt("SELECT octet_length(source_text_encrypted) FROM documents WHERE id = '$documentId'")
@@ -390,6 +400,9 @@ class DocumentDeleteReachTest {
 
         private const val DETAIL = "detail"
         private const val DOCUMENT_ID_PROPERTY = "document_id"
+
+        /** X4 보강이 쓰는 응답 필드. 작업 행을 조인 없이 세려면 이 값이 필요하다. */
+        private const val CONVERSION_ID_PROPERTY = "conversion_id"
         private const val VALIDATION_ITEM_SCHEMA = "ValidationErrorItem"
 
         /** 계약이 이 경로 404 의 인라인 예시에 붙인 이름. 값이 아니라 이름이라 여기 적는다. */

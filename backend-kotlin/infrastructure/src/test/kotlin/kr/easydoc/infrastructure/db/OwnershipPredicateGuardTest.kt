@@ -384,6 +384,7 @@ class OwnershipPredicateGuardTest {
                 "$AUTH/JdbcWorkspaceRepository.kt | SELECT [documents]",
                 "$DOCUMENT/JdbcConversionRepository.kt | SELECT [conversions]",
                 "$DOCUMENT/JdbcConversionRepository.kt | UPDATE [conversions]",
+                "$DOCUMENT/JdbcConversionRepository.kt | SELECT [conversions, documents]",
                 "$DOCUMENT/JdbcConversionRepository.kt | INSERT [conversions]",
                 "$DOCUMENT/JdbcDocumentRepository.kt | SELECT [documents]",
                 "$DOCUMENT/JdbcDocumentRepository.kt | UPDATE [documents]",

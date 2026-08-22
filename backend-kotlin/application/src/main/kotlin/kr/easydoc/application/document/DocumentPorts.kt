@@ -1,10 +1,14 @@
 package kr.easydoc.application.document
 
 import kr.easydoc.core.crypto.EncryptedContent
+import kr.easydoc.core.crypto.PlainBody
 import kr.easydoc.core.document.Conversion
+import kr.easydoc.core.document.ConversionStatus
 import kr.easydoc.core.document.Document
 import kr.easydoc.core.document.DocumentListing
+import kr.easydoc.core.document.MaskedItemView
 import kr.easydoc.core.document.SourceFormat
+import java.time.Instant
 import java.util.UUID
 
 // 문서·변환 유스케이스가 바깥 세계에 요구하는 것들 — **포트 선언**.
@@ -85,30 +89,27 @@ class ConversionEnvelope(
     val ciphertexts: ConversionCiphertexts,
 )
 
-/**
- * `conversions` 저장소.
- *
- * ## 소유 조건 규약 — [DocumentRepository] 와 같은 규칙이고, 여기엔 **적혀 있지도 않았다**
- *
- * 게이트 27 M-3 이 지적한 자리다. 이쪽은 「거짓 선언」이 아니라 **무선언**이었고, 강제자가
- * 0인 것은 같았다(`privacy-gate` 판정 §1.5).
- *
- * `conversions` 에는 소유자 컬럼이 없다 — 소유는 `conversions.document_id` 를 거쳐
- * `documents.user_id` 로만 닿는다(`V1__python_schema_baseline.sql`). 그래서 사용자 경로가
- * 변환 한 건을 읽으려면 **조인을 품은 단일 질의**여야 한다. 읽고 나서 소유자를 비교하는 형태는
- * 만들지 않는다 — [ConversionEnvelope] 에는 애초에 비교할 재료(`documentId`)가 없어서 질의를
- * 한 번 더 던지게 되고, 그 순간 [DocumentRepository] KDoc 이 금지한 형태가 확정된다.
- *
- * ## 오늘 여기에 사용자 경로용 읽기 포트는 없다
- *
- * [lockEnvelope] 는 유지보수(키 회전)용이라 소유자를 받지 않는다. **`GET /conversions/{id}` 를
- * 만들 때 이 메서드를 쓰지 마라** — 소유자 인자를 받고 조인을 SQL `WHERE` 안에 넣는 새 포트가
- * 필요하다(`privacy-gate` 해제 조건 ⒜, C6 단위).
- *
- * 이 규약을 지키는 것도 시그니처가 아니라 탐지기다 — `OwnershipPredicateGuardTest` 가 제품
- * 소스에서 이 테이블에 닿는 SQL 을 뽑아 정확 열거 핀과 대조한다. 오늘 이 인터페이스가 내는
- * SQL 은 그 핀에 항목으로 올라 있다 — 목록의 정본은 그 파일이지 이 문장이 아니다.
- */
+/** 사용자 경로가 읽어 가는 변환 행 한 건 — **암호문 그대로**와 평문 메타데이터. */
+data class StoredConversion(
+    val id: UUID,
+    val documentId: UUID,
+    val status: ConversionStatus,
+    val ciphertexts: ConversionCiphertexts,
+    val reviewedAt: Instant?,
+    val missingPlaceholders: List<String>,
+    val model: String?,
+    val providerName: String?,
+    val inputTokens: Int?,
+    val outputTokens: Int?,
+    val failureCode: String?,
+) {
+    /** 로그 허용목록 그대로 — 식별자·상태·실패 코드와 **개수**뿐이다. */
+    override fun toString(): String =
+        "StoredConversion($id, doc=$documentId, ${status.wireName}, failure=$failureCode, " +
+            "missing=${missingPlaceholders.size})"
+}
+
+/** `conversions` 저장소. */
 interface ConversionRepository {
     /** 대기 상태 변환을 만든다. **커밋하지 않는다.** */
     fun insertPending(
@@ -118,12 +119,13 @@ interface ConversionRepository {
         keyVersion: Int,
     ): Conversion
 
-    /**
-     * 회전 대상 행의 암호문과 봉투를 읽고 **그 행을 잠근다**. 없으면 `null`.
-     *
-     * 잠그는 이유와 이름이 `lock` 인 이유는 [DocumentRepository.lockSourceText] 와 같다.
-     * 소유자를 받지 않는 이유도 같다.
-     */
+    /** **내** 변환 한 건을 읽는다. 없거나 내 것이 아니면 `null` — **두 경우를 구분하지 않는다.** */
+    fun findOwnedResult(
+        ownerId: UUID,
+        conversionId: UUID,
+    ): StoredConversion?
+
+    /** 회전 대상 행의 암호문과 봉투를 읽고 **그 행을 잠근다**. 없으면 `null`. */
     fun lockEnvelope(conversionId: UUID): ConversionEnvelope?
 
     /** 암호문 세 열과 봉투 두 값을 **한 UPDATE 로** 바꾼다. 갱신됐으면 `true`. */
@@ -135,32 +137,13 @@ interface ConversionRepository {
     ): Boolean
 }
 
-/**
- * 변환 작업 큐.
- *
- * ## 등록이 저장과 **같은 트랜잭션**이다
- *
- * 계획 §4.4 가 정한 구조다 — *"문서·변환·작업 행을 같은 DB 트랜잭션에서 저장하면 'DB 커밋
- * 성공, 큐 등록 실패' 간극이 사라진다."* 큐가 같은 PostgreSQL 이므로 등록은 INSERT 한
- * 문장이고, 그 문장이 저장과 같은 트랜잭션에 있으면 **문서만 있고 작업이 없는 상태가
- * 구조적으로 생기지 않는다.**
- *
- * 그래서 이 포트는 실패를 별도 갈래로 만들지 않는다 — 등록이 실패하면 저장도 함께
- * 롤백된다. Redis/ARQ 전제였던 「커밋 이후 등록 → 실패 시 `EnqueueFailed` 표시 + 502」는
- * 재현 대상이 사라진 자리다.
- *
- * **계약 조항의 처분은 끝났다** — 502 는 2026-08-20 에 폐기됐고(계약 `x-retired-responses`,
- * 리더 판정 L-1) 그 자리를 대신하는 것은 **500 + 전량 롤백**이다(`POST /documents`
- * description). 폐기한 상태 코드가 어느 오퍼레이션에도 되살아나지 않는지는
- * `DocumentContractNodeTest` 의 P-39 케이스가 계약 파일을 읽어 전역으로 잰다.
- * (2026-08-21 정정 — 종전 문면은 저장소에 없는 이름을 지목했다. 그 종류는 이제
- * `NamedReferenceGuardTest` 축 A 가 잰다.)
- *
- * ## 멱등하다
- *
- * 작업 식별자를 변환 식별자로 고정한다. 같은 변환을 두 번 등록해도 작업은 하나다 —
- * 계약이 *"등록은 작업 id를 변환 id로 고정해 멱등하다"* 로 이미 그렇게 적었다.
- */
+/** 마스킹 대응표를 **읽는** 포트. */
+fun interface MaskedItemReader {
+    /** 복호화된 대응표 JSON 을 항목 목록으로 되살린다. */
+    fun decode(body: PlainBody): List<MaskedItemView>
+}
+
+/** 변환 작업 큐. */
 fun interface ConversionQueue {
     /** 변환 작업을 등록한다. 호출자의 트랜잭션 안에서 돈다. */
     fun enqueue(conversionId: UUID)

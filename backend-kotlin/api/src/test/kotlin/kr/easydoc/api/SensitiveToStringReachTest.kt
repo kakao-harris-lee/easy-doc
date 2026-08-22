@@ -181,49 +181,8 @@ class SensitiveToStringReachTest {
         /** 클래스패스 필터가 제품 산출물을 통째로 걸러 버렸는지 보는 하한. */
         const val MIN_PRODUCTION_CLASSES = 60
 
-        /**
-         * 소스 쪽은 **하한이 아니라 정확 일치**다 (게이트 25 U-1).
-         *
-         * 종전 값은 하한 20 인데 실측이 44~46 이었다 — **24건까지 조용히 잃어도** 울리지 않는다는
-         * 뜻이고, 그 여유가 정확히 파서 미탐(`fun interface`·비ASCII 이름·중첩 모듈)이
-         * 겹쳐 쌓일 수 있는 크기였다. 하한은 「0 에 가까운 상태」만 막고, 이 게이트가 실제로
-         * 겪은 실패는 **0 이 아니라 조금 줄어드는 것**이었다.
-         *
-         * 값 46 은 2026-08-19 게이트 25 조치 시점의 실측이다. 리뷰 산출물이 적은 44 는 crypto
-         * 커밋(`9c7aa03`) 이전 시점의 수라 오늘 값과 다르다 — 그 차이 자체가 이 상수를 하한이
-         * 아니라 정확 일치로 두는 이유다(그때는 「44 이상」이라 아무도 눈치채지 못했다).
-         *
-         * 정확 일치의 비용은 새 타입을 더할 때 이 숫자를 함께 고치는 것이다. 그 한 줄이
-         * 리뷰에 「이번에 무엇이 검사 범위에 들어왔는가」를 드러내므로 비용이 아니라 값이다.
-         *
-         * 46 → 48 (2026-08-20, 문서 저장 경로 커밋): `core.document.MaskedItemView` 와
-         * `application.document.AcceptedUpload` 둘이다. 나머지 문서 도메인 타입
-         * (`Document`·`Conversion`·`DocumentListing`·`DocumentDraft`·`ConversionCiphertexts`·
-         * `ConversionEnvelope`·`DocumentStorage`)은 **일반 class** 라 이 수에 들어오지 않고,
-         * 그중 사용자 콘텐츠를 든 것은 손으로 쓴 `toString()` 을 갖는다 — 그쪽은 위
-         * 「R-10 일반 class 축」이 잰다.
-         *
-         * 48 → 50 (2026-08-20, `POST /documents` 커밋): `api.document.DocumentTextRequest` 와
-         * `api.document.DocumentCreatedResponse` 둘이다. 앞엣것이 이 게이트가 **처음으로
-         * 실제 문서 본문을 든 요청 DTO** 를 잡는 자리다(`text`·`title` 두 토큰이 함께 걸린다) —
-         * `SENSITIVE_NAME_TOKENS` 의 `text`·`title` 이 "Phase 4 의 문서 DTO 를 겨냥해 미리
-         * 둔다" 고 적힌 채 대상 0건이던 상태가 여기서 닫힌다.
-         *
-         * 50 → 52 (2026-08-21, `GET /documents` 커밋): `api.document.DocumentListItemResponse` 와
-         * `api.document.DocumentListResponse` 둘이다. 앞엣것이 **응답 쪽에서 처음으로 제목을
-         * 든 data class** 이고(`title` 토큰), 목록은 한 번에 스무 건이 오므로 컴파일러가 만든
-         * `toString()` 을 그대로 두면 한 줄이 제목 스무 개를 로그에 남긴다. 뒤엣것은 민감
-         * 토큰이 없지만 이 수는 **선언 전수**라 함께 오른다.
-         *
-         * 52 → 53 (2026-08-21, `/health` 진단 커밋 — 게이트 28 P-8): `application.health.HealthReport`
-         * 하나다(`api.health.HealthResponse` 는 이미 세어져 있었다 — 필드가 늘었을 뿐이다).
-         * 민감 토큰은 없지만 **이 커밋이 이 탐지기의 갈래를 하나 늘렸다**: `checks` 가
-         * 저장소 최초의 `Map` 필드라 `GeneratedToStringProbes.slotFor` 가 「모르는 타입」으로
-         * 끊었고, 그래서 맵 갈래(`mapSlot` — 키와 값 **양쪽**에 표본을 심는다)를 더했다.
-         * 그 끊김이 설계대로 동작한 것이다: 새 타입이 들어오면 조용히 검사 밖에 남는 대신
-         * 게이트가 빨개진다.
-         */
-        const val EXPECTED_SOURCE_DECLARATIONS = 53
+        /** 소스 쪽은 하한이 아니라 정확 일치다 (게이트 25 U-1). */
+        const val EXPECTED_SOURCE_DECLARATIONS = 57
 
         /** 민감 판정이 반드시 닿아야 하는 타입 — 바닥이다. */
         val KNOWN_SENSITIVE_TYPES =

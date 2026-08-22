@@ -647,6 +647,36 @@ object ContractSpec {
         return keys
     }
 
+    /** **P-31 — 스키마 자체의 `enum` 값 집합.** (`ConversionStatus` 처럼 열거가 스키마 루트에 있는 것) */
+    fun schemaEnum(schema: String): List<String> {
+        val values = strings("components", "schemas", schema, "enum")
+        require(values.isNotEmpty()) { "$schema 의 enum 이 비었다 — 이 대조는 아무것도 재지 않는다." }
+        return values
+    }
+
+    /** **P-32 — 스키마 속성의 `enum` 값 집합.** (`MaskedItemResponse.category` 처럼) */
+    fun schemaPropertyEnum(
+        schema: String,
+        property: String,
+    ): List<String> {
+        val values = strings("components", "schemas", schema, "properties", property, "enum")
+        require(values.isNotEmpty()) { "$schema.$property 의 enum 이 비었다 — 이 대조는 아무것도 재지 않는다." }
+        return values
+    }
+
+    /** **P-32 — 스키마 속성의 `pattern`.** 배열 속성이면 `items.pattern` 을 읽는다. */
+    fun schemaPropertyPattern(
+        schema: String,
+        property: String,
+    ): String {
+        val node = map("components", "schemas", schema, "properties", property)
+        val direct = node["pattern"]?.toString()
+        if (direct != null) return direct
+        val items = node["items"] as? Map<*, *>
+        return items?.get("pattern")?.toString()
+            ?: error("$schema.$property 에 pattern 이 없다(직접도 items 아래도) — 자리표시자 형식의 정본이 사라졌다")
+    }
+
     /** P-11. 스키마 속성의 `const`. */
     fun schemaPropertyConst(
         schema: String,

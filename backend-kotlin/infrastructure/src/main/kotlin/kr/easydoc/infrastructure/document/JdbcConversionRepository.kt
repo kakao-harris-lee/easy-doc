@@ -3,18 +3,27 @@ package kr.easydoc.infrastructure.document
 import kr.easydoc.application.document.ConversionCiphertexts
 import kr.easydoc.application.document.ConversionEnvelope
 import kr.easydoc.application.document.ConversionRepository
+import kr.easydoc.application.document.StoredConversion
 import kr.easydoc.core.crypto.EncryptedContent
 import kr.easydoc.core.document.Conversion
 import kr.easydoc.core.document.ConversionStatus
 import kr.easydoc.core.exceptions.StorageException
 import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.jdbc.core.simple.JdbcClient
+import tools.jackson.core.JacksonException
+import tools.jackson.databind.json.JsonMapper
 import java.sql.ResultSet
 import java.time.OffsetDateTime
 import java.util.UUID
 
 /** `conversions` 테이블 접근. 스키마는 `V1__python_schema_baseline.sql` + `V3`·`V4` 가 정한다. */
 class JdbcConversionRepository(private val jdbc: JdbcClient) : ConversionRepository {
+    /**
+     * `missing_placeholders` 의 `jsonb` 를 읽는 데만 쓴다. [MaskedItemCodec] 의 것과 인스턴스를
+     * 공유하지 않는 이유는 [placeholderLabels] KDoc — 저쪽은 **봉인 대상**의 코덱이다.
+     */
+    private val json = JsonMapper.builder().build()
+
     override fun insertPending(
         id: UUID,
         documentId: UUID,
@@ -36,13 +45,20 @@ class JdbcConversionRepository(private val jdbc: JdbcClient) : ConversionReposit
             throw StorageException(STORAGE_FAILURE_MESSAGE)
         }
 
-    /**
-     * 암호문 세 열과 봉투를 읽고 **행을 잠근다**(`FOR NO KEY UPDATE`).
-     *
-     * 잠금 모드를 고른 사유는 [JdbcDocumentRepository.lockSourceText] KDoc 에 있다 —
-     * 여기서는 `conversion_jobs.conversion_id` 가 이 행을 참조하므로, `FOR UPDATE` 로 잡으면
-     * 회전이 도는 동안 작업 등록의 외래 키 검사까지 멈춘다.
-     */
+    /** **내** 변환 한 건을 읽는다 — 조인과 소유 술어가 **한 문장** 안에 있다. */
+    override fun findOwnedResult(
+        ownerId: UUID,
+        conversionId: UUID,
+    ): StoredConversion? =
+        jdbc
+            .sql(FIND_OWNED_SQL)
+            .param("id", conversionId)
+            .param("ownerId", ownerId)
+            .query { rs, _ -> toStored(rs) }
+            .optional()
+            .orElse(null)
+
+    /** 암호문 세 열과 봉투를 읽고 **행을 잠근다**(`FOR NO KEY UPDATE`). */
     override fun lockEnvelope(conversionId: UUID): ConversionEnvelope? =
         jdbc
             .sql(
@@ -105,6 +121,60 @@ class JdbcConversionRepository(private val jdbc: JdbcClient) : ConversionReposit
             updatedAt = rs.getObject("updated_at", OffsetDateTime::class.java).toInstant(),
         )
 
+    /** 조회 한 행을 [StoredConversion] 으로 옮긴다. **복호화하지 않는다** — 그것은 유스케이스다. */
+    private fun toStored(rs: ResultSet): StoredConversion {
+        val scheme = rs.getString("encryption_scheme")
+        val keyVersion = rs.getInt("key_version")
+        return StoredConversion(
+            id = rs.getObject("id", UUID::class.java),
+            documentId = rs.getObject("document_id", UUID::class.java),
+            status = ConversionStatus.ofWireName(rs.getString("status")),
+            ciphertexts =
+                ConversionCiphertexts(
+                    easyText = sealedOrNull(rs, "easy_text_encrypted", scheme, keyVersion),
+                    maskedItems = sealedOrNull(rs, "masked_items_encrypted", scheme, keyVersion),
+                    editedText = sealedOrNull(rs, "edited_text_encrypted", scheme, keyVersion),
+                ),
+            reviewedAt = rs.getObject("reviewed_at", OffsetDateTime::class.java)?.toInstant(),
+            missingPlaceholders = placeholderLabels(rs.getString("missing_placeholders")),
+            model = rs.getString("model"),
+            providerName = rs.getString("provider_name"),
+            inputTokens = rs.getObject("input_tokens", Int::class.javaObjectType),
+            outputTokens = rs.getObject("output_tokens", Int::class.javaObjectType),
+            failureCode = rs.getString("failure_code"),
+        )
+    }
+
+    /** `missing_placeholders` 의 `jsonb` 값을 라벨 목록으로 읽는다. */
+    private fun placeholderLabels(raw: String?): List<String> {
+        if (raw == null) return emptyList()
+        val root =
+            try {
+                json.readTree(raw)
+            } catch (exc: JacksonException) {
+                throw malformedPlaceholders(exc::class.java.simpleName)
+            }
+        // `JsonNode.values()` 를 쓰는 이유는 [MaskedItemCodec.decode] 와 같다 — Jackson 3 의
+        // `JsonNode.map(Function)` 이 Kotlin 의 `Iterable.map` 을 가린다.
+        //
+        // 판정을 **한 자리에 모은다.** 갈래마다 `throw` 를 쓰면 detekt `ThrowsCount` 가 울리고,
+        // 그 규칙이 옳게 가리키는 것은 「실패 경로가 흩어져 있다」다 — 사유 토큰만 다르므로
+        // 하나로 접는 편이 읽기도 낫다.
+        val reason =
+            when {
+                !root.isArray -> "not-an-array"
+                root.values().any { !it.isString } -> "element-not-a-string"
+                else -> null
+            }
+        if (reason != null) throw malformedPlaceholders(reason)
+        return root.values().map { it.stringValue("") }
+    }
+
+    private fun malformedPlaceholders(reason: String): StorageException {
+        DocumentStorageLog.malformedStoredValue(MISSING_PLACEHOLDERS_COLUMN, reason)
+        return StorageException(UNREADABLE_RESULT_MESSAGE)
+    }
+
     private fun toEnvelope(rs: ResultSet): ConversionEnvelope {
         val scheme = rs.getString("encryption_scheme")
         val keyVersion = rs.getInt("key_version")
@@ -132,6 +202,28 @@ class JdbcConversionRepository(private val jdbc: JdbcClient) : ConversionReposit
     private companion object {
         /** 저장소가 만든 고정 문자열. 계약 `InternalError` 의 `storage` 갈래다. */
         const val STORAGE_FAILURE_MESSAGE = "요청을 처리하지 못했습니다"
+
+        /**
+         * 저장된 값이 우리 형식이 아닐 때의 문구. 계약 `InternalError` 의 다른 갈래이고
+         * [MaskedItemCodec] 이 쓰는 것과 **같은 문자열**이다 — 두 값 모두 「저장된 변환
+         * 결과를 읽지 못했다」는 같은 사건이므로 사용자에게 갈리는 안내를 주지 않는다.
+         */
+        const val UNREADABLE_RESULT_MESSAGE = "저장된 변환 결과를 읽을 수 없습니다"
+
+        private const val MISSING_PLACEHOLDERS_COLUMN = "conversions.missing_placeholders"
+
+        /** 조회 질의. **소유 술어가 조인 위에 있다.** */
+        val FIND_OWNED_SQL =
+            """
+            SELECT c.id, d.id AS document_id, c.status,
+                   c.easy_text_encrypted, c.masked_items_encrypted, c.edited_text_encrypted,
+                   c.encryption_scheme, c.key_version,
+                   c.reviewed_at, c.missing_placeholders,
+                   c.model, c.provider_name, c.input_tokens, c.output_tokens, c.failure_code
+            FROM conversions c
+            JOIN documents d ON d.id = c.document_id
+            WHERE c.id = :id AND d.user_id = :ownerId
+            """.trimIndent()
 
         val INSERT_PENDING_SQL =
             """

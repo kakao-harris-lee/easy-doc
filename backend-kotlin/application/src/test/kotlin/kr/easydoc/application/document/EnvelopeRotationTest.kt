@@ -336,6 +336,16 @@ class EnvelopeRotationTest {
             keyVersion: Int,
         ): Conversion = error("회전 경로가 변환을 만들지 않는다")
 
+        /**
+         * 회전은 이 포트를 쓰지 않는다. 회전 배치에는 「내 것」이 없고, 그래서 이 대역이
+         * 언제나 `null` 을 돌려주는 것이 옳다 — 회전이 실수로 사용자 경로 포트를 부르면
+         * 이 파일의 케이스가 「행이 없다」로 빨개진다.
+         */
+        override fun findOwnedResult(
+            ownerId: UUID,
+            conversionId: UUID,
+        ): StoredConversion? = null
+
         override fun lockEnvelope(conversionId: UUID): ConversionEnvelope? = envelope
 
         override fun rewriteEnvelope(

@@ -20,6 +20,8 @@ class JsonRequestStrictnessConfig {
             builder
                 .withCoercionConfig(LogicalType.Textual) { coercion ->
                     COERCED_INTO_TEXT.forEach { shape -> coercion.setCoercion(shape, CoercionAction.Fail) }
+                }.withCoercionConfig(LogicalType.OtherScalar) { coercion ->
+                    coercion.setCoercion(CoercionInputShape.EmptyString, CoercionAction.Fail)
                 }.changeDefaultNullHandling { nulls -> nulls.withValueNulls(Nulls.FAIL) }
         }
 

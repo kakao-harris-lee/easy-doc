@@ -13,12 +13,15 @@ import kr.easydoc.core.document.DocumentListing
 import kr.easydoc.core.document.FALLBACK_TITLE
 import kr.easydoc.core.document.MAX_CONVERTIBLE_CHARS
 import kr.easydoc.core.document.MAX_UPLOAD_BYTES
+import kr.easydoc.core.document.MaskedItemView
 import kr.easydoc.core.document.SourceFormat
 import kr.easydoc.core.exceptions.DocumentExtractionException
 import kr.easydoc.core.exceptions.InvalidInputException
 import kr.easydoc.core.exceptions.NotFoundException
 import kr.easydoc.core.exceptions.StorageException
 import kr.easydoc.core.exceptions.UploadTooLargeException
+import kr.easydoc.core.privacy.MaskCategory
+import kr.easydoc.core.security.Secret
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.DisplayName
@@ -361,7 +364,7 @@ class DocumentServiceTest {
         queueFailure: RuntimeException? = null,
     ) {
         val transaction = RecordingTransactionRunner()
-        val cipher = FakeContentCipher(writeKeyVersion)
+        val cipher = FakeContentCipher(writeKeyVersion, transaction)
         val documents = FakeDocumentRepository(transaction)
         val conversions = FakeConversionRepository(transaction)
         val workspaces = FakeWorkspaceLookup(defaultWorkspace)
@@ -380,55 +383,6 @@ class DocumentServiceTest {
                 },
                 transaction = transaction,
             )
-    }
-
-    /**
-     * 트랜잭션 경계를 **깊이로** 드러내는 대역.
-     *
-     * `catch` 절을 쓰지 않고 [runCatching] 으로 받는 이유: 이 자리에서 잡아야 하는 것은
-     * 「블록이 실패했다」 하나인데 그 타입은 대역마다 다르다. 넓은 타입을 `catch` 로 잡으면
-     * detekt `TooGenericExceptionCaught` 가 옳게 지적한다.
-     */
-    private class RecordingTransactionRunner : TransactionRunner {
-        var depth: Int = 0
-            private set
-        var started: Int = 0
-            private set
-        var committed: Int = 0
-            private set
-        var failed: Int = 0
-            private set
-
-        override fun <T> inTransaction(block: () -> T): T {
-            started++
-            depth++
-            val result = runCatching(block)
-            depth--
-            result.onSuccess { committed++ }.onFailure { failed++ }
-            return result.getOrThrow()
-        }
-    }
-
-    /** 결속 인자를 그대로 기록하는 암호 대역. 실제 암호는 여기서 재지 않는다. */
-    private class FakeContentCipher(override val writeKeyVersion: Int) : ContentCipher {
-        override val writeScheme: String = EncryptionScheme.AES_256_GCM_V1
-
-        val sealed = mutableListOf<Triple<String, UUID, EncryptedField>>()
-
-        override fun encrypt(
-            plain: PlainBody,
-            record: UUID,
-            field: EncryptedField,
-        ): EncryptedContent {
-            sealed += Triple(plain.value, record, field)
-            return EncryptedContent(plain.value.toByteArray(Charsets.UTF_8), writeScheme, writeKeyVersion)
-        }
-
-        override fun decrypt(
-            content: EncryptedContent,
-            record: UUID,
-            field: EncryptedField,
-        ): PlainBody = PlainBody(String(content.bytes, Charsets.UTF_8))
     }
 
     private data class ListQuery(
@@ -498,38 +452,6 @@ class DocumentServiceTest {
             depthWhenDeleted += transaction.depth
             return deletable.remove(documentId)
         }
-    }
-
-    private class FakeConversionRepository(private val transaction: RecordingTransactionRunner) : ConversionRepository {
-        val inserted = mutableListOf<Pair<UUID, Pair<String, Int>>>()
-        val depthWhenInserted = mutableListOf<Int>()
-
-        override fun insertPending(
-            id: UUID,
-            documentId: UUID,
-            scheme: String,
-            keyVersion: Int,
-        ): Conversion {
-            inserted += id to (scheme to keyVersion)
-            depthWhenInserted += transaction.depth
-            return Conversion(
-                id = id,
-                documentId = documentId,
-                status = ConversionStatus.PENDING,
-                failureCode = null,
-                createdAt = Instant.EPOCH,
-                updatedAt = Instant.EPOCH,
-            )
-        }
-
-        override fun lockEnvelope(conversionId: UUID): ConversionEnvelope? = null
-
-        override fun rewriteEnvelope(
-            expected: ConversionEnvelope,
-            scheme: String,
-            keyVersion: Int,
-            ciphertexts: ConversionCiphertexts,
-        ): Boolean = false
     }
 
     private class FakeConversionQueue(

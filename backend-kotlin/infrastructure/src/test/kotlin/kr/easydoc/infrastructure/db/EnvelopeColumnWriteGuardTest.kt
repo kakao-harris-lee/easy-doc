@@ -315,12 +315,13 @@ class EnvelopeColumnWriteGuardTest {
          */
         val EXPECTED_FILES =
             listOf(
+                "api/src/test/kotlin/kr/easydoc/api/ConversionReadReachTest.kt",
                 "infrastructure/src/main/kotlin/kr/easydoc/infrastructure/document/JdbcConversionRepository.kt",
                 "infrastructure/src/main/kotlin/kr/easydoc/infrastructure/document/JdbcDocumentRepository.kt",
                 "infrastructure/src/test/kotlin/kr/easydoc/infrastructure/document/EnvelopeRotationConcurrencyTest.kt",
             )
 
-        /** 문장 수. 파일 목록만 보면 **같은 파일 안에 한 문장을 더 넣는 편집**이 조용하다. */
-        const val EXPECTED_STATEMENTS = 5
+        /** 문장 수. 파일 목록만 보면 같은 파일 안에 한 문장을 더 넣는 편집이 조용하다. */
+        const val EXPECTED_STATEMENTS = 6
     }
 }

@@ -9,6 +9,8 @@ import kr.easydoc.application.document.DocumentDraft
 import kr.easydoc.application.document.DocumentRepository
 import kr.easydoc.application.document.DocumentTextExtractor
 import kr.easydoc.application.document.ExtractedDocument
+import kr.easydoc.application.document.MaskedItemReader
+import kr.easydoc.application.document.StoredConversion
 import kr.easydoc.application.document.WorkspaceLookup
 import kr.easydoc.core.crypto.EncryptedContent
 import kr.easydoc.core.crypto.EncryptedField
@@ -18,9 +20,12 @@ import kr.easydoc.core.document.Conversion
 import kr.easydoc.core.document.ConversionStatus
 import kr.easydoc.core.document.Document
 import kr.easydoc.core.document.DocumentListing
+import kr.easydoc.core.document.MaskedItemView
 import kr.easydoc.core.document.SourceFormat
 import kr.easydoc.core.exceptions.DocumentExtractionException
 import kr.easydoc.core.exceptions.UnsupportedFormatException
+import kr.easydoc.core.privacy.MaskCategory
+import kr.easydoc.core.security.Secret
 import java.time.Instant
 import java.time.temporal.ChronoUnit
 import java.util.UUID
@@ -71,6 +76,9 @@ class InMemoryDocumentRepository : DocumentRepository {
     override fun lockSourceText(documentId: UUID): EncryptedContent? =
         rows.firstOrNull { it.document.id == documentId }?.sourceText
 
+    /** 그 문서의 소유자. 없으면 `null`. */
+    fun ownerOf(documentId: UUID): UUID? = rows.firstOrNull { it.document.id == documentId }?.ownerId
+
     override fun rewriteEnvelope(
         documentId: UUID,
         expected: EncryptedContent,
@@ -93,9 +101,23 @@ class InMemoryDocumentRepository : DocumentRepository {
     }
 }
 
-/** `conversions` 대역. 대기 상태 한 건을 만드는 것까지가 이 슬라이스의 범위다. */
-class InMemoryConversionRepository : ConversionRepository {
-    private val rows = mutableMapOf<UUID, ConversionEnvelope>()
+/** `conversions` 대역. */
+class InMemoryConversionRepository(private val documents: InMemoryDocumentRepository) : ConversionRepository {
+    /** `data class` 인 사유는 `StoredConversion` KDoc 과 같다 — 필드 수와 detekt 문턱. */
+    private data class Row(
+        val documentId: UUID,
+        var envelope: ConversionEnvelope,
+        var status: ConversionStatus,
+        var reviewedAt: Instant?,
+        var missingPlaceholders: List<String>,
+        var model: String?,
+        var providerName: String?,
+        var inputTokens: Int?,
+        var outputTokens: Int?,
+        var failureCode: String?,
+    )
+
+    private val rows = mutableMapOf<UUID, Row>()
 
     override fun insertPending(
         id: UUID,
@@ -104,16 +126,28 @@ class InMemoryConversionRepository : ConversionRepository {
         keyVersion: Int,
     ): Conversion {
         rows[id] =
-            ConversionEnvelope(
-                conversionId = id,
-                scheme = scheme,
-                keyVersion = keyVersion,
-                ciphertexts =
-                    ConversionCiphertexts(
-                        easyText = null,
-                        maskedItems = null,
-                        editedText = null,
+            Row(
+                documentId = documentId,
+                envelope =
+                    ConversionEnvelope(
+                        conversionId = id,
+                        scheme = scheme,
+                        keyVersion = keyVersion,
+                        ciphertexts =
+                            ConversionCiphertexts(
+                                easyText = null,
+                                maskedItems = null,
+                                editedText = null,
+                            ),
                     ),
+                status = ConversionStatus.PENDING,
+                reviewedAt = null,
+                missingPlaceholders = emptyList(),
+                model = null,
+                providerName = null,
+                inputTokens = null,
+                outputTokens = null,
+                failureCode = null,
             )
         return Conversion(
             id = id,
@@ -125,7 +159,30 @@ class InMemoryConversionRepository : ConversionRepository {
         )
     }
 
-    override fun lockEnvelope(conversionId: UUID): ConversionEnvelope? = rows[conversionId]
+    /** 소유 판정을 문서 저장소에 묻는다. 없거나 남의 것이면 `null` — 두 경우를 구분하지 않는다. */
+    override fun findOwnedResult(
+        ownerId: UUID,
+        conversionId: UUID,
+    ): StoredConversion? =
+        rows[conversionId]
+            ?.takeIf { documents.ownerOf(it.documentId) == ownerId }
+            ?.let { row ->
+                StoredConversion(
+                    id = conversionId,
+                    documentId = row.documentId,
+                    status = row.status,
+                    ciphertexts = row.envelope.ciphertexts,
+                    reviewedAt = row.reviewedAt,
+                    missingPlaceholders = row.missingPlaceholders,
+                    model = row.model,
+                    providerName = row.providerName,
+                    inputTokens = row.inputTokens,
+                    outputTokens = row.outputTokens,
+                    failureCode = row.failureCode,
+                )
+            }
+
+    override fun lockEnvelope(conversionId: UUID): ConversionEnvelope? = rows[conversionId]?.envelope
 
     override fun rewriteEnvelope(
         expected: ConversionEnvelope,
@@ -133,13 +190,33 @@ class InMemoryConversionRepository : ConversionRepository {
         keyVersion: Int,
         ciphertexts: ConversionCiphertexts,
     ): Boolean {
-        // 읽어 온 그 행이 그대로일 때만 쓴다(동일성 비교). 실물은 봉투 두 값 + 암호문 세 열을
-        // SQL 조건으로 건다 — 여기서는 같은 성질을 참조 동일성으로 흉내 낸다.
-        val unchanged = rows[expected.conversionId] === expected
+        val row = rows[expected.conversionId] ?: return false
+        val unchanged = row.envelope === expected
         if (unchanged) {
-            rows[expected.conversionId] = ConversionEnvelope(expected.conversionId, scheme, keyVersion, ciphertexts)
+            row.envelope = ConversionEnvelope(expected.conversionId, scheme, keyVersion, ciphertexts)
         }
         return unchanged
+    }
+
+    /** 변환 한 건을 완료 상태로 만든다. 실물에서는 Phase 5 워커의 UPDATE 다. */
+    @Suppress("LongParameterList")
+    fun complete(
+        conversionId: UUID,
+        ciphertexts: ConversionCiphertexts,
+        missingPlaceholders: List<String>,
+        model: String,
+        providerName: String,
+        inputTokens: Int,
+        outputTokens: Int,
+    ) {
+        val row = rows.getValue(conversionId)
+        row.envelope = ConversionEnvelope(conversionId, row.envelope.scheme, row.envelope.keyVersion, ciphertexts)
+        row.status = ConversionStatus.DONE
+        row.missingPlaceholders = missingPlaceholders
+        row.model = model
+        row.providerName = providerName
+        row.inputTokens = inputTokens
+        row.outputTokens = outputTokens
     }
 }
 
@@ -204,13 +281,37 @@ class StubContentCipher : ContentCipher {
     }
 }
 
-/**
- * 파일 추출 대역.
- *
- * 확장자 판별은 **실물 규칙**([SourceFormat.ofUploadFilename])을 그대로 쓴다 — 그 판정이
- * 계약 `x-input-limits.supported_upload_formats` 와 묶여 있고, 대역이 자기 규칙을 만들면
- * 슬라이스가 계약과 무관한 것을 재게 된다. 파서만 흉내 낸다: 바이트를 UTF-8 로 읽는다.
- */
+/** 마스킹 대응표 읽기 대역. */
+class StubMaskedItemReader : MaskedItemReader {
+    override fun decode(body: PlainBody): List<MaskedItemView> =
+        body.value
+            .lineSequence()
+            .filter { it.isNotBlank() }
+            .map { line ->
+                val parts = line.split(SEPARATOR, limit = FIELD_COUNT)
+                require(parts.size == FIELD_COUNT) { "대역 형식이 아니다 — 필드 ${parts.size}개" }
+                MaskedItemView(
+                    category = MaskCategory.entries.first { it.label == parts[0] },
+                    placeholder = parts[1],
+                    original = Secret(parts[2]),
+                )
+            }.toList()
+
+    companion object {
+        private const val SEPARATOR = "|"
+        private const val FIELD_COUNT = 3
+
+        /** 테스트가 이 대역이 읽을 평문을 만든다. 암호화는 호출자가 [ContentCipher] 로 한다. */
+        fun encodeForStub(items: List<MaskedItemView>): PlainBody =
+            PlainBody(
+                items.joinToString("\n") { item ->
+                    listOf(item.category.label, item.placeholder, item.original.reveal()).joinToString(SEPARATOR)
+                },
+            )
+    }
+}
+
+/** 파일 추출 대역. */
 class StubDocumentTextExtractor : DocumentTextExtractor {
     override fun extract(
         filename: String?,

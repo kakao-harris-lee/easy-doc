@@ -2,6 +2,7 @@ package kr.easydoc.infrastructure.document
 
 import kr.easydoc.application.auth.TransactionRunner
 import kr.easydoc.application.crypto.ContentCipher
+import kr.easydoc.application.document.ConversionQueryService
 import kr.easydoc.application.document.ConversionQueue
 import kr.easydoc.application.document.ConversionRepository
 import kr.easydoc.application.document.DocumentRepository
@@ -9,6 +10,7 @@ import kr.easydoc.application.document.DocumentService
 import kr.easydoc.application.document.DocumentStorage
 import kr.easydoc.application.document.DocumentTextExtractor
 import kr.easydoc.application.document.EnvelopeRotation
+import kr.easydoc.application.document.MaskedItemReader
 import kr.easydoc.application.document.WorkspaceLookup
 import kr.easydoc.infrastructure.crypto.MIGRATE_PROFILE
 import kr.easydoc.infrastructure.queue.JdbcConversionQueue
@@ -36,7 +38,7 @@ class DocumentConfiguration {
 
     /** 마스킹 대응표 코덱 — **읽기 포트로만 노출한다.** */
     @Bean
-    fun maskedItemCodec(): MaskedItemCodec = MaskedItemCodec()
+    fun maskedItemReader(): MaskedItemReader = MaskedItemCodec()
 
     /** 업로드가 한 트랜잭션에서 쓰는 세 저장소. 묶는 사유는 [DocumentStorage] KDoc. */
     @Bean
@@ -62,13 +64,22 @@ class DocumentConfiguration {
             transaction = transactionRunner,
         )
 
-    /**
-     * 키 회전 유스케이스.
-     *
-     * **호출자가 아직 없다**(운영 CLI·worker 스케줄·마이그레이션 중 무엇인지는 계획 §9 질문
-     * ⑦ 의 열린 판정이다). 빈으로 올려 두는 이유는 [maskedItemCodec] 과 같다 — 조립이
-     * 실제로 되는지가 판정 시점까지 미검증으로 남지 않게 한다.
-     */
+    /** 변환 조회 유스케이스. */
+    @Bean
+    fun conversionQueryService(
+        conversions: ConversionRepository,
+        cipher: ContentCipher,
+        maskedItems: MaskedItemReader,
+        transactionRunner: TransactionRunner,
+    ): ConversionQueryService =
+        ConversionQueryService(
+            conversions = conversions,
+            cipher = cipher,
+            maskedItems = maskedItems,
+            transaction = transactionRunner,
+        )
+
+    /** 키 회전 유스케이스. */
     @Bean
     fun envelopeRotation(
         documents: DocumentRepository,
