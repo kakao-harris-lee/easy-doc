@@ -1712,6 +1712,8 @@ pytest 사슬의 표적 실행 우회(`conftest.py` 이관을 착수했다가 **
 | `6c970b6` | stop-time 게이트가 잡은 C6 응답 계약 위반 둘 — ⑴ 「`done` 전에는 비어 있다」 규칙에 강제자 신설(`ConversionStatus.exposesResult` + 서비스 집행 + 매퍼 `require`) ⑵ 500 저장 문구를 계약 예시에 맞춤. `core/document`·`core/exceptions`·`application/document`·`api/document` + 테스트 | **대기** | 필수 축①(보안·개인정보 노출 범위)·②(외부 HTTP 계약)에 닿는다 — 이연이 아니라 미리뷰 | `04_documents-c6r2` | `04_documents-c6r2` (닫힘, 2026-08-22) |
 | `4ac13ec` | 위 `6c970b6` 이 셋만 닫고 남긴 여섯을 stop-time 게이트가 다시 잡았다 — 완료 전 결과 필드를 **셋 → 아홉**으로 넓힘(`ConversionView.carriesResult` 신설이 아홉의 단일 정의, 대상 집합은 계약 `required` 에서 계산). 분모 결함도 고침(단위 팔 분모를 `exposesResult` → 상태 이름, 상수 자체를 계약 enum 과 대조). `core/document`·`application/document`·`api/document` + 테스트 | **대기** | 필수 축②(외부 HTTP 계약)에 닿는다 — 이연이 아니라 미리뷰. 축① 은 **아니다**: 여섯은 사용자 본문·개인정보를 담지 않는다(그 판단으로 지난 회차가 범위를 좁혔고, 계약 문면 축에서 틀렸다 — 축 판정과 범위 판정을 섞지 않는다) | `04_documents-c6r2` | `04_documents-c6r2` (닫힘, 2026-08-22) |
 
+| `80f6761` | `codex-reviewer` 를 `model: opus` → `haiku` + 얇은 래퍼 사유 명문화. `CLAUDE.md` 가 이미 규정한 것을 에이전트 정의가 따라잡았다(사용자 결정 2026-08-22 — 이 판이 최종) | **대기** | 필수 축③(게이트·탐지기 자신)에 닿는다 — 리뷰 레인 자신의 정의다. 이연이 아니라 미리뷰. **그리고 이 변경은 §4(축② 전사 역전)의 마감을 더 급하게 만든다** — 긴 브리프를 요약하는 Haiku 래퍼에서 전사 충실도가 하중을 받는 성질이 되고, 그것이 바로 역전이 일어난 기제다 | `xx_harness 2회차` | - |
+
 **`상태` 어휘는 둘이다.** `이연` = 필수 축에 닿지 않아 묶기로 판정한 것. `대기` = **필수 축에
 닿는데 아직 리뷰를 못 받은 것** — 이연이 아니라 빚이다. 위 세 줄은 전부 `대기`다(축③ =
 게이트·탐지기 자신). 거짓으로 「비필수」라고 적지 않는다. **`tests/test_review_coverage_reach.py`
