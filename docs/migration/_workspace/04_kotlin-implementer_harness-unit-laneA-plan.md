@@ -182,7 +182,10 @@ Kotlin 테스트의 `MIN_*`/`MAX_*` 상수 전수: 선언 **25**개 / 이름 **1
 
 표식을 **빌드 앞에서** 박고 같은 값으로:
 `./gradlew --no-build-cache --rerun-tasks build parityHarness` →
-`KOTLIN_GATE_REACH_REQUIRE_FRESH_REPORTS=1` 요구 모드 게이트 → `uv run pytest -q`.
+`KOTLIN_GATE_REACH_REQUIRE_REPORT=1` 요구 모드 게이트 → `uv run pytest -q`.
+(초판은 존재하지 않는 이름 `KOTLIN_GATE_REACH_REQUIRE_FRESH_REPORTS` 를 적었다 —
+없는 변수 설정은 **조용한 무동작**이라 그 문면대로 검증하면 요구 모드 5축이 한 번도
+판정되지 않은 채 「요구 모드 통과」가 성립한다. `xx_harness-r2` M-1, 실측으로 재현됨.)
 `uv run pytest -q tests/test_kotlin_comment_budget.py`(Kotlin 변경 후) — **파일은 건드리지 않고 실행만** 한다.
 
 ## 6. 보고할 잔여 (미리 적어 둔다)

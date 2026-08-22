@@ -235,6 +235,11 @@ jobs:
         run: uv run pytest tests/test_kotlin_class_snapshot_reach.py
       - name: 리뷰 커버리지 (경로 명시 — 비면제 커밋이 리뷰·장부 중 하나에 드는가)
         run: uv run pytest tests/test_review_coverage_reach.py
+      # 형제 다섯과 달리 이 파일만 배선이 **0** 이었다(`xx_harness-r2` M-2, 실측: 파일을
+      # 지워도 `48 passed`). `329a964` 가 이 파일을 CLAUDE.md 테스트 주석 규약의 유일한
+      # 강제자로 만들어 하중이 커진 상태였다.
+      - name: Kotlin 주석 예산 (경로 명시 — 제품·테스트 두 축과 이력 표식 상한)
+        run: uv run pytest tests/test_kotlin_comment_budget.py
       - run: uv run pytest
       # 골든셋 LLM 평가(-m llm)는 API 키 시크릿 등록 후 별도 잡으로 활성화한다.
 
