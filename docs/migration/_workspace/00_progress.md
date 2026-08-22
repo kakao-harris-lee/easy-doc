@@ -1769,6 +1769,7 @@ pytest 사슬의 표적 실행 우회(`conftest.py` 이관을 착수했다가 **
 | `fb7d01c` | 조치 A-4 — 출하 모드에서 `이연` 행도 상환 요구(codex ⑴). `tests/test_review_coverage_reach.py` · `tests/test_harness_scope_reach.py` | **대기** | 필수 축③ — 이연이 아니라 미리뷰 | `xx_harness-r2-fixes` | `xx_harness-r2-fixes` (닫힘, 2026-08-23) |
 | `06ea048` | 리더 판정 P-1 — X-11 `리뷰할 회차` 칸 문법 강제자(R-4). `.claude/skills/kotlin-migration/SKILL.md` · `tests/test_harness_scope_reach.py` | **대기** | 필수 축③ — 이연이 아니라 미리뷰 | `xx_harness-r2-fixes` | `xx_harness-r2-fixes` (닫힘, 2026-08-23) |
 | `a304cc1` | 리더 판정 P-3 ⑶ — 하한 라쳇의 커밋 전 빨강에 「미커밋 신규 상수 N건」 사유를 붙인다(레인 A 발견 ①). `tests/test_kotlin_gate_reach.py` | **대기** | 필수 축③ — 이연이 아니라 미리뷰 | `xx_harness-r2-fixes` | `xx_harness-r2-fixes` (닫힘, 2026-08-23) |
+| `a1fc790` | C7 선행 계약 판정 3건(P-1·X-8·X-12) + 계약 개정 ㉠㉡(JSON 팔 `workspace_id` 처분 복기 · `ValidationFailed` 두 갈래 경계) + 스펙 CU-11→CU-12 재번호·DC-29~31 신설. `contracts/easy-doc-v1.yaml` · `04_contract-keeper_{c7-rulings,documents-test-spec}.md` · changelog | **대기** | 필수 축②(외부 HTTP 계약)에 닿는다 — 이연이 아니라 미리뷰. 값 불변·비파괴(`:api:test --rerun-tasks` 365/365) | `04_documents-c7` | - |
 
 **`상태` 어휘는 둘이다.** `이연` = 필수 축에 닿지 않아 묶기로 판정한 것. `대기` = **필수 축에
 닿는데 아직 리뷰를 못 받은 것** — 이연이 아니라 빚이다. 위 세 줄은 전부 `대기`다(축③ =
