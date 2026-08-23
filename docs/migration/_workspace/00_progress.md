@@ -1771,6 +1771,7 @@ pytest 사슬의 표적 실행 우회(`conftest.py` 이관을 착수했다가 **
 | `a304cc1` | 리더 판정 P-3 ⑶ — 하한 라쳇의 커밋 전 빨강에 「미커밋 신규 상수 N건」 사유를 붙인다(레인 A 발견 ①). `tests/test_kotlin_gate_reach.py` | **대기** | 필수 축③ — 이연이 아니라 미리뷰 | `xx_harness-r2-fixes` | `xx_harness-r2-fixes` (닫힘, 2026-08-23) |
 | `a1fc790` | C7 선행 계약 판정 3건(P-1·X-8·X-12) + 계약 개정 ㉠㉡(JSON 팔 `workspace_id` 처분 복기 · `ValidationFailed` 두 갈래 경계) + 스펙 CU-11→CU-12 재번호·DC-29~31 신설. `contracts/easy-doc-v1.yaml` · `04_contract-keeper_{c7-rulings,documents-test-spec}.md` · changelog | **대기** | 필수 축②(외부 HTTP 계약)에 닿는다 — 이연이 아니라 미리뷰. 값 불변·비파괴(`:api:test --rerun-tasks` 365/365) | `04_documents-c7` | - |
 | `e937f94` | C7a — 게이트 `04_documents-c6r2` 이월 정리: X-8(`POST /documents` JSON 팔 `workspace_id` `String?` + `parseWorkspaceId` 공유, DC-29~31 신설) · X-13(DTO 3종 주 생성자 private + `@ConsistentCopyVisibility`) · X-14 · X-15 · P-1 재명명(예시 신선도 대조, fail-closed) · X-12 KDoc. 음성 대조 5건 전건 실측 | **대기** | 필수 축②(외부 HTTP 계약 — `detail` 모양·검사 순서)·축③(계약 테스트 지원 코드)에 닿는다 — 이연이 아니라 미리뷰 | `04_documents-c7` | - |
+| `9df7039` | C7b — `PUT /conversions/{id}` 검수 저장 본체(28파일): 정규화 선행·초안 보존(바이트+평문 두 겹)·`reviewed_at`·`FOR NO KEY UPDATE` + 조건부 UPDATE(0행 = 500, B-2)·봉투 (다)·`ReviewedBody` 첫 생성 지점·CU-1~CU-12·X-F9 마감·`ConversionReviewStorageTest` 신설. `tests/test_kotlin_gate_reach.py` 동반. 음성 대조 11+5 전건 실측 | **대기** | 필수 축①(저장 암호화·소유권 은닉·평문 미노출)·②(외부 HTTP 계약)·③(게이트 자신)에 닿는다 — 이연이 아니라 미리뷰 | `04_documents-c7` | - |
 
 **`상태` 어휘는 둘이다.** `이연` = 필수 축에 닿지 않아 묶기로 판정한 것. `대기` = **필수 축에
 닿는데 아직 리뷰를 못 받은 것** — 이연이 아니라 빚이다. 위 세 줄은 전부 `대기`다(축③ =
