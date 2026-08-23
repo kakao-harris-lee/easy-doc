@@ -13,20 +13,10 @@ import java.util.UUID
 
 // 문서·변환 유스케이스가 바깥 세계에 요구하는 것들 — **포트 선언**.
 //
-// `application` 은 `infrastructure` 를 의존하지 않는다(계획 §3.2). 구현은 JDBC 를 아는
-// `infrastructure/document` 가 제공한다. 원본에서 `app/services/documents.py` 가
-// `DocumentStore`·`ConversionStore`·`WorkspaceLookup` 세 `Protocol` 을 나란히 선언하던
-// 자리와 같다 — 그래서 [WorkspaceLookup] 도 여기 있다.
+// `application` 은 `infrastructure` 를 의존하지 않는다(계획 §3.2).
 //
-// **[DocumentTextExtractor] 는 이 파일에 없다.** 별도 파일(`DocumentTextExtractor.kt`)로
-// 이미 있고, 합치면 그 파일을 읽던 자리들이 흔들린다.
-//
-// ## 평문이 이 경계를 넘지 않는다
-//
-// 저장소 포트는 [EncryptedContent] 만 주고받고 `PlainBody` 를 **타입으로 보지 못한다.**
-// 암호화하는 층이 `application` 인 근거는 계획 §4.1 셋이다 — ⑴ AEAD 결속에 행 UUID 가
-// 들어가므로 UUID 생성이 암호화보다 앞서야 하고 그 순서를 정하는 곳이 유스케이스다,
-// ⑵ 평문의 노출면을 좁힌다, ⑶ 회전이 한 유스케이스다.
+// **평문이 이 경계를 넘지 않는다** — 저장소 포트는 [EncryptedContent] 만 주고받고 `PlainBody` 를
+// **타입으로 보지 못한다.** 암호화하는 층이 `application` 인 근거는 계획 §4.1.
 
 /** 저장 직전의 문서 한 건 — **DB 시계가 채우는 값을 뺀 전부**. */
 class DocumentDraft(
@@ -109,6 +99,16 @@ data class StoredConversion(
             "missing=${missingPlaceholders.size})"
 }
 
+/** 잠근 행 — 상태와 봉투. 봉투가 행 단위라 열이 전부 NULL 이어도 세대를 묻는다. */
+class LockedConversion(
+    val status: ConversionStatus,
+    val envelope: ConversionEnvelope,
+) {
+    /** 식별자·상태·세대만 남긴다. */
+    override fun toString(): String =
+        "LockedConversion(${envelope.conversionId}, ${status.wireName}, ${envelope.scheme} v${envelope.keyVersion})"
+}
+
 /** `conversions` 저장소. */
 interface ConversionRepository {
     /** 대기 상태 변환을 만든다. **커밋하지 않는다.** */
@@ -134,6 +134,27 @@ interface ConversionRepository {
         scheme: String,
         keyVersion: Int,
         ciphertexts: ConversionCiphertexts,
+    ): Boolean
+
+    /**
+     * 검수 저장 대상인 **내** 변환을 읽고 **잠근다**(`FOR NO KEY UPDATE`) — 회전과 직렬화한다.
+     * 없거나 내 것이 아니면 `null` — **두 경우를 구분하지 않는다.**
+     */
+    fun lockOwnedForReview(
+        ownerId: UUID,
+        conversionId: UUID,
+    ): LockedConversion?
+
+    /**
+     * 검수본과 검수 시각을 **한 UPDATE 로** 저장한다. [updated] 가 **쓸 행 버전 전체**인 것은
+     * 라벨과 열 내용이 어긋난 조합을 호출자가 만들 수 없게 한다. [ownerId] 는 잉여가 아니다 —
+     * 소유 술어가 **쓰기 문장 자신에도** 걸린다. `false` 는 **잠금 전제가 깨졌다는 신호다.**
+     */
+    fun saveReview(
+        ownerId: UUID,
+        expected: ConversionEnvelope,
+        requiredStatus: ConversionStatus,
+        updated: ConversionEnvelope,
     ): Boolean
 }
 

@@ -431,7 +431,11 @@ class ValueSlotInvariantReachTest {
         private const val GET = "get"
 
         /** 오퍼레이션이 요청 본문을 요구할 때 쓰는 최소 유효 본문 — 스키마 이름별. */
-        private val MINIMAL_BODIES = mapOf("WorkspaceNameRequest" to """{"name":"가"}""")
+        private val MINIMAL_BODIES =
+            mapOf(
+                "WorkspaceNameRequest" to """{"name":"가"}""",
+                "ConversionReviewRequest" to """{"edited_text":"가"}""",
+            )
 
         private const val LIST_SCHEMA = "DocumentListResponse"
         private const val VALIDATION_ITEM_SCHEMA = "ValidationErrorItem"

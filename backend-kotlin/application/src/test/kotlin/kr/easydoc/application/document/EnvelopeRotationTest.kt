@@ -7,6 +7,7 @@ import kr.easydoc.core.crypto.EncryptedField
 import kr.easydoc.core.crypto.EncryptionScheme
 import kr.easydoc.core.crypto.PlainBody
 import kr.easydoc.core.document.Conversion
+import kr.easydoc.core.document.ConversionStatus
 import kr.easydoc.core.document.Document
 import kr.easydoc.core.document.DocumentListing
 import kr.easydoc.core.exceptions.DecryptionFailedException
@@ -357,5 +358,18 @@ class EnvelopeRotationTest {
             rewrites += Rewrite(expected, keyVersion, ciphertexts)
             return updated
         }
+
+        /** 회전은 검수 포트를 쓰지 않는다 — 부르면 이 파일의 케이스가 그 사실로 빨개진다. */
+        override fun lockOwnedForReview(
+            ownerId: UUID,
+            conversionId: UUID,
+        ): LockedConversion? = error("회전 경로가 검수 저장 포트를 부르면 안 된다")
+
+        override fun saveReview(
+            ownerId: UUID,
+            expected: ConversionEnvelope,
+            requiredStatus: ConversionStatus,
+            updated: ConversionEnvelope,
+        ): Boolean = error("회전 경로가 검수 저장 포트를 부르면 안 된다")
     }
 }

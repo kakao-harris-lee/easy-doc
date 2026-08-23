@@ -50,11 +50,10 @@ open class StorageException(message: String) : EasyDocException(message)
 class DecryptionFailedException : StorageException(MESSAGE) {
     companion object {
         /**
-         * 응답 detail 로 그대로 나간다. 계약은 이 갈래의 값을 저장소에 **위임했고**
-         * (`InternalError.description` 이 셋째 갈래만 리터럴 없이 적는다), 규범은 값이 아니라
-         * 성질 넷이다 — 500 · 문자열 · **고정** · 최상위 키 `detail` 하나.
-         * 계약 `InternalError.examples.storage` 는 이 값의 **예시**이므로, 이 값을 바꾸면
-         * 계약 위반이 아니라 **예시가 낡는다.** 그때 예시를 함께 갱신한다.
+         * 응답 detail 로 그대로 나간다. 계약은 이 갈래의 값을 저장소에 **위임했고** 규범은 값이
+         * 아니라 성질 넷이다 — 500 · 문자열 · **고정** · 최상위 키 `detail` 하나.
+         * `InternalError.examples.storage` 는 그 값의 **예시**라, 값을 바꾸면 계약 위반이 아니라
+         * **예시가 낡는다**(그때 예시를 함께 갱신한다).
          */
         const val MESSAGE: String = "저장된 변환 결과를 읽을 수 없습니다"
     }

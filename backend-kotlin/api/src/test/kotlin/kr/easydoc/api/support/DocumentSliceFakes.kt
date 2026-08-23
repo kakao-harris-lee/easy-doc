@@ -9,6 +9,7 @@ import kr.easydoc.application.document.DocumentDraft
 import kr.easydoc.application.document.DocumentRepository
 import kr.easydoc.application.document.DocumentTextExtractor
 import kr.easydoc.application.document.ExtractedDocument
+import kr.easydoc.application.document.LockedConversion
 import kr.easydoc.application.document.MaskedItemReader
 import kr.easydoc.application.document.StoredConversion
 import kr.easydoc.application.document.WorkspaceLookup
@@ -196,6 +197,28 @@ class InMemoryConversionRepository(private val documents: InMemoryDocumentReposi
             row.envelope = ConversionEnvelope(expected.conversionId, scheme, keyVersion, ciphertexts)
         }
         return unchanged
+    }
+
+    /** 소유 판정은 [findOwnedResult] 와 같은 자리에 묻는다. 대역이라 잠금은 없다. */
+    override fun lockOwnedForReview(
+        ownerId: UUID,
+        conversionId: UUID,
+    ): LockedConversion? =
+        rows[conversionId]
+            ?.takeIf { documents.ownerOf(it.documentId) == ownerId }
+            ?.let { LockedConversion(it.status, it.envelope) }
+
+    override fun saveReview(
+        ownerId: UUID,
+        expected: ConversionEnvelope,
+        requiredStatus: ConversionStatus,
+        updated: ConversionEnvelope,
+    ): Boolean {
+        // 실물의 `WHERE` 조건을 대역에서도 판정한다 — 상태·봉투가 어긋나면 0행이다.
+        val row = rows[expected.conversionId]?.takeIf { it.status == requiredStatus && it.envelope === expected }
+        row?.envelope = updated
+        row?.reviewedAt = Instant.EPOCH.plusSeconds(1)
+        return row != null
     }
 
     /** 변환 한 건을 완료 상태로 만든다. 실물에서는 Phase 5 워커의 UPDATE 다. */

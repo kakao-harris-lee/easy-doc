@@ -1,5 +1,6 @@
 package kr.easydoc.api.document
 
+import com.fasterxml.jackson.annotation.JsonCreator
 import com.fasterxml.jackson.annotation.JsonProperty
 import kr.easydoc.core.document.ConversionView
 import kr.easydoc.core.document.MaskedItemView
@@ -30,11 +31,22 @@ data class MaskedItemResponse(
 }
 
 /**
- * `GET`·`PUT /conversions/{conversion_id}` 응답. 계약 `components/schemas/ConversionResponse` —
- * **열세 필드가 전부다.** 두 오퍼레이션이 같은 스키마를 쓴다.
- *
- * 생성자와 `copy()` 가 `private` 인 것은 [of] 의 노출 판정을 우회하는 조립 지점이 생기지
- * 않게 하려는 것이다 — 그 판정이 규율이 아니라 타입이 된다.
+ * PUT 요청 본문. 계약 `ConversionReviewRequest`. **제약을 애너테이션으로 걸지 않는다** —
+ * 계약이 「정규화 후 · 서비스 층 · 문자열 `detail`」인데 Bean Validation 은 배열을 낸다.
+ */
+data class ConversionReviewRequest
+    @JsonCreator
+    constructor(
+        @param:JsonProperty("edited_text") val editedText: String,
+    ) {
+        /** **수정본을 찍지 않는다.** */
+        override fun toString(): String = "ConversionReviewRequest(editedText=$CONTENT_MASK ${editedText.length}자)"
+    }
+
+/**
+ * `GET`·`PUT /conversions/{conversion_id}` 응답. 계약 `ConversionResponse` — **열세 필드가
+ * 전부다.** 생성자와 `copy()` 가 `private` 인 것은 [of] 의 노출 판정을 우회하는 조립 지점이
+ * 생기지 않게 한다.
  */
 @ConsistentCopyVisibility
 data class ConversionResponse private constructor(

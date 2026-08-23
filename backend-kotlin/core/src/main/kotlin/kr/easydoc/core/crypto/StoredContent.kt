@@ -12,13 +12,9 @@ import kr.easydoc.core.text.hasUnpairedSurrogate
 // `infrastructure` 의 어댑터가 하고(`AesGcmContentCipher`), 유스케이스가 요구하는 계약은
 // `application` 의 포트가 진다(`ContentCipher`). 계획 §3.2 의 세 자리가 그대로다.
 //
-// ## 2026-08-12 재개발 전환이 바꾼 것
-//
-// 이 자리는 원래 "Python `cryptography` 의 Fernet 토큰을 Kotlin 이 읽는다"였다. 롤백을
-// 포기하면서(master-plan 6.2 · 계획 §4.3 2차 개정) 읽어야 할 옛 암호문이 사라졌고,
-// **호환이 아니라 표준 AEAD 신규 구현**이 됐다. 없어진 것은 「Python 과 같은 바이트」이지
-// 「암호가 올바른가」가 아니다 — round-trip · 변조 거부 · nonce 재사용 금지 · 복호화
-// oracle 금지 · 키 회전은 `migration-safety-gate` I-7 이 그대로 요구한다.
+// 저장 암호화는 **표준 AEAD 신규 구현**이고 옛 토큰 형식과의 호환 요구가 없다. 요구되는 성질은
+// round-trip · 변조 거부 · nonce 재사용 금지 · 복호화 oracle 금지 · 키 회전이다
+// (`migration-safety-gate` I-7).
 
 /** **암호화되기 전/복호화된 뒤의 사용자 콘텐츠** 한 조각. */
 @JvmInline

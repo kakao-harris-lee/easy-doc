@@ -43,8 +43,13 @@ class ProvenanceCreationSitesTest {
                     ),
                 "ReviewedBody" to
                     mapOf(
+                        "api/src/main/kotlin/kr/easydoc/api/document/ConversionController.kt" to 1,
+                        "application/src/test/kotlin/kr/easydoc/application/document/" +
+                            "ConversionReviewServiceTest.kt" to 1,
                         "core/src/test/kotlin/kr/easydoc/core/privacy/MaskingTest.kt" to 4,
                         "core/src/test/kotlin/kr/easydoc/core/ExportParityTest.kt" to 1,
+                        "infrastructure/src/test/kotlin/kr/easydoc/infrastructure/document/" +
+                            "EnvelopeRotationConcurrencyTest.kt" to 1,
                     ),
             )
 

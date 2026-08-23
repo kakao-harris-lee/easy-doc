@@ -2,7 +2,12 @@ package kr.easydoc.api
 
 import kr.easydoc.api.support.AuthSliceBeans
 import kr.easydoc.api.support.ContractSpec
+import kr.easydoc.api.support.InMemoryConversionRepository
 import kr.easydoc.api.support.ServedOperations
+import kr.easydoc.application.crypto.ContentCipher
+import kr.easydoc.application.document.ConversionCiphertexts
+import kr.easydoc.core.crypto.EncryptedField
+import kr.easydoc.core.crypto.PlainBody
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
@@ -17,9 +22,11 @@ import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.get
 import org.springframework.test.web.servlet.patch
 import org.springframework.test.web.servlet.post
+import org.springframework.test.web.servlet.put
 import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerMapping
 import tools.jackson.databind.ObjectMapper
 import java.nio.charset.StandardCharsets
+import java.util.UUID
 
 /** 하한선 열거 **전건**의 X-D1 — 전역 부착 장치를 뺀 컨텍스트에서 잰다. 분모는 계약이다. */
 @WebMvcTest
@@ -33,6 +40,12 @@ class PrivateHeaderFloorCensusTest {
 
     @Autowired
     private lateinit var environment: Environment
+
+    @Autowired
+    private lateinit var conversions: InMemoryConversionRepository
+
+    @Autowired
+    private lateinit var cipher: ContentCipher
 
     private val json = ObjectMapper()
 
@@ -178,6 +191,20 @@ class PrivateHeaderFloorCensusTest {
                 authorizedGet(itemPath(CONVERSION_ITEM_PATH, GET, conversionId), token)
             }
 
+            "PUT $CONVERSION_ITEM_PATH" -> {
+                val token = newAccount()
+                val conversionId = acceptDocument(token)
+                // `done` 이 아니면 409 라 결과를 먼저 심는다.
+                markDone(conversionId)
+                mockMvc
+                    .put(itemPath(CONVERSION_ITEM_PATH, PUT, conversionId)) {
+                        header(HttpHeaders.AUTHORIZATION, bearer(token))
+                        contentType = MediaType.APPLICATION_JSON
+                        content = reviewBody(SAMPLE_REVIEW)
+                    }.andReturn()
+                    .response
+            }
+
             "GET $WORKSPACES_PATH" -> {
                 authorizedGet(WORKSPACES_PATH, newAccount())
             }
@@ -229,6 +256,27 @@ class PrivateHeaderFloorCensusTest {
         }
         return bodyOf(response)[CONVERSION_ID_PROPERTY]?.toString() ?: error("접수 응답에 변환 식별자가 없다")
     }
+
+    /** 완료 상태로 만든다 — 실물에서는 워커의 UPDATE. */
+    private fun markDone(conversionId: String) {
+        val id = UUID.fromString(conversionId)
+        conversions.complete(
+            conversionId = id,
+            ciphertexts =
+                ConversionCiphertexts(
+                    easyText = cipher.encrypt(PlainBody(SAMPLE_DRAFT), id, EncryptedField.CONVERSION_EASY_TEXT),
+                    maskedItems = null,
+                    editedText = null,
+                ),
+            missingPlaceholders = emptyList(),
+            model = SAMPLE_MODEL,
+            providerName = SAMPLE_PROVIDER,
+            inputTokens = SAMPLE_TOKENS,
+            outputTokens = SAMPLE_TOKENS,
+        )
+    }
+
+    private fun reviewBody(text: String): String = json.writeValueAsString(mapOf(EDITED_TEXT_PROPERTY to text))
 
     private fun defaultWorkspaceId(token: String): String {
         val response = authorizedGet(WORKSPACES_PATH, token)
@@ -307,6 +355,7 @@ class PrivateHeaderFloorCensusTest {
         const val GET = "get"
         const val POST = "post"
         const val PATCH = "patch"
+        const val PUT = "put"
 
         val DECLARED_FLOOR_TARGETS: Set<String> =
             setOf(
@@ -322,6 +371,10 @@ class PrivateHeaderFloorCensusTest {
                 "PATCH /workspaces/{workspace_id}",
             )
 
+        /**
+         * 유보 상한과 인구조사 하한. **실측은 유보 1 · 조사 9 라 두 값 모두 여유 1** — 그 창
+         * 안에서는 구현한 자리를 유보로 되돌려도 빨개지지 않는다. 인상은 Phase 경계에서 리더가.
+         */
         const val MAX_DEFERRED_FLOOR_TARGETS = 2
 
         const val MIN_FLOOR_CENSUS_TARGETS = 8
@@ -329,7 +382,6 @@ class PrivateHeaderFloorCensusTest {
         /** 아직 미구현인 자리. **면제가 아니라 유보다** — 구현하면 빨개진다. */
         val NOT_YET_IMPLEMENTED: Set<String> =
             setOf(
-                "PUT /conversions/{conversion_id}",
                 "GET /conversions/{conversion_id}/export",
             )
 
@@ -338,12 +390,20 @@ class PrivateHeaderFloorCensusTest {
         const val ACCESS_TOKEN_PROPERTY = "access_token"
         const val NAME_PROPERTY = "name"
         const val TEXT_PROPERTY = "text"
+        const val EDITED_TEXT_PROPERTY = "edited_text"
         const val CONVERSION_ID_PROPERTY = "conversion_id"
         const val ITEMS_PROPERTY = "items"
         const val ID_PROPERTY = "id"
 
         const val VALID_PASSWORD = "correct horse battery"
         const val SAMPLE_TEXT = "하한선 인구조사용 안내문 본문"
+
+        /** PUT 성공 팔의 배경 값 — 이 케이스는 헤더만 잰다. */
+        const val SAMPLE_DRAFT = "인구조사용 초안입니다."
+        const val SAMPLE_REVIEW = "인구조사용 검수본입니다."
+        const val SAMPLE_MODEL = "census-model"
+        const val SAMPLE_PROVIDER = "census-provider"
+        const val SAMPLE_TOKENS = 1
 
         var counter = 0
     }

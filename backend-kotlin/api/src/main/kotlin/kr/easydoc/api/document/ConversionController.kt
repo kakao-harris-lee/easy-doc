@@ -3,21 +3,29 @@ package kr.easydoc.api.document
 import kr.easydoc.api.MIGRATE_PROFILE
 import kr.easydoc.api.auth.AuthenticatedUser
 import kr.easydoc.application.document.ConversionQueryService
+import kr.easydoc.application.document.ConversionReviewService
+import kr.easydoc.core.privacy.ReviewedBody
 import org.springframework.context.annotation.Profile
 import org.springframework.http.HttpHeaders
 import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
+import org.springframework.web.bind.annotation.PutMapping
+import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RestController
 import java.util.UUID
 
-// 계약·실경로 검증: `ConversionReadContractTest`, `ConversionReadReachTest`.
+// 계약·실경로 검증: `ConversionReadContractTest`, `ConversionReadReachTest`,
+// `ConversionReviewContractTest`, `ConversionReviewReachTest`.
 
-/** `GET /conversions/{conversion_id}` — 변환 상태와 결과 조회. */
+/** `GET`·`PUT /conversions/{conversion_id}` — 변환 상태·결과 조회와 담당자 검수 저장. */
 @Profile("!$MIGRATE_PROFILE")
 @RestController
-class ConversionController(private val conversions: ConversionQueryService) {
+class ConversionController(
+    private val conversions: ConversionQueryService,
+    private val review: ConversionReviewService,
+) {
     /** 변환 한 건의 상태와 결과. 완료 전에는 결과 필드가 비어 있다(계약 `get.description`). */
     @GetMapping(CONVERSION_ITEM_PATH)
     fun readConversion(
@@ -25,6 +33,30 @@ class ConversionController(private val conversions: ConversionQueryService) {
         @PathVariable(CONVERSION_ID_VARIABLE) conversionId: UUID,
     ): ResponseEntity<ConversionResponse> {
         val view = conversions.read(ownerId = user.id, conversionId = conversionId)
+        return ResponseEntity
+            .ok()
+            .contentType(MediaType.APPLICATION_JSON)
+            .header(HttpHeaders.CACHE_CONTROL, NO_STORE)
+            .header(X_CONTENT_TYPE_OPTIONS, NOSNIFF)
+            .body(ConversionResponse.of(view))
+    }
+
+    /**
+     * 검수본 저장. **AI 초안은 남는다.** 응답이 `GET` 과 같은 스키마라 헤더도 같다.
+     * [ReviewedBody] 를 만드는 **유일한 프로덕션 자리**다.
+     */
+    @PutMapping(CONVERSION_ITEM_PATH, consumes = [MediaType.APPLICATION_JSON_VALUE])
+    fun updateConversion(
+        user: AuthenticatedUser,
+        @PathVariable(CONVERSION_ID_VARIABLE) conversionId: UUID,
+        @RequestBody request: ConversionReviewRequest,
+    ): ResponseEntity<ConversionResponse> {
+        val view =
+            review.save(
+                ownerId = user.id,
+                conversionId = conversionId,
+                submitted = ReviewedBody(request.editedText),
+            )
         return ResponseEntity
             .ok()
             .contentType(MediaType.APPLICATION_JSON)

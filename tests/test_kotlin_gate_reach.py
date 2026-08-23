@@ -252,6 +252,8 @@ TEST_CLASSES: tuple[str, ...] = (
     "kr.easydoc.api.ContractHeaderDeclarationTest",
     "kr.easydoc.api.ConversionReadContractTest",
     "kr.easydoc.api.ConversionReadReachTest",
+    "kr.easydoc.api.ConversionReviewContractTest",
+    "kr.easydoc.api.ConversionReviewReachTest",
     "kr.easydoc.api.CorsContractTest",
     "kr.easydoc.api.DeletedAccountTokenReachTest",
     "kr.easydoc.api.DocumentBodyLogLeakReachTest",
@@ -290,6 +292,7 @@ TEST_CLASSES: tuple[str, ...] = (
     "kr.easydoc.application.conversion.ConversionParityTest",
     "kr.easydoc.application.conversion.ConvertDocumentUseCaseTest",
     "kr.easydoc.application.document.ConversionQueryServiceTest",
+    "kr.easydoc.application.document.ConversionReviewServiceTest",
     "kr.easydoc.application.conversion.RepairDecisionTest",
     "kr.easydoc.application.document.DocumentServiceTest",
     "kr.easydoc.application.document.EnvelopeRotationTest",
@@ -335,6 +338,7 @@ TEST_CLASSES: tuple[str, ...] = (
     "kr.easydoc.infrastructure.db.PythonSchemaBaselineTest",
     "kr.easydoc.infrastructure.db.StatementCountingPremiseTest",
     "kr.easydoc.infrastructure.document.DocumentStorageContextTest",
+    "kr.easydoc.infrastructure.document.ConversionReviewStorageTest",
     "kr.easydoc.infrastructure.document.EnvelopeRotationConcurrencyTest",
     "kr.easydoc.infrastructure.document.JdbcDocumentStoreTest",
     "kr.easydoc.infrastructure.document.MaskedItemCodecTest",
@@ -372,7 +376,7 @@ TEST_CLASSES: tuple[str, ...] = (
 #: Phase 안에서 하한과 실측의 간격이 **자란다.** 그래서 이 정확 일치 축은 상환 규약과 함께
 #: 쓸 때 **덜** 필요해지는 게 아니라 **더** 필요해진다. 둘은 중복이 아니다:
 #: 하한은 「얼마 아래로는 못 간다」, 이 상수는 「한 개도 조용히 못 준다」.
-TEST_CLASS_COUNT = 112
+TEST_CLASS_COUNT = 116
 
 #: 선언 개수의 **하한**. 「목록과 개수가 서로 맞는가」(두 수기 선언 사이의 일관성)가 아니라
 #: "그 수가 **얼마 아래로는 내려갈 수 없는가**"를 본다. 게이트 27 codex C-5 가 지적한 것이
@@ -740,6 +744,8 @@ MIN_TESTS_BY_NAMED_ENFORCER: dict[str, int] = {
     "kr.easydoc.api.ConfigurationPropertiesBindingTest": 1,
     "kr.easydoc.api.ConversionReadContractTest": 6,
     "kr.easydoc.api.ConversionReadReachTest": 12,
+    "kr.easydoc.api.ConversionReviewContractTest": 4,
+    "kr.easydoc.api.ConversionReviewReachTest": 13,
     "kr.easydoc.api.DeletedAccountTokenReachTest": 2,
     "kr.easydoc.api.DocumentContractNodeTest": 15,
     "kr.easydoc.api.DocumentDtoLeakTest": 6,
@@ -797,6 +803,8 @@ MIN_ASSERTIONS_BY_CLASS: dict[str, int] = {
     "kr.easydoc.api.ContractErrorBodyReachTest": 16,
     "kr.easydoc.api.ConversionReadContractTest": 26,
     "kr.easydoc.api.ConversionReadReachTest": 45,
+    "kr.easydoc.api.ConversionReviewContractTest": 12,
+    "kr.easydoc.api.ConversionReviewReachTest": 40,
     "kr.easydoc.api.DeletedAccountTokenReachTest": 12,
     "kr.easydoc.api.DocumentBodyLogLeakReachTest": 32,
     "kr.easydoc.api.DocumentContractNodeTest": 40,

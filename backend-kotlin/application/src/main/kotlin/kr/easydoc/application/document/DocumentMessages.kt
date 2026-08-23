@@ -47,3 +47,17 @@ const val CONVERSION_NOT_FOUND_MESSAGE: String = "변환 결과를 찾을 수 �
 
 /** 작업 공간이 **하나도 없다** — 사용자 입력 문제가 아니라 우리 불변식이 깨진 것이다. */
 const val NO_WORKSPACE_MESSAGE: String = "요청을 처리하지 못했습니다"
+
+/** 계약 PUT 409 예시 `not_done`. **404·422 아니다.** */
+const val CONVERSION_NOT_DONE_MESSAGE: String = "변환이 끝난 뒤에 수정할 수 있습니다"
+
+/** 계약 PUT 422 예시 `empty`. 제어문자만 담긴 수정본도 여기다. */
+const val EMPTY_REVIEW_MESSAGE: String = "수정본이 비어 있습니다"
+
+/** 계약 PUT 422 예시 `too_long`. 길이는 **정규화 후**다. */
+val REVIEW_TOO_LONG_MESSAGE: String =
+    "수정본은 ${String.format(Locale.ROOT, "%,d", MAX_CONVERTIBLE_CHARS)}자 이하여야 합니다" +
+        " (긴 문서 분할 변환은 준비 중입니다)"
+
+/** 잠근 행에 저장이 닿지 않았다 — 입력 문제가 아니라 **우리 전제가 깨진 것**이다. */
+const val REVIEW_NOT_SAVED_MESSAGE: String = "요청을 처리하지 못했습니다"

@@ -3,11 +3,16 @@ package kr.easydoc.api
 import kr.easydoc.api.config.PrivateResponseHeadersConfig
 import kr.easydoc.api.support.AuthSliceBeans
 import kr.easydoc.api.support.ContractSpec
+import kr.easydoc.api.support.InMemoryConversionRepository
 import kr.easydoc.api.support.InMemoryUserRepository
 import kr.easydoc.api.support.InMemoryWorkspaceRepository
 import kr.easydoc.api.support.ProductClasses
 import kr.easydoc.api.support.RequestFieldProbes
 import kr.easydoc.api.support.RequestFieldProbes.Observed
+import kr.easydoc.application.crypto.ContentCipher
+import kr.easydoc.application.document.ConversionCiphertexts
+import kr.easydoc.core.crypto.EncryptedField
+import kr.easydoc.core.crypto.PlainBody
 import kr.easydoc.core.user.PasswordHash
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.DisplayName
@@ -20,6 +25,7 @@ import org.springframework.http.MediaType
 import org.springframework.mock.web.MockHttpServletResponse
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.post
+import org.springframework.test.web.servlet.put
 import tools.jackson.databind.ObjectMapper
 import java.nio.charset.StandardCharsets
 import java.util.UUID
@@ -39,6 +45,12 @@ class RequestFieldRejectionLayerTest {
 
     @Autowired
     private lateinit var workspaces: InMemoryWorkspaceRepository
+
+    @Autowired
+    private lateinit var conversions: InMemoryConversionRepository
+
+    @Autowired
+    private lateinit var cipher: ContentCipher
 
     private val json = ObjectMapper()
 
@@ -146,6 +158,7 @@ class RequestFieldRejectionLayerTest {
             SIGNUP_PASSWORD_FIELD to { value -> signup(email = RequestFieldProbes.uniqueEmail(), password = value) },
             TEXT_FIELD to ::probeText,
             NAME_FIELD to ::probeName,
+            EDITED_TEXT_FIELD to ::probeEditedText,
         )
 
     private fun probeText(value: String): Observed =
@@ -153,6 +166,56 @@ class RequestFieldRejectionLayerTest {
 
     private fun probeName(value: String): Observed =
         postJson(WORKSPACES_PATH, json.writeValueAsString(mapOf(NAME_PROPERTY to value)), newOwner())
+
+    /** 검수 저장은 **완료된 내 변환**을 전제한다 — 아니면 409 라 길이 축에 닿지 못한다. */
+    private fun probeEditedText(value: String): Observed {
+        val owner = newOwner()
+        val conversionId = acceptDocument(owner)
+        conversions.complete(
+            conversionId = conversionId,
+            ciphertexts =
+                ConversionCiphertexts(
+                    easyText =
+                        cipher.encrypt(
+                            PlainBody(PROBE_DRAFT),
+                            conversionId,
+                            EncryptedField.CONVERSION_EASY_TEXT,
+                        ),
+                    maskedItems = null,
+                    editedText = null,
+                ),
+            missingPlaceholders = emptyList(),
+            model = PROBE_MODEL,
+            providerName = PROBE_PROVIDER,
+            inputTokens = 1,
+            outputTokens = 1,
+        )
+        val response =
+            mockMvc
+                .put("$CONVERSION_PATH_PREFIX$conversionId") {
+                    header(HttpHeaders.AUTHORIZATION, "Bearer stub-token:$owner")
+                    contentType = MediaType.APPLICATION_JSON
+                    content = json.writeValueAsString(mapOf(EDITED_TEXT_PROPERTY to value))
+                }.andReturn()
+                .response
+        return Observed(response.status, detailOf(response))
+    }
+
+    /** 문서를 접수한다. **행은 제품이 쓴다.** */
+    private fun acceptDocument(owner: UUID): UUID {
+        val response =
+            mockMvc
+                .post(DOCUMENTS_PATH) {
+                    header(HttpHeaders.AUTHORIZATION, "Bearer stub-token:$owner")
+                    contentType = MediaType.APPLICATION_JSON
+                    content = json.writeValueAsString(mapOf(TEXT_PROPERTY to PROBE_BODY))
+                }.andReturn()
+                .response
+        val body = json.readValue(response.getContentAsString(StandardCharsets.UTF_8), Map::class.java)
+        return UUID.fromString(
+            body[CONVERSION_ID_PROPERTY]?.toString() ?: error("프로브 문서 접수가 실패했다: ${response.status} $body"),
+        )
+    }
 
     private fun signup(
         email: String,
@@ -203,14 +266,25 @@ class RequestFieldRejectionLayerTest {
 
         const val TEXT_PROPERTY = "text"
         const val NAME_PROPERTY = "name"
+        const val EDITED_TEXT_PROPERTY = "edited_text"
+        const val CONVERSION_ID_PROPERTY = "conversion_id"
+
+        const val CONVERSION_PATH_PREFIX = "/conversions/"
+
+        /** 검수 프로브의 배경 값 — 길이 축과 무관하다. */
+        const val PROBE_BODY = "검수 프로브용 안내문 본문"
+        const val PROBE_DRAFT = "검수 프로브용 초안입니다."
+        const val PROBE_MODEL = "probe-model"
+        const val PROBE_PROVIDER = "probe-provider"
 
         /** 계약이 필드를 지목하는 경로 문자열이다. 값이 아니라 이름이다. */
         const val SIGNUP_EMAIL_FIELD = "SignupRequest.email"
         const val SIGNUP_PASSWORD_FIELD = "SignupRequest.password"
         const val TEXT_FIELD = "DocumentTextRequest.text"
         const val NAME_FIELD = "WorkspaceNameRequest.name"
+        const val EDITED_TEXT_FIELD = "ConversionReviewRequest.edited_text"
 
-        /** 계약 필드 중 api 모듈에 DTO 가 아직 없는 것 — 정확 열거 핀이다. */
-        val PINNED_WITHOUT_DTO = setOf("ConversionReviewRequest.edited_text")
+        /** DTO 가 없는 계약 필드 — 정확 열거 핀. **비어 있다**: F3 다섯이 전부 검사받는다. */
+        val PINNED_WITHOUT_DTO = emptySet<String>()
     }
 }

@@ -68,6 +68,12 @@ internal class FakeContentCipher(
         depthWhenDecrypted += transaction?.depth ?: 0
         return PlainBody(String(content.bytes, Charsets.UTF_8))
     }
+
+    /** **배경을 심을 때만 쓴다** — 옛 세대로 봉인된 행을 만든다. 제품 포트에는 이 갈래가 없다. */
+    fun encryptAs(
+        plain: PlainBody,
+        keyVersion: Int,
+    ): EncryptedContent = EncryptedContent(plain.value.toByteArray(Charsets.UTF_8), writeScheme, keyVersion)
 }
 
 internal class FakeConversionRepository(private val transaction: RecordingTransactionRunner) : ConversionRepository {
@@ -114,6 +120,40 @@ internal class FakeConversionRepository(private val transaction: RecordingTransa
         keyVersion: Int,
         ciphertexts: ConversionCiphertexts,
     ): Boolean = false
+
+    /** 검수 저장이 잠그고 읽는 행. 케이스가 심는다. */
+    val lockedForReview = mutableMapOf<Pair<UUID, UUID>, LockedConversion>()
+    val depthWhenLocked = mutableListOf<Int>()
+
+    override fun lockOwnedForReview(
+        ownerId: UUID,
+        conversionId: UUID,
+    ): LockedConversion? {
+        depthWhenLocked += transaction.depth
+        return lockedForReview[ownerId to conversionId]
+    }
+
+    /** 검수 저장 호출 기록. **0행 갈래**는 [saveReviewSucceeds] 로 만든다. */
+    val savedReviews = mutableListOf<SavedReview>()
+    var saveReviewSucceeds: Boolean = true
+
+    override fun saveReview(
+        ownerId: UUID,
+        expected: ConversionEnvelope,
+        requiredStatus: ConversionStatus,
+        updated: ConversionEnvelope,
+    ): Boolean {
+        savedReviews += SavedReview(expected, requiredStatus, updated, transaction.depth)
+        return saveReviewSucceeds
+    }
+
+    /** 한 번의 검수 저장 호출 — 조건과 쓴 값을 그대로 든다. */
+    internal class SavedReview(
+        val expected: ConversionEnvelope,
+        val requiredStatus: ConversionStatus,
+        val updated: ConversionEnvelope,
+        val depth: Int,
+    )
 }
 
 /** 대응표 읽기 대역. 형식은 한 줄에 자리표시자 하나다 — 실물 JSON 을 흉내 내지 않는다. */

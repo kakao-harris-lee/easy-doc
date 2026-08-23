@@ -3,7 +3,9 @@ package kr.easydoc.infrastructure.document
 import kr.easydoc.application.auth.TransactionRunner
 import kr.easydoc.application.crypto.ContentCipher
 import kr.easydoc.application.document.ConversionEnvelope
+import kr.easydoc.application.document.ConversionQueryService
 import kr.easydoc.application.document.ConversionRepository
+import kr.easydoc.application.document.ConversionReviewService
 import kr.easydoc.application.document.DocumentRepository
 import kr.easydoc.application.document.DocumentService
 import kr.easydoc.application.document.DocumentStorage
@@ -13,6 +15,7 @@ import kr.easydoc.core.crypto.EncryptedContent
 import kr.easydoc.core.crypto.EncryptedField
 import kr.easydoc.core.crypto.EncryptionScheme
 import kr.easydoc.core.crypto.PlainBody
+import kr.easydoc.core.privacy.ReviewedBody
 import kr.easydoc.core.security.Secret
 import kr.easydoc.core.user.PasswordHash
 import kr.easydoc.infrastructure.DatabaseHandle
@@ -79,9 +82,10 @@ class EnvelopeRotationConcurrencyTest {
     @Test
     @DisplayName("회전 중에 들어온 **검수 저장이 사라지지 않는다** — 회전이 낡은 값으로 덮지 않는다")
     fun `회전이 동시 검수 저장을 삼키지 않는다`() {
-        val conversionId = seededConversion()
+        val (owner, conversionId) = seededConversion()
         val writer = Holder()
-        val rotation = rotationWith(conversionHook = { writer.start { saveEditedText(conversionId, EDITED_BODY) } })
+        val rotation =
+            rotationWith(conversionHook = { writer.start { saveEditedText(owner, conversionId, EDITED_BODY) } })
 
         val outcome = rotation.rotateConversion(conversionId)
         writer.await()
@@ -102,11 +106,11 @@ class EnvelopeRotationConcurrencyTest {
     @Test
     @DisplayName("**잠금 전제가 깨지면 CONTENDED 로 드러난다** — 조용히 덮는 갈래가 남지 않는다")
     fun `잠금이 서지 않으면 CONTENDED 다`() {
-        val conversionId = seededConversion()
+        val (owner, conversionId) = seededConversion()
         val writer = Holder()
         val rotation =
             rotationWith(
-                conversionHook = { writer.start { saveEditedText(conversionId, EDITED_BODY) } },
+                conversionHook = { writer.start { saveEditedText(owner, conversionId, EDITED_BODY) } },
                 transaction = NoTransaction,
             )
 
@@ -137,29 +141,13 @@ class EnvelopeRotationConcurrencyTest {
             .isEqualTo(REWRITTEN_BODY)
     }
 
-    /** C7(검수 저장)이 가질 모양 — 행을 잠근 채 읽고, 그 행의 세대로 봉인해, 봉투와 함께 쓴다. */
+    /** **제품 경로 그대로** 저장한다 — 흉내는 제품과 갈려도 이 파일이 초록이라 쓰지 않는다. */
     private fun saveEditedText(
+        owner: UUID,
         conversionId: UUID,
         body: String,
-    ) = inOwnTransaction { connection ->
-        val (scheme, keyVersion) = lockRow(connection, "conversions", conversionId)
-        val field = EncryptedField.CONVERSION_EDITED_TEXT
-        val sealed = cipherWith(keyVersion).encrypt(PlainBody(body), conversionId, field)
-        check(sealed.scheme == scheme) { "봉인 방식이 행의 방식과 다르다" }
-        connection
-            .prepareStatement(
-                """
-                UPDATE conversions
-                SET edited_text_encrypted = ?, encryption_scheme = ?, key_version = ?
-                WHERE id = ?
-                """.trimIndent(),
-            ).use { statement ->
-                statement.setBytes(1, sealed.bytes)
-                statement.setString(2, sealed.scheme)
-                statement.setInt(3, sealed.keyVersion)
-                statement.setObject(4, conversionId)
-                statement.executeUpdate()
-            }
+    ) {
+        reviewServiceOn(dataSource()).save(owner, conversionId, ReviewedBody(body))
     }
 
     /** 같은 모양의 문서 쪽 쓰기. */
@@ -248,8 +236,8 @@ class EnvelopeRotationConcurrencyTest {
         )
     }
 
-    /** 초안·대응표가 채워진 옛 세대 변환 하나. 검수본은 비어 있다. */
-    private fun seededConversion(): UUID {
+    /** 초안·대응표가 찬 **완료** 상태의 옛 세대 변환. 검수본은 비어 있다. */
+    private fun seededConversion(): Pair<UUID, UUID> {
         val owner = newUser()
         val workspace = workspaces.create(owner, "회전 경합 ${UUID.randomUUID()}").id
         val accepted = service.createFromText(owner, "원문 본문", null, workspace.toString())
@@ -262,7 +250,8 @@ class EnvelopeRotationConcurrencyTest {
             .sql(
                 """
                 UPDATE conversions
-                SET easy_text_encrypted = :easyText,
+                SET status = 'done',
+                    easy_text_encrypted = :easyText,
                     masked_items_encrypted = :maskedItems,
                     encryption_scheme = :scheme,
                     key_version = :keyVersion
@@ -274,7 +263,27 @@ class EnvelopeRotationConcurrencyTest {
             .param("keyVersion", OLD_GENERATION)
             .param("id", conversionId)
             .update()
-        return conversionId
+        return owner to conversionId
+    }
+
+    /** 검수 저장 유스케이스 — 제품 조립과 같은 모양. */
+    private fun reviewServiceOn(dataSource: DataSource): ConversionReviewService {
+        val client = JdbcClient.create(dataSource)
+        val conversions = JdbcConversionRepository(client)
+        val runner = SpringTransactionRunner(TransactionTemplate(DataSourceTransactionManager(dataSource)))
+        val writer = cipherWith(OLD_GENERATION)
+        return ConversionReviewService(
+            conversions = conversions,
+            cipher = writer,
+            query =
+                ConversionQueryService(
+                    conversions = conversions,
+                    cipher = writer,
+                    maskedItems = MaskedItemCodec(),
+                    transaction = runner,
+                ),
+            transaction = runner,
+        )
     }
 
     private fun seededDocument(): UUID {

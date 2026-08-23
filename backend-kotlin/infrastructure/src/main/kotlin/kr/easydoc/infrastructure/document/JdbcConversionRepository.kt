@@ -3,6 +3,7 @@ package kr.easydoc.infrastructure.document
 import kr.easydoc.application.document.ConversionCiphertexts
 import kr.easydoc.application.document.ConversionEnvelope
 import kr.easydoc.application.document.ConversionRepository
+import kr.easydoc.application.document.LockedConversion
 import kr.easydoc.application.document.StoredConversion
 import kr.easydoc.core.crypto.EncryptedContent
 import kr.easydoc.core.document.Conversion
@@ -18,12 +19,6 @@ import java.util.UUID
 
 /** `conversions` 테이블 접근. 스키마는 `V1__python_schema_baseline.sql` + `V3`·`V4` 가 정한다. */
 class JdbcConversionRepository(private val jdbc: JdbcClient) : ConversionRepository {
-    /**
-     * `missing_placeholders` 의 `jsonb` 를 읽는 데만 쓴다. [MaskedItemCodec] 의 것과 인스턴스를
-     * 공유하지 않는 이유는 [placeholderLabels] KDoc — 저쪽은 **봉인 대상**의 코덱이다.
-     */
-    private val json = JsonMapper.builder().build()
-
     override fun insertPending(
         id: UUID,
         documentId: UUID,
@@ -38,7 +33,7 @@ class JdbcConversionRepository(private val jdbc: JdbcClient) : ConversionReposit
                 .param("status", ConversionStatus.PENDING.wireName)
                 .param("scheme", scheme)
                 .param("keyVersion", keyVersion)
-                .query { rs, _ -> toConversion(rs) }
+                .query { rs, _ -> ConversionRows.toConversion(rs) }
                 .single()
         } catch (failure: DataIntegrityViolationException) {
             DocumentStorageLog.constraintViolation("conversions", failure)
@@ -54,7 +49,7 @@ class JdbcConversionRepository(private val jdbc: JdbcClient) : ConversionReposit
             .sql(FIND_OWNED_SQL)
             .param("id", conversionId)
             .param("ownerId", ownerId)
-            .query { rs, _ -> toStored(rs) }
+            .query { rs, _ -> ConversionRows.toStored(rs) }
             .optional()
             .orElse(null)
 
@@ -69,7 +64,7 @@ class JdbcConversionRepository(private val jdbc: JdbcClient) : ConversionReposit
                 FOR NO KEY UPDATE
                 """.trimIndent(),
             ).param("id", conversionId)
-            .query { rs, _ -> toEnvelope(rs) }
+            .query { rs, _ -> ConversionRows.toEnvelope(rs) }
             .optional()
             .orElse(null)
 
@@ -109,7 +104,110 @@ class JdbcConversionRepository(private val jdbc: JdbcClient) : ConversionReposit
             .param("expectedEditedText", expected.ciphertexts.editedText?.bytes)
             .update() > 0
 
-    private fun toConversion(rs: ResultSet): Conversion =
+    /** **내** 변환을 읽고 잠근다. 소유 술어가 조인 위에 있다. */
+    override fun lockOwnedForReview(
+        ownerId: UUID,
+        conversionId: UUID,
+    ): LockedConversion? =
+        jdbc
+            .sql(LOCK_OWNED_FOR_REVIEW_SQL)
+            .param("id", conversionId)
+            .param("ownerId", ownerId)
+            .query { rs, _ -> ConversionRows.toLocked(rs) }
+            .optional()
+            .orElse(null)
+
+    /** 검수본·검수 시각·봉투를 **한 UPDATE 로**. 검수 시각은 **DB 시계**다. */
+    override fun saveReview(
+        ownerId: UUID,
+        expected: ConversionEnvelope,
+        requiredStatus: ConversionStatus,
+        updated: ConversionEnvelope,
+    ): Boolean =
+        jdbc
+            .sql(SAVE_REVIEW_SQL)
+            .param("easyText", updated.ciphertexts.easyText?.bytes)
+            .param("maskedItems", updated.ciphertexts.maskedItems?.bytes)
+            .param("editedText", updated.ciphertexts.editedText?.bytes)
+            .param("scheme", updated.scheme)
+            .param("keyVersion", updated.keyVersion)
+            .param("id", expected.conversionId)
+            .param("ownerId", ownerId)
+            .param("requiredStatus", requiredStatus.wireName)
+            .param("expectedScheme", expected.scheme)
+            .param("expectedKeyVersion", expected.keyVersion)
+            .param("expectedEasyText", expected.ciphertexts.easyText?.bytes)
+            .param("expectedMaskedItems", expected.ciphertexts.maskedItems?.bytes)
+            .param("expectedEditedText", expected.ciphertexts.editedText?.bytes)
+            .update() > 0
+
+    private companion object {
+        /** 저장소가 만든 고정 문자열. 계약 `InternalError` 의 `storage` 갈래다. */
+        const val STORAGE_FAILURE_MESSAGE = "요청을 처리하지 못했습니다"
+
+        /** 검수 저장이 잠그는 질의. `OF c` 로 **변환 행만** 잠근다. */
+        val LOCK_OWNED_FOR_REVIEW_SQL =
+            """
+            SELECT c.id, c.status, c.easy_text_encrypted, c.masked_items_encrypted, c.edited_text_encrypted,
+                   c.encryption_scheme, c.key_version
+            FROM conversions c
+            JOIN documents d ON d.id = c.document_id
+            WHERE c.id = :id AND d.user_id = :ownerId
+            FOR NO KEY UPDATE OF c
+            """.trimIndent()
+
+        /**
+         * 검수 저장 UPDATE. 봉투를 암호문과 **같은 문장에서** SET 한다. `WHERE` 의 상태·암호문
+         * 조건은 잠금 아래에서 잉여로 보이지만, 잠금이 서지 않은 상태를 **0행으로** 드러내는
+         * fail-closed 카나리다.
+         */
+        val SAVE_REVIEW_SQL =
+            """
+            UPDATE conversions
+            SET easy_text_encrypted = :easyText,
+                masked_items_encrypted = :maskedItems,
+                edited_text_encrypted = :editedText,
+                encryption_scheme = :scheme,
+                key_version = :keyVersion,
+                reviewed_at = now()
+            WHERE id = :id
+              AND document_id IN (SELECT id FROM documents WHERE user_id = :ownerId)
+              AND status = :requiredStatus
+              AND encryption_scheme = :expectedScheme
+              AND key_version = :expectedKeyVersion
+              AND easy_text_encrypted IS NOT DISTINCT FROM CAST(:expectedEasyText AS bytea)
+              AND masked_items_encrypted IS NOT DISTINCT FROM CAST(:expectedMaskedItems AS bytea)
+              AND edited_text_encrypted IS NOT DISTINCT FROM CAST(:expectedEditedText AS bytea)
+            """.trimIndent()
+
+        /** 조회 질의. **소유 술어가 조인 위에 있다.** */
+        val FIND_OWNED_SQL =
+            """
+            SELECT c.id, d.id AS document_id, c.status,
+                   c.easy_text_encrypted, c.masked_items_encrypted, c.edited_text_encrypted,
+                   c.encryption_scheme, c.key_version,
+                   c.reviewed_at, c.missing_placeholders,
+                   c.model, c.provider_name, c.input_tokens, c.output_tokens, c.failure_code
+            FROM conversions c
+            JOIN documents d ON d.id = c.document_id
+            WHERE c.id = :id AND d.user_id = :ownerId
+            """.trimIndent()
+
+        val INSERT_PENDING_SQL =
+            """
+            INSERT INTO conversions (id, document_id, status, encryption_scheme, key_version)
+            VALUES (:id, :documentId, :status, :scheme, :keyVersion)
+            RETURNING id, document_id, status, failure_code, created_at, updated_at
+            """.trimIndent()
+    }
+}
+
+/** `conversions` 행 → 도메인 타입 매핑. 접근과 매핑을 가른다. */
+private object ConversionRows {
+    /** `missing_placeholders` 를 읽을 때만 쓴다. 봉인 대상의 코덱과 인스턴스를 공유하지 않는다. */
+    private val json = JsonMapper.builder().build()
+
+    fun toConversion(rs: ResultSet): Conversion =
         Conversion(
             id = rs.getObject("id", UUID::class.java),
             documentId = rs.getObject("document_id", UUID::class.java),
@@ -122,7 +220,7 @@ class JdbcConversionRepository(private val jdbc: JdbcClient) : ConversionReposit
         )
 
     /** 조회 한 행을 [StoredConversion] 으로 옮긴다. **복호화하지 않는다** — 그것은 유스케이스다. */
-    private fun toStored(rs: ResultSet): StoredConversion {
+    fun toStored(rs: ResultSet): StoredConversion {
         val scheme = rs.getString("encryption_scheme")
         val keyVersion = rs.getInt("key_version")
         return StoredConversion(
@@ -175,7 +273,11 @@ class JdbcConversionRepository(private val jdbc: JdbcClient) : ConversionReposit
         return StorageException(UNREADABLE_RESULT_MESSAGE)
     }
 
-    private fun toEnvelope(rs: ResultSet): ConversionEnvelope {
+    /** 잠근 행 — 상태와 봉투. */
+    fun toLocked(rs: ResultSet): LockedConversion =
+        LockedConversion(ConversionStatus.ofWireName(rs.getString("status")), toEnvelope(rs))
+
+    fun toEnvelope(rs: ResultSet): ConversionEnvelope {
         val scheme = rs.getString("encryption_scheme")
         val keyVersion = rs.getInt("key_version")
         return ConversionEnvelope(
@@ -199,37 +301,8 @@ class JdbcConversionRepository(private val jdbc: JdbcClient) : ConversionReposit
         keyVersion: Int,
     ): EncryptedContent? = rs.getBytes(column)?.let { EncryptedContent(it, scheme, keyVersion) }
 
-    private companion object {
-        /** 저장소가 만든 고정 문자열. 계약 `InternalError` 의 `storage` 갈래다. */
-        const val STORAGE_FAILURE_MESSAGE = "요청을 처리하지 못했습니다"
+    private const val MISSING_PLACEHOLDERS_COLUMN = "conversions.missing_placeholders"
 
-        /**
-         * 저장된 값이 우리 형식이 아닐 때의 문구. 계약 `InternalError` 의 다른 갈래이고
-         * [MaskedItemCodec] 이 쓰는 것과 **같은 문자열**이다 — 두 값 모두 「저장된 변환
-         * 결과를 읽지 못했다」는 같은 사건이므로 사용자에게 갈리는 안내를 주지 않는다.
-         */
-        const val UNREADABLE_RESULT_MESSAGE = "저장된 변환 결과를 읽을 수 없습니다"
-
-        private const val MISSING_PLACEHOLDERS_COLUMN = "conversions.missing_placeholders"
-
-        /** 조회 질의. **소유 술어가 조인 위에 있다.** */
-        val FIND_OWNED_SQL =
-            """
-            SELECT c.id, d.id AS document_id, c.status,
-                   c.easy_text_encrypted, c.masked_items_encrypted, c.edited_text_encrypted,
-                   c.encryption_scheme, c.key_version,
-                   c.reviewed_at, c.missing_placeholders,
-                   c.model, c.provider_name, c.input_tokens, c.output_tokens, c.failure_code
-            FROM conversions c
-            JOIN documents d ON d.id = c.document_id
-            WHERE c.id = :id AND d.user_id = :ownerId
-            """.trimIndent()
-
-        val INSERT_PENDING_SQL =
-            """
-            INSERT INTO conversions (id, document_id, status, encryption_scheme, key_version)
-            VALUES (:id, :documentId, :status, :scheme, :keyVersion)
-            RETURNING id, document_id, status, failure_code, created_at, updated_at
-            """.trimIndent()
-    }
+    /** 저장된 값이 우리 형식이 아닐 때의 문구. [MaskedItemCodec] 이 쓰는 것과 **같은 문자열**이다. */
+    private const val UNREADABLE_RESULT_MESSAGE = "저장된 변환 결과를 읽을 수 없습니다"
 }

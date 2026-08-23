@@ -75,6 +75,22 @@ object ContractSpec {
         return successes.first().toInt()
     }
 
+    /**
+     * 성공 응답 본문이 가리키는 스키마 `$ref`. 두 오퍼레이션이 **같은 스키마를 쓰는가**를
+     * 이름을 코드에 적지 않고 계약 노드끼리 짝지어 잰다.
+     */
+    fun successResponseSchemaRef(
+        path: String,
+        method: String,
+    ): String {
+        val content = map("paths", path, method, "responses", successStatus(path, method).toString(), "content")
+        val mediaType =
+            content.values.filterIsInstance<Map<*, *>>().singleOrNull()
+                ?: error("$path $method 성공 응답의 content 가 미디어 타입 하나가 아니다: ${content.keys}")
+        val schema = mediaType["schema"] as? Map<*, *> ?: error("$path $method 성공 응답에 schema 가 없다")
+        return schema["\$ref"]?.toString() ?: error("$path $method 성공 응답 schema 가 \$ref 가 아니다: $schema")
+    }
+
     /** P-2. 그 응답에 선언된 헤더 이름 집합. */
     fun responseHeaderNames(
         path: String,

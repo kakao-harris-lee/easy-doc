@@ -10,6 +10,7 @@ import kr.easydoc.application.auth.WorkspaceDeletionState
 import kr.easydoc.application.auth.WorkspaceRepository
 import kr.easydoc.application.crypto.ContentCipher
 import kr.easydoc.application.document.ConversionQueryService
+import kr.easydoc.application.document.ConversionReviewService
 import kr.easydoc.application.document.DocumentService
 import kr.easydoc.application.document.DocumentStorage
 import kr.easydoc.application.document.DocumentTextExtractor
@@ -137,6 +138,21 @@ class AuthSliceBeans {
             conversions = conversions,
             cipher = cipher,
             maskedItems = maskedItems,
+            transaction = transaction,
+        )
+
+    /** 검수 저장 유스케이스도 실물이다. 응답 조립은 조회 유스케이스를 그대로 쓴다. */
+    @Bean
+    fun conversionReviewService(
+        conversions: InMemoryConversionRepository,
+        cipher: ContentCipher,
+        query: ConversionQueryService,
+        transaction: TransactionRunner,
+    ): ConversionReviewService =
+        ConversionReviewService(
+            conversions = conversions,
+            cipher = cipher,
+            query = query,
             transaction = transaction,
         )
 }
