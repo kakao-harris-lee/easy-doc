@@ -6,7 +6,7 @@
 // 조건은 문서가 아니라 CoreModuleBoundaryTest 가 지킨다.
 
 plugins {
-    // parity 하네스(ParityActualWriter)를 infrastructure·application 테스트가 함께 쓴다.
+    // FakeLlmProvider 등 테스트 대역을 application·api 테스트가 함께 쓴다.
     // 별도 모듈을 만들지 않는 이유: 계획 §3.2가 정한 모듈은 다섯 개뿐이고,
     // 테스트 지원 코드는 제품 모듈이 아니다.
     `java-test-fixtures`

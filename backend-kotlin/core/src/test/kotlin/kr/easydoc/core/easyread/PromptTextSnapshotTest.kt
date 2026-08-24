@@ -90,11 +90,11 @@ class PromptTextSnapshotTest {
     }
 
     companion object {
-        private const val SNAPSHOT_RESOURCE = "/kr/easydoc/core/easyread/python-prompt-snapshot.json"
+        private const val SNAPSHOT_RESOURCE = "/kr/easydoc/core/easyread/prompt-snapshot.json"
 
         private val SNAPSHOT: JsonObject = loadSnapshot()
 
-        /** 스냅샷을 뽑을 때 Python 쪽에 고정해 둔 id 와 같은 값을 낸다. */
+        /** 스냅샷을 뽑을 때 고정해 둔 id 와 같은 값을 낸다 — 다르면 구분자 태그가 스냅샷과 갈린다. */
         private val FIXED_IDS = DocumentIdGenerator { SNAPSHOT.string("_fixed_document_id") }
 
         private fun loadSnapshot(): JsonObject {

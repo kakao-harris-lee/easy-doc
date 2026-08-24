@@ -16,7 +16,7 @@ import org.junit.jupiter.params.provider.MethodSource
 class PostprocessTest {
     @ParameterizedTest(name = "{0} — {1}")
     @MethodSource("cases")
-    @DisplayName("Python 실측 케이스와 결과가 같다")
+    @DisplayName("스냅샷 케이스와 결과가 같다")
     fun `후처리 결과가 스냅샷과 일치한다`(
         @Suppress("UNUSED_PARAMETER") name: String,
         @Suppress("UNUSED_PARAMETER") note: String,
@@ -48,7 +48,7 @@ class PostprocessTest {
     }
 
     private companion object {
-        const val SNAPSHOT_RESOURCE = "/kr/easydoc/core/easyread/python-prompt-snapshot.json"
+        const val SNAPSHOT_RESOURCE = "/kr/easydoc/core/easyread/prompt-snapshot.json"
         const val MIN_NEGATIVE_CASES = 9
 
         @JvmStatic

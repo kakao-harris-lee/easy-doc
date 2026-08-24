@@ -14,48 +14,12 @@ plugins {
     alias(libs.plugins.detekt)
 }
 
-// parity 산출물의 저장소 루트 기준 경로. backend-kotlin/ 이 Gradle 루트이므로 한 단계 위다.
-val parityActualDir: File = File(rootDir.parentFile, "parity/actual")
-
-// parity fixture(입력)의 경로. 산출물과 달리 **읽기 전용**이라 test·parityHarness 가 같은
-// 곳을 본다 — 사본을 두면 어느 것이 정본인지 알 수 없어진다.
-val parityFixturesDir: File = File(rootDir.parentFile, "parity/fixtures")
-
-// Kotlin 이 포팅을 끝냈다고 선언한 parity 도메인 목록. 파일 자체의 설명은 그 안에 있다.
-val parityDomainsFile: File = rootProject.file("parity-domains.txt")
-
 // 계약 정본. 테스트가 실행 시점에 시스템 속성으로 경로를 만들어 읽으므로 Gradle 의 입력
 // 지문에 잡히지 않았고, 그래서 **계약만 바꾼 변경이 계약 테스트를 한 번도 돌리지 않고**
 // UP-TO-DATE / FROM-CACHE 로 초록이 됐다(contract-keeper 6ece404 §5 실측).
 // X-J2 가 요구한 「계약 값을 바꾸면 테스트가 깨진다」는 테스트가 돌 때만 참이므로,
 // 파일을 선언 입력으로 걸어 그 전제를 빌드가 지키게 한다.
 val apiContractFile: File = File(rootDir.parentFile, "contracts/easy-doc-v1.yaml")
-
-/** 선언 파일을 읽어 도메인 이름만 남긴다 (`#` 뒤 주석·빈 줄 제거). */
-fun declaredParityDomains(file: File): List<String> =
-    file
-        .readLines()
-        .map { it.substringBefore('#').trim() }
-        .filter { it.isNotEmpty() }
-        .distinct()
-        .sorted()
-
-// 지난 실행의 산출물을 지운다. 이것이 없으면 Kotlin 쪽 parity 테스트를 지워도 예전
-// 산출물이 parity/actual/ 에 남아 게이트가 계속 통과한다 — "무엇을 이번에 실제로
-// 만들었는가"가 아래 parityManifestCheck 판정의 입력이므로 선행 조건이다.
-val parityActualClean =
-    tasks.register("parityActualClean") {
-        group = "verification"
-        description = "parity/actual/ 을 비운다 (지난 실행의 산출물이 게이트를 통과시키지 못하게)"
-        val target = parityActualDir
-        outputs.upToDateWhen { false }
-        doLast {
-            if (target.exists()) {
-                check(target.deleteRecursively()) { "parity/actual 을 지우지 못했다: $target" }
-            }
-            check(target.mkdirs() || target.isDirectory) { "parity/actual 을 만들지 못했다: $target" }
-        }
-    }
 
 allprojects {
     group = "kr.easydoc"
@@ -130,10 +94,6 @@ subprojects {
         // 전체 실행이 분 단위로 늘어난다.
         systemProperty("testcontainers.reuse.enable", "true")
 
-        // parity fixture(입력)는 읽기 전용이라 test·parityHarness 가 같은 곳을 본다.
-        // 산출 경로(parity.actual.dir)와 달리 실행 종류에 따라 갈리지 않는다.
-        systemProperty("parity.fixtures.dir", parityFixturesDir.absolutePath)
-
         // 소스 전수를 훑는 탐지기(허용목록 가드 등)가 쓰는 루트. 테스트 작업 디렉터리는
         // 모듈 디렉터리라, 코드에서 상대 경로로 거슬러 올라가면 모듈이 늘 때 조용히 어긋난다.
         systemProperty("easydoc.kotlin.source.root", rootDir.absolutePath)
@@ -161,17 +121,12 @@ subprojects {
         // 소스 전수를 훑는 탐지기가 **실행 시점에 읽는 것**을 선언 입력으로 건다 (β-02).
         //
         // 위 계약 파일만 걸어 두어 **비대칭**이었다. 같은 블록이 `easydoc.kotlin.source.root`
-        // 로 rootDir 을 넘겨 주는데, 그 루트 아래 파일들은 선언 입력이 아니었다.
-        // 실측(2026-08-21): `ParityDeclarationSyncTest` 가 실행 시점에 읽는
-        // `backend-kotlin/parity-domains.txt` 에서 도메인 한 줄을 지웠는데
-        // `./gradlew :core:test` 가 **UP-TO-DATE** 로 끝났다(그 상태에서 `--rerun-tasks` 를
-        // 주면 그 테스트가 `["export"]` 를 지목하며 실패한다 — 양성 대조). 즉 스캐너가
-        // 재는 대상이 바뀌어도 스캐너가 돌지 않았고, 그 실행의 초록은 그 변경에 대해
-        // 아무 의미가 없었다.
+        // 로 rootDir 을 넘겨 주는데, 그 루트 아래 파일들은 선언 입력이 아니었다 — 실행
+        // 시점에 읽는 파일이 바뀌어도 탐지기가 다시 돌지 않고 UP-TO-DATE 로 끝날 수 있다.
         //
         // 왜 `inputs.dir(rootDir)` 이 아닌가: 그러면 `build/` 산출물이 입력에 들어가
-        // 순환이 생기고 매 실행이 out-of-date 가 된다. 그래서 **소스 트리와 선언 파일만**
-        // 건다. 모듈 자기 소스는 이미 컴파일 산출물로 입력이지만, 다른 모듈의 소스는
+        // 순환이 생기고 매 실행이 out-of-date 가 된다. 그래서 **소스 트리만** 건다.
+        // 모듈 자기 소스는 이미 컴파일 산출물로 입력이지만, 다른 모듈의 소스는
         // 아니었다 — 그 자리가 이 선언의 값이다.
         //
         // 비용: 어느 모듈의 소스를 고쳐도 모든 테스트 태스크가 다시 돈다. CI 는 매번 새
@@ -181,121 +136,13 @@ subprojects {
             .files(
                 rootProject.fileTree(rootDir) {
                     include("**/src/**")
-                    include("parity-domains.txt")
                     exclude("**/build/**")
                     exclude("**/.gradle/**")
                 },
             ).withPropertyName("scannedSourceTree")
             .withPathSensitivity(PathSensitivity.RELATIVE)
-
-        // parity fixture(정본 입력)도 테스트가 실행 시점에 읽는다. 같은 사유다.
-        inputs
-            .dir(parityFixturesDir)
-            .withPropertyName("parityFixtures")
-            .withPathSensitivity(PathSensitivity.RELATIVE)
-    }
-
-    // 일반 `test` 는 게이트 디렉터리를 건드리지 않는다. parity 산출물은 모듈 build/ 안에
-    // 버려지고, 저장소 루트 parity/actual/ 은 아래 parityHarness 태스크만 쓴다.
-    tasks.named<Test>("test") {
-        systemProperty(
-            "parity.actual.dir",
-            layout.buildDirectory
-                .dir("parity-actual")
-                .get()
-                .asFile.absolutePath,
-        )
-    }
-
-    // parity 게이트용 산출 태스크. `parity/actual/{도메인}` 아래 json 산출물 을 **Kotlin 테스트가**
-    // 쓴다는 것을 보장하는 유일한 장치다 (Phase 0 필수 조치 E,
-    // python-kotlin-parity 스킬 "이 게이트가 막지 못하는 것" 참고).
-    val sourceSets = extensions.getByType<SourceSetContainer>()
-    tasks.register<Test>("parityHarness") {
-        group = "verification"
-        description = "parity 산출물을 저장소 루트 parity/actual/ 에 쓴다 (@Tag(\"parity\") 테스트만)"
-        dependsOn(parityActualClean)
-        testClassesDirs = sourceSets.getByName("test").output.classesDirs
-        classpath = sourceSets.getByName("test").runtimeClasspath
-        useJUnitPlatform {
-            includeTags("parity")
-            excludeTags("llm")
-        }
-        systemProperty("parity.actual.dir", parityActualDir.absolutePath)
-        systemProperty("parity.fixtures.dir", parityFixturesDir.absolutePath)
-        systemProperty("easydoc.kotlin.source.root", rootDir.absolutePath)
-        // 입력이 같아도 매번 다시 써야 게이트가 최신 산출물을 본다.
-        outputs.upToDateWhen { false }
     }
 }
-
-// --- 선언 ↔ 실행 대조 -------------------------------------------------------
-// parity-domains.txt 는 손으로 적는 선언이라 그 자체로는 아무것도 보장하지 않는다.
-// 이 태스크가 선언을 **이번 실행이 실제로 만든 산출물**과 양방향으로 대조해서 의미를
-// 준다. 두 방향 모두 막아야 하는 이유는 다르다.
-//
-//   선언 O / 산출 X — "포팅했다"고 적어 두고 산출물이 없는 상태. 이것을 여기서 막지
-//       않으면 CI 비교 단계가 그 도메인을 "결과 파일 없음"으로 잡아 주기는 하지만,
-//       그 단계에는 부분 검증 사면이 걸려 있다. **탐지와 사면을 같은 단계에 두지
-//       않는 것**이 이 태스크가 별도 단계로 존재하는 이유다.
-//   선언 X / 산출 O — CI 비교는 선언한 도메인만 좁혀서 본다. 그러니 산출물만 만들고
-//       선언에서 빼면 값 비교를 조용히 건너뛸 수 있다. 그 경로를 막는다.
-val parityManifestCheck =
-    tasks.register("parityManifestCheck") {
-        group = "verification"
-        description = "parity-domains.txt 의 선언과 실제 산출물이 정확히 일치하는지 확인한다"
-        dependsOn(subprojects.map { "${it.path}:parityHarness" })
-        val actualDir = parityActualDir
-        val declarationFile = parityDomainsFile
-        outputs.upToDateWhen { false }
-        doLast {
-            check(declarationFile.isFile) {
-                "parity 도메인 선언 파일이 없다: $declarationFile — 무엇을 검증해야 하는지의 근거가 사라졌다."
-            }
-            val declared = declaredParityDomains(declarationFile).toSet()
-            val produced =
-                (actualDir.listFiles()?.filter { it.isDirectory } ?: emptyList())
-                    .map { it.name }
-                    .toSet()
-
-            val problems = mutableListOf<String>()
-            (declared - produced).sorted().forEach {
-                problems +=
-                    "  - [선언 O / 산출 X] $it — parity-domains.txt 는 포팅됐다고 선언하는데 " +
-                    "parityHarness 가 parity/actual/$it 에 아무것도 쓰지 않았다."
-            }
-            (produced - declared).sorted().forEach {
-                problems +=
-                    "  - [선언 X / 산출 O] $it — 산출물은 있는데 선언이 없다. " +
-                    "CI parity 비교가 이 도메인을 건너뛰므로 값이 달라도 드러나지 않는다."
-            }
-            (declared intersect produced).sorted().forEach { domain ->
-                val jsons = File(actualDir, domain).listFiles { f: File -> f.isFile && f.name.endsWith(".json") }
-                if (jsons.isNullOrEmpty()) {
-                    problems += "  - [산출물 0건] $domain — 디렉터리는 있으나 json 이 하나도 없다."
-                }
-            }
-
-            if (problems.isNotEmpty()) {
-                error(
-                    buildString {
-                        appendLine("parity 선언과 산출물이 어긋난다.")
-                        appendLine("  선언(parity-domains.txt): ${declared.sorted().joinToString(", ").ifEmpty { "없음" }}")
-                        appendLine("  산출(parity/actual):      ${produced.sorted().joinToString(", ").ifEmpty { "없음" }}")
-                        problems.forEach { appendLine(it) }
-                    },
-                )
-            }
-            if (declared.isEmpty()) {
-                logger.lifecycle(
-                    "parity 선언 0개 — 포팅을 끝냈다고 선언한 도메인이 없다. " +
-                        "게이트는 아무 값도 검증하지 않는다(= 통과가 아니라 '검증 대상 없음').",
-                )
-            } else {
-                logger.lifecycle("parity 선언 ${declared.size}개 전부 산출물 확인: ${declared.sorted().joinToString(", ")}")
-            }
-        }
-    }
 
 // ── 모듈 의존 방향 강제 (Phase 3 착수 전 · 2회차 codex #5) ────────────────────────────
 //
@@ -407,11 +254,4 @@ tasks.register("moduleBoundaryCheck") {
     group = "verification"
     description = "api·worker 의 모듈 경계 판정을 한 번에 돌린다"
     dependsOn(moduleBoundaryChecks)
-}
-
-// 루트에서 한 번에 도는 편의 태스크.
-tasks.register("parityHarness") {
-    group = "verification"
-    description = "모든 모듈의 parity 산출물을 저장소 루트 parity/actual/ 에 쓰고 선언과 대조한다"
-    dependsOn(parityManifestCheck)
 }

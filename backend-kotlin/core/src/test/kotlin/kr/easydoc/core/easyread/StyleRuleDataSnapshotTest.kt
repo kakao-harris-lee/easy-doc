@@ -89,7 +89,7 @@ class StyleRuleDataSnapshotTest {
 
     private companion object {
         const val EXPECTED_DICTIONARY_SIZE = 246
-        const val SNAPSHOT_RESOURCE = "/kr/easydoc/core/easyread/python-style-rules-snapshot.json"
+        const val SNAPSHOT_RESOURCE = "/kr/easydoc/core/easyread/style-rules-snapshot.json"
 
         fun loadSnapshot(): JsonObject {
             val stream =
