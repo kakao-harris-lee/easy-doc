@@ -8,6 +8,10 @@
 .vscode/
 .DS_Store
 
+# 로컬 에이전트 상태(머신별 권한·경로)와 도구 세션 로그
+.claude/settings.local.json
+.playwright-mcp/
+
 # OMC 상태
 .omc/
 
