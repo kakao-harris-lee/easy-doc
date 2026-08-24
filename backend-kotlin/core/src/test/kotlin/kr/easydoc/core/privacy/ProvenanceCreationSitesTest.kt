@@ -36,8 +36,6 @@ class ProvenanceCreationSitesTest {
                         "core/src/test/kotlin/kr/easydoc/core/easyread/PromptInjectionGuardTest.kt" to 4,
                         "core/src/test/kotlin/kr/easydoc/core/easyread/PromptTextSnapshotTest.kt" to 1,
                         "core/src/test/kotlin/kr/easydoc/core/easyread/PromptsTest.kt" to 4,
-                        "core/src/test/kotlin/kr/easydoc/core/CoreDomainsParityTest.kt" to 1,
-                        "core/src/test/kotlin/kr/easydoc/core/ExportParityTest.kt" to 1,
                         "core/src/test/kotlin/kr/easydoc/core/llm/LlmPromptTest.kt" to 1,
                         "core/src/test/kotlin/kr/easydoc/core/privacy/MaskingTest.kt" to 10,
                     ),
@@ -47,7 +45,6 @@ class ProvenanceCreationSitesTest {
                         "application/src/test/kotlin/kr/easydoc/application/document/" +
                             "ConversionReviewServiceTest.kt" to 1,
                         "core/src/test/kotlin/kr/easydoc/core/privacy/MaskingTest.kt" to 4,
-                        "core/src/test/kotlin/kr/easydoc/core/ExportParityTest.kt" to 1,
                         "infrastructure/src/test/kotlin/kr/easydoc/infrastructure/document/" +
                             "EnvelopeRotationConcurrencyTest.kt" to 1,
                     ),
