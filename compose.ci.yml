@@ -21,6 +21,10 @@ services:
       - "host.docker.internal:host-gateway"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
+      # 계약 정본은 저장소 루트 contracts/ 에 있다. Gradle·ContractSpec 은 backend
+      # 루트(/build)의 부모에서 contracts/easy-doc-v1.yaml 을 찾으므로 /contracts 로 붙인다.
+      # 빌드 컨텍스트는 backend-kotlin/ 만 유지하고, 테스트가 읽는 파일만 읽기 전용으로 연다.
+      - ./contracts:/contracts:ro
 
   frontend-check:
     profiles: [ci]

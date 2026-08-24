@@ -1,11 +1,32 @@
+import { execFileSync } from 'node:child_process'
+import process from 'node:process'
 import { configDefaults, defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
+
+/**
+ * Node 25+는 실험용 Web Storage를 기본 켠다. 그 globalThis.localStorage 는
+ * Storage가 아니라서 jsdom이 window.localStorage 설치를 건너뛰고, 테스트가
+ * `undefined.clear` 로 죽는다. CI는 Node 22라 안 보이지만 engines(<27) 로컬에서 재현된다.
+ * 플래그 이름은 Node 버전에 따라 다르므로, 이 런타임이 받는 쪽만 넘긴다.
+ */
+function disableNodeWebStorageArgs(): string[] {
+  for (const flag of ['--no-webstorage', '--no-experimental-webstorage']) {
+    try {
+      execFileSync(process.execPath, [flag, '--eval', ''], { stdio: 'ignore' })
+      return [flag]
+    } catch {
+      // 이 Node 빌드에 없는 플래그.
+    }
+  }
+  return []
+}
 
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react()],
   test: {
     environment: 'jsdom',
+    execArgv: disableNodeWebStorageArgs(),
     setupFiles: ['./src/test/setup.ts'],
     // 전역 주입 없이 vitest API를 명시적으로 import 한다 — 타입이 파일 안에서 닫힌다.
     globals: false,

@@ -44,7 +44,7 @@
 - [x] 로컬 전체 스택과 CI 검증 서비스를 Compose 파일에서 한눈에 확인할 수 있게 한다.
 - [x] 백엔드·프런트 이미지가 각 프로젝트 디렉터리만 build context로 사용하게 한다.
 - [x] CI는 Compose 설정 검증 후 백엔드·프런트 독립 게이트를 실행한다.
-- [ ] 이미지 registry push와 실제 환경 배포는 대상 registry/호스트가 정해진 뒤 별도 승인으로 연결한다.
+- [x] 이미지 registry push를 GHCR CD(`v*` 태그·수동 실행)로 연결한다. 실제 환경 배포는 대상 인프라 결정 후이며 K1 범위 밖이다.
 
 ### K1-3. Worker 수직 흐름
 
@@ -76,9 +76,9 @@
 ## 4. 완료 정의
 
 - [ ] `docker compose -f compose.yml -f compose.ci.yml run --rm backend-check` 통과
-- [ ] `docker compose -f compose.yml -f compose.ci.yml run --rm frontend-check` 통과
+- [x] `docker compose -f compose.yml -f compose.ci.yml run --rm frontend-check` 통과
 - [ ] `docker compose up -d --build --wait` 후 Playwright 핵심 흐름 통과
-- [ ] `docker compose config`와 `docker compose -f compose.yml -f compose.ci.yml config` 통과
+- [x] `docker compose config`와 `docker compose -f compose.yml -f compose.ci.yml config` 통과
 - [ ] 계약·Kotlin DTO/컨트롤러·React 타입/호출부가 같은 변경 단위로 검증됨
 - [ ] 미완료 항목이 `docs/kotlin-redevelopment-backlog.md`와 일치함
 
