@@ -1,9 +1,5 @@
-# Kotlin 런타임 이미지. API·워커·마이그레이션이 **하나의 이미지**를 공유하고
-# Spring profile 로만 갈린다 (계획 §3.2: "같은 JAR/레이어를 사용하고 실행 profile 만
-# api, worker, migrate 로 구분한다").
-#
-# 저장소 루트의 Dockerfile(Python)을 대체하지 않는다. 절체는 Phase 7이고, 그때까지
-# 두 런타임이 나란히 존재한다.
+# Kotlin 백엔드 프로젝트 이미지. API·워커·마이그레이션이 **하나의 이미지**를 공유하고
+# Spring profile 로만 갈린다.
 #
 # 빌드 컨텍스트는 backend-kotlin/ 이다:
 #   docker build -f backend-kotlin/Dockerfile backend-kotlin
@@ -39,7 +35,7 @@ COPY worker worker
 RUN ./gradlew --no-daemon :api:bootJar :worker:bootJar -x test
 
 # --- 런타임 단계 -------------------------------------------------------------
-FROM eclipse-temurin:21.0.4_7-jre-noble
+FROM eclipse-temurin:21.0.4_7-jre-noble AS runtime
 
 # compose healthcheck 와 운영 진단에 쓸 curl. JRE 이미지에는 들어 있지 않다.
 # --no-install-recommends: 이미지에 불필요한 패키지를 늘리지 않는다.
@@ -47,7 +43,7 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends curl \
     && rm -rf /var/lib/apt/lists/*
 
-# non-root 실행. 애플리케이션이 자기 코드를 고칠 수 없어야 한다(Python 이미지와 같은 규칙).
+# non-root 실행. 애플리케이션이 자기 코드를 고칠 수 없어야 한다.
 RUN useradd --system --create-home --uid 10001 easydoc
 
 WORKDIR /app

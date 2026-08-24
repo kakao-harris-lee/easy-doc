@@ -30,10 +30,10 @@ class Secret(private val value: String) {
     override fun hashCode(): Int = MASK.hashCode()
 
     companion object {
-        /** 마스킹 문자열. Python `SecretStr` 의 `**********` 와 같은 자리다. */
+        /** 로그와 디버그 출력에 사용하는 고정 마스킹 문자열. */
         const val MASK: String = "**********"
 
-        /** 미설정 상태. Python 의 `SecretStr | None = None` 에 대응한다. */
+        /** 설정이 비어 있음을 타입 안에서 표현하는 값. */
         val EMPTY: Secret = Secret("")
     }
 }

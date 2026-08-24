@@ -31,7 +31,7 @@ import { defineConfig, devices } from '@playwright/test'
 /** 브라우저가 보는 출처. 계약 `x-cors.allow_origins` 에 이 값이 있어야 한다(E11 이 단언한다). */
 const FRONTEND_ORIGIN = process.env.E2E_FRONTEND_ORIGIN ?? 'http://localhost:5173'
 
-/** Kotlin API 출처. compose 의 `kotlin-api` 와 같은 포트를 기본값으로 둔다. */
+/** Kotlin API 출처. compose 의 `backend-api`와 같은 포트를 기본값으로 둔다. */
 const API_BASE_URL = process.env.E2E_API_BASE_URL ?? 'http://localhost:8100'
 
 const frontendPort = new URL(FRONTEND_ORIGIN).port

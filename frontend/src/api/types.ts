@@ -1,11 +1,11 @@
 /**
- * 백엔드 Pydantic 스키마와 1:1로 맞춘 타입.
+ * 공개 API 계약과 1:1로 맞춘 wire type.
  *
  * 필드 이름은 백엔드가 내려주는 snake_case를 그대로 쓴다 — 경계에서 이름을 바꾸면
  * 어떤 필드가 서버에서 온 것인지 추적이 끊기고, 스키마가 바뀌었을 때 타입 검사가
  * 잡아주지 못하는 구간이 생긴다.
  *
- * 원본: app/api/auth.py, app/api/documents.py
+ * 기준: contracts/easy-doc-v1.yaml
  */
 
 /** 변환 상태. 백엔드 conversions.status CHECK 제약과 같은 값 집합이다. */

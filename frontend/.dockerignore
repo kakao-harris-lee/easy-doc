@@ -1,0 +1,7 @@
+node_modules/
+dist/
+test-results/
+.omc/
+*.log
+.DS_Store
+

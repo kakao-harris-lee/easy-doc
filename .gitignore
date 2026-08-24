@@ -1,12 +1,3 @@
-# Python
-__pycache__/
-*.py[cod]
-.venv/
-.mypy_cache/
-.pytest_cache/
-.ruff_cache/
-dist/
-
 # 환경 변수 (비밀키는 .env로만 관리 — 커밋 금지)
 .env
 .env.*
@@ -27,9 +18,16 @@ dist/
 backend-kotlin/build/
 backend-kotlin/*/build/
 backend-kotlin/.gradle/
+backend-kotlin/.kotlin/
 backend-kotlin/*/.gradle/
 backend-kotlin/**/bin/
 !backend-kotlin/gradle/wrapper/gradle-wrapper.jar
+
+# React / Vite
+frontend/node_modules/
+frontend/dist/
+frontend/test-results/
+frontend/playwright-report/
 
 # 골든셋을 수집한 **원본 공공기관 문서 13건**(PDF 9 · HWPX 4, 합계 76MB). 바이너리라
 # git 에 영구 편입되면 clone 이 계속 무거워진다.
@@ -46,12 +44,8 @@ backend-kotlin/**/bin/
 # `find docs/golden -type f -size -24k` 가 0건이다(전부 24KB 이상). 그 논거가 실제로
 # 닿는 곳은 `docs/golden-drafts/` 이고, 그쪽은 아래 사유로 **일부러 무시하지 않는다.**
 #
-# **`docs/golden-drafts/`는 여기 넣지 않는다.** `app/easyread/collection.py` 가 초안을
-# **커밋 대상으로 전제**하고 그 위에 `redact_contacts` 라는 저장소 sink 안전장치를 걸어
-# 뒀다(§970 "초안이 `docs/golden-drafts/`에 커밋되기 때문에 거는 것", §210 "`.gitignore`
-# 대상이 아니라"). 무시로 돌리면 그 장치의 근거가 사라져 다음 사람이 걷어낼 빌미가 되고,
-# 초안은 큐레이션 산출물이라 이 기계에만 남는다. 다만 **아직 커밋되지도 않아 그 전제는
-# 현재 성립하지 않는다** — 별건으로 판단한다.
+# **`docs/golden-drafts/`는 여기 넣지 않는다.** 초안도 큐레이션 산출물이므로 변경이
+# `git status`에 보여야 개인정보·연락처 사람 검수를 건너뛰지 않는다.
 #
 # 이 문서들은 골든셋의 출처이므로 **지우지 마라.** 추적되지 않으니 fresh clone 에는
 # 없다(제거된 `docs/migration/_workspace/03_rebuild-extraction-list.md` P1-8 참조 —

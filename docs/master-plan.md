@@ -1,12 +1,19 @@
-# Easy-Read AI — 마스터 기획서 (v2.2)
+# Easy-Read AI — 마스터 기획서 (v2.3)
 
 > 공공기관용 '쉬운 글' 자동 변환 SaaS
-> 최종 수정: 2026-08-24 · 상태: 개발 착수용 확정본 (스프린트 1~3 완료 + 2026-08-12 정책 갱신 + 2026-08-24 Python 제거 반영)
+> 최종 수정: 2026-08-24 · 상태: Kotlin Lean MVP 재개발 진행 중 (Sprint K1)
+
+## v2.2 → v2.3 주요 변경 사항 (2026-08-24)
+
+- 과거 Python 스프린트의 완료 표시와 현재 Kotlin 구현 진행률을 분리했다. 현재 실행 계획은 `docs/plans/2026-08-24-sprint-k1-kotlin-mvp-completion.md` 하나다.
+- 저장소를 독립 프로젝트 `backend-kotlin/`과 `frontend/`, 두 프로젝트가 공유하는 `contracts/`, 루트 Compose 통합 계층으로 정의했다.
+- CI는 `compose.yml` + `compose.ci.yml`에서 백엔드·프런트 검증 서비스를 함께 보여 주고, CD는 동일 Compose 이미지 정의로 GHCR 이미지를 게시한다.
+- Python 시대 스프린트/CI 기록은 `docs/plans/archive/python-era/`로 이동했으며 현재 작업의 완료 근거가 아니다.
 
 ## v2.1 → v2.2 주요 변경 사항 (2026-08-24)
 
-- **Python 구현·실행 환경 전면 제거.** 6.2가 정한 "재개발(Python은 참고 구현)" 방향을 끝까지 진행해, `app/`·Python 테스트·Alembic·arq·Python-Kotlin parity 하네스를 저장소에서 제거했다. 이제 제품 런타임은 **Kotlin/Spring Boot 하나**이고, Python으로만 구현됐던 기능(골든셋 LLM 평가, 쉬운 말 사전 정적 치환 등)은 **Kotlin 미구현 backlog**로 남는다 — "폐기"가 아니라 "아직 Kotlin에 없음"이다. 근거·범위: `docs/plans/2026-08-24-python-removal-for-kotlin-redevelopment.md`.
-- 6.1·6.2를 Kotlin/Gradle/frontend 기준으로 재작성. 스프린트 1~3 로드맵(9장)의 완료 기록은 **당시 Python 구현 기준의 역사적 사실**로 남기고 고치지 않는다 — 그 구현 자체는 이제 없다.
+- **Python 구현·실행 환경 전면 제거.** 제품 런타임은 **Kotlin/Spring Boot 하나**이며, 미구현 기능은 Kotlin backlog로 관리한다. 제거 결정 기록은 `docs/plans/archive/transition/2026-08-24-python-removal-for-kotlin-redevelopment.md`에 보관한다.
+- 6.1·6.2를 Kotlin/Gradle/frontend 기준으로 재작성. 당시 스프린트 기록은 `docs/plans/archive/python-era/`에 역사 자료로만 보존한다.
 
 ## v2 → v2.1 주요 변경 사항 (2026-08-12)
 
@@ -105,7 +112,7 @@
 
 ### 3.3 품질 신뢰 체계
 
-- **골든셋**: 실제 복지 안내문 20~30건 + 기대 변환 결과를 골든셋으로 구축. 프롬프트·모델 변경 시 자동 평가(스타일 규칙 검사 + LLM-as-judge)를 CI에서 강제한다는 것이 목표다. **2026-08-24 기준 평가 도구는 Python 구현(`app/easyread/goldenset.py`·`judge.py`)에만 있었고 Python 제거와 함께 없어졌다 — Kotlin 대체 도구는 재개발 backlog.** 골든 JSON 56건·`required_facts` 253개는 `data/golden/documents/`에 언어 독립 fixture로 옮겼다. easy-read 변환 예시 6개·독립 style rule 데이터(어려운말 사전 246개 포함)는 이미 Kotlin(`Prompts.kt`·`StyleRules.kt`와 그 테스트 리소스)에 포팅·고정되어 있어 별도로 옮기지 않았다(제거 계획 §4.2, 실행 기록 `docs/plans/_workspace-python-removal/02_data-migration-manifest.md`). Python 골든셋의 회귀 바닥값(`tests/golden/baseline.json`)은 Python 실행 결과 기반이라 보존하지 않고 폐기했다(같은 문서 §3).
+- **골든셋**: 실제 복지 안내문과 기대 사실을 `data/golden/documents/`에 언어 독립 JSON으로 보존한다(56건, `required_facts` 253개). 프롬프트·모델 변경 시 Kotlin 스타일 규칙 검사 + opt-in LLM-as-judge를 CI에서 강제하는 것이 목표다. **2026-08-24 기준 Kotlin 평가 실행기는 아직 미구현**이며 Sprint K1 backlog다. 현재 Kotlin `Prompts.kt`·`StyleRules.kt`와 스냅샷 테스트는 프롬프트/규칙 데이터의 정적 회귀만 담당한다.
 - **쉬운 글 스타일 규칙**: 국립국어원·보건복지부·알다 가이드라인 기반 체크리스트(문장 길이, 한 문장 한 정보, 어려운 한자어 치환, 능동태 등)를 명문화하여 프롬프트와 평가 기준에 공통 사용.
 - **HITL**: 모든 결과물은 담당자 검수 후 확정. "AI 초안"임을 UI에 명시.
 - **변환 호출 계약**: 문서 변환 1건 = LLM 호출 **최대 2회** — 변환 1회 + 스타일 규칙 위반이 기계 검출된 경우에만 표적 보정 1회(루프 없음, 보정 실패·악화 시 원본 채택). 크레딧 원가 산정(5장)은 이 상한을 전제로 한다. **알려진 품질 한계(2026-08-08 갱신)**: gpt-4o의 장문 자체 요약(압축) 문제는 기본 모델을 gpt-4.1로 교체해 해소했다(전건 정상 팽창·충실성 바닥 0건 — docs/quality/2026-08-07-model-comparison.md, 2026-08-08-golden-reeval-gpt41.md). 분할 변환 필요성은 소멸. 현재 남은 한계는 **장문에서 문장 길이 등 스타일 규칙 준수율 하락**(2,000자 초과 통과율 0.11)으로, 파일럿 안내의 2,000자 내외 권장은 이 사유로 유지한다.
@@ -195,24 +202,25 @@ v1 기획의 MVP는 물론, 아래 P0 전체(11개)도 "정식 출시" 기준이
 
 | 영역 | 선택 | 비고 |
 |---|---|---|
-| Backend | **Kotlin + Spring Boot** (2026-08-12 재개발 전환, 2026-08-24 Python 실행 환경 완전 제거) | 제품 런타임은 Kotlin/Spring Boot 하나다. Python 3.12 + FastAPI 구현은 저장소에서 제거됐다 — 참고 구현이 필요하면 태그 `pre-python-removal-20260824` 이전 커밋을 본다 |
-| 빌드·패키지 | **Gradle** (`backend-kotlin/`) | 의존성 잠금은 Gradle dependency locking. Python 패키지 관리자(uv·Poetry·pip)는 이 저장소에 없다 |
+| Backend | **Kotlin + Spring Boot** | 독립 Gradle 프로젝트 `backend-kotlin/`. 제품 런타임은 이것 하나다 |
+| 빌드·패키지 | **Gradle** (`backend-kotlin/`) | 의존성 잠금은 Gradle dependency locking |
 | AI | LLM Provider 추상화 레이어 (자체 인터페이스) + 상용 API | LangChain은 필요한 부분(문서 로더 등)만 선택적 사용, 체인 로직은 직접 구현 우선. Kotlin `core.llm.LlmProvider` + `infrastructure.llm.AnthropicProvider`로 구현됨 |
 | DB | **PostgreSQL + pgvector** | 유저·결제·문서 메타 + 쉬운 말 사전 벡터를 단일 DB로. ChromaDB 미사용. Flyway로 스키마 관리(Alembic 아님) |
 | 비동기 작업 | **PostgreSQL lease 기반 작업 큐** (2026-08-12 전환, 계획 §4.4) | 대용량 변환, 알림 발송. arq + Redis 는 폐기 — 큐를 위해 두 번째 저장소를 운영하지 않는다. Kotlin `infrastructure.queue.JdbcConversionQueue`는 있으나 `worker/` 모듈의 실제 처리 루프는 **미구현**(2026-08-24 기준 — 재개발 backlog) |
-| Frontend | React + TypeScript | 분할 화면 에디터 |
-| Infra | 클라우드 (Phase 2에 CSAP 요건 반영해 리전·구성 재검토) | |
+| Frontend | React + TypeScript + Vite | 독립 npm 프로젝트 `frontend/`; 백엔드와 HTTP API로만 통신 |
+| 계약 | OpenAPI `contracts/easy-doc-v1.yaml` | 서버 DTO와 프런트 wire type의 공동 기준 |
+| Infra | Docker Compose + 향후 클라우드 | 로컬/CI/이미지 게시가 같은 Dockerfile과 Compose 모델을 사용 |
 
 ### 6.2 회귀 방지 4원칙 (2026-08-24 Kotlin/frontend 기준으로 재작성)
 
 1. **의존성 잠금 (Gradle)**: `dependencyLocking`으로 재현 가능한 빌드. 전이 의존성이 조용히 올라가는 것을 락파일로 막는다.
 2. **엄격한 타입 (Kotlin 컴파일러 + `allWarningsAsErrors`)**: 모든 함수 시그니처와 API 입출력에 타입 필수. API 입출력은 Kotlin data class(요청/응답 DTO)로 표현한다.
 3. **코드 규격화 (ktlint + detekt)**: 포맷·린트·정적 분석 단일화. *(스타일 통일 도구이며 논리 오류를 막는 도구는 아님 — 논리 오류는 테스트가 담당)*
-4. **CI/CD (GitHub Actions)**: `backend-kotlin` 잡의 `./gradlew build`(ktlint·detekt·test 포함) + `frontend` 잡의 `npm run check && npm run test && npm run build` 통과 없이는 배포 불가. `e2e` 잡이 Kotlin API + React를 Playwright로 통합 검증한다. **골든셋 자동 평가(스타일 규칙 검사 + LLM-as-judge)는 Python 구현과 함께 제거됐다 — Kotlin 대체 도구는 아직 없다(재개발 backlog, 3.3 참고).**
+4. **CI/CD (Compose + GitHub Actions)**: `compose.yml`은 PostgreSQL·migrate·API·worker·frontend 전체 런타임을, `compose.ci.yml`은 `backend-check`·`frontend-check` 검증 서비스를 추가한다. CI는 두 Compose 모델의 유효성과 독립 프로젝트 게이트, Playwright E2E를 확인한다. CD는 같은 Compose build 정의로 backend/frontend 이미지를 GHCR에 게시한다. 실제 환경 배포는 대상 인프라가 결정된 뒤 추가한다. **Kotlin 골든셋 평가기는 아직 backlog다.**
 
-**검증 기준 (2026-08-12 결정, 2026-08-24 완결)**: 위 4원칙을 Python으로 갖추고도 회귀가 반복됐고, 그것이 Kotlin/Spring 런타임 교체의 직접적 계기였다. 판정 기준은 **요구사항·정책(3장) 충족**이며 "Python 출력과 같은가"가 아니다 — 2026-08-24 Python 실행 환경 제거로 대조할 Python 출력 자체가 없어져 이 원칙은 유일한 기준이 됐다. 같은 이유로 **API 계약(v1)도 동결이 아니라 개선 대상**이며, 계약을 고치는 편이 맞다면 React 클라이언트를 함께 고친다 — 다만 계약 변경은 기록을 남기고 서버·클라이언트를 같은 판단으로 맞춘 뒤에만 반영한다. 예외는 **정책 불변식 하나**다 — 3.2의 마스킹 선행처럼 요구사항 자체가 "이 순서를 지켜라"인 것.
+**검증 기준**: 판정 기준은 **요구사항·정책(3장)·공개 API 계약 충족**이다. API 계약도 개선할 수 있지만, 변경 기록과 Kotlin 소비자·React 소비자를 같은 변경 단위로 맞춰야 한다. 마스킹 선행처럼 정책 자체가 순서를 정한 불변식은 구현 선택으로 완화할 수 없다.
 
-> **2026-08-12 재개발 전환 + 2026-08-24 Python 제거 완결.** Python 코드를 폐기하고 요구사항·API 계약·React(UI/UX)를 기준으로 다시 구현하는 재개발 방향을 끝까지 진행해, 2026-08-24 `app/`·Python 테스트·Python 실행 환경 자체를 저장소에서 제거했다(`docs/plans/2026-08-24-python-removal-for-kotlin-redevelopment.md`). 이전(포팅)이 아니라 재개발이며, 되돌아갈 Python 운영 환경이 없으므로 절체는 **일방향**이다.
+> **2026-08-24 재개발 전환 완료.** 요구사항·API 계약·React(UI/UX)를 기준으로 Kotlin 제품을 개발한다. 제거 결정은 `docs/plans/archive/transition/2026-08-24-python-removal-for-kotlin-redevelopment.md`에 보관하며 현재 실행 계획으로 사용하지 않는다.
 >
 > 저장 암호화는 표준 AEAD(호환을 위한 Fernet 제약 없음)로 구현한다. round-trip·변조 거부·키 회전은 여전히 요구사항이며, 판정 근거는 값 동일성이 아니라 성질 충족이다.
 >
@@ -236,7 +244,7 @@ v1 기획의 MVP는 물론, 아래 P0 전체(11개)도 "정식 출시" 기준이
 
 > 통과율 90% 기준은 n=20 단일 실행에서는 통계 변동이 크다(실제 90% 품질의 provider도 18/20 미달 확률 약 32%). 경계값에서의 재실행·표본 확대 판단은 사람이 하며, 자동 재시도로 가리지 않는다.
 
-**검증 절차**: ①-a 합성 골든셋 20건으로 평가 하네스 구축·검증(스프린트 1 완료) → ①-b 실제 복지 안내문 20~30건 수집으로 골든셋 교체·보강 — 수집 경로는 기관 공개 안내문 또는 파일럿 기관 제공, 수집본은 마스킹 파이프라인(2종)을 거친 뒤 **전화번호·이메일·계좌번호는 사람이 직접 확인·제거**하고 `synthetic: false`로 편입 — 범주 축소(3.2)로 이 3종은 파이프라인이 걸러 주지 않는다 → ② LLM 벤치마크 실행 → 벤더 확정(스프린트 2) → ③ 파일럿 기관 무상/할인 운영 → ④ 수정률·소요시간 데이터로 영업 자료화.
+**검증 절차**: ① Kotlin 골든셋 평가기 구현 → ② 현재 56건 fixture의 스키마·스타일 규칙 기준선 기록 → ③ 실제 복지 안내문 보강(전화번호·이메일·계좌번호는 사람이 직접 확인·제거) → ④ opt-in LLM 벤치마크로 벤더/모델 결정 → ⑤ 파일럿 기관 무상/할인 운영 → ⑥ 수정률·소요시간 데이터로 영업 자료화.
 
 ---
 
@@ -258,13 +266,21 @@ v1 기획의 MVP는 물론, 아래 P0 전체(11개)도 "정식 출시" 기준이
 
 각 단계는 앞 단계의 검증을 통과해야 진행한다. 검증 실패 시 다음 단계 개발 대신 품질 개선으로 회귀한다.
 
-### 단계 1 — Lean MVP (스프린트 1~3, 약 6주)
+### 단계 1 — Kotlin Lean MVP (Sprint K1)
 
-| 스프린트 | 내용 |
-|---|---|
-| 1 (2주) | ✅ 완료(2026-08-06) — 리포·CI 셋업, 합성 골든셋 20건 + 평가 하네스, LLM 벤치마크 하네스, 변환+마스킹 파이프라인 프로토타입. 벤더 확정은 API 키·실제 문서 확보 대기로 스프린트 2 이월 |
-| 2 (2주) | ✅ 개발 완료(2026-08-06) — 이메일 계정(argon2+JWT), 파일 텍스트 추출(docx/pdf/hwpx), 변환 API + 비동기 처리(arq), 암호화 저장·30일 보존 필드. **벤더 확정은 미완(이월 지속)** — OpenAI 키 확보·gpt-4o 단독 측정까지 진행(합성 20건 기준 KPI 충족), 비교 대상(Anthropic 키) 미확보 + 실수집 45건 코퍼스에서 장문 충실성 저하 진단(docs/quality/ 참조)으로 확정 보류. 이메일 알림(P0-3)·30일 자동 삭제 잡(3.2)·hwp 베스트에포트(P0-2)는 후속 |
-| 3 (2주) | ✅ 개발 완료(2026-08-07) — 분할 화면 에디터(검수 수정 저장·AI 초안 보존), docx/txt 다운로드(마스킹 복원), 변환 기록, Docker 단일 명령 데모 스택 — **파일럿 기관 데모 가능 상태 도달**. 원본/결과 비교는 붙여넣기 업로드 직후 세션에서만 가능(원문 조회 API는 개인정보 노출면 확대라 보류 — 정책 결정 대기). 게이트 ①(실무자 검증)은 미착수 |
+| 영역 | 현재 상태 | Sprint K1 완료 조건 |
+|---|---|---|
+| 계정·작업 공간 | Kotlin API + React 구현 | Compose E2E 유지 |
+| 문서 입력·추출 | Kotlin DOCX/PDF/HWPX + 텍스트 구현 | 보안 경계/계약 회귀 없음 |
+| 저장·마스킹·LLM 유스케이스 | 구현 | 실제 worker 실행 경로 연결 |
+| 비동기 변환 | queue adapter 구현, worker 처리 루프 미구현 | `pending → processing → done|failed` E2E |
+| 검수·기록 | Kotlin API + React 구현 | 변환 완료 흐름과 통합 |
+| 내보내기 | 코어 생성 로직 일부, HTTP endpoint 미구현 | docx/txt 계약과 UI 완료 |
+| 30일 보존 삭제 | 미구현 | 자동 삭제 작업과 관측 구현 |
+| 품질 평가 | fixture 보존, Kotlin 실행기 미구현 | 정적 평가 CI + opt-in judge 레인 |
+| 개발·배포 모델 | 독립 프로젝트 + Compose/CI/CD 구조 정리 | 모든 완료 정의 통과 |
+
+상세 작업과 체크박스는 `docs/plans/2026-08-24-sprint-k1-kotlin-mvp-completion.md`만 사용한다. 과거 Sprint 1~4는 Python 시대 기록이며 `docs/plans/archive/python-era/`에 보관한다.
 
 **게이트 ①**: 파일럿 실무자 검증(4.0 성공 기준) 통과 → 단계 2 진행.
 

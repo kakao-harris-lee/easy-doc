@@ -13,13 +13,9 @@
 # 코드를 내놓는다), Playwright 의 코드를 변수에 받아 그대로 `exit` 한다.
 # `set -euo pipefail` 을 걸고, 정리는 `trap` 이 맡아 실패 경로에서도 컨테이너가 남지 않는다.
 #
-# ## 왜 compose 가 아닌가
-#
-# 계획 §3-4 는 `local:` 을 compose 경로로 적었으나, 리더 판정(OQ-E1)이 CI 실행 경로를
-# **새 잡 `e2e`** 로 정했고 그 잡은 서비스 컨테이너 + bootJar 로 돈다. 로컬과 CI 가 다른
-# 절차를 밟으면 "로컬에서는 되는데" 가 구조적으로 생기므로, 이 스크립트가 CI 절차를 그대로
-# 따라간다. compose 경로(`docker compose --profile kotlin up -d`)도 여전히 유효하고,
-# 그때는 `E2E_SKIP_STACK=1 E2E_API_BASE_URL=http://localhost:8100` 로 이 스크립트를 부른다.
+# 기본 모드는 빠른 로컬 진단을 위해 API와 DB만 직접 띄운다. CI와 전체 프로젝트 검증은
+# `compose.yml`로 스택을 먼저 띄운 뒤 아래처럼 브라우저 단계만 사용한다.
+#   E2E_SKIP_STACK=1 E2E_API_BASE_URL=http://localhost:8100 frontend/e2e/run-local.sh
 
 set -euo pipefail
 
@@ -31,7 +27,7 @@ repo_root="$(dirname "$frontend_dir")"
 PG_PORT="${E2E_PG_PORT:-55432}"
 PG_CONTAINER="${E2E_PG_CONTAINER:-easydoc-e2e-pg}"
 PG_IMAGE="${E2E_PG_IMAGE:-pgvector/pgvector:pg16}"
-PG_DB="${E2E_PG_DB:-easydoc_kotlin}"
+PG_DB="${E2E_PG_DB:-easydoc}"
 API_PORT="${E2E_API_PORT:-8100}"
 API_BASE_URL="${E2E_API_BASE_URL:-http://localhost:${API_PORT}}"
 # 브라우저 출처. 계약 `x-cors.allow_origins` 의 값과 같아야 프리플라이트가 통과한다.
@@ -142,11 +138,11 @@ else
 
   # --- ④ 마이그레이션 ---------------------------------------------------------
   log "Flyway 마이그레이션 (profile=migrate)"
-  java -jar "$API_JAR" --spring.profiles.active=migrate >"${LOG_DIR}/kotlin-migrate.log" 2>&1
+  java -jar "$API_JAR" --spring.profiles.active=migrate >"${LOG_DIR}/backend-migrate.log" 2>&1
 
   # --- ⑤ API 기동 -------------------------------------------------------------
   log "Kotlin API 기동 (profile=api, ${API_BASE_URL})"
-  java -jar "$API_JAR" --spring.profiles.active=api >"${LOG_DIR}/kotlin-api.log" 2>&1 &
+  java -jar "$API_JAR" --spring.profiles.active=api >"${LOG_DIR}/backend-api.log" 2>&1 &
   api_pid=$!
 
   healthy=0
@@ -156,7 +152,7 @@ else
       break
     fi
     if ! kill -0 "$api_pid" 2>/dev/null; then
-      echo "::error::Kotlin API 프로세스가 죽었다. ${LOG_DIR}/kotlin-api.log 를 보라." >&2
+      echo "::error::Kotlin API 프로세스가 죽었다. ${LOG_DIR}/backend-api.log 를 보라." >&2
       exit 1
     fi
     sleep 1

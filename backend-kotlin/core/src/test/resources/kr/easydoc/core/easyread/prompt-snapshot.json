@@ -1,5 +1,5 @@
 {
-  "_note": "app/easyread/prompts.py 에서 기계로 뽑은 전문 스냅샷. 손으로 고치지 않는다 — 값이 갈리면 왜 갈렸는지 먼저 찾는다. source_text 는 마스킹 전 원문이고 masked_text 는 Python 마스킹을 통과한 값이다.",
+  "_note": "Kotlin Prompts의 전문 스냅샷. 손으로 고치지 않는다. 값이 갈리면 변경 이유와 품질 영향을 먼저 확인한다. source_text는 마스킹 전 원문이고 masked_text는 Kotlin 마스킹을 통과한 값이다.",
   "_fixed_document_id": "0123456789ab",
   "DOCUMENT_TAG_NAME": "문서",
   "CONVERTED_TAG_NAME": "변환문",
