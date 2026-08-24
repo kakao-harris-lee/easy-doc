@@ -91,7 +91,8 @@ jobs:
 
   # ── 브라우저 E2E 레인 (React ↔ Kotlin API ↔ PostgreSQL) ────────────────────
   #
-  # 계획 정본: `docs/migration/_workspace/03_contract-keeper_react-e2e-plan.md`.
+  # 계획 정본(제거됨, git 태그 `pre-python-removal-20260824`에서 열람 가능):
+  # `docs/migration/_workspace/03_contract-keeper_react-e2e-plan.md`.
   # 원장 Phase 3 표 행 5 「React 를 Kotlin API 에 연결한 로그인·작업 공간 E2E」의
   # 실행 경로가 이 잡이다. 리더 판정(OQ-E1): `local:` 로 닫지 않고 CI 잡을 신설한다.
   #

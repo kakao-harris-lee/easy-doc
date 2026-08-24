@@ -31,10 +31,6 @@ backend-kotlin/*/.gradle/
 backend-kotlin/**/bin/
 !backend-kotlin/gradle/wrapper/gradle-wrapper.jar
 
-# parity 산출물은 실행할 때마다 생기는 결과물이라 커밋하지 않는다.
-# fixture(parity/fixtures/)는 정본이므로 Phase 2에서 생기면 커밋한다.
-parity/actual/
-parity/_harness-selfcheck/
 # 골든셋을 수집한 **원본 공공기관 문서 13건**(PDF 9 · HWPX 4, 합계 76MB). 바이너리라
 # git 에 영구 편입되면 clone 이 계속 무거워진다.
 #
@@ -58,7 +54,8 @@ parity/_harness-selfcheck/
 # 현재 성립하지 않는다** — 별건으로 판단한다.
 #
 # 이 문서들은 골든셋의 출처이므로 **지우지 마라.** 추적되지 않으니 fresh clone 에는
-# 없다(`docs/migration/_workspace/03_rebuild-extraction-list.md` P1-8 참조).
+# 없다(제거된 `docs/migration/_workspace/03_rebuild-extraction-list.md` P1-8 참조 —
+# 전문은 태그 `pre-python-removal-20260824`에서 열람 가능).
 docs/golden/(공고문 제2026-2658) 2026년 제주향토음식 요리교실 사업자 공모.hwpx
 docs/golden/(최종) 2026년 자활사업안내(II) 자산형성지원 통장사업 안내.pdf
 docs/golden/★+2023년도+노인실태조사+보고서(최종본)★.pdf

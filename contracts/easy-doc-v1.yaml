@@ -23,8 +23,10 @@ openapi: 3.1.0
 #
 # ## 출처
 #
-# 조항의 1차 출처는 여전히 `app/api/*.py`·`app/main.py`의 실제 동작이다 —
-# 다만 "그렇게 동작한다"가 곧 "그래야 한다"는 아니다. Python과 의도적으로 다른 조항은
+# 조항의 1차 출처는 과거 Python 참고 구현(`app/api/*.py`·`app/main.py`)의 실제 동작이었다
+# — 그 구현은 2026-08-24 재개발 전환으로 저장소에서 제거됐고 git 태그
+# `pre-python-removal-20260824`에서만 열람할 수 있다. "그렇게 동작했다"가 곧
+# "그래야 한다"는 아니다. Python과 의도적으로 다른 조항은
 # 각 자리에 `x-improved` 또는 산문으로 근거를 남긴다.
 # 3자 대조 기록: `docs/migration/_workspace/00_contract-keeper_three-way-diff.md`
 # 재분류 기록: `docs/migration/_workspace/02_contract-rebase.md`
@@ -42,7 +44,7 @@ info:
   version: "1.4.0"
   x-baselined-at: "2026-08-12"       # 초판 기준선을 뜬 날 (동결일이 아니다)
   x-rebased-at: "2026-08-12"         # 계약의 성격을 "개선 대상"으로 다시 정의한 날
-  x-source-runtime: "Python 3.12 / FastAPI (app/main.py) — 기준선 출처이지 정답이 아니다"
+  x-source-runtime: "Python 3.12 / FastAPI (app/main.py) — 과거 참고 구현이었고 2026-08-24 저장소에서 제거됨(git 태그 pre-python-removal-20260824). 기준선 출처였을 뿐 정답이 아니었다"
   x-change-policy-ref: "최상위 x-change-policy"
   description: |
     공공기관용 '쉬운 글' 자동 변환 서비스의 HTTP 계약 v1.

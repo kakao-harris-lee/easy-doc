@@ -13,8 +13,7 @@ x-kotlin-app: &kotlin-app
   # 비밀키는 .env에서만 온다 — compose 파일에는 값을 적지 않는다.
   env_file: .env
   environment:
-    # Kotlin 전용 데이터베이스. Alembic(Python)이 관리하는 easydoc 과 갈라 둔다
-    # (계획 §4.2-6: 한 환경에서 Alembic과 Flyway를 함께 실행하지 않는다).
+    # Kotlin 전용 데이터베이스.
     SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/easydoc_kotlin
     SPRING_DATASOURCE_USERNAME: postgres
     SPRING_DATASOURCE_PASSWORD: postgres

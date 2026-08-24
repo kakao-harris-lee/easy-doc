@@ -6,12 +6,6 @@
 
 .git
 .github
-.venv
-__pycache__/
-*.py[cod]
-.mypy_cache/
-.pytest_cache/
-.ruff_cache/
 .omc/
 
 # 프론트 빌드 산출물·의존성. 이미지 안에서 npm ci로 새로 만든다 —
@@ -20,10 +14,7 @@ frontend/node_modules/
 frontend/dist/
 
 # 이미지에 넣지 않는 것들 (런타임에 쓰이지 않는다)
-tests
 docs
-scripts
 README.md
 CLAUDE.md
-Dockerfile
 docker-compose.yml

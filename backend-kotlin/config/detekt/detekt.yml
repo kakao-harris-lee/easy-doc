@@ -42,9 +42,9 @@ style:
     # 미포팅 잔여 항목은 산출물 문서에 적는다. 코드에 TODO 로 흘리면 추적되지 않는다.
     # 단 Phase 경계를 명시한 것은 허용한다 (예: "Phase 3에서 채운다").
     comments:
-      - reason: '미완성 표시는 docs/migration/_workspace/ 산출물에 적는다'
+      - reason: '미완성 표시는 docs/kotlin-redevelopment-backlog.md 에 적는다'
         value: 'FIXME:'
-      - reason: '미완성 표시는 docs/migration/_workspace/ 산출물에 적는다'
+      - reason: '미완성 표시는 docs/kotlin-redevelopment-backlog.md 에 적는다'
         value: 'STOPSHIP:'
 
 performance:
