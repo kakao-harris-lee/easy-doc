@@ -1,7 +1,0 @@
-SQLAlchemy 2.0 비동기(asyncpg) 기반 alembic 마이그레이션 디렉터리.
-
-접속 URL은 alembic.ini가 아니라 app.config.Settings(환경변수 DATABASE_URL)에서 읽는다.
-
-    uv run alembic revision --autogenerate -m "설명"   # 모델 변경 반영
-    uv run alembic upgrade head                        # 적용
-    uv run alembic downgrade -1                        # 되돌리기

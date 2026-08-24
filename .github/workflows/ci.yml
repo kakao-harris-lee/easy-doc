@@ -4,245 +4,9 @@ on:
   push:
     branches: [main]
   pull_request:
-  # llm-lane 의 API 레인을 돌리는 **유일한 경로**다(2026-08-21 운영자 결정 —
-  # 자동 실행을 껐다. 사유는 `llm-lane` 잡의 「변경 범위 판정」 스텝 주석에 있다).
-  # 예전에는 "조건 계산이 틀렸을 때 확인할 손잡이" 였고, 지금은 그 손잡이가 본길이다.
-  # push·pull_request 에서는 경로 «탐지» 만 하고 실행하지 않는다.
   workflow_dispatch:
-    inputs:
-      run_llm_lane:
-        description: "-m llm 레인(실제 API 호출, ~28분·실과금)을 실행한다. 이 트리거에서만 실행된다"
-        type: boolean
-        default: true
 
 jobs:
-  quality:
-    runs-on: ubuntu-latest
-    # 서비스 컨테이너·네트워크 대기로 잡이 매달리는 것을 방지한다.
-    timeout-minutes: 15
-    permissions:
-      contents: read
-    # 로컬 docker-compose.yml과 같은 이미지 — db 마커 통합 테스트를 CI에서 실제로 실행한다.
-    services:
-      postgres:
-        image: pgvector/pgvector:pg16
-        env:
-          POSTGRES_DB: easydoc
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U postgres -d easydoc"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
-      redis:
-        image: redis:7-alpine
-        ports:
-          - 6379:6379
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
-    env:
-      DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/easydoc
-      REDIS_URL: redis://localhost:6379/0
-    steps:
-      # `fetch-depth: 0` — **라쳇 상수 대조의 기준점이 git 이력이다** (C4 R-9).
-      #
-      # `tests/test_kotlin_gate_reach.py` 의 라쳇 핀(`MIN_TEST_CLASSES`·`MIN_FLOOR_CLASSES`·
-      # `MIN_TESTS_IN_FLOOR_CLASS` 값들과 Kotlin 쪽 `MIN_*` 다섯)은 **값 자신이 권위**라
-      # 값만 보고는 낮아졌는지 알 수 없다. 그래서 「이 파일 이력의 최댓값보다 작을 수 없다」로
-      # 되짚는데, `actions/checkout` 의 기본 `fetch-depth` 는 **1** 이라 이력이 없다 —
-      # 그 상태에서는 그 축이 **존재만 하고 도달이 0** 이 된다(규칙 3 근거 6 의 형태).
-      #
-      # 비용: 전체 클론이다. 실측 `.git` 112MB · 커밋 477개 · 이 대조가 읽는 리비전 64개
-      # (`git show` 64회, 1~2초). 얕은 클론으로 되돌리면 요구 모드에서 **실패**하므로
-      # 조용히 사라지지 않는다.
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - uses: astral-sh/setup-uv@v5
-        with:
-          python-version: "3.12"
-          enable-cache: true
-      - run: uv sync --locked
-      - run: uv run ruff check .
-      - run: uv run ruff format --check .
-      # mypy 는 크롤링할 때 점으로 시작하는 디렉터리를 건너뛴다. 그래서 `mypy .` 는
-      # `.claude/skills/**/scripts/` 를 **한 번도 보지 않는다**(parity 스크립트 0개).
-      # 하필 그 두 파일이 parity 게이트의 신뢰 뿌리다 — 저장소의 다른 모든 판정을 그것이
-      # 내리는데, 정작 자기는 타입 게이트 밖에 있었다. 낡은 `type: ignore` 하나가 실제로
-      # 이 사각지대에 남아 있었고, 사람이 경로를 손으로 줄 때만 드러났다.
-      # 경로를 명시해 붙인다. 설정(`[tool.mypy] files`)이 아니라 명령에 적는 이유는,
-      # 로컬에서 치는 명령과 CI 가 도는 명령이 같아야 사각지대가 다시 안 생기기 때문이다.
-      #
-      # **열거가 아니라 루트를 준다** (2026-08-13). 처음엔 `.claude/skills/python-kotlin-parity/scripts`
-      # 한 곳만 열거했는데, 위 주석이 `**/scripts/` 라고 **복수로 선언**하는 동안 실제 도달은
-      # 한 곳이었다 — `migration-safety-gate/scripts/scan_privacy_invariants.py` 는 그 사이
-      # **한 번도 검사받지 않았다**. 빈자리가 구조적이라 열거로는 다음 스킬에서 또 벌어진다.
-      # `.claude` 루트를 주면 mypy 가 재귀하고, 명시 경로에는 건너뛰기가 적용되지 않는다.
-      # 글롭(`.claude/skills/*/scripts`)은 `.py` 없는 디렉터리에서 깨져 못 쓴다
-      # (`codex-review/scripts` 는 셸 스크립트뿐).
-      #
-      # 도달 차이(실측, **이 커밋 시점** — 절대 개수는 커밋마다 움직이므로 시점 없이 쓰지 마라):
-      #   `mypy .`                                      → 125 파일 (.claude 도달 0/3)
-      #   `mypy . .claude/skills/python-kotlin-parity/scripts` → 127 파일 (도달 2/3)
-      #   `mypy . .claude`                              → 128 파일 (도달 3/3)
-      # 음성 대조: 위 gate 파일에 반환 타입 오류를 심으면 옛 명령은 Success, 새 명령은
-      # `error: Incompatible return value type`. 도달 차이가 실제로 존재한다.
-      - run: uv run mypy . .claude
-      # 데이터 보호 불변식 기계 스캔 (privacy-gate 판정 X-8, 2026-08-13 · 리더 승인).
-      #
-      # **`kotlin` 잡이 아니라 여기다.** SCAN_ROOTS 가 app·backend-kotlin·scripts·frontend/src
-      # 를 함께 덮는데, 배선 시점 실측으로 검사 171파일 중 **98개(57%)가 backend-kotlin 밖**
-      # 이다. 좁은 잡에 붙이면 선언한 범위보다 좁은 자리에서 도는 게이트가 된다.
-      # 이 잡은 이미 `uv sync --locked` 를 마쳐 필요한 것이 다 있고 DB·JDK 를 쓰지 않는다.
-      #
-      # 위치가 mypy 바로 다음인 이유: ⑴ 이 스캐너 자신이 mypy 대상이라 타입 검사를 통과한
-      # 직후가 순서상 맞고, ⑵ alembic·pytest 같은 느린 단계 앞이라 실패가 빠르다.
-      #
-      # 배선 시점 실측: 검사 171파일(backend-kotlin 73) · BLOCK 후보 0 · exit 0.
-      # 음성 대조(합성 저장소): 로거 본문 보간·403·난수 키·DTD 팩터리를 심은 .kt 에서
-      # BLOCK 4건 검출 — Kotlin 에서 실제로 작동한다.
-      #
-      # `--changed` 를 쓰지 않는다: 기본 base 가 `main` 이라 오래 사는 브랜치에서 범위가
-      # 계속 넓어지거나 fork point 이동으로 흔들리고, 전수가 이미 1초 미만이다.
-      # `--no-fail` 을 붙이지 않는다: 붙이면 BLOCK 후보가 있어도 초록이라 게이트가 장식이 된다.
-      #
-      # 이 스텝 자체의 삭제는 이 스텝이 막지 못한다. 최종 방어선은 그 diff 가 리뷰에
-      # 올라가는 것이다 — 한 칸 더 옮기지 않는다.
-      - name: 데이터 보호 불변식 스캔 (BLOCK 후보 0건 유지)
-        run: uv run python .claude/skills/migration-safety-gate/scripts/scan_privacy_invariants.py
-      # Python 정본 스냅샷 재생성 diff 검사 (X-9 마감의 뒤 조각 — 게이트 15 X1 · P-B·C15-5).
-      #
-      # 이 생성기는 Kotlin 프롬프트·스타일 포팅 판정의 정본 스냅샷을 app/easyread 에서
-      # 재생성해 커밋본과 대조한다. 배선 전 도달이 0 이었다 — 부르는 곳이 자기 docstring
-      # 뿐이라(실측 grep 2줄) 한 번 손으로 돌린 diff 0 이 승격(L344·L345)의 근거로 쓰였고,
-      # 그 뒤 app/easyread 가 바뀌어도 아무 데서도 빨개지지 않았다. 리더 판정: 승격은
-      # 마감 축소가 아니라 **CI 배선 완성**으로 유지한다 — 이 스텝이 그 배선이다.
-      #
-      # **kotlin 잡이 아니라 여기다.** 생성기가 필요로 하는 것은 JDK 가 아니라 이 잡의
-      # Python 환경(uv sync --locked)이다. app/** 가 지워지면 이 스텝은 exit 2 로 죽는다 —
-      # 그것이 X-9 가 "되돌릴 수 없는 창"이라 부른 상태이고, 조용히 지나가면 안 되는
-      # 자리라 사면을 붙이지 않는다(스냅샷의 삭제 후 지위는 P-C 판정 대상으로 열려 있다).
-      #
-      # 음성 대조(실측, tmp 사본): 케이스 45→4 축소 → SnapshotError·exit 2 /
-      # 파생 키(GLOSS_COLLISION_PATTERN_GLOSSES) 단독 삭제 → [갈림]·exit 1.
-      # 그 탐지력 자체의 회귀는 tests/test_python_snapshot_guard.py 가 고정한다.
-      # 이 스텝 자체의 삭제는 이 스텝이 막지 못한다 — 그 diff 가 리뷰에 올라가는 것이
-      # 최종 방어선이다.
-      - name: Python 정본 스냅샷 재생성 diff 검사 (X-9 뒤 조각)
-        run: uv run python .claude/skills/migration-safety-gate/scripts/dump_python_snapshots.py --check
-      - run: uv run alembic upgrade head
-      # 아래 `uv run pytest` 가 이 파일도 수집하는데 왜 경로를 또 적는가 —
-      # **자기 안의 단언은 파일과 함께 사라지기 때문이다.**
-      # tests/test_harness_scope_reach.py 는 "지금 어디서 도는가: CI quality 잡의
-      # uv run pytest 단계" 를 자기 docstring 에 적어 두는데, 그 문장은 파일이 지워지면
-      # 같이 지워진다. 그러면 전체 수집은 그냥 한 건 줄어들고 스위트는 초록이다.
-      # 실측(이 커밋 시점): `--ignore` 로 빼면 수집 1055/1060 → 1036/1041 인데 **exit 0**.
-      # `- run: uv run pytest` 한 줄을 지워도 잡 이름 `quality` 가 남아 표의 `ci:quality`
-      # 표기는 계속 유효하다. 도달 0을 잡으려고 만든 파일에 도달 0이 재현되고 아무도
-      # 모르는 상태였다. (수집 개수는 커밋마다 움직인다 — 시점 없는 절대 수치는 곧 거짓이 된다)
-      #
-      # 그래서 존재 단언을 **파일 밖**(여기)에 둔다. 이 스텝이 실제로 막는 것(실측):
-      #   파일 삭제·경로 변경 → exit 4 (file or directory not found)
-      #   `pytestmark = pytest.mark.llm` 등으로 전건 제외 → 1 deselected / 0 selected,
-      #     exit 5 (no tests ran). 같은 조작이 전체 수집에서는 exit 0 이라 조용하다 —
-      #     경로를 명시했기 때문에만 빨개진다. 마커 우회를 이 스텝이 실제로 막는다.
-      # 막지 못하는 것: 이 스텝 자체의 삭제. 저장소 안의 어떤 파일도 자기 자신에 대한
-      # 절대 기준이 될 수 없다 — 이 diff 가 리뷰에 올라가는 것이 최종 방어선이다.
-      - name: 하네스 도달 검사 실재 확인 (경로 명시 — 자기 단언은 파일과 함께 사라진다)
-        run: uv run pytest tests/test_harness_scope_reach.py
-      # 같은 규약을 스캐너 회귀에도 적용한다 (게이트 09 M-13). `uv run pytest` 전체 수집만
-      # 있으면 이 파일을 지워도 exit 0 이다 — 수집이 한 건 줄고 스위트는 초록이다.
-      # 이 파일이 지키는 것은 CI BLOCK 게이트(scan_privacy_invariants.py)의 동작 전부다.
-      - name: 스캐너 회귀 실재 확인 (경로 명시)
-        run: uv run pytest tests/test_privacy_scanner.py
-      # 같은 규약을 parity 게이트 회귀에도 적용한다 (게이트 15 X2 — 두 파일에 적용된
-      # 규약의 세 번째 대상인데 이 파일만 빠져 있었다, codex C15-6 (c) 축).
-      # 이 파일이 지키는 것은 parity 비교기의 게이트 우회 회귀 — runtime 위조·fixture
-      # 축소를 helper 층과 **본류 배선**(compare_file·main 의 호출부) 양쪽에서 잡는
-      # 테스트 — 와 CI 셸 가드(선언·정본·하한) 검증 전부다. 전체 수집만 있으면 이
-      # 파일을 지워도 exit 0 이다 — 수집이 줄고 스위트는 초록이다.
-      - name: parity 게이트 회귀 실재 확인 (경로 명시)
-        run: uv run pytest tests/test_parity_ci_gate.py
-      # 같은 규약을 스냅샷 가드 회귀에도 적용한다 (게이트 15 리더 판정 — 가드 성격
-      # 테스트의 경로 명시는 이 저장소가 세 번 적용한 규약이고, 미적용은 X2 의 CI 축을
-      # 새 파일에서 재생산한다). 이 파일이 지키는 것은 위 스냅샷 재생성 diff 검사
-      # (dump_python_snapshots.py --check)의 **삭제 탐지력** 전부다 — 케이스 하한
-      # PROMPT_CASE_FLOOR 와 파생 키 무조건 재생성이 다시 무력해지면 여기가 빨개진다.
-      # 전체 수집만 있으면 이 파일을 지워도 exit 0 이다 — 수집이 줄고 스위트는 초록이다.
-      # (§6.2 "열거 유지 vs 구조 유도"의 구조 판정은 다음 게이트 이월 — 지금은 규약 적용만.)
-      - name: 스냅샷 가드 회귀 실재 확인 (경로 명시)
-        run: uv run pytest tests/test_python_snapshot_guard.py
-      # 같은 규약을 게이트 러너 계약 테스트에도 적용한다 (게이트 16 A — T-G·K16-1 후단 합의).
-      # 이 파일이 지키는 것은 `.claude/skills/kotlin-migration/scripts/run_gate.sh` 의 계약
-      # 전부다 — 빈/공백 인자 exit 2(C, 차단②), 단일 문자열 인자만 수용해 인용 경계
-      # 보존(D), 파이프 안 실패 비-0 전파(게이트 15 X3 본래 목적), 그리고 러너 밖 파이프는
-      # 못 잡는다는 한계(B)의 문서화. 첫 판에는 이 테스트가 0건이라 세 결함이 아무 데서도
-      # 빨개지지 않았다. 전체 수집만 있으면 이 파일을 지워도 exit 0 이다 — 수집이 줄고
-      # 스위트는 초록이다. 러너 자신을 CI 가 부르는 배선은 여전히 0 이다(local) — 이 스텝이
-      # 배선하는 것은 러너가 아니라 러너의 계약 테스트다.
-      - name: 게이트 러너 계약 실재 확인 (경로 명시)
-        run: uv run pytest tests/test_run_gate.py
-      # 같은 규약을 Kotlin 테스트 클래스 대조에도 적용한다 (게이트 25 H4 · 게이트 26).
-      # 여기서 도는 것은 **선언 ↔ 트리 정확 일치**와 내용 결속뿐이다 — 테스트 파일을
-      # 지우면 kotlin 잡을 기다리지 않고 이 값싼 잡에서 먼저 빨개진다.
-      # 이 잡에는 Gradle 리포트가 없으므로 실행 대조의 대상이 0건이다 — **skip 이 아니라
-      # 0건이다**(게이트 26 에서 skip 을 없앴다). 선언 전건에 대한 실행 요구는 아래
-      # kotlin 잡이 요구 모드로 켠다.
-      - name: Kotlin 테스트 클래스 실재 확인 (경로 명시)
-        run: uv run pytest tests/test_kotlin_gate_reach.py
-      # 같은 규약을 로컬 검증 러너 계약에도 적용한다 (β-01 의 장치 절반).
-      #
-      # 리더가 「전건 초록」을 보고했는데 이 잡이 빨갰다. 원인은 검증 집합이 이 잡의
-      # **부분집합**이었던 것이다 — 빠진 것: `ruff format --check` ·
-      # `dump_python_snapshots.py --check` · 개별 경로 pytest 8종. 같은 형태가 이 세션에서
-      # 세 번 났고, 인스턴스는 `94440d8` 로 닫혔지만 **재발 방지 장치가 0** 이었다.
-      #
-      # 이 파일이 지키는 것은 `.claude/skills/kotlin-migration/scripts/quality_gate_local.py`
-      # 의 계약 전부다 — ⑴ 명령 목록이 이 워크플로에서 **유도**된다(하드코딩이면 「워크플로를
-      # 고치면 목록이 따라 바뀐다」 대조가 빨개진다) ⑵ 라벨이 명령 단위로 분해된다
-      # (`ruff check` 와 `ruff format --check` 가 각각 한 줄) ⑶ 트리가 더럽거나 HEAD 가
-      # 움직이면 「전건 초록」을 찍지 않는다 ⑷ 명령이 0개면 통과가 아니다.
-      # 전체 수집만 있으면 이 파일을 지워도 exit 0 이다 — 수집이 줄고 스위트는 초록이다.
-      - name: 로컬 검증 러너 계약 실재 확인 (경로 명시)
-        run: uv run pytest tests/test_quality_gate_local.py
-      # 원시 제어문자 전수 검사 (게이트 26 — privacy-gate 처방 · 교차 종합 §7 양립 확인).
-      #
-      # 추적 파일에 원시 제어문자가 들어가는 사고가 게이트 2·12·13·25·26 에 걸쳐 반복됐고,
-      # 게이트 26 한 회차에만 세 번 났다(제품 테스트 · 감사문 · 교차 종합문 자신).
-      # 그중 하나는 NUL 때문에 git 이 파일을 **바이너리로 분류**해 `git diff` 가 본문을
-      # 내지 않았고, 그 상태로 연속 두 게이트 동안 아무 레인도 그 파일을 읽지 못했다 —
-      # 저장소가 스스로 「최종 방어선」이라 적은 리뷰 diff 가 그 파일에서만 거짓이었다.
-      #
-      # **개인정보 스캐너에 넣지 않았다** — 그것은 개인정보 불변식 축이고 이것은 심사
-      # 가능성 축이다. 섞으면 한쪽의 오탐이 다른 쪽 게이트의 신뢰를 갉는다.
-      # 분모는 `git ls-files` 전수이고 면제 목록은 없다. 훑은 수가 0이면 실패한다.
-      - name: 원시 제어문자 전수 검사 (경로 명시 — 추적 파일 전건)
-        run: uv run pytest tests/test_raw_control_chars.py
-      # 아래 셋은 2026-08-22 하네스 개조에서 신설됐고, **처음엔 경로 명시가 빠져 있었다**
-      # (`xx_harness-fixes` F-4). blanket `uv run pytest` 가 수집하므로 통과는 했지만,
-      # 그 상태로 파일을 지우면 **99 passed EXIT=0** 이었다 — 이 저장소가 다른 게이트
-      # 네 곳에 전부 붙여 둔 규약(파일 소실을 개수 아닌 배선으로 잡는다)을 새 셋에는
-      # 안 붙인 것이다. 같은 빈자리가 신설 파일마다 재발하므로 여기 명시로 고정한다.
-      - name: 커밋 게이트 사슬 도달 (경로 명시 — ruff 가 pytest 안에서 돈다)
-        run: uv run pytest tests/test_commit_gate_chain_reach.py
-      - name: Kotlin 테스트 클래스 정체성 스냅샷 (경로 명시)
-        run: uv run pytest tests/test_kotlin_class_snapshot_reach.py
-      - name: 리뷰 커버리지 (경로 명시 — 비면제 커밋이 리뷰·장부 중 하나에 드는가)
-        run: uv run pytest tests/test_review_coverage_reach.py
-      # 형제 다섯과 달리 이 파일만 배선이 **0** 이었다(`xx_harness-r2` M-2, 실측: 파일을
-      # 지워도 `48 passed`). `329a964` 가 이 파일을 CLAUDE.md 테스트 주석 규약의 유일한
-      # 강제자로 만들어 하중이 커진 상태였다.
-      - name: Kotlin 주석 예산 (경로 명시 — 제품·테스트 두 축과 이력 표식 상한)
-        run: uv run pytest tests/test_kotlin_comment_budget.py
-      - run: uv run pytest
-      # 골든셋 LLM 평가(-m llm)는 API 키 시크릿 등록 후 별도 잡으로 활성화한다.
-
   # 프론트 게이트. 백엔드 잡과 독립이라 paths 필터 없이 항상 돌린다 — 필터를 걸면
   # 필수 체크가 건너뛴 채 "성공"으로 보고되어 병합이 열리는 함정이 있다.
   frontend:
@@ -266,9 +30,7 @@ jobs:
       - run: npm run test -- --run
       - run: npm run build
 
-  # Kotlin 게이트. 계획 §5 Phase 1 "CI에 Kotlin build/test를 추가하되 기존 Python/React
-  # gate 유지". 위 두 잡을 건드리지 않는다 — 절체(Phase 7)까지 Python suite가 비교
-  # 기준으로 계속 돌아야 한다.
+  # Kotlin 게이트. Kotlin/Spring Boot 가 유일한 제품 런타임이다.
   #
   # paths 필터를 걸지 않는 이유는 frontend 잡과 같다: 필터를 걸면 필수 체크가 건너뛴 채
   # "성공"으로 보고되어 병합이 열린다.
@@ -281,9 +43,6 @@ jobs:
       run:
         working-directory: backend-kotlin
     steps:
-      # 사유는 quality 잡의 같은 스텝 주석과 같다 — 라쳇 대조가 이력을 기준점으로 쓴다.
-      # 이 잡은 요구 모드(`KOTLIN_GATE_REACH_REQUIRE_REPORT=1`)로 그 대조를 돌리므로
-      # 이력이 없으면 **실패**한다.
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -299,26 +58,6 @@ jobs:
       - name: PostgreSQL 이미지 미리 받기
         run: docker pull pgvector/pgvector:pg16
 
-      # 이번 실행의 표식 (β-02 — 「돌았다」와 「이번에 돌았다」를 가른다).
-      #
-      # 아래 실행 대조는 `build/test-results/test/*.xml` 을 읽는다. 그 XML 은 Gradle
-      # 태스크의 **출력**이라 `UP-TO-DATE` 면 그대로 남고 `FROM-CACHE` 면 복원된다.
-      # 실측(2026-08-21): `--rerun-tasks` 로 만든 XML 의 `timestamp="…T08:06:19.523Z"` 가
-      # 리포트 디렉터리 삭제 뒤 `FROM-CACHE` 복원에서 **글자 그대로 되살아났다**. 파일
-      # mtime 만 복원 시각으로 갱신되므로 mtime 은 신선도의 근거가 될 수 없다.
-      #
-      # 그래서 빌드 **앞에서** 현재 UTC 시각을 박고, 대조가 모든 리포트의 `timestamp` 가
-      # 그보다 나중인지 본다. **순서가 이 축의 전부다** — 표식이 빌드 뒤로 가면 복원된
-      # 리포트도 표식보다 나중이 되어 언제나 초록이 된다. 그 순서는
-      # `tests/test_kotlin_gate_reach.py::test_CI_가_이번_실행_표식과_캐시_금지를_배선했다`
-      # 가 이 파일을 파싱해 고정한다(그 테스트는 quality 잡에서도 돈다).
-      #
-      # 요구 모드에서 이 표식이 없으면 대조가 **실패**한다(fail-closed) — 표식이 조용히
-      # 사라지면 그 축이 존재만 하고 도달이 0 이 되기 때문이다.
-      - name: 이번 실행 표식 (리포트 신선도 판정의 기준 시각)
-        working-directory: .
-        run: echo "KOTLIN_GATE_REACH_RUN_STARTED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_ENV"
-
       # build = 컴파일 + ktlintCheck + detekt + test (Testcontainers 포함).
       # 락파일과 어긋나면 실패시킨다 — 전이 의존성이 조용히 올라가는 것을 막는 지점이다.
       #
@@ -327,68 +66,24 @@ jobs:
       # `~/.gradle` 을 캐시하므로 **빌드 캐시**가 남는다. 그 경로로 테스트 태스크가
       # `FROM-CACHE` 가 되면 이 잡은 테스트를 한 건도 돌리지 않고 초록이 되고, 그 리포트가
       # 「게이트가 CI 에서 실제로 돌았다」의 근거로 인용된다. 캐시를 끊어 그 경로를 없앤다.
-      # `--rerun-tasks` 를 쓰지 않는 이유는 비용이다(컴파일까지 전부 다시 돈다) — 그리고
-      # 신선한지는 선언이 아니라 위 표식이 **실행마다 측정**한다.
+      # `--rerun-tasks` 를 쓰지 않는 이유는 비용이다(컴파일까지 전부 다시 돈다).
       - name: Gradle build (ktlint · detekt · test)
         run: ./gradlew build --no-daemon --no-build-cache
 
-      # 테스트 클래스 **전체**의 실행 대조 (게이트 25 H4 — codex 단독 지적 · 게이트 26).
-      #
-      # 아래 두 스텝은 클래스를 **손으로 적어** 둘만 지킨다. 그 사이 Phase 3~4 에서 가드가
-      # 여럿 늘었고, 늘어난 것들은 지워도 CI 가 통과하는 상태였다. 여기서는 목록을 손으로
-      # 적지 않고 `tests/test_kotlin_gate_reach.py` 가 트리와 **정확 일치**로 대조한다.
-      # 게이트 26 에서 분모가 「가드 이름 families」에서 「JUnit 애너테이션을 품은 최상위
-      # 선언 전부」로 바뀌었다 — 이름 열거를 없앤 것이 그 처방의 본체다.
-      #
-      # 이 스텝이 위 `build` **뒤에** 있어야 하는 이유: 대조의 한 축이 방금 만들어진
-      # `build/test-results/test/*.xml` 을 읽어 "그 클래스가 실제로 돌았는가"를 본다.
-      # 요구 모드를 켜면 ⑴ 리포트 부재 자체가 실패이고 ⑵ 대상이 **선언 전건**으로
-      # 넓어진다. 켜지 않으면 리포트에 실재하는 클래스만 재므로 조용히 좁아진다.
-      #
-      # **그리고 `build` 와 이 스텝 사이에 리포트를 덮는 것이 없어야 한다** (게이트 28 C-2).
-      # 앞선 판은 이 스텝을 아래 두 「탐지기 존재 확인」 **뒤에** 두었다. 그 둘은
-      # `:core:test --tests <클래스 하나>` 라서 core 모듈의 리포트를 그 하나로 통째로
-      # 덮어쓴다 — 요구 모드 대조가 **덮인 리포트를 읽어 결정론적으로 실패**했다
-      # (run 32333596159·32309434868 연속 빨강. 미실행 목록에 `ProvenanceCreationSitesTest`
-      # **자신**이 들어 있었던 것이 그 증거다).
-      #
-      # 순서를 고치는 것만으로는 부족하다 — 다음 사람이 사이에 스텝 하나를 끼우면 같은
-      # 일이 조용히 재발한다. 그래서 그 제약을 주석이 아니라 **탐지기**로 세웠다:
-      # `tests/test_kotlin_gate_reach.py::test_요구모드_대조_앞에_리포트를_덮는_스텝이_없다`
-      # 가 이 파일을 파싱해 `build` 와 이 스텝 **사이**에 `--tests` 필터를 건 gradlew 호출이
-      # 없는지 본다(이름 면제 없음). 그 테스트는 quality 잡에서도 도므로 Gradle 없이 빨개진다.
-      #
-      # `working-directory: .` 인 이유는 이 잡의 기본값이 `backend-kotlin` 이기 때문이다.
-      # 이 스텝 자체의 삭제는 이 스텝이 막지 못한다 — 다만 그 삭제는 quality 잡의
-      # `test_CI_가_이_대조를_경로_명시로_배선했다` 에서 빨개진다(장치 밖 단언).
-      - name: Kotlin 테스트 클래스 실행 대조 (리포트 XML — 삭제·미실행·skipped 시 실패)
-        working-directory: .
-        env:
-          KOTLIN_GATE_REACH_REQUIRE_REPORT: "1"
-        run: uv run pytest tests/test_kotlin_gate_reach.py
-
-      # 보안 불변식 **탐지기 자신의 존재**를 확인한다 (교차 종합 C-05).
+      # 보안 불변식 **탐지기 자신의 존재**를 확인한다.
       #
       # 위 `build` 는 있는 테스트를 전부 돌리지만, **테스트 파일을 지우면 그대로 초록**이다.
       # 두 탐지기가 지켜야 할 것은 마스킹 선행 불변식(INV-01)이고, 그것을 지우는 diff 가
       # 조용히 지나가면 안 된다. `--tests` 필터는 일치하는 테스트가 없으면
       # `No tests found for given includes` 로 **실패**한다 — 실측 확인.
       #
-      # 존재 단언을 파일 밖에 두는 이유는 quality 잡의 pytest 경로 명시와 같다:
-      # 자기 안의 단언은 파일과 함께 사라진다.
       # `--tests` 는 **집합 의미론**이다 — 여러 개를 주면 "하나라도 맞으면 통과"라서
-      # 클래스 **하나만** 지워도 RC=0 이었다(게이트 09 M-02 실측). 둘 다 지워야 실패하는
-      # 가드는 "탐지기가 살아 있다"를 보장하지 못한다.
-      #
-      # 그래서 **클래스마다 따로 돌린다.** 하나가 사라지면 그 스텝이
-      # `No tests found for given includes` 로 실패한다.
-      #
-      # **위 실행 대조보다 뒤에 둔다** (게이트 28 C-2). 이 둘은 core 리포트를 한 클래스로
-      # 덮으므로 앞에 두면 그 대조가 덮인 것을 읽는다. 여기서 재는 것(클래스가 사라지면
-      # `No tests found for given includes`)은 **순서와 무관**하므로 내려도 잃는 것이 없다.
+      # 클래스 **하나만** 지워도 RC=0 이었다. 둘 다 지워야 실패하는 가드는 "탐지기가
+      # 살아 있다"를 보장하지 못한다. 그래서 **클래스마다 따로 돌린다.** 하나가
+      # 사라지면 그 스텝이 `No tests found for given includes` 로 실패한다.
       #
       # 목록을 손으로 적는 것 자체는 이 스텝이 막지 못한다(줄을 지우면 그만이다).
-      # 최종 방어선은 그 diff 가 리뷰에 올라가는 것이다 — 한 칸 더 옮기지 않는다.
+      # 최종 방어선은 그 diff 가 리뷰에 올라가는 것이다.
       - name: 탐지기 존재 확인 — provenance 생성 지점 (단독 삭제 시 실패)
         run: ./gradlew :core:test --no-daemon --tests kr.easydoc.core.privacy.ProvenanceCreationSitesTest
       - name: 탐지기 존재 확인 — MaskedText 생성 통로 (단독 삭제 시 실패)
@@ -403,7 +98,7 @@ jobs:
   # ## 왜 `frontend` 잡을 키우지 않는가 (계획 §3-4 (a) vs (b))
   #
   # 순수 프런트 게이트에 DB·JVM 을 넣으면 **프런트 회귀가 인프라 실패로 빨강**이 된다.
-  # 신호가 섞이고 잡 시간이 늘어난다. 기존 네 잡(`quality`·`frontend`·`kotlin`·`llm-lane`)은
+  # 신호가 섞이고 잡 시간이 늘어난다. 기존 두 잡(`frontend`·`kotlin`)은
   # 이 잡이 생겨도 한 줄도 바뀌지 않는다.
   #
   # ## 왜 compose 가 아니라 서비스 컨테이너 + bootJar 인가
@@ -423,8 +118,7 @@ jobs:
     permissions:
       contents: read
     services:
-      # `kotlin-migrate`/`kotlin-api` 가 쓰는 DB 와 같은 이름. Alembic(Python)이 관리하는
-      # `easydoc` 과 갈라 둔다 — 한 환경에서 Alembic 과 Flyway 를 함께 돌리지 않는다.
+      # `kotlin-migrate`/`kotlin-api` 가 쓰는 DB 와 같은 이름.
       postgres:
         image: pgvector/pgvector:pg16
         env:
@@ -442,7 +136,7 @@ jobs:
       SPRING_DATASOURCE_URL: jdbc:postgresql://localhost:5432/easydoc_kotlin
       SPRING_DATASOURCE_USERNAME: postgres
       SPRING_DATASOURCE_PASSWORD: postgres
-      # Python api(8000)와 포트를 나눈다 — compose 의 `kotlin-api` 와 같은 값이다.
+      # compose 의 `kotlin-api` 와 같은 포트.
       SERVER_PORT: "8100"
       E2E_API_BASE_URL: http://localhost:8100
       # 브라우저 출처. 계약 `x-cors.allow_origins` 의 기본값과 같아야 프리플라이트가
@@ -630,349 +324,3 @@ jobs:
             frontend/test-results
           retention-days: 7
           if-no-files-found: warn
-
-  # ── LLM 레인 (실제 API 호출 — 관련 변경일 때만 돈다) ──────────────────────
-  #
-  # 배경: `-m llm` 마커가 붙은 테스트는 실제 Anthropic/OpenAI API 를 호출한다.
-  # 그런데 pyproject.toml 의 `addopts = "-m 'not llm'"` 때문에 기본 스위트에서 빠지고,
-  # 그것을 돌리는 잡이 없어서 **CI 도달이 0** 이었다. 품질 합격선의 차단축 3개가
-  # 전부 이 마커에 있는데 한 번도 안 돈 채 "합격선 확정" 이 보고된 적이 있다
-  # (`kotlin-migration` 스킬 「선언한 범위와 실제 도달을 대조한다」 근거 6번).
-  #
-  # 그렇다고 매 커밋마다 돌리면 56건 골든 코퍼스를 통째로 변환하는 비용이 매번 나간다.
-  # 그래서 **관련 변경일 때만** 돈다. 무엇이 '관련' 인지의 선언은
-  # `.github/llm-lane-paths.txt` 한 곳뿐이고, 그 선언이 실제 도달보다 좁지 않은지는
-  # `tests/test_llm_lane_scope.py` 가 매번 폐포를 다시 계산해 검사한다.
-  #
-  # 서드파티 액션(dorny/paths-filter 등)을 쓰지 않는다 — 공공기관 문서를 다루는
-  # 저장소라 공급망을 늘리지 않는다. git 으로 직접 구한다.
-  #
-  # ## 조용한 초록을 만들지 않는다
-  # 건너뛸 때 잡은 초록으로 끝나지만, 그 초록이 "레인이 통과했다" 로 읽히면 근거
-  # 6번의 재발이다. 그래서 건너뛴 실행은 스텝 요약(job summary)과 로그에 **건너뛰었다는
-  # 사실과 그 이유**를 반드시 남긴다.
-  #
-  # ## 이 잡이 막지 못하는 것
-  # 필수 체크로 걸어도 조건 분기가 초록을 내므로, 이 잡의 성공은 "레인이 통과했다"가
-  # 아니라 "레인이 필요했다면 통과했다" 이다. 실제로 무엇이 돌았는지는 요약을 읽어야 한다.
-  #
-  # ## 2026-08-21 이후: 자동 실행하지 않는다
-  # push·pull_request 에서 이 잡이 하는 일은 **API 를 쓰지 않는 두 가지뿐**이다 —
-  # ⑴ 경로 목록 완전성 검사(`--self-check`, 조건 없이 매번) ⑵ 변경 범위 «탐지».
-  # 실제 `-m llm` 실행은 `workflow_dispatch` 로만 한다. 그래서 이 잡의 초록은 이제
-  # "레인이 필요했다면 통과했다" 도 아니고 **"레인을 돌리지 않았다"** 이다 — 골든 경로를
-  # 건드린 커밋에서는 요약이 그 사실을 경고로 남긴다. 사유는 「변경 범위 판정」 스텝 주석.
-  llm-lane:
-    runs-on: ubuntu-latest
-    # 30분이었고, 그 값으로는 **이 레인이 CI에서 한 번도 완주하지 못했다.** 56문서를
-    # 직렬로 변환하고(문서당 최대 2회 호출) 다시 최대 56회를 채점하는 작업의 실측
-    # 소요가 35분 20초다(`docs/migration/_workspace/04_goldenset-first-run.md`).
-    # 35분짜리에 30분 한도를 건 것이라 플래키가 아니라 구조였고, 방해받지 않은 실행은
-    # 전부 정확히 ~30분에서 죽었다(`81ba9fa` 30m14s · `79447cd` 30m22s).
-    #
-    # ## 상한을 잡이 아니라 스텝에 건다 (2026-08-21)
-    #
-    # **잡 타임아웃은 잡을 «취소»한다.** 그래서 conclusion 이 `failure` 가 아니라
-    # `cancelled` 가 되고, 더 나쁘게는 **뒤따르는 스텝이 통째로 skip 된다.**
-    # 실측: run 32403598822 에서 한도에 걸리자 `실행 결과 요약` 스텝이 `skipped` 로
-    # 끝났다 — 정작 무엇이 돌았는지 알아야 할 그때 요약이 사라졌다.
-    #
-    # 그래서 실제 상한은 아래 `-m llm 레인 실행` 스텝에 `timeout-minutes: 55` 로 건다.
-    # 스텝 타임아웃은 그 «스텝»만 실패시키므로 ⑴ 잡 conclusion 이 `cancelled` 가 아니라
-    # `failure` 가 되어 신호가 정직해지고 ⑵ 요약 스텝이 실제로 돈다.
-    # 이 값(70분)은 그 스텝 상한을 감싸는 **바깥 안전망**이다 — 체크아웃·uv sync·요약이
-    # 함께 매달리는 경우까지 흡수하되(55 + 여유 15), 매달린 잡을 무한정 붙들지는 않는다.
-    # 두 값은 한 쌍이라 한쪽만 고치면 안 된다: 잡 상한이 스텝 상한보다 낮아지면
-    # 위의 skip 사고가 그대로 되살아난다.
-    #
-    # **여유 15분의 근거는 실측이다.** 잡 시계는 checkout 부터 도는데, 선행 스텝
-    # (`fetch-depth: 0` checkout · 범위 판정 · setup-uv · `uv sync --locked`)에는 개별
-    # 상한이 없다. 그래서 "얼마나 걸리는가"를 재 봤다 — run 32403598822 에서 잡 시작
-    # 18:30:49 → pytest collection 18:31:05 로 **총 16초**다. 15분은 그 56배이고,
-    # 뒤따르는 요약 스텝은 `$GITHUB_STEP_SUMMARY` 에 몇 줄 쓰는 것이 전부다.
-    # 개별 상한을 더 달지 않은 이유가 이것이다 — 16초짜리 구간에 상한 넷을 붙이면
-    # 읽는 사람이 그 값들을 실제 위험으로 오해한다. **선행 스텝이 느려지면 이 계산이
-    # 무너지므로, 여기를 고칠 때는 다시 재라.**
-    #
-    # 55분인 이유는 실측 35분 20초 대비 여유 56%다. 러너 성능 편차와 SDK 재시도를
-    # 흡수한다 — 이 레인의 논리 호출 하나는 최악 **6분**이다(`ANTHROPIC_TIMEOUT_SECONDS`
-    # 120초 × `max_retries=2` 이므로 최초 요청 포함 최대 3회, `app/llm/anthropic_provider.py`).
-    # 공용 기본값 60초(`app/llm/provider.py`)가 아니다 — Anthropic 은 사고 토큰 때문에
-    # 자기 상수를 따로 쓴다. 문서당 변환은 최대 2회 논리 호출이고 judge 가 1회 더 붙는다.
-    #
-    # 그래서 55분은 **최악 경계가 아니라 실측 + 여유**다. 최악으로 잡으면
-    # 56문서 × 3호출 × 6분 = 1,008분이 되어 상한으로서 아무 의미가 없다. 느린 호출이
-    # 겹쳐 55분을 넘기면 판정을 또 못 얻지만, 그때 얻는 것은 진행 로그가 가리키는
-    # **어디서 느렸는가**이고 그것이 다음 상한값의 근거가 된다.
-    # **이 값을 다시 줄이려면 먼저 실측을 갱신하라** — 위 35분 20초는 로컬 수치이고,
-    # CI 실측은 이 변경이 처음으로 만들어 낸다.
-    timeout-minutes: 70
-    permissions:
-      contents: read
-    # 워크플로 전체가 아니라 이 잡에만 건다 — quality·frontend·kotlin 의 실행 정책을
-    # 건드리지 않기 위해서다. 연속 푸시로 API 호출이 겹쳐 쌓이는 것만 막는다.
-    concurrency:
-      group: llm-lane-${{ github.event.pull_request.number || github.ref }}
-      cancel-in-progress: true
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          # PR base 와 push 이전 커밋을 diff 하려면 히스토리가 필요하다.
-          # 얕게 받으면 merge-base 를 못 찾아 조건 계산이 통째로 실패한다.
-          fetch-depth: 0
-
-      # 경로 목록의 완전성 검사. **조건 없이 매번 돈다** — 판정 규칙 자신은 조건부일
-      # 수 없다. 여기서 실패하면 "목록이 레인의 실제 도달보다 좁다" 는 뜻이고,
-      # 그 상태의 초록은 아무것도 보장하지 않는다.
-      #
-      # 이 스텝을 경로로 명시 호출하는 데는 또 다른 이유가 있다. 검사 파일 안에 적은
-      # 자기 단언은 그 파일과 함께 사라지지만, 이 스텝은 모듈을 import 하므로
-      # 파일을 지우면 `No module named tests.test_llm_lane_scope` 로 **잡이 깨진다**.
-      # 장치 밖에서 깨지는 지점을 그렇게 만든다(스킬 규칙 5·6).
-      #
-      # uv 없이 러너의 맨 python3 로 돈다 — 이 모듈은 표준 라이브러리만 쓴다.
-      - name: 경로 목록 완전성 검사 (조건 없이 매번 — API 안 씀)
-        run: python3 -m tests.test_llm_lane_scope --self-check
-
-      - name: 변경 범위 판정 (.github/llm-lane-paths.txt 대조)
-        id: scope
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          PUSH_BEFORE: ${{ github.event.before }}
-          FORCE_INPUT: ${{ github.event.inputs.run_llm_lane }}
-        run: |
-          set -euo pipefail
-          work=$(mktemp -d)
-          changed="$work/changed.txt"
-          reason=""
-          force=no
-
-          # 수동 실행은 언제나 강제. 조건 계산을 우회할 손잡이가 반드시 하나 있어야 한다.
-          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
-            if [ "$FORCE_INPUT" != "false" ]; then
-              force=yes
-              reason="workflow_dispatch 수동 강제 실행"
-            fi
-          fi
-
-          if [ "$force" = "no" ]; then
-            base=""
-            if [ "$EVENT_NAME" = "pull_request" ]; then
-              base="$PR_BASE_SHA"
-            else
-              base="$PUSH_BEFORE"
-            fi
-
-            # 판정할 수 없는 상태(첫 푸시의 0-sha, 강제 푸시로 사라진 커밋 등)에서는
-            # **건너뛰지 않고 돌린다.** '알 수 없음' 은 '무관' 이 아니다. 여기서 조용히
-            # 건너뛰면 그것이 정확히 근거 6번의 형태(도달 0 인데 초록)가 된다.
-            if [ -z "$base" ] || [ "$base" = "0000000000000000000000000000000000000000" ] \
-               || ! git cat-file -e "${base}^{commit}" 2>/dev/null; then
-              force=yes
-              reason="비교 기준 커밋을 찾을 수 없다(base='${base:-없음}') — 알 수 없음은 무관이 아니므로 실행한다"
-            else
-              # --no-renames: 이름만 바꾼 변경도 양쪽 경로가 다 나오게 한다.
-              # 한쪽만 나오면 레인 파일을 목록 밖으로 옮기는 변경이 안 걸린다.
-              merge_base=$(git merge-base "$base" HEAD 2>/dev/null || echo "$base")
-              git diff --name-only --no-renames "$merge_base" HEAD > "$changed"
-              echo "변경 파일 $(wc -l < "$changed" | tr -d '[:space:]')건 (기준 ${merge_base})"
-            fi
-          fi
-
-          if [ "$force" = "yes" ]; then
-            echo "run=true" >> "$GITHUB_OUTPUT"
-            echo "reason=$reason" >> "$GITHUB_OUTPUT"
-            {
-              echo "### LLM 레인: **실행**"
-              echo ""
-              echo "사유: $reason"
-            } >> "$GITHUB_STEP_SUMMARY"
-            exit 0
-          fi
-
-          # 매칭 규칙은 CI 쪽에 복제하지 않는다 — 완전성 검사와 **같은 판정기**를 부른다.
-          # 규칙이 두 곳에 있으면 그 복사본이 갈리고, 갈린 순간 검사는 CI 가 실제로
-          # 쓰는 규칙이 아니라 자기 규칙을 검사하게 된다.
-          matched="$work/matched.txt"
-          python3 -m tests.test_llm_lane_scope --match "$changed" > "$matched"
-          count=$(wc -l < "$matched" | tr -d '[:space:]')
-
-          # ── 여기서 «탐지» 와 «실행» 이 갈린다 (2026-08-21 운영자 결정) ──────────
-          #
-          # 예전에는 골든 경로가 걸리면 곧바로 `run=true` 로 API 레인을 돌렸다. 이제
-          # **자동 실행은 하지 않는다.** 실행은 `workflow_dispatch` 로만 한다(위 force 분기).
-          #
-          # 왜: 이 레인은 문서 56건을 변환하고 다시 채점하는 데 ~28분과 실과금이 든다.
-          # 그런데 `.github/workflows/ci.yml` 자신이 위 목록에 들어 있어(규칙 6 — 판정
-          # 장치는 자기를 대상에 넣는다) **CI 를 한 줄만 고쳐도** 그 비용이 딸려 왔다.
-          # 게다가 이 게이트는 필수 정보 보존 축(허용치 0)이 구조적으로 실패해 **항상
-          # 빨간색**이고, `main` 은 브랜치 보호가 없어 필수 체크도 아니다. 즉 자동 실행은
-          # 돈을 쓰면서 아무것도 막지 못하고 있었고, 상시 빨간 체크는 읽히지 않는다.
-          #
-          # **탐지까지 끄지는 않는다.** 위 `--match` 는 API 를 쓰지 않는다. 걸린 경로를
-          # 계속 계산해 «손으로 돌려라» 고 요약에 적는다 — 자동 실행을 끄는 것과 변경이
-          # 골든 품질을 건드렸다는 사실을 감추는 것은 다르다. 조용해지면 그게 이 저장소가
-          # 결함으로 보는 형태다.
-          echo "run=false" >> "$GITHUB_OUTPUT"
-          if [ "$count" -gt 0 ]; then
-            echo "touched=$count" >> "$GITHUB_OUTPUT"
-            echo "reason=골든 경로 ${count}건 변경 — 자동 실행은 꺼져 있다(손으로 돌린다)" >> "$GITHUB_OUTPUT"
-            echo "골든 경로에 걸린 변경 ${count}건 — 자동 실행하지 않는다:"
-            cat "$matched"
-            { sed 's/^/- `/; s/$/`/' "$matched"; } > "$work/matched.md"
-            echo "matched_md<<EOF" >> "$GITHUB_OUTPUT"
-            cat "$work/matched.md" >> "$GITHUB_OUTPUT"
-            echo "EOF" >> "$GITHUB_OUTPUT"
-          else
-            echo "touched=0" >> "$GITHUB_OUTPUT"
-            echo "reason=골든 경로 무변경" >> "$GITHUB_OUTPUT"
-          fi
-
-      # 건너뛴 실행이 통과처럼 보이면 안 된다. 초록은 남지만 그 초록이 무엇을
-      # 뜻하는지는 로그와 요약에 글자로 남긴다.
-      - name: 건너뜀 사유 기록 (조용한 초록 방지)
-        if: steps.scope.outputs.run != 'true'
-        env:
-          TOUCHED: ${{ steps.scope.outputs.touched }}
-          MATCHED_MD: ${{ steps.scope.outputs.matched_md }}
-        run: |
-          set -euo pipefail
-          # 두 경우를 **가른다.** 예전에는 한 문구뿐이라 "건드리지 않았다" 로만 적혔는데,
-          # 자동 실행을 끈 지금은 «건드렸는데 안 돌린» 경우가 생긴다. 그 둘을 같은 문구로
-          # 덮으면 골든 품질을 건드린 변경이 무변경 커밋과 구별되지 않는다.
-          if [ "${TOUCHED:-0}" != "0" ]; then
-            echo "::warning::이 커밋은 골든 경로 ${TOUCHED}건을 건드렸다. -m llm 레인은 **자동 실행하지 않는다** — 품질 영향을 보려면 손으로 돌려라."
-            {
-              echo "### LLM 레인: **미실행 — 손으로 돌려야 한다**"
-              echo ""
-              echo "이 커밋은 \`.github/llm-lane-paths.txt\` 에 걸린 변경 **${TOUCHED}건**을 담고 있다:"
-              echo ""
-              echo "$MATCHED_MD"
-              echo ""
-              echo "> **이 잡의 초록은 품질 판정이 아니다.** 골든 품질에 영향이 갈 수 있는"
-              echo "> 변경인데 판정을 **하지 않았다**. 자동 실행은 비용(~28분·실과금) 대비"
-              echo "> 차단력이 없어 껐다 — 필수 정보 보존 축이 구조적으로 실패해 상시"
-              echo "> 빨간색이고, \`main\` 은 브랜치 보호가 없어 필수 체크도 아니다."
-              echo ""
-              echo "돌리는 법:"
-              echo ""
-              echo "- CI 에서: Actions → CI → **Run workflow** (\`run_llm_lane\` 기본 켜짐)"
-              echo "- 로컬에서: \`GOLDEN_PROVIDER=anthropic LLM_MODEL=claude-sonnet-5 LLM_EFFORT=low uv run pytest tests/golden -m llm\`"
-              echo "  (기준선 지문의 producer 와 같은 조건이어야 상대 하한선이 비교된다)"
-            } >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo "::notice::이 커밋은 골든 경로를 건드리지 않았다. -m llm API 레인 미실행."
-            {
-              echo "### LLM 레인: **건너뜀 (골든 경로 무변경)**"
-              echo ""
-              echo "이 커밋은 \`.github/llm-lane-paths.txt\` 의 어떤 경로도 건드리지 않았다."
-              echo "실제 API 호출은 **한 건도 하지 않았다.**"
-              echo ""
-              echo "> 이 초록은 품질 판정이 아니다 — 판정할 대상이 없었다는 기록이다."
-            } >> "$GITHUB_STEP_SUMMARY"
-          fi
-
-      - uses: astral-sh/setup-uv@v5
-        if: steps.scope.outputs.run == 'true'
-        with:
-          python-version: "3.12"
-          enable-cache: true
-
-      - run: uv sync --locked
-        if: steps.scope.outputs.run == 'true'
-
-      # 실제 호출 지점. 키는 시크릿에서만 오고 **값을 찍지 않는다** — 로그에 키가
-      # 남으면 회수 외에는 되돌릴 방법이 없다.
-      #
-      # GOLDEN_RECORD_BASELINE 은 **세우지 않는다.** 기준선 기록은 판정이 아니라
-      # 기준 자체를 바꾸는 일이라 CI 가 할 일이 아니다. 세우면 CI 가 자기 합격선을
-      # 매번 새로 써서 회귀가 영원히 안 잡힌다. 기준선 파일을 갱신하는 경로는
-      # 사람이 로컬에서 돌려 diff 를 커밋하는 것 하나뿐이다.
-      #
-      # (`tests/golden/baseline.json` 이 "저장소에 없다"고 적혀 있던 자리다. 2026-08-12
-      # 첫 실행 때는 조건이 비어 내렸으나 2026-08-13 에 조건을 채워 다시 기록됐고,
-      # 지금은 추적 중이다. 낡은 서술이라 지운다 — 없다고 적힌 파일이 있으면 이 잡이
-      # 무엇과 비교하는지를 읽는 사람이 잘못 안다.)
-      - name: -m llm 레인 실행 (실제 API 호출)
-        if: steps.scope.outputs.run == 'true'
-        # **실제 상한은 여기다** (잡 레벨이 아니라). 잡 타임아웃은 잡을 취소해
-        # 후속 스텝을 통째로 skip 시키지만(run 32403598822 에서 `실행 결과 요약` 이
-        # 실제로 `skipped` 였다), 스텝 타임아웃은 이 스텝만 실패시킨다. 그래서
-        # 잡 conclusion 이 `cancelled` 가 아니라 `failure` 로 남고 요약 스텝이 돈다.
-        # 위 잡 레벨 `timeout-minutes: 70` 과 한 쌍이다 — 근거는 그쪽 주석에 있다.
-        timeout-minutes: 55
-        env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          # 스텝 출력을 `run:` 본문에 `${{ }}` 로 직접 끼워 넣지 않는다 — 그 자리는
-          # 셸 소스로 치환돼 값이 곧 코드가 된다. env 로 넘기면 값으로만 남는다.
-          LANE_REASON: ${{ steps.scope.outputs.reason }}
-          # 기준선 지문의 producer 축과 **같은 조건으로 돌린다.**
-          # `tests/golden/baseline.json` 의 producer 는
-          # `provider=anthropic · model=claude-sonnet-5 · effort=low` 인데, 이 둘을 주지
-          # 않으면 `Settings` 기본값이 둘 다 `None` 이라(`app/config.py`) 지문이 갈리고
-          # **상대 하한선이 "비교 불가"로 떨어져 판정을 하지 않는다.** 그 상태의 초록은
-          # "회귀가 없다"가 아니라 "회귀를 보지 않았다"는 뜻이다 — 이 저장소가 반복해서
-          # 결함으로 지목해 온 '도달 0인데 초록' 형태다(CLAUDE.md 「범위 대조」).
-          #
-          # 값을 여기 박아 두는 것이 기준선을 CI 가 고쳐 쓰는 것과 다른 점: 이것은
-          # **비교의 조건을 기준선에 맞추는 것**이지 합격선을 옮기는 것이 아니다.
-          # 기준선을 다시 기록할 때 producer 가 바뀌면 이 두 줄도 함께 갱신해야 한다 —
-          # 어긋나면 게이트가 조용해지는 것이 아니라 '비교 불가'로 시끄러워진다.
-          LLM_MODEL: claude-sonnet-5
-          LLM_EFFORT: low
-        run: |
-          set -euo pipefail
-          if [ -z "${ANTHROPIC_API_KEY:-}" ]; then
-            echo "::error::ANTHROPIC_API_KEY 시크릿이 비어 있다 — 자격 증명 없는 실행은 0건 측정이고 0건은 통과가 아니다."
-            exit 1
-          fi
-          # 키 값 자체는 절대 찍지 않는다. 길이조차 찍지 않는다 — 회수 말고는 되돌릴 방법이 없다.
-          echo "레인 실행 사유: $LANE_REASON"
-          # `--log-cli-level=INFO` 가 붙은 이유는 취향이 아니라 **사고 재발 방지**다.
-          # 이 레인이 죽는 방식은 테스트 실패가 아니라 **타임아웃 kill** 이라, pytest 의
-          # 기본 캡처(=실패한 테스트에만 재생)로는 재생이 아예 일어나지 않는다. 실제로
-          # 30분을 출력 0줄로 죽어서 어디서 매달렸는지를 로그에서 알 수 없었다.
-          # 이 플래그가 없으면 `log_progress`(`tests/golden/test_golden_eval.py`) 가 찍는
-          # 진행 줄이 그대로 사라진다 — 두 장치는 **한 쌍이고 한쪽만 있으면 둘 다 무의미하다.**
-          #
-          # ## 왜 `-s` 가 아닌가 (2026-08-21 실측으로 교체)
-          #
-          # 처음엔 `-s`(캡처 끄기) + `print` 였다. 근거는 "캡처를 켜면 진행 줄이 버퍼에
-          # 갇혀 kill 때 사라진다" 였는데 **그 전제가 틀렸다.** CI 는 stdout 이 tty 가
-          # 아니므로, 비-tty 리다이렉트(`> out.txt 2>&1`) 상태로 `kill -9` 한 뒤 파일에
-          # 남은 진행 줄을 셌다(같은 탐침 2회):
-          #
-          #   (A) `--log-cli-level=INFO` (캡처 유지) → **8줄 / 9줄** 생존
-          #   (B) `-s`                   (캡처 끔)   →   9줄 / 8줄 생존
-          #
-          # **둘 다 살아남는다.** live log 는 pytest 가 레코드마다 스트림을 명시적으로
-          # flush 해서 블록 버퍼링을 타지 않는다(남은 8줄은 약 440바이트로 4KB 블록
-          # 경계에 한참 못 미치는데도 파일에 있었다).
-          #
-          # 생존이 안 갈리므로 판정은 부수효과로 넘어간다. `-s` 는 캡처를 통째로 꺼서
-          # 실패 리포트의 `Captured stdout/stderr` 섹션을 없앤다. 이 레인은 필수 정보
-          # 보존 축의 허용치가 **0** 이라 빨간색으로 끝날 공산이 크고, 그때 가장 필요한
-          # 것이 그 섹션이다. 즉 `-s` 는 진행 로그를 얻는 대가로 실패 진단을 버리는
-          # 거래인데, 실측이 그 대가를 **치를 필요가 없다**고 말한다.
-          #
-          # 이 플래그는 무엇을 테스트하는지 바꾸지 않는다(선택·판정에 관여하지 않고
-          # 출력만 늘린다). 그래서 로컬 명령과 갈려도 사각지대가 생기지 않는다.
-          uv run pytest -m llm --log-cli-level=INFO
-
-      - name: 실행 결과 요약
-        # `!cancelled()` 가 붙은 이유: 기본 조건은 «앞 스텝이 성공했을 때만» 이라
-        # 레인이 빨갛게 끝나면 요약이 통째로 사라진다. 그리고 잡이 취소되면
-        # (잡 타임아웃·concurrency 선점) 조건과 무관하게 스텝이 skip 된다 —
-        # run 32403598822 에서 실제로 이 스텝이 `skipped` 였다.
-        # `!cancelled()` 는 **실패했어도 돈다**로 바꾸되 진짜 취소일 때는 비켜선다.
-        # `always()` 를 쓰지 않는 이유: 취소 뒤에도 스텝을 붙들어 잡 중단이 늦어진다.
-        if: ${{ !cancelled() && steps.scope.outputs.run == 'true' }}
-        env:
-          LANE_REASON: ${{ steps.scope.outputs.reason }}
-        run: |
-          set -euo pipefail
-          {
-            echo ""
-            echo "레인 실행 사유: $LANE_REASON"
-          } >> "$GITHUB_STEP_SUMMARY"
