@@ -94,50 +94,34 @@ describe('검수 에디터', () => {
     expect(editor).toHaveValue('초안. 덧붙임')
   })
 
-  it('docx 내려받기를 누르면 파일을 받아 저장한다', async () => {
-    const user = userEvent.setup()
-    const objectUrl = 'blob:test'
-    const createObjectURL = vi.fn(() => objectUrl)
-    const revokeObjectURL = vi.fn()
-    vi.stubGlobal('URL', { ...URL, createObjectURL, revokeObjectURL })
-    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
-    vi.mocked(downloadExport).mockResolvedValue({
-      blob: new Blob(['내용']),
-      filename: '재난지원금 안내.docx',
-    })
-    render(<ReviewEditor conversion={conversion()} sourceText={null} />)
+  it.each(['docx', 'hwpx', 'txt'] as const)(
+    '%s 내려받기를 누르면 파일을 받아 저장한다',
+    async (format) => {
+      const user = userEvent.setup()
+      const objectUrl = 'blob:test'
+      const createObjectURL = vi.fn(() => objectUrl)
+      const revokeObjectURL = vi.fn()
+      vi.stubGlobal('URL', { ...URL, createObjectURL, revokeObjectURL })
+      const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+      vi.mocked(downloadExport).mockResolvedValue({
+        blob: new Blob(['내용']),
+        filename: `재난지원금 안내.${format}`,
+      })
+      render(<ReviewEditor conversion={conversion()} sourceText={null} />)
 
-    await user.click(screen.getByRole('button', { name: 'docx 내려받기' }))
+      await user.click(screen.getByRole('button', { name: `${format} 내려받기` }))
 
-    expect(vi.mocked(downloadExport)).toHaveBeenCalledWith('c1', 'docx')
-    expect(click).toHaveBeenCalled()
-    expect(revokeObjectURL).toHaveBeenCalledWith(objectUrl)
-    expect(await screen.findByText('DOCX 파일을 내려받았습니다.')).toBeInTheDocument()
+      expect(vi.mocked(downloadExport)).toHaveBeenCalledWith('c1', format)
+      expect(click).toHaveBeenCalled()
+      expect(revokeObjectURL).toHaveBeenCalledWith(objectUrl)
+      expect(
+        await screen.findByText(`${format.toUpperCase()} 파일을 내려받았습니다.`),
+      ).toBeInTheDocument()
 
-    click.mockRestore()
-    vi.unstubAllGlobals()
-  })
-
-  it('hwpx 내려받기는 hwpx 형식으로 요청한다', async () => {
-    const user = userEvent.setup()
-    const createObjectURL = vi.fn(() => 'blob:test')
-    const revokeObjectURL = vi.fn()
-    vi.stubGlobal('URL', { ...URL, createObjectURL, revokeObjectURL })
-    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
-    vi.mocked(downloadExport).mockResolvedValue({
-      blob: new Blob(['내용']),
-      filename: '재난지원금 안내.hwpx',
-    })
-    render(<ReviewEditor conversion={conversion()} sourceText={null} />)
-
-    await user.click(screen.getByRole('button', { name: 'hwpx 내려받기' }))
-
-    expect(vi.mocked(downloadExport)).toHaveBeenCalledWith('c1', 'hwpx')
-    expect(await screen.findByText('HWPX 파일을 내려받았습니다.')).toBeInTheDocument()
-
-    click.mockRestore()
-    vi.unstubAllGlobals()
-  })
+      click.mockRestore()
+      vi.unstubAllGlobals()
+    },
+  )
 
   it('마스킹 항목이 결과에 남아 있는지 표로 알려준다', async () => {
     const user = userEvent.setup()

@@ -130,13 +130,23 @@ class ConversionExportReachTest {
     fun `없는 것과 남의 것이 구분되지 않는다`() {
         val mine = newAccount()
         val theirs = createDocument(newAccount()).second
-        val format = firstFormat()
 
-        val absent = exportBytes(mine, UUID.randomUUID(), format)
-        val others = exportBytes(mine, theirs, format)
+        ContractSpec.schemaEnum(FORMAT_SCHEMA).forEach { format ->
+            val absent = exportBytes(mine, UUID.randomUUID(), format)
+            val others = exportBytes(mine, theirs, format)
 
-        assertThat(absent.statusCode()).isEqualTo(NOT_FOUND)
-        OwnershipConcealment.assertIndistinguishable("GET $EXPORT_PATH", absent, others)
+            assertThat(absent.statusCode())
+                .withFailMessage("%s 없는 변환이 404 가 아니다: %d", format, absent.statusCode())
+                .isEqualTo(NOT_FOUND)
+            assertThat(others.statusCode())
+                .withFailMessage("%s 타인 변환이 404 가 아니다: %d", format, others.statusCode())
+                .isEqualTo(NOT_FOUND)
+            OwnershipConcealment.assertIndistinguishable(
+                "GET $EXPORT_PATH?format=$format",
+                absent,
+                others,
+            )
+        }
     }
 
     @Test
