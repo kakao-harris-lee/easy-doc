@@ -1,8 +1,8 @@
 /**
  * E1·E2·E3·E12 — 가입·로그인·세션 만료·가드.
  *
- * 케이스 ↔ 계약 대응은 계획 §3-2 표가 정본이다
- * (`docs/migration/_workspace/03_contract-keeper_react-e2e-plan.md`).
+ * 케이스 ↔ 계약 대응은 계획 §3-2 표가 정본이다(제거됨, git 태그
+ * `pre-python-removal-20260824`에서 열람 가능: `docs/migration/_workspace/03_contract-keeper_react-e2e-plan.md`).
  */
 
 import { expect, test } from '@playwright/test'

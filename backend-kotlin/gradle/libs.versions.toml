@@ -9,7 +9,8 @@
 #   여기서 BOM 기준으로 재정렬했다.
 # - Spring Boot는 **4.1.0**을 고른다. 계획 §3.1이 적은 "4.1 계열 후보"를 그대로 채택한
 #   결정이며, 2026-08-12 사용자 승인 건이다(경위는
-#   `docs/migration/_workspace/01_kotlin-implementer_boot41-upgrade.md`).
+#   `docs/migration/_workspace/01_kotlin-implementer_boot41-upgrade.md`,
+#   제거됨, git 태그 `pre-python-removal-20260824`에서 열람 가능).
 #   Phase 1 골격은 4.0.7로 먼저 만들어졌는데, 계획이 지정한 계열과 어긋난 채로 Kotlin
 #   코드가 쌓이면 되돌리는 비용이 시간에 비례해 커지므로 코드량이 가장 적은 시점에 옮겼다.
 #   실측 결과 4.1 계열의 안정판은 4.1.0 하나뿐이다(4.1.1 이후 없음, maven-metadata
@@ -146,7 +147,8 @@ spring-boot-starter-jdbc = { module = "org.springframework.boot:spring-boot-star
 # 그래서 같은 커밋에 대체 강제자를 세웠다 — `RequestFieldRejectionLayerTest` 가
 # 「그 필드의 거절이 어느 층에서 일어나는가」를 **응답 `detail` 모양**으로 잰다.
 # 금지 애너테이션 열거에 의존하지 않는 축이고, 사유는
-# `docs/migration/_workspace/04_kotlin-implementer_documents.md` 「C4」 절에 있다.
+# `docs/migration/_workspace/04_kotlin-implementer_documents.md` 「C4」 절에 있다
+# (제거됨, git 태그 `pre-python-removal-20260824`에서 열람 가능).
 spring-boot-starter-validation = { module = "org.springframework.boot:spring-boot-starter-validation" }
 spring-boot-starter-test = { module = "org.springframework.boot:spring-boot-starter-test" }
 # Spring Boot 4는 테스트 슬라이스도 기술별 모듈로 쪼갰다. @WebMvcTest·MockMvc 는

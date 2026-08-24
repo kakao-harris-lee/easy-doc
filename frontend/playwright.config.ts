@@ -3,7 +3,8 @@ import { defineConfig, devices } from '@playwright/test'
 /**
  * Phase 3 브라우저 E2E — 실 React ↔ 실 Kotlin API ↔ 실 PostgreSQL.
  *
- * 계획 정본: `docs/migration/_workspace/03_contract-keeper_react-e2e-plan.md`.
+ * 계획 정본(제거됨, git 태그 `pre-python-removal-20260824`에서 열람 가능):
+ * `docs/migration/_workspace/03_contract-keeper_react-e2e-plan.md`.
  * 스텁·목·MSW 를 쓰지 않는다. 기존 Vitest 스위트(`npm run test`)와 **별 스크립트**다 —
  * 같은 명령에 묶으면 `frontend` CI 잡이 서버를 요구하게 되어 계획 §3-4 (a) 를 뒷문으로
  * 채택하는 것이 된다(계획 §4-3).

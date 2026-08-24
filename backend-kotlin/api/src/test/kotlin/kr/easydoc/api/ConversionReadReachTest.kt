@@ -385,7 +385,8 @@ class ConversionReadReachTest {
 
         // 규약: SQL 은 **companion 의 상수 리터럴**에 두고 조각만 채운다. 호출부에서 조립하면
         // 스캐너와 `EnvelopeColumnWriteGuardTest` 가 함께 눈을 감는다 — 근거는
-        // `docs/migration/_workspace/04_kotlin-implementer_c6-test-sql-constraints.md`.
+        // `docs/migration/_workspace/04_kotlin-implementer_c6-test-sql-constraints.md`
+        // (제거됨, git 태그 `pre-python-removal-20260824`에서 열람 가능).
         database.execute(
             MARK_DONE_SQL.format(
                 easy,
