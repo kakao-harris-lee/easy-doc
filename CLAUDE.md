@@ -11,24 +11,20 @@
 **모든 기능 구현은 리서치가 기본이다. 바퀴를 매번 새로 만들지 않는다.** 기능 단위(Phase의 `{scope}` 하나, 또는 그에 준하는 작업 덩어리)에 착수하기 전에 아래 세 가지를 **순서대로** 끝내고, 그 결과를 계획 문서로 남긴 뒤에만 구현 에이전트를 띄운다. 리더가 위임할 때 이 세 항목을 프롬프트에 포함하고, 구현 에이전트는 계획이 없으면 먼저 계획을 쓴다.
 
 1. **라이브러리·프레임워크 리서치** — 표준·검증된 구현이 있으면 그것을 쓴다(Spring Boot·Spring Security·Jackson·Bean Validation·JCA·POI·PDFBox·Flyway·Testcontainers 등). 공식 문서(context7 / 공식 레퍼런스)로 **현재 버전의 API와 권장 방식**을 확인한다 — 학습 데이터 기억에 의존하지 않는다. 직접 구현은 ① 요구사항이 라이브러리가 제공하지 않는 성질을 요구하거나(예: 마스킹 순서 불변식·AAD 규약) ② 의존성 추가가 보안·라이선스·범위 정책에 어긋날 때만 하고, 그 사유를 계획에 적는다.
-2. **기구현 확인** — 같은 저장소에 이미 있는 것을 다시 만들지 않는다. `backend-kotlin/` 모듈(core·application·infrastructure·api·worker)의 기존 포트·유틸·테스트 지원 클래스, `contracts/`·`docs/migration/_workspace/`의 명세·판정 기록, Phase 0 spike 산출물을 먼저 찾아본다. 같은 기능이 이미 있으면 **재사용·확장**이 기본이고 중복 구현은 결함으로 취급한다.
-3. **계획 작성** — 위 두 결과를 바탕으로 "무엇을 어떤 라이브러리로, 기존 무엇을 재사용해, 어떤 순서로, 어떤 테스트로 검증하는가"를 적는다. 위치는 마이그레이션 작업이면 `docs/migration/_workspace/`, 그 외는 `docs/plans/`다. **파일명 규약은 여기에 값으로 옮겨 적지 않는다** — `{phase}`·`{scope}` 의 정본은 `.claude/skills/kotlin-migration/SKILL.md` 의 `{scope}` 정본 표 하나이고, `docs/plans/` 는 날짜 접두(`YYYY-MM-DD-`)를 쓴다. 옮겨 적으면 갈린다. 계획 없이 시작한 구현은 리뷰 게이트에서 **그 사실 자체를 지적 대상**으로 본다.
+2. **기구현 확인** — 같은 저장소에 이미 있는 것을 다시 만들지 않는다. `backend-kotlin/` 모듈(core·application·infrastructure·api·worker)의 기존 포트·유틸·테스트 지원 클래스, `contracts/`를 먼저 찾아본다. 같은 기능이 이미 있으면 **재사용·확장**이 기본이고 중복 구현은 결함으로 취급한다.
+3. **계획 작성** — 위 두 결과를 바탕으로 "무엇을 어떤 라이브러리로, 기존 무엇을 재사용해, 어떤 순서로, 어떤 테스트로 검증하는가"를 적는다. 위치는 `docs/plans/`이고 날짜 접두(`YYYY-MM-DD-`)를 쓴다. 계획 없이 시작한 구현은 리뷰에서 그 사실 자체를 지적 대상으로 본다.
 
-이 규칙은 Kotlin 마이그레이션에 한정되지 않는다 — 프론트엔드·도구 스크립트·하네스(`.claude/**`) 변경에도 똑같이 적용한다. **강제자는 현재 리더의 위임 프롬프트와 리뷰 게이트의 지적 대상 판정이며, 자동 탐지는 없다**(2026-08-19 게이트 26 codex C-1 — 전칭 선언에 강제자 0. 이 문장이 없으면 이 절 자신이 아래 「선언한 범위와 실제 도달을 대조한다」가 금지한 형태가 된다).
+이 규칙은 프론트엔드·도구 스크립트·하네스(`.claude/**`) 변경에도 똑같이 적용한다. **강제자는 현재 리더의 위임 프롬프트와 리뷰의 지적 대상 판정이며, 자동 탐지는 없다**(2026-08-19 게이트 26 codex C-1 — 전칭 선언에 강제자 0).
 
-## 하네스: Kotlin 마이그레이션
+## Python 제거 완결 (2026-08-24)
 
-**목표:** 제품 동작과 개인정보 보호 정책을 보존한 채 Python/FastAPI 런타임을 Kotlin/Spring Boot로 교체한다. 계획 기준 문서는 `docs/plans/2026-08-11-kotlin-react-migration.md`.
+2026-08-12 재개발 전환(Python→Kotlin 재구현) 결정을 끝까지 진행해, **Python 애플리케이션·실행 환경·Python↔Kotlin parity 하네스·마이그레이션 진행 문서(`docs/migration/**`)를 저장소에서 전부 제거했다.** 근거·범위·실행 기록은 `docs/plans/2026-08-24-python-removal-for-kotlin-redevelopment.md`. 제거 직전 상태는 로컬 태그 `pre-python-removal-20260824`로 보존돼 있다.
 
-**트리거:** 코틀린 전환·Kotlin 포팅·`backend-kotlin/` 작업·API 계약 동결·Python↔Kotlin parity 검증·Fernet/JWT/Argon2 호환·Flyway 인수·작업 큐 전환·절체(cutover) 관련 요청이면 `kotlin-migration` 스킬을 사용하라. 후속 요청("이어서", "다시", "재검증", "Phase N만 다시")에도 같은 스킬을 쓴다. 단순 조회나 질문은 직접 응답해도 된다.
+이 절 아래는 이제 **순수 Kotlin/Spring Boot + React 개발 지침**이다. 더 이상 존재하지 않는 것: Python 애플리케이션(`app/`), Python 테스트(`tests/`), Alembic, arq, `uv`/`ruff`/`mypy`/`pytest` 명령, Python-Kotlin parity 비교(`parity/`), 마이그레이션 Phase 0~9 진행 추적(`docs/migration/_workspace/`), `kotlin-migration`·`python-kotlin-parity`·`migration-safety-gate`·`codex-review` 스킬과 `codex-reviewer`·`migration-reviewer`·`parity-verifier`·`privacy-gate` 에이전트. 이 스킬·에이전트를 트리거하는 요청("코틀린 전환", "parity 검증", "Phase N 종료" 등)을 받으면 **이 절을 근거로 하네스가 없다는 사실을 안내**하고, 필요한 작업은 아래 일반 Kotlin 지침과 `kotlin-spring-conventions`·`api-contract-freeze` 스킬(둘은 존치, Python 의존이 없다)로 직접 수행한다.
 
-**리뷰 게이트:** codex 독립 리뷰는 **필수**다. `codex-reviewer`와 `migration-reviewer`를 병렬·독립 실행한 뒤 교차 대조한다. 두 리뷰가 상충하면 어느 쪽도 삭제하지 않고 양쪽 근거를 병기해 사용자 판단을 받는다. **회차를 정하는 것은 커밋 수가 아니라 무엇을 건드렸는가다**(2026-08-21 개정, 사용자 승인) — 보안·개인정보 불변식 / 외부 HTTP 계약 / 게이트·탐지기 자신 / Phase 종료·착수 판정 / 작업 큐·LLM 호출 규약 / 문서 추출·내보내기 무결성 / 골든 품질 합격선 **일곱** 중 하나에 닿으면 그 변경 단위마다 **반드시** 돌리고, 일곱에 닿지 않는 변경은 Phase 또는 게이트 회차 단위로 묶어 한 번에 리뷰한다. 뒤 셋은 codex 독립 리뷰 지적으로 신설했다(2026-08-21) — 초판 4축이 **계획 §5 즉시 중단 기준 7개 중 4개를 담지 못했다.** **묶은 것은 `00_progress.md` 「리뷰 이연 장부」에 적는다 — 적지 않고 묶는 것은 면제와 같다.** **면제가 늘어난 것이 아니다** — 모든 변경은 여전히 정확히 한 번 리뷰를 받고 바뀐 것은 시점이다. **넷의 정본과 면제 목록은 `.claude/skills/kotlin-migration/SKILL.md` 리뷰 게이트 절이다** — 여기에 값을 옮겨 적지 않는다(옮겨 적으면 갈린다).
+**Kotlin 재개발 backlog(미구현 항목)와 이 저장소가 과거에 확정한 요구사항(마스킹 범주, 저장 암호화 AEAD 성질, Argon2/JWT 정확성 요건, DOCX/PDF/HWPX 파싱 방식 등)은 `docs/kotlin-redevelopment-backlog.md`에 옮겨 적었다** — 마이그레이션 문서가 지워지기 전에 그 문서들이 유일한 출처였던 결정을 이곳으로 이월했다. 새로 발견되는 요구사항은 이 문서에 추가한다.
 
-**Codex 실행 정책:** `codex@openai-codex` 플러그인과 **Stop-time review gate를 모두 켜 둔다.** 리뷰 레인은 셋이고 서로를 대체하지 않는다 — ① codex 독립(명시) ② Claude 독립(명시) ③ stop-time(같은 세션 자기 검사). ③은 세션 종료 직전 편집을 보지만 ①·②의 **자기 승인은 겨누지 못하고**(같은 세션이라서), ①·②는 그 마지막 편집을 못 본다. **비활성화 판은 2026-08-21 사용자 결정으로 되살렸다** — 근거였던 "명시적 리뷰와 중복"이 원장 30건에 반증됐고(두 명시 레인이 놓친 것을 stop-time이 여러 회차 잡았다), 결정적으로 그 판을 들여온 회차에서 실제로 돈 게이트가 stop-time 하나였고 그것이 결함 2건을 잡았다. 아울러 그 비활성화 선언은 **강제자가 없어 도달 0이었다** — 플러그인 훅은 문장과 무관하게 계속 돌았다. 전문·원장 인용은 `.claude/skills/codex-review/SKILL.md` §2.0이 정본이다. `codex-reviewer`는 호출·원문 보존만 하는 얇은 래퍼라 Haiku를 쓰고, 독립 판단은 Codex와 Opus `migration-reviewer`가 맡는다 — **래퍼가 자기 판정으로 원문을 대체하면 교차 대조가 Claude 대 Claude가 된다**(`xx_harness` 회차 실측, 제거함).
-
-**범위 대조:** 게이트·불변식·규칙을 세우거나 넓힐 때 **선언한 범위와 실제 도달 범위를 실행으로 대조**한다. 대조 없이 "전역"·"모든"·"항상"을 쓰지 않고, 도달 0("이 게이트가 지금 어디서 도는가")을 특히 의심하며, **범위는 근거를 넘지 않는다** — 판정 기준은 겪은 **횟수가 아니라 결함의 구조**다. **장치를 먼저 분류한다**(탐지 / 은폐 / 강제·표현 / 범위 선언). 빈자리가 구조적으로 재발하면(열거할 수 없는 자리를 **종류로** 댈 수 있으면) 그 종류만큼 넓히되, **은폐형**(무시 패턴·억제·면제 조항)은 ⑴이 참이어도 **넓히지 않는다 — 탐지형으로 갈아탄다.** **범위 선언형**은 빈 선언에서 통과하면 안 된다. 규칙 전문과 근거가 된 실패 7건은 `.claude/skills/kotlin-migration/SKILL.md`의 "선언한 범위와 실제 도달을 대조한다" 절에 있다. `실행 경로` 규약의 어휘·강제자·그 강제자 자신의 도달은 **그 절이 정본이다** — 여기에 값을 옮겨 적지 않는다(옮겨 적었더니 즉시 갈렸고, 그 드리프트가 바로 이 절이 금지하는 것이다).
-
-**변경 이력:**
+**변경 이력 (2026-08-24 이전 — 지금은 없는 하네스에 대한 역사 기록. 옮기지 않는다):**
 | 날짜 | 변경 내용 | 대상 | 사유 |
 |------|----------|------|------|
 | 2026-08-11 | 초기 구성 (에이전트 6, 스킬 6) | 전체 | Kotlin 마이그레이션 착수 |
@@ -43,67 +39,50 @@
 | 2026-08-14 | 규칙 5 복원 절차의 전제 갱신 — `cp -iv` 별칭 제거(사용자), 규칙은 유지 | skills/kotlin-migration(규칙 5) | 사고 3건은 **셋 다 별칭이 기제**였고(정지 2 + `-i` 비대화 거절로 백업 조용한 실패 1 — 초판이 셋째를 "별칭과 무관"으로 잘못 재분류했다가 stop-time 게이트에 잡혀 정정) 별칭 제거로 소멸. 규칙 유지의 별칭 무관 근거: `cp` 복원은 사본의 최신성·복원 내용을 **증명하지 않으며**, 민짜 `cp` 는 낡은 사본을 프롬프트 없이 덮는다(15시간 54분 사건의 전날 백업 — 그 낡음은 절차 결함이었고 별칭의 정지가 우연히 손실을 막았다). git 경유 + sha256 대조가 그 증명을 제공한다 |
 | 2026-08-21 | **하네스 비용 구조 개조 4건** — ① 라쳇 상환(규칙 8 신설: 인상 시점 = Phase 경계) ② 게이트 깊이 상한(규칙 7 신설: 열거형은 3층, 4층 금지) ③ 원장 2단 분리(`00_progress.md` 3,123 → 1,276줄 + `00_progress-archive.md`) ④ 리뷰 회차 트리거를 커밋 기반 → **성질 기반**(4축에 닿으면 필수, 그 밖은 Phase·회차 단위로 묶음. 면제 목록 불변) | CLAUDE.md · skills/kotlin-migration(규칙 7·8, 작업 추적, 리뷰 게이트) · skills/codex-review(§2.1) · `tests/test_harness_scope_reach.py`(`read_progress_markdown` 2파일 합본 + `test_원장_파일이_전부_실재한다` 신설) · `tests/test_kotlin_gate_reach.py`(라쳇 주석 규약) · 계획 `docs/migration/_workspace/xx_harness_cost-restructure-plan.md` | 사용자 지시 — 사이클·토큰 과다 진단. 실측: 제품 Kotlin 15,375줄 대 메타 산출물 6:1(리뷰 43,157줄 / 하네스 가드 11,476줄 / 원장 3,123줄), 8/20→8/21 제품 파일 +4 에 메타 +3,001줄, `MIN_TEST_CLASSES` 라쳇이 하루에 5회 인상. **일정 자체는 계획(Phase 0~3 = 4.5~6주)보다 3배 빠르다** — 문제는 제품 1단위당 비용이고 기제는 규칙 4에 **탐지기 제거·상환 항이 없다**는 것 |
 | 2026-08-21 | **위 ② 의 코드 제거분 철회** — `TEST_CLASS_COUNT` 를 없앴다가 되돌렸다. 규칙 7 의 「같은 것을 두 번 선언하지 않는다」 문장도 정정 | skills/kotlin-migration(규칙 7) · `tests/test_kotlin_gate_reach.py` · 계획 문서 §3-b·§5 | stop-time codex 게이트 지적 2건 — **가드 둘이 누락을 조용히 통과**하고 있었다. ⑴ 라쳇은 「함께 줄이기」를 막는 게 아니라 **하한 아래만** 막는다: 선언 111 · 하한 105 → **6개 창**, 유일한 backstop 이 오래된 Gradle 리포트(가드가 아니라 우연). 규칙 8 의 상환이 그 창을 **넓혀** 두 처방이 곱해졌다. ⑵ 아카이브를 지워도 검사기가 `EXIT=0` — 아카이브 대상 표가 0개라 `EXPECTED_TARGET_TABLES` 가 닿지 않았고 "그 축이 잡는다"는 주석이 거짓이었다. **직접 원인은 계획서가 음성 대조 V3·V4 를 적어 두고 실행하지 않은 채 읽기로 판정한 것**(규칙 2 가 금지하는 대리 측정) |
+| 2026-08-24 | **Python 제거 완결** — 위 이력 전체가 관리하던 Python↔Kotlin parity 하네스(에이전트 6·스킬 6 중 `python-kotlin-parity`·`kotlin-migration`·`migration-safety-gate`·`codex-review`·해당 에이전트)와 `docs/migration/**`·`parity/**`·Python 애플리케이션을 저장소에서 제거했다 | 전체 | 사용자 지시 — `docs/plans/2026-08-24-python-removal-for-kotlin-redevelopment.md`. 재개발(Python 참고 구현 폐기) 방향의 최종 집행 |
 
 ## 기술 스택 (확정)
 
-- **제품 런타임: Kotlin + Spring Boot / Gradle** (2026-08-12 재개발 전환 — master-plan 6.2)
-- 남은 Python 도구(골든셋·수집·벤치마크)는 3.12+ / **uv** (Poetry, pip requirements.txt 금지). 이들도 최종 폐기 대상이며 Kotlin 대체물이 같은 fixture로 검증될 때까지만 한시 존치한다
+- **제품 런타임: Kotlin + Spring Boot / Gradle** — 유일한 런타임이다(2026-08-24 Python 실행 환경 제거로 "재개발 전환"이 완결됨)
 - PostgreSQL + pgvector (단일 DB — ChromaDB 등 별도 벡터 DB 추가 금지)
-- 비동기 작업: **PostgreSQL lease 기반 작업 큐** (2026-08-12 전환 — arq + Redis 폐기. 큐를 위해 두 번째 저장소를 운영하지 않는다)
+- 비동기 작업: **PostgreSQL lease 기반 작업 큐** (arq + Redis 사용 금지 — 큐를 위해 두 번째 저장소를 운영하지 않는다). `infrastructure.queue.JdbcConversionQueue`는 있으나 `worker/` 모듈의 처리 루프는 미구현(backlog)
 - Frontend: React + TypeScript (Vite)
 - LLM: 자체 Provider 추상화 레이어 경유 (아래 '아키텍처 규칙')
+- Python은 이 저장소에 없다. 새 도구·스크립트도 Python으로 작성하지 않는다 — 필요하면 Kotlin(Gradle 태스크) 또는 셸 스크립트를 쓴다.
 
 ## 명령어
 
 ```bash
-uv sync                      # 의존성 설치
-uv run uvicorn app.main:app --reload   # 개발 서버
-uv run pytest                # 테스트
-uv run pytest tests/golden   # 프롬프트 골든셋 평가
-uv run ruff check --fix . && uv run ruff format .
-uv run mypy . .claude   # 점 디렉터리는 크롤링에서 빠진다 — 개별 스크립트 경로를 열거하지 말고 루트를 명시한다
+cd backend-kotlin && ./gradlew build       # 컴파일 + ktlint + detekt + test
+cd backend-kotlin && ./gradlew bootRun -p api   # API 개발 서버
+cd frontend && npm run check               # tsc + eslint + prettier
+cd frontend && npm run test -- --run       # frontend 테스트
+docker compose up                          # 전체 스택(로컬)
 ```
 
-커밋 전 필수 통과: ruff → mypy → pytest. CI(GitHub Actions)에서도 동일 순서로 강제된다.
+커밋 전 필수 통과: `backend-kotlin`은 `./gradlew build`, `frontend`는 `npm run check && npm run test -- --run && npm run build`. CI(GitHub Actions)의 `kotlin`·`frontend`·`e2e` 잡이 같은 검증을 강제한다.
 
 ## 아키텍처 규칙
 
-1. **LLM 추상화**: 모든 LLM 호출은 `app/llm/provider.py`의 `LLMProvider` 인터페이스를 통해서만 한다. 벤더 SDK(anthropic, openai 등)를 서비스 코드에서 직접 import하지 않는다. 새 벤더는 provider 구현체 추가로만 대응.
-2. **마스킹 선행 (보안 불변식)**: 사용자 문서 텍스트는 `app/privacy/masking.py` 파이프라인을 통과한 후에만 LLMProvider에 전달될 수 있다. 이 순서를 우회하는 코드는 절대 작성하지 않는다. **마스킹 범주는 주민등록번호(외국인등록번호 포함)·카드번호 2종**(2026-08-12 5종 → 2종 축소, master-plan 3.2) — 좁아진 것은 범주일 뿐 순서 불변식은 그대로다. 2종만 걸러도 반드시 마스킹 후 전달이다. 전화번호·이메일·계좌번호는 마스킹되지 않고 그대로 LLM에 전달된다는 사실을 전제로 코드를 읽고 쓴다(로그·응답 노출 규칙은 축소와 무관하게 유지).
-3. **레이어 분리**: `api/`(라우터, Pydantic 스키마) → `services/`(비즈니스 로직) → `repositories/`(DB 접근). 라우터에 비즈니스 로직 금지.
-4. **쉬운 글 스타일 규칙**은 `app/easyread/style_rules.py` 한 곳에 상수/함수로 정의하고, 프롬프트 생성과 골든셋 평가가 같은 정의를 사용한다.
-
-## 디렉터리 구조 (백엔드)
-
-```
-app/
-  api/          # FastAPI 라우터 + 요청/응답 Pydantic 스키마
-  services/     # 비즈니스 로직
-  repositories/ # DB 접근 (SQLAlchemy)
-  llm/          # LLMProvider 인터페이스 + 구현체
-  privacy/      # 마스킹 파이프라인
-  easyread/     # 변환 프롬프트, 스타일 규칙, 후처리
-  ingest/       # 파일 텍스트 추출 (docx/pdf/hwpx)
-  workers/      # arq 태스크
-tests/
-  golden/       # 골든셋 문서 + 자동 평가
-```
+1. **LLM 추상화**: 모든 LLM 호출은 `core`의 `LlmProvider` 인터페이스를 통해서만 한다. 벤더 SDK를 서비스 코드에서 직접 import하지 않는다. 새 벤더는 `infrastructure`의 provider 구현체 추가로만 대응(현재 `AnthropicProvider`).
+2. **마스킹 선행 (보안 불변식)**: 사용자 문서 텍스트는 `core`의 마스킹 파이프라인(`privacy` 패키지)을 통과한 후에만 `LlmProvider`에 전달될 수 있다. 이 순서를 우회하는 코드는 절대 작성하지 않는다. **마스킹 범주는 주민등록번호(외국인등록번호 포함)·카드번호 2종**(master-plan 3.2) — 전화번호·이메일·계좌번호는 마스킹되지 않고 그대로 LLM에 전달된다는 사실을 전제로 코드를 읽고 쓴다.
+3. **레이어 분리**: `api`(컨트롤러, 요청/응답 DTO) → `application`(비즈니스 로직·유스케이스) → `infrastructure`(DB·외부 연동 어댑터) → `core`(순수 도메인). `api`·`worker`는 `infrastructure`를 런타임에만 붙인다(컴파일 시점 의존 금지 — `build.gradle.kts`의 `moduleBoundaryCheck`가 강제).
+4. **쉬운 글 스타일 규칙**은 `core`에 상수/함수로 정의하고, 프롬프트 생성이 그 정의를 사용한다. 골든셋 평가 도구는 아직 Kotlin에 없다(backlog).
 
 ## 코딩 규칙
 
-- 모든 함수에 타입 힌트 필수. `mypy --strict` 통과 기준으로 작성. `Any`·`type: ignore`는 사유 주석 없이 금지.
-- API 입출력은 반드시 Pydantic 모델. dict 반환 금지.
-- 예외는 도메인 예외(`app/exceptions.py`)로 정의해 사용하고, 라우터 레벨에서 HTTP 응답으로 변환.
+- **Kotlin 주석은 현재 코드만 설명한다.** 코드만으로 드러나지 않는 불변식·외부 계약·함정만 가장 가까운 선언에 짧게 남긴다. 리뷰 ID·날짜·커밋·실측 로그·이전 실패·기각한 대안·사건 이력은 `.kt`에 누적하지 말고 `docs/plans/`의 계획 산출물이나 커밋 메시지에 둔다. 기존 설명을 고칠 때는 새 절을 덧붙이지 말고 교체·압축한다. 테스트 의도는 우선 `@DisplayName`·테스트 이름·단언으로 표현한다.
+- **테스트 `.kt`에도 같은 규약이 그대로 적용된다.** 주석 예산의 **분모만** 제품(`src/main/`)과 테스트(`src/test/`) 둘로 갈랐고, **무엇을 써도 되는가는 갈리지 않았다.** **허용**: 그 테스트가 고정하는 불변식, 음성 대조가 무엇을 재는지, 함정, `@DisplayName`. **금지**: 리뷰 ID·날짜·커밋 SHA·실측 로그·사건 이력·기각한 대안 — 제품과 **같다**.
 - 주석·docstring·사용자 노출 문자열은 한국어, 코드 식별자는 영어.
-- **Kotlin 주석은 현재 코드만 설명한다.** 코드만으로 드러나지 않는 불변식·외부 계약·함정만 가장 가까운 선언에 짧게 남긴다. 리뷰 ID·날짜·커밋·실측 로그·이전 실패·기각한 대안·사건 이력은 `.kt`에 누적하지 말고 `docs/migration/_workspace/`의 계획·리뷰 산출물이나 커밋 메시지에 둔다. 기존 설명을 고칠 때는 새 절을 덧붙이지 말고 교체·압축한다. 테스트 의도는 우선 `@DisplayName`·테스트 이름·단언으로 표현한다. Kotlin 변경 후 `uv run pytest -q tests/test_kotlin_comment_budget.py`를 실행한다.
-- **테스트 `.kt`에도 같은 규약이 그대로 적용된다** (2026-08-23, X-16). 주석 예산의 **분모만** 제품(`src/main/`)과 테스트(`src/test/`) 둘로 갈랐고, **무엇을 써도 되는가는 갈리지 않았다.** 축을 가른 것은 "테스트에는 회고를 쌓아도 된다"는 뜻이 아니다. **허용**: 그 테스트가 고정하는 불변식, 음성 대조가 무엇을 재는지, 함정, `@DisplayName`. **금지**: 리뷰 ID·날짜·커밋 SHA·실측 로그·사건 이력·기각한 대안 — 제품과 **같다**. 금지 목록 중 기계로 잴 수 있는 둘(날짜 `20YY-MM-DD`·커밋 SHA)은 축마다 **여유 0 상한**으로 고정돼 있어 늘리면 그 diff가 리뷰에 올라간다. 값의 정본은 `tests/test_kotlin_comment_budget.py`이고 여기에 옮겨 적지 않는다.
+- API 입출력은 반드시 데이터 클래스(요청/응답 DTO). `Map`·`Any` 반환 금지.
+- 예외는 도메인 예외로 정의해 사용하고, 컨트롤러/전역 핸들러 레벨에서 HTTP 응답으로 변환.
 
 ## 테스트 규칙
 
 - 새 기능 = 테스트 동반. 버그 수정 = 재현 테스트 먼저.
-- **프롬프트·스타일 규칙·LLM 설정을 변경하면 반드시 `uv run pytest tests/golden` 실행** 후 결과를 보고할 것. 통과율 하락 시 변경을 되돌리거나 사유를 명시.
-- 골든셋 평가는 ① 규칙 기반 검사(문장 길이, 금지 표현, 필수 정보 유지)와 ② LLM-as-judge 채점으로 구성. 외부 API를 쓰는 judge 테스트는 `@pytest.mark.llm`으로 분리(CI에서만 전체 실행).
-- LLM 호출부 단위 테스트는 FakeProvider로 대체.
+- 프롬프트·스타일 규칙·LLM 설정을 변경하면 관련 `core`/`infrastructure` 테스트를 실행해 결과를 보고한다.
+- LLM 호출부 단위 테스트는 `FakeLlmProvider`(testFixtures)로 대체.
+- 골든셋 자동 평가(스타일 규칙 검사 + LLM-as-judge)는 Kotlin에 아직 없다 — 재도입 시 이 절에 추가한다.
 
 ## 보안·데이터 규칙 (위반 금지)
 
@@ -119,15 +98,11 @@ tests/
 - 프론트에서 LLM 직접 호출, 벤더 SDK 직접 import
 - '페이지' 용어 사용 — 과금·UI 용어는 '크레딧' (1,000자 = 1크레딧)
 - 영업·안내 문구에 "의무화" 표현 (master-plan 1.2 화법 가이드 준수)
-- **현재 Python 구현의 출력을 정답으로 삼아 Kotlin 결과를 거기에 맞추기** — Python은 **폐기 대상**이고 기준은 요구사항·정책 충족이다(master-plan 6.2). 동작이 갈리면 어느 쪽이 요구사항에 맞는지 판단해 기록한다. 예외는 **정책 불변식(마스킹 선행 등) 하나**다 — 2026-08-12 재개발 전환으로 롤백 대상이 사라져 **암호문·토큰 호환 예외는 무효**가 됐다
-- **큐레이션 데이터를 반출하기 전에 `app/**`·`tests/**` 지우기** — 재개발의 유일한 **영구 손실** 위험이다. 골든셋 56건·`required_facts` 253개·246 어려운말 사전·치환 비문 워드리스트(`COMPOUND_HEAD_NOUNS` 등)·회귀 코퍼스가 **전부 삭제 대상 디렉터리 안에 산다**(`parity/fixtures/`만 최상위라 살아남는다). 이건 명세로 전사할 것이 아니라 **기계가독 파일로 복사할 것**이다 — 프로즈 전사는 오류만 낳는다. 보존 비용은 0에 가깝고, 잃으면 재도출은 실측 튜닝의 재현이라 비싸다
-- **명세가 있는 것을 확인하겠다고 Python 코드 읽기** — 요구사항·계약·`migration-safety-gate` I-항목이 규정한 것은 그것이 정본이다(2026-08-12 사용자 결정). **인증·비밀번호는 신규 생성**한다. 명세가 없으면 Python을 베끼는 게 아니라 **새로 정해 적는다**. 삭제 조건은 "전 항목을 명세로 옮김"이 아니라 **P1(데이터 반출) + P2(재구축이 게이트를 실제로 통과)**다 — `docs/migration/_workspace/03_rebuild-extraction-list.md`
 - 계약·처리방침·영업 문서에 마스킹 범주를 실제 구현(2종)보다 넓게 적기 (master-plan 3.2)
+- Python으로 새 스크립트·도구 작성 (2026-08-24 Python 실행 환경 제거 — Kotlin/Gradle 태스크 또는 셸 스크립트를 쓴다)
 
 ## Definition of Done
 
-기능 하나가 끝났다고 말하려면: 타입 검사·린트·테스트 전체 통과 + 골든셋 영향 확인(해당 시) + 로그에 개인정보 미포함 확인 + master-plan의 해당 기능 표와 어긋나는 점이 있으면 문서 갱신 제안까지.
+기능 하나가 끝났다고 말하려면: `./gradlew build`(Kotlin 변경 시) 또는 `npm run check && npm run test -- --run && npm run build`(frontend 변경 시) 통과 + 로그에 개인정보 미포함 확인 + master-plan의 해당 기능 표와 어긋나는 점이 있으면 문서 갱신 제안까지.
 
-Kotlin 재개발의 완료 판정은 **"현재 Python과 같은 값이 나오는가"가 아니라 "요구사항·정책(master-plan 3장·4장)을 충족하는가"**다. Python과 결과가 다르면 그 자체를 결함으로 보지 말고, 어느 쪽이 요구사항에 맞는지 판단해 근거와 함께 남긴다 — Python 쪽이 틀린 경우도 전제한다.
-
-예외는 **정책 불변식 하나**다 — 마스킹 선행·no-store·소유권 은닉처럼 요구사항 자체가 그 형태를 지정한 것. **암호문·토큰 호환은 2026-08-12 재개발 전환으로 무효**가 됐다(롤백 대상 소멸, master-plan 6.2). 없어진 것은 "Python과 같은 바이트"이지 **"암호가 올바르다"가 아니다** — round-trip·변조 거부·키 회전·nonce 재사용 금지는 여전히 요구사항이며, 판정 근거가 값 동일성에서 성질 충족으로 바뀔 뿐이다.
+판정 기준은 **"요구사항·정책(master-plan 3장·4장)을 충족하는가"**다. 대조할 Python 구현은 더 이상 없다(2026-08-24 제거). 정책 불변식(마스킹 선행·no-store·소유권 은닉 등)은 요구사항 자체가 그 형태를 지정한 것이므로 그대로 지킨다. 저장 암호화는 round-trip·변조 거부·키 회전·nonce 재사용 금지를 성질로 판정한다(값 동일성을 대조할 대상이 없다).

@@ -1,0 +1,141 @@
+To honour the JVM settings for this build a single-use Daemon process will be forked. For more on this, please refer to https://docs.gradle.org/9.1.0/userguide/gradle_daemon.html#sec:disabling_the_daemon in the Gradle documentation.
+Daemon will be stopped at the end of the build 
+> Task :worker:clean
+> Task :application:clean
+> Task :application:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :application:processResources NO-SOURCE
+> Task :core:clean
+> Task :core:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :api:clean
+> Task :infrastructure:clean
+> Task :infrastructure:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :infrastructure:processResources
+> Task :infrastructure:processTestFixturesResources
+> Task :api:detekt FROM-CACHE
+> Task :application:detekt FROM-CACHE
+> Task :infrastructure:detekt FROM-CACHE
+> Task :core:compileKotlin FROM-CACHE
+> Task :api:loadKtlintReporters FROM-CACHE
+> Task :application:loadKtlintReporters FROM-CACHE
+> Task :infrastructure:loadKtlintReporters FROM-CACHE
+> Task :core:compileJava NO-SOURCE
+> Task :core:processResources NO-SOURCE
+> Task :core:classes UP-TO-DATE
+> Task :api:runKtlintCheckOverKotlinScripts FROM-CACHE
+> Task :application:runKtlintCheckOverKotlinScripts FROM-CACHE
+> Task :infrastructure:runKtlintCheckOverKotlinScripts FROM-CACHE
+> Task :api:ktlintKotlinScriptCheck FROM-CACHE
+> Task :infrastructure:ktlintKotlinScriptCheck FROM-CACHE
+> Task :application:ktlintKotlinScriptCheck FROM-CACHE
+> Task :infrastructure:runKtlintCheckOverMainSourceSet FROM-CACHE
+> Task :application:runKtlintCheckOverMainSourceSet FROM-CACHE
+> Task :api:runKtlintCheckOverMainSourceSet FROM-CACHE
+> Task :infrastructure:ktlintMainSourceSetCheck FROM-CACHE
+> Task :api:ktlintMainSourceSetCheck FROM-CACHE
+> Task :application:ktlintMainSourceSetCheck FROM-CACHE
+> Task :application:runKtlintCheckOverTestSourceSet FROM-CACHE
+> Task :infrastructure:runKtlintCheckOverTestFixturesSourceSet FROM-CACHE
+> Task :api:runKtlintCheckOverTestSourceSet FROM-CACHE
+> Task :api:ktlintTestSourceSetCheck FROM-CACHE
+> Task :infrastructure:ktlintTestFixturesSourceSetCheck FROM-CACHE
+> Task :application:ktlintTestSourceSetCheck FROM-CACHE
+> Task :api:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :application:processTestResources NO-SOURCE
+> Task :infrastructure:runKtlintCheckOverTestSourceSet FROM-CACHE
+> Task :api:processResources
+> Task :api:processTestResources NO-SOURCE
+> Task :infrastructure:ktlintTestSourceSetCheck FROM-CACHE
+> Task :infrastructure:processTestResources NO-SOURCE
+> Task :core:jar
+> Task :application:compileKotlin FROM-CACHE
+> Task :application:compileJava NO-SOURCE
+> Task :application:classes UP-TO-DATE
+> Task :core:compileTestFixturesKotlin FROM-CACHE
+> Task :core:compileTestFixturesJava NO-SOURCE
+> Task :core:processTestFixturesResources NO-SOURCE
+> Task :core:testFixturesClasses UP-TO-DATE
+> Task :core:testFixturesJar
+> Task :application:jar
+> Task :core:detekt FROM-CACHE
+> Task :core:loadKtlintReporters FROM-CACHE
+> Task :core:runKtlintCheckOverKotlinScripts FROM-CACHE
+> Task :core:ktlintKotlinScriptCheck FROM-CACHE
+> Task :core:runKtlintCheckOverMainSourceSet FROM-CACHE
+> Task :core:ktlintMainSourceSetCheck FROM-CACHE
+> Task :core:runKtlintCheckOverTestFixturesSourceSet FROM-CACHE
+> Task :core:ktlintTestFixturesSourceSetCheck FROM-CACHE
+> Task :core:runKtlintCheckOverTestSourceSet FROM-CACHE
+> Task :core:ktlintTestSourceSetCheck FROM-CACHE
+> Task :application:compileTestKotlin FROM-CACHE
+> Task :application:compileTestJava NO-SOURCE
+> Task :application:testClasses UP-TO-DATE
+> Task :core:compileTestKotlin FROM-CACHE
+> Task :core:compileTestJava NO-SOURCE
+> Task :core:processTestResources
+> Task :core:testClasses
+> Task :application:test FROM-CACHE
+> Task :application:check UP-TO-DATE
+
+> Task :api:moduleBoundaryCheck
+[api] 모듈 경계 확인: 선언 종류 + compileClasspath 양쪽 통과.
+
+> Task :core:test FROM-CACHE
+> Task :core:check UP-TO-DATE
+> Task :api:compileKotlin FROM-CACHE
+> Task :infrastructure:compileKotlin FROM-CACHE
+> Task :api:compileJava NO-SOURCE
+> Task :api:classes
+> Task :infrastructure:compileJava NO-SOURCE
+> Task :infrastructure:classes
+> Task :api:jar
+> Task :infrastructure:jar
+> Task :infrastructure:compileTestFixturesKotlin FROM-CACHE
+> Task :infrastructure:compileTestFixturesJava NO-SOURCE
+> Task :infrastructure:testFixturesClasses
+> Task :infrastructure:testFixturesJar
+> Task :infrastructure:compileTestKotlin FROM-CACHE
+> Task :infrastructure:compileTestJava NO-SOURCE
+> Task :infrastructure:testClasses UP-TO-DATE
+> Task :api:compileTestKotlin FROM-CACHE
+> Task :api:compileTestJava NO-SOURCE
+> Task :api:testClasses UP-TO-DATE
+> Task :infrastructure:test FROM-CACHE
+> Task :infrastructure:check UP-TO-DATE
+> Task :api:test FROM-CACHE
+> Task :api:check
+> Task :worker:detekt
+> Task :worker:loadKtlintReporters FROM-CACHE
+> Task :worker:runKtlintCheckOverKotlinScripts FROM-CACHE
+> Task :worker:ktlintKotlinScriptCheck FROM-CACHE
+> Task :worker:runKtlintCheckOverMainSourceSet FROM-CACHE
+> Task :worker:ktlintMainSourceSetCheck FROM-CACHE
+> Task :worker:runKtlintCheckOverTestSourceSet FROM-CACHE
+> Task :worker:ktlintTestSourceSetCheck FROM-CACHE
+
+> Task :worker:moduleBoundaryCheck
+[worker] 모듈 경계 확인: 선언 종류 + compileClasspath 양쪽 통과.
+
+> Task :worker:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :worker:compileKotlin FROM-CACHE
+> Task :worker:compileJava NO-SOURCE
+> Task :worker:processResources
+> Task :worker:classes
+> Task :worker:jar
+> Task :worker:compileTestKotlin FROM-CACHE
+> Task :worker:compileTestJava NO-SOURCE
+> Task :worker:processTestResources NO-SOURCE
+> Task :worker:testClasses UP-TO-DATE
+> Task :worker:test FROM-CACHE
+> Task :worker:check
+
+[Incubating] Problems report is available at: file:///Users/harris/Development/private/easy-doc/backend-kotlin/build/reports/problems/problems-report.html
+
+Deprecated Gradle features were used in this build, making it incompatible with Gradle 10.
+
+You can use '--warning-mode all' to show the individual deprecation warnings and determine if they come from your own scripts or plugins.
+
+For more on this, please refer to https://docs.gradle.org/9.1.0/userguide/command_line_interface.html#sec:command_line_warnings in the Gradle documentation.
+
+BUILD SUCCESSFUL in 7s
+80 actionable tasks: 20 executed, 60 from cache
+EXIT_CODE=0
