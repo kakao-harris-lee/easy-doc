@@ -1,3 +1,7 @@
+// 파일 이름을 유지한다 — `NamedReferenceGuardTest`·`PrivateResponseHeadersReachTest` 가
+// 이 파일을 이름으로 지목한다. 클래스 이름과 다르다고 파일을 옮기면 그 참조가 끊긴다.
+@file:Suppress("MatchingDeclarationName", "ktlint:standard:filename")
+
 package kr.easydoc.api
 
 import kr.easydoc.api.support.ContractSpec
@@ -6,7 +10,6 @@ import kr.easydoc.infrastructure.DatabaseHandle
 import kr.easydoc.infrastructure.MigrationCatalog
 import kr.easydoc.infrastructure.PostgresTestSupport
 import org.assertj.core.api.Assertions.assertThat
-import org.flywaydb.core.Flyway
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
 import org.springframework.boot.test.context.SpringBootTest
@@ -37,7 +40,7 @@ class ApiStartupOnEmptyDatabaseTest {
     }
 
     @Test
-    @DisplayName("Flyway 가 V1·V2 를 적용했다")
+    @DisplayName("Flyway 가 스키마를 적용했다")
     fun `스키마가 적용됐다`() {
         assertThat(StartupDatabases.appliedVersions(StartupDatabases.empty))
             .containsExactlyElementsOf(MigrationCatalog.versions)
@@ -52,69 +55,10 @@ class ApiStartupOnEmptyDatabaseTest {
     }
 }
 
-/** Phase 1 종료 조건 검증 — 갈래 2: 기존 schema snapshot. */
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-class ApiStartupOnPythonSnapshotTest {
-    @LocalServerPort
-    private var port: Int = 0
-
-    @Test
-    @DisplayName("기존 Python 스키마 위에서 기동하고 /health 가 200 · 두 의존 서비스 진단이 **참**이다")
-    fun `기존 스키마에서 기동한다`() {
-        val response = StartupDatabases.httpGet(port, "/health")
-
-        assertThat(response.statusCode()).isEqualTo(200)
-
-        StartupDatabases.assertDependenciesUp(response)
-    }
-
-    @Test
-    @DisplayName("baseline 이 기록되고 alembic_version 은 그대로다")
-    fun `baseline 을 기록하고 alembic_version 을 건드리지 않는다`() {
-        assertThat(StartupDatabases.appliedVersions(StartupDatabases.pythonSnapshot))
-            .containsExactlyElementsOf(MigrationCatalog.versions)
-
-        val alembicVersion =
-            StartupDatabases.pythonSnapshot
-                .queryFirstColumn("SELECT version_num FROM alembic_version")
-                .firstOrNull()
-        assertThat(alembicVersion).isEqualTo("0006")
-    }
-
-    companion object {
-        @JvmStatic
-        @DynamicPropertySource
-        fun datasourceProperties(registry: DynamicPropertyRegistry) {
-            StartupDatabases.bind(registry, StartupDatabases.pythonSnapshot)
-        }
-    }
-}
-
 /** 두 기동 갈래가 쓰는 데이터베이스 준비. */
 private object StartupDatabases {
     /** 갈래 1 — 테이블이 하나도 없는 DB. */
     val empty: DatabaseHandle by lazy { PostgresTestSupport.createEmptyDatabase("startup_empty") }
-
-    /** 갈래 2 — "Alembic 이 0006 까지 올린 DB". */
-    val pythonSnapshot: DatabaseHandle by lazy {
-        val database = PostgresTestSupport.createEmptyDatabase("startup_snapshot")
-        Flyway
-            .configure()
-            .dataSource(database.jdbcUrl, database.username, database.password)
-            .locations("classpath:db/migration")
-            .target("1")
-            .load()
-            .migrate()
-        database.execute(
-            """
-            DROP TABLE flyway_schema_history;
-            CREATE TABLE alembic_version (version_num varchar(32) NOT NULL
-                CONSTRAINT alembic_version_pkc PRIMARY KEY);
-            INSERT INTO alembic_version VALUES ('0006');
-            """.trimIndent(),
-        )
-        database
-    }
 
     /** 진짜 HTTP 로 부른다. */
     fun httpGet(

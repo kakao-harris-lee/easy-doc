@@ -351,7 +351,7 @@ class JdbcWorkspaceRepositoryTest {
         /** 목록 요청 하나가 도는 SQL 문 수. 문서 수가 같은 질의에 담기므로 1 이다. */
         const val LIST_STATEMENTS = 1
 
-        /** `V1__python_schema_baseline.sql` 이 준 제약 이름이다. 값이 아니라 이름이다. */
+        /** `V1__initial_schema.sql` 이 준 제약 이름이다. 값이 아니라 이름이다. */
         const val DOCUMENTS_WORKSPACE_FK = "fk_documents_workspace_id_workspaces"
 
         const val CONCURRENT_DELETERS = 2

@@ -14,7 +14,7 @@ import java.sql.ResultSet
 import java.time.OffsetDateTime
 import java.util.UUID
 
-/** `documents` 테이블 접근. 스키마는 `V1__python_schema_baseline.sql` + `V3`·`V4` 가 정한다. */
+/** `documents` 테이블 접근. 스키마는 `V1__initial_schema.sql` 이 정한다. */
 class JdbcDocumentRepository(private val jdbc: JdbcClient) : DocumentRepository {
     override fun insert(
         ownerId: UUID,

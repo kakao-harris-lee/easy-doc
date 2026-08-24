@@ -92,12 +92,12 @@ class EncryptionSchemeSchemaTest {
     }
 
     @Test
-    @DisplayName("V3 SQL 리터럴이 코드 상수와 같다 — 적용된 DB 만 보면 안 잡히는 축")
+    @DisplayName("마이그레이션 SQL 리터럴이 코드 상수와 같다 — 적용된 DB 만 보면 안 잡히는 축")
     fun `마이그레이션 리터럴이 코드 상수와 같다`() {
-        val sql = MigrationCatalog.sourceOf("3")
+        val sql = MigrationCatalog.sourceOf("1")
 
         assertThat(sql)
-            .describedAs("V3 가 코드 상수를 CHECK 목록에 넣지 않는다")
+            .describedAs("마이그레이션이 코드 상수를 CHECK 목록에 넣지 않는다")
             .contains("IN ('${EncryptionScheme.AES_256_GCM_V1}')")
     }
 

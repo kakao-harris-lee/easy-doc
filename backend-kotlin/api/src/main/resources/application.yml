@@ -21,8 +21,8 @@ spring:
   flyway:
     enabled: true
     locations: classpath:db/migration
-    # baseline-on-migrate 를 여기서 켜지 않는다. 켜면 스키마가 기준선과 달라도 아무 확인
-    # 없이 baseline 한다. 판정은 FlywayBaselineGuard 가 지문 대조로 한다.
+    # baseline-on-migrate 를 켜지 않는다 — 이제 이 값을 쓰는 baseline 판정 로직이
+    # 없으므로 항상 통상적인 마이그레이션 절차(V1부터 순서대로 적용)만 돈다.
     baseline-on-migrate: false
     baseline-version: 1
 

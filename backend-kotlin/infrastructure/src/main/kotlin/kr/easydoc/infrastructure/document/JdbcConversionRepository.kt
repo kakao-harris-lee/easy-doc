@@ -17,7 +17,7 @@ import java.sql.ResultSet
 import java.time.OffsetDateTime
 import java.util.UUID
 
-/** `conversions` 테이블 접근. 스키마는 `V1__python_schema_baseline.sql` + `V3`·`V4` 가 정한다. */
+/** `conversions` 테이블 접근. 스키마는 `V1__initial_schema.sql` 이 정한다. */
 class JdbcConversionRepository(private val jdbc: JdbcClient) : ConversionRepository {
     override fun insertPending(
         id: UUID,

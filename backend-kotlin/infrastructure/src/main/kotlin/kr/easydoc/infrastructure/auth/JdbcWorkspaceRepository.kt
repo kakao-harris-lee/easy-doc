@@ -16,7 +16,7 @@ import java.sql.ResultSet
 import java.time.OffsetDateTime
 import java.util.UUID
 
-/** `workspaces` 테이블 접근. 스키마는 `V1__python_schema_baseline.sql` 이 정한다. */
+/** `workspaces` 테이블 접근. 스키마는 `V1__initial_schema.sql` 이 정한다. */
 class JdbcWorkspaceRepository(private val jdbc: JdbcClient) : WorkspaceRepository {
     /** 기본 작업 공간을 만든다. */
     override fun createDefault(userId: UUID): UUID {

@@ -13,7 +13,7 @@ import java.sql.ResultSet
 import java.time.OffsetDateTime
 import java.util.UUID
 
-/** `users` 테이블 접근. 스키마는 `V1__python_schema_baseline.sql` 이 정한다. */
+/** `users` 테이블 접근. 스키마는 `V1__initial_schema.sql` 이 정한다. */
 class JdbcUserRepository(private val jdbc: JdbcClient) : UserRepository {
     override fun findByEmail(email: String): StoredUser? =
         jdbc
