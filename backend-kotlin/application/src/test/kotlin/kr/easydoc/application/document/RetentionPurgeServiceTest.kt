@@ -75,6 +75,73 @@ class RetentionPurgeServiceTest {
         assertThat(world.store.limits).containsExactly(BATCH)
     }
 
+    @Test
+    @DisplayName("실제 삭제는 짧은 배치가 나올 때까지 트랜잭션마다 반복한다")
+    fun `만료량이 배치를 넘으면 끝까지 지운다`() {
+        val world = World(batchSize = BATCH)
+        val first = UUID.fromString("00000000-0000-4000-8000-0000000000a1")
+        val second = UUID.fromString("00000000-0000-4000-8000-0000000000a2")
+        val third = UUID.fromString("00000000-0000-4000-8000-0000000000a3")
+        world.store.enqueue(
+            RetentionPurgeResult(
+                dryRun = false,
+                enabled = true,
+                purgedDocuments = BATCH,
+                purgedConversions = BATCH,
+                skippedLeased = 1,
+                documentIds = listOf(first, second),
+            ),
+            RetentionPurgeResult(
+                dryRun = false,
+                enabled = true,
+                purgedDocuments = 1,
+                purgedConversions = 1,
+                skippedLeased = 1,
+                documentIds = listOf(third),
+            ),
+        )
+
+        val result = world.purge.run()
+
+        assertThat(world.store.calls).isEqualTo(2)
+        assertThat(world.transaction.committed).isEqualTo(2)
+        assertThat(result.purgedDocuments).isEqualTo(3)
+        assertThat(result.purgedConversions).isEqualTo(3)
+        assertThat(result.skippedLeased).isEqualTo(1)
+        assertThat(result.documentIds).containsExactly(first, second, third)
+        assertThat(world.observer.seen).containsExactly(result)
+    }
+
+    @Test
+    @DisplayName("dry-run 은 한 배치만 미리보고 반복하지 않는다")
+    fun `dry-run 은 한 배치만 본다`() {
+        val world = World(dryRun = true, batchSize = BATCH)
+        world.store.enqueue(
+            RetentionPurgeResult(
+                dryRun = true,
+                enabled = true,
+                purgedDocuments = BATCH,
+                purgedConversions = BATCH,
+                skippedLeased = 0,
+                documentIds = listOf(DOCUMENT, UUID.fromString("00000000-0000-4000-8000-0000000000d2")),
+            ),
+            RetentionPurgeResult(
+                dryRun = true,
+                enabled = true,
+                purgedDocuments = 1,
+                purgedConversions = 1,
+                skippedLeased = 0,
+                documentIds = listOf(UUID.fromString("00000000-0000-4000-8000-0000000000d3")),
+            ),
+        )
+
+        val result = world.purge.run()
+
+        assertThat(world.store.calls).isEqualTo(1)
+        assertThat(world.transaction.committed).isEqualTo(1)
+        assertThat(result.purgedDocuments).isEqualTo(BATCH)
+    }
+
     private class World(
         enabled: Boolean = true,
         dryRun: Boolean = false,
@@ -97,7 +164,20 @@ class RetentionPurgeServiceTest {
             private set
         val dryRuns = mutableListOf<Boolean>()
         val limits = mutableListOf<Int>()
-        var next: RetentionPurgeResult? = null
+        private val queued = ArrayDeque<RetentionPurgeResult>()
+        var next: RetentionPurgeResult?
+            get() = queued.firstOrNull()
+            set(value) {
+                queued.clear()
+                if (value != null) {
+                    queued.addLast(value)
+                }
+            }
+
+        fun enqueue(vararg results: RetentionPurgeResult) {
+            queued.clear()
+            queued.addAll(results)
+        }
 
         override fun purge(
             dryRun: Boolean,
@@ -106,7 +186,7 @@ class RetentionPurgeServiceTest {
             calls++
             dryRuns += dryRun
             limits += limit
-            return next
+            return queued.removeFirstOrNull()
                 ?: RetentionPurgeResult(
                     dryRun = dryRun,
                     enabled = true,
@@ -128,7 +208,7 @@ class RetentionPurgeServiceTest {
 
     private companion object {
         val DOCUMENT: UUID = UUID.fromString("00000000-0000-4000-8000-0000000000d1")
-        const val BATCH: Int = 7
+        const val BATCH: Int = 2
         const val DEFAULT_BATCH: Int = 100
     }
 }

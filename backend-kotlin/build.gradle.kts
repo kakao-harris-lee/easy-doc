@@ -1,5 +1,6 @@
 import io.gitlab.arturbosch.detekt.Detekt
 import io.gitlab.arturbosch.detekt.extensions.DetektExtension
+import org.gradle.api.plugins.JavaPluginExtension
 import org.gradle.api.tasks.testing.logging.TestExceptionFormat
 import org.jetbrains.kotlin.gradle.dsl.KotlinJvmProjectExtension
 import org.jlleitschuh.gradle.ktlint.KtlintExtension
@@ -21,6 +22,7 @@ plugins {
 // 파일을 선언 입력으로 걸어 그 전제를 빌드가 지키게 한다.
 val apiContractFile: File = File(rootDir.parentFile, "contracts/easy-doc-v1.yaml")
 val goldenDocumentsDir: File = File(rootDir.parentFile, "data/golden/documents")
+val goldenConversionsDir: File = File(rootDir.parentFile, "data/golden/conversions")
 
 allprojects {
     group = "kr.easydoc"
@@ -84,8 +86,12 @@ subprojects {
     tasks.withType<Test>().configureEach {
         useJUnitPlatform {
             // 실제 LLM API를 부르는 테스트는 기본 실행에서 뺀다
-            // (Python의 @pytest.mark.llm 에 대응). 비용 승인 후에만 돌린다.
-            excludeTags("llm")
+            // (Python의 @pytest.mark.llm 에 대응). 비용 승인 후에만 `testLlm` 으로 연다.
+            if (name == "testLlm") {
+                includeTags("llm")
+            } else {
+                excludeTags("llm")
+            }
         }
         testLogging {
             events("failed", "skipped")
@@ -115,6 +121,7 @@ subprojects {
         // 경로 민감도를 NONE 으로 둔다: 절대 경로가 지문에 들어가면 기계가 다른 CI 에서
         // 빌드 캐시가 재사용되지 않아, 캐시를 끄는 것과 같아진다.
         systemProperty("easydoc.golden.documents.dir", goldenDocumentsDir.absolutePath)
+        systemProperty("easydoc.golden.conversions.dir", goldenConversionsDir.absolutePath)
 
         inputs
             .file(apiContractFile)
@@ -124,6 +131,11 @@ subprojects {
         inputs
             .dir(goldenDocumentsDir)
             .withPropertyName("goldenDocuments")
+            .withPathSensitivity(PathSensitivity.RELATIVE)
+
+        inputs
+            .dir(goldenConversionsDir)
+            .withPropertyName("goldenConversions")
             .withPathSensitivity(PathSensitivity.RELATIVE)
 
         // 소스 전수를 훑는 탐지기가 **실행 시점에 읽는 것**을 선언 입력으로 건다 (β-02).
@@ -149,6 +161,16 @@ subprojects {
                 },
             ).withPropertyName("scannedSourceTree")
             .withPathSensitivity(PathSensitivity.RELATIVE)
+    }
+
+    tasks.register<Test>("testLlm") {
+        group = "verification"
+        description =
+            "LLM-as-judge opt-in 레인. 비밀값이 없으면 skip 하고, 있으면 유료 호출로 골든 변환을 채점한다."
+        val testSourceSet = project.extensions.getByType<JavaPluginExtension>().sourceSets.getByName("test")
+        testClassesDirs = testSourceSet.output.classesDirs
+        classpath = testSourceSet.runtimeClasspath
+        failOnNoDiscoveredTests = false
     }
 }
 
@@ -262,4 +284,10 @@ tasks.register("moduleBoundaryCheck") {
     group = "verification"
     description = "api·worker 의 모듈 경계 판정을 한 번에 돌린다"
     dependsOn(moduleBoundaryChecks)
+}
+
+tasks.register("testLlm") {
+    group = "verification"
+    description = "LLM-as-judge opt-in 레인을 모든 모듈에서 연다. 비밀값과 비용 승인 후에만 실행한다."
+    dependsOn(subprojects.map { it.tasks.named("testLlm") })
 }

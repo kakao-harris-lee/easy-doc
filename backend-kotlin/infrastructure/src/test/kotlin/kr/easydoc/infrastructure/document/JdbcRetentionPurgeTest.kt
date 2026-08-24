@@ -120,12 +120,33 @@ class JdbcRetentionPurgeTest {
         assertThat(result.toString()).doesNotContain("본문")
     }
 
-    private fun purge(dryRun: Boolean): PurgeExpiredDocuments =
+    @Test
+    @DisplayName("한 스케줄이 배치를 넘겨 만료된 문서를 모두 지운다")
+    fun `배치보다 많은 만료 문서를 한 번에 비운다`() {
+        val first = seedDocument()
+        val second = seedDocument()
+        val third = seedDocument()
+        expire(first.documentId)
+        expire(second.documentId)
+        expire(third.documentId)
+
+        val result = purge(dryRun = false, batchSize = 2).run()
+
+        assertThat(result.purgedDocuments).isEqualTo(3)
+        assertThat(documentExists(first.documentId)).isFalse()
+        assertThat(documentExists(second.documentId)).isFalse()
+        assertThat(documentExists(third.documentId)).isFalse()
+    }
+
+    private fun purge(
+        dryRun: Boolean,
+        batchSize: Int = BATCH,
+    ): PurgeExpiredDocuments =
         PurgeExpiredDocuments(
             store = JdbcExpiredDocumentPurge(jdbc),
             transaction = SpringTransactionRunner(TransactionTemplate(DataSourceTransactionManager(dataSource))),
             observer = NoopObserver,
-            policy = RetentionPurgePolicy(enabled = true, dryRun = dryRun, batchSize = BATCH),
+            policy = RetentionPurgePolicy(enabled = true, dryRun = dryRun, batchSize = batchSize),
         )
 
     private fun seedDocument(): Seeded {

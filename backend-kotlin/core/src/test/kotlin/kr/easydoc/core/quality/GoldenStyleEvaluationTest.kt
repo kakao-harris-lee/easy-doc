@@ -5,7 +5,7 @@ import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
 
-/** 스타일 규칙 평가는 외부 API 없이 돈다. */
+/** 스타일 규칙 함수 단위 검사. 골든 변환 채점은 GoldenCorpusEvaluationTest 가 맡는다. */
 class GoldenStyleEvaluationTest {
     @Test
     @DisplayName("쉬운 문장은 스타일 규칙을 통과한다")

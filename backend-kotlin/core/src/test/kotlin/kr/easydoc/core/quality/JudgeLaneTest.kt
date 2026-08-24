@@ -3,7 +3,6 @@ package kr.easydoc.core.quality
 import kr.easydoc.core.llm.FakeLlmProvider
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.DisplayName
-import org.junit.jupiter.api.Tag
 import org.junit.jupiter.api.Test
 
 /** LLM-as-judge 는 비밀값이 있는 opt-in 레인이다. 기본 실행은 skip 경로만 고정한다. */
@@ -42,20 +41,5 @@ class JudgeLaneTest {
                 .toString(),
         ).doesNotContain(document.sourceText)
         assertThat(score.toString()).doesNotContain(document.sourceText)
-    }
-
-    @Test
-    @Tag("llm")
-    @DisplayName("유료 LLM judge 는 비밀값이 있을 때만 연다 — 기본 Gradle 실행에서 제외하고 호출하지 않는다")
-    fun `유료 레인은 비밀값이 없으면 skip 한다`() {
-        val secret =
-            listOf(System.getenv("OPENAI_API_KEY"), System.getenv("ANTHROPIC_API_KEY"))
-                .firstOrNull { !it.isNullOrBlank() }
-        val decision = JudgeLane.decide(secret)
-        if (secret.isNullOrBlank()) {
-            assertThat(decision).isEqualTo(JudgeLaneDecision.SKIPPED_MISSING_SECRET)
-        } else {
-            assertThat(decision).isEqualTo(JudgeLaneDecision.RUN)
-        }
     }
 }
