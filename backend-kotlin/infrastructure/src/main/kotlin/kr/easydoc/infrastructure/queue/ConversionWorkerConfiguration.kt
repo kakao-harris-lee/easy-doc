@@ -14,6 +14,7 @@ import kr.easydoc.application.crypto.ContentCipher
 import kr.easydoc.application.document.MaskedItemWriter
 import kr.easydoc.core.llm.LlmProvider
 import kr.easydoc.infrastructure.document.JdbcConversionWorkStore
+import org.slf4j.LoggerFactory
 import org.springframework.boot.context.properties.ConfigurationProperties
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
@@ -110,6 +111,8 @@ class ScheduledConversionJobHeartbeat(
     private val policy: ConversionWorkerPolicy,
     private val interval: Duration,
 ) : ConversionJobHeartbeat {
+    private val log = LoggerFactory.getLogger(ScheduledConversionJobHeartbeat::class.java)
+
     override fun <T> whileHeld(
         lease: ConversionJobLease,
         block: () -> T,
@@ -121,7 +124,7 @@ class ScheduledConversionJobHeartbeat(
         val periodMs = interval.toMillis().coerceAtLeast(1)
         val future =
             scheduler.scheduleAtFixedRate(
-                { leases.renew(lease, policy.leaseDuration) },
+                { renewQuietly(lease) },
                 periodMs,
                 periodMs,
                 TimeUnit.MILLISECONDS,
@@ -131,6 +134,16 @@ class ScheduledConversionJobHeartbeat(
         } finally {
             future.cancel(true)
             scheduler.shutdownNow()
+        }
+    }
+
+    /** 한 번의 연장 실패가 `scheduleAtFixedRate` 후속 실행을 죽이면 긴 LLM 호출 중 리스가 만료된다. */
+    @Suppress("TooGenericExceptionCaught")
+    private fun renewQuietly(lease: ConversionJobLease) {
+        try {
+            leases.renew(lease, policy.leaseDuration)
+        } catch (exc: RuntimeException) {
+            log.warn("변환 작업 리스 연장에 실패했다: conversionId={}", lease.conversionId, exc)
         }
     }
 

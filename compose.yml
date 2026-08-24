@@ -72,7 +72,8 @@ services:
 
   backend-api:
     <<: *backend-app
-    command: ["java", "-jar", "/app/easy-doc-api.jar", "--spring.profiles.active=api"]
+    # Compose 는 로컬 스택이다. fake LLM 을 .env 로 켜도 api 가 같은 설정을 읽어 기동해야 한다.
+    command: ["java", "-jar", "/app/easy-doc-api.jar", "--spring.profiles.active=api,local"]
     ports:
       # 계약상 API가 쓰는 포트.
       - "127.0.0.1:8100:8100"
@@ -89,10 +90,11 @@ services:
 
   # 변환 워커. lease 를 획득해 마스킹 → LLM → 결과 저장까지 실행한다.
   # 실제 유료 호출 없이 완료까지 보려면 .env 의 EASYDOC_LLM_PROVIDER=fake.
+  # fake 는 local/test 프로필에서만 조립되므로 Compose 스택은 local 을 켠다.
   backend-worker:
     <<: *backend-app
     command:
-      ["java", "-jar", "/app/easy-doc-worker.jar", "--spring.profiles.active=worker"]
+      ["java", "-jar", "/app/easy-doc-worker.jar", "--spring.profiles.active=worker,local"]
     depends_on:
       backend-migrate:
         condition: service_completed_successfully

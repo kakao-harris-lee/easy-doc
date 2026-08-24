@@ -6,6 +6,8 @@ import kr.easydoc.core.security.Secret
 import org.springframework.boot.context.properties.ConfigurationProperties
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
+import org.springframework.core.env.Environment
+import org.springframework.core.env.Profiles
 import java.math.BigDecimal
 
 // infrastructure가 LLM composition root를 소유한다. 설정으로 strategy를 선택하고
@@ -45,7 +47,10 @@ data class LlmPricingProperties(
 @Configuration(proxyBeanMethods = false)
 class LlmProviderConfiguration {
     @Bean
-    fun llmProvider(properties: LlmProperties): LlmProvider {
+    fun llmProvider(
+        properties: LlmProperties,
+        environment: Environment,
+    ): LlmProvider {
         val provider =
             when (properties.provider.lowercase()) {
                 OPENAI_PROVIDER_NAME -> {
@@ -57,6 +62,7 @@ class LlmProviderConfiguration {
                 }
 
                 FAKE_PROVIDER_NAME -> {
+                    requireFakeAllowed(environment)
                     LocalLlmProvider()
                 }
 
@@ -87,6 +93,14 @@ class LlmProviderConfiguration {
             apiKey = properties.openAiApiKey,
             model = properties.model.nonBlankOr(DEFAULT_OPENAI_MODEL),
         )
+
+    private fun requireFakeAllowed(environment: Environment) {
+        if (!environment.acceptsProfiles(Profiles.of(LOCAL_PROFILE, TEST_PROFILE))) {
+            throw ConfigurationException(
+                "fake LLM provider 는 $LOCAL_PROFILE/$TEST_PROFILE 프로필에서만 사용할 수 있습니다",
+            )
+        }
+    }
 }
 
 private fun String?.nonBlankOr(default: String): String = this?.takeIf(String::isNotBlank) ?: default

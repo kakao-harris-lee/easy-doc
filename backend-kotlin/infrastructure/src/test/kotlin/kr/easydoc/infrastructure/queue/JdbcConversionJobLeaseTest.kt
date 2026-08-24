@@ -1,5 +1,6 @@
 package kr.easydoc.infrastructure.queue
 
+import kr.easydoc.application.conversion.ConversionAcquire
 import kr.easydoc.application.conversion.ConversionJobLease
 import kr.easydoc.core.crypto.EncryptionScheme
 import kr.easydoc.core.document.SourceFormat
@@ -98,6 +99,34 @@ class JdbcConversionJobLeaseTest {
     }
 
     @Test
+    @DisplayName("시도 상한을 쓴 만료 작업은 다시 집지 않고 failed 가 된다")
+    fun `상한을 넘긴 만료는 실패로 확정한다`() {
+        val conversionId = seedJob()
+        checkNotNull(acquire(WORKER_A))
+        jdbc
+            .sql(
+                """
+                UPDATE conversion_jobs
+                SET attempts = :attempts, lease_until = now() - INTERVAL '1 second'
+                WHERE conversion_id = :id
+                """.trimIndent(),
+            ).param("attempts", MAX_ATTEMPTS)
+            .param("id", conversionId)
+            .update()
+
+        val acquired =
+            checkNotNull(
+                transactions.execute { queue.acquire(WORKER_B, Duration.ofMinutes(2), MAX_ATTEMPTS) },
+            )
+
+        assertThat(acquired).isInstanceOf(ConversionAcquire.Exhausted::class.java)
+        assertThat((acquired as ConversionAcquire.Exhausted).conversionId).isEqualTo(conversionId)
+        assertThat(jobState(conversionId)).isEqualTo(JdbcConversionQueue.FAILED_STATE)
+        assertThat(jobAttempts(conversionId)).isEqualTo(MAX_ATTEMPTS)
+        assertThat(acquire(WORKER_A)).isNull()
+    }
+
+    @Test
     @DisplayName("갱신은 같은 fencing 토큰에서만 만료를 민다")
     fun `갱신은 주인만 한다`() {
         seedJob()
@@ -159,7 +188,10 @@ class JdbcConversionJobLeaseTest {
     }
 
     private fun acquire(owner: String): ConversionJobLease? =
-        transactions.execute { queue.acquire(owner, Duration.ofMinutes(2)) }
+        when (val got = transactions.execute { queue.acquire(owner, Duration.ofMinutes(2), MAX_ATTEMPTS) }) {
+            is ConversionAcquire.Held -> got.lease
+            else -> null
+        }
 
     private fun seedJob(): UUID {
         val owner = users.create("u${UUID.randomUUID()}@example.com", PasswordHash(DUMMY_PHC)).id
@@ -206,9 +238,17 @@ class JdbcConversionJobLeaseTest {
             .query { rs, _ -> rs.getObject("lease_until", java.time.OffsetDateTime::class.java) }
             .single()
 
+    private fun jobAttempts(conversionId: UUID): Int =
+        jdbc
+            .sql("SELECT attempts FROM conversion_jobs WHERE conversion_id = :id")
+            .param("id", conversionId)
+            .query { rs, _ -> rs.getInt("attempts") }
+            .single()
+
     private companion object {
         const val WORKER_A: String = "worker-a"
         const val WORKER_B: String = "worker-b"
+        const val MAX_ATTEMPTS: Int = 3
         const val DUMMY_PHC = "\$argon2id\$v=19\$m=19456,t=2,p=1\$c29tZXNhbHQ\$aGFzaGhhc2hoYXNoaGFzaGhhc2g"
     }
 }

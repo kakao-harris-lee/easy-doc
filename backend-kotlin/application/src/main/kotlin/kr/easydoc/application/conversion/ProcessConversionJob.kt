@@ -25,12 +25,39 @@ class ProcessConversionJob(
     private val log = LoggerFactory.getLogger(ProcessConversionJob::class.java)
 
     /** 작업이 있으면 한 건 처리한다. */
-    fun processNext(): ConversionJobOutcome {
-        val lease =
-            transaction.inTransaction {
-                stores.leases.acquire(runtime.policy.owner, runtime.policy.leaseDuration)
-            } ?: return ConversionJobOutcome.IDLE
-        return prepare(lease)?.let { prepared -> runPrepared(lease, prepared) } ?: ConversionJobOutcome.DROPPED
+    fun processNext(): ConversionJobOutcome =
+        when (val claimed = transaction.inTransaction { claim() }) {
+            ConversionAcquire.Empty -> {
+                ConversionJobOutcome.IDLE
+            }
+
+            is ConversionAcquire.Exhausted -> {
+                ConversionJobOutcome.FAILED
+            }
+
+            is ConversionAcquire.Held -> {
+                prepare(claimed.lease)?.let { prepared -> runPrepared(claimed.lease, prepared) }
+                    ?: ConversionJobOutcome.DROPPED
+            }
+        }
+
+    /**
+     * 리스를 집는다. 시도 상한을 넘긴 만료 작업은 같은 트랜잭션에서 변환 행도 실패로 맞춘다 —
+     * 큐만 실패하고 변환이 `processing` 에 남으면 사용자는 영원히 기다린다.
+     */
+    private fun claim(): ConversionAcquire {
+        val acquired =
+            stores.leases.acquire(runtime.policy.owner, runtime.policy.leaseDuration, runtime.policy.maxAttempts)
+        if (acquired is ConversionAcquire.Exhausted) {
+            stores.work.saveFailure(
+                acquired.conversionId,
+                ATTEMPTS_EXHAUSTED_FAILURE_CODE,
+                ConversionUsage(llmCalls = 0, inputTokens = 0, outputTokens = 0),
+                LlmAttribution(convert.providerName, model = null),
+            )
+            log.info("시도 상한을 넘겨 변환을 실패로 확정한다: conversionId={}", acquired.conversionId)
+        }
+        return acquired
     }
 
     private fun runPrepared(
@@ -180,6 +207,11 @@ class ProcessConversionJob(
         val usage: ConversionUsage,
         val attribution: LlmAttribution,
     )
+
+    companion object {
+        /** 프로세스 중단으로 시도만 쌓인 작업. 계약 `failure_code` 예외 클래스명 형식. */
+        const val ATTEMPTS_EXHAUSTED_FAILURE_CODE: String = "ConversionAttemptsExhaustedException"
+    }
 }
 
 /** 하트비트와 재시도 정책. */
