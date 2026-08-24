@@ -1,5 +1,6 @@
 package kr.easydoc.infrastructure.queue
 
+import kr.easydoc.application.conversion.ConversionAcquire
 import kr.easydoc.application.conversion.ConversionJobLease
 import kr.easydoc.application.conversion.ConversionJobLeasePort
 import kr.easydoc.application.document.ConversionQueue
@@ -27,19 +28,28 @@ class JdbcConversionQueue(private val jdbc: JdbcClient) :
     override fun acquire(
         owner: String,
         leaseDuration: Duration,
-    ): ConversionJobLease? =
+        maxAttempts: Int,
+    ): ConversionAcquire =
         jdbc
             .sql(ACQUIRE_SQL)
             .param("owner", owner)
             .param("leaseSeconds", leaseDuration.seconds)
+            .param("maxAttempts", maxAttempts)
             .query { rs, _ ->
-                ConversionJobLease(
-                    conversionId = rs.getObject("conversion_id", UUID::class.java),
-                    owner = rs.getString("lease_owner"),
-                    attempts = rs.getInt("attempts"),
-                )
+                val conversionId = rs.getObject("conversion_id", UUID::class.java)
+                if (rs.getBoolean("exhausted")) {
+                    ConversionAcquire.Exhausted(conversionId)
+                } else {
+                    ConversionAcquire.Held(
+                        ConversionJobLease(
+                            conversionId = conversionId,
+                            owner = rs.getString("lease_owner"),
+                            attempts = rs.getInt("attempts"),
+                        ),
+                    )
+                }
             }.optional()
-            .orElse(null)
+            .orElse(ConversionAcquire.Empty)
 
     override fun renew(
         lease: ConversionJobLease,
@@ -106,10 +116,14 @@ class JdbcConversionQueue(private val jdbc: JdbcClient) :
 
         const val FAILED_STATE: String = "failed"
 
+        /**
+         * PG12+ 는 CTE 를 인라인할 수 있다. `FOR UPDATE SKIP LOCKED` 가 UPDATE 에 접히면
+         * 두 세션이 같은 행을 고른다. MATERIALIZED 로 고르기·잠금을 먼저 고정한다.
+         */
         val ACQUIRE_SQL =
             """
-            WITH picked AS (
-                SELECT conversion_id
+            WITH picked AS MATERIALIZED (
+                SELECT conversion_id, attempts
                 FROM conversion_jobs
                 WHERE (state = '$READY_STATE' AND next_attempt_at <= now())
                    OR (state = '$LEASED_STATE' AND lease_until < now())
@@ -118,14 +132,27 @@ class JdbcConversionQueue(private val jdbc: JdbcClient) :
                 LIMIT 1
             )
             UPDATE conversion_jobs AS job
-            SET state = '$LEASED_STATE',
-                lease_owner = :owner,
-                lease_until = now() + (:leaseSeconds * INTERVAL '1 second'),
-                attempts = job.attempts + 1,
+            SET state = CASE
+                    WHEN picked.attempts >= :maxAttempts THEN '$FAILED_STATE'
+                    ELSE '$LEASED_STATE'
+                END,
+                lease_owner = CASE
+                    WHEN picked.attempts >= :maxAttempts THEN NULL
+                    ELSE :owner
+                END,
+                lease_until = CASE
+                    WHEN picked.attempts >= :maxAttempts THEN NULL
+                    ELSE now() + (:leaseSeconds * INTERVAL '1 second')
+                END,
+                attempts = CASE
+                    WHEN picked.attempts >= :maxAttempts THEN job.attempts
+                    ELSE job.attempts + 1
+                END,
                 updated_at = now()
             FROM picked
             WHERE job.conversion_id = picked.conversion_id
-            RETURNING job.conversion_id, job.lease_owner, job.attempts
+            RETURNING job.conversion_id, job.lease_owner, job.attempts,
+                      (picked.attempts >= :maxAttempts) AS exhausted
             """.trimIndent()
 
         val LOCK_HELD_SQL =

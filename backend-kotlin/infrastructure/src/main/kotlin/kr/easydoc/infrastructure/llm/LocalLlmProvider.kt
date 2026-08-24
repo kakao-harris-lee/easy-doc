@@ -6,10 +6,15 @@ import kr.easydoc.core.llm.LlmOptions
 import kr.easydoc.core.llm.LlmPrompt
 import kr.easydoc.core.llm.LlmProvider
 
-/** Compose·로컬 E2E 가 실제 유료 호출 없이 변환을 끝낼 때 쓰는 대역. */
+/** Compose·로컬 E2E 가 실제 유료 호출 없이 변환을 끝낼 때 쓰는 대역. 운영 프로필에서는 조립하지 않는다. */
 const val FAKE_PROVIDER_NAME: String = "fake"
 
 const val FAKE_MODEL_NAME: String = "fake-passthrough"
+
+/** fake provider 를 허용하는 Spring 프로필. Compose api·worker 가 켠다. */
+const val LOCAL_PROFILE: String = "local"
+
+const val TEST_PROFILE: String = "test"
 
 /**
  * 스타일 규칙을 통과하는 고정 문장을 돌려준다. 품질 평가용이 아니라 **상태 전이** 용이다.

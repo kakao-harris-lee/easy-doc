@@ -138,6 +138,17 @@ class ProcessConversionJobTest {
         }
 
         @Test
+        @DisplayName("획득 시점에 이미 상한을 넘긴 작업은 LLM 없이 실패로 확정한다")
+        fun `중단 회수가 상한을 넘기면 즉시 실패다`() {
+            val world = World(exhausted = true)
+
+            assertThat(world.jobs.processNext()).isEqualTo(ConversionJobOutcome.FAILED)
+            assertThat(world.provider.calls).isEmpty()
+            assertThat(world.work.status).isEqualTo(ConversionStatus.FAILED)
+            assertThat(world.work.failureCode).isEqualTo(ProcessConversionJob.ATTEMPTS_EXHAUSTED_FAILURE_CODE)
+        }
+
+        @Test
         @DisplayName("절단은 재시도하지 않는다")
         fun `절단은 즉시 실패다`() {
             val world =
@@ -200,6 +211,7 @@ class ProcessConversionJobTest {
         provider: FakeLlmProvider = FakeLlmProvider.replying("오늘 서류를 내세요."),
         lease: ConversionJobLease? = ConversionJobLease(UUID.randomUUID(), OWNER, attempts = 1),
         attempts: Int = 1,
+        exhausted: Boolean = false,
     ) {
         val conversionId: UUID = lease?.conversionId ?: UUID.randomUUID()
         val documentId: UUID = UUID.randomUUID()
@@ -208,7 +220,7 @@ class ProcessConversionJobTest {
         val transaction = RecordingDepth()
         val cipher = RecordingCipher(transaction)
         val sourceSealed = cipher.encrypt(PlainBody(source), documentId, EncryptedField.DOCUMENT_SOURCE_TEXT)
-        val leases = FakeLeases(this.lease, transaction)
+        val leases = FakeLeases(this.lease, transaction, exhausted)
         val work = FakeWork(conversionId, documentId, sourceSealed, transaction)
         val provider = SpyingProvider(provider)
         val heartbeat = RenewingHeartbeat(leases)
@@ -279,6 +291,7 @@ class ProcessConversionJobTest {
     private class FakeLeases(
         private val next: ConversionJobLease?,
         private val transaction: RecordingDepth,
+        private val exhausted: Boolean = false,
     ) : ConversionJobLeasePort {
         var held: Boolean = true
         val completed = mutableListOf<ConversionJobLease>()
@@ -290,9 +303,14 @@ class ProcessConversionJobTest {
         override fun acquire(
             owner: String,
             leaseDuration: Duration,
-        ): ConversionJobLease? {
+            maxAttempts: Int,
+        ): ConversionAcquire {
             depthWhenAcquired += transaction.depth
-            return next
+            return when {
+                next == null -> ConversionAcquire.Empty
+                exhausted -> ConversionAcquire.Exhausted(next.conversionId)
+                else -> ConversionAcquire.Held(next)
+            }
         }
 
         override fun renew(

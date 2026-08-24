@@ -18,13 +18,32 @@ class ConversionJobLease(
     override fun toString(): String = "ConversionJobLease($conversionId, owner=$owner, attempts=$attempts)"
 }
 
+/**
+ * [ConversionJobLeasePort.acquire] 의 결과. 만료 회수가 시도 상한을 넘기면 큐 행을
+ * 실패한 채로 돌려보낸다 — 호출자가 같은 트랜잭션에서 변환 행도 실패로 맞춰야 한다.
+ */
+sealed interface ConversionAcquire {
+    /** 집을 작업이 없다. */
+    object Empty : ConversionAcquire
+
+    /** 이 worker 가 리스를 쥐었다. */
+    class Held(val lease: ConversionJobLease) : ConversionAcquire
+
+    /** 시도 상한을 넘겨 큐에서 이미 실패로 확정했다. */
+    class Exhausted(val conversionId: UUID) : ConversionAcquire
+}
+
 /** worker 가 `conversion_jobs` 를 소비할 때 쓰는 포트. 등록([ConversionQueue])과 축이 다르다. */
 interface ConversionJobLeasePort {
-    /** 집을 수 있는 작업 한 건을 집어 [owner] 에게 맡긴다. 없으면 `null`. */
+    /**
+     * 집을 수 있는 작업 한 건을 집어 [owner] 에게 맡긴다.
+     * 만료된 작업의 시도가 이미 [maxAttempts] 이상이면 큐 행을 실패로 확정하고 [ConversionAcquire.Exhausted] 를 돌려준다.
+     */
     fun acquire(
         owner: String,
         leaseDuration: Duration,
-    ): ConversionJobLease?
+        maxAttempts: Int,
+    ): ConversionAcquire
 
     /** 아직 이 리스가 유효하면 만료를 연장한다. 연장됐으면 `true`. */
     fun renew(
