@@ -7,7 +7,7 @@ import java.nio.charset.StandardCharsets
 import java.time.Duration
 
 /** 어댑터를 HTTP 수준에서 시험하기 위한 스텁 서버. */
-internal class StubAnthropicServer : AutoCloseable {
+internal class StubLlmServer : AutoCloseable {
     private val server: HttpServer = HttpServer.create(InetSocketAddress(LOOPBACK, ANY_PORT), 0)
 
     private val recorded = mutableListOf<RecordedRequest>()

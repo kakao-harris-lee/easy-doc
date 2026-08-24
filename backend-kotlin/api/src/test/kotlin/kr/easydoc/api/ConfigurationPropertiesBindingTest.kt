@@ -15,6 +15,7 @@ import org.springframework.boot.context.properties.source.ConfigurationPropertyS
 import org.springframework.boot.context.properties.source.MapConfigurationPropertySource
 import org.springframework.core.convert.ConversionService
 import org.springframework.core.convert.support.DefaultConversionService
+import java.math.BigDecimal
 
 /** 설정 바인딩이 실제로 값을 싣는지 — 2026-08-19 실측으로 드러난 결함의 회귀 고정판. */
 class ConfigurationPropertiesBindingTest {
@@ -36,8 +37,23 @@ class ConfigurationPropertiesBindingTest {
 
         assertThat(auth.argon2.iterations).isEqualTo(7)
 
-        val llm = bind("easydoc.llm", LlmProperties::class.java, mapOf("easydoc.llm.effort" to "high"))
+        val llm =
+            bind(
+                "easydoc.llm",
+                LlmProperties::class.java,
+                mapOf(
+                    "easydoc.llm.provider" to "anthropic",
+                    "easydoc.llm.effort" to "high",
+                    "easydoc.llm.open-ai-api-key" to SECRET_VALUE,
+                    "easydoc.llm.pricing.input-usd-per-million-tokens" to "2.00",
+                    "easydoc.llm.pricing.output-usd-per-million-tokens" to "8.00",
+                ),
+            )
+        assertThat(llm.provider).isEqualTo("anthropic")
         assertThat(llm.effort).isEqualTo("high")
+        assertThat(llm.openAiApiKey.reveal()).isEqualTo(SECRET_VALUE)
+        assertThat(llm.pricing.inputUsdPerMillionTokens).isEqualByComparingTo(BigDecimal("2.00"))
+        assertThat(llm.pricing.outputUsdPerMillionTokens).isEqualByComparingTo(BigDecimal("8.00"))
 
         val easyDoc =
             bind(

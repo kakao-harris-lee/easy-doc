@@ -1,5 +1,7 @@
 package kr.easydoc.core.llm
 
+import java.math.BigDecimal
+
 /** 모델이 생성을 멈춘 이유. **벤더 어휘가 아니라 우리 어휘로 정규화한 값이다.** */
 enum class LlmFinishReason {
     /** 모델이 스스로 답을 끝냈다. 정상 경로. */
@@ -29,13 +31,18 @@ data class LlmCompletion(
     val inputTokens: Int = 0,
     val outputTokens: Int = 0,
     val finishReason: LlmFinishReason = LlmFinishReason.OTHER,
+    /** 실제 호출 경과 시간. 관측 decorator가 채우며 직접 어댑터 호출 시에는 `null`이다. */
+    val latencyMs: Long? = null,
+    /** 설정된 모델 단가로 계산한 예상 비용. 단가가 없으면 `null`이며 0달러로 오인하지 않는다. */
+    val estimatedCostUsd: BigDecimal? = null,
 ) {
-    /** 출력 상한에 걸려 잘렸는가. 원본 `LLMResponse.truncated` 의 자리다. */
+    /** 출력 상한에 걸려 잘렸는가. */
     val truncated: Boolean
         get() = finishReason == LlmFinishReason.MAX_TOKENS
 
     /** 본문은 길이만 남긴다. 나머지는 개인정보가 아니므로 그대로 둔다. */
     override fun toString(): String =
         "LlmCompletion(provider=$provider, model=$model, text=${text.length}자, " +
-            "inputTokens=$inputTokens, outputTokens=$outputTokens, finishReason=$finishReason)"
+            "inputTokens=$inputTokens, outputTokens=$outputTokens, finishReason=$finishReason, " +
+            "latencyMs=$latencyMs, estimatedCostUsd=$estimatedCostUsd)"
 }

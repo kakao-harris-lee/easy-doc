@@ -22,11 +22,11 @@ import org.junit.jupiter.api.Test
  * 받아 그대로 기록하므로, 직렬화·헤더 조립·문자 인코딩까지 전부 이 검사를 통과한다.
  */
 class AnthropicProviderRequestTest {
-    private lateinit var server: StubAnthropicServer
+    private lateinit var server: StubLlmServer
 
     @BeforeEach
     fun start() {
-        server = StubAnthropicServer()
+        server = StubLlmServer()
         server.replyWith(body = successBody())
     }
 

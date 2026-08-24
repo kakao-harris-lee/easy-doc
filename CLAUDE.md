@@ -23,11 +23,32 @@
 ## 작업 방식
 
 1. 요청과 관련된 현재 코드, 테스트, 계약, backlog를 먼저 확인한다.
-2. 이미 있는 구현을 재사용하고 요청한 범위를 넘어 기능을 확장하지 않는다.
-3. 라이브러리 선택이나 버전별 API가 중요한 경우에만 공식 문서로 확인한다.
-4. 작은 작업은 바로 구현한다. 별도 계획 문서는 사용자가 요청했거나 여러 모듈·데이터 변경이 얽힌 경우에만 작성한다.
-5. 새 기능에는 테스트를, 버그 수정에는 재현 테스트를 동반한다.
+2. **TDD를 기본 순서로 사용한다.** 실패하는 테스트로 요구사항을 고정한 뒤 최소 구현으로 통과시키고, 마지막에 중복과 이름을 정리한다. 버그 수정은 재현 테스트가 먼저다.
+3. 이미 있는 구현을 재사용하고 요청한 범위를 넘어 기능을 확장하지 않는다.
+4. 라이브러리 선택이나 버전별 API가 중요한 경우에만 공식 문서로 확인한다.
+5. 작은 작업은 바로 구현한다. 별도 계획 문서는 사용자가 요청했거나 여러 모듈·데이터 변경이 얽힌 경우에만 작성한다.
 6. 관련 검증을 실행하고 실행하지 못한 항목은 명시한다.
+
+## 설계와 의존성 규칙
+
+- 의존성은 constructor injection으로 전달한다. 서비스 내부에서 구체 구현을 `new`로 만들거나 전역 singleton, service locator, 정적 mutable 상태로 찾지 않는다.
+- Spring `@Configuration`은 composition root다. 구현 선택과 decorator 조립은 여기서만 하고 도메인·유스케이스 코드에 Spring 조건문을 넣지 않는다.
+- 외부 연동은 port/interface + adapter, 교체 가능한 정책은 strategy, 횡단 관심사(관측·캐시·재시도·감사)는 decorator로 분리한다.
+- 객체 생성을 factory로 숨길 때도 반환 타입은 interface로 유지한다. 상속보다 조합을 우선한다.
+- 클래스와 함수는 변경 이유가 하나가 되도록 작게 유지한다. 여러 유스케이스를 한 서비스에 계속 붙이는 god service를 만들지 않는다.
+- 도메인 의미가 있는 문자열·숫자는 value object와 enum으로 표현하고 `Map`, `Any`, boolean flag 조합을 공개 경계에 사용하지 않는다.
+- I/O, 시간, 난수, 외부 SDK, repository는 테스트 대역으로 교체할 수 있어야 한다.
+- 외부 호출은 timeout을 필수로 두고 재시도 책임은 한 계층만 가진다. 작업 큐와 SDK가 동시에 재시도하지 않는다.
+- 중복 요청과 worker 재실행을 전제로 idempotency를 설계하고, 장시간 외부 호출을 DB transaction 안에서 실행하지 않는다.
+- 경계 입력은 fail-fast로 검증하되 사용자 오류와 시스템 오류를 타입으로 구분한다. 예외를 정상 분기 제어에 사용하지 않는다.
+
+## 상수와 구성 관리
+
+- 모델 ID, provider 선택, 토큰 단가, timeout, retry, batch 크기, feature flag처럼 운영 중 바뀔 수 있는 값은 코드에 박지 않고 타입이 있는 `@ConfigurationProperties`로 받는다.
+- 운영자가 런타임에 변경하거나 tenant별로 달라야 하고 변경 이력·감사가 필요한 정책은 DB로 관리한다. MVP에서 배포 단위 변경이면 구성 파일/환경변수로 시작한다.
+- 비밀값은 환경변수 또는 secret manager로만 주입한다. 구성 파일에는 값이 아니라 참조만 둔다.
+- API 경로, wire protocol 버전, 계약상 고정 enum처럼 코드와 함께 바뀌어야 하는 불변식만 코드 상수로 허용하고 테스트로 고정한다.
+- 숫자·문자열 literal을 추가할 때는 불변식, 구성값, 데이터 중 어디에 속하는지 먼저 분류한다. 출처 없는 magic number를 두지 않는다.
 
 ## 기술 스택
 
@@ -36,6 +57,24 @@
 - 비동기 처리: PostgreSQL lease 기반 작업 큐
 - Frontend: React, TypeScript, Vite
 - LLM: `core`의 `LlmProvider` 인터페이스와 `infrastructure` 어댑터
+
+## LLM provider와 관측
+
+`LlmProvider`가 아래 예시의 `TextTransformer` 역할을 이미 담당하므로 같은 인터페이스를 새로 만들지 않는다. 서비스는 구체 벤더를 알지 못하고, 설정이 strategy를 선택하며 metrics decorator가 선택된 provider를 감싼다.
+
+```text
+[Conversion Service] -> [MetricsLlmProviderDecorator] -> [LlmProvider]
+                                                        ├─ [OpenAiProvider]
+                                                        └─ [AnthropicProvider]
+```
+
+- OpenAI와 Anthropic 요청·응답의 차이는 각 adapter 안에서 공통 `LlmCompletion`으로 정규화한다.
+- 공통 결과에는 본문, provider, 실제 응답 model, 입력·출력 토큰, 종료 사유, 지연 시간, 설정 단가 기반 예상 비용을 포함한다.
+- 비용은 `Double`이 아니라 `BigDecimal`로 계산한다. 모델 가격은 자주 바뀌므로 코드 상수가 아니라 구성값이며, 미설정은 0달러가 아니라 `null`이다.
+- decorator는 성공과 실패 모두 provider·지연·outcome을 관측한다. 성공 시에만 model·token·예상 비용을 기록한다.
+- 관측 로그와 메트릭에 prompt, 변환 본문, 응답 본문, API 키, 예외 메시지를 넣지 않는다.
+- OpenAI Responses API는 `store=false`를 명시한다. Anthropic Messages API는 `anthropic-version`을 고정하고 두 adapter 모두 SDK/HTTP 계층의 자동 재시도를 사용하지 않는다.
+- 새 provider는 adapter contract test와 설정 선택 테스트를 먼저 추가한 뒤 구현한다. 실제 외부 API를 단위 테스트에서 호출하지 않는다.
 
 ## 아키텍처 규칙
 

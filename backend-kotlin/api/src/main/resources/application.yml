@@ -90,6 +90,15 @@ easydoc:
     - http://localhost:5173
   auth:
     jwt-expire-minutes: 60
+  llm:
+    provider: ${EASYDOC_LLM_PROVIDER:openai}
+    model: ${EASYDOC_LLM_MODEL:}
+    effort: ${EASYDOC_LLM_EFFORT:}
+    anthropic-api-key: ${ANTHROPIC_API_KEY:}
+    open-ai-api-key: ${OPENAI_API_KEY:}
+    pricing:
+      input-usd-per-million-tokens: ${EASYDOC_LLM_INPUT_USD_PER_MILLION_TOKENS:}
+      output-usd-per-million-tokens: ${EASYDOC_LLM_OUTPUT_USD_PER_MILLION_TOKENS:}
   # 저장 암호화(AES-256-GCM). 키는 base64 32바이트이고 **환경변수로만** 준다 —
   # 값을 이 파일에 적지 않는다(프로젝트 CLAUDE.md 보안 규칙).
   #

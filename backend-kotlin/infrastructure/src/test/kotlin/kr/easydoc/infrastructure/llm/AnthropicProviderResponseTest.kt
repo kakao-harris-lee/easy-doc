@@ -21,11 +21,11 @@ import java.time.Duration
 
 /** 응답 해석과 실패 매핑을 확인한다. 벤더 오류 타입이 core 를 넘어오지 않는 것이 핵심이다. */
 class AnthropicProviderResponseTest {
-    private lateinit var server: StubAnthropicServer
+    private lateinit var server: StubLlmServer
 
     @BeforeEach
     fun start() {
-        server = StubAnthropicServer()
+        server = StubLlmServer()
     }
 
     @AfterEach

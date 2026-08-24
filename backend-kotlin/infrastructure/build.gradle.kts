@@ -24,6 +24,7 @@ dependencies {
     // spring-web 만 쓴다 — infrastructure 는 요청을 받는 쪽이 아니라 보내는 쪽이다.
     implementation(libs.spring.web)
     implementation(libs.jackson.databind)
+    implementation(libs.slf4j.api)
     // 인증 — Argon2id 해시(검증된 인코더 + PHC 인코딩)와 HS256 토큰.
     // 두 라이브러리 모두 이 모듈 밖으로 새지 않는다: api·worker 는 infrastructure 를
     // runtimeOnly 로만 의존하므로 컴파일 시점에 `com.nimbusds.*` 를 볼 수 없다.

@@ -22,8 +22,6 @@ import java.time.Duration
 
 // Anthropic Messages API provider 구현체.
 //
-// 원본: app/llm/anthropic_provider.py
-//
 // ## no-training 계약 (CLAUDE.md 보안·데이터 규칙)
 //
 // **상용 API 입력 데이터 학습 미사용(no-training) 조건을 전제로 한다.** 사용자 문서
@@ -40,7 +38,6 @@ import java.time.Duration
 // 요약하면 (1) SDK 전이 의존성이 BOM 밖에서 따라 들어오는 것을 막고, (2) SDK 내장
 // 재시도가 워커 재시도와 겹쳐 호출 수를 늘리는 것을 막기 위해서다.
 
-/** 원본: `AnthropicProvider.name` ClassVar. */
 const val ANTHROPIC_PROVIDER_NAME: String = "anthropic"
 
 /** Messages API 버전 헤더. 날짜 문자열이지만 릴리스 핀이지 오늘 날짜가 아니다. */
@@ -50,7 +47,7 @@ internal const val ANTHROPIC_BASE_URL: String = "https://api.anthropic.com"
 
 internal const val ANTHROPIC_MESSAGES_PATH: String = "/v1/messages"
 
-/** 기본 모델. 원본: `app/llm/anthropic_provider.py` 의 `model: str = "claude-sonnet-5"`. */
+/** 기본 모델. 운영에서는 `easydoc.llm.model` 설정으로 교체할 수 있다. */
 const val DEFAULT_ANTHROPIC_MODEL: String = "claude-sonnet-5"
 
 /** Anthropic 전용 읽기 타임아웃. */
@@ -151,8 +148,7 @@ class AnthropicProvider(private val settings: AnthropicSettings) : LlmProvider {
             // 타임아웃·연결 실패·프로토콜 오류. 예외 메시지에는 URL·헤더가 실릴 수 있으므로
             // 그대로 쓰지 않고 **타입 이름만** 남긴다.
             //
-            // 원인 예외를 cause 로 매달지 않는다 — 원본은 `from exc` 로 체인을 유지했지만
-            // (`app/llm/anthropic_provider.py`), Spring 의 HttpClientErrorException 은
+            // 원인 예외를 cause로 매달지 않는다. Spring의 HttpClientErrorException은
             // **응답 본문을 메시지에 담는다.** 체인을 매달면 스택 트레이스를 한 번 찍는 것만으로
             // 벤더가 되비춘 프롬프트가 로그로 나간다. 도메인 예외 계층이 메시지 전용인 것도
             // 같은 근거다(`DomainExceptions.kt` 의 메시지 규약).
