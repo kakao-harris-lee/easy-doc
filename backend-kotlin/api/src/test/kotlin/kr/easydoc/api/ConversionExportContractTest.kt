@@ -144,6 +144,28 @@ class ConversionExportContractTest {
     }
 
     @Test
+    @DisplayName("검수 없는 초안은 자리표시자를 복원하지 않는다 — 계약 복원 보류")
+    fun `검수 전에는 원문을 넣지 않는다`() {
+        val owner = newOwner()
+        val conversionId = acceptDocument(owner).conversionId
+        val item = maskedItem()
+        complete(
+            conversionId,
+            easyText = "등록번호는 ${item.placeholder} 입니다.",
+            masked = listOf(item),
+        )
+
+        val body =
+            String(
+                export(owner, conversionId, ExportFormat.TXT.extension).contentAsByteArray,
+                StandardCharsets.UTF_8,
+            )
+
+        assertThat(body).contains(item.placeholder)
+        assertThat(body).doesNotContain(ORIGINAL)
+    }
+
+    @Test
     @DisplayName("검수 없는 초안에서 자리표시자가 빠지면 409 · 계약 예시 missing_placeholders")
     fun `유실된 초안은 409 다`() {
         val owner = newOwner()
@@ -414,6 +436,8 @@ class ConversionExportContractTest {
         val CONTROL_RANGE = 0x00..0x9F
         val RESERVED_RANGE = 0x20..0x7E
 
-        fun maskedItem(): MaskedItemView = MaskedItemView(MaskCategory.RRN, "[[주민등록번호1]]", Secret("900101-1234567"))
+        const val ORIGINAL: String = "900101-1234567"
+
+        fun maskedItem(): MaskedItemView = MaskedItemView(MaskCategory.RRN, "[[주민등록번호1]]", Secret(ORIGINAL))
     }
 }

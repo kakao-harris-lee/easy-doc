@@ -343,7 +343,7 @@ value class ReviewedBody(val value: String) {
 
 /**
  * 내보낼 최종 본문을 고르고, **사람 검수를 거친 경우에만** 자리표시자를 원문으로
- * 되돌린다 (**내보내기 전용**).
+ * 되돌린다 (**내보내기 전용**). HTTP 계약 GET export 의 복원 규칙과 같다.
  */
 fun restoreForExport(
     draft: ModelDraft,

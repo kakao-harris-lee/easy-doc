@@ -1,5 +1,12 @@
 package kr.easydoc.infrastructure.export
 
+import kr.dogfoot.hwpxlib.`object`.HWPXFile
+import kr.dogfoot.hwpxlib.`object`.content.section_xml.SectionXMLFile
+import kr.dogfoot.hwpxlib.`object`.content.section_xml.paragraph.Para
+import kr.dogfoot.hwpxlib.`object`.content.section_xml.paragraph.Run
+import kr.dogfoot.hwpxlib.`object`.content.section_xml.paragraph.T
+import kr.dogfoot.hwpxlib.tool.blankfilemaker.BlankFileMaker
+import kr.dogfoot.hwpxlib.writer.HWPXWriter
 import kr.easydoc.core.easyread.ExportFile
 import kr.easydoc.core.easyread.ExportFormat
 import kr.easydoc.core.easyread.exportFileOf
@@ -12,35 +19,78 @@ import java.util.zip.CRC32
 import java.util.zip.ZipEntry
 
 /**
- * 복원된 본문을 최소 HWPX(OWPML) 패키지로 담는다.
- * 입력 추출기가 읽는 `Contents/sectionN.xml` 의 `p`/`t` 만 채운다.
+ * 복원된 본문을 HWPX(OWPML) 패키지로 담는다.
+ *
+ * 패키지 뼈대는 손 XML 이 아니라 [BlankFileMaker] 다. 한컴이 공개한 구조
+ * (`Contents/header.xml`, `content.hpf` 의 manifest 항목을 spine 이 참조)를
+ * 라이브러리가 채운다. zip 의 `mimetype` 만 개방형 컨테이너 규칙에 맞춰
+ * 첫 STORED 항목으로 다시 얹는다.
  */
 internal class HwpxPackageWriter {
     fun write(
         title: String,
         body: String,
-    ): ExportFile = exportFileOf(title, ExportFormat.HWPX, packageBytes(sectionXml(stripControlChars(body))))
-
-    private fun sectionXml(body: String): ByteArray {
-        val paragraphs =
-            exportParagraphs(body).joinToString("") { line ->
-                "<hp:p><hp:run><hp:t>${escapeXml(line)}</hp:t></hp:run></hp:p>"
-            }
-        return (
-            """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>""" +
-                """<hs:sec xmlns:hs="$SECTION_NS" xmlns:hp="$PARAGRAPH_NS">$paragraphs</hs:sec>"""
-        ).toByteArray(StandardCharsets.UTF_8)
+    ): ExportFile {
+        val hwpx = BlankFileMaker.make()
+        fillBody(hwpx, stripControlChars(body))
+        return exportFileOf(title, ExportFormat.HWPX, withStoredMimetypeFirst(HWPXWriter.toBytes(hwpx)))
     }
 
-    private fun packageBytes(section: ByteArray): ByteArray {
+    private fun fillBody(
+        hwpx: HWPXFile,
+        body: String,
+    ) {
+        val section = sectionOf(hwpx)
+        val lines = exportParagraphs(body)
+        val first = section.getPara(0)
+        textOf(first.getRun(0)).addText(lines.first())
+        lines.drop(1).forEach { line -> appendParagraph(section, first, line) }
+    }
+
+    private fun sectionOf(hwpx: HWPXFile): SectionXMLFile {
+        val sections = hwpx.sectionXMLFileList()
+        check(sections.count() > 0) { "빈 HWPX 뼈대에 구역이 없다" }
+        return sections.get(0)
+    }
+
+    private fun appendParagraph(
+        section: SectionXMLFile,
+        template: Para,
+        line: String,
+    ) {
+        val para =
+            section
+                .addNewPara()
+                .paraPrIDRefAnd(template.paraPrIDRef())
+                .styleIDRefAnd(template.styleIDRef())
+                .pageBreakAnd(false)
+                .columnBreakAnd(false)
+                .mergedAnd(false)
+        val run = para.addNewRun()
+        run.charPrIDRef(template.getRun(0).charPrIDRef())
+        run.addNewT().addText(line)
+    }
+
+    private fun textOf(run: Run): T {
+        for (index in 0 until run.countOfRunItem()) {
+            val item = run.getRunItem(index)
+            if (item is T) return item
+        }
+        return run.addNewT()
+    }
+
+    /**
+     * hwpxlib 는 `mimetype` 을 DEFLATED 로 쓴다. 개방형 HWPX/OCF 는 이 항목이
+     * 압축되지 않은 채 zip 의 첫 자리에 있어야 한다.
+     */
+    private fun withStoredMimetypeFirst(packaged: ByteArray): ByteArray {
+        val parts = hwpxZipEntries(packaged)
+        val mimetype = parts.remove(MIMETYPE_NAME) ?: error("hwpxlib 패키지에 mimetype 이 없다")
         val sink = ByteArrayOutputStream()
         ZipArchiveOutputStream(sink).use { zip ->
             zip.setEncoding(StandardCharsets.UTF_8.name())
-            putStored(zip, MIMETYPE_NAME, MIMETYPE_BYTES)
-            putDeflated(zip, "META-INF/container.xml", CONTAINER_XML)
-            putDeflated(zip, "version.xml", VERSION_XML)
-            putDeflated(zip, "Contents/content.hpf", CONTENT_HPF)
-            putDeflated(zip, "Contents/section0.xml", section)
+            putStored(zip, MIMETYPE_NAME, mimetype)
+            parts.forEach { (name, bytes) -> putDeflated(zip, name, bytes) }
         }
         return sink.toByteArray()
     }
@@ -71,44 +121,7 @@ internal class HwpxPackageWriter {
 
     private fun crc32(bytes: ByteArray): Long = CRC32().apply { update(bytes) }.value
 
-    private fun escapeXml(text: String): String =
-        buildString(text.length) {
-            text.forEach { ch ->
-                when (ch) {
-                    '&' -> append("&amp;")
-                    '<' -> append("&lt;")
-                    '>' -> append("&gt;")
-                    '"' -> append("&quot;")
-                    '\'' -> append("&apos;")
-                    else -> append(ch)
-                }
-            }
-        }
-
     private companion object {
-        const val SECTION_NS: String = "http://www.hancom.co.kr/hwpml/2011/section"
-        const val PARAGRAPH_NS: String = "http://www.hancom.co.kr/hwpml/2011/paragraph"
         const val MIMETYPE_NAME: String = "mimetype"
-        val MIMETYPE_BYTES: ByteArray = "application/hwp+zip".toByteArray(StandardCharsets.US_ASCII)
-        val CONTAINER_XML: ByteArray =
-            (
-                """<?xml version="1.0" encoding="UTF-8"?>""" +
-                    """<container xmlns="urn:oasis:names:tc:opendocument:xmlns:container">""" +
-                    """<rootfiles>""" +
-                    """<rootfile full-path="Contents/content.hpf" media-type="application/hwpml-package+xml"/>""" +
-                    """</rootfiles></container>"""
-            ).toByteArray(StandardCharsets.UTF_8)
-        val VERSION_XML: ByteArray =
-            (
-                """<?xml version="1.0" encoding="UTF-8"?>""" +
-                    """<hv:HCFVersion xmlns:hv="http://www.hancom.co.kr/hwpml/2011/version" """ +
-                    """tagetApplication="WORDPROCESSOR" major="5" minor="1" micro="0" buildNumber="0"/>"""
-            ).toByteArray(StandardCharsets.UTF_8)
-        val CONTENT_HPF: ByteArray =
-            (
-                """<?xml version="1.0" encoding="UTF-8"?>""" +
-                    """<opf:package xmlns:opf="http://www.idpf.org/2007/opf/" version="">""" +
-                    """<opf:spine><opf:itemref idref="section0"/></opf:spine></opf:package>"""
-            ).toByteArray(StandardCharsets.UTF_8)
     }
 }

@@ -72,6 +72,7 @@ class ConversionExportService(
         reviewed: PlainBody?,
         items: List<MaskedItem>,
     ): String {
+        // 검수본이 없으면 자리표시자를 복원하지 않는다. 계약 GET export 복원 규칙과 같다.
         val restoration =
             restoreForExport(
                 ModelDraft(draft.value),

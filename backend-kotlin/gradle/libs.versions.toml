@@ -117,6 +117,10 @@ pdfbox = "3.0.5"
 commonsCompress = "1.28.0"
 commonsIo = "2.20.0"
 xmlbeans = "5.3.0"
+# HWPX 쓰기는 POI 가 DOCX 를 쓰듯 한컴 공개 포맷의 Java 구현을 쓴다.
+# BlankFileMaker 가 header.xml·manifest·spine 을 KS X 6101/한컴 구조로 채운다.
+# Apache-2.0, 런타임 전이 없음(1.0.9 POM 실측). infrastructure 에서만 선언한다.
+hwpxlib = "1.0.9"
 
 [libraries]
 # --- Spring Boot BOM ---------------------------------------------------------
@@ -244,6 +248,7 @@ pdfbox = { module = "org.apache.pdfbox:pdfbox", version.ref = "pdfbox" }
 commons-compress = { module = "org.apache.commons:commons-compress", version.ref = "commonsCompress" }
 commons-io = { module = "commons-io:commons-io", version.ref = "commonsIo" }
 xmlbeans = { module = "org.apache.xmlbeans:xmlbeans", version.ref = "xmlbeans" }
+hwpxlib = { module = "kr.dogfoot:hwpxlib", version.ref = "hwpxlib" }
 
 # POI 가 끌고 오는 `log4j-api` 는 **API 만**이라 바인딩이 없으면
 # `Log4j API could not find a logging provider` 경고가 난다(spike S-10).

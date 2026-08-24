@@ -38,7 +38,7 @@
 ### 2.4 문서 파싱 (DOCX/PDF/HWPX)
 
 - **DOCX**: Apache POI를 usermodel이 아니라 **OOXML DOM 순회**로 쓰면 블록 추출 결과가 안정적이다(표·텍스트박스·SDT·`w:ins`/`w:delText`·`mc:Fallback`·`a:t`/`m:t`·linked 머리글 처리 필요).
-- **HWPX**: DTD/UTF-16 DTD/XXE 차단 필수(StAX 파서 설정). zip bomb 방어 필수(압축 해제 크기 상한 — spike 기준 1GiB 입력을 힙 256MB에서 거부). mimetype 항목이 STORED로 zip 첫 번째여야 한다(개방형 HWPX 스펙).
+- **HWPX**: DTD/UTF-16 DTD/XXE 차단 필수(StAX 파서 설정). zip bomb 방어 필수(압축 해제 크기 상한 — spike 기준 1GiB 입력을 힙 256MB에서 거부). mimetype 항목이 STORED로 zip 첫 번째여야 한다(개방형 HWPX 스펙). **내보내기는 `hwpxlib` BlankFileMaker로 header.xml·manifest·spine을 채우고**, mimetype만 첫 STORED 항목으로 다시 얹는다.
 - **PDF**: PDFBox 사용. `MAX_EXTRACTED_CHARS`·업로드 크기 상한 경계 확인 필요. 암호 걸린 PDF/DOCX 처리 정책 미정 — 결정 필요.
 - **DOCX 내보내기 템플릿**: POI로 생성한 DOCX에는 `styles.xml`/theme가 기본으로 없어 Heading 1 등 서식이 사라진다. 템플릿을 저장소에 동봉할지 결정 필요.
 - 내보내기 zip 컨테이너의 바이트 단위 동일성은 애초에 불가능한 목표다(압축기 차이) — 비교는 정규화된 텍스트/구조로 한다.

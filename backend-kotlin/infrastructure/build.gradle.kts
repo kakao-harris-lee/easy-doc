@@ -32,9 +32,10 @@ dependencies {
     implementation(libs.nimbus.jose.jwt)
     // 문서 추출(Phase 4). 파서 라이브러리도 이 모듈 밖으로 새지 않는다 — api·worker 는
     // infrastructure 를 runtimeOnly 로만 의존하므로 `org.apache.poi.*`·`org.apache.pdfbox.*`
-    // 를 컴파일 시점에 볼 수 없다.
+    // ·`kr.dogfoot.hwpxlib.*` 를 컴파일 시점에 볼 수 없다.
     implementation(libs.poi.ooxml)
     implementation(libs.pdfbox)
+    implementation(libs.hwpxlib)
     // POI 전이지만 직접 쓴다(zip 예산 방어). 전이에 기대면 POI 업그레이드가 API 를 바꾼다.
     implementation(libs.commons.compress)
     // POI 전이 둘. `implementation` 으로 선언하는 이유는 **컴파일과 런타임이 같은 버전을

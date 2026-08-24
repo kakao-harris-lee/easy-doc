@@ -1133,7 +1133,7 @@ x-private-response-headers:
     - "GET /documents"                 # 사용자가 적어 준 제목이 실린다 (본문 유도는 폐기 — `x-title-policy`)
     - "GET /conversions/{conversion_id}"       # masked_items[].original에 실제 개인정보
     - "PUT /conversions/{conversion_id}"       # GET과 같은 응답 스키마
-    - "GET /conversions/{conversion_id}/export"  # 자리표시자가 원문으로 복원된 최종본
+    - "GET /conversions/{conversion_id}/export"  # 검수 후 원문이 복원될 수 있는 최종본
     - "GET /workspaces"                # 작업 공간 이름도 사용자가 적은 콘텐츠
     - "POST /workspaces"
     - "PATCH /workspaces/{workspace_id}"
@@ -1610,19 +1610,22 @@ paths:
       summary: 검수 완료 문서를 파일로 내려받는다
       security: [{ HTTPBearer: [] }]
       description: |
-        **이 응답에만 마스킹 자리표시자가 원문으로 복원되어 실린다** — 담당자가 그대로
-        배포할 최종 산출물이기 때문이다(app/easyread/export.py). 마스킹 선행 불변식의
-        유일한 예외이며, 다른 어떤 경로도 복원본을 만들지 않는다.
+        **이 응답에서만** 마스킹 자리표시자가 원문으로 복원될 수 있다 — 담당자가
+        그대로 배포할 최종 산출물이기 때문이다. 마스킹 선행 불변식의 유일한 예외이며,
+        다른 어떤 경로도 복원본을 만들지 않는다.
 
         본문 선택 규칙: 검수본이 있으면 그것이 최종본이고, 없으면 AI 초안이다
         (`edited_text ?? easy_text`).
 
+        복원 규칙: 검수본이 있을 때만 자리표시자를 원문으로 되돌린다. 검수 없는 초안은
+        자리표시자를 그대로 둔다 — 모델이 자리를 옮기거나 위조 라벨을 넣어도 원문을
+        주입하지 않기 위해서다. 검수본에서 자리표시자가 빠져 있어도 막지 않는다(최종
+        판단은 담당자 몫 — HITL).
+
         409가 나는 경우가 둘이다:
           1. 아직 완료되지 않아 내보낼 결과가 없다
-          2. 검수본이 없는데 `missing_placeholders`가 비어 있지 않다 — 자리표시자가
-             결과에서 사라졌다는 것은 그 자리의 정보가 통째로 빠졌다는 뜻이라,
-             검수를 거치지 않은 초안을 그대로 배포하게 둘 수 없다. 검수본이 있으면
-             막지 않는다(최종 판단은 담당자 몫 — HITL).
+          2. 검수본이 없는데 자리표시자가 결과에서 사라졌다 — 그 자리의 정보가 통째로
+             빠졌다는 뜻이라, 검수를 거치지 않은 초안을 그대로 배포하게 둘 수 없다.
       parameters:
         - name: conversion_id
           in: path
