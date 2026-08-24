@@ -112,7 +112,7 @@
 
 ### 3.3 품질 신뢰 체계
 
-- **골든셋**: 실제 복지 안내문과 기대 사실을 `data/golden/documents/`에 언어 독립 JSON으로 보존한다(56건, `required_facts` 253개). 프롬프트·모델 변경 시 Kotlin 스타일 규칙 검사 + opt-in LLM-as-judge를 CI에서 강제하는 것이 목표다. **2026-08-24 기준 Kotlin 평가 실행기는 아직 미구현**이며 Sprint K1 backlog다. 현재 Kotlin `Prompts.kt`·`StyleRules.kt`와 스냅샷 테스트는 프롬프트/규칙 데이터의 정적 회귀만 담당한다.
+- **골든셋**: 실제 복지 안내문과 기대 사실을 `data/golden/documents/`에 언어 독립 JSON으로 보존한다(56건, `required_facts` 253개). 프롬프트·모델 변경 시 Kotlin 스타일 규칙 검사 + opt-in LLM-as-judge를 CI에서 강제하는 것이 목표다. **2026-08-24 기준** `backend-kotlin` 품질 게이트가 스키마·원문 사실 잔존·스타일 규칙·커밋된 기준선(`golden-baseline.json`)을 `./gradlew build`에서 검사한다. LLM-as-judge는 `@Tag("llm")` opt-in이며 비밀값이 없으면 skip한다. `Prompts.kt`·`StyleRules.kt` 스냅샷 테스트는 프롬프트/규칙 데이터의 정적 회귀를 계속 담당한다.
 - **쉬운 글 스타일 규칙**: 국립국어원·보건복지부·알다 가이드라인 기반 체크리스트(문장 길이, 한 문장 한 정보, 어려운 한자어 치환, 능동태 등)를 명문화하여 프롬프트와 평가 기준에 공통 사용.
 - **HITL**: 모든 결과물은 담당자 검수 후 확정. "AI 초안"임을 UI에 명시.
 - **변환 호출 계약**: 문서 변환 1건 = LLM 호출 **최대 2회** — 변환 1회 + 스타일 규칙 위반이 기계 검출된 경우에만 표적 보정 1회(루프 없음, 보정 실패·악화 시 원본 채택). 크레딧 원가 산정(5장)은 이 상한을 전제로 한다. **알려진 품질 한계(2026-08-08 갱신)**: gpt-4o의 장문 자체 요약(압축) 문제는 기본 모델을 gpt-4.1로 교체해 해소했다(전건 정상 팽창·충실성 바닥 0건 — docs/quality/2026-08-07-model-comparison.md, 2026-08-08-golden-reeval-gpt41.md). 분할 변환 필요성은 소멸. 현재 남은 한계는 **장문에서 문장 길이 등 스타일 규칙 준수율 하락**(2,000자 초과 통과율 0.11)으로, 파일럿 안내의 2,000자 내외 권장은 이 사유로 유지한다.
@@ -276,8 +276,8 @@ v1 기획의 MVP는 물론, 아래 P0 전체(11개)도 "정식 출시" 기준이
 | 비동기 변환 | worker 처리 루프 구현 | Compose Playwright에서 `pending → processing → done|failed` 재확인 |
 | 검수·기록 | Kotlin API + React 구현 | 변환 완료 흐름과 통합 |
 | 내보내기 | GET `/conversions/{id}/export` (docx/txt/hwpx) | Lean MVP 형식 완료. pdf는 계약 enum 밖(422), P0 재다운로드 범위 |
-| 30일 보존 삭제 | 미구현 | 자동 삭제 작업과 관측 구현 |
-| 품질 평가 | fixture 보존, Kotlin 실행기 미구현 | 정적 평가 CI + opt-in judge 레인 |
+| 30일 보존 삭제 | worker 배치 구현 | 활성 lease skip, dry-run·감사 로그 |
+| 품질 평가 | Kotlin 정적 게이트 + 기준선 | opt-in judge 레인은 비밀값 없으면 skip |
 | 개발·배포 모델 | 독립 프로젝트 + Compose/CI/CD 구조 정리 | 모든 완료 정의 통과 |
 
 상세 작업과 체크박스는 `docs/plans/2026-08-24-sprint-k1-kotlin-mvp-completion.md`만 사용한다. 과거 Sprint 1~4는 Python 시대 기록이며 `docs/plans/archive/python-era/`에 보관한다.

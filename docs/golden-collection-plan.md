@@ -25,14 +25,15 @@ data/golden/documents/  승인된 언어 독립 fixture
 
 ## 현재 검증
 
-Kotlin 골든 평가기는 Sprint K1 미구현 항목이다. 구현 전에는 다음만 확인한다.
+`backend-kotlin` Gradle 테스트가 `data/golden/documents/`를 읽어 다음을 검사한다.
 
-- JSON 구문과 필수 metadata 존재
-- 연락처/개인정보 사람 검수 기록
-- `required_facts`가 원문에 실제로 존재
+- JSON 구문과 평가 입력 스키마(id·title·category·source_text·required_facts)
 - 중복 `id` 없음
+- `required_facts`가 원문에 실제로 존재
+- 스타일 규칙은 외부 API 없이 `StyleRules.checkStyle`로 채점
+- 커밋된 기준선(`core/src/test/resources/kr/easydoc/core/quality/golden-baseline.json`)과 문서·사실 건수 일치. 일반 테스트는 이 파일을 다시 쓰지 않는다.
 
-평가기가 추가되면 `backend-kotlin` Gradle task로 스키마·스타일 규칙 검사를 실행하고, 외부 LLM judge는 비밀값이 있는 opt-in CI 레인으로 분리한다. 기준선 갱신은 일반 테스트 실행과 분리하고 변경 사유를 리뷰한다.
+LLM-as-judge는 `@Tag("llm")` opt-in이다. 기본 `./gradlew build`는 제외하고, 비밀값이 없으면 레인을 skip한다. 기준선 파일은 일반 테스트가 다시 쓰지 않으며, 건수 변경은 리뷰 승인 후에만 커밋한다.
 
 ## 완료 체크
 
@@ -40,4 +41,4 @@ Kotlin 골든 평가기는 Sprint K1 미구현 항목이다. 구현 전에는 �
 - [ ] 개인정보·연락처 사람 검수
 - [ ] `required_facts` 3~6개 검증
 - [ ] 중복 ID 확인
-- [ ] Kotlin 정적 평가 통과(평가기 구현 후)
+- [x] Kotlin 정적 평가 통과(평가기 구현 후)

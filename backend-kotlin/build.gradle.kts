@@ -20,6 +20,7 @@ plugins {
 // X-J2 가 요구한 「계약 값을 바꾸면 테스트가 깨진다」는 테스트가 돌 때만 참이므로,
 // 파일을 선언 입력으로 걸어 그 전제를 빌드가 지키게 한다.
 val apiContractFile: File = File(rootDir.parentFile, "contracts/easy-doc-v1.yaml")
+val goldenDocumentsDir: File = File(rootDir.parentFile, "data/golden/documents")
 
 allprojects {
     group = "kr.easydoc"
@@ -113,10 +114,17 @@ subprojects {
         // 옮겨 적어야 한다면, 옮겨 적지 않은 채로 같은 결함이 되살아난다.
         // 경로 민감도를 NONE 으로 둔다: 절대 경로가 지문에 들어가면 기계가 다른 CI 에서
         // 빌드 캐시가 재사용되지 않아, 캐시를 끄는 것과 같아진다.
+        systemProperty("easydoc.golden.documents.dir", goldenDocumentsDir.absolutePath)
+
         inputs
             .file(apiContractFile)
             .withPropertyName("apiContract")
             .withPathSensitivity(PathSensitivity.NONE)
+
+        inputs
+            .dir(goldenDocumentsDir)
+            .withPropertyName("goldenDocuments")
+            .withPathSensitivity(PathSensitivity.RELATIVE)
 
         // 소스 전수를 훑는 탐지기가 **실행 시점에 읽는 것**을 선언 입력으로 건다 (β-02).
         //
