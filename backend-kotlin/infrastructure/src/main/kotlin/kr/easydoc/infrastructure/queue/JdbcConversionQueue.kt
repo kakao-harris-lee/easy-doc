@@ -116,9 +116,13 @@ class JdbcConversionQueue(private val jdbc: JdbcClient) :
 
         const val FAILED_STATE: String = "failed"
 
+        /**
+         * PG12+ 는 CTE 를 인라인할 수 있다. `FOR UPDATE SKIP LOCKED` 가 UPDATE 에 접히면
+         * 두 세션이 같은 행을 고른다. MATERIALIZED 로 고르기·잠금을 먼저 고정한다.
+         */
         val ACQUIRE_SQL =
             """
-            WITH picked AS (
+            WITH picked AS MATERIALIZED (
                 SELECT conversion_id, attempts
                 FROM conversion_jobs
                 WHERE (state = '$READY_STATE' AND next_attempt_at <= now())

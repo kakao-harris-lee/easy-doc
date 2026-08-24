@@ -162,29 +162,52 @@ class JdbcConversionJobLeaseTest {
     }
 
     @Test
-    @DisplayName("두 worker 가 동시에 집으면 서로 다른 작업을 받거나 한쪽은 빈손이다")
+    @DisplayName("두 worker 가 동시에 집으면 서로 다른 작업을 받는다")
     fun `SKIP LOCKED 가 한 행을 두 번 주지 않는다`() {
         val first = seedJob()
         val second = seedJob()
-        val seen = mutableSetOf<UUID>()
-        val start = CountDownLatch(1)
-        val done = CountDownLatch(2)
+        val ready = CountDownLatch(2)
+        val acquired = CountDownLatch(2)
+        val release = CountDownLatch(1)
         val pool = Executors.newFixedThreadPool(2)
-        repeat(2) { index ->
-            pool.submit {
-                start.await()
-                val owner = if (index == 0) WORKER_A else WORKER_B
-                transactions.execute {
-                    acquire(owner)?.let { seen += it.conversionId }
+        try {
+            val futures =
+                listOf(WORKER_A, WORKER_B).map { owner ->
+                    pool.submit<ConversionAcquire> {
+                        ready.countDown()
+                        check(ready.await(5, TimeUnit.SECONDS))
+                        var got: ConversionAcquire = ConversionAcquire.Empty
+                        transactions.execute {
+                            try {
+                                got = queue.acquire(owner, Duration.ofMinutes(2), MAX_ATTEMPTS)
+                            } finally {
+                                acquired.countDown()
+                                check(release.await(5, TimeUnit.SECONDS))
+                            }
+                        }
+                        got
+                    }
                 }
-                done.countDown()
-            }
-        }
-        start.countDown()
-        assertThat(done.await(5, TimeUnit.SECONDS)).isTrue()
-        pool.shutdownNow()
+            val bothAcquired = acquired.await(5, TimeUnit.SECONDS)
+            release.countDown()
+            val ids =
+                futures.map { future ->
+                    when (val got = future.get(5, TimeUnit.SECONDS)) {
+                        is ConversionAcquire.Held -> {
+                            got.lease.conversionId
+                        }
 
-        assertThat(seen).containsExactlyInAnyOrder(first, second)
+                        else -> {
+                            null
+                        }
+                    }
+                }
+            assertThat(bothAcquired).isTrue()
+            assertThat(ids).containsExactlyInAnyOrder(first, second)
+        } finally {
+            release.countDown()
+            pool.shutdownNow()
+        }
     }
 
     private fun acquire(owner: String): ConversionJobLease? =
