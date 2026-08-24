@@ -182,7 +182,7 @@ class SensitiveToStringReachTest {
         const val MIN_PRODUCTION_CLASSES = 60
 
         /** 소스 쪽은 하한이 아니라 정확 일치다 (게이트 25 U-1). */
-        const val EXPECTED_SOURCE_DECLARATIONS = 58
+        const val EXPECTED_SOURCE_DECLARATIONS = 62
 
         /** 민감 판정이 반드시 닿아야 하는 타입 — 바닥이다. */
         val KNOWN_SENSITIVE_TYPES =

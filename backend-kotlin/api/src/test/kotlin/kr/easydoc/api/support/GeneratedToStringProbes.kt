@@ -110,13 +110,20 @@ class GeneratedToStringProbes(
             }
 
             else -> {
-                runCatching { dataClassProbe(type) }
-                    .fold(
-                        onSuccess = { probe -> probe?.let { GeneralCandidate(it, null) } },
-                        onFailure = { failure ->
-                            GeneralCandidate.undecidable(type, failure.message ?: "표본 생성 실패")
-                        },
-                    )
+                val widened = type.annotations.any { it is UserContent }
+                val anySensitive =
+                    widened || parameters.any { isSensitiveName(nameOf(type, it)) }
+                if (!anySensitive) {
+                    null
+                } else {
+                    runCatching { dataClassProbe(type) }
+                        .fold(
+                            onSuccess = { probe -> probe?.let { GeneralCandidate(it, null) } },
+                            onFailure = { failure ->
+                                GeneralCandidate.undecidable(type, failure.message ?: "표본 생성 실패")
+                            },
+                        )
+                }
             }
         }
     }
