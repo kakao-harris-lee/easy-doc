@@ -52,10 +52,9 @@
 
 제거 작업(단계 2)에서 아래로 이동했다 — 정확한 경로·개수·SHA-256은 `docs/plans/_workspace-python-removal/02_data-migration-manifest.md` 참고.
 
-- golden JSON 56건, `required_facts` 253개 → `data/golden/`
-- easy-read 변환 예시 6개 → `data/golden/` 또는 `data/examples/`
-- 독립 style rule 데이터(13개 키) → `data/style-rules/`
-- DOCX/PDF/HWPX 샘플, 위조·과대 ZIP 보안 fixture → `data/document-samples/`
+- golden JSON 56건, `required_facts` 253개 → `data/golden/documents/` (Kotlin이 아직 쓰지 않아 새로 옮김)
+- easy-read 변환 예시 6개, 독립 style rule 데이터(13개 키, 어려운말 사전 246개 포함), DOCX/PDF/HWPX 샘플·위조·과대 ZIP 보안 fixture는 **이동하지 않았다** — 조사 결과 이미 Kotlin(`backend-kotlin/core`·`infrastructure`의 소스·테스트 리소스)에 SHA-256 또는 값 단위로 전건 포팅·고정되어 있어, 이동 조건 4(중복 생성 금지)에 따라 그대로 뒀다. Python 이름이 남은 두 스냅샷(`python-style-rules-snapshot.json`, `python-prompt-snapshot.json`)의 중립 명칭 변경은 단계 3에서 처리한다.
+- `tests/golden/baseline.json`(Python LLM 채점 회귀 바닥값)은 Python 실행 결과라 보존하지 않고 폐기하기로 결정했다.
 
 ## 4. 참고 — 이제 없는 문서
 

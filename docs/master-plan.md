@@ -105,7 +105,7 @@
 
 ### 3.3 품질 신뢰 체계
 
-- **골든셋**: 실제 복지 안내문 20~30건 + 기대 변환 결과를 골든셋으로 구축. 프롬프트·모델 변경 시 자동 평가(스타일 규칙 검사 + LLM-as-judge)를 CI에서 강제한다는 것이 목표다. **2026-08-24 기준 평가 도구는 Python 구현(`app/easyread/goldenset.py`·`judge.py`)에만 있었고 Python 제거와 함께 없어졌다 — Kotlin 대체 도구는 재개발 backlog.** 골든 JSON 56건·`required_facts` 253개·easy-read 변환 예시 6개는 `data/**`에 언어 독립 fixture로 보존했다(제거 계획 §4.2).
+- **골든셋**: 실제 복지 안내문 20~30건 + 기대 변환 결과를 골든셋으로 구축. 프롬프트·모델 변경 시 자동 평가(스타일 규칙 검사 + LLM-as-judge)를 CI에서 강제한다는 것이 목표다. **2026-08-24 기준 평가 도구는 Python 구현(`app/easyread/goldenset.py`·`judge.py`)에만 있었고 Python 제거와 함께 없어졌다 — Kotlin 대체 도구는 재개발 backlog.** 골든 JSON 56건·`required_facts` 253개는 `data/golden/documents/`에 언어 독립 fixture로 옮겼다. easy-read 변환 예시 6개·독립 style rule 데이터(어려운말 사전 246개 포함)는 이미 Kotlin(`Prompts.kt`·`StyleRules.kt`와 그 테스트 리소스)에 포팅·고정되어 있어 별도로 옮기지 않았다(제거 계획 §4.2, 실행 기록 `docs/plans/_workspace-python-removal/02_data-migration-manifest.md`). Python 골든셋의 회귀 바닥값(`tests/golden/baseline.json`)은 Python 실행 결과 기반이라 보존하지 않고 폐기했다(같은 문서 §3).
 - **쉬운 글 스타일 규칙**: 국립국어원·보건복지부·알다 가이드라인 기반 체크리스트(문장 길이, 한 문장 한 정보, 어려운 한자어 치환, 능동태 등)를 명문화하여 프롬프트와 평가 기준에 공통 사용.
 - **HITL**: 모든 결과물은 담당자 검수 후 확정. "AI 초안"임을 UI에 명시.
 - **변환 호출 계약**: 문서 변환 1건 = LLM 호출 **최대 2회** — 변환 1회 + 스타일 규칙 위반이 기계 검출된 경우에만 표적 보정 1회(루프 없음, 보정 실패·악화 시 원본 채택). 크레딧 원가 산정(5장)은 이 상한을 전제로 한다. **알려진 품질 한계(2026-08-08 갱신)**: gpt-4o의 장문 자체 요약(압축) 문제는 기본 모델을 gpt-4.1로 교체해 해소했다(전건 정상 팽창·충실성 바닥 0건 — docs/quality/2026-08-07-model-comparison.md, 2026-08-08-golden-reeval-gpt41.md). 분할 변환 필요성은 소멸. 현재 남은 한계는 **장문에서 문장 길이 등 스타일 규칙 준수율 하락**(2,000자 초과 통과율 0.11)으로, 파일럿 안내의 2,000자 내외 권장은 이 사유로 유지한다.
