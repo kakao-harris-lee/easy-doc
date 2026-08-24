@@ -270,7 +270,7 @@ function parseFilename(disposition: string | null): string | null {
  *
  * JSON이 아니라 바이트를 받으므로 requestJson을 쓰지 않는다. 파일명은 응답 헤더에서
  * 읽는다 — 개발 환경은 교차 출처라 백엔드가 Content-Disposition을 노출 목록에 넣어
- * 두었지만(app/main.py), 프록시가 걷어낼 수도 있어 호출한 쪽이 대체 이름을 갖는다.
+ * 두었지만, 프록시가 걷어낼 수도 있어 호출한 쪽이 대체 이름을 갖는다.
  */
 export async function downloadExport(
   conversionId: string,

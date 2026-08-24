@@ -1,0 +1,19 @@
+# Generated and local state
+.git/
+.omc/
+.playwright-mcp/
+backend-kotlin/.gradle/
+backend-kotlin/.kotlin/
+backend-kotlin/**/build/
+frontend/node_modules/
+frontend/dist/
+frontend/test-results/
+frontend/playwright-report/
+
+# Historical and large evidence; open explicitly only for a task that names it
+docs/plans/archive/
+docs/benchmarks/
+docs/quality/
+docs/golden/
+docs/golden-drafts/
+

@@ -8,14 +8,14 @@ spring:
     default: api
 
   datasource:
-    # 기본값은 docker-compose.yml 의 로컬 개발 환경 기준. 운영은 환경변수로 덮어쓴다.
+    # 기본값은 compose.yml 의 로컬 개발 환경 기준. 운영은 환경변수로 덮어쓴다.
     # 비밀값을 이 파일에 적지 않는다 — .env/환경변수만 쓴다(프로젝트 CLAUDE.md).
-    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/easydoc_kotlin}
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/easydoc}
     username: ${SPRING_DATASOURCE_USERNAME:postgres}
     password: ${SPRING_DATASOURCE_PASSWORD:postgres}
     hikari:
       # 기동 시 접속을 시도하지 않는다 — DB가 떠 있지 않아도 앱은 뜨고 /health 로
-      # 진단할 수 있어야 한다(Python app/main.py lifespan 주석과 같은 동작).
+      # 진단할 수 있어야 한다. 실제 의존성 상태는 health 진단에서 구분한다.
       initialization-fail-timeout: -1
 
   flyway:
@@ -163,7 +163,7 @@ logging:
     org.flywaydb: INFO
 
 ---
-# migrate profile — 스키마만 적용하고 종료한다. compose 의 kotlin-migrate 가 쓴다.
+# migrate profile — 스키마만 적용하고 종료한다. compose 의 backend-migrate가 쓴다.
 #
 # **본문 암호화 키를 요구하지 않는다** (게이트 26 조치 2). CryptoConfiguration 이
 # `@Profile("!migrate")` 라 이 프로필에서는 조립되지 않으므로, 키가 비어 있어도 뜨고

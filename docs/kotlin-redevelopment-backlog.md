@@ -1,10 +1,10 @@
 # Kotlin 재개발 backlog
 
 - 작성일: 2026-08-24
-- 목적: `docs/migration/**`(마이그레이션 진행 문서, 2026-08-24 제거)와 이제 없는 Python 구현에만 있던 결정·미해결 항목 중, 아직 유효한 요구사항과 미구현 기능을 옮겨 적는다. 이 문서는 계획이 아니라 **backlog**다 — 착수 순서·우선순위는 `docs/master-plan.md` 4장을 따른다.
-- 근거: `docs/plans/2026-08-24-python-removal-for-kotlin-redevelopment.md`, 제거 직전 `docs/migration/_workspace/00_progress.md`(태그 `pre-python-removal-20260824`에서 전문 확인 가능).
+- 목적: 현재 Kotlin/Spring Boot 제품에서 아직 구현되지 않은 기능과 결정이 필요한 항목을 관리한다. 이 문서는 계획이 아니라 **backlog**다. 착수 순서는 `docs/master-plan.md`와 활성 Sprint K1 문서를 따른다.
+- 상태 근거: 현재 `backend-kotlin/`, `frontend/`, `contracts/easy-doc-v1.yaml`의 구현과 테스트.
 
-## 1. 미구현 기능 (실측 — `docs/plans/_workspace-python-removal/00_baseline_kotlin-incompleteness-snapshot.md` 참고)
+## 1. 미구현 기능 (2026-08-24 현재 코드 기준)
 
 | 기능 | 상태 | 비고 |
 |---|---|---|
@@ -12,17 +12,17 @@
 | Worker 작업 처리(리스 획득 → 마스킹 → LLM 호출 → 결과 반영) | 미구현 | `infrastructure.queue.JdbcConversionQueue`(큐 자료구조)는 있으나 `worker/` 모듈은 Spring Boot 기동 골격뿐 |
 | 보존·자동 삭제 정책(기본 30일) | 미구현 | 스케줄러·배치 없음 |
 | 쉬운 말 사전(RAG, pgvector 기반 팝업) | 미구현 | master-plan P0-5. Lean MVP 범위 밖으로 의도적으로 미뤄져 있었다 |
-| 골든셋 품질 평가(스타일 규칙 + LLM-as-judge) | 미구현(Kotlin) | Python `app/easyread/{goldenset,judge}.py`에만 있었고 제거됐다. 골든 fixture 자체는 `data/golden/`에 보존(§3) |
+| 골든셋 품질 평가(스타일 규칙 + LLM-as-judge) | 미구현 | 골든 fixture는 `data/golden/`에 보존. Kotlin 실행기와 CI 기준선 필요 |
 | 결제(카드·계좌이체·세금계산서), 크레딧 차감 | 미구현 | Lean MVP 범위 밖(master-plan 4.0) |
 | 운영자 어드민 | 미구현 | Lean MVP 범위 밖 |
 
-## 2. 구현 시 반드시 지킬 요구사항 (Python spike로 확인됐던 사항 — Kotlin으로 그대로 적용)
+## 2. 구현 시 반드시 지킬 요구사항
 
 ### 2.1 저장 암호화
 
-- **표준 AEAD**(Fernet 호환 불필요 — 2026-08-12 재개발 전환으로 호환 요구 소멸). 이미 `infrastructure.crypto.CryptoConfiguration` + `V2__encryption_scheme.sql`/`V3__encryption_scheme_aead.sql`로 구현됨.
+- **표준 AEAD**를 사용한다. 이미 `infrastructure.crypto.CryptoConfiguration`과 현재 Flyway schema로 구현돼 있다.
 - 요구 성질: round-trip, 변조 거부(HMAC/AEAD 태그 검증을 복호화보다 먼저), 키 회전 지원(`encryption_scheme`/`key_version` 컬럼), nonce 재사용 금지.
-- 판정 기준은 값 동일성이 아니라 위 성질 충족(Python 대조 불가 — 이미 제거됨).
+- 판정 기준은 round-trip, 변조 거부, 키 회전, nonce 재사용 금지 성질이다.
 
 ### 2.2 Argon2 (비밀번호 해시)
 
@@ -48,15 +48,14 @@
 - 마스킹 범주 2종(주민등록번호·카드번호)이며, 마스킹 선행 불변식(LLM 전달 전 필수 통과)은 순서 문제이지 범주 문제가 아니다.
 - 원문-플레이스홀더 대응표는 인증된 소유자의 검수 조회 응답에만 반환, 로그·목록 응답에는 포함하지 않는다.
 
-## 3. 언어 독립 데이터 보존 위치
+## 3. 언어 독립 데이터 위치
 
-제거 작업(단계 2)에서 아래로 이동했다 — 정확한 경로·개수·SHA-256은 `docs/plans/_workspace-python-removal/02_data-migration-manifest.md` 참고.
+- golden JSON 56건, `required_facts` 253개: `data/golden/documents/`
+- 프롬프트·스타일 규칙 기준: `backend-kotlin/core/src/main/kotlin/kr/easydoc/core/easyread/` 및 같은 모듈의 스냅샷 테스트
+- DOCX/PDF/HWPX 보안 fixture: `backend-kotlin/infrastructure/src/testFixtures/resources/fixtures/ingest/`
 
-- golden JSON 56건, `required_facts` 253개 → `data/golden/documents/` (Kotlin이 아직 쓰지 않아 새로 옮김)
-- easy-read 변환 예시 6개, 독립 style rule 데이터(13개 키, 어려운말 사전 246개 포함), DOCX/PDF/HWPX 샘플·위조·과대 ZIP 보안 fixture는 **이동하지 않았다** — 조사 결과 이미 Kotlin(`backend-kotlin/core`·`infrastructure`의 소스·테스트 리소스)에 SHA-256 또는 값 단위로 전건 포팅·고정되어 있어, 이동 조건 4(중복 생성 금지)에 따라 그대로 뒀다. Python 이름이 남은 두 스냅샷(`python-style-rules-snapshot.json`, `python-prompt-snapshot.json`)의 중립 명칭 변경은 단계 3에서 처리한다.
-- `tests/golden/baseline.json`(Python LLM 채점 회귀 바닥값)은 Python 실행 결과라 보존하지 않고 폐기하기로 결정했다.
+## 4. 역사 자료
 
-## 4. 참고 — 이제 없는 문서
-
-- `docs/plans/2026-08-11-kotlin-react-migration.md` (마이그레이션 계획 원본) — 제거됨. 필요하면 태그 `pre-python-removal-20260824`에서 열람.
-- `docs/migration/_workspace/**`(진행 원장·spike 보고서·리뷰) — 제거됨. 같은 태그에서 열람 가능.
+- Python 시대 스프린트와 CI 기록은 `docs/plans/archive/python-era/`에 보관한다.
+- Python 제거 범위와 결정은 `docs/plans/archive/transition/2026-08-24-python-removal-for-kotlin-redevelopment.md`에 보관한다.
+- 역사 자료의 완료 표시는 현재 Kotlin backlog를 닫지 않는다.

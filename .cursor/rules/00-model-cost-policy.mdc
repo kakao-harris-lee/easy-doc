@@ -1,0 +1,15 @@
+---
+description: Enforce low-cost model routing and prohibit expensive agent orchestration
+alwaysApply: true
+---
+
+# Model and cost policy
+
+- Implementation, tests, debugging, refactoring, configuration, and documentation edits must use Sonnet 5 or Codex.
+- Never implement with Opus 5. If the active model is Opus and the request requires file edits or commands, produce only a plan/handoff and stop before changing the workspace.
+- Opus 5 is allowed only for an explicitly requested plan or architecture decision. End that session after the plan.
+- Do not spawn subagents, background agents, parallel agents, review swarms, or recursive delegations.
+- Do not invoke repository skills or build orchestration/harness layers. Work directly from the relevant files and existing Gradle/npm/Compose checks.
+- Do not scan the whole repository repeatedly. Start from the requested project, its related tests, and the API contract only when the public API changes.
+- Never make paid external LLM calls without explicit approval of the call count and budget.
+

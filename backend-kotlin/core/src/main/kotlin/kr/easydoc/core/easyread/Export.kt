@@ -5,8 +5,6 @@ import java.nio.charset.StandardCharsets
 
 // 내보내기 — **순수 문자열·바이트 로직만** 둔다.
 //
-// 원본: app/easyread/export.py 의 export_filename · content_disposition · render_export(TXT).
-//
 // ## 여기 없는 것과 그 이유
 //
 // - **DOCX·HWPX 렌더링**: POI/ZIP 의존이라 `infrastructure` 몫이고 Phase 4다. 이 파일이
@@ -14,8 +12,7 @@ import java.nio.charset.StandardCharsets
 //   (kotlin-spring-conventions §1), zip 컨테이너 조립은 그 조건을 만족하지 않는다.
 // - **자리표시자 복원**: 이미 `privacy/Masking.kt::restoreForExport` 에 있다. 여기 다시
 //   만들지 않는다 — 복원 규칙(정확히 1회일 때만·검수본 없으면 보류)은 마스킹 쪽 결정이고
-//   두 벌로 두면 한쪽만 고쳐지는 날이 온다. Python 이 `export.py` 에 둔 것을 그대로 옮기지
-//   않은 유일한 자리이며, 그 판단의 근거는 `restoreForExport` KDoc 에 적혀 있다.
+//   두 벌로 두면 한쪽만 고쳐지는 날이 온다. 판단 근거는 `restoreForExport` KDoc에 있다.
 
 /** 내보내기 형식. 값이 그대로 확장자다. */
 enum class ExportFormat(
