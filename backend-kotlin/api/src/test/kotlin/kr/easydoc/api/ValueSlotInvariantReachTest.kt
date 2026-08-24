@@ -273,6 +273,9 @@ class ValueSlotInvariantReachTest {
         if (slot.location == PATH_LOCATION) {
             path = path.replace("{${slot.name}}", BLANK_SEGMENT)
         }
+        // 쿼리 값 자리를 겨눌 때 같은 경로의 `{conversion_id}` 같은 나머지를 채운다.
+        // 더미 UUID 면 형식 오류가 자원 404 보다 먼저다.
+        path = PATH_VARIABLE.replace(path) { UNUSED_PATH_UUID }
         require(!path.contains("{")) {
             "${slot.label}: 경로에 채우지 못한 변수가 남았다($path) — 그 자리를 채울 자원 fixture 가 필요하다. " +
                 "이 케이스를 건너뛰지 않는다."
@@ -299,10 +302,30 @@ class ValueSlotInvariantReachTest {
     private fun uninterpretableSamples(parameter: ContractQueryParameter): List<Pair<String, String>> {
         val common = listOf("빈 자리" to "", "공백뿐" to BLANK_SEGMENT)
         return when (declaredKindOf(parameter)) {
-            INTEGER_KIND -> common + listOf("정수 문법 아님" to "abc", "표현 범위 초과" to "99999999999999999999")
-            UUID_KIND -> common + listOf("UUID 문법 아님" to "abc")
-            else -> error("계약이 ${parameter.name} 에 선언한 타입을 이 표본 생성기가 모른다: ${parameter.schema}")
+            INTEGER_KIND -> {
+                common + listOf("정수 문법 아님" to "abc", "표현 범위 초과" to "99999999999999999999")
+            }
+
+            UUID_KIND -> {
+                common + listOf("UUID 문법 아님" to "abc")
+            }
+
+            STRING_KIND -> {
+                val outsider = enumOutsider(parameter)
+                common + if (outsider == null) emptyList() else listOf("enum 밖" to outsider)
+            }
+
+            else -> {
+                error("계약이 ${parameter.name} 에 선언한 타입을 이 표본 생성기가 모른다: ${parameter.schema}")
+            }
         }
+    }
+
+    /** 계약 enum 에 없는 값 하나. 목록이 없으면 이 자리는 공백·빈 값만 잰다. */
+    private fun enumOutsider(parameter: ContractQueryParameter): String? {
+        val declared = (parameter.schema["enum"] as? List<*>)?.map { it.toString() }?.toSet() ?: return null
+        require(declared.isNotEmpty()) { "${parameter.name} 의 enum 이 비었다 — 밖을 고를 분모가 없다" }
+        return listOf("pdf", "hwp", "DOCX", "__not_in_enum__").firstOrNull { it !in declared }
     }
 
     /** 계약 파라미터 스키마의 선언 타입. `anyOf` 는 널이 아닌 갈래를 읽는다. */
@@ -452,8 +475,12 @@ class ValueSlotInvariantReachTest {
         /** OpenAPI 타입·형식 어휘. 표본 생성기가 선언 타입을 가르는 데 쓴다. */
         private const val INTEGER_KIND = "integer"
         private const val UUID_KIND = "uuid"
+        private const val STRING_KIND = "string"
         private const val NULL_TYPE = "null"
         private const val UNKNOWN_KIND = "?"
+
+        private val PATH_VARIABLE = Regex("\\{[^}]+\\}")
+        private const val UNUSED_PATH_UUID = "00000000-0000-0000-0000-000000000000"
 
         /** 값 자리는 있고 어떤 타입으로도 해석되지 않는 조각. 인코딩된 공백이다. */
         private const val BLANK_SEGMENT = "%20"

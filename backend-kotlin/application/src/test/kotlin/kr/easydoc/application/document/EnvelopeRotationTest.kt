@@ -347,6 +347,11 @@ class EnvelopeRotationTest {
             conversionId: UUID,
         ): StoredConversion? = null
 
+        override fun findOwnedExport(
+            ownerId: UUID,
+            conversionId: UUID,
+        ): StoredExport? = error("회전 경로가 내보내기 포트를 부르면 안 된다")
+
         override fun lockEnvelope(conversionId: UUID): ConversionEnvelope? = envelope
 
         override fun rewriteEnvelope(

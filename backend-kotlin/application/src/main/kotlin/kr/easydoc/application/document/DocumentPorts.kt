@@ -100,6 +100,15 @@ data class StoredConversion(
             "missing=${missingPlaceholders.size})"
 }
 
+/** 내보내기가 읽는 행 — 변환 결과와 **파일명에 쓸 문서 제목**. */
+class StoredExport(
+    val result: StoredConversion,
+    val documentTitle: String,
+) {
+    /** 제목은 길이만 남긴다. 본문은 이 객체에 없다. */
+    override fun toString(): String = "StoredExport(${result.id}, 제목 ${documentTitle.length}자)"
+}
+
 /** 잠근 행 — 상태와 봉투. 봉투가 행 단위라 열이 전부 NULL 이어도 세대를 묻는다. */
 class LockedConversion(
     val status: ConversionStatus,
@@ -125,6 +134,15 @@ interface ConversionRepository {
         ownerId: UUID,
         conversionId: UUID,
     ): StoredConversion?
+
+    /**
+     * 내보내기가 읽는 **내** 변환. 조회와 같은 소유 술어이고, 파일명에 쓸 제목을 함께 준다.
+     * 없거나 내 것이 아니면 `null` — **두 경우를 구분하지 않는다.**
+     */
+    fun findOwnedExport(
+        ownerId: UUID,
+        conversionId: UUID,
+    ): StoredExport?
 
     /** 회전 대상 행의 암호문과 봉투를 읽고 **그 행을 잠근다**. 없으면 `null`. */
     fun lockEnvelope(conversionId: UUID): ConversionEnvelope?

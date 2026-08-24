@@ -275,7 +275,7 @@ v1 기획의 MVP는 물론, 아래 P0 전체(11개)도 "정식 출시" 기준이
 | 저장·마스킹·LLM 유스케이스 | 구현 | worker 실행 경로에 연결됨 |
 | 비동기 변환 | worker 처리 루프 구현 | Compose Playwright에서 `pending → processing → done|failed` 재확인 |
 | 검수·기록 | Kotlin API + React 구현 | 변환 완료 흐름과 통합 |
-| 내보내기 | 코어 생성 로직 일부, HTTP endpoint 미구현 | docx/txt 계약과 UI 완료 |
+| 내보내기 | GET `/conversions/{id}/export` (docx/txt/hwpx) | Lean MVP 형식 완료. pdf는 계약 enum 밖(422), P0 재다운로드 범위 |
 | 30일 보존 삭제 | 미구현 | 자동 삭제 작업과 관측 구현 |
 | 품질 평가 | fixture 보존, Kotlin 실행기 미구현 | 정적 평가 CI + opt-in judge 레인 |
 | 개발·배포 모델 | 독립 프로젝트 + Compose/CI/CD 구조 정리 | 모든 완료 정의 통과 |

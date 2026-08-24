@@ -4,6 +4,7 @@ import org.yaml.snakeyaml.Yaml
 import java.io.File
 
 /** **계약 파일을 직접 읽는다** — OQ-3 / X-J2 의 구현. */
+@Suppress("LargeClass")
 object ContractSpec {
     /** 저장소 루트 기준 계약 파일 경로. */
     private const val CONTRACT_RELATIVE_PATH = "contracts/easy-doc-v1.yaml"
@@ -338,8 +339,10 @@ object ContractSpec {
                     location = declaration["in"]?.toString() ?: error("$method $path 의 parameters[$index] 에 in 이 없다"),
                     required = declaration["required"] as? Boolean ?: false,
                     schema =
-                        declaration["schema"] as? Map<*, *>
-                            ?: error("$method $path 의 parameters[$index] 에 schema 가 없다"),
+                        resolveSchema(
+                            declaration["schema"] as? Map<*, *>
+                                ?: error("$method $path 의 parameters[$index] 에 schema 가 없다"),
+                        ),
                 )
             }.filter { it.location == QUERY_LOCATION }
 
@@ -448,8 +451,16 @@ object ContractSpec {
                 name = declaration["name"]?.toString() ?: error("$path 의 parameters 에 name 이 없다"),
                 location = declaration["in"]?.toString() ?: error("$path 의 parameters 에 in 이 없다"),
                 format =
-                    (declaration["schema"] as? Map<*, *>)?.get("format")?.toString()
-                        ?: error("$path 의 parameters 에 schema.format 이 없다"),
+                    run {
+                        val schema =
+                            resolveSchema(
+                                declaration["schema"] as? Map<*, *>
+                                    ?: error("$path 의 parameters 에 schema 가 없다"),
+                            )
+                        schema["format"]?.toString()
+                            ?: schema["type"]?.toString()
+                            ?: error("$path 의 parameters 에 schema.format 이 없다")
+                    },
             )
         }
 
@@ -495,8 +506,10 @@ object ContractSpec {
                 name = declaration["name"]?.toString() ?: error("$label 의 parameters[$index] 에 name 이 없다"),
                 location = declaration["in"]?.toString() ?: error("$label 의 parameters[$index] 에 in 이 없다"),
                 schema =
-                    declaration["schema"] as? Map<*, *>
-                        ?: error("$label 의 parameters[$index] 에 schema 가 없다"),
+                    resolveSchema(
+                        declaration["schema"] as? Map<*, *>
+                            ?: error("$label 의 parameters[$index] 에 schema 가 없다"),
+                    ),
             )
         }
     }
@@ -671,6 +684,12 @@ object ContractSpec {
         val values = strings("components", "schemas", schema, "enum")
         require(values.isNotEmpty()) { "$schema 의 enum 이 비었다 — 이 대조는 아무것도 재지 않는다." }
         return values
+    }
+
+    /** `$ref` 를 따라 스키마 본문을 연다. 이미 인라인이면 그대로 둔다. */
+    fun resolveSchema(schema: Map<*, *>): Map<*, *> {
+        val ref = schema["\$ref"]?.toString() ?: return schema
+        return map("components", "schemas", ref.substringAfterLast('/'))
     }
 
     /** **P-32 — 스키마 속성의 `enum` 값 집합.** (`MaskedItemResponse.category` 처럼) */

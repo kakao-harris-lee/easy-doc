@@ -51,6 +51,13 @@ const val NO_WORKSPACE_MESSAGE: String = "요청을 처리하지 못했습니다
 /** 계약 PUT 409 예시 `not_done`. **404·422 아니다.** */
 const val CONVERSION_NOT_DONE_MESSAGE: String = "변환이 끝난 뒤에 수정할 수 있습니다"
 
+/** 계약 GET export 409 예시 `not_done`. 검수 저장 409 와 **문구가 다르다.** */
+const val EXPORT_NOT_DONE_MESSAGE: String = "변환이 끝난 뒤에 내려받을 수 있습니다"
+
+/** 계약 GET export 409 예시 `missing_placeholders`. */
+const val EXPORT_MISSING_PLACEHOLDERS_MESSAGE: String =
+    "변환에서 유실된 개인정보 표시가 있습니다 — 검수 화면에서 수정 후 내보내세요"
+
 /** 계약 PUT 422 예시 `empty`. 제어문자만 담긴 수정본도 여기다. */
 const val EMPTY_REVIEW_MESSAGE: String = "수정본이 비어 있습니다"
 

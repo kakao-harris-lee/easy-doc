@@ -5,6 +5,7 @@ import kr.easydoc.application.document.ConversionEnvelope
 import kr.easydoc.application.document.ConversionRepository
 import kr.easydoc.application.document.LockedConversion
 import kr.easydoc.application.document.StoredConversion
+import kr.easydoc.application.document.StoredExport
 import kr.easydoc.core.crypto.EncryptedContent
 import kr.easydoc.core.document.Conversion
 import kr.easydoc.core.document.ConversionStatus
@@ -50,6 +51,19 @@ class JdbcConversionRepository(private val jdbc: JdbcClient) : ConversionReposit
             .param("id", conversionId)
             .param("ownerId", ownerId)
             .query { rs, _ -> ConversionRows.toStored(rs) }
+            .optional()
+            .orElse(null)
+
+    /** **내** 변환과 문서 제목을 한 문장으로 읽는다. 소유 술어는 [findOwnedResult] 와 같다. */
+    override fun findOwnedExport(
+        ownerId: UUID,
+        conversionId: UUID,
+    ): StoredExport? =
+        jdbc
+            .sql(FIND_OWNED_SQL)
+            .param("id", conversionId)
+            .param("ownerId", ownerId)
+            .query { rs, _ -> StoredExport(ConversionRows.toStored(rs), rs.getString("title")) }
             .optional()
             .orElse(null)
 
@@ -183,7 +197,7 @@ class JdbcConversionRepository(private val jdbc: JdbcClient) : ConversionReposit
         /** 조회 질의. **소유 술어가 조인 위에 있다.** */
         val FIND_OWNED_SQL =
             """
-            SELECT c.id, d.id AS document_id, c.status,
+            SELECT c.id, d.id AS document_id, d.title, c.status,
                    c.easy_text_encrypted, c.masked_items_encrypted, c.edited_text_encrypted,
                    c.encryption_scheme, c.key_version,
                    c.reviewed_at, c.missing_placeholders,

@@ -1,7 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { fetchMe, login } from './auth'
-import { ApiError, NETWORK_ERROR_STATUS, listDocuments, setUnauthorizedHandler } from './client'
+import {
+  ApiError,
+  NETWORK_ERROR_STATUS,
+  downloadExport,
+  listDocuments,
+  setUnauthorizedHandler,
+} from './client'
 import { readToken, writeToken } from './token'
 
 /** JSON 응답을 흉내 낸다. */
@@ -133,5 +139,45 @@ describe('오류 해석', () => {
       status: NETWORK_ERROR_STATUS,
       message: expect.stringContaining('서버에 연결하지 못했습니다'),
     })
+  })
+})
+
+describe('내보내기', () => {
+  it('format 쿼리를 붙이고 filename* 을 파일명으로 쓴다', async () => {
+    writeToken('token-abc')
+    const filename = '기초연금.txt'
+    fetchMock.mockResolvedValue(
+      new Response('본문', {
+        status: 200,
+        headers: {
+          'Content-Disposition': `attachment; filename="easy-read.txt"; filename*=UTF-8''${encodeURIComponent(filename)}`,
+        },
+      }),
+    )
+
+    const file = await downloadExport('c1', 'txt')
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      'http://localhost:8000/conversions/c1/export?format=txt',
+    )
+    expect(file.filename).toBe(filename)
+    expect(await file.blob.text()).toBe('본문')
+  })
+
+  it('filename* 이 없으면 파일명을 null 로 둔다', async () => {
+    writeToken('token-abc')
+    fetchMock.mockResolvedValue(
+      new Response('본문', {
+        status: 200,
+        headers: { 'Content-Disposition': 'attachment; filename="easy-read.docx"' },
+      }),
+    )
+
+    const file = await downloadExport('c1', 'docx')
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      'http://localhost:8000/conversions/c1/export?format=docx',
+    )
+    expect(file.filename).toBeNull()
   })
 })

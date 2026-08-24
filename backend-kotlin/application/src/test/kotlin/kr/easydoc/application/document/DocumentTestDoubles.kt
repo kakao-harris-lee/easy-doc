@@ -112,6 +112,19 @@ internal class FakeConversionRepository(private val transaction: RecordingTransa
         return owned[ownerId to conversionId]
     }
 
+    /** 내보내기 전용 조회. 제목은 [titles] 가 없으면 기본 이름을 쓴다. */
+    val titles = mutableMapOf<UUID, String>()
+
+    override fun findOwnedExport(
+        ownerId: UUID,
+        conversionId: UUID,
+    ): StoredExport? {
+        reads += ownerId to conversionId
+        depthWhenRead += transaction.depth
+        val stored = owned[ownerId to conversionId] ?: return null
+        return StoredExport(stored, titles[conversionId] ?: DEFAULT_EXPORT_TITLE)
+    }
+
     override fun lockEnvelope(conversionId: UUID): ConversionEnvelope? = null
 
     override fun rewriteEnvelope(
@@ -154,6 +167,10 @@ internal class FakeConversionRepository(private val transaction: RecordingTransa
         val updated: ConversionEnvelope,
         val depth: Int,
     )
+
+    private companion object {
+        const val DEFAULT_EXPORT_TITLE: String = "안내문"
+    }
 }
 
 /** 대응표 읽기 대역. 형식은 한 줄에 자리표시자 하나다 — 실물 JSON 을 흉내 내지 않는다. */
