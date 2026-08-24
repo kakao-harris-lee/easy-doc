@@ -22,6 +22,10 @@ class ConvertDocumentUseCase(
     private val provider: LlmProvider,
     private val documentIds: DocumentIdGenerator = SecureDocumentIds,
 ) {
+    /** worker 가 변환 유스케이스에 들어가기 전 실패를 기록할 때 쓰는 벤더 이름. */
+    val providerName: String
+        get() = provider.name
+
     /** 원문 [source] 를 쉬운 글로 바꾼다. */
     fun convert(
         source: String,
@@ -38,14 +42,24 @@ private class Pass(
     private val budget = CompletionBudget()
     private var inputTokens = 0
     private var outputTokens = 0
+    private var lastModel: String? = null
 
     fun run(source: String): ConversionResult {
         val masking = maskText(source)
 
         // ① 변환 패스 — 항상 정확히 1회.
         return when (val first = complete(LlmPrompt.forConversion(masking.maskedText, documentIds))) {
-            is Outcome.Rejected -> ConversionResult.Failed(kind = first.kind, usage = usage())
-            is Outcome.Body -> finish(first.text, masking)
+            is Outcome.Rejected -> {
+                ConversionResult.Failed(
+                    kind = first.kind,
+                    usage = usage(),
+                    attribution = LlmAttribution(provider.name, lastModel),
+                )
+            }
+
+            is Outcome.Body -> {
+                finish(first.text, masking)
+            }
         }
     }
 
@@ -76,6 +90,7 @@ private class Pass(
             missingPlaceholders = placeholders.filter { it !in adopted.text },
             maskedItems = masking.items,
             usage = usage(),
+            attribution = LlmAttribution(provider.name, lastModel),
         )
     }
 
@@ -103,6 +118,7 @@ private class Pass(
                 return Outcome.Rejected(failureKind(exc))
             }
 
+        lastModel = completion.model
         inputTokens += completion.inputTokens
         outputTokens += completion.outputTokens
         return classify(completion)

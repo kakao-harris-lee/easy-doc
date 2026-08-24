@@ -318,12 +318,13 @@ class EnvelopeColumnWriteGuardTest {
                 "api/src/test/kotlin/kr/easydoc/api/ConversionReadReachTest.kt",
                 "api/src/test/kotlin/kr/easydoc/api/ConversionReviewReachTest.kt",
                 "infrastructure/src/main/kotlin/kr/easydoc/infrastructure/document/JdbcConversionRepository.kt",
+                "infrastructure/src/main/kotlin/kr/easydoc/infrastructure/document/JdbcConversionWorkStore.kt",
                 "infrastructure/src/main/kotlin/kr/easydoc/infrastructure/document/JdbcDocumentRepository.kt",
                 "infrastructure/src/test/kotlin/kr/easydoc/infrastructure/document/ConversionReviewStorageTest.kt",
                 "infrastructure/src/test/kotlin/kr/easydoc/infrastructure/document/EnvelopeRotationConcurrencyTest.kt",
             )
 
         /** 문장 수. 파일 목록만 보면 같은 파일 안에 한 문장을 더 넣는 편집이 조용하다. */
-        const val EXPECTED_STATEMENTS = 9
+        const val EXPECTED_STATEMENTS = 10
     }
 }

@@ -402,6 +402,11 @@ class OwnershipPredicateGuardTest {
                 "$DOCUMENT/JdbcConversionRepository.kt | UPDATE [conversions, documents]",
                 "$DOCUMENT/JdbcConversionRepository.kt | SELECT [conversions, documents]",
                 "$DOCUMENT/JdbcConversionRepository.kt | INSERT [conversions]",
+                "$DOCUMENT/JdbcConversionWorkStore.kt | SELECT [conversions, documents]",
+                "$DOCUMENT/JdbcConversionWorkStore.kt | UPDATE [conversions]",
+                "$DOCUMENT/JdbcConversionWorkStore.kt | UPDATE [conversions]",
+                "$DOCUMENT/JdbcConversionWorkStore.kt | UPDATE [conversions]",
+                "$DOCUMENT/JdbcConversionWorkStore.kt | UPDATE [conversions]",
                 "$DOCUMENT/JdbcDocumentRepository.kt | SELECT [documents]",
                 "$DOCUMENT/JdbcDocumentRepository.kt | UPDATE [documents]",
                 "$DOCUMENT/JdbcDocumentRepository.kt | DELETE [documents]",
@@ -409,19 +414,24 @@ class OwnershipPredicateGuardTest {
                 "$DOCUMENT/JdbcDocumentRepository.kt | SELECT [conversions, documents]",
             )
 
-        /** 그중 소유 매개변수가 걸리지 않은 문장. 오늘 일곱이고, 각각 사유가 있다. */
+        /** 그중 소유 매개변수가 걸리지 않은 문장. worker 내부 경로가 변환 행을 집는다. */
         val EXPECTED_UNGUARDED =
             listOf(
                 "$AUTH/JdbcWorkspaceRepository.kt | SELECT [documents]",
                 "$DOCUMENT/JdbcConversionRepository.kt | SELECT [conversions]",
                 "$DOCUMENT/JdbcConversionRepository.kt | UPDATE [conversions]",
                 "$DOCUMENT/JdbcConversionRepository.kt | INSERT [conversions]",
+                "$DOCUMENT/JdbcConversionWorkStore.kt | SELECT [conversions, documents]",
+                "$DOCUMENT/JdbcConversionWorkStore.kt | UPDATE [conversions]",
+                "$DOCUMENT/JdbcConversionWorkStore.kt | UPDATE [conversions]",
+                "$DOCUMENT/JdbcConversionWorkStore.kt | UPDATE [conversions]",
+                "$DOCUMENT/JdbcConversionWorkStore.kt | UPDATE [conversions]",
                 "$DOCUMENT/JdbcDocumentRepository.kt | SELECT [documents]",
                 "$DOCUMENT/JdbcDocumentRepository.kt | UPDATE [documents]",
                 "$DOCUMENT/JdbcDocumentRepository.kt | INSERT [documents]",
             )
 
-        /** [EXPECTED_UNGUARDED] 의 **개수 상한**. 여유가 0 이고 상향은 이력 라쳇이 막는다. */
-        const val MAX_UNGUARDED_STATEMENTS = 7
+        /** [EXPECTED_UNGUARDED] 의 **개수 상한**. worker 내부 SQL 다섯이 늘었다. */
+        const val MAX_UNGUARDED_STATEMENTS = 12
     }
 }

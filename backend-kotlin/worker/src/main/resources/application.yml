@@ -11,8 +11,7 @@ spring:
     # 웹 서버가 없으면 non-daemon 스레드가 하나도 없어 main 이 반환하는 순간 JVM 이
     # 종료한다(Phase 1 compose 실행에서 실제로 exit 0 로 즉시 끝나는 것을 확인했다).
     # worker 는 상주 프로세스여야 하므로 Spring 이 유지 스레드를 띄우게 한다.
-    # Phase 5에서 lease 폴링 루프가 붙으면 그 루프가 같은 일을 하지만, 그때까지 compose 의
-    # worker 서비스가 "떠 있다"를 보여줄 수 있어야 배선 문제와 구분된다.
+    # 스케줄 폴링이 큐를 비워도 keep-alive 는 남겨 둔다 — idle 이어도 프로세스가 죽지 않는다.
     keep-alive: true
 
   datasource:
@@ -28,7 +27,7 @@ spring:
     enabled: false
 
 easydoc:
-  # worker 도 같은 키를 갖는다 — 변환 결과·마스킹 대응표를 쓰는 쪽이 여기다(Phase 5).
+  # worker 도 같은 키를 갖는다 — 변환 결과·마스킹 대응표를 쓰는 쪽이 여기다.
   # api 와 **같은 환경변수 이름**을 읽는다. 두 프로세스가 다른 키를 들면 한쪽이 쓴 행을
   # 다른 쪽이 열지 못하고, 그 실패는 단일 예외라 원인이 드러나지 않는다.
   #
@@ -42,6 +41,22 @@ easydoc:
         # 키 검사값(12자리 hex). **비밀이 아니다** — 키와 다른 자리에서 받아야 대조가 뜻을
         # 가진다. 값을 모르면 비워 둔 채 한 번 띄워라. 기동이 실패하면서 계산값을 알려 준다.
         kcv: ${EASYDOC_ENCRYPTION_KCV_V1:}
+  llm:
+    provider: ${EASYDOC_LLM_PROVIDER:openai}
+    model: ${EASYDOC_LLM_MODEL:}
+    effort: ${EASYDOC_LLM_EFFORT:}
+    anthropic-api-key: ${ANTHROPIC_API_KEY:}
+    open-ai-api-key: ${OPENAI_API_KEY:}
+    pricing:
+      input-usd-per-million-tokens: ${EASYDOC_LLM_INPUT_USD_PER_MILLION_TOKENS:}
+      output-usd-per-million-tokens: ${EASYDOC_LLM_OUTPUT_USD_PER_MILLION_TOKENS:}
+  worker:
+    owner: ${EASYDOC_WORKER_OWNER:}
+    lease-duration-seconds: ${EASYDOC_WORKER_LEASE_DURATION_SECONDS:120}
+    max-attempts: ${EASYDOC_WORKER_MAX_ATTEMPTS:3}
+    retry-backoff-seconds: ${EASYDOC_WORKER_RETRY_BACKOFF_SECONDS:5}
+    heartbeat-interval-seconds: ${EASYDOC_WORKER_HEARTBEAT_INTERVAL_SECONDS:40}
+    poll-interval-ms: ${EASYDOC_WORKER_POLL_INTERVAL_MS:500}
 
 logging:
   level:

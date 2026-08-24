@@ -39,6 +39,16 @@ class LlmProviderConfigurationTest {
     }
 
     @Test
+    @DisplayName("fake 를 선택하면 로컬 대역을 metrics decorator로 감싼다")
+    fun `fake 는 로컬 대역이다`() {
+        val provider = configuration.llmProvider(LlmProperties(provider = FAKE_PROVIDER_NAME))
+
+        assertThat(provider).isInstanceOf(MetricsLlmProviderDecorator::class.java)
+        assertThat(provider.name).isEqualTo(FAKE_PROVIDER_NAME)
+        assertThat(provider.toString()).contains(FAKE_MODEL_NAME)
+    }
+
+    @Test
     @DisplayName("키가 없어도 조립은 된다 — 기동을 막지 않는다")
     fun `키 미설정은 기동을 막지 않는다`() {
         assertThat(configuration.llmProvider(LlmProperties(openAiApiKey = Secret.EMPTY)).name)

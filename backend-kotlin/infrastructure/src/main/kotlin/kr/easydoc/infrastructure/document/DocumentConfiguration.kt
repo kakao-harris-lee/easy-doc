@@ -31,15 +31,15 @@ class DocumentConfiguration {
     fun conversionRepository(jdbcClient: JdbcClient): ConversionRepository = JdbcConversionRepository(jdbcClient)
 
     @Bean
-    fun conversionQueue(jdbcClient: JdbcClient): ConversionQueue = JdbcConversionQueue(jdbcClient)
+    fun conversionQueue(jdbcClient: JdbcClient): JdbcConversionQueue = JdbcConversionQueue(jdbcClient)
 
     /** 사유는 클래스 KDoc 의 「`WorkspaceLookup` 빈이 따로 있는 이유」. */
     @Bean
     fun workspaceLookup(jdbcClient: JdbcClient): WorkspaceLookup = JdbcWorkspaceLookup(jdbcClient)
 
-    /** 마스킹 대응표 코덱 — **읽기 포트로만 노출한다.** */
+    /** 마스킹 대응표 코덱. 읽기·쓰기 포트는 이 한 빈이 모두 만족한다. */
     @Bean
-    fun maskedItemReader(): MaskedItemReader = MaskedItemCodec()
+    fun maskedItemCodec(): MaskedItemCodec = MaskedItemCodec()
 
     /** 업로드가 한 트랜잭션에서 쓰는 세 저장소. 묶는 사유는 [DocumentStorage] KDoc. */
     @Bean

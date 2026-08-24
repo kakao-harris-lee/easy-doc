@@ -56,10 +56,14 @@ class LlmProviderConfiguration {
                     AnthropicProvider(anthropicSettings(properties))
                 }
 
+                FAKE_PROVIDER_NAME -> {
+                    LocalLlmProvider()
+                }
+
                 else -> {
                     throw ConfigurationException(
                         "지원하지 않는 LLM provider 설정입니다 " +
-                            "(가능: $OPENAI_PROVIDER_NAME, $ANTHROPIC_PROVIDER_NAME)",
+                            "(가능: $OPENAI_PROVIDER_NAME, $ANTHROPIC_PROVIDER_NAME, $FAKE_PROVIDER_NAME)",
                     )
                 }
             }

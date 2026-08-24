@@ -8,6 +8,7 @@ import kr.easydoc.core.document.Document
 import kr.easydoc.core.document.DocumentListing
 import kr.easydoc.core.document.MaskedItemView
 import kr.easydoc.core.document.SourceFormat
+import kr.easydoc.core.privacy.MaskedItem
 import java.time.Instant
 import java.util.UUID
 
@@ -162,6 +163,11 @@ interface ConversionRepository {
 fun interface MaskedItemReader {
     /** 복호화된 대응표 JSON 을 항목 목록으로 되살린다. */
     fun decode(body: PlainBody): List<MaskedItemView>
+}
+
+/** 마스킹 대응표를 **저장용 JSON 으로 만드는** 포트. 결과는 반드시 암호화해서 저장한다. */
+fun interface MaskedItemWriter {
+    fun encode(items: List<MaskedItem>): PlainBody
 }
 
 /** 변환 작업 큐. */

@@ -87,7 +87,8 @@ services:
       retries: 10
       start_period: 20s
 
-  # 변환 워커. Phase 5에서 lease 기반 작업 큐가 붙기 전까지는 기동만 한다.
+  # 변환 워커. lease 를 획득해 마스킹 → LLM → 결과 저장까지 실행한다.
+  # 실제 유료 호출 없이 완료까지 보려면 .env 의 EASYDOC_LLM_PROVIDER=fake.
   backend-worker:
     <<: *backend-app
     command:

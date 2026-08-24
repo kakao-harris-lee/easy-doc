@@ -5,9 +5,9 @@
 - Docker Engine과 Docker Compose v2
 - `.env.example`을 복사한 `.env`
 - `EASYDOC_AUTH_JWT_SECRET`, `EASYDOC_ENCRYPTION_KEY_V1`, `EASYDOC_ENCRYPTION_KCV_V1`
-- 실제 변환을 확인할 때만 선택한 provider API key
+- 실제 변환을 확인할 때만 선택한 provider API key. 유료 호출 없이 상태만 보려면 `EASYDOC_LLM_PROVIDER=fake`
 
-worker 처리 루프와 내보내기 endpoint는 Sprint K1에서 아직 미구현이다. 따라서 현재 Compose 기동 성공은 완성된 변환 흐름을 의미하지 않는다.
+worker는 lease를 집어 마스킹 → LLM → 결과 저장까지 실행한다. 내보내기 endpoint는 Sprint K1에서 아직 미구현이다.
 
 ## 전체 스택
 
@@ -37,7 +37,7 @@ browser -> frontend/nginx -> backend-api -> PostgreSQL
 1. `/health`가 200인지 확인한다.
 2. 가입·로그인·작업 공간 생성이 되는지 확인한다.
 3. 텍스트와 지원 파일(DOCX/PDF/HWPX)의 등록 응답이 202인지 확인한다.
-4. 변환 상태가 worker 구현 전에는 완료되지 않을 수 있음을 기록한다.
+4. 변환 상태가 `pending`을 지나 `done` 또는 `failed`로 끝나는지 확인한다. fake provider면 본문은 고정 문장이다.
 5. 로그에 문서 본문, 개인정보, API key가 없는지 확인한다.
 
 ## 로그와 종료
