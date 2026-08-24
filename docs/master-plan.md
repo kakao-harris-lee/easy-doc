@@ -206,7 +206,7 @@ v1 기획의 MVP는 물론, 아래 P0 전체(11개)도 "정식 출시" 기준이
 | 빌드·패키지 | **Gradle** (`backend-kotlin/`) | 의존성 잠금은 Gradle dependency locking |
 | AI | LLM Provider 추상화 레이어 (자체 인터페이스) + 상용 API | LangChain은 필요한 부분(문서 로더 등)만 선택적 사용, 체인 로직은 직접 구현 우선. Kotlin `core.llm.LlmProvider` + `infrastructure.llm.AnthropicProvider`로 구현됨 |
 | DB | **PostgreSQL + pgvector** | 유저·결제·문서 메타 + 쉬운 말 사전 벡터를 단일 DB로. ChromaDB 미사용. Flyway로 스키마 관리(Alembic 아님) |
-| 비동기 작업 | **PostgreSQL lease 기반 작업 큐** (2026-08-12 전환, 계획 §4.4) | 대용량 변환, 알림 발송. arq + Redis 는 폐기 — 큐를 위해 두 번째 저장소를 운영하지 않는다. Kotlin `infrastructure.queue.JdbcConversionQueue`는 있으나 `worker/` 모듈의 실제 처리 루프는 **미구현**(2026-08-24 기준 — 재개발 backlog) |
+| 비동기 작업 | **PostgreSQL lease 기반 작업 큐** (2026-08-12 전환, 계획 §4.4) | 대용량 변환, 알림 발송. arq + Redis 는 폐기 — 큐를 위해 두 번째 저장소를 운영하지 않는다. Kotlin `worker/` 가 lease를 획득해 마스킹 → LLM → 결과 저장까지 실행한다 |
 | Frontend | React + TypeScript + Vite | 독립 npm 프로젝트 `frontend/`; 백엔드와 HTTP API로만 통신 |
 | 계약 | OpenAPI `contracts/easy-doc-v1.yaml` | 서버 DTO와 프런트 wire type의 공동 기준 |
 | Infra | Docker Compose + 향후 클라우드 | 로컬/CI/이미지 게시가 같은 Dockerfile과 Compose 모델을 사용 |
@@ -272,8 +272,8 @@ v1 기획의 MVP는 물론, 아래 P0 전체(11개)도 "정식 출시" 기준이
 |---|---|---|
 | 계정·작업 공간 | Kotlin API + React 구현 | Compose E2E 유지 |
 | 문서 입력·추출 | Kotlin DOCX/PDF/HWPX + 텍스트 구현 | 보안 경계/계약 회귀 없음 |
-| 저장·마스킹·LLM 유스케이스 | 구현 | 실제 worker 실행 경로 연결 |
-| 비동기 변환 | queue adapter 구현, worker 처리 루프 미구현 | `pending → processing → done|failed` E2E |
+| 저장·마스킹·LLM 유스케이스 | 구현 | worker 실행 경로에 연결됨 |
+| 비동기 변환 | worker 처리 루프 구현 | Compose Playwright에서 `pending → processing → done|failed` 재확인 |
 | 검수·기록 | Kotlin API + React 구현 | 변환 완료 흐름과 통합 |
 | 내보내기 | 코어 생성 로직 일부, HTTP endpoint 미구현 | docx/txt 계약과 UI 완료 |
 | 30일 보존 삭제 | 미구현 | 자동 삭제 작업과 관측 구현 |

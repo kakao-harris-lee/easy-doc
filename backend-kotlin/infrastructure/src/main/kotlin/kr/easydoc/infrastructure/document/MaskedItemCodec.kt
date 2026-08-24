@@ -1,6 +1,7 @@
 package kr.easydoc.infrastructure.document
 
 import kr.easydoc.application.document.MaskedItemReader
+import kr.easydoc.application.document.MaskedItemWriter
 import kr.easydoc.core.crypto.PlainBody
 import kr.easydoc.core.document.MaskedItemView
 import kr.easydoc.core.exceptions.StorageException
@@ -12,14 +13,16 @@ import tools.jackson.databind.JsonNode
 import tools.jackson.databind.json.JsonMapper
 
 /** 마스킹 대응표의 **저장 형식** — 자리표시자와 원값의 표를 JSON 한 덩어리로 만든다. */
-class MaskedItemCodec : MaskedItemReader {
+class MaskedItemCodec :
+    MaskedItemReader,
+    MaskedItemWriter {
     private val json = JsonMapper.builder().build()
 
     /**
      * 저장용 평문 JSON 을 만든다. **결과는 반드시 암호화해서 저장한다** — 여기에는 가려졌던
      * 개인정보가 그대로 들어 있다.
      */
-    fun encode(items: List<MaskedItem>): PlainBody {
+    override fun encode(items: List<MaskedItem>): PlainBody {
         val array = json.createArrayNode()
         items.forEach { item ->
             array.addObject().apply {

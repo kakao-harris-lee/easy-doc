@@ -17,14 +17,14 @@
 - OpenAI/Anthropic provider 전략과 메트릭 decorator
 - React 가입·로그인·업로드·변환 폴링·검수·기록 화면
 - API 계약 테스트, Kotlin 단위/통합 테스트, React 단위 테스트, Playwright E2E 경로
+- Worker가 lease를 획득해 마스킹 → LLM(트랜잭션 밖) → fencing 완료까지 실행한다
 
 ### 아직 Lean MVP 실행 흐름을 막는 항목
 
-1. `worker`가 lease를 획득해 마스킹 → LLM 호출 → 결과 저장까지 실행하지 않는다.
-2. docx/txt 내보내기 HTTP 엔드포인트가 없다. 계약의 pdf 내보내기는 제품 범위와 함께 재결정해야 한다.
-3. 기본 30일 보존 만료를 실행하는 삭제 작업이 없다.
-4. Kotlin 골든셋 평가기가 없어 모델/프롬프트 변경의 품질 게이트가 닫히지 않는다.
-5. Compose 전체 스택 검증과 GitHub Actions의 실행 경로가 분리되어 있다.
+1. docx/txt 내보내기 HTTP 엔드포인트가 없다. 계약의 pdf 내보내기는 제품 범위와 함께 재결정해야 한다.
+2. 기본 30일 보존 만료를 실행하는 삭제 작업이 없다.
+3. Kotlin 골든셋 평가기가 없어 모델/프롬프트 변경의 품질 게이트가 닫히지 않는다.
+4. Compose 전체 스택 검증과 GitHub Actions의 실행 경로가 분리되어 있다.
 
 ## 2. 스프린트 목표
 
@@ -48,11 +48,13 @@
 
 ### K1-3. Worker 수직 흐름
 
-- [ ] 실패 테스트로 lease 획득·갱신·완료·실패·재시도 계약을 고정한다.
-- [ ] 마스킹된 타입만 `LlmProvider`에 전달한다.
-- [ ] LLM 호출을 DB 트랜잭션 밖에서 실행한다.
-- [ ] 중복 실행에도 완료 결과가 덮어써지지 않도록 fencing/CAS를 적용한다.
-- [ ] Compose E2E에서 `pending → processing → done|failed`를 관찰한다.
+- [x] 실패 테스트로 lease 획득·갱신·완료·실패·재시도 계약을 고정한다.
+- [x] 마스킹된 타입만 `LlmProvider`에 전달한다.
+- [x] LLM 호출을 DB 트랜잭션 밖에서 실행한다.
+- [x] 중복 실행에도 완료 결과가 덮어써지지 않도록 fencing/CAS를 적용한다.
+- [x] Compose E2E에서 `pending → processing → done|failed`를 관찰한다.
+
+상태 전이는 PostgreSQL 통합 테스트(`ConversionWorkerFlowTest`)로 고정했다. Compose Playwright 핵심 흐름은 스프린트 완료 정의에 남는다.
 
 ### K1-4. 내보내기
 
