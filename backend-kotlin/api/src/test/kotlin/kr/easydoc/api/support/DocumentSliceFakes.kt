@@ -12,6 +12,7 @@ import kr.easydoc.application.document.ExtractedDocument
 import kr.easydoc.application.document.LockedConversion
 import kr.easydoc.application.document.MaskedItemReader
 import kr.easydoc.application.document.StoredConversion
+import kr.easydoc.application.document.StoredExport
 import kr.easydoc.application.document.WorkspaceLookup
 import kr.easydoc.core.crypto.EncryptedContent
 import kr.easydoc.core.crypto.EncryptedField
@@ -79,6 +80,37 @@ class InMemoryDocumentRepository : DocumentRepository {
 
     /** 그 문서의 소유자. 없으면 `null`. */
     fun ownerOf(documentId: UUID): UUID? = rows.firstOrNull { it.document.id == documentId }?.ownerId
+
+    /** 그 문서의 제목. 없으면 `null`. */
+    fun titleOf(documentId: UUID): String? = rows.firstOrNull { it.document.id == documentId }?.document?.title
+
+    /**
+     * 저장된 제목을 테스트가 직접 바꾼다. 제품 경로의 [resolveTitle] 을 우회해
+     * 내보내기 파일명 정제를 재기 위한 자리이다.
+     */
+    fun rewriteTitle(
+        documentId: UUID,
+        title: String,
+    ) {
+        val index = rows.indexOfFirst { it.document.id == documentId }
+        check(index >= 0) { "제목을 바꿀 문서가 없다" }
+        val row = rows[index]
+        val document = row.document
+        rows[index] =
+            Row(
+                row.ownerId,
+                Document(
+                    document.id,
+                    title,
+                    document.sourceFormat,
+                    document.charCount,
+                    document.createdAt,
+                    document.retentionExpiresAt,
+                ),
+                row.workspaceId,
+                row.sourceText,
+            )
+    }
 
     override fun rewriteEnvelope(
         documentId: UUID,
@@ -182,6 +214,14 @@ class InMemoryConversionRepository(private val documents: InMemoryDocumentReposi
                     failureCode = row.failureCode,
                 )
             }
+
+    override fun findOwnedExport(
+        ownerId: UUID,
+        conversionId: UUID,
+    ): StoredExport? =
+        findOwnedResult(ownerId, conversionId)?.let { stored ->
+            documents.titleOf(stored.documentId)?.let { StoredExport(stored, it) }
+        }
 
     override fun lockEnvelope(conversionId: UUID): ConversionEnvelope? = rows[conversionId]?.envelope
 

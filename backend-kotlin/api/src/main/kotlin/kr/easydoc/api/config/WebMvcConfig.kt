@@ -3,7 +3,9 @@ package kr.easydoc.api.config
 import kr.easydoc.api.auth.AuthenticatedEndpoints
 import kr.easydoc.api.auth.AuthenticatedUserArgumentResolver
 import kr.easydoc.api.auth.AuthenticationInterceptor
+import kr.easydoc.api.document.ExportFormatConverter
 import org.springframework.context.annotation.Configuration
+import org.springframework.format.FormatterRegistry
 import org.springframework.http.MediaType
 import org.springframework.web.method.support.HandlerMethodArgumentResolver
 import org.springframework.web.servlet.config.annotation.ContentNegotiationConfigurer
@@ -21,6 +23,10 @@ class WebMvcConfig(
         configurer
             .ignoreAcceptHeader(true)
             .defaultContentType(MediaType.APPLICATION_JSON)
+    }
+
+    override fun addFormatters(registry: FormatterRegistry) {
+        registry.addConverter(ExportFormatConverter())
     }
 
     /**

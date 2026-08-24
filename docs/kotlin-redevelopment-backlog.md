@@ -8,7 +8,7 @@
 
 | 기능 | 상태 | 비고 |
 |---|---|---|
-| `GET/POST /conversions/{conversion_id}/export` (docx·pdf·txt 3형식 다운로드) | 미구현 | 계약(`contracts/easy-doc-v1.yaml`)에는 있다. 컨트롤러 없음 |
+| `GET /conversions/{conversion_id}/export` (docx·txt·hwpx) | 구현 | `pdf`·구버전 `hwp`는 계약 enum 밖(422). POST export 없음 |
 | Worker 작업 처리(리스 획득 → 마스킹 → LLM 호출 → 결과 반영) | 구현 | `worker` 프로필이 lease를 집어 트랜잭션 밖에서 LLM을 호출하고 fencing으로 완료를 쓴다. 로컬 Compose는 `EASYDOC_LLM_PROVIDER=fake`로 유료 호출 없이 상태를 끝낸다 |
 | 보존·자동 삭제 정책(기본 30일) | 미구현 | 스케줄러·배치 없음 |
 | 쉬운 말 사전(RAG, pgvector 기반 팝업) | 미구현 | master-plan P0-5. Lean MVP 범위 밖으로 의도적으로 미뤄져 있었다 |

@@ -9,8 +9,10 @@ import kr.easydoc.application.auth.UserRepository
 import kr.easydoc.application.auth.WorkspaceDeletionState
 import kr.easydoc.application.auth.WorkspaceRepository
 import kr.easydoc.application.crypto.ContentCipher
+import kr.easydoc.application.document.ConversionExportService
 import kr.easydoc.application.document.ConversionQueryService
 import kr.easydoc.application.document.ConversionReviewService
+import kr.easydoc.application.document.DocumentExporter
 import kr.easydoc.application.document.DocumentService
 import kr.easydoc.application.document.DocumentStorage
 import kr.easydoc.application.document.DocumentTextExtractor
@@ -18,6 +20,9 @@ import kr.easydoc.application.document.MaskedItemReader
 import kr.easydoc.application.document.WorkspaceLookup
 import kr.easydoc.application.workspace.DUPLICATE_WORKSPACE_NAME_MESSAGE
 import kr.easydoc.application.workspace.WorkspaceService
+import kr.easydoc.core.easyread.ExportFormat
+import kr.easydoc.core.easyread.exportFileOf
+import kr.easydoc.core.easyread.renderTxt
 import kr.easydoc.core.exceptions.ConflictException
 import kr.easydoc.core.exceptions.EmailAlreadyRegisteredException
 import kr.easydoc.core.exceptions.InvalidCredentialsException
@@ -153,6 +158,36 @@ class AuthSliceBeans {
             conversions = conversions,
             cipher = cipher,
             query = query,
+            transaction = transaction,
+        )
+
+    /**
+     * 슬라이스의 파일 조립. TXT 는 제품 함수, 나머지 형식은 본문 바이트만 담아 헤더·파일명을 잰다.
+     * 실제 zip 은 `PackagedDocumentExporterTest` 와 실경로 테스트가 본다.
+     */
+    @Bean
+    fun documentExporter(): DocumentExporter =
+        DocumentExporter { title, body, format ->
+            if (format == ExportFormat.TXT) {
+                renderTxt(title, body)
+            } else {
+                exportFileOf(title, format, body.toByteArray(Charsets.UTF_8))
+            }
+        }
+
+    @Bean
+    fun conversionExportService(
+        conversions: InMemoryConversionRepository,
+        cipher: ContentCipher,
+        maskedItems: MaskedItemReader,
+        exporter: DocumentExporter,
+        transaction: TransactionRunner,
+    ): ConversionExportService =
+        ConversionExportService(
+            conversions = conversions,
+            cipher = cipher,
+            maskedItems = maskedItems,
+            exporter = exporter,
             transaction = transaction,
         )
 }

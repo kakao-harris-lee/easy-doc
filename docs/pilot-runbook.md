@@ -7,7 +7,8 @@
 - `EASYDOC_AUTH_JWT_SECRET`, `EASYDOC_ENCRYPTION_KEY_V1`, `EASYDOC_ENCRYPTION_KCV_V1`
 - 실제 변환을 확인할 때만 선택한 provider API key. 유료 호출 없이 상태만 보려면 `EASYDOC_LLM_PROVIDER=fake`(Compose가 `local` 프로필을 켠다)
 
-worker는 lease를 집어 마스킹 → LLM → 결과 저장까지 실행한다. 내보내기 endpoint는 Sprint K1에서 아직 미구현이다.
+worker는 lease를 집어 마스킹 → LLM → 결과 저장까지 실행한다. 내보내기는
+`GET /conversions/{conversion_id}/export?format=docx|txt|hwpx`다. `pdf`는 계약상 422다.
 
 ## 전체 스택
 

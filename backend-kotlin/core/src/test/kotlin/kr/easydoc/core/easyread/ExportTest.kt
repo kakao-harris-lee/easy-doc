@@ -66,6 +66,17 @@ class ExportTest {
         }
 
         @Test
+        @DisplayName("계약 enum 값만 형식으로 읽는다 — 대소문자를 바꾸거나 pdf 를 받지 않는다")
+        fun `와이어 이름으로 형식을 읽는다`() {
+            assertThat(ExportFormat.ofWireName("docx")).isEqualTo(ExportFormat.DOCX)
+            assertThat(ExportFormat.ofWireName("txt")).isEqualTo(ExportFormat.TXT)
+            assertThat(ExportFormat.ofWireName("hwpx")).isEqualTo(ExportFormat.HWPX)
+            assertThat(ExportFormat.ofWireName("DOCX")).isNull()
+            assertThat(ExportFormat.ofWireName("pdf")).isNull()
+            assertThat(ExportFormat.ofWireName("hwp")).isNull()
+        }
+
+        @Test
         @DisplayName("보충 평면 문자를 서로게이트 한가운데서 자르지 않는다")
         fun `코드포인트로 자른다`() {
             val name = exportFilename("가" + "\uD83D\uDE00".repeat(100), ExportFormat.TXT)

@@ -191,6 +191,10 @@ class PrivateHeaderFloorCensusTest {
                 authorizedGet(itemPath(CONVERSION_ITEM_PATH, GET, conversionId), token)
             }
 
+            "GET $CONVERSION_EXPORT_PATH" -> {
+                exportCompleted(newAccount())
+            }
+
             "PUT $CONVERSION_ITEM_PATH" -> {
                 val token = newAccount()
                 val conversionId = acceptDocument(token)
@@ -232,6 +236,16 @@ class PrivateHeaderFloorCensusTest {
                 )
             }
         }
+
+    private fun exportCompleted(token: String): MockHttpServletResponse {
+        val conversionId = acceptDocument(token)
+        markDone(conversionId)
+        val format = ContractSpec.schemaEnum(EXPORT_FORMAT_SCHEMA).first()
+        return authorizedGet(
+            "${itemPath(CONVERSION_EXPORT_PATH, GET, conversionId)}?format=$format",
+            token,
+        )
+    }
 
     private fun newAccount(): String {
         val email = uniqueEmail()
@@ -351,6 +365,7 @@ class PrivateHeaderFloorCensusTest {
         const val WORKSPACES_PATH = "/workspaces"
         const val WORKSPACE_ITEM_PATH = "/workspaces/{workspace_id}"
         const val CONVERSION_ITEM_PATH = "/conversions/{conversion_id}"
+        const val CONVERSION_EXPORT_PATH = "/conversions/{conversion_id}/export"
 
         const val GET = "get"
         const val POST = "post"
@@ -372,18 +387,15 @@ class PrivateHeaderFloorCensusTest {
             )
 
         /**
-         * 유보 상한과 인구조사 하한. **실측은 유보 1 · 조사 9 라 두 값 모두 여유 1** — 그 창
-         * 안에서는 구현한 자리를 유보로 되돌려도 빨개지지 않는다. 인상은 Phase 경계에서 리더가.
+         * 유보 상한과 인구조사 하한. **실측은 유보 0 · 조사 10** 이라 유보 상한은 여유 2 다.
+         * 인상은 Phase 경계에서 리더가.
          */
         const val MAX_DEFERRED_FLOOR_TARGETS = 2
 
         const val MIN_FLOOR_CENSUS_TARGETS = 8
 
         /** 아직 미구현인 자리. **면제가 아니라 유보다** — 구현하면 빨개진다. */
-        val NOT_YET_IMPLEMENTED: Set<String> =
-            setOf(
-                "GET /conversions/{conversion_id}/export",
-            )
+        val NOT_YET_IMPLEMENTED: Set<String> = emptySet()
 
         const val EMAIL_PROPERTY = "email"
         const val PASSWORD_PROPERTY = "password"
@@ -394,6 +406,7 @@ class PrivateHeaderFloorCensusTest {
         const val CONVERSION_ID_PROPERTY = "conversion_id"
         const val ITEMS_PROPERTY = "items"
         const val ID_PROPERTY = "id"
+        const val EXPORT_FORMAT_SCHEMA = "ExportFormat"
 
         const val VALID_PASSWORD = "correct horse battery"
         const val SAMPLE_TEXT = "하한선 인구조사용 안내문 본문"

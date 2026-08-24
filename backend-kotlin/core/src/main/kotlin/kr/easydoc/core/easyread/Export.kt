@@ -35,6 +35,12 @@ enum class ExportFormat(
      * 그대로 따른다(한컴 개발자 포럼 공식 답변 등 세 곳 일치).
      */
     HWPX("hwpx", "application/hwp+zip"),
+    ;
+
+    companion object {
+        /** 쿼리 파라미터·계약 enum 값으로 형식을 읽는다. 목록에 없으면 `null` — 422 는 호출 쪽이 낸다. */
+        fun ofWireName(value: String): ExportFormat? = entries.firstOrNull { it.extension == value }
+    }
 }
 
 /** 파일명에서 걷어낼 문자. */
@@ -117,16 +123,23 @@ class ExportFile(
     override fun hashCode(): Int = (filename.hashCode() * 31 + mediaType.hashCode()) * 31 + content.contentHashCode()
 }
 
+/** 제목·형식·본문 바이트로 파일 한 건을 만든다. 파일명 정제는 형식과 무관하게 같다. */
+fun exportFileOf(
+    title: String,
+    format: ExportFormat,
+    content: ByteArray,
+): ExportFile =
+    ExportFile(
+        filename = exportFilename(stripControlChars(title), format),
+        mediaType = format.mediaType,
+        content = content,
+    )
+
 /** 본문을 TXT 바이트로 만든다. */
 fun renderTxt(
     title: String,
     body: String,
-): ExportFile =
-    ExportFile(
-        filename = exportFilename(stripControlChars(title), ExportFormat.TXT),
-        mediaType = ExportFormat.TXT.mediaType,
-        content = stripControlChars(body).toByteArray(StandardCharsets.UTF_8),
-    )
+): ExportFile = exportFileOf(title, ExportFormat.TXT, stripControlChars(body).toByteArray(StandardCharsets.UTF_8))
 
 /** 앞에서 [limit] **코드포인트**만 남긴다. */
 private fun String.takeCodePoints(limit: Int): String {
