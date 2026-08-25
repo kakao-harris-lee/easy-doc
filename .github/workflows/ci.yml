@@ -79,7 +79,9 @@ jobs:
         run: frontend/e2e/run-local.sh
       - name: Compose 로그 보관
         if: always()
-        run: docker compose -f compose.yml -f compose.e2e.yml logs --no-color > frontend/test-results/compose.log
+        run: |
+          mkdir -p frontend/test-results
+          docker compose -f compose.yml -f compose.e2e.yml logs --no-color > frontend/test-results/compose.log
       - name: E2E 아티팩트
         if: always()
         uses: actions/upload-artifact@v4
