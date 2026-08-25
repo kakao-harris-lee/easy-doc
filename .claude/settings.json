@@ -1,6 +1,6 @@
 {
   "model": "sonnet",
   "permissions": {
-    "deny": ["Agent", "Skill"]
+    "deny": ["Skill"]
   }
 }
