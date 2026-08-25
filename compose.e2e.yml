@@ -1,0 +1,12 @@
+# Playwright E2E 전용 override — 유료 LLM 없이 worker 변환을 끝낸다.
+#
+# `EASYDOC_LLM_PROVIDER=fake` 는 **api·worker 에만** 넣는다.
+
+services:
+  backend-api:
+    environment:
+      EASYDOC_LLM_PROVIDER: fake
+
+  backend-worker:
+    environment:
+      EASYDOC_LLM_PROVIDER: fake

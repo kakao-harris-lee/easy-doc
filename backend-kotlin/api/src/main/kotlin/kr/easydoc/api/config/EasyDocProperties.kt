@@ -9,7 +9,12 @@ import org.springframework.boot.context.properties.ConfigurationProperties
 @ConfigurationProperties(prefix = "easydoc")
 data class EasyDocProperties(
     /** 브라우저에서 API를 부를 수 있는 오리진 목록. Python 기본값과 같다. */
-    val corsOrigins: List<String> = listOf("http://localhost:5173"),
+    val corsOrigins: List<String> =
+        listOf(
+            "http://localhost:5173",
+            "http://localhost:8080",
+            "http://127.0.0.1:8080",
+        ),
 ) {
     // ── `easydoc.crypto.fernet-key` 는 여기 없다 — 설정 자체가 사라졌다 ────────────
     //

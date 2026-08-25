@@ -88,10 +88,12 @@ server:
 easydoc:
   cors-origins:
     - http://localhost:5173
+    - http://localhost:8080
+    - http://127.0.0.1:8080
   auth:
     jwt-expire-minutes: 60
   llm:
-    provider: ${EASYDOC_LLM_PROVIDER:openai}
+    provider: ${EASYDOC_LLM_PROVIDER:anthropic}
     model: ${EASYDOC_LLM_MODEL:}
     effort: ${EASYDOC_LLM_EFFORT:}
     anthropic-api-key: ${ANTHROPIC_API_KEY:}
@@ -163,7 +165,7 @@ logging:
     org.flywaydb: INFO
 
 ---
-# migrate profile — 스키마만 적용하고 종료한다. compose 의 backend-migrate가 쓴다.
+# migrate profile — 스키마만 적용하고 종료한다. CI·로컬 one-off 용(Compose 는 api 기동 시 Flyway).
 #
 # **본문 암호화 키를 요구하지 않는다** (게이트 26 조치 2). CryptoConfiguration 이
 # `@Profile("!migrate")` 라 이 프로필에서는 조립되지 않으므로, 키가 비어 있어도 뜨고

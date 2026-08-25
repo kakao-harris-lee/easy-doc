@@ -73,9 +73,9 @@ docker compose up -d --build
 
 브라우저에서 **http://127.0.0.1:8080** 을 연다.
 
-- `backend-migrate`가 Flyway 마이그레이션을 적용하고 정상 종료하면 `backend-api`와 `backend-worker`가 뜬다. `frontend`는 `backend-api`의 healthcheck 통과를 기다린다.
+- `backend-api`가 기동하면서 Flyway로 스키마를 적용한다. `backend-worker`는 API healthcheck 통과 후, `frontend`도 API healthcheck 통과 후 뜬다.
 - **`--build`를 빼지 않는다**: 코드를 고친 뒤 `docker compose up -d`만 하면 옛 이미지로 만든 컨테이너가 그대로 뜬다.
-- api·worker·migrate는 같은 이미지(`easy-doc-kotlin:local`)를 command(profile)만 달리해 쓴다. 프론트는 별도 이미지(`easy-doc-frontend:local`)다.
+- api·worker는 같은 이미지(`easy-doc-backend:local`)를 command(profile)만 달리해 쓴다. 프론트는 별도 이미지(`easy-doc-frontend:local`)다.
 - 포트는 모두 `127.0.0.1`에만 바인딩된다(8080 화면, 8100 API). 외부 공개는 앞단 리버스 프록시(TLS·본문 크기 제한)를 두고 한다.
 
 ```bash

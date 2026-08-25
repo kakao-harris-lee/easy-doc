@@ -150,4 +150,12 @@ export const ROUTES = {
   unauthorized: 401,
   /** 계약 `components/responses/ValidationFailed` — 422. */
   unprocessable: 422,
+  /** 계약 `paths./documents.post` — 202 (변환은 아직 시작 전). */
+  documentCreate: { path: '/documents', method: 'POST', accepted: 202 },
+  /** 계약 `paths./conversions/{conversion_id}.get` — 200. */
+  conversionRead: { method: 'GET', ok: 200 },
+  /** 계약 `paths./conversions/{conversion_id}.put` — 200. */
+  conversionReview: { method: 'PUT', ok: 200 },
+  /** 계약 `paths./conversions/{conversion_id}/export.get` — 200 (파일). */
+  conversionExport: { method: 'GET', ok: 200 },
 } as const

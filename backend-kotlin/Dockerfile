@@ -63,5 +63,5 @@ ENV SERVER_PORT=8100 \
 
 EXPOSE 8100
 
-# 기본은 API. worker·migrate 는 compose 에서 command 로 덮어쓴다.
+# 기본은 API. worker 는 compose 에서 command 로 덮어쓴다.
 CMD ["java", "-jar", "/app/easy-doc-api.jar", "--spring.profiles.active=api"]

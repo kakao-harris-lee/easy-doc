@@ -86,7 +86,15 @@ class CorsContractTest {
     }
 
     @Test
-    @DisplayName("허용하지 않은 오리진에는 Allow-Origin 을 내주지 않는다")
+    @DisplayName("compose frontend 오리진(localhost:8080)도 허용한다 — fetch POST가 Origin 을 보낸다")
+    fun `compose frontend origin 을 허용한다`() {
+        val response = simpleRequest("http://localhost:8080")
+
+        assertThat(response.status).isEqualTo(200)
+        assertThat(response.getHeader(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN)).isEqualTo("http://localhost:8080")
+    }
+
+    @Test
     fun `허용하지 않은 오리진은 거절한다`() {
         assertThat(simpleRequest("http://evil.example").getHeader(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN)).isNull()
         assertThat(preflight("http://evil.example", "GET").getHeader(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN)).isNull()

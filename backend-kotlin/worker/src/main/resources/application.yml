@@ -22,8 +22,8 @@ spring:
       initialization-fail-timeout: -1
 
   flyway:
-    # worker 는 스키마를 적용하지 않는다. 마이그레이션 주체는 migrate profile 하나뿐이다 —
-    # 여럿이 동시에 migrate 하면 Flyway 잠금 경합과 부분 적용 상태가 생긴다.
+    # worker 는 스키마를 적용하지 않는다. Flyway 는 api 프로세스가 기동할 때만 실행한다 —
+    # worker 와 동시에 migrate 하면 Flyway 잠금 경합이 생긴다.
     enabled: false
 
 easydoc:
@@ -42,7 +42,7 @@ easydoc:
         # 가진다. 값을 모르면 비워 둔 채 한 번 띄워라. 기동이 실패하면서 계산값을 알려 준다.
         kcv: ${EASYDOC_ENCRYPTION_KCV_V1:}
   llm:
-    provider: ${EASYDOC_LLM_PROVIDER:openai}
+    provider: ${EASYDOC_LLM_PROVIDER:anthropic}
     model: ${EASYDOC_LLM_MODEL:}
     effort: ${EASYDOC_LLM_EFFORT:}
     anthropic-api-key: ${ANTHROPIC_API_KEY:}

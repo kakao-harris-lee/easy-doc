@@ -1,5 +1,5 @@
 # Kotlin 백엔드와 React 프런트엔드를 함께 보는 로컬·파일럿 스택.
-# 사용법: docker compose up -d --build  (마이그레이션까지 자동으로 적용된다)
+# 사용법: docker compose up -d --build  (backend-api 기동 시 Flyway 가 스키마를 적용한다)
 #
 # 인프라만 띄우고 앱은 호스트에서 돌리려면: docker compose up -d postgres
 
@@ -34,7 +34,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      # DB 준비 완료 후에만 마이그레이션·앱이 붙도록 한다.
+      # DB 준비 완료 후에만 앱이 붙도록 한다.
       test: ["CMD-SHELL", "pg_isready -U postgres -d easydoc"]
       interval: 5s
       timeout: 5s
@@ -60,16 +60,6 @@ services:
         condition: service_healthy
 
   # --- Kotlin 백엔드 ---
-  backend-migrate:
-    <<: *backend-app
-    command:
-      ["java", "-jar", "/app/easy-doc-api.jar", "--spring.profiles.active=migrate"]
-    depends_on:
-      postgres:
-        condition: service_healthy
-    # 정상 종료(코드 0)를 완료 신호로 쓰므로 재시작 정책을 걸지 않는다.
-    restart: "no"
-
   backend-api:
     <<: *backend-app
     # Compose 는 로컬 스택이다. fake LLM 을 .env 로 켜도 api 가 같은 설정을 읽어 기동해야 한다.
@@ -78,8 +68,8 @@ services:
       # 계약상 API가 쓰는 포트.
       - "127.0.0.1:8100:8100"
     depends_on:
-      backend-migrate:
-        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
     healthcheck:
       # 계약상 /health 는 인증 없이 200 {"status":"ok"} 를 돌려준다.
       test: ["CMD", "curl", "--fail", "--silent", "http://localhost:8100/health"]
@@ -89,15 +79,17 @@ services:
       start_period: 20s
 
   # 변환 워커. lease 를 획득해 마스킹 → LLM → 결과 저장까지 실행한다.
-  # 실제 유료 호출 없이 완료까지 보려면 .env 의 EASYDOC_LLM_PROVIDER=fake.
-  # fake 는 local/test 프로필에서만 조립되므로 Compose 스택은 local 을 켠다.
+  # `.env` 의 EASYDOC_LLM_PROVIDER·API 키로 실제 변환한다(기본 anthropic).
+  # 유료 호출 없이 E2E 만 돌릴 때는 compose.e2e.yml 이 fake 로 덮어쓴다.
   backend-worker:
     <<: *backend-app
     command:
       ["java", "-jar", "/app/easy-doc-worker.jar", "--spring.profiles.active=worker,local"]
     depends_on:
-      backend-migrate:
-        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      backend-api:
+        condition: service_healthy
 
 volumes:
   postgres_data:

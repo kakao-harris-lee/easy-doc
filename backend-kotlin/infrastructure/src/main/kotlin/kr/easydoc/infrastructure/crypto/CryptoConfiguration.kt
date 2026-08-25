@@ -28,7 +28,7 @@ import java.security.SecureRandom
 
 /**
  * 스키마만 적용하고 종료하는 실행 프로필. `api/src/main/resources/application.yml` 의
- * `on-profile: migrate`, `ApiApplication.main` 의 종료 판정, compose 의 `backend-migrate`
+ * `on-profile: migrate`, `ApiApplication.main` 의 종료 판정. Compose 는 api 기동 시 Flyway.
  * 가 가리키는 것과 같은 이름이다.
  */
 const val MIGRATE_PROFILE: String = "migrate"

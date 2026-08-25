@@ -20,6 +20,8 @@ jobs:
         run: docker compose -f compose.yml config --quiet
       - name: CI 서비스 포함 모델 검증
         run: docker compose -f compose.yml -f compose.ci.yml --profile ci config --quiet
+      - name: E2E override 모델 검증
+        run: docker compose -f compose.yml -f compose.e2e.yml config --quiet
 
   backend:
     runs-on: ubuntu-latest
@@ -69,7 +71,7 @@ jobs:
           ./backend-kotlin/gradlew -p backend-kotlin --no-daemon -q :infrastructure:writeEncryptionKeyEnv "-Peasydoc.encryptionEnvOut=$RUNNER_TEMP/easy-doc-key.env"
           cat "$RUNNER_TEMP/easy-doc-key.env" >> .env
       - name: Compose 전체 스택 기동
-        run: docker compose -f compose.yml up -d --build --wait
+        run: docker compose -f compose.yml -f compose.e2e.yml up -d --build --wait
       - name: Kotlin API + React E2E
         env:
           E2E_SKIP_STACK: "1"
@@ -77,7 +79,7 @@ jobs:
         run: frontend/e2e/run-local.sh
       - name: Compose 로그 보관
         if: always()
-        run: docker compose -f compose.yml logs --no-color > frontend/test-results/compose.log
+        run: docker compose -f compose.yml -f compose.e2e.yml logs --no-color > frontend/test-results/compose.log
       - name: E2E 아티팩트
         if: always()
         uses: actions/upload-artifact@v4

@@ -1,0 +1,180 @@
+@import 'tailwindcss';
+
+/*
+  Easy-Read AI — design tokens
+  Portable note: all brand values are plain CSS custom properties defined in
+  :root below. To port to non-Tailwind CSS, copy the :root block and reference
+  the same var(--*) names. The @theme inline block only exposes them to Tailwind
+  utility classes (bg-primary, text-success, etc.).
+*/
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary-hover: var(--primary-hover);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  /* status */
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-success-surface: var(--success-surface);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-warning-surface: var(--warning-surface);
+  --color-danger: var(--danger);
+  --color-danger-foreground: var(--danger-foreground);
+  --color-danger-surface: var(--danger-surface);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+  --color-info-surface: var(--info-surface);
+
+  /* admin (navy) */
+  --color-admin: var(--admin);
+  --color-admin-foreground: var(--admin-foreground);
+  --color-admin-surface: var(--admin-surface);
+
+  --radius-sm: 8px;
+  --radius-md: 10px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+
+  --font-sans: var(--font-pretendard);
+}
+
+:root {
+  color-scheme: light;
+
+  /* neutrals */
+  --background: #f6f8f9;
+  --foreground: #14211f;
+  --card: #ffffff;
+  --card-foreground: #14211f;
+  --popover: #ffffff;
+  --popover-foreground: #14211f;
+  --muted: #eef2f1;
+  --muted-foreground: #506461;
+  --secondary: #eef2f1;
+  --secondary-foreground: #1d2b29;
+  --accent: #e4efed;
+  --accent-foreground: #0f4a44;
+  --border: #d8e0de;
+  --input: #cbd5d2;
+  --ring: #0f766e;
+
+  /* brand — deep teal */
+  --primary: #0f766e;
+  --primary-foreground: #ffffff;
+  --primary-hover: #0c5f58;
+
+  /* status — restrained, never color-alone */
+  --success: #197a48;
+  --success-foreground: #ffffff;
+  --success-surface: #e6f4ec;
+  --warning: #8a5a00;
+  --warning-foreground: #ffffff;
+  --warning-surface: #fbf0d6;
+  --danger: #b4231f;
+  --danger-foreground: #ffffff;
+  --danger-surface: #fbe9e8;
+  --info: #0f766e;
+  --info-foreground: #ffffff;
+  --info-surface: #e4efed;
+
+  /* admin — deep navy to visually separate the operator console */
+  --admin: #17324d;
+  --admin-foreground: #ffffff;
+  --admin-surface: #eaeff4;
+
+  --font-pretendard: 'Pretendard', 'Pretendard Variable', -apple-system,
+    BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Malgun Gothic', 'Segoe UI',
+    system-ui, sans-serif;
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  html {
+    @apply bg-background;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: var(--font-pretendard);
+    font-size: 16px;
+    line-height: 1.6;
+  }
+
+  /* Visible focus for keyboard users (KWCAG 2.2) */
+  :focus-visible {
+    outline: 3px solid var(--ring);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  ::selection {
+    background: var(--accent);
+    color: var(--accent-foreground);
+  }
+}
+
+/* Respect reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Skeleton shimmer (disabled under reduced-motion by rule above) */
+@keyframes er-shimmer {
+  0% {
+    background-position: -400px 0;
+  }
+  100% {
+    background-position: 400px 0;
+  }
+}
+
+.er-skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--muted) 25%,
+    #e3e9e8 37%,
+    var(--muted) 63%
+  );
+  background-size: 800px 100%;
+  animation: er-shimmer 1.4s ease-in-out infinite;
+}
+
+/* Toast slide-in */
+@keyframes er-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.er-toast-in {
+  animation: er-toast-in 0.18s ease-out;
+}

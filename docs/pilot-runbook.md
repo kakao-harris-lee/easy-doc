@@ -31,7 +31,7 @@ browser -> frontend/nginx -> backend-api -> PostgreSQL
                                 +-> lease queue -> backend-worker
 ```
 
-`backend-migrate`는 Flyway를 적용하고 종료한다. `backend-api`와 `backend-worker`는 마이그레이션 성공 후 시작한다.
+`backend-api`가 기동하면서 Flyway로 스키마를 적용한다. `backend-worker`는 API가 healthy 한 뒤 시작한다.
 
 ## 확인 순서
 

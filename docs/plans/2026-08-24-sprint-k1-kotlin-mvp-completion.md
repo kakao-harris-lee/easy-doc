@@ -1,7 +1,8 @@
 # Sprint K1 — Kotlin Lean MVP 실행 경로 완성
 
 - 기간: 2026-08-24 시작, 완료일은 검증 후 기록
-- 상태: 진행 중
+- 상태: 진행 중 (완료 정의 6/6 — Playwright 변환 수직 흐름 E13 검증 완료)
+- 최근 검증: 2026-08-25
 - 기준: `docs/master-plan.md`의 Lean MVP와 `contracts/easy-doc-v1.yaml`
 - 원칙: Kotlin 백엔드와 React 프런트엔드는 독립 프로젝트로 개발하고 HTTP API 계약으로만 연결한다.
 
@@ -74,14 +75,22 @@
 
 ## 4. 완료 정의
 
-- [ ] `docker compose -f compose.yml -f compose.ci.yml run --rm backend-check` 통과
+- [x] `docker compose -f compose.yml -f compose.ci.yml run --rm backend-check` 통과
 - [x] `docker compose -f compose.yml -f compose.ci.yml run --rm frontend-check` 통과
-- [ ] `docker compose up -d --build --wait` 후 Playwright 핵심 흐름 통과
+- [x] `docker compose up -d --build --wait` 후 Playwright 핵심 흐름 통과
 - [x] `docker compose config`와 `docker compose -f compose.yml -f compose.ci.yml config` 통과
 - [x] 계약·Kotlin DTO/컨트롤러·React 타입/호출부가 같은 변경 단위로 검증됨
 - [x] 미완료 항목이 `docs/kotlin-redevelopment-backlog.md`와 일치함
 
+### 2026-08-25 검증 기록
+
+- Compose 로컬/CI 구성 검증 통과.
+- `backend-check` 통과: Gradle `build`, ktlint, detekt, 모듈 경계, 단위·통합 테스트 포함 (`BUILD SUCCESSFUL`, 79 tasks).
+- `frontend-check` 통과: TypeScript/ESLint/Prettier, Vitest 63개, Vite production build.
+- 실제 유료 LLM 호출을 막기 위해 provider를 `fake`로 고정하고 CI와 같이 런타임 JWT를 생성한 전체 Compose 스택이 healthy 상태로 기동됨.
+- 현재 Playwright 스위트 13개(인증·작업 공간·CORS 12 + 변환 수직 E13) 통과함.
+- `frontend/e2e/conversion-flow.spec.ts` E13: 붙여넣기 등록(202·pending) → worker fake LLM 완료(done) → 검수 저장(PUT 200) → txt 내보내기(파일 본문 검증). CI 는 `compose.e2e.yml` 로 api·worker 에만 `EASYDOC_LLM_PROVIDER=fake` 를 넣고, `run-local.sh` 는 worker 를 `worker,local` 프로필로 함께 띄운다.
+
 ## 5. 범위 밖
 
 결제, 크레딧 자동 차감, RAG, 운영자 어드민, 랜딩 페이지, OCR, 실제 배포와 실제 LLM 호출은 Sprint K1 범위가 아니다.
-

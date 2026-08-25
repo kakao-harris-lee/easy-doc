@@ -5,7 +5,7 @@
 #   frontend/e2e/run-local.sh --grep E11   # 인자는 그대로 playwright 로 넘어간다
 #
 # 세우는 것: 일회용 PostgreSQL 컨테이너 → Flyway 마이그레이션 → Kotlin API(bootJar) →
-# Vite dev 서버(Playwright 의 webServer 가 띄운다) → Playwright.
+# Kotlin worker(bootJar, fake LLM) → Vite dev 서버(Playwright 의 webServer 가 띄운다) → Playwright.
 #
 # ## 게이트 러너 규약
 #
@@ -13,8 +13,8 @@
 # 코드를 내놓는다), Playwright 의 코드를 변수에 받아 그대로 `exit` 한다.
 # `set -euo pipefail` 을 걸고, 정리는 `trap` 이 맡아 실패 경로에서도 컨테이너가 남지 않는다.
 #
-# 기본 모드는 빠른 로컬 진단을 위해 API와 DB만 직접 띄운다. CI와 전체 프로젝트 검증은
-# `compose.yml`로 스택을 먼저 띄운 뒤 아래처럼 브라우저 단계만 사용한다.
+# 기본 모드는 빠른 로컬 진단을 위해 API·worker·DB를 직접 띄운다. CI와 전체 프로젝트 검증은
+# `compose.yml` + `compose.e2e.yml` 로 스택을 먼저 띄운 뒤 아래처럼 브라우저 단계만 사용한다.
 #   E2E_SKIP_STACK=1 E2E_API_BASE_URL=http://localhost:8100 frontend/e2e/run-local.sh
 
 set -euo pipefail
@@ -34,18 +34,24 @@ API_BASE_URL="${E2E_API_BASE_URL:-http://localhost:${API_PORT}}"
 FRONTEND_ORIGIN="${E2E_FRONTEND_ORIGIN:-http://localhost:5173}"
 LOG_DIR="${E2E_LOG_DIR:-${frontend_dir}/test-results}"
 API_JAR="${repo_root}/backend-kotlin/api/build/libs/easy-doc-api.jar"
+WORKER_JAR="${repo_root}/backend-kotlin/worker/build/libs/easy-doc-worker.jar"
 
 # 스택을 이미 띄워 두었으면(compose 등) 이 스크립트는 Playwright 만 돌린다.
 SKIP_STACK="${E2E_SKIP_STACK:-0}"
 SKIP_BUILD="${E2E_SKIP_BUILD:-0}"
 
 api_pid=""
+worker_pid=""
 # 저장 암호화 키가 잠깐 머무는 파일. 읽고 곧바로 지우지만, 실패 경로에서도 남지 않게
 # 정리 대상에 넣는다 — 비밀이 디스크에 남는 시간은 짧을수록 좋다.
 key_env_file=""
 
 cleanup() {
   local status=$?
+  if [ -n "$worker_pid" ] && kill -0 "$worker_pid" 2>/dev/null; then
+    kill "$worker_pid" 2>/dev/null || true
+    wait "$worker_pid" 2>/dev/null || true
+  fi
   if [ -n "$api_pid" ] && kill -0 "$api_pid" 2>/dev/null; then
     kill "$api_pid" 2>/dev/null || true
     wait "$api_pid" 2>/dev/null || true
@@ -94,14 +100,18 @@ else
   log "PostgreSQL 준비 완료"
 
   # --- ② bootJar -------------------------------------------------------------
-  if [ "$SKIP_BUILD" = "1" ] && [ -f "$API_JAR" ]; then
+  if [ "$SKIP_BUILD" = "1" ] && [ -f "$API_JAR" ] && [ -f "$WORKER_JAR" ]; then
     log "bootJar 빌드를 건너뛴다 (E2E_SKIP_BUILD=1)"
   else
-    log "Kotlin API bootJar 빌드"
-    (cd "${repo_root}/backend-kotlin" && ./gradlew :api:bootJar --no-daemon -q)
+    log "Kotlin API·worker bootJar 빌드"
+    (cd "${repo_root}/backend-kotlin" && ./gradlew :api:bootJar :worker:bootJar --no-daemon -q)
   fi
   if [ ! -f "$API_JAR" ]; then
     echo "::error::${API_JAR} 이 없다 — bootJar 가 만들어지지 않았다." >&2
+    exit 1
+  fi
+  if [ ! -f "$WORKER_JAR" ]; then
+    echo "::error::${WORKER_JAR} 이 없다 — worker bootJar 가 만들어지지 않았다." >&2
     exit 1
   fi
 
@@ -136,11 +146,7 @@ else
 
   mkdir -p "$LOG_DIR"
 
-  # --- ④ 마이그레이션 ---------------------------------------------------------
-  log "Flyway 마이그레이션 (profile=migrate)"
-  java -jar "$API_JAR" --spring.profiles.active=migrate >"${LOG_DIR}/backend-migrate.log" 2>&1
-
-  # --- ⑤ API 기동 -------------------------------------------------------------
+  # --- ④ API 기동 (Flyway 는 api 기동 시 자동 적용) ------------------------------
   log "Kotlin API 기동 (profile=api, ${API_BASE_URL})"
   java -jar "$API_JAR" --spring.profiles.active=api >"${LOG_DIR}/backend-api.log" 2>&1 &
   api_pid=$!
@@ -162,6 +168,20 @@ else
     exit 1
   fi
   log "Kotlin API 준비 완료"
+
+  # --- ⑤ worker 기동 ----------------------------------------------------------
+  # E13 수직 흐름은 lease 큐를 소비하는 프로세스가 있어야 한다. fake LLM 은 local
+  # 프로필에서만 조립되므로 worker,local 을 켠다.
+  export EASYDOC_LLM_PROVIDER=fake
+  log "Kotlin worker 기동 (profile=worker,local, fake LLM)"
+  java -jar "$WORKER_JAR" --spring.profiles.active=worker,local >"${LOG_DIR}/backend-worker.log" 2>&1 &
+  worker_pid=$!
+  sleep 2
+  if ! kill -0 "$worker_pid" 2>/dev/null; then
+    echo "::error::Kotlin worker 프로세스가 죽었다. ${LOG_DIR}/backend-worker.log 를 보라." >&2
+    exit 1
+  fi
+  log "Kotlin worker 준비 완료"
 fi
 
 # --- ⑥ Playwright -------------------------------------------------------------

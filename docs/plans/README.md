@@ -7,7 +7,9 @@
 1. 제품 범위와 우선순위: [`../master-plan.md`](../master-plan.md)
 2. 현재 구현/미구현 목록: [`../kotlin-redevelopment-backlog.md`](../kotlin-redevelopment-backlog.md)
 3. 현재 스프린트: [`2026-08-24-sprint-k1-kotlin-mvp-completion.md`](2026-08-24-sprint-k1-kotlin-mvp-completion.md)
-4. 완료된 전환 기록: [`archive/transition/2026-08-24-python-removal-for-kotlin-redevelopment.md`](archive/transition/2026-08-24-python-removal-for-kotlin-redevelopment.md)
+4. UI/UX 재구성 기획: [`2026-08-24-v0-ui-ux-redesign-plan.md`](2026-08-24-v0-ui-ux-redesign-plan.md)
+5. v0.app 디자인 프롬프트: [`2026-08-24-v0-ui-design-prompts.md`](2026-08-24-v0-ui-design-prompts.md)
+6. 완료된 전환 기록: [`archive/transition/2026-08-24-python-removal-for-kotlin-redevelopment.md`](archive/transition/2026-08-24-python-removal-for-kotlin-redevelopment.md)
 
 ## 상태 규칙
 
