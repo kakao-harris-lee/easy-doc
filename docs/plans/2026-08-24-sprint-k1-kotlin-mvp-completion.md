@@ -78,8 +78,8 @@
 - [x] `docker compose -f compose.yml -f compose.ci.yml run --rm frontend-check` 통과
 - [ ] `docker compose up -d --build --wait` 후 Playwright 핵심 흐름 통과
 - [x] `docker compose config`와 `docker compose -f compose.yml -f compose.ci.yml config` 통과
-- [ ] 계약·Kotlin DTO/컨트롤러·React 타입/호출부가 같은 변경 단위로 검증됨
-- [ ] 미완료 항목이 `docs/kotlin-redevelopment-backlog.md`와 일치함
+- [x] 계약·Kotlin DTO/컨트롤러·React 타입/호출부가 같은 변경 단위로 검증됨
+- [x] 미완료 항목이 `docs/kotlin-redevelopment-backlog.md`와 일치함
 
 ## 5. 범위 밖
 
