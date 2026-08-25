@@ -10,9 +10,9 @@
 |---|---|---|
 | `GET /conversions/{conversion_id}/export` (docx·txt·hwpx) | 구현 | `pdf`·구버전 `hwp`는 계약 enum 밖(422). POST export 없음 |
 | Worker 작업 처리(리스 획득 → 마스킹 → LLM 호출 → 결과 반영) | 구현 | `worker` 프로필이 lease를 집어 트랜잭션 밖에서 LLM을 호출하고 fencing으로 완료를 쓴다. 로컬 Compose는 `EASYDOC_LLM_PROVIDER=fake`로 유료 호출 없이 상태를 끝낸다 |
-| 보존·자동 삭제 정책(기본 30일) | 미구현 | 스케줄러·배치 없음 |
+| 보존·자동 삭제 정책(기본 30일) | 구현 | worker가 `retention_expires_at` 만료 문서를 배치가 짧아질 때까지 반복 삭제한다. 활성 lease는 건너뛰고, dry-run은 한 배치만 미리본다. 건수 메트릭·문서 ID 감사 로그만 남긴다 |
 | 쉬운 말 사전(RAG, pgvector 기반 팝업) | 미구현 | master-plan P0-5. Lean MVP 범위 밖으로 의도적으로 미뤄져 있었다 |
-| 골든셋 품질 평가(스타일 규칙 + LLM-as-judge) | 미구현 | 골든 fixture는 `data/golden/`에 보존. Kotlin 실행기와 CI 기준선 필요 |
+| 골든셋 품질 평가(스타일 규칙 + LLM-as-judge) | 구현 | `./gradlew build`가 스키마·원문 사실·변환 스냅샷 스타일/사실·파일·ID·JSON digest 기준선을 검사한다. LLM-as-judge는 `./gradlew testLlm`이며 비밀값이 없으면 skip |
 | 결제(카드·계좌이체·세금계산서), 크레딧 차감 | 미구현 | Lean MVP 범위 밖(master-plan 4.0) |
 | 운영자 어드민 | 미구현 | Lean MVP 범위 밖 |
 

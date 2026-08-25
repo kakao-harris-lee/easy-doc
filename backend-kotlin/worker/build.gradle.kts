@@ -1,7 +1,6 @@
 // worker — 변환 worker, 보존 만료 scheduler.
 //
-// api 를 의존하지 않는다 (계획 §3.2). Phase 1에서는 기동 진입점과 profile 만 세우고,
-// lease 기반 작업 큐와 보존 파기 scheduler 는 Phase 5다.
+// api 를 의존하지 않는다 (계획 §3.2). 리스 기반 작업 큐와 보존 파기 scheduler 를 기동한다.
 
 plugins {
     alias(libs.plugins.kotlin.spring)

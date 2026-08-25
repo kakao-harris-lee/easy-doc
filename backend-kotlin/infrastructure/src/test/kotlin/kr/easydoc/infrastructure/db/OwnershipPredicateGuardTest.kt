@@ -412,6 +412,10 @@ class OwnershipPredicateGuardTest {
                 "$DOCUMENT/JdbcDocumentRepository.kt | DELETE [documents]",
                 "$DOCUMENT/JdbcDocumentRepository.kt | INSERT [documents]",
                 "$DOCUMENT/JdbcDocumentRepository.kt | SELECT [conversions, documents]",
+                "$DOCUMENT/JdbcExpiredDocumentPurge.kt | SELECT [conversions]",
+                "$DOCUMENT/JdbcExpiredDocumentPurge.kt | DELETE [documents]",
+                "$DOCUMENT/JdbcExpiredDocumentPurge.kt | SELECT [conversions, documents]",
+                "$DOCUMENT/JdbcExpiredDocumentPurge.kt | SELECT [conversions, documents]",
             )
 
         /** 그중 소유 매개변수가 걸리지 않은 문장. worker 내부 경로가 변환 행을 집는다. */
@@ -429,9 +433,13 @@ class OwnershipPredicateGuardTest {
                 "$DOCUMENT/JdbcDocumentRepository.kt | SELECT [documents]",
                 "$DOCUMENT/JdbcDocumentRepository.kt | UPDATE [documents]",
                 "$DOCUMENT/JdbcDocumentRepository.kt | INSERT [documents]",
+                "$DOCUMENT/JdbcExpiredDocumentPurge.kt | SELECT [conversions]",
+                "$DOCUMENT/JdbcExpiredDocumentPurge.kt | DELETE [documents]",
+                "$DOCUMENT/JdbcExpiredDocumentPurge.kt | SELECT [conversions, documents]",
+                "$DOCUMENT/JdbcExpiredDocumentPurge.kt | SELECT [conversions, documents]",
             )
 
-        /** [EXPECTED_UNGUARDED] 의 **개수 상한**. worker 내부 SQL 다섯이 늘었다. */
-        const val MAX_UNGUARDED_STATEMENTS = 12
+        /** [EXPECTED_UNGUARDED] 의 **개수 상한**. 보존 만료 파기는 소유자 경로가 아니라 worker 시스템 작업이다. */
+        const val MAX_UNGUARDED_STATEMENTS = 16
     }
 }

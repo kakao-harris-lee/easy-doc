@@ -57,6 +57,11 @@ easydoc:
     retry-backoff-seconds: ${EASYDOC_WORKER_RETRY_BACKOFF_SECONDS:5}
     heartbeat-interval-seconds: ${EASYDOC_WORKER_HEARTBEAT_INTERVAL_SECONDS:40}
     poll-interval-ms: ${EASYDOC_WORKER_POLL_INTERVAL_MS:500}
+  retention:
+    enabled: ${EASYDOC_RETENTION_ENABLED:true}
+    dry-run: ${EASYDOC_RETENTION_DRY_RUN:false}
+    cron: ${EASYDOC_RETENTION_CRON:0 0 3 * * *}
+    batch-size: ${EASYDOC_RETENTION_BATCH_SIZE:100}
 
 logging:
   level:

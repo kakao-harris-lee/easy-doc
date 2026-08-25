@@ -21,9 +21,7 @@
 
 ### 아직 Lean MVP 실행 흐름을 막는 항목
 
-1. 기본 30일 보존 만료를 실행하는 삭제 작업이 없다.
-2. Kotlin 골든셋 평가기가 없어 모델/프롬프트 변경의 품질 게이트가 닫히지 않는다.
-3. Compose 전체 스택 검증과 GitHub Actions의 실행 경로가 분리되어 있다.
+1. Compose 전체 스택 검증과 GitHub Actions의 실행 경로가 분리되어 있다. Playwright 핵심 흐름은 스프린트 완료 정의에 남는다.
 
 ## 2. 스프린트 목표
 
@@ -63,16 +61,16 @@
 
 ### K1-5. 보존·삭제
 
-- [ ] 만료 문서/변환/마스킹 대응표를 같은 경계에서 삭제한다.
-- [ ] 활성 lease와 삭제가 충돌하지 않게 한다.
-- [ ] dry-run/메트릭/감사 이벤트를 제공하고 본문은 로그에 남기지 않는다.
+- [x] 만료 문서/변환/마스킹 대응표를 같은 경계에서 삭제한다.
+- [x] 활성 lease와 삭제가 충돌하지 않게 한다.
+- [x] dry-run/메트릭/감사 이벤트를 제공하고 본문은 로그에 남기지 않는다.
 
 ### K1-6. Kotlin 품질 게이트
 
-- [ ] `data/golden/documents/`를 읽는 Kotlin 평가 입력 스키마를 만든다.
-- [ ] 스타일 규칙 평가는 외부 API 없이 실행한다.
-- [ ] LLM-as-judge는 별도 opt-in 레인으로 두고 비밀값이 없으면 명시적으로 skip한다.
-- [ ] 기준선 기록과 승인 없는 기준선 갱신 금지 규칙을 정한다.
+- [x] `data/golden/documents/`를 읽는 Kotlin 평가 입력 스키마를 만든다.
+- [x] 스타일 규칙 평가는 외부 API 없이 실행한다.
+- [x] LLM-as-judge는 별도 opt-in 레인으로 두고 비밀값이 없으면 명시적으로 skip한다.
+- [x] 기준선 기록과 승인 없는 기준선 갱신 금지 규칙을 정한다.
 
 ## 4. 완료 정의
 
@@ -80,8 +78,8 @@
 - [x] `docker compose -f compose.yml -f compose.ci.yml run --rm frontend-check` 통과
 - [ ] `docker compose up -d --build --wait` 후 Playwright 핵심 흐름 통과
 - [x] `docker compose config`와 `docker compose -f compose.yml -f compose.ci.yml config` 통과
-- [ ] 계약·Kotlin DTO/컨트롤러·React 타입/호출부가 같은 변경 단위로 검증됨
-- [ ] 미완료 항목이 `docs/kotlin-redevelopment-backlog.md`와 일치함
+- [x] 계약·Kotlin DTO/컨트롤러·React 타입/호출부가 같은 변경 단위로 검증됨
+- [x] 미완료 항목이 `docs/kotlin-redevelopment-backlog.md`와 일치함
 
 ## 5. 범위 밖
 

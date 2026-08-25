@@ -91,7 +91,7 @@ docker compose down                 # 중지 (-v를 붙이면 DB 데이터까지
 
 ## 데이터
 
-언어 독립 골든 문서는 `data/golden/documents/`에 있고, Kotlin 프롬프트·스타일 규칙·파서 fixture는 각 백엔드 모듈의 테스트 리소스에 있다. 현재 위치와 미구현 평가는 [`docs/kotlin-redevelopment-backlog.md`](docs/kotlin-redevelopment-backlog.md)에 기록한다.
+언어 독립 골든 문서는 `data/golden/documents/`에 있고, 변환 스냅샷은 `data/golden/conversions/`에 있다. Kotlin 프롬프트·스타일 규칙·파서 fixture는 각 백엔드 모듈의 테스트 리소스에 있다. 품질 게이트와 남은 항목은 [`docs/kotlin-redevelopment-backlog.md`](docs/kotlin-redevelopment-backlog.md)에 기록한다.
 
 ## 프로젝트 경계
 

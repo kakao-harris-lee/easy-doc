@@ -4,6 +4,7 @@ import kr.easydoc.api.config.EasyDocProperties
 import kr.easydoc.core.security.Secret
 import kr.easydoc.infrastructure.auth.AuthProperties
 import kr.easydoc.infrastructure.crypto.EncryptionProperties
+import kr.easydoc.infrastructure.document.RetentionProperties
 import kr.easydoc.infrastructure.llm.LlmProperties
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.DisplayName
@@ -82,6 +83,24 @@ class ConfigurationPropertiesBindingTest {
                 .value
                 .reveal(),
         ).isEqualTo(SECRET_VALUE)
+    }
+
+    @Test
+    @DisplayName("보존 파기 설정이 기본값과 다른 값을 싣는다")
+    fun `보존 설정이 기본값과 다른 값을 싣는다`() {
+        val retention =
+            bind(
+                "easydoc.retention",
+                RetentionProperties::class.java,
+                mapOf(
+                    "easydoc.retention.enabled" to "false",
+                    "easydoc.retention.dry-run" to "true",
+                    "easydoc.retention.batch-size" to "7",
+                ),
+            )
+        assertThat(retention.enabled).isFalse()
+        assertThat(retention.dryRun).isTrue()
+        assertThat(retention.batchSize).isEqualTo(7)
     }
 
     private fun <T : Any> bind(

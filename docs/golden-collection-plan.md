@@ -19,20 +19,22 @@
 docs/golden/            검토할 공개 원문
 docs/golden-drafts/     사람 검수 전 JSON 초안
 data/golden/documents/  승인된 언어 독립 fixture
+data/golden/conversions/ 문서 id 별 변환 스냅샷(`{id}.txt`)
 ```
 
 초안에서 승인 경로로 이동할 때 파일명과 `id`를 고정하고, 기존 fixture를 덮어쓰지 않는다.
 
 ## 현재 검증
 
-Kotlin 골든 평가기는 Sprint K1 미구현 항목이다. 구현 전에는 다음만 확인한다.
+`backend-kotlin` Gradle 테스트가 `data/golden/documents/`와 `data/golden/conversions/`를 읽어 다음을 검사한다.
 
-- JSON 구문과 필수 metadata 존재
-- 연락처/개인정보 사람 검수 기록
-- `required_facts`가 원문에 실제로 존재
+- JSON 구문과 평가 입력 스키마(id·title·category·source_text·required_facts)
 - 중복 `id` 없음
+- `required_facts`가 원문에 실제로 존재
+- 커밋된 변환 스냅샷(`data/golden/conversions/{id}.txt`)에 스타일 규칙(`checkStyle`)과 사실 잔존을 적용. 스냅샷은 필수 사실을 담은 기대 변환문이며, 사람 검수본으로 교체할 수 있다.
+- 커밋된 기준선(`core/src/test/resources/kr/easydoc/core/quality/golden-baseline.json`)과 문서 수·사실 수·정렬된 파일명·ID·정규화 JSON digest·스타일/사실 통과 건수가 일치. 일반 테스트는 이 파일을 다시 쓰지 않는다.
 
-평가기가 추가되면 `backend-kotlin` Gradle task로 스키마·스타일 규칙 검사를 실행하고, 외부 LLM judge는 비밀값이 있는 opt-in CI 레인으로 분리한다. 기준선 갱신은 일반 테스트 실행과 분리하고 변경 사유를 리뷰한다.
+LLM-as-judge는 `./gradlew testLlm` opt-in이다. 기본 `./gradlew build`는 `@Tag("llm")`를 제외하고, 비밀값이 없으면 레인을 skip한다. 비밀값이 있으면 골든 문서를 실제로 변환한 뒤 사실·judge로 채점한다. 기준선 파일은 일반 테스트가 다시 쓰지 않으며, 정체성·채점 변경은 리뷰 승인 후에만 커밋한다.
 
 ## 완료 체크
 
@@ -40,4 +42,4 @@ Kotlin 골든 평가기는 Sprint K1 미구현 항목이다. 구현 전에는 �
 - [ ] 개인정보·연락처 사람 검수
 - [ ] `required_facts` 3~6개 검증
 - [ ] 중복 ID 확인
-- [ ] Kotlin 정적 평가 통과(평가기 구현 후)
+- [x] Kotlin 정적 평가 통과(평가기 구현 후)

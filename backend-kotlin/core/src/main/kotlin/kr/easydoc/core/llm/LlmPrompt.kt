@@ -8,6 +8,7 @@ import kr.easydoc.core.easyread.buildSystemPrompt
 import kr.easydoc.core.easyread.buildUserPrompt
 import kr.easydoc.core.privacy.MaskedText
 import kr.easydoc.core.privacy.ModelDraft
+import kr.easydoc.core.quality.RequiredFact
 
 /** LLM 에 실제로 나가는 `(system, user)` 페이로드. */
 class LlmPrompt private constructor(
@@ -39,5 +40,25 @@ class LlmPrompt private constructor(
             val repair = buildRepairPrompt(converted, violations, documentIds)
             return LlmPrompt(system = repair.system, user = repair.user)
         }
+
+        /**
+         * LLM-as-judge 프롬프트. 원문·변환문을 실어 사실 보존만 묻는다.
+         * 이 객체의 [toString] 은 길이만 남기므로 본문이 로그에 실리지 않는다.
+         */
+        fun forJudge(
+            source: String,
+            converted: String,
+            facts: List<RequiredFact>,
+        ): LlmPrompt {
+            val factLines = facts.joinToString("\n") { "- ${it.canonical}" }
+            return LlmPrompt(
+                system = JUDGE_SYSTEM,
+                user = "필수 사실:\n$factLines\n\n원문:\n$source\n\n변환:\n$converted",
+            )
+        }
+
+        private const val JUDGE_SYSTEM: String =
+            "너는 쉬운 글 변환의 사실 보존을 채점한다. 필수 사실이 변환문에 남았으면 " +
+                "첫 줄에 yes, 빠졌으면 no 만 답한다. 본문을 되풀이하지 않는다."
     }
 }
