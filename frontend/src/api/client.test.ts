@@ -19,6 +19,10 @@ function jsonResponse(status: number, payload: unknown): Response {
 }
 
 const fetchMock = vi.fn<typeof fetch>()
+const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000').replace(
+  /\/+$/,
+  '',
+)
 
 beforeEach(() => {
   window.localStorage.clear()
@@ -39,7 +43,7 @@ describe('요청 조립', () => {
     await fetchMe()
 
     const [url, init] = fetchMock.mock.calls[0] ?? []
-    expect(url).toBe('http://localhost:8000/auth/me')
+    expect(url).toBe(`${apiBaseUrl}/auth/me`)
     expect(new Headers(init?.headers).get('Authorization')).toBe('Bearer token-abc')
   })
 
@@ -63,7 +67,7 @@ describe('요청 조립', () => {
 
     await listDocuments({ limit: 20, offset: 40 })
 
-    expect(fetchMock.mock.calls[0]?.[0]).toBe('http://localhost:8000/documents?limit=20&offset=40')
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(`${apiBaseUrl}/documents?limit=20&offset=40`)
   })
 })
 
@@ -157,9 +161,7 @@ describe('내보내기', () => {
 
     const file = await downloadExport('c1', 'txt')
 
-    expect(fetchMock.mock.calls[0]?.[0]).toBe(
-      'http://localhost:8000/conversions/c1/export?format=txt',
-    )
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(`${apiBaseUrl}/conversions/c1/export?format=txt`)
     expect(file.filename).toBe(filename)
     expect(await file.blob.text()).toBe('본문')
   })
@@ -175,9 +177,7 @@ describe('내보내기', () => {
 
     const file = await downloadExport('c1', 'docx')
 
-    expect(fetchMock.mock.calls[0]?.[0]).toBe(
-      'http://localhost:8000/conversions/c1/export?format=docx',
-    )
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(`${apiBaseUrl}/conversions/c1/export?format=docx`)
     expect(file.filename).toBeNull()
   })
 })

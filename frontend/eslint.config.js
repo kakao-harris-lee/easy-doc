@@ -10,7 +10,9 @@ import tseslint from 'typescript-eslint'
 // 사람이 봐야 하는 항목(대비, 초점 순서)까지 잡아주지는 않으므로 최소선으로만 쓴다.
 export default tseslint.config(
   // playwright-report·test-results 는 실행 산출물이다(추적하지 않는다).
-  { ignores: ['dist', 'coverage', 'playwright-report', 'test-results'] },
+  {
+    ignores: ['dist', 'coverage', 'playwright-report', 'test-results', 'easy-read-ai'],
+  },
   {
     files: ['**/*.{ts,tsx}'],
     extends: [

@@ -1,4 +1,5 @@
 import { Link, useLocation, useParams } from 'react-router-dom'
+import { CircleAlert, LoaderCircle } from 'lucide-react'
 
 import { ReviewEditor } from '../components/ReviewEditor'
 import { failureMessage } from '../conversion/failureMessages'
@@ -35,8 +36,14 @@ export function ConversionPage() {
   if (conversion !== null && conversion.status === 'failed') {
     const failure = failureMessage(conversion.failure_code)
     return (
-      <section aria-labelledby="conversion-heading">
-        <h2 id="conversion-heading">변환하지 못했습니다</h2>
+      <section
+        className="mx-auto mt-16 max-w-xl rounded-[12px] border border-border bg-card p-8 text-center"
+        aria-labelledby="conversion-heading"
+      >
+        <CircleAlert className="mx-auto mb-4 size-10 text-danger" aria-hidden="true" />
+        <h2 className="text-xl font-extrabold" id="conversion-heading">
+          변환하지 못했습니다
+        </h2>
         <p className="form-error" role="alert">
           {failure.reason} {failure.advice}
         </p>
@@ -48,16 +55,30 @@ export function ConversionPage() {
   }
 
   return (
-    <section aria-labelledby="conversion-heading">
-      <h2 id="conversion-heading">변환 중</h2>
+    <section
+      className="mx-auto mt-16 max-w-xl rounded-[12px] border border-border bg-card p-8 text-center"
+      aria-labelledby="conversion-heading"
+    >
+      <span
+        className="mx-auto mb-4 flex size-12 items-center justify-center rounded-full bg-accent text-primary"
+        aria-hidden="true"
+      >
+        <LoaderCircle className="size-6 animate-spin" />
+      </span>
+      <h2 className="text-xl font-extrabold" id="conversion-heading">
+        변환 중
+      </h2>
       {timedOut ? (
         <p className="form-error" role="alert">
           변환이 예상보다 오래 걸리고 있습니다. 잠시 후 변환 기록에서 결과를 다시 확인해 주세요.
         </p>
       ) : (
-        <p className="conversion-progress" role="status">
+        <p
+          className="flex items-center justify-center gap-2 font-semibold text-primary"
+          role="status"
+        >
           {/* 회전 표시는 장식이라 낭독기에서 숨긴다 — 상태는 옆 문구가 알린다. */}
-          <span className="spinner" aria-hidden="true" />
+          <span className="size-3 rounded-full bg-primary" aria-hidden="true" />
           {conversion === null
             ? '변환 상태를 확인하고 있습니다…'
             : PROGRESS_TEXT[conversion.status === 'processing' ? 'processing' : 'pending']}

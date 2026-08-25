@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process'
 import process from 'node:process'
 import { configDefaults, defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
+import tailwindcss from '@tailwindcss/vite'
 
 /**
  * Node 25+는 실험용 Web Storage를 기본 켠다. 그 globalThis.localStorage 는
@@ -23,7 +24,7 @@ function disableNodeWebStorageArgs(): string[] {
 
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), tailwindcss()],
   test: {
     environment: 'jsdom',
     execArgv: disableNodeWebStorageArgs(),

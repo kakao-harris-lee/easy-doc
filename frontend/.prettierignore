@@ -5,6 +5,7 @@ package-lock.json
 playwright-report
 test-results
 blob-report
+easy-read-ai
 
 # OMC 세션 상태. 저장소 루트 .gitignore(:21 `.omc/`)가 이미 무시하지만, prettier 는
 # 자기 디렉터리의 .gitignore 만 읽어 여기서 다시 적어야 한다. 범위는 그 줄과 같다.

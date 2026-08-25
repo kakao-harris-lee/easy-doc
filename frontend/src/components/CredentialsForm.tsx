@@ -3,6 +3,7 @@ import type { FormEvent } from 'react'
 
 import { ApiError } from '../api/client'
 import { validateEmail, validatePassword } from '../auth/validation'
+import { Button } from './ui/Button'
 
 interface CredentialsFormProps {
   /** 제출 버튼 문구 ("로그인" / "가입하기"). */
@@ -61,7 +62,7 @@ export function CredentialsForm({
   }
 
   return (
-    <form className="credentials-form" onSubmit={handleSubmit} noValidate>
+    <form className="mt-6 flex flex-col gap-4" onSubmit={handleSubmit} noValidate>
       {formError !== null && (
         <p className="form-error" role="alert">
           {formError}
@@ -71,6 +72,7 @@ export function CredentialsForm({
       <div className="field">
         <label htmlFor={emailId}>이메일</label>
         <input
+          className="h-11 w-full rounded-[10px] border border-input bg-card px-3.5 text-base text-foreground"
           id={emailId}
           type="email"
           value={email}
@@ -89,6 +91,7 @@ export function CredentialsForm({
       <div className="field">
         <label htmlFor={passwordId}>비밀번호</label>
         <input
+          className="h-11 w-full rounded-[10px] border border-input bg-card px-3.5 text-base text-foreground"
           id={passwordId}
           type="password"
           value={password}
@@ -115,9 +118,9 @@ export function CredentialsForm({
         )}
       </div>
 
-      <button type="submit" disabled={submitting}>
+      <Button type="submit" loading={submitting} fullWidth>
         {submitting ? '처리 중…' : submitLabel}
-      </button>
+      </Button>
     </form>
   )
 }

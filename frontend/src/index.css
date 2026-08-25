@@ -1,369 +1,206 @@
-/*
- * 기본 스타일.
- *
- * 색 대비는 KWCAG 기준(본문 4.5:1)을 넘도록 골랐다 — 흰 배경(#ffffff) 위
- * 본문 #1f2328(약 14.7:1), 보조 문구 #4a5259(약 8.0:1), 오류 #b3261e(약 6.4:1).
- * 쉬운 글 서비스이므로 본문 글자를 크게(17px), 줄 간격을 넉넉히 둔다.
- */
+@import 'tailwindcss';
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary-hover: var(--primary-hover);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-success-surface: var(--success-surface);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-warning-surface: var(--warning-surface);
+  --color-danger: var(--danger);
+  --color-danger-foreground: var(--danger-foreground);
+  --color-danger-surface: var(--danger-surface);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+  --color-info-surface: var(--info-surface);
+  --color-admin: var(--admin);
+  --color-admin-foreground: var(--admin-foreground);
+  --color-admin-surface: var(--admin-surface);
+  --radius-sm: 8px;
+  --radius-md: 10px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --font-sans: var(--font-pretendard);
+}
 
 :root {
-  --color-text: #1f2328;
-  --color-muted: #4a5259;
-  --color-error: #b3261e;
-  --color-accent: #1a4fa0;
-  --color-border: #c9ced4;
-
   color-scheme: light;
-  font-family: 'Pretendard', system-ui, 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
-  font-size: 17px;
-  line-height: 1.7;
-  color: var(--color-text);
-  background-color: #ffffff;
+  --background: #f6f8f9;
+  --foreground: #14211f;
+  --card: #ffffff;
+  --card-foreground: #14211f;
+  --popover: #ffffff;
+  --popover-foreground: #14211f;
+  --muted: #eef2f1;
+  --muted-foreground: #506461;
+  --secondary: #eef2f1;
+  --secondary-foreground: #1d2b29;
+  --accent: #e4efed;
+  --accent-foreground: #0f4a44;
+  --border: #d8e0de;
+  --input: #cbd5d2;
+  --ring: #0f766e;
+  --primary: #0f766e;
+  --primary-foreground: #ffffff;
+  --primary-hover: #0c5f58;
+  --success: #197a48;
+  --success-foreground: #ffffff;
+  --success-surface: #e6f4ec;
+  --warning: #8a5a00;
+  --warning-foreground: #ffffff;
+  --warning-surface: #fbf0d6;
+  --danger: #b4231f;
+  --danger-foreground: #ffffff;
+  --danger-surface: #fbe9e8;
+  --info: #0f766e;
+  --info-foreground: #ffffff;
+  --info-surface: #e4efed;
+  --admin: #17324d;
+  --admin-foreground: #ffffff;
+  --admin-surface: #eaeff4;
+  --font-pretendard:
+    'Pretendard', 'Pretendard Variable', -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo',
+    'Malgun Gothic', 'Segoe UI', system-ui, sans-serif;
 }
 
-body {
-  margin: 0;
-}
-
-/* 키보드 사용자가 지금 어디에 있는지 항상 보이게 한다. */
-:focus-visible {
-  outline: 3px solid var(--color-accent);
-  outline-offset: 2px;
-}
-
-/* 건너뛰기 링크는 초점을 받을 때만 나타난다. */
-.skip-link {
-  position: absolute;
-  left: -9999px;
-  top: 0;
-  background: #ffffff;
-  padding: 0.5rem 1rem;
-  z-index: 10;
-}
-
-.skip-link:focus {
-  left: 0;
-}
-
-.app-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  flex-wrap: wrap;
-  padding: 1rem 1.5rem;
-  border-bottom: 1px solid var(--color-border);
-}
-
-.app-header h1 {
-  font-size: 1.25rem;
-  margin: 0;
-}
-
-.app-header__account {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-}
-
-.app-header__email {
-  color: var(--color-muted);
-  font-size: 0.9rem;
-}
-
-.app-nav {
-  display: flex;
-  gap: 1rem;
-  margin-right: auto;
-}
-
-.app-nav a {
-  text-decoration: none;
-  padding: 0.25rem 0;
-  border-bottom: 2px solid transparent;
-}
-
-/* 지금 보고 있는 화면을 밑줄로도 알린다 — 색만으로 구분하지 않는다(KWCAG). */
-.app-nav a[aria-current='page'] {
-  font-weight: 700;
-  border-bottom-color: var(--color-accent);
-}
-
-/* 작업 공간 메뉴 — 좁은 화면에서는 줄이 바뀌며 오류 문구가 아래로 내려간다. */
-.workspace-menu {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-}
-
-.workspace-menu label {
-  font-weight: 600;
-  font-size: 0.9rem;
-}
-
-.workspace-menu select {
-  font: inherit;
-  padding: 0.35rem 0.5rem;
-  max-width: 16rem;
-  border: 1px solid var(--color-border);
-  border-radius: 0.35rem;
-}
-
-/* 머리말 버튼은 본문 버튼보다 작게 — 주된 행동(변환)보다 눈에 덜 띄어야 한다. */
-.workspace-menu button {
-  padding: 0.35rem 0.6rem;
-  font-size: 0.9rem;
-}
-
-/* 오류는 줄 전체를 차지해 선택 상자 옆에서 잘리지 않게 한다. */
-.workspace-menu .form-error {
-  flex-basis: 100%;
-}
-
-.app-main {
-  max-width: 72rem;
-  margin: 0 auto;
-  padding: 1.5rem;
-}
-
-.auth-page {
-  max-width: 24rem;
-}
-
-.credentials-form {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-}
-
-.field {
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-}
-
-.field label {
-  font-weight: 600;
-}
-
-.field input {
-  font: inherit;
-  padding: 0.55rem 0.7rem;
-  border: 1px solid var(--color-border);
-  border-radius: 0.35rem;
-}
-
-.field input[aria-invalid='true'] {
-  border-color: var(--color-error);
-}
-
-.field-hint {
-  margin: 0;
-  color: var(--color-muted);
-  font-size: 0.9rem;
-}
-
-.field-error,
-.form-error {
-  margin: 0;
-  color: var(--color-error);
-  font-size: 0.95rem;
-}
-
-.form-error {
-  border: 1px solid var(--color-error);
-  border-radius: 0.35rem;
-  padding: 0.6rem 0.8rem;
-}
-
-button {
-  font: inherit;
-  padding: 0.6rem 1rem;
-  border: 1px solid var(--color-accent);
-  border-radius: 0.35rem;
-  background: var(--color-accent);
-  color: #ffffff;
-  cursor: pointer;
-}
-
-button:disabled {
-  /* 비활성 버튼도 문구는 읽혀야 하므로 투명도 대신 색을 낮춘다. */
-  background: #6b7280;
-  border-color: #6b7280;
-  cursor: default;
-}
-
-a {
-  color: var(--color-accent);
-}
-
-.route-status {
-  color: var(--color-muted);
-}
-
-.form-success {
-  margin: 0;
-  color: #1b5e20; /* 흰 배경 대비 약 7.4:1 */
-  border: 1px solid #1b5e20;
-  border-radius: 0.35rem;
-  padding: 0.6rem 0.8rem;
-}
-
-.page-lead {
-  color: var(--color-muted);
-}
-
-/* --- 업로드 화면 --- */
-
-.mode-choice {
-  display: flex;
-  gap: 1.5rem;
-  flex-wrap: wrap;
-  align-items: center;
-  border: 1px solid var(--color-border);
-  border-radius: 0.35rem;
-  padding: 0.75rem 1rem;
-  margin: 0 0 1rem;
-}
-
-.mode-choice label {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-}
-
-.upload-textarea,
-.review-textarea {
-  font: inherit;
-  width: 100%;
-  box-sizing: border-box;
-  padding: 0.6rem 0.7rem;
-  border: 1px solid var(--color-border);
-  border-radius: 0.35rem;
-  resize: vertical;
-}
-
-.upload-page form {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-  align-items: flex-start;
-}
-
-.upload-page .field {
-  width: 100%;
-}
-
-/* --- 변환 진행 --- */
-
-.conversion-progress {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-}
-
-.spinner {
-  width: 1.1rem;
-  height: 1.1rem;
-  border: 3px solid var(--color-border);
-  border-top-color: var(--color-accent);
-  border-radius: 50%;
-  animation: spin 1s linear infinite;
-}
-
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
+@layer base {
+  * {
+    @apply border-border;
+  }
+  html {
+    @apply bg-background;
+  }
+  body {
+    @apply m-0 min-w-80 bg-background text-foreground antialiased;
+    font-family: var(--font-pretendard);
+    font-size: 16px;
+    line-height: 1.6;
+  }
+  :focus-visible {
+    outline: 3px solid var(--ring);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+  ::selection {
+    background: var(--accent);
+    color: var(--accent-foreground);
   }
 }
 
-/* 회전 애니메이션은 어지럼을 유발할 수 있다 — 줄이기를 원한 사용자에게는 멈춘다. */
+@layer components {
+  .skip-link {
+    @apply fixed -left-[9999px] top-2 z-50 rounded-lg bg-primary px-4 py-2 font-bold text-white;
+  }
+  .skip-link:focus {
+    @apply left-2;
+  }
+
+  .field {
+    @apply flex flex-col gap-1.5;
+  }
+  .field label {
+    @apply text-[15px] font-semibold text-foreground;
+  }
+  .field input:not([type='radio']):not([type='file']),
+  .field select,
+  .upload-textarea,
+  .review-textarea {
+    @apply w-full rounded-[10px] border border-input bg-card px-3.5 text-base text-foreground;
+  }
+  .field input:not([type='radio']):not([type='file']) {
+    @apply h-11;
+  }
+  .field input[type='file'] {
+    @apply w-full rounded-[10px] border border-dashed border-input bg-background p-3;
+  }
+  .upload-textarea,
+  .review-textarea {
+    @apply py-3 leading-relaxed;
+  }
+  .field input[aria-invalid='true'],
+  .upload-textarea[aria-invalid='true'] {
+    @apply border-danger;
+  }
+  .field-hint {
+    @apply m-0 text-sm text-muted-foreground;
+  }
+  .field-error {
+    @apply m-0 text-sm font-medium text-danger;
+  }
+  .form-error {
+    @apply m-0 rounded-[10px] border border-danger/25 bg-danger-surface px-3 py-2 text-sm font-medium text-danger;
+  }
+  .form-success {
+    @apply m-0 rounded-[10px] border border-success/25 bg-success-surface px-3 py-2 text-sm font-medium text-success;
+  }
+
+  .review-textarea {
+    @apply min-h-80 resize-y;
+  }
+  .review-source {
+    @apply bg-secondary;
+  }
+  .review-warning {
+    @apply mb-4 rounded-[10px] border border-danger/25 bg-danger-surface px-4 py-3 text-danger;
+  }
+  .review-actions {
+    @apply my-4 flex flex-wrap gap-2;
+  }
+  .review-actions button {
+    @apply inline-flex h-11 items-center justify-center rounded-[10px] bg-primary px-4 font-semibold text-white hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .review-actions button:not(:first-child) {
+    @apply border border-input bg-card text-foreground hover:bg-secondary;
+  }
+
+  .history-table,
+  .masked-table {
+    @apply w-full border-collapse;
+  }
+  .history-table caption,
+  .masked-table caption {
+    @apply py-4 text-left text-sm text-muted-foreground;
+  }
+  .history-table th,
+  .history-table td,
+  .masked-table th,
+  .masked-table td {
+    @apply border-t border-border px-3 py-3 text-left align-middle;
+  }
+  .history-table thead th,
+  .masked-table thead th {
+    @apply bg-background text-sm font-semibold text-muted-foreground;
+  }
+  .history-table button {
+    @apply inline-flex h-9 items-center rounded-[10px] border border-input bg-card px-3 text-sm font-semibold text-foreground hover:bg-secondary disabled:opacity-50;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .spinner {
-    animation: none;
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
   }
-}
-
-/* --- 검수 에디터 --- */
-
-.review-banner {
-  border: 2px solid var(--color-accent);
-  border-radius: 0.35rem;
-  padding: 0.7rem 1rem;
-  margin: 0 0 1rem;
-  font-weight: 700;
-}
-
-.review-warning {
-  border: 1px solid var(--color-error);
-  border-radius: 0.35rem;
-  padding: 0.6rem 0.8rem;
-  color: var(--color-error);
-}
-
-.review h2:focus-visible {
-  outline: 3px solid var(--color-accent);
-}
-
-.review-split {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 1.5rem;
-}
-
-/* 좁은 화면에서는 위아래로 쌓는다 — 두 칸을 억지로 붙이면 글이 읽히지 않는다. */
-@media (max-width: 60rem) {
-  .review-split {
-    grid-template-columns: 1fr;
-  }
-}
-
-.review-pane h3 {
-  font-size: 1rem;
-  margin: 0 0 0.4rem;
-}
-
-/* 읽기 전용 칸은 배경을 낮춰 고칠 수 있는 칸과 구분한다(글자 대비는 그대로 유지). */
-.review-source {
-  background: #f1f3f5;
-}
-
-.review-actions {
-  display: flex;
-  gap: 0.75rem;
-  flex-wrap: wrap;
-  margin: 1rem 0;
-}
-
-/* --- 표 (마스킹 항목·변환 기록) --- */
-
-.masked-table,
-.history-table {
-  width: 100%;
-  border-collapse: collapse;
-  margin-top: 0.5rem;
-}
-
-.masked-table caption,
-.history-table caption {
-  text-align: left;
-  color: var(--color-muted);
-  font-size: 0.9rem;
-  padding-bottom: 0.5rem;
-}
-
-.masked-table th,
-.masked-table td,
-.history-table th,
-.history-table td {
-  border: 1px solid var(--color-border);
-  padding: 0.45rem 0.6rem;
-  text-align: left;
-  vertical-align: top;
-}
-
-.masked-table thead th,
-.history-table thead th {
-  background: #f1f3f5;
 }

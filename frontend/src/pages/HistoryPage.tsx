@@ -1,10 +1,20 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { FilePlus2, Trash2 } from 'lucide-react'
 
 import { ApiError, deleteDocument, listDocuments } from '../api/client'
 import type { ConversionStatus, DocumentListItem } from '../api/types'
 import { conversionPath, HOME_PATH } from '../routes/paths'
 import { useWorkspace } from '../workspace/context'
+import { Badge } from '../components/ui/Badge'
+import { Button } from '../components/ui/Button'
+
+const STATUS_TONE: Record<ConversionStatus, 'warning' | 'info' | 'success' | 'danger'> = {
+  pending: 'warning',
+  processing: 'info',
+  done: 'success',
+  failed: 'danger',
+}
 
 /** 한 번에 불러올 개수. 백엔드 기본값과 같다. */
 const PAGE_SIZE = 20
@@ -126,8 +136,24 @@ export function HistoryPage() {
   }
 
   return (
-    <section aria-labelledby="history-heading">
-      <h2 id="history-heading">변환 기록</h2>
+    <section className="flex flex-col gap-6" aria-labelledby="history-heading">
+      <header className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
+        <div>
+          <p className="mb-1 text-sm font-bold text-primary">내 문서</p>
+          <h2 id="history-heading" className="text-2xl font-extrabold tracking-tight">
+            변환 기록
+          </h2>
+          <p className="mt-1 text-[15px] text-muted-foreground">
+            지금까지 변환한 문서를 확인하고 다시 검수할 수 있습니다.
+          </p>
+        </div>
+        <Link
+          className="inline-flex h-11 items-center justify-center gap-2 rounded-[10px] bg-primary px-4 font-semibold text-white no-underline hover:bg-primary-hover"
+          to={HOME_PATH}
+        >
+          <FilePlus2 className="size-4" aria-hidden="true" />새 문서 변환
+        </Link>
+      </header>
 
       {error !== null && (
         <p className="form-error" role="alert">
@@ -135,79 +161,95 @@ export function HistoryPage() {
         </p>
       )}
 
-      {items.length === 0 && !loading && error === null ? (
-        <p>
-          {currentName === null
-            ? '아직 변환한 문서가 없습니다.'
-            : `‘${currentName}’에는 아직 변환한 문서가 없습니다.`}{' '}
-          <Link to={HOME_PATH}>문서를 올려 보세요.</Link>
-        </p>
-      ) : (
-        <table className="history-table">
-          {/* 어느 작업 공간을 보고 있는지 표 설명에 적는다 — 목록이 걸러졌다는 사실이
-              화면을 보지 않는 사용자에게도 전달되어야 한다(KWCAG). */}
-          <caption>
+      <div className="overflow-x-auto rounded-[12px] border border-border bg-card px-5 pb-5 shadow-[0_1px_2px_rgba(20,33,31,0.04)]">
+        {items.length === 0 && !loading && error === null ? (
+          <p className="py-14 text-center text-muted-foreground">
             {currentName === null
-              ? '내가 변환한 문서 목록입니다.'
-              : `‘${currentName}’에서 변환한 문서 목록입니다.`}{' '}
-            제목을 누르면 검수 화면이 열립니다.
-          </caption>
-          <thead>
-            <tr>
-              <th scope="col">제목</th>
-              <th scope="col">상태</th>
-              <th scope="col">글자 수</th>
-              <th scope="col">올린 날짜</th>
-              <th scope="col">검수</th>
-              <th scope="col">삭제</th>
-            </tr>
-          </thead>
-          <tbody>
-            {items.map((item) => (
-              <tr key={item.id}>
-                <th scope="row">
-                  {/* 변환 행이 없으면 열 화면도 없다 — 링크 대신 제목만 보여준다. */}
-                  {item.conversion_id === null ? (
-                    item.title
-                  ) : (
-                    <Link to={conversionPath(item.conversion_id)}>{item.title}</Link>
-                  )}
-                </th>
-                <td>{item.status === null ? '알 수 없음' : STATUS_TEXT[item.status]}</td>
-                <td>{item.char_count.toLocaleString('ko-KR')}자</td>
-                <td>{formatDate(item.created_at)}</td>
-                <td>{item.reviewed_at === null ? '초안' : '검수함'}</td>
-                <td>
-                  <button
-                    type="button"
-                    // 줄마다 같은 "삭제"가 반복되므로 어떤 문서인지 이름에 실어 준다.
-                    aria-label={`${item.title} 삭제`}
-                    onClick={() => void handleDelete(item)}
-                    disabled={deletingId === item.id}
-                  >
-                    삭제
-                  </button>
-                </td>
+              ? '아직 변환한 문서가 없습니다.'
+              : `‘${currentName}’에는 아직 변환한 문서가 없습니다.`}{' '}
+            <Link to={HOME_PATH}>문서를 올려 보세요.</Link>
+          </p>
+        ) : (
+          <table className="history-table">
+            {/* 어느 작업 공간을 보고 있는지 표 설명에 적는다 — 목록이 걸러졌다는 사실이
+              화면을 보지 않는 사용자에게도 전달되어야 한다(KWCAG). */}
+            <caption>
+              {currentName === null
+                ? '내가 변환한 문서 목록입니다.'
+                : `‘${currentName}’에서 변환한 문서 목록입니다.`}{' '}
+              제목을 누르면 검수 화면이 열립니다.
+            </caption>
+            <thead>
+              <tr>
+                <th scope="col">제목</th>
+                <th scope="col">상태</th>
+                <th scope="col">글자 수</th>
+                <th scope="col">올린 날짜</th>
+                <th scope="col">검수</th>
+                <th scope="col">삭제</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
+            </thead>
+            <tbody>
+              {items.map((item) => (
+                <tr key={item.id}>
+                  <th scope="row">
+                    {/* 변환 행이 없으면 열 화면도 없다 — 링크 대신 제목만 보여준다. */}
+                    {item.conversion_id === null ? (
+                      item.title
+                    ) : (
+                      <Link to={conversionPath(item.conversion_id)}>{item.title}</Link>
+                    )}
+                  </th>
+                  <td>
+                    {item.status === null ? (
+                      <Badge>알 수 없음</Badge>
+                    ) : (
+                      <Badge tone={STATUS_TONE[item.status]}>{STATUS_TEXT[item.status]}</Badge>
+                    )}
+                  </td>
+                  <td>{item.char_count.toLocaleString('ko-KR')}자</td>
+                  <td>{formatDate(item.created_at)}</td>
+                  <td>{item.reviewed_at === null ? '초안' : '검수함'}</td>
+                  <td>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      type="button"
+                      // 줄마다 같은 "삭제"가 반복되므로 어떤 문서인지 이름에 실어 준다.
+                      aria-label={`${item.title} 삭제`}
+                      onClick={() => void handleDelete(item)}
+                      disabled={deletingId === item.id}
+                    >
+                      <Trash2 className="size-4" aria-hidden="true" />
+                      삭제
+                    </Button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
 
-      {loading && <p role="status">불러오는 중입니다…</p>}
+        {loading && (
+          <p className="py-6 text-center text-sm text-primary" role="status">
+            불러오는 중입니다…
+          </p>
+        )}
 
-      {hasMore && (
-        <button
-          type="button"
-          onClick={() => {
-            setLoading(true)
-            setOffset(items.length)
-          }}
-          disabled={loading}
-        >
-          더 보기
-        </button>
-      )}
+        {hasMore && (
+          <Button
+            variant="outline"
+            type="button"
+            onClick={() => {
+              setLoading(true)
+              setOffset(items.length)
+            }}
+            disabled={loading}
+          >
+            더 보기
+          </Button>
+        )}
+      </div>
     </section>
   )
 }

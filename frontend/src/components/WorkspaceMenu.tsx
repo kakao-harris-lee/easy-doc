@@ -1,7 +1,9 @@
 import { useId, useState } from 'react'
+import { Pencil, Plus } from 'lucide-react'
 
 import { ApiError } from '../api/client'
 import { useWorkspace } from '../workspace/context'
+import { Button } from './ui/Button'
 
 const CREATE_PROMPT = '새 작업 공간의 이름을 입력해 주세요. (50자 이내)'
 const RENAME_PROMPT = '작업 공간의 새 이름을 입력해 주세요. (50자 이내)'
@@ -51,9 +53,12 @@ export function WorkspaceMenu() {
   }
 
   return (
-    <div className="workspace-menu">
-      <label htmlFor={selectId}>작업 공간</label>
+    <div className="workspace-menu relative flex flex-wrap items-center gap-2">
+      <label className="text-sm font-semibold text-muted-foreground" htmlFor={selectId}>
+        작업 공간
+      </label>
       <select
+        className="h-9 min-w-44 rounded-[10px] border border-input bg-card px-3 text-sm text-foreground"
         id={selectId}
         value={current?.id ?? ''}
         disabled={busy}
@@ -68,14 +73,19 @@ export function WorkspaceMenu() {
           </option>
         ))}
       </select>
-      <button
+      <Button
+        variant="outline"
+        size="sm"
         type="button"
         disabled={busy}
         onClick={() => void run(window.prompt(CREATE_PROMPT), create)}
       >
+        <Plus className="size-4" aria-hidden="true" />
         새로 만들기
-      </button>
-      <button
+      </Button>
+      <Button
+        variant="ghost"
+        size="sm"
         type="button"
         disabled={busy || current === null}
         onClick={() => {
@@ -85,10 +95,11 @@ export function WorkspaceMenu() {
           void run(window.prompt(RENAME_PROMPT, current.name), (name) => rename(current.id, name))
         }}
       >
+        <Pencil className="size-4" aria-hidden="true" />
         이름 바꾸기
-      </button>
+      </Button>
       {message !== null && (
-        <p className="form-error" role="alert">
+        <p className="form-error basis-full" role="alert">
           {message}
         </p>
       )}

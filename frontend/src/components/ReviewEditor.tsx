@@ -1,8 +1,11 @@
 import { useEffect, useId, useRef, useState } from 'react'
+import { Download, Save, ShieldAlert } from 'lucide-react'
 
 import { ApiError, downloadExport, saveReview } from '../api/client'
 import type { ConversionResponse, ExportFormat } from '../api/types'
 import { setUnsavedChanges } from '../review/unsavedChanges'
+import { Badge } from './ui/Badge'
+import { Button } from './ui/Button'
 
 interface ReviewEditorProps {
   conversion: ConversionResponse
@@ -130,15 +133,34 @@ export function ReviewEditor({ conversion, sourceText }: ReviewEditorProps) {
   }
 
   return (
-    <section className="review" aria-labelledby="review-heading">
+    <section className="flex flex-col gap-5" aria-labelledby="review-heading">
       {/* HITL 고지 — 이 화면에서 가장 먼저 읽혀야 하는 문장이다. */}
-      <p className="review-banner" role="note">
+      <p
+        className="flex items-center gap-2 rounded-[10px] border border-warning/25 bg-warning-surface px-4 py-3 font-semibold text-warning"
+        role="note"
+      >
+        <ShieldAlert className="size-5 shrink-0" aria-hidden="true" />
         AI가 만든 초안입니다 — 반드시 검토 후 사용하세요.
       </p>
 
-      <h2 id="review-heading" ref={headingRef} tabIndex={-1}>
-        쉬운 글 검수
-      </h2>
+      <header className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
+        <div>
+          <Badge tone="success" className="mb-2">
+            변환 완료
+          </Badge>
+          <h2
+            className="text-2xl font-extrabold tracking-tight"
+            id="review-heading"
+            ref={headingRef}
+            tabIndex={-1}
+          >
+            쉬운 글 검수
+          </h2>
+          <p className="mt-1 text-[15px] text-muted-foreground">
+            원문과 AI 초안을 비교하고, 필요한 내용을 직접 고쳐 주세요.
+          </p>
+        </div>
+      </header>
 
       {conversion.missing_placeholders.length > 0 && (
         <p className="review-warning">
@@ -148,9 +170,9 @@ export function ReviewEditor({ conversion, sourceText }: ReviewEditorProps) {
         </p>
       )}
 
-      <div className="review-split">
-        <div className="review-pane">
-          <h3>
+      <div className="grid gap-4 lg:grid-cols-2">
+        <div className="rounded-[12px] border border-border bg-card p-5">
+          <h3 className="mb-2 text-sm font-bold text-muted-foreground">
             <label htmlFor={`${editorId}-source`}>원본 (읽기 전용)</label>
           </h3>
           {sourceText === null ? (
@@ -171,8 +193,8 @@ export function ReviewEditor({ conversion, sourceText }: ReviewEditorProps) {
           )}
         </div>
 
-        <div className="review-pane">
-          <h3>
+        <div className="rounded-[12px] border border-primary/30 bg-card p-5">
+          <h3 className="mb-2 text-sm font-bold text-primary">
             <label htmlFor={editorId}>쉬운 글 결과 (고칠 수 있습니다)</label>
           </h3>
           <textarea
@@ -185,21 +207,40 @@ export function ReviewEditor({ conversion, sourceText }: ReviewEditorProps) {
         </div>
       </div>
 
-      <div className="review-actions">
-        <button type="button" onClick={() => void handleSave()} disabled={busy}>
+      <div className="flex flex-wrap gap-2">
+        <Button type="button" onClick={() => void handleSave()} disabled={busy}>
+          <Save className="size-4" aria-hidden="true" />
           {busy ? '처리 중…' : '검수 내용 저장'}
-        </button>
-        <button type="button" onClick={() => void handleDownload('docx')} disabled={busy}>
+        </Button>
+        <Button
+          variant="outline"
+          type="button"
+          onClick={() => void handleDownload('docx')}
+          disabled={busy}
+        >
+          <Download className="size-4" aria-hidden="true" />
           docx 내려받기
-        </button>
+        </Button>
         {/* hwpx는 공공기관에서 그대로 이어 쓰는 형식이라 docx 바로 옆에 둔다.
             열리는지 확인이 필요한 형식이므로(한컴 호환 미검증) txt보다 앞이되 기본은 아니다. */}
-        <button type="button" onClick={() => void handleDownload('hwpx')} disabled={busy}>
+        <Button
+          variant="outline"
+          type="button"
+          onClick={() => void handleDownload('hwpx')}
+          disabled={busy}
+        >
+          <Download className="size-4" aria-hidden="true" />
           hwpx 내려받기
-        </button>
-        <button type="button" onClick={() => void handleDownload('txt')} disabled={busy}>
+        </Button>
+        <Button
+          variant="outline"
+          type="button"
+          onClick={() => void handleDownload('txt')}
+          disabled={busy}
+        >
+          <Download className="size-4" aria-hidden="true" />
           txt 내려받기
-        </button>
+        </Button>
       </div>
 
       {/* 저장 결과는 화면 어디를 보고 있든 알아야 한다. 실패는 즉시(alert),
@@ -221,8 +262,13 @@ export function ReviewEditor({ conversion, sourceText }: ReviewEditorProps) {
             : `마지막 저장: ${new Date(reviewedAt).toLocaleString('ko-KR')}`}
       </p>
 
-      <section className="masked-panel" aria-labelledby="masked-heading">
-        <h3 id="masked-heading">가린 개인정보</h3>
+      <section
+        className="overflow-x-auto rounded-[12px] border border-border bg-card p-5"
+        aria-labelledby="masked-heading"
+      >
+        <h3 className="font-bold" id="masked-heading">
+          가린 개인정보
+        </h3>
         {conversion.masked_items.length === 0 ? (
           <p className="field-hint">가린 개인정보가 없습니다.</p>
         ) : (
