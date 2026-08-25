@@ -162,9 +162,13 @@ export function createDocumentFromText(
 export function createDocumentFromFile(
   file: File,
   workspaceId: string | null,
+  title?: string,
 ): Promise<DocumentCreatedResponse> {
   const form = new FormData()
   form.append('file', file)
+  if (title !== undefined && title !== '') {
+    form.append('title', title)
+  }
   if (workspaceId !== null) {
     form.append('workspace_id', workspaceId)
   }

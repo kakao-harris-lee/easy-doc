@@ -13,6 +13,9 @@ import { Button } from '../components/ui/Button'
 /** 한 번에 변환할 수 있는 길이. 백엔드 MAX_CONVERTIBLE_CHARS와 같은 값이다. */
 const MAX_CHARS = 4000
 
+/** 문서 제목 길이 상한. 백엔드 x-input-limits.max_title_length와 같은 값이다. */
+const MAX_TITLE_LENGTH = 255
+
 /** 업로드 파일 크기 상한. 백엔드 MAX_UPLOAD_BYTES와 같은 값이다. */
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 
@@ -41,10 +44,12 @@ export function UploadPage() {
   // 공간에 담는다 — 업로드를 막는 대신 늘 갈 곳이 있게 한다.
   const { currentId: workspaceId } = useWorkspace()
   const textareaId = useId()
+  const titleId = useId()
   const fileId = useId()
   const counterId = useId()
 
   const [mode, setMode] = useState<InputMode>('text')
+  const [title, setTitle] = useState('')
   const [text, setText] = useState('')
   const [file, setFile] = useState<File | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -52,6 +57,8 @@ export function UploadPage() {
 
   const charCount = text.length
   const tooLong = charCount > MAX_CHARS
+  const titleTrimmed = title.trim()
+  const titleTooLong = title.length > MAX_TITLE_LENGTH
 
   function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
     setFile(event.target.files?.[0] ?? null)
@@ -87,6 +94,14 @@ export function UploadPage() {
   async function handleSubmit(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault()
     setError(null)
+    if (titleTrimmed === '') {
+      setError('문서 제목을 입력해 주세요.')
+      return
+    }
+    if (titleTooLong) {
+      setError(`제목이 너무 깁니다. ${MAX_TITLE_LENGTH}자 이내로 줄여 주세요.`)
+      return
+    }
     if (mode === 'text') {
       if (text.trim() === '') {
         setError('변환할 글을 입력해 주세요.')
@@ -96,7 +111,7 @@ export function UploadPage() {
         setError(`글이 너무 깁니다. ${chars(MAX_CHARS)}자 이내로 줄여 주세요.`)
         return
       }
-      await submit(() => createDocumentFromText(text, workspaceId), text)
+      await submit(() => createDocumentFromText(text, workspaceId, titleTrimmed), text)
       return
     }
     if (file === null) {
@@ -107,7 +122,7 @@ export function UploadPage() {
       setError('파일이 너무 큽니다. 10MB 이내 파일로 나눠 올려 주세요.')
       return
     }
-    await submit(() => createDocumentFromFile(file, workspaceId))
+    await submit(() => createDocumentFromFile(file, workspaceId, titleTrimmed))
   }
 
   function selectMode(next: InputMode) {
@@ -154,6 +169,22 @@ export function UploadPage() {
                 {error}
               </p>
             )}
+
+            <div className="field">
+              <label htmlFor={titleId}>문서 제목</label>
+              <input
+                id={titleId}
+                type="text"
+                value={title}
+                maxLength={MAX_TITLE_LENGTH}
+                aria-invalid={titleTooLong}
+                placeholder="예: 2024년 청년 월세 특별지원 안내문"
+                onChange={(event) => setTitle(event.target.value)}
+              />
+              <p className={titleTooLong ? 'field-error' : 'field-hint'}>
+                변환 기록에서 문서를 구분하는 이름입니다. {MAX_TITLE_LENGTH}자 이내.
+              </p>
+            </div>
 
             <fieldset className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               <legend className="col-span-full mb-1 text-[15px] font-semibold">

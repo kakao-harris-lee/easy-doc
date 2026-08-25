@@ -76,6 +76,7 @@ test.describe('변환 수직 흐름', () => {
     const observedStatuses = trackConversionStatuses(page)
     await signUpAndLand(page, newAccount())
 
+    await page.getByLabel('문서 제목').fill('E2E 건강보험료 안내')
     await page.getByLabel('바꿀 글').fill(SOURCE_TEXT)
 
     const [createdResponse] = await Promise.all([
