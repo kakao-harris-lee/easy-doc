@@ -43,24 +43,24 @@
 
 :root {
   color-scheme: light;
-  --background: #f6f8f9;
-  --foreground: #14211f;
+  --background: #f5f5f5;
+  --foreground: #242424;
   --card: #ffffff;
-  --card-foreground: #14211f;
+  --card-foreground: #242424;
   --popover: #ffffff;
-  --popover-foreground: #14211f;
-  --muted: #eef2f1;
-  --muted-foreground: #506461;
-  --secondary: #eef2f1;
-  --secondary-foreground: #1d2b29;
-  --accent: #e4efed;
-  --accent-foreground: #0f4a44;
-  --border: #d8e0de;
-  --input: #cbd5d2;
-  --ring: #0f766e;
-  --primary: #0f766e;
+  --popover-foreground: #242424;
+  --muted: #f0f0f0;
+  --muted-foreground: #616161;
+  --secondary: #f5f5f5;
+  --secondary-foreground: #242424;
+  --accent: #ebf3fc;
+  --accent-foreground: #0f548c;
+  --border: #d1d1d1;
+  --input: #b3b3b3;
+  --ring: #0f6cbd;
+  --primary: #0f6cbd;
   --primary-foreground: #ffffff;
-  --primary-hover: #0c5f58;
+  --primary-hover: #115ea3;
   --success: #197a48;
   --success-foreground: #ffffff;
   --success-surface: #e6f4ec;
@@ -70,12 +70,12 @@
   --danger: #b4231f;
   --danger-foreground: #ffffff;
   --danger-surface: #fbe9e8;
-  --info: #0f766e;
+  --info: #0f6cbd;
   --info-foreground: #ffffff;
-  --info-surface: #e4efed;
-  --admin: #17324d;
+  --info-surface: #ebf3fc;
+  --admin: #0f548c;
   --admin-foreground: #ffffff;
-  --admin-surface: #eaeff4;
+  --admin-surface: #ebf3fc;
   --font-pretendard:
     'Pretendard', 'Pretendard Variable', -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo',
     'Malgun Gothic', 'Segoe UI', system-ui, sans-serif;
