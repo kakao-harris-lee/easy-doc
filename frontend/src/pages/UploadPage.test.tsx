@@ -59,8 +59,9 @@ function documentPage(items: DocumentListItem[]) {
   return { items, limit: 20, offset: 0, has_more: false }
 }
 
-function renderPage(workspace: Partial<WorkspaceContextValue> = {}) {
-  return render(
+/** 화면 한 벌. 작업 공간이 바뀌는 상황을 재려면 같은 트리를 다시 그려야 한다. */
+function page(workspace: Partial<WorkspaceContextValue> = {}) {
+  return (
     <WorkspaceContext.Provider value={workspaceContext(workspace)}>
       <MemoryRouter initialEntries={['/']}>
         <Routes>
@@ -68,8 +69,12 @@ function renderPage(workspace: Partial<WorkspaceContextValue> = {}) {
           <Route path="/conversions/:conversionId" element={<h2>변환 화면</h2>} />
         </Routes>
       </MemoryRouter>
-    </WorkspaceContext.Provider>,
+    </WorkspaceContext.Provider>
   )
+}
+
+function renderPage(workspace: Partial<WorkspaceContextValue> = {}) {
+  return render(page(workspace))
 }
 
 beforeEach(() => {
@@ -385,6 +390,86 @@ describe('업로드 화면', () => {
       expect.objectContaining({ workspaceId: 'w2' }),
       expect.anything(),
     )
+    // 좁히지 않은 조회가 한 번도 끼지 않았는지까지 본다 — 아래 「작업 공간이 정해지기
+    // 전에는 부르지 않는다」와 같은 사실을 조회 인자 쪽에서 못박는다.
+    for (const [params] of vi.mocked(listDocuments).mock.calls) {
+      expect(params?.workspaceId).toBe('w2')
+    }
+  })
+
+  it('작업 공간이 정해지기 전에는 문서 목록을 조회하지 않는다', async () => {
+    renderPage({ workspaces: [], currentId: null })
+
+    // 화면이 다 그려지고 effect가 돌 기회를 준 뒤에 본다.
+    await screen.findByRole('button', { name: '쉬운 글 초안 만들기' })
+
+    // 재는 것은 「제안이 안 보인다」가 아니라 **호출 자체가 없다**는 사실이다.
+    // 작업 공간을 아직 모르는 채로 조회하면 요청에 workspace_id가 빠지고 서버는 기본
+    // 범위로 답한다. 그 응답이 근거로 들어오면 화면은 "‘복지정책팀’ · 새 변환"이라고
+    // 말하면서 다른 작업 공간의 문서 제목을 이어서 검수하라고 권하게 된다. 넓게 불러
+    // 두고 화면에서만 거르는 방식으로 되돌리면 그 제목은 이미 브라우저에 와 있으므로,
+    // 빈 화면을 재는 것으로는 회귀를 잡지 못한다.
+    expect(vi.mocked(listDocuments)).not.toHaveBeenCalled()
+    expect(screen.queryByRole('complementary', { name: '다음 할 일' })).not.toBeInTheDocument()
+  })
+
+  it('작업 공간이 정해지면 그때 그 작업 공간으로 좁혀 조회한다', async () => {
+    vi.mocked(listDocuments).mockResolvedValue(
+      documentPage([
+        documentItem({
+          id: 'd1',
+          conversion_id: 'c1',
+          status: 'done',
+          reviewed_at: null,
+          title: '민원 안내문',
+        }),
+      ]),
+    )
+    const { rerender } = render(page({ workspaces: [], currentId: null }))
+    await screen.findByRole('button', { name: '쉬운 글 초안 만들기' })
+    expect(vi.mocked(listDocuments)).not.toHaveBeenCalled()
+
+    // 목록이 도착했다. 미룬 조회는 여기서 나가야 한다 — 안 부르는 것이 아니라 늦게
+    // 부르는 것이 이 갈래의 값이다.
+    rerender(
+      page({ workspaces: [workspaceItem({ id: 'w2', name: '민원 안내' })], currentId: 'w2' }),
+    )
+
+    expect(await screen.findByRole('complementary', { name: '다음 할 일' })).toBeInTheDocument()
+    expect(vi.mocked(listDocuments)).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(listDocuments)).toHaveBeenCalledWith(
+      expect.objectContaining({ workspaceId: 'w2' }),
+      expect.anything(),
+    )
+  })
+
+  it('작업 공간을 바꾸면 이전 작업 공간의 제안이 화면에 남지 않는다', async () => {
+    vi.mocked(listDocuments).mockResolvedValueOnce(
+      documentPage([
+        documentItem({
+          id: 'd1',
+          conversion_id: 'c1',
+          status: 'done',
+          reviewed_at: null,
+          title: '복지정책팀 문서',
+        }),
+      ]),
+    )
+    const { rerender } = render(
+      page({ workspaces: [workspaceItem({ id: 'w1', name: '복지정책팀' })], currentId: 'w1' }),
+    )
+    expect(await screen.findByText(/복지정책팀 문서/)).toBeInTheDocument()
+
+    // 새 작업 공간의 응답은 아직 오지 않았다.
+    vi.mocked(listDocuments).mockReturnValue(new Promise(() => undefined))
+    rerender(
+      page({ workspaces: [workspaceItem({ id: 'w2', name: '민원 안내' })], currentId: 'w2' }),
+    )
+
+    // 응답을 기다리는 동안 이전 공간의 제목이 남아 있으면, 화면은 민원 안내에서 작업
+    // 중이라고 말하면서 복지정책팀 문서를 이어서 하라고 권하게 된다.
+    expect(screen.queryByText(/복지정책팀 문서/)).not.toBeInTheDocument()
+    expect(screen.queryByRole('complementary', { name: '다음 할 일' })).not.toBeInTheDocument()
   })
 
   it('안내 카드는 개인정보 2종만 가린다고 알린다', () => {

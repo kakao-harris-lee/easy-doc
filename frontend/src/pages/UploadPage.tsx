@@ -217,6 +217,9 @@ export function UploadPage() {
   // 남겨 두면 방금 옮겨 온 작업 공간에 없는 문서를 이어서 하라고 권하게 된다. 렌더 중에
   // 맞추는 이유는 기록 화면과 같다(React 공식 "렌더 중 상태 조정" 패턴) — effect로 미루면
   // 잘못된 작업 공간의 제안이 한 프레임 먼저 보인다.
+  // 아래 조회가 작업 공간이 정해진 뒤에만 나가게 된 지금도 이 처리는 그대로 필요하다:
+  // 조회를 아예 걸지 않는 것은 `null`인 동안뿐이고, w1 → w2처럼 **정해진 공간끼리**
+  // 바뀌는 경우는 이전 공간의 응답이 이미 상태에 들어와 있다.
   const [suggestionWorkspaceId, setSuggestionWorkspaceId] = useState(workspaceId)
   if (suggestionWorkspaceId !== workspaceId) {
     setSuggestionWorkspaceId(workspaceId)
@@ -229,22 +232,38 @@ export function UploadPage() {
    * 「다음 할 일」의 근거가 될 최근 문서를 읽는다(§6.2, §7).
    *
    * 새 API를 만들지 않는다 — 기록 화면이 쓰는 `GET /documents`를 그대로 쓴다. 조회는
-   * 현재 작업 공간으로 좁힌다(§3 개인화 우선순위 2). 아직 작업 공간 목록을 못 받았으면
-   * 좁히지 않는다 — 기록 화면과 같은 판단이다.
+   * 현재 작업 공간으로 좁힌다(§3 개인화 우선순위 2).
+   *
+   * **작업 공간이 정해지기 전(null)에는 아예 부르지 않는다.** 여기서 「기록 화면과 같이
+   * 좁히지 않고 부른다」로 되돌리지 마라 — 두 화면은 같은 판단을 공유할 수 없다. 기록
+   * 화면은 받은 목록 **그 자체**를 보여주므로 범위가 넓어도 화면이 거짓말하지 않지만,
+   * 이 화면은 제안을 **작업 공간 맥락과 짝지어** 보여준다(머리말이 "‘복지정책팀’ · 새
+   * 변환"이라고 말한다). 좁히지 않은 응답이 근거로 들어오면 화면이 복지정책팀에서
+   * 작업 중이라고 말하면서 다른 작업 공간의 문서 제목을 이어서 검수하라고 권하게 된다.
+   *
+   * 넓게 불러 두고 나중에 거르는 방식도 쓰지 않는다. 그 시점에는 다른 작업 공간의 문서
+   * 제목이 이미 브라우저에 와 있고, 화면에 안 그린다고 새어 나간 사실이 없어지지 않는다.
+   * 부르지 않는 대가는 제안이 잠깐 늦게 나타나는 것뿐이다 — 목록이 도착해 `workspaceId`가
+   * 정해지면 이 effect가 그때 다시 돈다. 작업 공간이 하나도 없어 끝내 정해지지 않는
+   * 계정에서는 조용히 아무것도 제안하지 않는다(오류로 알리지 않는다).
    *
    * 실패하면 조용히 아무것도 제안하지 않는다. 이 제안은 보조이지 이 화면의 핵심 흐름이
    * 아니므로, 실패를 오류로 알리면 정작 해야 할 일(문서 등록)을 가리는 소음이 된다.
+   * 어느 갈래에서도 문서 등록은 막지 않는다.
    */
   useEffect(() => {
+    if (workspaceId === null) {
+      return
+    }
+    // 이 실행이 근거로 삼는 작업 공간. 좁힐 값이 있다는 사실을 아래 비동기 함수까지
+    // 들고 간다 — 조회 시점에 다시 null을 따지는 갈래를 남기지 않는다.
+    const scope = workspaceId
     const controller = new AbortController()
 
     async function loadSuggestion(): Promise<void> {
       try {
         const page = await listDocuments(
-          {
-            limit: SUGGESTION_SCAN_LIMIT,
-            ...(workspaceId === null ? {} : { workspaceId }),
-          },
+          { limit: SUGGESTION_SCAN_LIMIT, workspaceId: scope },
           controller.signal,
         )
         setRecentDocuments(page.items)
