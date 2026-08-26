@@ -206,6 +206,22 @@ internal class FakeConversionFeedbackRepository(private val transaction: Recordi
         clock = clock.plusSeconds(1)
         return clock
     }
+
+    /**
+     * 회전 팔은 저장 유스케이스가 부르지 않는다 — 부르면 이 대역이 그 사실로 끊긴다.
+     * 회전 자체를 재는 것은 [EnvelopeRotationTest] 의 대역이다.
+     */
+    override fun lockComment(conversionId: UUID): LockedFeedbackComment = error(ROTATION_PORT_MESSAGE)
+
+    override fun rewriteComment(
+        conversionId: UUID,
+        expected: EncryptedContent,
+        comment: EncryptedContent,
+    ): Boolean = error(ROTATION_PORT_MESSAGE)
+
+    private companion object {
+        const val ROTATION_PORT_MESSAGE = "피드백 저장 경로가 회전 포트를 부르면 안 된다"
+    }
 }
 
 /** 대응표 읽기 대역. 형식은 한 줄에 자리표시자 하나다 — 실물 JSON 을 흉내 내지 않는다. */

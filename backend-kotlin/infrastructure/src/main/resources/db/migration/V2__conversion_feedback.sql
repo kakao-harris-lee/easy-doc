@@ -60,6 +60,9 @@ CREATE TABLE conversion_feedback (
     -- NULL 을 허용하는 이유: 피드백은 검수 수정본 없이도 제출될 수 있다(그대로 쓸 만하면
     -- 고칠 것이 없다). 그때 「수정률 0%」와 「측정 대상 아님」은 다른 값이라 0 으로 채우지
     -- 않는다.
+    --
+    -- 셋이 서로 독립이 아니라는 것은 아래 `ck_conversion_feedback_edit_metrics_*` 세 CHECK 가
+    -- 진다 — 「짝 없는 편집 거리」 같은 조합은 NULL 허용의 부산물이 아니라 결함이다.
     easy_char_count integer,
     edited_char_count integer,
     edit_distance integer,
@@ -79,8 +82,14 @@ CREATE TABLE conversion_feedback (
     -- conversion_jobs 로 이미 이어진다. 여기에 한 칸을 더 이으면 **파일럿이 끝나기도 전에
     -- 게이트 ① 의 표본이 사라진다** — 30일은 파일럿 기간과 같은 자릿수다.
     --
-    -- 지표 표는 파기 대상이 아니다. 봉인된 자유 의견 하나를 빼면 남는 것은 척도 숫자이고,
-    -- 개인정보 삭제 요구는 원문·변환 결과·계정이 지워지는 것으로 이미 충족된다.
+    -- **그래서 이 표에는 삭제 경로가 아직 없다.** TTL 도, 보존 만료 파기의 대상도 아니다
+    -- (`JdbcExpiredDocumentPurge` 는 `documents` 만 지운다). 계정 삭제 기능도 제품에 없다.
+    -- 남는 것이 대부분 척도 숫자인 것은 맞지만, **봉인된 자유 의견 칸은 예외다** — 위
+    -- 「자유 의견」 주석이 적었듯 거기에는 문서 본문 조각이 실제로 들어온다. 봉인은 저장
+    -- 시 기밀성이지 삭제가 아니고, 키는 운영 마스터 키라 사용자가 사라져도 그대로 열린다.
+    -- 그러므로 「개인정보 삭제 요구는 다른 표가 지워지는 것으로 이미 충족된다」고 읽지 마라.
+    -- 이 표의 파기는 파일럿 종료 절차(`docs/pilot-runbook.md`)가 지는 몫이고, 그 절차가
+    -- 서기 전까지 이 행들은 남는다.
     --
     -- 그래서 여기 있는 `conversion_id`·`user_id` 는 **참조가 아니라 기록**이다. 가리키는
     -- 행이 이미 없을 수 있고, 그것이 정상이다. 다음 사람이 이것을 「빠뜨린 FK」로 보고
@@ -118,7 +127,31 @@ CREATE TABLE conversion_feedback (
     CONSTRAINT ck_conversion_feedback_comment_scheme_paired
         CHECK ((comment_encrypted IS NULL) = (encryption_scheme IS NULL)),
     CONSTRAINT ck_conversion_feedback_comment_key_version_paired
-        CHECK ((comment_encrypted IS NULL) = (key_version IS NULL))
+        CHECK ((comment_encrypted IS NULL) = (key_version IS NULL)),
+
+    -- 지표 셋의 **음수 금지.** 글자 수는 세는 값이고 편집 거리는 연산 수라 셋 다 0 이 바닥이다.
+    -- 음수가 한 건 섞이면 집계의 수정률(`edit_distance / easy_char_count`)이 음수가 되고,
+    -- runbook 「집계」의 psql 한 줄은 그것을 「거의 안 고쳤다」로 읽는다 — 척도값에 범위
+    -- CHECK 를 둔 것과 같은 사유다. NULL 은 여기서 걸리지 않는다(`NULL >= 0` 은 unknown).
+    CONSTRAINT ck_conversion_feedback_edit_metrics_nonnegative
+        CHECK (easy_char_count >= 0 AND edited_char_count >= 0 AND edit_distance >= 0),
+
+    -- **검수본 글자 수와 편집 거리는 함께 있거나 함께 없다.** 둘 다 검수본이 있어야 뜻이
+    -- 생기는 값이고, `ConversionFeedbackService` 의 `EditMetrics` 는 실제로 그 둘을 한
+    -- 갈래에서 함께 채운다. 「검수본이 없는데 편집 거리는 0」인 행이 들어오면 집계는 그것을
+    -- 「하나도 고치지 않았다」로 읽는다 — NULL 을 허용한 사유가 정확히 그 구분이므로,
+    -- 짝이 깨진 조합을 여기서 끊어야 그 구분이 실제로 성립한다.
+    CONSTRAINT ck_conversion_feedback_edit_metrics_paired
+        CHECK ((edited_char_count IS NULL) = (edit_distance IS NULL)),
+
+    -- **분모 없는 분자를 막는다.** 초안 글자 수는 수정률의 분모이자 편집 거리의 한쪽 끝이라,
+    -- 그것이 없으면 나머지 둘은 「무엇에 견준 값인지」를 말하지 못한다. `EditMetrics` 도
+    -- 초안이 없으면 셋을 함께 비운다.
+    --
+    -- 위 둘과 합치면 통과하는 조합은 셋뿐이고, 그것이 `EditMetrics` 가 만들 수 있는 전부다:
+    -- (NULL, NULL, NULL) · (초안, NULL, NULL) · (초안, 검수본, 거리).
+    CONSTRAINT ck_conversion_feedback_edit_metrics_measured
+        CHECK (edited_char_count IS NULL OR easy_char_count IS NOT NULL)
 );
 
 -- 집계는 기간으로 자르고(문서 보존 만료 전에 돌린다) 그 안에서 참여자 수를 센다.

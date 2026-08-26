@@ -215,12 +215,37 @@ data class StoredFeedback(
 }
 
 /**
+ * 회전이 잠근 피드백 행 한 건 — **봉인된 자유 의견과 그 봉투**.
+ *
+ * `null` 인 [comment] 와 「행이 없다」를 구분하려고 감싼다. 자유 의견은 선택 항목이라
+ * **행은 있는데 봉인된 것이 없는** 상태가 정상이고, 그 둘은 회전에서 다른 결과다
+ * (`EnvelopeRotation.rotateFeedback`).
+ *
+ * 봉투 두 값이 [ConversionEnvelope] 처럼 따로 서지 않는 것은 이 표의 봉투 열이 암호문과
+ * **함께 NULL 이 되기** 때문이다(V2 의 `ck_conversion_feedback_comment_*_paired`) — 행 단위
+ * 봉투가 아니라 그 한 열의 봉투다. `documents.lockSourceText` 가 [EncryptedContent] 하나를
+ * 돌려주는 것과 같은 형태다.
+ */
+class LockedFeedbackComment(val comment: EncryptedContent?) {
+    /** 봉인 유무만 남긴다 — 암호문도 세대도 로그에 넣을 이유가 없다. */
+    override fun toString(): String = "LockedFeedbackComment(의견 ${if (comment == null) "없음" else "있음"})"
+}
+
+/**
  * `conversion_feedback` 저장소.
  *
- * **upsert 하나뿐이다** — 한 변환의 피드백은 1건이고 다시 보내면 덮어쓴다(계약 #15 가
- * `POST` 가 아니라 `PUT` 인 사유). 만드는 자리와 고치는 자리가 같으므로 갈래를 나누지 않는다.
+ * 사용자 경로는 **upsert 하나뿐이다** — 한 변환의 피드백은 1건이고 다시 보내면 덮어쓴다
+ * (계약 #15 가 `POST` 가 아니라 `PUT` 인 사유). 만드는 자리와 고치는 자리가 같으므로 갈래를
+ * 나누지 않는다.
+ *
+ * 나머지 둘은 **키 회전 전용**이다. `core/crypto/StoredContent.kt` 가 저장 암호화의 요구
+ * 성질로 키 회전을 적어 두었고, 봉인된 열은 그 경로를 하나씩 가져야 한다 — 없으면 옛 세대를
+ * 설정에서 내리는 순간 그 열의 행들이 영원히 열리지 않는다(AAD 에 `key_version` 이 실린다).
+ * 회전 팔은 [ConversionRepository.lockEnvelope]/[ConversionRepository.rewriteEnvelope] 와 같은
+ * 규약이다: **암호문만 오가고 평문을 보지 못하며**, 소유자를 인자로 받지 않는다(회전 배치에
+ * 「내 것」이 없다).
  */
-fun interface ConversionFeedbackRepository {
+interface ConversionFeedbackRepository {
     /**
      * 피드백 한 행을 쓰거나 덮어쓴다. **커밋하지 않는다** — 트랜잭션 경계는 유스케이스가 연다.
      *
@@ -233,6 +258,25 @@ fun interface ConversionFeedbackRepository {
         ownerId: UUID,
         feedback: StoredFeedback,
     ): Instant
+
+    /**
+     * 회전 대상 행의 봉인된 의견과 봉투를 읽고 **그 행을 잠근다**(`FOR NO KEY UPDATE`).
+     * 행이 없으면 `null` — 행은 있는데 의견이 없는 상태는 [LockedFeedbackComment] 안의
+     * `null` 이고, 둘은 다른 결과다.
+     */
+    fun lockComment(conversionId: UUID): LockedFeedbackComment?
+
+    /**
+     * 봉인된 의견과 봉투 두 값을 **한 UPDATE 로** 바꾼다. [expected] 는 잠근 채 읽은 암호문
+     * 그 자체이고 그것이 쓰기 조건이다 — 정수 하나를 넘기면 조건을 좁게 쓰는 갈래가 생긴다.
+     *
+     * `false` 는 「할 일이 없었다」가 아니라 **잠금 전제가 깨졌다는 신호다.**
+     */
+    fun rewriteComment(
+        conversionId: UUID,
+        expected: EncryptedContent,
+        comment: EncryptedContent,
+    ): Boolean
 }
 
 /** 마스킹 대응표를 **읽는** 포트. */

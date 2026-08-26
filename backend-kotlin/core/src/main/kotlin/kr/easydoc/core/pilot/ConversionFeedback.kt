@@ -67,6 +67,14 @@ enum class PublishIntent(val wireName: String) {
          * 거부 문구. **입력값을 넣지 않는다** — 예외 메시지에 입력을 넣지 않는다는
          * `DomainExceptions.kt` 의 규약이고, 그 규약이 이 문구를 응답 `detail` 에 그대로
          * 실어도 되는 근거다.
+         *
+         * **계약에 대응 예시가 없다.** 같은 422 의 형제 갈래들은
+         * `paths./conversions/{conversion_id}/feedback.put.responses.422.content.application/json.examples`
+         * 아래에 `score_out_of_range`·`minutes_out_of_range`·`comment_too_long` 으로 적혀 있고
+         * `api` 의 `ConversionFeedbackReachTest` 가 그것을 읽어 응답과 대조하지만, 목록 밖
+         * `publish_intent` 갈래는 대조할 예시가 없어 `detail` 이 문자열인지까지만 잰다.
+         * 계약을 손볼 때(`x-change-policy` 절차) 그 examples 맵에 예시 하나를 더하면 이 문구도
+         * 형제들과 같은 방식으로 고정된다.
          */
         const val UNKNOWN_INTENT_MESSAGE: String = "배포 의향은 as_is, with_edits, not_usable 중 하나여야 합니다"
     }
@@ -83,8 +91,17 @@ value class QualityScore(val value: Int) {
         /** 만족도가 들어갈 수 있는 범위 — **정본은 여기 하나다.** */
         val RANGE: IntRange = 1..5
 
-        /** 거부 문구. 경계값은 [RANGE] 에서 끌어오고 **입력값은 넣지 않는다.** */
-        val OUT_OF_RANGE_MESSAGE: String = "품질 만족도는 ${RANGE.first}점에서 ${RANGE.last}점 사이여야 합니다"
+        /**
+         * 거부 문구. 경계값은 [RANGE] 에서 끌어오고 **입력값은 넣지 않는다.**
+         *
+         * 문구의 정본은 계약의 422 예시
+         * `paths./conversions/{conversion_id}/feedback.put.responses.422
+         * .content.application/json.examples.score_out_of_range.value.detail` 이다
+         * (`contracts/easy-doc-v1.yaml`). **한 글자도 다르게 다듬지 마라** —
+         * `api` 의 `ConversionFeedbackReachTest` 가 그 예시를 읽어 응답 `detail` 과 대조한다.
+         * 문구를 바꿔야 하면 계약을 먼저 고쳐라(`x-change-policy` 절차).
+         */
+        val OUT_OF_RANGE_MESSAGE: String = "품질 만족도는 ${RANGE.first}에서 ${RANGE.last} 사이의 값이어야 합니다"
     }
 }
 
@@ -104,7 +121,16 @@ value class MinutesSpent(val value: Int) {
         /** 소요 시간이 들어갈 수 있는 범위(분) — **정본은 여기 하나다.** */
         val RANGE: IntRange = 0..600
 
-        /** 거부 문구. 경계값은 [RANGE] 에서 끌어오고 **입력값은 넣지 않는다.** */
-        val OUT_OF_RANGE_MESSAGE: String = "소요 시간은 ${RANGE.first}분에서 ${RANGE.last}분 사이여야 합니다"
+        /**
+         * 거부 문구. 경계값은 [RANGE] 에서 끌어오고 **입력값은 넣지 않는다.**
+         *
+         * 문구의 정본은 계약의 422 예시
+         * `paths./conversions/{conversion_id}/feedback.put.responses.422
+         * .content.application/json.examples.minutes_out_of_range.value.detail` 이다
+         * (`contracts/easy-doc-v1.yaml`). **한 글자도 다르게 다듬지 마라** —
+         * `api` 의 `ConversionFeedbackReachTest` 가 그 예시를 읽어 응답 `detail` 과 대조한다.
+         * 문구를 바꿔야 하면 계약을 먼저 고쳐라(`x-change-policy` 절차).
+         */
+        val OUT_OF_RANGE_MESSAGE: String = "소요 시간은 ${RANGE.first}에서 ${RANGE.last}분 사이의 값이어야 합니다"
     }
 }

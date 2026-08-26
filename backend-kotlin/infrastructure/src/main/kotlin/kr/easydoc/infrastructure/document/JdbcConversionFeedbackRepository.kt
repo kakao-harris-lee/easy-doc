@@ -1,10 +1,13 @@
 package kr.easydoc.infrastructure.document
 
 import kr.easydoc.application.document.ConversionFeedbackRepository
+import kr.easydoc.application.document.LockedFeedbackComment
 import kr.easydoc.application.document.StoredFeedback
+import kr.easydoc.core.crypto.EncryptedContent
 import kr.easydoc.core.exceptions.StorageException
 import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.jdbc.core.simple.JdbcClient
+import java.sql.ResultSet
 import java.time.Instant
 import java.time.OffsetDateTime
 import java.util.UUID
@@ -45,6 +48,35 @@ class JdbcConversionFeedbackRepository(private val jdbc: JdbcClient) : Conversio
             DocumentStorageLog.constraintViolation(FEEDBACK_TABLE, failure)
             throw StorageException(STORAGE_FAILURE_MESSAGE)
         }
+
+    /**
+     * 회전 대상 행의 봉인된 의견과 봉투를 읽고 **행을 잠근다**(`FOR NO KEY UPDATE`).
+     * `JdbcConversionRepository.lockEnvelope` 와 같은 형태다.
+     */
+    override fun lockComment(conversionId: UUID): LockedFeedbackComment? =
+        jdbc
+            .sql(LOCK_COMMENT_SQL)
+            .param("id", conversionId)
+            .query { rs, _ -> LockedFeedbackComment(sealedCommentOf(rs)) }
+            .optional()
+            .orElse(null)
+
+    /** 봉인된 의견과 봉투 두 값을 **한 UPDATE 로** 바꾼다. */
+    override fun rewriteComment(
+        conversionId: UUID,
+        expected: EncryptedContent,
+        comment: EncryptedContent,
+    ): Boolean =
+        jdbc
+            .sql(REWRITE_COMMENT_SQL)
+            .param("comment", comment.bytes)
+            .param("scheme", comment.scheme)
+            .param("keyVersion", comment.keyVersion)
+            .param("id", conversionId)
+            .param("expectedScheme", expected.scheme)
+            .param("expectedKeyVersion", expected.keyVersion)
+            .param("expectedComment", expected.bytes)
+            .update() > 0
 
     private companion object {
         /** 저장소가 만든 고정 문자열. 계약 `InternalError` 의 `storage` 갈래다. */
@@ -99,5 +131,51 @@ class JdbcConversionFeedbackRepository(private val jdbc: JdbcClient) : Conversio
             WHERE conversion_feedback.user_id = :ownerId
             RETURNING submitted_at
             """.trimIndent()
+
+        /**
+         * 회전이 잠그는 질의. 소유 술어가 없다 — **회전 배치에 「내 것」이 없다.**
+         * (`JdbcConversionRepository.lockEnvelope` 와 같은 자리이고, 그쪽도 같은 이유로
+         * `OwnershipPredicateGuardTest` 의 미방어 열거에 핀으로 적혀 있다.)
+         */
+        val LOCK_COMMENT_SQL =
+            """
+            SELECT comment_encrypted, encryption_scheme, key_version
+            FROM conversion_feedback WHERE conversion_id = :id
+            FOR NO KEY UPDATE
+            """.trimIndent()
+
+        /**
+         * 회전 UPDATE. 암호문과 봉투 두 값을 **같은 문장에서** SET 한다 — 나누면 「세대는 v1
+         * 인데 암호문은 v2」인 행이 남고 그 행은 영원히 열리지 않는다.
+         *
+         * `WHERE` 의 봉투·암호문 조건은 잠금 아래에서 잉여로 보이지만, 잠금이 서지 않은
+         * 상태를 **0행으로** 드러내는 fail-closed 카나리다([UPSERT_SQL] 의 `user_id` 조건과
+         * 같은 판단).
+         *
+         * `updated_at` 은 밀고 `submitted_at` 은 두지 않는다. 회전은 행이 **바뀐** 사건이지
+         * 검수자가 피드백을 **다시 낸** 사건이 아니고, 계약이 `submitted_at` 을 후자로
+         * 정의한다 — 두 열을 나눠 둔 스키마의 판단이 여기서 실제로 갈린다.
+         */
+        val REWRITE_COMMENT_SQL =
+            """
+            UPDATE conversion_feedback
+            SET comment_encrypted = :comment,
+                encryption_scheme = :scheme,
+                key_version = :keyVersion,
+                updated_at = now()
+            WHERE conversion_id = :id
+              AND encryption_scheme = :expectedScheme
+              AND key_version = :expectedKeyVersion
+              AND comment_encrypted IS NOT DISTINCT FROM CAST(:expectedComment AS bytea)
+            """.trimIndent()
+
+        /**
+         * 봉인된 의견 한 열을 봉투와 묶어 읽는다. 세 열이 함께 NULL 이면 `null` 이다 —
+         * 자유 의견이 선택 항목이라 그것이 정상 상태다(V2 의 짝 제약이 「셋이 함께」를 진다).
+         */
+        fun sealedCommentOf(rs: ResultSet): EncryptedContent? {
+            val bytes = rs.getBytes("comment_encrypted") ?: return null
+            return EncryptedContent(bytes, rs.getString("encryption_scheme"), rs.getInt("key_version"))
+        }
     }
 }

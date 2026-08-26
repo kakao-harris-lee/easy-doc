@@ -34,12 +34,11 @@ import java.util.UUID
 /**
  * `PUT /conversions/{conversion_id}/feedback` 실측 계약 — 실제 HTTP·DB 경로로 잰다.
  *
- * **범위 밖 값의 갈래는 `detail` 의 모양만 잰다.** 계약의 422 예시 문구
- * (`score_out_of_range`·`minutes_out_of_range`)와 `core/pilot/ConversionFeedback.kt` 의
- * 거부 문구가 **오늘 서로 다르다**(「1에서 5 사이의 값이어야」 대 「1점에서 5점 사이여야」).
- * 계약이 정본이므로 그 자리는 core 나 계약 중 한쪽이 고쳐야 하고, 이 테스트가 임의로 한쪽을
- * 골라 고정하면 그 판단을 여기서 몰래 내리는 것이 된다. 계약이 문구와 별개로 요구하는 것
- * — **422 이고 `detail` 이 배열이 아니라 문자열이다** — 은 여기서 그대로 잰다.
+ * **범위 밖 값의 갈래는 모양과 문구를 함께 잰다.** 422 이고 `detail` 이 배열이 아니라
+ * 문자열인 것에 더해, 그 문자열이 계약의 422 예시(`score_out_of_range`·`minutes_out_of_range`)와
+ * 같은지까지 [ContractSpec.pathExampleDetail] 로 대조한다 — 자유 의견 길이 초과 케이스가 쓰는
+ * 방식과 같다. 계약이 문구의 정본이고 `core/pilot/ConversionFeedback.kt` 의 거부 문구가 그것을
+ * 따른다. 목록 밖 `publish_intent` 갈래만 계약에 대응 예시가 없어 모양까지만 잰다.
  */
 @SpringBootTest(
     webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
@@ -192,21 +191,26 @@ class ConversionFeedbackReachTest {
     }
 
     @Test
-    @DisplayName("범위 밖 척도 값 → 422 · `detail` **문자열**(배열 아님) · 행이 남지 않는다")
+    @DisplayName("범위 밖 척도 값 → 422 · `detail` **문자열**(배열 아님)이고 계약 422 예시 문구와 같다 · 행이 남지 않는다")
     fun `범위 밖 값은 문자열 detail 로 거절된다`() {
         val token = newAccount()
 
-        OUT_OF_RANGE_BODIES.forEach { (label, body) ->
+        OUT_OF_RANGE_CASES.forEach { case ->
             val conversionId = doneConversion(token)
 
-            val response = submit(token, conversionId, body)
+            val response = submit(token, conversionId, case.body)
 
             assertDeclaredStatus(response, UNPROCESSABLE)
             assertThat(bodyOf(response)[DETAIL])
-                .withFailMessage("%s 의 detail 이 문자열이 아니다 — 스키마 층이 판정했다는 뜻이다", label)
+                .withFailMessage("%s 의 detail 이 문자열이 아니다 — 스키마 층이 판정했다는 뜻이다", case.label)
                 .isInstanceOf(String::class.java)
+            case.contractExample?.let { example ->
+                assertThat(bodyOf(response)[DETAIL])
+                    .withFailMessage("%s 의 detail 이 계약 422 예시 `%s` 와 다르다", case.label, example)
+                    .isEqualTo(ContractSpec.pathExampleDetail(FEEDBACK_PATH, PUT, UNPROCESSABLE, example))
+            }
             assertThat(database.queryInt(rowCountSql(conversionId)))
-                .withFailMessage("%s 를 거절했는데 행이 저장됐다", label)
+                .withFailMessage("%s 를 거절했는데 행이 저장됐다", case.label)
                 .isZero()
         }
     }
@@ -444,6 +448,8 @@ class ConversionFeedbackReachTest {
         /** 계약 예시 좌표 — 이름이지 값이 아니다. */
         private const val NOT_DONE_EXAMPLE = "not_done"
         private const val TOO_LONG_EXAMPLE = "comment_too_long"
+        private const val SCORE_OUT_OF_RANGE_EXAMPLE = "score_out_of_range"
+        private const val MINUTES_OUT_OF_RANGE_EXAMPLE = "minutes_out_of_range"
 
         private const val DONE_STATUS = "done"
         private const val PENDING_STATUS = "pending"
@@ -470,10 +476,23 @@ class ConversionFeedbackReachTest {
         private const val LONG_COMMENT_REPEATS = 40
 
         /**
-         * 척도 밖 값 넷. 범위의 정본은 `core/pilot/ConversionFeedback.kt` 이고 여기는 그
-         * **바깥**을 고른 자리다 — 경계 자신은 위 성공 케이스가 통과로 고정한다.
+         * 거절 한 건 — 무엇을 보내고 계약의 **어느 예시**와 대조하는가.
+         *
+         * [contractExample] 이 `null` 이면 계약에 대응 예시가 없다는 뜻이고, 그때는 `detail` 이
+         * 문자열인지까지만 잰다. 예시가 있는데 대조하지 않으면 구현 문구가 조용히 갈린다.
          */
-        private val OUT_OF_RANGE_BODIES: List<Pair<String, String>> by lazy {
+        private data class OutOfRangeCase(
+            val label: String,
+            val body: String,
+            val contractExample: String?,
+        )
+
+        /**
+         * 척도 밖 값 넷과 목록 밖 배포 의향 하나. 범위의 정본은
+         * `core/pilot/ConversionFeedback.kt` 이고 여기는 그 **바깥**을 고른 자리다 —
+         * 경계 자신은 위 성공 케이스가 통과로 고정한다.
+         */
+        private val OUT_OF_RANGE_CASES: List<OutOfRangeCase> by lazy {
             val intent = ContractSpec.schemaEnum(PUBLISH_INTENT_SCHEMA).first()
 
             fun body(
@@ -486,15 +505,19 @@ class ConversionFeedbackReachTest {
                 """.trimIndent()
 
             listOf(
-                "만족도 하한 미만" to body(0, VALID_MINUTES_SPENT),
-                "만족도 상한 초과" to body(6, VALID_MINUTES_SPENT),
-                "소요 시간 음수" to body(VALID_QUALITY_SCORE, -1),
-                "소요 시간 상한 초과" to body(VALID_QUALITY_SCORE, 601),
-                "목록 밖 배포 의향" to
+                OutOfRangeCase("만족도 하한 미만", body(0, VALID_MINUTES_SPENT), SCORE_OUT_OF_RANGE_EXAMPLE),
+                OutOfRangeCase("만족도 상한 초과", body(6, VALID_MINUTES_SPENT), SCORE_OUT_OF_RANGE_EXAMPLE),
+                OutOfRangeCase("소요 시간 음수", body(VALID_QUALITY_SCORE, -1), MINUTES_OUT_OF_RANGE_EXAMPLE),
+                OutOfRangeCase("소요 시간 상한 초과", body(VALID_QUALITY_SCORE, 601), MINUTES_OUT_OF_RANGE_EXAMPLE),
+                OutOfRangeCase(
+                    "목록 밖 배포 의향",
                     """
                     {"$PUBLISH_INTENT_PROPERTY":"maybe","$QUALITY_SCORE_PROPERTY":$VALID_QUALITY_SCORE,
                      "$MINUTES_SPENT_PROPERTY":$VALID_MINUTES_SPENT}
                     """.trimIndent(),
+                    // 계약에 대응 예시가 없다(`PublishIntent.UNKNOWN_INTENT_MESSAGE` 의 주석 참고).
+                    contractExample = null,
+                ),
             )
         }
 

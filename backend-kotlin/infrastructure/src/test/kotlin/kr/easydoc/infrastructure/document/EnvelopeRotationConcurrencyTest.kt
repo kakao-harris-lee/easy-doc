@@ -213,6 +213,7 @@ class EnvelopeRotationConcurrencyTest {
         return EnvelopeRotation(
             documents = HookedDocuments(JdbcDocumentRepository(client), documentHook),
             conversions = HookedConversions(JdbcConversionRepository(client), conversionHook),
+            feedback = JdbcConversionFeedbackRepository(client),
             cipher = cipherWith(NEW_GENERATION),
             transaction =
                 transaction

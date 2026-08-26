@@ -87,7 +87,7 @@ docker compose -f compose.yml -f compose.ci.yml run --rm frontend-check
   2종뿐이고(master-plan §3.2), 전화·이메일·계좌는 가려지지 않은 채 provider로 나간다.
   §8 리스크 표의 「축소한 범주의 개인정보가 그대로 전송」이 이 자리다.
 - 기관의 **기존 방식 소요**를 착수 전에 인터뷰로 받아 아래 「기존 방식 소요」 칸에 적는다.
-  이 값이 없으면 기준 ①을 판정할 대조군이 없다.
+  이 값이 없으면 기준 ③을 판정할 대조군이 없다(기준 ①은 배포 의향 건수라 대조군이 필요 없다).
 
 ### 기록 방법
 
@@ -132,6 +132,56 @@ docker compose -f compose.yml -f compose.ci.yml run --rm frontend-check
 docker compose -f compose.yml exec -T postgres \
   psql -U postgres -d easydoc -f - < scripts/pilot-report.sql
 ```
+
+### 파일럿 종료 정리 — `conversion_feedback`
+
+**순서는 집계 → 판정 기록 → 이 정리다.** 아래 「판정 기록」을 남긴 **직후**에 실행한다.
+집계 전이나 판정 기록 전에 실행하면 판정 근거를 스스로 지우는 것이 된다.
+
+판정이 끝나면 `conversion_feedback`을 정리한다. 이 표는 **문서 30일 파기의 사슬 밖**이다 —
+파기는 `documents` → `conversions` → `conversion_jobs`로만 이어지고 피드백 표에는 FK가 없다
+(판정 근거를 남기려고 의도한 설계다). 그 결과 이 표에는 TTL도 purge도 없어서
+**아무도 지우지 않으면 영구히 남는다.**
+
+자유 의견 칸이 문제다. AEAD로 봉해 두었지만 **봉인은 기밀성이지 삭제가 아니다** — 키는
+운영 마스터 키라 계속 열린다. 그리고 그 칸에는 검수자가 문서 본문 조각을 그대로 붙여 넣는
+일이 실제로 일어나고(`V2__conversion_feedback.sql`의 주석 — "○○동 ○○○님께 안내드립니다
+부분이 어색합니다"), 마스킹 범주는 주민등록번호·카드번호 2종뿐이라(master-plan §3.2)
+그 조각의 **이름·주소·전화번호는 어디서도 가려지지 않는다.**
+
+**선택지는 둘이다.**
+
+**⒜ 자유 의견만 비운다 (기본 권고)**
+
+`comment_encrypted`·`encryption_scheme`·`key_version` 세 열을 `NULL`로 만든다.
+개인정보가 들어오는 칸이 사라지고 **척도 숫자(배포 의향·품질 만족도·소요 시간)와
+수정률 지표는 남는다.** 나중에 판정을 되짚거나 영업·계약 자료로 쓸 수 있다 —
+없앨 이유가 있는 것은 본문 조각이지 본문에 대한 척도가 아니다. 그래서 이쪽이 기본이다.
+
+```bash
+# 세 열을 반드시 함께 NULL 로 만든다. 스키마에 「셋이 함께 있거나 함께 없다」 CHECK 가
+# 걸려 있어(ck_conversion_feedback_comment_scheme_paired,
+# ck_conversion_feedback_comment_key_version_paired) 하나만 비우면 거절된다.
+docker compose -f compose.yml exec -T postgres \
+  psql -U postgres -d easydoc -c \
+  "UPDATE conversion_feedback SET comment_encrypted = NULL, encryption_scheme = NULL, key_version = NULL;"
+```
+
+**⒝ 표를 통째로 지운다**
+
+판정 기록 문서(`docs/plans/`)에 집계 출력과 결론을 이미 남긴 뒤라면 이쪽이 깔끔하다.
+표가 사라지므로 되짚을 근거는 그 문서에만 남는다.
+
+```bash
+docker compose -f compose.yml exec -T postgres \
+  psql -U postgres -d easydoc -c "DELETE FROM conversion_feedback;"
+```
+
+**이것이 수기 절차인 이유**: 제품에 삭제 요청을 처리하는 경로가 아직 없다 — 계정 삭제
+기능 자체가 없다(계약 `contracts/easy-doc-v1.yaml`의 오퍼레이션에 없다). master-plan §3.2가
+약속한 "삭제 요청 시 즉시 파기"를 이 표에 대해서는 사람이 대신 실행하는 것이다.
+자동화는 그 경로가 제품에 생길 때 함께 선다(`docs/kotlin-redevelopment-backlog.md`
+「1.1 추후 개선 항목」).
 
 ### 판정 기록
 

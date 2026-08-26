@@ -126,17 +126,19 @@ class DocumentConfiguration {
             transaction = transactionRunner,
         )
 
-    /** 키 회전 유스케이스. */
+    /** 키 회전 유스케이스. 봉인된 열이 사는 **세 저장소를 전부** 받는다. */
     @Bean
     fun envelopeRotation(
         documents: DocumentRepository,
         conversions: ConversionRepository,
+        feedback: ConversionFeedbackRepository,
         cipher: ContentCipher,
         transactionRunner: TransactionRunner,
     ): EnvelopeRotation =
         EnvelopeRotation(
             documents = documents,
             conversions = conversions,
+            feedback = feedback,
             cipher = cipher,
             transaction = transactionRunner,
         )

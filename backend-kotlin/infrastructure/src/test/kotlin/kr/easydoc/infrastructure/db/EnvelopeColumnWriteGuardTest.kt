@@ -320,6 +320,9 @@ class EnvelopeColumnWriteGuardTest {
                 "api/src/test/kotlin/kr/easydoc/api/ConversionFeedbackReachTest.kt",
                 "api/src/test/kotlin/kr/easydoc/api/ConversionReadReachTest.kt",
                 "api/src/test/kotlin/kr/easydoc/api/ConversionReviewReachTest.kt",
+                // 피드백 의견의 회전 UPDATE. 봉인 열이 하나라 문장도 하나다.
+                "infrastructure/src/main/kotlin/kr/easydoc/infrastructure/document/" +
+                    "JdbcConversionFeedbackRepository.kt",
                 "infrastructure/src/main/kotlin/kr/easydoc/infrastructure/document/JdbcConversionRepository.kt",
                 "infrastructure/src/main/kotlin/kr/easydoc/infrastructure/document/JdbcConversionWorkStore.kt",
                 "infrastructure/src/main/kotlin/kr/easydoc/infrastructure/document/JdbcDocumentRepository.kt",
@@ -328,6 +331,6 @@ class EnvelopeColumnWriteGuardTest {
             )
 
         /** 문장 수. 파일 목록만 보면 같은 파일 안에 한 문장을 더 넣는 편집이 조용하다. */
-        const val EXPECTED_STATEMENTS = 12
+        const val EXPECTED_STATEMENTS = 13
     }
 }

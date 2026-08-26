@@ -58,7 +58,6 @@ export function UploadPage() {
   const charCount = text.length
   const tooLong = charCount > MAX_CHARS
   const titleTrimmed = title.trim()
-  const titleTooLong = title.length > MAX_TITLE_LENGTH
 
   function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
     setFile(event.target.files?.[0] ?? null)
@@ -98,10 +97,10 @@ export function UploadPage() {
       setError('문서 제목을 입력해 주세요.')
       return
     }
-    if (titleTooLong) {
-      setError(`제목이 너무 깁니다. ${MAX_TITLE_LENGTH}자 이내로 줄여 주세요.`)
-      return
-    }
+    // 제목 길이는 여기서 막지 않는다. 계약(`contracts/easy-doc-v1.yaml` x-title-policy.rule,
+    // x-input-limits.max_title_length)이 정한 처분은 **자르기이지 거절이 아니다** — 사용자가
+    // 라벨 하나 때문에 문서 접수를 거절당하지 않게 한 결정이다. 입력 칸의 maxLength가 넘치는
+    // 입력을 먼저 막고, 그래도 넘어간 제목은 서버가 잘라 저장한다.
     if (mode === 'text') {
       if (text.trim() === '') {
         setError('변환할 글을 입력해 주세요.')
@@ -177,11 +176,12 @@ export function UploadPage() {
                 type="text"
                 value={title}
                 maxLength={MAX_TITLE_LENGTH}
-                aria-invalid={titleTooLong}
                 placeholder="예: 2024년 청년 월세 특별지원 안내문"
                 onChange={(event) => setTitle(event.target.value)}
               />
-              <p className={titleTooLong ? 'field-error' : 'field-hint'}>
+              {/* aria-invalid를 길이로 걸지 않는다 — 상한을 넘긴 제목도 거절이 아니라 잘림이라
+              「잘못된 값」이라는 안내가 실제 처분과 어긋난다. maxLength가 입력을 돕는다. */}
+              <p className="field-hint">
                 변환 기록에서 문서를 구분하는 이름입니다. {MAX_TITLE_LENGTH}자 이내.
               </p>
             </div>
