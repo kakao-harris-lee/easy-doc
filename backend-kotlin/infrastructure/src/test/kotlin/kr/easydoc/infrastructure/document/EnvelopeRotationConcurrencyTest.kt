@@ -3,6 +3,8 @@ package kr.easydoc.infrastructure.document
 import kr.easydoc.application.auth.TransactionRunner
 import kr.easydoc.application.crypto.ContentCipher
 import kr.easydoc.application.document.ConversionEnvelope
+import kr.easydoc.application.document.ConversionFeedbackRepository
+import kr.easydoc.application.document.ConversionFeedbackService
 import kr.easydoc.application.document.ConversionQueryService
 import kr.easydoc.application.document.ConversionRepository
 import kr.easydoc.application.document.ConversionReviewService
@@ -10,11 +12,14 @@ import kr.easydoc.application.document.DocumentRepository
 import kr.easydoc.application.document.DocumentService
 import kr.easydoc.application.document.DocumentStorage
 import kr.easydoc.application.document.EnvelopeRotation
+import kr.easydoc.application.document.FeedbackSubmission
+import kr.easydoc.application.document.LockedFeedbackComment
 import kr.easydoc.application.document.RotationOutcome
 import kr.easydoc.core.crypto.EncryptedContent
 import kr.easydoc.core.crypto.EncryptedField
 import kr.easydoc.core.crypto.EncryptionScheme
 import kr.easydoc.core.crypto.PlainBody
+import kr.easydoc.core.pilot.PublishIntent
 import kr.easydoc.core.privacy.ReviewedBody
 import kr.easydoc.core.security.Secret
 import kr.easydoc.core.user.PasswordHash
@@ -141,6 +146,62 @@ class EnvelopeRotationConcurrencyTest {
             .isEqualTo(REWRITTEN_BODY)
     }
 
+    @Test
+    @DisplayName("피드백 회전도 같은 잠금을 든다 — 회전 중에 들어온 **의견 저장이 사라지지 않는다**")
+    fun `피드백 회전이 동시 의견 저장을 삼키지 않는다`() {
+        val (owner, conversionId) = seededFeedback()
+        val writer = Holder()
+        val rotation =
+            rotationWith(feedbackHook = { writer.start { submitFeedback(owner, conversionId, LATER_COMMENT) } })
+
+        val outcome = rotation.rotateFeedback(conversionId)
+        writer.await()
+
+        assertThat(writer.blockedWhileHeld())
+            .describedAs(
+                "회전이 잠근 행에 사용자 쓰기가 그대로 들어갔다 — `LOCK_COMMENT_SQL` 의 FOR NO KEY UPDATE 가 " +
+                    "서지 않는다 (회전 결과 %s).",
+                outcome,
+            ).isTrue()
+
+        val stored = storedComment(conversionId)
+        assertThat(openedComment(conversionId, stored))
+            .describedAs(
+                "의견 저장이 흔적 없이 사라졌다 — 회전이 자기가 읽은 낡은 암호문으로 행을 덮었다 (회전 결과 %s).",
+                outcome,
+            ).isEqualTo(LATER_COMMENT)
+        assertThat(stored.keyVersion)
+            .describedAs("봉투는 새 세대인데 암호문은 나중에 들어온 옛 세대다 — 이렇게 찢어진 행은 영원히 열리지 않는다")
+            .isEqualTo(OLD_GENERATION)
+    }
+
+    @Test
+    @DisplayName("피드백 회전도 **잠금 전제가 깨지면 CONTENDED 로 드러난다** — 뒤진 쪽이 조용히 이기지 않는다")
+    fun `피드백 잠금이 서지 않으면 CONTENDED 다`() {
+        val (owner, conversionId) = seededFeedback()
+        val writer = Holder()
+        val rotation =
+            rotationWith(
+                feedbackHook = { writer.start { submitFeedback(owner, conversionId, LATER_COMMENT) } },
+                transaction = NoTransaction,
+            )
+
+        val outcome = rotation.rotateFeedback(conversionId)
+        writer.await()
+
+        val stored = storedComment(conversionId)
+        assertThat(outcome)
+            .describedAs(
+                "잠금 없이 경합에서 이겼다고 보고했다 — `REWRITE_COMMENT_SQL` 의 봉투·암호문 조건이 0행으로 드러나지 않는다",
+            ).isEqualTo(RotationOutcome.CONTENDED)
+        assertThat(openedComment(conversionId, stored))
+            .describedAs("회전이 그사이 들어온 의견을 낡은 평문으로 덮었다")
+            .isEqualTo(LATER_COMMENT)
+        assertThat(stored.keyVersion)
+            .describedAs("세대만 새것으로 올라갔다면 그사이 저장된 의견이 열리지 않는다")
+            .isEqualTo(OLD_GENERATION)
+    }
+
     /** **제품 경로 그대로** 저장한다 — 흉내는 제품과 갈려도 이 파일이 초록이라 쓰지 않는다. */
     private fun saveEditedText(
         owner: UUID,
@@ -202,10 +263,11 @@ class EnvelopeRotationConcurrencyTest {
         }
     }
 
-    /** 회전 한 벌. [conversionHook]·[documentHook] 은 저장소가 행을 읽어 온 직후 불린다. */
+    /** 회전 한 벌. [conversionHook]·[documentHook]·[feedbackHook] 은 저장소가 행을 읽어 온 직후 불린다. */
     private fun rotationWith(
         conversionHook: () -> Unit = {},
         documentHook: () -> Unit = {},
+        feedbackHook: () -> Unit = {},
         transaction: TransactionRunner? = null,
     ): EnvelopeRotation {
         val dataSource = dataSource()
@@ -213,7 +275,7 @@ class EnvelopeRotationConcurrencyTest {
         return EnvelopeRotation(
             documents = HookedDocuments(JdbcDocumentRepository(client), documentHook),
             conversions = HookedConversions(JdbcConversionRepository(client), conversionHook),
-            feedback = JdbcConversionFeedbackRepository(client),
+            feedback = HookedFeedback(JdbcConversionFeedbackRepository(client), feedbackHook),
             cipher = cipherWith(NEW_GENERATION),
             transaction =
                 transaction
@@ -287,6 +349,50 @@ class EnvelopeRotationConcurrencyTest {
         )
     }
 
+    /** 옛 세대 의견이 봉해진 피드백 한 행. 대상 변환은 [seededConversion] 이 세운 완료 행이다. */
+    private fun seededFeedback(): Pair<UUID, UUID> {
+        val (owner, conversionId) = seededConversion()
+        submitFeedback(owner, conversionId, FIRST_COMMENT)
+        return owner to conversionId
+    }
+
+    /** **제품 경로 그대로** 피드백을 낸다 — 실경로 `upsert` 가 회전과 같은 행에서 겹치는 것이 요점이다. */
+    private fun submitFeedback(
+        owner: UUID,
+        conversionId: UUID,
+        comment: String,
+    ) {
+        feedbackServiceOn(dataSource()).save(
+            owner,
+            conversionId,
+            FeedbackSubmission(
+                publishIntent = PublishIntent.WITH_EDITS.wireName,
+                qualityScore = QUALITY_SCORE,
+                minutesSpent = MINUTES_SPENT,
+                comment = comment,
+            ),
+        )
+    }
+
+    /** 피드백 저장 유스케이스 — 제품 조립과 같은 모양이고 [reviewServiceOn] 과 나란하다. */
+    private fun feedbackServiceOn(dataSource: DataSource): ConversionFeedbackService {
+        val client = JdbcClient.create(dataSource)
+        val runner = SpringTransactionRunner(TransactionTemplate(DataSourceTransactionManager(dataSource)))
+        val writer = cipherWith(OLD_GENERATION)
+        return ConversionFeedbackService(
+            feedback = JdbcConversionFeedbackRepository(client),
+            cipher = writer,
+            query =
+                ConversionQueryService(
+                    conversions = JdbcConversionRepository(client),
+                    cipher = writer,
+                    maskedItems = MaskedItemCodec(),
+                    transaction = runner,
+                ),
+            transaction = runner,
+        )
+    }
+
     private fun seededDocument(): UUID {
         val owner = newUser()
         val workspace = workspaces.create(owner, "문서 경합 ${UUID.randomUUID()}").id
@@ -298,6 +404,16 @@ class EnvelopeRotationConcurrencyTest {
 
     private fun readDocument(documentId: UUID): EncryptedContent =
         checkNotNull(JdbcDocumentRepository(jdbc).lockSourceText(documentId)) { "문서 행이 없다" }
+
+    /** 그 행에 실제로 남은 봉인된 의견 한 열 — 봉투 두 값도 이 안에 함께 있다. */
+    private fun storedComment(conversionId: UUID): EncryptedContent =
+        checkNotNull(JdbcConversionFeedbackRepository(jdbc).lockComment(conversionId)?.comment) { "봉인된 의견이 없다" }
+
+    /** 행이 든 봉투 그대로 연다 — 봉투와 암호문 세대가 갈린 행이면 여기서 열리지 않는다. */
+    private fun openedComment(
+        conversionId: UUID,
+        sealed: EncryptedContent,
+    ): String = reader.decrypt(sealed, conversionId, EncryptedField.CONVERSION_FEEDBACK_COMMENT).value
 
     private fun openedEditedText(row: ConversionEnvelope): String {
         val sealed = checkNotNull(row.ciphertexts.editedText) { "검수본이 비어 있다" }
@@ -327,12 +443,21 @@ class EnvelopeRotationConcurrencyTest {
     /** 방해 쓰기 하나를 띄우고 정해진 시간만 기다린다. */
     private inner class Holder {
         private var future: Future<*>? = null
+        private var heldAtGrace = false
 
         fun start(task: () -> Unit) {
             val submitted = interference.submit(task)
             future = submitted
             runCatching { submitted.get(INTERFERENCE_GRACE_MILLIS, TimeUnit.MILLISECONDS) }
+            heldAtGrace = !submitted.isDone
         }
+
+        /**
+         * 회전이 아직 커밋하지 않은 동안 방해 쓰기가 **막혀 있었는가.** 훅은 회전 트랜잭션
+         * 안에서 불리므로, 잠금이 실제로 서 있으면 유예가 끝날 때까지 끝날 수 없다 —
+         * 「직렬화됐다」를 최종 상태가 아니라 이 값으로 곧장 잰다.
+         */
+        fun blockedWhileHeld(): Boolean = heldAtGrace
 
         fun await() {
             checkNotNull(future) { "방해 쓰기가 시작되지 않았다 — 훅이 불리지 않았다" }
@@ -357,6 +482,14 @@ class EnvelopeRotationConcurrencyTest {
             delegate.lockSourceText(documentId).also { hook() }
     }
 
+    private class HookedFeedback(
+        private val delegate: ConversionFeedbackRepository,
+        private val hook: () -> Unit,
+    ) : ConversionFeedbackRepository by delegate {
+        override fun lockComment(conversionId: UUID): LockedFeedbackComment? =
+            delegate.lockComment(conversionId).also { hook() }
+    }
+
     /** 트랜잭션을 열지 않는 실행기 — 「잠금 전제가 깨진 상태」의 재현용이다. */
     private object NoTransaction : TransactionRunner {
         override fun <T> inTransaction(block: () -> T): T = block()
@@ -369,6 +502,12 @@ class EnvelopeRotationConcurrencyTest {
         const val DRAFT_BODY = "쉬운 글 초안"
         const val EDITED_BODY = "담당자가 고친 검수본"
         const val REWRITTEN_BODY = "다시 쓴 원문"
+        const val FIRST_COMMENT = "검수자가 처음 남긴 의견"
+        const val LATER_COMMENT = "회전 중에 다시 낸 의견"
+
+        /** 피드백의 수기 값 둘. 범위의 정본은 `core/pilot/ConversionFeedback.kt` 이고 여기는 그 안의 한 점이다. */
+        const val QUALITY_SCORE = 4
+        const val MINUTES_SPENT = 12
 
         /** 방해 쓰기를 기다리는 시간. 잠금이 없으면 이 안에 끝나고, 있으면 끝나지 못한다. */
         const val INTERFERENCE_GRACE_MILLIS = 2_000L
