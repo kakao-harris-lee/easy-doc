@@ -2,6 +2,8 @@ package kr.easydoc.infrastructure.document
 
 import kr.easydoc.application.auth.TransactionRunner
 import kr.easydoc.application.crypto.ContentCipher
+import kr.easydoc.application.document.ConversionFeedbackRepository
+import kr.easydoc.application.document.ConversionFeedbackService
 import kr.easydoc.application.document.ConversionQueryService
 import kr.easydoc.application.document.ConversionQueue
 import kr.easydoc.application.document.ConversionRepository
@@ -20,7 +22,16 @@ import org.springframework.context.annotation.Configuration
 import org.springframework.context.annotation.Profile
 import org.springframework.jdbc.core.simple.JdbcClient
 
-/** 문서·변환 저장 경로 조립 — **이 모듈이 소유한다.** */
+/**
+ * 문서·변환 저장 경로 조립 — **이 모듈이 소유한다.**
+ *
+ * `TooManyFunctions` 를 억제한다: 조립 지점의 함수 수는 이 클래스의 복잡도가 아니라
+ * **협력자의 수**다. 규칙을 지키려고 조립을 두 클래스로 가르면 「어느 파일이 무엇을
+ * 조립하는가」를 사람이 기억해야 하고, 그 순간 조립 지점이 하나라는 성질이 사라진다
+ * (프로젝트 `CLAUDE.md` 「Spring `@Configuration` 은 composition root 다」). 억제는 이
+ * 클래스 하나에 걸리고 도메인·유스케이스 코드로 번지지 않는다.
+ */
+@Suppress("TooManyFunctions")
 @Configuration(proxyBeanMethods = false)
 @Profile("!$MIGRATE_PROFILE")
 class DocumentConfiguration {
@@ -95,17 +106,39 @@ class DocumentConfiguration {
             transaction = transactionRunner,
         )
 
-    /** 키 회전 유스케이스. */
+    /** 파일럿 피드백 저장소. 문서·변환과 **수명이 분리된** 표라 저장소도 따로 선다. */
+    @Bean
+    fun conversionFeedbackRepository(jdbcClient: JdbcClient): ConversionFeedbackRepository =
+        JdbcConversionFeedbackRepository(jdbcClient)
+
+    /** 파일럿 피드백 저장 유스케이스. 소유·상태 판정은 조회 쪽을 그대로 쓴다. */
+    @Bean
+    fun conversionFeedbackService(
+        feedback: ConversionFeedbackRepository,
+        cipher: ContentCipher,
+        query: ConversionQueryService,
+        transactionRunner: TransactionRunner,
+    ): ConversionFeedbackService =
+        ConversionFeedbackService(
+            feedback = feedback,
+            cipher = cipher,
+            query = query,
+            transaction = transactionRunner,
+        )
+
+    /** 키 회전 유스케이스. 봉인된 열이 사는 **세 저장소를 전부** 받는다. */
     @Bean
     fun envelopeRotation(
         documents: DocumentRepository,
         conversions: ConversionRepository,
+        feedback: ConversionFeedbackRepository,
         cipher: ContentCipher,
         transactionRunner: TransactionRunner,
     ): EnvelopeRotation =
         EnvelopeRotation(
             documents = documents,
             conversions = conversions,
+            feedback = feedback,
             cipher = cipher,
             transaction = transactionRunner,
         )

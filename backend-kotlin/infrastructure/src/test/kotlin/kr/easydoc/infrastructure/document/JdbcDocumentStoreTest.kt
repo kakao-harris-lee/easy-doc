@@ -90,6 +90,7 @@ class JdbcDocumentStoreTest {
             EnvelopeRotation(
                 documents = documents,
                 conversions = conversions,
+                feedback = JdbcConversionFeedbackRepository(jdbc),
                 cipher = cipherWith(writeKeyVersion = 2),
                 transaction = SpringTransactionRunner(TransactionTemplate(DataSourceTransactionManager(dataSource))),
             )
@@ -455,6 +456,7 @@ class JdbcDocumentStoreTest {
             EnvelopeRotation(
                 documents = JdbcDocumentRepository(JdbcClient.create(counting)),
                 conversions = JdbcConversionRepository(JdbcClient.create(counting)),
+                feedback = JdbcConversionFeedbackRepository(JdbcClient.create(counting)),
                 cipher = cipherWith(writeKeyVersion = 2),
                 transaction = SpringTransactionRunner(TransactionTemplate(DataSourceTransactionManager(counting))),
             )

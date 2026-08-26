@@ -173,6 +173,57 @@ internal class FakeConversionRepository(private val transaction: RecordingTransa
     }
 }
 
+/**
+ * 피드백 저장 대역 — **실물 upsert 처럼 행 하나로 접힌다.** 호출은 [upserts] 에 전부
+ * 쌓이고 [rows] 에는 변환당 마지막 값만 남으므로, 멱등성을 「호출 수」가 아니라
+ * 「남은 행」으로 잰다.
+ */
+internal class FakeConversionFeedbackRepository(private val transaction: RecordingTransactionRunner) :
+    ConversionFeedbackRepository {
+    /** 변환 하나에 행 하나 — PK 가 `conversion_id` 인 것을 그대로 흉내 낸다. */
+    val rows = mutableMapOf<UUID, StoredFeedback>()
+
+    /** `user_id` 컬럼에 실제로 들어간 값. */
+    val owners = mutableMapOf<UUID, UUID>()
+
+    /** 호출 기록 전부 — 덮어쓴 이력을 본다. */
+    val upserts = mutableListOf<StoredFeedback>()
+
+    /** 저장이 불린 시점의 트랜잭션 깊이. 0 이면 경계 밖이다. */
+    val depthWhenUpserted = mutableListOf<Int>()
+
+    /** `submitted_at` 을 흉내 내는 시계 — 호출마다 앞으로 간다(재제출이 값을 민다). */
+    private var clock: Instant = Instant.EPOCH
+
+    override fun upsert(
+        ownerId: UUID,
+        feedback: StoredFeedback,
+    ): Instant {
+        upserts += feedback
+        depthWhenUpserted += transaction.depth
+        rows[feedback.conversionId] = feedback
+        owners[feedback.conversionId] = ownerId
+        clock = clock.plusSeconds(1)
+        return clock
+    }
+
+    /**
+     * 회전 팔은 저장 유스케이스가 부르지 않는다 — 부르면 이 대역이 그 사실로 끊긴다.
+     * 회전 자체를 재는 것은 [EnvelopeRotationTest] 의 대역이다.
+     */
+    override fun lockComment(conversionId: UUID): LockedFeedbackComment = error(ROTATION_PORT_MESSAGE)
+
+    override fun rewriteComment(
+        conversionId: UUID,
+        expected: EncryptedContent,
+        comment: EncryptedContent,
+    ): Boolean = error(ROTATION_PORT_MESSAGE)
+
+    private companion object {
+        const val ROTATION_PORT_MESSAGE = "피드백 저장 경로가 회전 포트를 부르면 안 된다"
+    }
+}
+
 /** 대응표 읽기 대역. 형식은 한 줄에 자리표시자 하나다 — 실물 JSON 을 흉내 내지 않는다. */
 internal class FakeMaskedItemReader : MaskedItemReader {
     val decoded = mutableListOf<PlainBody>()

@@ -396,6 +396,11 @@ class OwnershipPredicateGuardTest {
             listOf(
                 "$AUTH/JdbcWorkspaceRepository.kt | SELECT [documents]",
                 "$AUTH/JdbcWorkspaceRepository.kt | SELECT [documents]",
+                // 피드백 upsert. 덮어쓰기 팔에 소유 술어가 걸려 아래 미방어 목록에는 없다.
+                "$DOCUMENT/JdbcConversionFeedbackRepository.kt | INSERT [conversion_feedback]",
+                // 봉인된 의견의 키 회전 두 문장. 아래 미방어 목록에 있다 — 사유는 그쪽에 적었다.
+                "$DOCUMENT/JdbcConversionFeedbackRepository.kt | SELECT [conversion_feedback]",
+                "$DOCUMENT/JdbcConversionFeedbackRepository.kt | UPDATE [conversion_feedback]",
                 "$DOCUMENT/JdbcConversionRepository.kt | SELECT [conversions]",
                 "$DOCUMENT/JdbcConversionRepository.kt | UPDATE [conversions]",
                 "$DOCUMENT/JdbcConversionRepository.kt | SELECT [conversions, documents]",
@@ -418,10 +423,19 @@ class OwnershipPredicateGuardTest {
                 "$DOCUMENT/JdbcExpiredDocumentPurge.kt | SELECT [conversions, documents]",
             )
 
-        /** 그중 소유 매개변수가 걸리지 않은 문장. worker 내부 경로가 변환 행을 집는다. */
+        /**
+         * 그중 소유 매개변수가 걸리지 않은 문장. worker 내부 경로가 변환 행을 집는다.
+         *
+         * 키 회전 세 쌍(`documents`·`conversions`·`conversion_feedback`)도 여기 있다 —
+         * **회전 배치에 「내 것」이 없다.** 운영자가 키 세대를 올릴 때 도는 경로이고, 소유자를
+         * 인자로 받을 수 있는 자리가 아니다. 회전이 여는 것은 암호문뿐이고 평문은 호출자에게
+         * 나가지 않는다(`EnvelopeRotation`).
+         */
         val EXPECTED_UNGUARDED =
             listOf(
                 "$AUTH/JdbcWorkspaceRepository.kt | SELECT [documents]",
+                "$DOCUMENT/JdbcConversionFeedbackRepository.kt | SELECT [conversion_feedback]",
+                "$DOCUMENT/JdbcConversionFeedbackRepository.kt | UPDATE [conversion_feedback]",
                 "$DOCUMENT/JdbcConversionRepository.kt | SELECT [conversions]",
                 "$DOCUMENT/JdbcConversionRepository.kt | UPDATE [conversions]",
                 "$DOCUMENT/JdbcConversionRepository.kt | INSERT [conversions]",
@@ -439,7 +453,14 @@ class OwnershipPredicateGuardTest {
                 "$DOCUMENT/JdbcExpiredDocumentPurge.kt | SELECT [conversions, documents]",
             )
 
-        /** [EXPECTED_UNGUARDED] 의 **개수 상한**. 보존 만료 파기는 소유자 경로가 아니라 worker 시스템 작업이다. */
-        const val MAX_UNGUARDED_STATEMENTS = 16
+        /**
+         * [EXPECTED_UNGUARDED] 의 **개수 상한**. 보존 만료 파기는 소유자 경로가 아니라 worker
+         * 시스템 작업이고, 키 회전은 운영자 배치다 — 둘 다 소유자를 인자로 받을 자리가 없다.
+         *
+         * 16 → 18 로 올린 것은 봉인된 자유 의견에 회전 경로를 세우면서다(잠금 SELECT · 회전
+         * UPDATE). 사용자 요청 경로가 이 상한을 먹는 일은 없어야 한다 — 그 경우의 답은 상한을
+         * 올리는 것이 아니라 소유 술어를 붙이는 것이다.
+         */
+        const val MAX_UNGUARDED_STATEMENTS = 18
     }
 }

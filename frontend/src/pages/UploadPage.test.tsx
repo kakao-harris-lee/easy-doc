@@ -44,10 +44,15 @@ describe('업로드 화면', () => {
     })
     renderPage()
 
+    await user.type(screen.getByLabelText('문서 제목'), '청년 월세 지원 안내')
     await user.type(screen.getByLabelText('바꿀 글'), '신청 안내')
     await user.click(screen.getByRole('button', { name: '쉬운 글로 바꾸기' }))
 
-    expect(vi.mocked(createDocumentFromText)).toHaveBeenCalledWith('신청 안내', 'w1')
+    expect(vi.mocked(createDocumentFromText)).toHaveBeenCalledWith(
+      '신청 안내',
+      'w1',
+      '청년 월세 지원 안내',
+    )
     expect(await screen.findByRole('heading', { name: '변환 화면' })).toBeInTheDocument()
   })
 
@@ -64,10 +69,11 @@ describe('업로드 화면', () => {
       currentId: 'w2',
     })
 
+    await user.type(screen.getByLabelText('문서 제목'), '민원 안내')
     await user.type(screen.getByLabelText('바꿀 글'), '신청 안내')
     await user.click(screen.getByRole('button', { name: '쉬운 글로 바꾸기' }))
 
-    expect(vi.mocked(createDocumentFromText)).toHaveBeenCalledWith('신청 안내', 'w2')
+    expect(vi.mocked(createDocumentFromText)).toHaveBeenCalledWith('신청 안내', 'w2', '민원 안내')
   })
 
   it('작업 공간을 아직 못 받았어도 올릴 수 있다', async () => {
@@ -80,11 +86,16 @@ describe('업로드 화면', () => {
     })
     renderPage({ workspaces: [], currentId: null })
 
+    await user.type(screen.getByLabelText('문서 제목'), '기본 작업 공간 문서')
     await user.type(screen.getByLabelText('바꿀 글'), '신청 안내')
     await user.click(screen.getByRole('button', { name: '쉬운 글로 바꾸기' }))
 
     // null이면 서버가 기본 작업 공간에 담는다 — 업로드를 막지 않는다.
-    expect(vi.mocked(createDocumentFromText)).toHaveBeenCalledWith('신청 안내', null)
+    expect(vi.mocked(createDocumentFromText)).toHaveBeenCalledWith(
+      '신청 안내',
+      null,
+      '기본 작업 공간 문서',
+    )
   })
 
   it('상한을 넘은 글은 서버에 보내지 않고 알린다', async () => {
@@ -94,11 +105,23 @@ describe('업로드 화면', () => {
     // 4,000자 상한을 넘긴다. 붙여넣기(paste)로 넣어야 한 글자씩 타이핑하지 않는다.
     await user.click(screen.getByLabelText('바꿀 글'))
     await user.paste('가'.repeat(4001))
+    await user.type(screen.getByLabelText('문서 제목'), '긴 원문')
     await user.click(screen.getByRole('button', { name: '쉬운 글로 바꾸기' }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent('4,000자 이내로 줄여 주세요')
     // 글자 수 안내는 같은 사실을 두 번 알리지 않는다(라이브 영역이 아니다).
     expect(screen.getByLabelText('바꿀 글')).toHaveAttribute('aria-invalid', 'true')
+    expect(vi.mocked(createDocumentFromText)).not.toHaveBeenCalled()
+  })
+
+  it('제목 없이는 서버에 보내지 않는다', async () => {
+    const user = userEvent.setup()
+    renderPage()
+
+    await user.type(screen.getByLabelText('바꿀 글'), '신청 안내')
+    await user.click(screen.getByRole('button', { name: '쉬운 글로 바꾸기' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('문서 제목을 입력해 주세요.')
     expect(vi.mocked(createDocumentFromText)).not.toHaveBeenCalled()
   })
 
@@ -109,6 +132,7 @@ describe('업로드 화면', () => {
     )
     renderPage()
 
+    await user.type(screen.getByLabelText('문서 제목'), '긴 문서')
     await user.type(screen.getByLabelText('바꿀 글'), '긴 문서')
     await user.click(screen.getByRole('button', { name: '쉬운 글로 바꾸기' }))
 

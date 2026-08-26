@@ -3,6 +3,7 @@ package kr.easydoc.api.support
 import kr.easydoc.application.crypto.ContentCipher
 import kr.easydoc.application.document.ConversionCiphertexts
 import kr.easydoc.application.document.ConversionEnvelope
+import kr.easydoc.application.document.ConversionFeedbackRepository
 import kr.easydoc.application.document.ConversionQueue
 import kr.easydoc.application.document.ConversionRepository
 import kr.easydoc.application.document.DocumentDraft
@@ -10,9 +11,11 @@ import kr.easydoc.application.document.DocumentRepository
 import kr.easydoc.application.document.DocumentTextExtractor
 import kr.easydoc.application.document.ExtractedDocument
 import kr.easydoc.application.document.LockedConversion
+import kr.easydoc.application.document.LockedFeedbackComment
 import kr.easydoc.application.document.MaskedItemReader
 import kr.easydoc.application.document.StoredConversion
 import kr.easydoc.application.document.StoredExport
+import kr.easydoc.application.document.StoredFeedback
 import kr.easydoc.application.document.WorkspaceLookup
 import kr.easydoc.core.crypto.EncryptedContent
 import kr.easydoc.core.crypto.EncryptedField
@@ -280,6 +283,42 @@ class InMemoryConversionRepository(private val documents: InMemoryDocumentReposi
         row.providerName = providerName
         row.inputTokens = inputTokens
         row.outputTokens = outputTokens
+    }
+}
+
+/**
+ * 파일럿 피드백 저장소 대역. 실물과 같은 성질 하나를 지킨다 — **변환당 행이 하나다.**
+ * 재제출이 행을 늘리면 게이트 ① 판정의 분모가 부풀고, 그 오염은 집계 시점에 되돌릴 수 없다.
+ */
+class InMemoryConversionFeedbackRepository : ConversionFeedbackRepository {
+    private val rows = mutableMapOf<UUID, Pair<UUID, StoredFeedback>>()
+
+    /** 저장된 행. 테스트가 「하나뿐인가」를 보는 자리다. */
+    val stored: Map<UUID, Pair<UUID, StoredFeedback>> get() = rows
+
+    override fun upsert(
+        ownerId: UUID,
+        feedback: StoredFeedback,
+    ): Instant {
+        rows[feedback.conversionId] = ownerId to feedback
+        // 실물은 DB 시계다. 대역은 호출 순서만 구분하면 되므로 단조 증가 값을 준다.
+        return Instant.EPOCH.plusSeconds(rows.size.toLong())
+    }
+
+    /**
+     * 회전 팔은 슬라이스에 없다 — HTTP 경로가 키 회전을 부르지 않는다. 부르면 이 대역이
+     * 그 사실로 끊긴다(조용히 `null` 을 돌려주면 회전이 「행이 없다」로 통과한다).
+     */
+    override fun lockComment(conversionId: UUID): LockedFeedbackComment = error(ROTATION_PORT_MESSAGE)
+
+    override fun rewriteComment(
+        conversionId: UUID,
+        expected: EncryptedContent,
+        comment: EncryptedContent,
+    ): Boolean = error(ROTATION_PORT_MESSAGE)
+
+    private companion object {
+        const val ROTATION_PORT_MESSAGE = "HTTP 슬라이스가 회전 포트를 부르면 안 된다"
     }
 }
 

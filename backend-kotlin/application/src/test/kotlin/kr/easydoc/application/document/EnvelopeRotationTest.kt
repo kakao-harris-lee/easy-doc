@@ -198,11 +198,142 @@ class EnvelopeRotationTest {
         assertThat(world.transaction.failed).isEqualTo(1)
     }
 
+    @Test
+    @DisplayName("봉인된 자유 의견도 회전한다 — v1 로 봉한 것이 v2 뒤에도 **같은 평문**으로 열린다")
+    fun `피드백 의견을 회전한다`() {
+        val world = World()
+        val original = sealed(COMMENT_BODY, OLD_VERSION)
+        world.feedback.comment = original
+
+        val outcome = world.rotation.rotateFeedback(CONVERSION)
+
+        assertThat(outcome).isEqualTo(RotationOutcome.ROTATED)
+        val rewrite = world.feedback.rewrites.single()
+        assertThat(rewrite.expected)
+            .describedAs("쓰기 조건은 잠근 채 읽은 암호문 그 자체다 — 세대 정수 하나가 아니다")
+            .isSameAs(original)
+        assertThat(rewrite.comment.keyVersion).isEqualTo(NEW_VERSION)
+        assertThat(rewrite.comment.scheme).isEqualTo(EncryptionScheme.AES_256_GCM_V1)
+        assertThat(String(rewrite.comment.bytes, Charsets.UTF_8))
+            .describedAs("회전이 평문을 바꾸면 판정 근거가 조용히 달라진다")
+            .isEqualTo(COMMENT_BODY)
+        assertThat(world.cipher.bindings)
+            .describedAs("결속을 유지한 채 돌아야 한다 — AAD 가 어긋나면 회전한 행이 열리지 않는다")
+            .containsExactly(CONVERSION to EncryptedField.CONVERSION_FEEDBACK_COMMENT)
+    }
+
+    @Test
+    @DisplayName("**의견이 없는 행은 NOTHING_SEALED** — 빈 의견을 지어내 봉인하지 않는다")
+    fun `의견이 없으면 아무것도 봉하지 않는다`() {
+        val world = World()
+        world.feedback.comment = null
+
+        val outcome = world.rotation.rotateFeedback(CONVERSION)
+
+        assertThat(outcome).isEqualTo(RotationOutcome.NOTHING_SEALED)
+        assertThat(world.feedback.rewrites).isEmpty()
+        assertThat(world.cipher.encryptCalls)
+            .describedAs("빈 의견을 암호화했다 — 선택 항목이던 칸이 「빈 의견을 남겼다」로 바뀐다")
+            .isZero()
+    }
+
+    @Test
+    @DisplayName("피드백 회전의 나머지 갈래 — 행 없음·이미 최신·경합")
+    fun `피드백 회전의 나머지 갈래`() {
+        val missing = World().apply { feedback.rowExists = false }
+        assertThat(missing.rotation.rotateFeedback(CONVERSION))
+            .describedAs("행이 없는 것과 의견이 없는 것은 다른 결과다")
+            .isEqualTo(RotationOutcome.MISSING)
+
+        val current = World().apply { feedback.comment = sealed(COMMENT_BODY, NEW_VERSION) }
+        assertThat(current.rotation.rotateFeedback(CONVERSION)).isEqualTo(RotationOutcome.ALREADY_CURRENT)
+        assertThat(current.feedback.rewrites).isEmpty()
+
+        val contended =
+            World().apply {
+                feedback.comment = sealed(COMMENT_BODY, OLD_VERSION)
+                feedback.updated = false
+            }
+        assertThat(contended.rotation.rotateFeedback(CONVERSION)).isEqualTo(RotationOutcome.CONTENDED)
+    }
+
+    @Test
+    @DisplayName("의견이 열리지 않으면 UPDATE 를 부르지 않는다")
+    fun `피드백 복호화 실패는 중단한다`() {
+        val world = World(unopenable = EncryptedField.CONVERSION_FEEDBACK_COMMENT)
+        world.feedback.comment = sealed(COMMENT_BODY, OLD_VERSION)
+
+        assertThatThrownBy { world.rotation.rotateFeedback(CONVERSION) }
+            .isInstanceOf(DecryptionFailedException::class.java)
+
+        assertThat(world.feedback.rewrites).isEmpty()
+        assertThat(world.transaction.failed).isEqualTo(1)
+        assertThat(world.transaction.committed).isZero()
+    }
+
+    /**
+     * **회전 경로의 전수 대조.** [EncryptedField] 는 봉인된 열의 정본이고, 회전 경로가 없는
+     * 열은 옛 세대를 설정에서 내리는 순간 **영원히 열리지 않는다**(AAD 에 `key_version` 이
+     * 실린다). `EncryptionSchemeSchemaTest` 는 「이름 ↔ 실제 컬럼」만 재므로 이 공백을 못 본다.
+     *
+     * 새 봉인 열이 생겼을 때 이 파일이 빨개지는 **강제 수단은 두 겹이다**:
+     * 1. [rotationOf] 의 `when` 에 `else` 가 없다 — 새 [EncryptedField] 를 더하면 **컴파일이
+     *    깨진다.** 회전 경로를 정하지 않고는 열거형에 값을 더할 수 없다.
+     * 2. 갈래를 아무렇게나 이어 붙여도 아래 단언이 잡는다 — 그 갈래를 돌린 뒤 **그 열이 실제로
+     *    다시 봉해졌는지**를 암호 대역에서 확인한다.
+     */
+    @Test
+    @DisplayName("**모든 봉인 열이 회전 경로를 가진다** — 새 열이 결속만 얻고 회전을 못 얻는 것을 막는다")
+    fun `봉인된 열 전부가 회전 경로를 가진다`() {
+        assertThat(EncryptedField.entries)
+            .describedAs("봉인 열이 하나도 없다 — 이 대조가 0건을 훑고 통과한다")
+            .isNotEmpty()
+
+        val uncovered = EncryptedField.entries.filterNot { field -> field in rotationOf(field) }
+
+        assertThat(uncovered)
+            .withFailMessage {
+                "회전 경로가 닿지 않는 봉인 열이 있다: ${uncovered.map { it.wireName }.sorted()}\n" +
+                    "  키 세대를 올리고 옛 세대를 설정에서 내리면 그 열의 행들은 영원히 열리지 않는다.\n" +
+                    "  `EnvelopeRotation` 에 그 열을 여는 갈래를 더하고 이 `when` 을 이어라."
+            }.isEmpty()
+    }
+
+    /**
+     * 그 열을 맡은 회전을 **실제로 돌리고**, 회전이 다시 봉한 열 전부를 돌려준다.
+     *
+     * `else` 가 없는 것이 이 검사의 절반이다 — 새 [EncryptedField] 는 여기서 컴파일을 깨뜨린다.
+     */
+    private fun rotationOf(field: EncryptedField): Set<EncryptedField> {
+        val world = World()
+        world.sealEverythingAtOldVersion()
+
+        val outcome =
+            when (field) {
+                EncryptedField.DOCUMENT_SOURCE_TEXT -> world.rotation.rotateDocument(DOCUMENT)
+
+                EncryptedField.CONVERSION_EASY_TEXT,
+                EncryptedField.CONVERSION_MASKED_ITEMS,
+                EncryptedField.CONVERSION_EDITED_TEXT,
+                -> world.rotation.rotateConversion(CONVERSION)
+
+                EncryptedField.CONVERSION_FEEDBACK_COMMENT -> world.rotation.rotateFeedback(CONVERSION)
+            }
+
+        check(outcome == RotationOutcome.ROTATED) {
+            "${field.wireName} 을 맡은 회전이 옛 세대 행을 회전하지 못했다: $outcome"
+        }
+        return world.cipher.resealed
+    }
+
     private companion object {
         val CONVERSION: UUID = UUID.fromString("00000000-0000-4000-8000-0000000000c1")
         val DOCUMENT: UUID = UUID.fromString("00000000-0000-4000-8000-0000000000d1")
         const val OLD_VERSION = 1
         const val NEW_VERSION = 2
+
+        /** 회전이 평문을 그대로 옮기는지 보는 표식. 값 자체는 성질과 무관하다. */
+        const val COMMENT_BODY = "○○동 안내 부분이 어색합니다"
 
         fun sealed(
             plain: String,
@@ -232,14 +363,23 @@ class EnvelopeRotationTest {
         val cipher = FakeRotatingCipher(unopenable)
         val documents = FakeDocumentRepository()
         val conversions = FakeConversionRepository()
+        val feedback = FakeRotatingFeedbackRepository()
 
         val rotation =
             EnvelopeRotation(
                 documents = documents,
                 conversions = conversions,
+                feedback = feedback,
                 cipher = cipher,
                 transaction = transaction,
             )
+
+        /** 봉인된 열을 **전부** 옛 세대로 채운다. 전수 대조가 쓰는 자리다. */
+        fun sealEverythingAtOldVersion() {
+            documents.sourceText = sealed("원문", OLD_VERSION)
+            conversions.envelope = envelopeOf(OLD_VERSION, "초안", "대응표", "검수본")
+            feedback.comment = sealed("의견", OLD_VERSION)
+        }
     }
 
     /** [DocumentServiceTest] 의 것과 같은 이유로 `catch` 절을 쓰지 않는다. */
@@ -265,12 +405,16 @@ class EnvelopeRotationTest {
             private set
         val bindings = mutableListOf<Pair<UUID, EncryptedField>>()
 
+        /** 회전이 **다시 봉한** 열. 전수 대조가 「경로가 이 열에 실제로 닿았는가」를 여기서 본다. */
+        val resealed = mutableSetOf<EncryptedField>()
+
         override fun encrypt(
             plain: PlainBody,
             record: UUID,
             field: EncryptedField,
         ): EncryptedContent {
             encryptCalls++
+            resealed += field
             return sealed(plain.value, writeKeyVersion)
         }
 
@@ -376,5 +520,35 @@ class EnvelopeRotationTest {
             requiredStatus: ConversionStatus,
             updated: ConversionEnvelope,
         ): Boolean = error("회전 경로가 검수 저장 포트를 부르면 안 된다")
+    }
+
+    private class FeedbackRewrite(
+        val expected: EncryptedContent,
+        val comment: EncryptedContent,
+    )
+
+    private class FakeRotatingFeedbackRepository : ConversionFeedbackRepository {
+        /** 행이 없으면 [rowExists] 가 `false` 다 — 「행이 없다」와 「의견이 없다」는 다른 상태다. */
+        var rowExists: Boolean = true
+        var comment: EncryptedContent? = null
+        var updated: Boolean = true
+        val rewrites = mutableListOf<FeedbackRewrite>()
+
+        override fun upsert(
+            ownerId: UUID,
+            feedback: StoredFeedback,
+        ): java.time.Instant = error("회전 경로가 피드백 저장 포트를 부르면 안 된다")
+
+        override fun lockComment(conversionId: UUID): LockedFeedbackComment? =
+            if (rowExists) LockedFeedbackComment(comment) else null
+
+        override fun rewriteComment(
+            conversionId: UUID,
+            expected: EncryptedContent,
+            comment: EncryptedContent,
+        ): Boolean {
+            rewrites += FeedbackRewrite(expected, comment)
+            return updated
+        }
     }
 }

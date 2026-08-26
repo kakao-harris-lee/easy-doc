@@ -135,3 +135,38 @@ export interface WorkspaceListResponse {
 export interface WorkspaceNameRequest {
   name: string
 }
+
+// --- pilot feedback ---
+
+/**
+ * 배포 의향. 파일럿 게이트 ①의 기준 1을 판정하는 값이다(docs/pilot-runbook.md).
+ *
+ * `as_is`·`with_edits`가 "이 결과물을 다듬어 실제로 배포하겠다"에 해당한다.
+ */
+export type PublishIntent = 'as_is' | 'with_edits' | 'not_usable'
+
+/**
+ * PUT /conversions/{conversion_id}/feedback 요청 본문.
+ *
+ * 한 변환의 피드백은 1건이고 다시 보내면 덮어쓴다(멱등 upsert).
+ */
+export interface ConversionFeedbackRequest {
+  publish_intent: PublishIntent
+  /** 품질 만족도. 1~5 정수. */
+  quality_score: number
+  /** 이번 건에 들인 시간(분). 0~600 정수. */
+  minutes_spent: number
+  /** 자유 의견. 서버에서 봉인되므로 집계 스크립트는 읽지 않는다. 비우면 null. */
+  comment: string | null
+}
+
+/** PUT /conversions/{conversion_id}/feedback 응답. 저장된 값을 그대로 돌려준다. */
+export interface ConversionFeedbackResponse {
+  conversion_id: string
+  publish_intent: PublishIntent
+  quality_score: number
+  minutes_spent: number
+  comment: string | null
+  /** ISO 8601 문자열. */
+  submitted_at: string
+}

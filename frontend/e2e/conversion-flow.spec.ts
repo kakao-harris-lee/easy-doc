@@ -1,5 +1,5 @@
 /**
- * E13 — 문서 등록 → worker 변환 → 검수 저장 → 내보내기 수직 흐름.
+ * E13 — 문서 등록 → worker 변환 → 검수 저장 → 피드백 제출 → 내보내기 수직 흐름.
  *
  * Kotlin `ConversionWorkerFlowTest` 가 DB·워커 상태 전이를 고정하고, React 단위
  * 테스트가 폴링·에디터·다운로드 UI를 고정한다. 여기서는 **실 브라우저·실 API·실
@@ -25,6 +25,10 @@ const SOURCE_TEXT = '국민건강보험료를 납부하려면 가까운 지사�
 
 /** 검수 저장 후 내려받기에 실릴 수정본. */
 const REVIEWED_TEXT = 'E2E 검수본입니다. 가까운 지사에 방문하세요.'
+
+/** 파일럿 게이트 ① 피드백 값. 자유 의견에는 문서 본문을 옮기지 않는다(폼 안내와 같은 규칙). */
+const FEEDBACK_MINUTES = '25'
+const FEEDBACK_COMMENT = 'E2E 확인용 의견입니다.'
 
 type ConversionStatus = 'pending' | 'processing' | 'done' | 'failed'
 
@@ -69,13 +73,16 @@ function trackConversionStatuses(page: import('@playwright/test').Page) {
 }
 
 test.describe('변환 수직 흐름', () => {
-  test('E13 붙여넣기 등록 → worker 완료 → 검수 저장 → txt 내려받기', async ({ page }) => {
+  test('E13 붙여넣기 등록 → worker 완료 → 검수 저장 → 피드백 제출 → txt 내려받기', async ({
+    page,
+  }) => {
     test.setTimeout(120_000)
 
     const log = new NetworkLog(page, API_BASE_URL)
     const observedStatuses = trackConversionStatuses(page)
     await signUpAndLand(page, newAccount())
 
+    await page.getByLabel('문서 제목').fill('E2E 건강보험료 안내')
     await page.getByLabel('바꿀 글').fill(SOURCE_TEXT)
 
     const [createdResponse] = await Promise.all([
@@ -124,6 +131,25 @@ test.describe('변환 수직 흐름', () => {
     expect(savedResponse.status()).toBe(ROUTES.conversionReview.ok)
     await expect(page.getByText('검수 내용을 저장했습니다.')).toBeVisible()
 
+    // 검수를 마친 자리에서 파일럿 판정용 피드백을 남긴다 — 백엔드는 done 이 아닌 변환에
+    // 대해 409 로 막으므로, 이 단계는 검수 저장 뒤에 와야 한다.
+    await page.getByLabel('조금 고쳐서 쓰겠다').check()
+    await page.getByLabel('4점').check()
+    await page.getByLabel('이번 건 소요 시간(분)').fill(FEEDBACK_MINUTES)
+    await page.getByLabel('의견 (선택)').fill(FEEDBACK_COMMENT)
+
+    const feedbackPath = `${conversionPath}/feedback`
+    const [feedbackResponse] = await Promise.all([
+      page.waitForResponse(
+        (response) =>
+          response.url() === api(feedbackPath) &&
+          response.request().method() === ROUTES.conversionFeedback.method,
+      ),
+      page.getByRole('button', { name: '의견 보내기', exact: true }).click(),
+    ])
+    expect(feedbackResponse.status()).toBe(ROUTES.conversionFeedback.ok)
+    await expect(page.getByText('의견을 보냈습니다. 감사합니다.')).toBeVisible()
+
     const exportPath = `${conversionPath}/export?format=txt`
     const downloadPromise = page.waitForEvent('download')
     const [exportResponse, download] = await Promise.all([
@@ -157,6 +183,9 @@ test.describe('변환 수직 흐름', () => {
     ).toBeGreaterThan(0)
     expect(callSignatures).toContain(
       `${ROUTES.conversionReview.method} ${conversionPath} ${ROUTES.conversionReview.ok}`,
+    )
+    expect(callSignatures).toContain(
+      `${ROUTES.conversionFeedback.method} ${feedbackPath} ${ROUTES.conversionFeedback.ok}`,
     )
     expect(callSignatures).toContain(
       `${ROUTES.conversionExport.method} ${exportPath} ${ROUTES.conversionExport.ok}`,
