@@ -2,11 +2,16 @@ import { Link, Navigate, useNavigate } from 'react-router-dom'
 
 import { useAuth } from '../auth/context'
 import { MIN_PASSWORD_LENGTH } from '../auth/validation'
+import { AuthIntro } from '../components/AuthIntro'
 import { CredentialsForm } from '../components/CredentialsForm'
-import { Badge } from '../components/ui/Badge'
-import { HOME_PATH } from '../routes/paths'
+import { HOME_PATH, LOGIN_PATH } from '../routes/paths'
 
-/** 가입 화면. 가입에 성공하면 이어서 로그인까지 마치고 홈으로 간다. */
+/**
+ * 가입 화면. 가입에 성공하면 이어서 로그인까지 마치고 홈으로 간다.
+ *
+ * 배치와 DOM 순서의 근거는 [LoginPage]와 같다 — 인증 화면은 작업 공간 맥락이 없어
+ * `PageHeader` 대신 §6.1의 2단 구성을 쓴다.
+ */
 export function SignupPage() {
   const { status, signUp } = useAuth()
   const navigate = useNavigate()
@@ -16,53 +21,39 @@ export function SignupPage() {
   }
 
   return (
-    <div className="mx-auto grid min-h-[calc(100dvh-6.5rem)] w-full max-w-5xl items-center gap-10 lg:grid-cols-2">
-      <section className="mx-auto w-full max-w-sm" aria-labelledby="signup-heading">
-        <Badge tone="primary" withIcon={false} className="mb-2">
-          계정 만들기
-        </Badge>
-        <h2 id="signup-heading" className="text-2xl font-extrabold tracking-tight text-foreground">
-          가입하기
-        </h2>
-        <p className="mt-1 text-[15px] leading-relaxed text-muted-foreground">
-          업무용 이메일로 나만의 안전한 작업 공간을 시작하세요.
-        </p>
-        <CredentialsForm
-          submitLabel="가입하기"
-          passwordAutoComplete="new-password"
-          passwordHint={`${MIN_PASSWORD_LENGTH}자 이상 입력해 주세요.`}
-          onSubmit={async (email, password) => {
-            await signUp(email, password)
-            navigate(HOME_PATH, { replace: true })
-          }}
-        />
-        <p className="mt-5 text-center text-sm text-muted-foreground">
-          이미 계정이 있으신가요? <Link to="/login">로그인</Link>
-        </p>
-      </section>
-      <aside
-        className="relative overflow-hidden rounded-[16px] border border-border bg-primary p-8 text-white"
-        aria-label="가입 안내"
+    <div className="mx-auto grid w-full max-w-5xl items-center gap-8 py-2 lg:grid-cols-[minmax(0,1fr)_440px] lg:gap-12">
+      <section
+        className="w-full max-w-[440px] justify-self-center lg:order-2"
+        aria-labelledby="signup-heading"
       >
-        <span
-          className="mb-5 flex size-12 items-center justify-center rounded-[12px] bg-white/15 text-xl font-black"
-          aria-hidden="true"
-        >
-          문
-        </span>
-        <h2 className="text-2xl font-extrabold tracking-tight">
-          공공 문서 업무에 맞춘
-          <br />
-          차분한 작업 공간
-        </h2>
-        <p className="mt-3 text-[15px] leading-relaxed text-white/80">
-          변환 결과는 언제나 AI 초안으로 표시됩니다. 사실관계와 신청 방법을 담당자가 확인한 뒤
-          사용하세요.
-        </p>
-        <Badge className="mt-5 border-white/25 bg-white/10 text-white" withIcon={false}>
-          AI 초안 · 사람 검토 필수
-        </Badge>
-      </aside>
+        <div className="rounded-[16px] border border-border bg-card p-6 shadow-[0_8px_28px_rgba(35,31,70,0.06)] sm:p-8">
+          <h1
+            id="signup-heading"
+            className="text-[28px] font-extrabold leading-9 tracking-tight text-foreground"
+          >
+            가입하기
+          </h1>
+          <p className="mt-2 text-sm leading-[22px] text-muted-foreground">
+            업무용 이메일로 가입하면 기본 작업 공간이 하나 만들어집니다.
+          </p>
+          <CredentialsForm
+            submitLabel="가입하기"
+            passwordAutoComplete="new-password"
+            passwordHint={`${MIN_PASSWORD_LENGTH}자 이상 입력해 주세요.`}
+            onSubmit={async (email, password) => {
+              await signUp(email, password)
+              navigate(HOME_PATH, { replace: true })
+            }}
+          />
+          <p className="mt-5 text-center text-sm text-muted-foreground">
+            이미 계정이 있으신가요? <Link to={LOGIN_PATH}>로그인</Link>
+          </p>
+        </div>
+      </section>
+      <AuthIntro
+        headingId="signup-intro-heading"
+        summary="어려운 공공 안내문을 쉬운 우리말 초안으로 바꾸고, 담당자가 검수해 문서로 내려받습니다."
+      />
     </div>
   )
 }

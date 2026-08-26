@@ -74,7 +74,9 @@ describe('저장하지 않은 검수 수정', () => {
 
     expect(confirm).toHaveBeenCalled()
     expect(screen.getByRole('heading', { name: '쉬운 글 검수' })).toBeInTheDocument()
-    expect(screen.queryByRole('heading', { name: '변환 기록' })).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('heading', { name: '변환한 문서를 확인합니다' }),
+    ).not.toBeInTheDocument()
   })
 
   it('떠나겠다고 하면 이동한다', async () => {
@@ -85,7 +87,9 @@ describe('저장하지 않은 검수 수정', () => {
     await user.type(await screen.findByLabelText('쉬운 글 결과 (고칠 수 있습니다)'), ' 수정')
     await user.click(screen.getByRole('link', { name: '변환 기록' }))
 
-    expect(await screen.findByRole('heading', { name: '변환 기록' })).toBeInTheDocument()
+    expect(
+      await screen.findByRole('heading', { name: '변환한 문서를 확인합니다' }),
+    ).toBeInTheDocument()
   })
 
   it('수정하지 않았으면 묻지 않는다', async () => {
@@ -97,6 +101,8 @@ describe('저장하지 않은 검수 수정', () => {
     await user.click(screen.getByRole('link', { name: '변환 기록' }))
 
     expect(confirm).not.toHaveBeenCalled()
-    expect(await screen.findByRole('heading', { name: '변환 기록' })).toBeInTheDocument()
+    expect(
+      await screen.findByRole('heading', { name: '변환한 문서를 확인합니다' }),
+    ).toBeInTheDocument()
   })
 })

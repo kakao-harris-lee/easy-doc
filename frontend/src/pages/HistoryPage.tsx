@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { FilePlus2, Trash2 } from 'lucide-react'
+import { FilePlus2, FileText, Trash2 } from 'lucide-react'
 
 import { ApiError, deleteDocument, listDocuments } from '../api/client'
 import type { ConversionStatus, DocumentListItem } from '../api/types'
 import { conversionPath, HOME_PATH } from '../routes/paths'
 import { useWorkspace } from '../workspace/context'
+import { PageHeader } from '../components/PageHeader'
 import { Badge } from '../components/ui/Badge'
 import { Button } from '../components/ui/Button'
 
@@ -136,119 +137,126 @@ export function HistoryPage() {
   }
 
   return (
-    <section className="flex flex-col gap-6" aria-labelledby="history-heading">
-      <header className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
-        <div>
-          <p className="mb-1 text-sm font-bold text-primary">내 문서</p>
-          <h2 id="history-heading" className="text-2xl font-extrabold tracking-tight">
-            변환 기록
-          </h2>
-          <p className="mt-1 text-[15px] text-muted-foreground">
-            지금까지 변환한 문서를 확인하고 다시 검수할 수 있습니다.
-          </p>
-        </div>
-        <Link
-          className="inline-flex h-11 items-center justify-center gap-2 rounded-[10px] bg-primary px-4 font-semibold text-white no-underline hover:bg-primary-hover"
-          to={HOME_PATH}
-        >
-          <FilePlus2 className="size-4" aria-hidden="true" />새 문서 변환
-        </Link>
-      </header>
+    <section aria-labelledby="history-heading">
+      <PageHeader
+        // 어느 작업 공간의 기록을 보고 있는지가 맥락이다(DESIGN.md §6.6) — 작업 공간을
+        // 바꾸면 라벨과 설명이 함께 바뀌어 선택 결과가 화면에서 곧바로 보인다.
+        context={currentName === null ? '변환 기록' : `${currentName} · 변환 기록`}
+        title="변환한 문서를 확인합니다"
+        description={
+          currentName === null
+            ? '문서의 변환 상태를 보고, 이어서 검수하거나 삭제할 수 있습니다.'
+            : `‘${currentName}’에서 변환한 문서의 상태를 보고, 이어서 검수하거나 삭제할 수 있습니다.`
+        }
+        titleId="history-heading"
+        action={{ label: '새 문서 변환', to: HOME_PATH, icon: FilePlus2 }}
+      />
 
-      {error !== null && (
-        <p className="form-error" role="alert">
-          {error}
-        </p>
-      )}
-
-      <div className="overflow-x-auto rounded-[12px] border border-border bg-card px-5 pb-5 shadow-[0_1px_2px_rgba(20,33,31,0.04)]">
-        {items.length === 0 && !loading && error === null ? (
-          <p className="py-14 text-center text-muted-foreground">
-            {currentName === null
-              ? '아직 변환한 문서가 없습니다.'
-              : `‘${currentName}’에는 아직 변환한 문서가 없습니다.`}{' '}
-            <Link to={HOME_PATH}>문서를 올려 보세요.</Link>
+      <div className="flex flex-col gap-6">
+        {error !== null && (
+          <p className="form-error" role="alert">
+            {error}
           </p>
-        ) : (
-          <table className="history-table">
-            {/* 어느 작업 공간을 보고 있는지 표 설명에 적는다 — 목록이 걸러졌다는 사실이
+        )}
+
+        <div className="overflow-x-auto rounded-[12px] border border-border bg-card px-5 pb-5 shadow-[0_1px_2px_rgba(20,33,31,0.04)]">
+          {items.length === 0 && !loading && error === null ? (
+            // 빈 상태도 지금 작업 공간의 이야기로 말하고, 다음 할 일 하나를 함께 준다(§6.6).
+            <div className="flex flex-col items-center gap-4 py-14 text-center">
+              <FileText className="size-8 text-muted-foreground" aria-hidden="true" />
+              <p className="text-muted-foreground">
+                {currentName === null
+                  ? '아직 변환한 문서가 없습니다.'
+                  : `‘${currentName}’에는 아직 변환한 문서가 없습니다.`}
+              </p>
+              <Link
+                className="inline-flex h-11 items-center justify-center gap-2 rounded-md bg-primary px-4 text-[15px] font-semibold text-primary-foreground no-underline transition-colors hover:bg-primary-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                to={HOME_PATH}
+              >
+                <FilePlus2 className="size-[18px]" aria-hidden="true" />첫 문서 변환하기
+              </Link>
+            </div>
+          ) : (
+            <table className="history-table">
+              {/* 어느 작업 공간을 보고 있는지 표 설명에 적는다 — 목록이 걸러졌다는 사실이
               화면을 보지 않는 사용자에게도 전달되어야 한다(KWCAG). */}
-            <caption>
-              {currentName === null
-                ? '내가 변환한 문서 목록입니다.'
-                : `‘${currentName}’에서 변환한 문서 목록입니다.`}{' '}
-              제목을 누르면 검수 화면이 열립니다.
-            </caption>
-            <thead>
-              <tr>
-                <th scope="col">제목</th>
-                <th scope="col">상태</th>
-                <th scope="col">글자 수</th>
-                <th scope="col">올린 날짜</th>
-                <th scope="col">검수</th>
-                <th scope="col">삭제</th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((item) => (
-                <tr key={item.id}>
-                  <th scope="row">
-                    {/* 변환 행이 없으면 열 화면도 없다 — 링크 대신 제목만 보여준다. */}
-                    {item.conversion_id === null ? (
-                      item.title
-                    ) : (
-                      <Link to={conversionPath(item.conversion_id)}>{item.title}</Link>
-                    )}
-                  </th>
-                  <td>
-                    {item.status === null ? (
-                      <Badge>알 수 없음</Badge>
-                    ) : (
-                      <Badge tone={STATUS_TONE[item.status]}>{STATUS_TEXT[item.status]}</Badge>
-                    )}
-                  </td>
-                  <td>{item.char_count.toLocaleString('ko-KR')}자</td>
-                  <td>{formatDate(item.created_at)}</td>
-                  <td>{item.reviewed_at === null ? '초안' : '검수함'}</td>
-                  <td>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      type="button"
-                      // 줄마다 같은 "삭제"가 반복되므로 어떤 문서인지 이름에 실어 준다.
-                      aria-label={`${item.title} 삭제`}
-                      onClick={() => void handleDelete(item)}
-                      disabled={deletingId === item.id}
-                    >
-                      <Trash2 className="size-4" aria-hidden="true" />
-                      삭제
-                    </Button>
-                  </td>
+              <caption>
+                {currentName === null
+                  ? '내가 변환한 문서 목록입니다.'
+                  : `‘${currentName}’에서 변환한 문서 목록입니다.`}{' '}
+                제목을 누르면 검수 화면이 열립니다.
+              </caption>
+              <thead>
+                <tr>
+                  <th scope="col">제목</th>
+                  <th scope="col">상태</th>
+                  <th scope="col">글자 수</th>
+                  <th scope="col">올린 날짜</th>
+                  <th scope="col">검수</th>
+                  <th scope="col">삭제</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
+              </thead>
+              <tbody>
+                {items.map((item) => (
+                  <tr key={item.id}>
+                    <th scope="row">
+                      {/* 변환 행이 없으면 열 화면도 없다 — 링크 대신 제목만 보여준다. */}
+                      {item.conversion_id === null ? (
+                        item.title
+                      ) : (
+                        <Link to={conversionPath(item.conversion_id)}>{item.title}</Link>
+                      )}
+                    </th>
+                    <td>
+                      {item.status === null ? (
+                        <Badge>알 수 없음</Badge>
+                      ) : (
+                        <Badge tone={STATUS_TONE[item.status]}>{STATUS_TEXT[item.status]}</Badge>
+                      )}
+                    </td>
+                    <td>{item.char_count.toLocaleString('ko-KR')}자</td>
+                    <td>{formatDate(item.created_at)}</td>
+                    <td>{item.reviewed_at === null ? '초안' : '검수함'}</td>
+                    <td>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        type="button"
+                        // 줄마다 같은 "삭제"가 반복되므로 어떤 문서인지 이름에 실어 준다.
+                        aria-label={`${item.title} 삭제`}
+                        onClick={() => void handleDelete(item)}
+                        disabled={deletingId === item.id}
+                      >
+                        <Trash2 className="size-4" aria-hidden="true" />
+                        삭제
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
 
-        {loading && (
-          <p className="py-6 text-center text-sm text-primary" role="status">
-            불러오는 중입니다…
-          </p>
-        )}
+          {loading && (
+            <p className="py-6 text-center text-sm text-primary" role="status">
+              불러오는 중입니다…
+            </p>
+          )}
 
-        {hasMore && (
-          <Button
-            variant="outline"
-            type="button"
-            onClick={() => {
-              setLoading(true)
-              setOffset(items.length)
-            }}
-            disabled={loading}
-          >
-            더 보기
-          </Button>
-        )}
+          {hasMore && (
+            <Button
+              variant="outline"
+              type="button"
+              onClick={() => {
+                setLoading(true)
+                setOffset(items.length)
+              }}
+              disabled={loading}
+            >
+              더 보기
+            </Button>
+          )}
+        </div>
       </div>
     </section>
   )

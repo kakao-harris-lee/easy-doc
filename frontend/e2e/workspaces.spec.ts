@@ -17,6 +17,7 @@ import {
   newAccount,
   plantToken,
   selectedWorkspaceName,
+  signOut,
   signUpAndLand,
   uniqueWorkspaceName,
   workspaceAlert,
@@ -52,7 +53,7 @@ test.describe('작업 공간', () => {
     expect(await workspaceNames(page)).toContain(nameA)
 
     // 로그아웃하면 보호 화면에서 밀려난다.
-    await page.getByRole('button', { name: '로그아웃', exact: true }).click()
+    await signOut(page)
     await expect(page.getByRole('heading', { name: '로그인' })).toBeVisible()
 
     // --- 계정 B ---------------------------------------------------------------

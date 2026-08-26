@@ -96,6 +96,23 @@ describe('변환 기록', () => {
     expect(screen.queryByRole('button', { name: '더 보기' })).not.toBeInTheDocument()
   })
 
+  it('한 건도 없으면 지금 작업 공간 이름과 첫 변환 행동을 보여준다', async () => {
+    vi.mocked(listDocuments).mockResolvedValue({
+      items: [],
+      limit: 20,
+      offset: 0,
+      has_more: false,
+    })
+    renderPage({ workspaces: [workspaceItem({ id: 'w1', name: '민원 안내' })], currentId: 'w1' })
+
+    // 빈 상태도 "어디가 비었는지"를 말한다 — 작업 공간을 잘못 고른 것과 정말 문서가
+    // 없는 것은 사용자에게 전혀 다른 상황이다(DESIGN.md §6.6).
+    expect(
+      await screen.findByText('‘민원 안내’에는 아직 변환한 문서가 없습니다.'),
+    ).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: '첫 문서 변환하기' })).toHaveAttribute('href', '/')
+  })
+
   it('불러오지 못하면 사유를 알린다', async () => {
     vi.mocked(listDocuments).mockRejectedValue(new Error('network down'))
     renderPage()

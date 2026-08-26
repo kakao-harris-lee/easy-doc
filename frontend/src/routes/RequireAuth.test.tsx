@@ -71,7 +71,10 @@ describe('인증 가드', () => {
     vi.mocked(fetchMe).mockResolvedValue({ id: 'u1', email: 'user@example.com' })
     renderAt('/')
 
-    await user.click(await screen.findByRole('button', { name: '로그아웃' }))
+    // 로그아웃은 계정 메뉴 안에 있다 — 머리말은 이메일도 로그아웃도 펼쳐 두지 않는다
+    // (DESIGN.md §5.1, components/AppLayout.tsx).
+    await user.click(await screen.findByRole('button', { name: '계정 메뉴' }))
+    await user.click(screen.getByRole('button', { name: '로그아웃' }))
 
     expect(await screen.findByRole('heading', { name: '로그인' })).toBeInTheDocument()
     expect(window.localStorage.getItem('easydoc.access_token')).toBeNull()

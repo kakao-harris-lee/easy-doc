@@ -129,6 +129,19 @@ export async function answerPrompt(page: Page, buttonName: string, answer: strin
     .click()
 }
 
+/**
+ * 로그아웃한다.
+ *
+ * 로그아웃 버튼은 머리말에 상시 노출되지 않는다 — 계정 이메일과 함께 계정 메뉴 안에
+ * 들어갔다(DESIGN.md §5.1: 이메일을 늘 펼쳐 두지 않는다). 그래서 먼저 메뉴를 펼친다.
+ * 데스크톱 뷰포트(`devices['Desktop Chrome']` 1280px)에서는 이 트리거가 보이는 유일한
+ * 계정 통로이고, 좁은 화면에서는 햄버거 메뉴가 같은 역할을 겸한다.
+ */
+export async function signOut(page: Page): Promise<void> {
+  await page.getByRole('button', { name: '계정 메뉴' }).click()
+  await page.getByRole('button', { name: '로그아웃', exact: true }).click()
+}
+
 /** 가입 → 자동 로그인 → 홈. 작업 공간 메뉴가 뜰 때까지 기다린다. */
 export async function signUpAndLand(page: Page, account: Account): Promise<void> {
   await page.goto('/signup')
