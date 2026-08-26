@@ -85,7 +85,7 @@ class ConversionWorkerFlowTest {
         transaction = SpringTransactionRunner(TransactionTemplate(DataSourceTransactionManager(dataSource)))
         service =
             DocumentService(
-                storage = DocumentStorage(documents, conversions, queue),
+                storage = DocumentStorage(documents, JdbcDocumentOriginalRepository(jdbc), conversions, queue),
                 workspaces = JdbcWorkspaceLookup(jdbc),
                 cipher = cipher,
                 extractor = DocumentTextExtractor { _, _ -> ExtractedDocument(SourceFormat.DOCX, "추출") },

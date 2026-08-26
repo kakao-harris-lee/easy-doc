@@ -68,6 +68,78 @@ interface DocumentRepository {
     ): Boolean
 }
 
+/**
+ * 봉인된 업로드 원본 한 건 — 암호문과 **봉하기 전 바이트 수**.
+ *
+ * 크기가 암호문 옆에 함께 서는 이유: 원본은 최대 10MB 라 「있는가·얼마나 큰가」를 묻는 쪽이
+ * 「무엇인가」를 묻는 쪽보다 훨씬 잦다. [EncryptedContent.bytes] 의 길이는 nonce·태그가 붙은
+ * 값이라 원본 크기가 아니고, 그것을 빼서 되짚는 계산을 호출자마다 적게 하지 않는다.
+ */
+class StoredOriginal(
+    val bytes: EncryptedContent,
+    val byteSize: Int,
+) {
+    /** 크기 두 개만 남긴다 — 암호문 자체는 [EncryptedContent.toString] 이 이미 가린다. */
+    override fun toString(): String = "StoredOriginal(원본 ${byteSize}바이트, $bytes)"
+}
+
+/**
+ * `document_originals` 저장소 — 업로드된 **원본 파일 바이트**.
+ *
+ * `documents` 와 표가 갈린 사유는 `V3__document_originals.sql` 머리주석이다. 포트가 갈린 사유는
+ * 그것과 같다: 원본은 **선택적으로 존재하고**(붙여넣기 경로에는 행이 없다) 텍스트 원문과
+ * **따로 회전한다**. 두 성질을 [DocumentRepository] 안에 섞으면 「문서 한 건」의 뜻이 흐려진다.
+ *
+ * 다른 저장소와 같은 규약이다: 평문이 이 경계를 넘지 않고([EncryptedContent] 만 오간다),
+ * 커밋하지 않으며, 회전 팔은 소유자를 받지 않는다(회전 배치에 「내 것」이 없다).
+ */
+interface DocumentOriginalRepository {
+    /**
+     * 원본 한 행을 만든다. **커밋하지 않는다** — 트랜잭션 경계는 유스케이스가 연다.
+     *
+     * `documents` 행이 **같은 트랜잭션 안에 이미 있어야 한다**(FK). 문서 등록과 원본 저장이
+     * 한 경계 안에 있는 것이 「저장은 실패했는데 업로드는 성공」을 구조적으로 없앤다.
+     *
+     * 암호문과 크기를 [StoredOriginal] 하나로 받는 것은 **둘이 어긋난 조합을 호출자가 만들 수
+     * 없게** 하려는 것이다(`ConversionEnvelope` 가 「쓸 행 버전 전체」인 것과 같은 판단).
+     *
+     * [ownerId] 는 잉여가 아니다 — **소유 술어가 쓰기 문장 자신에 걸린다**
+     * ([ConversionRepository.saveReview] 와 같은 규칙). 이 표에는 `user_id` 열이 없고 소유자는
+     * `documents` 가 안다. 호출자가 이미 그 문서를 방금 만들었더라도, 남의 문서에 원본을 붙일
+     * 수 있는 문장을 저장소가 제공하지 않는 것이 이 인자의 값어치다.
+     */
+    fun insert(
+        ownerId: UUID,
+        documentId: UUID,
+        original: StoredOriginal,
+    )
+
+    /**
+     * **내** 문서의 원본을 읽는다. 없거나 내 것이 아니면 `null` — **두 경우를 구분하지 않는다.**
+     *
+     * 소유자를 인자로 받는 것이 이 포트에서 유일하게 사용자 경로인 자리다. 원본을 문서 식별자
+     * 하나로 읽을 수 있게 두면 다음 조각(§6.5 원본 형식 내보내기)이 그 구멍으로 남의 파일을
+     * 내보낸다 — 계약이 「남의 자원은 404」라고 정한 축이라, 부르는 곳이 생기기 전에 술어를
+     * 포트에 박아 둔다.
+     *
+     * 붙여넣기 문서는 행이 없으므로 언제나 `null` 이다.
+     */
+    fun findOwned(
+        ownerId: UUID,
+        documentId: UUID,
+    ): StoredOriginal?
+
+    /** 회전 대상 행의 암호문과 봉투를 읽고 **그 행을 잠근다**. 없으면 `null`. */
+    fun lockOriginal(documentId: UUID): EncryptedContent?
+
+    /** 원본 암호문과 봉투 두 값을 **한 UPDATE 로** 바꾼다. 갱신됐으면 `true`. */
+    fun rewriteEnvelope(
+        documentId: UUID,
+        expected: EncryptedContent,
+        original: EncryptedContent,
+    ): Boolean
+}
+
 /** 한 변환 행의 암호문 세 열. **셋을 함께 다루는 것이 요점이다.** */
 class ConversionCiphertexts(
     val easyText: EncryptedContent?,
@@ -296,9 +368,32 @@ fun interface ConversionQueue {
     fun enqueue(conversionId: UUID)
 }
 
-/** 업로드 한 번이 **같은 트랜잭션에서** 쓰는 세 저장소. */
+/**
+ * **봉인된 열이 사는 저장소 전부** — 키 회전이 받는 묶음.
+ *
+ * `core/crypto/StoredContent.kt` 의 `EncryptedField` 가 봉인된 **열**을 전수 열거하고, 이 묶음이
+ * 그 열들이 사는 **표**를 전수로 든다. 둘을 나란히 두는 이유: 새 봉인 열이 생기면 회전 경로도
+ * 함께 생겨야 하는데(없으면 옛 세대를 내리는 순간 그 열이 영원히 열리지 않는다), 저장소를
+ * 인자로 흩어 놓으면 「어디까지가 전부인가」를 세는 자리가 사라진다.
+ *
+ * [DocumentStorage] 와 같은 형태이고 이유도 같다 — 함께 서야 하는 협력자를 묶는다.
+ */
+class SealedStores(
+    val documents: DocumentRepository,
+    val originals: DocumentOriginalRepository,
+    val conversions: ConversionRepository,
+    val feedback: ConversionFeedbackRepository,
+)
+
+/**
+ * 업로드 한 번이 **같은 트랜잭션에서** 쓰는 네 저장소.
+ *
+ * [originals] 가 여기 있는 것이 「원본 저장 실패가 업로드를 조용히 성공시키지 않는다」의
+ * 형태다 — 다른 경계에 두면 문서만 남고 원본이 사라지는 갈래가 생긴다.
+ */
 class DocumentStorage(
     val documents: DocumentRepository,
+    val originals: DocumentOriginalRepository,
     val conversions: ConversionRepository,
     val queue: ConversionQueue,
 )

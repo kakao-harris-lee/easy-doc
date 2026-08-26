@@ -412,6 +412,12 @@ class OwnershipPredicateGuardTest {
                 "$DOCUMENT/JdbcConversionWorkStore.kt | UPDATE [conversions]",
                 "$DOCUMENT/JdbcConversionWorkStore.kt | UPDATE [conversions]",
                 "$DOCUMENT/JdbcConversionWorkStore.kt | UPDATE [conversions]",
+                // 업로드 원본(V3). 잠금 SELECT 와 회전 UPDATE 는 아래 미방어 목록에 있고,
+                // INSERT 와 조회는 `documents.user_id` 를 훑어 소유 술어를 문장 자신에 건다.
+                "$DOCUMENT/JdbcDocumentOriginalRepository.kt | SELECT [document_originals]",
+                "$DOCUMENT/JdbcDocumentOriginalRepository.kt | INSERT [document_originals, documents]",
+                "$DOCUMENT/JdbcDocumentOriginalRepository.kt | SELECT [document_originals, documents]",
+                "$DOCUMENT/JdbcDocumentOriginalRepository.kt | UPDATE [document_originals]",
                 "$DOCUMENT/JdbcDocumentRepository.kt | SELECT [documents]",
                 "$DOCUMENT/JdbcDocumentRepository.kt | UPDATE [documents]",
                 "$DOCUMENT/JdbcDocumentRepository.kt | DELETE [documents]",
@@ -444,6 +450,10 @@ class OwnershipPredicateGuardTest {
                 "$DOCUMENT/JdbcConversionWorkStore.kt | UPDATE [conversions]",
                 "$DOCUMENT/JdbcConversionWorkStore.kt | UPDATE [conversions]",
                 "$DOCUMENT/JdbcConversionWorkStore.kt | UPDATE [conversions]",
+                // 업로드 원본의 키 회전 두 문장 (V3). 사유는 위 KDoc 과 같다 — 회전 배치다.
+                // 이 파일의 INSERT·조회는 여기 없다: 사용자 경로라 소유 술어를 붙였다.
+                "$DOCUMENT/JdbcDocumentOriginalRepository.kt | SELECT [document_originals]",
+                "$DOCUMENT/JdbcDocumentOriginalRepository.kt | UPDATE [document_originals]",
                 "$DOCUMENT/JdbcDocumentRepository.kt | SELECT [documents]",
                 "$DOCUMENT/JdbcDocumentRepository.kt | UPDATE [documents]",
                 "$DOCUMENT/JdbcDocumentRepository.kt | INSERT [documents]",
@@ -460,7 +470,12 @@ class OwnershipPredicateGuardTest {
          * 16 → 18 로 올린 것은 봉인된 자유 의견에 회전 경로를 세우면서다(잠금 SELECT · 회전
          * UPDATE). 사용자 요청 경로가 이 상한을 먹는 일은 없어야 한다 — 그 경우의 답은 상한을
          * 올리는 것이 아니라 소유 술어를 붙이는 것이다.
+         *
+         * 18 → 20 은 업로드 원본(V3)의 회전 경로 두 문장이다. **같은 파일의 INSERT 와 조회는
+         * 이 상한을 먹지 않았다** — 둘 다 사용자 요청 경로라 `documents.user_id` 를 훑는 소유
+         * 술어를 문장 자신에 붙였고(`JdbcDocumentOriginalRepository`), 그것이 위 문단이 말한
+         * 「그 경우의 답」이다.
          */
-        const val MAX_UNGUARDED_STATEMENTS = 18
+        const val MAX_UNGUARDED_STATEMENTS = 20
     }
 }

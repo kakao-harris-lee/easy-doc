@@ -325,12 +325,16 @@ class EnvelopeColumnWriteGuardTest {
                     "JdbcConversionFeedbackRepository.kt",
                 "infrastructure/src/main/kotlin/kr/easydoc/infrastructure/document/JdbcConversionRepository.kt",
                 "infrastructure/src/main/kotlin/kr/easydoc/infrastructure/document/JdbcConversionWorkStore.kt",
+                // 업로드 원본의 회전 UPDATE (V3). 봉인 열이 하나라 문장도 하나다 — 저장 쪽은
+                // INSERT 라 SET 절이 없어 이 조사에 잡히지 않는다.
+                "infrastructure/src/main/kotlin/kr/easydoc/infrastructure/document/" +
+                    "JdbcDocumentOriginalRepository.kt",
                 "infrastructure/src/main/kotlin/kr/easydoc/infrastructure/document/JdbcDocumentRepository.kt",
                 "infrastructure/src/test/kotlin/kr/easydoc/infrastructure/document/ConversionReviewStorageTest.kt",
                 "infrastructure/src/test/kotlin/kr/easydoc/infrastructure/document/EnvelopeRotationConcurrencyTest.kt",
             )
 
         /** 문장 수. 파일 목록만 보면 같은 파일 안에 한 문장을 더 넣는 편집이 조용하다. */
-        const val EXPECTED_STATEMENTS = 13
+        const val EXPECTED_STATEMENTS = 14
     }
 }

@@ -7,6 +7,7 @@ import kr.easydoc.core.crypto.EncryptedContent
 import kr.easydoc.core.crypto.EncryptedField
 import kr.easydoc.core.crypto.EncryptionScheme
 import kr.easydoc.core.crypto.PlainBody
+import kr.easydoc.core.crypto.PlainBytes
 import kr.easydoc.core.document.ConversionStatus
 import kr.easydoc.core.exceptions.LlmProviderException
 import kr.easydoc.core.llm.FakeLlmProvider
@@ -269,22 +270,23 @@ class ProcessConversionJobTest {
         val sealed = mutableListOf<Triple<String, UUID, EncryptedField>>()
         val depthWhenDecrypted = mutableListOf<Int>()
 
-        override fun encrypt(
-            plain: PlainBody,
+        /** 바이트 짝만 구현한다 — 문자열 짝은 [ContentCipher] 의 기본 구현을 탄다. */
+        override fun encryptBytes(
+            plain: PlainBytes,
             record: UUID,
             field: EncryptedField,
         ): EncryptedContent {
-            sealed += Triple(plain.value, record, field)
-            return EncryptedContent(plain.value.toByteArray(StandardCharsets.UTF_8), writeScheme, writeKeyVersion)
+            sealed += Triple(String(plain.value, StandardCharsets.UTF_8), record, field)
+            return EncryptedContent(plain.value, writeScheme, writeKeyVersion)
         }
 
-        override fun decrypt(
+        override fun decryptBytes(
             content: EncryptedContent,
             record: UUID,
             field: EncryptedField,
-        ): PlainBody {
+        ): PlainBytes {
             depthWhenDecrypted += transaction.depth
-            return PlainBody(String(content.bytes, StandardCharsets.UTF_8))
+            return PlainBytes(content.bytes)
         }
     }
 

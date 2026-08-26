@@ -4,6 +4,7 @@ import kr.easydoc.application.auth.TransactionRunner
 import kr.easydoc.application.crypto.ContentCipher
 import kr.easydoc.core.crypto.EncryptedField
 import kr.easydoc.core.crypto.PlainBody
+import kr.easydoc.core.crypto.PlainBytes
 import kr.easydoc.core.document.ConversionStatus
 import kr.easydoc.core.document.DocumentListing
 import kr.easydoc.core.document.MAX_CONVERTIBLE_CHARS
@@ -24,6 +25,19 @@ data class AcceptedUpload(
     val conversionId: UUID,
     val status: ConversionStatus,
     val charCount: Int,
+)
+
+/**
+ * 저장할 콘텐츠 한 벌 — 변환이 돌 **텍스트**와, 그것을 뽑아낸 **원본 파일**(있으면).
+ *
+ * 셋을 함께 드는 이유: 형식은 텍스트가 어디서 왔는지를 말하고 원본은 그 출처 자체라, 셋이
+ * 어긋난 조합(`text` 형식인데 원본이 있다)은 결함이지 표현할 값이 아니다. 붙여넣기 팔에서만
+ * [original] 이 `null` 이다.
+ */
+private class UploadContent(
+    val text: String,
+    val sourceFormat: SourceFormat,
+    val original: PlainBytes?,
 )
 
 /** 문서 등록 유스케이스 — 붙여넣기·파일 두 입력을 받아 **저장하고 작업을 등록한다.** */
@@ -48,7 +62,10 @@ class DocumentService(
     ): AcceptedUpload {
         if (text.isBlank()) throw InvalidInputException(EMPTY_BODY_MESSAGE)
         // 제목을 안 주면 대체 제목이다. 본문은 제목이 되지 않는다.
-        return store(ownerId, text, SourceFormat.TEXT, title) { parseWorkspaceId(rawWorkspaceId) }
+        // 붙여넣기에는 원본 파일이 없다 — `null` 이 그 사실이다.
+        return store(ownerId, UploadContent(text, SourceFormat.TEXT, original = null), title) {
+            parseWorkspaceId(rawWorkspaceId)
+        }
     }
 
     /**
@@ -71,7 +88,12 @@ class DocumentService(
         // 빈 docx·hwpx 는 예외 없이 빈 문자열을 돌려준다 — 빈 문서 판정은 추출 결과로 한다.
         if (extracted.text.isBlank()) throw DocumentExtractionException(NO_TEXT_IN_DOCUMENT_MESSAGE)
         // `filename` 은 여기서 끝난다 — 추출기가 형식을 가리는 데 썼고, 그 아래로 흐르지 않는다.
-        return store(ownerId, extracted.text, extracted.format, title) { parseWorkspaceId(rawWorkspaceId) }
+        //
+        // **추출 텍스트와 원본을 함께 저장한다.** 원본을 남긴다고 추출 텍스트를 없애지 않는다 —
+        // 변환·마스킹은 텍스트로 돌고(§4), 원본은 §6.5 의 「원본 형식 내보내기」가 쓴다.
+        return store(ownerId, UploadContent(extracted.text, extracted.format, PlainBytes(bytes)), title) {
+            parseWorkspaceId(rawWorkspaceId)
+        }
     }
 
     /** 내 문서 목록을 최신순으로 돌려준다. 작업 공간을 주면 그 안만 본다. */
@@ -106,21 +128,38 @@ class DocumentService(
      */
     private fun store(
         ownerId: UUID,
-        text: String,
-        sourceFormat: SourceFormat,
+        content: UploadContent,
         givenTitle: String?,
         requestedWorkspaceId: () -> UUID?,
     ): AcceptedUpload {
-        val charCount = charCountOf(text)
+        val charCount = charCountOf(content.text)
         if (charCount > MAX_CONVERTIBLE_CHARS) throw InvalidInputException(BODY_TOO_LONG_MESSAGE)
 
         // 작업 공간 단계 — 형식(422) 다음 소유권(404). 형식은 여기, 소유권은 트랜잭션 안이다.
         val workspaceId = requestedWorkspaceId()
 
+        val documentId = UUID.randomUUID()
+        val conversionId = UUID.randomUUID()
+
+        // 결속(record + column)을 여기서 정한다. 행 식별자가 AEAD 에 실리므로 UUID 를
+        // 먼저 만들어야 하고, 그래서 저장소가 아니라 이 자리가 암호화한다(계획 §4.1).
+        //
+        // **봉인은 트랜잭션 밖이다.** 원본은 최대 10MB 라 AEAD 한 번이 짧지 않고, 그것을
+        // 열린 트랜잭션 안에서 돌리면 스냅샷과 연결을 그만큼 오래 붙잡는다. UUID 를 먼저
+        // 뽑아 두면 결속에 필요한 것이 전부 갖춰지므로 트랜잭션을 열 이유가 없다
+        // (프로젝트 `CLAUDE.md` 「장시간 작업을 DB transaction 안에서 실행하지 않는다」).
+        val sealed = cipher.encrypt(PlainBody(content.text), documentId, EncryptedField.DOCUMENT_SOURCE_TEXT)
+        // 붙여넣기 경로에는 원본이 없다 — `null` 이 그대로 「봉할 것이 없다」다.
+        val sealedOriginal =
+            content.original?.let {
+                StoredOriginal(
+                    bytes = cipher.encryptBytes(it, documentId, EncryptedField.DOCUMENT_ORIGINAL_BYTES),
+                    byteSize = it.size,
+                )
+            }
+
         return transaction.inTransaction {
             val resolvedWorkspaceId = resolveWorkspaceId(ownerId, workspaceId)
-            val documentId = UUID.randomUUID()
-            val conversionId = UUID.randomUUID()
 
             val draft =
                 DocumentDraft(
@@ -129,14 +168,17 @@ class DocumentService(
                     // **본문(`text`)도 파일 이름도 넘기지 않는다.** 제목은 평문 컬럼이고 이
                     // 시점에는 마스킹이 돌지 않았다 — 게이트 27 Critical ① + 2026-08-20 재판정.
                     title = resolveTitle(givenTitle),
-                    sourceFormat = sourceFormat,
+                    sourceFormat = content.sourceFormat,
                     charCount = charCount,
                 )
-            // 결속(record + column)을 여기서 정한다. 행 식별자가 AEAD 에 실리므로 UUID 를
-            // 먼저 만들어야 하고, 그래서 저장소가 아니라 이 자리가 암호화한다(계획 §4.1).
-            val sealed = cipher.encrypt(PlainBody(text), documentId, EncryptedField.DOCUMENT_SOURCE_TEXT)
 
             storage.documents.insert(ownerId, draft, sealed)
+            // 원본이 있으면 **같은 경계 안에서** 이어 쓴다. 그때만 `document_originals` 에 행이
+            // 생긴다(V3 의 「행이 없다」 표현). 여기서 실패하면 위 문서·아래 변환·작업이 함께
+            // 되돌아간다 — 「원본 저장은 실패했는데 업로드는 성공」이 구조적으로 없다.
+            //
+            // 문서 다음인 것은 FK 때문이다 — `documents` 행이 같은 트랜잭션 안에 이미 있어야 한다.
+            if (sealedOriginal != null) storage.originals.insert(ownerId, documentId, sealedOriginal)
             val conversion =
                 storage.conversions.insertPending(
                     id = conversionId,

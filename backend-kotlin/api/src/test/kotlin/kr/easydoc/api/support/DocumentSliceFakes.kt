@@ -7,6 +7,7 @@ import kr.easydoc.application.document.ConversionFeedbackRepository
 import kr.easydoc.application.document.ConversionQueue
 import kr.easydoc.application.document.ConversionRepository
 import kr.easydoc.application.document.DocumentDraft
+import kr.easydoc.application.document.DocumentOriginalRepository
 import kr.easydoc.application.document.DocumentRepository
 import kr.easydoc.application.document.DocumentTextExtractor
 import kr.easydoc.application.document.ExtractedDocument
@@ -16,11 +17,13 @@ import kr.easydoc.application.document.MaskedItemReader
 import kr.easydoc.application.document.StoredConversion
 import kr.easydoc.application.document.StoredExport
 import kr.easydoc.application.document.StoredFeedback
+import kr.easydoc.application.document.StoredOriginal
 import kr.easydoc.application.document.WorkspaceLookup
 import kr.easydoc.core.crypto.EncryptedContent
 import kr.easydoc.core.crypto.EncryptedField
 import kr.easydoc.core.crypto.EncryptionScheme
 import kr.easydoc.core.crypto.PlainBody
+import kr.easydoc.core.crypto.PlainBytes
 import kr.easydoc.core.document.Conversion
 import kr.easydoc.core.document.ConversionStatus
 import kr.easydoc.core.document.Document
@@ -351,35 +354,71 @@ class InMemoryWorkspaceLookup(private val workspaces: InMemoryWorkspaceRepositor
             ?.id
 }
 
+/**
+ * 업로드 원본 저장 대역. 슬라이스에서 원본은 **저장만 되고 아직 어떤 응답에도 나가지 않는다** —
+ * 계약이 이번 조각에서 그대로이기 때문이다. 그 사실이 실제로 유지되는지는
+ * [findOwned] 가 슬라이스에서 한 번도 불리지 않는 것으로 드러난다.
+ */
+class InMemoryDocumentOriginalRepository(private val documents: InMemoryDocumentRepository) :
+    DocumentOriginalRepository {
+    private val rows = mutableMapOf<UUID, StoredOriginal>()
+
+    override fun insert(
+        ownerId: UUID,
+        documentId: UUID,
+        original: StoredOriginal,
+    ) {
+        // 실물처럼 소유 술어가 쓰기 자신에 걸린다 — 남의 문서면 0행이고, 그것은 결함이다.
+        check(documents.ownerOf(documentId) == ownerId) { "남의 문서에 원본을 붙였다" }
+        rows[documentId] = original
+    }
+
+    /** 소유 술어를 실물과 같은 자리에 둔다 — 남의 문서면 「없다」와 같은 값이다. */
+    override fun findOwned(
+        ownerId: UUID,
+        documentId: UUID,
+    ): StoredOriginal? = if (documents.ownerOf(documentId) == ownerId) rows[documentId] else null
+
+    override fun lockOriginal(documentId: UUID): EncryptedContent? = rows[documentId]?.bytes
+
+    override fun rewriteEnvelope(
+        documentId: UUID,
+        expected: EncryptedContent,
+        original: EncryptedContent,
+    ): Boolean = error("슬라이스가 회전을 돌리지 않는다")
+
+    /** 그 문서에 원본이 남았는가 — 붙여넣기 팔이 행을 만들지 않는 것을 재는 자리다. */
+    fun byteSizeOf(documentId: UUID): Int? = rows[documentId]?.byteSize
+}
+
 /** 암호화를 흉내만 낸다 — AES 를 슬라이스에서 돌리지 않는다. */
 class StubContentCipher : ContentCipher {
     override val writeScheme: String = EncryptionScheme.AES_256_GCM_V1
     override val writeKeyVersion: Int = 1
 
-    override fun encrypt(
-        plain: PlainBody,
+    /** 바이트 짝만 구현한다 — 문자열 짝은 [ContentCipher] 의 기본 구현을 탄다. */
+    override fun encryptBytes(
+        plain: PlainBytes,
         record: UUID,
         field: EncryptedField,
     ): EncryptedContent =
         EncryptedContent(
-            bytes =
-                plain.value
-                    .toByteArray(Charsets.UTF_8)
-                    .map { (it.toInt() xor MASK).toByte() }
-                    .toByteArray(),
+            bytes = masked(plain.value),
             scheme = writeScheme,
             keyVersion = writeKeyVersion,
         )
 
-    override fun decrypt(
+    override fun decryptBytes(
         content: EncryptedContent,
         record: UUID,
         field: EncryptedField,
-    ): PlainBody = PlainBody(String(content.bytes.map { (it.toInt() xor MASK).toByte() }.toByteArray(), Charsets.UTF_8))
+    ): PlainBytes = PlainBytes(masked(content.bytes))
 
     private companion object {
         /** 대칭 변환 하나. 암호가 아니다 — 평문과 바이트가 같아지는 상태만 막는다. */
         const val MASK = 0x5A
+
+        fun masked(bytes: ByteArray): ByteArray = ByteArray(bytes.size) { (bytes[it].toInt() xor MASK).toByte() }
     }
 }
 

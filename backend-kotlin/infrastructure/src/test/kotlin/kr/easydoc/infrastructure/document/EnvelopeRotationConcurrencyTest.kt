@@ -15,6 +15,7 @@ import kr.easydoc.application.document.EnvelopeRotation
 import kr.easydoc.application.document.FeedbackSubmission
 import kr.easydoc.application.document.LockedFeedbackComment
 import kr.easydoc.application.document.RotationOutcome
+import kr.easydoc.application.document.SealedStores
 import kr.easydoc.core.crypto.EncryptedContent
 import kr.easydoc.core.crypto.EncryptedField
 import kr.easydoc.core.crypto.EncryptionScheme
@@ -273,9 +274,13 @@ class EnvelopeRotationConcurrencyTest {
         val dataSource = dataSource()
         val client = JdbcClient.create(dataSource)
         return EnvelopeRotation(
-            documents = HookedDocuments(JdbcDocumentRepository(client), documentHook),
-            conversions = HookedConversions(JdbcConversionRepository(client), conversionHook),
-            feedback = HookedFeedback(JdbcConversionFeedbackRepository(client), feedbackHook),
+            stores =
+                SealedStores(
+                    documents = HookedDocuments(JdbcDocumentRepository(client), documentHook),
+                    originals = JdbcDocumentOriginalRepository(client),
+                    conversions = HookedConversions(JdbcConversionRepository(client), conversionHook),
+                    feedback = HookedFeedback(JdbcConversionFeedbackRepository(client), feedbackHook),
+                ),
             cipher = cipherWith(NEW_GENERATION),
             transaction =
                 transaction
@@ -289,6 +294,7 @@ class EnvelopeRotationConcurrencyTest {
             storage =
                 DocumentStorage(
                     documents = JdbcDocumentRepository(client),
+                    originals = JdbcDocumentOriginalRepository(client),
                     conversions = JdbcConversionRepository(client),
                     queue = JdbcConversionQueue(client),
                 ),

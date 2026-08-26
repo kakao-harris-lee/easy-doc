@@ -155,6 +155,89 @@ class DocumentServiceTest {
     }
 
     @Test
+    @DisplayName("파일 업로드가 **원본 바이트를 함께 남긴다** — 추출 텍스트는 그대로 남는다")
+    fun `파일 업로드가 원본을 남긴다`() {
+        val world = World()
+
+        val accepted = world.service.createFromFile(OWNER, "a.docx", ORIGINAL_FILE, null, null)
+
+        val original = world.originals.rows.getValue(accepted.documentId)
+        assertThat(original.byteSize)
+            .describedAs("봉하기 전 바이트 수다 — nonce·태그가 붙은 암호문 길이가 아니다")
+            .isEqualTo(ORIGINAL_FILE.size)
+        assertThat(original.bytes.bytes)
+            .describedAs("원본이 UTF-8 왕복으로 눌리면 파일이 조용히 망가진다")
+            .isEqualTo(ORIGINAL_FILE)
+        assertThat(world.documents.inserted)
+            .describedAs("원본을 남긴다고 추출 텍스트를 없애지 않는다 — 변환·마스킹은 텍스트로 돈다")
+            .hasSize(1)
+        assertThat(world.cipher.sealed.map { it.third })
+            .describedAs("원본은 원문과 **다른 열**로 결속된다 — 결속이 같으면 서로 바꿔치기가 된다")
+            .containsExactly(EncryptedField.DOCUMENT_SOURCE_TEXT, EncryptedField.DOCUMENT_ORIGINAL_BYTES)
+        assertThat(
+            world.cipher.sealed
+                .map { it.second }
+                .distinct(),
+        ).describedAs("두 암호문 모두 그 문서 행에 결속된다")
+            .containsExactly(accepted.documentId)
+    }
+
+    @Test
+    @DisplayName("**붙여넣기에는 원본 행이 없다** — 없는 파일을 빈 바이트로 지어내지 않는다")
+    fun `붙여넣기는 원본을 남기지 않는다`() {
+        val world = World()
+
+        world.service.createFromText(OWNER, "복지 급여 안내", null, null)
+
+        assertThat(world.originals.rows)
+            .describedAs("빈 원본 행이 생기면 「원본이 있다」와 「없다」를 스키마가 구분하지 못한다")
+            .isEmpty()
+        assertThat(world.cipher.sealed.map { it.third }).containsExactly(EncryptedField.DOCUMENT_SOURCE_TEXT)
+    }
+
+    @Test
+    @DisplayName("원본 저장이 **문서 등록과 같은 트랜잭션**이다")
+    fun `원본 저장이 같은 트랜잭션이다`() {
+        val world = World()
+
+        world.service.createFromFile(OWNER, "a.docx", ORIGINAL_FILE, null, null)
+
+        assertThat(world.transaction.started).isEqualTo(1)
+        assertThat(world.originals.depthWhenInserted)
+            .describedAs("원본 저장이 트랜잭션 밖이면 「문서는 남았는데 원본은 없다」가 생긴다")
+            .containsExactly(1)
+    }
+
+    @Test
+    @DisplayName("**원본 저장이 실패하면 업로드가 실패한다** — 조용히 성공하지 않는다")
+    fun `원본 저장 실패는 업로드를 되돌린다`() {
+        val world = World(originalFailure = IllegalStateException("원본 저장 실패"))
+
+        assertThatThrownBy { world.service.createFromFile(OWNER, "a.docx", ORIGINAL_FILE, null, null) }
+            .isInstanceOf(IllegalStateException::class.java)
+
+        assertThat(world.transaction.committed)
+            .describedAs("원본을 잃은 채 문서만 남으면 §6.5 의 원본 내보내기가 그 문서에서 영영 불가능하다")
+            .isZero()
+        assertThat(world.transaction.failed).isEqualTo(1)
+        assertThat(world.queue.enqueued)
+            .describedAs("작업까지 갔다면 원본 없는 문서가 변환을 돈다")
+            .isEmpty()
+    }
+
+    @Test
+    @DisplayName("**봉인이 트랜잭션 밖에서 끝난다** — 10MB AEAD 가 열린 트랜잭션을 붙잡지 않는다")
+    fun `봉인이 트랜잭션 밖이다`() {
+        val world = World()
+
+        world.service.createFromFile(OWNER, "a.docx", ORIGINAL_FILE, null, null)
+
+        assertThat(world.cipher.depthWhenSealed)
+            .describedAs("봉인이 트랜잭션 안에서 돌면 스냅샷과 연결을 AEAD 시간만큼 더 붙잡는다")
+            .containsOnly(0)
+    }
+
+    @Test
     @DisplayName("봉투 두 값은 **쓰기 설정**에서 온다 — 행과 암호문의 세대가 갈리지 않는다")
     fun `봉투 두 값이 쓰기 설정에서 온다`() {
         val world = World(writeKeyVersion = 2)
@@ -353,6 +436,13 @@ class DocumentServiceTest {
         val OWNER: UUID = UUID.fromString("00000000-0000-4000-8000-0000000000a1")
         val OWNED_WORKSPACE: UUID = UUID.fromString("00000000-0000-4000-8000-0000000000b1")
         val STRANGER_WORKSPACE: UUID = UUID.fromString("00000000-0000-4000-8000-0000000000b2")
+
+        /**
+         * 업로드 원본을 흉내 내는 바이트. **UTF-8 로 해석되지 않는 값을 섞는다** — 문자열 짝을
+         * 타는 경로가 생기면 이 바이트가 U+FFFD 로 눌려 단언이 빨개진다(zip 머리 뒤 단독 0x80·0xFF).
+         */
+        val ORIGINAL_FILE: ByteArray =
+            byteArrayOf(0x50, 0x4B, 0x03, 0x04, 0x80.toByte(), 0xFF.toByte(), 0x00, 0xC0.toByte())
     }
 
     /** 한 케이스가 쓰는 대역 묶음. 케이스마다 새로 만든다 — 대역이 상태를 들고 있다. */
@@ -362,10 +452,12 @@ class DocumentServiceTest {
         defaultWorkspace: UUID? = OWNED_WORKSPACE,
         writeKeyVersion: Int = 1,
         queueFailure: RuntimeException? = null,
+        originalFailure: RuntimeException? = null,
     ) {
         val transaction = RecordingTransactionRunner()
         val cipher = FakeContentCipher(writeKeyVersion, transaction)
         val documents = FakeDocumentRepository(transaction)
+        val originals = FakeDocumentOriginalRepository(transaction, originalFailure)
         val conversions = FakeConversionRepository(transaction)
         val workspaces = FakeWorkspaceLookup(defaultWorkspace)
         val queue = FakeConversionQueue(transaction, queueFailure)
@@ -374,7 +466,13 @@ class DocumentServiceTest {
 
         val service =
             DocumentService(
-                storage = DocumentStorage(documents = documents, conversions = conversions, queue = queue),
+                storage =
+                    DocumentStorage(
+                        documents = documents,
+                        originals = originals,
+                        conversions = conversions,
+                        queue = queue,
+                    ),
                 workspaces = workspaces,
                 cipher = cipher,
                 extractor = { _, _ ->

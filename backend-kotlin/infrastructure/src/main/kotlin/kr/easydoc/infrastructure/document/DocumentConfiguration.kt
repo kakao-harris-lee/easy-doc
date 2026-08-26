@@ -8,12 +8,14 @@ import kr.easydoc.application.document.ConversionQueryService
 import kr.easydoc.application.document.ConversionQueue
 import kr.easydoc.application.document.ConversionRepository
 import kr.easydoc.application.document.ConversionReviewService
+import kr.easydoc.application.document.DocumentOriginalRepository
 import kr.easydoc.application.document.DocumentRepository
 import kr.easydoc.application.document.DocumentService
 import kr.easydoc.application.document.DocumentStorage
 import kr.easydoc.application.document.DocumentTextExtractor
 import kr.easydoc.application.document.EnvelopeRotation
 import kr.easydoc.application.document.MaskedItemReader
+import kr.easydoc.application.document.SealedStores
 import kr.easydoc.application.document.WorkspaceLookup
 import kr.easydoc.infrastructure.crypto.MIGRATE_PROFILE
 import kr.easydoc.infrastructure.queue.JdbcConversionQueue
@@ -38,6 +40,11 @@ class DocumentConfiguration {
     @Bean
     fun documentRepository(jdbcClient: JdbcClient): DocumentRepository = JdbcDocumentRepository(jdbcClient)
 
+    /** 업로드 원본 저장소. `documents` 와 표가 갈린 사유는 `V3__document_originals.sql`. */
+    @Bean
+    fun documentOriginalRepository(jdbcClient: JdbcClient): DocumentOriginalRepository =
+        JdbcDocumentOriginalRepository(jdbcClient)
+
     @Bean
     fun conversionRepository(jdbcClient: JdbcClient): ConversionRepository = JdbcConversionRepository(jdbcClient)
 
@@ -52,13 +59,20 @@ class DocumentConfiguration {
     @Bean
     fun maskedItemCodec(): MaskedItemCodec = MaskedItemCodec()
 
-    /** 업로드가 한 트랜잭션에서 쓰는 세 저장소. 묶는 사유는 [DocumentStorage] KDoc. */
+    /** 업로드가 한 트랜잭션에서 쓰는 네 저장소. 묶는 사유는 [DocumentStorage] KDoc. */
     @Bean
     fun documentStorage(
         documents: DocumentRepository,
+        originals: DocumentOriginalRepository,
         conversions: ConversionRepository,
         queue: ConversionQueue,
-    ): DocumentStorage = DocumentStorage(documents = documents, conversions = conversions, queue = queue)
+    ): DocumentStorage =
+        DocumentStorage(
+            documents = documents,
+            originals = originals,
+            conversions = conversions,
+            queue = queue,
+        )
 
     @Bean
     fun documentService(
@@ -126,20 +140,26 @@ class DocumentConfiguration {
             transaction = transactionRunner,
         )
 
-    /** 키 회전 유스케이스. 봉인된 열이 사는 **세 저장소를 전부** 받는다. */
+    /** 봉인된 열이 사는 저장소 전부. 묶는 사유는 [SealedStores] KDoc. */
     @Bean
-    fun envelopeRotation(
+    fun sealedStores(
         documents: DocumentRepository,
+        originals: DocumentOriginalRepository,
         conversions: ConversionRepository,
         feedback: ConversionFeedbackRepository,
-        cipher: ContentCipher,
-        transactionRunner: TransactionRunner,
-    ): EnvelopeRotation =
-        EnvelopeRotation(
+    ): SealedStores =
+        SealedStores(
             documents = documents,
+            originals = originals,
             conversions = conversions,
             feedback = feedback,
-            cipher = cipher,
-            transaction = transactionRunner,
         )
+
+    /** 키 회전 유스케이스. 봉인된 열이 사는 저장소를 [SealedStores] 로 **전부** 받는다. */
+    @Bean
+    fun envelopeRotation(
+        stores: SealedStores,
+        cipher: ContentCipher,
+        transactionRunner: TransactionRunner,
+    ): EnvelopeRotation = EnvelopeRotation(stores = stores, cipher = cipher, transaction = transactionRunner)
 }

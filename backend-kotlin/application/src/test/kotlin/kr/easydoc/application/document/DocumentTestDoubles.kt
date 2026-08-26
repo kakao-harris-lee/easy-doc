@@ -6,6 +6,7 @@ import kr.easydoc.core.crypto.EncryptedContent
 import kr.easydoc.core.crypto.EncryptedField
 import kr.easydoc.core.crypto.EncryptionScheme
 import kr.easydoc.core.crypto.PlainBody
+import kr.easydoc.core.crypto.PlainBytes
 import kr.easydoc.core.document.Conversion
 import kr.easydoc.core.document.ConversionStatus
 import kr.easydoc.core.document.MaskedItemView
@@ -50,23 +51,33 @@ internal class FakeContentCipher(
     /** 복호화가 불린 시점의 트랜잭션 깊이. 0 이면 경계 밖이다. */
     val depthWhenDecrypted = mutableListOf<Int>()
 
-    override fun encrypt(
-        plain: PlainBody,
+    /** **봉인이 불린 시점의** 트랜잭션 깊이. 0 이면 경계 밖이다 — 10MB 원본이 재는 축이다. */
+    val depthWhenSealed = mutableListOf<Int>()
+
+    /**
+     * **바이트 짝만 구현한다** — 문자열 짝은 [ContentCipher] 의 기본 구현이 이 위로 흐른다.
+     * 제품 어댑터와 같은 모양이라 대역이 문자열/바이트로 다르게 굴 여지가 없다.
+     */
+    override fun encryptBytes(
+        plain: PlainBytes,
         record: UUID,
         field: EncryptedField,
     ): EncryptedContent {
-        sealed += Triple(plain.value, record, field)
-        return EncryptedContent(plain.value.toByteArray(Charsets.UTF_8), writeScheme, writeKeyVersion)
+        // 기록은 그대로 문자열이다 — 이 대역이 봉하는 것은 전부 텍스트 경로이고, 원본 바이트를
+        // 재는 자리는 크기와 결속뿐이라 UTF-8 로 되읽어도 단언이 달라지지 않는다.
+        sealed += Triple(String(plain.value, Charsets.UTF_8), record, field)
+        depthWhenSealed += transaction?.depth ?: 0
+        return EncryptedContent(plain.value, writeScheme, writeKeyVersion)
     }
 
-    override fun decrypt(
+    override fun decryptBytes(
         content: EncryptedContent,
         record: UUID,
         field: EncryptedField,
-    ): PlainBody {
+    ): PlainBytes {
         decryptions += record to field
         depthWhenDecrypted += transaction?.depth ?: 0
-        return PlainBody(String(content.bytes, Charsets.UTF_8))
+        return PlainBytes(content.bytes)
     }
 
     /** **배경을 심을 때만 쓴다** — 옛 세대로 봉인된 행을 만든다. 제품 포트에는 이 갈래가 없다. */
@@ -74,6 +85,53 @@ internal class FakeContentCipher(
         plain: PlainBody,
         keyVersion: Int,
     ): EncryptedContent = EncryptedContent(plain.value.toByteArray(Charsets.UTF_8), writeScheme, keyVersion)
+}
+
+/**
+ * 원본 저장 대역 — 업로드 팔이 **무엇을 언제 썼는지**만 기록한다.
+ *
+ * [insertFailure] 가 있으면 저장이 던진다. 「원본 저장이 실패하면 업로드가 조용히 성공하지
+ * 않는다」를 재는 자리라 `queue` 대역이 실패를 흉내 내는 것과 같은 모양이다.
+ */
+internal class FakeDocumentOriginalRepository(
+    private val transaction: RecordingTransactionRunner,
+    private val insertFailure: RuntimeException? = null,
+) : DocumentOriginalRepository {
+    val rows = mutableMapOf<UUID, StoredOriginal>()
+
+    /** `user_id` 술어에 실제로 들어간 값. 소유자가 저장소까지 갔는가를 재는 재료다. */
+    val owners = mutableMapOf<UUID, UUID>()
+
+    /** 저장이 불린 시점의 트랜잭션 깊이. 0 이면 경계 밖이다. */
+    val depthWhenInserted = mutableListOf<Int>()
+
+    override fun insert(
+        ownerId: UUID,
+        documentId: UUID,
+        original: StoredOriginal,
+    ) {
+        depthWhenInserted += transaction.depth
+        insertFailure?.let { throw it }
+        rows[documentId] = original
+        owners[documentId] = ownerId
+    }
+
+    override fun findOwned(
+        ownerId: UUID,
+        documentId: UUID,
+    ): StoredOriginal? = if (owners[documentId] == ownerId) rows[documentId] else null
+
+    override fun lockOriginal(documentId: UUID): EncryptedContent? = error(ROTATION_PORT_MESSAGE)
+
+    override fun rewriteEnvelope(
+        documentId: UUID,
+        expected: EncryptedContent,
+        original: EncryptedContent,
+    ): Boolean = error(ROTATION_PORT_MESSAGE)
+
+    private companion object {
+        const val ROTATION_PORT_MESSAGE = "업로드 경로가 회전 포트를 부르면 안 된다"
+    }
 }
 
 internal class FakeConversionRepository(private val transaction: RecordingTransactionRunner) : ConversionRepository {

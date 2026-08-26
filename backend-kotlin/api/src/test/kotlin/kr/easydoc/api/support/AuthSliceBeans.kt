@@ -104,16 +104,27 @@ class AuthSliceBeans {
     fun stubMaskedItemReader(): MaskedItemReader = StubMaskedItemReader()
 
     /**
-     * 업로드가 한 트랜잭션에서 쓰는 세 저장소를 제품 조립과 같은 모양으로 묶는다
+     * 업로드가 한 트랜잭션에서 쓰는 네 저장소를 제품 조립과 같은 모양으로 묶는다
      * (`DocumentConfiguration.documentStorage`). 셋을 유스케이스에 따로 넘기면 그중
      * 하나만 다른 경계에 두는 배선이 타입으로 막히지 않는다.
      */
     @Bean
+    fun documentOriginalRepository(documents: InMemoryDocumentRepository): InMemoryDocumentOriginalRepository =
+        InMemoryDocumentOriginalRepository(documents)
+
+    @Bean
     fun documentStorage(
         documents: InMemoryDocumentRepository,
+        originals: InMemoryDocumentOriginalRepository,
         conversions: InMemoryConversionRepository,
         queue: RecordingConversionQueue,
-    ): DocumentStorage = DocumentStorage(documents = documents, conversions = conversions, queue = queue)
+    ): DocumentStorage =
+        DocumentStorage(
+            documents = documents,
+            originals = originals,
+            conversions = conversions,
+            queue = queue,
+        )
 
     /** 유스케이스는 실물이다 — 계약이 정한 검사 순서를 슬라이스가 실제로 밟아야 한다. */
     @Bean

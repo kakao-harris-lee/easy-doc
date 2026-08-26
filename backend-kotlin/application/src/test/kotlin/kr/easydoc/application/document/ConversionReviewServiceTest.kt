@@ -293,6 +293,7 @@ class ConversionReviewServiceTest {
                     EncryptedField.CONVERSION_MASKED_ITEMS -> call.updated.ciphertexts.maskedItems
                     EncryptedField.CONVERSION_EDITED_TEXT -> call.updated.ciphertexts.editedText
                     EncryptedField.DOCUMENT_SOURCE_TEXT -> error("검수 저장이 원문 열을 쓰지 않는다")
+                    EncryptedField.DOCUMENT_ORIGINAL_BYTES -> error("검수 저장이 원본 파일 열을 쓰지 않는다")
                     EncryptedField.CONVERSION_FEEDBACK_COMMENT -> error("검수 저장이 피드백 열을 쓰지 않는다")
                 }
             return column?.let { cipher.decrypt(it, call.expected.conversionId, field).value }

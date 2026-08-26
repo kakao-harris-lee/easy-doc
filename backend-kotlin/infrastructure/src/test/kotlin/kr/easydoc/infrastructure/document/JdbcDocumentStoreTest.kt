@@ -4,12 +4,15 @@ import kr.easydoc.application.crypto.ContentCipher
 import kr.easydoc.application.document.ConversionCiphertexts
 import kr.easydoc.application.document.ConversionEnvelope
 import kr.easydoc.application.document.ConversionQueue
+import kr.easydoc.application.document.ConversionRepository
+import kr.easydoc.application.document.DocumentRepository
 import kr.easydoc.application.document.DocumentService
 import kr.easydoc.application.document.DocumentStorage
 import kr.easydoc.application.document.DocumentTextExtractor
 import kr.easydoc.application.document.EnvelopeRotation
 import kr.easydoc.application.document.ExtractedDocument
 import kr.easydoc.application.document.RotationOutcome
+import kr.easydoc.application.document.SealedStores
 import kr.easydoc.core.crypto.EncryptedContent
 import kr.easydoc.core.crypto.EncryptedField
 import kr.easydoc.core.crypto.EncryptionScheme
@@ -51,6 +54,23 @@ private const val LIST_LIMIT = 10
 /** P2 목록 팔이 남의 작업 공간에 심는 문서 수. 결정적 축이라 「0이 아니다」면 된다. */
 private const val FOREIGN_DOCUMENTS = 3
 
+/**
+ * 봉인된 열이 사는 저장소 묶음. 회전 배선이 두 자리라 한 곳에서 만든다.
+ *
+ * 클래스 밖에 두는 것은 이 파일의 상수들과 같은 이유다 — 케이스가 아니라 배선이고,
+ * 클래스 본문을 더 불리지 않는다.
+ */
+private fun sealedStoresOn(
+    client: JdbcClient,
+    documentRepository: DocumentRepository = JdbcDocumentRepository(client),
+    conversionRepository: ConversionRepository = JdbcConversionRepository(client),
+) = SealedStores(
+    documents = documentRepository,
+    originals = JdbcDocumentOriginalRepository(client),
+    conversions = conversionRepository,
+    feedback = JdbcConversionFeedbackRepository(client),
+)
+
 /** 문서·변환 저장 경로 — 실제 PostgreSQL 에서만 잴 수 있는 것들. */
 
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
@@ -88,9 +108,7 @@ class JdbcDocumentStoreTest {
         service = serviceOn(dataSource, cipher)
         rotation =
             EnvelopeRotation(
-                documents = documents,
-                conversions = conversions,
-                feedback = JdbcConversionFeedbackRepository(jdbc),
+                stores = sealedStoresOn(jdbc, documents, conversions),
                 cipher = cipherWith(writeKeyVersion = 2),
                 transaction = SpringTransactionRunner(TransactionTemplate(DataSourceTransactionManager(dataSource))),
             )
@@ -454,9 +472,7 @@ class JdbcDocumentStoreTest {
 
         val countedRotation =
             EnvelopeRotation(
-                documents = JdbcDocumentRepository(JdbcClient.create(counting)),
-                conversions = JdbcConversionRepository(JdbcClient.create(counting)),
-                feedback = JdbcConversionFeedbackRepository(JdbcClient.create(counting)),
+                stores = sealedStoresOn(JdbcClient.create(counting)),
                 cipher = cipherWith(writeKeyVersion = 2),
                 transaction = SpringTransactionRunner(TransactionTemplate(DataSourceTransactionManager(counting))),
             )
@@ -605,6 +621,7 @@ class JdbcDocumentStoreTest {
             storage =
                 DocumentStorage(
                     documents = JdbcDocumentRepository(client),
+                    originals = JdbcDocumentOriginalRepository(client),
                     conversions = JdbcConversionRepository(client),
                     queue = conversionQueue(client),
                 ),

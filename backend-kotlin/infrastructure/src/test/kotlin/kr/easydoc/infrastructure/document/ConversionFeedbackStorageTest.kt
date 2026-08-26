@@ -3,6 +3,7 @@ package kr.easydoc.infrastructure.document
 import kr.easydoc.application.crypto.ContentCipher
 import kr.easydoc.application.document.EnvelopeRotation
 import kr.easydoc.application.document.RotationOutcome
+import kr.easydoc.application.document.SealedStores
 import kr.easydoc.application.document.StoredFeedback
 import kr.easydoc.core.crypto.EncryptedField
 import kr.easydoc.core.crypto.EncryptionScheme
@@ -69,9 +70,13 @@ class ConversionFeedbackStorageTest {
         rotatedCipher = cipherWith(NEW_GENERATION)
         rotation =
             EnvelopeRotation(
-                documents = JdbcDocumentRepository(jdbc),
-                conversions = JdbcConversionRepository(jdbc),
-                feedback = feedback,
+                stores =
+                    SealedStores(
+                        documents = JdbcDocumentRepository(jdbc),
+                        originals = JdbcDocumentOriginalRepository(jdbc),
+                        conversions = JdbcConversionRepository(jdbc),
+                        feedback = feedback,
+                    ),
                 cipher = rotatedCipher,
                 transaction = SpringTransactionRunner(TransactionTemplate(DataSourceTransactionManager(dataSource))),
             )
