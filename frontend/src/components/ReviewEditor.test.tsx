@@ -13,6 +13,25 @@ vi.mock('../api/client', async (importOriginal) => ({
   downloadExport: vi.fn(),
 }))
 
+/**
+ * 화면 폭을 고정한다.
+ *
+ * jsdom에는 matchMedia가 없어서 에디터는 기본값(2열)으로 그려진다. 탭 동작을 보려면
+ * "좁은 화면"이라고 답하는 matchMedia를 꽂아야 한다.
+ */
+function stubViewport(splitView: boolean): void {
+  vi.stubGlobal('matchMedia', (query: string) => ({
+    matches: splitView,
+    media: query,
+    onchange: null,
+    addEventListener: () => undefined,
+    removeEventListener: () => undefined,
+    addListener: () => undefined,
+    removeListener: () => undefined,
+    dispatchEvent: () => false,
+  }))
+}
+
 beforeEach(() => {
   vi.mocked(saveReview).mockReset()
   vi.mocked(downloadExport).mockReset()
@@ -21,6 +40,7 @@ beforeEach(() => {
 afterEach(() => {
   // 모듈 전역 상태라 테스트끼리 새지 않게 되돌린다(언마운트 정리와 같은 일).
   setUnsavedChanges(false)
+  vi.unstubAllGlobals()
 })
 
 describe('검수 에디터', () => {
@@ -47,8 +67,21 @@ describe('검수 에디터', () => {
     )
 
     expect(screen.getByLabelText('쉬운 글 결과 (고칠 수 있습니다)')).toHaveValue('AI 초안입니다.')
-    // 원본이 없는 경로임을 숨기지 않는다.
-    expect(screen.getByText(/이 화면에서는 원본을 볼 수 없습니다/)).toBeInTheDocument()
+  })
+
+  /**
+   * 원문이 없는 경로(파일 업로드·기록 재진입)에서 왼쪽에 빈 입력칸이 남아 있으면,
+   * 화면은 "원문을 보여주지 않는다"가 아니라 "원문이 아직 안 왔다" 또는 "여기에 원문을
+   * 적어야 한다"고 말하게 된다. 셋은 서로 다른 상태이므로(DESIGN.md §9) 입력칸이
+   * 사라졌는지와 설명이 남았는지를 함께 고정한다.
+   */
+  it('원문이 없으면 빈 입력칸 대신 설명 카드를 보여준다', () => {
+    render(<ReviewEditor conversion={conversion()} sourceText={null} />)
+
+    expect(screen.queryByLabelText('원본 (읽기 전용)')).not.toBeInTheDocument()
+    expect(
+      screen.getByText('파일로 올린 문서는 이 화면에서 원문을 다시 표시하지 않습니다.'),
+    ).toBeInTheDocument()
   })
 
   it('AI 초안임을 알리는 배너와 자리표시자 유실 경고를 보여준다', () => {
@@ -61,6 +94,44 @@ describe('검수 에디터', () => {
 
     expect(screen.getByRole('note')).toHaveTextContent('AI가 만든 초안입니다')
     expect(screen.getByText(/\[\[카드번호1\]\]가 결과에서 빠졌습니다/)).toBeInTheDocument()
+  })
+
+  it('수정하면 저장 안 됨이 되고, 저장하면 저장한 시각을 남긴다', async () => {
+    const user = userEvent.setup()
+    vi.mocked(saveReview).mockResolvedValue(
+      conversion({ edited_text: '초안. 수정', reviewed_at: '2026-08-07T02:00:00Z' }),
+    )
+    render(<ReviewEditor conversion={conversion({ easy_text: '초안.' })} sourceText={null} />)
+
+    expect(screen.getByRole('status')).toHaveTextContent('저장 전')
+
+    await user.type(screen.getByLabelText('쉬운 글 결과 (고칠 수 있습니다)'), ' 수정')
+
+    expect(screen.getByRole('status')).toHaveTextContent('저장 안 됨')
+
+    await user.click(screen.getByRole('button', { name: '검수 내용 저장' }))
+
+    // 저장 여부는 토스트로 흘려보내지 않고 화면에 남는다(§9).
+    expect(await screen.findByText(/^저장됨 · /)).toBeInTheDocument()
+    expect(screen.queryByText('저장 안 됨')).not.toBeInTheDocument()
+  })
+
+  it('저장했다는 사실을 두 곳에서 낭독하지 않는다', async () => {
+    const user = userEvent.setup()
+    vi.mocked(saveReview).mockResolvedValue(
+      conversion({ edited_text: '초안. 수정', reviewed_at: '2026-08-07T02:00:00Z' }),
+    )
+    render(<ReviewEditor conversion={conversion({ easy_text: '초안.' })} sourceText={null} />)
+
+    await user.type(screen.getByLabelText('쉬운 글 결과 (고칠 수 있습니다)'), ' 수정')
+    await user.click(screen.getByRole('button', { name: '검수 내용 저장' }))
+
+    const success = await screen.findByText('검수 내용을 저장했습니다.')
+    // 낭독되는 곳은 저장 상태 라벨 하나뿐이고, 버튼 옆 성공 안내는 눈으로만 본다.
+    const announced = screen.getAllByRole('status')
+    expect(announced).toHaveLength(1)
+    expect(announced[0]).toHaveTextContent(/^저장됨 · /)
+    expect(success).not.toHaveAttribute('role')
   })
 
   it('수정한 글을 저장하고 결과를 알린다', async () => {
@@ -77,8 +148,6 @@ describe('검수 에디터', () => {
 
     expect(vi.mocked(saveReview)).toHaveBeenCalledWith('c1', '고친 글.')
     expect(await screen.findByText('검수 내용을 저장했습니다.')).toBeInTheDocument()
-    // 저장이 끝나면 "저장하지 않은 수정" 안내가 사라진다.
-    expect(screen.getByText(/마지막 저장:/)).toBeInTheDocument()
   })
 
   it('저장에 실패하면 사유를 알리고 수정 내용을 그대로 둔다', async () => {
@@ -92,6 +161,8 @@ describe('검수 에디터', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent('아직 완료되지 않은 변환입니다')
     expect(editor).toHaveValue('초안. 덧붙임')
+    // 실패했으므로 저장하지 않은 수정이라는 사실이 그대로 남아야 한다.
+    expect(screen.getByRole('status')).toHaveTextContent('저장 안 됨')
   })
 
   it.each(['docx', 'hwpx', 'txt'] as const)(
@@ -138,5 +209,35 @@ describe('검수 에디터', () => {
     await user.clear(screen.getByLabelText('쉬운 글 결과 (고칠 수 있습니다)'))
 
     expect(screen.getByRole('row', { name: /주민등록번호1/ })).toHaveTextContent('없음')
+  })
+
+  describe('좁은 화면', () => {
+    it('원문이 있으면 원문·쉬운 글 탭으로 나누고 키보드로 옮길 수 있다', async () => {
+      const user = userEvent.setup()
+      stubViewport(false)
+      render(<ReviewEditor conversion={conversion()} sourceText="원문입니다." />)
+
+      expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual(['원문', '쉬운 글'])
+      expect(screen.getByLabelText('원본 (읽기 전용)')).toBeVisible()
+      expect(screen.getByLabelText('쉬운 글 결과 (고칠 수 있습니다)')).not.toBeVisible()
+
+      screen.getByRole('tab', { name: '원문' }).focus()
+      await user.keyboard('{ArrowRight}')
+
+      expect(screen.getByRole('tab', { name: '쉬운 글' })).toHaveAttribute('aria-selected', 'true')
+      expect(screen.getByLabelText('쉬운 글 결과 (고칠 수 있습니다)')).toBeVisible()
+      expect(screen.getByLabelText('원본 (읽기 전용)')).not.toBeVisible()
+    })
+
+    it('원문이 없으면 탭을 만들지 않고 설명 카드를 그대로 보여준다', () => {
+      stubViewport(false)
+      render(<ReviewEditor conversion={conversion()} sourceText={null} />)
+
+      expect(screen.queryAllByRole('tab')).toHaveLength(0)
+      expect(
+        screen.getByText('파일로 올린 문서는 이 화면에서 원문을 다시 표시하지 않습니다.'),
+      ).toBeInTheDocument()
+      expect(screen.getByLabelText('쉬운 글 결과 (고칠 수 있습니다)')).toBeVisible()
+    })
   })
 })

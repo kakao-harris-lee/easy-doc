@@ -1,10 +1,16 @@
-import { render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { ApiError, createDocumentFromFile, createDocumentFromText } from '../api/client'
-import { workspaceContext, workspaceItem } from '../test/factories'
+import {
+  ApiError,
+  createDocumentFromFile,
+  createDocumentFromText,
+  listDocuments,
+} from '../api/client'
+import type { DocumentListItem } from '../api/types'
+import { documentItem, workspaceContext, workspaceItem } from '../test/factories'
 import { WorkspaceContext } from '../workspace/context'
 import type { WorkspaceContextValue } from '../workspace/context'
 import { ACCEPTED_EXTENSIONS, MAX_CHARS, MAX_UPLOAD_BYTES, UploadPage } from './UploadPage'
@@ -27,12 +33,31 @@ async function chooseFileMode(user: ReturnType<typeof userEvent.setup>): Promise
   return screen.getByLabelText('바꿀 파일') as HTMLInputElement
 }
 
+/**
+ * 브라우저가 파일 선택 대화상자를 닫는 순서를 그대로 흉내 낸다.
+ *
+ * 실제 브라우저는 **초점을 파일 입력에 되돌려 놓은 뒤** change를 알린다 — 그래서 change를
+ * 받아 그 입력을 감추면 초점이 갈 곳을 잃는다. `userEvent.upload()`는 반대로 change를 낸
+ * 다음 입력을 다시 focus 하므로(user-event의 `behavior.click`) 이 순서를 재현하지 못한다.
+ * 초점이 어디로 가는지를 재는 테스트에서만 이 도우미를 쓴다.
+ */
+function selectFileLikeBrowser(input: HTMLInputElement, file: File) {
+  input.focus()
+  fireEvent.change(input, { target: { files: [file] } })
+}
+
 vi.mock('../api/client', async (importOriginal) => ({
   // ApiError는 화면이 instanceof로 가르므로 진짜 클래스를 그대로 쓴다.
   ...(await importOriginal<typeof import('../api/client')>()),
   createDocumentFromText: vi.fn(),
   createDocumentFromFile: vi.fn(),
+  listDocuments: vi.fn(),
 }))
+
+/** GET /documents 한 쪽. 「다음 할 일」은 이 응답만 근거로 삼는다(§7). */
+function documentPage(items: DocumentListItem[]) {
+  return { items, limit: 20, offset: 0, has_more: false }
+}
 
 function renderPage(workspace: Partial<WorkspaceContextValue> = {}) {
   return render(
@@ -50,6 +75,9 @@ function renderPage(workspace: Partial<WorkspaceContextValue> = {}) {
 beforeEach(() => {
   vi.mocked(createDocumentFromText).mockReset()
   vi.mocked(createDocumentFromFile).mockReset()
+  // 기본값은 "문서 없음"이다 — 그 경우 이 화면은 아무것도 제안하지 않으므로(제안이
+  // 곧 이 화면의 대표 행동과 같은 말이 된다) 나머지 테스트가 제안에 영향받지 않는다.
+  vi.mocked(listDocuments).mockReset().mockResolvedValue(documentPage([]))
 })
 
 describe('업로드 화면', () => {
@@ -177,6 +205,52 @@ describe('업로드 화면', () => {
     expect(screen.getByRole('button', { name: '안내문.docx 파일 제거' })).toBeInTheDocument()
   })
 
+  it('파일을 고른 뒤 초점이 <body>로 떨어지지 않는다', async () => {
+    const user = userEvent.setup()
+    renderPage()
+
+    const input = await chooseFileMode(user)
+    selectFileLikeBrowser(input, docxFile())
+
+    // 대화상자가 닫힌 직후 초점을 갖고 있는 것은 방금 고른 그 파일 입력이다. 파일을
+    // 고르면 그 입력이 `display:none`이 되므로, 화면이 초점을 옮겨 두지 않으면 초점은
+    // <body>로 떨어진다 — 키보드 사용자는 Tab 위치를 잃고 낭독기는 무엇이 선택됐는지도,
+    // 새로 나타난 카드도 알리지 못한다. 그렇게 감추기만 하는 리팩터가 다시 들어오면
+    // 여기서 걸려야 한다.
+    expect(document.activeElement).not.toBe(document.body)
+    // jsdom은 CSS를 적용하지 않아 감춘 입력도 계속 초점을 받을 수 있다. 그래서 위
+    // 단언만으로는 부족하고 「감춰진 입력에 초점이 남아 있지 않다」까지 함께 못박는다.
+    expect(input).not.toHaveFocus()
+  })
+
+  it('파일을 고르면 초점이 선택한 파일 카드로 옮겨간다', async () => {
+    const user = userEvent.setup()
+    renderPage()
+
+    const input = await chooseFileMode(user)
+    selectFileLikeBrowser(input, docxFile())
+
+    // 초점이 옮겨가는 것만으로 낭독기가 "선택한 파일 안내문.docx"를 읽는다 — 제거
+    // 버튼에 초점을 주면 "제거"만 읽혀 무슨 파일인지 알 수 없다.
+    const card = screen.getByRole('group', { name: '선택한 파일 안내문.docx' })
+    expect(card).toHaveFocus()
+    // 초점만 받고 탭 순서에는 끼지 않는다.
+    expect(card).toHaveAttribute('tabindex', '-1')
+  })
+
+  it('제거하면 초점이 다시 파일 입력으로 돌아온다', async () => {
+    const user = userEvent.setup()
+    renderPage()
+
+    const input = await chooseFileMode(user)
+    await user.upload(input, docxFile())
+    await user.click(screen.getByRole('button', { name: '안내문.docx 파일 제거' }))
+
+    // 방금 누른 제거 버튼이 사라졌다. 선택 경로가 카드로 옮긴 초점이 이 복귀를 가로채면
+    // 안 된다 — 두 경로는 서로 다른 표시를 보고 각자의 자리로만 초점을 옮긴다.
+    expect(input).toHaveFocus()
+  })
+
   it('제거하면 카드가 사라지고 같은 파일을 다시 고를 수 있다', async () => {
     const user = userEvent.setup()
     renderPage()
@@ -239,6 +313,78 @@ describe('업로드 화면', () => {
     expect(
       within(guide).getByText(`한 번에 ${MAX_CHARS.toLocaleString('ko-KR')}자까지`),
     ).toBeInTheDocument()
+  })
+
+  it('제안은 한 건만, 대표 행동보다 아래에 보여준다', async () => {
+    // 네 조건이 모두 있는 목록이다. 규칙의 우선순위는 nextAction.test.ts가 고정하고,
+    // 여기서는 "화면에 하나만 나온다"만 본다.
+    vi.mocked(listDocuments).mockResolvedValue(
+      documentPage([
+        documentItem({ id: 'd1', conversion_id: 'c1', status: 'failed', title: '실패 문서' }),
+        documentItem({ id: 'd2', conversion_id: 'c2', status: 'processing', title: '진행 문서' }),
+        documentItem({
+          id: 'd3',
+          conversion_id: 'c3',
+          status: 'done',
+          reviewed_at: null,
+          title: '초안 문서',
+        }),
+      ]),
+    )
+    renderPage()
+
+    const suggestion = await screen.findByRole('complementary', { name: '다음 할 일' })
+    expect(within(suggestion).getAllByRole('link')).toHaveLength(1)
+    expect(within(suggestion).getByText('쉬운 글 초안을 검수해 주세요')).toBeInTheDocument()
+    expect(within(suggestion).getByRole('link', { name: '‘초안 문서’ 검수 열기' })).toHaveAttribute(
+      'href',
+      '/conversions/c3',
+    )
+
+    // 대표 행동은 여전히 제출 버튼 하나뿐이다(§5.3, §14) — 제안은 링크로만 나타난다.
+    expect(screen.getAllByRole('button', { name: '쉬운 글 초안 만들기' })).toHaveLength(1)
+    expect(within(suggestion).queryByRole('button')).not.toBeInTheDocument()
+  })
+
+  it('목록 조회가 실패해도 문서 등록은 그대로 동작한다', async () => {
+    const user = userEvent.setup()
+    vi.mocked(listDocuments).mockRejectedValue(new ApiError(500, '문서를 불러오지 못했습니다'))
+    vi.mocked(createDocumentFromText).mockResolvedValue({
+      document_id: 'd1',
+      conversion_id: 'c1',
+      status: 'pending',
+      char_count: 7,
+    })
+    renderPage()
+
+    await user.type(screen.getByLabelText('문서 제목'), '청년 월세 지원 안내')
+    await user.type(screen.getByLabelText('바꿀 글'), '신청 안내')
+    await user.click(screen.getByRole('button', { name: '쉬운 글 초안 만들기' }))
+
+    expect(await screen.findByRole('heading', { name: '변환 화면' })).toBeInTheDocument()
+    // 보조 제안이 실패한 것을 오류로 알리지 않는다 — 핵심 흐름을 가리는 소음이다.
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(screen.queryByRole('complementary', { name: '다음 할 일' })).not.toBeInTheDocument()
+  })
+
+  it('이 화면이 곧 새 변환이므로 문서가 없으면 아무것도 제안하지 않는다', async () => {
+    renderPage()
+
+    expect(await screen.findByRole('button', { name: '쉬운 글 초안 만들기' })).toBeInTheDocument()
+    expect(screen.queryByRole('complementary', { name: '다음 할 일' })).not.toBeInTheDocument()
+  })
+
+  it('제안 근거는 지금 고른 작업 공간으로 좁혀 조회한다', async () => {
+    renderPage({
+      workspaces: [workspaceItem({ id: 'w1' }), workspaceItem({ id: 'w2', name: '민원 안내' })],
+      currentId: 'w2',
+    })
+
+    await screen.findByRole('button', { name: '쉬운 글 초안 만들기' })
+    expect(vi.mocked(listDocuments)).toHaveBeenCalledWith(
+      expect.objectContaining({ workspaceId: 'w2' }),
+      expect.anything(),
+    )
   })
 
   it('안내 카드는 개인정보 2종만 가린다고 알린다', () => {

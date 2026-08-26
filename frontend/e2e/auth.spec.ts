@@ -24,7 +24,7 @@ import {
   workspaceNames,
   workspaceSelect,
 } from './support/app'
-import { NetworkLog, signature } from './support/network'
+import { NetworkLog, routeSignature, signature } from './support/network'
 
 interface WorkspaceListBody {
   items: { id: string; name: string }[]
@@ -39,6 +39,16 @@ test.describe('인증 흐름', () => {
       (response) =>
         response.url() === api(ROUTES.workspaceList.path) &&
         response.request().method() === ROUTES.workspaceList.method,
+    )
+    // 「다음 할 일」 제안이 근거로 읽는 문서 목록(DESIGN.md §7). 현재 작업 공간이
+    // 정해진 뒤에 나가므로 목록 응답보다 늦다 — 아래 순서 단언이 도착 전에 돌지 않도록
+    // 여기서 약속을 걸어 둔다. 작업 공간을 아직 모를 때 나가는 조회는 목록이 도착하는
+    // 즉시 취소되어 응답이 없다(실측). 그래서 `workspace_id` 가 실린 것만 잡는다.
+    const suggestionPromise = page.waitForResponse(
+      (response) =>
+        response.request().method() === ROUTES.documentList.method &&
+        response.url().startsWith(api(`${ROUTES.documentList.path}?`)) &&
+        new URL(response.url()).searchParams.has('workspace_id'),
     )
     await signUpAndLand(page, account)
     const listBody = (await (await listPromise).json()) as WorkspaceListBody
@@ -60,12 +70,24 @@ test.describe('인증 흐름', () => {
     // --- 네트워크 -------------------------------------------------------------
     // `AuthProvider.signUp` = signup + signIn 이고, signIn 이 login 뒤에 me 를 부른다.
     // 목록은 인증이 선 뒤 `WorkspaceProvider` 가 부른다 — 이 순서가 계약 흐름이다.
+    // 마지막 `GET /documents` 는 「다음 할 일」 제안이다(DESIGN.md §7): 새 API 가 아니라
+    // §6.2 대로 **기존 문서 목록**을 근거로 삼고, 현재 작업 공간이 정해진 뒤 그 공간으로
+    // 좁혀 한 번 부른다. 그래서 목록 조회 **뒤**가 이 호출의 자리다.
+    //
+    // 비교는 [routeSignature] 로 한다 — 쿼리의 작업 공간 UUID 는 매 실행 달라져 기대값에
+    // 적을 수 없다. 대신 **어느 작업 공간으로 좁혔는가**를 바로 아래에서 따로 단언한다.
+    // 배열 전체를 정확히 단언하는 것은 그대로 둔다: 중복·불필요 호출이 끼어들면 여기서
+    // 걸려야 한다.
+    const suggestion = await suggestionPromise
+    expect(new URL(suggestion.url()).searchParams.get('workspace_id')).toBe(listBody.items[0]?.id)
+
     const calls = await log.apiCalls()
-    expect(calls.map(signature)).toEqual([
+    expect(calls.map(routeSignature)).toEqual([
       `${ROUTES.signup.method} ${ROUTES.signup.path} ${ROUTES.signup.created}`,
       `${ROUTES.login.method} ${ROUTES.login.path} ${ROUTES.login.ok}`,
       `${ROUTES.me.method} ${ROUTES.me.path} ${ROUTES.me.ok}`,
       `${ROUTES.workspaceList.method} ${ROUTES.workspaceList.path} ${ROUTES.workspaceList.ok}`,
+      `${ROUTES.documentList.method} ${ROUTES.documentList.path} ${ROUTES.documentList.ok}`,
     ])
     expect(await storedToken(page)).not.toBeNull()
   })

@@ -152,6 +152,12 @@ export const ROUTES = {
   unprocessable: 422,
   /** 계약 `paths./documents.post` — 202 (변환은 아직 시작 전). */
   documentCreate: { path: '/documents', method: 'POST', accepted: 202 },
+  /**
+   * 계약 `paths./documents.get` — 200. 기록 화면이 쓰고, DESIGN.md §7 의 「다음 할 일」
+   * 제안도 §6.2 대로 **이 목록**을 근거로 읽는다(새 API 를 만들지 않았다).
+   * 쿼리(`limit`·`workspace_id`)는 부르는 쪽이 정한다 — 여기에는 경로만 둔다.
+   */
+  documentList: { path: '/documents', method: 'GET', ok: 200 },
   /** 계약 `paths./conversions/{conversion_id}.get` — 200. */
   conversionRead: { method: 'GET', ok: 200 },
   /** 계약 `paths./conversions/{conversion_id}.put` — 200. */

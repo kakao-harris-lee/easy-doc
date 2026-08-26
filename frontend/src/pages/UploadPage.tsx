@@ -1,10 +1,16 @@
 import { useEffect, useId, useRef, useState } from 'react'
-import type { ChangeEvent, FormEvent } from 'react'
-import { FileCheck2, FileText, Upload, Wand2, X } from 'lucide-react'
-import { useNavigate } from 'react-router-dom'
+import type { ChangeEvent, FormEvent, RefObject } from 'react'
+import { ArrowRight, FileCheck2, FileText, Upload, Wand2, X } from 'lucide-react'
+import { Link, useNavigate } from 'react-router-dom'
 
-import { ApiError, createDocumentFromFile, createDocumentFromText } from '../api/client'
-import type { DocumentCreatedResponse } from '../api/types'
+import {
+  ApiError,
+  createDocumentFromFile,
+  createDocumentFromText,
+  listDocuments,
+} from '../api/client'
+import type { DocumentCreatedResponse, DocumentListItem } from '../api/types'
+import { chooseNextAction } from '../conversion/nextAction'
 import { conversionPath, type SourceTextState } from '../routes/paths'
 import { useWorkspace } from '../workspace/context'
 import { Badge } from '../components/ui/Badge'
@@ -38,6 +44,16 @@ const SUPPORTED_FORMAT_LABEL = ACCEPTED_EXTENSIONS.split(',')
 
 const BYTES_PER_UNIT = 1024
 const SIZE_UNITS = ['B', 'KB', 'MB', 'GB'] as const
+
+/**
+ * 「다음 할 일」 판단에 훑어볼 문서 수(§7).
+ *
+ * 규칙은 상태별 우선순위라 목록의 첫 줄만 봐서는 답이 나오지 않는다 — 최근 문서가 모두
+ * 검수까지 끝난 상태라도 그 아래에 검수를 기다리는 문서가 있을 수 있다. 그렇다고 전부
+ * 훑을 이유도 없다: 이 화면의 본업은 문서 등록이고 제안은 보조다. 기록 화면의 한 쪽
+ * 크기(HistoryPage.PAGE_SIZE)와 같은 20건이면 최근 작업 맥락을 판단하기에 충분하다.
+ */
+const SUGGESTION_SCAN_LIMIT = 20
 
 /**
  * §6.2 오른쪽 안내 카드의 3단계.
@@ -82,6 +98,8 @@ function formatOf(fileName: string): string {
 interface SelectedFileCardProps {
   file: File
   onRemove: () => void
+  /** 파일을 고른 직후 초점을 받을 자리. UploadPage의 선택 경로가 여기로 초점을 옮긴다. */
+  cardRef: RefObject<HTMLDivElement>
 }
 
 /**
@@ -91,11 +109,28 @@ interface SelectedFileCardProps {
  * 올리려는지가 제출 직전의 유일한 확인 지점이라 이름·형식·크기와 제거 행동을 화면이
  * 직접 그린다. 제거 버튼의 이름에 파일명을 넣는 이유는 목록이 아니어도 낭독기가
  * "무엇을" 지우는지 말해야 하기 때문이다.
+ *
+ * 카드 자체가 초점을 받는다(`tabIndex={-1}`). 제거 버튼에 초점을 주면 낭독기가 "제거"만
+ * 읽어 **무슨 파일이** 선택됐는지 알 수 없다. 그래서 카드에 role="group"과 "선택한 파일
+ * <파일명>"이라는 이름을 붙여, 초점이 옮겨오는 것만으로 방금 한 행동의 결과가 읽히게
+ * 한다 — 같은 사실을 라이브 영역으로 한 번 더 알리지 않는다.
+ * 탭 순서에는 넣지 않는다. 키보드 이동 경로에 초점만 받는 컨테이너가 끼면 제거 버튼까지
+ * 가는 길이 한 칸 길어진다.
  */
-function SelectedFileCard({ file, onRemove }: SelectedFileCardProps) {
+function SelectedFileCard({ file, onRemove, cardRef }: SelectedFileCardProps) {
+  const headingId = useId()
+  const nameId = useId()
   return (
-    <div className="flex flex-col gap-1.5">
-      <p className="text-[15px] font-semibold text-foreground">선택한 파일</p>
+    <div
+      ref={cardRef}
+      tabIndex={-1}
+      role="group"
+      aria-labelledby={`${headingId} ${nameId}`}
+      className="flex flex-col gap-1.5"
+    >
+      <p id={headingId} className="text-[15px] font-semibold text-foreground">
+        선택한 파일
+      </p>
       <div className="flex items-center gap-3 rounded-[10px] border border-input bg-card p-3">
         <span
           className="flex size-10 shrink-0 items-center justify-center rounded-[10px] bg-accent text-accent-foreground"
@@ -104,7 +139,9 @@ function SelectedFileCard({ file, onRemove }: SelectedFileCardProps) {
           <FileText className="size-[18px]" />
         </span>
         <div className="min-w-0 flex-1">
-          <p className="truncate font-semibold text-foreground">{file.name}</p>
+          <p id={nameId} className="truncate font-semibold text-foreground">
+            {file.name}
+          </p>
           <p className="text-sm text-muted-foreground">
             {formatOf(file.name)} · {formatBytes(file.size)}
           </p>
@@ -150,10 +187,19 @@ export function UploadPage() {
   const [file, setFile] = useState<File | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
+  // 「다음 할 일」의 근거. null은 "아직 모른다"이며(조회 전 또는 조회 실패) 빈 배열은
+  // "이 작업 공간에는 문서가 없다"는 서버의 답이다. 두 상태를 한 값으로 합치지 않는다 —
+  // §6.2는 완료 상태와 검수 여부가 확인될 때만 제안하라고 했다.
+  const [recentDocuments, setRecentDocuments] = useState<DocumentListItem[] | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const fileCardRef = useRef<HTMLDivElement>(null)
   // 제거 버튼을 눌러 파일이 빠졌는지 표시한다. 초점을 되돌릴 시점은 파일 입력이 다시
   // 보이게 된 뒤이므로 렌더가 끝난 다음에 읽는다.
   const refocusPending = useRef(false)
+  // 파일을 골라 카드가 새로 나타났는지 표시한다. 선택과 제거는 초점을 옮길 곳도, 옮길
+  // 시점도 다르므로 서로 다른 표시와 서로 다른 effect로 둔다 — 한 곳에 엮으면 한쪽
+  // 경로가 다른 쪽이 방금 옮긴 초점을 뺏는다.
+  const cardFocusPending = useRef(false)
 
   const charCount = text.length
   const tooLong = charCount > MAX_CHARS
@@ -167,6 +213,51 @@ export function UploadPage() {
   const workspaceName = workspaces.find((workspace) => workspace.id === workspaceId)?.name
   const headerContext = workspaceName === undefined ? '새 변환' : `${workspaceName} · 새 변환`
 
+  // 작업 공간이 바뀌면 이전 작업 공간의 제안을 그 자리에서 내린다. 새 응답이 올 때까지
+  // 남겨 두면 방금 옮겨 온 작업 공간에 없는 문서를 이어서 하라고 권하게 된다. 렌더 중에
+  // 맞추는 이유는 기록 화면과 같다(React 공식 "렌더 중 상태 조정" 패턴) — effect로 미루면
+  // 잘못된 작업 공간의 제안이 한 프레임 먼저 보인다.
+  const [suggestionWorkspaceId, setSuggestionWorkspaceId] = useState(workspaceId)
+  if (suggestionWorkspaceId !== workspaceId) {
+    setSuggestionWorkspaceId(workspaceId)
+    setRecentDocuments(null)
+  }
+
+  const nextAction = chooseNextAction(recentDocuments)
+
+  /**
+   * 「다음 할 일」의 근거가 될 최근 문서를 읽는다(§6.2, §7).
+   *
+   * 새 API를 만들지 않는다 — 기록 화면이 쓰는 `GET /documents`를 그대로 쓴다. 조회는
+   * 현재 작업 공간으로 좁힌다(§3 개인화 우선순위 2). 아직 작업 공간 목록을 못 받았으면
+   * 좁히지 않는다 — 기록 화면과 같은 판단이다.
+   *
+   * 실패하면 조용히 아무것도 제안하지 않는다. 이 제안은 보조이지 이 화면의 핵심 흐름이
+   * 아니므로, 실패를 오류로 알리면 정작 해야 할 일(문서 등록)을 가리는 소음이 된다.
+   */
+  useEffect(() => {
+    const controller = new AbortController()
+
+    async function loadSuggestion(): Promise<void> {
+      try {
+        const page = await listDocuments(
+          {
+            limit: SUGGESTION_SCAN_LIMIT,
+            ...(workspaceId === null ? {} : { workspaceId }),
+          },
+          controller.signal,
+        )
+        setRecentDocuments(page.items)
+      } catch {
+        // 취소든 서버 오류든 결론은 같다: 근거가 없으므로 제안하지 않는다.
+        setRecentDocuments(null)
+      }
+    }
+
+    void loadSuggestion()
+    return () => controller.abort()
+  }, [workspaceId])
+
   useEffect(() => {
     if (file !== null || !refocusPending.current) {
       return
@@ -176,8 +267,24 @@ export function UploadPage() {
     fileInputRef.current?.focus()
   }, [file])
 
+  useEffect(() => {
+    if (file === null || !cardFocusPending.current) {
+      return
+    }
+    // 초점을 갖고 있던 파일 입력이 방금 화면에서 내려갔다. 그대로 두면 초점이 <body>로
+    // 떨어져 키보드 사용자는 Tab 위치를 잃고 낭독기는 무엇이 선택됐는지 알리지 못한다.
+    // 카드가 그려진 뒤인 여기서 결과가 나타난 자리로 초점을 옮긴다.
+    cardFocusPending.current = false
+    fileCardRef.current?.focus()
+  }, [file])
+
   function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
-    setFile(event.target.files?.[0] ?? null)
+    const selected = event.target.files?.[0] ?? null
+    // 대화상자를 취소해 고른 파일이 없으면 파일 입력이 그대로 보이고 초점도 거기 남는다
+    // — 옮길 일이 없다. 제거 경로의 표시는 여기서 접어 두 경로가 겹치지 않게 한다.
+    refocusPending.current = false
+    cardFocusPending.current = selected !== null
+    setFile(selected)
     setError(null)
   }
 
@@ -192,6 +299,7 @@ export function UploadPage() {
     if (fileInputRef.current !== null) {
       fileInputRef.current.value = ''
     }
+    cardFocusPending.current = false
     refocusPending.current = true
     setFile(null)
     setError(null)
@@ -398,7 +506,9 @@ export function UploadPage() {
                     뽑은 글자 수가 {chars(MAX_CHARS)}자를 넘으면 변환할 수 없습니다.
                   </p>
                 </div>
-                {file !== null && <SelectedFileCard file={file} onRemove={removeFile} />}
+                {file !== null && (
+                  <SelectedFileCard file={file} onRemove={removeFile} cardRef={fileCardRef} />
+                )}
               </>
             )}
 
@@ -464,6 +574,36 @@ export function UploadPage() {
           </section>
         </aside>
       </div>
+
+      {/*
+        규칙 기반 「다음 할 일」 한 건(§7).
+
+        `newConversion` 제안(열 변환이 없는 경우)은 여기서 그리지 않는다 — 이 화면이 곧
+        새 변환이고, 그 제안은 바로 위 제출 버튼과 같은 말을 두 번 하는 것이다(§15의 3:
+        "화면에 이미 더 강한 대표 행동이 있는가?"). 그래서 화면에 나타나는 제안은 언제나
+        0개 또는 1개이며, 있을 때도 대표 행동보다 약하다: 페이지 맨 아래, 구분선 하나,
+        채운 버튼이 아닌 글자 크기의 링크다(§5.3, §6.2, §14). 터치 대상 44px은 §10을
+        따라 링크 높이로 지킨다.
+      */}
+      {nextAction !== null && nextAction.conversionId !== null && (
+        <aside
+          aria-label="다음 할 일"
+          className="mt-8 flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-t border-border pt-4"
+        >
+          <p className="m-0 text-sm text-muted-foreground">
+            <span className="font-semibold text-foreground">‘{nextAction.documentTitle}’</span>{' '}
+            {nextAction.message}
+          </p>
+          <Link
+            to={conversionPath(nextAction.conversionId)}
+            aria-label={`‘${nextAction.documentTitle}’ ${nextAction.actionLabel}`}
+            className="inline-flex min-h-11 items-center gap-1 text-sm font-semibold text-primary underline underline-offset-4 hover:text-primary-hover"
+          >
+            {nextAction.actionLabel}
+            <ArrowRight className="size-[18px]" aria-hidden="true" />
+          </Link>
+        </aside>
+      )}
     </section>
   )
 }

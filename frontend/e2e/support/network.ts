@@ -38,9 +38,30 @@ export interface ObservedResponse {
   readonly headers: readonly { name: string; value: string }[]
 }
 
-/** `METHOD /path 상태` 한 줄 — 순서 단언의 비교 단위다. */
+/** `METHOD /path?쿼리 상태` 한 줄 — 순서 단언의 비교 단위다. 쿼리를 **포함한다.** */
 export function signature(entry: ObservedResponse): string {
   return `${entry.method} ${entry.path} ${entry.status}`
+}
+
+/**
+ * `METHOD /path 상태` 한 줄 — [signature] 에서 **쿼리를 걷어낸** 비교 단위다.
+ *
+ * ## 왜 두 벌인가
+ *
+ * `ObservedResponse.path` 는 위 주석대로 경로**와 쿼리**다. 그것으로 충분하지 않은
+ * 자리가 생겼다: DESIGN.md §7 의 「다음 할 일」 제안은 §6.2 가 정한 대로 **기존 문서
+ * 목록**(`GET /documents`)을 근거로 읽고, 그 조회를 현재 작업 공간으로 좁히므로
+ * 쿼리에 **매 실행 달라지는 작업 공간 UUID** 가 실린다. 기대값에 문자열로 적을 수 없다.
+ *
+ * 그렇다고 [signature] 자체를 쿼리 없는 형태로 바꾸지 않는다 — 쿼리까지 보고 있던
+ * 단언이 조용히 눈이 멀고, 그 실명은 실패로 드러나지 않는다. 무엇을 비교하는지가
+ * **이름에 드러나도록** 둘을 함께 두고, 부르는 쪽이 고른다.
+ *
+ * 경로만 보면 쿼리에 담긴 사실(어느 작업 공간으로 좁혔는가)이 빠진다. 그 자리는
+ * 부르는 쪽에서 응답 URL 의 검색 파라미터를 따로 단언해 메운다(E1·E5).
+ */
+export function routeSignature(entry: ObservedResponse): string {
+  return `${entry.method} ${entry.path.replace(/\?.*$/, '')} ${entry.status}`
 }
 
 /** 헤더 이름은 대소문자를 가리지 않는다. 같은 이름이 몇 번 실렸는지까지 센다. */
