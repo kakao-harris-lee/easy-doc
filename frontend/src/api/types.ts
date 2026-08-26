@@ -11,8 +11,32 @@
 /** 변환 상태. 백엔드 conversions.status CHECK 제약과 같은 값 집합이다. */
 export type ConversionStatus = 'pending' | 'processing' | 'done' | 'failed'
 
-/** 내보내기 형식. 백엔드 ExportFormat과 같다. */
+/**
+ * 내보내기 형식. 계약 `components/schemas/ExportFormat`.
+ * **`'pdf'`는 없다** — PDF 렌더러가 없어 서버가 422로 거절한다.
+ */
 export type ExportFormat = 'docx' | 'txt' | 'hwpx'
+
+/**
+ * 문서가 어디서 왔는가. 붙여넣기는 `'text'`, 파일은 소문자 확장자.
+ * 계약 `components/schemas/SourceFormat`.
+ */
+export type SourceFormat = 'text' | 'docx' | 'pdf' | 'hwpx'
+
+/**
+ * 원본 서식 유지 상태. 계약 `components/schemas/FormatPreservationStatus`.
+ * 오늘 서버가 낼 수 있는 값은 `'not_applicable'` 하나뿐이다 — 유지할 원본 서식이
+ * 없다는 뜻이고(붙여넣기이거나 원본 바이트가 남아 있지 않다), 구조 보존이 구현되면
+ * 계약과 함께 값이 는다.
+ */
+export type FormatPreservationStatus = 'not_applicable'
+
+/** 원본 서식 유지 판정. 계약 `components/schemas/FormatPreservation`. */
+export interface FormatPreservation {
+  status: FormatPreservationStatus
+  /** 사용자에게 보여 줄 영향 항목 문구. 개인정보도 본문도 담기지 않는다. */
+  details: string[]
+}
 
 // --- auth ---
 
@@ -67,6 +91,19 @@ export interface ConversionResponse {
   id: string
   document_id: string
   status: ConversionStatus
+  /** 원본 형식. **결과 필드가 아니라 문서 메타라** 완료 전에도 실려 온다. */
+  source_format: SourceFormat
+  /**
+   * 이 변환을 내려받을 때 **써야 하는** 형식. 서버가 `source_format`에서 유도한다.
+   * `null`은 「모른다」가 아니라 **「같은 형식으로 내보낼 수단이 없다」**다(원본이 PDF).
+   * 그때 다른 형식으로 우회 다운로드를 제시하지 않는다.
+   */
+  export_format: ExportFormat | null
+  /**
+   * 서식 유지 상태. `null`은 **서버가 아직 판정하지 않았다**는 뜻이고
+   * 「유지 가능」도 「유지 불가」도 아니다 — 상태를 화면에서 지어내지 않는다.
+   */
+  format_preservation: FormatPreservation | null
   easy_text: string | null
   /** 담당자 검수 수정본. 에디터 초기값은 `edited_text ?? easy_text`. */
   edited_text: string | null
@@ -91,7 +128,8 @@ export interface ConversionReviewRequest {
 export interface DocumentListItem {
   id: string
   title: string
-  source_format: string
+  /** 계약은 2026-08-12부터 enum이었다 — 1.6.0에서 이름 있는 컴포넌트가 되며 타입을 맞췄다. */
+  source_format: SourceFormat
   char_count: number
   /** ISO 8601 문자열. */
   created_at: string

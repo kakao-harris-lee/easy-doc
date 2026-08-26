@@ -9,6 +9,7 @@ import kr.easydoc.application.document.StoredExport
 import kr.easydoc.core.crypto.EncryptedContent
 import kr.easydoc.core.document.Conversion
 import kr.easydoc.core.document.ConversionStatus
+import kr.easydoc.core.document.SourceFormat
 import kr.easydoc.core.exceptions.StorageException
 import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.jdbc.core.simple.JdbcClient
@@ -194,10 +195,21 @@ class JdbcConversionRepository(private val jdbc: JdbcClient) : ConversionReposit
               AND edited_text_encrypted IS NOT DISTINCT FROM CAST(:expectedEditedText AS bytea)
             """.trimIndent()
 
-        /** 조회 질의. **소유 술어가 조인 위에 있다.** */
+        /**
+         * 조회 질의. **소유 술어가 조인 위에 있다.**
+         *
+         * `has_stored_original` 은 `EXISTS` 로 묻는다 — 원본은 최대 10MB 인데 조회가 알아야
+         * 하는 것은 「있는가」 하나뿐이다. 조인으로 끌어오면 bytea 열이 결과 집합에 들어오고,
+         * `LEFT JOIN` 으로 열 하나만 골라도 계획이 그 행을 집으러 간다. `EXISTS` 는
+         * `document_originals` 의 기본 키를 한 번 찍고 끝난다(`V3__document_originals.sql`
+         * 이 인덱스를 따로 두지 않은 사유와 같은 자리).
+         */
         val FIND_OWNED_SQL =
             """
-            SELECT c.id, d.id AS document_id, d.title, c.status,
+            SELECT c.id, d.id AS document_id, d.title, d.source_format, c.status,
+                   EXISTS (
+                       SELECT 1 FROM document_originals o WHERE o.document_id = d.id
+                   ) AS has_stored_original,
                    c.easy_text_encrypted, c.masked_items_encrypted, c.edited_text_encrypted,
                    c.encryption_scheme, c.key_version,
                    c.reviewed_at, c.missing_placeholders,
@@ -241,6 +253,8 @@ private object ConversionRows {
             id = rs.getObject("id", UUID::class.java),
             documentId = rs.getObject("document_id", UUID::class.java),
             status = ConversionStatus.ofWireName(rs.getString("status")),
+            sourceFormat = SourceFormat.ofWireName(rs.getString("source_format")),
+            hasStoredOriginal = rs.getBoolean("has_stored_original"),
             ciphertexts =
                 ConversionCiphertexts(
                     easyText = sealedOrNull(rs, "easy_text_encrypted", scheme, keyVersion),

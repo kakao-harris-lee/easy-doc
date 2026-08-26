@@ -1,5 +1,6 @@
 package kr.easydoc.core.easyread
 
+import kr.easydoc.core.document.SourceFormat
 import kr.easydoc.core.text.stripControlChars
 import java.nio.charset.StandardCharsets
 
@@ -40,6 +41,25 @@ enum class ExportFormat(
     companion object {
         /** 쿼리 파라미터·계약 enum 값으로 형식을 읽는다. 목록에 없으면 `null` — 422 는 호출 쪽이 낸다. */
         fun ofWireName(value: String): ExportFormat? = entries.firstOrNull { it.extension == value }
+
+        /**
+         * 원본 형식이 정하는 내보내기 형식 — **들어온 형식 그대로 나간다**(`DESIGN.md` §6.5).
+         *
+         * `PDF` 만 `null` 이다. **대체 형식으로 접지 않는다** — §6.5 가 "PDF 다운로드 기능이
+         * 준비되기 전까지 다른 형식으로의 우회 다운로드를 기본 행동으로 제공하지 않는다"고
+         * 정했고, 여기서 `TXT` 를 돌려주면 계약이 그 우회를 **권하는** 것이 된다.
+         * `PDF` 를 [ExportFormat] 에 더해 이 `null` 을 없애려 들지 마라 — 렌더러가 없다.
+         *
+         * `when` 을 **전수로** 적는다. [SourceFormat] 에 값이 늘면 여기가 컴파일 에러가 되고,
+         * 그것이 새 형식의 내보내기 판정을 빠뜨리지 않게 하는 장치다.
+         */
+        fun ofSource(source: SourceFormat): ExportFormat? =
+            when (source) {
+                SourceFormat.TEXT -> TXT
+                SourceFormat.DOCX -> DOCX
+                SourceFormat.HWPX -> HWPX
+                SourceFormat.PDF -> null
+            }
     }
 }
 

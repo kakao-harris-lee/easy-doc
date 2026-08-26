@@ -83,8 +83,10 @@ class AuthSliceBeans {
     fun inMemoryDocuments(): InMemoryDocumentRepository = InMemoryDocumentRepository()
 
     @Bean
-    fun inMemoryConversions(documents: InMemoryDocumentRepository): InMemoryConversionRepository =
-        InMemoryConversionRepository(documents)
+    fun inMemoryConversions(
+        documents: InMemoryDocumentRepository,
+        originals: InMemoryDocumentOriginalRepository,
+    ): InMemoryConversionRepository = InMemoryConversionRepository(documents, originals)
 
     @Bean
     fun recordingQueue(): RecordingConversionQueue = RecordingConversionQueue()

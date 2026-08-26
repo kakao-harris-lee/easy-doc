@@ -702,6 +702,26 @@ object ContractSpec {
         return values
     }
 
+    /**
+     * 스키마 속성의 `enum` 값 집합 — **속성이 `$ref` 면 그것을 따라간다.**
+     *
+     * [schemaPropertyEnum] 은 속성 노드 **바로 아래**의 `enum` 만 읽는다. 값 집합을 이름 있는
+     * 컴포넌트로 뽑으면(1.6.0 의 `SourceFormat`) 그 경로가 사라지고 대조가 "계약에 없는
+     * 경로다"로 죽는데, 그것은 값 집합이 바뀌었다는 뜻이 아니라 **인용 방식**이 바뀐 것뿐이다.
+     * 두 함수를 따로 두는 이유는 인라인 갈래의 대조가 `$ref` 를 **조용히 통과하지 않게**
+     * 하기 위해서다 — 이쪽을 쓰는 자리는 「따라가도 좋다」를 명시적으로 고른 자리다.
+     */
+    fun schemaPropertyEnumResolved(
+        schema: String,
+        property: String,
+    ): List<String> {
+        val node = map("components", "schemas", schema, "properties", property)
+        val resolved = resolveSchema(node)
+        val values = (resolved["enum"] as? List<*>)?.map { it.toString() }.orEmpty()
+        require(values.isNotEmpty()) { "$schema.$property 의 enum 이 비었다 — 이 대조는 아무것도 재지 않는다." }
+        return values
+    }
+
     /** **P-32 — 스키마 속성의 `pattern`.** 배열 속성이면 `items.pattern` 을 읽는다. */
     fun schemaPropertyPattern(
         schema: String,
@@ -728,6 +748,16 @@ object ContractSpec {
         require(description.isNotBlank()) { "$schema.$property 에 description 이 없다 — 이 대조는 아무것도 재지 않는다." }
         return description
     }
+
+    /**
+     * `x-export-format-derivation.mapping` — 원본 형식 → 내보내기 형식. 값이 `null` 인 항목은
+     * 「같은 형식으로 내보낼 수단이 없다」이고, **키가 없는 것과 다르다**(키 누락은 결함이다).
+     */
+    fun exportFormatDerivation(): Map<String, String?> =
+        map("x-export-format-derivation", "mapping")
+            .entries
+            .associate { (key, value) -> key.toString() to value?.toString() }
+            .also { require(it.isNotEmpty()) { "내보내기 형식 유도표가 비었다 — 이 대조는 아무것도 재지 않는다." } }
 
     /** P-11. 스키마 속성의 `const`. */
     fun schemaPropertyConst(

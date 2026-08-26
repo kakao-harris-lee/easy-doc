@@ -3,6 +3,7 @@ package kr.easydoc.application.document
 import kr.easydoc.core.crypto.EncryptedField
 import kr.easydoc.core.crypto.PlainBody
 import kr.easydoc.core.document.ConversionStatus
+import kr.easydoc.core.document.SourceFormat
 import kr.easydoc.core.exceptions.ConflictException
 import kr.easydoc.core.exceptions.InvalidInputException
 import kr.easydoc.core.exceptions.NotFoundException
@@ -361,6 +362,8 @@ class ConversionFeedbackServiceTest {
                     id = conversionId,
                     documentId = UUID.randomUUID(),
                     status = status,
+                    sourceFormat = SourceFormat.TEXT,
+                    hasStoredOriginal = false,
                     ciphertexts = ConversionCiphertexts(seal(draft), null, seal(edited)),
                     reviewedAt = edited?.let { Instant.EPOCH },
                     missingPlaceholders = emptyList(),

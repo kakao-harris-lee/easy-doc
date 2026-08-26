@@ -9,6 +9,10 @@ export function conversion(overrides: Partial<ConversionResponse> = {}): Convers
     id: 'c1',
     document_id: 'd1',
     status: 'done',
+    // 기본값은 붙여넣기다 — 원본 파일이 없으니 유지할 서식도 없고, TXT로 내려받는다.
+    source_format: 'text',
+    export_format: 'txt',
+    format_preservation: { status: 'not_applicable', details: [] },
     easy_text: '신청은 3월 2일부터 할 수 있어요. 등록번호는 [[주민등록번호1]]이에요.',
     edited_text: null,
     reviewed_at: null,

@@ -15,6 +15,9 @@ import kr.easydoc.core.crypto.PlainBody
 import kr.easydoc.core.document.ConversionStatus
 import kr.easydoc.core.document.ConversionView
 import kr.easydoc.core.document.MaskedItemView
+import kr.easydoc.core.document.SourceFormat
+import kr.easydoc.core.document.formatPreservationOf
+import kr.easydoc.core.easyread.ExportFormat
 import kr.easydoc.core.privacy.MaskCategory
 import kr.easydoc.core.security.Secret
 import kr.easydoc.core.user.PasswordHash
@@ -191,12 +194,22 @@ class ConversionReadContractTest {
         assertThat(ConversionResponse.of(base).status).isEqualTo(base.status.wireName)
     }
 
-    /** 계약이 「비어 있어야」 한다고 적은 조합. */
+    /**
+     * 계약이 「비어 있어야」 한다고 적은 조합.
+     *
+     * **형식 셋은 여기서도 값을 든다** — 결과 필드가 아니라 문서 메타이므로 완료 전에도
+     * 나가고, 노출 가드가 그것을 결과로 세면 안 된다(계약 `ConversionResponse` 설명).
+     * 원본이 있는 DOCX 를 고른 것은 `format_preservation` 이 `null` 인 갈래까지 함께
+     * 지나게 하려는 것이다.
+     */
     private fun beforeDoneView(): ConversionView =
         ConversionView(
             id = UUID.randomUUID(),
             documentId = UUID.randomUUID(),
             status = ConversionStatus.entries.first { !it.exposesResult },
+            sourceFormat = SourceFormat.DOCX,
+            exportFormat = ExportFormat.ofSource(SourceFormat.DOCX),
+            formatPreservation = formatPreservationOf(hasStoredOriginal = true),
             easyText = null,
             editedText = null,
             reviewedAt = null,
@@ -325,8 +338,20 @@ class ConversionReadContractTest {
     private companion object {
         val STUB_HASH = PasswordHash("stub-hash")
 
-        /** 계약 `get.description` 이 완료 전에 나간다고 적은 것 — 앞의 둘은 자원 식별자다. */
-        val BEFORE_DONE_FIELDS = setOf("id", "document_id", "status", "failure_code")
+        /**
+         * 계약 `get.description` 이 완료 전에 나간다고 적은 **일곱** — 앞의 둘은 자원
+         * 식별자이고, 뒤의 셋은 문서 메타에서 오는 **형식 셋**이라 완료 여부와 무관하다.
+         */
+        val BEFORE_DONE_FIELDS =
+            setOf(
+                "id",
+                "document_id",
+                "status",
+                "failure_code",
+                "source_format",
+                "export_format",
+                "format_preservation",
+            )
 
         const val PLACEHOLDER = "[[주민등록번호1]]"
 

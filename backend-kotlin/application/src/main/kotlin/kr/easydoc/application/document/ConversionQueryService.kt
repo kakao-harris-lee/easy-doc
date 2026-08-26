@@ -6,6 +6,8 @@ import kr.easydoc.core.crypto.EncryptedContent
 import kr.easydoc.core.crypto.EncryptedField
 import kr.easydoc.core.crypto.PlainBody
 import kr.easydoc.core.document.ConversionView
+import kr.easydoc.core.document.formatPreservationOf
+import kr.easydoc.core.easyread.ExportFormat
 import kr.easydoc.core.exceptions.NotFoundException
 import java.util.UUID
 
@@ -27,12 +29,21 @@ class ConversionQueryService(
         return if (stored.status.exposesResult) completed(stored) else beforeDone(stored)
     }
 
-    /** 완료 전 응답 — **저장에서 오는 것은 넷뿐**이고 배열 둘은 빈 목록이다(X-E3). */
+    /**
+     * 완료 전 응답 — **결과 필드는 하나도 실리지 않고** 배열 둘은 빈 목록이다(X-E3).
+     *
+     * **형식 셋은 여기서도 실린다.** 문서 메타라 변환 완료 여부와 무관하고, 계약이
+     * `ConversionResponse` 설명에서 「형식 셋은 결과 필드가 아니다」로 그것을 고정한다 —
+     * 실패한 변환 화면에서도 「이 문서는 DOCX 였다」는 사실은 여전히 참이다.
+     */
     private fun beforeDone(stored: StoredConversion): ConversionView =
         ConversionView(
             id = stored.id,
             documentId = stored.documentId,
             status = stored.status,
+            sourceFormat = stored.sourceFormat,
+            exportFormat = ExportFormat.ofSource(stored.sourceFormat),
+            formatPreservation = formatPreservationOf(stored.hasStoredOriginal),
             easyText = null,
             editedText = null,
             reviewedAt = null,
@@ -50,6 +61,9 @@ class ConversionQueryService(
             id = stored.id,
             documentId = stored.documentId,
             status = stored.status,
+            sourceFormat = stored.sourceFormat,
+            exportFormat = ExportFormat.ofSource(stored.sourceFormat),
+            formatPreservation = formatPreservationOf(stored.hasStoredOriginal),
             easyText = open(stored.id, stored.ciphertexts.easyText, EncryptedField.CONVERSION_EASY_TEXT),
             editedText = open(stored.id, stored.ciphertexts.editedText, EncryptedField.CONVERSION_EDITED_TEXT),
             reviewedAt = stored.reviewedAt,

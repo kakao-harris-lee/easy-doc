@@ -1,0 +1,211 @@
+package kr.easydoc.api
+
+import com.fasterxml.jackson.annotation.JsonProperty
+import kr.easydoc.api.document.ConversionResponse
+import kr.easydoc.api.document.FormatPreservationResponse
+import kr.easydoc.api.support.ContractSpec
+import kr.easydoc.core.crypto.PlainBody
+import kr.easydoc.core.document.ConversionStatus
+import kr.easydoc.core.document.ConversionView
+import kr.easydoc.core.document.FormatPreservationStatus
+import kr.easydoc.core.document.SourceFormat
+import kr.easydoc.core.document.formatPreservationOf
+import kr.easydoc.core.easyread.ExportFormat
+import org.assertj.core.api.Assertions.assertThat
+import org.junit.jupiter.api.DisplayName
+import org.junit.jupiter.api.Test
+import java.util.UUID
+import kotlin.reflect.KClass
+import kotlin.reflect.full.memberProperties
+
+/**
+ * `ConversionResponse` **형식 셋**의 계약 — `DESIGN.md` §6.5 「필요한 계약 정보」의 읽기 절반.
+ *
+ * **기대값을 손으로 적지 않는다.** 세 값 집합은 전부 계약 파일에서 읽어 구현 enum 과 대조한다 —
+ * 손으로 적으면 계약이 넓어진 날 이 파일만 옛 집합을 알고 통과한다.
+ */
+class ConversionFormatContractTest {
+    @Test
+    @DisplayName("계약 `SourceFormat` 의 값 집합이 구현 `SourceFormat` **전부**를 정확히 덮는다")
+    fun `원본 형식 집합이 계약과 같다`() {
+        val declared = ContractSpec.schemaEnum(SOURCE_FORMAT_SCHEMA)
+
+        assertThat(declared)
+            .withFailMessage(
+                "계약 %s 의 enum 이 구현 전부를 덮지 않는다 — 계약 %s / 구현 %s",
+                SOURCE_FORMAT_SCHEMA,
+                declared,
+                SourceFormat.entries.map { it.wireName },
+            ).containsExactlyInAnyOrderElementsOf(SourceFormat.entries.map { it.wireName })
+    }
+
+    @Test
+    @DisplayName("계약 `ExportFormat` 의 값 집합이 구현 `ExportFormat` **전부**를 정확히 덮고 `pdf` 가 **없다**")
+    fun `내보내기 형식 집합이 계약과 같다`() {
+        val declared = ContractSpec.schemaEnum(EXPORT_FORMAT_SCHEMA)
+
+        assertThat(declared).containsExactlyInAnyOrderElementsOf(ExportFormat.entries.map { it.extension })
+
+        // 계약이 그 자리에 사유를 적어 뒀다: 렌더러가 없는 형식을 값으로 먼저 넣으면
+        // 계약이 없는 기능을 약속한다. 한쪽만 늘어나는 것을 이 단언이 막는다.
+        assertThat(declared)
+            .withFailMessage("계약 %s 에 `pdf` 가 들었다 — PDF 렌더러가 없는데 계약이 그것을 약속한다", EXPORT_FORMAT_SCHEMA)
+            .doesNotContain(SourceFormat.PDF.wireName)
+        assertThat(ExportFormat.entries.map { it.extension }).doesNotContain(SourceFormat.PDF.wireName)
+    }
+
+    @Test
+    @DisplayName("계약 `FormatPreservationStatus` 가 구현 enum **전부**를 정확히 덮는다 — 오늘은 한 값뿐이다")
+    fun `서식 유지 상태 집합이 계약과 같다`() {
+        val declared = ContractSpec.schemaEnum(PRESERVATION_STATUS_SCHEMA)
+
+        assertThat(declared)
+            .withFailMessage(
+                "계약 %s 의 enum 이 구현 전부를 덮지 않는다 — 한쪽만 넓어지면 응답이 계약 밖 상태를 싣는다: 계약 %s / 구현 %s",
+                PRESERVATION_STATUS_SCHEMA,
+                declared,
+                FormatPreservationStatus.entries.map { it.wireName },
+            ).containsExactlyInAnyOrderElementsOf(FormatPreservationStatus.entries.map { it.wireName })
+    }
+
+    @Test
+    @DisplayName("`ExportFormat.ofSource` 가 **모든** 원본 형식에 답하고, 답한 값은 전부 계약 `ExportFormat` 안이다")
+    fun `유도 규칙의 상이 계약 안이다`() {
+        val declaredExports = ContractSpec.schemaEnum(EXPORT_FORMAT_SCHEMA)
+
+        val derived = SourceFormat.entries.associateWith { ExportFormat.ofSource(it) }
+
+        assertThat(derived.keys)
+            .describedAs("유도 규칙의 정의역이 원본 형식 전부가 아니다")
+            .containsExactlyInAnyOrderElementsOf(SourceFormat.entries)
+        assertThat(derived.values.filterNotNull().map { it.extension })
+            .withFailMessage("유도 결과가 계약 %s 밖의 값을 냈다: %s", EXPORT_FORMAT_SCHEMA, derived)
+            .allSatisfy { assertThat(it).isIn(declaredExports) }
+    }
+
+    @Test
+    @DisplayName("`ExportFormat.ofSource` 가 계약 `x-export-format-derivation.mapping` 과 **한 항목도 다르지 않다**")
+    fun `유도 규칙이 계약 표와 같다`() {
+        val declared = ContractSpec.exportFormatDerivation()
+
+        // 정의역이 먼저다 — 표에 빠진 형식은 「모른다」가 아니라 누락이고, 그 갈래는 대조를 받지 않는다.
+        assertThat(declared.keys)
+            .withFailMessage("계약 유도표의 정의역이 `SourceFormat` 전부가 아니다: 표 %s", declared.keys)
+            .containsExactlyInAnyOrderElementsOf(SourceFormat.entries.map { it.wireName })
+
+        val implemented = SourceFormat.entries.associate { it.wireName to ExportFormat.ofSource(it)?.extension }
+
+        assertThat(implemented)
+            .withFailMessage(
+                "유도 규칙이 계약 `x-export-format-derivation.mapping` 과 다르다 — 계약 %s / 구현 %s. " +
+                    "`null` 을 대체 형식으로 접으면 계약이 우회 다운로드를 권하는 것이 된다(DESIGN.md §6.5).",
+                declared,
+                implemented,
+            ).isEqualTo(declared)
+
+        assertThat(declared.values)
+            .describedAs("표에 `null` 갈래가 하나도 없다 — 「내보낼 수단이 없다」를 재는 대조가 공허해진다")
+            .containsNull()
+    }
+
+    @Test
+    @DisplayName("`FormatPreservationResponse` 의 JSON 키가 계약 `FormatPreservation.required` 와 정확히 같다 (P-33)")
+    fun `서식 유지 DTO 의 키가 계약 required 와 같다`() {
+        assertThat(jsonPropertyNames(FormatPreservationResponse::class))
+            .isEqualTo(ContractSpec.schemaRequired(PRESERVATION_SCHEMA))
+    }
+
+    @Test
+    @DisplayName("`ConversionResponse` 의 JSON 키가 계약 `ConversionResponse.required` 와 정확히 같다 (P-33)")
+    fun `변환 응답 DTO 의 키가 계약 required 와 같다`() {
+        assertThat(jsonPropertyNames(ConversionResponse::class))
+            .isEqualTo(ContractSpec.schemaRequired(CONVERSION_SCHEMA))
+    }
+
+    @Test
+    @DisplayName("원본이 남지 않은 문서는 `not_applicable` 이고, 남은 문서는 **판정하지 않는다**(`null`)")
+    fun `서식 유지 판정이 원본 유무로 갈린다`() {
+        val declaredStatuses = ContractSpec.schemaEnum(PRESERVATION_STATUS_SCHEMA)
+
+        val withoutOriginal = formatPreservationOf(hasStoredOriginal = false)
+        assertThat(withoutOriginal).describedAs("되살릴 원본이 없다는 것은 오늘 서버가 확실히 아는 사실이다").isNotNull()
+        assertThat(withoutOriginal!!.status.wireName)
+            .withFailMessage("판정 값이 계약 %s 밖이다", PRESERVATION_STATUS_SCHEMA)
+            .isIn(declaredStatuses)
+        assertThat(withoutOriginal.details)
+            .describedAs("영향 항목을 만들어 낼 원본 구조 분석기가 없다 — `null` 이 아니라 빈 배열이다")
+            .isEmpty()
+
+        assertThat(formatPreservationOf(hasStoredOriginal = true))
+            .describedAs("원본이 남아 있으면 나중에 판정이 설 수 있다 — 지금 어느 상태로도 접지 않는다")
+            .isNull()
+    }
+
+    @Test
+    @DisplayName("조립된 응답의 형식 셋이 **전부 계약 값 집합 안**이다 — 원본 형식 넷 전부를 지난다")
+    fun `조립된 응답의 형식 셋이 계약 안이다`() {
+        val declaredSources = ContractSpec.schemaEnum(SOURCE_FORMAT_SCHEMA)
+        val declaredExports = ContractSpec.schemaEnum(EXPORT_FORMAT_SCHEMA)
+        val declaredStatuses = ContractSpec.schemaEnum(PRESERVATION_STATUS_SCHEMA)
+        val preservationKeys = ContractSpec.schemaRequired(PRESERVATION_SCHEMA)
+
+        SourceFormat.entries.forEach { source ->
+            listOf(true, false).forEach { hasOriginal ->
+                val response = ConversionResponse.of(viewOf(source, hasOriginal))
+
+                assertThat(response.sourceFormat)
+                    .withFailMessage("원본 형식 %s 가 계약 값 집합 밖으로 나갔다", response.sourceFormat)
+                    .isIn(declaredSources)
+                response.exportFormat?.let {
+                    assertThat(it).withFailMessage("내보내기 형식 %s 가 계약 값 집합 밖으로 나갔다", it).isIn(declaredExports)
+                }
+                response.formatPreservation?.let { preservation ->
+                    assertThat(preservation.status).isIn(declaredStatuses)
+                    assertThat(jsonPropertyNames(preservation::class)).isEqualTo(preservationKeys)
+                }
+            }
+        }
+    }
+
+    /** 완료 변환 하나 — 형식 셋만 갈아 끼운다. 결과 필드는 노출 가드를 지나는 최소값이다. */
+    private fun viewOf(
+        source: SourceFormat,
+        hasStoredOriginal: Boolean,
+    ): ConversionView =
+        ConversionView(
+            id = UUID.randomUUID(),
+            documentId = UUID.randomUUID(),
+            status = ConversionStatus.DONE,
+            sourceFormat = source,
+            exportFormat = ExportFormat.ofSource(source),
+            formatPreservation = formatPreservationOf(hasStoredOriginal),
+            easyText = PlainBody("쉬운 글 초안입니다."),
+            editedText = null,
+            reviewedAt = null,
+            maskedItems = emptyList(),
+            missingPlaceholders = emptyList(),
+            model = "stub-model",
+            providerName = "stub-provider",
+            inputTokens = 1,
+            outputTokens = 2,
+            failureCode = null,
+        )
+
+    /** 응답 DTO 가 실제로 내보내는 JSON 키. `@get:JsonProperty` 를 읽는다. */
+    private fun jsonPropertyNames(type: KClass<*>): Set<String> =
+        type.memberProperties
+            .mapNotNull { property ->
+                property.getter.annotations
+                    .filterIsInstance<JsonProperty>()
+                    .firstOrNull()
+                    ?.value
+            }.toSet()
+
+    private companion object {
+        const val CONVERSION_SCHEMA = "ConversionResponse"
+        const val SOURCE_FORMAT_SCHEMA = "SourceFormat"
+        const val EXPORT_FORMAT_SCHEMA = "ExportFormat"
+        const val PRESERVATION_SCHEMA = "FormatPreservation"
+        const val PRESERVATION_STATUS_SCHEMA = "FormatPreservationStatus"
+    }
+}

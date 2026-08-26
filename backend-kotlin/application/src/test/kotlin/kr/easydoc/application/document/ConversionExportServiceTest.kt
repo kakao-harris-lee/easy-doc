@@ -4,6 +4,7 @@ import kr.easydoc.core.crypto.EncryptedField
 import kr.easydoc.core.crypto.PlainBody
 import kr.easydoc.core.document.ConversionStatus
 import kr.easydoc.core.document.MaskedItemView
+import kr.easydoc.core.document.SourceFormat
 import kr.easydoc.core.easyread.ExportFile
 import kr.easydoc.core.easyread.ExportFormat
 import kr.easydoc.core.easyread.exportFileOf
@@ -200,6 +201,8 @@ class ConversionExportServiceTest {
                     id = conversionId,
                     documentId = UUID.randomUUID(),
                     status = body.status,
+                    sourceFormat = SourceFormat.TEXT,
+                    hasStoredOriginal = false,
                     ciphertexts =
                         ConversionCiphertexts(
                             easyText = seal(body.easyText, EncryptedField.CONVERSION_EASY_TEXT),

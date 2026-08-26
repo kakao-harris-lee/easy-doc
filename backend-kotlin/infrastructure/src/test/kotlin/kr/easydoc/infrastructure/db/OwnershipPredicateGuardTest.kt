@@ -405,7 +405,10 @@ class OwnershipPredicateGuardTest {
                 "$DOCUMENT/JdbcConversionRepository.kt | UPDATE [conversions]",
                 "$DOCUMENT/JdbcConversionRepository.kt | SELECT [conversions, documents]",
                 "$DOCUMENT/JdbcConversionRepository.kt | UPDATE [conversions, documents]",
-                "$DOCUMENT/JdbcConversionRepository.kt | SELECT [conversions, documents]",
+                // 조회가 `document_originals` 를 **읽는다** — 원본 바이트가 아니라 행의 유무만
+                // (`EXISTS`). 서식 유지 판정이 그 사실 하나로 선다. 소유 술어는 그대로 조인 위에
+                // 있고, `EXISTS` 는 이미 소유자로 좁혀진 `d.id` 에 걸린다.
+                "$DOCUMENT/JdbcConversionRepository.kt | SELECT [conversions, document_originals, documents]",
                 "$DOCUMENT/JdbcConversionRepository.kt | INSERT [conversions]",
                 "$DOCUMENT/JdbcConversionWorkStore.kt | SELECT [conversions, documents]",
                 "$DOCUMENT/JdbcConversionWorkStore.kt | UPDATE [conversions]",

@@ -41,7 +41,7 @@ openapi: 3.1.0
 
 info:
   title: Easy-Read AI API
-  version: "1.5.0"
+  version: "1.6.0"
   x-baselined-at: "2026-08-12"       # 초판 기준선을 뜬 날 (동결일이 아니다)
   x-rebased-at: "2026-08-12"         # 계약의 성격을 "개선 대상"으로 다시 정의한 날
   x-source-runtime: "Python 3.12 / FastAPI (app/main.py) — 과거 참고 구현이었고 2026-08-24 저장소에서 제거됨(git 태그 pre-python-removal-20260824). 기준선 출처였을 뿐 정답이 아니었다"
@@ -575,6 +575,37 @@ x-input-limits:
                                      # 생략 시의 고정 문구 `제목 없음`은 이 상한과 무관하다 (`x-title-policy`)
   max_feedback_comment_length: 500   # 피드백 자유 의견. 초과 시 422 — 서비스 층, 문자열 detail (정규화 **후** 길이)
   retention_days: 30
+
+# -----------------------------------------------------------------------------
+# 내보내기 형식 유도 — **들어온 형식 그대로 나간다** (`DESIGN.md` §6.5, 2026-08-26)
+#
+# 이 표가 `ConversionResponse.export_format` 값의 정본이다. 그 필드의 산문은 규칙을
+# 설명하고, 대조는 이 표를 읽는다 — 산문에서 값을 뽑는 규칙은 문장이 바뀌면 조용히
+# 어긋난다. 서버가 `format` 쿼리를 강제하게 되는 날, 그 오퍼레이션이 받아들이는 값도
+# 이 표에서 나온다.
+# -----------------------------------------------------------------------------
+x-export-format-derivation:
+  ground: G2
+  decided_at: "2026-08-26"
+  basis: "DESIGN.md §6.5 — 파일 형식 선택은 사용자가 검수 과정에서 해결해야 할 문제가 아니다"
+  # 키는 `SourceFormat` 값, 값은 `ExportFormat` 값 또는 `null`.
+  # **정의역이 `SourceFormat` 전부여야 한다** — 빠진 형식은 「모른다」가 아니라 누락이다.
+  mapping:
+    text: txt      # 붙여넣기는 파일이 아니었다. UTF-8 텍스트로 내려받는다
+    docx: docx
+    hwpx: hwpx
+    pdf: null      # 같은 형식으로 내보낼 수단이 없다 — 아래 `x-null-is-not-unknown`
+  x-null-is-not-unknown: |
+    `null`은 「모른다」가 아니라 **「같은 형식으로 내보낼 수단이 없다」**다.
+    `pdf`를 `ExportFormat`에 넣을 수 없고(렌더러가 없다), `txt`·`docx`로 접을 수도 없다 —
+    §6.5가 "PDF 다운로드 기능이 준비되기 전까지 다른 형식으로의 우회 다운로드를 기본
+    행동으로 제공하지 않는다"고 정한 자리다. 계약이 대체 형식을 실으면 그 금지를 계약이
+    스스로 어긴다. 화면은 이 `null`을 보고 내려받기 행동을 제시하지 않는다.
+  x-not-a-rename: |
+    `text → txt`는 유도이지 이름 변환이 아니다. 두 값 집합은 서로 다른 축이고
+    (`SourceFormat`은 「어디서 왔는가」, `ExportFormat`은 「무엇으로 나가는가」),
+    붙여넣기에는 애초에 확장자가 없다. 이름이 같은 셋(`docx`·`hwpx`)은 우연이 아니라
+    「그대로 나간다」의 결과이며, 그 우연을 유도 **규칙**으로 삼으면 이 한 갈래가 어긋난다.
 
 # -----------------------------------------------------------------------------
 # 문서 제목 — **제목은 문서 내용에서 만들지 않는다**
@@ -1556,7 +1587,9 @@ paths:
         **`masked_items[].original`에 가려졌던 실제 개인정보가 실린다** — 소유자 인증을
         통과한 조회에서만 나간다. 그래서 캐시 금지 헤더가 필수다.
         완료(`done`) 전에는 `easy_text`·`edited_text`·`masked_items`가 비어 있고
-        상태와 `failure_code`만 나간다.
+        상태와 `failure_code`, 그리고 **형식 셋**(`source_format`·`export_format`·
+        `format_preservation`)만 나간다 — 형식 셋은 변환 결과가 아니라 문서 메타에서
+        오므로 완료 여부와 무관하다(`ConversionResponse` 설명).
       responses:
         '200':
           description: 변환 상태·결과
@@ -2377,6 +2410,88 @@ components:
         내보내기 형식. 값이 그대로 확장자이자 쿼리 파라미터 값이다.
         `pdf`와 구버전 `hwp`(바이너리)는 Lean MVP 범위 밖이며 목록에 없는 값은 422다.
 
+        **`pdf`를 여기 더하지 않는다** (2026-08-26 재확인). PDF 렌더러가 없고
+        `GET /conversions/{conversion_id}/export?format=pdf`는 오늘 422다
+        (`docs/pilot-runbook.md`도 PDF를 범위 밖으로 적는다). 값을 먼저 넣으면 계약이
+        없는 기능을 약속한다. 원본이 PDF인 변환의 `ConversionResponse.export_format`이
+        `null`인 것이 이 부재를 응답에서 말하는 방법이다.
+
+    SourceFormat:
+      type: string
+      enum: [text, docx, pdf, hwpx]
+      description: |
+        문서가 **어디서 왔는가**. 붙여넣기는 `"text"`, 파일은 소문자 확장자다.
+
+        **enum으로 고정한다** (2026-08-12 개정, `x-change-policy` G1).
+        초판은 "자유 문자열이라 좁히면 파괴적"이라고 적었으나 사실이 아니었다 —
+        값 집합은 이미 닫혀 있다. 저장 값은 업로드 확장자를 소문자화한 것이지만 그 유도는
+        추출기가 지원 형식(`docx`·`pdf`·`hwpx`)만 통과시킨 **뒤에** 일어나고, 붙여넣기는
+        상수 `text`다. 그 밖의 값이 나올 경로가 없다(Kotlin `core/document/SourceFormat.kt`).
+        지원 형식을 늘리면 이 enum과 `x-input-limits.supported_upload_formats`를
+        같은 변경 단위에서 함께 늘린다(추가는 비파괴).
+
+        **1.6.0에서 `DocumentListItem.source_format`의 인라인 enum을 여기로 옮겼다.**
+        `ConversionResponse.source_format`이 **같은 값 집합**을 쓰기 때문이고, 인라인으로
+        두 번 적으면 그 순간 값 집합이 두 벌이 된다 — 한쪽만 늘어나는 날이 온다.
+        독립 컴포넌트로 두는 둘째 이유는 `ConversionStatus`·`PublishIntent`와 같다:
+        React 생성 타입이 **이름으로 부르는 union**이어야 화면 코드가 문자열 리터럴을
+        자기 자리에 복제하지 않는다. 값 집합은 옮기기 전과 **한 글자도 다르지 않다.**
+
+    FormatPreservationStatus:
+      type: string
+      enum: [not_applicable]
+      description: |
+        원본 서식 유지 상태. **오늘 서버가 정직하게 말할 수 있는 값은 하나뿐이다.**
+
+        - `not_applicable` — **유지할 원본 서식이 없다.** 두 갈래가 여기 든다:
+          ⑴ 붙여넣기(`source_format: text`) — 파일이 아니었으므로 서식이 애초에 없다.
+          ⑵ 원본 파일 바이트가 저장돼 있지 않은 문서 — `document_originals` 표가 서기
+             전(2026-08-26 이전)에 업로드된 문서가 그렇다. 그 바이트는 파싱 직후 사라졌고
+             다시 만들 수 없으므로, 구조 보존이 구현된 **뒤에도** 이 판정은 바뀌지 않는다.
+          두 갈래 모두 **영구히 참**이라 지금 내보내도 나중에 거짓이 되지 않는다.
+
+        **`DESIGN.md` §6.5가 제시한 다섯 값 중 넷을 뺐다. 각각의 사유는 이렇다:**
+
+        - `available`(「유지 가능」) — **근거가 없다.** 오늘 내보내기는 원본 바이트를 읽지
+          않는다. 제목과 본문 문자열로 **새 문서를 만든다**(Kotlin
+          `infrastructure/export/PackagedDocumentExporter`). 유지되는 원본 요소가 하나도
+          없으므로 이 값은 낙관적 추측이고, §6.5의 "상태는 낙관적으로 추측하지 않는다"에
+          정면으로 걸린다.
+        - `partial`(「일부 유지」) — 「일부」라고 말하려면 무엇이 유지되고 무엇이 달라지는지
+          알아야 하는데 원본 구조 분석기가 없다. 게다가 오늘의 결과는 「일부」가 아니라
+          「전무」다 — `available`보다 덜 틀린 것이 아니라 같은 종류로 틀린다.
+        - `checking`(「서식 확인 중」) — 서버가 **시작하지 않는** 분석의 진행 상태다.
+          내보내면 끝나지 않을 스피너를 약속한다.
+        - `failed`(「서식 유지 실패」) — 내보내기는 오늘 **성공한다**(유효한 DOCX·HWPX가
+          나간다). 실패한 적 없는 일을 실패라고 말할 수 없고, §6.5가 이 값에 붙인 「다시
+          시도」 행동은 기능이 없는 동안 아무것도 고치지 못한다.
+
+        **넷을 되살리는 것은 비파괴 추가다.** 구조 보존(§6.5 구현)이 서면 그때 이 enum에
+        값을 더하고 같은 변경 단위에서 React union을 넓힌다.
+
+    FormatPreservation:
+      type: object
+      required: [status, details]
+      description: |
+        원본 서식 유지 상태와, 사용자에게 보여 줄 영향 항목.
+        `ConversionResponse.format_preservation`이 `null`이면 **서버가 판정하지 않았다**는
+        뜻이다 — 그 사유는 그 필드 쪽에 적혀 있다.
+      properties:
+        status: { $ref: '#/components/schemas/FormatPreservationStatus' }
+        details:
+          type: array
+          items: { type: string }
+          description: |
+            사용자에게 그대로 보여 줄 **영향 항목** 문구 목록. 예를 들어 「복잡한 표 1개는
+            단순 표로 바뀔 수 있습니다」 같은 문장이 여기 든다(§6.5).
+
+            **개인정보도 문서 본문도 담지 않는다.** 담을 수 있는 것은 구조 요소의 종류와
+            개수뿐이며, 그 규칙은 `missing_placeholders`가 라벨만 싣는 것과 같은 판단이다.
+
+            **오늘은 항상 빈 배열이다** — 유일한 상태 `not_applicable`에는 사용자에게
+            알릴 영향 항목이 없고, 항목을 만들어 낼 원본 구조 분석기도 아직 없다.
+            `null`이 아니라 `[]`인 것은 `masked_items`와 같은 규칙이다.
+
     # ---------------------------------------------------------------------
     # auth
     # ---------------------------------------------------------------------
@@ -2587,11 +2702,18 @@ components:
     ConversionResponse:
       type: object
       required:
-        [id, document_id, status, easy_text, edited_text, reviewed_at,
+        [id, document_id, status, source_format, export_format, format_preservation,
+         easy_text, edited_text, reviewed_at,
          masked_items, missing_placeholders, model, provider_name,
          input_tokens, output_tokens, failure_code]
       description: |
-        변환 상태·결과. 완료 전에는 결과 필드가 모두 비어 있다.
+        변환 상태·결과. 완료 전에는 **결과 필드**가 모두 비어 있다.
+
+        **형식 셋(`source_format`·`export_format`·`format_preservation`)은 결과 필드가
+        아니다.** 문서 메타에서 오는 값이라 `pending`·`processing`·`failed`에서도 그대로
+        나간다. 검수 화면을 직접 URL로 열거나 새로고침해도 원본 형식을 잃지 않아야 하고
+        (`DESIGN.md` §6.5 「필요한 계약 정보」), 변환이 실패한 화면에서도 「이 문서는
+        DOCX였다」는 사실은 여전히 참이기 때문이다.
 
         **required 범위가 FastAPI 자동 생성물보다 넓다.** 자동 생성물은
         기본값이 있거나 nullable인 필드를 required에서 빼지만, 실제 응답은 항상
@@ -2602,6 +2724,52 @@ components:
         id: { type: string, format: uuid }
         document_id: { type: string, format: uuid }
         status: { $ref: '#/components/schemas/ConversionStatus' }
+        source_format:
+          $ref: '#/components/schemas/SourceFormat'
+          description: |
+            이 변환이 딸린 문서의 **원본 형식**. `DocumentListItem.source_format`과
+            **같은 값 집합이자 같은 값**이다 — 두 응답이 같은 컬럼을 읽는다.
+
+            검수 화면이 화면 전환 상태에 기대지 않고 이 값 하나로 「DOCX로 내려받기」를
+            그릴 수 있어야 한다는 것이 이 필드가 여기 있는 이유다(`DESIGN.md` §6.5).
+        export_format:
+          anyOf:
+            - { $ref: '#/components/schemas/ExportFormat' }
+            - { type: 'null' }
+          description: |
+            이 변환을 내려받을 때 **써야 하는** 형식. 서버가 `source_format`에서 유도한다:
+            `text → txt` · `docx → docx` · `hwpx → hwpx` · **`pdf → null`**.
+
+            **「지금 요청해야 하는 값」이지 「지금 반드시 나오는 값」이 아니다.** 오늘
+            `GET /conversions/{conversion_id}/export`의 `format` 쿼리는 여전히 필수이고
+            서버가 다른 값을 거절하지 않는다 — 클라이언트가 `format=txt`를 넣으면 원본이
+            DOCX여도 TXT가 나간다. 그 강제는 다음 조각이고, 그때 이 필드의 값과 그
+            오퍼레이션이 받아들이는 값이 **같아진다**(§6.5 "가능한 값은 서버 응답의
+            `export_format`과 일치해야 한다"). 그 사이에도 이 필드는 거짓이 아니다:
+            서버가 정한 형식을 말하고, 강제하지 않는다는 사실을 여기 적어 둔다.
+
+            **`null`은 「모른다」가 아니라 「같은 형식으로 내보낼 수단이 없다」다.** 원본이
+            PDF인 변환에서만 나온다. `pdf`를 실을 수 없는 것은 `ExportFormat`에 그 값이
+            없어서이고(렌더러가 없다), `txt`·`docx`를 대신 실을 수도 없다 — §6.5가
+            "PDF 다운로드 기능이 준비되기 전까지 다른 형식으로의 우회 다운로드를 기본
+            행동으로 제공하지 않는다"고 정한 자리다. 우회를 계약이 권하면 그 금지가
+            무의미해진다. 화면은 이 `null`을 보고 내려받기 행동을 **제시하지 않는다.**
+        format_preservation:
+          anyOf:
+            - { $ref: '#/components/schemas/FormatPreservation' }
+            - { type: 'null' }
+          description: |
+            원본 서식 유지 상태. **`null`은 「서버가 아직 판정하지 않았다」다** —
+            「유지 가능」도 「유지 불가」도 아니다.
+
+            오늘 `null`이 나오는 조건은 하나다: **원본 파일 바이트가 저장돼 있는데 그것을
+            분석하는 구현이 아직 없다.** 원본이 있으므로 나중에 판정이 설 수 있고, 그래서
+            지금 어느 상태로도 접지 않는다. 값이 서는 유일한 경우(`not_applicable`)와 그
+            사유는 `FormatPreservationStatus`에 있다.
+
+            §6.5: "상태는 낙관적으로 추측하지 않는다. 서버가 제공한 결과만 표시한다."
+            `null`은 **서버가 아무것도 제공하지 않았다**는 뜻이고, 화면은 그때 상태를
+            지어내지 말고 `원본 서식 유지` 패널의 상태 줄을 비운다.
         easy_text:
           anyOf: [{ type: string }, { type: 'null' }]
           description: AI 초안. `done`이 아니면 null.
@@ -2777,21 +2945,14 @@ components:
             `maxLength`는 사용자 입력을 자른 결과의 사후 보장이다 — 고정 문구는 그 상한과 무관하다.
             React `HistoryPage`가 이 값을 표에 **그대로 렌더링**하므로 값 자체가 화면 문구다.
         source_format:
-          type: string
-          enum: [text, docx, pdf, hwpx]
+          $ref: '#/components/schemas/SourceFormat'
           description: |
             붙여넣기는 `"text"`, 파일은 소문자 확장자.
 
-            **enum으로 고정한다** (2026-08-12 개정, `x-change-policy` G1).
-            초판은 "자유 문자열이라 좁히면 파괴적"이라고 적었으나 사실이 아니었다 —
-            값 집합은 이미 닫혀 있다. `_source_format`이 확장자를 소문자화해 쓰지만
-            그 함수는 `extract_text`가 지원 형식(`docx`·`pdf`·`hwpx`)만 통과시킨 **뒤에**
-            불리고, 붙여넣기는 상수 `TEXT_SOURCE_FORMAT = "text"`다. 그 밖의 값이 나올
-            경로가 없다(`app/services/documents.py`).
-            React 영향 없음 — 이 필드를 화면에 쓰는 코드가 없다(2026-08-12 실측:
-            `frontend/src` 전체에서 `types.ts` 선언과 테스트 팩토리에만 등장).
-            지원 형식을 늘리면 이 enum과 `x-input-limits.supported_upload_formats`를
-            같은 변경 단위에서 함께 늘린다(추가는 비파괴).
+            **1.6.0에서 인라인 enum을 `SourceFormat` 컴포넌트로 옮겼다** — 값 집합과
+            그것을 enum으로 고정한 사유(2026-08-12 개정)는 전부 그쪽에 있다.
+            `ConversionResponse.source_format`이 같은 값 집합을 쓰게 되면서, 인라인으로
+            두 벌을 두면 한쪽만 늘어나는 날이 오기 때문이다.
         char_count: { type: integer }
         created_at: { type: string, format: date-time }
         retention_expires_at:
@@ -2911,6 +3072,117 @@ components:
 # 변경 이력
 # =============================================================================
 x-changelog:
+  - version: "1.6.0"
+    date: "2026-08-26"
+    revision: "DESIGN-6.5-READ"   # §6.5 「필요한 계약 정보」의 **읽기 절반**
+    author: contract-keeper
+    change: |
+      **변환 조회 응답이 원본 형식과 출력 형식을 말하게 했다 — 추가와 이동만 있고
+      나가는 바이트의 기존 값은 하나도 바뀌지 않는다.**
+
+      ⑴ **`ConversionResponse`에 필드 셋 추가** — `source_format`(비-null) ·
+         `export_format`(nullable) · `format_preservation`(nullable). `required`가
+         열셋에서 **열여섯**으로 늘었다. 「키는 항상 있고 값이 null일 수 있다」 규칙 그대로다.
+      ⑵ **`SourceFormat` 컴포넌트 신설** — `DocumentListItem.source_format`의 인라인
+         enum을 **옮긴** 것이다. 값 집합 `[text, docx, pdf, hwpx]`는 한 글자도 다르지
+         않고, 2026-08-12 개정의 근거 산문도 그대로 옮겼다. 두 응답이 같은 값 집합을
+         쓰게 됐으므로 인라인 두 벌은 한쪽만 늘어나는 날을 예약하는 일이다.
+      ⑶ **`FormatPreservationStatus`·`FormatPreservation` 신설.** 상태 enum은
+         **`not_applicable` 하나뿐이다.** `DESIGN.md` §6.5가 제시한 다섯 중 넷
+         (`available`·`partial`·`checking`·`failed`)을 **뺐고**, 각각을 뺀 사유를 그
+         컴포넌트 안에 적었다. 요약하면 오늘 내보내기는 원본 바이트를 읽지 않고 제목·본문으로
+         새 문서를 만들기 때문에 「유지 가능」도 「일부 유지」도 근거가 없고, 시작하지 않는
+         분석의 「확인 중」과 실패한 적 없는 「유지 실패」는 화면에 끝나지 않는 상태를 만든다.
+      ⑷ **`ConversionResponse.description`과 `GET /conversions/{conversion_id}`의
+         `description`에 「형식 셋은 결과 필드가 아니다」를 적었다.** 완료 전에 나가는 것이
+         넷에서 **일곱**으로 늘었다는 뜻이고, 그 분모를 계약에서 읽는 대조가 있다
+         (`affected_tests`).
+      ⑸ **`ExportFormat`은 값을 늘리지 않았다.** `pdf`를 넣지 않는 사유를 그 자리에
+         **명시적으로 적었다** — 이전에는 "범위 밖"이라고만 적혀 있어 다음 조각이 무심코
+         넣을 수 있었다. 원본이 PDF인 변환은 `export_format: null`로 그 부재를 말한다.
+      ⑹ **`GET /conversions/{conversion_id}/export`는 한 글자도 바꾸지 않았다.**
+         `format` 쿼리는 여전히 **필수**이고 값 집합도 `docx|txt|hwpx` 그대로다. 서버가
+         원본에서 형식을 강제하는 것(§6.5 "원본과 다른 값을 거절하고")은 **다음 조각**이며,
+         그 사실을 `export_format` 설명이 안고 있다.
+    ground: |
+      **G2 — 요구사항이 그것을 요구한다.** `DESIGN.md` §6.5 「필요한 계약 정보」가 네 가지를
+      이름으로 지목했고, 그중 셋이 조회 응답에 **없었다.** 없으면 검수 화면이 「무슨 형식으로
+      내려받는가」를 화면 전환 상태(업로드 직후의 메모리)로만 알 수 있고, 직접 URL 진입과
+      새로고침에서 그 사실이 사라진다. 취향이 아니라 §6.5 첫 문장의 선결이다.
+
+      직전 커밋이 `document_originals`를 세워 원본 바이트를 저장하기 시작한 것이 이 조각의
+      선행 조건이었다 — 「원본이 있는가」를 서버가 알게 된 뒤에야 `format_preservation`을
+      추측 없이 말할 수 있다.
+    rationale: |
+      **① 왜 `format_preservation`이 nullable인가 — 그리고 `null`이 무엇을 뜻하는가.**
+      §6.5는 "상태는 낙관적으로 추측하지 않는다. 서버가 제공한 결과만 표시한다"고 정한다.
+      원본 구조 분석기가 없는 오늘, 원본 바이트가 **있는** 문서에 대해 서버가 정직하게 낼
+      수 있는 상태는 없다. 그때 다섯 값 중 아무거나 고르는 것은 전부 추측이므로 **아무것도
+      제공하지 않는다** — 그것이 `null`이다. 「유지 불가」로 접지 않는 이유는 그것도 판정이기
+      때문이다: 원본이 남아 있으므로 나중에 판정이 설 수 있다.
+
+      **② 왜 그런데도 enum이 비어 있지 않은가.** 원본 바이트가 **없는** 문서에 대해서는
+      서버가 오늘 확실히 안다 — 유지할 것이 없다. 붙여넣기는 파일이 아니었고, 표가 서기 전에
+      올라온 문서는 바이트가 이미 사라졌다. 둘 다 **영구히 참**이라 구조 보존이 구현된 뒤에도
+      뒤집히지 않는다. 판정 기준을 `source_format == text`가 아니라 **원본 행의 유무**로 둔
+      것이 이 둘째 갈래를 덮는다.
+
+      **③ 왜 `export_format`이 「요청해야 하는 값」인가.** 두 갈래가 있었다.
+      「지금 반드시 나오는 값」으로 정의하면 오늘 거짓이다 — 클라이언트가 `format`을 임의로
+      고를 수 있고 서버가 막지 않는다. 「앞으로 될 값」으로 정의하면 계약이 아직 없는 강제를
+      약속한다. 셋째 갈래를 골랐다: **서버가 원본에서 유도한, 클라이언트가 요청해야 하는
+      형식.** 이 정의는 오늘 참이고(유도는 실재하고 안정적이다), 다음 조각이 강제를 붙이면
+      **정의를 바꾸지 않고** 그대로 「나오는 값」이 된다. 유일한 대가는 "서버가 아직 강제하지
+      않는다"를 계약이 소리 내어 말해야 한다는 것이고, 그것은 적었다.
+
+      **④ 왜 PDF가 `null`이고 `txt`가 아닌가.** 대체 형식을 실으면 계약이 우회 다운로드를
+      **권하는** 것이 된다. §6.5는 그것을 금지한다("다른 형식으로의 우회 다운로드를 기본
+      행동으로 제공하지 않는다"). `null`은 「이 변환에는 내려받기 행동이 없다」를 화면이
+      추측 없이 읽을 수 있는 유일한 값이다.
+
+      **⑤ 왜 `SourceFormat`을 컴포넌트로 뽑았고, 그것이 왜 비파괴인가.** `ConversionStatus`
+      (2026-08-12)와 `PublishIntent`(1.5.0)가 같은 판정을 받은 자리다 — React 생성 타입이
+      이름으로 부르는 union이어야 화면이 문자열 리터럴을 복제하지 않는다. 와이어에서 보면
+      `$ref`는 인라인 enum과 **같은 스키마**이고 값 집합이 그대로라, 소비자가 받는 바이트도
+      받아들여야 하는 값도 달라지지 않는다.
+    version_note: |
+      **1.5.0 → 1.6.0.** `ConversionResponse`에 필드 셋이 늘고 컴포넌트 셋이 새로 서므로
+      React 생성 타입이 달라진다 — 1.5.0과 같은 기준이다.
+      **비파괴다** — 기존 경로·상태 코드·필드 이름·문구·값 집합이 하나도 바뀌지 않았고
+      `required`는 넓어지기만 했다(응답의 required 확장은 소비자에게 안전하다).
+      `DocumentListItem.source_format`의 enum 이동은 **와이어에서 무변화**라 이 상향의
+      사유가 아니다(1.4.0의 두 항목이 버전을 올리지 않은 것과 같은 기준이며, 이번에는
+      필드 추가 쪽이 사유다).
+    react_impact: |
+      `frontend/src/api/types.ts`에 `SourceFormat`·`FormatPreservationStatus`·
+      `FormatPreservation` 타입이 서고 `ConversionResponse`에 필드 셋이 는다.
+      `DocumentListItem.source_format`은 `string`에서 `SourceFormat` union으로 좁아진다 —
+      계약이 2026-08-12부터 enum이었는데 프런트 타입만 넓게 남아 있던 자리를 맞춘 것이다.
+      **화면 코드는 이 변경 단위에서 바꾸지 않는다.** 검수 화면의 `원본 서식 유지` 패널과
+      「DOCX로 내려받기」 버튼(§6.5)은 뒤 조각이며, 그전에 타입이 먼저 서 있어야 그 조각이
+      화면 상태를 지어내지 않는다. 실측(2026-08-26): `frontend/src` 전체에서
+      `source_format`을 읽는 화면 코드는 여전히 없다.
+    affected_tests: |
+      **이 계약 변경이 분모를 바꾸는 대조들이다.**
+      - `ConversionReadContractTest` CR-1 — 최상위 키 집합을 `ConversionResponse.required`와
+        **직접 대조**한다. DTO가 따라오기 전까지 빨갛다. 그것이 이 장치의 의도다.
+      - `ConversionReadContractTest`의 「결과 필드 아홉」 대조 — 분모가
+        `required - BEFORE_DONE_FIELDS`다. 완료 전에 나가는 것이 넷에서 **일곱**으로 늘었으므로
+        그 집합을 함께 넓힌다. 넓히지 않으면 형식 셋이 「완료 전에 실리면 안 되는 값」으로
+        잘못 분류돼 빨갛다.
+      - `DocumentListReachTest` DL-3 — `DocumentListItem.properties.source_format.enum`을
+        **경로로 직접** 읽고 있었다. `$ref`가 되었으므로 `$ref`를 따라가는 조회로 바꾼다
+        (`ContractSpec.schemaPropertyEnumResolved`).
+      - **신규 `ConversionFormatContractTest`** — 형식 셋의 값이 전부 계약에서 나온다는 대조.
+        Kotlin `SourceFormat`·`ExportFormat`·`FormatPreservationStatus`가 계약 enum을
+        **정확히** 덮는지, 유도 규칙(`source → export`)의 상과 정의역이 계약 값 집합 안인지,
+        `format_preservation` 객체의 키 집합이 계약 `required`와 같은지를 잰다.
+      - `ConversionReadReachTest` — 붙여넣기(`text`)와 DOCX 업로드 두 갈래에서 실제 DB를
+        거쳐 나온 형식 셋을 계약과 대조한다.
+      - `x-input-limits.supported_upload_formats` ↔ `SourceFormat` 대조
+        (`UploadFormatContractTest`)는 그대로다 — 그 목록은 옮기지 않았다.
+    notified: [kotlin-implementer, 리더]
+
   - version: "1.5.0"
     date: "2026-08-26"
     revision: "PILOT-GATE-1"   # 파일럿 게이트 ① 판정 수단 — 리더 지시

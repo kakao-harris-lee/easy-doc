@@ -3,6 +3,9 @@ package kr.easydoc.application.document
 import kr.easydoc.core.crypto.EncryptedField
 import kr.easydoc.core.crypto.PlainBody
 import kr.easydoc.core.document.ConversionStatus
+import kr.easydoc.core.document.FormatPreservationStatus
+import kr.easydoc.core.document.SourceFormat
+import kr.easydoc.core.easyread.ExportFormat
 import kr.easydoc.core.exceptions.NotFoundException
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
@@ -130,6 +133,66 @@ class ConversionQueryServiceTest {
     }
 
     @Test
+    @DisplayName("형식 셋이 저장 값에서 유도된다 — 원본이 남아 있으면 서식 유지를 **판정하지 않는다**")
+    fun `형식 셋이 저장 값에서 유도된다`() {
+        val world = World()
+        val withOriginal = UUID.randomUUID()
+        val withoutOriginal = UUID.randomUUID()
+        world.seedResults(withOriginal, easyText = "쉬운 글 초안")
+        world.seedOrigin(withOriginal, SeededOrigin(SourceFormat.DOCX, hasStoredOriginal = true))
+        world.seedResults(withoutOriginal, easyText = "쉬운 글 초안")
+        world.seedOrigin(withoutOriginal, SeededOrigin(SourceFormat.DOCX, hasStoredOriginal = false))
+
+        val kept = world.service.read(OWNER, withOriginal)
+        val lost = world.service.read(OWNER, withoutOriginal)
+
+        assertThat(kept.sourceFormat).isEqualTo(SourceFormat.DOCX)
+        assertThat(kept.exportFormat).describedAs("들어온 형식 그대로 나간다").isEqualTo(ExportFormat.DOCX)
+        assertThat(kept.formatPreservation)
+            .describedAs("원본이 남아 있는데 판정을 지어냈다 — 분석기가 없는 동안 어느 상태도 추측이다")
+            .isNull()
+
+        assertThat(lost.formatPreservation?.status)
+            .describedAs("되살릴 원본이 없다는 것은 서버가 확실히 아는 사실이다")
+            .isEqualTo(FormatPreservationStatus.NOT_APPLICABLE)
+        assertThat(lost.formatPreservation?.details).isEmpty()
+    }
+
+    @Test
+    @DisplayName("원본이 PDF 면 `exportFormat` 이 `null` 이다 — 대체 형식으로 접지 않는다")
+    fun `PDF 는 내보내기 형식이 없다`() {
+        val world = World()
+        val conversionId = UUID.randomUUID()
+        world.seedResults(conversionId, easyText = "쉬운 글 초안")
+        world.seedOrigin(conversionId, SeededOrigin(SourceFormat.PDF, hasStoredOriginal = true))
+
+        val view = world.service.read(OWNER, conversionId)
+
+        assertThat(view.sourceFormat).isEqualTo(SourceFormat.PDF)
+        assertThat(view.exportFormat)
+            .describedAs("PDF 렌더러가 없다 — TXT·DOCX 로 접으면 계약이 우회 다운로드를 권하는 것이 된다")
+            .isNull()
+    }
+
+    @Test
+    @DisplayName("형식 셋은 **완료 전에도** 실린다 — 결과 필드가 아니므로 `carriesResult` 가 세지 않는다")
+    fun `완료 전에도 형식 셋이 실린다`() {
+        val world = World()
+        val conversionId = UUID.randomUUID()
+        world.seedPending(conversionId)
+        world.seedOrigin(conversionId, SeededOrigin(SourceFormat.HWPX, hasStoredOriginal = true))
+
+        val view = world.service.read(OWNER, conversionId)
+
+        assertThat(view.status).isEqualTo(ConversionStatus.PENDING)
+        assertThat(view.sourceFormat).isEqualTo(SourceFormat.HWPX)
+        assertThat(view.exportFormat).isEqualTo(ExportFormat.HWPX)
+        assertThat(view.carriesResult)
+            .describedAs("형식 셋이 「결과 필드」로 세어졌다 — 응답 조립이 완료 전에 막힌다")
+            .isFalse()
+    }
+
+    @Test
     @DisplayName("읽기는 트랜잭션 **안**, 복호화는 **밖**이다 — 커넥션을 쥔 채 열지 않는다")
     fun `복호화가 트랜잭션 밖이다`() {
         val world = World()
@@ -160,6 +223,18 @@ class ConversionQueryServiceTest {
         val STRANGER: UUID = UUID.fromString("00000000-0000-4000-8000-0000000000a2")
     }
 
+    /**
+     * 문서가 어디서 왔고 그 원본이 남아 있는가 — **둘을 함께 준다.**
+     *
+     * 「형식은 DOCX 인데 원본은 없다」가 실재하는 조합이라(표가 서기 전 업로드) 하나로
+     * 접을 수 없고, 두 인자를 따로 늘어놓으면 시드 함수가 detekt `LongParameterList`
+     * 문턱을 넘는다. 함께 다니는 값이므로 함께 묶는다.
+     */
+    private data class SeededOrigin(
+        val sourceFormat: SourceFormat = SourceFormat.TEXT,
+        val hasStoredOriginal: Boolean = false,
+    )
+
     /** 한 케이스가 쓰는 대역 묶음. 케이스마다 새로 만든다 — 대역이 상태를 들고 있다. */
     private class World {
         val transaction = RecordingTransactionRunner()
@@ -185,6 +260,8 @@ class ConversionQueryServiceTest {
                     id = conversionId,
                     documentId = UUID.randomUUID(),
                     status = ConversionStatus.PENDING,
+                    sourceFormat = SeededOrigin().sourceFormat,
+                    hasStoredOriginal = SeededOrigin().hasStoredOriginal,
                     ciphertexts = ConversionCiphertexts(easyText = null, maskedItems = null, editedText = null),
                     reviewedAt = null,
                     missingPlaceholders = emptyList(),
@@ -204,6 +281,25 @@ class ConversionQueryServiceTest {
         ) {
             val key = owner to conversionId
             conversions.owned[key] = conversions.owned.getValue(key).copy(status = status)
+        }
+
+        /**
+         * 이미 심은 행의 **출처**만 갈아 끼운다 — `demoteTo` 와 같은 형태다.
+         *
+         * [seedResults] 의 인자로 받지 않는 이유는 detekt `LongParameterList` 문턱(6)이다.
+         * 출처는 결과 열과 함께 다니는 값이 아니라 **문서 쪽 사실**이라, 따로 세우는 편이
+         * 그 사실을 더 잘 드러내기도 한다.
+         */
+        fun seedOrigin(
+            conversionId: UUID,
+            origin: SeededOrigin,
+            owner: UUID = OWNER,
+        ) {
+            val key = owner to conversionId
+            conversions.owned[key] =
+                conversions.owned
+                    .getValue(key)
+                    .copy(sourceFormat = origin.sourceFormat, hasStoredOriginal = origin.hasStoredOriginal)
         }
 
         /**
@@ -227,6 +323,8 @@ class ConversionQueryServiceTest {
                     id = conversionId,
                     documentId = UUID.randomUUID(),
                     status = ConversionStatus.DONE,
+                    sourceFormat = SeededOrigin().sourceFormat,
+                    hasStoredOriginal = SeededOrigin().hasStoredOriginal,
                     ciphertexts =
                         ConversionCiphertexts(
                             easyText = seal(easyText, EncryptedField.CONVERSION_EASY_TEXT),

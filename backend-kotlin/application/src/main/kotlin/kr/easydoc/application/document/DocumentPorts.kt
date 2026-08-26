@@ -160,6 +160,16 @@ data class StoredConversion(
     val id: UUID,
     val documentId: UUID,
     val status: ConversionStatus,
+    /** 문서 행에서 오는 원본 형식. 변환 행에는 없고 **같은 조인**이 함께 읽는다. */
+    val sourceFormat: SourceFormat,
+    /**
+     * 그 문서의 **원본 파일 바이트가 저장돼 있는가**(`document_originals` 행의 유무).
+     *
+     * 바이트 자체를 들지 않는다 — 조회는 그것을 읽지 않고, 최대 10MB 를 열 이유가 없다.
+     * 서식 유지 판정([kr.easydoc.core.document.formatPreservationOf])이 묻는 것은
+     * 「되살릴 원본이 있는가」 하나뿐이다.
+     */
+    val hasStoredOriginal: Boolean,
     val ciphertexts: ConversionCiphertexts,
     val reviewedAt: Instant?,
     val missingPlaceholders: List<String>,
@@ -169,10 +179,10 @@ data class StoredConversion(
     val outputTokens: Int?,
     val failureCode: String?,
 ) {
-    /** 로그 허용목록 그대로 — 식별자·상태·실패 코드와 **개수**뿐이다. */
+    /** 로그 허용목록 그대로 — 식별자·상태·형식·실패 코드와 **개수**뿐이다. */
     override fun toString(): String =
-        "StoredConversion($id, doc=$documentId, ${status.wireName}, failure=$failureCode, " +
-            "missing=${missingPlaceholders.size})"
+        "StoredConversion($id, doc=$documentId, ${status.wireName}, ${sourceFormat.wireName}, " +
+            "failure=$failureCode, missing=${missingPlaceholders.size})"
 }
 
 /** 내보내기가 읽는 행 — 변환 결과와 **파일명에 쓸 문서 제목**. */

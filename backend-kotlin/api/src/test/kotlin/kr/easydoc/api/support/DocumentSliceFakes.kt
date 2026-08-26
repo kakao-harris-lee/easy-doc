@@ -90,6 +90,10 @@ class InMemoryDocumentRepository : DocumentRepository {
     /** 그 문서의 제목. 없으면 `null`. */
     fun titleOf(documentId: UUID): String? = rows.firstOrNull { it.document.id == documentId }?.document?.title
 
+    /** 그 문서의 원본 형식. 없으면 `null` — 실물에서는 조회 조인이 같은 값을 함께 읽는다. */
+    fun sourceFormatOf(documentId: UUID): SourceFormat? =
+        rows.firstOrNull { it.document.id == documentId }?.document?.sourceFormat
+
     /**
      * 저장된 제목을 테스트가 직접 바꾼다. 제품 경로의 [resolveTitle] 을 우회해
      * 내보내기 파일명 정제를 재기 위한 자리이다.
@@ -140,8 +144,17 @@ class InMemoryDocumentRepository : DocumentRepository {
     }
 }
 
-/** `conversions` 대역. */
-class InMemoryConversionRepository(private val documents: InMemoryDocumentRepository) : ConversionRepository {
+/**
+ * `conversions` 대역.
+ *
+ * 원본 저장소를 함께 받는 것이 실물과 같은 모양이다 — `JdbcConversionRepository` 의 조회는
+ * `document_originals` 의 행 유무를 **같은 한 문장**에서 `EXISTS` 로 읽는다. 대역이 그것을
+ * 모르면 서식 유지 판정이 슬라이스에서만 다른 값이 된다.
+ */
+class InMemoryConversionRepository(
+    private val documents: InMemoryDocumentRepository,
+    private val originals: InMemoryDocumentOriginalRepository,
+) : ConversionRepository {
     /** `data class` 인 사유는 `StoredConversion` KDoc 과 같다 — 필드 수와 detekt 문턱. */
     private data class Row(
         val documentId: UUID,
@@ -210,6 +223,10 @@ class InMemoryConversionRepository(private val documents: InMemoryDocumentReposi
                     id = conversionId,
                     documentId = row.documentId,
                     status = row.status,
+                    sourceFormat =
+                        documents.sourceFormatOf(row.documentId)
+                            ?: error("변환은 있는데 그 문서가 없다 — 대역의 두 표가 갈렸다"),
+                    hasStoredOriginal = originals.byteSizeOf(row.documentId) != null,
                     ciphertexts = row.envelope.ciphertexts,
                     reviewedAt = row.reviewedAt,
                     missingPlaceholders = row.missingPlaceholders,

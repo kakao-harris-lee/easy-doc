@@ -4,6 +4,7 @@ import kr.easydoc.core.crypto.EncryptedField
 import kr.easydoc.core.crypto.PlainBody
 import kr.easydoc.core.document.ConversionStatus
 import kr.easydoc.core.document.MAX_CONVERTIBLE_CHARS
+import kr.easydoc.core.document.SourceFormat
 import kr.easydoc.core.exceptions.ConflictException
 import kr.easydoc.core.exceptions.InvalidInputException
 import kr.easydoc.core.exceptions.NotFoundException
@@ -272,6 +273,8 @@ class ConversionReviewServiceTest {
                     id = conversionId,
                     documentId = UUID.randomUUID(),
                     status = status,
+                    sourceFormat = SourceFormat.TEXT,
+                    hasStoredOriginal = false,
                     ciphertexts = ciphertexts,
                     reviewedAt = Instant.EPOCH,
                     missingPlaceholders = emptyList(),

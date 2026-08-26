@@ -184,12 +184,12 @@ class SensitiveToStringReachTest {
         /**
          * 소스 쪽은 하한이 아니라 정확 일치다 (게이트 25 U-1).
          *
-         * 파일럿 피드백(계약 1.5.0 #15)이 **일곱**을 더해 65 → 72 다 — core 의
-         * `QualityScore`·`MinutesSpent`, application 의 `FeedbackSubmission`·
-         * `ConversionFeedbackView`·`StoredFeedback`, api 의 `ConversionFeedbackRequest`·
-         * `ConversionFeedbackResponse`.
+         * 파일럿 피드백(계약 1.5.0 #15)이 **일곱**을 더해 65 → 72 였고,
+         * §6.5 형식 셋(계약 1.6.0)이 **하나**를 더해 73 이다 —
+         * api 의 `FormatPreservationResponse`. core 의 `FormatPreservation` 은
+         * `data class` 가 아니라 일반 class 여서 이 축이 아니라 R-10 쪽에서 세어진다.
          */
-        const val EXPECTED_SOURCE_DECLARATIONS = 72
+        const val EXPECTED_SOURCE_DECLARATIONS = 73
 
         /** 민감 판정이 반드시 닿아야 하는 타입 — 바닥이다. */
         val KNOWN_SENSITIVE_TYPES =
