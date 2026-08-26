@@ -75,14 +75,19 @@ class ConversionController(
     /**
      * 검수 완료 문서를 파일로 내려받는다. **이 응답에만** 자리표시자가 원문으로 복원될 수 있다.
      * 본문은 JSON 이 아니라 파일 바이트다.
+     *
+     * **`format` 은 선택이다**(계약 `x-export-format-derivation.enforcement`). 없으면 서버가
+     * 원본에서 정하고, 있으면 그 값과 같아야 한다 — 그 판정은 변환 행을 읽어야 서므로
+     * 여기가 아니라 [ConversionExportService] 가 한다. 이 층이 거르는 것은 **값 집합**
+     * 하나뿐이고(`ExportFormatConverter` → 422), 그 갈래는 변환을 읽기 전에 갈린다.
      */
     @GetMapping(CONVERSION_EXPORT_PATH)
     fun exportConversion(
         user: AuthenticatedUser,
         @PathVariable(CONVERSION_ID_VARIABLE) conversionId: UUID,
-        @RequestParam(name = FORMAT_PARAM) format: ExportFormat,
+        @RequestParam(name = FORMAT_PARAM, required = false) format: ExportFormat?,
     ): ResponseEntity<ByteArray> {
-        val file = exports.export(ownerId = user.id, conversionId = conversionId, format = format)
+        val file = exports.export(ownerId = user.id, conversionId = conversionId, requested = format)
         return ResponseEntity
             .ok()
             .header(HttpHeaders.CONTENT_DISPOSITION, contentDisposition(file.filename))

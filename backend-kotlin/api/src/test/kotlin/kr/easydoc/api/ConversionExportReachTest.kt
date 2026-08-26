@@ -1,10 +1,13 @@
 package kr.easydoc.api
 
 import kr.easydoc.api.support.ContractSpec
+import kr.easydoc.api.support.MultipartBody
 import kr.easydoc.api.support.OwnershipConcealment
+import kr.easydoc.api.support.UploadFixtures
 import kr.easydoc.application.crypto.ContentCipher
 import kr.easydoc.core.crypto.EncryptedField
 import kr.easydoc.core.crypto.PlainBody
+import kr.easydoc.core.document.SourceFormat
 import kr.easydoc.core.privacy.MaskCategory
 import kr.easydoc.core.privacy.MaskedItem
 import kr.easydoc.core.security.Secret
@@ -45,21 +48,21 @@ class ConversionExportReachTest {
     private val extractors = DocumentExtractors()
 
     @Test
-    @DisplayName("검수본의 자리표시자가 원문으로 복원되어 txt·docx·hwpx 본문에 실린다")
+    @DisplayName("검수본의 자리표시자가 원문으로 복원되어 txt·docx·hwpx 본문에 실린다 — **각 형식의 원본에서**")
     fun `검수본은 형식마다 복원한다`() {
-        val token = newAccount()
-        val conversionId = createDocument(token).second
-        markDone(
-            conversionId,
-            DoneResult(
-                easyText = "버려질 초안 $PLACEHOLDER",
-                editedText = "검수본 $PLACEHOLDER 입니다.",
-                maskedItems = listOf(hiddenItem()),
-                reviewed = true,
-            ),
-        )
-
         ContractSpec.schemaEnum(FORMAT_SCHEMA).forEach { format ->
+            val token = newAccount()
+            val conversionId = documentProducing(token, format)
+            markDone(
+                conversionId,
+                DoneResult(
+                    easyText = "버려질 초안 $PLACEHOLDER",
+                    editedText = "검수본 $PLACEHOLDER 입니다.",
+                    maskedItems = listOf(hiddenItem()),
+                    reviewed = true,
+                ),
+            )
+
             val response = exportBytes(token, conversionId, format)
             assertDeclaredStatus(response.statusCode(), ContractSpec.successStatus(EXPORT_PATH, GET))
             val body = exportedText(response.body(), format)
@@ -69,6 +72,62 @@ class ConversionExportReachTest {
             assertThat(body)
                 .withFailMessage("%s 본문에 자리표시자가 남았다", format)
                 .doesNotContain(PLACEHOLDER)
+        }
+    }
+
+    @Test
+    @DisplayName("`format` 을 **생략하면** 원본이 정한 형식이 나간다 — 직접 URL 로 열어도 동작한다")
+    fun `형식을 생략하면 서버가 정한다`() {
+        ContractSpec.schemaEnum(FORMAT_SCHEMA).forEach { format ->
+            val token = newAccount()
+            val conversionId = documentProducing(token, format)
+            markDone(conversionId, DoneResult(easyText = "쉬운 글 초안입니다."))
+
+            val response = exportBytes(token, conversionId, format = null)
+
+            assertDeclaredStatus(response.statusCode(), ContractSpec.successStatus(EXPORT_PATH, GET))
+            assertThat(response.headers().firstValue(CONTENT_DISPOSITION))
+                .withFailMessage("생략 경로가 %s 확장자를 내지 않았다: %s", format, response.headers())
+                .hasValueSatisfying { assertThat(it).contains(".$format") }
+            assertThat(exportedText(response.body(), format)).contains("쉬운 글 초안입니다.")
+        }
+    }
+
+    @Test
+    @DisplayName("원본과 **다른** 형식은 409 · 계약 예시 format_mismatch — 실제 업로드를 지난다")
+    fun `원본과 다른 형식은 409 다`() {
+        val formats = ContractSpec.schemaEnum(FORMAT_SCHEMA)
+
+        formats.forEach { derived ->
+            val token = newAccount()
+            val conversionId = documentProducing(token, derived)
+            markDone(conversionId, DoneResult(easyText = "쉬운 글 초안입니다."))
+
+            formats.filterNot { it == derived }.forEach { outsider ->
+                val response = exportText(token, conversionId, outsider)
+
+                assertDeclaredStatus(response.statusCode(), CONFLICT)
+                assertThat(jsonBody(response)[DETAIL])
+                    .withFailMessage("원본이 %s 인데 %s 요청의 처분이 계약과 다르다", derived, outsider)
+                    .isEqualTo(ContractSpec.pathExampleDetail(EXPORT_PATH, GET, CONFLICT, MISMATCH_EXAMPLE))
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("PDF 원본은 **어떤 값도·생략도** 409 · 계약 예시 no_exportable_format")
+    fun `PDF 원본은 내보낼 수 없다`() {
+        val token = newAccount()
+        val conversionId = uploadDocument(token, "안내문.pdf", UploadFixtures.samplePdf())
+        markDone(conversionId, DoneResult(easyText = "쉬운 글 초안입니다."))
+
+        (ContractSpec.schemaEnum(FORMAT_SCHEMA) + null).forEach { requested ->
+            val response = exportText(token, conversionId, requested)
+
+            assertDeclaredStatus(response.statusCode(), CONFLICT)
+            assertThat(jsonBody(response)[DETAIL])
+                .withFailMessage("PDF 원본 · 요청 %s 의 처분이 계약과 다르다", requested)
+                .isEqualTo(ContractSpec.pathExampleDetail(EXPORT_PATH, GET, CONFLICT, UNAVAILABLE_EXAMPLE))
         }
     }
 
@@ -99,7 +158,7 @@ class ConversionExportReachTest {
         forceStatus(failed, FAILED_STATUS)
 
         listOf(pending, failed).forEach { conversionId ->
-            val response = exportText(token, conversionId, firstFormat())
+            val response = exportText(token, conversionId, format = null)
             assertDeclaredStatus(response.statusCode(), CONFLICT)
             assertThat(jsonBody(response)[DETAIL])
                 .isEqualTo(ContractSpec.pathExampleDetail(EXPORT_PATH, GET, CONFLICT, NOT_DONE_EXAMPLE))
@@ -119,16 +178,18 @@ class ConversionExportReachTest {
             ),
         )
 
-        val response = exportText(token, conversionId, firstFormat())
+        val response = exportText(token, conversionId, format = null)
         assertDeclaredStatus(response.statusCode(), CONFLICT)
         assertThat(jsonBody(response)[DETAIL])
             .isEqualTo(ContractSpec.pathExampleDetail(EXPORT_PATH, GET, CONFLICT, MISSING_EXAMPLE))
     }
 
     @Test
-    @DisplayName("없는 식별자와 타인 식별자의 상태·본문 바이트·헤더 이름이 같다")
+    @DisplayName("없는 식별자와 타인 식별자의 상태·본문 바이트·헤더 이름이 같다 — **원본과 다른 형식으로도**")
     fun `없는 것과 남의 것이 구분되지 않는다`() {
         val mine = newAccount()
+        // 붙여넣기 문서라 `txt` 만 그 원본이 정한 형식이다 — 나머지 둘은 **불일치**이고,
+        // 그래도 409 가 아니라 404 여야 한다. 그것이 불일치를 409 에 둔 둘째 근거의 실측이다.
         val theirs = createDocument(newAccount()).second
 
         ContractSpec.schemaEnum(FORMAT_SCHEMA).forEach { format ->
@@ -219,10 +280,60 @@ class ConversionExportReachTest {
             UUID.fromString(body.getValue("conversion_id").toString())
     }
 
+    /**
+     * 그 내보내기 형식을 내는 원본으로 문서 하나를 만든다 — **실제 업로드를 지난다.**
+     *
+     * 어느 원본이 어느 형식을 내는지는 계약 유도표를 뒤집어 읽는다. 손으로 적으면 표가
+     * 바뀐 날 이 파일만 옛 대응을 알고 통과한다.
+     */
+    private fun documentProducing(
+        token: String,
+        format: String,
+    ): UUID {
+        val source =
+            ContractSpec
+                .exportFormatDerivation()
+                .entries
+                .firstOrNull { it.value == format }
+                ?.key
+                ?: error("계약 유도표에 $format 을 내는 원본이 없다")
+        val uploads =
+            mapOf(
+                SourceFormat.DOCX.wireName to UploadFixtures::sampleDocx,
+                SourceFormat.HWPX.wireName to UploadFixtures::sampleHwpx,
+                SourceFormat.PDF.wireName to UploadFixtures::samplePdf,
+            )
+        return if (source == SourceFormat.TEXT.wireName) {
+            createDocument(token).second
+        } else {
+            uploadDocument(token, "안내문.$source", (uploads[source] ?: error("$source 픽스처가 없다"))())
+        }
+    }
+
+    /** 파일을 올려 그 문서의 변환 식별자를 준다. **행은 제품이 쓴다.** */
+    private fun uploadDocument(
+        token: String,
+        filename: String,
+        content: ByteArray,
+    ): UUID {
+        val body = MultipartBody().file(FILE_PART, filename, content)
+        val request =
+            HttpRequest
+                .newBuilder(URI.create("http://localhost:$port$DOCUMENTS_PATH"))
+                .header(CONTENT_TYPE, body.contentType())
+                .header("Authorization", "Bearer $token")
+                .POST(HttpRequest.BodyPublishers.ofByteArray(body.build()))
+        val response = send(request)
+        check(response.statusCode() == ContractSpec.successStatus(DOCUMENTS_PATH, POST)) {
+            "업로드가 실패했다: ${response.statusCode()} ${response.body()}"
+        }
+        return UUID.fromString(jsonBody(response).getValue("conversion_id").toString())
+    }
+
     private fun exportBytes(
         token: String?,
         conversionId: UUID,
-        format: String,
+        format: String?,
     ): HttpResponse<ByteArray> =
         HttpClient.newHttpClient().send(
             getRequest(token, exportPath(conversionId, format)).build(),
@@ -232,16 +343,17 @@ class ConversionExportReachTest {
     private fun exportText(
         token: String?,
         conversionId: UUID,
-        format: String,
+        format: String?,
     ): HttpResponse<String> = send(getRequest(token, exportPath(conversionId, format)))
 
+    /** [format] 이 `null` 이면 쿼리를 아예 붙이지 않는다 — **생략이 기본 경로다.** */
     private fun exportPath(
         conversionId: UUID,
-        format: String,
+        format: String?,
     ): String {
         val path =
             EXPORT_PATH.replace("{${ContractSpec.pathVariable(EXPORT_PATH, GET).name}}", conversionId.toString())
-        return "$path?${formatQueryName()}=$format"
+        return if (format == null) path else "$path?${formatQueryName()}=$format"
     }
 
     private fun formatQueryName(): String = ContractSpec.queryParameters(EXPORT_PATH, GET).single().name
@@ -322,6 +434,12 @@ class ConversionExportReachTest {
 
         private const val NOT_DONE_EXAMPLE = "not_done"
         private const val MISSING_EXAMPLE = "missing_placeholders"
+        private const val MISMATCH_EXAMPLE = "format_mismatch"
+        private const val UNAVAILABLE_EXAMPLE = "no_exportable_format"
+
+        /** 업로드 파트 이름. 계약 `POST /documents` 의 multipart 본문이 정한다. */
+        private const val FILE_PART = "file"
+        private const val CONTENT_DISPOSITION = "Content-Disposition"
 
         private const val PLACEHOLDER = "[[주민등록번호1]]"
         private const val ORIGINAL = "900101-1234567"

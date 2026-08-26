@@ -109,6 +109,56 @@ class ConversionFormatContractTest {
     }
 
     @Test
+    @DisplayName("계약 `enforcement` 가 유도표와 **같은 절**에 있고, 처분이 오퍼레이션 선언과 맞물린다")
+    fun `강제 선언이 계약 안에서 닫힌다`() {
+        val enforcement = ContractSpec.exportEnforcement()
+        val declaredStatuses = ContractSpec.responseStatuses(EXPORT_PATH, GET)
+
+        assertThat(enforcement.parameter)
+            .describedAs("강제가 가리키는 파라미터가 그 오퍼레이션에 없다")
+            .isEqualTo(ContractSpec.queryParameters(EXPORT_PATH, GET).single().name)
+        assertThat(ContractSpec.queryParameters(EXPORT_PATH, GET).single().required)
+            .withFailMessage("계약 `enforcement.required` 와 오퍼레이션 선언이 갈렸다 — 두 자리가 같은 사실을 다르게 말한다")
+            .isEqualTo(enforcement.required)
+
+        // 처분으로 쓰는 상태 코드가 그 오퍼레이션에 선언돼 있어야 한다 — 없으면 계약에 없는 응답을 약속한다.
+        listOf(enforcement.onMismatch, enforcement.onNullMapping, enforcement.onUnknownValue).forEach { status ->
+            assertThat(declaredStatuses)
+                .withFailMessage("`enforcement` 가 선언되지 않은 상태 %d 를 처분으로 쓴다", status)
+                .contains(status.toString())
+        }
+    }
+
+    @Test
+    @DisplayName("불일치 처분이 **자원 상태**의 코드다 — 검증 층 코드(422)로 두면 소유 은닉보다 먼저 답한다")
+    fun `불일치 처분이 검증 코드와 갈린다`() {
+        val enforcement = ContractSpec.exportEnforcement()
+
+        assertThat(enforcement.onMismatch)
+            .withFailMessage(
+                "불일치가 값 집합 거절(%d)과 같은 코드다 — 그러면 그 판정이 소유 확인보다 먼저 나가고 " +
+                    "남의 문서의 원본 형식이 샌다(계약 `x-why-409-and-not-422`)",
+                enforcement.onUnknownValue,
+            ).isNotEqualTo(enforcement.onUnknownValue)
+        assertThat(enforcement.onNullMapping)
+            .describedAs("「내보낼 수단이 없다」도 자원 상태다 — 불일치와 같은 코드여야 한다")
+            .isEqualTo(enforcement.onMismatch)
+    }
+
+    @Test
+    @DisplayName("내보낼 수 없는 원본은 **PDF 하나뿐**이다 — 문구가 그 형식을 이름으로 부를 수 있는 근거")
+    fun `내보낼 수 없는 원본이 하나뿐이다`() {
+        val declared = ContractSpec.exportFormatDerivation()
+
+        assertThat(declared.filterValues { it == null }.keys)
+            .withFailMessage(
+                "유도표의 `null` 갈래가 늘었다 — `EXPORT_FORMAT_UNAVAILABLE_MESSAGE` 가 PDF 를 이름으로 부르므로 " +
+                    "그 문구가 거짓이 된다: %s",
+                declared,
+            ).containsExactly(SourceFormat.PDF.wireName)
+    }
+
+    @Test
     @DisplayName("`FormatPreservationResponse` 의 JSON 키가 계약 `FormatPreservation.required` 와 정확히 같다 (P-33)")
     fun `서식 유지 DTO 의 키가 계약 required 와 같다`() {
         assertThat(jsonPropertyNames(FormatPreservationResponse::class))
@@ -202,6 +252,9 @@ class ConversionFormatContractTest {
             }.toSet()
 
     private companion object {
+        const val EXPORT_PATH = "/conversions/{conversion_id}/export"
+        const val GET = "get"
+
         const val CONVERSION_SCHEMA = "ConversionResponse"
         const val SOURCE_FORMAT_SCHEMA = "SourceFormat"
         const val EXPORT_FORMAT_SCHEMA = "ExportFormat"

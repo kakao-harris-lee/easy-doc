@@ -41,7 +41,7 @@ openapi: 3.1.0
 
 info:
   title: Easy-Read AI API
-  version: "1.6.0"
+  version: "2.0.0"
   x-baselined-at: "2026-08-12"       # 초판 기준선을 뜬 날 (동결일이 아니다)
   x-rebased-at: "2026-08-12"         # 계약의 성격을 "개선 대상"으로 다시 정의한 날
   x-source-runtime: "Python 3.12 / FastAPI (app/main.py) — 과거 참고 구현이었고 2026-08-24 저장소에서 제거됨(git 태그 pre-python-removal-20260824). 기준선 출처였을 뿐 정답이 아니었다"
@@ -581,8 +581,9 @@ x-input-limits:
 #
 # 이 표가 `ConversionResponse.export_format` 값의 정본이다. 그 필드의 산문은 규칙을
 # 설명하고, 대조는 이 표를 읽는다 — 산문에서 값을 뽑는 규칙은 문장이 바뀌면 조용히
-# 어긋난다. 서버가 `format` 쿼리를 강제하게 되는 날, 그 오퍼레이션이 받아들이는 값도
-# 이 표에서 나온다.
+# 어긋난다. **2026-08-26(2.0.0)부터 이 표는 `GET /conversions/{conversion_id}/export`가
+# 받아들이는 값도 정한다** — 아래 `enforcement`. 두 자리가 같은 규칙을 각자 적지 않게
+# 그 오퍼레이션은 이 절을 가리키기만 한다.
 # -----------------------------------------------------------------------------
 x-export-format-derivation:
   ground: G2
@@ -606,6 +607,56 @@ x-export-format-derivation:
     (`SourceFormat`은 「어디서 왔는가」, `ExportFormat`은 「무엇으로 나가는가」),
     붙여넣기에는 애초에 확장자가 없다. 이름이 같은 셋(`docx`·`hwpx`)은 우연이 아니라
     「그대로 나간다」의 결과이며, 그 우연을 유도 **규칙**으로 삼으면 이 한 갈래가 어긋난다.
+
+  # ---------------------------------------------------------------------------
+  # 강제 (2.0.0, 2026-08-26) — **서버가 원본에서 정한다.**
+  # 이 블록이 `GET /conversions/{conversion_id}/export`의 처분 정본이다.
+  # 그 오퍼레이션의 산문은 이 키들을 설명하고, 대조는 이 키들을 읽는다.
+  # ---------------------------------------------------------------------------
+  enforcement:
+    since: "2.0.0"
+    operation: exportConversion
+    parameter: format
+    required: false            # 생략이 기본 경로다 — 서버가 `mapping`으로 정한다
+    on_absent: derive          # `mapping[source_format]`이 나간다
+    on_match: export           # 준 값이 `mapping[source_format]`과 같으면 그대로 나간다
+    on_mismatch: 409           # `ExportFormat` 안의 값이지만 이 변환의 원본과 다르다
+    on_null_mapping: 409       # `mapping[source_format]`이 `null` — 내보낼 수단이 없다
+    on_unknown_value: 422      # `ExportFormat` 밖의 값 — 변환을 읽기 전에 갈린다
+  x-why-409-and-not-422: |
+    **판정이 이 변환의 상태에 달렸기 때문이다.** 같은 쿼리 문자열이 `conversion_id`에 따라
+    통과하기도 하고 거절되기도 한다 — `format=txt`는 붙여넣기 변환에서 옳고 DOCX 변환에서
+    그르다. 422가 재는 것은 **값 자체**(`ExportFormat` 밖인가)이고 그 판정에는 DB가 필요
+    없다. 원본과의 불일치는 행을 읽어야만 알 수 있으므로 422의 성질이 아니다.
+
+    **두 번째 이유가 결정적이다: 소유 은닉과 순서가 맞아야 한다.** 불일치를 검증 층(422)에
+    두면 그 응답이 **소유 확인보다 먼저** 나가고, 남의 변환에 `format=docx`를 던진 호출자가
+    「이 문서는 DOCX가 아니다」를 알게 된다 — 404로 가려 둔 사실이 형식 축으로 샌다
+    (`x-change-policy.invariants` 「소유권 은닉 404」). 409는 행을 읽은 **뒤**의 판정이라
+    남의 자원에서는 404가 먼저 나가고 이 갈래에 닿지 않는다.
+
+    이 오퍼레이션의 기존 409 둘(완료 전·자리표시자 유실)도 같은 성질이다: 요청은
+    온전한데 **이 변환의 상태**가 내보내기를 허락하지 않는다. 새 갈래 둘을 그 옆에 두면
+    같은 종류의 판정이 한 상태 코드 아래 모이고, 오퍼레이션의 상태 집합은 그대로다.
+
+    **새 상태 코드를 만들지 않았다.** 406은 `Accept` 협상의 코드이고(여기는 쿼리
+    파라미터다), 415는 요청 본문의 미디어 타입이며(GET에 본문이 없다), 501은 **메서드**가
+    구현되지 않았다는 뜻이라 셋 다 이 상황을 가리키지 않는다.
+  x-superseded: |
+    **폐기된 조항: 클라이언트가 형식을 임의로 고른다.**
+
+    2.0.0 이전의 `GET /conversions/{conversion_id}/export`는 `format`을 **필수**로 받고
+    `ExportFormat` 안의 값이면 원본과 무관하게 그대로 내보냈다 — DOCX로 올린 문서를
+    `format=txt`로 받을 수 있었고, 그 교차 형식 내보내기가 **기본 동작**이었다.
+    그 조항은 폐기됐다. 되살리지 마라.
+
+    되살리면 무엇이 깨지는가: `DESIGN.md` §6.5의 첫 문장(「들어온 형식 그대로 나간다」)과
+    §14 완료 기준(「입력 형식과 다른 교차 형식 내보내기가 라이브 기능처럼 보이지 않는다」)이
+    동시에 깨진다. 화면 쪽 대가는 더 크다 — 형식 선택이 화면으로 돌아오고, 그것이 §6.5가
+    "사용자가 검수 과정에서 해결해야 할 문제가 아니다"라고 말한 바로 그 선택이다.
+
+    **`format` 누락이 422였던 갈래도 함께 폐기됐다.** 이제 누락은 오류가 아니라 기본
+    경로다(`enforcement.on_absent`). 422는 **값 집합 밖**에서만 남는다.
 
 # -----------------------------------------------------------------------------
 # 문서 제목 — **제목은 문서 내용에서 만들지 않는다**
@@ -1691,10 +1742,25 @@ paths:
         주입하지 않기 위해서다. 검수본에서 자리표시자가 빠져 있어도 막지 않는다(최종
         판단은 담당자 몫 — HITL).
 
-        409가 나는 경우가 둘이다:
+        **결과 형식은 서버가 원본에서 정한다** (2.0.0 — `DESIGN.md` §6.5 「들어온 형식
+        그대로 나간다」). 규칙과 처분의 정본은 최상위 `x-export-format-derivation`이고
+        여기서 옮겨 적지 않는다. 요약하면: `format`을 **생략하면** 서버가
+        `mapping[source_format]`으로 정하고, 주면 그 값과 **같아야** 한다.
+        그 값은 이 변환의 `ConversionResponse.export_format`과 언제나 같다.
+
+        409가 나는 경우가 넷이다:
           1. 아직 완료되지 않아 내보낼 결과가 없다
           2. 검수본이 없는데 자리표시자가 결과에서 사라졌다 — 그 자리의 정보가 통째로
              빠졌다는 뜻이라, 검수를 거치지 않은 초안을 그대로 배포하게 둘 수 없다.
+          3. `format`이 이 변환의 원본이 정한 형식과 다르다 (`enforcement.on_mismatch`)
+          4. 이 변환에는 내보낼 수 있는 형식이 없다 — 원본이 PDF다
+             (`enforcement.on_null_mapping`). 이때는 **어떤 `format` 값도** 통과하지
+             못하고 생략해도 같다. 대체 형식으로 접지 않는 사유는
+             `x-export-format-derivation.x-null-is-not-unknown`에 있다.
+
+        **1·2와 3·4의 순서**: 형식 판정이 먼저다. 3·4는 기다려도 바뀌지 않는 사실이고
+        1은 시간이 푸는 사실이라, 결국 거절될 요청에 「끝난 뒤에 다시 오라」고 답하면
+        틀린 행동을 권하게 된다. 소유 판정(404)은 그 전부보다 먼저다.
       parameters:
         - name: conversion_id
           in: path
@@ -1702,9 +1768,20 @@ paths:
           schema: { type: string, format: uuid }
         - name: format
           in: query
-          required: true
+          required: false
           description: |
-            **필수 파라미터다.** 목록에 없는 값(`pdf`·구버전 `hwp` 등)은 422다.
+            **선택 파라미터다** (2.0.0에서 필수를 풀었다 —
+            `x-export-format-derivation.enforcement`가 정본이다).
+
+            - **생략하면** 서버가 원본에서 정한다. 이것이 기본 경로다.
+            - **주면** 이 변환의 `ConversionResponse.export_format`과 같아야 한다.
+              값 집합 안이지만 다른 값이면 **409**다(422가 아니다 —
+              `x-why-409-and-not-422`).
+            - 목록에 없는 값(`pdf`·구버전 `hwp` 등)은 그대로 **422**다. **빈 값
+              (`?format=`)도 여기다** — 값을 주지 않은 것이 아니라 목록에 없는 값을 준 것이다.
+
+            **누락은 더 이상 422가 아니다.** 그 갈래는 폐기됐다(`x-superseded`) —
+            되살리면 내보내기가 다시 「클라이언트가 형식을 고르는」 오퍼레이션이 된다.
           schema: { $ref: '#/components/schemas/ExportFormat' }
       responses:
         '200':
@@ -1785,7 +1862,9 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
         '409':
-          description: 아직 완료되지 않았거나, 검수 없이 자리표시자가 유실된 초안이다
+          description: |
+            내보낼 수 없는 변환이다 — 완료 전 · 자리표시자 유실 · 원본과 다른 형식 요청 ·
+            내보낼 형식 없음(PDF 원본). 넷의 구분과 순서는 `description`에 있다.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
@@ -1793,8 +1872,14 @@ paths:
                 not_done: { value: { detail: "변환이 끝난 뒤에 내려받을 수 있습니다" } }
                 missing_placeholders:
                   value: { detail: "변환에서 유실된 개인정보 표시가 있습니다 — 검수 화면에서 수정 후 내보내세요" }
+                format_mismatch:
+                  value: { detail: "원본과 같은 형식으로만 내려받을 수 있습니다" }
+                no_exportable_format:
+                  value: { detail: "PDF 문서 내려받기는 아직 준비되지 않았습니다" }
         '422':
-          description: '`format` 누락 또는 미지원 값'
+          description: |
+            `format`이 `ExportFormat` 밖의 값이다. **누락은 여기가 아니다** —
+            생략은 2.0.0부터 기본 경로이고, 원본과 다른 값은 409다.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
@@ -2737,16 +2822,19 @@ components:
             - { $ref: '#/components/schemas/ExportFormat' }
             - { type: 'null' }
           description: |
-            이 변환을 내려받을 때 **써야 하는** 형식. 서버가 `source_format`에서 유도한다:
+            이 변환을 내려받을 때 나오는 형식. 서버가 `source_format`에서 유도한다:
             `text → txt` · `docx → docx` · `hwpx → hwpx` · **`pdf → null`**.
+            유도표의 정본은 최상위 `x-export-format-derivation`이다.
 
-            **「지금 요청해야 하는 값」이지 「지금 반드시 나오는 값」이 아니다.** 오늘
-            `GET /conversions/{conversion_id}/export`의 `format` 쿼리는 여전히 필수이고
-            서버가 다른 값을 거절하지 않는다 — 클라이언트가 `format=txt`를 넣으면 원본이
-            DOCX여도 TXT가 나간다. 그 강제는 다음 조각이고, 그때 이 필드의 값과 그
-            오퍼레이션이 받아들이는 값이 **같아진다**(§6.5 "가능한 값은 서버 응답의
-            `export_format`과 일치해야 한다"). 그 사이에도 이 필드는 거짓이 아니다:
-            서버가 정한 형식을 말하고, 강제하지 않는다는 사실을 여기 적어 둔다.
+            **2.0.0부터 「나오는 값」이자 「요청할 수 있는 유일한 값」이다.**
+            `GET /conversions/{conversion_id}/export`가 이 값과 다른 `format`을 **거절한다**
+            (409). 1.6.0에서 이 필드를 세울 때 「지금 요청해야 하는 값이지 지금 반드시
+            나오는 값이 아니다」라고 적었던 단서는 그 강제가 서면서 사라졌다 —
+            **정의를 바꾸지 않고** 강제만 붙었다. 그 오퍼레이션의 `format`을 생략하면
+            서버가 여기 적힌 값을 그대로 쓴다.
+
+            **`null`이면 내려받기 자체가 없다.** 어떤 `format` 값도 통과하지 못하고
+            생략해도 409다 — 아래 문단이 그 사유다.
 
             **`null`은 「모른다」가 아니라 「같은 형식으로 내보낼 수단이 없다」다.** 원본이
             PDF인 변환에서만 나온다. `pdf`를 실을 수 없는 것은 `ExportFormat`에 그 값이
@@ -3072,6 +3160,131 @@ components:
 # 변경 이력
 # =============================================================================
 x-changelog:
+  - version: "2.0.0"
+    date: "2026-08-26"
+    revision: "DESIGN-6.5-ENFORCE"   # §6.5 의 **쓰기 절반** — 1.6.0 이 예고한 그 조각
+    author: contract-keeper
+    change: |
+      **내보내기 형식을 서버가 원본에서 강제한다. 이것은 파괴적 변경이다** —
+      지금까지 통과하던 요청 갈래가 오늘부터 거절된다.
+
+      ⑴ **`GET /conversions/{conversion_id}/export`의 `format`이 `required: false`가 됐다.**
+         생략이 기본 경로이고, 그때 서버가 `x-export-format-derivation.mapping`으로 정한다.
+      ⑵ **값을 주면 그 변환의 `export_format`과 같아야 한다.** 값 집합 안이지만 다른 값은
+         **409**다. 상태 코드를 고른 근거는 `x-export-format-derivation.x-why-409-and-not-422`
+         — 요약하면 ⓐ 판정이 행을 읽어야 서는 **자원 상태**이고 ⓑ 422로 두면 검증 층이
+         소유 확인보다 먼저 답해 「남의 문서는 DOCX가 아니다」가 샌다.
+      ⑶ **원본이 PDF인 변환은 내보낼 수 없다** — `export_format: null`이고 **어떤 값도,
+         생략도** 409다. 새 문구 하나(`no_exportable_format`)를 그 자리에 뒀다.
+      ⑷ **`format` 누락의 422 갈래가 폐기됐다.** 누락은 오류가 아니라 기본 경로다.
+         422는 **`ExportFormat` 밖의 값**에만 남는다. 폐기 사실은
+         `x-export-format-derivation.x-superseded`가 안는다 —
+         `x-retired-responses`가 아닌 이유는 **상태 코드가 아니라 그 코드의 한 갈래**가
+         내려갔기 때문이고, 그 구분은 `x-retired-503-configurations` 머리 주석의 규칙 그대로다.
+      ⑸ **`enforcement` 블록 신설** — `x-export-format-derivation` 안이다. 처분(어느
+         갈래가 어느 상태 코드인가)을 **기계가 읽을 수 있게** 두었다. 오퍼레이션 산문은
+         이 키들을 설명하고 규칙을 옮겨 적지 않는다 — 두 자리에 적으면 한쪽만 바뀐다.
+      ⑹ **`ExportFormat`은 값을 늘리지 않았다.** `pdf`는 여전히 없다(렌더러가 없다).
+         PDF 원본의 처분은 값 추가가 아니라 409로 말한다.
+      ⑺ **`ConversionResponse.export_format` 설명에서 「강제하지 않는다」를 걷어냈다.**
+         1.6.0이 그 단서를 「다음 조각에서 사라진다」고 적어 두었고, 이번이 그 조각이다.
+         **필드의 정의는 바뀌지 않았다** — 그것이 1.6.0 `rationale` ③이 셋째 갈래를 고른
+         값어치다.
+      **응답 상태 집합은 늘지도 줄지도 않았다** — 200·401·404·409·422·500·503 그대로다.
+    ground: |
+      **G3 — 정책 결정이 바뀌었다.** `DESIGN.md` §6.5가 "현재처럼 클라이언트가
+      `format=docx|txt|hwpx`를 임의 선택하게 두지 않는다. 기존 쿼리 파라미터를 유지해야
+      한다면 원본과 다른 값을 거절하고, 가능한 값은 서버 응답의 `export_format`과 일치해야
+      한다"고 정했고, §13 4단계가 그 강제를 **서버에서** 하라고 못박았다("텍스트→TXT,
+      DOCX→DOCX, HWPX→HWPX, PDF→PDF 규칙을 서버에서 강제"). G2로도 성립하지만
+      1차 근거는 설계 문서의 정책 결정이다.
+    escalation: |
+      **`x-change-policy.escalate_to_leader` 2번에 걸린다** — React 런타임 코드
+      (`ReviewEditor.tsx`의 3버튼)가 이미 의존하는 동작이 바뀐다. 계약 소유자가 단독으로
+      정하지 않았다: 근거는 사용자 승인 설계 문서 `DESIGN.md` §6.5·§13 4단계·§14 완료
+      기준("입력 형식과 다른 교차 형식 내보내기가 라이브 기능처럼 보이지 않는다")이며,
+      이번 조각의 지시가 그 이행이다. 계약이 정책을 만들지 않았고 따라갔다.
+    rationale: |
+      **① 왜 `required`를 풀었나 — 버린 두 선택지의 대가.**
+      §6.5는 "기존 쿼리 파라미터를 유지해야 한다면"이라고 **조건부로** 적었으므로 셋 중
+      하나를 골라야 했다.
+
+      - **⑴ required 유지 + 불일치 거절**(버림). 서버가 아무것도 «결정»하지 않는다 —
+        클라이언트가 여전히 형식을 **이름 대야** 하고, 맞히려면 먼저 조회해야 하니
+        왕복이 하나 는다. §6.5의 첫 문장("서버가 원본 형식으로부터 결과 형식을 결정하는
+        것을 **기본으로** 한다")이 요구하는 기본값이 서지 않는다. **PDF 원본에서는 더
+        나쁘다**: 필수인데 통과하는 값이 **하나도 없는** 파라미터가 된다.
+      - **⑶ 파라미터 제거**(버림). 가장 순수해 보이지만 **가장 위험하다.** OpenAPI에도
+        Spring에도 「선언되지 않은 쿼리는 무시」가 기본이라, 제거하면 `?format=pdf`가
+        조용히 무시되고 DOCX가 나간다 — §6.5가 금지한 **조용한 대체**를 계약이 만든다.
+        막으려면 미선언 쿼리 거절이라는, 이 계약 어디에도 없는 장치를 새로 세워야 한다.
+      - **⑵ optional + 일치 강제**(고름). 생략이 기본 경로라 §6.5의 기본값이 서고,
+        직접 URL·북마크가 동작하며, PDF 원본에서 「보낼 값이 없다」가 자연스럽다.
+        준 값은 **주장**으로 취급해 다르면 소리 내어 거절한다.
+
+      **required → optional 자체는 비파괴다**(요청 제약 완화). 파괴적인 것은 어느 선택지를
+      골랐든 같은 몫, 즉 **불일치 거절**이다.
+
+      **② 왜 409이고 422가 아닌가.** 정본은 `x-export-format-derivation.x-why-409-and-not-422`.
+      여기서 다시 적지 않는다.
+
+      **③ 왜 PDF도 409인가 — 「미구현」이 아니라 「이 자원은 못 한다」.**
+      501은 **메서드**가 구현되지 않았다는 뜻이라 틀리고, 이 경로는 DOCX·HWPX·TXT 원본에서
+      멀쩡히 200을 낸다. 못 하는 것은 **이 변환**이고 그 사유는 이 변환의 `source_format`이다.
+      자원 상태에 달린 거절이므로 다른 셋과 같은 409다.
+
+      **④ 왜 불일치 문구가 형식 이름을 말하지 않는가.** 문구는 상수 하나다
+      (`"원본과 같은 형식으로만 내려받을 수 있습니다"`). 옳은 값은 이미 조회 응답의
+      `export_format`에 있고, 그 값을 오류 문구에 **또** 실으면 정본이 둘이 된다.
+    version_note: |
+      **1.6.0 → 2.0.0.** 이 계약의 **첫 major bump**다.
+
+      1.1.0~1.6.0의 선례는 「나가는 바이트가 바뀌면 minor를 올린다」였고 그 항목들은 전부
+      **비파괴**였다(추가·이동·상태 집합 축소). 이번은 다르다: **지금까지 200이던 요청이
+      409가 된다.** minor로 두면 "1.x 안에서는 깨지지 않는다"는 선례가 조용히 거짓이 된다.
+
+      **major가 뜻하는 것은 「문서 개정이 호환되지 않는다」이지 「API가 v2가 됐다」가
+      아니다.** 경로 접두사도(`/api`도 `/v2`도 없다) `openapi:` 필드도 오퍼레이션 id도
+      그대로이며, v1과 v2를 나란히 서비스하지 않는다. 이 파일은 여전히 「외부 HTTP 계약 v1」이고
+      `info.version`은 그 **문서의 판번호**다.
+
+      ⚠ **버전 규칙은 아직 계약에 없다**(1.3.0 `version_note`가 남긴 경고 그대로 —
+      `x-change-policy`에 `versioning` 키가 없고 그 신설은 별도 작업 C6이다). 이 bump는
+      「파괴적이면 major」라는 semver의 평이한 독법을 따른 것이며, 규칙이 서는 날
+      **이 항목과 1.3.0을 소급 대조**해야 한다.
+    react_impact: |
+      **런타임 파손 2건 — 이번 변경 단위에서 함께 고쳤다.**
+        - `frontend/src/components/ReviewEditor.tsx` — `DOWNLOAD_FORMATS` 상수
+          (`['docx','hwpx','txt']`)가 원본과 무관하게 버튼 셋을 그렸다. 붙여넣기 문서에서
+          `docx`·`hwpx` 버튼은 이제 **반드시 409로 실패한다.** 목록의 출처를 상수에서
+          `conversion.export_format`으로 **바꿨다** — `null`이면 내려받기 버튼이 없다
+          (§6.5 "화면은 이 `null`을 보고 내려받기 행동을 제시하지 않는다").
+          **버튼 하나의 모양·문구·`원본 서식 유지` 패널은 이 단위에서 바꾸지 않았다** —
+          그것은 §13 4단계의 다음 조각이다.
+        - `frontend/src/api/client.ts::downloadExport` — 시그니처는 그대로 두었다.
+          화면이 `export_format`을 그대로 넘기므로 **보내는 값이 언제나 일치**한다.
+          계약이 생략을 허용하게 됐다는 사실은 KDoc에 적었다.
+      `frontend/src/api/types.ts`는 **바뀌지 않는다** — 값 집합도 필드도 그대로다.
+    affected_tests: |
+      - `ConversionExportContractTest` — 「형식마다 성공」이 **한 문서에 세 형식**을 던지고
+        있었다. 그 문서는 붙여넣기라 이제 `txt`만 통과한다. 원본 형식마다 문서를 만들어
+        그 형식으로 내보내는 대조로 바꾼다. 「형식 누락 → 422」는 **뒤집힌다**(누락이
+        기본 경로다). 불일치 409·PDF 409·소유 은닉 우선(404) 케이스를 더한다.
+      - `ConversionExportReachTest` — 같은 이유로 실제 DOCX·HWPX·PDF 업로드를 지나야
+        한다(`UploadFixtures`). 「없는 것과 남의 것이 구분되지 않는다」는 불일치 형식으로도
+        404여야 한다 — 그것이 409를 고른 둘째 근거의 실측이다.
+      - `ConversionFormatContractTest` — `enforcement` 블록과 구현 처분의 대조를 더한다.
+      - `ConversionExportServiceTest`(application) — 유스케이스 층의 거절 순서.
+      - `PrivateHeaderFloorCensusTest` — 헤더를 재려고 `ExportFormat` 값 집합의 **첫 값**을
+        붙이고 있었다. 그 값(`docx`)은 붙여넣기 문서에서 이제 409라 헤더를 성공 경로에서
+        재지 못한다. **`format`을 아예 붙이지 않는** 요청으로 바꾼다 — 생략이 원본과
+        무관하게 200을 내는 경로다. 이 대조가 재는 것은 형식이 아니라 헤더다.
+      - `frontend/src/components/ReviewEditor.test.tsx` — 버튼 목록이 `export_format`을
+        따르는지, `null`에서 버튼이 없는지.
+      - `frontend/e2e/conversion-flow.spec.ts` E13은 **그대로 통과한다** — 붙여넣기라
+        `export_format`이 `txt`이고 화면이 그 값으로 버튼 하나를 그린다.
+    notified: [kotlin-implementer, 리더]
+
   - version: "1.6.0"
     date: "2026-08-26"
     revision: "DESIGN-6.5-READ"   # §6.5 「필요한 계약 정보」의 **읽기 절반**

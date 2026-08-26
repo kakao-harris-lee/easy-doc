@@ -178,7 +178,7 @@ describe('검수 에디터', () => {
         blob: new Blob(['내용']),
         filename: `재난지원금 안내.${format}`,
       })
-      render(<ReviewEditor conversion={conversion()} sourceText={null} />)
+      render(<ReviewEditor conversion={conversion({ export_format: format })} sourceText={null} />)
 
       await user.click(screen.getByRole('button', { name: `${format} 내려받기` }))
 
@@ -193,6 +193,28 @@ describe('검수 에디터', () => {
       vi.unstubAllGlobals()
     },
   )
+
+  it('서버가 정한 형식 하나만 내려받기로 제시한다 — 교차 형식 버튼을 그리지 않는다', () => {
+    render(<ReviewEditor conversion={conversion({ export_format: 'docx' })} sourceText={null} />)
+
+    expect(screen.getByRole('button', { name: 'docx 내려받기' })).toBeInTheDocument()
+    // 원본이 DOCX인데 txt·hwpx 버튼을 그리면 그 버튼은 서버에서 반드시 409로 실패한다.
+    expect(screen.queryByRole('button', { name: 'txt 내려받기' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'hwpx 내려받기' })).not.toBeInTheDocument()
+  })
+
+  it('내려받을 수단이 없으면(export_format null) 내려받기 행동을 제시하지 않는다', () => {
+    render(
+      <ReviewEditor
+        conversion={conversion({ source_format: 'pdf', export_format: null })}
+        sourceText={null}
+      />,
+    )
+
+    // §6.5 — 상태를 지어내지 않는다. 저장은 여전히 할 수 있어야 한다.
+    expect(screen.getByRole('button', { name: '검수 내용 저장' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /내려받기$/ })).not.toBeInTheDocument()
+  })
 
   it('마스킹 항목이 결과에 남아 있는지 표로 알려준다', async () => {
     const user = userEvent.setup()

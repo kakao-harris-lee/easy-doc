@@ -46,12 +46,19 @@ const PANELS = [
 type PanelKey = (typeof PANELS)[number]['key']
 
 /**
- * 내려받기 형식.
+ * 이 변환을 내려받을 수 있는 형식.
  *
- * hwpx는 공공기관에서 그대로 이어 쓰는 형식이라 docx 바로 옆에 둔다. 열리는지 확인이
- * 필요한 형식이므로(한컴 호환 미검증) txt보다 앞이되 기본은 아니다.
+ * **목록이 아니라 서버가 정한 값 하나다**(DESIGN.md §6.5 「들어온 형식 그대로 나간다」).
+ * 종전에는 `['docx','hwpx','txt']` 상수라 원본과 무관하게 버튼 셋을 그렸고, 서버가 형식을
+ * 강제하기 시작한 뒤로 그중 둘은 **반드시 409로 실패한다.**
+ *
+ * `export_format`이 null이면 빈 목록이다 — 내려받을 수단이 없는 변환(원본 PDF)에서는
+ * 내려받기 행동을 제시하지 않는다(§6.5 "화면은 이 null을 보고 내려받기 행동을 제시하지
+ * 않는다"). 그 제한을 설명하는 `원본 서식 유지` 패널은 §13 4단계의 다음 조각이다.
  */
-const DOWNLOAD_FORMATS: readonly ExportFormat[] = ['docx', 'hwpx', 'txt']
+function downloadFormats(conversion: ConversionResponse): readonly ExportFormat[] {
+  return conversion.export_format === null ? [] : [conversion.export_format]
+}
 
 /** 원문과 결과를 나란히 담을 수 있는 최소 너비(DESIGN.md §6.4·§10). */
 const SPLIT_VIEW_QUERY = '(min-width: 1024px)'
@@ -459,7 +466,7 @@ export function ReviewEditor({ conversion, sourceText }: ReviewEditorProps) {
             {pending !== 'save' && <Save className="size-[18px]" aria-hidden="true" />}
             {pending === 'save' ? '저장 중…' : '검수 내용 저장'}
           </Button>
-          {DOWNLOAD_FORMATS.map((format) => (
+          {downloadFormats(conversion).map((format) => (
             <Button
               key={format}
               className="h-11 grow sm:grow-0"

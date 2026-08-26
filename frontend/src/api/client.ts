@@ -293,6 +293,12 @@ function parseFilename(disposition: string | null): string | null {
  * JSON이 아니라 바이트를 받으므로 requestJson을 쓰지 않는다. 파일명은 응답 헤더에서
  * 읽는다 — 개발 환경은 교차 출처라 백엔드가 Content-Disposition을 노출 목록에 넣어
  * 두었지만, 프록시가 걷어낼 수도 있어 호출한 쪽이 대체 이름을 갖는다.
+ *
+ * **`format`은 선택이 아니라 주장이다.** 서버가 원본에서 형식을 정하고(계약
+ * `x-export-format-derivation.enforcement`), 다른 값을 주면 409로 거절한다. 계약은
+ * 생략도 허용하지만 여기서는 늘 보낸다 — 화면이 `conversion.export_format`을 그대로
+ * 넘기므로 값이 언제나 일치하고, 보내 두면 서버와 화면이 갈린 날 조용히 다른 형식을
+ * 받는 대신 409로 드러난다.
  */
 export async function downloadExport(
   conversionId: string,

@@ -251,14 +251,16 @@ class PrivateHeaderFloorCensusTest {
             .response
     }
 
+    /**
+     * **`format` 을 붙이지 않는다** — 이 대조가 재는 것은 헤더이지 형식이고, 서버가 원본에서
+     * 형식을 정하기 시작한 뒤로 값 집합의 첫 값(`docx`)은 붙여넣기 문서에서 409 다
+     * (계약 `x-export-format-derivation.enforcement`). 생략이 원본에 상관없이 200 을 내는
+     * 경로이므로 이 census 는 그쪽으로 지난다.
+     */
     private fun exportCompleted(token: String): MockHttpServletResponse {
         val conversionId = acceptDocument(token)
         markDone(conversionId)
-        val format = ContractSpec.schemaEnum(EXPORT_FORMAT_SCHEMA).first()
-        return authorizedGet(
-            "${itemPath(CONVERSION_EXPORT_PATH, GET, conversionId)}?format=$format",
-            token,
-        )
+        return authorizedGet(itemPath(CONVERSION_EXPORT_PATH, GET, conversionId), token)
     }
 
     private fun newAccount(): String {
@@ -437,7 +439,6 @@ class PrivateHeaderFloorCensusTest {
         const val CONVERSION_ID_PROPERTY = "conversion_id"
         const val ITEMS_PROPERTY = "items"
         const val ID_PROPERTY = "id"
-        const val EXPORT_FORMAT_SCHEMA = "ExportFormat"
 
         const val VALID_PASSWORD = "correct horse battery"
         const val SAMPLE_TEXT = "하한선 인구조사용 안내문 본문"

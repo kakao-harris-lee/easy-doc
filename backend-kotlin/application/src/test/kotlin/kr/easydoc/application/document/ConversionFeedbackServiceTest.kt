@@ -287,7 +287,11 @@ class ConversionFeedbackServiceTest {
                 .getValue(conversionId)
                 .toString(),
         ).forEach { rendered ->
-            assertThat(rendered).doesNotContain(COMMENT).doesNotContain("123")
+            // 식별자를 뺀 나머지에서 찾는다 — `seedDone` 의 무작위 UUID 가 `123` 을 품는 날이
+            // 있고(2026-08-26 실측), 그때 이 단언은 **누출이 아닌 것**을 누출이라고 말한다.
+            assertThat(rendered.replace(conversionId.toString(), ""))
+                .doesNotContain(COMMENT)
+                .doesNotContain("123")
         }
     }
 

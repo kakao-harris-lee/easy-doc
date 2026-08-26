@@ -14,6 +14,7 @@ import kr.easydoc.application.document.ConversionCiphertexts
 import kr.easydoc.core.crypto.EncryptedField
 import kr.easydoc.core.crypto.PlainBody
 import kr.easydoc.core.document.MaskedItemView
+import kr.easydoc.core.document.SourceFormat
 import kr.easydoc.core.easyread.ExportFormat
 import kr.easydoc.core.privacy.MaskCategory
 import kr.easydoc.core.security.Secret
@@ -27,8 +28,10 @@ import org.springframework.context.annotation.Import
 import org.springframework.http.HttpHeaders
 import org.springframework.http.MediaType
 import org.springframework.mock.web.MockHttpServletResponse
+import org.springframework.mock.web.MockMultipartFile
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.get
+import org.springframework.test.web.servlet.multipart
 import org.springframework.test.web.servlet.post
 import tools.jackson.databind.ObjectMapper
 import java.net.URLDecoder
@@ -71,18 +74,24 @@ class ConversionExportContractTest {
     }
 
     @Test
-    @DisplayName("계약 enum 의 각 형식이 200 · 선언 헤더 · filename* · 해당 미디어 타입을 낸다")
+    @DisplayName("계약 enum 의 각 형식이 **그 형식을 내보내는 원본에서** 200 · 선언 헤더 · filename* · 미디어 타입을 낸다")
     fun `형식마다 성공 응답이 계약과 같다`() {
-        val owner = newOwner()
-        val conversionId = completedConversion(owner)
         val success = ContractSpec.successStatus(EXPORT_PATH, GET)
         val declaredHeaders = ContractSpec.responseHeaderNames(EXPORT_PATH, GET, success)
         val formats = ContractSpec.schemaEnum(FORMAT_SCHEMA)
 
         assertThat(formats).describedAs("계약 형식 enum 이 비었다").isNotEmpty()
         assertThat(declaredHeaders).describedAs("내보내기 200 헤더가 비었다").isNotEmpty()
+        // 형식마다 그것을 내는 원본이 있어야 대조가 성립한다 — 없으면 그 형식이 검사되지 않는다.
+        assertThat(formats.map { ExportFormat.ofWireName(it) })
+            .describedAs("계약 형식 중 어느 원본도 내지 못하는 값이 있다 — 유도표와 값 집합이 갈렸다")
+            .allSatisfy { assertThat(sourceProducing(checkNotNull(it))).isNotNull() }
 
         formats.forEach { format ->
+            val exportFormat = ExportFormat.ofWireName(format) ?: error("계약 enum $format 이 구현에 없다")
+            val owner = newOwner()
+            val conversionId = completedConversion(owner, checkNotNull(sourceProducing(exportFormat)))
+
             val response = export(owner, conversionId, format)
 
             assertThat(response.status)
@@ -95,11 +104,7 @@ class ConversionExportContractTest {
             }
             assertPrivateHeaders(response)
             assertFilenameStar(response)
-            assertMediaType(
-                response,
-                ExportFormat.ofWireName(format)?.mediaType
-                    ?: error("계약 enum $format 이 구현에 없다"),
-            )
+            assertMediaType(response, exportFormat.mediaType)
             if (format == ExportFormat.TXT.extension) {
                 assertThat(response.contentAsByteArray.take(BOM.size))
                     .withFailMessage("txt 가 BOM 으로 시작한다 — charset=utf-8 과 겹치면 한글이 이중으로 깨진다")
@@ -109,9 +114,101 @@ class ConversionExportContractTest {
     }
 
     @Test
-    @DisplayName("format 누락 → 422 · detail 배열이 query/format 을 지목한다")
-    fun `형식 누락은 422 배열이다`() {
-        val response = export(newOwner(), UUID.randomUUID().toString(), format = null)
+    @DisplayName("format 을 **생략하면** 서버가 원본에서 정한다 — 누락은 더는 422 가 아니다")
+    fun `형식 누락은 기본 경로다`() {
+        val declared = ContractSpec.exportEnforcement()
+        assertThat(declared.required)
+            .describedAs("계약이 `format` 을 아직 필수로 선언한다 — 생략 경로가 성립하지 않는다")
+            .isFalse()
+
+        ExportFormat.entries.forEach { expected ->
+            val owner = newOwner()
+            val conversionId = completedConversion(owner, checkNotNull(sourceProducing(expected)))
+
+            val response = export(owner, conversionId, format = null)
+
+            assertThat(response.status)
+                .withFailMessage(
+                    "`format` 없는 요청이 %d 가 아니다: %s",
+                    ContractSpec.successStatus(EXPORT_PATH, GET),
+                    response.getContentAsString(),
+                ).isEqualTo(ContractSpec.successStatus(EXPORT_PATH, GET))
+            assertMediaType(response, expected.mediaType)
+            assertThat(decodedFilename(assertFilenameStar(response)))
+                .withFailMessage("생략 경로가 유도값 %s 이 아닌 확장자를 냈다", expected.extension)
+                .endsWith(".${expected.extension}")
+        }
+    }
+
+    @Test
+    @DisplayName("원본이 정한 형식과 **다른** 값은 409 · 계약 예시 format_mismatch — 422 가 아니다")
+    fun `원본과 다른 형식은 409 다`() {
+        val declared = ContractSpec.exportEnforcement()
+        assertThat(declared.onMismatch).isEqualTo(CONFLICT)
+
+        ExportFormat.entries.forEach { derived ->
+            val owner = newOwner()
+            val conversionId = completedConversion(owner, checkNotNull(sourceProducing(derived)))
+
+            ExportFormat.entries.filterNot { it == derived }.forEach { outsider ->
+                val response = export(owner, conversionId, outsider.extension)
+
+                assertDeclaredStatus(response, CONFLICT)
+                assertThat(bodyOf(response)[DETAIL])
+                    .withFailMessage("원본이 %s 인데 %s 요청이 통과했거나 문구가 다르다", derived.extension, outsider.extension)
+                    .isEqualTo(ContractSpec.pathExampleDetail(EXPORT_PATH, GET, CONFLICT, MISMATCH_EXAMPLE))
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("내보낼 형식이 없는 원본은 **어떤 값도·생략도** 409 · 계약 예시 no_exportable_format")
+    fun `내보낼 수단이 없으면 409 다`() {
+        val declared = ContractSpec.exportEnforcement()
+        assertThat(declared.onNullMapping).isEqualTo(CONFLICT)
+        val unexportable =
+            SourceFormat.entries.filter { ExportFormat.ofSource(it) == null }
+        assertThat(unexportable).describedAs("상이 `null` 인 원본이 없다 — 이 대조가 공허해진다").isNotEmpty()
+
+        unexportable.forEach { source ->
+            val owner = newOwner()
+            val conversionId = completedConversion(owner, source)
+
+            (ExportFormat.entries.map { it.extension } + null).forEach { requested ->
+                val response = export(owner, conversionId, requested)
+
+                assertDeclaredStatus(response, CONFLICT)
+                assertThat(bodyOf(response)[DETAIL])
+                    .withFailMessage("원본 %s · 요청 %s 의 처분이 계약과 다르다", source.wireName, requested)
+                    .isEqualTo(ContractSpec.pathExampleDetail(EXPORT_PATH, GET, CONFLICT, UNAVAILABLE_EXAMPLE))
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("**남의 변환**에서는 형식이 달라도 404 이고, 없는 변환과 **구분되지 않는다**")
+    fun `소유 은닉이 형식 판정보다 먼저다`() {
+        val theirs = completedConversion(newOwner(), SourceFormat.DOCX)
+        val mine = newOwner()
+        val mismatched = ExportFormat.TXT.extension
+
+        val others = export(mine, theirs, mismatched)
+        val absent = export(mine, UUID.randomUUID().toString(), mismatched)
+
+        assertDeclaredStatus(others, NOT_FOUND)
+        assertDeclaredStatus(absent, NOT_FOUND)
+        assertThat(others.getContentAsString(StandardCharsets.UTF_8))
+            .withFailMessage("409 가 나가거나 문구가 갈리면 404 로 가려 둔 사실이 형식 축으로 샌다")
+            .isEqualTo(absent.getContentAsString(StandardCharsets.UTF_8))
+    }
+
+    @Test
+    @DisplayName("빈 값(`?format=`)은 **생략이 아니라 계약 밖 값**이다 → 422")
+    fun `빈 형식은 422 다`() {
+        val owner = newOwner()
+        val conversionId = completedConversion(owner)
+
+        val response = export(owner, conversionId, format = "")
 
         assertDeclaredStatus(response, UNPROCESSABLE)
         assertValidationArray(response, QUERY_LOCATION, formatQueryName())
@@ -136,7 +233,7 @@ class ConversionExportContractTest {
         val owner = newOwner()
         val conversionId = acceptDocument(owner).conversionId
 
-        val response = export(owner, conversionId, firstFormat())
+        val response = export(owner, conversionId, format = null)
 
         assertDeclaredStatus(response, CONFLICT)
         assertThat(bodyOf(response)[DETAIL])
@@ -176,7 +273,7 @@ class ConversionExportContractTest {
             masked = listOf(maskedItem()),
         )
 
-        val response = export(owner, conversionId, firstFormat())
+        val response = export(owner, conversionId, format = null)
 
         assertDeclaredStatus(response, CONFLICT)
         assertThat(bodyOf(response)[DETAIL])
@@ -215,7 +312,7 @@ class ConversionExportContractTest {
         documents.rewriteTitle(accepted.documentId, "가${forbidden}나")
         complete(accepted.conversionId, easyText = "본문")
 
-        val decoded = decodedFilename(assertFilenameStar(export(owner, accepted.conversionId, firstFormat())))
+        val decoded = decodedFilename(assertFilenameStar(export(owner, accepted.conversionId, format = null)))
         val pattern = ContractExportSpec.filenameForbidden()
 
         assertThat(pattern.containsMatchIn(decoded))
@@ -255,21 +352,56 @@ class ConversionExportContractTest {
 
     private fun firstFormat(): String = ContractSpec.schemaEnum(FORMAT_SCHEMA).first()
 
-    private fun completedConversion(owner: UUID): String {
-        val conversionId = acceptDocument(owner).conversionId
+    /**
+     * 이 내보내기 형식을 내는 원본. 없으면 `null`.
+     *
+     * **유도표를 뒤집어 읽는다** — 어느 원본이 `docx` 를 내는지 손으로 적으면 표가 바뀐 날
+     * 이 파일만 옛 대응을 알고 통과한다.
+     */
+    private fun sourceProducing(format: ExportFormat): SourceFormat? =
+        SourceFormat.entries.firstOrNull { ExportFormat.ofSource(it) == format }
+
+    private fun completedConversion(
+        owner: UUID,
+        source: SourceFormat = SourceFormat.TEXT,
+    ): String {
+        val conversionId = acceptDocument(owner, source).conversionId
         complete(conversionId, easyText = "쉬운 글 초안입니다.")
         return conversionId
     }
 
-    private fun acceptDocument(owner: UUID): Accepted {
+    /**
+     * 그 원본 형식의 문서를 접수한다. 붙여넣기는 JSON, 파일은 multipart 다 —
+     * **제품 경로 그대로** 지난다(형식은 `StubDocumentTextExtractor` 가 파일 이름에서 읽는다).
+     */
+    private fun acceptDocument(
+        owner: UUID,
+        source: SourceFormat = SourceFormat.TEXT,
+    ): Accepted {
         val created =
-            mockMvc
-                .post(DOCUMENTS_PATH) {
-                    header(HttpHeaders.AUTHORIZATION, "Bearer stub-token:$owner")
-                    contentType = MediaType.APPLICATION_JSON
-                    content = json.writeValueAsString(mapOf(TEXT_PROPERTY to SAMPLE_TEXT))
-                }.andReturn()
-                .response
+            if (source == SourceFormat.TEXT) {
+                mockMvc
+                    .post(DOCUMENTS_PATH) {
+                        header(HttpHeaders.AUTHORIZATION, "Bearer stub-token:$owner")
+                        contentType = MediaType.APPLICATION_JSON
+                        content = json.writeValueAsString(mapOf(TEXT_PROPERTY to SAMPLE_TEXT))
+                    }.andReturn()
+                    .response
+            } else {
+                mockMvc
+                    .multipart(DOCUMENTS_PATH) {
+                        header(HttpHeaders.AUTHORIZATION, "Bearer stub-token:$owner")
+                        file(
+                            MockMultipartFile(
+                                FILE_PART,
+                                "안내문.${source.wireName}",
+                                MediaType.APPLICATION_OCTET_STREAM_VALUE,
+                                SAMPLE_TEXT.toByteArray(StandardCharsets.UTF_8),
+                            ),
+                        )
+                    }.andReturn()
+                    .response
+            }
         check(created.status == ContractSpec.successStatus(DOCUMENTS_PATH, POST)) {
             "문서 접수가 실패했다: ${created.status} ${created.getContentAsString(StandardCharsets.UTF_8)}"
         }
@@ -409,8 +541,12 @@ class ConversionExportContractTest {
         const val POST = "post"
 
         const val UNAUTHORIZED = 401
+        const val NOT_FOUND = 404
         const val CONFLICT = 409
         const val UNPROCESSABLE = 422
+
+        /** 업로드 파트 이름. 계약 `POST /documents` 의 multipart 본문이 정한다. */
+        const val FILE_PART = "file"
 
         const val FORMAT_SCHEMA = "ExportFormat"
         const val VALIDATION_ITEM_SCHEMA = "ValidationErrorItem"
@@ -424,6 +560,8 @@ class ConversionExportContractTest {
 
         const val NOT_DONE_EXAMPLE = "not_done"
         const val MISSING_EXAMPLE = "missing_placeholders"
+        const val MISMATCH_EXAMPLE = "format_mismatch"
+        const val UNAVAILABLE_EXAMPLE = "no_exportable_format"
 
         const val SAMPLE_TEXT = "내보내기 계약 검사용 안내문 본문"
         const val SAMPLE_MODEL = "stub-model"
