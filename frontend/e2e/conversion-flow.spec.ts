@@ -91,7 +91,9 @@ test.describe('변환 수직 흐름', () => {
           response.url() === api(ROUTES.documentCreate.path) &&
           response.request().method() === ROUTES.documentCreate.method,
       ),
-      page.getByRole('button', { name: '쉬운 글로 바꾸기', exact: true }).click(),
+      // 대표 버튼은 AI가 아니라 결과와 작업을 말한다(DESIGN.md §6.2) — `쉬운 글로 바꾸기`에서
+      // 바뀐 문구다. 이 화면의 제출 버튼은 하나뿐이라 `exact`로 좁혀 둔다.
+      page.getByRole('button', { name: '쉬운 글 초안 만들기', exact: true }).click(),
     ])
     expect(createdResponse.status()).toBe(ROUTES.documentCreate.accepted)
 
