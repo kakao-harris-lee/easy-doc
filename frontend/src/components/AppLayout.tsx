@@ -61,6 +61,13 @@ function navLinkClass({ isActive }: { isActive: boolean }): string {
  *
  * 대신 초점 규약은 직접 지킨다: 펼치면 첫 행동으로 초점을 옮기고, Esc로 접으면 트리거로
  * 되돌리며, 초점이 밖으로 나가거나 바깥을 누르면 접는다(§11).
+ *
+ * disclosure를 골랐으므로 속성도 disclosure만 쓴다 — `aria-expanded` + `aria-controls`가
+ * 전부이고 `aria-haspopup`은 쓰지 않는다. `aria-haspopup="true"`는 `"menu"`와 동의어라
+ * 낭독기에 "메뉴가 열린다"고 알리는데, 여기서 열리는 패널에는 `role="menu"`도
+ * `menuitem`도 없다 — 약속한 역할이 실재하지 않으면 그 예고가 곧 거짓말이 된다.
+ * 패널에 `role="menu"`를 붙이는 반대 방향은 더 나쁘다: 계정 이메일 `<p>`가 `menuitem`이
+ * 아니라 곧바로 규격 위반이고, 화살표·Home/End 이동 규약까지 딸려 온다.
  */
 function AccountMenu({ email, onSignOut }: { email: string; onSignOut: () => void }) {
   const [open, setOpen] = useState(false)
@@ -116,8 +123,9 @@ function AccountMenu({ email, onSignOut }: { email: string; onSignOut: () => voi
         ref={triggerRef}
         type="button"
         aria-label="계정 메뉴"
-        aria-haspopup="true"
         aria-expanded={open}
+        // 패널은 접혔을 때 DOM에 없다. `aria-controls`도 그때만 건다 — 없는 id를 가리키는
+        // 참조는 낭독기가 따라갈 대상이 없어 깨진 관계로 남는다.
         aria-controls={open ? panelId : undefined}
         onClick={() => setOpen((value) => !value)}
         onKeyDown={handleEscape}
@@ -170,6 +178,9 @@ function AccountMenu({ email, onSignOut }: { email: string; onSignOut: () => voi
 export function AppLayout({ children }: { children: ReactNode }) {
   const { status, user, signOut } = useAuth()
   const [mobileOpen, setMobileOpen] = useState(false)
+  // 햄버거도 계정 메뉴와 같은 disclosure다 — 펼쳐지는 nav를 `aria-controls`로 가리켜야
+  // 낭독기가 "무엇이 펼쳐졌는지"를 안다. 접혔을 때 nav가 DOM에 없으므로 참조도 그때만 건다.
+  const mobileNavId = useId()
 
   function guard(event: MouseEvent): void {
     if (!confirmDiscardUnsaved()) {
@@ -223,6 +234,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
                   type="button"
                   aria-label={mobileOpen ? '메뉴 닫기' : '메뉴 열기'}
                   aria-expanded={mobileOpen}
+                  aria-controls={mobileOpen ? mobileNavId : undefined}
                   onClick={() => setMobileOpen((open) => !open)}
                   className="flex size-11 items-center justify-center rounded-[10px] border border-border text-foreground hover:bg-secondary lg:hidden"
                 >
@@ -251,7 +263,11 @@ export function AppLayout({ children }: { children: ReactNode }) {
           </div>
         )}
         {status === 'authenticated' && mobileOpen && (
-          <nav aria-label="주요 메뉴 (모바일)" className="border-t border-border bg-card lg:hidden">
+          <nav
+            id={mobileNavId}
+            aria-label="주요 메뉴 (모바일)"
+            className="border-t border-border bg-card lg:hidden"
+          >
             <div className={cn(CONTAINER, 'flex flex-col gap-1 py-3')}>
               <NavLink to={HOME_PATH} end onClick={guard} className={navLinkClass}>
                 새 변환
