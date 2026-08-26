@@ -1,9 +1,10 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ApiError, deleteDocument, listDocuments } from '../api/client'
+import type { DocumentListItem } from '../api/types'
 import { documentItem, workspaceContext, workspaceItem } from '../test/factories'
 import { WorkspaceContext } from '../workspace/context'
 import type { WorkspaceContextValue } from '../workspace/context'
@@ -29,14 +30,75 @@ function renderPage(workspace: Partial<WorkspaceContextValue> = {}) {
   return render(page(workspace))
 }
 
+/**
+ * 화면 폭을 고정한다.
+ *
+ * jsdom에는 matchMedia가 없어서 화면은 기본값(표)으로 그려진다. 카드 목록을 보려면
+ * "좁은 화면"이라고 답하는 matchMedia를 꽂아야 한다.
+ */
+function stubViewport(tableView: boolean): void {
+  vi.stubGlobal('matchMedia', (query: string) => ({
+    matches: tableView,
+    media: query,
+    onchange: null,
+    addEventListener: () => undefined,
+    removeEventListener: () => undefined,
+    addListener: () => undefined,
+    removeListener: () => undefined,
+    dispatchEvent: () => false,
+  }))
+}
+
 beforeEach(() => {
   vi.mocked(listDocuments).mockReset()
   vi.mocked(deleteDocument).mockReset()
   vi.restoreAllMocks()
 })
 
+afterEach(() => {
+  vi.unstubAllGlobals()
+})
+
+describe('지금 해야 할 일', () => {
+  /**
+   * 서버 상태 조합 → 사용자가 읽을 말(DESIGN.md §6.6).
+   *
+   * 표로 고정하는 이유: `done`인데 `reviewed_at`이 비어 있는 줄과 채워진 줄은 서버에서
+   * 한 글자 차이지만 사용자에게는 "지금 내 차례"와 "끝난 일"로 정반대다. 그리고 두 번째
+   * 열은 `pending`·`processing` 같은 처리 상태가 아니라 할 일로 읽혀야 하므로, 규칙이
+   * 아니라 **화면에 나온 말**로 고정한다.
+   */
+  const cases: [string, Partial<DocumentListItem>, string][] = [
+    ['대기 중이면 변환 중', { status: 'pending' }, '변환 중'],
+    ['처리 중이면 변환 중', { status: 'processing' }, '변환 중'],
+    ['완료했지만 검수 전이면 검수 필요', { status: 'done', reviewed_at: null }, '검수 필요'],
+    [
+      '검수 시각이 있으면 검수함',
+      { status: 'done', reviewed_at: '2026-08-07T02:00:00Z' },
+      '검수함',
+    ],
+    ['실패는 실패', { status: 'failed' }, '실패'],
+    // 변환 행이 없는 문서다. 백엔드가 최신 변환을 LEFT JOIN으로 붙이므로 status와
+    // conversion_id가 함께 빈다. 진행 중인 일이 없어서 '변환 중'이라 하면 기다리면
+    // 끝난다는 거짓말이 되고, 실패한 것도 아니다.
+    ['변환 행이 없으면 변환 없음', { status: null, conversion_id: null }, '변환 없음'],
+  ]
+
+  it.each(cases)('%s', async (_name, patch, expected) => {
+    vi.mocked(listDocuments).mockResolvedValue({
+      items: [documentItem(patch)],
+      limit: 20,
+      offset: 0,
+      has_more: false,
+    })
+    renderPage()
+
+    expect(await screen.findByRole('row', { name: /재난지원금 안내/ })).toHaveTextContent(expected)
+  })
+})
+
 describe('변환 기록', () => {
-  it('문서 한 줄에 상태·글자 수·검수 여부를 보여준다', async () => {
+  it('문서 한 줄에 할 일·보조 정보·글자 수를 보여준다', async () => {
     vi.mocked(listDocuments).mockResolvedValue({
       items: [
         documentItem({ id: 'd1', title: '재난지원금 안내', char_count: 1200 }),
@@ -55,9 +117,11 @@ describe('변환 기록', () => {
     renderPage()
 
     const draftRow = await screen.findByRole('row', { name: /재난지원금 안내/ })
-    expect(draftRow).toHaveTextContent('변환 완료')
+    // 두 번째 열은 처리 상태가 아니라 지금 할 일이다(§6.6).
+    expect(draftRow).toHaveTextContent('검수 필요')
     expect(draftRow).toHaveTextContent('1,200자')
-    expect(draftRow).toHaveTextContent('초안')
+    // 제목 아래 보조 정보는 원본 형식과 올린 날짜다.
+    expect(draftRow).toHaveTextContent('붙여넣기 · 2026. 8. 7.')
     expect(screen.getByRole('row', { name: /검수한 문서/ })).toHaveTextContent('검수함')
     // 제목이 검수 화면으로 가는 통로다.
     expect(screen.getByRole('link', { name: '재난지원금 안내' })).toHaveAttribute(
@@ -118,6 +182,36 @@ describe('변환 기록', () => {
     renderPage()
 
     expect(await screen.findByRole('alert')).toHaveTextContent('변환 기록을 불러오지 못했습니다')
+  })
+})
+
+describe('좁은 화면', () => {
+  it('표 대신 카드 목록으로 바꾸고 표를 남기지 않는다', async () => {
+    stubViewport(false)
+    vi.mocked(listDocuments).mockResolvedValue({
+      items: [documentItem({ id: 'd1', title: '재난지원금 안내' })],
+      limit: 20,
+      offset: 0,
+      has_more: false,
+    })
+    renderPage()
+
+    const list = await screen.findByRole('list', { name: /변환한 문서 목록입니다/ })
+    // 카드 안에서도 §6.6의 위계를 지킨다: 제목 → 할 일 → 보조 정보 → 삭제.
+    const card = within(list).getByRole('listitem')
+    expect(card).toHaveTextContent('검수 필요')
+    expect(card).toHaveTextContent('붙여넣기 · 2026. 8. 7.')
+    expect(within(card).getByRole('link', { name: '재난지원금 안내' })).toHaveAttribute(
+      'href',
+      '/conversions/c1',
+    )
+
+    // 왜 이것을 재는가: 표와 카드를 둘 다 그려 두고 CSS로 한쪽만 감추는 흔한 해법은
+    // 낭독기에게 같은 목록을 두 번 들려준다. 감춰진 표도 접근성 트리에 남기 때문이다.
+    // queryByRole은 보이는 것만 세므로, DOM에 정말 한 벌만 있는지는 element로 확인한다.
+    expect(screen.queryByRole('table')).not.toBeInTheDocument()
+    expect(document.querySelector('table')).toBeNull()
+    expect(screen.getAllByText('재난지원금 안내')).toHaveLength(1)
   })
 })
 
@@ -222,6 +316,10 @@ describe('문서 삭제', () => {
 
     await user.click(await screen.findByRole('button', { name: '재난지원금 안내 삭제' }))
 
+    // 무엇이 사라지는지 대화상자 안에서 확인할 수 있어야 한다(§9) — 줄마다 같은 문장이
+    // 뜨면 다른 문서의 삭제 버튼을 눌렀는지 알아챌 방법이 없다.
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining('‘재난지원금 안내’'))
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining('되돌릴 수 없습니다'))
     expect(confirm).toHaveBeenCalledWith(expect.stringContaining('즉시 삭제됩니다'))
     expect(vi.mocked(deleteDocument)).toHaveBeenCalledWith('d1')
     // 지운 줄이 사라지고 첫 쪽부터 다시 읽는다 — 삭제로 다음 쪽 경계가 밀리기 때문이다.

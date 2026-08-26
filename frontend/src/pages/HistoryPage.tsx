@@ -1,39 +1,128 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useSyncExternalStore } from 'react'
 import { Link } from 'react-router-dom'
 import { FilePlus2, FileText, Trash2 } from 'lucide-react'
 
 import { ApiError, deleteDocument, listDocuments } from '../api/client'
-import type { ConversionStatus, DocumentListItem } from '../api/types'
+import type { DocumentListItem } from '../api/types'
 import { conversionPath, HOME_PATH } from '../routes/paths'
 import { useWorkspace } from '../workspace/context'
 import { PageHeader } from '../components/PageHeader'
 import { Badge } from '../components/ui/Badge'
+import type { BadgeProps } from '../components/ui/Badge'
 import { Button } from '../components/ui/Button'
-
-const STATUS_TONE: Record<ConversionStatus, 'warning' | 'info' | 'success' | 'danger'> = {
-  pending: 'warning',
-  processing: 'info',
-  done: 'success',
-  failed: 'danger',
-}
 
 /** 한 번에 불러올 개수. 백엔드 기본값과 같다. */
 const PAGE_SIZE = 20
 
-/** 삭제 전에 묻는 말. 되돌릴 수 없다는 것과 무엇이 함께 사라지는지를 밝힌다. */
-const DELETE_CONFIRM_MESSAGE = '문서와 변환 결과가 즉시 삭제됩니다. 되돌릴 수 없습니다. 삭제할까요?'
-
-/** 상태 코드 → 사람이 읽는 말. */
-const STATUS_TEXT: Record<ConversionStatus, string> = {
-  pending: '대기 중',
-  processing: '변환 중',
-  done: '변환 완료',
-  failed: '변환 실패',
+/**
+ * 삭제 전에 묻는 말.
+ *
+ * 무엇이 사라지는지(§9: 삭제되는 대상의 제목)와 되돌릴 수 없다는 사실을 함께 쓴다 —
+ * 줄마다 같은 문장이 뜨면 어느 문서를 고른 것인지 확인할 방법이 대화상자 안에 없다.
+ */
+function deleteConfirmMessage(title: string): string {
+  return `‘${title}’ 문서와 변환 결과가 즉시 삭제됩니다. 되돌릴 수 없습니다. 삭제할까요?`
 }
 
-/** 날짜를 한국어 표기로. 시각까지 보여준다(같은 날 여러 건을 가르는 기준이다). */
-function formatDate(value: string): string {
-  return new Date(value).toLocaleString('ko-KR')
+/**
+ * 기록 한 줄에서 사용자가 **지금 해야 할 일**(DESIGN.md §6.6).
+ *
+ * `pending`·`processing` 같은 내부 처리 상태 대신 행동으로 읽는 말만 남긴다.
+ * `변환 없음`은 §6.6의 네 표현에 없지만, 계약상 존재할 수 있는 줄이라 이름을 준다.
+ */
+type NextAction = '변환 중' | '검수 필요' | '검수함' | '실패' | '변환 없음'
+
+/**
+ * 서버 상태를 「지금 해야 할 일」로 옮긴다.
+ *
+ * 판정 순서에 뜻이 있다.
+ * 1. `status`가 `null`이면 이 문서에는 변환 행 자체가 없다 — 백엔드 목록 질의가
+ *    최신 변환을 `LEFT JOIN LATERAL`로 붙이므로 `status`·`reviewed_at`·`conversion_id`가
+ *    함께 `null`이 된다. 진행 중인 일이 없으니 `변환 중`이라 하면 기다리면 끝난다는
+ *    거짓말이 되고, `실패`도 아니다. 일어난 일을 그대로 `변환 없음`이라 적는다.
+ * 2. `failed`가 검수 여부보다 앞선다. 실패한 변환에는 검수할 초안이 없다.
+ * 3. `reviewed_at`이 있으면 `검수함`. 검수는 `done` 뒤에만 저장되므로 사실상 `done`이지만,
+ *    검수 여부가 `done`보다 구체적인 사실이라 먼저 본다.
+ * 4. 남은 `done`은 초안이 그대로 남아 있다는 뜻 — 사용자가 할 일은 `검수 필요`다.
+ */
+function nextAction(item: Pick<DocumentListItem, 'status' | 'reviewed_at'>): NextAction {
+  if (item.status === null) {
+    return '변환 없음'
+  }
+  if (item.status === 'failed') {
+    return '실패'
+  }
+  if (item.reviewed_at !== null) {
+    return '검수함'
+  }
+  return item.status === 'done' ? '검수 필요' : '변환 중'
+}
+
+/**
+ * 할 일별 배지 색.
+ *
+ * 색은 거들 뿐이다(§8.1) — 배지에는 문구가 늘 함께 있고, `neutral`을 뺀 각 tone은
+ * 서로 다른 아이콘 모양을 그린다. 색을 못 보는 화면에서도 넷이 구분된다.
+ */
+const NEXT_ACTION_TONE: Record<NextAction, NonNullable<BadgeProps['tone']>> = {
+  '변환 중': 'info',
+  '검수 필요': 'warning',
+  검수함: 'success',
+  실패: 'danger',
+  '변환 없음': 'neutral',
+}
+
+/** 원본 형식을 사람이 읽는 말로. 계약이 아직 enum을 닫지 않아 모르는 값은 대문자로 둔다. */
+const SOURCE_FORMAT_TEXT: Record<string, string> = {
+  text: '붙여넣기',
+  docx: 'DOCX',
+  pdf: 'PDF',
+  hwpx: 'HWPX',
+}
+
+/**
+ * 제목 아래 보조 정보: `DOCX · 2026. 8. 26.`(§6.6).
+ *
+ * 날짜만 쓴다 — 표에서 열을 하나 줄이는 것이 목적이고, 시각까지 필요한 사용자는
+ * 검수 화면에서 본다. 정확한 시점은 `<time datetime>`에 그대로 남긴다.
+ */
+function secondaryInfo(item: DocumentListItem): string {
+  const format = SOURCE_FORMAT_TEXT[item.source_format] ?? item.source_format.toUpperCase()
+  return `${format} · ${new Date(item.created_at).toLocaleDateString('ko-KR')}`
+}
+
+/** 표로 담을 수 있는 최소 너비. 767px 이하는 카드 목록이다(§6.6·§10). */
+const TABLE_VIEW_QUERY = '(min-width: 768px)'
+
+function tableViewMedia(): MediaQueryList | null {
+  // matchMedia가 없는 환경(jsdom)도 있다. 없으면 표로 본다 — 표는 열 이름이 붙어 있어
+  // 어떤 값인지 설명이 가장 많이 남는 쪽이다.
+  return typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+    ? window.matchMedia(TABLE_VIEW_QUERY)
+    : null
+}
+
+function subscribeToTableView(onChange: () => void): () => void {
+  const media = tableViewMedia()
+  media?.addEventListener('change', onChange)
+  return () => media?.removeEventListener('change', onChange)
+}
+
+function getTableView(): boolean {
+  return tableViewMedia()?.matches ?? true
+}
+
+/**
+ * 지금 화면이 표를 담을 만큼 넓은지.
+ *
+ * 표와 카드를 둘 다 그려 두고 CSS로 한쪽을 감추지 않는 이유: 낭독기는 `display:none`이
+ * 아닌 이상 둘 다 읽고, 감춘 쪽까지 접근성 트리에 남으면 같은 문서 목록이 두 번 들린다.
+ * 표에는 열 이름과 캡션이, 카드에는 목록 의미가 붙으므로 "같은 것의 다른 모양"도
+ * 아니다. 그래서 폭을 JS로 판정해 **한 벌만** DOM에 넣는다(`ReviewEditor`의 탭 판정과
+ * 같은 이유다).
+ */
+function useTableView(): boolean {
+  return useSyncExternalStore(subscribeToTableView, getTableView, () => true)
 }
 
 /**
@@ -49,6 +138,7 @@ function formatDate(value: string): string {
 export function HistoryPage() {
   const { workspaces, currentId: workspaceId } = useWorkspace()
   const currentName = workspaces.find((workspace) => workspace.id === workspaceId)?.name ?? null
+  const tableView = useTableView()
   const [offset, setOffset] = useState(0)
   const [items, setItems] = useState<DocumentListItem[]>([])
   const [hasMore, setHasMore] = useState(false)
@@ -115,7 +205,7 @@ export function HistoryPage() {
    * 둔 쪽을 그대로 두면 아직 못 본 문서가 조용히 건너뛰어진다.
    */
   async function handleDelete(item: DocumentListItem): Promise<void> {
-    if (!window.confirm(DELETE_CONFIRM_MESSAGE)) {
+    if (!window.confirm(deleteConfirmMessage(item.title))) {
       return
     }
     setDeletingId(item.id)
@@ -135,6 +225,64 @@ export function HistoryPage() {
       setDeletingId(null)
     }
   }
+
+  /**
+   * 대표 행 행동은 제목 링크 하나다(§6.6).
+   *
+   * `conversion_id`가 `null`이면 변환 행이 없어 열 화면 자체가 없다 — 링크로 만들면
+   * 어디로도 가지 않는 통로가 생긴다. 이때는 제목을 그대로 두고, 왜 열 수 없는지는
+   * 옆의 `변환 없음` 배지가 말한다.
+   */
+  function documentTitle(item: DocumentListItem) {
+    // 모바일에서만 터치 대상 44px을 확보한다(§10). 표에서까지 44px을 잡으면 두 줄짜리
+    // 제목 셀이 §6.6의 56~64px 행 높이를 넘긴다. 표에서는 22px 줄 높이를 고정해
+    // 보조 정보 16px·셀 여백 24px과 합쳐 62px에 앉힌다.
+    const shape = tableView
+      ? 'text-[15px] font-semibold leading-[22px]'
+      : 'inline-flex min-h-11 items-center text-[17px] font-bold leading-6'
+    return item.conversion_id === null ? (
+      <span className={shape}>{item.title}</span>
+    ) : (
+      <Link
+        className={`${shape} text-primary underline-offset-4 hover:underline`}
+        to={conversionPath(item.conversion_id)}
+      >
+        {item.title}
+      </Link>
+    )
+  }
+
+  /** 지금 할 일 배지. 색만이 아니라 문구와 아이콘 모양으로도 구분된다(§8.1). */
+  function actionBadge(item: DocumentListItem) {
+    const action = nextAction(item)
+    return <Badge tone={NEXT_ACTION_TONE[action]}>{action}</Badge>
+  }
+
+  /** 삭제는 낮은 강조로 행 끝에 둔다(§6.6). */
+  function deleteButton(item: DocumentListItem) {
+    return (
+      <Button
+        // 모바일 카드에서는 터치 대상 44×44px을 지킨다(§10).
+        className={tableView ? undefined : 'min-h-11 min-w-11'}
+        variant="ghost"
+        size="sm"
+        type="button"
+        // 줄마다 같은 "삭제"가 반복되므로 어떤 문서인지 이름에 실어 준다.
+        aria-label={`${item.title} 삭제`}
+        onClick={() => void handleDelete(item)}
+        disabled={deletingId === item.id}
+      >
+        <Trash2 className="size-4" aria-hidden="true" />
+        삭제
+      </Button>
+    )
+  }
+
+  /** 표 캡션과 카드 목록 이름이 같은 문장을 쓴다 — 모양이 달라도 보는 범위는 같다. */
+  const listDescription =
+    currentName === null
+      ? '내가 변환한 문서 목록입니다.'
+      : `‘${currentName}’에서 변환한 문서 목록입니다.`
 
   return (
     <section aria-labelledby="history-heading">
@@ -159,7 +307,7 @@ export function HistoryPage() {
           </p>
         )}
 
-        <div className="overflow-x-auto rounded-[12px] border border-border bg-card px-5 pb-5 shadow-[0_1px_2px_rgba(20,33,31,0.04)]">
+        <div className="rounded-[12px] border border-border bg-card px-5 pb-5 shadow-[0_1px_2px_rgba(20,33,31,0.04)]">
           {items.length === 0 && !loading && error === null ? (
             // 빈 상태도 지금 작업 공간의 이야기로 말하고, 다음 할 일 하나를 함께 준다(§6.6).
             <div className="flex flex-col items-center gap-4 py-14 text-center">
@@ -176,65 +324,56 @@ export function HistoryPage() {
                 <FilePlus2 className="size-[18px]" aria-hidden="true" />첫 문서 변환하기
               </Link>
             </div>
-          ) : (
+          ) : tableView ? (
             <table className="history-table">
               {/* 어느 작업 공간을 보고 있는지 표 설명에 적는다 — 목록이 걸러졌다는 사실이
               화면을 보지 않는 사용자에게도 전달되어야 한다(KWCAG). */}
-              <caption>
-                {currentName === null
-                  ? '내가 변환한 문서 목록입니다.'
-                  : `‘${currentName}’에서 변환한 문서 목록입니다.`}{' '}
-                제목을 누르면 검수 화면이 열립니다.
-              </caption>
+              <caption>{listDescription} 제목을 누르면 검수 화면이 열립니다.</caption>
               <thead>
                 <tr>
                   <th scope="col">제목</th>
-                  <th scope="col">상태</th>
+                  {/* 두 번째 열은 처리 상태가 아니라 사용자가 지금 할 일이다(§6.6). */}
+                  <th scope="col">지금 할 일</th>
                   <th scope="col">글자 수</th>
-                  <th scope="col">올린 날짜</th>
-                  <th scope="col">검수</th>
                   <th scope="col">삭제</th>
                 </tr>
               </thead>
               <tbody>
                 {items.map((item) => (
-                  <tr key={item.id}>
+                  // 행 높이 56~64px(§6.6). 제목 22px + 보조 정보 16px에 셀 위아래 여백
+                  // 24px을 더해 62px에 앉으므로, h-[60px]은 그보다 짧아지지 않게 하는 바닥이다.
+                  <tr className="h-[60px]" key={item.id}>
                     <th scope="row">
-                      {/* 변환 행이 없으면 열 화면도 없다 — 링크 대신 제목만 보여준다. */}
-                      {item.conversion_id === null ? (
-                        item.title
-                      ) : (
-                        <Link to={conversionPath(item.conversion_id)}>{item.title}</Link>
-                      )}
+                      {documentTitle(item)}
+                      <p className="text-[13px] font-normal leading-4 text-muted-foreground">
+                        {secondaryInfo(item)}
+                      </p>
                     </th>
-                    <td>
-                      {item.status === null ? (
-                        <Badge>알 수 없음</Badge>
-                      ) : (
-                        <Badge tone={STATUS_TONE[item.status]}>{STATUS_TEXT[item.status]}</Badge>
-                      )}
-                    </td>
+                    <td>{actionBadge(item)}</td>
                     <td>{item.char_count.toLocaleString('ko-KR')}자</td>
-                    <td>{formatDate(item.created_at)}</td>
-                    <td>{item.reviewed_at === null ? '초안' : '검수함'}</td>
-                    <td>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        type="button"
-                        // 줄마다 같은 "삭제"가 반복되므로 어떤 문서인지 이름에 실어 준다.
-                        aria-label={`${item.title} 삭제`}
-                        onClick={() => void handleDelete(item)}
-                        disabled={deletingId === item.id}
-                      >
-                        <Trash2 className="size-4" aria-hidden="true" />
-                        삭제
-                      </Button>
-                    </td>
+                    <td>{deleteButton(item)}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
+          ) : (
+            // 767px 이하에서는 표를 가로로 밀지 않고 카드 목록으로 바꾼다(§6.6·§10).
+            // 카드 안에서도 §6.6의 위계를 DOM 순서로 지킨다: 제목 → 할 일 → 보조 정보 → 삭제.
+            <ul aria-label={listDescription} className="flex flex-col gap-3 py-4">
+              {items.map((item) => (
+                <li
+                  className="flex flex-col items-start gap-2 rounded-[12px] border border-border p-4"
+                  key={item.id}
+                >
+                  {documentTitle(item)}
+                  {actionBadge(item)}
+                  <p className="text-[13px] leading-4 text-muted-foreground">
+                    {secondaryInfo(item)} · {item.char_count.toLocaleString('ko-KR')}자
+                  </p>
+                  {deleteButton(item)}
+                </li>
+              ))}
+            </ul>
           )}
 
           {loading && (
