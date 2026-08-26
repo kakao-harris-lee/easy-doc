@@ -7,6 +7,8 @@
 
 import { clearToken, readToken } from './token'
 import type {
+  ConversionFeedbackRequest,
+  ConversionFeedbackResponse,
   ConversionResponse,
   ConversionReviewRequest,
   DocumentCreatedResponse,
@@ -240,6 +242,22 @@ export function saveReview(conversionId: string, editedText: string): Promise<Co
   return requestJson<ConversionResponse>(`/conversions/${conversionId}`, {
     method: 'PUT',
     body,
+  })
+}
+
+/**
+ * PUT /conversions/{id}/feedback — 파일럿 검수 피드백을 저장한다.
+ *
+ * 멱등 upsert다. 한 변환의 피드백은 1건이고 다시 보내면 덮어쓴다 — 실무자가 검수
+ * 도중 값을 고쳐 다시 보내도 표에 줄이 늘지 않는다(docs/pilot-runbook.md 게이트 ①).
+ */
+export function saveFeedback(
+  conversionId: string,
+  feedback: ConversionFeedbackRequest,
+): Promise<ConversionFeedbackResponse> {
+  return requestJson<ConversionFeedbackResponse>(`/conversions/${conversionId}/feedback`, {
+    method: 'PUT',
+    body: feedback,
   })
 }
 

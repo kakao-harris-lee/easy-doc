@@ -4,6 +4,7 @@ import { Download, Save, ShieldAlert } from 'lucide-react'
 import { ApiError, downloadExport, saveReview } from '../api/client'
 import type { ConversionResponse, ExportFormat } from '../api/types'
 import { setUnsavedChanges } from '../review/unsavedChanges'
+import { ReviewFeedback } from './ReviewFeedback'
 import { Badge } from './ui/Badge'
 import { Button } from './ui/Button'
 
@@ -261,6 +262,11 @@ export function ReviewEditor({ conversion, sourceText }: ReviewEditorProps) {
             ? '아직 저장한 검수 내용이 없습니다 (AI 초안 그대로입니다).'
             : `마지막 저장: ${new Date(reviewedAt).toLocaleString('ko-KR')}`}
       </p>
+
+      {/* 결과를 다 보고 난 자리에 둔다 — 검수 전에 묻는 만족도는 결과가 아니라 기대치를
+          재게 된다. 이 화면은 status가 done일 때만 그려지므로(ConversionPage) 서버가
+          409로 막는 조건과 화면이 같다. */}
+      <ReviewFeedback conversionId={conversion.id} />
 
       <section
         className="overflow-x-auto rounded-[12px] border border-border bg-card p-5"

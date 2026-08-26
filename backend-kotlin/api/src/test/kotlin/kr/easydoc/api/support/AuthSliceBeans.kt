@@ -10,6 +10,7 @@ import kr.easydoc.application.auth.WorkspaceDeletionState
 import kr.easydoc.application.auth.WorkspaceRepository
 import kr.easydoc.application.crypto.ContentCipher
 import kr.easydoc.application.document.ConversionExportService
+import kr.easydoc.application.document.ConversionFeedbackService
 import kr.easydoc.application.document.ConversionQueryService
 import kr.easydoc.application.document.ConversionReviewService
 import kr.easydoc.application.document.DocumentExporter
@@ -156,6 +157,28 @@ class AuthSliceBeans {
     ): ConversionReviewService =
         ConversionReviewService(
             conversions = conversions,
+            cipher = cipher,
+            query = query,
+            transaction = transaction,
+        )
+
+    @Bean
+    fun inMemoryConversionFeedback(): InMemoryConversionFeedbackRepository = InMemoryConversionFeedbackRepository()
+
+    /**
+     * 파일럿 피드백 유스케이스도 실물이다 — 제품 조립(`DocumentConfiguration`)과 같은 모양이다.
+     * `@WebMvcTest` 는 컨트롤러를 전부 슬라이스에 넣으므로 이 빈이 없으면 `/auth` 만 겨누는
+     * 테스트도 컨텍스트 조립에서 멈춘다.
+     */
+    @Bean
+    fun conversionFeedbackService(
+        feedback: InMemoryConversionFeedbackRepository,
+        cipher: ContentCipher,
+        query: ConversionQueryService,
+        transaction: TransactionRunner,
+    ): ConversionFeedbackService =
+        ConversionFeedbackService(
+            feedback = feedback,
             cipher = cipher,
             query = query,
             transaction = transaction,

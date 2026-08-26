@@ -48,7 +48,11 @@ describe('업로드 화면', () => {
     await user.type(screen.getByLabelText('바꿀 글'), '신청 안내')
     await user.click(screen.getByRole('button', { name: '쉬운 글로 바꾸기' }))
 
-    expect(vi.mocked(createDocumentFromText)).toHaveBeenCalledWith('신청 안내', 'w1', '청년 월세 지원 안내')
+    expect(vi.mocked(createDocumentFromText)).toHaveBeenCalledWith(
+      '신청 안내',
+      'w1',
+      '청년 월세 지원 안내',
+    )
     expect(await screen.findByRole('heading', { name: '변환 화면' })).toBeInTheDocument()
   })
 

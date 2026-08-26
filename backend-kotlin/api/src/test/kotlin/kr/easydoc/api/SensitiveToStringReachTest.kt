@@ -181,8 +181,15 @@ class SensitiveToStringReachTest {
         /** 클래스패스 필터가 제품 산출물을 통째로 걸러 버렸는지 보는 하한. */
         const val MIN_PRODUCTION_CLASSES = 60
 
-        /** 소스 쪽은 하한이 아니라 정확 일치다 (게이트 25 U-1). */
-        const val EXPECTED_SOURCE_DECLARATIONS = 65
+        /**
+         * 소스 쪽은 하한이 아니라 정확 일치다 (게이트 25 U-1).
+         *
+         * 파일럿 피드백(계약 1.5.0 #15)이 **일곱**을 더해 65 → 72 다 — core 의
+         * `QualityScore`·`MinutesSpent`, application 의 `FeedbackSubmission`·
+         * `ConversionFeedbackView`·`StoredFeedback`, api 의 `ConversionFeedbackRequest`·
+         * `ConversionFeedbackResponse`.
+         */
+        const val EXPECTED_SOURCE_DECLARATIONS = 72
 
         /** 민감 판정이 반드시 닿아야 하는 타입 — 바닥이다. */
         val KNOWN_SENSITIVE_TYPES =

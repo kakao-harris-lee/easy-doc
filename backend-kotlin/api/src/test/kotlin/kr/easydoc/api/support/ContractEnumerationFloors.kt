@@ -2,7 +2,8 @@ package kr.easydoc.api.support
 
 const val MIN_GLOBAL_RESPONSE_HEADERS = 2
 
-const val MIN_PRIVATE_HEADER_TARGETS = 10
+/** 1.5.0 에서 `PUT /conversions/{conversion_id}/feedback` 이 더해져 10 에서 올렸다. */
+const val MIN_PRIVATE_HEADER_TARGETS = 11
 
 const val MIN_RETIRED_RESPONSES = 1
 

@@ -41,7 +41,7 @@ openapi: 3.1.0
 
 info:
   title: Easy-Read AI API
-  version: "1.4.0"
+  version: "1.5.0"
   x-baselined-at: "2026-08-12"       # 초판 기준선을 뜬 날 (동결일이 아니다)
   x-rebased-at: "2026-08-12"         # 계약의 성격을 "개선 대상"으로 다시 정의한 날
   x-source-runtime: "Python 3.12 / FastAPI (app/main.py) — 과거 참고 구현이었고 2026-08-24 저장소에서 제거됨(git 태그 pre-python-removal-20260824). 기준선 출처였을 뿐 정답이 아니었다"
@@ -49,8 +49,10 @@ info:
   description: |
     공공기관용 '쉬운 글' 자동 변환 서비스의 HTTP 계약 v1.
 
-    **엔드포인트는 정확히 14개다** — 제품 13개 + 헬스 체크 1개.
-    계획 §2.2의 "14개 HTTP 엔드포인트"는 `/health`를 포함해야 맞는 수다.
+    **엔드포인트는 정확히 15개다** — 제품 14개 + 헬스 체크 1개.
+    계획 §2.2가 센 "14개 HTTP 엔드포인트"는 **그 문서를 쓸 때의 수**이며 `/health`를
+    포함해야 맞는 수였다. 1.5.0에서 `PUT /conversions/{conversion_id}/feedback`이 더해져
+    오늘은 15개다 — 계획 문서의 수를 고치는 것이 아니라 **수의 정본이 이 계약**이다.
 
     ## 경로 접두사
     애플리케이션 경로에는 `/api` 접두사가 없다. `app/api/auth.py`의
@@ -105,8 +107,10 @@ info:
     ## 응답 헤더 — 전역 요구 (2026-08-12 리더 판정)
     `Cache-Control: no-store`와 `X-Content-Type-Options: nosniff`는 **Kotlin 런타임이
     내보내는 모든 응답**에 붙는다. 상태 코드·경로·핸들러 유무를 가리지 않는다.
-    **`paths` 아래 개별 응답에 적힌 헤더 선언 10건을 "붙는 자리 목록"으로 읽으면 안 된다** —
-    그것은 고위험 경로에 남긴 **하한선**이고 범위가 아니다.
+    **`paths` 아래 개별 응답에 적힌 헤더 선언을 "붙는 자리 목록"으로 읽으면 안 된다** —
+    그것은 고위험 경로에 남긴 **하한선**이고 범위가 아니다. 그 선언이 몇 건인지는 이 자리에
+    적지 않는다 — 하한선 목록은 늘어나는데(1.5.0에서 피드백 오퍼레이션이 더해졌다) 수를
+    옮겨 적은 산문은 따라오지 않아 조용히 거짓이 된다(게이트 28 P-5가 서수를 버린 것과 같은 처방).
     요구의 정본은 최상위 `x-global-response-headers`이며, **OpenAPI 문법으로는 이 요구를
     끝까지 표현할 수 없다**(같은 절의 `x-openapi-expressibility`에 무엇을 표현하지 못하는지
     적었다). 이 요구의 대상은 **Kotlin 런타임 하나뿐**이다 — Python은 폐기·재개발
@@ -161,7 +165,8 @@ x-change-policy:
     - "JSON 필드 snake_case"
     - "JWT 페이로드에 개인정보 금지 (sub·exp·typ 세 개)"
     - "Cache-Control: no-store + X-Content-Type-Options: nosniff — Kotlin 런타임의 모든 응답
-       (2026-08-12 리더 판정, 정본 `x-global-response-headers`). 고위험 10곳은 좁힐 수 없는 하한선이다"
+       (2026-08-12 리더 판정, 정본 `x-global-response-headers`). 고위험 경로 목록
+       (`x-private-response-headers.applies_to`)은 좁힐 수 없는 하한선이다"
     - "인증 실패 응답의 균일성(계정 열거 방지)"
   invariants_note: |
     위 목록은 깨지면 사용자 데이터가 새는 항목이다. 개선의 이름으로도 좁히지 않는다.
@@ -216,9 +221,12 @@ x-retired-responses:
          저장과 **같은 트랜잭션**에 들어갔고, "저장은 됐는데 등록은 실패"라는 상태가
          구조적으로 성립하지 않는다. 등록이 실패하면 전량 롤백이고 그때 옳은 코드는
          500이다. 실측(2026-08-20): 그 예외를 던지는 제품 코드가 **0곳**이었다.
-      2. `LLMProviderError` — **14개 오퍼레이션 중 동기로 LLM을 부르는 것이 없다.**
+      2. `LLMProviderError` — **15개 오퍼레이션 중 동기로 LLM을 부르는 것이 없다.**
          변환은 워커가 비동기로 하고, LLM 실패는 HTTP 상태가 아니라
          `ConversionResponse.failure_code` 값으로 사용자에게 간다.
+         (수는 1.5.0에서 14에서 15로 늘었다 — 새 오퍼레이션
+         `PUT /conversions/{conversion_id}/feedback`도 LLM을 부르지 않으므로
+         이 진술은 그대로 참이다.)
 
       즉 502는 이 계약에서 **도달 0인 조항**이었다. 조항만 지우고 컴포넌트를 남기면
       참조 없는 고아가 되고, 그것을 읽는 테스트는 자기 사본과 대조해 초록이 된다.
@@ -384,6 +392,9 @@ x-unsupported-media-type:
       **`PUT /conversions/{conversion_id}`는 재지 못했다 — 구현이 없다.**
       선언은 하되 **"쟀다"로 읽히지 않게 이 자리에 적는다.** 그 오퍼레이션을 구현하는
       단위가 이 팔의 케이스를 함께 닫는다.
+
+      **`PUT /conversions/{conversion_id}/feedback`도 같다** (1.5.0 신설, 구현 전).
+      본문을 받으므로 위 `rule`에 따라 415를 선언하지만 그것은 선언이지 측정이 아니다.
   x-auth-order-open:
     status: 판정_대기
     escalated_to: 리더
@@ -562,6 +573,7 @@ x-input-limits:
   min_password_length: 8             # 미만 시 422 — 서비스 층, 문자열 detail
   max_title_length: 255              # **사용자가 준 제목에만** 걸린다 — 자른다(거절하지 않는다).
                                      # 생략 시의 고정 문구 `제목 없음`은 이 상한과 무관하다 (`x-title-policy`)
+  max_feedback_comment_length: 500   # 피드백 자유 의견. 초과 시 422 — 서비스 층, 문자열 detail (정규화 **후** 길이)
   retention_days: 30
 
 # -----------------------------------------------------------------------------
@@ -707,6 +719,15 @@ x-stored-text-domain:
         `status`가 그 사실을 담는다. 빈 선언으로 통과하지 않게 하려면 계약 테스트가
         `measured`인 팔에 대해서만 케이스를 요구하고, `pending`이 남아 있다는 것 자체를
         마감 목록으로 읽어야 한다.
+    - field: "ConversionFeedbackRequest.comment"
+      reached_from: "PUT /conversions/{conversion_id}/feedback"
+      status: pending            # 같은 저장 경로를 지난다. 마감은 #15를 구현하는 단위다
+      note: |
+        피드백 자유 의견도 봉인해 저장하므로 같은 정의역이 걸린다.
+        **오늘 이 팔은 측정되지 않았다** — `status`가 그 사실을 담는다.
+        길이(`x-input-limits.max_feedback_comment_length`)와는 다른 축이다.
+        위 `detail` 문구가 「문서 본문」을 말하지만 **팔마다 문구를 바꾸지 않는다** —
+        고정 문구 하나가 이 절의 조항이고, 자리마다 다듬으면 두 벌이 되어 갈린다.
   x-not-the-title: |
     **제목은 이 절의 대상이 아니다.** 제목은 봉인되지 않는 평문 열이고, `x-title-policy`가
     **정제** 처분을 정했다(제어문자·짝 없는 서로게이트를 걷어내고 상한에서 자른다).
@@ -923,8 +944,8 @@ x-error-body-universality:
 # 사적 응답 헤더 — 읽는 순서를 틀리지 않는다.
 #
 # `x-global-response-headers`가 **요구의 정본**이다 (Kotlin의 모든 응답).
-# 뒤따르는 `x-private-response-headers`의 10곳 목록은 그 요구의 **하한선**이지
-# 범위가 아니다. 10곳을 범위로 읽으면 이 절을 거꾸로 읽은 것이다.
+# 뒤따르는 `x-private-response-headers`의 목록은 그 요구의 **하한선**이지
+# 범위가 아니다. 그 목록을 범위로 읽으면 이 절을 거꾸로 읽은 것이다.
 # -----------------------------------------------------------------------------
 x-global-response-headers:
   status: "결정됨 (2026-08-12 리더 판정) — OQ-1 종결. 경로: 계약 소유자 재심 제기 → 리더 판정"
@@ -972,7 +993,7 @@ x-global-response-headers:
        (목록은 `x-phase3-measurement.unreachable_by_filter`).
 
     두 층 모두 헤더를 `add`가 아니라 **`set`**으로 쓴다 — 컨트롤러 `ResponseEntity`가 같은
-    헤더를 이미 실은 10곳에서 `add`를 쓰면 `Cache-Control: no-store, no-store`가 나가고,
+    헤더를 이미 실은 자리에서 `add`를 쓰면 `Cache-Control: no-store, no-store`가 나가고,
     값을 `const`로 못박은 이 계약(`components.headers.CacheControlNoStore`)에 위반된다.
     이중 부착은 기능은 멀쩡하고 계약만 깨지는 종류라 눈으로는 안 잡힌다.
     **밸브와 필터가 같은 응답에 둘 다 닿는 구간이 존재하므로**(밸브는 모든 응답을 지나간다)
@@ -1021,12 +1042,19 @@ x-global-response-headers:
     스펙은 요구를 **기술**할 수 있을 뿐 **검사 가능한 형태로** 만들지 못한다.
     "스펙에 적혀 있으니 검증됐다"고 읽으면 오독이다.
   x-origin-of-the-ten: |
-    **아래 `x-private-response-headers.applies_to`의 10곳이 왜 하필 10곳인지의 출처.**
+    **아래 `x-private-response-headers.applies_to`의 첫 열 자리가 왜 하필 그 열이었는지의 출처.**
     그 목록은 Python `app/api/`의 `PRIVATE_RESPONSE_HEADERS` 부착 자리에서 왔다 —
     Python은 그 성공 응답 10곳에만 붙이고 오류 응답·204·`/health`에는 붙이지 않았다
     (실측 2026-08-12: 401·422 응답 헤더에 cache-control 없음). Kotlin 계약이 전역으로
-    넓힌 뒤에도 이 10곳을 하한선으로 남긴 이유는 그 연혁이 아니라
+    넓힌 뒤에도 그 자리들을 하한선으로 남긴 이유는 그 연혁이 아니라
     `x-private-response-headers.x-why-these-ten`의 위험도 기준이다.
+
+    **목록은 그 뒤로 늘었다** — 1.5.0에서 `PUT /conversions/{conversion_id}/feedback`이
+    더해졌다. 그 자리는 Python에 대응물이 아예 없으므로 **이 절의 대상이 아니다**:
+    여기가 설명하는 것은 「왜 하필 그 열 자리였나」이지 「목록의 현재 크기」가 아니다.
+    현재 크기를 이 자리에서 세지 않는 이유는 세는 자리가 늘수록 갈리기 때문이다
+    (게이트 28 P-5). **키 이름의 `ten`은 그 연혁을 가리키는 안정 id로 남긴다** —
+    목록이 늘 때마다 이름을 다시 세면 이 파일과 리뷰 기록의 인용이 전부 어긋난다.
 
     **2026-08-12 2차 재심 — 이 절의 옛 내용(`x-python-deviation`)은 대상 소멸로 정리됐다.**
     종전에는 "Python은 이 전역 요구를 만족하지 않는다 — 인정된 이탈이며, 관찰 기간에 두
@@ -1113,12 +1141,12 @@ x-global-response-headers:
     개선 원장의 V2-3(DELETE 204의 헤더)도 이 판정에 흡수됐다.
 
 # -----------------------------------------------------------------------------
-# 하한선 — 개인정보·자격증명이 실리는 고위험 10곳.
+# 하한선 — 개인정보·자격증명이 실리는 고위험 경로.
 #
 # 전역 규칙이 있는데도 이 목록을 남기는 이유: 필터가 제거되거나 체인 순서가 어긋나도
 # **고위험 경로에서 테스트가 먼저 깨져야** 하기 때문이다(2026-08-12 리더 판정 부수 결정 1).
-# 이 10곳의 개별 contract test는 삭제하지 않는다.
-# Python 기준선 확인: grep -rn "headers.update(PRIVATE_RESPONSE_HEADERS)\|\*\*PRIVATE_RESPONSE_HEADERS" app/api/ | wc -l  → 10
+# 이 목록의 개별 contract test는 삭제하지 않는다.
+# Python 기준선 확인 (초판 열 자리의 출처. 그 뒤 더해진 자리는 Python에 대응물이 없다): grep -rn "headers.update(PRIVATE_RESPONSE_HEADERS)\|\*\*PRIVATE_RESPONSE_HEADERS" app/api/ | wc -l  → 10
 # -----------------------------------------------------------------------------
 x-private-response-headers:
   role: |
@@ -1139,12 +1167,18 @@ x-private-response-headers:
     - "GET /workspaces"                # 작업 공간 이름도 사용자가 적은 콘텐츠
     - "POST /workspaces"
     - "PATCH /workspaces/{workspace_id}"
+    - "PUT /conversions/{conversion_id}/feedback"  # 자유 의견 — 사용자가 적어 준 콘텐츠가 그대로 되돌아 나간다
   x-why-these-ten: |
-    이 열 자리를 고른 규칙은 **"개인정보·자격증명이 실리는 응답"**이다.
+    이 목록을 고른 규칙은 **"개인정보·자격증명이 실리는 응답"**이다.
     `POST /auth/login`은 Bearer 토큰 자체를, 나머지 `/auth` 둘은 이메일을, 문서·작업 공간
     응답은 사용자 콘텐츠를 싣는다. 헤더가 빠지면 **200 OK로 나타나는 보안 사고**라
     본문 검증으로는 절대 잡히지 않는다 — 그래서 전역 규칙과 별개로 개별 단언을 남긴다.
-    이 목록은 `paths` 아래 개별 응답의 헤더 선언 10건과 1:1로 대응한다.
+    이 목록은 `paths` 아래 개별 응답의 헤더 선언과 **1:1로 대응한다** — 조항은 그 대응이지
+    개수가 아니다(개수 대조는 `PrivateHeaderFloorCensusTest`가 한다). 1.5.0에서
+    `PUT /conversions/{conversion_id}/feedback`이 더해졌다: 자유 의견은 사용자가 직접 적은
+    콘텐츠이고 그 응답이 그것을 그대로 되돌려 주므로 같은 규칙에 걸린다.
+    **키 이름의 `ten`은 목록이 열 자리이던 때의 안정 id다**
+    (연혁은 `x-global-response-headers.x-origin-of-the-ten`).
   x-not-a-scope: |
     **여기 없는 응답에도 헤더는 붙는다.** 종전 이 절에 있던 `does_not_apply_to`
     (DELETE 204 · `/health` · 모든 오류 응답)는 2026-08-12 리더 판정으로 **무효**이며,
@@ -1735,6 +1769,97 @@ paths:
         '503': { $ref: '#/components/responses/ServiceUnavailable' }
 
   # ===========================================================================
+  # #15 PUT /conversions/{conversion_id}/feedback — 200
+  # 1.5.0 신설(2026-08-26). 파일럿 게이트 ① 판정 수단 — Python 참고 구현에 대응물이 없다.
+  #
+  # **번호는 자리가 아니라 id다.** 이 오퍼레이션은 목록 중간(#9 다음)에 놓이지만 번호는
+  # 가장 큰 수를 잇는다 — 뒤 번호를 밀면 이 파일과 리뷰 기록이 이미 인용한 서수
+  # (예: `x-stored-text-domain`의 「마감은 #8을 구현하는 단위다」)가 조용히 다른 것을
+  # 가리키게 된다. 다시 세지 않고 안정 id를 주는 것이 게이트 28 P-5의 처방이다.
+  # ===========================================================================
+  /conversions/{conversion_id}/feedback:
+    parameters:
+      - name: conversion_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    put:
+      tags: [documents]
+      operationId: saveConversionFeedback
+      summary: 검수 담당자의 파일럿 피드백을 저장한다
+      security: [{ HTTPBearer: [] }]
+      description: |
+        검수 화면 하단 폼의 제출을 받는다 — 배포 의향 · 품질 만족도 · 이번 건 소요 시간 ·
+        자유 의견(선택). **게이트 ①의 유일한 수기 입력**이고 나머지 지표는 시스템이 남긴다
+        (`docs/pilot-runbook.md` 「기록 방법」).
+
+        **POST가 아니라 PUT인 이유: 한 변환의 피드백은 1건이고 다시 보내면 덮어쓴다.**
+        자원이 변환당 하나로 정해져 있어 만드는 자리와 고치는 자리가 같고, 그것이 멱등
+        upsert다. 같은 본문을 두 번 보내도 결과가 같아야 하는 것은 취향이 아니다 —
+        폼 재제출·네트워크 재시도로 한 변환에 두 건이 쌓이면 게이트 ① 판정의 **분모**
+        (10건)가 조용히 부풀고, 그 오염은 집계 시점에 되돌릴 수 없다.
+
+        **아직 `done`이 아니면 409다** — `PUT /conversions/{conversion_id}`와 **같은 사유,
+        같은 문구**다. 결과를 보지 않은 채 품질을 답할 수 없으므로 없는 것이 아니라 지금이
+        아닐 뿐이고, 사용자가 취할 조치가 422와 다르다(기다렸다 다시).
+
+        **`get`을 두지 않는다.** 재방문 시 이전 값을 폼에 되살리는 것은 이번 범위 밖이다.
+        필요해지면 **같은 경로에 `get`을 더한다** — 다른 경로를 새로 만들지 않는다.
+
+        **저장 수명이 문서와 분리돼 있다.** 문서·변환은 보존 기간이 지나면 파기되지만
+        (`x-input-limits.retention_days`) 게이트 판정 근거는 그 뒤에 읽는다
+        (`docs/pilot-runbook.md` 「집계」). 계약이 정하는 것은 이 오퍼레이션이 문서 파기
+        뒤에도 의미를 갖는다는 것뿐이고, 저장 형태는 구현 판단이다.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ConversionFeedbackRequest' }
+      responses:
+        '200':
+          description: |
+            저장됨. 처음 낸 것이든 덮어쓴 것이든 **같은 200**이다 — 클라이언트가 두 경우를
+            구분해서 할 일이 없고, 구분해 주면 "이미 냈는가"가 화면 분기로 새어 들어온다.
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CacheControlNoStore' }
+            X-Content-Type-Options: { $ref: '#/components/headers/XContentTypeOptions' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ConversionFeedbackResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404':
+          description: 없거나 내 것이 아니다
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+              examples:
+                not_found: { value: { detail: "변환 결과를 찾을 수 없습니다" } }
+        '409':
+          description: 아직 완료되지 않은 변환이다
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+              examples:
+                not_done: { value: { detail: "변환이 끝난 뒤에 수정할 수 있습니다" } }
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
+        '422':
+          description: |
+            필수 필드 누락은 **배열** detail(스키마 층)이고, 값 범위 밖·자유 의견 길이 초과는
+            **문자열** detail(서비스 층)이다. 두 갈래의 경계는 `ValidationFailed`가 정본이며
+            이 오퍼레이션이 새 경계를 만들지 않는다.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+              examples:
+                field_missing:
+                  value: { detail: [{ loc: ["body", "publish_intent"], msg: "Field required", type: "missing" }] }
+                score_out_of_range: { value: { detail: "품질 만족도는 1에서 5 사이의 값이어야 합니다" } }
+                minutes_out_of_range: { value: { detail: "소요 시간은 0에서 600분 사이의 값이어야 합니다" } }
+                comment_too_long: { value: { detail: "자유 의견은 500자 이하여야 합니다" } }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+
+  # ===========================================================================
   # #10 GET /workspaces — 200
   # #11 POST /workspaces — 201
   # 원본: app/api/workspaces.py
@@ -2163,8 +2288,9 @@ components:
         내려갔다: **`queue` · `cipher` · `datasource`**.
 
         **내려간 것의 사유·근거·되살릴 조건은 `x-retired-503-configurations`가 정본이다.**
-        이 자리에 두 벌로 적지 않는다 — 이 컴포넌트를 13개 오퍼레이션이 선언하므로 사유를
-        여기 두면 13곳이 그것을 인용하게 된다. **서수로 부르지 않는다**: 그 절의 `id`로만
+        이 자리에 두 벌로 적지 않는다 — 이 컴포넌트를 **인증이 걸린 오퍼레이션 전부**가
+        선언하므로 사유를 여기 두면 그 모든 자리가 그것을 인용하게 된다.
+        (수를 적지 않는 이유는 오퍼레이션이 늘 때마다 산문이 갈리기 때문이다 — 게이트 28 P-5.) **서수로 부르지 않는다**: 그 절의 `id`로만
         가리킨다(서수를 버린 사유는 그 절 머리 주석에 있다 — 게이트 28 P-5).
 
         **그래서 `POST /documents`의 503은 어디서 오는가**: 위 유일한 줄, 곧 **인증 경로**다.
@@ -2519,6 +2645,121 @@ components:
             `"EnqueueFailed"`는 **2026-08-20에 폐기된 값**이다 — Redis/ARQ 전제였고,
             어떤 구현에서도 더는 나오지 않는다(`x-retired-responses`).
 
+    # ---------------------------------------------------------------------
+    # 파일럿 피드백 (1.5.0 신설) — 게이트 ① 판정 수단.
+    # 세 스키마 모두 `PUT /conversions/{conversion_id}/feedback` 하나에서만 쓰인다.
+    # ---------------------------------------------------------------------
+    PublishIntent:
+      type: string
+      enum: [as_is, with_edits, not_usable]
+      description: |
+        검수 담당자의 **배포 의향**. 값의 뜻은 이렇다:
+          - `as_is` — 그대로 쓸 수 있다
+          - `with_edits` — 조금 고쳐서 쓰겠다
+          - `not_usable` — 쓸 수 없다
+
+        **이 값 자체가 게이트 ① 판정의 분모다.** 통과 기준 1이 10건 중 `as_is`와
+        `with_edits`의 **건수**를 세므로(`docs/pilot-runbook.md` 「게이트 ① 판정」),
+        값을 늘리거나 이름을 바꾸면 스키마가 아니라 **판정 기준**이 바뀐다. 「보통」 같은
+        중간값을 더하면 세는 쪽이 그것을 어느 편에 넣을지 계약이 답하지 못한다 —
+        값 추가는 `x-change-policy.escalate_to_leader`에 걸리는 변경이다.
+
+        **독립 컴포넌트로 두는 이유는 `ConversionStatus`와 같다** — React 생성 타입이
+        이름으로 부르는 union이어야 한다. 인라인 enum은 익명 타입으로 풀려 화면 코드가
+        세 문자열 리터럴을 자기 자리에 복제하게 되고, 그러면 값 집합이 두 벌이 된다.
+
+    ConversionFeedbackRequest:
+      type: object
+      required: [publish_intent, quality_score, minutes_spent]
+      description: |
+        검수 화면 하단 피드백 폼의 제출 본문. 수기 입력은 이 네 필드가 전부이고
+        나머지 지표는 시스템이 남긴다(`docs/pilot-runbook.md` 「기록 방법」).
+        `comment`만 선택이며, 나머지 셋은 없으면 판정이 성립하지 않으므로 필수다.
+      properties:
+        publish_intent: { $ref: '#/components/schemas/PublishIntent' }
+        quality_score:
+          type: integer
+          description: |
+            품질 만족도. **1 이상 5 이하의 정수**다(1이 가장 낮고 5가 가장 높다).
+            게이트 ① 통과 기준 2가 이 값의 평균을 3.5와 견준다.
+
+            **`minimum`/`maximum`을 쓰지 않는다.** 범위 위반은 이 계약에서 **서비스 층**
+            판정이고 422 **문자열** detail이다. 스키마 키워드로 적으면 같은 위반이 배열
+            detail로 나가고 사용자에게 보이는 문구가 한국어에서 영문으로 바뀐다 —
+            `x-request-field-constraints.x-decision`의 둘째 사유가 그대로 적용된다.
+            그래서 **범위는 이 산문이 고정한다.**
+            `x-service-constraint`도 달지 않는다: 그 확장은 **길이** 축의 상한을 적는
+            자리이고 여기는 값의 범위다. 두 축을 한 키로 뭉치면 그 키를 읽는 대조가
+            무엇을 재는지 알 수 없게 된다.
+        minutes_spent:
+          type: integer
+          description: |
+            **이 건 하나**를 처리하는 데 든 시간(분). **0 이상 600 이하의 정수**다.
+            게이트 ① 기준 3의 중앙값이 이 값에서 나온다.
+
+            **상한 600(10시간)의 사유**: 문서 한 건의 검수가 10시간을 넘는 값은 측정값이
+            아니라 **오타**다(자릿수를 하나 더 누른 입력 하나가 중앙값을 통째로 끌어올린다).
+            상한이 막는 것은 성실한 응답이 아니라 실수다.
+            **0을 허용하는 사유**: 1분이 안 걸린 건이 실제로 있다. 하한을 1로 두면 가장
+            빠른 건이 반올림 때문에 거절되는데, 그것은 이 지표가 재려는 것과 정반대다.
+            범위 위반의 처분은 `quality_score`와 같다(422 문자열, 스키마 키워드 없음).
+        comment:
+          anyOf: [{ type: string }, { type: 'null' }]
+          x-service-constraint: { max_length: 500, measured_on: normalized }
+          description: |
+            자유 의견. **선택**이며 주지 않거나 `null`이면 의견 없음이다.
+
+            **정규화 후** 길이를 재고 500자를 넘으면 422 **문자열** detail이다.
+            `maxLength`를 쓰지 않는 이유는 `ConversionReviewRequest.edited_text`와 같다 —
+            스키마 키워드는 정규화 **전** 원시 값에 걸려 "정규화 후 길이"를 말하지 못한다
+            (`x-request-field-constraints.x-openapi-expressibility`).
+            상한 값의 정본은 `x-input-limits.max_feedback_comment_length`다.
+
+            **이 필드는 AEAD로 봉인해 저장한다.** 자유 의견에는 사용자가 문서 본문 조각을
+            그대로 옮겨 적을 수 있어 평문 열에 둘 수 없다. 봉인해 저장하므로 길이와 다른
+            축인 **저장 정의역**이 함께 걸린다(`x-stored-text-domain` — 텍스트로 왕복하지
+            않는 값은 받지 않는다). 봉인의 귀결로 집계 스크립트는 이 값을 읽지 못한다.
+
+            **화면은 「문서 내용은 적지 마세요」 안내를 폼 안에 고정한다.** 마스킹 범주가
+            주민등록번호·카드번호 **2종뿐**이라(master-plan §3.2) 의견에 적힌 전화번호·
+            주소·이름은 어디서도 가려지지 않는다. 계약이 안내 문구까지 정하지는 않지만,
+            **그 안내가 없으면 이 필드가 마스킹을 우회하는 자리가 된다**는 것은 계약이
+            적는다 — `x-title-policy.rationale`이 같은 종류의 우회를 적어 둔 이유와 같다.
+
+    ConversionFeedbackResponse:
+      type: object
+      required:
+        [conversion_id, publish_intent, quality_score, minutes_spent,
+         comment, submitted_at]
+      description: |
+        저장된 피드백. **required 범위가 넓은 사유는 `ConversionResponse`의 description에
+        적힌 것과 같다** — 키는 항상 존재하고 값이 null일 수 있다. Kotlin이 null 필드를
+        생략하면(Jackson `NON_NULL`) React가 `undefined`를 받아 분기가 달라진다.
+
+        **저장된 값을 그대로 돌려준다.** 시스템이 계산하는 파생 지표(검수본과 초안의
+        편집 거리·글자 수 같은 것)는 **응답에 싣지 않는다.** 그것은 판정용 집계 값이지
+        사용자에게 보여 줄 값이 아니고, 검수본과의 차이를 화면에 올리면 「AI가 내 수정을
+        채점한다」는 오해를 만든다. 파일럿이 재려는 것은 담당자의 **판단**이지 담당자의
+        점수가 아니며, 채점받는다는 느낌은 그 판단 자체를 왜곡한다.
+        파생 지표의 집계는 DB에서 스크립트가 한다(`docs/pilot-runbook.md` 「집계」).
+      properties:
+        conversion_id: { type: string, format: uuid }
+        publish_intent: { $ref: '#/components/schemas/PublishIntent' }
+        quality_score: { type: integer }
+        minutes_spent: { type: integer }
+        comment:
+          anyOf: [{ type: string }, { type: 'null' }]
+          description: |
+            저장된 자유 의견. 주지 않았으면 null이다. 봉인해 둔 값을 **소유자 조회에서만**
+            푼다 — 그래서 이 응답에 캐시 금지 헤더가 붙는다.
+        submitted_at:
+          type: string
+          format: date-time
+          description: |
+            이 피드백을 **마지막으로 저장한** 시각(ISO 8601). 덮어쓰면 갱신된다.
+            멱등 upsert라 "처음 낸 시각"과 "마지막으로 낸 시각"이 갈리는데, 판정에 쓰는
+            것은 마지막 값이므로 계약이 싣는 것도 그것이다.
+
     DocumentListItem:
       type: object
       required:
@@ -2670,6 +2911,103 @@ components:
 # 변경 이력
 # =============================================================================
 x-changelog:
+  - version: "1.5.0"
+    date: "2026-08-26"
+    revision: "PILOT-GATE-1"   # 파일럿 게이트 ① 판정 수단 — 리더 지시
+    author: contract-keeper
+    change: |
+      **파일럿 피드백 엔드포인트 하나를 세웠다 — 추가만 있고 기존 조항의 값은 하나도 바뀌지 않는다.**
+
+      ⑴ **경로 `PUT /conversions/{conversion_id}/feedback` 신설(#15).** `put` 하나뿐이고
+         `get`은 두지 않았다 — 재방문 시 이전 값 복원은 이번 범위 밖이며, 필요해지면
+         **같은 경로에 `get`을 더한다**는 것을 그 오퍼레이션 서술에 적었다.
+         응답은 200·401·404·409·415·422·500·503이고, **404·409의 문구는 기존
+         `PUT /conversions/{conversion_id}`와 같은 값**이다(같은 사유에 문구를 새로 만들면
+         한 API 안에서 같은 상황이 두 문장으로 갈린다).
+      ⑵ **스키마 셋 신설** — `PublishIntent`(독립 enum) · `ConversionFeedbackRequest` ·
+         `ConversionFeedbackResponse`. `ConversionResponse`(열세 필드 고정)와
+         `ConversionReviewRequest`는 **건드리지 않았다.**
+      ⑶ **`x-input-limits.max_feedback_comment_length: 500`** 추가(초과 시 422 문자열).
+      ⑷ **`x-private-response-headers.applies_to`에 새 오퍼레이션 추가** — 하한선이 한 자리
+         늘었다. **넓히는 방향이라 `invariants` 축소가 아니다**(`invariants_note`).
+      ⑸ **`x-stored-text-domain.applies_to`에 `ConversionFeedbackRequest.comment` 팔 추가**
+         (`status: pending` — 오늘 재지 않았다. 남아 있다는 것 자체가 마감 목록이다).
+      ⑹ **`x-unsupported-media-type.x-measured.not_reached`에 새 오퍼레이션을 적었다** —
+         본문을 받으므로 415를 선언하지만 구현이 없어 그것은 선언이지 측정이 아니다.
+      ⑺ **개수를 세는 산문을 정리했다.** 두 갈래로 갈라 처리했다:
+         - **수 자체가 주장인 자리는 수를 고쳤다** — `info.description`의 엔드포인트 수
+           (14→15, 제품 13→14)와 `x-retired-responses`의 「14개 오퍼레이션 중 동기로 LLM을
+           부르는 것이 없다」(→15). 후자의 주장은 새 오퍼레이션에서도 그대로 참이다.
+         - **하한선·컴포넌트 사용처를 세던 산문은 수를 지웠다** — 「헤더 선언 10건」
+           (`info.description`) · 「고위험 10곳」(`x-change-policy.invariants`) · 「10곳 목록」
+           (`x-global-response-headers` 머리 주석·`enforcement`) · 「고위험 10곳」·「이 10곳의
+           개별 contract test」(`x-private-response-headers` 머리 주석) · 「이 열 자리」·
+           「헤더 선언 10건과 1:1」(`x-why-these-ten`) · 「13개 오퍼레이션이 선언하므로 13곳이
+           인용한다」(`ServiceUnavailable`). 다시 세지 않은 이유는 **게이트 28 P-5와 같다** —
+           목록이 늘어나는데 서수를 옮겨 적은 자리들이 따라오지 않으면 계약 자체로 무엇이
+           참인지 결정할 수 없게 된다. 개수 대조는 산문이 아니라 `PrivateHeaderFloorCensusTest`
+           와 `MIN_PRIVATE_HEADER_TARGETS`가 한다.
+         - **키 이름 `x-why-these-ten`·`x-origin-of-the-ten`은 그대로 뒀다.** 목록이 열
+           자리이던 때를 가리키는 **안정 id**이며, 이름을 다시 세면 이 파일과 리뷰 기록의
+           인용이 함께 어긋난다. 두 자리에 그 사실을 적었다.
+         - `x-changelog`의 **과거 항목은 고치지 않는다** — 그때의 수는 그때 참이었다.
+      ⑻ **새 오퍼레이션의 번호는 #15다** — 자리는 `#9` 다음이지만 뒤 번호를 밀지 않았다.
+         `x-stored-text-domain`이 이미 「마감은 #8을 구현하는 단위다」로 서수를 인용하고
+         있어, 다시 세면 그 인용이 조용히 다른 것을 가리킨다(같은 P-5 처방).
+    ground: |
+      **G2 — 요구사항이 그것을 요구한다.** `docs/master-plan.md` §9 게이트 ①(파일럿 실무자
+      검증 → 단계 2 진행)을 판정하려면 「배포 의향」과 「1건 소요 시간」이 필요한데 그 값을
+      받을 자리가 계약에 **없었다.** `docs/pilot-runbook.md` 「기록 방법」이 검수 화면의 폼
+      제출 한 번을 유일한 수기 입력으로 정하고 있으므로, 그 제출을 받는 HTTP 자리가 서야
+      파일럿을 시작할 수 있다. 취향이 아니라 게이트의 선결이다.
+    rationale: |
+      **① 왜 POST가 아니라 PUT인가.** 한 변환의 피드백은 1건이고 자원이 변환당 하나로
+      정해져 있어 만드는 자리와 고치는 자리가 같다. 폼 재제출·네트워크 재시도로 한 변환에
+      두 건이 쌓이면 게이트 ①의 **분모(10건)**가 조용히 부풀고 그 오염은 집계 시점에
+      되돌릴 수 없다. 멱등 upsert는 그 위험을 프로토콜 층에서 없앤다.
+
+      **② 왜 `get`이 없는가.** 지금 필요한 것은 판정 데이터를 받는 것뿐이고 조회는 집계
+      스크립트가 DB에서 한다. 쓰지 않을 오퍼레이션을 미리 세우면 구현·테스트·프런트 타입이
+      함께 늘고 그중 무엇도 게이트를 앞당기지 않는다. 필요해지면 **같은 경로**에 더한다.
+
+      **③ 왜 파생 지표를 응답에 싣지 않는가.** 편집 거리·글자 수는 판정용 집계 값이지
+      사용자에게 보여 줄 값이 아니다. 검수본과의 차이를 화면에 올리면 「AI가 내 수정을
+      채점한다」는 오해를 만들고, 그 오해는 파일럿이 재려는 것(담당자의 판단)을 왜곡한다.
+
+      **④ 왜 보존이 문서와 분리되는가.** 문서·변환은 30일 뒤 파기되지만 게이트 판정 근거는
+      그 뒤에 읽는다. 계약이 정하는 것은 이 오퍼레이션이 문서 파기 뒤에도 의미를 갖는다는
+      것뿐이고 저장 형태는 구현 판단이다.
+
+      **⑤ 왜 범위·길이를 스키마 키워드로 적지 않는가.** `x-request-field-constraints.x-decision`
+      (2026-08-13, G1+G4)이 이미 판정한 자리와 같다 — 스키마 층에 적으면 같은 위반이 배열
+      detail로 나가고 사용자 문구가 영문으로 바뀐다. 상한은 그대로이고 강제하는 층만 사실과
+      맞게 적는다. `comment`는 거기에 더해 **정규화 후** 길이를 재므로 `maxLength`가 애초에
+      그 요구를 표현하지 못한다.
+    version_note: |
+      **1.4.0 → 1.5.0.** 새 경로와 새 스키마 셋이라 React 생성 타입이 달라진다.
+      **비파괴다** — 기존 경로·스키마·필드·문구·상태 코드가 하나도 바뀌지 않았고 추가만 있다.
+      (1.4.0의 두 항목이 버전을 올리지 않은 것과 다른 이유가 이것이다: 그쪽은 나가는 바이트가
+      같았고 이번에는 없던 오퍼레이션과 타입이 생긴다.)
+    react_impact: |
+      `frontend/src/api/types.ts`에 `PublishIntent`·`ConversionFeedbackRequest`·
+      `ConversionFeedbackResponse`가, `frontend/src/api/client.ts`에 호출부가 늘고,
+      검수 화면 하단에 새 컴포넌트 `ReviewFeedback.tsx`가 붙는다. **기존 화면 코드가 깨지는
+      자리는 없다**(추가만). 폼 안의 「문서 내용은 적지 마세요」 안내는 그 컴포넌트가 진다 —
+      사유는 `ConversionFeedbackRequest.comment`에 적혀 있다.
+    affected_tests: |
+      **이 계약 변경이 분모를 바꾸는 대조들이다. 고치는 것은 구현 레인이지만 기록은 여기 남긴다.**
+      - `PrivateHeaderFloorCensusTest.DECLARED_FLOOR_TARGETS` — `PUT /conversions/{conversion_id}/feedback`
+        추가. 계약의 `applies_to`와 **1:1로 대조**하므로 고치기 전까지 빨갛다. 그것이 이 장치의 의도다.
+      - `support/ContractEnumerationFloors.kt`의 `MIN_PRIVATE_HEADER_TARGETS` — 10 → 11.
+      - `AuthenticationCoverageContractTest` — 계약에서 자동 파생이다. 계약과
+        `AuthenticatedEndpoints.PROTECTED_PATH_PATTERNS`가 맞으면 통과한다.
+      - **신규 `ConversionFeedbackContractTest`** — 스키마·응답 집합·문구 대조(404·409 문구가
+        `PUT /conversions/{conversion_id}`와 **같은 값**임을 계약에서 읽어 단언).
+      - **신규 `ConversionFeedbackReachTest`** — 200 멱등 덮어쓰기 · 404 소유자 은폐 ·
+        409 미완료 · 422 두 갈래(배열/문자열) · 415.
+      - `x-stored-text-domain`의 새 팔은 `pending`이므로 오늘 케이스를 요구하지 않는다.
+    notified: [kotlin-implementer, 리더]
+
   - version: "1.4.0"
     date: "2026-08-23"
     revision: "G29-X8"   # 게이트 회차 04_documents-c6r2 판정 X-8 (contract-keeper 판정 → 리더 승인)

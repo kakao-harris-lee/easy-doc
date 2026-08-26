@@ -396,6 +396,8 @@ class OwnershipPredicateGuardTest {
             listOf(
                 "$AUTH/JdbcWorkspaceRepository.kt | SELECT [documents]",
                 "$AUTH/JdbcWorkspaceRepository.kt | SELECT [documents]",
+                // 피드백 upsert. 덮어쓰기 팔에 소유 술어가 걸려 아래 미방어 목록에는 없다.
+                "$DOCUMENT/JdbcConversionFeedbackRepository.kt | INSERT [conversion_feedback]",
                 "$DOCUMENT/JdbcConversionRepository.kt | SELECT [conversions]",
                 "$DOCUMENT/JdbcConversionRepository.kt | UPDATE [conversions]",
                 "$DOCUMENT/JdbcConversionRepository.kt | SELECT [conversions, documents]",

@@ -458,6 +458,9 @@ class ValueSlotInvariantReachTest {
             mapOf(
                 "WorkspaceNameRequest" to """{"name":"가"}""",
                 "ConversionReviewRequest" to """{"edited_text":"가"}""",
+                // 계약 required 셋만 담는다 — `comment` 는 선택이라 최소 본문에 없다.
+                "ConversionFeedbackRequest" to
+                    """{"publish_intent":"as_is","quality_score":3,"minutes_spent":1}""",
             )
 
         private const val LIST_SCHEMA = "DocumentListResponse"

@@ -87,6 +87,9 @@ enum class EncryptedField(val wireName: String) {
 
     /** 담당자 검수 수정본. `conversions.edited_text_encrypted` (Alembic 0004). */
     CONVERSION_EDITED_TEXT("conversions.edited_text_encrypted"),
+
+    /** 파일럿 검수자의 자유 의견. `conversion_feedback.comment_encrypted` (V2). 본문 조각이 섞일 수 있다. */
+    CONVERSION_FEEDBACK_COMMENT("conversion_feedback.comment_encrypted"),
 }
 
 /** `encryption_scheme` 컬럼에 들어가는 방식 이름. */

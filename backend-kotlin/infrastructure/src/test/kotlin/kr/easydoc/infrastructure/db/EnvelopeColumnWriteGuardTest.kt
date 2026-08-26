@@ -316,6 +316,8 @@ class EnvelopeColumnWriteGuardTest {
         val EXPECTED_FILES =
             listOf(
                 "api/src/test/kotlin/kr/easydoc/api/ConversionExportReachTest.kt",
+                // 피드백 실경로 테스트도 완료 상태를 SQL 로 심는다 — 그 문장이 봉투를 함께 쓴다.
+                "api/src/test/kotlin/kr/easydoc/api/ConversionFeedbackReachTest.kt",
                 "api/src/test/kotlin/kr/easydoc/api/ConversionReadReachTest.kt",
                 "api/src/test/kotlin/kr/easydoc/api/ConversionReviewReachTest.kt",
                 "infrastructure/src/main/kotlin/kr/easydoc/infrastructure/document/JdbcConversionRepository.kt",
@@ -326,6 +328,6 @@ class EnvelopeColumnWriteGuardTest {
             )
 
         /** 문장 수. 파일 목록만 보면 같은 파일 안에 한 문장을 더 넣는 편집이 조용하다. */
-        const val EXPECTED_STATEMENTS = 11
+        const val EXPECTED_STATEMENTS = 12
     }
 }

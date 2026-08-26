@@ -156,6 +156,8 @@ export const ROUTES = {
   conversionRead: { method: 'GET', ok: 200 },
   /** 계약 `paths./conversions/{conversion_id}.put` — 200. */
   conversionReview: { method: 'PUT', ok: 200 },
+  /** 계약 `paths./conversions/{conversion_id}/feedback.put` — 200 (멱등 upsert). */
+  conversionFeedback: { method: 'PUT', ok: 200 },
   /** 계약 `paths./conversions/{conversion_id}/export.get` — 200 (파일). */
   conversionExport: { method: 'GET', ok: 200 },
 } as const

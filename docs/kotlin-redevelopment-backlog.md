@@ -13,6 +13,7 @@
 | 보존·자동 삭제 정책(기본 30일) | 구현 | worker가 `retention_expires_at` 만료 문서를 배치가 짧아질 때까지 반복 삭제한다. 활성 lease는 건너뛰고, dry-run은 한 배치만 미리본다. 건수 메트릭·문서 ID 감사 로그만 남긴다 |
 | 쉬운 말 사전(RAG, pgvector 기반 팝업) | 미구현 | master-plan P0-5. Lean MVP 범위 밖으로 의도적으로 미뤄져 있었다 |
 | 골든셋 품질 평가(스타일 규칙 + LLM-as-judge) | 구현 | `./gradlew build`가 스키마·원문 사실·변환 스냅샷 스타일/사실·파일·ID·JSON digest 기준선을 검사한다. LLM-as-judge는 `./gradlew testLlm`이며 비밀값이 없으면 skip |
+| 검수 피드백 기록(게이트 ① 판정 근거) | 구현 | `PUT /conversions/{id}/feedback` 멱등 upsert. 배포 의향·품질 만족도·소요 시간 + 자유 의견(AEAD 봉인). 수정률 지표는 저장 시점에 계산해 평문 숫자로 남긴다. `conversion_feedback`은 문서 30일 파기와 **분리**돼 있다(FK 없음). 집계는 `scripts/pilot-report.sql`, 절차는 `docs/pilot-runbook.md` 「게이트 ① 판정」. 조회 API(`GET`)와 재방문 시 이전 값 표시는 범위 밖 |
 | 결제(카드·계좌이체·세금계산서), 크레딧 차감 | 미구현 | Lean MVP 범위 밖(master-plan 4.0) |
 | 운영자 어드민 | 미구현 | Lean MVP 범위 밖 |
 

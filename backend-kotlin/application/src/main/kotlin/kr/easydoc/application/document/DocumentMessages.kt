@@ -68,3 +68,15 @@ val REVIEW_TOO_LONG_MESSAGE: String =
 
 /** 잠근 행에 저장이 닿지 않았다 — 입력 문제가 아니라 **우리 전제가 깨진 것**이다. */
 const val REVIEW_NOT_SAVED_MESSAGE: String = "요청을 처리하지 못했습니다"
+
+/**
+ * 계약 `PUT /conversions/{conversion_id}/feedback` 422 예시 `comment_too_long`.
+ * 길이는 **정규화 후**이고 상한의 값은 [MAX_FEEDBACK_COMMENT_LENGTH] 에서 끌어온다
+ * (계약 `x-input-limits.max_feedback_comment_length` 와 같은 값).
+ *
+ * 범위 밖 값(품질 만족도·소요 시간)의 문구는 여기 없다 — 그 둘은 범위와 문구를 함께
+ * `core/pilot/ConversionFeedback.kt` 가 든다(`QualityScore.OUT_OF_RANGE_MESSAGE`·
+ * `MinutesSpent.OUT_OF_RANGE_MESSAGE`). 경계값에서 끌어 쓰는 문구를 경계값에서 떼어 놓으면
+ * 두 벌이 되어 갈린다.
+ */
+val FEEDBACK_COMMENT_TOO_LONG_MESSAGE: String = "자유 의견은 ${MAX_FEEDBACK_COMMENT_LENGTH}자 이하여야 합니다"

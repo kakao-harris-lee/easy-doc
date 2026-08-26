@@ -196,17 +196,11 @@ class PrivateHeaderFloorCensusTest {
             }
 
             "PUT $CONVERSION_ITEM_PATH" -> {
-                val token = newAccount()
-                val conversionId = acceptDocument(token)
-                // `done` 이 아니면 409 라 결과를 먼저 심는다.
-                markDone(conversionId)
-                mockMvc
-                    .put(itemPath(CONVERSION_ITEM_PATH, PUT, conversionId)) {
-                        header(HttpHeaders.AUTHORIZATION, bearer(token))
-                        contentType = MediaType.APPLICATION_JSON
-                        content = reviewBody(SAMPLE_REVIEW)
-                    }.andReturn()
-                    .response
+                putOnCompleted(CONVERSION_ITEM_PATH, reviewBody(SAMPLE_REVIEW))
+            }
+
+            "PUT $CONVERSION_FEEDBACK_PATH" -> {
+                putOnCompleted(CONVERSION_FEEDBACK_PATH, feedbackBody())
             }
 
             "GET $WORKSPACES_PATH" -> {
@@ -236,6 +230,26 @@ class PrivateHeaderFloorCensusTest {
                 )
             }
         }
+
+    /**
+     * 완료된 내 변환에 `PUT` 을 보낸다. 두 자리(검수 저장·피드백)가 **같은 전제**를 쓴다 —
+     * `done` 이 아니면 409 라 결과를 먼저 심어야 한다.
+     */
+    private fun putOnCompleted(
+        template: String,
+        body: String,
+    ): MockHttpServletResponse {
+        val token = newAccount()
+        val conversionId = acceptDocument(token)
+        markDone(conversionId)
+        return mockMvc
+            .put(itemPath(template, PUT, conversionId)) {
+                header(HttpHeaders.AUTHORIZATION, bearer(token))
+                contentType = MediaType.APPLICATION_JSON
+                content = body
+            }.andReturn()
+            .response
+    }
 
     private fun exportCompleted(token: String): MockHttpServletResponse {
         val conversionId = acceptDocument(token)
@@ -291,6 +305,16 @@ class PrivateHeaderFloorCensusTest {
     }
 
     private fun reviewBody(text: String): String = json.writeValueAsString(mapOf(EDITED_TEXT_PROPERTY to text))
+
+    /** 배포 의향 값은 **계약에서 읽는다.** 척도 둘은 이 케이스가 재지 않는 배경 값이다. */
+    private fun feedbackBody(): String =
+        json.writeValueAsString(
+            mapOf(
+                PUBLISH_INTENT_PROPERTY to ContractSpec.schemaEnum(PUBLISH_INTENT_SCHEMA).first(),
+                QUALITY_SCORE_PROPERTY to SAMPLE_QUALITY_SCORE,
+                MINUTES_SPENT_PROPERTY to SAMPLE_MINUTES_SPENT,
+            ),
+        )
 
     private fun defaultWorkspaceId(token: String): String {
         val response = authorizedGet(WORKSPACES_PATH, token)
@@ -366,6 +390,7 @@ class PrivateHeaderFloorCensusTest {
         const val WORKSPACE_ITEM_PATH = "/workspaces/{workspace_id}"
         const val CONVERSION_ITEM_PATH = "/conversions/{conversion_id}"
         const val CONVERSION_EXPORT_PATH = "/conversions/{conversion_id}/export"
+        const val CONVERSION_FEEDBACK_PATH = "/conversions/{conversion_id}/feedback"
 
         const val GET = "get"
         const val POST = "post"
@@ -384,6 +409,8 @@ class PrivateHeaderFloorCensusTest {
                 "GET /workspaces",
                 "POST /workspaces",
                 "PATCH /workspaces/{workspace_id}",
+                // 1.5.0 신설 — 자유 의견이 응답에 그대로 되돌아 나간다.
+                "PUT /conversions/{conversion_id}/feedback",
             )
 
         /**
@@ -403,6 +430,10 @@ class PrivateHeaderFloorCensusTest {
         const val NAME_PROPERTY = "name"
         const val TEXT_PROPERTY = "text"
         const val EDITED_TEXT_PROPERTY = "edited_text"
+        const val PUBLISH_INTENT_PROPERTY = "publish_intent"
+        const val QUALITY_SCORE_PROPERTY = "quality_score"
+        const val MINUTES_SPENT_PROPERTY = "minutes_spent"
+        const val PUBLISH_INTENT_SCHEMA = "PublishIntent"
         const val CONVERSION_ID_PROPERTY = "conversion_id"
         const val ITEMS_PROPERTY = "items"
         const val ID_PROPERTY = "id"
@@ -417,6 +448,10 @@ class PrivateHeaderFloorCensusTest {
         const val SAMPLE_MODEL = "census-model"
         const val SAMPLE_PROVIDER = "census-provider"
         const val SAMPLE_TOKENS = 1
+
+        /** 피드백 성공 팔의 배경 값 — 범위의 정본은 `core/pilot/ConversionFeedback.kt` 다. */
+        const val SAMPLE_QUALITY_SCORE = 4
+        const val SAMPLE_MINUTES_SPENT = 12
 
         var counter = 0
     }

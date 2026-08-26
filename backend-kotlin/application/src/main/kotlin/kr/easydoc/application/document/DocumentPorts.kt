@@ -8,6 +8,9 @@ import kr.easydoc.core.document.Document
 import kr.easydoc.core.document.DocumentListing
 import kr.easydoc.core.document.MaskedItemView
 import kr.easydoc.core.document.SourceFormat
+import kr.easydoc.core.pilot.MinutesSpent
+import kr.easydoc.core.pilot.PublishIntent
+import kr.easydoc.core.pilot.QualityScore
 import kr.easydoc.core.privacy.MaskedItem
 import java.time.Instant
 import java.util.UUID
@@ -175,6 +178,61 @@ interface ConversionRepository {
         requiredStatus: ConversionStatus,
         updated: ConversionEnvelope,
     ): Boolean
+}
+
+/**
+ * 저장할 피드백 한 행 — **DB 시계가 채우는 값을 뺀 전부**. [DocumentDraft] 와 같은 형태다.
+ *
+ * 라벨과 열 내용이 어긋난 조합을 호출자가 만들 수 없게 **행 하나를 통째로** 든다
+ * ([ConversionEnvelope] 가 「쓸 행 버전 전체」인 것과 같은 판단이다). 특히 수정률 지표
+ * 셋은 서로 모순될 수 있는 값들이라(검수본 없이 `edit_distance` 만 있는 행) 한 자리에서
+ * 함께 만들어져야 한다.
+ *
+ * `user_id` 는 여기 없다 — 소유자는 [ConversionFeedbackRepository.upsert] 의 인자로 따로
+ * 간다. 소유 술어는 쓰기 문장 자신이 지는 것이라 값 타입의 일부가 아니다.
+ */
+data class StoredFeedback(
+    val conversionId: UUID,
+    val publishIntent: PublishIntent,
+    val qualityScore: QualityScore,
+    val minutesSpent: MinutesSpent,
+    /** 봉인된 자유 의견. 없으면 `null` — 스키마의 「셋이 함께 있거나 함께 없다」와 맞는다. */
+    val comment: EncryptedContent?,
+    val easyCharCount: Int?,
+    val editedCharCount: Int?,
+    val editDistance: Int?,
+) {
+    /**
+     * 로그 허용목록 그대로 — 식별자·의향과 **의견의 유무**뿐이다.
+     * ([StoredConversion.toString] 과 같은 규칙.)
+     *
+     * 자유 의견은 이미 암호문이라 [EncryptedContent.toString] 이 가리지만, 점수·분·지표까지
+     * 찍을 이유가 없다. 셋을 함께 보면 「누가 몇 점을 주고 얼마나 고쳤는가」가 로그에 남고,
+     * 그것은 파일럿 참여자 한 사람의 평가다.
+     */
+    override fun toString(): String =
+        "StoredFeedback($conversionId, ${publishIntent.wireName}, 의견 ${if (comment == null) "없음" else "있음"})"
+}
+
+/**
+ * `conversion_feedback` 저장소.
+ *
+ * **upsert 하나뿐이다** — 한 변환의 피드백은 1건이고 다시 보내면 덮어쓴다(계약 #15 가
+ * `POST` 가 아니라 `PUT` 인 사유). 만드는 자리와 고치는 자리가 같으므로 갈래를 나누지 않는다.
+ */
+fun interface ConversionFeedbackRepository {
+    /**
+     * 피드백 한 행을 쓰거나 덮어쓴다. **커밋하지 않는다** — 트랜잭션 경계는 유스케이스가 연다.
+     *
+     * [ownerId] 는 `user_id` 컬럼에 그대로 들어간다. 집계가 참여자 수를 세는 축이고
+     * (`docs/pilot-runbook.md` 「대상과 규모」), 소유 판정은 이 호출 **앞에서** 끝나 있다.
+     *
+     * @return 저장된 `submitted_at`. 덮어쓴 경우에도 그 시점의 값이다.
+     */
+    fun upsert(
+        ownerId: UUID,
+        feedback: StoredFeedback,
+    ): Instant
 }
 
 /** 마스킹 대응표를 **읽는** 포트. */
