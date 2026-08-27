@@ -147,7 +147,7 @@
 @layer components {
   .skip-link {
     /* 버튼이므로 §8.3 의 10px 을 따른다 (이 파일의 다른 버튼과 같은 값). */
-    @apply fixed -left-[9999px] top-2 z-50 rounded-[10px] bg-primary px-4 py-2 font-bold text-white;
+    @apply fixed -left-[9999px] top-2 z-50 inline-flex min-h-11 items-center rounded-[10px] bg-primary px-4 py-2 font-bold text-white;
   }
   .skip-link:focus {
     @apply left-2;

@@ -118,7 +118,9 @@ export function CredentialsForm({
         )}
       </div>
 
-      <Button type="submit" loading={submitting} fullWidth>
+      {/* 이 화면의 대표 행동이자 모바일에서 손가락이 닿는 곳이다 — 기본 md(40px)로는
+          §10 의 44px 에 못 미친다. */}
+      <Button type="submit" className="h-11" loading={submitting} fullWidth>
         {submitting ? '처리 중…' : submitLabel}
       </Button>
     </form>

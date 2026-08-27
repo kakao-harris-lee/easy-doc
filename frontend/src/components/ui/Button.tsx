@@ -43,7 +43,11 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
     <button
       ref={ref}
       className={cn(
-        'inline-flex items-center justify-center gap-2 rounded-md font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-50',
+        // 포커스 링을 여기서 다시 정하지 않는다. `index.css` 의 `:focus-visible` 이
+        // 3px·offset 2px·ring 색을 이미 그리고, DESIGN.md §11 이 요구하는 두께도 그
+        // 한 곳에 있다. 예전에 있던 `focus-visible:outline-2` 삼종은 같은 말을 하면서
+        // 두께만 2px 로 덮어써, 규정된 3px 이 앱 어디에도 그려지지 않게 만들었다.
+        'inline-flex items-center justify-center gap-2 rounded-md font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50',
         variants[variant],
         sizes[size],
         fullWidth && 'w-full',

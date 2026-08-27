@@ -128,6 +128,8 @@ export function ReviewEditor({ conversion, sourceText }: ReviewEditorProps) {
   const [feedback, setFeedback] = useState<Feedback | null>(null)
   const [pending, setPending] = useState<Pending>(null)
   const [activePanel, setActivePanel] = useState<PanelKey>('source')
+  /** 저장·내려받기를 누른 버튼. 그 작업이 끝나면 초점을 여기로 돌린다. */
+  const refocusRef = useRef<HTMLButtonElement | null>(null)
 
   const dirty = draft !== savedText
   const busy = pending !== null
@@ -167,6 +169,32 @@ export function ReviewEditor({ conversion, sourceText }: ReviewEditorProps) {
   // 화면을 떠날 때 경고 상태를 반드시 끈다 — 켜진 채로 두면 다음 화면에서 이유 없이
   // "저장하지 않은 수정이 있다"고 묻는다.
   useEffect(() => () => setUnsavedChanges(false), [])
+
+  /**
+   * 저장·내려받기가 끝나면 방금 누른 버튼으로 초점을 돌린다.
+   *
+   * 이 버튼들은 진행 중에 `disabled` 가 된다. 브라우저는 초점을 가진 요소가 잠기는
+   * 순간 초점을 `<body>` 로 떨어뜨리므로, 키보드 사용자는 저장을 누른 대가로 지금까지
+   * 온 탭 경로를 통째로 잃고 문서 맨 앞에서 다시 밟아야 한다(§14 «키보드만으로 검수
+   * 저장과 내려받기까지 이동할 수 있다»).
+   *
+   * `finally` 가 아니라 effect 에서 돌리는 이유: `finally` 시점에는 아직 리렌더 전이라
+   * 버튼이 잠긴 상태이고, 잠긴 버튼은 초점을 받지 못한다. `pending` 이 풀린 뒤 DOM 이
+   * 갱신된 이 자리가 초점을 받을 수 있는 첫 순간이다.
+   *
+   * 초점이 `<body>` 에 있을 때만 돌린다 — 기다리는 동안 사용자가 다른 곳으로 옮겨 갔다면
+   * 그 초점을 빼앗지 않는다.
+   */
+  useEffect(() => {
+    if (pending !== null) {
+      return
+    }
+    const trigger = refocusRef.current
+    refocusRef.current = null
+    if (trigger !== null && document.activeElement === document.body) {
+      trigger.focus()
+    }
+  }, [pending])
 
   async function handleSave(): Promise<void> {
     setPending('save')
@@ -310,14 +338,23 @@ export function ReviewEditor({ conversion, sourceText }: ReviewEditorProps) {
           <Badge tone="success" className="mb-2">
             변환 완료
           </Badge>
-          <h2
+          {/*
+            이 화면의 h1이다(§11 «제목 순서»). 검수 화면은 `PageHeader`를 쓰지 않는다 —
+            그 컴포넌트는 맥락 라벨과 오른쪽 대표 행동을 전제하는데 여기서는 위의 HITL
+            고지와 저장 상태가 그 자리를 쓴다. 그래도 **본문의 첫 제목은 h1이어야 한다**:
+            h2로 시작하면 낭독기 목차에 뿌리가 없어 "지금 어느 화면인가"를 제목으로
+            물을 수 없다(머리말의 로고는 제목이 아니다).
+
+            글자 크기는 클래스가 정하므로 태그를 바꿔도 보이는 모양은 그대로다.
+          */}
+          <h1
             className="text-2xl font-extrabold tracking-tight"
             id="review-heading"
             ref={headingRef}
             tabIndex={-1}
           >
             쉬운 글 검수
-          </h2>
+          </h1>
           <p className="mt-1 text-[15px] text-muted-foreground">
             원문과 AI 초안을 비교하고, 필요한 내용을 직접 고쳐 주세요.
           </p>
@@ -346,7 +383,7 @@ export function ReviewEditor({ conversion, sourceText }: ReviewEditorProps) {
                 aria-controls={`${editorId}-${panel.key}-panel`}
                 tabIndex={activePanel === panel.key ? 0 : -1}
                 className={cn(
-                  'flex h-11 flex-1 items-center justify-center rounded-[10px] px-3 text-[15px] font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring',
+                  'flex h-11 flex-1 items-center justify-center rounded-[10px] px-3 text-[15px] font-semibold transition-colors',
                   activePanel === panel.key
                     ? 'bg-card text-primary shadow-sm'
                     : 'text-muted-foreground hover:text-foreground',
@@ -371,10 +408,10 @@ export function ReviewEditor({ conversion, sourceText }: ReviewEditorProps) {
               // 왔음"이나 "지우고 다시 넣어야 함"처럼 보이므로, 왜 없는지 설명하는
               // 카드로 대체한다(§6.4).
               <>
-                <h3 className="mb-2 flex items-center gap-2 text-sm font-bold text-muted-foreground">
+                <h2 className="mb-2 flex items-center gap-2 text-sm font-bold text-muted-foreground">
                   <FileX2 className="size-[18px] shrink-0" aria-hidden="true" />
                   원문 없음
-                </h3>
+                </h2>
                 <div className="rounded-[10px] border border-dashed border-input bg-background p-5">
                   <p className="font-semibold">
                     파일로 올린 문서는 이 화면에서 원문을 다시 표시하지 않습니다.
@@ -387,9 +424,9 @@ export function ReviewEditor({ conversion, sourceText }: ReviewEditorProps) {
               </>
             ) : (
               <>
-                <h3 className="mb-2 text-sm font-bold text-muted-foreground">
+                <h2 className="mb-2 text-sm font-bold text-muted-foreground">
                   <label htmlFor={`${editorId}-source`}>원본 (읽기 전용)</label>
-                </h3>
+                </h2>
                 {/* 읽기 전용 textarea로 두면 키보드로 초점을 받아 스크롤·선택·복사까지 된다 —
                     스크롤되는 div에 tabindex를 붙이는 것보다 조작 방법이 분명하다. */}
                 <textarea
@@ -409,9 +446,9 @@ export function ReviewEditor({ conversion, sourceText }: ReviewEditorProps) {
             {...panelProps('result')}
           >
             <div className="mb-2 flex items-center justify-between gap-2">
-              <h3 className="text-sm font-bold text-primary">
+              <h2 className="text-sm font-bold text-primary">
                 <label htmlFor={editorId}>쉬운 글 결과 (고칠 수 있습니다)</label>
-              </h3>
+              </h2>
               {/* 눈으로 두 패널을 가르는 표식이다. 같은 사실을 위 라벨이 이미 말하므로
                   낭독기에서는 감춘다 — 한 입력에 두 번 붙는 설명이 된다. */}
               <Badge tone="primary" className="shrink-0" aria-hidden="true">
@@ -459,7 +496,10 @@ export function ReviewEditor({ conversion, sourceText }: ReviewEditorProps) {
             className={cn('h-11 w-full sm:w-auto', dirty && 'ring-2 ring-ring/40')}
             variant={dirty ? 'primary' : 'secondary'}
             aria-describedby={statusId}
-            onClick={() => void handleSave()}
+            onClick={(event) => {
+              refocusRef.current = event.currentTarget
+              void handleSave()
+            }}
             disabled={busy}
             loading={pending === 'save'}
           >
@@ -472,7 +512,10 @@ export function ReviewEditor({ conversion, sourceText }: ReviewEditorProps) {
               className="h-11 grow sm:grow-0"
               variant="outline"
               type="button"
-              onClick={() => void handleDownload(format)}
+              onClick={(event) => {
+                refocusRef.current = event.currentTarget
+                void handleDownload(format)
+              }}
               disabled={busy}
               loading={pending === format}
             >
@@ -492,9 +535,9 @@ export function ReviewEditor({ conversion, sourceText }: ReviewEditorProps) {
         className="overflow-x-auto rounded-[12px] border border-border bg-card p-5"
         aria-labelledby="masked-heading"
       >
-        <h3 className="font-bold" id="masked-heading">
+        <h2 className="font-bold" id="masked-heading">
           가린 개인정보
-        </h3>
+        </h2>
         {conversion.masked_items.length === 0 ? (
           <p className="field-hint">가린 개인정보가 없습니다.</p>
         ) : (

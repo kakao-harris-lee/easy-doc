@@ -318,7 +318,7 @@ export function HistoryPage() {
                   : `‘${currentName}’에는 아직 변환한 문서가 없습니다.`}
               </p>
               <Link
-                className="inline-flex h-11 items-center justify-center gap-2 rounded-md bg-primary px-4 text-[15px] font-semibold text-primary-foreground no-underline transition-colors hover:bg-primary-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                className="inline-flex h-11 items-center justify-center gap-2 rounded-md bg-primary px-4 text-[15px] font-semibold text-primary-foreground no-underline transition-colors hover:bg-primary-hover"
                 to={HOME_PATH}
               >
                 <FilePlus2 className="size-[18px]" aria-hidden="true" />첫 문서 변환하기

@@ -41,7 +41,7 @@ export interface PageHeaderProps {
 
 /** 대표 행동이 링크일 때 쓰는 모양. `Button`의 primary와 같은 시각 언어를 맞춘다. */
 const ACTION_LINK_CLASS =
-  'inline-flex h-11 w-full items-center justify-center gap-2 rounded-md bg-primary px-4 text-[15px] font-semibold text-primary-foreground no-underline transition-colors hover:bg-primary-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring sm:w-auto'
+  'inline-flex h-11 w-full items-center justify-center gap-2 rounded-md bg-primary px-4 text-[15px] font-semibold text-primary-foreground no-underline transition-colors hover:bg-primary-hover sm:w-auto'
 
 /**
  * 업무 화면의 첫머리. 맥락 라벨 → 제목 → 한 줄 설명 → 대표 행동 순서를 강제한다

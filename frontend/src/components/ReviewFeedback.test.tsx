@@ -45,6 +45,39 @@ describe('검수 피드백 폼', () => {
     expect(screen.getByRole('group', { name: '품질 만족도' })).toBeInTheDocument()
   })
 
+  /*
+    라디오 묶음의 오류는 «보인다»로 끝나지 않는다. `fieldset` 의 역할은 `group` 이고
+    ARIA 1.2 의 `group` 은 `aria-invalid` 를 지원 속성으로 두지 않아, 그것만 붙어 있던
+    동안 낭독기 사용자는 어느 묶음이 왜 거절됐는지 들을 수 없었다. `aria-describedby`
+    로 이어 둔 관계를 여기서 고정한다 — 되돌리면 이 테스트가 먼저 깨진다.
+  */
+  it('고르지 않은 라디오 묶음의 오류가 묶음에 프로그램적으로 연결된다', async () => {
+    const user = userEvent.setup()
+    render(<ReviewFeedback conversionId="c1" />)
+
+    await user.click(screen.getByRole('button', { name: '의견 보내기' }))
+
+    for (const [name, message] of [
+      ['이 결과를 실제로 배포할 수 있나요?', '배포 의향을 골라 주세요.'],
+      ['품질 만족도', '품질 만족도를 골라 주세요.'],
+    ]) {
+      const group = screen.getByRole('group', { name })
+      const described = (group.getAttribute('aria-describedby') ?? '').split(/\s+/).filter(Boolean)
+      expect(described.length).toBeGreaterThan(0)
+      const texts = described.map((id) => document.getElementById(id)?.textContent ?? '')
+      expect(texts.join(' ')).toContain(message)
+    }
+  })
+
+  it('품질 만족도 눈금 설명은 오류 전에도 묶음에 연결돼 있다', () => {
+    render(<ReviewFeedback conversionId="c1" />)
+
+    const group = screen.getByRole('group', { name: '품질 만족도' })
+    const described = (group.getAttribute('aria-describedby') ?? '').split(/\s+/).filter(Boolean)
+    const texts = described.map((id) => document.getElementById(id)?.textContent ?? '')
+    expect(texts.join(' ')).toContain('1점은 전혀 만족스럽지 않음')
+  })
+
   it('문서 내용을 적지 말라는 안내를 조건 없이 보여준다', () => {
     render(<ReviewFeedback conversionId="c1" />)
 

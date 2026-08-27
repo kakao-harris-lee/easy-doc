@@ -134,6 +134,46 @@ describe('검수 에디터', () => {
     expect(success).not.toHaveAttribute('role')
   })
 
+  /*
+    저장 버튼은 진행 중에 `disabled` 가 된다. 브라우저는 초점을 가진 요소가 잠기는 순간
+    초점을 `<body>` 로 떨어뜨리므로, 되돌려 놓지 않으면 키보드 사용자는 저장 한 번에
+    탭 경로를 통째로 잃고 문서 맨 앞에서 다시 밟아야 한다(§14).
+  */
+  it('저장이 끝나면 초점이 저장 버튼으로 돌아온다', async () => {
+    const user = userEvent.setup()
+    vi.mocked(saveReview).mockResolvedValue(
+      conversion({ edited_text: '초안. 수정', reviewed_at: '2026-08-07T02:00:00Z' }),
+    )
+    render(<ReviewEditor conversion={conversion({ easy_text: '초안.' })} sourceText={null} />)
+
+    await user.type(screen.getByLabelText('쉬운 글 결과 (고칠 수 있습니다)'), ' 수정')
+    const save = screen.getByRole('button', { name: '검수 내용 저장' })
+    await user.click(save)
+
+    await screen.findByText('검수 내용을 저장했습니다.')
+    expect(screen.getByRole('button', { name: '검수 내용 저장' })).toHaveFocus()
+  })
+
+  it('내려받기가 끝나도 초점이 그 버튼으로 돌아온다', async () => {
+    const user = userEvent.setup()
+    vi.mocked(downloadExport).mockResolvedValue({
+      blob: new Blob(['쉬운 글'], { type: 'text/plain' }),
+      filename: '쉬운 글.txt',
+    })
+    // jsdom 에는 blob URL 도 anchor 내려받기도 없다 — 저장 경로만 통과시킨다.
+    vi.stubGlobal('URL', {
+      ...URL,
+      createObjectURL: () => 'blob:test',
+      revokeObjectURL: () => undefined,
+    })
+    render(<ReviewEditor conversion={conversion()} sourceText={null} />)
+
+    await user.click(screen.getByRole('button', { name: 'txt 내려받기' }))
+
+    await screen.findByText('TXT 파일을 내려받았습니다.')
+    expect(screen.getByRole('button', { name: 'txt 내려받기' })).toHaveFocus()
+  })
+
   it('수정한 글을 저장하고 결과를 알린다', async () => {
     const user = userEvent.setup()
     vi.mocked(saveReview).mockResolvedValue(

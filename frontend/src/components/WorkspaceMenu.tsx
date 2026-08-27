@@ -103,7 +103,10 @@ export function WorkspaceMenu() {
         작업 공간
       </label>
       <select
-        className="h-9 min-w-44 rounded-[10px] border border-input bg-card px-3 text-sm text-foreground"
+        // §10 은 이 행을 «모바일에서 감춰지지 않아야 하는 것»으로 못박았다 — 그렇다면
+        // 그 행의 조작 대상도 44px 이어야 한다. 예전 h-9(36px)·sm 버튼(32px)은
+        // 손가락으로 고르는 화면에서 규정에 못 미쳤다.
+        className="h-11 min-w-44 rounded-[10px] border border-input bg-card px-3 text-sm text-foreground"
         id={selectId}
         value={current?.id ?? ''}
         onChange={(event) => select(event.target.value)}
@@ -117,11 +120,18 @@ export function WorkspaceMenu() {
           </option>
         ))}
       </select>
-      <Button variant="outline" size="sm" type="button" onClick={() => open('create', '')}>
+      <Button
+        className="min-h-11"
+        variant="outline"
+        size="sm"
+        type="button"
+        onClick={() => open('create', '')}
+      >
         <Plus className="size-4" aria-hidden="true" />
         새로 만들기
       </Button>
       <Button
+        className="min-h-11"
         variant="ghost"
         size="sm"
         type="button"

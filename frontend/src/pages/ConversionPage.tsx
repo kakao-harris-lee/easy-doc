@@ -35,10 +35,10 @@ const CARD_CLASS = 'rounded-[16px] border border-border bg-card p-6 shadow-card 
 
 /** 보조 행동 링크(기록으로 나가기). 대표 행동과 구별되게 테두리형으로 둔다. */
 const QUIET_LINK_CLASS =
-  'inline-flex h-11 items-center justify-center gap-2 rounded-md border border-input bg-card px-4 text-[15px] font-semibold text-foreground no-underline transition-colors hover:bg-secondary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring'
+  'inline-flex h-11 items-center justify-center gap-2 rounded-md border border-input bg-card px-4 text-[15px] font-semibold text-foreground no-underline transition-colors hover:bg-secondary'
 
 const ACTION_LINK_CLASS =
-  'inline-flex h-11 items-center justify-center gap-2 rounded-md bg-primary px-4 text-[15px] font-semibold text-primary-foreground no-underline transition-colors hover:bg-primary-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring'
+  'inline-flex h-11 items-center justify-center gap-2 rounded-md bg-primary px-4 text-[15px] font-semibold text-primary-foreground no-underline transition-colors hover:bg-primary-hover'
 
 /**
  * 변환 화면.

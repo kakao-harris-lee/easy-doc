@@ -117,9 +117,9 @@ export function ReviewFeedback({ conversionId }: ReviewFeedbackProps) {
       className="rounded-[12px] border border-border bg-card p-5"
       aria-labelledby="feedback-heading"
     >
-      <h3 className="font-bold" id="feedback-heading">
+      <h2 className="font-bold" id="feedback-heading">
         이번 결과에 대한 의견
-      </h3>
+      </h2>
       <p className="field-hint">
         파일럿 판정에 쓰는 기록입니다. 문서 한 건마다 한 번만 보내면 되고, 다시 보내면 앞서 보낸
         내용을 덮어씁니다.
@@ -142,15 +142,35 @@ export function ReviewFeedback({ conversionId }: ReviewFeedbackProps) {
         noValidate
         onSubmit={(event) => void handleSubmit(event)}
       >
-        <fieldset className="field" aria-invalid={intentInvalid}>
+        {/*
+          오류는 `aria-describedby`로 묶음에 잇는다. `aria-invalid`만으로는 아무도 듣지
+          못한다 — `fieldset`의 역할은 `group`이고 ARIA 1.2의 `group`은 `aria-invalid`를
+          지원 속성으로 두지 않아 낭독기가 그냥 흘린다. 그렇다고 라디오 하나하나에
+          붙이면 화살표로 지날 때마다 같은 문장이 세 번 읽힌다(§11 중복 낭독 금지).
+          묶음에 한 번만 붙는 자리가 이 둘 사이의 유일한 답이다.
+          (`aria-invalid`는 그대로 둔다 — 지원하는 AT에서는 여전히 상태를 알린다.)
+        */}
+        <fieldset
+          className="field"
+          aria-invalid={intentInvalid}
+          aria-describedby={intentInvalid ? `${intentId}-error` : undefined}
+        >
           <legend className="mb-1.5 text-[15px] font-semibold">
             이 결과를 실제로 배포할 수 있나요?
           </legend>
           <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+            {/*
+              누르는 대상은 상자 전체다 — 라디오 상자(13px)와 그 옆 글자만 누를 수 있으면
+              실제 터치 대상은 20px 남짓이라 §10 의 44px 에 한참 못 미친다. 테두리로
+              그려 둔 48px 칸이 이미 있으므로, 그 칸 자체를 `<label>` 로 만들면 보이는
+              모양은 그대로 두고 누를 수 있는 넓이만 칸 크기가 된다(새 변환 화면의 입력
+              방식 선택이 이미 같은 모양이다).
+            */}
             {PUBLISH_INTENTS.map((option) => (
-              <div
+              <label
                 key={option.value}
-                className={`flex h-12 items-center gap-2 rounded-[10px] border px-3.5 font-semibold ${intent === option.value ? 'border-primary bg-accent text-accent-foreground' : 'border-border bg-background'}`}
+                htmlFor={`${intentId}-${option.value}`}
+                className={`flex h-12 cursor-pointer items-center gap-2 rounded-[10px] border px-3.5 font-semibold ${intent === option.value ? 'border-primary bg-accent text-accent-foreground' : 'border-border bg-background'}`}
               >
                 <input
                   id={`${intentId}-${option.value}`}
@@ -161,26 +181,33 @@ export function ReviewFeedback({ conversionId }: ReviewFeedbackProps) {
                   checked={intent === option.value}
                   onChange={() => setIntent(option.value)}
                 />
-                <label htmlFor={`${intentId}-${option.value}`} className="cursor-pointer">
-                  {option.label}
-                </label>
-              </div>
+                {option.label}
+              </label>
             ))}
           </div>
-          {intentInvalid && <p className="field-error">배포 의향을 골라 주세요.</p>}
+          {intentInvalid && (
+            <p className="field-error" id={`${intentId}-error`}>
+              배포 의향을 골라 주세요.
+            </p>
+          )}
         </fieldset>
 
         {/* 1~5는 select가 아니라 라디오로 둔다. 눈금이 다섯 칸뿐이라 한눈에 다 보이는 편이
             비교해서 고르기 쉽고, 위 배포 의향과 조작 방법이 같아진다. select는 값을 열어야
             선택지가 보이고 낭독기에서도 현재 값 하나만 읽혀, 같은 폼 안에서 두 가지 조작
             규약이 섞인다. */}
-        <fieldset className="field" aria-invalid={scoreInvalid}>
+        <fieldset
+          className="field"
+          aria-invalid={scoreInvalid}
+          aria-describedby={scoreInvalid ? `${scoreId}-hint ${scoreId}-error` : `${scoreId}-hint`}
+        >
           <legend className="mb-1.5 text-[15px] font-semibold">품질 만족도</legend>
           <div className="flex flex-wrap gap-2">
             {QUALITY_SCORES.map((value) => (
-              <div
+              <label
                 key={value}
-                className={`flex h-12 items-center gap-2 rounded-[10px] border px-3.5 font-semibold ${score === value ? 'border-primary bg-accent text-accent-foreground' : 'border-border bg-background'}`}
+                htmlFor={`${scoreId}-${value}`}
+                className={`flex h-12 min-w-11 cursor-pointer items-center justify-center gap-2 rounded-[10px] border px-3.5 font-semibold ${score === value ? 'border-primary bg-accent text-accent-foreground' : 'border-border bg-background'}`}
               >
                 <input
                   id={`${scoreId}-${value}`}
@@ -191,14 +218,18 @@ export function ReviewFeedback({ conversionId }: ReviewFeedbackProps) {
                   checked={score === value}
                   onChange={() => setScore(value)}
                 />
-                <label htmlFor={`${scoreId}-${value}`} className="cursor-pointer">
-                  {value}점
-                </label>
-              </div>
+                {value}점
+              </label>
             ))}
           </div>
-          <p className="field-hint">1점은 전혀 만족스럽지 않음, 5점은 매우 만족스러움입니다.</p>
-          {scoreInvalid && <p className="field-error">품질 만족도를 골라 주세요.</p>}
+          <p className="field-hint" id={`${scoreId}-hint`}>
+            1점은 전혀 만족스럽지 않음, 5점은 매우 만족스러움입니다.
+          </p>
+          {scoreInvalid && (
+            <p className="field-error" id={`${scoreId}-error`}>
+              품질 만족도를 골라 주세요.
+            </p>
+          )}
         </fieldset>
 
         <div className="field">
@@ -234,7 +265,7 @@ export function ReviewFeedback({ conversionId }: ReviewFeedbackProps) {
           <p className="field-hint">{MAX_COMMENT_LENGTH}자 이내.</p>
         </div>
 
-        <Button type="submit" loading={busy} className="w-fit">
+        <Button type="submit" loading={busy} className="h-11 w-fit">
           <Send className="size-4" aria-hidden="true" />
           의견 보내기
         </Button>
