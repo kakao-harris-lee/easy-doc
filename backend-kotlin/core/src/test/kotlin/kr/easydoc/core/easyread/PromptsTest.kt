@@ -16,7 +16,8 @@ class PromptsTest {
     private fun listedAlways(prompt: String): List<String> = listedWords(prompt, "[어려운 표현 바꾸기]", "[문맥을 보고 판단할 표현]")
 
     /** `[문맥을 보고 판단할 표현]` 절에 실린 낱말만 뽑는다. */
-    private fun listedConditional(prompt: String): List<String> = listedWords(prompt, "[문맥을 보고 판단할 표현]", "[개인정보 표시]")
+    private fun listedConditional(prompt: String): List<String> =
+        listedWords(prompt, "[문맥을 보고 판단할 표현]", "[낯선 말 풀어 설명하기]")
 
     private fun listedWords(
         prompt: String,
