@@ -70,6 +70,40 @@ class PackagedOriginalReflectorTest {
         assertThat(extractors.extract(file.filename, file.content).text).isEqualTo("쉬운 제목\n쉬운 본문")
     }
 
+    /**
+     * **검수본 문단은 어느 갈래에서도 사라지지 않는다.**
+     *
+     * 두 형식의 머리말 자리가 달라서 같은 시험을 둘 다에 건다. DOCX 는 머리글 파트가 본문
+     * 뒤라 겹치는 자리가 검수본의 끝줄이고, HWPX 는 머리말이 본문 사이에 들어가 겹치는 자리가
+     * 가운데다. 어느 쪽이든 그 자리와 겹친 줄은 본문 끝으로 옮겨 붙고, 판정은 머리말이 있다는
+     * 이유만으로도 `available` 이 아니다.
+     */
+    @Test
+    @DisplayName("머리말이 있는 원본에서도 검수본 문단이 하나도 사라지지 않는다")
+    fun `머리말이 있어도 검수본이 사라지지 않는다`() {
+        headerFooterFixtures.forEach { (name, original) ->
+            listOf(1, 5, 8, 12).forEach { count ->
+                val lines = List(count) { "검수한 문단 ${it + 1}." }
+                val body = lines.joinToString("\n")
+
+                val outcome = reflector.outline(original, body)!!
+                val file = reflector.reflect(original, "안내", body)!!
+
+                val written = extractors.extract(file.filename, file.content).text
+                assertThat(lines)
+                    .withFailMessage(
+                        "%s 에 %d 줄을 반영했더니 결과에 없는 검수본 문단이 있다. 검수한 문장이 소리 없이 사라진다.%n결과: %s",
+                        name,
+                        count,
+                        written,
+                    ).allMatch { line -> written.contains(line) }
+                assertThat(reflectedPreservation(outcome).status)
+                    .withFailMessage("%s: 머리말 문구가 원본으로 남는데 「그대로 나간다」고 말했다", name)
+                    .isEqualTo(FormatPreservationStatus.PARTIAL)
+            }
+        }
+    }
+
     @Test
     @DisplayName("PDF 원본은 반영하지 않는다 — 같은 형식으로 내보낼 수단이 없다")
     fun `pdf 는 반영하지 않는다`() {
@@ -86,6 +120,16 @@ class PackagedOriginalReflectorTest {
 
         assertThat(reflector.outline(bomb, "쉬운 본문")).isNull()
         assertThat(reflector.reflect(bomb, "안내", "쉬운 본문")).isNull()
+    }
+
+    /** 머리말·꼬리말이 **있는** 원본. 두 형식의 머리말 자리가 다르다는 것이 여기 둘의 차이다. */
+    private val headerFooterFixtures: Map<String, OriginalDocument> by lazy {
+        mapOf(
+            "sample_rich.docx" to
+                OriginalDocument(SourceFormat.DOCX, PlainBytes(IngestFixtures.bytes("sample_rich.docx"))),
+            "머리말이 본문 사이에 오는 hwpx" to
+                OriginalDocument(SourceFormat.HWPX, PlainBytes(ExportFixtures.richHwpx())),
+        )
     }
 
     private fun originalOf(

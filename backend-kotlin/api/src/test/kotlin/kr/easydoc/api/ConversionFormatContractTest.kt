@@ -183,8 +183,8 @@ class ConversionFormatContractTest {
         val judgments =
             mapOf(
                 "원본이 없다" to noOriginalPreservation(),
-                "짝이 정확히 맞았다" to reflectedPreservation(ReflectionOutcome(0, 0, 0)),
-                "일부가 달라진다" to reflectedPreservation(ReflectionOutcome(2, 1, 3)),
+                "짝이 정확히 맞았다" to reflectedPreservation(ReflectionOutcome(0, 0, 0, 0)),
+                "일부가 달라진다" to reflectedPreservation(ReflectionOutcome(2, 1, 3, 0)),
                 "원본을 열 수 없다" to unreadableOriginalPreservation(),
             )
 
@@ -208,7 +208,9 @@ class ConversionFormatContractTest {
             listOf(
                 noOriginalPreservation(),
                 unreadableOriginalPreservation(),
-                reflectedPreservation(ReflectionOutcome(3, 4, 5)),
+                reflectedPreservation(ReflectionOutcome(3, 4, 5, 0)),
+                // 머리말 자리와 겹쳐 옮겨 붙은 문단을 말하는 갈래도 같은 규칙을 지나야 한다.
+                reflectedPreservation(ReflectionOutcome(3, 0, 0, 5)),
             ).flatMap { it.details }
 
         assertThat(everyDetail).allSatisfy { detail ->
@@ -257,7 +259,7 @@ class ConversionFormatContractTest {
             exportFormat = ExportFormat.ofSource(source),
             formatPreservation =
                 if (hasStoredOriginal) {
-                    reflectedPreservation(ReflectionOutcome(1, 1, 1))
+                    reflectedPreservation(ReflectionOutcome(1, 1, 1, 0))
                 } else {
                     noOriginalPreservation()
                 },

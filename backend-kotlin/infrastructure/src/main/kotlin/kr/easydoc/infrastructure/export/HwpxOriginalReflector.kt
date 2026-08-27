@@ -83,8 +83,8 @@ internal class HwpxOriginalReflector {
         plan.emptied.forEach { unit -> unit.rewrite("") }
         if (plan.appended.isEmpty()) return
         val template =
-            plan.written.lastOrNull()?.unit
-                // 본문 단위가 하나도 없으면 문단의 본을 뜰 데가 없다. `hp:p` 의 문단 모양 참조를
+            plan.appendTemplate
+                // 원본에 단위가 하나도 없으면 문단의 본을 뜰 데가 없다. `hp:p` 의 문단 모양 참조를
                 // 지어내는 대신 **실패로 끝낸다** — 한글이 열지 못할 파일을 내보내지 않는다.
                 ?: error("HWPX 원본에 본을 뜰 문단이 없다")
         append(
@@ -97,8 +97,8 @@ internal class HwpxOriginalReflector {
     }
 
     /**
-     * 자리를 찾지 못한 문단을 **마지막 구역 끝에** 붙인다. 서식은 마지막으로 쓴 단위에서
-     * **속성만** 베낀다 — 문단을 통째로 복제하면 그 안의 그림·표가 함께 복제된다.
+     * 자리를 찾지 못한 문단을 **마지막 구역 끝에** 붙인다. 서식은 [ReflectionPlan.appendTemplate]
+     * 에서 **속성만** 베낀다 — 문단을 통째로 복제하면 그 안의 그림·표가 함께 복제된다.
      */
     private fun append(
         section: Element,
@@ -108,11 +108,14 @@ internal class HwpxOriginalReflector {
         val anchor = template.anchor ?: error("HWPX 단위에 문단 조상이 없다")
         val sourceText = template.texts.first()
         val sourceRun = sourceText.parentNode as Element
+        // **본을 뜬 문단이 다른 구역에 있을 수 있다.** 구역마다 DOM 문서가 따로라 요소를 그 문서에서
+        // 만들지 않으면 붙이는 순간 `WRONG_DOCUMENT_ERR` 로 내보내기가 통째로 실패한다.
+        val owner = section.ownerDocument
         for (line in lines) {
-            val paragraph = copiedShell(anchor)
-            val run = copiedShell(sourceRun)
-            val text = section.ownerDocument.createElementNS(sourceText.namespaceURI, sourceText.nodeName)
-            text.appendChild(section.ownerDocument.createTextNode(line))
+            val paragraph = copiedShell(anchor, owner)
+            val run = copiedShell(sourceRun, owner)
+            val text = owner.createElementNS(sourceText.namespaceURI, sourceText.nodeName)
+            text.appendChild(owner.createTextNode(line))
             run.appendChild(text)
             paragraph.appendChild(run)
             section.appendChild(paragraph)
@@ -120,12 +123,15 @@ internal class HwpxOriginalReflector {
     }
 
     /**
-     * [source] 와 **같은 이름·같은 속성**의 빈 요소. 자식은 베끼지 않는다.
+     * [source] 와 **같은 이름·같은 속성**의 빈 요소를 [owner] 문서에 만든다. 자식은 베끼지 않는다.
      *
      * `id` 만 뺀다 — 같은 값이 두 문단에 실리면 한글이 문단을 구분하지 못한다.
      */
-    private fun copiedShell(source: Element): Element {
-        val copy = source.ownerDocument.createElementNS(source.namespaceURI, source.nodeName)
+    private fun copiedShell(
+        source: Element,
+        owner: Document,
+    ): Element {
+        val copy = owner.createElementNS(source.namespaceURI, source.nodeName)
         val attributes = source.attributes
         for (index in 0 until attributes.length) {
             val attribute = attributes.item(index)

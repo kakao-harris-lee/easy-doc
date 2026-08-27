@@ -307,7 +307,7 @@ internal class FakeMaskedItemReader : MaskedItemReader {
  * 고쳐 쓰는 일은 infrastructure 의 `PackagedOriginalReflector` 가 fixture 로 검증한다.
  */
 internal class FakeOriginalStructureReflector(
-    var outcome: ReflectionOutcome? = ReflectionOutcome(0, 0, 0),
+    var outcome: ReflectionOutcome? = ReflectionOutcome(0, 0, 0, 0),
     var file: ExportFile? = null,
 ) : OriginalStructureReflector {
     /** 판정·반영에 넘어온 원본의 형식. 「무엇을 열려고 했는가」를 재는 재료다. */

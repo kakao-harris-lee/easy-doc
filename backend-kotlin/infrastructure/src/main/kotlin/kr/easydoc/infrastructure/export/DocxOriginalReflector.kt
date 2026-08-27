@@ -7,6 +7,7 @@ import kr.easydoc.infrastructure.ingest.DocxSectionParts
 import kr.easydoc.infrastructure.ingest.OoxmlDom
 import kr.easydoc.infrastructure.ingest.OoxmlSkips
 import org.apache.poi.xwpf.usermodel.XWPFDocument
+import org.w3c.dom.Document
 import org.w3c.dom.Element
 import org.w3c.dom.Node
 import java.io.ByteArrayInputStream
@@ -86,7 +87,7 @@ internal class DocxOriginalReflector {
         }
         plan.emptied.forEach { it.rewrite("") }
         if (plan.appended.isNotEmpty()) {
-            append(document.document.body.domNode, plan.written.lastOrNull()?.unit, plan.appended)
+            append(document.document.body.domNode, plan.appendTemplate, plan.appended)
         }
     }
 
@@ -96,8 +97,8 @@ internal class DocxOriginalReflector {
      * 마지막 단위 **뒤**가 아니라 본문 끝인 것은, 마지막 단위가 표 셀 안일 수 있기 때문이다 —
      * 그 자리에 붙이면 원본에 없던 행이 표 안에서 자란다. 본문 끝은 표 다음이기도 하다.
      *
-     * 서식은 마지막으로 쓴 단위에서 **속성만** 베낀다. 문단을 통째로 복제하면 그 안의 그림·표가
-     * 함께 복제된다.
+     * 서식은 [ReflectionPlan.appendTemplate] 에서 **속성만** 베낀다. 문단을 통째로 복제하면 그
+     * 안의 그림·표가 함께 복제된다.
      */
     private fun append(
         body: Node,
@@ -109,10 +110,10 @@ internal class DocxOriginalReflector {
         val tail = OoxmlDom.childElements(body).lastOrNull()?.takeIf { OoxmlDom.localName(it) == "sectPr" }
         for (line in lines) {
             val paragraph = owner.createElementNS(WORDPROCESSING_NAMESPACE, "w:p")
-            template?.anchor?.let { anchor -> copiedProperties(anchor, "pPr")?.let(paragraph::appendChild) }
+            template?.anchor?.let { anchor -> copiedProperties(anchor, "pPr", owner)?.let(paragraph::appendChild) }
             val run = owner.createElementNS(WORDPROCESSING_NAMESPACE, "w:r")
             template?.texts?.firstOrNull()?.parentNode?.let { source ->
-                copiedProperties(source, "rPr")?.let(run::appendChild)
+                copiedProperties(source, "rPr", owner)?.let(run::appendChild)
             }
             val text = owner.createElementNS(WORDPROCESSING_NAMESPACE, "w:t")
             preserveSpace(text)
@@ -124,17 +125,21 @@ internal class DocxOriginalReflector {
     }
 
     /**
-     * [source] 의 속성 요소(`w:pPr`·`w:rPr`) 사본. 없으면 `null`.
+     * [source] 의 속성 요소(`w:pPr`·`w:rPr`) 사본을 [owner] 문서로 가져온다. 없으면 `null`.
      *
      * `w:pPr` 안의 `w:sectPr` 은 **떼어 낸다** — 구역 나눔이 실린 문단을 본으로 삼으면 덧붙인
      * 문단 수만큼 구역이 늘어난다.
+     *
+     * 본을 뜬 문단이 머리글·바닥글 파트에 있으면 그 노드는 **다른 DOM 문서**의 것이다. 옮겨
+     * 심지 않고 붙이면 `WRONG_DOCUMENT_ERR` 로 내보내기가 통째로 실패한다.
      */
     private fun copiedProperties(
         source: Node,
         name: String,
+        owner: Document,
     ): Node? {
         val properties = OoxmlDom.childElements(source).firstOrNull { OoxmlDom.localName(it) == name } ?: return null
-        val copy = properties.cloneNode(true)
+        val copy = owner.importNode(properties, true)
         OoxmlDom
             .childElements(copy)
             .filter { OoxmlDom.localName(it) == "sectPr" }

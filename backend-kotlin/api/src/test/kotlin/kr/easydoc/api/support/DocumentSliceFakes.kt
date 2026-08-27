@@ -501,7 +501,7 @@ class StubDocumentTextExtractor : DocumentTextExtractor {
  */
 class SliceOriginalReflector : OriginalStructureReflector {
     /** 판정 결과. `null` 이면 「원본을 열 수 없다」다. */
-    var outcome: ReflectionOutcome? = ReflectionOutcome(0, 0, 0)
+    var outcome: ReflectionOutcome? = ReflectionOutcome(0, 0, 0, 0)
 
     /** 내보내기가 원본을 열 수 있는가. `false` 면 500 갈래다. */
     var openable: Boolean = true

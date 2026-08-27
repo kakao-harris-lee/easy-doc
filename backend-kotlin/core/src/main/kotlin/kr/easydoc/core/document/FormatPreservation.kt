@@ -74,9 +74,20 @@ class ReflectionOutcome(
     val emptiedUnits: Int,
     /** 원본에 자리가 없어 본문 끝에 **덧붙는** 문단 수. 버리면 검수한 내용이 사라진다. */
     val appendedLines: Int,
+    /**
+     * 머리말·꼬리말 자리와 겹쳐 본문 끝으로 **옮겨 붙는** 검수본 문단 수.
+     *
+     * 추출기가 머리말 문구까지 읽어 가므로 검수본에도 그 줄이 들어 있다. 원본 머리말은 그대로
+     * 두는 것이 「유지」라 그 자리에는 쓸 수 없지만, 그렇다고 줄을 버리면 담당자가 검수한
+     * 문장이 파일에서 사라진다. 그래서 옮겨 붙이고, 옮겼다는 사실을 이 수로 말한다 —
+     * [appendedLines] 와 나눠 세는 것은 **사유가 다르기 때문**이다(자리가 없었던 것이 아니라
+     * 자리가 머리말의 몫이었다).
+     */
+    val displacedLines: Int,
 ) {
     override fun toString(): String =
-        "ReflectionOutcome(머리말·꼬리말 $headerFooterUnits, 비움 $emptiedUnits, 덧붙임 $appendedLines)"
+        "ReflectionOutcome(머리말·꼬리말 $headerFooterUnits, 비움 $emptiedUnits, " +
+            "덧붙임 $appendedLines, 옮김 $displacedLines)"
 }
 
 /** 되살릴 원본이 **없다**는 판정. 붙여넣기와 원본 바이트가 없는 옛 문서 — 둘 다 영구히 참이다. */
@@ -101,6 +112,8 @@ fun unreadableOriginalPreservation(): FormatPreservation =
  * - 본문 단위가 남으면 그 문단은 **비운다** — 원본 문구를 남기지 않는다. 검수를 지나지 않은
  *   원본 문장이 「쉬운 글」 파일에 섞이는 것이 조용한 거짓말이기 때문이다.
  * - 단위가 모자라면 남은 문단을 본문 끝에 **덧붙인다** — 버리면 검수한 내용이 사라진다.
+ * - 머리말·꼬리말 자리와 겹친 문단도 본문 끝으로 **옮겨 붙인다** — 같은 사유다. 자리를
+ *   건너뛰고 뒤 문단을 당겨 오면 본문 전체가 한 칸씩 밀리므로 자리는 그대로 두고 줄만 옮긴다.
  *
  * 어느 쪽도 「대응을 확신한 반영」이 아니다. 그래서 그 수만큼이 그대로 `partial` 의 근거이고
  * [FormatPreservation.details] 가 그것을 개수로 말한다(§6.5 "낙관적으로 추측하지 않는다").
@@ -109,8 +122,11 @@ fun reflectedPreservation(outcome: ReflectionOutcome): FormatPreservation {
     val details =
         buildList {
             if (outcome.headerFooterUnits > 0) add(headerFooterDetail(outcome.headerFooterUnits))
+            if (outcome.displacedLines > 0) add(displacedDetail(outcome.displacedLines))
             if (outcome.emptiedUnits > 0) add(emptiedDetail(outcome.emptiedUnits))
             if (outcome.appendedLines > 0) add(appendedDetail(outcome.appendedLines))
+            // 옮겨 붙은 문단은 이 갈래에 넣지 않는다 — 자리를 소비한 채 줄만 끝으로 갔으므로
+            // 원본 문단과 검수본 문단의 짝은 한 칸도 밀리지 않는다.
             if (outcome.emptiedUnits > 0 || outcome.appendedLines > 0) add(SHIFTED_DETAIL)
         }
     return if (details.isEmpty()) {
@@ -125,6 +141,8 @@ fun reflectedPreservation(outcome: ReflectionOutcome): FormatPreservation {
  * 끼워 넣는 형식 인자가 하나도 없어야 한다.
  */
 private fun headerFooterDetail(count: Int): String = "머리말·꼬리말 ${count}곳은 원본 문구를 그대로 둡니다."
+
+private fun displacedDetail(count: Int): String = "머리말·꼬리말 자리와 겹친 문단 ${count}개는 본문 끝으로 옮겨 붙습니다."
 
 private fun emptiedDetail(count: Int): String = "원본 문단 ${count}개는 반영할 내용이 없어 빈 문단으로 남습니다."
 

@@ -32,6 +32,7 @@ class DocxOriginalReflectorTest {
         assertThat(plan.written).hasSize(7)
         assertThat(outcome.emptiedUnits).isZero()
         assertThat(outcome.appendedLines).isZero()
+        assertThat(outcome.displacedLines).isZero()
         assertThat(outcome.headerFooterUnits)
             .describedAs("머리글·바닥글 문구는 추출됐지만 되돌려 쓰지 않는다 — 원본 문구로 남는다")
             .isEqualTo(2)
@@ -86,9 +87,13 @@ class DocxOriginalReflectorTest {
             .doesNotContain("표 뒤에 오는 문단")
     }
 
+    /**
+     * 머리글·바닥글 자리와 겹친 두 줄은 원본 머리글에 쓸 수 없다. 그렇다고 **버리지 않는다** —
+     * 본문 끝으로 옮겨 붙이고 판정이 그 수를 말한다.
+     */
     @Test
-    @DisplayName("문단이 남으면 본문 끝에 덧붙인다 — 버리지 않는다")
-    fun `남으면 덧붙인다`() {
+    @DisplayName("머리글·바닥글 자리와 겹친 문단도 본문 끝에 남는다 — 버리지 않는다")
+    fun `겹친 문단도 남는다`() {
         val original = IngestFixtures.bytes("sample_rich.docx")
         val many = richBodyLines.map { "쉬운 $it" } + listOf("덧붙는 문단 하나.", "덧붙는 문단 둘.")
 
@@ -96,11 +101,19 @@ class DocxOriginalReflectorTest {
         val file = reflector.reflect(original, "안내문", many)!!
 
         assertThat(plan.outcome().appendedLines)
-            .describedAs("머리말·꼬리말 두 단위 몫까지는 덧붙지 않는다 — 아홉 줄 중 일곱이 본문, 둘이 그 몫이다")
+            .describedAs("원본 단위가 아홉이고 줄도 아홉이라 넘치는 줄은 없다")
             .isZero()
+        assertThat(plan.outcome().displacedLines)
+            .describedAs("머리말·꼬리말 두 단위 몫과 겹친 두 줄이 옮겨 붙는다")
+            .isEqualTo(2)
         assertThat(extractors.extract(file.filename, file.content).text)
-            .describedAs("덧붙지 않은 두 줄은 머리말·꼬리말 자리의 몫이라 쓰이지 않는다")
-            .isEqualTo((richBodyLines.map { "쉬운 $it" } + listOf("머리글 문구", "바닥글 문구")).joinToString("\n"))
+            .describedAs("겹친 두 줄은 본문 끝(머리글·바닥글 앞)에 선다 — 어디에도 없어지지 않는다")
+            .isEqualTo(
+                (
+                    richBodyLines.map { "쉬운 $it" } +
+                        listOf("덧붙는 문단 하나.", "덧붙는 문단 둘.", "머리글 문구", "바닥글 문구")
+                ).joinToString("\n"),
+            )
     }
 
     @Test
@@ -113,12 +126,34 @@ class DocxOriginalReflectorTest {
         val file = reflector.reflect(original, "안내문", many)!!
 
         assertThat(plan.outcome().appendedLines).isEqualTo(2)
+        assertThat(plan.outcome().displacedLines).isEqualTo(2)
         assertThat(extractors.extract(file.filename, file.content).text)
-            .describedAs("덧붙은 둘은 본문 끝(머리글·바닥글 앞)에 선다")
-            .isEqualTo(
-                (List(7) { "문단 ${it + 1}." } + listOf("문단 10.", "문단 11.", "머리글 문구", "바닥글 문구"))
-                    .joinToString("\n"),
-            )
+            .describedAs("머리글이 본문 뒤인 DOCX 에서는 겹친 줄과 넘친 줄이 이어져 열한 줄이 차례대로 남는다")
+            .isEqualTo((many + listOf("머리글 문구", "바닥글 문구")).joinToString("\n"))
+    }
+
+    /**
+     * 유실 0 을 **개수가 아니라 내용으로** 잰다. 줄 수를 바꿔 가며 자리 맞춤의 네 갈래를 모두
+     * 지나게 하고, 그때마다 검수본의 모든 문단이 결과 문서 안에 남아 있는지 확인한다.
+     */
+    @Test
+    @DisplayName("어떤 줄 수에서도 검수본 문단이 하나도 사라지지 않는다")
+    fun `검수본이 사라지지 않는다`() {
+        val original = IngestFixtures.bytes("sample_rich.docx")
+
+        listOf(1, 6, 7, 8, 9, 12).forEach { count ->
+            val lines = List(count) { "검수한 문단 ${it + 1}." }
+
+            val file = reflector.reflect(original, "안내문", lines)!!
+
+            val written = extractors.extract(file.filename, file.content).text
+            assertThat(lines)
+                .withFailMessage(
+                    "%d 줄을 반영했더니 결과에 없는 검수본 문단이 있다. 담당자가 검수한 문장이 소리 없이 사라진다.%n결과: %s",
+                    count,
+                    written,
+                ).allMatch { line -> written.contains(line) }
+        }
     }
 
     @Test

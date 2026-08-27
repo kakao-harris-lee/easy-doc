@@ -157,7 +157,8 @@ class ConversionQueryServiceTest {
         val conversionId = UUID.randomUUID()
         world.seedResults(conversionId, easyText = "쉬운 글 초안")
         world.seedOrigin(conversionId, SeededOrigin(SourceFormat.DOCX, hasStoredOriginal = true))
-        world.reflector.outcome = ReflectionOutcome(headerFooterUnits = 2, emptiedUnits = 1, appendedLines = 0)
+        world.reflector.outcome =
+            ReflectionOutcome(headerFooterUnits = 2, emptiedUnits = 1, appendedLines = 0, displacedLines = 0)
 
         val view = world.service.read(OWNER, conversionId)
 
@@ -175,7 +176,8 @@ class ConversionQueryServiceTest {
         val conversionId = UUID.randomUUID()
         world.seedResults(conversionId, easyText = "쉬운 글 초안")
         world.seedOrigin(conversionId, SeededOrigin(SourceFormat.HWPX, hasStoredOriginal = true))
-        world.reflector.outcome = ReflectionOutcome(headerFooterUnits = 0, emptiedUnits = 0, appendedLines = 0)
+        world.reflector.outcome =
+            ReflectionOutcome(headerFooterUnits = 0, emptiedUnits = 0, appendedLines = 0, displacedLines = 0)
 
         val view = world.service.read(OWNER, conversionId)
 
