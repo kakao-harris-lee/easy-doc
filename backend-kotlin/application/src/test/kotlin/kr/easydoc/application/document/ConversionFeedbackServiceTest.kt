@@ -314,7 +314,8 @@ class ConversionFeedbackServiceTest {
     private class World {
         val transaction = RecordingTransactionRunner()
         val cipher = FakeContentCipher(writeKeyVersion = 1, transaction = transaction)
-        val conversions = FakeConversionRepository(transaction)
+        val originals = FakeDocumentOriginalRepository(transaction)
+        val conversions = FakeConversionRepository(transaction, originals)
         val feedback = FakeConversionFeedbackRepository(transaction)
 
         val service =
@@ -328,7 +329,7 @@ class ConversionFeedbackServiceTest {
                         maskedItems = FakeMaskedItemReader(),
                         original =
                             OriginalReflection(
-                                StoredOriginalReader(FakeDocumentOriginalRepository(transaction), cipher),
+                                StoredOriginalReader(originals, cipher),
                                 FakeOriginalStructureReflector(),
                             ),
                         transaction = transaction,

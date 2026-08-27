@@ -27,6 +27,11 @@ function docxFile(name = '안내문.docx'): File {
   return new File(['x'.repeat(2048)], name, { type: DOCX_TYPE })
 }
 
+/** 2KB짜리 pdf. 내용은 보지 않는다 — 화면은 확장자만 보고 안내를 고른다. */
+function pdfFile(name = '안내문.pdf'): File {
+  return new File(['x'.repeat(2048)], name, { type: 'application/pdf' })
+}
+
 /** 파일 올리기 모드로 바꾸고 파일 입력을 돌려준다. */
 async function chooseFileMode(user: ReturnType<typeof userEvent.setup>): Promise<HTMLInputElement> {
   await user.click(screen.getByRole('radio', { name: '파일 올리기' }))
@@ -480,5 +485,51 @@ describe('업로드 화면', () => {
     expect(within(guide).getByText(/주민등록번호와 카드번호/)).toBeInTheDocument()
     // 계약이 가리는 범주는 2종뿐이다 — 없는 보호를 약속하지 않는다.
     expect(within(guide).queryByText(/전화번호|이메일/)).not.toBeInTheDocument()
+  })
+  /**
+   * §6.5 마지막 문단 — PDF 로 올린 결과를 PDF 로 다시 받을 수 없다는 사실은 **올리기 전에**
+   * 알려야 한다. 겁주지 않는다: 업로드·변환·검수는 그대로 되고 못 하는 것은 내려받기 하나다.
+   * 「준비 중」이라고 쓰지도 않는다 — 못 만든 기능이 아니라 하지 않기로 정해진 범위다.
+   */
+  it('올리기 전에 PDF 는 같은 형식으로 내려받지 않는다고 알린다', () => {
+    renderPage()
+
+    const guide = screen.getByRole('region', { name: '이 작업에서 일어나는 일' })
+    expect(within(guide).getByText(/PDF는 출력용 형식이라/)).toBeInTheDocument()
+    expect(within(guide).getByText(/업로드와 변환, 검수는 그대로 됩니다/)).toBeInTheDocument()
+    expect(within(guide).queryByText(/준비 중/)).not.toBeInTheDocument()
+  })
+
+  /**
+   * 이 안내는 정보이지 행동이 아니다 — 실행 버튼을 만들지 않고, 핵심 흐름의 주 행동
+   * (`쉬운 글 초안 만들기`)이 있는 폼이 아니라 보조 안내 카드 안에 둔다(§2).
+   */
+  it('PDF 안내를 실행 버튼이나 대표 행동 옆에 두지 않는다', () => {
+    renderPage()
+
+    const guide = screen.getByRole('region', { name: '이 작업에서 일어나는 일' })
+    expect(within(guide).queryByRole('button')).not.toBeInTheDocument()
+    expect(within(guide).queryByRole('link')).not.toBeInTheDocument()
+    const form = screen.getByRole('button', { name: '쉬운 글 초안 만들기' }).closest('form')
+    expect(form).not.toBeNull()
+    expect(within(form as HTMLElement).queryByText(/PDF는 출력용 형식이라/)).not.toBeInTheDocument()
+  })
+
+  it('고른 파일이 PDF 일 때만 파일 카드에서 같은 사실을 한 번 더 말한다', async () => {
+    const user = userEvent.setup()
+    renderPage()
+
+    const input = await chooseFileMode(user)
+    await user.upload(input, docxFile())
+
+    const card = screen.getByRole('group', { name: /선택한 파일/ })
+    expect(within(card).queryByText(/PDF는 출력용 형식이라/)).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: '안내문.docx 파일 제거' }))
+    await user.upload(await chooseFileMode(user), pdfFile())
+
+    expect(
+      within(screen.getByRole('group', { name: /선택한 파일/ })).getByText(/PDF는 출력용 형식이라/),
+    ).toBeInTheDocument()
   })
 })

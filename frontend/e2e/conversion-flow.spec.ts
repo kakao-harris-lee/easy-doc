@@ -161,9 +161,16 @@ test.describe('변환 수직 흐름', () => {
           response.request().method() === ROUTES.conversionExport.method,
       ),
       downloadPromise,
-      page.getByRole('button', { name: 'txt 내려받기', exact: true }).click(),
+      // §6.5 «한 번의 명확한 행동» — 저장하지 않은 수정이 있으면 이 버튼이 저장까지
+      // 한다. 여기서는 바로 위에서 이미 저장했으므로 한 걸음짜리 이름이다.
+      page.getByRole('button', { name: 'TXT로 내려받기', exact: true }).click(),
     ])
     expect(exportResponse.status()).toBe(ROUTES.conversionExport.ok)
+
+    // §6.5 — 내려받은 파일명은 원본 제목에 `-쉬운글` 이 붙어 원본 파일과 구분된다. 서버가
+    // `Content-Disposition` 의 `filename*` 으로 주고, 화면은 그것을 그대로 anchor 의
+    // 내려받기 이름으로 쓴다 — 그 두 걸음이 실제로 이어지는지는 여기서만 잴 수 있다.
+    expect(download.suggestedFilename()).toBe('E2E 건강보험료 안내-쉬운글.txt')
 
     const savedPath = await download.path()
     expect(savedPath).not.toBeNull()

@@ -5,6 +5,7 @@ import { ApiError, downloadExport, saveReview } from '../api/client'
 import type { ConversionResponse, ExportFormat } from '../api/types'
 import { cn } from '../lib/utils'
 import { setUnsavedChanges } from '../review/unsavedChanges'
+import { FormatPreservationPanel, PdfExportNotice } from './FormatPreservationPanel'
 import { ReviewFeedback } from './ReviewFeedback'
 import { Badge } from './ui/Badge'
 import { Button } from './ui/Button'
@@ -34,8 +35,14 @@ interface Feedback {
   announce: boolean
 }
 
-/** 지금 진행 중인 작업. 어느 버튼이 도는지까지 알아야 그 버튼의 문구만 바꿀 수 있다. */
-type Pending = 'save' | ExportFormat | null
+/**
+ * 지금 진행 중인 작업. 어느 버튼이 도는지까지 알아야 그 버튼의 문구만 바꿀 수 있다.
+ *
+ * 내려받기가 둘로 나뉜 이유는 §6.5의 「저장하고 내려받기」다. 시작할 때 어느 쪽인지 정해
+ * 두면 진행 문구가 **도는 도중에 바뀌지 않는다** — `dirty`로 그때그때 고르면 저장이 끝나는
+ * 순간 "저장하고 내려받는 중…"이 "내려받는 중…"으로 갈아치워진다.
+ */
+type Pending = 'save' | 'download' | 'saveAndDownload' | null
 
 /** 검수 패널. DOM 순서이자 탭 순서이며, §11이 요구하는 「원문 다음 결과」다. */
 const PANELS = [
@@ -54,7 +61,7 @@ type PanelKey = (typeof PANELS)[number]['key']
  *
  * `export_format`이 null이면 빈 목록이다 — 내려받을 수단이 없는 변환(원본 PDF)에서는
  * 내려받기 행동을 제시하지 않는다(§6.5 "화면은 이 null을 보고 내려받기 행동을 제시하지
- * 않는다"). 그 제한을 설명하는 `원본 서식 유지` 패널은 §13 4단계의 다음 조각이다.
+ * 않는다"). 버튼이 없는 이유는 `PdfExportNotice`가 그 자리 위에서 말한다.
  */
 function downloadFormats(conversion: ConversionResponse): readonly ExportFormat[] {
   return conversion.export_format === null ? [] : [conversion.export_format]
@@ -125,6 +132,18 @@ export function ReviewEditor({ conversion, sourceText }: ReviewEditorProps) {
   /** 마지막으로 서버에 저장된 글. 이것과 draft가 다르면 저장하지 않은 변경이다. */
   const [savedText, setSavedText] = useState(initialText)
   const [reviewedAt, setReviewedAt] = useState(conversion.reviewed_at)
+  /**
+   * 서버가 마지막으로 준 서식 유지 판정.
+   *
+   * 조회 응답에서 한 번 받고 마는 값이 **아니다.** 이 판정은 검수본의 문단 수와 원본
+   * 구조 단위의 짝에서 나오므로, 담당자가 검수하며 문단을 나누거나 합쳐 저장하면 서버의
+   * 답이 바뀐다. 저장 응답이 그 새 판정을 싣고 오고(`GET`과 같은 스키마다) 화면은 그것을
+   * 그대로 옮긴다 — 여기서 값을 붙들고 있으면 패널이 「유지 가능」이라고 말한 뒤 실제로는
+   * 그렇지 않은 파일이 내려간다(§6.5 «상태는 낙관적으로 추측하지 않는다»).
+   *
+   * 판정을 화면에서 다시 세지 않는 것이 요점이다 — 규칙은 서버 한 곳에만 있다.
+   */
+  const [preservation, setPreservation] = useState(conversion.format_preservation)
   const [feedback, setFeedback] = useState<Feedback | null>(null)
   const [pending, setPending] = useState<Pending>(null)
   const [activePanel, setActivePanel] = useState<PanelKey>('source')
@@ -133,6 +152,8 @@ export function ReviewEditor({ conversion, sourceText }: ReviewEditorProps) {
 
   const dirty = draft !== savedText
   const busy = pending !== null
+  /** 내려받기 버튼이 도는 중인지. 저장을 먼저 하는 경로도 같은 버튼이 돈다. */
+  const downloading = pending === 'download' || pending === 'saveAndDownload'
   const splitView = useSplitView()
 
   /**
@@ -196,17 +217,36 @@ export function ReviewEditor({ conversion, sourceText }: ReviewEditorProps) {
     }
   }, [pending])
 
+  /**
+   * 검수본을 서버에 저장하고 화면 상태를 맞춘다.
+   *
+   * 저장 버튼과 `저장하고 내려받기`가 같은 함수를 지난다 — 두 경로가 저장을 서로 다르게
+   * 하면 "저장했는데 파일에는 안 담겼다"는 갈래가 생긴다.
+   */
+  async function persistDraft(): Promise<void> {
+    const saved = await saveReview(conversion.id, draft)
+    // 서버가 다듬은 결과(제어문자 제거 등)를 그대로 화면에 반영한다 — 우리가 보낸
+    // 글을 저장본으로 삼으면 저장 직후에도 "수정됨" 표시가 남는 경우가 생긴다.
+    const stored = saved.edited_text ?? draft
+    setDraft(stored)
+    setSavedText(stored)
+    setReviewedAt(saved.reviewed_at)
+    // 방금 저장한 글로 서버가 다시 잰 판정이다. `??`로 옛 값을 붙들지 않는다 — 계약에서
+    // 이 키는 늘 있고 `null`은 「아직 판정하지 않았다」라는 서버의 답이라, 그것을 지난
+    // 조회의 판정으로 메우면 화면이 서버가 하지 않은 말을 하게 된다.
+    setPreservation(saved.format_preservation)
+  }
+
+  /** 서버가 준 사유를 문장 뒤에 붙인다. ApiError가 아니면 붙일 사유가 없다. */
+  function reasonOf(caught: unknown): string {
+    return caught instanceof ApiError ? ` 사유: ${caught.message}.` : ''
+  }
+
   async function handleSave(): Promise<void> {
     setPending('save')
     setFeedback(null)
     try {
-      const saved = await saveReview(conversion.id, draft)
-      // 서버가 다듬은 결과(제어문자 제거 등)를 그대로 화면에 반영한다 — 우리가 보낸
-      // 글을 저장본으로 삼으면 저장 직후에도 "수정됨" 표시가 남는 경우가 생긴다.
-      const stored = saved.edited_text ?? draft
-      setDraft(stored)
-      setSavedText(stored)
-      setReviewedAt(saved.reviewed_at)
+      await persistDraft()
       // 저장됐다는 사실은 위 상태 라벨이 `저장됨 · 시각`으로 알린다. 여기 문구는 방금
       // 누른 버튼 옆에 결과를 남기는 보조 수단이라 낭독하지 않는다(§9 성공 토스트는
       // 보조 수단, §11 중복 낭독 금지).
@@ -225,28 +265,46 @@ export function ReviewEditor({ conversion, sourceText }: ReviewEditorProps) {
     }
   }
 
+  /**
+   * 저장하지 않은 수정이 있으면 **먼저 저장하고** 내려받는다(§6.5 「한 번의 명확한 행동」).
+   *
+   * 내려받는 파일에는 서버에 저장된 글만 담긴다. 그래서 "저장한 내용만 담깁니다" 같은
+   * 안내로 사용자에게 순서를 떠넘기지 않고 화면이 두 걸음을 한 번에 밟는다.
+   *
+   * 실패했을 때 **어느 걸음에서 멈췄는지**를 문구가 말한다(§9 — 일어난 일, 보존된 데이터,
+   * 다시 할 수 있는 일). 저장부터 실패한 경우와 저장은 됐는데 내려받기가 실패한 경우는
+   * 사용자가 다음에 할 일이 다르다: 앞은 다시 저장부터, 뒤는 내려받기만 다시다.
+   */
   async function handleDownload(format: ExportFormat): Promise<void> {
-    setPending(format)
+    const name = format.toUpperCase()
+    const needsSave = dirty
+    let saved = false
+    setPending(needsSave ? 'saveAndDownload' : 'download')
     setFeedback(null)
     try {
+      if (needsSave) {
+        await persistDraft()
+        saved = true
+      }
       const downloaded = await downloadExport(conversion.id, format)
       saveBlob(downloaded.blob, downloaded.filename ?? `쉬운 글.${format}`)
       // 내려받기 결과는 화면 어디에도 남지 않는 사실이라 이쪽은 낭독한다.
       setFeedback({
         kind: 'success',
-        message: `${format.toUpperCase()} 파일을 내려받았습니다.`,
+        message: saved
+          ? `검수 내용을 저장하고 ${name} 파일을 내려받았습니다.`
+          : `${name} 파일을 내려받았습니다.`,
         announce: true,
       })
     } catch (caught) {
       // 자리표시자가 빠진 초안은 내려받을 수 없다(409) — 그 사유도 백엔드 문구로 온다.
-      setFeedback({
-        kind: 'error',
-        message:
-          caught instanceof ApiError
-            ? caught.message
-            : '파일을 내려받지 못했습니다. 잠시 후 다시 시도해 주세요.',
-        announce: true,
-      })
+      const message =
+        needsSave && !saved
+          ? `검수 내용을 저장하지 못해 ${name} 파일을 내려받지 않았습니다.${reasonOf(caught)} 고친 내용은 화면에 그대로 있습니다. 다시 시도해 주세요.`
+          : saved
+            ? `검수 내용은 저장했습니다. ${name} 파일만 내려받지 못했습니다.${reasonOf(caught)} 저장된 내용은 그대로이니 내려받기를 다시 눌러 주세요.`
+            : `${name} 파일을 내려받지 못했습니다.${reasonOf(caught)} 저장된 내용은 그대로입니다. 다시 시도해 주세요.`
+      setFeedback({ kind: 'error', message, announce: true })
     } finally {
       setPending(null)
     }
@@ -291,7 +349,13 @@ export function ReviewEditor({ conversion, sourceText }: ReviewEditorProps) {
     ? {
         tone: 'warning' as const,
         label: '저장 안 됨',
-        detail: '고친 내용을 저장해야 내려받는 파일에 담깁니다.',
+        // 내려받기가 있는 화면에서는 순서를 사용자에게 떠넘기지 않는다 — 그 버튼이
+        // 저장까지 한 번에 한다(§6.5). 내려받을 수단이 없는 원본(PDF)에서는 그 약속을
+        // 하지 않는다.
+        detail:
+          downloadFormats(conversion).length > 0
+            ? '내려받기를 누르면 저장한 뒤 파일을 만듭니다.'
+            : '아직 서버에 저장하지 않은 수정이 있습니다.',
       }
     : reviewedAt === null
       ? {
@@ -474,6 +538,15 @@ export function ReviewEditor({ conversion, sourceText }: ReviewEditorProps) {
           </p>
         )}
 
+        {/* §6.5 — 내려받기 버튼을 누르기 직전에 원본 서식이 어떻게 되는지 읽게 한다.
+            DOCX·HWPX가 아니면 패널은 스스로 아무것도 그리지 않고, PDF는 내려받기 버튼이
+            없는 이유를 대신 말한다. */}
+        <FormatPreservationPanel
+          sourceFormat={conversion.source_format}
+          preservation={preservation}
+        />
+        <PdfExportNotice conversion={conversion} />
+
         {/* 저장·내려받기 결과는 방금 누른 버튼 바로 위에 남긴다. 실패는 즉시(alert)
             알리고, 성공은 하던 일을 끊지 않게(status) 알리되 저장 성공은 위 상태
             라벨이 이미 말했으므로 낭독하지 않는다. */}
@@ -517,10 +590,17 @@ export function ReviewEditor({ conversion, sourceText }: ReviewEditorProps) {
                 void handleDownload(format)
               }}
               disabled={busy}
-              loading={pending === format}
+              loading={downloading}
             >
-              {pending !== format && <Download className="size-[18px]" aria-hidden="true" />}
-              {format} 내려받기
+              {!downloading && <Download className="size-[18px]" aria-hidden="true" />}
+              {/* 저장하지 않은 수정이 있으면 두 걸음을 한 버튼 이름으로 말한다(§6.5).
+                  형식 이름을 버튼에 넣어 무엇이 나오는지 누르기 전에 알린다 — 누른 뒤
+                  형식을 고르게 하는 모달은 두지 않는다. */}
+              {pending === 'saveAndDownload'
+                ? '저장하고 내려받는 중…'
+                : pending === 'download'
+                  ? '내려받는 중…'
+                  : `${dirty ? '저장하고 ' : ''}${format.toUpperCase()}로 내려받기`}
             </Button>
           ))}
         </div>

@@ -458,7 +458,7 @@ class DocumentServiceTest {
         val cipher = FakeContentCipher(writeKeyVersion, transaction)
         val documents = FakeDocumentRepository(transaction)
         val originals = FakeDocumentOriginalRepository(transaction, originalFailure)
-        val conversions = FakeConversionRepository(transaction)
+        val conversions = FakeConversionRepository(transaction, originals)
         val workspaces = FakeWorkspaceLookup(defaultWorkspace)
         val queue = FakeConversionQueue(transaction, queueFailure)
         var extractorCalls: Int = 0

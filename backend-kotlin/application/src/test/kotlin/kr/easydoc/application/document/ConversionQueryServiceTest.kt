@@ -318,9 +318,9 @@ class ConversionQueryServiceTest {
     private class World {
         val transaction = RecordingTransactionRunner()
         val cipher = FakeContentCipher(writeKeyVersion = 1, transaction = transaction)
-        val conversions = FakeConversionRepository(transaction)
         val maskedItems = FakeMaskedItemReader()
         val originals = FakeDocumentOriginalRepository(transaction)
+        val conversions = FakeConversionRepository(transaction, originals)
         val reflector = FakeOriginalStructureReflector()
 
         val service =

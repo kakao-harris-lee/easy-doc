@@ -328,10 +328,10 @@ class ConversionExportServiceTest {
     private class World {
         val transaction = RecordingTransactionRunner()
         val cipher = FakeContentCipher(writeKeyVersion = 1, transaction = transaction)
-        val conversions = FakeConversionRepository(transaction)
         val maskedItems = RecordingMaskedItemReader()
         val exporter = RecordingDocumentExporter(transaction)
         val originals = FakeDocumentOriginalRepository(transaction)
+        val conversions = FakeConversionRepository(transaction, originals)
         val reflector = FakeOriginalStructureReflector()
         var documentTitle: String = "안내문"
         val service =

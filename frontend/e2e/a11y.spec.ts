@@ -330,6 +330,14 @@ test.describe('접근성 — 키보드', () => {
   })
 })
 
+/**
+ * 변환 조회 응답을 늦추는 시간. 진행 화면을 재는 동안만 건다.
+ *
+ * 화면의 폴링 주기(2초)보다 짧게 둔다 — 폴링을 밀리게 하는 것이 아니라 한 응답이 오는
+ * 시각만 뒤로 미는 것이다.
+ */
+const POLL_DELAY_MS = 1_000
+
 test.describe('접근성 — 320px', () => {
   test('E17 320px 에서 어느 화면도 가로로 넘치지 않고 터치 대상이 44px 이상이다', async ({
     page,
@@ -357,7 +365,21 @@ test.describe('접근성 — 320px', () => {
     expect(overflow.culprits.join('\n'), '새 변환이 가로로 넘친다').toBe('')
     expect(undersized(await touchTargets(page)), '새 변환의 작은 터치 대상').toEqual([])
 
-    // 변환 진행 — 첫 폴링 응답과 다음 폴링(2초) 사이라 반드시 이 화면이 떠 있다.
+    // 변환 진행 — fake LLM 으로 도는 worker 가 첫 폴링 전에 끝내 버리면 이 화면은 몇 ms 만
+    // 떠 있다 사라지고, 그러면 넘침을 재지 못한 채 지나간다(부하가 있는 전체 실행에서 실제로
+    // 그렇게 됐다). 그래서 조회 응답만 1초 늦춘다 — **응답 내용은 그대로 통과시킨다.**
+    // 진행 화면을 위조하는 것이 아니라 실제 진행 상태를 잴 시간을 만드는 것이다.
+    // 늦추는 것은 **첫 응답 하나뿐**이고 그 뒤 폴링은 손대지 않는다. 중간에 `unroute` 로
+    // 걷어내면 아직 자고 있던 처리기가 깨어나 이미 처리된 요청을 이어 보내려다 죽는다 —
+    // 그래서 등록은 그대로 두고 처리기 안에서 한 번만 늦춘다.
+    let delayedFirstRead = false
+    await page.route(/\/conversions\/[^/?]+$/, async (route) => {
+      if (!delayedFirstRead) {
+        delayedFirstRead = true
+        await new Promise((resolve) => setTimeout(resolve, POLL_DELAY_MS))
+      }
+      await route.continue()
+    })
     await page.getByLabel('문서 제목').fill('320px 확인')
     await page.getByLabel('바꿀 글').fill(SOURCE_TEXT)
     await page.getByRole('button', { name: '쉬운 글 초안 만들기', exact: true }).click()
