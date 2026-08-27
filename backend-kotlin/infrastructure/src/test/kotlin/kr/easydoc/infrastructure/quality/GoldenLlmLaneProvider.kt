@@ -25,6 +25,15 @@ internal class LaneJournal(private val retryBudget: Int = DEFAULT_RETRY_BUDGET) 
     /** 지금 어느 문서를 재는 중인가. 레인은 문서를 **순차로** 돌므로 커서 하나면 된다. */
     private var stage: String = SETUP_STAGE
 
+    /**
+     * 지금이 judge 호출 구간인가.
+     *
+     * 게이트 ⓪ 이 보는 출력 토큰은 **변환** 호출의 것이다. judge 는 같은 provider 를 쓰지만
+     * "yes"/"no" 한 줄을 돌려주므로, 섞으면 [largestConversionCallOutputTokens] 가 무엇의
+     * 최댓값인지 말할 수 없게 된다.
+     */
+    private var judging: Boolean = false
+
     var calls: Int = 0
         private set
 
@@ -37,6 +46,16 @@ internal class LaneJournal(private val retryBudget: Int = DEFAULT_RETRY_BUDGET) 
     var outputTokens: Int = 0
         private set
 
+    /**
+     * 관측한 **변환** 호출 하나가 낸 출력 토큰의 최댓값.
+     *
+     * 문서당 합계(`ConversionUsage.outputTokens`)는 최대 2회 호출의 합이라 단일 호출 상한
+     * `DEFAULT_MAX_TOKENS` 대비로는 상계치다. 상한을 올릴지 판단하는 데 필요한 것은 **한 번의
+     * 호출이 실제로 얼마나 냈는가**이므로 그 값을 여기서 따로 센다.
+     */
+    var largestConversionCallOutputTokens: Int = 0
+        private set
+
     val budget: Int get() = retryBudget
 
     /** 재시도 예산을 다 썼는가. 다 썼다는 사실 자체가 「그날 인프라가 흔들렸다」는 관측값이다. */
@@ -44,12 +63,22 @@ internal class LaneJournal(private val retryBudget: Int = DEFAULT_RETRY_BUDGET) 
 
     fun beginDocument(documentId: String) {
         stage = documentId
+        judging = false
+    }
+
+    /** 같은 문서의 judge 구간으로 넘어간다. 실패 귀속은 그대로 문서 id 를 따른다. */
+    fun beginJudge(documentId: String) {
+        stage = documentId
+        judging = true
     }
 
     fun recordCall(completion: LlmCompletion) {
         calls++
         inputTokens += completion.inputTokens
         outputTokens += completion.outputTokens
+        if (!judging) {
+            largestConversionCallOutputTokens = maxOf(largestConversionCallOutputTokens, completion.outputTokens)
+        }
     }
 
     fun recordFault(

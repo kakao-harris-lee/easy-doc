@@ -1,7 +1,9 @@
 package kr.easydoc.infrastructure.quality
 
+import kr.easydoc.application.conversion.ConversionFailureKind
 import kr.easydoc.application.conversion.ConversionResult
 import kr.easydoc.application.conversion.ConvertDocumentUseCase
+import kr.easydoc.core.document.charCountOf
 import kr.easydoc.core.exceptions.LlmProviderException
 import kr.easydoc.core.quality.GoldenDocument
 import kr.easydoc.core.quality.GoldenDocumentLoader
@@ -75,38 +77,54 @@ private class LaneGrader(
     fun grade(document: GoldenDocument) {
         journal.beginDocument(document.id)
         val startedAt = System.nanoTime()
-        val converted = convert(document)
-        report.recordDocument(Duration.ofNanos(System.nanoTime() - startedAt))
-        if (converted != null) {
-            score(document, converted)
+        val result = converter.convert(document.sourceText)
+        val elapsed = Duration.ofNanos(System.nanoTime() - startedAt)
+
+        when (result) {
+            is ConversionResult.Converted -> {
+                score(document, result, elapsed)
+            }
+
+            is ConversionResult.Failed -> {
+                recordFailed(document, result, elapsed)
+            }
         }
     }
 
     /** 변환 실패는 여기서 끝난다 — 채점할 본문이 없다. 실패의 **원인**은 저널에서 가져온다. */
-    private fun convert(document: GoldenDocument): String? =
-        when (val result = converter.convert(document.sourceText)) {
-            is ConversionResult.Converted -> {
-                result.easyText.value
-            }
-
-            is ConversionResult.Failed -> {
-                report.recordConversionFailure(
-                    documentId = document.id,
-                    kind = result.kind,
-                    fault = journal.lastFault(document.id),
-                    retries = journal.retriesFor(document.id),
-                )
-                null
-            }
-        }
+    private fun recordFailed(
+        document: GoldenDocument,
+        result: ConversionResult.Failed,
+        elapsed: Duration,
+    ) {
+        report.recordConversionFailure(
+            documentId = document.id,
+            kind = result.kind,
+            fault = journal.lastFault(document.id),
+            retries = journal.retriesFor(document.id),
+        )
+        report.recordDocument(
+            LaneMeasurement(
+                documentId = document.id,
+                sourceChars = charCountOf(document.sourceText),
+                // 채점할 본문도 스타일 판정도 없다. 0 이나 false 로 채우면 분포와 통과율이 거짓이 된다.
+                convertedChars = null,
+                outputTokens = result.usage.outputTokens,
+                truncated = result.kind == ConversionFailureKind.TRUNCATED,
+                stylePassed = null,
+            ),
+            elapsed,
+        )
+    }
 
     private fun score(
         document: GoldenDocument,
-        converted: String,
+        result: ConversionResult.Converted,
+        elapsed: Duration,
     ) {
+        val converted = result.easyText.value
         val style = evaluateStyle(document.id, converted)
         val facts = evaluateFacts(document.id, converted, document.requiredFacts)
-        report.recordStyle(style.passed)
         if (!facts.passed) {
             report.recordQualityFailure(document.id, "사실 누락 ${facts.missing.size}")
         }
@@ -114,6 +132,18 @@ private class LaneGrader(
         if (judged != null && !judged.passed) {
             report.recordQualityFailure(document.id, "judge 실패")
         }
+        report.recordDocument(
+            LaneMeasurement(
+                documentId = document.id,
+                // 계약 `char_count` 와 같은 기준으로 센다 — 코드 단위가 아니라 코드 포인트다.
+                sourceChars = charCountOf(document.sourceText),
+                convertedChars = charCountOf(converted),
+                outputTokens = result.usage.outputTokens,
+                truncated = false,
+                stylePassed = style.passed,
+            ),
+            elapsed,
+        )
 
         // 본문이 채점 결과에도 요약에도 실리지 않는지 문서마다 확인한다(CLAUDE.md 관측 규칙).
         assertThat(style.toString()).doesNotContain(converted)
@@ -127,6 +157,7 @@ private class LaneGrader(
         converted: String,
     ): JudgeScore? =
         try {
+            journal.beginJudge(document.id)
             judge.score(document, converted)
         } catch (exc: LlmProviderException) {
             // GoldenJudge 는 예외를 잡지 않는다. 여기서 잡지 않으면 문서 한 건의 429 가 레인
