@@ -96,7 +96,14 @@ class InMemoryDocumentRepository : DocumentRepository {
                 )
             }
 
-    /** 소유 조건을 실물과 같은 축으로 본다 — 두 조건이 한 판정에 함께 든다. */
+    /**
+     * 소유 조건을 실물과 같은 축으로 본다 — 두 조건이 한 판정에 함께 든다.
+     *
+     * **보존 기간은 여기서 보지 않는다.** 이 대역의 시계는 [Instant.EPOCH] 에서 출발하므로
+     * 모든 행이 실시간 기준으로는 이미 만료다 — 만료 술어를 흉내 내면 슬라이스의 모든 문서가
+     * 404 가 되고, 그것은 실물의 동작이 아니다. 보존 기간은 위 [RETENTION_DAYS] 주석의 규약
+     * 그대로 **실물 DB 가 잰다**(`DocumentSourceReachTest` 의 만료 경계 케이스).
+     */
     override fun findOwnedSource(
         ownerId: UUID,
         documentId: UUID,

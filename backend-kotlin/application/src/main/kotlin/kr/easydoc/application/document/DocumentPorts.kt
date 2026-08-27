@@ -76,7 +76,13 @@ interface DocumentRepository {
     ): List<DocumentListing>
 
     /**
-     * **내** 문서의 원문을 읽는다. 없거나 내 것이 아니면 `null` — **두 경우를 구분하지 않는다.**
+     * **내** 문서의 원문을 읽는다. 없거나 내 것이 아니거나 **보존 기간이 지났으면** `null` —
+     * **세 경우를 구분하지 않는다.**
+     *
+     * 만료가 여기 함께 있는 이유: 파기는 워커 배치가 실제로 지울 때 일어나므로 만료 시각과
+     * 다음 배치 사이에 창이 열리고, 이 포트가 돌려주는 것은 **마스킹 전 문서 전문**이라 그
+     * 창에서 노출되는 양이 다른 조회와 다르다. 판정을 질의 자신이 지는 사유는 소유 술어와
+     * 같다 — 읽고 나서 비교하는 형태면 이미 평문이 이 경계를 넘은 뒤다.
      *
      * [lockSourceText] 와 갈린 이유는 [DocumentOriginalRepository.findOwned] 가
      * [DocumentOriginalRepository.lockOriginal] 과 갈린 것과 같다: 저쪽은 **회전 배치**라

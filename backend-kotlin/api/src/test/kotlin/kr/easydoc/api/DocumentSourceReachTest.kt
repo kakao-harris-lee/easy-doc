@@ -146,6 +146,65 @@ class DocumentSourceReachTest {
     }
 
     @Test
+    @DisplayName("DS-4 **보존 기간이 지난 문서는 파기 전이라도 404 다** — 배치가 늦어도 원문이 나가지 않는다")
+    fun `만료된 문서는 404 다`() {
+        val token = newAccount()
+        val documentId = createDocument(token, SOURCE_WITH_RRN)
+        expireIn(documentId, PAST)
+
+        val response = readSource(token, documentId)
+
+        assertDeclaredStatus(response, NOT_FOUND)
+        assertThat(bodyOf(response)[DETAIL])
+            .isEqualTo(ContractSpec.pathExampleDetail(SOURCE_PATH, GET, NOT_FOUND, NOT_FOUND_EXAMPLE))
+        assertThat(response.body())
+            .describedAs("거절 본문에 원문 조각이 실리면 만료 술어가 아무것도 막지 못한 것이다")
+            .doesNotContain(RRN)
+    }
+
+    @Test
+    @DisplayName("DS-4 **만료 직전 문서는 200 이다** — 경계를 함께 잰다(술어가 산 문서까지 접지 않는다)")
+    fun `만료 직전 문서는 200 이다`() {
+        val token = newAccount()
+        val documentId = createDocument(token, SOURCE_WITH_RRN)
+        expireIn(documentId, ALMOST_EXPIRED)
+
+        val response = readSource(token, documentId)
+
+        assertDeclaredStatus(response, ContractSpec.successStatus(SOURCE_PATH, GET))
+        assertThat(bodyOf(response)[SOURCE_TEXT_PROPERTY]).isEqualTo(SOURCE_WITH_RRN)
+    }
+
+    @Test
+    @DisplayName("DS-4 만료 시각 **정각**은 404 다 — 파기 배치 술어(`<= now()`)와 정확한 여집합이다")
+    fun `만료 정각은 404 다`() {
+        val token = newAccount()
+        val documentId = createDocument(token, SOURCE_WITH_RRN)
+        expireIn(documentId, NOW)
+
+        assertDeclaredStatus(readSource(token, documentId), NOT_FOUND)
+        assertThat(purgeCandidates(documentId))
+            .describedAs("조회가 접은 행을 파기 배치가 대상으로 보지 않으면 둘 사이에 틈이 남는다")
+            .isEqualTo(1)
+    }
+
+    @Test
+    @DisplayName("DS-4 만료 404 가 **없는 문서와 구분되지 않는다** — 만료가 존재를 드러내지 않는다")
+    fun `만료와 없음이 구분되지 않는다`() {
+        val token = newAccount()
+        val expired = createDocument(token, SOURCE_WITH_RRN)
+        expireIn(expired, PAST)
+
+        val absent = readSourceBytes(token, UUID.randomUUID().toString())
+
+        OwnershipConcealment.assertIndistinguishable(
+            "GET $SOURCE_PATH",
+            absent,
+            readSourceBytes(token, expired),
+        )
+    }
+
+    @Test
     @DisplayName("DS-5 UUID 가 아닌 경로 변수 → 422 · detail **배열**")
     fun `UUID 가 아닌 경로 변수는 422 배열이다`() {
         val response = readSource(newAccount(), NOT_A_UUID)
@@ -265,6 +324,27 @@ class DocumentSourceReachTest {
     private fun sourcePath(documentId: String): String =
         SOURCE_PATH.replace("{${ContractSpec.pathVariable(SOURCE_PATH, GET).name}}", documentId)
 
+    /**
+     * 보존 만료 시각을 옮긴다 — 실물에서는 30일이 흐른 상태다.
+     *
+     * 30일을 기다릴 수 없으니 시계 대신 **행을 민다.** 판정은 어차피 `now()` 와 그 열의
+     * 비교라 어느 쪽을 움직여도 같은 술어를 지난다.
+     */
+    private fun expireIn(
+        documentId: String,
+        offset: String,
+    ) {
+        database.execute(
+            "UPDATE documents SET retention_expires_at = $offset WHERE id = '$documentId'",
+        )
+    }
+
+    /** 파기 배치가 이 행을 대상으로 보는가 — `JdbcExpiredDocumentPurge` 와 같은 술어다. */
+    private fun purgeCandidates(documentId: String): Int =
+        database.queryInt(
+            "SELECT count(*) FROM documents WHERE id = '$documentId' AND retention_expires_at <= now()",
+        )
+
     /** 저장된 암호문과 그 봉투. 조회가 쓰기를 동반하지 않는지 보는 재료다. */
     private fun sourceCiphertext(documentId: String): List<String> =
         database.queryFirstColumn(
@@ -338,6 +418,17 @@ class DocumentSourceReachTest {
         private const val NOT_A_UUID = "not-a-uuid"
         private const val FORGED_TOKEN = "forged.token.value"
         private const val VALID_PASSWORD = "correct horse battery"
+
+        /**
+         * 보존 만료 시각을 옮길 자리 셋. **`NOW` 가 경계 자신이다** — 조회 술어가
+         * `retention_expires_at > now()` 라 정각은 지난 것으로 접히고, 그것이 파기 배치의
+         * `<= now()` 와 겹치지도 벌어지지도 않는 지점이다.
+         */
+        private const val PAST = "now() - interval '1 second'"
+        private const val NOW = "now()"
+
+        /** 「아직 남았다」의 가장 가까운 자리. 초 단위로 잡으면 요청이 도는 사이에 지난다. */
+        private const val ALMOST_EXPIRED = "now() + interval '1 minute'"
 
         /** 합성 주민등록번호. 마스킹 **전** 값이 그대로 나가는지를 재는 표식이다. */
         private const val RRN = "900101-1234567"

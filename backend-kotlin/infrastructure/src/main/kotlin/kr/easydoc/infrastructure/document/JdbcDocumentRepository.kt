@@ -59,6 +59,17 @@ class JdbcDocumentRepository(private val jdbc: JdbcClient) : DocumentRepository 
     /**
      * 내 문서의 원문을 읽는다. **소유 조건이 같은 문장 안에 있다** — 읽고 나서 비교하지 않는다.
      *
+     * **보존 기간 술어도 같은 문장 안에 있다.** `retention_expires_at > now()` 는
+     * `JdbcExpiredDocumentPurge` 의 `retention_expires_at <= now()` 와 **정확한 여집합**이고,
+     * 그렇게 둔 것이 요점이다 — 파기는 워커 배치가 실제로 지울 때 일어나므로 만료 시각과 다음
+     * 배치 사이에 창이 열린다. 그 창에서 이 오퍼레이션은 문서 **전문을 마스킹 전 상태로**
+     * 돌려주므로(계약 `x-private-response-headers.applies_to`), 「30일 뒤 자동 삭제」
+     * (master-plan §3.2)가 가장 날것인 데이터에서 먼저 깨진다. 두 술어가 여집합이 아니게
+     * 되는 순간 그 창이 다시 생기거나(겹침) 이미 지운 행을 찾게 된다(틈).
+     *
+     * 만료를 「없음」과 같은 갈래로 접는 것도 의도다 — 있는지 없는지 구분되지 않아야 한다
+     * (소유자 은폐와 같은 코드).
+     *
      * 잠그지 않는다: 사용자 요청 경로이고 이 값은 문서 등록 시점에 확정돼 바뀌지 않는다
      * (바꾸는 것은 회전뿐이고, 그쪽은 [lockSourceText] 가 잠근다).
      */
@@ -73,6 +84,7 @@ class JdbcDocumentRepository(private val jdbc: JdbcClient) : DocumentRepository 
                        source_text_encrypted, encryption_scheme, key_version
                 FROM documents
                 WHERE id = :id AND user_id = :ownerId
+                  AND retention_expires_at > now()
                 """.trimIndent(),
             ).param("id", documentId)
             .param("ownerId", ownerId)
