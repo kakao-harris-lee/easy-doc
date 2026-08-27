@@ -2,6 +2,7 @@ package kr.easydoc.infrastructure.document
 
 import kr.easydoc.application.document.DocumentDraft
 import kr.easydoc.application.document.DocumentRepository
+import kr.easydoc.application.document.StoredSourceText
 import kr.easydoc.core.crypto.EncryptedContent
 import kr.easydoc.core.document.ConversionStatus
 import kr.easydoc.core.document.Document
@@ -54,6 +55,30 @@ class JdbcDocumentRepository(private val jdbc: JdbcClient) : DocumentRepository 
         if (workspaceId != null) statement.param("workspaceId", workspaceId)
         return statement.query { rs, _ -> toListing(rs) }.list()
     }
+
+    /**
+     * 내 문서의 원문을 읽는다. **소유 조건이 같은 문장 안에 있다** — 읽고 나서 비교하지 않는다.
+     *
+     * 잠그지 않는다: 사용자 요청 경로이고 이 값은 문서 등록 시점에 확정돼 바뀌지 않는다
+     * (바꾸는 것은 회전뿐이고, 그쪽은 [lockSourceText] 가 잠근다).
+     */
+    override fun findOwnedSource(
+        ownerId: UUID,
+        documentId: UUID,
+    ): StoredSourceText? =
+        jdbc
+            .sql(
+                """
+                SELECT id, source_format, char_count,
+                       source_text_encrypted, encryption_scheme, key_version
+                FROM documents
+                WHERE id = :id AND user_id = :ownerId
+                """.trimIndent(),
+            ).param("id", documentId)
+            .param("ownerId", ownerId)
+            .query { rs, _ -> toSourceText(rs) }
+            .optional()
+            .orElse(null)
 
     /** 원문 암호문과 봉투를 읽고 **행을 잠근다**(`FOR NO KEY UPDATE`). */
     override fun lockSourceText(documentId: UUID): EncryptedContent? =
@@ -130,6 +155,19 @@ class JdbcDocumentRepository(private val jdbc: JdbcClient) : DocumentRepository 
             retentionExpiresAt = rs.getObject("retention_expires_at", OffsetDateTime::class.java).toInstant(),
         )
 
+    private fun toSourceText(rs: ResultSet): StoredSourceText =
+        StoredSourceText(
+            documentId = rs.getObject("id", UUID::class.java),
+            sourceFormat = SourceFormat.ofWireName(rs.getString("source_format")),
+            charCount = rs.getInt("char_count"),
+            sourceText =
+                EncryptedContent(
+                    bytes = rs.getBytes("source_text_encrypted"),
+                    scheme = rs.getString("encryption_scheme"),
+                    keyVersion = rs.getInt("key_version"),
+                ),
+        )
+
     private fun toListing(rs: ResultSet): DocumentListing {
         val conversionId = rs.getObject("conversion_id", UUID::class.java)
         val status = rs.getString("conversion_status")
@@ -138,6 +176,7 @@ class JdbcDocumentRepository(private val jdbc: JdbcClient) : DocumentRepository 
             conversionId = conversionId,
             status = status?.let { ConversionStatus.ofWireName(it) },
             reviewedAt = rs.getObject("reviewed_at", OffsetDateTime::class.java)?.toInstant(),
+            feedbackSubmittedAt = rs.getObject("feedback_submitted_at", OffsetDateTime::class.java)?.toInstant(),
         )
     }
 
@@ -155,12 +194,20 @@ class JdbcDocumentRepository(private val jdbc: JdbcClient) : DocumentRepository 
             RETURNING id, title, source_format, char_count, created_at, retention_expires_at
             """.trimIndent()
 
-        /** 목록 질의. 작업 공간 필터 유무로 **두 형태**가 있다. */
+        /**
+         * 목록 질의. 작업 공간 필터 유무로 **두 형태**가 있다.
+         *
+         * 피드백도 최신 변환과 같은 규칙으로 **왼쪽 조인**한다 — 의견을 내지 않은 문서가
+         * 목록에서 사라지면 안 된다. 봉인된 자유 의견 열은 고르지 않고 `submitted_at` 하나만
+         * 든다(계약 `DocumentListItem.feedback_submitted_at`). `f.user_id = d.user_id` 는
+         * `JdbcConversionRepository.FIND_OWNED_SQL` 과 같은 fail-closed 술어다.
+         */
         fun listSql(filterWorkspace: Boolean): String =
             """
             SELECT d.id, d.title, d.source_format, d.char_count,
                    d.created_at, d.retention_expires_at,
-                   c.id AS conversion_id, c.status AS conversion_status, c.reviewed_at
+                   c.id AS conversion_id, c.status AS conversion_status, c.reviewed_at,
+                   f.submitted_at AS feedback_submitted_at
             FROM documents d
             LEFT JOIN LATERAL (
                 SELECT k.id, k.status, k.reviewed_at
@@ -169,6 +216,8 @@ class JdbcDocumentRepository(private val jdbc: JdbcClient) : DocumentRepository 
                 ORDER BY k.created_at DESC, k.id DESC
                 LIMIT 1
             ) c ON true
+            LEFT JOIN conversion_feedback f
+                   ON f.conversion_id = c.id AND f.user_id = d.user_id
             WHERE d.user_id = :ownerId
             ${if (filterWorkspace) "AND d.workspace_id = :workspaceId" else ""}
             ORDER BY d.created_at DESC, d.id DESC

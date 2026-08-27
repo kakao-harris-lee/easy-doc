@@ -15,17 +15,18 @@ import { render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { getConversion, listDocuments } from './api/client'
+import { ApiError, getConversion, getDocumentSource, listDocuments } from './api/client'
 import { AuthContext, type AuthContextValue } from './auth/context'
 import { AppLayout } from './components/AppLayout'
 import { AppRoutes } from './routes/AppRoutes'
-import { conversion, documentItem, workspaceContext } from './test/factories'
+import { conversion, documentItem, documentSource, workspaceContext } from './test/factories'
 import { WorkspaceContext } from './workspace/context'
 
 vi.mock('./api/client', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./api/client')>()),
   listDocuments: vi.fn(),
   getConversion: vi.fn(),
+  getDocumentSource: vi.fn(),
 }))
 
 const USER = { id: 'u1', email: 'gongmuwon@example.test' }
@@ -56,7 +57,12 @@ function renderAt(entry: Entry, status: AuthContextValue['status'] = 'authentica
   )
 }
 
-/** 검수 화면이 원문을 함께 받는 경로(붙여넣기 직후). 기록에서 다시 열면 이 상태가 없다. */
+/**
+ * 검수 화면이 원문을 라우터 state 로 함께 받는 경로(붙여넣기 직후).
+ *
+ * 이 값이 없어도 화면은 서버에서 원문을 가져온다 — 여기서 굳이 실어 보내는 것은
+ * «첫 화면부터 왼쪽이 차 있는» 경로도 접근성 규칙을 똑같이 지키는지 재기 위해서다.
+ */
 const REVIEW_WITH_SOURCE = {
   pathname: '/conversions/c1',
   state: { sourceText: '신청은 3월 2일부터 가능합니다.' },
@@ -117,13 +123,14 @@ const SCREENS: readonly {
     settle: () => screen.findByRole('heading', { name: '쉬운 글 검수' }),
   },
   {
-    // §14 «원문 없음»은 로딩·빈 상태와 다른 화면이다 — 접근성도 따로 재야 한다.
-    name: '검수 (원문 없음)',
+    // §9 «원문을 불러오지 못함»은 로딩·빈 상태와 다른 화면이다 — 접근성도 따로 재야 한다.
+    name: '검수 (원문 불러오기 실패)',
     open: () => {
       vi.mocked(getConversion).mockResolvedValue(conversion({ status: 'done' }))
+      vi.mocked(getDocumentSource).mockRejectedValue(new ApiError(404, '문서를 찾을 수 없습니다.'))
       renderAt('/conversions/c1')
     },
-    settle: () => screen.findByRole('heading', { name: '원문 없음' }),
+    settle: () => screen.findByRole('heading', { name: '원문을 불러오지 못함' }),
   },
   {
     name: '변환 기록',
@@ -248,11 +255,13 @@ beforeEach(() => {
     has_more: false,
   })
   vi.mocked(getConversion).mockResolvedValue(conversion({ status: 'done' }))
+  vi.mocked(getDocumentSource).mockResolvedValue(documentSource())
 })
 
 afterEach(() => {
   vi.mocked(listDocuments).mockReset()
   vi.mocked(getConversion).mockReset()
+  vi.mocked(getDocumentSource).mockReset()
 })
 
 describe('①  랜드마크와 건너뛰기 링크', () => {

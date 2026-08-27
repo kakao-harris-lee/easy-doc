@@ -20,6 +20,7 @@ import kr.easydoc.application.document.StoredConversion
 import kr.easydoc.application.document.StoredExport
 import kr.easydoc.application.document.StoredFeedback
 import kr.easydoc.application.document.StoredOriginal
+import kr.easydoc.application.document.StoredSourceText
 import kr.easydoc.application.document.WorkspaceLookup
 import kr.easydoc.core.crypto.EncryptedContent
 import kr.easydoc.core.crypto.EncryptedField
@@ -85,7 +86,31 @@ class InMemoryDocumentRepository : DocumentRepository {
             .sortedWith(compareByDescending<Row> { it.document.createdAt }.thenByDescending { it.document.id })
             .drop(offset)
             .take(limit)
-            .map { DocumentListing(it.document, conversionId = null, status = null, reviewedAt = null) }
+            .map {
+                DocumentListing(
+                    it.document,
+                    conversionId = null,
+                    status = null,
+                    reviewedAt = null,
+                    feedbackSubmittedAt = null,
+                )
+            }
+
+    /** 소유 조건을 실물과 같은 축으로 본다 — 두 조건이 한 판정에 함께 든다. */
+    override fun findOwnedSource(
+        ownerId: UUID,
+        documentId: UUID,
+    ): StoredSourceText? =
+        rows
+            .firstOrNull { it.ownerId == ownerId && it.document.id == documentId }
+            ?.let {
+                StoredSourceText(
+                    documentId = it.document.id,
+                    sourceFormat = it.document.sourceFormat,
+                    charCount = it.document.charCount,
+                    sourceText = it.sourceText,
+                )
+            }
 
     override fun lockSourceText(documentId: UUID): EncryptedContent? =
         rows.firstOrNull { it.document.id == documentId }?.sourceText
@@ -167,6 +192,8 @@ class InMemoryConversionRepository(
         var envelope: ConversionEnvelope,
         var status: ConversionStatus,
         var reviewedAt: Instant?,
+        /** 실물에서는 `conversion_feedback` 을 왼쪽 조인해 읽는 값이다. 낸 적이 없으면 `null`. */
+        var feedbackSubmittedAt: Instant?,
         var missingPlaceholders: List<String>,
         var model: String?,
         var providerName: String?,
@@ -200,6 +227,7 @@ class InMemoryConversionRepository(
                     ),
                 status = ConversionStatus.PENDING,
                 reviewedAt = null,
+                feedbackSubmittedAt = null,
                 missingPlaceholders = emptyList(),
                 model = null,
                 providerName = null,
@@ -235,6 +263,7 @@ class InMemoryConversionRepository(
                     hasStoredOriginal = originals.byteSizeOf(row.documentId) != null,
                     ciphertexts = row.envelope.ciphertexts,
                     reviewedAt = row.reviewedAt,
+                    feedbackSubmittedAt = row.feedbackSubmittedAt,
                     missingPlaceholders = row.missingPlaceholders,
                     model = row.model,
                     providerName = row.providerName,
@@ -288,6 +317,18 @@ class InMemoryConversionRepository(
         row?.envelope = updated
         row?.reviewedAt = Instant.EPOCH.plusSeconds(1)
         return row != null
+    }
+
+    /**
+     * 피드백을 낸 흔적을 남긴다 — 실물에서는 `conversion_feedback` 의 행 하나이고, 조회는
+     * 그것을 왼쪽 조인해 읽는다. **검수 시각을 건드리지 않는다**: 두 값이 다른 사실이라는
+     * 것이 계약 `feedback_submitted_at` 의 요지다.
+     */
+    fun recordFeedback(
+        conversionId: UUID,
+        submittedAt: Instant,
+    ) {
+        rows.getValue(conversionId).feedbackSubmittedAt = submittedAt
     }
 
     /** 변환 한 건을 완료 상태로 만든다. 실물에서는 Phase 5 워커의 UPDATE 다. */

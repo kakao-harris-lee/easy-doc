@@ -1,17 +1,30 @@
-import { render, screen, within } from '@testing-library/react'
+import { render as renderInDom, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import type { ReactElement } from 'react'
+import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { ApiError, downloadExport, saveReview } from '../api/client'
-import type { FormatPreservation } from '../api/types'
+import { ApiError, downloadExport, saveFeedback, saveReview } from '../api/client'
+import type { ConversionResponse, FormatPreservation } from '../api/types'
 import { setUnsavedChanges } from '../review/unsavedChanges'
-import { conversion } from '../test/factories'
+import { conversion, sourceFailed, sourceLoading, sourceReady } from '../test/factories'
 import { ReviewEditor } from './ReviewEditor'
+
+/**
+ * 라우터 안에서 그린다.
+ *
+ * 에디터가 품고 있는 피드백 폼이 제출 뒤 변환 기록으로 가는 링크를 내놓으므로,
+ * `<Link>`가 라우터 없이는 그려지지 않는다.
+ */
+function render(ui: ReactElement) {
+  return renderInDom(<MemoryRouter>{ui}</MemoryRouter>)
+}
 
 vi.mock('../api/client', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api/client')>()),
   saveReview: vi.fn(),
   downloadExport: vi.fn(),
+  saveFeedback: vi.fn(),
 }))
 
 /**
@@ -36,6 +49,7 @@ function stubViewport(splitView: boolean): void {
 beforeEach(() => {
   vi.mocked(saveReview).mockReset()
   vi.mocked(downloadExport).mockReset()
+  vi.mocked(saveFeedback).mockReset()
 })
 
 afterEach(() => {
@@ -44,12 +58,26 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
+/**
+ * 응답에서 `feedback_submitted_at` 키를 통째로 지운다.
+ *
+ * 계약은 「키는 늘 있고 값만 null일 수 있다」로 정하지만 그것은 **서버의 약속이지 이
+ * 컴포넌트가 받는 값의 보장이 아니다** — 아직 이 필드를 싣지 않는 서버, 배포 시차로
+ * 남아 있는 옛 번들에서 키 없이 들어온다. 기본 목(`conversion`)은 계약대로 키를 담아
+ * 두고, 그 약속이 깨진 상황은 여기서만 만든다.
+ */
+function withoutFeedbackKey(response: ConversionResponse): ConversionResponse {
+  const stripped: Partial<ConversionResponse> = { ...response }
+  delete stripped.feedback_submitted_at
+  return stripped as ConversionResponse
+}
+
 describe('검수 에디터', () => {
   it('저장한 수정본이 있으면 그것을 초기값으로 쓴다', () => {
     render(
       <ReviewEditor
         conversion={conversion({ easy_text: 'AI 초안입니다.', edited_text: '담당자가 고친 글.' })}
-        sourceText="원문입니다."
+        source={sourceReady('원문입니다.')}
       />,
     )
 
@@ -63,33 +91,77 @@ describe('검수 에디터', () => {
     render(
       <ReviewEditor
         conversion={conversion({ easy_text: 'AI 초안입니다.', edited_text: null })}
-        sourceText={null}
+        source={sourceFailed()}
       />,
     )
 
     expect(screen.getByLabelText('쉬운 글 결과 (고칠 수 있습니다)')).toHaveValue('AI 초안입니다.')
   })
 
+  it('원문을 불러왔으면 왼쪽 패널에 읽기 전용으로 보여준다', () => {
+    render(<ReviewEditor conversion={conversion()} source={sourceReady('파일에서 뽑은 원문.')} />)
+
+    const panel = screen.getByLabelText('원본 (읽기 전용)')
+    expect(panel).toHaveValue('파일에서 뽑은 원문.')
+    // 사용자가 고치는 것은 오른쪽 결과다 — 왼쪽은 끝까지 읽기 전용이다.
+    expect(panel).toHaveAttribute('readonly')
+  })
+
   /**
-   * 원문이 없는 경로(파일 업로드·기록 재진입)에서 왼쪽에 빈 입력칸이 남아 있으면,
-   * 화면은 "원문을 보여주지 않는다"가 아니라 "원문이 아직 안 왔다" 또는 "여기에 원문을
-   * 적어야 한다"고 말하게 된다. 셋은 서로 다른 상태이므로(DESIGN.md §9) 입력칸이
-   * 사라졌는지와 설명이 남았는지를 함께 고정한다.
+   * 원문을 못 가져온 경로에서 왼쪽에 빈 입력칸이 남아 있으면, 화면은 "못 가져왔다"가
+   * 아니라 "아직 안 왔다" 또는 "여기에 원문을 적어야 한다"고 말하게 된다. 셋은 서로 다른
+   * 상태이므로(DESIGN.md §9) 입력칸이 사라졌는지와 설명이 남았는지를 함께 고정한다.
    */
-  it('원문이 없으면 빈 입력칸 대신 설명 카드를 보여준다', () => {
-    render(<ReviewEditor conversion={conversion()} sourceText={null} />)
+  it('원문을 못 불러왔으면 빈 입력칸 대신 실패를 설명한다', () => {
+    render(<ReviewEditor conversion={conversion()} source={sourceFailed('not_found')} />)
 
     expect(screen.queryByLabelText('원본 (읽기 전용)')).not.toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '원문을 불러오지 못함' })).toBeInTheDocument()
+    expect(screen.getByText('원문을 찾을 수 없습니다.')).toBeInTheDocument()
+    // 「파일로 올려서」가 아니다 — 이제 원문이 없는 이유는 «불러오지 못했다» 하나뿐이다.
     expect(
-      screen.getByText('파일로 올린 문서는 이 화면에서 원문을 다시 표시하지 않습니다.'),
-    ).toBeInTheDocument()
+      screen.queryByText('파일로 올린 문서는 이 화면에서 원문을 다시 표시하지 않습니다.'),
+    ).not.toBeInTheDocument()
+  })
+
+  /**
+   * 불러오는 중에 「원문 없음」을 보여주면 그것은 아직 참이 아닌 문장이다(§9).
+   * 로딩과 실패가 같은 화면으로 뭉치는 순간 사용자는 기다리면 될 일을 포기한다.
+   */
+  it('원문을 불러오는 중에는 없다고 말하지 않는다', () => {
+    render(<ReviewEditor conversion={conversion()} source={sourceLoading()} />)
+
+    expect(screen.getByRole('heading', { name: '원문 불러오는 중' })).toBeInTheDocument()
+    expect(screen.getByText('원문을 불러오고 있습니다…')).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: '원문을 불러오지 못함' })).not.toBeInTheDocument()
+    expect(screen.queryByText('원문을 찾을 수 없습니다.')).not.toBeInTheDocument()
+  })
+
+  it('네트워크 실패에는 다시 불러올 행동을 주고, 404에는 주지 않는다', async () => {
+    const user = userEvent.setup()
+    const retry = vi.fn()
+    const view = render(
+      <ReviewEditor conversion={conversion()} source={sourceFailed('unreachable', retry)} />,
+    )
+
+    expect(screen.getByText('원문을 불러오지 못했습니다.')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '원문 다시 불러오기' }))
+    expect(retry).toHaveBeenCalledTimes(1)
+
+    // 404는 다시 물어도 404다 — 눌러도 소용없는 행동을 제시하지 않는다(§15).
+    view.rerender(
+      <MemoryRouter>
+        <ReviewEditor conversion={conversion()} source={sourceFailed('not_found')} />
+      </MemoryRouter>,
+    )
+    expect(screen.queryByRole('button', { name: '원문 다시 불러오기' })).not.toBeInTheDocument()
   })
 
   it('AI 초안임을 알리는 배너와 자리표시자 유실 경고를 보여준다', () => {
     render(
       <ReviewEditor
         conversion={conversion({ missing_placeholders: ['[[카드번호1]]'] })}
-        sourceText={null}
+        source={sourceFailed()}
       />,
     )
 
@@ -102,7 +174,7 @@ describe('검수 에디터', () => {
     vi.mocked(saveReview).mockResolvedValue(
       conversion({ edited_text: '초안. 수정', reviewed_at: '2026-08-07T02:00:00Z' }),
     )
-    render(<ReviewEditor conversion={conversion({ easy_text: '초안.' })} sourceText={null} />)
+    render(<ReviewEditor conversion={conversion({ easy_text: '초안.' })} source={sourceFailed()} />)
 
     expect(screen.getByRole('status')).toHaveTextContent('저장 전')
 
@@ -122,7 +194,7 @@ describe('검수 에디터', () => {
     vi.mocked(saveReview).mockResolvedValue(
       conversion({ edited_text: '초안. 수정', reviewed_at: '2026-08-07T02:00:00Z' }),
     )
-    render(<ReviewEditor conversion={conversion({ easy_text: '초안.' })} sourceText={null} />)
+    render(<ReviewEditor conversion={conversion({ easy_text: '초안.' })} source={sourceFailed()} />)
 
     await user.type(screen.getByLabelText('쉬운 글 결과 (고칠 수 있습니다)'), ' 수정')
     await user.click(screen.getByRole('button', { name: '검수 내용 저장' }))
@@ -136,6 +208,94 @@ describe('검수 에디터', () => {
   })
 
   /*
+    의견을 보낸 변환에서 상단이 「아직 저장한 검수 내용이 없습니다」만 말하면, 서버에
+    잘 저장된 제출을 사용자가 실패로 읽는다. 두 사실은 서로를 지우지 않는다 — 수정본을
+    저장하지 않은 것도 참이고, 의견을 보낸 것도 참이라 둘 다 적혀 있어야 한다.
+  */
+  it('의견을 보낸 변환은 저장 상태와 의견 보냄을 함께 적는다', () => {
+    render(
+      <ReviewEditor
+        conversion={conversion({
+          reviewed_at: null,
+          feedback_submitted_at: '2026-08-27T02:00:00Z',
+        })}
+        source={sourceFailed()}
+      />,
+    )
+
+    expect(screen.getByRole('status')).toHaveTextContent('저장 전')
+    expect(screen.getByText(/고쳐서 저장한 내용은 없습니다/)).toBeInTheDocument()
+    // 「아직 …이 없습니다」는 할 일이 남았다는 말로 읽혀 제출 실패로 오해된다.
+    expect(screen.queryByText(/아직 저장한 검수 내용이 없습니다/)).not.toBeInTheDocument()
+    expect(screen.getByText(/^의견 보냄 · /)).toBeInTheDocument()
+  })
+
+  it('의견을 보낸 적이 없으면 의견 보냄을 적지 않는다', () => {
+    render(<ReviewEditor conversion={conversion()} source={sourceFailed()} />)
+
+    expect(
+      screen.getByText('아직 저장한 검수 내용이 없습니다. AI 초안 그대로입니다.'),
+    ).toBeInTheDocument()
+    expect(screen.queryByText(/의견 보냄/)).not.toBeInTheDocument()
+  })
+
+  /*
+    키가 없으면 「제출 안 함」으로 읽는다.
+
+    `=== null`로 물으면 `undefined`가 그 갈래를 비켜 가, 아무 의견도 보내지 않은 변환에
+    「의견 보냄 · Invalid Date」 배지가 뜬다. `new Date(undefined)`는 던지지 않고 Invalid
+    Date를 만들기 때문에 화면이 조용히 거짓말을 한다 — 값이 없을 때 안전한 오답은
+    「아직 안 보냈다」 쪽이다.
+  */
+  it('의견 제출 시각 키가 아예 없으면 제출 안 한 것으로 읽는다', () => {
+    render(
+      <ReviewEditor
+        conversion={withoutFeedbackKey(conversion({ reviewed_at: null }))}
+        source={sourceFailed()}
+      />,
+    )
+
+    expect(
+      screen.getByText('아직 저장한 검수 내용이 없습니다. AI 초안 그대로입니다.'),
+    ).toBeInTheDocument()
+    expect(screen.queryByText(/의견 보냄/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Invalid Date/)).not.toBeInTheDocument()
+  })
+
+  /*
+    토스트만 뜨고 상단이 그대로면 화면은 방금 일어난 일을 반영하지 않은 것이다.
+    다시 조회하지 않고 서버가 응답에 실어 준 시각을 그대로 옮긴다.
+  */
+  it('의견을 보내면 상단 상태가 곧바로 바뀐다', async () => {
+    const user = userEvent.setup()
+    vi.mocked(saveFeedback).mockResolvedValue({
+      conversion_id: 'c1',
+      publish_intent: 'with_edits',
+      quality_score: 4,
+      minutes_spent: 25,
+      comment: null,
+      submitted_at: '2026-08-27T02:00:00Z',
+    })
+    render(<ReviewEditor conversion={conversion()} source={sourceFailed()} />)
+
+    expect(screen.queryByText(/의견 보냄/)).not.toBeInTheDocument()
+
+    await user.click(screen.getByLabelText('조금 고쳐서 쓰겠다'))
+    await user.click(screen.getByLabelText('4점'))
+    await user.type(screen.getByLabelText('이번 건 소요 시간(분)'), '25')
+    await user.click(screen.getByRole('button', { name: '의견 보내기' }))
+
+    expect(await screen.findByText(/^의견 보냄 · /)).toBeInTheDocument()
+    // 화면을 대신 넘기지 않는다 — 검수 화면은 그대로 있고 돌아가는 길만 생긴다.
+    expect(screen.getByLabelText('쉬운 글 결과 (고칠 수 있습니다)')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: '변환 기록으로 돌아가기' })).toBeInTheDocument()
+    // 제출 성공은 폼의 안내가 이미 낭독한다. 상태 패널이 같은 사실을 한 번 더 읽지 않게
+    // 이 배지는 `role="status"` 바깥에 있다(§11 중복 낭독 금지).
+    const announced = screen.getAllByRole('status').map((node) => node.textContent ?? '')
+    expect(announced.filter((text) => text.includes('의견 보냄'))).toHaveLength(0)
+  })
+
+  /*
     저장 버튼은 진행 중에 `disabled` 가 된다. 브라우저는 초점을 가진 요소가 잠기는 순간
     초점을 `<body>` 로 떨어뜨리므로, 되돌려 놓지 않으면 키보드 사용자는 저장 한 번에
     탭 경로를 통째로 잃고 문서 맨 앞에서 다시 밟아야 한다(§14).
@@ -145,7 +305,7 @@ describe('검수 에디터', () => {
     vi.mocked(saveReview).mockResolvedValue(
       conversion({ edited_text: '초안. 수정', reviewed_at: '2026-08-07T02:00:00Z' }),
     )
-    render(<ReviewEditor conversion={conversion({ easy_text: '초안.' })} sourceText={null} />)
+    render(<ReviewEditor conversion={conversion({ easy_text: '초안.' })} source={sourceFailed()} />)
 
     await user.type(screen.getByLabelText('쉬운 글 결과 (고칠 수 있습니다)'), ' 수정')
     const save = screen.getByRole('button', { name: '검수 내용 저장' })
@@ -167,7 +327,7 @@ describe('검수 에디터', () => {
       createObjectURL: () => 'blob:test',
       revokeObjectURL: () => undefined,
     })
-    render(<ReviewEditor conversion={conversion()} sourceText={null} />)
+    render(<ReviewEditor conversion={conversion()} source={sourceFailed()} />)
 
     await user.click(screen.getByRole('button', { name: 'TXT로 내려받기' }))
 
@@ -180,7 +340,7 @@ describe('검수 에디터', () => {
     vi.mocked(saveReview).mockResolvedValue(
       conversion({ edited_text: '고친 글.', reviewed_at: '2026-08-07T02:00:00Z' }),
     )
-    render(<ReviewEditor conversion={conversion({ easy_text: '초안.' })} sourceText={null} />)
+    render(<ReviewEditor conversion={conversion({ easy_text: '초안.' })} source={sourceFailed()} />)
 
     const editor = screen.getByLabelText('쉬운 글 결과 (고칠 수 있습니다)')
     await user.clear(editor)
@@ -194,7 +354,7 @@ describe('검수 에디터', () => {
   it('저장에 실패하면 사유를 알리고 수정 내용을 그대로 둔다', async () => {
     const user = userEvent.setup()
     vi.mocked(saveReview).mockRejectedValue(new ApiError(409, '아직 완료되지 않은 변환입니다'))
-    render(<ReviewEditor conversion={conversion({ easy_text: '초안.' })} sourceText={null} />)
+    render(<ReviewEditor conversion={conversion({ easy_text: '초안.' })} source={sourceFailed()} />)
 
     const editor = screen.getByLabelText('쉬운 글 결과 (고칠 수 있습니다)')
     await user.type(editor, ' 덧붙임')
@@ -219,7 +379,9 @@ describe('검수 에디터', () => {
         blob: new Blob(['내용']),
         filename: `재난지원금 안내.${format}`,
       })
-      render(<ReviewEditor conversion={conversion({ export_format: format })} sourceText={null} />)
+      render(
+        <ReviewEditor conversion={conversion({ export_format: format })} source={sourceFailed()} />,
+      )
 
       await user.click(screen.getByRole('button', { name: `${format.toUpperCase()}로 내려받기` }))
 
@@ -236,7 +398,9 @@ describe('검수 에디터', () => {
   )
 
   it('서버가 정한 형식 하나만 내려받기로 제시한다 — 교차 형식 버튼을 그리지 않는다', () => {
-    render(<ReviewEditor conversion={conversion({ export_format: 'docx' })} sourceText={null} />)
+    render(
+      <ReviewEditor conversion={conversion({ export_format: 'docx' })} source={sourceFailed()} />,
+    )
 
     expect(screen.getByRole('button', { name: 'DOCX로 내려받기' })).toBeInTheDocument()
     // 원본이 DOCX인데 txt·hwpx 버튼을 그리면 그 버튼은 서버에서 반드시 409로 실패한다.
@@ -248,7 +412,7 @@ describe('검수 에디터', () => {
     render(
       <ReviewEditor
         conversion={conversion({ source_format: 'pdf', export_format: null })}
-        sourceText={null}
+        source={sourceFailed()}
       />,
     )
 
@@ -262,7 +426,7 @@ describe('검수 에디터', () => {
     render(
       <ReviewEditor
         conversion={conversion({ easy_text: '등록번호는 [[주민등록번호1]]이에요.' })}
-        sourceText={null}
+        source={sourceFailed()}
       />,
     )
 
@@ -278,7 +442,7 @@ describe('검수 에디터', () => {
     it('원문이 있으면 원문·쉬운 글 탭으로 나누고 키보드로 옮길 수 있다', async () => {
       const user = userEvent.setup()
       stubViewport(false)
-      render(<ReviewEditor conversion={conversion()} sourceText="원문입니다." />)
+      render(<ReviewEditor conversion={conversion()} source={sourceReady('원문입니다.')} />)
 
       expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual(['원문', '쉬운 글'])
       expect(screen.getByLabelText('원본 (읽기 전용)')).toBeVisible()
@@ -292,15 +456,150 @@ describe('검수 에디터', () => {
       expect(screen.getByLabelText('원본 (읽기 전용)')).not.toBeVisible()
     })
 
-    it('원문이 없으면 탭을 만들지 않고 설명 카드를 그대로 보여준다', () => {
+    it('원문을 아직 못 받았으면 탭을 만들지 않고 그 사실을 그대로 보여준다', () => {
       stubViewport(false)
-      render(<ReviewEditor conversion={conversion()} sourceText={null} />)
+      render(<ReviewEditor conversion={conversion()} source={sourceLoading()} />)
+
+      // 「불러오는 중」을 탭 뒤에 숨기면 그 사실이 사용자에게 닿지 않는다(§9).
+      expect(screen.queryAllByRole('tab')).toHaveLength(0)
+      expect(screen.getByRole('heading', { name: '원문 불러오는 중' })).toBeInTheDocument()
+      expect(screen.getByLabelText('쉬운 글 결과 (고칠 수 있습니다)')).toBeVisible()
+    })
+
+    it('원문을 못 불러왔으면 탭 없이 실패를 그대로 보여준다', () => {
+      stubViewport(false)
+      render(<ReviewEditor conversion={conversion()} source={sourceFailed('not_found')} />)
 
       expect(screen.queryAllByRole('tab')).toHaveLength(0)
-      expect(
-        screen.getByText('파일로 올린 문서는 이 화면에서 원문을 다시 표시하지 않습니다.'),
-      ).toBeInTheDocument()
+      expect(screen.getByText('원문을 찾을 수 없습니다.')).toBeInTheDocument()
       expect(screen.getByLabelText('쉬운 글 결과 (고칠 수 있습니다)')).toBeVisible()
+    })
+
+    /**
+     * 늦게 도착한 원문이 **편집 중인 화면을 가로채지 않는다.**
+     *
+     * 탭이 없는 동안에는 두 패널이 함께 보이므로 사용자는 결과 편집기에 바로 타이핑한다.
+     * 그때 원문이 도착해 탭이 생기면서 활성 탭이 초기값 `원문`에 머무르면, 방금까지 고치던
+     * 글과 초점이 눈앞에서 사라진다. 네트워크가 느릴수록 더 오래 타이핑하다 당한다.
+     */
+    it('원문이 늦게 도착해 탭이 생겨도 편집 중이던 결과 패널을 빼앗지 않는다', async () => {
+      const user = userEvent.setup()
+      stubViewport(false)
+      const target = conversion({ easy_text: '초안.' })
+      const view = render(<ReviewEditor conversion={target} source={sourceLoading()} />)
+
+      // 아직 탭이 없다 — 두 패널이 위아래로 모두 보인다.
+      expect(screen.queryAllByRole('tab')).toHaveLength(0)
+      const editor = screen.getByLabelText('쉬운 글 결과 (고칠 수 있습니다)')
+      await user.click(editor)
+      await user.type(editor, ' 수정')
+      expect(editor).toHaveFocus()
+
+      // 원문 도착 — 여기서 탭이 생긴다.
+      view.rerender(
+        <MemoryRouter>
+          <ReviewEditor conversion={target} source={sourceReady('원문입니다.')} />
+        </MemoryRouter>,
+      )
+
+      expect(screen.getAllByRole('tab')).toHaveLength(2)
+      expect(screen.getByRole('tab', { name: '쉬운 글' })).toHaveAttribute('aria-selected', 'true')
+      expect(editor).toBeVisible()
+      expect(editor).toHaveValue('초안. 수정')
+      expect(editor).toHaveFocus()
+    })
+
+    it('아무것도 건드리지 않았다면 탭이 생길 때 원문이 먼저다', () => {
+      stubViewport(false)
+      const target = conversion({ easy_text: '초안.' })
+      const view = render(<ReviewEditor conversion={target} source={sourceLoading()} />)
+
+      view.rerender(
+        <MemoryRouter>
+          <ReviewEditor conversion={target} source={sourceReady('원문입니다.')} />
+        </MemoryRouter>,
+      )
+
+      // §11의 읽기 순서는 그대로다 — 원문 다음 결과.
+      expect(screen.getByRole('tab', { name: '원문' })).toHaveAttribute('aria-selected', 'true')
+      expect(screen.getByLabelText('원본 (읽기 전용)')).toBeVisible()
+    })
+
+    /**
+     * 전이할 때만 판정한다. 사용자가 원문 탭을 직접 고른 뒤 창 크기가 오갔다고 결과로
+     * 튕기면 그것도 같은 종류의 가로채기다.
+     */
+    it('탭이 사라졌다 다시 생겨도 사용자가 고른 탭을 덮어쓰지 않는다', async () => {
+      const user = userEvent.setup()
+      stubViewport(false)
+      const target = conversion({ easy_text: '초안.' })
+      const view = render(<ReviewEditor conversion={target} source={sourceReady('원문입니다.')} />)
+
+      // 고쳐 두고(=dirty) 원문 탭을 직접 고른다.
+      await user.type(screen.getByLabelText('쉬운 글 결과 (고칠 수 있습니다)'), ' 수정')
+      await user.click(screen.getByRole('tab', { name: '원문' }))
+      expect(screen.getByRole('tab', { name: '원문' })).toHaveAttribute('aria-selected', 'true')
+
+      // 넓어졌다가(탭 사라짐) 다시 좁아진다(탭 생김).
+      const rerender = (splitView: boolean) => {
+        stubViewport(splitView)
+        view.rerender(
+          <MemoryRouter>
+            <ReviewEditor conversion={target} source={sourceReady('원문입니다.')} />
+          </MemoryRouter>,
+        )
+      }
+      rerender(true)
+      expect(screen.queryAllByRole('tab')).toHaveLength(0)
+      rerender(false)
+
+      // 초점은 어느 입력칸에도 없지만 고친 내용은 있다 — 그래도 사용자가 마지막으로
+      // 고른 원문 탭이 이긴다.
+      expect(screen.getByRole('tab', { name: '원문' })).toHaveAttribute('aria-selected', 'true')
+    })
+
+    /**
+     * **초점은 과거의 탭 선택보다 강한 신호다.**
+     *
+     * 탭을 골라 둔 사람이 화면을 넓혀(탭 소멸) 결과를 고치다가 다시 좁히면, 그 선택을
+     * 존중한다는 이유로 편집 중이던 결과 패널이 숨는다 — 처음에 고친 것과 같은 버그가
+     * 한 단계 뒤에 남아 있던 자리다.
+     */
+    it('탭을 골라 둔 뒤라도 넓혔다 좁힐 때 초점이 있는 패널을 빼앗지 않는다', async () => {
+      const user = userEvent.setup()
+      stubViewport(false)
+      const target = conversion({ easy_text: '초안.' })
+      const view = render(<ReviewEditor conversion={target} source={sourceReady('원문입니다.')} />)
+      const rerender = (splitView: boolean) => {
+        stubViewport(splitView)
+        view.rerender(
+          <MemoryRouter>
+            <ReviewEditor conversion={target} source={sourceReady('원문입니다.')} />
+          </MemoryRouter>,
+        )
+      }
+
+      // ① 원문 탭을 직접 고른다.
+      await user.click(screen.getByRole('tab', { name: '원문' }))
+      expect(screen.getByRole('tab', { name: '원문' })).toHaveAttribute('aria-selected', 'true')
+
+      // ② 넓힌다 — 탭이 사라지고 두 패널이 모두 보인다.
+      rerender(true)
+      expect(screen.queryAllByRole('tab')).toHaveLength(0)
+
+      // ③ 결과 편집기에 초점을 두고 타이핑한다.
+      const editor = screen.getByLabelText('쉬운 글 결과 (고칠 수 있습니다)')
+      await user.click(editor)
+      await user.type(editor, ' 수정')
+      expect(editor).toHaveFocus()
+
+      // ④ 다시 좁힌다 — 여기서 결과 패널이 숨으면 안 된다.
+      rerender(false)
+
+      expect(screen.getByRole('tab', { name: '쉬운 글' })).toHaveAttribute('aria-selected', 'true')
+      expect(editor).toBeVisible()
+      expect(editor).toHaveValue('초안. 수정')
+      expect(editor).toHaveFocus()
     })
   })
 })
@@ -330,7 +629,7 @@ describe('원본 서식 유지 패널', () => {
           export_format: sourceFormat,
           format_preservation: { status: 'available', details: [] },
         })}
-        sourceText={null}
+        source={sourceFailed()}
       />,
     )
 
@@ -341,7 +640,7 @@ describe('원본 서식 유지 패널', () => {
 
   /** §6.5 표 — 붙여넣기는 「적용 대상 아님」이라 패널 자체가 없다. */
   it('붙여넣기(TXT)에는 패널을 그리지 않는다', () => {
-    render(<ReviewEditor conversion={conversion()} sourceText="원문입니다." />)
+    render(<ReviewEditor conversion={conversion()} source={sourceReady('원문입니다.')} />)
 
     expect(screen.queryByRole('region', { name: '원본 서식 유지' })).not.toBeInTheDocument()
   })
@@ -362,7 +661,7 @@ describe('원본 서식 유지 패널', () => {
           export_format: 'docx',
           format_preservation: preservation,
         })}
-        sourceText={null}
+        source={sourceFailed()}
       />,
     )
 
@@ -382,7 +681,7 @@ describe('원본 서식 유지 패널', () => {
           export_format: 'docx',
           format_preservation: { status: 'not_applicable', details: [] },
         })}
-        sourceText={null}
+        source={sourceFailed()}
       />,
     )
 
@@ -404,7 +703,7 @@ describe('원본 서식 유지 패널', () => {
           export_format: 'docx',
           format_preservation: { status: 'partial', details: ['문단 3개는 본문 끝에 덧붙습니다.'] },
         })}
-        sourceText={null}
+        source={sourceFailed()}
       />,
     )
 
@@ -424,7 +723,7 @@ describe('원본 서식 유지 패널', () => {
           export_format: 'docx',
           format_preservation: { status: 'failed', details: ['원본 파일을 열 수 없습니다.'] },
         })}
-        sourceText={null}
+        source={sourceFailed()}
       />,
     )
 
@@ -447,7 +746,7 @@ describe('원본 서식 유지 패널', () => {
           export_format: 'docx',
           format_preservation: { status: 'partial', details },
         })}
-        sourceText={null}
+        source={sourceFailed()}
       />,
     )
 
@@ -472,7 +771,7 @@ describe('원본 서식 유지 패널', () => {
             details: ['원본 파일을 열 수 없어 같은 형식으로 다시 만들 수 없습니다.'],
           },
         })}
-        sourceText={null}
+        source={sourceFailed()}
       />,
     )
 
@@ -498,7 +797,7 @@ describe('원본 서식 유지 패널', () => {
           export_format: 'docx',
           format_preservation: null,
         })}
-        sourceText={null}
+        source={sourceFailed()}
       />,
     )
 
@@ -516,7 +815,7 @@ describe('원본 서식 유지 패널', () => {
     render(
       <ReviewEditor
         conversion={conversion({ source_format: 'pdf', export_format: null })}
-        sourceText={null}
+        source={sourceFailed()}
       />,
     )
 
@@ -558,7 +857,7 @@ describe('원본 서식 유지 패널', () => {
           easy_text: '첫 문단',
           format_preservation: { status: 'available', details: [] },
         })}
-        sourceText={null}
+        source={sourceFailed()}
       />,
     )
 
@@ -602,7 +901,7 @@ describe('원본 서식 유지 패널', () => {
           easy_text: '초안.',
           format_preservation: { status: 'available', details: [] },
         })}
-        sourceText={null}
+        source={sourceFailed()}
       />,
     )
 
@@ -648,7 +947,7 @@ describe('저장하고 내려받기', () => {
           easy_text: '첫 문단',
           format_preservation: { status: 'available', details: [] },
         })}
-        sourceText={null}
+        source={sourceFailed()}
       />,
     )
 
@@ -672,7 +971,7 @@ describe('저장하고 내려받기', () => {
       blob: new Blob(['내용']),
       filename: '안내문-쉬운글.txt',
     })
-    render(<ReviewEditor conversion={conversion({ easy_text: '초안.' })} sourceText={null} />)
+    render(<ReviewEditor conversion={conversion({ easy_text: '초안.' })} source={sourceFailed()} />)
 
     await user.type(screen.getByLabelText('쉬운 글 결과 (고칠 수 있습니다)'), ' 수정')
 
@@ -694,7 +993,7 @@ describe('저장하고 내려받기', () => {
       blob: new Blob(['내용']),
       filename: '안내문-쉬운글.txt',
     })
-    render(<ReviewEditor conversion={conversion()} sourceText={null} />)
+    render(<ReviewEditor conversion={conversion()} source={sourceFailed()} />)
 
     await user.click(screen.getByRole('button', { name: 'TXT로 내려받기' }))
 
@@ -709,7 +1008,7 @@ describe('저장하고 내려받기', () => {
   it('저장에 실패하면 내려받지 않고 그 사실을 알린다', async () => {
     const user = userEvent.setup()
     vi.mocked(saveReview).mockRejectedValue(new ApiError(409, '아직 완료되지 않은 변환입니다'))
-    render(<ReviewEditor conversion={conversion({ easy_text: '초안.' })} sourceText={null} />)
+    render(<ReviewEditor conversion={conversion({ easy_text: '초안.' })} source={sourceFailed()} />)
 
     await user.type(screen.getByLabelText('쉬운 글 결과 (고칠 수 있습니다)'), ' 수정')
     await user.click(screen.getByRole('button', { name: '저장하고 TXT로 내려받기' }))
@@ -730,7 +1029,7 @@ describe('저장하고 내려받기', () => {
       conversion({ edited_text: '초안. 수정', reviewed_at: '2026-08-07T02:00:00Z' }),
     )
     vi.mocked(downloadExport).mockRejectedValue(new ApiError(409, '자리표시자가 빠졌습니다'))
-    render(<ReviewEditor conversion={conversion({ easy_text: '초안.' })} sourceText={null} />)
+    render(<ReviewEditor conversion={conversion({ easy_text: '초안.' })} source={sourceFailed()} />)
 
     await user.type(screen.getByLabelText('쉬운 글 결과 (고칠 수 있습니다)'), ' 수정')
     await user.click(screen.getByRole('button', { name: '저장하고 TXT로 내려받기' }))

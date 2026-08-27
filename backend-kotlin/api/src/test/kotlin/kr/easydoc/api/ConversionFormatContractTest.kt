@@ -266,6 +266,7 @@ class ConversionFormatContractTest {
             easyText = PlainBody("쉬운 글 초안입니다."),
             editedText = null,
             reviewedAt = null,
+            feedbackSubmittedAt = null,
             maskedItems = emptyList(),
             missingPlaceholders = emptyList(),
             model = "stub-model",

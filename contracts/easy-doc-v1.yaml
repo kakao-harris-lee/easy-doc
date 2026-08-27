@@ -41,7 +41,7 @@ openapi: 3.1.0
 
 info:
   title: Easy-Read AI API
-  version: "2.1.0"
+  version: "2.2.0"
   x-baselined-at: "2026-08-12"       # 초판 기준선을 뜬 날 (동결일이 아니다)
   x-rebased-at: "2026-08-12"         # 계약의 성격을 "개선 대상"으로 다시 정의한 날
   x-source-runtime: "Python 3.12 / FastAPI (app/main.py) — 과거 참고 구현이었고 2026-08-24 저장소에서 제거됨(git 태그 pre-python-removal-20260824). 기준선 출처였을 뿐 정답이 아니었다"
@@ -49,10 +49,11 @@ info:
   description: |
     공공기관용 '쉬운 글' 자동 변환 서비스의 HTTP 계약 v1.
 
-    **엔드포인트는 정확히 15개다** — 제품 14개 + 헬스 체크 1개.
+    **엔드포인트는 정확히 16개다** — 제품 15개 + 헬스 체크 1개.
     계획 §2.2가 센 "14개 HTTP 엔드포인트"는 **그 문서를 쓸 때의 수**이며 `/health`를
-    포함해야 맞는 수였다. 1.5.0에서 `PUT /conversions/{conversion_id}/feedback`이 더해져
-    오늘은 15개다 — 계획 문서의 수를 고치는 것이 아니라 **수의 정본이 이 계약**이다.
+    포함해야 맞는 수였다. 1.5.0에서 `PUT /conversions/{conversion_id}/feedback`이,
+    2.2.0에서 `GET /documents/{document_id}/source`가 더해져 오늘은 16개다 —
+    계획 문서의 수를 고치는 것이 아니라 **수의 정본이 이 계약**이다.
 
     ## 경로 접두사
     애플리케이션 경로에는 `/api` 접두사가 없다. `app/api/auth.py`의
@@ -1243,6 +1244,7 @@ x-private-response-headers:
     - "POST /auth/login"               # 응답 본문이 Bearer 토큰 자체다
     - "GET /auth/me"                   # 이메일이 실린다
     - "GET /documents"                 # 사용자가 적어 준 제목이 실린다 (본문 유도는 폐기 — `x-title-policy`)
+    - "GET /documents/{document_id}/source"    # source_text가 **마스킹 전** 원문 그대로다 (주민등록번호·카드번호 포함)
     - "GET /conversions/{conversion_id}"       # masked_items[].original에 실제 개인정보
     - "PUT /conversions/{conversion_id}"       # GET과 같은 응답 스키마
     - "GET /conversions/{conversion_id}/export"  # 검수 후 원문이 복원될 수 있는 최종본
@@ -1259,6 +1261,12 @@ x-private-response-headers:
     개수가 아니다(개수 대조는 `PrivateHeaderFloorCensusTest`가 한다). 1.5.0에서
     `PUT /conversions/{conversion_id}/feedback`이 더해졌다: 자유 의견은 사용자가 직접 적은
     콘텐츠이고 그 응답이 그것을 그대로 되돌려 주므로 같은 규칙에 걸린다.
+    2.2.0에서 `GET /documents/{document_id}/source`가 더해졌다: **이 목록에서 개인정보가
+    가장 날것으로 실리는 자리다.** 다른 자리들은 사용자가 적어 준 콘텐츠이거나 이미
+    골라낸 항목(`masked_items`)인데, 원문은 **마스킹 전 문서 전체**라 주민등록번호·카드번호가
+    본문 안 어디에 있든 그대로 나간다. 새로 여는 범주는 아니다 — 같은 소유자에게
+    `GET /conversions/{conversion_id}`가 이미 그 값들을 `masked_items[].original`로
+    돌려주고 있고, 원문 조회는 그보다 넓은 범주를 열지 않는다.
     **키 이름의 `ten`은 목록이 열 자리이던 때의 안정 id다**
     (연혁은 `x-global-response-headers.x-origin-of-the-ten`).
   x-not-a-scope: |
@@ -1605,6 +1613,66 @@ paths:
       responses:
         '204':
           description: 파기됨. 본문 길이 0.
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404':
+          description: 없거나 내 것이 아니다 (403 아님 — 존재 자체를 숨긴다)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+              examples:
+                not_found: { value: { detail: "문서를 찾을 수 없습니다" } }
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '500': { $ref: '#/components/responses/InternalError' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+
+  # ===========================================================================
+  # #16 GET /documents/{document_id}/source — 200
+  # 원본 없음 — Python 참고 구현에 대응물이 없다(2.2.0 신설).
+  # ===========================================================================
+  /documents/{document_id}/source:
+    get:
+      tags: [documents]
+      operationId: readDocumentSource
+      summary: 추출된 원문을 다시 읽는다
+      security: [{ HTTPBearer: [] }]
+      description: |
+        **검수 화면의 왼쪽 절반이다.** `DESIGN.md` §6.4가 원문과 AI 초안을 나란히 놓고
+        비교하라고 정했는데, 원문은 문서 등록 시점 이후로 서버 응답에 실린 적이 없었다.
+        그래서 붙여넣기 직후의 한 화면 밖(파일 업로드·기록 재진입·새로고침)에서는
+        비교 대상 자체가 없었다. 이 오퍼레이션이 그 자리를 채운다.
+
+        **`ConversionResponse`에 얹지 않고 경로를 새로 냈다.** 변환 조회는 완료를 기다리며
+        폴링되는 자리라(2초 간격) 수천 자 본문을 매 폴링마다 실어 보내게 된다. 원문은
+        문서 등록 시점에 확정되고 그 뒤 바뀌지 않으므로 **한 번만** 가져오면 된다.
+
+        **여기 실리는 것은 파일에서 뽑아낸 텍스트다** — 원본 파일 바이트가 아니다.
+        업로드 파일 자체를 내려받는 경로는 없고, 이 응답의 `char_count`는
+        `DocumentListItem.char_count`와 같은 값이다(같은 열을 읽는다).
+
+        **마스킹 전 개인정보가 실린다.** 저장된 원문은 사용자가 올린 그대로이고
+        마스킹은 LLM에 넘기기 직전에만 적용된다 — 그래서 이 오퍼레이션이
+        `x-private-response-headers.applies_to`에 있고 캐시 금지 헤더가 필수다.
+        **새로 여는 표면은 아니다**: 같은 소유자에게
+        `GET /conversions/{conversion_id}`가 이미 `masked_items[].original`로
+        가려졌던 실제 값을 돌려주고 있으므로, 원문 조회는 그보다 넓은 범주를 열지 않는다.
+
+        보존 기간(30일)이 지나 파기됐거나 즉시 파기된 문서는 **404**다 —
+        남의 문서와 같은 응답이라 존재 여부가 드러나지 않는다.
+      parameters:
+        - name: document_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: 추출된 원문
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CacheControlNoStore' }
+            X-Content-Type-Options: { $ref: '#/components/headers/XContentTypeOptions' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DocumentSourceResponse' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404':
           description: 없거나 내 것이 아니다 (403 아님 — 존재 자체를 숨긴다)
@@ -2814,7 +2882,7 @@ components:
       type: object
       required:
         [id, document_id, status, source_format, export_format, format_preservation,
-         easy_text, edited_text, reviewed_at,
+         easy_text, edited_text, reviewed_at, feedback_submitted_at,
          masked_items, missing_placeholders, model, provider_name,
          input_tokens, output_tokens, failure_code]
       description: |
@@ -2904,6 +2972,23 @@ components:
         reviewed_at:
           anyOf: [{ type: string, format: date-time }, { type: 'null' }]
           description: 검수 수정본을 마지막으로 저장한 시각(ISO 8601). null이면 초안 그대로.
+        feedback_submitted_at:
+          anyOf: [{ type: string, format: date-time }, { type: 'null' }]
+          description: |
+            이 변환에 **파일럿 피드백을 마지막으로 제출한** 시각(ISO 8601). 낸 적이 없으면 null.
+            값은 `conversion_feedback.submitted_at` 이고 `ConversionFeedbackResponse.submitted_at`
+            과 **같은 열**이다 — 덮어쓰면 함께 갱신된다.
+
+            **`reviewed_at` 과 다른 사실이다.** 「수정본을 저장했다」와 「의견을 냈다」는 서로를
+            함의하지 않는다: 초안을 그대로 두고 의견만 낼 수 있고, 고쳐 저장하고 의견은 안 낼
+            수도 있다. 그래서 피드백 제출이 `reviewed_at` 을 대신 찍지 않는다 — 두 사실을 한
+            컬럼에 뭉개면 수정률 지표(`conversion_feedback.edit_distance`·`edited_char_count`)가
+            기대는 구분이 무너진다. 검수 화면이 「검수함」을 그리려면 **둘 다** 봐야 하고, 이
+            필드가 없으면 새로고침한 화면이 방금 낸 의견을 잃는다.
+
+            **제출 시각뿐이다.** 배포 의향·만족도·소요 시간·자유 의견은 여기 싣지 않는다 —
+            자유 의견은 봉인해 둔 사용자 콘텐츠라 조회 응답에 나가지 않고, 그 값을 되돌려
+            주는 자리는 저장 응답(`PUT /conversions/{conversion_id}/feedback`) 하나다.
         masked_items:
           type: array
           items: { $ref: '#/components/schemas/MaskedItemResponse' }
@@ -3054,7 +3139,7 @@ components:
       type: object
       required:
         [id, title, source_format, char_count, created_at,
-         retention_expires_at, conversion_id, status, reviewed_at]
+         retention_expires_at, conversion_id, status, reviewed_at, feedback_submitted_at]
       description: 문서 목록 한 줄 (문서 메타 + 최신 변환 상태). required 범위는 ConversionResponse와 같은 이유로 넓다.
       properties:
         id: { type: string, format: uuid }
@@ -3092,7 +3177,52 @@ components:
           description: |
             목록에서 "검수함/초안"을 표시하려면 필요하다 — `status`만으로는 알 수 없다
             (`done`은 "AI 변환이 끝났다"는 뜻일 뿐이다).
+        feedback_submitted_at:
+          anyOf: [{ type: string, format: date-time }, { type: 'null' }]
+          description: |
+            **최신 변환**에 피드백을 마지막으로 제출한 시각. 낸 적이 없거나 변환이 하나도
+            없으면 null이다. `ConversionResponse.feedback_submitted_at`과 같은 열을 읽고,
+            그 필드의 설명이 「왜 `reviewed_at`으로 대신 찍지 않는가」의 정본이다.
 
+            여기 함께 싣는 이유: 목록이 "검수함"을 그리는 근거가 **둘로 갈린다**(수정본 저장·
+            의견 제출). 한쪽만 보면 의견만 낸 문서가 목록에서 영영 "검수 필요"로 남는다.
+
+            최신 변환이 없으면(`conversion_id`가 null) 이 값도 null이다 — 피드백은 변환 한
+            건에 딸리기 때문이다. 반대로 이 값이 서면 `status`는 언제나 `done`이다(완료 전
+            변환에는 피드백을 낼 수 없다, #15의 409).
+
+    DocumentSourceResponse:
+      type: object
+      required: [document_id, source_format, char_count, source_text]
+      description: |
+        `GET /documents/{document_id}/source` 응답 — **네 필드가 전부다.**
+
+        **`DocumentListItem`에는 이 본문이 실리지 않는다.** 목록은 한 번에 여러 문서를
+        돌려주는 자리라 원문을 얹으면 응답 크기가 문서 수만큼 곱해지고, 목록 화면은
+        본문을 그리지 않는다. 원문은 언제나 이 오퍼레이션 하나로만 나간다.
+      properties:
+        document_id: { type: string, format: uuid }
+        source_format:
+          $ref: '#/components/schemas/SourceFormat'
+          description: |
+            이 원문이 어디서 왔는지. 붙여넣기는 `"text"`, 파일은 소문자 확장자다.
+            `ConversionResponse.source_format`·`DocumentListItem.source_format`과
+            **같은 열을 읽으므로** 세 자리의 값이 갈릴 수 없다.
+        char_count:
+          type: integer
+          description: |
+            `source_text`의 공백 포함 문자 수. `DocumentListItem.char_count`와 같은 열이다
+            — 클라이언트가 본문을 세어 다시 구할 필요가 없게 함께 싣는다.
+        source_text:
+          type: string
+          description: |
+            **마스킹 전 원문 그대로다** — 저장된 값에 주민등록번호·카드번호가 들어 있으면
+            그대로 실린다(마스킹은 LLM에 넘기기 직전에만 적용된다). 이 필드가 있기 때문에
+            이 오퍼레이션에 캐시 금지 헤더가 필수다.
+
+            파일 업로드였다면 **파서가 뽑아낸 텍스트**이지 원본 파일 바이트가 아니다 —
+            서식·표·이미지는 여기 없고, 그것을 되살리는 자리는 내보내기다
+            (`GET /conversions/{conversion_id}/export`).
     DocumentListResponse:
       type: object
       required: [items, limit, offset, has_more]
@@ -3194,6 +3324,40 @@ components:
 # 변경 이력
 # =============================================================================
 x-changelog:
+  - version: "2.2.0"
+    date: "2026-08-27"
+    revision: "DESIGN-6.4-SOURCE"   # §6.4 비교 화면의 **왼쪽 절반**
+    author: contract-keeper
+    change: |
+      **추출된 원문을 다시 읽는 경로가 생겼다. 파괴적 변경이 아니다** —
+      기존 오퍼레이션은 요청 모양도 응답 필드도 하나 바뀌지 않았다.
+
+      ⑴ **`GET /documents/{document_id}/source` 신설.** 응답은 새 스키마
+         `DocumentSourceResponse`이고 `document_id`·`source_format`·`char_count`·
+         `source_text` 넷이 전부다. 소유자만 200이고 없거나 남의 것이면 **404**다
+         (403이 아니다 — 존재를 숨긴다).
+      ⑵ **`ConversionResponse`에 원문을 얹지 않았다.** 그 응답은 변환 완료를 기다리며
+         2초 간격으로 폴링되는 자리라 수천 자 본문을 매 폴링마다 실어 보내게 된다.
+         원문은 문서 등록 시점에 확정되고 그 뒤 바뀌지 않으므로 한 번만 가져오면 된다.
+      ⑶ **`DocumentListItem`에는 싣지 않는다.** 목록은 한 번에 여러 문서를 돌려주는
+         자리라 원문을 얹으면 응답 크기가 문서 수만큼 곱해지고, 목록 화면은 본문을
+         그리지 않는다.
+      ⑷ **`x-private-response-headers.applies_to`에 등록했다.** 저장된 원문은 마스킹
+         **전**이라 주민등록번호·카드번호가 본문 안 어디에 있든 그대로 실린다 —
+         이 목록에서 개인정보가 가장 날것으로 실리는 자리이고, 그래서 열거에서
+         빠지면 안 된다.
+      ⑸ **엔드포인트 수가 15 → 16이다.**
+    ground: |
+      **G3 — 정책 결정의 구현.** `DESIGN.md` §6.4가 검수 화면을 "원문과 AI 초안을
+      나란히 놓고 비교하는 자리"로 정했는데, 원문은 문서 등록 이후 어떤 응답에도
+      실린 적이 없었다. 그래서 붙여넣기 직후의 한 화면 밖 — 파일 업로드, 변환 기록
+      재진입, **새로고침** — 에서는 비교 대상 자체가 없었다. 사용자가 이것을 고쳐
+      달라고 요청했다(2026-08-27).
+    compatibility: |
+      **기존 클라이언트가 깨지지 않는다.** 오퍼레이션이 하나 늘었을 뿐 기존 경로의
+      요청·응답이 그대로다. 새 표면을 여는 것이 아니라는 근거는 `applies_to`의
+      `x-why-these-ten`에 적었다 — 같은 소유자에게 `GET /conversions/{conversion_id}`가
+      이미 `masked_items[].original`로 가려졌던 실제 값을 돌려주고 있다.
   - version: "2.1.0"
     date: "2026-08-26"
     revision: "DESIGN-6.5-PRESERVE"   # §6.5 의 본체 — 2.0.0 이 예고한 「원본 서식 유지」

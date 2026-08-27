@@ -185,6 +185,12 @@ class PrivateHeaderFloorCensusTest {
                 authorizedGet(DOCUMENTS_PATH, newAccount())
             }
 
+            "GET $DOCUMENT_SOURCE_PATH" -> {
+                val token = newAccount()
+                val documentId = acceptDocumentId(token)
+                authorizedGet(itemPath(DOCUMENT_SOURCE_PATH, GET, documentId), token)
+            }
+
             "GET $CONVERSION_ITEM_PATH" -> {
                 val token = newAccount()
                 val conversionId = acceptDocument(token)
@@ -279,12 +285,20 @@ class PrivateHeaderFloorCensusTest {
         name: String,
     ): MockHttpServletResponse = postJson(WORKSPACES_PATH, token, nameBody(name))
 
-    private fun acceptDocument(token: String): String {
+    private fun acceptDocument(token: String): String = accepted(token, CONVERSION_ID_PROPERTY)
+
+    /** 같은 접수 요청에서 **문서** 식별자를 받는다 — 원문 조회가 겨누는 자원이다. */
+    private fun acceptDocumentId(token: String): String = accepted(token, DOCUMENT_ID_PROPERTY)
+
+    private fun accepted(
+        token: String,
+        property: String,
+    ): String {
         val response = postJson(DOCUMENTS_PATH, token, json.writeValueAsString(mapOf(TEXT_PROPERTY to SAMPLE_TEXT)))
         check(response.status == ContractSpec.successStatus(DOCUMENTS_PATH, POST)) {
             "문서 접수가 실패했다: ${response.status} ${response.getContentAsString(StandardCharsets.UTF_8)}"
         }
-        return bodyOf(response)[CONVERSION_ID_PROPERTY]?.toString() ?: error("접수 응답에 변환 식별자가 없다")
+        return bodyOf(response)[property]?.toString() ?: error("접수 응답에 $property 가 없다")
     }
 
     /** 완료 상태로 만든다 — 실물에서는 워커의 UPDATE. */
@@ -388,6 +402,7 @@ class PrivateHeaderFloorCensusTest {
         const val LOGIN_PATH = "/auth/login"
         const val ME_PATH = "/auth/me"
         const val DOCUMENTS_PATH = "/documents"
+        const val DOCUMENT_SOURCE_PATH = "/documents/{document_id}/source"
         const val WORKSPACES_PATH = "/workspaces"
         const val WORKSPACE_ITEM_PATH = "/workspaces/{workspace_id}"
         const val CONVERSION_ITEM_PATH = "/conversions/{conversion_id}"
@@ -405,6 +420,8 @@ class PrivateHeaderFloorCensusTest {
                 "POST /auth/login",
                 "GET /auth/me",
                 "GET /documents",
+                // 2.2.0 신설 — 저장된 원문이 **마스킹 전** 그대로 나간다.
+                "GET /documents/{document_id}/source",
                 "GET /conversions/{conversion_id}",
                 "PUT /conversions/{conversion_id}",
                 "GET /conversions/{conversion_id}/export",
@@ -416,7 +433,7 @@ class PrivateHeaderFloorCensusTest {
             )
 
         /**
-         * 유보 상한과 인구조사 하한. **실측은 유보 0 · 조사 10** 이라 유보 상한은 여유 2 다.
+         * 유보 상한과 인구조사 하한. **실측은 유보 0 · 조사 12** 라 유보 상한은 여유 2 다.
          * 인상은 Phase 경계에서 리더가.
          */
         const val MAX_DEFERRED_FLOOR_TARGETS = 2
@@ -437,6 +454,7 @@ class PrivateHeaderFloorCensusTest {
         const val MINUTES_SPENT_PROPERTY = "minutes_spent"
         const val PUBLISH_INTENT_SCHEMA = "PublishIntent"
         const val CONVERSION_ID_PROPERTY = "conversion_id"
+        const val DOCUMENT_ID_PROPERTY = "document_id"
         const val ITEMS_PROPERTY = "items"
         const val ID_PROPERTY = "id"
 

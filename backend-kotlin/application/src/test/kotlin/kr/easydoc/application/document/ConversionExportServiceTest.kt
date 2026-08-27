@@ -376,6 +376,7 @@ class ConversionExportServiceTest {
                             editedText = seal(body.editedText, EncryptedField.CONVERSION_EDITED_TEXT),
                         ),
                     reviewedAt = if (body.editedText == null) null else Instant.EPOCH,
+                    feedbackSubmittedAt = null,
                     missingPlaceholders = emptyList(),
                     model = "test-model",
                     providerName = "fake",

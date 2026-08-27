@@ -1,9 +1,11 @@
 import { useId, useState } from 'react'
 import type { FormEvent } from 'react'
-import { Send } from 'lucide-react'
+import { ListChecks, Send } from 'lucide-react'
+import { Link } from 'react-router-dom'
 
 import { ApiError, saveFeedback } from '../api/client'
 import type { PublishIntent } from '../api/types'
+import { HISTORY_PATH } from '../routes/paths'
 import { Button } from './ui/Button'
 
 interface ReviewFeedbackProps {
@@ -14,6 +16,14 @@ interface ReviewFeedbackProps {
    * 화면이 먼저 같은 조건을 지켜야 사용자가 보낼 수 없는 폼을 채우지 않는다.
    */
   conversionId: string
+  /**
+   * 의견이 저장된 뒤 그 시각(ISO 8601)을 위로 올린다.
+   *
+   * 폼이 스스로 위쪽 상태 패널을 고치지 않는 이유: 그 패널은 이 변환의 상태를 말하는
+   * 자리이고, 이 컴포넌트가 아는 것은 방금 보낸 의견 하나뿐이다. 서버가 응답에 실어
+   * 준 `submitted_at`을 그대로 넘겨 주고, 무엇을 어떻게 보여줄지는 검수 화면이 정한다.
+   */
+  onSubmitted?: (submittedAt: string) => void
 }
 
 /** 배포 의향 선택지. 값은 계약의 `publish_intent`, 문구는 화면 라벨이다. */
@@ -49,7 +59,7 @@ interface Result {
  * 다른 일이고, 한 컴포넌트에서 두 종류의 상태를 굴리면 어느 안내가 무엇의 결과인지
  * 화면에서도 코드에서도 흐려진다.
  */
-export function ReviewFeedback({ conversionId }: ReviewFeedbackProps) {
+export function ReviewFeedback({ conversionId, onSubmitted }: ReviewFeedbackProps) {
   const intentId = useId()
   const scoreId = useId()
   const minutesId = useId()
@@ -91,7 +101,7 @@ export function ReviewFeedback({ conversionId }: ReviewFeedbackProps) {
     setBusy(true)
     setResult(null)
     try {
-      await saveFeedback(conversionId, {
+      const stored = await saveFeedback(conversionId, {
         publish_intent: intent,
         quality_score: score,
         minutes_spent: minutesSpent,
@@ -99,6 +109,9 @@ export function ReviewFeedback({ conversionId }: ReviewFeedbackProps) {
         comment: comment.trim() === '' ? null : comment.trim(),
       })
       setResult({ kind: 'success', message: '의견을 보냈습니다. 감사합니다.' })
+      // 저장 시각은 서버가 정한다 — 화면에서 `new Date()`로 지어내면 위 상태 패널이
+      // 서버에 남은 것과 다른 시각을 말하게 된다.
+      onSubmitted?.(stored.submitted_at)
     } catch (caught) {
       setResult({
         kind: 'error',
@@ -273,12 +286,28 @@ export function ReviewFeedback({ conversionId }: ReviewFeedbackProps) {
         {/* 실패는 즉시 알리고(alert), 성공은 하던 일을 끊지 않게 알린다(status) —
             검수 에디터의 안내와 같은 규약이다. */}
         {result !== null && (
-          <p
-            className={result.kind === 'error' ? 'form-error' : 'form-success'}
-            role={result.kind === 'error' ? 'alert' : 'status'}
-          >
-            {result.message}
-          </p>
+          <div className="flex flex-col items-start gap-3">
+            <p
+              className={result.kind === 'error' ? 'form-error' : 'form-success'}
+              role={result.kind === 'error' ? 'alert' : 'status'}
+            >
+              {result.message}
+            </p>
+            {/* 보내고 나면 이 화면에서 할 일이 끝난다. 그렇다고 화면을 대신 넘기지는
+                않는다 — 방금 무엇이 저장됐는지 확인할 틈을 뺏고, 저장하지 않은 수정이
+                남아 있을 수도 있다(§9 «사용자가 다음 걸음을 고른다»). 대신 다음 걸음
+                하나를 여기 눌 수 있게 둔다. 링크 밖 문구가 목적지를 말하므로 낭독기에서도
+                "돌아가기"만 덩그러니 들리지 않는다. */}
+            {result.kind === 'success' && (
+              <Link
+                className="inline-flex min-h-11 items-center gap-2 rounded-md border border-border px-4 text-[15px] font-semibold text-primary no-underline transition-colors hover:bg-muted"
+                to={HISTORY_PATH}
+              >
+                <ListChecks className="size-[18px]" aria-hidden="true" />
+                변환 기록으로 돌아가기
+              </Link>
+            )}
+          </div>
         )}
       </form>
     </section>

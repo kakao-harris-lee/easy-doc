@@ -30,7 +30,7 @@ function deleteConfirmMessage(title: string): string {
  * `pending`·`processing` 같은 내부 처리 상태 대신 행동으로 읽는 말만 남긴다.
  * `변환 없음`은 §6.6의 네 표현에 없지만, 계약상 존재할 수 있는 줄이라 이름을 준다.
  */
-type NextAction = '변환 중' | '검수 필요' | '검수함' | '실패' | '변환 없음'
+type NextAction = '변환 중' | '검수 필요' | '검수 완료' | '실패' | '변환 없음'
 
 /**
  * 서버 상태를 「지금 해야 할 일」로 옮긴다.
@@ -41,19 +41,29 @@ type NextAction = '변환 중' | '검수 필요' | '검수함' | '실패' | '변
  *    함께 `null`이 된다. 진행 중인 일이 없으니 `변환 중`이라 하면 기다리면 끝난다는
  *    거짓말이 되고, `실패`도 아니다. 일어난 일을 그대로 `변환 없음`이라 적는다.
  * 2. `failed`가 검수 여부보다 앞선다. 실패한 변환에는 검수할 초안이 없다.
- * 3. `reviewed_at`이 있으면 `검수함`. 검수는 `done` 뒤에만 저장되므로 사실상 `done`이지만,
- *    검수 여부가 `done`보다 구체적인 사실이라 먼저 본다.
- * 4. 남은 `done`은 초안이 그대로 남아 있다는 뜻 — 사용자가 할 일은 `검수 필요`다.
+ * 3. `reviewed_at`이나 `feedback_submitted_at` 중 **하나만 있어도** `검수 완료`다. 두 값은
+ *    검수의 서로 다른 결말을 적은 것이라 둘 다 채워지는 것이 규칙이 아니다 — 초안이
+ *    그대로 쓸 만해 한 글자도 고치지 않고 의견만 보낸 담당자는 `reviewed_at`을 영영
+ *    남기지 않는다. `reviewed_at`만 보면 그 사람에게는 자기가 이미 끝낸 문서가 계속
+ *    `검수 필요`로 되돌아와, 화면이 자기 일을 못 본 척하는 셈이 된다.
+ * 4. 남은 `done`은 아무도 이 초안을 들여다보지 않았다는 뜻 — 할 일은 `검수 필요`다.
  */
-function nextAction(item: Pick<DocumentListItem, 'status' | 'reviewed_at'>): NextAction {
+function nextAction(
+  item: Pick<DocumentListItem, 'status' | 'reviewed_at' | 'feedback_submitted_at'>,
+): NextAction {
   if (item.status === null) {
     return '변환 없음'
   }
   if (item.status === 'failed') {
     return '실패'
   }
-  if (item.reviewed_at !== null) {
-    return '검수함'
+  // `!== null`이 아니라 「값이 있는가」로 묻는다. 계약은 두 키가 늘 존재한다고 정하지만
+  // 그것은 서버의 약속이지 이 함수가 받는 값의 보장이 아니다 — 필드를 아직 안 싣는 서버,
+  // 배포 시차로 남아 있는 옛 번들, 목을 덜 고친 테스트에서는 `undefined`가 들어온다.
+  // 그때 `undefined !== null`은 **참**이라, 아무도 손대지 않은 초안이 전부 `검수 완료`로
+  // 뒤집힌다. 없는 값은 「제출 안 함」으로 읽는 쪽이 안전한 오답이다.
+  if (typeof item.reviewed_at === 'string' || typeof item.feedback_submitted_at === 'string') {
+    return '검수 완료'
   }
   return item.status === 'done' ? '검수 필요' : '변환 중'
 }
@@ -67,7 +77,7 @@ function nextAction(item: Pick<DocumentListItem, 'status' | 'reviewed_at'>): Nex
 const NEXT_ACTION_TONE: Record<NextAction, NonNullable<BadgeProps['tone']>> = {
   '변환 중': 'info',
   '검수 필요': 'warning',
-  검수함: 'success',
+  '검수 완료': 'success',
   실패: 'danger',
   '변환 없음': 'neutral',
 }

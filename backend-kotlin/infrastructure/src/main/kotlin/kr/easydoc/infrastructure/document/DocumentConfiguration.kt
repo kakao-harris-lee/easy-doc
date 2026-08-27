@@ -11,6 +11,7 @@ import kr.easydoc.application.document.ConversionReviewService
 import kr.easydoc.application.document.DocumentOriginalRepository
 import kr.easydoc.application.document.DocumentRepository
 import kr.easydoc.application.document.DocumentService
+import kr.easydoc.application.document.DocumentSourceService
 import kr.easydoc.application.document.DocumentStorage
 import kr.easydoc.application.document.DocumentTextExtractor
 import kr.easydoc.application.document.EnvelopeRotation
@@ -93,6 +94,18 @@ class DocumentConfiguration {
             extractor = extractor,
             transaction = transactionRunner,
         )
+
+    /**
+     * 원문 조회 유스케이스 — 검수 화면의 왼쪽 절반이 읽는 자리.
+     *
+     * [documentService] 와 갈라 세운 사유는 `DocumentSourceService` KDoc 이다: 저쪽은 업로드
+     * 한 번이 쓰는 네 저장소를 묶고, 이쪽의 협력자는 저장소 하나와 암호 하나뿐이다.
+     */
+    @Bean
+    fun documentSourceService(
+        documents: DocumentRepository,
+        cipher: ContentCipher,
+    ): DocumentSourceService = DocumentSourceService(documents = documents, cipher = cipher)
 
     /**
      * 원본 구조 반영. 조회의 서식 유지 판정과 내보내기가 **같은 이 하나**를 쓴다 —

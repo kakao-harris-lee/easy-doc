@@ -376,6 +376,7 @@ class ConversionFeedbackServiceTest {
                     hasStoredOriginal = false,
                     ciphertexts = ConversionCiphertexts(seal(draft), null, seal(edited)),
                     reviewedAt = edited?.let { Instant.EPOCH },
+                    feedbackSubmittedAt = null,
                     missingPlaceholders = emptyList(),
                     model = null,
                     providerName = null,

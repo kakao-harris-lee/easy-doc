@@ -11,13 +11,13 @@ import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { fetchMe } from '../api/auth'
-import { getConversion, listDocuments } from '../api/client'
+import { getConversion, getDocumentSource, listDocuments } from '../api/client'
 import { AuthProvider } from '../auth/AuthProvider'
 import { AppLayout } from '../components/AppLayout'
 import { workspaceContext } from '../test/factories'
 import { WorkspaceContext } from '../workspace/context'
 import { AppRoutes } from '../routes/AppRoutes'
-import { conversion } from '../test/factories'
+import { conversion, documentSource } from '../test/factories'
 import { setUnsavedChanges } from './unsavedChanges'
 
 vi.mock('../api/auth', () => ({
@@ -29,6 +29,7 @@ vi.mock('../api/auth', () => ({
 vi.mock('../api/client', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api/client')>()),
   getConversion: vi.fn(),
+  getDocumentSource: vi.fn(),
   listDocuments: vi.fn(),
   saveReview: vi.fn(),
 }))
@@ -54,6 +55,8 @@ beforeEach(() => {
   window.localStorage.setItem('easydoc.access_token', 'valid-token')
   vi.mocked(fetchMe).mockResolvedValue({ id: 'u1', email: 'user@example.com' })
   vi.mocked(getConversion).mockResolvedValue(conversion({ easy_text: '초안입니다.' }))
+  // 검수 화면은 원문을 서버에서 가져온다 — 목이 없으면 실제 fetch 가 나간다.
+  vi.mocked(getDocumentSource).mockResolvedValue(documentSource())
   vi.mocked(listDocuments).mockResolvedValue({ items: [], limit: 20, offset: 0, has_more: false })
 })
 

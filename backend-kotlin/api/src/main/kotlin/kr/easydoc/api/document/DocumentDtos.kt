@@ -6,6 +6,7 @@ import com.fasterxml.jackson.annotation.JsonSetter
 import com.fasterxml.jackson.annotation.Nulls
 import kr.easydoc.application.document.AcceptedUpload
 import kr.easydoc.core.document.DocumentListing
+import kr.easydoc.core.document.DocumentSourceView
 import kr.easydoc.core.privacy.CONTENT_MASK
 
 // 민감 필드 부재 검증: `DocumentDtoLeakTest`.
@@ -59,7 +60,7 @@ data class DocumentCreatedResponse private constructor(
     }
 }
 
-/** 목록 한 줄. 계약 `components/schemas/DocumentListItem` — 아홉 필드가 전부다. 조립은 [of] 뿐이다. */
+/** 목록 한 줄. 계약 `components/schemas/DocumentListItem` — 열 필드가 전부다. 조립은 [of] 뿐이다. */
 @ConsistentCopyVisibility
 data class DocumentListItemResponse private constructor(
     @get:JsonProperty("id") val id: String,
@@ -71,12 +72,15 @@ data class DocumentListItemResponse private constructor(
     @get:JsonProperty("conversion_id") val conversionId: String?,
     @get:JsonProperty("status") val status: String?,
     @get:JsonProperty("reviewed_at") val reviewedAt: String?,
+    /** 최신 변환에 피드백을 마지막으로 낸 시각. **`reviewed_at` 과 다른 사실이다.** */
+    @get:JsonProperty("feedback_submitted_at") val feedbackSubmittedAt: String?,
 ) {
     /** 제목은 표식과 길이만 남긴다. `Document.toString` 과 같은 형태다. */
     override fun toString(): String =
         "DocumentListItemResponse(id=$id, title=$CONTENT_MASK ${title.length}자, sourceFormat=$sourceFormat, " +
             "charCount=$charCount, createdAt=$createdAt, retentionExpiresAt=$retentionExpiresAt, " +
-            "conversionId=$conversionId, status=$status, reviewedAt=$reviewedAt)"
+            "conversionId=$conversionId, status=$status, reviewedAt=$reviewedAt, " +
+            "feedbackSubmittedAt=$feedbackSubmittedAt)"
 
     companion object {
         fun of(listing: DocumentListing): DocumentListItemResponse =
@@ -90,6 +94,40 @@ data class DocumentListItemResponse private constructor(
                 conversionId = listing.conversionId?.toString(),
                 status = listing.status?.wireName,
                 reviewedAt = listing.reviewedAt?.toString(),
+                feedbackSubmittedAt = listing.feedbackSubmittedAt?.toString(),
+            )
+    }
+}
+
+/**
+ * `GET /documents/{document_id}/source` 응답. 계약 `components/schemas/DocumentSourceResponse`
+ * — **네 필드가 전부다.** 조립은 [of] 뿐이다.
+ *
+ * [sourceText] 를 `String` 으로 드는 것은 계약이 아니라 **X2** 때문이다 — 웹 표현 타입은
+ * 저장·평문 타입(`PlainBody` 등)을 주 생성자에 들지 못한다(`DocumentDtoLeakTest`).
+ * 그것이 평문 문자열이 되는 자리는 [of] 하나다.
+ */
+@ConsistentCopyVisibility
+data class DocumentSourceResponse private constructor(
+    @get:JsonProperty("document_id") val documentId: String,
+    @get:JsonProperty("source_format") val sourceFormat: String,
+    @get:JsonProperty("char_count") val charCount: Int,
+    /** **마스킹 전 원문 그대로다** — 이 필드가 이 응답에 캐시 금지 헤더를 요구한다. */
+    @get:JsonProperty("source_text") val sourceText: String,
+) {
+    /** **본문을 찍지 않는다.** 표식과 길이만 남긴다 — `ConversionResponse` 와 같은 규칙이다. */
+    override fun toString(): String =
+        "DocumentSourceResponse(documentId=$documentId, sourceFormat=$sourceFormat, " +
+            "charCount=$charCount, sourceText=$CONTENT_MASK ${sourceText.length}자)"
+
+    companion object {
+        fun of(view: DocumentSourceView): DocumentSourceResponse =
+            DocumentSourceResponse(
+                documentId = view.documentId.toString(),
+                // 값 집합의 정본은 계약이다 — `enum` 이름이 아니라 `wireName` 만 나간다.
+                sourceFormat = view.sourceFormat.wireName,
+                charCount = view.charCount,
+                sourceText = view.sourceText.value,
             )
     }
 }

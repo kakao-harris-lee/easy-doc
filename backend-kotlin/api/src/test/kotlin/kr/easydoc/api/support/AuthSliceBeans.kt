@@ -15,6 +15,7 @@ import kr.easydoc.application.document.ConversionQueryService
 import kr.easydoc.application.document.ConversionReviewService
 import kr.easydoc.application.document.DocumentExporter
 import kr.easydoc.application.document.DocumentService
+import kr.easydoc.application.document.DocumentSourceService
 import kr.easydoc.application.document.DocumentStorage
 import kr.easydoc.application.document.DocumentTextExtractor
 import kr.easydoc.application.document.ExportRendering
@@ -147,6 +148,13 @@ class AuthSliceBeans {
             extractor = extractor,
             transaction = transaction,
         )
+
+    /** 원문 조회 유스케이스도 실물이다. 협력자는 저장소 하나와 암호 하나뿐이다. */
+    @Bean
+    fun documentSourceService(
+        documents: InMemoryDocumentRepository,
+        cipher: ContentCipher,
+    ): DocumentSourceService = DocumentSourceService(documents = documents, cipher = cipher)
 
     /** 조회 유스케이스도 실물이다 — 제품 조립과 같은 모양으로 나눈다. */
     @Bean

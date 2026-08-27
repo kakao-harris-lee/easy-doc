@@ -85,6 +85,23 @@ export interface DocumentCreatedResponse {
   char_count: number
 }
 
+/**
+ * GET /documents/{document_id}/source 응답 — 추출된 원문.
+ *
+ * 소유자만 볼 수 있고, 남의 것·없는 것·보관 기간이 지나 파기된 것은 모두 404다.
+ * 값은 문서 등록 시점에 확정돼 변하지 않으므로 화면은 **한 번만** 가져온다.
+ *
+ * `source_text`에는 **마스킹 전 개인정보가 그대로 들어 있을 수 있다.** 화면에 그리는
+ * 것 외에 저장·로그·분석 이벤트 어디로도 보내지 않는다.
+ */
+export interface DocumentSourceResponse {
+  document_id: string
+  source_format: SourceFormat
+  /** 공백 포함 문자 수. `DocumentCreatedResponse.char_count`와 같은 기준이다. */
+  char_count: number
+  source_text: string
+}
+
 /** 검수 화면에 보여줄 마스킹 항목. original은 가려졌던 실제 값이다. */
 export interface MaskedItemResponse {
   category: string
@@ -115,6 +132,15 @@ export interface ConversionResponse {
   edited_text: string | null
   /** ISO 8601 문자열. */
   reviewed_at: string | null
+  /**
+   * 이번 결과에 대한 의견을 보낸 시각(ISO 8601). 보낸 적이 없으면 `null`이다.
+   *
+   * `reviewed_at`과 **다른 사실**이다 — 저 값은 수정본을 저장한 시각이라, 의견만 보낸
+   * 변환에서는 끝까지 `null`로 남는다. 서버는 시각만 돌려주고 의견의 **내용**(배포
+   * 의향·점수·소요 시간·자유 의견)은 응답에 싣지 않으므로, 화면도 「언제 보냈는가」
+   * 이상을 말하지 않는다.
+   */
+  feedback_submitted_at: string | null
   masked_items: MaskedItemResponse[]
   missing_placeholders: string[]
   model: string | null
@@ -145,6 +171,11 @@ export interface DocumentListItem {
   status: ConversionStatus | null
   /** 검수 수정본을 저장한 시각(ISO 8601). null이면 아직 AI 초안 그대로다. */
   reviewed_at: string | null
+  /**
+   * 이번 결과에 대한 의견을 보낸 시각(ISO 8601). 보낸 적이 없으면 null이다.
+   * 수정본 저장과는 별개의 사실이라 `reviewed_at`이 null인 줄에도 값이 있을 수 있다.
+   */
+  feedback_submitted_at: string | null
 }
 
 /** GET /documents 응답. 총 개수는 싣지 않는다(has_more로 다음 쪽 유무만 알린다). */

@@ -34,6 +34,30 @@ class DocumentDraft(
     override fun toString(): String = "DocumentDraft($id, ${sourceFormat.wireName}, 제목 ${title.length}자, ${charCount}자)"
 }
 
+/**
+ * 사용자 경로가 읽어 가는 문서 원문 한 건 — **암호문 그대로**와 평문 메타데이터.
+ *
+ * [StoredConversion] 과 같은 형태다: 저장소 포트는 평문을 보지 못하고, 여는 일은 유스케이스가
+ * 한다. 형식과 문자 수를 암호문 옆에 함께 드는 것은 계약 `DocumentSourceResponse` 가 그 셋을
+ * 한 응답으로 요구하기 때문이고, 셋이 **같은 행**에서 와야 어긋난 조합이 생기지 않는다.
+ */
+class StoredSourceText(
+    val documentId: UUID,
+    val sourceFormat: SourceFormat,
+    val charCount: Int,
+    val sourceText: EncryptedContent,
+) {
+    /**
+     * 식별자·형식과 길이만 남긴다.
+     *
+     * **암호문 자체를 찍지 않는다.** [EncryptedContent.toString] 이 이미 바이트를 가리지만
+     * 방식 이름과 세대를 남기고, 이 필드의 이름이 민감 토큰(`text`)이라 `SensitiveToStringReachTest`
+     * 의 R-10 축이 그 출력을 유출로 읽는다. 여기서 봉투를 찍어 얻을 것이 없다 — 세대를 알아야
+     * 하는 것은 회전이고, 그쪽은 [EncryptedContent] 를 직접 든다.
+     */
+    override fun toString(): String = "StoredSourceText($documentId, ${sourceFormat.wireName}, ${charCount}자)"
+}
+
 /** `documents` 저장소. */
 interface DocumentRepository {
     /** 문서 행을 만든다. **커밋하지 않는다** — 트랜잭션 경계는 유스케이스가 연다. */
@@ -50,6 +74,22 @@ interface DocumentRepository {
         limit: Int,
         offset: Int,
     ): List<DocumentListing>
+
+    /**
+     * **내** 문서의 원문을 읽는다. 없거나 내 것이 아니면 `null` — **두 경우를 구분하지 않는다.**
+     *
+     * [lockSourceText] 와 갈린 이유는 [DocumentOriginalRepository.findOwned] 가
+     * [DocumentOriginalRepository.lockOriginal] 과 갈린 것과 같다: 저쪽은 **회전 배치**라
+     * 소유자가 없고 행을 잠그며, 이쪽은 **사용자 요청 경로**라 소유 술어가 질의 자신에
+     * 걸리고 잠그지 않는다. 한 함수로 합치면 회전이 소유자를 지어내거나 조회가 행을 잠근다.
+     *
+     * 형식·문자 수를 함께 주는 것은 계약 `DocumentSourceResponse` 가 그 셋을 한 응답으로
+     * 요구하기 때문이다 — 두 번 물으면 그 사이에 문서가 파기될 수 있다.
+     */
+    fun findOwnedSource(
+        ownerId: UUID,
+        documentId: UUID,
+    ): StoredSourceText?
 
     /** 원문 암호문과 그 봉투를 읽고 **그 행을 잠근다**. 없으면 `null`. */
     fun lockSourceText(documentId: UUID): EncryptedContent?
@@ -172,6 +212,14 @@ data class StoredConversion(
     val hasStoredOriginal: Boolean,
     val ciphertexts: ConversionCiphertexts,
     val reviewedAt: Instant?,
+    /**
+     * `conversion_feedback.submitted_at` — 이 변환에 피드백을 마지막으로 낸 시각. 없으면 `null`.
+     *
+     * 조인해서 함께 읽는다. 피드백 표는 **왼쪽 조인**이다(행이 없는 것이 정상이고, 그때
+     * 변환이 목록·조회에서 사라지면 안 된다). 시각 하나만 드는 사유는 계약
+     * `ConversionResponse.feedback_submitted_at` — 봉인된 자유 의견은 여기로 나가지 않는다.
+     */
+    val feedbackSubmittedAt: Instant?,
     val missingPlaceholders: List<String>,
     val model: String?,
     val providerName: String?,

@@ -1,6 +1,12 @@
 /** 테스트에서 쓰는 API 응답 만들기. 필요한 필드만 덮어써서 의도를 드러낸다. */
 
-import type { ConversionResponse, DocumentListItem, WorkspaceListItem } from '../api/types'
+import type {
+  ConversionResponse,
+  DocumentListItem,
+  DocumentSourceResponse,
+  WorkspaceListItem,
+} from '../api/types'
+import type { DocumentSource, SourceFailure } from '../review/sourceText'
 import type { WorkspaceContextValue } from '../workspace/context'
 
 /** 변환 조회 응답. 기본값은 "완료된 검수 대상". */
@@ -16,6 +22,9 @@ export function conversion(overrides: Partial<ConversionResponse> = {}): Convers
     easy_text: '신청은 3월 2일부터 할 수 있어요. 등록번호는 [[주민등록번호1]]이에요.',
     edited_text: null,
     reviewed_at: null,
+    // 계약에서 이 키는 늘 있고 값만 null이 될 수 있다 — 목에서 키를 빼면 화면이
+    // "서버가 주지 않는 값"을 상대로 통과해 버린다.
+    feedback_submitted_at: null,
     // category는 서버가 주는 한국어 문자열 그대로다 — 자리표시자에 그대로 박히는
     // 복원 키라서(`[[주민등록번호1]]`) 영문 코드로 바꿀 수 없다. 범주는 2종뿐이다
     // (주민등록번호·카드번호, 2026-08-12 축소).
@@ -73,6 +82,43 @@ export function documentItem(overrides: Partial<DocumentListItem> = {}): Documen
     conversion_id: 'c1',
     status: 'done',
     reviewed_at: null,
+    feedback_submitted_at: null,
     ...overrides,
   }
+}
+
+/** GET /documents/{id}/source 응답. 기본값은 붙여넣기 원문. */
+export function documentSource(
+  overrides: Partial<DocumentSourceResponse> = {},
+): DocumentSourceResponse {
+  const source_text = overrides.source_text ?? '신청은 3월 2일부터 가능합니다.'
+  return {
+    document_id: 'd1',
+    source_format: 'text',
+    char_count: source_text.length,
+    ...overrides,
+    source_text,
+  }
+}
+
+/**
+ * 원문 패널에 꽂을 상태.
+ *
+ * 화면 테스트가 훅 대신 이 값을 직접 넘긴다 — 패널이 보는 것은 상태이지 그 상태를 만든
+ * 요청이 아니다. 세 갈래를 따로 두는 이유는 §9다: 로딩·원문·실패는 서로 다른 화면이고,
+ * 테스트에서도 그 셋을 헷갈리지 않게 이름으로 갈라 둔다.
+ */
+export function sourceReady(text = '원문입니다.'): DocumentSource {
+  return { state: { status: 'ready', text }, retry: () => undefined }
+}
+
+export function sourceLoading(): DocumentSource {
+  return { state: { status: 'loading' }, retry: () => undefined }
+}
+
+export function sourceFailed(
+  failure: SourceFailure = 'not_found',
+  retry: () => void = () => undefined,
+): DocumentSource {
+  return { state: { status: 'failed', failure }, retry }
 }

@@ -137,6 +137,36 @@ class ConversionReadContractTest {
     }
 
     @Test
+    @DisplayName("피드백을 낸 변환은 `feedback_submitted_at` 이 서고 `reviewed_at` 은 **그대로 null** 이다")
+    fun `피드백 제출 시각이 검수 시각과 따로 나간다`() {
+        val owner = newOwner()
+        val conversionId = completedConversion(owner)
+        conversions.recordFeedback(UUID.fromString(conversionId), FEEDBACK_SUBMITTED_AT)
+
+        val body = bodyOf(read(owner, conversionId))
+
+        assertThat(body[FEEDBACK_SUBMITTED_AT_PROPERTY])
+            .withFailMessage("의견을 냈는데 제출 시각이 응답에 없다 — 새로고침한 검수 화면이 그 사실을 잃는다")
+            .isEqualTo(FEEDBACK_SUBMITTED_AT.toString())
+        assertThat(body[REVIEWED_AT_PROPERTY])
+            .withFailMessage("피드백 제출이 `reviewed_at` 까지 찍었다 — 수정률 지표가 기대는 구분이 무너진다")
+            .isNull()
+    }
+
+    @Test
+    @DisplayName("의견을 낸 적이 없으면 `feedback_submitted_at` 은 **키는 있고 값이 null** 이다")
+    fun `피드백이 없으면 제출 시각이 null 로 나간다`() {
+        val owner = newOwner()
+
+        val body = bodyOf(read(owner, completedConversion(owner)))
+
+        assertThat(body.keys.map { it.toString() })
+            .withFailMessage("키가 생략됐다 — React 가 undefined 를 받아 분기가 갈린다")
+            .contains(FEEDBACK_SUBMITTED_AT_PROPERTY)
+        assertThat(body[FEEDBACK_SUBMITTED_AT_PROPERTY]).isNull()
+    }
+
+    @Test
     @DisplayName("CR-9 UUID 가 아닌 경로 변수 → 422 · detail **배열** · 항목 키 정확히 `ValidationErrorItem.required` (X-C2)")
     fun `UUID 가 아닌 경로 변수는 422 배열이다`() {
         val response = read(newOwner(), NOT_A_UUID)
@@ -155,9 +185,9 @@ class ConversionReadContractTest {
             }.andReturn()
             .response
 
-    /** 분모를 계약에서 읽는다 — `required` 에서 나가는 넷을 뺀 **아홉**이 「결과 필드」다. */
+    /** 분모를 계약에서 읽는다 — `required` 에서 나가는 넷을 뺀 **열**이 「결과 필드」다. */
     @Test
-    @DisplayName("완료 전 변환의 결과 필드 **아홉 전부**에 대해 응답이 조립되지 않는다 — 바이트를 만드는 자리가 막는다")
+    @DisplayName("완료 전 변환의 결과 필드 **열 전부**에 대해 응답이 조립되지 않는다 — 바이트를 만드는 자리가 막는다")
     fun `완료 전 결과를 담은 응답은 조립되지 않는다`() {
         val draft = "매퍼 가드가 막아야 하는 초안"
         val hidden = "900101-1234567"
@@ -169,6 +199,7 @@ class ConversionReadContractTest {
                 "edited_text" to base.copy(editedText = PlainBody(draft)),
                 "masked_items" to base.copy(maskedItems = listOf(item)),
                 "reviewed_at" to base.copy(reviewedAt = Instant.EPOCH),
+                "feedback_submitted_at" to base.copy(feedbackSubmittedAt = Instant.EPOCH),
                 "missing_placeholders" to base.copy(missingPlaceholders = listOf(PLACEHOLDER)),
                 "model" to base.copy(model = "probe-model"),
                 "provider_name" to base.copy(providerName = "probe-provider"),
@@ -213,6 +244,7 @@ class ConversionReadContractTest {
             easyText = null,
             editedText = null,
             reviewedAt = null,
+            feedbackSubmittedAt = null,
             maskedItems = emptyList(),
             missingPlaceholders = emptyList(),
             model = null,
@@ -368,6 +400,11 @@ class ConversionReadContractTest {
         const val TEXT_PROPERTY = "text"
         const val CONVERSION_ID_PROPERTY = "conversion_id"
         const val MASKED_ITEMS_PROPERTY = "masked_items"
+        const val REVIEWED_AT_PROPERTY = "reviewed_at"
+        const val FEEDBACK_SUBMITTED_AT_PROPERTY = "feedback_submitted_at"
+
+        /** 대역이 심는 피드백 제출 시각. 값 자체는 아무래도 좋고 **왕복하는가**만 잰다. */
+        val FEEDBACK_SUBMITTED_AT: Instant = Instant.EPOCH.plusSeconds(120)
         const val CATEGORY_PROPERTY = "category"
         const val PLACEHOLDER_PROPERTY = "placeholder"
         const val DETAIL = "detail"

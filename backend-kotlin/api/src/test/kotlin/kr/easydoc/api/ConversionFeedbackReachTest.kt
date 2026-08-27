@@ -152,6 +152,54 @@ class ConversionFeedbackReachTest {
     }
 
     @Test
+    @DisplayName("낸 의견이 변환 조회와 문서 목록에 **제출 시각으로** 남는다 — `reviewed_at` 은 그대로 null")
+    fun `피드백 제출 시각이 조회와 목록에 실린다`() {
+        val token = newAccount()
+        val withFeedback = doneConversion(token)
+        val withoutFeedback = doneConversion(token)
+
+        val submittedAt = bodyOf(submit(token, withFeedback, feedbackBody(comment = COMMENT_BODY)))
+        val read = bodyOf(get(token, conversionPath(withFeedback.toString())))
+
+        assertThat(read[FEEDBACK_SUBMITTED_AT_PROPERTY])
+            .withFailMessage("의견을 냈는데 변환 조회가 그 사실을 모른다 — 새로고침한 검수 화면이 「검수 필요」로 되돌아간다")
+            .isEqualTo(submittedAt[SUBMITTED_AT_PROPERTY])
+        assertThat(read[REVIEWED_AT_PROPERTY])
+            .withFailMessage("피드백 제출이 `reviewed_at` 을 대신 찍었다 — 수정률 지표가 기대는 구분이 무너진다")
+            .isNull()
+
+        val items = (bodyOf(get(token, DOCUMENTS_PATH))[ITEMS_PROPERTY] as List<*>).map { it as Map<*, *> }
+        val listed = items.associate { it[CONVERSION_ID_PROPERTY] to it[FEEDBACK_SUBMITTED_AT_PROPERTY] }
+
+        assertThat(listed)
+            .withFailMessage("의견을 내지 않은 문서가 목록에서 사라졌다 — 피드백 조인이 왼쪽 조인이 아니다")
+            .containsKey(withoutFeedback.toString())
+        assertThat(listed[withFeedback.toString()])
+            .withFailMessage("목록이 제출 시각을 싣지 않는다 — 변환 기록이 「검수 완료」를 그릴 수 없다")
+            .isEqualTo(submittedAt[SUBMITTED_AT_PROPERTY])
+        assertThat(listed[withoutFeedback.toString()])
+            .withFailMessage("의견을 내지 않은 문서에 제출 시각이 섰다")
+            .isNull()
+    }
+
+    @Test
+    @DisplayName("남의 변환에 딸린 피드백 제출 사실이 내 목록·조회로 새지 않는다")
+    fun `남의 피드백 제출 사실이 새지 않는다`() {
+        val stranger = newAccount()
+        val theirs = doneConversion(stranger)
+        submit(stranger, theirs, feedbackBody(comment = COMMENT_BODY))
+
+        val mine = newAccount()
+
+        assertThat(get(mine, conversionPath(theirs.toString())).statusCode())
+            .withFailMessage("남의 변환 조회가 404 가 아니다")
+            .isEqualTo(NOT_FOUND)
+        assertThat((bodyOf(get(mine, DOCUMENTS_PATH))[ITEMS_PROPERTY] as List<*>))
+            .withFailMessage("내 목록에 남의 문서가 실렸다")
+            .isEmpty()
+    }
+
+    @Test
     @DisplayName("타인 소유 변환 → **부재 응답**이고 없는 것과 **응답이 구별되지 않는다**")
     fun `타인 변환 피드백은 404 이고 부재와 같다`() {
         val mine = newAccount()
@@ -323,6 +371,11 @@ class ConversionFeedbackReachTest {
         body: String,
     ): HttpResponse<String> = send(jsonRequest(feedbackPath(conversionId.toString()), token).PUT(bodyPublisher(body)))
 
+    private fun get(
+        token: String,
+        path: String,
+    ): HttpResponse<String> = send(jsonRequest(path, token).GET())
+
     private fun submitBytes(
         token: String,
         conversionId: UUID,
@@ -377,6 +430,13 @@ class ConversionFeedbackReachTest {
             conversionId,
         )
 
+    /** 변환 조회 경로. 경로 변수 이름을 계약에서 읽는 것은 [feedbackPath] 와 같다. */
+    private fun conversionPath(conversionId: String): String =
+        CONVERSION_ITEM_PATH.replace(
+            "{${ContractSpec.pathVariable(CONVERSION_ITEM_PATH, GET).name}}",
+            conversionId,
+        )
+
     // ================================================================ 저장 상태 조회
 
     private fun rowCountSql(conversionId: UUID): String =
@@ -424,8 +484,10 @@ class ConversionFeedbackReachTest {
         private const val LOGIN_PATH = "/auth/login"
         private const val DOCUMENTS_PATH = "/documents"
         private const val FEEDBACK_PATH = "/conversions/{conversion_id}/feedback"
+        private const val CONVERSION_ITEM_PATH = "/conversions/{conversion_id}"
         private const val POST = "post"
         private const val PUT = "put"
+        private const val GET = "get"
 
         private const val FORBIDDEN = 403
         private const val NOT_FOUND = 404
@@ -443,6 +505,11 @@ class ConversionFeedbackReachTest {
         private const val MINUTES_SPENT_PROPERTY = "minutes_spent"
         private const val COMMENT_PROPERTY = "comment"
         private const val SUBMITTED_AT_PROPERTY = "submitted_at"
+
+        /** 조회·목록이 싣는 이름. 피드백 응답의 [SUBMITTED_AT_PROPERTY] 와 **같은 열**이다. */
+        private const val FEEDBACK_SUBMITTED_AT_PROPERTY = "feedback_submitted_at"
+        private const val REVIEWED_AT_PROPERTY = "reviewed_at"
+        private const val ITEMS_PROPERTY = "items"
         private const val DETAIL = "detail"
 
         /** 계약 예시 좌표 — 이름이지 값이 아니다. */

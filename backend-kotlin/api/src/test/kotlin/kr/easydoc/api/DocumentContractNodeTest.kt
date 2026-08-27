@@ -3,6 +3,7 @@ package kr.easydoc.api
 import kr.easydoc.api.document.DocumentCreatedResponse
 import kr.easydoc.api.document.DocumentListItemResponse
 import kr.easydoc.api.document.DocumentListResponse
+import kr.easydoc.api.document.DocumentSourceResponse
 import kr.easydoc.api.document.DocumentTextRequest
 import kr.easydoc.api.document.LIST_LIMIT_DEFAULT
 import kr.easydoc.api.document.LIST_LIMIT_MAX
@@ -91,6 +92,24 @@ class DocumentContractNodeTest {
         assertThat(jsonPropertyNames(DocumentListResponse::class)).isEqualTo(ContractSpec.schemaRequired(LIST_SCHEMA))
         assertThat(jsonPropertyNames(DocumentListItemResponse::class))
             .isEqualTo(ContractSpec.schemaRequired(LIST_ITEM_SCHEMA))
+    }
+
+    @Test
+    @DisplayName("P-33 원문 조회 스키마의 required 와 DTO 의 JSON 키가 정확히 같다")
+    fun `원문 DTO 의 키가 계약 required 와 같다`() {
+        assertThat(jsonPropertyNames(DocumentSourceResponse::class))
+            .isEqualTo(ContractSpec.schemaRequired(SOURCE_SCHEMA))
+    }
+
+    @Test
+    @DisplayName("원문은 **목록에 실리지 않는다** — 본문 필드가 DocumentListItem 에 없다")
+    fun `목록 스키마에 원문이 없다`() {
+        assertThat(ContractSpec.schemaPropertyNames(LIST_ITEM_SCHEMA))
+            .withFailMessage(
+                "목록 한 줄에 %s 가 생겼다 — 목록은 한 번에 여러 문서를 돌려주는 자리라 " +
+                    "원문을 얹으면 응답 크기가 문서 수만큼 곱해진다",
+                SOURCE_TEXT_PROPERTY,
+            ).doesNotContain(SOURCE_TEXT_PROPERTY)
     }
 
     @Test
@@ -249,6 +268,8 @@ class DocumentContractNodeTest {
         const val CREATED_SCHEMA = "DocumentCreatedResponse"
         const val LIST_SCHEMA = "DocumentListResponse"
         const val LIST_ITEM_SCHEMA = "DocumentListItem"
+        const val SOURCE_SCHEMA = "DocumentSourceResponse"
+        const val SOURCE_TEXT_PROPERTY = "source_text"
 
         /** 계약 `x-input-limits` 의 노드 이름. 값이 아니라 자리다. */
         const val LIST_LIMIT_KEY = "list_limit"

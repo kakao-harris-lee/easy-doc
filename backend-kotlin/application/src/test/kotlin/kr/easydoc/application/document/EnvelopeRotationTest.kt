@@ -557,6 +557,12 @@ class EnvelopeRotationTest {
             offset: Int,
         ): List<DocumentListing> = error("회전 경로가 목록을 읽지 않는다")
 
+        /** 회전 배치에는 「내 것」이 없다 — 부르면 이 파일의 케이스가 그 사실로 빨개진다. */
+        override fun findOwnedSource(
+            ownerId: UUID,
+            documentId: UUID,
+        ): StoredSourceText? = error("회전 경로가 소유자 조회 포트를 부르면 안 된다")
+
         override fun lockSourceText(documentId: UUID): EncryptedContent? = sourceText
 
         override fun rewriteEnvelope(

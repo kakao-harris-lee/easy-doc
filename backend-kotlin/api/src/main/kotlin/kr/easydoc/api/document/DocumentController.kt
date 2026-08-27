@@ -6,6 +6,7 @@ import kr.easydoc.api.MIGRATE_PROFILE
 import kr.easydoc.api.auth.AuthenticatedUser
 import kr.easydoc.application.document.AcceptedUpload
 import kr.easydoc.application.document.DocumentService
+import kr.easydoc.application.document.DocumentSourceService
 import kr.easydoc.application.document.MISSING_FILE_PART_MESSAGE
 import kr.easydoc.core.document.MAX_UPLOAD_BYTES
 import kr.easydoc.core.exceptions.InvalidInputException
@@ -29,11 +30,15 @@ import java.util.UUID
 
 /**
  * `POST /documents` — **한 경로가 두 입력을 받는다.** 그리고 같은 경로의 `GET` — 목록.
- * 그리고 `DELETE /documents/{document_id}` — 즉시 파기.
+ * 그리고 `DELETE /documents/{document_id}` — 즉시 파기,
+ * `GET /documents/{document_id}/source` — 추출된 원문 조회.
  */
 @Profile("!$MIGRATE_PROFILE")
 @RestController
-class DocumentController(private val documentService: DocumentService) {
+class DocumentController(
+    private val documentService: DocumentService,
+    private val documentSources: DocumentSourceService,
+) {
     /** 붙여넣기 모드. 계약 `requestBody.content['application/json']`. */
     @PostMapping(DOCUMENTS_PATH, consumes = [MediaType.APPLICATION_JSON_VALUE])
     fun createFromText(
@@ -92,6 +97,26 @@ class DocumentController(private val documentService: DocumentService) {
             .body(DocumentListResponse.of(fetched, limit = limit, offset = offset))
     }
 
+    /**
+     * `GET /documents/{document_id}/source` — 추출된 원문을 다시 읽는다.
+     *
+     * **사적 헤더 2종이 붙는다** — 응답이 마스킹 **전** 원문을 싣는다(계약
+     * `x-private-response-headers.applies_to`).
+     */
+    @GetMapping(DOCUMENT_SOURCE_PATH)
+    fun readSource(
+        user: AuthenticatedUser,
+        @PathVariable(DOCUMENT_ID_VARIABLE) documentId: UUID,
+    ): ResponseEntity<DocumentSourceResponse> {
+        val view = documentSources.read(ownerId = user.id, documentId = documentId)
+        return ResponseEntity
+            .ok()
+            .contentType(MediaType.APPLICATION_JSON)
+            .header(HttpHeaders.CACHE_CONTROL, NO_STORE)
+            .header(X_CONTENT_TYPE_OPTIONS, NOSNIFF)
+            .body(DocumentSourceResponse.of(view))
+    }
+
     /** `DELETE /documents/{document_id}` — 즉시 파기. **204 이고 본문이 없다.** */
     @DeleteMapping(DOCUMENT_ITEM_PATH)
     fun delete(
@@ -118,6 +143,9 @@ class DocumentController(private val documentService: DocumentService) {
 
         /** 계약 `paths./documents/{document_id}` — 경로 문자열과 **변수 이름**. */
         const val DOCUMENT_ITEM_PATH = "/documents/{document_id}"
+
+        /** 계약 `paths./documents/{document_id}/source` — 같은 변수 이름을 쓴다. */
+        const val DOCUMENT_SOURCE_PATH = "/documents/{document_id}/source"
         const val DOCUMENT_ID_VARIABLE = "document_id"
 
         /** 계약 `DocumentFileRequest.properties` 의 파트 이름 셋. */

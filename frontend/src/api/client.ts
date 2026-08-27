@@ -13,6 +13,7 @@ import type {
   ConversionReviewRequest,
   DocumentCreatedResponse,
   DocumentListResponse,
+  DocumentSourceResponse,
   DocumentTextRequest,
   ExportFormat,
   WorkspaceListResponse,
@@ -194,6 +195,22 @@ export function listDocuments(
   }
   const suffix = query.size > 0 ? `?${query.toString()}` : ''
   return requestJson<DocumentListResponse>(`/documents${suffix}`, { signal })
+}
+
+/**
+ * GET /documents/{id}/source — 추출된 원문을 가져온다.
+ *
+ * **한 번만 부른다.** 원문은 문서 등록 시점에 확정돼 변하지 않으므로 변환 상태처럼
+ * 주기적으로 물어볼 값이 아니다(`src/review/sourceText.ts`).
+ *
+ * 소유자가 아니거나 보관 기간이 지나 파기된 문서는 404다 — 존재를 숨기기 위해 서버가
+ * 403 대신 404로 답한다.
+ */
+export function getDocumentSource(
+  documentId: string,
+  signal?: AbortSignal,
+): Promise<DocumentSourceResponse> {
+  return requestJson<DocumentSourceResponse>(`/documents/${documentId}/source`, { signal })
 }
 
 /** GET /workspaces — 내 작업 공간을 만든 순서대로 조회한다 (문서 수 포함). */

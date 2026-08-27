@@ -65,7 +65,7 @@ data class FormatPreservationResponse(
 }
 
 /**
- * `GET`·`PUT /conversions/{conversion_id}` 응답. 계약 `ConversionResponse` — **열여섯 필드가
+ * `GET`·`PUT /conversions/{conversion_id}` 응답. 계약 `ConversionResponse` — **열일곱 필드가
  * 전부다.** 생성자와 `copy()` 가 `private` 인 것은 [of] 의 노출 판정을 우회하는 조립 지점이
  * 생기지 않게 한다.
  *
@@ -85,6 +85,8 @@ data class ConversionResponse private constructor(
     @get:JsonProperty("easy_text") val easyText: String?,
     @get:JsonProperty("edited_text") val editedText: String?,
     @get:JsonProperty("reviewed_at") val reviewedAt: String?,
+    /** 피드백을 마지막으로 제출한 시각. **`reviewed_at` 과 다른 사실이다**(계약 설명이 정본). */
+    @get:JsonProperty("feedback_submitted_at") val feedbackSubmittedAt: String?,
     @get:JsonProperty("masked_items") val maskedItems: List<MaskedItemResponse>,
     @get:JsonProperty("missing_placeholders") val missingPlaceholders: List<String>,
     @get:JsonProperty("model") val model: String?,
@@ -98,7 +100,7 @@ data class ConversionResponse private constructor(
         "ConversionResponse(id=$id, documentId=$documentId, status=$status, " +
             "sourceFormat=$sourceFormat, exportFormat=$exportFormat, formatPreservation=$formatPreservation, " +
             "easyText=$CONTENT_MASK ${easyText?.length ?: 0}자, editedText=$CONTENT_MASK ${editedText?.length ?: 0}자, " +
-            "reviewedAt=$reviewedAt, maskedItems=${maskedItems.size}건, " +
+            "reviewedAt=$reviewedAt, feedbackSubmittedAt=$feedbackSubmittedAt, maskedItems=${maskedItems.size}건, " +
             "missingPlaceholders=$missingPlaceholders, model=$CONTENT_MASK, providerName=$CONTENT_MASK, " +
             "inputTokens=$inputTokens, outputTokens=$outputTokens, failureCode=$failureCode)"
 
@@ -123,6 +125,7 @@ data class ConversionResponse private constructor(
                 easyText = view.easyText?.value,
                 editedText = view.editedText?.value,
                 reviewedAt = view.reviewedAt?.toString(),
+                feedbackSubmittedAt = view.feedbackSubmittedAt?.toString(),
                 maskedItems = view.maskedItems.map(MaskedItemResponse::of),
                 missingPlaceholders = view.missingPlaceholders,
                 model = view.model,

@@ -365,6 +365,7 @@ class ConversionReviewServiceTest {
                     // `edited_text_encrypted` 를 언제나 함께 쓴다 — 「검수 시각은 있는데
                     // 검수본이 없는」 행은 실물에 존재할 수 없다. 시각은 저장이 찍는다.
                     reviewedAt = null,
+                    feedbackSubmittedAt = null,
                     missingPlaceholders = emptyList(),
                     model = null,
                     providerName = null,

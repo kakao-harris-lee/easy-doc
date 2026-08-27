@@ -92,7 +92,7 @@ class ConversionQueryServiceTest {
     }
 
     @Test
-    @DisplayName("완료 전 변환이 결과 열을 들고 있어도 **결과 필드 아홉이 전부** 비고 복호화조차 하지 않는다")
+    @DisplayName("완료 전 변환이 결과 열을 들고 있어도 **결과 필드 열이 전부** 비고 복호화조차 하지 않는다")
     fun `완료 전 변환은 저장된 결과를 내보내지 않는다`() {
         // 분모를 `exposesResult` 로 잡으면 잘못 준 상태가 **빠진다** — 이름으로 잡고 값은 따로 잰다.
         val beforeDone = ConversionStatus.entries - ConversionStatus.DONE
@@ -282,6 +282,41 @@ class ConversionQueryServiceTest {
     }
 
     @Test
+    @DisplayName("피드백 제출 시각을 검수 시각과 **따로** 싣는다 — 두 사실이 한 값으로 뭉치지 않는다")
+    fun `피드백 제출 시각이 검수 시각과 따로 실린다`() {
+        val world = World()
+        val conversionId = UUID.randomUUID()
+        world.seedResults(conversionId, easyText = "쉬운 글 초안")
+
+        val view = world.service.read(OWNER, conversionId)
+
+        assertThat(view.feedbackSubmittedAt)
+            .describedAs("저장된 피드백 제출 시각이 조회에 실리지 않았다 — 화면이 방금 낸 의견을 잃는다")
+            .isEqualTo(FEEDBACK_SUBMITTED_AT)
+        assertThat(view.reviewedAt)
+            .describedAs("두 시각이 뒤바뀌었다 — 「수정본을 저장했다」와 「의견을 냈다」는 다른 사실이다")
+            .isEqualTo(REVIEWED_AT)
+    }
+
+    @Test
+    @DisplayName("의견을 낸 적이 없으면 `null` 이다 — 검수 시각이 서 있어도 대신 채우지 않는다")
+    fun `피드백이 없으면 제출 시각이 null 이다`() {
+        val world = World()
+        val conversionId = UUID.randomUUID()
+        world.seedResults(conversionId, easyText = "쉬운 글 초안")
+        world.seedNoFeedback(conversionId)
+
+        val view = world.service.read(OWNER, conversionId)
+
+        assertThat(view.feedbackSubmittedAt)
+            .describedAs("피드백 행이 없는데 값이 섰다 — 목록이 「검수함」을 지어낸다")
+            .isNull()
+        assertThat(view.reviewedAt)
+            .describedAs("검수 시각까지 함께 지워졌다 — 두 값이 한 사실로 묶여 있다는 뜻이다")
+            .isEqualTo(REVIEWED_AT)
+    }
+
+    @Test
     @DisplayName("조회 결과의 `toString` 이 **본문도 가린 값도 담지 않는다** — 개수까지다")
     fun `조회 결과의 toString 이 본문을 담지 않는다`() {
         val world = World()
@@ -300,6 +335,13 @@ class ConversionQueryServiceTest {
 
         /** 원본 자리에 둘 바이트. 대역 반영기가 열지 않으므로 내용은 아무래도 좋다. */
         val ORIGINAL_BYTES: ByteArray = "원본 바이트".toByteArray()
+
+        /**
+         * 검수 저장 시각과 피드백 제출 시각. **서로 다른 값이어야** 조회가 둘을 뒤바꿔
+         * 실어도 케이스가 초록으로 남지 않는다 — 두 사실을 가르는 것이 이 필드의 요지다.
+         */
+        val REVIEWED_AT: Instant = Instant.EPOCH.plusSeconds(60)
+        val FEEDBACK_SUBMITTED_AT: Instant = Instant.EPOCH.plusSeconds(120)
     }
 
     /**
@@ -346,6 +388,7 @@ class ConversionQueryServiceTest {
                     hasStoredOriginal = SeededOrigin().hasStoredOriginal,
                     ciphertexts = ConversionCiphertexts(easyText = null, maskedItems = null, editedText = null),
                     reviewedAt = null,
+                    feedbackSubmittedAt = null,
                     missingPlaceholders = emptyList(),
                     model = null,
                     providerName = null,
@@ -353,6 +396,19 @@ class ConversionQueryServiceTest {
                     outputTokens = null,
                     failureCode = null,
                 )
+        }
+
+        /**
+         * 이미 심은 행에서 **피드백 행만 지운다** — 실물에서는 왼쪽 조인이 아무것도 못 찾는
+         * 상태다. `demoteTo` 와 같은 형태로 따로 두는 것은 [seedResults] 의 인자를 늘리면
+         * detekt `LongParameterList` 문턱에 닿기 때문이다.
+         */
+        fun seedNoFeedback(
+            conversionId: UUID,
+            owner: UUID = OWNER,
+        ) {
+            val key = owner to conversionId
+            conversions.owned[key] = conversions.owned.getValue(key).copy(feedbackSubmittedAt = null)
         }
 
         /** 결과 열을 채운 뒤 상태만 되돌린다 — HTTP 팔의 `forceStatus` 와 같다. */
@@ -432,8 +488,9 @@ class ConversionQueryServiceTest {
                                 ),
                             editedText = seal(editedText, EncryptedField.CONVERSION_EDITED_TEXT),
                         ),
-                    // 결과 필드 **아홉 전부**를 채운다 — 비워 두면 그 필드가 공허하게 통과한다.
-                    reviewedAt = Instant.EPOCH,
+                    // 결과 필드 **열 전부**를 채운다 — 비워 두면 그 필드가 공허하게 통과한다.
+                    reviewedAt = REVIEWED_AT,
+                    feedbackSubmittedAt = FEEDBACK_SUBMITTED_AT,
                     missingPlaceholders = maskedLabels,
                     model = "claude-test",
                     providerName = "anthropic",

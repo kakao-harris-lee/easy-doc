@@ -203,6 +203,13 @@ class JdbcConversionRepository(private val jdbc: JdbcClient) : ConversionReposit
          * `LEFT JOIN` 으로 열 하나만 골라도 계획이 그 행을 집으러 간다. `EXISTS` 는
          * `document_originals` 의 기본 키를 한 번 찍고 끝난다(`V3__document_originals.sql`
          * 이 인덱스를 따로 두지 않은 사유와 같은 자리).
+         *
+         * 피드백은 **왼쪽 조인**이다 — 의견을 내지 않은 변환이 훨씬 많고, 그때 행이 사라지면
+         * 조회가 404 가 된다. 봉인된 자유 의견 열은 **고르지 않는다**: 계약이 내보내는 것은
+         * `submitted_at` 하나뿐이라 여기서 암호문을 끌어올 이유가 없다.
+         * `f.user_id = d.user_id` 는 잉여로 보이지만 fail-closed 다 — 피드백 행의 제출자와
+         * 문서 소유자가 갈린 행은 「없음」으로 접고, 그 시각이 남의 제출 사실을 드러내는
+         * 경로가 되지 않게 한다.
          */
         val FIND_OWNED_SQL =
             """
@@ -212,10 +219,12 @@ class JdbcConversionRepository(private val jdbc: JdbcClient) : ConversionReposit
                    ) AS has_stored_original,
                    c.easy_text_encrypted, c.masked_items_encrypted, c.edited_text_encrypted,
                    c.encryption_scheme, c.key_version,
-                   c.reviewed_at, c.missing_placeholders,
+                   c.reviewed_at, f.submitted_at AS feedback_submitted_at, c.missing_placeholders,
                    c.model, c.provider_name, c.input_tokens, c.output_tokens, c.failure_code
             FROM conversions c
             JOIN documents d ON d.id = c.document_id
+            LEFT JOIN conversion_feedback f
+                   ON f.conversion_id = c.id AND f.user_id = d.user_id
             WHERE c.id = :id AND d.user_id = :ownerId
             """.trimIndent()
 
@@ -262,6 +271,7 @@ private object ConversionRows {
                     editedText = sealedOrNull(rs, "edited_text_encrypted", scheme, keyVersion),
                 ),
             reviewedAt = rs.getObject("reviewed_at", OffsetDateTime::class.java)?.toInstant(),
+            feedbackSubmittedAt = rs.getObject("feedback_submitted_at", OffsetDateTime::class.java)?.toInstant(),
             missingPlaceholders = placeholderLabels(rs.getString("missing_placeholders")),
             model = rs.getString("model"),
             providerName = rs.getString("provider_name"),

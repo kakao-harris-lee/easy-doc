@@ -59,6 +59,20 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
+/**
+ * 응답에서 `feedback_submitted_at` 키를 통째로 지운다.
+ *
+ * 계약은 「키는 늘 있고 값만 null일 수 있다」로 정하지만 그것은 **서버의 약속이지 이
+ * 화면이 받는 값의 보장이 아니다** — 아직 이 필드를 싣지 않는 서버, 배포 시차로 남아
+ * 있는 옛 번들, 목을 덜 고친 테스트에서 키 없이 들어온다. 기본 목(`documentItem`)은
+ * 계약대로 키를 담아 두고, 그 약속이 깨진 상황은 여기서만 만든다.
+ */
+function withoutFeedbackKey(item: DocumentListItem): DocumentListItem {
+  const stripped: Partial<DocumentListItem> = { ...item }
+  delete stripped.feedback_submitted_at
+  return stripped as DocumentListItem
+}
+
 describe('지금 해야 할 일', () => {
   /**
    * 서버 상태 조합 → 사용자가 읽을 말(DESIGN.md §6.6).
@@ -73,9 +87,17 @@ describe('지금 해야 할 일', () => {
     ['처리 중이면 변환 중', { status: 'processing' }, '변환 중'],
     ['완료했지만 검수 전이면 검수 필요', { status: 'done', reviewed_at: null }, '검수 필요'],
     [
-      '검수 시각이 있으면 검수함',
+      '검수 시각이 있으면 검수 완료',
       { status: 'done', reviewed_at: '2026-08-07T02:00:00Z' },
-      '검수함',
+      '검수 완료',
+    ],
+    // 초안이 그대로 쓸 만해 한 글자도 고치지 않고 의견만 보낸 담당자의 줄이다.
+    // `reviewed_at`은 영영 비어 있으므로, 그 값만 보면 이 사람에게는 이미 끝낸 문서가
+    // 계속 '검수 필요'로 되돌아온다.
+    [
+      '의견만 보낸 변환도 검수 완료',
+      { status: 'done', reviewed_at: null, feedback_submitted_at: '2026-08-27T02:00:00Z' },
+      '검수 완료',
     ],
     ['실패는 실패', { status: 'failed' }, '실패'],
     // 변환 행이 없는 문서다. 백엔드가 최신 변환을 LEFT JOIN으로 붙이므로 status와
@@ -94,6 +116,27 @@ describe('지금 해야 할 일', () => {
     renderPage()
 
     expect(await screen.findByRole('row', { name: /재난지원금 안내/ })).toHaveTextContent(expected)
+  })
+
+  /*
+    키가 없으면 「제출 안 함」으로 읽는다.
+
+    `!== null`로 물으면 `undefined !== null`이 **참**이라, 아무도 손대지 않은 초안이
+    전부 「검수 완료」로 뒤집힌다. 사용자에게는 검수해야 할 문서가 목록에서 통째로
+    사라지는 것과 같다 — 값이 없을 때 안전한 오답은 「아직 안 했다」 쪽이다.
+  */
+  it('의견 제출 시각 키가 아예 없으면 제출 안 한 것으로 읽는다', async () => {
+    vi.mocked(listDocuments).mockResolvedValue({
+      items: [withoutFeedbackKey(documentItem({ status: 'done', reviewed_at: null }))],
+      limit: 20,
+      offset: 0,
+      has_more: false,
+    })
+    renderPage()
+
+    const row = await screen.findByRole('row', { name: /재난지원금 안내/ })
+    expect(row).toHaveTextContent('검수 필요')
+    expect(row).not.toHaveTextContent('검수 완료')
   })
 })
 
@@ -122,7 +165,7 @@ describe('변환 기록', () => {
     expect(draftRow).toHaveTextContent('1,200자')
     // 제목 아래 보조 정보는 원본 형식과 올린 날짜다.
     expect(draftRow).toHaveTextContent('붙여넣기 · 2026. 8. 7.')
-    expect(screen.getByRole('row', { name: /검수한 문서/ })).toHaveTextContent('검수함')
+    expect(screen.getByRole('row', { name: /검수한 문서/ })).toHaveTextContent('검수 완료')
     // 제목이 검수 화면으로 가는 통로다.
     expect(screen.getByRole('link', { name: '재난지원금 안내' })).toHaveAttribute(
       'href',

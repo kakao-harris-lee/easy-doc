@@ -22,6 +22,14 @@ class DocumentListing(
     val conversionId: UUID?,
     val status: ConversionStatus?,
     val reviewedAt: Instant?,
+    /**
+     * 그 최신 변환에 피드백을 마지막으로 제출한 시각. 없으면 `null`.
+     *
+     * [reviewedAt] 과 **다른 사실이라** 함께 든다 — 목록이 「검수함」을 그리는 근거가 둘로
+     * 갈린다(수정본 저장·의견 제출). 계약 `DocumentListItem.feedback_submitted_at` 참고.
+     */
+    val feedbackSubmittedAt: Instant?,
 ) {
-    override fun toString(): String = "DocumentListing($document, $conversionId, ${status?.wireName}, $reviewedAt)"
+    override fun toString(): String =
+        "DocumentListing($document, $conversionId, ${status?.wireName}, $reviewedAt, $feedbackSubmittedAt)"
 }

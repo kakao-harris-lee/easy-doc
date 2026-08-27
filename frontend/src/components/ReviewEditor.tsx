@@ -1,25 +1,28 @@
 import { useEffect, useId, useRef, useState, useSyncExternalStore, type KeyboardEvent } from 'react'
-import { Download, FileX2, Save, ShieldAlert } from 'lucide-react'
+import { Download, Save, ShieldAlert } from 'lucide-react'
 
 import { ApiError, downloadExport, saveReview } from '../api/client'
 import type { ConversionResponse, ExportFormat } from '../api/types'
 import { cn } from '../lib/utils'
+import type { DocumentSource } from '../review/sourceText'
 import { setUnsavedChanges } from '../review/unsavedChanges'
 import { FormatPreservationPanel, PdfExportNotice } from './FormatPreservationPanel'
 import { ReviewFeedback } from './ReviewFeedback'
+import { SourceTextPanel } from './SourceTextPanel'
 import { Badge } from './ui/Badge'
 import { Button } from './ui/Button'
 
 interface ReviewEditorProps {
   conversion: ConversionResponse
   /**
-   * 왼쪽에 보여줄 원본. 붙여넣기로 올린 직후에만 있다.
+   * 왼쪽에 보여줄 원본과 그 상태.
    *
-   * 서버는 원문을 돌려주지 않는다 — 조회 응답에 문서 본문을 실으면 개인정보가
-   * 오가는 표면이 넓어진다. 그래서 파일 업로드와 기록에서 다시 들어온 경로에는
-   * 원본이 없고, 화면이 그 사실을 사용자에게 알린다.
+   * 종전에는 `string | null` 이었고 값이 있는 경우는 **붙여넣기 직후 한 번**뿐이었다 —
+   * 파일 업로드·기록 재진입·새로고침에서는 늘 `null` 이라 비교할 대상이 없었다. 지금은
+   * 서버(`GET /documents/{id}/source`)가 원문을 돌려주므로 화면은 그것을 가져오고,
+   * 여기에는 **로딩·원문·실패**가 구분된 채로 들어온다(§9).
    */
-  sourceText: string | null
+  source: DocumentSource
 }
 
 /**
@@ -122,7 +125,7 @@ function saveBlob(blob: Blob, filename: string): void {
  *
  * 화면 맨 위의 "AI가 만든 초안" 배너는 지우지 않는다(master-plan 3.3 HITL).
  */
-export function ReviewEditor({ conversion, sourceText }: ReviewEditorProps) {
+export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
   const editorId = useId()
   const headingRef = useRef<HTMLHeadingElement>(null)
   const tabRefs = useRef<Partial<Record<PanelKey, HTMLButtonElement | null>>>({})
@@ -132,6 +135,25 @@ export function ReviewEditor({ conversion, sourceText }: ReviewEditorProps) {
   /** 마지막으로 서버에 저장된 글. 이것과 draft가 다르면 저장하지 않은 변경이다. */
   const [savedText, setSavedText] = useState(initialText)
   const [reviewedAt, setReviewedAt] = useState(conversion.reviewed_at)
+  /**
+   * 이 변환에 의견을 보낸 시각. 아래 피드백 폼이 보내는 즉시 여기로 올라온다.
+   *
+   * 상태를 위에 두는 이유: 「의견을 보냈다」는 사실을 말해야 하는 곳은 이 화면의 상태
+   * 패널이고, 그것은 폼보다 위에 있다. 폼 안에만 남겨 두면 사용자는 토스트가 사라진 뒤
+   * 화면 맨 위에서 여전히 「아직 저장한 검수 내용이 없습니다」만 읽고 제출이 실패한 줄
+   * 안다 — 실제로 서버에는 저장돼 있는데도.
+   */
+  const [feedbackSubmittedAt, setFeedbackSubmittedAt] = useState(conversion.feedback_submitted_at)
+  /**
+   * 「의견을 보냈다」로 볼 수 있는가.
+   *
+   * 계약은 `feedback_submitted_at` 키가 늘 있다고 정하지만, 그것은 서버의 약속이지 이
+   * 컴포넌트가 받는 값의 보장이 아니다. 필드를 아직 안 싣는 서버·배포 시차로 남은 옛
+   * 번들·목을 덜 고친 테스트에서는 `undefined`가 들어오고, `!== null` 비교는 그것을
+   * **보낸 것으로** 읽어 `new Date(undefined)` — `Invalid Date` — 를 배지에 찍는다.
+   * 값이 실제로 시각 문자열일 때만 참으로 둔다.
+   */
+  const hasFeedback = typeof feedbackSubmittedAt === 'string'
   /**
    * 서버가 마지막으로 준 서식 유지 판정.
    *
@@ -149,6 +171,21 @@ export function ReviewEditor({ conversion, sourceText }: ReviewEditorProps) {
   const [activePanel, setActivePanel] = useState<PanelKey>('source')
   /** 저장·내려받기를 누른 버튼. 그 작업이 끝나면 초점을 여기로 돌린다. */
   const refocusRef = useRef<HTMLButtonElement | null>(null)
+  /**
+   * 지금 초점이 들어 있는 패널. 어느 쪽에도 없으면 `null`이다.
+   *
+   * 패널 상자에 건 focus·blur가 채운다 — 초점 사건은 거품처럼 올라오므로 상자 하나가
+   * 그 안의 입력칸·버튼을 모두 대신한다. ref가 아니라 상태로 두는 이유: 아래 탭 전이
+   * 판정이 **렌더 중에** 이 값을 읽어야 하고, 렌더 중 ref 읽기는 금지돼 있다.
+   */
+  const [focusedPanel, setFocusedPanel] = useState<PanelKey | null>(null)
+  /**
+   * 사용자가 탭을 직접 고른 적이 있는가.
+   *
+   * 골랐다면 그 선택이 이후의 모든 자동 판정을 이긴다 — 아래 탭 전이 판정이 그것을 다시
+   * 덮어쓰면, 원문을 보려고 탭을 누른 사람이 창 크기를 바꿀 때마다 결과로 튕긴다.
+   */
+  const [panelPickedByUser, setPanelPickedByUser] = useState(false)
 
   const dirty = draft !== savedText
   const busy = pending !== null
@@ -159,13 +196,51 @@ export function ReviewEditor({ conversion, sourceText }: ReviewEditorProps) {
   /**
    * 좁은 화면에서 탭으로 바꿀지.
    *
-   * 원문이 없으면 탭을 만들지 않는다. 고를 수 있는 것이 하나뿐인 탭 줄은 조작할 이유가
-   * 없는 장치이고, 원문 없음 설명을 탭 뒤에 숨기면 "아직 안 왔음"과 구분되지 않는다
-   * (§9 — 빈 상태·로딩·원문 없음은 서로 다른 상태다). 그래서 이 경로에서는 설명 카드와
-   * 편집기를 위아래로 그대로 쌓는다.
+   * 원문이 아직 없으면(불러오는 중이거나 못 불러왔으면) 탭을 만들지 않는다. 고를 수
+   * 있는 것이 하나뿐인 탭 줄은 조작할 이유가 없는 장치이고, 「불러오는 중」이나 「불러오지
+   * 못함」을 탭 뒤에 숨기면 그 사실 자체가 사용자에게 닿지 않는다(§9 — 로딩·실패·원문은
+   * 서로 다른 상태다). 그래서 그 경로에서는 설명 카드와 편집기를 위아래로 그대로 쌓는다.
    */
-  const showTabs = !splitView && sourceText !== null
+  const showTabs = !splitView && source.state.status === 'ready'
   const statusId = `${editorId}-save-status`
+
+  /**
+   * 탭이 **처음 생기는 순간** 어느 패널을 펼쳐 둘지 정한다.
+   *
+   * 탭이 없는 동안에는 두 패널이 위아래로 모두 보이므로 사용자는 결과 편집기에 바로
+   * 타이핑할 수 있다. 그런데 원문이 늦게 도착해 `showTabs`가 참으로 뒤집히면 그 순간
+   * 초기값 `'source'`가 **편집 중이던 결과 패널을 통째로 숨긴다** — 글도 초점도 눈앞에서
+   * 사라진다. 네트워크가 느릴수록 더 오래 타이핑하다 당한다.
+   *
+   * 그래서 전이 시점에 「사용자가 지금 어디에 있는가」를 묻는다. 순서가 곧 규칙이다.
+   *
+   * 1. **초점이 어느 패널 안에 있으면 그 패널이 이긴다.** 지금 손이 가 있는 곳을 숨기는
+   *    것이 이 버그의 정체이므로, 과거에 고른 탭보다 강한 신호다 — 탭을 골라 둔 뒤
+   *    화면을 넓혀 결과를 고치다가 다시 좁히는 경로가 그 예다.
+   * 2. 초점이 어디에도 없고 사용자가 탭을 고른 적이 있으면 **그 선택을 그대로 둔다.**
+   *    창 크기 조절 한 번에 남의 선택을 되돌리지 않는다.
+   * 3. 둘 다 아니면 고쳐 둔 내용(`dirty`)이 있는 쪽을 편들고, 그것도 없으면 §11의 읽기
+   *    순서대로 원문이 먼저다.
+   *
+   * **효과가 아니라 렌더 중에** 정하는 것이 요점이다. 효과는 DOM이 이미 갱신된 뒤에
+   * 돌아서, 그때는 `hidden`이 붙으며 초점이 `<body>`로 떨어진 다음이다. 렌더 중 상태
+   * 조정은 커밋 전에 다시 렌더되므로 결과 패널에 `hidden`이 한 번도 붙지 않는다
+   * (React가 문서화한 «렌더 중 상태 조정» 패턴이다).
+   *
+   * 그리고 **전이할 때만** 판정한다 — 매 렌더 판정하면 사용자가 방금 누른 탭을 곧바로
+   * 덮어쓴다.
+   */
+  const [tabsWereShown, setTabsWereShown] = useState(showTabs)
+  if (showTabs !== tabsWereShown) {
+    setTabsWereShown(showTabs)
+    if (showTabs) {
+      if (focusedPanel !== null) {
+        setActivePanel(focusedPanel)
+      } else if (!panelPickedByUser) {
+        setActivePanel(dirty ? 'result' : 'source')
+      }
+    }
+  }
 
   // 폴링이 끝나 에디터가 나타나는 순간 초점이 화면 맨 위에 그대로 있으면, 낭독기
   // 사용자는 결과가 나왔다는 것을 알 수 없다 — 새 화면의 제목으로 초점을 옮긴다.
@@ -327,6 +402,7 @@ export function ReviewEditor({ conversion, sourceText }: ReviewEditorProps) {
       return
     }
     event.preventDefault()
+    setPanelPickedByUser(true)
     setActivePanel(next)
     tabRefs.current[next]?.focus()
   }
@@ -361,7 +437,15 @@ export function ReviewEditor({ conversion, sourceText }: ReviewEditorProps) {
       ? {
           tone: 'info' as const,
           label: '저장 전',
-          detail: '아직 저장한 검수 내용이 없습니다. AI 초안 그대로입니다.',
+          // 의견을 보낸 뒤에는 「아직 …이 없습니다」가 "내 제출이 실패했나"로 읽힌다.
+          // 저장하지 않았다는 사실은 그대로 두되, 아직 할 일이 남았다는 뜻으로 들리지
+          // 않게 완료형으로 적는다. 무엇을 보냈는지는 옆의 「의견 보냄」이 말한다.
+          // 값의 유무를 `=== null`이 아니라 타입으로 묻는다 — 필드를 아직 안 싣는 서버나
+          // 옛 번들에서는 `undefined`가 오고, 그때 `=== null`은 거짓이라 의견을 낸 적
+          // 없는 화면이 「보냈다」 쪽 문구를 읽는다. 모르면 「아직」이 안전한 오답이다.
+          detail: hasFeedback
+            ? '고쳐서 저장한 내용은 없습니다. 결과는 AI 초안 그대로입니다.'
+            : '아직 저장한 검수 내용이 없습니다. AI 초안 그대로입니다.',
         }
       : {
           tone: 'success' as const,
@@ -385,14 +469,34 @@ export function ReviewEditor({ conversion, sourceText }: ReviewEditorProps) {
         {/* 이 화면에서 "저장했는가"를 말하는 곳은 여기 하나다. 저장 여부는 토스트로
             흘려보내지 않고 화면에 남긴다(§9). 색만으로 구분하지 않도록 배지에 문구와
             아이콘을 함께 둔다(§8.1). */}
-        <div
-          className="flex shrink-0 flex-col items-start gap-1 sm:items-end"
-          id={statusId}
-          role="status"
-        >
-          <Badge tone={status.tone}>{status.label}</Badge>
-          {status.detail !== null && (
-            <span className="text-sm text-muted-foreground sm:text-right">{status.detail}</span>
+        <div className="flex shrink-0 flex-col items-start gap-2 sm:items-end">
+          <div className="flex flex-col items-start gap-1 sm:items-end" id={statusId} role="status">
+            <Badge tone={status.tone}>{status.label}</Badge>
+            {status.detail !== null && (
+              <span className="text-sm text-muted-foreground sm:text-right">{status.detail}</span>
+            )}
+          </div>
+
+          {/* 의견을 보냈다는 사실은 저장 상태와 **다른 사실**이라 배지를 따로 둔다 —
+              「저장 전」과 「의견 보냄」이 동시에 참일 수 있고, 하나로 뭉치면 어느 쪽이
+              끝난 일인지 화면에서 사라진다. 색만으로 구분하지 않도록 배지에 시각까지
+              문구로 적는다(§8.1·§9).
+
+              위 `role="status"` 바깥에 두는 것이 중요하다. 여기에 넣으면 제출 성공을
+              폼의 안내와 이 배지가 잇달아 두 번 낭독한다(§11 중복 낭독 금지) —
+              「의견을 보냈습니다」는 폼이 이미 말했고, 이 배지는 그 뒤에도 화면에
+              남아 있는 기록이 그 몫이다. */}
+          {hasFeedback && (
+            <div className="flex flex-col items-start gap-1 sm:items-end">
+              <Badge tone="success">
+                의견 보냄 · {new Date(feedbackSubmittedAt).toLocaleString('ko-KR')}
+              </Badge>
+              {/* 의견의 내용은 서버가 돌려주지 않는다. 다시 볼 수 있는 척하지 않고
+                  없다고 적는다(§15 — 없는 기능을 있는 것처럼 보이게 하지 않는다). */}
+              <span className="text-sm text-muted-foreground sm:text-right">
+                검수 내용 저장과 따로 기록되며, 적은 내용은 이 화면에 다시 표시되지 않습니다.
+              </span>
+            </div>
           )}
         </div>
       </div>
@@ -452,7 +556,10 @@ export function ReviewEditor({ conversion, sourceText }: ReviewEditorProps) {
                     ? 'bg-card text-primary shadow-sm'
                     : 'text-muted-foreground hover:text-foreground',
                 )}
-                onClick={() => setActivePanel(panel.key)}
+                onClick={() => {
+                  setPanelPickedByUser(true)
+                  setActivePanel(panel.key)
+                }}
                 onKeyDown={handlePanelKeyDown}
               >
                 {panel.label}
@@ -463,50 +570,28 @@ export function ReviewEditor({ conversion, sourceText }: ReviewEditorProps) {
 
         {/* §11: 읽기 순서는 넓은 화면에서도 탭에서도 원문 다음 결과다. */}
         <div className="grid gap-4 lg:grid-cols-2">
+          {/* 초점 추적은 패널 상자에 건다 — 초점 사건은 거품처럼 올라오므로 상자 하나가
+              그 안의 입력칸과 버튼을 모두 대신한다(위 `focusedPanel`). */}
           <div
             className="rounded-[12px] border border-border bg-card p-5"
+            onFocus={() => setFocusedPanel('source')}
+            onBlur={() => setFocusedPanel(null)}
             {...panelProps('source')}
           >
-            {sourceText === null ? (
-              // 원문 없음은 로딩도 빈 상태도 아니다(§9). 빈 textarea를 만들면 "아직 안
-              // 왔음"이나 "지우고 다시 넣어야 함"처럼 보이므로, 왜 없는지 설명하는
-              // 카드로 대체한다(§6.4).
-              <>
-                <h2 className="mb-2 flex items-center gap-2 text-sm font-bold text-muted-foreground">
-                  <FileX2 className="size-[18px] shrink-0" aria-hidden="true" />
-                  원문 없음
-                </h2>
-                <div className="rounded-[10px] border border-dashed border-input bg-background p-5">
-                  <p className="font-semibold">
-                    파일로 올린 문서는 이 화면에서 원문을 다시 표시하지 않습니다.
-                  </p>
-                  <p className="field-hint mt-2">
-                    변환 기록에서 다시 연 문서도 같습니다. 문서 본문을 서버에 다시 받아 오지 않기
-                    때문입니다. 가린 개인정보는 아래 대응표에서 확인할 수 있습니다.
-                  </p>
-                </div>
-              </>
-            ) : (
-              <>
-                <h2 className="mb-2 text-sm font-bold text-muted-foreground">
-                  <label htmlFor={`${editorId}-source`}>원본 (읽기 전용)</label>
-                </h2>
-                {/* 읽기 전용 textarea로 두면 키보드로 초점을 받아 스크롤·선택·복사까지 된다 —
-                    스크롤되는 div에 tabindex를 붙이는 것보다 조작 방법이 분명하다. */}
-                <textarea
-                  id={`${editorId}-source`}
-                  className="review-textarea review-source text-[17px] leading-[1.75]"
-                  value={sourceText}
-                  rows={20}
-                  readOnly
-                />
-              </>
-            )}
+            {/* 로딩·실패·원문을 가르는 것은 이 패널이다(§9). 빈 textarea를 만들면 "아직
+                안 왔음"과 "못 가져왔음"이 같은 모양이 되므로 상태마다 다르게 말한다. */}
+            <SourceTextPanel
+              source={source}
+              textareaId={`${editorId}-source`}
+              failureNote="가린 개인정보는 아래 대응표에서 확인할 수 있습니다."
+            />
           </div>
 
           {/* 포인트색 경계로 "여기가 고치는 쪽"임을 원문 패널과 구분한다(§6.4). */}
           <div
             className="rounded-[12px] border-2 border-primary/40 bg-card p-5"
+            onFocus={() => setFocusedPanel('result')}
+            onBlur={() => setFocusedPanel(null)}
             {...panelProps('result')}
           >
             <div className="mb-2 flex items-center justify-between gap-2">
@@ -609,7 +694,7 @@ export function ReviewEditor({ conversion, sourceText }: ReviewEditorProps) {
       {/* 결과를 다 보고 난 자리에 둔다 — 검수 전에 묻는 만족도는 결과가 아니라 기대치를
           재게 된다. 이 화면은 status가 done일 때만 그려지므로(ConversionPage) 서버가
           409로 막는 조건과 화면이 같다. */}
-      <ReviewFeedback conversionId={conversion.id} />
+      <ReviewFeedback conversionId={conversion.id} onSubmitted={setFeedbackSubmittedAt} />
 
       <section
         className="overflow-x-auto rounded-[12px] border border-border bg-card p-5"

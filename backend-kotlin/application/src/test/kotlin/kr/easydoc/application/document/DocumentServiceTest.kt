@@ -533,6 +533,11 @@ class DocumentServiceTest {
             return emptyList()
         }
 
+        override fun findOwnedSource(
+            ownerId: UUID,
+            documentId: UUID,
+        ): StoredSourceText? = error("업로드 경로가 원문 조회 포트를 부르면 안 된다")
+
         override fun lockSourceText(documentId: UUID): EncryptedContent? = null
 
         override fun rewriteEnvelope(

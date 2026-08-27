@@ -408,7 +408,13 @@ class OwnershipPredicateGuardTest {
                 // 조회가 `document_originals` 를 **읽는다** — 원본 바이트가 아니라 행의 유무만
                 // (`EXISTS`). 서식 유지 판정이 그 사실 하나로 선다. 소유 술어는 그대로 조인 위에
                 // 있고, `EXISTS` 는 이미 소유자로 좁혀진 `d.id` 에 걸린다.
-                "$DOCUMENT/JdbcConversionRepository.kt | SELECT [conversions, document_originals, documents]",
+                //
+                // 같은 문장이 `conversion_feedback` 을 **왼쪽 조인**한다 — 계약
+                // `ConversionResponse.feedback_submitted_at` 이 제출 시각을 요구하고, 의견이
+                // 없는 변환이 조회에서 사라지면 안 되기 때문이다. 봉인된 자유 의견 열은 고르지
+                // 않고, 소유 술어(`d.user_id = :ownerId`)는 그대로 조인 위에 있다.
+                "$DOCUMENT/JdbcConversionRepository.kt | " +
+                    "SELECT [conversion_feedback, conversions, document_originals, documents]",
                 "$DOCUMENT/JdbcConversionRepository.kt | INSERT [conversions]",
                 "$DOCUMENT/JdbcConversionWorkStore.kt | SELECT [conversions, documents]",
                 "$DOCUMENT/JdbcConversionWorkStore.kt | UPDATE [conversions]",
@@ -421,11 +427,19 @@ class OwnershipPredicateGuardTest {
                 "$DOCUMENT/JdbcDocumentOriginalRepository.kt | INSERT [document_originals, documents]",
                 "$DOCUMENT/JdbcDocumentOriginalRepository.kt | SELECT [document_originals, documents]",
                 "$DOCUMENT/JdbcDocumentOriginalRepository.kt | UPDATE [document_originals]",
+                // 원문 조회(`GET /documents/{document_id}/source`). **아래 미방어 목록에 없다** —
+                // 사용자 요청 경로라 `user_id = :ownerId` 를 문장 자신에 붙였다. 바로 뒤의 같은
+                // 표기는 회전이 잠그고 읽는 SELECT 이고, 그쪽은 소유자를 받지 않는다.
+                "$DOCUMENT/JdbcDocumentRepository.kt | SELECT [documents]",
                 "$DOCUMENT/JdbcDocumentRepository.kt | SELECT [documents]",
                 "$DOCUMENT/JdbcDocumentRepository.kt | UPDATE [documents]",
                 "$DOCUMENT/JdbcDocumentRepository.kt | DELETE [documents]",
                 "$DOCUMENT/JdbcDocumentRepository.kt | INSERT [documents]",
-                "$DOCUMENT/JdbcDocumentRepository.kt | SELECT [conversions, documents]",
+                // 목록 질의. 최신 변환에 이어 `conversion_feedback` 도 **왼쪽 조인**한다 —
+                // 계약 `DocumentListItem.feedback_submitted_at` 이 제출 시각을 요구하고, 의견을
+                // 내지 않은 문서가 목록에서 빠지면 안 되기 때문이다. 소유 술어는 `WHERE
+                // d.user_id = :ownerId` 로 문장 자신에 남아 있다.
+                "$DOCUMENT/JdbcDocumentRepository.kt | SELECT [conversion_feedback, conversions, documents]",
                 "$DOCUMENT/JdbcExpiredDocumentPurge.kt | SELECT [conversions]",
                 "$DOCUMENT/JdbcExpiredDocumentPurge.kt | DELETE [documents]",
                 "$DOCUMENT/JdbcExpiredDocumentPurge.kt | SELECT [conversions, documents]",
