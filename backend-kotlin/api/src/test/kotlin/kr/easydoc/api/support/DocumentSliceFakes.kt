@@ -14,6 +14,8 @@ import kr.easydoc.application.document.ExtractedDocument
 import kr.easydoc.application.document.LockedConversion
 import kr.easydoc.application.document.LockedFeedbackComment
 import kr.easydoc.application.document.MaskedItemReader
+import kr.easydoc.application.document.OriginalDocument
+import kr.easydoc.application.document.OriginalStructureReflector
 import kr.easydoc.application.document.StoredConversion
 import kr.easydoc.application.document.StoredExport
 import kr.easydoc.application.document.StoredFeedback
@@ -29,7 +31,11 @@ import kr.easydoc.core.document.ConversionStatus
 import kr.easydoc.core.document.Document
 import kr.easydoc.core.document.DocumentListing
 import kr.easydoc.core.document.MaskedItemView
+import kr.easydoc.core.document.ReflectionOutcome
 import kr.easydoc.core.document.SourceFormat
+import kr.easydoc.core.easyread.ExportFile
+import kr.easydoc.core.easyread.ExportFormat
+import kr.easydoc.core.easyread.exportFileOf
 import kr.easydoc.core.exceptions.DocumentExtractionException
 import kr.easydoc.core.exceptions.UnsupportedFormatException
 import kr.easydoc.core.privacy.MaskCategory
@@ -372,9 +378,8 @@ class InMemoryWorkspaceLookup(private val workspaces: InMemoryWorkspaceRepositor
 }
 
 /**
- * 업로드 원본 저장 대역. 슬라이스에서 원본은 **저장만 되고 아직 어떤 응답에도 나가지 않는다** —
- * 계약이 이번 조각에서 그대로이기 때문이다. 그 사실이 실제로 유지되는지는
- * [findOwned] 가 슬라이스에서 한 번도 불리지 않는 것으로 드러난다.
+ * 업로드 원본 저장 대역. 조회의 서식 유지 판정과 내보내기가 [findOwned] 로 이 행을 읽는다 —
+ * 소유 술어를 실물과 같은 자리에 두는 것이 슬라이스에서도 중요한 이유다.
  */
 class InMemoryDocumentOriginalRepository(private val documents: InMemoryDocumentRepository) :
     DocumentOriginalRepository {
@@ -484,4 +489,35 @@ class StubDocumentTextExtractor : DocumentTextExtractor {
         if (text.isNullOrBlank()) throw DocumentExtractionException("문서에서 텍스트를 찾을 수 없습니다")
         return ExtractedDocument(format, text)
     }
+}
+
+/**
+ * 슬라이스의 원본 반영 대역.
+ *
+ * 슬라이스가 심는 원본은 진짜 DOCX 가 아니라 바이트 몇 개다. 여기서 POI 를 돌릴 수 없고
+ * 돌릴 이유도 없다 — HTTP 팔이 지는 책임은 「어떤 갈래에서 판정이 서고 어떤 갈래가 오류가
+ * 되는가」이고, 원본을 실제로 고쳐 쓰는 일은 `PackagedOriginalReflectorTest` 가 fixture 로
+ * 잰다. [outcome] · [openable] 로 그 갈래를 슬라이스가 고른다.
+ */
+class SliceOriginalReflector : OriginalStructureReflector {
+    /** 판정 결과. `null` 이면 「원본을 열 수 없다」다. */
+    var outcome: ReflectionOutcome? = ReflectionOutcome(0, 0, 0)
+
+    /** 내보내기가 원본을 열 수 있는가. `false` 면 500 갈래다. */
+    var openable: Boolean = true
+
+    override fun outline(
+        original: OriginalDocument,
+        body: String,
+    ): ReflectionOutcome? = outcome
+
+    override fun reflect(
+        original: OriginalDocument,
+        title: String,
+        body: String,
+    ): ExportFile? =
+        ExportFormat
+            .ofSource(original.format)
+            ?.takeIf { openable }
+            ?.let { format -> exportFileOf(title, format, body.toByteArray(Charsets.UTF_8)) }
 }

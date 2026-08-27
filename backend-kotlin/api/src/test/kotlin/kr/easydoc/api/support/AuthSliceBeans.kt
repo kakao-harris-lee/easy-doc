@@ -17,7 +17,10 @@ import kr.easydoc.application.document.DocumentExporter
 import kr.easydoc.application.document.DocumentService
 import kr.easydoc.application.document.DocumentStorage
 import kr.easydoc.application.document.DocumentTextExtractor
+import kr.easydoc.application.document.ExportRendering
 import kr.easydoc.application.document.MaskedItemReader
+import kr.easydoc.application.document.OriginalReflection
+import kr.easydoc.application.document.StoredOriginalReader
 import kr.easydoc.application.document.WorkspaceLookup
 import kr.easydoc.application.workspace.DUPLICATE_WORKSPACE_NAME_MESSAGE
 import kr.easydoc.application.workspace.WorkspaceService
@@ -151,14 +154,28 @@ class AuthSliceBeans {
         conversions: InMemoryConversionRepository,
         cipher: ContentCipher,
         maskedItems: MaskedItemReader,
+        original: OriginalReflection,
         transaction: TransactionRunner,
     ): ConversionQueryService =
         ConversionQueryService(
             conversions = conversions,
             cipher = cipher,
             maskedItems = maskedItems,
+            original = original,
             transaction = transaction,
         )
+
+    /** 원본을 여는 쪽과 반영하는 쪽 한 묶음. 제품 조립과 같은 모양이다. */
+    @Bean
+    fun originalReflection(
+        originals: InMemoryDocumentOriginalRepository,
+        cipher: ContentCipher,
+        reflector: SliceOriginalReflector,
+    ): OriginalReflection = OriginalReflection(StoredOriginalReader(originals, cipher), reflector)
+
+    /** 슬라이스의 원본 반영 대역. 케이스가 갈래를 고를 수 있게 **구체 타입으로** 노출한다. */
+    @Bean
+    fun sliceOriginalReflector(): SliceOriginalReflector = SliceOriginalReflector()
 
     /** 검수 저장 유스케이스도 실물이다. 응답 조립은 조회 유스케이스를 그대로 쓴다. */
     @Bean
@@ -211,19 +228,26 @@ class AuthSliceBeans {
             }
         }
 
+    /** 파일을 만드는 두 갈래 묶음. 제품 조립과 같은 모양이다. */
+    @Bean
+    fun exportRendering(
+        reflection: OriginalReflection,
+        exporter: DocumentExporter,
+    ): ExportRendering = ExportRendering(reflection = reflection, exporter = exporter)
+
     @Bean
     fun conversionExportService(
         conversions: InMemoryConversionRepository,
         cipher: ContentCipher,
         maskedItems: MaskedItemReader,
-        exporter: DocumentExporter,
+        rendering: ExportRendering,
         transaction: TransactionRunner,
     ): ConversionExportService =
         ConversionExportService(
             conversions = conversions,
             cipher = cipher,
             maskedItems = maskedItems,
-            exporter = exporter,
+            rendering = rendering,
             transaction = transaction,
         )
 }

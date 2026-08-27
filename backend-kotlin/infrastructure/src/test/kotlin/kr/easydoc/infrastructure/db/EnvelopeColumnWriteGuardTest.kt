@@ -334,7 +334,15 @@ class EnvelopeColumnWriteGuardTest {
                 "infrastructure/src/test/kotlin/kr/easydoc/infrastructure/document/EnvelopeRotationConcurrencyTest.kt",
             )
 
-        /** 문장 수. 파일 목록만 보면 같은 파일 안에 한 문장을 더 넣는 편집이 조용하다. */
-        const val EXPECTED_STATEMENTS = 14
+        /**
+         * 문장 수. 파일 목록만 보면 같은 파일 안에 한 문장을 더 넣는 편집이 조용하다.
+         *
+         * 14 → 16: §6.5 원본 서식 보존이 「저장된 원본을 열 수 없다」 갈래를 실측하면서
+         * **두 파일이 각각** 저장된 원본 바이트를 열리지 않는 값으로 갈아 끼우는 UPDATE 를
+         * 들였다(`BREAK_ORIGINAL_SQL`) — `ConversionReadReachTest` 는 그 갈래의 조회 판정이
+         * `failed` 임을, `ConversionExportReachTest` 는 같은 갈래의 내려받기가 500 이지
+         * 텍스트 대체본이 아님을 잰다. 두 문장 모두 봉투 두 값을 함께 SET 한다.
+         */
+        const val EXPECTED_STATEMENTS = 16
     }
 }

@@ -15,9 +15,13 @@ import kr.easydoc.application.document.DocumentStorage
 import kr.easydoc.application.document.DocumentTextExtractor
 import kr.easydoc.application.document.EnvelopeRotation
 import kr.easydoc.application.document.MaskedItemReader
+import kr.easydoc.application.document.OriginalReflection
+import kr.easydoc.application.document.OriginalStructureReflector
 import kr.easydoc.application.document.SealedStores
+import kr.easydoc.application.document.StoredOriginalReader
 import kr.easydoc.application.document.WorkspaceLookup
 import kr.easydoc.infrastructure.crypto.MIGRATE_PROFILE
+import kr.easydoc.infrastructure.export.PackagedOriginalReflector
 import kr.easydoc.infrastructure.queue.JdbcConversionQueue
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
@@ -90,18 +94,44 @@ class DocumentConfiguration {
             transaction = transactionRunner,
         )
 
+    /**
+     * 원본 구조 반영. 조회의 서식 유지 판정과 내보내기가 **같은 이 하나**를 쓴다 —
+     * 둘로 두면 「미리 말한 것」과 「실제로 한 것」이 갈린다.
+     */
+    @Bean
+    fun originalStructureReflector(): OriginalStructureReflector = PackagedOriginalReflector()
+
+    /**
+     * 원본을 **여는 쪽과 반영하는 쪽**을 한 묶음으로 세운다.
+     *
+     * 내보내기 조립이 아니라 여기 있는 것은 **조회가 이것을 쓰기 때문이다** — 서식 유지 판정은
+     * 내려받기 전에 나가는 값이라 저장 조립만으로 컨텍스트가 서야 한다(`DocumentStorageContextTest`).
+     */
+    @Bean
+    fun originalReflection(
+        originals: DocumentOriginalRepository,
+        cipher: ContentCipher,
+        reflector: OriginalStructureReflector,
+    ): OriginalReflection =
+        OriginalReflection(
+            originals = StoredOriginalReader(originals = originals, cipher = cipher),
+            reflector = reflector,
+        )
+
     /** 변환 조회 유스케이스. */
     @Bean
     fun conversionQueryService(
         conversions: ConversionRepository,
         cipher: ContentCipher,
         maskedItems: MaskedItemReader,
+        original: OriginalReflection,
         transactionRunner: TransactionRunner,
     ): ConversionQueryService =
         ConversionQueryService(
             conversions = conversions,
             cipher = cipher,
             maskedItems = maskedItems,
+            original = original,
             transaction = transactionRunner,
         )
 

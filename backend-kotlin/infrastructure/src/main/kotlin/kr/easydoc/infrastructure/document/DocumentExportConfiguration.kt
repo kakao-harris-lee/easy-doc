@@ -5,7 +5,9 @@ import kr.easydoc.application.crypto.ContentCipher
 import kr.easydoc.application.document.ConversionExportService
 import kr.easydoc.application.document.ConversionRepository
 import kr.easydoc.application.document.DocumentExporter
+import kr.easydoc.application.document.ExportRendering
 import kr.easydoc.application.document.MaskedItemReader
+import kr.easydoc.application.document.OriginalReflection
 import kr.easydoc.infrastructure.crypto.MIGRATE_PROFILE
 import kr.easydoc.infrastructure.export.PackagedDocumentExporter
 import org.springframework.context.annotation.Bean
@@ -20,20 +22,27 @@ class DocumentExportConfiguration {
     @Bean
     fun documentExporter(): DocumentExporter = PackagedDocumentExporter()
 
-    /** 복호화와 복원은 유스케이스, 패키지 조립은 [documentExporter] 가 한다. */
+    /** 파일을 만드는 두 갈래를 한 묶음으로 세운다 — 원본이 있으면 반영, 없으면 새 문서다. */
+    @Bean
+    fun exportRendering(
+        reflection: OriginalReflection,
+        exporter: DocumentExporter,
+    ): ExportRendering = ExportRendering(reflection = reflection, exporter = exporter)
+
+    /** 복호화와 복원은 유스케이스, 파일 조립은 [exportRendering] 이 한다. */
     @Bean
     fun conversionExportService(
         conversions: ConversionRepository,
         cipher: ContentCipher,
         maskedItems: MaskedItemReader,
-        exporter: DocumentExporter,
+        rendering: ExportRendering,
         transactionRunner: TransactionRunner,
     ): ConversionExportService =
         ConversionExportService(
             conversions = conversions,
             cipher = cipher,
             maskedItems = maskedItems,
-            exporter = exporter,
+            rendering = rendering,
             transaction = transactionRunner,
         )
 }

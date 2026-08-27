@@ -431,7 +431,7 @@ class ConversionReadReachTest {
     }
 
     @Test
-    @DisplayName("CF-2 업로드한 문서는 형식이 그대로 나가고, **원본이 남아 있으면 서식 유지를 판정하지 않는다**(`null`)")
+    @DisplayName("CF-2 업로드한 문서는 형식이 그대로 나가고, **완료 전에는 서식 유지를 판정하지 않는다**(`null`)")
     fun `업로드 문서의 형식 셋이 계약대로 나온다`() {
         val derivation = ContractSpec.exportFormatDerivation()
         val uploads =
@@ -460,7 +460,7 @@ class ConversionReadReachTest {
                 ).isEqualTo(derivation[format.wireName])
             assertThat(body[FORMAT_PRESERVATION_PROPERTY])
                 .withFailMessage(
-                    "원본 %s 의 바이트가 저장돼 있는데 서버가 서식 유지 상태를 지어냈다: %s",
+                    "원본 %s 가 아직 변환 중인데 서버가 서식 유지 상태를 지어냈다 — 짝지을 검수본이 없다: %s",
                     format.wireName,
                     body[FORMAT_PRESERVATION_PROPERTY],
                 ).isNull()
@@ -486,6 +486,84 @@ class ConversionReadReachTest {
             .describedAs("되살릴 원본이 사라진 것은 서버가 아는 사실이다 — 영원히 판정되지 않을 `null` 로 두면 안 된다")
             .isNotNull()
         assertThat(preservation!![STATUS_PROPERTY]).isEqualTo(FormatPreservationStatus.NOT_APPLICABLE.wireName)
+    }
+
+    @Test
+    @DisplayName("CF-5 완료된 DOCX 는 **원본을 실제로 열어** 판정한다 — 짝이 맞으면 `available`")
+    fun `완료된 업로드 문서가 원본으로 판정된다`() {
+        val token = newAccount()
+        val conversionId = uploadDocument(token, "안내문.docx", UploadFixtures.sampleDocx())
+        // `sample.docx` 의 본문 단위는 둘이다(추출 결과 두 줄, 머리글·바닥글 파트 없음).
+        markDone(conversionId, DoneResult(easyText = "쉬운 제목입니다.\n쉬운 본문입니다."))
+
+        val body = bodyOf(read(token, conversionId))
+
+        val preservation = body[FORMAT_PRESERVATION_PROPERTY] as? Map<*, *>
+        assertThat(preservation).describedAs("원본이 있고 검수본도 있는데 판정하지 않았다").isNotNull()
+        assertThat(preservation!![STATUS_PROPERTY])
+            .withFailMessage("원본 단위 수와 문단 수가 같은데 「유지 가능」이 아니다: %s", preservation)
+            .isEqualTo(FormatPreservationStatus.AVAILABLE.wireName)
+        assertThat(preservation[DETAILS_PROPERTY]).isEqualTo(emptyList<String>())
+    }
+
+    @Test
+    @DisplayName("CF-6 문단 수가 원본과 다르면 `partial` 이고, 항목은 **개수만** 말한다")
+    fun `문단 수가 다르면 일부 유지다`() {
+        val token = newAccount()
+        val conversionId = uploadDocument(token, "안내문.docx", UploadFixtures.sampleDocx())
+        markDone(conversionId, DoneResult(easyText = "한 문단으로 합친 쉬운 글입니다."))
+
+        val body = bodyOf(read(token, conversionId))
+
+        val preservation = body.getValue(FORMAT_PRESERVATION_PROPERTY) as Map<*, *>
+        assertThat(preservation[STATUS_PROPERTY]).isEqualTo(FormatPreservationStatus.PARTIAL.wireName)
+        val details = preservation[DETAILS_PROPERTY] as List<*>
+        assertThat(details).describedAs("「일부」라고 말해 놓고 무엇이 달라지는지 말하지 않았다").isNotEmpty()
+        assertThat(details).allSatisfy { item ->
+            assertThat(item.toString())
+                .withFailMessage("영향 항목에 문서 본문 조각이 실렸다: %s", item)
+                .doesNotContain("쉬운 글 변환 안내")
+                .doesNotContain("추출 테스트용")
+                .doesNotContain("한 문단으로 합친")
+        }
+    }
+
+    @Test
+    @DisplayName("CF-7 저장된 원본을 열 수 없으면 `failed` 다 — 사유를 항목으로 말한다")
+    fun `열 수 없는 원본은 실패로 나간다`() {
+        val token = newAccount()
+        val conversionId = uploadDocument(token, "안내문.docx", UploadFixtures.sampleDocx())
+        markDone(conversionId, DoneResult(easyText = "쉬운 제목입니다.\n쉬운 본문입니다."))
+        breakStoredOriginal(token, conversionId)
+
+        val body = bodyOf(read(token, conversionId))
+
+        val preservation = body.getValue(FORMAT_PRESERVATION_PROPERTY) as Map<*, *>
+        assertThat(preservation[STATUS_PROPERTY])
+            .describedAs("열리지 않는 원본을 「유지 가능」이라 말하면 내려받기에서야 드러난다")
+            .isEqualTo(FormatPreservationStatus.FAILED.wireName)
+        assertThat(preservation[DETAILS_PROPERTY] as List<*>).isNotEmpty()
+    }
+
+    /**
+     * 저장된 원본을 **열리지 않는 바이트로** 갈아 끼운다.
+     *
+     * 암호문 자체는 멀쩡하게 만든다(같은 결속·같은 세대) — 복호화가 실패하는 경로가 아니라
+     * **연 바이트가 문서가 아닌** 경로를 재려는 것이다.
+     */
+    private fun breakStoredOriginal(
+        token: String,
+        conversionId: UUID,
+    ) {
+        val documentId = UUID.fromString(bodyOf(read(token, conversionId)).getValue(DOCUMENT_ID_PROPERTY).toString())
+        database.execute(
+            BREAK_ORIGINAL_SQL.format(
+                sealed("zip 이 아니다", documentId, EncryptedField.DOCUMENT_ORIGINAL_BYTES),
+                cipher.writeScheme,
+                cipher.writeKeyVersion,
+                documentId,
+            ),
+        )
     }
 
     @Test
@@ -717,6 +795,22 @@ class ConversionReadReachTest {
         private const val SOURCE_FORMAT_PROPERTY = "source_format"
         private const val EXPORT_FORMAT_PROPERTY = "export_format"
         private const val FORMAT_PRESERVATION_PROPERTY = "format_preservation"
+
+        /**
+         * 규약: SQL 은 companion 의 상수 리터럴에 둔다 — 사유는 [markDone] 이 가리키는 문서.
+         *
+         * 암호문과 **봉투 두 값을 같은 문장에서** SET 한다. 행당 키 세대가 하나라 암호문만
+         * 갈아 끼우면 「세대는 v1 인데 암호문은 v2」인 행이 남고, AAD 에 세대가 실리므로
+         * 그 행은 영원히 열리지 않는다 — `EnvelopeColumnWriteGuardTest` 의 규약이다.
+         */
+        val BREAK_ORIGINAL_SQL =
+            """
+            UPDATE document_originals
+            SET file_bytes_encrypted = %s,
+                encryption_scheme = '%s',
+                key_version = %s
+            WHERE document_id = '%s'
+            """.trimIndent()
         private const val DETAILS_PROPERTY = "details"
         private const val EASY_TEXT_PROPERTY = "easy_text"
         private const val EDITED_TEXT_PROPERTY = "edited_text"

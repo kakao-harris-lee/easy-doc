@@ -16,7 +16,7 @@ import kr.easydoc.core.document.ConversionStatus
 import kr.easydoc.core.document.ConversionView
 import kr.easydoc.core.document.MaskedItemView
 import kr.easydoc.core.document.SourceFormat
-import kr.easydoc.core.document.formatPreservationOf
+import kr.easydoc.core.document.noOriginalPreservation
 import kr.easydoc.core.easyread.ExportFormat
 import kr.easydoc.core.privacy.MaskCategory
 import kr.easydoc.core.security.Secret
@@ -209,7 +209,7 @@ class ConversionReadContractTest {
             status = ConversionStatus.entries.first { !it.exposesResult },
             sourceFormat = SourceFormat.DOCX,
             exportFormat = ExportFormat.ofSource(SourceFormat.DOCX),
-            formatPreservation = formatPreservationOf(hasStoredOriginal = true),
+            formatPreservation = noOriginalPreservation(),
             easyText = null,
             editedText = null,
             reviewedAt = null,

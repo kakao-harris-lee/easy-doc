@@ -25,11 +25,17 @@ export type SourceFormat = 'text' | 'docx' | 'pdf' | 'hwpx'
 
 /**
  * 원본 서식 유지 상태. 계약 `components/schemas/FormatPreservationStatus`.
- * 오늘 서버가 낼 수 있는 값은 `'not_applicable'` 하나뿐이다 — 유지할 원본 서식이
- * 없다는 뜻이고(붙여넣기이거나 원본 바이트가 남아 있지 않다), 구조 보존이 구현되면
- * 계약과 함께 값이 는다.
+ *
+ * - `'not_applicable'` — 유지할 원본 서식이 없다(붙여넣기이거나 원본 바이트가 남아
+ *   있지 않다). 영구히 참이다.
+ * - `'available'` — 원본 구조 그대로 나간다. 짝이 하나라도 어긋나면 이 값이 아니다.
+ * - `'partial'` — 일부는 달라진다. 무엇이 얼마나 달라지는지 `details`가 개수로 말한다.
+ * - `'failed'` — 같은 형식으로 다시 만들 수 없다. 내려받기도 같은 사유로 실패한다.
+ *
+ * `'checking'`은 계약에 **없다** — 판정이 조회 한 번 안에서 동기로 끝나 지켜볼 진행
+ * 상태가 없다. 아직 판정하지 않은 동안은 `format_preservation` 자체가 `null`이다.
  */
-export type FormatPreservationStatus = 'not_applicable'
+export type FormatPreservationStatus = 'not_applicable' | 'available' | 'partial' | 'failed'
 
 /** 원본 서식 유지 판정. 계약 `components/schemas/FormatPreservation`. */
 export interface FormatPreservation {

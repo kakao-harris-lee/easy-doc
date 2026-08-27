@@ -29,7 +29,7 @@ class PackagedDocumentExporterTest {
     fun `txt 본문이 그대로다`() {
         val file = exporter.export("제목", "한 줄.\n두 줄.", ExportFormat.TXT)
 
-        assertThat(file.filename).isEqualTo("제목.txt")
+        assertThat(file.filename).isEqualTo("제목-쉬운글.txt")
         assertThat(file.mediaType).isEqualTo(ExportFormat.TXT.mediaType)
         assertThat(String(file.content, Charsets.UTF_8)).isEqualTo("한 줄.\n두 줄.")
     }
@@ -39,7 +39,7 @@ class PackagedDocumentExporterTest {
     fun `docx 왕복이 본문을 지킨다`() {
         val file = exporter.export("보고서", "첫 문단\n둘째 문단", ExportFormat.DOCX)
 
-        assertThat(file.filename).isEqualTo("보고서.docx")
+        assertThat(file.filename).isEqualTo("보고서-쉬운글.docx")
         assertThat(file.mediaType).isEqualTo(ExportFormat.DOCX.mediaType)
         val extracted = extractors.extract(file.filename, file.content)
         assertThat(extracted.text).contains("첫 문단").contains("둘째 문단")
@@ -50,7 +50,7 @@ class PackagedDocumentExporterTest {
     fun `hwpx 왕복이 본문을 지킨다`() {
         val file = exporter.export("안내", "한글 본문\n둘째 줄", ExportFormat.HWPX)
 
-        assertThat(file.filename).isEqualTo("안내.hwpx")
+        assertThat(file.filename).isEqualTo("안내-쉬운글.hwpx")
         assertThat(file.mediaType).isEqualTo(ExportFormat.HWPX.mediaType)
         val extracted = extractors.extract(file.filename, file.content)
         assertThat(extracted.text).contains("한글 본문").contains("둘째 줄")

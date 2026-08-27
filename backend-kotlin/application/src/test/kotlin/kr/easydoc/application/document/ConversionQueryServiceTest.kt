@@ -2,8 +2,10 @@ package kr.easydoc.application.document
 
 import kr.easydoc.core.crypto.EncryptedField
 import kr.easydoc.core.crypto.PlainBody
+import kr.easydoc.core.crypto.PlainBytes
 import kr.easydoc.core.document.ConversionStatus
 import kr.easydoc.core.document.FormatPreservationStatus
+import kr.easydoc.core.document.ReflectionOutcome
 import kr.easydoc.core.document.SourceFormat
 import kr.easydoc.core.easyread.ExportFormat
 import kr.easydoc.core.exceptions.NotFoundException
@@ -133,29 +135,97 @@ class ConversionQueryServiceTest {
     }
 
     @Test
-    @DisplayName("형식 셋이 저장 값에서 유도된다 — 원본이 남아 있으면 서식 유지를 **판정하지 않는다**")
-    fun `형식 셋이 저장 값에서 유도된다`() {
+    @DisplayName("원본이 남지 않은 문서는 `not_applicable` 이다 — 영구히 참인 판정이다")
+    fun `원본이 없으면 판정이 없다고 말한다`() {
         val world = World()
-        val withOriginal = UUID.randomUUID()
-        val withoutOriginal = UUID.randomUUID()
-        world.seedResults(withOriginal, easyText = "쉬운 글 초안")
-        world.seedOrigin(withOriginal, SeededOrigin(SourceFormat.DOCX, hasStoredOriginal = true))
-        world.seedResults(withoutOriginal, easyText = "쉬운 글 초안")
-        world.seedOrigin(withoutOriginal, SeededOrigin(SourceFormat.DOCX, hasStoredOriginal = false))
+        val conversionId = UUID.randomUUID()
+        world.seedResults(conversionId, easyText = "쉬운 글 초안")
+        world.seedOrigin(conversionId, SeededOrigin(SourceFormat.DOCX, hasStoredOriginal = false))
 
-        val kept = world.service.read(OWNER, withOriginal)
-        val lost = world.service.read(OWNER, withoutOriginal)
+        val view = world.service.read(OWNER, conversionId)
 
-        assertThat(kept.sourceFormat).isEqualTo(SourceFormat.DOCX)
-        assertThat(kept.exportFormat).describedAs("들어온 형식 그대로 나간다").isEqualTo(ExportFormat.DOCX)
-        assertThat(kept.formatPreservation)
-            .describedAs("원본이 남아 있는데 판정을 지어냈다 — 분석기가 없는 동안 어느 상태도 추측이다")
+        assertThat(view.exportFormat).describedAs("들어온 형식 그대로 나간다").isEqualTo(ExportFormat.DOCX)
+        assertThat(view.formatPreservation?.status).isEqualTo(FormatPreservationStatus.NOT_APPLICABLE)
+        assertThat(view.formatPreservation?.details).isEmpty()
+        assertThat(world.reflector.outlined).describedAs("열 원본이 없는데 반영기를 불렀다").isEmpty()
+    }
+
+    @Test
+    @DisplayName("원본이 남은 완료 변환은 **반영 결과를 미리 재서** 판정한다")
+    fun `원본이 있으면 반영 결과로 판정한다`() {
+        val world = World()
+        val conversionId = UUID.randomUUID()
+        world.seedResults(conversionId, easyText = "쉬운 글 초안")
+        world.seedOrigin(conversionId, SeededOrigin(SourceFormat.DOCX, hasStoredOriginal = true))
+        world.reflector.outcome = ReflectionOutcome(headerFooterUnits = 2, emptiedUnits = 1, appendedLines = 0)
+
+        val view = world.service.read(OWNER, conversionId)
+
+        assertThat(world.reflector.outlined)
+            .describedAs("판정은 저장된 원본을 실제로 열어 재야 한다 — 형식만 보고 지어내지 않는다")
+            .containsExactly(SourceFormat.DOCX)
+        assertThat(view.formatPreservation?.status).isEqualTo(FormatPreservationStatus.PARTIAL)
+        assertThat(view.formatPreservation?.details).hasSize(3)
+    }
+
+    @Test
+    @DisplayName("짝이 하나도 어긋나지 않으면 `available` 이다")
+    fun `짝이 맞으면 유지 가능이다`() {
+        val world = World()
+        val conversionId = UUID.randomUUID()
+        world.seedResults(conversionId, easyText = "쉬운 글 초안")
+        world.seedOrigin(conversionId, SeededOrigin(SourceFormat.HWPX, hasStoredOriginal = true))
+        world.reflector.outcome = ReflectionOutcome(headerFooterUnits = 0, emptiedUnits = 0, appendedLines = 0)
+
+        val view = world.service.read(OWNER, conversionId)
+
+        assertThat(view.formatPreservation?.status).isEqualTo(FormatPreservationStatus.AVAILABLE)
+        assertThat(view.formatPreservation?.details).isEmpty()
+    }
+
+    @Test
+    @DisplayName("원본을 열 수 없으면 `failed` 다 — 사유를 항목으로 준다")
+    fun `열 수 없는 원본은 실패로 나간다`() {
+        val world = World()
+        val conversionId = UUID.randomUUID()
+        world.seedResults(conversionId, easyText = "쉬운 글 초안")
+        world.seedOrigin(conversionId, SeededOrigin(SourceFormat.DOCX, hasStoredOriginal = true))
+        world.reflector.outcome = null
+
+        val view = world.service.read(OWNER, conversionId)
+
+        assertThat(view.formatPreservation?.status).isEqualTo(FormatPreservationStatus.FAILED)
+        assertThat(view.formatPreservation?.details).hasSize(1)
+    }
+
+    @Test
+    @DisplayName("검수본이 있으면 **그것을** 판정의 한쪽으로 쓴다 — 초안이 아니다")
+    fun `검수본이 판정의 한쪽이다`() {
+        val world = World()
+        val conversionId = UUID.randomUUID()
+        world.seedResults(conversionId, easyText = "초안 한 줄", editedText = "검수 한 줄\n검수 두 줄")
+        world.seedOrigin(conversionId, SeededOrigin(SourceFormat.DOCX, hasStoredOriginal = true))
+
+        world.service.read(OWNER, conversionId)
+
+        assertThat(world.reflector.outlined).containsExactly(SourceFormat.DOCX)
+    }
+
+    @Test
+    @DisplayName("완료 전에는 원본이 있어도 **판정하지 않는다** — 짝지을 검수본이 아직 없다")
+    fun `완료 전에는 판정하지 않는다`() {
+        val world = World()
+        val conversionId = UUID.randomUUID()
+        world.seedResults(conversionId, easyText = "쉬운 글 초안")
+        world.seedOrigin(conversionId, SeededOrigin(SourceFormat.DOCX, hasStoredOriginal = true))
+        world.demoteTo(conversionId, ConversionStatus.PROCESSING)
+
+        val view = world.service.read(OWNER, conversionId)
+
+        assertThat(view.formatPreservation)
+            .describedAs("`checking` 으로 접지 않는다 — 이 판정은 조회 한 번 안에서 동기로 끝난다")
             .isNull()
-
-        assertThat(lost.formatPreservation?.status)
-            .describedAs("되살릴 원본이 없다는 것은 서버가 확실히 아는 사실이다")
-            .isEqualTo(FormatPreservationStatus.NOT_APPLICABLE)
-        assertThat(lost.formatPreservation?.details).isEmpty()
+        assertThat(world.reflector.outlined).describedAs("완료 전에 10MB 원본을 열었다").isEmpty()
     }
 
     @Test
@@ -172,6 +242,10 @@ class ConversionQueryServiceTest {
         assertThat(view.exportFormat)
             .describedAs("PDF 렌더러가 없다 — TXT·DOCX 로 접으면 계약이 우회 다운로드를 권하는 것이 된다")
             .isNull()
+        assertThat(view.formatPreservation)
+            .describedAs("반영할 대상 형식이 없다 — 「유지 불가」가 아니라 판정하지 않는다")
+            .isNull()
+        assertThat(world.reflector.outlined).describedAs("PDF 원본을 열려고 했다").isEmpty()
     }
 
     @Test
@@ -221,6 +295,9 @@ class ConversionQueryServiceTest {
     private companion object {
         val OWNER: UUID = UUID.fromString("00000000-0000-4000-8000-0000000000a1")
         val STRANGER: UUID = UUID.fromString("00000000-0000-4000-8000-0000000000a2")
+
+        /** 원본 자리에 둘 바이트. 대역 반영기가 열지 않으므로 내용은 아무래도 좋다. */
+        val ORIGINAL_BYTES: ByteArray = "원본 바이트".toByteArray()
     }
 
     /**
@@ -241,12 +318,15 @@ class ConversionQueryServiceTest {
         val cipher = FakeContentCipher(writeKeyVersion = 1, transaction = transaction)
         val conversions = FakeConversionRepository(transaction)
         val maskedItems = FakeMaskedItemReader()
+        val originals = FakeDocumentOriginalRepository(transaction)
+        val reflector = FakeOriginalStructureReflector()
 
         val service =
             ConversionQueryService(
                 conversions = conversions,
                 cipher = cipher,
                 maskedItems = maskedItems,
+                original = OriginalReflection(StoredOriginalReader(originals, cipher), reflector),
                 transaction = transaction,
             )
 
@@ -296,10 +376,25 @@ class ConversionQueryServiceTest {
             owner: UUID = OWNER,
         ) {
             val key = owner to conversionId
+            val stored = conversions.owned.getValue(key)
             conversions.owned[key] =
-                conversions.owned
-                    .getValue(key)
-                    .copy(sourceFormat = origin.sourceFormat, hasStoredOriginal = origin.hasStoredOriginal)
+                stored.copy(sourceFormat = origin.sourceFormat, hasStoredOriginal = origin.hasStoredOriginal)
+            // 「행이 있다」와 「바이트가 열린다」가 실제로 같은 사실이어야 한다 — 표에도 함께 심는다.
+            if (origin.hasStoredOriginal) {
+                originals.insert(
+                    owner,
+                    stored.documentId,
+                    StoredOriginal(
+                        bytes =
+                            cipher.encryptBytes(
+                                PlainBytes(ORIGINAL_BYTES),
+                                stored.documentId,
+                                EncryptedField.DOCUMENT_ORIGINAL_BYTES,
+                            ),
+                        byteSize = ORIGINAL_BYTES.size,
+                    ),
+                )
+            }
         }
 
         /**

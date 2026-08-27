@@ -10,6 +10,9 @@ import kr.easydoc.core.crypto.PlainBytes
 import kr.easydoc.core.document.Conversion
 import kr.easydoc.core.document.ConversionStatus
 import kr.easydoc.core.document.MaskedItemView
+import kr.easydoc.core.document.ReflectionOutcome
+import kr.easydoc.core.document.SourceFormat
+import kr.easydoc.core.easyread.ExportFile
 import kr.easydoc.core.privacy.MaskCategory
 import kr.easydoc.core.security.Secret
 import java.time.Instant
@@ -293,5 +296,42 @@ internal class FakeMaskedItemReader : MaskedItemReader {
             .filter { it.isNotBlank() }
             .map { MaskedItemView(MaskCategory.RRN, it, Secret("가린값")) }
             .toList()
+    }
+}
+
+/**
+ * 원본 반영 대역 — 미리 정해 둔 판정과 파일을 돌려준다.
+ *
+ * 여기서 실제 파일을 열지 않는 것이 요점이다. 유스케이스가 지는 책임은 「어느 갈래에서
+ * 원본을 열려 하는가」와 「그 결과를 응답·오류로 어떻게 옮기는가」이고, 원본 구조를 실제로
+ * 고쳐 쓰는 일은 infrastructure 의 `PackagedOriginalReflector` 가 fixture 로 검증한다.
+ */
+internal class FakeOriginalStructureReflector(
+    var outcome: ReflectionOutcome? = ReflectionOutcome(0, 0, 0),
+    var file: ExportFile? = null,
+) : OriginalStructureReflector {
+    /** 판정·반영에 넘어온 원본의 형식. 「무엇을 열려고 했는가」를 재는 재료다. */
+    val outlined = mutableListOf<SourceFormat>()
+    val reflected = mutableListOf<SourceFormat>()
+
+    /** 반영에 넘어온 본문. 내보내기가 **복원된 본문**을 넘기는지 재는 자리다. */
+    val bodies = mutableListOf<String>()
+
+    override fun outline(
+        original: OriginalDocument,
+        body: String,
+    ): ReflectionOutcome? {
+        outlined += original.format
+        return outcome
+    }
+
+    override fun reflect(
+        original: OriginalDocument,
+        title: String,
+        body: String,
+    ): ExportFile? {
+        reflected += original.format
+        bodies += body
+        return file
     }
 }

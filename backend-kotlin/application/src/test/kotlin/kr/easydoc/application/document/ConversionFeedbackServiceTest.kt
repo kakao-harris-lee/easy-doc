@@ -326,6 +326,11 @@ class ConversionFeedbackServiceTest {
                         conversions = conversions,
                         cipher = cipher,
                         maskedItems = FakeMaskedItemReader(),
+                        original =
+                            OriginalReflection(
+                                StoredOriginalReader(FakeDocumentOriginalRepository(transaction), cipher),
+                                FakeOriginalStructureReflector(),
+                            ),
                         transaction = transaction,
                     ),
                 transaction = transaction,

@@ -167,7 +167,11 @@ subprojects {
         group = "verification"
         description =
             "LLM-as-judge opt-in 레인. 비밀값이 없으면 skip 하고, 있으면 유료 호출로 골든 변환을 채점한다."
-        val testSourceSet = project.extensions.getByType<JavaPluginExtension>().sourceSets.getByName("test")
+        val testSourceSet =
+            project.extensions
+                .getByType<JavaPluginExtension>()
+                .sourceSets
+                .getByName("test")
         testClassesDirs = testSourceSet.output.classesDirs
         classpath = testSourceSet.runtimeClasspath
         failOnNoDiscoveredTests = false

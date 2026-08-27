@@ -67,10 +67,28 @@ enum class ExportFormat(
 private val FORBIDDEN_IN_FILENAME =
     Regex("""[\u0000-\u001F\u007F-\u009F"\\/:*?<>|]""")
 
-/** 제목이 통째로 지워졌을 때 쓸 이름. */
+/**
+ * 제목이 통째로 지워졌을 때 쓸 이름.
+ *
+ * 여기에는 [EASY_READ_SUFFIX] 를 덧붙이지 않는다 — 이 이름은 **원본 제목에서 나온 것이
+ * 아니라서** 구분할 원본 파일명 자체가 없고, 이름이 이미 「쉬운 글」이라 붙이면
+ * `쉬운 글-쉬운글` 이 된다.
+ */
 private const val FALLBACK_NAME = "쉬운 글"
 
-/** 확장자를 뺀 파일명 길이 상한. */
+/**
+ * 원본 파일과 구분하려고 제목 뒤에 붙이는 표식 (`DESIGN.md` §6.5 — 예: `청년월세안내-쉬운글.docx`).
+ *
+ * 원본 서식을 유지해 내보내면 결과 파일이 원본과 **같은 형식·비슷한 이름**이라, 표식이
+ * 없으면 내려받기 폴더에서 둘을 가릴 수 없다. 표식은 `filename*` 쪽에만 실린다 — ASCII
+ * 대체 이름([ASCII_FALLBACK_STEM])은 계약이 `easy-read.<ext>` 로 고정한 값이라 그대로 둔다.
+ */
+private const val EASY_READ_SUFFIX = "-쉬운글"
+
+/**
+ * 확장자를 뺀 파일명 길이 상한. **[EASY_READ_SUFFIX] 를 포함한 길이다** — 상한을 제목 몫으로만
+ * 읽으면 표식만큼 이름이 길어져, 한글 제목이 상한에 닿았을 때 UTF-8 바이트 예산을 넘는다.
+ */
 private const val MAX_FILENAME_STEM = 80
 
 /** `filename*` 을 모르는 클라이언트를 위한 ASCII 대체 이름. */
@@ -82,7 +100,12 @@ private const val TRIMMED_EDGE_CHARS = ". "
 /** `Byte` 의 부호를 떼고 0..255 로 읽기 위한 마스크. JVM `Byte` 는 부호 있는 8비트다. */
 private const val BYTE_MASK = 0xFF
 
-/** 문서 제목으로 내려받을 파일명을 만든다. */
+/**
+ * 문서 제목으로 내려받을 파일명을 만든다 — 제목 뒤에 [EASY_READ_SUFFIX] 가 붙는다.
+ *
+ * 자르기는 표식을 붙이기 **전**에 하고 그 몫을 미리 뺀다. 붙인 뒤에 자르면 표식이 잘려
+ * `…-쉬운` 같은 이름이 나가고, 자르지 않으면 상한이 표식만큼 늘어난다.
+ */
 fun exportFilename(
     title: String,
     format: ExportFormat,
@@ -96,9 +119,10 @@ fun exportFilename(
     val stem =
         cleaned
             .trim { it in TRIMMED_EDGE_CHARS }
-            .takeCodePoints(MAX_FILENAME_STEM)
+            .takeCodePoints(MAX_FILENAME_STEM - EASY_READ_SUFFIX.length)
             .trim { it in TRIMMED_EDGE_CHARS }
-    return "${stem.ifEmpty { FALLBACK_NAME }}.${format.extension}"
+    val named = if (stem.isEmpty()) FALLBACK_NAME else stem + EASY_READ_SUFFIX
+    return "$named.${format.extension}"
 }
 
 /** RFC 5987 방식으로 파일명을 담은 `Content-Disposition` 헤더 값을 만든다. */
@@ -166,3 +190,20 @@ private fun String.takeCodePoints(limit: Int): String {
     if (codePointCount(0, length) <= limit) return this
     return substring(0, offsetByCodePoints(0, limit))
 }
+
+/**
+ * 내보낼 본문을 **원본 단위에 짝지을 문단**으로 나눈다.
+ *
+ * 빈 줄을 버리는 것이 추출과 대칭이다 — 추출기가 빈 블록을 버렸으므로(infrastructure
+ * `ingest/ExtractedTextBuilder`) 원본 단위 쪽에는 빈 줄에 대응하는 자리가 애초에 없다.
+ * 여기서 빈 줄을 세면 「원본보다 문단이 많다」가 사실이 아닌 채로 서고, 그 차이만큼 빈
+ * 문단이 문서 끝에 덧붙는다.
+ *
+ * **판정과 실제 반영이 이 함수 하나를 함께 쓴다** — `reflectedPreservation` 이 미리 말한
+ * 개수와 내보내기가 실제로 쓴 개수가 갈리면 응답이 거짓이 된다.
+ *
+ * 새 문서를 만드는 갈래(`infrastructure/export/exportParagraphs`)와 다른 함수인 것은
+ * 의도적이다: 그쪽은 짝지을 원본이 없어 빈 줄도 그대로 문단이 된다.
+ */
+fun exportContentLines(body: String): List<String> =
+    stripControlChars(body).split("\r\n", "\n").filter { it.isNotBlank() }

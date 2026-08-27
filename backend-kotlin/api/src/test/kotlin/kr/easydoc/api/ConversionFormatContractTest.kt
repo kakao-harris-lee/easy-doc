@@ -8,8 +8,11 @@ import kr.easydoc.core.crypto.PlainBody
 import kr.easydoc.core.document.ConversionStatus
 import kr.easydoc.core.document.ConversionView
 import kr.easydoc.core.document.FormatPreservationStatus
+import kr.easydoc.core.document.ReflectionOutcome
 import kr.easydoc.core.document.SourceFormat
-import kr.easydoc.core.document.formatPreservationOf
+import kr.easydoc.core.document.noOriginalPreservation
+import kr.easydoc.core.document.reflectedPreservation
+import kr.easydoc.core.document.unreadableOriginalPreservation
 import kr.easydoc.core.easyread.ExportFormat
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.DisplayName
@@ -173,22 +176,46 @@ class ConversionFormatContractTest {
     }
 
     @Test
-    @DisplayName("원본이 남지 않은 문서는 `not_applicable` 이고, 남은 문서는 **판정하지 않는다**(`null`)")
-    fun `서식 유지 판정이 원본 유무로 갈린다`() {
+    @DisplayName("구현이 낼 수 있는 판정이 **전부 계약 값 집합 안**이다 — 네 갈래를 모두 지난다")
+    fun `서식 유지 판정이 계약 값 집합 안이다`() {
         val declaredStatuses = ContractSpec.schemaEnum(PRESERVATION_STATUS_SCHEMA)
 
-        val withoutOriginal = formatPreservationOf(hasStoredOriginal = false)
-        assertThat(withoutOriginal).describedAs("되살릴 원본이 없다는 것은 오늘 서버가 확실히 아는 사실이다").isNotNull()
-        assertThat(withoutOriginal!!.status.wireName)
-            .withFailMessage("판정 값이 계약 %s 밖이다", PRESERVATION_STATUS_SCHEMA)
-            .isIn(declaredStatuses)
-        assertThat(withoutOriginal.details)
-            .describedAs("영향 항목을 만들어 낼 원본 구조 분석기가 없다 — `null` 이 아니라 빈 배열이다")
-            .isEmpty()
+        val judgments =
+            mapOf(
+                "원본이 없다" to noOriginalPreservation(),
+                "짝이 정확히 맞았다" to reflectedPreservation(ReflectionOutcome(0, 0, 0)),
+                "일부가 달라진다" to reflectedPreservation(ReflectionOutcome(2, 1, 3)),
+                "원본을 열 수 없다" to unreadableOriginalPreservation(),
+            )
 
-        assertThat(formatPreservationOf(hasStoredOriginal = true))
-            .describedAs("원본이 남아 있으면 나중에 판정이 설 수 있다 — 지금 어느 상태로도 접지 않는다")
-            .isNull()
+        judgments.forEach { (why, judged) ->
+            assertThat(judged.status.wireName)
+                .withFailMessage("%s: 판정 값이 계약 %s 밖이다", why, PRESERVATION_STATUS_SCHEMA)
+                .isIn(declaredStatuses)
+        }
+        assertThat(judgments.getValue("일부가 달라진다").details)
+            .describedAs("「일부」라고 말해 놓고 무엇이 달라지는지 말하지 않으면 사용자가 취할 행동이 없다")
+            .isNotEmpty()
+        assertThat(judgments.getValue("짝이 정확히 맞았다").details)
+            .describedAs("알릴 영향 항목이 없다 — `null` 이 아니라 빈 배열이다")
+            .isEmpty()
+    }
+
+    @Test
+    @DisplayName("판정 문구는 **개수와 고정 문장만** 담는다 — 문서 본문이 실릴 통로가 없다")
+    fun `판정 문구가 본문을 담지 않는다`() {
+        val everyDetail =
+            listOf(
+                noOriginalPreservation(),
+                unreadableOriginalPreservation(),
+                reflectedPreservation(ReflectionOutcome(3, 4, 5)),
+            ).flatMap { it.details }
+
+        assertThat(everyDetail).allSatisfy { detail ->
+            assertThat(detail)
+                .withFailMessage("계약 `FormatPreservation.details` 는 구조 요소의 종류와 개수만 허용한다: %s", detail)
+                .matches("""[^A-Za-z<>\[\]{}]*""")
+        }
     }
 
     @Test
@@ -228,7 +255,12 @@ class ConversionFormatContractTest {
             status = ConversionStatus.DONE,
             sourceFormat = source,
             exportFormat = ExportFormat.ofSource(source),
-            formatPreservation = formatPreservationOf(hasStoredOriginal),
+            formatPreservation =
+                if (hasStoredOriginal) {
+                    reflectedPreservation(ReflectionOutcome(1, 1, 1))
+                } else {
+                    noOriginalPreservation()
+                },
             easyText = PlainBody("쉬운 글 초안입니다."),
             editedText = null,
             reviewedAt = null,

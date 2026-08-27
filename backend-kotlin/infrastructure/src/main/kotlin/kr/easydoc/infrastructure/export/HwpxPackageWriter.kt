@@ -11,12 +11,6 @@ import kr.easydoc.core.easyread.ExportFile
 import kr.easydoc.core.easyread.ExportFormat
 import kr.easydoc.core.easyread.exportFileOf
 import kr.easydoc.core.text.stripControlChars
-import org.apache.commons.compress.archivers.zip.ZipArchiveEntry
-import org.apache.commons.compress.archivers.zip.ZipArchiveOutputStream
-import java.io.ByteArrayOutputStream
-import java.nio.charset.StandardCharsets
-import java.util.zip.CRC32
-import java.util.zip.ZipEntry
 
 /**
  * 복원된 본문을 HWPX(OWPML) 패키지로 담는다.
@@ -80,48 +74,8 @@ internal class HwpxPackageWriter {
     }
 
     /**
-     * hwpxlib 는 `mimetype` 을 DEFLATED 로 쓴다. 개방형 HWPX/OCF 는 이 항목이
-     * 압축되지 않은 채 zip 의 첫 자리에 있어야 한다.
+     * hwpxlib 는 `mimetype` 을 DEFLATED 로 쓴다. 개방형 HWPX/OCF 는 이 항목이 압축되지 않은
+     * 채 zip 의 첫 자리에 있어야 한다 — 다시 포장하는 규칙은 [hwpxPackageOf] 하나다.
      */
-    private fun withStoredMimetypeFirst(packaged: ByteArray): ByteArray {
-        val parts = hwpxZipEntries(packaged)
-        val mimetype = parts.remove(MIMETYPE_NAME) ?: error("hwpxlib 패키지에 mimetype 이 없다")
-        val sink = ByteArrayOutputStream()
-        ZipArchiveOutputStream(sink).use { zip ->
-            zip.setEncoding(StandardCharsets.UTF_8.name())
-            putStored(zip, MIMETYPE_NAME, mimetype)
-            parts.forEach { (name, bytes) -> putDeflated(zip, name, bytes) }
-        }
-        return sink.toByteArray()
-    }
-
-    private fun putStored(
-        zip: ZipArchiveOutputStream,
-        name: String,
-        bytes: ByteArray,
-    ) {
-        val entry = ZipArchiveEntry(name)
-        entry.method = ZipEntry.STORED
-        entry.size = bytes.size.toLong()
-        entry.crc = crc32(bytes)
-        zip.putArchiveEntry(entry)
-        zip.write(bytes)
-        zip.closeArchiveEntry()
-    }
-
-    private fun putDeflated(
-        zip: ZipArchiveOutputStream,
-        name: String,
-        bytes: ByteArray,
-    ) {
-        zip.putArchiveEntry(ZipArchiveEntry(name))
-        zip.write(bytes)
-        zip.closeArchiveEntry()
-    }
-
-    private fun crc32(bytes: ByteArray): Long = CRC32().apply { update(bytes) }.value
-
-    private companion object {
-        const val MIMETYPE_NAME: String = "mimetype"
-    }
+    private fun withStoredMimetypeFirst(packaged: ByteArray): ByteArray = hwpxPackageOf(hwpxZipEntries(packaged))
 }

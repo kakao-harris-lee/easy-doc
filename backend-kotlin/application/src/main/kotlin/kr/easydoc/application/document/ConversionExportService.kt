@@ -29,7 +29,7 @@ class ConversionExportService(
     private val conversions: ConversionRepository,
     private val cipher: ContentCipher,
     private val maskedItems: MaskedItemReader,
-    private val exporter: DocumentExporter,
+    private val rendering: ExportRendering,
     private val transaction: TransactionRunner,
 ) {
     /**
@@ -45,7 +45,15 @@ class ConversionExportService(
         requested: ExportFormat?,
     ): ExportFile {
         val prepared = transaction.inTransaction { prepare(ownerId, conversionId, requested) }
-        return exporter.export(prepared.title, prepared.body, prepared.format)
+        // 원본이 없는 문서(붙여넣기 · `document_originals` 가 서기 전 업로드)는 새 문서를 만든다 —
+        // 그 갈래의 서식 유지 판정이 `not_applicable` 이고, **영구히 참**이다.
+        val opened =
+            prepared.original
+                ?: return rendering.exporter.export(prepared.title, prepared.body, prepared.format)
+        // **텍스트 전용 파일로 조용히 대체하지 않는다**(§6.5). 원본을 열 수 없으면 그 사실이
+        // 오류로 드러나고, 같은 사유가 조회 응답에서는 `failed` 로 이미 보인다.
+        return rendering.reflection.reflector.reflect(opened, prepared.title, prepared.body)
+            ?: throw StorageException(UNREADABLE_ORIGINAL_MESSAGE)
     }
 
     private fun prepare(
@@ -70,6 +78,13 @@ class ConversionExportService(
             title = stored.documentTitle,
             format = format,
             body = restoredBody(draft, reviewed, items),
+            // 조회의 판정과 **같은 원본**을 연다. 붙여넣기 문서에는 행이 없어 언제나 `null` 이다.
+            original =
+                rendering.reflection.originals.read(
+                    ownerId,
+                    stored.result.documentId,
+                    stored.result.sourceFormat,
+                ),
         )
     }
 
@@ -135,11 +150,23 @@ class ConversionExportService(
         val title: String,
         val format: ExportFormat,
         val body: String,
+        val original: OriginalDocument?,
     ) {
-        override fun toString(): String = "PreparedExport(제목 ${title.length}자, ${format.extension}, 본문 ${body.length}자)"
+        override fun toString(): String =
+            "PreparedExport(제목 ${title.length}자, ${format.extension}, 본문 ${body.length}자, 원본 $original)"
     }
 
     private companion object {
         const val UNREADABLE_EXPORT_MESSAGE: String = "저장된 변환 결과를 읽을 수 없습니다"
+
+        /**
+         * 저장된 원본을 열 수 없다 — **500** 이다(`StorageException`).
+         *
+         * 업로드 때는 같은 바이트가 파서를 지나갔다(그래야 변환이 섰다). 그러니 지금 열리지
+         * 않는 것은 사용자가 고칠 수 있는 입력 문제가 아니라 **서버가 보관한 바이트의 문제**이고,
+         * 「저장된 변환 결과를 읽을 수 없습니다」와 같은 종류의 실패다. 기다리면 달라지는 일이
+         * 아니라 409 도 아니다.
+         */
+        const val UNREADABLE_ORIGINAL_MESSAGE: String = "저장된 원본 파일을 읽을 수 없습니다"
     }
 }
