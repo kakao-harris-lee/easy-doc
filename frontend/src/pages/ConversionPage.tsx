@@ -117,9 +117,16 @@ export function ConversionPage() {
 
           <div>
             <h2 className="m-0 text-[15px] font-bold">다음에 할 일</h2>
+            {/* **사용자에게 원인을 추론시키지 않는다.** 종전 문구는 "목록에 없다면 보관
+                기간이 지나 파기된 것" 이라고 적었는데 그 추론은 **방향이 거꾸로다** —
+                보관 기간이 지난 문서는 목록 질의에 만료 술어가 없어 **아직 목록에 남아
+                있고**, 정작 목록에서 사라진 경우는 주소를 잘못 쳤거나·남의 변환이거나·
+                이미 파기가 끝난 것이라 넷을 하나도 가려내지 못한다. 게다가 이 화면은
+                문서 제목을 모르므로(`ConversionResponse` 에 제목이 없다) 사용자가 어느
+                줄이 이 변환인지 짚을 수도 없다. 확인할 수 없는 것을 확인하라고 시키는
+                안내는 안내가 아니다. 할 수 있는 일만 적는다. */}
             <p className="m-0 mt-1 text-sm leading-[22px] text-muted-foreground">
-              변환 기록에서 이 문서를 찾아보세요. 목록에 없다면 보관 기간이 지나 파기된 것입니다.
-              그때는 문서를 다시 올려 변환해 주세요.
+              변환 기록에서 다른 문서를 열어 보거나, 문서를 다시 올려 변환해 주세요.
             </p>
             <div className="mt-4 flex flex-wrap gap-2">
               <Link className={ACTION_LINK_CLASS} to={HISTORY_PATH}>
