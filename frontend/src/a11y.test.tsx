@@ -115,6 +115,16 @@ const SCREENS: readonly {
     settle: () => screen.findByRole('heading', { name: '변환하지 못했습니다' }),
   },
   {
+    // 404 로 닫힌 변환(없는 것·남의 것·보관 기간이 지나 파기된 것)은 기다리는 화면이
+    // 아니라 **끝난 화면**이다 — §9 가 요구하는 대로 로딩과 다른 상태로 잰다.
+    name: '변환 없음',
+    open: () => {
+      vi.mocked(getConversion).mockRejectedValue(new ApiError(404, '변환을 찾을 수 없습니다.'))
+      renderAt('/conversions/c1')
+    },
+    settle: () => screen.findByRole('heading', { name: '이 변환을 열 수 없습니다' }),
+  },
+  {
     name: '검수',
     open: () => {
       vi.mocked(getConversion).mockResolvedValue(conversion({ status: 'done' }))

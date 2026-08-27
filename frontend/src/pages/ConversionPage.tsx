@@ -1,6 +1,6 @@
 import { useId } from 'react'
 import { Link, useLocation, useParams } from 'react-router-dom'
-import { CircleAlert, Clock, FilePlus2, History, LoaderCircle } from 'lucide-react'
+import { CircleAlert, Clock, FilePlus2, FileQuestion, History, LoaderCircle } from 'lucide-react'
 
 import type { ConversionResponse } from '../api/types'
 import { ConversionStages, type StageStatus } from '../components/ConversionStages'
@@ -76,7 +76,7 @@ export function ConversionPage() {
 
   // 라우트 패턴이 항상 값을 채우지만 타입은 undefined를 허용한다.
   const polling = useConversionPolling(conversionId ?? '')
-  const { conversion, error, timedOut } = polling
+  const { conversion, error, timedOut, missing } = polling
 
   /**
    * 원문. **폴링과는 다른 궤도로 움직인다.**
@@ -86,6 +86,56 @@ export function ConversionPage() {
    * 있어 첫 조회가 온 뒤에 시작하고, 그 뒤로는 폴링이 몇 번을 더 돌든 다시 부르지 않는다.
    */
   const source = useDocumentSource(conversion?.document_id ?? null, initialSourceText)
+
+  if (missing) {
+    return (
+      <section aria-labelledby="conversion-heading">
+        <PageHeader
+          context={context}
+          title="이 변환을 열 수 없습니다"
+          description="기다려서 열리는 화면이 아닙니다 — 지금 할 수 있는 일을 아래에 정리했습니다."
+          titleId="conversion-heading"
+        />
+        {/* 진행 표시도 스켈레톤도 두지 않는다. 「로딩」과 「없음」은 다른 상태이고(§9),
+            기다리는 모양을 남겨 두면 화면이 오지 않을 것을 기다리라고 말하게 된다. */}
+        <div className={`${CARD_CLASS} flex flex-col gap-6`}>
+          <div className="flex items-start gap-3">
+            <FileQuestion className="mt-0.5 size-[18px] shrink-0 text-info" aria-hidden="true" />
+            {/* 이 화면의 유일한 live region이다. 폴링을 기다리다 결말이 바뀐 것이라
+                한 번은 알려야 하지만, 제목과 같은 문장을 되풀이하지 않는다(§11).
+
+                사유를 단정하지 않는 것이 중요하다 — 서버는 없는 변환·남의 변환·보관
+                기간이 지나 파기된 문서를 **모두 같은 404**로 답한다(존재를 숨기려는
+                계약의 선택). 「파기됐습니다」라고 적으면 주소를 잘못 친 경우에 거짓말이
+                된다. 그래서 가능성을 나란히 두고, 어느 쪽인지 확인할 자리(변환 기록)를
+                가리킨다. */}
+            <p className="m-0 font-medium" role="status">
+              주소가 잘못됐거나, 다른 계정의 변환이거나, 보관 기간이 지나 문서와 함께 파기된
+              경우입니다. 새로 고쳐도 결과는 같습니다.
+            </p>
+          </div>
+
+          <div>
+            <h2 className="m-0 text-[15px] font-bold">다음에 할 일</h2>
+            <p className="m-0 mt-1 text-sm leading-[22px] text-muted-foreground">
+              변환 기록에서 이 문서를 찾아보세요. 목록에 없다면 보관 기간이 지나 파기된 것입니다.
+              그때는 문서를 다시 올려 변환해 주세요.
+            </p>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <Link className={ACTION_LINK_CLASS} to={HISTORY_PATH}>
+                <History className="size-[18px]" aria-hidden="true" />
+                변환 기록 보기
+              </Link>
+              <Link className={QUIET_LINK_CLASS} to={HOME_PATH}>
+                <FilePlus2 className="size-[18px]" aria-hidden="true" />
+                문서 다시 올리기
+              </Link>
+            </div>
+          </div>
+        </div>
+      </section>
+    )
+  }
 
   if (conversion !== null && conversion.status === 'done') {
     return <ReviewEditor conversion={conversion} source={source} />

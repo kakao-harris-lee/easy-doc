@@ -2,7 +2,7 @@ import { act, render, screen } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { ApiError, getConversion, getDocumentSource } from '../api/client'
+import { ApiError, NETWORK_ERROR_STATUS, getConversion, getDocumentSource } from '../api/client'
 import { POLL_INTERVAL_MS, POLL_TIMEOUT_MS } from '../conversion/useConversionPolling'
 import { conversion, documentSource, workspaceContext } from '../test/factories'
 import { WorkspaceContext } from '../workspace/context'
@@ -195,6 +195,70 @@ describe('변환 폴링', () => {
     await tick(3)
 
     expect(vi.mocked(getConversion).mock.calls.length).toBe(afterDone)
+  })
+
+  /**
+   * **404는 일시적 실패가 아니다.**
+   *
+   * 서버가 보관 기간이 지난 문서의 변환 조회를 404로 닫으면서, 사용자가 자기 목록에서
+   * 만료된 문서를 눌러 이 화면에 닿는 경로가 정상 흐름이 됐다. 그때 계속 물어보면서 진행
+   * 표시를 남겨 두면 화면은 「기다리면 된다」고 말하는데 실제로는 영영 오지 않는다.
+   */
+  it('404를 받으면 폴링을 멈춘다', async () => {
+    vi.mocked(getConversion).mockRejectedValue(new ApiError(404, '변환을 찾을 수 없습니다.'))
+    renderPage()
+
+    await act(async () => {})
+    const afterMissing = vi.mocked(getConversion).mock.calls.length
+    await tick(3)
+
+    // 인터벌이 살아 있으면 여기서 호출 수가 계속 늘어난다.
+    expect(vi.mocked(getConversion).mock.calls.length).toBe(afterMissing)
+  })
+
+  it('404면 기다리는 화면이 아니라 끝난 화면을 보여준다', async () => {
+    vi.mocked(getConversion).mockRejectedValue(new ApiError(404, '변환을 찾을 수 없습니다.'))
+    renderPage()
+
+    await act(async () => {})
+
+    expect(screen.getByRole('heading', { name: '이 변환을 열 수 없습니다' })).toBeInTheDocument()
+    // 진행 표시도 스켈레톤도 남지 않는다 — 「로딩」과 「없음」은 다른 상태다(§9).
+    expect(screen.queryByRole('list', { name: '변환 단계' })).toBeNull()
+    expect(screen.queryByRole('img', { name: /검수 화면 미리보기/ })).toBeNull()
+    expect(screen.queryByText(/변환을 기다리고 있습니다/)).toBeNull()
+    expect(screen.queryByText(/변환 상태를 확인하고 있습니다/)).toBeNull()
+
+    // 사유를 단정하지 않는다 — 없는 변환·남의 변환·파기된 문서가 모두 같은 404다.
+    const announced = screen.getAllByRole('status')
+    expect(announced).toHaveLength(1)
+    expect(announced[0]).toHaveTextContent('주소가 잘못됐거나')
+    expect(announced[0]).toHaveTextContent('보관 기간이 지나 문서와 함께 파기된')
+
+    // 갈 곳을 준다.
+    expect(screen.getByRole('link', { name: /변환 기록 보기/ })).toHaveAttribute('href', '/history')
+    expect(screen.getByRole('link', { name: /문서 다시 올리기/ })).toHaveAttribute('href', '/')
+  })
+
+  /**
+   * 이 회귀를 막는 것이 404 처리만큼 중요하다 — 5xx·네트워크 끊김에서도 멈춰 버리면
+   * 잠깐의 장애가 「변환이 사라졌다」로 보인다.
+   */
+  it.each([
+    ['500', new ApiError(500, '서버 오류입니다.')],
+    ['네트워크 실패', new ApiError(NETWORK_ERROR_STATUS, '서버에 연결하지 못했습니다.')],
+  ])('%s는 여전히 폴링을 이어간다', async (_label, caught) => {
+    vi.mocked(getConversion).mockRejectedValue(caught)
+    renderPage()
+
+    await act(async () => {})
+    const afterFirst = vi.mocked(getConversion).mock.calls.length
+    await tick(3)
+
+    expect(vi.mocked(getConversion).mock.calls.length).toBeGreaterThan(afterFirst)
+    // 끝난 화면으로 바꾸지 않는다 — 기다리면 풀릴 수 있는 실패다.
+    expect(screen.queryByRole('heading', { name: '이 변환을 열 수 없습니다' })).toBeNull()
+    expect(screen.getByRole('list', { name: '변환 단계' })).toBeInTheDocument()
   })
 
   it('화면을 떠나면 폴링을 멈춘다', async () => {
