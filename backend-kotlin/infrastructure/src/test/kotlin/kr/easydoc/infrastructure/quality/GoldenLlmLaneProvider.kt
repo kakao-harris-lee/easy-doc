@@ -52,9 +52,40 @@ internal class LaneJournal(private val retryBudget: Int = DEFAULT_RETRY_BUDGET) 
      * 문서당 합계(`ConversionUsage.outputTokens`)는 최대 2회 호출의 합이라 단일 호출 상한
      * `DEFAULT_MAX_TOKENS` 대비로는 상계치다. 상한을 올릴지 판단하는 데 필요한 것은 **한 번의
      * 호출이 실제로 얼마나 냈는가**이므로 그 값을 여기서 따로 센다.
+     *
+     * **보정 호출을 포함한다.** 보정은 변환과 같은 상한을 쓰고, 초안 전문에 위반 목록까지
+     * 실어 보내므로 오히려 더 큰 출력을 낼 수 있다 — 상한에 가장 가까웠던 호출이 보정 쪽일
+     * 수 있다는 뜻이다. 그것을 빼고 재면 「상한이 모자라는가」에 답할 수 없다.
+     * judge 만 뺀다: "yes"/"no" 한 줄이라 섞으면 최댓값이 무엇의 최댓값인지 말할 수 없다.
      */
     var largestConversionCallOutputTokens: Int = 0
         private set
+
+    /** 변환·보정 호출 수. 호출 단위 절단률의 분모다. */
+    var conversionCalls: Int = 0
+        private set
+
+    /**
+     * `truncated` 가 참이었던 **변환·보정** 호출 수.
+     *
+     * 문서 단위 절단(`ConversionFailureKind.TRUNCATED`)과 **다른 값이고, 그 차이가 이 값의
+     * 존재 이유다.** `ConvertDocumentUseCase.repairOnce` 는 보정 호출이 절단되면
+     * (`as? Outcome.Body` 가 실패하면) 원본 초안을 채택하고 변환을 **성공으로** 끝낸다 —
+     * 제품 동작으로는 옳지만(master-plan §3.3 「보정 실패·악화 시 원본 채택」), 그 절단은
+     * 문서 단위 집계에 한 건도 남지 않는다. 게이트 ⓪ 이 묻는 것은 「상한에 닿았는가」이므로
+     * 여기서 호출 단위로 센다.
+     */
+    var truncatedConversionCalls: Int = 0
+        private set
+
+    /**
+     * `truncated` 가 참이었던 judge 호출 수. 게이트 숫자가 아니라 **측정 유효성 경고**다 —
+     * judge 응답이 잘리면 `GoldenJudge.isYes` 가 잘린 문자열을 읽어 판정이 뒤집힐 수 있다.
+     */
+    var truncatedJudgeCalls: Int = 0
+        private set
+
+    private val truncatedCallsByDocument = mutableMapOf<String, Int>()
 
     val budget: Int get() = retryBudget
 
@@ -76,10 +107,22 @@ internal class LaneJournal(private val retryBudget: Int = DEFAULT_RETRY_BUDGET) 
         calls++
         inputTokens += completion.inputTokens
         outputTokens += completion.outputTokens
-        if (!judging) {
-            largestConversionCallOutputTokens = maxOf(largestConversionCallOutputTokens, completion.outputTokens)
+        if (judging) {
+            if (completion.truncated) {
+                truncatedJudgeCalls++
+            }
+            return
+        }
+        conversionCalls++
+        largestConversionCallOutputTokens = maxOf(largestConversionCallOutputTokens, completion.outputTokens)
+        if (completion.truncated) {
+            truncatedConversionCalls++
+            truncatedCallsByDocument.merge(stage, 1, Int::plus)
         }
     }
+
+    /** 이 문서의 변환·보정 호출 중 절단된 수. 구간별 집계가 장문 쪽 쏠림을 보려면 문서별이어야 한다. */
+    fun truncatedCallsFor(documentId: String): Int = truncatedCallsByDocument[documentId] ?: 0
 
     fun recordFault(
         fault: LaneFault,

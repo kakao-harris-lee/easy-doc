@@ -111,6 +111,7 @@ private class LaneGrader(
                 convertedChars = null,
                 outputTokens = result.usage.outputTokens,
                 truncated = result.kind == ConversionFailureKind.TRUNCATED,
+                truncatedCalls = journal.truncatedCallsFor(document.id),
                 stylePassed = null,
             ),
             elapsed,
@@ -139,7 +140,9 @@ private class LaneGrader(
                 sourceChars = charCountOf(document.sourceText),
                 convertedChars = charCountOf(converted),
                 outputTokens = result.usage.outputTokens,
+                // 변환은 성공했지만 보정 호출이 잘렸을 수 있다 — 그 갈래는 여기에만 남는다.
                 truncated = false,
+                truncatedCalls = journal.truncatedCallsFor(document.id),
                 stylePassed = style.passed,
             ),
             elapsed,

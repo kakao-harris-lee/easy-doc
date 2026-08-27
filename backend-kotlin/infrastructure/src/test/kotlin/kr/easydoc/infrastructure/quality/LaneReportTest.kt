@@ -34,28 +34,89 @@ class LaneReportTest {
     @Test
     @DisplayName("팽창비·스타일 통과율·절단률을 2,000자 경계로 갈라 낸다")
     fun `게이트 측정치를 길이 구간별로 낸다`() {
+        // 호출 6회(문서 4건 중 둘이 보정까지 갔다) — 호출 단위 절단률의 분모다.
+        repeat(6) { journal.recordCall(completion(outputTokens = 2_000)) }
         // 단문 둘: 하나는 스타일 통과(팽창비 1.20), 하나는 실패(1.50).
         record(id = "g-001", sourceChars = 1_000, convertedChars = 1_200, outputTokens = 2_000, stylePassed = true)
         record(id = "g-002", sourceChars = 1_000, convertedChars = 1_500, outputTokens = 2_400, stylePassed = false)
-        // 장문 둘: 하나는 통과(1.80), 하나는 절단.
-        record(id = "g-003", sourceChars = 3_000, convertedChars = 5_400, outputTokens = 9_000, stylePassed = true)
+        // 장문 둘: 하나는 통과(1.80)했지만 **보정 호출이 잘렸고**, 하나는 변환 자체가 절단됐다.
+        recordRepairTruncated(
+            id = "g-003",
+            sourceChars = 3_000,
+            convertedChars = 5_400,
+            outputTokens = 9_000,
+            truncatedCalls = 1,
+        )
         recordTruncated(id = "g-004", sourceChars = 3_500, outputTokens = 16_000)
 
         val rendered = report.render()
 
-        assertThat(rendered).contains("문서 4건 · 변환 성공 3 · 절단 1 (25.0%) · 그 밖의 변환 실패 0")
+        assertThat(rendered).contains("문서 4건 · 변환 성공 3 · 절단으로 실패 1 (25.0%) · 그 밖의 변환 실패 0")
         assertThat(rendered).contains("스타일 규칙 통과 2/3 (66.7%)")
         // 단문 구간: 절단 0건, 스타일 1/2, 팽창비 중앙 1.20 · p90 1.50 · 최대 1.50.
         assertThat(rendered).contains(
-            "2000자 이하 — 문서 2 · 변환 성공 2 · 절단 0 (0.0%) · 스타일 통과 1/2 (50.0%) · " +
+            "2000자 이하 — 문서 2 · 변환 성공 2 · 절단 문서 0 (0.0%) / 호출 0 · 스타일 통과 1/2 (50.0%) · " +
                 "팽창비 1.20/1.50/1.50 · 출력 토큰 2000/2400/2400",
         )
         // 장문 구간: 절단률이 단문과 갈려 보여야 한다 — 이 갈림이 게이트 판정의 축이다.
+        // 장문 구간이 절단을 문서 1건·호출 2회로 갈라 낸다 — 조용히 넘어간 보정 절단이 여기 보인다.
         assertThat(rendered).contains(
-            "2000자 초과 — 문서 2 · 변환 성공 1 · 절단 1 (50.0%) · 스타일 통과 1/1 (100.0%) · " +
+            "2000자 초과 — 문서 2 · 변환 성공 1 · 절단 문서 1 (50.0%) / 호출 2 · 스타일 통과 1/1 (100.0%) · " +
                 "팽창비 1.80/1.80/1.80 · 출력 토큰 9000/16000/16000",
         )
-        assertThat(rendered).contains("전체 — 문서 4 · 변환 성공 3 · 절단 1 (25.0%)")
+        assertThat(rendered).contains("전체 — 문서 4 · 변환 성공 3 · 절단 문서 1 (25.0%) / 호출 2")
+        // 합계 줄과 구간 줄이 같은 출처(문서별 기록)에서 나온다 — 둘이 어긋나면 어느 쪽도 못 믿는다.
+        assertThat(rendered).contains("절단 — 문서 단위 1/4 (25.0%, 변환 실패) · 호출 단위 2/6 (33.3%, 변환+보정)")
+        assertThat(rendered).contains("차이 1회 = 보정 호출이 잘렸지만 원본 초안이 채택돼 성공으로 끝난 횟수")
+    }
+
+    @Test
+    @DisplayName("보정 절단은 호출 단위에만 잡히고 문서 단위에는 잡히지 않는다 — 그 차이를 보고한다")
+    fun `조용히 넘어간 절단을 차이로 낸다`() {
+        // 변환 호출 1 + 보정 호출 1, 그중 보정만 절단. 유스케이스는 원본 초안을 채택해 성공으로 끝낸다.
+        journal.beginDocument("g-001")
+        journal.recordCall(completion(outputTokens = 4_000))
+        journal.recordCall(completion(outputTokens = 16_000, truncated = true))
+        recordRepairTruncated(
+            id = "g-001",
+            sourceChars = 3_000,
+            convertedChars = 3_600,
+            outputTokens = 4_000,
+            // 저널이 센 값을 그대로 싣는다 — 이 배선이 끊기면 구간 집계가 조용히 0 이 된다.
+            truncatedCalls = journal.truncatedCallsFor("g-001"),
+        )
+
+        val rendered = report.render()
+
+        assertThat(journal.truncatedConversionCalls).isEqualTo(1)
+        assertThat(rendered).contains("절단 — 문서 단위 0/1 (0.0%, 변환 실패) · 호출 단위 1/2 (50.0%, 변환+보정)")
+        assertThat(rendered).contains("차이 1회 = 보정 호출이 잘렸지만 원본 초안이 채택돼 성공으로 끝난 횟수")
+    }
+
+    @Test
+    @DisplayName("조용히 넘어간 절단이 없으면 두 값이 같다고 명시한다")
+    fun `차이가 없으면 없다고 적는다`() {
+        journal.beginDocument("g-001")
+        journal.recordCall(completion(outputTokens = 4_000))
+        record(id = "g-001", sourceChars = 900, convertedChars = 1_000, outputTokens = 4_000, stylePassed = true)
+
+        assertThat(report.render()).contains("차이 없음 — 상한에 닿은 호출이 모두 문서 실패로 나타났다")
+    }
+
+    @Test
+    @DisplayName("judge 응답이 잘리면 판정을 믿을 수 없다고 경고한다 — 게이트 숫자와 섞지 않는다")
+    fun `judge 절단은 경고로만 낸다`() {
+        journal.beginDocument("g-001")
+        journal.recordCall(completion(outputTokens = 4_000))
+        journal.beginJudge("g-001")
+        journal.recordCall(completion(outputTokens = 16_000, truncated = true))
+
+        val rendered = report.render()
+
+        assertThat(journal.truncatedConversionCalls).isZero()
+        assertThat(journal.truncatedJudgeCalls).isEqualTo(1)
+        assertThat(rendered).contains("⚠ judge 호출 절단 1회")
+        assertThat(rendered).contains("호출 단위 0/1")
     }
 
     @Test
@@ -67,7 +128,8 @@ class LaneReportTest {
         journal.recordCall(completion(outputTokens = 3))
 
         assertThat(journal.largestConversionCallOutputTokens).isEqualTo(7_400)
-        assertThat(report.render()).contains("단일 호출 최대 출력 토큰 7400 / 상한 16000 (DEFAULT_MAX_TOKENS)")
+        assertThat(report.render())
+            .contains("단일 호출 최대 출력 토큰 7400 / 상한 16000 (DEFAULT_MAX_TOKENS, 변환+보정 호출 기준)")
     }
 
     @Test
@@ -103,6 +165,7 @@ class LaneReportTest {
         assertThat(report.render()).contains("인프라 오류 분포 — 없음")
     }
 
+    /** 변환에 성공한 문서. 절단된 호출은 없다. */
     private fun record(
         id: String,
         sourceChars: Int,
@@ -117,7 +180,33 @@ class LaneReportTest {
                 convertedChars = convertedChars,
                 outputTokens = outputTokens,
                 truncated = false,
+                truncatedCalls = 0,
                 stylePassed = stylePassed,
+            ),
+            ELAPSED,
+        )
+    }
+
+    /**
+     * **변환은 성공했지만 보정 호출이 잘린** 문서. 이 레인이 새로 잡으려는 갈래가 이것이다 —
+     * 문서 단위로는 성공이라 [LaneMeasurement.truncated] 는 거짓이고, 절단은 호출 수에만 남는다.
+     */
+    private fun recordRepairTruncated(
+        id: String,
+        sourceChars: Int,
+        convertedChars: Int,
+        outputTokens: Int,
+        truncatedCalls: Int,
+    ) {
+        report.recordDocument(
+            LaneMeasurement(
+                documentId = id,
+                sourceChars = sourceChars,
+                convertedChars = convertedChars,
+                outputTokens = outputTokens,
+                truncated = false,
+                truncatedCalls = truncatedCalls,
+                stylePassed = true,
             ),
             ELAPSED,
         )
@@ -135,20 +224,24 @@ class LaneReportTest {
                 convertedChars = null,
                 outputTokens = outputTokens,
                 truncated = true,
+                truncatedCalls = 1,
                 stylePassed = null,
             ),
             ELAPSED,
         )
     }
 
-    private fun completion(outputTokens: Int): LlmCompletion =
+    private fun completion(
+        outputTokens: Int,
+        truncated: Boolean = false,
+    ): LlmCompletion =
         LlmCompletion(
             text = "결과",
             provider = "anthropic",
             model = "claude-sonnet-5",
             inputTokens = 10,
             outputTokens = outputTokens,
-            finishReason = LlmFinishReason.END_TURN,
+            finishReason = if (truncated) LlmFinishReason.MAX_TOKENS else LlmFinishReason.END_TURN,
         )
 
     private fun fault(label: String): LaneFault = LaneFault(label, status = null, transient = true)

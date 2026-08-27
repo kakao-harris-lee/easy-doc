@@ -21,8 +21,16 @@ internal data class LaneMeasurement(
      * 최댓값은 [LaneJournal.largestConversionCallOutputTokens] 가 따로 센다.
      */
     val outputTokens: Int,
-    /** 출력 상한에서 잘렸는가. 절단 발생률의 분자다. */
+    /** 출력 상한에서 잘려 **변환이 실패로 끝났는가.** 문서 단위 절단 발생률의 분자다. */
     val truncated: Boolean,
+    /**
+     * 이 문서의 변환·보정 호출 중 `truncated` 였던 호출 수.
+     *
+     * [truncated] 와 다르다. 보정 호출이 잘리면 유스케이스가 원본 초안을 채택해 변환은
+     * **성공으로** 끝나므로([LaneJournal.truncatedConversionCalls]), 그 절단은 [truncated]
+     * 에 남지 않는다. 상한에 닿은 빈도를 보려면 이 값이 필요하다.
+     */
+    val truncatedCalls: Int,
     /** 스타일 규칙 통과 여부. 변환이 실패했으면 `null` — 잴 본문이 없다. */
     val stylePassed: Boolean?,
 ) {
@@ -126,7 +134,7 @@ internal class LaneReport(
         val truncated = measurements.count { it.truncated }
         val otherFailures = measurements.count { it.convertedChars == null && !it.truncated }
         return "문서 ${measurements.size}건 · 변환 성공 ${converted(measurements).size} · " +
-            "절단 $truncated (${rate(truncated, measurements.size)}) · 그 밖의 변환 실패 $otherFailures"
+            "절단으로 실패 $truncated (${rate(truncated, measurements.size)}) · 그 밖의 변환 실패 $otherFailures"
     }
 
     private fun qualityLine(): String {
@@ -169,10 +177,51 @@ internal class LaneReport(
         appendLine(bucketLine("  ${LONG_DOCUMENT_CHARS}자 이하", short))
         appendLine(bucketLine("  ${LONG_DOCUMENT_CHARS}자 초과", long))
         appendLine(bucketLine("  전체", measurements))
+        appendLine(truncationLine())
+        appendLine(silentTruncationLine())
+        if (journal.truncatedJudgeCalls > 0) {
+            appendLine(
+                "  ⚠ judge 호출 절단 ${journal.truncatedJudgeCalls}회 — 잘린 응답을 판정으로 읽었으므로 " +
+                    "그 문서의 judge 결과를 신뢰할 수 없다",
+            )
+        }
         appendLine(
             "  단일 호출 최대 출력 토큰 ${journal.largestConversionCallOutputTokens} / " +
-                "상한 $DEFAULT_MAX_TOKENS (DEFAULT_MAX_TOKENS)",
+                "상한 $DEFAULT_MAX_TOKENS (DEFAULT_MAX_TOKENS, 변환+보정 호출 기준)",
         )
+    }
+
+    /**
+     * 절단을 **두 단위로** 나란히 낸다. 문서 단위는 「사용자에게 결과가 나가지 않은 건수」이고,
+     * 호출 단위는 「상한에 닿은 빈도」다. 게이트 ⓪ 이 묻는 것은 뒤쪽이다.
+     */
+    private fun truncationLine(): String {
+        val documents = measurements.count { it.truncated }
+        val calls = truncatedCalls()
+        return "  절단 — 문서 단위 $documents/${measurements.size} (${rate(documents, measurements.size)}, 변환 실패) · " +
+            "호출 단위 $calls/${journal.conversionCalls} (${rate(calls, journal.conversionCalls)}, 변환+보정)"
+    }
+
+    /**
+     * 호출 단위 절단은 **문서별 기록의 합**으로 낸다. 저널의 전체 카운터
+     * ([LaneJournal.truncatedConversionCalls])를 여기서 따로 읽으면 구간 줄과 합계 줄이 서로 다른
+     * 출처를 갖게 되고, 둘이 어긋나는 순간 어느 쪽이 참인지 말할 수 없다. 분모(호출 수)만 저널에서
+     * 온다 — 문서별 기록은 호출이 몇 번이었는지 모른다.
+     */
+    private fun truncatedCalls(): Int = measurements.sumOf { it.truncatedCalls }
+
+    /**
+     * 두 값의 차이가 곧 **「잘렸는데 조용히 넘어간」 횟수**다. 보정 호출이 절단되면 유스케이스가
+     * 원본 초안을 채택하므로 변환은 성공으로 끝난다 — 상한에 닿았는데 실패로 보이지 않는 갈래다.
+     */
+    private fun silentTruncationLine(): String {
+        val silent = truncatedCalls() - measurements.count { it.truncated }
+        return if (silent > 0) {
+            "  └ 차이 ${silent}회 = 보정 호출이 잘렸지만 원본 초안이 채택돼 성공으로 끝난 횟수 " +
+                "(상한에 닿았으나 실패로 보이지 않는다)"
+        } else {
+            "  └ 차이 없음 — 상한에 닿은 호출이 모두 문서 실패로 나타났다(조용히 넘어간 절단 없음)"
+        }
     }
 
     private fun bucketLine(
@@ -186,7 +235,7 @@ internal class LaneReport(
         val truncated = rows.count { it.truncated }
         val passed = scored.count { it.stylePassed == true }
         return "$label — 문서 ${rows.size} · 변환 성공 ${scored.size} · " +
-            "절단 $truncated (${rate(truncated, rows.size)}) · " +
+            "절단 문서 $truncated (${rate(truncated, rows.size)}) / 호출 ${rows.sumOf { it.truncatedCalls }} · " +
             "스타일 통과 $passed/${scored.size} (${rate(passed, scored.size)}) · " +
             "팽창비 ${ratioTail(scored.mapNotNull { it.expansion })} · " +
             "출력 토큰 ${tokenTail(rows.map { it.outputTokens })}"
