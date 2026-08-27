@@ -221,6 +221,69 @@ class RetentionReadGuardReachTest {
             .isNotEqualTo(fixture.editedBytes)
     }
 
+    // ============================================== PUT /conversions/{id}/feedback
+
+    @Test
+    @DisplayName("RG-5 만료된 문서의 변환에는 **피드백을 낼 수 없다** — 404 이고 행이 생기지 않는다")
+    fun `만료된 변환의 피드백 저장은 404 다`() {
+        val fixture = completedConversion()
+        expireIn(fixture.documentId, PAST)
+
+        val response = saveFeedback(fixture.token, fixture.conversionId)
+
+        assertDeclaredStatus(response, CONVERSION_FEEDBACK_PATH, PUT, NOT_FOUND)
+        assertThat(feedbackRows(fixture.conversionId))
+            .describedAs(
+                "이 저장은 수정률 지표를 계산하려고 **복호화된 본문**을 읽는다 — 만료 뒤에 열려 있으면 " +
+                    "「30일 뒤 자동 삭제」 뒤에도 본문 복호화가 계속 열린 것이다",
+            ).isZero()
+    }
+
+    @Test
+    @DisplayName("RG-5 피드백 저장의 만료 **정각**도 404 다")
+    fun `피드백 저장의 만료 정각은 404 다`() {
+        val fixture = completedConversion()
+        expireIn(fixture.documentId, NOW)
+
+        val response = saveFeedback(fixture.token, fixture.conversionId)
+
+        assertDeclaredStatus(response, CONVERSION_FEEDBACK_PATH, PUT, NOT_FOUND)
+        assertThat(feedbackRows(fixture.conversionId)).isZero()
+    }
+
+    @Test
+    @DisplayName("RG-5 **만료 직전에는 정상 저장된다** — 술어가 산 문서까지 접지 않는다")
+    fun `만료 직전 변환의 피드백 저장은 200 이다`() {
+        val fixture = completedConversion()
+        expireIn(fixture.documentId, ALMOST_EXPIRED)
+
+        val response = saveFeedback(fixture.token, fixture.conversionId)
+
+        assertDeclaredStatus(
+            response,
+            CONVERSION_FEEDBACK_PATH,
+            PUT,
+            ContractSpec.successStatus(CONVERSION_FEEDBACK_PATH, PUT),
+        )
+        assertThat(feedbackRows(fixture.conversionId)).isEqualTo(1)
+    }
+
+    @Test
+    @DisplayName("RG-5 **이미 낸 의견은 만료 뒤에도 남는다** — 닫히는 것은 새 제출뿐이다")
+    fun `이미 낸 의견은 만료 뒤에도 남는다`() {
+        val fixture = completedConversion()
+        val stored = saveFeedback(fixture.token, fixture.conversionId).statusCode()
+        check(stored == ContractSpec.successStatus(CONVERSION_FEEDBACK_PATH, PUT)) { "배경 피드백 저장이 실패했다" }
+
+        expireIn(fixture.documentId, PAST)
+
+        assertThat(feedbackRows(fixture.conversionId))
+            .describedAs(
+                "`conversion_feedback` 은 파기 사슬 밖이다(FK 없음) — 그 분리는 「이미 낸 의견이 남는다」는 " +
+                    "뜻이고, 이 케이스가 계약 문구의 그 절반을 잰다",
+            ).isEqualTo(1)
+    }
+
     // =========================================================== 닫지 않은 자리
 
     @Test
@@ -280,6 +343,9 @@ class RetentionReadGuardReachTest {
 
     /** 파기 배치가 이 행을 대상으로 보는가 — `JdbcExpiredDocumentPurge` 와 같은 술어다. */
     private fun purgeCandidates(documentId: UUID): Int = database.queryInt(PURGE_CANDIDATE_SQL.format(documentId))
+
+    /** 그 변환에 저장된 피드백 행 수. 「행이 생기지 않았다」·「남아 있다」를 함께 잰다. */
+    private fun feedbackRows(conversionId: UUID): Int = database.queryInt(FEEDBACK_ROWS_SQL.format(conversionId))
 
     private fun editedTextBytes(conversionId: UUID): String =
         database.queryFirstColumn(EDITED_TEXT_SQL.format(conversionId)).single()
@@ -352,6 +418,29 @@ class RetentionReadGuardReachTest {
 
     private fun reviewPath(conversionId: UUID): String = itemPath(CONVERSION_ITEM_PATH, PUT, conversionId.toString())
 
+    /** 척도 둘은 이 파일이 재지 않는 배경 값이다 — 배포 의향만 계약에서 읽는다. */
+    private fun saveFeedback(
+        token: String,
+        conversionId: UUID,
+    ): HttpResponse<String> {
+        val body =
+            json.writeValueAsString(
+                mapOf(
+                    PUBLISH_INTENT_PROPERTY to ContractSpec.schemaEnum(PUBLISH_INTENT_SCHEMA).first(),
+                    QUALITY_SCORE_PROPERTY to SAMPLE_QUALITY_SCORE,
+                    MINUTES_SPENT_PROPERTY to SAMPLE_MINUTES_SPENT,
+                ),
+            )
+        val path = itemPath(CONVERSION_FEEDBACK_PATH, PUT, conversionId.toString())
+        return send(
+            HttpRequest
+                .newBuilder(URI.create("http://localhost:$port$path"))
+                .header(AUTHORIZATION, "Bearer $token")
+                .header(CONTENT_TYPE, JSON_MEDIA_TYPE)
+                .PUT(HttpRequest.BodyPublishers.ofString(body, Charsets.UTF_8)),
+        )
+    }
+
     private fun listDocuments(token: String): HttpResponse<String> = send(get(token, DOCUMENTS_PATH))
 
     private fun get(
@@ -419,6 +508,7 @@ class RetentionReadGuardReachTest {
         private const val DOCUMENTS_PATH = "/documents"
         private const val CONVERSION_ITEM_PATH = "/conversions/{conversion_id}"
         private const val CONVERSION_EXPORT_PATH = "/conversions/{conversion_id}/export"
+        private const val CONVERSION_FEEDBACK_PATH = "/conversions/{conversion_id}/feedback"
 
         private const val GET = "get"
         private const val POST = "post"
@@ -438,6 +528,14 @@ class RetentionReadGuardReachTest {
         private const val PASSWORD_PROPERTY = "password"
         private const val ACCESS_TOKEN_PROPERTY = "access_token"
         private const val TEXT_PROPERTY = "text"
+        private const val PUBLISH_INTENT_PROPERTY = "publish_intent"
+        private const val QUALITY_SCORE_PROPERTY = "quality_score"
+        private const val MINUTES_SPENT_PROPERTY = "minutes_spent"
+        private const val PUBLISH_INTENT_SCHEMA = "PublishIntent"
+
+        /** 척도 둘의 배경 값. 범위의 정본은 `core/pilot/ConversionFeedback.kt` 다. */
+        private const val SAMPLE_QUALITY_SCORE = 4
+        private const val SAMPLE_MINUTES_SPENT = 12
 
         /** 계약이 이 경로 404 의 인라인 예시에 붙인 이름. */
         private const val NOT_FOUND_EXAMPLE = "not_found"
@@ -507,6 +605,8 @@ class RetentionReadGuardReachTest {
             "SELECT coalesce(encode(edited_text_encrypted, 'hex'), '') FROM conversions WHERE id = '%s'"
 
         private const val REVIEWED_AT_SQL = "SELECT coalesce(reviewed_at::text, '') FROM conversions WHERE id = '%s'"
+
+        private const val FEEDBACK_ROWS_SQL = "SELECT count(*) FROM conversion_feedback WHERE conversion_id = '%s'"
 
         private var counter = 0
 

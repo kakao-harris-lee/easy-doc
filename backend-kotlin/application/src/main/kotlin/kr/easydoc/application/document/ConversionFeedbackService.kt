@@ -101,7 +101,12 @@ class ConversionFeedbackService(
     ): ConversionFeedbackView {
         val values = validate(submitted)
 
-        // 404 는 이 조회가 던진다 — 없는 것과 남의 것을 구분하지 않는 술어가 여기 하나다.
+        // 404 는 이 조회가 던진다 — 없는 것·남의 것·**보존 기간이 지난 것**을 구분하지 않는
+        // 술어가 여기 하나다. 만료가 여기 걸리는 것은 위임의 우연이 아니라 요구다: 바로
+        // 아래에서 [EditMetrics.of] 가 **복호화된 본문**을 읽으므로, 만료 뒤에도 저장을
+        // 허용하면 「30일 뒤 자동 삭제」(master-plan §3.2) 뒤에 본문 복호화가 계속 열린다.
+        // 만료를 보지 않는 조회로 갈아 끼우면 그 자리가 조용히 열린다 —
+        // `RetentionReadGuardReachTest` 의 RG-5 가 그 변이를 끊는다.
         val result = query.read(ownerId, conversionId)
         if (result.status != ConversionStatus.DONE) throw ConflictException(CONVERSION_NOT_DONE_MESSAGE)
 

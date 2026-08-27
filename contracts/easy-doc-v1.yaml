@@ -2045,6 +2045,14 @@ paths:
         (`x-input-limits.retention_days`) 게이트 판정 근거는 그 뒤에 읽는다
         (`docs/pilot-runbook.md` 「집계」). 계약이 정하는 것은 이 오퍼레이션이 문서 파기
         뒤에도 의미를 갖는다는 것뿐이고, 저장 형태는 구현 판단이다.
+
+        **그 분리는 「이미 낸 의견이 남는다」는 뜻이지 「만료 뒤에도 새로 낼 수 있다」는
+        뜻이 아니다.** 두 문장을 섞어 읽지 마라 — **보존 기간이 지난 문서의 변환에는
+        피드백을 낼 수 없다(404).** 이 저장은 수정률 지표를 계산하려고 변환 본문
+        (`easy_text`·`edited_text`)을 **복호화해서 읽기** 때문이다. 만료 뒤에도 허용하면
+        「30일 뒤 자동 삭제」(master-plan §3.2) 뒤에 본문 복호화가 계속 열려 있게 되고,
+        그것은 2.3.0이 조회·내보내기·검수 저장을 닫은 것과 **같은 이유**다.
+        이미 저장된 행은 그대로 남는다 — 닫히는 것은 **새 제출**뿐이다.
       requestBody:
         required: true
         content:
@@ -2063,7 +2071,9 @@ paths:
               schema: { $ref: '#/components/schemas/ConversionFeedbackResponse' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404':
-          description: 없거나 내 것이 아니다
+          description: |
+            없거나, 내 것이 아니거나, **문서의 보존 기간이 지났다.**
+            셋이 같은 응답인 것이 조항이다 — 위 `description`의 「분리」 문단이 그 사유다.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
@@ -3367,7 +3377,14 @@ x-changelog:
          뚫린다 — 셋이 구분되지 않는 것이 조항이다.
       ⑶ **`PUT`이 특히 중요하다.** 파기 대상 문서에 새 검수본을 쓰면 다음 배치가 방금 쓴
          내용을 지운다. 판정을 저장 전 잠금 질의가 지므로 **아무것도 쓰이지 않는다.**
-      ⑷ **`GET /documents`(목록)만 열어 둔다. 사용자 결정이다** — 목록은 제목만 싣고,
+      ⑷ **`PUT /conversions/{conversion_id}/feedback`도 같은 판정으로 닫힌다.** 그 저장은
+         소유·상태 판정을 `GET /conversions/{conversion_id}`에 그대로 위임하므로 별도 술어
+         없이 함께 닫혔고, 2.3.0은 **이미 그랬던 동작을 계약에 적는다.** 사유는 위임의
+         우연이 아니다: 그 저장은 수정률 지표를 계산하려고 변환 본문을 **복호화해서 읽는다.**
+         `conversion_feedback` 표가 파기와 분리돼 있다는 것은 「이미 낸 의견이 남는다」는
+         뜻이지 「만료 뒤에도 새로 낼 수 있다」는 뜻이 아니다 — 그 구분을 해당 오퍼레이션의
+         `description`에 적었다.
+      ⑸ **`GET /documents`(목록)만 열어 둔다. 사용자 결정이다** — 목록은 제목만 싣고,
          문서가 파기됐다는 사실을 사용자가 알아차리는 자리가 목록이다. 만료 직후 목록에서까지
          소리 없이 사라지면 사용자는 이유를 알 수 없다. 남은 항목은 이 하나뿐이고
          `docs/kotlin-redevelopment-backlog.md` §1.1에 있다.
