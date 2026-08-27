@@ -41,7 +41,7 @@ openapi: 3.1.0
 
 info:
   title: Easy-Read AI API
-  version: "2.2.0"
+  version: "2.3.0"
   x-baselined-at: "2026-08-12"       # 초판 기준선을 뜬 날 (동결일이 아니다)
   x-rebased-at: "2026-08-12"         # 계약의 성격을 "개선 대상"으로 다시 정의한 날
   x-source-runtime: "Python 3.12 / FastAPI (app/main.py) — 과거 참고 구현이었고 2026-08-24 저장소에서 제거됨(git 태그 pre-python-removal-20260824). 기준선 출처였을 뿐 정답이 아니었다"
@@ -1713,6 +1713,11 @@ paths:
       description: |
         **`masked_items[].original`에 가려졌던 실제 개인정보가 실린다** — 소유자 인증을
         통과한 조회에서만 나간다. 그래서 캐시 금지 헤더가 필수다.
+
+        **보존 기간(30일)이 지난 문서의 변환은 파기 전이라도 404다.** 파기는 하루 한 번
+        배치이므로(`RetentionPurgeScheduler`) 만료와 파기 사이의 창이 **최대 24시간**인데,
+        이 응답은 그 창에서 실제 주민등록번호·카드번호를 평문으로 내준다 — 노출 크기는
+        `GET /documents/{document_id}/source`보다 작아도 **범주는 같다.**
         완료(`done`) 전에는 `easy_text`·`edited_text`·`masked_items`가 비어 있고
         상태와 `failure_code`, 그리고 **형식 셋**(`source_format`·`export_format`·
         `format_preservation`)만 나간다 — 형식 셋은 변환 결과가 아니라 문서 메타에서
@@ -1728,7 +1733,9 @@ paths:
               schema: { $ref: '#/components/schemas/ConversionResponse' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404':
-          description: 없거나 내 것이 아니다
+          description: |
+            없거나, 내 것이 아니거나, **문서의 보존 기간이 지났다.**
+            셋이 같은 응답인 것이 조항이다.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
@@ -1756,6 +1763,10 @@ paths:
 
         **응답은 GET과 같은 스키마다** — 따라서 캐시 금지 헤더도 GET과 같다
         (api-contract-freeze §2.7 해결 1: 2026-08-11에 구현을 고쳐 계약으로 확정).
+
+        **보존 기간이 지난 문서의 변환은 404다** — GET과 같은 판정이며, 쓰기라서 더 중요하다:
+        파기 대상 문서에 새 검수본을 쓰면 다음 배치가 방금 쓴 내용을 지운다. 판정은 저장 전
+        잠금 질의가 지므로 **아무것도 쓰이지 않는다.**
       requestBody:
         required: true
         content:
@@ -1772,7 +1783,8 @@ paths:
               schema: { $ref: '#/components/schemas/ConversionResponse' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404':
-          description: 없거나 내 것이 아니다
+          description: |
+            없거나, 내 것이 아니거나, **문서의 보존 기간이 지났다** (GET과 같은 판정).
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
@@ -1847,6 +1859,10 @@ paths:
 
         원본이 없는 문서(붙여넣기 · `document_originals` 표가 서기 전 업로드)는 예전처럼
         본문 문자열로 새 문서를 만든다. 그 갈래의 판정이 `not_applicable`이고 영구히 참이다.
+
+        **보존 기간이 지난 문서의 변환은 404다** — 조회와 **같은 질의**가 그 판정을 지므로
+        두 오퍼레이션이 갈릴 수 없다. 이 응답은 자리표시자가 원문으로 복원된 최종본이라
+        만료 창에서 나가면 안 되는 값이다.
 
         **저장된 원본을 열 수 없으면 500이다.** 텍스트 전용 파일로 조용히 대체하지
         않는다(§6.5). 409가 아닌 이유: 업로드 때 같은 바이트가 파서를 지나갔으므로(그래야
@@ -1956,7 +1972,9 @@ paths:
               schema: { type: string, format: binary }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404':
-          description: 없거나 내 것이 아니다
+          description: |
+            없거나, 내 것이 아니거나, **문서의 보존 기간이 지났다.**
+            셋이 같은 응답인 것이 조항이다.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
@@ -3332,6 +3350,43 @@ components:
 # 변경 이력
 # =============================================================================
 x-changelog:
+  - version: "2.3.0"
+    date: "2026-08-27"
+    revision: "RETENTION-READ-GUARD"   # 만료 창을 「내용을 내주는」 경로 전부에서 닫는다
+    author: contract-keeper
+    change: |
+      **보존 기간이 지난 문서의 내용을 내주는 경로를 전부 404로 닫았다. 파괴적 변경이
+      아니다** — 요청 모양도 응답 필드도 그대로이고, 만료되지 않은 자원의 동작은 하나도
+      바뀌지 않았다.
+
+      ⑴ **닫은 곳 셋**: `GET /conversions/{conversion_id}` ·
+         `GET /conversions/{conversion_id}/export` · `PUT /conversions/{conversion_id}`.
+         2.2.0이 `GET /documents/{document_id}/source`에 건 것과 **같은 술어**
+         (`retention_expires_at > now()`)이고, 소유 술어와 같은 문장 안에 있다.
+      ⑵ **없음·타인·만료가 모두 같은 404다.** 만료가 존재를 드러내면 소유권 은닉이 그만큼
+         뚫린다 — 셋이 구분되지 않는 것이 조항이다.
+      ⑶ **`PUT`이 특히 중요하다.** 파기 대상 문서에 새 검수본을 쓰면 다음 배치가 방금 쓴
+         내용을 지운다. 판정을 저장 전 잠금 질의가 지므로 **아무것도 쓰이지 않는다.**
+      ⑷ **`GET /documents`(목록)만 열어 둔다. 사용자 결정이다** — 목록은 제목만 싣고,
+         문서가 파기됐다는 사실을 사용자가 알아차리는 자리가 목록이다. 만료 직후 목록에서까지
+         소리 없이 사라지면 사용자는 이유를 알 수 없다. 남은 항목은 이 하나뿐이고
+         `docs/kotlin-redevelopment-backlog.md` §1.1에 있다.
+    ground: |
+      **G3 — 정책 결정의 구현.** master-plan §3.2가 「기본 보존 30일 후 자동 삭제」를
+      약속하는데, 파기는 `RetentionPurgeScheduler`가 **매일 03:00 한 번** 도는 배치라
+      만료와 파기 사이의 창이 **최대 24시간**이다. 2.2.0은 그 창을 원문 조회에서만 닫으며
+      "다른 조회는 마스킹을 거친 결과"라고 적었는데 **그것이 틀렸다** —
+      `GET /conversions/{conversion_id}`는 `masked_items[].original`로 가려졌던 실제
+      주민등록번호·카드번호를 **평문으로** 돌려준다(`MaskedItemResponse`가 명시한다).
+      노출 크기만 다를 뿐 범주는 원문 조회와 같다. 2026-08-27 사용자 결정으로 범위를
+      「내용을 내주는 경로 전부, 목록은 제외」로 정했다.
+    compatibility: |
+      **기존 클라이언트가 깨지지 않는다.** 만료되지 않은 자원에서는 요청·응답이 완전히
+      그대로다. 달라지는 것은 **만료됐지만 아직 파기되지 않은** 자원뿐이고, 그 자원은
+      배치가 도는 순간 어차피 404가 된다 — 이 변경은 그 시점을 만료 시각으로 당긴다.
+      프런트는 이미 이 경우의 문구를 갖고 있다(「보관 기간이 지나 파기됐거나 지워진
+      문서입니다. 다시 불러와도 결과는 같습니다.」).
+
   - version: "2.2.0"
     date: "2026-08-27"
     revision: "DESIGN-6.4-SOURCE"   # §6.4 비교 화면의 **왼쪽 절반**
@@ -3356,9 +3411,9 @@ x-changelog:
          빠지면 안 된다.
       ⑸ **보존 기간이 지난 문서는 파기 전이라도 404다.** 파기는 워커 배치가 실제로 행을
          지울 때 일어나 만료와 다음 배치 사이에 창이 열리는데, 이 응답은 마스킹 전 문서
-         전문이라 그 창에서 나가는 양이 다른 조회와 다르다. **이 오퍼레이션만** 조회 질의에
-         만료 술어를 걸었고(`retention_expires_at > now()` — 파기 배치 술어의 정확한
-         여집합), 다른 조회의 처분은 backlog §1.1의 추후 개선 항목으로 남겼다.
+         전문이라 그 창에서 나가는 양이 다른 조회와 다르다. 술어는
+         `retention_expires_at > now()` — 파기 배치 술어(`<= now()`)의 정확한 여집합이다.
+         **같은 판정을 내용을 내주는 나머지 세 오퍼레이션에도 걸었다** — 2.3.0이 그 자리다.
       ⑹ **엔드포인트 수가 15 → 16이다.**
     ground: |
       **G3 — 정책 결정의 구현.** `DESIGN.md` §6.4가 검수 화면을 "원문과 AI 초안을
