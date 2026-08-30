@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+
+<channel>
+	<title>한국어 기초사전 개발 지원(Open API) - 사전 검색</title>
+	<link>https://krdict.korean.go.kr</link>
+	<description>한국어 기초사전 개발 지원(Open API) - 사전 검색 결과</description>
+	<lastBuildDate>20260828090240</lastBuildDate>
+	<total>1</total>
+	<start>1</start>
+	<num>10</num>
+	
+	
+	
+	<item>
+		
+		
+		<target_code>20490</target_code>
+		<word>거주지</word>
+		<sup_no>0</sup_no>
+		
+		<origin>居住地</origin>
+		
+		
+		<pronunciation>거주지</pronunciation>
+		
+		
+		<word_grade>고급</word_grade>
+		
+		<pos>명사</pos>
+		<link>https://krdict.korean.go.kr/kor/dicSearch/SearchView?ParaWordNo=20490</link>
+		
+		
+		<sense>
+			<sense_order>1</sense_order>
+			<definition>머물러 살고 있는 장소.</definition>
+			
+		</sense>
+		
+		
+		
+
+		
+
+		
+
+		
+
+		
+	</item>
+	
+	
+	
+</channel>
+
+
