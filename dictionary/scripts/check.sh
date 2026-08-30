@@ -43,7 +43,7 @@ export PYTHONPATH="$REPO_ROOT/src"
 overall_rc=0
 
 echo "================================================================"
-echo "1/4  tests/ (unittest)"
+echo "1/5  tests/ (unittest)"
 echo "================================================================"
 python3 -m unittest discover -s tests
 rc=$?
@@ -54,7 +54,7 @@ fi
 
 echo
 echo "================================================================"
-echo "2/4  tools/tests/ (unittest)"
+echo "2/5  tools/tests/ (unittest)"
 echo "================================================================"
 PYTHONPATH="$REPO_ROOT/src:$REPO_ROOT/tools" python3 -m unittest discover -s tools/tests
 rc=$?
@@ -65,7 +65,7 @@ fi
 
 echo
 echo "================================================================"
-echo "3/4  층위 1 산출물 불변식 (dist/ 읽기 전용)"
+echo "3/5  층위 1 산출물 불변식 (dist/ 읽기 전용)"
 echo "================================================================"
 if [ ! -f "$REPO_ROOT/dist/easy_dict.sqlite3" ]; then
     echo "[건너뜀] dist/easy_dict.sqlite3 없음 — 빌드 먼저 필요"
@@ -80,7 +80,7 @@ fi
 
 echo
 echo "================================================================"
-echo "4/4  층위 2 코퍼스 통과 검사 (골든 문서, dist/ 읽기 전용)"
+echo "4/5  층위 2 코퍼스 통과 검사 (골든 문서, dist/ 읽기 전용)"
 echo "================================================================"
 GOLDEN_DIR="${GOLDEN_DIR:-$REPO_ROOT/../data/golden}"
 if [ ! -d "$GOLDEN_DIR" ]; then
