@@ -22,13 +22,16 @@ class GlossCollisionTest {
 
     @Test
     @DisplayName("패턴 ③ 복합어 앞자리 낱말 + 관형구 뜻풀이")
-    fun `신청 정해진 날 을 잡는다`() {
-        // 기존에는 "기한"(정해진 날짜)으로 이 패턴을 확인했으나, "기한"이
-        // easy-dictionary 소비자 중복 정책으로 사전에서 빠지면서 COMPOUND_TAIL_KEYS
-        // 에서도 빠졌다(GlossCollision.kt 주석 참고). 같은 패턴을 여전히 검증하는
-        // "기일"(정해진 날)로 바꿔 확인한다.
-        assertThat(findGlossCollisions("신청 정해진 날까지 내세요.")).containsExactly("정해진 날")
-        assertThat(findGlossCollisions("접수 정해진 날이 지났습니다.")).containsExactly("정해진 날")
+    fun `사용 정해진 날짜 를 잡는다`() {
+        assertThat(findGlossCollisions("사용 정해진 날짜까지 내세요.")).containsExactly("정해진 날짜")
+        assertThat(findGlossCollisions("납부 정해진 날짜가 지났습니다.")).containsExactly("정해진 날짜")
+    }
+
+    @Test
+    @DisplayName("한 자리가 여러 패턴에 걸려도 가장 긴 매치 하나만 센다")
+    fun `겹치는 매치를 하나로 접는다`() {
+        val found = findGlossCollisions("사용 정해진 날짜까지 내세요.")
+        assertThat(found).hasSize(1)
     }
 
     @ParameterizedTest(name = "{0}")
@@ -55,7 +58,7 @@ class GlossCollisionTest {
     @ValueSource(
         strings = [
             "매달 정해진 금액을 드립니다.",
-            "미리 정해진 날에 오세요.",
+            "미리 정해진 날짜에 오세요.",
             "학생에게 정해진 금액을 드립니다.",
         ],
     )

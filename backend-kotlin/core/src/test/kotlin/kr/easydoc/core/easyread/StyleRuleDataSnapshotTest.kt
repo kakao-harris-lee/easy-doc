@@ -22,7 +22,7 @@ class StyleRuleDataSnapshotTest {
             .jsonPrimitive.int
 
     @Test
-    @DisplayName("어려운 말 사전 167개가 키·값·순서까지 원본과 같다")
+    @DisplayName("어려운 말 사전 248개가 키·값·순서까지 원본과 같다")
     fun `사전이 전건 일치한다`() {
         val expected =
             snapshot.getValue("DIFFICULT_WORD_REPLACEMENTS").jsonArray.map { entry ->
@@ -88,7 +88,7 @@ class StyleRuleDataSnapshotTest {
     }
 
     private companion object {
-        const val EXPECTED_DICTIONARY_SIZE = 167
+        const val EXPECTED_DICTIONARY_SIZE = 248
         const val SNAPSHOT_RESOURCE = "/kr/easydoc/core/easyread/style-rules-snapshot.json"
 
         fun loadSnapshot(): JsonObject {

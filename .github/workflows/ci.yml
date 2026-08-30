@@ -30,10 +30,6 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      # 사전 저장소가 없는 GitHub CI 에서는 [건너뜀] 으로 지나간다 — 교차 저장소
-      # 검사라 실효는 사전 저장소를 옆에 둔 로컬·릴리스 검증에서 난다.
-      - name: 사전 중복 표제어 게이트
-        run: ./scripts/check-dict-overlap.sh
       - run: cp .env.example .env
       - name: Kotlin 빌드·정적 분석·테스트
         run: docker compose -f compose.yml -f compose.ci.yml run --build --rm backend-check

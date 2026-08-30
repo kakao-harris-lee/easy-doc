@@ -51,8 +51,8 @@ class StyleRulesTest {
         @Test
         @DisplayName("결과 순서가 사전 선언 순서를 따른다")
         fun `사전 선언 순서로 돌려준다`() {
-            val found = findDifficultWords("금일 중으로 서류를 제출하고, 완납하고, 신청하고, 접수하세요.")
-            assertThat(found).containsExactly("금일", "제출", "접수", "완납")
+            val found = findDifficultWords("금일 중으로 서류를 제출하고, 납부하고, 신청하고, 접수하세요.")
+            assertThat(found).containsExactly("금일", "제출", "접수", "납부")
         }
 
         @Test
@@ -66,7 +66,7 @@ class StyleRulesTest {
         @DisplayName("낱말 첫머리에 오면 조사가 붙어도 잡는다")
         fun `조사가 붙어도 잡는다`() {
             assertThat(findDifficultWords("정액 지원을 받습니다.")).containsExactly("정액")
-            assertThat(findDifficultWords("경감을 신청하세요.")).contains("경감")
+            assertThat(findDifficultWords("감면을 신청하세요.")).contains("감면")
         }
 
         @Test
@@ -81,7 +81,7 @@ class StyleRulesTest {
     inner class StyleChecking {
         @Test
         fun `쉼표가 상한을 넘으면 지적한다`() {
-            val result = checkStyle("금일 중으로 서류를 제출하고, 완납하고, 신청하고, 접수하세요.")
+            val result = checkStyle("금일 중으로 서류를 제출하고, 납부하고, 신청하고, 접수하세요.")
 
             assertThat(result.totalSentences).isEqualTo(1)
             assertThat(result.passed).isFalse()
@@ -91,7 +91,7 @@ class StyleRulesTest {
                     "어려운 표현 잔존(금일)",
                     "어려운 표현 잔존(제출)",
                     "어려운 표현 잔존(접수)",
-                    "어려운 표현 잔존(완납)",
+                    "어려운 표현 잔존(납부)",
                 )
         }
 
