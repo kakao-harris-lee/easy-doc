@@ -313,68 +313,6 @@ python3 tools/detect_consumer_overlap.py \
 결과는 실행 시점 사전 상태에 따라 달라지므로, 최신 수치는 직접 위 명령으로
 다시 뽑아라.
 
-## `export_reference_contexts.py`
-
-Kotlin 이식본을 참조 구현과 **바이트 단위로 대조**하기 위한 기대 출력 픽스처를
-뽑는다. easy-doc의 Kotlin `core`가 `src/easydict/lookup.py`를 이식하는 중인데,
-경계 규칙 하나만 빠져도 문서가 조용히 훼손된다(`DESIGN.md` §6.7 실측 결함:
-`CCTV`에서 `CT`가 매칭돼 `C전류 변성기V`가 되는 종류). 사람 눈으로 잡히는
-결함이 아니라서, 참조 구현의 실제 출력과 대조하는 것이 유일한 기계적
-안전장치다.
-
-골든 코퍼스(`../data/golden/documents/*.json`, 읽기 전용) 56건의
-`source_text`마다 `EasyDict.build_prompt_context()`를 호출해 `<id>.txt`
-한 건씩 쓰고, 무엇으로 뽑았는지를 `manifest.json`에 남긴다. **읽기만 한다** —
-`dist/`도 코퍼스도 고치지 않고 사전을 재빌드하지도 않는다.
-
-### 재생성
-
-```bash
-python3 tools/export_reference_contexts.py
-```
-
-기본 출력 경로는
-`../backend-kotlin/infrastructure/src/test/resources/dictionary/reference/`
-(`--output-dir`로 변경 가능). 색인·코퍼스 경로는 `--index`/`--golden-dir`.
-
-### 파라미터 — 기본값은 제품이 실제로 쓸 값
-
-`build_prompt_context`의 출력은 예산 파라미터에 따라 통째로 달라지므로, 기본값을
-`docs/easy-doc-integration.md` §4·§5 권장값(`max_terms=40`, `max_chars=4000`,
-`max_chars_ratio=1.0`, `min_substitute=5`, `max_examples=3`,
-`gloss_style=sentence`)으로 두고 전부 CLI로 바꿀 수 있게 했다. **바꾼 값은 그대로
-`manifest.json`의 `parameters`에 기록된다** — 기록하지 않으면 픽스처가
-"참조 구현의 출력"이 아니라 "알 수 없는 설정에서의 출력"이 되어, 나중에 제품이
-다른 값을 쓰기 시작하면 조용히 거짓말을 하게 된다.
-
-### 매니페스트에 생성 일시를 넣지 않는 이유
-
-`manifest.json`이 담는 것은 파라미터, 색인 `schema_version`과 sha256, 문서별
-입력(`source_text`)·출력(컨텍스트) sha256과 길이, 매칭 건수뿐이다. 생성
-일시처럼 매번 바뀌는 값을 넣으면 재생성할 때마다 diff가 통째로 뒤집혀, 정작
-봐야 할 "참조 출력이 달라졌다"는 신호가 잡음에 묻힌다. **같은 입력이면 몇 번을
-돌려도 바이트가 같다**(실측: 연속 2회 실행 `diff -r` 차이 없음).
-
-### 픽스처 형식 (Kotlin 쪽이 읽는 계약)
-
-- `<id>.txt` = `build_prompt_context()` 반환 문자열 **그대로**, UTF-8. 끝에
-  개행을 덧붙이지 않는다 — 덧붙이면 Kotlin이 매번 걷어내야 하는 가짜 차이가
-  된다. 파일을 그대로 읽어 문자열 비교하면 된다.
-- 매칭이 0건인 문서도 파일을 남긴다. **주의**: 참조 구현은 매칭이 0건이어도
-  빈 문자열이 아니라 3개 섹션 제목만 있는 **골격**을 돌려준다 — 그 케이스의
-  정답은 `""`가 아니라 그 골격이다. (골든 코퍼스 56건에는 매칭 0건 문서가
-  없다. 최소 8건, 중앙값 21건이다.)
-- 골든 문서가 빠지면 대응하는 낡은 `.txt`를 지운다. 안 지우면 존재하지 않는
-  문서의 기대 출력이 계속 통과한다.
-
-### 실측 (2026-08-30, 사전 2,179건)
-
-56건 / 총 143.7 KiB(매니페스트 24.4 KiB 포함). 매칭 건수 최소 8 · 중앙 21 ·
-최대 108, 고유 엔트리 최소 5 · 중앙 14 · 최대 53. 56건 중 35건에 잘림
-안내줄이 붙는다 — 예산 규칙(`max_terms`/`max_chars`/`max_chars_ratio`/
-`min_substitute`)이 실제로 과반의 픽스처에서 작동하므로, 이식본이 그 규칙을
-빠뜨리면 바로 걸린다.
-
 ## API 명세 — 확인 방법과 확인/추정 구분
 
 **사용자가 실제 인증키로 검색 API 3건을 조회한 원본 응답**을
