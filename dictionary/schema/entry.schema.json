@@ -1,0 +1,170 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://easy-dictionay.local/schema/entry.schema.json",
+  "title": "EasyDictEntry",
+  "description": "dist/easy_dict.json 의 entries 배열 원소 1개에 대한 스키마 (DESIGN.md §4.2). SQLite의 v_entry_full 뷰 + variants + examples + source 를 하나의 표제어 단위로 합친 형태이다. replace_strategy/risk_level 은 이 사전의 핵심 안전장치이므로 값 범위를 enum으로 고정한다 (과태료→벌금 처럼 법적으로 다른 개념으로 오치환되는 사고를 방지).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "term",
+    "easy_term",
+    "replace_strategy",
+    "risk_level",
+    "readability",
+    "confidence"
+  ],
+  "properties": {
+    "id": {
+      "type": "integer",
+      "description": "entries.id (SQLite 기본키). 빌드 산출물에서는 참조/디버깅용 식별자로 쓰인다."
+    },
+    "term": {
+      "type": "string",
+      "minLength": 1,
+      "description": "원어(어려운 말). 예: '차상위계층'"
+    },
+    "term_hanja": {
+      "type": ["string", "null"],
+      "description": "한자 병기. 예: '次上位階層'. 병기 정보가 없으면 null 또는 생략."
+    },
+    "pos": {
+      "type": ["string", "null"],
+      "enum": ["noun", "verb", "adjective", "adverb", "determiner", "phrase", null],
+      "description": "품사. noun(명사)|verb(동사)|adjective(형용사)|adverb(부사)|determiner(관형사)|phrase(구/관용구)."
+    },
+    "easy_term": {
+      "type": "string",
+      "minLength": 1,
+      "description": "문장에 그대로 끼울 짧은 대치어(쉬운 말)."
+    },
+    "definition": {
+      "type": ["string", "null"],
+      "description": "한 문장 풀이. 초등학교 3~4학년 수준의 쉬운 문장으로 작성한다."
+    },
+    "replace_strategy": {
+      "type": "string",
+      "enum": ["substitute", "gloss", "keep"],
+      "description": "치환 전략 (DESIGN.md §2.1). substitute: 원어를 지우고 쉬운 말로 교체해도 안전. gloss: 원어를 남기고 쉬운 말을 괄호로 덧붙여 설명(제도명·법률용어 등). keep: 바꾸지 않는다(법령명·금액·기한 등 사실관계가 걸린 값)."
+    },
+    "risk_level": {
+      "type": "string",
+      "enum": ["none", "low", "high"],
+      "description": "자동 치환 위험도. high는 자동 치환 파이프라인에서 사람 검수 큐로 보내는 대상이다."
+    },
+    "caution": {
+      "type": ["string", "null"],
+      "description": "치환 시 주의사항(사람이 읽는 메모). 예: '제도 명칭이라 신청 창구에서 다시 써야 합니다. 원어를 지우지 마세요.'"
+    },
+    "readability": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 3,
+      "description": "가독성 등급. 1(가장 쉬움) ~ 3(여전히 조금 어려움)."
+    },
+    "confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "자동 치환 신뢰도. 0~1 사이 실수."
+    },
+    "priority": {
+      "type": "integer",
+      "description": "동일 위치에서 여러 표제어가 겹칠 때 우선순위. 큰 값이 우선한다. 기본값은 100 + len(term)*10."
+    },
+    "status": {
+      "type": "string",
+      "enum": ["active", "review", "deprecated"],
+      "description": "표제어 상태. active만 자동 치환에 실사용된다. risk_level='high'인 표제어는 사람 검수 전까지 'review' 상태로 유지된다."
+    },
+    "tags": {
+      "type": "array",
+      "description": "이 표제어에 부여된 태그 이름 목록 (§3.3 태그 표준값 참조). 카테고리는 단일 값이 아니라 태그 N:M으로 표현한다.",
+      "items": { "type": "string" }
+    },
+    "primary_tag": {
+      "type": ["string", "null"],
+      "description": "대표 태그 이름. 기존 {\"category\": \"행정용어\"} 형태와의 호환을 위해 둔다."
+    },
+    "variants": {
+      "type": "array",
+      "description": "활용형·띄어쓰기·한자·약어 등 표면형 변형 목록 (§3.4).",
+      "items": { "$ref": "#/$defs/variant" }
+    },
+    "examples": {
+      "type": "array",
+      "description": "before/after 예문 목록 (RAG few-shot 재료).",
+      "items": { "$ref": "#/$defs/example" }
+    },
+    "source": {
+      "anyOf": [
+        { "$ref": "#/$defs/source" },
+        { "type": "null" }
+      ],
+      "description": "출처 정보. 원본 데이터의 sources.code 와 역추적용 행/조문 참조(ref)를 담는다."
+    }
+  },
+  "$defs": {
+    "variant": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["surface", "kind"],
+      "properties": {
+        "surface": {
+          "type": "string",
+          "minLength": 1,
+          "description": "실제 표면형. 예: '명기하여', '차상위 계층'."
+        },
+        "kind": {
+          "type": "string",
+          "enum": ["conjugation", "spacing", "hanja", "abbrev", "synonym", "typo"],
+          "description": "변형 종류. conjugation(용언 활용형)|spacing(띄어쓰기 변형)|hanja(한자 병기 분리형)|abbrev(약어)|synonym(이형태/복수 순화어)|typo(수동 등록 오탈자)."
+        },
+        "is_auto": {
+          "type": "boolean",
+          "description": "빌드 규칙으로 자동 생성되었는지 여부. typo는 항상 false(수동 등록 전용)."
+        }
+      }
+    },
+    "example": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["before", "after"],
+      "properties": {
+        "before": {
+          "type": "string",
+          "minLength": 1,
+          "description": "치환 전 원문 예문."
+        },
+        "after": {
+          "type": "string",
+          "minLength": 1,
+          "description": "치환 후 예문."
+        },
+        "note": {
+          "type": ["string", "null"],
+          "description": "예문에 대한 부연 설명."
+        },
+        "is_golden": {
+          "type": "boolean",
+          "description": "easy-doc 골든셋 검증(required_facts.canonical)에 쓰이는 정답 예문인지 여부."
+        }
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code"],
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 1,
+          "description": "sources.code. 예: 'data.go.kr:welfare-terms'."
+        },
+        "ref": {
+          "type": ["string", "null"],
+          "description": "원본 데이터 내 역추적 키. 예: 'row:412'."
+        }
+      }
+    }
+  }
+}

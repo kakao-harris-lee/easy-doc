@@ -1,0 +1,278 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+
+<channel>
+	<title>한국어 기초사전 개발 지원(Open API) - 사전 검색</title>
+	<link>https://krdict.korean.go.kr</link>
+	<description>한국어 기초사전 개발 지원(Open API) - 사전 검색 결과</description>
+	<lastBuildDate>20260828090239</lastBuildDate>
+	<total>7</total>
+	<start>1</start>
+	<num>10</num>
+	
+	
+	
+	<item>
+		
+		
+		<target_code>64410</target_code>
+		<word>선정</word>
+		<sup_no>2</sup_no>
+		
+		<origin>選定</origin>
+		
+		
+		<pronunciation>선ː정</pronunciation>
+		
+		
+		<word_grade>중급</word_grade>
+		
+		<pos>명사</pos>
+		<link>https://krdict.korean.go.kr/kor/dicSearch/SearchView?ParaWordNo=64410</link>
+		
+		
+		<sense>
+			<sense_order>1</sense_order>
+			<definition>여럿 가운데에서 목적에 맞는 것을 골라 정함.</definition>
+			
+		</sense>
+		
+		
+		
+
+		
+
+		
+
+		
+
+		
+	</item>
+	
+	<item>
+		
+		
+		<target_code>64409</target_code>
+		<word>선정</word>
+		<sup_no>1</sup_no>
+		
+		<origin>善政</origin>
+		
+		
+		<pronunciation>선ː정</pronunciation>
+		
+		
+		<word_grade>고급</word_grade>
+		
+		<pos>명사</pos>
+		<link>https://krdict.korean.go.kr/kor/dicSearch/SearchView?ParaWordNo=64409</link>
+		
+		
+		<sense>
+			<sense_order>1</sense_order>
+			<definition>백성을 어질게 잘 다스리는 정치.</definition>
+			
+		</sense>
+		
+		
+		
+
+		
+
+		
+
+		
+
+		
+	</item>
+	
+	<item>
+		
+		
+		<target_code>64411</target_code>
+		<word>선정되다</word>
+		<sup_no>0</sup_no>
+		
+		<origin>選定되다</origin>
+		
+		
+		<pronunciation>선ː정되다/선ː정뒈다</pronunciation>
+		
+		
+		<word_grade>중급</word_grade>
+		
+		<pos>동사</pos>
+		<link>https://krdict.korean.go.kr/kor/dicSearch/SearchView?ParaWordNo=64411</link>
+		
+		
+		<sense>
+			<sense_order>1</sense_order>
+			<definition>여럿 가운데에서 목적에 맞는 것이 골라져 정해지다.</definition>
+			
+		</sense>
+		
+		
+		
+
+		
+
+		
+
+		
+
+		
+	</item>
+	
+	<item>
+		
+		
+		<target_code>44912</target_code>
+		<word>선정하다</word>
+		<sup_no>0</sup_no>
+		
+		<origin>選定하다</origin>
+		
+		
+		<pronunciation>선ː정하다</pronunciation>
+		
+		
+		<word_grade>중급</word_grade>
+		
+		<pos>동사</pos>
+		<link>https://krdict.korean.go.kr/kor/dicSearch/SearchView?ParaWordNo=44912</link>
+		
+		
+		<sense>
+			<sense_order>1</sense_order>
+			<definition>여럿 가운데에서 목적에 맞는 것을 골라 정하다.</definition>
+			
+		</sense>
+		
+		
+		
+
+		
+
+		
+
+		
+
+		
+	</item>
+	
+	<item>
+		
+		
+		<target_code>64412</target_code>
+		<word>선정성</word>
+		<sup_no>0</sup_no>
+		
+		<origin>煽情性</origin>
+		
+		
+		<pronunciation>선정썽</pronunciation>
+		
+		
+		<word_grade>고급</word_grade>
+		
+		<pos>명사</pos>
+		<link>https://krdict.korean.go.kr/kor/dicSearch/SearchView?ParaWordNo=64412</link>
+		
+		
+		<sense>
+			<sense_order>1</sense_order>
+			<definition>성적인 욕망과 같은 자극적이고 강한 감정을 일으키는 성질.</definition>
+			
+		</sense>
+		
+		
+		
+
+		
+
+		
+
+		
+
+		
+	</item>
+	
+	<item>
+		
+		
+		<target_code>64415</target_code>
+		<word>선정적</word>
+		<sup_no>1</sup_no>
+		
+		<origin>煽情的</origin>
+		
+		
+		<pronunciation>선정적</pronunciation>
+		
+		
+		<word_grade>고급</word_grade>
+		
+		<pos>명사</pos>
+		<link>https://krdict.korean.go.kr/kor/dicSearch/SearchView?ParaWordNo=64415</link>
+		
+		
+		<sense>
+			<sense_order>1</sense_order>
+			<definition>성적인 욕망과 같은 자극적이고 강한 감정을 일으키는 것.</definition>
+			
+		</sense>
+		
+		
+		
+
+		
+
+		
+
+		
+
+		
+	</item>
+	
+	<item>
+		
+		
+		<target_code>64414</target_code>
+		<word>선정적</word>
+		<sup_no>2</sup_no>
+		
+		<origin>煽情的</origin>
+		
+		
+		<pronunciation>선정적</pronunciation>
+		
+		
+		<word_grade>고급</word_grade>
+		
+		<pos>관형사</pos>
+		<link>https://krdict.korean.go.kr/kor/dicSearch/SearchView?ParaWordNo=64414</link>
+		
+		
+		<sense>
+			<sense_order>1</sense_order>
+			<definition>성적인 욕망과 같은 자극적이고 강한 감정을 일으키는.</definition>
+			
+		</sense>
+		
+		
+		
+
+		
+
+		
+
+		
+
+		
+	</item>
+	
+	
+	
+</channel>
+
+
