@@ -421,6 +421,49 @@ class ConvertDocumentUseCaseTest {
             assertThat(provider.calls).hasSize(1)
             assertThat(provider.calls[0].prompt.user).startsWith("<문서 id=")
         }
+
+        @Test
+        @DisplayName("명시 인자가 없으면 포트에 묻는다 — 제품 worker 가 타는 경로")
+        fun `포트가 준 컨텍스트를 싣는다`() {
+            val provider = FakeLlmProvider(listOf(reply(cleanText)))
+            val useCase = ConvertDocumentUseCase(provider, fixedIds) { context }
+
+            useCase.convert(source)
+
+            assertThat(provider.calls[0].prompt.user).startsWith(context)
+        }
+
+        @Test
+        @DisplayName("명시 인자가 포트를 이긴다 — 골든 LLM 레인의 문서별 A/B 가 계속 성립해야 한다")
+        fun `명시 인자가 우선한다`() {
+            val provider = FakeLlmProvider(listOf(reply(cleanText)))
+            val fromPort = "[문서 사전]\n- 포트가 준 것"
+            val useCase = ConvertDocumentUseCase(provider, fixedIds) { fromPort }
+
+            useCase.convert(source, dictionaryContext = context)
+
+            assertThat(provider.calls[0].prompt.user).startsWith(context)
+            assertThat(provider.calls[0].prompt.user).doesNotContain(fromPort)
+        }
+
+        @Test
+        @DisplayName("포트가 보는 것은 마스킹된 본문이다 — 배선이 마스킹을 우회하면 안 된다")
+        fun `포트에 원문이 가지 않는다`() {
+            val provider = FakeLlmProvider(listOf(reply(cleanText)))
+            val seen = mutableListOf<String>()
+            val useCase =
+                ConvertDocumentUseCase(provider, fixedIds) { masked ->
+                    seen += masked.value
+                    null
+                }
+
+            useCase.convert("금일 신청자 900101-1234567 님께 안내하십시오.")
+
+            assertThat(seen).hasSize(1)
+            assertThat(seen[0])
+                .withFailMessage("마스킹 전 원문이 사전 포트로 나갔다")
+                .doesNotContain("900101-1234567")
+        }
     }
 
     @Nested

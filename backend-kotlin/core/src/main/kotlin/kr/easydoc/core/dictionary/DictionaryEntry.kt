@@ -1,5 +1,8 @@
 package kr.easydoc.core.dictionary
 
+import kr.easydoc.core.privacy.CONTENT_MASK
+import kr.easydoc.core.privacy.UserContent
+
 // easy-dictionary 색인의 도메인 타입 — 정본은 `dictionary/DESIGN.md` §3.2·§4.3 이다.
 //
 // **이 패키지는 JSON 을 모른다.** core 본 소스에는 JSON 라이브러리가 없고(core/build.gradle.kts
@@ -103,7 +106,21 @@ data class DictionaryEntry(
  * 다. 참조 구현(파이썬)은 코드 포인트로 세지만, 경계 판정이 보는 문자(한글 음절·로마자·숫자·
  * 공백·문장부호)가 전부 BMP 라 판정 결과는 두 단위에서 같다 — 서로게이트 반쪽은 한글 음절도
  * 로마자도 아니어서 파이썬이 보는 보충 평면 문자 하나와 같은 판정을 받는다.
+ *
+ * ## `@UserContent` 를 붙이는 이유
+ *
+ * [surface] 는 **사용자 문서에서 잘라낸 조각**인데, 이름이 `SensitiveToStringReachTest` 의
+ * 민감 이름 토큰(`text`·`body`·`content`…) 중 무엇에도 걸리지 않는다. 그 게이트는 이름
+ * 휴리스틱이라, 어노테이션이 없으면 이 타입은 「통과」가 아니라 **아예 검사 대상이 아니다**.
+ * `UserContent` KDoc 이 "필드 **이름**만 봐서는 드러나지 않는 자리에 붙인다"고 정한 것이
+ * 정확히 이 자리이고, [RepairPrompt] 도 같은 사유로 붙어 있다.
+ *
+ * 오늘 유출 경로는 없다 — core 에는 로거가 없고, 이 타입은 `kr.easydoc.core.dictionary` 와
+ * 주입 어댑터 밖으로 나가지 않으며, 어댑터는 개수만 로그에 남긴다. 그러나 그 안전은 **아무도
+ * 매치를 로깅하지 않아서**일 뿐이고 다음 사람이 한 줄 더하면 사라진다. 게이트가 그 한 줄을
+ * 잡게 하는 것이 이 어노테이션의 값어치다.
  */
+@UserContent
 data class DictionaryMatch(
     val start: Int,
     val end: Int,
@@ -119,4 +136,11 @@ data class DictionaryMatch(
      * 활용형에 원형을 끼워 넣어 비문을 만드는 사고를 막는 신호가 이 값이다.
      */
     val isInflected: Boolean get() = surface != entry.term
+
+    /**
+     * **[surface] 만 가린다.** [start]·[end]·[entryId] 는 위치와 식별자라 문서 내용이 아니고,
+     * 진단에 실제로 쓸모가 있다 — 전부 지우면 「어느 위치의 어떤 엔트리였나」를 잃는다.
+     * [entry] 는 [entryId] 로 언제든 되짚을 수 있으므로 찍지 않는다.
+     */
+    override fun toString(): String = "DictionaryMatch(start=$start, end=$end, surface=$CONTENT_MASK, entryId=$entryId)"
 }

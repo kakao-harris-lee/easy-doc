@@ -29,7 +29,7 @@ internal fun renderDictionaryPromptContext(
     text: String,
     matches: List<DictionaryMatch>,
     policy: DictionaryContextPolicy,
-): String {
+): RenderedDictionaryContext {
     // 최초 등장분만 남긴다 — 이 시점의 순서가 곧 문서 등장 순서다.
     val unique = matches.distinctBy { it.entryId }
     val reservedIds = reservedSubstituteIds(unique, policy.minSubstitute)
@@ -114,15 +114,20 @@ private fun fitToBudget(
     termTruncated: Boolean,
     budget: Int?,
     maxExamples: Int,
-): String {
-    val first = renderContextBlock(ranked, maxExamples, termTruncated, totalFound)
-    if (budget == null || charCountOf(first) <= budget) return first
+): RenderedDictionaryContext {
+    val first =
+        RenderedDictionaryContext(
+            text = renderContextBlock(ranked, maxExamples, termTruncated, totalFound),
+            renderedTerms = ranked.size,
+            totalTerms = totalFound,
+        )
+    if (budget == null || charCountOf(first.text) <= budget) return first
 
     // 여기부터는 예산 때문에 반드시 뭔가 잘리므로 잘림 안내를 항상 켠다.
     var best = first
     for (fallback in budgetFallbacks(ranked, totalFound, maxExamples)) {
         best = fallback
-        if (charCountOf(fallback) <= budget) break
+        if (charCountOf(fallback.text) <= budget) break
     }
     return best
 }
@@ -132,14 +137,26 @@ private fun budgetFallbacks(
     ranked: List<DictionaryMatch>,
     totalFound: Int,
     maxExamples: Int,
-): Sequence<String> =
+): Sequence<RenderedDictionaryContext> =
     sequence {
         for (limit in (maxExamples - 1) downTo 0) {
-            yield(renderContextBlock(ranked, limit, showNotice = true, totalFound = totalFound))
+            yield(rendering(ranked, limit, totalFound))
         }
         var selected = ranked
         while (selected.isNotEmpty()) {
             selected = selected.dropLast(1)
-            yield(renderContextBlock(selected, 0, showNotice = true, totalFound = totalFound))
+            yield(rendering(selected, 0, totalFound))
         }
     }
+
+/** 후퇴 한 단계의 결과. 개수를 **찍은 문자열과 같은 자리에서** 세어 둘이 어긋날 수 없게 한다. */
+private fun rendering(
+    selected: List<DictionaryMatch>,
+    exampleLimit: Int,
+    totalFound: Int,
+): RenderedDictionaryContext =
+    RenderedDictionaryContext(
+        text = renderContextBlock(selected, exampleLimit, showNotice = true, totalFound = totalFound),
+        renderedTerms = selected.size,
+        totalTerms = totalFound,
+    )

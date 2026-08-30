@@ -149,6 +149,15 @@ class DictionaryPromptContextTest {
             assertThat(index.buildPromptContext("안내입니다.", DictionaryContextPolicy()))
                 .isEqualTo(expected)
         }
+
+        @Test
+        @DisplayName("골격뿐인 결과는 실린 항목도 찾은 항목도 0이다")
+        fun `골격의 항목 수는 0이다`() {
+            val rendered = index.renderPromptContext(noTerms, DictionaryContextPolicy())
+            assertThat(rendered.renderedTerms).isZero()
+            assertThat(rendered.totalTerms).isZero()
+            assertThat(rendered.text).isEqualTo(skeleton)
+        }
     }
 
     @Nested
@@ -391,6 +400,32 @@ class DictionaryPromptContextTest {
             val context = index.buildPromptContext(text, unlimited.copy(maxChars = 1))
             assertThat(context).contains("## 이 문서에 나온 어려운 말")
             assertThat(charCountOf(context)).isGreaterThan(1)
+        }
+
+        @Test
+        @DisplayName("실린 항목 수를 함께 돌려준다 — 배선이 출력 문자열을 훑지 않고 주입 여부를 정한다")
+        fun `렌더된 항목 수를 돌려준다`() {
+            val full = index.renderPromptContext(text, unlimited)
+            assertThat(full.renderedTerms).isEqualTo(full.totalTerms)
+
+            val termTruncated = index.renderPromptContext(text, unlimited.copy(maxTerms = 4, minSubstitute = 0))
+            assertThat(termTruncated.totalTerms).isEqualTo(9)
+            assertThat(termTruncated.renderedTerms).isEqualTo(4)
+
+            // 매칭은 9건인데 실린 것은 0건 — 「찾은 게 없다」와 다른 상태이고, 이 둘을 개수로
+            // 가를 수 있어야 배선이 골격 주입을 막을 수 있다.
+            val emptied = index.renderPromptContext(text, unlimited.copy(maxChars = 1))
+            assertThat(emptied.totalTerms).isEqualTo(9)
+            assertThat(emptied.renderedTerms).isZero()
+        }
+
+        @Test
+        @DisplayName("buildPromptContext 는 같은 렌더링의 문자열이다 — 기존 호출자의 반환값이 바뀌지 않는다")
+        fun `문자열 창구가 같은 결과를 돌려준다`() {
+            for (policy in listOf(unlimited, unlimited.copy(maxTerms = 4), unlimited.copy(maxChars = 1))) {
+                assertThat(index.buildPromptContext(text, policy))
+                    .isEqualTo(index.renderPromptContext(text, policy).text)
+            }
         }
     }
 

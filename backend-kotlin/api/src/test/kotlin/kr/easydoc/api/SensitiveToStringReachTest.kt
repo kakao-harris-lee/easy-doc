@@ -192,8 +192,13 @@ class SensitiveToStringReachTest {
          * 원문 조회(계약 2.2.0)가 **하나**를 더해 74 다 — api 의 `DocumentSourceResponse`.
          * 같은 조각의 `DocumentSourceView`(core)·`StoredSourceText`(application)는 여기 없다:
          * 둘 다 `toString()` 을 손으로 쥔 일반 class 라 R-10 축에서 세어진다.
+         *
+         * 사전이 **다섯**을 더해 79 다. core 이식본 넷(`DictionaryContextPolicy`·
+         * `DictionaryEntry`·`DictionaryExample`·`DictionaryMatch`)과 주입 설정 하나
+         * (`DictionaryProperties`). 넷은 이 숫자를 함께 올리지 않은 채 들어왔고, 그래서
+         * 사전 조각이 붙기 전부터 이 테스트는 이미 빨간불이었다.
          */
-        const val EXPECTED_SOURCE_DECLARATIONS = 74
+        const val EXPECTED_SOURCE_DECLARATIONS = 79
 
         /** 민감 판정이 반드시 닿아야 하는 타입 — 바닥이다. */
         val KNOWN_SENSITIVE_TYPES =

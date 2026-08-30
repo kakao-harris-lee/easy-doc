@@ -1,5 +1,6 @@
 package kr.easydoc.worker
 
+import kr.easydoc.application.conversion.DictionaryContextSource
 import kr.easydoc.application.conversion.ProcessConversionJob
 import kr.easydoc.application.document.PurgeExpiredDocuments
 import kr.easydoc.infrastructure.DatabaseHandle
@@ -33,6 +34,12 @@ class WorkerStartupTest {
         assertThat(context.getBean(ProcessConversionJob::class.java)).isNotNull()
         assertThat(context.getBean(PurgeExpiredDocuments::class.java)).isNotNull()
         assertThat(context.getBean(RetentionPurgeScheduler::class.java)).isNotNull()
+    }
+
+    @Test
+    @DisplayName("worker 는 사전 컨텍스트 공급원을 갖는다 — 색인 적재까지 실제로 도는 자리다")
+    fun `사전 공급원이 조립된다`() {
+        assertThat(context.getBean(DictionaryContextSource::class.java)).isNotNull()
     }
 
     @Test

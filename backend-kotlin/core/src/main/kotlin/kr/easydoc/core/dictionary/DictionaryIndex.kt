@@ -20,7 +20,17 @@ package kr.easydoc.core.dictionary
  * 나열 순서로 들어온다. 그래서 여기서는 동률일 때 "리스트에서 먼저 오는 원소"를 고르기만 하면
  * 된다 — [longestMatchAt] 이 `maxBy`(첫 최대 원소 반환)를 쓰는 이유다. 다만 §6.7 (0) 정확
  * 일치 필터는 조회 시점 규칙이라 여기서 이식한다.
+ *
+ * ## `TooManyFunctions` 억제 사유
+ *
+ * 11개 중 **8개가 §6.7 경계 규칙의 private 헬퍼**다([boundaryOk]·[leftBoundaryOk]·
+ * [josaChainReachesWordBoundary]·[singleHangulHeadwordOk] 등). 규칙마다 이름을 준 것은
+ * 의도적이다 — 실패한 테스트가 어느 규칙이 깨졌는지 이름으로 말해 주고, 각 규칙이 문서를
+ * 조용히 훼손한 실측 결함에서 하나씩 도출됐기 때문이다. 규칙 수를 줄이려고 헬퍼를 합치면
+ * 그 대응이 사라진다. 공개 표면은 셋뿐이고([findAll]·[buildPromptContext]·
+ * [renderPromptContext]) 그것이 이 클래스가 실제로 하는 일의 크기다.
  */
+@Suppress("TooManyFunctions")
 class DictionaryIndex private constructor(
     private val entries: Map<Int, DictionaryEntry>,
     private val root: TrieNode,
@@ -51,11 +61,26 @@ class DictionaryIndex private constructor(
      *
      * **이것이 사전의 실제 쓰임이다.** 전체 사전이 아니라 이 문서에 실제로 등장한 용어만,
      * 전략별 세 구역으로 나눠 싣는다. 자세한 규칙은 [renderDictionaryPromptContext] 참고.
+     *
+     * 문자열만 필요한 호출자를 위한 편의 창구다. **무엇이 실렸는지**까지 봐야 하는 쪽은
+     * [renderPromptContext] 를 쓴다 — 주입할지 말지를 정하는 배선이 그렇다.
      */
     fun buildPromptContext(
         text: String,
         policy: DictionaryContextPolicy = DictionaryContextPolicy(),
-    ): String = renderDictionaryPromptContext(text, findAll(text), policy)
+    ): String = renderPromptContext(text, policy).text
+
+    /**
+     * [buildPromptContext] 와 같은 블록을 만들되 **실린 항목 수까지** 돌려준다 (§7.2).
+     *
+     * 예산이 빠듯하면 매칭이 있어도 항목이 한 줄도 살아남지 못한다. 그 골격을 프롬프트에
+     * 실을지는 core 가 아니라 배선의 판단이고([RenderedDictionaryContext] KDoc), 그 판단을
+     * 출력 문자열을 훑지 않고 내리게 하는 것이 이 창구의 존재 이유다.
+     */
+    fun renderPromptContext(
+        text: String,
+        policy: DictionaryContextPolicy = DictionaryContextPolicy(),
+    ): RenderedDictionaryContext = renderDictionaryPromptContext(text, findAll(text), policy)
 
     /**
      * 위치 [at] 에서 시작하는 최장일치 매칭 하나를 찾는다.

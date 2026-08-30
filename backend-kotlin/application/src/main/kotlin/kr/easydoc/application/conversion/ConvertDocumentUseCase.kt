@@ -21,6 +21,7 @@ import kr.easydoc.core.privacy.maskText
 class ConvertDocumentUseCase(
     private val provider: LlmProvider,
     private val documentIds: DocumentIdGenerator = SecureDocumentIds,
+    private val dictionary: DictionaryContextSource = NoDictionaryContext,
 ) {
     /** worker 가 변환 유스케이스에 들어가기 전 실패를 기록할 때 쓰는 벤더 이름. */
     val providerName: String
@@ -32,12 +33,17 @@ class ConvertDocumentUseCase(
      * [dictionaryContext] 는 이 문서에만 해당하는 사전 지침이며 **①차 변환 프롬프트에만** 실린다
      * (계약은 `buildUserPrompt` KDoc). 보정 패스에 함께 넘기지 않는 것이 이 인자의 요점이다 —
      * 사전 있음/없음 A/B 에서 바뀌는 변수가 둘이 되면 통과율 차이가 어느 쪽 때문인지 말할 수 없다.
+     *
+     * 인자를 주지 않으면 [DictionaryContextSource] 포트에 묻는다. **명시 인자가 이긴다** —
+     * 골든 LLM 레인(`GoldenLlmLaneDictionary`)이 문서마다 미리 뽑아 둔 컨텍스트를 실어 A/B 를
+     * 재는데, 포트가 그것을 덮어쓰면 레인은 자기가 실은 것과 다른 것을 재고도 실은 것을 쟀다고
+     * 적게 된다. 「호출자가 무엇을 실을지 이미 정했으면 그대로」가 두 경로를 함께 성립시킨다.
      */
     fun convert(
         source: String,
         options: LlmOptions = LlmOptions(),
         dictionaryContext: String? = null,
-    ): ConversionResult = Pass(provider, documentIds, options, dictionaryContext).run(source)
+    ): ConversionResult = Pass(provider, documentIds, options, dictionaryContext, dictionary).run(source)
 }
 
 /** 변환 1건의 실행 상태. */
@@ -46,6 +52,7 @@ private class Pass(
     private val documentIds: DocumentIdGenerator,
     private val options: LlmOptions,
     private val dictionaryContext: String?,
+    private val dictionary: DictionaryContextSource,
 ) {
     private val budget = CompletionBudget()
     private var inputTokens = 0
@@ -54,7 +61,10 @@ private class Pass(
 
     fun run(source: String): ConversionResult {
         val masking = maskText(source)
-        val prompt = LlmPrompt.forConversion(masking.maskedText, documentIds, dictionaryContext)
+        // 사전은 **마스킹 직후** 마스킹된 본문으로 묻는다. 프롬프트에 실제로 들어가는 것이
+        // 그 본문이고, 원문으로 물으면 배선이 마스킹 규칙을 우회하는 통로가 된다.
+        val context = dictionaryContext ?: dictionary.contextFor(masking.maskedText)
+        val prompt = LlmPrompt.forConversion(masking.maskedText, documentIds, context)
 
         // ① 변환 패스 — 항상 정확히 1회.
         return when (val first = complete(prompt)) {
