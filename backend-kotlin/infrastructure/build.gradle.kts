@@ -103,3 +103,60 @@ tasks.register<JavaExec>("writeEncryptionKeyEnv") {
     // 매번 새 키를 내야 한다. UP-TO-DATE 로 건너뛰면 파일이 비어 있는 채 통과한다.
     outputs.upToDateWhen { false }
 }
+
+// ── 사전 색인 배포 (easy-dictionary) ────────────────────────────────────────────────
+//
+// 정본은 `dictionary/dist/easy_dict.index.json` 이지만, 제품은 **여기 커밋된 사본**을
+// 클래스패스 리소스로 읽는다. 사본이 필요한 이유는 도커다: compose 의 백엔드 빌드 컨텍스트가
+// `./backend-kotlin` 이라 컨테이너 안 Gradle 은 `../dictionary/` 를 볼 수 없다. 빌드 시점에
+// 정본을 끌어오는 방식은 CI 의 backend 잡(도커 빌드)에서 그대로 깨진다.
+//
+// 사본이 생기면 갈라질 자리도 생긴다. 아래 검사 태스크가 `check` 에 붙어 그것을 막는다 —
+// 새 검증 하네스가 아니라 **기존 Gradle 검증에 태스크 하나를 얹은 것**이다.
+val dictionaryIndexSource: File = File(rootDir.parentFile, "dictionary/dist/easy_dict.index.json")
+val dictionaryIndexResource: File = file("src/main/resources/dictionary/easy_dict.index.json")
+
+tasks.register<Copy>("syncDictionaryIndex") {
+    group = "build"
+    description = "dictionary/dist/easy_dict.index.json 을 infrastructure 리소스 사본으로 복사한다."
+    from(dictionaryIndexSource)
+    into(dictionaryIndexResource.parentFile)
+
+    // 정본이 없는 체크아웃(도커 빌드 컨텍스트)에서도 태스크가 실패하지 않게 둔다 —
+    // 그 환경에는 복사할 것이 없고, 사본은 이미 커밋돼 있다.
+    onlyIf { dictionaryIndexSource.isFile }
+}
+
+val checkDictionaryIndex =
+    tasks.register("checkDictionaryIndex") {
+        group = "verification"
+        description = "커밋된 사전 색인 사본이 dictionary/dist 정본과 같은지 본다(정본이 없으면 [건너뜀])."
+
+        // 정본은 Gradle 루트(backend-kotlin) 밖이라 어차피 빌드 지문에 잡히지 않는다.
+        // 두 파일을 견주는 비용은 밀리초 단위이므로 매번 실제로 본다 — UP-TO-DATE 로
+        // 건너뛴 검사는 검사하지 않은 것과 같다.
+        outputs.upToDateWhen { false }
+
+        val source = dictionaryIndexSource
+        val copy = dictionaryIndexResource
+        doLast {
+            if (!source.isFile) {
+                logger.lifecycle(
+                    "[건너뜀] ${source.path} 없음 — 사본이 낡았는지 검사하지 않았다. " +
+                        "\"통과\"가 아니라 \"검사 안 함\"이다.",
+                )
+                return@doLast
+            }
+            check(copy.isFile) {
+                "사전 색인 사본이 없다: ${copy.path} — ./gradlew :infrastructure:syncDictionaryIndex 를 돌린다."
+            }
+            check(source.readBytes().contentEquals(copy.readBytes())) {
+                "사전 색인 사본이 정본과 다르다: ${copy.path} — " +
+                    "./gradlew :infrastructure:syncDictionaryIndex 를 돌리고 사본을 함께 커밋한다."
+            }
+        }
+    }
+
+tasks.named("check") {
+    dependsOn(checkDictionaryIndex)
+}

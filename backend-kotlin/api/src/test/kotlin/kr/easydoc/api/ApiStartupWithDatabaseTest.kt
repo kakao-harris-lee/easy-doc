@@ -5,6 +5,7 @@
 package kr.easydoc.api
 
 import kr.easydoc.api.support.ContractSpec
+import kr.easydoc.application.conversion.DictionaryContextSource
 import kr.easydoc.application.health.HealthDiagnosis
 import kr.easydoc.infrastructure.DatabaseHandle
 import kr.easydoc.infrastructure.MigrationCatalog
@@ -12,8 +13,10 @@ import kr.easydoc.infrastructure.PostgresTestSupport
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
+import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.boot.test.web.server.LocalServerPort
+import org.springframework.context.ApplicationContext
 import org.springframework.test.context.DynamicPropertyRegistry
 import org.springframework.test.context.DynamicPropertySource
 import tools.jackson.databind.ObjectMapper
@@ -27,6 +30,19 @@ import java.net.http.HttpResponse
 class ApiStartupOnEmptyDatabaseTest {
     @LocalServerPort
     private var port: Int = 0
+
+    @Autowired
+    private lateinit var context: ApplicationContext
+
+    @Test
+    @DisplayName("API 는 사전을 적재하지 않는다 — 큐를 소비하지 않는 프로세스가 1.5MB 색인을 들 이유가 없다")
+    fun `사전 공급원이 없다`() {
+        assertThat(context.getBeanNamesForType(DictionaryContextSource::class.java))
+            .withFailMessage(
+                "API 컨텍스트에 사전 공급원이 조립됐다 — 조립은 worker 프로필 " +
+                    "(`ConversionWorkerConfiguration`) 몫이다. 어댑터에 `@Component` 가 붙지 않았는지 보라.",
+            ).isEmpty()
+    }
 
     @Test
     @DisplayName("빈 DB 에서 기동하고 /health 가 200 · 두 의존 서비스 진단이 **참**이다")

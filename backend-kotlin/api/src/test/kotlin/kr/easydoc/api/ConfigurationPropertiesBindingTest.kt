@@ -1,9 +1,11 @@
 package kr.easydoc.api
 
 import kr.easydoc.api.config.EasyDocProperties
+import kr.easydoc.core.dictionary.DictionaryContextPolicy
 import kr.easydoc.core.security.Secret
 import kr.easydoc.infrastructure.auth.AuthProperties
 import kr.easydoc.infrastructure.crypto.EncryptionProperties
+import kr.easydoc.infrastructure.dictionary.DictionaryProperties
 import kr.easydoc.infrastructure.document.RetentionProperties
 import kr.easydoc.infrastructure.llm.LlmProperties
 import org.assertj.core.api.Assertions.assertThat
@@ -101,6 +103,35 @@ class ConfigurationPropertiesBindingTest {
         assertThat(retention.enabled).isFalse()
         assertThat(retention.dryRun).isTrue()
         assertThat(retention.batchSize).isEqualTo(7)
+    }
+
+    @Test
+    @DisplayName("사전 주입 설정이 기본값과 다른 값을 싣는다 — 플래그와 예산 다섯이 전부 운영 손잡이다")
+    fun `사전 설정이 기본값과 다른 값을 싣는다`() {
+        val dictionary =
+            bind(
+                "easydoc.dictionary",
+                DictionaryProperties::class.java,
+                mapOf(
+                    "easydoc.dictionary.enabled" to "false",
+                    "easydoc.dictionary.max-terms" to "12",
+                    "easydoc.dictionary.max-chars" to "1500",
+                    "easydoc.dictionary.max-chars-ratio" to "0.5",
+                    "easydoc.dictionary.min-substitute" to "2",
+                    "easydoc.dictionary.max-examples" to "1",
+                ),
+            )
+        assertThat(dictionary.enabled).isFalse()
+        assertThat(dictionary.policy())
+            .isEqualTo(
+                DictionaryContextPolicy(
+                    maxTerms = 12,
+                    maxChars = 1500,
+                    maxCharsRatio = 0.5,
+                    minSubstitute = 2,
+                    maxExamples = 1,
+                ),
+            )
     }
 
     private fun <T : Any> bind(

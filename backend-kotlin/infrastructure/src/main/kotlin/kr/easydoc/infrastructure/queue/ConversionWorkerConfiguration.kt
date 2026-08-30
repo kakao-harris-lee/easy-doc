@@ -9,10 +9,15 @@ import kr.easydoc.application.conversion.ConversionWorkerPolicy
 import kr.easydoc.application.conversion.ConversionWorkerRuntime
 import kr.easydoc.application.conversion.ConversionWorkerStores
 import kr.easydoc.application.conversion.ConvertDocumentUseCase
+import kr.easydoc.application.conversion.DictionaryContextSource
+import kr.easydoc.application.conversion.NoDictionaryContext
 import kr.easydoc.application.conversion.ProcessConversionJob
 import kr.easydoc.application.crypto.ContentCipher
 import kr.easydoc.application.document.MaskedItemWriter
 import kr.easydoc.core.llm.LlmProvider
+import kr.easydoc.infrastructure.dictionary.DictionaryIndexJsonReader
+import kr.easydoc.infrastructure.dictionary.DictionaryProperties
+import kr.easydoc.infrastructure.dictionary.IndexedDictionaryContextSource
 import kr.easydoc.infrastructure.document.JdbcConversionWorkStore
 import org.slf4j.LoggerFactory
 import org.springframework.boot.context.properties.ConfigurationProperties
@@ -47,7 +52,28 @@ data class ConversionWorkerProperties(
 @Profile("worker")
 class ConversionWorkerConfiguration {
     @Bean
-    fun convertDocumentUseCase(provider: LlmProvider): ConvertDocumentUseCase = ConvertDocumentUseCase(provider)
+    fun convertDocumentUseCase(
+        provider: LlmProvider,
+        dictionary: DictionaryContextSource,
+    ): ConvertDocumentUseCase = ConvertDocumentUseCase(provider, dictionary = dictionary)
+
+    /**
+     * 사전 컨텍스트 공급원. **여기가 사전을 적재하는 유일한 자리다** — 이 설정이 worker 프로필
+     * 전용이므로 큐를 소비하지 않는 API 프로세스는 1.5MB 색인을 읽지 않는다.
+     *
+     * 주입을 껐으면 색인을 **읽지도 않는다**. 끈 실행에서 적재만 하는 것은 기동 시간과 힙을
+     * 그대로 쓰면서 아무것도 얻지 않는 것이다.
+     */
+    @Bean
+    fun dictionaryContextSource(properties: DictionaryProperties): DictionaryContextSource =
+        if (properties.enabled) {
+            IndexedDictionaryContextSource(
+                index = DictionaryIndexJsonReader().readClasspathResource(),
+                policy = properties.policy(),
+            )
+        } else {
+            NoDictionaryContext
+        }
 
     @Bean
     fun conversionWorkerPolicy(properties: ConversionWorkerProperties): ConversionWorkerPolicy =
