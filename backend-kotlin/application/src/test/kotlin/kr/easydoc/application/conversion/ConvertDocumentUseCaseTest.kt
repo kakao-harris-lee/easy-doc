@@ -395,6 +395,35 @@ class ConvertDocumentUseCaseTest {
     }
 
     @Nested
+    @DisplayName("사전 컨텍스트 주입")
+    inner class DictionaryContextInjection {
+        private val context = "[문서 사전]\n- 금일: 오늘"
+
+        @Test
+        @DisplayName("1차 변환 프롬프트에만 싣는다 — A/B 에서 바뀌는 변수는 하나여야 한다")
+        fun `보정 프롬프트에는 싣지 않는다`() {
+            val provider = FakeLlmProvider(listOf(reply(draftWithIssue), reply(cleanText)))
+
+            useCase(provider).convert(source, dictionaryContext = context)
+
+            assertThat(provider.calls).hasSize(2)
+            assertThat(provider.calls[0].prompt.user).startsWith(context)
+            assertThat(provider.calls[1].prompt.user).doesNotContain(context)
+        }
+
+        @Test
+        @DisplayName("주지 않으면 프롬프트가 달라지지 않는다 — 베이스라인 측정 조건")
+        fun `기본값은 주입하지 않는다`() {
+            val provider = FakeLlmProvider(listOf(reply(cleanText)))
+
+            useCase(provider).convert(source)
+
+            assertThat(provider.calls).hasSize(1)
+            assertThat(provider.calls[0].prompt.user).startsWith("<문서 id=")
+        }
+    }
+
+    @Nested
     @DisplayName("마스킹 선행 불변식")
     inner class MaskingComesFirst {
         @Test

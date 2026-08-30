@@ -39,7 +39,7 @@ class PromptsTest {
             val listed = listedAlways(systemPromptOf("금일 중 서류를 지참하세요."))
 
             assertThat(listed).containsExactly("금일", "지참")
-            assertThat(listed).doesNotContain("감면", "별도", "제출")
+            assertThat(listed).doesNotContain("경감", "별도", "제출")
         }
 
         @Test
@@ -68,7 +68,7 @@ class PromptsTest {
         @DisplayName("문맥 판단 그룹은 입력과 무관하게 항상 싣는다")
         fun `PROMPT_ONLY_WORDS 는 항상 실린다`() {
             val absent = listedConditional(systemPromptOf("아무 상관 없는 본문입니다."))
-            val present = listedConditional(systemPromptOf("상기 내용을 확인하기 바랍니다."))
+            val present = listedConditional(systemPromptOf("하기 내용을 확인하기 바랍니다."))
 
             assertThat(absent).containsExactlyElementsOf(PROMPT_ONLY_WORDS)
             assertThat(present).containsExactlyElementsOf(PROMPT_ONLY_WORDS)
@@ -77,7 +77,7 @@ class PromptsTest {
         @Test
         @DisplayName("문맥 판단 그룹은 치환 목록에 실리지 않는다")
         fun `PROMPT_ONLY_WORDS 는 치환 목록에 없다`() {
-            val listed = listedAlways(systemPromptOf("상기 내용을 확인하기 바랍니다. 하자가 있으면 게시하세요."))
+            val listed = listedAlways(systemPromptOf("하기 내용을 확인하기 바랍니다. 게시하세요."))
 
             assertThat(listed).doesNotContainAnyElementsOf(PROMPT_ONLY_WORDS)
         }
@@ -162,6 +162,42 @@ class PromptsTest {
 
             assertThat(user).contains("문제: 어려운 표현 잔존(없는말)")
             assertThat(user).doesNotContain("'없는말' (뜻:")
+        }
+    }
+
+    @Nested
+    @DisplayName("사전 컨텍스트 주입")
+    inner class DictionaryContext {
+        private val masked = maskText("금일 서류를 지참하세요.").maskedText
+        private val fixedIds = DocumentIdGenerator { "0123456789ab" }
+        private val context = "[문서 사전]\n- 금일: 오늘"
+
+        @Test
+        @DisplayName("주지 않으면 기존 사용자 프롬프트와 한 글자도 다르지 않다")
+        fun `null 이면 기존 출력이다`() {
+            assertThat(buildUserPrompt(masked, fixedIds, null)).isEqualTo(buildUserPrompt(masked, fixedIds))
+        }
+
+        @Test
+        @DisplayName("공백뿐인 컨텍스트는 없는 것으로 본다")
+        fun `blank 는 null 과 같다`() {
+            assertThat(buildUserPrompt(masked, fixedIds, "   \n  ")).isEqualTo(buildUserPrompt(masked, fixedIds))
+        }
+
+        @Test
+        @DisplayName("컨텍스트는 문서 구분자보다 앞에, 빈 줄 하나를 두고 실린다")
+        fun `문서보다 앞에 붙인다`() {
+            val prompt = buildUserPrompt(masked, fixedIds, context)
+
+            assertThat(prompt).startsWith("$context\n\n<$DOCUMENT_TAG_NAME id=\"0123456789ab\">")
+            assertThat(prompt).isEqualTo("$context\n\n" + buildUserPrompt(masked, fixedIds))
+        }
+
+        @Test
+        @DisplayName("파일에서 읽은 컨텍스트의 앞뒤 공백이 이음매를 흔들지 않는다")
+        fun `앞뒤 공백은 이음매를 바꾸지 않는다`() {
+            assertThat(buildUserPrompt(masked, fixedIds, "\n$context\n\n"))
+                .isEqualTo(buildUserPrompt(masked, fixedIds, context))
         }
     }
 

@@ -322,13 +322,31 @@ fun buildSystemPrompt(maskedText: MaskedText): String {
 /** 프롬프트 절 구분 — 빈 줄 하나. */
 private const val SECTION_SEPARATOR = "\n\n"
 
-/** 마스킹된 원문을 난수 id 구분자로 감싸 변환을 지시한다. */
+/**
+ * 마스킹된 원문을 난수 id 구분자로 감싸 변환을 지시한다.
+ *
+ * [dictionaryContext] 는 이 문서에만 해당하는 사전 지침 블록이다. 세 가지가 이 인자의 계약이다.
+ *
+ * 1. **구분자 밖, 문서보다 앞.** 지시는 같은 사용자 메시지에서 본문보다 앞에 와야 모델이
+ *    지시로 읽는다(easy-dictionary 통합 문서 §4). 구분자 밖에 두는 것은 이 값이 사용자가 올린
+ *    본문이 아니라 **신뢰된 사전 산출물**이기 때문이다 — 주입 방어([INJECTION_GUARD])가 가두는
+ *    대상은 본문이지 우리가 만든 지침이 아니다. 신뢰할 수 없는 값을 이 인자로 넘기면 그 방어가
+ *    무의미해진다.
+ * 2. **`null` 이거나 공백뿐이면 출력이 기존과 한 글자도 다르지 않다.** 사전 있음/없음 A/B 의
+ *    「없음」 쪽이 베이스라인과 같은 프롬프트여야 두 측정을 비교할 수 있다.
+ * 3. **앞뒤 공백을 다듬는다.** 값의 출처가 파일이라 줄바꿈으로 끝나는 것이 보통이고, 그대로
+ *    이으면 이음매의 빈 줄 수가 파일마다 달라진다.
+ */
 fun buildUserPrompt(
     maskedText: MaskedText,
     documentIds: DocumentIdGenerator = SecureDocumentIds,
+    dictionaryContext: String? = null,
 ): String {
     val documentId = documentIds.next()
-    return "<$DOCUMENT_TAG_NAME id=\"$documentId\">\n" +
+    val trimmed = dictionaryContext?.trim()?.takeIf(String::isNotEmpty)
+    val context = if (trimmed == null) "" else trimmed + SECTION_SEPARATOR
+    return context +
+        "<$DOCUMENT_TAG_NAME id=\"$documentId\">\n" +
         "${maskedText.value}\n" +
         "</$DOCUMENT_TAG_NAME id=\"$documentId\">\n\n" +
         "위 문서를 쉬운 글로 바꿔 주세요."

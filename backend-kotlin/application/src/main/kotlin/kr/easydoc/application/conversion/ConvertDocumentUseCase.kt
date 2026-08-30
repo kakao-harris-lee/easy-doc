@@ -26,11 +26,18 @@ class ConvertDocumentUseCase(
     val providerName: String
         get() = provider.name
 
-    /** 원문 [source] 를 쉬운 글로 바꾼다. */
+    /**
+     * 원문 [source] 를 쉬운 글로 바꾼다.
+     *
+     * [dictionaryContext] 는 이 문서에만 해당하는 사전 지침이며 **①차 변환 프롬프트에만** 실린다
+     * (계약은 `buildUserPrompt` KDoc). 보정 패스에 함께 넘기지 않는 것이 이 인자의 요점이다 —
+     * 사전 있음/없음 A/B 에서 바뀌는 변수가 둘이 되면 통과율 차이가 어느 쪽 때문인지 말할 수 없다.
+     */
     fun convert(
         source: String,
         options: LlmOptions = LlmOptions(),
-    ): ConversionResult = Pass(provider, documentIds, options).run(source)
+        dictionaryContext: String? = null,
+    ): ConversionResult = Pass(provider, documentIds, options, dictionaryContext).run(source)
 }
 
 /** 변환 1건의 실행 상태. */
@@ -38,6 +45,7 @@ private class Pass(
     private val provider: LlmProvider,
     private val documentIds: DocumentIdGenerator,
     private val options: LlmOptions,
+    private val dictionaryContext: String?,
 ) {
     private val budget = CompletionBudget()
     private var inputTokens = 0
@@ -46,9 +54,10 @@ private class Pass(
 
     fun run(source: String): ConversionResult {
         val masking = maskText(source)
+        val prompt = LlmPrompt.forConversion(masking.maskedText, documentIds, dictionaryContext)
 
         // ① 변환 패스 — 항상 정확히 1회.
-        return when (val first = complete(LlmPrompt.forConversion(masking.maskedText, documentIds))) {
+        return when (val first = complete(prompt)) {
             is Outcome.Rejected -> {
                 ConversionResult.Failed(
                     kind = first.kind,

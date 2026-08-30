@@ -39,8 +39,17 @@ class GoldenCorpusLlmEvaluationTest {
                 is LanePlan.Unusable -> fail<LanePlan.Ready>(plan.reason)
             }
 
+        // 사전 컨텍스트는 **문서 목록을 안 뒤** 정한다 — 몇 건에 실렸는지가 측정 조건의 일부라
+        // 요약 문자열을 만들기 전에 알아야 한다.
+        val documents = GoldenDocumentLoader.loadDirectory(GoldenDocumentLoader.documentsDirectory()).documents
+        val dictionary =
+            when (val plan = LaneDictionary.plan(System::getenv, documents.map(GoldenDocument::id))) {
+                is LaneDictionaryPlan.Ready -> plan.dictionary
+                is LaneDictionaryPlan.Unusable -> fail<LaneDictionary>(plan.reason)
+            }
+
         val journal = LaneJournal()
-        val report = LaneReport(ready.description, journal)
+        val report = LaneReport("${ready.description} · ${dictionary.description}", journal)
         // 제품이 조립한 provider 를 레인 계측이 감싼다. 변환도 judge 도 같은 계측을 지난다.
         val provider = LaneInstrumentedProvider(ready.provider, journal)
         val grader =
@@ -49,13 +58,11 @@ class GoldenCorpusLlmEvaluationTest {
                 judge = GoldenJudge(provider),
                 journal = journal,
                 report = report,
+                dictionary = dictionary,
             )
 
         // 문서를 **순차로** 돈다 — 이유는 LaneInstrumentedProvider KDoc 「호출 간격」 절에 있다.
-        GoldenDocumentLoader
-            .loadDirectory(GoldenDocumentLoader.documentsDirectory())
-            .documents
-            .forEach(grader::grade)
+        documents.forEach(grader::grade)
 
         // 통과한 실행에서도 측정 조건과 집계가 남아야 한다(`testLlm` 은 stdout 을 보여 준다).
         println(report.render())
@@ -73,11 +80,12 @@ private class LaneGrader(
     private val judge: GoldenJudge,
     private val journal: LaneJournal,
     private val report: LaneReport,
+    private val dictionary: LaneDictionary,
 ) {
     fun grade(document: GoldenDocument) {
         journal.beginDocument(document.id)
         val startedAt = System.nanoTime()
-        val result = converter.convert(document.sourceText)
+        val result = converter.convert(document.sourceText, dictionaryContext = dictionary.contextFor(document.id))
         val elapsed = Duration.ofNanos(System.nanoTime() - startedAt)
 
         when (result) {
