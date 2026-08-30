@@ -167,10 +167,23 @@ subprojects {
         group = "verification"
         description =
             "LLM-as-judge opt-in 레인. 비밀값이 없으면 skip 하고, 있으면 유료 호출로 골든 변환을 채점한다."
-        val testSourceSet = project.extensions.getByType<JavaPluginExtension>().sourceSets.getByName("test")
+        val testSourceSet =
+            project.extensions
+                .getByType<JavaPluginExtension>()
+                .sourceSets
+                .getByName("test")
         testClassesDirs = testSourceSet.output.classesDirs
         classpath = testSourceSet.runtimeClasspath
         failOnNoDiscoveredTests = false
+
+        // 레인 요약(무엇으로 쟀는지·통과/실패·인프라 흔들림)은 stdout 으로 나온다. 기본 로깅은
+        // failed·skipped 만 찍어, **통과한 실행의 측정값이 어디에도 남지 않았다.**
+        testLogging.showStandardStreams = true
+
+        // 이 태스크는 **재는 행위**다. 소스가 그대로여도 다시 재야 한다 —
+        // 다른 `EASYDOC_LLM_*`·키로 다시 돌린 실행이 UP-TO-DATE 로 건너뛰면, 돌리지 않은 값을
+        // 돌린 값으로 읽게 된다. 환경변수는 Gradle 입력 지문에 잡히지 않으므로 여기서 끈다.
+        outputs.upToDateWhen { false }
     }
 }
 

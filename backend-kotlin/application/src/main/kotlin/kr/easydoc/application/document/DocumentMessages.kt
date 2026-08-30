@@ -58,6 +58,25 @@ const val EXPORT_NOT_DONE_MESSAGE: String = "변환이 끝난 뒤에 내려받�
 const val EXPORT_MISSING_PLACEHOLDERS_MESSAGE: String =
     "변환에서 유실된 개인정보 표시가 있습니다 — 검수 화면에서 수정 후 내보내세요"
 
+/**
+ * 계약 GET export 409 예시 `format_mismatch` — 요청한 형식이 **이 변환의 원본**과 다르다.
+ *
+ * **옳은 형식을 문구에 싣지 않는다.** 그 값은 이미 조회 응답의 `export_format` 에 있고,
+ * 오류 문구에 또 실으면 「무슨 형식으로 내려받는가」의 정본이 둘이 된다
+ * (계약 `x-export-format-derivation` `rationale` ④).
+ */
+const val EXPORT_FORMAT_MISMATCH_MESSAGE: String = "원본과 같은 형식으로만 내려받을 수 있습니다"
+
+/**
+ * 계약 GET export 409 예시 `no_exportable_format` — 같은 형식으로 내보낼 수단이 없다.
+ *
+ * 오늘 이 갈래에 드는 원본은 **PDF 하나뿐이다**(계약 `x-export-format-derivation.mapping`
+ * 에서 상이 `null` 인 유일한 키). 그래서 문구가 형식을 이름으로 부를 수 있고, 그 대응이
+ * 깨지는 날은 `ConversionFormatContractTest` 가 빨갛다 — 표에 `null` 갈래가 늘면 그
+ * 단언이 먼저 걸린다.
+ */
+const val EXPORT_FORMAT_UNAVAILABLE_MESSAGE: String = "PDF 문서 내려받기는 아직 준비되지 않았습니다"
+
 /** 계약 PUT 422 예시 `empty`. 제어문자만 담긴 수정본도 여기다. */
 const val EMPTY_REVIEW_MESSAGE: String = "수정본이 비어 있습니다"
 

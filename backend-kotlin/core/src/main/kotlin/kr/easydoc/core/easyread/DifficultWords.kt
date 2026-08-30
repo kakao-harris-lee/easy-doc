@@ -2,7 +2,13 @@ package kr.easydoc.core.easyread
 
 // 스냅샷 검증: `StyleRuleDataSnapshotTest`.
 
-/** 어려운 한자어·행정 용어 → 쉬운 표현 사전 (246개). */
+// 사전을 넓히는 것은 값싸 보이지만 값싸지 않다. 낱말을 하나 넣으면 [findDifficultWords]
+// 가 그 말이 든 기존 골든 스냅샷을 전부 위반으로 세고, 뜻풀이가 명사형이면 치환 비문
+// 검출 패턴까지 하나 늘어난다. 그래서 **행정 문서 밖에서는 거의 쓰지 않는 말만** 넣고,
+// '지원'·'평가'·'조사'처럼 쉬운 글에서도 쓸 수 있는 말은 넣지 않는다. 분야 전용 명사
+// ('의료기술' 같은 말)도 넣지 않는다 — 그 처리는 [EXPLAIN_INSTRUCTION] 의 몫이다.
+
+/** 어려운 한자어·행정 용어 → 쉬운 표현 사전 (248개). */
 val DIFFICULT_WORD_REPLACEMENTS: Map<String, String> =
     linkedMapOf(
         // --- 때·기간 ---
@@ -106,6 +112,9 @@ val DIFFICULT_WORD_REPLACEMENTS: Map<String, String> =
         "게첨" to "내붙임",
         "배부" to "나눠 줌",
         "배포" to "널리 나눠 줌",
+        // 값을 "배포"와 같은 문자열로 둔다 — 새 뜻풀이를 만들면 NOMINAL_GLOSSES 에
+        // 검출 패턴이 하나 더 생기고, 그 오탐 비용을 뜻이 같은 자리에서 치를 이유가 없다.
+        "보급" to "널리 나눠 줌",
         "요망" to "바람",
         "여부" to "그런지 아닌지",
         "의거" to "따름",
@@ -207,6 +216,9 @@ val DIFFICULT_WORD_REPLACEMENTS: Map<String, String> =
         "독려" to "북돋움",
         "촉구" to "재촉함",
         "의뢰" to "부탁함",
+        // 값이 "-ㅁ/-음"으로 끝나지 않게 골랐다("맡김"이 아니라 "맡기는 것") —
+        // 명사형 값은 그대로 [NOMINAL_GLOSSES] 검출 패턴이 된다.
+        "위탁" to "일을 대신 맡기는 것",
         "연계" to "이어 줌",
         "판정" to "가려 정함",
         "선정" to "뽑음",

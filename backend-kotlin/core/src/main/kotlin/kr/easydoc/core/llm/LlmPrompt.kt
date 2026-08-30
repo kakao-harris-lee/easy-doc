@@ -21,14 +21,20 @@ class LlmPrompt private constructor(
     override fun toString(): String = "LlmPrompt(system=${system.length}자, user=${user.length}자)"
 
     companion object {
-        /** 1차 변환 프롬프트. 마스킹을 거친 본문만 받는다. */
+        /**
+         * 1차 변환 프롬프트. 마스킹을 거친 본문만 받는다.
+         *
+         * [dictionaryContext] 는 [buildUserPrompt] 로 그대로 내려간다 — 계약은 그쪽 KDoc 에 있다.
+         * 시스템 프롬프트는 문서에 따라 달라지지 않으므로 건드리지 않는다.
+         */
         fun forConversion(
             maskedText: MaskedText,
             documentIds: DocumentIdGenerator = SecureDocumentIds,
+            dictionaryContext: String? = null,
         ): LlmPrompt =
             LlmPrompt(
                 system = buildSystemPrompt(maskedText),
-                user = buildUserPrompt(maskedText, documentIds),
+                user = buildUserPrompt(maskedText, documentIds, dictionaryContext),
             )
 
         /** 보정(수리) 패스 프롬프트. 기계 검사가 잡아낸 위반만 표적으로 고치게 한다. */

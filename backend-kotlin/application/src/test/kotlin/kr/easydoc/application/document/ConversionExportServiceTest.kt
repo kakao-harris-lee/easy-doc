@@ -2,13 +2,16 @@ package kr.easydoc.application.document
 
 import kr.easydoc.core.crypto.EncryptedField
 import kr.easydoc.core.crypto.PlainBody
+import kr.easydoc.core.crypto.PlainBytes
 import kr.easydoc.core.document.ConversionStatus
 import kr.easydoc.core.document.MaskedItemView
+import kr.easydoc.core.document.SourceFormat
 import kr.easydoc.core.easyread.ExportFile
 import kr.easydoc.core.easyread.ExportFormat
 import kr.easydoc.core.easyread.exportFileOf
 import kr.easydoc.core.exceptions.ConflictException
 import kr.easydoc.core.exceptions.NotFoundException
+import kr.easydoc.core.exceptions.StorageException
 import kr.easydoc.core.privacy.MaskCategory
 import kr.easydoc.core.security.Secret
 import org.assertj.core.api.Assertions.assertThat
@@ -130,7 +133,7 @@ class ConversionExportServiceTest {
 
         val file = world.export(conversionId, ExportFormat.TXT)
 
-        assertThat(file.filename).isEqualTo("기초연금 신청 안내.txt")
+        assertThat(file.filename).isEqualTo("기초연금 신청 안내-쉬운글.txt")
         assertThat(
             world.exporter.calls
                 .single()
@@ -153,34 +156,194 @@ class ConversionExportServiceTest {
     }
 
     @Test
-    @DisplayName("형식을 조립기에 그대로 넘긴다")
-    fun `형식을 조립기에 넘긴다`() {
+    @DisplayName("형식을 **요청이 아니라 원본**이 정한다 — `format` 을 생략해도 같은 파일이 나간다")
+    fun `형식을 원본이 정한다`() {
+        SourceFormat.entries
+            .mapNotNull { source -> ExportFormat.ofSource(source)?.let { source to it } }
+            .forEach { (source, derived) ->
+                listOf(null, derived).forEach { requested ->
+                    val world = World()
+                    val conversionId = UUID.randomUUID()
+                    world.seedDone(conversionId, Seed(easyText = "본문", sourceFormat = source))
+
+                    world.export(conversionId, requested)
+
+                    assertThat(
+                        world.exporter.calls
+                            .single()
+                            .format,
+                    ).withFailMessage(
+                        "원본 %s · 요청 %s 에서 조립기가 받은 형식이 유도값과 다르다: %s",
+                        source.wireName,
+                        requested,
+                        world.exporter.calls
+                            .single()
+                            .format,
+                    ).isEqualTo(derived)
+                }
+            }
+    }
+
+    @Test
+    @DisplayName("원본이 정한 형식과 **다른** 값은 409 다 — 값 집합 안이어도 거절한다")
+    fun `원본과 다른 형식은 409 다`() {
+        SourceFormat.entries
+            .mapNotNull { source -> ExportFormat.ofSource(source)?.let { source to it } }
+            .forEach { (source, derived) ->
+                ExportFormat.entries.filterNot { it == derived }.forEach { outsider ->
+                    val world = World()
+                    val conversionId = UUID.randomUUID()
+                    world.seedDone(conversionId, Seed(easyText = "본문", sourceFormat = source))
+
+                    assertThatThrownBy { world.export(conversionId, outsider) }
+                        .describedAs("원본 ${source.wireName} 에 ${outsider.extension} 를 요청했는데 통과했다")
+                        .isInstanceOf(ConflictException::class.java)
+                        .hasMessage(EXPORT_FORMAT_MISMATCH_MESSAGE)
+                    assertThat(world.exporter.calls).isEmpty()
+                }
+            }
+    }
+
+    @Test
+    @DisplayName("내보낼 형식이 없는 원본은 **어떤 값도·생략도** 409 다 — 대체 형식으로 접지 않는다")
+    fun `내보낼 수단이 없으면 409 다`() {
+        val unexportable = SourceFormat.entries.filter { ExportFormat.ofSource(it) == null }
+        assertThat(unexportable)
+            .describedAs("상이 `null` 인 원본이 하나도 없다 — 이 대조가 공허해진다")
+            .isNotEmpty()
+
+        unexportable.forEach { source ->
+            (ExportFormat.entries + null).forEach { requested ->
+                val world = World()
+                val conversionId = UUID.randomUUID()
+                world.seedDone(conversionId, Seed(easyText = "본문", sourceFormat = source))
+
+                assertThatThrownBy { world.export(conversionId, requested) }
+                    .describedAs("원본 ${source.wireName} · 요청 $requested 가 통과했다")
+                    .isInstanceOf(ConflictException::class.java)
+                    .hasMessage(EXPORT_FORMAT_UNAVAILABLE_MESSAGE)
+                assertThat(world.exporter.calls).isEmpty()
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("형식 판정이 **완료 판정보다 먼저**다 — 기다려도 바뀌지 않는 사실을 먼저 말한다")
+    fun `형식이 완료보다 먼저다`() {
+        val pending = ConversionStatus.entries.first { !it.exposesResult }
+        val world = World()
+        val mismatched = UUID.randomUUID()
+        val unexportable = UUID.randomUUID()
+        world.seedDone(mismatched, Seed(easyText = "본문", sourceFormat = SourceFormat.DOCX, status = pending))
+        world.seedDone(unexportable, Seed(easyText = "본문", sourceFormat = SourceFormat.PDF, status = pending))
+
+        assertThatThrownBy { world.export(mismatched, ExportFormat.TXT) }
+            .isInstanceOf(ConflictException::class.java)
+            .hasMessage(EXPORT_FORMAT_MISMATCH_MESSAGE)
+        assertThatThrownBy { world.export(unexportable, null) }
+            .isInstanceOf(ConflictException::class.java)
+            .hasMessage(EXPORT_FORMAT_UNAVAILABLE_MESSAGE)
+    }
+
+    @Test
+    @DisplayName("남의 변환에서는 **404 가 먼저다** — 형식 불일치가 남의 문서 형식을 알려 주지 않는다")
+    fun `소유 판정이 형식 판정보다 먼저다`() {
+        val world = World()
+        val theirs = UUID.randomUUID()
+        world.seedDone(theirs, Seed(easyText = "본문", sourceFormat = SourceFormat.DOCX), owner = STRANGER)
+
+        assertThatThrownBy { world.export(theirs, ExportFormat.TXT) }
+            .describedAs("409 가 나가면 「남의 문서는 DOCX 가 아니다」가 형식 축으로 샌다")
+            .isInstanceOf(NotFoundException::class.java)
+            .hasMessage(CONVERSION_NOT_FOUND_MESSAGE)
+    }
+
+    @Test
+    @DisplayName("원본이 남아 있으면 **원본 구조에 반영한** 파일이 나간다 — 새 문서를 만들지 않는다")
+    fun `원본이 있으면 반영한다`() {
         val world = World()
         val conversionId = UUID.randomUUID()
-        world.seedDone(conversionId, Seed(easyText = "본문"))
+        world.seedDone(conversionId, Seed(easyText = "쉬운 글", sourceFormat = SourceFormat.DOCX))
+        world.seedOriginal(conversionId)
+        world.reflector.file = exportFileOf("안내문", ExportFormat.DOCX, "반영된 원본".toByteArray())
 
-        world.export(conversionId, ExportFormat.DOCX)
+        val file = world.export(conversionId)
 
-        assertThat(
-            world.exporter.calls
-                .single()
-                .format,
-        ).isEqualTo(ExportFormat.DOCX)
+        assertThat(world.reflector.reflected).containsExactly(SourceFormat.DOCX)
+        assertThat(world.exporter.calls).describedAs("원본이 있는데 새 문서를 만들었다").isEmpty()
+        assertThat(String(file.content, Charsets.UTF_8)).isEqualTo("반영된 원본")
+    }
+
+    @Test
+    @DisplayName("반영에는 **복원된 본문**이 간다 — 자리표시자 규칙은 한 벌이다")
+    fun `반영에 복원된 본문이 간다`() {
+        val world = World()
+        val conversionId = UUID.randomUUID()
+        world.seedDone(
+            conversionId,
+            Seed(
+                easyText = "초안 $PLACEHOLDER",
+                editedText = "검수본 $PLACEHOLDER",
+                masked = listOf(item()),
+                sourceFormat = SourceFormat.HWPX,
+            ),
+        )
+        world.seedOriginal(conversionId)
+        world.reflector.file = exportFileOf("안내문", ExportFormat.HWPX, ByteArray(0))
+
+        world.export(conversionId)
+
+        assertThat(world.reflector.bodies).containsExactly("검수본 $ORIGINAL")
+    }
+
+    @Test
+    @DisplayName("원본을 열 수 없으면 **500** 이다 — 텍스트 전용 파일로 조용히 대체하지 않는다")
+    fun `열 수 없는 원본은 오류다`() {
+        val world = World()
+        val conversionId = UUID.randomUUID()
+        world.seedDone(conversionId, Seed(easyText = "쉬운 글", sourceFormat = SourceFormat.DOCX))
+        world.seedOriginal(conversionId)
+        world.reflector.file = null
+
+        assertThatThrownBy { world.export(conversionId) }
+            .describedAs("§6.5: 같은 형식으로 다시 만들 수 없는 이유를 보여 주고 대체하지 않는다")
+            .isInstanceOf(StorageException::class.java)
+        assertThat(world.exporter.calls).describedAs("반영에 실패하고 새 문서로 접었다").isEmpty()
+    }
+
+    @Test
+    @DisplayName("원본이 없는 문서는 예전처럼 새 문서를 만든다 — 붙여넣기와 옛 업로드가 그 갈래다")
+    fun `원본이 없으면 새 문서를 만든다`() {
+        val world = World()
+        val conversionId = UUID.randomUUID()
+        world.seedDone(conversionId, Seed(easyText = "쉬운 글", sourceFormat = SourceFormat.DOCX))
+
+        val file = world.export(conversionId)
+
+        assertThat(world.reflector.reflected).isEmpty()
+        assertThat(world.exporter.calls.map { it.format }).containsExactly(ExportFormat.DOCX)
+        assertThat(String(file.content, Charsets.UTF_8)).isEqualTo("쉬운 글")
     }
 
     private class World {
         val transaction = RecordingTransactionRunner()
         val cipher = FakeContentCipher(writeKeyVersion = 1, transaction = transaction)
-        val conversions = FakeConversionRepository(transaction)
         val maskedItems = RecordingMaskedItemReader()
         val exporter = RecordingDocumentExporter(transaction)
+        val originals = FakeDocumentOriginalRepository(transaction)
+        val conversions = FakeConversionRepository(transaction, originals)
+        val reflector = FakeOriginalStructureReflector()
         var documentTitle: String = "안내문"
         val service =
             ConversionExportService(
                 conversions = conversions,
                 cipher = cipher,
                 maskedItems = maskedItems,
-                exporter = exporter,
+                rendering =
+                    ExportRendering(
+                        OriginalReflection(StoredOriginalReader(originals, cipher), reflector),
+                        exporter,
+                    ),
                 transaction = transaction,
             )
 
@@ -200,6 +363,8 @@ class ConversionExportServiceTest {
                     id = conversionId,
                     documentId = UUID.randomUUID(),
                     status = body.status,
+                    sourceFormat = body.sourceFormat,
+                    hasStoredOriginal = false,
                     ciphertexts =
                         ConversionCiphertexts(
                             easyText = seal(body.easyText, EncryptedField.CONVERSION_EASY_TEXT),
@@ -211,6 +376,7 @@ class ConversionExportServiceTest {
                             editedText = seal(body.editedText, EncryptedField.CONVERSION_EDITED_TEXT),
                         ),
                     reviewedAt = if (body.editedText == null) null else Instant.EPOCH,
+                    feedbackSubmittedAt = null,
                     missingPlaceholders = emptyList(),
                     model = "test-model",
                     providerName = "fake",
@@ -221,11 +387,37 @@ class ConversionExportServiceTest {
             maskedItems.byPlaceholder = body.masked.associateBy { it.placeholder }
         }
 
+        /**
+         * 이미 심은 변환의 문서에 **업로드 원본**을 붙인다. 「행이 있다」와 「바이트가 열린다」를
+         * 함께 세운다 — 둘이 갈리면 내보내기가 실제로 겪는 상태가 아니다.
+         */
+        fun seedOriginal(
+            conversionId: UUID,
+            owner: UUID = OWNER,
+        ) {
+            val stored = conversions.owned.getValue(owner to conversionId)
+            conversions.owned[owner to conversionId] = stored.copy(hasStoredOriginal = true)
+            originals.insert(
+                owner,
+                stored.documentId,
+                StoredOriginal(
+                    bytes =
+                        cipher.encryptBytes(
+                            PlainBytes(ORIGINAL_BYTES),
+                            stored.documentId,
+                            EncryptedField.DOCUMENT_ORIGINAL_BYTES,
+                        ),
+                    byteSize = ORIGINAL_BYTES.size,
+                ),
+            )
+        }
+
+        /** [requested] 의 기본값이 `null` 인 것이 요점이다 — **생략이 기본 경로**다. */
         fun export(
             conversionId: UUID,
-            format: ExportFormat = ExportFormat.TXT,
+            requested: ExportFormat? = null,
             owner: UUID = OWNER,
-        ): ExportFile = service.export(owner, conversionId, format)
+        ): ExportFile = service.export(owner, conversionId, requested)
     }
 
     private data class Seed(
@@ -233,6 +425,7 @@ class ConversionExportServiceTest {
         val editedText: String? = null,
         val masked: List<MaskedItemView> = emptyList(),
         val status: ConversionStatus = ConversionStatus.DONE,
+        val sourceFormat: SourceFormat = SourceFormat.TEXT,
     )
 
     /** 자리표시자 한 줄을 항목으로 되살린다. 원값은 [byPlaceholder] 가 정한다. */
@@ -275,6 +468,9 @@ class ConversionExportServiceTest {
         val STRANGER: UUID = UUID.fromString("22222222-2222-2222-2222-222222222222")
         const val PLACEHOLDER: String = "[[주민등록번호1]]"
         const val ORIGINAL: String = "900101-1234567"
+
+        /** 원본 자리에 둘 바이트. 대역 반영기가 열지 않으므로 내용은 아무래도 좋다. */
+        val ORIGINAL_BYTES: ByteArray = "원본 바이트".toByteArray()
 
         fun item(): MaskedItemView = MaskedItemView(MaskCategory.RRN, PLACEHOLDER, Secret(ORIGINAL))
     }

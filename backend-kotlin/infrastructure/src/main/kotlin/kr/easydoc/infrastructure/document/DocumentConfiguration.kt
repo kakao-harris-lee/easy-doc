@@ -8,14 +8,21 @@ import kr.easydoc.application.document.ConversionQueryService
 import kr.easydoc.application.document.ConversionQueue
 import kr.easydoc.application.document.ConversionRepository
 import kr.easydoc.application.document.ConversionReviewService
+import kr.easydoc.application.document.DocumentOriginalRepository
 import kr.easydoc.application.document.DocumentRepository
 import kr.easydoc.application.document.DocumentService
+import kr.easydoc.application.document.DocumentSourceService
 import kr.easydoc.application.document.DocumentStorage
 import kr.easydoc.application.document.DocumentTextExtractor
 import kr.easydoc.application.document.EnvelopeRotation
 import kr.easydoc.application.document.MaskedItemReader
+import kr.easydoc.application.document.OriginalReflection
+import kr.easydoc.application.document.OriginalStructureReflector
+import kr.easydoc.application.document.SealedStores
+import kr.easydoc.application.document.StoredOriginalReader
 import kr.easydoc.application.document.WorkspaceLookup
 import kr.easydoc.infrastructure.crypto.MIGRATE_PROFILE
+import kr.easydoc.infrastructure.export.PackagedOriginalReflector
 import kr.easydoc.infrastructure.queue.JdbcConversionQueue
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
@@ -38,6 +45,11 @@ class DocumentConfiguration {
     @Bean
     fun documentRepository(jdbcClient: JdbcClient): DocumentRepository = JdbcDocumentRepository(jdbcClient)
 
+    /** 업로드 원본 저장소. `documents` 와 표가 갈린 사유는 `V3__document_originals.sql`. */
+    @Bean
+    fun documentOriginalRepository(jdbcClient: JdbcClient): DocumentOriginalRepository =
+        JdbcDocumentOriginalRepository(jdbcClient)
+
     @Bean
     fun conversionRepository(jdbcClient: JdbcClient): ConversionRepository = JdbcConversionRepository(jdbcClient)
 
@@ -52,13 +64,20 @@ class DocumentConfiguration {
     @Bean
     fun maskedItemCodec(): MaskedItemCodec = MaskedItemCodec()
 
-    /** 업로드가 한 트랜잭션에서 쓰는 세 저장소. 묶는 사유는 [DocumentStorage] KDoc. */
+    /** 업로드가 한 트랜잭션에서 쓰는 네 저장소. 묶는 사유는 [DocumentStorage] KDoc. */
     @Bean
     fun documentStorage(
         documents: DocumentRepository,
+        originals: DocumentOriginalRepository,
         conversions: ConversionRepository,
         queue: ConversionQueue,
-    ): DocumentStorage = DocumentStorage(documents = documents, conversions = conversions, queue = queue)
+    ): DocumentStorage =
+        DocumentStorage(
+            documents = documents,
+            originals = originals,
+            conversions = conversions,
+            queue = queue,
+        )
 
     @Bean
     fun documentService(
@@ -76,18 +95,56 @@ class DocumentConfiguration {
             transaction = transactionRunner,
         )
 
+    /**
+     * 원문 조회 유스케이스 — 검수 화면의 왼쪽 절반이 읽는 자리.
+     *
+     * [documentService] 와 갈라 세운 사유는 `DocumentSourceService` KDoc 이다: 저쪽은 업로드
+     * 한 번이 쓰는 네 저장소를 묶고, 이쪽의 협력자는 저장소 하나와 암호 하나뿐이다.
+     */
+    @Bean
+    fun documentSourceService(
+        documents: DocumentRepository,
+        cipher: ContentCipher,
+    ): DocumentSourceService = DocumentSourceService(documents = documents, cipher = cipher)
+
+    /**
+     * 원본 구조 반영. 조회의 서식 유지 판정과 내보내기가 **같은 이 하나**를 쓴다 —
+     * 둘로 두면 「미리 말한 것」과 「실제로 한 것」이 갈린다.
+     */
+    @Bean
+    fun originalStructureReflector(): OriginalStructureReflector = PackagedOriginalReflector()
+
+    /**
+     * 원본을 **여는 쪽과 반영하는 쪽**을 한 묶음으로 세운다.
+     *
+     * 내보내기 조립이 아니라 여기 있는 것은 **조회가 이것을 쓰기 때문이다** — 서식 유지 판정은
+     * 내려받기 전에 나가는 값이라 저장 조립만으로 컨텍스트가 서야 한다(`DocumentStorageContextTest`).
+     */
+    @Bean
+    fun originalReflection(
+        originals: DocumentOriginalRepository,
+        cipher: ContentCipher,
+        reflector: OriginalStructureReflector,
+    ): OriginalReflection =
+        OriginalReflection(
+            originals = StoredOriginalReader(originals = originals, cipher = cipher),
+            reflector = reflector,
+        )
+
     /** 변환 조회 유스케이스. */
     @Bean
     fun conversionQueryService(
         conversions: ConversionRepository,
         cipher: ContentCipher,
         maskedItems: MaskedItemReader,
+        original: OriginalReflection,
         transactionRunner: TransactionRunner,
     ): ConversionQueryService =
         ConversionQueryService(
             conversions = conversions,
             cipher = cipher,
             maskedItems = maskedItems,
+            original = original,
             transaction = transactionRunner,
         )
 
@@ -126,20 +183,26 @@ class DocumentConfiguration {
             transaction = transactionRunner,
         )
 
-    /** 키 회전 유스케이스. 봉인된 열이 사는 **세 저장소를 전부** 받는다. */
+    /** 봉인된 열이 사는 저장소 전부. 묶는 사유는 [SealedStores] KDoc. */
     @Bean
-    fun envelopeRotation(
+    fun sealedStores(
         documents: DocumentRepository,
+        originals: DocumentOriginalRepository,
         conversions: ConversionRepository,
         feedback: ConversionFeedbackRepository,
-        cipher: ContentCipher,
-        transactionRunner: TransactionRunner,
-    ): EnvelopeRotation =
-        EnvelopeRotation(
+    ): SealedStores =
+        SealedStores(
             documents = documents,
+            originals = originals,
             conversions = conversions,
             feedback = feedback,
-            cipher = cipher,
-            transaction = transactionRunner,
         )
+
+    /** 키 회전 유스케이스. 봉인된 열이 사는 저장소를 [SealedStores] 로 **전부** 받는다. */
+    @Bean
+    fun envelopeRotation(
+        stores: SealedStores,
+        cipher: ContentCipher,
+        transactionRunner: TransactionRunner,
+    ): EnvelopeRotation = EnvelopeRotation(stores = stores, cipher = cipher, transaction = transactionRunner)
 }

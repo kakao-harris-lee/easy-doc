@@ -1,11 +1,13 @@
 package kr.easydoc.api.support
 
 import kr.easydoc.core.privacy.UserContent
+import org.w3c.dom.Element
 import java.lang.reflect.Modifier
 import java.math.BigDecimal
 import java.time.Duration
 import java.time.Instant
 import java.util.UUID
+import javax.xml.parsers.DocumentBuilderFactory
 import kotlin.reflect.KClass
 import kotlin.reflect.KFunction
 import kotlin.reflect.KParameter
@@ -168,6 +170,13 @@ class GeneratedToStringProbes(
                 mapSlot(type, where, visiting)
             }
 
+            classifier == Element::class -> {
+                // DOM 요소는 **텍스트를 담는다** — 문서 파서를 지나는 타입이 검사 밖에 남지
+                // 않도록 표식을 요소 안에 심는다. 심는 자리는 시작 태그 뒤 텍스트이고,
+                // 그것이 추출·반영이 실제로 읽는 자리다(`ingest/OoxmlDom.leadingText`).
+                ProbeSlot(carriesText = true) { planting -> elementWith(if (planting) SENTINEL else FILLER) }
+            }
+
             classifier.qualifiedName?.startsWith(PRODUCT_PACKAGE) == true -> {
                 productSlot(classifier, where, visiting)
             }
@@ -179,6 +188,12 @@ class GeneratedToStringProbes(
                 )
             }
         }
+    }
+
+    /** 표식을 담은 DOM 요소 하나. */
+    private fun elementWith(text: String): Element {
+        val document = DocumentBuilderFactory.newInstance().newDocumentBuilder().newDocument()
+        return document.createElement("t").apply { appendChild(document.createTextNode(text)) }
     }
 
     private fun collectionSlot(

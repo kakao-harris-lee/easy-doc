@@ -405,18 +405,41 @@ class OwnershipPredicateGuardTest {
                 "$DOCUMENT/JdbcConversionRepository.kt | UPDATE [conversions]",
                 "$DOCUMENT/JdbcConversionRepository.kt | SELECT [conversions, documents]",
                 "$DOCUMENT/JdbcConversionRepository.kt | UPDATE [conversions, documents]",
-                "$DOCUMENT/JdbcConversionRepository.kt | SELECT [conversions, documents]",
+                // 조회가 `document_originals` 를 **읽는다** — 원본 바이트가 아니라 행의 유무만
+                // (`EXISTS`). 서식 유지 판정이 그 사실 하나로 선다. 소유 술어는 그대로 조인 위에
+                // 있고, `EXISTS` 는 이미 소유자로 좁혀진 `d.id` 에 걸린다.
+                //
+                // 같은 문장이 `conversion_feedback` 을 **왼쪽 조인**한다 — 계약
+                // `ConversionResponse.feedback_submitted_at` 이 제출 시각을 요구하고, 의견이
+                // 없는 변환이 조회에서 사라지면 안 되기 때문이다. 봉인된 자유 의견 열은 고르지
+                // 않고, 소유 술어(`d.user_id = :ownerId`)는 그대로 조인 위에 있다.
+                "$DOCUMENT/JdbcConversionRepository.kt | " +
+                    "SELECT [conversion_feedback, conversions, document_originals, documents]",
                 "$DOCUMENT/JdbcConversionRepository.kt | INSERT [conversions]",
                 "$DOCUMENT/JdbcConversionWorkStore.kt | SELECT [conversions, documents]",
                 "$DOCUMENT/JdbcConversionWorkStore.kt | UPDATE [conversions]",
                 "$DOCUMENT/JdbcConversionWorkStore.kt | UPDATE [conversions]",
                 "$DOCUMENT/JdbcConversionWorkStore.kt | UPDATE [conversions]",
                 "$DOCUMENT/JdbcConversionWorkStore.kt | UPDATE [conversions]",
+                // 업로드 원본(V3). 잠금 SELECT 와 회전 UPDATE 는 아래 미방어 목록에 있고,
+                // INSERT 와 조회는 `documents.user_id` 를 훑어 소유 술어를 문장 자신에 건다.
+                "$DOCUMENT/JdbcDocumentOriginalRepository.kt | SELECT [document_originals]",
+                "$DOCUMENT/JdbcDocumentOriginalRepository.kt | INSERT [document_originals, documents]",
+                "$DOCUMENT/JdbcDocumentOriginalRepository.kt | SELECT [document_originals, documents]",
+                "$DOCUMENT/JdbcDocumentOriginalRepository.kt | UPDATE [document_originals]",
+                // 원문 조회(`GET /documents/{document_id}/source`). **아래 미방어 목록에 없다** —
+                // 사용자 요청 경로라 `user_id = :ownerId` 를 문장 자신에 붙였다. 바로 뒤의 같은
+                // 표기는 회전이 잠그고 읽는 SELECT 이고, 그쪽은 소유자를 받지 않는다.
+                "$DOCUMENT/JdbcDocumentRepository.kt | SELECT [documents]",
                 "$DOCUMENT/JdbcDocumentRepository.kt | SELECT [documents]",
                 "$DOCUMENT/JdbcDocumentRepository.kt | UPDATE [documents]",
                 "$DOCUMENT/JdbcDocumentRepository.kt | DELETE [documents]",
                 "$DOCUMENT/JdbcDocumentRepository.kt | INSERT [documents]",
-                "$DOCUMENT/JdbcDocumentRepository.kt | SELECT [conversions, documents]",
+                // 목록 질의. 최신 변환에 이어 `conversion_feedback` 도 **왼쪽 조인**한다 —
+                // 계약 `DocumentListItem.feedback_submitted_at` 이 제출 시각을 요구하고, 의견을
+                // 내지 않은 문서가 목록에서 빠지면 안 되기 때문이다. 소유 술어는 `WHERE
+                // d.user_id = :ownerId` 로 문장 자신에 남아 있다.
+                "$DOCUMENT/JdbcDocumentRepository.kt | SELECT [conversion_feedback, conversions, documents]",
                 "$DOCUMENT/JdbcExpiredDocumentPurge.kt | SELECT [conversions]",
                 "$DOCUMENT/JdbcExpiredDocumentPurge.kt | DELETE [documents]",
                 "$DOCUMENT/JdbcExpiredDocumentPurge.kt | SELECT [conversions, documents]",
@@ -444,6 +467,10 @@ class OwnershipPredicateGuardTest {
                 "$DOCUMENT/JdbcConversionWorkStore.kt | UPDATE [conversions]",
                 "$DOCUMENT/JdbcConversionWorkStore.kt | UPDATE [conversions]",
                 "$DOCUMENT/JdbcConversionWorkStore.kt | UPDATE [conversions]",
+                // 업로드 원본의 키 회전 두 문장 (V3). 사유는 위 KDoc 과 같다 — 회전 배치다.
+                // 이 파일의 INSERT·조회는 여기 없다: 사용자 경로라 소유 술어를 붙였다.
+                "$DOCUMENT/JdbcDocumentOriginalRepository.kt | SELECT [document_originals]",
+                "$DOCUMENT/JdbcDocumentOriginalRepository.kt | UPDATE [document_originals]",
                 "$DOCUMENT/JdbcDocumentRepository.kt | SELECT [documents]",
                 "$DOCUMENT/JdbcDocumentRepository.kt | UPDATE [documents]",
                 "$DOCUMENT/JdbcDocumentRepository.kt | INSERT [documents]",
@@ -460,7 +487,12 @@ class OwnershipPredicateGuardTest {
          * 16 → 18 로 올린 것은 봉인된 자유 의견에 회전 경로를 세우면서다(잠금 SELECT · 회전
          * UPDATE). 사용자 요청 경로가 이 상한을 먹는 일은 없어야 한다 — 그 경우의 답은 상한을
          * 올리는 것이 아니라 소유 술어를 붙이는 것이다.
+         *
+         * 18 → 20 은 업로드 원본(V3)의 회전 경로 두 문장이다. **같은 파일의 INSERT 와 조회는
+         * 이 상한을 먹지 않았다** — 둘 다 사용자 요청 경로라 `documents.user_id` 를 훑는 소유
+         * 술어를 문장 자신에 붙였고(`JdbcDocumentOriginalRepository`), 그것이 위 문단이 말한
+         * 「그 경우의 답」이다.
          */
-        const val MAX_UNGUARDED_STATEMENTS = 18
+        const val MAX_UNGUARDED_STATEMENTS = 20
     }
 }

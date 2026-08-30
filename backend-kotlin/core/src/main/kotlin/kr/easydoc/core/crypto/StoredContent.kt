@@ -37,6 +37,32 @@ value class PlainBody(val value: String) {
     }
 }
 
+/**
+ * **암호화되기 전/복호화된 뒤의 사용자 바이트** 한 조각 — 업로드된 파일 그 자체.
+ *
+ * [PlainBody] 와 나누는 이유: 저쪽은 문자열이고 짝 없는 서로게이트를 거절하는 **텍스트**
+ * 불변식을 진다. 원본 파일(DOCX·HWPX·PDF)은 zip·바이너리라 어떤 문자 인코딩으로도 해석되지
+ * 않는다. base64 로 접어 [PlainBody] 에 태우는 길도 있었지만 — 10MB 가 13.3MB 문자열이 되고
+ * 다시 13.3MB UTF-8 바이트가 된다 — 값이 아니라 표현을 바꾸는 우회라 타입을 하나 세웠다.
+ * 봉인 자체(AES-GCM)는 원래 바이트를 다루므로 어댑터는 오히려 짧아진다.
+ */
+class PlainBytes(val value: ByteArray) {
+    /** 바이트 수. 크기만 묻는 자리가 배열을 복사해 가지 않게 한다. */
+    val size: Int get() = value.size
+
+    override fun equals(other: Any?): Boolean = other is PlainBytes && value.contentEquals(other.value)
+
+    override fun hashCode(): Int = value.contentHashCode()
+
+    /** 길이만 남긴다. 내용은 개인정보 포함 여부와 무관하게 로그 금지다(프로젝트 `CLAUDE.md`). */
+    override fun toString(): String = "PlainBytes(${value.size}바이트)"
+}
+
+// 빈 바이트 배열을 여기서 거절하지 않는다. 「비어 있으면 안 된다」는 **업로드 원본의** 성질이지
+// 「봉할 바이트」 일반의 성질이 아니다 — 문자열 짝이 이 타입 위에 서 있으므로(`ContentCipher`)
+// 여기서 막으면 빈 문자열을 봉하는 다른 경로가 함께 끊긴다. 원본의 하한은
+// `V3` 의 `ck_document_originals_byte_size_positive` 가 마지막 방어선으로 진다.
+
 /** 암호문 한 조각과, 그것을 **다시 열기 위해 같은 행에 함께 적히는 두 값**. */
 class EncryptedContent(
     val bytes: ByteArray,
@@ -78,6 +104,15 @@ class EncryptedContent(
 enum class EncryptedField(val wireName: String) {
     /** 업로드 원문. `documents.source_text_encrypted` (V1 baseline). */
     DOCUMENT_SOURCE_TEXT("documents.source_text_encrypted"),
+
+    /**
+     * 업로드된 **원본 파일 바이트**. `document_originals.file_bytes_encrypted` (V3).
+     *
+     * [DOCUMENT_SOURCE_TEXT] 와 나뉜 자리다 — 저쪽은 파서가 뽑아낸 텍스트고 이쪽은 파일
+     * 그대로다. 원본에는 본문 말고도 작성자·수정 이력·주석이 함께 들어 있어 민감도가 더 높다.
+     * 붙여넣기 경로에는 이 열의 행이 아예 없다.
+     */
+    DOCUMENT_ORIGINAL_BYTES("document_originals.file_bytes_encrypted"),
 
     /** AI 초안. `conversions.easy_text_encrypted`. */
     CONVERSION_EASY_TEXT("conversions.easy_text_encrypted"),

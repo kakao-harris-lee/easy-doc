@@ -702,6 +702,26 @@ object ContractSpec {
         return values
     }
 
+    /**
+     * 스키마 속성의 `enum` 값 집합 — **속성이 `$ref` 면 그것을 따라간다.**
+     *
+     * [schemaPropertyEnum] 은 속성 노드 **바로 아래**의 `enum` 만 읽는다. 값 집합을 이름 있는
+     * 컴포넌트로 뽑으면(1.6.0 의 `SourceFormat`) 그 경로가 사라지고 대조가 "계약에 없는
+     * 경로다"로 죽는데, 그것은 값 집합이 바뀌었다는 뜻이 아니라 **인용 방식**이 바뀐 것뿐이다.
+     * 두 함수를 따로 두는 이유는 인라인 갈래의 대조가 `$ref` 를 **조용히 통과하지 않게**
+     * 하기 위해서다 — 이쪽을 쓰는 자리는 「따라가도 좋다」를 명시적으로 고른 자리다.
+     */
+    fun schemaPropertyEnumResolved(
+        schema: String,
+        property: String,
+    ): List<String> {
+        val node = map("components", "schemas", schema, "properties", property)
+        val resolved = resolveSchema(node)
+        val values = (resolved["enum"] as? List<*>)?.map { it.toString() }.orEmpty()
+        require(values.isNotEmpty()) { "$schema.$property 의 enum 이 비었다 — 이 대조는 아무것도 재지 않는다." }
+        return values
+    }
+
     /** **P-32 — 스키마 속성의 `pattern`.** 배열 속성이면 `items.pattern` 을 읽는다. */
     fun schemaPropertyPattern(
         schema: String,
@@ -727,6 +747,37 @@ object ContractSpec {
         val description = text("components", "schemas", schema, "properties", property, "description")
         require(description.isNotBlank()) { "$schema.$property 에 description 이 없다 — 이 대조는 아무것도 재지 않는다." }
         return description
+    }
+
+    /**
+     * `x-export-format-derivation.mapping` — 원본 형식 → 내보내기 형식. 값이 `null` 인 항목은
+     * 「같은 형식으로 내보낼 수단이 없다」이고, **키가 없는 것과 다르다**(키 누락은 결함이다).
+     */
+    fun exportFormatDerivation(): Map<String, String?> =
+        map("x-export-format-derivation", "mapping")
+            .entries
+            .associate { (key, value) -> key.toString() to value?.toString() }
+            .also { require(it.isNotEmpty()) { "내보내기 형식 유도표가 비었다 — 이 대조는 아무것도 재지 않는다." } }
+
+    /**
+     * `x-export-format-derivation.enforcement` — 내보내기 오퍼레이션의 **처분**.
+     *
+     * 상태 코드를 테스트에 손으로 적지 않으려고 계약에서 읽는다. 계약이 처분을 바꾸면
+     * 구현이 따라오기 전까지 대조가 빨갛고, 그것이 이 블록을 기계가 읽을 수 있게 둔 이유다.
+     */
+    fun exportEnforcement(): ExportEnforcement {
+        val node = map("x-export-format-derivation", "enforcement")
+
+        fun intAt(key: String): Int =
+            (node[key] as? Number)?.toInt() ?: error("enforcement.$key 가 상태 코드가 아니다: ${node[key]}")
+
+        return ExportEnforcement(
+            parameter = node["parameter"]?.toString() ?: error("enforcement.parameter 가 없다"),
+            required = node["required"] as? Boolean ?: error("enforcement.required 가 불리언이 아니다"),
+            onMismatch = intAt("on_mismatch"),
+            onNullMapping = intAt("on_null_mapping"),
+            onUnknownValue = intAt("on_unknown_value"),
+        )
     }
 
     /** P-11. 스키마 속성의 `const`. */
@@ -892,6 +943,20 @@ data class StoredTextDomain(
 data class StoredTextArm(
     val field: String,
     val measurementStatus: String,
+)
+
+/**
+ * 계약 `x-export-format-derivation.enforcement` — 내보내기 `format` 쿼리의 처분.
+ *
+ * `on_absent`·`on_match` 는 상태 코드가 아니라 행동 이름이라 여기 들지 않는다 —
+ * 그 둘은 「성공한다」의 두 갈래이고 성공 상태는 `successStatus` 가 이미 준다.
+ */
+data class ExportEnforcement(
+    val parameter: String,
+    val required: Boolean,
+    val onMismatch: Int,
+    val onNullMapping: Int,
+    val onUnknownValue: Int,
 )
 
 /** 계약 경로 수준 `parameters` 한 항목. */

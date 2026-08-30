@@ -15,9 +15,13 @@ import kr.easydoc.application.document.ConversionQueryService
 import kr.easydoc.application.document.ConversionReviewService
 import kr.easydoc.application.document.DocumentExporter
 import kr.easydoc.application.document.DocumentService
+import kr.easydoc.application.document.DocumentSourceService
 import kr.easydoc.application.document.DocumentStorage
 import kr.easydoc.application.document.DocumentTextExtractor
+import kr.easydoc.application.document.ExportRendering
 import kr.easydoc.application.document.MaskedItemReader
+import kr.easydoc.application.document.OriginalReflection
+import kr.easydoc.application.document.StoredOriginalReader
 import kr.easydoc.application.document.WorkspaceLookup
 import kr.easydoc.application.workspace.DUPLICATE_WORKSPACE_NAME_MESSAGE
 import kr.easydoc.application.workspace.WorkspaceService
@@ -83,8 +87,10 @@ class AuthSliceBeans {
     fun inMemoryDocuments(): InMemoryDocumentRepository = InMemoryDocumentRepository()
 
     @Bean
-    fun inMemoryConversions(documents: InMemoryDocumentRepository): InMemoryConversionRepository =
-        InMemoryConversionRepository(documents)
+    fun inMemoryConversions(
+        documents: InMemoryDocumentRepository,
+        originals: InMemoryDocumentOriginalRepository,
+    ): InMemoryConversionRepository = InMemoryConversionRepository(documents, originals)
 
     @Bean
     fun recordingQueue(): RecordingConversionQueue = RecordingConversionQueue()
@@ -104,16 +110,27 @@ class AuthSliceBeans {
     fun stubMaskedItemReader(): MaskedItemReader = StubMaskedItemReader()
 
     /**
-     * 업로드가 한 트랜잭션에서 쓰는 세 저장소를 제품 조립과 같은 모양으로 묶는다
+     * 업로드가 한 트랜잭션에서 쓰는 네 저장소를 제품 조립과 같은 모양으로 묶는다
      * (`DocumentConfiguration.documentStorage`). 셋을 유스케이스에 따로 넘기면 그중
      * 하나만 다른 경계에 두는 배선이 타입으로 막히지 않는다.
      */
     @Bean
+    fun documentOriginalRepository(documents: InMemoryDocumentRepository): InMemoryDocumentOriginalRepository =
+        InMemoryDocumentOriginalRepository(documents)
+
+    @Bean
     fun documentStorage(
         documents: InMemoryDocumentRepository,
+        originals: InMemoryDocumentOriginalRepository,
         conversions: InMemoryConversionRepository,
         queue: RecordingConversionQueue,
-    ): DocumentStorage = DocumentStorage(documents = documents, conversions = conversions, queue = queue)
+    ): DocumentStorage =
+        DocumentStorage(
+            documents = documents,
+            originals = originals,
+            conversions = conversions,
+            queue = queue,
+        )
 
     /** 유스케이스는 실물이다 — 계약이 정한 검사 순서를 슬라이스가 실제로 밟아야 한다. */
     @Bean
@@ -132,20 +149,41 @@ class AuthSliceBeans {
             transaction = transaction,
         )
 
+    /** 원문 조회 유스케이스도 실물이다. 협력자는 저장소 하나와 암호 하나뿐이다. */
+    @Bean
+    fun documentSourceService(
+        documents: InMemoryDocumentRepository,
+        cipher: ContentCipher,
+    ): DocumentSourceService = DocumentSourceService(documents = documents, cipher = cipher)
+
     /** 조회 유스케이스도 실물이다 — 제품 조립과 같은 모양으로 나눈다. */
     @Bean
     fun conversionQueryService(
         conversions: InMemoryConversionRepository,
         cipher: ContentCipher,
         maskedItems: MaskedItemReader,
+        original: OriginalReflection,
         transaction: TransactionRunner,
     ): ConversionQueryService =
         ConversionQueryService(
             conversions = conversions,
             cipher = cipher,
             maskedItems = maskedItems,
+            original = original,
             transaction = transaction,
         )
+
+    /** 원본을 여는 쪽과 반영하는 쪽 한 묶음. 제품 조립과 같은 모양이다. */
+    @Bean
+    fun originalReflection(
+        originals: InMemoryDocumentOriginalRepository,
+        cipher: ContentCipher,
+        reflector: SliceOriginalReflector,
+    ): OriginalReflection = OriginalReflection(StoredOriginalReader(originals, cipher), reflector)
+
+    /** 슬라이스의 원본 반영 대역. 케이스가 갈래를 고를 수 있게 **구체 타입으로** 노출한다. */
+    @Bean
+    fun sliceOriginalReflector(): SliceOriginalReflector = SliceOriginalReflector()
 
     /** 검수 저장 유스케이스도 실물이다. 응답 조립은 조회 유스케이스를 그대로 쓴다. */
     @Bean
@@ -198,19 +236,26 @@ class AuthSliceBeans {
             }
         }
 
+    /** 파일을 만드는 두 갈래 묶음. 제품 조립과 같은 모양이다. */
+    @Bean
+    fun exportRendering(
+        reflection: OriginalReflection,
+        exporter: DocumentExporter,
+    ): ExportRendering = ExportRendering(reflection = reflection, exporter = exporter)
+
     @Bean
     fun conversionExportService(
         conversions: InMemoryConversionRepository,
         cipher: ContentCipher,
         maskedItems: MaskedItemReader,
-        exporter: DocumentExporter,
+        rendering: ExportRendering,
         transaction: TransactionRunner,
     ): ConversionExportService =
         ConversionExportService(
             conversions = conversions,
             cipher = cipher,
             maskedItems = maskedItems,
-            exporter = exporter,
+            rendering = rendering,
             transaction = transaction,
         )
 }

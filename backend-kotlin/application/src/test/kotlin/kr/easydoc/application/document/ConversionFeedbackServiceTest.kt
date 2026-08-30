@@ -3,6 +3,7 @@ package kr.easydoc.application.document
 import kr.easydoc.core.crypto.EncryptedField
 import kr.easydoc.core.crypto.PlainBody
 import kr.easydoc.core.document.ConversionStatus
+import kr.easydoc.core.document.SourceFormat
 import kr.easydoc.core.exceptions.ConflictException
 import kr.easydoc.core.exceptions.InvalidInputException
 import kr.easydoc.core.exceptions.NotFoundException
@@ -286,7 +287,11 @@ class ConversionFeedbackServiceTest {
                 .getValue(conversionId)
                 .toString(),
         ).forEach { rendered ->
-            assertThat(rendered).doesNotContain(COMMENT).doesNotContain("123")
+            // 식별자를 뺀 나머지에서 찾는다 — `seedDone` 의 무작위 UUID 가 `123` 을 품는 날이
+            // 있고(2026-08-26 실측), 그때 이 단언은 **누출이 아닌 것**을 누출이라고 말한다.
+            assertThat(rendered.replace(conversionId.toString(), ""))
+                .doesNotContain(COMMENT)
+                .doesNotContain("123")
         }
     }
 
@@ -309,7 +314,8 @@ class ConversionFeedbackServiceTest {
     private class World {
         val transaction = RecordingTransactionRunner()
         val cipher = FakeContentCipher(writeKeyVersion = 1, transaction = transaction)
-        val conversions = FakeConversionRepository(transaction)
+        val originals = FakeDocumentOriginalRepository(transaction)
+        val conversions = FakeConversionRepository(transaction, originals)
         val feedback = FakeConversionFeedbackRepository(transaction)
 
         val service =
@@ -321,6 +327,11 @@ class ConversionFeedbackServiceTest {
                         conversions = conversions,
                         cipher = cipher,
                         maskedItems = FakeMaskedItemReader(),
+                        original =
+                            OriginalReflection(
+                                StoredOriginalReader(originals, cipher),
+                                FakeOriginalStructureReflector(),
+                            ),
                         transaction = transaction,
                     ),
                 transaction = transaction,
@@ -361,8 +372,11 @@ class ConversionFeedbackServiceTest {
                     id = conversionId,
                     documentId = UUID.randomUUID(),
                     status = status,
+                    sourceFormat = SourceFormat.TEXT,
+                    hasStoredOriginal = false,
                     ciphertexts = ConversionCiphertexts(seal(draft), null, seal(edited)),
                     reviewedAt = edited?.let { Instant.EPOCH },
+                    feedbackSubmittedAt = null,
                     missingPlaceholders = emptyList(),
                     model = null,
                     providerName = null,

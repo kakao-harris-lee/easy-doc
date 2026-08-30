@@ -13,6 +13,7 @@ import type {
   ConversionReviewRequest,
   DocumentCreatedResponse,
   DocumentListResponse,
+  DocumentSourceResponse,
   DocumentTextRequest,
   ExportFormat,
   WorkspaceListResponse,
@@ -196,6 +197,22 @@ export function listDocuments(
   return requestJson<DocumentListResponse>(`/documents${suffix}`, { signal })
 }
 
+/**
+ * GET /documents/{id}/source — 추출된 원문을 가져온다.
+ *
+ * **한 번만 부른다.** 원문은 문서 등록 시점에 확정돼 변하지 않으므로 변환 상태처럼
+ * 주기적으로 물어볼 값이 아니다(`src/review/sourceText.ts`).
+ *
+ * 소유자가 아니거나 보관 기간이 지나 파기된 문서는 404다 — 존재를 숨기기 위해 서버가
+ * 403 대신 404로 답한다.
+ */
+export function getDocumentSource(
+  documentId: string,
+  signal?: AbortSignal,
+): Promise<DocumentSourceResponse> {
+  return requestJson<DocumentSourceResponse>(`/documents/${documentId}/source`, { signal })
+}
+
 /** GET /workspaces — 내 작업 공간을 만든 순서대로 조회한다 (문서 수 포함). */
 export function listWorkspaces(signal?: AbortSignal): Promise<WorkspaceListResponse> {
   return requestJson<WorkspaceListResponse>('/workspaces', { signal })
@@ -293,6 +310,12 @@ function parseFilename(disposition: string | null): string | null {
  * JSON이 아니라 바이트를 받으므로 requestJson을 쓰지 않는다. 파일명은 응답 헤더에서
  * 읽는다 — 개발 환경은 교차 출처라 백엔드가 Content-Disposition을 노출 목록에 넣어
  * 두었지만, 프록시가 걷어낼 수도 있어 호출한 쪽이 대체 이름을 갖는다.
+ *
+ * **`format`은 선택이 아니라 주장이다.** 서버가 원본에서 형식을 정하고(계약
+ * `x-export-format-derivation.enforcement`), 다른 값을 주면 409로 거절한다. 계약은
+ * 생략도 허용하지만 여기서는 늘 보낸다 — 화면이 `conversion.export_format`을 그대로
+ * 넘기므로 값이 언제나 일치하고, 보내 두면 서버와 화면이 갈린 날 조용히 다른 형식을
+ * 받는 대신 409로 드러난다.
  */
 export async function downloadExport(
   conversionId: string,

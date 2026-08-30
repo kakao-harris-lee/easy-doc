@@ -4,7 +4,7 @@ import kr.easydoc.application.crypto.ContentCipher
 import kr.easydoc.core.crypto.EncryptedContent
 import kr.easydoc.core.crypto.EncryptedField
 import kr.easydoc.core.crypto.EncryptionScheme
-import kr.easydoc.core.crypto.PlainBody
+import kr.easydoc.core.crypto.PlainBytes
 import kr.easydoc.core.exceptions.ConfigurationException
 import kr.easydoc.core.exceptions.DecryptionFailedException
 import kr.easydoc.core.security.Secret
@@ -54,8 +54,8 @@ class AesGcmContentCipher(
         logger.info("저장 암호화 키 {}세대를 적재했다. 쓰기 세대=v{}", keys.size, writeKeyVersion)
     }
 
-    override fun encrypt(
-        plain: PlainBody,
+    override fun encryptBytes(
+        plain: PlainBytes,
         record: UUID,
         field: EncryptedField,
     ): EncryptedContent {
@@ -65,15 +65,15 @@ class AesGcmContentCipher(
         val cipher = Cipher.getInstance(TRANSFORMATION)
         cipher.init(Cipher.ENCRYPT_MODE, key, GCMParameterSpec(TAG_BITS, nonce))
         cipher.updateAAD(associatedData(writeScheme, writeKeyVersion, record, field))
-        val sealed = cipher.doFinal(plain.value.toByteArray(Charsets.UTF_8))
+        val sealed = cipher.doFinal(plain.value)
         return EncryptedContent(nonce + sealed, writeScheme, writeKeyVersion)
     }
 
-    override fun decrypt(
+    override fun decryptBytes(
         content: EncryptedContent,
         record: UUID,
         field: EncryptedField,
-    ): PlainBody {
+    ): PlainBytes {
         // 아래 세 갈래(모르는 방식 · 없는 키 세대 · 길이 미달)와 태그 검증 실패가 **같은
         // 예외**여야 하고(I-7 검증 3), **같은 시간**을 써야 한다(게이트 25 X3).
         // 그래서 여기서 끊지 않고 판정만 모아 둔다 — 실제 끊는 자리는 아래 한 곳이다.
@@ -92,7 +92,7 @@ class AesGcmContentCipher(
             )
 
         if (rejected || opened == null) throw DecryptionFailedException()
-        return PlainBody(String(opened, Charsets.UTF_8))
+        return PlainBytes(opened)
     }
 
     /**

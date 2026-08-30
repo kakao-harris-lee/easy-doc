@@ -57,6 +57,20 @@ class LlmPromptTest {
     }
 
     @Test
+    @DisplayName("사전 컨텍스트는 user 프롬프트로만 내려가고 system 은 그대로다")
+    fun `사전 컨텍스트를 전달한다`() {
+        val masked = maskText("금일 서류를 지참하세요.").maskedText
+        val context = "[문서 사전]\n- 금일: 오늘"
+
+        val injected = LlmPrompt.forConversion(masked, fixedIds, context)
+        val plain = LlmPrompt.forConversion(masked, fixedIds)
+
+        assertThat(injected.user).startsWith("$context\n\n<문서 id=\"0123456789ab\">")
+        assertThat(plain.user).doesNotContain(context)
+        assertThat(injected.system).isEqualTo(plain.system)
+    }
+
+    @Test
     @DisplayName("보정 프롬프트는 1차 변환문과 지적 목록을 담는다")
     fun `보정 프롬프트를 만든다`() {
         val issue =

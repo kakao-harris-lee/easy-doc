@@ -1,11 +1,15 @@
 package kr.easydoc.api
 
 import kr.easydoc.api.support.ContractSpec
+import kr.easydoc.api.support.MultipartBody
 import kr.easydoc.api.support.OwnershipConcealment
+import kr.easydoc.api.support.UploadFixtures
 import kr.easydoc.application.crypto.ContentCipher
 import kr.easydoc.core.crypto.EncryptedField
 import kr.easydoc.core.crypto.PlainBody
 import kr.easydoc.core.document.ConversionStatus
+import kr.easydoc.core.document.FormatPreservationStatus
+import kr.easydoc.core.document.SourceFormat
 import kr.easydoc.core.privacy.MaskCategory
 import kr.easydoc.core.privacy.MaskedItem
 import kr.easydoc.core.security.Secret
@@ -403,6 +407,222 @@ class ConversionReadReachTest {
         )
     }
 
+    // ============================================================== 형식 셋 (§6.5)
+
+    @Test
+    @DisplayName("CF-1 붙여넣기 → `text` · `txt` · `not_applicable` — 원본 파일이 없으니 유지할 서식이 없다")
+    fun `붙여넣기의 형식 셋이 계약대로 나온다`() {
+        val token = newAccount()
+        val conversionId = createDocument(token).second
+
+        val body = bodyOf(read(token, conversionId))
+
+        assertFormatTripleInContract(body)
+        assertThat(body.getValue(SOURCE_FORMAT_PROPERTY)).isEqualTo(SourceFormat.TEXT.wireName)
+        assertThat(body[EXPORT_FORMAT_PROPERTY])
+            .describedAs("붙여넣기는 UTF-8 텍스트로 내려받는다(DESIGN.md §6.5 표)")
+            .isEqualTo(ContractSpec.exportFormatDerivation()[SourceFormat.TEXT.wireName])
+
+        val preservation = body[FORMAT_PRESERVATION_PROPERTY] as? Map<*, *>
+        assertThat(preservation).describedAs("붙여넣기는 서버가 확실히 아는 갈래다 — `null` 로 접으면 안 된다").isNotNull()
+        assertThat(preservation!![STATUS_PROPERTY])
+            .isEqualTo(FormatPreservationStatus.NOT_APPLICABLE.wireName)
+        assertThat(preservation[DETAILS_PROPERTY]).isEqualTo(emptyList<String>())
+    }
+
+    @Test
+    @DisplayName("CF-2 업로드한 문서는 형식이 그대로 나가고, **완료 전에는 서식 유지를 판정하지 않는다**(`null`)")
+    fun `업로드 문서의 형식 셋이 계약대로 나온다`() {
+        val derivation = ContractSpec.exportFormatDerivation()
+        val uploads =
+            mapOf(
+                SourceFormat.DOCX to ("안내문.docx" to UploadFixtures.sampleDocx()),
+                SourceFormat.HWPX to ("안내문.hwpx" to UploadFixtures.sampleHwpx()),
+                SourceFormat.PDF to ("안내문.pdf" to UploadFixtures.samplePdf()),
+            )
+        assertThat(uploads.keys)
+            .describedAs("업로드 형식 전부를 지나지 않으면 `export_format` 의 `null` 갈래가 대조를 받지 않는다")
+            .containsExactlyInAnyOrderElementsOf(SourceFormat.UPLOAD_FORMATS)
+
+        uploads.forEach { (format, file) ->
+            val token = newAccount()
+            val conversionId = uploadDocument(token, file.first, file.second)
+
+            val body = bodyOf(read(token, conversionId))
+
+            assertFormatTripleInContract(body)
+            assertThat(body.getValue(SOURCE_FORMAT_PROPERTY)).isEqualTo(format.wireName)
+            assertThat(body[EXPORT_FORMAT_PROPERTY])
+                .withFailMessage(
+                    "원본 %s 의 `export_format` 이 계약 유도표와 다르다: %s",
+                    format.wireName,
+                    body[EXPORT_FORMAT_PROPERTY],
+                ).isEqualTo(derivation[format.wireName])
+            assertThat(body[FORMAT_PRESERVATION_PROPERTY])
+                .withFailMessage(
+                    "원본 %s 가 아직 변환 중인데 서버가 서식 유지 상태를 지어냈다 — 짝지을 검수본이 없다: %s",
+                    format.wireName,
+                    body[FORMAT_PRESERVATION_PROPERTY],
+                ).isNull()
+        }
+    }
+
+    @Test
+    @DisplayName("CF-3 원본 바이트가 없는 업로드 문서는 `not_applicable` 이다 — `document_originals` 가 서기 전 문서")
+    fun `원본이 없는 업로드 문서는 유지 대상이 아니다`() {
+        val token = newAccount()
+        val conversionId = uploadDocument(token, "안내문.docx", UploadFixtures.sampleDocx())
+        // 표가 서기 전(2026-08-26 이전)에 올라온 문서 재현 — 바이트만 사라지고 형식은 남는다.
+        database.execute(
+            "DELETE FROM document_originals WHERE document_id IN " +
+                "(SELECT document_id FROM conversions WHERE id = '$conversionId')",
+        )
+
+        val body = bodyOf(read(token, conversionId))
+
+        assertThat(body.getValue(SOURCE_FORMAT_PROPERTY)).isEqualTo(SourceFormat.DOCX.wireName)
+        val preservation = body[FORMAT_PRESERVATION_PROPERTY] as? Map<*, *>
+        assertThat(preservation)
+            .describedAs("되살릴 원본이 사라진 것은 서버가 아는 사실이다 — 영원히 판정되지 않을 `null` 로 두면 안 된다")
+            .isNotNull()
+        assertThat(preservation!![STATUS_PROPERTY]).isEqualTo(FormatPreservationStatus.NOT_APPLICABLE.wireName)
+    }
+
+    @Test
+    @DisplayName("CF-5 완료된 DOCX 는 **원본을 실제로 열어** 판정한다 — 짝이 맞으면 `available`")
+    fun `완료된 업로드 문서가 원본으로 판정된다`() {
+        val token = newAccount()
+        val conversionId = uploadDocument(token, "안내문.docx", UploadFixtures.sampleDocx())
+        // `sample.docx` 의 본문 단위는 둘이다(추출 결과 두 줄, 머리글·바닥글 파트 없음).
+        markDone(conversionId, DoneResult(easyText = "쉬운 제목입니다.\n쉬운 본문입니다."))
+
+        val body = bodyOf(read(token, conversionId))
+
+        val preservation = body[FORMAT_PRESERVATION_PROPERTY] as? Map<*, *>
+        assertThat(preservation).describedAs("원본이 있고 검수본도 있는데 판정하지 않았다").isNotNull()
+        assertThat(preservation!![STATUS_PROPERTY])
+            .withFailMessage("원본 단위 수와 문단 수가 같은데 「유지 가능」이 아니다: %s", preservation)
+            .isEqualTo(FormatPreservationStatus.AVAILABLE.wireName)
+        assertThat(preservation[DETAILS_PROPERTY]).isEqualTo(emptyList<String>())
+    }
+
+    @Test
+    @DisplayName("CF-6 문단 수가 원본과 다르면 `partial` 이고, 항목은 **개수만** 말한다")
+    fun `문단 수가 다르면 일부 유지다`() {
+        val token = newAccount()
+        val conversionId = uploadDocument(token, "안내문.docx", UploadFixtures.sampleDocx())
+        markDone(conversionId, DoneResult(easyText = "한 문단으로 합친 쉬운 글입니다."))
+
+        val body = bodyOf(read(token, conversionId))
+
+        val preservation = body.getValue(FORMAT_PRESERVATION_PROPERTY) as Map<*, *>
+        assertThat(preservation[STATUS_PROPERTY]).isEqualTo(FormatPreservationStatus.PARTIAL.wireName)
+        val details = preservation[DETAILS_PROPERTY] as List<*>
+        assertThat(details).describedAs("「일부」라고 말해 놓고 무엇이 달라지는지 말하지 않았다").isNotEmpty()
+        assertThat(details).allSatisfy { item ->
+            assertThat(item.toString())
+                .withFailMessage("영향 항목에 문서 본문 조각이 실렸다: %s", item)
+                .doesNotContain("쉬운 글 변환 안내")
+                .doesNotContain("추출 테스트용")
+                .doesNotContain("한 문단으로 합친")
+        }
+    }
+
+    @Test
+    @DisplayName("CF-7 저장된 원본을 열 수 없으면 `failed` 다 — 사유를 항목으로 말한다")
+    fun `열 수 없는 원본은 실패로 나간다`() {
+        val token = newAccount()
+        val conversionId = uploadDocument(token, "안내문.docx", UploadFixtures.sampleDocx())
+        markDone(conversionId, DoneResult(easyText = "쉬운 제목입니다.\n쉬운 본문입니다."))
+        breakStoredOriginal(token, conversionId)
+
+        val body = bodyOf(read(token, conversionId))
+
+        val preservation = body.getValue(FORMAT_PRESERVATION_PROPERTY) as Map<*, *>
+        assertThat(preservation[STATUS_PROPERTY])
+            .describedAs("열리지 않는 원본을 「유지 가능」이라 말하면 내려받기에서야 드러난다")
+            .isEqualTo(FormatPreservationStatus.FAILED.wireName)
+        assertThat(preservation[DETAILS_PROPERTY] as List<*>).isNotEmpty()
+    }
+
+    /**
+     * 저장된 원본을 **열리지 않는 바이트로** 갈아 끼운다.
+     *
+     * 암호문 자체는 멀쩡하게 만든다(같은 결속·같은 세대) — 복호화가 실패하는 경로가 아니라
+     * **연 바이트가 문서가 아닌** 경로를 재려는 것이다.
+     */
+    private fun breakStoredOriginal(
+        token: String,
+        conversionId: UUID,
+    ) {
+        val documentId = UUID.fromString(bodyOf(read(token, conversionId)).getValue(DOCUMENT_ID_PROPERTY).toString())
+        database.execute(
+            BREAK_ORIGINAL_SQL.format(
+                sealed("zip 이 아니다", documentId, EncryptedField.DOCUMENT_ORIGINAL_BYTES),
+                cipher.writeScheme,
+                cipher.writeKeyVersion,
+                documentId,
+            ),
+        )
+    }
+
+    @Test
+    @DisplayName("CF-4 형식 셋은 **완료 전에도** 나간다 — 결과 필드가 아니라 문서 메타다")
+    fun `완료 전에도 형식 셋이 나간다`() {
+        val token = newAccount()
+        val conversionId = uploadDocument(token, "안내문.docx", UploadFixtures.sampleDocx())
+        forceStatus(conversionId, FAILED_STATUS, failureCode = "ProviderUnavailable")
+
+        val body = bodyOf(read(token, conversionId))
+
+        assertThat(body.getValue(STATUS_PROPERTY)).isEqualTo(FAILED_STATUS)
+        assertFormatTripleInContract(body)
+        assertThat(body.getValue(SOURCE_FORMAT_PROPERTY))
+            .describedAs("변환이 실패해도 「이 문서는 DOCX 였다」는 사실은 그대로다")
+            .isEqualTo(SourceFormat.DOCX.wireName)
+        assertThat(body[EXPORT_FORMAT_PROPERTY]).isEqualTo(SourceFormat.DOCX.wireName)
+    }
+
+    /** 형식 셋의 **키가 있고** 값이 계약 값 집합 안인가. 값 자체는 케이스가 잰다. */
+    private fun assertFormatTripleInContract(body: Map<*, *>) {
+        val keys = body.keys.map { it.toString() }
+        assertThat(keys)
+            .describedAs("키는 항상 있고 값이 null 일 수 있다 — 생략되면 React 가 `undefined` 를 받는다")
+            .contains(SOURCE_FORMAT_PROPERTY, EXPORT_FORMAT_PROPERTY, FORMAT_PRESERVATION_PROPERTY)
+
+        assertThat(body.getValue(SOURCE_FORMAT_PROPERTY).toString())
+            .isIn(ContractSpec.schemaEnum(SOURCE_FORMAT_SCHEMA))
+        body[EXPORT_FORMAT_PROPERTY]?.let {
+            assertThat(it.toString()).isIn(ContractSpec.schemaEnum(EXPORT_FORMAT_SCHEMA))
+        }
+        (body[FORMAT_PRESERVATION_PROPERTY] as? Map<*, *>)?.let { preservation ->
+            assertThat(preservation.keys.map { it.toString() }.toSet())
+                .isEqualTo(ContractSpec.schemaRequired(PRESERVATION_SCHEMA))
+            assertThat(preservation[STATUS_PROPERTY].toString())
+                .isIn(ContractSpec.schemaEnum(PRESERVATION_STATUS_SCHEMA))
+        }
+    }
+
+    /** 파일을 올려 그 문서의 변환 식별자를 준다. **행은 제품이 쓴다** — 원본 행도 함께 선다. */
+    private fun uploadDocument(
+        token: String,
+        filename: String,
+        content: ByteArray,
+    ): UUID {
+        val body = MultipartBody().file(FILE_PART, filename, content)
+        val request =
+            HttpRequest
+                .newBuilder(URI.create("http://localhost:$port$DOCUMENTS_PATH"))
+                .header(CONTENT_TYPE, body.contentType())
+                .header("Authorization", "Bearer $token")
+                .POST(HttpRequest.BodyPublishers.ofByteArray(body.build()))
+        val response = send(request)
+        check(response.statusCode() == ContractSpec.successStatus(DOCUMENTS_PATH, POST)) {
+            "업로드가 실패했다: ${response.statusCode()} ${response.body()}"
+        }
+        return UUID.fromString(bodyOf(response).getValue("conversion_id").toString())
+    }
+
     /** 상태만 바꾼다. 결과 열은 건드리지 않으므로 「완료 전」 모양이 유지된다. */
     private fun forceStatus(
         conversionId: UUID,
@@ -561,6 +781,10 @@ class ConversionReadReachTest {
         private const val INTERNAL_ERROR = 500
 
         private const val CONVERSION_SCHEMA = "ConversionResponse"
+        private const val SOURCE_FORMAT_SCHEMA = "SourceFormat"
+        private const val EXPORT_FORMAT_SCHEMA = "ExportFormat"
+        private const val PRESERVATION_SCHEMA = "FormatPreservation"
+        private const val PRESERVATION_STATUS_SCHEMA = "FormatPreservationStatus"
         private const val MASKED_ITEM_SCHEMA = "MaskedItemResponse"
         private const val STATUS_SCHEMA = "ConversionStatus"
         private const val ERROR_SCHEMA = "ErrorResponse"
@@ -568,6 +792,26 @@ class ConversionReadReachTest {
         private const val ID_PROPERTY = "id"
         private const val DOCUMENT_ID_PROPERTY = "document_id"
         private const val STATUS_PROPERTY = "status"
+        private const val SOURCE_FORMAT_PROPERTY = "source_format"
+        private const val EXPORT_FORMAT_PROPERTY = "export_format"
+        private const val FORMAT_PRESERVATION_PROPERTY = "format_preservation"
+
+        /**
+         * 규약: SQL 은 companion 의 상수 리터럴에 둔다 — 사유는 [markDone] 이 가리키는 문서.
+         *
+         * 암호문과 **봉투 두 값을 같은 문장에서** SET 한다. 행당 키 세대가 하나라 암호문만
+         * 갈아 끼우면 「세대는 v1 인데 암호문은 v2」인 행이 남고, AAD 에 세대가 실리므로
+         * 그 행은 영원히 열리지 않는다 — `EnvelopeColumnWriteGuardTest` 의 규약이다.
+         */
+        val BREAK_ORIGINAL_SQL =
+            """
+            UPDATE document_originals
+            SET file_bytes_encrypted = %s,
+                encryption_scheme = '%s',
+                key_version = %s
+            WHERE document_id = '%s'
+            """.trimIndent()
+        private const val DETAILS_PROPERTY = "details"
         private const val EASY_TEXT_PROPERTY = "easy_text"
         private const val EDITED_TEXT_PROPERTY = "edited_text"
         private const val MASKED_ITEMS_PROPERTY = "masked_items"
@@ -602,11 +846,25 @@ class ConversionReadReachTest {
         private const val STORED_MODEL = "stored-model-probe"
         private const val STORED_PROVIDER = "stored-provider"
 
-        /** 계약 `get.description` 이 완료 전에 나간다고 적은 것 — 앞의 둘은 자원 식별자다. */
+        /**
+         * 계약 `get.description` 이 완료 전에 나간다고 적은 **일곱** — 앞의 둘은 자원
+         * 식별자이고, 뒤의 셋은 문서 메타에서 오는 **형식 셋**이라 완료 여부와 무관하다.
+         */
         private val BEFORE_DONE_FIELDS =
-            setOf(ID_PROPERTY, DOCUMENT_ID_PROPERTY, STATUS_PROPERTY, FAILURE_CODE_PROPERTY)
+            setOf(
+                ID_PROPERTY,
+                DOCUMENT_ID_PROPERTY,
+                STATUS_PROPERTY,
+                FAILURE_CODE_PROPERTY,
+                SOURCE_FORMAT_PROPERTY,
+                EXPORT_FORMAT_PROPERTY,
+                FORMAT_PRESERVATION_PROPERTY,
+            )
 
         private const val CONTENT_TYPE = "Content-Type"
+
+        /** 업로드 파트 이름. 계약 `POST /documents` 의 multipart 본문이 정한다. */
+        private const val FILE_PART = "file"
         private const val JSON_MEDIA_TYPE = "application/json"
         private const val WWW_AUTHENTICATE = "WWW-Authenticate"
         private const val WWW_AUTHENTICATE_COMPONENT = "WWWAuthenticateBearer"

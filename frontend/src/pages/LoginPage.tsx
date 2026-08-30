@@ -1,11 +1,20 @@
 import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom'
 
 import { useAuth } from '../auth/context'
+import { AuthIntro } from '../components/AuthIntro'
 import { CredentialsForm } from '../components/CredentialsForm'
-import { Badge } from '../components/ui/Badge'
-import { HOME_PATH, type FromLocationState } from '../routes/paths'
+import { HOME_PATH, SIGNUP_PATH, type FromLocationState } from '../routes/paths'
 
-/** 로그인 화면. */
+/**
+ * 로그인 화면.
+ *
+ * `PageHeader`를 쓰지 않는다 — 그 컴포넌트는 작업 공간 맥락 라벨과 오른쪽 대표 행동을
+ * 전제하는데, 인증 화면에는 아직 작업 공간이 없고 대표 행동은 폼의 제출 버튼 자체다.
+ * 대신 §6.1이 정한 2단 배치(왼쪽 설명, 오른쪽 440px 인증 카드)를 따른다.
+ *
+ * DOM 순서는 폼이 먼저다. 모바일에서 폼을 먼저 보여야 하고(§6.1), 그래야 화면의 첫
+ * 제목(h1)이 설명 영역보다 앞에 온다. 데스크톱의 좌우 배치는 `order`로만 바꾼다.
+ */
 export function LoginPage() {
   const { status, signIn } = useAuth()
   const navigate = useNavigate()
@@ -19,52 +28,40 @@ export function LoginPage() {
   }
 
   return (
-    <div className="mx-auto grid min-h-[calc(100dvh-6.5rem)] w-full max-w-5xl items-center gap-10 lg:grid-cols-2">
-      <section className="mx-auto w-full max-w-sm" aria-labelledby="login-heading">
-        <Badge tone="primary" withIcon={false} className="mb-2">
-          다시 오신 것을 환영합니다
-        </Badge>
-        <h2 id="login-heading" className="text-2xl font-extrabold tracking-tight text-foreground">
-          로그인
-        </h2>
-        <p className="mt-1 text-[15px] leading-relaxed text-muted-foreground">
-          계정으로 로그인하고 쉬운 우리말 문서 작업을 이어가세요.
-        </p>
-        <CredentialsForm
-          submitLabel="로그인"
-          passwordAutoComplete="current-password"
-          onSubmit={async (email, password) => {
-            await signIn(email, password)
-            navigate(from, { replace: true })
-          }}
-        />
-        <p className="mt-5 text-center text-sm text-muted-foreground">
-          아직 계정이 없으신가요? <Link to="/signup">가입하기</Link>
-        </p>
-      </section>
-      <aside
-        className="relative overflow-hidden rounded-[16px] border border-border bg-primary p-8 text-white"
-        aria-label="서비스 안내"
+    <div className="mx-auto grid w-full max-w-5xl items-center gap-8 py-2 lg:grid-cols-[minmax(0,1fr)_440px] lg:gap-12">
+      <section
+        className="w-full max-w-[440px] justify-self-center lg:order-2"
+        aria-labelledby="login-heading"
       >
-        <span
-          className="mb-5 flex size-12 items-center justify-center rounded-[12px] bg-white/15 text-xl font-black"
-          aria-hidden="true"
-        >
-          ✓
-        </span>
-        <h2 className="text-2xl font-extrabold tracking-tight">
-          어려운 안내문을
-          <br />더 읽기 쉽게
-        </h2>
-        <p className="mt-3 text-[15px] leading-relaxed text-white/80">
-          AI가 만든 쉬운 글 초안을 원문과 비교하고, 담당자가 직접 검수한 뒤 내려받을 수 있습니다.
-        </p>
-        <ul className="mt-6 flex list-disc flex-col gap-2 pl-5 text-sm text-white/80">
-          <li>원문과 결과를 나란히 비교</li>
-          <li>개인정보를 가린 뒤 안전하게 변환</li>
-          <li>DOCX·HWPX·TXT 형식으로 내려받기</li>
-        </ul>
-      </aside>
+        <div className="rounded-[16px] border border-border bg-card p-6 shadow-[0_8px_28px_rgba(35,31,70,0.06)] sm:p-8">
+          <h1
+            id="login-heading"
+            className="text-[28px] font-extrabold leading-9 tracking-tight text-foreground"
+          >
+            로그인
+          </h1>
+          <p className="mt-2 text-sm leading-[22px] text-muted-foreground">
+            마지막으로 보던 작업 공간에서 문서 변환과 검수를 이어서 합니다.
+          </p>
+          {/* 실패 사유는 폼 맨 위에 남는 문단으로 표시된다(§6.1) — CredentialsForm이
+              토스트가 아니라 화면에 유지되는 오류를 그린다. */}
+          <CredentialsForm
+            submitLabel="로그인"
+            passwordAutoComplete="current-password"
+            onSubmit={async (email, password) => {
+              await signIn(email, password)
+              navigate(from, { replace: true })
+            }}
+          />
+          <p className="mt-5 text-center text-sm text-muted-foreground">
+            아직 계정이 없으신가요? <Link to={SIGNUP_PATH}>가입하기</Link>
+          </p>
+        </div>
+      </section>
+      <AuthIntro
+        headingId="login-intro-heading"
+        summary="어려운 공공 안내문을 쉬운 우리말 초안으로 바꾸고, 담당자가 검수해 문서로 내려받습니다."
+      />
     </div>
   )
 }

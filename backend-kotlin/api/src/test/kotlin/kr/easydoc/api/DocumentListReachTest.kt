@@ -62,10 +62,8 @@ class DocumentListReachTest {
         createFromText(token, textBody("붙여넣기 본문"))
         upload(token, MultipartBody().file(FILE_PART, "안내문.docx", UploadFixtures.sampleDocx()))
 
-        val declared =
-            ContractSpec
-                .strings("components", "schemas", LIST_ITEM_SCHEMA, "properties", SOURCE_FORMAT_PROPERTY, "enum")
-                .toSet()
+        // 1.6.0 에서 이 속성이 `SourceFormat` 컴포넌트 `$ref` 가 됐다 — 값 집합은 그대로다.
+        val declared = ContractSpec.schemaPropertyEnumResolved(LIST_ITEM_SCHEMA, SOURCE_FORMAT_PROPERTY).toSet()
         val observed = itemsOf(list(token)).map { it[SOURCE_FORMAT_PROPERTY].toString() }.toSet()
 
         assertThat(declared).isNotEmpty()

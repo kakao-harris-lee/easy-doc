@@ -6,6 +6,7 @@ import kr.easydoc.core.crypto.EncryptedContent
 import kr.easydoc.core.crypto.EncryptedField
 import kr.easydoc.core.crypto.EncryptionScheme
 import kr.easydoc.core.crypto.PlainBody
+import kr.easydoc.core.crypto.PlainBytes
 import kr.easydoc.core.document.Conversion
 import kr.easydoc.core.document.ConversionStatus
 import kr.easydoc.core.document.Document
@@ -199,6 +200,94 @@ class EnvelopeRotationTest {
     }
 
     @Test
+    @DisplayName("업로드 원본도 회전한다 — **바이트가 한 비트도 바뀌지 않는다**")
+    fun `원본 바이트를 회전한다`() {
+        val world = World()
+        val original = sealedBytes(ORIGINAL_FILE, OLD_VERSION)
+        world.originals.original = original
+
+        val outcome = world.rotation.rotateDocumentOriginal(DOCUMENT)
+
+        assertThat(outcome).isEqualTo(RotationOutcome.ROTATED)
+        val rewrite = world.originals.rewrites.single()
+        assertThat(rewrite.first)
+            .describedAs("쓰기 조건은 잠근 채 읽은 암호문 그 자체다 — 세대 정수 하나가 아니다")
+            .isSameAs(original)
+        assertThat(rewrite.second.keyVersion).isEqualTo(NEW_VERSION)
+        assertThat(rewrite.second.bytes)
+            .describedAs(
+                "회전이 원본 바이트를 바꿨다. 문자열 짝(UTF-8 왕복)을 타면 해석되지 않는 " +
+                    "바이트가 U+FFFD 로 눌려 파일이 조용히 망가진다 — 되돌릴 수 없다",
+            ).isEqualTo(ORIGINAL_FILE)
+        assertThat(world.cipher.bindings)
+            .describedAs("결속이 어긋나면 회전한 행이 열리지 않는다")
+            .containsExactly(DOCUMENT to EncryptedField.DOCUMENT_ORIGINAL_BYTES)
+    }
+
+    @Test
+    @DisplayName("**원본이 없으면 MISSING** — 붙여넣기 문서는 회전할 것이 없다")
+    fun `원본이 없으면 MISSING 이다`() {
+        val world = World()
+        world.originals.original = null
+
+        assertThat(world.rotation.rotateDocumentOriginal(DOCUMENT)).isEqualTo(RotationOutcome.MISSING)
+        assertThat(world.originals.rewrites).isEmpty()
+        assertThat(world.cipher.encryptCalls)
+            .describedAs("없는 원본을 지어내 봉인했다")
+            .isZero()
+    }
+
+    @Test
+    @DisplayName("원본 회전의 나머지 갈래 — 이미 최신·경합")
+    fun `원본 회전의 나머지 갈래`() {
+        val current = World().apply { originals.original = sealedBytes(ORIGINAL_FILE, NEW_VERSION) }
+        assertThat(current.rotation.rotateDocumentOriginal(DOCUMENT)).isEqualTo(RotationOutcome.ALREADY_CURRENT)
+        assertThat(current.originals.rewrites).isEmpty()
+        assertThat(current.cipher.encryptCalls).isZero()
+
+        val contended =
+            World().apply {
+                originals.original = sealedBytes(ORIGINAL_FILE, OLD_VERSION)
+                originals.updated = false
+            }
+        assertThat(contended.rotation.rotateDocumentOriginal(DOCUMENT)).isEqualTo(RotationOutcome.CONTENDED)
+    }
+
+    @Test
+    @DisplayName("원본이 열리지 않으면 UPDATE 를 부르지 않는다")
+    fun `원본 복호화 실패는 중단한다`() {
+        val world = World(unopenable = EncryptedField.DOCUMENT_ORIGINAL_BYTES)
+        world.originals.original = sealedBytes(ORIGINAL_FILE, OLD_VERSION)
+
+        assertThatThrownBy { world.rotation.rotateDocumentOriginal(DOCUMENT) }
+            .isInstanceOf(DecryptionFailedException::class.java)
+
+        assertThat(world.originals.rewrites).isEmpty()
+        assertThat(world.transaction.failed).isEqualTo(1)
+        assertThat(world.transaction.committed).isZero()
+    }
+
+    @Test
+    @DisplayName("원문 회전은 원본을 건드리지 않는다 — **두 봉투가 따로 돈다**")
+    fun `원문 회전과 원본 회전이 서로를 건드리지 않는다`() {
+        val world = World()
+        world.sealEverythingAtOldVersion()
+
+        world.rotation.rotateDocument(DOCUMENT)
+
+        assertThat(world.originals.rewrites)
+            .describedAs("봉투를 공유하지 않는다는 것이 V3 의 판단이다 — 한쪽 회전이 다른 표를 쓰면 안 된다")
+            .isEmpty()
+        assertThat(world.cipher.resealed).containsExactly(EncryptedField.DOCUMENT_SOURCE_TEXT)
+
+        world.rotation.rotateDocumentOriginal(DOCUMENT)
+
+        assertThat(world.documents.rewrites)
+            .describedAs("원본 회전이 `documents` 를 한 번만 썼어야 한다 — 위 원문 회전 그 한 번이다")
+            .hasSize(1)
+    }
+
+    @Test
     @DisplayName("봉인된 자유 의견도 회전한다 — v1 로 봉한 것이 v2 뒤에도 **같은 평문**으로 열린다")
     fun `피드백 의견을 회전한다`() {
         val world = World()
@@ -312,6 +401,8 @@ class EnvelopeRotationTest {
             when (field) {
                 EncryptedField.DOCUMENT_SOURCE_TEXT -> world.rotation.rotateDocument(DOCUMENT)
 
+                EncryptedField.DOCUMENT_ORIGINAL_BYTES -> world.rotation.rotateDocumentOriginal(DOCUMENT)
+
                 EncryptedField.CONVERSION_EASY_TEXT,
                 EncryptedField.CONVERSION_MASKED_ITEMS,
                 EncryptedField.CONVERSION_EDITED_TEXT,
@@ -335,10 +426,23 @@ class EnvelopeRotationTest {
         /** 회전이 평문을 그대로 옮기는지 보는 표식. 값 자체는 성질과 무관하다. */
         const val COMMENT_BODY = "○○동 안내 부분이 어색합니다"
 
+        /**
+         * 원본 파일을 흉내 내는 바이트. **UTF-8 로 해석되지 않는 값을 일부러 섞는다** — 회전이
+         * 문자열 짝을 타면 이 바이트가 U+FFFD 로 바뀌어 되돌아오지 않는다(zip 머리 `PK\x03\x04`
+         * 뒤에 단독 0x80·0xFF 를 둔 모양이다).
+         */
+        val ORIGINAL_FILE: ByteArray =
+            byteArrayOf(0x50, 0x4B, 0x03, 0x04, 0x80.toByte(), 0xFF.toByte(), 0x00, 0xC0.toByte())
+
         fun sealed(
             plain: String,
             keyVersion: Int,
         ) = EncryptedContent(plain.toByteArray(Charsets.UTF_8), EncryptionScheme.AES_256_GCM_V1, keyVersion)
+
+        fun sealedBytes(
+            plain: ByteArray,
+            keyVersion: Int,
+        ) = EncryptedContent(plain, EncryptionScheme.AES_256_GCM_V1, keyVersion)
 
         fun envelopeOf(
             keyVersion: Int,
@@ -362,14 +466,19 @@ class EnvelopeRotationTest {
         val transaction = RecordingTransactionRunner()
         val cipher = FakeRotatingCipher(unopenable)
         val documents = FakeDocumentRepository()
+        val originals = FakeDocumentOriginalRepository()
         val conversions = FakeConversionRepository()
         val feedback = FakeRotatingFeedbackRepository()
 
         val rotation =
             EnvelopeRotation(
-                documents = documents,
-                conversions = conversions,
-                feedback = feedback,
+                stores =
+                    SealedStores(
+                        documents = documents,
+                        originals = originals,
+                        conversions = conversions,
+                        feedback = feedback,
+                    ),
                 cipher = cipher,
                 transaction = transaction,
             )
@@ -377,6 +486,7 @@ class EnvelopeRotationTest {
         /** 봉인된 열을 **전부** 옛 세대로 채운다. 전수 대조가 쓰는 자리다. */
         fun sealEverythingAtOldVersion() {
             documents.sourceText = sealed("원문", OLD_VERSION)
+            originals.original = sealedBytes(ORIGINAL_FILE, OLD_VERSION)
             conversions.envelope = envelopeOf(OLD_VERSION, "초안", "대응표", "검수본")
             feedback.comment = sealed("의견", OLD_VERSION)
         }
@@ -408,24 +518,25 @@ class EnvelopeRotationTest {
         /** 회전이 **다시 봉한** 열. 전수 대조가 「경로가 이 열에 실제로 닿았는가」를 여기서 본다. */
         val resealed = mutableSetOf<EncryptedField>()
 
-        override fun encrypt(
-            plain: PlainBody,
+        /** 바이트 짝만 구현한다 — 문자열 짝은 [ContentCipher] 의 기본 구현을 탄다. */
+        override fun encryptBytes(
+            plain: PlainBytes,
             record: UUID,
             field: EncryptedField,
         ): EncryptedContent {
             encryptCalls++
             resealed += field
-            return sealed(plain.value, writeKeyVersion)
+            return EncryptedContent(plain.value, EncryptionScheme.AES_256_GCM_V1, writeKeyVersion)
         }
 
-        override fun decrypt(
+        override fun decryptBytes(
             content: EncryptedContent,
             record: UUID,
             field: EncryptedField,
-        ): PlainBody {
+        ): PlainBytes {
             if (field == unopenable) throw DecryptionFailedException()
             bindings += record to field
-            return PlainBody(String(content.bytes, Charsets.UTF_8))
+            return PlainBytes(content.bytes)
         }
     }
 
@@ -446,6 +557,12 @@ class EnvelopeRotationTest {
             offset: Int,
         ): List<DocumentListing> = error("회전 경로가 목록을 읽지 않는다")
 
+        /** 회전 배치에는 「내 것」이 없다 — 부르면 이 파일의 케이스가 그 사실로 빨개진다. */
+        override fun findOwnedSource(
+            ownerId: UUID,
+            documentId: UUID,
+        ): StoredSourceText? = error("회전 경로가 소유자 조회 포트를 부르면 안 된다")
+
         override fun lockSourceText(documentId: UUID): EncryptedContent? = sourceText
 
         override fun rewriteEnvelope(
@@ -461,6 +578,35 @@ class EnvelopeRotationTest {
             ownerId: UUID,
             documentId: UUID,
         ): Boolean = error("회전 경로가 문서를 지우지 않는다")
+    }
+
+    private class FakeDocumentOriginalRepository : DocumentOriginalRepository {
+        var original: EncryptedContent? = null
+        var updated: Boolean = true
+        val rewrites = mutableListOf<Pair<EncryptedContent, EncryptedContent>>()
+
+        override fun insert(
+            ownerId: UUID,
+            documentId: UUID,
+            original: StoredOriginal,
+        ) = error("회전 경로가 원본을 만들지 않는다")
+
+        /** 회전 배치에는 「내 것」이 없다 — 부르면 이 파일의 케이스가 그 사실로 빨개진다. */
+        override fun findOwned(
+            ownerId: UUID,
+            documentId: UUID,
+        ): StoredOriginal? = error("회전 경로가 소유자 조회 포트를 부르면 안 된다")
+
+        override fun lockOriginal(documentId: UUID): EncryptedContent? = original
+
+        override fun rewriteEnvelope(
+            documentId: UUID,
+            expected: EncryptedContent,
+            original: EncryptedContent,
+        ): Boolean {
+            rewrites += expected to original
+            return updated
+        }
     }
 
     private class Rewrite(

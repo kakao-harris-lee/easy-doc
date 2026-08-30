@@ -17,13 +17,14 @@ import {
   newAccount,
   plantToken,
   selectedWorkspaceName,
+  signOut,
   signUpAndLand,
   uniqueWorkspaceName,
   workspaceAlert,
   workspaceNames,
   workspaceSelect,
 } from './support/app'
-import { NetworkLog, signature } from './support/network'
+import { NetworkLog, routeSignature, signature } from './support/network'
 
 interface WorkspaceListBody {
   items: { id: string; name: string }[]
@@ -52,7 +53,7 @@ test.describe('작업 공간', () => {
     expect(await workspaceNames(page)).toContain(nameA)
 
     // 로그아웃하면 보호 화면에서 밀려난다.
-    await page.getByRole('button', { name: '로그아웃', exact: true }).click()
+    await signOut(page)
     await expect(page.getByRole('heading', { name: '로그인' })).toBeVisible()
 
     // --- 계정 B ---------------------------------------------------------------
@@ -77,7 +78,24 @@ test.describe('작업 공간', () => {
     await expect(workspaceSelect(page).locator('option')).toHaveCount(1)
 
     const created = uniqueWorkspaceName()
-    await answerPrompt(page, '새로 만들기', created)
+    // 현재 작업 공간이 새 공간으로 바뀌면 「다음 할 일」 제안이 그 공간의 문서 목록을
+    // 다시 읽는다(DESIGN.md §7·§6.2). 이 화면의 **최초** 제안 조회는 위 `toHaveCount(1)`
+    // 시점에 이미 끝났으므로, 지금 거는 이 약속이 잡는 것은 그 재조회다 — 아래 순서
+    // 단언이 재조회 도착 전에 돌지 않게 한다.
+    const suggestionPromise = page.waitForResponse(
+      (response) =>
+        response.request().method() === ROUTES.documentList.method &&
+        response.url().startsWith(api(`${ROUTES.documentList.path}?`)) &&
+        new URL(response.url()).searchParams.has('workspace_id'),
+    )
+    const [createdResponse] = await Promise.all([
+      page.waitForResponse(
+        (response) =>
+          response.url() === api(ROUTES.workspaceCreate.path) &&
+          response.request().method() === ROUTES.workspaceCreate.method,
+      ),
+      answerPrompt(page, '새로 만들기', created),
+    ])
 
     // --- 화면 -----------------------------------------------------------------
     await expect(workspaceSelect(page).locator('option')).toHaveCount(2)
@@ -86,11 +104,29 @@ test.describe('작업 공간', () => {
     expect((await selectedWorkspaceName(page)).trim()).toBe(created)
 
     // --- 네트워크 -------------------------------------------------------------
-    // 만들기 응답에는 문서 수도 순서도 없다 — 그래서 목록 재조회가 뒤따른다.
-    const signatures = (await log.apiCalls()).map(signature)
-    expect(signatures.slice(-2)).toEqual([
-      `${ROUTES.workspaceCreate.method} ${ROUTES.workspaceCreate.path} ${ROUTES.workspaceCreate.created}`,
+    // 만들기 응답에는 문서 수도 순서도 없다 — 그래서 목록 재조회가 뒤따른다. 그 뒤
+    // 「다음 할 일」 제안이 **새 작업 공간**의 문서 목록을 읽는다 — 옮겨 간 곳의 근거로
+    // 다시 판단해야 하기 때문이다(§7 은 §6.2 의 기존 목록을 근거로 쓴다).
+    //
+    // 끝에서 세는 대신 **만들기 호출을 기준점으로 잡아** 그 뒤 전부를 단언한다.
+    // 이 단언이 재는 것은 「만들기 **바로 뒤에** 목록 재조회가 온다」는 인과이므로,
+    // 기준점이 배열 끝이면 뒤에 호출이 하나 붙을 때마다 숫자만 늘리게 되고 그러다
+    // 인과 자체가 흐려진다. `slice(createdAt)` 은 여전히 전체 일치라서 예상 밖 호출이
+    // 끼어들면 그대로 걸린다.
+    const suggestion = await suggestionPromise
+    // 좁힌 대상이 방금 만든 공간인가 — [routeSignature] 가 걷어낸 쿼리를 여기서 잰다.
+    expect(new URL(suggestion.url()).searchParams.get('workspace_id')).toBe(
+      ((await createdResponse.json()) as { id: string }).id,
+    )
+
+    const signatures = (await log.apiCalls()).map(routeSignature)
+    const createSignature = `${ROUTES.workspaceCreate.method} ${ROUTES.workspaceCreate.path} ${ROUTES.workspaceCreate.created}`
+    const createdAt = signatures.indexOf(createSignature)
+    expect(createdAt).toBeGreaterThanOrEqual(0)
+    expect(signatures.slice(createdAt)).toEqual([
+      createSignature,
       `${ROUTES.workspaceList.method} ${ROUTES.workspaceList.path} ${ROUTES.workspaceList.ok}`,
+      `${ROUTES.documentList.method} ${ROUTES.documentList.path} ${ROUTES.documentList.ok}`,
     ])
   })
 

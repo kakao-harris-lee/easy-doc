@@ -3,8 +3,6 @@ package kr.easydoc.infrastructure.ingest
 import kr.easydoc.core.document.SourceFormat
 import kr.easydoc.core.exceptions.DocumentExtractionException
 import org.apache.poi.xwpf.usermodel.XWPFDocument
-import org.apache.poi.xwpf.usermodel.XWPFHeaderFooter
-import org.w3c.dom.Element
 import org.w3c.dom.Node
 import java.io.ByteArrayInputStream
 import java.io.IOException
@@ -57,12 +55,8 @@ internal class DocxExtractor {
     ) {
         val body = document.document.body.domNode
         elementBlocks(body, sink)
-        for (sectionProperties in sectionPropertiesInDocumentOrder(body)) {
-            for (reference in HEADER_FOOTER_ORDER) {
-                val part = referencedPart(document, sectionProperties, reference) ?: continue
-                elementBlocks(part, sink)
-            }
-        }
+        // 파트 해석은 `DocxSectionParts` 가 소유한다 — 반영(내보내기) 쪽이 같은 순서를 봐야 한다.
+        for (part in DocxSectionParts.headerFooterParts(document, body)) elementBlocks(part, sink)
     }
 
     /** OOXML 조각을 **문서 순서대로** 훑어 문단 단위 텍스트를 모은다. */
@@ -75,7 +69,7 @@ internal class DocxExtractor {
         stack.addLast(root)
         while (stack.isNotEmpty()) {
             val node = stack.removeLast()
-            if (isAlternateContentFallback(node)) continue
+            if (OoxmlSkips.isAlternateContentFallback(node)) continue
             when (OoxmlDom.localName(node)) {
                 "p" -> {
                     sink.add(current.toString())
@@ -95,53 +89,6 @@ internal class DocxExtractor {
         sink.add(current.toString())
     }
 
-    /** `mc:AlternateContent` 의 `mc:Fallback` 인가 — **네임스페이스까지 본다.** */
-    private fun isAlternateContentFallback(node: Node): Boolean =
-        OoxmlDom.localName(node) == "Fallback" && node.namespaceURI == MARKUP_COMPATIBILITY_NAMESPACE
-
-    /** 구역 속성(`w:sectPr`)을 문서 순서로 모은다. */
-    private fun sectionPropertiesInDocumentOrder(body: Node): List<Element> {
-        val found = mutableListOf<Element>()
-        for (child in OoxmlDom.childElements(body)) {
-            when (OoxmlDom.localName(child)) {
-                "sectPr" -> {
-                    found += child
-                }
-
-                "p" -> {
-                    OoxmlDom
-                        .childElements(child)
-                        .firstOrNull { OoxmlDom.localName(it) == "pPr" }
-                        ?.let(::sectionPropertiesOf)
-                        ?.let { found += it }
-                }
-            }
-        }
-        return found
-    }
-
-    /** `w:pPr` 안의 `w:sectPr`. 구역 나눔이 문단 속성에 실리는 자리다. */
-    private fun sectionPropertiesOf(paragraphProperties: Element): Element? =
-        OoxmlDom.childElements(paragraphProperties).firstOrNull { OoxmlDom.localName(it) == "sectPr" }
-
-    /** `headerReference`/`footerReference` 중 `w:type="default"` 하나를 풀어 그 파트의 DOM 을 준다. */
-    private fun referencedPart(
-        document: XWPFDocument,
-        sectionProperties: Element,
-        referenceName: String,
-    ): Node? {
-        val relationId =
-            OoxmlDom
-                .childElements(sectionProperties)
-                .firstOrNull {
-                    OoxmlDom.localName(it) == referenceName &&
-                        it.getAttributeNS(WORDPROCESSING_NAMESPACE, "type") == DEFAULT_REFERENCE_TYPE
-                }?.getAttributeNS(RELATIONSHIP_NAMESPACE, "id")
-                ?.takeIf { it.isNotEmpty() }
-                ?: return null
-        return (document.getRelationById(relationId) as? XWPFHeaderFooter)?._getHdrFtr()?.domNode
-    }
-
     private fun broken(
         uploadSize: Int,
         cause: Throwable,
@@ -151,19 +98,6 @@ internal class DocxExtractor {
     }
 
     companion object {
-        /** `w:sectPr` 안에서 우리가 인정하는 참조 유형. `even`/`first` 는 걷지 않는다. */
-        const val DEFAULT_REFERENCE_TYPE: String = "default"
-
-        private const val WORDPROCESSING_NAMESPACE =
-            "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
-        private const val RELATIONSHIP_NAMESPACE =
-            "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
-        private const val MARKUP_COMPATIBILITY_NAMESPACE =
-            "http://schemas.openxmlformats.org/markup-compatibility/2006"
-
-        /** 구역마다 머리글 → 바닥글 순서. 원본 `for part in (section.header, section.footer)` 와 같다. */
-        private val HEADER_FOOTER_ORDER = listOf("headerReference", "footerReference")
-
         /** **걷지 않는다고 선언한 것** (계획 §9 질문 ⑩ — DOC-02 「조용한 누락 금지」). */
         val SKIPPED_PARTS: List<String> =
             listOf(

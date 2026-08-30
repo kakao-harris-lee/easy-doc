@@ -1,10 +1,22 @@
-import { render, screen } from '@testing-library/react'
+import { render as renderInDom, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import type { ReactElement } from 'react'
+import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ApiError, saveFeedback } from '../api/client'
 import type { ConversionFeedbackResponse } from '../api/types'
 import { ReviewFeedback } from './ReviewFeedback'
+
+/**
+ * 라우터 안에서 그린다.
+ *
+ * 폼이 제출 성공 뒤 변환 기록으로 가는 링크를 내놓으므로 `<Link>`가 라우터를 요구한다.
+ * 목적지가 진짜 라우트인지는 라우팅 테스트의 몫이고, 여기서는 href만 본다.
+ */
+function render(ui: ReactElement) {
+  return renderInDom(<MemoryRouter>{ui}</MemoryRouter>)
+}
 
 vi.mock('../api/client', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api/client')>()),
@@ -43,6 +55,39 @@ describe('검수 피드백 폼', () => {
       screen.getByRole('group', { name: '이 결과를 실제로 배포할 수 있나요?' }),
     ).toBeInTheDocument()
     expect(screen.getByRole('group', { name: '품질 만족도' })).toBeInTheDocument()
+  })
+
+  /*
+    라디오 묶음의 오류는 «보인다»로 끝나지 않는다. `fieldset` 의 역할은 `group` 이고
+    ARIA 1.2 의 `group` 은 `aria-invalid` 를 지원 속성으로 두지 않아, 그것만 붙어 있던
+    동안 낭독기 사용자는 어느 묶음이 왜 거절됐는지 들을 수 없었다. `aria-describedby`
+    로 이어 둔 관계를 여기서 고정한다 — 되돌리면 이 테스트가 먼저 깨진다.
+  */
+  it('고르지 않은 라디오 묶음의 오류가 묶음에 프로그램적으로 연결된다', async () => {
+    const user = userEvent.setup()
+    render(<ReviewFeedback conversionId="c1" />)
+
+    await user.click(screen.getByRole('button', { name: '의견 보내기' }))
+
+    for (const [name, message] of [
+      ['이 결과를 실제로 배포할 수 있나요?', '배포 의향을 골라 주세요.'],
+      ['품질 만족도', '품질 만족도를 골라 주세요.'],
+    ]) {
+      const group = screen.getByRole('group', { name })
+      const described = (group.getAttribute('aria-describedby') ?? '').split(/\s+/).filter(Boolean)
+      expect(described.length).toBeGreaterThan(0)
+      const texts = described.map((id) => document.getElementById(id)?.textContent ?? '')
+      expect(texts.join(' ')).toContain(message)
+    }
+  })
+
+  it('품질 만족도 눈금 설명은 오류 전에도 묶음에 연결돼 있다', () => {
+    render(<ReviewFeedback conversionId="c1" />)
+
+    const group = screen.getByRole('group', { name: '품질 만족도' })
+    const described = (group.getAttribute('aria-describedby') ?? '').split(/\s+/).filter(Boolean)
+    const texts = described.map((id) => document.getElementById(id)?.textContent ?? '')
+    expect(texts.join(' ')).toContain('1점은 전혀 만족스럽지 않음')
   })
 
   it('문서 내용을 적지 말라는 안내를 조건 없이 보여준다', () => {
@@ -124,6 +169,58 @@ describe('검수 피드백 폼', () => {
     await user.click(screen.getByRole('button', { name: '의견 보내기' }))
 
     expect(await screen.findByRole('status')).toHaveTextContent('의견을 보냈습니다. 감사합니다.')
+  })
+
+  /*
+    보낸 뒤 화면이 그대로면 사용자는 "저장이 안 됐나"로 읽는다. 폼은 자기가 아는 사실
+    하나 — 서버가 정한 저장 시각 — 을 위로 올리고, 그것을 어떻게 보여줄지는 검수 화면이
+    정한다. 시각을 화면에서 지어내지 않는 것이 요점이다.
+  */
+  it('보내고 나면 서버가 정한 저장 시각을 위로 올린다', async () => {
+    const user = userEvent.setup()
+    vi.mocked(saveFeedback).mockResolvedValue(saved({ submitted_at: '2026-08-27T02:00:00Z' }))
+    const onSubmitted = vi.fn()
+    render(<ReviewFeedback conversionId="c1" onSubmitted={onSubmitted} />)
+
+    await fillRequired(user)
+    await user.click(screen.getByRole('button', { name: '의견 보내기' }))
+
+    await screen.findByRole('status')
+    expect(onSubmitted).toHaveBeenCalledWith('2026-08-27T02:00:00Z')
+  })
+
+  /*
+    화면을 대신 넘기지 않는다 — 방금 무엇이 저장됐는지 확인할 틈을 뺏는다. 대신 다음
+    걸음 하나를 성공 안내 옆에 둔다.
+  */
+  it('보내고 나면 변환 기록으로 돌아가는 길을 함께 준다', async () => {
+    const user = userEvent.setup()
+    vi.mocked(saveFeedback).mockResolvedValue(saved())
+    render(<ReviewFeedback conversionId="c1" />)
+
+    expect(screen.queryByRole('link', { name: '변환 기록으로 돌아가기' })).not.toBeInTheDocument()
+
+    await fillRequired(user)
+    await user.click(screen.getByRole('button', { name: '의견 보내기' }))
+
+    expect(await screen.findByRole('link', { name: '변환 기록으로 돌아가기' })).toHaveAttribute(
+      'href',
+      '/history',
+    )
+  })
+
+  it('보내지 못하면 돌아가는 길을 내놓지 않는다', async () => {
+    const user = userEvent.setup()
+    vi.mocked(saveFeedback).mockRejectedValue(new ApiError(500, '잠시 후 다시 시도해 주세요'))
+    const onSubmitted = vi.fn()
+    render(<ReviewFeedback conversionId="c1" onSubmitted={onSubmitted} />)
+
+    await fillRequired(user)
+    await user.click(screen.getByRole('button', { name: '의견 보내기' }))
+
+    await screen.findByRole('alert')
+    expect(onSubmitted).not.toHaveBeenCalled()
+    expect(screen.queryByRole('link', { name: '변환 기록으로 돌아가기' })).not.toBeInTheDocument()
   })
 
   it('서버가 거절하면 그 사유를 보여준다', async () => {

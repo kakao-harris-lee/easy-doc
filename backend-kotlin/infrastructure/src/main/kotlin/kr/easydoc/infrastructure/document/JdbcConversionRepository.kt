@@ -9,6 +9,7 @@ import kr.easydoc.application.document.StoredExport
 import kr.easydoc.core.crypto.EncryptedContent
 import kr.easydoc.core.document.Conversion
 import kr.easydoc.core.document.ConversionStatus
+import kr.easydoc.core.document.SourceFormat
 import kr.easydoc.core.exceptions.StorageException
 import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.jdbc.core.simple.JdbcClient
@@ -159,7 +160,14 @@ class JdbcConversionRepository(private val jdbc: JdbcClient) : ConversionReposit
         /** 저장소가 만든 고정 문자열. 계약 `InternalError` 의 `storage` 갈래다. */
         const val STORAGE_FAILURE_MESSAGE = "요청을 처리하지 못했습니다"
 
-        /** 검수 저장이 잠그는 질의. `OF c` 로 **변환 행만** 잠근다. */
+        /**
+         * 검수 저장이 잠그는 질의. `OF c` 로 **변환 행만** 잠근다.
+         *
+         * **보존 기간 술어가 소유 술어와 같은 자리에 있다** — 만료된 문서의 변환은 여기서
+         * 「없음」이 되고, 유스케이스가 그것을 404 로 옮긴다. 쓰기 경로라 특히 중요하다:
+         * 파기 대상 문서에 새 검수본을 쓰게 두면 **다음 배치가 방금 쓴 내용을 지운다.**
+         * 사유와 여집합 관계는 [FIND_OWNED_SQL] 에 적었다.
+         */
         val LOCK_OWNED_FOR_REVIEW_SQL =
             """
             SELECT c.id, c.status, c.easy_text_encrypted, c.masked_items_encrypted, c.edited_text_encrypted,
@@ -167,6 +175,7 @@ class JdbcConversionRepository(private val jdbc: JdbcClient) : ConversionReposit
             FROM conversions c
             JOIN documents d ON d.id = c.document_id
             WHERE c.id = :id AND d.user_id = :ownerId
+              AND d.retention_expires_at > now()
             FOR NO KEY UPDATE OF c
             """.trimIndent()
 
@@ -174,6 +183,13 @@ class JdbcConversionRepository(private val jdbc: JdbcClient) : ConversionReposit
          * 검수 저장 UPDATE. 봉투를 암호문과 **같은 문장에서** SET 한다. `WHERE` 의 상태·암호문
          * 조건은 잠금 아래에서 잉여로 보이지만, 잠금이 서지 않은 상태를 **0행으로** 드러내는
          * fail-closed 카나리다.
+         *
+         * **보존 기간 술어도 소유 술어와 같은 자리에 함께 든다** — 같은 규칙이다(소유 술어가
+         * 쓰기 문장 자신에도 걸리는 것과 같은 사유). 잠금 질의가 이미 걸렀으므로 이 조건이
+         * 여기서 거짓이 되는 일은 없다: PostgreSQL 의 `now()` 는 `transaction_timestamp()` 라
+         * **한 트랜잭션 안에서 고정**이고, 잠금과 이 UPDATE 는 같은 트랜잭션에 있다
+         * (`ConversionReviewService.save`). 그래서 이 술어는 거짓 0행(=500)을 만들지 않고
+         * 카나리로만 선다.
          */
         val SAVE_REVIEW_SQL =
             """
@@ -185,7 +201,10 @@ class JdbcConversionRepository(private val jdbc: JdbcClient) : ConversionReposit
                 key_version = :keyVersion,
                 reviewed_at = now()
             WHERE id = :id
-              AND document_id IN (SELECT id FROM documents WHERE user_id = :ownerId)
+              AND document_id IN (
+                  SELECT id FROM documents
+                  WHERE user_id = :ownerId AND retention_expires_at > now()
+              )
               AND status = :requiredStatus
               AND encryption_scheme = :expectedScheme
               AND key_version = :expectedKeyVersion
@@ -194,17 +213,54 @@ class JdbcConversionRepository(private val jdbc: JdbcClient) : ConversionReposit
               AND edited_text_encrypted IS NOT DISTINCT FROM CAST(:expectedEditedText AS bytea)
             """.trimIndent()
 
-        /** 조회 질의. **소유 술어가 조인 위에 있다.** */
+        /**
+         * 조회 질의. **소유 술어가 조인 위에 있다.**
+         *
+         * `has_stored_original` 은 `EXISTS` 로 묻는다 — 원본은 최대 10MB 인데 조회가 알아야
+         * 하는 것은 「있는가」 하나뿐이다. 조인으로 끌어오면 bytea 열이 결과 집합에 들어오고,
+         * `LEFT JOIN` 으로 열 하나만 골라도 계획이 그 행을 집으러 간다. `EXISTS` 는
+         * `document_originals` 의 기본 키를 한 번 찍고 끝난다(`V3__document_originals.sql`
+         * 이 인덱스를 따로 두지 않은 사유와 같은 자리).
+         *
+         * 피드백은 **왼쪽 조인**이다 — 의견을 내지 않은 변환이 훨씬 많고, 그때 행이 사라지면
+         * 조회가 404 가 된다. 봉인된 자유 의견 열은 **고르지 않는다**: 계약이 내보내는 것은
+         * `submitted_at` 하나뿐이라 여기서 암호문을 끌어올 이유가 없다.
+         * `f.user_id = d.user_id` 는 잉여로 보이지만 fail-closed 다 — 피드백 행의 제출자와
+         * 문서 소유자가 갈린 행은 「없음」으로 접고, 그 시각이 남의 제출 사실을 드러내는
+         * 경로가 되지 않게 한다.
+         *
+         * **보존 기간 술어가 소유 술어와 같은 자리에 있다.** `d.retention_expires_at > now()` 는
+         * `JdbcExpiredDocumentPurge` 의 `retention_expires_at <= now()` 와 **정확한 여집합**이다
+         * (`JdbcDocumentRepository.findOwnedSource` 와 같은 형태). 파기는 매일 03:00 배치 한
+         * 번이라(`RetentionPurgeScheduler`) 만료와 파기 사이의 창이 **최대 24시간**이고, 이
+         * 응답은 그 창에서 `masked_items[].original` 로 **가려졌던 실제 주민등록번호·카드번호를
+         * 평문으로** 돌려준다(계약 `MaskedItemResponse`). 노출 크기는 원문 조회보다 작아도
+         * **범주는 같다.**
+         *
+         * 이 질의를 조회와 내보내기가 **함께 쓴다** — 그래서 두 오퍼레이션이 한 술어로 닫힌다.
+         * 만료가 「없음」·「타인」과 같은 갈래로 접히는 것도 의도다(존재 은폐).
+         *
+         * **목록(`JdbcDocumentRepository.listSql`)에는 걸지 않는다.** 사용자 결정이다 —
+         * 목록은 제목만 싣고, 문서가 파기됐다는 사실을 사용자가 알아차리는 자리가 목록이다.
+         * 거기서까지 소리 없이 사라지면 사용자는 이유를 알 수 없다
+         * (`docs/kotlin-redevelopment-backlog.md` §1.1).
+         */
         val FIND_OWNED_SQL =
             """
-            SELECT c.id, d.id AS document_id, d.title, c.status,
+            SELECT c.id, d.id AS document_id, d.title, d.source_format, c.status,
+                   EXISTS (
+                       SELECT 1 FROM document_originals o WHERE o.document_id = d.id
+                   ) AS has_stored_original,
                    c.easy_text_encrypted, c.masked_items_encrypted, c.edited_text_encrypted,
                    c.encryption_scheme, c.key_version,
-                   c.reviewed_at, c.missing_placeholders,
+                   c.reviewed_at, f.submitted_at AS feedback_submitted_at, c.missing_placeholders,
                    c.model, c.provider_name, c.input_tokens, c.output_tokens, c.failure_code
             FROM conversions c
             JOIN documents d ON d.id = c.document_id
+            LEFT JOIN conversion_feedback f
+                   ON f.conversion_id = c.id AND f.user_id = d.user_id
             WHERE c.id = :id AND d.user_id = :ownerId
+              AND d.retention_expires_at > now()
             """.trimIndent()
 
         val INSERT_PENDING_SQL =
@@ -241,6 +297,8 @@ private object ConversionRows {
             id = rs.getObject("id", UUID::class.java),
             documentId = rs.getObject("document_id", UUID::class.java),
             status = ConversionStatus.ofWireName(rs.getString("status")),
+            sourceFormat = SourceFormat.ofWireName(rs.getString("source_format")),
+            hasStoredOriginal = rs.getBoolean("has_stored_original"),
             ciphertexts =
                 ConversionCiphertexts(
                     easyText = sealedOrNull(rs, "easy_text_encrypted", scheme, keyVersion),
@@ -248,6 +306,7 @@ private object ConversionRows {
                     editedText = sealedOrNull(rs, "edited_text_encrypted", scheme, keyVersion),
                 ),
             reviewedAt = rs.getObject("reviewed_at", OffsetDateTime::class.java)?.toInstant(),
+            feedbackSubmittedAt = rs.getObject("feedback_submitted_at", OffsetDateTime::class.java)?.toInstant(),
             missingPlaceholders = placeholderLabels(rs.getString("missing_placeholders")),
             model = rs.getString("model"),
             providerName = rs.getString("provider_name"),

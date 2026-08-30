@@ -65,7 +65,13 @@ class ConversionReviewStorageTest {
         cipher = cipherWith(WRITE_GENERATION)
         service =
             DocumentService(
-                storage = DocumentStorage(JdbcDocumentRepository(jdbc), conversions, JdbcConversionQueue(jdbc)),
+                storage =
+                    DocumentStorage(
+                        JdbcDocumentRepository(jdbc),
+                        JdbcDocumentOriginalRepository(jdbc),
+                        conversions,
+                        JdbcConversionQueue(jdbc),
+                    ),
                 workspaces = JdbcWorkspaceLookup(jdbc),
                 cipher = cipher,
                 extractor = { _, _ -> error("이 테스트는 파일 경로를 쓰지 않는다") },

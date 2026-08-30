@@ -4,7 +4,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { fetchMe, login } from '../api/auth'
-import { ApiError } from '../api/client'
+import { ApiError, listDocuments } from '../api/client'
 import { AuthProvider } from '../auth/AuthProvider'
 import { AppLayout } from '../components/AppLayout'
 import { workspaceContext } from '../test/factories'
@@ -15,6 +15,15 @@ vi.mock('../api/auth', () => ({
   login: vi.fn(),
   signup: vi.fn(),
   fetchMe: vi.fn(),
+}))
+
+// 로그인에 성공하면 홈(업로드 화면)이 뜨고, 그 화면은 「다음 할 일」 근거로 문서를
+// 조회한다(§7). 모킹하지 않으면 진짜 요청이 나가 이 가짜 토큰에 401이 돌아오고, API
+// 클라이언트가 그 401에 토큰을 지워 "토큰을 저장한다"는 단언이 무너진다. ApiError는
+// 아래 테스트가 실제 클래스로 쓰므로 부분 모킹으로 원본을 남긴다.
+vi.mock('../api/client', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../api/client')>()),
+  listDocuments: vi.fn(),
 }))
 
 function renderAt(path: string) {
@@ -37,6 +46,7 @@ beforeEach(() => {
   window.localStorage.clear()
   vi.mocked(login).mockReset()
   vi.mocked(fetchMe).mockReset()
+  vi.mocked(listDocuments).mockResolvedValue({ items: [], limit: 20, offset: 0, has_more: false })
 })
 
 afterEach(() => {

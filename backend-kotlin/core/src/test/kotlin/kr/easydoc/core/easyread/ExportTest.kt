@@ -15,11 +15,11 @@ class ExportTest {
     inner class Filename {
         @ParameterizedTest(name = "{0} -> {1}")
         @CsvSource(
-            "'기초연금 신청 안내', '기초연금 신청 안내.txt'",
-            "'../etc/passwd', 'etc passwd.txt'",
-            "'보고서 \"최종\"', '보고서 최종.txt'",
-            "'...보고서...', '보고서.txt'",
-            "'a:b*c?d<e>f|g', 'a b c d e f g.txt'",
+            "'기초연금 신청 안내', '기초연금 신청 안내-쉬운글.txt'",
+            "'../etc/passwd', 'etc passwd-쉬운글.txt'",
+            "'보고서 \"최종\"', '보고서 최종-쉬운글.txt'",
+            "'...보고서...', '보고서-쉬운글.txt'",
+            "'a:b*c?d<e>f|g', 'a b c d e f g-쉬운글.txt'",
         )
         @DisplayName("경로 구분자·따옴표·예약 문자를 공백으로 바꾸고 공백을 접는다")
         fun `금지 문자를 걷어낸다`(
@@ -32,14 +32,24 @@ class ExportTest {
         @Test
         @DisplayName("금지 문자는 지우지 않고 공백으로 바꾼다 — 지우면 낱말이 붙는다")
         fun `낱말을 붙이지 않는다`() {
-            assertThat(exportFilename("가/나", ExportFormat.TXT)).isEqualTo("가 나.txt")
+            assertThat(exportFilename("가/나", ExportFormat.TXT)).isEqualTo("가 나-쉬운글.txt")
         }
 
         @ParameterizedTest(name = "{0}")
         @ValueSource(strings = ["///", "   ", "...", "\u0000\u001F"])
-        @DisplayName("제목이 통째로 지워지면 기본 이름을 쓴다")
+        @DisplayName("제목이 통째로 지워지면 기본 이름을 쓴다 — 여기에는 `-쉬운글` 을 겹쳐 붙이지 않는다")
         fun `빈 제목은 기본 이름이다`(title: String) {
-            assertThat(exportFilename(title, ExportFormat.TXT)).isEqualTo("쉬운 글.txt")
+            assertThat(exportFilename(title, ExportFormat.TXT))
+                .describedAs("원본 제목에서 나온 이름이 아니라 구분할 원본 파일명이 없다 — `쉬운 글-쉬운글` 은 겹말이다")
+                .isEqualTo("쉬운 글.txt")
+        }
+
+        @Test
+        @DisplayName("**원본과 구분하는 `-쉬운글` 표식이 붙는다** — `DESIGN.md` §6.5")
+        fun `원본과 구분하는 표식이 붙는다`() {
+            assertThat(exportFilename("청년월세안내", ExportFormat.DOCX))
+                .describedAs("원본 서식을 유지해 내보내면 형식도 이름도 원본과 닮는다 — 표식이 없으면 둘을 가릴 수 없다")
+                .isEqualTo("청년월세안내-쉬운글.docx")
         }
 
         @Test
@@ -47,22 +57,25 @@ class ExportTest {
         fun `상한을 문자 수로 센다`() {
             val stem = exportFilename("가".repeat(200), ExportFormat.TXT).removeSuffix(".txt")
 
-            assertThat(stem).hasSize(80)
+            assertThat(stem)
+                .describedAs("상한은 표식을 **포함한** 길이다 — 제목 몫으로만 읽으면 이름이 표식만큼 길어진다")
+                .hasSize(80)
+            assertThat(stem).endsWith("-쉬운글")
         }
 
         @Test
-        @DisplayName("자른 자리에 점이 남으면 한 번 더 깎는다")
+        @DisplayName("자른 자리에 점이 남으면 한 번 더 깎는다 — 표식은 그 **뒤에** 붙어 잘리지 않는다")
         fun `자른 뒤에도 점을 남기지 않는다`() {
-            val stem = exportFilename("가".repeat(79) + "." + "나".repeat(10), ExportFormat.TXT)
+            val stem = exportFilename("가".repeat(76) + "." + "나".repeat(10), ExportFormat.TXT)
 
-            assertThat(stem).isEqualTo("가".repeat(79) + ".txt")
+            assertThat(stem).isEqualTo("가".repeat(76) + "-쉬운글.txt")
         }
 
         @Test
         @DisplayName("형식이 확장자를 정한다")
         fun `형식별 확장자를 붙인다`() {
-            assertThat(exportFilename("보고서", ExportFormat.DOCX)).isEqualTo("보고서.docx")
-            assertThat(exportFilename("보고서", ExportFormat.HWPX)).isEqualTo("보고서.hwpx")
+            assertThat(exportFilename("보고서", ExportFormat.DOCX)).isEqualTo("보고서-쉬운글.docx")
+            assertThat(exportFilename("보고서", ExportFormat.HWPX)).isEqualTo("보고서-쉬운글.hwpx")
         }
 
         @Test
@@ -163,7 +176,7 @@ class ExportTest {
             val file = renderTxt("제목입니다", "본문입니다")
 
             assertThat(String(file.content, Charsets.UTF_8)).isEqualTo("본문입니다")
-            assertThat(file.filename).isEqualTo("제목입니다.txt")
+            assertThat(file.filename).isEqualTo("제목입니다-쉬운글.txt")
         }
 
         @Test
@@ -177,8 +190,8 @@ class ExportTest {
         @Test
         @DisplayName("제목의 제어문자는 **지워진다** — 파일명 정제만 거칠 때와 다르다")
         fun `제목도 정규화한다`() {
-            assertThat(renderTxt("제\u0000목", "본문").filename).isEqualTo("제목.txt")
-            assertThat(exportFilename("제\u0000목", ExportFormat.TXT)).isEqualTo("제 목.txt")
+            assertThat(renderTxt("제\u0000목", "본문").filename).isEqualTo("제목-쉬운글.txt")
+            assertThat(exportFilename("제\u0000목", ExportFormat.TXT)).isEqualTo("제 목-쉬운글.txt")
         }
 
         @Test

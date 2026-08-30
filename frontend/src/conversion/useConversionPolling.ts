@@ -31,6 +31,14 @@ export interface ConversionPolling {
   error: string | null
   /** 상한까지 기다렸는데 끝나지 않았다. */
   timedOut: boolean
+  /**
+   * 서버가 **404**로 답했다. 기다려서 해결되지 않는 **끝난 상태**다.
+   *
+   * 계약은 없는 변환·남의 변환·보관 기간이 지나 파기된 문서를 **모두 같은 404**로 답한다
+   * (존재를 숨기려는 의도적 선택). 그래서 이 값은 「파기됐다」가 아니라 「열 수 없다」까지만
+   * 뜻하고, 셋 중 무엇인지 화면이 단정하지 않는다.
+   */
+  missing: boolean
 }
 
 /**
@@ -47,7 +55,7 @@ interface PollState extends ConversionPolling {
 
 /** 아직 아무것도 읽지 않은 상태. */
 function emptyState(conversionId: string): PollState {
-  return { conversionId, conversion: null, error: null, timedOut: false }
+  return { conversionId, conversion: null, error: null, timedOut: false, missing: false }
 }
 
 /** 더 물어볼 필요가 없는 상태인지. */
@@ -82,7 +90,7 @@ export function useConversionPolling(conversionId: string): ConversionPolling {
           return
         }
         const timedOut = !isTerminal(next) && Date.now() >= deadline
-        setState({ conversionId, conversion: next, error: null, timedOut })
+        setState({ conversionId, conversion: next, error: null, timedOut, missing: false })
         if (isTerminal(next) || timedOut) {
           stop()
         }
@@ -90,8 +98,17 @@ export function useConversionPolling(conversionId: string): ConversionPolling {
         if (stopped || (caught instanceof DOMException && caught.name === 'AbortError')) {
           return
         }
-        // 조회가 한 번 실패해도 폴링은 이어간다 — 네트워크가 잠깐 끊긴 경우가 흔하고,
-        // 그때마다 사용자가 새로고침해야 한다면 진행 표시의 의미가 없다.
+        // 404만은 다르다. **일시적 실패가 아니라 끝난 상태**라 다시 물어봐야 같은 답이
+        // 온다 — 계속 물으면서 진행 표시를 남겨 두면 화면은 「기다리면 된다」고 말하는데
+        // 실제로는 영영 오지 않는다. 사용자가 자기 목록에서 보관 기간이 지난 문서를 눌러
+        // 여기에 닿는 경로가 정상 흐름이므로(서버가 그 조회를 404로 닫았다) 흔한 길이다.
+        if (caught instanceof ApiError && caught.status === 404) {
+          setState({ ...emptyState(conversionId), missing: true })
+          stop()
+          return
+        }
+        // 그 밖의 실패는 폴링을 이어간다 — 네트워크가 잠깐 끊긴 경우가 흔하고, 그때마다
+        // 사용자가 새로고침해야 한다면 진행 표시의 의미가 없다.
         const message =
           caught instanceof ApiError
             ? caught.message

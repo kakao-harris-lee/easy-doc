@@ -38,29 +38,59 @@
   --radius-md: 10px;
   --radius-lg: 12px;
   --radius-xl: 16px;
+  /* DESIGN.md §8.3: 카드 그림자는 `0 8px 28px rgba(35, 31, 70, 0.06)` 이하로 제한한다.
+     Tailwind 기본 그림자는 검정 기반이라 새 캔버스(#F7F7FB) 위에서 회색 때처럼 보인다.
+     그림자 색을 브랜드 잉크(35,31,70)로 바꾸고, lg 이상 단계도 상한을 넘지 않게 눌러
+     `shadow-lg`/`shadow-xl` 를 쓰더라도 §8.3 을 위반할 수 없게 한다. */
+  --shadow-2xs: 0 1px 1px rgba(35, 31, 70, 0.03);
+  --shadow-xs: 0 1px 2px rgba(35, 31, 70, 0.04);
+  --shadow-sm: 0 1px 2px rgba(35, 31, 70, 0.05);
+  --shadow-md: 0 4px 14px rgba(35, 31, 70, 0.05);
+  --shadow-lg: 0 8px 28px rgba(35, 31, 70, 0.06);
+  --shadow-xl: 0 8px 28px rgba(35, 31, 70, 0.06);
+  --shadow-2xl: 0 8px 28px rgba(35, 31, 70, 0.06);
+  /* 상한 자체를 이름으로 부를 때 쓴다: `shadow-card`. */
+  --shadow-card: 0 8px 28px rgba(35, 31, 70, 0.06);
   --font-sans: var(--font-pretendard);
 }
 
 :root {
   color-scheme: light;
-  --background: #f5f5f5;
-  --foreground: #242424;
+  /* DESIGN.md §8.1 색상 토큰. 여기가 정본이고
+     `FluentThemeProvider` 의 BrandVariants 램프는 이 값에서 파생된 것이다. */
+  --background: #f7f7fb;
+  --foreground: #202230;
   --card: #ffffff;
-  --card-foreground: #242424;
+  --card-foreground: #202230;
   --popover: #ffffff;
-  --popover-foreground: #242424;
-  --muted: #f0f0f0;
-  --muted-foreground: #616161;
-  --secondary: #f5f5f5;
-  --secondary-foreground: #242424;
-  --accent: #ebf3fc;
-  --accent-foreground: #0f548c;
-  --border: #d1d1d1;
-  --input: #b3b3b3;
-  --ring: #0f6cbd;
-  --primary: #0f6cbd;
+  --popover-foreground: #202230;
+  --muted: #f0f0f6;
+  --muted-foreground: #626577;
+  /* secondary 는 §8.1 에 없다. 예전에는 background 와 같은 값이었지만 새 캔버스는
+     카드와 거의 붙어 있어서 흰 버튼의 hover 가 보이지 않는다. 그래서 muted 와 같은
+     면으로 맞춰 「선택되지 않은 면」 하나로 통일한다. */
+  --secondary: #f0f0f6;
+  --secondary-foreground: #202230;
+  --accent: #efedff;
+  --accent-foreground: #342a7c;
+  --border: #dedee8;
+  /* --input 은 §8.1 표의 #C9C9D6 을 쓰지 않는다. 그 값은 카드(#ffffff) 대비 1.64:1,
+     캔버스(#f7f7fb) 대비 1.53:1 이라 WCAG 2.2 SC 1.4.11(비텍스트 명암비)이 컨트롤
+     경계에 요구하는 3:1 에 못 미친다. §11 이 WCAG 2.2 AA 를 최소 기준으로 두므로
+     §8.1 의 개별 값이 여기에 양보한다. #86899f 는 흰 카드 대비 3.45:1, 캔버스 대비
+     3.23:1 로 여유를 두고 넘긴다(드롭존이 bg-background 위에 있어 두 배경 모두 봐야
+     한다). 색상은 --muted-foreground(#626577)·--admin(#3f4257)과 같은 232° 근처의
+     푸른 중성이라 §8.1 의 보라/슬레이트 계열에서 튀지 않는다.
+     --border 와 값이 다른 것은 실수가 아니다. --border 는 표 구분선처럼 순수 장식
+     경계라 1.4.11 대상이 아니고, 어둡게 하면 §1 이 요구한 가벼운 캔버스가 깨진다.
+     --input 은 입력·드롭존·outline 버튼에서 컨트롤을 식별하는 유일한 시각 단서이므로
+     3:1 을 지켜야 한다. 표 값으로 되돌리지 말 것. */
+  --input: #86899f;
+  --ring: #5b4bc4;
+  --primary: #5b4bc4;
   --primary-foreground: #ffffff;
-  --primary-hover: #115ea3;
+  --primary-hover: #493ba5;
+  /* 성공·경고·위험은 DESIGN.md §8.1 지시대로 브랜드와 합치지 않고 값을 그대로 둔다. */
   --success: #197a48;
   --success-foreground: #ffffff;
   --success-surface: #e6f4ec;
@@ -70,12 +100,19 @@
   --danger: #b4231f;
   --danger-foreground: #ffffff;
   --danger-surface: #fbe9e8;
+  /* info 는 이전까지 브랜드와 같은 값(#0f6cbd)이라 「정보」가 아니라 「브랜드」로 읽혔다.
+     브랜드가 보라로 옮겨간 지금은 그 파랑을 그대로 두는 편이 오히려 의미가 살아난다.
+     다만 surface 를 옛 #ebf3fc 로 두면 새 --accent(#efedff)와 구별되지 않으므로
+     파랑 쪽으로 더 밀어 활성 메뉴(accent)와 정보 배지가 겹쳐 보이지 않게 한다. */
   --info: #0f6cbd;
   --info-foreground: #ffffff;
-  --info-surface: #ebf3fc;
-  --admin: #0f548c;
+  --info-surface: #e1effb;
+  /* admin 은 상태가 아니라 「관리자 범위」 표식이다. 브랜드 보라에 맞추면 일반 행동과,
+     info 파랑에 맞추면 정보 배지와 섞인다. 그래서 새 중성 계열의 짙은 슬레이트로 빼
+     둘 중 어느 쪽으로도 오해되지 않게 한다. */
+  --admin: #3f4257;
   --admin-foreground: #ffffff;
-  --admin-surface: #ebf3fc;
+  --admin-surface: #ececf2;
   --font-pretendard:
     'Pretendard', 'Pretendard Variable', -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo',
     'Malgun Gothic', 'Segoe UI', system-ui, sans-serif;
@@ -97,7 +134,9 @@
   :focus-visible {
     outline: 3px solid var(--ring);
     outline-offset: 2px;
-    border-radius: 4px;
+    /* 포커스 링은 대부분 입력·버튼에 걸린다. §8.3 의 컨트롤 모서리(10px)와 맞춰
+       링만 각져 보이지 않게 한다. */
+    border-radius: var(--radius-md);
   }
   ::selection {
     background: var(--accent);
@@ -107,7 +146,8 @@
 
 @layer components {
   .skip-link {
-    @apply fixed -left-[9999px] top-2 z-50 rounded-lg bg-primary px-4 py-2 font-bold text-white;
+    /* 버튼이므로 §8.3 의 10px 을 따른다 (이 파일의 다른 버튼과 같은 값). */
+    @apply fixed -left-[9999px] top-2 z-50 inline-flex min-h-11 items-center rounded-[10px] bg-primary px-4 py-2 font-bold text-white;
   }
   .skip-link:focus {
     @apply left-2;

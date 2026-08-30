@@ -14,7 +14,10 @@ import kr.easydoc.application.document.DocumentStorage
 import kr.easydoc.application.document.EnvelopeRotation
 import kr.easydoc.application.document.FeedbackSubmission
 import kr.easydoc.application.document.LockedFeedbackComment
+import kr.easydoc.application.document.OriginalReflection
 import kr.easydoc.application.document.RotationOutcome
+import kr.easydoc.application.document.SealedStores
+import kr.easydoc.application.document.StoredOriginalReader
 import kr.easydoc.core.crypto.EncryptedContent
 import kr.easydoc.core.crypto.EncryptedField
 import kr.easydoc.core.crypto.EncryptionScheme
@@ -29,6 +32,7 @@ import kr.easydoc.infrastructure.auth.JdbcUserRepository
 import kr.easydoc.infrastructure.auth.JdbcWorkspaceRepository
 import kr.easydoc.infrastructure.crypto.AesGcmContentCipher
 import kr.easydoc.infrastructure.db.SpringTransactionRunner
+import kr.easydoc.infrastructure.export.PackagedOriginalReflector
 import kr.easydoc.infrastructure.queue.JdbcConversionQueue
 import org.assertj.core.api.Assertions.assertThat
 import org.flywaydb.core.Flyway
@@ -273,9 +277,13 @@ class EnvelopeRotationConcurrencyTest {
         val dataSource = dataSource()
         val client = JdbcClient.create(dataSource)
         return EnvelopeRotation(
-            documents = HookedDocuments(JdbcDocumentRepository(client), documentHook),
-            conversions = HookedConversions(JdbcConversionRepository(client), conversionHook),
-            feedback = HookedFeedback(JdbcConversionFeedbackRepository(client), feedbackHook),
+            stores =
+                SealedStores(
+                    documents = HookedDocuments(JdbcDocumentRepository(client), documentHook),
+                    originals = JdbcDocumentOriginalRepository(client),
+                    conversions = HookedConversions(JdbcConversionRepository(client), conversionHook),
+                    feedback = HookedFeedback(JdbcConversionFeedbackRepository(client), feedbackHook),
+                ),
             cipher = cipherWith(NEW_GENERATION),
             transaction =
                 transaction
@@ -289,6 +297,7 @@ class EnvelopeRotationConcurrencyTest {
             storage =
                 DocumentStorage(
                     documents = JdbcDocumentRepository(client),
+                    originals = JdbcDocumentOriginalRepository(client),
                     conversions = JdbcConversionRepository(client),
                     queue = JdbcConversionQueue(client),
                 ),
@@ -343,6 +352,11 @@ class EnvelopeRotationConcurrencyTest {
                     conversions = conversions,
                     cipher = writer,
                     maskedItems = MaskedItemCodec(),
+                    original =
+                        OriginalReflection(
+                            StoredOriginalReader(JdbcDocumentOriginalRepository(client), writer),
+                            PackagedOriginalReflector(),
+                        ),
                     transaction = runner,
                 ),
             transaction = runner,
@@ -387,6 +401,11 @@ class EnvelopeRotationConcurrencyTest {
                     conversions = JdbcConversionRepository(client),
                     cipher = writer,
                     maskedItems = MaskedItemCodec(),
+                    original =
+                        OriginalReflection(
+                            StoredOriginalReader(JdbcDocumentOriginalRepository(client), writer),
+                            PackagedOriginalReflector(),
+                        ),
                     transaction = runner,
                 ),
             transaction = runner,

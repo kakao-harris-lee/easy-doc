@@ -320,17 +320,37 @@ class EnvelopeColumnWriteGuardTest {
                 "api/src/test/kotlin/kr/easydoc/api/ConversionFeedbackReachTest.kt",
                 "api/src/test/kotlin/kr/easydoc/api/ConversionReadReachTest.kt",
                 "api/src/test/kotlin/kr/easydoc/api/ConversionReviewReachTest.kt",
+                // 보존 만료 창의 실경로 테스트도 완료 상태를 SQL 로 심는다 — 그 문장이 봉투를
+                // 함께 쓴다(`MARK_DONE_SQL`). 만료된 변환이 조회·내보내기·검수 저장에서
+                // 404 인지를 재려면 먼저 「내줄 것이 실재하는」 행을 세워야 한다.
+                "api/src/test/kotlin/kr/easydoc/api/RetentionReadGuardReachTest.kt",
                 // 피드백 의견의 회전 UPDATE. 봉인 열이 하나라 문장도 하나다.
                 "infrastructure/src/main/kotlin/kr/easydoc/infrastructure/document/" +
                     "JdbcConversionFeedbackRepository.kt",
                 "infrastructure/src/main/kotlin/kr/easydoc/infrastructure/document/JdbcConversionRepository.kt",
                 "infrastructure/src/main/kotlin/kr/easydoc/infrastructure/document/JdbcConversionWorkStore.kt",
+                // 업로드 원본의 회전 UPDATE (V3). 봉인 열이 하나라 문장도 하나다 — 저장 쪽은
+                // INSERT 라 SET 절이 없어 이 조사에 잡히지 않는다.
+                "infrastructure/src/main/kotlin/kr/easydoc/infrastructure/document/" +
+                    "JdbcDocumentOriginalRepository.kt",
                 "infrastructure/src/main/kotlin/kr/easydoc/infrastructure/document/JdbcDocumentRepository.kt",
                 "infrastructure/src/test/kotlin/kr/easydoc/infrastructure/document/ConversionReviewStorageTest.kt",
                 "infrastructure/src/test/kotlin/kr/easydoc/infrastructure/document/EnvelopeRotationConcurrencyTest.kt",
             )
 
-        /** 문장 수. 파일 목록만 보면 같은 파일 안에 한 문장을 더 넣는 편집이 조용하다. */
-        const val EXPECTED_STATEMENTS = 13
+        /**
+         * 문장 수. 파일 목록만 보면 같은 파일 안에 한 문장을 더 넣는 편집이 조용하다.
+         *
+         * 14 → 16: §6.5 원본 서식 보존이 「저장된 원본을 열 수 없다」 갈래를 실측하면서
+         * **두 파일이 각각** 저장된 원본 바이트를 열리지 않는 값으로 갈아 끼우는 UPDATE 를
+         * 들였다(`BREAK_ORIGINAL_SQL`) — `ConversionReadReachTest` 는 그 갈래의 조회 판정이
+         * `failed` 임을, `ConversionExportReachTest` 는 같은 갈래의 내려받기가 500 이지
+         * 텍스트 대체본이 아님을 잰다. 두 문장 모두 봉투 두 값을 함께 SET 한다.
+         *
+         * 16 → 17: 보존 만료 창을 재는 `RetentionReadGuardReachTest` 의 `MARK_DONE_SQL` 이다.
+         * 만료 뒤 404 를 재려면 만료 **전에** 내줄 것이 실재해야 하므로, 결과 열과 봉투를
+         * 함께 채우는 문장 하나가 그 파일에 선다.
+         */
+        const val EXPECTED_STATEMENTS = 17
     }
 }
