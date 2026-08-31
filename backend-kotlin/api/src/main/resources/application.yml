@@ -98,6 +98,10 @@ easydoc:
     effort: ${EASYDOC_LLM_EFFORT:}
     anthropic-api-key: ${ANTHROPIC_API_KEY:}
     open-ai-api-key: ${OPENAI_API_KEY:}
+    # 출력 토큰 상한. 운영 중 조정될 수 있는 값이라 코드 상수가 아니라 구성값이다
+    # (CLAUDE.md 「상수와 구성 관리」). 기본값 16000 은 core `DEFAULT_MAX_TOKENS` 와
+    # 같은 값을 미설정 시에도 유지하기 위한 것이고, 실제 출처는 이 환경변수 하나다.
+    max-output-tokens: ${EASYDOC_LLM_MAX_OUTPUT_TOKENS:16000}
     pricing:
       input-usd-per-million-tokens: ${EASYDOC_LLM_INPUT_USD_PER_MILLION_TOKENS:}
       output-usd-per-million-tokens: ${EASYDOC_LLM_OUTPUT_USD_PER_MILLION_TOKENS:}

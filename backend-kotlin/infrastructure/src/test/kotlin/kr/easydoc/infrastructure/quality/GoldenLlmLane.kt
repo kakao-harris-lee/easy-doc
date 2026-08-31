@@ -1,6 +1,7 @@
 package kr.easydoc.infrastructure.quality
 
 import kr.easydoc.core.exceptions.ConfigurationException
+import kr.easydoc.core.llm.LlmOptions
 import kr.easydoc.core.llm.LlmProvider
 import kr.easydoc.core.quality.JudgeLane
 import kr.easydoc.core.quality.JudgeLaneDecision
@@ -34,6 +35,13 @@ internal object GoldenLlmLane {
     const val ANTHROPIC_KEY_ENV: String = "ANTHROPIC_API_KEY"
 
     const val OPENAI_KEY_ENV: String = "OPENAI_API_KEY"
+
+    /**
+     * 제품 `application.yml` 과 같은 이름이다(`easydoc.llm.max-output-tokens`). 게이트 ⓪
+     * 측정 목적이 상한을 구성으로 바꿔 가며 장문을 재는 것이라, 이 값을 무시하면 레인이
+     * 제품과 다른 조건([GoldenLlmLane] 최상단 KDoc — provider 사고와 같은 계열)을 재게 된다.
+     */
+    const val MAX_OUTPUT_TOKENS_ENV: String = "EASYDOC_LLM_MAX_OUTPUT_TOKENS"
 
     /**
      * [PROVIDER_ENV] 미설정 시 기본값.
@@ -104,15 +112,28 @@ internal object GoldenLlmLane {
      *
      * `MockEnvironment` 에는 프로필을 넣지 않는다. 이 자리에서 필요한 것은 fake 허용 판정뿐이고
      * fake 는 이미 위에서 거부했다.
+     *
+     * 제품 조립([LlmProviderConfiguration.llmProvider])은 `properties.maxOutputTokens` 를
+     * 읽지 않는다(그 필드는 `ConversionWorkerConfiguration` 이 조립 시점에 쓴다). 그래서 여기서
+     * 같은 값으로 [LlmOptions] 를 만들어 함께 반환한다 — 해석 자체는 [properties] 하나뿐이고
+     * provider 조립과 옵션 조립이 **같은 [LlmProperties] 인스턴스**에서 갈라질 뿐이다.
      */
     private fun assemble(
         providerName: String,
         env: (String) -> String?,
     ): LanePlan =
         try {
-            LanePlan.Ready(LlmProviderConfiguration().llmProvider(properties(providerName, env), MockEnvironment()))
+            val props = properties(providerName, env)
+            LanePlan.Ready(
+                provider = LlmProviderConfiguration().llmProvider(props, MockEnvironment()),
+                options = LlmOptions(maxTokens = props.maxOutputTokens),
+            )
         } catch (exc: ConfigurationException) {
             LanePlan.Unusable("제품 설정 규칙이 이 레인 설정을 거절했다: ${exc.message}")
+        } catch (exc: IllegalArgumentException) {
+            // maxOutputTokensOf 의 파싱 거절과 LlmOptions.init 의 0 이하 거절이 둘 다 여기로 온다 —
+            // 둘 다 "이 레인 설정으로는 조립할 수 없다" 는 같은 결이라 문구를 하나로 묶는다.
+            LanePlan.Unusable("이 레인 설정을 해석할 수 없다: ${exc.message}")
         }
 
     private fun properties(
@@ -125,9 +146,28 @@ internal object GoldenLlmLane {
             effort = env(EFFORT_ENV),
             anthropicApiKey = secretOf(env(ANTHROPIC_KEY_ENV)),
             openAiApiKey = secretOf(env(OPENAI_KEY_ENV)),
+            maxOutputTokens = maxOutputTokensOf(env),
             // 단가는 받지 않는다. 레인이 내는 값은 통과율과 실패 원인이고, 비용 추정은
             // 운영 관측(metrics decorator)의 몫이다. 여기서 받으면 파싱 실패 표면만 늘어난다.
         )
+
+    /**
+     * 미설정·빈 값은 [LlmProperties] 의 기본값(= core `DEFAULT_MAX_TOKENS`)으로 접는다 —
+     * 그 기본값을 여기 다시 적으면 출처가 둘이 된다.
+     *
+     * **값이 있는데 정수가 아니면 기본값으로 접지 않는다.** 조용히 접으면 운영자가
+     * `EASYDOC_LLM_MAX_OUTPUT_TOKENS=32k` 처럼 잘못 넣었을 때 레인이 그것을 모르고 다른
+     * 조건으로 측정한다 — 같은 값에서 제품(Spring 바인딩)은 기동을 거부하므로 레인과 제품의
+     * 행동이 갈린다. 다른 필드가 잘못됐을 때(`missingSecret`·제품 조립 거절)와 같은 결로
+     * [IllegalArgumentException] 을 던져 [assemble] 이 [LanePlan.Unusable] 로 접게 한다.
+     */
+    private fun maxOutputTokensOf(env: (String) -> String?): Int {
+        val raw = env(MAX_OUTPUT_TOKENS_ENV)?.takeIf(String::isNotBlank) ?: return LlmProperties().maxOutputTokens
+        return raw.toIntOrNull()
+            ?: throw IllegalArgumentException(
+                "$MAX_OUTPUT_TOKENS_ENV='$raw' 은 정수가 아니다",
+            )
+    }
 
     private fun secretOf(value: String?): Secret = value?.takeIf(String::isNotBlank)?.let(::Secret) ?: Secret.EMPTY
 
@@ -136,14 +176,22 @@ internal object GoldenLlmLane {
 
 /** 이 환경에서 레인을 돌릴 수 있는가. */
 internal sealed interface LanePlan {
-    /** 돌릴 수 있다. [provider] 는 제품이 조립한 것 그대로다. */
-    class Ready(val provider: LlmProvider) : LanePlan {
+    /**
+     * 돌릴 수 있다. [provider] 는 제품이 조립한 것 그대로다. [options] 는 실제 변환 호출에
+     * 실리는 [LlmOptions] — 출력 토큰 상한이 이 문서 채점에 어떤 조건이었는지는 채점 결과와
+     * 함께 남아야 하는 측정 조건이다(게이트 ⓪).
+     */
+    class Ready(
+        val provider: LlmProvider,
+        val options: LlmOptions,
+    ) : LanePlan {
         /**
          * **무엇으로 쟀는지** 한 줄. provider 자신의 `toString` 을 그대로 쓴다 — 어댑터가 실제로
          * 들고 있는 모델·effort 이고, 레인이 따로 적으면 또 두 벌이 된다. API 키는 [Secret] 이
-         * 막으므로 이 문자열에 실리지 않는다.
+         * 막으므로 이 문자열에 실리지 않는다. `max_tokens` 는 provider 의 상태가 아니라 호출
+         * 옵션이라 provider 의 `toString` 에 실리지 않으므로 여기서 따로 붙인다.
          */
-        val description: String get() = "provider=${provider.name} settings=$provider"
+        val description: String get() = "provider=${provider.name} settings=$provider max_tokens=${options.maxTokens}"
     }
 
     /** 비밀값이 없다. 건너뛴다. */

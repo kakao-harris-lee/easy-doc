@@ -1,6 +1,7 @@
 package kr.easydoc.infrastructure.llm
 
 import kr.easydoc.core.exceptions.ConfigurationException
+import kr.easydoc.core.llm.DEFAULT_MAX_TOKENS
 import kr.easydoc.core.llm.LlmProvider
 import kr.easydoc.core.security.Secret
 import org.springframework.boot.context.properties.ConfigurationProperties
@@ -24,6 +25,15 @@ data class LlmProperties(
     val anthropicApiKey: Secret = Secret.EMPTY,
     val openAiApiKey: Secret = Secret.EMPTY,
     val pricing: LlmPricingProperties = LlmPricingProperties(),
+    /**
+     * 출력 토큰 상한. 운영 중 조정될 수 있는 값이라 코드 상수가 아니라 구성값이다
+     * (CLAUDE.md 「상수와 구성 관리」). 기본값은 [DEFAULT_MAX_TOKENS] — 미설정 시
+     * 동작이 바뀌지 않도록 출처를 하나로 유지한다.
+     *
+     * 값의 양수 검증은 여기서 중복하지 않는다 — [kr.easydoc.core.llm.LlmOptions] 의
+     * `init` 이 조립 시점(`LlmOptions(maxTokens = ...)`)에 이미 거절한다.
+     */
+    val maxOutputTokens: Int = DEFAULT_MAX_TOKENS,
 )
 
 /** 모델 가격은 코드 상수가 아니라 배포 설정으로 받는다. */

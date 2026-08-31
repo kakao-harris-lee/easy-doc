@@ -21,6 +21,16 @@ import kr.easydoc.core.privacy.maskText
 class ConvertDocumentUseCase(
     private val provider: LlmProvider,
     private val documentIds: DocumentIdGenerator = SecureDocumentIds,
+    /**
+     * `convert` 호출에 명시 인자가 없을 때 쓰는 기본 옵션. composition root
+     * (`ConversionWorkerConfiguration`)가 `easydoc.llm.max-output-tokens` 구성값으로
+     * 채워 넣는다 — 이 자리가 아니면 실제 워커 호출 경로에 구성값이 닿을 곳이 없다.
+     *
+     * [dictionary] 앞에 둔다 — [dictionary] 가 SAM 변환 대상이라 호출부가 trailing lambda
+     * (`ConvertDocumentUseCase(provider, ids) { context }`)로 넘기고, 마지막 자리가 아니면
+     * 그 문법이 깨진다.
+     */
+    private val defaultOptions: LlmOptions = LlmOptions(),
     private val dictionary: DictionaryContextSource = NoDictionaryContext,
 ) {
     /** worker 가 변환 유스케이스에 들어가기 전 실패를 기록할 때 쓰는 벤더 이름. */
@@ -41,7 +51,7 @@ class ConvertDocumentUseCase(
      */
     fun convert(
         source: String,
-        options: LlmOptions = LlmOptions(),
+        options: LlmOptions = defaultOptions,
         dictionaryContext: String? = null,
     ): ConversionResult = Pass(provider, documentIds, options, dictionaryContext, dictionary).run(source)
 }

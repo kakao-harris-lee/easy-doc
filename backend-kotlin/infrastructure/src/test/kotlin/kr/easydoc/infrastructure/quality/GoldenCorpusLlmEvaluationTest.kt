@@ -54,7 +54,10 @@ class GoldenCorpusLlmEvaluationTest {
         val provider = LaneInstrumentedProvider(ready.provider, journal)
         val grader =
             LaneGrader(
-                converter = ConvertDocumentUseCase(provider),
+                // defaultOptions 는 제품 조립(ConversionWorkerConfiguration)과 같은 값이다 —
+                // ready.options 가 이미 easydoc.llm.max-output-tokens 해석을 실었다
+                // (GoldenLlmLane.assemble KDoc). judge 는 채점용 별도 호출이라 대상이 아니다.
+                converter = ConvertDocumentUseCase(provider, defaultOptions = ready.options),
                 judge = GoldenJudge(provider),
                 journal = journal,
                 report = report,

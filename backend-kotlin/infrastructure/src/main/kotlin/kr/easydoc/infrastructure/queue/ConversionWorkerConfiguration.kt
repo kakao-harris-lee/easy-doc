@@ -14,11 +14,13 @@ import kr.easydoc.application.conversion.NoDictionaryContext
 import kr.easydoc.application.conversion.ProcessConversionJob
 import kr.easydoc.application.crypto.ContentCipher
 import kr.easydoc.application.document.MaskedItemWriter
+import kr.easydoc.core.llm.LlmOptions
 import kr.easydoc.core.llm.LlmProvider
 import kr.easydoc.infrastructure.dictionary.DictionaryIndexJsonReader
 import kr.easydoc.infrastructure.dictionary.DictionaryProperties
 import kr.easydoc.infrastructure.dictionary.IndexedDictionaryContextSource
 import kr.easydoc.infrastructure.document.JdbcConversionWorkStore
+import kr.easydoc.infrastructure.llm.LlmProperties
 import org.slf4j.LoggerFactory
 import org.springframework.boot.context.properties.ConfigurationProperties
 import org.springframework.context.annotation.Bean
@@ -51,11 +53,22 @@ data class ConversionWorkerProperties(
 @Configuration(proxyBeanMethods = false)
 @Profile("worker")
 class ConversionWorkerConfiguration {
+    /**
+     * `LlmOptions` 를 여기서 조립한다 — 출력 토큰 상한을 구성값(`easydoc.llm.max-output-tokens`)
+     * 에서 받아 실제 워커 호출까지 흘려보내는 유일한 지점이다. 값 검증(양수)은 중복하지
+     * 않는다 — [LlmOptions] 의 `init` 이 이 생성 시점에 이미 거절한다.
+     */
     @Bean
     fun convertDocumentUseCase(
         provider: LlmProvider,
         dictionary: DictionaryContextSource,
-    ): ConvertDocumentUseCase = ConvertDocumentUseCase(provider, dictionary = dictionary)
+        properties: LlmProperties,
+    ): ConvertDocumentUseCase =
+        ConvertDocumentUseCase(
+            provider,
+            dictionary = dictionary,
+            defaultOptions = LlmOptions(maxTokens = properties.maxOutputTokens),
+        )
 
     /**
      * 사전 컨텍스트 공급원. **여기가 사전을 적재하는 유일한 자리다** — 이 설정이 worker 프로필

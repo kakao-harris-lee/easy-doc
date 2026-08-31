@@ -21,7 +21,12 @@ plugins {
 // X-J2 가 요구한 「계약 값을 바꾸면 테스트가 깨진다」는 테스트가 돌 때만 참이므로,
 // 파일을 선언 입력으로 걸어 그 전제를 빌드가 지키게 한다.
 val apiContractFile: File = File(rootDir.parentFile, "contracts/easy-doc-v1.yaml")
-val goldenDocumentsDir: File = File(rootDir.parentFile, "data/golden/documents")
+// `-Peasydoc.golden.documents.dir=<절대경로>` 로 덮어쓸 수 있다 — 게이트 ⓪ 측정처럼
+// 승인 코퍼스 밖 표본을 레인으로 잴 때 쓴다. 로더(GoldenDocumentLoader)는 이미 같은
+// 이름의 시스템 속성을 읽으므로, 여기는 그 속성에 실을 값을 고르는 것뿐이다.
+val goldenDocumentsDir: File =
+    (findProperty("easydoc.golden.documents.dir") as String?)?.let(::File)
+        ?: File(rootDir.parentFile, "data/golden/documents")
 val goldenConversionsDir: File = File(rootDir.parentFile, "data/golden/conversions")
 
 allprojects {
