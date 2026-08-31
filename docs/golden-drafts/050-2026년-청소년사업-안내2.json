@@ -10,8 +10,10 @@
       "accept": []
     },
     {
-      "canonical": "1주",
-      "accept": []
+      "canonical": "1주일",
+      "accept": [
+        "1주"
+      ]
     },
     {
       "canonical": "9세 이상",
