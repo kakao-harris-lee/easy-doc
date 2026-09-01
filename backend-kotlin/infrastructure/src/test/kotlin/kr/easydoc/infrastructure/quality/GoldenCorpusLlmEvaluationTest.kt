@@ -49,7 +49,10 @@ class GoldenCorpusLlmEvaluationTest {
             }
 
         val journal = LaneJournal()
-        val report = LaneReport("${ready.description} · ${dictionary.description}", journal)
+        // ready.options.maxTokens 는 easydoc.llm.max-output-tokens 를 제품과 같은 규칙으로
+        // 해석한 값이다(GoldenLlmLane.assemble KDoc) — 리포트의 「상한」 표시가 이 값과
+        // 어긋나지 않도록 같은 출처를 그대로 넘긴다.
+        val report = LaneReport("${ready.description} · ${dictionary.description}", journal, ready.options.maxTokens)
         // 제품이 조립한 provider 를 레인 계측이 감싼다. 변환도 judge 도 같은 계측을 지난다.
         val provider = LaneInstrumentedProvider(ready.provider, journal)
         val grader =
@@ -57,7 +60,16 @@ class GoldenCorpusLlmEvaluationTest {
                 // defaultOptions 는 제품 조립(ConversionWorkerConfiguration)과 같은 값이다 —
                 // ready.options 가 이미 easydoc.llm.max-output-tokens 해석을 실었다
                 // (GoldenLlmLane.assemble KDoc). judge 는 채점용 별도 호출이라 대상이 아니다.
-                converter = ConvertDocumentUseCase(provider, defaultOptions = ready.options),
+                //
+                // dictionary.contextSource 는 제품 조립 모드에서만 실제 소스이고, 그 외에는
+                // NoDictionaryContext 다(LaneDictionary KDoc 「두 방식」) — 파일 주입 모드의
+                // 문서별 문자열은 아래 grade() 가 convert() 의 명시 인자로 싣는다.
+                converter =
+                    ConvertDocumentUseCase(
+                        provider,
+                        defaultOptions = ready.options,
+                        dictionary = dictionary.contextSource,
+                    ),
                 judge = GoldenJudge(provider),
                 journal = journal,
                 report = report,
