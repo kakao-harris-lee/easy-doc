@@ -59,12 +59,11 @@ class GoldenCorpusLlmEvaluationTest {
         // ready.options.maxTokens 는 easydoc.llm.max-output-tokens 를 제품과 같은 규칙으로
         // 해석한 값이다(GoldenLlmLane.assemble KDoc) — 리포트의 「상한」 표시가 이 값과
         // 어긋나지 않도록 같은 출처를 그대로 넘긴다.
-        val report =
-            LaneReport(
-                "${ready.description} · ${dictionary.description} · ${transcript.description}",
-                journal,
-                ready.options.maxTokens,
-            )
+        val conditions = "${ready.description} · ${dictionary.description} · ${transcript.description}"
+        val report = LaneReport(conditions, journal, ready.options.maxTokens)
+        // 디렉터리를 나중에 여는 사람이 무엇으로 잰 변환문인지 알아야 한다 — 리포트 헤더와
+        // 같은 문자열을 유료 호출을 시작하기 전에 써 둔다(LaneTranscript.writeConditions KDoc).
+        transcript.writeConditions(conditions)
         // 제품이 조립한 provider 를 레인 계측이 감싼다. 변환도 judge 도 같은 계측을 지난다.
         val provider = LaneInstrumentedProvider(ready.provider, journal)
         val grader =

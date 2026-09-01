@@ -90,6 +90,50 @@ class LaneTranscriptTest {
         assertThat(transcript.description).doesNotContain(BODY)
     }
 
+    @Test
+    @DisplayName("비어 있지 않은 디렉터리는 거절한다 — 이전 실행 변환문을 이번 결과로 오인하면 안 된다")
+    fun `비어 있지 않으면 거절한다`(
+        @TempDir temp: Path,
+    ) {
+        // 1차 실행이 남긴 것으로 볼 수 있는 파일 하나.
+        temp.resolve("047.txt").writeText("이전 실행의 변환문")
+
+        val plan = LaneTranscript.plan(env(temp))
+
+        assertThat(plan).isInstanceOf(LaneTranscriptPlan.Unusable::class.java)
+        val reason = (plan as LaneTranscriptPlan.Unusable).reason
+        assertThat(reason).contains(LaneTranscript.DIRECTORY_ENV)
+        assertThat(reason).contains("비어 있지 않다")
+    }
+
+    @Test
+    @DisplayName("측정 조건을 conditions.txt 로 남긴다 — 본문은 담지 않는다")
+    fun `조건 파일을 남긴다`(
+        @TempDir temp: Path,
+    ) {
+        val transcript = ready(LaneTranscript.plan(env(temp)))
+        val conditions = "provider=anthropic settings=stub · dictContext=off · transcript=$temp"
+
+        transcript.writeConditions(conditions)
+        transcript.save("001", BODY)
+
+        val written = temp.resolve("conditions.txt")
+        assertThat(written.readText()).isEqualTo(conditions)
+        assertThat(written.readText()).doesNotContain(BODY)
+    }
+
+    @Test
+    @DisplayName("off 면 조건 파일도 남기지 않는다")
+    fun `off 면 조건 파일도 안 남긴다`(
+        @TempDir temp: Path,
+    ) {
+        val transcript = ready(LaneTranscript.plan(env = { null }))
+
+        transcript.writeConditions("provider=anthropic")
+
+        assertThat(temp.toFile().listFiles()).isEmpty()
+    }
+
     private fun env(directory: Path): (String) -> String? =
         mapOf(LaneTranscript.DIRECTORY_ENV to directory.toString())::get
 
