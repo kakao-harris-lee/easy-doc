@@ -78,6 +78,7 @@ internal class LaneReport(
     private val infrastructure = mutableListOf<String>()
     private val measurements = mutableListOf<LaneMeasurement>()
     private val durationsMillis = mutableListOf<Long>()
+    private val transcriptSkipped = mutableListOf<String>()
 
     /** 문서 한 건을 다 돈 뒤의 측정값과 소요. 변환이 실패한 문서도 센다 — 실패에 쓴 시간도 시간이다. */
     fun recordDocument(
@@ -109,6 +110,17 @@ internal class LaneReport(
         }
     }
 
+    /**
+     * 이 문서는 [LaneTranscript] 가 켜져 있었지만 변환이 실패해 남길 본문이 없었다.
+     *
+     * 문서 id 만 담는다 — 본문이 없다는 사실 자체가 값이고, 실었다면 담을 본문도 없다.
+     * [LaneTranscript] 가 꺼져 있을 때는 호출부가 이 메서드를 부르지 않는다 — 그래서
+     * [render] 에도 이 노브를 켜지 않은 실행에서는 아무 줄이 늘지 않는다.
+     */
+    fun recordTranscriptSkipped(documentId: String) {
+        transcriptSkipped += documentId
+    }
+
     /** judge 호출 자체가 실패했다. 모델의 판정이 아니라 인프라 사건이다. */
     fun recordJudgeFailure(
         documentId: String,
@@ -127,6 +139,7 @@ internal class LaneReport(
             appendLine("골든 LLM 레인 — $description")
             appendLine(outcomeLine())
             appendLine(qualityLine())
+            appendTranscriptSkippedLine()
             appendGateSection()
             appendDocumentSection()
             appendLine(callLine())
@@ -165,6 +178,20 @@ internal class LaneReport(
         val sorted = durationsMillis.sorted()
         return "문서 소요 — 합계 ${seconds(sorted.sum())} · 중앙값 ${seconds(quantile(sorted, MEDIAN))} · " +
             "최대 ${seconds(sorted.last())}"
+    }
+
+    /**
+     * [LaneTranscript] 가 켜져 있었는데 본문을 못 남긴 문서를 알린다. 켜지 않은 실행에서는
+     * [recordTranscriptSkipped] 가 한 번도 불리지 않으므로 이 줄 자체가 안 생긴다
+     * ([recordTranscriptSkipped] KDoc).
+     */
+    private fun StringBuilder.appendTranscriptSkippedLine() {
+        if (transcriptSkipped.isNotEmpty()) {
+            appendLine(
+                "변환문 보존 — 건너뜀 ${transcriptSkipped.size}건(변환 실패, 남길 본문 없음): " +
+                    transcriptSkipped.joinToString(", "),
+            )
+        }
     }
 
     private fun distributionLine(): String =

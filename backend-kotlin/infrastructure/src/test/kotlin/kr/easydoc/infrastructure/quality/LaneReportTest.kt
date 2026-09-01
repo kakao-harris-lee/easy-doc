@@ -194,6 +194,23 @@ class LaneReportTest {
         assertThat(report.render()).contains("인프라 오류 분포 — 없음")
     }
 
+    @Test
+    @DisplayName("변환문 보존이 건너뛴 문서를 id 로만 남긴다 — 본문은 실리지 않는다")
+    fun `변환문 보존 건너뜀을 id 로만 남긴다`() {
+        report.recordTranscriptSkipped("g-001")
+        report.recordTranscriptSkipped("g-002")
+
+        val rendered = report.render()
+
+        assertThat(rendered).contains("변환문 보존 — 건너뜀 2건(변환 실패, 남길 본문 없음): g-001, g-002")
+    }
+
+    @Test
+    @DisplayName("건너뛴 문서가 없으면 그 줄이 아예 없다 — 노브를 켜지 않은 실행과 같게 보인다")
+    fun `건너뜀이 없으면 줄이 없다`() {
+        assertThat(report.render()).doesNotContain("변환문 보존")
+    }
+
     /** 변환에 성공한 문서. 절단된 호출은 없다. */
     private fun record(
         id: String,
