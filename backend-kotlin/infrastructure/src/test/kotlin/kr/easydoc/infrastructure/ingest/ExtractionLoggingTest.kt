@@ -66,6 +66,22 @@ class ExtractionLoggingTest {
     }
 
     @Test
+    @DisplayName("암호화된 hwpx(매니페스트의 encryption-data)도 같은 사유 코드를 남긴다 — OLE2 경로와 원인이 같다")
+    fun `암호화된 hwpx 사유가 encrypted_container 다`() {
+        val encryptedHwpx =
+            IngestFixtures.zipOf(
+                mapOf(
+                    "META-INF/manifest.xml" to ENCRYPTED_MANIFEST.toByteArray(),
+                    "Contents/section0.xml" to byteArrayOf(0x01, 0x02, 0xAB.toByte()),
+                ),
+            )
+
+        val events = capture { runCatching { extractors.extract("안내문.hwpx", encryptedHwpx) } }
+
+        assertThat(render(events)).contains("reason=encrypted_container")
+    }
+
+    @Test
     @DisplayName("사용자에게 나가는 문구에도 파일 이름·본문이 없다")
     fun `사용자 문구가 입력을 반향하지 않는다`() {
         val thrown =
@@ -117,5 +133,14 @@ class ExtractionLoggingTest {
 
     private companion object {
         const val OLE2_PADDING_BYTES = 64
+
+        /** `HwpxExtractorTest.ENCRYPTED_MANIFEST` 와 같은 모양 — `odf:` 접두사는 실제 표본 그대로다. */
+        const val ENCRYPTED_MANIFEST =
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>" +
+                "<odf:manifest xmlns:odf=\"urn:oasis:names:tc:opendocument:xmlns:manifest:1.0\">" +
+                "<odf:file-entry full-path=\"Contents/section0.xml\" media-type=\"application/xml\">" +
+                "<odf:encryption-data checksum-type=\"x\" checksum=\"y\"/>" +
+                "</odf:file-entry>" +
+                "</odf:manifest>"
     }
 }
