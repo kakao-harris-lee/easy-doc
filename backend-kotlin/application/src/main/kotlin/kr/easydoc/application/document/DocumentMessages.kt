@@ -68,14 +68,36 @@ const val EXPORT_MISSING_PLACEHOLDERS_MESSAGE: String =
 const val EXPORT_FORMAT_MISMATCH_MESSAGE: String = "원본과 같은 형식으로만 내려받을 수 있습니다"
 
 /**
- * 계약 GET export 409 예시 `no_exportable_format` — 같은 형식으로 내보낼 수단이 없다.
+ * 계약 GET export 409 예시 `no_exportable_format` — 같은 형식으로 내보낼 수단도
+ * 선택지도 없다(`ExportFormat.ofSource` 와 `ExportFormat.choicesFor` 가 **둘 다** 비었다).
  *
- * 오늘 이 갈래에 드는 원본은 **PDF 하나뿐이다**(계약 `x-export-format-derivation.mapping`
- * 에서 상이 `null` 인 유일한 키). 그래서 문구가 형식을 이름으로 부를 수 있고, 그 대응이
- * 깨지는 날은 `ConversionFormatContractTest` 가 빨갛다 — 표에 `null` 갈래가 늘면 그
- * 단언이 먼저 걸린다.
+ * **오늘 이 갈래를 밟는 원본은 없다** — PDF는 2.6.0부터 [EXPORT_FORMAT_CHOICE_REQUIRED_MESSAGE]·
+ * [EXPORT_FORMAT_CHOICE_MISMATCH_MESSAGE] 갈래로 옮겨 갔다(선택지가 생겼으므로). 문구가
+ * 특정 형식을 이름으로 부르지 않는 것은 그래서다 — 이 갈래에 드는 원본이 무엇이 될지
+ * 오늘은 알 수 없다. `x-export-format-derivation.choices` 의 정의역 불변식이 깨져
+ * `mapping` 이 `null` 인데 `choices` 도 비는 형식이 생기면 그때 이 문구를 쓴다.
  */
-const val EXPORT_FORMAT_UNAVAILABLE_MESSAGE: String = "PDF 문서 내려받기는 아직 준비되지 않았습니다"
+const val EXPORT_FORMAT_UNAVAILABLE_MESSAGE: String = "이 문서는 내려받을 수 있는 형식이 없습니다"
+
+/**
+ * 계약 GET export 409 예시 `export_format_choice_required` — 선택지가 있는 원본(PDF)에서
+ * `format` 을 생략했다.
+ *
+ * 서버가 대신 고르지 않는다(`enforcement.on_absent_with_choices`) — PDF가 아닌 원본과
+ * 달리 생략이 기본 경로가 아니다. 오늘 이 갈래에 드는 선택지는 **PDF 하나뿐**이라
+ * 문구가 그 값을 이름으로 부를 수 있고, 그 대응이 깨지는 날은
+ * `ConversionFormatContractTest` 가 빨갛다.
+ */
+const val EXPORT_FORMAT_CHOICE_REQUIRED_MESSAGE: String = "내보낼 형식을 골라주세요 (docx·hwpx)"
+
+/**
+ * 계약 GET export 409 예시 `export_format_choice_mismatch` — 요청한 형식이 `ExportFormat`
+ * 안이지만 **이 원본의 선택지 밖**이다(예: PDF에 `format=txt`).
+ *
+ * [EXPORT_FORMAT_MISMATCH_MESSAGE] 와 같은 이유로 **옳은 형식을 문구에 싣지 않는다** — 그
+ * 값은 이미 조회 응답의 `export_format_choices` 에 있다.
+ */
+const val EXPORT_FORMAT_CHOICE_MISMATCH_MESSAGE: String = "고를 수 있는 형식으로만 내려받을 수 있습니다"
 
 /** 계약 PUT 422 예시 `empty`. 제어문자만 담긴 수정본도 여기다. */
 const val EMPTY_REVIEW_MESSAGE: String = "수정본이 비어 있습니다"

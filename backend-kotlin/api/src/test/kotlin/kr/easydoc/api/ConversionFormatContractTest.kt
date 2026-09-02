@@ -125,7 +125,13 @@ class ConversionFormatContractTest {
             .isEqualTo(enforcement.required)
 
         // 처분으로 쓰는 상태 코드가 그 오퍼레이션에 선언돼 있어야 한다 — 없으면 계약에 없는 응답을 약속한다.
-        listOf(enforcement.onMismatch, enforcement.onNullMapping, enforcement.onUnknownValue).forEach { status ->
+        listOf(
+            enforcement.onMismatch,
+            enforcement.onNullMapping,
+            enforcement.onUnknownValue,
+            enforcement.onAbsentWithChoices,
+            enforcement.onChoiceMismatch,
+        ).forEach { status ->
             assertThat(declaredStatuses)
                 .withFailMessage("`enforcement` 가 선언되지 않은 상태 %d 를 처분으로 쓴다", status)
                 .contains(status.toString())
@@ -146,6 +152,69 @@ class ConversionFormatContractTest {
         assertThat(enforcement.onNullMapping)
             .describedAs("「내보낼 수단이 없다」도 자원 상태다 — 불일치와 같은 코드여야 한다")
             .isEqualTo(enforcement.onMismatch)
+        assertThat(enforcement.onAbsentWithChoices)
+            .describedAs("선택지 생략도 자원 상태다 — 값 집합 거절(422)과 갈려야 소유 은닉이 지켜진다")
+            .isNotEqualTo(enforcement.onUnknownValue)
+        assertThat(enforcement.onChoiceMismatch)
+            .describedAs("선택지 밖 요청도 자원 상태다 — 불일치와 같은 코드여야 한다")
+            .isEqualTo(enforcement.onMismatch)
+    }
+
+    @Test
+    @DisplayName(
+        "P-40 `choices` 의 정의역이 `mapping` 과 맞물린다 — `null` 인 키는 `choices` 에, " +
+            "값을 낸 키는 `choices` 에 **없어야** 한다 (2.6.0)",
+    )
+    fun `선택지 정의역이 유도표와 맞물린다`() {
+        val mapping = ContractSpec.exportFormatDerivation()
+        val choices = ContractSpec.exportFormatChoices()
+
+        val nullMappedKeys = mapping.filterValues { it == null }.keys
+        assertThat(choices.keys)
+            .withFailMessage(
+                "choices 의 정의역이 mapping 의 null 갈래와 다르다 — mapping null 키 %s / choices 키 %s",
+                nullMappedKeys,
+                choices.keys,
+            ).isEqualTo(nullMappedKeys)
+
+        val declaredExports = ContractSpec.schemaEnum(EXPORT_FORMAT_SCHEMA)
+        choices.forEach { (source, values) ->
+            assertThat(values)
+                .withFailMessage("%s 가 mapping 에서 null 인데 choices 도 비었다 — 내보낼 방법이 없다", source)
+                .isNotEmpty()
+            assertThat(values)
+                .withFailMessage("%s 의 choices 가 계약 %s 밖의 값을 냈다: %s", source, EXPORT_FORMAT_SCHEMA, values)
+                .allSatisfy { assertThat(it).isIn(declaredExports) }
+        }
+
+        // `ExportFormat.choicesFor` 가 계약과 한 항목도 다르지 않다.
+        val implemented =
+            SourceFormat.entries.associate { source ->
+                source.wireName to ExportFormat.choicesFor(source).map { it.extension }
+            }
+        val declaredWithEmpty =
+            SourceFormat.entries.associate { source -> source.wireName to (choices[source.wireName] ?: emptyList()) }
+        assertThat(implemented)
+            .withFailMessage(
+                "`ExportFormat.choicesFor` 가 계약 `choices` 와 다르다 — 계약 %s / 구현 %s",
+                declaredWithEmpty,
+                implemented,
+            ).isEqualTo(declaredWithEmpty)
+    }
+
+    @Test
+    @DisplayName("P-40 유도값과 선택지가 **겹치지 않는다** — 서버가 정한 원본에 사용자가 또 고를 자리가 없다")
+    fun `유도값과 선택지가 겹치지 않는다`() {
+        SourceFormat.entries.forEach { source ->
+            val derived = ExportFormat.ofSource(source)
+            val choices = ExportFormat.choicesFor(source)
+            if (derived != null) {
+                assertThat(choices).withFailMessage("%s 는 유도값이 있는데 선택지도 있다", source).isEmpty()
+            }
+            if (choices.isNotEmpty()) {
+                assertThat(derived).withFailMessage("%s 는 선택지가 있는데 유도값도 있다", source).isNull()
+            }
+        }
     }
 
     @Test
@@ -257,6 +326,7 @@ class ConversionFormatContractTest {
             status = ConversionStatus.DONE,
             sourceFormat = source,
             exportFormat = ExportFormat.ofSource(source),
+            exportFormatChoices = ExportFormat.choicesFor(source),
             formatPreservation =
                 if (hasStoredOriginal) {
                     reflectedPreservation(ReflectionOutcome(1, 1, 1, 0))

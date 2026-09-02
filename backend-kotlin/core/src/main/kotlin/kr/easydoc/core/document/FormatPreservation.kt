@@ -17,8 +17,9 @@ package kr.easydoc.core.document
 enum class FormatPreservationStatus(val wireName: String) {
     /**
      * **유지할 원본 서식이 없다.** 붙여넣기라 파일이 아니었거나, 원본 파일 바이트가
-     * 저장돼 있지 않아 되살릴 수 없는 문서다. 둘 다 **영구히 참**이라 구조 보존이
-     * 구현된 뒤에도 이 판정은 뒤집히지 않는다.
+     * 저장돼 있지 않아 되살릴 수 없는 문서이거나, PDF처럼 원본을 열어 반영한다는 개념
+     * 자체가 적용되지 않는 문서다([choiceExportPreservation]). 모두 **영구히 참**이라
+     * 구조 보존이 구현된 뒤에도 이 판정은 뒤집히지 않는다.
      */
     NOT_APPLICABLE("not_applicable"),
 
@@ -92,6 +93,19 @@ class ReflectionOutcome(
 
 /** 되살릴 원본이 **없다**는 판정. 붙여넣기와 원본 바이트가 없는 옛 문서 — 둘 다 영구히 참이다. */
 fun noOriginalPreservation(): FormatPreservation =
+    FormatPreservation(FormatPreservationStatus.NOT_APPLICABLE, emptyList())
+
+/**
+ * **선택지가 있는 원본**(오늘은 PDF)의 판정 — 반영할 대상이 없다.
+ *
+ * [noOriginalPreservation] 과 사유가 다르다: 원본 파일 바이트는 저장돼 있을 수 있지만
+ * (`hasStoredOriginal`) 그 원본을 **열어 반영하지 않는다** — 사용자가 고른 형식으로
+ * 새 문서를 조립할 뿐이다(2.6.0 재결정, `ConversionExportService`). 「원본이 없다」가
+ * 아니라 「원본은 있어도 반영이라는 개념이 이 갈래에 적용되지 않는다」는 것이 이 함수와
+ * [noOriginalPreservation] 을 나누는 이유다. 완료 전후를 가리지 않고 **즉시** 이 값이다 —
+ * 짝지을 검수본을 기다릴 이유가 없다(`ExportFormat.choicesFor` 가 이미 아는 사실이다).
+ */
+fun choiceExportPreservation(): FormatPreservation =
     FormatPreservation(FormatPreservationStatus.NOT_APPLICABLE, emptyList())
 
 /**

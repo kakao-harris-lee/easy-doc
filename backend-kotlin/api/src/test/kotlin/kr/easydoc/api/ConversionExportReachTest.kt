@@ -133,19 +133,60 @@ class ConversionExportReachTest {
     }
 
     @Test
-    @DisplayName("PDF 원본은 **어떤 값도·생략도** 409 · 계약 예시 no_exportable_format")
-    fun `PDF 원본은 내보낼 수 없다`() {
+    @DisplayName("PDF 원본은 `format` 을 생략하면 409 · 계약 예시 export_format_choice_required — 서버가 대신 고르지 않는다")
+    fun `PDF 원본은 형식 생략이 409 다`() {
         val token = newAccount()
         val conversionId = uploadDocument(token, "안내문.pdf", UploadFixtures.samplePdf())
         markDone(conversionId, DoneResult(easyText = "쉬운 글 초안입니다."))
 
-        (ContractSpec.schemaEnum(FORMAT_SCHEMA) + null).forEach { requested ->
-            val response = exportText(token, conversionId, requested)
+        val response = exportText(token, conversionId, format = null)
+
+        assertDeclaredStatus(response.statusCode(), CONFLICT)
+        assertThat(jsonBody(response)[DETAIL])
+            .isEqualTo(ContractSpec.pathExampleDetail(EXPORT_PATH, GET, CONFLICT, CHOICE_REQUIRED_EXAMPLE))
+    }
+
+    @Test
+    @DisplayName("PDF 원본은 선택지 밖의 값(값 집합 안이어도) 409 · 계약 예시 export_format_choice_mismatch")
+    fun `PDF 원본은 선택지 밖 요청이 409 다`() {
+        val token = newAccount()
+        val conversionId = uploadDocument(token, "안내문.pdf", UploadFixtures.samplePdf())
+        markDone(conversionId, DoneResult(easyText = "쉬운 글 초안입니다."))
+
+        val choices = pdfChoices()
+        val outsiders = ContractSpec.schemaEnum(FORMAT_SCHEMA).filterNot { it in choices }
+        assertThat(outsiders).describedAs("PDF 의 선택지 밖 값이 하나도 없다 — 이 대조가 공허해진다").isNotEmpty()
+
+        outsiders.forEach { outsider ->
+            val response = exportText(token, conversionId, outsider)
 
             assertDeclaredStatus(response.statusCode(), CONFLICT)
             assertThat(jsonBody(response)[DETAIL])
-                .withFailMessage("PDF 원본 · 요청 %s 의 처분이 계약과 다르다", requested)
-                .isEqualTo(ContractSpec.pathExampleDetail(EXPORT_PATH, GET, CONFLICT, UNAVAILABLE_EXAMPLE))
+                .withFailMessage("PDF 원본 · 요청 %s 의 처분이 계약과 다르다", outsider)
+                .isEqualTo(ContractSpec.pathExampleDetail(EXPORT_PATH, GET, CONFLICT, CHOICE_MISMATCH_EXAMPLE))
+        }
+    }
+
+    @Test
+    @DisplayName("PDF 원본은 선택지(docx·hwpx) 중 하나를 고르면 200 · **신문서 조립** — 원본을 반영하지 않는다")
+    fun `PDF 원본은 선택지로 신문서를 받는다`() {
+        val token = newAccount()
+        val choices = pdfChoices()
+        assertThat(choices).isNotEmpty()
+
+        choices.forEach { choice ->
+            val conversionId = uploadDocument(token, "안내문.pdf", UploadFixtures.samplePdf())
+            markDone(conversionId, DoneResult(easyText = "쉬운 글 초안입니다."))
+
+            val response = exportBytes(token, conversionId, choice)
+
+            assertDeclaredStatus(response.statusCode(), ContractSpec.successStatus(EXPORT_PATH, GET))
+            assertThat(response.headers().firstValue(CONTENT_DISPOSITION))
+                .withFailMessage("PDF 를 %s 로 골랐는데 확장자가 다르다: %s", choice, response.headers())
+                .hasValueSatisfying { assertThat(it).contains(".$choice") }
+            assertThat(exportedText(response.body(), choice))
+                .describedAs("신문서 조립이므로 본문은 검수본 그대로다 — 원본 PDF 를 반영하지 않는다")
+                .contains("쉬운 글 초안입니다.")
         }
     }
 
@@ -505,6 +546,15 @@ class ConversionExportReachTest {
 
     private fun formatQueryName(): String = ContractSpec.queryParameters(EXPORT_PATH, GET).single().name
 
+    /**
+     * PDF 원본이 고를 수 있는 형식 목록(계약 `x-export-format-derivation.choices.pdf`).
+     * 인덱스 접근을 쓰는 것은 이 클래스에 로컬 `Map<*, *>.getValue(key: String): Any` 확장이
+     * 있어 `Map<String, List<String>>.getValue` 가 그 확장으로 가려지기 때문이다.
+     */
+    private fun pdfChoices(): List<String> =
+        ContractSpec.exportFormatChoices()[SourceFormat.PDF.wireName]
+            ?: error("계약 choices 에 pdf 키가 없다")
+
     private fun firstFormat(): String = ContractSpec.schemaEnum(FORMAT_SCHEMA).first()
 
     private fun exportedText(
@@ -583,7 +633,8 @@ class ConversionExportReachTest {
         private const val NOT_DONE_EXAMPLE = "not_done"
         private const val MISSING_EXAMPLE = "missing_placeholders"
         private const val MISMATCH_EXAMPLE = "format_mismatch"
-        private const val UNAVAILABLE_EXAMPLE = "no_exportable_format"
+        private const val CHOICE_REQUIRED_EXAMPLE = "export_format_choice_required"
+        private const val CHOICE_MISMATCH_EXAMPLE = "export_format_choice_mismatch"
 
         /** 500 문구를 읽을 좌표. 이름이지 값이 아니다. */
         private const val INTERNAL_ERROR_COMPONENT = "InternalError"

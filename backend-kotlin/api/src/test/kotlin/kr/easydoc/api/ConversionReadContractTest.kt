@@ -240,6 +240,7 @@ class ConversionReadContractTest {
             status = ConversionStatus.entries.first { !it.exposesResult },
             sourceFormat = SourceFormat.DOCX,
             exportFormat = ExportFormat.ofSource(SourceFormat.DOCX),
+            exportFormatChoices = ExportFormat.choicesFor(SourceFormat.DOCX),
             formatPreservation = noOriginalPreservation(),
             easyText = null,
             editedText = null,
@@ -371,8 +372,8 @@ class ConversionReadContractTest {
         val STUB_HASH = PasswordHash("stub-hash")
 
         /**
-         * 계약 `get.description` 이 완료 전에 나간다고 적은 **일곱** — 앞의 둘은 자원
-         * 식별자이고, 뒤의 셋은 문서 메타에서 오는 **형식 셋**이라 완료 여부와 무관하다.
+         * 계약 `get.description` 이 완료 전에 나간다고 적은 **여덟** — 앞의 둘은 자원
+         * 식별자이고, 뒤의 넷은 문서 메타에서 오는 **형식 셋**이라 완료 여부와 무관하다.
          */
         val BEFORE_DONE_FIELDS =
             setOf(
@@ -382,6 +383,7 @@ class ConversionReadContractTest {
                 "failure_code",
                 "source_format",
                 "export_format",
+                "export_format_choices",
                 "format_preservation",
             )
 

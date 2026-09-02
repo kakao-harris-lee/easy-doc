@@ -205,25 +205,66 @@ class ConversionExportServiceTest {
     }
 
     @Test
-    @DisplayName("내보낼 형식이 없는 원본은 **어떤 값도·생략도** 409 다 — 대체 형식으로 접지 않는다")
-    fun `내보낼 수단이 없으면 409 다`() {
-        val unexportable = SourceFormat.entries.filter { ExportFormat.ofSource(it) == null }
-        assertThat(unexportable)
-            .describedAs("상이 `null` 인 원본이 하나도 없다 — 이 대조가 공허해진다")
-            .isNotEmpty()
+    @DisplayName(
+        "유도값도 선택지도 없는 원본은 **어떤 값도·생략도** 409 다 — 오늘은 실재하는 " +
+            "`SourceFormat` 이 없어 이 대조는 값 집합이 넓어질 때를 대비한 안전망이다",
+    )
+    fun `유도값도 선택지도 없으면 409 다`() {
+        val trulyUnexportable =
+            SourceFormat.entries.filter { ExportFormat.ofSource(it) == null && ExportFormat.choicesFor(it).isEmpty() }
+        assertThat(trulyUnexportable)
+            .describedAs("오늘은 이 갈래에 드는 원본이 없다 — PDF 는 `choicesFor` 가 채운다")
+            .isEmpty()
+    }
 
-        unexportable.forEach { source ->
-            (ExportFormat.entries + null).forEach { requested ->
-                val world = World()
-                val conversionId = UUID.randomUUID()
-                world.seedDone(conversionId, Seed(easyText = "본문", sourceFormat = source))
+    @Test
+    @DisplayName("PDF 원본에서 `format` 을 생략하면 409 다 — 서버가 대신 고르지 않는다")
+    fun `PDF 는 형식 생략이 409 다`() {
+        val world = World()
+        val conversionId = UUID.randomUUID()
+        world.seedDone(conversionId, Seed(easyText = "본문", sourceFormat = SourceFormat.PDF))
 
-                assertThatThrownBy { world.export(conversionId, requested) }
-                    .describedAs("원본 ${source.wireName} · 요청 $requested 가 통과했다")
-                    .isInstanceOf(ConflictException::class.java)
-                    .hasMessage(EXPORT_FORMAT_UNAVAILABLE_MESSAGE)
-                assertThat(world.exporter.calls).isEmpty()
-            }
+        assertThatThrownBy { world.export(conversionId, null) }
+            .isInstanceOf(ConflictException::class.java)
+            .hasMessage(EXPORT_FORMAT_CHOICE_REQUIRED_MESSAGE)
+        assertThat(world.exporter.calls).isEmpty()
+    }
+
+    @Test
+    @DisplayName("PDF 원본에서 선택지 밖의 값(값 집합 안이어도)은 409 다")
+    fun `PDF 는 선택지 밖 요청이 409 다`() {
+        val world = World()
+        val conversionId = UUID.randomUUID()
+        world.seedDone(conversionId, Seed(easyText = "본문", sourceFormat = SourceFormat.PDF))
+
+        val outsiders = ExportFormat.entries.filterNot { it in ExportFormat.choicesFor(SourceFormat.PDF) }
+        assertThat(outsiders).describedAs("PDF 의 선택지 밖 값이 하나도 없다 — 이 대조가 공허해진다").isNotEmpty()
+
+        outsiders.forEach { outsider ->
+            assertThatThrownBy { world.export(conversionId, outsider) }
+                .describedAs("PDF 에 ${outsider.extension} 를 요청했는데 통과했다")
+                .isInstanceOf(ConflictException::class.java)
+                .hasMessage(EXPORT_FORMAT_CHOICE_MISMATCH_MESSAGE)
+        }
+        assertThat(world.exporter.calls).isEmpty()
+    }
+
+    @Test
+    @DisplayName("PDF 원본은 고른 형식으로 **신문서를 조립한다** — 원본이 저장돼 있어도 열어 반영하지 않는다")
+    fun `PDF 는 선택지로 신문서를 만든다`() {
+        ExportFormat.choicesFor(SourceFormat.PDF).forEach { choice ->
+            val world = World()
+            val conversionId = UUID.randomUUID()
+            world.seedDone(conversionId, Seed(easyText = "쉬운 글", sourceFormat = SourceFormat.PDF))
+            world.seedOriginal(conversionId)
+
+            val file = world.export(conversionId, choice)
+
+            assertThat(world.reflector.reflected)
+                .describedAs("PDF 원본을 열어 반영하려 했다 — §6.5 재결정은 원본을 열지 않는다고 정했다")
+                .isEmpty()
+            assertThat(world.exporter.calls.map { it.format }).containsExactly(choice)
+            assertThat(String(file.content, Charsets.UTF_8)).isEqualTo("쉬운 글")
         }
     }
 
@@ -233,16 +274,16 @@ class ConversionExportServiceTest {
         val pending = ConversionStatus.entries.first { !it.exposesResult }
         val world = World()
         val mismatched = UUID.randomUUID()
-        val unexportable = UUID.randomUUID()
+        val choiceRequired = UUID.randomUUID()
         world.seedDone(mismatched, Seed(easyText = "본문", sourceFormat = SourceFormat.DOCX, status = pending))
-        world.seedDone(unexportable, Seed(easyText = "본문", sourceFormat = SourceFormat.PDF, status = pending))
+        world.seedDone(choiceRequired, Seed(easyText = "본문", sourceFormat = SourceFormat.PDF, status = pending))
 
         assertThatThrownBy { world.export(mismatched, ExportFormat.TXT) }
             .isInstanceOf(ConflictException::class.java)
             .hasMessage(EXPORT_FORMAT_MISMATCH_MESSAGE)
-        assertThatThrownBy { world.export(unexportable, null) }
+        assertThatThrownBy { world.export(choiceRequired, null) }
             .isInstanceOf(ConflictException::class.java)
-            .hasMessage(EXPORT_FORMAT_UNAVAILABLE_MESSAGE)
+            .hasMessage(EXPORT_FORMAT_CHOICE_REQUIRED_MESSAGE)
     }
 
     @Test

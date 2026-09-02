@@ -760,6 +760,18 @@ object ContractSpec {
             .also { require(it.isNotEmpty()) { "내보내기 형식 유도표가 비었다 — 이 대조는 아무것도 재지 않는다." } }
 
     /**
+     * `x-export-format-derivation.choices` — `mapping`이 `null`인 원본이 고를 수 있는 형식
+     * 목록(2.6.0). 그 키에 없는 원본은 빈 목록으로 읽는다 — 「선택지가 없다」는 사실이다.
+     */
+    fun exportFormatChoices(): Map<String, List<String>> =
+        map("x-export-format-derivation", "choices")
+            .entries
+            .associate { (key, value) ->
+                key.toString() to
+                    (value as? List<*> ?: error("choices.$key 가 배열이 아니다: $value")).map { it.toString() }
+            }
+
+    /**
      * `x-export-format-derivation.enforcement` — 내보내기 오퍼레이션의 **처분**.
      *
      * 상태 코드를 테스트에 손으로 적지 않으려고 계약에서 읽는다. 계약이 처분을 바꾸면
@@ -777,6 +789,8 @@ object ContractSpec {
             onMismatch = intAt("on_mismatch"),
             onNullMapping = intAt("on_null_mapping"),
             onUnknownValue = intAt("on_unknown_value"),
+            onAbsentWithChoices = intAt("on_absent_with_choices"),
+            onChoiceMismatch = intAt("on_choice_mismatch"),
         )
     }
 
@@ -957,6 +971,8 @@ data class ExportEnforcement(
     val onMismatch: Int,
     val onNullMapping: Int,
     val onUnknownValue: Int,
+    val onAbsentWithChoices: Int,
+    val onChoiceMismatch: Int,
 )
 
 /** 계약 경로 수준 `parameters` 한 항목. */

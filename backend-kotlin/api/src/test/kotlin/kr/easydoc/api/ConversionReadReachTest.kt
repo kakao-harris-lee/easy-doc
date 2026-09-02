@@ -432,17 +432,17 @@ class ConversionReadReachTest {
 
     @Test
     @DisplayName(
-        "CF-2 업로드한 문서는 형식이 그대로 나가고, 원본이 저장되는 형식은 **완료 전에는 서식 유지를 판정하지 않는다**(`null`)",
+        "CF-2 업로드한 문서는 형식이 그대로 나가고, 반영을 시도할 형식은 **완료 전에는 서식 유지를 판정하지 않는다**(`null`)",
     )
     fun `업로드 문서의 형식 셋이 계약대로 나온다`() {
         val derivation = ContractSpec.exportFormatDerivation()
+        val choices = ContractSpec.exportFormatChoices()
+        // PDF(선택지 원본, 2.6.0)·txt(원본 미저장) 는 완료 전에도 즉시 `not_applicable` 이다.
         val uploads =
             mapOf(
                 SourceFormat.DOCX to ("안내문.docx" to UploadFixtures.sampleDocx()),
                 SourceFormat.HWPX to ("안내문.hwpx" to UploadFixtures.sampleHwpx()),
                 SourceFormat.PDF to ("안내문.pdf" to UploadFixtures.samplePdf()),
-                // txt 는 원본을 저장하지 않는다(TXT-UPLOAD, `DocumentService`) — 그래서 완료 전에도
-                // `null`(아직 판정 못함)이 아니라 붙여넣기와 같은 `not_applicable` 이 즉시 나간다.
                 SourceFormat.TXT to ("안내문.txt" to UploadFixtures.sampleTxt()),
             )
         assertThat(uploads.keys)
@@ -463,10 +463,11 @@ class ConversionReadReachTest {
                     format.wireName,
                     body[EXPORT_FORMAT_PROPERTY],
                 ).isEqualTo(derivation[format.wireName])
-            if (format == SourceFormat.TXT) {
+            assertThat(body[EXPORT_FORMAT_CHOICES_PROPERTY]).isEqualTo(choices[format.wireName] ?: emptyList<String>())
+            if (format == SourceFormat.TXT || format == SourceFormat.PDF) {
                 val preservation = body[FORMAT_PRESERVATION_PROPERTY] as? Map<*, *>
                 assertThat(preservation)
-                    .describedAs("txt 는 원본이 없어 판정이 영구히 참이다 — 완료를 기다릴 이유가 없다")
+                    .describedAs("%s 는 원본을 반영하지 않아 판정이 영구히 참이다 — 완료를 기다릴 이유가 없다", format.wireName)
                     .isNotNull()
                 assertThat(preservation!![STATUS_PROPERTY]).isEqualTo(FormatPreservationStatus.NOT_APPLICABLE.wireName)
             } else {
@@ -602,12 +603,14 @@ class ConversionReadReachTest {
         assertThat(keys)
             .describedAs("키는 항상 있고 값이 null 일 수 있다 — 생략되면 React 가 `undefined` 를 받는다")
             .contains(SOURCE_FORMAT_PROPERTY, EXPORT_FORMAT_PROPERTY, FORMAT_PRESERVATION_PROPERTY)
+        assertThat(keys).contains(EXPORT_FORMAT_CHOICES_PROPERTY)
 
         assertThat(body.getValue(SOURCE_FORMAT_PROPERTY).toString())
             .isIn(ContractSpec.schemaEnum(SOURCE_FORMAT_SCHEMA))
         body[EXPORT_FORMAT_PROPERTY]?.let {
             assertThat(it.toString()).isIn(ContractSpec.schemaEnum(EXPORT_FORMAT_SCHEMA))
         }
+        // 값 자체(계약 `choices` 와의 일치)는 CF-2 가 잰다 — 여기는 키가 있다는 것만 본다.
         (body[FORMAT_PRESERVATION_PROPERTY] as? Map<*, *>)?.let { preservation ->
             assertThat(preservation.keys.map { it.toString() }.toSet())
                 .isEqualTo(ContractSpec.schemaRequired(PRESERVATION_SCHEMA))
@@ -807,6 +810,7 @@ class ConversionReadReachTest {
         private const val STATUS_PROPERTY = "status"
         private const val SOURCE_FORMAT_PROPERTY = "source_format"
         private const val EXPORT_FORMAT_PROPERTY = "export_format"
+        private const val EXPORT_FORMAT_CHOICES_PROPERTY = "export_format_choices"
         private const val FORMAT_PRESERVATION_PROPERTY = "format_preservation"
 
         /**
@@ -860,8 +864,8 @@ class ConversionReadReachTest {
         private const val STORED_PROVIDER = "stored-provider"
 
         /**
-         * 계약 `get.description` 이 완료 전에 나간다고 적은 **일곱** — 앞의 둘은 자원
-         * 식별자이고, 뒤의 셋은 문서 메타에서 오는 **형식 셋**이라 완료 여부와 무관하다.
+         * 계약 `get.description` 이 완료 전에 나간다고 적은 **여덟** — 앞의 둘은 자원
+         * 식별자이고, 뒤의 넷은 문서 메타에서 오는 **형식 셋**이라 완료 여부와 무관하다.
          */
         private val BEFORE_DONE_FIELDS =
             setOf(
@@ -871,6 +875,7 @@ class ConversionReadReachTest {
                 FAILURE_CODE_PROPERTY,
                 SOURCE_FORMAT_PROPERTY,
                 EXPORT_FORMAT_PROPERTY,
+                EXPORT_FORMAT_CHOICES_PROPERTY,
                 FORMAT_PRESERVATION_PROPERTY,
             )
 
