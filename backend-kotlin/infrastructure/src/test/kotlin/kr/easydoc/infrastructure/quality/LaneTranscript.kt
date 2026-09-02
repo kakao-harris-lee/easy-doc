@@ -1,5 +1,6 @@
 package kr.easydoc.infrastructure.quality
 
+import kr.easydoc.core.quality.GoldenDocumentLoader
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
@@ -82,12 +83,13 @@ internal class LaneTranscript private constructor(
         private const val PROBE_FILE_NAME: String = ".lane-transcript-probe"
 
         /**
-         * 파일명으로 안전한 문서 id 문법. 영숫자·`.`·`_`·`-` 만 허용한다 — 특히 `/`(POSIX)와
-         * `\`(Windows) 경로 구분자를 뺀 것이 핵심이다. 실제 골든 코퍼스 문서(`data/golden/documents`
-         * 아래 JSON 파일)의 id 는 [GoldenDocumentLoader] 기준 전부 세 자리 숫자라 이 문법보다
-         * 훨씬 좁다 — 여기는 그보다 넓게, 하지만 경로 이스케이프는 불가능하게 허용한다.
+         * 파일명으로 안전한 문서 id 문법. [GoldenDocumentLoader.SAFE_DOCUMENT_ID] 를 그대로
+         * 쓴다 — 이제 그 로더가 코퍼스를 읽는 시점에 같은 문법을 강제하므로, 여기서 따로
+         * 문법을 적으면 값 출처가 둘이 된다. 이 검사가 여전히 남아 있는 이유는 [safeFileNameOrNull]
+         * KDoc과 [save] KDoc에 있다 — 로더의 사전 검사를 이 함수의 유일한 방어선으로 두지
+         * 않기 위해서다.
          */
-        private val SAFE_DOCUMENT_ID: Regex = Regex("^[A-Za-z0-9._-]+$")
+        private val SAFE_DOCUMENT_ID: Regex = GoldenDocumentLoader.SAFE_DOCUMENT_ID
 
         /**
          * [env] 를 인자로 받는 이유는 [GoldenLlmLane.plan] 과 같다 — 선택 규칙을 유료 호출

@@ -117,6 +117,11 @@ internal object GoldenLlmLane {
      * 읽지 않는다(그 필드는 `ConversionWorkerConfiguration` 이 조립 시점에 쓴다). 그래서 여기서
      * 같은 값으로 [LlmOptions] 를 만들어 함께 반환한다 — 해석 자체는 [properties] 하나뿐이고
      * provider 조립과 옵션 조립이 **같은 [LlmProperties] 인스턴스**에서 갈라질 뿐이다.
+     *
+     * `props.maxOutputTokens` 를 직접 읽지 않고 [LlmProperties.validatedMaxOutputTokens] 를
+     * 거친다 — `ConversionWorkerConfiguration` 이 쓰는 것과 같은 관문이다. 직접 읽으면 레인이
+     * 상한([kr.easydoc.infrastructure.llm.MAX_OUTPUT_TOKENS_CEILING])을 우회해 제품이 거절할
+     * 값으로도 유료 호출을 낼 수 있다 — 검증 규칙 자체는 여기서 다시 적지 않는다.
      */
     private fun assemble(
         providerName: String,
@@ -126,7 +131,7 @@ internal object GoldenLlmLane {
             val props = properties(providerName, env)
             LanePlan.Ready(
                 provider = LlmProviderConfiguration().llmProvider(props, MockEnvironment()),
-                options = LlmOptions(maxTokens = props.maxOutputTokens),
+                options = LlmOptions(maxTokens = props.validatedMaxOutputTokens()),
             )
         } catch (exc: ConfigurationException) {
             LanePlan.Unusable("제품 설정 규칙이 이 레인 설정을 거절했다: ${exc.message}")

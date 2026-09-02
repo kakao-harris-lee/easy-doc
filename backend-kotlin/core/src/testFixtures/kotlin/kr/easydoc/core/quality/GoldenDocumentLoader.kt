@@ -28,8 +28,14 @@ object GoldenDocumentLoader {
 
     fun loadFile(file: File): GoldenDocument {
         val root = Json.parseToJsonElement(file.readText()).jsonObject
+        val id = text(root, "id")
+        require(SAFE_DOCUMENT_ID.matches(id)) {
+            "골든 문서 id \"$id\" (${file.name}) 는 안전한 파일명 문법을 어긴다 — 영숫자·`.`·`_`·`-` 만 " +
+                "허용한다. 이 id 는 LaneTranscript·LaneDictionary 등 소비자가 파일명에 그대로 쓰므로, " +
+                "코퍼스에 들어오는 시점에 막는다. 이 문서의 id 를 고쳐라."
+        }
         return GoldenDocument(
-            id = text(root, "id"),
+            id = id,
             title = text(root, "title"),
             category = text(root, "category"),
             synthetic = root["synthetic"]?.jsonPrimitive?.booleanOrNull ?: false,
@@ -145,4 +151,24 @@ object GoldenDocumentLoader {
     private const val SOURCE_ROOT_PROPERTY: String = "easydoc.kotlin.source.root"
     private const val DIRECTORY_RELATIVE: String = "data/golden/documents"
     private const val CONVERSIONS_FOLDER: String = "conversions"
+
+    /**
+     * 골든 문서 id 의 안전한 파일명 문법 — 코퍼스 스키마 차원의 계약이다.
+     *
+     * 문서 id 는 이 로더를 거친 뒤 여러 소비자가 파일명에 그대로 쓴다 —
+     * `LaneTranscript`(`<디렉터리>/<id>.txt` 로 변환문을 쓴다)와 `LaneDictionary` 파일 주입
+     * 모드(`<디렉터리>/<id>.txt` 를 읽는다)가 그 예다. [loadFile] 이 이 문법을 로드 시점에
+     * 강제하므로, 이 값을 통과한 코퍼스를 쓰는 모든 소비자가 별도 검사 없이 이 불변식을
+     * 물려받는다.
+     *
+     * 영숫자·`.`·`_`·`-` 만 허용한다 — 특히 `/`(POSIX)·`\`(Windows) 경로 구분자를 뺀 것이
+     * 핵심이다. 실제 골든 코퍼스 문서(`data/golden/documents` 아래 JSON 파일)의 id 는 전부
+     * 세 자리 숫자라 이 문법보다 훨씬 좁지만, 여기는 그보다 넓게 — 다만 경로 이스케이프는
+     * 불가능하게 — 허용한다.
+     *
+     * 소비자는 이 값을 그대로 참조해야 한다(예: `LaneTranscript.SAFE_DOCUMENT_ID`) — 같은
+     * 문법을 두 곳에 따로 적으면 값 출처가 둘이 되어 여기서 문법을 넓히거나 좁혀도 다른 쪽이
+     * 조용히 어긋난다.
+     */
+    val SAFE_DOCUMENT_ID: Regex = Regex("^[A-Za-z0-9._-]+$")
 }

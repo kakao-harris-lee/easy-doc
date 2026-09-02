@@ -5,6 +5,7 @@ import kr.easydoc.infrastructure.llm.AnthropicEffort
 import kr.easydoc.infrastructure.llm.DEFAULT_ANTHROPIC_MODEL
 import kr.easydoc.infrastructure.llm.FAKE_PROVIDER_NAME
 import kr.easydoc.infrastructure.llm.LlmProperties
+import kr.easydoc.infrastructure.llm.MAX_OUTPUT_TOKENS_CEILING
 import kr.easydoc.infrastructure.llm.OPENAI_PROVIDER_NAME
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.DisplayName
@@ -118,6 +119,22 @@ class GoldenLlmLaneTest {
         assertThat((plan as LanePlan.Unusable).reason)
             .contains(GoldenLlmLane.MAX_OUTPUT_TOKENS_ENV)
             .contains("32k")
+    }
+
+    @Test
+    @DisplayName("EASYDOC_LLM_MAX_OUTPUT_TOKENS 가 상한을 넘으면 레인도 제품과 같이 거절한다 — 상한을 우회하지 않는다")
+    fun `출력 토큰 상한 초과는 레인도 거절한다`() {
+        val plan =
+            GoldenLlmLane.plan(
+                env(
+                    GoldenLlmLane.PROVIDER_ENV to ANTHROPIC_PROVIDER_NAME,
+                    GoldenLlmLane.ANTHROPIC_KEY_ENV to KEY,
+                    GoldenLlmLane.MAX_OUTPUT_TOKENS_ENV to (MAX_OUTPUT_TOKENS_CEILING + 1).toString(),
+                ),
+            )
+
+        assertThat(plan).isInstanceOf(LanePlan.Unusable::class.java)
+        assertThat((plan as LanePlan.Unusable).reason).contains("A4 20장")
     }
 
     @Test

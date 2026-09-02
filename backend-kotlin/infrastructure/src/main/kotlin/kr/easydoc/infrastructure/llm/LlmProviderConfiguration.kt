@@ -41,8 +41,15 @@ data class LlmProperties(
      * 과 같은 자리·같은 예외 타입([ConfigurationException])을 쓴다. 0 이하는 배포 환경변수
      * 오타(빈 문자열이 0으로 바인딩되는 경우 등)이지 호출 코드의 버그가 아니다.
      *
-     * 호출자(현재는 [kr.easydoc.infrastructure.queue.ConversionWorkerConfiguration]) 는
-     * 이 값을 거쳐서만 `LlmOptions` 를 조립해야 한다.
+     * 상한([MAX_OUTPUT_TOKENS_CEILING]) 검증도 여기서 한다. [kr.easydoc.core.llm.LlmOptions]
+     * 의 `init` `require` 는 "1 이상"이라는 도메인 불변식만 지키면 되는 마지막 방어선이고,
+     * 상한은 도메인 불변식이 아니라 "운영자 설정이 받아들일 수 있는 범위"라는 배포 정책이라
+     * core 가 알 이유가 없다 — [LlmProperties] 가 이미 그 정책의 조립 지점이므로 여기 둔다.
+     *
+     * 호출자(현재는 [kr.easydoc.infrastructure.queue.ConversionWorkerConfiguration],
+     * 그리고 같은 규칙을 재사용하는 골든 LLM 레인
+     * [kr.easydoc.infrastructure.quality.GoldenLlmLane]) 는 이 값을 거쳐서만 `LlmOptions`
+     * 를 조립해야 한다.
      */
     fun validatedMaxOutputTokens(): Int {
         if (maxOutputTokens <= 0) {
@@ -50,9 +57,38 @@ data class LlmProperties(
                 "easydoc.llm.max-output-tokens 는 1 이상이어야 합니다 (현재: $maxOutputTokens)",
             )
         }
+        if (maxOutputTokens > MAX_OUTPUT_TOKENS_CEILING) {
+            throw ConfigurationException(
+                "easydoc.llm.max-output-tokens 는 $MAX_OUTPUT_TOKENS_CEILING 이하여야 합니다 " +
+                    "(현재: $maxOutputTokens, 기준: A4 20장 분량 문서를 절단 없이 처리할 수 있는 상한)",
+            )
+        }
         return maxOutputTokens
     }
 }
+
+/**
+ * [LlmProperties.maxOutputTokens] 의 운영자 설정 허용 상한.
+ *
+ * 사용자가 정한 기준(2026-09-02): **A4 20장 정도의 내용을 처리하는 것을 상한으로 잡는다.**
+ * 도출(각 단계는 보수적으로 — 즉 상한이 낮아서 정상 문서를 거절하는 쪽으로는 틀리지 않게 —
+ * 잡았다):
+ *
+ * | 단계 | 값 | 출처 |
+ * |---|---|---|
+ * | A4 1장 | ≈ 1,800자 | 관공서 문서 관행(10pt·줄간격 160%) — 규격이 아니라 관행이다 |
+ * | 20장 원문 | ≈ 36,000자 | |
+ * | 팽창비 상한 | 1.35 | 게이트 ⓪ 2차 측정 실측 — 장문 4건 중 최대값 |
+ * | 변환문 | ≈ 48,600자 | |
+ * | 토큰/글자 | 1.3 | 게이트 ⓪ 2차 측정 실측 — 나머지 문서가 1:1보다 높아 보수적으로 잡은 값 |
+ * | **상한** | **64,000** | 위 계산(≈63,000)을 올림 — 게이트 ⓪ 1·2차 측정이 이 값으로 21,926자
+ * |   |   | 문서를 절단 없이 처리했다(실제로 쓰인 값이기도 하다) |
+ *
+ * **약한 가정**: 팽창비·토큰/글자 비율은 n=4 표본에서 왔고, A4 1장 1,800자는 관행이지
+ * 규격이 아니다. 셋 다 보수적으로(높게) 잡았으므로 이 상한이 정상 문서를 거절하는 방향으로
+ * 틀릴 가능성은 낮다.
+ */
+const val MAX_OUTPUT_TOKENS_CEILING: Int = 64_000
 
 /** 모델 가격은 코드 상수가 아니라 배포 설정으로 받는다. */
 data class LlmPricingProperties(

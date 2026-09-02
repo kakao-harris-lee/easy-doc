@@ -9,6 +9,7 @@ import kr.easydoc.core.llm.LlmOptions
 import kr.easydoc.core.llm.LlmPrompt
 import kr.easydoc.core.llm.LlmProvider
 import kr.easydoc.infrastructure.llm.LlmProperties
+import kr.easydoc.infrastructure.llm.MAX_OUTPUT_TOKENS_CEILING
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.DisplayName
@@ -85,6 +86,46 @@ class ConversionWorkerConfigurationTest {
                 properties = LlmProperties(maxOutputTokens = -1),
             )
         }.isInstanceOf(ConfigurationException::class.java)
+    }
+
+    @Test
+    @DisplayName("A4 20장 기준 상한을 넘는 값은 운영자 오설정으로 거절한다")
+    fun `상한 초과는 ConfigurationException 이다`() {
+        val configuration = ConversionWorkerConfiguration()
+
+        assertThatThrownBy {
+            configuration.convertDocumentUseCase(
+                provider = RecordingProvider(),
+                dictionary = NoDictionaryContext,
+                properties = LlmProperties(maxOutputTokens = MAX_OUTPUT_TOKENS_CEILING + 1),
+            )
+        }.isInstanceOf(ConfigurationException::class.java)
+            .hasMessageContaining("easydoc.llm.max-output-tokens")
+            .hasMessageContaining("A4 20장")
+    }
+
+    @Test
+    @DisplayName("상한과 정확히 같은 값은 통과한다 — 경계값")
+    fun `상한과 정확히 같은 값은 통과한다`() {
+        val recordingProvider = RecordingProvider()
+        val configuration = ConversionWorkerConfiguration()
+
+        val useCase =
+            configuration.convertDocumentUseCase(
+                provider = recordingProvider,
+                dictionary = NoDictionaryContext,
+                properties = LlmProperties(maxOutputTokens = MAX_OUTPUT_TOKENS_CEILING),
+            )
+
+        useCase.convert("변환할 원문입니다.")
+
+        assertThat(recordingProvider.lastOptions?.maxTokens).isEqualTo(MAX_OUTPUT_TOKENS_CEILING)
+    }
+
+    @Test
+    @DisplayName("기본값은 상한 안에 있다")
+    fun `기본값이 상한을 넘지 않는다`() {
+        assertThat(DEFAULT_MAX_TOKENS).isLessThanOrEqualTo(MAX_OUTPUT_TOKENS_CEILING)
     }
 
     /** 실제 완성 요청에 실린 [LlmOptions] 를 기록만 하는 대역. */
