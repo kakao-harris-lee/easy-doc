@@ -14,7 +14,10 @@ import java.time.Duration
  */
 class LaneReportTest {
     private val journal = LaneJournal()
-    private val report = LaneReport("provider=anthropic settings=stub", journal)
+
+    // 64000 은 2026-08-31 1차 측정이 실제로 쓴 상한이다 — DEFAULT_MAX_TOKENS(16000)와 다른 값을
+    // 골라야 「상한 줄이 주입값을 찍는다」를 실제로 시험한다(우연히 같은 값이면 통과해도 증명이 안 된다).
+    private val report = LaneReport("provider=anthropic settings=stub", journal, maxOutputTokens = 64_000)
 
     @Test
     @DisplayName("provider 오류는 인프라로, 절단·빈 결과는 모델 품질로 센다")
@@ -129,7 +132,33 @@ class LaneReportTest {
 
         assertThat(journal.largestConversionCallOutputTokens).isEqualTo(7_400)
         assertThat(report.render())
-            .contains("단일 호출 최대 출력 토큰 7400 / 상한 16000 (DEFAULT_MAX_TOKENS, 변환+보정 호출 기준)")
+            .contains("단일 호출 최대 출력 토큰 7400 / 상한 64000 (easydoc.llm.max-output-tokens, 변환+보정 호출 기준)")
+    }
+
+    @Test
+    @DisplayName("문서별 측정값을 원문 글자 수 내림차순으로 낸다 — 실패 문서는 -로 낸다")
+    fun `문서별 값을 원문 글자 수 내림차순으로 낸다`() {
+        record(id = "g-001", sourceChars = 1_000, convertedChars = 1_200, outputTokens = 2_000, stylePassed = true)
+        record(id = "g-002", sourceChars = 1_000, convertedChars = 1_500, outputTokens = 2_400, stylePassed = false)
+        // 성공했지만 보정 호출이 잘린 문서 — expansion·stylePassed 는 값이 있어야 한다.
+        recordRepairTruncated(
+            id = "g-003",
+            sourceChars = 3_000,
+            convertedChars = 5_400,
+            outputTokens = 9_000,
+            truncatedCalls = 1,
+        )
+        // 변환 자체가 실패한 문서 — convertedChars/expansion/stylePassed 가 전부 null 이라 "-" 로 낸다.
+        recordTruncated(id = "g-004", sourceChars = 3_500, outputTokens = 16_000)
+
+        val documentLines = report.render().lines().filter { it.contains(" — 원문 ") }
+
+        assertThat(documentLines).containsExactly(
+            "  g-004 — 원문 3500 · 변환 - · 팽창비 - · 출력 토큰 16000 · 절단 호출 1 · 스타일 -",
+            "  g-003 — 원문 3000 · 변환 5400 · 팽창비 1.80 · 출력 토큰 9000 · 절단 호출 1 · 스타일 통과",
+            "  g-001 — 원문 1000 · 변환 1200 · 팽창비 1.20 · 출력 토큰 2000 · 절단 호출 0 · 스타일 통과",
+            "  g-002 — 원문 1000 · 변환 1500 · 팽창비 1.50 · 출력 토큰 2400 · 절단 호출 0 · 스타일 미통과",
+        )
     }
 
     @Test
@@ -163,6 +192,23 @@ class LaneReportTest {
     fun `실패가 없으면 비어 있다`() {
         assertThat(report.failures()).isEmpty()
         assertThat(report.render()).contains("인프라 오류 분포 — 없음")
+    }
+
+    @Test
+    @DisplayName("변환문 보존이 건너뛴 문서를 id 로만 남긴다 — 본문은 실리지 않는다")
+    fun `변환문 보존 건너뜀을 id 로만 남긴다`() {
+        report.recordTranscriptSkipped("g-001")
+        report.recordTranscriptSkipped("g-002")
+
+        val rendered = report.render()
+
+        assertThat(rendered).contains("변환문 보존 — 건너뜀 2건(변환 실패, 남길 본문 없음): g-001, g-002")
+    }
+
+    @Test
+    @DisplayName("건너뛴 문서가 없으면 그 줄이 아예 없다 — 노브를 켜지 않은 실행과 같게 보인다")
+    fun `건너뜀이 없으면 줄이 없다`() {
+        assertThat(report.render()).doesNotContain("변환문 보존")
     }
 
     /** 변환에 성공한 문서. 절단된 호출은 없다. */

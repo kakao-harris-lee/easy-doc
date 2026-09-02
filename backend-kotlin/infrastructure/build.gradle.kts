@@ -59,6 +59,12 @@ dependencies {
     // 테스트 클래스패스에만 올라가므로 bootJar 의 runtimeClasspath 에는 실리지 않는다.
     testFixturesImplementation(libs.spring.boot.starter)
     testFixturesRuntimeOnly(libs.postgresql)
+    // 실제 OLE2 컨테이너 fixture 빌더(`Ole2ContainerFixtures`)가 POIFS 를 쓴다. `api` 는
+    // `testFixtures(project(":infrastructure"))` 로만 이 산출물을 당기므로, `implementation`
+    // 이 아니라 `testFixturesImplementation`으로 둬 `api` 의 테스트 **컴파일** 클래스패스에는
+    // POI 타입이 새지 않는다(공개 시그니처가 POI 타입을 노출하지 않는 이유이기도 하다) —
+    // 런타임에는 testFixtures 산출물을 통해 전이적으로 실린다.
+    testFixturesImplementation(libs.poi.ooxml)
 
     testImplementation(platform(libs.spring.boot.bom))
     testImplementation(libs.spring.boot.starter.test)

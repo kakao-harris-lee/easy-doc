@@ -47,18 +47,46 @@ class GoldenCorpusLlmEvaluationTest {
                 is LaneDictionaryPlan.Ready -> plan.dictionary
                 is LaneDictionaryPlan.Unusable -> fail<LaneDictionary>(plan.reason)
             }
+        // 변환문 보존은 유료 호출 전에 정해야 한다 — 쓸 수 없는 경로거나 문서 id 중 하나라도
+        // 파일명으로 위험하면 여기서 실패해야 사용자가 변환문이 남는 줄 알고(또는 안전한 줄
+        // 알고) 유료 호출을 다 쓰는 일이 없다(LaneTranscript KDoc).
+        val transcript =
+            when (val plan = LaneTranscript.plan(System::getenv, documents.map(GoldenDocument::id))) {
+                is LaneTranscriptPlan.Ready -> plan.transcript
+                is LaneTranscriptPlan.Unusable -> fail<LaneTranscript>(plan.reason)
+            }
 
         val journal = LaneJournal()
-        val report = LaneReport("${ready.description} · ${dictionary.description}", journal)
+        // ready.options.maxTokens 는 easydoc.llm.max-output-tokens 를 제품과 같은 규칙으로
+        // 해석한 값이다(GoldenLlmLane.assemble KDoc) — 리포트의 「상한」 표시가 이 값과
+        // 어긋나지 않도록 같은 출처를 그대로 넘긴다.
+        val conditions = "${ready.description} · ${dictionary.description} · ${transcript.description}"
+        val report = LaneReport(conditions, journal, ready.options.maxTokens)
+        // 디렉터리를 나중에 여는 사람이 무엇으로 잰 변환문인지 알아야 한다 — 리포트 헤더와
+        // 같은 문자열을 유료 호출을 시작하기 전에 써 둔다(LaneTranscript.writeConditions KDoc).
+        transcript.writeConditions(conditions)
         // 제품이 조립한 provider 를 레인 계측이 감싼다. 변환도 judge 도 같은 계측을 지난다.
         val provider = LaneInstrumentedProvider(ready.provider, journal)
         val grader =
             LaneGrader(
-                converter = ConvertDocumentUseCase(provider),
+                // defaultOptions 는 제품 조립(ConversionWorkerConfiguration)과 같은 값이다 —
+                // ready.options 가 이미 easydoc.llm.max-output-tokens 해석을 실었다
+                // (GoldenLlmLane.assemble KDoc). judge 는 채점용 별도 호출이라 대상이 아니다.
+                //
+                // dictionary.contextSource 는 제품 조립 모드에서만 실제 소스이고, 그 외에는
+                // NoDictionaryContext 다(LaneDictionary KDoc 「두 방식」) — 파일 주입 모드의
+                // 문서별 문자열은 아래 grade() 가 convert() 의 명시 인자로 싣는다.
+                converter =
+                    ConvertDocumentUseCase(
+                        provider,
+                        defaultOptions = ready.options,
+                        dictionary = dictionary.contextSource,
+                    ),
                 judge = GoldenJudge(provider),
                 journal = journal,
                 report = report,
                 dictionary = dictionary,
+                transcript = transcript,
             )
 
         // 문서를 **순차로** 돈다 — 이유는 LaneInstrumentedProvider KDoc 「호출 간격」 절에 있다.
@@ -81,6 +109,7 @@ private class LaneGrader(
     private val journal: LaneJournal,
     private val report: LaneReport,
     private val dictionary: LaneDictionary,
+    private val transcript: LaneTranscript,
 ) {
     fun grade(document: GoldenDocument) {
         journal.beginDocument(document.id)
@@ -105,6 +134,12 @@ private class LaneGrader(
         result: ConversionResult.Failed,
         elapsed: Duration,
     ) {
+        // 변환문 보존이 켜져 있었다면 이 문서는 남길 본문이 없었다는 사실을 알린다 — 꺼져
+        // 있으면 부르지 않는다(LaneReport.recordTranscriptSkipped KDoc 「이 노브를 켜지 않은
+        // 실행에서는 아무 줄이 늘지 않는다」).
+        if (transcript.enabled) {
+            report.recordTranscriptSkipped(document.id)
+        }
         report.recordConversionFailure(
             documentId = document.id,
             kind = result.kind,
@@ -132,6 +167,10 @@ private class LaneGrader(
         elapsed: Duration,
     ) {
         val converted = result.easyText.value
+        // off 면 아무 것도 하지 않는다(LaneTranscript.save KDoc). 리포트·로그에는 이 본문이
+        // 실리지 않는다 — 아래 assertThat(report.render())...doesNotContain(converted) 가
+        // 그 경계를 매 문서 확인한다.
+        transcript.save(document.id, converted)
         val style = evaluateStyle(document.id, converted)
         val facts = evaluateFacts(document.id, converted, document.requiredFacts)
         if (!facts.passed) {

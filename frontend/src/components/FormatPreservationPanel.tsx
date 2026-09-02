@@ -53,7 +53,13 @@ const UNKNOWN_VIEW: StatusView = { tone: 'info', icon: HelpCircle, label: '확�
 const FAILED_RECOVERY =
   '검수한 내용은 저장해 두면 그대로 남습니다. 아래 내려받기를 다시 눌러 시도할 수 있고, 그래도 실패하면 원본 파일을 다시 올려 변환해 주세요.'
 
-/** 서식 유지 패널을 그리는 원본 형식. 붙여넣기·PDF는 이 패널의 대상이 아니다(§6.5 표). */
+/**
+ * 서식 유지 패널을 그리는 원본 형식. 붙여넣기·PDF는 이 패널의 대상이 아니다(§6.5 표).
+ *
+ * 업로드한 평문(`txt`)도 여기 넣지 않는다 — 문단·표·이미지 같은 유지할 원본 구조가
+ * 애초에 없는 형식이라 붙여넣기(`text`)와 같은 결론이다. 서버도 이 경우
+ * `format_preservation.status`를 `not_applicable`로 매긴다.
+ */
 const PANEL_FORMATS: readonly string[] = ['docx', 'hwpx']
 
 interface FormatPreservationPanelProps {

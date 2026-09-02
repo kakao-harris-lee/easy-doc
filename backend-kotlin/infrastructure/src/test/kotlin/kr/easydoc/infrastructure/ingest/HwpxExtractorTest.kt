@@ -127,6 +127,86 @@ class HwpxExtractorTest {
     }
 
     @Test
+    @DisplayName(
+        "매니페스트에 encryption-data 가 있으면 **손상 문구가 아니라 암호 안내**로 거절한다 " +
+            "(실제 표본: docs/golden/golden-collection-plan.hwpx, AES-256-CBC)",
+    )
+    fun `암호화된 hwpx 를 암호 안내로 거절한다`() {
+        val encrypted =
+            IngestFixtures.zipOf(
+                mapOf(
+                    "META-INF/manifest.xml" to ENCRYPTED_MANIFEST.toByteArray(StandardCharsets.UTF_8),
+                    // 암호화된 구역은 암호문 바이트다 — XML 이 아니다. 이 바이트가 파싱되면
+                    // (검사가 없다면) "손상" 문구가 나가는 게 이 버그였다.
+                    "Contents/section0.xml" to GARBAGE_SECTION_BYTES,
+                ),
+            )
+
+        assertThatThrownBy { extractor.extract(encrypted) }
+            .isInstanceOf(DocumentExtractionException::class.java)
+            .hasMessage(ExtractionMessages.ENCRYPTED)
+    }
+
+    @Test
+    @DisplayName("매니페스트는 있어도 encryption-data 가 없으면 그대로 추출한다 (대조군)")
+    fun `암호화 표시 없는 매니페스트는 통과시킨다`() {
+        val plain =
+            IngestFixtures.zipOf(
+                mapOf(
+                    "META-INF/manifest.xml" to PLAIN_MANIFEST.toByteArray(StandardCharsets.UTF_8),
+                    "Contents/section0.xml" to VALID_SECTION.toByteArray(StandardCharsets.UTF_8),
+                ),
+            )
+
+        assertThat(extractor.extract(plain)).isEqualTo("안내")
+    }
+
+    @Test
+    @DisplayName("매니페스트 자체가 없어도 그대로 추출한다 — 검사가 선택적임을 보인다 (대조군)")
+    fun `매니페스트 없는 패키지도 통과시킨다`() {
+        val noManifest =
+            IngestFixtures.zipOf(mapOf("Contents/section0.xml" to VALID_SECTION.toByteArray(StandardCharsets.UTF_8)))
+
+        assertThat(extractor.extract(noManifest)).isEqualTo("안내")
+    }
+
+    @Test
+    @DisplayName(
+        "BinData 만 암호화되고 구역은 평문이면 그대로 추출한다 — 사전 차단이 아니라 " +
+            "구역 파싱 실패 뒤에만 진단해야 하는 이유(오탐 방지)",
+    )
+    fun `다른 항목만 암호화된 매니페스트는 통과시킨다`() {
+        val onlyImageEncrypted =
+            IngestFixtures.zipOf(
+                mapOf(
+                    "META-INF/manifest.xml" to BINDATA_ONLY_ENCRYPTED_MANIFEST.toByteArray(StandardCharsets.UTF_8),
+                    "Contents/section0.xml" to VALID_SECTION.toByteArray(StandardCharsets.UTF_8),
+                ),
+            )
+
+        assertThat(extractor.extract(onlyImageEncrypted)).isEqualTo("안내")
+    }
+
+    @Test
+    @DisplayName(
+        "매니페스트가 무관한 항목(BinData)만 암호화로 표시하고 구역 자체가 깨졌다면 " +
+            "**손상**으로 거절한다 — 암호화라고 단정하지 않는다",
+    )
+    fun `무관한 항목의 암호화 표시로 손상을 암호화로 오판하지 않는다`() {
+        val unrelatedEncryptionButBrokenSection =
+            IngestFixtures.zipOf(
+                mapOf(
+                    "META-INF/manifest.xml" to BINDATA_ONLY_ENCRYPTED_MANIFEST.toByteArray(StandardCharsets.UTF_8),
+                    "Contents/section0.xml" to GARBAGE_SECTION_BYTES,
+                ),
+            )
+
+        assertThatThrownBy { extractor.extract(unrelatedEncryptionButBrokenSection) }
+            .isInstanceOf(DocumentExtractionException::class.java)
+            .hasMessage(ExtractionMessages.broken(SourceFormat.HWPX))
+    }
+
+    @Test
     @DisplayName("정상 재포장은 통과한다 — 위 거부들이 재포장 탓이 아님을 세운다")
     fun `대조군은 통과한다`() {
         val original = IngestFixtures.bytes("sample.hwpx")
@@ -164,5 +244,48 @@ class HwpxExtractorTest {
     private companion object {
         /** 상한을 확실히 넘기되 fixture 가 불필요하게 커지지 않을 만큼만. */
         const val OVERSIZED_PARAGRAPH_CHARS = MAX_EXTRACTED_CHARS + 20_000
+
+        /** `<sec><p><run><t>` 만 있으면 되는 최소 유효 구역 — 네임스페이스는 로컬 이름만 보므로 없어도 된다. */
+        const val VALID_SECTION = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><sec><p><run><t>안내</t></run></p></sec>"
+
+        /**
+         * `manifest:encryption-data` 를 담은 매니페스트 — 실제 표본(golden-collection-plan.hwpx)이
+         * 쓰는 `odf:` 접두사 그대로다. 검사는 접두사가 아니라 로컬 이름을 보므로 이 접두사가
+         * 핵심 검증 대상이다.
+         */
+        const val ENCRYPTED_MANIFEST =
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>" +
+                "<odf:manifest xmlns:odf=\"urn:oasis:names:tc:opendocument:xmlns:manifest:1.0\">" +
+                "<odf:file-entry full-path=\"Contents/section0.xml\" media-type=\"application/xml\">" +
+                "<odf:encryption-data checksum-type=\"x\" checksum=\"y\">" +
+                "<odf:algorithm algorithm-name=\"http://www.w3.org/2001/04/xmlenc#aes256-cbc\" " +
+                "initialisation-vector=\"z\"/>" +
+                "</odf:encryption-data>" +
+                "</odf:file-entry>" +
+                "</odf:manifest>"
+
+        /** [ENCRYPTED_MANIFEST] 와 같은 모양이지만 `encryption-data` 가 없는 대조군. */
+        const val PLAIN_MANIFEST =
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>" +
+                "<odf:manifest xmlns:odf=\"urn:oasis:names:tc:opendocument:xmlns:manifest:1.0\">" +
+                "<odf:file-entry full-path=\"Contents/section0.xml\" media-type=\"application/xml\"/>" +
+                "</odf:manifest>"
+
+        /**
+         * [ENCRYPTED_MANIFEST] 와 달리 암호화 표시가 구역이 아니라 `BinData/x.jpg` 에 붙는다 —
+         * 실제 표본(golden-collection-plan.hwpx)이 이미지·구역을 각각 따로 암호화 표시하는
+         * 모양 그대로다. 구역(`Contents/section0.xml`)은 이 매니페스트에 아예 등장하지 않는다.
+         */
+        const val BINDATA_ONLY_ENCRYPTED_MANIFEST =
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>" +
+                "<odf:manifest xmlns:odf=\"urn:oasis:names:tc:opendocument:xmlns:manifest:1.0\">" +
+                "<odf:file-entry full-path=\"BinData/x.jpg\" media-type=\"image/jpeg\">" +
+                "<odf:encryption-data checksum-type=\"x\" checksum=\"y\"/>" +
+                "</odf:file-entry>" +
+                "</odf:manifest>"
+
+        /** 암호문 흉내 — 유효한 XML 이 아니다. */
+        val GARBAGE_SECTION_BYTES =
+            byteArrayOf(0x01, 0x02, 0xAB.toByte(), 0xCD.toByte(), 0xEF.toByte(), 0x00, 0x10, 0x20)
     }
 }

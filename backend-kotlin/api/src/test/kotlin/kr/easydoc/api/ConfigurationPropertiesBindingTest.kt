@@ -40,24 +40,6 @@ class ConfigurationPropertiesBindingTest {
 
         assertThat(auth.argon2.iterations).isEqualTo(7)
 
-        val llm =
-            bind(
-                "easydoc.llm",
-                LlmProperties::class.java,
-                mapOf(
-                    "easydoc.llm.provider" to "anthropic",
-                    "easydoc.llm.effort" to "high",
-                    "easydoc.llm.open-ai-api-key" to SECRET_VALUE,
-                    "easydoc.llm.pricing.input-usd-per-million-tokens" to "2.00",
-                    "easydoc.llm.pricing.output-usd-per-million-tokens" to "8.00",
-                ),
-            )
-        assertThat(llm.provider).isEqualTo("anthropic")
-        assertThat(llm.effort).isEqualTo("high")
-        assertThat(llm.openAiApiKey.reveal()).isEqualTo(SECRET_VALUE)
-        assertThat(llm.pricing.inputUsdPerMillionTokens).isEqualByComparingTo(BigDecimal("2.00"))
-        assertThat(llm.pricing.outputUsdPerMillionTokens).isEqualByComparingTo(BigDecimal("8.00"))
-
         val easyDoc =
             bind(
                 "easydoc",
@@ -85,6 +67,30 @@ class ConfigurationPropertiesBindingTest {
                 .value
                 .reveal(),
         ).isEqualTo(SECRET_VALUE)
+    }
+
+    @Test
+    @DisplayName("LLM 설정이 기본값과 다른 값을 싣는다 — 출력 토큰 상한 포함")
+    fun `llm 설정이 기본값과 다른 값을 싣는다`() {
+        val llm =
+            bind(
+                "easydoc.llm",
+                LlmProperties::class.java,
+                mapOf(
+                    "easydoc.llm.provider" to "anthropic",
+                    "easydoc.llm.effort" to "high",
+                    "easydoc.llm.open-ai-api-key" to SECRET_VALUE,
+                    "easydoc.llm.pricing.input-usd-per-million-tokens" to "2.00",
+                    "easydoc.llm.pricing.output-usd-per-million-tokens" to "8.00",
+                    "easydoc.llm.max-output-tokens" to "5000",
+                ),
+            )
+        assertThat(llm.provider).isEqualTo("anthropic")
+        assertThat(llm.effort).isEqualTo("high")
+        assertThat(llm.openAiApiKey.reveal()).isEqualTo(SECRET_VALUE)
+        assertThat(llm.pricing.inputUsdPerMillionTokens).isEqualByComparingTo(BigDecimal("2.00"))
+        assertThat(llm.pricing.outputUsdPerMillionTokens).isEqualByComparingTo(BigDecimal("8.00"))
+        assertThat(llm.maxOutputTokens).isEqualTo(5000)
     }
 
     @Test

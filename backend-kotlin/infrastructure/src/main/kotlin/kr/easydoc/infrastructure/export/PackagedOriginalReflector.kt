@@ -34,7 +34,13 @@ class PackagedOriginalReflector : OriginalStructureReflector {
 
             // 같은 형식으로 내보낼 수단이 없다(PDF) 또는 원본이 없다(붙여넣기).
             // 부르는 쪽이 이 갈래를 먼저 걸러야 한다 — 여기서 다른 형식으로 접지 않는다.
-            SourceFormat.PDF, SourceFormat.TEXT -> null
+            //
+            // **TXT 도 여기 든다 — 평문에는 반영할 원본 구조가 애초에 없다.** docx·hwpx 의
+            // 반영은 "원본 파일의 문단 슬롯에 검수본을 끼워 넣는다"는 뜻인데, 평문 파일에는
+            // 유지할 서식도 슬롯도 없어 그 개념 자체가 성립하지 않는다. `DocumentService` 가
+            // TXT 업로드의 원본 바이트를 저장하지 않으므로(붙여넣기와 같은 이유) 이 갈래는
+            // 실제로는 호출되지 않는다 — `when` 이 `SourceFormat` 전부를 요구해서 남긴 방어선이다.
+            SourceFormat.PDF, SourceFormat.TEXT, SourceFormat.TXT -> null
         }
     }
 
@@ -45,7 +51,7 @@ class PackagedOriginalReflector : OriginalStructureReflector {
         when (original.format) {
             SourceFormat.DOCX -> guardedBudget(original) { docx.outline(it, lines) }
             SourceFormat.HWPX -> guardedBudget(original) { hwpx.outline(it, lines) }
-            SourceFormat.PDF, SourceFormat.TEXT -> null
+            SourceFormat.PDF, SourceFormat.TEXT, SourceFormat.TXT -> null
         }
 
     /**

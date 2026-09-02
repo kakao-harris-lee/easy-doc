@@ -32,6 +32,11 @@ function pdfFile(name = '안내문.pdf'): File {
   return new File(['x'.repeat(2048)], name, { type: 'application/pdf' })
 }
 
+/** 2KB짜리 txt. 붙여넣기(`text`)와 달리 업로드한 평문 파일이다. */
+function txtFile(name = '안내문.txt'): File {
+  return new File(['x'.repeat(2048)], name, { type: 'text/plain' })
+}
+
 /** 파일 올리기 모드로 바꾸고 파일 입력을 돌려준다. */
 async function chooseFileMode(user: ReturnType<typeof userEvent.setup>): Promise<HTMLInputElement> {
   await user.click(screen.getByRole('radio', { name: '파일 올리기' }))
@@ -213,6 +218,34 @@ describe('업로드 화면', () => {
     expect(screen.getByText('안내문.docx')).toBeInTheDocument()
     expect(screen.getByText('DOCX · 2KB')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '안내문.docx 파일 제거' })).toBeInTheDocument()
+  })
+
+  it('txt 파일도 올릴 수 있고 파일 등록으로 제출된다', async () => {
+    const user = userEvent.setup()
+    vi.mocked(createDocumentFromFile).mockResolvedValue({
+      document_id: 'd1',
+      conversion_id: 'c1',
+      status: 'pending',
+      char_count: 7,
+    })
+    renderPage()
+
+    const input = await chooseFileMode(user)
+    await user.upload(input, txtFile())
+
+    // 확장자 기준 표시일 뿐이다 — 붙여넣기(`text`)와 구분되는 업로드 파일 형식임을
+    // 화면이 TXT로 보여준다.
+    expect(screen.getByText('안내문.txt')).toBeInTheDocument()
+    expect(screen.getByText('TXT · 2KB')).toBeInTheDocument()
+
+    await user.type(screen.getByLabelText('문서 제목'), '안내문')
+    await user.click(screen.getByRole('button', { name: '쉬운 글 초안 만들기' }))
+
+    expect(vi.mocked(createDocumentFromFile)).toHaveBeenCalledWith(
+      expect.objectContaining({ name: '안내문.txt' }),
+      'w1',
+      '안내문',
+    )
   })
 
   it('파일을 고른 뒤 초점이 <body>로 떨어지지 않는다', async () => {

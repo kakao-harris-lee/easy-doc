@@ -56,9 +56,17 @@ enum class ExportFormat(
         fun ofSource(source: SourceFormat): ExportFormat? =
             when (source) {
                 SourceFormat.TEXT -> TXT
+
                 SourceFormat.DOCX -> DOCX
+
                 SourceFormat.HWPX -> HWPX
+
                 SourceFormat.PDF -> null
+
+                // 평문 업로드에도 붙여넣기와 같은 렌더러를 쓴다 — 반영할 원본 구조가 없으므로
+                // "그대로 나간다"의 가장 단순한 형태다(`PackagedOriginalReflector` 가 반영을
+                // 맡지 않는 이유와 같다).
+                SourceFormat.TXT -> TXT
             }
     }
 }

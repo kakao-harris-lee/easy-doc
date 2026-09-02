@@ -50,6 +50,20 @@ internal const val ANTHROPIC_MESSAGES_PATH: String = "/v1/messages"
 /** 기본 모델. 운영에서는 `easydoc.llm.model` 설정으로 교체할 수 있다. */
 const val DEFAULT_ANTHROPIC_MODEL: String = "claude-sonnet-5"
 
+/**
+ * [DEFAULT_ANTHROPIC_MODEL](`claude-sonnet-5`) 의 **동기 Messages API** 최대 출력 토큰.
+ *
+ * 출처: Anthropic 공식 모델 문서(2026-09-02 확인) — https://platform.claude.com/docs/en/models/overview
+ * ("Max output: 128K tokens", Claude Sonnet 5). 같은 문서는 Message Batches API 가
+ * `output-300k-2026-03-24` 베타 헤더로 300K 까지 지원한다고 밝히지만, 이 어댑터는
+ * 동기 Messages API 만 호출하므로([AnthropicProvider.execute] 참고) 배치 한도는 쓰지 않는다.
+ *
+ * **기본 모델만 다룬다.** `easydoc.llm.model` 로 다른 모델을 지정하면 그 모델의 한도는
+ * 신뢰성 있게 알 수 없다(`model` 은 자유 문자열이고, 모델별 한도 표는 조용히 낡는다) —
+ * [LlmProviderConfiguration] 이 이 상수를 모델 미지정일 때만 검사에 쓰는 이유다.
+ */
+const val ANTHROPIC_DEFAULT_MODEL_MAX_OUTPUT_TOKENS: Int = 128_000
+
 /** Anthropic 전용 읽기 타임아웃. */
 val ANTHROPIC_READ_TIMEOUT: Duration = Duration.ofSeconds(120)
 

@@ -1,5 +1,6 @@
 package kr.easydoc.api.support
 
+import kr.easydoc.infrastructure.ingest.Ole2ContainerFixtures
 import java.io.ByteArrayOutputStream
 import java.util.zip.CRC32
 import java.util.zip.ZipEntry
@@ -16,6 +17,9 @@ object UploadFixtures {
     fun samplePdf(): ByteArray = bytes("sample.pdf")
 
     fun sampleHwpx(): ByteArray = bytes("sample.hwpx")
+
+    /** 평문(.txt) 업로드 하나. UTF-8 로 인코딩된 정상 본문이다. */
+    fun sampleTxt(): ByteArray = "안내문 첫 줄\n둘째 줄".toByteArray(Charsets.UTF_8)
 
     fun bytes(name: String): ByteArray =
         requireNotNull(UploadFixtures::class.java.getResourceAsStream("$ROOT/$name")) {
@@ -74,11 +78,47 @@ object UploadFixtures {
         return sink.toByteArray()
     }
 
-    /** OLE2 매직 + UTF-16LE 스트림 이름 — 구버전 워드 컨테이너로 진단되는 최소 바이트. */
-    fun legacyWordContainer(): ByteArray =
-        byteArrayOf(0xD0.toByte(), 0xCF.toByte(), 0x11, 0xE0.toByte()) +
-            ByteArray(OLE2_PADDING_BYTES) +
-            WORD_STREAM_NAME.toByteArray(Charsets.UTF_16LE)
+    /**
+     * 루트에 `WordDocument` 스트림 하나만 있는 실제 OLE2 컨테이너 — 구버전 워드 컨테이너로
+     * 진단된다. `Ole2Diagnosis` 가 POIFS 로 디렉터리를 파싱하므로(계획 §5 D-12) 매직 바이트
+     * 뒤에 이름만 이어붙인 블롭으로는 더 이상 이 진단을 재현하지 못한다 — 실제 POIFS 컨테이너를
+     * 만드는 `Ole2ContainerFixtures`(`infrastructure` testFixtures)에 위임한다.
+     */
+    fun legacyWordContainer(): ByteArray = Ole2ContainerFixtures.ole2With(WORD_STREAM_NAME)
+
+    /**
+     * 루트에 HWP 5.x `FileHeader` 스트림 하나만 있는 실제 OLE2 컨테이너 — 구버전 hwp 컨테이너로
+     * 진단된다. 서명 출처는 `Ole2Diagnosis.HWP5_SIGNATURE` KDoc과 같다(한글과컴퓨터 공개 명세
+     * 4.1절, `pyhwp`). 위와 같은 이유로 `Ole2ContainerFixtures` 에 위임한다.
+     */
+    fun legacyHwpContainer(): ByteArray = Ole2ContainerFixtures.ole2WithHwp5FileHeader()
+
+    /**
+     * 헤더가 손상돼 POIFS 파싱 중 **비검사(unchecked) 예외**를 던지는 OLE2 컨테이너 — 500 이
+     * 아니라 422·`UNKNOWN_OLE2` 로 나가는지를 엔드포인트 레벨에서 재는 픽스처다. 실제로 어떤
+     * 예외가 나는지·왜 이 값을 골랐는지는 `Ole2ContainerFixtures.corruptedBatSectorCount` KDoc
+     * 참고(Codex 재리뷰 지적).
+     */
+    fun corruptedOle2Container(): ByteArray = Ole2ContainerFixtures.corruptedBatSectorCount()
+
+    /**
+     * [corruptedOle2Container] 와 같은 목적이지만 **다른 예외 타입**을 낸다 —
+     * `IllegalArgumentException`·`IllegalStateException` 어느 쪽도 아닌
+     * `IndexOutOfBoundsException`("Block 2147483647 not found", 사전 프로브로 확인). 이 둘만
+     * 나열해 잡던 이전 `Ole2Diagnosis` 는 이 컨테이너에서 여전히 500 으로 샜다(Codex stop-time
+     * 재리뷰 지적) — 그래서 지금은 `RuntimeException` 을 좁혀 잡는다. 자세한 이유는
+     * `Ole2ContainerFixtures.corruptedFirstDirectorySector` KDoc 참고.
+     */
+    fun corruptedOle2ContainerWithIndexOutOfBounds(): ByteArray = Ole2ContainerFixtures.corruptedFirstDirectorySector()
+
+    /**
+     * 아는 스트림이 하나도 없는 OLE2 컨테이너 — `UNKNOWN_OLE2` 문구가 나가는 기준(baseline)
+     * 케이스다. `UNKNOWN_OLE2` 상수는 `infrastructure` 모듈 내부(`ExtractionMessages`)에 있어
+     * `api` 테스트 컴파일 클래스패스에서 직접 참조할 수 없다(이 파일 상단 클래스 KDoc의
+     * `testFixtures` 경계와 같은 이유) — 문자열을 여기 그대로 베끼는 대신, [corruptedOle2Container]
+     * 의 응답 `detail` 이 이 baseline 의 `detail` 과 **같은지**로 "같은 UNKNOWN_OLE2 경로"임을 잰다.
+     */
+    fun unknownOle2Container(): ByteArray = Ole2ContainerFixtures.ole2With("SomethingElse")
 
     private fun readEntries(archive: ByteArray): LinkedHashMap<String, ByteArray> {
         val entries = LinkedHashMap<String, ByteArray>()
@@ -172,7 +212,6 @@ object UploadFixtures {
     /** 주석 안에서 안전한 한 바이트. `-` 는 `--` 를 만들어 주석을 깨뜨리므로 쓰지 않는다. */
     private const val COMMENT_FILLER = "x"
 
-    private const val OLE2_PADDING_BYTES = 64
     private const val WORD_STREAM_NAME = "WordDocument"
 
     /** 외부 엔터티를 선언하고 참조하는 구역 XML — 고전적인 XXE 모양이다. */

@@ -196,6 +196,25 @@ class DocumentServiceTest {
     }
 
     @Test
+    @DisplayName("**txt 업로드도 원본 행이 없다** — 평문에는 반영할 서식이 없어 저장해도 쓰이지 않는다")
+    fun `txt 업로드는 원본을 남기지 않는다`() {
+        val world = World(extractedFormat = SourceFormat.TXT)
+
+        val accepted = world.service.createFromFile(OWNER, "a.txt", ORIGINAL_FILE, null, null)
+
+        assertThat(world.originals.rows)
+            .describedAs("원본을 남기면 `hasStoredOriginal` 이 참이 되어 내보내기가 500 으로 떨어진다")
+            .isEmpty()
+        assertThat(world.cipher.sealed.map { it.third }).containsExactly(EncryptedField.DOCUMENT_SOURCE_TEXT)
+        assertThat(
+            world.documents.inserted
+                .single()
+                .first.sourceFormat,
+        ).isEqualTo(SourceFormat.TXT)
+        assertThat(accepted.documentId).isNotNull()
+    }
+
+    @Test
     @DisplayName("원본 저장이 **문서 등록과 같은 트랜잭션**이다")
     fun `원본 저장이 같은 트랜잭션이다`() {
         val world = World()

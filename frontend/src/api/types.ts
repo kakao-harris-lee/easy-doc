@@ -19,9 +19,11 @@ export type ExportFormat = 'docx' | 'txt' | 'hwpx'
 
 /**
  * 문서가 어디서 왔는가. 붙여넣기는 `'text'`, 파일은 소문자 확장자.
+ * **`'text'`와 `'txt'`는 다른 값이다** — `'text'`는 붙여넣기(파일이 아니다), `'txt'`는
+ * 업로드된 평문(.txt) 파일이다.
  * 계약 `components/schemas/SourceFormat`.
  */
-export type SourceFormat = 'text' | 'docx' | 'pdf' | 'hwpx'
+export type SourceFormat = 'text' | 'docx' | 'pdf' | 'hwpx' | 'txt'
 
 /**
  * 원본 서식 유지 상태. 계약 `components/schemas/FormatPreservationStatus`.

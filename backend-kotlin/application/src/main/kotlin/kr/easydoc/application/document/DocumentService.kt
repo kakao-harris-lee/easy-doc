@@ -91,7 +91,16 @@ class DocumentService(
         //
         // **추출 텍스트와 원본을 함께 저장한다.** 원본을 남긴다고 추출 텍스트를 없애지 않는다 —
         // 변환·마스킹은 텍스트로 돌고(§4), 원본은 §6.5 의 「원본 형식 내보내기」가 쓴다.
-        return store(ownerId, UploadContent(extracted.text, extracted.format, PlainBytes(bytes)), title) {
+        //
+        // **TXT 만 예외다 — 원본을 저장하지 않는다.** 평문에는 §6.5 가 반영할 서식이 애초에
+        // 없어(`PackagedOriginalReflector` 의 `SourceFormat.TXT` 갈래) 저장해도 쓰이지 않는다.
+        // 그런데도 저장하면 `hasStoredOriginal` 이 참이 되어 `ConversionExportService.export`
+        // 가 `reflect() == null` 을 "저장된 원본을 읽을 수 없다"(500)로 오인한다 — 반영할
+        // 대상이 없다는 사실과 반영에 실패했다는 사실이 같은 신호에 실리기 때문이다. 원본을
+        // 남기지 않으면 붙여넣기와 같은 길로 가서 `not_applicable` 로 정확히 판정되고, 내보내기는
+        // 검수본으로 새 텍스트 파일을 만드는 자연스러운 경로를 그대로 탄다.
+        val original = if (extracted.format == SourceFormat.TXT) null else PlainBytes(bytes)
+        return store(ownerId, UploadContent(extracted.text, extracted.format, original), title) {
             parseWorkspaceId(rawWorkspaceId)
         }
     }

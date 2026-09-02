@@ -1,7 +1,6 @@
 package kr.easydoc.infrastructure.quality
 
 import kr.easydoc.application.conversion.ConversionFailureKind
-import kr.easydoc.core.llm.DEFAULT_MAX_TOKENS
 import java.time.Duration
 import java.util.Locale
 import kotlin.math.ceil
@@ -17,8 +16,9 @@ internal data class LaneMeasurement(
     val convertedChars: Int?,
     /**
      * 변환에 쓴 출력 토큰. 유스케이스가 보고하는 **문서당 합계**이므로 변환 1회 + 보정 최대
-     * 1회의 합이고, 단일 호출 상한(`DEFAULT_MAX_TOKENS`) 대비로는 **상계치**다. 단일 호출의
-     * 최댓값은 [LaneJournal.largestConversionCallOutputTokens] 가 따로 센다.
+     * 1회의 합이고, 단일 호출 상한([LaneReport] 생성자로 주입되는 실효 값, `easydoc.llm.max-output-tokens`)
+     * 대비로는 **상계치**다. 단일 호출의 최댓값은 [LaneJournal.largestConversionCallOutputTokens] 가
+     * 따로 센다.
      */
     val outputTokens: Int,
     /** 출력 상한에서 잘려 **변환이 실패로 끝났는가.** 문서 단위 절단 발생률의 분자다. */
@@ -66,11 +66,19 @@ internal data class LaneMeasurement(
 internal class LaneReport(
     private val description: String,
     private val journal: LaneJournal,
+    /**
+     * 이 회차가 실제로 쓴 단일 호출 출력 토큰 상한. 값의 출처는 하나다 — 제품 조립과 같은
+     * 해석인 `props.maxOutputTokens`(`easydoc.llm.max-output-tokens`)에서 와야 하고,
+     * [LaneReport] 는 여기서 새 기본값을 만들지 않는다. 기본 인자를 두지 않은 것도 같은
+     * 이유다 — 호출부가 실제로 쓴 값을 빠뜨리면 컴파일이 막아야 한다.
+     */
+    private val maxOutputTokens: Int,
 ) {
     private val quality = mutableListOf<String>()
     private val infrastructure = mutableListOf<String>()
     private val measurements = mutableListOf<LaneMeasurement>()
     private val durationsMillis = mutableListOf<Long>()
+    private val transcriptSkipped = mutableListOf<String>()
 
     /** 문서 한 건을 다 돈 뒤의 측정값과 소요. 변환이 실패한 문서도 센다 — 실패에 쓴 시간도 시간이다. */
     fun recordDocument(
@@ -102,6 +110,17 @@ internal class LaneReport(
         }
     }
 
+    /**
+     * 이 문서는 [LaneTranscript] 가 켜져 있었지만 변환이 실패해 남길 본문이 없었다.
+     *
+     * 문서 id 만 담는다 — 본문이 없다는 사실 자체가 값이고, 실었다면 담을 본문도 없다.
+     * [LaneTranscript] 가 꺼져 있을 때는 호출부가 이 메서드를 부르지 않는다 — 그래서
+     * [render] 에도 이 노브를 켜지 않은 실행에서는 아무 줄이 늘지 않는다.
+     */
+    fun recordTranscriptSkipped(documentId: String) {
+        transcriptSkipped += documentId
+    }
+
     /** judge 호출 자체가 실패했다. 모델의 판정이 아니라 인프라 사건이다. */
     fun recordJudgeFailure(
         documentId: String,
@@ -120,7 +139,9 @@ internal class LaneReport(
             appendLine("골든 LLM 레인 — $description")
             appendLine(outcomeLine())
             appendLine(qualityLine())
+            appendTranscriptSkippedLine()
             appendGateSection()
+            appendDocumentSection()
             appendLine(callLine())
             appendLine(durationLine())
             appendLine("인프라 오류 분포 — ${distributionLine()}")
@@ -159,6 +180,20 @@ internal class LaneReport(
             "최대 ${seconds(sorted.last())}"
     }
 
+    /**
+     * [LaneTranscript] 가 켜져 있었는데 본문을 못 남긴 문서를 알린다. 켜지 않은 실행에서는
+     * [recordTranscriptSkipped] 가 한 번도 불리지 않으므로 이 줄 자체가 안 생긴다
+     * ([recordTranscriptSkipped] KDoc).
+     */
+    private fun StringBuilder.appendTranscriptSkippedLine() {
+        if (transcriptSkipped.isNotEmpty()) {
+            appendLine(
+                "변환문 보존 — 건너뜀 ${transcriptSkipped.size}건(변환 실패, 남길 본문 없음): " +
+                    transcriptSkipped.joinToString(", "),
+            )
+        }
+    }
+
     private fun distributionLine(): String =
         journal
             .distribution()
@@ -187,9 +222,42 @@ internal class LaneReport(
         }
         appendLine(
             "  단일 호출 최대 출력 토큰 ${journal.largestConversionCallOutputTokens} / " +
-                "상한 $DEFAULT_MAX_TOKENS (DEFAULT_MAX_TOKENS, 변환+보정 호출 기준)",
+                "상한 $maxOutputTokens (easydoc.llm.max-output-tokens, 변환+보정 호출 기준)",
         )
     }
+
+    // ── 문서별 측정 ───────────────────────────────────────────────────────────────
+
+    /**
+     * 문서 한 건 한 줄. 구간 집계([bucketLine])는 분포만 보여 주고 개별 문서 값은 어디에도
+     * 실리지 않았다 — 장문 단독 값을 확인하려면 이 줄이 필요하다. 원문 글자 수 내림차순으로
+     * 낸다: 이 리포트를 읽는 목적이 장문 확인이다.
+     *
+     * 변환 실패 문서는 [LaneMeasurement.convertedChars]·[LaneMeasurement.expansion]·
+     * [LaneMeasurement.stylePassed] 가 전부 `null` 이다 — 없는 값을 1.0 이나 0 으로 채우지
+     * 않고 "-" 로 낸다([LaneMeasurement] KDoc과 같은 이유).
+     */
+    private fun StringBuilder.appendDocumentSection() {
+        appendLine("문서별 측정 (원문 글자 수 내림차순)")
+        measurements
+            .sortedByDescending { it.sourceChars }
+            .forEach { appendLine("  ${documentLine(it)}") }
+    }
+
+    private fun documentLine(measurement: LaneMeasurement): String =
+        "${measurement.documentId} — 원문 ${measurement.sourceChars} · " +
+            "변환 ${measurement.convertedChars?.toString() ?: "-"} · " +
+            "팽창비 ${measurement.expansion?.let { String.format(Locale.ROOT, "%.2f", it) } ?: "-"} · " +
+            "출력 토큰 ${measurement.outputTokens} · " +
+            "절단 호출 ${measurement.truncatedCalls} · " +
+            "스타일 ${styleLabel(measurement.stylePassed)}"
+
+    private fun styleLabel(passed: Boolean?): String =
+        when (passed) {
+            true -> "통과"
+            false -> "미통과"
+            null -> "-"
+        }
 
     /**
      * 절단을 **두 단위로** 나란히 낸다. 문서 단위는 「사용자에게 결과가 나가지 않은 건수」이고,

@@ -197,8 +197,13 @@ class SensitiveToStringReachTest {
          * `DictionaryEntry`·`DictionaryExample`·`DictionaryMatch`)과 주입 설정 하나
          * (`DictionaryProperties`). 넷은 이 숫자를 함께 올리지 않은 채 들어왔고, 그래서
          * 사전 조각이 붙기 전부터 이 테스트는 이미 빨간불이었다.
+         *
+         * OLE2 진단이 **하나**를 더해 80 이다 — `Ole2Diagnosis.Ole2RootFacts`(POI 파싱과
+         * 우리 분기 로직을 분리하며 생긴 내부 값 타입, POI 가 던지는 비검사 예외를 좁혀 잡기
+         * 위한 리팩터, Codex stop-time 재리뷰 지적). 세 필드가 전부 `Boolean`(루트 스트림
+         * 존재 여부)이라 민감 정보가 없다 — 아래 [KNOWN_SENSITIVE_TYPES] 에 넣지 않는다.
          */
-        const val EXPECTED_SOURCE_DECLARATIONS = 79
+        const val EXPECTED_SOURCE_DECLARATIONS = 80
 
         /** 민감 판정이 반드시 닿아야 하는 타입 — 바닥이다. */
         val KNOWN_SENSITIVE_TYPES =

@@ -97,6 +97,21 @@ class ConversionExportReachTest {
     }
 
     @Test
+    @DisplayName(
+        "txt 업로드도 완료 후 내보내기가 200 이다 — 원본을 저장하지 않아도 `reflect()==null` 이 500 으로 새지 않는다",
+    )
+    fun `txt 업로드는 내보내기가 500 으로 떨어지지 않는다`() {
+        val token = newAccount()
+        val conversionId = uploadDocument(token, "안내문.txt", UploadFixtures.sampleTxt())
+        markDone(conversionId, DoneResult(easyText = "쉬운 글 초안입니다."))
+
+        val response = exportBytes(token, conversionId, format = null)
+
+        assertDeclaredStatus(response.statusCode(), ContractSpec.successStatus(EXPORT_PATH, GET))
+        assertThat(exportedText(response.body(), TXT)).contains("쉬운 글 초안입니다.")
+    }
+
+    @Test
     @DisplayName("원본과 **다른** 형식은 409 · 계약 예시 format_mismatch — 실제 업로드를 지난다")
     fun `원본과 다른 형식은 409 다`() {
         val formats = ContractSpec.schemaEnum(FORMAT_SCHEMA)
