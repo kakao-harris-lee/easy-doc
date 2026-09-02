@@ -12,7 +12,7 @@ import org.junit.jupiter.params.provider.CsvSource
 import org.junit.jupiter.params.provider.NullAndEmptySource
 import org.junit.jupiter.params.provider.ValueSource
 
-/** 디스패치 · 확장자 판별 · OLE2 3분기. */
+/** 디스패치 · 확장자 판별 · OLE2 4분기. */
 class DocumentExtractorsTest {
     private val extractors = DocumentExtractors()
 
@@ -45,11 +45,27 @@ class DocumentExtractorsTest {
     }
 
     @Test
-    @DisplayName("지원하지 않는 형식은 계약 문구 그대로 거절한다")
+    @DisplayName("알 수 없는 확장자는 계약 문구 그대로 거절한다")
     fun `지원하지 않는 형식을 거절한다`() {
-        assertThatThrownBy { extractors.extract("안내문.hwp", byteArrayOf()) }
+        assertThatThrownBy { extractors.extract("안내문.xyz", byteArrayOf()) }
             .isInstanceOf(UnsupportedFormatException::class.java)
             .hasMessage("지원 형식: docx, pdf, hwpx, txt")
+    }
+
+    @Test
+    @DisplayName("구버전 doc 확장자는 일반 안내가 아니라 **전용 문구**로 거절한다 — 내용 진단 없이 확장자만으로 안다")
+    fun `doc 확장자를 전용 문구로 거절한다`() {
+        assertThatThrownBy { extractors.extract("안내문.doc", byteArrayOf()) }
+            .isInstanceOf(UnsupportedFormatException::class.java)
+            .hasMessage(ExtractionMessages.LEGACY_DOC)
+    }
+
+    @Test
+    @DisplayName("구버전 hwp 확장자는 일반 안내가 아니라 **전용 문구**로 거절한다 — doc 와 같은 대접이다")
+    fun `hwp 확장자를 전용 문구로 거절한다`() {
+        assertThatThrownBy { extractors.extract("안내문.hwp", byteArrayOf()) }
+            .isInstanceOf(UnsupportedFormatException::class.java)
+            .hasMessage(ExtractionMessages.LEGACY_HWP)
     }
 
     @Test
@@ -95,7 +111,18 @@ class DocumentExtractorsTest {
     }
 
     @Test
-    @DisplayName("OLE2 이지만 어느 쪽인지 모르면 단정하지 않는다 (OLE2 3분기)")
+    @DisplayName(
+        "구버전 hwp(5.x) 를 hwpx 로 이름만 바꿔 올려도 **전용 문구**로 거절한다 " +
+            "(OLE2 3분기 — 계약 legacy_hwp_policy, 서명 출처는 Ole2Diagnosis KDoc)",
+    )
+    fun `구버전 hwp 를 가려낸다`() {
+        assertThatThrownBy { extractors.extract("안내문.hwpx", ole2WithHwpSignature()) }
+            .isInstanceOf(DocumentExtractionException::class.java)
+            .hasMessage(ExtractionMessages.LEGACY_HWP)
+    }
+
+    @Test
+    @DisplayName("OLE2 이지만 어느 쪽인지 모르면 단정하지 않는다 (OLE2 4분기)")
     fun `미상 OLE2 는 두 가능성을 함께 안내한다`() {
         assertThatThrownBy { extractors.extract("안내문.hwpx", ole2With("SomethingElse")) }
             .isInstanceOf(DocumentExtractionException::class.java)
@@ -103,15 +130,16 @@ class DocumentExtractorsTest {
     }
 
     @Test
-    @DisplayName("세 문구가 서로 다르다 — 3분기를 합치면 사용자가 취할 조치를 알 수 없다")
-    fun `세 안내 문구가 서로 다르다`() {
+    @DisplayName("네 문구가 서로 다르다 — 4분기를 합치면 사용자가 취할 조치를 알 수 없다")
+    fun `네 안내 문구가 서로 다르다`() {
         assertThat(
             setOf(
                 ExtractionMessages.ENCRYPTED,
                 ExtractionMessages.LEGACY_DOC,
+                ExtractionMessages.LEGACY_HWP,
                 ExtractionMessages.UNKNOWN_OLE2,
             ),
-        ).hasSize(3)
+        ).hasSize(4)
     }
 
     @Test
@@ -148,10 +176,15 @@ class DocumentExtractorsTest {
     }
 
     /** OLE2 매직 + UTF-16LE 스트림 이름을 담은 최소 바이트. */
-    private fun ole2With(streamName: String): ByteArray =
+    private fun ole2With(streamName: String): ByteArray = ole2Containing(streamName.toByteArray(Charsets.UTF_16LE))
+
+    /** OLE2 매직 + HWP 5.x `FileHeader` 서명(ASCII, `Ole2Diagnosis.HWP5_SIGNATURE`)을 담은 최소 바이트. */
+    private fun ole2WithHwpSignature(): ByteArray = ole2Containing("HWP Document File".toByteArray(Charsets.US_ASCII))
+
+    private fun ole2Containing(needle: ByteArray): ByteArray =
         byteArrayOf(0xD0.toByte(), 0xCF.toByte(), 0x11, 0xE0.toByte()) +
             ByteArray(OLE2_PADDING_BYTES) +
-            streamName.toByteArray(Charsets.UTF_16LE)
+            needle
 
     private companion object {
         const val OLE2_PADDING_BYTES = 64

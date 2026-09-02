@@ -28,8 +28,26 @@ object ExtractionMessages {
     /** 구버전 `.doc`(OLE2)을 확장자만 바꿔 올린 경우. 계약 `x-input-limits.legacy_doc_policy`. */
     const val LEGACY_DOC: String = "구버전 doc 형식은 지원하지 않습니다 (docx로 다시 저장해 올려주세요)"
 
+    /**
+     * 구버전 `.hwp`(5.x, OLE2)를 확장자만 바꿔 올린 경우. 계약 `x-input-limits.legacy_hwp_policy`.
+     * `.doc`↔`LEGACY_DOC`과 같은 급의 안내 — 무엇이 문제이고 무엇을 하면 되는지를 담는다.
+     */
+    const val LEGACY_HWP: String = "구버전 hwp 형식은 지원하지 않습니다 (hwpx로 다시 저장해 올려주세요)"
+
     /** OLE2 이긴 한데 어느 쪽인지 단정할 수 없을 때. 두 가능성을 함께 안내한다. */
     const val UNKNOWN_OLE2: String = "암호가 설정되었거나 지원하지 않는 구형식 파일입니다"
+
+    /**
+     * 지원하지 않는 확장자 중 **전용 안내**가 있는 것 — 일반 [UNSUPPORTED_FORMAT](형식 목록
+     * 나열)보다 사용자가 취할 조치를 구체적으로 안내한다. 확장자만 보고 정하므로 내용을 열어
+     * 보지 않고도(`Ole2Diagnosis`의 OLE2 3분기와 별개로) 낼 수 있다 — `.doc`·`.hwp`가
+     * `UPLOAD_FORMATS`에 없는 이유는 그대로다(거절은 유지, 안내만 나아졌다).
+     */
+    val LEGACY_EXTENSION_MESSAGES: Map<String, String> =
+        mapOf(
+            "doc" to LEGACY_DOC,
+            "hwp" to LEGACY_HWP,
+        )
 
     /** 텍스트 레이어가 없는 스캔 PDF. **페이지 0건과 다른 문구다** — 사용자가 취할 조치가 다르다. */
     const val PDF_NO_TEXT_LAYER: String = "텍스트를 추출할 수 없습니다 (스캔 PDF는 지원 예정)"

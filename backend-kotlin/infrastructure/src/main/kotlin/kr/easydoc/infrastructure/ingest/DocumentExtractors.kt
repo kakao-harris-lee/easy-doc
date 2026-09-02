@@ -24,7 +24,12 @@ class DocumentExtractors internal constructor(
     ): ExtractedDocument {
         val format =
             SourceFormat.ofUploadFilename(filename)
-                ?: throw UnsupportedFormatException(ExtractionMessages.UNSUPPORTED_FORMAT)
+                ?: throw UnsupportedFormatException(
+                    // `.doc`·`.hwp`는 내용을 열어 보지 않고 확장자만으로도 전용 안내를 낼 수 있다 —
+                    // 내용 진단(`Ole2Diagnosis`)은 hwpx·docx 확장자로 위장해 온 경우를 잡는 별도 경로다.
+                    ExtractionMessages.LEGACY_EXTENSION_MESSAGES[SourceFormat.extensionOf(filename)]
+                        ?: ExtractionMessages.UNSUPPORTED_FORMAT,
+                )
 
         if (format.isZipContainer) {
             // zip 이어야 할 자리에 OLE2 가 오면 "손상" 안내보다 원인을 짚어 주는 편이 낫다.

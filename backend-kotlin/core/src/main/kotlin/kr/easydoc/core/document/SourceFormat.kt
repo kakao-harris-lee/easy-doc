@@ -43,13 +43,22 @@ enum class SourceFormat(val wireName: String) {
 
         /** 파일 이름의 확장자로 업로드 형식을 가린다. 대소문자를 가리지 않는다. */
         fun ofUploadFilename(filename: String?): SourceFormat? {
+            val extension = extensionOf(filename) ?: return null
+            return UPLOAD_FORMATS.firstOrNull { it.wireName == extension }
+        }
+
+        /**
+         * 파일 이름에서 확장자만 소문자로 뽑는다 — **지원 형식인지는 묻지 않는다.**
+         * 지원하지 않는 확장자라도 전용 안내 문구를 낼지 판단하려면(`.doc`·`.hwp`)
+         * 형식으로 못 가려도 확장자 자체는 있어야 한다.
+         */
+        fun extensionOf(filename: String?): String? {
             val leaf = filename.orEmpty().substringAfterLast('/').substringAfterLast('\\')
             // `.hwpx` 처럼 이름 전체가 확장자인 경우를 형식으로 인정하지 않는다 —
             // `substringAfterLast` 는 구분자가 없으면 원문을 돌려주므로 점 위치를 직접 본다.
             val dot = leaf.lastIndexOf('.')
             if (dot <= 0) return null
-            val extension = leaf.substring(dot + 1).lowercase()
-            return UPLOAD_FORMATS.firstOrNull { it.wireName == extension }
+            return leaf.substring(dot + 1).lowercase()
         }
     }
 }

@@ -41,7 +41,7 @@ openapi: 3.1.0
 
 info:
   title: Easy-Read AI API
-  version: "2.4.0"
+  version: "2.5.0"
   x-baselined-at: "2026-08-12"       # 초판 기준선을 뜬 날 (동결일이 아니다)
   x-rebased-at: "2026-08-12"         # 계약의 성격을 "개선 대상"으로 다시 정의한 날
   x-source-runtime: "Python 3.12 / FastAPI (app/main.py) — 과거 참고 구현이었고 2026-08-24 저장소에서 제거됨(git 태그 pre-python-removal-20260824). 기준선 출처였을 뿐 정답이 아니었다"
@@ -566,6 +566,12 @@ x-input-limits:
   legacy_doc_policy: |
     구버전 `.doc`(OLE2)은 전용 안내 문구와 함께 422다 —
     "구버전 doc 형식은 지원하지 않습니다 (docx로 다시 저장해 올려주세요)".
+  legacy_hwp_policy: |
+    구버전 `.hwp`(5.x, OLE2)는 **지원 형식으로 추가되지 않았다** — 여전히 422다.
+    다만 전용 안내 문구와 함께 거절한다 —
+    "구버전 hwp 형식은 지원하지 않습니다 (hwpx로 다시 저장해 올려주세요)".
+    확장자가 `.hwp`인 업로드(내용을 열어 보지 않아도 안다)와, `.hwpx`(zip)로 이름만
+    바꿔 올렸지만 내용이 실은 HWP 5.x OLE2 복합 문서인 업로드 둘 다 이 문구로 거절한다.
   rejected_pdf: "텍스트 레이어 없는 스캔 PDF·암호화 PDF는 422"
   list_limit: { min: 1, max: 100, default: 20 }   # 범위 밖은 422 — **스키마 층**이라 배열 detail
   list_offset: { min: 0, default: 0 }             # 범위 밖은 422 — **스키마 층**이라 배열 detail
@@ -3370,6 +3376,46 @@ components:
 # 변경 이력
 # =============================================================================
 x-changelog:
+  - version: "2.5.0"
+    date: "2026-09-02"
+    revision: "LEGACY-HWP-MESSAGE"   # `.hwp` 거절 문구를 `.doc`와 같은 급으로 올린다
+    author: contract-keeper
+    change: |
+      **`.hwp`(구버전, 5.x)는 계속 미지원이다 — 이 개정은 거절 여부가 아니라 안내 문구를
+      바꾼다.** `x-input-limits.supported_upload_formats`는 이 개정에서 한 글자도 바뀌지
+      않았다(`[docx, pdf, hwpx, txt]` 그대로) — `.hwp`를 지원 형식에 더하지 않는다.
+
+      전에는 `.hwp` 업로드가 일반 `UNSUPPORTED_FORMAT`("지원 형식: docx, pdf, hwpx, txt")
+      만 받았다 — `.doc`가 이미 갖고 있던 것과 같은 급의 **전용 안내**가 없었다. 이번
+      개정으로 두 경로 모두 전용 문구를 낸다:
+      ⑴ **확장자 경로.** `.hwp`로 올라온 파일은 내용을 열어 보지 않고 확장자만으로
+      거절 문구를 정한다(`.doc`도 지금까지 이 경로에서는 일반 문구만 받고 있었다는
+      사실이 이번에 드러나, 같은 변경 단위에서 `.doc`도 전용 문구를 받게 했다 — 한쪽만
+      특별대우하지 않는다).
+      ⑵ **내용 경로.** `.hwpx`(zip이어야 할 확장자)로 이름만 바꿔 올렸지만 내용이 실은
+      HWP 5.x OLE2 복합 문서인 경우 — 기존 `Ole2Diagnosis`의 암호화·구버전 `.doc` 판정에
+      **세 번째 갈래**를 더해 가려낸다. 서명은 HWP 5.x `FileHeader` 스트림의 32바이트
+      ASCII 시그니처 `"HWP Document File"`이며, 한글과컴퓨터 공개 명세(「한글 문서 파일
+      형식 5.0」 revision 1.3, 4.1절)와 오픈소스 파서 `pyhwp`의 `HWP5_SIGNATURE` 상수로
+      교차 확인했다(`Ole2Diagnosis.kt` KDoc에 출처를 남겼다).
+
+      새 필드 `x-input-limits.legacy_hwp_policy`를 `legacy_doc_policy` 옆에 더했다 — 형태를
+      그대로 따랐다(전용 문구를 산문에 그대로 인용).
+    ground: |
+      **G3 — 정책 결정의 구현.** 2026-09-02 사용자 결정: 「`.hwp`는 미지원으로 유지하되
+      안내가 불친절하니 고친다 — 지원 형식으로 추가하는 것이 아니다」. 거절 자체는
+      바뀌지 않았으므로 G2(요구사항 미충족)가 아니라 문구 개선이고, `.doc`와 같은 대접을
+      요구한 것은 이미 있던 `legacy_doc_policy` 조항의 **적용 범위를 넓힌 것**이지 새
+      불변식을 만든 것이 아니다.
+    compatibility: |
+      **비파괴다.** `supported_upload_formats`·`SourceFormat.enum` 모두 그대로다. 바뀐 것은
+      `.doc`·`.hwp` 두 확장자·두 콘텐츠-진단 갈래가 받는 422 `detail` 문자열뿐이고, 이
+      문자열은 애초에 계약이 고정값으로 못박은 적이 없었다(`legacy_doc_policy`도 종전에
+      "전용 안내 문구와 함께 422"라고만 적었지 값을 다른 곳에서 인용하도록 강제하지
+      않았다). 기존에 `.hwp`·`.doc`를 업로드해 일반 `UNSUPPORTED_FORMAT` 문자열을 그대로
+      비교하던 소비자가 있다면 그 문자열 비교만 깨진다 — 상태 코드(422)·최상위 키
+      (`detail`)는 그대로다.
+
   - version: "2.4.0"
     date: "2026-09-02"
     revision: "TXT-UPLOAD"   # `.txt` 를 기본 업로드 형식에 더한다

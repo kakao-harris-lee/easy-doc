@@ -174,7 +174,10 @@ class DocumentEndpointReachTest {
             upload(
                 token,
                 MultipartBody()
-                    .file(FILE_PART, "안내문.hwp", "본문".toByteArray(Charsets.UTF_8))
+                    // `.hwp`는 이제 전용 문구(legacy_hwp_policy)로 거절돼 일반 unsupported_format
+                    // 예시와 갈린다 — 여기서 재려는 것은 "형식 오류가 어떤 문구든" 그것이 작업 공간
+                    // 형식 오류보다 먼저 나가는지이므로, 집합 밖 확장자 중 전용 문구가 없는 것을 쓴다.
+                    .file(FILE_PART, "안내문.xyz", "본문".toByteArray(Charsets.UTF_8))
                     .value(WORKSPACE_ID_PART, SUBMITTED_BAD_WORKSPACE),
             )
         assertDeclaredStatus(extraction, earlierStageStatus(EXTRACTION_STAGE, WORKSPACE_STAGE))
@@ -354,6 +357,30 @@ class DocumentEndpointReachTest {
 
         assertThat(ContractSpec.text(INPUT_LIMITS, LEGACY_DOC_POLICY_KEY))
             .withFailMessage("계약의 구버전 doc 조항과 나간 문구가 갈렸다")
+            .contains(bodyOf(response)[DETAIL].toString())
+    }
+
+    @Test
+    @DisplayName("DC-15 hwpx 로 이름만 바꾼 구버전 hwp(5.x) 도 **전용 안내 문구**로 거절한다 (계약 legacy_hwp_policy)")
+    fun `구버전 hwp 컨테이너에 전용 문구가 나간다`() {
+        val token = newAccount()
+
+        val response = upload(token, MultipartBody().file(FILE_PART, "안내문.hwpx", UploadFixtures.legacyHwpContainer()))
+
+        assertThat(ContractSpec.text(INPUT_LIMITS, LEGACY_HWP_POLICY_KEY))
+            .withFailMessage("계약의 구버전 hwp 조항과 나간 문구가 갈렸다")
+            .contains(bodyOf(response)[DETAIL].toString())
+    }
+
+    @Test
+    @DisplayName("DC-15 `.hwp` 확장자는 내용을 열어 보지 않아도 `.doc` 와 같은 급의 전용 문구로 거절한다")
+    fun `hwp 확장자에도 전용 문구가 나간다`() {
+        val token = newAccount()
+
+        val response = upload(token, MultipartBody().file(FILE_PART, "안내문.hwp", "본문".toByteArray(Charsets.UTF_8)))
+
+        assertThat(ContractSpec.text(INPUT_LIMITS, LEGACY_HWP_POLICY_KEY))
+            .withFailMessage("계약의 구버전 hwp 조항과 나간 문구가 갈렸다")
             .contains(bodyOf(response)[DETAIL].toString())
     }
 
@@ -610,6 +637,7 @@ class DocumentEndpointReachTest {
         private const val ZIP_BUDGET_KEY = "zip_uncompressed_budget_bytes"
         private const val SUPPORTED_FORMATS_KEY = "supported_upload_formats"
         private const val LEGACY_DOC_POLICY_KEY = "legacy_doc_policy"
+        private const val LEGACY_HWP_POLICY_KEY = "legacy_hwp_policy"
 
         private const val FILE_PART = "file"
         private const val WORKSPACE_ID_PART = "workspace_id"

@@ -26,7 +26,7 @@ const MAX_TITLE_LENGTH = 255
 /** 업로드 파일 크기 상한. 백엔드 MAX_UPLOAD_BYTES와 같은 값이다. */
 export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 
-/** 받을 수 있는 확장자. 구버전 hwp는 백엔드가 거절한다(app/ingest/extractors.py). */
+/** 받을 수 있는 확장자. 구버전 hwp·doc는 백엔드가 전용 문구로 거절한다(DocumentExtractors.kt, Ole2Diagnosis.kt). */
 export const ACCEPTED_EXTENSIONS = '.docx,.pdf,.hwpx,.txt'
 
 /**

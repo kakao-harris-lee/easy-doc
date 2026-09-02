@@ -83,6 +83,15 @@ object UploadFixtures {
             ByteArray(OLE2_PADDING_BYTES) +
             WORD_STREAM_NAME.toByteArray(Charsets.UTF_16LE)
 
+    /**
+     * OLE2 매직 + HWP 5.x `FileHeader` 서명(ASCII) — 구버전 hwp 컨테이너로 진단되는 최소 바이트.
+     * 서명 출처는 `Ole2Diagnosis.HWP5_SIGNATURE` KDoc과 같다(한글과컴퓨터 공개 명세 4.1절, `pyhwp`).
+     */
+    fun legacyHwpContainer(): ByteArray =
+        byteArrayOf(0xD0.toByte(), 0xCF.toByte(), 0x11, 0xE0.toByte()) +
+            ByteArray(OLE2_PADDING_BYTES) +
+            HWP5_SIGNATURE.toByteArray(Charsets.US_ASCII)
+
     private fun readEntries(archive: ByteArray): LinkedHashMap<String, ByteArray> {
         val entries = LinkedHashMap<String, ByteArray>()
         ZipInputStream(archive.inputStream()).use { zip ->
@@ -177,6 +186,7 @@ object UploadFixtures {
 
     private const val OLE2_PADDING_BYTES = 64
     private const val WORD_STREAM_NAME = "WordDocument"
+    private const val HWP5_SIGNATURE = "HWP Document File"
 
     /** 외부 엔터티를 선언하고 참조하는 구역 XML — 고전적인 XXE 모양이다. */
     private val DOCTYPE_SECTION =
