@@ -182,6 +182,23 @@ class DocumentExtractorsTest {
     }
 
     @Test
+    @DisplayName(
+        "POI 가 손상된 헤더에 비검사(unchecked) 예외를 던져도 500 으로 새지 않고 미상으로 떨어진다 " +
+            "(OLE2 4분기, Codex 재리뷰 지적)",
+    )
+    fun `POI 비검사 예외도 미상으로 떨어진다`() {
+        // BAT 섹터 수 필드를 파일 실제 크기로는 불가능한 값으로 바꾼 헤더 — POI 5.4.1 은 이
+        // 패치에 `IllegalArgumentException`(체크 예외가 아니다)을 던진다(픽스처 KDoc 참고,
+        // 사전 프로브로 확인). classify 가 IOException 만 잡던 예전 코드라면 이 예외가 그대로
+        // 새어 500 이 됐다.
+        val corrupted = Ole2ContainerFixtures.corruptedBatSectorCount()
+
+        assertThatThrownBy { extractors.extract("안내문.hwpx", corrupted) }
+            .isInstanceOf(DocumentExtractionException::class.java)
+            .hasMessage(ExtractionMessages.UNKNOWN_OLE2)
+    }
+
+    @Test
     @DisplayName("네 문구가 서로 다르다 — 4분기를 합치면 사용자가 취할 조치를 알 수 없다")
     fun `네 안내 문구가 서로 다르다`() {
         assertThat(

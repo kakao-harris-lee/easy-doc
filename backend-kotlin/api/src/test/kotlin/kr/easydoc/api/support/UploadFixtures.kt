@@ -93,6 +93,23 @@ object UploadFixtures {
      */
     fun legacyHwpContainer(): ByteArray = Ole2ContainerFixtures.ole2WithHwp5FileHeader()
 
+    /**
+     * 헤더가 손상돼 POIFS 파싱 중 **비검사(unchecked) 예외**를 던지는 OLE2 컨테이너 — 500 이
+     * 아니라 422·`UNKNOWN_OLE2` 로 나가는지를 엔드포인트 레벨에서 재는 픽스처다. 실제로 어떤
+     * 예외가 나는지·왜 이 값을 골랐는지는 `Ole2ContainerFixtures.corruptedBatSectorCount` KDoc
+     * 참고(Codex 재리뷰 지적).
+     */
+    fun corruptedOle2Container(): ByteArray = Ole2ContainerFixtures.corruptedBatSectorCount()
+
+    /**
+     * 아는 스트림이 하나도 없는 OLE2 컨테이너 — `UNKNOWN_OLE2` 문구가 나가는 기준(baseline)
+     * 케이스다. `UNKNOWN_OLE2` 상수는 `infrastructure` 모듈 내부(`ExtractionMessages`)에 있어
+     * `api` 테스트 컴파일 클래스패스에서 직접 참조할 수 없다(이 파일 상단 클래스 KDoc의
+     * `testFixtures` 경계와 같은 이유) — 문자열을 여기 그대로 베끼는 대신, [corruptedOle2Container]
+     * 의 응답 `detail` 이 이 baseline 의 `detail` 과 **같은지**로 "같은 UNKNOWN_OLE2 경로"임을 잰다.
+     */
+    fun unknownOle2Container(): ByteArray = Ole2ContainerFixtures.ole2With("SomethingElse")
+
     private fun readEntries(archive: ByteArray): LinkedHashMap<String, ByteArray> {
         val entries = LinkedHashMap<String, ByteArray>()
         ZipInputStream(archive.inputStream()).use { zip ->

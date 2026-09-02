@@ -385,6 +385,30 @@ class DocumentEndpointReachTest {
     }
 
     @Test
+    @DisplayName(
+        "DC-15 POI 가 손상된 OLE2 헤더에 비검사(unchecked) 예외를 던져도 500 이 아니라 " +
+            "미상 OLE2 와 같은 422 로 나간다 (Codex 재리뷰 지적)",
+    )
+    fun `손상된 OLE2 헤더도 미상과 같은 422 로 나간다`() {
+        val token = newAccount()
+
+        val baseline =
+            upload(token, MultipartBody().file(FILE_PART, "안내문.hwpx", UploadFixtures.unknownOle2Container()))
+        assertDeclaredStatus(baseline, UNPROCESSABLE)
+
+        val response =
+            upload(token, MultipartBody().file(FILE_PART, "안내문.hwpx", UploadFixtures.corruptedOle2Container()))
+
+        assertDeclaredStatus(response, UNPROCESSABLE)
+        assertThat(bodyOf(response)[DETAIL])
+            .withFailMessage(
+                "손상된 헤더의 detail 이 미상 OLE2(UNKNOWN_OLE2) baseline 과 다르다 — 500 으로 새지는 " +
+                    "않았어도 다른 경로로 떨어졌을 수 있다: %s",
+                bodyOf(response)[DETAIL],
+            ).isEqualTo(bodyOf(baseline)[DETAIL])
+    }
+
+    @Test
     @DisplayName("DC-16 남의 작업 공간 식별자 → **404**(403 아님) · detail 이 계약 404 예시와 같다 (X-B1)")
     fun `남의 작업 공간은 404 다`() {
         val mine = newAccount()

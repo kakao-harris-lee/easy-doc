@@ -24,14 +24,22 @@ import java.nio.charset.CodingErrorAction
  * 가능성이 여전히 CP949 보다 높기 때문이다.
  *
  * 판정 순서:
- * 1. UTF-8 BOM(`U+FEFF`)이 있으면 그 자체로 UTF-8 이 확정이다 — 한글 유무와 무관하게
- *    더 시도하지 않는다. BOM 없이 이 순서를 두면 BOM 붙은 비한국어 UTF-8 파일이 우연히
- *    한글을 포함한 CP949 로도 읽힐 때 잘못 CP949 로 샐 수 있다.
- * 2. UTF-8 엄격 디코딩이 성공하고 결과에 한글이 있으면 UTF-8.
+ * 1. **원시 바이트** 선두가 UTF-8 BOM(`EF BB BF`)이면 그 자체로 UTF-8 이 확정이다 — 한글
+ *    유무와 무관하게, 그리고 BOM 뒤가 유효한 UTF-8 인지와도 무관하게 더 시도하지 않는다.
+ *    BOM 뒤가 깨진 UTF-8 이면 CP949 로 넘기지 않고 곧장 손상 파일로 거절한다. **디코딩이
+ *    성공한 뒤에야 BOM 을 보면 안 된다** — 반례: `EF BB BF 81 00` 은 BOM 뒤가 유효한 UTF-8
+ *    이 아니지만, 전체 바이트열을 CP949("x-windows-949")로 엄격 디코딩하면 성공하고 그
+ *    결과에 한글 음절이 섞여 나온다. BOM 을 디코딩 성공 뒤에야 확정하면 이 바이트열이 잘못
+ *    CP949 로 샌다(Codex 재리뷰 지적, 2026-09-02) — BOM 은 계약(`x-input-limits.
+ *    txt_encoding_policy`)상 결정적이므로 디코딩을 시도하기 **전에**, 원시 바이트만으로
+ *    가른다.
+ * 2. BOM 이 없고 UTF-8 엄격 디코딩이 성공하고 결과에 한글이 있으면 UTF-8.
  * 3. 그 외 CP949 엄격 디코딩이 성공하고 결과에 한글이 있으면 CP949.
  * 4. 그 외 UTF-8 엄격 디코딩이 성공했으면(순수 ASCII·비한국어 텍스트) UTF-8.
- * 5. 그 외(둘 다 실패, 또는 둘 다 성공했지만 어느 쪽도 한글이 없는 경우는 없음 — 2·3이
- *    이미 그 갈래를 처리한다) 손상 파일과 같은 방식으로 거절한다.
+ * 5. 그 외 — UTF-8 엄격 디코딩이 실패했고, CP949 로도 실패했거나 CP949 는 성공했지만 그
+ *    결과에 한글 신호(음절·자모)가 전혀 없는 경우(예: 한자만 있는 CP949 문서) — 손상
+ *    파일과 같은 방식으로 거절한다. UTF-8 디코딩이 성공한 경우는 한글 유무와 무관하게
+ *    이미 규칙 2·4 가 UTF-8 로 확정하므로 이 갈래에 오지 않는다.
  *
  * 한국 공공기관 문서를 다루는 이 제품의 전제(사용자 결정)가 위 판정의 근거다 — 그 전제가
  * 없는 일반 텍스트 서비스라면 한글 유무로 인코딩을 정하는 것은 근거가 없다.
@@ -53,9 +61,14 @@ internal class TxtExtractor {
 
     /** 판정 순서는 클래스 KDoc의 5단계 그대로다. */
     private fun decode(data: ByteArray): String? {
+        // 규칙 1 — BOM 은 원시 바이트로, 디코딩을 시도하기 전에 결정한다. BOM 이 있으면
+        // UTF-8 만 시도하고, 그마저 실패하면(BOM 뒤가 깨진 UTF-8) CP949 로 넘기지 않고
+        // null 을 돌려줘 [broken] 으로 거절한다.
+        if (hasBomPrefix(data)) return strictDecode(Charsets.UTF_8, data)
+
         val utf8 = strictDecode(Charsets.UTF_8, data)
-        // BOM 이나 한글로 이미 확정됐으면(규칙 1·2) CP949 는 아예 시도하지 않는다.
-        val utf8Decisive = utf8 != null && (utf8.startsWith(BOM) || containsHangul(utf8))
+        // 규칙 2 — 한글로 이미 확정됐으면 CP949 는 아예 시도하지 않는다.
+        val utf8Decisive = utf8 != null && containsHangul(utf8)
         val cp949 = if (utf8Decisive) null else strictDecode(CP949, data)
         return when {
             utf8Decisive -> utf8
@@ -63,6 +76,13 @@ internal class TxtExtractor {
             else -> utf8
         }
     }
+
+    /**
+     * 원시 바이트 선두가 UTF-8 BOM(`EF BB BF`)인지 본다 — 디코딩 성공 여부와 무관하게,
+     * 디코딩을 시도하기 전에 결정한다. [decode] 규칙 1 이 이 함수에 기댄다.
+     */
+    private fun hasBomPrefix(data: ByteArray): Boolean =
+        data.size >= BOM_BYTES.size && BOM_BYTES.indices.all { data[it] == BOM_BYTES[it] }
 
     /**
      * 한글 포함 여부 — 세 블록 중 하나라도 있으면 참이다(Unicode 표준 `Blocks.txt` 기준):
@@ -109,6 +129,9 @@ internal class TxtExtractor {
         /** CP949(MS949) — JDK 표준 charset 이름은 "x-windows-949"(아래 리터럴). EUC-KR 의 상위 집합이다. */
         val CP949: Charset = Charset.forName("x-windows-949")
         const val BOM: Char = '\uFEFF'
+
+        /** UTF-8 BOM 원시 바이트열 — [hasBomPrefix]가 디코딩 전 원시 바이트로 판정할 때 쓴다. */
+        val BOM_BYTES = byteArrayOf(0xEF.toByte(), 0xBB.toByte(), 0xBF.toByte())
 
         /** Unicode 블록 "Hangul Syllables" — 완성형 한글 음절. [containsHangul] 참고. */
         val HANGUL_SYLLABLES = 0xAC00..0xD7A3

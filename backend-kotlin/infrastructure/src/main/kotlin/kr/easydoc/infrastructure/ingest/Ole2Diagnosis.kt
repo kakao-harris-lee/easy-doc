@@ -59,9 +59,25 @@ internal object Ole2Diagnosis {
     /**
      * POIFS 로 디렉터리를 연다. POIFS 는 스트림 전체를 메모리에 올려 구조를 읽는데, 그 입력은
      * 업로드 상한으로 이미 크기가 제한돼 있다. 디렉터리를 열지 못하거나(OLE2 매직 뒤가
-     * 손상됐거나) 대상 스트림을 읽지 못하면 — 즉 POI/IO 예외가 나면 — [UNKNOWN_OLE2] 로
-     * 떨어진다. `Throwable` 을 넓게 잡지 않고 `IOException`(POIFS 파싱·스트림 읽기 실패의
-     * 공통 상위 타입 — `NotOLE2FileException` 포함)만 잡는다.
+     * 손상됐거나) 대상 스트림을 읽지 못하면 [UNKNOWN_OLE2] 로 떨어진다.
+     *
+     * POI 가 실패를 항상 체크 예외로 알리지는 않는다 — `IOException`(POIFS 파싱·스트림 읽기
+     * 실패의 공통 상위 타입, `NotOLE2FileException` 포함)뿐 아니라, 조작된 헤더 값에서
+     * 계산한 크기·색인이 말이 안 될 때는 **비검사(unchecked)** 예외도 던진다. 예: BAT(FAT)
+     * 섹터 수가 실제 파일 크기로는 불가능한 값이면 `IllegalArgumentException`("Unable read a
+     * >2gb file via an InputStream")을, 루트 디렉터리 속성을 해석하지 못하면
+     * `IllegalStateException`("Invalid format, cannot convert property ... to RootProperty")을
+     * 던진다(둘 다 POI 5.4.1 실물을 사전 프로브로 확인 — 앞의 예는 `Ole2ContainerFixtures.
+     * corruptedBatSectorCount` 가 만드는 픽스처가 그대로 재현한다).
+     *
+     * `IllegalArgumentException`·`IllegalStateException` 은 보통 우리 코드의 **프로그래밍
+     * 오류**를 뜻해 잡지 않는 것이 원칙이다(CLAUDE.md). 그러나 여기서는 우리 코드가 아니라
+     * **POI 가 신뢰할 수 없는 입력(사용자가 올린 바이트)을 파싱하며** 던지는 것이고, 그
+     * 입력이 이미 OLE2 매직으로 형식이 확정된 뒤 이 함수 안에서만 열린다 — 그래서 이 두
+     * 예외를 이 지점에서만, POIFS 생성과 루트 항목 조회 범위로 좁혀 잡는다(우리 자신의
+     * `when` 분기 로직은 이 try 블록 밖의 코드가 아니라 안에 있지만, 그 분기는 문자열 상수를
+     * 고르기만 할 뿐 실패할 수 있는 연산이 없다 — 실질적으로 예외가 날 수 있는 지점은 POIFS
+     * 호출뿐이다). `Throwable` 은 여전히 넓게 잡지 않는다.
      */
     private fun classify(data: ByteArray): Pair<String, String> =
         try {
@@ -75,6 +91,10 @@ internal object Ole2Diagnosis {
                 }
             }
         } catch (_: IOException) {
+            "ole2_container" to ExtractionMessages.UNKNOWN_OLE2
+        } catch (_: IllegalArgumentException) {
+            "ole2_container" to ExtractionMessages.UNKNOWN_OLE2
+        } catch (_: IllegalStateException) {
             "ole2_container" to ExtractionMessages.UNKNOWN_OLE2
         }
 

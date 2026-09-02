@@ -95,6 +95,61 @@ class TxtExtractorTest {
     }
 
     @Test
+    @DisplayName("BOM 뒤가 깨진 UTF-8 이면 CP949 로 새지 않고 손상 파일로 거절한다 — BOM 은 디코딩 전에 결정적이다")
+    fun `BOM 뒤가 깨진 UTF-8 이면 거절한다`() {
+        // EF BB BF(BOM) + 81 00 은 BOM 뒤가 유효한 UTF-8 이 아니지만, 전체 바이트열을 CP949 로
+        // 엄격 디코딩하면 성공하고 그 결과에 한글 음절이 섞여 나온다(JDK "x-windows-949", 사전
+        // 프로브로 확인). BOM 을 디코딩 성공 여부에 기대 뒤늦게 확정하면 이 바이트열이 잘못
+        // CP949 로 샌다 — Codex 재리뷰 지적(2026-09-02): BOM 은 디코딩을 시도하기 전에, 원시
+        // 바이트만으로 결정돼야 한다.
+        val bomThenBrokenUtf8 = byteArrayOf(0xEF.toByte(), 0xBB.toByte(), 0xBF.toByte(), 0x81.toByte(), 0x00)
+        val cp949Decoded = strictCp949Decode(bomThenBrokenUtf8)
+        check(cp949Decoded != null && containsHangul(cp949Decoded)) {
+            "이 바이트열이 CP949 로 유효하고 한글을 포함해야 BOM 결정성이 실제로 갈리는 테스트가 된다"
+        }
+
+        assertThatThrownBy { extractor.extract(bomThenBrokenUtf8) }
+            .isInstanceOf(DocumentExtractionException::class.java)
+            .hasMessage(ExtractionMessages.broken(SourceFormat.TXT))
+    }
+
+    @Test
+    @DisplayName("한글 음절이 없어도 한글 자모만 있으면 CP949 쪽이 이긴다 — 자모도 한글 신호다")
+    fun `자모만 있는 CP949 문서를 읽는다`() {
+        // "ㄱㄴㄷ" 은 완성형 한글 음절이 아니라 호환 자모(Hangul Compatibility Jamo) 뿐이다.
+        // CP949 바이트열은 UTF-8 로는 무효하고 CP949 로는 유효하며 그 결과에 자모가 있다
+        // (사전 프로브로 확인) — containsHangul 이 자모 블록도 한글로 인정하므로 규칙 3 을
+        // 타 CP949 로 확정된다.
+        val bytes = "ㄱㄴㄷ".toByteArray(CP949)
+        check(!strictUtf8Decodes(bytes)) { "이 바이트열이 UTF-8 로 무효해야 규칙 3 갈래를 잰다" }
+
+        assertThat(extractor.extract(bytes)).isEqualTo("ㄱㄴㄷ")
+    }
+
+    @Test
+    @DisplayName(
+        "한글 자모가 전혀 없는 한자 전용 CP949 문서는 거절한다 — 규칙 3 이 신호를 찾지 못해 규칙 5 로 떨어진다",
+    )
+    fun `한글 신호가 없는 한자 전용 CP949 문서는 거절한다`() {
+        // "大韓民國" 은 한자만으로 이뤄져 완성형 음절도 자모도 없다. CP949 바이트열은 UTF-8
+        // 로는 무효하고 CP949 로는 유효하지만, 그 결과에 한글 신호가 전혀 없어 규칙 3 을 타지
+        // 못하고 규칙 5(UTF-8 실패 · CP949 는 한글 신호 없이 성공)로 떨어져 손상 파일과 같은
+        // 방식으로 거절된다(사전 프로브로 확인). 이 제품 범위(공공기관 한국어 문서)에서는
+        // 사실상 나타나지 않는 입력이지만, 정책이 실제로 이렇게 동작한다는 것을 정직하게
+        // 고정한다 — 지원 범위를 넓히는 테스트가 아니다.
+        val bytes = "大韓民國".toByteArray(CP949)
+        val cp949Decoded = strictCp949Decode(bytes)
+        check(!strictUtf8Decodes(bytes)) { "이 바이트열이 UTF-8 로 무효해야 규칙 5 갈래를 잰다" }
+        check(cp949Decoded != null && !containsHangul(cp949Decoded)) {
+            "이 바이트열이 CP949 로 유효하고 한글 신호가 없어야 규칙 5 갈래를 잰다"
+        }
+
+        assertThatThrownBy { extractor.extract(bytes) }
+            .isInstanceOf(DocumentExtractionException::class.java)
+            .hasMessage(ExtractionMessages.broken(SourceFormat.TXT))
+    }
+
+    @Test
     @DisplayName("UTF-8 도 CP949 도 아닌 바이트는 손상 파일과 같은 방식으로 거절한다")
     fun `둘 다 아니면 거절한다`() {
         val undecodable = byteArrayOf(0xFF.toByte(), 0xFE.toByte(), 0x00, 0x01)
@@ -135,6 +190,24 @@ class TxtExtractorTest {
 
     /** CP949 성공 여부만 본다 — 픽스처가 실제로 이중 유효/무효인지 확인하는 사전 프로브. */
     private fun strictCp949Decodes(bytes: ByteArray): Boolean = strictCp949Decode(bytes) != null
+
+    /** UTF-8 성공 여부만 본다 — 픽스처가 실제로 UTF-8 로 무효한지 확인하는 사전 프로브. */
+    private fun strictUtf8Decodes(bytes: ByteArray): Boolean = strictUtf8Decode(bytes) != null
+
+    /** [TxtExtractor] 와 같은 엄격 디코더로 UTF-8 디코딩을 시도한다. 실패하면 `null`. */
+    @Suppress("SwallowedException")
+    private fun strictUtf8Decode(bytes: ByteArray): String? {
+        val decoder =
+            Charsets.UTF_8
+                .newDecoder()
+                .onMalformedInput(CodingErrorAction.REPORT)
+                .onUnmappableCharacter(CodingErrorAction.REPORT)
+        return try {
+            decoder.decode(ByteBuffer.wrap(bytes)).toString()
+        } catch (cause: CharacterCodingException) {
+            null
+        }
+    }
 
     /** [TxtExtractor] 와 같은 엄격 디코더로 CP949 디코딩을 시도한다. 실패하면 `null`. */
     @Suppress("SwallowedException")
