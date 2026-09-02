@@ -1,5 +1,6 @@
 package kr.easydoc.api.support
 
+import kr.easydoc.infrastructure.ingest.Ole2ContainerFixtures
 import java.io.ByteArrayOutputStream
 import java.util.zip.CRC32
 import java.util.zip.ZipEntry
@@ -77,20 +78,20 @@ object UploadFixtures {
         return sink.toByteArray()
     }
 
-    /** OLE2 매직 + UTF-16LE 스트림 이름 — 구버전 워드 컨테이너로 진단되는 최소 바이트. */
-    fun legacyWordContainer(): ByteArray =
-        byteArrayOf(0xD0.toByte(), 0xCF.toByte(), 0x11, 0xE0.toByte()) +
-            ByteArray(OLE2_PADDING_BYTES) +
-            WORD_STREAM_NAME.toByteArray(Charsets.UTF_16LE)
+    /**
+     * 루트에 `WordDocument` 스트림 하나만 있는 실제 OLE2 컨테이너 — 구버전 워드 컨테이너로
+     * 진단된다. `Ole2Diagnosis` 가 POIFS 로 디렉터리를 파싱하므로(계획 §5 D-12) 매직 바이트
+     * 뒤에 이름만 이어붙인 블롭으로는 더 이상 이 진단을 재현하지 못한다 — 실제 POIFS 컨테이너를
+     * 만드는 `Ole2ContainerFixtures`(`infrastructure` testFixtures)에 위임한다.
+     */
+    fun legacyWordContainer(): ByteArray = Ole2ContainerFixtures.ole2With(WORD_STREAM_NAME)
 
     /**
-     * OLE2 매직 + HWP 5.x `FileHeader` 서명(ASCII) — 구버전 hwp 컨테이너로 진단되는 최소 바이트.
-     * 서명 출처는 `Ole2Diagnosis.HWP5_SIGNATURE` KDoc과 같다(한글과컴퓨터 공개 명세 4.1절, `pyhwp`).
+     * 루트에 HWP 5.x `FileHeader` 스트림 하나만 있는 실제 OLE2 컨테이너 — 구버전 hwp 컨테이너로
+     * 진단된다. 서명 출처는 `Ole2Diagnosis.HWP5_SIGNATURE` KDoc과 같다(한글과컴퓨터 공개 명세
+     * 4.1절, `pyhwp`). 위와 같은 이유로 `Ole2ContainerFixtures` 에 위임한다.
      */
-    fun legacyHwpContainer(): ByteArray =
-        byteArrayOf(0xD0.toByte(), 0xCF.toByte(), 0x11, 0xE0.toByte()) +
-            ByteArray(OLE2_PADDING_BYTES) +
-            HWP5_SIGNATURE.toByteArray(Charsets.US_ASCII)
+    fun legacyHwpContainer(): ByteArray = Ole2ContainerFixtures.ole2WithHwp5FileHeader()
 
     private fun readEntries(archive: ByteArray): LinkedHashMap<String, ByteArray> {
         val entries = LinkedHashMap<String, ByteArray>()
@@ -184,9 +185,7 @@ object UploadFixtures {
     /** 주석 안에서 안전한 한 바이트. `-` 는 `--` 를 만들어 주석을 깨뜨리므로 쓰지 않는다. */
     private const val COMMENT_FILLER = "x"
 
-    private const val OLE2_PADDING_BYTES = 64
     private const val WORD_STREAM_NAME = "WordDocument"
-    private const val HWP5_SIGNATURE = "HWP Document File"
 
     /** 외부 엔터티를 선언하고 참조하는 구역 XML — 고전적인 XXE 모양이다. */
     private val DOCTYPE_SECTION =

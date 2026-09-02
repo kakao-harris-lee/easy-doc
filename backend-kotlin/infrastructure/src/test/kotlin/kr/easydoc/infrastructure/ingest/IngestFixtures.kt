@@ -5,6 +5,8 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import org.apache.poi.poifs.filesystem.DirectoryEntry
+import org.apache.poi.poifs.filesystem.POIFSFileSystem
 import java.io.ByteArrayOutputStream
 import java.util.zip.Deflater
 import java.util.zip.ZipEntry
@@ -83,4 +85,31 @@ internal object IngestFixtures {
         }
         return entries
     }
+
+    /**
+     * 실제 OLE2 복합 문서를 POIFS 로 만든다 — 매직 바이트 + 문자열 스캔용 손 조립 블롭이 아니라
+     * 진짜 디렉터리 구조다. [build] 는 루트 디렉터리에 스트림·스토리지(하위 디렉터리)를 채운다.
+     */
+    fun ole2Of(build: DirectoryEntry.() -> Unit): ByteArray {
+        val sink = ByteArrayOutputStream()
+        POIFSFileSystem().use { fs ->
+            fs.root.build()
+            fs.writeFilesystem(sink)
+        }
+        return sink.toByteArray()
+    }
+
+    /**
+     * 루트 레벨에 스트림 하나만 있는 최소 OLE2 컨테이너 — `api` 모듈 테스트와 함께 쓰는
+     * `testFixtures` 빌더([Ole2ContainerFixtures])에 위임한다. 이 함수 자체는 그대로 두어
+     * (`test` 소스셋의) 기존 호출부를 바꾸지 않는다.
+     */
+    fun ole2With(
+        streamName: String,
+        content: ByteArray = byteArrayOf(0),
+    ): ByteArray = Ole2ContainerFixtures.ole2With(streamName, content)
+
+    /** [Ole2ContainerFixtures.hwp5FileHeader] 로 위임 — HWP5 `FileHeader` 스트림 내용. */
+    fun hwp5FileHeader(signature: String = Ole2ContainerFixtures.HWP5_SIGNATURE_TEXT): ByteArray =
+        Ole2ContainerFixtures.hwp5FileHeader(signature)
 }

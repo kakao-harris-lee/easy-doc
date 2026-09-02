@@ -54,10 +54,10 @@ class ExtractionLoggingTest {
         val encrypted =
             capture {
                 runCatching {
-                    extractors.extract("안내문.docx", ole2With("EncryptedPackage"))
+                    extractors.extract("안내문.docx", IngestFixtures.ole2With("EncryptedPackage"))
                 }
             }
-        val legacy = capture { runCatching { extractors.extract("안내문.docx", ole2With("WordDocument")) } }
+        val legacy = capture { runCatching { extractors.extract("안내문.docx", IngestFixtures.ole2With("WordDocument")) } }
         val scanned = capture { runCatching { extractors.extract("안내문.pdf", IngestFixtures.bytes("empty.pdf")) } }
 
         assertThat(render(encrypted)).contains("reason=encrypted_container")
@@ -126,14 +126,7 @@ class ExtractionLoggingTest {
             }
         }
 
-    private fun ole2With(streamName: String): ByteArray =
-        byteArrayOf(0xD0.toByte(), 0xCF.toByte(), 0x11, 0xE0.toByte()) +
-            ByteArray(OLE2_PADDING_BYTES) +
-            streamName.toByteArray(Charsets.UTF_16LE)
-
     private companion object {
-        const val OLE2_PADDING_BYTES = 64
-
         /** `HwpxExtractorTest.ENCRYPTED_MANIFEST` 와 같은 모양 — `odf:` 접두사는 실제 표본 그대로다. */
         const val ENCRYPTED_MANIFEST =
             "<?xml version=\"1.0\" encoding=\"UTF-8\"?>" +

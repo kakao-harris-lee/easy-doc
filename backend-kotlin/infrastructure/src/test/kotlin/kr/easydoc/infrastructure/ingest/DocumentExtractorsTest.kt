@@ -11,6 +11,7 @@ import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.CsvSource
 import org.junit.jupiter.params.provider.NullAndEmptySource
 import org.junit.jupiter.params.provider.ValueSource
+import java.io.ByteArrayInputStream
 
 /** 디스패치 · 확장자 판별 · OLE2 4분기. */
 class DocumentExtractorsTest {
@@ -95,17 +96,17 @@ class DocumentExtractorsTest {
     }
 
     @Test
-    @DisplayName("암호 걸린 OOXML 은 암호 안내로 거절한다 (OLE2 1분기)")
+    @DisplayName("암호 걸린 OOXML 은 암호 안내로 거절한다 (OLE2 1분기 — 루트 EncryptedPackage 스트림)")
     fun `암호 컨테이너를 가려낸다`() {
-        assertThatThrownBy { extractors.extract("안내문.docx", ole2With("EncryptedPackage")) }
+        assertThatThrownBy { extractors.extract("안내문.docx", IngestFixtures.ole2With("EncryptedPackage")) }
             .isInstanceOf(DocumentExtractionException::class.java)
             .hasMessage(ExtractionMessages.ENCRYPTED)
     }
 
     @Test
-    @DisplayName("구버전 doc 은 **전용 문구**로 거절한다 (OLE2 2분기 — 계약 legacy_doc_policy)")
+    @DisplayName("구버전 doc 은 **전용 문구**로 거절한다 (OLE2 2분기 — 계약 legacy_doc_policy, 루트 WordDocument 스트림)")
     fun `구버전 doc 을 가려낸다`() {
-        assertThatThrownBy { extractors.extract("안내문.docx", ole2With("WordDocument")) }
+        assertThatThrownBy { extractors.extract("안내문.docx", IngestFixtures.ole2With("WordDocument")) }
             .isInstanceOf(DocumentExtractionException::class.java)
             .hasMessage(ExtractionMessages.LEGACY_DOC)
     }
@@ -116,15 +117,66 @@ class DocumentExtractorsTest {
             "(OLE2 3분기 — 계약 legacy_hwp_policy, 서명 출처는 Ole2Diagnosis KDoc)",
     )
     fun `구버전 hwp 를 가려낸다`() {
-        assertThatThrownBy { extractors.extract("안내문.hwpx", ole2WithHwpSignature()) }
+        val hwp =
+            IngestFixtures.ole2Of {
+                createDocument("FileHeader", ByteArrayInputStream(IngestFixtures.hwp5FileHeader()))
+            }
+
+        assertThatThrownBy { extractors.extract("안내문.hwpx", hwp) }
             .isInstanceOf(DocumentExtractionException::class.java)
             .hasMessage(ExtractionMessages.LEGACY_HWP)
     }
 
     @Test
-    @DisplayName("OLE2 이지만 어느 쪽인지 모르면 단정하지 않는다 (OLE2 4분기)")
+    @DisplayName(
+        "HWP 가 임베드한 워드 개체는 오판을 부르지 않는다 — 루트 FileHeader 서명이 " +
+            "임베드 스토리지 안의 WordDocument·EncryptedPackage 보다 앞선다 (Codex 리뷰 지적, 혼합 표지 케이스)",
+    )
+    fun `임베드 개체가 섞여도 루트 FileHeader 로 hwp 를 가려낸다`() {
+        val hwpWithEmbeddedObjects =
+            IngestFixtures.ole2Of {
+                createDocument("FileHeader", ByteArrayInputStream(IngestFixtures.hwp5FileHeader()))
+                val binData = createDirectory("BinData")
+                binData.createDocument("WordDocument", ByteArrayInputStream(byteArrayOf(1, 2, 3)))
+                binData.createDocument("EncryptedPackage", ByteArrayInputStream(byteArrayOf(4, 5, 6)))
+            }
+
+        assertThatThrownBy { extractors.extract("안내문.hwpx", hwpWithEmbeddedObjects) }
+            .isInstanceOf(DocumentExtractionException::class.java)
+            .hasMessage(ExtractionMessages.LEGACY_HWP)
+    }
+
+    @Test
+    @DisplayName("루트에 FileHeader 가 있어도 서명이 다르면 hwp 로 단정하지 않는다 (OLE2 4분기)")
+    fun `FileHeader 서명이 틀리면 미상으로 남는다`() {
+        val wrongSignature =
+            IngestFixtures.ole2Of {
+                createDocument(
+                    "FileHeader",
+                    ByteArrayInputStream(IngestFixtures.hwp5FileHeader(signature = "Not The Real Signature")),
+                )
+            }
+
+        assertThatThrownBy { extractors.extract("안내문.hwpx", wrongSignature) }
+            .isInstanceOf(DocumentExtractionException::class.java)
+            .hasMessage(ExtractionMessages.UNKNOWN_OLE2)
+    }
+
+    @Test
+    @DisplayName("OLE2 이지만 아는 스트림이 하나도 없으면 단정하지 않는다 (OLE2 4분기)")
     fun `미상 OLE2 는 두 가능성을 함께 안내한다`() {
-        assertThatThrownBy { extractors.extract("안내문.hwpx", ole2With("SomethingElse")) }
+        assertThatThrownBy { extractors.extract("안내문.hwpx", IngestFixtures.ole2With("SomethingElse")) }
+            .isInstanceOf(DocumentExtractionException::class.java)
+            .hasMessage(ExtractionMessages.UNKNOWN_OLE2)
+    }
+
+    @Test
+    @DisplayName("OLE2 매직 뒤가 손상돼 POIFS 가 디렉터리를 못 열어도 예외가 새지 않는다 (OLE2 4분기)")
+    fun `POIFS 파싱 실패도 미상으로 떨어진다`() {
+        val magic = byteArrayOf(0xD0.toByte(), 0xCF.toByte(), 0x11, 0xE0.toByte())
+        val magicThenGarbage = magic + ByteArray(OLE2_PADDING_BYTES) { it.toByte() }
+
+        assertThatThrownBy { extractors.extract("안내문.hwpx", magicThenGarbage) }
             .isInstanceOf(DocumentExtractionException::class.java)
             .hasMessage(ExtractionMessages.UNKNOWN_OLE2)
     }
@@ -175,18 +227,8 @@ class DocumentExtractorsTest {
         assertThat(result.toString()).contains("docx")
     }
 
-    /** OLE2 매직 + UTF-16LE 스트림 이름을 담은 최소 바이트. */
-    private fun ole2With(streamName: String): ByteArray = ole2Containing(streamName.toByteArray(Charsets.UTF_16LE))
-
-    /** OLE2 매직 + HWP 5.x `FileHeader` 서명(ASCII, `Ole2Diagnosis.HWP5_SIGNATURE`)을 담은 최소 바이트. */
-    private fun ole2WithHwpSignature(): ByteArray = ole2Containing("HWP Document File".toByteArray(Charsets.US_ASCII))
-
-    private fun ole2Containing(needle: ByteArray): ByteArray =
-        byteArrayOf(0xD0.toByte(), 0xCF.toByte(), 0x11, 0xE0.toByte()) +
-            ByteArray(OLE2_PADDING_BYTES) +
-            needle
-
     private companion object {
-        const val OLE2_PADDING_BYTES = 64
+        /** OLE2 매직 뒤에 붙일, 유효한 디렉터리 구조가 아닌 임의 바이트 길이 — 파싱 실패 케이스 전용. */
+        const val OLE2_PADDING_BYTES = 508
     }
 }
