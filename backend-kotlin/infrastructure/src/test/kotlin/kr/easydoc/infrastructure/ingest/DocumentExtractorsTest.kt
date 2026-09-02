@@ -198,6 +198,115 @@ class DocumentExtractorsTest {
             .hasMessage(ExtractionMessages.UNKNOWN_OLE2)
     }
 
+    /** 아래 손상된 헤더 표 테스트의 한 행. */
+    private data class HostileHeaderCase(
+        val label: String,
+        val patch: (ByteArray) -> Unit,
+        val expectedMessage: String,
+    )
+
+    @Test
+    @DisplayName(
+        "POI 가 온갖 모양으로 손상된 OLE2 헤더에 던지는 예외가 전부 잡힌다 — 타입을 하나씩 나열하지 " +
+            "않고 RuntimeException 을 좁혀 잡는 이유를 표로 남긴다 (Codex stop-time 재리뷰 지적)",
+    )
+    fun `손상된 헤더 여덟 가지가 전부 DocumentExtractionException 으로 떨어진다`() {
+        // 각 행의 주석은 POI 5.4.1 이 그 패치에 실제로 던진 예외를 사전 프로브로 확인한 값이다.
+        // 셋(미니 섹터 시프트·미니 스트림 컷오프·첫 DIFAT 섹터)은 POI 가 값을 그대로 받아들여
+        // 예외가 나지 않는다 — 원본 WordDocument 스트림은 그대로 읽혀 LEGACY_DOC 로 떨어진다.
+        // "무엇도 새지 않는다"는 이 표의 목적은 만족하지만 UNKNOWN_OLE2 로 단정하면 거짓이라
+        // 실측한 문구를 그대로 적는다(정책을 넓히지 않는다).
+        val cases =
+            listOf(
+                // IOException("Unsupported blocksize  (2^31). Expected 2^9 or 2^12.")
+                HostileHeaderCase("섹터 시프트=0x1F(2^31)", { it[0x1E] = 0x1F }, ExtractionMessages.UNKNOWN_OLE2),
+                // IOException("Unsupported blocksize  (2^0). Expected 2^9 or 2^12.")
+                HostileHeaderCase("섹터 시프트=0x00(2^0)", { it[0x1E] = 0x00 }, ExtractionMessages.UNKNOWN_OLE2),
+                // 예외 없음 — POI 가 그대로 받아들인다.
+                HostileHeaderCase("미니 섹터 시프트=0x1F", { it[0x20] = 0x1F }, ExtractionMessages.LEGACY_DOC),
+                // 예외 없음.
+                HostileHeaderCase("미니 섹터 시프트=0x00", { it[0x20] = 0x00 }, ExtractionMessages.LEGACY_DOC),
+                // IOException("Block count 2147483647 is too high. POI maximum is 65535.")
+                HostileHeaderCase(
+                    "BAT 섹터 수=0x7FFFFFFF",
+                    { writeIntLe(it, HOSTILE_BAT_SECTOR_COUNT_OFFSET, HOSTILE_ABSURD_INT) },
+                    ExtractionMessages.UNKNOWN_OLE2,
+                ),
+                // IndexOutOfBoundsException("Block 2147483647 not found") — IOException 이 아니다.
+                // Ole2Diagnosis.readFacts 가 IOException 만 잡았다면 여기서 새어 500 이 됐다.
+                HostileHeaderCase(
+                    "첫 디렉터리 섹터=0x7FFFFFFF",
+                    { writeIntLe(it, HOSTILE_FIRST_DIR_SECTOR_OFFSET, HOSTILE_ABSURD_INT) },
+                    ExtractionMessages.UNKNOWN_OLE2,
+                ),
+                // 예외 없음.
+                HostileHeaderCase(
+                    "미니 스트림 컷오프=0",
+                    { writeIntLe(it, HOSTILE_MINI_STREAM_CUTOFF_OFFSET, 0) },
+                    ExtractionMessages.LEGACY_DOC,
+                ),
+                // 예외 없음 — 첫 DIFAT 섹터는 헤더 안 DIFAT 배열이 다 찰 때까지는 안 쓰인다.
+                HostileHeaderCase(
+                    "첫 DIFAT 섹터=0x7FFFFFFF",
+                    { writeIntLe(it, HOSTILE_FIRST_DIFAT_SECTOR_OFFSET, HOSTILE_ABSURD_INT) },
+                    ExtractionMessages.LEGACY_DOC,
+                ),
+                // ArrayIndexOutOfBoundsException("Index -2 out of bounds for length 5") —
+                // IllegalArgumentException 도 IllegalStateException 도 아니다(그 둘만 잡던
+                // 이전 버전이 여기서 500 으로 샜다).
+                HostileHeaderCase(
+                    "DIFAT 섹터 수=0x7FFFFFFF",
+                    { writeIntLe(it, HOSTILE_DIFAT_COUNT_OFFSET, HOSTILE_ABSURD_INT) },
+                    ExtractionMessages.UNKNOWN_OLE2,
+                ),
+            )
+
+        cases.forEach { case ->
+            val bytes = Ole2ContainerFixtures.ole2With("WordDocument").also(case.patch)
+
+            assertThatThrownBy { extractors.extract("안내문.hwpx", bytes) }
+                .withFailMessage("%s 가 기대한 문구로 떨어지지 않았다", case.label)
+                .isInstanceOf(DocumentExtractionException::class.java)
+                .hasMessage(case.expectedMessage)
+        }
+    }
+
+    @Test
+    @DisplayName("헤더 뒤가 통째로 잘린 OLE2(512+1 바이트)도 미상으로 떨어진다 — IndexOutOfBoundsException 실증")
+    fun `헤더만 있고 몸통이 잘린 OLE2 도 미상으로 떨어진다`() {
+        // IndexOutOfBoundsException("Block 1 not found") — 사전 프로브로 확인.
+        val truncated = Ole2ContainerFixtures.ole2With("WordDocument").copyOf(HEADER_PLUS_ONE_BYTE)
+
+        assertThatThrownBy { extractors.extract("안내문.hwpx", truncated) }
+            .isInstanceOf(DocumentExtractionException::class.java)
+            .hasMessage(ExtractionMessages.UNKNOWN_OLE2)
+    }
+
+    @Test
+    @DisplayName("디렉터리가 파일 끝을 넘어 가리키는 잘린 OLE2(4096 바이트)도 미상으로 떨어진다")
+    fun `디렉터리가 파일 끝을 넘는 잘린 OLE2 도 미상으로 떨어진다`() {
+        // IndexOutOfBoundsException("Block 4096 not found") — 사전 프로브로 확인.
+        val bytes = Ole2ContainerFixtures.ole2With("WordDocument")
+        writeIntLe(bytes, HOSTILE_FIRST_DIR_SECTOR_OFFSET, TRUNCATED_CONTAINER_SIZE)
+        val truncated = bytes.copyOf(TRUNCATED_CONTAINER_SIZE)
+
+        assertThatThrownBy { extractors.extract("안내문.hwpx", truncated) }
+            .isInstanceOf(DocumentExtractionException::class.java)
+            .hasMessage(ExtractionMessages.UNKNOWN_OLE2)
+    }
+
+    /** 리틀엔디안 4바이트 정수를 [offset] 에 써넣는다 — `Ole2ContainerFixtures` 의 헤더 조작과 같은 모양. */
+    private fun writeIntLe(
+        bytes: ByteArray,
+        offset: Int,
+        value: Int,
+    ) {
+        bytes[offset] = (value and BYTE_MASK).toByte()
+        bytes[offset + 1] = ((value shr BYTE_BITS) and BYTE_MASK).toByte()
+        bytes[offset + 2] = ((value shr (2 * BYTE_BITS)) and BYTE_MASK).toByte()
+        bytes[offset + 3] = ((value shr (3 * BYTE_BITS)) and BYTE_MASK).toByte()
+    }
+
     @Test
     @DisplayName("네 문구가 서로 다르다 — 4분기를 합치면 사용자가 취할 조치를 알 수 없다")
     fun `네 안내 문구가 서로 다르다`() {
@@ -247,5 +356,25 @@ class DocumentExtractorsTest {
     private companion object {
         /** OLE2 매직 뒤에 붙일, 유효한 디렉터리 구조가 아닌 임의 바이트 길이 — 파싱 실패 케이스 전용. */
         const val OLE2_PADDING_BYTES = 508
+
+        // 아래는 손상된 헤더 표 테스트·잘린 컨테이너 테스트가 쓰는 오프셋 — MS-CFB §2.2, 값은
+        // `Ole2ContainerFixtures` 의 같은 이름 오프셋 상수와 같다(테스트 소스셋이라 별도로 든다).
+        const val HOSTILE_BAT_SECTOR_COUNT_OFFSET = 0x2C
+        const val HOSTILE_FIRST_DIR_SECTOR_OFFSET = 0x30
+        const val HOSTILE_MINI_STREAM_CUTOFF_OFFSET = 0x38
+        const val HOSTILE_FIRST_DIFAT_SECTOR_OFFSET = 0x44
+        const val HOSTILE_DIFAT_COUNT_OFFSET = 0x48
+
+        /** 실제 파일 크기로는 있을 수 없는 값 — POI 가 이 필드들에 이 값이 오면 예외를 던진다. */
+        const val HOSTILE_ABSURD_INT = 0x7FFFFFFF
+
+        /** OLE2 헤더(512바이트) 바로 뒤 1바이트만 있는 크기 — 몸통이 통째로 잘린 케이스. */
+        const val HEADER_PLUS_ONE_BYTE = 513
+
+        /** 디렉터리가 파일 끝을 넘어 가리키는 잘림 케이스의 컨테이너 크기. */
+        const val TRUNCATED_CONTAINER_SIZE = 4096
+
+        const val BYTE_MASK = 0xFF
+        const val BYTE_BITS = 8
     }
 }

@@ -406,6 +406,18 @@ class DocumentEndpointReachTest {
                     "않았어도 다른 경로로 떨어졌을 수 있다: %s",
                 bodyOf(response)[DETAIL],
             ).isEqualTo(bodyOf(baseline)[DETAIL])
+
+        // 위 패치는 IllegalArgumentException 을 던진다 — 그 타입만으로 안심하면 안 된다는
+        // 것을 이 두 번째 패치로 보인다: IndexOutOfBoundsException(IAE·ISE 어느 쪽도 아니다,
+        // 사전 프로브로 확인)을 던지는 다른 헤더 필드를 손상시켜도 같은 결과가 나와야 한다.
+        val indexOutOfBoundsCase = UploadFixtures.corruptedOle2ContainerWithIndexOutOfBounds()
+        val otherType = upload(token, MultipartBody().file(FILE_PART, "안내문.hwpx", indexOutOfBoundsCase))
+        assertDeclaredStatus(otherType, UNPROCESSABLE)
+        assertThat(bodyOf(otherType)[DETAIL])
+            .withFailMessage(
+                "IndexOutOfBoundsException 을 던지는 패치의 detail 이 미상 OLE2 baseline 과 다르다: %s",
+                bodyOf(otherType)[DETAIL],
+            ).isEqualTo(bodyOf(baseline)[DETAIL])
     }
 
     @Test

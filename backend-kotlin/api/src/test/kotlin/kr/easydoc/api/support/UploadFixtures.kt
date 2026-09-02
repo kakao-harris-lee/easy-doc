@@ -102,6 +102,16 @@ object UploadFixtures {
     fun corruptedOle2Container(): ByteArray = Ole2ContainerFixtures.corruptedBatSectorCount()
 
     /**
+     * [corruptedOle2Container] 와 같은 목적이지만 **다른 예외 타입**을 낸다 —
+     * `IllegalArgumentException`·`IllegalStateException` 어느 쪽도 아닌
+     * `IndexOutOfBoundsException`("Block 2147483647 not found", 사전 프로브로 확인). 이 둘만
+     * 나열해 잡던 이전 `Ole2Diagnosis` 는 이 컨테이너에서 여전히 500 으로 샜다(Codex stop-time
+     * 재리뷰 지적) — 그래서 지금은 `RuntimeException` 을 좁혀 잡는다. 자세한 이유는
+     * `Ole2ContainerFixtures.corruptedFirstDirectorySector` KDoc 참고.
+     */
+    fun corruptedOle2ContainerWithIndexOutOfBounds(): ByteArray = Ole2ContainerFixtures.corruptedFirstDirectorySector()
+
+    /**
      * 아는 스트림이 하나도 없는 OLE2 컨테이너 — `UNKNOWN_OLE2` 문구가 나가는 기준(baseline)
      * 케이스다. `UNKNOWN_OLE2` 상수는 `infrastructure` 모듈 내부(`ExtractionMessages`)에 있어
      * `api` 테스트 컴파일 클래스패스에서 직접 참조할 수 없다(이 파일 상단 클래스 KDoc의
