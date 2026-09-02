@@ -35,6 +35,7 @@ class DocumentContractNodeTest {
     fun `입력 상한 산문 노드가 실재한다`() {
         assertThat(ContractSpec.text(INPUT_LIMITS, LEGACY_DOC_POLICY_KEY)).isNotBlank()
         assertThat(ContractSpec.text(INPUT_LIMITS, LEGACY_HWP_POLICY_KEY)).isNotBlank()
+        assertThat(ContractSpec.text(INPUT_LIMITS, TXT_ENCODING_POLICY_KEY)).isNotBlank()
         assertThat(ContractSpec.text(INPUT_LIMITS, REJECTED_PDF_KEY)).isNotBlank()
         assertThat(ContractSpec.inputLimit(ZIP_BUDGET_KEY)).isPositive()
         assertThat(ContractSpec.inputLimit(MAX_EXTRACTED_CHARS_KEY)).isPositive()
@@ -265,6 +266,7 @@ class DocumentContractNodeTest {
         const val ZIP_BUDGET_KEY = "zip_uncompressed_budget_bytes"
         const val LEGACY_DOC_POLICY_KEY = "legacy_doc_policy"
         const val LEGACY_HWP_POLICY_KEY = "legacy_hwp_policy"
+        const val TXT_ENCODING_POLICY_KEY = "txt_encoding_policy"
         const val REJECTED_PDF_KEY = "rejected_pdf"
 
         const val CREATED_SCHEMA = "DocumentCreatedResponse"
