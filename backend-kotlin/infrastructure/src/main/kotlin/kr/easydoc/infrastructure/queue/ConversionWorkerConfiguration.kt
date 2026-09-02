@@ -55,8 +55,9 @@ data class ConversionWorkerProperties(
 class ConversionWorkerConfiguration {
     /**
      * `LlmOptions` 를 여기서 조립한다 — 출력 토큰 상한을 구성값(`easydoc.llm.max-output-tokens`)
-     * 에서 받아 실제 워커 호출까지 흘려보내는 유일한 지점이다. 값 검증(양수)은 중복하지
-     * 않는다 — [LlmOptions] 의 `init` 이 이 생성 시점에 이미 거절한다.
+     * 에서 받아 실제 워커 호출까지 흘려보내는 유일한 지점이다. `properties.validatedMaxOutputTokens()`
+     * 가 운영자 오설정(0 이하)을 `ConfigurationException` 으로 여기서 먼저 거절한다 —
+     * [LlmOptions] 의 `init` `require` 는 그 계약이 지켜지지 않았을 때의 마지막 방어선이다.
      */
     @Bean
     fun convertDocumentUseCase(
@@ -67,7 +68,7 @@ class ConversionWorkerConfiguration {
         ConvertDocumentUseCase(
             provider,
             dictionary = dictionary,
-            defaultOptions = LlmOptions(maxTokens = properties.maxOutputTokens),
+            defaultOptions = LlmOptions(maxTokens = properties.validatedMaxOutputTokens()),
         )
 
     /**

@@ -21,7 +21,7 @@ class LaneTranscriptTest {
     fun `미설정이면 off 다`(
         @TempDir temp: Path,
     ) {
-        val transcript = ready(LaneTranscript.plan(env = { null }))
+        val transcript = ready(LaneTranscript.plan(env = { null }, documentIds = listOf("001")))
 
         assertThat(transcript.enabled).isFalse()
         assertThat(transcript.description).isEqualTo("transcript=off")
@@ -32,11 +32,22 @@ class LaneTranscriptTest {
     }
 
     @Test
+    @DisplayName("off 면 문서 id 가 위험해도 검사하지 않는다 — 기존 동작과 같다")
+    fun `off 면 id 검사도 하지 않는다`() {
+        // 노브를 켜면 거절당할 id(경로 순회, 예약 이름 충돌) 지만, off 는 쓰지 않으므로
+        // 안전 여부를 볼 이유가 없다 — 이 노브를 쓰지 않는 기존 골든 테스트가 이 문서 id
+        // 문법으로 영향받으면 안 된다.
+        val plan = LaneTranscript.plan(env = { null }, documentIds = listOf("../report", "conditions"))
+
+        assertThat(plan).isInstanceOf(LaneTranscriptPlan.Ready::class.java)
+    }
+
+    @Test
     @DisplayName("설정하면 문서마다 <id>.txt 로 남긴다")
     fun `설정하면 문서별 파일이 생긴다`(
         @TempDir temp: Path,
     ) {
-        val transcript = ready(LaneTranscript.plan(env(temp)))
+        val transcript = ready(LaneTranscript.plan(env(temp), listOf("001")))
 
         assertThat(transcript.enabled).isTrue()
         assertThat(transcript.description).isEqualTo("transcript=$temp")
@@ -55,7 +66,7 @@ class LaneTranscriptTest {
     ) {
         val target = temp.resolve("새-디렉터리")
 
-        val transcript = ready(LaneTranscript.plan(env(target)))
+        val transcript = ready(LaneTranscript.plan(env(target), listOf("001")))
 
         assertThat(target.exists()).isTrue()
         transcript.save("001", BODY)
@@ -72,10 +83,51 @@ class LaneTranscriptTest {
         val blocked = temp.resolve("파일로-막힌-경로")
         blocked.writeText("이미 파일이다")
 
-        val plan = LaneTranscript.plan(env(blocked))
+        val plan = LaneTranscript.plan(env(blocked), listOf("001"))
 
         assertThat(plan).isInstanceOf(LaneTranscriptPlan.Unusable::class.java)
         assertThat((plan as LaneTranscriptPlan.Unusable).reason).contains(LaneTranscript.DIRECTORY_ENV)
+    }
+
+    @Test
+    @DisplayName("경로 순회 문서 id 는 유료 호출을 시작하기 전에 거절한다")
+    fun `경로 순회 id 는 거절한다`(
+        @TempDir temp: Path,
+    ) {
+        // 원래 결함 재현 — "../report" 는 <디렉터리>/../report.txt 로 풀려 디렉터리 밖에 쓴다.
+        val plan = LaneTranscript.plan(env(temp), listOf("001", "../report"))
+
+        assertThat(plan).isInstanceOf(LaneTranscriptPlan.Unusable::class.java)
+        val reason = (plan as LaneTranscriptPlan.Unusable).reason
+        assertThat(reason).contains("../report")
+        // 계획 단계에서 거절됐으니 아무 파일도(디렉터리 밖은 물론 안에도) 쓰지 않았어야 한다 —
+        // "유료 호출 전에" 를 파일시스템으로 확인한다.
+        assertThat(temp.toFile().listFiles()).isEmpty()
+        assertThat(temp.resolveSibling("report.txt").exists()).isFalse()
+    }
+
+    @Test
+    @DisplayName("conditions 와 충돌하는 문서 id 는 거절한다 — 측정 조건 파일을 덮어쓰면 안 된다")
+    fun `conditions 와 충돌하는 id 는 거절한다`(
+        @TempDir temp: Path,
+    ) {
+        val plan = LaneTranscript.plan(env(temp), listOf("001", "conditions"))
+
+        assertThat(plan).isInstanceOf(LaneTranscriptPlan.Unusable::class.java)
+        val reason = (plan as LaneTranscriptPlan.Unusable).reason
+        assertThat(reason).contains("conditions")
+        assertThat(reason).contains(LaneTranscript.CONDITIONS_FILE_NAME)
+    }
+
+    @Test
+    @DisplayName("코퍼스 안에서 문서 id 가 중복되면 거절한다 — 나중 문서가 앞선 변환문을 조용히 덮어쓰면 안 된다")
+    fun `중복 id 는 거절한다`(
+        @TempDir temp: Path,
+    ) {
+        val plan = LaneTranscript.plan(env(temp), listOf("001", "002", "001"))
+
+        assertThat(plan).isInstanceOf(LaneTranscriptPlan.Unusable::class.java)
+        assertThat((plan as LaneTranscriptPlan.Unusable).reason).contains("001")
     }
 
     @Test
@@ -83,7 +135,7 @@ class LaneTranscriptTest {
     fun `본문을 찍지 않는다`(
         @TempDir temp: Path,
     ) {
-        val transcript = ready(LaneTranscript.plan(env(temp)))
+        val transcript = ready(LaneTranscript.plan(env(temp), listOf("001")))
 
         transcript.save("001", BODY)
 
@@ -98,7 +150,7 @@ class LaneTranscriptTest {
         // 1차 실행이 남긴 것으로 볼 수 있는 파일 하나.
         temp.resolve("047.txt").writeText("이전 실행의 변환문")
 
-        val plan = LaneTranscript.plan(env(temp))
+        val plan = LaneTranscript.plan(env(temp), listOf("001"))
 
         assertThat(plan).isInstanceOf(LaneTranscriptPlan.Unusable::class.java)
         val reason = (plan as LaneTranscriptPlan.Unusable).reason
@@ -111,7 +163,7 @@ class LaneTranscriptTest {
     fun `조건 파일을 남긴다`(
         @TempDir temp: Path,
     ) {
-        val transcript = ready(LaneTranscript.plan(env(temp)))
+        val transcript = ready(LaneTranscript.plan(env(temp), listOf("001")))
         val conditions = "provider=anthropic settings=stub · dictContext=off · transcript=$temp"
 
         transcript.writeConditions(conditions)
@@ -127,7 +179,7 @@ class LaneTranscriptTest {
     fun `off 면 조건 파일도 안 남긴다`(
         @TempDir temp: Path,
     ) {
-        val transcript = ready(LaneTranscript.plan(env = { null }))
+        val transcript = ready(LaneTranscript.plan(env = { null }, documentIds = listOf("001")))
 
         transcript.writeConditions("provider=anthropic")
 

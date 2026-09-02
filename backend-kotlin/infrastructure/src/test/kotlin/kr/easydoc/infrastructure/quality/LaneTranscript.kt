@@ -34,13 +34,25 @@ internal class LaneTranscript private constructor(
      *
      * 변환이 실패한 문서는 쓸 본문이 없으므로 호출하지 않는다 — 그 대신
      * `LaneReport.recordTranscriptSkipped` 로 건너뛴 사실만 남긴다.
+     *
+     * [documentId] 는 [plan] 이 이미 [rejectUnsafeDocumentIds] 로 걸렀어야 하는 값이다 — 유일한
+     * 프로덕션 호출부(`GoldenCorpusLlmEvaluationTest`)가 `plan` 에 넘긴 것과 같은 문서 목록을
+     * 돈다. 그래도 여기서 다시 [safeFileNameOrNull] 로 확인하는 이유는, 이 줄이 바로 그
+     * 취약점이 있던 자리이기 때문이다 — `plan` 의 사전 검사가 이 함수의 유일한 방어선이
+     * 되게 두지 않는다. 통과했어야 할 값이 걸리면 조용히 다른 곳에 쓰는 대신 바로 터뜨린다.
      */
     fun save(
         documentId: String,
         text: String,
     ) {
         val dir = directory ?: return
-        dir.resolve("$documentId$FILE_SUFFIX").writeText(text)
+        val fileName =
+            safeFileNameOrNull(documentId, dir)
+                ?: error(
+                    "문서 id \"$documentId\" 는 변환문 파일명으로 쓸 수 없다 — plan() 이 미리 걸렀어야 " +
+                        "한다. LaneTranscript 를 만든 곳을 확인하라.",
+                )
+        dir.resolve(fileName).writeText(text)
     }
 
     /**
@@ -70,8 +82,18 @@ internal class LaneTranscript private constructor(
         private const val PROBE_FILE_NAME: String = ".lane-transcript-probe"
 
         /**
+         * 파일명으로 안전한 문서 id 문법. 영숫자·`.`·`_`·`-` 만 허용한다 — 특히 `/`(POSIX)와
+         * `\`(Windows) 경로 구분자를 뺀 것이 핵심이다. 실제 골든 코퍼스 문서(`data/golden/documents`
+         * 아래 JSON 파일)의 id 는 [GoldenDocumentLoader] 기준 전부 세 자리 숫자라 이 문법보다
+         * 훨씬 좁다 — 여기는 그보다 넓게, 하지만 경로 이스케이프는 불가능하게 허용한다.
+         */
+        private val SAFE_DOCUMENT_ID: Regex = Regex("^[A-Za-z0-9._-]+$")
+
+        /**
          * [env] 를 인자로 받는 이유는 [GoldenLlmLane.plan] 과 같다 — 선택 규칙을 유료 호출
-         * 없이 시험하기 위해서다.
+         * 없이 시험하기 위해서다. [documentIds] 를 받는 이유는 [LaneDictionary.plan] 과 같다 —
+         * 이 레인이 채점할 문서 id 전체를 계획 시점에 이미 알 수 있으니, 그중 하나라도 파일명으로
+         * 위험하면 문서를 하나씩 돌기 전에, 즉 유료 호출을 시작하기 전에 걸러야 한다.
          *
          * 판정 순서:
          * ⑴ 디렉터리를 만들 수 없으면 거절한다.
@@ -80,26 +102,35 @@ internal class LaneTranscript private constructor(
          * 이번 실행 결과로 오인하게 된다 — `backend-kotlin/build.gradle.kts` 가 `testLlm` 에
          * `outputs.upToDateWhen { false }` 를 건 이유(「돌리지 않은 값을 돌린 값으로
          * 읽는다」)와 같은 성질의 문제다. **여기서 기존 파일을 지우지 않는다** — 그 파일이
-         * 다른 판정의 근거일 수 있다. 이 순서가 [probeWritable] 보다 먼저인 이유는 바로
-         * 아래 KDoc에 있다.
-         * ⑶ 비어 있어도 쓰기 권한이 없을 수 있으면 거절한다([probeWritable]).
+         * 다른 판정의 근거일 수 있다.
+         * ⑶ **문서 id 중 하나라도 파일명으로 위험하면 거절한다**([rejectUnsafeDocumentIds]) —
+         * 경로 순회, 예약 파일 이름과의 충돌, 같은 실행 안에서의 id 중복 셋 다 이 자리에서
+         * 잡는다. 이 검사는 파일시스템을 건드리지 않으므로 [probeWritable] 보다 먼저 두어도
+         * 안전하다.
+         * ⑷ 비어 있어도 쓰기 권한이 없을 수 있으면 거절한다([probeWritable]). 이 순서가
+         * ⑵ 보다 뒤인 이유는 바로 그 함수 KDoc에 있다.
          *
-         * 셋 다 **유료 호출을 시작하기 전에** 거절한다. 조용히 넘어가면 사용자는 변환문이
-         * 남는 줄 알고(또는 이전 실행 것을 이번 것으로 착각하고) 유료 호출을 다 쓰고
-         * 아무것도 못 건진다 — `LaneDictionary.planDirectory`·`LaneDictionary.read` KDoc과
-         * 같은 판단이다.
+         * 넷 다 **유료 호출을 시작하기 전에** 거절한다. 조용히 넘어가면 사용자는 변환문이
+         * 남는 줄 알고(또는 이전 실행 것을 이번 것으로 착각하고, 또는 다른 문서의 변환문이나
+         * 측정 조건 파일을 조용히 덮어쓴 채로) 유료 호출을 다 쓰고 아무것도 못 건진다 —
+         * `LaneDictionary.planDirectory`·`LaneDictionary.read` KDoc과 같은 판단이다.
          */
-        fun plan(env: (String) -> String?): LaneTranscriptPlan {
+        fun plan(
+            env: (String) -> String?,
+            documentIds: List<String>,
+        ): LaneTranscriptPlan {
             val configured =
                 env(DIRECTORY_ENV)?.takeIf(String::isNotBlank)
                     ?: return LaneTranscriptPlan.Ready(LaneTranscript(null))
             val directory = Path.of(configured)
             return try {
                 Files.createDirectories(directory)
-                rejectIfNotEmpty(configured, directory) ?: run {
-                    probeWritable(directory)
-                    LaneTranscriptPlan.Ready(LaneTranscript(directory))
-                }
+                rejectIfNotEmpty(configured, directory)
+                    ?: rejectUnsafeDocumentIds(documentIds, directory)
+                    ?: run {
+                        probeWritable(directory)
+                        LaneTranscriptPlan.Ready(LaneTranscript(directory))
+                    }
             } catch (exc: IOException) {
                 LaneTranscriptPlan.Unusable(
                     "$DIRECTORY_ENV=$configured 에 쓸 수 없다: ${exc.message} — 이대로 돌면 변환문 없이 " +
@@ -107,6 +138,90 @@ internal class LaneTranscript private constructor(
                 )
             }
         }
+
+        /** [save] 가 실제로 쓸 파일 이름. 검증과 쓰기가 같은 계산을 쓰게 한다. */
+        private fun fileNameFor(documentId: String): String = "$documentId$FILE_SUFFIX"
+
+        /**
+         * [documentId] 가 [directory] 안에 안전하게 `<id>.txt` 로 쓸 수 있으면 그 파일 이름을,
+         * 아니면 `null` 을 돌려준다. [rejectUnsafeDocumentIds] 의 계획 시점 검사와 [save] 의
+         * 쓰기 시점 검사가 같은 판정을 쓰게 하는 자리다.
+         */
+        private fun safeFileNameOrNull(
+            documentId: String,
+            directory: Path,
+        ): String? {
+            val fileName = fileNameFor(documentId)
+            val normalizedDirectory = directory.normalize()
+            val staysInsideDirectory = normalizedDirectory.resolve(fileName).normalize().parent == normalizedDirectory
+            val isSafe =
+                SAFE_DOCUMENT_ID.matches(documentId) &&
+                    fileName != CONDITIONS_FILE_NAME &&
+                    fileName != PROBE_FILE_NAME &&
+                    staysInsideDirectory
+            return fileName.takeIf { isSafe }
+        }
+
+        /**
+         * [plan] KDoc 판정 순서 ⑶. **[rejectIfNotEmpty] 뒤, [probeWritable] 앞**에 부른다 —
+         * 파일시스템을 건드리지 않는 순수 검사라 순서가 중요하지 않지만, 어차피 값싼 검사를
+         * 값비싼(디스크 I/O) 검사보다 먼저 두는 편이 실패 시 사용자에게 더 정확한 이유를
+         * 준다.
+         *
+         * 셋을 본다.
+         *
+         * ⑴ **경로 순회.** [SAFE_DOCUMENT_ID] 가 허용하지 않는 문자(특히 `/`, `\`)가 하나라도
+         * 있으면 거절한다. 원래 결함은 문서 id `../report` 가 `<디렉터리>/../report.txt` 로
+         * 풀려 디렉터리 밖에 쓰던 것이었다 — 이 문법 검사가 그 경로를 막는다.
+         * ⑵ **정규화된 경로가 실제로 [directory] 바로 아래인지.** 문법 검사만으로는 놓치는
+         * 경우를 대비한 두 번째 층이다 — 지금은 ⑴ 을 통과한 id 가 이 검사에서 걸릴 일이
+         * 없지만(구분자가 아예 없으므로), [FILE_SUFFIX] 나 허용 문자 집합이 나중에 바뀌어도
+         * 이 검사가 여전히 디렉터리 이탈을 잡아 준다.
+         * ⑶ **예약 파일 이름과의 충돌.** `<id>.txt` 가 [CONDITIONS_FILE_NAME] 이나
+         * [PROBE_FILE_NAME] 과 같아지면 거절한다 — id `conditions` 가 이 레인의 측정 조건
+         * 파일을 변환문으로 덮어쓰는 경로다. 유료 호출이 시작된 뒤에야 측정 출처 기록이
+         * 사라지는 쪽이 훨씬 아프므로 계획 시점에 막는다.
+         *
+         * 마지막으로 **같은 실행 안에서의 id 중복**을 본다. [rejectIfNotEmpty] 는 디렉터리에
+         * *이미 있는* 파일만 막는다 — 코퍼스 자체에 같은 id 가 두 번 있으면 그 방어를 비켜
+         * 간다. 정상 흐름에서는 절대 나면 안 되는 충돌이므로(코퍼스는 문서 id 로 파일 하나씩
+         * 대응해야 한다), 이 시점에 나면 그 자체가 코퍼스 이상 신호다 — 조용히 두 번째
+         * 문서가 첫 문서의 변환문을 지우게 두지 않고 거절한다.
+         */
+        private fun rejectUnsafeDocumentIds(
+            documentIds: List<String>,
+            directory: Path,
+        ): LaneTranscriptPlan.Unusable? {
+            val unsafeId = documentIds.firstOrNull { safeFileNameOrNull(it, directory) == null }
+            val duplicates =
+                documentIds
+                    .groupingBy { it }
+                    .eachCount()
+                    .filterValues { it > 1 }
+                    .keys
+            return when {
+                unsafeId != null -> unsafeDocumentId(unsafeId)
+                duplicates.isNotEmpty() -> duplicateDocumentIds(duplicates)
+                else -> null
+            }
+        }
+
+        /** [rejectUnsafeDocumentIds] KDoc ⑴⑵⑶ — [id] 가 파일명으로 안전하지 않을 때의 거절 사유. */
+        private fun unsafeDocumentId(id: String): LaneTranscriptPlan.Unusable =
+            LaneTranscriptPlan.Unusable(
+                "문서 id \"$id\" 를 변환문 파일명으로 쓸 수 없다 — 영숫자·`.`·`_`·`-` 만 허용하고, " +
+                    "`${CONDITIONS_FILE_NAME}`·`${PROBE_FILE_NAME}` 과 겹쳐서도 안 된다. 이대로 돌면 " +
+                    "디렉터리 밖에 쓰거나 이 레인의 측정 조건 파일을 덮어쓴 채로 유료 호출을 시작하게 " +
+                    "된다. 코퍼스의 이 문서 id 를 고쳐라.",
+            )
+
+        /** [rejectUnsafeDocumentIds] KDoc 마지막 문단 — 코퍼스 안 [ids] 중복의 거절 사유. */
+        private fun duplicateDocumentIds(ids: Set<String>): LaneTranscriptPlan.Unusable =
+            LaneTranscriptPlan.Unusable(
+                "문서 id 가 코퍼스 안에서 중복된다: ${ids.sorted().joinToString()} — 이대로 돌면 같은 " +
+                    "이름의 파일을 나중 문서가 조용히 덮어써 앞선 문서의 변환문이 사라진 채로 유료 호출을 " +
+                    "시작하게 된다. 코퍼스의 id 중복을 없애라.",
+            )
 
         /**
          * [plan] KDoc 판정 순서 ⑵. **[probeWritable] 보다 먼저 불러야 한다** — 그 쪽이 먼저

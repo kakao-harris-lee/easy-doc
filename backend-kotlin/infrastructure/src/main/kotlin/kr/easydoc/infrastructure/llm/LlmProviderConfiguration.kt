@@ -30,11 +30,29 @@ data class LlmProperties(
      * (CLAUDE.md 「상수와 구성 관리」). 기본값은 [DEFAULT_MAX_TOKENS] — 미설정 시
      * 동작이 바뀌지 않도록 출처를 하나로 유지한다.
      *
-     * 값의 양수 검증은 여기서 중복하지 않는다 — [kr.easydoc.core.llm.LlmOptions] 의
-     * `init` 이 조립 시점(`LlmOptions(maxTokens = ...)`)에 이미 거절한다.
+     * 값을 그대로 쓰지 마라 — [validatedMaxOutputTokens] 를 거쳐라. 이 필드는 운영자
+     * 입력이라 [kr.easydoc.core.llm.LlmOptions] 의 `init` `require` (프로그래밍 오류용
+     * `IllegalArgumentException`)에 검증을 맡기지 않는다.
      */
     val maxOutputTokens: Int = DEFAULT_MAX_TOKENS,
-)
+) {
+    /**
+     * [maxOutputTokens] 를 운영자 오설정 관점에서 검증한다 — [LlmPricingProperties.toTokenPricing]
+     * 과 같은 자리·같은 예외 타입([ConfigurationException])을 쓴다. 0 이하는 배포 환경변수
+     * 오타(빈 문자열이 0으로 바인딩되는 경우 등)이지 호출 코드의 버그가 아니다.
+     *
+     * 호출자(현재는 [kr.easydoc.infrastructure.queue.ConversionWorkerConfiguration]) 는
+     * 이 값을 거쳐서만 `LlmOptions` 를 조립해야 한다.
+     */
+    fun validatedMaxOutputTokens(): Int {
+        if (maxOutputTokens <= 0) {
+            throw ConfigurationException(
+                "easydoc.llm.max-output-tokens 는 1 이상이어야 합니다 (현재: $maxOutputTokens)",
+            )
+        }
+        return maxOutputTokens
+    }
+}
 
 /** 모델 가격은 코드 상수가 아니라 배포 설정으로 받는다. */
 data class LlmPricingProperties(

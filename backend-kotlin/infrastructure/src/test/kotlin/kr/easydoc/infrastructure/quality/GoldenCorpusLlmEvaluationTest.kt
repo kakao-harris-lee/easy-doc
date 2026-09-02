@@ -47,10 +47,11 @@ class GoldenCorpusLlmEvaluationTest {
                 is LaneDictionaryPlan.Ready -> plan.dictionary
                 is LaneDictionaryPlan.Unusable -> fail<LaneDictionary>(plan.reason)
             }
-        // 변환문 보존은 유료 호출 전에 정해야 한다 — 쓸 수 없는 경로면 여기서 실패해야
-        // 사용자가 변환문이 남는 줄 알고 유료 호출을 다 쓰는 일이 없다(LaneTranscript KDoc).
+        // 변환문 보존은 유료 호출 전에 정해야 한다 — 쓸 수 없는 경로거나 문서 id 중 하나라도
+        // 파일명으로 위험하면 여기서 실패해야 사용자가 변환문이 남는 줄 알고(또는 안전한 줄
+        // 알고) 유료 호출을 다 쓰는 일이 없다(LaneTranscript KDoc).
         val transcript =
-            when (val plan = LaneTranscript.plan(System::getenv)) {
+            when (val plan = LaneTranscript.plan(System::getenv, documents.map(GoldenDocument::id))) {
                 is LaneTranscriptPlan.Ready -> plan.transcript
                 is LaneTranscriptPlan.Unusable -> fail<LaneTranscript>(plan.reason)
             }
