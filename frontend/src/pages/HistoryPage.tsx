@@ -82,12 +82,18 @@ const NEXT_ACTION_TONE: Record<NextAction, NonNullable<BadgeProps['tone']>> = {
   '변환 없음': 'neutral',
 }
 
-/** 원본 형식을 사람이 읽는 말로. 계약이 아직 enum을 닫지 않아 모르는 값은 대문자로 둔다. */
+/**
+ * 원본 형식을 사람이 읽는 말로. 계약이 아직 enum을 닫지 않아 모르는 값은 대문자로 둔다.
+ *
+ * `text`(붙여넣기)와 `txt`(업로드한 평문 파일)는 서로 다른 값이라 표기도 다르다 — 둘 다
+ * "텍스트"라고 적으면 이 문서가 붙여넣기인지 파일 업로드인지 목록에서 구분할 수 없다.
+ */
 const SOURCE_FORMAT_TEXT: Record<string, string> = {
   text: '붙여넣기',
   docx: 'DOCX',
   pdf: 'PDF',
   hwpx: 'HWPX',
+  txt: 'TXT',
 }
 
 /**

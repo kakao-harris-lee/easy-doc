@@ -41,7 +41,7 @@ openapi: 3.1.0
 
 info:
   title: Easy-Read AI API
-  version: "2.3.0"
+  version: "2.4.0"
   x-baselined-at: "2026-08-12"       # 초판 기준선을 뜬 날 (동결일이 아니다)
   x-rebased-at: "2026-08-12"         # 계약의 성격을 "개선 대상"으로 다시 정의한 날
   x-source-runtime: "Python 3.12 / FastAPI (app/main.py) — 과거 참고 구현이었고 2026-08-24 저장소에서 제거됨(git 태그 pre-python-removal-20260824). 기준선 출처였을 뿐 정답이 아니었다"
@@ -562,7 +562,7 @@ x-input-limits:
   max_upload_bytes: 10485760         # app/ingest/extractors.py MAX_UPLOAD_BYTES (10 * 1024 * 1024) → 초과 시 413
   max_extracted_chars: 500000        # 추출 결과 상한 → 초과 시 422
   zip_uncompressed_budget_bytes: 52428800  # 업로드 상한의 5배. 초과 시 422 (압축 폭탄 방어)
-  supported_upload_formats: [docx, pdf, hwpx]  # 확장자 대소문자 무시. 그 밖은 422
+  supported_upload_formats: [docx, pdf, hwpx, txt]  # 확장자 대소문자 무시. 그 밖은 422
   legacy_doc_policy: |
     구버전 `.doc`(OLE2)은 전용 안내 문구와 함께 422다 —
     "구버전 doc 형식은 지원하지 않습니다 (docx로 다시 저장해 올려주세요)".
@@ -597,6 +597,8 @@ x-export-format-derivation:
     docx: docx
     hwpx: hwpx
     pdf: null      # 같은 형식으로 내보낼 수단이 없다 — 아래 `x-null-is-not-unknown`
+    txt: txt       # 2.4.0. 업로드된 평문도 같은 렌더러로 나간다 — 반영할 원본 구조가 없다는
+                   # 점만 `text`와 다르고(아래 `x-not-a-rename`), 나가는 형식은 같다
   x-null-is-not-unknown: |
     `null`은 「모른다」가 아니라 **「같은 형식으로 내보낼 수단이 없다」**다.
     `pdf`를 `ExportFormat`에 넣을 수 없고(렌더러가 없다), `txt`·`docx`로 접을 수도 없다 —
@@ -606,7 +608,7 @@ x-export-format-derivation:
   x-not-a-rename: |
     `text → txt`는 유도이지 이름 변환이 아니다. 두 값 집합은 서로 다른 축이고
     (`SourceFormat`은 「어디서 왔는가」, `ExportFormat`은 「무엇으로 나가는가」),
-    붙여넣기에는 애초에 확장자가 없다. 이름이 같은 셋(`docx`·`hwpx`)은 우연이 아니라
+    붙여넣기에는 애초에 확장자가 없다. 이름이 같은 셋(`docx`·`hwpx`·`txt`)은 우연이 아니라
     「그대로 나간다」의 결과이며, 그 우연을 유도 **규칙**으로 삼으면 이 한 갈래가 어긋난다.
 
   # ---------------------------------------------------------------------------
@@ -1527,7 +1529,7 @@ paths:
                 too_long:
                   value: { detail: "현재는 4,000자 이하 문서만 변환할 수 있습니다 (긴 문서 분할 변환은 준비 중입니다)" }
                 unsupported_format:
-                  value: { detail: "지원 형식: docx, pdf, hwpx" }
+                  value: { detail: "지원 형식: docx, pdf, hwpx, txt" }
                 undecodable_text:
                   # 값의 정본은 `x-stored-text-domain.detail`이다. 여기 있는 것은 그 값의 예시이며,
                   # 계약 테스트는 두 자리가 같은지도 함께 본다 — 두 벌이 갈리면 오라클이 둘이 된다.
@@ -2631,14 +2633,14 @@ components:
 
     SourceFormat:
       type: string
-      enum: [text, docx, pdf, hwpx]
+      enum: [text, docx, pdf, hwpx, txt]
       description: |
         문서가 **어디서 왔는가**. 붙여넣기는 `"text"`, 파일은 소문자 확장자다.
 
         **enum으로 고정한다** (2026-08-12 개정, `x-change-policy` G1).
         초판은 "자유 문자열이라 좁히면 파괴적"이라고 적었으나 사실이 아니었다 —
         값 집합은 이미 닫혀 있다. 저장 값은 업로드 확장자를 소문자화한 것이지만 그 유도는
-        추출기가 지원 형식(`docx`·`pdf`·`hwpx`)만 통과시킨 **뒤에** 일어나고, 붙여넣기는
+        추출기가 지원 형식(`docx`·`pdf`·`hwpx`·`txt`)만 통과시킨 **뒤에** 일어나고, 붙여넣기는
         상수 `text`다. 그 밖의 값이 나올 경로가 없다(Kotlin `core/document/SourceFormat.kt`).
         지원 형식을 늘리면 이 enum과 `x-input-limits.supported_upload_formats`를
         같은 변경 단위에서 함께 늘린다(추가는 비파괴).
@@ -2650,18 +2652,26 @@ components:
         React 생성 타입이 **이름으로 부르는 union**이어야 화면 코드가 문자열 리터럴을
         자기 자리에 복제하지 않는다. 값 집합은 옮기기 전과 **한 글자도 다르지 않다.**
 
+        **`txt`는 2.4.0에서 더했다** — `text`(붙여넣기)와는 다른 값이다. `text`는 파일이
+        아니라서 원본 바이트가 없고, `txt`는 업로드된 평문 파일이라 바이트가 있다. 그 차이가
+        `document_originals`에 행을 남기는지를 가른다(아래 `FormatPreservationStatus`
+        `not_applicable` ⑶, `x-export-format-derivation.mapping`).
+
     FormatPreservationStatus:
       type: string
       enum: [not_applicable, available, partial, failed]
       description: |
         원본 서식 유지 상태.
 
-        - `not_applicable` — **유지할 원본 서식이 없다.** 두 갈래가 여기 든다:
+        - `not_applicable` — **유지할 원본 서식이 없다.** 세 갈래가 여기 든다:
           ⑴ 붙여넣기(`source_format: text`) — 파일이 아니었으므로 서식이 애초에 없다.
           ⑵ 원본 파일 바이트가 저장돼 있지 않은 문서 — `document_originals` 표가 서기
              전(2026-08-26 이전)에 업로드된 문서가 그렇다. 그 바이트는 파싱 직후 사라졌고
              다시 만들 수 없으므로 이 판정은 앞으로도 바뀌지 않는다.
-          두 갈래 모두 **영구히 참**이다.
+          ⑶ 업로드된 평문(`source_format: txt`, 2.4.0) — 파일은 맞지만 평문에는 애초에
+             유지할 서식이 없다(굵기·글꼴·표·머리말 같은 구조가 없다). ⑴과 사유가 같으므로
+             `document_originals`에 원본을 남기지 않는다 — 남겨도 반영할 대상이 없다.
+          세 갈래 모두 **영구히 참**이다.
         - `available`(「유지 가능」) — **원본 구조 그대로 나간다.** 원본의 본문 단위
           하나하나에 검수본 문단 하나씩이 들어가고(수가 정확히 같다), 원본 문구가 남는
           머리말·꼬리말도 없다. 짝이 하나라도 어긋나면 이 값이 아니다.
@@ -3360,6 +3370,52 @@ components:
 # 변경 이력
 # =============================================================================
 x-changelog:
+  - version: "2.4.0"
+    date: "2026-09-02"
+    revision: "TXT-UPLOAD"   # `.txt` 를 기본 업로드 형식에 더한다
+    author: contract-keeper
+    change: |
+      **`.txt`(평문) 업로드를 지원 형식에 더했다. 비파괴 추가다** — 기존 세 형식(docx·pdf·hwpx)의
+      요청·응답은 한 글자도 바뀌지 않았고, 새 값은 두 곳에 **같은 변경 단위로** 늘었다
+      (`SourceFormat.enum`이 스스로 요구하는 규칙, 2026-08-12 개정 G1):
+      ⑴ `x-input-limits.supported_upload_formats` — `[docx, pdf, hwpx]` → `[docx, pdf, hwpx, txt]`.
+      ⑵ `components.schemas.SourceFormat.enum` — `txt` 추가.
+
+      **`text`(붙여넣기)와 `txt`(업로드)는 다른 값이다.** 사용자 결정(2026-09-02):
+      「.txt 파일은 기본 업로드 항목이어야 한다」. 기존 `text`를 재사용하지 않은 이유는
+      `text`가 "파일이 아니므로 `document_originals`에 원본이 없다"는 불변식을 지고 있고,
+      `.txt` 업로드는 원본 바이트가 있어 그 불변식을 깨기 때문이다(Kotlin
+      `core/document/SourceFormat.kt`).
+
+      **내보내기·서식 유지 판정.** `x-export-format-derivation.mapping`에 `txt: txt`를
+      더했다 — 평문은 반영할 원본 구조가 없으므로 "그대로 나간다"의 가장 단순한 형태이고,
+      값을 `null`로 두면(PDF처럼) 사용자가 변환 결과를 **영영 내려받지 못한다** — 렌더러가
+      없는 PDF와 달리 평문 렌더러는 이미 있다(붙여넣기가 쓰던 `txt` 렌더러 그대로다).
+      `FormatPreservationStatus.not_applicable` 설명에 세 번째 갈래를 더했다 — `.txt`는
+      파일이지만 평문에는 애초에 유지할 서식이 없으므로(글꼴·표·머리말 같은 구조가 없다)
+      붙여넣기와 같은 사유로 `not_applicable`이다. 그래서 구현은 `.txt`의 원본 바이트를
+      `document_originals`에 **저장하지 않는다** — 저장해도 반영할 대상이 없고, 저장하면서
+      반영을 구현하지 않으면 "반영할 서식이 없다"와 "저장된 원본을 읽을 수 없다"(500)가
+      같은 신호(`hasStoredOriginal`)에 실려 매 내보내기가 오류로 떨어진다.
+
+      **인코딩.** UTF-8을 우선 시도하고 실패하면 CP949(EUC-KR 상위 집합, 한국 공공기관
+      `.txt`의 흔한 인코딩)로 재시도한다. 둘 다 실패하면 다른 추출 실패와 같은 방식으로
+      거절한다(`DocumentExtractionException`, 손상 파일과 같은 문구) — 계약에 새 오류
+      문구를 추가하지 않았다. UTF-8 BOM은 본문에 새지 않게 걷어낸다. 이 규칙은 구현
+      세부(`infrastructure/ingest/TxtExtractor.kt`)이고 계약이 값으로 고정하는 항목이
+      아니다 — 계약은 "업로드가 통과한다/거절한다"만 정한다.
+    ground: |
+      **G3 — 정책 결정의 구현.** 2026-09-02 사용자 결정 「.txt 파일은 기본 업로드 항목이어야
+      한다」의 이행이다. 값 추가는 `x-change-policy` G1이 이미 허용한 비파괴 변경이고,
+      서식 유지 판정을 셋째 갈래로 넓힌 것은 새 원본 형식이 기존 넷(붙여넣기·docx·hwpx·pdf)
+      어디에도 딱 맞지 않아 판정 스스로가 요구한 확장이다(G2에 가깝다 — 기존 조항을
+      좁히지 않고 새 사실을 반영했다).
+    compatibility: |
+      **기존 클라이언트가 깨지지 않는다.** 기존 세 형식의 업로드·조회·내보내기 요청·응답이
+      전부 그대로다. `SourceFormat`·`x-input-limits.supported_upload_formats` 모두 값을
+      **더했을 뿐 빼지 않았다.** 이미 저장된 문서의 `source_format`은 여전히 옛 값 중
+      하나이므로 이 변경으로 응답이 달라지는 기존 자원이 하나도 없다.
+
   - version: "2.3.0"
     date: "2026-08-27"
     revision: "RETENTION-READ-GUARD"   # 만료 창을 「내용을 내주는」 경로 전부에서 닫는다

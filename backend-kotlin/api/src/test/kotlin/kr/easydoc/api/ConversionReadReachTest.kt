@@ -431,7 +431,9 @@ class ConversionReadReachTest {
     }
 
     @Test
-    @DisplayName("CF-2 업로드한 문서는 형식이 그대로 나가고, **완료 전에는 서식 유지를 판정하지 않는다**(`null`)")
+    @DisplayName(
+        "CF-2 업로드한 문서는 형식이 그대로 나가고, 원본이 저장되는 형식은 **완료 전에는 서식 유지를 판정하지 않는다**(`null`)",
+    )
     fun `업로드 문서의 형식 셋이 계약대로 나온다`() {
         val derivation = ContractSpec.exportFormatDerivation()
         val uploads =
@@ -439,6 +441,9 @@ class ConversionReadReachTest {
                 SourceFormat.DOCX to ("안내문.docx" to UploadFixtures.sampleDocx()),
                 SourceFormat.HWPX to ("안내문.hwpx" to UploadFixtures.sampleHwpx()),
                 SourceFormat.PDF to ("안내문.pdf" to UploadFixtures.samplePdf()),
+                // txt 는 원본을 저장하지 않는다(TXT-UPLOAD, `DocumentService`) — 그래서 완료 전에도
+                // `null`(아직 판정 못함)이 아니라 붙여넣기와 같은 `not_applicable` 이 즉시 나간다.
+                SourceFormat.TXT to ("안내문.txt" to UploadFixtures.sampleTxt()),
             )
         assertThat(uploads.keys)
             .describedAs("업로드 형식 전부를 지나지 않으면 `export_format` 의 `null` 갈래가 대조를 받지 않는다")
@@ -458,12 +463,20 @@ class ConversionReadReachTest {
                     format.wireName,
                     body[EXPORT_FORMAT_PROPERTY],
                 ).isEqualTo(derivation[format.wireName])
-            assertThat(body[FORMAT_PRESERVATION_PROPERTY])
-                .withFailMessage(
-                    "원본 %s 가 아직 변환 중인데 서버가 서식 유지 상태를 지어냈다 — 짝지을 검수본이 없다: %s",
-                    format.wireName,
-                    body[FORMAT_PRESERVATION_PROPERTY],
-                ).isNull()
+            if (format == SourceFormat.TXT) {
+                val preservation = body[FORMAT_PRESERVATION_PROPERTY] as? Map<*, *>
+                assertThat(preservation)
+                    .describedAs("txt 는 원본이 없어 판정이 영구히 참이다 — 완료를 기다릴 이유가 없다")
+                    .isNotNull()
+                assertThat(preservation!![STATUS_PROPERTY]).isEqualTo(FormatPreservationStatus.NOT_APPLICABLE.wireName)
+            } else {
+                assertThat(body[FORMAT_PRESERVATION_PROPERTY])
+                    .withFailMessage(
+                        "원본 %s 가 아직 변환 중인데 서버가 서식 유지 상태를 지어냈다 — 짝지을 검수본이 없다: %s",
+                        format.wireName,
+                        body[FORMAT_PRESERVATION_PROPERTY],
+                    ).isNull()
+            }
         }
     }
 

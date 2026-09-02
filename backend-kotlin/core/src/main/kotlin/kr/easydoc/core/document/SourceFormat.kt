@@ -18,6 +18,15 @@ enum class SourceFormat(val wireName: String) {
     /** OWPML(한글) 문서. zip 컨테이너다. */
     HWPX("hwpx"),
 
+    /**
+     * 업로드된 평문 파일. zip 이 아니다.
+     *
+     * **[TEXT](붙여넣기)와 다르다.** [TEXT] 는 파일이 아니라서 원본 바이트가 없고 그 불변식은
+     * 여기서 한 글자도 바꾸지 않는다 — `.txt` 업로드는 원본 바이트가 있으므로 값을 나눴다.
+     * 인코딩은 UTF-8 우선, 실패하면 CP949(EUC-KR)로 재시도한다(`TxtExtractor`).
+     */
+    TXT("txt"),
+
     ;
 
     /** 이 형식이 zip 컨테이너인가. */
@@ -25,7 +34,7 @@ enum class SourceFormat(val wireName: String) {
 
     companion object {
         /** 업로드로 들어올 수 있는 형식 — [TEXT] 를 뺀 전부. */
-        val UPLOAD_FORMATS: List<SourceFormat> = listOf(DOCX, PDF, HWPX)
+        val UPLOAD_FORMATS: List<SourceFormat> = listOf(DOCX, PDF, HWPX, TXT)
 
         /** 저장된 컬럼 값(`documents.source_format`)을 형식으로 되읽는다. */
         fun ofWireName(value: String): SourceFormat =

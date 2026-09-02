@@ -174,7 +174,7 @@ class DocumentEndpointReachTest {
             upload(
                 token,
                 MultipartBody()
-                    .file(FILE_PART, "안내문.txt", "본문".toByteArray(Charsets.UTF_8))
+                    .file(FILE_PART, "안내문.hwp", "본문".toByteArray(Charsets.UTF_8))
                     .value(WORKSPACE_ID_PART, SUBMITTED_BAD_WORKSPACE),
             )
         assertDeclaredStatus(extraction, earlierStageStatus(EXTRACTION_STAGE, WORKSPACE_STAGE))
@@ -328,7 +328,7 @@ class DocumentEndpointReachTest {
 
         val cases =
             mapOf(
-                "집합 밖 확장자" to MultipartBody().file(FILE_PART, "안내문.txt", "본문".toByteArray(Charsets.UTF_8)),
+                "집합 밖 확장자" to MultipartBody().file(FILE_PART, "안내문.hwp", "본문".toByteArray(Charsets.UTF_8)),
                 "구버전 워드 컨테이너" to MultipartBody().file(FILE_PART, "안내문.docx", UploadFixtures.legacyWordContainer()),
                 "압축 해제량 초과" to MultipartBody().file(FILE_PART, "안내문.docx", UploadFixtures.zipOverBudget(budget + 1)),
                 "외부 엔터티 선언" to MultipartBody().file(FILE_PART, "안내문.hwpx", UploadFixtures.hwpxWithDoctype()),
@@ -522,6 +522,7 @@ class DocumentEndpointReachTest {
             SourceFormat.DOCX.wireName -> UploadFixtures.sampleDocx()
             SourceFormat.PDF.wireName -> UploadFixtures.samplePdf()
             SourceFormat.HWPX.wireName -> UploadFixtures.sampleHwpx()
+            SourceFormat.TXT.wireName -> UploadFixtures.sampleTxt()
             else -> error("계약이 지원 형식 $format 를 선언했는데 그 형식의 정상 fixture 가 없다 — 이 케이스는 재지 못한다")
         }
 

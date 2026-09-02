@@ -17,6 +17,9 @@ object UploadFixtures {
 
     fun sampleHwpx(): ByteArray = bytes("sample.hwpx")
 
+    /** 평문(.txt) 업로드 하나. UTF-8 로 인코딩된 정상 본문이다. */
+    fun sampleTxt(): ByteArray = "안내문 첫 줄\n둘째 줄".toByteArray(Charsets.UTF_8)
+
     fun bytes(name: String): ByteArray =
         requireNotNull(UploadFixtures::class.java.getResourceAsStream("$ROOT/$name")) {
             "fixture 를 찾지 못했다: $ROOT/$name — infrastructure testFixtures 리소스가 클래스패스에 없다"

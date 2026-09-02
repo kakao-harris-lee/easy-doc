@@ -22,6 +22,8 @@ class DocumentExtractorsTest {
         "안내문.DOCX, docx",
         "안내문.Pdf, pdf",
         "안내문.hwpx, hwpx",
+        "안내문.txt, txt",
+        "안내문.TXT, txt",
         "C:\\Users\\hong\\안내문.docx, docx",
         "/tmp/../안내문.pdf, pdf",
         "a.b.c.hwpx, hwpx",
@@ -47,7 +49,7 @@ class DocumentExtractorsTest {
     fun `지원하지 않는 형식을 거절한다`() {
         assertThatThrownBy { extractors.extract("안내문.hwp", byteArrayOf()) }
             .isInstanceOf(UnsupportedFormatException::class.java)
-            .hasMessage("지원 형식: docx, pdf, hwpx")
+            .hasMessage("지원 형식: docx, pdf, hwpx, txt")
     }
 
     @Test
@@ -60,8 +62,9 @@ class DocumentExtractorsTest {
     @Test
     @DisplayName("업로드 형식 집합이 **손으로 적은 값**과 같다 — 계약 대조는 UploadFormatContractTest 가 한다")
     fun `업로드 형식 집합이 못박은 값과 같다`() {
-        assertThat(SourceFormat.UPLOAD_FORMATS.map { it.wireName }).containsExactly("docx", "pdf", "hwpx")
-        assertThat(SourceFormat.entries.map { it.wireName }).containsExactly("text", "docx", "pdf", "hwpx")
+        assertThat(SourceFormat.UPLOAD_FORMATS.map { it.wireName }).containsExactly("docx", "pdf", "hwpx", "txt")
+        assertThat(SourceFormat.entries.map { it.wireName })
+            .containsExactly("text", "docx", "pdf", "hwpx", "txt")
         assertThat(SourceFormat.UPLOAD_FORMATS).doesNotContain(SourceFormat.TEXT)
     }
 
@@ -72,6 +75,7 @@ class DocumentExtractorsTest {
         assertThat(SourceFormat.HWPX.isZipContainer).isTrue()
         assertThat(SourceFormat.PDF.isZipContainer).isFalse()
         assertThat(SourceFormat.TEXT.isZipContainer).isFalse()
+        assertThat(SourceFormat.TXT.isZipContainer).isFalse()
     }
 
     @Test
@@ -123,6 +127,15 @@ class DocumentExtractorsTest {
         assertThat(docx.text).isEqualTo(IngestFixtures.expectedText(IngestFixtures.repoOracle, "sample.docx"))
         assertThat(pdf.text).isEqualTo(IngestFixtures.expectedText(IngestFixtures.repoOracle, "sample.pdf"))
         assertThat(hwpx.text).isEqualTo(IngestFixtures.expectedText(IngestFixtures.repoOracle, "sample.hwpx"))
+    }
+
+    @Test
+    @DisplayName("txt 도 포트를 통해 형식과 본문을 함께 돌려준다")
+    fun `txt 가 포트를 통해 나온다`() {
+        val txt = extractors.extract("안내문.txt", "안내문 첫 줄\n둘째 줄".toByteArray(Charsets.UTF_8))
+
+        assertThat(txt.format).isEqualTo(SourceFormat.TXT)
+        assertThat(txt.text).isEqualTo("안내문 첫 줄\n둘째 줄")
     }
 
     @Test

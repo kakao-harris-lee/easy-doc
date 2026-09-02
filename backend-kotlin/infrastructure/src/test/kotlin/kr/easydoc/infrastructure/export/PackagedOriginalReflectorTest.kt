@@ -114,6 +114,15 @@ class PackagedOriginalReflectorTest {
     }
 
     @Test
+    @DisplayName("txt 원본은 반영하지 않는다 — 평문에는 반영할 원본 구조가 없다")
+    fun `txt 는 반영하지 않는다`() {
+        val original = OriginalDocument(SourceFormat.TXT, PlainBytes("안내문 본문".toByteArray(Charsets.UTF_8)))
+
+        assertThat(reflector.outline(original, "쉬운 본문")).isNull()
+        assertThat(reflector.reflect(original, "안내", "쉬운 본문")).isNull()
+    }
+
+    @Test
     @DisplayName("압축 예산을 넘는 원본은 열지 않는다 — 저장된 바이트에도 방어가 걸린다")
     fun `예산을 넘으면 열지 않는다`() {
         val bomb = originalOf("oversized.zip", SourceFormat.DOCX)

@@ -10,12 +10,13 @@ class DocumentExtractors internal constructor(
     private val docx: DocxExtractor,
     private val pdf: PdfExtractor,
     private val hwpx: HwpxExtractor,
+    private val txt: TxtExtractor,
 ) : DocumentTextExtractor {
     /**
      * 기본 조립. 형식별 추출기는 `internal` 이라 이 모듈 밖에서는 갈아끼울 수 없다 —
      * 파서 구현이 포트 뒤에 남는다는 것이 계획 §3.2 의 의존 방향이다.
      */
-    constructor() : this(DocxExtractor(), PdfExtractor(), HwpxExtractor())
+    constructor() : this(DocxExtractor(), PdfExtractor(), HwpxExtractor(), TxtExtractor())
 
     override fun extract(
         filename: String?,
@@ -38,6 +39,8 @@ class DocumentExtractors internal constructor(
                 SourceFormat.PDF -> pdf.extract(bytes)
 
                 SourceFormat.HWPX -> hwpx.extract(bytes)
+
+                SourceFormat.TXT -> txt.extract(bytes)
 
                 // 붙여넣기는 이 경로로 오지 않는다 — `ofUploadFilename` 이 업로드 형식만 돌려준다.
                 SourceFormat.TEXT -> error("붙여넣기는 추출기를 지나지 않는다")
