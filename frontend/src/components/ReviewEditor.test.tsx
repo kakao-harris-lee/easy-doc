@@ -408,7 +408,7 @@ describe('검수 에디터', () => {
     expect(screen.queryByRole('button', { name: 'HWPX로 내려받기' })).not.toBeInTheDocument()
   })
 
-  it('내려받을 수단이 없으면(export_format null) 내려받기 행동을 제시하지 않는다', () => {
+  it('내려받을 수단이 없으면(export_format null, 선택지도 없음) 내려받기 행동을 제시하지 않는다', () => {
     render(
       <ReviewEditor
         conversion={conversion({ source_format: 'pdf', export_format: null })}
@@ -420,6 +420,58 @@ describe('검수 에디터', () => {
     expect(screen.getByRole('button', { name: '검수 내용 저장' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /내려받기$/ })).not.toBeInTheDocument()
   })
+
+  it('PDF 원본에 선택지가 있으면(export_format_choices) 형식마다 버튼을 하나씩 그린다', () => {
+    render(
+      <ReviewEditor
+        conversion={conversion({
+          source_format: 'pdf',
+          export_format: null,
+          export_format_choices: ['docx', 'hwpx'],
+        })}
+        source={sourceFailed()}
+      />,
+    )
+
+    expect(screen.getByRole('button', { name: 'DOCX로 내려받기' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'HWPX로 내려받기' })).toBeInTheDocument()
+    // 선택지에 없는 형식의 버튼은 그리지 않는다.
+    expect(screen.queryByRole('button', { name: 'TXT로 내려받기' })).not.toBeInTheDocument()
+  })
+
+  it.each(['docx', 'hwpx'] as const)(
+    'PDF 선택지 중 %s를 누르면 그 형식으로 내려받는다',
+    async (format) => {
+      const user = userEvent.setup()
+      const objectUrl = 'blob:test'
+      const createObjectURL = vi.fn(() => objectUrl)
+      const revokeObjectURL = vi.fn()
+      vi.stubGlobal('URL', { ...URL, createObjectURL, revokeObjectURL })
+      const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+      vi.mocked(downloadExport).mockResolvedValue({
+        blob: new Blob(['내용']),
+        filename: `재난지원금 안내.${format}`,
+      })
+      render(
+        <ReviewEditor
+          conversion={conversion({
+            source_format: 'pdf',
+            export_format: null,
+            export_format_choices: ['docx', 'hwpx'],
+          })}
+          source={sourceFailed()}
+        />,
+      )
+
+      await user.click(screen.getByRole('button', { name: `${format.toUpperCase()}로 내려받기` }))
+
+      expect(vi.mocked(downloadExport)).toHaveBeenCalledWith('c1', format)
+      expect(click).toHaveBeenCalled()
+
+      click.mockRestore()
+      vi.unstubAllGlobals()
+    },
+  )
 
   it('마스킹 항목이 결과에 남아 있는지 표로 알려준다', async () => {
     const user = userEvent.setup()
@@ -811,7 +863,7 @@ describe('원본 서식 유지 패널', () => {
    * PDF는 §6.5 표에서 서식 유지 패널의 대상이 아니다. 대신 내려받기 버튼이 **없는 이유**를
    * 말한다 — 아무 설명 없이 자리를 비우면 화면이 고장 난 것처럼 보인다.
    */
-  it('PDF 원본에서는 상태 표시 대신 내려받기가 없는 이유를 말한다', () => {
+  it('PDF 원본에 선택지가 없으면 상태 표시 대신 내려받기가 없는 이유를 말한다', () => {
     render(
       <ReviewEditor
         conversion={conversion({ source_format: 'pdf', export_format: null })}
@@ -825,6 +877,33 @@ describe('원본 서식 유지 패널', () => {
     // 곧 될 것처럼 적지 않는다 — 하지 않기로 정해진 범위다.
     expect(screen.queryByText(/준비 중/)).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /내려받기$/ })).not.toBeInTheDocument()
+  })
+
+  /**
+   * 2.6.0 — PDF에 선택지가 있으면(`export_format_choices`) 「내려받기가 없다」는
+   * 옛 문구를 더는 쓰지 않는다. 버튼이 실제로 있으므로 그 자리에는 무엇이 나오는지만
+   * 말한다: 원본 레이아웃은 반영되지 않는 새 문서라는 사실.
+   */
+  it('PDF 원본에 선택지가 있으면 내려받기가 없다는 문구 대신 새 문서라는 안내를 보여준다', () => {
+    render(
+      <ReviewEditor
+        conversion={conversion({
+          source_format: 'pdf',
+          export_format: null,
+          export_format_choices: ['docx', 'hwpx'],
+        })}
+        source={sourceFailed()}
+      />,
+    )
+
+    expect(screen.queryByRole('region', { name: '원본 서식 유지' })).not.toBeInTheDocument()
+    expect(screen.getByText(/원본 레이아웃을 그대로 유지할 수 없습니다/)).toBeInTheDocument()
+    expect(screen.getByText(/새 문서를 만들어 드립니다/)).toBeInTheDocument()
+    // 더는 참이 아닌 옛 문구를 남기지 않는다 — 버튼이 실제로 있다.
+    expect(screen.queryByText(/이 문서에는\s*내려받기가 없습니다/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/준비 중/)).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'DOCX로 내려받기' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'HWPX로 내려받기' })).toBeInTheDocument()
   })
 
   /**

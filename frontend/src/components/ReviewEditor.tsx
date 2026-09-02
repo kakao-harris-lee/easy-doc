@@ -56,18 +56,23 @@ const PANELS = [
 type PanelKey = (typeof PANELS)[number]['key']
 
 /**
- * 이 변환을 내려받을 수 있는 형식.
+ * 이 변환을 내려받을 수 있는 형식(들).
  *
- * **목록이 아니라 서버가 정한 값 하나다**(DESIGN.md §6.5 「들어온 형식 그대로 나간다」).
- * 종전에는 `['docx','hwpx','txt']` 상수라 원본과 무관하게 버튼 셋을 그렸고, 서버가 형식을
- * 강제하기 시작한 뒤로 그중 둘은 **반드시 409로 실패한다.**
+ * **대개는 목록이 아니라 서버가 정한 값 하나다**(DESIGN.md §6.5 「들어온 형식 그대로
+ * 나간다」). 종전에는 `['docx','hwpx','txt']` 상수라 원본과 무관하게 버튼 셋을 그렸고,
+ * 서버가 형식을 강제하기 시작한 뒤로 그중 둘은 **반드시 409로 실패한다.**
  *
- * `export_format`이 null이면 빈 목록이다 — 내려받을 수단이 없는 변환(원본 PDF)에서는
- * 내려받기 행동을 제시하지 않는다(§6.5 "화면은 이 null을 보고 내려받기 행동을 제시하지
- * 않는다"). 버튼이 없는 이유는 `PdfExportNotice`가 그 자리 위에서 말한다.
+ * `export_format`이 null이면 두 갈래로 갈린다(2.6.0, `export_format_choices`):
+ * - 배열이 비어 있지 않으면(오늘은 PDF뿐) **그 배열 전부**를 버튼으로 그린다 — 사용자가
+ *   `docx`·`hwpx` 중 하나를 직접 골라 새 문서로 받는다(§6.5 2026-09-02 재결정).
+ * - 배열이 비어 있으면 빈 목록이다 — 내려받을 수단이 없는 변환에서는 내려받기 행동을
+ *   제시하지 않는다(§6.5 "화면은 이 null을 보고 내려받기 행동을 제시하지 않는다"). 버튼이
+ *   없는 이유는 `PdfExportNotice`가 그 자리 위에서 말한다.
  */
 function downloadFormats(conversion: ConversionResponse): readonly ExportFormat[] {
-  return conversion.export_format === null ? [] : [conversion.export_format]
+  return conversion.export_format !== null
+    ? [conversion.export_format]
+    : conversion.export_format_choices
 }
 
 /** 원문과 결과를 나란히 담을 수 있는 최소 너비(DESIGN.md §6.4·§10). */
@@ -168,6 +173,15 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
   const [preservation, setPreservation] = useState(conversion.format_preservation)
   const [feedback, setFeedback] = useState<Feedback | null>(null)
   const [pending, setPending] = useState<Pending>(null)
+  /**
+   * 지금 내려받는 중인 형식.
+   *
+   * PDF 원본은 버튼이 둘일 수 있다(`export_format_choices`) — `pending`만으로는 어느
+   * 버튼을 눌렀는지 구분되지 않아 두 버튼이 동시에 "내려받는 중…"이라고 말하게 된다.
+   * 이 값은 그 버튼 하나만 도는 것처럼 보이게 한다. 나머지 버튼은 `busy`로 여전히
+   * 잠기지만 문구는 그대로 둔다 — 누른 적 없는 버튼이 진행 중이라고 말하지 않는다.
+   */
+  const [pendingFormat, setPendingFormat] = useState<ExportFormat | null>(null)
   const [activePanel, setActivePanel] = useState<PanelKey>('source')
   /** 저장·내려받기를 누른 버튼. 그 작업이 끝나면 초점을 여기로 돌린다. */
   const refocusRef = useRef<HTMLButtonElement | null>(null)
@@ -355,6 +369,7 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
     const needsSave = dirty
     let saved = false
     setPending(needsSave ? 'saveAndDownload' : 'download')
+    setPendingFormat(format)
     setFeedback(null)
     try {
       if (needsSave) {
@@ -382,6 +397,7 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
       setFeedback({ kind: 'error', message, announce: true })
     } finally {
       setPending(null)
+      setPendingFormat(null)
     }
   }
 
@@ -664,30 +680,35 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
             {pending !== 'save' && <Save className="size-[18px]" aria-hidden="true" />}
             {pending === 'save' ? '저장 중…' : '검수 내용 저장'}
           </Button>
-          {downloadFormats(conversion).map((format) => (
-            <Button
-              key={format}
-              className="h-11 grow sm:grow-0"
-              variant="outline"
-              type="button"
-              onClick={(event) => {
-                refocusRef.current = event.currentTarget
-                void handleDownload(format)
-              }}
-              disabled={busy}
-              loading={downloading}
-            >
-              {!downloading && <Download className="size-[18px]" aria-hidden="true" />}
-              {/* 저장하지 않은 수정이 있으면 두 걸음을 한 버튼 이름으로 말한다(§6.5).
-                  형식 이름을 버튼에 넣어 무엇이 나오는지 누르기 전에 알린다 — 누른 뒤
-                  형식을 고르게 하는 모달은 두지 않는다. */}
-              {pending === 'saveAndDownload'
-                ? '저장하고 내려받는 중…'
-                : pending === 'download'
-                  ? '내려받는 중…'
-                  : `${dirty ? '저장하고 ' : ''}${format.toUpperCase()}로 내려받기`}
-            </Button>
-          ))}
+          {downloadFormats(conversion).map((format) => {
+            // 이 버튼을 눌러서 도는 중인지 — PDF 원본은 버튼이 둘일 수 있어(위
+            // `pendingFormat`) `pending`만으로는 어느 버튼인지 구분되지 않는다.
+            const thisDownloading = downloading && pendingFormat === format
+            return (
+              <Button
+                key={format}
+                className="h-11 grow sm:grow-0"
+                variant="outline"
+                type="button"
+                onClick={(event) => {
+                  refocusRef.current = event.currentTarget
+                  void handleDownload(format)
+                }}
+                disabled={busy}
+                loading={thisDownloading}
+              >
+                {!thisDownloading && <Download className="size-[18px]" aria-hidden="true" />}
+                {/* 저장하지 않은 수정이 있으면 두 걸음을 한 버튼 이름으로 말한다(§6.5).
+                    형식 이름을 버튼에 넣어 무엇이 나오는지 누르기 전에 알린다 — 누른 뒤
+                    형식을 고르게 하는 모달은 두지 않는다. */}
+                {pending === 'saveAndDownload' && thisDownloading
+                  ? '저장하고 내려받는 중…'
+                  : pending === 'download' && thisDownloading
+                    ? '내려받는 중…'
+                    : `${dirty ? '저장하고 ' : ''}${format.toUpperCase()}로 내려받기`}
+              </Button>
+            )
+          })}
         </div>
       </div>
 
