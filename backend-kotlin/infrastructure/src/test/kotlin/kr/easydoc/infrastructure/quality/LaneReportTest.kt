@@ -58,14 +58,14 @@ class LaneReportTest {
         assertThat(rendered).contains("스타일 규칙 통과 2/3 (66.7%)")
         // 단문 구간: 절단 0건, 스타일 1/2, 팽창비 중앙 1.20 · p90 1.50 · 최대 1.50.
         assertThat(rendered).contains(
-            "2000자 이하 — 문서 2 · 변환 성공 2 · 절단 문서 0 (0.0%) / 호출 0 · 스타일 통과 1/2 (50.0%) · " +
-                "팽창비 1.20/1.50/1.50 · 출력 토큰 2000/2400/2400",
+            "2000자 이하 — 문서 2 · 변환 성공 2 · 절단 문서 0 (0.0%) / 호출 0 · " +
+                "스타일 통과 1/2(변환 회차 있는 문서) (50.0%) · 팽창비 1.20/1.50/1.50 · 출력 토큰 2000/2400/2400",
         )
         // 장문 구간: 절단률이 단문과 갈려 보여야 한다 — 이 갈림이 게이트 판정의 축이다.
         // 장문 구간이 절단을 문서 1건·호출 2회로 갈라 낸다 — 조용히 넘어간 보정 절단이 여기 보인다.
         assertThat(rendered).contains(
-            "2000자 초과 — 문서 2 · 변환 성공 1 · 절단 문서 1 (50.0%) / 호출 2 · 스타일 통과 1/1 (100.0%) · " +
-                "팽창비 1.80/1.80/1.80 · 출력 토큰 9000/16000/16000",
+            "2000자 초과 — 문서 2 · 변환 성공 1 · 절단 문서 1 (50.0%) / 호출 2 · " +
+                "스타일 통과 1/1(변환 회차 있는 문서) (100.0%) · 팽창비 1.80/1.80/1.80 · 출력 토큰 9000/16000/16000",
         )
         assertThat(rendered).contains("전체 — 문서 4 · 변환 성공 3 · 절단 문서 1 (25.0%) / 호출 2")
         // 합계 줄과 구간 줄이 같은 출처(문서별 기록)에서 나온다 — 둘이 어긋나면 어느 쪽도 못 믿는다.
@@ -349,6 +349,80 @@ class LaneReportTest {
         assertThat(rendered).contains("문서별 반복 집계 (같은 문서를 여러 번 돌린 결과 — 중앙값/최소/최대)")
         assertThat(rendered).contains(
             "g-001 — 반복 3회 · 팽창비 1.20/1.00/1.40 · 밀도 0.200/0.100/0.300 · 절단 호출 합계 1",
+        )
+    }
+
+    /**
+     * Codex 정지 시점 리뷰가 잡은 문제의 재현·회귀 시험이다 — `measurements` 는 문서×회차
+     * 행인데 헤드라인 줄이 그대로 세면 runs=3 에서 문서 2건이 6건으로 보였다. 문서 g-001 은
+     * 3회 다 변환에 성공(밀도가 회차마다 다름)하고, g-002 는 3회 중 **한 회차만 절단**되고
+     * 나머지 둘은 성공한다 — g-002 는 [outcomeLine] 의 「변환 성공·절단으로 실패·그 밖의
+     * 실패」 세 갈래 중 절단으로 실패에만 잡혀야 한다(세 갈래는 배타적이고 문서 수의 합과
+     * 같다). 그러면서도 성공한 회차의 스타일 판정은 실재하므로 [qualityLine] 의 통과율
+     * 분모에는 들어간다 — outcomeLine 의 「변환 성공」과 qualityLine 의 통과율 분모가 **서로
+     * 다른 축약**([DocumentSummary] KDoc)이라는 것을 이 한 문서가 동시에 보여 준다.
+     */
+    @Test
+    @DisplayName("runs=3·문서 2건 — 헤드라인 수치는 회차가 아니라 문서를 센다")
+    fun `헤드라인 수치는 문서 단위로 낸다`() {
+        // g-001: 3회 다 성공, 팽창비 1.05/1.15/1.30·밀도 0.100/0.200/0.300, 전부 스타일 통과.
+        record(
+            id = "g-001",
+            chars = CharCounts(1_000, 1_100),
+            outputTokens = 500,
+            style = StyleSample(passed = true, sentenceCount = 10, issueCounts = mapOf(StyleRuleKind.LENGTH to 1)),
+        )
+        record(
+            id = "g-001",
+            chars = CharCounts(1_000, 1_200),
+            outputTokens = 500,
+            style = StyleSample(passed = true, sentenceCount = 10, issueCounts = mapOf(StyleRuleKind.LENGTH to 2)),
+        )
+        record(
+            id = "g-001",
+            chars = CharCounts(1_000, 1_300),
+            outputTokens = 500,
+            style = StyleSample(passed = true, sentenceCount = 10, issueCounts = mapOf(StyleRuleKind.LENGTH to 3)),
+        )
+        // g-002: 회차 1·3 은 성공(팽창비 1.05/1.15·밀도 0.050/0.150, 둘 다 통과), 회차 2 는 절단.
+        record(
+            id = "g-002",
+            chars = CharCounts(1_000, 1_050),
+            outputTokens = 400,
+            style = StyleSample(passed = true, sentenceCount = 20, issueCounts = mapOf(StyleRuleKind.LENGTH to 1)),
+        )
+        recordTruncated(id = "g-002", sourceChars = 1_000, outputTokens = 800)
+        record(
+            id = "g-002",
+            chars = CharCounts(1_000, 1_150),
+            outputTokens = 400,
+            style = StyleSample(passed = true, sentenceCount = 20, issueCounts = mapOf(StyleRuleKind.LENGTH to 3)),
+        )
+        // 호출 단위 절단률의 분모 — 문서 수(2)·회차 수(6)와는 다른, 저널이 보는 실제 호출 수다.
+        repeat(6) { journal.recordCall(completion(outputTokens = 500)) }
+
+        val rendered = report.render()
+
+        // 문서 2건 — 6행(3회×2문서)이 아니다. 세 갈래는 배타적이고 문서 수의 합과 같다 —
+        // g-002 는 절단 회차를 하나 가졌으니(모든 회차가 성공한 게 아니니) 절단으로 실패
+        // 쪽에만 잡히고, 변환 성공(g-001 만 해당)에는 잡히지 않는다.
+        assertThat(rendered).contains("문서 2건 · 변환 성공 1 · 절단으로 실패 1 (50.0%) · 그 밖의 변환 실패 0")
+        // 스타일 통과율 분모는 변환 성공 회차가 있는 문서 수(2, outcomeLine 의 「변환 성공」과는
+        // 다른 축약) — g-002 는 절단 회차 때문에
+        // 「모든 회차 통과」를 만족하지 못해 미통과로 잡힌다(박한 쪽).
+        assertThat(rendered).contains("스타일 규칙 통과 1/2 (50.0%)")
+        // 밀도 중앙값은 문서 2건의 회차 중앙값(g-001=0.200, g-002=0.050) 위에서 다시 낸 값이다
+        // (nearest-rank, 2건 → 더 작은 쪽) — 회차 6건을 그대로 모은 값이 아니다.
+        assertThat(rendered).contains("스타일 위반 밀도 중앙값 0.050 (위반 수/문장 수, 표본 2건)")
+        // 절단은 문서 단위로 한 번(g-002), 호출 단위로는 그 문서의 잘린 회차 한 번 — 서로
+        // 다른 분모(문서 2, 호출 6)로 나란히 낸다.
+        assertThat(rendered).contains("절단 — 문서 단위 1/2 (50.0%, 변환 실패) · 호출 단위 1/6 (16.7%, 변환+보정)")
+        // 게이트 ⓪ 구간 줄(B2/B3 판정을 읽는 자리)도 같은 모순을 재현하면 안 된다 — 「변환
+        // 성공」은 outcomeLine 과 같은 엄격한 축약(1, g-001 만)을 쓰고, 「스타일 통과」 분모는
+        // 여전히 느슨한 축약(2, 변환 회차가 있는 문서)이라 그 옆에 무엇을 센 분모인지 적는다.
+        assertThat(rendered).contains(
+            "2000자 이하 — 문서 2 · 변환 성공 1 · 절단 문서 1 (50.0%) / 호출 1 · " +
+                "스타일 통과 1/2(변환 회차 있는 문서) (50.0%) · 팽창비 1.05/1.20/1.20 · 출력 토큰 400/500/500",
         )
     }
 
