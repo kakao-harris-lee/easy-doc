@@ -1,6 +1,7 @@
 package kr.easydoc.infrastructure.quality
 
 import kr.easydoc.application.conversion.ConversionFailureKind
+import kr.easydoc.core.easyread.StyleRuleKind
 import java.time.Duration
 import java.util.Locale
 import kotlin.math.ceil
@@ -33,6 +34,19 @@ internal data class LaneMeasurement(
     val truncatedCalls: Int,
     /** 스타일 규칙 통과 여부. 변환이 실패했으면 `null` — 잴 본문이 없다. */
     val stylePassed: Boolean?,
+    /**
+     * `checkStyle` 이 나눈 문장 수(`StyleCheckResult.totalSentences`). [stylePassed] 를 낸
+     * 바로 그 [kr.easydoc.core.quality.evaluateStyle] 호출에서 그대로 가져온다 — 이 레인이
+     * 문장 분리기를 따로 두지 않는 이유가 여기 있다. 분리기를 따로 두면 통과 판정과 문장 수가
+     * 서로 다른 분리 기준을 잴 위험이 생긴다(둘이 갈리면 위반 밀도가 어느 기준으로 잰 값인지
+     * 말할 수 없다). 변환이 실패했으면 잴 본문이 없으므로 0.
+     */
+    val sentenceCount: Int,
+    /**
+     * 규칙별([StyleRuleKind]) 위반 문장 수. 마찬가지로 [sentenceCount] 를 낸 `checkStyle`
+     * 호출의 `issues` 를 규칙별로 센 값이다. 변환이 실패했으면 빈 맵.
+     */
+    val styleIssueCounts: Map<StyleRuleKind, Int>,
 ) {
     /**
      * 출력 팽창비 = 변환 글자 수 / 원문 글자 수.
@@ -41,6 +55,20 @@ internal data class LaneMeasurement(
      * 정한 그 값이다. 변환이 실패했으면 `null` — 없는 값을 1.0 으로 채우면 분포가 거짓이 된다.
      */
     val expansion: Double? get() = convertedChars?.takeIf { sourceChars > 0 }?.let { it.toDouble() / sourceChars }
+
+    /** [styleIssueCounts] 값의 합 — 문서 한 건의 스타일 위반 총수. */
+    val styleIssueCount: Int get() = styleIssueCounts.values.sum()
+
+    /**
+     * 스타일 위반 밀도 = 위반 수 / 문장 수. 게이트 ⓪ 의 새 입력값 — 문서 단위 이분법(통과/미통과)
+     * 대신 위반이 얼마나 조밀한지를 본다.
+     *
+     * 변환이 실패했거나([convertedChars] `null`) 문장이 하나도 없으면([sentenceCount] 0)
+     * `null` — 0 으로 채우면 "위반이 없다"와 "잴 수 없다"가 구분되지 않는다([expansion] 과
+     * 같은 판단).
+     */
+    val styleIssueDensity: Double?
+        get() = convertedChars?.let { styleIssueCount.toDouble().takeIf { sentenceCount > 0 }?.div(sentenceCount) }
 }
 
 /**
@@ -142,6 +170,7 @@ internal class LaneReport(
             appendTranscriptSkippedLine()
             appendGateSection()
             appendDocumentSection()
+            appendRunAggregateSection()
             appendLine(callLine())
             appendLine(durationLine())
             appendLine("인프라 오류 분포 — ${distributionLine()}")
@@ -212,6 +241,7 @@ internal class LaneReport(
         appendLine(bucketLine("  ${LONG_DOCUMENT_CHARS}자 이하", short))
         appendLine(bucketLine("  ${LONG_DOCUMENT_CHARS}자 초과", long))
         appendLine(bucketLine("  전체", measurements))
+        appendLine(styleDensityLine())
         appendLine(truncationLine())
         appendLine(silentTruncationLine())
         if (journal.truncatedJudgeCalls > 0) {
@@ -250,13 +280,74 @@ internal class LaneReport(
             "팽창비 ${measurement.expansion?.let { String.format(Locale.ROOT, "%.2f", it) } ?: "-"} · " +
             "출력 토큰 ${measurement.outputTokens} · " +
             "절단 호출 ${measurement.truncatedCalls} · " +
-            "스타일 ${styleLabel(measurement.stylePassed)}"
+            "스타일 ${styleLabel(measurement.stylePassed)} · " +
+            "문장 ${measurement.sentenceCount} · " +
+            "위반 ${styleIssueSummary(measurement)}"
 
     private fun styleLabel(passed: Boolean?): String =
         when (passed) {
             true -> "통과"
             false -> "미통과"
             null -> "-"
+        }
+
+    /**
+     * 위반 총수·밀도·규칙별([StyleRuleKind]) 내역을 한 자리에 낸다. 규칙별로 나누는 이유는
+     * DIFFICULT_WORD 과다 발화처럼 특정 규칙 하나가 밀도를 끌어올리는 경우를 다른 규칙과
+     * 섞지 않고 읽기 위해서다. 변환이 실패한 문서는 잴 본문이 없으므로 "-"([styleLabel] 과
+     * 같은 관례).
+     */
+    private fun styleIssueSummary(measurement: LaneMeasurement): String {
+        if (measurement.convertedChars == null) return "-"
+        val density = measurement.styleIssueDensity?.let { String.format(Locale.ROOT, "%.3f", it) } ?: "-"
+        val breakdown = StyleRuleKind.entries.joinToString(" ") { "$it=${measurement.styleIssueCounts[it] ?: 0}" }
+        return "${measurement.styleIssueCount}건(밀도 $density · $breakdown)"
+    }
+
+    /** 게이트 ⓪ 요약에 남기는 문서 간 위반 밀도 중앙값. 개별 문서 값은 [appendDocumentSection] 이 낸다. */
+    private fun styleDensityLine(): String {
+        val densities = converted(measurements).mapNotNull { it.styleIssueDensity }
+        return if (densities.isEmpty()) {
+            "  스타일 위반 밀도 — 표본 없음"
+        } else {
+            "  스타일 위반 밀도 중앙값 ${String.format(Locale.ROOT, "%.3f", quantile(densities.sorted(), MEDIAN))} " +
+                "(위반 수/문장 수, 표본 ${densities.size}건)"
+        }
+    }
+
+    /**
+     * 같은 문서를 여러 번([EASYDOC_LANE_RUNS]) 돌렸을 때만 나온다 — 1회씩만 돈 문서는 반복
+     * 집계랄 것이 없다. 매 실행에서 어떤 문서 그룹도 크기가 2 이상이 아니면(= runs 가 1이면)
+     * 이 섹션 자체가 생기지 않는다([recordTranscriptSkipped] KDoc과 같은 관례).
+     */
+    private fun StringBuilder.appendRunAggregateSection() {
+        val repeated = documentGroups().filter { it.size > 1 }
+        if (repeated.isEmpty()) return
+        appendLine("문서별 반복 집계 (같은 문서를 여러 번 돌린 결과 — 중앙값/최소/최대)")
+        repeated.forEach { group ->
+            appendLine(
+                "  ${group.first().documentId} — 반복 ${group.size}회 · " +
+                    "팽창비 ${medianMinMax(group.mapNotNull { it.expansion }, decimals = 2)} · " +
+                    "밀도 ${medianMinMax(group.mapNotNull { it.styleIssueDensity }, decimals = 3)} · " +
+                    "절단 호출 합계 ${group.sumOf { it.truncatedCalls }}",
+            )
+        }
+    }
+
+    /** [documentId] 별로 묶은 반복 기록. 처음 나온 순서를 유지한다([measurements] 기록 순서). */
+    private fun documentGroups(): List<List<LaneMeasurement>> = measurements.groupBy { it.documentId }.values.toList()
+
+    private fun medianMinMax(
+        values: List<Double>,
+        decimals: Int,
+    ): String =
+        if (values.isEmpty()) {
+            "-"
+        } else {
+            values.sorted().let { sorted ->
+                listOf(quantile(sorted, MEDIAN), sorted.first(), sorted.last())
+                    .joinToString("/") { String.format(Locale.ROOT, "%.${decimals}f", it) }
+            }
         }
 
     /**

@@ -1,6 +1,7 @@
 package kr.easydoc.infrastructure.quality
 
 import kr.easydoc.application.conversion.ConversionFailureKind
+import kr.easydoc.core.easyread.StyleRuleKind
 import kr.easydoc.core.llm.LlmCompletion
 import kr.easydoc.core.llm.LlmFinishReason
 import org.assertj.core.api.Assertions.assertThat
@@ -40,13 +41,12 @@ class LaneReportTest {
         // 호출 6회(문서 4건 중 둘이 보정까지 갔다) — 호출 단위 절단률의 분모다.
         repeat(6) { journal.recordCall(completion(outputTokens = 2_000)) }
         // 단문 둘: 하나는 스타일 통과(팽창비 1.20), 하나는 실패(1.50).
-        record(id = "g-001", sourceChars = 1_000, convertedChars = 1_200, outputTokens = 2_000, stylePassed = true)
-        record(id = "g-002", sourceChars = 1_000, convertedChars = 1_500, outputTokens = 2_400, stylePassed = false)
+        record(id = "g-001", chars = CharCounts(1_000, 1_200), outputTokens = 2_000, style = StyleSample(true))
+        record(id = "g-002", chars = CharCounts(1_000, 1_500), outputTokens = 2_400, style = StyleSample(false))
         // 장문 둘: 하나는 통과(1.80)했지만 **보정 호출이 잘렸고**, 하나는 변환 자체가 절단됐다.
         recordRepairTruncated(
             id = "g-003",
-            sourceChars = 3_000,
-            convertedChars = 5_400,
+            chars = CharCounts(3_000, 5_400),
             outputTokens = 9_000,
             truncatedCalls = 1,
         )
@@ -82,8 +82,7 @@ class LaneReportTest {
         journal.recordCall(completion(outputTokens = 16_000, truncated = true))
         recordRepairTruncated(
             id = "g-001",
-            sourceChars = 3_000,
-            convertedChars = 3_600,
+            chars = CharCounts(3_000, 3_600),
             outputTokens = 4_000,
             // 저널이 센 값을 그대로 싣는다 — 이 배선이 끊기면 구간 집계가 조용히 0 이 된다.
             truncatedCalls = journal.truncatedCallsFor("g-001"),
@@ -101,7 +100,7 @@ class LaneReportTest {
     fun `차이가 없으면 없다고 적는다`() {
         journal.beginDocument("g-001")
         journal.recordCall(completion(outputTokens = 4_000))
-        record(id = "g-001", sourceChars = 900, convertedChars = 1_000, outputTokens = 4_000, stylePassed = true)
+        record(id = "g-001", chars = CharCounts(900, 1_000), outputTokens = 4_000, style = StyleSample(passed = true))
 
         assertThat(report.render()).contains("차이 없음 — 상한에 닿은 호출이 모두 문서 실패로 나타났다")
     }
@@ -138,15 +137,35 @@ class LaneReportTest {
     @Test
     @DisplayName("문서별 측정값을 원문 글자 수 내림차순으로 낸다 — 실패 문서는 -로 낸다")
     fun `문서별 값을 원문 글자 수 내림차순으로 낸다`() {
-        record(id = "g-001", sourceChars = 1_000, convertedChars = 1_200, outputTokens = 2_000, stylePassed = true)
-        record(id = "g-002", sourceChars = 1_000, convertedChars = 1_500, outputTokens = 2_400, stylePassed = false)
+        record(
+            id = "g-001",
+            chars = CharCounts(1_000, 1_200),
+            outputTokens = 2_000,
+            style = StyleSample(passed = true, sentenceCount = 20, issueCounts = emptyMap()),
+        )
+        record(
+            id = "g-002",
+            chars = CharCounts(1_000, 1_500),
+            outputTokens = 2_400,
+            style =
+                StyleSample(
+                    passed = false,
+                    sentenceCount = 15,
+                    issueCounts = mapOf(StyleRuleKind.LENGTH to 2, StyleRuleKind.COMMA to 1),
+                ),
+        )
         // 성공했지만 보정 호출이 잘린 문서 — expansion·stylePassed 는 값이 있어야 한다.
         recordRepairTruncated(
             id = "g-003",
-            sourceChars = 3_000,
-            convertedChars = 5_400,
+            chars = CharCounts(3_000, 5_400),
             outputTokens = 9_000,
             truncatedCalls = 1,
+            style =
+                StyleSample(
+                    passed = true,
+                    sentenceCount = 40,
+                    issueCounts = mapOf(StyleRuleKind.DIFFICULT_WORD to 4),
+                ),
         )
         // 변환 자체가 실패한 문서 — convertedChars/expansion/stylePassed 가 전부 null 이라 "-" 로 낸다.
         recordTruncated(id = "g-004", sourceChars = 3_500, outputTokens = 16_000)
@@ -154,17 +173,189 @@ class LaneReportTest {
         val documentLines = report.render().lines().filter { it.contains(" — 원문 ") }
 
         assertThat(documentLines).containsExactly(
-            "  g-004 — 원문 3500 · 변환 - · 팽창비 - · 출력 토큰 16000 · 절단 호출 1 · 스타일 -",
-            "  g-003 — 원문 3000 · 변환 5400 · 팽창비 1.80 · 출력 토큰 9000 · 절단 호출 1 · 스타일 통과",
-            "  g-001 — 원문 1000 · 변환 1200 · 팽창비 1.20 · 출력 토큰 2000 · 절단 호출 0 · 스타일 통과",
-            "  g-002 — 원문 1000 · 변환 1500 · 팽창비 1.50 · 출력 토큰 2400 · 절단 호출 0 · 스타일 미통과",
+            "  g-004 — 원문 3500 · 변환 - · 팽창비 - · 출력 토큰 16000 · 절단 호출 1 · 스타일 - · 문장 0 · 위반 -",
+            "  g-003 — 원문 3000 · 변환 5400 · 팽창비 1.80 · 출력 토큰 9000 · 절단 호출 1 · 스타일 통과 · 문장 40 · " +
+                "위반 4건(밀도 0.100 · LENGTH=0 COMMA=0 DOUBLE_PASSIVE=0 DIFFICULT_WORD=4 GLOSS_COLLISION=0)",
+            "  g-001 — 원문 1000 · 변환 1200 · 팽창비 1.20 · 출력 토큰 2000 · 절단 호출 0 · 스타일 통과 · 문장 20 · " +
+                "위반 0건(밀도 0.000 · LENGTH=0 COMMA=0 DOUBLE_PASSIVE=0 DIFFICULT_WORD=0 GLOSS_COLLISION=0)",
+            "  g-002 — 원문 1000 · 변환 1500 · 팽창비 1.50 · 출력 토큰 2400 · 절단 호출 0 · 스타일 미통과 · 문장 15 · " +
+                "위반 3건(밀도 0.200 · LENGTH=2 COMMA=1 DOUBLE_PASSIVE=0 DIFFICULT_WORD=0 GLOSS_COLLISION=0)",
+        )
+    }
+
+    @Test
+    @DisplayName("위반 밀도 = 위반 수/문장 수 — 위반이 없으면 0.000, 변환 실패나 문장 0건이면 잴 수 없다")
+    fun `위반 밀도를 계산한다`() {
+        val noIssues =
+            LaneMeasurement(
+                documentId = "g-001",
+                sourceChars = 100,
+                convertedChars = 120,
+                outputTokens = 50,
+                truncated = false,
+                truncatedCalls = 0,
+                stylePassed = true,
+                sentenceCount = 10,
+                styleIssueCounts = emptyMap(),
+            )
+        assertThat(noIssues.styleIssueCount).isEqualTo(0)
+        assertThat(noIssues.styleIssueDensity).isEqualTo(0.0)
+
+        val someIssues =
+            LaneMeasurement(
+                documentId = "g-002",
+                sourceChars = 100,
+                convertedChars = 120,
+                outputTokens = 50,
+                truncated = false,
+                truncatedCalls = 0,
+                stylePassed = false,
+                sentenceCount = 8,
+                styleIssueCounts = mapOf(StyleRuleKind.LENGTH to 3, StyleRuleKind.COMMA to 1),
+            )
+        assertThat(someIssues.styleIssueCount).isEqualTo(4)
+        assertThat(someIssues.styleIssueDensity).isEqualTo(0.5)
+
+        val failed =
+            LaneMeasurement(
+                documentId = "g-003",
+                sourceChars = 100,
+                convertedChars = null,
+                outputTokens = 50,
+                truncated = true,
+                truncatedCalls = 1,
+                stylePassed = null,
+                sentenceCount = 0,
+                styleIssueCounts = emptyMap(),
+            )
+        assertThat(failed.styleIssueDensity).isNull()
+
+        val noSentences =
+            LaneMeasurement(
+                documentId = "g-004",
+                sourceChars = 10,
+                convertedChars = 0,
+                outputTokens = 5,
+                truncated = false,
+                truncatedCalls = 0,
+                stylePassed = true,
+                sentenceCount = 0,
+                styleIssueCounts = emptyMap(),
+            )
+        assertThat(noSentences.styleIssueDensity).isNull()
+    }
+
+    @Test
+    @DisplayName("문서별 줄에 규칙별 위반 수를 낸다 — DIFFICULT_WORD 과다 발화를 다른 규칙과 섞지 않고 읽을 수 있다")
+    fun `규칙별 위반 수를 낸다`() {
+        record(
+            id = "g-001",
+            chars = CharCounts(1_000, 1_200),
+            outputTokens = 2_000,
+            style =
+                StyleSample(
+                    passed = false,
+                    sentenceCount = 10,
+                    issueCounts = mapOf(StyleRuleKind.DIFFICULT_WORD to 5, StyleRuleKind.LENGTH to 1),
+                ),
+        )
+
+        assertThat(report.render()).contains("LENGTH=1 COMMA=0 DOUBLE_PASSIVE=0 DIFFICULT_WORD=5 GLOSS_COLLISION=0")
+    }
+
+    @Test
+    @DisplayName("게이트 ⓪ 요약에 문서 간 위반 밀도 중앙값을 낸다")
+    fun `밀도 중앙값을 요약에 낸다`() {
+        record(
+            id = "g-001",
+            chars = CharCounts(1_000, 1_200),
+            outputTokens = 2_000,
+            style = StyleSample(passed = true, sentenceCount = 10, issueCounts = emptyMap()),
+        )
+        record(
+            id = "g-002",
+            chars = CharCounts(1_000, 1_200),
+            outputTokens = 2_000,
+            style = StyleSample(passed = false, sentenceCount = 10, issueCounts = mapOf(StyleRuleKind.LENGTH to 2)),
+        )
+        record(
+            id = "g-003",
+            chars = CharCounts(1_000, 1_200),
+            outputTokens = 2_000,
+            style = StyleSample(passed = false, sentenceCount = 10, issueCounts = mapOf(StyleRuleKind.LENGTH to 4)),
+        )
+
+        // 밀도 0.000 / 0.200 / 0.400 의 중앙값(nearest-rank, 3건) = 0.200.
+        assertThat(report.render()).contains("스타일 위반 밀도 중앙값 0.200 (위반 수/문장 수, 표본 3건)")
+    }
+
+    @Test
+    @DisplayName("문서를 한 번만 돌리면 반복 집계 섹션이 아예 없다 — runs=1 과 같다")
+    fun `한 번만 돌리면 반복 집계가 없다`() {
+        record(id = "g-001", chars = CharCounts(1_000, 1_200), outputTokens = 2_000, style = StyleSample(passed = true))
+
+        assertThat(report.render()).doesNotContain("문서별 반복 집계")
+    }
+
+    @Test
+    @DisplayName("같은 문서를 여러 번 돌리면 팽창비·밀도의 중앙값/최소/최대와 절단 호출 합계를 문서별로 낸다")
+    fun `반복 실행을 문서별로 집계한다`() {
+        // 세 번 다 같은 문서 g-001 — 팽창비 1.00/1.20/1.40, 밀도 0.100/0.200/0.300, 절단 호출 0/1/0.
+        report.recordDocument(
+            LaneMeasurement(
+                documentId = "g-001",
+                sourceChars = 1_000,
+                convertedChars = 1_000,
+                outputTokens = 500,
+                truncated = false,
+                truncatedCalls = 0,
+                stylePassed = true,
+                sentenceCount = 10,
+                styleIssueCounts = mapOf(StyleRuleKind.LENGTH to 1),
+            ),
+            ELAPSED,
+        )
+        report.recordDocument(
+            LaneMeasurement(
+                documentId = "g-001",
+                sourceChars = 1_000,
+                convertedChars = 1_200,
+                outputTokens = 500,
+                truncated = false,
+                truncatedCalls = 1,
+                stylePassed = false,
+                sentenceCount = 10,
+                styleIssueCounts = mapOf(StyleRuleKind.LENGTH to 2),
+            ),
+            ELAPSED,
+        )
+        report.recordDocument(
+            LaneMeasurement(
+                documentId = "g-001",
+                sourceChars = 1_000,
+                convertedChars = 1_400,
+                outputTokens = 500,
+                truncated = false,
+                truncatedCalls = 0,
+                stylePassed = false,
+                sentenceCount = 10,
+                styleIssueCounts = mapOf(StyleRuleKind.LENGTH to 3),
+            ),
+            ELAPSED,
+        )
+
+        val rendered = report.render()
+
+        assertThat(rendered).contains("문서별 반복 집계 (같은 문서를 여러 번 돌린 결과 — 중앙값/최소/최대)")
+        assertThat(rendered).contains(
+            "g-001 — 반복 3회 · 팽창비 1.20/1.00/1.40 · 밀도 0.200/0.100/0.300 · 절단 호출 합계 1",
         )
     }
 
     @Test
     @DisplayName("표본이 없는 구간은 0 이 아니라 「표본 없음」으로 낸다")
     fun `빈 구간을 0 으로 채우지 않는다`() {
-        record(id = "g-001", sourceChars = 500, convertedChars = 600, outputTokens = 900, stylePassed = true)
+        record(id = "g-001", chars = CharCounts(500, 600), outputTokens = 900, style = StyleSample(passed = true))
 
         val rendered = report.render()
 
@@ -177,7 +368,7 @@ class LaneReportTest {
     fun `요약이 측정 조건과 흔들림을 남긴다`() {
         journal.beginDocument("g-001")
         journal.recordFault(LaneFault("HTTP 429", status = 429, transient = true), retried = true)
-        record(id = "g-001", sourceChars = 800, convertedChars = 900, outputTokens = 1_100, stylePassed = true)
+        record(id = "g-001", chars = CharCounts(800, 900), outputTokens = 1_100, style = StyleSample(passed = true))
 
         val rendered = report.render()
 
@@ -211,23 +402,42 @@ class LaneReportTest {
         assertThat(report.render()).doesNotContain("변환문 보존")
     }
 
+    /** [record]·[recordRepairTruncated] 가 공유하는 원문·변환 글자 수 묶음(detekt `LongParameterList` 회피). */
+    private data class CharCounts(
+        val source: Int,
+        val converted: Int,
+    )
+
+    /**
+     * [record]·[recordRepairTruncated] 가 공유하는 스타일 측정값 묶음. [CharCounts] 와 같은
+     * 이유로 하나의 파라미터로 묶는다 — [LaneMeasurement] 자체는 data class 라 detekt
+     * `LongParameterList` 에서 빠지지만([config/detekt/detekt.yml] 이 손대지 않은 기본값
+     * `ignoreDataClasses`), 이 파일의 조립 함수는 아니다.
+     */
+    private data class StyleSample(
+        val passed: Boolean,
+        val sentenceCount: Int = DEFAULT_SENTENCE_COUNT,
+        val issueCounts: Map<StyleRuleKind, Int> = emptyMap(),
+    )
+
     /** 변환에 성공한 문서. 절단된 호출은 없다. */
     private fun record(
         id: String,
-        sourceChars: Int,
-        convertedChars: Int,
+        chars: CharCounts,
         outputTokens: Int,
-        stylePassed: Boolean,
+        style: StyleSample,
     ) {
         report.recordDocument(
             LaneMeasurement(
                 documentId = id,
-                sourceChars = sourceChars,
-                convertedChars = convertedChars,
+                sourceChars = chars.source,
+                convertedChars = chars.converted,
                 outputTokens = outputTokens,
                 truncated = false,
                 truncatedCalls = 0,
-                stylePassed = stylePassed,
+                stylePassed = style.passed,
+                sentenceCount = style.sentenceCount,
+                styleIssueCounts = style.issueCounts,
             ),
             ELAPSED,
         )
@@ -239,20 +449,22 @@ class LaneReportTest {
      */
     private fun recordRepairTruncated(
         id: String,
-        sourceChars: Int,
-        convertedChars: Int,
+        chars: CharCounts,
         outputTokens: Int,
         truncatedCalls: Int,
+        style: StyleSample = StyleSample(passed = true),
     ) {
         report.recordDocument(
             LaneMeasurement(
                 documentId = id,
-                sourceChars = sourceChars,
-                convertedChars = convertedChars,
+                sourceChars = chars.source,
+                convertedChars = chars.converted,
                 outputTokens = outputTokens,
                 truncated = false,
                 truncatedCalls = truncatedCalls,
-                stylePassed = true,
+                stylePassed = style.passed,
+                sentenceCount = style.sentenceCount,
+                styleIssueCounts = style.issueCounts,
             ),
             ELAPSED,
         )
@@ -272,6 +484,8 @@ class LaneReportTest {
                 truncated = true,
                 truncatedCalls = 1,
                 stylePassed = null,
+                sentenceCount = 0,
+                styleIssueCounts = emptyMap(),
             ),
             ELAPSED,
         )
@@ -294,5 +508,8 @@ class LaneReportTest {
 
     private companion object {
         val ELAPSED: Duration = Duration.ofSeconds(3)
+
+        /** 밀도를 다루지 않는 테스트가 굳이 문장 수를 정하지 않아도 되게 두는 기본값. */
+        const val DEFAULT_SENTENCE_COUNT: Int = 10
     }
 }
