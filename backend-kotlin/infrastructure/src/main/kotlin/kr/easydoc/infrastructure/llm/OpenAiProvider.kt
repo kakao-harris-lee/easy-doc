@@ -22,6 +22,18 @@ import java.time.Duration
 const val OPENAI_PROVIDER_NAME: String = "openai"
 const val DEFAULT_OPENAI_MODEL: String = "gpt-4.1"
 
+/**
+ * [DEFAULT_OPENAI_MODEL](`gpt-4.1`) 이 지원하는 최대 출력 토큰.
+ *
+ * 출처: OpenAI 공식 모델 문서(2026-09-02 확인) — https://platform.openai.com/docs/models/gpt-4.1
+ * ("32,768 max output tokens").
+ *
+ * **기본 모델만 다룬다.** `easydoc.llm.model` 로 다른 모델을 지정하면 그 모델의 한도는
+ * 신뢰성 있게 알 수 없다(`model` 은 자유 문자열이고, 모델별 한도 표는 조용히 낡는다) —
+ * [LlmProviderConfiguration] 이 이 상수를 모델 미지정일 때만 검사에 쓰는 이유다.
+ */
+const val OPENAI_DEFAULT_MODEL_MAX_OUTPUT_TOKENS: Int = 32_768
+
 internal const val OPENAI_BASE_URL: String = "https://api.openai.com"
 internal const val OPENAI_RESPONSES_PATH: String = "/v1/responses"
 

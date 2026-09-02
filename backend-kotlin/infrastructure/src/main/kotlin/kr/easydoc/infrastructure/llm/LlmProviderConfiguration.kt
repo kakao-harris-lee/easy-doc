@@ -118,10 +118,22 @@ class LlmProviderConfiguration {
         val provider =
             when (properties.provider.lowercase()) {
                 OPENAI_PROVIDER_NAME -> {
+                    requireMaxOutputTokensWithinDefaultModelLimit(
+                        properties,
+                        OPENAI_PROVIDER_NAME,
+                        DEFAULT_OPENAI_MODEL,
+                        OPENAI_DEFAULT_MODEL_MAX_OUTPUT_TOKENS,
+                    )
                     OpenAiProvider(openAiSettings(properties))
                 }
 
                 ANTHROPIC_PROVIDER_NAME -> {
+                    requireMaxOutputTokensWithinDefaultModelLimit(
+                        properties,
+                        ANTHROPIC_PROVIDER_NAME,
+                        DEFAULT_ANTHROPIC_MODEL,
+                        ANTHROPIC_DEFAULT_MODEL_MAX_OUTPUT_TOKENS,
+                    )
                     AnthropicProvider(anthropicSettings(properties))
                 }
 
@@ -142,6 +154,34 @@ class LlmProviderConfiguration {
             pricing = properties.pricing.toTokenPricing(),
             observer = StructuredLogLlmCallObserver(),
         )
+    }
+
+    /**
+     * `easydoc.llm.max-output-tokens` 가 provider **기본 모델**이 실제로 낼 수 있는 최대
+     * 출력 토큰을 넘지 않는지 조립 시점에 확인한다.
+     *
+     * [LlmProperties.validatedMaxOutputTokens] 의 하한·상한([MAX_OUTPUT_TOKENS_CEILING])
+     * 검증 위에 얹는 provider별 추가 제약이다 — 값 출처는 늘리지 않는다.
+     *
+     * **모델을 지정했을 때는 검사하지 않는다.** `easydoc.llm.model` 은 자유 문자열이라
+     * 임의 모델의 한도를 신뢰성 있게 알 수 없다(전체 모델 한도 표는 조용히 낡는다). 아는
+     * 것(어댑터 기본 모델의 공식 한도)만 검사하고, 모르는 것은 provider 호출 실패로
+     * 드러나게 둔다 — 모델을 직접 지정한 운영자는 그 모델의 한도를 아는 쪽이 우리보다 낫다.
+     */
+    private fun requireMaxOutputTokensWithinDefaultModelLimit(
+        properties: LlmProperties,
+        providerName: String,
+        defaultModel: String,
+        defaultModelMaxOutputTokens: Int,
+    ) {
+        val configured = properties.validatedMaxOutputTokens()
+        if (!properties.model.isNullOrBlank()) return
+        if (configured > defaultModelMaxOutputTokens) {
+            throw ConfigurationException(
+                "easydoc.llm.max-output-tokens 는 $providerName 기본 모델($defaultModel)의 " +
+                    "최대 출력 토큰($defaultModelMaxOutputTokens) 이하여야 합니다 (현재: $configured)",
+            )
+        }
     }
 
     /** 호출 대상 URL은 adapter의 프로토콜 불변식을 사용한다. */

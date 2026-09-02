@@ -106,6 +106,72 @@ class LlmProviderConfigurationTest {
     }
 
     @Test
+    @DisplayName("openai + 모델 미지정 + 기본 모델 한도 초과는 조립 시점에 거절한다")
+    fun `openai 기본 모델 한도를 넘으면 거절한다`() {
+        assertThatThrownBy {
+            assemble(
+                LlmProperties(
+                    provider = OPENAI_PROVIDER_NAME,
+                    maxOutputTokens = OPENAI_DEFAULT_MODEL_MAX_OUTPUT_TOKENS + 1,
+                ),
+            )
+        }.isInstanceOf(ConfigurationException::class.java)
+            .hasMessageContaining(DEFAULT_OPENAI_MODEL)
+            .hasMessageContaining(OPENAI_DEFAULT_MODEL_MAX_OUTPUT_TOKENS.toString())
+    }
+
+    @Test
+    @DisplayName("openai + 모델 지정이면 같은 값도 통과한다 — 모르는 모델의 한도는 검사하지 않는다")
+    fun `openai 모델을 지정하면 한도를 검사하지 않는다`() {
+        val provider =
+            assemble(
+                LlmProperties(
+                    provider = OPENAI_PROVIDER_NAME,
+                    model = "gpt-4.1-custom",
+                    maxOutputTokens = OPENAI_DEFAULT_MODEL_MAX_OUTPUT_TOKENS + 1,
+                ),
+            )
+
+        assertThat(provider.toString()).contains("gpt-4.1-custom")
+    }
+
+    @Test
+    @DisplayName("anthropic 기본 모델은 현재 기본값과 게이트 ⓪ 이 쓴 64,000 모두 통과한다")
+    fun `anthropic 기본 모델은 64000 까지 통과한다`() {
+        val defaultAssembled = assemble(LlmProperties(provider = ANTHROPIC_PROVIDER_NAME))
+        val gateZeroAssembled =
+            assemble(
+                LlmProperties(
+                    provider = ANTHROPIC_PROVIDER_NAME,
+                    maxOutputTokens = MAX_OUTPUT_TOKENS_CEILING,
+                ),
+            )
+
+        assertThat(defaultAssembled.toString()).contains(DEFAULT_ANTHROPIC_MODEL)
+        assertThat(gateZeroAssembled.toString()).contains(DEFAULT_ANTHROPIC_MODEL)
+    }
+
+    @Test
+    @DisplayName("provider별 모델 한도 검사를 더해도 기존 하한·상한 검증은 그대로 던진다")
+    fun `기존 하한 상한 검증은 그대로다`() {
+        assertThatThrownBy {
+            assemble(LlmProperties(provider = OPENAI_PROVIDER_NAME, maxOutputTokens = 0))
+        }.isInstanceOf(ConfigurationException::class.java)
+            .hasMessageContaining("easydoc.llm.max-output-tokens")
+
+        assertThatThrownBy {
+            assemble(
+                LlmProperties(
+                    provider = OPENAI_PROVIDER_NAME,
+                    model = "gpt-4.1-custom",
+                    maxOutputTokens = MAX_OUTPUT_TOKENS_CEILING + 1,
+                ),
+            )
+        }.isInstanceOf(ConfigurationException::class.java)
+            .hasMessageContaining("A4 20장")
+    }
+
+    @Test
     @DisplayName("설정 표면에 호출 대상(엔드포인트)을 여는 필드가 없다")
     fun `baseUrl 을 설정으로 열지 않는다`() {
         val endpointish =
