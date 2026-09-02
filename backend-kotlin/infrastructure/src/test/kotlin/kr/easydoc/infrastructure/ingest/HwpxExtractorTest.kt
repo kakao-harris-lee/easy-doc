@@ -171,6 +171,42 @@ class HwpxExtractorTest {
     }
 
     @Test
+    @DisplayName(
+        "BinData 만 암호화되고 구역은 평문이면 그대로 추출한다 — 사전 차단이 아니라 " +
+            "구역 파싱 실패 뒤에만 진단해야 하는 이유(오탐 방지)",
+    )
+    fun `다른 항목만 암호화된 매니페스트는 통과시킨다`() {
+        val onlyImageEncrypted =
+            IngestFixtures.zipOf(
+                mapOf(
+                    "META-INF/manifest.xml" to BINDATA_ONLY_ENCRYPTED_MANIFEST.toByteArray(StandardCharsets.UTF_8),
+                    "Contents/section0.xml" to VALID_SECTION.toByteArray(StandardCharsets.UTF_8),
+                ),
+            )
+
+        assertThat(extractor.extract(onlyImageEncrypted)).isEqualTo("안내")
+    }
+
+    @Test
+    @DisplayName(
+        "매니페스트가 무관한 항목(BinData)만 암호화로 표시하고 구역 자체가 깨졌다면 " +
+            "**손상**으로 거절한다 — 암호화라고 단정하지 않는다",
+    )
+    fun `무관한 항목의 암호화 표시로 손상을 암호화로 오판하지 않는다`() {
+        val unrelatedEncryptionButBrokenSection =
+            IngestFixtures.zipOf(
+                mapOf(
+                    "META-INF/manifest.xml" to BINDATA_ONLY_ENCRYPTED_MANIFEST.toByteArray(StandardCharsets.UTF_8),
+                    "Contents/section0.xml" to GARBAGE_SECTION_BYTES,
+                ),
+            )
+
+        assertThatThrownBy { extractor.extract(unrelatedEncryptionButBrokenSection) }
+            .isInstanceOf(DocumentExtractionException::class.java)
+            .hasMessage(ExtractionMessages.broken(SourceFormat.HWPX))
+    }
+
+    @Test
     @DisplayName("정상 재포장은 통과한다 — 위 거부들이 재포장 탓이 아님을 세운다")
     fun `대조군은 통과한다`() {
         val original = IngestFixtures.bytes("sample.hwpx")
@@ -233,6 +269,19 @@ class HwpxExtractorTest {
             "<?xml version=\"1.0\" encoding=\"UTF-8\"?>" +
                 "<odf:manifest xmlns:odf=\"urn:oasis:names:tc:opendocument:xmlns:manifest:1.0\">" +
                 "<odf:file-entry full-path=\"Contents/section0.xml\" media-type=\"application/xml\"/>" +
+                "</odf:manifest>"
+
+        /**
+         * [ENCRYPTED_MANIFEST] 와 달리 암호화 표시가 구역이 아니라 `BinData/x.jpg` 에 붙는다 —
+         * 실제 표본(golden-collection-plan.hwpx)이 이미지·구역을 각각 따로 암호화 표시하는
+         * 모양 그대로다. 구역(`Contents/section0.xml`)은 이 매니페스트에 아예 등장하지 않는다.
+         */
+        const val BINDATA_ONLY_ENCRYPTED_MANIFEST =
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>" +
+                "<odf:manifest xmlns:odf=\"urn:oasis:names:tc:opendocument:xmlns:manifest:1.0\">" +
+                "<odf:file-entry full-path=\"BinData/x.jpg\" media-type=\"image/jpeg\">" +
+                "<odf:encryption-data checksum-type=\"x\" checksum=\"y\"/>" +
+                "</odf:file-entry>" +
                 "</odf:manifest>"
 
         /** 암호문 흉내 — 유효한 XML 이 아니다. */
