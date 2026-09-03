@@ -18,7 +18,7 @@ import { Button } from '../components/ui/Button'
 import { PageHeader } from '../components/PageHeader'
 
 /** 한 번에 변환할 수 있는 길이. 백엔드 MAX_CONVERTIBLE_CHARS와 같은 값이다. */
-export const MAX_CHARS = 4000
+export const MAX_CHARS = 20000
 
 /** 문서 제목 길이 상한. 백엔드 x-input-limits.max_title_length와 같은 값이다. */
 const MAX_TITLE_LENGTH = 255

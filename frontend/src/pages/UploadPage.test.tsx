@@ -164,13 +164,13 @@ describe('업로드 화면', () => {
     const user = userEvent.setup()
     renderPage()
 
-    // 4,000자 상한을 넘긴다. 붙여넣기(paste)로 넣어야 한 글자씩 타이핑하지 않는다.
+    // 20,000자 상한을 넘긴다. 붙여넣기(paste)로 넣어야 한 글자씩 타이핑하지 않는다.
     await user.click(screen.getByLabelText('바꿀 글'))
-    await user.paste('가'.repeat(4001))
+    await user.paste('가'.repeat(20001))
     await user.type(screen.getByLabelText('문서 제목'), '긴 원문')
     await user.click(screen.getByRole('button', { name: '쉬운 글 초안 만들기' }))
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('4,000자 이내로 줄여 주세요')
+    expect(await screen.findByRole('alert')).toHaveTextContent('20,000자 이내로 줄여 주세요')
     // 글자 수 안내는 같은 사실을 두 번 알리지 않는다(라이브 영역이 아니다).
     expect(screen.getByLabelText('바꿀 글')).toHaveAttribute('aria-invalid', 'true')
     expect(vi.mocked(createDocumentFromText)).not.toHaveBeenCalled()
@@ -333,13 +333,13 @@ describe('업로드 화면', () => {
     await user.click(screen.getByLabelText('바꿀 글'))
     await user.paste('가'.repeat(threshold - 1))
 
-    const belowCounter = screen.getByText(`${(threshold - 1).toLocaleString('ko-KR')} / 4,000자`)
+    const belowCounter = screen.getByText(`${(threshold - 1).toLocaleString('ko-KR')} / 20,000자`)
     expect(belowCounter).toHaveClass('text-muted-foreground')
     expect(belowCounter).not.toHaveClass('text-warning')
 
     await user.paste('가')
 
-    const atCounter = screen.getByText(`${threshold.toLocaleString('ko-KR')} / 4,000자`)
+    const atCounter = screen.getByText(`${threshold.toLocaleString('ko-KR')} / 20,000자`)
     expect(atCounter).toHaveClass('text-warning')
     // 80%는 아직 오류가 아니다 — 입력은 유효한 상태로 남는다.
     expect(screen.getByLabelText('바꿀 글')).toHaveAttribute('aria-invalid', 'false')
