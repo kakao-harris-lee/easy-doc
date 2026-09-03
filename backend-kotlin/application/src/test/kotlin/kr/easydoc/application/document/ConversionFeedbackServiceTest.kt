@@ -10,6 +10,7 @@ import kr.easydoc.core.exceptions.NotFoundException
 import kr.easydoc.core.pilot.MinutesSpent
 import kr.easydoc.core.pilot.PublishIntent
 import kr.easydoc.core.pilot.QualityScore
+import kr.easydoc.core.text.EditDistanceBudget
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.DisplayName
@@ -149,6 +150,23 @@ class ConversionFeedbackServiceTest {
         assertThat(row.editedCharCount).isEqualTo(4)
         // 「나」→「라」 치환 하나 + 「라」 삽입 하나.
         assertThat(row.editDistance).isEqualTo(2)
+    }
+
+    @Test
+    @DisplayName("셀 예산을 넘으면 편집 거리만 `null` 이다 — 글자 수 둘은 남는다")
+    fun `예산 초과는 거리만 비우고 글자 수는 남긴다`() {
+        val world = World(budget = EditDistanceBudget(1))
+        // 겹치는 문자가 없어 접두·접미가 제거되지 않는다 — cells = 3 × 4 = 12 > 예산(1).
+        val conversionId = world.seedDone(draft = "가나다", edited = "abcd")
+
+        world.save(conversionId)
+
+        val row = world.feedback.rows.getValue(conversionId)
+        assertThat(row.easyCharCount).isEqualTo(3)
+        assertThat(row.editedCharCount).isEqualTo(4)
+        assertThat(row.editDistance)
+            .withFailMessage("예산을 넘었는데 거리가 계산됐다 — 요청 스레드 CPU 상한이 강제되지 않는다")
+            .isNull()
     }
 
     @Test
@@ -311,7 +329,7 @@ class ConversionFeedbackServiceTest {
     }
 
     /** 케이스마다 새로 만드는 대역 묶음 — 대역이 상태를 든다. */
-    private class World {
+    private class World(budget: EditDistanceBudget = EditDistanceBudget(1_000_000)) {
         val transaction = RecordingTransactionRunner()
         val cipher = FakeContentCipher(writeKeyVersion = 1, transaction = transaction)
         val originals = FakeDocumentOriginalRepository(transaction)
@@ -335,6 +353,7 @@ class ConversionFeedbackServiceTest {
                         transaction = transaction,
                     ),
                 transaction = transaction,
+                editDistanceBudget = budget,
             )
 
         @Suppress("LongParameterList")

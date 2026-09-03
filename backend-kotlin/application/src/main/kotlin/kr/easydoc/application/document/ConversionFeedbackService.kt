@@ -11,7 +11,8 @@ import kr.easydoc.core.exceptions.InvalidInputException
 import kr.easydoc.core.pilot.MinutesSpent
 import kr.easydoc.core.pilot.PublishIntent
 import kr.easydoc.core.pilot.QualityScore
-import kr.easydoc.core.text.editDistanceOf
+import kr.easydoc.core.text.EditDistanceBudget
+import kr.easydoc.core.text.editDistanceWithin
 import kr.easydoc.core.text.stripControlChars
 import java.time.Instant
 import java.util.UUID
@@ -84,6 +85,7 @@ class ConversionFeedbackService(
     private val cipher: ContentCipher,
     private val query: ConversionQueryService,
     private val transaction: TransactionRunner,
+    private val editDistanceBudget: EditDistanceBudget,
 ) {
     /**
      * 저장하고 **저장된 값 그대로**를 돌려준다. 판정 순서는 값 검증 → 소유권(404) →
@@ -110,7 +112,7 @@ class ConversionFeedbackService(
         val result = query.read(ownerId, conversionId)
         if (result.status != ConversionStatus.DONE) throw ConflictException(CONVERSION_NOT_DONE_MESSAGE)
 
-        val metrics = EditMetrics.of(draft = result.easyText, edited = result.editedText)
+        val metrics = EditMetrics.of(draft = result.easyText, edited = result.editedText, budget = editDistanceBudget)
         val sealedComment =
             values.comment?.let { cipher.encrypt(it, conversionId, EncryptedField.CONVERSION_FEEDBACK_COMMENT) }
 
@@ -198,6 +200,7 @@ private class EditMetrics private constructor(
         fun of(
             draft: PlainBody?,
             edited: PlainBody?,
+            budget: EditDistanceBudget,
         ): EditMetrics =
             when {
                 // 방어적 갈래다 — `done` 인 변환에는 초안이 있다. 그래도 셋을 함께 비우는
@@ -213,10 +216,13 @@ private class EditMetrics private constructor(
                 }
 
                 else -> {
+                    // 편집 거리는 셀 예산을 넘으면 `null` 이다("측정 대상 아님") — 「검수본
+                    // 없음」과 같은 null 이지만 사유가 다르다. 글자 수 둘은 예산과 무관하게
+                    // 항상 O(n) 이라 그대로 남긴다(`EditDistance.kt` KDoc 2026-09-03 갱신).
                     EditMetrics(
                         easyCharCount = charCountOf(draft.value),
                         editedCharCount = charCountOf(edited.value),
-                        editDistance = editDistanceOf(draft.value, edited.value),
+                        editDistance = editDistanceWithin(draft.value, edited.value, budget),
                     )
                 }
             }

@@ -31,12 +31,14 @@ import kr.easydoc.core.easyread.renderTxt
 import kr.easydoc.core.exceptions.ConflictException
 import kr.easydoc.core.exceptions.EmailAlreadyRegisteredException
 import kr.easydoc.core.exceptions.InvalidCredentialsException
+import kr.easydoc.core.text.EditDistanceBudget
 import kr.easydoc.core.user.PasswordHash
 import kr.easydoc.core.user.StoredUser
 import kr.easydoc.core.user.User
 import kr.easydoc.core.workspace.DEFAULT_WORKSPACE_NAME
 import kr.easydoc.core.workspace.Workspace
 import kr.easydoc.core.workspace.WorkspaceListing
+import kr.easydoc.infrastructure.document.FeedbackProperties
 import org.springframework.boot.test.context.TestConfiguration
 import org.springframework.context.annotation.Bean
 import java.time.Instant
@@ -220,6 +222,7 @@ class AuthSliceBeans {
             cipher = cipher,
             query = query,
             transaction = transaction,
+            editDistanceBudget = EditDistanceBudget(FeedbackProperties.DEFAULT_EDIT_DISTANCE_CELL_BUDGET),
         )
 
     /**

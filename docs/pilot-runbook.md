@@ -134,6 +134,11 @@ docker compose -f compose.yml -f compose.ci.yml run --rm frontend-check
 문서 보존 만료(기본 30일) **전에** 실행한다. 지표 표는 파기 대상이 아니지만, 판정 중
 원문·변환 결과를 대조해야 할 때 그쪽은 이미 사라져 있다.
 
+편집 거리는 셀 예산(`easydoc.feedback.edit-distance-cell-budget`)을 넘으면 계산하지 않고
+`edit_distance`를 `NULL`로 남긴다(요청 스레드 CPU 상한, `core/text/EditDistance.kt`). 이 행은
+수정률 표본에서 빠지므로 수정률 평균·중앙값과 **함께 표본 수를 읽는다** — 표본이 10건보다
+작으면 그만큼이 예산 초과로 빠진 것이다.
+
 ```bash
 docker compose -f compose.yml exec -T postgres \
   psql -U postgres -d easydoc -f - < scripts/pilot-report.sql

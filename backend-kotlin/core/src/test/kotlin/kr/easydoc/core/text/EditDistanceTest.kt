@@ -1,8 +1,10 @@
 package kr.easydoc.core.text
 
 import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
+import kotlin.random.Random
 
 /**
  * 수정률의 분자다. **코드 포인트 단위**라는 것이 이 테스트의 핵심 축이다 — 서로게이트 쌍을
@@ -84,5 +86,85 @@ class EditDistanceTest {
     @DisplayName("앞쪽 접두사가 같아도 뒤쪽 차이만큼만 센다")
     fun `공통 접두사는 거리에 들어가지 않는다`() {
         assertThat(editDistanceOf("민원 처리 안내", "민원 처리 방법")).isEqualTo(2)
+    }
+
+    @Test
+    @DisplayName("접두·접미 제거는 결과를 바꾸지 않는다 — 서로게이트 쌍 포함 무작위 소형 문자열을 순수 DP 참조 구현과 대조한다")
+    fun `접두 접미 제거가 참조 DP와 같은 값을 낸다`() {
+        val alphabet = listOf("가", "나", "다", "라", "마", "a", "b", "c", "😀", "😁", " ", "")
+        val random = Random(20260903)
+
+        repeat(300) {
+            val left = randomString(alphabet, random)
+            val right = randomString(alphabet, random)
+
+            assertThat(editDistanceOf(left, right))
+                .withFailMessage("left=%s right=%s", left, right)
+                .isEqualTo(referenceDistance(left, right))
+        }
+    }
+
+    @Test
+    @DisplayName("셀 예산을 넘으면 null 이다 — 정확히 예산이면 값이다")
+    fun `예산 초과는 null 이고 정확히 예산이면 값이다`() {
+        // 서로 겹치는 문자가 없어 접두·접미가 제거되지 않는다 — rows=columns=10, cells=100.
+        val left = "abcdefghij"
+        val right = "1234567890"
+
+        assertThat(editDistanceWithin(left, right, EditDistanceBudget(99))).isNull()
+        assertThat(editDistanceWithin(left, right, EditDistanceBudget(100)))
+            .isEqualTo(editDistanceOf(left, right))
+    }
+
+    @Test
+    @DisplayName("긴 공통 접두사 뒤의 작은 수정은 예산 안에서 계산된다 — 예산이 제거 뒤 크기에 적용된다")
+    fun `긴 공통 접두사는 예산 판정에서 빠진다`() {
+        val prefix = "가".repeat(10_000)
+        val left = "${prefix}나다"
+        val right = "${prefix}라다"
+
+        // 접두 1만 자·공통 접미 "다" 를 떼면 남는 것은 "나" 대 "라" — 셀 1개.
+        assertThat(editDistanceWithin(left, right, EditDistanceBudget(1))).isEqualTo(1)
+    }
+
+    @Test
+    @DisplayName("`EditDistanceBudget` 은 1 미만을 거절한다")
+    fun `EditDistanceBudget 이 0 이하를 거절한다`() {
+        assertThatThrownBy { EditDistanceBudget(0) }.isInstanceOf(IllegalArgumentException::class.java)
+        assertThatThrownBy { EditDistanceBudget(-1) }.isInstanceOf(IllegalArgumentException::class.java)
+    }
+
+    private companion object {
+        fun randomString(
+            alphabet: List<String>,
+            random: Random,
+        ): String {
+            val length = random.nextInt(0, 13)
+            return (0 until length).joinToString("") { alphabet[random.nextInt(alphabet.size)] }
+        }
+
+        /** 접두·접미 제거를 전혀 하지 않는 순수 O(n·m) 표 전체를 굴리는 참조 구현. */
+        fun referenceDistance(
+            left: String,
+            right: String,
+        ): Int {
+            val a = left.codePoints().toArray()
+            val b = right.codePoints().toArray()
+            val table = Array(a.size + 1) { IntArray(b.size + 1) }
+            for (i in 0..a.size) table[i][0] = i
+            for (j in 0..b.size) table[0][j] = j
+            for (i in 1..a.size) {
+                for (j in 1..b.size) {
+                    val cost = if (a[i - 1] == b[j - 1]) 0 else 1
+                    table[i][j] =
+                        minOf(
+                            table[i - 1][j] + 1,
+                            table[i][j - 1] + 1,
+                            table[i - 1][j - 1] + cost,
+                        )
+                }
+            }
+            return table[a.size][b.size]
+        }
     }
 }
