@@ -18,8 +18,7 @@ const val EMPTY_BODY_MESSAGE: String = "본문이 비어 있습니다"
 
 /** 계약 `POST /documents` 422 예시 `too_long`. */
 val BODY_TOO_LONG_MESSAGE: String =
-    "현재는 ${String.format(Locale.ROOT, "%,d", MAX_CONVERTIBLE_CHARS)}자 이하 문서만 변환할 수 있습니다" +
-        " (긴 문서 분할 변환은 준비 중입니다)"
+    "현재는 ${String.format(Locale.ROOT, "%,d", MAX_CONVERTIBLE_CHARS)}자 이하 문서만 변환할 수 있습니다"
 
 /**
  * 파일에서 뽑은 본문이 공백뿐일 때. 원본 `app/services/documents.py` 의
@@ -104,8 +103,7 @@ const val EMPTY_REVIEW_MESSAGE: String = "수정본이 비어 있습니다"
 
 /** 계약 PUT 422 예시 `too_long`. 길이는 **정규화 후**다. */
 val REVIEW_TOO_LONG_MESSAGE: String =
-    "수정본은 ${String.format(Locale.ROOT, "%,d", MAX_CONVERTIBLE_CHARS)}자 이하여야 합니다" +
-        " (긴 문서 분할 변환은 준비 중입니다)"
+    "수정본은 ${String.format(Locale.ROOT, "%,d", MAX_CONVERTIBLE_CHARS)}자 이하여야 합니다"
 
 /** 잠근 행에 저장이 닿지 않았다 — 입력 문제가 아니라 **우리 전제가 깨진 것**이다. */
 const val REVIEW_NOT_SAVED_MESSAGE: String = "요청을 처리하지 못했습니다"

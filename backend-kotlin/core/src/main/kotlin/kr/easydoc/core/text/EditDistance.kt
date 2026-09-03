@@ -19,7 +19,7 @@ package kr.easydoc.core.text
  * 사정이 다르다.**
  *
  * - **검수본**은 코드가 막는다 — `ConversionReviewService.normalize` 가 제어문자를 걷어낸
- *   길이를 재서 [kr.easydoc.core.document.MAX_CONVERTIBLE_CHARS](4,000자)를 넘으면
+ *   길이를 재서 [kr.easydoc.core.document.MAX_CONVERTIBLE_CHARS](20,000자)를 넘으면
  *   `InvalidInputException` 으로 거절한다.
  * - **초안에는 길이 검증이 없다.** worker 는 `ProcessConversionJob.finishSuccess` 에서 모델
  *   출력을 `PlainBody` 로 감싸 그대로 암호화·저장하고, `ModelDraft` 와 `PlainBody` 는 길이를
@@ -27,9 +27,9 @@ package kr.easydoc.core.text
  *   (기본값 `DEFAULT_MAX_TOKENS` = 16,000) 하나뿐이고, 그나마 **길이 검사가 아니라 출력
  *   예산**이다 — 예산에 닿은 응답을 `TRUNCATED` 실패로 버리기 때문에 저장까지 오는 초안이
  *   그 안에 드는 것뿐이다. 토큰은 글자가 아니라서 16,000 토큰이 만드는 한국어 본문은
- *   4,000자보다 훨씬 길 수 있다.
+ *   20,000자보다 훨씬 길 수 있다.
  *
- * 그래서 최악의 표는 「4,000 × 4,000」이 아니라 「4,000 × (그 출력 예산이 허용하는 길이)」이고,
+ * 그래서 최악의 표는 「20,000 × 20,000」이 아니라 「20,000 × (그 출력 예산이 허용하는 길이)」이고,
  * `maxTokens` 를 키우면 여기 비용도 함께 커진다. 이 함수의 비용 상한은 코드 불변식이 아니라
  * **설정에 의존한다** — 그 값을 올릴 때 이 구현의 비용 판단을 함께 다시 해야 한다.
  *

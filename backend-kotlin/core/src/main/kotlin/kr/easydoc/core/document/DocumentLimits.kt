@@ -12,7 +12,7 @@ package kr.easydoc.core.document
 // `MAX_CONVERTIBLE_CHARS` 주석이 같은 구분을 적었다).
 
 /** 한 번에 변환할 수 있는 문서 길이. 계약 `x-input-limits.max_convertible_chars`. */
-const val MAX_CONVERTIBLE_CHARS: Int = 4_000
+const val MAX_CONVERTIBLE_CHARS: Int = 20_000
 
 /** 업로드 파일 크기 상한(바이트). 계약 `x-input-limits.max_upload_bytes`. */
 const val MAX_UPLOAD_BYTES: Long = 10L * 1024 * 1024

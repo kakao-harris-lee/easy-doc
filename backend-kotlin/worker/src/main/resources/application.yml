@@ -49,7 +49,9 @@ easydoc:
     open-ai-api-key: ${OPENAI_API_KEY:}
     # api 와 같은 이름·같은 기본값. ConvertDocumentUseCase 를 실제로 돌리는 것은
     # worker 프로세스이므로 이 값이 닿아야 하는 자리는 여기다.
-    max-output-tokens: ${EASYDOC_LLM_MAX_OUTPUT_TOKENS:16000}
+    # 기본값 64000 은 anthropic 기준(게이트 ⓪ 3차 측정 조건)이다. provider 를 openai 로
+    # 바꾸면 그 모델의 출력 한도(gpt-4.1: 32,768) 이하로 함께 낮춰야 조립이 통과한다.
+    max-output-tokens: ${EASYDOC_LLM_MAX_OUTPUT_TOKENS:64000}
     pricing:
       input-usd-per-million-tokens: ${EASYDOC_LLM_INPUT_USD_PER_MILLION_TOKENS:}
       output-usd-per-million-tokens: ${EASYDOC_LLM_OUTPUT_USD_PER_MILLION_TOKENS:}

@@ -99,9 +99,11 @@ easydoc:
     anthropic-api-key: ${ANTHROPIC_API_KEY:}
     open-ai-api-key: ${OPENAI_API_KEY:}
     # 출력 토큰 상한. 운영 중 조정될 수 있는 값이라 코드 상수가 아니라 구성값이다
-    # (CLAUDE.md 「상수와 구성 관리」). 기본값 16000 은 core `DEFAULT_MAX_TOKENS` 와
-    # 같은 값을 미설정 시에도 유지하기 위한 것이고, 실제 출처는 이 환경변수 하나다.
-    max-output-tokens: ${EASYDOC_LLM_MAX_OUTPUT_TOKENS:16000}
+    # (CLAUDE.md 「상수와 구성 관리」). 기본값 64000 은 anthropic 기준(게이트 ⓪ 3차
+    # 측정 조건)이다. provider 를 openai 로 바꾸면 그 모델의 출력 한도(gpt-4.1: 32,768)
+    # 이하로 함께 낮춰야 조립이 통과한다 — core `DEFAULT_MAX_TOKENS`(16,000)는 이
+    # 값이 없을 때만 쓰이는 provider 안전 fallback이라 여기 기본값과 다르다.
+    max-output-tokens: ${EASYDOC_LLM_MAX_OUTPUT_TOKENS:64000}
     pricing:
       input-usd-per-million-tokens: ${EASYDOC_LLM_INPUT_USD_PER_MILLION_TOKENS:}
       output-usd-per-million-tokens: ${EASYDOC_LLM_OUTPUT_USD_PER_MILLION_TOKENS:}

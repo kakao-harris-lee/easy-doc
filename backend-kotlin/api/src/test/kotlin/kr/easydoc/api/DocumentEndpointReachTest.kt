@@ -5,6 +5,7 @@ import kr.easydoc.api.support.ContractSpec
 import kr.easydoc.api.support.MultipartBody
 import kr.easydoc.api.support.OwnershipConcealment
 import kr.easydoc.api.support.UploadFixtures
+import kr.easydoc.core.document.MAX_CONVERTIBLE_CHARS
 import kr.easydoc.core.document.SourceFormat
 import kr.easydoc.infrastructure.DatabaseHandle
 import kr.easydoc.infrastructure.PostgresTestSupport
@@ -702,7 +703,7 @@ class DocumentEndpointReachTest {
         private const val TOO_LONG_BODY_EXAMPLE = "too_long"
 
         /** 본문 길이 단계에 닿게 하는 글자 수. */
-        private const val OVER_BODY_LIMIT_CHARS = 5_000
+        private const val OVER_BODY_LIMIT_CHARS = MAX_CONVERTIBLE_CHARS + 1_000
 
         /** 상한 초과 파일을 채우는 바이트. 내용은 판정에 쓰이지 않는다(크기 검사가 먼저다). */
         private const val OVERSIZED_FILLER: Byte = 0x41
