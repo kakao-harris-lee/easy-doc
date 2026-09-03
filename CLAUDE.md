@@ -14,7 +14,7 @@
 ## 모델·비용 정책
 
 - **구현 모델은 Sonnet 5다.** 코드 작성, 테스트, 디버깅, 리팩터링, 설정 변경, 문서 갱신을 Opus 이상 모델로 타이핑하지 않는다.
-- 기본 모델은 `.claude/settings.json`의 `sonnet`이며, 구현 중 상위 모델로 자동 승격하지 않는다. 세션을 상위 모델(Fable/Opus)로 띄웠더라도 이 기본값은 위임 경로에서 지켜진다 — 구현 타이핑은 여전히 Sonnet 실행 에이전트 몫이다.
+- 세션(오케스트레이터) 모델은 전역 설정과 `--model`이 정하며, 프로젝트 `.claude/settings.json`은 모델을 고정하지 않는다(세션 모델을 Sonnet으로 덮어쓰던 파일은 2026-09-03 제거). 구현 모델 Sonnet은 실행 에이전트 `oh-my-claudecode:executor`의 frontmatter `model: sonnet`으로 고정되며, 구현 중 상위 모델로 자동 승격하지 않는다. 세션을 상위 모델(Fable/Opus)로 띄웠더라도 구현 타이핑은 여전히 Sonnet 실행 에이전트 몫이다.
 - **Opus 5 이상(Fable 5 포함)은 계획·아키텍처 판단과 오케스트레이션에 허용한다.** 상위 모델 세션이 파일을 직접 고치는 대신, 범위를 나눠 Sonnet 실행 에이전트에 위임하고 결과를 종합한다. 「생각은 상위 모델, 타이핑은 Sonnet」이 기본형이다.
 - 모델이 고정되지 않은 에이전트(빌트인 general-purpose·Explore·Plan, fork, Workflow의 agent(), frontmatter `model: inherit`)는 세션 모델을 상속한다. 상위 모델 세션에서는 이들을 쓰지 않거나 호출 시 model(대개 sonnet)을 명시한다.
 - 계획은 Codex를 우선 사용해도 충분하다.
