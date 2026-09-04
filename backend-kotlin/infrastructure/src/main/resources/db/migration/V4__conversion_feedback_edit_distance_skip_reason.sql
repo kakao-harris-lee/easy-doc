@@ -71,9 +71,10 @@ CREATE FUNCTION conversion_feedback_reject_skip_reason_contradiction() RETURNS t
     LANGUAGE plpgsql AS $$
 BEGIN
     IF NEW.edit_distance IS NOT NULL AND NEW.edit_distance_skip_reason IS NOT NULL THEN
-        RAISE EXCEPTION '편집 거리와 skip_reason 을 동시에 지정할 수 없습니다 (edit_distance=%, edit_distance_skip_reason=%)',
-            NEW.edit_distance, NEW.edit_distance_skip_reason
-            USING ERRCODE = 'check_violation';
+        RAISE EXCEPTION 'edit_distance 와 edit_distance_skip_reason 은 함께 있을 수 없습니다 (trg_conversion_feedback_a_reject_skip_reason_contradiction)'
+            USING ERRCODE = 'check_violation',
+                  CONSTRAINT = 'trg_conversion_feedback_a_reject_skip_reason_contradiction',
+                  TABLE = 'conversion_feedback';
     END IF;
     RETURN NEW;
 END;
