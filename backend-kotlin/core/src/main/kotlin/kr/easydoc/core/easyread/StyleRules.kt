@@ -144,26 +144,32 @@ private fun parenthesisContent(
     return content.ifEmpty { null }
 }
 
+/** 연속 공백 — 괄호 내용과 사전 값을 같은 기준으로 비교하려고 양끝을 다듬고 내부 공백을 하나로 모은다. */
+private val WHITESPACE_RUN = unicodeRegex("""\s+""")
+
+/** [text] 양끝을 다듬고 내부 공백 연속을 하나로 모은다. */
+private fun normalizeGlossText(text: String): String = WHITESPACE_RUN.replace(text.trim(), " ")
+
 /**
- * [endIndex] 바로 뒤 괄호가 [word] 의 사전 뜻풀이([DIFFICULT_WORD_REPLACEMENTS])인가 —
- * 이미 설명된 용어만 잡지 않는다. 괄호 내용이 그저 한글이라는 것만으로는 뜻풀이로 보지
- * 않는다 — "시행(예정)"·"명의(공동명의)"처럼 사전 값과 무관한 괄호까지 억누르게 된다.
- * 사전 값과 같거나 서로 포함 관계일 때만 뜻풀이로 본다. 값에 "/"·","로 대안이 여럿이면
- * 그중 하나만 맞아도 된다.
+ * [endIndex] 바로 뒤 괄호가 [word] 의 사전 뜻풀이([DIFFICULT_WORD_REPLACEMENTS])와 **정확히
+ * 같은가** — 이미 설명된 용어만 잡지 않는다. 포함 관계는 보지 않는다 — "이름"을 부분
+ * 문자열로 담은 "이름 없음"·"이름표"까지 뜻풀이로 치면 뜻이 다른 말을 억누르게 된다.
+ * 마찬가지로 "시행(예정)"·"명의(공동명의)"처럼 사전 값과 무관한 괄호는 뜻풀이가 아니다.
+ * 값에 "/"·","로 대안이 여럿이면 그중 하나와만 같아도 된다.
  */
 private fun isGlossedByParenthesis(
     word: String,
     text: String,
     endIndex: Int,
 ): Boolean {
-    val content = parenthesisContent(text, endIndex)
+    val content = parenthesisContent(text, endIndex)?.let(::normalizeGlossText)
     val gloss = DIFFICULT_WORD_REPLACEMENTS[word]
     return content != null && gloss != null &&
         gloss
             .split('/', ',')
-            .map { it.trim() }
+            .map { normalizeGlossText(it) }
             .filter { it.isNotEmpty() }
-            .any { alt -> content == alt || content.contains(alt) || alt.contains(content) }
+            .any { it == content }
 }
 
 /** [word] 가 [text] 안에 온전한 낱말로 한 번이라도 나타나는가 — 복합어 안에 박힌 자리는 세지 않는다. */
