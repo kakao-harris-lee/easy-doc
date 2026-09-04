@@ -20,6 +20,9 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.ZoneOffset
 import java.util.UUID
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 /** `email_verification_codes` 저장소 — 실제 PostgreSQL 에서만 잴 수 있는 단발성·만료·상한. */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
@@ -89,6 +92,83 @@ class JdbcVerificationCodeStoreTest {
         assertThat(codes.attempt(userId, code, MAX_ATTEMPTS))
             .withFailMessage("시도 상한을 넘긴 코드가 여전히 정답을 받아들인다")
             .isFalse()
+    }
+
+    /**
+     * 상수 시간 비교(`MessageDigest.isEqual`)로 바꾼 뒤에도 동작은 그대로다 — 오답은 오답이고
+     * 정답은 정답이다. 값이 부분적으로 겹치는 오답(첫 자리만 다름·끝 자리만 다름)도 섞어
+     * 짧은 회로(단락 평가) 흔적이 판정에 새지 않는지 함께 잰다.
+     */
+    @Test
+    @DisplayName("상수 시간 비교로 바꿔도 오답은 여전히 실패하고 정답은 여전히 통과한다")
+    fun `상수 시간 비교도 정오답 판정은 그대로다`() {
+        val userId = newUser()
+        val code = codes.issue(userId, TTL, COOLDOWN)
+        val firstDigitDiffers = ("9" + code.drop(1)).let { if (it == code) "8" + code.drop(1) else it }
+        val lastDigitDiffers = (code.dropLast(1) + "9").let { if (it == code) code.dropLast(1) + "8" else it }
+
+        assertThat(codes.attempt(userId, firstDigitDiffers, MAX_ATTEMPTS)).isFalse()
+        assertThat(codes.attempt(userId, lastDigitDiffers, MAX_ATTEMPTS)).isFalse()
+        assertThat(codes.attempt(userId, code, MAX_ATTEMPTS))
+            .withFailMessage("상수 시간 비교로 바꾼 뒤 정답이 통과하지 않는다")
+            .isTrue()
+    }
+
+    /**
+     * 게이트 리뷰 팔로업 — `incrementAttemptsOnActiveCode` 의 가드가 안쪽 서브쿼리에만
+     * 있으면, 동시에 들어온 오답들이 잠금을 기다리는 동안 상한을 넘겨 `attempts` 를
+     * 계속 올릴 수 있었다. 바깥 `WHERE` 에 같은 가드를 되풀이한 수정이 그 경쟁을 막는지
+     * 실제 동시성으로 잰다 — 20개 스레드가 같은 오답을 동시에 시도해도 `attempts` 는
+     * `max-attempts` 를 넘지 않아야 한다.
+     */
+    @Test
+    @DisplayName("동시에 들어온 오답 20개는 attempts 를 상한 이상으로 올리지 못한다")
+    fun `동시 오답은 시도 횟수를 상한 이상으로 올리지 않는다`() {
+        val userId = newUser()
+        codes.issue(userId, TTL, COOLDOWN)
+
+        val concurrency = 20
+        val pool = Executors.newFixedThreadPool(concurrency)
+        val ready = CountDownLatch(concurrency)
+        val start = CountDownLatch(1)
+        val results =
+            try {
+                val futures =
+                    (1..concurrency).map {
+                        pool.submit<Boolean> {
+                            ready.countDown()
+                            start.await()
+                            codes.attempt(userId, "000000", MAX_ATTEMPTS)
+                        }
+                    }
+                ready.await()
+                start.countDown()
+                futures.map { it.get(10, TimeUnit.SECONDS) }
+            } finally {
+                pool.shutdown()
+                pool.awaitTermination(10, TimeUnit.SECONDS)
+            }
+
+        assertThat(results)
+            .describedAs("모든 시도가 오답이니 결과는 전부 false 여야 한다")
+            .allMatch { !it }
+
+        val finalAttempts =
+            jdbc
+                .sql(
+                    """
+                    SELECT attempts FROM email_verification_codes
+                    WHERE user_id = :userId ORDER BY created_at DESC LIMIT 1
+                    """.trimIndent(),
+                ).param("userId", userId)
+                .query { rs, _ -> rs.getInt("attempts") }
+                .single()
+        assertThat(finalAttempts)
+            .withFailMessage(
+                "동시 오답이 시도 횟수를 상한(%d) 이상으로 올렸다: %d",
+                MAX_ATTEMPTS,
+                finalAttempts,
+            ).isLessThanOrEqualTo(MAX_ATTEMPTS)
     }
 
     @Test

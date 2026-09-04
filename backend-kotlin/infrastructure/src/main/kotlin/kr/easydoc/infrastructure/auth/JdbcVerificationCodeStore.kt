@@ -18,7 +18,12 @@ import java.util.UUID
  * **해싱은 SHA-256 + 행마다 다른 salt 다** — 그 결정과 근거는 마이그레이션 파일의 머리
  * 주석에 있다(Argon2 를 쓰지 않는 이유: 10분 TTL·5회 시도 제한이 있는 저-엔트로피 일회성
  * 코드에는 계산 비용이 높은 해시가 필요하지 않다).
+ *
+ * 함수 수 상한을 억제한다 — 리뷰 팔로업(상수 시간 비교, 경쟁 방지 가드)이
+ * `hashOf`/`matches`/`digestOf`/`toActiveCodeRow`/`consume` 처럼 작은 사유별 함수로
+ * 쪼갠 결과이지 책임이 늘어난 것이 아니다. 합치면 오히려 각 함수가 지는 사유가 흐려진다.
  */
+@Suppress("TooManyFunctions")
 class JdbcVerificationCodeStore(
     private val jdbc: JdbcClient,
     private val clock: Clock,
@@ -71,7 +76,7 @@ class JdbcVerificationCodeStore(
     ): Boolean {
         val now = Timestamp.from(clock.instant())
         val active = incrementAttemptsOnActiveCode(userId, now, maxAttempts)
-        val matched = active != null && hashOf(code, active.salt) == active.codeHash
+        val matched = active != null && matches(code, active.salt, active.codeHash)
         if (matched) {
             consume(checkNotNull(active).id, now)
         }
@@ -81,6 +86,13 @@ class JdbcVerificationCodeStore(
     /**
      * 활성(미소비·미만료·시도 미소진) 코드 하나의 시도 횟수를 올리고 그 행의 해시 재료를
      * 돌려준다. 조건에 걸리는 행이 없으면 아무것도 갱신하지 않고 `null` 이다.
+     *
+     * **가드 조건을 바깥 `WHERE` 에도 되풀이한다** — 안쪽 서브쿼리는 `id` 하나만 골라 잠금
+     * 전에 고정하므로, 동시에 들어온 두 번째 시도가 잠금을 기다리는 동안 첫 번째가
+     * `attempts` 를 상한까지 올려도 그 `id` 자체는 여전히 일치해 두 번째 `UPDATE` 도
+     * 통과해 버린다(상한을 넘겨 증가). 바깥 `WHERE` 에 같은 조건을 두면 PostgreSQL 이 잠금을
+     * 얻은 뒤 그 행의 **최신 커밋값**으로 조건을 다시 평가한다(`EvalPlanQual`) — 상한에
+     * 이미 닿은 행은 그 시점에 걸러진다.
      */
     private fun incrementAttemptsOnActiveCode(
         userId: UUID,
@@ -101,6 +113,9 @@ class JdbcVerificationCodeStore(
                     ORDER BY created_at DESC
                     LIMIT 1
                 )
+                AND consumed_at IS NULL
+                AND expires_at > :now
+                AND attempts < :maxAttempts
                 RETURNING id, code_hash, salt
                 """.trimIndent(),
             ).param("userId", userId)
@@ -182,11 +197,28 @@ class JdbcVerificationCodeStore(
     private fun hashOf(
         code: String,
         salt: String,
-    ): String {
+    ): String = Base64.getEncoder().encodeToString(digestOf(code, salt))
+
+    /**
+     * 저장된 해시와 **상수 시간**으로 비교한다 — `String.equals`/`==` 는 첫 불일치 바이트에서
+     * 바로 멈추는 단락 평가라 응답 시간이 일치한 접두 길이를 흘린다(비교 대상이 salt 를 아는
+     * DB 공격자가 아니라 이 서버 자신의 판정이라도, 코드가 100만 가지뿐이라 그 신호가 실전
+     * 값어치를 갖는다). `MessageDigest.isEqual` 은 배열 길이가 같으면 항상 전체를 훑는다.
+     */
+    private fun matches(
+        code: String,
+        salt: String,
+        storedHash: String,
+    ): Boolean = MessageDigest.isEqual(digestOf(code, salt), Base64.getDecoder().decode(storedHash))
+
+    private fun digestOf(
+        code: String,
+        salt: String,
+    ): ByteArray {
         val digest = MessageDigest.getInstance("SHA-256")
         digest.update(salt.toByteArray(Charsets.UTF_8))
         digest.update(code.toByteArray(Charsets.UTF_8))
-        return Base64.getEncoder().encodeToString(digest.digest())
+        return digest.digest()
     }
 
     private companion object {
