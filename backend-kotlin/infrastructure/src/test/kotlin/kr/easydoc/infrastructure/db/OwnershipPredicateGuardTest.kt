@@ -401,8 +401,15 @@ class OwnershipPredicateGuardTest {
                 // 봉인된 의견의 키 회전 두 문장. 아래 미방어 목록에 있다 — 사유는 그쪽에 적었다.
                 "$DOCUMENT/JdbcConversionFeedbackRepository.kt | SELECT [conversion_feedback]",
                 "$DOCUMENT/JdbcConversionFeedbackRepository.kt | UPDATE [conversion_feedback]",
+                // 키 회전 배치(`rotate-keys`)의 후보 커서 질의 넷 — `KeyRotationBatch` KDoc.
+                // 넷 다 아래 미방어 목록에 있다. 같은 표기(`SELECT [conversion_feedback]`)가
+                // 바로 위 잠금 SELECT 와 겹치는 것은 우연이 아니다 — 회전은 둘 다 소유자가
+                // 없는 배치 경로다.
+                "$DOCUMENT/JdbcConversionFeedbackRepository.kt | SELECT [conversion_feedback]",
                 "$DOCUMENT/JdbcConversionRepository.kt | SELECT [conversions]",
                 "$DOCUMENT/JdbcConversionRepository.kt | UPDATE [conversions]",
+                // 변환 키 회전 배치 후보 커서 — 같은 사유(`rotate-keys`, 「내 것」이 없다).
+                "$DOCUMENT/JdbcConversionRepository.kt | SELECT [conversions]",
                 "$DOCUMENT/JdbcConversionRepository.kt | SELECT [conversions, documents]",
                 "$DOCUMENT/JdbcConversionRepository.kt | UPDATE [conversions, documents]",
                 // 조회가 `document_originals` 를 **읽는다** — 원본 바이트가 아니라 행의 유무만
@@ -424,6 +431,8 @@ class OwnershipPredicateGuardTest {
                 // 업로드 원본(V3). 잠금 SELECT 와 회전 UPDATE 는 아래 미방어 목록에 있고,
                 // INSERT 와 조회는 `documents.user_id` 를 훑어 소유 술어를 문장 자신에 건다.
                 "$DOCUMENT/JdbcDocumentOriginalRepository.kt | SELECT [document_originals]",
+                // 업로드 원본 키 회전 배치 후보 커서 — 같은 사유다.
+                "$DOCUMENT/JdbcDocumentOriginalRepository.kt | SELECT [document_originals]",
                 "$DOCUMENT/JdbcDocumentOriginalRepository.kt | INSERT [document_originals, documents]",
                 "$DOCUMENT/JdbcDocumentOriginalRepository.kt | SELECT [document_originals, documents]",
                 "$DOCUMENT/JdbcDocumentOriginalRepository.kt | UPDATE [document_originals]",
@@ -433,6 +442,8 @@ class OwnershipPredicateGuardTest {
                 "$DOCUMENT/JdbcDocumentRepository.kt | SELECT [documents]",
                 "$DOCUMENT/JdbcDocumentRepository.kt | SELECT [documents]",
                 "$DOCUMENT/JdbcDocumentRepository.kt | UPDATE [documents]",
+                // 문서 키 회전 배치 후보 커서 — 같은 사유다.
+                "$DOCUMENT/JdbcDocumentRepository.kt | SELECT [documents]",
                 "$DOCUMENT/JdbcDocumentRepository.kt | DELETE [documents]",
                 "$DOCUMENT/JdbcDocumentRepository.kt | INSERT [documents]",
                 // 목록 질의. 최신 변환에 이어 `conversion_feedback` 도 **왼쪽 조인**한다 —
@@ -444,6 +455,13 @@ class OwnershipPredicateGuardTest {
                 "$DOCUMENT/JdbcExpiredDocumentPurge.kt | DELETE [documents]",
                 "$DOCUMENT/JdbcExpiredDocumentPurge.kt | SELECT [conversions, documents]",
                 "$DOCUMENT/JdbcExpiredDocumentPurge.kt | SELECT [conversions, documents]",
+                // 피드백 자유 의견 파기 배치(2026-09-04, backlog §1.1 「conversion_feedback 의
+                // 삭제 경로」 판단 ⑵). 봉투 세 열을 NULL 로 만드는 UPDATE 와 잠금 SELECT 둘
+                // 다 아래 미방어 목록에 있다 — worker 의 보존 파기 배치라 소유자를 인자로 받을
+                // 자리가 없다(문서 보존 파기와 같은 사유). 순서는 파일 안 정의 순서를 따른다
+                // (`nullOutSql` 이 `LOCK_EXPIRED_COMMENTS_SQL` 보다 위에 있다).
+                "$DOCUMENT/JdbcFeedbackCommentPurge.kt | UPDATE [conversion_feedback]",
+                "$DOCUMENT/JdbcFeedbackCommentPurge.kt | SELECT [conversion_feedback]",
             )
 
         /**
@@ -459,25 +477,38 @@ class OwnershipPredicateGuardTest {
                 "$AUTH/JdbcWorkspaceRepository.kt | SELECT [documents]",
                 "$DOCUMENT/JdbcConversionFeedbackRepository.kt | SELECT [conversion_feedback]",
                 "$DOCUMENT/JdbcConversionFeedbackRepository.kt | UPDATE [conversion_feedback]",
+                // 키 회전 배치(`rotate-keys`)의 후보 커서 질의 넷 — `KeyRotationBatch` KDoc.
+                // 운영자가 키 세대를 올릴 때 도는 배치이고, 회전 대상 행 자체가 「내 것」이
+                // 아니라 커서(마지막으로 본 id)로 다음 배치를 고른다 — 소유자를 받을 자리가
+                // 원래 없다.
+                "$DOCUMENT/JdbcConversionFeedbackRepository.kt | SELECT [conversion_feedback]",
                 "$DOCUMENT/JdbcConversionRepository.kt | SELECT [conversions]",
                 "$DOCUMENT/JdbcConversionRepository.kt | UPDATE [conversions]",
+                "$DOCUMENT/JdbcConversionRepository.kt | SELECT [conversions]",
                 "$DOCUMENT/JdbcConversionRepository.kt | INSERT [conversions]",
                 "$DOCUMENT/JdbcConversionWorkStore.kt | SELECT [conversions, documents]",
                 "$DOCUMENT/JdbcConversionWorkStore.kt | UPDATE [conversions]",
                 "$DOCUMENT/JdbcConversionWorkStore.kt | UPDATE [conversions]",
                 "$DOCUMENT/JdbcConversionWorkStore.kt | UPDATE [conversions]",
                 "$DOCUMENT/JdbcConversionWorkStore.kt | UPDATE [conversions]",
-                // 업로드 원본의 키 회전 두 문장 (V3). 사유는 위 KDoc 과 같다 — 회전 배치다.
-                // 이 파일의 INSERT·조회는 여기 없다: 사용자 경로라 소유 술어를 붙였다.
+                // 업로드 원본의 키 회전 세 문장 (V3, 회전 후보 커서 하나 포함). 사유는 위 KDoc
+                // 과 같다 — 회전 배치다. 이 파일의 INSERT·조회는 여기 없다: 사용자 경로라
+                // 소유 술어를 붙였다.
+                "$DOCUMENT/JdbcDocumentOriginalRepository.kt | SELECT [document_originals]",
                 "$DOCUMENT/JdbcDocumentOriginalRepository.kt | SELECT [document_originals]",
                 "$DOCUMENT/JdbcDocumentOriginalRepository.kt | UPDATE [document_originals]",
                 "$DOCUMENT/JdbcDocumentRepository.kt | SELECT [documents]",
                 "$DOCUMENT/JdbcDocumentRepository.kt | UPDATE [documents]",
+                "$DOCUMENT/JdbcDocumentRepository.kt | SELECT [documents]",
                 "$DOCUMENT/JdbcDocumentRepository.kt | INSERT [documents]",
                 "$DOCUMENT/JdbcExpiredDocumentPurge.kt | SELECT [conversions]",
                 "$DOCUMENT/JdbcExpiredDocumentPurge.kt | DELETE [documents]",
                 "$DOCUMENT/JdbcExpiredDocumentPurge.kt | SELECT [conversions, documents]",
                 "$DOCUMENT/JdbcExpiredDocumentPurge.kt | SELECT [conversions, documents]",
+                // 피드백 자유 의견 파기 배치(2026-09-04) — 같은 사유. 봉투 세 열을 NULL 로
+                // 만드는 UPDATE 와 잠금 SELECT 둘 다 여기 있다(순서는 파일 안 정의 순서).
+                "$DOCUMENT/JdbcFeedbackCommentPurge.kt | UPDATE [conversion_feedback]",
+                "$DOCUMENT/JdbcFeedbackCommentPurge.kt | SELECT [conversion_feedback]",
             )
 
         /**
@@ -492,7 +523,17 @@ class OwnershipPredicateGuardTest {
          * 이 상한을 먹지 않았다** — 둘 다 사용자 요청 경로라 `documents.user_id` 를 훑는 소유
          * 술어를 문장 자신에 붙였고(`JdbcDocumentOriginalRepository`), 그것이 위 문단이 말한
          * 「그 경우의 답」이다.
+         *
+         * 20 → 24 는 `rotate-keys` 운영 진입점(backlog §1.1 「키 회전에 운영 진입점이 없음」)
+         * 이 더한 회전 후보 커서 질의 넷이다 — 가족 넷(`documents`·`document_originals`·
+         * `conversions`·`conversion_feedback`) 각각 하나씩. `KeyRotationBatch` 가 그 커서로
+         * 배치를 나눠 돌리고, 잠금·재봉인은 여전히 `EnvelopeRotation` 의 기존 행 단위
+         * 메서드가 진다 — 이 넷은 후보를 **고르기만** 한다.
+         *
+         * 24 → 26 은 피드백 자유 의견 파기 배치(2026-09-04, backlog §1.1 「conversion_feedback
+         * 의 삭제 경로」 판단 ⑵)의 잠금 SELECT 와 봉투 세 열을 NULL 로 만드는 UPDATE 둘이다.
+         * 이 배치도 worker 시스템 작업이지 소유자 요청 경로가 아니다 — 위 문단과 같은 사유다.
          */
-        const val MAX_UNGUARDED_STATEMENTS = 20
+        const val MAX_UNGUARDED_STATEMENTS = 26
     }
 }

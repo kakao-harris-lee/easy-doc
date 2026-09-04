@@ -111,6 +111,26 @@ class JdbcDocumentOriginalRepository(private val jdbc: JdbcClient) : DocumentOri
             .param("expectedFileBytes", expected.bytes)
             .update() > 0
 
+    /** 키 회전 배치의 후보. `document_id > :after` 로 커서를 넘긴다 — [DocumentOriginalRepository.documentIdsOlderThan] KDoc. */
+    override fun documentIdsOlderThan(
+        keyVersion: Int,
+        after: UUID,
+        limit: Int,
+    ): List<UUID> =
+        jdbc
+            .sql(
+                """
+                SELECT document_id FROM document_originals
+                WHERE key_version < :keyVersion AND document_id > :after
+                ORDER BY document_id ASC
+                LIMIT :limit
+                """.trimIndent(),
+            ).param("keyVersion", keyVersion)
+            .param("after", after)
+            .param("limit", limit)
+            .query { rs, _ -> rs.getObject("document_id", UUID::class.java) }
+            .list()
+
     private fun storageFailure(failure: DataIntegrityViolationException): StorageException {
         // 예외 **메시지**를 로그에 넣지 않는다 — 그 안에 실패한 행 전체가 들어 있다.
         // 원본 표에서는 그것이 곧 파일 바이트다.

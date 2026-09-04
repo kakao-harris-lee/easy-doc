@@ -574,6 +574,12 @@ class EnvelopeRotationTest {
             return true
         }
 
+        override fun idsOlderThan(
+            keyVersion: Int,
+            after: UUID,
+            limit: Int,
+        ): List<UUID> = error("회전 배치의 후보 선정은 KeyRotationBatch 몫이다 — EnvelopeRotation 이 부르면 안 된다")
+
         override fun deleteOwned(
             ownerId: UUID,
             documentId: UUID,
@@ -607,6 +613,12 @@ class EnvelopeRotationTest {
             rewrites += expected to original
             return updated
         }
+
+        override fun documentIdsOlderThan(
+            keyVersion: Int,
+            after: UUID,
+            limit: Int,
+        ): List<UUID> = error("회전 배치의 후보 선정은 KeyRotationBatch 몫이다 — EnvelopeRotation 이 부르면 안 된다")
     }
 
     private class Rewrite(
@@ -666,6 +678,12 @@ class EnvelopeRotationTest {
             requiredStatus: ConversionStatus,
             updated: ConversionEnvelope,
         ): Boolean = error("회전 경로가 검수 저장 포트를 부르면 안 된다")
+
+        override fun idsOlderThan(
+            keyVersion: Int,
+            after: UUID,
+            limit: Int,
+        ): List<UUID> = error("회전 배치의 후보 선정은 KeyRotationBatch 몫이다 — EnvelopeRotation 이 부르면 안 된다")
     }
 
     private class FeedbackRewrite(
@@ -696,5 +714,11 @@ class EnvelopeRotationTest {
             rewrites += FeedbackRewrite(expected, comment)
             return updated
         }
+
+        override fun conversionIdsOlderThan(
+            keyVersion: Int,
+            after: UUID,
+            limit: Int,
+        ): List<UUID> = error("회전 배치의 후보 선정은 KeyRotationBatch 몫이다 — EnvelopeRotation 이 부르면 안 된다")
     }
 }

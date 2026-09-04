@@ -119,6 +119,26 @@ class JdbcConversionRepository(private val jdbc: JdbcClient) : ConversionReposit
             .param("expectedEditedText", expected.ciphertexts.editedText?.bytes)
             .update() > 0
 
+    /** 키 회전 배치의 후보. `id > :after` 로 커서를 넘긴다 — [ConversionRepository.idsOlderThan] KDoc. */
+    override fun idsOlderThan(
+        keyVersion: Int,
+        after: UUID,
+        limit: Int,
+    ): List<UUID> =
+        jdbc
+            .sql(
+                """
+                SELECT id FROM conversions
+                WHERE key_version < :keyVersion AND id > :after
+                ORDER BY id ASC
+                LIMIT :limit
+                """.trimIndent(),
+            ).param("keyVersion", keyVersion)
+            .param("after", after)
+            .param("limit", limit)
+            .query { rs, _ -> rs.getObject("id", UUID::class.java) }
+            .list()
+
     /** **내** 변환을 읽고 잠근다. 소유 술어가 조인 위에 있다. */
     override fun lockOwnedForReview(
         ownerId: UUID,

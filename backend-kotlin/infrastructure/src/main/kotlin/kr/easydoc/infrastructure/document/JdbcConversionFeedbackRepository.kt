@@ -80,6 +80,27 @@ class JdbcConversionFeedbackRepository(private val jdbc: JdbcClient) : Conversio
             .param("expectedComment", expected.bytes)
             .update() > 0
 
+    /**
+     * 키 회전 배치의 후보. `conversion_id > :after` 로 커서를 넘긴다 —
+     * [ConversionFeedbackRepository.conversionIdsOlderThan] KDoc.
+     *
+     * `key_version IS NOT NULL` 을 함께 건다 — 자유 의견이 없는 행은 봉투 자체가 없어
+     * `key_version < :keyVersion` 이 SQL 삼치 논리에서 `unknown` 이 되어 자동으로 빠지지만,
+     * 의도를 코드에 명시적으로 남긴다.
+     */
+    override fun conversionIdsOlderThan(
+        keyVersion: Int,
+        after: UUID,
+        limit: Int,
+    ): List<UUID> =
+        jdbc
+            .sql(CANDIDATES_SQL)
+            .param("keyVersion", keyVersion)
+            .param("after", after)
+            .param("limit", limit)
+            .query { rs, _ -> rs.getObject("conversion_id", UUID::class.java) }
+            .list()
+
     private companion object {
         /** 저장소가 만든 고정 문자열. 계약 `InternalError` 의 `storage` 갈래다. */
         const val STORAGE_FAILURE_MESSAGE = "요청을 처리하지 못했습니다"
@@ -170,6 +191,15 @@ class JdbcConversionFeedbackRepository(private val jdbc: JdbcClient) : Conversio
               AND encryption_scheme = :expectedScheme
               AND key_version = :expectedKeyVersion
               AND comment_encrypted IS NOT DISTINCT FROM CAST(:expectedComment AS bytea)
+            """.trimIndent()
+
+        /** 키 회전 배치의 후보 커서 질의 — [ConversionFeedbackRepository.conversionIdsOlderThan] KDoc. */
+        val CANDIDATES_SQL =
+            """
+            SELECT conversion_id FROM conversion_feedback
+            WHERE key_version IS NOT NULL AND key_version < :keyVersion AND conversion_id > :after
+            ORDER BY conversion_id ASC
+            LIMIT :limit
             """.trimIndent()
 
         /**

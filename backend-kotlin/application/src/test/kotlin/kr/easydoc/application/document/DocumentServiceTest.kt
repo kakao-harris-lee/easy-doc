@@ -565,6 +565,13 @@ class DocumentServiceTest {
             sourceText: EncryptedContent,
         ): Boolean = false
 
+        /** 회전 배치 후보 포트 — 업로드 경로가 부를 일이 없다. */
+        override fun idsOlderThan(
+            keyVersion: Int,
+            after: UUID,
+            limit: Int,
+        ): List<UUID> = emptyList()
+
         /** 삭제 요청을 기록한다. 소유자 인자가 실제로 전달되는지를 잴 재료다. */
         override fun deleteOwned(
             ownerId: UUID,

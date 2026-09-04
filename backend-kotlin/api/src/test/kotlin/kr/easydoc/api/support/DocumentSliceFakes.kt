@@ -170,6 +170,17 @@ class InMemoryDocumentRepository : DocumentRepository {
         return row != null
     }
 
+    /**
+     * 회전 배치 후보 포트 — HTTP 슬라이스가 부를 일이 없다. `lockComment`·
+     * `document_originals.rewriteEnvelope` 와 같은 자리(그 KDoc 참고): 슬라이스가 실수로
+     * 이것을 부르면 조용히 빈 목록을 돌려주는 대신 여기서 끊는다.
+     */
+    override fun idsOlderThan(
+        keyVersion: Int,
+        after: UUID,
+        limit: Int,
+    ): List<UUID> = error(ROTATION_PORT_MESSAGE)
+
     /** 소유 조건을 실물과 같은 축으로 본다 — 두 조건이 한 판정에 함께 든다. */
     override fun deleteOwned(
         ownerId: UUID,
@@ -179,6 +190,7 @@ class InMemoryDocumentRepository : DocumentRepository {
     private companion object {
         /** 계약 `x-input-limits.retention_days`. 슬라이스는 이 값을 단언하지 않는다 — 실물 DB 가 잰다. */
         const val RETENTION_DAYS = 30L
+        const val ROTATION_PORT_MESSAGE = "HTTP 슬라이스가 회전 포트를 부르면 안 된다"
     }
 }
 
@@ -304,6 +316,13 @@ class InMemoryConversionRepository(
         return unchanged
     }
 
+    /** 회전 배치 후보 포트 — HTTP 슬라이스가 부를 일이 없다. [InMemoryConversionFeedbackRepository.lockComment] 와 같은 자리다. */
+    override fun idsOlderThan(
+        keyVersion: Int,
+        after: UUID,
+        limit: Int,
+    ): List<UUID> = error(ROTATION_PORT_MESSAGE)
+
     /** 소유 판정은 [findOwnedResult] 와 같은 자리에 묻는다. 대역이라 잠금은 없다. */
     override fun lockOwnedForReview(
         ownerId: UUID,
@@ -358,6 +377,10 @@ class InMemoryConversionRepository(
         row.inputTokens = inputTokens
         row.outputTokens = outputTokens
     }
+
+    private companion object {
+        const val ROTATION_PORT_MESSAGE = "HTTP 슬라이스가 회전 포트를 부르면 안 된다"
+    }
 }
 
 /**
@@ -390,6 +413,12 @@ class InMemoryConversionFeedbackRepository : ConversionFeedbackRepository {
         expected: EncryptedContent,
         comment: EncryptedContent,
     ): Boolean = error(ROTATION_PORT_MESSAGE)
+
+    override fun conversionIdsOlderThan(
+        keyVersion: Int,
+        after: UUID,
+        limit: Int,
+    ): List<UUID> = error(ROTATION_PORT_MESSAGE)
 
     private companion object {
         const val ROTATION_PORT_MESSAGE = "HTTP 슬라이스가 회전 포트를 부르면 안 된다"
@@ -456,6 +485,12 @@ class InMemoryDocumentOriginalRepository(private val documents: InMemoryDocument
         expected: EncryptedContent,
         original: EncryptedContent,
     ): Boolean = error("슬라이스가 회전을 돌리지 않는다")
+
+    override fun documentIdsOlderThan(
+        keyVersion: Int,
+        after: UUID,
+        limit: Int,
+    ): List<UUID> = error("슬라이스가 회전을 돌리지 않는다")
 
     /** 그 문서에 원본이 남았는가 — 붙여넣기 팔이 행을 만들지 않는 것을 재는 자리다. */
     fun byteSizeOf(documentId: UUID): Int? = rows[documentId]?.byteSize

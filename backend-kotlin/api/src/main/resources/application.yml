@@ -101,6 +101,13 @@ easydoc:
   # 크기다(`FeedbackProperties` KDoc).
   feedback:
     edit-distance-cell-budget: ${EASYDOC_FEEDBACK_EDIT_DISTANCE_CELL_BUDGET:200000000}
+    # 피드백 자유 의견(comment_encrypted·encryption_scheme·key_version)의 보존 일수. worker
+    # 의 보존 파기 배치(`RetentionPurgeScheduler`)만 이 값을 실제로 쓰지만(api 는 그 배치를
+    # 돌리지 않는다), 같은 환경변수 이름을 api 에도 두는 것은 위 편집 거리 예산과 같은 이유다
+    # — 두 프로세스가 값을 요구하면 같은 손잡이여야 한다. 배포 의향·품질 만족도·소요 시간·
+    # 수정률 지표(평문 숫자)는 이 파기가 건드리지 않고 영구히 남는다
+    # (`FeedbackProperties` KDoc, master-plan §3.2).
+    comment-retention-days: ${EASYDOC_FEEDBACK_COMMENT_RETENTION_DAYS:30}
   llm:
     provider: ${EASYDOC_LLM_PROVIDER:anthropic}
     model: ${EASYDOC_LLM_MODEL:}
@@ -141,6 +148,11 @@ easydoc:
         # 키 검사값(12자리 hex). **비밀이 아니다** — 키와 다른 자리에서 받아야 대조가 뜻을
         # 가진다. 값을 모르면 비워 둔 채 한 번 띄워라. 기동이 실패하면서 계산값을 알려 준다.
         kcv: ${EASYDOC_ENCRYPTION_KCV_V1:}
+    # `rotate-keys` 프로필(아래 문서)이 읽는 배치 크기. 기본값 근거는
+    # `KeyRotationProperties` KDoc. 일반 `api`·`worker` 기동에는 영향이 없다 — 이 값을
+    # 읽는 빈(`KeyRotationConfiguration`)이 `rotate-keys` 에서만 조립된다.
+    rotation:
+      batch-size: ${EASYDOC_ENCRYPTION_ROTATION_BATCH_SIZE:200}
 
 logging:
   level:
@@ -197,5 +209,21 @@ spring:
   config:
     activate:
       on-profile: migrate
+  main:
+    web-application-type: none
+
+---
+# rotate-keys profile — 낡은 세대로 봉인된 행을 현재 쓰기 세대로 재봉인하고 종료한다.
+# CLI one-off 용이다(migrate 와 같다 — Compose 상시 서비스가 아니다). 절차는
+# `docs/pilot-runbook.md` 「키 회전 실행」. backlog §1.1 「키 회전에 운영 진입점이 없음」.
+#
+# migrate 와 달리 **본문 암호화 키 전체 세대를 요구한다.** CryptoConfiguration 은
+# `@Profile("!migrate")` 라 이 프로필에서도 그대로 조립되고, 기존 기동 자기점검(위
+# easydoc.encryption 주석 — write-key-version 이 키 링에 없으면 기동을 거부한다)이
+# 그대로 걸린다. 이 프로필만을 위한 우회는 두지 않는다.
+spring:
+  config:
+    activate:
+      on-profile: rotate-keys
   main:
     web-application-type: none

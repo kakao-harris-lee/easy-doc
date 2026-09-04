@@ -137,6 +137,12 @@ class DocumentSourceServiceTest {
             sourceText: EncryptedContent,
         ): Boolean = error("조회 경로가 봉투를 다시 쓰지 않는다")
 
+        override fun idsOlderThan(
+            keyVersion: Int,
+            after: UUID,
+            limit: Int,
+        ): List<UUID> = error("조회 경로가 회전 후보를 고르지 않는다")
+
         override fun deleteOwned(
             ownerId: UUID,
             documentId: UUID,

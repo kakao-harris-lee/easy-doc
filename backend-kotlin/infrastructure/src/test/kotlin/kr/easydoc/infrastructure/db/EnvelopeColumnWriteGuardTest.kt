@@ -334,8 +334,14 @@ class EnvelopeColumnWriteGuardTest {
                 "infrastructure/src/main/kotlin/kr/easydoc/infrastructure/document/" +
                     "JdbcDocumentOriginalRepository.kt",
                 "infrastructure/src/main/kotlin/kr/easydoc/infrastructure/document/JdbcDocumentRepository.kt",
+                // 피드백 자유 의견 파기 배치의 UPDATE (2026-09-04, backlog §1.1 「conversion_feedback
+                // 의 삭제 경로」 판단 ⑵) — 봉투 세 열을 함께 NULL 로 만든다.
+                "infrastructure/src/main/kotlin/kr/easydoc/infrastructure/document/JdbcFeedbackCommentPurge.kt",
                 "infrastructure/src/test/kotlin/kr/easydoc/infrastructure/document/ConversionReviewStorageTest.kt",
                 "infrastructure/src/test/kotlin/kr/easydoc/infrastructure/document/EnvelopeRotationConcurrencyTest.kt",
+                // 회전 배치 통합 테스트도 옛 세대 변환을 완료 상태로 심는다 — 그 문장이 봉투를
+                // 함께 쓴다(`completeConversion`).
+                "infrastructure/src/test/kotlin/kr/easydoc/infrastructure/document/KeyRotationBatchTest.kt",
             )
 
         /**
@@ -350,7 +356,16 @@ class EnvelopeColumnWriteGuardTest {
          * 16 → 17: 보존 만료 창을 재는 `RetentionReadGuardReachTest` 의 `MARK_DONE_SQL` 이다.
          * 만료 뒤 404 를 재려면 만료 **전에** 내줄 것이 실재해야 하므로, 결과 열과 봉투를
          * 함께 채우는 문장 하나가 그 파일에 선다.
+         *
+         * 17 → 18: `KeyRotationBatchTest`(backlog §1.1 「키 회전에 운영 진입점이 없음」)의
+         * `completeConversion` 이 옛 세대 변환을 완료 상태로 심는다 — 결과 열과 봉투를 함께
+         * 채우는 문장 하나다.
+         *
+         * 18 → 19: 피드백 자유 의견 파기 배치(2026-09-04, backlog §1.1 「conversion_feedback 의
+         * 삭제 경로」 판단 ⑵)의 `JdbcFeedbackCommentPurge` UPDATE 다 — 봉인 열이 하나라 문장도
+         * 하나이고, `comment_encrypted`·`encryption_scheme`·`key_version` 셋을 같은 문장에서
+         * 함께 `NULL`로 만든다(값을 대입하는 대신 비운다는 점만 회전 UPDATE 와 다르다).
          */
-        const val EXPECTED_STATEMENTS = 17
+        const val EXPECTED_STATEMENTS = 19
     }
 }

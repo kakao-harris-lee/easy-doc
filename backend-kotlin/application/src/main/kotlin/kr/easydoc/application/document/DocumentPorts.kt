@@ -108,6 +108,19 @@ interface DocumentRepository {
         sourceText: EncryptedContent,
     ): Boolean
 
+    /**
+     * 키 회전 배치의 후보 — `key_version` 이 [keyVersion] 보다 낡은 문서 id 를 [after] 뒤로
+     * id 오름차순 [limit] 건까지 고른다. **커서다** — 회전이 [KeyRotationBatch] 를 부르며
+     * 반환 마지막 id 를 다음 호출의 [after] 로 넘긴다. `CONTENDED`(동시 쓰기와 겹쳐 회전이
+     * 실패한 행)로 남아도 세대가 그대로라 커서를 다시 지나가지 않고, 그래서 한 배치가
+     * 같은 행을 영원히 다시 고르는 일이 없다 — 다음 실행이 처음부터 다시 훑으며 그 행을 잡는다.
+     */
+    fun idsOlderThan(
+        keyVersion: Int,
+        after: UUID,
+        limit: Int,
+    ): List<UUID>
+
     /** 내 문서 한 건을 **지운다**. 지웠으면 `true`, 없거나 내 것이 아니면 `false`. */
     fun deleteOwned(
         ownerId: UUID,
@@ -185,6 +198,13 @@ interface DocumentOriginalRepository {
         expected: EncryptedContent,
         original: EncryptedContent,
     ): Boolean
+
+    /** 키 회전 배치의 후보. [DocumentRepository.idsOlderThan] 과 같은 커서 규약이다. */
+    fun documentIdsOlderThan(
+        keyVersion: Int,
+        after: UUID,
+        limit: Int,
+    ): List<UUID>
 }
 
 /** 한 변환 행의 암호문 세 열. **셋을 함께 다루는 것이 요점이다.** */
@@ -302,6 +322,13 @@ interface ConversionRepository {
         keyVersion: Int,
         ciphertexts: ConversionCiphertexts,
     ): Boolean
+
+    /** 키 회전 배치의 후보. [DocumentRepository.idsOlderThan] 과 같은 커서 규약이다. */
+    fun idsOlderThan(
+        keyVersion: Int,
+        after: UUID,
+        limit: Int,
+    ): List<UUID>
 
     /**
      * 검수 저장 대상인 **내** 변환을 읽고 **잠근다**(`FOR NO KEY UPDATE`) — 회전과 직렬화한다.
@@ -433,6 +460,19 @@ interface ConversionFeedbackRepository {
         expected: EncryptedContent,
         comment: EncryptedContent,
     ): Boolean
+
+    /**
+     * 키 회전 배치의 후보. [DocumentRepository.idsOlderThan] 과 같은 커서 규약이다.
+     *
+     * `key_version` 은 이 표에서 nullable 이다(자유 의견이 선택 항목이라 봉투가 아예 없는
+     * 행이 정상이다) — 그 행은 후보가 아니다. 낡은 세대인지는 `key_version` 이 실제로
+     * 있고 [keyVersion] 보다 작을 때만 묻는다.
+     */
+    fun conversionIdsOlderThan(
+        keyVersion: Int,
+        after: UUID,
+        limit: Int,
+    ): List<UUID>
 }
 
 /** 마스킹 대응표를 **읽는** 포트. */
