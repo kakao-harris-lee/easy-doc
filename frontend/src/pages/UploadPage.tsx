@@ -11,6 +11,7 @@ import {
 } from '../api/client'
 import type { DocumentCreatedResponse, DocumentListItem } from '../api/types'
 import { chooseNextAction } from '../conversion/nextAction'
+import { countChars } from '../lib/charCount'
 import { conversionPath, type SourceTextState } from '../routes/paths'
 import { useWorkspace } from '../workspace/context'
 import { Badge } from '../components/ui/Badge'
@@ -18,7 +19,7 @@ import { Button } from '../components/ui/Button'
 import { PageHeader } from '../components/PageHeader'
 
 /** 한 번에 변환할 수 있는 길이. 백엔드 MAX_CONVERTIBLE_CHARS와 같은 값이다. */
-export const MAX_CHARS = 4000
+export const MAX_CHARS = 20000
 
 /** 문서 제목 길이 상한. 백엔드 x-input-limits.max_title_length와 같은 값이다. */
 const MAX_TITLE_LENGTH = 255
@@ -225,7 +226,10 @@ export function UploadPage() {
   // 경로가 다른 쪽이 방금 옮긴 초점을 뺏는다.
   const cardFocusPending = useRef(false)
 
-  const charCount = text.length
+  // 백엔드는 UTF-16 코드 유닛이 아니라 유니코드 코드 포인트로 상한을 잰다
+  // (DocumentLimits.charCountOf). text.length는 이모지 같은 surrogate pair
+  // 문자를 2로 세어 어긋나므로 countChars로 코드 포인트 수를 맞춘다.
+  const charCount = countChars(text)
   const tooLong = charCount > MAX_CHARS
   // 80% 미만에서는 보조 글자색이다. 여유가 많을 때까지 경고색을 쓰면 실제로 위험한
   // 순간에 색이 아무 말도 하지 못한다(§6.2).

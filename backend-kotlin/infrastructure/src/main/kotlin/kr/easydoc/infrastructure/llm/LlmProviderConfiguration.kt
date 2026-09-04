@@ -107,6 +107,21 @@ data class LlmPricingProperties(
     }
 }
 
+/**
+ * provider+모델별로 알려진 실제 최대 출력 토큰 표.
+ *
+ * 값 자체(각 어댑터의 `..._DEFAULT_MODEL_MAX_OUTPUT_TOKENS`)는 벤더가 발행한 모델 스펙이라
+ * 코드와 함께 바뀌어야 하는 wire 불변식이다 — CLAUDE.md 「상수와 구성 관리」가 코드 상수로
+ * 허용하는 항목이며 운영자가 조정할 값이 아니다. 표에 없는 (provider, 모델) 조합은 검사하지
+ * 않는다 — 전체 모델 목록으로 표를 키우면 조용히 낡는다. 아는 모델만 조립 시점에 막고,
+ * 모르는 모델을 지정한 운영자는 그 모델의 한도를 우리보다 잘 아는 쪽으로 본다.
+ */
+private val KNOWN_MODEL_MAX_OUTPUT_TOKENS: Map<Pair<String, String>, Int> =
+    mapOf(
+        (OPENAI_PROVIDER_NAME to DEFAULT_OPENAI_MODEL) to OPENAI_DEFAULT_MODEL_MAX_OUTPUT_TOKENS,
+        (ANTHROPIC_PROVIDER_NAME to DEFAULT_ANTHROPIC_MODEL) to ANTHROPIC_DEFAULT_MODEL_MAX_OUTPUT_TOKENS,
+    )
+
 /** 설정에서 [LlmProvider] 구현체를 고른다. */
 @Configuration(proxyBeanMethods = false)
 class LlmProviderConfiguration {
@@ -118,21 +133,19 @@ class LlmProviderConfiguration {
         val provider =
             when (properties.provider.lowercase()) {
                 OPENAI_PROVIDER_NAME -> {
-                    requireMaxOutputTokensWithinDefaultModelLimit(
+                    requireMaxOutputTokensWithinKnownModelLimit(
                         properties,
                         OPENAI_PROVIDER_NAME,
                         DEFAULT_OPENAI_MODEL,
-                        OPENAI_DEFAULT_MODEL_MAX_OUTPUT_TOKENS,
                     )
                     OpenAiProvider(openAiSettings(properties))
                 }
 
                 ANTHROPIC_PROVIDER_NAME -> {
-                    requireMaxOutputTokensWithinDefaultModelLimit(
+                    requireMaxOutputTokensWithinKnownModelLimit(
                         properties,
                         ANTHROPIC_PROVIDER_NAME,
                         DEFAULT_ANTHROPIC_MODEL,
-                        ANTHROPIC_DEFAULT_MODEL_MAX_OUTPUT_TOKENS,
                     )
                     AnthropicProvider(anthropicSettings(properties))
                 }
@@ -157,29 +170,33 @@ class LlmProviderConfiguration {
     }
 
     /**
-     * `easydoc.llm.max-output-tokens` 가 provider **기본 모델**이 실제로 낼 수 있는 최대
-     * 출력 토큰을 넘지 않는지 조립 시점에 확인한다.
+     * `easydoc.llm.max-output-tokens` 가 실제로 조립될 모델(`easydoc.llm.model` 명시값,
+     * 없으면 provider 기본 모델)이 낼 수 있는 최대 출력 토큰을 넘지 않는지 조립 시점에
+     * 확인한다.
      *
      * [LlmProperties.validatedMaxOutputTokens] 의 하한·상한([MAX_OUTPUT_TOKENS_CEILING])
-     * 검증 위에 얹는 provider별 추가 제약이다 — 값 출처는 늘리지 않는다.
+     * 검증 위에 얹는 provider·모델별 추가 제약이다 — 값 출처는 늘리지 않는다.
      *
-     * **모델을 지정했을 때는 검사하지 않는다.** `easydoc.llm.model` 은 자유 문자열이라
-     * 임의 모델의 한도를 신뢰성 있게 알 수 없다(전체 모델 한도 표는 조용히 낡는다). 아는
-     * 것(어댑터 기본 모델의 공식 한도)만 검사하고, 모르는 것은 provider 호출 실패로
-     * 드러나게 둔다 — 모델을 직접 지정한 운영자는 그 모델의 한도를 아는 쪽이 우리보다 낫다.
+     * **[KNOWN_MODEL_MAX_OUTPUT_TOKENS] 표에 없는 모델은 검사하지 않는다.** `easydoc.llm.model`
+     * 은 자유 문자열이라 임의 모델의 한도를 신뢰성 있게 알 수 없다(전체 모델 한도 표는
+     * 조용히 낡는다). 아는 모델(표에 있는 항목)만 검사하고, 모르는 모델은 provider 호출
+     * 실패로 드러나게 둔다 — 모델을 직접 지정한 운영자는 그 모델의 한도를 아는 쪽이
+     * 우리보다 낫다. `easydoc.llm.model` 을 provider 기본 모델과 같은 이름으로 명시해도
+     * (예: openai + `gpt-4.1`) 표에 있으므로 검사 대상이다 — "명시 여부"가 아니라
+     * "아는 모델인지"가 기준이다.
      */
-    private fun requireMaxOutputTokensWithinDefaultModelLimit(
+    private fun requireMaxOutputTokensWithinKnownModelLimit(
         properties: LlmProperties,
         providerName: String,
         defaultModel: String,
-        defaultModelMaxOutputTokens: Int,
     ) {
         val configured = properties.validatedMaxOutputTokens()
-        if (!properties.model.isNullOrBlank()) return
-        if (configured > defaultModelMaxOutputTokens) {
+        val effectiveModel = properties.model.nonBlankOr(defaultModel)
+        val limit = KNOWN_MODEL_MAX_OUTPUT_TOKENS[providerName to effectiveModel] ?: return
+        if (configured > limit) {
             throw ConfigurationException(
-                "easydoc.llm.max-output-tokens 는 $providerName 기본 모델($defaultModel)의 " +
-                    "최대 출력 토큰($defaultModelMaxOutputTokens) 이하여야 합니다 (현재: $configured)",
+                "easydoc.llm.max-output-tokens 는 $providerName 모델($effectiveModel)의 " +
+                    "최대 출력 토큰($limit) 이하여야 합니다 (현재: $configured)",
             )
         }
     }

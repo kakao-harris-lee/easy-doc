@@ -65,12 +65,13 @@ data class FormatPreservationResponse(
 }
 
 /**
- * `GET`·`PUT /conversions/{conversion_id}` 응답. 계약 `ConversionResponse` — **열일곱 필드가
+ * `GET`·`PUT /conversions/{conversion_id}` 응답. 계약 `ConversionResponse` — **열여덟 필드가
  * 전부다.** 생성자와 `copy()` 가 `private` 인 것은 [of] 의 노출 판정을 우회하는 조립 지점이
  * 생기지 않게 한다.
  *
- * **형식 셋(`source_format`·`export_format`·`format_preservation`)은 결과 필드가 아니다** —
- * 문서 메타에서 오므로 완료 전에도 실리고, 그래서 [of] 의 노출 단언이 세지 않는다.
+ * **형식 셋(`source_format`·`export_format`·`export_format_choices`·`format_preservation`)은
+ * 결과 필드가 아니다** — 문서 메타에서 오므로 완료 전에도 실리고, 그래서 [of] 의 노출 단언이
+ * 세지 않는다.
  */
 @ConsistentCopyVisibility
 data class ConversionResponse private constructor(
@@ -78,8 +79,13 @@ data class ConversionResponse private constructor(
     @get:JsonProperty("document_id") val documentId: String,
     @get:JsonProperty("status") val status: String,
     @get:JsonProperty("source_format") val sourceFormat: String,
-    /** 원본이 PDF 면 `null` — 「같은 형식으로 내보낼 수단이 없다」는 뜻이다. */
+    /** `null` 이면 서버가 하나로 정하지 않는다 — [exportFormatChoices] 를 보라. */
     @get:JsonProperty("export_format") val exportFormat: String?,
+    /**
+     * [exportFormat] 이 `null` 이고 사용자가 고를 수 있는 형식이 있을 때만 비어 있지
+     * 않다. 그 밖에는 빈 배열이다(2.6.0 — `x-export-format-derivation.choices`).
+     */
+    @get:JsonProperty("export_format_choices") val exportFormatChoices: List<String>,
     /** `null` 은 「유지 불가」가 아니라 **서버가 아직 판정하지 않았다**. */
     @get:JsonProperty("format_preservation") val formatPreservation: FormatPreservationResponse?,
     @get:JsonProperty("easy_text") val easyText: String?,
@@ -98,7 +104,8 @@ data class ConversionResponse private constructor(
     /** 본문 둘은 표식과 길이만, 마스킹 항목은 **개수만** 남긴다. */
     override fun toString(): String =
         "ConversionResponse(id=$id, documentId=$documentId, status=$status, " +
-            "sourceFormat=$sourceFormat, exportFormat=$exportFormat, formatPreservation=$formatPreservation, " +
+            "sourceFormat=$sourceFormat, exportFormat=$exportFormat, exportFormatChoices=$exportFormatChoices, " +
+            "formatPreservation=$formatPreservation, " +
             "easyText=$CONTENT_MASK ${easyText?.length ?: 0}자, editedText=$CONTENT_MASK ${editedText?.length ?: 0}자, " +
             "reviewedAt=$reviewedAt, feedbackSubmittedAt=$feedbackSubmittedAt, maskedItems=${maskedItems.size}건, " +
             "missingPlaceholders=$missingPlaceholders, model=$CONTENT_MASK, providerName=$CONTENT_MASK, " +
@@ -120,6 +127,7 @@ data class ConversionResponse private constructor(
                 // 값 집합의 정본은 계약이다 — `enum` 이름이 아니라 `wireName` 만 나간다.
                 sourceFormat = view.sourceFormat.wireName,
                 exportFormat = view.exportFormat?.extension,
+                exportFormatChoices = view.exportFormatChoices.map { it.extension },
                 formatPreservation = view.formatPreservation?.let(FormatPreservationResponse::of),
                 // `PlainBody` 를 벗기는 **유일한** 자리. DTO 가 그 타입을 들지 않는 사유는 클래스 KDoc.
                 easyText = view.easyText?.value,

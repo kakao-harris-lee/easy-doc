@@ -1,5 +1,6 @@
 package kr.easydoc.core.easyread
 
+import kr.easydoc.core.document.SourceFormat
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Nested
@@ -207,6 +208,45 @@ class ExportTest {
 
             assertThat(rendered).doesNotContain("비밀 본문입니다")
             assertThat(rendered).contains("바이트")
+        }
+    }
+
+    /** `choicesFor` — PDF 재결정(2.6.0)의 정본. */
+    @Nested
+    @DisplayName("선택지 (2.6.0 PDF 재결정)")
+    inner class Choices {
+        @Test
+        @DisplayName("`ofSource` 가 값을 내는 원본은 선택지가 없다 — 서버가 이미 정했다")
+        fun `유도값이 있으면 선택지가 없다`() {
+            SourceFormat.entries
+                .filter { ExportFormat.ofSource(it) != null }
+                .forEach { source ->
+                    assertThat(ExportFormat.choicesFor(source))
+                        .withFailMessage("%s 는 유도값이 있는데 선택지도 있다 — 고를 이유가 없다", source)
+                        .isEmpty()
+                }
+        }
+
+        @Test
+        @DisplayName("PDF 는 DOCX·HWPX 중 하나를 고른다 — 유도값이 없는 유일한 갈래")
+        fun `PDF 는 두 형식 중 하나다`() {
+            assertThat(ExportFormat.ofSource(SourceFormat.PDF))
+                .describedAs("PDF 는 여전히 유도값이 없다 — 서버가 하나로 정하지 않는다")
+                .isNull()
+            assertThat(ExportFormat.choicesFor(SourceFormat.PDF))
+                .containsExactlyInAnyOrder(ExportFormat.DOCX, ExportFormat.HWPX)
+        }
+
+        @Test
+        @DisplayName("모든 원본이 유도값 또는 선택지 중 **적어도 하나**를 낸다 — 어느 쪽도 없는 원본은 없다")
+        fun `모든 원본에 처분이 있다`() {
+            SourceFormat.entries.forEach { source ->
+                val derived = ExportFormat.ofSource(source)
+                val choices = ExportFormat.choicesFor(source)
+                assertThat(derived != null || choices.isNotEmpty())
+                    .withFailMessage("%s 가 유도값도 선택지도 없다 — 내보낼 방법이 없다", source)
+                    .isTrue()
+            }
         }
     }
 }

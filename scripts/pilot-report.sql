@@ -94,6 +94,12 @@ ORDER BY array_position(ARRAY['as_is', 'with_edits', 'not_usable'], i.intent);
 -- 「표본 수」를 함께 내는데, 수정률 표본은 전체 표본보다 작을 수 있다 — 검수 수정본 없이
 -- 제출된 피드백은 세 지표가 NULL 이고(V2 주석: 「수정률 0%」와 「측정 대상 아님」은 다른
 -- 값이다) percentile_cont 가 그 행을 조용히 건너뛰기 때문이다.
+--
+-- **수정률이 빠진 이유는 하나가 아니다** (2026-09-04, `edit_distance_skip_reason` 컬럼 추가,
+-- `V4__conversion_feedback_edit_distance_skip_reason.sql`). 검수 수정본 자체가 없는 경우
+-- (`no_review`)와, 수정본은 있지만 셀 예산(`easydoc.feedback.edit-distance-cell-budget`)을
+-- 넘어 계산을 포기한 경우(`budget_exceeded`)가 여기서는 구분되지 않고 함께 빠진다 — 아래
+-- ③-1 이 그 둘을 나눠 보여준다.
 WITH sample AS (
     SELECT
         minutes_spent,
@@ -133,6 +139,21 @@ FROM (
     FROM sample
 ) m
 ORDER BY m.ord;
+
+
+-- --- ③-1 수정률 표본 구성 (2026-09-04 추가) -------------------------------------
+-- 위 ③의 수정률 표본 수가 전체 표본보다 작을 때, **왜 빠졌는지**를 나눠 보여준다.
+-- `측정됨` = edit_distance IS NOT NULL(위 ③이 실제로 쓰는 표본). `검수본_없음`과
+-- `예산_초과`는 edit_distance_skip_reason 의 두 값이다(`core/pilot/ConversionFeedback.kt`
+-- 의 EditDistanceSkipReason). 세 수의 합이 항상 전체 표본 수와 같다 — 다르면 `EditMetrics`
+-- 가 만들 수 없는 조합이 DB 에 들어간 것이므로 그 자체가 버그 신호다.
+SELECT
+    '③-1 수정률 표본 구성' AS "구분",
+    count(*) FILTER (WHERE edit_distance IS NOT NULL) AS "측정됨",
+    count(*) FILTER (WHERE edit_distance_skip_reason = 'no_review') AS "검수본_없음",
+    count(*) FILTER (WHERE edit_distance_skip_reason = 'budget_exceeded') AS "예산_초과",
+    count(*) AS "전체_표본"
+FROM conversion_feedback;
 
 
 -- --- ④ 기준 판정 --------------------------------------------------------------

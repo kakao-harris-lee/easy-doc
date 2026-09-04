@@ -7,6 +7,7 @@ import kr.easydoc.core.crypto.EncryptedField
 import kr.easydoc.core.crypto.PlainBody
 import kr.easydoc.core.document.ConversionView
 import kr.easydoc.core.document.FormatPreservation
+import kr.easydoc.core.document.choiceExportPreservation
 import kr.easydoc.core.document.noOriginalPreservation
 import kr.easydoc.core.document.reflectedPreservation
 import kr.easydoc.core.document.unreadableOriginalPreservation
@@ -50,8 +51,8 @@ class ConversionQueryService(
      * 서식 유지 판정에 원본 바이트가 필요한가.
      *
      * 셋을 **모두** 지나야 연다 — 최대 10MB 를 복호화하고 파싱하는 일이라 갈래를 좁게 둔다.
-     * ⑴ 원본 행이 있고, ⑵ 같은 형식으로 내보낼 수단이 있고(PDF 제외), ⑶ 판정의 다른 한쪽인
-     * 검수본이 이미 있다(완료).
+     * ⑴ 원본 행이 있고, ⑵ 같은 형식으로 내보낼 수단이 있고(선택지가 있는 원본 제외 —
+     * PDF 는 오늘 원본을 열어 반영하지 않는다), ⑶ 판정의 다른 한쪽인 검수본이 이미 있다(완료).
      */
     private fun needsOriginal(stored: StoredConversion): Boolean =
         stored.hasStoredOriginal &&
@@ -72,6 +73,7 @@ class ConversionQueryService(
             status = stored.status,
             sourceFormat = stored.sourceFormat,
             exportFormat = ExportFormat.ofSource(stored.sourceFormat),
+            exportFormatChoices = ExportFormat.choicesFor(stored.sourceFormat),
             formatPreservation = beforeDonePreservation(stored),
             easyText = null,
             editedText = null,
@@ -100,6 +102,7 @@ class ConversionQueryService(
             status = stored.status,
             sourceFormat = stored.sourceFormat,
             exportFormat = ExportFormat.ofSource(stored.sourceFormat),
+            exportFormatChoices = ExportFormat.choicesFor(stored.sourceFormat),
             formatPreservation = donePreservation(stored, opened, editedText ?: easyText),
             easyText = easyText,
             editedText = editedText,
@@ -121,16 +124,21 @@ class ConversionQueryService(
     /**
      * 완료 **전**의 서식 유지 판정.
      *
-     * 되살릴 원본이 없다는 것만 지금 확실하다 — 그 판정은 영구히 참이다. 원본이 있으면
-     * `null` 이고, 그것은 「유지 불가」가 아니라 **아직 판정하지 않았다**는 뜻이다: 판정의
-     * 다른 한쪽인 검수본이 아직 없고, 없는 값으로 세는 짝은 추측이다.
+     * 선택지가 있는 원본(PDF)과 되살릴 원본이 없는 문서는 지금 이미 확실하다 — 그 판정은
+     * 영구히 참이고 검수본을 기다릴 이유가 없다. 그 밖에 원본이 있으면 `null` 이고, 그것은
+     * 「유지 불가」가 아니라 **아직 판정하지 않았다**는 뜻이다: 판정의 다른 한쪽인 검수본이
+     * 아직 없고, 없는 값으로 세는 짝은 추측이다.
      *
      * **`checking` 을 내지 않는다.** 이 판정은 조회 한 번 안에서 동기로 끝나므로 클라이언트가
      * 지켜볼 진행 상태가 없다 — 여기서 「확인 중」을 내면 변환이 끝나야만 끝나는 스피너를
      * 서식 이름으로 약속하게 된다.
      */
     private fun beforeDonePreservation(stored: StoredConversion): FormatPreservation? =
-        if (stored.hasStoredOriginal) null else noOriginalPreservation()
+        when {
+            ExportFormat.choicesFor(stored.sourceFormat).isNotEmpty() -> choiceExportPreservation()
+            !stored.hasStoredOriginal -> noOriginalPreservation()
+            else -> null
+        }
 
     /**
      * 완료 **후**의 서식 유지 판정 — 내보내기가 **실제로 할 반영**을 미리 재서 말한다.
@@ -138,9 +146,10 @@ class ConversionQueryService(
      * 판정과 내보내기가 같은 [OriginalStructureReflector] 를 지나고 그 안에서 같은 자리
      * 맞춤을 쓰므로, 여기서 말한 개수와 파일에 실제로 들어가는 개수가 갈릴 수 없다.
      *
-     * 원본이 PDF 면 `null` 이다 — 같은 형식으로 내보낼 수단이 아직 없어(`ExportFormat.ofSource`)
-     * 「반영하면 이렇게 된다」를 말할 대상 자체가 없다. 「유지 불가」로 접지 않는 이유는
-     * 그것이 렌더러가 없다는 사실이지 원본 구조에 대한 판정이 아니기 때문이다.
+     * 선택지가 있는 원본(PDF)은 언제나 `not_applicable` 이다 — 원본을 열어 반영한다는
+     * 개념 자체가 적용되지 않는다(2.6.0 재결정, [choiceExportPreservation]). 「유지 불가」로
+     * 접지 않는 이유는 그것이 원본 구조에 대한 판정이 아니라 애초에 반영을 시도하지 않는다는
+     * 사실이기 때문이다.
      */
     private fun donePreservation(
         stored: StoredConversion,
@@ -148,11 +157,17 @@ class ConversionQueryService(
         body: PlainBody?,
     ): FormatPreservation? =
         when {
+            // 반영이라는 개념 자체가 적용되지 않는다(PDF) — 원본을 열지 않는다.
+            ExportFormat.choicesFor(stored.sourceFormat).isNotEmpty() -> {
+                choiceExportPreservation()
+            }
+
             !stored.hasStoredOriginal -> {
                 noOriginalPreservation()
             }
 
-            // 같은 형식으로 내보낼 수단이 없다(PDF) — 반영 결과를 말할 대상 자체가 없다.
+            // 같은 형식으로 내보낼 수단도 선택지도 없다(오늘은 없는 갈래) — 반영 결과를 말할
+            // 대상 자체가 없다.
             ExportFormat.ofSource(stored.sourceFormat) == null -> {
                 null
             }

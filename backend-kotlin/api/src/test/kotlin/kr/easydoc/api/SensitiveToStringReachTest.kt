@@ -202,8 +202,13 @@ class SensitiveToStringReachTest {
          * 우리 분기 로직을 분리하며 생긴 내부 값 타입, POI 가 던지는 비검사 예외를 좁혀 잡기
          * 위한 리팩터, Codex stop-time 재리뷰 지적). 세 필드가 전부 `Boolean`(루트 스트림
          * 존재 여부)이라 민감 정보가 없다 — 아래 [KNOWN_SENSITIVE_TYPES] 에 넣지 않는다.
+         *
+         * 편집 거리 셀 예산(2026-09-03)이 **둘**을 더해 82 다 — core `EditDistanceBudget`
+         * (`value class`, `Long` 셀 수 하나)과 infrastructure `FeedbackProperties`
+         * (편집 거리 셀 예산 설정, `Long` 하나). 둘 다 운영 노브 숫자만 감싸 민감 정보가
+         * 없다 — [KNOWN_SENSITIVE_TYPES] 에 넣지 않는다.
          */
-        const val EXPECTED_SOURCE_DECLARATIONS = 80
+        const val EXPECTED_SOURCE_DECLARATIONS = 82
 
         /** 민감 판정이 반드시 닿아야 하는 타입 — 바닥이다. */
         val KNOWN_SENSITIVE_TYPES =

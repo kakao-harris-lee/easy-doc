@@ -25,6 +25,7 @@ import kr.easydoc.core.crypto.PlainBody
 import kr.easydoc.core.pilot.PublishIntent
 import kr.easydoc.core.privacy.ReviewedBody
 import kr.easydoc.core.security.Secret
+import kr.easydoc.core.text.EditDistanceBudget
 import kr.easydoc.core.user.PasswordHash
 import kr.easydoc.infrastructure.DatabaseHandle
 import kr.easydoc.infrastructure.PostgresTestSupport
@@ -409,6 +410,7 @@ class EnvelopeRotationConcurrencyTest {
                     transaction = runner,
                 ),
             transaction = runner,
+            editDistanceBudget = EditDistanceBudget(FeedbackProperties.DEFAULT_EDIT_DISTANCE_CELL_BUDGET),
         )
     }
 

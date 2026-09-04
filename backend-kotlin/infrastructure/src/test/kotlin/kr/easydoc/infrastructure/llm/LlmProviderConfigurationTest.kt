@@ -152,6 +152,52 @@ class LlmProviderConfigurationTest {
     }
 
     @Test
+    @DisplayName("openai + 모델을 명시적으로 gpt-4.1 로 지정해도 그 모델의 한도를 검사한다")
+    fun `openai 명시적 gpt-4-1 은 알려진 모델 한도를 검사한다`() {
+        assertThatThrownBy {
+            assemble(
+                LlmProperties(
+                    provider = OPENAI_PROVIDER_NAME,
+                    model = DEFAULT_OPENAI_MODEL,
+                    maxOutputTokens = OPENAI_DEFAULT_MODEL_MAX_OUTPUT_TOKENS + 1,
+                ),
+            )
+        }.isInstanceOf(ConfigurationException::class.java)
+            .hasMessageContaining(DEFAULT_OPENAI_MODEL)
+            .hasMessageContaining(OPENAI_DEFAULT_MODEL_MAX_OUTPUT_TOKENS.toString())
+    }
+
+    @Test
+    @DisplayName("openai + 모델을 명시적으로 gpt-4.1 로 지정하고 한도 이내면 통과한다")
+    fun `openai 명시적 gpt-4-1 은 한도 이내면 통과한다`() {
+        val provider =
+            assemble(
+                LlmProperties(
+                    provider = OPENAI_PROVIDER_NAME,
+                    model = DEFAULT_OPENAI_MODEL,
+                    maxOutputTokens = OPENAI_DEFAULT_MODEL_MAX_OUTPUT_TOKENS,
+                ),
+            )
+
+        assertThat(provider.toString()).contains(DEFAULT_OPENAI_MODEL)
+    }
+
+    @Test
+    @DisplayName("openai + 모르는 모델을 명시적으로 지정하면 표에 없어 검사하지 않는다")
+    fun `openai 모르는 명시적 모델은 표에 없어 통과한다`() {
+        val provider =
+            assemble(
+                LlmProperties(
+                    provider = OPENAI_PROVIDER_NAME,
+                    model = "gpt-4.1-custom",
+                    maxOutputTokens = MAX_OUTPUT_TOKENS_CEILING,
+                ),
+            )
+
+        assertThat(provider.toString()).contains("gpt-4.1-custom")
+    }
+
+    @Test
     @DisplayName("provider별 모델 한도 검사를 더해도 기존 하한·상한 검증은 그대로 던진다")
     fun `기존 하한 상한 검증은 그대로다`() {
         assertThatThrownBy {

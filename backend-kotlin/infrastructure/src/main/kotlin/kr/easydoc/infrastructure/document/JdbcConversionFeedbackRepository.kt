@@ -5,6 +5,7 @@ import kr.easydoc.application.document.LockedFeedbackComment
 import kr.easydoc.application.document.StoredFeedback
 import kr.easydoc.core.crypto.EncryptedContent
 import kr.easydoc.core.exceptions.StorageException
+import kr.easydoc.core.pilot.EditDistanceSkipReason
 import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.jdbc.core.simple.JdbcClient
 import java.sql.ResultSet
@@ -39,6 +40,7 @@ class JdbcConversionFeedbackRepository(private val jdbc: JdbcClient) : Conversio
                 .param("easyCharCount", feedback.easyCharCount)
                 .param("editedCharCount", feedback.editedCharCount)
                 .param("editDistance", feedback.editDistance)
+                .param("editDistanceSkipReason", feedback.editDistanceSkipReason?.wireName)
                 .query { rs, _ -> rs.getObject("submitted_at", OffsetDateTime::class.java).toInstant() }
                 .single()
         } catch (failure: DataIntegrityViolationException) {
@@ -109,12 +111,12 @@ class JdbcConversionFeedbackRepository(private val jdbc: JdbcClient) : Conversio
             INSERT INTO conversion_feedback (
                 conversion_id, user_id, publish_intent, quality_score, minutes_spent,
                 comment_encrypted, encryption_scheme, key_version,
-                easy_char_count, edited_char_count, edit_distance
+                easy_char_count, edited_char_count, edit_distance, edit_distance_skip_reason
             ) VALUES (
                 :conversionId, :ownerId, :publishIntent, :qualityScore, :minutesSpent,
                 CAST(:comment AS bytea), CAST(:scheme AS varchar), CAST(:keyVersion AS smallint),
                 CAST(:easyCharCount AS integer), CAST(:editedCharCount AS integer),
-                CAST(:editDistance AS integer)
+                CAST(:editDistance AS integer), CAST(:editDistanceSkipReason AS text)
             )
             ON CONFLICT (conversion_id) DO UPDATE SET
                 publish_intent = EXCLUDED.publish_intent,
@@ -126,6 +128,7 @@ class JdbcConversionFeedbackRepository(private val jdbc: JdbcClient) : Conversio
                 easy_char_count = EXCLUDED.easy_char_count,
                 edited_char_count = EXCLUDED.edited_char_count,
                 edit_distance = EXCLUDED.edit_distance,
+                edit_distance_skip_reason = EXCLUDED.edit_distance_skip_reason,
                 submitted_at = now(),
                 updated_at = now()
             WHERE conversion_feedback.user_id = :ownerId

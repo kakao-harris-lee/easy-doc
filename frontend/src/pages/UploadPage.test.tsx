@@ -164,14 +164,54 @@ describe('업로드 화면', () => {
     const user = userEvent.setup()
     renderPage()
 
-    // 4,000자 상한을 넘긴다. 붙여넣기(paste)로 넣어야 한 글자씩 타이핑하지 않는다.
+    // 20,000자 상한을 넘긴다. 붙여넣기(paste)로 넣어야 한 글자씩 타이핑하지 않는다.
     await user.click(screen.getByLabelText('바꿀 글'))
-    await user.paste('가'.repeat(4001))
+    await user.paste('가'.repeat(20001))
     await user.type(screen.getByLabelText('문서 제목'), '긴 원문')
     await user.click(screen.getByRole('button', { name: '쉬운 글 초안 만들기' }))
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('4,000자 이내로 줄여 주세요')
+    expect(await screen.findByRole('alert')).toHaveTextContent('20,000자 이내로 줄여 주세요')
     // 글자 수 안내는 같은 사실을 두 번 알리지 않는다(라이브 영역이 아니다).
+    expect(screen.getByLabelText('바꿀 글')).toHaveAttribute('aria-invalid', 'true')
+    expect(vi.mocked(createDocumentFromText)).not.toHaveBeenCalled()
+  })
+
+  it('surrogate pair 문자(이모지) 2만 자는 코드 포인트 기준으로 상한 이내다', async () => {
+    // 백엔드는 유니코드 코드 포인트로 상한을 잰다(DocumentLimits.charCountOf). '😀'는
+    // UTF-16으로 2 코드 유닛(surrogate pair)이라 text.length로 세면 4만으로 잘못
+    // 잡혀 상한을 넘겼다고 오판한다 — 코드 포인트 2만 개는 실제로는 상한 이내다.
+    const user = userEvent.setup()
+    vi.mocked(createDocumentFromText).mockResolvedValue({
+      document_id: 'd1',
+      conversion_id: 'c1',
+      status: 'pending',
+      char_count: 20000,
+    })
+    renderPage()
+
+    const emoji20000 = '😀'.repeat(20000)
+    await user.click(screen.getByLabelText('바꿀 글'))
+    await user.paste(emoji20000)
+    await user.type(screen.getByLabelText('문서 제목'), '이모지 문서')
+
+    expect(screen.getByText('20,000 / 20,000자')).toBeInTheDocument()
+    expect(screen.getByLabelText('바꿀 글')).toHaveAttribute('aria-invalid', 'false')
+
+    await user.click(screen.getByRole('button', { name: '쉬운 글 초안 만들기' }))
+
+    expect(vi.mocked(createDocumentFromText)).toHaveBeenCalledWith(emoji20000, 'w1', '이모지 문서')
+  })
+
+  it('surrogate pair 문자(이모지)가 코드 포인트 기준으로 상한을 넘으면 막는다', async () => {
+    const user = userEvent.setup()
+    renderPage()
+
+    await user.click(screen.getByLabelText('바꿀 글'))
+    await user.paste('😀'.repeat(20001))
+    await user.type(screen.getByLabelText('문서 제목'), '이모지 문서')
+    await user.click(screen.getByRole('button', { name: '쉬운 글 초안 만들기' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('20,000자 이내로 줄여 주세요')
     expect(screen.getByLabelText('바꿀 글')).toHaveAttribute('aria-invalid', 'true')
     expect(vi.mocked(createDocumentFromText)).not.toHaveBeenCalled()
   })
@@ -333,13 +373,13 @@ describe('업로드 화면', () => {
     await user.click(screen.getByLabelText('바꿀 글'))
     await user.paste('가'.repeat(threshold - 1))
 
-    const belowCounter = screen.getByText(`${(threshold - 1).toLocaleString('ko-KR')} / 4,000자`)
+    const belowCounter = screen.getByText(`${(threshold - 1).toLocaleString('ko-KR')} / 20,000자`)
     expect(belowCounter).toHaveClass('text-muted-foreground')
     expect(belowCounter).not.toHaveClass('text-warning')
 
     await user.paste('가')
 
-    const atCounter = screen.getByText(`${threshold.toLocaleString('ko-KR')} / 4,000자`)
+    const atCounter = screen.getByText(`${threshold.toLocaleString('ko-KR')} / 20,000자`)
     expect(atCounter).toHaveClass('text-warning')
     // 80%는 아직 오류가 아니다 — 입력은 유효한 상태로 남는다.
     expect(screen.getByLabelText('바꿀 글')).toHaveAttribute('aria-invalid', 'false')

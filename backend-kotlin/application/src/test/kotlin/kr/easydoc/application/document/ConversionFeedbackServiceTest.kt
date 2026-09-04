@@ -7,9 +7,11 @@ import kr.easydoc.core.document.SourceFormat
 import kr.easydoc.core.exceptions.ConflictException
 import kr.easydoc.core.exceptions.InvalidInputException
 import kr.easydoc.core.exceptions.NotFoundException
+import kr.easydoc.core.pilot.EditDistanceSkipReason
 import kr.easydoc.core.pilot.MinutesSpent
 import kr.easydoc.core.pilot.PublishIntent
 import kr.easydoc.core.pilot.QualityScore
+import kr.easydoc.core.text.EditDistanceBudget
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.DisplayName
@@ -134,6 +136,9 @@ class ConversionFeedbackServiceTest {
             .withFailMessage("검수본이 없는데 글자 수가 채워졌다 — 집계가 「하나도 고치지 않았다」로 읽는다")
             .isNull()
         assertThat(row.editDistance).isNull()
+        assertThat(row.editDistanceSkipReason)
+            .withFailMessage("검수본이 없는데 사유가 예산 초과로 찍혔다 — 두 사유가 다른 상황이다")
+            .isEqualTo(EditDistanceSkipReason.NO_REVIEW)
     }
 
     @Test
@@ -149,6 +154,29 @@ class ConversionFeedbackServiceTest {
         assertThat(row.editedCharCount).isEqualTo(4)
         // 「나」→「라」 치환 하나 + 「라」 삽입 하나.
         assertThat(row.editDistance).isEqualTo(2)
+        assertThat(row.editDistanceSkipReason)
+            .withFailMessage("거리를 실제로 쟀는데 건너뜀 사유가 남았다")
+            .isNull()
+    }
+
+    @Test
+    @DisplayName("셀 예산을 넘으면 편집 거리만 `null` 이다 — 글자 수 둘은 남는다")
+    fun `예산 초과는 거리만 비우고 글자 수는 남긴다`() {
+        val world = World(budget = EditDistanceBudget(1))
+        // 겹치는 문자가 없어 접두·접미가 제거되지 않는다 — cells = 3 × 4 = 12 > 예산(1).
+        val conversionId = world.seedDone(draft = "가나다", edited = "abcd")
+
+        world.save(conversionId)
+
+        val row = world.feedback.rows.getValue(conversionId)
+        assertThat(row.easyCharCount).isEqualTo(3)
+        assertThat(row.editedCharCount).isEqualTo(4)
+        assertThat(row.editDistance)
+            .withFailMessage("예산을 넘었는데 거리가 계산됐다 — 요청 스레드 CPU 상한이 강제되지 않는다")
+            .isNull()
+        assertThat(row.editDistanceSkipReason)
+            .withFailMessage("예산 초과인데 사유가 검수본 없음으로 찍혔다 — DB CHECK(V4)가 이 짝을 실제로 요구한다")
+            .isEqualTo(EditDistanceSkipReason.BUDGET_EXCEEDED)
     }
 
     @Test
@@ -163,6 +191,9 @@ class ConversionFeedbackServiceTest {
         assertThat(listOf(row.easyCharCount, row.editedCharCount, row.editDistance))
             .withFailMessage("초안이 없는데 지표가 남았다 — 무엇에 견준 값인지 말할 수 없는 숫자다")
             .containsOnlyNulls()
+        assertThat(row.editDistanceSkipReason)
+            .withFailMessage("거리가 null 인데 사유가 없다 — DB 짝 제약(V4)을 어긴다")
+            .isEqualTo(EditDistanceSkipReason.NO_REVIEW)
     }
 
     @Test
@@ -311,7 +342,7 @@ class ConversionFeedbackServiceTest {
     }
 
     /** 케이스마다 새로 만드는 대역 묶음 — 대역이 상태를 든다. */
-    private class World {
+    private class World(budget: EditDistanceBudget = EditDistanceBudget(1_000_000)) {
         val transaction = RecordingTransactionRunner()
         val cipher = FakeContentCipher(writeKeyVersion = 1, transaction = transaction)
         val originals = FakeDocumentOriginalRepository(transaction)
@@ -335,6 +366,7 @@ class ConversionFeedbackServiceTest {
                         transaction = transaction,
                     ),
                 transaction = transaction,
+                editDistanceBudget = budget,
             )
 
         @Suppress("LongParameterList")

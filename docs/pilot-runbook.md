@@ -106,11 +106,11 @@ docker compose -f compose.yml -f compose.ci.yml run --rm frontend-check
 자유 의견만 AEAD로 봉인되므로 집계 스크립트는 읽지 않는다 — 열람이 필요하면
 소유자 토큰으로 화면에서 본다.
 
-### 통과 기준 — **제안값이며 착수 전 승인이 필요하다**
+### 통과 기준 — **확정(2026-09-04)**
 
-아래 숫자는 아직 승인되지 않았다. 파일럿을 시작하기 전에 사용자가 확정하고 이 절을 고친다.
+아래 숫자는 2026-09-04 사용자가 제안값 그대로 확정했다. 이후 숫자를 바꿀 때는 이 절에 날짜를 남긴 변경 기록을 추가한다.
 
-| # | 기준 | 제안값 | 판정 |
+| # | 기준 | 확정값 | 판정 |
 |---|---|---|---|
 | 1 | 배포 의향이 `as_is`(그대로 쓸 수 있다) 또는 `with_edits`(조금 고쳐서 쓰겠다)인 건수 | 10건 중 **8건 이상** | 스크립트 |
 | 2 | 품질 만족도 평균 | **3.5 이상** | 스크립트 |
@@ -133,6 +133,17 @@ docker compose -f compose.yml -f compose.ci.yml run --rm frontend-check
 
 문서 보존 만료(기본 30일) **전에** 실행한다. 지표 표는 파기 대상이 아니지만, 판정 중
 원문·변환 결과를 대조해야 할 때 그쪽은 이미 사라져 있다.
+
+수정률(`edit_distance`) 표본은 **두 가지 이유로** 전체 표본보다 작을 수 있다(2026-09-04,
+`edit_distance_skip_reason` 컬럼 추가 — `V4__conversion_feedback_edit_distance_skip_reason.sql`).
+검수 수정본 자체가 없으면(`no_review`) 애초에 잴 것이 없고, 수정본은 있지만 셀 예산
+(`easydoc.feedback.edit-distance-cell-budget`)을 넘으면 계산을 포기한다(`budget_exceeded`,
+요청 스레드 CPU 상한, `core/text/EditDistance.kt`). 두 경우 모두 `edit_distance`가 `NULL`로
+남지만 원인이 다르다 — `budget_exceeded`는 검수자가 실제로 문서를 수정했는데도 표본에서
+빠지는 경우라 예산을 올릴지 판단할 근거가 되고, `no_review`는 검수자가 그대로 쓸 만하다고
+판단해 수정본 자체를 내지 않은 경우다. `scripts/pilot-report.sql`의 「③-1 수정률 표본
+구성」이 이 둘과 「측정됨」을 나눠 낸다 — 수정률 평균·중앙값을 읽을 때는 그 표를 **함께
+읽는다.**
 
 ```bash
 docker compose -f compose.yml exec -T postgres \

@@ -8,6 +8,7 @@ import kr.easydoc.core.document.Document
 import kr.easydoc.core.document.DocumentListing
 import kr.easydoc.core.document.MaskedItemView
 import kr.easydoc.core.document.SourceFormat
+import kr.easydoc.core.pilot.EditDistanceSkipReason
 import kr.easydoc.core.pilot.MinutesSpent
 import kr.easydoc.core.pilot.PublishIntent
 import kr.easydoc.core.pilot.QualityScore
@@ -350,6 +351,12 @@ data class StoredFeedback(
     val easyCharCount: Int?,
     val editedCharCount: Int?,
     val editDistance: Int?,
+    /**
+     * [editDistance] 가 `null` 인 사유. `null` 은 검수본이 아예 없어서인지, 있는데 셀 예산을
+     * 넘어서인지를 구분한다(`ConversionFeedbackService.EditMetrics`, `V4` 의 CHECK).
+     * `editDistance` 가 있으면 이 값은 `null` 이다.
+     */
+    val editDistanceSkipReason: EditDistanceSkipReason?,
 ) {
     /**
      * 로그 허용목록 그대로 — 식별자·의향과 **의견의 유무**뿐이다.

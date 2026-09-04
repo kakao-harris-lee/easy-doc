@@ -175,12 +175,14 @@ class DocumentConfiguration {
         cipher: ContentCipher,
         query: ConversionQueryService,
         transactionRunner: TransactionRunner,
+        feedbackProperties: FeedbackProperties,
     ): ConversionFeedbackService =
         ConversionFeedbackService(
             feedback = feedback,
             cipher = cipher,
             query = query,
             transaction = transactionRunner,
+            editDistanceBudget = feedbackProperties.editDistanceBudget(),
         )
 
     /** 봉인된 열이 사는 저장소 전부. 묶는 사유는 [SealedStores] KDoc. */

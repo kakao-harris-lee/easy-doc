@@ -6,6 +6,7 @@ import kr.easydoc.core.security.Secret
 import kr.easydoc.infrastructure.auth.AuthProperties
 import kr.easydoc.infrastructure.crypto.EncryptionProperties
 import kr.easydoc.infrastructure.dictionary.DictionaryProperties
+import kr.easydoc.infrastructure.document.FeedbackProperties
 import kr.easydoc.infrastructure.document.RetentionProperties
 import kr.easydoc.infrastructure.llm.LlmProperties
 import org.assertj.core.api.Assertions.assertThat
@@ -109,6 +110,19 @@ class ConfigurationPropertiesBindingTest {
         assertThat(retention.enabled).isFalse()
         assertThat(retention.dryRun).isTrue()
         assertThat(retention.batchSize).isEqualTo(7)
+    }
+
+    @Test
+    @DisplayName("피드백 설정이 기본값과 다른 값을 싣는다 — 편집 거리 셀 예산")
+    fun `피드백 설정이 기본값과 다른 값을 싣는다`() {
+        val feedback =
+            bind(
+                "easydoc.feedback",
+                FeedbackProperties::class.java,
+                mapOf("easydoc.feedback.edit-distance-cell-budget" to "12345"),
+            )
+        assertThat(feedback.editDistanceCellBudget).isEqualTo(12345L)
+        assertThat(feedback.editDistanceBudget().cells).isEqualTo(12345L)
     }
 
     @Test

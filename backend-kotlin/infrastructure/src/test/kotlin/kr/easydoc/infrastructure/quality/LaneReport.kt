@@ -1,6 +1,7 @@
 package kr.easydoc.infrastructure.quality
 
 import kr.easydoc.application.conversion.ConversionFailureKind
+import kr.easydoc.core.easyread.StyleRuleKind
 import java.time.Duration
 import java.util.Locale
 import kotlin.math.ceil
@@ -33,6 +34,19 @@ internal data class LaneMeasurement(
     val truncatedCalls: Int,
     /** 스타일 규칙 통과 여부. 변환이 실패했으면 `null` — 잴 본문이 없다. */
     val stylePassed: Boolean?,
+    /**
+     * `checkStyle` 이 나눈 문장 수(`StyleCheckResult.totalSentences`). [stylePassed] 를 낸
+     * 바로 그 [kr.easydoc.core.quality.evaluateStyle] 호출에서 그대로 가져온다 — 이 레인이
+     * 문장 분리기를 따로 두지 않는 이유가 여기 있다. 분리기를 따로 두면 통과 판정과 문장 수가
+     * 서로 다른 분리 기준을 잴 위험이 생긴다(둘이 갈리면 위반 밀도가 어느 기준으로 잰 값인지
+     * 말할 수 없다). 변환이 실패했으면 잴 본문이 없으므로 0.
+     */
+    val sentenceCount: Int,
+    /**
+     * 규칙별([StyleRuleKind]) 위반 문장 수. 마찬가지로 [sentenceCount] 를 낸 `checkStyle`
+     * 호출의 `issues` 를 규칙별로 센 값이다. 변환이 실패했으면 빈 맵.
+     */
+    val styleIssueCounts: Map<StyleRuleKind, Int>,
 ) {
     /**
      * 출력 팽창비 = 변환 글자 수 / 원문 글자 수.
@@ -41,6 +55,20 @@ internal data class LaneMeasurement(
      * 정한 그 값이다. 변환이 실패했으면 `null` — 없는 값을 1.0 으로 채우면 분포가 거짓이 된다.
      */
     val expansion: Double? get() = convertedChars?.takeIf { sourceChars > 0 }?.let { it.toDouble() / sourceChars }
+
+    /** [styleIssueCounts] 값의 합 — 문서 한 건의 스타일 위반 총수. */
+    val styleIssueCount: Int get() = styleIssueCounts.values.sum()
+
+    /**
+     * 스타일 위반 밀도 = 위반 수 / 문장 수. 게이트 ⓪ 의 새 입력값 — 문서 단위 이분법(통과/미통과)
+     * 대신 위반이 얼마나 조밀한지를 본다.
+     *
+     * 변환이 실패했거나([convertedChars] `null`) 문장이 하나도 없으면([sentenceCount] 0)
+     * `null` — 0 으로 채우면 "위반이 없다"와 "잴 수 없다"가 구분되지 않는다([expansion] 과
+     * 같은 판단).
+     */
+    val styleIssueDensity: Double?
+        get() = convertedChars?.let { styleIssueCount.toDouble().takeIf { sentenceCount > 0 }?.div(sentenceCount) }
 }
 
 /**
@@ -142,6 +170,7 @@ internal class LaneReport(
             appendTranscriptSkippedLine()
             appendGateSection()
             appendDocumentSection()
+            appendRunAggregateSection()
             appendLine(callLine())
             appendLine(durationLine())
             appendLine("인프라 오류 분포 — ${distributionLine()}")
@@ -151,16 +180,40 @@ internal class LaneReport(
 
     // ── 요약 줄 ──────────────────────────────────────────────────────────────────
 
+    /**
+     * **모든 헤드라인 수치의 단위는 문서다.** [measurements] 는 문서×회차 행이라 그대로 세면
+     * runs=3 에서 문서 7건이 21건으로 보인다 — [documentSummaries] 가 그 사고를 막는 자리다.
+     * runs=1 이면 그룹 크기가 항상 1이라 모든 축약이 원본 행과 값이 같으므로 오늘 렌더링과
+     * 완전히 같다.
+     *
+     * 세 갈래(변환 성공·절단으로 실패·그 밖의 변환 실패)는 **서로 배타적이고 문서 수의 합과
+     * 같아야 한다** — runs=1 이 그랬던 것과 같다. 그래서 「변환 성공」은
+     * [DocumentSummary.allRunsConverted](모든 회차가 변환에 성공)를 쓴다 — [스타일 통과율의
+     * 분모][qualityLine]가 쓰는 [DocumentSummary.hasConvertedRun](회차 중 하나라도 성공)과는
+     * 다른 축약이다. 회차 하나가 절단된 문서도 스타일을 잴 회차는 있을 수 있지만(그래서
+     * 통과율 분모에는 들어간다), 「변환 성공」이라 부를 수는 없다 — 절단으로 실패 쪽에 이미
+     * 잡혔다.
+     */
     private fun outcomeLine(): String {
-        val truncated = measurements.count { it.truncated }
-        val otherFailures = measurements.count { it.convertedChars == null && !it.truncated }
-        return "문서 ${measurements.size}건 · 변환 성공 ${converted(measurements).size} · " +
-            "절단으로 실패 $truncated (${rate(truncated, measurements.size)}) · 그 밖의 변환 실패 $otherFailures"
+        val summaries = documentSummaries()
+        val truncated = summaries.count { it.truncated }
+        val converted = summaries.count { it.allRunsConverted }
+        val otherFailures = summaries.count { it.otherFailure }
+        return "문서 ${summaries.size}건 · 변환 성공 $converted · " +
+            "절단으로 실패 $truncated (${rate(truncated, summaries.size)}) · 그 밖의 변환 실패 $otherFailures"
     }
 
+    /**
+     * 통과율 분모는 [DocumentSummary.hasConvertedRun](회차 중 하나라도 성공)이다 —
+     * [outcomeLine] 의 「변환 성공」([DocumentSummary.allRunsConverted], 모든 회차 성공)과
+     * 다른 축약이다. 절단된 회차가 섞여도 성공한 회차의 스타일 판정은 실재하는 값이라, 그
+     * 회차들을 근거로 통과율을 매길 수 있다 — [DocumentSummary.stylePassedAllRuns] 가 그 절단
+     * 회차 때문에 결국 미통과로 떨어뜨린다(박한 쪽).
+     */
     private fun qualityLine(): String {
-        val scored = converted(measurements)
-        val passed = scored.count { it.stylePassed == true }
+        val summaries = documentSummaries()
+        val scored = summaries.filter { it.hasConvertedRun }
+        val passed = scored.count { it.stylePassedAllRuns }
         return "스타일 규칙 통과 $passed/${scored.size} (${rate(passed, scored.size)}) · " +
             "품질 실패 ${quality.size}건 · 인프라 실패 ${infrastructure.size}건"
     }
@@ -171,13 +224,20 @@ internal class LaneReport(
             "입력 ${journal.inputTokens} 토큰 · 출력 ${journal.outputTokens} 토큰"
     }
 
+    /**
+     * 합계는 이 레인이 실제로 쓴 총 시간이라 회차 축약 없이 [durationsMillis] 그대로 합한다 —
+     * 「몇 초를 썼는가」는 문서 개념이 아니라 실측 총량이다. 중앙값·최대는 문서 단위다 —
+     * 문서마다 회차 중앙값을 먼저 내고([DocumentSummary.medianElapsedMillis]), 그 위에서
+     * 다시 중앙값·최대를 낸다. 그러지 않으면 runs=3 에서 한 문서의 세 회차가 분포에 세 번
+     * 들어가 「전형적인 문서가 걸리는 시간」을 부풀린다.
+     */
     private fun durationLine(): String {
         if (durationsMillis.isEmpty()) {
             return "문서 소요 — 없음"
         }
-        val sorted = durationsMillis.sorted()
-        return "문서 소요 — 합계 ${seconds(sorted.sum())} · 중앙값 ${seconds(quantile(sorted, MEDIAN))} · " +
-            "최대 ${seconds(sorted.last())}"
+        val perDocument = documentSummaries().map { it.medianElapsedMillis }.sorted()
+        return "문서 소요 — 합계 ${seconds(durationsMillis.sum())} · 중앙값 ${seconds(quantile(perDocument, MEDIAN))} · " +
+            "최대 ${seconds(perDocument.last())}"
     }
 
     /**
@@ -208,10 +268,12 @@ internal class LaneReport(
             "게이트 ⓪ 측정 (backlog §1.2) — 팽창비=변환 글자 수/원문 글자 수(공백 포함), " +
                 "출력 토큰=문서당 합계(변환 1회+보정 1회), 세 값은 중앙값/p90/최대",
         )
-        val (long, short) = measurements.partition { it.sourceChars > LONG_DOCUMENT_CHARS }
+        val summaries = documentSummaries()
+        val (long, short) = summaries.partition { it.sourceChars > LONG_DOCUMENT_CHARS }
         appendLine(bucketLine("  ${LONG_DOCUMENT_CHARS}자 이하", short))
         appendLine(bucketLine("  ${LONG_DOCUMENT_CHARS}자 초과", long))
-        appendLine(bucketLine("  전체", measurements))
+        appendLine(bucketLine("  전체", summaries))
+        appendLine(styleDensityLine())
         appendLine(truncationLine())
         appendLine(silentTruncationLine())
         if (journal.truncatedJudgeCalls > 0) {
@@ -250,7 +312,9 @@ internal class LaneReport(
             "팽창비 ${measurement.expansion?.let { String.format(Locale.ROOT, "%.2f", it) } ?: "-"} · " +
             "출력 토큰 ${measurement.outputTokens} · " +
             "절단 호출 ${measurement.truncatedCalls} · " +
-            "스타일 ${styleLabel(measurement.stylePassed)}"
+            "스타일 ${styleLabel(measurement.stylePassed)} · " +
+            "문장 ${measurement.sentenceCount} · " +
+            "위반 ${styleIssueSummary(measurement)}"
 
     private fun styleLabel(passed: Boolean?): String =
         when (passed) {
@@ -260,13 +324,80 @@ internal class LaneReport(
         }
 
     /**
+     * 위반 총수·밀도·규칙별([StyleRuleKind]) 내역을 한 자리에 낸다. 규칙별로 나누는 이유는
+     * DIFFICULT_WORD 과다 발화처럼 특정 규칙 하나가 밀도를 끌어올리는 경우를 다른 규칙과
+     * 섞지 않고 읽기 위해서다. 변환이 실패한 문서는 잴 본문이 없으므로 "-"([styleLabel] 과
+     * 같은 관례).
+     */
+    private fun styleIssueSummary(measurement: LaneMeasurement): String {
+        if (measurement.convertedChars == null) return "-"
+        val density = measurement.styleIssueDensity?.let { String.format(Locale.ROOT, "%.3f", it) } ?: "-"
+        val breakdown = StyleRuleKind.entries.joinToString(" ") { "$it=${measurement.styleIssueCounts[it] ?: 0}" }
+        return "${measurement.styleIssueCount}건(밀도 $density · $breakdown)"
+    }
+
+    /**
+     * 게이트 ⓪ 요약에 남기는 문서 간 위반 밀도 중앙값. **표본은 문서 수다** — runs>1 이면
+     * [DocumentSummary.medianDensity] 가 먼저 문서 하나의 회차들을 중앙값 하나로 접었으므로,
+     * 여기서 다시 문서 수만큼만 센다(회차 수가 아니다). 개별 문서 값은 [appendDocumentSection]
+     * 이 회차별로 낸다.
+     */
+    private fun styleDensityLine(): String {
+        val densities = documentSummaries().mapNotNull { it.medianDensity }
+        return if (densities.isEmpty()) {
+            "  스타일 위반 밀도 — 표본 없음"
+        } else {
+            "  스타일 위반 밀도 중앙값 ${String.format(Locale.ROOT, "%.3f", quantile(densities.sorted(), MEDIAN))} " +
+                "(위반 수/문장 수, 표본 ${densities.size}건)"
+        }
+    }
+
+    /**
+     * 같은 문서를 여러 번([EASYDOC_LANE_RUNS]) 돌렸을 때만 나온다 — 1회씩만 돈 문서는 반복
+     * 집계랄 것이 없다. 매 실행에서 어떤 문서 그룹도 크기가 2 이상이 아니면(= runs 가 1이면)
+     * 이 섹션 자체가 생기지 않는다([recordTranscriptSkipped] KDoc과 같은 관례).
+     */
+    private fun StringBuilder.appendRunAggregateSection() {
+        val repeated = documentGroups().filter { it.size > 1 }
+        if (repeated.isEmpty()) return
+        appendLine("문서별 반복 집계 (같은 문서를 여러 번 돌린 결과 — 중앙값/최소/최대)")
+        repeated.forEach { group ->
+            appendLine(
+                "  ${group.first().documentId} — 반복 ${group.size}회 · " +
+                    "팽창비 ${medianMinMax(group.mapNotNull { it.expansion }, decimals = 2)} · " +
+                    "밀도 ${medianMinMax(group.mapNotNull { it.styleIssueDensity }, decimals = 3)} · " +
+                    "절단 호출 합계 ${group.sumOf { it.truncatedCalls }}",
+            )
+        }
+    }
+
+    private fun medianMinMax(
+        values: List<Double>,
+        decimals: Int,
+    ): String =
+        if (values.isEmpty()) {
+            "-"
+        } else {
+            values.sorted().let { sorted ->
+                listOf(quantile(sorted, MEDIAN), sorted.first(), sorted.last())
+                    .joinToString("/") { String.format(Locale.ROOT, "%.${decimals}f", it) }
+            }
+        }
+
+    /**
      * 절단을 **두 단위로** 나란히 낸다. 문서 단위는 「사용자에게 결과가 나가지 않은 건수」이고,
      * 호출 단위는 「상한에 닿은 빈도」다. 게이트 ⓪ 이 묻는 것은 뒤쪽이다.
+     *
+     * 문서 단위 분모·분자는 [documentSummaries] 를 쓴다 — 문서 하나가 회차 셋 중 하나만
+     * 잘려도 그 문서는 「절단 문서」 한 건이지 세 건이 아니다([DocumentSummary.truncated]).
+     * 호출 단위는 여전히 [truncatedCalls] 로 회차를 모두 더한 값이다 — 이쪽은 애초에 호출
+     * 개념이라 회차 축약을 거치지 않는다.
      */
     private fun truncationLine(): String {
-        val documents = measurements.count { it.truncated }
+        val summaries = documentSummaries()
+        val documents = summaries.count { it.truncated }
         val calls = truncatedCalls()
-        return "  절단 — 문서 단위 $documents/${measurements.size} (${rate(documents, measurements.size)}, 변환 실패) · " +
+        return "  절단 — 문서 단위 $documents/${summaries.size} (${rate(documents, summaries.size)}, 변환 실패) · " +
             "호출 단위 $calls/${journal.conversionCalls} (${rate(calls, journal.conversionCalls)}, 변환+보정)"
     }
 
@@ -281,9 +412,11 @@ internal class LaneReport(
     /**
      * 두 값의 차이가 곧 **「잘렸는데 조용히 넘어간」 횟수**다. 보정 호출이 절단되면 유스케이스가
      * 원본 초안을 채택하므로 변환은 성공으로 끝난다 — 상한에 닿았는데 실패로 보이지 않는 갈래다.
+     * 앞쪽([truncatedCalls])은 호출 단위, 뒤쪽([DocumentSummary.truncated] 문서 수)은 문서
+     * 단위다 — [truncationLine] 이 나란히 내는 두 단위와 같은 짝이다.
      */
     private fun silentTruncationLine(): String {
-        val silent = truncatedCalls() - measurements.count { it.truncated }
+        val silent = truncatedCalls() - documentSummaries().count { it.truncated }
         return if (silent > 0) {
             "  └ 차이 ${silent}회 = 보정 호출이 잘렸지만 원본 초안이 채택돼 성공으로 끝난 횟수 " +
                 "(상한에 닿았으나 실패로 보이지 않는다)"
@@ -292,27 +425,135 @@ internal class LaneReport(
         }
     }
 
+    /**
+     * 장문·단문 구간은 게이트 ⓪ B2/B3 판정을 그대로 읽는 자리다 — [outcomeLine] 과 같은
+     * 이유로 「변환 성공」은 [DocumentSummary.allRunsConverted](엄격) 을 쓴다. 여기서도
+     * 「변환 성공 1 · 절단 문서 1」처럼 합이 안 맞아 보이는 모순을 두면 B2/B3 를 읽는 자리에서
+     * 바로 그 모순이 재현된다.
+     *
+     * 「스타일 통과」의 분모는 여전히 [DocumentSummary.hasConvertedRun](느슨, 회차 중 하나라도
+     * 성공)이다 — 절단된 회차가 섞여도 성공한 회차의 스타일 판정은 실재하는 값이라 통과율을
+     * 매길 근거가 있다([qualityLine] 과 같은 판단). 두 「변환 성공」이 서로 다른 분모라 줄에
+     * 그대로 나란히 두면 헷갈리므로, 통과율 분모 옆에 **그 분모가 무엇인지** 적어 둔다
+     * (`변환 회차 있는 문서`) — 숫자만 보고 같은 집합이라고 오해하지 않게.
+     *
+     * 팽창비·출력 토큰은 [DocumentSummary.medianExpansion]·[DocumentSummary.medianOutputTokens] —
+     * 문서마다 회차 중앙값을 먼저 낸 값이다. 여기서 다시 [ratioTail]·[tokenTail] 로 **문서 간**
+     * 중앙값/p90/최대를 낸다. 원본 회차 값을 그대로 모아 냈다면(runs=3) 한 문서의 세 회차가
+     * 분포에 세 번 들어가 꼬리(p90·최대)가 실제보다 두꺼워 보인다.
+     */
     private fun bucketLine(
         label: String,
-        rows: List<LaneMeasurement>,
+        rows: List<DocumentSummary>,
     ): String {
         if (rows.isEmpty()) {
             return "$label — 표본 없음"
         }
-        val scored = converted(rows)
+        val scored = rows.filter { it.hasConvertedRun }
+        val converted = rows.count { it.allRunsConverted }
         val truncated = rows.count { it.truncated }
-        val passed = scored.count { it.stylePassed == true }
-        return "$label — 문서 ${rows.size} · 변환 성공 ${scored.size} · " +
-            "절단 문서 $truncated (${rate(truncated, rows.size)}) / 호출 ${rows.sumOf { it.truncatedCalls }} · " +
-            "스타일 통과 $passed/${scored.size} (${rate(passed, scored.size)}) · " +
-            "팽창비 ${ratioTail(scored.mapNotNull { it.expansion })} · " +
-            "출력 토큰 ${tokenTail(rows.map { it.outputTokens })}"
+        val passed = scored.count { it.stylePassedAllRuns }
+        return "$label — 문서 ${rows.size} · 변환 성공 $converted · " +
+            "절단 문서 $truncated (${rate(truncated, rows.size)}) / 호출 ${rows.sumOf { it.truncatedCallsTotal }} · " +
+            "스타일 통과 $passed/${scored.size}(변환 회차 있는 문서) (${rate(passed, scored.size)}) · " +
+            "팽창비 ${ratioTail(scored.mapNotNull { it.medianExpansion })} · " +
+            "출력 토큰 ${tokenTail(rows.map { it.medianOutputTokens })}"
     }
 
-    // ── 공용 ─────────────────────────────────────────────────────────────────────
+    // ── 문서 단위 축약 ────────────────────────────────────────────────────────────
 
-    private fun converted(rows: List<LaneMeasurement>): List<LaneMeasurement> =
-        rows.filter { it.convertedChars != null }
+    /**
+     * 문서 하나를 여러 번([EASYDOC_LANE_RUNS]) 돌렸을 때, **모든 헤드라인 통계가 읽는 문서
+     * 단위 축약값**. [measurements] 는 문서×회차 행이라 그대로 세면 runs=3 에서 문서 7건이
+     * 21건으로 보인다 — Codex 정지 시점 리뷰가 잡은 문제다. runs=1 이면 그룹 크기가 언제나
+     * 1이라 아래 모든 축약이 그 한 행의 값과 같으므로, 오늘(runs 노브 이전) 렌더링과 완전히
+     * 같다.
+     *
+     * ## 축약 규칙
+     *
+     * - [truncated] 는 회차 중 **하나라도** 절단으로 실패했으면 참이다 — 「일부만 잘려도 그
+     *   문서는 절단 문서다」.
+     * - [allRunsConverted]·[hasConvertedRun]·[otherFailure] 는 **쓰임이 다른 두 축약**이다.
+     *     - [outcomeLine] 의 「변환 성공·절단으로 실패·그 밖의 변환 실패」 세 갈래는 배타적이고
+     *       문서 수의 합과 같아야 한다(runs=1 이 그랬듯). 그래서 [truncated] 가 먼저 걸러내고,
+     *       남은 문서 중 **모든** 회차가 변환에 성공했으면(그리고 그때만) [allRunsConverted]
+     *       가 참이며 「변환 성공」이 된다. 나머지(절단도 아니고 전부 성공도 아닌, 즉 일부·전부
+     *       가 그 밖의 이유로 실패한)는 [otherFailure] — 정확히 셋의 나머지다.
+     *     - [qualityLine]·[bucketLine] 의 스타일 통과율 분모는 [hasConvertedRun](회차 중
+     *       **하나라도** 성공)을 쓴다 — 절단된 회차가 섞여도 성공한 회차의 스타일 판정은
+     *       실재하므로 통과율을 매길 근거가 있다. 그래서 [hasConvertedRun] 은 [truncated] 와
+     *       배타적이지 않다(두 회차는 성공하고 한 회차는 잘린 문서가 흔한 예다) — 그 문서는
+     *       [truncationLine] 에는 절단 문서로, 통과율 분모에는 성공 문서로 **둘 다** 잡힌다.
+     *       [stylePassedAllRuns] 가(아래) 그 절단을 결국 미통과로 떨어뜨린다.
+     * - [stylePassedAllRuns] 는 **문자 그대로 모든 회차**(절단된 회차 포함)가 통과해야 참이다.
+     *   절단된 회차는 `stylePassed` 가 `null` 이라 `== true` 를 만족하지 못하므로, 회차 하나가
+     *   잘리기만 해도 그 문서는 통과로 집계되지 않는다 — 관대한 정의(변환 성공 회차만 보고
+     *   판단)는 절단이라는 불안정을 통과율 뒤에 숨긴다. **박한 쪽이 참이다.**
+     * - [medianExpansion]·[medianDensity] 는 변환에 성공한 회차들의 값 중앙값이다(성공한
+     *   회차가 없으면 `null`) — 절단된 회차가 섞인 문서라도 끝난 회차의 값은 실측값이므로 그
+     *   값을 그대로 쓴다. [medianOutputTokens]·[medianElapsedMillis] 는 **모든** 회차의 값
+     *   중앙값이다 — 출력 토큰·소요 시간은 절단된 회차도 실측값을 낸다.
+     * - [truncatedCallsTotal] 은 이 문서의 모든 회차에 걸친 호출 단위 절단 합 — 절단
+     *   발생률의 호출 쪽 분자는 여전히 호출 수 기준이라 문서 축약을 거치지 않는다.
+     */
+    private data class DocumentSummary(
+        val documentId: String,
+        val sourceChars: Int,
+        val truncated: Boolean,
+        val allRunsConverted: Boolean,
+        val hasConvertedRun: Boolean,
+        val otherFailure: Boolean,
+        val stylePassedAllRuns: Boolean,
+        val medianExpansion: Double?,
+        val medianDensity: Double?,
+        val medianOutputTokens: Int,
+        val medianElapsedMillis: Long,
+        val truncatedCallsTotal: Int,
+    )
+
+    /** [documentId] 별로 묶은, 소요 시간과 짝지은 반복 기록. 처음 나온 순서를 유지한다. */
+    private fun runGroups(): List<List<Pair<LaneMeasurement, Long>>> =
+        measurements
+            .zip(durationsMillis)
+            .groupBy { (measurement, _) -> measurement.documentId }
+            .values
+            .toList()
+
+    /** [documentGroups] 는 [appendRunAggregateSection] 이 회차별 원본 값을 그대로 나열하는 데 쓴다. */
+    private fun documentGroups(): List<List<LaneMeasurement>> = runGroups().map { rows -> rows.map { it.first } }
+
+    /** [documentGroups] 와 같은 근원([runGroups])에서 문서 단위로 축약한 값. [DocumentSummary] KDoc. */
+    private fun documentSummaries(): List<DocumentSummary> = runGroups().map(::summarize)
+
+    private fun summarize(rows: List<Pair<LaneMeasurement, Long>>): DocumentSummary {
+        val truncated = rows.any { (measurement, _) -> measurement.truncated }
+        val allRunsConverted = !truncated && rows.all { (measurement, _) -> measurement.convertedChars != null }
+        val hasConvertedRun = rows.any { (measurement, _) -> measurement.convertedChars != null }
+        val convertedExpansions = rows.mapNotNull { (measurement, _) -> measurement.expansion }
+        val convertedDensities = rows.mapNotNull { (measurement, _) -> measurement.styleIssueDensity }
+        return DocumentSummary(
+            documentId = rows.first().first.documentId,
+            sourceChars = rows.first().first.sourceChars,
+            truncated = truncated,
+            allRunsConverted = allRunsConverted,
+            hasConvertedRun = hasConvertedRun,
+            // outcomeLine 세 갈래의 나머지다 — 절단도 아니고(!truncated) 전부 성공도 아닌
+            // (!allRunsConverted) 문서. truncated 가 이미 배타적으로 걸러졌으므로 이 셋의
+            // 합은 문서 수와 같다.
+            otherFailure = !truncated && !allRunsConverted,
+            stylePassedAllRuns = rows.all { (measurement, _) -> measurement.stylePassed == true },
+            medianExpansion = medianOrNull(convertedExpansions),
+            medianDensity = medianOrNull(convertedDensities),
+            medianOutputTokens = quantile(rows.map { (measurement, _) -> measurement.outputTokens }.sorted(), MEDIAN),
+            medianElapsedMillis = quantile(rows.map { (_, elapsedMillis) -> elapsedMillis }.sorted(), MEDIAN),
+            truncatedCallsTotal = rows.sumOf { (measurement, _) -> measurement.truncatedCalls },
+        )
+    }
+
+    private fun <T : Comparable<T>> medianOrNull(values: List<T>): T? =
+        values.takeIf { it.isNotEmpty() }?.sorted()?.let { quantile(it, MEDIAN) }
+
+    // ── 공용 ─────────────────────────────────────────────────────────────────────
 
     private fun StringBuilder.appendSection(
         title: String,

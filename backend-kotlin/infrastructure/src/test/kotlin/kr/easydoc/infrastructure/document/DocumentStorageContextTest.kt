@@ -189,6 +189,12 @@ class DocumentStorageContextTest {
             ).withBean(
                 EncryptionProperties::class.java,
                 Supplier { EncryptionProperties(writeKeyVersion = writeKeyVersion, keys = keys) },
+            ).withBean(
+                // `DocumentConfiguration.conversionFeedbackService` 가 요구한다. 이 테스트는
+                // `@ConfigurationPropertiesScan` 없이 `@Configuration` 클래스만 올리므로
+                // 다른 구성값(`EncryptionProperties`)과 같은 방식으로 직접 공급한다.
+                FeedbackProperties::class.java,
+                Supplier { FeedbackProperties() },
             )
     }
 

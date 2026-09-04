@@ -41,7 +41,7 @@ openapi: 3.1.0
 
 info:
   title: Easy-Read AI API
-  version: "2.5.1"
+  version: "2.7.0"
   x-baselined-at: "2026-08-12"       # 초판 기준선을 뜬 날 (동결일이 아니다)
   x-rebased-at: "2026-08-12"         # 계약의 성격을 "개선 대상"으로 다시 정의한 날
   x-source-runtime: "Python 3.12 / FastAPI (app/main.py) — 과거 참고 구현이었고 2026-08-24 저장소에서 제거됨(git 태그 pre-python-removal-20260824). 기준선 출처였을 뿐 정답이 아니었다"
@@ -557,8 +557,8 @@ x-auth:
 # 입력 상한 — 전부 계약이다.
 # -----------------------------------------------------------------------------
 x-input-limits:
-  max_convertible_chars: 4000        # app/services/documents.py MAX_CONVERTIBLE_CHARS → 초과 시 422
-  max_review_chars: 4000             # 검수 수정본도 같은 상한 → 초과 시 422
+  max_convertible_chars: 20000       # core/document/DocumentLimits.kt MAX_CONVERTIBLE_CHARS → 초과 시 422
+  max_review_chars: 20000            # 검수 수정본도 같은 상한 → 초과 시 422
   max_upload_bytes: 10485760         # app/ingest/extractors.py MAX_UPLOAD_BYTES (10 * 1024 * 1024) → 초과 시 413
   max_extracted_chars: 500000        # 추출 결과 상한 → 초과 시 422
   zip_uncompressed_budget_bytes: 52428800  # 업로드 상한의 5배. 초과 시 422 (압축 폭탄 방어)
@@ -630,15 +630,32 @@ x-export-format-derivation:
     text: txt      # 붙여넣기는 파일이 아니었다. UTF-8 텍스트로 내려받는다
     docx: docx
     hwpx: hwpx
-    pdf: null      # 같은 형식으로 내보낼 수단이 없다 — 아래 `x-null-is-not-unknown`
+    pdf: null      # 서버가 정하지 않는다 — 사용자가 고른다. 아래 `choices`·`x-null-is-not-unknown`
     txt: txt       # 2.4.0. 업로드된 평문도 같은 렌더러로 나간다 — 반영할 원본 구조가 없다는
                    # 점만 `text`와 다르고(아래 `x-not-a-rename`), 나가는 형식은 같다
+  # ---------------------------------------------------------------------------
+  # 선택지 (2.6.0, 2026-09-02 사용자 결정) — `mapping`이 `null`인 원본에서 사용자가
+  # 고를 수 있는 형식. **정의역 불변식**: `mapping`이 `null`인 키는 여기 반드시 나타나야
+  # 하고(값은 `[]`여도 된다 — 「선택지도 없다」는 사실을 명시적으로 적는다), `mapping`이
+  # 값을 낸 키는 여기 나타나면 안 된다(선택의 여지가 없다). `DocumentContractNodeTest`가
+  # 이 정의역 대조를 잰다.
+  # ---------------------------------------------------------------------------
+  choices:
+    pdf: [docx, hwpx]
   x-null-is-not-unknown: |
-    `null`은 「모른다」가 아니라 **「같은 형식으로 내보낼 수단이 없다」**다.
-    `pdf`를 `ExportFormat`에 넣을 수 없고(렌더러가 없다), `txt`·`docx`로 접을 수도 없다 —
-    §6.5가 "PDF 다운로드 기능이 준비되기 전까지 다른 형식으로의 우회 다운로드를 기본
-    행동으로 제공하지 않는다"고 정한 자리다. 계약이 대체 형식을 실으면 그 금지를 계약이
-    스스로 어긴다. 화면은 이 `null`을 보고 내려받기 행동을 제시하지 않는다.
+    `null`은 「모른다」가 아니라 **「서버가 정하지 않는다」**다. 그 뜻은 두 갈래로 갈린다:
+
+    ⑴ **`choices`에 값이 있는 원본(오늘은 `pdf`뿐)** — 서버가 못 정하는 것이 아니라
+       **사용자가 고른다** (2.6.0 재결정, `DESIGN.md` §6.5). PDF는 편집 가능한 문서
+       구조가 아니라 「들어온 형식 그대로」가 성립하지 않고, PDF 렌더러도 없다 — 그래서
+       사용자가 `docx`·`hwpx` 중 하나를 골라 **신문서 조립**으로 받는다. 이것은
+       §6.5가 금지한 *조용한* 대체가 아니다 — 사용자가 명시적으로 고른 두 구조화
+       형식 사이의 선택이고, 아무 것도 고르지 않으면 내보내지 않는다(아래 `enforcement`).
+    ⑵ **`choices`에도 없는 원본(오늘은 없다)** — 이때만 원래 뜻 그대로
+       「같은 형식으로 내보낼 수단이 없다」이고 대체 형식으로 접지 않는다. §6.5가
+       "PDF 다운로드 기능이 준비되기 전까지 다른 형식으로의 우회 다운로드를 기본
+       행동으로 제공하지 않는다"고 정한 자리는 이제 이 갈래(⑵)에 적용된다 — PDF는
+       ⑴로 옮겨졌다. 화면은 이 `null`을 보고 내려받기 행동을 제시하지 않는다.
   x-not-a-rename: |
     `text → txt`는 유도이지 이름 변환이 아니다. 두 값 집합은 서로 다른 축이고
     (`SourceFormat`은 「어디서 왔는가」, `ExportFormat`은 「무엇으로 나가는가」),
@@ -658,8 +675,16 @@ x-export-format-derivation:
     on_absent: derive          # `mapping[source_format]`이 나간다
     on_match: export           # 준 값이 `mapping[source_format]`과 같으면 그대로 나간다
     on_mismatch: 409           # `ExportFormat` 안의 값이지만 이 변환의 원본과 다르다
-    on_null_mapping: 409       # `mapping[source_format]`이 `null` — 내보낼 수단이 없다
+    on_null_mapping: 409       # `mapping[source_format]`이 `null` 이고 `choices`도 없다 — 내보낼 수단이 없다(오늘은 없는 갈래)
     on_unknown_value: 422      # `ExportFormat` 밖의 값 — 변환을 읽기 전에 갈린다
+    # -------------------------------------------------------------------------
+    # 선택지 처분 (2.6.0) — `mapping[source_format]`이 `null`이고 `choices[source_format]`이
+    # 비어 있지 않을 때만 적용된다. `on_null_mapping`보다 **먼저** 검사한다 — 그 갈래는
+    # 「선택지도 없다」는 사실을 재는 것이라, 선택지가 있는 원본에는 애초에 해당하지 않는다.
+    # -------------------------------------------------------------------------
+    on_absent_with_choices: 409   # `format`을 생략했다 — 서버가 대신 고르지 않는다
+    on_choice: export             # 준 값이 `choices[source_format]` 안이다 — 신문서 조립
+    on_choice_mismatch: 409       # 준 값이 `ExportFormat` 안이지만 `choices[source_format]` 밖이다
   x-why-409-and-not-422: |
     **판정이 이 변환의 상태에 달렸기 때문이다.** 같은 쿼리 문자열이 `conversion_id`에 따라
     통과하기도 하고 거절되기도 한다 — `format=txt`는 붙여넣기 변환에서 옳고 DOCX 변환에서
@@ -694,6 +719,12 @@ x-export-format-derivation:
 
     **`format` 누락이 422였던 갈래도 함께 폐기됐다.** 이제 누락은 오류가 아니라 기본
     경로다(`enforcement.on_absent`). 422는 **값 집합 밖**에서만 남는다.
+
+    **2.6.0의 `choices` 갈래는 이 폐기를 되살리는 것이 아니다.** 옛 조항은 「원본과
+    무관하게 아무 값이나 통과한다」였고, `choices`는 그 반대다 — 값 집합이 **원본별로
+    좁혀진 목록**(오늘은 PDF의 `[docx, hwpx]`뿐)이고, 목록 밖 값은 여전히 409로 거절되며
+    (`on_choice_mismatch`), 생략도 통과하지 않는다(`on_absent_with_choices`). 서버가
+    「하나로 정하지 않는다」일 뿐 「아무거나 받는다」가 아니다.
 
 # -----------------------------------------------------------------------------
 # 문서 제목 — **제목은 문서 내용에서 만들지 않는다**
@@ -936,14 +967,14 @@ x-request-field-constraints:
       detail: "비밀번호는 8자 이상이어야 합니다"
     - field: "DocumentTextRequest.text"
       layer: service
-      limit: 4000
+      limit: 20000
       measured_on: "원시 값 — 정규화하지 않는다. ⚠ `edited_text`와 비대칭이다(아래 x-open-asymmetry)"
-      detail: "현재는 4,000자 이하 문서만 변환할 수 있습니다 (긴 문서 분할 변환은 준비 중입니다)"
+      detail: "현재는 20,000자 이하 문서만 변환할 수 있습니다"
     - field: "ConversionReviewRequest.edited_text"
       layer: service
-      limit: 4000
+      limit: 20000
       measured_on: "정규화 후 — 제어문자 제거(app/services/documents.py:399-402)"
-      detail: "수정본은 4,000자 이하여야 합니다 (긴 문서 분할 변환은 준비 중입니다)"
+      detail: "수정본은 20,000자 이하여야 합니다"
     - field: "WorkspaceNameRequest.name"
       layer: service
       limit: 50                 # 하한은 "정규화 후 비어 있지 않을 것"이며 minLength로 표현되지 않는다
@@ -1548,7 +1579,7 @@ paths:
         '415': { $ref: '#/components/responses/UnsupportedMediaType' }
         '422':
           description: |
-            빈 본문 · 4,000자 초과 · 지원하지 않는 형식 · 추출 실패 ·
+            빈 본문 · 20,000자 초과 · 지원하지 않는 형식 · 추출 실패 ·
             **텍스트로 저장할 수 없는 문자**(`x-stored-text-domain`) · 잘못된 JSON ·
             `workspace_id` 형식 오류 · 필드 누락.
             앞의 것들은 문자열 detail, 마지막은 배열 detail이다.
@@ -1561,7 +1592,7 @@ paths:
                 empty_body:
                   value: { detail: "본문이 비어 있습니다" }
                 too_long:
-                  value: { detail: "현재는 4,000자 이하 문서만 변환할 수 있습니다 (긴 문서 분할 변환은 준비 중입니다)" }
+                  value: { detail: "현재는 20,000자 이하 문서만 변환할 수 있습니다" }
                 unsupported_format:
                   value: { detail: "지원 형식: docx, pdf, hwpx, txt" }
                 undecodable_text:
@@ -1833,13 +1864,13 @@ paths:
                 not_done: { value: { detail: "변환이 끝난 뒤에 수정할 수 있습니다" } }
         '415': { $ref: '#/components/responses/UnsupportedMediaType' }
         '422':
-          description: 수정본이 비었거나 4,000자를 넘었다 / 필드 누락
+          description: 수정본이 비었거나 20,000자를 넘었다 / 필드 누락
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
               examples:
                 empty: { value: { detail: "수정본이 비어 있습니다" } }
-                too_long: { value: { detail: "수정본은 4,000자 이하여야 합니다 (긴 문서 분할 변환은 준비 중입니다)" } }
+                too_long: { value: { detail: "수정본은 20,000자 이하여야 합니다" } }
         '500': { $ref: '#/components/responses/InternalError' }
         '503': { $ref: '#/components/responses/ServiceUnavailable' }
 
@@ -1872,17 +1903,31 @@ paths:
         `mapping[source_format]`으로 정하고, 주면 그 값과 **같아야** 한다.
         그 값은 이 변환의 `ConversionResponse.export_format`과 언제나 같다.
 
-        409가 나는 경우가 넷이다:
+        **PDF는 다르다 — 서버가 정하지 않고 사용자가 고른다** (2.6.0 재결정,
+        `x-export-format-derivation.choices`). 원본이 PDF면 `export_format`이 `null`이고
+        `export_format_choices`가 `[docx, hwpx]`다. `format`은 그 배열 안의 값이어야
+        하고(생략은 409), 원본을 여닫지 않은 채 **고른 형식의 새 문서**를 조립해 내보낸다
+        — 원본 서식을 반영하는 것이 아니므로 `format_preservation`은 언제나
+        `not_applicable`이다.
+
+        409가 나는 경우가 다섯이다:
           1. 아직 완료되지 않아 내보낼 결과가 없다
           2. 검수본이 없는데 자리표시자가 결과에서 사라졌다 — 그 자리의 정보가 통째로
              빠졌다는 뜻이라, 검수를 거치지 않은 초안을 그대로 배포하게 둘 수 없다.
           3. `format`이 이 변환의 원본이 정한 형식과 다르다 (`enforcement.on_mismatch`)
-          4. 이 변환에는 내보낼 수 있는 형식이 없다 — 원본이 PDF다
-             (`enforcement.on_null_mapping`). 이때는 **어떤 `format` 값도** 통과하지
-             못하고 생략해도 같다. 대체 형식으로 접지 않는 사유는
-             `x-export-format-derivation.x-null-is-not-unknown`에 있다.
+          4. **PDF 원본인데 `format`을 생략했다** (`enforcement.on_absent_with_choices`)
+             — 서버가 대신 고르지 않는다. 「내보낼 형식을 골라주세요」가 이 갈래의 문구다.
+          5. **PDF 원본인데 `format`이 `export_format_choices` 밖이다**
+             (`enforcement.on_choice_mismatch`) — 값 집합(`ExportFormat`) 안이어도 이
+             원본이 고를 수 있는 형식이 아니면 거절한다.
 
-        **1·2와 3·4의 순서**: 형식 판정이 먼저다. 3·4는 기다려도 바뀌지 않는 사실이고
+          PDF가 아닌 원본에는 4·5가 일어나지 않는다 — `export_format_choices`가 비어
+          있으므로 `format`을 생략하면 그대로 1·2·3의 갈래를 지난다(2.0.0부터의 동작과
+          같다). `choices`도 없는 원본이 생기면(오늘은 없다) 그때는 옛 `no_exportable_format`
+          409가 어떤 `format` 값도·생략도 통과시키지 않는다
+          (`enforcement.on_null_mapping`, `x-export-format-derivation.x-null-is-not-unknown`).
+
+        **1·2와 3·4·5의 순서**: 형식 판정이 먼저다. 3·4·5는 기다려도 바뀌지 않는 사실이고
         1은 시간이 푸는 사실이라, 결국 거절될 요청에 「끝난 뒤에 다시 오라」고 답하면
         틀린 행동을 권하게 된다. 소유 판정(404)은 그 전부보다 먼저다.
 
@@ -1891,7 +1936,8 @@ paths:
         반영합니다」). 새 문서를 만들지 않으므로 본문에 없던 것 — 이미지, 표, 머리말·
         꼬리말, 스타일, 쪽 나눔 — 이 그대로 남는다. 무엇이 유지되고 무엇이 달라지는지는
         **내려받기 전에** `ConversionResponse.format_preservation`이 말하고, 그 판정과 이
-        오퍼레이션은 같은 코드를 지난다.
+        오퍼레이션은 같은 코드를 지난다. **PDF는 이 갈래가 아니다** — 위에서 말했듯 원본을
+        열지 않고 새 문서를 만든다.
 
         원본이 없는 문서(붙여넣기 · `document_originals` 표가 서기 전 업로드)는 예전처럼
         본문 문자열로 새 문서를 만든다. 그 갈래의 판정이 `not_applicable`이고 영구히 참이다.
@@ -1915,7 +1961,8 @@ paths:
           required: false
           description: |
             **선택 파라미터다** (2.0.0에서 필수를 풀었다 —
-            `x-export-format-derivation.enforcement`가 정본이다).
+            `x-export-format-derivation.enforcement`가 정본이다). PDF 원본은 예외다 —
+            아래 참고.
 
             - **생략하면** 서버가 원본에서 정한다. 이것이 기본 경로다.
             - **주면** 이 변환의 `ConversionResponse.export_format`과 같아야 한다.
@@ -1926,6 +1973,11 @@ paths:
 
             **누락은 더 이상 422가 아니다.** 그 갈래는 폐기됐다(`x-superseded`) —
             되살리면 내보내기가 다시 「클라이언트가 형식을 고르는」 오퍼레이션이 된다.
+
+            **PDF 원본(2.6.0)**: `ConversionResponse.export_format`이 `null`이라 위 규칙이
+            적용되지 않는다. 대신 `export_format_choices`(`[docx, hwpx]`) 안의 값이어야
+            한다 — **생략은 여기서도 409**다(서버가 대신 고르지 않는다), 배열 밖의 값 집합
+            안 값(예: `txt`)도 409다.
           schema: { $ref: '#/components/schemas/ExportFormat' }
       responses:
         '200':
@@ -2017,7 +2069,8 @@ paths:
         '409':
           description: |
             내보낼 수 없는 변환이다 — 완료 전 · 자리표시자 유실 · 원본과 다른 형식 요청 ·
-            내보낼 형식 없음(PDF 원본). 넷의 구분과 순서는 `description`에 있다.
+            선택지 있는 원본(PDF)에서 형식 생략·선택지 밖 요청 · 내보낼 형식 자체가 없음.
+            여섯의 구분과 순서는 `description`에 있다.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
@@ -2027,8 +2080,12 @@ paths:
                   value: { detail: "변환에서 유실된 개인정보 표시가 있습니다 — 검수 화면에서 수정 후 내보내세요" }
                 format_mismatch:
                   value: { detail: "원본과 같은 형식으로만 내려받을 수 있습니다" }
+                export_format_choice_required:
+                  value: { detail: "내보낼 형식을 골라주세요 (docx·hwpx)" }
+                export_format_choice_mismatch:
+                  value: { detail: "고를 수 있는 형식으로만 내려받을 수 있습니다" }
                 no_exportable_format:
-                  value: { detail: "PDF 문서 내려받기는 아직 준비되지 않았습니다" }
+                  value: { detail: "이 문서는 내려받을 수 있는 형식이 없습니다" }
         '422':
           description: |
             `format`이 `ExportFormat` 밖의 값이다. **누락은 여기가 아니다** —
@@ -2705,7 +2762,7 @@ components:
       description: |
         원본 서식 유지 상태.
 
-        - `not_applicable` — **유지할 원본 서식이 없다.** 세 갈래가 여기 든다:
+        - `not_applicable` — **유지할 원본 서식이 없다.** 네 갈래가 여기 든다:
           ⑴ 붙여넣기(`source_format: text`) — 파일이 아니었으므로 서식이 애초에 없다.
           ⑵ 원본 파일 바이트가 저장돼 있지 않은 문서 — `document_originals` 표가 서기
              전(2026-08-26 이전)에 업로드된 문서가 그렇다. 그 바이트는 파싱 직후 사라졌고
@@ -2713,7 +2770,13 @@ components:
           ⑶ 업로드된 평문(`source_format: txt`, 2.4.0) — 파일은 맞지만 평문에는 애초에
              유지할 서식이 없다(굵기·글꼴·표·머리말 같은 구조가 없다). ⑴과 사유가 같으므로
              `document_originals`에 원본을 남기지 않는다 — 남겨도 반영할 대상이 없다.
-          세 갈래 모두 **영구히 참**이다.
+          ⑷ PDF(`source_format: pdf`, 2.6.0) — 원본 파일 바이트는 저장돼 있을 수 있지만
+             **반영할 대상 자체가 없다.** 사용자가 `export_format_choices` 중 하나를 골라
+             그 형식의 **새 문서**로 조립해 받는다(`x-export-format-derivation.choices`) —
+             원본 구조를 여닫지 않으므로 판정할 「짝」이 없다. ⑵와 사유가 다르다 — 바이트가
+             없어서가 아니라 반영이라는 개념 자체가 이 갈래에 적용되지 않는다.
+          네 갈래 모두 **영구히 참**이고, **완료 전에도** 이 값이 즉시 선다 — 짝지을
+          검수본을 기다릴 이유가 없다(아래 `format_preservation: null`의 조건 ⑴ 참고).
         - `available`(「유지 가능」) — **원본 구조 그대로 나간다.** 원본의 본문 단위
           하나하나에 검수본 문단 하나씩이 들어가고(수가 정확히 같다), 원본 문구가 남는
           머리말·꼬리말도 없다. 짝이 하나라도 어긋나면 이 값이 아니다.
@@ -2829,10 +2892,10 @@ components:
       properties:
         text:
           type: string
-          x-service-constraint: { max_length: 4000, measured_on: raw }
+          x-service-constraint: { max_length: 20000, measured_on: raw }
           description: |
             공백만 있으면 422("본문이 비어 있습니다").
-            4,000자 초과도 422. **바이트가 아니라 문자 수**로 잰다 — 한국어는 UTF-8에서
+            20,000자 초과도 422. **바이트가 아니라 문자 수**로 잰다 — 한국어는 UTF-8에서
             글자당 3바이트라 바이트 기준이면 실제 분량의 1/3에서 잘린다.
             둘 다 **서비스 층** 판정이라 422 **문자열** detail이다(`maxLength` 미사용 사유는
             `x-request-field-constraints`). ⚠ 이 필드는 `edited_text`와 달리 **원시 길이**로
@@ -2955,9 +3018,9 @@ components:
       properties:
         edited_text:
           type: string
-          x-service-constraint: { max_length: 4000, measured_on: normalized }
+          x-service-constraint: { max_length: 20000, measured_on: normalized }
           description: |
-            제어문자를 걷어낸 뒤 **그 결과로** 빈 값·길이를 판정한다. 원문과 **같은 4,000자
+            제어문자를 걷어낸 뒤 **그 결과로** 빈 값·길이를 판정한다. 원문과 **같은 20,000자
             상한**을 쓴다 — 검수는 초안을 다듬는 자리이지 새 문서를 쓰는 자리가 아니다.
             먼저 걷어내는 이유는 docx(XML)가 담지 못하는 문자를 저장해 두면 **내보내기
             시점에** 터져 사용자가 원인을 알 수 없는 500을 받기 때문이다.
@@ -2969,18 +3032,19 @@ components:
     ConversionResponse:
       type: object
       required:
-        [id, document_id, status, source_format, export_format, format_preservation,
-         easy_text, edited_text, reviewed_at, feedback_submitted_at,
+        [id, document_id, status, source_format, export_format, export_format_choices,
+         format_preservation, easy_text, edited_text, reviewed_at, feedback_submitted_at,
          masked_items, missing_placeholders, model, provider_name,
          input_tokens, output_tokens, failure_code]
       description: |
         변환 상태·결과. 완료 전에는 **결과 필드**가 모두 비어 있다.
 
-        **형식 셋(`source_format`·`export_format`·`format_preservation`)은 결과 필드가
-        아니다.** 문서 메타에서 오는 값이라 `pending`·`processing`·`failed`에서도 그대로
-        나간다. 검수 화면을 직접 URL로 열거나 새로고침해도 원본 형식을 잃지 않아야 하고
-        (`DESIGN.md` §6.5 「필요한 계약 정보」), 변환이 실패한 화면에서도 「이 문서는
-        DOCX였다」는 사실은 여전히 참이기 때문이다.
+        **형식 셋(`source_format`·`export_format`·`export_format_choices`·
+        `format_preservation`)은 결과 필드가 아니다.** 문서 메타에서 오는 값이라
+        `pending`·`processing`·`failed`에서도 그대로 나간다. 검수 화면을 직접 URL로
+        열거나 새로고침해도 원본 형식을 잃지 않아야 하고(`DESIGN.md` §6.5 「필요한 계약
+        정보」), 변환이 실패한 화면에서도 「이 문서는 DOCX였다」는 사실은 여전히 참이기
+        때문이다.
 
         **required 범위가 FastAPI 자동 생성물보다 넓다.** 자동 생성물은
         기본값이 있거나 nullable인 필드를 required에서 빼지만, 실제 응답은 항상
@@ -3015,15 +3079,32 @@ components:
             **정의를 바꾸지 않고** 강제만 붙었다. 그 오퍼레이션의 `format`을 생략하면
             서버가 여기 적힌 값을 그대로 쓴다.
 
-            **`null`이면 내려받기 자체가 없다.** 어떤 `format` 값도 통과하지 못하고
-            생략해도 409다 — 아래 문단이 그 사유다.
+            **`null`이면 서버가 하나로 정하지 않았다는 뜻이다.** 두 갈래로 갈린다 —
+            `export_format_choices`가 **비어 있으면** 어떤 `format` 값도 생략도 통과하지
+            못하고(내려받기 자체가 없다), **비어 있지 않으면** 그 배열 안의 값 하나를
+            `format`으로 골라야 한다(생략은 409). 아래 두 문단이 그 사유다.
 
-            **`null`은 「모른다」가 아니라 「같은 형식으로 내보낼 수단이 없다」다.** 원본이
-            PDF인 변환에서만 나온다. `pdf`를 실을 수 없는 것은 `ExportFormat`에 그 값이
-            없어서이고(렌더러가 없다), `txt`·`docx`를 대신 실을 수도 없다 — §6.5가
-            "PDF 다운로드 기능이 준비되기 전까지 다른 형식으로의 우회 다운로드를 기본
-            행동으로 제공하지 않는다"고 정한 자리다. 우회를 계약이 권하면 그 금지가
-            무의미해진다. 화면은 이 `null`을 보고 내려받기 행동을 **제시하지 않는다.**
+            **`null`은 「모른다」가 아니라 「서버가 정하지 않는다」다.** 오늘 이 값이 나오는
+            원본은 PDF뿐이다. PDF는 편집 가능한 문서 구조가 아니라서 「들어온 형식 그대로」
+            (§6.5)가 성립하지 않고 PDF 렌더러도 없다 — 그래서 **사용자가**
+            `export_format_choices`(`[docx, hwpx]`) 중 하나를 골라 그 형식의 새 문서로
+            받는다(2.6.0 재결정, `x-export-format-derivation.choices`). 그 전(2.0.0–2.5.1)
+            에는 PDF에 선택지도 없어 이 `null`이 곧 「내보낼 수단이 없다」였다 — 오늘도
+            `choices`가 비는 원본이 생기면(현재는 없다) 그 원본에서는 이 옛 뜻이 그대로다.
+        export_format_choices:
+          type: array
+          items: { $ref: '#/components/schemas/ExportFormat' }
+          description: |
+            `export_format`이 `null`이고 이 원본에 사용자가 고를 수 있는 형식이 있을 때만
+            **비어 있지 않은 배열**이다 — 그 밖에는(`export_format`이 값을 냈거나, `null`
+            이지만 고를 형식도 없을 때) **빈 배열**이다. `null`이 아니라 `[]`인 것은
+            `masked_items`와 같은 규칙이다 — React가 `undefined` 분기를 만들지 않는다.
+
+            정본은 `x-export-format-derivation.choices[source_format]`이다. 오늘 이 배열이
+            비어 있지 않은 원본은 PDF 하나뿐이고 값은 `[docx, hwpx]`다(2.6.0).
+
+            `GET /conversions/{conversion_id}/export`의 `format`은 이 배열이 비어 있지
+            않으면 그 안의 값이어야 한다(생략은 409 — `enforcement.on_absent_with_choices`).
         format_preservation:
           anyOf:
             - { $ref: '#/components/schemas/FormatPreservation' }
@@ -3032,18 +3113,20 @@ components:
             원본 서식 유지 상태. **`null`은 「서버가 아직 판정하지 않았다」다** —
             「유지 가능」도 「유지 불가」도 아니다.
 
-            `null`이 나오는 조건은 둘이고, **둘 다 판정의 재료가 없다**는 뜻이다.
+            `null`이 나오는 조건은 하나뿐이고, **판정의 재료가 없다**는 뜻이다.
               ⑴ **변환이 아직 완료되지 않았다** — 판정의 한쪽인 검수본(`edited_text ??
                  easy_text`)이 없다. 원본 단위와 짝지을 문단이 없으므로 어느 상태를 골라도
                  추측이다. 완료되면 그다음 조회에서 값이 선다.
-              ⑵ **원본이 PDF다**(`export_format: null`) — 같은 형식으로 내보낼 수단이
-                 없어서 「반영하면 이렇게 된다」를 말할 대상 자체가 없다. 이것은 원본
-                 구조에 대한 판정이 아니라 렌더러가 없다는 사실이라 `failed`로 접지 않는다.
 
-            그 밖에는 언제나 값이 선다 — 원본이 없으면 `not_applicable`, 있으면 서버가
-            **실제로 할 반영을 미리 재서** `available`·`partial`·`failed` 중 하나다.
-            판정과 내보내기가 같은 코드를 지나므로 여기서 말한 개수와 실제로 나가는 파일이
-            갈릴 수 없다.
+            **2.6.0에서 둘째 조건(「원본이 PDF다」)이 빠졌다.** PDF는 이제 완료 전이든
+            후든 **즉시 `not_applicable`**이다(`FormatPreservationStatus.not_applicable`
+            ⑷) — 반영이라는 개념 자체가 PDF에 적용되지 않는다는 사실은 검수본을 기다려도
+            바뀌지 않으므로, 붙여넣기·옛 업로드와 같은 「영구히 참」 갈래로 옮겼다.
+
+            그 밖에는 언제나 값이 선다 — 원본이 없거나(붙여넣기·옛 업로드·PDF) `not_applicable`,
+            있으면 서버가 **실제로 할 반영을 미리 재서** `available`·`partial`·`failed`
+            중 하나다. 판정과 내보내기가 같은 코드를 지나므로 여기서 말한 개수와 실제로
+            나가는 파일이 갈릴 수 없다.
 
             §6.5: "상태는 낙관적으로 추측하지 않는다. 서버가 제공한 결과만 표시한다."
             `null`은 **서버가 아무것도 제공하지 않았다**는 뜻이고, 화면은 그때 상태를
@@ -3412,6 +3495,89 @@ components:
 # 변경 이력
 # =============================================================================
 x-changelog:
+  - version: "2.7.0"
+    date: "2026-09-03"
+    revision: "GATE0-CAP-RAISE"   # 게이트 ⓪ 판정: 변환 상한 4,000자 → 20,000자, 출력 토큰 기본값 16,000 → 64,000
+    author: contract-keeper
+    change: |
+      **게이트 ⓪ 판정(2026-09-03, 사용자): 상한값 재조정.** 분할 변환은 하지 않기로
+      했고, 그 대신 상한 자체를 올린다.
+
+      ⑴ **`x-input-limits.max_convertible_chars`·`max_review_chars`가 4,000 → 20,000이다.**
+         `DocumentTextRequest.text`·`ConversionReviewRequest.edited_text`의
+         `x-service-constraint.max_length`, `POST /documents`·
+         `PUT /conversions/{conversion_id}` 422 응답의 `limit`·`description`·예시
+         `detail`이 같은 변경 단위로 20,000을 반영한다.
+      ⑵ **422 `detail` 문구에서 「(긴 문서 분할 변환은 준비 중입니다)」 꼬리를 뗀다.**
+         분할 변환은 하지 않기로 판정이 났으므로 "준비 중"이라는 말이 더 이상 맞지
+         않는다 — 두 문구 다 "…자 이하 문서만 변환할 수 있습니다"/"…자 이하여야
+         합니다"로 끝난다.
+      ⑶ **출력 토큰 구성 기본값이 16,000 → 64,000이다(계약 밖, 참고).** 두
+         `application.yml`의 `easydoc.llm.max-output-tokens`(환경변수
+         `EASYDOC_LLM_MAX_OUTPUT_TOKENS`) 기본값만 게이트 ⓪ 3차 측정 조건과 같은
+         64,000으로 올라간다 — 이것이 제품 운영값이다. `core.llm`의
+         `DEFAULT_MAX_TOKENS`는 16,000 그대로다 — 이 상수는 그 구성값이 없을 때만
+         쓰이는 **provider 안전 fallback**이라 운영값과 다르게 유지한다: 기본
+         provider가 아닌 OpenAI(기본 모델 gpt-4.1, 출력 한도 32,768)로 바뀌어도
+         무설정 조립이 항상 성공해야 하기 때문이다. `MAX_OUTPUT_TOKENS_CEILING`
+         (64,000)은 그대로다.
+    ground: |
+      **G3 — 정책 결정.** 게이트 ⓪ 판정(2026-09-03, 사용자) — `docs/master-plan.md`
+      §9 근거. 분할 변환 없이 상한 재조정으로 처리한다.
+    compatibility: |
+      **비파괴 확장이다.** 상한이 늘었을 뿐 검증 방향은 바뀌지 않았다 — 이전에 통과하던
+      요청은 계속 통과하고, 20,000자를 넘는 요청만 새로 통과한다(이전에는 4,000자
+      초과부터 거절). 422 `detail` 문구가 바뀌었으므로 그 문자열을 그대로 비교하는
+      소비자는 갱신이 필요하다.
+
+  - version: "2.6.0"
+    date: "2026-09-02"
+    revision: "PDF-EXPORT-CHOICE"   # PDF 원본은 사용자가 DOCX·HWPX 중 하나를 골라 내보낸다
+    author: contract-keeper
+    change: |
+      **PDF 원본에 내보내기 경로가 생겼다. PDF 렌더러는 만들지 않는다** — 사용자가
+      검수 완료 후 `docx`·`hwpx` 중 하나를 골라 그 형식의 **새 문서**로 받는다
+      (2026-09-02 사용자 결정). §6.5의 「PDF 다운로드 기능이 준비되기 전까지 다른
+      형식으로의 우회 다운로드를 기본 행동으로 제공하지 않는다」는 *조용한* 대체를
+      금지한 것이었고, 이번 변경은 **명시적으로 고른** 두 구조화 형식 사이의 선택이라
+      그 금지의 재결정이지 위반이 아니다 — `DESIGN.md` §6.5에 한 문단을 더해 이 재결정을
+      적었다.
+
+      ⑴ **`x-export-format-derivation`에 `choices` 신설.** `mapping[source]`이 `null`인
+         원본이 고를 수 있는 형식 목록이다. 오늘은 `{ pdf: [docx, hwpx] }` 하나뿐이고,
+         정의역 불변식(「`mapping`이 `null`인 키는 여기 반드시, 값을 낸 키는 여기 없어야」)
+         은 `DocumentContractNodeTest`가 잰다.
+      ⑵ **`enforcement`에 갈래 셋 추가** — `on_absent_with_choices`(생략 거절)·
+         `on_choice`(고른 값이 `choices` 안이면 신문서 조립)·`on_choice_mismatch`(그
+         밖의 값 집합 안 값 거절). 셋 다 409다 — 사유는 기존 `on_mismatch`·
+         `on_null_mapping`과 같다(자원 상태 판정, 소유 은닉과의 순서).
+      ⑶ **`ConversionResponse`에 `export_format_choices` 필드 추가.** `export_format`이
+         `null`이고 그 원본에 선택지가 있을 때만 비어 있지 않다. `required`에 더했다 —
+         키는 항상 있고 값이 빈 배열일 수 있다.
+      ⑷ **`FormatPreservationStatus.not_applicable`에 넷째 갈래(PDF)가 생겼다.** PDF는
+         원본을 열지 않고 새 문서를 조립하므로 반영이라는 개념 자체가 적용되지 않는다 —
+         `format_preservation`이 완료 전후 가리지 않고 즉시 `not_applicable`이다.
+      ⑸ **`format_preservation: null`의 둘째 조건(「원본이 PDF다」)이 빠졌다.** ⑷로
+         옮겨 갔다 — PDF는 더 이상 판정 보류(`null`) 갈래가 아니다.
+      ⑹ **`GET .../export` 409 예시가 둘 늘었다** — `export_format_choice_required`·
+         `export_format_choice_mismatch`. 기존 `no_exportable_format` 예시 문구는 PDF를
+         이름으로 부르지 않도록 고쳤다 — PDF가 그 갈래를 더 이상 밟지 않기 때문이다
+         (오늘 그 갈래를 밟는 원본은 없다).
+      ⑺ **`ExportFormat`은 값을 늘리지 않았다.** `pdf`는 여전히 없다 — PDF는 결과
+         형식이 아니라 원본 형식일 뿐이고, 나가는 파일은 항상 `docx`나 `hwpx`다.
+    ground: |
+      **G3 — 정책 결정.** 2026-09-02 사용자 결정: "PDF 원본 문서는 사용자가 DOCX 또는
+      HWPX 중 하나를 골라 신문서 조립으로 내보낸다. PDF 렌더러는 만들지 않는다."
+      `docs/kotlin-redevelopment-backlog.md` §1.3의 PDF 항목이 이 결정으로 닫힌다.
+    compatibility: |
+      **비파괴다.** 기존 요청 갈래(PDF가 아닌 원본의 생략·일치·불일치)는 하나도 거절
+      방향이 바뀌지 않았다. 새로 거절되는 요청은 **PDF 원본에 한해서만**이고, PDF는
+      2.5.1까지 **모든** `format` 값(생략 포함)이 이미 409였다 — 그러니 이번 변경으로
+      PDF 원본에 새로 거절당하는 요청은 없다. 오히려 `format=docx`·`format=hwpx`가
+      **처음으로 통과한다**(200). `ConversionResponse`에 필드가 하나 늘었다
+      (`export_format_choices`, `required`) — 엄격한 스키마 검증기를 쓰는 소비자는
+      재생성이 필요하다(React 생성 타입과 같은 사유, 1.6.0 이후 반복된 패턴).
+
   - version: "2.5.1"
     date: "2026-09-02"
     revision: "TXT-ENCODING-HANGUL-SIGNAL"   # `.txt` 인코딩 판정을 한글 신호 우선으로 못박고, SourceFormat 모순을 고친다
@@ -4047,7 +4213,7 @@ x-changelog:
     affected_tests: |
       - **DC-27에 JSON 팔 케이스** — 형식 오류 `workspace_id`를 `application/json`으로 보내
         422 · `detail` **문자열** · 값이 multipart 팔과 **같음**. 오늘 이 입력의 테스트가 **0건**이다.
-      - **DC-26에 JSON 팔 복합 케이스** — 본문 4,000자 초과 **+** 형식 오류 `workspace_id` →
+      - **DC-26에 JSON 팔 복합 케이스** — 본문 20,000자 초과 **+** 형식 오류 `workspace_id` →
         본문 길이 문구(문자열)가 관측된다. 검사 순서 조항이 JSON 팔에서 깨지는 자리다.
       - **두 팔 교차 단언** — 같은 결함에서 두 팔의 `detail` **타입과 값이 같다**를 한 단언에
         담는다. 팔별로 따로 재면 갈림이 다시 조용히 들어온다.

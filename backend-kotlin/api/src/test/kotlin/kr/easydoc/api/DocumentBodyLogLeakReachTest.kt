@@ -9,6 +9,7 @@ import kr.easydoc.api.support.POSITIVE_CONTROL_MARKER
 import kr.easydoc.api.support.RETRO_CANARY_VALUE
 import kr.easydoc.api.support.RETRO_CONTROL_MARKER
 import kr.easydoc.api.support.UploadFixtures
+import kr.easydoc.core.document.MAX_CONVERTIBLE_CHARS
 import kr.easydoc.infrastructure.DatabaseHandle
 import kr.easydoc.infrastructure.PostgresTestSupport
 import org.assertj.core.api.Assertions.assertThat
@@ -552,7 +553,7 @@ class DocumentBodyLogLeakReachTest {
         private const val EXPECTED_STORAGE_QUERIES = 5
 
         /** 계약 상한을 확실히 넘기는 길이. 정확한 경계는 DC-9·DC-10 이 잰다. */
-        private const val OVER_LIMIT_CHARS = 5_000
+        private const val OVER_LIMIT_CHARS = MAX_CONVERTIBLE_CHARS + 1_000
 
         val database: DatabaseHandle by lazy { PostgresTestSupport.createEmptyDatabase("document_log_leak") }
 

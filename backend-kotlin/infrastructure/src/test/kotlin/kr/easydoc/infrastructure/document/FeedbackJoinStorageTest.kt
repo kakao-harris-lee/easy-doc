@@ -5,6 +5,7 @@ import kr.easydoc.application.document.StoredFeedback
 import kr.easydoc.core.crypto.EncryptedContent
 import kr.easydoc.core.crypto.EncryptionScheme
 import kr.easydoc.core.document.SourceFormat
+import kr.easydoc.core.pilot.EditDistanceSkipReason
 import kr.easydoc.core.pilot.MinutesSpent
 import kr.easydoc.core.pilot.PublishIntent
 import kr.easydoc.core.pilot.QualityScore
@@ -145,6 +146,7 @@ class FeedbackJoinStorageTest {
             easyCharCount = null,
             editedCharCount = null,
             editDistance = null,
+            editDistanceSkipReason = EditDistanceSkipReason.NO_REVIEW,
         )
 
     private fun newUser(): UUID = users.create("f${UUID.randomUUID()}@example.com", PasswordHash(DUMMY_PHC)).id

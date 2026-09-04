@@ -223,6 +223,31 @@ class DocumentContractNodeTest {
         assertThat(retired).doesNotHaveDuplicates()
     }
 
+    @Test
+    @DisplayName(
+        "P-40 `x-export-format-derivation.choices` 의 정의역이 `mapping` 과 정확히 맞물린다 (2.6.0) — " +
+            "`mapping` 이 `null` 인 원본만, 그리고 그 전부가 `choices` 에 나타난다",
+    )
+    fun `내보내기 선택지의 정의역이 유도표와 맞물린다`() {
+        val mapping = ContractSpec.exportFormatDerivation()
+        val choices = ContractSpec.exportFormatChoices()
+        val nullMappedSources = mapping.filterValues { it == null }.keys
+
+        assertThat(nullMappedSources)
+            .withFailMessage("유도표에 null 갈래가 하나도 없다 — 이 대조가 공허해진다")
+            .isNotEmpty()
+        assertThat(choices.keys)
+            .withFailMessage(
+                "choices 의 정의역이 mapping 의 null 갈래와 다르다 — 값을 낸 원본이 choices 에 있거나, " +
+                    "null 인 원본이 choices 에 없다. mapping null 키 %s / choices 키 %s",
+                nullMappedSources,
+                choices.keys,
+            ).isEqualTo(nullMappedSources)
+        assertThat(choices.values)
+            .withFailMessage("choices 에 값을 나열했는데 빈 배열이다 — 「선택지가 없다」는 그 키를 아예 빼서 말한다")
+            .allSatisfy { assertThat(it).isNotEmpty() }
+    }
+
     /** 응답 DTO 가 실제로 내보내는 JSON 키. `@get:JsonProperty` 를 읽는다. */
     private fun jsonPropertyNames(type: kotlin.reflect.KClass<*>): Set<String> =
         type.memberProperties

@@ -8,10 +8,12 @@ import kr.easydoc.core.document.ConversionStatus
 import kr.easydoc.core.document.charCountOf
 import kr.easydoc.core.exceptions.ConflictException
 import kr.easydoc.core.exceptions.InvalidInputException
+import kr.easydoc.core.pilot.EditDistanceSkipReason
 import kr.easydoc.core.pilot.MinutesSpent
 import kr.easydoc.core.pilot.PublishIntent
 import kr.easydoc.core.pilot.QualityScore
-import kr.easydoc.core.text.editDistanceOf
+import kr.easydoc.core.text.EditDistanceBudget
+import kr.easydoc.core.text.editDistanceWithin
 import kr.easydoc.core.text.stripControlChars
 import java.time.Instant
 import java.util.UUID
@@ -84,6 +86,7 @@ class ConversionFeedbackService(
     private val cipher: ContentCipher,
     private val query: ConversionQueryService,
     private val transaction: TransactionRunner,
+    private val editDistanceBudget: EditDistanceBudget,
 ) {
     /**
      * 저장하고 **저장된 값 그대로**를 돌려준다. 판정 순서는 값 검증 → 소유권(404) →
@@ -110,7 +113,7 @@ class ConversionFeedbackService(
         val result = query.read(ownerId, conversionId)
         if (result.status != ConversionStatus.DONE) throw ConflictException(CONVERSION_NOT_DONE_MESSAGE)
 
-        val metrics = EditMetrics.of(draft = result.easyText, edited = result.editedText)
+        val metrics = EditMetrics.of(draft = result.easyText, edited = result.editedText, budget = editDistanceBudget)
         val sealedComment =
             values.comment?.let { cipher.encrypt(it, conversionId, EncryptedField.CONVERSION_FEEDBACK_COMMENT) }
 
@@ -128,6 +131,7 @@ class ConversionFeedbackService(
                             easyCharCount = metrics.easyCharCount,
                             editedCharCount = metrics.editedCharCount,
                             editDistance = metrics.editDistance,
+                            editDistanceSkipReason = metrics.editDistanceSkipReason,
                         ),
                 )
             }
@@ -188,35 +192,56 @@ private class ValidFeedback(
  * 따로 계산해 넘기면 「검수본이 없는데 편집 거리는 0」 같은 행이 만들어지고, 집계는 그것을
  * 「하나도 고치지 않았다」로 읽는다 — 스키마가 `NULL` 을 허용한 사유가 정확히 그 구분이다
  * (`V2__conversion_feedback.sql` 「수정률 지표 셋」).
+ *
+ * [editDistance] 가 `null` 인 두 사유([EditDistanceSkipReason])는 서로 다른 `editedCharCount`
+ * 짝을 요구한다 — [EditDistanceSkipReason.NO_REVIEW] 는 검수본이 아예 없어 글자 수도 함께
+ * `null` 이고, [EditDistanceSkipReason.BUDGET_EXCEEDED] 는 검수본은 있고 글자 수도 재지만
+ * 편집 거리 계산만 예산 때문에 포기한 경우다(`V4__conversion_feedback_edit_distance_skip_reason.sql`
+ * 이 이 짝을 DB 에서도 강제한다). `init` 이 「거리와 사유가 함께 있거나 함께 없다」를
+ * 지킨다 — [of] 밖에서 이 클래스를 만들 수 없으므로 그 갈래 넷만 실제로 만들어진다.
  */
 private class EditMetrics private constructor(
     val easyCharCount: Int?,
     val editedCharCount: Int?,
     val editDistance: Int?,
+    val editDistanceSkipReason: EditDistanceSkipReason?,
 ) {
+    init {
+        check((editDistance == null) == (editDistanceSkipReason != null)) {
+            "editDistance 와 editDistanceSkipReason 은 함께 있거나 함께 없어야 한다"
+        }
+    }
+
     companion object {
         fun of(
             draft: PlainBody?,
             edited: PlainBody?,
+            budget: EditDistanceBudget,
         ): EditMetrics =
             when {
                 // 방어적 갈래다 — `done` 인 변환에는 초안이 있다. 그래도 셋을 함께 비우는
                 // 것이 맞다: 초안이 분모이자 편집 거리의 한쪽 끝이라, 그것이 없으면 나머지
-                // 둘은 「무엇에 견준 값인지」를 말하지 못한다.
+                // 둘은 「무엇에 견준 값인지」를 말하지 못한다. 검수본 자체가 없는 것과 같은
+                // 사유([EditDistanceSkipReason.NO_REVIEW])로 남긴다.
                 draft == null -> {
-                    EditMetrics(null, null, null)
+                    EditMetrics(null, null, null, EditDistanceSkipReason.NO_REVIEW)
                 }
 
                 // 검수본이 없으면 「수정률 0%」가 아니라 「측정 대상 아님」이다 — 0 으로 채우지 않는다.
                 edited == null -> {
-                    EditMetrics(charCountOf(draft.value), null, null)
+                    EditMetrics(charCountOf(draft.value), null, null, EditDistanceSkipReason.NO_REVIEW)
                 }
 
                 else -> {
+                    // 편집 거리는 셀 예산을 넘으면 `null` 이다("측정 대상 아님") — 「검수본
+                    // 없음」과 같은 null 이지만 사유가 다르다. 글자 수 둘은 예산과 무관하게
+                    // 항상 O(n) 이라 그대로 남긴다(`EditDistance.kt` KDoc 2026-09-03 갱신).
+                    val distance = editDistanceWithin(draft.value, edited.value, budget)
                     EditMetrics(
                         easyCharCount = charCountOf(draft.value),
                         editedCharCount = charCountOf(edited.value),
-                        editDistance = editDistanceOf(draft.value, edited.value),
+                        editDistance = distance,
+                        editDistanceSkipReason = if (distance == null) EditDistanceSkipReason.BUDGET_EXCEEDED else null,
                     )
                 }
             }

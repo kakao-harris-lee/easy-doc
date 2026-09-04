@@ -159,6 +159,34 @@ class LaneTranscriptTest {
     }
 
     @Test
+    @DisplayName("runs 를 2 이상으로 주면 <id>-run<n>.txt 로 남긴다")
+    fun `runs 2 이상이면 run 접미사를 붙인다`(
+        @TempDir temp: Path,
+    ) {
+        val transcript = ready(LaneTranscript.plan(env(temp), listOf("001"), runs = 2))
+
+        transcript.save("001", BODY, run = 1)
+        transcript.save("001", "$BODY-2", run = 2)
+
+        assertThat(temp.resolve("001-run1.txt").readText()).isEqualTo(BODY)
+        assertThat(temp.resolve("001-run2.txt").readText()).isEqualTo("$BODY-2")
+        assertThat(temp.resolve("001.txt").exists()).isFalse()
+    }
+
+    @Test
+    @DisplayName("runs=1(기본)이면 접미사 없이 기존과 같은 파일명을 쓴다 — 반복 노브를 쓰지 않은 실행과 같게 보인다")
+    fun `runs 1 이면 접미사가 없다`(
+        @TempDir temp: Path,
+    ) {
+        val transcript = ready(LaneTranscript.plan(env(temp), listOf("001"), runs = 1))
+
+        transcript.save("001", BODY)
+
+        assertThat(temp.resolve("001.txt").readText()).isEqualTo(BODY)
+        assertThat(temp.resolve("001-run1.txt").exists()).isFalse()
+    }
+
+    @Test
     @DisplayName("측정 조건을 conditions.txt 로 남긴다 — 본문은 담지 않는다")
     fun `조건 파일을 남긴다`(
         @TempDir temp: Path,

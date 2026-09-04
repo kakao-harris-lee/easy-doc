@@ -120,10 +120,23 @@ export interface ConversionResponse {
   source_format: SourceFormat
   /**
    * 이 변환을 내려받을 때 **써야 하는** 형식. 서버가 `source_format`에서 유도한다.
-   * `null`은 「모른다」가 아니라 **「같은 형식으로 내보낼 수단이 없다」**다(원본이 PDF).
-   * 그때 다른 형식으로 우회 다운로드를 제시하지 않는다.
+   *
+   * `null`은 「모른다」가 아니라 **「서버가 하나로 정하지 않는다」**다. 오늘 이 값이
+   * 나오는 원본은 PDF뿐이고, 두 갈래로 갈린다 — `export_format_choices`가 비어 있지
+   * 않으면 그 배열 중 하나를 사용자가 **직접 골라야** 하고(2.6.0, DESIGN.md §6.5
+   * 2026-09-02 재결정), 비어 있으면 「같은 형식으로 내보낼 수단이 없다」는 뜻이라 다른
+   * 형식으로 우회 다운로드를 제시하지 않는다.
    */
   export_format: ExportFormat | null
+  /**
+   * `export_format`이 `null`이고 사용자가 고를 수 있는 형식이 있을 때만 비어 있지 않은
+   * 배열이다. 그 밖에는(`export_format`이 값을 냈거나, `null`이지만 고를 형식도 없을
+   * 때) 빈 배열이다 — `masked_items`와 같은 규칙으로 `null`이 아니라 `[]`다.
+   *
+   * 오늘 이 배열이 비어 있지 않은 원본은 PDF 하나뿐이고 값은 `['docx', 'hwpx']`다.
+   * 계약 `x-export-format-derivation.choices`가 정본이다.
+   */
+  export_format_choices: ExportFormat[]
   /**
    * 서식 유지 상태. `null`은 **서버가 아직 판정하지 않았다**는 뜻이고
    * 「유지 가능」도 「유지 불가」도 아니다 — 상태를 화면에서 지어내지 않는다.

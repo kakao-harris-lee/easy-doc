@@ -45,10 +45,12 @@ enum class ExportFormat(
         /**
          * 원본 형식이 정하는 내보내기 형식 — **들어온 형식 그대로 나간다**(`DESIGN.md` §6.5).
          *
-         * `PDF` 만 `null` 이다. **대체 형식으로 접지 않는다** — §6.5 가 "PDF 다운로드 기능이
-         * 준비되기 전까지 다른 형식으로의 우회 다운로드를 기본 행동으로 제공하지 않는다"고
-         * 정했고, 여기서 `TXT` 를 돌려주면 계약이 그 우회를 **권하는** 것이 된다.
-         * `PDF` 를 [ExportFormat] 에 더해 이 `null` 을 없애려 들지 마라 — 렌더러가 없다.
+         * `PDF` 만 `null` 이다. `PDF` 를 [ExportFormat] 에 더해 이 `null` 을 없애려 들지
+         * 마라 — 렌더러가 없다. **`null` 이 「내보낼 수 없다」는 아니다** — PDF 는
+         * [choicesFor] 가 대신 답한다(2.6.0 재결정, `x-export-format-derivation.choices`):
+         * 사용자가 `DOCX`·`HWPX` 중 하나를 골라 신문서로 받는다. `null` 을 다른 값으로
+         * **접지** 않는 것은 여전하다 — 서버가 하나로 정하지 않는 것과 대체 형식을 강요하지
+         * 않는 것은 같은 규칙의 두 표현이다.
          *
          * `when` 을 **전수로** 적는다. [SourceFormat] 에 값이 늘면 여기가 컴파일 에러가 되고,
          * 그것이 새 형식의 내보내기 판정을 빠뜨리지 않게 하는 장치다.
@@ -67,6 +69,27 @@ enum class ExportFormat(
                 // "그대로 나간다"의 가장 단순한 형태다(`PackagedOriginalReflector` 가 반영을
                 // 맡지 않는 이유와 같다).
                 SourceFormat.TXT -> TXT
+            }
+
+        /**
+         * [ofSource] 가 `null` 인 원본에서 **사용자가 고를 수 있는** 형식 목록
+         * (2.6.0 — `x-export-format-derivation.choices`, `DESIGN.md` §6.5 재결정).
+         *
+         * [ofSource] 가 값을 낸 원본은 언제나 빈 목록이다 — 고를 것이 없다(서버가 이미
+         * 정했다). 오늘은 `PDF` 하나만 값을 낸다: PDF 는 편집 가능한 문서 구조가 아니라
+         * "들어온 형식 그대로"가 성립하지 않고 렌더러도 없어, 사용자가 `DOCX`·`HWPX` 중
+         * 하나를 골라 신문서로 받는다. **원본을 열어 반영하지 않는다** — 고른 형식으로
+         * 새 문서를 조립할 뿐이다(`ConversionExportService`).
+         *
+         * `when` 을 **전수로** 적는다 — 사유는 [ofSource] 와 같다.
+         */
+        fun choicesFor(source: SourceFormat): List<ExportFormat> =
+            when (source) {
+                SourceFormat.TEXT -> emptyList()
+                SourceFormat.DOCX -> emptyList()
+                SourceFormat.HWPX -> emptyList()
+                SourceFormat.PDF -> listOf(DOCX, HWPX)
+                SourceFormat.TXT -> emptyList()
             }
     }
 }

@@ -19,9 +19,15 @@ data class ConversionView(
     val sourceFormat: SourceFormat,
     /**
      * 내려받을 때 **써야 하는** 형식 — [sourceFormat] 이 정한다([ExportFormat.ofSource]).
-     * 원본이 PDF 면 `null` 이고, 그것은 「같은 형식으로 내보낼 수단이 없다」는 뜻이다.
+     * `null` 이면 서버가 하나로 정하지 않는다 — [exportFormatChoices] 를 보라.
      */
     val exportFormat: ExportFormat?,
+    /**
+     * [exportFormat] 이 `null` 이고 이 원본에 사용자가 고를 수 있는 형식이 있을 때만
+     * 비어 있지 않다([ExportFormat.choicesFor]). 그 밖에는 빈 목록이다 — `null` 이 아니라
+     * `[]` 인 것은 `maskedItems` 와 같은 규칙이다. 오늘 비어 있지 않은 원본은 PDF 하나뿐이다.
+     */
+    val exportFormatChoices: List<ExportFormat>,
     /** 서식 유지 판정. `null` 은 「유지 불가」가 아니라 **서버가 아직 판정하지 않았다**. */
     val formatPreservation: FormatPreservation?,
     val easyText: PlainBody?,

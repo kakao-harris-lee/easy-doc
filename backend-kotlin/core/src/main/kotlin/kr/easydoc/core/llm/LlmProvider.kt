@@ -3,7 +3,15 @@ package kr.easydoc.core.llm
 // 서비스가 벤더를 알지 않도록 하는 LLM port다. 구현체와 HTTP 클라이언트는
 // infrastructure에만 있고, 설정에서 선택한 adapter를 관측 decorator가 감싼다.
 
-/** 출력 토큰 상한 기본값. */
+/**
+ * 출력 토큰 상한 기본값 — **provider 안전 fallback**이다. 값을 그대로 「제품 운영값」으로
+ * 읽지 마라. 이 상수는 어느 provider에서도 무설정 조립이 성공해야 한다는 불변식을 지키는
+ * 하한 안전값이고, 그 경계는 OpenAI 기본 모델(gpt-4.1) 출력 한도(32,768)다.
+ *
+ * **제품 운영값은 `application.yml` `easydoc.llm.max-output-tokens`(64,000, 게이트 ⓪ 3차
+ * 측정 조건)**이고, 그 값은 [kr.easydoc.infrastructure.llm.LlmProperties.validatedMaxOutputTokens]
+ * 를 거쳐 조립된다 — 이 상수는 그 설정이 없을 때만 쓰인다.
+ */
 const val DEFAULT_MAX_TOKENS: Int = 16_000
 
 /** 한 번의 완성 요청에 붙는 **벤더 공통** 옵션. */

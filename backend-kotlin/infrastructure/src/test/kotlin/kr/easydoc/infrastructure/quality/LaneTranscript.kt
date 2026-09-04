@@ -31,27 +31,33 @@ internal class LaneTranscript private constructor(
         get() = if (directory == null) "transcript=off" else "transcript=$directory"
 
     /**
-     * 변환 결과 본문을 `<디렉터리>/<문서id>.txt` 로 쓴다. off 면 아무 것도 하지 않는다.
+     * 변환 결과 본문을 쓴다. off 면 아무 것도 하지 않는다.
+     *
+     * 파일명은 [run] 이 `null` 이면 `<디렉터리>/<문서id>.txt`(기존과 같다), 아니면
+     * `<디렉터리>/<문서id>-run<run>.txt` 다([fileNameFor]). [EASYDOC_LANE_RUNS] 가 1(기본값)
+     * 이면 호출부가 [run] 을 넘기지 않으므로 이 노브를 쓰지 않던 실행과 파일명이 완전히 같다.
      *
      * 변환이 실패한 문서는 쓸 본문이 없으므로 호출하지 않는다 — 그 대신
      * `LaneReport.recordTranscriptSkipped` 로 건너뛴 사실만 남긴다.
      *
-     * [documentId] 는 [plan] 이 이미 [rejectUnsafeDocumentIds] 로 걸렀어야 하는 값이다 — 유일한
-     * 프로덕션 호출부(`GoldenCorpusLlmEvaluationTest`)가 `plan` 에 넘긴 것과 같은 문서 목록을
-     * 돈다. 그래도 여기서 다시 [safeFileNameOrNull] 로 확인하는 이유는, 이 줄이 바로 그
-     * 취약점이 있던 자리이기 때문이다 — `plan` 의 사전 검사가 이 함수의 유일한 방어선이
-     * 되게 두지 않는다. 통과했어야 할 값이 걸리면 조용히 다른 곳에 쓰는 대신 바로 터뜨린다.
+     * [documentId]·[run] 조합은 [plan] 이 이미 [rejectUnsafeDocumentIds] 로 걸렀어야 하는
+     * 값이다 — 유일한 프로덕션 호출부(`GoldenCorpusLlmEvaluationTest`)가 `plan` 에 넘긴 것과
+     * 같은 문서 목록·반복 횟수를 돈다. 그래도 여기서 다시 [safeFileNameOrNull] 로 확인하는
+     * 이유는, 이 줄이 바로 그 취약점이 있던 자리이기 때문이다 — `plan` 의 사전 검사가 이
+     * 함수의 유일한 방어선이 되게 두지 않는다. 통과했어야 할 값이 걸리면 조용히 다른 곳에
+     * 쓰는 대신 바로 터뜨린다.
      */
     fun save(
         documentId: String,
         text: String,
+        run: Int? = null,
     ) {
         val dir = directory ?: return
         val fileName =
-            safeFileNameOrNull(documentId, dir)
+            safeFileNameOrNull(documentId, dir, run)
                 ?: error(
-                    "문서 id \"$documentId\" 는 변환문 파일명으로 쓸 수 없다 — plan() 이 미리 걸렀어야 " +
-                        "한다. LaneTranscript 를 만든 곳을 확인하라.",
+                    "문서 id \"$documentId\"(run=$run) 는 변환문 파일명으로 쓸 수 없다 — plan() 이 미리 " +
+                        "걸렀어야 한다. LaneTranscript 를 만든 곳을 확인하라.",
                 )
         dir.resolve(fileName).writeText(text)
     }
@@ -120,6 +126,7 @@ internal class LaneTranscript private constructor(
         fun plan(
             env: (String) -> String?,
             documentIds: List<String>,
+            runs: Int = 1,
         ): LaneTranscriptPlan {
             val configured =
                 env(DIRECTORY_ENV)?.takeIf(String::isNotBlank)
@@ -128,7 +135,7 @@ internal class LaneTranscript private constructor(
             return try {
                 Files.createDirectories(directory)
                 rejectIfNotEmpty(configured, directory)
-                    ?: rejectUnsafeDocumentIds(documentIds, directory)
+                    ?: rejectUnsafeDocumentIds(documentIds, directory, runs)
                     ?: run {
                         probeWritable(directory)
                         LaneTranscriptPlan.Ready(LaneTranscript(directory))
@@ -141,19 +148,27 @@ internal class LaneTranscript private constructor(
             }
         }
 
-        /** [save] 가 실제로 쓸 파일 이름. 검증과 쓰기가 같은 계산을 쓰게 한다. */
-        private fun fileNameFor(documentId: String): String = "$documentId$FILE_SUFFIX"
+        /**
+         * [save] 가 실제로 쓸 파일 이름. 검증과 쓰기가 같은 계산을 쓰게 한다. [run] 이 `null`
+         * 이면 접미사가 없다 — [EASYDOC_LANE_RUNS] 를 쓰지 않는 실행(기본값 1)과 파일명이
+         * 완전히 같아야 하기 때문이다([save] KDoc).
+         */
+        private fun fileNameFor(
+            documentId: String,
+            run: Int?,
+        ): String = if (run == null) "$documentId$FILE_SUFFIX" else "$documentId-run$run$FILE_SUFFIX"
 
         /**
-         * [documentId] 가 [directory] 안에 안전하게 `<id>.txt` 로 쓸 수 있으면 그 파일 이름을,
-         * 아니면 `null` 을 돌려준다. [rejectUnsafeDocumentIds] 의 계획 시점 검사와 [save] 의
-         * 쓰기 시점 검사가 같은 판정을 쓰게 하는 자리다.
+         * [documentId] 가 [directory] 안에 [run] 접미사를 붙여(또는 붙이지 않고) 안전하게 쓸 수
+         * 있으면 그 파일 이름을, 아니면 `null` 을 돌려준다. [rejectUnsafeDocumentIds] 의 계획
+         * 시점 검사와 [save] 의 쓰기 시점 검사가 같은 판정을 쓰게 하는 자리다.
          */
         private fun safeFileNameOrNull(
             documentId: String,
             directory: Path,
+            run: Int? = null,
         ): String? {
-            val fileName = fileNameFor(documentId)
+            val fileName = fileNameFor(documentId, run)
             val normalizedDirectory = directory.normalize()
             val staysInsideDirectory = normalizedDirectory.resolve(fileName).normalize().parent == normalizedDirectory
             val isSafe =
@@ -193,8 +208,15 @@ internal class LaneTranscript private constructor(
         private fun rejectUnsafeDocumentIds(
             documentIds: List<String>,
             directory: Path,
+            runs: Int,
         ): LaneTranscriptPlan.Unusable? {
-            val unsafeId = documentIds.firstOrNull { safeFileNameOrNull(it, directory) == null }
+            // runs==1 이면 접미사 없는 이름 하나만(run=null) — 이 노브를 쓰지 않는 실행과 같은
+            // 검사다. runs>1 이면 실제로 쓰일 run=1..runs 전부를 미리 확인한다.
+            val runIndices: List<Int?> = if (runs > 1) (1..runs).toList() else listOf(null)
+            val unsafeId =
+                documentIds.firstOrNull { id ->
+                    runIndices.any { run -> safeFileNameOrNull(id, directory, run) == null }
+                }
             val duplicates =
                 documentIds
                     .groupingBy { it }
