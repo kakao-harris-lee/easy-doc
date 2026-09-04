@@ -1,0 +1,637 @@
+{
+  "$comment": "P0-5 S1 조회 유효성 픽스처 (docs/plans/2026-09-04-p0-5-easy-word-dictionary-rag.md SS3.6/Q). TermLookupFixtureTest(infrastructure)가 실제 커밋된 사전 색인(infrastructure/src/main/resources/dictionary/easy_dict.index.json)에 대해 이 케이스들을 돌려 top-1 정확도/위험한 applicable/무결과율 세 지표를 각각 판정한다. source=golden:<id> 는 infrastructure/src/test/resources/dictionary/reference/<id>.txt 가 이미 검증한 term-easy_term 쌍을 data/golden/documents/<id>.json 의 source_text에서 실제로 찾아 만든 질의다. source=hand 는 손으로 작성한 케이스(복합어, 활용형, 로마자/숫자 경계, 조사 연쇄, 의도적 음성 등)다. expected_entry_id(정수)는 쓰지 않는다 - core는 wire 색인의 정수 id를 독립적으로 검증할 수단이 없고(core에는 JSON 리더가 없다), expected_term은 실제 표제어와 문자 그대로 비교되는 더 안정적인 자연키다.",
+  "hand_written_count": 34,
+  "harvested_count": 32,
+  "total_count": 66,
+  "hand_written_ratio": 0.5152,
+  "cases": [
+    {
+      "query": "해당자인",
+      "source": "golden:001",
+      "expected_term": "해당자",
+      "expected_easy_term": "해당하는 사람",
+      "expected_strategy": "substitute",
+      "expected_match_kind": "exact",
+      "expected_applicable": true
+    },
+    {
+      "query": "소득인정액이",
+      "source": "golden:001",
+      "expected_term": "소득인정액",
+      "expected_easy_term": "심사에 쓰는 우리 가구의 소득·재산 계산값",
+      "expected_strategy": "gloss",
+      "expected_match_kind": "exact",
+      "expected_applicable": false
+    },
+    {
+      "query": "동절기",
+      "source": "golden:002",
+      "expected_term": "동절기",
+      "expected_easy_term": "겨울철",
+      "expected_strategy": "substitute",
+      "expected_match_kind": "exact",
+      "expected_applicable": true
+    },
+    {
+      "query": "인플루엔자",
+      "source": "golden:002",
+      "expected_term": "인플루엔자",
+      "expected_easy_term": "바이러스에 의해 일어나 다른 사람에게서 쉽게 옮는 감기.",
+      "expected_strategy": "gloss",
+      "expected_match_kind": "exact",
+      "expected_applicable": false
+    },
+    {
+      "query": "관내",
+      "source": "golden:003",
+      "expected_term": "관내",
+      "expected_easy_term": "우리 지역 안",
+      "expected_strategy": "substitute",
+      "expected_match_kind": "exact",
+      "expected_applicable": true
+    },
+    {
+      "query": "주민등록",
+      "source": "golden:003",
+      "expected_term": "주민등록",
+      "expected_easy_term": "어디에 사는지 나라에 등록하는 것",
+      "expected_strategy": "gloss",
+      "expected_match_kind": "exact",
+      "expected_applicable": false
+    },
+    {
+      "query": "하절기",
+      "source": "golden:004",
+      "expected_term": "하절기",
+      "expected_easy_term": "여름철",
+      "expected_strategy": "substitute",
+      "expected_match_kind": "exact",
+      "expected_applicable": true
+    },
+    {
+      "query": "생계급여",
+      "source": "golden:004",
+      "expected_term": "생계급여",
+      "expected_easy_term": "먹고 입고 사는 데 필요한 돈을 주는 급여",
+      "expected_strategy": "gloss",
+      "expected_match_kind": "exact",
+      "expected_applicable": false
+    },
+    {
+      "query": "실직",
+      "source": "golden:005",
+      "expected_term": "실직",
+      "expected_easy_term": "일자리를 잃음",
+      "expected_strategy": "substitute",
+      "expected_match_kind": "exact",
+      "expected_applicable": true
+    },
+    {
+      "query": "가구에",
+      "source": "golden:005",
+      "expected_term": "가구",
+      "expected_easy_term": "함께 사는 식구",
+      "expected_strategy": "gloss",
+      "expected_match_kind": "exact",
+      "expected_applicable": false
+    },
+    {
+      "query": "기재",
+      "source": "golden:006",
+      "expected_term": "기재",
+      "expected_easy_term": "적기",
+      "expected_strategy": "substitute",
+      "expected_match_kind": "exact",
+      "expected_applicable": true
+    },
+    {
+      "query": "기초생활수급자는",
+      "source": "golden:006",
+      "expected_term": "기초생활수급자",
+      "expected_easy_term": "수급자(생계급여 등을 받는 사람)",
+      "expected_strategy": "gloss",
+      "expected_match_kind": "exact",
+      "expected_applicable": false
+    },
+    {
+      "query": "전월까지",
+      "source": "golden:007",
+      "expected_term": "전월",
+      "expected_easy_term": "지난달",
+      "expected_strategy": "substitute",
+      "expected_match_kind": "exact",
+      "expected_applicable": true
+    },
+    {
+      "query": "급여는",
+      "source": "golden:007",
+      "expected_term": "급여",
+      "expected_easy_term": "나라에서 주는 돈이나 도움",
+      "expected_strategy": "gloss",
+      "expected_match_kind": "exact",
+      "expected_applicable": false
+    },
+    {
+      "query": "감면",
+      "source": "golden:008",
+      "expected_term": "감면",
+      "expected_easy_term": "깎아 줌",
+      "expected_strategy": "substitute",
+      "expected_match_kind": "exact",
+      "expected_applicable": true
+    },
+    {
+      "query": "침수",
+      "source": "golden:009",
+      "expected_term": "침수",
+      "expected_easy_term": "물에 잠김",
+      "expected_strategy": "substitute",
+      "expected_match_kind": "exact",
+      "expected_applicable": true
+    },
+    {
+      "query": "농경지",
+      "source": "golden:009",
+      "expected_term": "농경지",
+      "expected_easy_term": "농사를 짓는 땅.",
+      "expected_strategy": "gloss",
+      "expected_match_kind": "exact",
+      "expected_applicable": false
+    },
+    {
+      "query": "당월에",
+      "source": "golden:010",
+      "expected_term": "당월",
+      "expected_easy_term": "이번 달",
+      "expected_strategy": "substitute",
+      "expected_match_kind": "exact",
+      "expected_applicable": true
+    },
+    {
+      "query": "검진",
+      "source": "golden:010",
+      "expected_term": "검진",
+      "expected_easy_term": "건강 상태를 알아보기 위하여 증상이나 상태를 살핌.",
+      "expected_strategy": "gloss",
+      "expected_match_kind": "exact",
+      "expected_applicable": false
+    },
+    {
+      "query": "기한이",
+      "source": "golden:011",
+      "expected_term": "기한",
+      "expected_easy_term": "정해진 날짜",
+      "expected_strategy": "substitute",
+      "expected_match_kind": "exact",
+      "expected_applicable": true
+    },
+    {
+      "query": "구비서류를",
+      "source": "golden:012",
+      "expected_term": "구비서류",
+      "expected_easy_term": "준비할 서류",
+      "expected_strategy": "substitute",
+      "expected_match_kind": "exact",
+      "expected_applicable": true
+    },
+    {
+      "query": "개요",
+      "source": "golden:012",
+      "expected_term": "개요",
+      "expected_easy_term": "전체 내용 중에서 주요 내용을 뽑아 간략히 정리한 것.",
+      "expected_strategy": "gloss",
+      "expected_match_kind": "exact",
+      "expected_applicable": false
+    },
+    {
+      "query": "어린이집",
+      "source": "golden:013",
+      "expected_term": "어린이집",
+      "expected_easy_term": "시설을 갖추고 만 6세 미만의 어린아이를 맡아 돌보아 주는 곳.",
+      "expected_strategy": "gloss",
+      "expected_match_kind": "exact",
+      "expected_applicable": false
+    },
+    {
+      "query": "산정",
+      "source": "golden:014",
+      "expected_term": "산정",
+      "expected_easy_term": "계산함",
+      "expected_strategy": "substitute",
+      "expected_match_kind": "exact",
+      "expected_applicable": true
+    },
+    {
+      "query": "수급자가",
+      "source": "golden:014",
+      "expected_term": "수급자",
+      "expected_easy_term": "지금 급여를 받고 있는 사람",
+      "expected_strategy": "gloss",
+      "expected_match_kind": "exact",
+      "expected_applicable": false
+    },
+    {
+      "query": "납부",
+      "source": "golden:015",
+      "expected_term": "납부",
+      "expected_easy_term": "내기",
+      "expected_strategy": "substitute",
+      "expected_match_kind": "exact",
+      "expected_applicable": true
+    },
+    {
+      "query": "정산",
+      "source": "golden:016",
+      "expected_term": "정산",
+      "expected_easy_term": "계산해서 맞춤",
+      "expected_strategy": "substitute",
+      "expected_match_kind": "exact",
+      "expected_applicable": true
+    },
+    {
+      "query": "의료급여",
+      "source": "golden:016",
+      "expected_term": "의료급여",
+      "expected_easy_term": "병원비 등 치료비를 도와주는 급여",
+      "expected_strategy": "gloss",
+      "expected_match_kind": "exact",
+      "expected_applicable": false
+    },
+    {
+      "query": "미납",
+      "source": "golden:017",
+      "expected_term": "미납",
+      "expected_easy_term": "내지 않음",
+      "expected_strategy": "substitute",
+      "expected_match_kind": "exact",
+      "expected_applicable": true
+    },
+    {
+      "query": "제반",
+      "source": "golden:018",
+      "expected_term": "제반",
+      "expected_easy_term": "여러",
+      "expected_strategy": "substitute",
+      "expected_match_kind": "exact",
+      "expected_applicable": true
+    },
+    {
+      "query": "생계",
+      "source": "golden:018",
+      "expected_term": "생계",
+      "expected_easy_term": "살림을 꾸리고 살아가는 방법이나 형편.",
+      "expected_strategy": "gloss",
+      "expected_match_kind": "exact",
+      "expected_applicable": false
+    },
+    {
+      "query": "송부",
+      "source": "golden:019",
+      "expected_term": "송부",
+      "expected_easy_term": "보내기",
+      "expected_strategy": "substitute",
+      "expected_match_kind": "exact",
+      "expected_applicable": true
+    },
+    {
+      "query": "구비서류",
+      "source": "hand",
+      "expected_term": "구비서류",
+      "expected_easy_term": "준비할 서류",
+      "expected_strategy": "substitute",
+      "expected_match_kind": "exact",
+      "expected_applicable": true,
+      "note": "계획 3.6절 실측값 - 대체 가능한 단순 정확 일치"
+    },
+    {
+      "query": "과태료를",
+      "source": "hand",
+      "expected_term": "과태료",
+      "expected_easy_term": "규칙을 안 지켜서 내는 돈",
+      "expected_strategy": "gloss",
+      "expected_match_kind": "exact",
+      "expected_applicable": false,
+      "note": "계획 3.6절 실측값 - 조사가 붙어도 exact, 고위험 gloss 는 적용 불가"
+    },
+    {
+      "query": "과태료",
+      "source": "hand",
+      "expected_term": "과태료",
+      "expected_easy_term": "규칙을 안 지켜서 내는 돈",
+      "expected_strategy": "gloss",
+      "expected_match_kind": "exact",
+      "expected_applicable": false,
+      "note": "조사 없이 표제어만 조회해도 같은 엔트리"
+    },
+    {
+      "query": "급여",
+      "source": "hand",
+      "expected_term": "급여",
+      "expected_easy_term": "나라에서 주는 돈이나 도움",
+      "expected_strategy": "gloss",
+      "expected_match_kind": "exact",
+      "expected_applicable": false,
+      "note": "표면형 급여 를 공유하는 엔트리 두 개(우선순위 동률) 중 surface_index 순서상 먼저 오는 것이 승자다"
+    },
+    {
+      "query": "시행령",
+      "source": "hand",
+      "expected_term": "시행령",
+      "expected_easy_term": "법을 자세히 정한 대통령 규정",
+      "expected_strategy": "gloss",
+      "expected_match_kind": "exact",
+      "expected_applicable": false,
+      "note": "핵심 회귀 - 시행령 은 그 자체로 실제 엔트리이며 짧은 시행 에 밀리지 않는다(최장일치)"
+    },
+    {
+      "query": "시행령을",
+      "source": "hand",
+      "expected_term": "시행령",
+      "expected_easy_term": "법을 자세히 정한 대통령 규정",
+      "expected_strategy": "gloss",
+      "expected_match_kind": "exact",
+      "expected_applicable": false,
+      "note": "시행령 에 조사가 붙어도 최장일치가 유지된다"
+    },
+    {
+      "query": "게시판",
+      "source": "hand",
+      "expected_term": null,
+      "expected_easy_term": null,
+      "expected_strategy": null,
+      "expected_match_kind": null,
+      "expected_applicable": false,
+      "note": "의도적 음성 - 게시/판 어느 부분 문자열도 사전에 없다(무결과)"
+    },
+    {
+      "query": "저소득가구",
+      "source": "hand",
+      "expected_term": "저소득",
+      "expected_easy_term": "적은 수입.",
+      "expected_strategy": "gloss",
+      "expected_match_kind": "compound_part",
+      "expected_applicable": false,
+      "note": "복합어 부분 일치 - 접두 저소득(3자) 이 접미 가구(2자) 보다 길어 채택된다"
+    },
+    {
+      "query": "고령운전자",
+      "source": "hand",
+      "expected_term": "고령",
+      "expected_easy_term": "나이가 많음",
+      "expected_strategy": "substitute",
+      "expected_match_kind": "compound_part",
+      "expected_applicable": false,
+      "note": "복합어 부분 일치 - 매칭된 엔트리 전략이 substitute 라도 compound_part 는 항상 applicable=false"
+    },
+    {
+      "query": "무직저소득",
+      "source": "hand",
+      "expected_term": "저소득",
+      "expected_easy_term": "적은 수입.",
+      "expected_strategy": "gloss",
+      "expected_match_kind": "compound_part",
+      "expected_applicable": false,
+      "note": "복합어 부분 일치(접미 전용) - 접두 쪽(무직/무직저/무)은 전부 사전에 없고 접미 저소득 만 있다"
+    },
+    {
+      "query": "동네축제",
+      "source": "hand",
+      "expected_term": null,
+      "expected_easy_term": null,
+      "expected_strategy": null,
+      "expected_match_kind": null,
+      "expected_applicable": false,
+      "note": "의도적 음성 - 전체 문자열과 모든 접두/접미 부분 문자열이 사전에 없다"
+    },
+    {
+      "query": "우리동네",
+      "source": "hand",
+      "expected_term": null,
+      "expected_easy_term": null,
+      "expected_strategy": null,
+      "expected_match_kind": null,
+      "expected_applicable": false,
+      "note": "의도적 음성 - 전체 문자열과 모든 접두/접미 부분 문자열이 사전에 없다"
+    },
+    {
+      "query": "산정하여",
+      "source": "hand",
+      "expected_term": "산정",
+      "expected_easy_term": "계산함",
+      "expected_strategy": "substitute",
+      "expected_match_kind": "inflected",
+      "expected_applicable": true,
+      "note": "활용형 표면형 산정하여 는 표제어 산정 과 다르다(isInflected)"
+    },
+    {
+      "query": "산정한",
+      "source": "hand",
+      "expected_term": "산정",
+      "expected_easy_term": "계산함",
+      "expected_strategy": "substitute",
+      "expected_match_kind": "inflected",
+      "expected_applicable": true,
+      "note": "활용형 표면형 산정한"
+    },
+    {
+      "query": "산정합니다",
+      "source": "hand",
+      "expected_term": "산정",
+      "expected_easy_term": "계산함",
+      "expected_strategy": "substitute",
+      "expected_match_kind": "inflected",
+      "expected_applicable": true,
+      "note": "활용형 표면형 산정합니다"
+    },
+    {
+      "query": "고 등교육법",
+      "source": "hand",
+      "expected_term": "고등교육법",
+      "expected_easy_term": "고등교육법",
+      "expected_strategy": "keep",
+      "expected_match_kind": "inflected",
+      "expected_applicable": false,
+      "note": "OCR/추출 과정에서 생기는 띄어쓰기 이형태 - keep 전략은 표제어와 이형태 모두 applicable=false"
+    },
+    {
+      "query": "고등교육법",
+      "source": "hand",
+      "expected_term": "고등교육법",
+      "expected_easy_term": "고등교육법",
+      "expected_strategy": "keep",
+      "expected_match_kind": "exact",
+      "expected_applicable": false,
+      "note": "같은 엔트리를 띄어쓰기 없이 조회하면 exact"
+    },
+    {
+      "query": "BRT를",
+      "source": "hand",
+      "expected_term": "BRT",
+      "expected_easy_term": "간선 급행 버스, 간선 급행 버스 체계",
+      "expected_strategy": "gloss",
+      "expected_match_kind": "exact",
+      "expected_applicable": false,
+      "note": "표면형 소유권 규칙(6.7 (0)) - 같은 표면형 BRT 를 공유하는 두 엔트리(한글 표제어 비아르티, 로마자 표제어 BRT) 중 표면형이 곧 자기 표제어인 BRT 항목이 이긴다. 조사 를 은 매치 밖"
+    },
+    {
+      "query": "O2O",
+      "source": "hand",
+      "expected_term": "O2O",
+      "expected_easy_term": "온오프라인 연계 마케팅",
+      "expected_strategy": "gloss",
+      "expected_match_kind": "exact",
+      "expected_applicable": false,
+      "note": "표면형 소유권 규칙 - 로마자 표제어 O2O 항목이 한글 표제어(오투오) 항목을 이긴다"
+    },
+    {
+      "query": "NFC기술",
+      "source": "hand",
+      "expected_term": "NFC 기술",
+      "expected_easy_term": "근거리 무선 통신 기술",
+      "expected_strategy": "gloss",
+      "expected_match_kind": "inflected",
+      "expected_applicable": false,
+      "note": "표면형(공백 없음)이 표제어(공백 있음)와 문자 단위로 달라 inflected"
+    },
+    {
+      "query": "구비서류에서는",
+      "source": "hand",
+      "expected_term": "구비서류",
+      "expected_easy_term": "준비할 서류",
+      "expected_strategy": "substitute",
+      "expected_match_kind": "exact",
+      "expected_applicable": true,
+      "note": "조사 연쇄(에서+는)가 어절 경계까지 이어져도 exact"
+    },
+    {
+      "query": "저소득",
+      "source": "hand",
+      "expected_term": "저소득",
+      "expected_easy_term": "적은 수입.",
+      "expected_strategy": "gloss",
+      "expected_match_kind": "exact",
+      "expected_applicable": false,
+      "note": "단독 조회 - 복합어 부분 일치 검증에 쓰인 엔트리 자체의 exact 동작"
+    },
+    {
+      "query": "고령",
+      "source": "hand",
+      "expected_term": "고령",
+      "expected_easy_term": "나이가 많음",
+      "expected_strategy": "substitute",
+      "expected_match_kind": "exact",
+      "expected_applicable": true,
+      "note": "단독 조회 - 복합어 부분 일치 검증에 쓰인 엔트리 자체의 exact 동작"
+    },
+    {
+      "query": "가구",
+      "source": "hand",
+      "expected_term": "가구",
+      "expected_easy_term": "함께 사는 식구",
+      "expected_strategy": "gloss",
+      "expected_match_kind": "exact",
+      "expected_applicable": false,
+      "note": "단독 조회 - 복합어 부분 일치 검증에 쓰인 엔트리 자체의 exact 동작"
+    },
+    {
+      "query": "부양",
+      "source": "hand",
+      "expected_term": "부양",
+      "expected_easy_term": "혼자 생활하기 어려운 사람을 돌봄.",
+      "expected_strategy": "gloss",
+      "expected_match_kind": "exact",
+      "expected_applicable": false,
+      "note": "StyleRules.DIFFICULT_WORD_REPLACEMENTS 에서 사전으로 소유권이 넘어간 81낱말 중 하나"
+    },
+    {
+      "query": "사본",
+      "source": "hand",
+      "expected_term": "사본",
+      "expected_easy_term": "복사한 것",
+      "expected_strategy": "substitute",
+      "expected_match_kind": "exact",
+      "expected_applicable": true,
+      "note": "문서 001 바꿔 쓰세요 구역에 나오는 낱말 - harvest 스크립트가 문서당 1건으로 제한해 스킵된 나머지를 손으로 보강"
+    },
+    {
+      "query": "소급하다",
+      "source": "hand",
+      "expected_term": "소급하다",
+      "expected_easy_term": "거슬러 올라가다",
+      "expected_strategy": "substitute",
+      "expected_match_kind": "exact",
+      "expected_applicable": true,
+      "note": "문서 001 바꿔 쓰세요 구역 - harvest 스크립트 문서당 1건 제한으로 스킵된 나머지를 손으로 보강"
+    },
+    {
+      "query": "수령",
+      "source": "hand",
+      "expected_term": "수령",
+      "expected_easy_term": "받음",
+      "expected_strategy": "substitute",
+      "expected_match_kind": "exact",
+      "expected_applicable": true,
+      "note": "문서 001 바꿔 쓰세요 구역 - harvest 스크립트 문서당 1건 제한으로 스킵된 나머지를 손으로 보강"
+    },
+    {
+      "query": "dBrain",
+      "source": "hand",
+      "expected_term": "dBrain",
+      "expected_easy_term": "디지털 예산 회계 시스템",
+      "expected_strategy": "gloss",
+      "expected_match_kind": "exact",
+      "expected_applicable": false,
+      "note": "표면형 소유권 규칙 - 로마자 표제어 dBrain 항목(우선순위 160)이 한글 표제어(디브레인, 우선순위 140) 항목을 이긴다"
+    },
+    {
+      "query": "G2G",
+      "source": "hand",
+      "expected_term": "G2G",
+      "expected_easy_term": "정부 간 거래",
+      "expected_strategy": "gloss",
+      "expected_match_kind": "exact",
+      "expected_applicable": false,
+      "note": "표면형 소유권 규칙 - 로마자 표제어 G2G 항목이 한글 표제어(지투지) 항목을 이긴다"
+    },
+    {
+      "query": "시행령이",
+      "source": "hand",
+      "expected_term": "시행령",
+      "expected_easy_term": "법을 자세히 정한 대통령 규정",
+      "expected_strategy": "gloss",
+      "expected_match_kind": "exact",
+      "expected_applicable": false,
+      "note": "시행령 에 다른 조사(이)가 붙어도 exact 를 유지하는지 보는 추가 조사 변형"
+    },
+    {
+      "query": "가구가",
+      "source": "hand",
+      "expected_term": "가구",
+      "expected_easy_term": "함께 사는 식구",
+      "expected_strategy": "gloss",
+      "expected_match_kind": "exact",
+      "expected_applicable": false,
+      "note": "가구 에 조사(가)가 붙은 변형 - 단독 조회 케이스와 짝을 이룬다"
+    },
+    {
+      "query": "고령이",
+      "source": "hand",
+      "expected_term": "고령",
+      "expected_easy_term": "나이가 많음",
+      "expected_strategy": "substitute",
+      "expected_match_kind": "exact",
+      "expected_applicable": true,
+      "note": "고령 에 조사(이)가 붙은 변형 - 단독 조회 케이스와 짝을 이룬다"
+    },
+    {
+      "query": "저소득이",
+      "source": "hand",
+      "expected_term": "저소득",
+      "expected_easy_term": "적은 수입.",
+      "expected_strategy": "gloss",
+      "expected_match_kind": "exact",
+      "expected_applicable": false,
+      "note": "저소득 에 조사(이)가 붙은 변형 - 단독 조회 케이스와 짝을 이룬다"
+    }
+  ]
+}
