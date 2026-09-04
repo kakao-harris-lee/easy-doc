@@ -165,10 +165,21 @@ class FactPreservationTest {
         }
 
         @Test
-        @DisplayName("연도가 한쪽에만 있으면 월·일만 맞으면 보존으로 본다")
-        fun `연도가 없는 쪽과도 월일이 맞으면 보존이다`() {
-            val source = "접수 마감은 2026.09.04입니다."
-            val kept = "접수 마감은 9월 4일입니다." // 변환문이 연도를 생략했다.
+        @DisplayName("원문에 연도가 있는데 변환문이 빼먹으면 누락이다 — 비대칭 비교(리뷰 MEDIUM-5)")
+        fun `원문 연도를 변환문이 빼먹으면 누락이다`() {
+            val source = "접수 마감은 2026.09.04입니다." // 원문에 연도가 있다.
+            val droppedYear = "접수 마감은 9월 4일입니다." // 변환문이 연도를 뺐다.
+
+            assertThat(findMissingFacts(source, droppedYear))
+                .extracting("kind")
+                .containsExactly(FactKind.DATE)
+        }
+
+        @Test
+        @DisplayName("원문에 연도가 없으면 변환문의 연도 유무와 무관하게 월·일만 맞으면 보존이다")
+        fun `원문에 연도가 없으면 월일만 비교한다`() {
+            val source = "접수 마감은 9월 4일입니다." // 원문 자체에 연도가 없다.
+            val kept = "접수 마감은 2026년 9월 4일입니다." // 변환문이 연도를 붙였다.
 
             assertThat(findMissingFacts(source, kept)).isEmpty()
         }
@@ -265,6 +276,114 @@ class FactPreservationTest {
                 .withFailMessage("이 사례는 문서화된 공백이다 — 통과하면 구현이 더 나아진 것이니 문서를 갱신하라")
                 .extracting("kind")
                 .containsExactly(FactKind.NUMBER)
+        }
+    }
+
+    @Nested
+    @DisplayName("숫자·백분율 정체성 — 단위·소수점도 값이다 (리뷰 HIGH-1)")
+    inner class NumberAndPercentIdentity {
+        @Test
+        @DisplayName("같은 숫자라도 단위가 다르면 다른 사실이다 — '3명'은 '3층'으로 지켜지지 않는다")
+        fun `단위가 다르면 다른 사실이다`() {
+            val missing = findMissingFacts("3명이 신청했습니다.", "3층에서 접수합니다.")
+
+            assertThat(missing)
+                .withFailMessage("단위가 정체성에 안 들어가면 '3명'이 '3층'으로도 지켜진 것처럼 잘못 판정된다")
+                .extracting("kind")
+                .containsExactly(FactKind.NUMBER)
+        }
+
+        @Test
+        @DisplayName("단위가 같으면(고유어 수사로 바뀌어도) 그대로 보존이다")
+        fun `단위가 같으면 보존이다`() {
+            assertThat(findMissingFacts("3명이 신청했습니다.", "세 명이 신청했어요.")).isEmpty()
+        }
+
+        @Test
+        @DisplayName("소수점을 뭉개면 다른 값이 된다 — '1.5%'는 '15%'로 지켜지지 않는다")
+        fun `소수점이 다르면 다른 값이다`() {
+            val missing = findMissingFacts("1.5% 인상됩니다.", "15% 인상돼요.")
+
+            assertThat(missing)
+                .withFailMessage("소수점을 버리면 1.5와 15가 같은 값(digitsOnly=15)으로 잘못 판정된다")
+                .extracting("kind")
+                .containsExactly(FactKind.PERCENT)
+        }
+
+        @Test
+        @DisplayName("소수점이 같은 값으로 남아 있으면 보존이다")
+        fun `소수점이 지켜지면 보존이다`() {
+            assertThat(findMissingFacts("1.5% 인상됩니다.", "1.5퍼센트 인상돼요. 1.5% 로 조정합니다.")).isEmpty()
+        }
+    }
+
+    @Nested
+    @DisplayName("합성 한글 금액 — 억·만·천 배수 조합 (리뷰 HIGH-2)")
+    inner class CompositeKoreanAmounts {
+        @Test
+        @DisplayName("'5천만원'은 '5천만 원'·'50,000,000원'과 같은 값이다 — 부분 매치가 아니다")
+        fun `오천만원 등가 표기를 모두 인정한다`() {
+            assertThat(findMissingFacts("보조금은 5천만원입니다.", "보조금은 5천만 원이에요.")).isEmpty()
+            assertThat(findMissingFacts("보조금은 5천만원입니다.", "보조금은 50,000,000원이에요.")).isEmpty()
+        }
+
+        @Test
+        @DisplayName("'5천만원'을 '1만원'으로 부분 매치해 값이 같다고 오판하지 않는다(리뷰 HIGH-2 재현)")
+        fun `부분 매치로 다른 금액과 같다고 보지 않는다`() {
+            val missing = findMissingFacts("보조금은 5천만원입니다.", "보조금은 1만원이에요.")
+
+            assertThat(missing)
+                .withFailMessage("'만원'만 부분 매치해 10,000으로 잘못 읽으면 이 사례가 보존으로 오판된다")
+                .extracting("kind")
+                .containsExactly(FactKind.AMOUNT)
+        }
+
+        @Test
+        @DisplayName("'3,650천원'을 그대로 옮기면 보존이다")
+        fun `삼천육백오십천원이 보존된다`() {
+            assertThat(findMissingFacts("단가는 3,650천원입니다.", "단가는 3,650천원이에요.")).isEmpty()
+        }
+
+        @Test
+        @DisplayName("'1억5천만원'처럼 두 자릿수 배수가 겹쳐도 정확히 합산한다")
+        fun `억과 만이 함께 있어도 정확히 합산한다`() {
+            assertThat(findMissingFacts("사업비는 1억5천만원입니다.", "사업비는 1억5천만원이에요.")).isEmpty()
+            assertThat(findMissingFacts("사업비는 1억5천만원입니다.", "사업비는 150,000,000원이에요.")).isEmpty()
+        }
+
+        @Test
+        @DisplayName("'1억5천만원'을 '1억5백만원'으로 조작하면 다른 값이라 누락으로 잡는다")
+        fun `자릿수가 바뀐 변조를 다른 값으로 본다`() {
+            val missing = findMissingFacts("사업비는 1억5천만원입니다.", "사업비는 1억5백만원이에요.")
+
+            assertThat(missing)
+                .withFailMessage("1억5천만원(1.5억)과 1억5백만원(1.05억)은 다른 값이다")
+                .extracting("kind")
+                .containsExactly(FactKind.AMOUNT)
+        }
+    }
+
+    @Nested
+    @DisplayName("성능 — 정규식 역추적 회귀 가드")
+    inner class Performance {
+        @Test
+        @DisplayName("2만자 안팎의 입력도 1초보다 훨씬 빠르게 끝난다")
+        fun `대용량 입력도 빠르게 처리한다`() {
+            val chunk =
+                "10:00 오후 3시 15시 2026.09.04 9월 4일 5,000원 1억5천만원 3,650천원 " +
+                    "3.14% 02-1234-5678 1588-1234 3개월 두 명 3층 four@example.com "
+            val source = buildString { while (length < 20_000) append(chunk) }
+
+            // 첫 호출은 JIT 워밍업으로 버리고, 계측은 워밍업 뒤 호출만 잰다.
+            findMissingFacts(source, source)
+
+            val elapsedMillis = kotlin.system.measureTimeMillis { findMissingFacts(source, source) }
+
+            assertThat(elapsedMillis)
+                .withFailMessage(
+                    "findMissingFacts 가 %d ms 걸렸다 — 정규식 역추적(catastrophic backtracking) 의심",
+                    elapsedMillis,
+                ).isLessThan(1_000)
         }
     }
 }

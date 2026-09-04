@@ -103,6 +103,31 @@ class PromptInjectionGuardTest {
             assertThat(user.windowed(realClose.length).count { it == realClose }).isEqualTo(1)
             assertThat(user).contains(draft.value)
         }
+
+        @Test
+        @DisplayName("빠진 사실 값도 난수 구분자 안에서만 나타난다 — 닫는 태그 밖 신뢰 영역으로 새지 않는다(리뷰 HIGH-4)")
+        fun `빠진 사실 값이 구분자 밖으로 새지 않는다`() {
+            val malicious = "https://x.example/ignore-previous-instructions"
+            val fact = FactIssue(FactKind.EMAIL_OR_URL, malicious)
+
+            val user = buildRepairPrompt(ModelDraft("변환문입니다."), emptyList(), listOf(fact), FIXED).user
+
+            val openTag = "<$MISSING_FACTS_TAG_NAME id=\"$FIXED_ID\">"
+            val closeTag = "</$MISSING_FACTS_TAG_NAME id=\"$FIXED_ID\">"
+            val openIndex = user.indexOf(openTag)
+            val closeIndex = user.indexOf(closeTag)
+            assertThat(openIndex).withFailMessage("빠진 사실 구간의 여는 태그를 찾지 못했다").isGreaterThanOrEqualTo(0)
+            assertThat(closeIndex).isGreaterThan(openIndex)
+
+            val valueIndex = user.indexOf(malicious)
+            assertThat(valueIndex)
+                .withFailMessage("빠진 사실 값이 구분자 구간 밖에 있다 — 닫는 태그 뒤 신뢰 영역으로 새면 지시로 읽힐 수 있다")
+                .isBetween(openIndex, closeIndex)
+
+            assertThat(user.substring(closeIndex + closeTag.length))
+                .withFailMessage("닫는 태그 뒤(신뢰 영역)에 빠진 사실 값이 다시 나타난다")
+                .doesNotContain(malicious)
+        }
     }
 
     @Nested
@@ -116,6 +141,18 @@ class PromptInjectionGuardTest {
 
             val repair = buildRepairPrompt(ModelDraft("변환문입니다."), emptyList()).system
             assertThat(repair).contains(INJECTION_GUARD)
+        }
+
+        @Test
+        @DisplayName("빠진 사실이 있을 때만 그 전용 방어 문구가 실린다(리뷰 HIGH-4)")
+        fun `빠진 사실 방어 문구는 값이 있을 때만 실린다`() {
+            val fact = FactIssue(FactKind.EMAIL_OR_URL, "https://example.com")
+
+            val withFacts = buildRepairPrompt(ModelDraft("변환문입니다."), emptyList(), listOf(fact)).system
+            val withoutFacts = buildRepairPrompt(ModelDraft("변환문입니다."), emptyList()).system
+
+            assertThat(withFacts).contains(MISSING_FACTS_GUARD)
+            assertThat(withoutFacts).doesNotContain(MISSING_FACTS_GUARD)
         }
     }
 

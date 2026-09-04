@@ -147,5 +147,29 @@ class RepairDecisionTest {
             assertThat(decision.factsMissingAfter).isEqualTo(1)
             assertThat(decision.accepted).isTrue()
         }
+
+        @Test
+        @DisplayName("건수가 같아도(1→1) 새로 빠뜨린 사실이 다르면 기각한다 — 집합 비교(리뷰 HIGH-3)")
+        fun `건수가 같아도 다른 사실을 새로 빠뜨리면 기각한다`() {
+            val twoFacts = "3명이 4층에서 신청합니다."
+            // 1차 결과: 3명을 빠뜨렸다(4층은 지켰다).
+            val draftLosingThreePeople = "4층에서 신청합니다."
+            // 보정 후보: 3명은 되살렸지만 4층을 새로 빠뜨렸다 — 건수는 여전히 1개다.
+            val candidateLosingFourthFloor = "3명이 신청합니다."
+
+            val decision =
+                decideRepairAdoption(
+                    maskedSource = twoFacts,
+                    original = draftLosingThreePeople,
+                    candidate = candidateLosingFourthFloor,
+                    placeholders = emptyList(),
+                )
+
+            assertThat(decision.factsMissingBefore).isEqualTo(1)
+            assertThat(decision.factsMissingAfter).isEqualTo(1)
+            assertThat(decision.accepted)
+                .withFailMessage("건수만 보면 1→1 이라 채택됐을 것이다 — 새로 빠진 사실(4층)을 놓쳤다")
+                .isFalse()
+        }
     }
 }

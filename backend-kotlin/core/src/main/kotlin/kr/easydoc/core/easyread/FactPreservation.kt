@@ -11,8 +11,9 @@ import kr.easydoc.core.privacy.MaskCategory
 // 보존으로 인정하고, 애매하면(단위 없는 한 자리 숫자 등) 아예 사실로 세지 않는다.
 //
 // 이 파일은 추출 파이프라인 오케스트레이션만 맡는다. 배수·수사 낱말 해석은
-// `KoreanAmountWords.kt`, 날짜·시각 구성요소 해석은 `TemporalFacts.kt` 에 있다
-// (한 파일 함수 수 상한 — detekt `TooManyFunctions`).
+// `KoreanAmountWords.kt`, 날짜·시각 구성요소 해석은 `TemporalFacts.kt`, 숫자·백분율
+// 정체성(단위·소수점 정규화)은 `NumberIdentity.kt` 에 있다(한 파일 함수 수 상한 —
+// detekt `TooManyFunctions`).
 
 /** 원문에서 놓치면 안 되는 사실의 종류. */
 enum class FactKind {
@@ -65,16 +66,18 @@ fun findMissingFacts(
 
 /**
  * 같은 날짜인가 — [ExtractedFact.compareKey] 는 항상 `MMDD` 라 월·일은 이미 비교된 것이고,
- * 연도는 **양쪽에 다 있을 때만** 비교한다. 한쪽이 연도를 안 적었으면(원문엔 있었는데
- * 변환문이 "9월 4일까지"로만 줄였다거나, 반대로 원문 자체에 연도가 없었다거나) 그 자리는
- * "둘 다 가진 요소만 본다"는 요청 그대로 비교에서 뺀다.
+ * 연도 비교는 **비대칭**이다(리뷰 MEDIUM-5). **원문에 연도가 있었으면 변환문도 같은 연도를
+ * 적어야 한다** — 원문이 "2026년 9월 4일"인데 변환문이 "9월 4일"로 연도를 빼먹었으면 그
+ * 자체가 사실 누락이다. 원문에 애초에 연도가 없었을 때만("9월 4일까지" 같은 표기) 월·일만
+ * 맞으면 되고, 그때는 변환문이 연도를 붙이든 안 붙이든 상관없다 — 원문에 없던 정보를
+ * 판정 대상으로 삼지 않는다는 원칙과 같다.
  */
 private fun sameDate(
-    a: ExtractedFact,
-    b: ExtractedFact,
+    sourceFact: ExtractedFact,
+    draftFact: ExtractedFact,
 ): Boolean {
-    if (a.compareKey != b.compareKey) return false
-    return a.year == null || b.year == null || a.year == b.year
+    if (sourceFact.compareKey != draftFact.compareKey) return false
+    return sourceFact.year?.let { it == draftFact.year } ?: true
 }
 
 /** 추출된 사실 하나. [compareKey] 가 같으면 같은 사실로 본다(표기가 달라도). [year] 는 [FactKind.DATE] 전용. */
@@ -109,12 +112,18 @@ private val PATTERNS: List<Pair<FactKind, Regex>> =
         FactKind.PHONE to Regex("""(?<!\d)(?:0\d{1,2}-\d{3,4}-\d{4}|1\d{3}-\d{4})(?!\d)"""),
         FactKind.TIME to Regex("""(?:오전|오후)?\s*\d{1,2}시(?:\s*\d{1,2}분)?|\d{1,2}:\d{2}"""),
         FactKind.DATE to Regex("""\d{4}[.\-]\d{1,2}[.\-]\d{1,2}|(?:\d{4}년\s*)?\d{1,2}월\s*\d{1,2}일"""),
-        FactKind.AMOUNT to Regex("""(?:\d{1,3}(?:,\d{3})+|\d+)\s*(?:만|억)?\s*원"""),
+        // 배수 단위(만·억·천·백·십)가 하나도 없는 순수 Arabic 숫자 + 원. 배수 단위가 있는
+        // 경우는 전부 WORD_AMOUNT(합성 파서, KoreanAmountWords.kt)가 맡는다 — 부분 매치
+        // 사고(리뷰 HIGH-2, "5천만원"이 "만원"=10,000 으로 잘못 잡히던 문제)를 막으려면
+        // 배수 단위가 있는 구간은 그 파서가 **통째로** 소비해야 한다.
+        FactKind.AMOUNT to Regex("""(?:\d{1,3}(?:,\d{3})+|\d+)\s*원"""),
         FactKind.AMOUNT to WORD_AMOUNT,
         FactKind.PERCENT to Regex("""\d+(?:\.\d+)?\s*%"""),
         // 2자리 이상 숫자(구분자 포함), 또는 단위가 붙은 한 자리 숫자. 원·%는 위에서 이미
-        // 더 구체적인 종류로 가져가므로 이 목록에 넣지 않는다.
-        FactKind.NUMBER to Regex("""\d{1,3}(?:,\d{3})+|\d{2,}|\d(?=(?:명|개|일|시|분|세|살|회|건|층|호|번))"""),
+        // 더 구체적인 종류로 가져가므로 이 목록에 넣지 않는다. 단위 문자를 **소비한다**
+        // (전에는 lookahead 로 흘려보내 raw.text 에 단위가 안 남았다 — 리뷰 HIGH-1 재현
+        // 사례: "3명"과 "3층"이 둘 다 raw.text="3"이 되어 같은 사실로 오판됐다).
+        FactKind.NUMBER to Regex("""\d{1,3}(?:,\d{3})+|\d{2,}|\d(?:명|개|일|시|분|세|살|회|건|층|호|번)"""),
         FactKind.NUMBER to WORD_NUMBER,
     )
 
@@ -168,9 +177,9 @@ private fun compareKeyOf(raw: RawMatch): String =
         FactKind.EMAIL_OR_URL -> raw.text.trim().lowercase()
         FactKind.TIME -> timeMinutes(raw.text)?.toString().orEmpty()
         FactKind.DATE -> dateCompareKey(raw.text).orEmpty()
-        FactKind.NUMBER -> digitsOnly(raw.text).ifEmpty { countWordValue(raw.text)?.toString().orEmpty() }
+        FactKind.NUMBER -> numberCompareKey(raw.text)
         FactKind.PHONE -> digitsOnly(raw.text)
-        FactKind.PERCENT -> digitsOnly(raw.text)
+        FactKind.PERCENT -> percentCompareKey(raw.text)
     }
 
 private fun extractFacts(text: String): List<ExtractedFact> {
