@@ -16,7 +16,7 @@
 
 import { expect, test, type Page } from '@playwright/test'
 
-import { newAccount, signUpAndLand, workspaceSelect } from './support/app'
+import { newAccount, signUpAndLand, verifyEmail, workspaceSelect } from './support/app'
 
 /** 모바일 최소 폭(DESIGN.md §14). `body { min-width: 320px }` 와 같은 값이다. */
 const MOBILE = { width: 320, height: 800 } as const
@@ -231,6 +231,11 @@ test.describe('접근성 — 키보드', () => {
     await page.keyboard.press('Enter')
     await expect(workspaceSelect(page)).toBeVisible()
 
+    // 이메일/비밀번호 계정은 인증을 마쳐야 문서 등록(`POST /documents`)이 열린다
+    // (계약 2.9.0) — 이 케이스가 재는 것은 그 뒤의 키보드 경로이지 인증 화면 자체가
+    // 아니므로 마우스·라벨 기반 도우미로 처리한다.
+    await verifyEmail(page, account)
+
     // --- 계정 메뉴를 키보드로 펼쳐 로그아웃 --------------------------------------
     // 아이콘 하나뿐인 트리거라 이름이 없으면 여기서 길이 끊긴다.
     await restartTabbing(page)
@@ -358,6 +363,8 @@ test.describe('접근성 — 320px', () => {
     }
 
     await signUpAndLand(page, account)
+    // 이메일/비밀번호 계정은 인증을 마쳐야 문서 등록(`POST /documents`)이 열린다(계약 2.9.0).
+    await verifyEmail(page, account)
 
     // 새 변환.
     await expect(page.getByRole('heading', { name: '문서 변환하기' })).toBeVisible()
@@ -418,7 +425,11 @@ test.describe('접근성 — 모션', () => {
     // 프로젝트 설정(`test.use`)이 아니라 이 테스트 안에서만 켠다 — 나머지 케이스는
     // 기본 설정 그대로 돌아야 «평소에도 통과하는가»를 함께 재게 된다.
     await page.emulateMedia({ reducedMotion: 'reduce' })
-    await signUpAndLand(page, newAccount())
+    const account = newAccount()
+    await signUpAndLand(page, account)
+    // 이메일/비밀번호 계정은 인증을 마쳐야 문서 등록(`POST /documents`)이 열린다(계약 2.9.0).
+    // 인증 확인 버튼도 로딩 스피너를 쓰므로, 이 단계 역시 reduced motion 아래에서 지나간다.
+    await verifyEmail(page, account)
 
     // 이 앱에서 반복 모션이 도는 유일한 화면은 변환 진행이다(§12).
     await page.getByLabel('문서 제목').fill('모션 확인')

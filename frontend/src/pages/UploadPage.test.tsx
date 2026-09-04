@@ -628,10 +628,11 @@ describe('업로드 화면', () => {
       renderPage({}, { user: userResponse({ email_verified: false }) })
 
       expect(screen.getByText('이메일 인증 후 문서를 변환할 수 있습니다.')).toBeInTheDocument()
-      expect(screen.getByRole('link', { name: '이메일 인증하기' })).toHaveAttribute(
-        'href',
-        '/verify-email',
-      )
+      const link = screen.getByRole('link', { name: '이메일 인증하기' })
+      expect(link).toHaveAttribute('href', '/verify-email')
+      // §10 터치 대상 44px — 배너가 flex 컨테이너라 이 링크는 인라인 링크 예외에서 빠진다.
+      // `h-11`(44px)이 이 앱의 다른 조작 대상과 같은 하한을 준다(e2e a11y.spec.ts E17).
+      expect(link).toHaveClass('h-11')
     })
 
     it('이메일이 인증되었으면 배너를 보여주지 않는다', () => {

@@ -60,7 +60,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
       {loading && (
         <span
           aria-hidden="true"
-          className="size-4 animate-spin rounded-full border-2 border-current border-r-transparent"
+          className="size-4 animate-spin rounded-full border-2 border-current border-r-transparent motion-reduce:animate-none"
         />
       )}
       {children}

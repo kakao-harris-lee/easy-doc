@@ -1,5 +1,6 @@
 package kr.easydoc.infrastructure.mail
 
+import kr.easydoc.application.mail.MailInbox
 import kr.easydoc.application.mail.MailSender
 import kr.easydoc.core.exceptions.ConfigurationException
 import kr.easydoc.core.privacy.CONTENT_MASK
@@ -7,12 +8,22 @@ import kr.easydoc.core.security.Secret
 import org.springframework.boot.context.properties.ConfigurationProperties
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
+import org.springframework.context.annotation.Profile
 
 /** `fake` 어댑터 이름. */
 const val FAKE_MAIL_PROVIDER_NAME: String = "fake"
 
 /** `smtp` 어댑터 이름 — 임시 relay(2026-09-04 사용자 결정: Daum, SES 전환 전까지). */
 const val SMTP_MAIL_PROVIDER_NAME: String = "smtp"
+
+/**
+ * `e2e` profile 이름. Playwright e2e 스택(`compose.e2e.yml`)이 `api,local` 곁에 얹어 켠다.
+ *
+ * `api` 쪽에도 같은 이름·같은 값을 따로 든다(`kr.easydoc.api.E2E_PROFILE`) — `MIGRATE_PROFILE`
+ * (`CryptoConfiguration.kt` KDoc)과 같은 이유다: `api` 는 `infrastructure` 를 `runtimeOnly`
+ * 로만 의존해 이 모듈의 상수를 컴파일 시점에 보지 못한다.
+ */
+const val E2E_PROFILE: String = "e2e"
 
 /**
  * SMTP relay 접속 설정. 바인딩 접두사는 `easydoc.mail.smtp`. `provider=smtp` 일 때만 읽힌다.
@@ -107,6 +118,23 @@ class MailConfiguration {
                 )
             }
         }
+
+    /**
+     * `e2e` profile 전용 — `E2eMailInboxController`(api) 가 가입 직후 보낸 인증 코드 메일을
+     * 되읽는 협력자다. `mailSender` 가 실제로 [MailInbox] 를 구현하지 않으면(=`fake` 가 아닌
+     * provider 로 잘못 조립되면) 기동 시점에 막는다 — 첫 조회 요청까지 오설정을 미루지 않는다
+     * (`requireSmtpConfigured` 와 같은 fail-fast 원칙). `compose.e2e.yml` 이 `e2e` profile 을
+     * 켤 때는 언제나 `easydoc.mail.provider=fake` 도 함께 켜므로 운영 경로에서는 이 빈 자체가
+     * 조립되지 않는다.
+     */
+    @Bean
+    @Profile(E2E_PROFILE)
+    fun mailInbox(mailSender: MailSender): MailInbox =
+        mailSender as? MailInbox
+            ?: throw ConfigurationException(
+                "e2e profile 은 MailInbox 를 구현하는 메일 발송기로만 조립돼야 합니다 " +
+                    "— easydoc.mail.provider=$FAKE_MAIL_PROVIDER_NAME 인지 확인하라",
+            )
 
     /**
      * `smtp` 는 host·username·password·from-address 넷이 전부 있어야 뜬다 — 하나라도

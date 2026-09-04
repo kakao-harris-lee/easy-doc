@@ -172,6 +172,55 @@ export async function signOut(page: Page): Promise<void> {
   await page.getByRole('button', { name: '로그아웃', exact: true }).click()
 }
 
+/** `/__e2e/mail/latest` 응답 모양 — `E2eMailInboxController`(api, `e2e` profile 전용)와 같다. */
+interface LatestMailResponse {
+  subject: string
+  text_body: string
+}
+
+/** 인증 코드 메일 본문에서 6자리 숫자를 꺼낸다 — `EmailVerificationService.bodyOf`. */
+const VERIFICATION_CODE_PATTERN = /\d{6}/
+
+/**
+ * 가입 직후 그 주소로 보낸 메일에서 6자리 인증 코드를 읽는다.
+ *
+ * **제품 API 가 아니다.** `e2e` profile 에서만 뜨는 진단 엔드포인트를 부른다
+ * (`compose.e2e.yml` 이 `backend-api` 에 그 profile 을 켠다) — `api`/`local`/prod 에는
+ * 이 경로가 없다.
+ */
+async function latestVerificationCode(page: Page, email: string): Promise<string> {
+  const response = await page.request.get(api(`/__e2e/mail/latest?to=${encodeURIComponent(email)}`))
+  if (!response.ok()) {
+    throw new Error(
+      `이메일 인증 코드 메일을 찾지 못했다: ${email} (status ${response.status()}) — ` +
+        `e2e profile 이 backend-api 에 켜졌는지 확인하라`,
+    )
+  }
+  const body = (await response.json()) as LatestMailResponse
+  const match = VERIFICATION_CODE_PATTERN.exec(body.text_body)
+  if (match === null) {
+    throw new Error(`메일 본문에서 6자리 인증 코드를 찾지 못했다: ${body.text_body}`)
+  }
+  return match[0]
+}
+
+/**
+ * `/verify-email` 로 가서 가입 시 발급된 코드를 확인하고 홈으로 돌아온다.
+ *
+ * 문서 변환(`POST /documents`)이 필요한 케이스가 가입 직후 명시적으로 부른다 —
+ * 이메일/비밀번호 계정은 인증을 마쳐야 그 호출이 열린다(계약 2.9.0). `signUpAndLand` 는
+ * 이 단계를 넣지 않는다 — 가입만 재는 케이스(예: E1 의 정확한 API 호출 목록 대조)가
+ * 여기서 나가는 추가 호출까지 겪지 않게 하려는 것이다. 이미 로그인 상태(가입이 토큰을
+ * 저장했다)라야 `/verify-email` 이 로그인 화면으로 튕기지 않는다.
+ */
+export async function verifyEmail(page: Page, account: Account): Promise<void> {
+  const code = await latestVerificationCode(page, account.email)
+  await page.goto('/verify-email')
+  await page.getByLabel('인증 코드').fill(code)
+  await page.getByRole('button', { name: '확인', exact: true }).click()
+  await expect(page.getByRole('heading', { name: '문서 변환하기' })).toBeVisible()
+}
+
 /** 가입 → 자동 로그인 → 홈. 작업 공간 메뉴가 뜰 때까지 기다린다. */
 export async function signUpAndLand(page: Page, account: Account): Promise<void> {
   await page.goto('/signup')
