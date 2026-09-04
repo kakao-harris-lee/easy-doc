@@ -376,10 +376,17 @@ private fun renderViolations(violations: List<SentenceIssue>): String {
         }.joinToString("\n")
 }
 
-/** 1차 변환문에서 기계 검출된 위반만 고치도록 지시하는 (system, user) 쌍. */
+/**
+ * 빠진 사실을 `- 값` 줄로 렌더링한다. 값은 [FactIssue] 가 그대로 들고 있는 원문 표기다 —
+ * 이미 LLM 에 나갈 프롬프트에 싣는 값이라 로그가 아니다([FactIssue] KDoc).
+ */
+private fun renderMissingFacts(facts: List<FactIssue>): String = facts.joinToString("\n") { "- ${it.value}" }
+
+/** 1차 변환문에서 기계 검출된 위반(문체·[findMissingFacts] 사실 보존)만 고치도록 지시하는 (system, user) 쌍. */
 fun buildRepairPrompt(
     converted: ModelDraft,
     violations: List<SentenceIssue>,
+    missingFacts: List<FactIssue> = emptyList(),
     documentIds: DocumentIdGenerator = SecureDocumentIds,
 ): RepairPrompt {
     val rules = renderStyleRules()
@@ -394,11 +401,21 @@ fun buildRepairPrompt(
             "[출력 형식]\n$OUTPUT_INSTRUCTION",
         ).joinToString(SECTION_SEPARATOR)
     val convertedId = documentIds.next()
+    // 사실 누락이 없으면(기본값) 이 블록은 빈 문자열이라 기존 [고칠 곳] 전용 출력과 한
+    // 글자도 다르지 않다 — PromptTextSnapshotTest 의 골든 스냅샷이 이 불변을 고정한다.
+    val factsBlock =
+        if (missingFacts.isEmpty()) {
+            ""
+        } else {
+            "\n\n[빠진 사실]\n" +
+                "아래 값은 원문에 있었는데 위 변환문에서 빠졌습니다. 뜻이 통하도록 문장에 그대로 되살려 넣으세요.\n" +
+                renderMissingFacts(missingFacts)
+        }
     val user =
         "<$CONVERTED_TAG_NAME id=\"$convertedId\">\n" +
             "${converted.value}\n" +
             "</$CONVERTED_TAG_NAME id=\"$convertedId\">\n\n" +
-            "[고칠 곳]\n$listed\n\n" +
+            "[고칠 곳]\n$listed$factsBlock\n\n" +
             "위 문제만 고친 뒤, 고친 글 전체를 처음부터 끝까지 출력해 주세요."
     return RepairPrompt(system = system, user = user)
 }

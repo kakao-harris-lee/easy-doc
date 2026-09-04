@@ -1,6 +1,7 @@
 package kr.easydoc.core.llm
 
 import kr.easydoc.core.easyread.DocumentIdGenerator
+import kr.easydoc.core.easyread.FactIssue
 import kr.easydoc.core.easyread.SecureDocumentIds
 import kr.easydoc.core.easyread.SentenceIssue
 import kr.easydoc.core.easyread.buildRepairPrompt
@@ -37,13 +38,17 @@ class LlmPrompt private constructor(
                 user = buildUserPrompt(maskedText, documentIds, dictionaryContext),
             )
 
-        /** 보정(수리) 패스 프롬프트. 기계 검사가 잡아낸 위반만 표적으로 고치게 한다. */
+        /**
+         * 보정(수리) 패스 프롬프트. 기계 검사가 잡아낸 위반(문체·[missingFacts] 사실 보존)만
+         * 표적으로 고치게 한다.
+         */
         fun forRepair(
             converted: ModelDraft,
             violations: List<SentenceIssue>,
+            missingFacts: List<FactIssue> = emptyList(),
             documentIds: DocumentIdGenerator = SecureDocumentIds,
         ): LlmPrompt {
-            val repair = buildRepairPrompt(converted, violations, documentIds)
+            val repair = buildRepairPrompt(converted, violations, missingFacts, documentIds)
             return LlmPrompt(system = repair.system, user = repair.user)
         }
 

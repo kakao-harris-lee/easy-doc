@@ -1,6 +1,8 @@
 package kr.easydoc.core.llm
 
 import kr.easydoc.core.easyread.DocumentIdGenerator
+import kr.easydoc.core.easyread.FactIssue
+import kr.easydoc.core.easyread.FactKind
 import kr.easydoc.core.easyread.SentenceIssue
 import kr.easydoc.core.easyread.StyleRuleKind
 import kr.easydoc.core.privacy.ModelDraft
@@ -81,12 +83,29 @@ class LlmPromptTest {
                 word = "접수",
             )
 
-        val prompt = LlmPrompt.forRepair(ModelDraft("신청을 접수합니다."), listOf(issue), fixedIds)
+        val prompt = LlmPrompt.forRepair(ModelDraft("신청을 접수합니다."), listOf(issue), documentIds = fixedIds)
 
         assertThat(prompt.user).contains("<변환문 id=\"0123456789ab\">")
         assertThat(prompt.user).contains("[고칠 곳]")
         assertThat(prompt.user).contains("신청을 접수합니다.")
         assertThat(prompt.system).contains("[고치는 방법]")
+    }
+
+    @Test
+    @DisplayName("빠진 사실이 있으면 보정 프롬프트에 값이 그대로 실린다")
+    fun `빠진 사실을 보정 프롬프트에 싣는다`() {
+        val fact = FactIssue(FactKind.PHONE, "02-1234-5678")
+
+        val prompt =
+            LlmPrompt.forRepair(
+                ModelDraft("문의하세요."),
+                emptyList(),
+                listOf(fact),
+                fixedIds,
+            )
+
+        assertThat(prompt.user).contains("[빠진 사실]")
+        assertThat(prompt.user).contains("02-1234-5678")
     }
 
     @Test

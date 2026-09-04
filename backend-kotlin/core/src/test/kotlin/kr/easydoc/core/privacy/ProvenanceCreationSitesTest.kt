@@ -36,8 +36,8 @@ class ProvenanceCreationSitesTest {
                         "application/src/main/kotlin/kr/easydoc/application/document/ConversionExportService.kt" to 1,
                         "core/src/test/kotlin/kr/easydoc/core/easyread/PromptInjectionGuardTest.kt" to 4,
                         "core/src/test/kotlin/kr/easydoc/core/easyread/PromptTextSnapshotTest.kt" to 1,
-                        "core/src/test/kotlin/kr/easydoc/core/easyread/PromptsTest.kt" to 4,
-                        "core/src/test/kotlin/kr/easydoc/core/llm/LlmPromptTest.kt" to 1,
+                        "core/src/test/kotlin/kr/easydoc/core/easyread/PromptsTest.kt" to 6,
+                        "core/src/test/kotlin/kr/easydoc/core/llm/LlmPromptTest.kt" to 2,
                         "core/src/test/kotlin/kr/easydoc/core/privacy/MaskingTest.kt" to 10,
                     ),
                 "ReviewedBody" to
