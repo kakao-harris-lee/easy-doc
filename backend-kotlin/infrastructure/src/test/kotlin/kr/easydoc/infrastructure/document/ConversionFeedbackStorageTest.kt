@@ -125,11 +125,20 @@ class ConversionFeedbackStorageTest {
     }
 
     @Test
-    @DisplayName("**사유 없는 예산 초과** — 거리만 비고 사유가 없으면 거절한다(짝 제약)")
-    fun `사유 없이 거리만 비우면 거절한다`() {
-        assertThatThrownBy { insertMetrics(easy = 120, edited = 118, distance = null, reason = null) }
-            .describedAs("거리가 null 인데 사유가 없으면 「검수본 없음」과 「예산 초과」를 구분할 수 없다")
-            .isInstanceOf(SQLException::class.java)
+    @DisplayName(
+        "**사유 없는 예산 초과 모양** — 거리만 비고 사유가 없으면 더는 거절하지 않는다, " +
+            "구버전 쓰기 호환 트리거가 budget_exceeded 로 되짚어 채운다",
+    )
+    fun `사유 없이 거리만 비우면 트리거가 budget_exceeded 를 채운다`() {
+        // V4 이전에는 이 조합(거리 없음·사유 없음)이 짝 CHECK 로 바로 거절됐다. 지금은
+        // `conversion_feedback_derive_skip_reason` 트리거가 이 조합을 「사유를 명시하지 않은
+        // 쓰기」로 보고 지표만으로 사유를 되짚어 채운다 — 옛 애플리케이션의 UPSERT 가 사유
+        // 컬럼을 아예 모르는 것과 SQL 수준에서 구분되지 않기 때문이다([oldUpsert] 케이스들
+        // 참고). 그래서 거절이 아니라 파생이 맞는 동작이다.
+        val conversionId =
+            insertMetrics(easy = 120, edited = 118, distance = null, reason = null, minutesSpent = OLD_WRITE_MINUTES)
+
+        assertThat(metricRowOf(conversionId).editDistanceSkipReason).isEqualTo("budget_exceeded")
     }
 
     @Test
@@ -202,6 +211,60 @@ class ConversionFeedbackStorageTest {
         assertThat(row.editedCharCount).isNull()
         assertThat(row.editDistance).isNull()
         assertThat(row.editDistanceSkipReason).isEqualTo("no_review")
+    }
+
+    @Test
+    @DisplayName(
+        "**구버전 쓰기 호환 — INSERT, 검수본 없음** — 4e0c1b0 의 옛 UPSERT(사유 컬럼을 모른다)로 " +
+            "검수본 없는 최초 제출을 넣으면 트리거가 no_review 를 되짚어 채운다",
+    )
+    fun `옛 UPSERT 로 검수본 없는 행을 넣으면 트리거가 no_review 를 채운다`() {
+        val conversionId = UUID.randomUUID()
+
+        oldUpsert(conversionId, editedCharCount = null, editDistance = null)
+
+        val row = metricRowOf(conversionId)
+        assertThat(row.editedCharCount).isNull()
+        assertThat(row.editDistance).isNull()
+        assertThat(row.editDistanceSkipReason)
+            .describedAs("옛 애플리케이션(롤백 대상)은 이 컬럼을 아예 쓰지 않는다 — 트리거가 채워야 새 CHECK 를 통과한다")
+            .isEqualTo("no_review")
+    }
+
+    @Test
+    @DisplayName(
+        "**구버전 쓰기 호환 — INSERT, 예산 초과** — 검수본 글자 수는 채우고 거리만 비운 옛 UPSERT 는 " +
+            "트리거가 budget_exceeded 로 구분해 채운다",
+    )
+    fun `옛 UPSERT 로 예산 초과 모양 행을 넣으면 트리거가 budget_exceeded 를 채운다`() {
+        val conversionId = UUID.randomUUID()
+
+        oldUpsert(conversionId, editedCharCount = EDITED_CHAR_COUNT_FIXTURE, editDistance = null)
+
+        val row = metricRowOf(conversionId)
+        assertThat(row.editedCharCount).isEqualTo(EDITED_CHAR_COUNT_FIXTURE)
+        assertThat(row.editDistance).isNull()
+        assertThat(row.editDistanceSkipReason).isEqualTo("budget_exceeded")
+    }
+
+    @Test
+    @DisplayName(
+        "**구버전 쓰기 호환 — ON CONFLICT UPDATE, 측정 성공** — 옛 재제출이 거리를 실제로 채우면 " +
+            "트리거가 이전에 남은 사유를 지운다",
+    )
+    fun `옛 UPSERT 재제출이 거리를 채우면 트리거가 사유를 지운다`() {
+        val conversionId = UUID.randomUUID()
+        oldUpsert(conversionId, editedCharCount = null, editDistance = null)
+        assertThat(metricRowOf(conversionId).editDistanceSkipReason).isEqualTo("no_review")
+
+        oldUpsert(conversionId, editedCharCount = EDITED_CHAR_COUNT_FIXTURE, editDistance = EDIT_DISTANCE_FIXTURE)
+
+        val row = metricRowOf(conversionId)
+        assertThat(row.editedCharCount).isEqualTo(EDITED_CHAR_COUNT_FIXTURE)
+        assertThat(row.editDistance).isEqualTo(EDIT_DISTANCE_FIXTURE)
+        assertThat(row.editDistanceSkipReason)
+            .describedAs("사유가 남아 있으면 「거리도 있고 사유도 있다」로 짝 CHECK 를 어긴다")
+            .isNull()
     }
 
     @Test
@@ -285,23 +348,69 @@ class ConversionFeedbackStorageTest {
             .isEqualTo(submittedAt)
     }
 
-    /** 지표 셋(+사유)만 다른 행 하나를 **원시 SQL 로** 넣는다. 도메인 타입을 지나지 않는 것이 요점이다. */
+    /**
+     * 지표 셋(+사유)만 다른 행 하나를 **원시 SQL 로** 넣는다. 도메인 타입을 지나지 않는 것이 요점이다.
+     *
+     * `minutesSpent` 는 기본이 [METRIC_ROW_MINUTES] 다 — [metricRowCount] 가 그 값으로 표식을
+     * 삼아 이 헬퍼가 넣은 행만 센다. 트리거가 사유를 되짚어 채워 CHECK 를 통과시키는 케이스처럼
+     * [EXPECTED_ACCEPTED_ROWS] 의 셈에 끼면 안 되는 행은 다른 값을 넘긴다.
+     *
+     * 넣은 행의 `conversion_id` 를 돌려준다 — 호출부가 [metricRowOf] 로 되읽어 트리거가 실제로
+     * 무엇을 파생했는지 잴 수 있게 한다.
+     */
     private fun insertMetrics(
         easy: Int?,
         edited: Int?,
         distance: Int?,
         reason: String?,
-    ) {
+        minutesSpent: Int = METRIC_ROW_MINUTES,
+    ): UUID {
+        val conversionId = UUID.randomUUID()
         database.execute(
             """
             INSERT INTO conversion_feedback
                 (conversion_id, user_id, publish_intent, quality_score, minutes_spent,
                  easy_char_count, edited_char_count, edit_distance, edit_distance_skip_reason)
-            VALUES ('${UUID.randomUUID()}', '${UUID.randomUUID()}', 'as_is', 4, $METRIC_ROW_MINUTES,
+            VALUES ('$conversionId', '${UUID.randomUUID()}', 'as_is', 4, $minutesSpent,
                     ${easy ?: "NULL"}, ${edited ?: "NULL"}, ${distance ?: "NULL"},
                     ${reason?.let { "'$it'" } ?: "NULL"});
             """.trimIndent(),
         )
+        return conversionId
+    }
+
+    /**
+     * **4e0c1b0 시점의 옛 UPSERT** — `edit_distance_skip_reason` 컬럼을 전혀 언급하지 않는다.
+     * `JdbcConversionFeedbackRepository.UPSERT_SQL` 이 그 컬럼을 더하기 **전** 문장을 그대로
+     * 옮긴 것이 요점이다 — 롤백되거나 아직 안 올라간 옛 애플리케이션 인스턴스가 실제로
+     * 이 문장을 낸다. 구버전 쓰기 호환 트리거(`V4` 의
+     * `conversion_feedback_derive_skip_reason`)가 이 경로에서도 CHECK 를 지키게 하는지가
+     * 이 테스트들의 대상이다.
+     */
+    private fun oldUpsert(
+        conversionId: UUID,
+        editedCharCount: Int?,
+        editDistance: Int?,
+    ) {
+        jdbc
+            .sql(OLD_UPSERT_SQL)
+            .param("conversionId", conversionId)
+            .param("ownerId", OWNER)
+            .param("publishIntent", PublishIntent.AS_IS.wireName)
+            .param("qualityScore", QUALITY_SCORE)
+            .param("minutesSpent", OLD_WRITE_MINUTES)
+            .param("comment", null as ByteArray?)
+            .param("scheme", null as String?)
+            .param("keyVersion", null as Int?)
+            .param("easyCharCount", EASY_CHAR_COUNT_FIXTURE)
+            .param("editedCharCount", editedCharCount)
+            .param("editDistance", editDistance)
+            // `RETURNING submitted_at` 이 있는 문장이다 — PgJDBC 는 `executeUpdate()` 로 그런
+            // 문장을 내면 "A result was returned when none was expected" 로 거절한다
+            // (`JdbcConversionFeedbackRepository.upsert` 가 실제로 `.query { … }.single()` 을
+            // 쓰는 이유와 같다). `.update()` 를 그대로 옮기면 이 헬퍼가 트리거보다 먼저 깨진다.
+            .query { rs, _ -> rs.getObject("submitted_at", OffsetDateTime::class.java).toInstant() }
+            .single()
     }
 
     /** 지표 케이스 행 하나를 되읽는다 — 실물 upsert 가 실제로 무엇을 저장했는지 잰다. */
@@ -404,6 +513,45 @@ class ConversionFeedbackStorageTest {
         /** 실물 upsert 지표 케이스(예산 초과·검수본 없음)가 쓰는 글자 수 고정값. */
         const val EASY_CHAR_COUNT_FIXTURE = 120
         const val EDITED_CHAR_COUNT_FIXTURE = 118
+
+        /** 구버전 쓰기 호환 케이스가 「측정 성공」 갈래에서 쓰는 편집 거리 고정값. */
+        const val EDIT_DISTANCE_FIXTURE = 7
+
+        /** 구버전 쓰기 호환 케이스가 넣는 행의 표식. [METRIC_ROW_MINUTES]·[MINUTES_SPENT] 와 갈라 센다. */
+        const val OLD_WRITE_MINUTES = 15
+
+        /**
+         * `JdbcConversionFeedbackRepository.UPSERT_SQL` 의 4e0c1b0 시점 문장 — `edit_distance_skip_reason`
+         * 을 더하기 **전**이다. 옛 애플리케이션이 실제로 내는 문장을 그대로 옮겨야 구버전 쓰기
+         * 호환 트리거를 검증하는 뜻이 서므로, 새 문장을 손으로 줄여 만들지 않는다.
+         */
+        const val OLD_UPSERT_SQL =
+            """
+            INSERT INTO conversion_feedback (
+                conversion_id, user_id, publish_intent, quality_score, minutes_spent,
+                comment_encrypted, encryption_scheme, key_version,
+                easy_char_count, edited_char_count, edit_distance
+            ) VALUES (
+                :conversionId, :ownerId, :publishIntent, :qualityScore, :minutesSpent,
+                CAST(:comment AS bytea), CAST(:scheme AS varchar), CAST(:keyVersion AS smallint),
+                CAST(:easyCharCount AS integer), CAST(:editedCharCount AS integer),
+                CAST(:editDistance AS integer)
+            )
+            ON CONFLICT (conversion_id) DO UPDATE SET
+                publish_intent = EXCLUDED.publish_intent,
+                quality_score = EXCLUDED.quality_score,
+                minutes_spent = EXCLUDED.minutes_spent,
+                comment_encrypted = EXCLUDED.comment_encrypted,
+                encryption_scheme = EXCLUDED.encryption_scheme,
+                key_version = EXCLUDED.key_version,
+                easy_char_count = EXCLUDED.easy_char_count,
+                edited_char_count = EXCLUDED.edited_char_count,
+                edit_distance = EXCLUDED.edit_distance,
+                submitted_at = now(),
+                updated_at = now()
+            WHERE conversion_feedback.user_id = :ownerId
+            RETURNING submitted_at
+            """
 
         val KEY_MATERIAL: Map<Int, Secret> =
             listOf(OLD_GENERATION, NEW_GENERATION).associateWith {

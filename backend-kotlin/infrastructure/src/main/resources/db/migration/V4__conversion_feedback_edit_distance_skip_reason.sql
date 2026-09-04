@@ -28,6 +28,51 @@ UPDATE conversion_feedback
 SET edit_distance_skip_reason = 'no_review'
 WHERE edit_distance IS NULL;
 
+-- ## 구버전 쓰기 호환
+--
+-- 이 마이그레이션이 적용된 뒤 `edit_distance_skip_reason` 을 **모르는** 옛 애플리케이션이
+-- 계속 쓸 수 있다 — 배포 롤백, 또는 그 사이 떠 있던 옛 인스턴스. `JdbcConversionFeedbackRepository`
+-- 의 옛 `UPSERT_SQL`(4e0c1b0)은 이 컬럼을 아예 언급하지 않는 INSERT ... ON CONFLICT 라,
+-- 새로 생기는 아래 `ck_conversion_feedback_edit_distance_skip_reason_paired` 앞에서 매번
+-- 걸린다: `edit_distance` 는 채우거나 비우면서 `edit_distance_skip_reason` 은 항상 암묵적
+-- NULL 로 두기 때문이다. 검수본 없는 최초 제출(`edit_distance IS NULL`)도, 예산 초과가
+-- 섞인 재제출의 ON CONFLICT UPDATE 도 CHECK 위반으로 500 이 된다. Flyway 는 마이그레이션을
+-- 되돌리지 않으므로, 옛 버전으로 애플리케이션만 롤백해도 이 표는 그대로 막힌다.
+--
+-- 아래 트리거가 그 구멍을 메운다 — 사유를 명시하지 않는 쓰기에서 지표 조합으로부터
+-- 사유를 **되짚어 채우는** 호환 shim 이다. 애플리케이션은 여전히 사유를 명시적으로 쓰고,
+-- 트리거는 그 값이 없을 때만(옛 쓰기 경로) 개입한다. 아래 CHECK 셋이 여전히 마지막
+-- 방어선이다 — 트리거는 짝을 맞출 뿐 검증하지 않는다.
+--
+-- 이 저장소에는 트리거를 쓰는 관행이 없다(`updated_at` 조차 upsert 문이 직접 민다,
+-- V2 주석 참고) — 이 트리거는 예외이고, 이 PR 보다 오래된 쓰기 경로가 더는 존재할 수
+-- 없게 되면(옛 애플리케이션 인스턴스가 전부 걷히면) 나중 마이그레이션에서 지워도 된다.
+CREATE FUNCTION conversion_feedback_derive_skip_reason() RETURNS trigger
+    LANGUAGE plpgsql AS $$
+BEGIN
+    IF NEW.edit_distance IS NOT NULL THEN
+        -- 거리를 실제로 쟀다 — 옛 UPSERT 의 재제출(ON CONFLICT UPDATE)이 예전에 남긴
+        -- 사유를 지운다. 그러지 않으면 「사유가 있는데 거리도 있다」는 짝 어긋난 행이 된다.
+        NEW.edit_distance_skip_reason := NULL;
+    ELSIF NEW.edit_distance_skip_reason IS NULL THEN
+        -- 거리가 없는데 사유도 안 왔다 — 옛 쓰기 경로다. `EditMetrics.of` 의 두 갈래와 같은
+        -- 판별: 검수본 글자 수가 없으면 검수본 자체가 없었던 것(no_review), 있으면 거리
+        -- 계산만 예산 때문에 포기한 것(budget_exceeded).
+        IF NEW.edited_char_count IS NULL THEN
+            NEW.edit_distance_skip_reason := 'no_review';
+        ELSE
+            NEW.edit_distance_skip_reason := 'budget_exceeded';
+        END IF;
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER trg_conversion_feedback_derive_skip_reason
+    BEFORE INSERT OR UPDATE ON conversion_feedback
+    FOR EACH ROW
+    EXECUTE FUNCTION conversion_feedback_derive_skip_reason();
+
 -- 알 수 없는 사유가 조용히 들어가는 것을 막는다. V1 의 `ck_conversions_status_valid` 와 같은
 -- 규칙으로, 목록을 코드가 아니라 이 시점 스냅샷으로 SQL 에 직접 적는다.
 ALTER TABLE conversion_feedback
