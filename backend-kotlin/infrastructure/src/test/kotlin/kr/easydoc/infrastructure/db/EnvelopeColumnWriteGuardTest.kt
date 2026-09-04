@@ -365,7 +365,14 @@ class EnvelopeColumnWriteGuardTest {
          * 삭제 경로」 판단 ⑵)의 `JdbcFeedbackCommentPurge` UPDATE 다 — 봉인 열이 하나라 문장도
          * 하나이고, `comment_encrypted`·`encryption_scheme`·`key_version` 셋을 같은 문장에서
          * 함께 `NULL`로 만든다(값을 대입하는 대신 비운다는 점만 회전 UPDATE 와 다르다).
+         *
+         * 19 → 20: `KeyRotationBatchTest` 의 CONTENDED 재현 케이스(독립 코드 리뷰 PR #15 LOW
+         * 지적)가 더한 `rewriteEditedTextConcurrently` 다. 회전의 SELECT 와 UPDATE 사이에
+         * 끼워 넣는 동시 쓰기이고, `edited_text_encrypted` 와 봉투 두 값을 같은 문장에서
+         * 함께 쓴다 — 옛 세대 그대로 쓰는 실제 동시 쓰기를 흉내 내므로 이 저장소의 다른 쓰기와
+         * 같은 불변식을 진다. `ReviewedBody` 를 만들 수 있는 자리가 아니라(privacy-gate X-5)
+         * 제품 검수 저장 경로 대신 이 원시 SQL 을 쓴다 — 사유는 그 함수 KDoc.
          */
-        const val EXPECTED_STATEMENTS = 19
+        const val EXPECTED_STATEMENTS = 20
     }
 }

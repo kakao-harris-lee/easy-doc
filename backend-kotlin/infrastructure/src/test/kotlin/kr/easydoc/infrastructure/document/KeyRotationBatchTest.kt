@@ -6,7 +6,6 @@ import kr.easydoc.application.document.ConversionEnvelope
 import kr.easydoc.application.document.ConversionFeedbackService
 import kr.easydoc.application.document.ConversionQueryService
 import kr.easydoc.application.document.ConversionRepository
-import kr.easydoc.application.document.ConversionReviewService
 import kr.easydoc.application.document.DocumentService
 import kr.easydoc.application.document.DocumentStorage
 import kr.easydoc.application.document.EnvelopeRotation
@@ -25,7 +24,6 @@ import kr.easydoc.core.crypto.EncryptionScheme
 import kr.easydoc.core.crypto.PlainBody
 import kr.easydoc.core.crypto.PlainBytes
 import kr.easydoc.core.pilot.PublishIntent
-import kr.easydoc.core.privacy.ReviewedBody
 import kr.easydoc.core.security.Secret
 import kr.easydoc.core.text.EditDistanceBudget
 import kr.easydoc.core.user.PasswordHash
@@ -126,8 +124,15 @@ class KeyRotationBatchTest {
 
         // NoTransaction 이라 회전이 실 잠금 없이 SELECT 와 UPDATE 를 두 문장으로 낸다 —
         // `EnvelopeRotationConcurrencyTest` 「잠금이 서지 않으면 CONTENDED 다」와 같은 기법.
-        // 그 사이에 낀 이 훅이 **제품 검수 저장 경로 그대로** 옛 세대인 채로 한 열
-        // (edited_text_encrypted)을 바꾼다.
+        // 그 사이에 낀 이 훅이 옛 세대인 채로 한 열(edited_text_encrypted)을 바꾼다.
+        //
+        // **제품 검수 저장 경로(`ConversionReviewService`)를 부르지 않는다.** 그 경로는
+        // `ReviewedBody` 를 요구하는데, 그 타입은 사람이 검수 화면에서 제출한 본문을 읽는
+        // 어댑터 한 곳에서만 만들 수 있다(privacy-gate X-5, `ProvenanceCreationSitesTest`
+        // 의 허용목록). 대신 `EnvelopeRotationConcurrencyTest.rewriteSourceText` 와 같은
+        // 기법을 쓴다 — `PlainBody` 로 직접 암호화하고 원시 SQL 로 쓴다. 재는 것은 「회전의
+        // 낙관적 조건이 동시 쓰기를 CONTENDED 로 드러내는가」이지 검수 유스케이스 자체가
+        // 아니라, 어떤 동시 쓰기든 같은 열을 바꾸기만 하면 같은 성질을 잰다.
         var interfered = false
         val client = JdbcClient.create(dataSource)
         val stores =
@@ -138,7 +143,7 @@ class KeyRotationBatchTest {
                     HookedConversions(JdbcConversionRepository(client)) {
                         if (!interfered) {
                             interfered = true
-                            reviewServiceOn().save(owner, accepted.conversionId, ReviewedBody("동시 편집"))
+                            rewriteEditedTextConcurrently(oldCipher, accepted.conversionId, "동시 편집")
                         }
                     },
                 feedback = JdbcConversionFeedbackRepository(client),
@@ -191,29 +196,34 @@ class KeyRotationBatchTest {
         override fun <T> inTransaction(block: () -> T): T = block()
     }
 
-    /** 검수 저장 유스케이스 — 제품 조립과 같은 모양이고 [feedbackServiceOn] 과 나란하다. */
-    private fun reviewServiceOn(): ConversionReviewService {
-        val client = JdbcClient.create(dataSource)
-        val conversions = JdbcConversionRepository(client)
-        val runner = SpringTransactionRunner(TransactionTemplate(DataSourceTransactionManager(dataSource)))
-        val writer = cipherWith(OLD_GENERATION)
-        return ConversionReviewService(
-            conversions = conversions,
-            cipher = writer,
-            query =
-                ConversionQueryService(
-                    conversions = conversions,
-                    cipher = writer,
-                    maskedItems = MaskedItemCodec(),
-                    original =
-                        OriginalReflection(
-                            StoredOriginalReader(JdbcDocumentOriginalRepository(client), writer),
-                            PackagedOriginalReflector(),
-                        ),
-                    transaction = runner,
-                ),
-            transaction = runner,
-        )
+    /**
+     * 회전의 SELECT 와 UPDATE 사이에 끼워 넣는 동시 쓰기. `edited_text_encrypted` 한 열만
+     * 원시 SQL 로 바꾼다 — `EnvelopeRotationConcurrencyTest.rewriteSourceText` 와 같은 형태고
+     * 같은 이유다: `ReviewedBody` 를 만들 수 있는 자리가 아니다(이 함수 주석 위 호출부 참고).
+     *
+     * 봉투 두 값(`encryption_scheme`·`key_version`)도 **같은 문장에서 함께** 쓴다 —
+     * `EnvelopeColumnWriteGuardTest` 가 저장소 전체에 거는 불변식이고, 이 동시 쓰기도 예외가
+     * 아니다: 옛 세대 그대로 쓰는 실제 동시 쓰기를 흉내 내므로 [cipher] 가 낸 세대를
+     * 그대로 적으면 된다.
+     */
+    private fun rewriteEditedTextConcurrently(
+        cipher: ContentCipher,
+        conversionId: UUID,
+        body: String,
+    ) {
+        val sealed = cipher.encrypt(PlainBody(body), conversionId, EncryptedField.CONVERSION_EDITED_TEXT)
+        jdbc
+            .sql(
+                """
+                UPDATE conversions
+                SET edited_text_encrypted = :bytes, encryption_scheme = :scheme, key_version = :keyVersion
+                WHERE id = :id
+                """.trimIndent(),
+            ).param("bytes", sealed.bytes)
+            .param("scheme", sealed.scheme)
+            .param("keyVersion", sealed.keyVersion)
+            .param("id", conversionId)
+            .update()
     }
 
     /** 가족 넷 모두에 옛 세대(v1) 행을 [ROW_COUNT] 건씩 심는다. */
