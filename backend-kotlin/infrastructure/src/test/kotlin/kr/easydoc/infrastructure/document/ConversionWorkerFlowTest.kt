@@ -1,5 +1,6 @@
 package kr.easydoc.infrastructure.document
 
+import kr.easydoc.application.conversion.ConversionCompletedNotifier
 import kr.easydoc.application.conversion.ConversionJobHeartbeat
 import kr.easydoc.application.conversion.ConversionJobLease
 import kr.easydoc.application.conversion.ConversionJobOutcome
@@ -27,6 +28,7 @@ import kr.easydoc.infrastructure.auth.JdbcUserRepository
 import kr.easydoc.infrastructure.auth.JdbcWorkspaceRepository
 import kr.easydoc.infrastructure.crypto.AesGcmContentCipher
 import kr.easydoc.infrastructure.db.SpringTransactionRunner
+import kr.easydoc.infrastructure.mail.FakeMailSender
 import kr.easydoc.infrastructure.queue.JdbcConversionQueue
 import org.assertj.core.api.Assertions.assertThat
 import org.flywaydb.core.Flyway
@@ -173,6 +175,12 @@ class ConversionWorkerFlowTest {
                             maxAttempts = 3,
                             retryBackoff = Duration.ofSeconds(1),
                         ),
+                ),
+            notifier =
+                ConversionCompletedNotifier(
+                    store = JdbcConversionNotificationStore(jdbc),
+                    mailSender = FakeMailSender(),
+                    publicBaseUrl = "http://localhost:5173",
                 ),
         )
 
