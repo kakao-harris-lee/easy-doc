@@ -78,11 +78,19 @@ data class GoogleOAuthProperties(
     val clientSecret: Secret = Secret.EMPTY,
     /** 콤마로 구분한 목록. 로컬 기본값은 프런트 개발 서버의 콜백 경로다. */
     val redirectUris: List<String> = listOf(DEFAULT_LOCAL_REDIRECT_URI),
+    /**
+     * JWKS(서명 검증 키) 캐시 TTL(분). 콜백마다 새로 받으면 Google 에 불필요한 부하를
+     * 준다 — [kr.easydoc.infrastructure.auth.google.GoogleSocialLoginProvider] 가 이
+     * 기간 동안은 캐시를 쓰고, 모르는 `kid`(키 회전)를 만나면 만료 전이라도 즉시 한 번
+     * 다시 받는다.
+     */
+    val jwksCacheMinutes: Long = DEFAULT_JWKS_CACHE_MINUTES,
 ) {
     fun isConfigured(): Boolean = clientId.isNotBlank() && !clientSecret.isBlank()
 
     private companion object {
         const val DEFAULT_LOCAL_REDIRECT_URI = "http://localhost:5173/auth/google/callback"
+        const val DEFAULT_JWKS_CACHE_MINUTES = 60L
     }
 }
 
@@ -174,6 +182,7 @@ class AuthConfiguration {
                     clientId = google.clientId,
                     clientSecret = google.clientSecret,
                     redirectUriAllowlist = google.redirectUris.toSet(),
+                    jwksCacheTtl = Duration.ofMinutes(google.jwksCacheMinutes),
                 ),
             )
         return mapOf(SocialLoginProviderId.GOOGLE to provider)

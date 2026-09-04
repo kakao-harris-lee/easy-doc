@@ -25,6 +25,7 @@ import java.net.http.HttpClient
 import java.nio.charset.StandardCharsets
 import java.security.interfaces.RSAPublicKey
 import java.text.ParseException
+import java.time.Clock
 import java.time.Duration
 import java.time.Instant
 
@@ -48,9 +49,25 @@ import java.time.Instant
  * 원칙).
  */
 @Suppress("TooManyFunctions")
-class GoogleSocialLoginProvider(private val settings: GoogleOAuthSettings) : SocialLoginProvider {
+class GoogleSocialLoginProvider(
+    private val settings: GoogleOAuthSettings,
+    private val clock: Clock = Clock.systemUTC(),
+) : SocialLoginProvider {
     private val log = LoggerFactory.getLogger(GoogleSocialLoginProvider::class.java)
     private val json = JsonMapper.builder().build()
+
+    /**
+     * JWKS 캐시 — [signingKeyFor] 만 읽고 쓴다. `cacheLock` 은 갱신 자리에서만 잠근다:
+     * 캐시가 신선하고 아는 `kid` 면 잠금 없이 바로 돌려준다(콜백마다 매번 도는 자리라
+     * 잠금 경합을 피한다). 잠금 안에서 조건을 **다시** 확인하는 이유는 여러 스레드가
+     * 동시에 캐시 미스를 만나면 그중 하나만 실제로 받아 오게 하려는 것이다 — 다른
+     * 스레드들은 잠금을 얻은 뒤 그 스레드가 이미 채운 결과를 본다.
+     */
+    private val cacheLock = Any()
+
+    @Volatile private var cachedKeys: Map<String, RSAKey> = emptyMap()
+
+    @Volatile private var cachedAt: Instant = Instant.EPOCH
 
     private val client: RestClient =
         RestClient
@@ -194,7 +211,7 @@ class GoogleSocialLoginProvider(private val settings: GoogleOAuthSettings) : Soc
             expiresAt == null ||
             claims.issuer !in GOOGLE_ISSUERS ||
             claims.audience?.contains(settings.clientId) != true ||
-            !Instant.now().isBefore(expiresAt.toInstant()) ||
+            !clock.instant().isBefore(expiresAt.toInstant()) ||
             claims.getStringClaim("nonce") != expectedNonce
         ) {
             throw InvalidCredentialsException(CODE_REJECTED_MESSAGE)
@@ -206,8 +223,47 @@ class GoogleSocialLoginProvider(private val settings: GoogleOAuthSettings) : Soc
         )
     }
 
-    /** Google JWKS 에서 토큰이 가리키는 키(`kid`)를 찾는다. 캐시하지 않는다 — MVP 단순화. */
-    private fun signingKeyFor(keyId: String?): RSAPublicKey = publicKeyFrom(jwkSetFrom(fetchJwksRaw()), keyId)
+    /**
+     * Google JWKS 에서 토큰이 가리키는 키(`kid`)를 찾는다. [cachedKeysFor] 가 캐시를
+     * 다룬다 — 이 함수는 그 결과에서 키 하나를 고르기만 한다.
+     */
+    private fun signingKeyFor(keyId: String?): RSAPublicKey {
+        val keys = cachedKeysFor(keyId)
+        val jwk = keyId?.let { keys[it] } ?: keys.values.firstOrNull()
+        return jwk?.toRSAPublicKey() ?: throw InvalidCredentialsException(CODE_REJECTED_MESSAGE)
+    }
+
+    /**
+     * 캐시가 신선하고(`jwksCacheTtl` 이내) 이 `kid` 를 안다면 그대로 돌려준다. 아니면
+     * (비었거나, 낡았거나, 모르는 `kid` — 키 회전) 새로 받아 **전체를 교체**한다.
+     * `keyId` 가 `null` 이면 항상 캐시를 그대로 쓴다(첫 키를 쓰는 갈래라 특정 `kid` 를
+     * 모른다는 조건이 성립하지 않는다) — 비어 있을 때만 채운다.
+     */
+    private fun cachedKeysFor(keyId: String?): Map<String, RSAKey> {
+        val snapshot = cachedKeys
+        if (isUsable(snapshot, keyId)) return snapshot
+
+        return synchronized(cacheLock) {
+            // 잠금을 얻는 사이 다른 스레드가 이미 채웠을 수 있다 — 다시 확인한다.
+            val current = cachedKeys
+            if (isUsable(current, keyId)) {
+                current
+            } else {
+                val refreshed = jwkSetFrom(fetchJwksRaw()).keys.filterIsInstance<RSAKey>().associateBy { it.keyID }
+                cachedKeys = refreshed
+                cachedAt = clock.instant()
+                refreshed
+            }
+        }
+    }
+
+    private fun isUsable(
+        keys: Map<String, RSAKey>,
+        keyId: String?,
+    ): Boolean =
+        keys.isNotEmpty() &&
+            Duration.between(cachedAt, clock.instant()) < settings.jwksCacheTtl &&
+            (keyId == null || keys.containsKey(keyId))
 
     private fun fetchJwksRaw(): String =
         try {
@@ -228,14 +284,6 @@ class GoogleSocialLoginProvider(private val settings: GoogleOAuthSettings) : Soc
         } catch (exc: ParseException) {
             throw unreachable("JWKS 형식 오류: ${exc::class.java.simpleName}")
         }
-
-    private fun publicKeyFrom(
-        jwkSet: JWKSet,
-        keyId: String?,
-    ): RSAPublicKey {
-        val jwk = ((if (keyId != null) jwkSet.getKeyByKeyId(keyId) else null) ?: jwkSet.keys.firstOrNull()) as? RSAKey
-        return jwk?.toRSAPublicKey() ?: throw InvalidCredentialsException(CODE_REJECTED_MESSAGE)
-    }
 
     /**
      * `detail` 은 **로그에만** 남는다. `ExternalServiceUnavailableException` 은
@@ -273,6 +321,8 @@ data class GoogleOAuthSettings(
     val jwksUri: String = GOOGLE_JWKS_URI,
     val connectTimeout: Duration = GOOGLE_CONNECT_TIMEOUT,
     val readTimeout: Duration = GOOGLE_READ_TIMEOUT,
+    /** 서명 검증 캐시 TTL. 운영 중 조정될 수 있는 값이라 구성값이다(CLAUDE.md). */
+    val jwksCacheTtl: Duration = GOOGLE_JWKS_CACHE_TTL_DEFAULT,
 )
 
 const val GOOGLE_AUTHORIZATION_ENDPOINT: String = "https://accounts.google.com/o/oauth2/v2/auth"
@@ -281,3 +331,6 @@ const val GOOGLE_JWKS_URI: String = "https://www.googleapis.com/oauth2/v3/certs"
 
 val GOOGLE_CONNECT_TIMEOUT: Duration = Duration.ofSeconds(10)
 val GOOGLE_READ_TIMEOUT: Duration = Duration.ofSeconds(15)
+
+/** `easydoc.oauth.google.jwks-cache-minutes` 미설정 시 기본값. */
+val GOOGLE_JWKS_CACHE_TTL_DEFAULT: Duration = Duration.ofMinutes(60)

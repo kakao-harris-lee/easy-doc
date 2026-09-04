@@ -98,6 +98,8 @@ easydoc:
   # 환경변수로만 주입하고(CLAUDE.md), yml 은 관여하지 않는다.
   oauth:
     state-ttl-minutes: 10
+    google:
+      jwks-cache-minutes: 60
   # 파일럿 피드백 저장(`PUT /conversions/{id}/feedback`) 의 편집 거리 계산 CPU 상한.
   # 요청 스레드에서 도는 O(n·m) Levenshtein 표의 최대 칸 수(접두·접미를 뗀 뒤 크기)를
   # 막는다 — 넘으면 편집 거리만 null(측정 대상 아님)이고 글자 수 둘은 남는다

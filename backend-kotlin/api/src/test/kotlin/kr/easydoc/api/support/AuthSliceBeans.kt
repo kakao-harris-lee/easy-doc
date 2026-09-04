@@ -548,6 +548,10 @@ class InMemoryOAuthStateStore : OAuthStateStore {
  * 쓰는 고정 대조값이기도 하다.
  */
 class FakeGoogleSocialLoginProvider : SocialLoginProvider {
+    /** 컨트롤러가 검증에서 이미 끊긴 요청은 이 카운터를 건드리지 않아야 한다("제공자를 왕복하지 않는다"). */
+    var exchangeCallCount = 0
+        private set
+
     override fun supportsRedirectUri(redirectUri: String): Boolean = redirectUri == ALLOWED_REDIRECT_URI
 
     override fun authorizationUrl(
@@ -561,6 +565,7 @@ class FakeGoogleSocialLoginProvider : SocialLoginProvider {
         redirectUri: String,
         nonce: String,
     ): SocialIdentity {
+        exchangeCallCount++
         if (code == "reject") {
             throw InvalidCredentialsException("이메일 또는 비밀번호가 올바르지 않습니다")
         }

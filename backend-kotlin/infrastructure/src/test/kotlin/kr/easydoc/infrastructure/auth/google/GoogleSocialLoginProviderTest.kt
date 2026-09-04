@@ -21,9 +21,13 @@ import org.junit.jupiter.api.Test
 import java.net.InetSocketAddress
 import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
+import java.time.Clock
 import java.time.Duration
 import java.time.Instant
+import java.time.ZoneId
+import java.time.ZoneOffset
 import java.util.Date
+import java.util.concurrent.atomic.AtomicInteger
 
 /** Google 어댑터 — 토큰 교환·ID 토큰 검증을 HTTP 스텁 + 테스트 RSA 키로 잰다. */
 class GoogleSocialLoginProviderTest {
@@ -178,9 +182,68 @@ class GoogleSocialLoginProviderTest {
         assertThat(p.supportsRedirectUri("https://evil.example.test/callback")).isFalse()
     }
 
+    // ------------------------------------------------------------------ JWKS 캐시
+
+    @Test
+    @DisplayName("같은 kid 로 두 번 검증하면 JWKS 요청이 한 번뿐이다 — 캐시가 재사용된다")
+    fun `같은 kid 는 캐시를 재사용한다`() {
+        val p = provider()
+        server.tokenResponseBody = tokenResponseWith(signedIdToken())
+        p.exchange("auth-code", REDIRECT_URI, NONCE)
+
+        server.tokenResponseBody = tokenResponseWith(signedIdToken(subject = "google-sub-2"))
+        val second = p.exchange("auth-code", REDIRECT_URI, NONCE)
+
+        assertThat(second.providerUserId).isEqualTo("google-sub-2")
+        assertThat(server.certsRequestCount).isEqualTo(1)
+    }
+
+    @Test
+    @DisplayName("모르는 kid(키 회전)를 만나면 캐시가 만료 전이라도 정확히 한 번 다시 받는다")
+    fun `모르는 kid 는 캐시를 정확히 한 번 갱신한다`() {
+        val p = provider()
+        server.tokenResponseBody = tokenResponseWith(signedIdToken())
+        p.exchange("auth-code", REDIRECT_URI, NONCE)
+        assertThat(server.certsRequestCount).isEqualTo(1)
+
+        // 키 회전: JWKS 에 새 키가 늘었고, 새 토큰은 그 새 키로 서명됐다 — 캐시는 아직 모른다.
+        val rotatedKey = RSAKeyGenerator(2048).keyID("test-key-2").generate()
+        server.jwksBody = jwkSetBody(signingKey, rotatedKey)
+        server.tokenResponseBody =
+            tokenResponseWith(signedIdToken(subject = "google-sub-3", signingKeyOverride = rotatedKey))
+
+        val identity = p.exchange("auth-code", REDIRECT_URI, NONCE)
+
+        assertThat(identity.providerUserId).isEqualTo("google-sub-3")
+        assertThat(server.certsRequestCount).isEqualTo(2)
+    }
+
+    @Test
+    @DisplayName("캐시 TTL 이 지나면 같은 kid 라도 다시 받는다")
+    fun `TTL 만료 후에는 같은 kid 도 다시 받는다`() {
+        val clock = MutableClock(Instant.parse("2026-09-05T00:00:00Z"))
+        val p = provider(jwksCacheTtl = Duration.ofMinutes(10), clock = clock)
+        server.tokenResponseBody =
+            tokenResponseWith(signedIdToken(expiresAt = clock.instant().plus(Duration.ofMinutes(5))))
+        p.exchange("auth-code", REDIRECT_URI, NONCE)
+        assertThat(server.certsRequestCount).isEqualTo(1)
+
+        clock.advance(Duration.ofMinutes(11))
+        server.tokenResponseBody =
+            tokenResponseWith(
+                signedIdToken(subject = "google-sub-4", expiresAt = clock.instant().plus(Duration.ofMinutes(5))),
+            )
+        p.exchange("auth-code", REDIRECT_URI, NONCE)
+
+        assertThat(server.certsRequestCount).isEqualTo(2)
+    }
+
     // ------------------------------------------------------------------ 픽스처
 
-    private fun provider(): GoogleSocialLoginProvider =
+    private fun provider(
+        jwksCacheTtl: Duration = GOOGLE_JWKS_CACHE_TTL_DEFAULT,
+        clock: Clock = Clock.systemUTC(),
+    ): GoogleSocialLoginProvider =
         GoogleSocialLoginProvider(
             GoogleOAuthSettings(
                 clientId = CLIENT_ID,
@@ -188,7 +251,9 @@ class GoogleSocialLoginProviderTest {
                 redirectUriAllowlist = setOf(REDIRECT_URI),
                 tokenEndpoint = server.baseUrl + "/token",
                 jwksUri = server.baseUrl + "/certs",
+                jwksCacheTtl = jwksCacheTtl,
             ),
+            clock = clock,
         )
 
     /** 시험용 클레임 조합기 — 각 매개변수가 검증 규칙 하나씩을 겨냥한 테스트 픽스처다. */
@@ -222,9 +287,9 @@ class GoogleSocialLoginProviderTest {
 
     private fun tokenResponseWith(idToken: String): String = """{"id_token":"$idToken"}"""
 
-    private fun jwkSetBody(key: RSAKey): String =
+    private fun jwkSetBody(vararg keys: RSAKey): String =
         com.nimbusds.jose.jwk
-            .JWKSet(key.toPublicJWK())
+            .JWKSet(keys.map { it.toPublicJWK() })
             .toString()
 
     private fun parseForm(body: String): Map<String, String> =
@@ -253,6 +318,10 @@ private class RoutedStubServer : AutoCloseable {
 
     val tokenRequests: MutableList<String> = mutableListOf()
 
+    /** JWKS 캐시가 실제로 요청 수를 줄이는지 재는 자리 — [GoogleSocialLoginProviderTest] 의 캐시 테스트 전용. */
+    private val certsRequests = AtomicInteger(0)
+    val certsRequestCount: Int get() = certsRequests.get()
+
     init {
         server.createContext("/token") { exchange -> handleToken(exchange) }
         server.createContext("/certs") { exchange -> handleCerts(exchange) }
@@ -269,7 +338,10 @@ private class RoutedStubServer : AutoCloseable {
     }
 
     private fun handleCerts(exchange: HttpExchange) {
-        exchange.use { respond(exchange, 200, jwksBody) }
+        exchange.use {
+            certsRequests.incrementAndGet()
+            respond(exchange, 200, jwksBody)
+        }
     }
 
     private fun respond(
@@ -286,4 +358,17 @@ private class RoutedStubServer : AutoCloseable {
     override fun close() {
         server.stop(0)
     }
+}
+
+/** 만료 경계를 재기 위한 시계 — `JdbcOAuthStateStoreTest`(다른 패키지)와 같은 필요다. */
+private class MutableClock(private var instant: Instant) : Clock() {
+    fun advance(duration: Duration) {
+        instant += duration
+    }
+
+    override fun instant(): Instant = instant
+
+    override fun withZone(zone: ZoneId?): Clock = this
+
+    override fun getZone(): ZoneId = ZoneOffset.UTC
 }

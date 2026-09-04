@@ -1,5 +1,6 @@
 package kr.easydoc.api.auth
 
+import jakarta.validation.Valid
 import kr.easydoc.application.auth.SocialLoginProviderId
 import kr.easydoc.application.auth.SocialLoginService
 import org.springframework.http.HttpStatus
@@ -24,7 +25,7 @@ class OAuthController(private val socialLogin: SocialLoginService) {
     @PostMapping("/{provider}/start", consumes = [MediaType.APPLICATION_JSON_VALUE])
     fun start(
         @PathVariable provider: SocialLoginProviderId,
-        @RequestBody request: OAuthStartRequest,
+        @Valid @RequestBody request: OAuthStartRequest,
     ): ResponseEntity<OAuthStartResponse> {
         val started = socialLogin.start(provider, request.redirectUri)
         return private(HttpStatus.OK).body(OAuthStartResponse(started.authorizationUrl, started.state))
@@ -34,7 +35,7 @@ class OAuthController(private val socialLogin: SocialLoginService) {
     @PostMapping("/{provider}/callback", consumes = [MediaType.APPLICATION_JSON_VALUE])
     fun callback(
         @PathVariable provider: SocialLoginProviderId,
-        @RequestBody request: OAuthCallbackRequest,
+        @Valid @RequestBody request: OAuthCallbackRequest,
     ): ResponseEntity<TokenResponse> {
         val issued = socialLogin.callback(provider, request.code, request.state, request.redirectUri)
         return private(HttpStatus.OK).body(

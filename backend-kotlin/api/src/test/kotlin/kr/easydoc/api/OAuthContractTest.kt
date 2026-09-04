@@ -3,6 +3,7 @@ package kr.easydoc.api
 import kr.easydoc.api.config.PrivateResponseHeadersConfig
 import kr.easydoc.api.support.AuthSliceBeans
 import kr.easydoc.api.support.ContractSpec
+import kr.easydoc.api.support.FakeGoogleSocialLoginProvider
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
@@ -30,6 +31,9 @@ import java.nio.charset.StandardCharsets
 class OAuthContractTest {
     @Autowired
     private lateinit var mockMvc: MockMvc
+
+    @Autowired
+    private lateinit var fakeProvider: FakeGoogleSocialLoginProvider
 
     private val json = ObjectMapper()
 
@@ -66,6 +70,15 @@ class OAuthContractTest {
 
         assertDeclaredStatus(response, UNPROCESSABLE_CONTENT, START_PATH, POST)
         assertThat(detailText(response)).isEqualTo("허용되지 않은 redirect_uri 입니다")
+    }
+
+    @Test
+    @DisplayName("start 의 빈 redirect_uri 는 422 배열이다 — minLength:1, 스키마 층")
+    fun `start 의 빈 redirect_uri 는 422 배열이다`() {
+        val response = start("")
+
+        assertDeclaredStatus(response, UNPROCESSABLE_CONTENT, START_PATH, POST)
+        assertBodyValidationArray(response, "redirect_uri")
     }
 
     @Test
@@ -179,6 +192,39 @@ class OAuthContractTest {
         assertDeclaredStatus(response, BAD_REQUEST, CALLBACK_PATH, POST)
     }
 
+    @Test
+    @DisplayName("빈 code 는 422 배열이다 — 제공자를 왕복하지 않고 끊긴다")
+    fun `빈 code 는 422 배열이고 제공자를 부르지 않는다`() {
+        val state = startState()
+        val callsBefore = fakeProvider.exchangeCallCount
+
+        val response = callback(code = "", state = state)
+
+        assertDeclaredStatus(response, UNPROCESSABLE_CONTENT, CALLBACK_PATH, POST)
+        assertBodyValidationArray(response, "code")
+        assertThat(fakeProvider.exchangeCallCount)
+            .withFailMessage("빈 code 검증 실패인데 제공자 exchange 가 불렸다 — 스키마 층에서 끊기지 않았다")
+            .isEqualTo(callsBefore)
+    }
+
+    @Test
+    @DisplayName("빈 state 는 422 배열이다")
+    fun `빈 state 는 422 배열이다`() {
+        val response = callback(code = "sub-z|z@example.test|true", state = "")
+
+        assertDeclaredStatus(response, UNPROCESSABLE_CONTENT, CALLBACK_PATH, POST)
+        assertBodyValidationArray(response, "state")
+    }
+
+    @Test
+    @DisplayName("콜백의 빈 redirect_uri 는 422 배열이다")
+    fun `콜백의 빈 redirect_uri 는 422 배열이다`() {
+        val response = callback(code = "sub-w|w@example.test|true", state = startState(), redirectUri = "")
+
+        assertDeclaredStatus(response, UNPROCESSABLE_CONTENT, CALLBACK_PATH, POST)
+        assertBodyValidationArray(response, "redirect_uri")
+    }
+
     // ------------------------------------------------------------------ 헬퍼
 
     private fun start(
@@ -244,6 +290,19 @@ class OAuthContractTest {
         expected.forEach { (header, value) ->
             assertThat(response.getHeaders(header)).containsExactly(value)
         }
+    }
+
+    /** Bean Validation(스키마 층) 실패의 모양 — `[{loc, msg, type}]`, `loc` 이 그 필드를 지목한다. */
+    private fun assertBodyValidationArray(
+        response: MockHttpServletResponse,
+        fieldName: String,
+    ) {
+        val detail = body(response)["detail"]
+        assertThat(detail).isInstanceOf(List::class.java)
+        val items = (detail as List<*>).map { it as Map<*, *> }
+        assertThat(items.map { it["loc"] })
+            .withFailMessage("거절 항목이 %s 를 지목하지 않는다: %s", fieldName, items)
+            .contains(listOf("body", fieldName))
     }
 
     private companion object {

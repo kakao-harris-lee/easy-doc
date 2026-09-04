@@ -86,7 +86,13 @@ class GlobalExceptionHandler : ResponseEntityExceptionHandler() {
         val items =
             ex.bindingResult.allErrors.map { error ->
                 // FieldError 는 rejectedValue 를 들고 있다 — 읽지 않는다.
-                val field = (error as? FieldError)?.field
+                //
+                // `field` 는 Bean Validation 이 리플렉션으로 본 **Kotlin 프로퍼티 이름**
+                // (camelCase)이다 — Jackson `@JsonProperty` 별칭을 모른다(그 별칭은
+                // 역직렬화 단계에서만 쓰이고, `@Valid` 검증은 그 뒤 이미 만들어진 객체를
+                // 본다). `bodyReadItem` 의 `mismatch.path`(Jackson 자체가 잰 JSON 경로)와
+                // 달리 여기는 wire 이름으로 옮겨야 계약의 snake_case `loc` 과 맞는다.
+                val field = (error as? FieldError)?.field?.let(::snakeCase)
                 ValidationErrorItem(
                     loc = listOfNotNull(BODY, field),
                     msg = error.defaultMessage ?: INVALID_INPUT_MESSAGE,
@@ -331,6 +337,9 @@ private fun errorTypeOf(code: String?): String =
         "NotNull", "NotEmpty", "NotBlank", "Required" -> "missing"
         else -> code.replace(SNAKE_BOUNDARY, "$1_$2").lowercase()
     }
+
+/** Kotlin 프로퍼티 이름(camelCase) → 계약의 wire 이름(snake_case). `errorTypeOf` 와 같은 변환. */
+private fun snakeCase(name: String): String = name.replace(SNAKE_BOUNDARY, "$1_$2").lowercase()
 
 /** 파라미터가 어디서 왔는지 — 계약의 `loc` 첫 칸이 된다. */
 private fun locationOf(parameter: MethodParameter): String =
