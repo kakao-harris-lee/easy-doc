@@ -1,16 +1,23 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, useLocation } from 'react-router-dom'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { oauthLinkStart } from '../api/auth'
+import { ApiError } from '../api/client'
 import { AuthContext } from '../auth/context'
 import type { AuthContextValue } from '../auth/context'
 import { setUnsavedChanges } from '../review/unsavedChanges'
 import { workspaceContext } from '../test/factories'
+import { mockLocationAssign } from '../test/location'
 import { WorkspaceContext } from '../workspace/context'
 import { AppLayout } from './AppLayout'
 
 const EMAIL = 'gongmuwon@example.test'
+
+vi.mock('../api/auth', () => ({
+  oauthLinkStart: vi.fn(),
+}))
 
 /** 지금 주소를 화면에 적는다 — 가드가 이동을 막았는지 렌더 결과로 확인한다. */
 function LocationProbe() {
@@ -20,7 +27,7 @@ function LocationProbe() {
 function authValue(overrides: Partial<AuthContextValue> = {}): AuthContextValue {
   return {
     status: 'authenticated',
-    user: { id: 'u1', email: EMAIL, email_verified: true },
+    user: { id: 'u1', email: EMAIL, email_verified: true, identities: [] },
     signIn: () => Promise.resolve(),
     signUp: () => Promise.resolve(),
     signInWithGoogle: () => Promise.resolve(),
@@ -47,6 +54,11 @@ function renderLayout(auth: Partial<AuthContextValue> = {}, initialPath = '/') {
     </AuthContext.Provider>,
   )
 }
+
+beforeEach(() => {
+  window.sessionStorage.clear()
+  vi.mocked(oauthLinkStart).mockReset()
+})
 
 afterEach(() => {
   setUnsavedChanges(false)
@@ -187,6 +199,76 @@ describe('저장하지 않은 수정 가드', () => {
     await user.click(screen.getByRole('button', { name: '로그아웃' }))
 
     expect(signOut).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('계정 메뉴 — 구글 계정 연결', () => {
+  it('연결돼 있지 않으면 연결 버튼을 보여준다', async () => {
+    const user = userEvent.setup()
+    renderLayout({ user: { id: 'u1', email: EMAIL, email_verified: true, identities: [] } })
+
+    await user.click(screen.getByRole('button', { name: '계정 메뉴' }))
+
+    expect(screen.getByRole('button', { name: '구글 계정 연결' })).toBeInTheDocument()
+    expect(screen.queryByText('구글 계정 연결됨')).not.toBeInTheDocument()
+  })
+
+  it('이미 연결돼 있으면 연결 상태만 보여주고 버튼은 없다', async () => {
+    const user = userEvent.setup()
+    renderLayout({
+      user: {
+        id: 'u1',
+        email: EMAIL,
+        email_verified: true,
+        identities: [{ provider: 'google' }],
+      },
+    })
+
+    await user.click(screen.getByRole('button', { name: '계정 메뉴' }))
+
+    expect(screen.getByText('구글 계정 연결됨')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '구글 계정 연결' })).not.toBeInTheDocument()
+  })
+
+  it('연결 버튼을 누르면 시작 요청 뒤 state를 저장하고 인가 URL로 이동한다', async () => {
+    const user = userEvent.setup()
+    vi.mocked(oauthLinkStart).mockResolvedValue({
+      authorization_url: 'https://accounts.google.com/o/oauth2/v2/auth?state=link-state',
+      state: 'link-state',
+    })
+    const assign = mockLocationAssign()
+    renderLayout({ user: { id: 'u1', email: EMAIL, email_verified: true, identities: [] } })
+
+    await user.click(screen.getByRole('button', { name: '계정 메뉴' }))
+    await user.click(screen.getByRole('button', { name: '구글 계정 연결' }))
+
+    expect(vi.mocked(oauthLinkStart)).toHaveBeenCalledWith(
+      'google',
+      `${window.location.origin}/auth/google/link/callback`,
+    )
+    expect(window.sessionStorage.getItem('easydoc.oauth.google.link.state')).toBe('link-state')
+    expect(window.sessionStorage.getItem('easydoc.oauth.google.link.redirect_uri')).toBe(
+      `${window.location.origin}/auth/google/link/callback`,
+    )
+    expect(assign).toHaveBeenCalledWith(
+      'https://accounts.google.com/o/oauth2/v2/auth?state=link-state',
+    )
+  })
+
+  it('시작 요청이 실패하면 로그아웃은 그대로 두고 이 자리에 오류를 보여준다', async () => {
+    const user = userEvent.setup()
+    vi.mocked(oauthLinkStart).mockRejectedValue(
+      new ApiError(422, '구글 로그인이 설정되지 않았습니다'),
+    )
+    const assign = mockLocationAssign()
+    renderLayout({ user: { id: 'u1', email: EMAIL, email_verified: true, identities: [] } })
+
+    await user.click(screen.getByRole('button', { name: '계정 메뉴' }))
+    await user.click(screen.getByRole('button', { name: '구글 계정 연결' }))
+
+    expect(await screen.findByText('구글 로그인이 설정되지 않았습니다')).toBeInTheDocument()
+    expect(assign).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: '로그아웃' })).toBeEnabled()
   })
 })
 

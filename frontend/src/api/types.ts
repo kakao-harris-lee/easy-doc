@@ -63,6 +63,16 @@ export interface UserResponse {
    * 계정은 항상 참이다. 거짓이면 `createDocument`가 403을 낸다.
    */
   email_verified: boolean
+  /**
+   * 연결된 소셜 신원의 제공자 목록(2.10.0 신설). 비밀번호 전용 계정, 아직 아무것도
+   * 잇지 않은 계정은 빈 배열이다 — `null`이 아니다.
+   */
+  identities: UserIdentityResponse[]
+}
+
+/** `UserResponse.identities`의 항목 하나. 계약 `components/schemas/UserIdentityResponse`. */
+export interface UserIdentityResponse {
+  provider: OAuthProvider
 }
 
 /** POST /auth/login 응답. */

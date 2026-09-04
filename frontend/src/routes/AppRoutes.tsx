@@ -5,6 +5,7 @@ import { EmailVerificationPage } from '../pages/EmailVerificationPage'
 import { HistoryPage } from '../pages/HistoryPage'
 import { LoginPage } from '../pages/LoginPage'
 import { OAuthCallbackPage } from '../pages/OAuthCallbackPage'
+import { OAuthLinkCallbackPage } from '../pages/OAuthLinkCallbackPage'
 import { SignupPage } from '../pages/SignupPage'
 import { UploadPage } from '../pages/UploadPage'
 import { RequireAuth } from './RequireAuth'
@@ -15,6 +16,7 @@ import {
   HOME_PATH,
   LOGIN_PATH,
   OAUTH_GOOGLE_CALLBACK_PATH,
+  OAUTH_GOOGLE_LINK_CALLBACK_PATH,
   SIGNUP_PATH,
 } from './paths'
 
@@ -25,6 +27,14 @@ export function AppRoutes() {
       <Route path={LOGIN_PATH} element={<LoginPage />} />
       <Route path={SIGNUP_PATH} element={<SignupPage />} />
       <Route path={OAUTH_GOOGLE_CALLBACK_PATH} element={<OAuthCallbackPage />} />
+      <Route
+        path={OAUTH_GOOGLE_LINK_CALLBACK_PATH}
+        element={
+          <RequireAuth>
+            <OAuthLinkCallbackPage />
+          </RequireAuth>
+        }
+      />
       <Route
         path={EMAIL_VERIFICATION_PATH}
         element={

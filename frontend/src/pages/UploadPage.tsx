@@ -1,7 +1,16 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import type { ChangeEvent, FormEvent, RefObject } from 'react'
-import { ArrowRight, FileCheck2, FileText, MailWarning, Upload, Wand2, X } from 'lucide-react'
-import { Link, useNavigate } from 'react-router-dom'
+import {
+  ArrowRight,
+  CircleCheck,
+  FileCheck2,
+  FileText,
+  MailWarning,
+  Upload,
+  Wand2,
+  X,
+} from 'lucide-react'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 
 import {
   ApiError,
@@ -13,7 +22,12 @@ import type { DocumentCreatedResponse, DocumentListItem } from '../api/types'
 import { useAuth } from '../auth/context'
 import { chooseNextAction } from '../conversion/nextAction'
 import { countChars } from '../lib/charCount'
-import { conversionPath, EMAIL_VERIFICATION_PATH, type SourceTextState } from '../routes/paths'
+import {
+  conversionPath,
+  EMAIL_VERIFICATION_PATH,
+  type HomeNoticeState,
+  type SourceTextState,
+} from '../routes/paths'
 import { useWorkspace } from '../workspace/context'
 import { Badge } from '../components/ui/Badge'
 import { Button } from '../components/ui/Button'
@@ -204,7 +218,15 @@ function SelectedFileCard({ file, onRemove, cardRef }: SelectedFileCardProps) {
  */
 export function UploadPage() {
   const navigate = useNavigate()
+  const location = useLocation()
   const { user } = useAuth()
+  // 다른 화면(`OAuthLinkCallbackPage`)이 라우터 state로 실어 보낸 한 번짜리 안내다.
+  // 지연 초기값으로 렌더 중 한 번만 읽는다 — `ConversionPage`의 initialSourceText와
+  // 같은 패턴. 새로고침하면 location.state가 사라지므로 다시 뜨지 않는다("한 번"이
+  // 실제로 지켜지는 이유이지, 여기서 따로 지우는 처리를 하지 않아도 된다).
+  const [homeNotice] = useState<string | null>(
+    () => (location.state as HomeNoticeState | null)?.notice ?? null,
+  )
   // 지금 고른 작업 공간에 담는다. 아직 목록을 못 받았으면(null) 서버가 기본 작업
   // 공간에 담는다 — 업로드를 막는 대신 늘 갈 곳이 있게 한다.
   const { workspaces, currentId: workspaceId } = useWorkspace()
@@ -461,6 +483,18 @@ export function UploadPage() {
         titleId="upload-heading"
         description="어려운 행정·복지 안내문을 쉬운 우리말 초안으로 바꿉니다."
       />
+
+      {/* 구글 계정 연결 성공 등, 다른 화면이 넘겨준 한 번짜리 안내(§9 — 상태를
+      토스트로 흘려보내지 않고 화면에 남긴다). */}
+      {homeNotice !== null && (
+        <p
+          className="mb-6 flex items-center gap-2 rounded-[10px] border border-success/25 bg-success-surface px-4 py-3 font-semibold text-success"
+          role="status"
+        >
+          <CircleCheck className="size-5 shrink-0" aria-hidden="true" />
+          {homeNotice}
+        </p>
+      )}
 
       {/* 이메일 미인증 안내 — 막지 않는다(§비차단 배너). 입력은 그대로 할 수 있고,
       실제로 막는 판단은 서버(403)가 한다. 이 자리는 폼보다 앞이라 제출 전에 먼저

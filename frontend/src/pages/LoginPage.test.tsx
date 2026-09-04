@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { fetchMe, login, oauthCallback, oauthStart } from '../api/auth'
+import { fetchMe, login, oauthCallback, oauthLinkStart, oauthStart } from '../api/auth'
 import { ApiError, listDocuments } from '../api/client'
 import { AuthProvider } from '../auth/AuthProvider'
 import { AppLayout } from '../components/AppLayout'
@@ -18,6 +18,7 @@ vi.mock('../api/auth', () => ({
   fetchMe: vi.fn(),
   oauthStart: vi.fn(),
   oauthCallback: vi.fn(),
+  oauthLinkStart: vi.fn(),
 }))
 
 // 로그인에 성공하면 홈(업로드 화면)이 뜨고, 그 화면은 「다음 할 일」 근거로 문서를
@@ -52,6 +53,7 @@ beforeEach(() => {
   vi.mocked(fetchMe).mockReset()
   vi.mocked(oauthStart).mockReset()
   vi.mocked(oauthCallback).mockReset()
+  vi.mocked(oauthLinkStart).mockReset()
   vi.mocked(listDocuments).mockResolvedValue({ items: [], limit: 20, offset: 0, has_more: false })
 })
 
@@ -94,6 +96,7 @@ describe('로그인 화면', () => {
       id: 'u1',
       email: 'user@example.com',
       email_verified: true,
+      identities: [],
     })
     renderAt('/login')
 
@@ -168,5 +171,93 @@ describe('구글 로그인 시작 (로그인 화면)', () => {
     // 이메일 폼은 이 실패와 무관하게 여전히 쓸 수 있다.
     expect(screen.getByLabelText('이메일')).toBeEnabled()
     expect(screen.getByRole('button', { name: '로그인' })).toBeEnabled()
+  })
+})
+
+describe('구글 계정 연결 이어가기 (?link=google)', () => {
+  it('로그인에 성공하면 연결 시작 요청을 보내고 인가 URL로 이동한다 — 홈으로는 가지 않는다', async () => {
+    const user = userEvent.setup()
+    vi.mocked(login).mockResolvedValue({
+      access_token: 'token-abc',
+      token_type: 'bearer',
+      expires_in: 3600,
+    })
+    vi.mocked(fetchMe).mockResolvedValue({
+      id: 'u1',
+      email: 'user@example.com',
+      email_verified: true,
+      identities: [],
+    })
+    vi.mocked(oauthLinkStart).mockResolvedValue({
+      authorization_url: 'https://accounts.google.com/o/oauth2/v2/auth?state=link-state',
+      state: 'link-state',
+    })
+    const assign = mockLocationAssign()
+    renderAt('/login?link=google')
+
+    await user.type(screen.getByLabelText('이메일'), 'user@example.com')
+    await user.type(screen.getByLabelText('비밀번호'), 'password123')
+    await user.click(screen.getByRole('button', { name: '로그인' }))
+
+    await waitFor(() => expect(assign).toHaveBeenCalledTimes(1))
+    expect(vi.mocked(oauthLinkStart)).toHaveBeenCalledWith(
+      'google',
+      `${window.location.origin}/auth/google/link/callback`,
+    )
+    expect(window.sessionStorage.getItem('easydoc.oauth.google.link.state')).toBe('link-state')
+    expect(window.sessionStorage.getItem('easydoc.oauth.google.link.redirect_uri')).toBe(
+      `${window.location.origin}/auth/google/link/callback`,
+    )
+    expect(assign).toHaveBeenCalledWith(
+      'https://accounts.google.com/o/oauth2/v2/auth?state=link-state',
+    )
+  })
+
+  it('연결 시작이 실패해도 로그인 자체는 성공했으니 평소처럼 홈으로 보낸다', async () => {
+    const user = userEvent.setup()
+    vi.mocked(login).mockResolvedValue({
+      access_token: 'token-abc',
+      token_type: 'bearer',
+      expires_in: 3600,
+    })
+    vi.mocked(fetchMe).mockResolvedValue({
+      id: 'u1',
+      email: 'user@example.com',
+      email_verified: true,
+      identities: [],
+    })
+    vi.mocked(oauthLinkStart).mockRejectedValue(
+      new ApiError(422, '구글 로그인이 설정되지 않았습니다'),
+    )
+    renderAt('/login?link=google')
+
+    await user.type(screen.getByLabelText('이메일'), 'user@example.com')
+    await user.type(screen.getByLabelText('비밀번호'), 'password123')
+    await user.click(screen.getByRole('button', { name: '로그인' }))
+
+    expect(await screen.findByRole('heading', { name: '문서 변환하기' })).toBeInTheDocument()
+  })
+
+  it('표시가 없으면(일반 로그인) 연결 시작을 부르지 않는다', async () => {
+    const user = userEvent.setup()
+    vi.mocked(login).mockResolvedValue({
+      access_token: 'token-abc',
+      token_type: 'bearer',
+      expires_in: 3600,
+    })
+    vi.mocked(fetchMe).mockResolvedValue({
+      id: 'u1',
+      email: 'user@example.com',
+      email_verified: true,
+      identities: [],
+    })
+    renderAt('/login')
+
+    await user.type(screen.getByLabelText('이메일'), 'user@example.com')
+    await user.type(screen.getByLabelText('비밀번호'), 'password123')
+    await user.click(screen.getByRole('button', { name: '로그인' }))
+
+    expect(await screen.findByRole('heading', { name: '문서 변환하기' })).toBeInTheDocument()
+    expect(vi.mocked(oauthLinkStart)).not.toHaveBeenCalled()
   })
 })

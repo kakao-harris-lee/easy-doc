@@ -18,6 +18,17 @@ const STATE_MISMATCH_MESSAGE = '요청이 만료되었거나 이미 사용되었
 /** 서버 오류를 해석하지 못했을 때(네트워크 등)만 쓰는 문구 — 서버 문구가 있으면 그것을 우선한다. */
 const GENERIC_ERROR_MESSAGE = '요청을 처리하지 못했습니다. 다시 시도해 주세요.'
 
+/**
+ * 로그인 콜백이 409(이미 같은 이메일로 가입됨)를 돌려줬을 때 보여줄 문구.
+ *
+ * 서버가 주는 `detail`(계정 탈취 방지 갈래, `account_linking`)을 그대로 쓰지 않는다 —
+ * 2.10.0부터 명시적 연결 흐름이 있으므로, 이 화면에서는 그 문으로 안내하는 것이 더
+ * 정확하다. 링크도 일반 로그인 화면이 아니라 `?link=google`을 실어 `LoginPage`가
+ * 로그인 성공 직후 연결을 이어서 시작하게 한다.
+ */
+const LINKED_ELSEWHERE_MESSAGE =
+  '이미 이 이메일로 가입된 계정이 있습니다. 이메일로 로그인하면 구글 계정을 연결해 드립니다.'
+
 type ViewState =
   | { kind: 'processing' }
   | { kind: 'linked-elsewhere'; message: string }
@@ -105,7 +116,7 @@ export function OAuthCallbackPage() {
       })
       .catch((caught: unknown) => {
         if (caught instanceof ApiError && caught.status === 409) {
-          setView({ kind: 'linked-elsewhere', message: caught.message })
+          setView({ kind: 'linked-elsewhere', message: LINKED_ELSEWHERE_MESSAGE })
         } else {
           setView({
             kind: 'error',
@@ -129,7 +140,7 @@ export function OAuthCallbackPage() {
         <h1 id="oauth-callback-heading">이미 가입된 이메일입니다</h1>
         <p role="alert">{view.message}</p>
         <p>
-          <Link to={LOGIN_PATH}>이메일로 로그인하기</Link>
+          <Link to={`${LOGIN_PATH}?link=google`}>이메일로 로그인하기</Link>
         </p>
       </section>
     )

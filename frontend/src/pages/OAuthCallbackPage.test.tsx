@@ -76,6 +76,7 @@ describe('구글 로그인 콜백', () => {
       id: 'u1',
       email: 'user@example.com',
       email_verified: true,
+      identities: [],
     })
 
     renderAt('/auth/google/callback?code=auth-code&state=state-xyz')
@@ -122,8 +123,10 @@ describe('구글 로그인 콜백', () => {
     expectSessionCleared()
   })
 
-  it('이미 같은 이메일로 가입돼 있으면(409) 로그인으로 안내한다', async () => {
+  it('이미 같은 이메일로 가입돼 있으면(409) 명시적 연결로 이어지는 로그인을 안내한다', async () => {
     seedStartedSession('state-xyz')
+    // 서버 문구(계정 탈취 방지 갈래)가 아니라, 명시적 연결 흐름으로 안내하는 화면
+    // 자체의 고정 문구를 보여준다 — 2.10.0부터 이 문이 실제로 있기 때문이다.
     vi.mocked(oauthCallback).mockRejectedValue(
       new ApiError(
         409,
@@ -135,10 +138,13 @@ describe('구글 로그인 콜백', () => {
 
     expect(
       await screen.findByText(
-        '이미 같은 이메일로 가입된 계정이 있습니다. 이메일로 로그인한 뒤 연결해 주세요.',
+        '이미 이 이메일로 가입된 계정이 있습니다. 이메일로 로그인하면 구글 계정을 연결해 드립니다.',
       ),
     ).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: '이메일로 로그인하기' })).toBeInTheDocument()
+    const link = screen.getByRole('link', { name: '이메일로 로그인하기' })
+    expect(link).toBeInTheDocument()
+    // LoginPage가 로그인 성공 직후 연결을 이어서 시작할 수 있도록 표시를 싣는다.
+    expect(link).toHaveAttribute('href', '/login?link=google')
     expectSessionCleared()
   })
 

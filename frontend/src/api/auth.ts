@@ -71,6 +71,43 @@ export function oauthCallback(
 }
 
 /**
+ * POST /auth/oauth/{provider}/link/start — 인증된 사용자의 계정에 소셜 신원을 이으려고
+ * 제공자 인가 URL을 발급받는다. Bearer 필요(계약 `x-social-login.explicit_linking`).
+ *
+ * 응답 모양은 `oauthStart`와 같다(`OAuthStartResponse`) — 갈리는 것은 서버가 `state`에
+ * 호출자 id를 함께 싣는다는 점뿐이고, 그 사실은 응답 본문에 드러나지 않는다.
+ */
+export function oauthLinkStart(
+  provider: OAuthProvider,
+  redirectUri: string,
+): Promise<OAuthStartResponse> {
+  const body: OAuthStartRequest = { redirect_uri: redirectUri }
+  return requestJson<OAuthStartResponse>(`/auth/oauth/${provider}/link/start`, {
+    method: 'POST',
+    body,
+  })
+}
+
+/**
+ * POST /auth/oauth/{provider}/link/callback — 인가 코드를 검증하고 소셜 신원을 호출자
+ * 계정에 잇는다. Bearer 필요, 성공은 204(본문 없음) — 로그인과 달리 토큰을 새로
+ * 발급하지 않는다(호출한 쪽이 이미 인증돼 있다).
+ *
+ * 같은 신원을 같은 사용자에 다시 연결해도 멱등하게 204다.
+ */
+export function oauthLinkCallback(
+  provider: OAuthProvider,
+  params: { code: string; state: string; redirectUri: string },
+): Promise<void> {
+  const body: OAuthCallbackRequest = {
+    code: params.code,
+    state: params.state,
+    redirect_uri: params.redirectUri,
+  }
+  return requestVoid(`/auth/oauth/${provider}/link/callback`, { method: 'POST', body })
+}
+
+/**
  * POST /auth/email-verification/request — 인증 코드를 (재)발급해 로그인 이메일로 보낸다.
  *
  * 본문은 없다 — 대상 이메일은 토큰의 사용자로 고정이다. 재요청 쿨다운(60초) 안에

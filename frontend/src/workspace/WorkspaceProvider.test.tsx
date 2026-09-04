@@ -23,7 +23,7 @@ function authValue(status: AuthStatus): AuthContextValue {
     status,
     user:
       status === 'authenticated'
-        ? { id: 'u1', email: 'owner@example.com', email_verified: true }
+        ? { id: 'u1', email: 'owner@example.com', email_verified: true, identities: [] }
         : null,
     signIn: () => Promise.resolve(),
     signUp: () => Promise.resolve(),
