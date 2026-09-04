@@ -26,6 +26,7 @@ class TermLookupServiceTest {
             examples = emptyList<DictionaryExample>(),
             matchKind = TermMatchKind.EXACT,
             applicable = true,
+            entryId = 2165,
         )
 
     @Test

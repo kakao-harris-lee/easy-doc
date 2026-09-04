@@ -1,6 +1,10 @@
 package kr.easydoc.core.dictionary
 
 import kr.easydoc.core.exceptions.InvalidInputException
+import kr.easydoc.core.privacy.CONTENT_MASK
+import kr.easydoc.core.privacy.UserContent
+import kr.easydoc.core.text.stripControlChars
+import kr.easydoc.core.text.stripUnpairedSurrogates
 
 /**
  * 검수 화면 조회 질의 — 담당자가 지목한 문자열 하나 (P0-5 §3.4 위치 계약).
@@ -8,24 +12,49 @@ import kr.easydoc.core.exceptions.InvalidInputException
  * **좌표를 갖지 않는다.** `easy_unit_index`·`start`·`end` 같은 위치 정보는 편집기의
  * 클라이언트 전용 상태이고, 조회 wire 계약이 받는 것은 선택된 문자열뿐이다(계획 §3.4).
  *
- * 제어문자를 제거하고 앞뒤 공백을 자른 뒤 비었거나 [MAX_LENGTH] 를 넘으면 [InvalidInputException]
- * 으로 거절한다. `100` 은 계획 §3.4 가 wire 계약 상한으로 정한 값이다 — 계약(조각 1)이 아직
- * 없어 여기서는 core 도메인 기본값으로 먼저 고정해 두고, 계약이 생기면 그 값을 그대로 옮긴다.
+ * 정제 후 비었거나 [MAX_LENGTH] 를 넘으면 [InvalidInputException] 으로 거절한다. `100` 은
+ * 계획 §3.4 가 wire 계약 상한으로 정한 값이다 — 계약(조각 1)이 아직 없어 여기서는 core 도메인
+ * 기본값으로 먼저 고정해 두고, 계약이 생기면 그 값을 그대로 옮긴다.
+ *
+ * ## `@UserContent` 를 붙이는 이유
+ *
+ * [text] 는 **사용자 문서에서 담당자가 지목해 잘라낸 조각**이라 [DictionaryMatch] 와 같은
+ * 이유로 `SensitiveToStringReachTest` 의 민감 이름 토큰에 걸리지 않는다(`text` 라는 이름 자체는
+ * 걸리지만, 이 타입은 `data class` 가 아니라 손으로 쓴 일반 class 라 R-10 축이 이름 자체는
+ * 물론이고 `@UserContent` 로 넓힌 판정도 함께 본다 — 어느 쪽이든 [toString] 이 값을 가려야
+ * 한다는 결론은 같다). 2026-09-05 심사에서 지적됐다.
  */
+@UserContent
 class TermQuery private constructor(val text: String) {
+    /** [DictionaryMatch] 와 같은 사유로 [text] 를 가린다 — 길이는 진단에 남긴다. */
+    override fun toString(): String = "TermQuery(text=$CONTENT_MASK, length=${text.length})"
+
     companion object {
         /** 계획 §3.4 가 적어 둔 wire 계약 상한(입력 제한 확장 노드) 후보값. 계약(조각 1)은 아직 없다. */
         const val MAX_LENGTH: Int = 100
 
+        /** 정제 후 이어붙는 공백류(스페이스·탭·개행·복귀)를 한 칸으로 뭉친다. */
+        private val WHITESPACE_RUN = Regex("\\s+")
+
         /**
          * 원문 문자열을 정제해 질의를 만든다.
          *
-         * 제어문자만 있거나 정제 후 비면, 또는 [MAX_LENGTH] 를 넘으면 거절한다 — 이 예외는
+         * 정제 순서는 [kr.easydoc.core.document.resolveTitle] 이 쓰는 것과 같은 두 함수
+         * ([stripControlChars]·[stripUnpairedSurrogates])로 시작한다 — 이름 정제와 같은 문제(XML 이
+         * 못 담는 제어문자, 인코딩이 못 담는 짝 없는 서로게이트)를 여기서 다시 만들지 않는다.
+         * `stripControlChars` 는 탭·개행·복귀를 **남긴다**(문서 구조로 본다) — 그래서 그 다음
+         * 단계로 남은 공백류를 전부 한 칸으로 뭉갠다. 담당자가 편집기에서 **여러 줄에 걸친
+         * 선택**을 지목하면 그 사이 개행이 그대로 남아, 원래는 이어져 있던 한 낱말이 줄바꿈으로
+         * 갈라진 두 낱말처럼 보여 사전 조회가 실패할 수 있다 — 뭉개면 그 선택이 한 줄짜리 조회처럼
+         * 동작한다. 마지막으로 앞뒤 공백을 자른다.
+         *
+         * 정제 후 비면, 또는 [MAX_LENGTH] 를 넘으면 거절한다 — 이 예외는
          * [kr.easydoc.core.exceptions.InvalidInputException] 이라 나중에 HTTP 경계(조각 4)가
          * 그대로 422 로 옮길 수 있다.
          */
         fun of(raw: String): TermQuery {
-            val sanitized = raw.filterNot { it.isISOControl() }.trim()
+            val stripped = stripUnpairedSurrogates(stripControlChars(raw))
+            val sanitized = WHITESPACE_RUN.replace(stripped, " ").trim()
             if (sanitized.isEmpty()) {
                 throw InvalidInputException("조회할 문자열이 비어 있다")
             }
@@ -57,6 +86,10 @@ enum class TermMatchKind { EXACT, INFLECTED, COMPOUND_PART }
  * 이고 [matchKind] 가 [TermMatchKind.COMPOUND_PART] 가 아닐 때만 참이다. 복합어 부분 일치는
  * 원어 일부만 지우는 편집이 되어 문서를 훼손하므로, 매칭된 엔트리의 전략과 무관하게 항상
  * 거짓이다(계획 §3.1 "대체어 버튼은 주지 않는다").
+ *
+ * [entryId] 는 [DictionaryMatch.entryId] 를 그대로 옮긴 것이다 — `term` 만으로는 표제어를
+ * 공유하는 엔트리(전체 2,179건 중 465건, 예: "급여")를 가려낼 수 없어 픽스처 실측
+ * (`TermLookupFixtureTest`)이 "어느 엔트리가 이겼나"를 검증할 유일한 확실한 키다.
  */
 data class TermCandidate(
     val term: String,
@@ -69,6 +102,7 @@ data class TermCandidate(
     val examples: List<DictionaryExample>,
     val matchKind: TermMatchKind,
     val applicable: Boolean,
+    val entryId: Int,
 )
 
 /**
@@ -145,6 +179,7 @@ object TermLookup {
             examples = entry.examples,
             matchKind = kind,
             applicable = kind != TermMatchKind.COMPOUND_PART && entry.strategy == ReplaceStrategy.SUBSTITUTE,
+            entryId = match.entryId,
         )
     }
 }

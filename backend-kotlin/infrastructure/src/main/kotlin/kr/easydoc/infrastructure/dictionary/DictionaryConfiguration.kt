@@ -22,6 +22,10 @@ import org.springframework.context.annotation.Configuration
  * 이 빈을 공유하게 바꾸면 두 스위치의 합집합 논리가 필요해져 "worker 를 그대로 둔다"는
  * 조건을 벗어난다. 색인 적재 호출이 두 곳(worker, 이 빈)에 남는 대신 worker 회귀가 없다 -
  * 실제 공유 배선은 조각 4 가 API 컨트롤러를 놓을 때 함께 정리한다.
+ *
+ * 2026-09-05 리뷰 - 이 저장소에서 **첫 nullable `@Bean`** 이다. S4(조각 3 이후) 에서
+ * 소비자 쪽 nullable 배선을 null object(예: 빈 `DictionaryIndex`)로 바꿀 계획이며, 이 빈
+ * 자체를 지금 바꾸지는 않는다(계획이 그 정리를 S4로 미룬다).
  */
 @Configuration(proxyBeanMethods = false)
 class DictionaryConfiguration {

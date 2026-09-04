@@ -154,6 +154,38 @@ class TermLookupTest {
     }
 
     @Test
+    @DisplayName("XML이 못 담는 C0 제어문자는 걷어낸다 - 2026-09-05 리뷰(항목 3)")
+    fun `실제 제어문자는 걷어낸다`() {
+        val query = TermQuery.of("가\u0001나")
+
+        assertThat(query.text).isEqualTo("가나")
+    }
+
+    @Test
+    @DisplayName("짝을 이루지 않은 서로게이트는 걷어낸다 - core/text 정제 재사용 (2026-09-05 리뷰(항목 3))")
+    fun `짝 없는 서로게이트는 걷어낸다`() {
+        val query = TermQuery.of("가\uD800나")
+
+        assertThat(query.text).isEqualTo("가나")
+    }
+
+    @Test
+    @DisplayName("여러 줄에 걸친 선택은 한 줄로 뭉친다 - 편집기 다중 라인 선택 대응 (2026-09-05 리뷰(항목 3))")
+    fun `여러 줄 선택은 한 칸 공백으로 뭉쳐진다`() {
+        val query = TermQuery.of("구비\n서류")
+
+        assertThat(query.text).isEqualTo("구비 서류")
+    }
+
+    @Test
+    @DisplayName("이어지는 공백류는 한 칸으로 뭉친다")
+    fun `연속 공백은 한 칸으로 뭉쳐진다`() {
+        val query = TermQuery.of("구비   서류\t\t문서")
+
+        assertThat(query.text).isEqualTo("구비 서류 문서")
+    }
+
+    @Test
     @DisplayName("상한을 넘는 질의는 생성을 거절한다")
     fun `상한을 넘으면 거절한다`() {
         val tooLong = "가".repeat(TermQuery.MAX_LENGTH + 1)
