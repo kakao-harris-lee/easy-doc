@@ -89,7 +89,9 @@ class SocialLoginService(
         requireEmailNotAlreadyLinked(normalizedEmail)
 
         return transaction.inTransaction {
-            val user = repositories.users.createWithoutPassword(normalizedEmail)
+            // `requireVerifiedEmail` 이 이미 `identity.emailVerified` 를 참으로 확정했다 —
+            // 여기서는 그 사실을 값으로 전달할 뿐이다.
+            val user = repositories.users.createWithoutPassword(normalizedEmail, emailVerified = identity.emailVerified)
             repositories.workspaces.createDefault(user.id)
             repositories.identities.link(user.id, providerId, identity.providerUserId, normalizedEmail, true)
             accessTokens.issue(user.id)

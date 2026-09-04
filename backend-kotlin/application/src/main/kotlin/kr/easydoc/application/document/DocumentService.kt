@@ -1,6 +1,7 @@
 package kr.easydoc.application.document
 
 import kr.easydoc.application.auth.TransactionRunner
+import kr.easydoc.application.auth.UserRepository
 import kr.easydoc.application.crypto.ContentCipher
 import kr.easydoc.core.crypto.EncryptedField
 import kr.easydoc.core.crypto.PlainBody
@@ -13,6 +14,7 @@ import kr.easydoc.core.document.SourceFormat
 import kr.easydoc.core.document.charCountOf
 import kr.easydoc.core.document.resolveTitle
 import kr.easydoc.core.exceptions.DocumentExtractionException
+import kr.easydoc.core.exceptions.EmailNotVerifiedException
 import kr.easydoc.core.exceptions.InvalidInputException
 import kr.easydoc.core.exceptions.NotFoundException
 import kr.easydoc.core.exceptions.StorageException
@@ -47,6 +49,7 @@ class DocumentService(
     private val cipher: ContentCipher,
     private val extractor: DocumentTextExtractor,
     private val transaction: TransactionRunner,
+    private val users: UserRepository,
 ) {
     /**
      * 붙여넣은 본문으로 문서를 만들고 변환을 요청한다.
@@ -60,6 +63,7 @@ class DocumentService(
         title: String?,
         rawWorkspaceId: String?,
     ): AcceptedUpload {
+        requireVerifiedEmail(ownerId)
         if (text.isBlank()) throw InvalidInputException(EMPTY_BODY_MESSAGE)
         // 제목을 안 주면 대체 제목이다. 본문은 제목이 되지 않는다.
         // 붙여넣기에는 원본 파일이 없다 — `null` 이 그 사실이다.
@@ -81,6 +85,7 @@ class DocumentService(
         title: String?,
         rawWorkspaceId: String?,
     ): AcceptedUpload {
+        requireVerifiedEmail(ownerId)
         // 크기 판정이 추출보다 먼저다 — 계약이 정한 순서이고, 상한을 넘는 바이트를 파서에
         // 넘기지 않는 것이 압축 폭탄 방어의 첫 단계이기도 하다(I-10).
         if (bytes.size > MAX_UPLOAD_BYTES) throw UploadTooLargeException(UPLOAD_TOO_LARGE_MESSAGE)
@@ -203,6 +208,23 @@ class DocumentService(
                 status = conversion.status,
                 charCount = charCount,
             )
+        }
+    }
+
+    /**
+     * 이메일 인증을 마쳤는지 본다 — **두 입력 팔의 첫 검사다**(계약 `POST /documents`
+     * 검사 순서 0번째, `x-input-limits` 보다도 앞). 캐릭터 수·파일 크기 같은 요청 내용은
+     * 아직 보지 않은 채로 거절한다: 애초에 이 사용자가 할 수 없는 일이라면 본문을 검증할
+     * 이유가 없다(`AuthService.signup` 이 `accessTokens.ensureConfigured()` 를 비밀번호
+     * 해시 계산보다 먼저 보는 것과 같은 순서 감각).
+     *
+     * 소유자 조회 한 번을 여기서 새로 한다 — `ownerId` 는 인증 토큰의 `sub` 일 뿐 사용자
+     * 행을 이미 읽어 온 상태가 아니다.
+     */
+    private fun requireVerifiedEmail(ownerId: UUID) {
+        val user = users.findById(ownerId) ?: return
+        if (user.emailVerifiedAt == null) {
+            throw EmailNotVerifiedException(EMAIL_VERIFICATION_REQUIRED_MESSAGE)
         }
     }
 

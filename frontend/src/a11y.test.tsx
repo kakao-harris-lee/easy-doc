@@ -29,7 +29,7 @@ vi.mock('./api/client', async (importOriginal) => ({
   getDocumentSource: vi.fn(),
 }))
 
-const USER = { id: 'u1', email: 'gongmuwon@example.test' }
+const USER = { id: 'u1', email: 'gongmuwon@example.test', email_verified: true }
 
 function authValue(status: AuthContextValue['status']): AuthContextValue {
   return {
@@ -39,6 +39,7 @@ function authValue(status: AuthContextValue['status']): AuthContextValue {
     signUp: () => Promise.resolve(),
     signInWithGoogle: () => Promise.resolve(),
     signOut: () => undefined,
+    refreshMe: () => Promise.resolve(),
   }
 }
 

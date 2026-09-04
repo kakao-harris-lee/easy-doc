@@ -37,6 +37,9 @@ import java.util.UUID
     webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
     properties = ["easydoc.auth.jwt-secret=$CONVERSION_READ_TEST_SECRET"],
 )
+// 클래스 크기는 이 파일이 재는 계약 조항의 수다 — 쪼개면 한 오퍼레이션의 실측이 여러
+// 파일로 흩어져 서로 어긋난다(이 저장소의 다른 오퍼레이션별 실측 파일과 같은 판단).
+@Suppress("LargeClass")
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class ConversionReadReachTest {
     @LocalServerPort
@@ -669,6 +672,9 @@ class ConversionReadReachTest {
         val email = "conversionread${counter++}@example.test"
         val credentials = json.writeValueAsString(mapOf("email" to email, "password" to VALID_PASSWORD))
         send(post(null, credentials, "/auth/signup"))
+        // 이메일 인증 게이트는 `POST /documents` 앞이다 — 이 파일은 그 게이트를 재지 않으므로
+        // 실물 인증 흐름 대신 저장소를 직접 인증 완료로 만든다.
+        database.execute("UPDATE users SET email_verified_at = now() WHERE email = '$email'")
         return bodyOf(send(post(null, credentials, "/auth/login")))
             .getValue("access_token")
             .toString()

@@ -71,6 +71,34 @@ class ConfigurationException(message: String) : EasyDocException(message)
 class InvalidOAuthStateException(message: String) : EasyDocException(message)
 
 /**
+ * 이메일 인증 코드가 유효하지 않다 — 오답·만료·무효화(5회 오답)를 구분하지 않는
+ * **단 하나의 예외**다. 사유를 가르면 공격자가 "이 코드가 존재는 했다"는 정보를 얻는다
+ * (`AuthService.login`이 계정 존재 여부를 감추는 것과 같은 이유).
+ */
+class InvalidVerificationCodeException(message: String) : EasyDocException(message)
+
+/**
+ * 이메일 인증 없이는 할 수 없는 동작을 요청했다 — 오늘은 `POST /documents` 하나뿐이다.
+ * 401(자격증명 자체가 없음)과 다르다: 토큰은 유효하고 신원도 확실하지만 **그 신원으로
+ * 아직 할 수 없는 일**이라 403이다.
+ */
+class EmailNotVerifiedException(message: String) : EasyDocException(message)
+
+/**
+ * 재시도 쿨다운 안에서 다시 요청했다 — 재발송 60초 쿨다운이 오늘의 유일한 발생 자리다.
+ * [retryAfterSeconds]는 계약이 요구하는 `Retry-After` 헤더 값이다(정수 초, 최소 1 —
+ * 0을 보내면 클라이언트가 즉시 재시도를 반복해 쿨다운을 사실상 무력화한다).
+ */
+class RateLimitedException(
+    message: String,
+    val retryAfterSeconds: Long,
+) : EasyDocException(message) {
+    init {
+        require(retryAfterSeconds >= 1) { "retryAfterSeconds 는 1 이상이어야 한다: $retryAfterSeconds" }
+    }
+}
+
+/**
  * 동기로 부른 하위 시스템(예: 소셜 로그인 제공자)에 닿지 못했다 — 타임아웃·연결 실패·5xx.
  * `LlmProviderException`(비동기 워커 경로, HTTP 상태로 나가지 않음)과 달리 이 예외는
  * **요청·응답 안에서 동기로** 관측되므로 502로 나간다. 계약 `x-retired-responses`가

@@ -36,11 +36,18 @@ export const NETWORK_ERROR_STATUS = 0
 /** API 오류. status로 화면이 분기하고, message는 그대로 사용자에게 보여줄 수 있다. */
 export class ApiError extends Error {
   readonly status: number
+  /**
+   * 429 응답의 `Retry-After`(초). 그 헤더가 없거나 정수로 읽지 못하면 null이다 —
+   * 오늘 이 헤더를 계산해 보내는 오퍼레이션은 `POST /auth/email-verification/request`
+   * 하나뿐이다(계약 `TooManyRequests`).
+   */
+  readonly retryAfterSeconds: number | null
 
-  constructor(status: number, message: string) {
+  constructor(status: number, message: string, retryAfterSeconds: number | null = null) {
     super(message)
     this.name = 'ApiError'
     this.status = status
+    this.retryAfterSeconds = retryAfterSeconds
   }
 }
 
@@ -132,15 +139,33 @@ async function send(path: string, options: RequestOptions): Promise<Response> {
       clearToken()
       unauthorizedHandler?.()
     }
-    throw new ApiError(response.status, await readErrorMessage(response))
+    throw new ApiError(
+      response.status,
+      await readErrorMessage(response),
+      parseRetryAfter(response.headers.get('Retry-After')),
+    )
   }
   return response
+}
+
+/** `Retry-After` 헤더(정수 초, 문자열)를 읽는다. 없거나 정수가 아니면 null. */
+function parseRetryAfter(header: string | null): number | null {
+  if (header === null) {
+    return null
+  }
+  const seconds = Number(header)
+  return Number.isFinite(seconds) ? seconds : null
 }
 
 /** JSON 응답을 기대하는 요청. */
 export async function requestJson<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const response = await send(path, options)
   return (await response.json()) as T
+}
+
+/** 본문 없는 응답(204)을 기대하는 요청. */
+export async function requestVoid(path: string, options: RequestOptions = {}): Promise<void> {
+  await send(path, options)
 }
 
 /**

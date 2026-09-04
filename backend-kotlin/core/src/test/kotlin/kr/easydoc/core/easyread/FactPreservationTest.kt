@@ -427,26 +427,29 @@ class FactPreservationTest {
     @Nested
     @DisplayName("성능 — 정규식 역추적(catastrophic backtracking) 회귀 가드 (리뷰 재검토 HIGH-3)")
     inner class Performance {
-        // 재현: 20,000 자리 숫자열 하나가 findMissingFacts 를 21.6초 걸리게 했다(배수 단위가
-        // 하나도 안 나오는 긴 숫자열 앞에서 탐욕 수량자가 매 시작 위치마다 한 글자씩 물러나며
-        // 재시도 — O(n²)). possessive 수량자로 고친 뒤에는 세 최악 사례 모두 워밍업 후
-        // 200ms 안에 끝나야 한다. 일반적인 실사용 입력(짧은 문장 다수)이 아니라 **이
-        // 구현이 특히 취약했던 모양**만 고른 사례들이다.
+        // 재현: 20,000 자리 숫자열 하나가 findMissingFacts 를 21.6초(21,600ms) 걸리게 했다(배수
+        // 단위가 하나도 안 나오는 긴 숫자열 앞에서 탐욕 수량자가 매 시작 위치마다 한 글자씩
+        // 물러나며 재시도 — O(n²)). possessive 수량자로 고친 뒤에는 세 최악 사례 모두 워밍업
+        // 후 2,000ms 안에 끝나야 한다. 이 경계는 원래 결함(21,600ms)보다 압도적으로 타이트해
+        // 역추적 회귀는 여전히 잡아내면서, CI 러너의 속도 편차(로컬 대비 느린 공용 러너에서
+        // 200ms 경계가 221ms 로 튀며 flaky 했던 사례)를 흡수하기 위한 값이다. 일반적인
+        // 실사용 입력(짧은 문장 다수)이 아니라 **이 구현이 특히 취약했던 모양**만 고른
+        // 사례들이다.
 
         @Test
-        @DisplayName("구분자·배수 단위 없이 숫자만 20,000자 이어져도 200ms 안에 끝난다")
+        @DisplayName("구분자·배수 단위 없이 숫자만 20,000자 이어져도 2,000ms 안에 끝난다")
         fun `구분자 없는 대량 숫자도 빠르게 처리한다`() {
             assertFastEnough("3".repeat(20_000))
         }
 
         @Test
-        @DisplayName("'1,' 을 20,000자만큼 반복해도 200ms 안에 끝난다")
+        @DisplayName("'1,' 을 20,000자만큼 반복해도 2,000ms 안에 끝난다")
         fun `콤마 반복 입력도 빠르게 처리한다`() {
             assertFastEnough("1,".repeat(10_000))
         }
 
         @Test
-        @DisplayName("'억만천'과 숫자·공백이 뒤섞인 20,000자도 200ms 안에 끝난다")
+        @DisplayName("'억만천'과 숫자·공백이 뒤섞인 20,000자도 2,000ms 안에 끝난다")
         fun `배수 단위가 뒤섞인 입력도 빠르게 처리한다`() {
             val chunk = "억만천 123 "
             assertFastEnough(buildString { while (length < 20_000) append(chunk) })
@@ -462,9 +465,10 @@ class FactPreservationTest {
             assertThat(elapsedMillis)
                 .withFailMessage(
                     "findMissingFacts 가 %d ms 걸렸다 — 정규식 역추적(catastrophic backtracking) 의심" +
-                        "(재현: 20,000자 숫자열에서 21.6초)",
+                        "(재현: 20,000자 숫자열에서 21,600ms). 경계는 2,000ms 로, 원래 결함보다 " +
+                        "압도적으로 타이트하면서 CI 러너 속도 편차는 허용한다.",
                     elapsedMillis,
-                ).isLessThan(200)
+                ).isLessThan(2_000)
         }
     }
 }

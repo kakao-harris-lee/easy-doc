@@ -1,6 +1,7 @@
 import { Link, Route, Routes } from 'react-router-dom'
 
 import { ConversionPage } from '../pages/ConversionPage'
+import { EmailVerificationPage } from '../pages/EmailVerificationPage'
 import { HistoryPage } from '../pages/HistoryPage'
 import { LoginPage } from '../pages/LoginPage'
 import { OAuthCallbackPage } from '../pages/OAuthCallbackPage'
@@ -9,6 +10,7 @@ import { UploadPage } from '../pages/UploadPage'
 import { RequireAuth } from './RequireAuth'
 import {
   CONVERSION_PATH,
+  EMAIL_VERIFICATION_PATH,
   HISTORY_PATH,
   HOME_PATH,
   LOGIN_PATH,
@@ -23,6 +25,14 @@ export function AppRoutes() {
       <Route path={LOGIN_PATH} element={<LoginPage />} />
       <Route path={SIGNUP_PATH} element={<SignupPage />} />
       <Route path={OAUTH_GOOGLE_CALLBACK_PATH} element={<OAuthCallbackPage />} />
+      <Route
+        path={EMAIL_VERIFICATION_PATH}
+        element={
+          <RequireAuth>
+            <EmailVerificationPage />
+          </RequireAuth>
+        }
+      />
       <Route
         path={HOME_PATH}
         element={

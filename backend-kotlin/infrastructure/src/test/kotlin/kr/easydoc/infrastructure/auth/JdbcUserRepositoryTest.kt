@@ -122,22 +122,66 @@ class JdbcUserRepositoryTest {
     fun `비밀번호 없는 사용자를 만든다`() {
         val email = uniqueEmail()
 
-        val created = users.createWithoutPassword(email)
+        val created = users.createWithoutPassword(email, emailVerified = true)
 
         assertThat(users.findByEmail(email)?.user).isEqualTo(created)
         assertThat(users.findByEmail(email)?.passwordHash).isNull()
     }
 
     @Test
+    @DisplayName("emailVerified=true 는 email_verified_at 을 생성 시각으로 채운다 — 제공자가 이미 검증했다")
+    fun `소셜 최초 가입은 인증 완료로 만들어진다`() {
+        val email = uniqueEmail()
+
+        val created = users.createWithoutPassword(email, emailVerified = true)
+
+        assertThat(created.emailVerifiedAt).isNotNull()
+    }
+
+    @Test
+    @DisplayName("emailVerified=false 는 email_verified_at 을 비워 둔다")
+    fun `emailVerified 거짓이면 미인증으로 만들어진다`() {
+        val email = uniqueEmail()
+
+        val created = users.createWithoutPassword(email, emailVerified = false)
+
+        assertThat(created.emailVerifiedAt).isNull()
+    }
+
+    @Test
     @DisplayName("비밀번호 없는 사용자도 이메일 유일성은 그대로 지킨다")
     fun `비밀번호 없는 사용자도 이메일이 겹치면 도메인 예외다`() {
         val email = uniqueEmail()
-        users.createWithoutPassword(email)
+        users.createWithoutPassword(email, emailVerified = true)
 
-        assertThatThrownBy { users.createWithoutPassword(email) }
+        assertThatThrownBy { users.createWithoutPassword(email, emailVerified = true) }
             .isInstanceOf(EmailAlreadyRegisteredException::class.java)
         assertThatThrownBy { users.create(email, HASH) }
             .isInstanceOf(EmailAlreadyRegisteredException::class.java)
+    }
+
+    @Test
+    @DisplayName("비밀번호로 만든 사용자는 email_verified_at 이 비어 있다 — 인증 코드로 채워야 한다")
+    fun `비밀번호 가입은 미인증으로 시작한다`() {
+        val email = uniqueEmail()
+
+        val created = users.create(email, HASH)
+
+        assertThat(created.emailVerifiedAt).isNull()
+    }
+
+    @Test
+    @DisplayName("markEmailVerified 는 email_verified_at 을 채운다 — 이미 채워졌으면 그대로 둔다(멱등)")
+    fun `markEmailVerified 는 채우고 멱등이다`() {
+        val email = uniqueEmail()
+        val created = users.create(email, HASH)
+
+        users.markEmailVerified(created.id)
+        val firstVerifiedAt = users.findById(created.id)?.emailVerifiedAt
+        assertThat(firstVerifiedAt).isNotNull()
+
+        users.markEmailVerified(created.id)
+        assertThat(users.findById(created.id)?.emailVerifiedAt).isEqualTo(firstVerifiedAt)
     }
 
     @Test

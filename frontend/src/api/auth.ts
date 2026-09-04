@@ -1,7 +1,8 @@
 /** 인증 엔드포인트 (app/api/auth.py). */
 
-import { requestJson } from './client'
+import { requestJson, requestVoid } from './client'
 import type {
+  ConfirmEmailVerificationRequest,
   CredentialsRequest,
   OAuthCallbackRequest,
   OAuthProvider,
@@ -67,4 +68,25 @@ export function oauthCallback(
     body,
     auth: false,
   })
+}
+
+/**
+ * POST /auth/email-verification/request — 인증 코드를 (재)발급해 로그인 이메일로 보낸다.
+ *
+ * 본문은 없다 — 대상 이메일은 토큰의 사용자로 고정이다. 재요청 쿨다운(60초) 안에
+ * 다시 부르면 429가 오고, `ApiError.retryAfterSeconds`에 남은 초가 실린다.
+ */
+export function requestEmailVerification(): Promise<void> {
+  return requestVoid('/auth/email-verification/request', { method: 'POST' })
+}
+
+/**
+ * POST /auth/email-verification/confirm — 발급된 인증 코드를 확인한다.
+ *
+ * 성공(204) 이후에는 `readMe.email_verified`가 참이 된다 — 호출한 쪽이 이어서
+ * 사용자 정보를 다시 읽어야 화면 상태가 맞는다.
+ */
+export function confirmEmailVerification(code: string): Promise<void> {
+  const body: ConfirmEmailVerificationRequest = { code }
+  return requestVoid('/auth/email-verification/confirm', { method: 'POST', body })
 }

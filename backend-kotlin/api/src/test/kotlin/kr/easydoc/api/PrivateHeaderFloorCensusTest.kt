@@ -3,6 +3,7 @@ package kr.easydoc.api
 import kr.easydoc.api.support.AuthSliceBeans
 import kr.easydoc.api.support.ContractSpec
 import kr.easydoc.api.support.InMemoryConversionRepository
+import kr.easydoc.api.support.InMemoryUserRepository
 import kr.easydoc.api.support.ServedOperations
 import kr.easydoc.application.crypto.ContentCipher
 import kr.easydoc.application.document.ConversionCiphertexts
@@ -46,6 +47,9 @@ class PrivateHeaderFloorCensusTest {
 
     @Autowired
     private lateinit var cipher: ContentCipher
+
+    @Autowired
+    private lateinit var users: InMemoryUserRepository
 
     private val json = ObjectMapper()
 
@@ -272,6 +276,9 @@ class PrivateHeaderFloorCensusTest {
     private fun newAccount(): String {
         val email = uniqueEmail()
         check(signup(email).status == ContractSpec.successStatus(SIGNUP_PATH, POST)) { "가입이 실패했다" }
+        // 이메일 인증 게이트는 `POST /documents` 앞이다 — 이 census 는 그 게이트를 재지
+        // 않으므로 실물 인증 흐름 대신 저장소를 직접 인증 완료로 만든다.
+        users.verifyEmailFor(email)
         val response = login(email)
         return bodyOf(response)[ACCESS_TOKEN_PROPERTY]?.toString() ?: error("로그인 응답에 토큰이 없다")
     }

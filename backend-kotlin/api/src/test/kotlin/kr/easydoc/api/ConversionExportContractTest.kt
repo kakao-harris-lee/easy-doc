@@ -500,6 +500,8 @@ class ConversionExportContractTest {
     private fun newOwner(): UUID {
         val id = users.create("export-${UUID.randomUUID()}@example.test", STUB_HASH).id
         workspaces.createDefault(id)
+        // 이메일 인증 게이트는 `POST /documents` 앞이다 — 이 파일은 그 게이트를 재지 않는다.
+        users.markEmailVerified(id)
         return id
     }
 

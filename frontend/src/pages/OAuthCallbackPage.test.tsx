@@ -72,7 +72,11 @@ describe('구글 로그인 콜백', () => {
       token_type: 'bearer',
       expires_in: 3600,
     })
-    vi.mocked(fetchMe).mockResolvedValue({ id: 'u1', email: 'user@example.com' })
+    vi.mocked(fetchMe).mockResolvedValue({
+      id: 'u1',
+      email: 'user@example.com',
+      email_verified: true,
+    })
 
     renderAt('/auth/google/callback?code=auth-code&state=state-xyz')
 

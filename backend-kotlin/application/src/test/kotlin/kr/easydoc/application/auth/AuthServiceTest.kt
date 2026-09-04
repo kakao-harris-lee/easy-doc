@@ -30,6 +30,19 @@ class AuthServiceTest {
     }
 
     @Test
+    @DisplayName("가입은 커밋 뒤에 이메일 인증 발급을 부른다 — 롤백될 계정에 먼저 보내지 않는다")
+    fun `가입이 커밋 뒤에 인증 발급을 부른다`() {
+        val world = World()
+
+        val user = world.service.signup(uniqueEmail(), VALID_PASSWORD)
+
+        assertThat(world.emailVerification.issuedFor).containsExactly(user.id)
+        assertThat(world.emailVerification.depthAtIssue)
+            .withFailMessage("발급이 트랜잭션 안에서 불렸다 — 커밋 뒤여야 한다")
+            .isZero()
+    }
+
+    @Test
     @DisplayName("해시 계산은 트랜잭션 **밖**에서 한다 — 커넥션을 붙잡고 기다리지 않는다")
     fun `해시는 트랜잭션 밖에서 계산한다`() {
         val world = World()
@@ -199,7 +212,24 @@ private class World(
     val users = RecordingUserRepository(rehashFails)
     val workspaces = RecordingWorkspaceRepository(transaction)
     val tokens = RecordingAccessTokens(tokensConfigured)
-    val service = AuthService(users, workspaces, hasher, tokens, transaction)
+    val emailVerification = RecordingEmailVerification(transaction)
+    val service = AuthService(users, workspaces, hasher, tokens, transaction, emailVerification)
+}
+
+/**
+ * `PostSignupEmailVerification` 대역 — 발급 호출을 기록한다. [depthAtIssue] 는 0이어야
+ * 한다: 커밋 **뒤**에 불려야 하고, 트랜잭션이 롤백될 계정에 발송을 시도하면 안 된다.
+ */
+private class RecordingEmailVerification(private val transaction: RecordingTransactionRunner) :
+    PostSignupEmailVerification {
+    val issuedFor: MutableList<UUID> = mutableListOf()
+    var depthAtIssue: Int = -1
+        private set
+
+    override fun issueAfterSignup(userId: UUID) {
+        issuedFor += userId
+        depthAtIssue = transaction.depth
+    }
 }
 
 /** 트랜잭션 깊이를 기록한다 — 무엇이 경계 안에서 도는지가 이 테스트의 관심사다. */
@@ -268,8 +298,12 @@ private class RecordingUserRepository(private val rehashFails: Boolean) : UserRe
         return stored.user
     }
 
-    override fun createWithoutPassword(email: String): User {
-        val stored = StoredUser(User(UUID.randomUUID(), email, Instant.EPOCH), passwordHash = null)
+    override fun createWithoutPassword(
+        email: String,
+        emailVerified: Boolean,
+    ): User {
+        val verifiedAt = if (emailVerified) Instant.EPOCH else null
+        val stored = StoredUser(User(UUID.randomUUID(), email, Instant.EPOCH, verifiedAt), passwordHash = null)
         saved[email] = stored
         return stored.user
     }
@@ -282,6 +316,13 @@ private class RecordingUserRepository(private val rehashFails: Boolean) : UserRe
             error("재해시 저장 실패")
         }
         rehashed += userId
+    }
+
+    override fun markEmailVerified(userId: UUID) {
+        val existing = saved.values.firstOrNull { it.user.id == userId } ?: return
+        if (existing.user.emailVerifiedAt != null) return
+        val verified = existing.user.copy(emailVerifiedAt = Instant.EPOCH)
+        saved[existing.user.email] = StoredUser(verified, existing.passwordHash)
     }
 }
 

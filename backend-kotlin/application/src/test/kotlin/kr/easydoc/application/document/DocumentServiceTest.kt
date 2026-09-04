@@ -1,6 +1,7 @@
 package kr.easydoc.application.document
 
 import kr.easydoc.application.auth.TransactionRunner
+import kr.easydoc.application.auth.UserRepository
 import kr.easydoc.application.crypto.ContentCipher
 import kr.easydoc.core.crypto.EncryptedContent
 import kr.easydoc.core.crypto.EncryptedField
@@ -16,12 +17,16 @@ import kr.easydoc.core.document.MAX_UPLOAD_BYTES
 import kr.easydoc.core.document.MaskedItemView
 import kr.easydoc.core.document.SourceFormat
 import kr.easydoc.core.exceptions.DocumentExtractionException
+import kr.easydoc.core.exceptions.EmailNotVerifiedException
 import kr.easydoc.core.exceptions.InvalidInputException
 import kr.easydoc.core.exceptions.NotFoundException
 import kr.easydoc.core.exceptions.StorageException
 import kr.easydoc.core.exceptions.UploadTooLargeException
 import kr.easydoc.core.privacy.MaskCategory
 import kr.easydoc.core.security.Secret
+import kr.easydoc.core.user.PasswordHash
+import kr.easydoc.core.user.StoredUser
+import kr.easydoc.core.user.User
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.DisplayName
@@ -31,6 +36,32 @@ import java.util.UUID
 
 /** 문서 등록 유스케이스 — Spring 도 DB 도 없이 대역으로 돈다. */
 class DocumentServiceTest {
+    @Test
+    @DisplayName("이메일 미인증 계정은 붙여넣기도 파일도 403 — 본문을 보기 전에 끊긴다")
+    fun `미인증 계정은 문서를 등록할 수 없다`() {
+        val world = World(emailVerified = false)
+
+        assertThatThrownBy { world.service.createFromText(OWNER, "본문", null, null) }
+            .isInstanceOf(EmailNotVerifiedException::class.java)
+            .hasMessage(EMAIL_VERIFICATION_REQUIRED_MESSAGE)
+        assertThatThrownBy { world.service.createFromFile(OWNER, "a.docx", ORIGINAL_FILE, null, null) }
+            .isInstanceOf(EmailNotVerifiedException::class.java)
+
+        assertThat(world.extractorCalls).describedAs("추출기가 불렸다 — 인증 확인보다 뒤여야 한다").isZero()
+        assertThat(world.documents.inserted).isEmpty()
+    }
+
+    @Test
+    @DisplayName("인증된 계정은 평소대로 접수된다")
+    fun `인증된 계정은 정상 접수된다`() {
+        val world = World(emailVerified = true)
+
+        val accepted = world.service.createFromText(OWNER, "본문", null, null)
+
+        assertThat(accepted).isNotNull()
+        assertThat(world.documents.inserted).hasSize(1)
+    }
+
     @Test
     @DisplayName("파일 크기 판정이 추출보다 먼저다 — 상한을 넘는 바이트를 파서에 넘기지 않는다")
     fun `크기 판정이 추출보다 먼저다`() {
@@ -464,7 +495,11 @@ class DocumentServiceTest {
             byteArrayOf(0x50, 0x4B, 0x03, 0x04, 0x80.toByte(), 0xFF.toByte(), 0x00, 0xC0.toByte())
     }
 
-    /** 한 케이스가 쓰는 대역 묶음. 케이스마다 새로 만든다 — 대역이 상태를 들고 있다. */
+    /**
+     * 한 케이스가 쓰는 대역 묶음. 케이스마다 새로 만든다 — 대역이 상태를 들고 있다.
+     * 매개변수 수는 협력자의 수다 — `DocumentConfiguration` 조립 지점과 같은 근거로 억제한다.
+     */
+    @Suppress("LongParameterList")
     private class World(
         extracted: String = "추출한 본문",
         extractedFormat: SourceFormat = SourceFormat.DOCX,
@@ -472,6 +507,8 @@ class DocumentServiceTest {
         writeKeyVersion: Int = 1,
         queueFailure: RuntimeException? = null,
         originalFailure: RuntimeException? = null,
+        /** 기본값 참 — 이 플래그와 무관한 케이스가 매번 인증 상태를 신경 쓰지 않게 한다. */
+        emailVerified: Boolean = true,
     ) {
         val transaction = RecordingTransactionRunner()
         val cipher = FakeContentCipher(writeKeyVersion, transaction)
@@ -480,6 +517,7 @@ class DocumentServiceTest {
         val conversions = FakeConversionRepository(transaction, originals)
         val workspaces = FakeWorkspaceLookup(defaultWorkspace)
         val queue = FakeConversionQueue(transaction, queueFailure)
+        val users = FakeUserRepository(emailVerified)
         var extractorCalls: Int = 0
             private set
 
@@ -499,7 +537,39 @@ class DocumentServiceTest {
                     ExtractedDocument(extractedFormat, extracted)
                 },
                 transaction = transaction,
+                users = users,
             )
+    }
+
+    /** `OWNER` 하나만 안다 — 문서 유스케이스는 [findById] 외의 연산을 부르지 않는다. */
+    private class FakeUserRepository(private val emailVerified: Boolean) : UserRepository {
+        override fun findByEmail(email: String): StoredUser? = error(NOT_USED_MESSAGE)
+
+        override fun findById(id: UUID): User =
+            User(id, "$id@example.test", Instant.EPOCH, emailVerifiedAt = if (emailVerified) Instant.EPOCH else null)
+
+        override fun exists(id: UUID): Boolean = error(NOT_USED_MESSAGE)
+
+        override fun create(
+            email: String,
+            passwordHash: PasswordHash,
+        ): User = error(NOT_USED_MESSAGE)
+
+        override fun createWithoutPassword(
+            email: String,
+            emailVerified: Boolean,
+        ): User = error(NOT_USED_MESSAGE)
+
+        override fun updatePasswordHash(
+            userId: UUID,
+            passwordHash: PasswordHash,
+        ) = error(NOT_USED_MESSAGE)
+
+        override fun markEmailVerified(userId: UUID) = error(NOT_USED_MESSAGE)
+
+        private companion object {
+            const val NOT_USED_MESSAGE = "문서 유스케이스가 부르지 않는 사용자 연산이다"
+        }
     }
 
     private data class ListQuery(

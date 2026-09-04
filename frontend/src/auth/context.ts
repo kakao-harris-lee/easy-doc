@@ -22,6 +22,11 @@ export interface AuthContextValue {
    */
   signInWithGoogle: (params: { code: string; state: string; redirectUri: string }) => Promise<void>
   signOut: () => void
+  /**
+   * 저장된 토큰으로 `/auth/me`를 다시 읽어 `user`를 최신화한다. 이메일 인증처럼
+   * 서버 쪽에서만 바뀌는 값(`email_verified`)을 반영할 때 쓴다.
+   */
+  refreshMe: () => Promise<void>
 }
 
 export const AuthContext = createContext<AuthContextValue | null>(null)

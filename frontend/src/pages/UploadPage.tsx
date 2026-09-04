@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import type { ChangeEvent, FormEvent, RefObject } from 'react'
-import { ArrowRight, FileCheck2, FileText, Upload, Wand2, X } from 'lucide-react'
+import { ArrowRight, FileCheck2, FileText, MailWarning, Upload, Wand2, X } from 'lucide-react'
 import { Link, useNavigate } from 'react-router-dom'
 
 import {
@@ -10,13 +10,21 @@ import {
   listDocuments,
 } from '../api/client'
 import type { DocumentCreatedResponse, DocumentListItem } from '../api/types'
+import { useAuth } from '../auth/context'
 import { chooseNextAction } from '../conversion/nextAction'
 import { countChars } from '../lib/charCount'
-import { conversionPath, type SourceTextState } from '../routes/paths'
+import { conversionPath, EMAIL_VERIFICATION_PATH, type SourceTextState } from '../routes/paths'
 import { useWorkspace } from '../workspace/context'
 import { Badge } from '../components/ui/Badge'
 import { Button } from '../components/ui/Button'
 import { PageHeader } from '../components/PageHeader'
+
+/**
+ * `createDocument`가 이메일 미인증일 때 주는 고정 문구(계약 `x-input-limits` 403
+ * 예시 `email_not_verified`). 이 문자열로 그 갈래만 골라 배너로 바꾼다 — 다른 403은
+ * 오늘 이 오퍼레이션에 없지만, 문구까지 맞춰 두면 계약이 바뀌었을 때 여기서도 드러난다.
+ */
+const EMAIL_NOT_VERIFIED_DETAIL = '이메일 인증 후 문서를 변환할 수 있습니다'
 
 /** 한 번에 변환할 수 있는 길이. 백엔드 MAX_CONVERTIBLE_CHARS와 같은 값이다. */
 export const MAX_CHARS = 20000
@@ -196,6 +204,7 @@ function SelectedFileCard({ file, onRemove, cardRef }: SelectedFileCardProps) {
  */
 export function UploadPage() {
   const navigate = useNavigate()
+  const { user } = useAuth()
   // 지금 고른 작업 공간에 담는다. 아직 목록을 못 받았으면(null) 서버가 기본 작업
   // 공간에 담는다 — 업로드를 막는 대신 늘 갈 곳이 있게 한다.
   const { workspaces, currentId: workspaceId } = useWorkspace()
@@ -212,6 +221,16 @@ export function UploadPage() {
   const [file, setFile] = useState<File | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
+  // 배너 표시 근거. `user.email_verified`를 매 렌더 그대로 읽지 않고 별도 상태로 두는
+  // 이유는 서버 403(EMAIL_NOT_VERIFIED_DETAIL)로도 같은 배너를 켜야 하기 때문이다 —
+  // 인증 상태가 아직 갱신되지 않은 순간에도(예: 다른 탭에서 방금 가입) 서버가 막았다는
+  // 사실 자체를 근거로 켤 수 있어야 한다.
+  const [emailVerificationRequired, setEmailVerificationRequired] = useState(
+    user?.email_verified === false,
+  )
+  // 인증 상태가 바뀌었는지 비교할 기준. 작업 공간 제안의 suggestionWorkspaceId와 같은
+  // 렌더 중 조정 패턴이다 — effect로 미루면 한 프레임 먼저 낡은 배너가 보인다.
+  const [lastEmailVerified, setLastEmailVerified] = useState(user?.email_verified)
   // 「다음 할 일」의 근거. null은 "아직 모른다"이며(조회 전 또는 조회 실패) 빈 배열은
   // "이 작업 공간에는 문서가 없다"는 서버의 답이다. 두 상태를 한 값으로 합치지 않는다 —
   // §6.2는 완료 상태와 검수 여부가 확인될 때만 제안하라고 했다.
@@ -255,6 +274,12 @@ export function UploadPage() {
   }
 
   const nextAction = chooseNextAction(recentDocuments)
+
+  // 인증 상태가 바뀌면(예: 다른 탭에서 방금 인증을 마쳤다) 배너도 따라간다.
+  if (lastEmailVerified !== user?.email_verified) {
+    setLastEmailVerified(user?.email_verified)
+    setEmailVerificationRequired(user?.email_verified === false)
+  }
 
   /**
    * 「다음 할 일」의 근거가 될 최근 문서를 읽는다(§6.2, §7).
@@ -367,6 +392,17 @@ export function UploadPage() {
       const state: SourceTextState = sourceText === undefined ? {} : { sourceText }
       navigate(conversionPath(created.conversion_id), { state })
     } catch (caught) {
+      // 이메일 미인증 403은 일반 오류 문단이 아니라 배너로 보여준다 — 조치가 "다시
+      // 시도"가 아니라 "인증 화면으로 가기"라 같은 자리에 두면 안내가 어긋난다.
+      if (
+        caught instanceof ApiError &&
+        caught.status === 403 &&
+        caught.message === EMAIL_NOT_VERIFIED_DETAIL
+      ) {
+        setEmailVerificationRequired(true)
+        setSubmitting(false)
+        return
+      }
       // 백엔드 오류 메시지는 사용자에게 보이려고 만든 한국어 문구다(입력값 미포함).
       // 413(크기 초과)·422(형식·길이)·502(변환 서비스)·503(설정) 모두 여기로 온다.
       setError(
@@ -425,6 +461,22 @@ export function UploadPage() {
         titleId="upload-heading"
         description="어려운 행정·복지 안내문을 쉬운 우리말 초안으로 바꿉니다."
       />
+
+      {/* 이메일 미인증 안내 — 막지 않는다(§비차단 배너). 입력은 그대로 할 수 있고,
+      실제로 막는 판단은 서버(403)가 한다. 이 자리는 폼보다 앞이라 제출 전에 먼저
+      읽힌다. */}
+      {emailVerificationRequired && (
+        <p
+          className="mb-6 flex items-center gap-2 rounded-[10px] border border-warning/25 bg-warning-surface px-4 py-3 font-semibold text-warning"
+          role="status"
+        >
+          <MailWarning className="size-5 shrink-0" aria-hidden="true" />
+          이메일 인증 후 문서를 변환할 수 있습니다.{' '}
+          <Link to={EMAIL_VERIFICATION_PATH} className="font-semibold underline underline-offset-4">
+            이메일 인증하기
+          </Link>
+        </p>
+      )}
 
       {/* 1280px 이상에서만 3:2로 나눈다(§10). 그 아래에서는 한 열로 접히고, 안내 카드는
       DOM 순서 그대로 폼 **뒤에** 놓여 입력과 대표 버튼 사이에 끼지 않는다. */}

@@ -1,6 +1,7 @@
 package kr.easydoc.infrastructure.document
 
 import kr.easydoc.application.auth.TransactionRunner
+import kr.easydoc.application.auth.UserRepository
 import kr.easydoc.application.crypto.ContentCipher
 import kr.easydoc.application.document.DocumentService
 import kr.easydoc.application.document.EnvelopeRotation
@@ -58,7 +59,10 @@ class DocumentStorageContextTest {
             .migrate()
 
         val jdbc = JdbcClient.create(dataSource())
-        owner = JdbcUserRepository(jdbc).create("context@example.test", FIXTURE_HASH).id
+        val users = JdbcUserRepository(jdbc)
+        owner = users.create("context@example.test", FIXTURE_HASH).id
+        // 이메일 인증 게이트는 `POST /documents` 앞이다 — 이 파일은 그 게이트를 재지 않는다.
+        users.markEmailVerified(owner)
         workspace = JdbcWorkspaceRepository(jdbc).create(owner, "기본").id
     }
 
@@ -186,6 +190,10 @@ class DocumentStorageContextTest {
                 Supplier {
                     SpringTransactionRunner(TransactionTemplate(DataSourceTransactionManager(dataSource)))
                 },
+            ).withBean(
+                // `DocumentConfiguration.documentService` 가 이메일 인증 게이트에 요구한다.
+                UserRepository::class.java,
+                Supplier { JdbcUserRepository(JdbcClient.create(dataSource)) },
             ).withBean(
                 EncryptionProperties::class.java,
                 Supplier { EncryptionProperties(writeKeyVersion = writeKeyVersion, keys = keys) },

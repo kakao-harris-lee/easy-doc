@@ -73,6 +73,7 @@ class ConversionReviewStorageTest {
                         JdbcConversionQueue(jdbc),
                     ),
                 workspaces = JdbcWorkspaceLookup(jdbc),
+                users = JdbcUserRepository(jdbc),
                 cipher = cipher,
                 extractor = { _, _ -> error("이 테스트는 파일 경로를 쓰지 않는다") },
                 transaction = SpringTransactionRunner(TransactionTemplate(DataSourceTransactionManager(dataSource))),
@@ -205,7 +206,10 @@ class ConversionReviewStorageTest {
             .optional()
             .orElse(null)
 
-    private fun newUser(): UUID = users.create("crs${UUID.randomUUID()}@example.test", PasswordHash(DUMMY_PHC)).id
+    // 이메일 인증 게이트는 `POST /documents` 앞이다 — 이 파일은 그 게이트를 재지 않으므로
+    // 실물 인증 흐름 대신 저장소를 직접 인증 완료로 만든다.
+    private fun newUser(): UUID =
+        users.create("crs${UUID.randomUUID()}@example.test", PasswordHash(DUMMY_PHC)).id.also(users::markEmailVerified)
 
     private fun cipherWith(writeKeyVersion: Int): ContentCipher =
         AesGcmContentCipher(

@@ -4,10 +4,12 @@ import kr.easydoc.api.support.ContractSpec
 import kr.easydoc.api.support.TestJwt
 import kr.easydoc.infrastructure.DatabaseHandle
 import kr.easydoc.infrastructure.PostgresTestSupport
+import kr.easydoc.infrastructure.mail.FakeMailSender
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
+import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.boot.test.web.server.LocalServerPort
 import org.springframework.test.context.DynamicPropertyRegistry
@@ -30,6 +32,10 @@ import kotlin.random.Random
 class AuthEndpointReachTest {
     @LocalServerPort
     private var port: Int = 0
+
+    /** 기본 provider(`fake`) — 실물 발송 없이 여기서 발급된 코드를 읽는다. */
+    @Autowired
+    private lateinit var mailSender: FakeMailSender
 
     private val json = ObjectMapper()
 
@@ -88,6 +94,114 @@ class AuthEndpointReachTest {
         assertPrivateHeaders(response)
         assertThat(bodyOf(response).keys.map { it.toString() }.toSet())
             .isEqualTo(ContractSpec.schemaRequired("UserResponse"))
+    }
+
+    @Test
+    @DisplayName("EV-1 가입 직후 인증 코드 메일이 발송된다 — email_verified 는 처음엔 거짓이다")
+    fun `가입 직후 인증 코드가 발송된다`() {
+        val email = uniqueEmail()
+        post("/auth/signup", credentials(email, VALID_PASSWORD))
+        val token = bodyOf(post("/auth/login", credentials(email, VALID_PASSWORD)))["access_token"].toString()
+
+        val me = get("/auth/me", token)
+        assertThat(bodyOf(me)["email_verified"]).isEqualTo(false)
+
+        val mail = mailSender.sent.last { it.to.value == email }
+        assertThat(mail.subject).isEqualTo(VERIFICATION_SUBJECT)
+        assertThat(codeIn(mail.textBody)).hasSize(CODE_LENGTH)
+    }
+
+    @Test
+    @DisplayName("EV-2 발급된 코드로 confirm 하면 204 이고 email_verified 가 참으로 바뀐다")
+    fun `정답 코드 확인은 인증을 완료한다`() {
+        val email = uniqueEmail()
+        val token = signupAndLogin(email)
+        val code = codeIn(mailSender.sent.last { it.to.value == email }.textBody)
+
+        val response = postAuthorized("/auth/email-verification/confirm", token, confirmBody(code))
+
+        assertThat(response.statusCode()).isEqualTo(ContractSpec.successStatus(CONFIRM_PATH, POST))
+        assertThat(bodyOf(get("/auth/me", token))["email_verified"]).isEqualTo(true)
+    }
+
+    @Test
+    @DisplayName("EV-3 오답 코드는 400 — 사유를 구분하지 않는 계약 고정 문구다")
+    fun `오답 코드는 400이다`() {
+        val token = signupAndLogin(uniqueEmail())
+
+        val response = postAuthorized("/auth/email-verification/confirm", token, confirmBody("000000"))
+
+        assertThat(response.statusCode()).isEqualTo(400)
+        assertThat(bodyOf(response)["detail"]).isEqualTo(INVALID_CODE_MESSAGE)
+    }
+
+    @Test
+    @DisplayName("EV-4 이미 인증된 이메일의 재요청·확인은 409다")
+    fun `이미 인증된 이메일은 409다`() {
+        val email = uniqueEmail()
+        val token = signupAndLogin(email)
+        val code = codeIn(mailSender.sent.last { it.to.value == email }.textBody)
+        postAuthorized("/auth/email-verification/confirm", token, confirmBody(code))
+
+        val requestAgain = postAuthorized("/auth/email-verification/request", token, null)
+        val confirmAgain = postAuthorized("/auth/email-verification/confirm", token, confirmBody(code))
+
+        assertThat(requestAgain.statusCode()).isEqualTo(409)
+        assertThat(bodyOf(requestAgain)["detail"]).isEqualTo(ALREADY_VERIFIED_MESSAGE)
+        assertThat(confirmAgain.statusCode()).isEqualTo(409)
+    }
+
+    @Test
+    @DisplayName("EV-5 재발송 쿨다운 안의 재요청은 429 이고 Retry-After 가 양의 정수 문자열이다")
+    fun `쿨다운 안의 재요청은 429다`() {
+        // 가입이 첫 코드를 이미 발급했다 — 곧바로 재요청하면 60초 쿨다운 안이다.
+        val token = signupAndLogin(uniqueEmail())
+
+        val response = postAuthorized("/auth/email-verification/request", token, null)
+
+        assertThat(response.statusCode()).isEqualTo(429)
+        val retryAfter = response.headers().firstValue("Retry-After").orElse(null)
+        assertThat(retryAfter).withFailMessage("Retry-After 헤더가 없다").isNotNull()
+        val seconds = retryAfter!!.toLongOrNull()
+        assertThat(seconds).withFailMessage("Retry-After 값이 정수가 아니다: %s", retryAfter).isNotNull()
+        assertThat(seconds!!).isGreaterThanOrEqualTo(1L)
+    }
+
+    @Test
+    @DisplayName("EV-6 인증 없이는 두 오퍼레이션 다 401")
+    fun `인증 없이는 401이다`() {
+        assertThat(postAuthorized("/auth/email-verification/request", null, null).statusCode()).isEqualTo(401)
+        assertThat(postAuthorized("/auth/email-verification/confirm", null, confirmBody("123456")).statusCode())
+            .isEqualTo(401)
+    }
+
+    private fun signupAndLogin(email: String): String {
+        post("/auth/signup", credentials(email, VALID_PASSWORD))
+        return bodyOf(post("/auth/login", credentials(email, VALID_PASSWORD)))["access_token"].toString()
+    }
+
+    private fun confirmBody(code: String): String = json.writeValueAsString(mapOf("code" to code))
+
+    private fun codeIn(body: String): String = CODE_PATTERN.find(body)?.value ?: error("메일 본문에서 코드를 찾지 못했다: $body")
+
+    private fun postAuthorized(
+        path: String,
+        token: String?,
+        payload: String?,
+    ): HttpResponse<String> {
+        val bodyPublisher =
+            if (payload == null) {
+                HttpRequest.BodyPublishers.noBody()
+            } else {
+                HttpRequest.BodyPublishers.ofString(payload, Charsets.UTF_8)
+            }
+        val builder =
+            HttpRequest
+                .newBuilder(uri(path))
+                .header("Content-Type", "application/json")
+                .POST(bodyPublisher)
+        token?.let { builder.header("Authorization", "Bearer $it") }
+        return send(builder)
     }
 
     /** L-3b — 자격증명 실패의 세 번째 축: 응답 시간. */
@@ -526,6 +640,16 @@ class AuthEndpointReachTest {
         private const val VALID_PASSWORD = "correct horse battery"
         private const val WRONG_PASSWORD = "correct horse batteryX"
         private const val NOT_YET_EXPIRED_SECONDS = 600L
+
+        private const val CONFIRM_PATH = "/auth/email-verification/confirm"
+
+        /** `EmailVerificationService` 의 고정 문구 — 두 예외 갈래가 계약과 같은 값인지 잰다. */
+        private const val VERIFICATION_SUBJECT = "[쉬운 글] 이메일 인증 코드"
+        private const val INVALID_CODE_MESSAGE = "인증 코드가 올바르지 않거나 만료되었습니다"
+        private const val ALREADY_VERIFIED_MESSAGE = "이미 인증된 이메일입니다"
+
+        private const val CODE_LENGTH = 6
+        private val CODE_PATTERN = Regex("\\d{$CODE_LENGTH}")
 
         /**
          * 계약 조항이 시간 축을 요구한다는 표식. 문구 전문을 옮겨 적지 않는다 — 그러면

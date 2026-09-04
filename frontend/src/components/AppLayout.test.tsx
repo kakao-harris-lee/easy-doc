@@ -20,11 +20,12 @@ function LocationProbe() {
 function authValue(overrides: Partial<AuthContextValue> = {}): AuthContextValue {
   return {
     status: 'authenticated',
-    user: { id: 'u1', email: EMAIL },
+    user: { id: 'u1', email: EMAIL, email_verified: true },
     signIn: () => Promise.resolve(),
     signUp: () => Promise.resolve(),
     signInWithGoogle: () => Promise.resolve(),
     signOut: () => undefined,
+    refreshMe: () => Promise.resolve(),
     ...overrides,
   }
 }

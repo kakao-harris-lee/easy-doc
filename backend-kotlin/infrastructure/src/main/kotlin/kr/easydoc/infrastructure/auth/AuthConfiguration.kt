@@ -2,6 +2,7 @@ package kr.easydoc.infrastructure.auth
 
 import kr.easydoc.application.auth.AccessTokens
 import kr.easydoc.application.auth.AuthService
+import kr.easydoc.application.auth.EmailVerificationService
 import kr.easydoc.application.auth.OAuthStateStore
 import kr.easydoc.application.auth.PasswordHasher
 import kr.easydoc.application.auth.SocialLoginProvider
@@ -11,7 +12,9 @@ import kr.easydoc.application.auth.SocialLoginService
 import kr.easydoc.application.auth.TransactionRunner
 import kr.easydoc.application.auth.UserIdentityRepository
 import kr.easydoc.application.auth.UserRepository
+import kr.easydoc.application.auth.VerificationCodeStore
 import kr.easydoc.application.auth.WorkspaceRepository
+import kr.easydoc.application.mail.MailSender
 import kr.easydoc.core.security.Secret
 import kr.easydoc.infrastructure.auth.google.GoogleOAuthSettings
 import kr.easydoc.infrastructure.auth.google.GoogleSocialLoginProvider
@@ -55,6 +58,20 @@ data class Argon2Properties(
     val parallelism: Int = 4,
     val saltLength: Int = 16,
     val hashLength: Int = 32,
+)
+
+/**
+ * 이메일 인증 설정. 바인딩 접두사는 `easydoc.email-verification`.
+ *
+ * 값 셋(TTL·쿨다운·시도 상한)이 운영 중 바뀔 수 있어 코드 상수가 아니라 구성값이다
+ * (프로젝트 `CLAUDE.md` 「상수와 구성 관리」). 기본값은 위임 지침의 설계 결정과 같다 —
+ * 10분 TTL, 60초 재발송 쿨다운, 5회 오답 상한.
+ */
+@ConfigurationProperties(prefix = "easydoc.email-verification")
+data class EmailVerificationProperties(
+    val codeTtlMinutes: Long = 10,
+    val resendCooldownSeconds: Long = 60,
+    val maxAttempts: Int = 5,
 )
 
 /** 소셜 로그인 공통 설정(제공자를 가리지 않는다). 바인딩 접두사는 `easydoc.oauth`. */
@@ -145,6 +162,8 @@ class AuthConfiguration {
     fun transactionRunner(transactionManager: PlatformTransactionManager): TransactionRunner =
         SpringTransactionRunner(TransactionTemplate(transactionManager))
 
+    /** 조립 지점의 매개변수 수는 협력자의 수다 — 클래스 KDoc과 같은 근거로 억제한다. */
+    @Suppress("LongParameterList")
     @Bean
     fun authService(
         users: UserRepository,
@@ -152,6 +171,7 @@ class AuthConfiguration {
         passwordHasher: PasswordHasher,
         accessTokens: AccessTokens,
         transactionRunner: TransactionRunner,
+        emailVerification: EmailVerificationService,
     ): AuthService =
         AuthService(
             users = users,
@@ -159,6 +179,27 @@ class AuthConfiguration {
             passwords = passwordHasher,
             accessTokens = accessTokens,
             transaction = transactionRunner,
+            emailVerification = emailVerification,
+        )
+
+    @Bean
+    fun verificationCodeStore(jdbcClient: JdbcClient): VerificationCodeStore =
+        JdbcVerificationCodeStore(jdbcClient, Clock.systemUTC())
+
+    @Bean
+    fun emailVerificationService(
+        users: UserRepository,
+        codes: VerificationCodeStore,
+        mailSender: MailSender,
+        properties: EmailVerificationProperties,
+    ): EmailVerificationService =
+        EmailVerificationService(
+            users = users,
+            codes = codes,
+            mail = mailSender,
+            codeTtl = Duration.ofMinutes(properties.codeTtlMinutes),
+            resendCooldown = Duration.ofSeconds(properties.resendCooldownSeconds),
+            maxAttempts = properties.maxAttempts,
         )
 
     @Bean

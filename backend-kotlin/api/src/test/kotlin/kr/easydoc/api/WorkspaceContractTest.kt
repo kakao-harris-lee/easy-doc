@@ -276,7 +276,8 @@ class WorkspaceContractTest {
     private fun bearer(owner: UUID): String = "Bearer stub-token:$owner"
 
     /** 계정을 실제로 만들고 그 식별자를 쓴다. */
-    private fun newOwner(): UUID = users.create("slice-${UUID.randomUUID()}@example.test", STUB_HASH).id
+    private fun newOwner(): UUID =
+        users.create("slice-${UUID.randomUUID()}@example.test", STUB_HASH).id.also(users::markEmailVerified)
 
     /** P-21 — 경로 변수 이름을 계약에서 읽어 URL 을 조립한다. */
     private fun itemPath(workspaceId: String): String = ITEM_PATH.replace("{${pathParameter().name}}", workspaceId)

@@ -45,14 +45,28 @@ interface UserRepository {
      * [PasswordHasher] 를 거치지 않으므로 [create] 와 별도 메서드다 — 매개변수를
      * `PasswordHash?` 로 열면 호출부마다 "언제 null 을 줘도 되는지"를 스스로 판단해야
      * 하고, 이름 있는 메서드 둘이 그 판단을 타입으로 대신한다.
+     *
+     * [emailVerified] 가 참이면 `email_verified_at` 을 생성 시각으로 채운다 — 제공자가
+     * 이미 검증한 이메일이라 우리 쪽 이메일 인증 코드가 또 필요하지 않다
+     * (`SocialLoginService.requireVerifiedEmail` 이 이 메서드에 닿는 모든 호출에서
+     * 참임을 이미 보장하지만, 그 전제를 이 메서드 시그니처에도 명시로 남긴다).
      */
-    fun createWithoutPassword(email: String): User
+    fun createWithoutPassword(
+        email: String,
+        emailVerified: Boolean,
+    ): User
 
     /** 재해시 결과를 반영한다. 로그인 **성공 뒤에만** 불린다. */
     fun updatePasswordHash(
         userId: UUID,
         passwordHash: PasswordHash,
     )
+
+    /**
+     * 이메일 소유 확인을 완료 처리한다 — `email_verified_at` 을 지금 시각으로 채운다.
+     * 이미 채워져 있으면(동시 확인 등) 아무것도 바꾸지 않는다(멱등).
+     */
+    fun markEmailVerified(userId: UUID)
 }
 
 /** 작업 공간 저장소. */

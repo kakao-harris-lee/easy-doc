@@ -2,6 +2,7 @@ package kr.easydoc.api.support
 
 import kr.easydoc.application.auth.AccessTokens
 import kr.easydoc.application.auth.AuthService
+import kr.easydoc.application.auth.EmailVerificationService
 import kr.easydoc.application.auth.IssuedAccessToken
 import kr.easydoc.application.auth.OAuthChallenge
 import kr.easydoc.application.auth.OAuthStateStore
@@ -15,6 +16,7 @@ import kr.easydoc.application.auth.TransactionRunner
 import kr.easydoc.application.auth.UserIdentity
 import kr.easydoc.application.auth.UserIdentityRepository
 import kr.easydoc.application.auth.UserRepository
+import kr.easydoc.application.auth.VerificationCodeStore
 import kr.easydoc.application.auth.WorkspaceDeletionState
 import kr.easydoc.application.auth.WorkspaceRepository
 import kr.easydoc.application.crypto.ContentCipher
@@ -32,6 +34,7 @@ import kr.easydoc.application.document.MaskedItemReader
 import kr.easydoc.application.document.OriginalReflection
 import kr.easydoc.application.document.StoredOriginalReader
 import kr.easydoc.application.document.WorkspaceLookup
+import kr.easydoc.application.mail.MailSender
 import kr.easydoc.application.workspace.DUPLICATE_WORKSPACE_NAME_MESSAGE
 import kr.easydoc.application.workspace.WorkspaceService
 import kr.easydoc.core.easyread.ExportFormat
@@ -41,6 +44,7 @@ import kr.easydoc.core.exceptions.ConflictException
 import kr.easydoc.core.exceptions.EmailAlreadyRegisteredException
 import kr.easydoc.core.exceptions.ExternalServiceUnavailableException
 import kr.easydoc.core.exceptions.InvalidCredentialsException
+import kr.easydoc.core.exceptions.RateLimitedException
 import kr.easydoc.core.text.EditDistanceBudget
 import kr.easydoc.core.user.PasswordHash
 import kr.easydoc.core.user.StoredUser
@@ -49,9 +53,12 @@ import kr.easydoc.core.workspace.DEFAULT_WORKSPACE_NAME
 import kr.easydoc.core.workspace.Workspace
 import kr.easydoc.core.workspace.WorkspaceListing
 import kr.easydoc.infrastructure.document.FeedbackProperties
+import kr.easydoc.infrastructure.mail.FakeMailSender
 import org.springframework.boot.test.context.TestConfiguration
 import org.springframework.context.annotation.Bean
+import java.time.Duration
 import java.time.Instant
+import java.util.Locale
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
@@ -76,6 +83,8 @@ class AuthSliceBeans {
             override fun <T> inTransaction(block: () -> T): T = block()
         }
 
+    /** 조립 지점의 매개변수 수는 협력자의 수다 — 제품 조립(`AuthConfiguration`)과 같은 근거로 억제한다. */
+    @Suppress("LongParameterList")
     @Bean
     fun authService(
         users: InMemoryUserRepository,
@@ -83,7 +92,30 @@ class AuthSliceBeans {
         hasher: StubPasswordHasher,
         tokens: StubAccessTokens,
         transaction: TransactionRunner,
-    ): AuthService = AuthService(users, workspaces, hasher, tokens, transaction)
+        emailVerification: EmailVerificationService,
+    ): AuthService = AuthService(users, workspaces, hasher, tokens, transaction, emailVerification)
+
+    @Bean
+    fun fakeMailSender(): FakeMailSender = FakeMailSender()
+
+    @Bean
+    fun inMemoryVerificationCodes(): InMemoryVerificationCodeStore = InMemoryVerificationCodeStore()
+
+    /** 유스케이스도 실물이다 — 제품 조립(`AuthConfiguration.emailVerificationService`)과 같은 모양이다. */
+    @Bean
+    fun emailVerificationService(
+        users: InMemoryUserRepository,
+        codes: InMemoryVerificationCodeStore,
+        mail: FakeMailSender,
+    ): EmailVerificationService =
+        EmailVerificationService(
+            users = users,
+            codes = codes,
+            mail = mail,
+            codeTtl = Duration.ofMinutes(10),
+            resendCooldown = Duration.ofSeconds(60),
+            maxAttempts = 5,
+        )
 
     @Bean
     fun inMemoryUserIdentities(): InMemoryUserIdentityRepository = InMemoryUserIdentityRepository()
@@ -182,7 +214,11 @@ class AuthSliceBeans {
             queue = queue,
         )
 
-    /** 유스케이스는 실물이다 — 계약이 정한 검사 순서를 슬라이스가 실제로 밟아야 한다. */
+    /**
+     * 유스케이스는 실물이다 — 계약이 정한 검사 순서를 슬라이스가 실제로 밟아야 한다.
+     * 매개변수 수는 협력자의 수다 — 제품 조립(`DocumentConfiguration`)과 같은 근거로 억제한다.
+     */
+    @Suppress("LongParameterList")
     @Bean
     fun documentService(
         storage: DocumentStorage,
@@ -190,6 +226,7 @@ class AuthSliceBeans {
         cipher: ContentCipher,
         extractor: DocumentTextExtractor,
         transaction: TransactionRunner,
+        users: InMemoryUserRepository,
     ): DocumentService =
         DocumentService(
             storage = storage,
@@ -197,6 +234,7 @@ class AuthSliceBeans {
             cipher = cipher,
             extractor = extractor,
             transaction = transaction,
+            users = users,
         )
 
     /** 원문 조회 유스케이스도 실물이다. 협력자는 저장소 하나와 암호 하나뿐이다. */
@@ -325,15 +363,20 @@ class InMemoryUserRepository : UserRepository {
     override fun create(
         email: String,
         passwordHash: PasswordHash,
-    ): User = insert(email, passwordHash)
+    ): User = insert(email, passwordHash, emailVerified = false)
 
-    override fun createWithoutPassword(email: String): User = insert(email, passwordHash = null)
+    override fun createWithoutPassword(
+        email: String,
+        emailVerified: Boolean,
+    ): User = insert(email, passwordHash = null, emailVerified = emailVerified)
 
     private fun insert(
         email: String,
         passwordHash: PasswordHash?,
+        emailVerified: Boolean,
     ): User {
-        val stored = StoredUser(User(UUID.randomUUID(), email, Instant.EPOCH), passwordHash)
+        val verifiedAt = if (emailVerified) Instant.EPOCH else null
+        val stored = StoredUser(User(UUID.randomUUID(), email, Instant.EPOCH, verifiedAt), passwordHash)
         if (byEmail.putIfAbsent(email, stored) != null) {
             throw EmailAlreadyRegisteredException("이미 가입된 이메일입니다")
         }
@@ -349,6 +392,19 @@ class InMemoryUserRepository : UserRepository {
         val replaced = StoredUser(existing.user, passwordHash)
         byId[userId] = replaced
         byEmail[existing.user.email] = replaced
+    }
+
+    override fun markEmailVerified(userId: UUID) {
+        val existing = byId[userId] ?: return
+        if (existing.user.emailVerifiedAt != null) return
+        val replaced = StoredUser(existing.user.copy(emailVerifiedAt = Instant.EPOCH), existing.passwordHash)
+        byId[userId] = replaced
+        byEmail[existing.user.email] = replaced
+    }
+
+    /** 슬라이스 테스트가 실물 인증 흐름을 건너뛰고 곧장 인증 완료로 만드는 자리. */
+    fun verifyEmailFor(email: String) {
+        byEmail[email]?.let { markEmailVerified(it.user.id) }
     }
 
     /** 계정 삭제 시나리오(M-3)를 위한 자리. 토큰은 유효한데 계정이 없는 상태를 만든다. */
@@ -581,5 +637,62 @@ class FakeGoogleSocialLoginProvider : SocialLoginProvider {
 
     companion object {
         const val ALLOWED_REDIRECT_URI = "http://localhost:5173/auth/google/callback"
+    }
+}
+
+/**
+ * 이메일 인증 코드 저장소 대역 — 실물(`JdbcVerificationCodeStore`)과 같은 계약(활성 코드
+ * 하나·쿨다운·시도 상한)을 인메모리로 지킨다. 슬라이스는 시간을 실제로 흘려보내지 않으므로
+ * 쿨다운은 [Instant.now] 대신 발급 횟수로 흉내 낸다 — `cooldownArmed` 가 참인 동안은
+ * 다음 [issue] 가 무조건 쿨다운으로 거절된다(테스트가 직접 무장한다).
+ */
+class InMemoryVerificationCodeStore : VerificationCodeStore {
+    private data class ActiveCode(
+        val code: String,
+        var attempts: Int = 0,
+        var voided: Boolean = false,
+    )
+
+    private val active = ConcurrentHashMap<UUID, ActiveCode>()
+    private var counter = 0
+
+    /** 다음 [issue] 를 429 로 거절하게 만든다 — 쿨다운 케이스 전용 스위치. */
+    var cooldownArmed: Boolean = false
+
+    override fun issue(
+        userId: UUID,
+        ttl: Duration,
+        cooldown: Duration,
+    ): String {
+        if (cooldownArmed) {
+            throw RateLimitedException("잠시 후 다시 시도해주세요", cooldown.seconds.coerceAtLeast(1))
+        }
+        val code = String.format(Locale.ROOT, "%06d", ++counter % 1_000_000)
+        active[userId] = ActiveCode(code)
+        return code
+    }
+
+    override fun attempt(
+        userId: UUID,
+        code: String,
+        maxAttempts: Int,
+    ): Boolean {
+        val current = active[userId]
+        val matched = current != null && !current.voided && current.code == code
+        when {
+            current == null || current.voided -> {
+                Unit
+            }
+
+            matched -> {
+                active.remove(userId)
+            }
+
+            else -> {
+                current.attempts++
+                if (current.attempts >= maxAttempts) current.voided = true
+            }
+        }
+        return matched
     }
 }

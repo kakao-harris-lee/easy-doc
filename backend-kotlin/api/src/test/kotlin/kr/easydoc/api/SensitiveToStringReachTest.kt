@@ -240,8 +240,16 @@ class SensitiveToStringReachTest {
          * `toString()` 을 이미 가린다), `GoogleOAuthProperties`·`OAuthProperties`
          * (infrastructure, 설정값)와 `GoogleOAuthSettings`(infrastructure.auth.google,
          * 어댑터 설정 — `clientSecret` 은 `Secret` 타입이라 그 자체가 이미 가려진다).
+         *
+         * 이메일 인증(backlog §1.4 P0-1/P0-3, 2026-09-04)이 **셋**을 더해 102 다(소셜 로그인
+         * 99 위에) — `ConfirmEmailVerificationRequest`(api, `code` 필드가 있어 이 파일
+         * 위에서 `toString()` 을 이미 가린다), `EmailVerificationProperties`(infrastructure,
+         * TTL·쿨다운·시도 상한 설정값 셋뿐이라 민감 토큰과 무관), `JdbcVerificationCodeStore
+         * .ActiveCodeRow`(infrastructure, `attempt` 판정 재료 — `codeHash`·`salt` 는 이미
+         * 해시·솔트라 그 값 자체가 평문 코드를 복원하지 못하고, 민감 판정 토큰(email·
+         * password·token·secret·address·name)에도 걸리지 않는다).
          */
-        const val EXPECTED_SOURCE_DECLARATIONS = 99
+        const val EXPECTED_SOURCE_DECLARATIONS = 102
 
         /** 민감 판정이 반드시 닿아야 하는 타입 — 바닥이다. */
         val KNOWN_SENSITIVE_TYPES =

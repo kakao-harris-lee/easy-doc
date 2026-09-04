@@ -13,6 +13,13 @@ import java.util.Locale
 // 않는다. 그 규약이 `GlobalExceptionHandler` 가 예외 메시지를 그대로 응답 `detail` 에
 // 실어도 되는 근거다(`DomainExceptions.kt`).
 
+/**
+ * 계약 `POST /documents` 403 예시 `email_not_verified` — 이메일 인증 전에는 변환을
+ * 요청할 수 없다(backlog §1.4 P0-1/P0-3). **이 오퍼레이션 하나만** 이 문구를 낸다 — 로그인
+ * 을 포함한 나머지 오퍼레이션은 미인증 사용자에게도 열려 있다.
+ */
+const val EMAIL_VERIFICATION_REQUIRED_MESSAGE: String = "이메일 인증 후 문서를 변환할 수 있습니다"
+
 /** 계약 `POST /documents` 422 예시 `empty_body`. 붙여넣기 본문이 공백뿐일 때. */
 const val EMPTY_BODY_MESSAGE: String = "본문이 비어 있습니다"
 

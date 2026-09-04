@@ -41,7 +41,7 @@ class JdbcUserIdentityRepositoryTest {
     @Test
     @DisplayName("연결한 신원을 (provider, provider_user_id) 로 다시 찾는다")
     fun `연결하고 다시 찾는다`() {
-        val user = users.createWithoutPassword(uniqueEmail())
+        val user = users.createWithoutPassword(uniqueEmail(), emailVerified = true)
 
         val linked = identities.link(user.id, SocialLoginProviderId.GOOGLE, "sub-1", user.email, true)
 
@@ -59,8 +59,8 @@ class JdbcUserIdentityRepositoryTest {
     @Test
     @DisplayName("같은 (provider, provider_user_id) 를 두 사용자에 연결할 수 없다 — 유일성 제약")
     fun `신원 유일성을 지킨다`() {
-        val first = users.createWithoutPassword(uniqueEmail())
-        val second = users.createWithoutPassword(uniqueEmail())
+        val first = users.createWithoutPassword(uniqueEmail(), emailVerified = true)
+        val second = users.createWithoutPassword(uniqueEmail(), emailVerified = true)
         identities.link(first.id, SocialLoginProviderId.GOOGLE, "shared-sub", first.email, true)
 
         assertThatThrownBy {
@@ -71,7 +71,7 @@ class JdbcUserIdentityRepositoryTest {
     @Test
     @DisplayName("계정을 지우면 연결된 신원도 함께 사라진다 — ON DELETE CASCADE")
     fun `계정 삭제가 신원까지 지운다`() {
-        val user = users.createWithoutPassword(uniqueEmail())
+        val user = users.createWithoutPassword(uniqueEmail(), emailVerified = true)
         identities.link(user.id, SocialLoginProviderId.GOOGLE, "cascade-sub", user.email, true)
 
         database.connect().use { connection ->

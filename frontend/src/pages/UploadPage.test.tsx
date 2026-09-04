@@ -10,7 +10,15 @@ import {
   listDocuments,
 } from '../api/client'
 import type { DocumentListItem } from '../api/types'
-import { documentItem, workspaceContext, workspaceItem } from '../test/factories'
+import { AuthContext } from '../auth/context'
+import type { AuthContextValue } from '../auth/context'
+import {
+  authContextValue,
+  documentItem,
+  userResponse,
+  workspaceContext,
+  workspaceItem,
+} from '../test/factories'
 import { WorkspaceContext } from '../workspace/context'
 import type { WorkspaceContextValue } from '../workspace/context'
 import { ACCEPTED_EXTENSIONS, MAX_CHARS, MAX_UPLOAD_BYTES, UploadPage } from './UploadPage'
@@ -70,21 +78,30 @@ function documentPage(items: DocumentListItem[]) {
 }
 
 /** 화면 한 벌. 작업 공간이 바뀌는 상황을 재려면 같은 트리를 다시 그려야 한다. */
-function page(workspace: Partial<WorkspaceContextValue> = {}) {
+function page(
+  workspace: Partial<WorkspaceContextValue> = {},
+  auth: Partial<AuthContextValue> = {},
+) {
   return (
-    <WorkspaceContext.Provider value={workspaceContext(workspace)}>
-      <MemoryRouter initialEntries={['/']}>
-        <Routes>
-          <Route path="/" element={<UploadPage />} />
-          <Route path="/conversions/:conversionId" element={<h2>변환 화면</h2>} />
-        </Routes>
-      </MemoryRouter>
-    </WorkspaceContext.Provider>
+    <AuthContext.Provider value={authContextValue(auth)}>
+      <WorkspaceContext.Provider value={workspaceContext(workspace)}>
+        <MemoryRouter initialEntries={['/']}>
+          <Routes>
+            <Route path="/" element={<UploadPage />} />
+            <Route path="/conversions/:conversionId" element={<h2>변환 화면</h2>} />
+            <Route path="/verify-email" element={<h2>이메일 인증 화면</h2>} />
+          </Routes>
+        </MemoryRouter>
+      </WorkspaceContext.Provider>
+    </AuthContext.Provider>
   )
 }
 
-function renderPage(workspace: Partial<WorkspaceContextValue> = {}) {
-  return render(page(workspace))
+function renderPage(
+  workspace: Partial<WorkspaceContextValue> = {},
+  auth: Partial<AuthContextValue> = {},
+) {
+  return render(page(workspace, auth))
 }
 
 beforeEach(() => {
@@ -604,5 +621,45 @@ describe('업로드 화면', () => {
     expect(
       within(screen.getByRole('group', { name: /선택한 파일/ })).getByText(/PDF는 출력용 형식이라/),
     ).toBeInTheDocument()
+  })
+
+  describe('이메일 인증', () => {
+    it('이메일이 인증되지 않았으면 배너와 인증 화면 링크를 보여준다', () => {
+      renderPage({}, { user: userResponse({ email_verified: false }) })
+
+      expect(screen.getByText('이메일 인증 후 문서를 변환할 수 있습니다.')).toBeInTheDocument()
+      expect(screen.getByRole('link', { name: '이메일 인증하기' })).toHaveAttribute(
+        'href',
+        '/verify-email',
+      )
+    })
+
+    it('이메일이 인증되었으면 배너를 보여주지 않는다', () => {
+      renderPage()
+
+      expect(
+        screen.queryByText('이메일 인증 후 문서를 변환할 수 있습니다.'),
+      ).not.toBeInTheDocument()
+    })
+
+    it('업로드가 403(이메일 미인증)으로 거절되면 일반 오류 대신 배너를 보여준다', async () => {
+      const user = userEvent.setup()
+      vi.mocked(createDocumentFromText).mockRejectedValue(
+        new ApiError(403, '이메일 인증 후 문서를 변환할 수 있습니다'),
+      )
+      renderPage()
+
+      await user.type(screen.getByLabelText('문서 제목'), '청년 월세 지원 안내')
+      await user.type(screen.getByLabelText('바꿀 글'), '신청 안내')
+      await user.click(screen.getByRole('button', { name: '쉬운 글 초안 만들기' }))
+
+      expect(
+        await screen.findByText('이메일 인증 후 문서를 변환할 수 있습니다.'),
+      ).toBeInTheDocument()
+      expect(screen.getByRole('link', { name: '이메일 인증하기' })).toBeInTheDocument()
+      // 같은 사실을 일반 오류 문단으로 한 번 더 말하지 않는다.
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+      expect(screen.queryByRole('heading', { name: '변환 화면' })).not.toBeInTheDocument()
+    })
   })
 })

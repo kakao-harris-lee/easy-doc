@@ -4,14 +4,23 @@ import kr.easydoc.core.privacy.CONTENT_MASK
 import java.time.Instant
 import java.util.UUID
 
-/** 사용자 도메인 타입. */
+/**
+ * 사용자 도메인 타입.
+ *
+ * [emailVerifiedAt] 이 `null` 이면 이메일 소유를 아직 확인하지 못한 계정이다 — 이메일/
+ * 비밀번호로 갓 가입한 계정의 기본값이다. 소셜 로그인 계정은 제공자가 이미 검증한
+ * 이메일만 받으므로 생성 시점에 채워진다([kr.easydoc.application.auth.SocialLoginService]).
+ * V7 적용 시점에 존재하던 계정은 소급 인증(grandfather)됐다(`V7__email_verification.sql`).
+ */
 data class User(
     val id: UUID,
     val email: String,
     val createdAt: Instant,
+    val emailVerifiedAt: Instant? = null,
 ) {
     /** **이메일을 찍지 않는다.** */
-    override fun toString(): String = "User(id=$id, email=$CONTENT_MASK, createdAt=$createdAt)"
+    override fun toString(): String =
+        "User(id=$id, email=$CONTENT_MASK, createdAt=$createdAt, emailVerified=${emailVerifiedAt != null})"
 }
 
 /**

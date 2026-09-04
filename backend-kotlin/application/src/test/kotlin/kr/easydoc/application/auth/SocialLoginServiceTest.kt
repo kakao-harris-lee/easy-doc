@@ -38,6 +38,14 @@ class SocialLoginServiceTest {
                 .providerUserId,
         ).isEqualTo("google-sub-1")
         assertThat(world.users.saved.keys).containsExactly("new@example.test")
+        // 제공자가 이미 검증한 이메일이다 — 우리 쪽 이메일 인증 코드가 또 필요하지 않다
+        // (backlog §1.4 P0-3, `UserRepository.createWithoutPassword` KDoc).
+        assertThat(
+            world.users.saved
+                .getValue("new@example.test")
+                .user.emailVerifiedAt,
+        ).withFailMessage("구글 최초 가입 계정이 생성 시점에 인증 완료로 표시되지 않았다")
+            .isNotNull()
     }
 
     @Test
@@ -349,8 +357,12 @@ private class RecordingSocialUserRepository : UserRepository {
         passwordHash: PasswordHash,
     ): User = error("소셜 로그인 유스케이스는 비밀번호가 있는 create 를 부르지 않는다")
 
-    override fun createWithoutPassword(email: String): User {
-        val stored = StoredUser(User(UUID.randomUUID(), email, Instant.EPOCH), passwordHash = null)
+    override fun createWithoutPassword(
+        email: String,
+        emailVerified: Boolean,
+    ): User {
+        val verifiedAt = if (emailVerified) Instant.EPOCH else null
+        val stored = StoredUser(User(UUID.randomUUID(), email, Instant.EPOCH, verifiedAt), passwordHash = null)
         saved[email] = stored
         return stored.user
     }
@@ -359,6 +371,8 @@ private class RecordingSocialUserRepository : UserRepository {
         userId: UUID,
         passwordHash: PasswordHash,
     ) = error("소셜 로그인 유스케이스는 비밀번호를 재해시하지 않는다")
+
+    override fun markEmailVerified(userId: UUID) = error("소셜 로그인 유스케이스는 이 메서드를 부르지 않는다 — 생성 시점에 이미 채운다")
 }
 
 private class RecordingSocialWorkspaceRepository : WorkspaceRepository {

@@ -57,7 +57,7 @@ class ContractHeaderDeclarationTest {
 
     private companion object {
         /** `$ref` 없이 경로에 직접 적힌 헤더. 값이 계산되는 것들이다. */
-        val INLINE_HEADERS = listOf("Location", "Content-Disposition")
+        val INLINE_HEADERS = listOf("Location", "Content-Disposition", "Retry-After")
 
         /** 반드시 세어져야 하는 헤더 — 바닥이다(정확 일치가 아니라 포함). */
         val EXPECTED_HEADER_NAMES =
@@ -67,6 +67,7 @@ class ContractHeaderDeclarationTest {
                 "WWW-Authenticate",
                 "Location",
                 "Content-Disposition",
+                "Retry-After",
             )
     }
 }

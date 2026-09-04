@@ -455,7 +455,8 @@ class JdbcDocumentStoreTest {
         repeat(FOREIGN_DOCUMENTS) { service.createFromText(stranger, "남의 안내문 $it", null, theirs.toString()) }
         val listFilled = list(theirs)
 
-        assertThat(missing).isEqualTo(1)
+        // 이메일 인증 조회 1(2.9.0 신설) + 작업 공간 소유 판정 1.
+        assertThat(missing).isEqualTo(2)
         assertThat(notMine).describedAs("없는 것과 남의 것이 다른 만큼 일하면 그 차이가 시간에 남는다").isEqualTo(missing)
         assertThat(listMissing).describedAs("목록 거절이 소유 판정 한 문장에서 끝나지 않았다").isEqualTo(1)
         assertThat(listEmpty).describedAs("없는 공간과 남의 공간이 다른 만큼 일한다").isEqualTo(listMissing)
@@ -626,6 +627,7 @@ class JdbcDocumentStoreTest {
                     queue = conversionQueue(client),
                 ),
             workspaces = JdbcWorkspaceLookup(client),
+            users = JdbcUserRepository(client),
             cipher = contentCipher,
             extractor = extractor,
             transaction = SpringTransactionRunner(TransactionTemplate(DataSourceTransactionManager(dataSource))),
@@ -640,7 +642,10 @@ class JdbcDocumentStoreTest {
             random = SecureRandom(),
         )
 
-    private fun newUser(): UUID = users.create("u${UUID.randomUUID()}@example.com", PasswordHash(DUMMY_PHC)).id
+    // 이메일 인증 게이트는 `POST /documents` 앞이다 — 이 파일은 그 게이트를 재지 않으므로
+    // 실물 인증 흐름 대신 저장소를 직접 인증 완료로 만든다.
+    private fun newUser(): UUID =
+        users.create("u${UUID.randomUUID()}@example.com", PasswordHash(DUMMY_PHC)).id.also(users::markEmailVerified)
 
     private fun dataSource(): DataSource =
         DriverManagerDataSource(database.jdbcUrl, database.username, database.password)
@@ -802,8 +807,11 @@ class JdbcDocumentStoreTest {
          */
         const val MARKER_HEX_CHARS = 8
 
-        /** 작업 공간 소유 판정 1 + 문서 INSERT 1 + 변환 INSERT 1 + 작업 INSERT 1. */
-        const val UPLOAD_STATEMENTS = 4
+        /**
+         * 이메일 인증 조회 1(2.9.0 신설, `DocumentService.requireVerifiedEmail`) +
+         * 작업 공간 소유 판정 1 + 문서 INSERT 1 + 변환 INSERT 1 + 작업 INSERT 1.
+         */
+        const val UPLOAD_STATEMENTS = 5
 
         const val DRAFT_BODY = "쉬운 글 초안"
 

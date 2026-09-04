@@ -6,11 +6,14 @@ import kr.easydoc.core.exceptions.ConflictException
 import kr.easydoc.core.exceptions.DocumentExtractionException
 import kr.easydoc.core.exceptions.EasyDocException
 import kr.easydoc.core.exceptions.EmailAlreadyRegisteredException
+import kr.easydoc.core.exceptions.EmailNotVerifiedException
 import kr.easydoc.core.exceptions.ExternalServiceUnavailableException
 import kr.easydoc.core.exceptions.InvalidCredentialsException
 import kr.easydoc.core.exceptions.InvalidInputException
 import kr.easydoc.core.exceptions.InvalidOAuthStateException
+import kr.easydoc.core.exceptions.InvalidVerificationCodeException
 import kr.easydoc.core.exceptions.NotFoundException
+import kr.easydoc.core.exceptions.RateLimitedException
 import kr.easydoc.core.exceptions.StorageException
 import kr.easydoc.core.exceptions.UnsupportedFormatException
 import kr.easydoc.core.exceptions.UploadTooLargeException
@@ -255,7 +258,14 @@ private fun bodyReadItem(exception: HttpMessageNotReadableException): Validation
     }
 }
 
-/** 도메인 예외 → (상태 코드, 추가 헤더). **정본은 `contracts/easy-doc-v1.yaml` 이다.** */
+/**
+ * 도메인 예외 → (상태 코드, 추가 헤더). **정본은 `contracts/easy-doc-v1.yaml` 이다.**
+ *
+ * 갈래 수가 늘 때마다 순환 복잡도가 함께 는다 — 이 함수의 복잡도는 **매핑 갈래의 수**이지
+ * 로직의 얽힘이 아니다(각 갈래는 서로 독립이고 상태 하나만 정한다). 억제는 이 함수 하나에
+ * 걸리고 갈래를 나누는 판단 자체로 번지지 않는다.
+ */
+@Suppress("CyclomaticComplexMethod")
 private fun mappingFor(exception: EasyDocException): Pair<HttpStatus, HttpHeaders?>? =
     when (exception) {
         // 입력 오류·지원하지 않는 형식·추출 실패 → 422.
@@ -265,6 +275,22 @@ private fun mappingFor(exception: EasyDocException): Pair<HttpStatus, HttpHeader
         is DocumentExtractionException,
         -> {
             HttpStatus.UNPROCESSABLE_ENTITY to null
+        }
+
+        // 인증 코드가 오답·만료·무효 — 사유를 가르지 않는다(`InvalidVerificationCodeException` KDoc).
+        is InvalidVerificationCodeException -> {
+            HttpStatus.BAD_REQUEST to null
+        }
+
+        // 이메일 인증 전이라 이 동작을 할 수 없다 — `POST /documents` 전용.
+        is EmailNotVerifiedException -> {
+            HttpStatus.FORBIDDEN to null
+        }
+
+        // 재발송 쿨다운 안 — 계약이 요구하는 `Retry-After` 를 여기서 싣는다.
+        is RateLimitedException -> {
+            HttpStatus.TOO_MANY_REQUESTS to
+                HttpHeaders().apply { set(HttpHeaders.RETRY_AFTER, exception.retryAfterSeconds.toString()) }
         }
 
         // 크기 초과만 413으로 가른다 — "파일을 나눠 올리라"는 안내가 형식 오류와 다르다.

@@ -5,6 +5,9 @@ export const LOGIN_PATH = '/login'
 export const SIGNUP_PATH = '/signup'
 export const HISTORY_PATH = '/history'
 
+/** 이메일 인증 화면. 가입(이메일·비밀번호) 직후 이리로 보낸다. */
+export const EMAIL_VERIFICATION_PATH = '/verify-email'
+
 /**
  * 구글 로그인 콜백 라우트. `GoogleLoginButton`이 만드는 `redirect_uri`와 같은 값이어야
  * 한다 — 제공자가 오늘 google 하나뿐이라 경로를 고정한다(계약 `x-social-login`).
