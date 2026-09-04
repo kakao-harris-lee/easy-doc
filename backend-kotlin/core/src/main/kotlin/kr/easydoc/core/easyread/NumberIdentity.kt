@@ -10,8 +10,13 @@ import java.math.BigDecimal
 // (digitsOnly="15")이 되어 다른 값인데 보존으로 오판된다. 그래서 NUMBER 의 정체성은
 // (정규화된 값, 단위) 쌍이고, PERCENT 는 [BigDecimal] 로 소수점까지 정규화한다.
 
-/** 단위 뒤에 붙는 낱말 — `FactPreservation.kt` [PATTERNS] 의 NUMBER 항·`WORD_NUMBER` 가 붙이는 것과 같은 목록. */
-private val NUMBER_UNIT_SUFFIX = Regex("""(명|개|일|시|분|세|살|회|건|층|호|번|달)$""")
+/**
+ * 단위 뒤에 붙는 낱말 — `KoreanAmountWords.kt` 의 [ARABIC_UNIT_ALTERNATION](Arabic 숫자용,
+ * "개월"처럼 긴 단위가 먼저 온다) 에 `달`(한글 수사 전용 단위)을 더한다. 문자열 끝(`$`)에
+ * 고정돼 있어 대체 순서와 무관하게 가장 긴 단위가 선택된다 — 짧은 대체가 먼저 시도돼도
+ * `$` 앞에서 실패하면 정규식이 다음 대체(더 긴 단위)로 되돌아가 결국 맞는 만큼 잡는다.
+ */
+private val NUMBER_UNIT_SUFFIX = Regex("""($ARABIC_UNIT_ALTERNATION|달)$""")
 
 /**
  * NUMBER 의 정체성은 **(정규화된 값, 단위)** 쌍이다 — 값만 보면 "3명"과 "3층"이 같은 사실로
@@ -29,7 +34,7 @@ internal fun numberCompareKey(matchText: String): String {
 
 /** `1.5%` 를 "15" 로 뭉개지 않도록 소수점을 보존해 [BigDecimal] 로 정규화한다(리뷰 HIGH-1). */
 internal fun percentCompareKey(matchText: String): String {
-    val numeric = Regex("""\d+(?:\.\d+)?""").find(matchText)?.value ?: return ""
+    val numeric = Regex("""\d++(?:\.\d++)?""").find(matchText)?.value ?: return ""
     val value = BigDecimal(numeric).stripTrailingZeros()
     return if (value.compareTo(BigDecimal.ZERO) == 0) "0" else value.toPlainString()
 }

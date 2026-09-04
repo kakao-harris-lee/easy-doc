@@ -280,6 +280,33 @@ class FactPreservationTest {
     }
 
     @Nested
+    @DisplayName("한글 수사 — '개월'과 '개' 단위 충돌 (리뷰 재검토 HIGH-1)")
+    inner class MonthVersusPieceUnit {
+        @Test
+        @DisplayName("'3개'(낱개)는 '세 달'(개월)로 지켜지지 않는다 — 재현 사례")
+        fun `개와 개월은 다른 단위다`() {
+            val missing = findMissingFacts("물품은 3개입니다.", "기간은 세 달입니다.")
+
+            assertThat(missing)
+                .withFailMessage("'개'가 '개월'로도 정규화되면 무관한 3개(낱개)가 3개월(기간)로 지켜진 것처럼 오판된다")
+                .extracting("kind")
+                .containsExactly(FactKind.NUMBER)
+        }
+
+        @Test
+        @DisplayName("'3개월'은 '세 달'과 같은 사실이다")
+        fun `개월과 달은 같은 단위로 정규화된다`() {
+            assertThat(findMissingFacts("계약 기간은 3개월입니다.", "계약 기간은 세 달입니다.")).isEmpty()
+        }
+
+        @Test
+        @DisplayName("'3개'는 '세 개'와 같은 사실이다")
+        fun `개는 개대로 보존된다`() {
+            assertThat(findMissingFacts("물품은 3개입니다.", "물품은 세 개입니다.")).isEmpty()
+        }
+    }
+
+    @Nested
     @DisplayName("숫자·백분율 정체성 — 단위·소수점도 값이다 (리뷰 HIGH-1)")
     inner class NumberAndPercentIdentity {
         @Test
@@ -361,29 +388,83 @@ class FactPreservationTest {
                 .extracting("kind")
                 .containsExactly(FactKind.AMOUNT)
         }
+
+        @Test
+        @DisplayName("배수 항 사이에 공백이 있어도 '1억 5천만원'은 통째로 소비된다(리뷰 재검토 HIGH-2 재현)")
+        fun `항 사이 공백이 있어도 전체를 합산한다`() {
+            assertThat(findMissingFacts("사업비는 1억 5천만원입니다.", "사업비는 150,000,000원이에요.")).isEmpty()
+        }
+
+        @Test
+        @DisplayName("'1억 5천만원'을 '5천만원'만 옮긴 값으로 잘못 판정하지 않는다 — 앞이 잘리면 안 된다")
+        fun `공백 뒤 앞부분이 잘려서 판정되지 않는다`() {
+            val missing = findMissingFacts("사업비는 1억 5천만원입니다.", "사업비는 50,000,000원이에요.")
+
+            assertThat(missing)
+                .withFailMessage("'1억 5천만원'이 '5천만원'(공백 뒤)만 부분 매치되면 1억이 통째로 사라진 걸 못 잡는다")
+                .extracting("kind")
+                .containsExactly(FactKind.AMOUNT)
+        }
+
+        @Test
+        @DisplayName("'5,000만원'은 '50,000,000원'과 같은 값이다")
+        fun `콤마와 만이 섞여도 정확히 합산한다`() {
+            assertThat(findMissingFacts("보조금은 5,000만원입니다.", "보조금은 50,000,000원이에요.")).isEmpty()
+        }
+
+        @Test
+        @DisplayName("'만원권'처럼 뒤에 다른 글자가 이어져도 그 글자까지 삼키지 않는다")
+        fun `만원권이 과잉 소비되지 않는다`() {
+            // "만원권"의 "만원"만 AMOUNT 로 잡히고 "권"은 사실과 무관하게 그대로 남아야 한다 —
+            // 값이 안 맞게 부풀거나 예외 없이 정상적으로 판정이 끝나는지만 본다(회귀 가드).
+            assertThat(findMissingFacts("만원권을 준비하세요.", "만원권을 준비하세요.")).isEmpty()
+            assertThat(findMissingFacts("만원권을 준비하세요.", "지폐를 준비하세요."))
+                .extracting("kind")
+                .containsExactly(FactKind.AMOUNT)
+        }
     }
 
     @Nested
-    @DisplayName("성능 — 정규식 역추적 회귀 가드")
+    @DisplayName("성능 — 정규식 역추적(catastrophic backtracking) 회귀 가드 (리뷰 재검토 HIGH-3)")
     inner class Performance {
+        // 재현: 20,000 자리 숫자열 하나가 findMissingFacts 를 21.6초 걸리게 했다(배수 단위가
+        // 하나도 안 나오는 긴 숫자열 앞에서 탐욕 수량자가 매 시작 위치마다 한 글자씩 물러나며
+        // 재시도 — O(n²)). possessive 수량자로 고친 뒤에는 세 최악 사례 모두 워밍업 후
+        // 200ms 안에 끝나야 한다. 일반적인 실사용 입력(짧은 문장 다수)이 아니라 **이
+        // 구현이 특히 취약했던 모양**만 고른 사례들이다.
+
         @Test
-        @DisplayName("2만자 안팎의 입력도 1초보다 훨씬 빠르게 끝난다")
-        fun `대용량 입력도 빠르게 처리한다`() {
-            val chunk =
-                "10:00 오후 3시 15시 2026.09.04 9월 4일 5,000원 1억5천만원 3,650천원 " +
-                    "3.14% 02-1234-5678 1588-1234 3개월 두 명 3층 four@example.com "
-            val source = buildString { while (length < 20_000) append(chunk) }
+        @DisplayName("구분자·배수 단위 없이 숫자만 20,000자 이어져도 200ms 안에 끝난다")
+        fun `구분자 없는 대량 숫자도 빠르게 처리한다`() {
+            assertFastEnough("3".repeat(20_000))
+        }
 
+        @Test
+        @DisplayName("'1,' 을 20,000자만큼 반복해도 200ms 안에 끝난다")
+        fun `콤마 반복 입력도 빠르게 처리한다`() {
+            assertFastEnough("1,".repeat(10_000))
+        }
+
+        @Test
+        @DisplayName("'억만천'과 숫자·공백이 뒤섞인 20,000자도 200ms 안에 끝난다")
+        fun `배수 단위가 뒤섞인 입력도 빠르게 처리한다`() {
+            val chunk = "억만천 123 "
+            assertFastEnough(buildString { while (length < 20_000) append(chunk) })
+        }
+
+        /** [source] 와 그것을 그대로 옮긴 초안 양쪽에서 재는 것이 핵심이다 — 양쪽 다 같은 추출을 탄다. */
+        private fun assertFastEnough(worstCase: String) {
             // 첫 호출은 JIT 워밍업으로 버리고, 계측은 워밍업 뒤 호출만 잰다.
-            findMissingFacts(source, source)
+            findMissingFacts(worstCase, worstCase)
 
-            val elapsedMillis = kotlin.system.measureTimeMillis { findMissingFacts(source, source) }
+            val elapsedMillis = kotlin.system.measureTimeMillis { findMissingFacts(worstCase, worstCase) }
 
             assertThat(elapsedMillis)
                 .withFailMessage(
-                    "findMissingFacts 가 %d ms 걸렸다 — 정규식 역추적(catastrophic backtracking) 의심",
+                    "findMissingFacts 가 %d ms 걸렸다 — 정규식 역추적(catastrophic backtracking) 의심" +
+                        "(재현: 20,000자 숫자열에서 21.6초)",
                     elapsedMillis,
-                ).isLessThan(1_000)
+                ).isLessThan(200)
         }
     }
 }
