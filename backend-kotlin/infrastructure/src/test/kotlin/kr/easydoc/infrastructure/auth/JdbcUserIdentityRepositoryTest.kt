@@ -1,6 +1,7 @@
 package kr.easydoc.infrastructure.auth
 
 import kr.easydoc.application.auth.SocialLoginProviderId
+import kr.easydoc.application.auth.SocialLoginService
 import kr.easydoc.core.exceptions.ConflictException
 import kr.easydoc.infrastructure.DatabaseHandle
 import kr.easydoc.infrastructure.PostgresTestSupport
@@ -57,7 +58,7 @@ class JdbcUserIdentityRepositoryTest {
     }
 
     @Test
-    @DisplayName("같은 (provider, provider_user_id) 를 두 사용자에 연결할 수 없다 — 유일성 제약")
+    @DisplayName("같은 (provider, provider_user_id) 를 두 사용자에 연결할 수 없다 — 유일성 제약(V6)")
     fun `신원 유일성을 지킨다`() {
         val first = users.createWithoutPassword(uniqueEmail(), emailVerified = true)
         val second = users.createWithoutPassword(uniqueEmail(), emailVerified = true)
@@ -66,6 +67,21 @@ class JdbcUserIdentityRepositoryTest {
         assertThatThrownBy {
             identities.link(second.id, SocialLoginProviderId.GOOGLE, "shared-sub", second.email, true)
         }.isInstanceOf(ConflictException::class.java)
+            .hasMessage(SocialLoginService.identityAlreadyLinkedToOtherUserMessage(SocialLoginProviderId.GOOGLE))
+    }
+
+    @Test
+    @DisplayName(
+        "같은 사용자에 같은 제공자의 두 번째 신원을 연결할 수 없다 — 유일성 제약(V9, 리뷰 후속 조치 HIGH)",
+    )
+    fun `사용자당 제공자 하나 불변식을 DB 가 지킨다`() {
+        val user = users.createWithoutPassword(uniqueEmail(), emailVerified = true)
+        identities.link(user.id, SocialLoginProviderId.GOOGLE, "first-sub", user.email, true)
+
+        assertThatThrownBy {
+            identities.link(user.id, SocialLoginProviderId.GOOGLE, "second-sub", user.email, true)
+        }.isInstanceOf(ConflictException::class.java)
+            .hasMessage(SocialLoginService.providerAlreadyLinkedMessage(SocialLoginProviderId.GOOGLE))
     }
 
     @Test

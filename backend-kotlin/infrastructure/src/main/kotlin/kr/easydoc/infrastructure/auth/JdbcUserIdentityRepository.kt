@@ -1,6 +1,7 @@
 package kr.easydoc.infrastructure.auth
 
 import kr.easydoc.application.auth.SocialLoginProviderId
+import kr.easydoc.application.auth.SocialLoginService
 import kr.easydoc.application.auth.UserIdentity
 import kr.easydoc.application.auth.UserIdentityRepository
 import kr.easydoc.core.exceptions.ConflictException
@@ -78,11 +79,34 @@ class JdbcUserIdentityRepository(private val jdbc: JdbcClient) : UserIdentityRep
                 .param("emailVerified", emailVerified)
                 .query { rs, _ -> toIdentity(rs) }
                 .single()
-        } catch (_: DuplicateKeyException) {
-            // `SocialLoginService` 는 같은 트랜잭션 안에서 `findByProviderIdentity` 를
-            // 먼저 확인하므로 여기까지 오는 것은 경쟁(같은 신원이 동시에 콜백을 두 번
-            // 완료)뿐이다. 원인을 잇지 않는다 — DETAIL 에 provider_user_id 가 담긴다.
-            throw ConflictException(ALREADY_LINKED_MESSAGE)
+        } catch (failure: DuplicateKeyException) {
+            // 원인을 잇지 않는다 — DETAIL 에 provider_user_id 가 담긴다.
+            throw conflictFor(failure, provider)
+        }
+    }
+
+    /**
+     * `user_identities` 에는 유일성 제약이 **둘** 있고(V6·V9), 어느 쪽이 걸렸는지에 따라
+     * 사용자에게 보여줄 사유가 다르다. 두 제약 모두 애플리케이션 층이 먼저 확인하지만
+     * (`SocialLoginService.linkCallback` 의 `findByProviderIdentity`·`findByUserAndProvider`),
+     * 그 확인과 이 `INSERT` 사이에는 커넥션 경계가 없어 동시 요청이 경쟁할 수 있다 — 이
+     * `catch` 가 그 경쟁의 **마지막 방어선**이다(리뷰 지적, HIGH: V9 신설 근거).
+     *
+     * 메시지는 `SocialLoginService`(그 결정 로직이 같은 갈래에서 던지는 문구)와
+     * **글자 그대로 같은 값**을 쓴다 — 결정적 경로와 DB 방어선이 서로 다른 문구를
+     * 내면 어느 쪽이 정본인지 계약이 갈린다(리뷰 지적, MEDIUM).
+     */
+    private fun conflictFor(
+        failure: DuplicateKeyException,
+        provider: SocialLoginProviderId,
+    ): ConflictException {
+        val detail = failure.mostSpecificCause.message.orEmpty()
+        return if (detail.contains(USER_ID_PROVIDER_CONSTRAINT)) {
+            // V9 — 이 사용자가 이 제공자에 이미 다른 신원을 연결했다(사용자당 제공자 하나).
+            ConflictException(SocialLoginService.providerAlreadyLinkedMessage(provider))
+        } else {
+            // V6 — 이 (provider, provider_user_id) 신원이 이미(다른 사용자에) 연결돼 있다.
+            ConflictException(SocialLoginService.identityAlreadyLinkedToOtherUserMessage(provider))
         }
     }
 
@@ -100,6 +124,7 @@ class JdbcUserIdentityRepository(private val jdbc: JdbcClient) : UserIdentityRep
         }
 
     private companion object {
-        const val ALREADY_LINKED_MESSAGE = "이미 연결된 계정입니다"
+        /** `V9__user_identities_one_per_provider.sql` 이 붙인 이름 — [conflictFor] 가 갈래를 가른다. */
+        const val USER_ID_PROVIDER_CONSTRAINT = "uq_user_identities_user_id_provider"
     }
 }

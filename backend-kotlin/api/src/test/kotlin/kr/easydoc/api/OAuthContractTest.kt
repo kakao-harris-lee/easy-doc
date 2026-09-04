@@ -44,6 +44,32 @@ class OAuthContractTest {
     private val json = ObjectMapper()
 
     @Test
+    @DisplayName(
+        "BadGateway(502) 는 oauthCallback·oauthLinkCallback 두 오퍼레이션만 선언한다 " +
+            "(리뷰 후속 조치 LOW — x-retired-responses[0].reinstated_by 의 좁은 범위를 계약 테스트로 고정한다)",
+    )
+    fun `502 선언 범위가 정확히 둘이다`() {
+        val declaring =
+            ContractSpec.operations().filter { (path, method) ->
+                BAD_GATEWAY.toString() in ContractSpec.responseStatuses(path, method)
+            }
+
+        assertThat(declaring.map { it.first }.toSet())
+            .withFailMessage(
+                "502 를 선언한 오퍼레이션이 %s 다 — 정본(x-retired-responses[0].reinstated_by)이 예고한 " +
+                    "둘(oauthCallback·oauthLinkCallback)과 달라졌다. 새 오퍼레이션이 늘었다면 그 정본 항목도 함께 갱신하라.",
+                declaring.map { (path, method) -> "${method.uppercase()} $path" },
+            ).isEqualTo(setOf(CALLBACK_PATH, LINK_CALLBACK_PATH))
+
+        declaring.forEach { (path, method) ->
+            val ref = ContractSpec.map("paths", path, method, "responses", BAD_GATEWAY.toString())["\$ref"]
+            assertThat(ref)
+                .withFailMessage("%s %s 의 502 가 BadGateway 컴포넌트를 참조하지 않는다: %s", method, path, ref)
+                .isEqualTo("#/components/responses/BadGateway")
+        }
+    }
+
+    @Test
     @DisplayName("start 성공 — 계약의 성공 상태 · 사적 헤더 · 본문 키 집합이 정확히 required")
     fun `start 응답이 계약과 같다`() {
         val response = start(REDIRECT_URI)
