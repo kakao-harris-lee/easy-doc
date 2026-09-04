@@ -267,8 +267,23 @@ class SensitiveToStringReachTest {
          * 남긴다)과 파일 전용 `private data class` 인 `Anchor`(앵커 후보 하나, (쉬운 글 색인,
          * 원본 색인) 쌍)·`Breakpoint`(LIS 로 걸러진 tie point, 이 파일 밖으로 나가지 않는다).
          * 넷 다 색인 정수뿐이라 민감 정보가 없다 — [KNOWN_SENSITIVE_TYPES] 에 넣지 않는다.
+         *
+         * P0-5 조각 2/3 조회 유스케이스(2026-09-05)가 둘을 더해 111 이다(세그먼트 109
+         * 위에) - core `TermCandidate`(조회 후보 하나. term/easyTerm/definition/caution/
+         * tags/examples/entryId 어느 필드 이름도 민감 판정 토큰에 걸리지 않는다, `DictionaryEntry`
+         * 와 같은 판단)와 infrastructure `DictionaryLookupProperties`(조회 활성화 스위치
+         * 하나, Boolean).
+         *
+         * **정정(2026-09-05, 같은 날 리뷰).** 위 문단이 "`TermQuery`는 `toString()`을 손으로
+         * 쥐지 않아 R-10 표본에도 잡히지 않는다"고 적었는데, 그 리뷰가 바로 그 상태를
+         * 지적했다 - `text`(민감 토큰 `text`에 걸리는 이름)를 가린 `toString()`이 없었다.
+         * 지금은 `@UserContent` + 손으로 쓴 `toString()`([kr.easydoc.core.privacy.CONTENT_MASK]
+         * 로 값을 가림)을 갖췄고, `TermQuery`는 `data class`가 아닌 일반 class라 이
+         * [EXPECTED_SOURCE_DECLARATIONS] 숫자는 그대로다 - R-10 쪽 `generalClassesWithCustomToString`
+         * 표본에 새로 잡히고, `민감 data class 가 값을 찍지 않는다` 테스트가 아니라
+         * `일반 class 의 손으로 쓴 toString 이 값을 찍지 않는다`(R-10) 테스트가 이를 검사한다.
          */
-        const val EXPECTED_SOURCE_DECLARATIONS = 109
+        const val EXPECTED_SOURCE_DECLARATIONS = 111
 
         /** 민감 판정이 반드시 닿아야 하는 타입 — 바닥이다. */
         val KNOWN_SENSITIVE_TYPES =
