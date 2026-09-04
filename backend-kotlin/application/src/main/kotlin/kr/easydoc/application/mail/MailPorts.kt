@@ -42,3 +42,16 @@ enum class MailRejectReason {
 interface MailSender {
     fun send(message: OutboundMail): MailDelivery
 }
+
+/**
+ * 발송한 메일을 다시 읽는 포트 — **e2e 진단 전용**이다. 실제 벤더(SES·SMTP 등)는 보낸
+ * 메일을 되읽을 방법이 없으므로 `FakeMailSender` 만 구현한다. 어느 제품 유스케이스도 이
+ * 포트에 의존하지 않는다 — `api` 모듈의 `e2e` profile 전용 진단 엔드포인트
+ * (`E2eMailInboxController`) 하나만의 협력자다. `api` 모듈은 `infrastructure` 를
+ * `runtimeOnly` 로만 의존해 `FakeMailSender` 를 컴파일 시점에 보지 못하므로, 그 컨트롤러가
+ * 캐스팅 없이 의존할 수 있게 이 얇은 포트를 `application` 에 둔다.
+ */
+interface MailInbox {
+    /** 그 수신자에게 보낸 가장 최근 메일. 없으면 `null`. */
+    fun latestTo(recipient: EmailAddress): OutboundMail?
+}

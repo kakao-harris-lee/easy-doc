@@ -24,6 +24,13 @@ internal const val MIGRATE_PROFILE = "migrate"
  */
 internal const val ROTATE_KEYS_PROFILE = "rotate-keys"
 
+/**
+ * `e2e` profile 이름. Playwright e2e 스택(`compose.e2e.yml`)이 `api,local` 곁에 얹어
+ * 켠다 — 이 profile 이 있을 때만 [kr.easydoc.api.e2e.E2eMailInboxController] 가 조립된다.
+ * 운영 profile(`api`·`local`·prod)에는 이 값이 없으므로 그 컨트롤러도 없다.
+ */
+internal const val E2E_PROFILE = "e2e"
+
 fun main(args: Array<String>) {
     val context = runApplication<ApiApplication>(*args)
     val profiles = context.environment.activeProfiles.toSet()

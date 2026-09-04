@@ -472,7 +472,13 @@ export function UploadPage() {
         >
           <MailWarning className="size-5 shrink-0" aria-hidden="true" />
           이메일 인증 후 문서를 변환할 수 있습니다.{' '}
-          <Link to={EMAIL_VERIFICATION_PATH} className="font-semibold underline underline-offset-4">
+          {/* §10 터치 대상 44px — 배너가 `flex` 컨테이너라 이 링크는 블록화된 flex item이다.
+          `h-11`(44px)로 이 앱의 다른 조작 대상(예: EmailVerificationPage의 입력·버튼)과
+          같은 하한을 준다. */}
+          <Link
+            to={EMAIL_VERIFICATION_PATH}
+            className="inline-flex h-11 items-center font-semibold underline underline-offset-4"
+          >
             이메일 인증하기
           </Link>
         </p>

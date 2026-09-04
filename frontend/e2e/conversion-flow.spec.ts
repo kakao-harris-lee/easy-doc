@@ -14,7 +14,7 @@ import { expect, test } from '@playwright/test'
 import { readFile } from 'node:fs/promises'
 
 import { ROUTES } from './contract'
-import { API_BASE_URL, api, newAccount, signUpAndLand } from './support/app'
+import { API_BASE_URL, api, newAccount, signUpAndLand, verifyEmail } from './support/app'
 import { NetworkLog, signature } from './support/network'
 
 /** fake LLM 이 돌려주는 고정 문장 — `LocalLlmProvider.CLEAN_REPLY`. */
@@ -80,7 +80,10 @@ test.describe('변환 수직 흐름', () => {
 
     const log = new NetworkLog(page, API_BASE_URL)
     const observedStatuses = trackConversionStatuses(page)
-    await signUpAndLand(page, newAccount())
+    const account = newAccount()
+    await signUpAndLand(page, account)
+    // 이메일/비밀번호 계정은 인증을 마쳐야 문서 등록(`POST /documents`)이 열린다(계약 2.9.0).
+    await verifyEmail(page, account)
 
     await page.getByLabel('문서 제목').fill('E2E 건강보험료 안내')
     await page.getByLabel('바꿀 글').fill(SOURCE_TEXT)

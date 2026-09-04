@@ -248,8 +248,13 @@ class SensitiveToStringReachTest {
          * .ActiveCodeRow`(infrastructure, `attempt` 판정 재료 — `codeHash`·`salt` 는 이미
          * 해시·솔트라 그 값 자체가 평문 코드를 복원하지 못하고, 민감 판정 토큰(email·
          * password·token·secret·address·name)에도 걸리지 않는다).
+         *
+         * e2e 진단 엔드포인트(`fix/e2e-email-verification`, 2026-09-04)가 **하나**를 더해
+         * 103 이다 — `LatestMailResponse`(api.e2e, `textBody` 가 토큰 `text`·`body` 에 걸려
+         * 이 파일 위에서 `toString()` 을 이미 가린다). `e2e` profile 전용이라 이 컨트롤러는
+         * `api`/`local`/prod 컨텍스트에 조립되지 않지만, 소스 선언 자체는 항상 스캔된다.
          */
-        const val EXPECTED_SOURCE_DECLARATIONS = 102
+        const val EXPECTED_SOURCE_DECLARATIONS = 103
 
         /** 민감 판정이 반드시 닿아야 하는 타입 — 바닥이다. */
         val KNOWN_SENSITIVE_TYPES =
