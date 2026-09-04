@@ -158,6 +158,45 @@
 
   **철회(2026-09-02):** 이전에 여기 있던 「관찰 하나(단정 아님)」 문단 — 「`docs/golden-collection-plan.md`의 같은 날 머리·꼬리 재확인 결과와 겹치는 정렬이 있다: 머리·꼬리가 깨끗한 022·023은 통과하거나 길이 인공물로 떨어졌고, 조각 오염이 있는 047·050이 진짜 치환 누락을 냈다」 — 는 철회한다. 그 정렬의 절반을 이루던 「047·050의 진짜 치환 누락」이 위 ⑷의 정정으로 무효가 되어 정렬 자체가 성립하지 않는다. `docs/golden-collection-plan.md`의 머리·꼬리 오염 기록 자체는 그대로 유효하지만, 그것과 스타일 통과/불통과 사이의 정렬을 가설로 제시할 근거는 이제 없다.
 
+## 1.4 메일 발송 서비스·소셜 로그인 조사 (2026-09-04)
+
+### 메일 발송 서비스
+
+전제: 자체 호스팅 SMTP가 아니라 **외부 발송 서비스**를 쓴다(결정 완료). 용도는 회원가입 인증코드·변환 완료 알림 등 **트랜잭션 메일만**이며 정보통신망법의 광고성 정보 규제(수신동의·야간 발송 제한) 대상이 아니다 — 단 추후 마케팅 메일을 얹으면 채널/템플릿을 분리해야 한다. 물량은 월 수백~수천 통(저볼륨), 발신 도메인은 `easydoc.kr`, API 키 등 비밀값은 환경변수/secret manager로만 주입하며 local/CI는 fake sender로 동작한다.
+
+| 서비스 | 월 5천통 기준가 | API | Java/Kotlin SDK | 한국 리전 | 비고 |
+|---|---|---|---|---|---|
+| AWS SES | $0.50~$0.80 추정(2026 가격 구조가 단일 요율/볼륨 티어 중 어느 쪽인지 소스 간 불일치 — **미확인**, 확인일 2026-09-04) | REST(SESv2) + SMTP relay | AWS SDK for Java v2 / Kotlin 공식 지원 | 서울(ap-northeast-2) 가능 | 신규 계정은 sandbox 상태로 시작, Production Access 승인 필요. SDK 자체 재시도를 끄고 써야 함(재시도 한 계층 원칙과 충돌) |
+| SendGrid(Twilio) | Essentials $19.95/월(5만통 포함, 확인일 2026-09-04) | REST + SMTP relay | 공식 Java SDK(`sendgrid-java`) | 명시적 리전 옵션 없음(미국 처리 추정) | 마케팅 기능·요금이 섞여 있어 트랜잭션 전용엔 과잉 스펙 |
+| Mailgun | Foundation $35/월(5만통 포함, 확인일 2026-09-04) | REST + SMTP relay | 공식 Java SDK(`mailgun-java`) | US/EU 선택(EU=독일), 한국 없음 | 저볼륨엔 기본 요금이 과함 |
+| Postmark | Basic $15/월(1만통 포함, 초과 $1.80/1000, 확인일 2026-09-04) | REST + SMTP relay | 공식 Java SDK(`postmark-java`) | 명시 안 됨(미국 추정) | 트랜잭션 전용 설계, 전달성 평판 상위권으로 언급됨, Sandbox Mode 공식 지원 |
+| Resend | Pro $20/월(5만통, 확인일 2026-09-04) | REST(HTTP)만 | **미확인**(공식 SDK 없이 HTTP 직접 호출 가능성) | 명시 안 됨 | 가격 정책이 자주 바뀌는 편(2024 Scale 티어 인상 사례) |
+| Brevo(구 Sendinblue) | $9~$25/월 구간 — 자료마다 상이, **미확인** | REST + SMTP relay | 공식 SDK 존재 주장(`sib-api-v3-sdk`)이나 GitHub 원본 미확인 | EU(프랑스), 한국 없음 | 공식 가격 페이지가 JS 렌더링이라 3차 소스 의존, 채택 전 재확인 필요 |
+| NHN Cloud Notification(Email) | **미확인**(콘솔 로그인 필요) | REST(SMS·알림톡과 통합 Notification API) | **미확인** | 국내(판교 등) | 완전한 한국어 콘솔, SMS/알림톡 확장 시 통합 이점 |
+| Naver Cloud Cloud Outbound Mailer | **미확인**(가격 계산기 로그인 필요) | REST(GET/POST/DELETE) | 공식 Java SDK 있음 | 국내(리전별 DKIM selector 분리) | 기본 발송 한도 월 100만 건. `naver.com`/`navercorp.com`/`ncloud.com`은 발신 도메인 등록 불가(`easydoc.kr`은 무관). DKIM 키 392자로 DNS TXT 255자 제한 초과 — 분할 등록 필요 |
+
+권고: **1순위 AWS SES** — 서울 리전, 공식 Kotlin SDK, 저볼륨 구간 최저가 축이나 sandbox 상태라 Production Access 승인이 선행돼야 한다. **2순위 Postmark** — 트랜잭션 전용이라 마케팅 오발송 위험이 구조적으로 없고 전달성 평판이 좋다. 국내 리전이 반드시 필요해지면 Naver Cloud가 유력하나 정확한 원화 단가는 미확인. 이번 조사로 확보하지 못한 항목: SES의 2026년 정확한 요금 구조, NHN Cloud·Naver Cloud의 원화 단가, naver.com/daum.net/kakao.com 수신함에서 특정 벤더가 스팸 처리되는 실증 사례(실제 발송 테스트 필요, 유료·실발송이라 사용자 승인 하 별도 진행).
+
+통합 형태(CLAUDE.md 포트/어댑터 원칙): `application`에 `MailSender` 포트(`send(OutboundMail): MailSendResult`), `infrastructure/mail`에 벤더별 어댑터(`SesMailSender` 등)와 local/CI용 `FakeMailSender`, `@ConfigurationProperties` 기반 `MailProperties`(provider·from-address·api-key 참조·timeout-ms). `LlmProvider`→`MetricsLlmProviderDecorator`와 같은 패턴으로 관측 decorator를 얹을 수 있다. 벤더 SDK 자체 재시도는 끄고 재시도 책임은 큐 쪽 한 계층만 갖는다. **어느 서비스를 쓸지는 아직 미정 — 결정은 사용자 몫이다.**
+
+### 소셜 로그인(카카오·네이버·구글)
+
+플로우 권고: Authorization Code 방식에서 **SPA가 code를 받아 백엔드 계약 오퍼레이션 `oauthCallback`으로 중계**하고, 백엔드가 code→token→profile 교환 뒤 자체 JWT를 발급한다(client secret은 항상 백엔드에만 존재). Spring Security의 OAuth2 Client 세션 필터체인(`CommonOAuth2Provider`)은 카카오·네이버를 내장 지원하지 않고 이 프로젝트는 세션 없는 JWT API이므로 채택하지 않는다 — 대신 `core`에 `SocialLoginProvider` 포트를 정의하고 `infrastructure`에 제공자별 HTTP 어댑터(`KakaoOAuthAdapter`/`NaverOAuthAdapter`/`GoogleOAuthAdapter`) 3개로 통일한다.
+
+| 제공자 | 안정 식별자 | 이메일 보장 | 필요 절차 |
+|---|---|---|---|
+| 구글 | `sub`(OIDC id_token claim) | `email_verified=true`로 신뢰도 있게 제공 | Cloud Console에서 OAuth 클라이언트 생성, 동의 화면 설정만 — 심사는 브랜딩 확인 수준 |
+| 카카오 | `id`(카카오 회원번호) | 기본은 닉네임만 필수 동의, 이메일은 **비즈 앱 전환 + 동의항목 심사(3~5영업일)** 뒤에야 필수 동의 가능 — 개인 개발자도 본인인증 완료 시 가능 | 비즈 앱 전환 신청을 최대한 빨리 시작, `is_email_valid`/`is_email_verified` null 가능성을 코드로 항상 확인 |
+| 네이버 | `response.id` | 이메일은 "제공 정보" 선택 항목이라 미보장(계정에 이메일이 없거나 비공개면 값이 비거나 거부 가능) | 개발자센터에서 제공 정보 항목 선택 + 서비스 검수. **공식 문서(`developers.naver.com`)는 이번 조사의 WebFetch에서 접근 차단됨 — 2차 출처 기반, 착수 전 재확인 필수** |
+
+계정 모델: `user_identities(provider, provider_user_id, user_id)` 연결 테이블 신설, 유니크 제약 `(provider, provider_user_id)`. `users.password_hash`는 nullable로 변경(소셜 전용 계정은 비밀번호 없음). **동일 이메일 자동 연결은 금지** — 이메일 검증 수준이 제공자마다 달라 보안 위험이며, 로그인 후 사용자가 명시적으로 연결하는 흐름을 권장(MVP엔 구현 부담도 적음). 기존 `signup`/`login` 계약은 유지하고 `oauthStart`/`oauthCallback` 오퍼레이션을 추가한다. 제공자 access/refresh token은 저장하지 않는다(로그인 목적엔 불필요, unlink 등 1회성 호출엔 요청 처리 중 메모리에서만 사용).
+
+보안: state는 세 제공자 모두 필수 발급·서버 대조(CSRF 방지). redirect URI는 local/prod 각각 콘솔에 등록하는 allowlist 방식이며 와일드카드 미지원이 일반적이다.
+
+권고 순서: **구글 → 카카오 → 네이버.** 구글은 문서가 가장 명확하고 리스크가 낮아 공용 포트·계약·스키마를 먼저 검증하는 데 쓰고, 카카오는 비즈 앱 심사(3~5영업일)에 리드타임이 있으니 신청을 최대한 빨리 시작한다. 사용자 준비물: 각 콘솔 앱 등록, client id/secret 발급, local/prod redirect URI 등록(전부 env/secret manager로 주입) — 구글은 Cloud Console, 카카오는 카카오디벨로퍼스(+비즈 앱 전환), 네이버는 개발자센터(+서비스 검수).
+
+신뢰도: 카카오·구글은 공식 문서 직접 열람으로 확인됨. 네이버는 공식 문서 접근이 막혀 2차 출처 교차검증에 그친 부분확인이며, PKCE 지원 여부(카카오·네이버)와 구글 revoke 엔드포인트의 신구 URL 우선순위는 미확인으로 남는다.
+
 ## 2. 구현 시 반드시 지킬 요구사항
 
 ### 2.1 저장 암호화
