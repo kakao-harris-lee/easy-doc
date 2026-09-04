@@ -253,8 +253,15 @@ class SensitiveToStringReachTest {
          * 103 이다 — `LatestMailResponse`(api.e2e, `textBody` 가 토큰 `text`·`body` 에 걸려
          * 이 파일 위에서 `toString()` 을 이미 가린다). `e2e` profile 전용이라 이 컨트롤러는
          * `api`/`local`/prod 컨텍스트에 조립되지 않지만, 소스 선언 자체는 항상 스캔된다.
+         *
+         * 명시적 계정 연결(backlog §1.4, 2.10.0, 2026-09-04)이 **둘**을 더해 105 다(e2e 진단
+         * 103 위에) — `UserIdentityResponse`(api, `readMe.identities` 항목 — `provider`
+         * 는 공개 enum 값이지만 필드 하나짜리 래퍼 DTO 라 이 파일 위에서 길이만 남기는
+         * `toString()` 을 이미 가린다), `ConsumedOAuthState`(application,
+         * `OAuthStateStore.consume` 의 결과 — `nonce` 는 무작위 토큰, `boundUserId` 는
+         * UUID 라 민감 판정 토큰에 걸리지 않는다, `UserIdentity`·`OAuthChallenge` 와 같은 등급).
          */
-        const val EXPECTED_SOURCE_DECLARATIONS = 103
+        const val EXPECTED_SOURCE_DECLARATIONS = 105
 
         /** 민감 판정이 반드시 닿아야 하는 타입 — 바닥이다. */
         val KNOWN_SENSITIVE_TYPES =

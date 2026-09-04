@@ -27,6 +27,33 @@ class JdbcUserIdentityRepository(private val jdbc: JdbcClient) : UserIdentityRep
             .optional()
             .orElse(null)
 
+    override fun findByUserAndProvider(
+        userId: UUID,
+        provider: SocialLoginProviderId,
+    ): UserIdentity? =
+        jdbc
+            .sql(
+                """
+                SELECT id, user_id, provider, provider_user_id FROM user_identities
+                WHERE user_id = :userId AND provider = :provider
+                """.trimIndent(),
+            ).param("userId", userId)
+            .param("provider", provider.wireValue)
+            .query { rs, _ -> toIdentity(rs) }
+            .optional()
+            .orElse(null)
+
+    override fun findAllByUser(userId: UUID): List<UserIdentity> =
+        jdbc
+            .sql(
+                """
+                SELECT id, user_id, provider, provider_user_id FROM user_identities
+                WHERE user_id = :userId
+                """.trimIndent(),
+            ).param("userId", userId)
+            .query { rs, _ -> toIdentity(rs) }
+            .list()
+
     override fun link(
         userId: UUID,
         provider: SocialLoginProviderId,

@@ -41,7 +41,7 @@ openapi: 3.1.0
 
 info:
   title: Easy-Read AI API
-  version: "2.9.0"
+  version: "2.10.0"
   x-baselined-at: "2026-08-12"       # 초판 기준선을 뜬 날 (동결일이 아니다)
   x-rebased-at: "2026-08-12"         # 계약의 성격을 "개선 대상"으로 다시 정의한 날
   x-source-runtime: "Python 3.12 / FastAPI (app/main.py) — 과거 참고 구현이었고 2026-08-24 저장소에서 제거됨(git 태그 pre-python-removal-20260824). 기준선 출처였을 뿐 정답이 아니었다"
@@ -49,14 +49,16 @@ info:
   description: |
     공공기관용 '쉬운 글' 자동 변환 서비스의 HTTP 계약 v1.
 
-    **엔드포인트는 정확히 20개다** — 제품 19개 + 헬스 체크 1개.
+    **엔드포인트는 정확히 22개다** — 제품 21개 + 헬스 체크 1개.
     계획 §2.2가 센 "14개 HTTP 엔드포인트"는 **그 문서를 쓸 때의 수**이며 `/health`를
     포함해야 맞는 수였다. 1.5.0에서 `PUT /conversions/{conversion_id}/feedback`이,
     2.2.0에서 `GET /documents/{document_id}/source`가, 2.8.0에서 소셜 로그인
     (backlog §1.4 P0-1) `POST /auth/oauth/{provider}/start`·
     `POST /auth/oauth/{provider}/callback`이, 2.9.0에서 이메일 인증(backlog §1.4
     P0-1/P0-3) `POST /auth/email-verification/request`·
-    `POST /auth/email-verification/confirm`이 더해져 오늘은 20개다 —
+    `POST /auth/email-verification/confirm`이, 2.10.0에서 명시적 계정 연결(backlog
+    §1.4) `POST /auth/oauth/{provider}/link/start`·
+    `POST /auth/oauth/{provider}/link/callback`이 더해져 오늘은 22개다 —
     계획 문서의 수를 고치는 것이 아니라 **수의 정본이 이 계약**이다.
 
     ## 경로 접두사
@@ -258,6 +260,14 @@ x-retired-responses:
       못함 — 우리 잘못도 사용자 잘못도 아니다). ⑷ **React 실패 안내는 이 변경 단위
       밖이다** — 프런트 레인이 뒤따르며(같은 PR) 그 화면 문구를 붙인다; 이 계약
       변경은 백엔드·계약만 묶는다.
+
+      **2.10.0 — 두 번째 오퍼레이션이 같은 자리를 밟는다(backlog §1.4 명시적 연결).**
+      `POST /auth/oauth/{provider}/link/callback` 도 인가 코드를 Google 과 동기로
+      교환한다 — `oauthCallback` 과 같은 `GoogleSocialLoginProvider.exchange` 를 그대로
+      쓰므로 근거 ⑶이 그대로 적용된다. **범위는 여전히 좁다** — 이번에도 컴포넌트에
+      `'502'`를 선언한 오퍼레이션은 딱 둘(`oauthCallback`·`oauthLinkCallback`)이고, 나머지
+      20개는 여전히 선언하지 않는다. "동기로 하위 시스템을 부르는" 오퍼레이션이
+      늘어난 것이지 이 조항의 판정 기준([if_it_should_return])이 넓어진 것이 아니다.
     consumer_debt: |
       `frontend/src/conversion/failureMessages.ts`의 `EnqueueFailed` 항목은 이제 어떤
       구현에서도 오지 않는 코드다(조회는 `MESSAGES[code] ?? UNKNOWN`이라 **런타임은
@@ -634,15 +644,53 @@ x-social-login:
     `email_already_linked`). 계정 탈취 방지가 이유다: 공격자가 피해자의 이메일로
     소셜 계정만 먼저 만들어 "당신 이메일로 가입된 계정이 있다"는 응답을 받는 것 자체는
     안전하지만(존재만 확인), 자동으로 이었다면 그 소셜 계정이 곧바로 피해자 계정에
-    로그인할 수 있게 된다. **명시적 연결 흐름(로그인한 뒤 계정 설정에서 잇기)은 이
-    변경 단위 밖**이다 — backlog §1.4의 다음 조각.
+    로그인할 수 있게 된다. **명시적 연결 흐름(로그인한 뒤 계정 설정에서 잇기)은
+    2.10.0에서 갖춰졌다** — 정본은 아래 `explicit_linking`.
 
     완전히 새로운 신원 + 새로운 이메일이면 계정(비밀번호 없음, `users.password_hash
     IS NULL`)과 기본 작업 공간을 `signup`과 같은 트랜잭션 원자성으로 만든다.
   provider_unreachable: |
-    `oauthCallback` 이 제공자(토큰 교환·JWKS 조회)에 동기로 닿지 못하면 502
-    (`components/responses/BadGateway`, 정본 근거는 `x-retired-responses[0]` 의
-    `reinstated_by`) — 우리 설정 미비(503)도 코드 버그(500)도 아니다.
+    `oauthCallback`·`oauthLinkCallback` 이 제공자(토큰 교환·JWKS 조회)에 동기로 닿지
+    못하면 502(`components/responses/BadGateway`, 정본 근거는 `x-retired-responses[0]`
+    의 `reinstated_by`) — 우리 설정 미비(503)도 코드 버그(500)도 아니다.
+  explicit_linking: |
+    **명시적 계정 연결(backlog §1.4, 2.10.0 신설).** 비밀번호 계정으로 이미 로그인한
+    사용자가 그 계정에 소셜 신원을 잇는 흐름 — `account_linking` 이 자동 연결을 막은
+    자리에서 사용자가 스스로 선택해 여는 문이다. `POST /auth/oauth/{provider}/link/start`
+    (`oauthLinkStart`, Bearer 필요)· `POST /auth/oauth/{provider}/link/callback`
+    (`oauthLinkCallback`, Bearer 필요) 둘로 이뤄진다.
+
+    **state 가 로그인 흐름과 갈리는 자리.** `oauthLinkStart` 가 발급하는 state 는
+    Bearer 토큰의 호출자 id 를 함께 싣는다(`oauth_states.user_id`, `state` 절의
+    "발급 당시의 `provider`+`redirect_uri` 에 바인딩"에 사용자 바인딩이 하나 더 붙는다).
+    `oauthLinkCallback` 은 그 값과 자신을 호출한 Bearer 사용자를 대조한다 — 다르면
+    (또는 로그인 state 처럼 애초에 사용자가 없으면) 400 이다. 반대로 연결 state 가
+    로그인 콜백(`oauthCallback`)에 오면 "사용자가 실려 있다"는 사실 자체로 같은 400
+    이다. 두 방향 모두 사유를 구분하지 않는다 — `state` 절과 같은 원칙.
+
+    **이메일 검증을 요구하지 않는다.** `oauthCallback`(로그인/가입)과 가장 크게
+    갈리는 지점이다 — 호출자가 이미 인증된 상태고, 인가 코드 교환 자체가 신원 소유를
+    증명하므로 제공자가 이메일을 검증했는지, 계정 이메일과 같은지는 연결 성립의
+    조건이 아니다(422 `email_required` 갈래가 이 오퍼레이션에는 없다). 다만 검증된
+    이메일이 계정 이메일과 같고 계정이 아직 미인증이면 부수 효과로
+    `readMe.email_verified` 를 참으로 만든다 — 선택적 이득이지 요구 조건은 아니다.
+
+    **연결 판정 셋:**
+      1. 그 신원이 이미 **호출자 자신**에 연결돼 있다 → 멱등, 204(새 행을 만들지
+         않는다) — 재시도·새로고침이 안전하다.
+      2. 그 신원이 이미 **다른** 사용자에 연결돼 있다 → 409
+         (`identity_already_linked_to_other_user`). 계정 탈취 방지가 이유는
+         `account_linking` 과 같다 — 다만 방향이 반대다(공격자가 아니라 소유자가
+         이미 다른 계정에 쓰고 있는 신원을 뺏어 오지 못하게 막는다).
+      3. 호출자 계정이 이 제공자에 **이미 다른** 신원을 연결했다 → 409
+         (`provider_already_linked`, 사용자당 제공자 하나 불변식 —
+         `user_identities` 는 애초에 `(provider, provider_user_id)` 유일성만 강제하고
+         "사용자당 하나"는 이 오퍼레이션이 판정한다).
+
+    **`readMe.identities`.** `UserResponse` 가 연결된 제공자 목록을 얻는다 — 화면이
+    연결 상태를 보여주는 자리다. 비밀번호 전용 계정은 빈 배열이다.
+
+    **연결 해제는 이 변경 단위 밖이다** — backlog §1.4의 다음 조각.
 
 # -----------------------------------------------------------------------------
 # 입력 상한 — 전부 계약이다.
@@ -1788,6 +1836,154 @@ paths:
         '503': { $ref: '#/components/responses/ServiceUnavailable' }
 
   # ===========================================================================
+  # #21 POST /auth/oauth/{provider}/link/start — 200
+  # 명시적 계정 연결(backlog §1.4, 2.10.0 신설) — 이미 로그인한 사용자가 자기 계정에
+  # 소셜 신원을 이으려는 흐름의 시작. 정본은 최상위 x-social-login.explicit_linking.
+  # ===========================================================================
+  /auth/oauth/{provider}/link/start:
+    post:
+      tags: [auth]
+      operationId: oauthLinkStart
+      summary: 인증된 사용자의 계정에 소셜 신원을 이으려고 제공자 인가 URL을 만든다
+      security: [{ HTTPBearer: [] }]
+      parameters:
+        - name: provider
+          in: path
+          required: true
+          schema: { type: string, enum: [google] }
+          description: |
+            `oauthStart` 와 같은 enum — 오늘은 `google` 하나뿐이다. 밖의 값(예약된
+            두 값 포함)은 같은 422 배열로 간다.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OAuthStartRequest' }
+      responses:
+        '200':
+          description: |
+            인가 URL 발급됨. 응답 모양은 `oauthStart` 와 같다(`OAuthStartResponse`) —
+            갈리는 것은 `state` 에 Bearer 토큰의 사용자 id 가 함께 실린다는 점뿐이고,
+            그 사실은 응답 본문에 드러나지 않는다(`x-social-login.explicit_linking`).
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CacheControlNoStore' }
+            X-Content-Type-Options: { $ref: '#/components/headers/XContentTypeOptions' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OAuthStartResponse' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
+        '422':
+          description: |
+            `oauthStart` 와 같은 세 갈래 — 지원하지 않는 `provider`(**배열**), 제공자
+            미설정(**문자열**), 허용 목록 밖 `redirect_uri`(**문자열**). 정본은
+            `x-social-login.provider_state`.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+              examples:
+                unsupported_provider:
+                  value: { detail: [{ loc: ["path", "provider"], msg: "Input should be a valid value", type: "value_parsing" }] }
+                provider_not_configured: { value: { detail: "구글 로그인이 설정되지 않았습니다" } }
+                redirect_uri_not_allowed: { value: { detail: "허용되지 않은 redirect_uri 입니다" } }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  # ===========================================================================
+  # #22 POST /auth/oauth/{provider}/link/callback — 204
+  # 명시적 계정 연결 — 인가 코드를 검증하고 신원을 호출자 계정에 잇는다. 응답 본문이
+  # 없다(로그인과 달리 토큰을 새로 발급하지 않는다 — 호출자는 이미 인증돼 있다).
+  # ===========================================================================
+  /auth/oauth/{provider}/link/callback:
+    post:
+      tags: [auth]
+      operationId: oauthLinkCallback
+      summary: 인가 코드를 검증하고 소셜 신원을 호출자 계정에 잇는다
+      security: [{ HTTPBearer: [] }]
+      description: |
+        정본은 최상위 `x-social-login.explicit_linking`. 이메일 검증 여부나 계정
+        이메일과의 일치를 요구하지 않는다 — 호출자가 이미 인증돼 있고, 코드 교환
+        자체가 신원 소유를 증명한다. 검증된 이메일이 계정 이메일과 같고 계정이
+        미인증이면 부수 효과로 `readMe.email_verified` 가 참이 된다(선택적 이득이지
+        요구 조건은 아니다).
+
+        같은 신원을 같은 사용자에 다시 연결하면 **멱등**하게 204다(새 행을 만들지
+        않는다) — 사용자가 새로고침·재시도로 같은 요청을 중복해도 안전하다.
+      parameters:
+        - name: provider
+          in: path
+          required: true
+          schema: { type: string, enum: [google] }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OAuthCallbackRequest' }
+      responses:
+        '204':
+          description: 연결됨 — 이미 연결돼 있던 경우(멱등)도 포함이다.
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CacheControlNoStore' }
+            X-Content-Type-Options: { $ref: '#/components/headers/XContentTypeOptions' }
+        '400':
+          description: |
+            `state` 가 없거나 만료·이미 사용됐거나 발급 당시의 `provider`/`redirect_uri`
+            와 다르다 — `oauthCallback` 과 같은 갈래. **더해서** 로그인 흐름의 state가
+            이 콜백에 왔거나(`user_id IS NULL`), 이 state 가 호출자가 아닌 다른 사용자
+            앞으로 발급됐어도 같은 400 이다. 사유를 구분하지 않는다(정본은
+            `x-social-login.state`).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+              examples:
+                invalid_state: { value: { detail: "요청이 만료되었거나 이미 사용되었습니다" } }
+        '401':
+          description: |
+            **둘 중 하나** — Bearer 토큰이 없거나 무효(`components/responses/Unauthorized`
+            와 같은 두 예시), 또는 제공자가 인가 코드를 거절했다(만료·재사용·불일치) ·
+            ID 토큰 검증에 실패했다. 문구는 새로 만들지 않는다 —
+            `x-auth.failure_uniformity` 의 "유효하지 않음" 갈래 문구를 그대로 재사용한다.
+          headers:
+            WWW-Authenticate: { $ref: '#/components/headers/WWWAuthenticateBearer' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+              examples:
+                no_header: { value: { detail: "인증이 필요합니다" } }
+                invalid_token: { value: { detail: "이메일 또는 비밀번호가 올바르지 않습니다" } }
+                code_rejected: { value: { detail: "이메일 또는 비밀번호가 올바르지 않습니다" } }
+        '409':
+          description: |
+            둘 중 하나(정본은 `x-social-login.explicit_linking`) — 그 소셜 신원이 이미
+            **다른** 사용자 계정에 연결돼 있다, 또는 호출자 계정이 이 제공자에 이미
+            **다른** 신원을 연결했다(사용자당 제공자 하나 불변식). 같은 신원을 같은
+            사용자에 다시 연결하는 것은 이 갈래가 아니다(멱등 204).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+              examples:
+                identity_already_linked_to_other_user:
+                  value: { detail: "이 구글 계정은 이미 다른 계정에 연결되어 있습니다" }
+                provider_already_linked:
+                  value: { detail: "이미 다른 구글 계정이 이 계정에 연결되어 있습니다" }
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
+        '422':
+          description: |
+            지원하지 않는 `provider`(**배열**, 스키마 층) 또는 제공자 미설정(**문자열**).
+            `oauthCallback` 과 달리 이메일 부재·미검증은 422 가 아니다 — 이 오퍼레이션은
+            이메일 검증을 요구하지 않는다(위 설명).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+              examples:
+                unsupported_provider:
+                  value: { detail: [{ loc: ["path", "provider"], msg: "Input should be a valid value", type: "value_parsing" }] }
+                provider_not_configured: { value: { detail: "구글 로그인이 설정되지 않았습니다" } }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '502': { $ref: '#/components/responses/BadGateway' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+
+  # ===========================================================================
   # #4 POST /documents — 202 (201 아님 — 변환은 아직 시작 전)
   # 원본: app/api/documents.py::create_document
   # ===========================================================================
@@ -2848,9 +3044,10 @@ components:
 
     # 2026-08-20에 폐기됐다가 2.8.0(backlog §1.4 P0-1)에서 되살아났다 — 정본은
     # `x-retired-responses[0]`(`reinstated_at`·`reinstated_by`). **`POST
-    # /auth/oauth/{provider}/callback` 하나만** 이 컴포넌트를 선언한다. 다른 오퍼레이션에
-    # 새로 붙이려면 그 오퍼레이션도 "동기로 하위 시스템을 부르는지"부터 그 절의 기준으로
-    # 판정한다.
+    # /auth/oauth/{provider}/callback`과 2.10.0의 `POST
+    # /auth/oauth/{provider}/link/callback` 둘만** 이 컴포넌트를 선언한다 — 둘 다 제공자
+    # 토큰 교환을 동기로 부르는 오퍼레이션이다. 다른 오퍼레이션에 새로 붙이려면 그
+    # 오퍼레이션도 "동기로 하위 시스템을 부르는지"부터 그 절의 기준으로 판정한다.
     BadGateway:
       description: |
         동기로 부른 하위 시스템(소셜 로그인 제공자)에 닿지 못했다 — 타임아웃·연결 실패·
@@ -3230,7 +3427,7 @@ components:
 
     UserResponse:
       type: object
-      required: [id, email, email_verified]
+      required: [id, email, email_verified, identities]
       description: 사용자 공개 표현. `password_hash`는 절대 포함하지 않는다.
       properties:
         id: { type: string, format: uuid }
@@ -3242,6 +3439,23 @@ components:
             계정과 V7 마이그레이션 이전 기존 계정은 항상 참이다. 거짓이면
             `createDocument` 가 403을 낸다 — `POST /auth/email-verification/request`로
             코드를 받고 `confirm` 으로 넘기면 참으로 바뀐다.
+        identities:
+          type: array
+          items: { $ref: '#/components/schemas/UserIdentityResponse' }
+          description: |
+            연결된 소셜 신원의 제공자 목록(2.10.0 신설, backlog §1.4 명시적 연결,
+            정본은 `x-social-login.explicit_linking`). 비밀번호 전용 계정, 아직 아무것도
+            잇지 않은 계정은 빈 배열이다. 화면이 "구글 계정이 연결돼 있음"을 보여주는
+            자리다 — `provider_user_id` 등 신원 상세는 담지 않는다(응답 최소화).
+
+    UserIdentityResponse:
+      type: object
+      required: [provider]
+      description: |
+        `UserResponse.identities` 의 항목 하나. 오늘은 `oauthStart` 등과 같은 enum
+        (`[google]`)뿐이다 — `kakao`·`naver` 는 예약만 됐고 아직 나올 수 없는 값이다.
+      properties:
+        provider: { type: string, enum: [google] }
 
     ConfirmEmailVerificationRequest:
       type: object
@@ -3948,6 +4162,49 @@ components:
 # 변경 이력
 # =============================================================================
 x-changelog:
+  - version: "2.10.0"
+    date: "2026-09-04"
+    revision: "SOCIAL-LOGIN-EXPLICIT-LINK"   # backlog §1.4 — 소셜 로그인 다음 조각, 명시적 계정 연결
+    author: contract-keeper
+    change: |
+      **이미 비밀번호 계정으로 로그인한 사용자가 그 계정에 소셜(Google) 신원을 잇는
+      명시적 연결 흐름을 연다.** 2.8.0(`x-social-login.account_linking`)이 자동 연결을
+      막으며 예고했던 "다음 작업 단위"가 이것이다.
+
+      ⑴ **오퍼레이션 2종 신설** — `POST /auth/oauth/{provider}/link/start`
+         (`oauthLinkStart`, Bearer 필요, 200) · `POST /auth/oauth/{provider}/link/callback`
+         (`oauthLinkCallback`, Bearer 필요, 204). 정본은 최상위
+         `x-social-login.explicit_linking`.
+      ⑵ **state 가 사용자에 바인딩된다.** `oauth_states.user_id`(nullable, 새 컬럼)가
+         로그인 state(`NULL`)와 연결 state(요청한 사용자 id)를 가른다.
+         `oauthLinkCallback` 이 그 값과 Bearer 사용자를 대조해 다르면(로그인 state 가
+         왔거나 다른 사용자의 연결 state 가 왔거나) 400 이다 — 반대 방향(연결 state 가
+         `oauthCallback` 에 옴)도 같은 400.
+      ⑶ **이메일 검증을 요구하지 않는다** — `oauthCallback` 과 갈리는 핵심 지점.
+         호출자가 이미 인증돼 있고 코드 교환 자체가 신원 소유를 증명한다. 검증된
+         이메일이 계정 이메일과 같고 계정이 미인증이면 부수 효과로
+         `email_verified_at` 을 채운다(선택적 이득).
+      ⑷ **연결 판정 셋** — 같은 신원·같은 사용자는 멱등 204, 신원이 이미 **다른**
+         사용자 것이면 409(`identity_already_linked_to_other_user`), 호출자가 이 제공자에
+         **이미 다른** 신원을 연결했으면 409(`provider_already_linked`, 사용자당
+         제공자 하나 불변식).
+      ⑸ **`UserResponse` 가 `identities: UserIdentityResponse[]` 를 얻는다(필수).**
+         연결된 제공자 목록 — 비밀번호 전용 계정은 빈 배열이다.
+      ⑹ **`BadGateway`(502) 선언이 둘로 늘었다** — `oauthLinkCallback` 도
+         `oauthCallback` 과 같은 이유(제공자 토큰 교환을 동기로 부른다)로 이 컴포넌트를
+         쓴다. 근거는 `x-retired-responses[0]` 의 `reinstated_by` 확장분.
+      ⑺ **엔드포인트 수 20 → 22**(제품 19 → 21 + 헬스 1).
+      ⑻ **연결 해제(unlink)는 이 변경 단위 밖이다** — backlog §1.4의 다음 조각.
+    ground: |
+      **G2 — 요구사항 반영.** backlog §1.4 「소셜 로그인」의 남은 조각(2026-09-04,
+      팀 리드 지시) — 2.8.0 이 자동 연결을 거절하며 예고한 자리를 채운다.
+    compatibility: |
+      **순수 확장이다.** 기존 20개 오퍼레이션의 요청·응답·오류 모양은 그대로다.
+      `UserResponse` 에 필드가 늘었지만 기존 소비자는 알 수 없는 키를 무시하므로
+      깨지지 않는다(React 도 마찬가지 — 이 필드를 아직 읽지 않는 소비자는 영향이 없다).
+      `oauth_states.user_id` 는 새 nullable 컬럼이라 기존 행(전부 로그인 state)은
+      `NULL` 로 채워지고 `oauthStart`/`oauthCallback` 동작은 바뀌지 않는다.
+
   - version: "2.9.0"
     date: "2026-09-04"
     revision: "EMAIL-VERIFICATION"   # backlog §1.4 P0-1/P0-3 — 이메일 가입의 소유 확인

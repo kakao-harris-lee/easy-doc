@@ -1,6 +1,7 @@
 package kr.easydoc.application.auth
 
 import kr.easydoc.core.exceptions.ConfigurationException
+import kr.easydoc.core.exceptions.ConflictException
 import kr.easydoc.core.exceptions.EmailAlreadyRegisteredException
 import kr.easydoc.core.exceptions.ExternalServiceUnavailableException
 import kr.easydoc.core.exceptions.InvalidCredentialsException
@@ -252,6 +253,150 @@ class SocialLoginServiceTest {
         assertThat(world.provider.exchangeCallCount).isZero()
     }
 
+    // ------------------------------------------------------------------ 명시적 연결(linkStart/linkCallback)
+
+    @Test
+    @DisplayName("연결 성공 — 로그인한 계정에 새 구글 신원이 연결된다")
+    fun `연결이 성공한다`() {
+        val world = SocialWorld()
+        val user = world.users.seedPasswordAccount("owner@example.test")
+        world.provider.nextIdentity = SocialIdentity("google-link-1", "owner-google@example.test", emailVerified = true)
+
+        val start = world.service.linkStart(user.id, SocialLoginProviderId.GOOGLE, REDIRECT_URI)
+        world.service.linkCallback(user.id, SocialLoginProviderId.GOOGLE, "auth-code", start.state, REDIRECT_URI)
+
+        val linked = world.identities.linked.single()
+        assertThat(linked.userId).isEqualTo(user.id)
+        assertThat(linked.providerUserId).isEqualTo("google-link-1")
+    }
+
+    @Test
+    @DisplayName("같은 신원을 같은 사용자에 다시 연결하면 멱등이다 — 새 신원을 만들지 않는다")
+    fun `같은 사용자의 재연결은 멱등이다`() {
+        val world = SocialWorld()
+        val user = world.users.seedPasswordAccount("owner2@example.test")
+        world.provider.nextIdentity =
+            SocialIdentity("google-link-2", "owner2-google@example.test", emailVerified = true)
+        val firstState = world.service.linkStart(user.id, SocialLoginProviderId.GOOGLE, REDIRECT_URI).state
+        world.service.linkCallback(user.id, SocialLoginProviderId.GOOGLE, "auth-code", firstState, REDIRECT_URI)
+
+        val secondState = world.service.linkStart(user.id, SocialLoginProviderId.GOOGLE, REDIRECT_URI).state
+        world.service.linkCallback(user.id, SocialLoginProviderId.GOOGLE, "auth-code", secondState, REDIRECT_URI)
+
+        assertThat(world.identities.linked).hasSize(1)
+    }
+
+    @Test
+    @DisplayName("다른 사용자가 이미 쓰는 신원을 연결하려 하면 409다")
+    fun `다른 사용자의 신원을 연결하려 하면 409다`() {
+        val world = SocialWorld()
+        val owner = world.users.seedPasswordAccount("first-owner@example.test")
+        val other = world.users.seedPasswordAccount("second-owner@example.test")
+        world.provider.nextIdentity =
+            SocialIdentity("google-link-3", "shared-identity@example.test", emailVerified = true)
+        val ownerState = world.service.linkStart(owner.id, SocialLoginProviderId.GOOGLE, REDIRECT_URI).state
+        world.service.linkCallback(owner.id, SocialLoginProviderId.GOOGLE, "auth-code", ownerState, REDIRECT_URI)
+
+        val otherState = world.service.linkStart(other.id, SocialLoginProviderId.GOOGLE, REDIRECT_URI).state
+
+        assertThatThrownBy {
+            world.service.linkCallback(other.id, SocialLoginProviderId.GOOGLE, "auth-code", otherState, REDIRECT_URI)
+        }.isInstanceOf(ConflictException::class.java)
+            .hasMessage(SocialLoginService.identityAlreadyLinkedToOtherUserMessage(SocialLoginProviderId.GOOGLE))
+    }
+
+    @Test
+    @DisplayName("한 계정에 같은 제공자의 두 번째 신원을 연결하려 하면 409다")
+    fun `같은 제공자의 두 번째 신원은 409다`() {
+        val world = SocialWorld()
+        val user = world.users.seedPasswordAccount("two-identities@example.test")
+        world.provider.nextIdentity = SocialIdentity("google-link-4a", "first@example.test", emailVerified = true)
+        val firstState = world.service.linkStart(user.id, SocialLoginProviderId.GOOGLE, REDIRECT_URI).state
+        world.service.linkCallback(user.id, SocialLoginProviderId.GOOGLE, "auth-code", firstState, REDIRECT_URI)
+
+        world.provider.nextIdentity = SocialIdentity("google-link-4b", "second@example.test", emailVerified = true)
+        val secondState = world.service.linkStart(user.id, SocialLoginProviderId.GOOGLE, REDIRECT_URI).state
+
+        assertThatThrownBy {
+            world.service.linkCallback(user.id, SocialLoginProviderId.GOOGLE, "auth-code", secondState, REDIRECT_URI)
+        }.isInstanceOf(ConflictException::class.java)
+            .hasMessage(SocialLoginService.providerAlreadyLinkedMessage(SocialLoginProviderId.GOOGLE))
+    }
+
+    @Test
+    @DisplayName("로그인 state 를 연결 콜백에 쓰면 400이다")
+    fun `로그인 state 는 연결 콜백에서 거절된다`() {
+        val world = SocialWorld()
+        val user = world.users.seedPasswordAccount("login-state-on-link@example.test")
+        val loginState = world.service.start(SocialLoginProviderId.GOOGLE, REDIRECT_URI).state
+
+        assertThatThrownBy {
+            world.service.linkCallback(user.id, SocialLoginProviderId.GOOGLE, "auth-code", loginState, REDIRECT_URI)
+        }.isInstanceOf(InvalidOAuthStateException::class.java)
+            .hasMessage(SocialLoginService.INVALID_STATE_MESSAGE)
+    }
+
+    @Test
+    @DisplayName("연결 state 를 로그인 콜백에 쓰면 400이다")
+    fun `연결 state 는 로그인 콜백에서 거절된다`() {
+        val world = SocialWorld()
+        val user = world.users.seedPasswordAccount("link-state-on-login@example.test")
+        val linkState = world.service.linkStart(user.id, SocialLoginProviderId.GOOGLE, REDIRECT_URI).state
+
+        assertThatThrownBy {
+            world.service.callback(SocialLoginProviderId.GOOGLE, "auth-code", linkState, REDIRECT_URI)
+        }.isInstanceOf(InvalidOAuthStateException::class.java)
+            .hasMessage(SocialLoginService.INVALID_STATE_MESSAGE)
+    }
+
+    @Test
+    @DisplayName("다른 사용자에게 발급된 연결 state 는 400이다")
+    fun `다른 사용자의 연결 state 는 거절된다`() {
+        val world = SocialWorld()
+        val issuer = world.users.seedPasswordAccount("issuer@example.test")
+        val impostor = world.users.seedPasswordAccount("impostor@example.test")
+        val state = world.service.linkStart(issuer.id, SocialLoginProviderId.GOOGLE, REDIRECT_URI).state
+
+        assertThatThrownBy {
+            world.service.linkCallback(impostor.id, SocialLoginProviderId.GOOGLE, "auth-code", state, REDIRECT_URI)
+        }.isInstanceOf(InvalidOAuthStateException::class.java)
+            .hasMessage(SocialLoginService.INVALID_STATE_MESSAGE)
+    }
+
+    @Test
+    @DisplayName("검증된 이메일이 계정 이메일과 같으면 미인증 계정을 인증 완료로 표시한다")
+    fun `일치하는 검증된 이메일은 계정을 인증 완료로 표시한다`() {
+        val world = SocialWorld()
+        val user = world.users.seedPasswordAccount("verify-me@example.test", emailVerified = false)
+        world.provider.nextIdentity = SocialIdentity("google-link-5", "Verify-Me@Example.Test", emailVerified = true)
+        val state = world.service.linkStart(user.id, SocialLoginProviderId.GOOGLE, REDIRECT_URI).state
+
+        world.service.linkCallback(user.id, SocialLoginProviderId.GOOGLE, "auth-code", state, REDIRECT_URI)
+
+        assertThat(
+            world.users.saved
+                .getValue("verify-me@example.test")
+                .user.emailVerifiedAt,
+        ).isNotNull()
+    }
+
+    @Test
+    @DisplayName("이메일이 다르면 부수 효과로 인증 완료 표시를 하지 않는다")
+    fun `이메일이 다르면 인증 완료로 표시하지 않는다`() {
+        val world = SocialWorld()
+        val user = world.users.seedPasswordAccount("account-email@example.test", emailVerified = false)
+        world.provider.nextIdentity = SocialIdentity("google-link-6", "different@example.test", emailVerified = true)
+        val state = world.service.linkStart(user.id, SocialLoginProviderId.GOOGLE, REDIRECT_URI).state
+
+        world.service.linkCallback(user.id, SocialLoginProviderId.GOOGLE, "auth-code", state, REDIRECT_URI)
+
+        assertThat(
+            world.users.saved
+                .getValue("account-email@example.test")
+                .user.emailVerifiedAt,
+        ).isNull()
+    }
+
     private companion object {
         const val REDIRECT_URI = "http://localhost:5173/auth/google/callback"
     }
@@ -315,6 +460,7 @@ private class InMemoryOAuthStateStore : OAuthStateStore {
         val provider: SocialLoginProviderId,
         val redirectUri: String,
         val nonce: String,
+        val userId: java.util.UUID?,
     )
 
     private val entries = mutableMapOf<String, Entry>()
@@ -324,10 +470,11 @@ private class InMemoryOAuthStateStore : OAuthStateStore {
         provider: SocialLoginProviderId,
         redirectUri: String,
         ttl: Duration,
+        userId: java.util.UUID?,
     ): OAuthChallenge {
         val state = "state-${++counter}"
         val nonce = "nonce-$counter"
-        entries[state] = Entry(provider, redirectUri, nonce)
+        entries[state] = Entry(provider, redirectUri, nonce, userId)
         return OAuthChallenge(state, nonce)
     }
 
@@ -335,12 +482,12 @@ private class InMemoryOAuthStateStore : OAuthStateStore {
         provider: SocialLoginProviderId,
         state: String,
         redirectUri: String,
-    ): String? =
+    ): ConsumedOAuthState? =
         // 단발 — 일치하든 안 하든 재사용은 막는다(실물의 단일 UPDATE ... WHERE ... RETURNING 과 같은 성질).
         entries
             .remove(state)
             ?.takeIf { it.provider == provider && it.redirectUri == redirectUri }
-            ?.nonce
+            ?.let { ConsumedOAuthState(it.nonce, it.userId) }
 }
 
 private class RecordingSocialUserRepository : UserRepository {
@@ -372,7 +519,24 @@ private class RecordingSocialUserRepository : UserRepository {
         passwordHash: PasswordHash,
     ) = error("소셜 로그인 유스케이스는 비밀번호를 재해시하지 않는다")
 
-    override fun markEmailVerified(userId: UUID) = error("소셜 로그인 유스케이스는 이 메서드를 부르지 않는다 — 생성 시점에 이미 채운다")
+    /** `linkCallback` 의 부수 효과(검증된 이메일이 일치하면 인증 완료로 표시)를 재는 자리에서 쓴다. */
+    override fun markEmailVerified(userId: UUID) {
+        val existing = saved.values.firstOrNull { it.user.id == userId } ?: return
+        if (existing.user.emailVerifiedAt != null) return
+        val replaced = StoredUser(existing.user.copy(emailVerifiedAt = Instant.EPOCH), existing.passwordHash)
+        saved[existing.user.email] = replaced
+    }
+
+    /** 비밀번호 계정을 직접 심는다 — `linkCallback` 이 "이미 로그인한 계정"을 전제하는 시나리오용. */
+    fun seedPasswordAccount(
+        email: String,
+        emailVerified: Boolean = true,
+    ): User {
+        val verifiedAt = if (emailVerified) Instant.EPOCH else null
+        val stored = StoredUser(User(UUID.randomUUID(), email, Instant.EPOCH, verifiedAt), PasswordHash("hashed:x"))
+        saved[email] = stored
+        return stored.user
+    }
 }
 
 private class RecordingSocialWorkspaceRepository : WorkspaceRepository {
@@ -428,6 +592,13 @@ private class RecordingIdentityRepository : UserIdentityRepository {
         provider: SocialLoginProviderId,
         providerUserId: String,
     ): UserIdentity? = byProvider[provider to providerUserId]
+
+    override fun findByUserAndProvider(
+        userId: UUID,
+        provider: SocialLoginProviderId,
+    ): UserIdentity? = byProvider.values.firstOrNull { it.userId == userId && it.provider == provider }
+
+    override fun findAllByUser(userId: UUID): List<UserIdentity> = byProvider.values.filter { it.userId == userId }
 
     override fun link(
         userId: UUID,

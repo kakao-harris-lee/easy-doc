@@ -69,6 +69,46 @@ class JdbcUserIdentityRepositoryTest {
     }
 
     @Test
+    @DisplayName("사용자·제공자로 찾는다 — 명시적 연결의 제공자당 하나 불변식이 쓰는 조회")
+    fun `사용자와 제공자로 찾는다`() {
+        val user = users.createWithoutPassword(uniqueEmail(), emailVerified = true)
+        identities.link(user.id, SocialLoginProviderId.GOOGLE, "user-provider-sub", user.email, true)
+
+        val found = identities.findByUserAndProvider(user.id, SocialLoginProviderId.GOOGLE)
+
+        assertThat(found?.providerUserId).isEqualTo("user-provider-sub")
+    }
+
+    @Test
+    @DisplayName("연결하지 않은 사용자·제공자 조합은 null 이다")
+    fun `연결하지 않은 조합은 null 이다`() {
+        val user = users.createWithoutPassword(uniqueEmail(), emailVerified = true)
+
+        assertThat(identities.findByUserAndProvider(user.id, SocialLoginProviderId.GOOGLE)).isNull()
+    }
+
+    @Test
+    @DisplayName("사용자가 연결한 신원 전체를 돌려준다 — readMe.identities 가 쓰는 조회")
+    fun `사용자의 신원 전체를 찾는다`() {
+        val user = users.createWithoutPassword(uniqueEmail(), emailVerified = true)
+        val other = users.createWithoutPassword(uniqueEmail(), emailVerified = true)
+        identities.link(user.id, SocialLoginProviderId.GOOGLE, "all-by-user-sub", user.email, true)
+        identities.link(other.id, SocialLoginProviderId.GOOGLE, "other-user-sub", other.email, true)
+
+        val found = identities.findAllByUser(user.id)
+
+        assertThat(found.map { it.providerUserId }).containsExactly("all-by-user-sub")
+    }
+
+    @Test
+    @DisplayName("신원을 연결하지 않은 사용자는 빈 목록이다")
+    fun `신원이 없으면 빈 목록이다`() {
+        val user = users.createWithoutPassword(uniqueEmail(), emailVerified = true)
+
+        assertThat(identities.findAllByUser(user.id)).isEmpty()
+    }
+
+    @Test
     @DisplayName("계정을 지우면 연결된 신원도 함께 사라진다 — ON DELETE CASCADE")
     fun `계정 삭제가 신원까지 지운다`() {
         val user = users.createWithoutPassword(uniqueEmail(), emailVerified = true)

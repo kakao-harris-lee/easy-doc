@@ -4,15 +4,18 @@ import kr.easydoc.api.config.PrivateResponseHeadersConfig
 import kr.easydoc.api.support.AuthSliceBeans
 import kr.easydoc.api.support.ContractSpec
 import kr.easydoc.api.support.FakeGoogleSocialLoginProvider
+import kr.easydoc.api.support.InMemoryUserRepository
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest
 import org.springframework.context.annotation.Import
+import org.springframework.http.HttpHeaders
 import org.springframework.http.MediaType
 import org.springframework.mock.web.MockHttpServletResponse
 import org.springframework.test.web.servlet.MockMvc
+import org.springframework.test.web.servlet.get
 import org.springframework.test.web.servlet.post
 import tools.jackson.databind.ObjectMapper
 import java.nio.charset.StandardCharsets
@@ -34,6 +37,9 @@ class OAuthContractTest {
 
     @Autowired
     private lateinit var fakeProvider: FakeGoogleSocialLoginProvider
+
+    @Autowired
+    private lateinit var users: InMemoryUserRepository
 
     private val json = ObjectMapper()
 
@@ -225,6 +231,171 @@ class OAuthContractTest {
         assertBodyValidationArray(response, "redirect_uri")
     }
 
+    // ------------------------------------------------------------------ 명시적 연결(link/start, link/callback)
+
+    @Test
+    @DisplayName("연결 오퍼레이션 둘 다 인증 없이는 401이다")
+    fun `연결 오퍼레이션은 인증이 필요하다`() {
+        val startResponse =
+            postJson("/auth/oauth/google/link/start", json.writeValueAsString(mapOf("redirect_uri" to REDIRECT_URI)))
+        assertDeclaredStatus(startResponse, UNAUTHORIZED, LINK_START_PATH, POST)
+
+        val callbackResponse =
+            postJson(
+                "/auth/oauth/google/link/callback",
+                json.writeValueAsString(mapOf("code" to "any", "state" to "any", "redirect_uri" to REDIRECT_URI)),
+            )
+        assertDeclaredStatus(callbackResponse, UNAUTHORIZED, LINK_CALLBACK_PATH, POST)
+    }
+
+    @Test
+    @DisplayName("비밀번호 계정에 신원을 연결하면 readMe.identities 에 나타나고, 이후 같은 신원 로그인이 같은 사용자로 온다")
+    fun `연결 뒤 같은 신원 로그인은 같은 계정이다`() {
+        val email = uniqueEmail()
+        val userId = signupAndVerify(email)
+        val bearer = login(email)
+
+        val linkState = linkStartState(bearer)
+        val linkResponse = linkCallback(bearer, code = "google-link-sub|linked@example.test|true", state = linkState)
+        assertThat(linkResponse.status).isEqualTo(NO_CONTENT)
+
+        val me = body(getAuthorized("/auth/me", bearer))
+        assertThat((me["identities"] as List<*>).map { (it as Map<*, *>)["provider"] }).containsExactly("google")
+
+        val loginResponse = callback(code = "google-link-sub|ignored@example.test|true", state = startState())
+        assertThat(userIdOf(loginResponse)).isEqualTo(userId)
+    }
+
+    @Test
+    @DisplayName("같은 신원을 같은 계정에 다시 연결해도 멱등이다 — 두 번째도 204다")
+    fun `재연결은 멱등이다`() {
+        val email = uniqueEmail()
+        signupAndVerify(email)
+        val bearer = login(email)
+
+        val firstResponse =
+            linkCallback(bearer, code = "google-idempotent-sub|first@example.test|true", state = linkStartState(bearer))
+        assertThat(firstResponse.status).isEqualTo(NO_CONTENT)
+
+        val secondResponse =
+            linkCallback(
+                bearer,
+                code = "google-idempotent-sub|second@example.test|true",
+                state = linkStartState(bearer),
+            )
+        assertThat(secondResponse.status).isEqualTo(NO_CONTENT)
+    }
+
+    @Test
+    @DisplayName("다른 계정이 이미 쓰는 신원을 연결하려 하면 409다")
+    fun `다른 계정의 신원을 연결하려 하면 409다`() {
+        val ownerEmail = uniqueEmail()
+        signupAndVerify(ownerEmail)
+        val ownerBearer = login(ownerEmail)
+        linkCallback(
+            ownerBearer,
+            code = "google-taken-sub|taken@example.test|true",
+            state = linkStartState(ownerBearer),
+        )
+
+        val otherEmail = uniqueEmail()
+        signupAndVerify(otherEmail)
+        val otherBearer = login(otherEmail)
+
+        val response =
+            linkCallback(
+                otherBearer,
+                code = "google-taken-sub|taken@example.test|true",
+                state = linkStartState(otherBearer),
+            )
+
+        assertDeclaredStatus(response, CONFLICT, LINK_CALLBACK_PATH, POST)
+        assertThat(detailText(response)).isEqualTo("이 구글 계정은 이미 다른 계정에 연결되어 있습니다")
+    }
+
+    @Test
+    @DisplayName("한 계정에 같은 제공자의 두 번째 신원을 연결하려 하면 409다")
+    fun `같은 제공자의 두 번째 신원은 409다`() {
+        val email = uniqueEmail()
+        signupAndVerify(email)
+        val bearer = login(email)
+        linkCallback(bearer, code = "google-first-sub|first@example.test|true", state = linkStartState(bearer))
+
+        val response =
+            linkCallback(bearer, code = "google-second-sub|second@example.test|true", state = linkStartState(bearer))
+
+        assertDeclaredStatus(response, CONFLICT, LINK_CALLBACK_PATH, POST)
+        assertThat(detailText(response)).isEqualTo("이미 다른 구글 계정이 이 계정에 연결되어 있습니다")
+    }
+
+    @Test
+    @DisplayName("로그인 state 를 연결 콜백에 쓰면 400이다")
+    fun `로그인 state 는 연결 콜백에서 거절된다`() {
+        val email = uniqueEmail()
+        signupAndVerify(email)
+        val bearer = login(email)
+        val loginState = startState()
+
+        val response = linkCallback(bearer, code = "any|any@example.test|true", state = loginState)
+
+        assertDeclaredStatus(response, BAD_REQUEST, LINK_CALLBACK_PATH, POST)
+        assertThat(detailText(response)).isEqualTo("요청이 만료되었거나 이미 사용되었습니다")
+    }
+
+    @Test
+    @DisplayName("연결 state 를 로그인 콜백에 쓰면 400이다")
+    fun `연결 state 는 로그인 콜백에서 거절된다`() {
+        val email = uniqueEmail()
+        signupAndVerify(email)
+        val bearer = login(email)
+        val linkState = linkStartState(bearer)
+
+        val response = callback(code = "any|any@example.test|true", state = linkState)
+
+        assertDeclaredStatus(response, BAD_REQUEST, CALLBACK_PATH, POST)
+    }
+
+    @Test
+    @DisplayName("다른 사용자에게 발급된 연결 state 는 400이다")
+    fun `다른 사용자의 연결 state 는 거절된다`() {
+        val issuerEmail = uniqueEmail()
+        signupAndVerify(issuerEmail)
+        val issuerBearer = login(issuerEmail)
+        val impostorEmail = uniqueEmail()
+        signupAndVerify(impostorEmail)
+        val impostorBearer = login(impostorEmail)
+        val state = linkStartState(issuerBearer)
+
+        val response = linkCallback(impostorBearer, code = "any|any@example.test|true", state = state)
+
+        assertDeclaredStatus(response, BAD_REQUEST, LINK_CALLBACK_PATH, POST)
+    }
+
+    @Test
+    @DisplayName("제공자가 연결 코드를 거절하면 401이다")
+    fun `연결 코드 거절은 401이다`() {
+        val email = uniqueEmail()
+        signupAndVerify(email)
+        val bearer = login(email)
+
+        val response = linkCallback(bearer, code = "reject", state = linkStartState(bearer))
+
+        assertDeclaredStatus(response, UNAUTHORIZED, LINK_CALLBACK_PATH, POST)
+        assertThat(detailText(response)).isEqualTo("이메일 또는 비밀번호가 올바르지 않습니다")
+    }
+
+    @Test
+    @DisplayName("연결 콜백에서도 제공자 불통은 502다")
+    fun `연결 콜백의 제공자 불통은 502다`() {
+        val email = uniqueEmail()
+        signupAndVerify(email)
+        val bearer = login(email)
+
+        val response = linkCallback(bearer, code = "unreachable", state = linkStartState(bearer))
+
+        assertDeclaredStatus(response, BAD_GATEWAY, LINK_CALLBACK_PATH, POST)
+    }
+
     // ------------------------------------------------------------------ 헬퍼
 
     private fun start(
@@ -262,6 +433,69 @@ class OAuthContractTest {
                 content = payload
             }.andReturn()
             .response
+
+    private fun postAuthorized(
+        path: String,
+        bearer: String,
+        payload: String,
+    ): MockHttpServletResponse =
+        mockMvc
+            .post(path) {
+                contentType = MediaType.APPLICATION_JSON
+                header(HttpHeaders.AUTHORIZATION, "Bearer $bearer")
+                content = payload
+            }.andReturn()
+            .response
+
+    private fun getAuthorized(
+        path: String,
+        bearer: String,
+    ): MockHttpServletResponse =
+        mockMvc
+            .get(path) {
+                header(HttpHeaders.AUTHORIZATION, "Bearer $bearer")
+            }.andReturn()
+            .response
+
+    private fun credentials(email: String): String =
+        json.writeValueAsString(mapOf("email" to email, "password" to PASSWORD))
+
+    /** 가입하고 `InMemoryUserRepository` 로 곧장 이메일 인증까지 마친다. 사용자 id 를 돌려준다. */
+    private fun signupAndVerify(email: String): String {
+        val response = postJson("/auth/signup", credentials(email))
+        users.verifyEmailFor(email)
+        return body(response)["id"] as String
+    }
+
+    /** 로그인해 Bearer 토큰(접두사 포함, `Authorization` 헤더에 그대로 쓸 값)을 얻는다. */
+    private fun login(email: String): String =
+        body(postJson("/auth/login", credentials(email)))["access_token"] as String
+
+    private fun linkStart(
+        bearer: String,
+        redirectUri: String = REDIRECT_URI,
+    ): MockHttpServletResponse =
+        postAuthorized(
+            "/auth/oauth/google/link/start",
+            bearer,
+            json.writeValueAsString(mapOf("redirect_uri" to redirectUri)),
+        )
+
+    private fun linkStartState(bearer: String): String = body(linkStart(bearer))["state"] as String
+
+    private fun linkCallback(
+        bearer: String,
+        code: String,
+        state: String,
+        redirectUri: String = REDIRECT_URI,
+    ): MockHttpServletResponse =
+        postAuthorized(
+            "/auth/oauth/google/link/callback",
+            bearer,
+            json.writeValueAsString(mapOf("code" to code, "state" to state, "redirect_uri" to redirectUri)),
+        )
+
+    private fun uniqueEmail(): String = "oauth-link${counter++}@example.test"
 
     private fun body(response: MockHttpServletResponse): Map<*, *> =
         json.readValue(response.getContentAsString(StandardCharsets.UTF_8), Map::class.java)
@@ -308,12 +542,18 @@ class OAuthContractTest {
     private companion object {
         const val START_PATH = "/auth/oauth/{provider}/start"
         const val CALLBACK_PATH = "/auth/oauth/{provider}/callback"
+        const val LINK_START_PATH = "/auth/oauth/{provider}/link/start"
+        const val LINK_CALLBACK_PATH = "/auth/oauth/{provider}/link/callback"
         const val POST = "post"
         const val UNPROCESSABLE_CONTENT = 422
         const val CONFLICT = 409
         const val UNAUTHORIZED = 401
         const val BAD_GATEWAY = 502
         const val BAD_REQUEST = 400
+        const val NO_CONTENT = 204
         const val REDIRECT_URI = "http://localhost:5173/auth/google/callback"
+        const val PASSWORD = "correct horse battery"
+
+        var counter = 0
     }
 }

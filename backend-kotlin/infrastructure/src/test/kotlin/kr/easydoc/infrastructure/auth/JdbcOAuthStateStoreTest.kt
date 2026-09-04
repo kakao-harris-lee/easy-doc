@@ -23,6 +23,7 @@ class JdbcOAuthStateStoreTest {
     private lateinit var database: DatabaseHandle
     private lateinit var clock: MutableClock
     private lateinit var states: JdbcOAuthStateStore
+    private lateinit var users: JdbcUserRepository
 
     @BeforeAll
     fun prepare() {
@@ -36,7 +37,9 @@ class JdbcOAuthStateStoreTest {
 
         clock = MutableClock(Instant.parse("2026-09-04T00:00:00Z"))
         val dataSource = DriverManagerDataSource(database.jdbcUrl, database.username, database.password)
-        states = JdbcOAuthStateStore(JdbcClient.create(dataSource), clock)
+        val jdbcClient = JdbcClient.create(dataSource)
+        states = JdbcOAuthStateStore(jdbcClient, clock)
+        users = JdbcUserRepository(jdbcClient)
     }
 
     @Test
@@ -44,9 +47,30 @@ class JdbcOAuthStateStoreTest {
     fun `정상 소비는 nonce 를 돌려준다`() {
         val challenge = states.issue(SocialLoginProviderId.GOOGLE, REDIRECT_URI, Duration.ofMinutes(10))
 
-        val nonce = states.consume(SocialLoginProviderId.GOOGLE, challenge.state, REDIRECT_URI)
+        val consumed = states.consume(SocialLoginProviderId.GOOGLE, challenge.state, REDIRECT_URI)
 
-        assertThat(nonce).isEqualTo(challenge.nonce)
+        assertThat(consumed?.nonce).isEqualTo(challenge.nonce)
+    }
+
+    @Test
+    @DisplayName("userId 없이 발급하면(로그인 흐름) 소비 결과의 boundUserId 가 null 이다")
+    fun `로그인 흐름 state 는 boundUserId 가 없다`() {
+        val challenge = states.issue(SocialLoginProviderId.GOOGLE, REDIRECT_URI, Duration.ofMinutes(10))
+
+        val consumed = states.consume(SocialLoginProviderId.GOOGLE, challenge.state, REDIRECT_URI)
+
+        assertThat(consumed?.boundUserId).isNull()
+    }
+
+    @Test
+    @DisplayName("userId 를 실어 발급하면(연결 흐름) 소비 결과가 그 사용자 id 를 돌려준다")
+    fun `연결 흐름 state 는 발급한 사용자 id 를 돌려준다`() {
+        val user = users.createWithoutPassword(uniqueEmail(), emailVerified = true)
+        val challenge = states.issue(SocialLoginProviderId.GOOGLE, REDIRECT_URI, Duration.ofMinutes(10), user.id)
+
+        val consumed = states.consume(SocialLoginProviderId.GOOGLE, challenge.state, REDIRECT_URI)
+
+        assertThat(consumed?.boundUserId).isEqualTo(user.id)
     }
 
     @Test
@@ -71,12 +95,13 @@ class JdbcOAuthStateStoreTest {
     fun `redirect_uri 불일치는 null 이다`() {
         val challenge = states.issue(SocialLoginProviderId.GOOGLE, REDIRECT_URI, Duration.ofMinutes(10))
 
-        val nonce = states.consume(SocialLoginProviderId.GOOGLE, challenge.state, "https://other.example.test/callback")
+        val consumed =
+            states.consume(SocialLoginProviderId.GOOGLE, challenge.state, "https://other.example.test/callback")
 
-        assertThat(nonce).isNull()
+        assertThat(consumed).isNull()
         // 잘못된 redirect_uri 로의 시도가 그 state 를 태우지 않는다 — 올바른 redirect_uri 로는 여전히 쓸 수 있다.
         val retried = states.consume(SocialLoginProviderId.GOOGLE, challenge.state, REDIRECT_URI)
-        assertThat(retried).isEqualTo(challenge.nonce)
+        assertThat(retried?.nonce).isEqualTo(challenge.nonce)
     }
 
     @Test
@@ -105,8 +130,11 @@ class JdbcOAuthStateStoreTest {
         assertThat(states.consume(SocialLoginProviderId.GOOGLE, challenge.state, REDIRECT_URI)).isNull()
     }
 
+    private fun uniqueEmail(): String = "oauth-state${counter++}@example.test"
+
     private companion object {
         const val REDIRECT_URI = "http://localhost:5173/auth/google/callback"
+        var counter = 0
     }
 }
 

@@ -2,6 +2,7 @@ package kr.easydoc.api.support
 
 import kr.easydoc.application.auth.AccessTokens
 import kr.easydoc.application.auth.AuthService
+import kr.easydoc.application.auth.ConsumedOAuthState
 import kr.easydoc.application.auth.EmailVerificationService
 import kr.easydoc.application.auth.IssuedAccessToken
 import kr.easydoc.application.auth.OAuthChallenge
@@ -548,6 +549,13 @@ class InMemoryUserIdentityRepository : UserIdentityRepository {
         providerUserId: String,
     ): UserIdentity? = byProvider[provider to providerUserId]
 
+    override fun findByUserAndProvider(
+        userId: UUID,
+        provider: SocialLoginProviderId,
+    ): UserIdentity? = byProvider.values.firstOrNull { it.userId == userId && it.provider == provider }
+
+    override fun findAllByUser(userId: UUID): List<UserIdentity> = byProvider.values.filter { it.userId == userId }
+
     override fun link(
         userId: UUID,
         provider: SocialLoginProviderId,
@@ -561,13 +569,14 @@ class InMemoryUserIdentityRepository : UserIdentityRepository {
     }
 }
 
-/** `oauth_states` 대역 — 실물(`JdbcOAuthStateStore`)과 같은 계약(단발 소비)을 지킨다. */
+/** `oauth_states` 대역 — 실물(`JdbcOAuthStateStore`)과 같은 계약(단발 소비, `user_id` 바인딩)을 지킨다. */
 class InMemoryOAuthStateStore : OAuthStateStore {
     private data class Entry(
         val provider: SocialLoginProviderId,
         val redirectUri: String,
         val nonce: String,
         val expiresAt: Instant,
+        val userId: UUID?,
     )
 
     private val entries = ConcurrentHashMap<String, Entry>()
@@ -577,10 +586,11 @@ class InMemoryOAuthStateStore : OAuthStateStore {
         provider: SocialLoginProviderId,
         redirectUri: String,
         ttl: java.time.Duration,
+        userId: UUID?,
     ): OAuthChallenge {
         val state = "state-${++counter}"
         val nonce = "nonce-$counter"
-        entries[state] = Entry(provider, redirectUri, nonce, Instant.now().plus(ttl))
+        entries[state] = Entry(provider, redirectUri, nonce, Instant.now().plus(ttl), userId)
         return OAuthChallenge(state, nonce)
     }
 
@@ -588,12 +598,12 @@ class InMemoryOAuthStateStore : OAuthStateStore {
         provider: SocialLoginProviderId,
         state: String,
         redirectUri: String,
-    ): String? =
+    ): ConsumedOAuthState? =
         entries
             .remove(state)
             ?.takeIf {
                 it.provider == provider && it.redirectUri == redirectUri && Instant.now().isBefore(it.expiresAt)
-            }?.nonce
+            }?.let { ConsumedOAuthState(it.nonce, it.userId) }
 }
 
 /**
