@@ -118,6 +118,29 @@ class JdbcUserRepositoryTest {
     }
 
     @Test
+    @DisplayName("비밀번호 없이 만든 사용자는 password_hash 가 null 이다 — 소셜 로그인 최초 가입")
+    fun `비밀번호 없는 사용자를 만든다`() {
+        val email = uniqueEmail()
+
+        val created = users.createWithoutPassword(email)
+
+        assertThat(users.findByEmail(email)?.user).isEqualTo(created)
+        assertThat(users.findByEmail(email)?.passwordHash).isNull()
+    }
+
+    @Test
+    @DisplayName("비밀번호 없는 사용자도 이메일 유일성은 그대로 지킨다")
+    fun `비밀번호 없는 사용자도 이메일이 겹치면 도메인 예외다`() {
+        val email = uniqueEmail()
+        users.createWithoutPassword(email)
+
+        assertThatThrownBy { users.createWithoutPassword(email) }
+            .isInstanceOf(EmailAlreadyRegisteredException::class.java)
+        assertThatThrownBy { users.create(email, HASH) }
+            .isInstanceOf(EmailAlreadyRegisteredException::class.java)
+    }
+
+    @Test
     @DisplayName("기본 작업 공간이 계약이 정한 이름으로 만들어진다")
     fun `기본 작업 공간을 만든다`() {
         val created = users.create(uniqueEmail(), HASH)

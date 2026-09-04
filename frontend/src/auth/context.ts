@@ -16,6 +16,11 @@ export interface AuthContextValue {
   signIn: (email: string, password: string) => Promise<void>
   /** 가입 후 이어서 로그인까지 한다 — 가입 응답에는 토큰이 없다. */
   signUp: (email: string, password: string) => Promise<void>
+  /**
+   * 소셜 로그인 콜백 처리. 인가 코드를 액세스 토큰으로 바꾸고 `signIn`과 같은 방식으로
+   * 저장한다. 실패하면 ApiError를 그대로 올린다(콜백 화면이 문구를 보여준다).
+   */
+  signInWithGoogle: (params: { code: string; state: string; redirectUri: string }) => Promise<void>
   signOut: () => void
 }
 

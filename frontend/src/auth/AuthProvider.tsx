@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 
-import { fetchMe, login, signup } from '../api/auth'
+import { fetchMe, login, oauthCallback, signup } from '../api/auth'
 import { setUnauthorizedHandler } from '../api/client'
 import { clearToken, readToken, writeToken } from '../api/token'
 import type { UserResponse } from '../api/types'
@@ -53,13 +53,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => controller.abort()
   }, [])
 
-  const signIn = useCallback(async (email: string, password: string) => {
-    const token = await login({ email, password })
-    writeToken(token.access_token)
+  /** 새로 받은 액세스 토큰을 저장하고 그 토큰의 사용자로 인증 상태를 채운다. */
+  const applyToken = useCallback(async (accessToken: string) => {
+    writeToken(accessToken)
     const me = await fetchMe()
     setUser(me)
     setStatus('authenticated')
   }, [])
+
+  const signIn = useCallback(
+    async (email: string, password: string) => {
+      const token = await login({ email, password })
+      await applyToken(token.access_token)
+    },
+    [applyToken],
+  )
 
   const signUp = useCallback(
     async (email: string, password: string) => {
@@ -69,6 +77,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [signIn],
   )
 
+  const signInWithGoogle = useCallback(
+    async (params: { code: string; state: string; redirectUri: string }) => {
+      const token = await oauthCallback('google', params)
+      await applyToken(token.access_token)
+    },
+    [applyToken],
+  )
+
   const signOut = useCallback(() => {
     clearToken()
     setUser(null)
@@ -76,8 +92,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const value = useMemo<AuthContextValue>(
-    () => ({ status, user, signIn, signUp, signOut }),
-    [status, user, signIn, signUp, signOut],
+    () => ({ status, user, signIn, signUp, signInWithGoogle, signOut }),
+    [status, user, signIn, signUp, signInWithGoogle, signOut],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

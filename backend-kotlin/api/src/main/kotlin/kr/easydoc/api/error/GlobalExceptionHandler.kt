@@ -6,8 +6,10 @@ import kr.easydoc.core.exceptions.ConflictException
 import kr.easydoc.core.exceptions.DocumentExtractionException
 import kr.easydoc.core.exceptions.EasyDocException
 import kr.easydoc.core.exceptions.EmailAlreadyRegisteredException
+import kr.easydoc.core.exceptions.ExternalServiceUnavailableException
 import kr.easydoc.core.exceptions.InvalidCredentialsException
 import kr.easydoc.core.exceptions.InvalidInputException
+import kr.easydoc.core.exceptions.InvalidOAuthStateException
 import kr.easydoc.core.exceptions.NotFoundException
 import kr.easydoc.core.exceptions.StorageException
 import kr.easydoc.core.exceptions.UnsupportedFormatException
@@ -84,7 +86,13 @@ class GlobalExceptionHandler : ResponseEntityExceptionHandler() {
         val items =
             ex.bindingResult.allErrors.map { error ->
                 // FieldError 는 rejectedValue 를 들고 있다 — 읽지 않는다.
-                val field = (error as? FieldError)?.field
+                //
+                // `field` 는 Bean Validation 이 리플렉션으로 본 **Kotlin 프로퍼티 이름**
+                // (camelCase)이다 — Jackson `@JsonProperty` 별칭을 모른다(그 별칭은
+                // 역직렬화 단계에서만 쓰이고, `@Valid` 검증은 그 뒤 이미 만들어진 객체를
+                // 본다). `bodyReadItem` 의 `mismatch.path`(Jackson 자체가 잰 JSON 경로)와
+                // 달리 여기는 wire 이름으로 옮겨야 계약의 snake_case `loc` 과 맞는다.
+                val field = (error as? FieldError)?.field?.let(::snakeCase)
                 ValidationErrorItem(
                     loc = listOfNotNull(BODY, field),
                     msg = error.defaultMessage ?: INVALID_INPUT_MESSAGE,
@@ -280,6 +288,18 @@ private fun mappingFor(exception: EasyDocException): Pair<HttpStatus, HttpHeader
             HttpStatus.NOT_FOUND to null
         }
 
+        // 요청 자체가 무효다(만료·재사용·바인딩 불일치) — 입력 규칙 위반(422)도 자원 상태
+        // 충돌(409)도 아니다. `POST /auth/oauth/{provider}/callback` 전용.
+        is InvalidOAuthStateException -> {
+            HttpStatus.BAD_REQUEST to null
+        }
+
+        // 동기로 부른 하위 시스템(소셜 로그인 제공자)에 닿지 못했다. `x-retired-responses`가
+        // 예고한 재도입 자리 — 예외 메시지는 항상 고정 문구이고 벤더 오류 텍스트를 담지 않는다.
+        is ExternalServiceUnavailableException -> {
+            HttpStatus.BAD_GATEWAY to null
+        }
+
         is ConfigurationException -> {
             HttpStatus.SERVICE_UNAVAILABLE to null
         }
@@ -317,6 +337,9 @@ private fun errorTypeOf(code: String?): String =
         "NotNull", "NotEmpty", "NotBlank", "Required" -> "missing"
         else -> code.replace(SNAKE_BOUNDARY, "$1_$2").lowercase()
     }
+
+/** Kotlin 프로퍼티 이름(camelCase) → 계약의 wire 이름(snake_case). `errorTypeOf` 와 같은 변환. */
+private fun snakeCase(name: String): String = name.replace(SNAKE_BOUNDARY, "$1_$2").lowercase()
 
 /** 파라미터가 어디서 왔는지 — 계약의 `loc` 첫 칸이 된다. */
 private fun locationOf(parameter: MethodParameter): String =

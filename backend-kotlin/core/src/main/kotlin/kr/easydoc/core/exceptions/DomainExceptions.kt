@@ -61,3 +61,20 @@ class DecryptionFailedException : StorageException(MESSAGE) {
 
 /** 서버 설정이 비어 있어 기능을 제공할 수 없다 (예: JWT 비밀키 미설정). */
 class ConfigurationException(message: String) : EasyDocException(message)
+
+/**
+ * OAuth state·nonce 가 유효하지 않다 — 만료·이미 사용·`provider`/`redirect_uri` 바인딩 불일치.
+ * `EmailAlreadyRegisteredException`·`ConflictException`(409)과 달리 **자원 상태 충돌이 아니라
+ * 요청 자체가 무효**라 409가 아니고, 길이·형식 같은 입력 규칙 위반도 아니라 422도 아니다 —
+ * 계약이 이 갈래를 400으로 못박았다(`POST /auth/oauth/{provider}/callback`).
+ */
+class InvalidOAuthStateException(message: String) : EasyDocException(message)
+
+/**
+ * 동기로 부른 하위 시스템(예: 소셜 로그인 제공자)에 닿지 못했다 — 타임아웃·연결 실패·5xx.
+ * `LlmProviderException`(비동기 워커 경로, HTTP 상태로 나가지 않음)과 달리 이 예외는
+ * **요청·응답 안에서 동기로** 관측되므로 502로 나간다. 계약 `x-retired-responses`가
+ * BadGateway를 폐기하며 "동기로 하위 시스템을 부르는 오퍼레이션이 새로 생기면 다시 세운다"고
+ * 예고한 자리이며, `POST /auth/oauth/{provider}/callback`이 그 자리다.
+ */
+class ExternalServiceUnavailableException(message: String) : EasyDocException(message)

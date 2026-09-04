@@ -2,11 +2,19 @@ package kr.easydoc.infrastructure.auth
 
 import kr.easydoc.application.auth.AccessTokens
 import kr.easydoc.application.auth.AuthService
+import kr.easydoc.application.auth.OAuthStateStore
 import kr.easydoc.application.auth.PasswordHasher
+import kr.easydoc.application.auth.SocialLoginProvider
+import kr.easydoc.application.auth.SocialLoginProviderId
+import kr.easydoc.application.auth.SocialLoginRepositories
+import kr.easydoc.application.auth.SocialLoginService
 import kr.easydoc.application.auth.TransactionRunner
+import kr.easydoc.application.auth.UserIdentityRepository
 import kr.easydoc.application.auth.UserRepository
 import kr.easydoc.application.auth.WorkspaceRepository
 import kr.easydoc.core.security.Secret
+import kr.easydoc.infrastructure.auth.google.GoogleOAuthSettings
+import kr.easydoc.infrastructure.auth.google.GoogleSocialLoginProvider
 import kr.easydoc.infrastructure.db.SpringTransactionRunner
 import org.springframework.boot.context.properties.ConfigurationProperties
 import org.springframework.context.annotation.Bean
@@ -49,7 +57,51 @@ data class Argon2Properties(
     val hashLength: Int = 32,
 )
 
-/** 인증 빈 조립. */
+/** 소셜 로그인 공통 설정(제공자를 가리지 않는다). 바인딩 접두사는 `easydoc.oauth`. */
+@ConfigurationProperties(prefix = "easydoc.oauth")
+data class OAuthProperties(
+    /** `state`·`nonce` 의 유효 기간(분). backlog §1.4 설계 결정 — 10분. */
+    val stateTtlMinutes: Long = 10,
+)
+
+/**
+ * Google OAuth 설정. 바인딩 접두사는 `easydoc.oauth.google`.
+ *
+ * **`clientId`·`clientSecret` 이 비어 있으면 google provider 는 등록되지 않는다**
+ * ([socialLoginProviders]) — 키 없는 로컬 개발 기동을 막지 않는다(계약 결정, backlog §1.4).
+ * `redirectUris` 필드 이름은 환경변수 `EASYDOC_OAUTH_GOOGLE_REDIRECT_URIS` 와 맞춘 것이다
+ * (relaxed binding: `redirect-uri-allowlist` 였다면 `_ALLOWLIST` 접미사가 붙었을 것).
+ */
+@ConfigurationProperties(prefix = "easydoc.oauth.google")
+data class GoogleOAuthProperties(
+    val clientId: String = "",
+    val clientSecret: Secret = Secret.EMPTY,
+    /** 콤마로 구분한 목록. 로컬 기본값은 프런트 개발 서버의 콜백 경로다. */
+    val redirectUris: List<String> = listOf(DEFAULT_LOCAL_REDIRECT_URI),
+    /**
+     * JWKS(서명 검증 키) 캐시 TTL(분). 콜백마다 새로 받으면 Google 에 불필요한 부하를
+     * 준다 — [kr.easydoc.infrastructure.auth.google.GoogleSocialLoginProvider] 가 이
+     * 기간 동안은 캐시를 쓰고, 모르는 `kid`(키 회전)를 만나면 만료 전이라도 즉시 한 번
+     * 다시 받는다.
+     */
+    val jwksCacheMinutes: Long = DEFAULT_JWKS_CACHE_MINUTES,
+) {
+    fun isConfigured(): Boolean = clientId.isNotBlank() && !clientSecret.isBlank()
+
+    private companion object {
+        const val DEFAULT_LOCAL_REDIRECT_URI = "http://localhost:5173/auth/google/callback"
+        const val DEFAULT_JWKS_CACHE_MINUTES = 60L
+    }
+}
+
+/**
+ * 인증 빈 조립.
+ *
+ * `TooManyFunctions` 를 억제한다: 조립 지점의 함수 수는 이 클래스의 복잡도가 아니라
+ * **협력자의 수**다 — `DocumentConfiguration` 과 같은 근거(그 클래스 KDoc). 억제는 이
+ * 클래스 하나에 걸리고 도메인·유스케이스 코드로 번지지 않는다.
+ */
+@Suppress("TooManyFunctions")
 @Configuration(proxyBeanMethods = false)
 class AuthConfiguration {
     @Bean
@@ -107,6 +159,61 @@ class AuthConfiguration {
             passwords = passwordHasher,
             accessTokens = accessTokens,
             transaction = transactionRunner,
+        )
+
+    @Bean
+    fun oauthStateStore(jdbcClient: JdbcClient): OAuthStateStore = JdbcOAuthStateStore(jdbcClient, Clock.systemUTC())
+
+    @Bean
+    fun userIdentityRepository(jdbcClient: JdbcClient): UserIdentityRepository = JdbcUserIdentityRepository(jdbcClient)
+
+    /**
+     * 등록된 소셜 로그인 제공자 — 오늘은 google 하나뿐이고, 키가 없으면 아예 등록하지
+     * 않는다(그 provider 를 요청하면 `SocialLoginService` 가 422 로 응답한다).
+     */
+    @Bean
+    fun socialLoginProviders(google: GoogleOAuthProperties): Map<SocialLoginProviderId, SocialLoginProvider> {
+        if (!google.isConfigured()) {
+            return emptyMap()
+        }
+        val provider =
+            GoogleSocialLoginProvider(
+                GoogleOAuthSettings(
+                    clientId = google.clientId,
+                    clientSecret = google.clientSecret,
+                    redirectUriAllowlist = google.redirectUris.toSet(),
+                    jwksCacheTtl = Duration.ofMinutes(google.jwksCacheMinutes),
+                ),
+            )
+        return mapOf(SocialLoginProviderId.GOOGLE to provider)
+    }
+
+    /** `SocialLoginService` 생성자 매개변수 상한을 지키려고 저장소 셋을 묶는다(그 클래스 KDoc). */
+    @Bean
+    fun socialLoginRepositories(
+        users: UserRepository,
+        identities: UserIdentityRepository,
+        workspaces: WorkspaceRepository,
+    ): SocialLoginRepositories = SocialLoginRepositories(users, identities, workspaces)
+
+    /** 조립 지점의 매개변수 수는 협력자의 수다 — 클래스 KDoc과 같은 근거로 억제한다. */
+    @Suppress("LongParameterList")
+    @Bean
+    fun socialLoginService(
+        providers: Map<SocialLoginProviderId, SocialLoginProvider>,
+        states: OAuthStateStore,
+        repositories: SocialLoginRepositories,
+        accessTokens: AccessTokens,
+        transactionRunner: TransactionRunner,
+        oauthProperties: OAuthProperties,
+    ): SocialLoginService =
+        SocialLoginService(
+            providers = providers,
+            states = states,
+            repositories = repositories,
+            accessTokens = accessTokens,
+            transaction = transactionRunner,
+            stateTtl = Duration.ofMinutes(oauthProperties.stateTtlMinutes),
         )
 
     private companion object {

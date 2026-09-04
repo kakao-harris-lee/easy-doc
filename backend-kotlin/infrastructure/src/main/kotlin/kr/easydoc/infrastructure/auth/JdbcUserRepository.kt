@@ -69,6 +69,28 @@ class JdbcUserRepository(private val jdbc: JdbcClient) : UserRepository {
         }
     }
 
+    /** 비밀번호 없이 새 사용자를 만든다 — 소셜 로그인 최초 가입. */
+    override fun createWithoutPassword(email: String): User {
+        val id = UUID.randomUUID()
+        return try {
+            jdbc
+                .sql(
+                    """
+                    INSERT INTO users (id, email, password_hash)
+                    VALUES (:id, :email, NULL)
+                    RETURNING id, email, created_at
+                    """.trimIndent(),
+                ).param("id", id)
+                .param("email", email)
+                .query { rs, _ -> toUser(rs) }
+                .single()
+        } catch (_: DuplicateKeyException) {
+            throw EmailAlreadyRegisteredException(DUPLICATE_EMAIL_MESSAGE)
+        } catch (_: DataIntegrityViolationException) {
+            throw StorageException(STORAGE_FAILURE_MESSAGE)
+        }
+    }
+
     override fun updatePasswordHash(
         userId: UUID,
         passwordHash: PasswordHash,
@@ -90,7 +112,7 @@ class JdbcUserRepository(private val jdbc: JdbcClient) : UserRepository {
         )
 
     private fun toStoredUser(rs: ResultSet): StoredUser =
-        StoredUser(toUser(rs), PasswordHash(rs.getString("password_hash")))
+        StoredUser(toUser(rs), rs.getString("password_hash")?.let(::PasswordHash))
 
     private companion object {
         /** 계약 `components/responses/Conflict` 의 `duplicate_email` 예시와 같은 값. */

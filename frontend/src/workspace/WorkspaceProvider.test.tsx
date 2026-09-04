@@ -24,6 +24,7 @@ function authValue(status: AuthStatus): AuthContextValue {
     user: status === 'authenticated' ? { id: 'u1', email: 'owner@example.com' } : null,
     signIn: () => Promise.resolve(),
     signUp: () => Promise.resolve(),
+    signInWithGoogle: () => Promise.resolve(),
     signOut: () => undefined,
   }
 }

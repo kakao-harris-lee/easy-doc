@@ -3,6 +3,7 @@ import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/context'
 import { AuthIntro } from '../components/AuthIntro'
 import { CredentialsForm } from '../components/CredentialsForm'
+import { GoogleLoginButton } from '../components/GoogleLoginButton'
 import { HOME_PATH, SIGNUP_PATH, type FromLocationState } from '../routes/paths'
 
 /**
@@ -53,6 +54,12 @@ export function LoginPage() {
               navigate(from, { replace: true })
             }}
           />
+          <div className="mt-5 flex items-center gap-3" aria-hidden="true">
+            <span className="h-px flex-1 bg-border" />
+            <span className="text-xs text-muted-foreground">또는</span>
+            <span className="h-px flex-1 bg-border" />
+          </div>
+          <GoogleLoginButton />
           <p className="mt-5 text-center text-sm text-muted-foreground">
             아직 계정이 없으신가요? <Link to={SIGNUP_PATH}>가입하기</Link>
           </p>

@@ -12,8 +12,10 @@ import kr.easydoc.core.exceptions.ConflictException
 import kr.easydoc.core.exceptions.DocumentExtractionException
 import kr.easydoc.core.exceptions.EasyDocException
 import kr.easydoc.core.exceptions.EmailAlreadyRegisteredException
+import kr.easydoc.core.exceptions.ExternalServiceUnavailableException
 import kr.easydoc.core.exceptions.InvalidCredentialsException
 import kr.easydoc.core.exceptions.InvalidInputException
+import kr.easydoc.core.exceptions.InvalidOAuthStateException
 import kr.easydoc.core.exceptions.LlmTruncatedException
 import kr.easydoc.core.exceptions.NotFoundException
 import kr.easydoc.core.exceptions.StorageException
@@ -116,6 +118,8 @@ class ErrorProbeController {
                 "llm-truncated" to { LlmTruncatedException("응답이 잘렸습니다") },
                 "configuration" to { ConfigurationException("JWT 비밀키가 설정되지 않았습니다") },
                 "storage" to { StorageException("저장된 변환 결과를 읽을 수 없습니다") },
+                "oauth-state" to { InvalidOAuthStateException("요청이 만료되었거나 이미 사용되었습니다") },
+                "external-unavailable" to { ExternalServiceUnavailableException("구글에 연결하지 못했습니다") },
                 "unmapped" to { EasyDocException("입력값 홍길동 이 섞인 메시지") },
             )
 

@@ -5,6 +5,8 @@ import kr.easydoc.core.dictionary.DictionaryContextPolicy
 import kr.easydoc.core.security.Secret
 import kr.easydoc.infrastructure.app.AppProperties
 import kr.easydoc.infrastructure.auth.AuthProperties
+import kr.easydoc.infrastructure.auth.GoogleOAuthProperties
+import kr.easydoc.infrastructure.auth.OAuthProperties
 import kr.easydoc.infrastructure.crypto.EncryptionProperties
 import kr.easydoc.infrastructure.dictionary.DictionaryProperties
 import kr.easydoc.infrastructure.document.FeedbackProperties
@@ -71,6 +73,32 @@ class ConfigurationPropertiesBindingTest {
                 .value
                 .reveal(),
         ).isEqualTo(SECRET_VALUE)
+    }
+
+    @Test
+    @DisplayName("소셜 로그인 설정이 기본값과 다른 값을 싣는다 — backlog §1.4 P0-1")
+    fun `소셜 로그인 설정이 기본값과 다른 값을 싣는다`() {
+        val oauth =
+            bind(
+                "easydoc.oauth",
+                OAuthProperties::class.java,
+                mapOf("easydoc.oauth.state-ttl-minutes" to "3"),
+            )
+        assertThat(oauth.stateTtlMinutes).isEqualTo(3)
+
+        val google =
+            bind(
+                "easydoc.oauth.google",
+                GoogleOAuthProperties::class.java,
+                mapOf(
+                    "easydoc.oauth.google.client-id" to "test-client-id",
+                    "easydoc.oauth.google.client-secret" to SECRET_VALUE,
+                    "easydoc.oauth.google.redirect-uris[0]" to "https://example.test/auth/google/callback",
+                ),
+            )
+        assertThat(google.clientId).isEqualTo("test-client-id")
+        assertThat(google.clientSecret.reveal()).isEqualTo(SECRET_VALUE)
+        assertThat(google.redirectUris).containsExactly("https://example.test/auth/google/callback")
     }
 
     @Test

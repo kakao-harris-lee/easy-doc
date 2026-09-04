@@ -5,6 +5,12 @@ export const LOGIN_PATH = '/login'
 export const SIGNUP_PATH = '/signup'
 export const HISTORY_PATH = '/history'
 
+/**
+ * 구글 로그인 콜백 라우트. `GoogleLoginButton`이 만드는 `redirect_uri`와 같은 값이어야
+ * 한다 — 제공자가 오늘 google 하나뿐이라 경로를 고정한다(계약 `x-social-login`).
+ */
+export const OAUTH_GOOGLE_CALLBACK_PATH = '/auth/google/callback'
+
 /** 변환 화면 라우트 패턴 (`useParams`의 키와 같은 이름을 쓴다). */
 export const CONVERSION_PATH = '/conversions/:conversionId'
 

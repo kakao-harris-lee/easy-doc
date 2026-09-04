@@ -68,6 +68,32 @@ export interface TokenResponse {
   expires_in: number
 }
 
+/** 지원하는 소셜 로그인 제공자. 계약 `enum`은 오늘 `google` 하나뿐이다. */
+export type OAuthProvider = 'google'
+
+/** POST /auth/oauth/{provider}/start 요청 본문. */
+export interface OAuthStartRequest {
+  /** SPA가 제공자 인가 뒤 되돌아올 자기 경로. 서버 허용 목록 안의 값만 받는다. */
+  redirect_uri: string
+}
+
+/** POST /auth/oauth/{provider}/start 응답. */
+export interface OAuthStartResponse {
+  /** 사용자를 리디렉션할 제공자 인가 URL. */
+  authorization_url: string
+  /** CSRF 방지 토큰. SPA는 콜백까지 들고 있다가 그대로 되돌려 보낸다. */
+  state: string
+}
+
+/** POST /auth/oauth/{provider}/callback 요청 본문. */
+export interface OAuthCallbackRequest {
+  /** 제공자가 발급한 인가 코드. */
+  code: string
+  state: string
+  /** `oauthStart`에 보냈던 것과 같은 값이어야 한다. */
+  redirect_uri: string
+}
+
 // --- documents ---
 
 /** POST /documents 요청 본문 (붙여넣기 모드). */

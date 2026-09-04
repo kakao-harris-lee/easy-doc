@@ -198,6 +198,10 @@
 
 신뢰도: 카카오·구글은 공식 문서 직접 열람으로 확인됨. 네이버는 공식 문서 접근이 막혀 2차 출처 교차검증에 그친 부분확인이며, PKCE 지원 여부(카카오·네이버)와 구글 revoke 엔드포인트의 신구 URL 우선순위는 미확인으로 남는다.
 
+**→ 구글 구현 완료(2026-09-04, `feat/google-login` 브랜치, 계약 2.8.0).** 위 권고 순서대로 첫 제공자(구글)를 이 절이 적은 설계 그대로 구현했다 — `SocialLoginProvider` 포트(`application`) + `infrastructure/auth/google`의 HTTP 어댑터, `user_identities` 연결 테이블(`V6__user_identities.sql`, 유니크 `(provider, provider_user_id)`), `users.password_hash` nullable, 계약에 `oauthStart`/`oauthCallback` 오퍼레이션 추가(기존 `signup`/`login`은 무변경). **동일 이메일 자동 연결 금지** 규칙도 그대로 지켰다 — 신원은 새로운데 같은 **검증된** 이메일의 계정이 이미 있으면 자동으로 잇지 않고 409(`email_already_linked`, "이미 같은 이메일로 가입된 계정이 있습니다. 이메일로 로그인한 뒤 연결해 주세요.")를 낸다. **로그인 후 사용자가 명시적으로 연결하는 흐름은 아직 구현하지 않았다 — 다음 작업 단위다.** 카카오·네이버는 미구현(포트는 재사용 가능하나 어댑터·비즈 앱 심사·서비스 검수는 착수 전이다).
+
+**남은 결함(2026-09-04, 의도적으로 미해결) — 동시 최초 콜백 경쟁이 오도하는 409를 낼 수 있다.** `SocialLoginService.callback`은 신원 미연결·새 이메일 갈래에서 ⑴ `users.findByEmail`로 이메일 중복을 트랜잭션 **밖**에서 먼저 보고 ⑵ 트랜잭션 안에서 `createWithoutPassword` + `user_identities.link`를 한다. 같은 사람이 같은 제공자 콜백을 (예: 브라우저 탭 두 개로) 동시에 두 번 보내면, 두 요청 모두 ⑴에서 "아직 없음"을 보고 통과한 뒤 ⑵의 `users.email` 유일 인덱스(`ix_users_email`, V1)에서 하나만 성공하고 나머지는 `EmailAlreadyRegisteredException` → **409 `duplicate_email`**(사용자가 자기 자신과 충돌한 것뿐인데 "이미 가입된 계정" 문구를 본다 — `email_already_linked`가 아니라 가입 경로의 일반 문구다, `JdbcUserRepository.createWithoutPassword`가 그 예외를 던진다). **재시도하면 성공한다** — 실패한 요청이 다시 콜백을 밟으면 이번에는 ⑴에서 방금 만들어진 신원이 아니라 이메일이 걸리므로 여전히 409지만, `user_identities.findByProviderIdentity`를 먼저 보는 정상 경로(이미 연결된 신원 → 로그인)를 다시 타면 통과한다 — 즉 요청 자체는 안전하고(중복 계정이 생기지 않는다), 사용자 경험만 나쁘다(드문 경쟁에서 한 번 실패 문구를 본다). 고칠 후보 둘: ⑴ `user_identities`에 먼저 upsert(멱등)하고 `users` 생성은 그 결과로 갈리게 하기 — 경쟁을 신원 유일 제약(이미 있는 제약, `(provider, provider_user_id)`) 쪽으로 옮긴다. ⑵ `users` 유일 제약 위반을 잡은 뒤 `findByProviderIdentity`를 **한 번 더** 재조회해, 그사이 다른 요청이 신원을 연결했으면 그 결과로 로그인 처리하기(현재는 위반을 잡아 곧바로 409로 옮긴다 — 재조회 없이). 어느 쪽도 구현하지 않았다 — 발생 빈도가 낮고(같은 사람의 동시 두 콜백) 재시도로 복구되므로 이번 작업 단위의 판단 밖으로 남겼다.
+
 ## 2. 구현 시 반드시 지킬 요구사항
 
 ### 2.1 저장 암호화

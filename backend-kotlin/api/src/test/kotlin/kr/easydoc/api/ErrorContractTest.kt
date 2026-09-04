@@ -41,6 +41,8 @@ class ErrorContractTest {
         "llm-truncated,       500",
         "configuration,       503",
         "storage,             500",
+        "oauth-state,         400",
+        "external-unavailable,502",
     )
     @DisplayName("도메인 예외가 계약이 선언한 상태 코드로 나간다")
     fun `도메인 예외 상태 코드 매핑`(
