@@ -7,6 +7,7 @@ import kr.easydoc.core.document.SourceFormat
 import kr.easydoc.core.exceptions.ConflictException
 import kr.easydoc.core.exceptions.InvalidInputException
 import kr.easydoc.core.exceptions.NotFoundException
+import kr.easydoc.core.pilot.EditDistanceSkipReason
 import kr.easydoc.core.pilot.MinutesSpent
 import kr.easydoc.core.pilot.PublishIntent
 import kr.easydoc.core.pilot.QualityScore
@@ -135,6 +136,9 @@ class ConversionFeedbackServiceTest {
             .withFailMessage("검수본이 없는데 글자 수가 채워졌다 — 집계가 「하나도 고치지 않았다」로 읽는다")
             .isNull()
         assertThat(row.editDistance).isNull()
+        assertThat(row.editDistanceSkipReason)
+            .withFailMessage("검수본이 없는데 사유가 예산 초과로 찍혔다 — 두 사유가 다른 상황이다")
+            .isEqualTo(EditDistanceSkipReason.NO_REVIEW)
     }
 
     @Test
@@ -150,6 +154,9 @@ class ConversionFeedbackServiceTest {
         assertThat(row.editedCharCount).isEqualTo(4)
         // 「나」→「라」 치환 하나 + 「라」 삽입 하나.
         assertThat(row.editDistance).isEqualTo(2)
+        assertThat(row.editDistanceSkipReason)
+            .withFailMessage("거리를 실제로 쟀는데 건너뜀 사유가 남았다")
+            .isNull()
     }
 
     @Test
@@ -167,6 +174,9 @@ class ConversionFeedbackServiceTest {
         assertThat(row.editDistance)
             .withFailMessage("예산을 넘었는데 거리가 계산됐다 — 요청 스레드 CPU 상한이 강제되지 않는다")
             .isNull()
+        assertThat(row.editDistanceSkipReason)
+            .withFailMessage("예산 초과인데 사유가 검수본 없음으로 찍혔다 — DB CHECK(V4)가 이 짝을 실제로 요구한다")
+            .isEqualTo(EditDistanceSkipReason.BUDGET_EXCEEDED)
     }
 
     @Test
@@ -181,6 +191,9 @@ class ConversionFeedbackServiceTest {
         assertThat(listOf(row.easyCharCount, row.editedCharCount, row.editDistance))
             .withFailMessage("초안이 없는데 지표가 남았다 — 무엇에 견준 값인지 말할 수 없는 숫자다")
             .containsOnlyNulls()
+        assertThat(row.editDistanceSkipReason)
+            .withFailMessage("거리가 null 인데 사유가 없다 — DB 짝 제약(V4)을 어긴다")
+            .isEqualTo(EditDistanceSkipReason.NO_REVIEW)
     }
 
     @Test

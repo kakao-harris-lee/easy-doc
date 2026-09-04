@@ -134,10 +134,16 @@ docker compose -f compose.yml -f compose.ci.yml run --rm frontend-check
 문서 보존 만료(기본 30일) **전에** 실행한다. 지표 표는 파기 대상이 아니지만, 판정 중
 원문·변환 결과를 대조해야 할 때 그쪽은 이미 사라져 있다.
 
-편집 거리는 셀 예산(`easydoc.feedback.edit-distance-cell-budget`)을 넘으면 계산하지 않고
-`edit_distance`를 `NULL`로 남긴다(요청 스레드 CPU 상한, `core/text/EditDistance.kt`). 이 행은
-수정률 표본에서 빠지므로 수정률 평균·중앙값과 **함께 표본 수를 읽는다** — 표본이 10건보다
-작으면 그만큼이 예산 초과로 빠진 것이다.
+수정률(`edit_distance`) 표본은 **두 가지 이유로** 전체 표본보다 작을 수 있다(2026-09-04,
+`edit_distance_skip_reason` 컬럼 추가 — `V4__conversion_feedback_edit_distance_skip_reason.sql`).
+검수 수정본 자체가 없으면(`no_review`) 애초에 잴 것이 없고, 수정본은 있지만 셀 예산
+(`easydoc.feedback.edit-distance-cell-budget`)을 넘으면 계산을 포기한다(`budget_exceeded`,
+요청 스레드 CPU 상한, `core/text/EditDistance.kt`). 두 경우 모두 `edit_distance`가 `NULL`로
+남지만 원인이 다르다 — `budget_exceeded`는 검수자가 실제로 문서를 수정했는데도 표본에서
+빠지는 경우라 예산을 올릴지 판단할 근거가 되고, `no_review`는 검수자가 그대로 쓸 만하다고
+판단해 수정본 자체를 내지 않은 경우다. `scripts/pilot-report.sql`의 「③-1 수정률 표본
+구성」이 이 둘과 「측정됨」을 나눠 낸다 — 수정률 평균·중앙값을 읽을 때는 그 표를 **함께
+읽는다.**
 
 ```bash
 docker compose -f compose.yml exec -T postgres \

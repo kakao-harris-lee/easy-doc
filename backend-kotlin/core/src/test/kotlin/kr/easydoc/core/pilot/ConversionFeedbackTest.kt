@@ -115,4 +115,26 @@ class ConversionFeedbackTest {
         assertThatThrownBy { MinutesSpent(probe) }
             .hasMessageNotContaining(probe.toString())
     }
+
+    @Test
+    @DisplayName("`EditDistanceSkipReason` 의 wireName 이 V4 CHECK 가 적은 두 값이다")
+    fun `편집 거리 건너뜀 사유의 와이어 이름이 스키마와 같다`() {
+        assertThat(EditDistanceSkipReason.entries.map { it.wireName })
+            .containsExactly("no_review", "budget_exceeded")
+    }
+
+    @Test
+    @DisplayName("저장된 컬럼 값을 되읽으면 같은 항목으로 돌아온다")
+    fun `편집 거리 건너뜀 사유가 왕복한다`() {
+        EditDistanceSkipReason.entries.forEach { reason ->
+            assertThat(EditDistanceSkipReason.ofWireName(reason.wireName)).isEqualTo(reason)
+        }
+    }
+
+    @Test
+    @DisplayName("컬럼에 모르는 값이 들어 있으면 저장 계층 오류다")
+    fun `모르는 건너뜀 사유는 StorageException 이다`() {
+        assertThatThrownBy { EditDistanceSkipReason.ofWireName("maybe") }
+            .isInstanceOf(StorageException::class.java)
+    }
 }

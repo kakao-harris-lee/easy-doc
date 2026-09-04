@@ -134,3 +134,40 @@ value class MinutesSpent(val value: Int) {
         val OUT_OF_RANGE_MESSAGE: String = "소요 시간은 ${RANGE.first}에서 ${RANGE.last}분 사이의 값이어야 합니다"
     }
 }
+
+/**
+ * `conversion_feedback.edit_distance` 가 `null` 인 **사유**.
+ *
+ * 2026-09-03 셀 예산 도입(`core/text/EditDistance.kt` 의 `editDistanceWithin`) 전에는
+ * `edit_distance IS NULL` 의 사유가 하나뿐이었다 — 검수본이 없다. 예산 도입 뒤에는 검수본이
+ * 있어도 셀 예산을 넘으면 같은 `null` 이 나오고, 그때는 `edited_char_count` 가 **채워진다**
+ * (`ConversionFeedbackService.EditMetrics.of`). 두 사유를 구분하지 않으면 집계
+ * (`scripts/pilot-report.sql`)가 「검수본이 없어서 못 쟀다」와 「검수본은 있는데 계산을
+ * 포기했다」를 같은 행으로 읽고, 운영자는 수정률 표본이 왜 짧은지 알 수 없다.
+ *
+ * `wireName` 은 `conversion_feedback.edit_distance_skip_reason` 컬럼 값과 1:1 이다
+ * (`V4__conversion_feedback_edit_distance_skip_reason.sql` 의 CHECK).
+ */
+enum class EditDistanceSkipReason(val wireName: String) {
+    /** 검수본이 없어서 편집 거리를 잴 수 없다 — `edited_char_count` 도 함께 `null` 이다. */
+    NO_REVIEW("no_review"),
+
+    /** 검수본은 있으나 셀 예산을 넘어 계산을 포기했다 — `edited_char_count` 는 채워진다. */
+    BUDGET_EXCEEDED("budget_exceeded"),
+
+    ;
+
+    companion object {
+        /**
+         * 저장된 컬럼 값을 항목으로 되읽는다. 모르는 값은 [PublishIntent.ofWireName] 과 같은
+         * 이유로 **저장 계층 오류**다 — 컬럼에 CHECK 가 걸려 있어 이 목록 밖의 값이 들어갈
+         * 수 없다.
+         */
+        fun ofWireName(value: String): EditDistanceSkipReason =
+            entries.firstOrNull { it.wireName == value }
+                ?: throw StorageException(UNKNOWN_STORED_REASON_MESSAGE)
+
+        /** 저장된 값을 읽지 못했을 때의 문구. 계약 `InternalError` 의 `storage` 갈래와 같다. */
+        const val UNKNOWN_STORED_REASON_MESSAGE: String = "저장된 변환 결과를 읽을 수 없습니다"
+    }
+}

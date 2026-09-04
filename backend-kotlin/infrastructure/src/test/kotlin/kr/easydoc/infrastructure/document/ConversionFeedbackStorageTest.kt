@@ -8,6 +8,7 @@ import kr.easydoc.application.document.StoredFeedback
 import kr.easydoc.core.crypto.EncryptedField
 import kr.easydoc.core.crypto.EncryptionScheme
 import kr.easydoc.core.crypto.PlainBody
+import kr.easydoc.core.pilot.EditDistanceSkipReason
 import kr.easydoc.core.pilot.MinutesSpent
 import kr.easydoc.core.pilot.PublishIntent
 import kr.easydoc.core.pilot.QualityScore
@@ -85,7 +86,7 @@ class ConversionFeedbackStorageTest {
     @Test
     @DisplayName("**분모 없는 분자** — 글자 수 둘이 없는데 편집 거리만 있는 행은 들어가지 않는다")
     fun `짝 없는 편집 거리를 거절한다`() {
-        assertThatThrownBy { insertMetrics(easy = null, edited = null, distance = 42) }
+        assertThatThrownBy { insertMetrics(easy = null, edited = null, distance = 42, reason = null) }
             .describedAs("집계는 이 행을 「무엇에 견준 값인지」 모른 채 수정률에 넣는다")
             .isInstanceOf(SQLException::class.java)
     }
@@ -93,7 +94,7 @@ class ConversionFeedbackStorageTest {
     @Test
     @DisplayName("**음수 지표** — 글자 수도 편집 거리도 0 아래로 갈 수 없다")
     fun `음수 지표를 거절한다`() {
-        assertThatThrownBy { insertMetrics(easy = -5, edited = -9, distance = -100) }
+        assertThatThrownBy { insertMetrics(easy = -5, edited = -9, distance = -100, reason = null) }
             .describedAs("음수 한 건이 수정률을 음수로 만들고 집계는 그것을 「거의 안 고쳤다」로 읽는다")
             .isInstanceOf(SQLException::class.java)
     }
@@ -101,24 +102,106 @@ class ConversionFeedbackStorageTest {
     @Test
     @DisplayName("**짝 없는 검수본 글자 수** — 편집 거리 없이 검수본 글자 수만 있는 행은 들어가지 않는다")
     fun `짝 없는 검수본 글자 수를 거절한다`() {
-        assertThatThrownBy { insertMetrics(easy = null, edited = 77, distance = null) }
+        assertThatThrownBy { insertMetrics(easy = null, edited = 77, distance = null, reason = null) }
             .isInstanceOf(SQLException::class.java)
     }
 
     @Test
-    @DisplayName("`EditMetrics` 가 만들 수 있는 **세 조합은 전부 통과한다** — 위 셋이 「언제나 거절」로 통과하지 않는다")
+    @DisplayName("`EditMetrics` 가 만들 수 있는 **네 조합은 전부 통과한다** — 위 셋이 「언제나 거절」로 통과하지 않는다")
     fun `서비스가 만드는 조합은 전부 통과한다`() {
-        // `ConversionFeedbackService.EditMetrics.of` 의 세 갈래 그대로다:
-        // 초안 없음 · 검수본 없음 · 둘 다 있음. 스키마가 이 중 하나라도 거절하면
-        // 프로덕션의 피드백 저장이 500 으로 죽는다 — 이 케이스가 그 방향을 고정한다.
-        insertMetrics(easy = null, edited = null, distance = null)
-        insertMetrics(easy = 120, edited = null, distance = null)
-        insertMetrics(easy = 120, edited = 118, distance = 7)
+        // `ConversionFeedbackService.EditMetrics.of` 의 네 갈래 그대로다:
+        // 초안 없음 · 검수본 없음(이 둘은 사유 no_review) · 예산 초과(사유 budget_exceeded) ·
+        // 둘 다 있고 예산 안. 스키마가 이 중 하나라도 거절하면 프로덕션의 피드백 저장이
+        // 500 으로 죽는다 — 이 케이스가 그 방향을 고정한다.
+        insertMetrics(easy = null, edited = null, distance = null, reason = "no_review")
+        insertMetrics(easy = 120, edited = null, distance = null, reason = "no_review")
+        insertMetrics(easy = 120, edited = 118, distance = null, reason = "budget_exceeded")
+        insertMetrics(easy = 120, edited = 118, distance = 7, reason = null)
 
         // 「하나도 고치지 않았다」는 정상 값이다 — 0 을 음수 금지가 함께 막으면 안 된다.
-        insertMetrics(easy = 120, edited = 120, distance = 0)
+        insertMetrics(easy = 120, edited = 120, distance = 0, reason = null)
 
         assertThat(metricRowCount()).isEqualTo(EXPECTED_ACCEPTED_ROWS)
+    }
+
+    @Test
+    @DisplayName("**사유 없는 예산 초과** — 거리만 비고 사유가 없으면 거절한다(짝 제약)")
+    fun `사유 없이 거리만 비우면 거절한다`() {
+        assertThatThrownBy { insertMetrics(easy = 120, edited = 118, distance = null, reason = null) }
+            .describedAs("거리가 null 인데 사유가 없으면 「검수본 없음」과 「예산 초과」를 구분할 수 없다")
+            .isInstanceOf(SQLException::class.java)
+    }
+
+    @Test
+    @DisplayName("**검수본 없음 사유인데 검수본 글자 수가 있다** — 짝이 어긋나 거절한다")
+    fun `검수본 없음 사유에 글자 수가 있으면 거절한다`() {
+        assertThatThrownBy { insertMetrics(easy = 120, edited = 118, distance = null, reason = "no_review") }
+            .describedAs("검수본이 없다는 사유인데 검수본 글자 수가 채워졌다")
+            .isInstanceOf(SQLException::class.java)
+    }
+
+    @Test
+    @DisplayName("**예산 초과 사유인데 검수본 글자 수가 없다** — 짝이 어긋나 거절한다")
+    fun `예산 초과 사유에 글자 수가 없으면 거절한다`() {
+        assertThatThrownBy { insertMetrics(easy = 120, edited = null, distance = null, reason = "budget_exceeded") }
+            .describedAs("예산 초과는 글자 수를 재고 거리 계산만 포기한다 — 글자 수가 없으면 안 된다")
+            .isInstanceOf(SQLException::class.java)
+    }
+
+    @Test
+    @DisplayName("**셀 예산 초과 행을 실물 upsert 로 저장한다** — Codex 리뷰(PR #13)가 잡은 결함: 인메모리 대역만 통과하고 실물 DB 는 CHECK 로 죽었었다")
+    fun `예산 초과 지표를 실물로 저장하고 사유와 함께 읽는다`() {
+        val conversionId = UUID.randomUUID()
+
+        feedback.upsert(
+            ownerId = OWNER,
+            feedback =
+                StoredFeedback(
+                    conversionId = conversionId,
+                    publishIntent = PublishIntent.WITH_EDITS,
+                    qualityScore = QualityScore(QUALITY_SCORE),
+                    minutesSpent = MinutesSpent(MINUTES_SPENT),
+                    comment = null,
+                    easyCharCount = EASY_CHAR_COUNT_FIXTURE,
+                    editedCharCount = EDITED_CHAR_COUNT_FIXTURE,
+                    editDistance = null,
+                    editDistanceSkipReason = EditDistanceSkipReason.BUDGET_EXCEEDED,
+                ),
+        )
+
+        val row = metricRowOf(conversionId)
+        assertThat(row.easyCharCount).isEqualTo(EASY_CHAR_COUNT_FIXTURE)
+        assertThat(row.editedCharCount).isEqualTo(EDITED_CHAR_COUNT_FIXTURE)
+        assertThat(row.editDistance).isNull()
+        assertThat(row.editDistanceSkipReason).isEqualTo("budget_exceeded")
+    }
+
+    @Test
+    @DisplayName("**검수본 없음 행을 실물 upsert 로 저장한다**")
+    fun `검수본 없음 지표를 실물로 저장하고 사유와 함께 읽는다`() {
+        val conversionId = UUID.randomUUID()
+
+        feedback.upsert(
+            ownerId = OWNER,
+            feedback =
+                StoredFeedback(
+                    conversionId = conversionId,
+                    publishIntent = PublishIntent.AS_IS,
+                    qualityScore = QualityScore(QUALITY_SCORE),
+                    minutesSpent = MinutesSpent(MINUTES_SPENT),
+                    comment = null,
+                    easyCharCount = EASY_CHAR_COUNT_FIXTURE,
+                    editedCharCount = null,
+                    editDistance = null,
+                    editDistanceSkipReason = EditDistanceSkipReason.NO_REVIEW,
+                ),
+        )
+
+        val row = metricRowOf(conversionId)
+        assertThat(row.easyCharCount).isEqualTo(EASY_CHAR_COUNT_FIXTURE)
+        assertThat(row.editedCharCount).isNull()
+        assertThat(row.editDistance).isNull()
+        assertThat(row.editDistanceSkipReason).isEqualTo("no_review")
     }
 
     @Test
@@ -202,22 +285,49 @@ class ConversionFeedbackStorageTest {
             .isEqualTo(submittedAt)
     }
 
-    /** 지표 셋만 다른 행 하나를 **원시 SQL 로** 넣는다. 도메인 타입을 지나지 않는 것이 요점이다. */
+    /** 지표 셋(+사유)만 다른 행 하나를 **원시 SQL 로** 넣는다. 도메인 타입을 지나지 않는 것이 요점이다. */
     private fun insertMetrics(
         easy: Int?,
         edited: Int?,
         distance: Int?,
+        reason: String?,
     ) {
         database.execute(
             """
             INSERT INTO conversion_feedback
                 (conversion_id, user_id, publish_intent, quality_score, minutes_spent,
-                 easy_char_count, edited_char_count, edit_distance)
+                 easy_char_count, edited_char_count, edit_distance, edit_distance_skip_reason)
             VALUES ('${UUID.randomUUID()}', '${UUID.randomUUID()}', 'as_is', 4, $METRIC_ROW_MINUTES,
-                    ${easy ?: "NULL"}, ${edited ?: "NULL"}, ${distance ?: "NULL"});
+                    ${easy ?: "NULL"}, ${edited ?: "NULL"}, ${distance ?: "NULL"},
+                    ${reason?.let { "'$it'" } ?: "NULL"});
             """.trimIndent(),
         )
     }
+
+    /** 지표 케이스 행 하나를 되읽는다 — 실물 upsert 가 실제로 무엇을 저장했는지 잰다. */
+    private fun metricRowOf(conversionId: UUID): MetricRow =
+        jdbc
+            .sql(
+                """
+                SELECT easy_char_count, edited_char_count, edit_distance, edit_distance_skip_reason
+                FROM conversion_feedback WHERE conversion_id = :id
+                """.trimIndent(),
+            ).param("id", conversionId)
+            .query { rs, _ ->
+                MetricRow(
+                    easyCharCount = rs.getObject("easy_char_count") as Int?,
+                    editedCharCount = rs.getObject("edited_char_count") as Int?,
+                    editDistance = rs.getObject("edit_distance") as Int?,
+                    editDistanceSkipReason = rs.getString("edit_distance_skip_reason"),
+                )
+            }.single()
+
+    private class MetricRow(
+        val easyCharCount: Int?,
+        val editedCharCount: Int?,
+        val editDistance: Int?,
+        val editDistanceSkipReason: String?,
+    )
 
     /** 실경로 upsert 로 피드백 한 행을 남긴다. 의견이 `null` 이면 봉투 세 열이 NULL 이다. */
     private fun saveComment(
@@ -241,6 +351,7 @@ class ConversionFeedbackStorageTest {
                 easyCharCount = null,
                 editedCharCount = null,
                 editDistance = null,
+                editDistanceSkipReason = EditDistanceSkipReason.NO_REVIEW,
             ),
     )
 
@@ -288,7 +399,11 @@ class ConversionFeedbackStorageTest {
         const val COMMENT_BODY = "○○동 ○○○ 님께 안내드립니다 부분이 어색합니다"
 
         /** 지표 케이스가 넣는 정상 행 수. 「언제나 거절」로 통과하지 않는 것을 이 정수가 잰다. */
-        const val EXPECTED_ACCEPTED_ROWS = 4
+        const val EXPECTED_ACCEPTED_ROWS = 5
+
+        /** 실물 upsert 지표 케이스(예산 초과·검수본 없음)가 쓰는 글자 수 고정값. */
+        const val EASY_CHAR_COUNT_FIXTURE = 120
+        const val EDITED_CHAR_COUNT_FIXTURE = 118
 
         val KEY_MATERIAL: Map<Int, Secret> =
             listOf(OLD_GENERATION, NEW_GENERATION).associateWith {
