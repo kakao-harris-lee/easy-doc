@@ -84,7 +84,7 @@ class PromptTextSnapshotTest {
         expectedSystem: String,
         expectedUser: String,
     ) {
-        val prompt = buildRepairPrompt(ModelDraft(convertedText), violations, FIXED_IDS)
+        val prompt = buildRepairPrompt(ModelDraft(convertedText), violations, documentIds = FIXED_IDS)
         assertThat(prompt.system).isEqualTo(expectedSystem)
         assertThat(prompt.user).isEqualTo(expectedUser)
     }

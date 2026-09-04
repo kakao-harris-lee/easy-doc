@@ -467,6 +467,60 @@ class ConvertDocumentUseCaseTest {
     }
 
     @Nested
+    @DisplayName("사실 보존 트리거 (backlog §1.3)")
+    inner class FactPreservationTrigger {
+        @Test
+        @DisplayName("문체는 깨끗해도 사실이 빠지면 보정을 부른다 — 값이 프롬프트에 실린다")
+        fun `사실 누락이 보정을 부른다`() {
+            val source = "02-1234-5678로 문의하세요."
+            val draftMissingPhone = "문의하세요."
+            val repaired = "문의는 02-1234-5678입니다."
+            val provider = FakeLlmProvider(listOf(reply(draftMissingPhone), reply(repaired)))
+
+            val result = converted(useCase(provider).convert(source))
+
+            assertThat(result.usage.llmCalls).isEqualTo(2)
+            assertThat(result.repaired).isTrue()
+            assertThat(result.easyText.value).isEqualTo(repaired)
+            assertThat(provider.calls[1].prompt.user).contains("[빠진 사실]")
+            assertThat(provider.calls[1].prompt.user).contains("02-1234-5678")
+        }
+
+        @Test
+        @DisplayName("문체와 사실이 모두 깨끗하면 보정을 부르지 않는다")
+        fun `사실과 문체가 깨끗하면 한 번만 부른다`() {
+            val source = "02-1234-5678로 9월 4일까지 문의하세요."
+            val draft = "문의는 02-1234-5678입니다. 마감은 9월 4일입니다."
+            val provider = FakeLlmProvider(listOf(reply(draft)))
+
+            val result = converted(useCase(provider).convert(source))
+
+            assertThat(result.usage.llmCalls).isEqualTo(1)
+            assertThat(result.repaired).isFalse()
+            assertThat(result.easyText.value).isEqualTo(draft)
+        }
+
+        @Test
+        @DisplayName("보정문이 다른 사실을 새로 빠뜨리면 기각한다 — 문체만 봤으면 채택했을 사례")
+        fun `보정이 다른 사실을 빠뜨리면 기각한다`() {
+            val source = "금일 02-1234-5678로 문의하세요."
+            // 1차 결과: 문체 위반('금일')은 있지만 사실(전화번호)은 지켜졌다.
+            val draftWithStyleIssue = "금일 문의는 02-1234-5678입니다."
+            // 보정 후보: 문체는 고쳤지만 전화번호를 통째로 날렸다.
+            val candidateDroppingFact = "오늘 문의하세요."
+            val provider = FakeLlmProvider(listOf(reply(draftWithStyleIssue), reply(candidateDroppingFact)))
+
+            val result = converted(useCase(provider).convert(source))
+
+            assertThat(result.usage.llmCalls).isEqualTo(2)
+            assertThat(result.repaired)
+                .withFailMessage("문체만 봤으면 채택됐을 보정이 사실 누락 때문에 기각되지 않았다")
+                .isFalse()
+            assertThat(result.easyText.value).isEqualTo(draftWithStyleIssue)
+        }
+    }
+
+    @Nested
     @DisplayName("마스킹 선행 불변식")
     inner class MaskingComesFirst {
         @Test

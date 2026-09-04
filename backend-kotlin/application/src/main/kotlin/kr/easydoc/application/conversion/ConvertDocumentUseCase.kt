@@ -1,9 +1,11 @@
 package kr.easydoc.application.conversion
 
 import kr.easydoc.core.easyread.DocumentIdGenerator
+import kr.easydoc.core.easyread.FactIssue
 import kr.easydoc.core.easyread.SecureDocumentIds
 import kr.easydoc.core.easyread.SentenceIssue
 import kr.easydoc.core.easyread.checkStyle
+import kr.easydoc.core.easyread.findMissingFacts
 import kr.easydoc.core.easyread.postprocess
 import kr.easydoc.core.exceptions.LlmEmptyResultException
 import kr.easydoc.core.exceptions.LlmProviderException
@@ -100,15 +102,24 @@ private class Pass(
         draft: String,
         masking: MaskingResult,
     ): ConversionResult {
+        // 보정 트리거는 **마스킹된 본문**(=실제로 LLM 에 나간 텍스트) 대 초안을 잰다 —
+        // 원문을 다시 마스킹하지 않는다(마스킹은 이 패스 시작에서 이미 한 번 끝났다).
+        val maskedSource = masking.maskedText.value
         val issues = checkStyle(draft).issues
+        val factIssues = findMissingFacts(maskedSource, draft)
         val placeholders = masking.items.map { it.placeholder }
 
-        // ② 보정 패스 — 기계 검출된 위반이 있을 때만, 정확히 1회.
+        // ② 보정 패스 — 기계 검출된 위반(문체 또는 사실 누락)이 있을 때만, 정확히 1회.
         //
         // **이 자리에 루프가 없다는 것이 상한의 실체다.** 보정 결과에 위반이 남아 있어도,
         // 보정을 기각했어도 다시 부르지 않는다. `while (issues.isNotEmpty())` 로 바꾸는 순간
         // 상한은 사라지고 지연·비용의 하한도 없어진다(인벤토리 §3.1 (가) 2).
-        val adopted = if (issues.isEmpty()) Adoption.keep(draft) else repairOnce(draft, issues, placeholders)
+        val adopted =
+            if (issues.isEmpty() && factIssues.isEmpty()) {
+                Adoption.keep(draft)
+            } else {
+                repairOnce(draft, issues, factIssues, placeholders, maskedSource)
+            }
 
         return ConversionResult.Converted(
             easyText = ModelDraft(adopted.text),
@@ -127,14 +138,22 @@ private class Pass(
     private fun repairOnce(
         draft: String,
         issues: List<SentenceIssue>,
+        factIssues: List<FactIssue>,
         placeholders: List<String>,
+        maskedSource: String,
     ): Adoption {
         // ModelDraft 로 감싸는 것이 허용되는 자리다 — 값의 출처가 LLM 출력의 후처리 결과다
         // (`Masking.kt` 「provenance 래퍼 사용 규약」).
-        val prompt = LlmPrompt.forRepair(ModelDraft(draft), issues, documentIds)
+        val prompt = LlmPrompt.forRepair(ModelDraft(draft), issues, factIssues, documentIds)
         val candidate = (complete(prompt) as? Outcome.Body)?.text ?: return Adoption.keep(draft)
 
-        val decision = decideRepairAdoption(original = draft, candidate = candidate, placeholders = placeholders)
+        val decision =
+            decideRepairAdoption(
+                original = draft,
+                candidate = candidate,
+                placeholders = placeholders,
+                maskedSource = maskedSource,
+            )
         return if (decision.accepted) Adoption(candidate, repaired = true) else Adoption.keep(draft)
     }
 

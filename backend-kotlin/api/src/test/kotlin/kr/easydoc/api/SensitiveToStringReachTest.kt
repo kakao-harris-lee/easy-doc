@@ -207,8 +207,14 @@ class SensitiveToStringReachTest {
          * (`value class`, `Long` 셀 수 하나)과 infrastructure `FeedbackProperties`
          * (편집 거리 셀 예산 설정, `Long` 하나). 둘 다 운영 노브 숫자만 감싸 민감 정보가
          * 없다 — [KNOWN_SENSITIVE_TYPES] 에 넣지 않는다.
+         *
+         * 사실 보존 기계 검사(backlog §1.3, 2026-09-04)가 **셋**을 더해 85 다 — core
+         * `FactIssue`(원문에는 있었는데 변환문에서 사라진 사실 하나. `value` 필드가 사용자
+         * 본문 조각이라 [SentenceIssue] 와 같은 이유로 `toString()` 이 이미 값을 가린다)와
+         * 같은 파일의 내부 전용 `ExtractedFact`·`RawMatch`(둘 다 `private` — 추출 파이프라인
+         * 중간값일 뿐 이 파일 밖으로 나가지 않는다).
          */
-        const val EXPECTED_SOURCE_DECLARATIONS = 82
+        const val EXPECTED_SOURCE_DECLARATIONS = 85
 
         /** 민감 판정이 반드시 닿아야 하는 타입 — 바닥이다. */
         val KNOWN_SENSITIVE_TYPES =

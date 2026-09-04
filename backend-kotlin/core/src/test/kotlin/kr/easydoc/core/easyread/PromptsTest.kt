@@ -163,6 +163,33 @@ class PromptsTest {
             assertThat(user).contains("문제: 어려운 표현 잔존(없는말)")
             assertThat(user).doesNotContain("'없는말' (뜻:")
         }
+
+        @Test
+        @DisplayName("빠진 사실이 있으면 값을 그대로 나열한 절이 붙는다")
+        fun `빠진 사실 절이 붙는다`() {
+            val user =
+                buildRepairPrompt(
+                    ModelDraft("본문입니다."),
+                    emptyList(),
+                    listOf(FactIssue(FactKind.PHONE, "02-1234-5678"), FactIssue(FactKind.DATE, "9월 4일")),
+                ).user
+
+            assertThat(user).contains("[빠진 사실]")
+            assertThat(user).contains("- 02-1234-5678")
+            assertThat(user).contains("- 9월 4일")
+        }
+
+        @Test
+        @DisplayName("빠진 사실이 없으면 그 절이 아예 없다 — 기존 출력과 같다")
+        fun `빠진 사실이 없으면 절이 없다`() {
+            val draft = ModelDraft("본문입니다.")
+            val fixedIds = DocumentIdGenerator { "0123456789ab" }
+            val withEmptyFacts = buildRepairPrompt(draft, emptyList(), emptyList(), fixedIds).user
+            val withoutFactsArg = buildRepairPrompt(draft, emptyList(), documentIds = fixedIds).user
+
+            assertThat(withEmptyFacts).doesNotContain("[빠진 사실]")
+            assertThat(withEmptyFacts).isEqualTo(withoutFactsArg)
+        }
     }
 
     @Nested
