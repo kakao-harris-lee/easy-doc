@@ -6,6 +6,8 @@
 
 ## 1. 미구현 기능 (2026-08-24 현재 코드 기준)
 
+**(2026-09-04)** 단계 2(P0)는 파일럿(게이트 ①)의 통과를 기다리지 않고 병행 착수한다 — `docs/master-plan.md` §9. P0 항목별 상태 지도는 §4.1.
+
 | 기능 | 상태 | 비고 |
 |---|---|---|
 | `GET /conversions/{conversion_id}/export` (docx·txt·hwpx) | 구현 | `pdf`·구버전 `hwp`는 계약 enum 밖(422). POST export 없음 |
