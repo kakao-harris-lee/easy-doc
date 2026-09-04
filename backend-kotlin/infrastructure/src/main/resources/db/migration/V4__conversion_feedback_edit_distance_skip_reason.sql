@@ -39,30 +39,73 @@ WHERE edit_distance IS NULL;
 -- 섞인 재제출의 ON CONFLICT UPDATE 도 CHECK 위반으로 500 이 된다. Flyway 는 마이그레이션을
 -- 되돌리지 않으므로, 옛 버전으로 애플리케이션만 롤백해도 이 표는 그대로 막힌다.
 --
--- 아래 트리거가 그 구멍을 메운다 — 사유를 명시하지 않는 쓰기에서 지표 조합으로부터
--- 사유를 **되짚어 채우는** 호환 shim 이다. 애플리케이션은 여전히 사유를 명시적으로 쓰고,
--- 트리거는 그 값이 없을 때만(옛 쓰기 경로) 개입한다. 아래 CHECK 셋이 여전히 마지막
--- 방어선이다 — 트리거는 짝을 맞출 뿐 검증하지 않는다.
+-- 아래 두 트리거가 그 구멍을 메운다. 하나는 사유를 명시하지 않는 쓰기에서 지표 조합으로부터
+-- 사유를 **되짚어 채우는**(gap-filling) 호환 shim, 다른 하나는 사유를 아는 쓰기가 거리와
+-- 사유를 **동시에 명시적으로** 보내는 모순을 UPDATE 에서 앞서 거절한다(같은 모순의 INSERT
+-- 는 별도 트리거 없이 아래 CHECK 셋이 바로 막는다). 애플리케이션은 여전히 사유를 명시적으로
+-- 쓰고, 두 트리거 모두 그 값이 없거나(gap) 물려받은(inherited) 값일 때만 개입한다. 아래
+-- CHECK 셋이 여전히 마지막 방어선이다 — 트리거는 짝을 맞추거나 모순을 앞서 거절할 뿐, CHECK
+-- 를 대신하지 않는다.
+--
+-- 2026-09-04, Codex 의 2차 재심사(PR #13, medium)가 잡은 결함의 수정이다. 옛 단일 트리거는
+-- `NEW.edit_distance IS NOT NULL` 이면 사유를 **항상** `NULL` 로 지웠다 — 새 애플리케이션이나
+-- 직접 SQL 이 거리와 사유를 동시에 명시적으로 보내는 모순도 조용히 고쳐써, 이 표의 마지막
+-- 방어선(짝 CHECK)을 무력화하고 애플리케이션 회귀를 오류로 드러내지 못하게 했다. 아래 거절
+-- 트리거가 그 경로를 막는다.
+--
+-- **트리거 실행 순서에 의존한다.** 둘 다 같은 표의 같은 이벤트(BEFORE UPDATE)에 걸릴 수
+-- 있으므로 PostgreSQL 은 트리거 이름 알파벳 순으로 실행한다 — 거절 트리거 이름을
+-- `..._a_...` 로 시작해 gap-filling 트리거(`trg_conversion_feedback_derive_skip_reason`)
+-- 보다 먼저 돌게 한다. 그래야 gap-filling 트리거의 UPDATE 갈래(물려받은 사유를 지우는 것)가
+-- 실행되는 시점에는 이번 `SET` 에서 명시적으로 보낸 모순이 이미 걸러진 뒤다 — 그 갈래에
+-- 남는 것은 언제나 물려받은 값뿐이다.
 --
 -- 이 저장소에는 트리거를 쓰는 관행이 없다(`updated_at` 조차 upsert 문이 직접 민다,
--- V2 주석 참고) — 이 트리거는 예외이고, 이 PR 보다 오래된 쓰기 경로가 더는 존재할 수
+-- V2 주석 참고) — 이 트리거들은 예외이고, 이 PR 보다 오래된 쓰기 경로가 더는 존재할 수
 -- 없게 되면(옛 애플리케이션 인스턴스가 전부 걷히면) 나중 마이그레이션에서 지워도 된다.
+
+-- **거절**: `edit_distance_skip_reason` 이 이번 `UPDATE` 의 `SET` 목록에 실제로 오를 때만
+-- 걸린다(`UPDATE OF edit_distance_skip_reason`) — 옛 UPSERT 처럼 컬럼을 아예 언급하지 않는
+-- `UPDATE` 는 이 이벤트 자체가 걸리지 않는다.
+CREATE FUNCTION conversion_feedback_reject_skip_reason_contradiction() RETURNS trigger
+    LANGUAGE plpgsql AS $$
+BEGIN
+    IF NEW.edit_distance IS NOT NULL AND NEW.edit_distance_skip_reason IS NOT NULL THEN
+        RAISE EXCEPTION '편집 거리와 skip_reason 을 동시에 지정할 수 없습니다 (edit_distance=%, edit_distance_skip_reason=%)',
+            NEW.edit_distance, NEW.edit_distance_skip_reason
+            USING ERRCODE = 'check_violation';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER trg_conversion_feedback_a_reject_skip_reason_contradiction
+    BEFORE UPDATE OF edit_distance_skip_reason ON conversion_feedback
+    FOR EACH ROW
+    EXECUTE FUNCTION conversion_feedback_reject_skip_reason_contradiction();
+
+-- **gap-filling**: 사유가 없는 쓰기(옛 UPSERT, 또는 이 컬럼을 SET 하지 않는 쓰기)에서만
+-- 개입한다. `INSERT` 에서 `edit_distance` 가 채워져 있으면 아무것도 하지 않는다 — 명시적
+-- 사유가 함께 왔다면 그 모순은 아래 CHECK 가 곧바로 막아야 하고, 여기서 지워 통과시키면
+-- 안 된다. `UPDATE` 에서만, 그리고 오직 사유가 물려받은 값일 때만(위 거절 트리거가 이번
+-- `SET` 의 명시적 모순은 먼저 걸렀으므로) 지운다.
 CREATE FUNCTION conversion_feedback_derive_skip_reason() RETURNS trigger
     LANGUAGE plpgsql AS $$
 BEGIN
-    IF NEW.edit_distance IS NOT NULL THEN
-        -- 거리를 실제로 쟀다 — 옛 UPSERT 의 재제출(ON CONFLICT UPDATE)이 예전에 남긴
-        -- 사유를 지운다. 그러지 않으면 「사유가 있는데 거리도 있다」는 짝 어긋난 행이 된다.
-        NEW.edit_distance_skip_reason := NULL;
-    ELSIF NEW.edit_distance_skip_reason IS NULL THEN
-        -- 거리가 없는데 사유도 안 왔다 — 옛 쓰기 경로다. `EditMetrics.of` 의 두 갈래와 같은
-        -- 판별: 검수본 글자 수가 없으면 검수본 자체가 없었던 것(no_review), 있으면 거리
-        -- 계산만 예산 때문에 포기한 것(budget_exceeded).
+    IF NEW.edit_distance IS NULL AND NEW.edit_distance_skip_reason IS NULL THEN
+        -- 거리도 사유도 없다 — 사유 컬럼을 모르는 옛 쓰기 경로다(INSERT·UPDATE 공통).
+        -- `EditMetrics.of` 의 두 갈래와 같은 판별: 검수본 글자 수가 없으면 검수본 자체가
+        -- 없었던 것(no_review), 있으면 거리 계산만 예산 때문에 포기한 것(budget_exceeded).
         IF NEW.edited_char_count IS NULL THEN
             NEW.edit_distance_skip_reason := 'no_review';
         ELSE
             NEW.edit_distance_skip_reason := 'budget_exceeded';
         END IF;
+    ELSIF TG_OP = 'UPDATE' AND NEW.edit_distance IS NOT NULL AND NEW.edit_distance_skip_reason IS NOT NULL THEN
+        -- UPDATE 에서만: 거리가 실제로 채워졌는데 사유가 남아 있다. 위 거절 트리거가 먼저
+        -- 돌아 이번 SET 의 명시적 모순은 이미 걸렀으므로, 여기 남는 값은 옛 행에서 그대로
+        -- 물려받은(inherited) 사유뿐이다 — 짝이 어긋나므로 지운다.
+        NEW.edit_distance_skip_reason := NULL;
     END IF;
     RETURN NEW;
 END;

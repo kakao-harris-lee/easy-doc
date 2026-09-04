@@ -8,6 +8,7 @@ import kr.easydoc.application.document.StoredFeedback
 import kr.easydoc.core.crypto.EncryptedField
 import kr.easydoc.core.crypto.EncryptionScheme
 import kr.easydoc.core.crypto.PlainBody
+import kr.easydoc.core.exceptions.StorageException
 import kr.easydoc.core.pilot.EditDistanceSkipReason
 import kr.easydoc.core.pilot.MinutesSpent
 import kr.easydoc.core.pilot.PublishIntent
@@ -268,6 +269,77 @@ class ConversionFeedbackStorageTest {
     }
 
     @Test
+    @DisplayName(
+        "**INSERT, 거리와 사유 동시 지정** — 짝 CHECK 가 곧바로 거절한다. Codex 2차 재심사(PR #13, " +
+            "medium)가 잡은 결함: 옛 단일 트리거는 `edit_distance` 가 있으면 사유를 항상 지워 이 모순을 " +
+            "조용히 고쳐썼다",
+    )
+    fun `INSERT 에서 거리와 사유를 함께 주면 거절한다`() {
+        assertThatThrownBy {
+            insertMetrics(
+                easy = EASY_CHAR_COUNT_FIXTURE,
+                edited = EDITED_CHAR_COUNT_FIXTURE,
+                distance = EDIT_DISTANCE_FIXTURE,
+                reason = "no_review",
+            )
+        }.describedAs("거리를 실제로 쟀다면서 검수본이 없다는 사유도 함께 왔다 — 모순이다")
+            .isInstanceOf(SQLException::class.java)
+    }
+
+    @Test
+    @DisplayName(
+        "**UPDATE, 거리와 사유 동시 지정** — 사유 컬럼을 아는 현재 앱 UPSERT 가 검수본 없음 행 위에 " +
+            "거리와 명시적 사유를 함께 보내면 거절 트리거가 막는다. 옛 단일 트리거는 이 모순을 " +
+            "`edit_distance_skip_reason := NULL` 로 조용히 고쳐써 CHECK 를 우회시켰다(Codex 2차 재심사)",
+    )
+    fun `현재 앱 UPSERT 재제출이 거리와 사유를 함께 보내면 거절 트리거가 막는다`() {
+        val conversionId = UUID.randomUUID()
+        upsertMetricsFeedback(
+            conversionId,
+            editedCharCount = null,
+            editDistance = null,
+            editDistanceSkipReason = EditDistanceSkipReason.NO_REVIEW,
+        )
+
+        assertThatThrownBy {
+            upsertMetricsFeedback(
+                conversionId,
+                editedCharCount = EDITED_CHAR_COUNT_FIXTURE,
+                editDistance = EDIT_DISTANCE_FIXTURE,
+                editDistanceSkipReason = EditDistanceSkipReason.NO_REVIEW,
+            )
+        }.describedAs("애플리케이션 버그로 거리와 사유가 함께 온 것 — 조용히 고쳐쓰지 않고 500 으로 드러나야 한다")
+            .isInstanceOf(StorageException::class.java)
+    }
+
+    @Test
+    @DisplayName(
+        "**UPDATE, 측정 성공** — 현재 앱 UPSERT 가 검수본 없음 행 위에 거리를 재고 사유를 비워 보내면 " +
+            "거절 트리거를 통과하고 사유가 지워진다 — 정상 재제출까지 막으면 안 된다",
+    )
+    fun `현재 앱 UPSERT 재제출이 측정에 성공하면 거절 트리거를 통과하고 사유가 지워진다`() {
+        val conversionId = UUID.randomUUID()
+        upsertMetricsFeedback(
+            conversionId,
+            editedCharCount = null,
+            editDistance = null,
+            editDistanceSkipReason = EditDistanceSkipReason.NO_REVIEW,
+        )
+
+        upsertMetricsFeedback(
+            conversionId,
+            editedCharCount = EDITED_CHAR_COUNT_FIXTURE,
+            editDistance = EDIT_DISTANCE_FIXTURE,
+            editDistanceSkipReason = null,
+        )
+
+        val row = metricRowOf(conversionId)
+        assertThat(row.editedCharCount).isEqualTo(EDITED_CHAR_COUNT_FIXTURE)
+        assertThat(row.editDistance).isEqualTo(EDIT_DISTANCE_FIXTURE)
+        assertThat(row.editDistanceSkipReason).isNull()
+    }
+
+    @Test
     @DisplayName("v1 로 봉한 의견이 회전 뒤 **같은 평문**으로 열리고 봉투 두 값이 새 세대다")
     fun `봉인된 의견을 회전한다`() {
         val conversionId = UUID.randomUUID()
@@ -378,6 +450,33 @@ class ConversionFeedbackStorageTest {
         )
         return conversionId
     }
+
+    /**
+     * **현재 앱 UPSERT** — [JdbcConversionFeedbackRepository.upsert] 그대로다(`edit_distance_skip_reason`
+     * 을 항상 `SET` 에 올린다). [oldUpsert] 와 짝이다: 이쪽은 사유 컬럼을 **아는** 쓰기가
+     * 거리와 사유를 동시에 명시적으로 보내는 모순을 거절 트리거가 막는지 재는 자리다.
+     */
+    private fun upsertMetricsFeedback(
+        conversionId: UUID,
+        editedCharCount: Int?,
+        editDistance: Int?,
+        editDistanceSkipReason: EditDistanceSkipReason?,
+    ): Instant =
+        feedback.upsert(
+            ownerId = OWNER,
+            feedback =
+                StoredFeedback(
+                    conversionId = conversionId,
+                    publishIntent = PublishIntent.AS_IS,
+                    qualityScore = QualityScore(QUALITY_SCORE),
+                    minutesSpent = MinutesSpent(MINUTES_SPENT),
+                    comment = null,
+                    easyCharCount = EASY_CHAR_COUNT_FIXTURE,
+                    editedCharCount = editedCharCount,
+                    editDistance = editDistance,
+                    editDistanceSkipReason = editDistanceSkipReason,
+                ),
+        )
 
     /**
      * **4e0c1b0 시점의 옛 UPSERT** — `edit_distance_skip_reason` 컬럼을 전혀 언급하지 않는다.
