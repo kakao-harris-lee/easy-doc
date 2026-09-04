@@ -56,22 +56,118 @@ fun splitSentences(text: String): List<String> =
         .map { candidate -> candidate.trim { it.isTextWhitespace() } }
         .filter { it.isNotEmpty() && !LIST_MARKER.matches(it) }
 
-/** [word] 가 낱말 시작 위치에 한 번이라도 나타나는가. */
-private fun appearsAtWordStart(
+/**
+ * 조사·어미가 낱말 뒤에 곧장 붙는 것도 낱말 경계로 본다. 국립국어원 표준 조사와
+ * 하다/되다/시키다 계열 서술어의 흔한 활용형이다 — **규칙 자체의 불변식**이다(운영 중
+ * 바뀌는 구성값이 아니라 [findDifficultWords] 판정 로직과 함께만 바뀐다).
+ */
+private val WORD_BOUNDARY_SUFFIXES: List<String> =
+    listOf(
+        // 조사
+        "은",
+        "는",
+        "이",
+        "가",
+        "을",
+        "를",
+        "의",
+        "에서",
+        "에게",
+        "에",
+        "로",
+        "으로",
+        "와",
+        "과",
+        "도",
+        "만",
+        "부터",
+        "까지",
+        "처럼",
+        "보다",
+        "이나",
+        "나",
+        "든지",
+        "마다",
+        "조차",
+        "마저",
+        "께",
+        "한테",
+        "이라",
+        "라고",
+        // 하다/되다/시키다 계열 서술 어미 — 대부분 어간(하/되/시키) 접두 매칭으로 잡히지만,
+        // -ㄴ/-ㄹ/-ㅁ 활용은 어간 음절 자체가 다른 음절로 축약돼("하"+ㄴ→"한") 접두
+        // 매칭에 안 걸린다. 그 축약 음절만 따로 올린다.
+        "하고",
+        "하면",
+        "하여",
+        "했",
+        "합",
+        "할",
+        "함",
+        "한",
+        "해",
+        "하",
+        "되고",
+        "되면",
+        "됐",
+        "됩",
+        "될",
+        "됨",
+        "된",
+        "돼",
+        "되",
+        "시키고",
+        "시켜",
+        "시킨",
+        "시킬",
+        "시킴",
+        "시키",
+    )
+
+/** [endIndex] 위치가 낱말 경계인가 — 텍스트 끝이거나 한글이 아니거나 조사·어미가 곧장 이어짐. */
+private fun hasWordBoundaryAfter(
+    text: String,
+    endIndex: Int,
+): Boolean =
+    endIndex >= text.length ||
+        text[endIndex] !in '가'..'힣' ||
+        WORD_BOUNDARY_SUFFIXES.any { text.startsWith(it, endIndex) }
+
+/**
+ * [endIndex] 바로 뒤에 괄호 뜻풀이(예: "명의(이름)")가 이어지는가 — 이미 설명된 용어는 잡지 않는다.
+ * 괄호 안에 한글 음절이 하나 이상 있고 숫자가 없어야 뜻풀이로 본다 — "시행(2026년 9월)"처럼
+ * 날짜·수치를 덧붙인 괄호는 뜻풀이가 아니라서 그대로 잡아야 한다.
+ */
+private fun isGlossedByParenthesis(
+    text: String,
+    endIndex: Int,
+): Boolean {
+    if (endIndex >= text.length || text[endIndex] != '(') return false
+    val closeIndex = text.indexOf(')', endIndex + 1)
+    val content = if (closeIndex > endIndex + 1) text.substring(endIndex + 1, closeIndex) else ""
+    return content.any { it in '가'..'힣' } && content.none { it in '0'..'9' }
+}
+
+/** [word] 가 [text] 안에 온전한 낱말로 한 번이라도 나타나는가 — 복합어 안에 박힌 자리는 세지 않는다. */
+private fun appearsAsWholeWord(
     word: String,
     text: String,
 ): Boolean {
     var index = text.indexOf(word)
     while (index >= 0) {
-        if (index == 0 || text[index - 1] !in '가'..'힣') return true
+        val startsWord = index == 0 || text[index - 1] !in '가'..'힣'
+        val endIndex = index + word.length
+        if (startsWord && !isGlossedByParenthesis(text, endIndex) && hasWordBoundaryAfter(text, endIndex)) {
+            return true
+        }
         index = text.indexOf(word, index + 1)
     }
     return false
 }
 
-/** 치환 목록에 있는 어려운 표현 중 본문에 낱말로 남아 있는 것을 찾는다. */
+/** 치환 목록에 있는 어려운 표현 중 본문에 온전한 낱말로 남아 있는 것을 찾는다. */
 fun findDifficultWords(text: String): List<String> =
-    DIFFICULT_WORD_REPLACEMENTS.keys.filter { it !in PROMPT_ONLY_WORDS && appearsAtWordStart(it, text) }
+    DIFFICULT_WORD_REPLACEMENTS.keys.filter { it !in PROMPT_ONLY_WORDS && appearsAsWholeWord(it, text) }
 
 /** 어떤 규칙이 걸렸는가. **사유 문구가 아니라 값으로 든다.** */
 enum class StyleRuleKind {

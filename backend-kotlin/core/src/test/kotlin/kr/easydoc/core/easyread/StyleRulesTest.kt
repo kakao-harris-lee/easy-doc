@@ -74,6 +74,65 @@ class StyleRulesTest {
         fun `PROMPT_ONLY_WORDS 는 채점하지 않는다`() {
             assertThat(findDifficultWords("신청하기 위해 게시판을 보세요.")).isEmpty()
         }
+
+        @Test
+        @DisplayName("법령 이름·시스템 라벨·공식 명칭 안의 복합어는 위반이 아니다(backlog §1.3 ⑷)")
+        fun `복합어 안에 박힌 사전 낱말은 잡지 않는다`() {
+            assertThat(
+                findDifficultWords(
+                    "청소년복지 지원법 시행령 제4조제2항에 따라 실제로 합니다. " +
+                        "시행령이란 법을 자세히 정한 대통령 규정을 말합니다.",
+                ),
+            ).isEmpty()
+            assertThat(findDifficultWords("사례관리에서 [연계대상자의뢰등록]을 누릅니다.")).isEmpty()
+            assertThat(findDifficultWords("신청 안내는 게시판에서 확인하세요.")).isEmpty()
+            assertThat(
+                findDifficultWords("질병으로 받는 연금인 상병보상연금을 받는 분도 마찬가지입니다."),
+            ).isEmpty()
+            assertThat(findDifficultWords("공동명의자 등록도 가능합니다.")).isEmpty()
+        }
+
+        @Test
+        @DisplayName("이미 괄호로 뜻을 풀어 둔 용어는 위반이 아니다(backlog §1.3 ⑷)")
+        fun `괄호 뜻풀이가 바로 붙은 낱말은 잡지 않는다`() {
+            assertThat(findDifficultWords("명의(이름)가 개인인 리스 차량입니다.")).isEmpty()
+        }
+
+        @Test
+        @DisplayName("조사·어미가 곧장 붙으면 복합어가 아니라 여전히 잡는다")
+        fun `조사와 서술 어미가 붙으면 낱말 경계로 본다`() {
+            assertThat(findDifficultWords("이 규정은 다음 달부터 시행을 시작합니다.")).contains("시행")
+            assertThat(findDifficultWords("법령은 오늘부터 시행합니다.")).contains("시행")
+            assertThat(findDifficultWords("새 규정이 다음 달에 시행됩니다.")).contains("시행")
+            assertThat(findDifficultWords("이 계좌는 대표자 명의로 되어 있습니다.")).contains("명의")
+        }
+
+        @Test
+        @DisplayName("-ㄴ/-ㄹ/-ㅁ 활용형(선어말 축약 음절)도 낱말 경계로 본다")
+        fun `선어말 축약 어미가 붙어도 잡는다`() {
+            assertThat(findDifficultWords("법령을 오늘 시행한다.")).contains("시행")
+            assertThat(findDifficultWords("어제 시행된 규정을 확인하세요.")).contains("시행")
+            assertThat(findDifficultWords("이미 시행한 규정입니다.")).contains("시행")
+            assertThat(findDifficultWords("내년에 시행할 때 다시 안내합니다.")).contains("시행")
+            assertThat(findDifficultWords("시행함으로써 효력이 생깁니다.")).contains("시행")
+            assertThat(findDifficultWords("이 규정은 시행 중입니다.")).contains("시행")
+            assertThat(findDifficultWords("업무를 위탁시킨 담당자에게 문의하세요.")).contains("위탁")
+        }
+
+        @Test
+        @DisplayName("낱말 뒤에 문장부호가 오거나 문장 끝이어도 잡는다")
+        fun `문장부호나 문장 끝 뒤에서도 낱말 경계로 본다`() {
+            assertThat(findDifficultWords("서류를 오늘 안에 제출.")).contains("제출")
+            assertThat(findDifficultWords("완납")).contains("완납")
+        }
+
+        @Test
+        @DisplayName("괄호 안에 숫자가 있으면 뜻풀이로 보지 않는다")
+        fun `숫자가 든 괄호는 뜻풀이로 보지 않는다`() {
+            assertThat(findDifficultWords("이 규정은 시행(2026년 9월)됩니다.")).contains("시행")
+            assertThat(findDifficultWords("이 규정은 시행(2026.9.)됩니다.")).contains("시행")
+            assertThat(findDifficultWords("명의(이름)가 개인인 리스 차량입니다.")).isEmpty()
+        }
     }
 
     @Nested
