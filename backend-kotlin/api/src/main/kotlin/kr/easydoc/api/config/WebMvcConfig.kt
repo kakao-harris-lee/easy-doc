@@ -3,6 +3,7 @@ package kr.easydoc.api.config
 import kr.easydoc.api.auth.AuthenticatedEndpoints
 import kr.easydoc.api.auth.AuthenticatedUserArgumentResolver
 import kr.easydoc.api.auth.AuthenticationInterceptor
+import kr.easydoc.api.auth.SocialLoginProviderIdConverter
 import kr.easydoc.api.document.ExportFormatConverter
 import org.springframework.context.annotation.Configuration
 import org.springframework.format.FormatterRegistry
@@ -27,6 +28,7 @@ class WebMvcConfig(
 
     override fun addFormatters(registry: FormatterRegistry) {
         registry.addConverter(ExportFormatConverter())
+        registry.addConverter(SocialLoginProviderIdConverter())
     }
 
     /**

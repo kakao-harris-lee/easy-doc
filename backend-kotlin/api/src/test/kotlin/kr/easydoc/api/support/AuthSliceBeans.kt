@@ -3,8 +3,17 @@ package kr.easydoc.api.support
 import kr.easydoc.application.auth.AccessTokens
 import kr.easydoc.application.auth.AuthService
 import kr.easydoc.application.auth.IssuedAccessToken
+import kr.easydoc.application.auth.OAuthChallenge
+import kr.easydoc.application.auth.OAuthStateStore
 import kr.easydoc.application.auth.PasswordHasher
+import kr.easydoc.application.auth.SocialIdentity
+import kr.easydoc.application.auth.SocialLoginProvider
+import kr.easydoc.application.auth.SocialLoginProviderId
+import kr.easydoc.application.auth.SocialLoginRepositories
+import kr.easydoc.application.auth.SocialLoginService
 import kr.easydoc.application.auth.TransactionRunner
+import kr.easydoc.application.auth.UserIdentity
+import kr.easydoc.application.auth.UserIdentityRepository
 import kr.easydoc.application.auth.UserRepository
 import kr.easydoc.application.auth.WorkspaceDeletionState
 import kr.easydoc.application.auth.WorkspaceRepository
@@ -30,6 +39,7 @@ import kr.easydoc.core.easyread.exportFileOf
 import kr.easydoc.core.easyread.renderTxt
 import kr.easydoc.core.exceptions.ConflictException
 import kr.easydoc.core.exceptions.EmailAlreadyRegisteredException
+import kr.easydoc.core.exceptions.ExternalServiceUnavailableException
 import kr.easydoc.core.exceptions.InvalidCredentialsException
 import kr.easydoc.core.text.EditDistanceBudget
 import kr.easydoc.core.user.PasswordHash
@@ -74,6 +84,44 @@ class AuthSliceBeans {
         tokens: StubAccessTokens,
         transaction: TransactionRunner,
     ): AuthService = AuthService(users, workspaces, hasher, tokens, transaction)
+
+    @Bean
+    fun inMemoryUserIdentities(): InMemoryUserIdentityRepository = InMemoryUserIdentityRepository()
+
+    @Bean
+    fun inMemoryOAuthStates(): InMemoryOAuthStateStore = InMemoryOAuthStateStore()
+
+    @Bean
+    fun fakeGoogleProvider(): FakeGoogleSocialLoginProvider = FakeGoogleSocialLoginProvider()
+
+    /** `SocialLoginService` 생성자 매개변수 상한을 지키려고 저장소 셋을 묶는다(그 클래스 KDoc). */
+    @Bean
+    fun socialLoginRepositories(
+        users: InMemoryUserRepository,
+        identities: InMemoryUserIdentityRepository,
+        workspaces: InMemoryWorkspaceRepository,
+    ): SocialLoginRepositories = SocialLoginRepositories(users, identities, workspaces)
+
+    /**
+     * `SocialLoginService` 는 실물이다 — 계약이 정한 판정 순서(state → 신원 → 이메일 규칙)를
+     * 슬라이스가 실제로 밟아야 한다. google 하나만 등록한다(제품 조립과 같은 모양).
+     */
+    @Bean
+    fun socialLoginService(
+        provider: FakeGoogleSocialLoginProvider,
+        states: InMemoryOAuthStateStore,
+        repositories: SocialLoginRepositories,
+        tokens: StubAccessTokens,
+        transaction: TransactionRunner,
+    ): SocialLoginService =
+        SocialLoginService(
+            providers = mapOf(SocialLoginProviderId.GOOGLE to provider),
+            states = states,
+            repositories = repositories,
+            accessTokens = tokens,
+            transaction = transaction,
+            stateTtl = java.time.Duration.ofMinutes(10),
+        )
 
     /**
      * `@WebMvcTest` 는 컨트롤러를 전부 슬라이스에 넣는다. `WorkspaceController` 가
@@ -277,6 +325,13 @@ class InMemoryUserRepository : UserRepository {
     override fun create(
         email: String,
         passwordHash: PasswordHash,
+    ): User = insert(email, passwordHash)
+
+    override fun createWithoutPassword(email: String): User = insert(email, passwordHash = null)
+
+    private fun insert(
+        email: String,
+        passwordHash: PasswordHash?,
     ): User {
         val stored = StoredUser(User(UUID.randomUUID(), email, Instant.EPOCH), passwordHash)
         if (byEmail.putIfAbsent(email, stored) != null) {
@@ -425,5 +480,101 @@ class StubAccessTokens : AccessTokens {
          * 단언하면 아무것도 검증하지 않는 것이다.
          */
         const val STUB_LIFETIME_SECONDS = 1L
+    }
+}
+
+/** `user_identities` 대역. */
+class InMemoryUserIdentityRepository : UserIdentityRepository {
+    private val byProvider = ConcurrentHashMap<Pair<SocialLoginProviderId, String>, UserIdentity>()
+
+    override fun findByProviderIdentity(
+        provider: SocialLoginProviderId,
+        providerUserId: String,
+    ): UserIdentity? = byProvider[provider to providerUserId]
+
+    override fun link(
+        userId: UUID,
+        provider: SocialLoginProviderId,
+        providerUserId: String,
+        email: String?,
+        emailVerified: Boolean,
+    ): UserIdentity {
+        val identity = UserIdentity(UUID.randomUUID(), userId, provider, providerUserId)
+        byProvider[provider to providerUserId] = identity
+        return identity
+    }
+}
+
+/** `oauth_states` 대역 — 실물(`JdbcOAuthStateStore`)과 같은 계약(단발 소비)을 지킨다. */
+class InMemoryOAuthStateStore : OAuthStateStore {
+    private data class Entry(
+        val provider: SocialLoginProviderId,
+        val redirectUri: String,
+        val nonce: String,
+        val expiresAt: Instant,
+    )
+
+    private val entries = ConcurrentHashMap<String, Entry>()
+    private var counter = 0
+
+    override fun issue(
+        provider: SocialLoginProviderId,
+        redirectUri: String,
+        ttl: java.time.Duration,
+    ): OAuthChallenge {
+        val state = "state-${++counter}"
+        val nonce = "nonce-$counter"
+        entries[state] = Entry(provider, redirectUri, nonce, Instant.now().plus(ttl))
+        return OAuthChallenge(state, nonce)
+    }
+
+    override fun consume(
+        provider: SocialLoginProviderId,
+        state: String,
+        redirectUri: String,
+    ): String? =
+        entries
+            .remove(state)
+            ?.takeIf {
+                it.provider == provider && it.redirectUri == redirectUri && Instant.now().isBefore(it.expiresAt)
+            }?.nonce
+}
+
+/**
+ * Google 어댑터 대역. 실제 네트워크를 타지 않는다 — `code` 문자열 자체가 시나리오를
+ * 인코딩한다(`sub|email|verified` 형식, `email` 을 비우면 이메일 없음). 특수값
+ * `reject`·`unreachable` 은 각각 401·502 갈래를 만든다. redirect_uri 허용 목록은
+ * [ALLOWED_REDIRECT_URI] 하나뿐이다 — 슬라이스 테스트가 허용 목록 밖 값을 보낼 때
+ * 쓰는 고정 대조값이기도 하다.
+ */
+class FakeGoogleSocialLoginProvider : SocialLoginProvider {
+    override fun supportsRedirectUri(redirectUri: String): Boolean = redirectUri == ALLOWED_REDIRECT_URI
+
+    override fun authorizationUrl(
+        state: String,
+        nonce: String,
+        redirectUri: String,
+    ): String = "https://accounts.google.test/o/oauth2/v2/auth?state=$state&nonce=$nonce&redirect_uri=$redirectUri"
+
+    override fun exchange(
+        code: String,
+        redirectUri: String,
+        nonce: String,
+    ): SocialIdentity {
+        if (code == "reject") {
+            throw InvalidCredentialsException("이메일 또는 비밀번호가 올바르지 않습니다")
+        }
+        if (code == "unreachable") {
+            throw ExternalServiceUnavailableException("구글에 연결하지 못했습니다")
+        }
+        val parts = code.split("|")
+        val providerUserId = parts.getOrNull(0) ?: error("잘못된 테스트 code: $code")
+        val email = parts.getOrNull(1)?.ifBlank { null }
+        val emailVerified = parts.getOrNull(2)?.toBooleanStrictOrNull() ?: true
+        return SocialIdentity(providerUserId, email, emailVerified)
+    }
+
+    companion object {
+        const val ALLOWED_REDIRECT_URI = "http://localhost:5173/auth/google/callback"
     }
 }

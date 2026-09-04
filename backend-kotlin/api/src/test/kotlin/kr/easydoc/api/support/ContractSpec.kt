@@ -619,6 +619,24 @@ object ContractSpec {
         }
     }
 
+    /**
+     * **P-39 — 되살아난 상태 코드**(2.8.0 신설). `x-retired-responses[].reinstated_by` 가
+     * 있는 항목의 `status`. 폐기 절 자체가 되살릴 조건(`if_it_should_return`)을 예고했고,
+     * 실제로 그 조건을 충족해 되살린 자리는 그 항목에 `reinstated_at`·`reinstated_by` 를
+     * 적는다 — [retiredResponseStatuses] 의 "폐기됐다"와 모순되지 않는다: 폐기 이력은
+     * 그대로 남고, 그 뒤에 조건을 갖춰 다시 세운 사실이 **같은 항목에 덧붙는다**.
+     */
+    fun reinstatedResponseStatuses(): List<String> {
+        val entries =
+            (at("x-retired-responses") as? List<*>) ?: error("x-retired-responses 가 목록이 아니다")
+        return entries.mapIndexedNotNull { index, entry ->
+            val retired =
+                entry as? Map<*, *> ?: error("x-retired-responses[$index] 가 매핑이 아니다: $entry")
+            val status = retired["status"]?.toString() ?: error("x-retired-responses[$index] 에 status 가 없다")
+            if (retired.containsKey("reinstated_by")) status else null
+        }
+    }
+
     /** **P-39 — `paths` 전체가 선언한 응답 상태 코드**를 `(경로, 메서드, 상태)` 로 편다. */
     fun declaredResponseStatuses(): List<Triple<String, String, String>> =
         operations().flatMap { (path, method) ->

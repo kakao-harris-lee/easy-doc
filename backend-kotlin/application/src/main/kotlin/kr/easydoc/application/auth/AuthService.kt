@@ -1,6 +1,7 @@
 package kr.easydoc.application.auth
 
 import kr.easydoc.core.exceptions.InvalidCredentialsException
+import kr.easydoc.core.user.PasswordHash
 import kr.easydoc.core.user.StoredUser
 import kr.easydoc.core.user.User
 import kr.easydoc.core.workspace.DEFAULT_WORKSPACE_NAME
@@ -49,20 +50,26 @@ class AuthService(
         accessTokens.ensureConfigured()
 
         val stored = users.findByEmail(normalizeEmail(email))
-        if (stored == null) {
-            // 계정이 없어도 **같은 검증 비용**을 치른다 — 계약 `x-auth.failure_uniformity` 3행.
-            // 여기서 바로 던지면 응답 시간이 계정 존재 여부를 알려 준다(실측 42배).
+        // 로컬 `val` 로 받는다 — 다른 모듈에 선언된 프로퍼티는 스마트 캐스트 대상이 아니다
+        // (컴파일러가 바이너리 호환성을 이유로 거절한다). 로컬 `val` 은 이 함수 안에서 불변이라
+        // 캐스트가 성립한다.
+        val passwordHash = stored?.passwordHash
+        if (stored == null || passwordHash == null) {
+            // 계정이 없거나(정본 갈래) 있어도 비밀번호가 없는 소셜 전용 계정이면(추가 갈래,
+            // `StoredUser.passwordHash` KDoc) **같은 검증 비용**을 치른다 — 계약
+            // `x-auth.failure_uniformity` 3행. 여기서 바로 던지면 응답 시간이 계정 존재
+            // 여부·가입 방식을 알려 준다(실측 42배 — 계정 부재 갈래에서).
             verifyAgainstDummy(password)
             throw InvalidCredentialsException(INVALID_CREDENTIALS_MESSAGE)
         }
 
-        if (!passwords.verify(password, stored.passwordHash)) {
+        if (!passwords.verify(password, passwordHash)) {
             throw InvalidCredentialsException(INVALID_CREDENTIALS_MESSAGE)
         }
 
         // 재해시는 **성공한 뒤에만** 한다. 실패한 로그인에서 재해시하면 오프라인 공격자에게
         // 계산 자원을 태워 준다(I-8 검증 2).
-        rehashIfOutdated(stored, password)
+        rehashIfOutdated(stored.user.id, passwordHash, password)
 
         return accessTokens.issue(stored.user.id)
     }
@@ -97,15 +104,16 @@ class AuthService(
 
     /** 저장된 해시의 파라미터가 현행 정책과 다르면 올린다 — **best-effort**. */
     private fun rehashIfOutdated(
-        stored: StoredUser,
+        userId: UUID,
+        currentHash: PasswordHash,
         rawPassword: String,
     ) {
         try {
-            if (!passwords.needsRehash(stored.passwordHash)) {
+            if (!passwords.needsRehash(currentHash)) {
                 return
             }
-            users.updatePasswordHash(stored.user.id, passwords.hash(rawPassword))
-            log.info("비밀번호 해시를 현행 파라미터로 올렸다: userId={}", stored.user.id)
+            users.updatePasswordHash(userId, passwords.hash(rawPassword))
+            log.info("비밀번호 해시를 현행 파라미터로 올렸다: userId={}", userId)
         } catch (
             @Suppress("TooGenericExceptionCaught") failure: RuntimeException,
         ) {
@@ -113,7 +121,7 @@ class AuthService(
             // 남기는 것은 사용자 ID 와 예외 **타입 이름**뿐이다.
             log.warn(
                 "비밀번호 재해시에 실패했다(로그인은 계속한다): userId={} 예외={}",
-                stored.user.id,
+                userId,
                 failure::class.java.simpleName,
             )
         }

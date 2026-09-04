@@ -196,20 +196,27 @@ class DocumentContractNodeTest {
     }
 
     @Test
-    @DisplayName("P-39 폐기한 상태 코드가 어느 오퍼레이션의 responses 에도 없다 (전역·목록 비어 있지 않음 포함)")
+    @DisplayName(
+        "P-39 폐기한 상태 코드는 그 항목에 reinstated_by 로 되살린 조건을 갖춘 자리에서만 다시 나온다",
+    )
     fun `폐기한 상태 코드가 되살아나지 않는다`() {
         val retired = ContractSpec.retiredResponseStatuses()
         assertThat(retired).isNotEmpty()
+
+        // 되살린 항목(x-retired-responses[].reinstated_by 가 있는 status)은 예외다 — 그
+        // 항목 자체가 "폐기 → 조건 충족 → 재도입"의 근거를 한 자리에 담고 있다.
+        val stillBanned = retired - ContractSpec.reinstatedResponseStatuses().toSet()
 
         val declared = ContractSpec.declaredResponseStatuses()
         assertThat(declared)
             .withFailMessage("계약에서 응답 선언을 하나도 찾지 못했다 — 이 대조는 아무것도 재지 않는다")
             .isNotEmpty()
 
-        val revived = declared.filter { (_, _, status) -> status in retired }
+        val revived = declared.filter { (_, _, status) -> status in stillBanned }
         assertThat(revived)
             .withFailMessage(
-                "폐기한 상태 코드가 되살아났다: %s — 되살리려면 x-retired-responses.if_it_should_return 이 요구하는 네 가지를 한 단위로 갖춰라",
+                "폐기한 상태 코드가 근거 없이 되살아났다: %s — 되살리려면 x-retired-responses.if_it_should_return " +
+                    "이 요구하는 네 가지를 한 단위로 갖추고 그 항목에 reinstated_by 를 적어라",
                 revived.map { (path, method, status) -> "${method.uppercase()} $path → $status" },
             ).isEmpty()
     }

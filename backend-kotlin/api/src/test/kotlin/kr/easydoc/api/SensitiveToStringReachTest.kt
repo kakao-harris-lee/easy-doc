@@ -231,7 +231,19 @@ class SensitiveToStringReachTest {
          * 그 자체가 토큰 `password` 에 걸린다) 둘 다 손으로 쥔 `toString()` 이 가린다 —
          * `MailProperties.fromAddress` 와 같은 선례.
          */
-        const val EXPECTED_SOURCE_DECLARATIONS = 89
+        
+         *
+         * 소셜 로그인(backlog §1.4 P0-1, 2026-09-04)이 **열**을 더해 99 다(메일 89 위에) —
+         * `OAuthStartRequest`·`OAuthStartResponse`·`OAuthCallbackRequest`(api, 뒤 둘은
+         * `redirect_uri` 만 담아 개인정보가 없다), `OAuthStart`·`OAuthChallenge`·
+         * `UserIdentity`(application, `state`·`nonce`·`provider_user_id` 는 무작위
+         * 토큰이거나 제공자 쪽 불투명 식별자라 이메일·비밀번호와 같은 등급이 아니다),
+         * `SocialIdentity`(application, 유일하게 이메일을 들고 있어 이 파일 위에서
+         * `toString()` 을 이미 가린다), `GoogleOAuthProperties`·`OAuthProperties`
+         * (infrastructure, 설정값)와 `GoogleOAuthSettings`(infrastructure.auth.google,
+         * 어댑터 설정 — `clientSecret` 은 `Secret` 타입이라 그 자체가 이미 가려진다).
+         */
+        const val EXPECTED_SOURCE_DECLARATIONS = 99
 
         /** 민감 판정이 반드시 닿아야 하는 타입 — 바닥이다. */
         val KNOWN_SENSITIVE_TYPES =

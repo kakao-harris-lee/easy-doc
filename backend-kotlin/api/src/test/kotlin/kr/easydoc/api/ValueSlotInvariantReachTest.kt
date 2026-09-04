@@ -183,11 +183,16 @@ class ValueSlotInvariantReachTest {
         println("[값 자리 분모] 매핑됨 ${liveSlotSet.size} · 미구현 ${unmapped.size}: ${unmapped.map { it.label }}")
     }
 
-    /** 인증이 이 가드보다 먼저다. */
+    /**
+     * 인증이 이 가드보다 먼저다. **인증이 걸린 오퍼레이션만** 잰다 — 계약이
+     * `security: []` 로 연 오퍼레이션(예: `oauthStart`)은 인증 자체가 없으니 이 순서
+     * 주장이 성립하지 않는다(재는 것이 없어 공허하게 통과하는 것도 아니다 — 애초에
+     * 대상이 아니다).
+     */
     @Test
     @DisplayName("순서 — 토큰 없는 **공백 쿼리 값 자리**는 422 가 아니라 401 이다 (X-A3)")
     fun `인증이 공백 쿼리 값 자리 거절보다 먼저다`() {
-        val slots = liveSlots().filter { it.slot.location == QUERY_LOCATION }
+        val slots = liveSlots().filter { it.slot.location == QUERY_LOCATION && requiresAuth(it) }
         assertThat(slots).withFailMessage("매핑된 쿼리 값 자리가 없다 — 이 케이스는 아무것도 재지 않는다").isNotEmpty()
 
         slots.forEach { (slot, method) ->
@@ -198,10 +203,11 @@ class ValueSlotInvariantReachTest {
         }
     }
 
+    /** 위 쿼리 케이스와 같은 범위 제한(인증이 걸린 오퍼레이션만) — 그 KDoc 참고. */
     @Test
     @DisplayName("순서 — 토큰 없는 **공백 경로 조각**은 422 가 아니라 401 이다 (X-A3)")
     fun `인증이 공백 경로 값 자리 거절보다 먼저다`() {
-        val slots = liveSlots().filter { it.slot.location == PATH_LOCATION }
+        val slots = liveSlots().filter { it.slot.location == PATH_LOCATION && requiresAuth(it) }
         assertThat(slots).withFailMessage("매핑된 경로 값 자리가 없다 — 이 케이스는 아무것도 재지 않는다").isNotEmpty()
 
         slots.forEach { (slot, method) ->
@@ -232,6 +238,10 @@ class ValueSlotInvariantReachTest {
         val slot: ContractValueSlot,
         val method: String,
     )
+
+    /** `security: []` 로 연 오퍼레이션(예: `oauthStart`)은 인증 자체가 없다. */
+    private fun requiresAuth(liveSlot: LiveSlot): Boolean =
+        ContractSpec.security(liveSlot.slot.path, liveSlot.method).isNotEmpty()
 
     /** 계약 × 실제 매핑. 경로 수준 선언은 그 경로의 매핑된 메서드마다 하나씩 펼친다. */
     private fun liveSlots(): List<LiveSlot> {
@@ -461,6 +471,12 @@ class ValueSlotInvariantReachTest {
                 // 계약 required 셋만 담는다 — `comment` 는 선택이라 최소 본문에 없다.
                 "ConversionFeedbackRequest" to
                     """{"publish_intent":"as_is","quality_score":3,"minutes_spent":1}""",
+                // 이 표본은 값 자리(경로 `provider`) 해석 여부만 잰다 — 허용 목록·실제
+                // google 설정과 무관하다(그 판정은 `SocialLoginServiceTest`·`OAuthContractTest`).
+                "OAuthStartRequest" to """{"redirect_uri":"http://localhost:5173/auth/google/callback"}""",
+                "OAuthCallbackRequest" to
+                    """{"code":"probe-code","state":"probe-state",""" +
+                    """"redirect_uri":"http://localhost:5173/auth/google/callback"}""",
             )
 
         private const val LIST_SCHEMA = "DocumentListResponse"

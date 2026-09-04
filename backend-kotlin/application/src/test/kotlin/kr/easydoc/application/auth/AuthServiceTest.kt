@@ -268,6 +268,12 @@ private class RecordingUserRepository(private val rehashFails: Boolean) : UserRe
         return stored.user
     }
 
+    override fun createWithoutPassword(email: String): User {
+        val stored = StoredUser(User(UUID.randomUUID(), email, Instant.EPOCH), passwordHash = null)
+        saved[email] = stored
+        return stored.user
+    }
+
     override fun updatePasswordHash(
         userId: UUID,
         passwordHash: PasswordHash,

@@ -3,10 +3,18 @@ import { Link, Route, Routes } from 'react-router-dom'
 import { ConversionPage } from '../pages/ConversionPage'
 import { HistoryPage } from '../pages/HistoryPage'
 import { LoginPage } from '../pages/LoginPage'
+import { OAuthCallbackPage } from '../pages/OAuthCallbackPage'
 import { SignupPage } from '../pages/SignupPage'
 import { UploadPage } from '../pages/UploadPage'
 import { RequireAuth } from './RequireAuth'
-import { CONVERSION_PATH, HISTORY_PATH, HOME_PATH, LOGIN_PATH, SIGNUP_PATH } from './paths'
+import {
+  CONVERSION_PATH,
+  HISTORY_PATH,
+  HOME_PATH,
+  LOGIN_PATH,
+  OAUTH_GOOGLE_CALLBACK_PATH,
+  SIGNUP_PATH,
+} from './paths'
 
 /** 라우팅 표. 테스트에서 임의의 라우터로 감쌀 수 있도록 App과 분리한다. */
 export function AppRoutes() {
@@ -14,6 +22,7 @@ export function AppRoutes() {
     <Routes>
       <Route path={LOGIN_PATH} element={<LoginPage />} />
       <Route path={SIGNUP_PATH} element={<SignupPage />} />
+      <Route path={OAUTH_GOOGLE_CALLBACK_PATH} element={<OAuthCallbackPage />} />
       <Route
         path={HOME_PATH}
         element={

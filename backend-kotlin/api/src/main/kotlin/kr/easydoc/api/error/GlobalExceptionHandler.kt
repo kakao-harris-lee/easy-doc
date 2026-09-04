@@ -6,8 +6,10 @@ import kr.easydoc.core.exceptions.ConflictException
 import kr.easydoc.core.exceptions.DocumentExtractionException
 import kr.easydoc.core.exceptions.EasyDocException
 import kr.easydoc.core.exceptions.EmailAlreadyRegisteredException
+import kr.easydoc.core.exceptions.ExternalServiceUnavailableException
 import kr.easydoc.core.exceptions.InvalidCredentialsException
 import kr.easydoc.core.exceptions.InvalidInputException
+import kr.easydoc.core.exceptions.InvalidOAuthStateException
 import kr.easydoc.core.exceptions.NotFoundException
 import kr.easydoc.core.exceptions.StorageException
 import kr.easydoc.core.exceptions.UnsupportedFormatException
@@ -278,6 +280,18 @@ private fun mappingFor(exception: EasyDocException): Pair<HttpStatus, HttpHeader
 
         is NotFoundException -> {
             HttpStatus.NOT_FOUND to null
+        }
+
+        // 요청 자체가 무효다(만료·재사용·바인딩 불일치) — 입력 규칙 위반(422)도 자원 상태
+        // 충돌(409)도 아니다. `POST /auth/oauth/{provider}/callback` 전용.
+        is InvalidOAuthStateException -> {
+            HttpStatus.BAD_REQUEST to null
+        }
+
+        // 동기로 부른 하위 시스템(소셜 로그인 제공자)에 닿지 못했다. `x-retired-responses`가
+        // 예고한 재도입 자리 — 예외 메시지는 항상 고정 문구이고 벤더 오류 텍스트를 담지 않는다.
+        is ExternalServiceUnavailableException -> {
+            HttpStatus.BAD_GATEWAY to null
         }
 
         is ConfigurationException -> {

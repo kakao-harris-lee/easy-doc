@@ -23,6 +23,7 @@ function authValue(overrides: Partial<AuthContextValue> = {}): AuthContextValue 
     user: { id: 'u1', email: EMAIL },
     signIn: () => Promise.resolve(),
     signUp: () => Promise.resolve(),
+    signInWithGoogle: () => Promise.resolve(),
     signOut: () => undefined,
     ...overrides,
   }
