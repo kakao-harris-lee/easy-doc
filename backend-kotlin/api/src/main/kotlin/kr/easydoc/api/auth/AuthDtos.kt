@@ -30,18 +30,30 @@ data class LoginRequest
 data class UserResponse(
     @get:JsonProperty("id") val id: String,
     @get:JsonProperty("email") val email: String,
+    @get:JsonProperty("email_verified") val emailVerified: Boolean,
 ) {
     /**
      * **이메일을 찍지 않는다.** 형제 요청 DTO 둘(`SignupRequest`·`LoginRequest`)이 같은
      * 이유로 이미 가리고 있는데 응답 DTO 만 빠져 있었다(게이트 23 privacy-gate 3a).
      * `/auth/me` 는 요청마다 이 객체를 만든다.
      */
-    override fun toString(): String = "UserResponse(id=$id, email=$CONTENT_MASK)"
+    override fun toString(): String = "UserResponse(id=$id, email=$CONTENT_MASK, emailVerified=$emailVerified)"
 
     companion object {
-        fun of(user: User): UserResponse = UserResponse(id = user.id.toString(), email = user.email)
+        fun of(user: User): UserResponse =
+            UserResponse(id = user.id.toString(), email = user.email, emailVerified = user.emailVerifiedAt != null)
     }
 }
+
+/** `/auth/email-verification/confirm` 요청. 계약 `ConfirmEmailVerificationRequest`. */
+data class ConfirmEmailVerificationRequest
+    @JsonCreator
+    constructor(
+        @param:JsonProperty("code") val code: String,
+    ) {
+        /** 코드가 로그·오류 메시지로 새지 않게 한다. */
+        override fun toString(): String = "ConfirmEmailVerificationRequest(...)"
+    }
 
 /** 액세스 토큰 응답. 계약 `components/schemas/TokenResponse`. */
 data class TokenResponse(

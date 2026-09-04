@@ -41,7 +41,7 @@ openapi: 3.1.0
 
 info:
   title: Easy-Read AI API
-  version: "2.8.0"
+  version: "2.9.0"
   x-baselined-at: "2026-08-12"       # 초판 기준선을 뜬 날 (동결일이 아니다)
   x-rebased-at: "2026-08-12"         # 계약의 성격을 "개선 대상"으로 다시 정의한 날
   x-source-runtime: "Python 3.12 / FastAPI (app/main.py) — 과거 참고 구현이었고 2026-08-24 저장소에서 제거됨(git 태그 pre-python-removal-20260824). 기준선 출처였을 뿐 정답이 아니었다"
@@ -49,12 +49,14 @@ info:
   description: |
     공공기관용 '쉬운 글' 자동 변환 서비스의 HTTP 계약 v1.
 
-    **엔드포인트는 정확히 18개다** — 제품 17개 + 헬스 체크 1개.
+    **엔드포인트는 정확히 20개다** — 제품 19개 + 헬스 체크 1개.
     계획 §2.2가 센 "14개 HTTP 엔드포인트"는 **그 문서를 쓸 때의 수**이며 `/health`를
     포함해야 맞는 수였다. 1.5.0에서 `PUT /conversions/{conversion_id}/feedback`이,
     2.2.0에서 `GET /documents/{document_id}/source`가, 2.8.0에서 소셜 로그인
     (backlog §1.4 P0-1) `POST /auth/oauth/{provider}/start`·
-    `POST /auth/oauth/{provider}/callback`이 더해져 오늘은 18개다 —
+    `POST /auth/oauth/{provider}/callback`이, 2.9.0에서 이메일 인증(backlog §1.4
+    P0-1/P0-3) `POST /auth/email-verification/request`·
+    `POST /auth/email-verification/confirm`이 더해져 오늘은 20개다 —
     계획 문서의 수를 고치는 것이 아니라 **수의 정본이 이 계약**이다.
 
     ## 경로 접두사
@@ -92,6 +94,12 @@ info:
     다른 사용자의 자원은 **403이 아니라 404**다. 없는 자원과 남의 자원을 구분하지
     않는다 — 구분하면 식별자의 존재 여부가 새어 나간다. 403이 새면 스타일 문제가
     아니라 보안 계약 위반이다(계획 §5 Phase 7 즉시 중단 기준).
+
+    **예외 하나 — `createDocument` 의 이메일 미인증 403(2.9.0).** 이 조항이 막는 것은
+    "남의 자원 존재를 403으로 흘리는 것"이다. 이메일 미인증 403은 자원 존재와 무관하다
+    — 호출자 **자신의 계정 상태**(신원은 확실하나 아직 갖추지 못한 자격)를 알리는
+    것이고, 그 사실은 이미 `readMe.email_verified` 로 호출자 스스로에게 노출돼 있다.
+    남의 계정 인증 여부를 흘리는 자리가 아니므로 이 절의 하한과 충돌하지 않는다.
 
     ## 인증 실패와 입력 검증의 우선순위
     **인증이 먼저다.** 이것은 Python이 그렇게 동작해서가 아니라 **그래야 하기
@@ -1556,6 +1564,87 @@ paths:
         '503': { $ref: '#/components/responses/ServiceUnavailable' }
 
   # ===========================================================================
+  # #19 POST /auth/email-verification/request — 204
+  # 이메일 인증(backlog §1.4 P0-1/P0-3, 2.9.0 신설) — 코드를 (재)발급하고 메일로 보낸다.
+  # ===========================================================================
+  /auth/email-verification/request:
+    post:
+      tags: [auth]
+      operationId: requestEmailVerification
+      summary: 이메일 인증 코드를 (재)발급하고 메일로 보낸다
+      security: [{ HTTPBearer: [] }]
+      description: |
+        6자리 숫자 코드를 발급해 로그인 이메일로 보낸다. 10분 뒤 만료되고, 최대 5회
+        오답이면 그 코드는 무효화된다(재요청으로만 회복). 이미 있던 활성 코드는 이번
+        발급으로 무효화된다 — **활성 코드는 항상 최대 하나**다.
+
+        본문은 없다 — 대상 이메일은 토큰의 사용자로 고정이며 요청자가 고를 수 없다.
+      responses:
+        '204':
+          description: 발급됨(메일 발송은 best-effort — 발송 실패도 204다. 재요청으로 회복한다)
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CacheControlNoStore' }
+            X-Content-Type-Options: { $ref: '#/components/headers/XContentTypeOptions' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          description: 이미 인증된 이메일이다
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+              examples:
+                already_verified: { value: { detail: "이미 인증된 이메일입니다" } }
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500': { $ref: '#/components/responses/InternalError' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+
+  # ===========================================================================
+  # #20 POST /auth/email-verification/confirm — 204
+  # 이메일 인증 — 발급된 코드를 확인한다.
+  # ===========================================================================
+  /auth/email-verification/confirm:
+    post:
+      tags: [auth]
+      operationId: confirmEmailVerification
+      summary: 발급된 인증 코드를 확인한다
+      security: [{ HTTPBearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ConfirmEmailVerificationRequest' }
+      responses:
+        '204':
+          description: 인증 완료 — 이후 `readMe.email_verified` 가 참이고 `createDocument` 가 열린다
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CacheControlNoStore' }
+            X-Content-Type-Options: { $ref: '#/components/headers/XContentTypeOptions' }
+        '400':
+          description: |
+            코드가 오답·만료·무효(5회 오답 소진) — **사유를 구분하지 않는다.** 어느
+            갈래인지 알려주면 공격자가 "이 코드가 한때 존재했다"는 정보를 얻는다.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+              examples:
+                invalid_code: { value: { detail: "인증 코드가 올바르지 않거나 만료되었습니다" } }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          description: 이미 인증된 이메일이다
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+              examples:
+                already_verified: { value: { detail: "이미 인증된 이메일입니다" } }
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '500': { $ref: '#/components/responses/InternalError' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+
+  # ===========================================================================
   # #17 POST /auth/oauth/{provider}/start — 200
   # 소셜 로그인(backlog §1.4 P0-1, 2.8.0 신설) — Authorization Code 흐름의 시작.
   # 정본은 최상위 x-social-login. 번호가 #4보다 앞선 경로에 있는데도 17인 것은
@@ -1724,10 +1813,18 @@ paths:
         남의 `workspace_id`는 **404**다 — 빈 목록으로 답하면 남의 작업 공간 존재를
         확인하는 수단이 된다.
 
-        검사 순서: 파일 크기(413) → 추출(422) → 본문 길이(422) →
+        검사 순서: **이메일 인증(403)** → 파일 크기(413) → 추출(422) → 본문 길이(422) →
         **작업 공간: 형식(422) 다음 소유권(404)** → **저장 정의역(422)** →
         **저장과 큐 등록(한 트랜잭션)** → 커밋.
         작업 공간 확인이 저장보다 **먼저**여야 거절당한 업로드가 기본 공간에 남지 않는다.
+
+        **이메일 인증이 맨 앞이다(2.9.0 신설, backlog §1.4 P0-1/P0-3).** 본문을 전혀
+        보지 않은 채로 거절한다 — 애초에 이 호출자가 할 수 없는 일이면 파일 크기·본문
+        형식을 검증할 이유가 없다. 이메일/비밀번호로 가입했고 아직 인증 코드를 확인하지
+        않은 계정이 대상이며, 소셜 로그인 계정과 V7 마이그레이션 시점 이전 기존 계정은
+        가입·전환 시점에 이미 인증된 것으로 표시돼 이 갈래를 밟지 않는다. **이 오퍼레이션
+        하나만** 이 게이트를 갖는다 — 로그인을 포함한 나머지는 미인증 사용자에게도 열려
+        있다(정본은 위 "소유권 은닉" 절의 예외 항).
 
         **이 순서는 복합 결함에도 적용된다** (2026-08-20 신설, 근거 **G2**).
         결함이 둘 이상 겹친 요청에서 **관측되는 응답은 이 목록에서 가장 앞선 검사의 것**이다.
@@ -1793,8 +1890,18 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/DocumentCreatedResponse' }
         '401': { $ref: '#/components/responses/Unauthorized' }
+        '403':
+          description: |
+            이메일 인증 전이다(2.9.0 신설) — 남의 자원을 감추는 403이 **아니다**. 위
+            "소유권 은닉" 절 예외 항이 이 갈래와 아래 작업 공간 404(그쪽은 여전히 존재
+            은닉이다)의 성격 차이를 정리한다.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+              examples:
+                email_not_verified: { value: { detail: "이메일 인증 후 문서를 변환할 수 있습니다" } }
         '404':
-          description: 지정한 작업 공간이 없거나 내 것이 아니다 (403 아님)
+          description: 지정한 작업 공간이 없거나 내 것이 아니다 (존재 은닉 — 위 403과는 다른 자리다)
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
@@ -2771,6 +2878,26 @@ components:
           examples:
             too_large: { value: { detail: "파일이 너무 큽니다 (최대 10MB)" } }
 
+    TooManyRequests:
+      description: |
+        재발송 쿨다운(60초) 안에 다시 요청했다. 2.9.0 신설 —
+        `POST /auth/email-verification/request` 하나만 이 컴포넌트를 선언한다.
+      headers:
+        Retry-After:
+          description: |
+            RFC 9110 표준 헤더 — 재시도까지 남은 정수 초, 문자열로 인코딩한다.
+            **값이 계산된다**(`Location`·`Content-Disposition` 과 같은 자리 —
+            `x-private-response-headers` 옆 `components/headers` 의 `const` 규약이
+            적용되지 않는 이유다). 최솟값 1이다 — 0을 보내면 클라이언트가 즉시
+            재시도를 반복해 쿨다운을 사실상 무력화한다.
+          required: true
+          schema: { type: string, examples: ["60"] }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+          examples:
+            rate_limited: { value: { detail: "잠시 후 다시 시도해주세요" } }
+
     UnsupportedMediaType:
       description: |
         요청 `Content-Type`이 그 오퍼레이션의 `requestBody.content` 키 집합 밖이다.
@@ -3103,11 +3230,33 @@ components:
 
     UserResponse:
       type: object
-      required: [id, email]
+      required: [id, email, email_verified]
       description: 사용자 공개 표현. `password_hash`는 절대 포함하지 않는다.
       properties:
         id: { type: string, format: uuid }
         email: { type: string, examples: ["user@example.test"] }
+        email_verified:
+          type: boolean
+          description: |
+            이메일 소유를 확인했는지(2.9.0 신설, backlog §1.4 P0-1/P0-3). 소셜 로그인
+            계정과 V7 마이그레이션 이전 기존 계정은 항상 참이다. 거짓이면
+            `createDocument` 가 403을 낸다 — `POST /auth/email-verification/request`로
+            코드를 받고 `confirm` 으로 넘기면 참으로 바뀐다.
+
+    ConfirmEmailVerificationRequest:
+      type: object
+      required: [code]
+      properties:
+        code:
+          type: string
+          minLength: 6
+          maxLength: 6
+          description: |
+            사용자가 타이핑하지 않고 메일에서 그대로 옮기는 6자리 숫자다 —
+            `OAuthCallbackRequest` 의 프로토콜 토큰 필드들과 같은 근거로
+            `minLength`/`maxLength` 를 스키마 층에 둔다(`x-request-field-constraints`
+            다섯 필드의 "요청 본문은 서비스 층에서만 잰다"는 원칙의 예외이며 이유가 같다).
+            형식은 맞지만 값이 틀리면 400(코드 오답)이지 422가 아니다.
 
     TokenResponse:
       type: object
@@ -3799,6 +3948,45 @@ components:
 # 변경 이력
 # =============================================================================
 x-changelog:
+  - version: "2.9.0"
+    date: "2026-09-04"
+    revision: "EMAIL-VERIFICATION"   # backlog §1.4 P0-1/P0-3 — 이메일 가입의 소유 확인
+    author: contract-keeper
+    change: |
+      **이메일/비밀번호 가입이 이메일 소유를 증명해야 문서를 변환할 수 있게 한다.**
+      소셜(Google) 계정은 제공자가 이미 검증했고, 기존 계정은 소급 인증(grandfather)된다.
+
+      ⑴ **오퍼레이션 2종 신설** — `POST /auth/email-verification/request`
+         (`requestEmailVerification`, 인증 필요, 204) ·
+         `POST /auth/email-verification/confirm`(`confirmEmailVerification`,
+         인증 필요, 204). 응답 본문이 없다 — 코드가 왕복하지 않는다.
+      ⑵ **`UserResponse` 가 `email_verified: boolean` 을 얻는다(필수).** 소셜 로그인
+         계정과 마이그레이션 이전 기존 계정은 항상 참이다.
+      ⑶ **스키마 1종** — `ConfirmEmailVerificationRequest`(`code`, 6자리 고정 길이).
+      ⑷ **`createDocument` 하나만 403 을 얻는다** — 이메일 미인증 계정의 변환 요청을
+         막는다. 검사 순서의 맨 앞이다(본문을 보기 전에 거절). 남의 자원을 감추는
+         403(이 계약이 원래 금지하는 것)이 아니다 — 정본은 최상위 설명의 "소유권 은닉"
+         절 예외 항.
+      ⑸ **컴포넌트 1종 신설** — `TooManyRequests`(429, 계산되는 `Retry-After` 헤더를
+         인라인으로 선언 — `Location`·`Content-Disposition` 과 같은 자리라 `const` 를
+         갖는 `components/headers` 로 옮기지 않는다). 재발송 쿨다운(60초) 안의
+         재요청에만 나간다.
+      ⑹ **엔드포인트 수 18 → 20**(제품 17 → 19 + 헬스 1).
+    ground: |
+      **G2 — 요구사항 반영.** backlog §1.4 「이메일 가입의 소유 확인」P0-1/P0-3
+      (2026-09-04, 팀 리드 지시). 설계 결정(6자리 코드, 10분 TTL, 5회 오답 무효화,
+      60초 재발송 쿨다운, 활성 코드는 항상 최대 하나, DB 로 쿨다운 판정 — 인메모리
+      아님)은 그 위임 지침이 원본이다.
+    compatibility: |
+      **거의 순수 확장이다.** 기존 오퍼레이션 17개의 요청·응답·오류 모양은 그대로다.
+      **유일한 예외는 `createDocument` 다** — 미인증 이메일/비밀번호 계정은 2.9.0
+      이전에 되던 문서 등록이 이제 403 이다. 이 계약이 정의하는 "이메일/비밀번호로
+      가입했고 아직 인증하지 않은 계정"이 2.9.0 이전에는 아예 존재하지 않았으므로
+      (모든 기존 행이 배포 시점에 소급 인증된다), 이 변화는 **2.9.0 이후 새로 가입한
+      계정에만** 미친다 — 배포 순간 기존 사용자의 요청이 갑자기 거절되지 않는다.
+      `UserResponse` 에 필드가 늘었지만 기존 소비자는 알 수 없는 키를 무시하므로
+      깨지지 않는다(React 도 마찬가지 — 이 필드를 아직 읽지 않는 소비자는 영향이 없다).
+
   - version: "2.8.0"
     date: "2026-09-04"
     revision: "SOCIAL-LOGIN-GOOGLE"   # backlog §1.4 P0-1 — Google Authorization Code 흐름

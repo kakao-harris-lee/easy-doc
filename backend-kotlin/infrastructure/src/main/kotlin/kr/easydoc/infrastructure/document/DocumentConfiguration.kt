@@ -1,6 +1,7 @@
 package kr.easydoc.infrastructure.document
 
 import kr.easydoc.application.auth.TransactionRunner
+import kr.easydoc.application.auth.UserRepository
 import kr.easydoc.application.crypto.ContentCipher
 import kr.easydoc.application.document.ConversionFeedbackRepository
 import kr.easydoc.application.document.ConversionFeedbackService
@@ -79,6 +80,7 @@ class DocumentConfiguration {
             queue = queue,
         )
 
+    @Suppress("LongParameterList")
     @Bean
     fun documentService(
         storage: DocumentStorage,
@@ -86,6 +88,7 @@ class DocumentConfiguration {
         cipher: ContentCipher,
         extractor: DocumentTextExtractor,
         transactionRunner: TransactionRunner,
+        users: UserRepository,
     ): DocumentService =
         DocumentService(
             storage = storage,
@@ -93,6 +96,7 @@ class DocumentConfiguration {
             cipher = cipher,
             extractor = extractor,
             transaction = transactionRunner,
+            users = users,
         )
 
     /**

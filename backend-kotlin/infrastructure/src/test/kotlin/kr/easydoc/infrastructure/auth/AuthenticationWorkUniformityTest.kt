@@ -2,6 +2,7 @@ package kr.easydoc.infrastructure.auth
 
 import kr.easydoc.application.auth.AuthService
 import kr.easydoc.application.auth.PasswordHasher
+import kr.easydoc.application.auth.PostSignupEmailVerification
 import kr.easydoc.core.exceptions.InvalidCredentialsException
 import kr.easydoc.core.security.Secret
 import kr.easydoc.core.user.PasswordHash
@@ -62,6 +63,9 @@ class AuthenticationWorkUniformityTest {
                 passwords = UnusedPasswordHasher,
                 accessTokens = tokens,
                 transaction = SpringTransactionRunner(TransactionTemplate(DataSourceTransactionManager(counting))),
+                // 이 테스트는 `signup` 을 부르지 않는다(`authenticate`·`login` 시간만 잰다) —
+                // 발급 자체가 관심사가 아니므로 no-op 이면 충분하다.
+                emailVerification = PostSignupEmailVerification { },
             )
     }
 

@@ -92,6 +92,7 @@ class ConversionWorkerFlowTest {
                 cipher = cipher,
                 extractor = DocumentTextExtractor { _, _ -> ExtractedDocument(SourceFormat.DOCX, "추출") },
                 transaction = transaction,
+                users = JdbcUserRepository(jdbc),
             )
     }
 
@@ -184,7 +185,10 @@ class ConversionWorkerFlowTest {
                 ),
         )
 
-    private fun newUser(): UUID = users.create("u${UUID.randomUUID()}@example.com", PasswordHash(DUMMY_PHC)).id
+    // 이메일 인증 게이트는 `POST /documents` 앞이다 — 이 파일은 그 게이트를 재지 않으므로
+    // 실물 인증 흐름 대신 저장소를 직접 인증 완료로 만든다.
+    private fun newUser(): UUID =
+        users.create("u${UUID.randomUUID()}@example.com", PasswordHash(DUMMY_PHC)).id.also(users::markEmailVerified)
 
     private fun statusOf(conversionId: UUID): String =
         jdbc

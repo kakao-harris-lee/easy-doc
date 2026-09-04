@@ -43,6 +43,20 @@ class DocumentEndpointReachTest {
     private val json = ObjectMapper()
 
     @Test
+    @DisplayName("이메일 미인증 계정은 본문을 보기도 전에 403 — 붙여넣기·파일 두 팔 모두")
+    fun `미인증 계정은 문서를 등록할 수 없다`() {
+        val token = unverifiedAccount()
+
+        val textResponse = createFromText(token, textBody("본문"))
+        assertDeclaredStatus(textResponse, FORBIDDEN)
+        assertThat(bodyOf(textResponse)[DETAIL]).isEqualTo(EMAIL_NOT_VERIFIED_MESSAGE)
+
+        val fileResponse = upload(token, MultipartBody().file(FILE_PART, "안내문.docx", UploadFixtures.sampleDocx()))
+        assertDeclaredStatus(fileResponse, FORBIDDEN)
+        assertThat(bodyOf(fileResponse)[DETAIL]).isEqualTo(EMAIL_NOT_VERIFIED_MESSAGE)
+    }
+
+    @Test
     @DisplayName("컨테이너 multipart 상한이 계약 업로드 상한 **이상**이다 — 경계 판정을 서비스가 지게 하는 전제")
     fun `컨테이너 상한이 계약 상한보다 넉넉하다`() {
         val contractLimit = ContractSpec.inputLimit(MAX_UPLOAD_BYTES_KEY).toLong()
@@ -518,6 +532,19 @@ class DocumentEndpointReachTest {
         val email = "document${counter++}@example.test"
         val credentials = json.writeValueAsString(mapOf("email" to email, "password" to VALID_PASSWORD))
         send(post(null, JSON_MEDIA_TYPE, credentials.toByteArray(Charsets.UTF_8), "/auth/signup"))
+        // 이메일 인증(backlog §1.4 P0-1/P0-3) 이후 문서 접수는 인증된 계정에만 열린다 —
+        // 이 파일은 그 게이트 자체를 재는 것이 아니라 그 뒤의 문서 경로를 재므로, 실물
+        // 인증 흐름 대신 저장소를 직접 인증 완료로 만든다.
+        database.execute("UPDATE users SET email_verified_at = now() WHERE email = '$email'")
+        val login = send(post(null, JSON_MEDIA_TYPE, credentials.toByteArray(Charsets.UTF_8), "/auth/login"))
+        return bodyOf(login).required("access_token").toString()
+    }
+
+    /** 인증 게이트 자체를 재는 케이스 전용 — 위 [newAccount] 와 달리 소급 인증하지 않는다. */
+    private fun unverifiedAccount(): String {
+        val email = "unverified-document${counter++}@example.test"
+        val credentials = json.writeValueAsString(mapOf("email" to email, "password" to VALID_PASSWORD))
+        send(post(null, JSON_MEDIA_TYPE, credentials.toByteArray(Charsets.UTF_8), "/auth/signup"))
         val login = send(post(null, JSON_MEDIA_TYPE, credentials.toByteArray(Charsets.UTF_8), "/auth/login"))
         return bodyOf(login).required("access_token").toString()
     }
@@ -666,6 +693,9 @@ class DocumentEndpointReachTest {
         private const val PAYLOAD_TOO_LARGE_COMPONENT = "PayloadTooLarge"
         private const val TOO_LARGE_EXAMPLE = "too_large"
         private const val WORKSPACE_NOT_FOUND_EXAMPLE = "workspace_not_found"
+
+        /** 계약 `POST /documents` 403 예시 `email_not_verified`. */
+        private const val EMAIL_NOT_VERIFIED_MESSAGE = "이메일 인증 후 문서를 변환할 수 있습니다"
 
         private const val INPUT_LIMITS = "x-input-limits"
         private const val TITLE_POLICY = "x-title-policy"

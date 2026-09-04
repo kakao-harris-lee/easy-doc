@@ -382,6 +382,7 @@ class KeyRotationBatchTest {
                     queue = JdbcConversionQueue(client),
                 ),
             workspaces = JdbcWorkspaceLookup(client),
+            users = JdbcUserRepository(client),
             cipher = cipher,
             extractor = { _, _ -> error("이 테스트는 파일 경로를 쓰지 않는다") },
             transaction = SpringTransactionRunner(TransactionTemplate(DataSourceTransactionManager(dataSource))),
@@ -411,7 +412,10 @@ class KeyRotationBatchTest {
         )
     }
 
-    private fun newUser(): UUID = users.create("rot${UUID.randomUUID()}@example.test", PasswordHash(DUMMY_PHC)).id
+    // 이메일 인증 게이트는 `POST /documents` 앞이다 — 이 파일은 그 게이트를 재지 않으므로
+    // 실물 인증 흐름 대신 저장소를 직접 인증 완료로 만든다.
+    private fun newUser(): UUID =
+        users.create("rot${UUID.randomUUID()}@example.test", PasswordHash(DUMMY_PHC)).id.also(users::markEmailVerified)
 
     /** 두 세대를 모두 실은 암호기. */
     private fun cipherWith(writeKeyVersion: Int): ContentCipher =

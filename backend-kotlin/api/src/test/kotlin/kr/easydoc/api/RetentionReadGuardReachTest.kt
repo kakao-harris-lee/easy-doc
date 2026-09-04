@@ -361,6 +361,9 @@ class RetentionReadGuardReachTest {
         val email = "retentionguard${counter++}@example.test"
         val credentials = json.writeValueAsString(mapOf(EMAIL_PROPERTY to email, PASSWORD_PROPERTY to VALID_PASSWORD))
         send(post(null, credentials, SIGNUP_PATH))
+        // 이메일 인증 게이트는 `POST /documents` 앞이다 — 이 파일은 그 게이트를 재지 않으므로
+        // 실물 인증 흐름 대신 저장소를 직접 인증 완료로 만든다.
+        database.execute("UPDATE users SET email_verified_at = now() WHERE email = '$email'")
         return bodyOf(send(post(null, credentials, LOGIN_PATH))).required(ACCESS_TOKEN_PROPERTY).toString()
     }
 

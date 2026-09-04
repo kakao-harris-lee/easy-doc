@@ -17,7 +17,7 @@ import java.util.UUID
 class JdbcUserRepository(private val jdbc: JdbcClient) : UserRepository {
     override fun findByEmail(email: String): StoredUser? =
         jdbc
-            .sql("SELECT id, email, password_hash, created_at FROM users WHERE email = :email")
+            .sql("SELECT id, email, password_hash, created_at, email_verified_at FROM users WHERE email = :email")
             .param("email", email)
             .query { rs, _ -> toStoredUser(rs) }
             .optional()
@@ -25,7 +25,7 @@ class JdbcUserRepository(private val jdbc: JdbcClient) : UserRepository {
 
     override fun findById(id: UUID): User? =
         jdbc
-            .sql("SELECT id, email, created_at FROM users WHERE id = :id")
+            .sql("SELECT id, email, created_at, email_verified_at FROM users WHERE id = :id")
             .param("id", id)
             .query { rs, _ -> toUser(rs) }
             .optional()
@@ -52,7 +52,7 @@ class JdbcUserRepository(private val jdbc: JdbcClient) : UserRepository {
                     """
                     INSERT INTO users (id, email, password_hash)
                     VALUES (:id, :email, :passwordHash)
-                    RETURNING id, email, created_at
+                    RETURNING id, email, created_at, email_verified_at
                     """.trimIndent(),
                 ).param("id", id)
                 .param("email", email)
@@ -69,19 +69,26 @@ class JdbcUserRepository(private val jdbc: JdbcClient) : UserRepository {
         }
     }
 
-    /** 비밀번호 없이 새 사용자를 만든다 — 소셜 로그인 최초 가입. */
-    override fun createWithoutPassword(email: String): User {
+    /**
+     * 비밀번호 없이 새 사용자를 만든다 — 소셜 로그인 최초 가입. [emailVerified] 가 참이면
+     * `email_verified_at` 을 생성 시각(`now()`)으로 함께 채운다(`UserRepository.createWithoutPassword` KDoc).
+     */
+    override fun createWithoutPassword(
+        email: String,
+        emailVerified: Boolean,
+    ): User {
         val id = UUID.randomUUID()
         return try {
             jdbc
                 .sql(
                     """
-                    INSERT INTO users (id, email, password_hash)
-                    VALUES (:id, :email, NULL)
-                    RETURNING id, email, created_at
+                    INSERT INTO users (id, email, password_hash, email_verified_at)
+                    VALUES (:id, :email, NULL, CASE WHEN :emailVerified THEN now() ELSE NULL END)
+                    RETURNING id, email, created_at, email_verified_at
                     """.trimIndent(),
                 ).param("id", id)
                 .param("email", email)
+                .param("emailVerified", emailVerified)
                 .query { rs, _ -> toUser(rs) }
                 .single()
         } catch (_: DuplicateKeyException) {
@@ -102,6 +109,14 @@ class JdbcUserRepository(private val jdbc: JdbcClient) : UserRepository {
             .update()
     }
 
+    /** 멱등 — 이미 채워진 행은 `WHERE` 절에서 걸러 다시 건드리지 않는다. */
+    override fun markEmailVerified(userId: UUID) {
+        jdbc
+            .sql("UPDATE users SET email_verified_at = now() WHERE id = :id AND email_verified_at IS NULL")
+            .param("id", userId)
+            .update()
+    }
+
     private fun toUser(rs: ResultSet): User =
         User(
             id = rs.getObject("id", UUID::class.java),
@@ -109,6 +124,7 @@ class JdbcUserRepository(private val jdbc: JdbcClient) : UserRepository {
             // timestamptz 를 OffsetDateTime 으로 받는다. `getTimestamp` 는 JVM 기본 시간대를
             // 끼워 넣어 서버 시간대에 따라 값이 달라진다.
             createdAt = rs.getObject("created_at", OffsetDateTime::class.java).toInstant(),
+            emailVerifiedAt = rs.getObject("email_verified_at", OffsetDateTime::class.java)?.toInstant(),
         )
 
     private fun toStoredUser(rs: ResultSet): StoredUser =

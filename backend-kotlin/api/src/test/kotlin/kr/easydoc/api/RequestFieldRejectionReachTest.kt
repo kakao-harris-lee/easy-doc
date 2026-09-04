@@ -195,6 +195,9 @@ class RequestFieldRejectionReachTest {
         val email = RequestFieldProbes.uniqueEmail()
         val credentials = json.writeValueAsString(mapOf("email" to email, "password" to validPassword()))
         send(post(null, SIGNUP_PATH, credentials))
+        // 이메일 인증 게이트는 `POST /documents` 앞이다 — 이 파일은 그 게이트를 재지 않으므로
+        // 실물 인증 흐름 대신 저장소를 직접 인증 완료로 만든다.
+        database.execute("UPDATE users SET email_verified_at = now() WHERE email = '$email'")
         val login = send(post(null, "/auth/login", credentials))
         return json.readValue(login.body(), Map::class.java)["access_token"].toString()
     }

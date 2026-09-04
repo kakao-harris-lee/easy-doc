@@ -84,6 +84,7 @@ class JdbcDocumentOriginalStoreTest {
                         queue = JdbcConversionQueue(jdbc),
                     ),
                 workspaces = JdbcWorkspaceLookup(jdbc),
+                users = JdbcUserRepository(jdbc),
                 // 추출 결과는 고정이다 — 이 파일이 재는 것은 파서가 아니라 **원본 바이트의 왕복**이다.
                 extractor = DocumentTextExtractor { _, _ -> ExtractedDocument(SourceFormat.DOCX, EXTRACTED_TEXT) },
                 cipher = cipher,
@@ -326,11 +327,14 @@ class JdbcDocumentOriginalStoreTest {
     private fun workspaceOf(owner: UUID): UUID =
         JdbcWorkspaceLookup(jdbc).findDefaultId(owner) ?: workspaces.create(owner, "기본").id
 
+    // 이메일 인증 게이트는 `POST /documents` 앞이다 — 이 파일은 그 게이트를 재지 않으므로
+    // 실물 인증 흐름 대신 저장소를 직접 인증 완료로 만든다.
     private fun newUser(): UUID =
         users
             .create("original-${UUID.randomUUID()}@example.kr", PasswordHash(DUMMY_PHC))
             .id
             .also { workspaces.create(it, "기본") }
+            .also(users::markEmailVerified)
 
     private fun rowCount(documentId: UUID): Int =
         jdbc
