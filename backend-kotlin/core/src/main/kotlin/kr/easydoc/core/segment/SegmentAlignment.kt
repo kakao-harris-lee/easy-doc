@@ -167,7 +167,9 @@ private fun chooseAnchors(
             .distinct()
             .sortedWith(compareBy({ it.easyIndex }, { it.sourceIndex }))
 
-    val kept = longestNonDecreasingSubsequence(candidates.map { it.sourceIndex }).map { candidates[it] }
+    val kept =
+        longestNonDecreasingSubsequence(candidates.map { it.sourceIndex }, sourceUnits.size)
+            .map { candidates[it] }
 
     return kept
         .groupBy({ it.easyIndex }, { it.sourceIndex })
@@ -199,36 +201,97 @@ private fun uniqueAnchorPositions(units: List<String>): Map<String, Int> {
 }
 
 /**
- * [values] 의 **비감소** 최장 부분수열을 이루는 색인들을 원래 순서로 돌려준다 —
- * patience sorting, `O(n log n)`. 강증가가 아니라 비감소인 것이 1:N·N:1 대응을 허용하는
- * 자리다(계획 §2 3항). 입력 순서(쉬운 글 색인 오름차순, 동점이면 원본 색인 오름차순)가
- * 이미 정해져 있어 재구성이 결정적이다.
+ * [values] 의 **비감소** 최장 부분수열을 이루는 색인들을 원래 순서로 돌려준다,
+ * `O(n log 원본 단위 수)`. 강증가가 아니라 비감소인 것이 1:N·N:1 대응을 허용하는 자리다
+ * (계획 §2 3항).
+ *
+ * **동점이면 쉬운 글 색인이 작은 쪽을 남긴다**(계획 §2 3항 결정성 규칙) — 최장 길이를 여전히
+ * 이룰 수 있는 후보 중 **가장 앞선 색인부터 그리디로 채택**해 구현한다. patience-sort
+ * overwrite 로 재구성하면(피벗을 계속 덮어써 마지막에 갱신된 원소를 따라가면) 오히려 **더
+ * 늦은** 쉬운 글 색인이 남는 반례가 있다 — `(easy0,src2), (easy1,src1), (easy2,src2)` 는 길이
+ * 2 인 비감소 부분수열 후보가 `{easy0,easy2}`·`{easy1,easy2}` 둘이고, overwrite 재구성은
+ * `easy1,easy2` 를 남겨 `easy0` 를 잘못 떨어뜨린다(리뷰 HIGH). 아래 [suffixLengths] 로
+ * "이 색인에서 시작해 낼 수 있는 최장 길이"를 먼저 구해 두면, 왼쪽부터 훑으며 "아직 남은
+ * 길이를 채울 수 있는" 첫 후보를 고르는 것만으로 가장 이른 색인을 남기는 재구성이 된다.
  */
-private fun longestNonDecreasingSubsequence(values: List<Int>): List<Int> {
+private fun longestNonDecreasingSubsequence(
+    values: List<Int>,
+    sourceUnitCount: Int,
+): List<Int> {
     if (values.isEmpty()) return emptyList()
 
-    // pileTop[k] = 길이 k+1 인 부분수열 중 끝 값이 가장 작은 것의 원소 색인.
-    val pileTop = mutableListOf<Int>()
-    val predecessor = IntArray(values.size) { -1 }
+    val suffixLength = suffixLengths(values, sourceUnitCount)
+    val targetLength = suffixLength.max()
 
+    val kept = mutableListOf<Int>()
+    var remaining = targetLength
+    var lastValue = -1
     for (i in values.indices) {
-        val value = values[i]
-        // 비감소를 허용하므로 "value 보다 큰" 첫 자리(bisect_right)를 찾는다.
-        var lo = 0
-        var hi = pileTop.size
-        while (lo < hi) {
-            val mid = (lo + hi) / 2
-            if (values[pileTop[mid]] <= value) lo = mid + 1 else hi = mid
+        if (remaining == 0) break
+        if (values[i] >= lastValue && suffixLength[i] >= remaining) {
+            kept += i
+            remaining--
+            lastValue = values[i]
         }
-        if (lo > 0) predecessor[i] = pileTop[lo - 1]
-        if (lo == pileTop.size) pileTop += i else pileTop[lo] = i
+    }
+    return kept
+}
+
+/**
+ * 반환값의 색인 `i` 자리 = 원소 `i` 를 **첫 원소로 삼는**, 색인 `i` 이후 구간만 쓰는 비감소
+ * 부분수열 중 가장 긴 것의 길이. 오른쪽에서 왼쪽으로 훑으며 원본 색인(값)을 키로 하는
+ * [FenwickMax] 에 "그 값 이상에서 시작 가능한 최장 길이"를 누적한다 — 원본 색인 범위가
+ * `0 until sourceUnitCount` 로 이미 좁아 좌표 압축이 필요 없다.
+ */
+private fun suffixLengths(
+    values: List<Int>,
+    sourceUnitCount: Int,
+): IntArray {
+    val maxIndex = sourceUnitCount - 1
+    val bestFromValue = FenwickMax(sourceUnitCount)
+    val length = IntArray(values.size)
+    for (i in values.indices.reversed()) {
+        val value = values[i]
+        // 미러링(`maxIndex - value`)으로 "value 이상" 구간의 최댓값 질의를 접두사 질의로 바꾼다.
+        val bestAfter = bestFromValue.prefixMax(maxIndex - value)
+        length[i] = 1 + maxOf(bestAfter, 0)
+        bestFromValue.update(maxIndex - value, length[i])
+    }
+    return length
+}
+
+/**
+ * 점 갱신·접두사 최댓값 질의만 지원하는 Fenwick 트리. 값이 없는 자리는 [NONE] 이다.
+ * [suffixLengths] 전용이라 이 파일 밖으로 나가지 않는다.
+ */
+private class FenwickMax(size: Int) {
+    private val tree = IntArray(size + 1) { NONE }
+
+    /** `[0, index]` 구간(0-based, 양 끝 포함)의 최댓값. 아무것도 없으면 [NONE]. */
+    fun prefixMax(index: Int): Int {
+        if (index < 0) return NONE
+        var i = index + 1
+        var result = NONE
+        while (i > 0) {
+            if (tree[i] > result) result = tree[i]
+            i -= i and (-i)
+        }
+        return result
     }
 
-    val chain = mutableListOf<Int>()
-    var cursor = pileTop.last()
-    while (cursor != -1) {
-        chain += cursor
-        cursor = predecessor[cursor]
+    /** `index` 자리(0-based)의 값을 [value] 로 **끌어올린다**(더 작으면 그대로 둔다). */
+    fun update(
+        index: Int,
+        value: Int,
+    ) {
+        var i = index + 1
+        while (i < tree.size) {
+            if (tree[i] < value) tree[i] = value
+            i += i and (-i)
+        }
     }
-    return chain.asReversed()
+
+    private companion object {
+        const val NONE = -1
+    }
 }

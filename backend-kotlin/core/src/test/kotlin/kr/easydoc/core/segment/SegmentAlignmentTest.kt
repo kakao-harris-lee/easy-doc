@@ -14,6 +14,13 @@ import kotlin.system.measureTimeMillis
  * 예시 표현이고, 실제 앵커는 [kr.easydoc.core.easyread.extractFacts] 가 잡는 사실
  * (날짜·연락처·백분율)이다 — 앵커가 자리표시자·사실로 한정된다는 계획 §2 규칙을 지키면서
  * 같은 1:N·N:1·순서 역전 구조를 재현한다.
+ *
+ * **A7(2026-09-05, S2 로 이연) 은 이 파일에 없다.** `split(추출 원문).size == TextUnitWalk
+ * 단위 수` 대조는 `infrastructure` 의 `TextUnitWalk` 와 실제 DOCX·HWPX 파싱(I/O)이 있어야
+ * 하는데, S1 은 `core` 순수 함수로 범위가 닫혀 있다(계획 §6 S1 파일 목록에 `infrastructure`
+ * 가 없다). 그 대조는 S2(`segment_map` 을 API 응답에 얹는 슬라이스, `infrastructure`·`api`
+ * 를 이미 여는 단계)에서 함께 넣는다 — 계획 문서 §6 의 S1 수용 기준 목록에도 같은 날짜로
+ * 이연 표시를 남겼다.
  */
 class SegmentAlignmentTest {
     @Nested
@@ -75,19 +82,55 @@ class SegmentAlignmentTest {
     @DisplayName("A5 — 순서 역전: 비단조 앵커는 LIS 로 걸러진다")
     inner class ReorderedAnchors {
         @Test
-        @DisplayName("앵커 매칭이 (원본2,쉬운0)·(원본1,쉬운1)·(원본0,쉬운2) → 정확히 한 단위만 high")
-        fun `역전된 앵커는 하나만 살아남고 나머지는 low 로 보간된다`() {
+        @DisplayName("앵커 매칭이 (원본2,쉬운0)·(원본1,쉬운1)·(원본0,쉬운2) → 정확히 한 단위만 high, 그것도 쉬운 글 0")
+        fun `역전된 앵커는 가장 이른 쉬운 글 단위만 살아남는다`() {
             // 원본 순서와 쉬운 글 순서가 완전히 뒤집힌 세 앵커 — 백분율·연락처·날짜.
+            // 후보를 (쉬운 글, 원본) 으로 적으면 (0,2)·(1,1)·(2,0) — 값이 2,1,0 으로 순감소라
+            // 비감소 부분수열은 어느 것을 남겨도 길이 1 뿐이다. 「동점이면 쉬운 글 색인이
+            // 작은 쪽을 남긴다」(계획 §2 3항) 는 이럴 때 **가장 이른 색인**을 남기라는 뜻이라
+            // 쉬운 글 0(원본 2) 이 살아남는다.
             val sourceUnits = listOf("할인율 45% 안내", "032-999-8888 문의", "10월 5일 접수")
             val easyUnits = listOf("10월 5일 접수", "032-999-8888 문의", "할인율 45% 안내")
 
             val result = alignSegments(sourceUnits, easyUnits)
 
-            assertThat(result.units.count { it.confidence == HIGH })
-                .withFailMessage("비감소 최장 부분수열의 길이는 1이어야 한다 — 세 앵커가 완전히 역전돼 있다.")
-                .isEqualTo(1)
-            assertThat(result.units).hasSize(3)
-            assertThat(result.units.map { it.easyUnitIndex }).containsExactly(0, 1, 2)
+            assertThat(result.summary())
+                .containsExactly(
+                    Triple(0, listOf(2), HIGH),
+                    Triple(1, listOf(2), LOW),
+                    Triple(2, listOf(2), LOW),
+                )
+        }
+    }
+
+    @Nested
+    @DisplayName("동점 재구성 회귀 — 두 최장 부분수열 후보 중 이른 쉬운 글 색인을 남긴다 (독립 리뷰 HIGH)")
+    inner class TieBreakPrefersEarliestEasyIndex {
+        @Test
+        @DisplayName(
+            "앵커가 (쉬운0,원본2)·(쉬운1,원본1)·(쉬운2,원본2) → {쉬운0,쉬운2} 와 {쉬운1,쉬운2} 가 둘 다 길이 2, " +
+                "이른 색인을 남겨 쉬운0·쉬운2 가 high 이고 쉬운1 은 low",
+        )
+        fun `길이가 같은 두 부분수열 중 이른 쉬운 글 색인 쪽을 남긴다`() {
+            // 원본 2(source2) 한 줄에 날짜·백분율 두 앵커가 함께 있어 원본 색인이 2 로
+            // 중복된다 — patience-sort 를 그대로 덮어쓰기로 재구성하면 {쉬운1,쉬운2} 를
+            // 남겨 쉬운0 을 잘못 떨어뜨린다(독립 리뷰가 잡은 버그, 커밋 3561d10 직후 발견).
+            val sourceUnits = listOf("안내문입니다", "032-555-1111 문의", "3월 2일과 10%할인 안내")
+            val easyUnits = listOf("3월 2일 안내", "032-555-1111 문의", "10%할인 안내")
+
+            val result = alignSegments(sourceUnits, easyUnits)
+
+            // 쉬운1 은 자기 앵커(원본1)를 잃고 low 로 보간된다 — 살아남은 두 앵커가 모두
+            // 원본 줄 2 를 가리켜(같은 줄에 두 사실이 있었으므로) 그 사이에 남는 원본 자리가
+            // 없다. `fillGap` 의 "갈 곳이 없으면 앞 앵커 바로 다음 자리로 몰아준다" 규칙대로
+            // 원본 2 로 떨어진다 — 원래 앵커였던 원본 1 로 되돌아가지 않는다(비감소 제약상
+            // 확정된 앵커 원본 2 를 지나쳐 되돌아갈 수 없다).
+            assertThat(result.summary())
+                .containsExactly(
+                    Triple(0, listOf(2), HIGH),
+                    Triple(1, listOf(2), LOW),
+                    Triple(2, listOf(2), HIGH),
+                )
         }
     }
 
