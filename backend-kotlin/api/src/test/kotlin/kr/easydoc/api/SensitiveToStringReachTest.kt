@@ -260,8 +260,15 @@ class SensitiveToStringReachTest {
          * `toString()` 을 이미 가린다), `ConsumedOAuthState`(application,
          * `OAuthStateStore.consume` 의 결과 — `nonce` 는 무작위 토큰, `boundUserId` 는
          * UUID 라 민감 판정 토큰에 걸리지 않는다, `UserIdentity`·`OAuthChallenge` 와 같은 등급).
+         *
+         * P0-4 문단 대응(`core/segment/SegmentAlignment.kt`, 2026-09-05)이 **넷**을 더해
+         * 109 다(명시적 계정 연결 105 위에) — 공개 타입 `SegmentUnit`(쉬운 글 단위 하나와
+         * 대응 원본 색인들)·`SegmentMap`(대응표 전체, `toString()` 을 손으로 쥐고 색인·개수만
+         * 남긴다)과 파일 전용 `private data class` 인 `Anchor`(앵커 후보 하나, (쉬운 글 색인,
+         * 원본 색인) 쌍)·`Breakpoint`(LIS 로 걸러진 tie point, 이 파일 밖으로 나가지 않는다).
+         * 넷 다 색인 정수뿐이라 민감 정보가 없다 — [KNOWN_SENSITIVE_TYPES] 에 넣지 않는다.
          */
-        const val EXPECTED_SOURCE_DECLARATIONS = 105
+        const val EXPECTED_SOURCE_DECLARATIONS = 109
 
         /** 민감 판정이 반드시 닿아야 하는 타입 — 바닥이다. */
         val KNOWN_SENSITIVE_TYPES =

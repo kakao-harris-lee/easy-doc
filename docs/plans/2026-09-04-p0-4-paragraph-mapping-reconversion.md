@@ -189,7 +189,9 @@ segment_map:                      # object | null
   - **A6 전사성·결정성:** 모든 쉬운 글 단위가 `units`에 **정확히 한 번** 나오고, 같은 입력을 두 번
     정렬하면 결과가 동일하다.
 - **A7 순회 대조(값어치 높음):** DOCX·HWPX fixture마다 `split(추출 원문).size == TextUnitWalk 단위
-  수`. 어긋나면 **오늘의 내보내기 정렬에 잠재 결함이 있다는 신호**다.
+  수`. 어긋나면 **오늘의 내보내기 정렬에 잠재 결함이 있다는 신호**다. **(2026-09-05, S2로 이연)**
+  `TextUnitWalk` 가 `infrastructure` 에 있고 실제 DOCX·HWPX 파싱(I/O)이 필요해 `core` 순수
+  함수로 닫힌 S1 범위 밖이다 — `infrastructure`·`api` 를 이미 여는 S2 에서 함께 넣는다.
 - **`Prompts.kt` 문자열을 한 글자도 바꾸지 않는다** → `PromptTextSnapshotTest`·골든 기준선 무영향.
 
 **S2 — `readConversion`에 `segment_map` (M, 계약 2.12.0, 마이그레이션 없음)**
