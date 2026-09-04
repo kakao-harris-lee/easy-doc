@@ -406,6 +406,10 @@ class OwnershipPredicateGuardTest {
                 // 바로 위 잠금 SELECT 와 겹치는 것은 우연이 아니다 — 회전은 둘 다 소유자가
                 // 없는 배치 경로다.
                 "$DOCUMENT/JdbcConversionFeedbackRepository.kt | SELECT [conversion_feedback]",
+                // 변환 완료 메일 알림(P0-3, 2026-09-04). worker 내부 경로 — `notified_at` 조회·
+                // 표시 둘 다 아래 미방어 목록에도 있다(사유는 그쪽에 적었다).
+                "$DOCUMENT/JdbcConversionNotificationStore.kt | SELECT [conversions, documents]",
+                "$DOCUMENT/JdbcConversionNotificationStore.kt | UPDATE [conversions]",
                 "$DOCUMENT/JdbcConversionRepository.kt | SELECT [conversions]",
                 "$DOCUMENT/JdbcConversionRepository.kt | UPDATE [conversions]",
                 // 변환 키 회전 배치 후보 커서 — 같은 사유(`rotate-keys`, 「내 것」이 없다).
@@ -482,6 +486,12 @@ class OwnershipPredicateGuardTest {
                 // 아니라 커서(마지막으로 본 id)로 다음 배치를 고른다 — 소유자를 받을 자리가
                 // 원래 없다.
                 "$DOCUMENT/JdbcConversionFeedbackRepository.kt | SELECT [conversion_feedback]",
+                // 변환 완료 메일 알림(P0-3, 2026-09-04) — 대상 조회·`notified_at` 표시 둘 다
+                // worker 가 완료 커밋 뒤 스스로 부르는 시스템 경로다. `conversionId` 는 worker
+                // 가 방금 자신이 처리한 리스에서 온 값이지 사용자 요청 파라미터가 아니라,
+                // 소유자를 받을 자리가 원래 없다(위 파기·회전 배치들과 같은 사유).
+                "$DOCUMENT/JdbcConversionNotificationStore.kt | SELECT [conversions, documents]",
+                "$DOCUMENT/JdbcConversionNotificationStore.kt | UPDATE [conversions]",
                 "$DOCUMENT/JdbcConversionRepository.kt | SELECT [conversions]",
                 "$DOCUMENT/JdbcConversionRepository.kt | UPDATE [conversions]",
                 "$DOCUMENT/JdbcConversionRepository.kt | SELECT [conversions]",
@@ -533,7 +543,11 @@ class OwnershipPredicateGuardTest {
          * 24 → 26 은 피드백 자유 의견 파기 배치(2026-09-04, backlog §1.1 「conversion_feedback
          * 의 삭제 경로」 판단 ⑵)의 잠금 SELECT 와 봉투 세 열을 NULL 로 만드는 UPDATE 둘이다.
          * 이 배치도 worker 시스템 작업이지 소유자 요청 경로가 아니다 — 위 문단과 같은 사유다.
+         *
+         * 26 → 28 은 변환 완료 메일 알림(P0-3, 2026-09-04)의 대상 조회·`notified_at` 표시
+         * 둘이다. worker 가 완료 커밋 뒤 자신이 방금 처리한 `conversionId` 로 스스로 부르는
+         * 경로라 — 위 파기·회전 배치들과 같은 사유로 소유자를 받을 자리가 없다.
          */
-        const val MAX_UNGUARDED_STATEMENTS = 26
+        const val MAX_UNGUARDED_STATEMENTS = 28
     }
 }

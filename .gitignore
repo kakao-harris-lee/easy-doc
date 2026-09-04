@@ -67,3 +67,6 @@ docs/golden/★2026년도 하반기 전기자동차 민간보급사업 공고(�
 docs/golden/무단방치 농업기계 강제처리 공고.hwpx
 docs/golden/★최종★ (2권) 2026년 청소년사업 안내(01.19).pdf
 docs/golden/한국보건의료연구원+종합감사+처분요구서_공개.pdf
+
+# OAuth 클라이언트 비밀 파일(Google Cloud Console 다운로드) — 값은 .env 로만 옮긴다
+client_secret_*.json

@@ -3,6 +3,7 @@ package kr.easydoc.api
 import kr.easydoc.api.config.EasyDocProperties
 import kr.easydoc.core.dictionary.DictionaryContextPolicy
 import kr.easydoc.core.security.Secret
+import kr.easydoc.infrastructure.app.AppProperties
 import kr.easydoc.infrastructure.auth.AuthProperties
 import kr.easydoc.infrastructure.crypto.EncryptionProperties
 import kr.easydoc.infrastructure.dictionary.DictionaryProperties
@@ -10,6 +11,7 @@ import kr.easydoc.infrastructure.document.FeedbackProperties
 import kr.easydoc.infrastructure.document.KeyRotationProperties
 import kr.easydoc.infrastructure.document.RetentionProperties
 import kr.easydoc.infrastructure.llm.LlmProperties
+import kr.easydoc.infrastructure.mail.MailProperties
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
@@ -169,6 +171,46 @@ class ConfigurationPropertiesBindingTest {
                     maxExamples = 1,
                 ),
             )
+    }
+
+    @Test
+    @DisplayName("메일 발송 설정이 기본값과 다른 값을 싣는다 — smtp 하위 설정 포함")
+    fun `메일 설정이 기본값과 다른 값을 싣는다`() {
+        val mail =
+            bind(
+                "easydoc.mail",
+                MailProperties::class.java,
+                mapOf(
+                    "easydoc.mail.provider" to "smtp",
+                    "easydoc.mail.from-address" to "pilot@easydoc.kr",
+                    "easydoc.mail.timeout-ms" to "9999",
+                    "easydoc.mail.smtp.host" to "smtp.daum.net",
+                    "easydoc.mail.smtp.port" to "465",
+                    "easydoc.mail.smtp.ssl" to "true",
+                    "easydoc.mail.smtp.username" to "pilot",
+                    "easydoc.mail.smtp.password" to SECRET_VALUE,
+                ),
+            )
+        assertThat(mail.provider).isEqualTo("smtp")
+        assertThat(mail.fromAddress).isEqualTo("pilot@easydoc.kr")
+        assertThat(mail.timeoutMs).isEqualTo(9999L)
+        assertThat(mail.smtp.host).isEqualTo("smtp.daum.net")
+        assertThat(mail.smtp.port).isEqualTo(465)
+        assertThat(mail.smtp.ssl).isTrue()
+        assertThat(mail.smtp.username).isEqualTo("pilot")
+        assertThat(mail.smtp.password.reveal()).isEqualTo(SECRET_VALUE)
+    }
+
+    @Test
+    @DisplayName("공개 기준 URL 설정이 기본값과 다른 값을 싣는다")
+    fun `공개 URL 설정이 기본값과 다른 값을 싣는다`() {
+        val app =
+            bind(
+                "easydoc.app",
+                AppProperties::class.java,
+                mapOf("easydoc.app.public-base-url" to "https://easydoc.kr"),
+            )
+        assertThat(app.publicBaseUrl).isEqualTo("https://easydoc.kr")
     }
 
     private fun <T : Any> bind(

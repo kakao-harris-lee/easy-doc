@@ -1,9 +1,11 @@
 package kr.easydoc.infrastructure.queue
 
 import kr.easydoc.application.auth.TransactionRunner
+import kr.easydoc.application.conversion.ConversionCompletedNotifier
 import kr.easydoc.application.conversion.ConversionJobHeartbeat
 import kr.easydoc.application.conversion.ConversionJobLease
 import kr.easydoc.application.conversion.ConversionJobLeasePort
+import kr.easydoc.application.conversion.ConversionNotificationStore
 import kr.easydoc.application.conversion.ConversionWorkStore
 import kr.easydoc.application.conversion.ConversionWorkerPolicy
 import kr.easydoc.application.conversion.ConversionWorkerRuntime
@@ -14,11 +16,14 @@ import kr.easydoc.application.conversion.NoDictionaryContext
 import kr.easydoc.application.conversion.ProcessConversionJob
 import kr.easydoc.application.crypto.ContentCipher
 import kr.easydoc.application.document.MaskedItemWriter
+import kr.easydoc.application.mail.MailSender
 import kr.easydoc.core.llm.LlmOptions
 import kr.easydoc.core.llm.LlmProvider
+import kr.easydoc.infrastructure.app.AppProperties
 import kr.easydoc.infrastructure.dictionary.DictionaryIndexJsonReader
 import kr.easydoc.infrastructure.dictionary.DictionaryProperties
 import kr.easydoc.infrastructure.dictionary.IndexedDictionaryContextSource
+import kr.easydoc.infrastructure.document.JdbcConversionNotificationStore
 import kr.easydoc.infrastructure.document.JdbcConversionWorkStore
 import kr.easydoc.infrastructure.llm.LlmProperties
 import org.slf4j.LoggerFactory
@@ -126,17 +131,35 @@ class ConversionWorkerConfiguration {
     ): ConversionWorkerStores = ConversionWorkerStores(leases, work, cipher, maskedItems)
 
     @Bean
+    fun conversionNotificationStore(jdbcClient: JdbcClient): ConversionNotificationStore =
+        JdbcConversionNotificationStore(jdbcClient)
+
+    /**
+     * 완료 알림 유스케이스. 메일 발송기(`easydoc.mail.provider`)와 공개 기준 URL
+     * (`easydoc.app.public-base-url`)을 여기서 묶는다 — [ProcessConversionJob] 은
+     * 완료 커밋 뒤 이 빈을 부르기만 한다.
+     */
+    @Bean
+    fun conversionCompletedNotifier(
+        store: ConversionNotificationStore,
+        mailSender: MailSender,
+        appProperties: AppProperties,
+    ): ConversionCompletedNotifier = ConversionCompletedNotifier(store, mailSender, appProperties.publicBaseUrl)
+
+    @Bean
     fun processConversionJob(
         stores: ConversionWorkerStores,
         convert: ConvertDocumentUseCase,
         transactionRunner: TransactionRunner,
         runtime: ConversionWorkerRuntime,
+        notifier: ConversionCompletedNotifier,
     ): ProcessConversionJob =
         ProcessConversionJob(
             stores = stores,
             convert = convert,
             transaction = transactionRunner,
             runtime = runtime,
+            notifier = notifier,
         )
 
     private fun hostOwner(): String =

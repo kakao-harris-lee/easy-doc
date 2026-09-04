@@ -218,8 +218,20 @@ class SensitiveToStringReachTest {
          * infrastructure `KeyRotationProperties`(회전 배치 크기 설정, `Int` 하나). 운영
          * 노브 숫자만 감싸 민감 정보가 없다 — [KNOWN_SENSITIVE_TYPES] 에 넣지 않는다
          * (`FeedbackProperties`·`RetentionProperties` 와 같은 판단).
+         *
+         * 변환 완료 이메일 알림(P0-3, 2026-09-04)이 **둘**을 더해 88 이다 — infrastructure
+         * `MailProperties`(메일 발송 설정. `fromAddress` 필드 이름이 민감 판정 토큰
+         * `address` 에 걸려 `dataClassProbes` 대상이지만, `toString()` 을 손으로 쥐고
+         * 값 대신 길이만 남긴다 — `no-reply@easydoc.kr` 처럼 비밀은 아니어도 같은 규약을
+         * 지킨다)와 `AppProperties`(공개 기준 URL 설정 하나, 민감 토큰과 무관).
+         *
+         * SMTP 임시 relay provider(P0-3 확장, 2026-09-04, 사용자 결정 — SES 전환 전까지)가
+         * **하나**를 더해 89 다 — infrastructure `SmtpProperties`. `username`(계정명이 보통
+         * 메일 주소 로컬파트라 토큰 `name` 에 걸린다)과 `password`([Secret] 이 스스로 가린다,
+         * 그 자체가 토큰 `password` 에 걸린다) 둘 다 손으로 쥔 `toString()` 이 가린다 —
+         * `MailProperties.fromAddress` 와 같은 선례.
          */
-        const val EXPECTED_SOURCE_DECLARATIONS = 86
+        const val EXPECTED_SOURCE_DECLARATIONS = 89
 
         /** 민감 판정이 반드시 닿아야 하는 타입 — 바닥이다. */
         val KNOWN_SENSITIVE_TYPES =

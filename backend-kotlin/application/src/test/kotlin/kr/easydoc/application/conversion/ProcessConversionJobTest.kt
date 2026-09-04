@@ -3,6 +3,10 @@ package kr.easydoc.application.conversion
 import kr.easydoc.application.auth.TransactionRunner
 import kr.easydoc.application.crypto.ContentCipher
 import kr.easydoc.application.document.MaskedItemWriter
+import kr.easydoc.application.mail.EmailAddress
+import kr.easydoc.application.mail.MailDelivery
+import kr.easydoc.application.mail.MailSender
+import kr.easydoc.application.mail.OutboundMail
 import kr.easydoc.core.crypto.EncryptedContent
 import kr.easydoc.core.crypto.EncryptedField
 import kr.easydoc.core.crypto.EncryptionScheme
@@ -54,6 +58,17 @@ class ProcessConversionJobTest {
             assertThat(statusAtCall).isEqualTo(ConversionStatus.PROCESSING)
             assertThat(world.work.status).isEqualTo(ConversionStatus.DONE)
             assertThat(world.leases.completed).containsExactly(world.lease)
+        }
+
+        @Test
+        @DisplayName("완료되면 소유자에게 알림 메일을 정확히 한 번 보낸다")
+        fun `완료는 알림을 한 번 보낸다`() {
+            val world = World()
+
+            world.jobs.processNext()
+
+            assertThat(world.mailSender.sent).hasSize(1)
+            assertThat(world.notificationStore.markNotifiedCalls).containsExactly(world.conversionId)
         }
 
         @Test
@@ -136,6 +151,7 @@ class ProcessConversionJobTest {
             assertThat(world.work.status).isEqualTo(ConversionStatus.FAILED)
             assertThat(world.work.failureCode).isEqualTo(ConversionFailureKind.PROVIDER_ERROR.failureCode)
             assertThat(world.leases.failed).containsExactly(world.lease)
+            assertThat(world.mailSender.sent).isEmpty()
         }
 
         @Test
@@ -184,6 +200,7 @@ class ProcessConversionJobTest {
             assertThat(world.jobs.processNext()).isEqualTo(ConversionJobOutcome.DROPPED)
             assertThat(world.work.successWrites).isEmpty()
             assertThat(world.work.status).isEqualTo(ConversionStatus.PROCESSING)
+            assertThat(world.mailSender.sent).isEmpty()
         }
 
         @Test
@@ -225,6 +242,9 @@ class ProcessConversionJobTest {
         val work = FakeWork(conversionId, documentId, sourceSealed, transaction)
         val provider = SpyingProvider(provider)
         val heartbeat = RenewingHeartbeat(leases)
+        val notificationStore = FakeNotificationStore()
+        val mailSender = RecordingMailSender()
+        val notifier = ConversionCompletedNotifier(notificationStore, mailSender, "http://localhost:5173")
         val jobs =
             ProcessConversionJob(
                 stores =
@@ -247,7 +267,33 @@ class ProcessConversionJobTest {
                                 retryBackoff = Duration.ofSeconds(5),
                             ),
                     ),
+                notifier = notifier,
             )
+    }
+
+    private class FakeNotificationStore : ConversionNotificationStore {
+        val markNotifiedCalls = mutableListOf<UUID>()
+
+        override fun findTarget(conversionId: UUID): ConversionNotificationTarget =
+            ConversionNotificationTarget(
+                documentTitle = "제목",
+                ownerEmail = EmailAddress.of("owner@example.com"),
+                alreadyNotified = false,
+            )
+
+        override fun markNotified(conversionId: UUID): Boolean {
+            markNotifiedCalls += conversionId
+            return true
+        }
+    }
+
+    private class RecordingMailSender : MailSender {
+        val sent = mutableListOf<OutboundMail>()
+
+        override fun send(message: OutboundMail): MailDelivery {
+            sent += message
+            return MailDelivery.Sent()
+        }
     }
 
     private class RecordingDepth : TransactionRunner {

@@ -153,6 +153,27 @@ easydoc:
     # 읽는 빈(`KeyRotationConfiguration`)이 `rotate-keys` 에서만 조립된다.
     rotation:
       batch-size: ${EASYDOC_ENCRYPTION_ROTATION_BATCH_SIZE:200}
+  # 변환 완료 메일 알림(P0-3). provider 는 fake·smtp 둘이다 — SES 등 실제 벤더는 아직 없다
+  # (backlog §1.4). smtp 는 임시 relay(2026-09-04 사용자 결정, SES 전환 전까지). fake 는
+  # local/CI/api 실행 어디서나 통과한다(fake LLM 과 달리 프로필로 가두지 않는다 —
+  # MailConfiguration KDoc). fake·smtp 가 아닌 값을 주면 기동이 ConfigurationException 으로
+  # 즉시 실패하고, smtp 인데 host·username·password·from-address 중 하나라도 비어도 같다.
+  mail:
+    provider: ${EASYDOC_MAIL_PROVIDER:fake}
+    from-address: ${EASYDOC_MAIL_FROM_ADDRESS:no-reply@easydoc.kr}
+    timeout-ms: ${EASYDOC_MAIL_TIMEOUT_MS:5000}
+    # provider=smtp 일 때만 읽힌다. ssl=true 는 접속 시점 암시적 TLS(SMTPS) — STARTTLS 가
+    # 아니다. host·username·password 는 비밀값이라 기본값을 두지 않는다(.env 로만 채운다).
+    smtp:
+      host: ${EASYDOC_MAIL_SMTP_HOST:}
+      port: ${EASYDOC_MAIL_SMTP_PORT:465}
+      ssl: ${EASYDOC_MAIL_SMTP_SSL:true}
+      username: ${EASYDOC_MAIL_SMTP_USERNAME:}
+      password: ${EASYDOC_MAIL_SMTP_PASSWORD:}
+  # 알림 메일 링크 등 사용자에게 보이는 절대 URL의 기준. 기본값은 frontend dev 서버 포트
+  # (`frontend/vite.config.ts`, 위 cors-origins 기본값과 같은 자리).
+  app:
+    public-base-url: ${EASYDOC_APP_PUBLIC_BASE_URL:http://localhost:5173}
 
 logging:
   level:

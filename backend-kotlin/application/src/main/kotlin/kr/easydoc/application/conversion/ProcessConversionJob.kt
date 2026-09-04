@@ -21,6 +21,7 @@ class ProcessConversionJob(
     private val convert: ConvertDocumentUseCase,
     private val transaction: TransactionRunner,
     private val runtime: ConversionWorkerRuntime,
+    private val notifier: ConversionCompletedNotifier,
 ) {
     private val log = LoggerFactory.getLogger(ProcessConversionJob::class.java)
 
@@ -165,6 +166,12 @@ class ProcessConversionJob(
                 stores.leases.complete(lease)
                 wrote
             }
+        // 알림은 커밋 **뒤**, 트랜잭션 밖에서 부른다 — 메일 발송은 외부 호출이라 DB 트랜잭션
+        // 안에 두지 않는다(CLAUDE.md). 실패해도 이 완료 결과를 되돌리지 않는다 — 내부에서
+        // 예외를 삼킨다(ConversionCompletedNotifier KDoc).
+        if (saved) {
+            notifier.notify(lease.conversionId)
+        }
         return if (saved) ConversionJobOutcome.COMPLETED else ConversionJobOutcome.DROPPED
     }
 

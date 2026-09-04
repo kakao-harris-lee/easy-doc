@@ -82,6 +82,25 @@ easydoc:
     # 의견 세 열만 NULL 로 만든다 — 배포 의향·품질 만족도·소요 시간·수정률 지표(평문 숫자)는
     # 건드리지 않고 영구히 남는다(`FeedbackProperties` KDoc, master-plan §3.2).
     comment-retention-days: ${EASYDOC_FEEDBACK_COMMENT_RETENTION_DAYS:30}
+  # 변환 완료 메일 알림(P0-3). 실제로 보내는 프로세스는 worker 다
+  # (`ConversionCompletedNotifier`가 완료 커밋 뒤 여기서 불린다) — api 와 **같은 환경변수
+  # 이름**을 두는 것은 다른 easydoc.* 설정과 같은 이유(두 프로세스가 값을 요구하면 같은
+  # 손잡이여야 한다). provider 는 fake·smtp 둘이다(backlog §1.4, `MailConfiguration` KDoc).
+  # smtp 는 임시 relay(2026-09-04 사용자 결정, SES 전환 전까지).
+  mail:
+    provider: ${EASYDOC_MAIL_PROVIDER:fake}
+    from-address: ${EASYDOC_MAIL_FROM_ADDRESS:no-reply@easydoc.kr}
+    timeout-ms: ${EASYDOC_MAIL_TIMEOUT_MS:5000}
+    # api 의 easydoc.mail.smtp 주석과 같다 — worker 가 실제로 이 값을 쓴다.
+    smtp:
+      host: ${EASYDOC_MAIL_SMTP_HOST:}
+      port: ${EASYDOC_MAIL_SMTP_PORT:465}
+      ssl: ${EASYDOC_MAIL_SMTP_SSL:true}
+      username: ${EASYDOC_MAIL_SMTP_USERNAME:}
+      password: ${EASYDOC_MAIL_SMTP_PASSWORD:}
+  # 알림 메일 링크의 기준 URL. api 의 easydoc.app 주석과 같다.
+  app:
+    public-base-url: ${EASYDOC_APP_PUBLIC_BASE_URL:http://localhost:5173}
 
 logging:
   level:

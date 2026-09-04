@@ -1,9 +1,11 @@
 package kr.easydoc.worker
 
+import kr.easydoc.application.conversion.ConversionCompletedNotifier
 import kr.easydoc.application.conversion.DictionaryContextSource
 import kr.easydoc.application.conversion.ProcessConversionJob
 import kr.easydoc.application.document.PurgeExpiredDocuments
 import kr.easydoc.application.document.PurgeFeedbackComments
+import kr.easydoc.application.mail.MailSender
 import kr.easydoc.infrastructure.DatabaseHandle
 import kr.easydoc.infrastructure.PostgresTestSupport
 import org.assertj.core.api.Assertions.assertThat
@@ -36,6 +38,13 @@ class WorkerStartupTest {
         assertThat(context.getBean(PurgeExpiredDocuments::class.java)).isNotNull()
         assertThat(context.getBean(PurgeFeedbackComments::class.java)).isNotNull()
         assertThat(context.getBean(RetentionPurgeScheduler::class.java)).isNotNull()
+    }
+
+    @Test
+    @DisplayName("worker 는 변환 완료 알림 유스케이스와 메일 발송기를 갖는다")
+    fun `완료 알림이 조립된다`() {
+        assertThat(context.getBean(ConversionCompletedNotifier::class.java)).isNotNull()
+        assertThat(context.getBean(MailSender::class.java)).isNotNull()
     }
 
     @Test

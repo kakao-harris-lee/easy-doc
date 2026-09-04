@@ -6,6 +6,7 @@
 - `.env.example`을 복사한 `.env`
 - `EASYDOC_AUTH_JWT_SECRET`, `EASYDOC_ENCRYPTION_KEY_V1`, `EASYDOC_ENCRYPTION_KCV_V1`
 - 실제 변환을 확인할 때만 선택한 provider API key. 유료 호출 없이 상태만 보려면 `EASYDOC_LLM_PROVIDER=fake`(Compose가 `local` 프로필을 켠다)
+- 변환 완료 메일 알림은 `EASYDOC_MAIL_PROVIDER=fake`가 기본값이라 별도 설정 없이도 뜬다(메모리 기록만, 실제 발송 없음). 실제 발송이 필요하면 `EASYDOC_MAIL_PROVIDER=smtp`(임시, Daum 등 소비자 메일 계정 — SES가 의도한 운영 provider이고 smtp는 그 전환 전까지의 임시 조치, 2026-09-04 사용자 결정)로 `EASYDOC_MAIL_SMTP_HOST`·`EASYDOC_MAIL_SMTP_PORT`·`EASYDOC_MAIL_SMTP_SSL`·`EASYDOC_MAIL_SMTP_USERNAME`·`EASYDOC_MAIL_SMTP_PASSWORD`(전부 비밀값, `.env`에만)를 채운다 — 넷 중 host·username·password·from-address 하나라도 비면 기동이 즉시 실패한다. `EASYDOC_MAIL_FROM_ADDRESS`·`EASYDOC_MAIL_TIMEOUT_MS`·`EASYDOC_APP_PUBLIC_BASE_URL`(알림 링크 기준 URL)은 `.env.example` 참고
 
 worker는 lease를 집어 마스킹 → LLM → 결과 저장까지 실행한다. 내보내기는
 `GET /conversions/{conversion_id}/export?format=docx|txt|hwpx`다. `pdf`는 계약상 422다.
