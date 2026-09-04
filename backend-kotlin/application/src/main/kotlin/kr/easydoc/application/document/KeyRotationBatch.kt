@@ -43,25 +43,30 @@ class KeyRotationResult(val families: List<FamilyRotationOutcome>) {
     override fun toString(): String = "KeyRotationResult($families)"
 }
 
-/** 회전 결과를 감사·메트릭으로 남긴다. 개수만 받는다 — 본문·id 는 애초에 이 자리에 없다. */
+/**
+ * 회전 결과를 감사·메트릭으로 남긴다. 개수만 받는다 — 본문·id 는 애초에 이 자리에 없다.
+ *
+ * **가족 하나씩** 받는다(전체 [KeyRotationResult] 가 아니다) — [KeyRotationBatch.run] 이
+ * 가족을 순회하며 **끝난 것부터 바로** 이 메서드를 부른다. 셋째 가족이 던지면 넷째는 아예
+ * 불리지 않지만, 이미 끝난 첫째·둘째는 이 메서드가 이미 받은 뒤다 — 「중간 실패 시 이미 끝난
+ * 가족의 결과가 로그에 안 남는다」는 결함(코드 리뷰 PR #15 MEDIUM)의 수정.
+ */
 fun interface KeyRotationObserver {
-    fun record(result: KeyRotationResult)
+    fun record(outcome: FamilyRotationOutcome)
 }
 
 /** 가족별 rotated/skipped/remaining 만 남긴다. */
 class LoggingKeyRotationObserver : KeyRotationObserver {
     private val log = LoggerFactory.getLogger(LoggingKeyRotationObserver::class.java)
 
-    override fun record(result: KeyRotationResult) {
-        result.families.forEach { family ->
-            log.info(
-                "키 회전 [{}]: rotated={} skipped={} remaining={}",
-                family.family,
-                family.rotated,
-                family.skipped,
-                family.remaining,
-            )
-        }
+    override fun record(outcome: FamilyRotationOutcome) {
+        log.info(
+            "키 회전 [{}]: rotated={} skipped={} remaining={}",
+            outcome.family,
+            outcome.rotated,
+            outcome.skipped,
+            outcome.remaining,
+        )
     }
 }
 
@@ -115,11 +120,15 @@ class KeyRotationBatch(
                     rotateOne = rotation::rotateFeedback,
                 ),
             )
-        val result = KeyRotationResult(families)
-        observer.record(result)
-        return result
+        return KeyRotationResult(families)
     }
 
+    /**
+     * 한 가족을 순회하고, **끝나는 즉시** [observer] 에 남긴다 — [run] 이 가족 넷을 전부 모은
+     * 뒤에야 한 번에 남기면, 셋째 가족에서 던진 예외가 첫째·둘째의 결과를 관측 밖으로
+     * 밀어낸다(그 둘은 실제로 회전을 마쳤는데도 로그에 안 남는다). 이 함수가 반환하기
+     * **전에** 기록하므로, 다음 가족에서 던져도 여기까지 끝난 가족은 이미 관측된 뒤다.
+     */
     private fun rotateFamily(
         family: String,
         fetch: (after: UUID, limit: Int) -> List<UUID>,
@@ -151,7 +160,9 @@ class KeyRotationBatch(
             batch = if (batch.size < policy.batchSize) emptyList() else fetch(cursor, policy.batchSize)
         }
 
-        return FamilyRotationOutcome(family, rotated, alreadyCurrent, missing, contended, nothingSealed)
+        val outcome = FamilyRotationOutcome(family, rotated, alreadyCurrent, missing, contended, nothingSealed)
+        observer.record(outcome)
+        return outcome
     }
 
     private companion object {

@@ -40,7 +40,10 @@ class RetentionPurgeScheduler(
         try {
             block()
         } catch (failure: RuntimeException) {
-            log.error("보존 파기 단계 실패: step={}", step, failure)
+            // 메시지만 남긴다 — Throwable 자체를 넘기지 않는다(`KeyRotationRunner` 와 같은
+            // 판단). 예외 객체를 로거에 그대로 주면 스택트레이스가 함께 찍히고, 이 저장소는
+            // 그 안에 무엇이 실릴지 이 메서드가 보장할 수 없다.
+            log.error("보존 파기 단계 실패: step={} message={}", step, failure.message)
         }
     }
 

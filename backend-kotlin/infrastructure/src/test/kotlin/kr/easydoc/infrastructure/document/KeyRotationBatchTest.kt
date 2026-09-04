@@ -2,16 +2,19 @@ package kr.easydoc.infrastructure.document
 
 import kr.easydoc.application.auth.TransactionRunner
 import kr.easydoc.application.crypto.ContentCipher
+import kr.easydoc.application.document.ConversionEnvelope
 import kr.easydoc.application.document.ConversionFeedbackService
 import kr.easydoc.application.document.ConversionQueryService
+import kr.easydoc.application.document.ConversionRepository
+import kr.easydoc.application.document.ConversionReviewService
 import kr.easydoc.application.document.DocumentService
 import kr.easydoc.application.document.DocumentStorage
 import kr.easydoc.application.document.EnvelopeRotation
+import kr.easydoc.application.document.FamilyRotationOutcome
 import kr.easydoc.application.document.FeedbackSubmission
 import kr.easydoc.application.document.KeyRotationBatch
 import kr.easydoc.application.document.KeyRotationObserver
 import kr.easydoc.application.document.KeyRotationPolicy
-import kr.easydoc.application.document.KeyRotationResult
 import kr.easydoc.application.document.OriginalReflection
 import kr.easydoc.application.document.SealedStores
 import kr.easydoc.application.document.StoredOriginal
@@ -22,6 +25,7 @@ import kr.easydoc.core.crypto.EncryptionScheme
 import kr.easydoc.core.crypto.PlainBody
 import kr.easydoc.core.crypto.PlainBytes
 import kr.easydoc.core.pilot.PublishIntent
+import kr.easydoc.core.privacy.ReviewedBody
 import kr.easydoc.core.security.Secret
 import kr.easydoc.core.text.EditDistanceBudget
 import kr.easydoc.core.user.PasswordHash
@@ -109,6 +113,107 @@ class KeyRotationBatchTest {
             assertThat(family.skipped).isZero()
             assertThat(family.remaining).isZero()
         }
+    }
+
+    @Test
+    @DisplayName("동시 쓰기와 겹친 행은 remaining 으로 집계되고, 재실행이 그 행을 다시 회전한다")
+    fun `배치 도중 경합한 행은 remaining 이고 재실행이 다시 회전한다`() {
+        val owner = newUser()
+        val workspaceId = workspaces.create(owner, "회전 경합 ${UUID.randomUUID()}").id
+        val oldCipher = cipherWith(OLD_GENERATION)
+        val accepted = serviceOn(oldCipher).createFromText(owner, "경합 원문", null, workspaceId.toString())
+        completeConversion(oldCipher, accepted.conversionId, 0)
+
+        // NoTransaction 이라 회전이 실 잠금 없이 SELECT 와 UPDATE 를 두 문장으로 낸다 —
+        // `EnvelopeRotationConcurrencyTest` 「잠금이 서지 않으면 CONTENDED 다」와 같은 기법.
+        // 그 사이에 낀 이 훅이 **제품 검수 저장 경로 그대로** 옛 세대인 채로 한 열
+        // (edited_text_encrypted)을 바꾼다.
+        var interfered = false
+        val client = JdbcClient.create(dataSource)
+        val stores =
+            SealedStores(
+                documents = JdbcDocumentRepository(client),
+                originals = JdbcDocumentOriginalRepository(client),
+                conversions =
+                    HookedConversions(JdbcConversionRepository(client)) {
+                        if (!interfered) {
+                            interfered = true
+                            reviewServiceOn().save(owner, accepted.conversionId, ReviewedBody("동시 편집"))
+                        }
+                    },
+                feedback = JdbcConversionFeedbackRepository(client),
+            )
+        val batch =
+            KeyRotationBatch(
+                stores = stores,
+                rotation =
+                    EnvelopeRotation(stores = stores, cipher = cipherWith(NEW_GENERATION), transaction = NoTransaction),
+                cipher = cipherWith(NEW_GENERATION),
+                policy = KeyRotationPolicy(batchSize = 10),
+                observer = KeyRotationObserver { _: FamilyRotationOutcome -> },
+            )
+
+        val result = batch.run()
+
+        val conversionsOutcome = result.families.single { it.family == "conversions" }
+        assertThat(conversionsOutcome.rotated)
+            .describedAs("경합한 행이 그래도 회전됐다고 집계됐다 — 동시 편집을 삼켰다는 뜻이다")
+            .isZero()
+        assertThat(conversionsOutcome.remaining)
+            .describedAs("경합이 remaining 으로 집계되지 않았다: %s", conversionsOutcome)
+            .isEqualTo(1)
+        assertThat(keyVersionOf("conversions", "id", accepted.conversionId))
+            .describedAs("CONTENDED 인데 세대가 올라갔다 — 실은 갱신되지 않았어야 한다")
+            .isEqualTo(OLD_GENERATION)
+
+        // 재실행 — 별도 재시도 로직 없이, 세대가 그대로라 다음 실행이 처음부터 다시 훑으며
+        // 이 행을 자연스럽게 다시 고른다(커서는 실행마다 새로 선다 — `KeyRotationBatch` KDoc).
+        val secondResult = batchWith(cipherWith(NEW_GENERATION), batchSize = 10).run()
+        val secondOutcome = secondResult.families.single { it.family == "conversions" }
+        assertThat(secondOutcome.rotated)
+            .describedAs("재실행이 경합했던 행을 다시 회전하지 못했다 — idempotent 재시도가 깨졌다")
+            .isEqualTo(1)
+        assertThat(secondOutcome.remaining).isZero()
+        assertThat(keyVersionOf("conversions", "id", accepted.conversionId)).isEqualTo(NEW_GENERATION)
+    }
+
+    /** 읽기 직후에 [hook] 을 부르는 것 말고는 [delegate] 그대로다. */
+    private class HookedConversions(
+        private val delegate: ConversionRepository,
+        private val hook: () -> Unit,
+    ) : ConversionRepository by delegate {
+        override fun lockEnvelope(conversionId: UUID): ConversionEnvelope? =
+            delegate.lockEnvelope(conversionId).also { hook() }
+    }
+
+    /** 트랜잭션을 열지 않는 실행기 — 「잠금 전제가 깨진 상태」의 재현용이다. */
+    private object NoTransaction : TransactionRunner {
+        override fun <T> inTransaction(block: () -> T): T = block()
+    }
+
+    /** 검수 저장 유스케이스 — 제품 조립과 같은 모양이고 [feedbackServiceOn] 과 나란하다. */
+    private fun reviewServiceOn(): ConversionReviewService {
+        val client = JdbcClient.create(dataSource)
+        val conversions = JdbcConversionRepository(client)
+        val runner = SpringTransactionRunner(TransactionTemplate(DataSourceTransactionManager(dataSource)))
+        val writer = cipherWith(OLD_GENERATION)
+        return ConversionReviewService(
+            conversions = conversions,
+            cipher = writer,
+            query =
+                ConversionQueryService(
+                    conversions = conversions,
+                    cipher = writer,
+                    maskedItems = MaskedItemCodec(),
+                    original =
+                        OriginalReflection(
+                            StoredOriginalReader(JdbcDocumentOriginalRepository(client), writer),
+                            PackagedOriginalReflector(),
+                        ),
+                    transaction = runner,
+                ),
+            transaction = runner,
+        )
     }
 
     /** 가족 넷 모두에 옛 세대(v1) 행을 [ROW_COUNT] 건씩 심는다. */
@@ -252,7 +357,7 @@ class KeyRotationBatchTest {
             rotation = EnvelopeRotation(stores = stores, cipher = cipher, transaction = runner),
             cipher = cipher,
             policy = KeyRotationPolicy(batchSize = batchSize),
-            observer = KeyRotationObserver { _: KeyRotationResult -> },
+            observer = KeyRotationObserver { _: FamilyRotationOutcome -> },
         )
     }
 

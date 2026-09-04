@@ -1,5 +1,8 @@
 package kr.easydoc.worker
 
+import ch.qos.logback.classic.Level
+import ch.qos.logback.classic.spi.ILoggingEvent
+import ch.qos.logback.core.read.ListAppender
 import kr.easydoc.application.auth.TransactionRunner
 import kr.easydoc.application.document.ExpiredDocumentPurge
 import kr.easydoc.application.document.FeedbackCommentPurge
@@ -15,6 +18,7 @@ import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatCode
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
+import org.slf4j.LoggerFactory
 
 /**
  * `RetentionPurgeScheduler` 는 Spring 도 DB 도 없이 대역으로 돈다 — 문서 파기와 피드백
@@ -71,6 +75,43 @@ class RetentionPurgeSchedulerTest {
 
         assertThat(documentStore.calls).isEqualTo(1)
         assertThat(feedbackStore.calls).isEqualTo(1)
+    }
+
+    @Test
+    @DisplayName("실패 로그는 예외 메시지만 남기고 Throwable 자체는 로거에 넘기지 않는다")
+    fun `실패 로그가 Throwable 을 싣지 않는다`() {
+        val documentStore = RecordingExpiredDocumentPurge(failing = true)
+        val feedbackStore = RecordingFeedbackCommentPurge()
+
+        val events = captureLog { scheduler(documentStore, feedbackStore).run() }
+
+        val failureEvent =
+            events.singleOrNull { it.level == Level.ERROR }
+                ?: error("실패 로그 한 건을 찾지 못했다 — 이 테스트가 재려는 로그 자체가 없다")
+        assertThat(failureEvent.throwableProxy)
+            .describedAs("Throwable 을 그대로 넘기면 스택트레이스가 함께 찍힌다 — 메시지만 남겨야 한다")
+            .isNull()
+        assertThat(failureEvent.formattedMessage)
+            .describedAs("실패 사유는 여전히 읽혀야 한다 — 메시지 자체를 지우는 것은 답이 아니다")
+            .contains("document purge boom")
+    }
+
+    /** [RetentionPurgeScheduler] 로거에 실행 중 찍힌 이벤트를 모은다. */
+    private fun captureLog(block: () -> Unit): List<ILoggingEvent> {
+        val logger =
+            LoggerFactory.getLogger(RetentionPurgeScheduler::class.java) as ch.qos.logback.classic.Logger
+        val appender = ListAppender<ILoggingEvent>().apply { start() }
+        val previousLevel = logger.level
+        logger.addAppender(appender)
+        logger.level = Level.TRACE
+        try {
+            block()
+        } finally {
+            logger.level = previousLevel
+            logger.detachAppender(appender)
+            appender.stop()
+        }
+        return appender.list.toList()
     }
 
     private fun scheduler(
