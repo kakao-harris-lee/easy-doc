@@ -93,8 +93,16 @@ data class OAuthProperties(
 data class GoogleOAuthProperties(
     val clientId: String = "",
     val clientSecret: Secret = Secret.EMPTY,
-    /** 콤마로 구분한 목록. 로컬 기본값은 프런트 개발 서버의 콜백 경로다. */
-    val redirectUris: List<String> = listOf(DEFAULT_LOCAL_REDIRECT_URI),
+    /**
+     * 콤마로 구분한 목록. 로컬 기본값은 프런트 개발 서버의 콜백 경로 **둘**이다 — 로그인
+     * (`oauthStart`/`oauthCallback`)이 쓰는 `/auth/google/callback` 과 명시적 연결
+     * (`oauthLinkStart`/`oauthLinkCallback`, 2.10.0, backlog §1.4)이 쓰는
+     * `/auth/google/link/callback`. 이 값이 비어 있는(로컬 기본값만 쓰는) 배포에서
+     * 연결 콜백이 여기 없으면 `oauthLinkStart` 가 422 `redirect_uri_not_allowed` 로
+     * 거절한다 — 두 콜백 다 이 배포의 SPA 가 실제로 리디렉션하는 경로이므로 기본값이
+     * 둘 다 담아야 한다(리뷰 후속 조치).
+     */
+    val redirectUris: List<String> = listOf(DEFAULT_LOGIN_REDIRECT_URI, DEFAULT_LINK_REDIRECT_URI),
     /**
      * JWKS(서명 검증 키) 캐시 TTL(분). 콜백마다 새로 받으면 Google 에 불필요한 부하를
      * 준다 — [kr.easydoc.infrastructure.auth.google.GoogleSocialLoginProvider] 가 이
@@ -105,9 +113,10 @@ data class GoogleOAuthProperties(
 ) {
     fun isConfigured(): Boolean = clientId.isNotBlank() && !clientSecret.isBlank()
 
-    private companion object {
-        const val DEFAULT_LOCAL_REDIRECT_URI = "http://localhost:5173/auth/google/callback"
-        const val DEFAULT_JWKS_CACHE_MINUTES = 60L
+    companion object {
+        const val DEFAULT_LOGIN_REDIRECT_URI = "http://localhost:5173/auth/google/callback"
+        const val DEFAULT_LINK_REDIRECT_URI = "http://localhost:5173/auth/google/link/callback"
+        private const val DEFAULT_JWKS_CACHE_MINUTES = 60L
     }
 }
 

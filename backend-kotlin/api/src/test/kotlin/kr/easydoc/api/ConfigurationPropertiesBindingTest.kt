@@ -102,6 +102,28 @@ class ConfigurationPropertiesBindingTest {
     }
 
     @Test
+    @DisplayName(
+        "redirect-uris 를 설정하지 않으면 로그인·연결 콜백 기본값 둘 다 실린다 " +
+            "(리뷰 후속 조치 — link/callback 을 빠뜨리면 oauthLinkStart 가 기본 구성에서 422 다)",
+    )
+    fun `구글 redirect_uri 기본값이 로그인과 연결 콜백을 모두 담는다`() {
+        val google =
+            bind(
+                "easydoc.oauth.google",
+                GoogleOAuthProperties::class.java,
+                mapOf(
+                    "easydoc.oauth.google.client-id" to "test-client-id",
+                    "easydoc.oauth.google.client-secret" to SECRET_VALUE,
+                ),
+            )
+        assertThat(google.redirectUris)
+            .containsExactly(
+                GoogleOAuthProperties.DEFAULT_LOGIN_REDIRECT_URI,
+                GoogleOAuthProperties.DEFAULT_LINK_REDIRECT_URI,
+            )
+    }
+
+    @Test
     @DisplayName("LLM 설정이 기본값과 다른 값을 싣는다 — 출력 토큰 상한 포함")
     fun `llm 설정이 기본값과 다른 값을 싣는다`() {
         val llm =
