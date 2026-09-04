@@ -7,6 +7,7 @@ import kr.easydoc.infrastructure.auth.AuthProperties
 import kr.easydoc.infrastructure.crypto.EncryptionProperties
 import kr.easydoc.infrastructure.dictionary.DictionaryProperties
 import kr.easydoc.infrastructure.document.FeedbackProperties
+import kr.easydoc.infrastructure.document.KeyRotationProperties
 import kr.easydoc.infrastructure.document.RetentionProperties
 import kr.easydoc.infrastructure.llm.LlmProperties
 import org.assertj.core.api.Assertions.assertThat
@@ -113,16 +114,32 @@ class ConfigurationPropertiesBindingTest {
     }
 
     @Test
-    @DisplayName("피드백 설정이 기본값과 다른 값을 싣는다 — 편집 거리 셀 예산")
+    @DisplayName("키 회전 설정이 기본값과 다른 값을 싣는다 — 배치 크기")
+    fun `키 회전 설정이 기본값과 다른 값을 싣는다`() {
+        val rotation =
+            bind(
+                "easydoc.encryption.rotation",
+                KeyRotationProperties::class.java,
+                mapOf("easydoc.encryption.rotation.batch-size" to "77"),
+            )
+        assertThat(rotation.batchSize).isEqualTo(77)
+    }
+
+    @Test
+    @DisplayName("피드백 설정이 기본값과 다른 값을 싣는다 — 편집 거리 셀 예산과 의견 보존 일수")
     fun `피드백 설정이 기본값과 다른 값을 싣는다`() {
         val feedback =
             bind(
                 "easydoc.feedback",
                 FeedbackProperties::class.java,
-                mapOf("easydoc.feedback.edit-distance-cell-budget" to "12345"),
+                mapOf(
+                    "easydoc.feedback.edit-distance-cell-budget" to "12345",
+                    "easydoc.feedback.comment-retention-days" to "7",
+                ),
             )
         assertThat(feedback.editDistanceCellBudget).isEqualTo(12345L)
         assertThat(feedback.editDistanceBudget().cells).isEqualTo(12345L)
+        assertThat(feedback.commentRetentionDays).isEqualTo(7)
     }
 
     @Test

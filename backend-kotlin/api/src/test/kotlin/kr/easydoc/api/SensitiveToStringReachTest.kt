@@ -213,8 +213,13 @@ class SensitiveToStringReachTest {
          * 본문 조각이라 [SentenceIssue] 와 같은 이유로 `toString()` 이 이미 값을 가린다)와
          * 같은 파일의 내부 전용 `ExtractedFact`·`RawMatch`(둘 다 `private` — 추출 파이프라인
          * 중간값일 뿐 이 파일 밖으로 나가지 않는다).
+         *
+         * 키 회전 운영 진입점(backlog §1.1, 2026-09-04)이 **하나**를 더해 86 이다 —
+         * infrastructure `KeyRotationProperties`(회전 배치 크기 설정, `Int` 하나). 운영
+         * 노브 숫자만 감싸 민감 정보가 없다 — [KNOWN_SENSITIVE_TYPES] 에 넣지 않는다
+         * (`FeedbackProperties`·`RetentionProperties` 와 같은 판단).
          */
-        const val EXPECTED_SOURCE_DECLARATIONS = 85
+        const val EXPECTED_SOURCE_DECLARATIONS = 86
 
         /** 민감 판정이 반드시 닿아야 하는 타입 — 바닥이다. */
         val KNOWN_SENSITIVE_TYPES =

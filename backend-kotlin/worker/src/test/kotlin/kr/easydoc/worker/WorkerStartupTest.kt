@@ -3,6 +3,7 @@ package kr.easydoc.worker
 import kr.easydoc.application.conversion.DictionaryContextSource
 import kr.easydoc.application.conversion.ProcessConversionJob
 import kr.easydoc.application.document.PurgeExpiredDocuments
+import kr.easydoc.application.document.PurgeFeedbackComments
 import kr.easydoc.infrastructure.DatabaseHandle
 import kr.easydoc.infrastructure.PostgresTestSupport
 import org.assertj.core.api.Assertions.assertThat
@@ -33,6 +34,7 @@ class WorkerStartupTest {
         assertThat(dataSource).isNotNull()
         assertThat(context.getBean(ProcessConversionJob::class.java)).isNotNull()
         assertThat(context.getBean(PurgeExpiredDocuments::class.java)).isNotNull()
+        assertThat(context.getBean(PurgeFeedbackComments::class.java)).isNotNull()
         assertThat(context.getBean(RetentionPurgeScheduler::class.java)).isNotNull()
     }
 

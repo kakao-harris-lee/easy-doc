@@ -15,7 +15,15 @@ import java.sql.ResultSet
 import java.time.OffsetDateTime
 import java.util.UUID
 
-/** `documents` 테이블 접근. 스키마는 `V1__initial_schema.sql` 이 정한다. */
+/**
+ * `documents` 테이블 접근. 스키마는 `V1__initial_schema.sql` 이 정한다.
+ *
+ * `@Suppress("TooManyFunctions")`: 이 클래스의 함수 수는 [DocumentRepository] 포트가 요구하는
+ * 오퍼레이션 수와 정확히 같다(`idsOlderThan` 추가로 임계를 넘었다) — 어댑터가 포트를 그대로
+ * 구현할 뿐이라 인터페이스를 쪼개지 않는 한 이 숫자는 줄지 않는다. `DocumentConfiguration`
+ * 의 같은 억제와 같은 판단이다.
+ */
+@Suppress("TooManyFunctions")
 class JdbcDocumentRepository(private val jdbc: JdbcClient) : DocumentRepository {
     override fun insert(
         ownerId: UUID,
@@ -137,6 +145,26 @@ class JdbcDocumentRepository(private val jdbc: JdbcClient) : DocumentRepository 
             .param("expectedKeyVersion", expected.keyVersion)
             .param("expectedSourceText", expected.bytes)
             .update() > 0
+
+    /** 키 회전 배치의 후보. `id > :after` 로 커서를 넘긴다 — [DocumentRepository.idsOlderThan] KDoc. */
+    override fun idsOlderThan(
+        keyVersion: Int,
+        after: UUID,
+        limit: Int,
+    ): List<UUID> =
+        jdbc
+            .sql(
+                """
+                SELECT id FROM documents
+                WHERE key_version < :keyVersion AND id > :after
+                ORDER BY id ASC
+                LIMIT :limit
+                """.trimIndent(),
+            ).param("keyVersion", keyVersion)
+            .param("after", after)
+            .param("limit", limit)
+            .query { rs, _ -> rs.getObject("id", UUID::class.java) }
+            .list()
 
     /** 내 문서를 지운다. **소유 조건이 같은 문장 안에 있다.** */
     override fun deleteOwned(

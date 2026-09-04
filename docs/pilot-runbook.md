@@ -59,6 +59,49 @@ docker compose -f compose.yml -f compose.ci.yml run --rm frontend-check
 
 실제 LLM 호출, 외부 배포, 기관 데이터 사용은 별도 승인과 비밀값 관리 없이 실행하지 않는다.
 
+## 키 회전 실행
+
+낡은 세대 키로 봉인된 행(`documents`·`document_originals`·`conversions`·`conversion_feedback`)을
+현재 쓰기 세대로 재봉인한다. `docs/kotlin-redevelopment-backlog.md` §1.1 「키 회전에 운영
+진입점이 없음」이 이 절차로 닫혔다 — `EnvelopeRotation`(행 단위 회전 로직)을
+`KeyRotationBatch`(가족 넷을 배치로 순회)가 부르고, `rotate-keys` profile 이 그 배치를
+컨텍스트 기동 시 한 번 돌리고 종료한다. `migrate`와 같은 CLI one-off 다 — Compose 상시
+서비스가 아니다.
+
+**절차:**
+
+1. `.env`(또는 배포 환경변수)에 새 키 세대를 **더한다** — 기존 `EASYDOC_ENCRYPTION_KEY_V1`은
+   그대로 두고 `EASYDOC_ENCRYPTION_KEY_V2`·`EASYDOC_ENCRYPTION_KCV_V2`를 추가한 뒤,
+   `EASYDOC_ENCRYPTION_WRITE_KEY_VERSION`을 `2`로 올린다. `application.yml`의
+   `easydoc.encryption.keys` 목록도 새 세대를 더하도록 배포 설정을 맞춘다(옛 세대를 지우면
+   그 세대로 쓴 행이 열리지 않는다 — 회전이 끝난 뒤에만 지운다).
+2. 먼저 **API·워커를 새 write-key-version으로 재배포**한다 — 이 시점부터 신규 쓰기는 새
+   세대로 저장되고, 옛 세대 행은 읽기만 가능한 채로 남는다.
+3. 회전 배치를 돌린다:
+   ```bash
+   docker compose -f compose.yml run --rm backend-api \
+     java -jar /app/easy-doc-api.jar --spring.profiles.active=rotate-keys
+   ```
+   (Compose에 `rotate-keys` 전용 one-shot 서비스는 없다 — `migrate`도 마찬가지로 없고, 위
+   명령처럼 `backend-api` 이미지를 프로필만 바꿔 일회성으로 돌린다.)
+4. 로그에서 가족별 `rotated`/`skipped`/`remaining` 집계만 확인한다(행 id·본문은 찍히지
+   않는다). 종료 코드 0이면 그 실행에서 회전할 후보를 전부 처리했다는 뜻이다 — 배치가
+   예외로 실패하면 0이 아닌 코드로 끝난다.
+5. **멱등이다** — 다시 돌려도 안전하다. 회전할 것이 없으면 즉시 종료 코드 0으로 끝난다.
+   동시 쓰기와 겹쳐 이번 실행이 놓친 행(`remaining`)은 세대가 그대로 남으므로 **다음
+   실행이 처음부터 다시 훑으며 자동으로 다시 고른다** — 별도 재시도 절차가 필요 없다.
+6. 전량이 회전됐음을 확인한 뒤(모든 가족 `rotated`+`skipped`가 전체 행 수와 같고
+   `remaining`이 0인 실행이 한 번 나온 뒤)에만 옛 세대를 `.env`·`application.yml`에서
+   지운다.
+
+배치 크기는 `easydoc.encryption.rotation.batch-size`(환경변수
+`EASYDOC_ENCRYPTION_ROTATION_BATCH_SIZE`, 기본 200)로 조정한다 — `document_originals`는
+파일이 최대 10MB라 배치를 낮춰 재실행할 수 있다.
+
+`rotate-keys`도 `migrate`와 달리 본문 암호화 키 전체 세대를 요구한다 —
+`write-key-version`이 키 링에 없으면 기동 자체가 거부된다(기존 기동 자기점검을 그대로
+탄다, 이 프로필만의 우회는 없다).
+
 ---
 
 ## 게이트 ① 판정
@@ -160,6 +203,17 @@ docker compose -f compose.yml exec -T postgres \
 (판정 근거를 남기려고 의도한 설계다). 그 결과 이 표에는 TTL도 purge도 없어서
 **아무도 지우지 않으면 영구히 남는다.**
 
+**→ 갱신(2026-09-04):** 아래 ⒜ 정책은 이제 worker의 보존 파기 배치(`RetentionPurgeScheduler`
+→ `PurgeFeedbackComments` → `JdbcFeedbackCommentPurge`)가 매일 자동으로 수행한다 —
+`easydoc.feedback.comment-retention-days`(기본 30일, env `EASYDOC_FEEDBACK_COMMENT_RETENTION_DAYS`)
+보다 오래된 의견의 세 열만 `NULL`로 만들고 척도 숫자는 그대로 둔다. 나이 판정은
+`submitted_at`(마지막 재제출 시각)이다 — 키 회전은 `updated_at`만 밀고 `submitted_at`은
+밀지 않으므로 회전이 삭제 시계를 늦추지 않는다(`FeedbackProperties` KDoc). 이 절차가
+여전히 남는 이유는 둘이다: ⑴ 파일럿 종료 직후 배치 주기(기본 매일 03:00)를 기다리지 않고
+**즉시** 비우고 싶을 때, ⑵ ⒝(표를 통째로 지우는 선택)는 자동화 대상이 아니다 — 척도
+숫자까지 지우는 것은 사람이 판정 기록을 문서로 남긴 뒤 스스로 판단할 일이라 배치가
+대신하지 않는다.
+
 자유 의견 칸이 문제다. AEAD로 봉해 두었지만 **봉인은 기밀성이지 삭제가 아니다** — 키는
 운영 마스터 키라 계속 열린다. 그리고 그 칸에는 검수자가 문서 본문 조각을 그대로 붙여 넣는
 일이 실제로 일어나고(`V2__conversion_feedback.sql`의 주석 — "○○동 ○○○님께 안내드립니다
@@ -168,12 +222,17 @@ docker compose -f compose.yml exec -T postgres \
 
 **선택지는 둘이다.**
 
-**⒜ 자유 의견만 비운다 (기본 권고)**
+**⒜ 자유 의견만 비운다 (기본 권고, 2026-09-04부터 매일 배치로도 자동 실행)**
 
 `comment_encrypted`·`encryption_scheme`·`key_version` 세 열을 `NULL`로 만든다.
 개인정보가 들어오는 칸이 사라지고 **척도 숫자(배포 의향·품질 만족도·소요 시간)와
 수정률 지표는 남는다.** 나중에 판정을 되짚거나 영업·계약 자료로 쓸 수 있다 —
 없앨 이유가 있는 것은 본문 조각이지 본문에 대한 척도가 아니다. 그래서 이쪽이 기본이다.
+
+아래 수기 명령은 이제 **즉시 실행하고 싶을 때만** 쓴다 — 30일이 지난 의견은 배치가
+어차피 다음 03:00에 비운다. 파일럿 종료 직후처럼 배치를 기다리지 않고 지금 비우고
+싶을 때, 또는 `easydoc.feedback.comment-retention-days`를 짧게 바꿔 놓지 않은 채
+당장 정리해야 할 때 그대로 쓴다.
 
 ```bash
 # 세 열을 반드시 함께 NULL 로 만든다. 스키마에 「셋이 함께 있거나 함께 없다」 CHECK 가

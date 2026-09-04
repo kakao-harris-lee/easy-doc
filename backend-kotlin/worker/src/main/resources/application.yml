@@ -77,6 +77,11 @@ easydoc:
   # 두는 것은 두 프로세스가 값을 요구하면 같은 손잡이여야 하기 때문이다(설명은 api 쪽 주석).
   feedback:
     edit-distance-cell-budget: ${EASYDOC_FEEDBACK_EDIT_DISTANCE_CELL_BUDGET:200000000}
+    # 피드백 자유 의견(comment_encrypted 등 세 열)의 보존 일수. `RetentionPurgeScheduler`
+    # 가 easydoc.retention 의 enabled·dryRun·batchSize 를 그대로 쓰면서 이 일수보다 오래된
+    # 의견 세 열만 NULL 로 만든다 — 배포 의향·품질 만족도·소요 시간·수정률 지표(평문 숫자)는
+    # 건드리지 않고 영구히 남는다(`FeedbackProperties` KDoc, master-plan §3.2).
+    comment-retention-days: ${EASYDOC_FEEDBACK_COMMENT_RETENTION_DAYS:30}
 
 logging:
   level:

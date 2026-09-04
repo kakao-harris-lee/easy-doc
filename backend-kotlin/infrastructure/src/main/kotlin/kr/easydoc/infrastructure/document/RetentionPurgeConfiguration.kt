@@ -2,8 +2,13 @@ package kr.easydoc.infrastructure.document
 
 import kr.easydoc.application.auth.TransactionRunner
 import kr.easydoc.application.document.ExpiredDocumentPurge
+import kr.easydoc.application.document.FeedbackCommentPurge
+import kr.easydoc.application.document.FeedbackCommentPurgeObserver
+import kr.easydoc.application.document.FeedbackCommentPurgePolicy
+import kr.easydoc.application.document.LoggingFeedbackCommentPurgeObserver
 import kr.easydoc.application.document.LoggingRetentionPurgeObserver
 import kr.easydoc.application.document.PurgeExpiredDocuments
+import kr.easydoc.application.document.PurgeFeedbackComments
 import kr.easydoc.application.document.RetentionPurgeObserver
 import kr.easydoc.application.document.RetentionPurgePolicy
 import org.springframework.boot.context.properties.ConfigurationProperties
@@ -50,6 +55,44 @@ class RetentionPurgeConfiguration {
         policy: RetentionPurgePolicy,
     ): PurgeExpiredDocuments =
         PurgeExpiredDocuments(
+            store = store,
+            transaction = transactionRunner,
+            observer = observer,
+            policy = policy,
+        )
+
+    @Bean
+    fun feedbackCommentPurge(jdbcClient: JdbcClient): FeedbackCommentPurge = JdbcFeedbackCommentPurge(jdbcClient)
+
+    @Bean
+    fun feedbackCommentPurgeObserver(): FeedbackCommentPurgeObserver = LoggingFeedbackCommentPurgeObserver()
+
+    /**
+     * enabled·dryRun·batchSize 는 문서 파기와 같은 손잡이(`easydoc.retention`)를 그대로
+     * 쓴다 — 둘 다 worker 의 같은 보존 파기 배치에 속한 단계라 별도 on/off·dry-run 표면을
+     * 두지 않는다. 보존 일수만 `easydoc.feedback.comment-retention-days`로 갈린다 — 문서
+     * 보존과 피드백 의견 보존은 서로 다른 기간을 가질 수 있는 별개의 정책이다.
+     */
+    @Bean
+    fun feedbackCommentPurgePolicy(
+        retention: RetentionProperties,
+        feedback: FeedbackProperties,
+    ): FeedbackCommentPurgePolicy =
+        FeedbackCommentPurgePolicy(
+            enabled = retention.enabled,
+            dryRun = retention.dryRun,
+            batchSize = retention.batchSize,
+            retentionDays = feedback.commentRetentionDays,
+        )
+
+    @Bean
+    fun purgeFeedbackComments(
+        store: FeedbackCommentPurge,
+        transactionRunner: TransactionRunner,
+        observer: FeedbackCommentPurgeObserver,
+        policy: FeedbackCommentPurgePolicy,
+    ): PurgeFeedbackComments =
+        PurgeFeedbackComments(
             store = store,
             transaction = transactionRunner,
             observer = observer,

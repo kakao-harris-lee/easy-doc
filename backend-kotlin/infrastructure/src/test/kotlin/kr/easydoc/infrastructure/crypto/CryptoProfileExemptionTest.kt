@@ -5,6 +5,7 @@ import kr.easydoc.core.crypto.EncryptedField
 import kr.easydoc.core.crypto.PlainBody
 import kr.easydoc.core.exceptions.ConfigurationException
 import kr.easydoc.core.security.Secret
+import kr.easydoc.infrastructure.document.ROTATE_KEYS_PROFILE
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
@@ -47,9 +48,11 @@ class CryptoProfileExemptionTest {
     }
 
     @Test
-    @DisplayName("api·worker·프로필 미지정은 키가 없으면 **거부한다** — 면제는 migrate 하나뿐이다")
+    @DisplayName("api·worker·rotate-keys·프로필 미지정은 키가 없으면 **거부한다** — 면제는 migrate 하나뿐이다")
     fun `서비스 프로필은 키가 없으면 거부한다`() {
-        listOf("api", "worker", null).forEach { profile ->
+        // rotate-keys 는 write-key-version 이 키 링에 없으면 뜨지 않는다 — 회전 진입점 전용
+        // 우회는 두지 않는다는 요구를 이 목록에 추가해 고정한다(`KeyRotationConfiguration` KDoc).
+        listOf("api", "worker", ROTATE_KEYS_PROFILE, null).forEach { profile ->
             runner(activeProfile = profile, keys = emptyList())
                 .run(
                     ContextConsumer { context: AssertableApplicationContext ->

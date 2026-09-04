@@ -195,6 +195,12 @@ internal class FakeDocumentOriginalRepository(
         original: EncryptedContent,
     ): Boolean = error(ROTATION_PORT_MESSAGE)
 
+    override fun documentIdsOlderThan(
+        keyVersion: Int,
+        after: UUID,
+        limit: Int,
+    ): List<UUID> = error(ROTATION_PORT_MESSAGE)
+
     private companion object {
         const val ROTATION_PORT_MESSAGE = "업로드 경로가 회전 포트를 부르면 안 된다"
     }
@@ -285,6 +291,13 @@ internal class FakeConversionRepository(
         keyVersion: Int,
         ciphertexts: ConversionCiphertexts,
     ): Boolean = false
+
+    /** 회전 배치 후보 포트 — 이 대역을 쓰는 케이스가 회전을 재지 않는다. */
+    override fun idsOlderThan(
+        keyVersion: Int,
+        after: UUID,
+        limit: Int,
+    ): List<UUID> = emptyList()
 
     /** 검수 저장이 잠그고 읽는 행. 케이스가 심는다. */
     val lockedForReview = mutableMapOf<Pair<UUID, UUID>, LockedConversion>()
@@ -415,6 +428,12 @@ internal class FakeConversionFeedbackRepository(private val transaction: Recordi
         expected: EncryptedContent,
         comment: EncryptedContent,
     ): Boolean = error(ROTATION_PORT_MESSAGE)
+
+    override fun conversionIdsOlderThan(
+        keyVersion: Int,
+        after: UUID,
+        limit: Int,
+    ): List<UUID> = error(ROTATION_PORT_MESSAGE)
 
     private companion object {
         const val ROTATION_PORT_MESSAGE = "피드백 저장 경로가 회전 포트를 부르면 안 된다"
