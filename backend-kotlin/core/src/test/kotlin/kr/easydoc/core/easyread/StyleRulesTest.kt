@@ -127,10 +127,15 @@ class StyleRulesTest {
         }
 
         @Test
-        @DisplayName("괄호 안에 숫자가 있으면 뜻풀이로 보지 않는다")
-        fun `숫자가 든 괄호는 뜻풀이로 보지 않는다`() {
+        @DisplayName("괄호 내용이 사전 뜻풀이와 무관하면 뜻풀이로 보지 않는다")
+        fun `괄호 안에 한글이 있어도 사전 뜻풀이가 아니면 잡는다`() {
+            // "명의" -> "이름" 이 사전 뜻풀이다 — 괄호 내용이 그 값과 같거나 서로 포함 관계일
+            // 때만 뜻풀이로 본다. "예정"·"추후 확정"·"공동명의"는 한글이지만 그 값과 무관하다.
+            assertThat(DIFFICULT_WORD_REPLACEMENTS.getValue("명의")).isEqualTo("이름")
+            assertThat(findDifficultWords("법령이 시행(예정)입니다.")).contains("시행")
+            assertThat(findDifficultWords("법령이 시행(추후 확정)입니다.")).contains("시행")
+            assertThat(findDifficultWords("명의(공동명의)가 여럿인 계약입니다.")).contains("명의")
             assertThat(findDifficultWords("이 규정은 시행(2026년 9월)됩니다.")).contains("시행")
-            assertThat(findDifficultWords("이 규정은 시행(2026.9.)됩니다.")).contains("시행")
             assertThat(findDifficultWords("명의(이름)가 개인인 리스 차량입니다.")).isEmpty()
         }
     }

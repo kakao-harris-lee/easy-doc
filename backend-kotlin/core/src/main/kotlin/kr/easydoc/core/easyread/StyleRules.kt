@@ -133,19 +133,37 @@ private fun hasWordBoundaryAfter(
         text[endIndex] !in '가'..'힣' ||
         WORD_BOUNDARY_SUFFIXES.any { text.startsWith(it, endIndex) }
 
+/** [endIndex] 바로 뒤 괄호의 내용(다듬은 문자열) — 괄호가 없거나 비어 있으면 `null`. */
+private fun parenthesisContent(
+    text: String,
+    endIndex: Int,
+): String? {
+    if (endIndex >= text.length || text[endIndex] != '(') return null
+    val closeIndex = text.indexOf(')', endIndex + 1)
+    val content = if (closeIndex > endIndex + 1) text.substring(endIndex + 1, closeIndex).trim() else ""
+    return content.ifEmpty { null }
+}
+
 /**
- * [endIndex] 바로 뒤에 괄호 뜻풀이(예: "명의(이름)")가 이어지는가 — 이미 설명된 용어는 잡지 않는다.
- * 괄호 안에 한글 음절이 하나 이상 있고 숫자가 없어야 뜻풀이로 본다 — "시행(2026년 9월)"처럼
- * 날짜·수치를 덧붙인 괄호는 뜻풀이가 아니라서 그대로 잡아야 한다.
+ * [endIndex] 바로 뒤 괄호가 [word] 의 사전 뜻풀이([DIFFICULT_WORD_REPLACEMENTS])인가 —
+ * 이미 설명된 용어만 잡지 않는다. 괄호 내용이 그저 한글이라는 것만으로는 뜻풀이로 보지
+ * 않는다 — "시행(예정)"·"명의(공동명의)"처럼 사전 값과 무관한 괄호까지 억누르게 된다.
+ * 사전 값과 같거나 서로 포함 관계일 때만 뜻풀이로 본다. 값에 "/"·","로 대안이 여럿이면
+ * 그중 하나만 맞아도 된다.
  */
 private fun isGlossedByParenthesis(
+    word: String,
     text: String,
     endIndex: Int,
 ): Boolean {
-    if (endIndex >= text.length || text[endIndex] != '(') return false
-    val closeIndex = text.indexOf(')', endIndex + 1)
-    val content = if (closeIndex > endIndex + 1) text.substring(endIndex + 1, closeIndex) else ""
-    return content.any { it in '가'..'힣' } && content.none { it in '0'..'9' }
+    val content = parenthesisContent(text, endIndex)
+    val gloss = DIFFICULT_WORD_REPLACEMENTS[word]
+    return content != null && gloss != null &&
+        gloss
+            .split('/', ',')
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .any { alt -> content == alt || content.contains(alt) || alt.contains(content) }
 }
 
 /** [word] 가 [text] 안에 온전한 낱말로 한 번이라도 나타나는가 — 복합어 안에 박힌 자리는 세지 않는다. */
@@ -157,7 +175,7 @@ private fun appearsAsWholeWord(
     while (index >= 0) {
         val startsWord = index == 0 || text[index - 1] !in '가'..'힣'
         val endIndex = index + word.length
-        if (startsWord && !isGlossedByParenthesis(text, endIndex) && hasWordBoundaryAfter(text, endIndex)) {
+        if (startsWord && !isGlossedByParenthesis(word, text, endIndex) && hasWordBoundaryAfter(text, endIndex)) {
             return true
         }
         index = text.indexOf(word, index + 1)
