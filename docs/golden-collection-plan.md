@@ -263,6 +263,8 @@ LLM-as-judge는 `./gradlew testLlm` opt-in이다. 기본 `./gradlew build`는 `@
 
 **부수 발견: 사전 참조 픽스처도 코퍼스에 종속돼 있었다.** `./gradlew build` 전건 실행에서 `DictionaryReferenceContextTest`(`backend-kotlin/infrastructure`)가 새 7건에 대해 `참조 출력 픽스처가 없다: /dictionary/reference/{id}.txt`로 실패했다 — 이 테스트는 `data/golden/documents/`의 모든 문서를 순회하며 Kotlin 이식본과 Python 참조 구현(`dictionary/src/easydict/lookup.py`)의 사전 컨텍스트 출력이 문자열까지 같은지 대조하는데, 픽스처(`backend-kotlin/infrastructure/src/test/resources/dictionary/reference/*.txt`)는 문서 id 별로 하나씩 커밋돼 있어 코퍼스에 문서를 추가하면 그 문서의 픽스처도 함께 있어야 한다. 같은 디렉터리의 `README.md`가 문서화한 재생성 절차(저장소 루트에서 `PYTHONPATH=dictionary/src python3` 스크립트로 `data/golden/documents/*.json` 전건을 다시 돌려 픽스처를 쓴다)를 그대로 실행해 `022`·`023`·`047`·`050`·`105`·`106`·`107`의 픽스처 7건을 추가했다. **기존 56건 픽스처는 `git status`로 무변경을 확인했다** — 사전 색인이 그대로이므로 재실행이 기존 참조값을 흔들지 않는다. 이 절차는 새 코드를 만든 것이 아니라 저장소가 이미 문서화한 재생성 스크립트를 그대로 돌린 것이다.
 
+**2026-09-04 결정: 이 결박을 푼다.** `docs/kotlin-redevelopment-backlog.md` §1.1 「사전 참조 픽스처가 골든 문서 전건에 결박」의 선택지 ⓑ(고정 부분집합)를 채택했다 — 위에서 재생성한 56건(2026-08 승격 시점 코퍼스)만 이식본↔참조 구현 대조를 계속하고, 그 뒤 승인되는 문서(이 7건과 앞으로의 승인 포함)는 대조도 픽스처 요구도 받지 않는다. 고정 56건 목록은 `DictionaryReferenceContextTest`의 `FROZEN_REFERENCE_DOCUMENT_IDS` 상수가 정본이다. **새 승인부터는 이 문단이 요구하던 Python 참조 구현 재실행이 더 이상 필요하지 않다** — 이 7건에 이미 만들어 둔 픽스처 파일은 지우지 않았지만(테스트가 요구하지 않을 뿐 참조로 남겨 둔다) 앞으로의 승인에서는 만들 필요가 없다.
+
 **대역 구성(승인 후).** 위 「5,000~20,000자 구간 갱신」·「원본 13건 추출 결과」 절이 다룬 길이 대역을 이번 승인 결과로 다시 적으면:
 
 - **5,000~20,000자, 실문서**: `105`(6,712자)·`107`(5,599자)
