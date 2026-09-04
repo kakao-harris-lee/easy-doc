@@ -12,7 +12,7 @@ import java.util.UUID
 
 /**
  * `oauth_states` 테이블 접근. 여러 API 인스턴스가 같은 상태를 봐야 하므로(무상태 배포)
- * 인메모리가 아니라 여기 둔다 — 스키마는 `V5__user_identities.sql`.
+ * 인메모리가 아니라 여기 둔다 — 스키마는 `V6__user_identities.sql`.
  */
 class JdbcOAuthStateStore(
     private val jdbc: JdbcClient,

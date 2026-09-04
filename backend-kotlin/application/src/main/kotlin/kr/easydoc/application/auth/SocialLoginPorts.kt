@@ -73,7 +73,7 @@ data class OAuthChallenge(
 
 /**
  * OAuth `state`·`nonce` 저장소. 여러 API 인스턴스가 상태를 공유해야 하므로(계약 설계
- * 결정) 인메모리가 아니라 DB(`oauth_states`, `V5__user_identities.sql`)에 둔다.
+ * 결정) 인메모리가 아니라 DB(`oauth_states`, `V6__user_identities.sql`)에 둔다.
  */
 interface OAuthStateStore {
     /** `provider`+`redirect_uri` 에 묶인 새 challenge 를 발급한다. `ttl` 이 지나면 무효다. */

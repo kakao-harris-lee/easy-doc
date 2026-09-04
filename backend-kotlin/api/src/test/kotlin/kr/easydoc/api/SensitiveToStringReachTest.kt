@@ -230,8 +230,6 @@ class SensitiveToStringReachTest {
          * 메일 주소 로컬파트라 토큰 `name` 에 걸린다)과 `password`([Secret] 이 스스로 가린다,
          * 그 자체가 토큰 `password` 에 걸린다) 둘 다 손으로 쥔 `toString()` 이 가린다 —
          * `MailProperties.fromAddress` 와 같은 선례.
-         */
-        
          *
          * 소셜 로그인(backlog §1.4 P0-1, 2026-09-04)이 **열**을 더해 99 다(메일 89 위에) —
          * `OAuthStartRequest`·`OAuthStartResponse`·`OAuthCallbackRequest`(api, 뒤 둘은

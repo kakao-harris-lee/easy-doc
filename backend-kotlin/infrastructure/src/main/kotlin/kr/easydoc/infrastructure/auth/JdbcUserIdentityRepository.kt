@@ -9,7 +9,7 @@ import org.springframework.jdbc.core.simple.JdbcClient
 import java.sql.ResultSet
 import java.util.UUID
 
-/** `user_identities` 테이블 접근. 스키마는 `V5__user_identities.sql` 이 정한다. */
+/** `user_identities` 테이블 접근. 스키마는 `V6__user_identities.sql` 이 정한다. */
 class JdbcUserIdentityRepository(private val jdbc: JdbcClient) : UserIdentityRepository {
     override fun findByProviderIdentity(
         provider: SocialLoginProviderId,

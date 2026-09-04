@@ -41,7 +41,7 @@ interface UserRepository {
     /**
      * 비밀번호 없이 새 사용자를 만든다 — 소셜 로그인 최초 가입
      * ([kr.easydoc.application.auth.SocialLoginService]). `password_hash` 는 `null` 로
-     * 저장된다(`users.password_hash` nullable, `V5__user_identities.sql`). 이 계정은
+     * 저장된다(`users.password_hash` nullable, `V6__user_identities.sql`). 이 계정은
      * [PasswordHasher] 를 거치지 않으므로 [create] 와 별도 메서드다 — 매개변수를
      * `PasswordHash?` 로 열면 호출부마다 "언제 null 을 줘도 되는지"를 스스로 판단해야
      * 하고, 이름 있는 메서드 둘이 그 판단을 타입으로 대신한다.
