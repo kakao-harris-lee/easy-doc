@@ -70,3 +70,6 @@ docs/golden/한국보건의료연구원+종합감사+처분요구서_공개.pdf
 
 # OAuth 클라이언트 비밀 파일(Google Cloud Console 다운로드) — 값은 .env 로만 옮긴다
 client_secret_*.json
+
+# 에이전트 격리 worktree (Agent isolation: worktree)
+.claude/worktrees/

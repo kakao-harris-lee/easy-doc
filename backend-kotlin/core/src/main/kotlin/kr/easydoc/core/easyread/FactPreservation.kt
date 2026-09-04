@@ -200,7 +200,10 @@ private fun compareKeyOf(raw: RawMatch): String =
         FactKind.PERCENT -> percentCompareKey(raw.text)
     }
 
-private fun extractFacts(text: String): List<ExtractedFact> {
+// P0-4 단위 정렬(`core/segment/SegmentAlignment.kt`, 2026-09-05)이 같은 추출 규칙을 앵커로
+// 재사용한다 — 공개 API 확대가 아니라 같은 core 모듈 안에서만 보이는 `internal` 좁히기다.
+
+internal fun extractFacts(text: String): List<ExtractedFact> {
     val normalized = normalizeFullWidthDigits(stripPlaceholders(text))
     return extractRawMatches(normalized)
         .map { raw ->
