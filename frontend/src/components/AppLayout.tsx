@@ -10,10 +10,12 @@ import {
 import { FilePlus2, History, LogOut, Menu, UserRound, X } from 'lucide-react'
 import { NavLink } from 'react-router-dom'
 
+import type { UserIdentityResponse } from '../api/types'
 import { useAuth } from '../auth/context'
 import { cn } from '../lib/utils'
 import { confirmDiscardUnsaved } from '../review/unsavedChanges'
 import { HISTORY_PATH, HOME_PATH } from '../routes/paths'
+import { GoogleLinkStatus } from './GoogleLinkStatus'
 import { Logo } from './Logo'
 import { WorkspaceMenu } from './WorkspaceMenu'
 import { Button } from './ui/Button'
@@ -69,7 +71,15 @@ function navLinkClass({ isActive }: { isActive: boolean }): string {
  * 패널에 `role="menu"`를 붙이는 반대 방향은 더 나쁘다: 계정 이메일 `<p>`가 `menuitem`이
  * 아니라 곧바로 규격 위반이고, 화살표·Home/End 이동 규약까지 딸려 온다.
  */
-function AccountMenu({ email, onSignOut }: { email: string; onSignOut: () => void }) {
+function AccountMenu({
+  email,
+  identities,
+  onSignOut,
+}: {
+  email: string
+  identities: UserIdentityResponse[]
+  onSignOut: () => void
+}) {
   const [open, setOpen] = useState(false)
   const panelId = useId()
   const containerRef = useRef<HTMLDivElement>(null)
@@ -154,6 +164,13 @@ function AccountMenu({ email, onSignOut }: { email: string; onSignOut: () => voi
             <LogOut className="size-4" aria-hidden="true" />
             로그아웃
           </Button>
+          {/* 패널 안의 다른 버튼과 같은 이유로 Esc를 직접 받는다(non-native
+              interactive element에 keydown을 거는 대신, 실제 버튼 각각에 건다). */}
+          <GoogleLinkStatus
+            identities={identities}
+            className="mt-3"
+            onButtonKeyDown={handleEscape}
+          />
         </div>
       )}
     </div>
@@ -229,7 +246,11 @@ export function AppLayout({ children }: { children: ReactNode }) {
                 </div>
                 {user !== null && (
                   <div className="hidden lg:block">
-                    <AccountMenu email={user.email} onSignOut={guardedSignOut} />
+                    <AccountMenu
+                      email={user.email}
+                      identities={user.identities}
+                      onSignOut={guardedSignOut}
+                    />
                   </div>
                 )}
                 <button
@@ -292,6 +313,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
                 <LogOut className="size-4" aria-hidden="true" />
                 로그아웃
               </Button>
+              {user !== null && <GoogleLinkStatus identities={user.identities} className="mt-2" />}
             </div>
           </nav>
         )}

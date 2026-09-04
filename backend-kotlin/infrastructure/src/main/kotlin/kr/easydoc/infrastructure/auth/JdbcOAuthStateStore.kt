@@ -1,5 +1,6 @@
 package kr.easydoc.infrastructure.auth
 
+import kr.easydoc.application.auth.ConsumedOAuthState
 import kr.easydoc.application.auth.OAuthChallenge
 import kr.easydoc.application.auth.OAuthStateStore
 import kr.easydoc.application.auth.SocialLoginProviderId
@@ -24,6 +25,7 @@ class JdbcOAuthStateStore(
         provider: SocialLoginProviderId,
         redirectUri: String,
         ttl: Duration,
+        userId: UUID?,
     ): OAuthChallenge {
         val state = randomToken()
         val nonce = randomToken()
@@ -31,8 +33,8 @@ class JdbcOAuthStateStore(
         jdbc
             .sql(
                 """
-                INSERT INTO oauth_states (id, provider, state, nonce, redirect_uri, expires_at)
-                VALUES (:id, :provider, :state, :nonce, :redirectUri, :expiresAt)
+                INSERT INTO oauth_states (id, provider, state, nonce, redirect_uri, expires_at, user_id)
+                VALUES (:id, :provider, :state, :nonce, :redirectUri, :expiresAt, :userId)
                 """.trimIndent(),
             ).param("id", UUID.randomUUID())
             .param("provider", provider.wireValue)
@@ -40,6 +42,7 @@ class JdbcOAuthStateStore(
             .param("nonce", nonce)
             .param("redirectUri", redirectUri)
             .param("expiresAt", (now + ttl).let { java.sql.Timestamp.from(it) })
+            .param("userId", userId)
             .update()
         return OAuthChallenge(state, nonce)
     }
@@ -54,7 +57,7 @@ class JdbcOAuthStateStore(
         provider: SocialLoginProviderId,
         state: String,
         redirectUri: String,
-    ): String? =
+    ): ConsumedOAuthState? =
         jdbc
             .sql(
                 """
@@ -65,13 +68,13 @@ class JdbcOAuthStateStore(
                   AND redirect_uri = :redirectUri
                   AND consumed_at IS NULL
                   AND expires_at > :now
-                RETURNING nonce
+                RETURNING nonce, user_id
                 """.trimIndent(),
             ).param("now", java.sql.Timestamp.from(clock.instant()))
             .param("provider", provider.wireValue)
             .param("state", state)
             .param("redirectUri", redirectUri)
-            .query { rs, _ -> rs.getString("nonce") }
+            .query { rs, _ -> ConsumedOAuthState(rs.getString("nonce"), rs.getObject("user_id", UUID::class.java)) }
             .optional()
             .orElse(null)
 

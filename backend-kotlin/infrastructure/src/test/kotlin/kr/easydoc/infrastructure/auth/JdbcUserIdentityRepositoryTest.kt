@@ -1,6 +1,7 @@
 package kr.easydoc.infrastructure.auth
 
 import kr.easydoc.application.auth.SocialLoginProviderId
+import kr.easydoc.application.auth.SocialLoginService
 import kr.easydoc.core.exceptions.ConflictException
 import kr.easydoc.infrastructure.DatabaseHandle
 import kr.easydoc.infrastructure.PostgresTestSupport
@@ -57,7 +58,7 @@ class JdbcUserIdentityRepositoryTest {
     }
 
     @Test
-    @DisplayName("같은 (provider, provider_user_id) 를 두 사용자에 연결할 수 없다 — 유일성 제약")
+    @DisplayName("같은 (provider, provider_user_id) 를 두 사용자에 연결할 수 없다 — 유일성 제약(V6)")
     fun `신원 유일성을 지킨다`() {
         val first = users.createWithoutPassword(uniqueEmail(), emailVerified = true)
         val second = users.createWithoutPassword(uniqueEmail(), emailVerified = true)
@@ -66,6 +67,61 @@ class JdbcUserIdentityRepositoryTest {
         assertThatThrownBy {
             identities.link(second.id, SocialLoginProviderId.GOOGLE, "shared-sub", second.email, true)
         }.isInstanceOf(ConflictException::class.java)
+            .hasMessage(SocialLoginService.identityAlreadyLinkedToOtherUserMessage(SocialLoginProviderId.GOOGLE))
+    }
+
+    @Test
+    @DisplayName(
+        "같은 사용자에 같은 제공자의 두 번째 신원을 연결할 수 없다 — 유일성 제약(V9, 리뷰 후속 조치 HIGH)",
+    )
+    fun `사용자당 제공자 하나 불변식을 DB 가 지킨다`() {
+        val user = users.createWithoutPassword(uniqueEmail(), emailVerified = true)
+        identities.link(user.id, SocialLoginProviderId.GOOGLE, "first-sub", user.email, true)
+
+        assertThatThrownBy {
+            identities.link(user.id, SocialLoginProviderId.GOOGLE, "second-sub", user.email, true)
+        }.isInstanceOf(ConflictException::class.java)
+            .hasMessage(SocialLoginService.providerAlreadyLinkedMessage(SocialLoginProviderId.GOOGLE))
+    }
+
+    @Test
+    @DisplayName("사용자·제공자로 찾는다 — 명시적 연결의 제공자당 하나 불변식이 쓰는 조회")
+    fun `사용자와 제공자로 찾는다`() {
+        val user = users.createWithoutPassword(uniqueEmail(), emailVerified = true)
+        identities.link(user.id, SocialLoginProviderId.GOOGLE, "user-provider-sub", user.email, true)
+
+        val found = identities.findByUserAndProvider(user.id, SocialLoginProviderId.GOOGLE)
+
+        assertThat(found?.providerUserId).isEqualTo("user-provider-sub")
+    }
+
+    @Test
+    @DisplayName("연결하지 않은 사용자·제공자 조합은 null 이다")
+    fun `연결하지 않은 조합은 null 이다`() {
+        val user = users.createWithoutPassword(uniqueEmail(), emailVerified = true)
+
+        assertThat(identities.findByUserAndProvider(user.id, SocialLoginProviderId.GOOGLE)).isNull()
+    }
+
+    @Test
+    @DisplayName("사용자가 연결한 신원 전체를 돌려준다 — readMe.identities 가 쓰는 조회")
+    fun `사용자의 신원 전체를 찾는다`() {
+        val user = users.createWithoutPassword(uniqueEmail(), emailVerified = true)
+        val other = users.createWithoutPassword(uniqueEmail(), emailVerified = true)
+        identities.link(user.id, SocialLoginProviderId.GOOGLE, "all-by-user-sub", user.email, true)
+        identities.link(other.id, SocialLoginProviderId.GOOGLE, "other-user-sub", other.email, true)
+
+        val found = identities.findAllByUser(user.id)
+
+        assertThat(found.map { it.providerUserId }).containsExactly("all-by-user-sub")
+    }
+
+    @Test
+    @DisplayName("신원을 연결하지 않은 사용자는 빈 목록이다")
+    fun `신원이 없으면 빈 목록이다`() {
+        val user = users.createWithoutPassword(uniqueEmail(), emailVerified = true)
+
+        assertThat(identities.findAllByUser(user.id)).isEmpty()
     }
 
     @Test

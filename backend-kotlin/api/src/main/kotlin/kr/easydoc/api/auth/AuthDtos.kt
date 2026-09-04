@@ -2,6 +2,7 @@ package kr.easydoc.api.auth
 
 import com.fasterxml.jackson.annotation.JsonCreator
 import com.fasterxml.jackson.annotation.JsonProperty
+import kr.easydoc.application.auth.SocialLoginProviderId
 import kr.easydoc.core.privacy.CONTENT_MASK
 import kr.easydoc.core.user.User
 
@@ -31,6 +32,7 @@ data class UserResponse(
     @get:JsonProperty("id") val id: String,
     @get:JsonProperty("email") val email: String,
     @get:JsonProperty("email_verified") val emailVerified: Boolean,
+    @get:JsonProperty("identities") val identities: List<UserIdentityResponse>,
 ) {
     /**
      * **이메일을 찍지 않는다.** 형제 요청 DTO 둘(`SignupRequest`·`LoginRequest`)이 같은
@@ -40,8 +42,37 @@ data class UserResponse(
     override fun toString(): String = "UserResponse(id=$id, email=$CONTENT_MASK, emailVerified=$emailVerified)"
 
     companion object {
-        fun of(user: User): UserResponse =
-            UserResponse(id = user.id.toString(), email = user.email, emailVerified = user.emailVerifiedAt != null)
+        /**
+         * [identities] 는 기본값 빈 목록이다 — `signup`(2.10.0에도 항상 비밀번호 계정,
+         * 아직 아무 신원도 잇지 않은 상태)이 그 자리에서 부를 때 매번 빈 목록을 만들어
+         * 넘기지 않아도 되게 한다. `/auth/me`(연결된 신원이 있을 수 있다)만 실제 값을 준다.
+         */
+        fun of(
+            user: User,
+            identities: List<SocialLoginProviderId> = emptyList(),
+        ): UserResponse =
+            UserResponse(
+                id = user.id.toString(),
+                email = user.email,
+                emailVerified = user.emailVerifiedAt != null,
+                identities = identities.map(UserIdentityResponse::of),
+            )
+    }
+}
+
+/** `UserResponse.identities` 의 항목 하나. 계약 `components/schemas/UserIdentityResponse`. */
+data class UserIdentityResponse(
+    @get:JsonProperty("provider") val provider: String,
+) {
+    /**
+     * 길이만 남긴다. `provider` 자체는 공개 enum 값(`google`)이라 개인정보는 아니지만,
+     * 필드 하나짜리 래퍼 DTO 는 `SensitiveToStringReachTest` 가 "감싼 쪽이 가린다"
+     * 전제로 기계적으로 재는 대상이다 — `WorkspaceNameRequest`·`MaskedText` 와 같은 이유.
+     */
+    override fun toString(): String = "UserIdentityResponse(${provider.length}자)"
+
+    companion object {
+        fun of(provider: SocialLoginProviderId): UserIdentityResponse = UserIdentityResponse(provider.wireValue)
     }
 }
 

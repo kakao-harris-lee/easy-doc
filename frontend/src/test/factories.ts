@@ -17,6 +17,7 @@ export function userResponse(overrides: Partial<UserResponse> = {}): UserRespons
     id: 'u1',
     email: 'user@example.com',
     email_verified: true,
+    identities: [],
     ...overrides,
   }
 }

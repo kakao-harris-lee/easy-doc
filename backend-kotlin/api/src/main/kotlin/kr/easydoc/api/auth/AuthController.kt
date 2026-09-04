@@ -2,6 +2,7 @@ package kr.easydoc.api.auth
 
 import kr.easydoc.application.auth.AuthService
 import kr.easydoc.application.auth.EmailVerificationService
+import kr.easydoc.application.auth.SocialLoginService
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
@@ -17,6 +18,7 @@ import org.springframework.web.bind.annotation.RestController
 class AuthController(
     private val authService: AuthService,
     private val emailVerification: EmailVerificationService,
+    private val socialLogin: SocialLoginService,
 ) {
     /** 계정과 기본 작업 공간을 만든다. **201** 이다 — 자원이 실제로 생겼다. */
     @PostMapping("/signup", consumes = [MediaType.APPLICATION_JSON_VALUE])
@@ -42,10 +44,12 @@ class AuthController(
         )
     }
 
-    /** 토큰이 가리키는 사용자. */
+    /** 토큰이 가리키는 사용자. `identities` 는 연결된 소셜 신원 목록이다(2.10.0, backlog §1.4). */
     @GetMapping("/me")
     fun me(user: AuthenticatedUser): ResponseEntity<UserResponse> =
-        private(HttpStatus.OK).body(UserResponse.of(authService.readUser(user.id)))
+        private(HttpStatus.OK).body(
+            UserResponse.of(authService.readUser(user.id), socialLogin.identitiesOf(user.id)),
+        )
 
     /** 인증 코드를 (재)발급하고 메일로 보낸다. 이미 인증됐으면 409, 쿨다운 안이면 429. */
     @PostMapping("/email-verification/request")

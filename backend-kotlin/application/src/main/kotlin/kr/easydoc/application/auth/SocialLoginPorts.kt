@@ -74,26 +74,45 @@ data class OAuthChallenge(
 /**
  * OAuth `state`·`nonce` 저장소. 여러 API 인스턴스가 상태를 공유해야 하므로(계약 설계
  * 결정) 인메모리가 아니라 DB(`oauth_states`, `V6__user_identities.sql`)에 둔다.
+ *
+ * **`userId` 가 로그인·연결 두 흐름을 가른다**(V8, backlog §1.4 명시적 연결). 로그인
+ * 흐름(`SocialLoginService.start`/`callback`)은 `null`을 쓴다 — 아직 아무도 인증되지
+ * 않은 채로 발급되는 state 다. 연결 흐름(`linkStart`/`linkCallback`)은 요청한 사용자의
+ * id 를 싣는다 — `linkCallback`이 그 값과 Bearer 토큰의 사용자를 대조해 다르면(또는
+ * `null`이면, 즉 로그인 state 가 연결 콜백에 잘못 왔다면) 400 으로 거절한다. 반대로
+ * 연결 state 가 로그인 콜백에 오면 `boundUserId != null` 로 같은 방식으로 걸린다.
  */
 interface OAuthStateStore {
-    /** `provider`+`redirect_uri` 에 묶인 새 challenge 를 발급한다. `ttl` 이 지나면 무효다. */
+    /**
+     * `provider`+`redirect_uri` 에 묶인 새 challenge 를 발급한다. `ttl` 이 지나면 무효다.
+     * [userId] 는 연결 흐름 전용이다 — 로그인 흐름은 생략하고(`null`) 부른다.
+     */
     fun issue(
         provider: SocialLoginProviderId,
         redirectUri: String,
         ttl: Duration,
+        userId: UUID? = null,
     ): OAuthChallenge
 
     /**
      * 단발 소비. 유효(존재·미만료·미사용·`provider`+`redirect_uri` 일치)하면 발급 당시
-     * `nonce` 를 돌려주며 **그 자리에서 소진한다**(재호출은 항상 `null`). 그 밖은 전부 `null`
-     * — 사유를 구분하지 않는다(어느 사유든 같은 400).
+     * `nonce` 와 [ConsumedOAuthState.boundUserId] 를 돌려주며 **그 자리에서 소진한다**
+     * (재호출은 항상 `null`). 그 밖은 전부 `null` — 사유를 구분하지 않는다(어느 사유든
+     * 같은 400). `boundUserId` 검증(로그인/연결 흐름 판정, 호출자 일치)은 이 저장소가
+     * 아니라 `SocialLoginService` 가 한다 — 저장소는 발급 당시 값을 그대로 돌려줄 뿐이다.
      */
     fun consume(
         provider: SocialLoginProviderId,
         state: String,
         redirectUri: String,
-    ): String?
+    ): ConsumedOAuthState?
 }
+
+/** [OAuthStateStore.consume] 의 결과 — 단발 소비된 `nonce` 와 발급 당시 바인딩된 사용자. */
+data class ConsumedOAuthState(
+    val nonce: String,
+    val boundUserId: UUID?,
+)
 
 /** 사용자와 소셜 신원의 연결 한 건. */
 data class UserIdentity(
@@ -110,6 +129,19 @@ interface UserIdentityRepository {
         provider: SocialLoginProviderId,
         providerUserId: String,
     ): UserIdentity?
+
+    /**
+     * 이 사용자가 이 제공자에 이미 연결한 신원이 있는지 본다 — 사용자당 제공자 하나
+     * 불변식(`SocialLoginService.linkCallback`, backlog §1.4 명시적 연결). 있으면
+     * 두 번째 연결 시도는 409 다.
+     */
+    fun findByUserAndProvider(
+        userId: UUID,
+        provider: SocialLoginProviderId,
+    ): UserIdentity?
+
+    /** 이 사용자가 연결한 신원 전체 — `readMe.identities` (backlog §1.4 명시적 연결). */
+    fun findAllByUser(userId: UUID): List<UserIdentity>
 
     /** 기존 사용자에 새 신원을 연결한다. 가입 트랜잭션 안에서 사용자 생성과 함께 불린다. */
     fun link(

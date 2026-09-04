@@ -57,6 +57,7 @@ beforeEach(() => {
     id: 'u1',
     email: 'user@example.com',
     email_verified: true,
+    identities: [],
   })
   vi.mocked(getConversion).mockResolvedValue(conversion({ easy_text: '초안입니다.' }))
   // 검수 화면은 원문을 서버에서 가져온다 — 목이 없으면 실제 fetch 가 나간다.

@@ -14,6 +14,14 @@ export const EMAIL_VERIFICATION_PATH = '/verify-email'
  */
 export const OAUTH_GOOGLE_CALLBACK_PATH = '/auth/google/callback'
 
+/**
+ * 명시적 계정 연결 콜백 라우트(2.10.0 신설, backlog §1.4). 로그인 콜백과 주소를
+ * 나누는 이유는 그 화면이 인증 전(Bearer 없음)이고 이 화면은 인증 후(Bearer 필요)라
+ * 요구하는 것과 실패 갈래가 다르기 때문이다 — `RequireAuth`로 감싸 미로그인 진입을
+ * 걸러낸다.
+ */
+export const OAUTH_GOOGLE_LINK_CALLBACK_PATH = '/auth/google/link/callback'
+
 /** 변환 화면 라우트 패턴 (`useParams`의 키와 같은 이름을 쓴다). */
 export const CONVERSION_PATH = '/conversions/:conversionId'
 
@@ -25,6 +33,14 @@ export function conversionPath(conversionId: string): string {
 /** 가드가 로그인 화면으로 넘길 때 싣는 원래 목적지. */
 export interface FromLocationState {
   from?: string
+}
+
+/**
+ * 홈으로 돌아갈 때 한 번만 보여줄 안내. `OAuthLinkCallbackPage`가 연결 성공 뒤 이
+ * 상태를 싣고 홈으로 이동한다 — 라우터 state라 새로고침하면 사라진다(진짜 "한 번"이다).
+ */
+export interface HomeNoticeState {
+  notice?: string
 }
 
 /**

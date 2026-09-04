@@ -29,7 +29,12 @@ vi.mock('./api/client', async (importOriginal) => ({
   getDocumentSource: vi.fn(),
 }))
 
-const USER = { id: 'u1', email: 'gongmuwon@example.test', email_verified: true }
+const USER = {
+  id: 'u1',
+  email: 'gongmuwon@example.test',
+  email_verified: true,
+  identities: [],
+}
 
 function authValue(status: AuthContextValue['status']): AuthContextValue {
   return {
