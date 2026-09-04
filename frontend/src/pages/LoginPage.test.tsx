@@ -90,7 +90,11 @@ describe('로그인 화면', () => {
       token_type: 'bearer',
       expires_in: 3600,
     })
-    vi.mocked(fetchMe).mockResolvedValue({ id: 'u1', email: 'user@example.com' })
+    vi.mocked(fetchMe).mockResolvedValue({
+      id: 'u1',
+      email: 'user@example.com',
+      email_verified: true,
+    })
     renderAt('/login')
 
     await user.type(screen.getByLabelText('이메일'), 'user@example.com')

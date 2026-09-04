@@ -69,7 +69,11 @@ describe('인증 가드', () => {
 
   it('토큰이 유효하면 보호 화면을 보여준다', async () => {
     window.localStorage.setItem('easydoc.access_token', 'valid-token')
-    vi.mocked(fetchMe).mockResolvedValue({ id: 'u1', email: 'user@example.com' })
+    vi.mocked(fetchMe).mockResolvedValue({
+      id: 'u1',
+      email: 'user@example.com',
+      email_verified: true,
+    })
 
     renderAt('/')
 
@@ -79,7 +83,11 @@ describe('인증 가드', () => {
   it('로그아웃하면 토큰을 지우고 로그인 화면으로 돌아간다', async () => {
     const user = userEvent.setup()
     window.localStorage.setItem('easydoc.access_token', 'valid-token')
-    vi.mocked(fetchMe).mockResolvedValue({ id: 'u1', email: 'user@example.com' })
+    vi.mocked(fetchMe).mockResolvedValue({
+      id: 'u1',
+      email: 'user@example.com',
+      email_verified: true,
+    })
     renderAt('/')
 
     // 로그아웃은 계정 메뉴 안에 있다 — 머리말은 이메일도 로그아웃도 펼쳐 두지 않는다

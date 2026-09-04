@@ -5,7 +5,7 @@ import { MIN_PASSWORD_LENGTH } from '../auth/validation'
 import { AuthIntro } from '../components/AuthIntro'
 import { CredentialsForm } from '../components/CredentialsForm'
 import { GoogleLoginButton } from '../components/GoogleLoginButton'
-import { HOME_PATH, LOGIN_PATH } from '../routes/paths'
+import { EMAIL_VERIFICATION_PATH, HOME_PATH, LOGIN_PATH } from '../routes/paths'
 
 /**
  * 가입 화면. 가입에 성공하면 이어서 로그인까지 마치고 홈으로 간다.
@@ -43,7 +43,9 @@ export function SignupPage() {
             passwordHint={`${MIN_PASSWORD_LENGTH}자 이상 입력해 주세요.`}
             onSubmit={async (email, password) => {
               await signUp(email, password)
-              navigate(HOME_PATH, { replace: true })
+              // 이메일·비밀번호 가입은 미인증 상태로 시작한다 — 곧장 홈이 아니라
+              // 인증 화면으로 보낸다. 구글 가입은 이 경로를 타지 않는다(늘 인증됨).
+              navigate(EMAIL_VERIFICATION_PATH, { replace: true })
             }}
           />
           <div className="mt-5 flex items-center gap-3" aria-hidden="true">

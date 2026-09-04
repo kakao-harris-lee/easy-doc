@@ -38,7 +38,9 @@ afterEach(() => {
 describe('요청 조립', () => {
   it('저장된 토큰을 Authorization 헤더로 붙인다', async () => {
     writeToken('token-abc')
-    fetchMock.mockResolvedValue(jsonResponse(200, { id: 'u1', email: 'a@example.com' }))
+    fetchMock.mockResolvedValue(
+      jsonResponse(200, { id: 'u1', email: 'a@example.com', email_verified: true }),
+    )
 
     await fetchMe()
 

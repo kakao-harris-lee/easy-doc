@@ -4,10 +4,39 @@ import type {
   ConversionResponse,
   DocumentListItem,
   DocumentSourceResponse,
+  UserResponse,
   WorkspaceListItem,
 } from '../api/types'
+import type { AuthContextValue } from '../auth/context'
 import type { DocumentSource, SourceFailure } from '../review/sourceText'
 import type { WorkspaceContextValue } from '../workspace/context'
+
+/** 로그인 사용자 표현. 기본값은 인증까지 끝난 계정이다. */
+export function userResponse(overrides: Partial<UserResponse> = {}): UserResponse {
+  return {
+    id: 'u1',
+    email: 'user@example.com',
+    email_verified: true,
+    ...overrides,
+  }
+}
+
+/**
+ * 인증 컨텍스트 값. 화면 테스트가 `AuthProvider` 대신 이 값을 직접 꽂는다 —
+ * `workspaceContext`와 같은 이유다(화면이 보는 것은 상태이지 그 상태를 만든 요청이 아니다).
+ */
+export function authContextValue(overrides: Partial<AuthContextValue> = {}): AuthContextValue {
+  return {
+    status: 'authenticated',
+    user: userResponse(),
+    signIn: () => Promise.resolve(),
+    signUp: () => Promise.resolve(),
+    signInWithGoogle: () => Promise.resolve(),
+    signOut: () => undefined,
+    refreshMe: () => Promise.resolve(),
+    ...overrides,
+  }
+}
 
 /** 변환 조회 응답. 기본값은 "완료된 검수 대상". */
 export function conversion(overrides: Partial<ConversionResponse> = {}): ConversionResponse {

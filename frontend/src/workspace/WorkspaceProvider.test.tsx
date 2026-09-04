@@ -21,11 +21,15 @@ const STORAGE_KEY = 'easydoc.workspace_id'
 function authValue(status: AuthStatus): AuthContextValue {
   return {
     status,
-    user: status === 'authenticated' ? { id: 'u1', email: 'owner@example.com' } : null,
+    user:
+      status === 'authenticated'
+        ? { id: 'u1', email: 'owner@example.com', email_verified: true }
+        : null,
     signIn: () => Promise.resolve(),
     signUp: () => Promise.resolve(),
     signInWithGoogle: () => Promise.resolve(),
     signOut: () => undefined,
+    refreshMe: () => Promise.resolve(),
   }
 }
 

@@ -58,6 +58,11 @@ export interface CredentialsRequest {
 export interface UserResponse {
   id: string
   email: string
+  /**
+   * 이메일 소유를 확인했는지(2.9.0 신설). 소셜 로그인 계정과 마이그레이션 이전 기존
+   * 계정은 항상 참이다. 거짓이면 `createDocument`가 403을 낸다.
+   */
+  email_verified: boolean
 }
 
 /** POST /auth/login 응답. */
@@ -92,6 +97,12 @@ export interface OAuthCallbackRequest {
   state: string
   /** `oauthStart`에 보냈던 것과 같은 값이어야 한다. */
   redirect_uri: string
+}
+
+/** POST /auth/email-verification/confirm 요청 본문. */
+export interface ConfirmEmailVerificationRequest {
+  /** 메일로 받은 6자리 숫자 코드. */
+  code: string
 }
 
 // --- documents ---
