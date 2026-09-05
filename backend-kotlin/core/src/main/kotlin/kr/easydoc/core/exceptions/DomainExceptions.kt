@@ -124,3 +124,11 @@ class ReconversionBudgetExhaustedException(
     message: String,
     val remainingCallBudget: Int,
 ) : EasyDocException(message)
+
+/**
+ * 재변환 동시 실행 한도(`easydoc.reconversion.concurrency`)에 도달했다 — 이 프로세스가
+ * 지금 이미 한도만큼의 재변환 LLM 호출을 진행 중이다. 호출을 시작하지 못했으므로 예약
+ * 전액이 환불된다(`ReconvertUnitService`). 트랜지언트 상태라 1초 뒤 재시도를 안내한다
+ * (`Retry-After: 1`) — 문서당 영구 상한인 [ReconversionBudgetExhaustedException] 과 다르다.
+ */
+class ReconversionConcurrencyExhaustedException(message: String) : EasyDocException(message)

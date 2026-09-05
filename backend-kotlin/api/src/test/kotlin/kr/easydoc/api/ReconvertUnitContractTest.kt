@@ -151,6 +151,18 @@ class ReconvertUnitContractTest {
     }
 
     @Test
+    @DisplayName("easy_text_fingerprint 형식이 올바르지 않으면 422 문자열이다")
+    fun `잘못된 지문 형식은 422 다`() {
+        val (owner, conversionId) = doneConversion()
+        val malformedBody = """{"easy_unit_indexes":[0],"easy_text_fingerprint":"not-a-hash"}"""
+
+        val response = reconvert(owner, conversionId, 0, malformedBody)
+
+        assertThat(response.status).isEqualTo(UNPROCESSABLE)
+        assertThat(bodyOf(response)[DETAIL]).isInstanceOf(String::class.java)
+    }
+
+    @Test
     @DisplayName("예산이 소진되면 429 이고 X-Remaining-Call-Budget 헤더가 붙는다 — LLM 을 부르지 않는다")
     fun `예산 소진은 429 다`() {
         val (owner, conversionId) = doneConversion()

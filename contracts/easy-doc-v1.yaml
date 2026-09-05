@@ -2502,6 +2502,16 @@ paths:
         2.14.0 항목) — `oauthCallback`·`oauthLinkCallback`과 같이 동기로 하위 시스템
         (LLM 제공자)을 부르기 때문이다.
 
+        **동시 실행에도 상한이 있다** — 이 프로세스가 지금 이미
+        `easydoc.reconversion.concurrency`(기본 4)만큼의 재변환 LLM 호출을 진행 중이면 이
+        호출은 시작되지 못하고 503이 난다(`ReconversionConcurrencyLimited`). 문서당 영구
+        상한인 위 429 예산과는 다른 축이다 — 이쪽은 다른 재변환 호출이 끝나면 곧바로 풀리는
+        트랜지언트 상태라 `Retry-After: 1`을 함께 낸다.
+
+        **`easy_text_fingerprint` 형식은 서버가 검증한다** — 64자 소문자 16진수(SHA-256 hex)
+        가 아니면 422다. 다만 그 지문이 **에디터의 실제 현재 본문과 일치하는지는 판정하지
+        않는다**(위 문단, 계획 §4 결정 3) — 형식만 본다.
+
         **멱등하지 않다** — 매 호출이 새 결과를 만들고, 클라이언트는 자동으로 재시도하지
         않는다. 비용 방벽은 예약 하나뿐이다.
       requestBody:
@@ -2536,16 +2546,19 @@ paths:
               examples:
                 not_done: { value: { detail: "변환이 끝난 뒤에 다시 변환할 수 있습니다" } }
         '422':
-          description: '`source_unit_index`가 원본 단위 범위를 벗어났다 (문자열 `detail`)'
+          description: |
+            `source_unit_index`가 원본 단위 범위를 벗어났거나, `easy_text_fingerprint`가
+            64자 소문자 16진수(SHA-256 hex) 형식이 아니다 (둘 다 문자열 `detail`).
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
               examples:
                 out_of_range: { value: { detail: "원본 단위 색인이 범위를 벗어났습니다" } }
+                invalid_fingerprint: { value: { detail: "easy_text_fingerprint 형식이 올바르지 않습니다" } }
         '429': { $ref: '#/components/responses/ReconversionBudgetExhausted' }
         '500': { $ref: '#/components/responses/InternalError' }
         '502': { $ref: '#/components/responses/BadGateway' }
-        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+        '503': { $ref: '#/components/responses/ReconversionConcurrencyLimited' }
 
   # ===========================================================================
   # #9 GET /conversions/{conversion_id}/export — 200 (파일)
@@ -3298,9 +3311,13 @@ components:
             **값이 계산된다**(`Location`·`Content-Disposition` 과 같은 자리 —
             `x-private-response-headers` 옆 `components/headers` 의 `const` 규약이
             적용되지 않는 이유다). 최솟값 1이다 — 0을 보내면 클라이언트가 즉시
-            재시도를 반복해 쿨다운을 사실상 무력화한다.
+            재시도를 반복해 쿨다운을 사실상 무력화한다. 값은 계산되지만 **스키마
+            (`type`·`examples`)는 이 헤더가 나타나는 모든 자리에서 문자열 그대로 같아야
+            한다** — `ContractSpec.collectHeaders`가 같은 이름의 헤더 선언이 계약 안에서
+            갈리지 않는지 전역으로 확인한다(`ReconversionConcurrencyLimited`의 고정값 "1"과
+            이 예시 "60"을 `examples`에 함께 둔 이유).
           required: true
-          schema: { type: string, examples: ["60"] }
+          schema: { type: string, examples: ["60", "1"] }
       content:
         application/json:
           schema: { $ref: '#/components/schemas/ErrorResponse' }
@@ -3335,6 +3352,37 @@ components:
           schema: { $ref: '#/components/schemas/ErrorResponse' }
           examples:
             budget_exhausted: { value: { detail: "재변환 호출 예산을 모두 사용했습니다" } }
+
+    ReconversionConcurrencyLimited:
+      description: |
+        재변환 동시 실행 한도(`easydoc.reconversion.concurrency`, 기본 4)에 도달했다 —
+        `reconvertUnit`(2.14.0) 전용, 이 프로세스가 이미 한도만큼의 재변환 LLM 호출을
+        진행 중이라 이 호출은 시작되지 못했다. LLM 호출은 0회이고 예약 전액이 환불된다.
+
+        **공유 `ServiceUnavailable` 을 재사용하지 않는다.** 그 컴포넌트는 "이 상태가 되는
+        구성은 JWT 서명 키 미설정 하나뿐"이라고 스스로 적어 뒀고(`components/responses
+        .ServiceUnavailable`), `Retry-After` 헤더도 없다 — 배포 오설정(고쳐야 사라짐)과
+        트랜지언트 동시성 한도(1초 뒤 재시도하면 사라질 수 있음)는 원인의 성격이 다르다.
+        `ReconversionBudgetExhausted` 가 `TooManyRequests` 를 재사용하지 않은 것과 같은
+        판단이다.
+
+        **`ReconversionBudgetExhausted`(429)와도 다른 축이다** — 그쪽은 문서당 영구 호출
+        상한(재발급되지 않는다)이고, 이쪽은 프로세스 전역의 동시 실행 한도(다른 재변환
+        호출이 끝나면 즉시 풀린다)다. 그래서 상태 코드도 갈린다: 영구 상한은 429, 트랜지언트
+        용량 초과는 503 + `Retry-After`.
+      headers:
+        Retry-After:
+          description: RFC 9110 표준 헤더 — 고정값 "1"(초). 동시성 한도는 다른 호출이 끝나는
+            즉시 풀리므로 재시도까지 걸리는 시간을 정확히 계산할 수 없어 최소값을 낸다.
+            스키마는 `TooManyRequests.headers.Retry-After`와 문자 그대로 같다 — 같은 이름의
+            헤더는 계약 전체에서 하나의 스키마여야 한다(`ContractSpec.collectHeaders`).
+          required: true
+          schema: { type: string, examples: ["60", "1"] }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+          examples:
+            concurrency_limited: { value: { detail: "동시 재변환 한도에 도달했습니다. 잠시 후 다시 시도해 주세요" } }
 
     UnsupportedMediaType:
       description: |

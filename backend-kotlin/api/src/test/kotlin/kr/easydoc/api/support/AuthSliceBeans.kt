@@ -345,6 +345,7 @@ class AuthSliceBeans {
             convert = convert,
             transaction = transaction,
             callBudget = SLICE_RECONVERSION_CALL_BUDGET,
+            concurrencyLimit = SLICE_RECONVERSION_CONCURRENCY,
         )
 
     @Bean
@@ -443,6 +444,9 @@ class AuthSliceBeans {
 
         /** 계약·`ReconversionProperties.DEFAULT_CALL_BUDGET` 과 같은 값. */
         const val SLICE_RECONVERSION_CALL_BUDGET = 20
+
+        /** 계약·`ReconversionProperties.DEFAULT_CONCURRENCY` 와 같은 값. */
+        const val SLICE_RECONVERSION_CONCURRENCY = 4
     }
 }
 

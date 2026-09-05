@@ -1,5 +1,7 @@
 package kr.easydoc.core.segment
 
+import kr.easydoc.core.privacy.MaskCategory
+import kr.easydoc.core.privacy.maskText
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
@@ -52,5 +54,20 @@ class SourceUnitsTest {
 
     private fun assertRoundTrips(text: String) {
         assertThat(joinUnits(splitUnits(text))).isEqualTo(text)
+    }
+
+    @Test
+    @DisplayName("대상 줄에 PII 가 있으면 단위의 자리표시자가 전체 마스킹과 같은 번호로 남는다")
+    fun `PII 가 있는 줄의 단위 마스킹이 전체와 일치한다`() {
+        val fullMasking = maskText("신청자 900101-1234567 님\n둘째 줄")
+        val unit = maskedUnitOf(fullMasking, 0)
+
+        assertThat(unit.maskedText.value).isEqualTo("신청자 [[주민등록번호1]] 님")
+        assertThat(unit.items).hasSize(1)
+        val item = unit.items.single()
+        assertThat(item.category).isEqualTo(MaskCategory.RRN)
+        assertThat(item.placeholder).isEqualTo("[[주민등록번호1]]")
+        assertThat(item.original.reveal()).isEqualTo("900101-1234567")
+        assertThat(fullMasking.items).containsExactly(item)
     }
 }
