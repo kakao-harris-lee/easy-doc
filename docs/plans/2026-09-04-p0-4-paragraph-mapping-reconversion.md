@@ -1,5 +1,9 @@
 # P0-4 — 문단 단위 대응과 재변환 설계
 
+- 개정 2026-09-05(S4 착수 — 버전 순서 정정): Kakao 로그인(PR #31, 병합 대기)이 2.13.0을
+  먼저 가져갔다 — S4 실행자가 착수 직전 실측(`grep -n '^  version:'`)으로 확인했다. 아래
+  §3·§6의 "2.13.0" 표기를 **2.14.0**으로 고친다(§3.2가 정한 절차 그대로: 먼저 병합되는
+  쪽이 다음 minor를 가져간다). 이 항목이 리베이스로 2.13.0 항목 **위**에 놓인다.
 - 작성 2026-09-04. 개정 2026-09-04(심사 반영 — 버전 순서·호출 예산·적용 규칙·에디터 형태 확정)
 - 기준: `docs/master-plan.md` §4.1 P0-4·§3.2·§9, `DESIGN.md` §6.4·§6.5,
   `docs/kotlin-redevelopment-backlog.md` §1.3, `contracts/easy-doc-v1.yaml` 2.10.0
@@ -88,7 +92,7 @@ segment_map:                      # object | null
 ### 계약 버전 순서 (P0-5 레인과 공유 — 확정)
 
 **⑴ P0-5 사전 조회 API = 2.11.0(마이그레이션 없음) → ⑵ P0-4 `segment_map`(S2) = 2.12.0
-(마이그레이션 없음) → ⑶ P0-4 재변환(S4) = 2.13.0 + Flyway V10.**
+(마이그레이션 없음) → ⑶ P0-4 재변환(S4) = 2.14.0(2026-09-05 정정 — 위 개정 참고) + Flyway V10.**
 
 - P0-5의 **조건부 프롬프트 주입**은 「착수 시점의 다음 빈 버전」을 가져간다. 번호를 예약하지 않는다.
 - **S1·S2는 P0-5 S1~S3와 병행해도 된다** — 만지는 파일이 겹치지 않는다(P0-4는
@@ -219,7 +223,7 @@ segment_map:                      # object | null
   확인 불가」로 표시. 201단위 입력 → 내려앉기 배너와 재변환 버튼 없음.
 - 문서: `DESIGN.md` §6.4에 「결과 패널은 단위 목록」·내려앉기 규칙·분할/병합 키를 개정으로 추가.
 
-**S4 — 재변환 엔드포인트 (M, 계약 2.13.0 + V10) — §0 게이트 확인 후 착수**
+**S4 — 재변환 엔드포인트 (M, 계약 2.14.0(2026-09-05 정정) + V10) — §0 게이트 확인 후 착수**
 - 파일: `V10__conversion_reconversion_budget.sql`(`reconversion_calls integer NOT NULL DEFAULT 0`
   + CHECK ≥ 0, `reconverted_units jsonb NOT NULL DEFAULT '[]'`),
   `application/conversion/ConvertDocumentUseCase.kt`(마스킹된 입력 진입점), 새

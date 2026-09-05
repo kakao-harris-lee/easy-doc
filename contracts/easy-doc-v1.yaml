@@ -41,7 +41,7 @@ openapi: 3.1.0
 
 info:
   title: Easy-Read AI API
-  version: "2.13.0"
+  version: "2.14.0"
   x-baselined-at: "2026-08-12"       # 초판 기준선을 뜬 날 (동결일이 아니다)
   x-rebased-at: "2026-08-12"         # 계약의 성격을 "개선 대상"으로 다시 정의한 날
   x-source-runtime: "Python 3.12 / FastAPI (app/main.py) — 과거 참고 구현이었고 2026-08-24 저장소에서 제거됨(git 태그 pre-python-removal-20260824). 기준선 출처였을 뿐 정답이 아니었다"
@@ -49,7 +49,7 @@ info:
   description: |
     공공기관용 '쉬운 글' 자동 변환 서비스의 HTTP 계약 v1.
 
-    **엔드포인트는 정확히 23개다** — 제품 22개 + 헬스 체크 1개.
+    **엔드포인트는 정확히 24개다** — 제품 23개 + 헬스 체크 1개.
     계획 §2.2가 센 "14개 HTTP 엔드포인트"는 **그 문서를 쓸 때의 수**이며 `/health`를
     포함해야 맞는 수였다. 1.5.0에서 `PUT /conversions/{conversion_id}/feedback`이,
     2.2.0에서 `GET /documents/{document_id}/source`가, 2.8.0에서 소셜 로그인
@@ -59,7 +59,11 @@ info:
     `POST /auth/email-verification/confirm`이, 2.10.0에서 명시적 계정 연결(backlog
     §1.4) `POST /auth/oauth/{provider}/link/start`·
     `POST /auth/oauth/{provider}/link/callback`이, 2.11.0에서 쉬운 말 사전 조회
-    (P0-5 조각 1) `POST /dictionary/lookup`이 더해져 오늘은 23개다 —
+    (P0-5 조각 1) `POST /dictionary/lookup`이 더해져 23개였다. 2.13.0의 카카오
+    로그인(backlog §1.4)은 기존 오퍼레이션 넷의 `provider` enum 값만 늘려 새
+    엔드포인트가 없고, 2.14.0에서 문단 재변환(P0-4 S4) `POST
+    /conversions/{conversion_id}/units/{source_unit_index}/reconvert`가 더해져
+    오늘은 24개다 —
     계획 문서의 수를 고치는 것이 아니라 **수의 정본이 이 계약**이다.
 
     ## 경로 접두사
@@ -277,6 +281,16 @@ x-retired-responses:
       `'502'`를 선언한 오퍼레이션은 딱 둘(`oauthCallback`·`oauthLinkCallback`)이고, 나머지
       20개는 여전히 선언하지 않는다. "동기로 하위 시스템을 부르는" 오퍼레이션이
       늘어난 것이지 이 조항의 판정 기준([if_it_should_return])이 넓어진 것이 아니다.
+
+      **2.14.0 — 세 번째 오퍼레이션(P0-4 S4, 2026-09-05).**
+      `POST /conversions/{conversion_id}/units/{source_unit_index}/reconvert`
+      (`reconvertUnit`)이 재변환 1회의 LLM 호출을 **동기로** 부른다(`ReconvertUnitService`)
+      — 워커 큐를 타지 않는 유일한 변환 경로다(계획
+      `docs/plans/2026-09-04-p0-4-paragraph-mapping-reconversion.md` §4 결정 3 「동기
+      처리」). 같은 근거 ⑶이 그대로 적용된다: 500(우리 코드 버그) · 503(우리 설정
+      미비) · 502(제공자에 닿지 못함). **범위 판정은 이번에도 좁게 유지한다** —
+      `'502'`를 선언한 오퍼레이션은 이제 정확히 셋(`oauthCallback`·`oauthLinkCallback`·
+      `reconvertUnit`)이고, 나머지 20개는 여전히 선언하지 않는다.
     consumer_debt: |
       `frontend/src/conversion/failureMessages.ts`의 `EnqueueFailed` 항목은 이제 어떤
       구현에서도 오지 않는 코드다(조회는 `MESSAGES[code] ?? UNKNOWN`이라 **런타임은
@@ -2441,6 +2455,99 @@ paths:
         '503': { $ref: '#/components/responses/ServiceUnavailable' }
 
   # ===========================================================================
+  # P0-4 S4 (2.14.0) — POST /conversions/{conversion_id}/units/{source_unit_index}/reconvert
+  # 원본: 신설 — 계획 docs/plans/2026-09-04-p0-4-paragraph-mapping-reconversion.md §4 결정 3
+  # ===========================================================================
+  /conversions/{conversion_id}/units/{source_unit_index}/reconvert:
+    parameters:
+      - name: conversion_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+      - name: source_unit_index
+        in: path
+        required: true
+        schema: { type: integer, minimum: 0 }
+    post:
+      tags: [documents]
+      operationId: reconvertUnit
+      summary: 원본 단위 하나를 다시 변환한 후보를 만든다
+      security: [{ HTTPBearer: [] }]
+      description: |
+        **응답은 후보 텍스트뿐이고 변환 본문에는 아무것도 쓰지 않는다.** 채택은
+        클라이언트 몫이다 — 이 오퍼레이션은 어떤 경우에도 `easy_text`·`edited_text`를
+        바꾸지 않는다(계획 §4 결정 3).
+
+        master-plan §3.2(2026-09-05 개정): *"자동 변환 1건 = LLM 호출 최대 2회(변경
+        없음). 사용자 재변환은 문서당 호출 예산(기본 20회, 구성값) 안에서만 실행되며,
+        예산은 요청이 아니라 실제 호출 수로 예약·정산한다."*
+
+        **`easy_unit_indexes`·`easy_text_fingerprint`는 서버가 판정에 쓰지 않는다** —
+        받은 값을 응답에 그대로 되울릴 뿐이다. 지문이 에디터 현재 본문과 다르면(사용자가
+        응답을 기다리는 동안 편집했다) 클라이언트가 스스로 판단해 카드로만 보여준다 —
+        서버는 그 판정에 관여하지 않는다.
+
+        **입력은 문서 전체를 마스킹한 뒤의 `source_unit_index`번째 줄이다** — 단위만
+        따로 마스킹하면 자리표시자 번호가 `segment_map`과 어긋난다. 변환 경로(1차
+        변환 → 조건부 보정 → 채택 판정)는 자동 변환과 완전히 같다 — 최대 1회 변환 +
+        1회 조건부 보정.
+
+        **예산은 요청이 아니라 LLM 호출 수로 센다.** 호출 전에 2회를 예약하고
+        (`easydoc.reconversion.call-budget`, 기본 20 — 문서 1건당), 호출 뒤 실제
+        사용량만 남기고 나머지를 환불한다. 예약이 실패하면(예산 소진) **LLM 호출은
+        0회이고** 429다.
+
+        **동기 처리다** — 단위 하나는 짧아 호출이 초 단위이고, 응답 시점까지 클라이언트가
+        기다린다. 그래서 이 오퍼레이션만 502(`BadGateway`)를 선언한다(`x-retired-responses[0].reinstated_by`
+        2.14.0 항목) — `oauthCallback`·`oauthLinkCallback`과 같이 동기로 하위 시스템
+        (LLM 제공자)을 부르기 때문이다.
+
+        **멱등하지 않다** — 매 호출이 새 결과를 만들고, 클라이언트는 자동으로 재시도하지
+        않는다. 비용 방벽은 예약 하나뿐이다.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReconvertUnitRequest' }
+      responses:
+        '200':
+          description: 재변환 후보
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CacheControlNoStore' }
+            X-Content-Type-Options: { $ref: '#/components/headers/XContentTypeOptions' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReconvertUnitResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404':
+          description: |
+            없거나, 내 것이 아니거나, **문서의 보존 기간이 지났다** — `readConversion`과
+            같은 판정(세 경우를 구분하지 않는다).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+              examples:
+                not_found: { value: { detail: "변환 결과를 찾을 수 없습니다" } }
+        '409':
+          description: 아직 완료되지 않은 변환이다 — 재변환은 완료 뒤에만 할 수 있다
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+              examples:
+                not_done: { value: { detail: "변환이 끝난 뒤에 다시 변환할 수 있습니다" } }
+        '422':
+          description: '`source_unit_index`가 원본 단위 범위를 벗어났다 (문자열 `detail`)'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+              examples:
+                out_of_range: { value: { detail: "원본 단위 색인이 범위를 벗어났습니다" } }
+        '429': { $ref: '#/components/responses/ReconversionBudgetExhausted' }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '502': { $ref: '#/components/responses/BadGateway' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+
+  # ===========================================================================
   # #9 GET /conversions/{conversion_id}/export — 200 (파일)
   # 원본: app/api/documents.py::export_conversion
   # ===========================================================================
@@ -3143,16 +3250,18 @@ components:
 
     # 2026-08-20에 폐기됐다가 2.8.0(backlog §1.4 P0-1)에서 되살아났다 — 정본은
     # `x-retired-responses[0]`(`reinstated_at`·`reinstated_by`). **`POST
-    # /auth/oauth/{provider}/callback`과 2.10.0의 `POST
-    # /auth/oauth/{provider}/link/callback` 둘만** 이 컴포넌트를 선언한다 — 둘 다 제공자
-    # 토큰 교환을 동기로 부르는 오퍼레이션이다. 다른 오퍼레이션에 새로 붙이려면 그
-    # 오퍼레이션도 "동기로 하위 시스템을 부르는지"부터 그 절의 기준으로 판정한다.
+    # /auth/oauth/{provider}/callback`·2.10.0의 `POST
+    # /auth/oauth/{provider}/link/callback`·2.14.0의 `POST
+    # /conversions/{conversion_id}/units/{source_unit_index}/reconvert` 셋만** 이
+    # 컴포넌트를 선언한다 — 셋 다 하위 시스템(제공자 토큰 교환 또는 LLM 제공자)을
+    # 동기로 부르는 오퍼레이션이다. 다른 오퍼레이션에 새로 붙이려면 그 오퍼레이션도
+    # "동기로 하위 시스템을 부르는지"부터 그 절의 기준으로 판정한다.
     BadGateway:
       description: |
-        동기로 부른 하위 시스템(소셜 로그인 제공자)에 닿지 못했다 — 타임아웃·연결 실패·
-        제공자의 5xx. **우리 설정 미비(503)도 우리 코드 버그(500)도 아니다** — 제공자
-        쪽 문제이거나 네트워크 문제라 재시도가 값어치 있을 수 있다는 점에서 예전 502
-        조항과 성격이 같다.
+        동기로 부른 하위 시스템(소셜 로그인 제공자 또는 LLM 제공자)에 닿지 못했다 —
+        타임아웃·연결 실패·제공자의 5xx. **우리 설정 미비(503)도 우리 코드 버그(500)도
+        아니다** — 제공자 쪽 문제이거나 네트워크 문제라 재시도가 값어치 있을 수 있다는
+        점에서 예전 502 조항과 성격이 같다.
         **벤더 오류 텍스트를 담지 않는다** — `detail` 은 항상 이 예시의 고정 문구다.
       content:
         application/json:
@@ -3197,6 +3306,35 @@ components:
           schema: { $ref: '#/components/schemas/ErrorResponse' }
           examples:
             rate_limited: { value: { detail: "잠시 후 다시 시도해주세요" } }
+
+    ReconversionBudgetExhausted:
+      description: |
+        재변환 호출 예산(`easydoc.reconversion.call-budget`, 문서 1건당)이 소진됐다 —
+        `reconvertUnit`(2.14.0) 전용, LLM 호출은 0회다.
+
+        **`TooManyRequests`를 재사용하지 않는다.** 그 컴포넌트는 60초 재발송 쿨다운
+        전용이라 `Retry-After`(재시도까지 남은 초)를 필수로 요구하는데, 이 예산에는
+        쿨다운도 재시도 시각도 없다 — 예산은 시간이 지나면 차는 창이 아니라 문서당
+        영구 상한이다. 그래서 **`Retry-After` 헤더가 없다.**
+
+        **잔여 예산은 몸체가 아니라 헤더로 낸다** — `x-error-body-universality`가
+        "오류 응답 본문은 언제나 `ErrorResponse`(`detail` 하나뿐)"를 요구하므로,
+        본문에 `remaining_call_budget`을 더한 새 스키마를 두면 그 전역 불변식을
+        깬다. `Retry-After`가 이미 같은 문제(쿨다운 시점을 몸체가 아니라 헤더로
+        나른다)를 푼 자리라 그 패턴을 그대로 따른다.
+      headers:
+        X-Remaining-Call-Budget:
+          description: |
+            이 예약 시도 시점의 잔여 재변환 호출 예산(정수, 문자열로 인코딩) — 이
+            요청은 예약에 실패했으므로 이 값은 **호출 전** 잔여량이다(호출 성공 응답의
+            `remaining_call_budget`은 그 반대로 **정산 후** 값이다).
+          required: true
+          schema: { type: string, examples: ["0", "1"] }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+          examples:
+            budget_exhausted: { value: { detail: "재변환 호출 예산을 모두 사용했습니다" } }
 
     UnsupportedMediaType:
       description: |
@@ -4030,7 +4168,9 @@ components:
         렌더링이 배열 길이를 다시 세지 않아도 되게 한다.
 
         **스타일 게이트를 이미 통과한 원본 단위 목록(`compliant_source_units`)은 이
-        버전에 없다** — 재변환(P0-4 S4, 계약 2.13.0 예정)이 그 자리에서 더한다.
+        버전에 없다.** 재변환(P0-4 S4, 2.14.0)은 이 자리를 더하지 않는다 — 그 슬라이스는
+        후보 텍스트를 돌려주는 `reconvertUnit` 오퍼레이션 하나로 좁혔다(x-changelog 2.14.0
+        참고). 스타일 게이트 사전 경고는 여전히 범위 밖이다.
       properties:
         source_unit_count:
           type: integer
@@ -4048,6 +4188,80 @@ components:
           description: |
             쉬운 글 단위 색인 순서 그대로, **`easy_unit_count`개**다. 모든 쉬운 글 단위가
             정확히 한 번씩 나온다(전사성) — 계획 §6 A6.
+
+    # ---------------------------------------------------------------------
+    # 재변환 (2.14.0 신설, P0-4 S4) — `reconvertUnit` 하나가 쓴다.
+    # ---------------------------------------------------------------------
+    ReconvertUnitRequest:
+      type: object
+      required: [easy_unit_indexes, easy_text_fingerprint]
+      description: |
+        `POST /conversions/{conversion_id}/units/{source_unit_index}/reconvert`의
+        요청 본문. `source_unit_index`는 경로가 지고 본문이 되풀이하지 않는다.
+      properties:
+        easy_unit_indexes:
+          type: array
+          items: { type: integer, minimum: 0 }
+          description: |
+            클라이언트가 **지금** 이 원본 단위에 대응시키고 있는 쉬운 글 단위 색인들.
+            빈 배열일 수 있다(대응을 찾지 못한 상태). 서버는 이 값으로 판정하지 않고
+            응답에 그대로 되울린다.
+        easy_text_fingerprint:
+          type: string
+          minLength: 64
+          maxLength: 64
+          pattern: '^[0-9a-f]{64}$'
+          description: |
+            에디터 **현재** 본문의 SHA-256 다이제스트를 16진 소문자 64자로 인코딩한 값.
+            서버는 이 값으로 아무 판정도 하지 않고 응답에 그대로 되울린다 — 응답이
+            어느 편집 상태에 대한 것인지 클라이언트가 식별하는 용도다.
+    ReconvertUnitResponse:
+      type: object
+      required:
+        [
+          candidate_text,
+          source_unit_index,
+          easy_unit_indexes,
+          easy_text_fingerprint,
+          llm_calls_used,
+          remaining_call_budget,
+        ]
+      description: |
+        `reconvertUnit`의 200 응답. **후보뿐이고 변환 본문에는 아무것도 쓰이지 않는다.**
+      properties:
+        candidate_text:
+          type: string
+          description: |
+            다시 변환한 후보 본문 — 원본 단위 하나에 대응하는 쉬운 글 텍스트다(1:N이면
+            `\n`으로 이어질 수 있다, 자동 변환의 프롬프트 규칙과 같다). 채택은 클라이언트
+            몫이고 서버는 어떤 본문도 저장하지 않는다.
+        source_unit_index:
+          type: integer
+          minimum: 0
+          description: 요청 경로의 `source_unit_index`를 그대로 되울린다.
+        easy_unit_indexes:
+          type: array
+          items: { type: integer, minimum: 0 }
+          description: 요청 `easy_unit_indexes`를 그대로 되울린다.
+        easy_text_fingerprint:
+          type: string
+          minLength: 64
+          maxLength: 64
+          pattern: '^[0-9a-f]{64}$'
+          description: 요청 `easy_text_fingerprint`를 그대로 되울린다.
+        llm_calls_used:
+          type: integer
+          minimum: 1
+          maximum: 2
+          description: |
+            이 재변환이 실제로 쓴 LLM 호출 수 — 1(보정 불필요) 또는 2(보정 호출까지).
+            `remaining_call_budget`이 줄어든 양과 같다.
+        remaining_call_budget:
+          type: integer
+          minimum: 0
+          description: |
+            이 호출을 정산한 뒤 이 문서에 남은 재변환 호출 예산
+            (`easydoc.reconversion.call-budget`에서 실제 사용량 누계를 뺀 값).
 
     # ---------------------------------------------------------------------
     # 파일럿 피드백 (1.5.0 신설) — 게이트 ① 판정 수단.
@@ -4447,6 +4661,64 @@ components:
 # 변경 이력
 # =============================================================================
 x-changelog:
+  # 2026-09-05 — 버전 순서 노트: 이 브랜치는 origin/main(2.12.0, PR #30 병합 시점) 위에서
+  # 시작했다. Kakao 로그인(PR #31, 병합 대기)이 2.13.0을 먼저 가져갔으므로 이 조각은
+  # 2.14.0이다. 이 항목은 리베이스로 2.13.0 항목 **위**에 놓인다 — 두 항목의 날짜가 같아
+  # 보여도 서수는 병합 순서를 따른다.
+  - version: "2.14.0"
+    date: "2026-09-05"
+    revision: "P0-4-S4-RECONVERT"   # P0-4 — 문단 단위 재변환(S4). S1~S3(정렬·segment_map·검수 화면)의 마지막 조각
+    author: contract-keeper
+    change: |
+      **재변환 엔드포인트를 새로 연다** — `POST
+      /conversions/{conversion_id}/units/{source_unit_index}/reconvert`
+      (`reconvertUnit`, Bearer 필요). 원본 단위 하나를 다시 변환한 **후보**만 돌려주고
+      변환 본문에는 아무것도 쓰지 않는다(P0-4 S4,
+      `docs/plans/2026-09-04-p0-4-paragraph-mapping-reconversion.md` §4 결정 3).
+
+      ⑴ **요청** `ReconvertUnitRequest` — `easy_unit_indexes`(현재 이 원본 단위에 대응
+         중인 쉬운 글 단위 색인들, 빈 배열 가능) · `easy_text_fingerprint`(에디터 현재
+         본문의 SHA-256 16진 문자열, 64자). 서버는 이 값들로 **아무 판정도 하지 않고**
+         응답에 그대로 되울린다 — 어느 편집 상태에 대한 응답인지 클라이언트가 식별하는
+         용도다.
+      ⑵ **응답** `ReconvertUnitResponse` — `candidate_text`·`source_unit_index`·
+         `easy_unit_indexes`·`easy_text_fingerprint`·`llm_calls_used`·
+         `remaining_call_budget`. **자동 교체는 어떤 경우에도 없다** — 채택은 클라이언트
+         몫이다.
+      ⑶ **예산은 요청이 아니라 LLM 호출 수로 센다.** 재변환 1회는 보정 여부에 따라 1
+         또는 2회를 쓴다. 문서 1건당 예산(`easydoc.reconversion.call-budget`, 기본
+         20 — 계획 §0 게이트 1, 2026-09-05 사용자 확정)을 예약(호출 전, 2회)·정산(호출
+         후, 실제 사용량만)한다. 예약 실패는 **LLM 호출 0회를 보장**하고 429를 낸다.
+      ⑷ **429는 공유 컴포넌트 `TooManyRequests`를 쓰지 않는다** — 새 컴포넌트
+         `ReconversionBudgetExhausted`. 저 컴포넌트는 60초 재발송 쿨다운 전용이라
+         `Retry-After`를 필수로 요구하는데, 재변환에는 쿨다운도 재시도 시각도 없다
+         (예산은 문서당 영구 상한이지 시간 창이 아니다). **잔여 예산은 몸체가 아니라
+         헤더(`X-Remaining-Call-Budget`)로 낸다** — `x-error-body-universality`
+         (오류 응답 본문은 언제나 `ErrorResponse`)를 지키면서 `Retry-After`와 같은
+         자리에 값을 싣는다.
+      ⑸ **502(`BadGateway`)를 세 번째로 선언한다** — `x-retired-responses[0].reinstated_by`
+         2.14.0 항목. 재변환 1회의 LLM 호출은 워커 큐를 타지 않고 요청 스레드에서
+         **동기로** 나간다(계획 §4 결정 3 「동기 처리」) — `oauthCallback`·
+         `oauthLinkCallback`과 같은 근거(동기로 하위 시스템을 부르는 오퍼레이션).
+      ⑹ **409**(완료 전 변환) · **422 문자열**(원본 단위 색인이 범위 밖) · **404**(남의
+         변환, 존재 은폐)는 기존 `updateConversion`·`readConversion`과 같은 판정 축을
+         쓴다.
+      ⑺ **`compliant_source_units`는 이번에도 더하지 않는다** — `SegmentMap` 설명 참고.
+         스타일 게이트 사전 경고(호출 전 「이미 통과했다」안내)는 이 슬라이스의 범위
+         밖이고, 응답에는 채택 판정(`adopted`)·거절 사유·문체 위반 수도 싣지 않는다 —
+         이번 조각은 **후보 텍스트와 예산 회계**로 좁혔다.
+    ground: |
+      **G2 — 요구사항 반영.** `docs/master-plan.md` §3.2(재변환 호출 예산 개정문,
+      2026-09-05 확정)·§4.1 P0-4, `docs/plans/2026-09-04-p0-4-paragraph-mapping-reconversion.md`
+      §0·§4 결정 3·§6 S4.
+    compatibility: |
+      **순수 추가다.** 새 경로 하나, 새 스키마 둘(`ReconvertUnitRequest`·
+      `ReconvertUnitResponse`), 새 응답 컴포넌트 하나(`ReconversionBudgetExhausted`,
+      본문은 기존 `ErrorResponse`를 그대로 쓰고 헤더 하나만 더한다)뿐이고 기존
+      오퍼레이션·스키마는 하나도 바뀌지 않는다. Flyway `V10`이 `conversions`에
+      평문 정수 열 둘(`reconversion_calls_reserved`·`reconversion_calls_used`)을
+      더하지만 API 응답에는 나가지 않는다.
+
   - version: "2.13.0"
     date: "2026-09-05"
     revision: "SOCIAL-LOGIN-KAKAO"   # backlog §1.4 — 소셜 로그인 두 번째 제공자

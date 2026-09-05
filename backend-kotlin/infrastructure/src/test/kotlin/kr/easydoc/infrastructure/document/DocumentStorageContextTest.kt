@@ -9,6 +9,8 @@ import kr.easydoc.application.document.RotationOutcome
 import kr.easydoc.core.crypto.EncryptedField
 import kr.easydoc.core.document.SourceFormat
 import kr.easydoc.core.exceptions.ConfigurationException
+import kr.easydoc.core.llm.FakeLlmProvider
+import kr.easydoc.core.llm.LlmProvider
 import kr.easydoc.core.security.Secret
 import kr.easydoc.core.user.PasswordHash
 import kr.easydoc.infrastructure.DatabaseHandle
@@ -21,6 +23,7 @@ import kr.easydoc.infrastructure.crypto.EncryptionProperties
 import kr.easydoc.infrastructure.crypto.KeyCheckValue
 import kr.easydoc.infrastructure.db.SpringTransactionRunner
 import kr.easydoc.infrastructure.ingest.IngestConfiguration
+import kr.easydoc.infrastructure.llm.LlmProperties
 import org.assertj.core.api.Assertions.assertThat
 import org.flywaydb.core.Flyway
 import org.junit.jupiter.api.BeforeAll
@@ -203,6 +206,18 @@ class DocumentStorageContextTest {
                 // 다른 구성값(`EncryptionProperties`)과 같은 방식으로 직접 공급한다.
                 FeedbackProperties::class.java,
                 Supplier { FeedbackProperties() },
+            ).withBean(
+                // `DocumentConfiguration.convertDocumentUseCase`(재변환 전용)가 요구한다 —
+                // 이 테스트는 재변환 경로를 재지 않으므로 응답 없는 대역이면 충분하다.
+                LlmProvider::class.java,
+                Supplier { FakeLlmProvider(emptyList()) },
+            ).withBean(
+                LlmProperties::class.java,
+                Supplier { LlmProperties() },
+            ).withBean(
+                // `DocumentConfiguration.reconvertUnitService` 가 요구한다.
+                ReconversionProperties::class.java,
+                Supplier { ReconversionProperties() },
             )
     }
 

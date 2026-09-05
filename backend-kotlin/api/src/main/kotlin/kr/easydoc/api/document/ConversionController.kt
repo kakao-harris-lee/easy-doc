@@ -2,6 +2,7 @@ package kr.easydoc.api.document
 
 import kr.easydoc.api.MIGRATE_PROFILE
 import kr.easydoc.api.auth.AuthenticatedUser
+import kr.easydoc.application.conversion.ReconvertUnitService
 import kr.easydoc.application.document.ConversionExportService
 import kr.easydoc.application.document.ConversionQueryService
 import kr.easydoc.application.document.ConversionReviewService
@@ -14,6 +15,7 @@ import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
+import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.PutMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestParam
@@ -22,15 +24,17 @@ import java.util.UUID
 
 // 계약·실경로 검증: `ConversionReadContractTest`, `ConversionReadReachTest`,
 // `ConversionReviewContractTest`, `ConversionReviewReachTest`,
-// `ConversionExportContractTest`, `ConversionExportReachTest`.
+// `ConversionExportContractTest`, `ConversionExportReachTest`,
+// `ReconvertUnitContractTest`, `ReconvertUnitReachTest`.
 
-/** `GET`·`PUT /conversions/{conversion_id}` 와 `GET .../export`. */
+/** `GET`·`PUT /conversions/{conversion_id}`, `GET .../export`, `POST .../units/{n}/reconvert`. */
 @Profile("!$MIGRATE_PROFILE")
 @RestController
 class ConversionController(
     private val conversions: ConversionQueryService,
     private val review: ConversionReviewService,
     private val exports: ConversionExportService,
+    private val reconversion: ReconvertUnitService,
 ) {
     /** 변환 한 건의 상태와 결과. 완료 전에는 결과 필드가 비어 있다(계약 `get.description`). */
     @GetMapping(CONVERSION_ITEM_PATH)
@@ -97,11 +101,40 @@ class ConversionController(
             .body(file.content)
     }
 
+    /**
+     * 원본 단위 하나를 다시 변환한 후보를 만든다. **후보뿐이고 변환 본문에는 아무것도
+     * 쓰지 않는다** — `easy_text`·`edited_text`는 이 오퍼레이션으로 바뀌지 않는다.
+     */
+    @PostMapping(CONVERSION_RECONVERT_PATH, consumes = [MediaType.APPLICATION_JSON_VALUE])
+    fun reconvertUnit(
+        user: AuthenticatedUser,
+        @PathVariable(CONVERSION_ID_VARIABLE) conversionId: UUID,
+        @PathVariable(SOURCE_UNIT_INDEX_VARIABLE) sourceUnitIndex: Int,
+        @RequestBody request: ReconvertUnitRequest,
+    ): ResponseEntity<ReconvertUnitResponse> {
+        val result =
+            reconversion.reconvert(
+                ownerId = user.id,
+                conversionId = conversionId,
+                sourceUnitIndex = sourceUnitIndex,
+                easyUnitIndexes = request.easyUnitIndexes,
+                easyTextFingerprint = request.easyTextFingerprint,
+            )
+        return ResponseEntity
+            .ok()
+            .contentType(MediaType.APPLICATION_JSON)
+            .header(HttpHeaders.CACHE_CONTROL, NO_STORE)
+            .header(X_CONTENT_TYPE_OPTIONS, NOSNIFF)
+            .body(ReconvertUnitResponse.of(result))
+    }
+
     private companion object {
         /** 계약 `paths./conversions/{conversion_id}` — 경로 문자열과 **변수 이름**. */
         const val CONVERSION_ITEM_PATH = "/conversions/{conversion_id}"
         const val CONVERSION_EXPORT_PATH = "/conversions/{conversion_id}/export"
+        const val CONVERSION_RECONVERT_PATH = "/conversions/{conversion_id}/units/{source_unit_index}/reconvert"
         const val CONVERSION_ID_VARIABLE = "conversion_id"
+        const val SOURCE_UNIT_INDEX_VARIABLE = "source_unit_index"
         const val FORMAT_PARAM = "format"
 
         /**

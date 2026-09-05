@@ -55,7 +55,23 @@ class ConvertDocumentUseCase(
         source: String,
         options: LlmOptions = defaultOptions,
         dictionaryContext: String? = null,
-    ): ConversionResult = Pass(provider, documentIds, options, dictionaryContext, dictionary).run(source)
+    ): ConversionResult = convertMasked(maskText(source), options, dictionaryContext)
+
+    /**
+     * 재변환 전용 진입점 — 호출자가 이미 마스킹을 마친 [masking] 을 그대로 쓴다.
+     * **다시 마스킹하지 않는다** (`docs/plans/2026-09-04-p0-4-paragraph-mapping-reconversion.md`
+     * §4 결정 3). 재변환 서비스가 문서 전체를 `maskText` 로 한 번 마스킹한 뒤
+     * `maskedUnitOf` 로 한 단위만 잘라 여기로 넘긴다 — 그래야 그 단위의 자리표시자 번호가
+     * 문서 전체의 마스킹 순서를 그대로 따르고, 저장된 `segment_map` 대응표와 어긋나지 않는다.
+     *
+     * 이 지점부터는 [convert] 와 완전히 같은 경로(프롬프트·보정·채택 판정)를 탄다 — 갈라지는
+     * 것은 마스킹을 다시 하지 않는다는 점뿐이다.
+     */
+    fun convertMasked(
+        masking: MaskingResult,
+        options: LlmOptions = defaultOptions,
+        dictionaryContext: String? = null,
+    ): ConversionResult = Pass(provider, documentIds, options, dictionaryContext, dictionary).run(masking)
 }
 
 /** 변환 1건의 실행 상태. */
@@ -71,10 +87,9 @@ private class Pass(
     private var outputTokens = 0
     private var lastModel: String? = null
 
-    fun run(source: String): ConversionResult {
-        val masking = maskText(source)
-        // 사전은 **마스킹 직후** 마스킹된 본문으로 묻는다. 프롬프트에 실제로 들어가는 것이
-        // 그 본문이고, 원문으로 물으면 배선이 마스킹 규칙을 우회하는 통로가 된다.
+    fun run(masking: MaskingResult): ConversionResult {
+        // 사전은 **마스킹된 본문**으로 묻는다. 프롬프트에 실제로 들어가는 것이 그 본문이고,
+        // 원문으로 물으면 배선이 마스킹 규칙을 우회하는 통로가 된다.
         val context = dictionaryContext ?: dictionary.contextFor(masking.maskedText)
         val prompt = LlmPrompt.forConversion(masking.maskedText, documentIds, context)
 

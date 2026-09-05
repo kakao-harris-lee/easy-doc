@@ -355,6 +355,62 @@ interface ConversionRepository {
         requiredStatus: ConversionStatus,
         updated: ConversionEnvelope,
     ): Boolean
+
+    /**
+     * 재변환 호출 예산을 **호출 전에** 예약한다(계획 §4 결정 3 「비용 상한은 요청이 아니라
+     * LLM 호출 수로 센다」). 한 번의 재변환은 보정 여부에 따라 1회 또는 2회를 쓰므로 항상
+     * [amount] = 2 를 예약하고, 실제 사용량만큼만 남기고 [settleReconversionCalls] 가 되돌린다.
+     *
+     * `reconversion_calls_used + reconversion_calls_reserved + amount <= budget` 일 때만
+     * 성공한다 — 예약은 **이미 나간 호출(used)** 과 **지금 진행 중인 다른 재변환의 예약
+     * (reserved)** 을 모두 합쳐 예산을 넘지 않는지 본다. 소유 술어가 이 UPDATE 문 자신에
+     * 걸린다(`OwnershipPredicateGuardTest`).
+     *
+     * 실패(예산 소진)면 [ReconversionReservation.Exhausted] 로 **그 시점의 잔여 예산**을 함께
+     * 준다 — 429 응답의 `remaining_call_budget` 이 이 값이다.
+     */
+    fun reserveReconversionCalls(
+        ownerId: UUID,
+        conversionId: UUID,
+        amount: Int,
+        budget: Int,
+    ): ReconversionReservation
+
+    /**
+     * 호출 뒤 정산한다 — 예약([reservedAmount], 언제나 2)에서 실제 사용량([actualUsed], 0·1·2)
+     * 만큼만 `used` 로 옮기고 나머지를 환불한다. 보정을 부르지 않았으면 1회가 환불되고, 첫
+     * 호출이 provider 오류로 실패하면 [actualUsed] = 0 이라 전액 환불된다.
+     *
+     * **실패 방향은 보수적이다** — 이 호출 자체가 어떤 이유로든 실행되지 않으면(프로세스 죽음
+     * 등) 예약이 남아 최대 [reservedAmount] 회를 더 쓴 것으로 세고, 예산을 **덜 세는 일은
+     * 없다**(계획 §4 결정 3). [ownerId] 는 [reserveReconversionCalls] 와 같은 소유 술어를
+     * 이 문장 자신에도 건다.
+     *
+     * @return 정산 뒤의 잔여 예산(`budget - used - reserved`) — 성공 응답의
+     *   `remaining_call_budget` 이 이 값이다.
+     */
+    fun settleReconversionCalls(
+        ownerId: UUID,
+        conversionId: UUID,
+        reservedAmount: Int,
+        actualUsed: Int,
+        budget: Int,
+    ): Int
+}
+
+/** [ConversionRepository.reserveReconversionCalls] 의 결과. */
+sealed interface ReconversionReservation {
+    /**
+     * 예약에 성공했다 — 이제 실제 LLM 호출을 진행해도 된다.
+     *
+     * `data object` 가 아니라 평범한 `object` 다 — 담은 값이 없어 `data` 가 주는 이득이
+     * 없고, `SensitiveToStringReachTest` 의 data class 탐지기가 인자 없는 주 생성자를
+     * 판정 불가로 본다(`GeneratedToStringProbes.primaryConstructorOf`).
+     */
+    object Reserved : ReconversionReservation
+
+    /** 예산이 모자라 예약하지 못했다 — LLM 호출 0회, 429 로 나간다. */
+    data class Exhausted(val remainingCallBudget: Int) : ReconversionReservation
 }
 
 /**

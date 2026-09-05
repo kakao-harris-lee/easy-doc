@@ -20,6 +20,8 @@ import kr.easydoc.application.auth.UserRepository
 import kr.easydoc.application.auth.VerificationCodeStore
 import kr.easydoc.application.auth.WorkspaceDeletionState
 import kr.easydoc.application.auth.WorkspaceRepository
+import kr.easydoc.application.conversion.ConvertDocumentUseCase
+import kr.easydoc.application.conversion.ReconvertUnitService
 import kr.easydoc.application.crypto.ContentCipher
 import kr.easydoc.application.dictionary.DictionaryAttribution
 import kr.easydoc.application.dictionary.DictionaryAttributionProvider
@@ -318,6 +320,33 @@ class AuthSliceBeans {
             transaction = transaction,
         )
 
+    /** 재변환 슬라이스의 LLM 대역 — 테스트가 [ControllableLlmProvider.willReturn] 으로 응답을 정한다. */
+    @Bean
+    fun controllableLlmProvider(): ControllableLlmProvider = ControllableLlmProvider()
+
+    @Bean
+    fun convertDocumentUseCaseForReconversion(provider: ControllableLlmProvider): ConvertDocumentUseCase =
+        ConvertDocumentUseCase(provider)
+
+    /** 재변환 유스케이스도 실물이다 — 제품 조립(`DocumentConfiguration.reconvertUnitService`)과 같은 모양이다. */
+    @Suppress("LongParameterList")
+    @Bean
+    fun reconvertUnitService(
+        conversions: InMemoryConversionRepository,
+        documents: InMemoryDocumentRepository,
+        cipher: ContentCipher,
+        convert: ConvertDocumentUseCase,
+        transaction: TransactionRunner,
+    ): ReconvertUnitService =
+        ReconvertUnitService(
+            conversions = conversions,
+            documents = documents,
+            cipher = cipher,
+            convert = convert,
+            transaction = transaction,
+            callBudget = SLICE_RECONVERSION_CALL_BUDGET,
+        )
+
     @Bean
     fun inMemoryConversionFeedback(): InMemoryConversionFeedbackRepository = InMemoryConversionFeedbackRepository()
 
@@ -411,6 +440,9 @@ class AuthSliceBeans {
     private companion object {
         /** 계약·`DictionaryLookupProperties.DEFAULT_RATE_LIMIT_PER_MINUTE` 와 같은 값. */
         const val LOOKUP_RATE_LIMIT_PER_MINUTE = 60
+
+        /** 계약·`ReconversionProperties.DEFAULT_CALL_BUDGET` 과 같은 값. */
+        const val SLICE_RECONVERSION_CALL_BUDGET = 20
     }
 }
 

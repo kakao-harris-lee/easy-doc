@@ -684,6 +684,22 @@ class EnvelopeRotationTest {
             after: UUID,
             limit: Int,
         ): List<UUID> = error("회전 배치의 후보 선정은 KeyRotationBatch 몫이다 — EnvelopeRotation 이 부르면 안 된다")
+
+        /** 회전은 재변환 예산 포트를 쓰지 않는다 — 부르면 이 파일의 케이스가 그 사실로 빨개진다. */
+        override fun reserveReconversionCalls(
+            ownerId: UUID,
+            conversionId: UUID,
+            amount: Int,
+            budget: Int,
+        ): ReconversionReservation = error("회전 경로가 재변환 예산 포트를 부르면 안 된다")
+
+        override fun settleReconversionCalls(
+            ownerId: UUID,
+            conversionId: UUID,
+            reservedAmount: Int,
+            actualUsed: Int,
+            budget: Int,
+        ): Int = error("회전 경로가 재변환 예산 포트를 부르면 안 된다")
     }
 
     private class FeedbackRewrite(

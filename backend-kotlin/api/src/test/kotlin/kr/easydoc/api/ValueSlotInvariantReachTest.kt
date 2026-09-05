@@ -480,6 +480,8 @@ class ValueSlotInvariantReachTest {
                 "OAuthCallbackRequest" to
                     """{"code":"probe-code","state":"probe-state",""" +
                     """"redirect_uri":"http://localhost:5173/auth/google/callback"}""",
+                "ReconvertUnitRequest" to
+                    """{"easy_unit_indexes":[0],"easy_text_fingerprint":"${"a".repeat(64)}"}""",
             )
 
         private const val LIST_SCHEMA = "DocumentListResponse"

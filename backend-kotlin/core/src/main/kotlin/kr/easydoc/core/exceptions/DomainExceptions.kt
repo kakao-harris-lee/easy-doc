@@ -104,5 +104,23 @@ class RateLimitedException(
  * **요청·응답 안에서 동기로** 관측되므로 502로 나간다. 계약 `x-retired-responses`가
  * BadGateway를 폐기하며 "동기로 하위 시스템을 부르는 오퍼레이션이 새로 생기면 다시 세운다"고
  * 예고한 자리이며, `POST /auth/oauth/{provider}/callback`이 그 자리다.
+ *
+ * `POST /conversions/{conversion_id}/units/{source_unit_index}/reconvert`(P0-4 S4,
+ * 2026-09-05)가 세 번째 자리다 — 재변환 1회가 부르는 동기 LLM 호출이 제공자에 닿지 못하면
+ * 같은 사유로 같은 코드가 나간다.
  */
 class ExternalServiceUnavailableException(message: String) : EasyDocException(message)
+
+/**
+ * 문서 1건의 재변환 호출 예산(`easydoc.reconversion.call-budget`)이 소진됐다 — 계획 §4 결정 3
+ * 「비용 상한은 요청이 아니라 LLM 호출 수로 센다」. **공유 컴포넌트 `TooManyRequests` 를 쓰지
+ * 않는다** — 그 컴포넌트는 60초 재발송 쿨다운 전용이라 `Retry-After` 를 필수로 요구하는데,
+ * 재변환에는 쿨다운도 재시도 시각도 없다(예산이 다시 차는 시점을 서버가 계산할 수 없다 —
+ * 예산은 문서당 영구 상한이지 시간 창이 아니다). [remainingCallBudget] 은 이 예외가 던져진
+ * 시점의 잔여 예산이고, 예약 실패는 LLM 호출 0회를 보장한다(사후 카운터가 아니라 UPDATE
+ * 조건으로 즉시 막는다).
+ */
+class ReconversionBudgetExhaustedException(
+    message: String,
+    val remainingCallBudget: Int,
+) : EasyDocException(message)

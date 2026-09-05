@@ -2,6 +2,7 @@ package kr.easydoc.api.document
 
 import com.fasterxml.jackson.annotation.JsonCreator
 import com.fasterxml.jackson.annotation.JsonProperty
+import kr.easydoc.application.conversion.ReconvertUnitResult
 import kr.easydoc.core.document.ConversionView
 import kr.easydoc.core.document.FormatPreservation
 import kr.easydoc.core.document.MaskedItemView
@@ -193,5 +194,51 @@ data class ConversionResponse private constructor(
                 failureCode = view.failureCode,
             )
         }
+    }
+}
+
+/**
+ * `POST .../reconvert` 요청 본문. 계약 `ReconvertUnitRequest`. `source_unit_index`는
+ * 경로가 지므로 여기 없다.
+ */
+data class ReconvertUnitRequest
+    @JsonCreator
+    constructor(
+        @param:JsonProperty("easy_unit_indexes") val easyUnitIndexes: List<Int>,
+        @param:JsonProperty("easy_text_fingerprint") val easyTextFingerprint: String,
+    ) {
+        /** 지문은 해시값이라도 `DictionaryLookupRequest.text`와 같은 규약을 따른다. */
+        override fun toString(): String =
+            "ReconvertUnitRequest(easyUnitIndexes=$easyUnitIndexes, easyTextFingerprint=$CONTENT_MASK)"
+    }
+
+/**
+ * `POST .../reconvert` 응답. 계약 `ReconvertUnitResponse` — **여섯 필드가 전부다.**
+ * 후보뿐이고 변환 본문에는 아무것도 쓰이지 않는다.
+ */
+data class ReconvertUnitResponse(
+    @get:JsonProperty("candidate_text") val candidateText: String,
+    @get:JsonProperty("source_unit_index") val sourceUnitIndex: Int,
+    @get:JsonProperty("easy_unit_indexes") val easyUnitIndexes: List<Int>,
+    @get:JsonProperty("easy_text_fingerprint") val easyTextFingerprint: String,
+    @get:JsonProperty("llm_calls_used") val llmCallsUsed: Int,
+    @get:JsonProperty("remaining_call_budget") val remainingCallBudget: Int,
+) {
+    /** **후보 본문을 찍지 않는다** — 사용자 문서 내용이다. */
+    override fun toString(): String =
+        "ReconvertUnitResponse(candidateText=$CONTENT_MASK ${candidateText.length}자, " +
+            "sourceUnitIndex=$sourceUnitIndex, easyUnitIndexes=$easyUnitIndexes, " +
+            "llmCallsUsed=$llmCallsUsed, remainingCallBudget=$remainingCallBudget)"
+
+    companion object {
+        fun of(result: ReconvertUnitResult): ReconvertUnitResponse =
+            ReconvertUnitResponse(
+                candidateText = result.candidateText,
+                sourceUnitIndex = result.sourceUnitIndex,
+                easyUnitIndexes = result.easyUnitIndexes,
+                easyTextFingerprint = result.easyTextFingerprint,
+                llmCallsUsed = result.llmCallsUsed,
+                remainingCallBudget = result.remainingCallBudget,
+            )
     }
 }

@@ -305,8 +305,20 @@ class SensitiveToStringReachTest {
          * `clientSecret` 은 `Secret` 타입이라 그 자체가 이미 가려진다 — `GoogleOAuthSettings`
          * 와 같은 판단)와 `KakaoOAuthProperties`(설정 바인딩, `GoogleOAuthProperties` 와
          * 같은 필드 모양이라 같은 이유로 [KNOWN_SENSITIVE_TYPES] 에 넣지 않는다).
+         *
+         * P0-4 문단 재변환(S4, 계약 2.14.0, 2026-09-05)이 **다섯**을 더해 126 다(121 위에) —
+         * api `ReconvertUnitRequest`·`ReconvertUnitResponse`(`easyTextFingerprint`·
+         * `candidateText` 가 토큰 `text`에 걸려 `toString()`을 손으로 쥐고 가린다), application
+         * `ReconvertUnitResult`(같은 필드를 들어 같은 이유로 가린다), application
+         * `ReconversionReservation.Exhausted`(`remainingCallBudget` 하나뿐, 민감 토큰과
+         * 무관 — [KNOWN_SENSITIVE_TYPES] 에 넣지 않는다), infrastructure
+         * `ReconversionProperties`(`callBudget` 설정값 하나, 운영 노브 숫자라 민감 정보가
+         * 없다 — `KeyRotationProperties`와 같은 판단). **`ReconversionReservation.Reserved`는
+         * 이 숫자에 없다** — 담은 값이 없어 `data object`가 아니라 평범한 `object`로 선언했다
+         * (data class 탐지기가 인자 없는 주 생성자를 판정 불가로 보므로, `data`를 붙이면 이
+         * 테스트가 판정 불가로 실패한다).
          */
-        const val EXPECTED_SOURCE_DECLARATIONS = 121
+        const val EXPECTED_SOURCE_DECLARATIONS = 126
 
         /** 민감 판정이 반드시 닿아야 하는 타입 — 바닥이다. */
         val KNOWN_SENSITIVE_TYPES =

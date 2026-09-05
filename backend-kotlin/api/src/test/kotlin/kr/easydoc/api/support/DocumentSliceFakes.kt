@@ -16,6 +16,7 @@ import kr.easydoc.application.document.LockedFeedbackComment
 import kr.easydoc.application.document.MaskedItemReader
 import kr.easydoc.application.document.OriginalDocument
 import kr.easydoc.application.document.OriginalStructureReflector
+import kr.easydoc.application.document.ReconversionReservation
 import kr.easydoc.application.document.StoredConversion
 import kr.easydoc.application.document.StoredExport
 import kr.easydoc.application.document.StoredFeedback
@@ -219,6 +220,8 @@ class InMemoryConversionRepository(
         var inputTokens: Int?,
         var outputTokens: Int?,
         var failureCode: String?,
+        var reconversionCallsReserved: Int = 0,
+        var reconversionCallsUsed: Int = 0,
     )
 
     private val rows = mutableMapOf<UUID, Row>()
@@ -376,6 +379,44 @@ class InMemoryConversionRepository(
         row.providerName = providerName
         row.inputTokens = inputTokens
         row.outputTokens = outputTokens
+    }
+
+    /** 케이스가 예산을 미리 소진된 상태로 만든다 — 429 갈래를 재는 자리다. */
+    fun forceReconversionCallsUsed(
+        conversionId: UUID,
+        used: Int,
+    ) {
+        rows.getValue(conversionId).reconversionCallsUsed = used
+    }
+
+    /** 소유 술어를 실물과 같은 자리에서 본다 — 남의 변환이면 예약하지 않는다. */
+    override fun reserveReconversionCalls(
+        ownerId: UUID,
+        conversionId: UUID,
+        amount: Int,
+        budget: Int,
+    ): ReconversionReservation {
+        val row = rows[conversionId]?.takeIf { documents.ownerOf(it.documentId) == ownerId }
+        if (row == null || row.reconversionCallsUsed + row.reconversionCallsReserved + amount > budget) {
+            val used = row?.reconversionCallsUsed ?: 0
+            val reserved = row?.reconversionCallsReserved ?: 0
+            return ReconversionReservation.Exhausted((budget - used - reserved).coerceAtLeast(0))
+        }
+        row.reconversionCallsReserved += amount
+        return ReconversionReservation.Reserved
+    }
+
+    override fun settleReconversionCalls(
+        ownerId: UUID,
+        conversionId: UUID,
+        reservedAmount: Int,
+        actualUsed: Int,
+        budget: Int,
+    ): Int {
+        val row = rows[conversionId]?.takeIf { documents.ownerOf(it.documentId) == ownerId } ?: return 0
+        row.reconversionCallsReserved -= reservedAmount
+        row.reconversionCallsUsed += actualUsed
+        return (budget - row.reconversionCallsUsed - row.reconversionCallsReserved).coerceAtLeast(0)
     }
 
     private companion object {
