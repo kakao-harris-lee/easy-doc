@@ -20,6 +20,8 @@ object AuthenticatedEndpoints {
             "/conversions/{conversion_id}/export",
             // 피드백도 같은 사유로 **따로** 넣는다 — 위 항목이 하위 경로를 덮지 않는다.
             "/conversions/{conversion_id}/feedback",
+            // 재변환(P0-4 S4, 2.14.0)도 같은 사유로 **따로** 넣는다.
+            "/conversions/{conversion_id}/units/{source_unit_index}/reconvert",
             "/documents",
             // `DELETE /documents/{document_id}` 를 만든 커밋이 더했다(위 규약).
             "/documents/{document_id}",

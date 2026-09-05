@@ -4,6 +4,7 @@ import kr.easydoc.application.document.ConversionCiphertexts
 import kr.easydoc.application.document.ConversionEnvelope
 import kr.easydoc.application.document.ConversionRepository
 import kr.easydoc.application.document.LockedConversion
+import kr.easydoc.application.document.ReconversionReservation
 import kr.easydoc.application.document.StoredConversion
 import kr.easydoc.application.document.StoredExport
 import kr.easydoc.core.crypto.EncryptedContent
@@ -176,6 +177,63 @@ class JdbcConversionRepository(private val jdbc: JdbcClient) : ConversionReposit
             .param("expectedEditedText", expected.ciphertexts.editedText?.bytes)
             .update() > 0
 
+    /**
+     * 예약 UPDATE — `used + reserved + amount <= budget` 일 때만 갱신된다. 0행이면 예산
+     * 소진이라, 그 시점의 상태를 다시 읽어 잔여 예산을 계산한다(트랜잭션 안이라 값이 흔들리지
+     * 않는다).
+     */
+    override fun reserveReconversionCalls(
+        ownerId: UUID,
+        conversionId: UUID,
+        amount: Int,
+        budget: Int,
+    ): ReconversionReservation {
+        val reserved =
+            jdbc
+                .sql(RESERVE_RECONVERSION_CALLS_SQL)
+                .param("id", conversionId)
+                .param("ownerId", ownerId)
+                .param("amount", amount)
+                .param("budget", budget)
+                .update() > 0
+        if (reserved) return ReconversionReservation.Reserved
+
+        val state =
+            jdbc
+                .sql(RECONVERSION_BUDGET_STATE_SQL)
+                .param("id", conversionId)
+                .param("ownerId", ownerId)
+                .query { rs, _ ->
+                    rs.getInt("reconversion_calls_used") + rs.getInt("reconversion_calls_reserved")
+                }.optional()
+                .orElse(budget)
+        return ReconversionReservation.Exhausted((budget - state).coerceAtLeast(0))
+    }
+
+    /**
+     * 정산 UPDATE — 예약분에서 실제 사용량만 `used` 로 옮기고 나머지를 환불한다. `RETURNING`
+     * 이 정산 **후** 값으로 잔여 예산을 함께 계산해 준다(PostgreSQL `RETURNING` 은 갱신된
+     * 값을 본다) — 정산과 잔여 예산 조회를 두 문장으로 나누지 않는다.
+     */
+    override fun settleReconversionCalls(
+        ownerId: UUID,
+        conversionId: UUID,
+        reservedAmount: Int,
+        actualUsed: Int,
+        budget: Int,
+    ): Int =
+        jdbc
+            .sql(SETTLE_RECONVERSION_CALLS_SQL)
+            .param("id", conversionId)
+            .param("ownerId", ownerId)
+            .param("reservedAmount", reservedAmount)
+            .param("actualUsed", actualUsed)
+            .param("budget", budget)
+            .query { rs, _ -> rs.getInt("remaining") }
+            .optional()
+            .map { it.coerceAtLeast(0) }
+            .orElse(0)
+
     private companion object {
         /** 저장소가 만든 고정 문자열. 계약 `InternalError` 의 `storage` 갈래다. */
         const val STORAGE_FAILURE_MESSAGE = "요청을 처리하지 못했습니다"
@@ -288,6 +346,50 @@ class JdbcConversionRepository(private val jdbc: JdbcClient) : ConversionReposit
             INSERT INTO conversions (id, document_id, status, encryption_scheme, key_version)
             VALUES (:id, :documentId, :status, :scheme, :keyVersion)
             RETURNING id, document_id, status, failure_code, created_at, updated_at
+            """.trimIndent()
+
+        /**
+         * 재변환 호출 예약(V10). 소유 술어는 [SAVE_REVIEW_SQL] 과 같은 자리다 —
+         * `document_id` 가 소유자로 좁혀진 문서 부분집합 안에 있는지 서브쿼리로 본다
+         * (`OwnershipPredicateGuardTest`). 예산 판정이 `WHERE` 안에 있어 조건이 거짓이면
+         * 0행이고, 그것이 곧 예산 소진이다(사후 카운터가 아니라 즉시 막는 장치).
+         */
+        val RESERVE_RECONVERSION_CALLS_SQL =
+            """
+            UPDATE conversions
+            SET reconversion_calls_reserved = reconversion_calls_reserved + :amount
+            WHERE id = :id
+              AND document_id IN (
+                  SELECT id FROM documents WHERE user_id = :ownerId
+              )
+              AND reconversion_calls_used + reconversion_calls_reserved + :amount <= :budget
+            """.trimIndent()
+
+        /** 예약 실패 뒤 잔여 예산을 계산하려고 다시 읽는 질의. 예약과 같은 소유 술어다. */
+        val RECONVERSION_BUDGET_STATE_SQL =
+            """
+            SELECT reconversion_calls_used, reconversion_calls_reserved
+            FROM conversions
+            WHERE id = :id
+              AND document_id IN (
+                  SELECT id FROM documents WHERE user_id = :ownerId
+              )
+            """.trimIndent()
+
+        /**
+         * 재변환 호출 정산(V10). 예약([reservedAmount])에서 실제 사용량([actualUsed])만 남기고
+         * 나머지를 환불한다 — `reserved` 는 그 차이만큼 줄고 `used` 는 실제 사용량만큼 는다.
+         */
+        val SETTLE_RECONVERSION_CALLS_SQL =
+            """
+            UPDATE conversions
+            SET reconversion_calls_reserved = reconversion_calls_reserved - :reservedAmount,
+                reconversion_calls_used = reconversion_calls_used + :actualUsed
+            WHERE id = :id
+              AND document_id IN (
+                  SELECT id FROM documents WHERE user_id = :ownerId
+              )
+            RETURNING :budget - reconversion_calls_used - reconversion_calls_reserved AS remaining
             """.trimIndent()
     }
 }

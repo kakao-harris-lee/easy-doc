@@ -14,6 +14,8 @@ import kr.easydoc.core.exceptions.InvalidOAuthStateException
 import kr.easydoc.core.exceptions.InvalidVerificationCodeException
 import kr.easydoc.core.exceptions.NotFoundException
 import kr.easydoc.core.exceptions.RateLimitedException
+import kr.easydoc.core.exceptions.ReconversionBudgetExhaustedException
+import kr.easydoc.core.exceptions.ReconversionConcurrencyExhaustedException
 import kr.easydoc.core.exceptions.StorageException
 import kr.easydoc.core.exceptions.UnsupportedFormatException
 import kr.easydoc.core.exceptions.UploadTooLargeException
@@ -228,6 +230,9 @@ internal const val UNEXPECTED_MESSAGE: String = "서버 오류가 발생했습�
 /** Pydantic 이 필수 값 누락에 쓰는 문구. React `readErrorMessage` 가 그대로 화면에 뿌린다. */
 private const val FIELD_REQUIRED_MESSAGE = "Field required"
 
+/** 계약 `components/responses/ReconversionBudgetExhausted.headers`. */
+private const val RECONVERSION_REMAINING_BUDGET_HEADER = "X-Remaining-Call-Budget"
+
 private const val INVALID_INPUT_MESSAGE = "Input is not valid"
 
 /** `loc` 첫 칸. Python 은 `body`·`query`·`path` 셋만 쓴다. */
@@ -293,6 +298,18 @@ private fun mappingFor(exception: EasyDocException): Pair<HttpStatus, HttpHeader
                 HttpHeaders().apply { set(HttpHeaders.RETRY_AFTER, exception.retryAfterSeconds.toString()) }
         }
 
+        // 재변환 호출 예산 소진 — 쿨다운이 아니라 문서당 영구 상한이라 `Retry-After` 가
+        // 없다(`RateLimitedException` 과 다른 429). 잔여 예산은 본문이 아니라 헤더로
+        // 낸다 — `x-error-body-universality`(오류 응답 본문은 언제나 detail 하나)를
+        // 지키면서 `Retry-After` 와 같은 자리에 값을 싣는다(계약
+        // `components/responses/ReconversionBudgetExhausted`).
+        is ReconversionBudgetExhaustedException -> {
+            HttpStatus.TOO_MANY_REQUESTS to
+                HttpHeaders().apply {
+                    set(RECONVERSION_REMAINING_BUDGET_HEADER, exception.remainingCallBudget.toString())
+                }
+        }
+
         // 크기 초과만 413으로 가른다 — "파일을 나눠 올리라"는 안내가 형식 오류와 다르다.
         is UploadTooLargeException -> {
             HttpStatus.PAYLOAD_TOO_LARGE to null
@@ -328,6 +345,17 @@ private fun mappingFor(exception: EasyDocException): Pair<HttpStatus, HttpHeader
 
         is ConfigurationException -> {
             HttpStatus.SERVICE_UNAVAILABLE to null
+        }
+
+        // 동시 재변환 한도 — 트랜지언트다(1초 뒤 재시도 가능하다는 것을 Retry-After 로 알린다).
+        // 문서당 영구 상한인 ReconversionBudgetExhaustedException(429)과 다른 축이라 503으로 가른다
+        // (계약 components/responses/ReconversionConcurrencyLimited — 공유 ServiceUnavailable 을
+        // 재사용하지 않는다: 그 컴포넌트는 "이 상태가 되는 구성은 JWT 서명 키 미설정 하나뿐"이라고
+        // 스스로 적어 뒀고 Retry-After 헤더도 없다 — ReconversionBudgetExhausted 가 TooManyRequests
+        // 를 재사용하지 않은 것과 같은 이유).
+        is ReconversionConcurrencyExhaustedException -> {
+            HttpStatus.SERVICE_UNAVAILABLE to
+                HttpHeaders().apply { set(HttpHeaders.RETRY_AFTER, "1") }
         }
 
         // 서버 버그. 메시지는 저장소가 만든 고정 문자열이라 그대로 내보내도 안전하다.

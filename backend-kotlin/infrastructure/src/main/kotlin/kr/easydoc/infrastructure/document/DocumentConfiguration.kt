@@ -2,6 +2,8 @@ package kr.easydoc.infrastructure.document
 
 import kr.easydoc.application.auth.TransactionRunner
 import kr.easydoc.application.auth.UserRepository
+import kr.easydoc.application.conversion.ConvertDocumentUseCase
+import kr.easydoc.application.conversion.ReconvertUnitService
 import kr.easydoc.application.crypto.ContentCipher
 import kr.easydoc.application.document.ConversionFeedbackRepository
 import kr.easydoc.application.document.ConversionFeedbackService
@@ -22,8 +24,11 @@ import kr.easydoc.application.document.OriginalStructureReflector
 import kr.easydoc.application.document.SealedStores
 import kr.easydoc.application.document.StoredOriginalReader
 import kr.easydoc.application.document.WorkspaceLookup
+import kr.easydoc.core.llm.LlmOptions
+import kr.easydoc.core.llm.LlmProvider
 import kr.easydoc.infrastructure.crypto.MIGRATE_PROFILE
 import kr.easydoc.infrastructure.export.PackagedOriginalReflector
+import kr.easydoc.infrastructure.llm.LlmProperties
 import kr.easydoc.infrastructure.queue.JdbcConversionQueue
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
@@ -168,6 +173,45 @@ class DocumentConfiguration {
             cipher = cipher,
             query = query,
             transaction = transactionRunner,
+        )
+
+    /**
+     * 재변환 전용 `ConvertDocumentUseCase` — **worker 가 아닌 프로필에서만** 조립한다
+     * (`@Profile("!worker")`, 클래스 레벨 `!$MIGRATE_PROFILE` 과 함께 걸려 사실상 api/local/test
+     * 에서만 선다). worker 프로필은 `ConversionWorkerConfiguration.convertDocumentUseCase` 가
+     * 이미 같은 타입의 빈을 조립하므로, 여기서 조건 없이 만들면 두 정의가 겹친다.
+     *
+     * **사전 컨텍스트를 주입하지 않는다**(기본값 `NoDictionaryContext`) — 재변환은 문서
+     * 전체가 아니라 단위 하나만 다시 변환하고, 그 규모에 1.5MB 사전 색인을 적재할 이유가
+     * 없다(`ConversionWorkerConfiguration.dictionaryContextSource` 와 같은 판단).
+     */
+    @Bean
+    @Profile("!worker")
+    fun convertDocumentUseCase(
+        provider: LlmProvider,
+        properties: LlmProperties,
+    ): ConvertDocumentUseCase =
+        ConvertDocumentUseCase(provider, defaultOptions = LlmOptions(maxTokens = properties.validatedMaxOutputTokens()))
+
+    /** 재변환 유스케이스 — `easydoc.reconversion.call-budget` 은 [ReconversionProperties] 가 문다. */
+    @Suppress("LongParameterList")
+    @Bean
+    fun reconvertUnitService(
+        conversions: ConversionRepository,
+        documents: DocumentRepository,
+        cipher: ContentCipher,
+        convert: ConvertDocumentUseCase,
+        transactionRunner: TransactionRunner,
+        properties: ReconversionProperties,
+    ): ReconvertUnitService =
+        ReconvertUnitService(
+            conversions = conversions,
+            documents = documents,
+            cipher = cipher,
+            convert = convert,
+            transaction = transactionRunner,
+            callBudget = properties.callBudget,
+            concurrencyLimit = properties.concurrency,
         )
 
     /** 파일럿 피드백 저장소. 문서·변환과 **수명이 분리된** 표라 저장소도 따로 선다. */

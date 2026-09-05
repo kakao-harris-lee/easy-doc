@@ -35,20 +35,44 @@ class MaskedTextGatewayTest {
     }
 
     @Test
-    @DisplayName("companion 이 여는 통로는 mask 하나뿐이다 — wrap 류의 재등장을 막는다")
+    @DisplayName("companion 이 여는 통로는 mask·unitOf 둘뿐이다 — 임의 문자열을 받는 통로의 재등장을 막는다")
     fun `감싸기만 하는 통로가 없다`() {
         val exposed =
             MaskedText.Companion::class.java.declaredMethods
                 .filterNot { it.isSynthetic }
-                .map { it.name.substringBefore('$') }
+                // `unitOf` 는 파라미터에 인라인 클래스(`MaskedText`)가 있어 Kotlin 이 이름을
+                // `unitOf-<해시>` 로 맹글링한다(JVM 서명 충돌 방지) — `mask` 는 파라미터가
+                // `String` 뿐이라 맹글링되지 않는다. `$`(합성 클래스 접미) 와 `-`(맹글링
+                // 접미) 둘 다 벗겨야 원래 이름과 비교할 수 있다.
+                .map { it.name.substringBefore('$').substringBefore('-') }
                 .sorted()
 
+        // 2026-09-05 (P0-4 S4 재변환) — `unitOf(source: MaskedText, index: Int)` 를
+        // 추가했다. **Kotlin 호출자에게는** 1ffaf93 에서 없앤 `wrap(masked: String)` 과
+        // 다른 통로다 — 그 함수는 임의 `String` 을 받았고, `unitOf` 는 컴파일러가 이미
+        // [MaskedText] 로 증명한 값만 받는다(`MaskedText` 생성자가 private 이라 호출자가
+        // 위조할 수 없다). **JVM 바이트코드 수준에서는 이 구분이 보이지 않는다** — 인라인
+        // 클래스는 파라미터에서 밑바탕 타입(`String`)으로 지워지므로, 리플렉션으로 본
+        // `unitOf` 의 첫 파라미터도 `String` 이다(`mask` 와 서명이 사실상 같다). 이는
+        // `MaskedText` 를 받는 기존 모든 함수(`LlmPrompt.forConversion` 등)에 이미 있던
+        // 한계이고(1ffaf93 KDoc 「Kotlin 호출자에 한정된다」), `unitOf` 가 그 한계를 새로
+        // 넓히지 않는다 — 그래서 이 테스트는 이름만 고정하고 파라미터 타입은 재지 않는다.
         assertThat(exposed)
             .withFailMessage {
-                "MaskedText.Companion 이 여는 함수가 [mask] 가 아니라 $exposed 다. " +
+                "MaskedText.Companion 이 여는 함수가 [mask, unitOf] 가 아니라 $exposed 다. " +
                     "1ffaf93 에서 되돌린 `wrap(masked: String)` 이 다시 생겼는지 확인하라 — " +
                     "임의 문자열을 감싸기만 하는 통로가 하나라도 있으면 마스킹 선행 불변식은 타입이 아니라 주석이 된다."
-            }.containsExactly("mask")
+            }.containsExactly("mask", "unitOf")
+    }
+
+    @Test
+    @DisplayName("unitOf 는 이미 마스킹된 값을 다시 마스킹하지 않고 그대로 조각낸다")
+    fun `unitOf 가 줄을 정확히 골라낸다`() {
+        val masking = MaskedText.mask("신청자 900101-1234567 님\n두 번째 줄")
+
+        val secondLine = MaskedText.unitOf(masking.maskedText, 1)
+
+        assertThat(secondLine.value).isEqualTo("두 번째 줄")
     }
 
     @Test

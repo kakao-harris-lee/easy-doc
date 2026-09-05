@@ -24,6 +24,27 @@ value class MaskedText private constructor(val value: String) {
             val (masked, items) = maskParts(text)
             return MaskingResult(maskedText = MaskedText(masked), items = items)
         }
+
+        /**
+         * 이미 마스킹된 [source] 를 줄 단위로 쪼갠 뒤 [index] 번째 줄만 [MaskedText] 로
+         * 감싼다 — 재변환 전용 통로다(`docs/plans/2026-09-04-p0-4-paragraph-mapping-reconversion.md`
+         * §4 결정 3 「입력은 문서 전체를 마스킹한 뒤의 n번째 줄」).
+         *
+         * **[String] 이 아니라 [MaskedText] 를 받는다** — 1ffaf93 에서 없앤
+         * `wrap(masked: String)` 과 이 함수가 다른 지점이 정확히 여기다: 그 함수는 임의
+         * 문자열을 감쌌고, 이 함수는 이미 [mask] 를 거친 값만 조각낸다. `MaskedText` 는
+         * 생성자가 `private` 이라 호출자가 위조할 수 없으므로, 이 함수로 마스킹되지 않은
+         * 문자열이 새어 들어올 길이 없다 — [source] 의 줄 나눔이 여전히 마스킹된 문자열이라는
+         * 사실은 [source] 자체가 이미 증명하고 있다.
+         *
+         * 단위만 따로 [mask] 에 다시 넣지 않는 이유는 그 계획 문서가 적어 두었다 — 범주별
+         * 자리표시자 번호가 문서 순서로 붙는데, 단위를 떼어 다시 마스킹하면 그 번호가 처음부터
+         * 다시 매겨져 저장된 대응표와 어긋난다.
+         */
+        internal fun unitOf(
+            source: MaskedText,
+            index: Int,
+        ): MaskedText = MaskedText(source.value.split("\n")[index])
     }
 }
 

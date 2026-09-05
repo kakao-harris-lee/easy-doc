@@ -119,6 +119,10 @@ easydoc:
     # 수정률 지표(평문 숫자)는 이 파기가 건드리지 않고 영구히 남는다
     # (`FeedbackProperties` KDoc, master-plan §3.2).
     comment-retention-days: ${EASYDOC_FEEDBACK_COMMENT_RETENTION_DAYS:30}
+  # 문단 재변환(P0-4 S4) 호출 예산 — 문서 1건당 재변환 LLM 호출 수 상한(요청 수가 아니다).
+  # 기본값 20은 사용자가 정한 비용 정책값이다(계획 §0 게이트 1, 2026-09-05 확정).
+  reconversion:
+    call-budget: ${EASYDOC_RECONVERSION_CALL_BUDGET:20}
   llm:
     provider: ${EASYDOC_LLM_PROVIDER:anthropic}
     model: ${EASYDOC_LLM_MODEL:}

@@ -368,6 +368,43 @@ internal class FakeConversionRepository(
             row.maskedItems == expected.maskedItems &&
             row.editedText == expected.editedText
 
+    /** 재변환 호출 예산 — conversionId → (reserved, used). 소유 술어는 [owned] 를 그대로 묻는다. */
+    private val reconversionBudgets = mutableMapOf<UUID, Pair<Int, Int>>()
+
+    override fun reserveReconversionCalls(
+        ownerId: UUID,
+        conversionId: UUID,
+        amount: Int,
+        budget: Int,
+    ): ReconversionReservation {
+        val owns = owned[ownerId to conversionId] != null
+        val (reserved, used) = reconversionBudgets[conversionId] ?: (0 to 0)
+        return if (owns && used + reserved + amount <= budget) {
+            reconversionBudgets[conversionId] = (reserved + amount) to used
+            ReconversionReservation.Reserved
+        } else {
+            ReconversionReservation.Exhausted(if (owns) (budget - used - reserved).coerceAtLeast(0) else 0)
+        }
+    }
+
+    override fun settleReconversionCalls(
+        ownerId: UUID,
+        conversionId: UUID,
+        reservedAmount: Int,
+        actualUsed: Int,
+        budget: Int,
+    ): Int {
+        if (owned[ownerId to conversionId] == null) return 0
+        val (reserved, used) = reconversionBudgets[conversionId] ?: (0 to 0)
+        val newReserved = reserved - reservedAmount
+        val newUsed = used + actualUsed
+        reconversionBudgets[conversionId] = newReserved to newUsed
+        return (budget - newUsed - newReserved).coerceAtLeast(0)
+    }
+
+    /** 케이스가 정산 뒤 상태를 단언하는 자리. */
+    fun reconversionBudgetOf(conversionId: UUID): Pair<Int, Int> = reconversionBudgets[conversionId] ?: (0 to 0)
+
     /** 한 번의 검수 저장 호출 — 조건과 쓴 값, 그리고 **어느 경계에서 돌았는지**를 그대로 든다. */
     internal class SavedReview(
         val expected: ConversionEnvelope,

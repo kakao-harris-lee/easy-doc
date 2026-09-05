@@ -168,6 +168,21 @@ class KeyRotationBatchObserverTest {
             requiredStatus: ConversionStatus,
             updated: ConversionEnvelope,
         ): Boolean = error(UNREACHABLE)
+
+        override fun reserveReconversionCalls(
+            ownerId: UUID,
+            conversionId: UUID,
+            amount: Int,
+            budget: Int,
+        ): ReconversionReservation = error(UNREACHABLE)
+
+        override fun settleReconversionCalls(
+            ownerId: UUID,
+            conversionId: UUID,
+            reservedAmount: Int,
+            actualUsed: Int,
+            budget: Int,
+        ): Int = error(UNREACHABLE)
     }
 
     /** 네 번째 가족 — 세 번째가 던지므로 이 자리까지 순회가 닿지 않는다. */

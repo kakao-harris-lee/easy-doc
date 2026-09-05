@@ -427,6 +427,13 @@ class OwnershipPredicateGuardTest {
                 "$DOCUMENT/JdbcConversionRepository.kt | " +
                     "SELECT [conversion_feedback, conversions, document_originals, documents]",
                 "$DOCUMENT/JdbcConversionRepository.kt | INSERT [conversions]",
+                // P0-4 S4 재변환 호출 예산(2026-09-05, V10) — 예약 UPDATE·잔여 조회 SELECT·
+                // 정산 UPDATE 셋 다 소유 술어가 문장 자신에 있다(서브쿼리 `WHERE user_id =
+                // :ownerId`) — `RESERVE_RECONVERSION_CALLS_SQL`·`RECONVERSION_BUDGET_STATE_SQL`·
+                // `SETTLE_RECONVERSION_CALLS_SQL`.
+                "$DOCUMENT/JdbcConversionRepository.kt | UPDATE [conversions, documents]",
+                "$DOCUMENT/JdbcConversionRepository.kt | SELECT [conversions, documents]",
+                "$DOCUMENT/JdbcConversionRepository.kt | UPDATE [conversions, documents]",
                 "$DOCUMENT/JdbcConversionWorkStore.kt | SELECT [conversions, documents]",
                 "$DOCUMENT/JdbcConversionWorkStore.kt | UPDATE [conversions]",
                 "$DOCUMENT/JdbcConversionWorkStore.kt | UPDATE [conversions]",
