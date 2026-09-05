@@ -4,6 +4,8 @@ import type {
   ConversionResponse,
   DocumentListItem,
   DocumentSourceResponse,
+  SegmentMap,
+  SegmentMapUnit,
   UserResponse,
   WorkspaceListItem,
 } from '../api/types'
@@ -70,7 +72,35 @@ export function conversion(overrides: Partial<ConversionResponse> = {}): Convers
     input_tokens: 10,
     output_tokens: 20,
     failure_code: null,
+    // 기본값은 null이다 — 대부분의 기존 테스트는 대응표를 다루지 않으므로 옛 단일
+    // 에디터 경로(§6 S3 "segment_map: null 렌더")를 그대로 탄다. 대응표가 필요한
+    // 테스트만 `segmentMap()`으로 명시해 덮어쓴다.
+    segment_map: null,
     ...overrides,
+  }
+}
+
+/** `segment_map.units`의 항목 하나. 기본값은 확인된(high) 1:1 대응이다. */
+export function segmentMapUnit(overrides: Partial<SegmentMapUnit> = {}): SegmentMapUnit {
+  return {
+    easy_unit_index: 0,
+    source_unit_indexes: [0],
+    confidence: 'high',
+    ...overrides,
+  }
+}
+
+/**
+ * 원문-쉬운 글 문단 대응표. `units`를 넘기면 그 길이가 `easy_unit_count`가 된다 —
+ * 계약이 요구하는 「배열 길이 == easy_unit_count」를 목에서도 어기지 않기 위해서다.
+ */
+export function segmentMap(overrides: Partial<SegmentMap> = {}): SegmentMap {
+  const units = overrides.units ?? [segmentMapUnit()]
+  return {
+    source_unit_count: 1,
+    easy_unit_count: units.length,
+    ...overrides,
+    units,
   }
 }
 

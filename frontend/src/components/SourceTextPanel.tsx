@@ -1,6 +1,7 @@
-import type { ReactNode } from 'react'
+import { useId, type ReactNode } from 'react'
 import { FileText, FileX2, LoaderCircle } from 'lucide-react'
 
+import { cn } from '../lib/utils'
 import type { DocumentSource } from '../review/sourceText'
 import { Button } from './ui/Button'
 
@@ -16,6 +17,20 @@ interface SourceTextPanelProps {
    */
   failureNote?: ReactNode
   rows?: number
+  /**
+   * 단위 목록 모드(DESIGN.md §6.4, 계획 §6 S3) — 결과 패널이 `SegmentedResultEditor`로
+   * 그려질 때만 부르는 쪽이 원문을 `\n`으로 쪼갠 줄 목록을 넘긴다. 넘기면 큰 textarea
+   * 하나 대신 **읽기 전용 단위마다 하나**로 그리고, hover·focus로 결과 패널과 하이라이트를
+   * 주고받는다(클릭 가능 — 각 단위가 포커스를 받는 요소다).
+   *
+   * `undefined`면 지금까지처럼 원문 전체를 담은 단일 읽기 전용 textarea를 그린다 —
+   * 대응표가 없거나(`segment_map: null`) 단위가 너무 많은 화면은 이 갈래를 그대로 쓴다.
+   */
+  units?: string[]
+  /** 결과 패널에서 hover·focus 중인 쉬운 글 단위가 가리키는 원본 단위 색인들. */
+  highlightedIndexes?: ReadonlySet<number>
+  /** 사용자가 원본 단위를 hover·focus했을 때(벗어나면 `null`) 알린다. */
+  onHoverUnit?: (index: number | null) => void
 }
 
 /** 실패 종류별 문구. 사용자가 **다음에 할 일이 다르므로** 같은 말로 뭉치지 않는다(§9). */
@@ -52,7 +67,12 @@ export function SourceTextPanel({
   textareaId,
   failureNote,
   rows = 20,
+  units,
+  highlightedIndexes,
+  onHoverUnit,
 }: SourceTextPanelProps) {
+  const listHeadingId = useId()
+
   if (source.state.status === 'loading') {
     return (
       <div aria-busy="true">
@@ -91,6 +111,47 @@ export function SourceTextPanel({
           )}
         </div>
       </div>
+    )
+  }
+
+  if (units !== undefined) {
+    return (
+      <>
+        <h2
+          className="mb-2 flex items-center gap-2 text-sm font-bold text-muted-foreground"
+          id={listHeadingId}
+        >
+          <FileText className="size-[18px] shrink-0" aria-hidden="true" />
+          원본 (읽기 전용)
+        </h2>
+        {/* 원본 단위마다 읽기 전용 textarea 하나(§6.4, 계획 §6 S3) — 결과 패널의
+            `SegmentedResultEditor`와 짝을 이룬다. 큰 textarea 하나 대신 단위로 쪼개는
+            이유는 hover·focus로 결과 쪽 단위와 서로 하이라이트를 주고받기 위해서다.
+            textarea 자체가 이미 클릭·포커스를 받는 요소다("클릭 가능"). */}
+        <div className="flex flex-col gap-2" role="list" aria-labelledby={listHeadingId}>
+          {units.map((unit, index) => {
+            const highlighted = highlightedIndexes?.has(index) ?? false
+            return (
+              <div key={index} role="listitem">
+                <textarea
+                  aria-label={`원본 ${index + 1}번째 문단`}
+                  className={cn(
+                    'min-h-11 w-full resize-y rounded-[10px] border border-input bg-secondary px-3.5 py-2.5 text-[17px] leading-[1.75] text-foreground transition-colors motion-reduce:transition-none',
+                    highlighted && 'border-primary ring-2 ring-primary/40',
+                  )}
+                  value={unit}
+                  rows={2}
+                  readOnly
+                  onFocus={() => onHoverUnit?.(index)}
+                  onBlur={() => onHoverUnit?.(null)}
+                  onMouseEnter={() => onHoverUnit?.(index)}
+                  onMouseLeave={() => onHoverUnit?.(null)}
+                />
+              </div>
+            )
+          })}
+        </div>
+      </>
     )
   }
 

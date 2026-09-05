@@ -1,4 +1,4 @@
-import { render as renderInDom, screen, within } from '@testing-library/react'
+import { fireEvent, render as renderInDom, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ReactElement } from 'react'
 import { MemoryRouter } from 'react-router-dom'
@@ -7,7 +7,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError, downloadExport, saveFeedback, saveReview } from '../api/client'
 import type { ConversionResponse, FormatPreservation } from '../api/types'
 import { setUnsavedChanges } from '../review/unsavedChanges'
-import { conversion, sourceFailed, sourceLoading, sourceReady } from '../test/factories'
+import {
+  conversion,
+  segmentMap,
+  segmentMapUnit,
+  sourceFailed,
+  sourceLoading,
+  sourceReady,
+} from '../test/factories'
 import { ReviewEditor } from './ReviewEditor'
 
 /**
@@ -1119,5 +1126,238 @@ describe('저장하고 내려받기', () => {
     expect(alert).toHaveTextContent('내려받기를 다시 눌러 주세요')
     // 저장은 실제로 끝났다 — 그 사실이 상태 라벨에도 남는다(§9).
     expect(await screen.findByText(/^저장됨 · /)).toBeInTheDocument()
+  })
+})
+
+/**
+ * 문단 단위 대응(`segment_map`, 계약 2.12.0) — 계획 §6 S3.
+ *
+ * 기본 목(`conversion()`)의 `segment_map`은 `null`이라 위 모든 테스트는 옛 단일
+ * 에디터 경로를 그대로 탄다. 여기서는 `segment_map`을 명시로 채운 변환만 다룬다.
+ */
+describe('문단 단위 대응(segment_map)', () => {
+  it('segment_map이 null이면 옛 단일 에디터를 그대로 쓴다', () => {
+    render(
+      <ReviewEditor
+        conversion={conversion({ segment_map: null, easy_text: '첫 문단\n둘째 문단' })}
+        source={sourceFailed()}
+      />,
+    )
+
+    expect(screen.getByLabelText('쉬운 글 결과 (고칠 수 있습니다)')).toHaveValue(
+      '첫 문단\n둘째 문단',
+    )
+    expect(screen.queryByLabelText(/쉬운 글 단위 1/)).not.toBeInTheDocument()
+  })
+
+  it('HIGH 대응은 「대응 확인」, LOW는 「추정」 배지로 구분하고 각 단위를 textarea로 그린다', () => {
+    const map = segmentMap({
+      source_unit_count: 2,
+      units: [
+        segmentMapUnit({ easy_unit_index: 0, source_unit_indexes: [0], confidence: 'high' }),
+        segmentMapUnit({ easy_unit_index: 1, source_unit_indexes: [], confidence: 'low' }),
+      ],
+    })
+    render(
+      <ReviewEditor
+        conversion={conversion({ easy_text: '첫 문장\n둘째 문장', segment_map: map })}
+        source={sourceReady('원본 문단 하나\n원본 문단 둘')}
+      />,
+    )
+
+    expect(screen.getByLabelText('쉬운 글 단위 1, 원본 1번째 문단에 대응')).toHaveValue('첫 문장')
+    expect(screen.getByLabelText('쉬운 글 단위 2, 대응 확인 불가')).toHaveValue('둘째 문장')
+    expect(screen.getByLabelText('원본 1번째 문단')).toHaveValue('원본 문단 하나')
+    expect(screen.getByLabelText('원본 2번째 문단')).toHaveValue('원본 문단 둘')
+    expect(screen.getByText('대응 확인')).toBeInTheDocument()
+    expect(screen.getByText('추정')).toBeInTheDocument()
+  })
+
+  it('쉬운 글 단위를 hover·focus하면 대응하는 원본 단위가 밝혀지고, 반대 방향도 같다', async () => {
+    const user = userEvent.setup()
+    const map = segmentMap({
+      source_unit_count: 2,
+      units: [
+        segmentMapUnit({ easy_unit_index: 0, source_unit_indexes: [0], confidence: 'high' }),
+        segmentMapUnit({ easy_unit_index: 1, source_unit_indexes: [1], confidence: 'high' }),
+      ],
+    })
+    render(
+      <ReviewEditor
+        conversion={conversion({ easy_text: '첫 문장\n둘째 문장', segment_map: map })}
+        source={sourceReady('원본 하나\n원본 둘')}
+      />,
+    )
+
+    const easyUnit1 = screen.getByLabelText('쉬운 글 단위 1, 원본 1번째 문단에 대응')
+    const sourceUnit1 = screen.getByLabelText('원본 1번째 문단')
+    const sourceUnit2 = screen.getByLabelText('원본 2번째 문단')
+
+    expect(sourceUnit1.className).not.toMatch(/border-primary/)
+    await user.click(easyUnit1)
+    expect(sourceUnit1.className).toMatch(/border-primary/)
+    expect(sourceUnit2.className).not.toMatch(/border-primary/)
+
+    await user.tab() // easyUnit1에서 초점을 떼어 하이라이트를 지운다.
+    expect(sourceUnit1.className).not.toMatch(/border-primary/)
+
+    // 반대 방향 — 원본 단위를 hover·focus하면 대응하는 쉬운 글 단위가 밝혀진다.
+    await user.click(sourceUnit2)
+    const easyUnit2 = screen.getByLabelText('쉬운 글 단위 2, 원본 2번째 문단에 대응')
+    expect(easyUnit2.className).toMatch(/border-primary/)
+  })
+
+  it('LOW 대응은 hover해도 원본 단위를 밝히지 않는다', async () => {
+    const user = userEvent.setup()
+    const map = segmentMap({
+      source_unit_count: 1,
+      units: [segmentMapUnit({ easy_unit_index: 0, source_unit_indexes: [0], confidence: 'low' })],
+    })
+    render(
+      <ReviewEditor
+        conversion={conversion({ easy_text: '문장 하나', segment_map: map })}
+        source={sourceReady('원본 하나')}
+      />,
+    )
+
+    const easyUnit = screen.getByLabelText('쉬운 글 단위 1, 대응 확인 불가')
+    const sourceUnit = screen.getByLabelText('원본 1번째 문단')
+    await user.click(easyUnit)
+    expect(sourceUnit.className).not.toMatch(/border-primary/)
+  })
+
+  it('단위 안에서 Enter를 누르면 그 자리를 나누고 뒤 단위 번호가 밀린다', async () => {
+    const map = segmentMap({
+      source_unit_count: 1,
+      units: [segmentMapUnit({ easy_unit_index: 0, source_unit_indexes: [0], confidence: 'high' })],
+    })
+    render(
+      <ReviewEditor
+        conversion={conversion({ easy_text: '첫줄', segment_map: map })}
+        source={sourceFailed()}
+      />,
+    )
+
+    const unit = screen.getByLabelText(/쉬운 글 단위 1/) as HTMLTextAreaElement
+    unit.focus()
+    unit.setSelectionRange(1, 1)
+    fireEvent.keyDown(unit, { key: 'Enter' })
+
+    // 나뉜 두 단위 모두 원래 단위의 대응(high, 원본 1번째 문단)을 그대로 물려받는다 —
+    // 국소 재계산은 서버가 다시 잴 때까지의 최선 추정이다(계획 §6 S3).
+    expect(screen.getByLabelText('쉬운 글 단위 1, 원본 1번째 문단에 대응')).toHaveValue('첫')
+    expect(screen.getByLabelText('쉬운 글 단위 2, 원본 1번째 문단에 대응')).toHaveValue('줄')
+  })
+
+  it('분할 뒤 저장하면 무손실로 이은 문자열 하나가 그대로 서버로 간다', async () => {
+    const user = userEvent.setup()
+    const map = segmentMap({
+      source_unit_count: 1,
+      units: [segmentMapUnit({ easy_unit_index: 0, source_unit_indexes: [0], confidence: 'high' })],
+    })
+    vi.mocked(saveReview).mockResolvedValue(
+      conversion({
+        edited_text: '첫\n줄',
+        reviewed_at: '2026-08-07T02:00:00Z',
+        segment_map: map,
+      }),
+    )
+    render(
+      <ReviewEditor
+        conversion={conversion({ easy_text: '첫줄', segment_map: map })}
+        source={sourceFailed()}
+      />,
+    )
+
+    const unit = screen.getByLabelText(/쉬운 글 단위 1/) as HTMLTextAreaElement
+    unit.focus()
+    unit.setSelectionRange(1, 1)
+    fireEvent.keyDown(unit, { key: 'Enter' })
+
+    await user.click(screen.getByRole('button', { name: '검수 내용 저장' }))
+
+    // split('\n') ↔ join('\n') 왕복 — 화면이 단위 목록으로 바뀌어도 저장 계약은
+    // `updateConversion` 하나뿐이고 값은 그대로 이은 문자열이다(계획 §2).
+    expect(vi.mocked(saveReview)).toHaveBeenCalledWith('c1', '첫\n줄')
+  })
+
+  it('맨 앞에서 Backspace를 누르면 앞 단위와 합치고, 둘 다 high일 때만 합친 단위도 high다', () => {
+    const map = segmentMap({
+      source_unit_count: 2,
+      units: [
+        segmentMapUnit({ easy_unit_index: 0, source_unit_indexes: [0], confidence: 'high' }),
+        segmentMapUnit({ easy_unit_index: 1, source_unit_indexes: [1], confidence: 'low' }),
+      ],
+    })
+    render(
+      <ReviewEditor
+        conversion={conversion({ easy_text: '첫줄\n둘째줄', segment_map: map })}
+        source={sourceFailed()}
+      />,
+    )
+
+    const unit2 = screen.getByLabelText(/쉬운 글 단위 2/) as HTMLTextAreaElement
+    unit2.focus()
+    unit2.setSelectionRange(0, 0)
+    fireEvent.keyDown(unit2, { key: 'Backspace' })
+
+    // 둘 중 하나가 low였으므로 합친 단위도 low다 — 「대응 확인 불가」로 낮춰 안전하게 그린다.
+    expect(screen.getByLabelText('쉬운 글 단위 1, 대응 확인 불가')).toHaveValue('첫줄둘째줄')
+    expect(screen.queryByLabelText(/쉬운 글 단위 2/)).not.toBeInTheDocument()
+  })
+
+  it('화살표 위·아래로 단위 사이를 옮긴다', () => {
+    const map = segmentMap({
+      source_unit_count: 2,
+      units: [
+        segmentMapUnit({ easy_unit_index: 0, source_unit_indexes: [0], confidence: 'high' }),
+        segmentMapUnit({ easy_unit_index: 1, source_unit_indexes: [1], confidence: 'high' }),
+      ],
+    })
+    render(
+      <ReviewEditor
+        conversion={conversion({ easy_text: '첫줄\n둘째줄', segment_map: map })}
+        source={sourceFailed()}
+      />,
+    )
+
+    const unit1 = screen.getByLabelText(/쉬운 글 단위 1/) as HTMLTextAreaElement
+    const unit2 = screen.getByLabelText(/쉬운 글 단위 2/) as HTMLTextAreaElement
+
+    unit1.focus()
+    unit1.setSelectionRange(unit1.value.length, unit1.value.length)
+    fireEvent.keyDown(unit1, { key: 'ArrowDown' })
+    expect(unit2).toHaveFocus()
+
+    unit2.setSelectionRange(0, 0)
+    fireEvent.keyDown(unit2, { key: 'ArrowUp' })
+    expect(unit1).toHaveFocus()
+  })
+
+  it('단위가 200개를 넘으면 단일 textarea로 내려앉고 배너가 사유를 적는다', () => {
+    const unitCount = 201
+    const bigText = Array.from({ length: unitCount }, (_, index) => `문장 ${index}`).join('\n')
+    const map = segmentMap({
+      source_unit_count: unitCount,
+      units: Array.from({ length: unitCount }, (_, index) =>
+        segmentMapUnit({
+          easy_unit_index: index,
+          source_unit_indexes: [index],
+          confidence: 'high',
+        }),
+      ),
+    })
+    render(
+      <ReviewEditor
+        conversion={conversion({ easy_text: bigText, segment_map: map })}
+        source={sourceFailed()}
+      />,
+    )
+
+    expect(screen.getByText(/문단이 200개를 넘어/)).toBeInTheDocument()
+    expect(screen.queryByLabelText(/쉬운 글 단위 1,/)).not.toBeInTheDocument()
+    expect(screen.getByLabelText('쉬운 글 결과 (고칠 수 있습니다)')).toHaveValue(bigText)
+    // 재변환은 이 슬라이스(S3) 범위 밖이다(S4) — 이 화면에서 그런 버튼을 만들지 않는다.
+    expect(screen.queryByRole('button', { name: /재변환/ })).not.toBeInTheDocument()
   })
 })

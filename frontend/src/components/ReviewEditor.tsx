@@ -2,12 +2,13 @@ import { useEffect, useId, useRef, useState, useSyncExternalStore, type Keyboard
 import { Download, Save, ShieldAlert } from 'lucide-react'
 
 import { ApiError, downloadExport, saveReview } from '../api/client'
-import type { ConversionResponse, ExportFormat } from '../api/types'
+import type { ConversionResponse, ExportFormat, SegmentMapUnit } from '../api/types'
 import { cn } from '../lib/utils'
 import type { DocumentSource } from '../review/sourceText'
 import { setUnsavedChanges } from '../review/unsavedChanges'
 import { FormatPreservationPanel, PdfExportNotice } from './FormatPreservationPanel'
 import { ReviewFeedback } from './ReviewFeedback'
+import { MAX_SEGMENTED_UNITS, SegmentedResultEditor } from './SegmentedResultEditor'
 import { SourceTextPanel } from './SourceTextPanel'
 import { Badge } from './ui/Badge'
 import { Button } from './ui/Button'
@@ -171,6 +172,17 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
    * 판정을 화면에서 다시 세지 않는 것이 요점이다 — 규칙은 서버 한 곳에만 있다.
    */
   const [preservation, setPreservation] = useState(conversion.format_preservation)
+  /**
+   * 문단 단위 대응표(계약 2.12.0, §6.4 S3). 서버가 매 조회·저장마다 다시 유도해 주는
+   * 값이지만, 문단을 나누거나 합치는 조작은 다음 저장까지 서버가 모르므로 여기서
+   * 국소적으로 갱신한다(계약 `segment_map` 설명 — 서버가 강제하지 않는 클라이언트
+   * 재계산). 저장이 끝나면 서버가 다시 잰 값으로 덮어써 낡은 추정을 남기지 않는다.
+   */
+  const [unitMap, setUnitMap] = useState<SegmentMapUnit[]>(conversion.segment_map?.units ?? [])
+  /** 결과 단위 hover·focus가 밝힌, 지금 하이라이트해야 할 원본 단위 색인들. */
+  const [highlightedSourceIndexes, setHighlightedSourceIndexes] = useState<number[]>([])
+  /** 원본 단위 hover·focus 중인 색인. 결과 쪽 단위 하이라이트를 계산하는 재료다. */
+  const [hoveredSourceIndex, setHoveredSourceIndex] = useState<number | null>(null)
   const [feedback, setFeedback] = useState<Feedback | null>(null)
   const [pending, setPending] = useState<Pending>(null)
   /**
@@ -208,6 +220,17 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
   const splitView = useSplitView()
 
   /**
+   * 결과 패널을 단위 목록(`SegmentedResultEditor`)으로 그릴지.
+   *
+   * 대응표가 없으면(`segment_map: null`) 애초에 비교할 지도가 없으니 옛 단일 textarea
+   * 그대로다. 단위 수가 상한(`MAX_SEGMENTED_UNITS`)을 넘으면 지도가 있어도 내려앉는다
+   * — 계획 §6 S3 "단위 수가 200을 넘으면 지금의 단일 textarea로 내려앉는다".
+   */
+  const unitCount = draft.split('\n').length
+  const useSegmentedEditor = conversion.segment_map !== null && unitCount <= MAX_SEGMENTED_UNITS
+  const showFallbackBanner = conversion.segment_map !== null && unitCount > MAX_SEGMENTED_UNITS
+
+  /**
    * 좁은 화면에서 탭으로 바꿀지.
    *
    * 원문이 아직 없으면(불러오는 중이거나 못 불러왔으면) 탭을 만들지 않는다. 고를 수
@@ -217,6 +240,7 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
    */
   const showTabs = !splitView && source.state.status === 'ready'
   const statusId = `${editorId}-save-status`
+  const resultHeadingId = `${editorId}-result-heading`
 
   /**
    * 탭이 **처음 생기는 순간** 어느 패널을 펼쳐 둘지 정한다.
@@ -324,6 +348,9 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
     // 이 키는 늘 있고 `null`은 「아직 판정하지 않았다」라는 서버의 답이라, 그것을 지난
     // 조회의 판정으로 메우면 화면이 서버가 하지 않은 말을 하게 된다.
     setPreservation(saved.format_preservation)
+    // 대응표도 같은 이유로 서버 응답이 이길 때마다 갱신한다 — 분할·병합으로 만든
+    // 로컬 추정은 서버가 다시 잰 값이 오는 순간 버려진다.
+    setUnitMap(saved.segment_map?.units ?? [])
   }
 
   /** 서버가 준 사유를 문장 뒤에 붙인다. ApiError가 아니면 붙일 사유가 없다. */
@@ -600,6 +627,15 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
               source={source}
               textareaId={`${editorId}-source`}
               failureNote="가린 개인정보는 아래 대응표에서 확인할 수 있습니다."
+              units={
+                useSegmentedEditor && source.state.status === 'ready'
+                  ? source.state.text.split('\n')
+                  : undefined
+              }
+              highlightedIndexes={
+                useSegmentedEditor ? new Set(highlightedSourceIndexes) : undefined
+              }
+              onHoverUnit={useSegmentedEditor ? setHoveredSourceIndex : undefined}
             />
           </div>
 
@@ -611,8 +647,15 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
             {...panelProps('result')}
           >
             <div className="mb-2 flex items-center justify-between gap-2">
-              <h2 className="text-sm font-bold text-primary">
-                <label htmlFor={editorId}>쉬운 글 결과 (고칠 수 있습니다)</label>
+              <h2 className="text-sm font-bold text-primary" id={resultHeadingId}>
+                {/* 단위 목록 모드에는 단일 입력이 없어 `label htmlFor`로 묶을 대상이
+                    없다 — `SegmentedResultEditor`의 `role="group"`이 이 id를
+                    `aria-labelledby`로 대신 참조한다. */}
+                {useSegmentedEditor ? (
+                  '쉬운 글 결과 (고칠 수 있습니다)'
+                ) : (
+                  <label htmlFor={editorId}>쉬운 글 결과 (고칠 수 있습니다)</label>
+                )}
               </h2>
               {/* 눈으로 두 패널을 가르는 표식이다. 같은 사실을 위 라벨이 이미 말하므로
                   낭독기에서는 감춘다 — 한 입력에 두 번 붙는 설명이 된다. */}
@@ -620,13 +663,34 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
                 편집 가능
               </Badge>
             </div>
-            <textarea
-              id={editorId}
-              className="review-textarea text-[17px] leading-[1.75]"
-              value={draft}
-              rows={20}
-              onChange={(event) => setDraft(event.target.value)}
-            />
+
+            {/* 문단이 상한을 넘어 단위 목록 대신 단일 글상자로 내려앉은 이유를 그
+                자리에서 설명한다(계획 §6 S3) — 재변환은 이 슬라이스 범위 밖이다(S4). */}
+            {showFallbackBanner && (
+              <p className="field-hint mb-2">
+                문단이 {MAX_SEGMENTED_UNITS}개를 넘어 문단별 편집 대신 하나의 글상자로 보여드립니다.
+              </p>
+            )}
+
+            {useSegmentedEditor ? (
+              <SegmentedResultEditor
+                headingId={resultHeadingId}
+                value={draft}
+                onChange={setDraft}
+                unitMap={unitMap}
+                onUnitMapChange={setUnitMap}
+                hoveredSourceIndex={hoveredSourceIndex}
+                onHoverUnit={setHighlightedSourceIndexes}
+              />
+            ) : (
+              <textarea
+                id={editorId}
+                className="review-textarea text-[17px] leading-[1.75]"
+                value={draft}
+                rows={20}
+                onChange={(event) => setDraft(event.target.value)}
+              />
+            )}
           </div>
         </div>
 
