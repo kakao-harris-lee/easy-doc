@@ -276,3 +276,101 @@ S4(PR #35) · S5(PR #36). 계획과 달라진 점 — ⑴ 429 응답은 본문 �
   **안의 클라이언트 상태**이고 서버가 알 이유가 없다.
 - 두 레인이 공유하는 파일은 계약과 `frontend/src/api/types.ts` 둘뿐이고 버전 순서는 §3이 정한다.
 - 사전 팝업이 「원본의 어느 문단에서 온 용어인지」를 말하려 하면 그 대응이 `high`일 때만 주장한다.
+
+## 10. S6 스팩 — 내보내기가 지도를 소비한다 (2026-09-06 착수 결정)
+
+§5가 미룬 후속이다. S1~S5 출시(PR #25·#28·#30·#35·#36)와 P0-5 조각 6 착수 뒤, 사용자가 다음
+순서로 S6 착수를 결정했다(2026-09-06). 이 절이 §5 「내보내기는 이번에 바꾸지 않는다」를 **대체**한다.
+§5의 경고는 그대로 참이다 — 이것은 **이미 출시된 내보내기의 동작 변경**이므로 회귀 가드(§6 G)가
+먼저 서고, 지도가 없을 때의 결과는 오늘과 바이트 단위로 같아야 한다.
+
+### 10.1 오늘의 자리 맞춤이 틀리는 두 경우
+
+`export/ReflectionPlan.planOf(units, lines)`는 차례로만 짝짓는다. 모델이 문단을 **합치면**(N:1) 그
+뒤의 모든 검수본 문단이 한 칸씩 앞으로 당겨져 엉뚱한 원본 자리에 들어가고 마지막 원본 문단들이
+비워진다. **나누면**(1:N) 반대로 한 칸씩 밀려 끝에 덧붙는다. 두 경우 모두 응답은 `partial`로
+정직하게 말하지만, 파일 안에서는 **본문 절반이 잘못된 서식 자리에** 놓인다. S1의 지도
+(`core/segment/alignSegments`)는 정확히 이 두 사실(어느 쉬운 글 단위가 어느 원본 단위에서 왔는지)을
+알고 있고, 검수 화면(S3)이 이미 그것을 사용자에게 보여 준다. 화면이 말한 대응과 파일의 대응이
+다른 것이 S6가 없는 오늘의 상태다.
+
+### 10.2 결정
+
+1. **지도의 원천은 하나다.** `ConversionQueryService.segmentMapOf`가 하는 계산(마스킹된 원문
+   줄 × 내보낼 본문 줄 → `alignSegments`)을 application 안의 한 함수(`SegmentMapDerivation` —
+   이름은 구현 시 정한다)로 빼서 조회와 내보내기가 **같은 함수**를 부른다. 본문은 둘 다
+   `edited_text ?: easy_text`다(오늘 `ConversionQueryService:112`가 그렇다). 조회 화면이 보여 준
+   지도와 파일에 적용된 지도가 갈릴 수 없어야 한다 — `ReflectionPlan` KDoc이 판정과 반영을
+   한 함수로 묶은 것과 같은 이유다.
+2. **포트에 지도를 더한다.** `OriginalStructureReflector.outline(original, body, map)` /
+   `reflect(original, title, body, map)`. `map: SegmentMap?` — `null`이면 오늘의 차례 짝짓기
+   그대로다(회귀 가드의 기준선). core 타입(`SegmentMap`)이 application 포트에 나오는 것은
+   허용 방향(core → application)이다.
+3. **지도로 짝짓는 규칙 — 줄마다 갈 곳이 정확히 하나라는 불변식은 그대로다.**
+   - 전제 검사: `map.sourceUnitCount == units.size`(내보내기 순회가 본 단위 수)이고
+     `map.easyUnitCount == lines.size`. 어긋나면 **지도를 버리고 차례 짝짓기로 떨어진다**
+     (`ordinalFallback = true`, 아래 결과 항목). §7 리스크 2(추출 줄 수 ≠ 내보내기 단위 수)가
+     여기서 드러나며, 그 사실은 응답 `details`로 나간다 — 조용히 넘기지 않는다.
+   - **1:1** — 그 원본 단위에 갈아 끼운다(오늘과 같음).
+   - **N:1(합침)** — 쉬운 글 한 줄이 원본 여러 단위에서 왔으면 **첫 원본 단위**에 쓰고 나머지
+     원본 단위는 비운다. 비운 수는 `mergedUnits`로 따로 센다 — 오늘의 `emptiedUnits`
+     («반영할 내용이 없어 비움»)와 뜻이 다르고, **뒤 문단이 밀리지 않으므로** `SHIFTED_DETAIL`을
+     붙이지 않는다.
+   - **1:N(나눔)** — 원본 한 단위에서 쉬운 글 여러 줄이 왔으면 첫 줄은 그 단위에 갈아 끼우고
+     **나머지 줄은 그 단위 문단 바로 뒤에 새 문단으로 끼워 넣는다.** 서식은 그 단위 문단의
+     **속성만** 베낀다 — 오늘 `append`가 `appendTemplate`로 하는 방식 그대로(`w:p`/`hp:p`의
+     속성 복사, 자식 노드는 복제하지 않음). 계획 §6 초안이 말한 `w:br` 삽입은 **채택하지
+     않는다**: 한 단위의 `texts`가 여러 `w:r`에 걸칠 수 있어 br의 자리가 모호하고, 문단 안
+     줄바꿈은 검수 화면이 보여 준 「문단」과 다른 구조다. 끼워 넣은 줄 수는 `splitLines`.
+   - **머리말·꼬리말 단위로 향한 줄**은 오늘처럼 본문 끝으로 옮긴다(`displacedLines`).
+   - **원본 색인이 비어 있는 줄**(`sourceUnitIndexes = []`, 퇴화 지도)은 끝에 덧붙인다
+     (`appendedLines`).
+   - **`LOW` confidence 줄**은 위 규칙대로 자리에 넣되 `lowConfidenceLines`로 센다 — 자리는
+     보간이고 짐작이므로 그 수만큼이 `partial`의 근거다.
+   - 어느 줄도 받지 못한 본문 단위는 비운다(`emptiedUnits`, 오늘과 같음).
+   - 검수본 줄의 **문서 안 순서는 지도 순서(쉬운 글 단위 순서)를 따른다**. 지도는 단조
+     (원본 색인이 쉬운 글 순서로 비감소)라 끼워 넣기·갈아 끼우기만으로 순서가 보존된다.
+4. **판정(`reflectedPreservation`)의 새 어휘.** `ReflectionOutcome`에 `mergedUnits`·`splitLines`·
+   `lowConfidenceLines`·`ordinalFallback`을 더한다. 상태 규칙:
+   - `available` — 옮김·비움·덧붙임·저확신·차례 폴백이 모두 0/false. **합침과 나눔은 `HIGH`면
+     `available`을 깨지 않는다** — 대응을 확신한 반영이다. 단 무슨 일이 있었는지는 `details`로
+     말한다. 따라서 **2.16.0부터 `available`에도 `details`가 붙을 수 있다**(오늘은 비어 있다).
+   - `partial` — 그 밖의 모든 경우. 새 문구(개수만, 문서 문자열 없음):
+     「원본 문단 N개는 앞 문단과 합쳐져 빈 문단으로 남습니다」, 「문단 N개는 원본 문단이 나뉘어
+     그 뒤에 새 문단으로 들어갑니다」, 「문단 N개는 원본 자리를 확신할 수 없어 차례로 짐작해
+     넣었습니다」, 「원본 구조와 문단 수를 맞출 수 없어 차례대로 반영합니다」(폴백).
+     `SHIFTED_DETAIL`은 **폴백일 때만** 붙는다 — 지도로 놓은 문단은 밀리지 않는다.
+5. **계약 2.16.0.** `FormatPreservation` 설명에 위 상태 규칙과 새 `details` 예문을 적고,
+   `x-export-format-derivation`에 「지도 소비」 문단을 더한다. 필드·enum은 바뀌지 않는다
+   (`details`는 자유 문자열). 프런트 `FormatPreservationPanel`은 `details`를 이미 그대로
+   그리므로 타입 변경이 없다 — `available` + details 조합이 깨지지 않는지 단위 테스트 1건.
+6. **PDF·붙여넣기 원본은 영향이 없다** — 되살릴 원본이 없어 이 경로를 지나지 않는다
+   (`choiceExportPreservation`·`noOriginalPreservation`).
+
+### 10.3 슬라이스
+
+- **S6-1 core·application (M).** `ReflectionOutcome` 네 필드 + `reflectedPreservation` 새 규칙
+  (core 단위 테스트, 상태표 전 조합); `SegmentMapDerivation` 추출과 `ConversionQueryService`·
+  `ConversionExportService` 양쪽 사용; 포트 서명에 `map` 추가. infrastructure 어댑터는 이
+  조각에서 **map을 받되 무시**해 빌드가 녹색으로 닫힌다. 회귀 가드: `map = null`일 때의 판정이
+  기존 테스트와 같음.
+- **S6-2 infrastructure (L).** `planOf(units, lines, map)` — 위 3의 규칙; `ReflectionPlan`에
+  `inserted: List<Insertion(afterUnit, lines)>` 갈래 추가; DOCX·HWPX 반영자가 `inserted`를 단위
+  문단 뒤에 속성 복사로 끼워 넣음. 픽스처 테스트(A) 1:N 나눔 (B) N:1 합침 (C) LOW 보간 줄
+  (D) 단위 수 불일치 → 폴백 + details (E) `null` 지도 ≡ 오늘 결과(바이트 비교, 기존
+  `PackagedOriginalReflectorTest` 픽스처 전부) (F) 「모든 줄이 written+inserted+appended 중 정확히
+  한 곳」 불변식 (G) 머리말이 본문 사이에 오는 HWPX에서 지도 짝짓기가 머리말 자리를 건너뛰지
+  않음.
+- **S6-3 계약·문서·프런트 (S).** 2.16.0 문구, `ConversionExportContractTest`·
+  `ConversionQueryServiceTest` 갱신, `FormatPreservationPanel` 테스트 1건, DESIGN.md §6.5에
+  「지도 소비」 한 문단, backlog §1.3 행, master-plan §4.1 P0-4 상태.
+
+### 10.4 수용 기준
+
+- 2문단 원본을 모델이 1문단으로 합친 fixture: 결과 파일의 **첫 문단**에 합친 문장, 둘째 문단은
+  빈 문단, 응답 `available` + details 1건(합침). 오늘은 `partial` + 「비움」 + 「밀릴 수 있음」.
+- 1문단 원본이 3문단으로 나뉜 fixture: 원본 문단 자리에 첫 줄, 바로 뒤에 같은 속성의 새 문단
+  2개, 응답 `available` + details 1건(나눔). 오늘은 끝에 2개 덧붙고 `partial`.
+- `map = null`·차례 폴백: 기존 픽스처 전부 오늘과 같은 바이트.
+- 지도 계산이 조회와 내보내기에서 **같은 함수**를 지남 — 테스트가 두 서비스에 같은 대역을 꽂아
+  호출 인자가 같음을 단언한다.
