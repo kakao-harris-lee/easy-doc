@@ -142,6 +142,10 @@ class AuthSliceBeans {
     @Bean
     fun fakeGoogleProvider(): FakeGoogleSocialLoginProvider = FakeGoogleSocialLoginProvider()
 
+    /** 카카오 대역 — backlog §1.4, 계약 2.13.0. [FakeGoogleSocialLoginProvider] 와 같은 방식. */
+    @Bean
+    fun fakeKakaoProvider(): FakeKakaoSocialLoginProvider = FakeKakaoSocialLoginProvider()
+
     /** `SocialLoginService` 생성자 매개변수 상한을 지키려고 저장소 셋을 묶는다(그 클래스 KDoc). */
     @Bean
     fun socialLoginRepositories(
@@ -152,18 +156,25 @@ class AuthSliceBeans {
 
     /**
      * `SocialLoginService` 는 실물이다 — 계약이 정한 판정 순서(state → 신원 → 이메일 규칙)를
-     * 슬라이스가 실제로 밟아야 한다. google 하나만 등록한다(제품 조립과 같은 모양).
+     * 슬라이스가 실제로 밟아야 한다. google·kakao 둘을 등록한다(제품 조립과 같은 모양,
+     * 카카오는 계약 2.13.0).
      */
+    @Suppress("LongParameterList")
     @Bean
     fun socialLoginService(
-        provider: FakeGoogleSocialLoginProvider,
+        google: FakeGoogleSocialLoginProvider,
+        kakao: FakeKakaoSocialLoginProvider,
         states: InMemoryOAuthStateStore,
         repositories: SocialLoginRepositories,
         tokens: StubAccessTokens,
         transaction: TransactionRunner,
     ): SocialLoginService =
         SocialLoginService(
-            providers = mapOf(SocialLoginProviderId.GOOGLE to provider),
+            providers =
+                mapOf(
+                    SocialLoginProviderId.GOOGLE to google,
+                    SocialLoginProviderId.KAKAO to kakao,
+                ),
             states = states,
             repositories = repositories,
             accessTokens = tokens,
@@ -700,6 +711,48 @@ class FakeGoogleSocialLoginProvider : SocialLoginProvider {
 
     companion object {
         const val ALLOWED_REDIRECT_URI = "http://localhost:5173/auth/google/callback"
+    }
+}
+
+/**
+ * 카카오 어댑터 대역 — backlog §1.4, 계약 2.13.0. [FakeGoogleSocialLoginProvider] 와 같은
+ * `code` 인코딩(`sub|email|verified`, `reject`·`unreachable` 특수값)을 쓴다 — 계약이 보는
+ * 결과 모양은 두 제공자가 같아서(OIDC·userinfo 대체 경로는 어댑터 내부 구현일 뿐) 슬라이스
+ * 테스트 대역까지 그 경로를 흉내 낼 필요는 없다.
+ */
+class FakeKakaoSocialLoginProvider : SocialLoginProvider {
+    var exchangeCallCount = 0
+        private set
+
+    override fun supportsRedirectUri(redirectUri: String): Boolean = redirectUri == ALLOWED_REDIRECT_URI
+
+    override fun authorizationUrl(
+        state: String,
+        nonce: String,
+        redirectUri: String,
+    ): String = "https://kauth.kakao.test/oauth/authorize?state=$state&nonce=$nonce&redirect_uri=$redirectUri"
+
+    override fun exchange(
+        code: String,
+        redirectUri: String,
+        nonce: String,
+    ): SocialIdentity {
+        exchangeCallCount++
+        if (code == "reject") {
+            throw InvalidCredentialsException("이메일 또는 비밀번호가 올바르지 않습니다")
+        }
+        if (code == "unreachable") {
+            throw ExternalServiceUnavailableException("카카오에 연결하지 못했습니다")
+        }
+        val parts = code.split("|")
+        val providerUserId = parts.getOrNull(0) ?: error("잘못된 테스트 code: $code")
+        val email = parts.getOrNull(1)?.ifBlank { null }
+        val emailVerified = parts.getOrNull(2)?.toBooleanStrictOrNull() ?: true
+        return SocialIdentity(providerUserId, email, emailVerified)
+    }
+
+    companion object {
+        const val ALLOWED_REDIRECT_URI = "http://localhost:5173/auth/kakao/callback"
     }
 }
 
