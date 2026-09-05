@@ -16,16 +16,17 @@
 | 긴 문서 처리(4,000자 초과) | **구현(2026-09-03, 계약 2.7.0)** — 상한 20,000자·출력 토큰 구성 기본값 64,000 | **게이트 ⓪ — 파일럿 착수의 선행 조건**(master-plan §9). 구현이 아니라 **측정과 선택**이 먼저다. 아래 §1.2 → 판정 기록은 §1.2 「최종 판정」 |
 | 레이아웃 인지 PDF 추출(읽기 순서 복원) | 보류(결정 2026-09-02, 현행 유지) | 디자인 PDF(2단·카드 레이아웃)에서 추출 순서가 뒤섞이는 것을 실측 확인(2026-08-31). 평범한 채용공고 PDF(표 위주, 디자인 레이아웃 아님)에서도 같은 결함이 재현되는 것을 2026-09-02에 두 번째로 실측 확인했다. 아래 §1.3 |
 | PDF 원본의 파일 내보내기 | **구현(2026-09-02, 계약 2.6.0)** — PDF는 사용자가 고른 DOCX·HWPX 신문서로 나간다. 렌더러 미도입 결정 | `ExportFormat.ofSource(PDF) = null` — 렌더러가 없고 `DESIGN.md` §6.5가 TXT 우회를 금지한다. 오늘 PDF 건의 export 요청은 형식 합의 단계에서 **409**다. **방향(2026-08-31): 라이브러리 조사 우선, PDF 렌더러가 어려우면 TXT 또는 DOCX·HWPX 선택 신문서 조립(레이아웃 유지)으로 간다 — 단 형식 선택·조립 분기 모두 현 경로에 없어 §1.3의 변경 단위를 따른다.** **결정(2026-09-02): PDF 렌더러는 도입하지 않는다 — PDF 원본은 사용자가 DOCX 또는 HWPX를 골라 신문서 조립으로 내보낸다.** 상세는 §1.3 |
-| 쉬운 말 사전(RAG, pgvector 기반 팝업) | **진행(2026-09-05, S1 구현 — PR #26)** | master-plan P0-5. Lean MVP 범위 밖으로 의도적으로 미뤄져 있었다. 계획은 `docs/plans/2026-09-04-p0-5-easy-word-dictionary-rag.md` |
+| 쉬운 말 사전(RAG, pgvector 기반 팝업) | **구현(2026-09-05, PR #26·#29·#34; 임베딩 조건부)** | master-plan P0-5. Lean MVP 범위 밖으로 의도적으로 미뤄져 있었다. 계획은 `docs/plans/2026-09-04-p0-5-easy-word-dictionary-rag.md` |
 | 골든셋 품질 평가(스타일 규칙 + LLM-as-judge) | 구현 | `./gradlew build`가 스키마·원문 사실·변환 스냅샷 스타일/사실·파일·ID·JSON digest 기준선을 검사한다. LLM-as-judge는 `./gradlew testLlm`이며 비밀값이 없으면 skip |
 | 검수 피드백 기록(게이트 ① 판정 근거) | 구현 | `PUT /conversions/{id}/feedback` 멱등 upsert. 배포 의향·품질 만족도·소요 시간 + 자유 의견(AEAD 봉인). 수정률 지표는 저장 시점에 계산해 평문 숫자로 남긴다. `conversion_feedback`은 문서 30일 파기와 **분리**돼 있다(FK 없음). 집계는 `scripts/pilot-report.sql`, 절차는 `docs/pilot-runbook.md` 「게이트 ① 판정」. 조회 API(`GET`)와 재방문 시 이전 값 표시는 범위 밖 |
 | 변환 완료 이메일 알림(P0-3) | **구현(2026-09-04) — provider: fake·smtp(임시)** | `ConversionCompletedNotifier`가 worker 완료 커밋 뒤(트랜잭션 밖) 문서 소유자에게 제목·링크만 담은 메일을 보낸다. `conversions.notified_at`(migration V5)로 재실행 멱등, 실패해도 변환을 막지 않는다. `MailSender` 포트에 `fake`(메모리 기록, 실제 네트워크 없음)와 `smtp`(2026-09-04 사용자 결정 — Daum 등 소비자 메일 계정을 임시 relay로, SMTPS만 지원) 두 어댑터가 있다. **SES가 의도한 운영 provider이고 smtp는 그 전환 전까지의 임시 조치다** — §1.4의 벤더 조사·요금 비교 결론은 그대로 유효하다 |
 | 결제(카드·계좌이체·세금계산서), 크레딧 차감 | 미구현 | Lean MVP 범위 밖(master-plan 4.0) |
 | 운영자 어드민 | 미구현 | Lean MVP 범위 밖 |
 
-**2026-09-05:** P0-4 문단 단위 대응·재변환은 S1–S3(원문·쉬운 글 단위 정렬, `segment_map` 조회
-API, 검수 화면의 단위별 대응·편집 UI)이 병합됐다(PR #25, #28, #30). S4(재변환 엔드포인트)·
-S5(재변환 UI)는 아직 진행 중이다 — 계획은
+**2026-09-05:** P0-4 문단 단위 대응·재변환은 S1–S5(원문·쉬운 글 단위 정렬, `segment_map` 조회
+API, 검수 화면의 단위별 대응·편집 UI, 재변환 엔드포인트, 재변환 UI) 전부 병합됐다(PR #25, #28,
+#30, #35, #36). S6(내보내기의 지도 소비)과 `segment_map.compliant_source_units`는 아직
+범위 밖으로 남아 있다 — 계획은
 `docs/plans/2026-09-04-p0-4-paragraph-mapping-reconversion.md`.
 
 ## 1.1 추후 개선 항목 (동작에는 문제 없음)
@@ -207,6 +208,11 @@ S5(재변환 UI)는 아직 진행 중이다 — 계획은
 **→ 구글 구현 완료(2026-09-04, `feat/google-login` 브랜치, 계약 2.8.0).** 위 권고 순서대로 첫 제공자(구글)를 이 절이 적은 설계 그대로 구현했다 — `SocialLoginProvider` 포트(`application`) + `infrastructure/auth/google`의 HTTP 어댑터, `user_identities` 연결 테이블(`V6__user_identities.sql`, 유니크 `(provider, provider_user_id)`), `users.password_hash` nullable, 계약에 `oauthStart`/`oauthCallback` 오퍼레이션 추가(기존 `signup`/`login`은 무변경). **동일 이메일 자동 연결 금지** 규칙도 그대로 지켰다 — 신원은 새로운데 같은 **검증된** 이메일의 계정이 이미 있으면 자동으로 잇지 않고 409(`email_already_linked`, "이미 같은 이메일로 가입된 계정이 있습니다. 이메일로 로그인한 뒤 연결해 주세요.")를 낸다. **로그인 후 사용자가 명시적으로 연결하는 흐름은 아직 구현하지 않았다 — 다음 작업 단위다.** 카카오·네이버는 미구현(포트는 재사용 가능하나 어댑터·비즈 앱 심사·서비스 검수는 착수 전이다).
 
 **남은 결함(2026-09-04, 의도적으로 미해결) — 동시 최초 콜백 경쟁이 오도하는 409를 낼 수 있다.** `SocialLoginService.callback`은 신원 미연결·새 이메일 갈래에서 ⑴ `users.findByEmail`로 이메일 중복을 트랜잭션 **밖**에서 먼저 보고 ⑵ 트랜잭션 안에서 `createWithoutPassword` + `user_identities.link`를 한다. 같은 사람이 같은 제공자 콜백을 (예: 브라우저 탭 두 개로) 동시에 두 번 보내면, 두 요청 모두 ⑴에서 "아직 없음"을 보고 통과한 뒤 ⑵의 `users.email` 유일 인덱스(`ix_users_email`, V1)에서 하나만 성공하고 나머지는 `EmailAlreadyRegisteredException` → **409 `duplicate_email`**(사용자가 자기 자신과 충돌한 것뿐인데 "이미 가입된 계정" 문구를 본다 — `email_already_linked`가 아니라 가입 경로의 일반 문구다, `JdbcUserRepository.createWithoutPassword`가 그 예외를 던진다). **재시도하면 성공한다** — 실패한 요청이 다시 콜백을 밟으면 이번에는 ⑴에서 방금 만들어진 신원이 아니라 이메일이 걸리므로 여전히 409지만, `user_identities.findByProviderIdentity`를 먼저 보는 정상 경로(이미 연결된 신원 → 로그인)를 다시 타면 통과한다 — 즉 요청 자체는 안전하고(중복 계정이 생기지 않는다), 사용자 경험만 나쁘다(드문 경쟁에서 한 번 실패 문구를 본다). 고칠 후보 둘: ⑴ `user_identities`에 먼저 upsert(멱등)하고 `users` 생성은 그 결과로 갈리게 하기 — 경쟁을 신원 유일 제약(이미 있는 제약, `(provider, provider_user_id)`) 쪽으로 옮긴다. ⑵ `users` 유일 제약 위반을 잡은 뒤 `findByProviderIdentity`를 **한 번 더** 재조회해, 그사이 다른 요청이 신원을 연결했으면 그 결과로 로그인 처리하기(현재는 위반을 잡아 곧바로 409로 옮긴다 — 재조회 없이). 어느 쪽도 구현하지 않았다 — 발생 빈도가 낮고(같은 사람의 동시 두 콜백) 재시도로 복구되므로 이번 작업 단위의 판단 밖으로 남겼다.
+
+**→ 카카오 구현 완료(2026-09-05, PR #31 백엔드·#32 프런트).** 권고 순서의 두 번째 제공자(카카오)를
+구글과 같은 `SocialLoginProvider` 포트로 구현했다 — 백엔드 어댑터·계약 오퍼레이션 확장이 PR #31,
+프런트 소셜 로그인 컴포넌트의 provider 매개변수화가 PR #32다. **네이버는 아직 진행 중이다**(포트는
+재사용 가능하나 어댑터·서비스 검수는 착수 전이다).
 
 ## 2. 구현 시 반드시 지킬 요구사항
 
