@@ -1,0 +1,207 @@
+package kr.easydoc.api
+
+import kr.easydoc.api.config.PrivateResponseHeadersConfig
+import kr.easydoc.api.support.AuthSliceBeans
+import kr.easydoc.api.support.ContractSpec
+import kr.easydoc.api.support.FakeTermCandidateSource
+import kr.easydoc.api.support.InMemoryUserRepository
+import kr.easydoc.core.user.PasswordHash
+import org.assertj.core.api.Assertions.assertThat
+import org.junit.jupiter.api.AfterEach
+import org.junit.jupiter.api.DisplayName
+import org.junit.jupiter.api.Test
+import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest
+import org.springframework.context.annotation.Import
+import org.springframework.http.HttpHeaders
+import org.springframework.http.MediaType
+import org.springframework.mock.web.MockHttpServletResponse
+import org.springframework.test.web.servlet.MockMvc
+import org.springframework.test.web.servlet.post
+import tools.jackson.databind.ObjectMapper
+import java.nio.charset.StandardCharsets
+import java.util.UUID
+
+/** `POST /dictionary/lookup` 의 계약 — 목으로 재현되는 층만 본다 (P0-5 조각 4). */
+@WebMvcTest
+@Import(PrivateResponseHeadersConfig::class, AuthSliceBeans::class)
+class DictionaryLookupContractTest {
+    @Autowired
+    private lateinit var mockMvc: MockMvc
+
+    @Autowired
+    private lateinit var users: InMemoryUserRepository
+
+    @Autowired
+    private lateinit var fakeSource: FakeTermCandidateSource
+
+    private val json = ObjectMapper()
+
+    /** [fakeSource] 는 슬라이스 컨텍스트에 하나뿐인 싱글턴이다 — 시험마다 스위치를 되돌린다. */
+    @AfterEach
+    fun resetFakeSource() {
+        fakeSource.disabled = false
+    }
+
+    @Test
+    @DisplayName("토큰 없이 부르면 401 이다")
+    fun `토큰이 없으면 401 이다`() {
+        val response = post(token = null, text = FakeTermCandidateSource.KNOWN_QUERY)
+
+        assertThat(response.status).isEqualTo(UNAUTHORIZED)
+    }
+
+    @Test
+    @DisplayName("consumes 밖 Content-Type(text/plain) 은 415 다")
+    fun `지원하지 않는 미디어 타입은 415 다`() {
+        val response =
+            mockMvc
+                .post(PATH) {
+                    header(HttpHeaders.AUTHORIZATION, "Bearer ${tokenFor(newOwner())}")
+                    contentType = MediaType.TEXT_PLAIN
+                    content = "hello"
+                }.andReturn()
+                .response
+
+        assertThat(response.status).isEqualTo(UNSUPPORTED_MEDIA_TYPE)
+    }
+
+    @Test
+    @DisplayName("200 응답의 키 집합과 헤더가 계약과 같다")
+    fun `200 응답이 계약과 같다`() {
+        val response = post(tokenFor(newOwner()), FakeTermCandidateSource.KNOWN_QUERY)
+
+        assertThat(response.status).isEqualTo(ContractSpec.successStatus(PATH, POST))
+        assertPrivateHeaders(response)
+
+        val responseBody = body(response)
+        assertThat(responseBody.keys.map { it.toString() }.toSet())
+            .isEqualTo(ContractSpec.schemaRequired("DictionaryLookupResponse"))
+        assertThat(responseBody["query"]).isEqualTo(FakeTermCandidateSource.KNOWN_QUERY)
+
+        val candidates = responseBody["candidates"] as List<*>
+        assertThat(candidates).isNotEmpty()
+        val candidate = candidates.first() as Map<*, *>
+        assertThat(candidate.keys.map { it.toString() }.toSet())
+            .isEqualTo(ContractSpec.schemaRequired("DictionaryLookupCandidate"))
+        assertThat(candidate["easy_term"]).isEqualTo("준비할 서류")
+        assertThat(candidate["strategy"]).isEqualTo("substitute")
+        assertThat(candidate["match_kind"]).isEqualTo("exact")
+        assertThat(candidate["applicable"]).isEqualTo(true)
+
+        val dictionary = responseBody["dictionary"] as Map<*, *>
+        assertThat(dictionary.keys.map { it.toString() }.toSet())
+            .isEqualTo(ContractSpec.schemaRequired("DictionaryAttribution"))
+    }
+
+    @Test
+    @DisplayName("후보가 없는 질의도 200 이고 candidates 는 빈 배열이다 — 404 가 아니다")
+    fun `후보 0건도 200 이다`() {
+        val response = post(tokenFor(newOwner()), "게시판")
+
+        assertThat(response.status).isEqualTo(OK)
+        assertThat(body(response)["candidates"] as List<*>).isEmpty()
+    }
+
+    @Test
+    @DisplayName("공백만 보내 정제 후 비면 422 문자열이다")
+    fun `공백만 보내면 422 문자열이다`() {
+        val response = post(tokenFor(newOwner()), "  ")
+
+        assertThat(response.status).isEqualTo(UNPROCESSABLE)
+        assertThat(detailOf(response)).isInstanceOf(String::class.java)
+    }
+
+    @Test
+    @DisplayName("제어 문자만 보내 정제 후 비면 422 문자열이다 — 공백류와 다른 경로(stripControlChars)를 탄다")
+    fun `제어 문자만 보내면 422 문자열이다`() {
+        // 이스케이프 시퀀스로 쓴다 - 소스에 raw NUL 바이트를 그대로 두면 파일이 git 상 binary 로
+        // 보이는 문제가 났다(2026-09-05 리뷰) - 여기서는 항상 이스케이프로만 표현한다.
+        val response = post(tokenFor(newOwner()), "\u0000\u0000")
+
+        assertThat(response.status).isEqualTo(UNPROCESSABLE)
+        assertThat(detailOf(response)).isInstanceOf(String::class.java)
+    }
+
+    @Test
+    @DisplayName("100자 상한을 넘으면 422 문자열이다 (스키마 배열이 아니다 — x-request-field-constraints)")
+    fun `상한을 넘으면 422 문자열이다`() {
+        val response = post(tokenFor(newOwner()), "가".repeat(TOO_LONG_QUERY_LENGTH))
+
+        assertThat(response.status).isEqualTo(UNPROCESSABLE)
+        assertThat(detailOf(response)).isInstanceOf(String::class.java)
+    }
+
+    @Test
+    @DisplayName("조회 기능이 꺼져 있으면 422 문자열 — 계약이 문서화한 문구 그대로다")
+    fun `조회가 꺼져 있으면 422 다`() {
+        fakeSource.disabled = true
+
+        val response = post(tokenFor(newOwner()), FakeTermCandidateSource.KNOWN_QUERY)
+
+        assertThat(response.status).isEqualTo(UNPROCESSABLE)
+        assertThat(detailOf(response)).isEqualTo("사전 조회가 꺼져 있습니다")
+    }
+
+    @Test
+    @DisplayName("사용자별 분당 60회를 넘으면 429 + Retry-After 다")
+    fun `한도를 넘으면 429 다`() {
+        val token = tokenFor(newOwner())
+
+        repeat(RATE_LIMIT_PER_MINUTE) {
+            val response = post(token, FakeTermCandidateSource.KNOWN_QUERY)
+            assertThat(response.status).isEqualTo(OK)
+        }
+
+        val blocked = post(token, FakeTermCandidateSource.KNOWN_QUERY)
+
+        assertThat(blocked.status).isEqualTo(TOO_MANY_REQUESTS)
+        assertThat(blocked.getHeader(HttpHeaders.RETRY_AFTER)).isNotNull()
+    }
+
+    private fun post(
+        token: String?,
+        text: String,
+    ): MockHttpServletResponse =
+        mockMvc
+            .post(PATH) {
+                token?.let { header(HttpHeaders.AUTHORIZATION, "Bearer $it") }
+                contentType = MediaType.APPLICATION_JSON
+                content = json.writeValueAsString(mapOf("text" to text))
+            }.andReturn()
+            .response
+
+    private fun body(response: MockHttpServletResponse): Map<*, *> =
+        json.readValue(response.getContentAsString(StandardCharsets.UTF_8), Map::class.java)
+
+    private fun detailOf(response: MockHttpServletResponse): Any? = body(response)["detail"]
+
+    private fun newOwner(): UUID = users.create("dictionary-${UUID.randomUUID()}@example.test", STUB_HASH).id
+
+    /** `StubAccessTokens.issue` 와 같은 토큰 모양 — `subject`. */
+    private fun tokenFor(userId: UUID): String = "stub-token:$userId"
+
+    /** 값·부착 개수만 잰다 — `OAuthContractTest.assertPrivateHeaders` 와 같은 방식. */
+    private fun assertPrivateHeaders(response: MockHttpServletResponse) {
+        val expected = ContractSpec.globalHeaderValues()
+        expected.forEach { (header, value) ->
+            assertThat(response.getHeaders(header)).containsExactly(value)
+        }
+    }
+
+    private companion object {
+        val STUB_HASH = PasswordHash("stub-hash")
+
+        const val PATH = "/dictionary/lookup"
+        const val POST = "post"
+
+        const val OK = 200
+        const val UNAUTHORIZED = 401
+        const val UNSUPPORTED_MEDIA_TYPE = 415
+        const val UNPROCESSABLE = 422
+        const val TOO_MANY_REQUESTS = 429
+
+        const val TOO_LONG_QUERY_LENGTH = 101
+        const val RATE_LIMIT_PER_MINUTE = 60
+    }
+}

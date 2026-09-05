@@ -21,6 +21,11 @@ import kr.easydoc.application.auth.VerificationCodeStore
 import kr.easydoc.application.auth.WorkspaceDeletionState
 import kr.easydoc.application.auth.WorkspaceRepository
 import kr.easydoc.application.crypto.ContentCipher
+import kr.easydoc.application.dictionary.DictionaryAttribution
+import kr.easydoc.application.dictionary.DictionaryAttributionProvider
+import kr.easydoc.application.dictionary.LookupRateLimiter
+import kr.easydoc.application.dictionary.TermCandidateSource
+import kr.easydoc.application.dictionary.TermLookupService
 import kr.easydoc.application.document.ConversionExportService
 import kr.easydoc.application.document.ConversionFeedbackService
 import kr.easydoc.application.document.ConversionQueryService
@@ -38,6 +43,12 @@ import kr.easydoc.application.document.WorkspaceLookup
 import kr.easydoc.application.mail.MailSender
 import kr.easydoc.application.workspace.DUPLICATE_WORKSPACE_NAME_MESSAGE
 import kr.easydoc.application.workspace.WorkspaceService
+import kr.easydoc.core.dictionary.DictionaryExample
+import kr.easydoc.core.dictionary.ReplaceStrategy
+import kr.easydoc.core.dictionary.RiskLevel
+import kr.easydoc.core.dictionary.TermCandidate
+import kr.easydoc.core.dictionary.TermMatchKind
+import kr.easydoc.core.dictionary.TermQuery
 import kr.easydoc.core.easyread.ExportFormat
 import kr.easydoc.core.easyread.exportFileOf
 import kr.easydoc.core.easyread.renderTxt
@@ -45,6 +56,7 @@ import kr.easydoc.core.exceptions.ConflictException
 import kr.easydoc.core.exceptions.EmailAlreadyRegisteredException
 import kr.easydoc.core.exceptions.ExternalServiceUnavailableException
 import kr.easydoc.core.exceptions.InvalidCredentialsException
+import kr.easydoc.core.exceptions.InvalidInputException
 import kr.easydoc.core.exceptions.RateLimitedException
 import kr.easydoc.core.text.EditDistanceBudget
 import kr.easydoc.core.user.PasswordHash
@@ -53,10 +65,13 @@ import kr.easydoc.core.user.User
 import kr.easydoc.core.workspace.DEFAULT_WORKSPACE_NAME
 import kr.easydoc.core.workspace.Workspace
 import kr.easydoc.core.workspace.WorkspaceListing
+import kr.easydoc.infrastructure.dictionary.InMemorySlidingWindowLookupRateLimiter
+import kr.easydoc.infrastructure.dictionary.NoTermCandidateSource
 import kr.easydoc.infrastructure.document.FeedbackProperties
 import kr.easydoc.infrastructure.mail.FakeMailSender
 import org.springframework.boot.test.context.TestConfiguration
 import org.springframework.context.annotation.Bean
+import java.time.Clock
 import java.time.Duration
 import java.time.Instant
 import java.util.Locale
@@ -348,6 +363,41 @@ class AuthSliceBeans {
             rendering = rendering,
             transaction = transaction,
         )
+
+    /**
+     * 사전 조회(2.11.0, P0-5)도 `@WebMvcTest` 가 컨트롤러를 전부 슬라이스에 넣는 대상이다 —
+     * 이 빈이 없으면 `/auth` 만 겨누는 테스트도 컨텍스트 조립에서 멈춘다(위 피드백 유스케이스와
+     * 같은 주석).
+     */
+    @Bean
+    fun fakeTermCandidateSource(): FakeTermCandidateSource = FakeTermCandidateSource()
+
+    @Bean
+    fun termLookupService(source: FakeTermCandidateSource): TermLookupService = TermLookupService(source)
+
+    /**
+     * 실물이다 — 60/분 기본 한도로 61번째 호출이 실제로 429 인지를 슬라이스가 직접 잰다
+     * (`DictionaryLookupContractTest`). `Clock.systemUTC()` 를 쓴다 — 60초 창 안에서 시험이
+     * 끝나므로 실제 시계로도 결정적이다.
+     */
+    @Bean
+    fun lookupRateLimiter(): LookupRateLimiter =
+        InMemorySlidingWindowLookupRateLimiter(limitPerMinute = LOOKUP_RATE_LIMIT_PER_MINUTE, clock = Clock.systemUTC())
+
+    @Bean
+    fun dictionaryAttributionProvider(): DictionaryAttributionProvider =
+        DictionaryAttributionProvider {
+            DictionaryAttribution(
+                name = "테스트 사전",
+                license = "테스트 라이선스",
+                schemaVersion = "1.0.0",
+            )
+        }
+
+    private companion object {
+        /** 계약·`DictionaryLookupProperties.DEFAULT_RATE_LIMIT_PER_MINUTE` 와 같은 값. */
+        const val LOOKUP_RATE_LIMIT_PER_MINUTE = 60
+    }
 }
 
 /** 유일성을 키 일치로 판정한다 — `ix_users_email` 과 같은 축이다. */
@@ -704,5 +754,53 @@ class InMemoryVerificationCodeStore : VerificationCodeStore {
             }
         }
         return matched
+    }
+}
+
+/**
+ * 사전 조회 컨트롤러 슬라이스 대역 — 실제 색인을 올리지 않고 고정 질의로 시나리오를 만든다.
+ * [disabled] 는 [InMemoryVerificationCodeStore.cooldownArmed] 와 같은 관례의 스위치다 —
+ * 다음 호출을 [NoTermCandidateSource] 와 같은 422 로 만든다.
+ */
+class FakeTermCandidateSource : TermCandidateSource {
+    var disabled: Boolean = false
+
+    override fun candidatesFor(query: TermQuery): List<TermCandidate> {
+        if (disabled) {
+            throw InvalidInputException(NoTermCandidateSource.LOOKUP_DISABLED_MESSAGE)
+        }
+        return FIXED_CANDIDATES[query.text] ?: emptyList()
+    }
+
+    companion object {
+        /** 슬라이스 테스트가 아는 유일한 질의 — 계획 §3.6 이 미리 확인해 둔 실측 값과 같다. */
+        const val KNOWN_QUERY = "구비서류"
+
+        private val FIXED_CANDIDATES: Map<String, List<TermCandidate>> =
+            mapOf(
+                KNOWN_QUERY to
+                    listOf(
+                        TermCandidate(
+                            term = "구비서류",
+                            easyTerm = "준비할 서류",
+                            strategy = ReplaceStrategy.SUBSTITUTE,
+                            risk = RiskLevel.NONE,
+                            definition = "신청에 필요한 서류",
+                            caution = null,
+                            tags = listOf("행정"),
+                            examples =
+                                listOf(
+                                    DictionaryExample(
+                                        before = "구비서류를 지참하세요",
+                                        after = "준비할 서류를 가져오세요",
+                                        isGolden = true,
+                                    ),
+                                ),
+                            matchKind = TermMatchKind.EXACT,
+                            applicable = true,
+                            entryId = 2165,
+                        ),
+                    ),
+            )
     }
 }

@@ -27,5 +27,7 @@ object AuthenticatedEndpoints {
             "/documents/{document_id}/source",
             "/workspaces",
             "/workspaces/{workspace_id}",
+            // 사전 조회(2.11.0, P0-5) — 소유 자원이 없지만 여전히 인증은 필요하다(계약 security).
+            "/dictionary/lookup",
         )
 }

@@ -159,10 +159,15 @@ class RequestFieldRejectionLayerTest {
             TEXT_FIELD to ::probeText,
             NAME_FIELD to ::probeName,
             EDITED_TEXT_FIELD to ::probeEditedText,
+            DICTIONARY_LOOKUP_TEXT_FIELD to ::probeDictionaryLookupText,
         )
 
     private fun probeText(value: String): Observed =
         postJson(DOCUMENTS_PATH, json.writeValueAsString(mapOf(TEXT_PROPERTY to value)), newOwner())
+
+    /** `NoTermCandidateSource`(조회 꺼짐)와 겹치지 않는다 — 슬라이스는 `FakeTermCandidateSource` 다. */
+    private fun probeDictionaryLookupText(value: String): Observed =
+        postJson(DICTIONARY_LOOKUP_PATH, json.writeValueAsString(mapOf(TEXT_PROPERTY to value)), newOwner())
 
     private fun probeName(value: String): Observed =
         postJson(WORKSPACES_PATH, json.writeValueAsString(mapOf(NAME_PROPERTY to value)), newOwner())
@@ -265,6 +270,7 @@ class RequestFieldRejectionLayerTest {
         const val SIGNUP_PATH = "/auth/signup"
         const val DOCUMENTS_PATH = "/documents"
         const val WORKSPACES_PATH = "/workspaces"
+        const val DICTIONARY_LOOKUP_PATH = "/dictionary/lookup"
 
         const val TEXT_PROPERTY = "text"
         const val NAME_PROPERTY = "name"
@@ -285,6 +291,7 @@ class RequestFieldRejectionLayerTest {
         const val TEXT_FIELD = "DocumentTextRequest.text"
         const val NAME_FIELD = "WorkspaceNameRequest.name"
         const val EDITED_TEXT_FIELD = "ConversionReviewRequest.edited_text"
+        const val DICTIONARY_LOOKUP_TEXT_FIELD = "DictionaryLookupRequest.text"
 
         /** DTO 가 없는 계약 필드 — 정확 열거 핀. **비어 있다**: F3 다섯이 전부 검사받는다. */
         val PINNED_WITHOUT_DTO = emptySet<String>()

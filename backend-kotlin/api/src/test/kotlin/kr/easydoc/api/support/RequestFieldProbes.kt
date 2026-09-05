@@ -40,6 +40,7 @@ object RequestFieldProbes {
             "DocumentTextRequest.text" to FieldShape(ProbeShape.PLAIN, Noise.CONTROL_CHAR),
             "WorkspaceNameRequest.name" to FieldShape(ProbeShape.PLAIN, Noise.CONTROL_CHAR),
             "ConversionReviewRequest.edited_text" to FieldShape(ProbeShape.PLAIN, Noise.CONTROL_CHAR),
+            "DictionaryLookupRequest.text" to FieldShape(ProbeShape.PLAIN, Noise.CONTROL_CHAR),
         )
 
     /** 계약이 지목한 요청 필드 이름 전부. */

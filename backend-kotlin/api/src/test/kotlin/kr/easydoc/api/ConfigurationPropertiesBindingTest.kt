@@ -8,6 +8,7 @@ import kr.easydoc.infrastructure.auth.AuthProperties
 import kr.easydoc.infrastructure.auth.GoogleOAuthProperties
 import kr.easydoc.infrastructure.auth.OAuthProperties
 import kr.easydoc.infrastructure.crypto.EncryptionProperties
+import kr.easydoc.infrastructure.dictionary.DictionaryLookupProperties
 import kr.easydoc.infrastructure.dictionary.DictionaryProperties
 import kr.easydoc.infrastructure.document.FeedbackProperties
 import kr.easydoc.infrastructure.document.KeyRotationProperties
@@ -221,6 +222,26 @@ class ConfigurationPropertiesBindingTest {
                     maxExamples = 1,
                 ),
             )
+    }
+
+    @Test
+    @DisplayName("사전 조회 설정이 기본값과 다른 값을 싣는다 — 남용 한도와 사전 단위 표기(P0-5 조각 4)")
+    fun `사전 조회 설정이 기본값과 다른 값을 싣는다`() {
+        val lookup =
+            bind(
+                "easydoc.dictionary.lookup",
+                DictionaryLookupProperties::class.java,
+                mapOf(
+                    "easydoc.dictionary.lookup.enabled" to "true",
+                    "easydoc.dictionary.lookup.rate-limit-per-minute" to "5",
+                    "easydoc.dictionary.lookup.dictionary-name" to "테스트 사전",
+                    "easydoc.dictionary.lookup.dictionary-license" to "테스트 라이선스",
+                ),
+            )
+        assertThat(lookup.enabled).isTrue()
+        assertThat(lookup.rateLimitPerMinute).isEqualTo(5)
+        assertThat(lookup.dictionaryName).isEqualTo("테스트 사전")
+        assertThat(lookup.dictionaryLicense).isEqualTo("테스트 라이선스")
     }
 
     @Test

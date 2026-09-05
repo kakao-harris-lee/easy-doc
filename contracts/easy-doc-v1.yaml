@@ -41,7 +41,7 @@ openapi: 3.1.0
 
 info:
   title: Easy-Read AI API
-  version: "2.10.0"
+  version: "2.11.0"
   x-baselined-at: "2026-08-12"       # 초판 기준선을 뜬 날 (동결일이 아니다)
   x-rebased-at: "2026-08-12"         # 계약의 성격을 "개선 대상"으로 다시 정의한 날
   x-source-runtime: "Python 3.12 / FastAPI (app/main.py) — 과거 참고 구현이었고 2026-08-24 저장소에서 제거됨(git 태그 pre-python-removal-20260824). 기준선 출처였을 뿐 정답이 아니었다"
@@ -49,7 +49,7 @@ info:
   description: |
     공공기관용 '쉬운 글' 자동 변환 서비스의 HTTP 계약 v1.
 
-    **엔드포인트는 정확히 22개다** — 제품 21개 + 헬스 체크 1개.
+    **엔드포인트는 정확히 23개다** — 제품 22개 + 헬스 체크 1개.
     계획 §2.2가 센 "14개 HTTP 엔드포인트"는 **그 문서를 쓸 때의 수**이며 `/health`를
     포함해야 맞는 수였다. 1.5.0에서 `PUT /conversions/{conversion_id}/feedback`이,
     2.2.0에서 `GET /documents/{document_id}/source`가, 2.8.0에서 소셜 로그인
@@ -58,7 +58,8 @@ info:
     P0-1/P0-3) `POST /auth/email-verification/request`·
     `POST /auth/email-verification/confirm`이, 2.10.0에서 명시적 계정 연결(backlog
     §1.4) `POST /auth/oauth/{provider}/link/start`·
-    `POST /auth/oauth/{provider}/link/callback`이 더해져 오늘은 22개다 —
+    `POST /auth/oauth/{provider}/link/callback`이, 2.11.0에서 쉬운 말 사전 조회
+    (P0-5 조각 1) `POST /dictionary/lookup`이 더해져 오늘은 23개다 —
     계획 문서의 수를 고치는 것이 아니라 **수의 정본이 이 계약**이다.
 
     ## 경로 접두사
@@ -102,6 +103,14 @@ info:
     — 호출자 **자신의 계정 상태**(신원은 확실하나 아직 갖추지 못한 자격)를 알리는
     것이고, 그 사실은 이미 `readMe.email_verified` 로 호출자 스스로에게 노출돼 있다.
     남의 계정 인증 여부를 흘리는 자리가 아니므로 이 절의 하한과 충돌하지 않는다.
+
+    **예외 둘 — `dictionaryLookup`(2.11.0)은 애초에 판정할 소유 자원이 없다.** 이
+    절이 다루는 것은 "남의 것과 없는 것을 같은 404로 가린다"는 판정이고, 그 판정은
+    **사용자 소유 자원**이 있을 때만 성립한다. 사전 조회는 요청자 본인이 지목한
+    문자열 하나로 전역 읽기 전용 사전 색인을 찾아볼 뿐 — 문서·작업 공간처럼 누구
+    소유인지 갈리는 자원을 전혀 읽지 않는다. 그래서 이 오퍼레이션은 404를 아예 쓰지
+    않는다(후보 0건도 200, 계획 §3.4) — 이 절의 하한을 어기는 것이 아니라 하한이
+    적용될 자리 자체가 없다.
 
     ## 인증 실패와 입력 검증의 우선순위
     **인증이 먼저다.** 이것은 Python이 그렇게 동작해서가 아니라 **그래야 하기
@@ -702,6 +711,7 @@ x-input-limits:
   max_extracted_chars: 500000        # 추출 결과 상한 → 초과 시 422
   zip_uncompressed_budget_bytes: 52428800  # 업로드 상한의 5배. 초과 시 422 (압축 폭탄 방어)
   supported_upload_formats: [docx, pdf, hwpx, txt]  # 확장자 대소문자 무시. 그 밖은 422
+  max_term_query_chars: 100          # core/dictionary/TermLookup.kt TermQuery.MAX_LENGTH → 초과 시 422 배열(스키마 층)
   legacy_doc_policy: |
     구버전 `.doc`(OLE2)은 전용 안내 문구와 함께 422다 —
     "구버전 doc 형식은 지원하지 않습니다 (docx로 다시 저장해 올려주세요)".
@@ -1119,6 +1129,11 @@ x-request-field-constraints:
       limit: 50                 # 하한은 "정규화 후 비어 있지 않을 것"이며 minLength로 표현되지 않는다
       measured_on: "정규화 후 — 제어문자 제거 + 앞뒤 공백 제거(app/services/workspaces.py:136-140)"
       detail: ["작업 공간 이름을 입력해 주세요", "작업 공간 이름은 50자 이하여야 합니다"]
+    - field: "DictionaryLookupRequest.text"           # P0-5, 2.11.0
+      layer: service
+      limit: 100                # 계획 §3.4, core/dictionary/TermLookup.kt TermQuery.MAX_LENGTH
+      measured_on: "정규화 후 — 제어문자 제거 + 공백류를 한 칸으로 뭉갬 + 앞뒤 공백 제거(TermQuery.of)"
+      detail: ["조회할 문자열이 비어 있다", "조회 문자열이 상한(100자)을 넘는다"]
 
   x-open-asymmetry: |
     **미결 — Phase 4, `kotlin-implementer`·`parity-verifier` 공동.**
@@ -1505,6 +1520,8 @@ tags:
     description: 문서 업로드·목록·변환 결과 조회·검수·내보내기
   - name: workspaces
     description: 작업 공간 목록·만들기·이름 바꾸기·삭제
+  - name: dictionary
+    description: 어려운 말 사전 조회 — 검수 화면의 대체어 추천(P0-5, 2.11.0)
   - name: health
     description: 생존 확인 (인증 불필요)
 
@@ -2903,6 +2920,68 @@ paths:
         '503': { $ref: '#/components/responses/ServiceUnavailable' }
 
   # ===========================================================================
+  # #23 POST /dictionary/lookup — 200 (P0-5 조각 1, 2.11.0 신설)
+  # 검수 화면에서 지목한 문자열 하나로 사전 후보를 찾는다. 계획 §3.4.
+  # ===========================================================================
+  /dictionary/lookup:
+    post:
+      tags: [dictionary]
+      operationId: dictionaryLookup
+      summary: 지목한 문자열로 쉬운 말 사전 후보를 찾는다
+      security: [{ HTTPBearer: [] }]
+      description: |
+        검수 화면 담당자가 편집기에서 지목한 문자열 하나를 사전 색인(트라이 최장일치)에
+        돌려 대체어·뜻·주의·치환 가능 여부를 돌려준다. **위치 정보(문단·시작·끝 오프셋)는
+        요청에도 응답에도 없다** — 좌표는 편집기의 클라이언트 전용 상태이고, 이 오퍼레이션이
+        받는 것은 선택된 문자열뿐이다(계획 §3.4 위치 계약).
+
+        서버에 저장된 변환 결과가 아니라 **요청에 실린 문자열 그대로**를 찾는다 — 담당자가
+        방금 고친 문장의 낱말도 저장 없이 바로 조회할 수 있는 이유다. 그래서 이 오퍼레이션은
+        `conversion_id`를 받지 않고, 자원 종속 경로도 두지 않는다.
+
+        후보가 없으면 빈 배열과 함께 **200**이다(404 가 아니다 — 위 "소유권 은닉" 절 예외
+        둘). `match_kind`는 서버가 정한 순서로 최대 1건을 돌려준다 — 정의는
+        `TermMatchKind` 스키마를 본다. 연속 점수(`score`)는 두지 않는다 — 어휘 일치에는
+        뜻이 없고, 있으면 다음 사람이 임의 임계값을 건다(계획 §3.4).
+
+        `applicable`이 참인 후보만 편집기가 치환 버튼을 낸다 — `strategy`가 `substitute`
+        이고 `match_kind`가 `compound_part`가 아닐 때뿐이다. `gloss`·`keep`은 원어를
+        지우면 안 되므로 설명만 보여준다.
+
+        **사용자별 분당 60회로 남용을 늦춘다**(`easydoc.dictionary.lookup.rate-limit-per-minute`,
+        인스턴스별 한도 — 계획 §3.4, 목적은 사전 전량 긁기를 늦추는 것). 사전 조회 기능
+        자체가 꺼져 있으면(`easydoc.dictionary.lookup.enabled=false`) 422 문자열 `detail`
+        (`"사전 조회가 꺼져 있습니다"`)로 거절한다.
+
+        **`text`를 로그·메트릭에 남기지 않는다.** 검수 담당자가 지목한 문서 조각이라
+        사용자 콘텐츠다(마스킹 원칙과 같은 경계) — 운영에서 남기는 것은 개수와
+        `match_kind` 분포뿐이다(계획 §3.6).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DictionaryLookupRequest' }
+      responses:
+        '200':
+          description: 조회 결과 (후보 0건도 200)
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CacheControlNoStore' }
+            X-Content-Type-Options: { $ref: '#/components/headers/XContentTypeOptions' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DictionaryLookupResponse' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500': { $ref: '#/components/responses/InternalError' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+
+  # ===========================================================================
   # #14 GET /health — 200 (인증 불필요)
   # 원본: app/main.py::health
   # ===========================================================================
@@ -3077,8 +3156,12 @@ components:
 
     TooManyRequests:
       description: |
-        재발송 쿨다운(60초) 안에 다시 요청했다. 2.9.0 신설 —
-        `POST /auth/email-verification/request` 하나만 이 컴포넌트를 선언한다.
+        너무 잦은 요청 — `Retry-After` 로 재시도 시점을 알린다. 2.9.0 신설 당시는
+        `POST /auth/email-verification/request` 재발송 쿨다운(60초) 하나만 이
+        컴포넌트를 선언했다. **2.11.0에서 `dictionaryLookup` 이 두 번째로 선언한다**
+        — 의미는 다르다(쿨다운이 아니라 사용자별 분당 60회 남용 한도, 계획 §3.4)
+        지만 "너무 잦은 요청, 잠시 후 재시도"라는 모양과 `Retry-After` 계약은 같아
+        컴포넌트를 새로 만들지 않고 재사용한다.
       headers:
         Retry-After:
           description: |
@@ -4124,6 +4207,100 @@ components:
           description: '만든 순서. **첫 번째가 기본 작업 공간이다.**'
 
     # ---------------------------------------------------------------------
+    # dictionary (P0-5, 2.11.0)
+    # ---------------------------------------------------------------------
+    DictionaryLookupRequest:
+      type: object
+      required: [text]
+      properties:
+        text:
+          type: string
+          x-service-constraint: { max_length: 100, non_empty: true, measured_on: normalized }
+          description: |
+            검수 화면에서 지목한 문자열 하나. **위치 정보를 담지 않는다** — 좌표는
+            편집기의 클라이언트 전용 상태다(계획 §3.4 위치 계약).
+
+            제어문자를 걷어내고 이어지는 공백류를 한 칸으로 뭉갠 뒤 앞뒤 공백을 턴
+            **그 결과로** 판정한다 — 비어 있으면 422, 100자를 넘으면 422이며 둘 다
+            문자열 `detail`이다. `minLength`/`maxLength`를 쓰지 않는 이유는
+            `WorkspaceNameRequest.name`과 같다(`x-request-field-constraints`).
+
+    TermStrategy:
+      type: string
+      enum: [substitute, gloss, keep]
+      description: |
+        사전 치환 전략(`dictionary/DESIGN.md` §2.1) — `substitute`(지워도 안전) ·
+        `gloss`(원어를 남기고 뜻을 덧붙임) · `keep`(손대면 안 됨).
+
+    TermRisk:
+      type: string
+      enum: [none, low, high]
+      description: 오변환 위험도. `high`는 자동 치환 금지 신호다.
+
+    TermMatchKind:
+      type: string
+      enum: [exact, inflected, compound_part]
+      description: |
+        `exact` — 매치 표면형이 표제어와 같고 남는 것이 조사뿐. `inflected` — 표면형이
+        표제어와 다른 활용형·이형태. `compound_part` — 질의의 일부(접두·접미)만 사전에
+        있는 복합어 부분 일치 — 이 갈래는 `applicable`이 항상 거짓이다. 연속 점수(`score`)는
+        두지 않는다 — 어휘 일치에 점수는 뜻이 없다(계획 §3.4).
+
+    DictionaryLookupExample:
+      type: object
+      required: [before, after]
+      properties:
+        before: { type: string }
+        after: { type: string }
+
+    DictionaryLookupCandidate:
+      type: object
+      required:
+        [term, easy_term, strategy, risk, definition, caution, tags, examples, match_kind, applicable]
+      properties:
+        term: { type: string, description: 사전 표제어 원형. }
+        easy_term: { type: string, description: 쉬운 말. }
+        strategy: { $ref: '#/components/schemas/TermStrategy' }
+        risk: { $ref: '#/components/schemas/TermRisk' }
+        definition: { type: [string, 'null'] }
+        caution: { type: [string, 'null'] }
+        tags:
+          type: array
+          items: { type: string }
+        examples:
+          type: array
+          items: { $ref: '#/components/schemas/DictionaryLookupExample' }
+        match_kind: { $ref: '#/components/schemas/TermMatchKind' }
+        applicable:
+          type: boolean
+          description: |
+            참이면 편집기가 치환 버튼을 낸다 — `strategy == substitute` 이고
+            `match_kind != compound_part` 일 때만 참이다(계획 §3.4).
+
+    DictionaryAttribution:
+      type: object
+      required: [name, license, schema_version]
+      properties:
+        name: { type: string, description: 사전 이름(사전 단위 표기, 계획 §3.2). }
+        license: { type: string, description: 라이선스 요약(사전 단위 표기, 원천별 상세는 범위 밖). }
+        schema_version:
+          type: string
+          description: 적재된 색인 파일의 `schema_version`(`DictionaryIndexJsonReader.SUPPORTED_SCHEMA_VERSION`).
+
+    DictionaryLookupResponse:
+      type: object
+      required: [query, candidates, dictionary]
+      properties:
+        query:
+          type: string
+          description: 정제된 질의 문자열 그대로(요청 `text`와 같음, 반향 확인용).
+        candidates:
+          type: array
+          items: { $ref: '#/components/schemas/DictionaryLookupCandidate' }
+          description: 후보 0건도 유효한 결과다 — 404가 아니라 빈 배열이다.
+        dictionary: { $ref: '#/components/schemas/DictionaryAttribution' }
+
+    # ---------------------------------------------------------------------
     # health
     # ---------------------------------------------------------------------
     HealthResponse:
@@ -4162,6 +4339,44 @@ components:
 # 변경 이력
 # =============================================================================
 x-changelog:
+  - version: "2.11.0"
+    date: "2026-09-05"
+    revision: "DICTIONARY-LOOKUP"   # P0-5 조각 1 — 검수 화면 대체어 추천의 조회 API
+    author: contract-keeper
+    change: |
+      **검수 화면 담당자가 지목한 문자열의 사전 지침(쉬운 말·뜻·주의·치환 가능 여부)을
+      조회하는 오퍼레이션을 연다.** 문서 변환 프롬프트 주입과는 별개 경로다 — 사람의
+      조회이지 LLM 컨텍스트가 아니다.
+
+      ⑴ **오퍼레이션 1종 신설** — `POST /dictionary/lookup`(`dictionaryLookup`,
+         Bearer 필요, 200). 요청은 `{ "text": string }` 하나뿐이고 **위치 정보를
+         갖지 않는다** — `easy_unit_index`·`start`·`end` 같은 좌표는 편집기의 클라이언트
+         전용 상태다(계획 §3.4 위치 계약, P0-4 편집기가 그대로 물려받는 경계).
+      ⑵ **어휘 우선, pgvector 도입 없음.** 사전에 이미 있는 표제어를 트라이 최장일치로
+         찾을 뿐 임베딩 근접 검색을 쓰지 않는다 — 미등재어를 벡터로 찾으면 「의미가
+         가까운 다른 표제어」가 나와 `과태료 → 벌금` 같은 오변환 사고를 검색 계층이
+         되살릴 위험이 있다(계획 §3.1). 임베딩 착수는 파일럿 무결과율 실측이 트리거를
+         넘을 때 사용자가 별도로 결정한다.
+      ⑶ **새 표·새 마이그레이션이 없다.** 조회는 워커가 프롬프트 주입에 이미 쓰는
+         같은 색인(`easy_dict.index.json`, 커밋된 사본)을 API 프로세스가 별도로
+         메모리에 올려 읽는다 — 매칭 구현이 둘로 갈리는 것(표 vs 트라이)을 피한다.
+      ⑷ **404를 쓰지 않는다.** 사용자 소유 자원을 읽지 않으므로 이 오퍼레이션에는
+         "없거나 내 것이 아니다" 판정이 성립할 자리가 없다(위 "소유권 은닉" 절 예외 둘).
+         후보 0건도 200 + 빈 배열이다.
+      ⑸ **남용 한도** — 사용자별 분당 60회, 인스턴스별 카운터(`TooManyRequests`
+         컴포넌트 재사용, 두 번째 선언자). 기능 자체는 `easydoc.dictionary.lookup.enabled`
+         로 끌 수 있고, 꺼져 있으면 422 문자열 `detail`이다.
+      ⑹ **`text` 길이 제약은 스키마가 아니라 서비스 층이다** — `x-request-field-constraints`
+         가 이미 세운 다섯 필드와 같은 판단(정규화 후 길이를 재고, 문구가 한국어다).
+      ⑺ **엔드포인트 수 22 → 23**(제품 21 → 22 + 헬스 1).
+    ground: |
+      **G2 — 요구사항 반영.** master-plan §4.1 P0-5, 계획
+      `docs/plans/2026-09-04-p0-5-easy-word-dictionary-rag.md` §3.4·조각 1.
+    compatibility: |
+      **순수 확장이다.** 기존 22개 오퍼레이션의 요청·응답·오류 모양은 그대로다.
+      `TooManyRequests`의 설명 문구만 "두 번째 선언자가 생겼다"로 갱신했고 헤더·본문
+      모양은 그대로라 기존 소비자(`POST /auth/email-verification/request`)는 영향이 없다.
+
   - version: "2.10.0"
     date: "2026-09-04"
     revision: "SOCIAL-LOGIN-EXPLICIT-LINK"   # backlog §1.4 — 소셜 로그인 다음 조각, 명시적 계정 연결
