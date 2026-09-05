@@ -84,9 +84,9 @@ class OAuthContractTest {
     }
 
     @Test
-    @DisplayName("지원하지 않는 provider(naver, 예약만 됐다) 는 422 배열이다 — 경로 값 자리 해석 실패는 스키마 층이다")
+    @DisplayName("지원하지 않는 provider(foo, 아는 provider 가 아니다) 는 422 배열이다 — 경로 값 자리 해석 실패는 스키마 층이다")
     fun `지원하지 않는 provider 는 422 다`() {
-        val response = start(REDIRECT_URI, provider = "naver")
+        val response = start(REDIRECT_URI, provider = "foo")
 
         assertDeclaredStatus(response, UNPROCESSABLE_CONTENT, START_PATH, POST)
         val detail = body(response)["detail"]
@@ -156,6 +156,128 @@ class OAuthContractTest {
         assertThat(linkResponse.status).isEqualTo(NO_CONTENT)
         val me = body(getAuthorized("/auth/me", bearer))
         assertThat((me["identities"] as List<*>).map { (it as Map<*, *>)["provider"] }).containsExactly("kakao")
+    }
+
+    // ------------------------------------------------------------------ 네이버(계약 2.15.0) — OIDC 없음, 이메일 항상 미검증
+
+    @Test
+    @DisplayName("네이버 start 도 200 이다 — google 과 같은 enum 안 값")
+    fun `네이버 start 는 200 이다`() {
+        val response = start(NAVER_REDIRECT_URI, provider = "naver")
+
+        assertThat(response.status).isEqualTo(ContractSpec.successStatus(START_PATH, POST))
+        val body = body(response)
+        assertThat(body["authorization_url"] as String).contains("state=")
+    }
+
+    @Test
+    @DisplayName(
+        "네이버 신원의 최초 가입(callback)은 이메일이 있으면 200 이다 — 네이버는 email_verified " +
+            "개념이 없어 이메일이 있어도 항상 미검증으로 낸다, 그래도 계정은 만들고 이메일 인증 " +
+            "절차로 이어진다(readMe.email_verified=false, 2026-09-05 결정)",
+    )
+    fun `네이버 최초 가입은 미검증 계정으로 200 이다`() {
+        val state = startState(provider = "naver", redirectUri = NAVER_REDIRECT_URI)
+
+        val response =
+            callback(
+                code = "naver-sub-new-1|naver-new@example.test",
+                state = state,
+                provider = "naver",
+                redirectUri = NAVER_REDIRECT_URI,
+            )
+
+        assertThat(response.status).isEqualTo(ContractSpec.successStatus(CALLBACK_PATH, POST))
+        val bearer = body(response)["access_token"] as String
+        val me = body(getAuthorized("/auth/me", bearer))
+        assertThat(me["email_verified"]).isEqualTo(false)
+    }
+
+    @Test
+    @DisplayName("네이버 신원에 이메일 자체가 없으면 여전히 422 다 — 네이버 전용 문구")
+    fun `네이버 이메일 없으면 네이버 전용 문구로 422 다`() {
+        val response =
+            callback(
+                code = "naver-sub-no-email|",
+                state = startState(provider = "naver", redirectUri = NAVER_REDIRECT_URI),
+                provider = "naver",
+                redirectUri = NAVER_REDIRECT_URI,
+            )
+
+        assertDeclaredStatus(response, UNPROCESSABLE_CONTENT, CALLBACK_PATH, POST)
+        assertThat(detailText(response))
+            .isEqualTo("네이버 계정에 이메일이 없어 가입할 수 없습니다. 이메일로 가입하거나 다른 방법을 이용해 주세요")
+    }
+
+    @Test
+    @DisplayName("네이버도 link/start·link/callback 을 통해 기존 계정에 연결된다 — 연결은 이메일 검증을 요구하지 않는다")
+    fun `네이버 연결 흐름도 동작한다`() {
+        val email = uniqueEmail()
+        signupAndVerify(email)
+        val bearer = login(email)
+
+        val linkState =
+            body(
+                postAuthorized(
+                    "/auth/oauth/naver/link/start",
+                    bearer,
+                    json.writeValueAsString(mapOf("redirect_uri" to NAVER_REDIRECT_URI)),
+                ),
+            )["state"] as String
+
+        val linkResponse =
+            postAuthorized(
+                "/auth/oauth/naver/link/callback",
+                bearer,
+                json.writeValueAsString(
+                    mapOf(
+                        "code" to "naver-link-sub|naver-linked@example.test|true",
+                        "state" to linkState,
+                        "redirect_uri" to NAVER_REDIRECT_URI,
+                    ),
+                ),
+            )
+
+        assertThat(linkResponse.status).isEqualTo(NO_CONTENT)
+        val me = body(getAuthorized("/auth/me", bearer))
+        assertThat((me["identities"] as List<*>).map { (it as Map<*, *>)["provider"] }).containsExactly("naver")
+    }
+
+    @Test
+    @DisplayName("연결된 네이버 신원으로 다시 콜백을 받으면 이메일 규칙과 무관하게 로그인이다")
+    fun `연결된 네이버 신원은 로그인이다`() {
+        val email = uniqueEmail()
+        val userId = signupAndVerify(email)
+        val bearer = login(email)
+        val linkState =
+            body(
+                postAuthorized(
+                    "/auth/oauth/naver/link/start",
+                    bearer,
+                    json.writeValueAsString(mapOf("redirect_uri" to NAVER_REDIRECT_URI)),
+                ),
+            )["state"] as String
+        postAuthorized(
+            "/auth/oauth/naver/link/callback",
+            bearer,
+            json.writeValueAsString(
+                mapOf(
+                    "code" to "naver-relogin-sub|naver-relogin@example.test|true",
+                    "state" to linkState,
+                    "redirect_uri" to NAVER_REDIRECT_URI,
+                ),
+            ),
+        )
+
+        val loginResponse =
+            callback(
+                code = "naver-relogin-sub|ignored@example.test|true",
+                state = startState(provider = "naver", redirectUri = NAVER_REDIRECT_URI),
+                provider = "naver",
+                redirectUri = NAVER_REDIRECT_URI,
+            )
+
+        assertThat(userIdOf(loginResponse)).isEqualTo(userId)
     }
 
     @Test
@@ -647,6 +769,7 @@ class OAuthContractTest {
         const val NO_CONTENT = 204
         const val REDIRECT_URI = "http://localhost:5173/auth/google/callback"
         const val KAKAO_REDIRECT_URI = "http://localhost:5173/auth/kakao/callback"
+        const val NAVER_REDIRECT_URI = "http://localhost:5173/auth/naver/callback"
         const val PASSWORD = "correct horse battery"
 
         var counter = 0

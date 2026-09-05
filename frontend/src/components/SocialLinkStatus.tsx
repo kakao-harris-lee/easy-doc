@@ -12,6 +12,7 @@ import { Button } from './ui/Button'
 const START_ERROR_MESSAGE: Record<OAuthProvider, string> = {
   google: '구글 계정 연결을 시작하지 못했습니다. 잠시 후 다시 시도해 주세요.',
   kakao: '카카오 계정 연결을 시작하지 못했습니다. 잠시 후 다시 시도해 주세요.',
+  naver: '네이버 계정 연결을 시작하지 못했습니다. 잠시 후 다시 시도해 주세요.',
 }
 
 interface SocialLinkStatusProps {
@@ -24,7 +25,7 @@ interface SocialLinkStatusProps {
 /**
  * 계정 메뉴·모바일 메뉴가 함께 쓰는 "연결된 계정" 조각.
  *
- * 지원하는 제공자(구글·카카오)마다 한 줄씩 보여준다 — 연결돼 있으면 그 사실만, 아니면
+ * 지원하는 제공자(구글·카카오·네이버)마다 한 줄씩 보여준다 — 연결돼 있으면 그 사실만, 아니면
  * 연결을 시작하는 버튼을 그린다. 끊기는 이번 변경 단위 밖(backlog §1.4의 다음 조각)이다.
  */
 export function SocialLinkStatus({

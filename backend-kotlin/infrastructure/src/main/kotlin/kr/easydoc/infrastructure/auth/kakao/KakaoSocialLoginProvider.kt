@@ -43,7 +43,8 @@ import java.time.Duration
  * 자체를 열 수 없고, 열려 있어도 `is_email_valid`/`is_email_verified` 가 거짓이거나 필드
  * 자체가 없을 수 있다(backlog §1.4 조사). 이 어댑터는 있는 그대로
  * [SocialIdentity.emailVerified] 로 옮길 뿐이다 — "검증된 이메일만 계정을 잇는다"는
- * 판정은 `SocialLoginService.requireVerifiedEmail` 의 몫이다(Google 과 같은 경계).
+ * 판정은 `SocialLoginService.requireEmailPresent` 의 몫이다(Google 과 같은 경계, 네이버만
+ * 예외를 받는다).
  * OIDC 경로의 이메일 검증 판정은 [OidcJwksVerifier] 가 갖는다(그 클래스 KDoc — `email`
  * claim 유무로 판정, 카카오 ID 토큰에는 Google 과 달리 별도의 `email_verified` claim이
  * 없다는 전제).

@@ -219,7 +219,7 @@ describe('지원하지 않는 소셜 로그인 provider', () => {
     window.localStorage.setItem('easydoc.access_token', 'valid-token')
     vi.mocked(fetchMe).mockResolvedValue(userResponse())
 
-    renderAt('/auth/naver/link/callback?code=auth-code&state=link-state-xyz')
+    renderAt('/auth/foo/link/callback?code=auth-code&state=link-state-xyz')
 
     expect(
       await screen.findByRole('heading', { name: '찾을 수 없는 화면입니다' }),

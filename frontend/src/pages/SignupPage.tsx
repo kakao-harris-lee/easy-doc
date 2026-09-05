@@ -44,7 +44,9 @@ export function SignupPage() {
             onSubmit={async (email, password) => {
               await signUp(email, password)
               // 이메일·비밀번호 가입은 미인증 상태로 시작한다 — 곧장 홈이 아니라
-              // 인증 화면으로 보낸다. 구글 가입은 이 경로를 타지 않는다(늘 인증됨).
+              // 인증 화면으로 보낸다. 구글·카카오 가입은 이 경로를 타지 않는다(늘
+              // 인증됨) — 네이버는 미검증으로 가입할 수 있어 같은 화면으로 보낸다
+              // (`OAuthCallbackPage`, 2026-09-05 결정).
               navigate(EMAIL_VERIFICATION_PATH, { replace: true })
             }}
           />
@@ -55,6 +57,7 @@ export function SignupPage() {
           </div>
           <SocialLoginButton provider="google" />
           <SocialLoginButton provider="kakao" />
+          <SocialLoginButton provider="naver" />
           <p className="mt-5 text-center text-sm text-muted-foreground">
             이미 계정이 있으신가요? <Link to={LOGIN_PATH}>로그인</Link>
           </p>

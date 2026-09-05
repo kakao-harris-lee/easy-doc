@@ -47,9 +47,11 @@ interface UserRepository {
      * 하고, 이름 있는 메서드 둘이 그 판단을 타입으로 대신한다.
      *
      * [emailVerified] 가 참이면 `email_verified_at` 을 생성 시각으로 채운다 — 제공자가
-     * 이미 검증한 이메일이라 우리 쪽 이메일 인증 코드가 또 필요하지 않다
-     * (`SocialLoginService.requireVerifiedEmail` 이 이 메서드에 닿는 모든 호출에서
-     * 참임을 이미 보장하지만, 그 전제를 이 메서드 시그니처에도 명시로 남긴다).
+     * 이미 검증한 이메일이라 우리 쪽 이메일 인증 코드가 또 필요하지 않다. **거짓일 수도
+     * 있다** — 네이버는 `email_verified` 개념이 없어 이메일이 있어도 [emailVerified] 가
+     * 거짓인 채로 이 메서드를 부른다(`SocialLoginService.requireEmailPresent`, 2026-09-05
+     * 결정). 거짓이면 `email_verified_at` 은 `null`로 남고, 호출자가 커밋 뒤 이메일 인증
+     * 코드 발급으로 이어가야 한다(`SocialLoginService.callback` 이 그 책임을 진다).
      */
     fun createWithoutPassword(
         email: String,

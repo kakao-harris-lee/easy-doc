@@ -317,8 +317,15 @@ class SensitiveToStringReachTest {
          * 이 숫자에 없다** — 담은 값이 없어 `data object`가 아니라 평범한 `object`로 선언했다
          * (data class 탐지기가 인자 없는 주 생성자를 판정 불가로 보므로, `data`를 붙이면 이
          * 테스트가 판정 불가로 실패한다).
+         *
+         * 소셜 로그인 세 번째(마지막) 제공자 — 네이버(backlog §1.4, 계약 2.15.0,
+         * 2026-09-05)가 **둘**을 더해 128 이다(126 위에) — infrastructure
+         * `NaverOAuthSettings`(어댑터 설정, `clientSecret` 은 `Secret` 타입이라 그 자체가
+         * 이미 가려진다 — `GoogleOAuthSettings`·`KakaoOAuthSettings` 와 같은 판단)와
+         * `NaverOAuthProperties`(설정 바인딩, 구글·카카오와 같은 필드 모양이라 같은 이유로
+         * [KNOWN_SENSITIVE_TYPES] 에 넣지 않는다).
          */
-        const val EXPECTED_SOURCE_DECLARATIONS = 126
+        const val EXPECTED_SOURCE_DECLARATIONS = 128
 
         /** 민감 판정이 반드시 닿아야 하는 타입 — 바닥이다. */
         val KNOWN_SENSITIVE_TYPES =

@@ -63,7 +63,7 @@ function authValue(status: AuthContextValue['status']): AuthContextValue {
     user: status === 'authenticated' ? USER : null,
     signIn: () => Promise.resolve(),
     signUp: () => Promise.resolve(),
-    signInWithSocialProvider: () => Promise.resolve(),
+    signInWithSocialProvider: () => Promise.resolve(USER),
     signOut: () => undefined,
     refreshMe: () => Promise.resolve(),
   }

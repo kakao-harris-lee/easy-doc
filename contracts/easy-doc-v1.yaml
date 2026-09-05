@@ -41,7 +41,7 @@ openapi: 3.1.0
 
 info:
   title: Easy-Read AI API
-  version: "2.14.0"
+  version: "2.15.0"
   x-baselined-at: "2026-08-12"       # 초판 기준선을 뜬 날 (동결일이 아니다)
   x-rebased-at: "2026-08-12"         # 계약의 성격을 "개선 대상"으로 다시 정의한 날
   x-source-runtime: "Python 3.12 / FastAPI (app/main.py) — 과거 참고 구현이었고 2026-08-24 저장소에서 제거됨(git 태그 pre-python-removal-20260824). 기준선 출처였을 뿐 정답이 아니었다"
@@ -620,14 +620,13 @@ x-social-login:
     우리 API 에 POST → API 가 code 를 제공자와 교환하고 ID 토큰을 검증한 뒤 우리
     액세스 토큰을 발급한다(`login` 과 같은 `TokenResponse`).
   providers:
-    supported: [google, kakao]
-    reserved: [naver]
+    supported: [google, kakao, naver]
+    reserved: []
     x-note: |
-      `provider` 경로 변수의 계약 `enum` 은 `[google, kakao]` 둘이다(카카오는 2.13.0
-      신설, backlog §1.4) — `reserved` 목록은 "나중에 이 enum 에 값이 늘 수 있다"는
-      예고일 뿐 지금 유효한 값이 아니다. `enum` 밖의 어떤 값(예약된 값 포함)도
-      `provider_state` 의 `unsupported_provider` 갈래로 간다 — "예약됨"과 "완전히
-      모름"을 가르지 않는다. 클라이언트가 취할 조치가 같기 때문이다(사용자 결정,
+      `provider` 경로 변수의 계약 `enum` 은 `[google, kakao, naver]` 셋이다(네이버는
+      2.15.0 신설, backlog §1.4 — 권고 순서 "구글 → 카카오 → 네이버"의 마지막 제공자).
+      `reserved` 목록은 이제 비어 있다 — 예고했던 값이 전부 열렸다. `enum` 밖의 어떤
+      값도 `provider_state` 의 `unsupported_provider` 갈래로 간다(사용자 결정,
       2026-09-04).
 
       **카카오 이메일 caveat.** 카카오는 비즈 앱 전환 + 이메일 동의항목 심사 전에는
@@ -642,6 +641,34 @@ x-social-login:
       카카오 사용자 정보 엔드포인트를 불러 이메일·검증 상태를 읽는다 — 어느 경로든
       계약이 보는 결과(`SocialIdentity`)의 모양은 같다. 구현 세부는
       `kr.easydoc.infrastructure.auth.kakao.KakaoSocialLoginProvider`.
+
+      **네이버는 OIDC 를 지원하지 않는다.** ID 토큰 자체가 없다 — 인가 코드 교환은
+      액세스 토큰만 내고, 신원은 `GET https://openapi.naver.com/v1/nid/me` 의
+      `response.id`·`response.email` 로 얻는다(userinfo 전용 경로 하나뿐, 카카오처럼
+      두 경로를 가르지 않는다). JWKS 서명 검증이 없으므로 `OidcJwksVerifier` 를 쓰지
+      않는다. 네이버는 `nonce` 파라미터도 지원하지 않는다 — `oauthStart`/
+      `oauthLinkStart` 는 다른 제공자와 같은 방식으로 `nonce` 를 발급·저장하지만(state
+      저장소 스키마와 호출 규약을 제공자마다 가르지 않기 위해서다), 인가 URL 에는 그
+      값을 싣지 않고 콜백에서도 대조하지 않는다 — 애초에 ID 토큰 리플레이가 성립하지
+      않는 프로토콜이라 검증할 대상이 없다.
+
+      **네이버 이메일 caveat.** 이메일은 "제공 정보" 선택 항목이라 계정에 이메일이
+      없거나 비공개면 비어 있을 수 있고, **네이버에는 애초에 `email_verified` 개념이
+      없다**(backlog §1.4 조사 — 공식 문서 `developers.naver.com` 이 이 조사 환경의
+      WebFetch 에서 접근 차단돼 2차 출처로만 확인했다는 전제가 있다). 이 어댑터는
+      검증되지 않은 값을 검증됨으로 잘못 표시하는 쪽보다 안전한 쪽을 택해 이메일이
+      있어도 **항상 미검증**(`emailVerified = false`)으로 신원을 낸다(2026-09-05
+      결정). 기존 `account_linking` 의 "이메일이 없거나 검증되지 않으면 422" 규칙은
+      네이버에 예외를 둔다(**2026-09-05 결정, option 2**) — 이메일 자체가 없으면
+      여전히 422(`email_required`, 네이버 전용 문구)지만, 이메일이 있으면 **미검증인
+      채로도** 계정(`users.email_verified_at IS NULL`)과 기본 작업 공간을 만든다.
+      트랜잭션 커밋 뒤 비밀번호 가입(`signup`)과 같은 best-effort 로 이메일 인증
+      코드를 발급한다 — 미검증 이메일 제공자(네이버)는 가입 뒤 이메일 인증 코드
+      절차를 거친다. 이메일이 이미 다른 계정에 등록돼 있으면 다른 제공자와 같은 규칙
+      대로 409(자동 연결 안 함). 이미 인증된 계정에 명시적으로 연결하는
+      `explicit_linking`(이메일 검증을 요구하지 않는다)이나, 그렇게 이미 연결된 신원으로
+      다시 로그인하는 경로(신원이 이미 있으면 이메일 규칙을 다시 보지 않는다)도 그대로
+      열려 있다. `response.id` 가 안정적 식별자다.
   provider_state: |
     `oauthStart`·`oauthCallback` 이 공유하는 422 세 갈래. 처음 하나는 스키마 층, 나머지
     둘은 도메인 층이라 `detail` **모양이 갈린다**(`ValidationFailed`가 여는 것과 같은
@@ -653,8 +680,9 @@ x-social-login:
          "provider"]`). 문구는 값을 반향하지 않는다.
       2. `provider_not_configured` — enum 안이지만 그 제공자 키가 서버에 없다(제공자
          전용 **문자열** 문구, google 은 "구글 로그인이 설정되지 않았습니다", kakao 는
-         "카카오 로그인이 설정되지 않았습니다" — 도메인 규칙이라
-         `x-request-field-constraints` 다섯 필드와 같은 축이다). **기동을 막지 않는다**
+         "카카오 로그인이 설정되지 않았습니다", naver 는 "네이버 로그인이 설정되지
+         않았습니다" — 도메인 규칙이라 `x-request-field-constraints` 다섯 필드와 같은
+         축이다). **기동을 막지 않는다**
          — 키 없는 로컬 개발이 여전히 뜬다(`x-auth`의 JWT 미설정과 같은 방침, 그러나
          상태 코드는 503이 아니라 422다: 이것은 "이 서버가 아직 소셜 로그인을 제공하지
          않는다"는 기능 부재이지 "설정이 있어야 할 자리가 비어 배포가 반쯤 죽었다"는
@@ -676,9 +704,16 @@ x-social-login:
     ID 토큰에서 얻은 이메일이 **검증됨**(`email_verified: true`)이 아니거나 아예
     없으면 422 — 검증되지 않은 이메일로 계정을 잇지 않는다.
 
+    **예외 — 네이버(2026-09-05 결정, option 2).** 이 제공자엔 애초에
+    `email_verified` 개념이 없어(`providers.x-note`) 위 규칙을 그대로 적용하면
+    네이버 신원으로는 영원히 가입할 수 없다. 그래서 네이버만 이메일이 **있으면**
+    미검증이어도 통과시켜 계정을 만들고, 가입 뒤 이메일 인증 코드 절차(비밀번호
+    가입과 같은 흐름)로 이어간다. 이메일 자체가 없으면 네이버도 여전히 422다.
+
     이미 연결된 신원(`(provider, provider_user_id)` 일치)이면 그냥 로그인이다. 신원은
-    새로운데 같은 검증된 이메일의 계정이 이미 있으면(비밀번호 가입이든 다른 제공자
-    연결이든) **자동으로 잇지 않는다** — 409(`components/responses/Conflict` 의
+    새로운데 같은 이메일의 계정이 이미 있으면(검증 여부와 무관 — `requireEmailNotAlreadyLinked`
+    는 이메일 존재만 본다, 비밀번호 가입이든 다른 제공자 연결이든) **자동으로 잇지 않는다**
+    — 409(`components/responses/Conflict` 의
     `email_already_linked`). 계정 탈취 방지가 이유다: 공격자가 피해자의 이메일로
     소셜 계정만 먼저 만들어 "당신 이메일로 가입된 계정이 있다"는 응답을 받는 것 자체는
     안전하지만(존재만 확인), 자동으로 이었다면 그 소셜 계정이 곧바로 피해자 계정에
@@ -1757,12 +1792,10 @@ paths:
           required: true
           schema:
             type: string
-            enum: [google, kakao]
+            enum: [google, kakao, naver]
           description: |
-            오늘은 `google`·`kakao` 둘이다(카카오는 2.13.0 신설). `naver` 는 예약만
-            됐다 — 이 enum 밖의 어떤 값(예약된 값도 포함)도 같은 422 하나로 응답한다.
-            "예약됨"과 "모름"을 가르지 않는다 — 클라이언트가 취할 조치가 같다
-            (`x-social-login` 참고).
+            오늘은 `google`·`kakao`·`naver` 셋이다(네이버는 2.15.0 신설). 이 enum
+            밖의 어떤 값도 같은 422 하나로 응답한다(`x-social-login` 참고).
       requestBody:
         required: true
         content:
@@ -1791,6 +1824,7 @@ paths:
                   value: { detail: [{ loc: ["path", "provider"], msg: "Input should be a valid value", type: "value_parsing" }] }
                 provider_not_configured: { value: { detail: "구글 로그인이 설정되지 않았습니다" } }
                 kakao_provider_not_configured: { value: { detail: "카카오 로그인이 설정되지 않았습니다" } }
+                naver_provider_not_configured: { value: { detail: "네이버 로그인이 설정되지 않았습니다" } }
                 redirect_uri_not_allowed: { value: { detail: "허용되지 않은 redirect_uri 입니다" } }
         '500': { $ref: '#/components/responses/InternalError' }
 
@@ -1809,14 +1843,16 @@ paths:
         결국 우리 JWT 를 발급하는 로그인의 한 경로이기 때문이다.
 
         신원 연결 규칙(정본은 `x-social-login.account_linking`): 이미 연결된 신원이면
-        로그인, 새 신원인데 같은 **검증된** 이메일의 계정이 이미 있으면 409(자동 연결하지
-        않는다 — 연결 흐름은 다음 작업 단위), 완전히 새로우면 계정 + 기본 작업 공간을
-        만든다(가입과 같은 트랜잭션 원자성).
+        로그인, 새 신원인데 같은 이메일의 계정이 이미 있으면(검증 여부와 무관) 409(자동
+        연결하지 않는다 — 연결 흐름은 다음 작업 단위), 완전히 새로우면 계정 + 기본 작업 공간을
+        만든다(가입과 같은 트랜잭션 원자성). **예외 — 미검증 이메일 제공자(네이버)는**
+        이메일이 있으면 미검증인 채로도 계정을 만들고, 가입 뒤 이메일 인증 코드
+        절차를 거친다(비밀번호 가입과 같은 흐름, 2026-09-05 결정).
       parameters:
         - name: provider
           in: path
           required: true
-          schema: { type: string, enum: [google, kakao] }
+          schema: { type: string, enum: [google, kakao, naver] }
       requestBody:
         required: true
         content:
@@ -1857,7 +1893,7 @@ paths:
               examples:
                 code_rejected: { value: { detail: "이메일 또는 비밀번호가 올바르지 않습니다" } }
         '409':
-          description: 같은 검증된 이메일의 계정이 이미 있다 — 자동 연결하지 않는다.
+          description: 같은 이메일의 계정이 이미 있다(검증 여부와 무관) — 자동 연결하지 않는다.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
@@ -1870,7 +1906,11 @@ paths:
           description: |
             지원하지 않는 `provider`(**배열**, 스키마 층), 제공자 미설정, 또는 제공자가
             이메일을 주지 않았거나 검증하지 않았다(`email_verified: false`, 둘 다
-            **문자열**, 도메인 층).
+            **문자열**, 도메인 층). **예외 — 네이버는 이메일이 있으면 미검증
+            (`email_verified: false`)이어도 이 422 를 타지 않는다** — 미검증인 채로
+            계정을 만들고 가입 뒤 이메일 인증 코드 절차로 이어간다(`naver_email_required`
+            예시, `x-social-login.account_linking` 예외). 네이버도 이메일 자체가
+            없으면 이 422 를 그대로 탄다.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
@@ -1879,7 +1919,11 @@ paths:
                   value: { detail: [{ loc: ["path", "provider"], msg: "Input should be a valid value", type: "value_parsing" }] }
                 provider_not_configured: { value: { detail: "구글 로그인이 설정되지 않았습니다" } }
                 kakao_provider_not_configured: { value: { detail: "카카오 로그인이 설정되지 않았습니다" } }
+                naver_provider_not_configured: { value: { detail: "네이버 로그인이 설정되지 않았습니다" } }
                 email_required: { value: { detail: "이메일 정보를 확인할 수 없습니다" } }
+                naver_email_required:
+                  value:
+                    detail: "네이버 계정에 이메일이 없어 가입할 수 없습니다. 이메일로 가입하거나 다른 방법을 이용해 주세요"
         '500': { $ref: '#/components/responses/InternalError' }
         '502': { $ref: '#/components/responses/BadGateway' }
         '503': { $ref: '#/components/responses/ServiceUnavailable' }
@@ -1899,10 +1943,10 @@ paths:
         - name: provider
           in: path
           required: true
-          schema: { type: string, enum: [google, kakao] }
+          schema: { type: string, enum: [google, kakao, naver] }
           description: |
-            `oauthStart` 와 같은 enum — 오늘은 `google`·`kakao` 둘이다. 밖의 값(예약된
-            값 포함)은 같은 422 배열로 간다.
+            `oauthStart` 와 같은 enum — 오늘은 `google`·`kakao`·`naver` 셋이다. 밖의
+            값은 같은 422 배열로 간다.
       requestBody:
         required: true
         content:
@@ -1936,6 +1980,7 @@ paths:
                   value: { detail: [{ loc: ["path", "provider"], msg: "Input should be a valid value", type: "value_parsing" }] }
                 provider_not_configured: { value: { detail: "구글 로그인이 설정되지 않았습니다" } }
                 kakao_provider_not_configured: { value: { detail: "카카오 로그인이 설정되지 않았습니다" } }
+                naver_provider_not_configured: { value: { detail: "네이버 로그인이 설정되지 않았습니다" } }
                 redirect_uri_not_allowed: { value: { detail: "허용되지 않은 redirect_uri 입니다" } }
         '500': { $ref: '#/components/responses/InternalError' }
 
@@ -1963,7 +2008,7 @@ paths:
         - name: provider
           in: path
           required: true
-          schema: { type: string, enum: [google, kakao] }
+          schema: { type: string, enum: [google, kakao, naver] }
       requestBody:
         required: true
         content:
@@ -2030,6 +2075,7 @@ paths:
                   value: { detail: [{ loc: ["path", "provider"], msg: "Input should be a valid value", type: "value_parsing" }] }
                 provider_not_configured: { value: { detail: "구글 로그인이 설정되지 않았습니다" } }
                 kakao_provider_not_configured: { value: { detail: "카카오 로그인이 설정되지 않았습니다" } }
+                naver_provider_not_configured: { value: { detail: "네이버 로그인이 설정되지 않았습니다" } }
         '500': { $ref: '#/components/responses/InternalError' }
         '502': { $ref: '#/components/responses/BadGateway' }
         '503': { $ref: '#/components/responses/ServiceUnavailable' }
@@ -3724,10 +3770,13 @@ components:
         email_verified:
           type: boolean
           description: |
-            이메일 소유를 확인했는지(2.9.0 신설, backlog §1.4 P0-1/P0-3). 소셜 로그인
-            계정과 V7 마이그레이션 이전 기존 계정은 항상 참이다. 거짓이면
+            이메일 소유를 확인했는지(2.9.0 신설, backlog §1.4 P0-1/P0-3). 이메일을
+            검증하는 소셜 제공자(구글·카카오) 계정과 V7 마이그레이션 이전 기존 계정은
+            항상 참이다. **네이버는 예외다**(2026-09-05 결정) — 그 제공자엔
+            `email_verified` 개념이 없어 계정이 거짓으로 만들어질 수 있다. 거짓이면
             `createDocument` 가 403을 낸다 — `POST /auth/email-verification/request`로
-            코드를 받고 `confirm` 으로 넘기면 참으로 바뀐다.
+            코드를 받고 `confirm` 으로 넘기면 참으로 바뀐다(네이버는 가입 직후 이
+            코드가 자동 발급된다, `x-social-login.providers.x-note`).
         identities:
           type: array
           items: { $ref: '#/components/schemas/UserIdentityResponse' }
@@ -3742,9 +3791,9 @@ components:
       required: [provider]
       description: |
         `UserResponse.identities` 의 항목 하나. `oauthStart` 등과 같은 enum
-        (`[google, kakao]`)이다 — `naver` 는 예약만 됐고 아직 나올 수 없는 값이다.
+        (`[google, kakao, naver]`)이다.
       properties:
-        provider: { type: string, enum: [google, kakao] }
+        provider: { type: string, enum: [google, kakao, naver] }
 
     ConfirmEmailVerificationRequest:
       type: object
@@ -4709,6 +4758,58 @@ components:
 # 변경 이력
 # =============================================================================
 x-changelog:
+  - version: "2.15.0"
+    date: "2026-09-05"
+    revision: "SOCIAL-LOGIN-NAVER"   # backlog §1.4 — 소셜 로그인 세 번째(마지막) 제공자
+    author: contract-keeper
+    change: |
+      **네이버를 세 번째 `SocialLoginProvider` 로 연다.** 로그인·연결 흐름은 이미
+      `{provider}` 로 갈리게 설계돼 있어 새 오퍼레이션 없이 enum 값 하나만 늘린다 —
+      "권고 순서: 구글 → 카카오 → 네이버"(backlog §1.4)의 마지막 자리이자
+      `reserved` 목록을 비우는 조각이다.
+
+      ⑴ **`provider` enum 이 `[google, kakao]` → `[google, kakao, naver]`.** 영향을
+         받는 자리 다섯 — `oauthStart`·`oauthCallback`·`oauthLinkStart`·
+         `oauthLinkCallback` 넷과 `UserIdentityResponse.provider`. 새 오퍼레이션은
+         없다. `providers.reserved` 는 이제 빈 배열이다 — 예고했던 값이 전부 열렸다.
+      ⑵ **`provider_not_configured` 문구가 갈린다.** 네이버 키 미설정은 "네이버
+         로그인이 설정되지 않았습니다"(**문자열**, 422) — 구글·카카오와 같은 방침
+         (기동을 막지 않는다).
+      ⑶ **네이버는 OIDC 가 없다.** ID 토큰 자체가 없어 인가 코드 교환은 액세스
+         토큰만 내고, 신원은 `GET https://openapi.naver.com/v1/nid/me` 의
+         `response.id`·`response.email` 로 얻는다(userinfo 전용 경로 하나뿐 — 카카오
+         처럼 OIDC/userinfo 두 경로를 가르지 않는다). JWKS 서명 검증이 없어
+         `OidcJwksVerifier` 를 쓰지 않는다. `nonce` 도 지원하지 않는다 — 다른
+         제공자와 같은 방식으로 발급·저장은 하지만(state 저장소 스키마를 제공자마다
+         가르지 않기 위해서) 인가 URL 에 싣지도, 콜백에서 대조하지도 않는다.
+      ⑷ **네이버는 `email_verified` 개념이 없다 — 이 어댑터는 이메일이 있어도 항상
+         미검증으로 신원을 낸다(2026-09-05 결정).** 검증되지 않은 값을 검증됨으로
+         잘못 표시하는 쪽보다 안전한 쪽을 택했다. **`account_linking` 이 네이버에
+         예외를 둔다(같은 날 후속 결정, option 2)** — 이메일이 없으면 여전히 422
+         (`email_required`, 네이버 전용 문구)지만, 이메일이 있으면 **미검증인 채로도**
+         계정(`users.email_verified_at IS NULL`)과 기본 작업 공간을 만든다. 미검증
+         이메일 제공자(네이버)는 가입 뒤 이메일 인증 코드 절차를 거친다 — 트랜잭션
+         커밋 뒤 비밀번호 가입(`signup`)과 같은 best-effort 로 `EmailVerificationService`
+         가 코드를 발급한다. 이메일이 이미 다른 계정에 등록돼 있으면 다른 제공자와
+         같은 규칙대로 여전히 409(자동 연결 안 함). 이미 인증된 계정에 여는
+         `explicit_linking`(이메일 검증을 요구하지 않는다)이나, 이미 연결된 신원으로
+         다시 로그인하는 경로(신원이 있으면 이메일 규칙을 다시 보지 않는다)도 그대로
+         열려 있다.
+      ⑸ **연결 해제(unlink)는 이번에도 범위 밖이다** — backlog §1.4의 다음 조각
+         (구글 2.10.0·카카오 2.13.0 changelog와 같은 처분).
+
+      **신뢰도.** 네이버 공식 문서(`developers.naver.com`)는 이 조사 환경의
+      WebFetch 에서 접근이 차단돼 2차 출처 교차검증에 그쳤다(backlog §1.4) —
+      엔드포인트 URL·응답 모양·`email_verified` 부재는 이 전제 위에서 확인된
+      값이다.
+    ground: |
+      **G2 — 요구사항 반영.** backlog §1.4 「소셜 로그인」 권고 순서의 세 번째(마지막)
+      제공자.
+    compatibility: |
+      **순수 확장이다.** 기존 오퍼레이션 넷의 요청·응답 스키마는 그대로고, `provider`
+      enum 에 값이 하나 늘었을 뿐이다. `google`·`kakao` 만 알던 기존 소비자는 영향이
+      없다 — `naver` 를 아직 안 쓰면 그 값을 볼 일이 없다.
+
   # 2026-09-05 — 버전 순서 노트: 이 브랜치는 origin/main(2.12.0, PR #30 병합 시점) 위에서
   # 시작했다. Kakao 로그인(PR #31, 병합 대기)이 2.13.0을 먼저 가져갔으므로 이 조각은
   # 2.14.0이다. 이 항목은 리베이스로 2.13.0 항목 **위**에 놓인다 — 두 항목의 날짜가 같아

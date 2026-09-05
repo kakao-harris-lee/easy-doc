@@ -53,12 +53,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => controller.abort()
   }, [])
 
-  /** 새로 받은 액세스 토큰을 저장하고 그 토큰의 사용자로 인증 상태를 채운다. */
-  const applyToken = useCallback(async (accessToken: string) => {
+  /** 새로 받은 액세스 토큰을 저장하고 그 토큰의 사용자로 인증 상태를 채운다. 채운 사용자를 돌려준다. */
+  const applyToken = useCallback(async (accessToken: string): Promise<UserResponse> => {
     writeToken(accessToken)
     const me = await fetchMe()
     setUser(me)
     setStatus('authenticated')
+    return me
   }, [])
 
   const signIn = useCallback(
@@ -81,9 +82,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     async (
       provider: OAuthProvider,
       params: { code: string; state: string; redirectUri: string },
-    ) => {
+    ): Promise<UserResponse> => {
       const token = await oauthCallback(provider, params)
-      await applyToken(token.access_token)
+      return applyToken(token.access_token)
     },
     [applyToken],
   )
