@@ -12,6 +12,10 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.ZoneOffset
 import java.util.UUID
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 
 /** 사전 조회 남용 한도의 인스턴스별 구현 (P0-5 조각 4). */
 class InMemorySlidingWindowLookupRateLimiterTest {
@@ -53,6 +57,66 @@ class InMemorySlidingWindowLookupRateLimiterTest {
         limiter.checkAndRecord(UUID.randomUUID())
 
         limiter.checkAndRecord(UUID.randomUUID())
+    }
+
+    @Test
+    @DisplayName("창 안 호출이 모두 만료되면 다음 호출에서 map 항목이 사라진다 — idle 사용자가 영원히 남지 않는다")
+    fun `idle 사용자는 청소된다`() {
+        val clock = MutableClock(Instant.parse("2026-09-05T00:00:00Z"))
+        val limiter = InMemorySlidingWindowLookupRateLimiter(limitPerMinute = 3, clock = clock)
+        val userId = UUID.randomUUID()
+
+        limiter.checkAndRecord(userId)
+        assertThat(limiter.trackedUsers()).isEqualTo(1)
+
+        clock.advance(Duration.ofSeconds(61))
+        limiter.checkAndRecord(userId)
+
+        assertThat(limiter.trackedUsers()).isEqualTo(0)
+    }
+
+    @Test
+    @DisplayName("동시에 20개 스레드가 같은 사용자로 부르면 한도만큼만 통과하고 나머지는 RateLimitedException 이다")
+    fun `동시 호출에서도 한도를 정확히 지킨다`() {
+        val clock = MutableClock(Instant.parse("2026-09-05T00:00:00Z"))
+        val limit = 5
+        val threadCount = 20
+        val limiter = InMemorySlidingWindowLookupRateLimiter(limitPerMinute = limit, clock = clock)
+        val userId = UUID.randomUUID()
+
+        val allowed = AtomicInteger(0)
+        val rejected = AtomicInteger(0)
+        val invalidRetryAfter = AtomicInteger(0)
+
+        val pool = Executors.newFixedThreadPool(threadCount)
+        val ready = CountDownLatch(threadCount)
+        val start = CountDownLatch(1)
+        val done = CountDownLatch(threadCount)
+
+        repeat(threadCount) {
+            pool.submit {
+                ready.countDown()
+                start.await()
+                try {
+                    limiter.checkAndRecord(userId)
+                    allowed.incrementAndGet()
+                } catch (thrown: RateLimitedException) {
+                    rejected.incrementAndGet()
+                    if (thrown.retryAfterSeconds < 1) invalidRetryAfter.incrementAndGet()
+                } finally {
+                    done.countDown()
+                }
+            }
+        }
+
+        ready.await()
+        start.countDown()
+        done.await(10, TimeUnit.SECONDS)
+        pool.shutdown()
+
+        assertThat(allowed.get()).isEqualTo(limit)
+        assertThat(rejected.get()).isEqualTo(threadCount - limit)
+        assertThat(invalidRetryAfter.get()).isZero()
     }
 }
 

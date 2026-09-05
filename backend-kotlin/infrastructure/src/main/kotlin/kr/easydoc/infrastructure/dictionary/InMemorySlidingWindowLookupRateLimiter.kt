@@ -32,8 +32,24 @@ class InMemorySlidingWindowLookupRateLimiter(
         val calls = callsByUser.computeIfAbsent(userId) { ArrayDeque() }
 
         synchronized(calls) {
+            // 드레인 전에 이미 뭔가 있었는지를 먼저 본다 — `computeIfAbsent` 가 이번 호출에서 막
+            // 새로 만든 빈 deque(이 사용자의 첫 호출)와, 예전 호출들이 전부 창 밖으로 밀려나
+            // 방금 비어버린 deque(진짜 idle 복귀)를 구분해야 한다. 구분하지 않으면 첫 호출마다
+            // 아래 청소가 걸려 map 에 아무것도 안 남고, 그 다음 호출도 늘 "첫 호출"처럼 보여
+            // 한도 자체가 무력화된다.
+            val hadEntriesBeforeDrain = calls.isNotEmpty()
             while (calls.isNotEmpty() && calls.first().isBefore(windowStart)) {
                 calls.removeFirst()
+            }
+            if (hadEntriesBeforeDrain && calls.isEmpty()) {
+                // idle 사용자 청소 — 갖고 있던 호출이 전부 창 밖으로 밀려났으면 map 항목 자체를
+                // 지운다. value-equality 로 가드한다(`ConcurrentHashMap.remove(key, value)`):
+                // `ArrayDeque` 는 `equals` 를 오버라이드하지 않아 참조 동일성으로 비교되므로,
+                // 그사이 다른 스레드가 이 `calls` 인스턴스에 이미 새 항목을 넣었다면(그래도 여전히
+                // map 의 값이 이 참조라면) 그 갱신을 지워버릴 위험이 남는다 — 드물게 그 경합이
+                // 나면 다음 호출이 `computeIfAbsent` 로 새 deque 를 다시 만들 뿐이라 benign
+                // re-create 로 받아들인다.
+                callsByUser.remove(userId, calls)
             }
             if (calls.size >= limitPerMinute) {
                 val retryAfter = Duration.between(now, calls.first().plus(WINDOW)).seconds.coerceAtLeast(1)
@@ -42,6 +58,9 @@ class InMemorySlidingWindowLookupRateLimiter(
             calls.addLast(now)
         }
     }
+
+    /** 테스트 전용 — 현재 map 에 남아 있는(청소되지 않은) 사용자 수. */
+    internal fun trackedUsers(): Int = callsByUser.size
 
     private companion object {
         val WINDOW: Duration = Duration.ofMinutes(1)
