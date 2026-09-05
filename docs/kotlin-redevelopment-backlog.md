@@ -23,7 +23,10 @@
 | 결제(카드·계좌이체·세금계산서), 크레딧 차감 | 미구현 | Lean MVP 범위 밖(master-plan 4.0) |
 | 운영자 어드민 | 미구현 | Lean MVP 범위 밖 |
 
-**2026-09-05:** P0-4 문단 단위 대응·재변환도 S1 구현이 진행 중이다(PR #25) — 계획은 `docs/plans/2026-09-04-p0-4-paragraph-mapping-reconversion.md`.
+**2026-09-05:** P0-4 문단 단위 대응·재변환은 S1–S3(원문·쉬운 글 단위 정렬, `segment_map` 조회
+API, 검수 화면의 단위별 대응·편집 UI)이 병합됐다(PR #25, #28, #30). S4(재변환 엔드포인트)·
+S5(재변환 UI)는 아직 진행 중이다 — 계획은
+`docs/plans/2026-09-04-p0-4-paragraph-mapping-reconversion.md`.
 
 ## 1.1 추후 개선 항목 (동작에는 문제 없음)
 
