@@ -27,7 +27,7 @@ function authValue(status: AuthStatus): AuthContextValue {
         : null,
     signIn: () => Promise.resolve(),
     signUp: () => Promise.resolve(),
-    signInWithGoogle: () => Promise.resolve(),
+    signInWithSocialProvider: () => Promise.resolve(),
     signOut: () => undefined,
     refreshMe: () => Promise.resolve(),
   }

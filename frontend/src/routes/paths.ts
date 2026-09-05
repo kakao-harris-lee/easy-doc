@@ -9,18 +9,19 @@ export const HISTORY_PATH = '/history'
 export const EMAIL_VERIFICATION_PATH = '/verify-email'
 
 /**
- * 구글 로그인 콜백 라우트. `GoogleLoginButton`이 만드는 `redirect_uri`와 같은 값이어야
- * 한다 — 제공자가 오늘 google 하나뿐이라 경로를 고정한다(계약 `x-social-login`).
+ * 소셜 로그인 콜백 라우트 패턴. `useParams`의 `provider` 키와 이름을 맞춘다(계약
+ * `x-social-login.flow`, 2.13.0부터 카카오도 지원 — `auth/socialLogin.ts`의
+ * `oauthCallbackPath`가 실제 provider로 이 패턴을 채운 값을 만든다).
  */
-export const OAUTH_GOOGLE_CALLBACK_PATH = '/auth/google/callback'
+export const OAUTH_CALLBACK_PATH = '/auth/:provider/callback'
 
 /**
- * 명시적 계정 연결 콜백 라우트(2.10.0 신설, backlog §1.4). 로그인 콜백과 주소를
+ * 명시적 계정 연결 콜백 라우트 패턴(2.10.0 신설, backlog §1.4). 로그인 콜백과 주소를
  * 나누는 이유는 그 화면이 인증 전(Bearer 없음)이고 이 화면은 인증 후(Bearer 필요)라
  * 요구하는 것과 실패 갈래가 다르기 때문이다 — `RequireAuth`로 감싸 미로그인 진입을
  * 걸러낸다.
  */
-export const OAUTH_GOOGLE_LINK_CALLBACK_PATH = '/auth/google/link/callback'
+export const OAUTH_LINK_CALLBACK_PATH = '/auth/:provider/link/callback'
 
 /** 변환 화면 라우트 패턴 (`useParams`의 키와 같은 이름을 쓴다). */
 export const CONVERSION_PATH = '/conversions/:conversionId'

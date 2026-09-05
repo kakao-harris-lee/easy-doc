@@ -174,6 +174,48 @@ describe('구글 로그인 시작 (로그인 화면)', () => {
   })
 })
 
+describe('카카오 로그인 시작 (로그인 화면)', () => {
+  it('시작 요청이 성공하면 redirect_uri를 넘기고 state를 저장한 뒤 인가 URL로 이동한다', async () => {
+    const user = userEvent.setup()
+    vi.mocked(oauthStart).mockResolvedValue({
+      authorization_url: 'https://kauth.kakao.com/oauth/authorize?state=state-xyz',
+      state: 'state-xyz',
+    })
+    const assign = mockLocationAssign()
+    renderAt('/login')
+
+    await user.click(screen.getByRole('button', { name: '카카오로 계속하기' }))
+
+    await waitFor(() => expect(assign).toHaveBeenCalledTimes(1))
+    expect(vi.mocked(oauthStart)).toHaveBeenCalledWith(
+      'kakao',
+      `${window.location.origin}/auth/kakao/callback`,
+    )
+    expect(window.sessionStorage.getItem('easydoc.oauth.kakao.state')).toBe('state-xyz')
+    expect(window.sessionStorage.getItem('easydoc.oauth.kakao.redirect_uri')).toBe(
+      `${window.location.origin}/auth/kakao/callback`,
+    )
+    expect(assign).toHaveBeenCalledWith('https://kauth.kakao.com/oauth/authorize?state=state-xyz')
+  })
+
+  it('제공자가 설정되지 않았으면(422) 버튼 아래에 안내하고 이메일 폼은 그대로 쓸 수 있다', async () => {
+    const user = userEvent.setup()
+    vi.mocked(oauthStart).mockRejectedValue(
+      new ApiError(422, '카카오 로그인이 설정되지 않았습니다'),
+    )
+    const assign = mockLocationAssign()
+    renderAt('/login')
+
+    await user.click(screen.getByRole('button', { name: '카카오로 계속하기' }))
+
+    expect(await screen.findByText('카카오 로그인이 설정되지 않았습니다')).toBeInTheDocument()
+    expect(assign).not.toHaveBeenCalled()
+    // 이메일 폼은 이 실패와 무관하게 여전히 쓸 수 있다.
+    expect(screen.getByLabelText('이메일')).toBeEnabled()
+    expect(screen.getByRole('button', { name: '로그인' })).toBeEnabled()
+  })
+})
+
 describe('구글 계정 연결 이어가기 (?link=google)', () => {
   it('로그인에 성공하면 연결 시작 요청을 보내고 인가 URL로 이동한다 — 홈으로는 가지 않는다', async () => {
     const user = userEvent.setup()
@@ -259,5 +301,43 @@ describe('구글 계정 연결 이어가기 (?link=google)', () => {
 
     expect(await screen.findByRole('heading', { name: '문서 변환하기' })).toBeInTheDocument()
     expect(vi.mocked(oauthLinkStart)).not.toHaveBeenCalled()
+  })
+})
+
+describe('카카오 계정 연결 이어가기 (?link=kakao)', () => {
+  it('로그인에 성공하면 연결 시작 요청을 보내고 인가 URL로 이동한다 — 홈으로는 가지 않는다', async () => {
+    const user = userEvent.setup()
+    vi.mocked(login).mockResolvedValue({
+      access_token: 'token-abc',
+      token_type: 'bearer',
+      expires_in: 3600,
+    })
+    vi.mocked(fetchMe).mockResolvedValue({
+      id: 'u1',
+      email: 'user@example.com',
+      email_verified: true,
+      identities: [],
+    })
+    vi.mocked(oauthLinkStart).mockResolvedValue({
+      authorization_url: 'https://kauth.kakao.com/oauth/authorize?state=link-state',
+      state: 'link-state',
+    })
+    const assign = mockLocationAssign()
+    renderAt('/login?link=kakao')
+
+    await user.type(screen.getByLabelText('이메일'), 'user@example.com')
+    await user.type(screen.getByLabelText('비밀번호'), 'password123')
+    await user.click(screen.getByRole('button', { name: '로그인' }))
+
+    await waitFor(() => expect(assign).toHaveBeenCalledTimes(1))
+    expect(vi.mocked(oauthLinkStart)).toHaveBeenCalledWith(
+      'kakao',
+      `${window.location.origin}/auth/kakao/link/callback`,
+    )
+    expect(window.sessionStorage.getItem('easydoc.oauth.kakao.link.state')).toBe('link-state')
+    expect(window.sessionStorage.getItem('easydoc.oauth.kakao.link.redirect_uri')).toBe(
+      `${window.location.origin}/auth/kakao/link/callback`,
+    )
+    expect(assign).toHaveBeenCalledWith('https://kauth.kakao.com/oauth/authorize?state=link-state')
   })
 })

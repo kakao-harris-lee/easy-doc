@@ -4,7 +4,7 @@ import { useAuth } from '../auth/context'
 import { MIN_PASSWORD_LENGTH } from '../auth/validation'
 import { AuthIntro } from '../components/AuthIntro'
 import { CredentialsForm } from '../components/CredentialsForm'
-import { GoogleLoginButton } from '../components/GoogleLoginButton'
+import { SocialLoginButton } from '../components/SocialLoginButton'
 import { EMAIL_VERIFICATION_PATH, HOME_PATH, LOGIN_PATH } from '../routes/paths'
 
 /**
@@ -53,7 +53,8 @@ export function SignupPage() {
             <span className="text-xs text-muted-foreground">또는</span>
             <span className="h-px flex-1 bg-border" />
           </div>
-          <GoogleLoginButton />
+          <SocialLoginButton provider="google" />
+          <SocialLoginButton provider="kakao" />
           <p className="mt-5 text-center text-sm text-muted-foreground">
             이미 계정이 있으신가요? <Link to={LOGIN_PATH}>로그인</Link>
           </p>

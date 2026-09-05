@@ -1,10 +1,10 @@
 import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom'
 
-import { startGoogleLink } from '../auth/googleLink'
 import { useAuth } from '../auth/context'
+import { isOAuthProvider, startSocialLink } from '../auth/socialLogin'
 import { AuthIntro } from '../components/AuthIntro'
 import { CredentialsForm } from '../components/CredentialsForm'
-import { GoogleLoginButton } from '../components/GoogleLoginButton'
+import { SocialLoginButton } from '../components/SocialLoginButton'
 import { HOME_PATH, SIGNUP_PATH, type FromLocationState } from '../routes/paths'
 
 /**
@@ -26,8 +26,11 @@ export function LoginPage() {
   const from = (location.state as FromLocationState | null)?.from ?? HOME_PATH
 
   // `OAuthCallbackPage`가 409(이미 같은 이메일로 가입됨)에서 이리로 보낼 때 싣는
-  // 표시다 — 이 주소로 온 경우에만 로그인 성공 직후 구글 계정 연결을 이어서 시작한다.
-  const shouldLinkGoogle = new URLSearchParams(location.search).get('link') === 'google'
+  // 표시다 — 이 주소로 온 경우에만 로그인 성공 직후 그 제공자 계정 연결을 이어서
+  // 시작한다. 지원하지 않는 값(오타·구값)이면 무시한다 — 라우트 `:provider` 세그먼트
+  // 검증과 같은 기준(`isOAuthProvider`)을 쓴다.
+  const linkParam = new URLSearchParams(location.search).get('link')
+  const providerToLink = isOAuthProvider(linkParam) ? linkParam : null
 
   if (status === 'authenticated') {
     return <Navigate to={from} replace />
@@ -56,11 +59,11 @@ export function LoginPage() {
             passwordAutoComplete="current-password"
             onSubmit={async (email, password) => {
               await signIn(email, password)
-              if (shouldLinkGoogle) {
+              if (providerToLink !== null) {
                 try {
-                  // 성공하면 이 함수가 곧장 구글 인가 화면으로 이동시킨다 — 이어지는
+                  // 성공하면 이 함수가 곧장 제공자 인가 화면으로 이동시킨다 — 이어지는
                   // navigate는 실행되지 않는다.
-                  await startGoogleLink()
+                  await startSocialLink(providerToLink)
                   return
                 } catch {
                   // 연결 시작 실패(네트워크 등)는 로그인 자체의 실패가 아니다 —
@@ -75,7 +78,8 @@ export function LoginPage() {
             <span className="text-xs text-muted-foreground">또는</span>
             <span className="h-px flex-1 bg-border" />
           </div>
-          <GoogleLoginButton />
+          <SocialLoginButton provider="google" />
+          <SocialLoginButton provider="kakao" />
           <p className="mt-5 text-center text-sm text-muted-foreground">
             아직 계정이 없으신가요? <Link to={SIGNUP_PATH}>가입하기</Link>
           </p>
