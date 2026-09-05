@@ -20,6 +20,9 @@ import kr.easydoc.core.document.noOriginalPreservation
 import kr.easydoc.core.easyread.ExportFormat
 import kr.easydoc.core.privacy.MaskCategory
 import kr.easydoc.core.security.Secret
+import kr.easydoc.core.segment.SegmentConfidence
+import kr.easydoc.core.segment.SegmentMap
+import kr.easydoc.core.segment.SegmentUnit
 import kr.easydoc.core.user.PasswordHash
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
@@ -122,6 +125,58 @@ class ConversionReadContractTest {
     }
 
     @Test
+    @DisplayName("완료 변환의 segment_map 키 집합이 정확히 SegmentMap.required 이고 단위마다 SegmentMapUnit.required 다 (P0-4 S2)")
+    fun `segment_map 모양이 계약과 같다`() {
+        val owner = newOwner()
+        val conversionId = completedConversion(owner)
+
+        val body = bodyOf(read(owner, conversionId))
+        assertThat(body.keys.map { it.toString() }).contains(SEGMENT_MAP_PROPERTY)
+        val segmentMap = body[SEGMENT_MAP_PROPERTY] as? Map<*, *>
+
+        assertThat(segmentMap).describedAs("완료 변환인데 segment_map 이 null 이다").isNotNull()
+        assertThat(segmentMap!!.keys.map { it.toString() }.toSet())
+            .withFailMessage("segment_map 의 키 집합이 계약 %s 와 다르다: %s", SEGMENT_MAP_SCHEMA, segmentMap.keys)
+            .isEqualTo(ContractSpec.schemaRequired(SEGMENT_MAP_SCHEMA))
+
+        val units = segmentMap[UNITS_PROPERTY] as List<*>
+        assertThat(units).describedAs("완료 변환인데 대응 단위가 하나도 없다").isNotEmpty()
+        val declaredConfidences = ContractSpec.schemaEnum(SEGMENT_CONFIDENCE_SCHEMA)
+        units.forEach { raw ->
+            val unit = raw as Map<*, *>
+            assertThat(unit.keys.map { it.toString() }.toSet())
+                .withFailMessage("segment_map.units 항목의 키 집합이 계약 %s 와 다르다: %s", SEGMENT_MAP_UNIT_SCHEMA, unit.keys)
+                .isEqualTo(ContractSpec.schemaRequired(SEGMENT_MAP_UNIT_SCHEMA))
+            assertThat(unit[CONFIDENCE_PROPERTY].toString())
+                .withFailMessage("confidence 값이 계약 enum %s 밖이다", declaredConfidences)
+                .isIn(declaredConfidences)
+        }
+    }
+
+    @Test
+    @DisplayName("완료 전 변환은 segment_map 이 null 이다 — 키는 있고 값이 없다")
+    fun `완료 전에는 segment_map 이 null 이다`() {
+        val owner = newOwner()
+        val body = json.writeValueAsString(mapOf(TEXT_PROPERTY to "안내문 본문"))
+        val created =
+            mockMvc
+                .post(DOCUMENTS_PATH) {
+                    header(HttpHeaders.AUTHORIZATION, "Bearer stub-token:$owner")
+                    contentType = MediaType.APPLICATION_JSON
+                    content = body
+                }.andReturn()
+                .response
+        val conversionId = bodyOf(created)[CONVERSION_ID_PROPERTY].toString()
+
+        val response = bodyOf(read(owner, conversionId))
+
+        assertThat(response.keys.map { it.toString() })
+            .withFailMessage("키가 생략됐다 — React 가 undefined 를 받아 분기가 갈린다")
+            .contains(SEGMENT_MAP_PROPERTY)
+        assertThat(response[SEGMENT_MAP_PROPERTY]).isNull()
+    }
+
+    @Test
     @DisplayName("CR-1 계약 범주 enum 이 `MaskCategory` **전부**를 덮는다 — 원소가 빠지면 여기가 먼저 깨진다 (N-26)")
     fun `계약 범주 집합이 구현 범주 전부를 덮는다`() {
         val declared = ContractSpec.schemaPropertyEnum(MASKED_ITEM_SCHEMA, CATEGORY_PROPERTY)
@@ -201,6 +256,10 @@ class ConversionReadContractTest {
                 "reviewed_at" to base.copy(reviewedAt = Instant.EPOCH),
                 "feedback_submitted_at" to base.copy(feedbackSubmittedAt = Instant.EPOCH),
                 "missing_placeholders" to base.copy(missingPlaceholders = listOf(PLACEHOLDER)),
+                "segment_map" to
+                    base.copy(
+                        segmentMap = SegmentMap(1, 1, listOf(SegmentUnit(0, listOf(0), SegmentConfidence.HIGH))),
+                    ),
                 "model" to base.copy(model = "probe-model"),
                 "provider_name" to base.copy(providerName = "probe-provider"),
                 "input_tokens" to base.copy(inputTokens = 1),
@@ -248,6 +307,7 @@ class ConversionReadContractTest {
             feedbackSubmittedAt = null,
             maskedItems = emptyList(),
             missingPlaceholders = emptyList(),
+            segmentMap = null,
             model = null,
             providerName = null,
             inputTokens = null,
@@ -400,6 +460,9 @@ class ConversionReadContractTest {
         const val CONVERSION_SCHEMA = "ConversionResponse"
         const val MASKED_ITEM_SCHEMA = "MaskedItemResponse"
         const val VALIDATION_ITEM_SCHEMA = "ValidationErrorItem"
+        const val SEGMENT_MAP_SCHEMA = "SegmentMap"
+        const val SEGMENT_MAP_UNIT_SCHEMA = "SegmentMapUnit"
+        const val SEGMENT_CONFIDENCE_SCHEMA = "SegmentConfidence"
 
         const val TEXT_PROPERTY = "text"
         const val CONVERSION_ID_PROPERTY = "conversion_id"
@@ -412,6 +475,9 @@ class ConversionReadContractTest {
         const val CATEGORY_PROPERTY = "category"
         const val PLACEHOLDER_PROPERTY = "placeholder"
         const val DETAIL = "detail"
+        const val SEGMENT_MAP_PROPERTY = "segment_map"
+        const val UNITS_PROPERTY = "units"
+        const val CONFIDENCE_PROPERTY = "confidence"
 
         const val NOT_A_UUID = "not-a-uuid"
     }

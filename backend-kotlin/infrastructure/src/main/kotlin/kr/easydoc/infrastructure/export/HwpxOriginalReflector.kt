@@ -20,6 +20,7 @@ import org.w3c.dom.Node
  * 약속한 것은 「본문 말고는 그대로」라서, 아는 것만 남기는 왕복은 그 약속을 지킬 수 없다.
  * 순회 규칙은 `ingest/HwpxExtractor` 와 같다(문단 시작에서 끊고, `t` 를 이어 붙인다).
  */
+@Suppress("TooManyFunctions")
 internal class HwpxOriginalReflector {
     private val walk = TextUnitWalk(headerFooter = ::isHeaderFooter)
 
@@ -42,6 +43,12 @@ internal class HwpxOriginalReflector {
             opened.sections.forEach { section -> parts[section.name] = SectionXml.serialize(section.document) }
             exportFileOf(title, ExportFormat.HWPX, hwpxPackageOf(parts))
         }
+
+    /**
+     * 원본 전체 단위 수(본문+머리글·꼬리말). **A7 대조 전용** — 추출기가 낸 줄 수와
+     * `TextUnitWalk` 가 낸 단위 수가 같은지 재는 시험이 이 값을 쓴다. 열리지 않으면 `null`.
+     */
+    internal fun unitCount(data: ByteArray): Int? = guarded(data) { opened -> unitsOf(opened).size }
 
     /**
      * 원본을 열어 [use] 에 넘긴다. **열리지 않으면 `null`** — 부르는 쪽이 그것을 오류와

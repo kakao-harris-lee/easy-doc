@@ -521,3 +521,76 @@ internal class FakeOriginalStructureReflector(
         return file
     }
 }
+
+/**
+ * 원문 저장소 대역 — `ConversionQueryService` 가 `segment_map` 을 유도하려고만 부른다.
+ *
+ * [seed] 로 심지 않은 문서는 `null` 을 돌려주고, 그러면 유스케이스가 `segment_map` 을
+ * `null` 로 접는다(계획 §3 「원문을 읽을 수 없으면 null」의 대역 형태). `DocumentSourceServiceTest`
+ * 의 로컬 대역과 같은 최소 구현 — 회전·삭제·목록 팔은 이 조회 경로가 부르지 않는다.
+ */
+internal class FakeQueryDocumentRepository(private val transaction: RecordingTransactionRunner) : DocumentRepository {
+    private val rows = mutableMapOf<Pair<UUID, UUID>, StoredSourceText>()
+
+    /** 조회에 넘어온 `(소유자, 문서)` 짝 전부. */
+    val queries = mutableListOf<Pair<UUID, UUID>>()
+
+    /** 조회가 불린 시점의 트랜잭션 깊이. `segment_map` 이 읽는 원문도 같은 경계 안에서 읽는다. */
+    val depthWhenRead = mutableListOf<Int>()
+
+    fun seed(
+        ownerId: UUID,
+        documentId: UUID,
+        text: String,
+        format: SourceFormat = SourceFormat.TEXT,
+    ) {
+        rows[ownerId to documentId] =
+            StoredSourceText(
+                documentId = documentId,
+                sourceFormat = format,
+                charCount = text.length,
+                sourceText = EncryptedContent(text.toByteArray(Charsets.UTF_8), EncryptionScheme.AES_256_GCM_V1, 1),
+            )
+    }
+
+    override fun findOwnedSource(
+        ownerId: UUID,
+        documentId: UUID,
+    ): StoredSourceText? {
+        queries += ownerId to documentId
+        depthWhenRead += transaction.depth
+        return rows[ownerId to documentId]
+    }
+
+    override fun insert(
+        ownerId: UUID,
+        draft: DocumentDraft,
+        sourceText: EncryptedContent,
+    ) = error("조회 경로가 문서를 만들지 않는다")
+
+    override fun listOwned(
+        ownerId: UUID,
+        workspaceId: UUID?,
+        limit: Int,
+        offset: Int,
+    ) = error("조회 경로가 목록을 읽지 않는다")
+
+    override fun lockSourceText(documentId: UUID): EncryptedContent? = error("조회 경로가 행을 잠그지 않는다")
+
+    override fun rewriteEnvelope(
+        documentId: UUID,
+        expected: EncryptedContent,
+        sourceText: EncryptedContent,
+    ): Boolean = error("조회 경로가 봉투를 다시 쓰지 않는다")
+
+    override fun idsOlderThan(
+        keyVersion: Int,
+        after: UUID,
+        limit: Int,
+    ): List<UUID> = error("조회 경로가 회전 후보를 고르지 않는다")
+
+    override fun deleteOwned(
+        ownerId: UUID,
+        documentId: UUID,
+    ): Boolean = error("조회 경로가 문서를 지우지 않는다")
+}

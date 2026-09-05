@@ -9,6 +9,7 @@ import kr.easydoc.core.document.ReflectionOutcome
 import kr.easydoc.core.document.SourceFormat
 import kr.easydoc.core.easyread.ExportFormat
 import kr.easydoc.core.exceptions.NotFoundException
+import kr.easydoc.core.segment.SegmentConfidence
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.DisplayName
@@ -349,6 +350,74 @@ class ConversionQueryServiceTest {
         assertThat(rendered).contains(conversionId.toString()).contains("masked=1")
     }
 
+    @Test
+    @DisplayName("공통 사실 앵커가 있으면 1:N 분할도 high 로 이어진다 — 원문을 같은 트랜잭션 안에서 읽는다")
+    fun `segment_map 이 사실 앵커로 1대N 분할을 잡는다`() {
+        val world = World()
+        val conversionId = UUID.randomUUID()
+        val documentId =
+            world.seedResults(conversionId, easyText = "3월 2일 안내\n3월 31일 안내\n032-123-4567 문의")
+        world.documents.seed(OWNER, documentId, "3월 2일과 3월 31일 안내\n032-123-4567 문의")
+
+        val view = world.service.read(OWNER, conversionId)
+
+        val map = view.segmentMap
+        assertThat(map).describedAs("완료 변환인데 segment_map 이 null 이다").isNotNull()
+        assertThat(map!!.sourceUnitCount).isEqualTo(2)
+        assertThat(map.easyUnitCount).isEqualTo(3)
+        assertThat(map.units.map { Triple(it.easyUnitIndex, it.sourceUnitIndexes, it.confidence) })
+            .containsExactly(
+                Triple(0, listOf(0), SegmentConfidence.HIGH),
+                Triple(1, listOf(0), SegmentConfidence.HIGH),
+                Triple(2, listOf(1), SegmentConfidence.HIGH),
+            )
+        // 원문 조회는 변환 행 조회와 **같은 트랜잭션 안**이다 — 원본 반영과 같은 규칙.
+        assertThat(world.documents.depthWhenRead).containsExactly(1)
+        // 복호화는(원문 포함) **경계 밖**이다 — 다른 본문 세 열과 같은 규칙.
+        assertThat(world.cipher.decryptions).contains(documentId to EncryptedField.DOCUMENT_SOURCE_TEXT)
+    }
+
+    @Test
+    @DisplayName("공통 앵커가 없으면 low 로만 채워진다 — 순수 차례 보간")
+    fun `segment_map 앵커가 없으면 low 다`() {
+        val world = World()
+        val conversionId = UUID.randomUUID()
+        val documentId = world.seedResults(conversionId, easyText = "a\nb\nc")
+        world.documents.seed(OWNER, documentId, "x\ny")
+
+        val view = world.service.read(OWNER, conversionId)
+
+        val map = requireNotNull(view.segmentMap)
+        assertThat(map.units.map { it.confidence }).containsOnly(SegmentConfidence.LOW)
+        assertThat(map.units.map { it.sourceUnitIndexes }).containsExactly(listOf(0), listOf(0), listOf(1))
+    }
+
+    @Test
+    @DisplayName("완료 전에는 segment_map 이 null 이고 원문 조회조차 하지 않는다")
+    fun `완료 전에는 segment_map 이 없다`() {
+        val world = World()
+        val conversionId = UUID.randomUUID()
+        world.seedPending(conversionId)
+
+        val view = world.service.read(OWNER, conversionId)
+
+        assertThat(view.segmentMap).isNull()
+        assertThat(world.documents.queries).isEmpty()
+    }
+
+    @Test
+    @DisplayName("원문 행을 더는 읽을 수 없으면 segment_map 이 null 로 접는다 — 예외로 튀지 않는다")
+    fun `원문이 없으면 segment_map 이 null 이다`() {
+        val world = World()
+        val conversionId = UUID.randomUUID()
+        world.seedResults(conversionId, easyText = "쉬운 글")
+        // world.documents 에 심지 않는다 — findOwnedSource 가 null 을 돌려준다.
+
+        val view = world.service.read(OWNER, conversionId)
+
+        assertThat(view.segmentMap).isNull()
+    }
+
     private companion object {
         val OWNER: UUID = UUID.fromString("00000000-0000-4000-8000-0000000000a1")
         val STRANGER: UUID = UUID.fromString("00000000-0000-4000-8000-0000000000a2")
@@ -384,6 +453,7 @@ class ConversionQueryServiceTest {
         val originals = FakeDocumentOriginalRepository(transaction)
         val conversions = FakeConversionRepository(transaction, originals)
         val reflector = FakeOriginalStructureReflector()
+        val documents = FakeQueryDocumentRepository(transaction)
 
         val service =
             ConversionQueryService(
@@ -391,6 +461,7 @@ class ConversionQueryServiceTest {
                 cipher = cipher,
                 maskedItems = maskedItems,
                 original = OriginalReflection(StoredOriginalReader(originals, cipher), reflector),
+                documents = documents,
                 transaction = transaction,
             )
 
@@ -478,6 +549,10 @@ class ConversionQueryServiceTest {
         /**
          * 결과 열을 채운 완료 변환 한 건. 암호문은 [cipher] 를 거쳐 만든다 — 대역이라도 평문을
          * 컬럼 자리에 두면 「복호화가 실제로 돌았는가」를 잴 수 없다.
+         *
+         * **문서 식별자를 돌려준다** — `segment_map` 을 재는 케이스가 [documents] 에 원문을
+         * 심으려면 이 변환이 딸린 문서 식별자가 있어야 한다(`FakeConversionRepository` 는
+         * 무작위로 뽑으므로 호출자가 미리 알 수 없다).
          */
         fun seedResults(
             conversionId: UUID,
@@ -485,16 +560,17 @@ class ConversionQueryServiceTest {
             editedText: String? = null,
             maskedLabels: List<String> = emptyList(),
             owner: UUID = OWNER,
-        ) {
+        ): UUID {
             fun seal(
                 value: String?,
                 field: EncryptedField,
             ) = value?.let { cipher.encrypt(PlainBody(it), conversionId, field) }
 
+            val documentId = UUID.randomUUID()
             conversions.owned[owner to conversionId] =
                 StoredConversion(
                     id = conversionId,
-                    documentId = UUID.randomUUID(),
+                    documentId = documentId,
                     status = ConversionStatus.DONE,
                     sourceFormat = SeededOrigin().sourceFormat,
                     hasStoredOriginal = SeededOrigin().hasStoredOriginal,
@@ -518,6 +594,7 @@ class ConversionQueryServiceTest {
                     outputTokens = 22,
                     failureCode = "ProviderUnavailable",
                 )
+            return documentId
         }
     }
 }

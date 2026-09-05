@@ -261,12 +261,14 @@ class AuthSliceBeans {
     ): DocumentSourceService = DocumentSourceService(documents = documents, cipher = cipher)
 
     /** 조회 유스케이스도 실물이다 — 제품 조립과 같은 모양으로 나눈다. */
+    @Suppress("LongParameterList")
     @Bean
     fun conversionQueryService(
         conversions: InMemoryConversionRepository,
         cipher: ContentCipher,
         maskedItems: MaskedItemReader,
         original: OriginalReflection,
+        documents: InMemoryDocumentRepository,
         transaction: TransactionRunner,
     ): ConversionQueryService =
         ConversionQueryService(
@@ -274,6 +276,7 @@ class AuthSliceBeans {
             cipher = cipher,
             maskedItems = maskedItems,
             original = original,
+            documents = documents,
             transaction = transaction,
         )
 
