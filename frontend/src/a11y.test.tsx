@@ -11,11 +11,12 @@
  * 그쪽은 `e2e/a11y.spec.ts` 가 실제 크롬에서 잰다.
  */
 
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ApiError, getConversion, getDocumentSource, listDocuments } from './api/client'
+import { lookupTerm } from './api/dictionary'
 import { AuthContext, type AuthContextValue } from './auth/context'
 import { AppLayout } from './components/AppLayout'
 import { AppRoutes } from './routes/AppRoutes'
@@ -34,6 +35,11 @@ vi.mock('./api/client', async (importOriginal) => ({
   listDocuments: vi.fn(),
   getConversion: vi.fn(),
   getDocumentSource: vi.fn(),
+}))
+
+vi.mock('./api/dictionary', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./api/dictionary')>()),
+  lookupTerm: vi.fn(),
 }))
 
 const USER = {
@@ -173,7 +179,39 @@ const SCREENS: readonly {
         },
       })
     },
-    settle: () => screen.findByRole('heading', { name: '쉬운 글 검수' }),
+    // 대응표 화면이 다 그려진 뒤 사전 팝업(TermLookupPopover)도 한 번 띄운다 —
+    // 그래야 이 스윕(랜드마크·제목 순서·aria 참조·라이브 영역 중복)이 그 DOM도 함께
+    // 훑는다(MEDIUM 리뷰). 결과 단위 textarea에서 두 글자를 선택하고 디바운스가
+    // 끝날 때까지 기다린다(이 파일은 가짜 타이머를 쓰지 않으므로 실제 250ms를 기다린다).
+    settle: async () => {
+      const heading = await screen.findByRole('heading', { name: '쉬운 글 검수' })
+      vi.mocked(lookupTerm).mockResolvedValue({
+        query: '3월',
+        candidates: [
+          {
+            term: '3월',
+            easy_term: '3월',
+            strategy: 'keep',
+            risk: 'none',
+            definition: '월을 가리키는 말',
+            caution: null,
+            tags: [],
+            examples: [],
+            match_kind: 'exact',
+            applicable: false,
+          },
+        ],
+        dictionary: { name: '쉬운 말 사전', license: 'CC-BY', schema_version: '1.0.0' },
+      })
+      const textarea = screen.getByLabelText(
+        '쉬운 글 단위 1, 원본 1번째 문단에 대응',
+      ) as HTMLTextAreaElement
+      textarea.focus()
+      textarea.setSelectionRange(0, 2)
+      fireEvent.mouseUp(textarea)
+      await screen.findByRole('dialog', { name: '쉬운 말 후보' })
+      return heading
+    },
   },
   {
     // §9 «원문을 불러오지 못함»은 로딩·빈 상태와 다른 화면이다 — 접근성도 따로 재야 한다.
@@ -315,6 +353,7 @@ afterEach(() => {
   vi.mocked(listDocuments).mockReset()
   vi.mocked(getConversion).mockReset()
   vi.mocked(getDocumentSource).mockReset()
+  vi.mocked(lookupTerm).mockReset()
 })
 
 describe('①  랜드마크와 건너뛰기 링크', () => {

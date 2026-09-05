@@ -360,3 +360,75 @@ export interface ConversionFeedbackResponse {
   /** ISO 8601 문자열. */
   submitted_at: string
 }
+
+// --- dictionary (P0-5, 계약 2.11.0) ---
+
+/**
+ * 사전 치환 전략. 계약 `components/schemas/TermStrategy`.
+ *
+ * `substitute`(지워도 안전) · `gloss`(원어를 남기고 뜻을 덧붙임) · `keep`(손대면 안 됨).
+ */
+export type TermStrategy = 'substitute' | 'gloss' | 'keep'
+
+/** 오변환 위험도. `high`는 자동 치환 금지 신호다. 계약 `components/schemas/TermRisk`. */
+export type TermRisk = 'none' | 'low' | 'high'
+
+/**
+ * 조회 후보의 일치 종류. 계약 `components/schemas/TermMatchKind`.
+ *
+ * `exact` — 매치 표면형이 표제어와 같고 남는 것이 조사뿐. `inflected` — 표면형이 표제어와
+ * 다른 활용형·이형태. `compound_part` — 질의 일부만 사전에 있는 복합어 부분 일치(이
+ * 갈래는 `applicable`이 항상 거짓이다). 연속 점수(`score`)는 계약에 없다.
+ */
+export type TermMatchKind = 'exact' | 'inflected' | 'compound_part'
+
+/** `DictionaryLookupCandidate.examples`의 항목 하나. */
+export interface DictionaryLookupExample {
+  before: string
+  after: string
+}
+
+/** POST /dictionary/lookup 후보 하나. 계약 `components/schemas/DictionaryLookupCandidate`. */
+export interface DictionaryLookupCandidate {
+  /** 사전 표제어 원형. */
+  term: string
+  /** 쉬운 말. */
+  easy_term: string
+  strategy: TermStrategy
+  risk: TermRisk
+  definition: string | null
+  caution: string | null
+  tags: string[]
+  examples: DictionaryLookupExample[]
+  match_kind: TermMatchKind
+  /**
+   * 참이면 편집기가 치환 버튼을 낸다 — `strategy === 'substitute'`이고
+   * `match_kind !== 'compound_part'`일 때만 참이다.
+   */
+  applicable: boolean
+}
+
+/** 사전 단위 출처 표기. 계약 `components/schemas/DictionaryAttribution`. */
+export interface DictionaryAttribution {
+  name: string
+  license: string
+  schema_version: string
+}
+
+/** POST /dictionary/lookup 요청 본문. */
+export interface DictionaryLookupRequest {
+  /** 검수 화면에서 지목한 문자열 하나. 위치 정보는 담지 않는다. */
+  text: string
+}
+
+/**
+ * POST /dictionary/lookup 응답. 계약 `components/schemas/DictionaryLookupResponse`.
+ *
+ * 후보 0건도 유효한 결과다(404가 아니라 빈 배열).
+ */
+export interface DictionaryLookupResponse {
+  /** 정제된 질의 문자열 그대로(요청 text와 같음, 반향 확인용). */
+  query: string
+  candidates: DictionaryLookupCandidate[]
+  dictionary: DictionaryAttribution
+}

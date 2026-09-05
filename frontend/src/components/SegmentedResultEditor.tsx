@@ -140,6 +140,10 @@ const UnitRow = memo(function UnitRow({
       <textarea
         ref={(node) => setRef(index, node)}
         aria-label={label}
+        // 사전 팝업(TermLookupPopover)이 선택이 일어난 textarea를 어느 단위인지
+        // 되짚는 유일한 표식이다 — 그 팝업은 이 단위 배열을 몰라도 이 속성만으로
+        // 전체 draft에서 이 단위의 자리를 찾아 치환할 수 있다.
+        data-unit-index={index}
         className={cn(
           'min-h-11 w-full resize-y rounded-[10px] border border-input bg-card px-3.5 py-2.5 text-[17px] leading-[1.75] text-foreground transition-colors motion-reduce:transition-none',
           highlighted && 'border-primary ring-2 ring-primary/40',
