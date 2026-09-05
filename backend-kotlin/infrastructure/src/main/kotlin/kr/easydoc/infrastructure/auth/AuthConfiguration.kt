@@ -112,6 +112,14 @@ data class GoogleOAuthProperties(
      * 다시 받는다.
      */
     val jwksCacheMinutes: Long = DEFAULT_JWKS_CACHE_MINUTES,
+    /**
+     * 토큰 교환·JWKS 호출의 연결·읽기 타임아웃(ms) — 하나의 손잡이로 묶는다
+     * (`MailProperties.timeoutMs` 와 같은 방침, CLAUDE.md 「상수와 구성 관리」). 이전에는
+     * `GoogleSocialLoginProvider` 가 이 값을 코드 상수(`GOOGLE_CONNECT_TIMEOUT`·
+     * `GOOGLE_READ_TIMEOUT`)로만 가졌다 — 운영 중 조정할 방법이 없었다(리뷰 후속 조치,
+     * 2026-09-05). 기본값은 그 상수 중 더 큰 쪽([kr.easydoc.infrastructure.auth.google.GOOGLE_READ_TIMEOUT])과 같다.
+     */
+    val timeoutMs: Long = DEFAULT_TIMEOUT_MS,
 ) {
     fun isConfigured(): Boolean = clientId.isNotBlank() && !clientSecret.isBlank()
 
@@ -119,6 +127,7 @@ data class GoogleOAuthProperties(
         const val DEFAULT_LOGIN_REDIRECT_URI = "http://localhost:5173/auth/google/callback"
         const val DEFAULT_LINK_REDIRECT_URI = "http://localhost:5173/auth/google/link/callback"
         private const val DEFAULT_JWKS_CACHE_MINUTES = 60L
+        private const val DEFAULT_TIMEOUT_MS = 15_000L
     }
 }
 
@@ -133,6 +142,8 @@ data class KakaoOAuthProperties(
     val clientSecret: Secret = Secret.EMPTY,
     val redirectUris: List<String> = listOf(DEFAULT_LOGIN_REDIRECT_URI, DEFAULT_LINK_REDIRECT_URI),
     val jwksCacheMinutes: Long = DEFAULT_JWKS_CACHE_MINUTES,
+    /** [GoogleOAuthProperties.timeoutMs] 와 같은 계약 — 그 필드 KDoc. */
+    val timeoutMs: Long = DEFAULT_TIMEOUT_MS,
 ) {
     fun isConfigured(): Boolean = clientId.isNotBlank() && !clientSecret.isBlank()
 
@@ -140,6 +151,7 @@ data class KakaoOAuthProperties(
         const val DEFAULT_LOGIN_REDIRECT_URI = "http://localhost:5173/auth/kakao/callback"
         const val DEFAULT_LINK_REDIRECT_URI = "http://localhost:5173/auth/kakao/link/callback"
         private const val DEFAULT_JWKS_CACHE_MINUTES = 60L
+        private const val DEFAULT_TIMEOUT_MS = 15_000L
     }
 }
 
@@ -259,6 +271,8 @@ class AuthConfiguration {
                             clientSecret = google.clientSecret,
                             redirectUriAllowlist = google.redirectUris.toSet(),
                             jwksCacheTtl = Duration.ofMinutes(google.jwksCacheMinutes),
+                            connectTimeout = Duration.ofMillis(google.timeoutMs),
+                            readTimeout = Duration.ofMillis(google.timeoutMs),
                         ),
                     ),
                 )
@@ -272,6 +286,8 @@ class AuthConfiguration {
                             clientSecret = kakao.clientSecret,
                             redirectUriAllowlist = kakao.redirectUris.toSet(),
                             jwksCacheTtl = Duration.ofMinutes(kakao.jwksCacheMinutes),
+                            connectTimeout = Duration.ofMillis(kakao.timeoutMs),
+                            readTimeout = Duration.ofMillis(kakao.timeoutMs),
                         ),
                     ),
                 )

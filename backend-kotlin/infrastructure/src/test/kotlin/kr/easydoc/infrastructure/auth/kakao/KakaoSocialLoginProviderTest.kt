@@ -27,7 +27,9 @@ import java.util.Date
 /**
  * 카카오 어댑터 — OIDC ID 토큰 경로와 사용자 정보 대체 경로 둘 다 HTTP 스텁 + 테스트 RSA
  * 키로 잰다. `GoogleSocialLoginProviderTest` 와 같은 방식(JDK `HttpServer` 스텁, 실제
- * 네트워크 없음).
+ * 네트워크 없음). 서명·JWKS 캐시·`iss`/`aud`/`exp`/`nonce` 대조는 `OidcJwksVerifier` 가
+ * 공유하는 로직이라 `OidcJwksVerifierTest` 로 옮겼다(리뷰 지적) — 여기 남는 것은 카카오
+ * 고유 경로(userinfo 대체·이메일 정책·엔드포인트·에러 매핑)다.
  */
 class KakaoSocialLoginProviderTest {
     private lateinit var server: RoutedStubServer
@@ -78,53 +80,6 @@ class KakaoSocialLoginProviderTest {
         assertThat(identity.emailVerified).isFalse()
     }
 
-    @Test
-    @DisplayName("nonce 가 다르면 거절된다 — 리플레이 방지")
-    fun `nonce 불일치는 거절된다`() {
-        server.tokenResponseBody = tokenResponseWith(idToken = signedIdToken(nonce = "issued-nonce"))
-
-        assertThatThrownBy { provider().exchange("auth-code", REDIRECT_URI, "different-nonce") }
-            .isInstanceOf(InvalidCredentialsException::class.java)
-    }
-
-    @Test
-    @DisplayName("aud 가 클라이언트 id 와 다르면 거절된다")
-    fun `aud 불일치는 거절된다`() {
-        server.tokenResponseBody = tokenResponseWith(idToken = signedIdToken(audience = "other-client-id"))
-
-        assertThatThrownBy { provider().exchange("auth-code", REDIRECT_URI, NONCE) }
-            .isInstanceOf(InvalidCredentialsException::class.java)
-    }
-
-    @Test
-    @DisplayName("iss 가 카카오가 아니면 거절된다")
-    fun `iss 불일치는 거절된다`() {
-        server.tokenResponseBody = tokenResponseWith(idToken = signedIdToken(issuer = "https://evil.example.test"))
-
-        assertThatThrownBy { provider().exchange("auth-code", REDIRECT_URI, NONCE) }
-            .isInstanceOf(InvalidCredentialsException::class.java)
-    }
-
-    @Test
-    @DisplayName("만료된 ID 토큰은 거절된다")
-    fun `만료된 토큰은 거절된다`() {
-        server.tokenResponseBody =
-            tokenResponseWith(idToken = signedIdToken(expiresAt = Instant.now().minus(Duration.ofMinutes(5))))
-
-        assertThatThrownBy { provider().exchange("auth-code", REDIRECT_URI, NONCE) }
-            .isInstanceOf(InvalidCredentialsException::class.java)
-    }
-
-    @Test
-    @DisplayName("다른 키로 서명된 토큰은 서명 검증에서 거절된다 — JWKS 에 없는 키")
-    fun `모르는 키 서명은 거절된다`() {
-        val otherKey = RSAKeyGenerator(2048).keyID("other-key").generate()
-        server.tokenResponseBody = tokenResponseWith(idToken = signedIdToken(signingKeyOverride = otherKey))
-
-        assertThatThrownBy { provider().exchange("auth-code", REDIRECT_URI, NONCE) }
-            .isInstanceOf(InvalidCredentialsException::class.java)
-    }
-
     // ------------------------------------------------------------------ 사용자 정보 대체 경로
 
     @Test
@@ -165,6 +120,38 @@ class KakaoSocialLoginProviderTest {
 
         assertThat(identity.email).isEqualTo("unverified@example.test")
         assertThat(identity.emailVerified).isFalse()
+    }
+
+    @Test
+    @DisplayName(
+        "사용자 정보 경로 — email_needs_agreement 가 참이고 email 키 자체가 없으면 이메일 없는 신원이다",
+    )
+    fun `이메일 동의가 없으면 신원의 이메일도 null 이다`() {
+        server.tokenResponseBody = tokenResponseWithoutIdToken(accessToken = "access-4")
+        server.userInfoBody = userInfoBodyNeedingEmailAgreement(id = 444L)
+
+        val identity = provider().exchange("auth-code", REDIRECT_URI, NONCE)
+
+        assertThat(identity.providerUserId).isEqualTo("444")
+        assertThat(identity.email).isNull()
+        assertThat(identity.emailVerified).isFalse()
+    }
+
+    @Test
+    @DisplayName("가정 고정 — 같은 카카오 사용자면 OIDC sub 와 사용자 정보 id 가 같은 문자열이다")
+    fun `OIDC sub 와 사용자 정보 id 는 같은 사용자에 대해 같은 문자열이다`() {
+        val fixedUserId = 999_888L
+
+        server.tokenResponseBody = tokenResponseWith(idToken = signedIdToken(subject = fixedUserId.toString()))
+        val oidcIdentity = provider().exchange("auth-code", REDIRECT_URI, NONCE)
+
+        server.tokenResponseBody = tokenResponseWithoutIdToken(accessToken = "access-fixed")
+        server.userInfoBody =
+            userInfoBodyOf(id = fixedUserId, email = "user@example.test", valid = true, verified = true)
+        val userInfoIdentity = provider().exchange("auth-code", REDIRECT_URI, NONCE)
+
+        assertThat(oidcIdentity.providerUserId).isEqualTo(fixedUserId.toString())
+        assertThat(userInfoIdentity.providerUserId).isEqualTo(oidcIdentity.providerUserId)
     }
 
     // ------------------------------------------------------------------ 실패 갈래
@@ -254,7 +241,6 @@ class KakaoSocialLoginProviderTest {
         nonce: String = NONCE,
         email: String? = "user@example.test",
         expiresAt: Instant = Instant.now().plus(Duration.ofMinutes(5)),
-        signingKeyOverride: RSAKey? = null,
     ): String {
         val builder =
             JWTClaimsSet
@@ -265,9 +251,8 @@ class KakaoSocialLoginProviderTest {
                 .claim("nonce", nonce)
                 .expirationTime(Date.from(expiresAt))
         email?.let { builder.claim("email", it) }
-        val key = signingKeyOverride ?: signingKey
-        val jwt = SignedJWT(JWSHeader.Builder(JWSAlgorithm.RS256).keyID(key.keyID).build(), builder.build())
-        jwt.sign(RSASSASigner(key))
+        val jwt = SignedJWT(JWSHeader.Builder(JWSAlgorithm.RS256).keyID(signingKey.keyID).build(), builder.build())
+        jwt.sign(RSASSASigner(signingKey))
         return jwt.serialize()
     }
 
@@ -283,6 +268,12 @@ class KakaoSocialLoginProviderTest {
     ): String =
         """
         {"id": $id, "kakao_account": {"email": "$email", "is_email_valid": $valid, "is_email_verified": $verified}}
+        """.trimIndent()
+
+    /** 카카오 실제 응답 모양 — 이메일 동의를 안 하면 `email` 키 자체가 없고 이 플래그만 남는다. */
+    private fun userInfoBodyNeedingEmailAgreement(id: Long): String =
+        """
+        {"id": $id, "kakao_account": {"email_needs_agreement": true}}
         """.trimIndent()
 
     private fun jwkSetBody(vararg keys: RSAKey): String =

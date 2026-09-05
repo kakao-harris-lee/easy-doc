@@ -96,11 +96,13 @@ class ConfigurationPropertiesBindingTest {
                     "easydoc.oauth.google.client-id" to "test-client-id",
                     "easydoc.oauth.google.client-secret" to SECRET_VALUE,
                     "easydoc.oauth.google.redirect-uris[0]" to "https://example.test/auth/google/callback",
+                    "easydoc.oauth.google.timeout-ms" to "5000",
                 ),
             )
         assertThat(google.clientId).isEqualTo("test-client-id")
         assertThat(google.clientSecret.reveal()).isEqualTo(SECRET_VALUE)
         assertThat(google.redirectUris).containsExactly("https://example.test/auth/google/callback")
+        assertThat(google.timeoutMs).isEqualTo(5000L)
     }
 
     @Test
@@ -136,11 +138,13 @@ class ConfigurationPropertiesBindingTest {
                     "easydoc.oauth.kakao.client-id" to "test-kakao-client-id",
                     "easydoc.oauth.kakao.client-secret" to SECRET_VALUE,
                     "easydoc.oauth.kakao.redirect-uris[0]" to "https://example.test/auth/kakao/callback",
+                    "easydoc.oauth.kakao.timeout-ms" to "6000",
                 ),
             )
         assertThat(kakao.clientId).isEqualTo("test-kakao-client-id")
         assertThat(kakao.clientSecret.reveal()).isEqualTo(SECRET_VALUE)
         assertThat(kakao.redirectUris).containsExactly("https://example.test/auth/kakao/callback")
+        assertThat(kakao.timeoutMs).isEqualTo(6000L)
     }
 
     @Test
