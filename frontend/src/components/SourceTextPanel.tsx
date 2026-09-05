@@ -63,6 +63,13 @@ const SourceUnitRow = memo(function SourceUnitRow({
         value={text}
         rows={2}
         readOnly
+        // 읽기 전용이라 고칠 것이 없다 — Tab 순서에서는 뺀다(WCAG 2.4.3). 문단이 최대
+        // 200개까지 있을 수 있어(MAX_SEGMENTED_UNITS), Tab 대상이면 결과 패널에 닿기
+        // 전에 키보드 사용자가 그 수만큼 Tab을 눌러야 한다. `tabIndex={-1}`은 스크립트·
+        // 클릭 초점은 그대로 허용하므로 마우스 hover·focus로 결과 쪽과 하이라이트를
+        // 주고받는 기능(onFocus·onMouseEnter)은 그대로 동작한다 — 잃는 것은 Tab
+        // 정거장 하나뿐이고, 스크린리더는 가상 커서로 이 문단을 여전히 읽을 수 있다.
+        tabIndex={-1}
         onFocus={() => onHoverUnit?.(index)}
         onBlur={() => onHoverUnit?.(null)}
         onMouseEnter={() => onHoverUnit?.(index)}

@@ -71,23 +71,101 @@ async function focusedStop(page: Page): Promise<string> {
 }
 
 /**
- * 이름이 `name` 을 포함하는 곳에 닿을 때까지 Tab 만 누른다.
+ * 이름이 `name` 에 걸리는 곳에 닿을 때까지 Tab 만 누른다. 문자열이면 부분 일치, 정규식이면
+ * `test()`로 판정한다 — 결과 패널이 단위 목록(`SegmentedResultEditor`)인지 단일 편집기인지에
+ * 따라 이름이 둘로 갈리는 경우(E14) 하나의 패턴으로 함께 받기 위해서다.
  *
  * 못 찾으면 지나온 정거장을 전부 적어 던진다 — «키보드로 닿지 않는다»는 실패는 어디까지
  * 갔다가 어디서 끊겼는지를 알려주지 않으면 고칠 수가 없다.
  */
-async function tabTo(page: Page, name: string, limit = 60): Promise<void> {
+async function tabTo(page: Page, name: string | RegExp, limit = 60): Promise<void> {
   const visited: string[] = []
   for (let step = 0; step < limit; step += 1) {
     await page.keyboard.press('Tab')
     const stop = await focusedStop(page)
     visited.push(stop)
-    if (stop.includes(name)) {
+    const matched = typeof name === 'string' ? stop.includes(name) : name.test(stop)
+    if (matched) {
       return
     }
   }
   throw new Error(
     `Tab ${limit}번 안에 ‘${name}’ 에 닿지 못했다.\n지나온 정거장:\n  ${visited.join('\n  ')}`,
+  )
+}
+
+/**
+ * Tab 이동이 실제로 밟는 초점 가능 요소 선택자 — `TermLookupPopover.tsx`의
+ * `FOCUSABLE_SELECTOR`와 같은 정의다(포커스 가둠·탭 예산 모두 같은 집합을 봐야 한다).
+ */
+const FOCUSABLE_SELECTOR = [
+  'a[href]',
+  'button:not([disabled])',
+  'input:not([disabled])',
+  'select:not([disabled])',
+  'textarea:not([disabled])',
+  '[tabindex]:not([tabindex="-1"])',
+].join(', ')
+
+/**
+ * 지금 초점 위치에서, 이름이 `patternSource`(정규식 소스)에 걸리는 다음 초점 가능 요소까지
+ * 몇 번 Tab 해야 하는지 DOM에서 직접 센다.
+ *
+ * 예전에는 고정 상한(60)을 썼다. 결과 패널이 단위 목록으로 바뀐 뒤(#30) 원본 패널도 문단마다
+ * 읽기 전용 단위(최대 `MAX_SEGMENTED_UNITS`=200개)를 두므로, 문서가 길어지면 고정 상한이
+ * «실패해야 할 것도 통과시키거나, 통과해야 할 것도 실패시키는» 값이 된다. 대신 지금 DOM에
+ * 실제로 있는 초점 가능 요소 수에서 예산을 뽑아 쓴다 — 원본 패널이 읽기 전용 단위를
+ * Tab 순서에서 빼도록 고쳤으므로(§ 아래 결정) 이 저장소에서는 이미 작은 값이 나오지만, 그
+ * 고침이 없었어도 이 예산은 문단 수를 따라갔을 것이다.
+ *
+ * 못 찾으면(패턴이 잘못됐거나 화면이 안 그려졌으면) 남은 초점 가능 요소 수 그대로 돌려줘
+ * `tabTo`가 있는 그대로 실패하고 지나온 정거장을 보여주게 한다 — 무한정 큰 값으로 실패를
+ * 감추지 않는다.
+ */
+async function tabBudgetTo(page: Page, patternSource: string): Promise<number> {
+  return page.evaluate(
+    ({ selector, patternSource: source }) => {
+      function accessibleName(element: Element): string {
+        const el = element as HTMLElement
+        const labelledBy = el.getAttribute('aria-labelledby')
+        const fromLabelledBy =
+          labelledBy === null
+            ? ''
+            : labelledBy
+                .split(/\s+/)
+                .map((id) => document.getElementById(id)?.textContent ?? '')
+                .join(' ')
+                .trim()
+        const label =
+          el.id === ''
+            ? null
+            : document.querySelector<HTMLElement>(`label[for="${CSS.escape(el.id)}"]`)
+        return (
+          fromLabelledBy ||
+          el.getAttribute('aria-label') ||
+          label?.textContent ||
+          el.closest('label')?.textContent ||
+          el.textContent ||
+          ''
+        )
+          .replace(/\s+/g, ' ')
+          .trim()
+      }
+      const pattern = new RegExp(source)
+      const all = Array.from(document.querySelectorAll<HTMLElement>(selector))
+      const currentIndex = all.indexOf(document.activeElement as HTMLElement)
+      // activeElement가 이 선택자에 없으면(예: tabIndex=-1로 초점을 받은 제목) 문서
+      // 맨 앞부터 센다 — 과대평가만 낳으므로 예산이 부족해질 일은 없다.
+      const from = currentIndex === -1 ? 0 : currentIndex + 1
+      for (let index = from; index < all.length; index += 1) {
+        const element = all[index]
+        if (element !== undefined && pattern.test(accessibleName(element))) {
+          return index - from + 1
+        }
+      }
+      return all.length - from + 1
+    },
+    { selector: FOCUSABLE_SELECTOR, patternSource },
   )
 }
 
@@ -275,7 +353,28 @@ test.describe('접근성 — 키보드', () => {
     // --- 검수 --------------------------------------------------------------------
     // 에디터가 나타나면 초점은 새 화면의 제목으로 옮겨 온다 — 거기서 이어서 Tab 한다.
     expect(await focusedStop(page)).toContain('쉬운 글 검수')
-    await tabTo(page, '쉬운 글 결과 (고칠 수 있습니다)')
+
+    // #30 이후 결과 패널은 `role="group"`(그 자체는 Tab 정거장이 아니다)이고, 실제로
+    // 초점을 받는 것은 단위마다 하나씩인 textarea다(`aria-label`이 "쉬운 글 단위 1, …"로
+    // 시작한다). 문단이 상한(`MAX_SEGMENTED_UNITS`=200)을 넘거나 `segment_map`이
+    // `null`이면 옛 단일 편집기로 내려앉고 그 라벨은 그대로 "쉬운 글 결과 (고칠 수
+    // 있습니다)"다 — 이 케이스는 짧은 한 문단짜리 원문이라 보통 단위 목록을 타지만,
+    // 어느 쪽이 실제로 그려지든 같은 시나리오 의도(결과 편집기에 닿는다)를 지키도록 두
+    // 이름을 한 정규식으로 함께 받는다.
+    // `focusedStop`이 돌려주는 문자열은 `태그:이름`(예: `textarea:쉬운 글 단위 1, …`)이라
+    // 이름 앞에 `^`를 붙이면 늘 어긋난다 — `tabBudgetTo`가 재는 순수 이름과 같은 패턴을
+    // 쓰기 위해 시작 앵커 없이 부분 일치로 둔다. 두 단위 번호를 헷갈릴 일은 없다
+    // (`단위 1,`은 `단위 10,`의 부분 문자열이 아니다).
+    const resultEditorPattern = /쉬운 글 단위 1,|쉬운 글 결과 \(고칠 수 있습니다\)$/
+
+    // 고정 상한(60) 대신 지금 DOM의 초점 가능 요소 수에서 예산을 뽑는다 — 원본 패널의
+    // 문단 수(=원본 단위 textarea 수)가 늘어도 이 예산이 따라간다. 원본 패널의 읽기
+    // 전용 단위 textarea는 Tab 정거장에서 뺐다(`SourceTextPanel.tsx` `tabIndex={-1}` —
+    // 읽기 전용 내용을 넘어가려고 문단 수만큼 Tab을 누르게 하는 것은 그 자체로 접근성
+    // 결함이다, WCAG 2.4.3). 그래서 여기 예산은 이미 작지만, 그 고침이 없었어도 이
+    // 헬퍼는 문단 수를 따라가는 값을 냈을 것이다 — 안전 여유로 2를 더한다.
+    const resultEditorBudget = (await tabBudgetTo(page, resultEditorPattern.source)) + 2
+    await tabTo(page, resultEditorPattern, resultEditorBudget)
     await page.keyboard.press('ControlOrMeta+a')
     await page.keyboard.type(REVIEWED_TEXT)
 
