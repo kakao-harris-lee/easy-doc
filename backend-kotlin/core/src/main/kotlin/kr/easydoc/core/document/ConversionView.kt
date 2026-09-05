@@ -2,6 +2,7 @@ package kr.easydoc.core.document
 
 import kr.easydoc.core.crypto.PlainBody
 import kr.easydoc.core.easyread.ExportFormat
+import kr.easydoc.core.segment.SegmentMap
 import java.time.Instant
 import java.util.UUID
 
@@ -43,6 +44,13 @@ data class ConversionView(
     val feedbackSubmittedAt: Instant?,
     val maskedItems: List<MaskedItemView>,
     val missingPlaceholders: List<String>,
+    /**
+     * 원문-쉬운 글 문단 대응표. **저장하지 않고 매 조회마다 유도한다**
+     * (`core/segment/SegmentAlignment.kt` — 계획 §2 결정 2). 완료 전이거나 두 본문 중 하나를
+     * 읽을 수 없으면(원문 행이 만료·삭제로 사라진 경합 포함) `null` — 「대응을 확인하지 못했다」와
+     * 다른 사유이므로 별도 필드를 두지 않고 이 필드 하나가 겸한다(계약 `segment_map` 설명).
+     */
+    val segmentMap: SegmentMap?,
     val model: String?,
     val providerName: String?,
     val inputTokens: Int?,
@@ -67,6 +75,7 @@ data class ConversionView(
                 providerName,
                 inputTokens,
                 outputTokens,
+                segmentMap,
             ).any { it != null } ||
                 maskedItems.isNotEmpty() ||
                 missingPlaceholders.isNotEmpty()
@@ -77,5 +86,5 @@ data class ConversionView(
      */
     override fun toString(): String =
         "ConversionView($id, ${status.wireName}, ${sourceFormat.wireName}, failure=$failureCode, " +
-            "masked=${maskedItems.size}, missing=${missingPlaceholders.size})"
+            "masked=${maskedItems.size}, missing=${missingPlaceholders.size}, segmentMap=$segmentMap)"
 }

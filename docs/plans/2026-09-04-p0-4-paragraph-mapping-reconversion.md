@@ -197,7 +197,10 @@ segment_map:                      # object | null
 **S2 — `readConversion`에 `segment_map` (M, 계약 2.12.0, 마이그레이션 없음)**
 - 파일: `contracts/easy-doc-v1.yaml`, `core/document/ConversionView.kt`,
   `application/document/ConversionQueryService.kt`(+`DocumentRepository.findOwnedSource` 협력자),
-  `api/document/ConversionDtos.kt`, `frontend/src/api/types.ts`, Kotlin 계약 테스트.
+  `api/document/ConversionDtos.kt`, Kotlin 계약 테스트.
+- **(2026-09-05)** `frontend/src/api/types.ts`의 `segment_map` 타입 반영은 이 슬라이스가 아니라
+  **S3(스택된 PR)**에서 낸다 — 프런트 레인이 검수 화면 작업과 함께 직렬화하도록 묶은 결정이고,
+  S2는 백엔드·계약 변경으로 닫는다.
 - 수용 기준: `pending`·`processing`·`failed` → `segment_map: null`(폴링 중 비용 0). `done` →
   `easy_unit_count == split(edited_text ?? easy_text).size`. 남의 변환 404 판정 불변.
 - **G 내보내기 회귀 가드:** 기존 `ConversionQueryServiceTest`·`ConversionExportContractTest`의 모든
@@ -245,6 +248,9 @@ segment_map:                      # object | null
 3. **api 프로세스가 유료 외부 호출을 하게 된다** — 타임아웃·동시 실행 제한이 있어도 사용자 요청 스레드에서 나가는 첫 LLM 호출이다.
 4. **수정률 KPI 오염** — 채택된 후보가 `edited_text`에 사람 편집처럼 섞인다. `reconverted_units`로 지표를 한정하되 **채택 여부는 모른다.**
 5. **CPU:** 조회마다 원문 복호화 + 정렬 + (S4부터) 원문 `checkStyle`. 20,000자로 실측해 기록한다.
+6. **(2026-09-05)** 앵커는 저장하지 않고 조회 시점의 **현재** 마스킹 규칙으로 다시 만든다 — 그래서
+   마스킹 규칙이 변환 이후에 바뀌면 오래된 변환은 앵커가 더 적게 잡혀 `low` confidence 로 보일 수
+   있다. 색인(줄 수 불변식)은 절대 깨지지 않는다 — 다시 계산해도 어긋나는 건 confidence 뿐이다.
 
 ## 8. 범위 밖
 

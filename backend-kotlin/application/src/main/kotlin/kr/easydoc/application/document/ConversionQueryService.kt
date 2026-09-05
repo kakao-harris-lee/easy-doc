@@ -13,6 +13,10 @@ import kr.easydoc.core.document.reflectedPreservation
 import kr.easydoc.core.document.unreadableOriginalPreservation
 import kr.easydoc.core.easyread.ExportFormat
 import kr.easydoc.core.exceptions.NotFoundException
+import kr.easydoc.core.privacy.maskText
+import kr.easydoc.core.segment.SegmentMap
+import kr.easydoc.core.segment.alignSegments
+import kr.easydoc.core.segment.splitUnits
 import java.util.UUID
 
 /** 변환 조회 유스케이스 — **내** 변환 한 건의 상태와 결과를 읽는다. */
@@ -21,13 +25,17 @@ class ConversionQueryService(
     private val cipher: ContentCipher,
     private val maskedItems: MaskedItemReader,
     private val original: OriginalReflection,
+    /** `segment_map` 을 유도하려고 원문을 읽는 협력자 — 계획 §6 S2. */
+    private val documents: DocumentRepository,
     private val transaction: TransactionRunner,
 ) {
     /**
      * 내 변환 한 건의 **상태와 결과**를 읽는다. 완료 전에는 결과 필드가 비어 있다.
      *
-     * 원본을 **한 트랜잭션 안에서 함께** 읽는다. 판정에 원본이 필요한 갈래인지는 변환 행을
-     * 읽어야 알 수 있고([needsOriginal]), 두 번 열면 그 사이에 원본이 지워질 수 있다.
+     * 원본·원문을 **한 트랜잭션 안에서 함께** 읽는다. 판정에 원본이 필요한 갈래인지는 변환
+     * 행을 읽어야 알 수 있고([needsOriginal]), 두 번 열면 그 사이에 행이 지워질 수 있다 —
+     * `segment_map` 이 읽는 원문도 같은 이유로 이 경계 안에서 함께 읽는다(암호문만 — 복호화는
+     * [completed] 가 경계 밖에서 한다, 다른 본문 세 열과 같은 규칙).
      */
     fun read(
         ownerId: UUID,
@@ -36,15 +44,18 @@ class ConversionQueryService(
         val loaded =
             transaction.inTransaction {
                 val stored = conversions.findOwnedResult(ownerId, conversionId) ?: return@inTransaction null
-                stored to
+                Triple(
+                    stored,
                     if (needsOriginal(stored)) {
                         original.originals.read(ownerId, stored.documentId, stored.sourceFormat)
                     } else {
                         null
-                    }
+                    },
+                    if (stored.status.exposesResult) documents.findOwnedSource(ownerId, stored.documentId) else null,
+                )
             } ?: throw NotFoundException(CONVERSION_NOT_FOUND_MESSAGE)
-        val (stored, opened) = loaded
-        return if (stored.status.exposesResult) completed(stored, opened) else beforeDone(stored)
+        val (stored, opened, source) = loaded
+        return if (stored.status.exposesResult) completed(stored, opened, source) else beforeDone(stored)
     }
 
     /**
@@ -83,6 +94,7 @@ class ConversionQueryService(
             feedbackSubmittedAt = null,
             maskedItems = emptyList(),
             missingPlaceholders = emptyList(),
+            segmentMap = null,
             model = null,
             providerName = null,
             inputTokens = null,
@@ -93,9 +105,11 @@ class ConversionQueryService(
     private fun completed(
         stored: StoredConversion,
         opened: OriginalDocument?,
+        source: StoredSourceText?,
     ): ConversionView {
         val easyText = open(stored.id, stored.ciphertexts.easyText, EncryptedField.CONVERSION_EASY_TEXT)
         val editedText = open(stored.id, stored.ciphertexts.editedText, EncryptedField.CONVERSION_EDITED_TEXT)
+        val body = editedText ?: easyText
         return ConversionView(
             id = stored.id,
             documentId = stored.documentId,
@@ -103,7 +117,7 @@ class ConversionQueryService(
             sourceFormat = stored.sourceFormat,
             exportFormat = ExportFormat.ofSource(stored.sourceFormat),
             exportFormatChoices = ExportFormat.choicesFor(stored.sourceFormat),
-            formatPreservation = donePreservation(stored, opened, editedText ?: easyText),
+            formatPreservation = donePreservation(stored, opened, body),
             easyText = easyText,
             editedText = editedText,
             reviewedAt = stored.reviewedAt,
@@ -113,12 +127,41 @@ class ConversionQueryService(
                     ?.let(maskedItems::decode)
                     ?: emptyList(),
             missingPlaceholders = stored.missingPlaceholders,
+            segmentMap = segmentMapOf(source, body),
             model = stored.model,
             providerName = stored.providerName,
             inputTokens = stored.inputTokens,
             outputTokens = stored.outputTokens,
             failureCode = stored.failureCode,
         )
+    }
+
+    /**
+     * `segment_map` 을 유도한다 — 계획 §2 결정 2, §3. **저장하지 않는다**: 매 조회마다
+     * (마스킹된 원문, 검수본 ?? 초안)에서 [alignSegments] 로 다시 계산한다.
+     *
+     * 앵커(마스킹 자리표시자·사실)가 원문·본문 양쪽에서 성립하려면 **같은 마스킹을 원문에
+     * 다시 적용해야 한다** — `ConvertDocumentUseCase.Pass.run` 이 LLM 에 넘긴 것이 마스킹된
+     * 원문이고, 그 결과 본문에 남는 것도 그 마스킹이 심은 자리표시자이기 때문이다
+     * (`maskText` 는 결정적이고 줄 수를 바꾸지 않으므로 색인이 원문 그대로와도 일치한다).
+     *
+     * [source] 가 없거나(원문 행이 만료·삭제로 사라진 경합) [body] 가 없으면(초안도 검수본도
+     * 없는 완료 행 — 오늘은 나올 수 없는 갈래) `null` 로 접는다. 예외로 튀지 않는다 — 이
+     * 필드는 파생값이고, 조회 자체를 막을 이유가 아니다.
+     *
+     * 앵커는 **조회 시점의 현재 마스킹 규칙**으로 다시 만든다 — 저장된 값이 아니다. 그래서
+     * 변환을 만든 이후에 마스킹 규칙이 바뀌면, 오래된 변환은 앵커가 더 적게 잡혀 `low`
+     * confidence 로 보일 수 있다. 색인(`sourceUnitIndexes`, 줄 수 불변식)은 절대 깨지지
+     * 않는다 — 다시 계산해도 어긋나는 건 confidence 뿐이다.
+     */
+    private fun segmentMapOf(
+        source: StoredSourceText?,
+        body: PlainBody?,
+    ): SegmentMap? {
+        if (source == null || body == null) return null
+        val sourceText = cipher.decrypt(source.sourceText, source.documentId, EncryptedField.DOCUMENT_SOURCE_TEXT)
+        val maskedSource = maskText(sourceText.value).maskedText.value
+        return alignSegments(splitUnits(maskedSource), splitUnits(body.value))
     }
 
     /**

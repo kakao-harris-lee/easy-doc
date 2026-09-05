@@ -6,6 +6,8 @@ import kr.easydoc.core.document.ConversionView
 import kr.easydoc.core.document.FormatPreservation
 import kr.easydoc.core.document.MaskedItemView
 import kr.easydoc.core.privacy.CONTENT_MASK
+import kr.easydoc.core.segment.SegmentMap
+import kr.easydoc.core.segment.SegmentUnit
 
 /** 마스킹 항목 한 건. 계약 `components/schemas/MaskedItemResponse` — 세 필드가 전부다. */
 data class MaskedItemResponse(
@@ -65,7 +67,51 @@ data class FormatPreservationResponse(
 }
 
 /**
- * `GET`·`PUT /conversions/{conversion_id}` 응답. 계약 `ConversionResponse` — **열여덟 필드가
+ * 대응 단위 한 건. 계약 `components/schemas/SegmentMapUnit` — 세 필드가 전부다.
+ *
+ * 담는 것은 색인·신뢰도뿐이다 — 본문은 싣지 않는다(계획 §3 「본문은 싣지 않는다」).
+ */
+data class SegmentMapUnitResponse(
+    @get:JsonProperty("easy_unit_index") val easyUnitIndex: Int,
+    @get:JsonProperty("source_unit_indexes") val sourceUnitIndexes: List<Int>,
+    @get:JsonProperty("confidence") val confidence: String,
+) {
+    companion object {
+        fun of(unit: SegmentUnit): SegmentMapUnitResponse =
+            SegmentMapUnitResponse(
+                easyUnitIndex = unit.easyUnitIndex,
+                sourceUnitIndexes = unit.sourceUnitIndexes,
+                // 계약 `SegmentConfidence` 의 값은 영문 소문자다 — enum 이름을 그대로 낮춘다.
+                confidence = unit.confidence.name.lowercase(),
+            )
+    }
+}
+
+/**
+ * 원문-쉬운 글 문단 대응표. 계약 `components/schemas/SegmentMap` — 세 필드가 전부다.
+ *
+ * **저장하지 않고 매 조회마다 유도한다**(`core/segment/SegmentAlignment.kt`,
+ * `docs/plans/2026-09-04-p0-4-paragraph-mapping-reconversion.md` §2 결정 2) — 클라이언트가
+ * 검수본을 수정한 뒤에는 이 응답이 낡으므로, 화면은 편집 시점마다 자신이 가진 두 본문으로
+ * 다시 계산해도 된다(같은 순수 함수를 프런트가 다시 부르는 것도 계약이 막지 않는다).
+ */
+data class SegmentMapResponse(
+    @get:JsonProperty("source_unit_count") val sourceUnitCount: Int,
+    @get:JsonProperty("easy_unit_count") val easyUnitCount: Int,
+    @get:JsonProperty("units") val units: List<SegmentMapUnitResponse>,
+) {
+    companion object {
+        fun of(map: SegmentMap): SegmentMapResponse =
+            SegmentMapResponse(
+                sourceUnitCount = map.sourceUnitCount,
+                easyUnitCount = map.easyUnitCount,
+                units = map.units.map(SegmentMapUnitResponse::of),
+            )
+    }
+}
+
+/**
+ * `GET`·`PUT /conversions/{conversion_id}` 응답. 계약 `ConversionResponse` — **열아홉 필드가
  * 전부다.** 생성자와 `copy()` 가 `private` 인 것은 [of] 의 노출 판정을 우회하는 조립 지점이
  * 생기지 않게 한다.
  *
@@ -95,6 +141,8 @@ data class ConversionResponse private constructor(
     @get:JsonProperty("feedback_submitted_at") val feedbackSubmittedAt: String?,
     @get:JsonProperty("masked_items") val maskedItems: List<MaskedItemResponse>,
     @get:JsonProperty("missing_placeholders") val missingPlaceholders: List<String>,
+    /** `null` 은 완료 전이거나 두 본문 중 하나를 읽을 수 없다는 뜻이다(계약 설명이 정본). */
+    @get:JsonProperty("segment_map") val segmentMap: SegmentMapResponse?,
     @get:JsonProperty("model") val model: String?,
     @get:JsonProperty("provider_name") val providerName: String?,
     @get:JsonProperty("input_tokens") val inputTokens: Int?,
@@ -108,7 +156,8 @@ data class ConversionResponse private constructor(
             "formatPreservation=$formatPreservation, " +
             "easyText=$CONTENT_MASK ${easyText?.length ?: 0}자, editedText=$CONTENT_MASK ${editedText?.length ?: 0}자, " +
             "reviewedAt=$reviewedAt, feedbackSubmittedAt=$feedbackSubmittedAt, maskedItems=${maskedItems.size}건, " +
-            "missingPlaceholders=$missingPlaceholders, model=$CONTENT_MASK, providerName=$CONTENT_MASK, " +
+            "missingPlaceholders=$missingPlaceholders, segmentMap=$segmentMap, " +
+            "model=$CONTENT_MASK, providerName=$CONTENT_MASK, " +
             "inputTokens=$inputTokens, outputTokens=$outputTokens, failureCode=$failureCode)"
 
     companion object {
@@ -136,6 +185,7 @@ data class ConversionResponse private constructor(
                 feedbackSubmittedAt = view.feedbackSubmittedAt?.toString(),
                 maskedItems = view.maskedItems.map(MaskedItemResponse::of),
                 missingPlaceholders = view.missingPlaceholders,
+                segmentMap = view.segmentMap?.let(SegmentMapResponse::of),
                 model = view.model,
                 providerName = view.providerName,
                 inputTokens = view.inputTokens,

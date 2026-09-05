@@ -293,8 +293,14 @@ class SensitiveToStringReachTest {
          * 가림), `DictionaryLookupCandidateResponse`·`DictionaryLookupExampleResponse`(둘
          * 다 사전 데이터일 뿐 사용자 콘텐츠가 아니라 민감 토큰에 걸리는 필드가 없다 -
          * `TermCandidate`·`DictionaryExample` 과 같은 판단, 가리지 않는다).
+         *
+         * P0-4 문단 대응 API 노출(S2, 계약 2.12.0, 2026-09-05)이 **둘**을 더해 119 다(117 위에)
+         * — api `SegmentMapResponse`·`SegmentMapUnitResponse`(`GET`·`PUT /conversions/{conversion_id}`
+         * 응답의 `segment_map` DTO). 필드 이름(sourceUnitCount·easyUnitCount·units·
+         * easyUnitIndex·sourceUnitIndexes·confidence) 어느 것도 민감 판정 토큰에 걸리지
+         * 않는다 — 색인과 개수뿐이다 — [KNOWN_SENSITIVE_TYPES] 에 넣지 않는다.
          */
-        const val EXPECTED_SOURCE_DECLARATIONS = 117
+        const val EXPECTED_SOURCE_DECLARATIONS = 119
 
         /** 민감 판정이 반드시 닿아야 하는 타입 — 바닥이다. */
         val KNOWN_SENSITIVE_TYPES =

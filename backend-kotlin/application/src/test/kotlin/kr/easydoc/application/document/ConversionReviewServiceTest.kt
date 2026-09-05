@@ -318,6 +318,7 @@ class ConversionReviewServiceTest {
                         cipher = cipher,
                         maskedItems = FakeMaskedItemReader(),
                         original = OriginalReflection(StoredOriginalReader(originals, cipher), reflector),
+                        documents = FakeQueryDocumentRepository(transaction),
                         transaction = transaction,
                     ),
                 transaction = transaction,

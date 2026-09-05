@@ -136,12 +136,14 @@ class DocumentConfiguration {
         )
 
     /** 변환 조회 유스케이스. */
+    @Suppress("LongParameterList")
     @Bean
     fun conversionQueryService(
         conversions: ConversionRepository,
         cipher: ContentCipher,
         maskedItems: MaskedItemReader,
         original: OriginalReflection,
+        documents: DocumentRepository,
         transactionRunner: TransactionRunner,
     ): ConversionQueryService =
         ConversionQueryService(
@@ -149,6 +151,7 @@ class DocumentConfiguration {
             cipher = cipher,
             maskedItems = maskedItems,
             original = original,
+            documents = documents,
             transaction = transactionRunner,
         )
 

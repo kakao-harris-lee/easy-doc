@@ -363,6 +363,7 @@ class ConversionFeedbackServiceTest {
                                 StoredOriginalReader(originals, cipher),
                                 FakeOriginalStructureReflector(),
                             ),
+                        documents = FakeQueryDocumentRepository(transaction),
                         transaction = transaction,
                     ),
                 transaction = transaction,

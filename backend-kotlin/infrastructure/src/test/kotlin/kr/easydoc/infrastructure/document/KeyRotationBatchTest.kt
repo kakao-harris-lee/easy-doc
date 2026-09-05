@@ -405,6 +405,7 @@ class KeyRotationBatchTest {
                             StoredOriginalReader(JdbcDocumentOriginalRepository(client), cipher),
                             PackagedOriginalReflector(),
                         ),
+                    documents = JdbcDocumentRepository(client),
                     transaction = runner,
                 ),
             transaction = runner,

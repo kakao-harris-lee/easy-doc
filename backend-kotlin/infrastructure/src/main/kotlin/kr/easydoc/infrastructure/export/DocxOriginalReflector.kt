@@ -47,6 +47,12 @@ internal class DocxOriginalReflector {
         }
 
     /**
+     * 원본 전체 단위 수(본문+머리글·꼬리말). **A7 대조 전용** — 추출기가 낸 줄 수와
+     * `TextUnitWalk` 가 낸 단위 수가 같은지 재는 시험이 이 값을 쓴다. 열리지 않으면 `null`.
+     */
+    internal fun unitCount(data: ByteArray): Int? = opened(data) { document -> unitsOf(document).size }
+
+    /**
      * 원본을 열어 [use] 에 넘긴다. **열리지 않으면 `null`** — 부르는 쪽이 그것을 오류와
      * `failed` 판정으로 바꾼다. 여기서 새 문서로 접으면 §6.5 가 금지한 조용한 대체가 된다.
      *
