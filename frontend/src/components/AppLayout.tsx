@@ -15,7 +15,7 @@ import { useAuth } from '../auth/context'
 import { cn } from '../lib/utils'
 import { confirmDiscardUnsaved } from '../review/unsavedChanges'
 import { HISTORY_PATH, HOME_PATH } from '../routes/paths'
-import { GoogleLinkStatus } from './GoogleLinkStatus'
+import { SocialLinkStatus } from './SocialLinkStatus'
 import { Logo } from './Logo'
 import { WorkspaceMenu } from './WorkspaceMenu'
 import { Button } from './ui/Button'
@@ -166,7 +166,7 @@ function AccountMenu({
           </Button>
           {/* 패널 안의 다른 버튼과 같은 이유로 Esc를 직접 받는다(non-native
               interactive element에 keydown을 거는 대신, 실제 버튼 각각에 건다). */}
-          <GoogleLinkStatus
+          <SocialLinkStatus
             identities={identities}
             className="mt-3"
             onButtonKeyDown={handleEscape}
@@ -313,7 +313,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
                 <LogOut className="size-4" aria-hidden="true" />
                 로그아웃
               </Button>
-              {user !== null && <GoogleLinkStatus identities={user.identities} className="mt-2" />}
+              {user !== null && <SocialLinkStatus identities={user.identities} className="mt-2" />}
             </div>
           </nav>
         )}

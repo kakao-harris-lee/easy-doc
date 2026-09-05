@@ -1,6 +1,6 @@
 import { createContext, useContext } from 'react'
 
-import type { UserResponse } from '../api/types'
+import type { OAuthProvider, UserResponse } from '../api/types'
 
 /**
  * 인증 상태.
@@ -20,7 +20,10 @@ export interface AuthContextValue {
    * 소셜 로그인 콜백 처리. 인가 코드를 액세스 토큰으로 바꾸고 `signIn`과 같은 방식으로
    * 저장한다. 실패하면 ApiError를 그대로 올린다(콜백 화면이 문구를 보여준다).
    */
-  signInWithGoogle: (params: { code: string; state: string; redirectUri: string }) => Promise<void>
+  signInWithSocialProvider: (
+    provider: OAuthProvider,
+    params: { code: string; state: string; redirectUri: string },
+  ) => Promise<void>
   signOut: () => void
   /**
    * 저장된 토큰으로 `/auth/me`를 다시 읽어 `user`를 최신화한다. 이메일 인증처럼

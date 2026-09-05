@@ -30,7 +30,7 @@ function authValue(overrides: Partial<AuthContextValue> = {}): AuthContextValue 
     user: { id: 'u1', email: EMAIL, email_verified: true, identities: [] },
     signIn: () => Promise.resolve(),
     signUp: () => Promise.resolve(),
-    signInWithGoogle: () => Promise.resolve(),
+    signInWithSocialProvider: () => Promise.resolve(),
     signOut: () => undefined,
     refreshMe: () => Promise.resolve(),
     ...overrides,
@@ -269,6 +269,77 @@ describe('계정 메뉴 — 구글 계정 연결', () => {
     expect(await screen.findByText('구글 로그인이 설정되지 않았습니다')).toBeInTheDocument()
     expect(assign).not.toHaveBeenCalled()
     expect(screen.getByRole('button', { name: '로그아웃' })).toBeEnabled()
+  })
+})
+
+describe('계정 메뉴 — 카카오 계정 연결', () => {
+  it('연결돼 있지 않으면 연결 버튼을 보여준다', async () => {
+    const user = userEvent.setup()
+    renderLayout({ user: { id: 'u1', email: EMAIL, email_verified: true, identities: [] } })
+
+    await user.click(screen.getByRole('button', { name: '계정 메뉴' }))
+
+    expect(screen.getByRole('button', { name: '카카오 계정 연결' })).toBeInTheDocument()
+    expect(screen.queryByText('카카오 계정 연결됨')).not.toBeInTheDocument()
+  })
+
+  it('이미 연결돼 있으면 연결 상태만 보여주고 버튼은 없다', async () => {
+    const user = userEvent.setup()
+    renderLayout({
+      user: {
+        id: 'u1',
+        email: EMAIL,
+        email_verified: true,
+        identities: [{ provider: 'kakao' }],
+      },
+    })
+
+    await user.click(screen.getByRole('button', { name: '계정 메뉴' }))
+
+    expect(screen.getByText('카카오 계정 연결됨')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '카카오 계정 연결' })).not.toBeInTheDocument()
+  })
+
+  it('연결 버튼을 누르면 시작 요청 뒤 state를 저장하고 인가 URL로 이동한다', async () => {
+    const user = userEvent.setup()
+    vi.mocked(oauthLinkStart).mockResolvedValue({
+      authorization_url: 'https://kauth.kakao.com/oauth/authorize?state=link-state',
+      state: 'link-state',
+    })
+    const assign = mockLocationAssign()
+    renderLayout({ user: { id: 'u1', email: EMAIL, email_verified: true, identities: [] } })
+
+    await user.click(screen.getByRole('button', { name: '계정 메뉴' }))
+    await user.click(screen.getByRole('button', { name: '카카오 계정 연결' }))
+
+    expect(vi.mocked(oauthLinkStart)).toHaveBeenCalledWith(
+      'kakao',
+      `${window.location.origin}/auth/kakao/link/callback`,
+    )
+    expect(window.sessionStorage.getItem('easydoc.oauth.kakao.link.state')).toBe('link-state')
+    expect(window.sessionStorage.getItem('easydoc.oauth.kakao.link.redirect_uri')).toBe(
+      `${window.location.origin}/auth/kakao/link/callback`,
+    )
+    expect(assign).toHaveBeenCalledWith('https://kauth.kakao.com/oauth/authorize?state=link-state')
+  })
+})
+
+describe('계정 메뉴 — 두 제공자를 함께 보여준다', () => {
+  it('구글만 연결돼 있으면 구글은 연결됨, 카카오는 연결 버튼을 보여준다', async () => {
+    const user = userEvent.setup()
+    renderLayout({
+      user: {
+        id: 'u1',
+        email: EMAIL,
+        email_verified: true,
+        identities: [{ provider: 'google' }],
+      },
+    })
+
+    await user.click(screen.getByRole('button', { name: '계정 메뉴' }))
+
+    expect(screen.getByText('구글 계정 연결됨')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '카카오 계정 연결' })).toBeInTheDocument()
   })
 })
 

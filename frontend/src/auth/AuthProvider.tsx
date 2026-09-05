@@ -4,7 +4,7 @@ import type { ReactNode } from 'react'
 import { fetchMe, login, oauthCallback, signup } from '../api/auth'
 import { setUnauthorizedHandler } from '../api/client'
 import { clearToken, readToken, writeToken } from '../api/token'
-import type { UserResponse } from '../api/types'
+import type { OAuthProvider, UserResponse } from '../api/types'
 import { AuthContext } from './context'
 import type { AuthContextValue, AuthStatus } from './context'
 
@@ -77,9 +77,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [signIn],
   )
 
-  const signInWithGoogle = useCallback(
-    async (params: { code: string; state: string; redirectUri: string }) => {
-      const token = await oauthCallback('google', params)
+  const signInWithSocialProvider = useCallback(
+    async (
+      provider: OAuthProvider,
+      params: { code: string; state: string; redirectUri: string },
+    ) => {
+      const token = await oauthCallback(provider, params)
       await applyToken(token.access_token)
     },
     [applyToken],
@@ -97,8 +100,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const value = useMemo<AuthContextValue>(
-    () => ({ status, user, signIn, signUp, signInWithGoogle, signOut, refreshMe }),
-    [status, user, signIn, signUp, signInWithGoogle, signOut, refreshMe],
+    () => ({ status, user, signIn, signUp, signInWithSocialProvider, signOut, refreshMe }),
+    [status, user, signIn, signUp, signInWithSocialProvider, signOut, refreshMe],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

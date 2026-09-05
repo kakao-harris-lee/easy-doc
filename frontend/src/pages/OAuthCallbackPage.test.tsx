@@ -163,3 +163,81 @@ describe('구글 로그인 콜백', () => {
     await waitFor(() => expectSessionCleared())
   })
 })
+
+describe('카카오 로그인 콜백', () => {
+  const KAKAO_STATE_KEY = 'easydoc.oauth.kakao.state'
+  const KAKAO_REDIRECT_URI_KEY = 'easydoc.oauth.kakao.redirect_uri'
+  const KAKAO_STORED_REDIRECT_URI = 'http://localhost:5173/auth/kakao/callback'
+
+  function seedKakaoSession(state = 'state-xyz') {
+    window.sessionStorage.setItem(KAKAO_STATE_KEY, state)
+    window.sessionStorage.setItem(KAKAO_REDIRECT_URI_KEY, KAKAO_STORED_REDIRECT_URI)
+  }
+
+  it('state가 일치하면 코드를 교환하고 성공 시 토큰을 저장한 뒤 홈으로 이동한다', async () => {
+    seedKakaoSession('state-xyz')
+    vi.mocked(oauthCallback).mockResolvedValue({
+      access_token: 'token-abc',
+      token_type: 'bearer',
+      expires_in: 3600,
+    })
+    vi.mocked(fetchMe).mockResolvedValue({
+      id: 'u1',
+      email: 'user@example.com',
+      email_verified: true,
+      identities: [],
+    })
+
+    renderAt('/auth/kakao/callback?code=auth-code&state=state-xyz')
+
+    expect(await screen.findByRole('heading', { name: '문서 변환하기' })).toBeInTheDocument()
+    expect(vi.mocked(oauthCallback)).toHaveBeenCalledWith('kakao', {
+      code: 'auth-code',
+      state: 'state-xyz',
+      redirectUri: KAKAO_STORED_REDIRECT_URI,
+    })
+    expect(window.localStorage.getItem('easydoc.access_token')).toBe('token-abc')
+    expect(window.sessionStorage.getItem(KAKAO_STATE_KEY)).toBeNull()
+    expect(window.sessionStorage.getItem(KAKAO_REDIRECT_URI_KEY)).toBeNull()
+  })
+
+  it('카카오가 취소를 알리면(error=access_denied) API를 부르지 않고 취소 안내를 보여준다', async () => {
+    seedKakaoSession('state-xyz')
+
+    renderAt('/auth/kakao/callback?error=access_denied')
+
+    expect(await screen.findByText('카카오 로그인을 취소했습니다.')).toBeInTheDocument()
+    expect(vi.mocked(oauthCallback)).not.toHaveBeenCalled()
+  })
+
+  it('이미 같은 이메일로 가입돼 있으면(409) 명시적 연결로 이어지는 로그인을 안내한다', async () => {
+    seedKakaoSession('state-xyz')
+    vi.mocked(oauthCallback).mockRejectedValue(
+      new ApiError(
+        409,
+        '이미 같은 이메일로 가입된 계정이 있습니다. 이메일로 로그인한 뒤 연결해 주세요.',
+      ),
+    )
+
+    renderAt('/auth/kakao/callback?code=auth-code&state=state-xyz')
+
+    expect(
+      await screen.findByText(
+        '이미 이 이메일로 가입된 계정이 있습니다. 이메일로 로그인하면 카카오 계정을 연결해 드립니다.',
+      ),
+    ).toBeInTheDocument()
+    const link = screen.getByRole('link', { name: '이메일로 로그인하기' })
+    expect(link).toHaveAttribute('href', '/login?link=kakao')
+  })
+})
+
+describe('지원하지 않는 소셜 로그인 provider', () => {
+  it('계약 enum 밖의 provider면 찾을 수 없는 화면을 보여준다', async () => {
+    renderAt('/auth/naver/callback?code=auth-code&state=state-xyz')
+
+    expect(
+      await screen.findByRole('heading', { name: '찾을 수 없는 화면입니다' }),
+    ).toBeInTheDocument()
+    expect(vi.mocked(oauthCallback)).not.toHaveBeenCalled()
+  })
+})

@@ -166,3 +166,64 @@ describe('구글 계정 연결 콜백', () => {
     expect(vi.mocked(oauthLinkCallback)).not.toHaveBeenCalled()
   })
 })
+
+describe('카카오 계정 연결 콜백', () => {
+  const KAKAO_STATE_KEY = 'easydoc.oauth.kakao.link.state'
+  const KAKAO_REDIRECT_URI_KEY = 'easydoc.oauth.kakao.link.redirect_uri'
+  const KAKAO_STORED_REDIRECT_URI = 'http://localhost:5173/auth/kakao/link/callback'
+
+  function seedKakaoSession(state = 'link-state-xyz') {
+    window.localStorage.setItem('easydoc.access_token', 'valid-token')
+    window.sessionStorage.setItem(KAKAO_STATE_KEY, state)
+    window.sessionStorage.setItem(KAKAO_REDIRECT_URI_KEY, KAKAO_STORED_REDIRECT_URI)
+  }
+
+  it('state가 일치하면 코드를 검증하고 성공하면 사용자를 새로고침한 뒤 홈에 안내를 보여준다', async () => {
+    seedKakaoSession('link-state-xyz')
+    vi.mocked(fetchMe)
+      .mockResolvedValueOnce(userResponse({ identities: [] }))
+      .mockResolvedValueOnce(userResponse({ identities: [{ provider: 'kakao' }] }))
+    vi.mocked(oauthLinkCallback).mockResolvedValue(undefined)
+
+    renderAt('/auth/kakao/link/callback?code=auth-code&state=link-state-xyz')
+
+    expect(await screen.findByRole('heading', { name: '문서 변환하기' })).toBeInTheDocument()
+    expect(vi.mocked(oauthLinkCallback)).toHaveBeenCalledWith('kakao', {
+      code: 'auth-code',
+      state: 'link-state-xyz',
+      redirectUri: KAKAO_STORED_REDIRECT_URI,
+    })
+    expect(await screen.findByText('카카오 계정을 연결했습니다')).toBeInTheDocument()
+    expect(window.sessionStorage.getItem(KAKAO_STATE_KEY)).toBeNull()
+    expect(window.sessionStorage.getItem(KAKAO_REDIRECT_URI_KEY)).toBeNull()
+  })
+
+  it('이미 다른 계정에 연결된 신원이면(409) 서버가 준 사유를 보여준다', async () => {
+    seedKakaoSession('link-state-xyz')
+    vi.mocked(fetchMe).mockResolvedValue(userResponse())
+    vi.mocked(oauthLinkCallback).mockRejectedValue(
+      new ApiError(409, '이 카카오 계정은 이미 다른 계정에 연결되어 있습니다'),
+    )
+
+    renderAt('/auth/kakao/link/callback?code=auth-code&state=link-state-xyz')
+
+    expect(
+      await screen.findByText('이 카카오 계정은 이미 다른 계정에 연결되어 있습니다'),
+    ).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: '홈으로 돌아가기' })).toBeInTheDocument()
+  })
+})
+
+describe('지원하지 않는 소셜 로그인 provider', () => {
+  it('로그인한 상태에서 계약 enum 밖의 provider면 찾을 수 없는 화면을 보여준다', async () => {
+    window.localStorage.setItem('easydoc.access_token', 'valid-token')
+    vi.mocked(fetchMe).mockResolvedValue(userResponse())
+
+    renderAt('/auth/naver/link/callback?code=auth-code&state=link-state-xyz')
+
+    expect(
+      await screen.findByRole('heading', { name: '찾을 수 없는 화면입니다' }),
+    ).toBeInTheDocument()
+    expect(vi.mocked(oauthLinkCallback)).not.toHaveBeenCalled()
+  })
+})
