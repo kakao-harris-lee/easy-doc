@@ -1,8 +1,14 @@
 package kr.easydoc.infrastructure.dictionary
 
+import kr.easydoc.application.dictionary.DictionaryAttribution
+import kr.easydoc.application.dictionary.DictionaryAttributionProvider
+import kr.easydoc.application.dictionary.LookupRateLimiter
+import kr.easydoc.application.dictionary.TermCandidateSource
+import kr.easydoc.application.dictionary.TermLookupService
 import kr.easydoc.core.dictionary.DictionaryIndex
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
+import java.time.Clock
 
 /**
  * 사전 색인을 worker 프로필 밖에서도 적재할 수 있게 하는 조립 지점 (P0-5 조각 3, S1).
@@ -26,10 +32,49 @@ import org.springframework.context.annotation.Configuration
  * 2026-09-05 리뷰 - 이 저장소에서 **첫 nullable `@Bean`** 이다. S4(조각 3 이후) 에서
  * 소비자 쪽 nullable 배선을 null object(예: 빈 `DictionaryIndex`)로 바꿀 계획이며, 이 빈
  * 자체를 지금 바꾸지는 않는다(계획이 그 정리를 S4로 미룬다).
+ *
+ * **정리(2026-09-05, 조각 4).** [termCandidateSource] 가 그 null object 다 —
+ * [dictionaryIndex] 가 `null` 이면 [NoTermCandidateSource] 를 골라, 컨트롤러가 nullable
+ * 을 직접 다루지 않는다. [dictionaryIndex] 자체는 여전히 nullable 을 돌려준다(Spring 이
+ * `null` `@Bean` 을 등록하지 않는 메커니즘을 그대로 쓴다) — 이 정리는 **소비자 쪽**의
+ * null 처분만 흡수한다.
  */
 @Configuration(proxyBeanMethods = false)
 class DictionaryConfiguration {
     @Bean
     fun dictionaryIndex(properties: DictionaryLookupProperties): DictionaryIndex? =
         if (properties.enabled) DictionaryIndexJsonReader().readClasspathResource() else null
+
+    /** [dictionaryIndex] 가 없으면(조회 기능이 꺼짐) [NoTermCandidateSource] 가 422 로 거절한다. */
+    @Bean
+    fun termCandidateSource(dictionaryIndex: DictionaryIndex?): TermCandidateSource =
+        dictionaryIndex?.let(::IndexedTermCandidateSource) ?: NoTermCandidateSource
+
+    /** `TermLookupService` 는 `@Component` 가 아니다 — 다른 유스케이스(`AuthService` 등)와 같이 조립 지점이 만든다. */
+    @Bean
+    fun termLookupService(source: TermCandidateSource): TermLookupService = TermLookupService(source)
+
+    /**
+     * `Clock.systemUTC()` 를 여기서 직접 넘긴다 — composition root 가 시간원을 고르는 자리라는
+     * 관례(`AuthConfiguration.jwtAccessTokens` 등)를 그대로 따른다.
+     */
+    @Bean
+    fun lookupRateLimiter(properties: DictionaryLookupProperties): LookupRateLimiter =
+        InMemorySlidingWindowLookupRateLimiter(properties.rateLimitPerMinute, Clock.systemUTC())
+
+    /**
+     * 사전 단위 표기(계획 §3.2). `schemaVersion` 은 색인 파일의 실제 값이 아니라
+     * [DictionaryIndexJsonReader] 가 적재를 성공시킨 버전([DictionaryIndexJsonReader
+     * .SUPPORTED_SCHEMA_VERSION]) 이다 — 적재를 통과한 색인은 이 버전이라고 스스로
+     * 확인했으므로([DictionaryIndexJsonReader.read] 의 `check`) 다른 값일 수 없다.
+     */
+    @Bean
+    fun dictionaryAttributionProvider(properties: DictionaryLookupProperties): DictionaryAttributionProvider =
+        DictionaryAttributionProvider {
+            DictionaryAttribution(
+                name = properties.dictionaryName,
+                license = properties.dictionaryLicense,
+                schemaVersion = DictionaryIndexJsonReader.SUPPORTED_SCHEMA_VERSION,
+            )
+        }
 }

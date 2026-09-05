@@ -282,8 +282,19 @@ class SensitiveToStringReachTest {
          * [EXPECTED_SOURCE_DECLARATIONS] 숫자는 그대로다 - R-10 쪽 `generalClassesWithCustomToString`
          * 표본에 새로 잡히고, `민감 data class 가 값을 찍지 않는다` 테스트가 아니라
          * `일반 class 의 손으로 쓴 toString 이 값을 찍지 않는다`(R-10) 테스트가 이를 검사한다.
+         *
+         * P0-5 조각 4 조회 API(2026-09-05)가 여섯을 더해 117 이다(111 위에) - application
+         * `DictionaryAttribution`(사전 단위 표기, `name` 이 민감 토큰에 걸려
+         * `MailProperties.fromAddress` 와 같은 규약으로 길이만 남긴다)과 api
+         * 다섯 - `DictionaryLookupRequest`(`text` 를 [TermQuery] 와 같은 사유로 가림),
+         * `DictionaryLookupResponse`(`query` 를 같은 사유로 가림 - 이름 자체는 민감 토큰에
+         * 걸리지 않지만 사용자가 지목한 문서 조각이라 방어적으로 가린다),
+         * `DictionaryAttributionResponse`(`DictionaryAttribution` 과 같은 이유로 `name` 을
+         * 가림), `DictionaryLookupCandidateResponse`·`DictionaryLookupExampleResponse`(둘
+         * 다 사전 데이터일 뿐 사용자 콘텐츠가 아니라 민감 토큰에 걸리는 필드가 없다 -
+         * `TermCandidate`·`DictionaryExample` 과 같은 판단, 가리지 않는다).
          */
-        const val EXPECTED_SOURCE_DECLARATIONS = 111
+        const val EXPECTED_SOURCE_DECLARATIONS = 117
 
         /** 민감 판정이 반드시 닿아야 하는 타입 — 바닥이다. */
         val KNOWN_SENSITIVE_TYPES =
