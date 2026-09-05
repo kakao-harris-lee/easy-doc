@@ -138,6 +138,11 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
   const tabRefs = useRef<Partial<Record<PanelKey, HTMLButtonElement | null>>>({})
   /** 결과 패널 상자 — 사전 팝업(TermLookupPopover)이 선택 이벤트를 거는 대상이다. */
   const resultPanelRef = useRef<HTMLDivElement>(null)
+  /**
+   * 원문 패널 상자 — 별도의 `TermLookupPopover` 인스턴스가 여기에 선택 이벤트를 건다
+   * (계획 §3.5 "원문 패널(읽기 전용)에서도 조회는 되고 적용 버튼은 없다", HIGH 리뷰 1).
+   */
+  const sourcePanelRef = useRef<HTMLDivElement>(null)
   const initialText = conversion.edited_text ?? conversion.easy_text ?? ''
 
   const [draft, setDraft] = useState(initialText)
@@ -642,6 +647,7 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
           {/* 초점 추적은 패널 상자에 건다 — 초점 사건은 거품처럼 올라오므로 상자 하나가
               그 안의 입력칸과 버튼을 모두 대신한다(위 `focusedPanel`). */}
           <div
+            ref={sourcePanelRef}
             className="rounded-[12px] border border-border bg-card p-5"
             onFocus={() => setFocusedPanel('source')}
             onBlur={() => setFocusedPanel(null)}
@@ -731,6 +737,16 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
           value={draft}
           onApply={setDraft}
           disabled={busy}
+        />
+
+        {/* 원문(읽기 전용) 패널에도 같은 조회를 별도 인스턴스로 붙인다(HIGH 리뷰 1) —
+            글을 고칠 대상이 없어 `applyDisabled`로 바꾸기 버튼을 뺀다. */}
+        <TermLookupPopover
+          containerRef={sourcePanelRef}
+          value={draft}
+          onApply={setDraft}
+          disabled={busy}
+          applyDisabled
         />
 
         {/* 내려받기를 막는 이유는 내려받기 버튼 가까이에 둔다(§6.4). */}
