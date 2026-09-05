@@ -3,6 +3,20 @@ import { memo, useCallback, useEffect, useRef, type KeyboardEvent } from 'react'
 import type { SegmentConfidence, SegmentMapUnit } from '../api/types'
 import { cn } from '../lib/utils'
 import { Badge } from './ui/Badge'
+import { ReconvertCandidateCard } from './ReconvertCandidateCard'
+
+/**
+ * 재변환 후보 카드가 그려질 때 이 컴포넌트가 필요로 하는 것(계획 §4 결정 3, §6 S5).
+ * 후보를 만들고 채택하는 로직 자체는 `ReviewEditor`가 쥐고, 이 컴포넌트는 어느 단위
+ * 아래에 카드를 앉힐지만 안다(`anchorEasyUnitIndex`).
+ */
+export interface SegmentedResultEditorCandidate {
+  sourceUnitIndex: number
+  candidateText: string
+  mode: 'replace' | 'insert'
+  /** 카드를 이 단위 바로 아래에 그린다. 지금 단위 범위 밖이면 카드를 그리지 않는다. */
+  anchorEasyUnitIndex: number
+}
 
 /**
  * 결과 패널이 문단(쉬운 글 단위) 목록으로 그려지는 상한.
@@ -45,6 +59,21 @@ export interface SegmentedResultEditorProps {
    * `persistDraft`가 그 사이의 수정을 지울 여지가 생긴다.
    */
   disabled?: boolean
+  /**
+   * 결과 단위가 focus를 잃을 때(계획 §6 S5) — 재변환 「이 위치에 넣기」가 참고하는
+   * "마지막으로 초점이 있던 쉬운 글 단위와 그 캐럿"을 부르는 쪽이 기록하는 자리다.
+   * 다시 변환 버튼(원본 패널)을 누르는 순간 지금 초점이 있던 결과 textarea가 이
+   * 콜백으로 자기 위치를 남기고 초점을 잃는다.
+   */
+  onUnitBlur?: (index: number, caret: number) => void
+  /** 재변환 후보 카드(계획 §4 결정 3, §6 S5). 있으면 `anchorEasyUnitIndex` 단위 바로
+   * 아래에 그린다. */
+  candidate?: SegmentedResultEditorCandidate | null
+  /** 카드의 두 실행 버튼(바꾸기·이 위치에 넣기)을 함께 잠근다. */
+  candidateDisabled?: boolean
+  onCandidateReplace?: () => void
+  onCandidateInsert?: () => void
+  onCandidateClose?: () => void
 }
 
 /** 신뢰도 배지 표현. 색만으로 가르지 않도록 문구를 함께 둔다(§8.1). */
@@ -111,6 +140,7 @@ interface UnitRowProps {
   onKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>, index: number) => void
   onHoverUnit: (sourceIndexes: number[]) => void
   setRef: (index: number, node: HTMLTextAreaElement | null) => void
+  onBlurUnit?: (index: number, caret: number) => void
 }
 
 /**
@@ -131,6 +161,7 @@ const UnitRow = memo(function UnitRow({
   onKeyDown,
   onHoverUnit,
   setRef,
+  onBlurUnit,
 }: UnitRowProps) {
   return (
     <div className="flex flex-col gap-1">
@@ -154,7 +185,13 @@ const UnitRow = memo(function UnitRow({
         onChange={(event) => onTextChange(index, event.target.value)}
         onKeyDown={(event) => onKeyDown(event, index)}
         onFocus={() => onHoverUnit(hoverSourceIndexes)}
-        onBlur={() => onHoverUnit([])}
+        onBlur={(event) => {
+          onHoverUnit([])
+          // 재변환 「이 위치에 넣기」(계획 §6 S5)가 참고하는 마지막 활성 단위·캐럿을
+          // 남긴다 — 다시 변환 버튼(원본 패널)을 누르는 순간 이 textarea가 초점을
+          // 잃으므로 그 값을 여기서 붙든다.
+          onBlurUnit?.(index, event.target.selectionStart ?? event.target.value.length)
+        }}
         onMouseEnter={() => onHoverUnit(hoverSourceIndexes)}
         onMouseLeave={() => onHoverUnit([])}
       />
@@ -190,6 +227,12 @@ export function SegmentedResultEditor({
   onHoverUnit,
   hoveredSourceIndex,
   disabled = false,
+  onUnitBlur,
+  candidate = null,
+  candidateDisabled = false,
+  onCandidateReplace,
+  onCandidateInsert,
+  onCandidateClose,
 }: SegmentedResultEditorProps) {
   const refs = useRef<Array<HTMLTextAreaElement | null>>([])
   const pendingFocusRef = useRef<{ index: number; caret: number } | null>(null)
@@ -384,20 +427,34 @@ export function SegmentedResultEditor({
         const badge = confidence === undefined ? CONFIDENCE_BADGE.low : CONFIDENCE_BADGE[confidence]
 
         return (
-          <UnitRow
-            key={index}
-            index={index}
-            text={unit}
-            label={unitLabel(index, mapUnit)}
-            badge={badge}
-            highlighted={highlighted}
-            disabled={disabled}
-            hoverSourceIndexes={confidence === 'high' ? sourceIndexes : []}
-            onTextChange={handleUnitTextChange}
-            onKeyDown={handleKeyDown}
-            onHoverUnit={onHoverUnit}
-            setRef={setUnitRef}
-          />
+          <div key={index} className="flex flex-col gap-2">
+            <UnitRow
+              index={index}
+              text={unit}
+              label={unitLabel(index, mapUnit)}
+              badge={badge}
+              highlighted={highlighted}
+              disabled={disabled}
+              hoverSourceIndexes={confidence === 'high' ? sourceIndexes : []}
+              onTextChange={handleUnitTextChange}
+              onKeyDown={handleKeyDown}
+              onHoverUnit={onHoverUnit}
+              setRef={setUnitRef}
+              onBlurUnit={onUnitBlur}
+            />
+            {/* 재변환 후보 카드(계획 §4 결정 3, §6 S5) — 이 단위 바로 아래에 앉힌다. */}
+            {candidate !== null && candidate.anchorEasyUnitIndex === index && (
+              <ReconvertCandidateCard
+                sourceUnitIndex={candidate.sourceUnitIndex}
+                candidateText={candidate.candidateText}
+                mode={candidate.mode}
+                disabled={candidateDisabled}
+                onReplace={() => onCandidateReplace?.()}
+                onInsert={() => onCandidateInsert?.()}
+                onClose={() => onCandidateClose?.()}
+              />
+            )}
+          </div>
         )
       })}
     </div>

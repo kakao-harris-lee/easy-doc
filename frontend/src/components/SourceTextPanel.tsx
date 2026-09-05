@@ -1,9 +1,26 @@
 import { memo, useId, type ReactNode } from 'react'
-import { FileText, FileX2, LoaderCircle } from 'lucide-react'
+import { FileText, FileX2, LoaderCircle, RefreshCcw } from 'lucide-react'
 
 import { cn } from '../lib/utils'
 import type { DocumentSource } from '../review/sourceText'
 import { Button } from './ui/Button'
+
+/**
+ * 원본 단위 재변환(계획 §4 결정 3, §6 S5) — 있으면 단위 목록 모드의 각 행에 「다시
+ * 변환」 버튼을 낸다. `units`(단위 목록)가 없으면 이 값이 있어도 아무것도 그리지 않는다
+ * — 재변환은 문단 대응이 있는 화면에서만 뜻이 있다.
+ */
+export interface SourceUnitReconvertProps {
+  /** 지금 재변환 응답을 기다리는 원본 단위 색인. 그 행만 진행 중 표시로 바뀐다. */
+  pendingIndex: number | null
+  /**
+   * 모든 행에 똑같이 적용되는 비활성 사유(저장·내려받기 진행 중, 재변환 예산 소진).
+   * `null`이면 비활성 사유가 없다는 뜻이고, 그때는 개별 행이 `pendingIndex`로만 갈린다
+   * — 요청이 도는 행 자신은 이 값과 무관하게 항상 잠긴다(중복 제출 방지).
+   */
+  disabledReason: string | null
+  onReconvert: (sourceIndex: number) => void
+}
 
 interface SourceTextPanelProps {
   source: DocumentSource
@@ -31,6 +48,8 @@ interface SourceTextPanelProps {
   highlightedIndexes?: ReadonlySet<number>
   /** 사용자가 원본 단위를 hover·focus했을 때(벗어나면 `null`) 알린다. */
   onHoverUnit?: (index: number | null) => void
+  /** 있으면 단위 목록 모드의 각 행에 재변환 버튼을 낸다(계획 §6 S5). */
+  reconvert?: SourceUnitReconvertProps
 }
 
 interface SourceUnitRowProps {
@@ -38,6 +57,9 @@ interface SourceUnitRowProps {
   text: string
   highlighted: boolean
   onHoverUnit?: (index: number | null) => void
+  reconvertPending: boolean
+  reconvertDisabledReason: string | null
+  onReconvert?: () => void
 }
 
 /**
@@ -51,13 +73,16 @@ const SourceUnitRow = memo(function SourceUnitRow({
   text,
   highlighted,
   onHoverUnit,
+  reconvertPending,
+  reconvertDisabledReason,
+  onReconvert,
 }: SourceUnitRowProps) {
   return (
-    <div role="listitem">
+    <div role="listitem" className="group relative">
       <textarea
         aria-label={`원본 ${index + 1}번째 문단`}
         className={cn(
-          'min-h-11 w-full resize-y rounded-[10px] border border-input bg-secondary px-3.5 py-2.5 text-[17px] leading-[1.75] text-foreground transition-colors motion-reduce:transition-none',
+          'min-h-11 w-full resize-y rounded-[10px] border border-input bg-secondary px-3.5 py-2.5 pr-14 text-[17px] leading-[1.75] text-foreground transition-colors motion-reduce:transition-none',
           highlighted && 'border-primary ring-2 ring-primary/40',
         )}
         value={text}
@@ -75,6 +100,33 @@ const SourceUnitRow = memo(function SourceUnitRow({
         onMouseEnter={() => onHoverUnit?.(index)}
         onMouseLeave={() => onHoverUnit?.(null)}
       />
+      {/* 다시 변환(계획 §6 S5). 평소에는 숨어 있다가 이 행에 마우스가 있거나(hover)
+          버튼 자신이 초점을 받으면(키보드 이동으로 늘 닿을 수 있다) 나타난다 —
+          200행까지 늘어날 수 있는 목록에서 항상 보이면 화면이 버튼으로 덮인다.
+          진행 중일 때는 숨기지 않는다 — 사용자가 지금 무슨 일이 도는지 봐야 한다. */}
+      {onReconvert !== undefined && (
+        <button
+          type="button"
+          aria-label={`원본 ${index + 1}번째 문단 다시 변환`}
+          aria-busy={reconvertPending || undefined}
+          title={reconvertDisabledReason ?? undefined}
+          disabled={reconvertPending || reconvertDisabledReason !== null}
+          className={cn(
+            'absolute top-2 right-2 flex size-11 items-center justify-center rounded-full border border-input bg-card text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 hover:bg-secondary hover:text-foreground focus-visible:opacity-100 disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transition-none',
+            reconvertPending && 'opacity-100',
+          )}
+          onClick={() => onReconvert()}
+        >
+          {reconvertPending ? (
+            <LoaderCircle
+              className="size-[18px] animate-spin motion-reduce:animate-none"
+              aria-hidden="true"
+            />
+          ) : (
+            <RefreshCcw className="size-[18px]" aria-hidden="true" />
+          )}
+        </button>
+      )}
     </div>
   )
 })
@@ -116,6 +168,7 @@ export function SourceTextPanel({
   units,
   highlightedIndexes,
   onHoverUnit,
+  reconvert,
 }: SourceTextPanelProps) {
   const listHeadingId = useId()
 
@@ -182,6 +235,9 @@ export function SourceTextPanel({
               text={unit}
               highlighted={highlightedIndexes?.has(index) ?? false}
               onHoverUnit={onHoverUnit}
+              reconvertPending={reconvert?.pendingIndex === index}
+              reconvertDisabledReason={reconvert?.disabledReason ?? null}
+              onReconvert={reconvert !== undefined ? () => reconvert.onReconvert(index) : undefined}
             />
           ))}
         </div>

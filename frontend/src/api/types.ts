@@ -326,6 +326,46 @@ export interface WorkspaceNameRequest {
   name: string
 }
 
+// --- 문단 재변환 (P0-4 S4/S5, 계약 2.14.0) ---
+
+/**
+ * `POST /conversions/{id}/units/{source_unit_index}/reconvert` 요청 본문. 경로의
+ * `source_unit_index`는 본문에 되풀이하지 않는다(계획 §4 결정 3).
+ */
+export interface ReconvertUnitRequest {
+  /**
+   * 클라이언트가 지금 이 원본 단위에 대응시키고 있는 쉬운 글 단위 색인들. 빈 배열일
+   * 수 있다. 서버는 이 값으로 판정하지 않고 응답에 그대로 되울린다.
+   */
+  easy_unit_indexes: number[]
+  /**
+   * 에디터 현재 본문의 SHA-256 다이제스트(16진 소문자 64자) —
+   * `src/review/fingerprint.ts`의 `computeEasyTextFingerprint`로 만든다.
+   */
+  easy_text_fingerprint: string
+}
+
+/**
+ * `POST /conversions/{id}/units/{source_unit_index}/reconvert` 응답 — 재변환 후보.
+ *
+ * **후보뿐이고 변환 본문(`easy_text`·`edited_text`)에는 아무것도 쓰이지 않는다.** 채택
+ * (바꾸기·삽입)은 클라이언트 몫이다(계획 §4 결정 3).
+ */
+export interface ReconvertUnitResponse {
+  /** 다시 변환한 후보 본문. 원본 단위 하나에 대응하는 쉬운 글 텍스트다. */
+  candidate_text: string
+  /** 요청 경로의 `source_unit_index`를 그대로 되울린다. */
+  source_unit_index: number
+  /** 요청 `easy_unit_indexes`를 그대로 되울린다. */
+  easy_unit_indexes: number[]
+  /** 요청 `easy_text_fingerprint`를 그대로 되울린다. */
+  easy_text_fingerprint: string
+  /** 이 재변환이 실제로 쓴 LLM 호출 수 — 1(보정 불필요) 또는 2(보정 호출까지). */
+  llm_calls_used: number
+  /** 이 호출을 정산한 뒤 이 문서에 남은 재변환 호출 예산. */
+  remaining_call_budget: number
+}
+
 // --- pilot feedback ---
 
 /**
