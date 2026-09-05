@@ -80,6 +80,7 @@ export function LoginPage() {
           </div>
           <SocialLoginButton provider="google" />
           <SocialLoginButton provider="kakao" />
+          <SocialLoginButton provider="naver" />
           <p className="mt-5 text-center text-sm text-muted-foreground">
             아직 계정이 없으신가요? <Link to={SIGNUP_PATH}>가입하기</Link>
           </p>

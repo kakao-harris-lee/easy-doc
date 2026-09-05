@@ -233,7 +233,7 @@ describe('카카오 로그인 콜백', () => {
 
 describe('지원하지 않는 소셜 로그인 provider', () => {
   it('계약 enum 밖의 provider면 찾을 수 없는 화면을 보여준다', async () => {
-    renderAt('/auth/naver/callback?code=auth-code&state=state-xyz')
+    renderAt('/auth/foo/callback?code=auth-code&state=state-xyz')
 
     expect(
       await screen.findByRole('heading', { name: '찾을 수 없는 화면입니다' }),

@@ -14,6 +14,7 @@ interface SocialLoginButtonProps {
 const GENERIC_START_ERROR_MESSAGE: Record<OAuthProvider, string> = {
   google: '구글 로그인을 시작하지 못했습니다. 잠시 후 다시 시도해 주세요.',
   kakao: '카카오 로그인을 시작하지 못했습니다. 잠시 후 다시 시도해 주세요.',
+  naver: '네이버 로그인을 시작하지 못했습니다. 잠시 후 다시 시도해 주세요.',
 }
 
 /**
@@ -23,6 +24,16 @@ const GENERIC_START_ERROR_MESSAGE: Record<OAuthProvider, string> = {
  */
 const KAKAO_BUTTON_CLASSNAME =
   'border-transparent bg-[#FEE500] text-black hover:bg-[#FEE500]/90 disabled:opacity-50 disabled:hover:bg-[#FEE500]'
+
+/**
+ * 네이버 로그인 버튼 브랜드 규격 — 배경 `#03C75A`(네이버 공식 그린). **공식 가이드는
+ * 흰 텍스트를 쓰지만, 흰 텍스트/`#03C75A` 배경의 명암비는 약 2.25:1로 WCAG AA
+ * 4.5:1 기준에 크게 못 미친다(검정 텍스트는 같은 배경에서 약 9.3:1) — 그래서 라벨은
+ * 카카오 버튼과 같은 판단으로 검정을 쓴다(브랜드 배색은 배경·아이콘에서 유지하고,
+ * 대비가 필요한 것은 라벨 쪽이라는 문제 설명의 결론을 그대로 따른다).
+ */
+const NAVER_BUTTON_CLASSNAME =
+  'border-transparent bg-[#03C75A] text-black hover:bg-[#03C75A]/90 disabled:opacity-50 disabled:hover:bg-[#03C75A]'
 
 /**
  * "OO로 계속하기" 버튼. 로그인·가입 화면 공용이고 `provider`로 구글·카카오를 가른다 —
@@ -52,13 +63,23 @@ export function SocialLoginButton({ provider }: SocialLoginButtonProps) {
       <Button
         type="button"
         variant="outline"
-        // 44px 높이 — 카카오 로그인 버튼 가이드의 최소 규격을 구글 버튼과도 통일한다.
-        className={cn('h-11', provider === 'kakao' && KAKAO_BUTTON_CLASSNAME)}
+        // 44px 높이 — 카카오 로그인 버튼 가이드의 최소 규격을 다른 제공자 버튼과도 통일한다.
+        className={cn(
+          'h-11',
+          provider === 'kakao' && KAKAO_BUTTON_CLASSNAME,
+          provider === 'naver' && NAVER_BUTTON_CLASSNAME,
+        )}
         fullWidth
         loading={starting}
         onClick={handleClick}
       >
-        {provider === 'google' ? <GoogleIcon /> : <KakaoIcon />}
+        {provider === 'google' ? (
+          <GoogleIcon />
+        ) : provider === 'kakao' ? (
+          <KakaoIcon />
+        ) : (
+          <NaverIcon />
+        )}
         {PROVIDER_LOGIN_LABEL[provider]}
       </Button>
       {error !== null && (
@@ -101,6 +122,19 @@ function KakaoIcon() {
         fill="#000000"
         d="M9 2.2C4.7 2.2 1.3 4.9 1.3 8.2c0 2.1 1.4 3.9 3.5 5-.15.55-.55 2.02-.63 2.35-.1.4.15.4.31.29.13-.09 2.05-1.36 2.87-1.92.51.07 1.04.11 1.58.11 4.3 0 7.7-2.7 7.7-6 0-3.4-3.4-6.1-7.7-6.1Z"
       />
+    </svg>
+  )
+}
+
+/**
+ * 단순한 "N" 마크 하나만 그린다 — 네이버 로고 형태를 흉내 낸 흰색 획, 이미 초록 배경
+ * 위에 놓이므로 별도 배경 사각형을 그리지 않는다(카카오 아이콘과 같은 "복잡하게
+ * 꾸미지 않는다" 원칙).
+ */
+function NaverIcon() {
+  return (
+    <svg aria-hidden="true" width="18" height="18" viewBox="0 0 18 18" className="shrink-0">
+      <path fill="#ffffff" d="M11.2 2.6v6.11L6.9 2.6H2.6v12.8h4.1V9.29l4.3 6.11h4.3V2.6h-4.1Z" />
     </svg>
   )
 }

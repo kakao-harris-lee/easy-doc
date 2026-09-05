@@ -83,8 +83,11 @@ export interface TokenResponse {
   expires_in: number
 }
 
-/** 지원하는 소셜 로그인 제공자. 계약 `enum`은 `google`·`kakao` 둘이다(카카오는 2.13.0 신설). */
-export type OAuthProvider = 'google' | 'kakao'
+/**
+ * 지원하는 소셜 로그인 제공자. 계약 `enum`은 `google`·`kakao`·`naver` 셋이다(네이버는
+ * 2.15.0 신설, backlog §1.4 — 권고 순서 "구글 → 카카오 → 네이버"의 마지막 제공자).
+ */
+export type OAuthProvider = 'google' | 'kakao' | 'naver'
 
 /** POST /auth/oauth/{provider}/start 요청 본문. */
 export interface OAuthStartRequest {

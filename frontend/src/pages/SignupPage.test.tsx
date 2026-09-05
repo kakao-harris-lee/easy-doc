@@ -134,3 +134,44 @@ describe('카카오 로그인 시작 (가입 화면)', () => {
     expect(screen.getByRole('button', { name: '가입하기' })).toBeEnabled()
   })
 })
+
+describe('네이버 로그인 시작 (가입 화면)', () => {
+  it('시작 요청이 성공하면 redirect_uri를 넘기고 state를 저장한 뒤 인가 URL로 이동한다', async () => {
+    const user = userEvent.setup()
+    vi.mocked(oauthStart).mockResolvedValue({
+      authorization_url: 'https://nid.naver.com/oauth2.0/authorize?state=state-xyz',
+      state: 'state-xyz',
+    })
+    const assign = mockLocationAssign()
+    renderAt('/signup')
+
+    await user.click(screen.getByRole('button', { name: '네이버로 계속하기' }))
+
+    await waitFor(() => expect(assign).toHaveBeenCalledTimes(1))
+    expect(vi.mocked(oauthStart)).toHaveBeenCalledWith(
+      'naver',
+      `${window.location.origin}/auth/naver/callback`,
+    )
+    expect(window.sessionStorage.getItem('easydoc.oauth.naver.state')).toBe('state-xyz')
+    expect(window.sessionStorage.getItem('easydoc.oauth.naver.redirect_uri')).toBe(
+      `${window.location.origin}/auth/naver/callback`,
+    )
+    expect(assign).toHaveBeenCalledWith('https://nid.naver.com/oauth2.0/authorize?state=state-xyz')
+  })
+
+  it('제공자가 설정되지 않았으면(422) 버튼 아래에 안내하고 이메일 가입 폼은 그대로 쓸 수 있다', async () => {
+    const user = userEvent.setup()
+    vi.mocked(oauthStart).mockRejectedValue(
+      new ApiError(422, '네이버 로그인이 설정되지 않았습니다'),
+    )
+    const assign = mockLocationAssign()
+    renderAt('/signup')
+
+    await user.click(screen.getByRole('button', { name: '네이버로 계속하기' }))
+
+    expect(await screen.findByText('네이버 로그인이 설정되지 않았습니다')).toBeInTheDocument()
+    expect(assign).not.toHaveBeenCalled()
+    expect(screen.getByLabelText('이메일')).toBeEnabled()
+    expect(screen.getByRole('button', { name: '가입하기' })).toBeEnabled()
+  })
+})

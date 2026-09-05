@@ -20,6 +20,8 @@ import kr.easydoc.infrastructure.auth.google.GoogleOAuthSettings
 import kr.easydoc.infrastructure.auth.google.GoogleSocialLoginProvider
 import kr.easydoc.infrastructure.auth.kakao.KakaoOAuthSettings
 import kr.easydoc.infrastructure.auth.kakao.KakaoSocialLoginProvider
+import kr.easydoc.infrastructure.auth.naver.NaverOAuthSettings
+import kr.easydoc.infrastructure.auth.naver.NaverSocialLoginProvider
 import kr.easydoc.infrastructure.db.SpringTransactionRunner
 import org.springframework.boot.context.properties.ConfigurationProperties
 import org.springframework.context.annotation.Bean
@@ -156,6 +158,30 @@ data class KakaoOAuthProperties(
 }
 
 /**
+ * 네이버 OAuth 설정. 바인딩 접두사는 `easydoc.oauth.naver` — [GoogleOAuthProperties] ·
+ * [KakaoOAuthProperties] 와 같은 계약(키 없으면 [socialLoginProviders] 가 등록하지
+ * 않는다, 기본 redirect_uri 는 로그인·연결 콜백 둘 다 담는다). 네이버는 OIDC 가 없어
+ * JWKS 캐시가 필요 없다 — 그래서 `jwksCacheMinutes` 필드가 없다(구글·카카오와의
+ * 유일한 구조적 차이, `NaverSocialLoginProvider` KDoc).
+ */
+@ConfigurationProperties(prefix = "easydoc.oauth.naver")
+data class NaverOAuthProperties(
+    val clientId: String = "",
+    val clientSecret: Secret = Secret.EMPTY,
+    val redirectUris: List<String> = listOf(DEFAULT_LOGIN_REDIRECT_URI, DEFAULT_LINK_REDIRECT_URI),
+    /** [GoogleOAuthProperties.timeoutMs] 와 같은 계약 — 그 필드 KDoc. */
+    val timeoutMs: Long = DEFAULT_TIMEOUT_MS,
+) {
+    fun isConfigured(): Boolean = clientId.isNotBlank() && !clientSecret.isBlank()
+
+    companion object {
+        const val DEFAULT_LOGIN_REDIRECT_URI = "http://localhost:5173/auth/naver/callback"
+        const val DEFAULT_LINK_REDIRECT_URI = "http://localhost:5173/auth/naver/link/callback"
+        private const val DEFAULT_TIMEOUT_MS = 15_000L
+    }
+}
+
+/**
  * 인증 빈 조립.
  *
  * `TooManyFunctions` 를 억제한다: 조립 지점의 함수 수는 이 클래스의 복잡도가 아니라
@@ -253,13 +279,15 @@ class AuthConfiguration {
     fun userIdentityRepository(jdbcClient: JdbcClient): UserIdentityRepository = JdbcUserIdentityRepository(jdbcClient)
 
     /**
-     * 등록된 소셜 로그인 제공자 — google·kakao 각각 키가 있을 때만 등록한다(둘 다 없으면
-     * 빈 맵, 그 provider 를 요청하면 `SocialLoginService` 가 422 로 응답한다).
+     * 등록된 소셜 로그인 제공자 — google·kakao·naver 각각 키가 있을 때만 등록한다(전부
+     * 없으면 빈 맵, 그 provider 를 요청하면 `SocialLoginService` 가 422 로 응답한다).
      */
+    @Suppress("LongParameterList")
     @Bean
     fun socialLoginProviders(
         google: GoogleOAuthProperties,
         kakao: KakaoOAuthProperties,
+        naver: NaverOAuthProperties,
     ): Map<SocialLoginProviderId, SocialLoginProvider> =
         buildMap {
             if (google.isConfigured()) {
@@ -288,6 +316,20 @@ class AuthConfiguration {
                             jwksCacheTtl = Duration.ofMinutes(kakao.jwksCacheMinutes),
                             connectTimeout = Duration.ofMillis(kakao.timeoutMs),
                             readTimeout = Duration.ofMillis(kakao.timeoutMs),
+                        ),
+                    ),
+                )
+            }
+            if (naver.isConfigured()) {
+                put(
+                    SocialLoginProviderId.NAVER,
+                    NaverSocialLoginProvider(
+                        NaverOAuthSettings(
+                            clientId = naver.clientId,
+                            clientSecret = naver.clientSecret,
+                            redirectUriAllowlist = naver.redirectUris.toSet(),
+                            connectTimeout = Duration.ofMillis(naver.timeoutMs),
+                            readTimeout = Duration.ofMillis(naver.timeoutMs),
                         ),
                     ),
                 )

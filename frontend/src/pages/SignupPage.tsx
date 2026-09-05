@@ -55,6 +55,7 @@ export function SignupPage() {
           </div>
           <SocialLoginButton provider="google" />
           <SocialLoginButton provider="kakao" />
+          <SocialLoginButton provider="naver" />
           <p className="mt-5 text-center text-sm text-muted-foreground">
             이미 계정이 있으신가요? <Link to={LOGIN_PATH}>로그인</Link>
           </p>

@@ -13,16 +13,18 @@ import type { OAuthProvider } from '../api/types'
 export const PROVIDER_DISPLAY_NAME: Record<OAuthProvider, string> = {
   google: '구글',
   kakao: '카카오',
+  naver: '네이버',
 }
 
 /** "OO로 계속하기" 버튼 라벨. 구글만 영문 브랜드명을 쓴다(기존 문구 유지). */
 export const PROVIDER_LOGIN_LABEL: Record<OAuthProvider, string> = {
   google: 'Google로 계속하기',
   kakao: '카카오로 계속하기',
+  naver: '네이버로 계속하기',
 }
 
 /** 지원하는 소셜 로그인 제공자 전체 목록. `SocialLinkStatus`도 이 값을 그대로 쓴다. */
-export const SUPPORTED_PROVIDERS: readonly OAuthProvider[] = ['google', 'kakao']
+export const SUPPORTED_PROVIDERS: readonly OAuthProvider[] = ['google', 'kakao', 'naver']
 
 /** 라우트 `:provider` 세그먼트·`?link=` 쿼리 값이 지원하는 제공자인지 확인한다. */
 export function isOAuthProvider(value: string | null | undefined): value is OAuthProvider {

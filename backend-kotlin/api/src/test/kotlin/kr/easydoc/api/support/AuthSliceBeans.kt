@@ -148,6 +148,10 @@ class AuthSliceBeans {
     @Bean
     fun fakeKakaoProvider(): FakeKakaoSocialLoginProvider = FakeKakaoSocialLoginProvider()
 
+    /** 네이버 대역 — backlog §1.4, 계약 2.15.0. [FakeKakaoSocialLoginProvider] 와 같은 방식. */
+    @Bean
+    fun fakeNaverProvider(): FakeNaverSocialLoginProvider = FakeNaverSocialLoginProvider()
+
     /** `SocialLoginService` 생성자 매개변수 상한을 지키려고 저장소 셋을 묶는다(그 클래스 KDoc). */
     @Bean
     fun socialLoginRepositories(
@@ -158,14 +162,15 @@ class AuthSliceBeans {
 
     /**
      * `SocialLoginService` 는 실물이다 — 계약이 정한 판정 순서(state → 신원 → 이메일 규칙)를
-     * 슬라이스가 실제로 밟아야 한다. google·kakao 둘을 등록한다(제품 조립과 같은 모양,
-     * 카카오는 계약 2.13.0).
+     * 슬라이스가 실제로 밟아야 한다. google·kakao·naver 셋을 등록한다(제품 조립과 같은
+     * 모양, 네이버는 계약 2.15.0).
      */
     @Suppress("LongParameterList")
     @Bean
     fun socialLoginService(
         google: FakeGoogleSocialLoginProvider,
         kakao: FakeKakaoSocialLoginProvider,
+        naver: FakeNaverSocialLoginProvider,
         states: InMemoryOAuthStateStore,
         repositories: SocialLoginRepositories,
         tokens: StubAccessTokens,
@@ -176,6 +181,7 @@ class AuthSliceBeans {
                 mapOf(
                     SocialLoginProviderId.GOOGLE to google,
                     SocialLoginProviderId.KAKAO to kakao,
+                    SocialLoginProviderId.NAVER to naver,
                 ),
             states = states,
             repositories = repositories,
@@ -789,6 +795,49 @@ class FakeKakaoSocialLoginProvider : SocialLoginProvider {
 
     companion object {
         const val ALLOWED_REDIRECT_URI = "http://localhost:5173/auth/kakao/callback"
+    }
+}
+
+/**
+ * 네이버 어댑터 대역 — backlog §1.4, 계약 2.15.0. [FakeKakaoSocialLoginProvider] 와 같은
+ * `code` 인코딩(`sub|email|verified`, `reject`·`unreachable` 특수값)을 받지만, 세 번째
+ * 구간(`verified`)은 **무시한다** — 실물 `NaverSocialLoginProvider` 가 네이버에는
+ * `email_verified` 개념이 없어 항상 미검증으로 신원을 내는 것과 같은 규칙이다(2026-09-05
+ * 결정). 그래서 이 대역으로 "네이버 신원 + 검증된 이메일"을 흉내 낼 수 없다 — 그것이
+ * 정확히 실물의 계약이다.
+ */
+class FakeNaverSocialLoginProvider : SocialLoginProvider {
+    var exchangeCallCount = 0
+        private set
+
+    override fun supportsRedirectUri(redirectUri: String): Boolean = redirectUri == ALLOWED_REDIRECT_URI
+
+    override fun authorizationUrl(
+        state: String,
+        nonce: String,
+        redirectUri: String,
+    ): String = "https://nid.naver.test/oauth2.0/authorize?state=$state&redirect_uri=$redirectUri"
+
+    override fun exchange(
+        code: String,
+        redirectUri: String,
+        nonce: String,
+    ): SocialIdentity {
+        exchangeCallCount++
+        if (code == "reject") {
+            throw InvalidCredentialsException("이메일 또는 비밀번호가 올바르지 않습니다")
+        }
+        if (code == "unreachable") {
+            throw ExternalServiceUnavailableException("네이버에 연결하지 못했습니다")
+        }
+        val parts = code.split("|")
+        val providerUserId = parts.getOrNull(0) ?: error("잘못된 테스트 code: $code")
+        val email = parts.getOrNull(1)?.ifBlank { null }
+        return SocialIdentity(providerUserId, email, emailVerified = false)
+    }
+
+    companion object {
+        const val ALLOWED_REDIRECT_URI = "http://localhost:5173/auth/naver/callback"
     }
 }
 

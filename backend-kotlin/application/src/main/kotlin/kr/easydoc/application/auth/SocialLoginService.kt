@@ -280,6 +280,7 @@ class SocialLoginService(
             when (providerId) {
                 SocialLoginProviderId.GOOGLE -> "구글 로그인이 설정되지 않았습니다"
                 SocialLoginProviderId.KAKAO -> "카카오 로그인이 설정되지 않았습니다"
+                SocialLoginProviderId.NAVER -> "네이버 로그인이 설정되지 않았습니다"
             }
 
         /** 계약 `oauthLinkCallback` `409` 예시 — 그 신원이 이미 **다른** 사용자에 연결돼 있다. */
@@ -287,6 +288,7 @@ class SocialLoginService(
             when (providerId) {
                 SocialLoginProviderId.GOOGLE -> "이 구글 계정은 이미 다른 계정에 연결되어 있습니다"
                 SocialLoginProviderId.KAKAO -> "이 카카오 계정은 이미 다른 계정에 연결되어 있습니다"
+                SocialLoginProviderId.NAVER -> "이 네이버 계정은 이미 다른 계정에 연결되어 있습니다"
             }
 
         /** 계약 `oauthLinkCallback` `409` 예시 — 이 사용자가 이 제공자에 이미 다른 신원을 연결했다. */
@@ -294,6 +296,7 @@ class SocialLoginService(
             when (providerId) {
                 SocialLoginProviderId.GOOGLE -> "이미 다른 구글 계정이 이 계정에 연결되어 있습니다"
                 SocialLoginProviderId.KAKAO -> "이미 다른 카카오 계정이 이 계정에 연결되어 있습니다"
+                SocialLoginProviderId.NAVER -> "이미 다른 네이버 계정이 이 계정에 연결되어 있습니다"
             }
     }
 }

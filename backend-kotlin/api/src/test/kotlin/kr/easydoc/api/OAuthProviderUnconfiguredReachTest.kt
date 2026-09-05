@@ -81,11 +81,25 @@ class OAuthProviderUnconfiguredReachTest {
     }
 
     @Test
-    @DisplayName("지원하지 않는 provider(naver, 예약만 됐다) 는 실물 구성에서도 422 배열이다 — 경로 값 해석은 스키마 층이다")
-    fun `지원하지 않는 provider 는 422 다`() {
+    @DisplayName("naver start 가 422 다 — 제공자 미설정, google·kakao 와 같은 방침")
+    fun `naver 미설정은 422 다`() {
         val response =
             post(
                 "/auth/oauth/naver/start",
+                """{"redirect_uri":"http://localhost:5173/auth/naver/callback"}""",
+            )
+
+        assertThat(response.statusCode()).isEqualTo(422)
+        val detail = json.readValue(response.body(), Map::class.java)["detail"]
+        assertThat(detail).isEqualTo("네이버 로그인이 설정되지 않았습니다")
+    }
+
+    @Test
+    @DisplayName("지원하지 않는 provider(foo, 아는 provider 가 아니다) 는 실물 구성에서도 422 배열이다 — 경로 값 해석은 스키마 층이다")
+    fun `지원하지 않는 provider 는 422 다`() {
+        val response =
+            post(
+                "/auth/oauth/foo/start",
                 """{"redirect_uri":"http://localhost:5173/auth/google/callback"}""",
             )
 

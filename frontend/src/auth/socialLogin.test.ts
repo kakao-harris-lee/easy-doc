@@ -12,6 +12,7 @@ describe('SUPPORTED_PROVIDERS', () => {
     const everyProvider = {
       google: true,
       kakao: true,
+      naver: true,
     } satisfies Record<OAuthProvider, true>
 
     expect(new Set(SUPPORTED_PROVIDERS)).toEqual(new Set(Object.keys(everyProvider)))

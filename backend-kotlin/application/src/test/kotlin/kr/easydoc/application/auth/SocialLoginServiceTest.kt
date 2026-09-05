@@ -445,9 +445,77 @@ class SocialLoginServiceTest {
             .hasMessage("카카오 로그인이 설정되지 않았습니다")
     }
 
+    // ------------------------------------------------------------------ 네이버(계약 2.15.0)
+
+    @Test
+    @DisplayName(
+        "네이버 신원은 이메일이 있어도 422 — 네이버는 email_verified 개념이 없어 어댑터가 " +
+            "항상 미검증으로 낸다(x-social-login.providers.x-note, 2026-09-05 결정)",
+    )
+    fun `네이버는 이메일이 있어도 항상 미검증이라 422다`() {
+        val world = SocialWorld(naverConfigured = true)
+        world.naverProvider.nextIdentity =
+            SocialIdentity("naver-sub-1", "naver-new@example.test", emailVerified = false)
+
+        val start = world.service.start(SocialLoginProviderId.NAVER, NAVER_REDIRECT_URI)
+
+        assertThatThrownBy {
+            world.service.callback(
+                SocialLoginProviderId.NAVER,
+                "auth-code",
+                start.state,
+                NAVER_REDIRECT_URI,
+            )
+        }.isInstanceOf(InvalidInputException::class.java)
+            .hasMessage(SocialLoginService.EMAIL_REQUIRED_MESSAGE)
+        assertThat(world.identities.linked).isEmpty()
+    }
+
+    @Test
+    @DisplayName("네이버 연결 흐름은 이메일 검증을 요구하지 않는다 — 로그인한 계정에 신원이 연결된다")
+    fun `네이버 연결이 성공한다`() {
+        val world = SocialWorld(naverConfigured = true)
+        val user = world.users.seedPasswordAccount("naver-owner@example.test")
+        world.naverProvider.nextIdentity =
+            SocialIdentity("naver-link-1", "naver-owner-social@example.test", emailVerified = false)
+
+        val start = world.service.linkStart(user.id, SocialLoginProviderId.NAVER, NAVER_REDIRECT_URI)
+        world.service.linkCallback(user.id, SocialLoginProviderId.NAVER, "auth-code", start.state, NAVER_REDIRECT_URI)
+
+        val linked = world.identities.linked.single()
+        assertThat(linked.userId).isEqualTo(user.id)
+        assertThat(linked.provider).isEqualTo(SocialLoginProviderId.NAVER)
+        assertThat(linked.providerUserId).isEqualTo("naver-link-1")
+    }
+
+    @Test
+    @DisplayName("연결된 네이버 신원으로 다시 콜백을 받으면 이메일 규칙과 무관하게 로그인이다")
+    fun `연결된 네이버 신원은 이메일 규칙 없이 로그인한다`() {
+        val world = SocialWorld(naverConfigured = true)
+        val existingUser = User(UUID.randomUUID(), "naver-linked@example.test", Instant.EPOCH)
+        world.identities.seed(existingUser.id, SocialLoginProviderId.NAVER, "naver-sub-2")
+        world.naverProvider.nextIdentity = SocialIdentity("naver-sub-2", email = null, emailVerified = false)
+
+        val start = world.service.start(SocialLoginProviderId.NAVER, NAVER_REDIRECT_URI)
+        val token = world.service.callback(SocialLoginProviderId.NAVER, "auth-code", start.state, NAVER_REDIRECT_URI)
+
+        assertThat(token.token).isEqualTo("token:${existingUser.id}")
+    }
+
+    @Test
+    @DisplayName("키가 설정되지 않은 네이버는 422 — 네이버 전용 문구다")
+    fun `설정되지 않은 네이버는 422다`() {
+        val world = SocialWorld(naverConfigured = false)
+
+        assertThatThrownBy { world.service.start(SocialLoginProviderId.NAVER, NAVER_REDIRECT_URI) }
+            .isInstanceOf(InvalidInputException::class.java)
+            .hasMessage("네이버 로그인이 설정되지 않았습니다")
+    }
+
     private companion object {
         const val REDIRECT_URI = "http://localhost:5173/auth/google/callback"
         const val KAKAO_REDIRECT_URI = "http://localhost:5173/auth/kakao/callback"
+        const val NAVER_REDIRECT_URI = "http://localhost:5173/auth/naver/callback"
     }
 }
 
@@ -456,6 +524,7 @@ private class SocialWorld(
     tokensConfigured: Boolean = true,
     googleConfigured: Boolean = true,
     kakaoConfigured: Boolean = false,
+    naverConfigured: Boolean = false,
 ) {
     val users = RecordingSocialUserRepository()
     val workspaces = RecordingSocialWorkspaceRepository()
@@ -464,6 +533,7 @@ private class SocialWorld(
     val tokens = RecordingSocialAccessTokens(tokensConfigured)
     val provider = FakeSocialLoginProvider("http://localhost:5173/auth/google/callback")
     val kakaoProvider = FakeSocialLoginProvider("http://localhost:5173/auth/kakao/callback")
+    val naverProvider = FakeSocialLoginProvider("http://localhost:5173/auth/naver/callback")
     val transaction =
         object : TransactionRunner {
             override fun <T> inTransaction(block: () -> T): T = block()
@@ -474,6 +544,7 @@ private class SocialWorld(
                 buildMap {
                     if (googleConfigured) put(SocialLoginProviderId.GOOGLE, provider)
                     if (kakaoConfigured) put(SocialLoginProviderId.KAKAO, kakaoProvider)
+                    if (naverConfigured) put(SocialLoginProviderId.NAVER, naverProvider)
                 },
             states = states,
             repositories = SocialLoginRepositories(users, identities, workspaces),
