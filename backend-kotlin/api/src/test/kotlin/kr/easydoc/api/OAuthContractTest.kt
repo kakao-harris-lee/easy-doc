@@ -84,15 +84,78 @@ class OAuthContractTest {
     }
 
     @Test
-    @DisplayName("지원하지 않는 provider 는 422 배열이다 — 경로 값 자리 해석 실패는 스키마 층이다")
+    @DisplayName("지원하지 않는 provider(naver, 예약만 됐다) 는 422 배열이다 — 경로 값 자리 해석 실패는 스키마 층이다")
     fun `지원하지 않는 provider 는 422 다`() {
-        val response = start(REDIRECT_URI, provider = "kakao")
+        val response = start(REDIRECT_URI, provider = "naver")
 
         assertDeclaredStatus(response, UNPROCESSABLE_CONTENT, START_PATH, POST)
         val detail = body(response)["detail"]
         assertThat(detail).isInstanceOf(List::class.java)
         val items = (detail as List<*>).map { it as Map<*, *> }
         assertThat(items.map { it["loc"] }).contains(listOf("path", "provider"))
+    }
+
+    // ------------------------------------------------------------------ 카카오(계약 2.13.0) — 4개 오퍼레이션 전부 허용
+
+    @Test
+    @DisplayName("카카오 start 도 200 이다 — google 과 같은 enum 안 값")
+    fun `카카오 start 는 200 이다`() {
+        val response = start(KAKAO_REDIRECT_URI, provider = "kakao")
+
+        assertThat(response.status).isEqualTo(ContractSpec.successStatus(START_PATH, POST))
+        val body = body(response)
+        assertThat(body["authorization_url"] as String).contains("state=").contains("nonce=")
+    }
+
+    @Test
+    @DisplayName("카카오 callback 도 로그인/가입에 쓸 수 있다")
+    fun `카카오 callback 은 토큰을 발급한다`() {
+        val state = startState(provider = "kakao", redirectUri = KAKAO_REDIRECT_URI)
+
+        val response =
+            callback(
+                code = "kakao-sub-new-1|kakao-new@example.test|true",
+                state = state,
+                provider = "kakao",
+                redirectUri = KAKAO_REDIRECT_URI,
+            )
+
+        assertThat(response.status).isEqualTo(ContractSpec.successStatus(CALLBACK_PATH, POST))
+        assertThat(body(response)["token_type"]).isEqualTo("bearer")
+    }
+
+    @Test
+    @DisplayName("카카오도 link/start·link/callback 을 통해 기존 계정에 연결된다")
+    fun `카카오 연결 흐름도 동작한다`() {
+        val email = uniqueEmail()
+        signupAndVerify(email)
+        val bearer = login(email)
+
+        val linkState =
+            body(
+                postAuthorized(
+                    "/auth/oauth/kakao/link/start",
+                    bearer,
+                    json.writeValueAsString(mapOf("redirect_uri" to KAKAO_REDIRECT_URI)),
+                ),
+            )["state"] as String
+
+        val linkResponse =
+            postAuthorized(
+                "/auth/oauth/kakao/link/callback",
+                bearer,
+                json.writeValueAsString(
+                    mapOf(
+                        "code" to "kakao-link-sub|kakao-linked@example.test|true",
+                        "state" to linkState,
+                        "redirect_uri" to KAKAO_REDIRECT_URI,
+                    ),
+                ),
+            )
+
+        assertThat(linkResponse.status).isEqualTo(NO_CONTENT)
+        val me = body(getAuthorized("/auth/me", bearer))
+        assertThat((me["identities"] as List<*>).map { (it as Map<*, *>)["provider"] }).containsExactly("kakao")
     }
 
     @Test
@@ -433,15 +496,19 @@ class OAuthContractTest {
             json.writeValueAsString(mapOf("redirect_uri" to redirectUri)),
         )
 
-    private fun startState(): String = body(start(REDIRECT_URI))["state"] as String
+    private fun startState(
+        provider: String = "google",
+        redirectUri: String = REDIRECT_URI,
+    ): String = body(start(redirectUri, provider))["state"] as String
 
     private fun callback(
         code: String,
         state: String,
         redirectUri: String = REDIRECT_URI,
+        provider: String = "google",
     ): MockHttpServletResponse =
         postJson(
-            "/auth/oauth/google/callback",
+            "/auth/oauth/$provider/callback",
             json.writeValueAsString(mapOf("code" to code, "state" to state, "redirect_uri" to redirectUri)),
         )
 
@@ -578,6 +645,7 @@ class OAuthContractTest {
         const val BAD_REQUEST = 400
         const val NO_CONTENT = 204
         const val REDIRECT_URI = "http://localhost:5173/auth/google/callback"
+        const val KAKAO_REDIRECT_URI = "http://localhost:5173/auth/kakao/callback"
         const val PASSWORD = "correct horse battery"
 
         var counter = 0

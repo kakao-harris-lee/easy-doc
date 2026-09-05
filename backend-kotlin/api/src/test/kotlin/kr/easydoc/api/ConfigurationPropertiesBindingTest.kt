@@ -6,6 +6,7 @@ import kr.easydoc.core.security.Secret
 import kr.easydoc.infrastructure.app.AppProperties
 import kr.easydoc.infrastructure.auth.AuthProperties
 import kr.easydoc.infrastructure.auth.GoogleOAuthProperties
+import kr.easydoc.infrastructure.auth.KakaoOAuthProperties
 import kr.easydoc.infrastructure.auth.OAuthProperties
 import kr.easydoc.infrastructure.crypto.EncryptionProperties
 import kr.easydoc.infrastructure.dictionary.DictionaryLookupProperties
@@ -95,11 +96,13 @@ class ConfigurationPropertiesBindingTest {
                     "easydoc.oauth.google.client-id" to "test-client-id",
                     "easydoc.oauth.google.client-secret" to SECRET_VALUE,
                     "easydoc.oauth.google.redirect-uris[0]" to "https://example.test/auth/google/callback",
+                    "easydoc.oauth.google.timeout-ms" to "5000",
                 ),
             )
         assertThat(google.clientId).isEqualTo("test-client-id")
         assertThat(google.clientSecret.reveal()).isEqualTo(SECRET_VALUE)
         assertThat(google.redirectUris).containsExactly("https://example.test/auth/google/callback")
+        assertThat(google.timeoutMs).isEqualTo(5000L)
     }
 
     @Test
@@ -121,6 +124,45 @@ class ConfigurationPropertiesBindingTest {
             .containsExactly(
                 GoogleOAuthProperties.DEFAULT_LOGIN_REDIRECT_URI,
                 GoogleOAuthProperties.DEFAULT_LINK_REDIRECT_URI,
+            )
+    }
+
+    @Test
+    @DisplayName("카카오 소셜 로그인 설정이 기본값과 다른 값을 싣는다 — backlog §1.4, 계약 2.13.0")
+    fun `카카오 설정이 기본값과 다른 값을 싣는다`() {
+        val kakao =
+            bind(
+                "easydoc.oauth.kakao",
+                KakaoOAuthProperties::class.java,
+                mapOf(
+                    "easydoc.oauth.kakao.client-id" to "test-kakao-client-id",
+                    "easydoc.oauth.kakao.client-secret" to SECRET_VALUE,
+                    "easydoc.oauth.kakao.redirect-uris[0]" to "https://example.test/auth/kakao/callback",
+                    "easydoc.oauth.kakao.timeout-ms" to "6000",
+                ),
+            )
+        assertThat(kakao.clientId).isEqualTo("test-kakao-client-id")
+        assertThat(kakao.clientSecret.reveal()).isEqualTo(SECRET_VALUE)
+        assertThat(kakao.redirectUris).containsExactly("https://example.test/auth/kakao/callback")
+        assertThat(kakao.timeoutMs).isEqualTo(6000L)
+    }
+
+    @Test
+    @DisplayName("카카오 redirect-uris 를 설정하지 않으면 로그인·연결 콜백 기본값 둘 다 실린다 — 구글과 같은 방침")
+    fun `카카오 redirect_uri 기본값이 로그인과 연결 콜백을 모두 담는다`() {
+        val kakao =
+            bind(
+                "easydoc.oauth.kakao",
+                KakaoOAuthProperties::class.java,
+                mapOf(
+                    "easydoc.oauth.kakao.client-id" to "test-kakao-client-id",
+                    "easydoc.oauth.kakao.client-secret" to SECRET_VALUE,
+                ),
+            )
+        assertThat(kakao.redirectUris)
+            .containsExactly(
+                KakaoOAuthProperties.DEFAULT_LOGIN_REDIRECT_URI,
+                KakaoOAuthProperties.DEFAULT_LINK_REDIRECT_URI,
             )
     }
 

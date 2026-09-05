@@ -67,11 +67,25 @@ class OAuthProviderUnconfiguredReachTest {
     }
 
     @Test
-    @DisplayName("지원하지 않는 provider 는 실물 구성에서도 422 배열이다 — 경로 값 해석은 스키마 층이다")
-    fun `지원하지 않는 provider 는 422 다`() {
+    @DisplayName("kakao start 가 422 다 — 제공자 미설정, google 과 같은 방침")
+    fun `kakao 미설정은 422 다`() {
         val response =
             post(
                 "/auth/oauth/kakao/start",
+                """{"redirect_uri":"http://localhost:5173/auth/kakao/callback"}""",
+            )
+
+        assertThat(response.statusCode()).isEqualTo(422)
+        val detail = json.readValue(response.body(), Map::class.java)["detail"]
+        assertThat(detail).isEqualTo("카카오 로그인이 설정되지 않았습니다")
+    }
+
+    @Test
+    @DisplayName("지원하지 않는 provider(naver, 예약만 됐다) 는 실물 구성에서도 422 배열이다 — 경로 값 해석은 스키마 층이다")
+    fun `지원하지 않는 provider 는 422 다`() {
+        val response =
+            post(
+                "/auth/oauth/naver/start",
                 """{"redirect_uri":"http://localhost:5173/auth/google/callback"}""",
             )
 

@@ -8,19 +8,20 @@ import java.util.UUID
 // (Google adapter · JDBC state/identity 저장소)가 준다.
 
 /**
- * 지원하는 소셜 로그인 제공자. **오늘은 `google` 하나뿐이다** — 계약
- * `paths./auth/oauth/{provider}/start.parameters[provider].schema.enum` 이 `[google]`
- * 하나만 연다. `kakao`·`naver` 는 예약만 됐고 이 enum 에 없다.
+ * 지원하는 소셜 로그인 제공자. **오늘은 `google`·`kakao` 둘이다**(계약 2.13.0) — 계약
+ * `paths./auth/oauth/{provider}/start.parameters[provider].schema.enum` 이 `[google,
+ * kakao]` 를 연다. `naver` 는 여전히 예약만 됐고 이 enum 에 없다.
  *
  * **문자열 → enum 해석은 이 타입이 하지 않는다.** API 경계의
  * `kr.easydoc.api.auth.SocialLoginProviderIdConverter`(Spring `Converter`)가 그 자리다 —
- * enum 밖 값(예약된 두 값 포함, 그 밖 전부)은 스키마 층 422 **배열**로 나가야 한다
+ * enum 밖 값(예약된 값 포함, 그 밖 전부)은 스키마 층 422 **배열**로 나가야 한다
  * (`ValueSlotInvariantReachTest`, `ExportFormatConverter` 와 같은 자리). 이 서비스
  * (`SocialLoginService`)는 이미 해석된 [SocialLoginProviderId] 만 받는다 — 원시 문자열을
  * 다시 파싱하지 않는다.
  */
 enum class SocialLoginProviderId(val wireValue: String) {
     GOOGLE("google"),
+    KAKAO("kakao"),
 }
 
 /** 제공자가 돌려준 신원 — ID 토큰 검증까지 마친 뒤의 결과. */

@@ -299,8 +299,14 @@ class SensitiveToStringReachTest {
          * 응답의 `segment_map` DTO). 필드 이름(sourceUnitCount·easyUnitCount·units·
          * easyUnitIndex·sourceUnitIndexes·confidence) 어느 것도 민감 판정 토큰에 걸리지
          * 않는다 — 색인과 개수뿐이다 — [KNOWN_SENSITIVE_TYPES] 에 넣지 않는다.
+         *
+         * 소셜 로그인 두 번째 제공자 — 카카오(backlog §1.4, 계약 2.13.0, 2026-09-05)가
+         * **둘**을 더해 121 이다(119 위에) — infrastructure `KakaoOAuthSettings`(어댑터 설정,
+         * `clientSecret` 은 `Secret` 타입이라 그 자체가 이미 가려진다 — `GoogleOAuthSettings`
+         * 와 같은 판단)와 `KakaoOAuthProperties`(설정 바인딩, `GoogleOAuthProperties` 와
+         * 같은 필드 모양이라 같은 이유로 [KNOWN_SENSITIVE_TYPES] 에 넣지 않는다).
          */
-        const val EXPECTED_SOURCE_DECLARATIONS = 119
+        const val EXPECTED_SOURCE_DECLARATIONS = 121
 
         /** 민감 판정이 반드시 닿아야 하는 타입 — 바닥이다. */
         val KNOWN_SENSITIVE_TYPES =

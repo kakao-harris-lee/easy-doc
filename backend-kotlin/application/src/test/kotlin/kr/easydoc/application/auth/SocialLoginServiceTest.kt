@@ -397,8 +397,57 @@ class SocialLoginServiceTest {
         ).isNull()
     }
 
+    // ------------------------------------------------------------------ 카카오(계약 2.13.0)
+
+    @Test
+    @DisplayName("카카오 신원도 이메일이 없으면 422 — google 과 같은 규칙(x-social-login.account_linking)")
+    fun `카카오 이메일 없으면 422다`() {
+        val world = SocialWorld(kakaoConfigured = true)
+        world.kakaoProvider.nextIdentity = SocialIdentity("kakao-sub-1", email = null, emailVerified = false)
+
+        val start = world.service.start(SocialLoginProviderId.KAKAO, KAKAO_REDIRECT_URI)
+
+        assertThatThrownBy {
+            world.service.callback(
+                SocialLoginProviderId.KAKAO,
+                "auth-code",
+                start.state,
+                KAKAO_REDIRECT_URI,
+            )
+        }.isInstanceOf(InvalidInputException::class.java)
+            .hasMessage(SocialLoginService.EMAIL_REQUIRED_MESSAGE)
+    }
+
+    @Test
+    @DisplayName("카카오 연결 흐름도 동작한다 — 로그인한 계정에 카카오 신원이 연결된다")
+    fun `카카오 연결이 성공한다`() {
+        val world = SocialWorld(kakaoConfigured = true)
+        val user = world.users.seedPasswordAccount("kakao-owner@example.test")
+        world.kakaoProvider.nextIdentity =
+            SocialIdentity("kakao-link-1", "kakao-owner-social@example.test", emailVerified = true)
+
+        val start = world.service.linkStart(user.id, SocialLoginProviderId.KAKAO, KAKAO_REDIRECT_URI)
+        world.service.linkCallback(user.id, SocialLoginProviderId.KAKAO, "auth-code", start.state, KAKAO_REDIRECT_URI)
+
+        val linked = world.identities.linked.single()
+        assertThat(linked.userId).isEqualTo(user.id)
+        assertThat(linked.provider).isEqualTo(SocialLoginProviderId.KAKAO)
+        assertThat(linked.providerUserId).isEqualTo("kakao-link-1")
+    }
+
+    @Test
+    @DisplayName("키가 설정되지 않은 카카오는 422 — 카카오 전용 문구다")
+    fun `설정되지 않은 카카오는 422다`() {
+        val world = SocialWorld(kakaoConfigured = false)
+
+        assertThatThrownBy { world.service.start(SocialLoginProviderId.KAKAO, KAKAO_REDIRECT_URI) }
+            .isInstanceOf(InvalidInputException::class.java)
+            .hasMessage("카카오 로그인이 설정되지 않았습니다")
+    }
+
     private companion object {
         const val REDIRECT_URI = "http://localhost:5173/auth/google/callback"
+        const val KAKAO_REDIRECT_URI = "http://localhost:5173/auth/kakao/callback"
     }
 }
 
@@ -406,20 +455,26 @@ class SocialLoginServiceTest {
 private class SocialWorld(
     tokensConfigured: Boolean = true,
     googleConfigured: Boolean = true,
+    kakaoConfigured: Boolean = false,
 ) {
     val users = RecordingSocialUserRepository()
     val workspaces = RecordingSocialWorkspaceRepository()
     val identities = RecordingIdentityRepository()
     val states: OAuthStateStore = InMemoryOAuthStateStore()
     val tokens = RecordingSocialAccessTokens(tokensConfigured)
-    val provider = FakeSocialLoginProvider()
+    val provider = FakeSocialLoginProvider("http://localhost:5173/auth/google/callback")
+    val kakaoProvider = FakeSocialLoginProvider("http://localhost:5173/auth/kakao/callback")
     val transaction =
         object : TransactionRunner {
             override fun <T> inTransaction(block: () -> T): T = block()
         }
     val service =
         SocialLoginService(
-            providers = if (googleConfigured) mapOf(SocialLoginProviderId.GOOGLE to provider) else emptyMap(),
+            providers =
+                buildMap {
+                    if (googleConfigured) put(SocialLoginProviderId.GOOGLE, provider)
+                    if (kakaoConfigured) put(SocialLoginProviderId.KAKAO, kakaoProvider)
+                },
             states = states,
             repositories = SocialLoginRepositories(users, identities, workspaces),
             accessTokens = tokens,
@@ -428,20 +483,20 @@ private class SocialWorld(
         )
 }
 
-private class FakeSocialLoginProvider : SocialLoginProvider {
+/** 제공자를 가리지 않는 대역 — 허용 redirect_uri 하나만 다르면 google 이든 kakao 든 같은 계약을 흉내 낸다. */
+private class FakeSocialLoginProvider(private val allowedRedirectUri: String) : SocialLoginProvider {
     var nextIdentity: SocialIdentity? = null
     var exchangeFailure: RuntimeException? = null
     var exchangeCallCount = 0
         private set
 
-    override fun supportsRedirectUri(redirectUri: String): Boolean =
-        redirectUri == "http://localhost:5173/auth/google/callback"
+    override fun supportsRedirectUri(redirectUri: String): Boolean = redirectUri == allowedRedirectUri
 
     override fun authorizationUrl(
         state: String,
         nonce: String,
         redirectUri: String,
-    ): String = "https://accounts.google.test/o/oauth2/auth?state=$state&nonce=$nonce"
+    ): String = "https://accounts.social.test/o/oauth2/auth?state=$state&nonce=$nonce"
 
     override fun exchange(
         code: String,

@@ -18,6 +18,8 @@ import kr.easydoc.application.mail.MailSender
 import kr.easydoc.core.security.Secret
 import kr.easydoc.infrastructure.auth.google.GoogleOAuthSettings
 import kr.easydoc.infrastructure.auth.google.GoogleSocialLoginProvider
+import kr.easydoc.infrastructure.auth.kakao.KakaoOAuthSettings
+import kr.easydoc.infrastructure.auth.kakao.KakaoSocialLoginProvider
 import kr.easydoc.infrastructure.db.SpringTransactionRunner
 import org.springframework.boot.context.properties.ConfigurationProperties
 import org.springframework.context.annotation.Bean
@@ -110,6 +112,14 @@ data class GoogleOAuthProperties(
      * 다시 받는다.
      */
     val jwksCacheMinutes: Long = DEFAULT_JWKS_CACHE_MINUTES,
+    /**
+     * 토큰 교환·JWKS 호출의 연결·읽기 타임아웃(ms) — 하나의 손잡이로 묶는다
+     * (`MailProperties.timeoutMs` 와 같은 방침, CLAUDE.md 「상수와 구성 관리」). 이전에는
+     * `GoogleSocialLoginProvider` 가 이 값을 코드 상수(`GOOGLE_CONNECT_TIMEOUT`·
+     * `GOOGLE_READ_TIMEOUT`)로만 가졌다 — 운영 중 조정할 방법이 없었다(리뷰 후속 조치,
+     * 2026-09-05). 기본값은 그 상수 중 더 큰 쪽([kr.easydoc.infrastructure.auth.google.GOOGLE_READ_TIMEOUT])과 같다.
+     */
+    val timeoutMs: Long = DEFAULT_TIMEOUT_MS,
 ) {
     fun isConfigured(): Boolean = clientId.isNotBlank() && !clientSecret.isBlank()
 
@@ -117,6 +127,31 @@ data class GoogleOAuthProperties(
         const val DEFAULT_LOGIN_REDIRECT_URI = "http://localhost:5173/auth/google/callback"
         const val DEFAULT_LINK_REDIRECT_URI = "http://localhost:5173/auth/google/link/callback"
         private const val DEFAULT_JWKS_CACHE_MINUTES = 60L
+        private const val DEFAULT_TIMEOUT_MS = 15_000L
+    }
+}
+
+/**
+ * 카카오 OAuth 설정. 바인딩 접두사는 `easydoc.oauth.kakao` — [GoogleOAuthProperties] 와
+ * 같은 계약(키 없으면 [socialLoginProviders] 가 등록하지 않는다, 기본 redirect_uri 는
+ * 로그인·연결 콜백 둘 다 담는다).
+ */
+@ConfigurationProperties(prefix = "easydoc.oauth.kakao")
+data class KakaoOAuthProperties(
+    val clientId: String = "",
+    val clientSecret: Secret = Secret.EMPTY,
+    val redirectUris: List<String> = listOf(DEFAULT_LOGIN_REDIRECT_URI, DEFAULT_LINK_REDIRECT_URI),
+    val jwksCacheMinutes: Long = DEFAULT_JWKS_CACHE_MINUTES,
+    /** [GoogleOAuthProperties.timeoutMs] 와 같은 계약 — 그 필드 KDoc. */
+    val timeoutMs: Long = DEFAULT_TIMEOUT_MS,
+) {
+    fun isConfigured(): Boolean = clientId.isNotBlank() && !clientSecret.isBlank()
+
+    companion object {
+        const val DEFAULT_LOGIN_REDIRECT_URI = "http://localhost:5173/auth/kakao/callback"
+        const val DEFAULT_LINK_REDIRECT_URI = "http://localhost:5173/auth/kakao/link/callback"
+        private const val DEFAULT_JWKS_CACHE_MINUTES = 60L
+        private const val DEFAULT_TIMEOUT_MS = 15_000L
     }
 }
 
@@ -218,25 +253,46 @@ class AuthConfiguration {
     fun userIdentityRepository(jdbcClient: JdbcClient): UserIdentityRepository = JdbcUserIdentityRepository(jdbcClient)
 
     /**
-     * 등록된 소셜 로그인 제공자 — 오늘은 google 하나뿐이고, 키가 없으면 아예 등록하지
-     * 않는다(그 provider 를 요청하면 `SocialLoginService` 가 422 로 응답한다).
+     * 등록된 소셜 로그인 제공자 — google·kakao 각각 키가 있을 때만 등록한다(둘 다 없으면
+     * 빈 맵, 그 provider 를 요청하면 `SocialLoginService` 가 422 로 응답한다).
      */
     @Bean
-    fun socialLoginProviders(google: GoogleOAuthProperties): Map<SocialLoginProviderId, SocialLoginProvider> {
-        if (!google.isConfigured()) {
-            return emptyMap()
+    fun socialLoginProviders(
+        google: GoogleOAuthProperties,
+        kakao: KakaoOAuthProperties,
+    ): Map<SocialLoginProviderId, SocialLoginProvider> =
+        buildMap {
+            if (google.isConfigured()) {
+                put(
+                    SocialLoginProviderId.GOOGLE,
+                    GoogleSocialLoginProvider(
+                        GoogleOAuthSettings(
+                            clientId = google.clientId,
+                            clientSecret = google.clientSecret,
+                            redirectUriAllowlist = google.redirectUris.toSet(),
+                            jwksCacheTtl = Duration.ofMinutes(google.jwksCacheMinutes),
+                            connectTimeout = Duration.ofMillis(google.timeoutMs),
+                            readTimeout = Duration.ofMillis(google.timeoutMs),
+                        ),
+                    ),
+                )
+            }
+            if (kakao.isConfigured()) {
+                put(
+                    SocialLoginProviderId.KAKAO,
+                    KakaoSocialLoginProvider(
+                        KakaoOAuthSettings(
+                            clientId = kakao.clientId,
+                            clientSecret = kakao.clientSecret,
+                            redirectUriAllowlist = kakao.redirectUris.toSet(),
+                            jwksCacheTtl = Duration.ofMinutes(kakao.jwksCacheMinutes),
+                            connectTimeout = Duration.ofMillis(kakao.timeoutMs),
+                            readTimeout = Duration.ofMillis(kakao.timeoutMs),
+                        ),
+                    ),
+                )
+            }
         }
-        val provider =
-            GoogleSocialLoginProvider(
-                GoogleOAuthSettings(
-                    clientId = google.clientId,
-                    clientSecret = google.clientSecret,
-                    redirectUriAllowlist = google.redirectUris.toSet(),
-                    jwksCacheTtl = Duration.ofMinutes(google.jwksCacheMinutes),
-                ),
-            )
-        return mapOf(SocialLoginProviderId.GOOGLE to provider)
-    }
 
     /** `SocialLoginService` 생성자 매개변수 상한을 지키려고 저장소 셋을 묶는다(그 클래스 KDoc). */
     @Bean

@@ -275,22 +275,25 @@ class SocialLoginService(
         /** 계약 `422` 예시 — 허용 목록 밖 `redirect_uri`. */
         const val REDIRECT_URI_NOT_ALLOWED_MESSAGE = "허용되지 않은 redirect_uri 입니다"
 
-        /** 키가 설정되지 않아 이 제공자가 등록되지 않았다 — google 전용 문구(사용자 요청). */
+        /** 키가 설정되지 않아 이 제공자가 등록되지 않았다 — 제공자별 문구(사용자 요청). */
         fun providerNotConfiguredMessage(providerId: SocialLoginProviderId): String =
             when (providerId) {
                 SocialLoginProviderId.GOOGLE -> "구글 로그인이 설정되지 않았습니다"
+                SocialLoginProviderId.KAKAO -> "카카오 로그인이 설정되지 않았습니다"
             }
 
         /** 계약 `oauthLinkCallback` `409` 예시 — 그 신원이 이미 **다른** 사용자에 연결돼 있다. */
         fun identityAlreadyLinkedToOtherUserMessage(providerId: SocialLoginProviderId): String =
             when (providerId) {
                 SocialLoginProviderId.GOOGLE -> "이 구글 계정은 이미 다른 계정에 연결되어 있습니다"
+                SocialLoginProviderId.KAKAO -> "이 카카오 계정은 이미 다른 계정에 연결되어 있습니다"
             }
 
         /** 계약 `oauthLinkCallback` `409` 예시 — 이 사용자가 이 제공자에 이미 다른 신원을 연결했다. */
         fun providerAlreadyLinkedMessage(providerId: SocialLoginProviderId): String =
             when (providerId) {
                 SocialLoginProviderId.GOOGLE -> "이미 다른 구글 계정이 이 계정에 연결되어 있습니다"
+                SocialLoginProviderId.KAKAO -> "이미 다른 카카오 계정이 이 계정에 연결되어 있습니다"
             }
     }
 }
