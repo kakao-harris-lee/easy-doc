@@ -173,7 +173,7 @@ function parseIntHeader(header: string | null): number | null {
     return null
   }
   const value = Number(header)
-  return Number.isFinite(value) ? value : null
+  return Number.isInteger(value) ? value : null
 }
 
 /** JSON 응답을 기대하는 요청. */

@@ -255,4 +255,19 @@ describe('reconvertUnit', () => {
       reconvertUnit('c1', 0, { easy_unit_indexes: [], easy_text_fingerprint: 'a'.repeat(64) }),
     ).rejects.toMatchObject({ status: 502, retryAfterSeconds: null, remainingCallBudget: null })
   })
+
+  it('정수가 아닌 헤더 값(LOW 리뷰 5)은 remainingCallBudget·retryAfterSeconds가 null이다', async () => {
+    writeToken('token-abc')
+    fetchMock.mockResolvedValue(
+      new Response(JSON.stringify({ detail: '동시 재변환 한도에 도달했습니다' }), {
+        status: 503,
+        // `Number.isFinite`는 '1.5'도 통과시키지만 초 단위 헤더는 정수여야 한다.
+        headers: { 'Content-Type': 'application/json', 'Retry-After': '1.5' },
+      }),
+    )
+
+    await expect(
+      reconvertUnit('c1', 0, { easy_unit_indexes: [], easy_text_fingerprint: 'a'.repeat(64) }),
+    ).rejects.toMatchObject({ status: 503, retryAfterSeconds: null })
+  })
 })

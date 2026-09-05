@@ -2,6 +2,7 @@ import { memo, useCallback, useEffect, useRef, type KeyboardEvent } from 'react'
 
 import type { SegmentConfidence, SegmentMapUnit } from '../api/types'
 import { cn } from '../lib/utils'
+import { alignUnitMap, reindexUnitMap, spliceUnitText } from '../review/unitMap'
 import { Badge } from './ui/Badge'
 import { ReconvertCandidateCard } from './ReconvertCandidateCard'
 
@@ -96,36 +97,6 @@ function unitLabel(index: number, unit: SegmentMapUnit | undefined): string {
   }
   const sourceOrdinals = unit.source_unit_indexes.map((sourceIndex) => sourceIndex + 1).join(', ')
   return `쉬운 글 단위 ${ordinal}, 원본 ${sourceOrdinals}번째 문단에 대응`
-}
-
-/** `easy_unit_index`를 배열 위치와 다시 맞춘다. 분할·병합 뒤 항상 이 함수를 거친다. */
-function reindex(units: SegmentMapUnit[]): SegmentMapUnit[] {
-  return units.map((unit, index) => ({ ...unit, easy_unit_index: index }))
-}
-
-/**
- * `unitMap`이 `units`와 길이가 다르면 안전하게 맞춘다.
- *
- * 이 컴포넌트가 지도를 실제로 읽는 곳은 여기 한 곳뿐이다 — `units.length === unitMap.length`
- * 라는 구조적 불변식을 이 함수 하나로 강제한다(CRITICAL 리뷰). 분할·병합·여러 줄 입력
- * 처리는 항상 같은 길이로 지도를 다시 짜서 넘기므로 이 갈래는 보통 그대로 통과하고,
- * 서버 응답이 아직 오지 않았거나 예상 밖의 경합이 남긴 낡은 지도를 만났을 때만 자리를
- * 채운다 — 어긋난 옛 항목을 엉뚱한 단위에 잘못 붙이지 않고 「대응 확인 불가」로 둔다.
- */
-function alignUnitMap(map: SegmentMapUnit[], unitCount: number): SegmentMapUnit[] {
-  if (map.length === unitCount) {
-    return map
-  }
-  return Array.from({ length: unitCount }, (_, index) => {
-    const existing = map[index]
-    return (
-      existing ?? {
-        easy_unit_index: index,
-        source_unit_indexes: [],
-        confidence: 'low' as SegmentConfidence,
-      }
-    )
-  }).map((unit, index) => ({ ...unit, easy_unit_index: index }))
 }
 
 interface UnitRowProps {
@@ -277,7 +248,7 @@ export function SegmentedResultEditor({
       const inheritedConfidence = original?.confidence ?? ('low' as SegmentConfidence)
       // 두 새 단위는 각자 자기 배열을 갖는다(LOW 리뷰) — `original.source_unit_indexes`를
       // 그대로 공유하면 훗날 한쪽을 고치는 코드가 다른 쪽까지 조용히 바꿔 버린다.
-      const nextMap = reindex([
+      const nextMap = reindexUnitMap([
         ...currentMap.slice(0, index),
         {
           easy_unit_index: 0,
@@ -322,7 +293,7 @@ export function SegmentedResultEditor({
       ).sort((left, right) => left - right)
       const mergedConfidence: SegmentConfidence =
         a?.confidence === 'high' && b?.confidence === 'high' ? 'high' : 'low'
-      const nextMap = reindex([
+      const nextMap = reindexUnitMap([
         ...currentMap.slice(0, index - 1),
         { easy_unit_index: 0, source_unit_indexes: mergedIndexes, confidence: mergedConfidence },
         ...currentMap.slice(index + 1),
@@ -351,30 +322,8 @@ export function SegmentedResultEditor({
         return
       }
 
-      const parts = text.split('\n')
-      const nextUnits = [
-        ...currentUnits.slice(0, index),
-        ...parts,
-        ...currentUnits.slice(index + 1),
-      ]
+      const { units: nextUnits, map: nextMap } = spliceUnitText(currentUnits, unitMap, index, text)
       onChange(nextUnits.join('\n'))
-
-      const currentMap = alignUnitMap(unitMap, currentUnits.length)
-      const original = currentMap[index]
-      const inserted: SegmentMapUnit[] = parts.map((_, partIndex) =>
-        partIndex === 0
-          ? {
-              easy_unit_index: 0,
-              source_unit_indexes: [...(original?.source_unit_indexes ?? [])],
-              confidence: original?.confidence ?? ('low' as SegmentConfidence),
-            }
-          : { easy_unit_index: 0, source_unit_indexes: [], confidence: 'low' as SegmentConfidence },
-      )
-      const nextMap = reindex([
-        ...currentMap.slice(0, index),
-        ...inserted,
-        ...currentMap.slice(index + 1),
-      ])
       onUnitMapChange(nextMap)
     },
     [value, unitMap, onChange, onUnitMapChange],
