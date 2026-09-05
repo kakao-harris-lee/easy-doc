@@ -47,6 +47,9 @@ class SocialLoginServiceTest {
                 .user.emailVerifiedAt,
         ).withFailMessage("구글 최초 가입 계정이 생성 시점에 인증 완료로 표시되지 않았다")
             .isNotNull()
+        // 이미 검증된 이메일이라 이메일 인증 코드를 또 발급하지 않는다 — 네이버(미검증)만
+        // 예외로 발급한다(클래스 KDoc, `callback` KDoc).
+        assertThat(world.emailVerification.issuedFor).isEmpty()
     }
 
     @Test
@@ -419,6 +422,25 @@ class SocialLoginServiceTest {
     }
 
     @Test
+    @DisplayName("카카오 최초 가입은 검증된 이메일이라 이메일 인증 코드를 또 발급하지 않는다")
+    fun `카카오 최초 가입은 인증 코드를 발급하지 않는다`() {
+        val world = SocialWorld(kakaoConfigured = true)
+        world.kakaoProvider.nextIdentity =
+            SocialIdentity("kakao-sub-new-1", "kakao-new@example.test", emailVerified = true)
+
+        val start = world.service.start(SocialLoginProviderId.KAKAO, KAKAO_REDIRECT_URI)
+        val token = world.service.callback(SocialLoginProviderId.KAKAO, "auth-code", start.state, KAKAO_REDIRECT_URI)
+
+        assertThat(token.token).isNotBlank()
+        assertThat(
+            world.users.saved
+                .getValue("kakao-new@example.test")
+                .user.emailVerifiedAt,
+        ).isNotNull()
+        assertThat(world.emailVerification.issuedFor).isEmpty()
+    }
+
+    @Test
     @DisplayName("카카오 연결 흐름도 동작한다 — 로그인한 계정에 카카오 신원이 연결된다")
     fun `카카오 연결이 성공한다`() {
         val world = SocialWorld(kakaoConfigured = true)
@@ -449,13 +471,40 @@ class SocialLoginServiceTest {
 
     @Test
     @DisplayName(
-        "네이버 신원은 이메일이 있어도 422 — 네이버는 email_verified 개념이 없어 어댑터가 " +
-            "항상 미검증으로 낸다(x-social-login.providers.x-note, 2026-09-05 결정)",
+        "네이버 최초 가입은 이메일이 있으면 미검증인 채로도 계정을 만든다 — 커밋 뒤 이메일 인증 " +
+            "코드를 발급한다(2026-09-05 결정, x-social-login.providers.x-note)",
     )
-    fun `네이버는 이메일이 있어도 항상 미검증이라 422다`() {
+    fun `네이버 최초 가입은 미검증 계정을 만들고 인증 코드를 발급한다`() {
         val world = SocialWorld(naverConfigured = true)
         world.naverProvider.nextIdentity =
             SocialIdentity("naver-sub-1", "naver-new@example.test", emailVerified = false)
+
+        val start = world.service.start(SocialLoginProviderId.NAVER, NAVER_REDIRECT_URI)
+        val token = world.service.callback(SocialLoginProviderId.NAVER, "auth-code", start.state, NAVER_REDIRECT_URI)
+
+        assertThat(token.token).isNotBlank()
+        val stored = world.users.saved.getValue("naver-new@example.test")
+        assertThat(stored.user.emailVerifiedAt)
+            .withFailMessage("네이버 최초 가입 계정은 미검증(email_verified_at == null)이어야 한다")
+            .isNull()
+        assertThat(
+            world.identities.linked
+                .single()
+                .providerUserId,
+        ).isEqualTo("naver-sub-1")
+        assertThat(world.identities.lastLinkedEmailVerified)
+            .withFailMessage("연결된 신원 행도 emailVerified == false 로 넘어가야 한다")
+            .isFalse()
+        // 커밋 뒤(트랜잭션 밖, depth == 0)에 best-effort 로 발급한다 — `AuthService.signup` 과 같다.
+        assertThat(world.emailVerification.issuedFor).containsExactly(stored.user.id)
+        assertThat(world.emailVerification.depthAtIssue).isZero()
+    }
+
+    @Test
+    @DisplayName("네이버 신원에 이메일 자체가 없으면 여전히 422 — 네이버 전용 문구다")
+    fun `네이버 이메일 없으면 네이버 전용 문구로 422다`() {
+        val world = SocialWorld(naverConfigured = true)
+        world.naverProvider.nextIdentity = SocialIdentity("naver-sub-1b", email = null, emailVerified = false)
 
         val start = world.service.start(SocialLoginProviderId.NAVER, NAVER_REDIRECT_URI)
 
@@ -467,8 +516,56 @@ class SocialLoginServiceTest {
                 NAVER_REDIRECT_URI,
             )
         }.isInstanceOf(InvalidInputException::class.java)
-            .hasMessage(SocialLoginService.EMAIL_REQUIRED_MESSAGE)
+            .hasMessage(SocialLoginService.NAVER_EMAIL_REQUIRED_MESSAGE)
         assertThat(world.identities.linked).isEmpty()
+        assertThat(world.emailVerification.issuedFor).isEmpty()
+    }
+
+    @Test
+    @DisplayName("네이버 신원의 이메일이 형식에 안 맞으면 네이버 전용 문구로 422다 — 계정을 만들지 않는다")
+    fun `네이버 이메일이 형식에 안 맞으면 네이버 전용 문구로 422다`() {
+        val world = SocialWorld(naverConfigured = true)
+        world.naverProvider.nextIdentity =
+            SocialIdentity("naver-sub-1d", email = "not-an-email", emailVerified = false)
+
+        val start = world.service.start(SocialLoginProviderId.NAVER, NAVER_REDIRECT_URI)
+
+        assertThatThrownBy {
+            world.service.callback(
+                SocialLoginProviderId.NAVER,
+                "auth-code",
+                start.state,
+                NAVER_REDIRECT_URI,
+            )
+        }.isInstanceOf(InvalidInputException::class.java)
+            .hasMessage(SocialLoginService.NAVER_EMAIL_REQUIRED_MESSAGE)
+        assertThat(world.users.saved).isEmpty()
+        assertThat(world.identities.linked).isEmpty()
+        assertThat(world.emailVerification.issuedFor).isEmpty()
+    }
+
+    @Test
+    @DisplayName("네이버 신원의 이메일이 이미 다른 계정에 등록돼 있으면 409 — 자동 연결하지 않는다")
+    fun `네이버도 이메일이 겹치면 409다`() {
+        val world = SocialWorld(naverConfigured = true)
+        world.users.saved["naver-taken@example.test"] =
+            StoredUser(User(UUID.randomUUID(), "naver-taken@example.test", Instant.EPOCH), PasswordHash("hashed:x"))
+        world.naverProvider.nextIdentity =
+            SocialIdentity("naver-sub-1c", "naver-taken@example.test", emailVerified = false)
+
+        val start = world.service.start(SocialLoginProviderId.NAVER, NAVER_REDIRECT_URI)
+
+        assertThatThrownBy {
+            world.service.callback(
+                SocialLoginProviderId.NAVER,
+                "auth-code",
+                start.state,
+                NAVER_REDIRECT_URI,
+            )
+        }.isInstanceOf(EmailAlreadyRegisteredException::class.java)
+            .hasMessage(SocialLoginService.EMAIL_ALREADY_LINKED_MESSAGE)
+        assertThat(world.identities.linked).isEmpty()
+        assertThat(world.emailVerification.issuedFor).isEmpty()
     }
 
     @Test
@@ -534,10 +631,8 @@ private class SocialWorld(
     val provider = FakeSocialLoginProvider("http://localhost:5173/auth/google/callback")
     val kakaoProvider = FakeSocialLoginProvider("http://localhost:5173/auth/kakao/callback")
     val naverProvider = FakeSocialLoginProvider("http://localhost:5173/auth/naver/callback")
-    val transaction =
-        object : TransactionRunner {
-            override fun <T> inTransaction(block: () -> T): T = block()
-        }
+    val transaction = SocialRecordingTransactionRunner()
+    val emailVerification = SocialRecordingEmailVerification(transaction)
     val service =
         SocialLoginService(
             providers =
@@ -551,7 +646,39 @@ private class SocialWorld(
             accessTokens = tokens,
             transaction = transaction,
             stateTtl = Duration.ofMinutes(10),
+            emailVerification = emailVerification,
         )
+}
+
+/** 트랜잭션 깊이를 기록한다 — `AuthServiceTest.SocialRecordingTransactionRunner` 와 같은 필요. */
+private class SocialRecordingTransactionRunner : TransactionRunner {
+    var depth = 0
+        private set
+
+    override fun <T> inTransaction(block: () -> T): T {
+        depth++
+        try {
+            return block()
+        } finally {
+            depth--
+        }
+    }
+}
+
+/**
+ * `PostSignupEmailVerification` 대역 — 발급 호출을 기록한다. [depthAtIssue] 는 0이어야
+ * 한다: 커밋 **뒤**에 불려야 한다(`AuthServiceTest.SocialRecordingEmailVerification` 과 같은 필요).
+ */
+private class SocialRecordingEmailVerification(private val transaction: SocialRecordingTransactionRunner) :
+    PostSignupEmailVerification {
+    val issuedFor: MutableList<UUID> = mutableListOf()
+    var depthAtIssue: Int = -1
+        private set
+
+    override fun issueAfterSignup(userId: UUID) {
+        issuedFor += userId
+        depthAtIssue = transaction.depth
+    }
 }
 
 /** 제공자를 가리지 않는 대역 — 허용 redirect_uri 하나만 다르면 google 이든 kakao 든 같은 계약을 흉내 낸다. */
@@ -705,6 +832,13 @@ private class RecordingIdentityRepository : UserIdentityRepository {
     val linked: MutableList<UserIdentity> = mutableListOf()
     private val byProvider = mutableMapOf<Pair<SocialLoginProviderId, String>, UserIdentity>()
 
+    /**
+     * `link()` 가 받은 `emailVerified` 를 그대로 기록한다 — [UserIdentity] 자체엔 그 필드가
+     * 없어(응답 최소화, `readMe.identities` KDoc) 인자로 들어온 값을 별도로 남겨야 잰다.
+     */
+    var lastLinkedEmailVerified: Boolean? = null
+        private set
+
     /** 「이미 연결된 신원」 시나리오를 준비한다. */
     fun seed(
         userId: UUID,
@@ -733,6 +867,7 @@ private class RecordingIdentityRepository : UserIdentityRepository {
         email: String?,
         emailVerified: Boolean,
     ): UserIdentity {
+        lastLinkedEmailVerified = emailVerified
         val identity = UserIdentity(UUID.randomUUID(), userId, provider, providerUserId)
         byProvider[provider to providerUserId] = identity
         linked += identity

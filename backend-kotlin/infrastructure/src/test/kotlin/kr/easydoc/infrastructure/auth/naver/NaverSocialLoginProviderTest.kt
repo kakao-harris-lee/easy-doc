@@ -86,6 +86,16 @@ class NaverSocialLoginProviderTest {
     }
 
     @Test
+    @DisplayName("토큰 엔드포인트가 HTTP 200 이어도 error 필드가 있으면 InvalidCredentialsException 이다")
+    fun `토큰 응답 HTTP 200 이어도 error 필드는 InvalidCredentialsException 이다`() {
+        server.tokenResponseStatus = 200
+        server.tokenResponseBody = """{"error":"invalid_request","error_description":"bad request"}"""
+
+        assertThatThrownBy { provider().exchange("auth-code", REDIRECT_URI, NONCE) }
+            .isInstanceOf(InvalidCredentialsException::class.java)
+    }
+
+    @Test
     @DisplayName("토큰 엔드포인트가 5xx 면 ExternalServiceUnavailableException 이다")
     fun `제공자 5xx 는 불통 예외다`() {
         server.tokenResponseStatus = 503
@@ -122,6 +132,28 @@ class NaverSocialLoginProviderTest {
 
         assertThatThrownBy { provider().exchange("auth-code", REDIRECT_URI, NONCE) }
             .isInstanceOf(InvalidCredentialsException::class.java)
+    }
+
+    @Test
+    @DisplayName("사용자 정보 응답이 HTTP 200 이어도 resultcode 가 실패면 InvalidCredentialsException 이다")
+    fun `HTTP 200 이어도 resultcode 실패는 InvalidCredentialsException 이다`() {
+        server.tokenResponseBody = tokenResponseBody(accessToken = "access-4")
+        server.userInfoStatus = 200
+        server.userInfoBody = """{"resultcode":"024","message":"Authentication failed","response":"fail"}"""
+
+        assertThatThrownBy { provider().exchange("auth-code", REDIRECT_URI, NONCE) }
+            .isInstanceOf(InvalidCredentialsException::class.java)
+    }
+
+    @Test
+    @DisplayName("resultcode 는 성공인데 response.id 가 없으면 형식 오류로 ExternalServiceUnavailableException 이다")
+    fun `resultcode 성공에 id 없음은 불통 예외다`() {
+        server.tokenResponseBody = tokenResponseBody(accessToken = "access-5")
+        server.userInfoStatus = 200
+        server.userInfoBody = """{"resultcode":"00","message":"success","response":{}}"""
+
+        assertThatThrownBy { provider().exchange("auth-code", REDIRECT_URI, NONCE) }
+            .isInstanceOf(ExternalServiceUnavailableException::class.java)
     }
 
     // ------------------------------------------------------------------ URL·redirect_uri

@@ -175,6 +175,7 @@ class AuthSliceBeans {
         repositories: SocialLoginRepositories,
         tokens: StubAccessTokens,
         transaction: TransactionRunner,
+        emailVerification: EmailVerificationService,
     ): SocialLoginService =
         SocialLoginService(
             providers =
@@ -188,6 +189,7 @@ class AuthSliceBeans {
             accessTokens = tokens,
             transaction = transaction,
             stateTtl = java.time.Duration.ofMinutes(10),
+            emailVerification = emailVerification,
         )
 
     /**

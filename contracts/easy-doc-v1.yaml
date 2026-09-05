@@ -658,12 +658,17 @@ x-social-login:
       WebFetch 에서 접근 차단돼 2차 출처로만 확인했다는 전제가 있다). 이 어댑터는
       검증되지 않은 값을 검증됨으로 잘못 표시하는 쪽보다 안전한 쪽을 택해 이메일이
       있어도 **항상 미검증**(`emailVerified = false`)으로 신원을 낸다(2026-09-05
-      결정). 그 결과 기존 `account_linking` 의 "이메일이 없거나 검증되지 않으면 422"
-      규칙이 네이버 최초 가입(`oauthCallback`)에는 **항상** 걸린다 — 네이버 신원
-      단독으로는 새 계정을 만들 수 없다. 이미 인증된 계정에 명시적으로 연결하는
+      결정). 기존 `account_linking` 의 "이메일이 없거나 검증되지 않으면 422" 규칙은
+      네이버에 예외를 둔다(**2026-09-05 결정, option 2**) — 이메일 자체가 없으면
+      여전히 422(`email_required`, 네이버 전용 문구)지만, 이메일이 있으면 **미검증인
+      채로도** 계정(`users.email_verified_at IS NULL`)과 기본 작업 공간을 만든다.
+      트랜잭션 커밋 뒤 비밀번호 가입(`signup`)과 같은 best-effort 로 이메일 인증
+      코드를 발급한다 — 미검증 이메일 제공자(네이버)는 가입 뒤 이메일 인증 코드
+      절차를 거친다. 이메일이 이미 다른 계정에 등록돼 있으면 다른 제공자와 같은 규칙
+      대로 409(자동 연결 안 함). 이미 인증된 계정에 명시적으로 연결하는
       `explicit_linking`(이메일 검증을 요구하지 않는다)이나, 그렇게 이미 연결된 신원으로
-      다시 로그인하는 경로(신원이 이미 있으면 이메일 규칙을 다시 보지 않는다)만 열려
-      있다. `response.id` 가 안정적 식별자다.
+      다시 로그인하는 경로(신원이 이미 있으면 이메일 규칙을 다시 보지 않는다)도 그대로
+      열려 있다. `response.id` 가 안정적 식별자다.
   provider_state: |
     `oauthStart`·`oauthCallback` 이 공유하는 422 세 갈래. 처음 하나는 스키마 층, 나머지
     둘은 도메인 층이라 `detail` **모양이 갈린다**(`ValidationFailed`가 여는 것과 같은
@@ -699,9 +704,16 @@ x-social-login:
     ID 토큰에서 얻은 이메일이 **검증됨**(`email_verified: true`)이 아니거나 아예
     없으면 422 — 검증되지 않은 이메일로 계정을 잇지 않는다.
 
+    **예외 — 네이버(2026-09-05 결정, option 2).** 이 제공자엔 애초에
+    `email_verified` 개념이 없어(`providers.x-note`) 위 규칙을 그대로 적용하면
+    네이버 신원으로는 영원히 가입할 수 없다. 그래서 네이버만 이메일이 **있으면**
+    미검증이어도 통과시켜 계정을 만들고, 가입 뒤 이메일 인증 코드 절차(비밀번호
+    가입과 같은 흐름)로 이어간다. 이메일 자체가 없으면 네이버도 여전히 422다.
+
     이미 연결된 신원(`(provider, provider_user_id)` 일치)이면 그냥 로그인이다. 신원은
-    새로운데 같은 검증된 이메일의 계정이 이미 있으면(비밀번호 가입이든 다른 제공자
-    연결이든) **자동으로 잇지 않는다** — 409(`components/responses/Conflict` 의
+    새로운데 같은 이메일의 계정이 이미 있으면(검증 여부와 무관 — `requireEmailNotAlreadyLinked`
+    는 이메일 존재만 본다, 비밀번호 가입이든 다른 제공자 연결이든) **자동으로 잇지 않는다**
+    — 409(`components/responses/Conflict` 의
     `email_already_linked`). 계정 탈취 방지가 이유다: 공격자가 피해자의 이메일로
     소셜 계정만 먼저 만들어 "당신 이메일로 가입된 계정이 있다"는 응답을 받는 것 자체는
     안전하지만(존재만 확인), 자동으로 이었다면 그 소셜 계정이 곧바로 피해자 계정에
@@ -1831,9 +1843,11 @@ paths:
         결국 우리 JWT 를 발급하는 로그인의 한 경로이기 때문이다.
 
         신원 연결 규칙(정본은 `x-social-login.account_linking`): 이미 연결된 신원이면
-        로그인, 새 신원인데 같은 **검증된** 이메일의 계정이 이미 있으면 409(자동 연결하지
-        않는다 — 연결 흐름은 다음 작업 단위), 완전히 새로우면 계정 + 기본 작업 공간을
-        만든다(가입과 같은 트랜잭션 원자성).
+        로그인, 새 신원인데 같은 이메일의 계정이 이미 있으면(검증 여부와 무관) 409(자동
+        연결하지 않는다 — 연결 흐름은 다음 작업 단위), 완전히 새로우면 계정 + 기본 작업 공간을
+        만든다(가입과 같은 트랜잭션 원자성). **예외 — 미검증 이메일 제공자(네이버)는**
+        이메일이 있으면 미검증인 채로도 계정을 만들고, 가입 뒤 이메일 인증 코드
+        절차를 거친다(비밀번호 가입과 같은 흐름, 2026-09-05 결정).
       parameters:
         - name: provider
           in: path
@@ -1879,7 +1893,7 @@ paths:
               examples:
                 code_rejected: { value: { detail: "이메일 또는 비밀번호가 올바르지 않습니다" } }
         '409':
-          description: 같은 검증된 이메일의 계정이 이미 있다 — 자동 연결하지 않는다.
+          description: 같은 이메일의 계정이 이미 있다(검증 여부와 무관) — 자동 연결하지 않는다.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
@@ -1892,7 +1906,11 @@ paths:
           description: |
             지원하지 않는 `provider`(**배열**, 스키마 층), 제공자 미설정, 또는 제공자가
             이메일을 주지 않았거나 검증하지 않았다(`email_verified: false`, 둘 다
-            **문자열**, 도메인 층).
+            **문자열**, 도메인 층). **예외 — 네이버는 이메일이 있으면 미검증
+            (`email_verified: false`)이어도 이 422 를 타지 않는다** — 미검증인 채로
+            계정을 만들고 가입 뒤 이메일 인증 코드 절차로 이어간다(`naver_email_required`
+            예시, `x-social-login.account_linking` 예외). 네이버도 이메일 자체가
+            없으면 이 422 를 그대로 탄다.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
@@ -1903,6 +1921,9 @@ paths:
                 kakao_provider_not_configured: { value: { detail: "카카오 로그인이 설정되지 않았습니다" } }
                 naver_provider_not_configured: { value: { detail: "네이버 로그인이 설정되지 않았습니다" } }
                 email_required: { value: { detail: "이메일 정보를 확인할 수 없습니다" } }
+                naver_email_required:
+                  value:
+                    detail: "네이버 계정에 이메일이 없어 가입할 수 없습니다. 이메일로 가입하거나 다른 방법을 이용해 주세요"
         '500': { $ref: '#/components/responses/InternalError' }
         '502': { $ref: '#/components/responses/BadGateway' }
         '503': { $ref: '#/components/responses/ServiceUnavailable' }
@@ -3749,10 +3770,13 @@ components:
         email_verified:
           type: boolean
           description: |
-            이메일 소유를 확인했는지(2.9.0 신설, backlog §1.4 P0-1/P0-3). 소셜 로그인
-            계정과 V7 마이그레이션 이전 기존 계정은 항상 참이다. 거짓이면
+            이메일 소유를 확인했는지(2.9.0 신설, backlog §1.4 P0-1/P0-3). 이메일을
+            검증하는 소셜 제공자(구글·카카오) 계정과 V7 마이그레이션 이전 기존 계정은
+            항상 참이다. **네이버는 예외다**(2026-09-05 결정) — 그 제공자엔
+            `email_verified` 개념이 없어 계정이 거짓으로 만들어질 수 있다. 거짓이면
             `createDocument` 가 403을 낸다 — `POST /auth/email-verification/request`로
-            코드를 받고 `confirm` 으로 넘기면 참으로 바뀐다.
+            코드를 받고 `confirm` 으로 넘기면 참으로 바뀐다(네이버는 가입 직후 이
+            코드가 자동 발급된다, `x-social-login.providers.x-note`).
         identities:
           type: array
           items: { $ref: '#/components/schemas/UserIdentityResponse' }
@@ -4760,14 +4784,17 @@ x-changelog:
          가르지 않기 위해서) 인가 URL 에 싣지도, 콜백에서 대조하지도 않는다.
       ⑷ **네이버는 `email_verified` 개념이 없다 — 이 어댑터는 이메일이 있어도 항상
          미검증으로 신원을 낸다(2026-09-05 결정).** 검증되지 않은 값을 검증됨으로
-         잘못 표시하는 쪽보다 안전한 쪽을 택했다. **새 판정 규칙을 만들지 않는다** —
-         기존 `account_linking` 의 "이메일이 없거나 검증되지 않으면 422
-         (`email_required`)" 가 그대로 적용되고, 그 결과 네이버 신원 **단독으로는
-         새 계정을 만들 수 없다.** 이미 인증된 계정에 여는 `explicit_linking`
-         (이메일 검증을 요구하지 않는다)이나, 이미 연결된 신원으로 다시 로그인하는
-         경로(신원이 있으면 이메일 규칙을 다시 보지 않는다)만 열려 있다 — 최소
-         충격 경로다(위임 지침, `SocialLoginService.callback` 의 기존 세 갈래
-         판정을 그대로 재사용한다).
+         잘못 표시하는 쪽보다 안전한 쪽을 택했다. **`account_linking` 이 네이버에
+         예외를 둔다(같은 날 후속 결정, option 2)** — 이메일이 없으면 여전히 422
+         (`email_required`, 네이버 전용 문구)지만, 이메일이 있으면 **미검증인 채로도**
+         계정(`users.email_verified_at IS NULL`)과 기본 작업 공간을 만든다. 미검증
+         이메일 제공자(네이버)는 가입 뒤 이메일 인증 코드 절차를 거친다 — 트랜잭션
+         커밋 뒤 비밀번호 가입(`signup`)과 같은 best-effort 로 `EmailVerificationService`
+         가 코드를 발급한다. 이메일이 이미 다른 계정에 등록돼 있으면 다른 제공자와
+         같은 규칙대로 여전히 409(자동 연결 안 함). 이미 인증된 계정에 여는
+         `explicit_linking`(이메일 검증을 요구하지 않는다)이나, 이미 연결된 신원으로
+         다시 로그인하는 경로(신원이 있으면 이메일 규칙을 다시 보지 않는다)도 그대로
+         열려 있다.
       ⑸ **연결 해제(unlink)는 이번에도 범위 밖이다** — backlog §1.4의 다음 조각
          (구글 2.10.0·카카오 2.13.0 changelog와 같은 처분).
 

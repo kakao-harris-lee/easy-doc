@@ -34,7 +34,7 @@ export function authContextValue(overrides: Partial<AuthContextValue> = {}): Aut
     user: userResponse(),
     signIn: () => Promise.resolve(),
     signUp: () => Promise.resolve(),
-    signInWithSocialProvider: () => Promise.resolve(),
+    signInWithSocialProvider: () => Promise.resolve(userResponse()),
     signOut: () => undefined,
     refreshMe: () => Promise.resolve(),
     ...overrides,

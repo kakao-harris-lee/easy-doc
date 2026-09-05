@@ -31,6 +31,13 @@ import java.time.Duration
  * 읽는다. JWKS 서명 검증이 필요 없어 [kr.easydoc.infrastructure.auth.oidc.OidcJwksVerifier]
  * 를 쓰지 않는다.
  *
+ * **userinfo 응답은 HTTP 상태만으로 성패를 알 수 없다 — envelope 의 `resultcode` 를 확인한다.**
+ * 네이버는 만료/무효 토큰에도 HTTP 200 과 함께 `{"resultcode":"024","message":"Authentication
+ * failed","response":...}` 를 낸다(2026-09-05 리뷰에서 발견). [identityFromUserInfo] 가
+ * `resultcode` 를 [NAVER_RESULT_CODE_SUCCESS] 와 비교해 성공이 아니면 벤더 `message`(2차
+ * 출처로만 확인된 코드 목록)를 로깅하지 않고 `InvalidCredentialsException`(401)으로 매핑한다.
+ * `resultcode` 가 성공인데 `response.id` 가 없는 경우는 별개의 형식 오류로 다뤄 502 로 낸다.
+ *
  * **`nonce` 를 인가 URL 에 싣지 않고 검증도 하지 않는다.** 네이버 프로토콜이 그 파라미터를
  * 지원하지 않는다(2차 출처 조사, backlog §1.4). [SocialLoginService][kr.easydoc.application.auth.SocialLoginService]
  * 는 다른 제공자와 같은 방식으로 `nonce` 를 발급·저장하지만(state 저장소 스키마와 호출
@@ -41,11 +48,14 @@ import java.time.Duration
  * 여부를 나타내는 필드 자체가 없다(`email_verified` 개념이 없다, 2차 출처 조사 —
  * 공식 문서 `developers.naver.com` 은 이 조사 환경의 WebFetch 에서 접근이 차단됐다).
  * 검증되지 않은 값을 검증됨으로 잘못 표시하는 쪽보다 안전한 쪽을 택해
- * [SocialIdentity.emailVerified] 를 항상 `false` 로 낸다 — 그 결과 기존
- * `SocialLoginService.requireVerifiedEmail` 규칙이 그대로 적용돼, 네이버 신원 단독으로는
- * 새 계정을 만들 수 없고(이메일이 있어도 422 `email_required`) 이미 인증된 계정에
- * 명시적으로 연결하거나(`linkCallback`, 이메일 검증을 요구하지 않는다) 이미 연결된
- * 신원으로 로그인하는 경로만 연다.
+ * [SocialIdentity.emailVerified] 를 항상 `false` 로 낸다 — **다른 제공자와 달리 이것이
+ * 최초 가입을 막지는 않는다(2026-09-05 후속 결정, option 2).**
+ * [SocialLoginService.requireEmailPresent] 가 네이버만 예외로 다룬다: 이메일이 있으면
+ * 미검증인 채로도 계정(`email_verified_at IS NULL`)과 기본 작업 공간을 만들고, 트랜잭션
+ * 커밋 뒤 비밀번호 가입과 같은 best-effort 로 이메일 인증 코드를 발급한다. 이메일 자체가
+ * 없으면 여전히 422(`email_required`, 네이버 전용 문구)다. 이미 인증된 계정에 명시적으로
+ * 연결하거나(`linkCallback`, 이메일 검증을 요구하지 않는다) 이미 연결된 신원으로
+ * 로그인하는 경로도 그대로 열려 있다.
  *
  * 엔드포인트 URL 을 설정으로 열지 않는 이유는 `GoogleSocialLoginProvider`·
  * `KakaoSocialLoginProvider` 와 같다.
@@ -101,10 +111,23 @@ class NaverSocialLoginProvider(private val settings: NaverOAuthSettings) : Socia
 
     // ------------------------------------------------------------------ ① 토큰 교환
 
+    /**
+     * 토큰 응답도 envelope 을 먼저 본다 — `identityFromUserInfo` 의 `resultcode` 확인과
+     * 같은 이유다. 네이버는 잘못된/만료된 요청에도 HTTP 200 과 함께
+     * `{"error":"invalid_request","error_description":...}` 를 낼 수 있다(2차 출처로만
+     * 확인됨, `resultcode` 와 같은 신뢰도). `error` 필드가 있으면 벤더 `error_description`
+     * 을 로깅하지 않고 [InvalidCredentialsException] 으로 매핑한다.
+     */
     private fun tokenResponseNode(
         code: String,
         redirectUri: String,
-    ): JsonNode = parseJson(tokenResponseBody(code, redirectUri))
+    ): JsonNode {
+        val node = parseJson(tokenResponseBody(code, redirectUri))
+        if (node.path("error").stringValue("").isNotEmpty()) {
+            throw InvalidCredentialsException(CODE_REJECTED_MESSAGE)
+        }
+        return node
+    }
 
     private fun tokenResponseBody(
         code: String,
@@ -158,9 +181,20 @@ class NaverSocialLoginProvider(private val settings: NaverOAuthSettings) : Socia
      * `GET https://openapi.naver.com/v1/nid/me` 를 불러 `response.id`·`response.email` 을
      * 읽는다. 이메일 필드 자체가 없으면(제공 정보 미동의·비공개) `email` 은 `null` 이다.
      * `emailVerified` 는 항상 `false` 다(클래스 KDoc).
+     *
+     * **먼저 envelope 의 `resultcode` 를 확인한다.** 네이버는 만료/유효하지 않은 액세스
+     * 토큰에도 HTTP 200 과 함께 `{"resultcode":"024","message":"Authentication failed",...}`
+     * 를 낸다 — HTTP 상태만으로는 실패를 알 수 없다. `resultcode` 가 [NAVER_RESULT_CODE_SUCCESS]
+     * 가 아니면 벤더 `message` 를 로깅하지 않고 [InvalidCredentialsException] 으로 매핑한다
+     * (클래스 KDoc "코드 목록은 2차 출처"). `resultcode` 가 성공이어도 `response.id` 가
+     * 없으면 형식 오류로 보고 `unreachable`(502)로 낸다.
      */
     private fun identityFromUserInfo(accessToken: String): SocialIdentity {
         val node = parseJson(userInfoResponseBody(accessToken))
+        val resultCode = node.path("resultcode").stringValue("")
+        if (resultCode != NAVER_RESULT_CODE_SUCCESS) {
+            throw InvalidCredentialsException(CODE_REJECTED_MESSAGE)
+        }
         val response = node.path("response")
         val id = response.path("id").stringValue("").ifEmpty { throw unreachable("response.id 없음") }
         val email = response.path("email").stringValue("").ifEmpty { null }
@@ -198,6 +232,12 @@ class NaverSocialLoginProvider(private val settings: NaverOAuthSettings) : Socia
     private companion object {
         /** 계약 401 예시와 같은 값(재사용 — `x-auth` 401 두 갈래 불변식을 지킨다). */
         const val CODE_REJECTED_MESSAGE = "이메일 또는 비밀번호가 올바르지 않습니다"
+
+        /**
+         * userinfo 응답 envelope 의 성공 `resultcode` — 이 값만 성공이고 나머지는 전부 실패로
+         * 다룬다. 실패 코드 목록(예 "024" 인증 실패)은 **2차 출처로만 확인됐다**(클래스 KDoc).
+         */
+        const val NAVER_RESULT_CODE_SUCCESS = "00"
 
         /** 계약 `components/responses/BadGateway` 의 `provider_unreachable` 예시와 같은 값. */
         const val PROVIDER_UNREACHABLE_MESSAGE = "네이버에 연결하지 못했습니다"

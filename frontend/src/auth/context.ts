@@ -19,11 +19,15 @@ export interface AuthContextValue {
   /**
    * 소셜 로그인 콜백 처리. 인가 코드를 액세스 토큰으로 바꾸고 `signIn`과 같은 방식으로
    * 저장한다. 실패하면 ApiError를 그대로 올린다(콜백 화면이 문구를 보여준다).
+   *
+   * 방금 가져온 사용자를 돌려준다 — 호출자(`OAuthCallbackPage`)가 `email_verified`를
+   * 보고 홈/이메일 인증 화면 중 어디로 보낼지 그 자리에서 정해야 하기 때문이다
+   * (네이버는 미검증 채로 계정을 만들 수 있다, 2026-09-05 결정).
    */
   signInWithSocialProvider: (
     provider: OAuthProvider,
     params: { code: string; state: string; redirectUri: string },
-  ) => Promise<void>
+  ) => Promise<UserResponse>
   signOut: () => void
   /**
    * 저장된 토큰으로 `/auth/me`를 다시 읽어 `user`를 최신화한다. 이메일 인증처럼

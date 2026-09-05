@@ -10,7 +10,7 @@ import {
   oauthStateStorageKey,
   PROVIDER_DISPLAY_NAME,
 } from '../auth/socialLogin'
-import { HOME_PATH, LOGIN_PATH } from '../routes/paths'
+import { EMAIL_VERIFICATION_PATH, HOME_PATH, LOGIN_PATH } from '../routes/paths'
 import { NotFoundPage } from './NotFoundPage'
 
 /** `state`가 없거나, 저장해 둔 값과 다르거나, 시작하지 않고 이 화면에 들어온 경우. */
@@ -116,8 +116,13 @@ export function OAuthCallbackPage() {
       state: parsed.state,
       redirectUri: parsed.redirectUri,
     })
-      .then(() => {
-        navigate(HOME_PATH, { replace: true })
+      .then((me) => {
+        // 미검증 이메일 제공자(네이버)는 미인증 채로 가입할 수 있다(2026-09-05 결정) —
+        // 이메일·비밀번호 가입(`SignupPage`)과 같은 이유로 곧장 홈이 아니라 인증
+        // 화면으로 보낸다.
+        navigate(me.email_verified === false ? EMAIL_VERIFICATION_PATH : HOME_PATH, {
+          replace: true,
+        })
       })
       .catch((caught: unknown) => {
         if (caught instanceof ApiError && caught.status === 409) {

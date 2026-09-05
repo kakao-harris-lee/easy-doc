@@ -231,6 +231,46 @@ describe('카카오 로그인 콜백', () => {
   })
 })
 
+describe('네이버 로그인 콜백', () => {
+  const NAVER_STATE_KEY = 'easydoc.oauth.naver.state'
+  const NAVER_REDIRECT_URI_KEY = 'easydoc.oauth.naver.redirect_uri'
+  const NAVER_STORED_REDIRECT_URI = 'http://localhost:5173/auth/naver/callback'
+
+  function seedNaverSession(state = 'state-xyz') {
+    window.sessionStorage.setItem(NAVER_STATE_KEY, state)
+    window.sessionStorage.setItem(NAVER_REDIRECT_URI_KEY, NAVER_STORED_REDIRECT_URI)
+  }
+
+  it(
+    '네이버는 이메일이 있어도 미검증으로 계정을 만들 수 있다 — 성공해도 홈이 아니라 ' +
+      '이메일 인증 화면으로 이동한다(readMe.email_verified=false, 2026-09-05 결정)',
+    async () => {
+      seedNaverSession('state-xyz')
+      vi.mocked(oauthCallback).mockResolvedValue({
+        access_token: 'token-abc',
+        token_type: 'bearer',
+        expires_in: 3600,
+      })
+      vi.mocked(fetchMe).mockResolvedValue({
+        id: 'u1',
+        email: 'user@example.com',
+        email_verified: false,
+        identities: [],
+      })
+
+      renderAt('/auth/naver/callback?code=auth-code&state=state-xyz')
+
+      expect(await screen.findByRole('heading', { name: '이메일 인증' })).toBeInTheDocument()
+      expect(vi.mocked(oauthCallback)).toHaveBeenCalledWith('naver', {
+        code: 'auth-code',
+        state: 'state-xyz',
+        redirectUri: NAVER_STORED_REDIRECT_URI,
+      })
+      expect(window.localStorage.getItem('easydoc.access_token')).toBe('token-abc')
+    },
+  )
+})
+
 describe('지원하지 않는 소셜 로그인 provider', () => {
   it('계약 enum 밖의 provider면 찾을 수 없는 화면을 보여준다', async () => {
     renderAt('/auth/foo/callback?code=auth-code&state=state-xyz')

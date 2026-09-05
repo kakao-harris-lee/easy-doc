@@ -27,7 +27,13 @@ function authValue(status: AuthStatus): AuthContextValue {
         : null,
     signIn: () => Promise.resolve(),
     signUp: () => Promise.resolve(),
-    signInWithSocialProvider: () => Promise.resolve(),
+    signInWithSocialProvider: () =>
+      Promise.resolve({
+        id: 'u1',
+        email: 'owner@example.com',
+        email_verified: true,
+        identities: [],
+      }),
     signOut: () => undefined,
     refreshMe: () => Promise.resolve(),
   }

@@ -30,7 +30,8 @@ function authValue(overrides: Partial<AuthContextValue> = {}): AuthContextValue 
     user: { id: 'u1', email: EMAIL, email_verified: true, identities: [] },
     signIn: () => Promise.resolve(),
     signUp: () => Promise.resolve(),
-    signInWithSocialProvider: () => Promise.resolve(),
+    signInWithSocialProvider: () =>
+      Promise.resolve({ id: 'u1', email: EMAIL, email_verified: true, identities: [] }),
     signOut: () => undefined,
     refreshMe: () => Promise.resolve(),
     ...overrides,

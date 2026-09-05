@@ -172,22 +172,41 @@ class OAuthContractTest {
 
     @Test
     @DisplayName(
-        "네이버 신원의 최초 가입(callback)은 422 다 — 네이버는 email_verified 개념이 없어 " +
-            "이메일이 있어도 항상 미검증으로 낸다(x-social-login.providers.x-note)",
+        "네이버 신원의 최초 가입(callback)은 이메일이 있으면 200 이다 — 네이버는 email_verified " +
+            "개념이 없어 이메일이 있어도 항상 미검증으로 낸다, 그래도 계정은 만들고 이메일 인증 " +
+            "절차로 이어진다(readMe.email_verified=false, 2026-09-05 결정)",
     )
-    fun `네이버 최초 가입은 422 다`() {
+    fun `네이버 최초 가입은 미검증 계정으로 200 이다`() {
         val state = startState(provider = "naver", redirectUri = NAVER_REDIRECT_URI)
 
         val response =
             callback(
-                code = "naver-sub-new-1|naver-new@example.test|true",
+                code = "naver-sub-new-1|naver-new@example.test",
                 state = state,
                 provider = "naver",
                 redirectUri = NAVER_REDIRECT_URI,
             )
 
+        assertThat(response.status).isEqualTo(ContractSpec.successStatus(CALLBACK_PATH, POST))
+        val bearer = body(response)["access_token"] as String
+        val me = body(getAuthorized("/auth/me", bearer))
+        assertThat(me["email_verified"]).isEqualTo(false)
+    }
+
+    @Test
+    @DisplayName("네이버 신원에 이메일 자체가 없으면 여전히 422 다 — 네이버 전용 문구")
+    fun `네이버 이메일 없으면 네이버 전용 문구로 422 다`() {
+        val response =
+            callback(
+                code = "naver-sub-no-email|",
+                state = startState(provider = "naver", redirectUri = NAVER_REDIRECT_URI),
+                provider = "naver",
+                redirectUri = NAVER_REDIRECT_URI,
+            )
+
         assertDeclaredStatus(response, UNPROCESSABLE_CONTENT, CALLBACK_PATH, POST)
-        assertThat(detailText(response)).isEqualTo("이메일 정보를 확인할 수 없습니다")
+        assertThat(detailText(response))
+            .isEqualTo("네이버 계정에 이메일이 없어 가입할 수 없습니다. 이메일로 가입하거나 다른 방법을 이용해 주세요")
     }
 
     @Test

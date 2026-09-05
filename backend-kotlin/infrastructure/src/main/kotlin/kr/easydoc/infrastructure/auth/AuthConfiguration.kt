@@ -354,6 +354,7 @@ class AuthConfiguration {
         accessTokens: AccessTokens,
         transactionRunner: TransactionRunner,
         oauthProperties: OAuthProperties,
+        emailVerification: EmailVerificationService,
     ): SocialLoginService =
         SocialLoginService(
             providers = providers,
@@ -362,6 +363,7 @@ class AuthConfiguration {
             accessTokens = accessTokens,
             transaction = transactionRunner,
             stateTtl = Duration.ofMinutes(oauthProperties.stateTtlMinutes),
+            emailVerification = emailVerification,
         )
 
     private companion object {
