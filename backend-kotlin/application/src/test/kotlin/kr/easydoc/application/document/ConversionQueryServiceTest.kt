@@ -375,6 +375,7 @@ class ConversionQueryServiceTest {
         assertThat(world.documents.depthWhenRead).containsExactly(1)
         // 복호화는(원문 포함) **경계 밖**이다 — 다른 본문 세 열과 같은 규칙.
         assertThat(world.cipher.decryptions).contains(documentId to EncryptedField.DOCUMENT_SOURCE_TEXT)
+        assertThat(world.cipher.depthWhenDecrypted).describedAs("원문 복호화가 경계 안에서 돌았다").containsOnly(0)
     }
 
     @Test

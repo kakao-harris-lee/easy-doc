@@ -148,6 +148,11 @@ class ConversionQueryService(
      * [source] 가 없거나(원문 행이 만료·삭제로 사라진 경합) [body] 가 없으면(초안도 검수본도
      * 없는 완료 행 — 오늘은 나올 수 없는 갈래) `null` 로 접는다. 예외로 튀지 않는다 — 이
      * 필드는 파생값이고, 조회 자체를 막을 이유가 아니다.
+     *
+     * 앵커는 **조회 시점의 현재 마스킹 규칙**으로 다시 만든다 — 저장된 값이 아니다. 그래서
+     * 변환을 만든 이후에 마스킹 규칙이 바뀌면, 오래된 변환은 앵커가 더 적게 잡혀 `low`
+     * confidence 로 보일 수 있다. 색인(`sourceUnitIndexes`, 줄 수 불변식)은 절대 깨지지
+     * 않는다 — 다시 계산해도 어긋나는 건 confidence 뿐이다.
      */
     private fun segmentMapOf(
         source: StoredSourceText?,
