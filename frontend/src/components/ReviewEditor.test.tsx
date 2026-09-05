@@ -1,10 +1,18 @@
-import { fireEvent, render as renderInDom, screen, waitFor, within } from '@testing-library/react'
+import {
+  act,
+  fireEvent,
+  render as renderInDom,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ReactElement } from 'react'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ApiError, downloadExport, saveFeedback, saveReview } from '../api/client'
+import { lookupTerm } from '../api/dictionary'
 import type { ConversionResponse, FormatPreservation } from '../api/types'
 import { setUnsavedChanges } from '../review/unsavedChanges'
 import {
@@ -34,6 +42,11 @@ vi.mock('../api/client', async (importOriginal) => ({
   saveFeedback: vi.fn(),
 }))
 
+vi.mock('../api/dictionary', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../api/dictionary')>()),
+  lookupTerm: vi.fn(),
+}))
+
 /**
  * 화면 폭을 고정한다.
  *
@@ -57,6 +70,7 @@ beforeEach(() => {
   vi.mocked(saveReview).mockReset()
   vi.mocked(downloadExport).mockReset()
   vi.mocked(saveFeedback).mockReset()
+  vi.mocked(lookupTerm).mockReset()
 })
 
 afterEach(() => {
@@ -1475,5 +1489,55 @@ describe('저장 중 경합 방지(MEDIUM 리뷰)', () => {
 
     // 응답(옛 초안 기준)이 그 사이에 고친 글을 덮어쓰지 않았다.
     expect(textarea).toHaveValue('이어서 고친 글')
+  })
+})
+
+/**
+ * 원문 패널(읽기 전용)에서도 사전 조회는 되고 적용 버튼은 없다(계획 §3.5, HIGH 리뷰 1).
+ * `TermLookupPopover`는 결과 패널뿐 아니라 원문 패널 컨테이너에도 별도 인스턴스로 붙는다.
+ */
+describe('원문 패널의 사전 조회', () => {
+  it('원문에서 선택하면 팝업에 후보가 뜨지만 바꾸기 버튼은 없다', async () => {
+    vi.useFakeTimers()
+    try {
+      vi.mocked(lookupTerm).mockResolvedValue({
+        query: '구비서류',
+        candidates: [
+          {
+            term: '구비서류',
+            easy_term: '준비할 서류',
+            strategy: 'substitute',
+            risk: 'none',
+            definition: '신청할 때 미리 갖춰야 하는 서류',
+            caution: null,
+            tags: [],
+            examples: [],
+            match_kind: 'exact',
+            applicable: true,
+          },
+        ],
+        dictionary: { name: '쉬운 말 사전', license: 'CC-BY', schema_version: '1.0.0' },
+      })
+      render(
+        <ReviewEditor
+          conversion={conversion({ easy_text: '결과 글', edited_text: null })}
+          source={sourceReady('구비서류를 준비하세요')}
+        />,
+      )
+      const sourceTextarea = screen.getByLabelText('원본 (읽기 전용)') as HTMLTextAreaElement
+      sourceTextarea.focus()
+      sourceTextarea.setSelectionRange(0, 4) // "구비서류"
+      fireEvent.mouseUp(sourceTextarea)
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(250)
+      })
+
+      expect(screen.getByRole('dialog', { name: '쉬운 말 후보' })).toBeInTheDocument()
+      expect(screen.getByText('준비할 서류')).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: '바꾸기' })).not.toBeInTheDocument()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
