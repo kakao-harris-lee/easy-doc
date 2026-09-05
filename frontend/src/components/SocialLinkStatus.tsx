@@ -4,11 +4,9 @@ import { CircleCheck } from 'lucide-react'
 
 import { ApiError } from '../api/client'
 import type { OAuthProvider, UserIdentityResponse } from '../api/types'
-import { PROVIDER_DISPLAY_NAME, startSocialLink } from '../auth/socialLogin'
+import { PROVIDER_DISPLAY_NAME, SUPPORTED_PROVIDERS, startSocialLink } from '../auth/socialLogin'
 import { cn } from '../lib/utils'
 import { Button } from './ui/Button'
-
-const SUPPORTED_PROVIDERS: readonly OAuthProvider[] = ['google', 'kakao']
 
 /** 시작 요청 자체가 실패했을 때(네트워크 등) 보여줄 문구. 서버 문구가 있으면 그것을 우선한다. */
 const START_ERROR_MESSAGE: Record<OAuthProvider, string> = {

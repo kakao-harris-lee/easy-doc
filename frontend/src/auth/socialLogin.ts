@@ -21,7 +21,8 @@ export const PROVIDER_LOGIN_LABEL: Record<OAuthProvider, string> = {
   kakao: '카카오로 계속하기',
 }
 
-const SUPPORTED_PROVIDERS: readonly OAuthProvider[] = ['google', 'kakao']
+/** 지원하는 소셜 로그인 제공자 전체 목록. `SocialLinkStatus`도 이 값을 그대로 쓴다. */
+export const SUPPORTED_PROVIDERS: readonly OAuthProvider[] = ['google', 'kakao']
 
 /** 라우트 `:provider` 세그먼트·`?link=` 쿼리 값이 지원하는 제공자인지 확인한다. */
 export function isOAuthProvider(value: string | null | undefined): value is OAuthProvider {
