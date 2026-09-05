@@ -19,7 +19,14 @@ import { ApiError, getConversion, getDocumentSource, listDocuments } from './api
 import { AuthContext, type AuthContextValue } from './auth/context'
 import { AppLayout } from './components/AppLayout'
 import { AppRoutes } from './routes/AppRoutes'
-import { conversion, documentItem, documentSource, workspaceContext } from './test/factories'
+import {
+  conversion,
+  documentItem,
+  documentSource,
+  segmentMap,
+  segmentMapUnit,
+  workspaceContext,
+} from './test/factories'
 import { WorkspaceContext } from './workspace/context'
 
 vi.mock('./api/client', async (importOriginal) => ({
@@ -136,6 +143,35 @@ const SCREENS: readonly {
     open: () => {
       vi.mocked(getConversion).mockResolvedValue(conversion({ status: 'done' }))
       renderAt(REVIEW_WITH_SOURCE)
+    },
+    settle: () => screen.findByRole('heading', { name: '쉬운 글 검수' }),
+  },
+  {
+    // 위 「검수」 픽스처는 `segment_map: null`이라 옛 단일 textarea 경로만 훑는다 —
+    // `SegmentedResultEditor`와 목록 모드 `SourceTextPanel`은 이 스윕에 한 번도
+    // 들어오지 않았다(MEDIUM 리뷰). 대응표가 있는 검수 화면을 따로 둬서 단위별
+    // 접근 가능한 이름·aria 참조·라이브 영역 규칙이 이 DOM에도 똑같이 적용되는지 잰다.
+    name: '검수 (문단 대응표)',
+    open: () => {
+      vi.mocked(getConversion).mockResolvedValue(
+        conversion({
+          easy_text: '3월 2일부터 신청할 수 있어요.\n주민센터로 가세요.\n자세한 안내가 이어집니다.',
+          segment_map: segmentMap({
+            source_unit_count: 2,
+            units: [
+              segmentMapUnit({ easy_unit_index: 0, source_unit_indexes: [0], confidence: 'high' }),
+              segmentMapUnit({ easy_unit_index: 1, source_unit_indexes: [1], confidence: 'high' }),
+              segmentMapUnit({ easy_unit_index: 2, source_unit_indexes: [], confidence: 'low' }),
+            ],
+          }),
+        }),
+      )
+      renderAt({
+        pathname: '/conversions/c1',
+        state: {
+          sourceText: '3월 2일부터 신청할 수 있습니다.\n주민센터를 방문해 주세요.',
+        },
+      })
     },
     settle: () => screen.findByRole('heading', { name: '쉬운 글 검수' }),
   },

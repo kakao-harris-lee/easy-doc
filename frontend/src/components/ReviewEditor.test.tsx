@@ -1,4 +1,4 @@
-import { fireEvent, render as renderInDom, screen, within } from '@testing-library/react'
+import { fireEvent, render as renderInDom, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ReactElement } from 'react'
 import { MemoryRouter } from 'react-router-dom'
@@ -1359,5 +1359,121 @@ describe('문단 단위 대응(segment_map)', () => {
     expect(screen.getByLabelText('쉬운 글 결과 (고칠 수 있습니다)')).toHaveValue(bigText)
     // 재변환은 이 슬라이스(S3) 범위 밖이다(S4) — 이 화면에서 그런 버튼을 만들지 않는다.
     expect(screen.queryByRole('button', { name: /재변환/ })).not.toBeInTheDocument()
+  })
+
+  /**
+   * CRITICAL 리뷰: 단위 안에서 Enter만 `handleSplit`을 타고, Shift+Enter·붙여넣기·드롭은
+   * 브라우저가 `\n`이 이미 섞인 값을 그대로 `onChange`로 준다. 이 값을 지도 갱신 없이
+   * 받으면 `units = value.split('\n')`만 늘어나고 `unitMap`은 그대로 남아 그 뒤 모든
+   * 단위가 엉뚱한 지도 항목을 입는다. 세 경로 모두 같은 방식(그 자리에서 나뉘는 것으로
+   * 보고 지도를 함께 다시 짬)으로 막히는지, 그리고 밀려난 뒤 단위는 원래 대응을 그대로
+   * 유지하는지 재는 자리다.
+   */
+  describe('단위 안에 줄바꿈이 섞여 들어오는 경로(Shift+Enter·붙여넣기·드롭)', () => {
+    function renderTwoUnits() {
+      const map = segmentMap({
+        source_unit_count: 2,
+        units: [
+          segmentMapUnit({ easy_unit_index: 0, source_unit_indexes: [0], confidence: 'high' }),
+          segmentMapUnit({ easy_unit_index: 1, source_unit_indexes: [1], confidence: 'high' }),
+        ],
+      })
+      render(
+        <ReviewEditor
+          conversion={conversion({ easy_text: '첫줄\n둘째줄', segment_map: map })}
+          source={sourceFailed()}
+        />,
+      )
+      return screen.getByLabelText(/쉬운 글 단위 1/) as HTMLTextAreaElement
+    }
+
+    it('Shift+Enter로 줄바꿈이 섞여도 지도 길이가 단위 수와 같고 뒤 단위는 원래 대응을 유지한다', async () => {
+      const user = userEvent.setup()
+      const unit1 = renderTwoUnits()
+      unit1.focus()
+      unit1.setSelectionRange(1, 1)
+
+      await user.keyboard('{Shift>}{Enter}{/Shift}')
+
+      expect(screen.getByLabelText('쉬운 글 단위 1, 원본 1번째 문단에 대응')).toHaveValue('첫')
+      expect(screen.getByLabelText('쉬운 글 단위 2, 대응 확인 불가')).toHaveValue('줄')
+      // 밀려난 뒤 단위는 원래 대응(원본 2번째 문단, high)을 그대로 유지한다 — 지도
+      // 갱신이 다른 단위까지 어긋나게 만들지 않았다는 뜻이다.
+      expect(screen.getByLabelText('쉬운 글 단위 3, 원본 2번째 문단에 대응')).toHaveValue('둘째줄')
+    })
+
+    it('붙여넣기로 줄바꿈이 섞여도 지도 길이가 단위 수와 같고 뒤 단위는 원래 대응을 유지한다', async () => {
+      const user = userEvent.setup()
+      const unit1 = renderTwoUnits()
+      unit1.focus()
+      unit1.setSelectionRange(1, 1)
+
+      await user.paste('X\nY')
+
+      expect(screen.getByLabelText('쉬운 글 단위 1, 원본 1번째 문단에 대응')).toHaveValue('첫X')
+      expect(screen.getByLabelText('쉬운 글 단위 2, 대응 확인 불가')).toHaveValue('Y줄')
+      expect(screen.getByLabelText('쉬운 글 단위 3, 원본 2번째 문단에 대응')).toHaveValue('둘째줄')
+    })
+
+    it('드롭으로 줄바꿈이 섞여도 지도 길이가 단위 수와 같고 뒤 단위는 원래 대응을 유지한다', () => {
+      const unit1 = renderTwoUnits()
+
+      // jsdom은 드롭의 기본 삽입 동작(브라우저가 드롭 지점에 텍스트를 끼워 넣고 input을
+      // 흘려보내는 것)을 구현하지 않는다 — 실제 브라우저가 만들 최종 DOM 상태(이미 섞인
+      // 값)를 change로 직접 재현해, onChange 처리 로직 자체를 검증한다.
+      fireEvent.drop(unit1, { dataTransfer: { getData: () => 'X\nY' } })
+      fireEvent.change(unit1, { target: { value: '첫X\nY줄' } })
+
+      expect(screen.getByLabelText('쉬운 글 단위 1, 원본 1번째 문단에 대응')).toHaveValue('첫X')
+      expect(screen.getByLabelText('쉬운 글 단위 2, 대응 확인 불가')).toHaveValue('Y줄')
+      expect(screen.getByLabelText('쉬운 글 단위 3, 원본 2번째 문단에 대응')).toHaveValue('둘째줄')
+    })
+  })
+})
+
+describe('저장 중 경합 방지(MEDIUM 리뷰)', () => {
+  it('저장·내려받기가 도는 동안 단위 textarea를 잠근다', async () => {
+    const user = userEvent.setup()
+    vi.mocked(saveReview).mockReturnValue(new Promise<ConversionResponse>(() => undefined))
+    const map = segmentMap({
+      units: [segmentMapUnit({ easy_unit_index: 0, source_unit_indexes: [0], confidence: 'high' })],
+    })
+    render(
+      <ReviewEditor
+        conversion={conversion({ easy_text: '첫줄', segment_map: map })}
+        source={sourceFailed()}
+      />,
+    )
+
+    await user.click(screen.getByRole('button', { name: '검수 내용 저장' }))
+
+    expect(screen.getByLabelText(/쉬운 글 단위 1/)).toBeDisabled()
+  })
+
+  it('저장이 도는 동안 이어서 고치면 응답이 그 사이의 수정을 덮어쓰지 않는다', async () => {
+    const user = userEvent.setup()
+    let resolveSave: (value: ConversionResponse) => void = () => undefined
+    vi.mocked(saveReview).mockReturnValue(
+      new Promise<ConversionResponse>((resolve) => {
+        resolveSave = resolve
+      }),
+    )
+    render(<ReviewEditor conversion={conversion({ easy_text: '초안' })} source={sourceFailed()} />)
+
+    const textarea = screen.getByLabelText('쉬운 글 결과 (고칠 수 있습니다)') as HTMLTextAreaElement
+    await user.click(screen.getByRole('button', { name: '검수 내용 저장' }))
+
+    // 저장 응답이 오기 전에 이어서 고친다. 지금 이 입력칸은 busy 동안 disabled지만,
+    // 여기서는 응답 처리 로직 자체(persistDraft의 낡은 응답 판정)를 검증하려고 값
+    // 변경을 직접 흘려보낸다.
+    fireEvent.change(textarea, { target: { value: '이어서 고친 글' } })
+
+    resolveSave(conversion({ edited_text: '초안', reviewed_at: '2026-08-07T02:00:00Z' }))
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: '검수 내용 저장' })).not.toBeDisabled(),
+    )
+
+    // 응답(옛 초안 기준)이 그 사이에 고친 글을 덮어쓰지 않았다.
+    expect(textarea).toHaveValue('이어서 고친 글')
   })
 })

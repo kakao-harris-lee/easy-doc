@@ -212,6 +212,19 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
    * 덮어쓰면, 원문을 보려고 탭을 누른 사람이 창 크기를 바꿀 때마다 결과로 튕긴다.
    */
   const [panelPickedByUser, setPanelPickedByUser] = useState(false)
+  /**
+   * 언제나 최신 `draft`를 가리키는 ref(§MEDIUM 리뷰).
+   *
+   * `persistDraft`는 저장 요청을 보낸 시점의 `draft`(클로저 값)를 쥔 채로 응답을
+   * 기다린다 — 그 사이 사용자가 이어서 고치면 `draft` state는 바뀌지만 그 클로저는
+   * 여전히 옛 값을 본다. 응답이 온 뒤 "보낸 값과 지금 값이 같은가"를 물으려면 클로저가
+   * 아니라 **항상 최신인** 값이 필요하고, 그것이 이 ref다. 렌더 중에는 ref를 쓰지 않는다
+   * (react-hooks/refs) — effect에서 커밋 직후에 맞춘다.
+   */
+  const draftRef = useRef(draft)
+  useEffect(() => {
+    draftRef.current = draft
+  }, [draft])
 
   const dirty = draft !== savedText
   const busy = pending !== null
@@ -337,10 +350,20 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
    * 하면 "저장했는데 파일에는 안 담겼다"는 갈래가 생긴다.
    */
   async function persistDraft(): Promise<void> {
-    const saved = await saveReview(conversion.id, draft)
+    const sentDraft = draft
+    const saved = await saveReview(conversion.id, sentDraft)
+    // 기다리는 동안 사용자가 이어서 고쳤다면(§MEDIUM 리뷰) 이 응답은 그때 보낸
+    // `sentDraft`에 대한 것일 뿐, 지금 화면의 최신 draft에 대한 것이 아니다. 그대로
+    // 덮어쓰면 방금 고친 내용이 사라지고, `unitMap`도 그 낡은 텍스트의 구조로 다시
+    // 짜여 지금 draft의 단위 수와 어긋난다(CRITICAL 리뷰가 지적한 것과 같은 종류의
+    // 불변식 붕괴). 이 응답이 낡았으면 아무 것도 덮어쓰지 않고 물러난다 — 저장 안 됨
+    // 상태는 `savedText`가 그대로 남아 자연히 유지된다.
+    if (draftRef.current !== sentDraft) {
+      return
+    }
     // 서버가 다듬은 결과(제어문자 제거 등)를 그대로 화면에 반영한다 — 우리가 보낸
     // 글을 저장본으로 삼으면 저장 직후에도 "수정됨" 표시가 남는 경우가 생긴다.
-    const stored = saved.edited_text ?? draft
+    const stored = saved.edited_text ?? sentDraft
     setDraft(stored)
     setSavedText(stored)
     setReviewedAt(saved.reviewed_at)
@@ -681,6 +704,7 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
                 onUnitMapChange={setUnitMap}
                 hoveredSourceIndex={hoveredSourceIndex}
                 onHoverUnit={setHighlightedSourceIndexes}
+                disabled={busy}
               />
             ) : (
               <textarea
@@ -689,6 +713,7 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
                 value={draft}
                 rows={20}
                 onChange={(event) => setDraft(event.target.value)}
+                disabled={busy}
               />
             )}
           </div>

@@ -1,4 +1,4 @@
-import { useId, type ReactNode } from 'react'
+import { memo, useId, type ReactNode } from 'react'
 import { FileText, FileX2, LoaderCircle } from 'lucide-react'
 
 import { cn } from '../lib/utils'
@@ -32,6 +32,45 @@ interface SourceTextPanelProps {
   /** 사용자가 원본 단위를 hover·focus했을 때(벗어나면 `null`) 알린다. */
   onHoverUnit?: (index: number | null) => void
 }
+
+interface SourceUnitRowProps {
+  index: number
+  text: string
+  highlighted: boolean
+  onHoverUnit?: (index: number | null) => void
+}
+
+/**
+ * 원본 패널의 단위 하나. `memo`로 감싼 이유는 결과 패널에서 hover할 때마다 원본 단위가
+ * 최대 200개까지 함께 다시 그려지는 것을 막기 위해서다(LOW 리뷰) — `onHoverUnit`은
+ * 부모가 넘기는 상태 setter라 참조가 안정적이므로, hover로 `highlighted`가 실제로
+ * 바뀐 한두 행만 다시 그려진다.
+ */
+const SourceUnitRow = memo(function SourceUnitRow({
+  index,
+  text,
+  highlighted,
+  onHoverUnit,
+}: SourceUnitRowProps) {
+  return (
+    <div role="listitem">
+      <textarea
+        aria-label={`원본 ${index + 1}번째 문단`}
+        className={cn(
+          'min-h-11 w-full resize-y rounded-[10px] border border-input bg-secondary px-3.5 py-2.5 text-[17px] leading-[1.75] text-foreground transition-colors motion-reduce:transition-none',
+          highlighted && 'border-primary ring-2 ring-primary/40',
+        )}
+        value={text}
+        rows={2}
+        readOnly
+        onFocus={() => onHoverUnit?.(index)}
+        onBlur={() => onHoverUnit?.(null)}
+        onMouseEnter={() => onHoverUnit?.(index)}
+        onMouseLeave={() => onHoverUnit?.(null)}
+      />
+    </div>
+  )
+})
 
 /** 실패 종류별 문구. 사용자가 **다음에 할 일이 다르므로** 같은 말로 뭉치지 않는다(§9). */
 const FAILURE_TEXT = {
@@ -129,27 +168,15 @@ export function SourceTextPanel({
             이유는 hover·focus로 결과 쪽 단위와 서로 하이라이트를 주고받기 위해서다.
             textarea 자체가 이미 클릭·포커스를 받는 요소다("클릭 가능"). */}
         <div className="flex flex-col gap-2" role="list" aria-labelledby={listHeadingId}>
-          {units.map((unit, index) => {
-            const highlighted = highlightedIndexes?.has(index) ?? false
-            return (
-              <div key={index} role="listitem">
-                <textarea
-                  aria-label={`원본 ${index + 1}번째 문단`}
-                  className={cn(
-                    'min-h-11 w-full resize-y rounded-[10px] border border-input bg-secondary px-3.5 py-2.5 text-[17px] leading-[1.75] text-foreground transition-colors motion-reduce:transition-none',
-                    highlighted && 'border-primary ring-2 ring-primary/40',
-                  )}
-                  value={unit}
-                  rows={2}
-                  readOnly
-                  onFocus={() => onHoverUnit?.(index)}
-                  onBlur={() => onHoverUnit?.(null)}
-                  onMouseEnter={() => onHoverUnit?.(index)}
-                  onMouseLeave={() => onHoverUnit?.(null)}
-                />
-              </div>
-            )
-          })}
+          {units.map((unit, index) => (
+            <SourceUnitRow
+              key={index}
+              index={index}
+              text={unit}
+              highlighted={highlightedIndexes?.has(index) ?? false}
+              onHoverUnit={onHoverUnit}
+            />
+          ))}
         </div>
       </>
     )
