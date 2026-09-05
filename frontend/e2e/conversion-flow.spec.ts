@@ -122,7 +122,8 @@ test.describe('변환 수직 흐름', () => {
     await expect(page.getByRole('group', { name: '쉬운 글 결과 (고칠 수 있습니다)' })).toBeVisible()
     const editor = page.getByLabel('쉬운 글 단위 1, 대응 확인 불가')
     await expect(editor).toHaveValue(FAKE_EASY_TEXT)
-    await expect(page.getByLabel('원본 1번째 문단')).toHaveValue(SOURCE_TEXT)
+    // S5 이후 「원본 1번째 문단 다시 변환」 버튼이 같은 접두를 가지므로 정확 일치로 textarea 만 고른다.
+    await expect(page.getByLabel('원본 1번째 문단', { exact: true })).toHaveValue(SOURCE_TEXT)
     await expect(page.getByRole('note')).toHaveText(/AI가 만든 초안입니다/)
 
     expect(observedStatuses.at(-1)).toBe('done')
