@@ -177,7 +177,15 @@ segment_map:                      # object | null
 
 ## 6. 슬라이스와 수용 기준
 
-**S1 — core 단위 분할과 정렬 (M, 백엔드만, 계약 변경 없음)**
+**완료(2026-09-05).** S1–S5 전부 병합됐다: S1(PR #25) · S2(PR #28) · S3(PR #30) ·
+S4(PR #35) · S5(PR #36). 계획과 달라진 점 — ⑴ 429 응답은 본문 필드가 아니라
+`X-Remaining-Call-Budget` 헤더로 잔여 예산을 싣는다(`ApiError.remainingCallBudget`) ⑵ 503
+동시 실행 한도 구성값의 실제 이름은 `easydoc.reconversion.concurrency`다(§4가 적은
+`easydoc.conversion.reconvert-concurrency`가 아니다) ⑶ 계약은 2.14.0, 마이그레이션은 V10으로
+확정됐다(§3가 정정 전 적어 둔 순서 그대로). S6(내보내기의 지도 소비)과
+`segment_map.compliant_source_units`는 여전히 미착수·범위 밖으로 남아 있다.
+
+**S1 — core 단위 분할과 정렬 (M, 백엔드만, 계약 변경 없음) — 완료(PR #25)**
 - 파일: `core/segment/{SourceUnits,SegmentAlignment}.kt`,
   `core/easyread/FactPreservation.kt`(`extractFacts` → `internal`), 각 테스트.
 - 수용 기준(입력 → 기대):
@@ -198,7 +206,7 @@ segment_map:                      # object | null
   함수로 닫힌 S1 범위 밖이다 — `infrastructure`·`api` 를 이미 여는 S2 에서 함께 넣는다.
 - **`Prompts.kt` 문자열을 한 글자도 바꾸지 않는다** → `PromptTextSnapshotTest`·골든 기준선 무영향.
 
-**S2 — `readConversion`에 `segment_map` (M, 계약 2.12.0, 마이그레이션 없음)**
+**S2 — `readConversion`에 `segment_map` (M, 계약 2.12.0, 마이그레이션 없음) — 완료(PR #28)**
 - 파일: `contracts/easy-doc-v1.yaml`, `core/document/ConversionView.kt`,
   `application/document/ConversionQueryService.kt`(+`DocumentRepository.findOwnedSource` 협력자),
   `api/document/ConversionDtos.kt`, Kotlin 계약 테스트.
@@ -210,7 +218,7 @@ segment_map:                      # object | null
 - **G 내보내기 회귀 가드:** 기존 `ConversionQueryServiceTest`·`ConversionExportContractTest`의 모든
   케이스에서 `format_preservation.status`와 `details`가 **바뀌지 않는다.**
 
-**S3 — 검수 화면의 단위 대응 (M, 프런트만)**
+**S3 — 검수 화면의 단위 대응 (M, 프런트만) — 완료(PR #30)**
 - 파일: `frontend/src/components/{ReviewEditor,SourceTextPanel}.tsx`, 새
   `SegmentedResultEditor.tsx`, 각 테스트, `frontend/src/a11y.test.tsx`.
 - 원문 패널은 읽기 전용 단위 목록(클릭 가능), 결과 패널은 **쉬운 글 단위마다 `<textarea>` 하나**.
@@ -223,7 +231,7 @@ segment_map:                      # object | null
   확인 불가」로 표시. 201단위 입력 → 내려앉기 배너와 재변환 버튼 없음.
 - 문서: `DESIGN.md` §6.4에 「결과 패널은 단위 목록」·내려앉기 규칙·분할/병합 키를 개정으로 추가.
 
-**S4 — 재변환 엔드포인트 (M, 계약 2.14.0(2026-09-05 정정) + V10) — §0 게이트 확인 후 착수**
+**S4 — 재변환 엔드포인트 (M, 계약 2.14.0(2026-09-05 정정) + V10) — 완료(PR #35)**
 - 파일: `V10__conversion_reconversion_budget.sql`(`reconversion_calls integer NOT NULL DEFAULT 0`
   + CHECK ≥ 0, `reconverted_units jsonb NOT NULL DEFAULT '[]'`),
   `application/conversion/ConvertDocumentUseCase.kt`(마스킹된 입력 진입점), 새
@@ -236,7 +244,7 @@ segment_map:                      # object | null
   대응표와 같음 / 사실 유실 후보 → `adopted: false` / 지문·색인 배열이 요청과 **동일하게 되울림**.
 - 실제 유료 호출 없이 fake provider로 검증. `./gradlew build` 통과. §5 CPU 실측 기록.
 
-**S5 — 재변환 UI (S, 프런트만) — §0 게이트 확인 후 착수**
+**S5 — 재변환 UI (S, 프런트만) — 완료(PR #36)**
 - 단위별 버튼, 이미 통과한 단위 경고, 남은 호출 예산 표시, 429·거절 사유 문구.
 - 수용 기준: **지문 불일치 응답은 어떤 단위도 교체하지 않는다**(카드 + 「이 위치에 넣기」만).
   `high` + 단일 단위에서만 「바꾸기」가 보인다. **StrictMode 이중 렌더와 버튼 연속 두 번 클릭이

@@ -109,6 +109,21 @@
 
 ## 4. 작업 순서
 
+**완료(2026-09-05).** 실행자는 아래 조각 1~5·Q를 문서 그대로의 경계가 아니라 **S1~S3** 세
+슬라이스로 묶어 병합했다: **S1(PR #26)**은 조각 2(후보 산출)·조각 3(유스케이스·배선)·조각 Q
+(픽스처)를 계약 변경 없이 먼저 냈고, **S2(PR #29)**가 조각 1(계약 2.11.0)과 조각 4(HTTP)를
+함께 냈다(계약 bump이 S1이 아니라 S2에서 일어난다 — 아래 조각 1 순서와 다르다), **S3(PR #34)**
+가 조각 5(프런트 팝업)를 냈다. 계획과 달라진 그 밖의 점 — ⑴ 픽스처 실제 경로는
+`backend-kotlin/core/src/test/resources/kr/easydoc/core/dictionary/lookup-fixture.json`이다
+(이 문서가 적은 `backend-kotlin/core/src/test/resources/dictionary/lookup-fixture.json`이
+아니다) ⑵ 픽스처 항목은 `expected_entry_id`뿐 아니라 `expected_easy_term`·`expected_strategy`·
+`expected_match_kind`까지 함께 단언한다 ⑶ 422 응답 문구는 `x-request-field-constraints`가 정한
+필드별 고정 문자열 규칙을 따른다 ⑷ 분당 한도는 고정 카운터가 아니라 **in-memory sliding
+window**(`InMemorySlidingWindowLookupRateLimiter`, 만료된 창을 스스로 비운다)로 구현됐다
+⑸ 팝업은 결과 패널뿐 아니라 **원문(읽기 전용) 패널에도 별도 인스턴스로 붙었다**(`applyDisabled`로
+「바꾸기」만 뺀다) — 이 문서 §3.5의 "결과 패널은 순수 textarea" 서술이 가정한 범위보다 넓다.
+조각 6(e2e)과 조각 7(조건부 임베딩)은 여전히 미착수·열려 있다.
+
 **조각 1 — 계약 (S, `contracts/`).** 2.11.0: `POST /dictionary/lookup`, 요청·응답 스키마, `x-input-limits.max_term_query_chars: 100`, 422·429 예시. 실패하는 `api/src/test/.../DictionaryLookupContractTest.kt` 골격을 같은 조각에 둔다.
 합격: 계약 테스트가 「경로 없음」으로 실패한다. `version`이 2.11.0이고 P0-4 계획이 쓰는 2.12.0·2.13.0과 충돌하지 않는다.
 
