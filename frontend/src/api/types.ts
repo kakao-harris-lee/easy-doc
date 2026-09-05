@@ -158,6 +158,44 @@ export interface MaskedItemResponse {
   original: string
 }
 
+/**
+ * 쉬운 글 단위 하나가 원본 단위에 대응한다는 판정의 신뢰도. 계약
+ * `components/schemas/SegmentConfidence`.
+ *
+ * `high`는 다시 쓰기를 견뎌 살아남는 앵커(마스킹 자리표시자·숫자·날짜·시각·금액·백분율·
+ * 연락처·URL)로 뒷받침된 대응이다. `low`는 앵커가 없어 순서 비례 보간으로만 나온
+ * 추정이다 — 화면은 `high`만 대응으로 주장하고 `low`는 「대응 확인 불가」로 표시한다.
+ */
+export type SegmentConfidence = 'high' | 'low'
+
+/**
+ * `SegmentMap.units`의 항목 하나 — 쉬운 글 단위 하나와 그것이 대응하는 원본 단위들.
+ * 계약 `components/schemas/SegmentMapUnit`.
+ */
+export interface SegmentMapUnit {
+  /** `edited_text ?? easy_text`를 `\n`으로 쪼갠 줄의 0 기반 색인. */
+  easy_unit_index: number
+  /**
+   * 이 쉬운 글 단위가 대응하는 원본 단위(저장된 추출 원문을 `\n`으로 쪼갠 줄)의 0 기반
+   * 색인 목록. 0개 이상 — 빈 배열은 「대응하는 원본 단위를 찾지 못했다」는 뜻이다.
+   */
+  source_unit_indexes: number[]
+  confidence: SegmentConfidence
+}
+
+/**
+ * 원문-쉬운 글 문단 대응표. `ConversionResponse.segment_map`의 본체. 계약
+ * `components/schemas/SegmentMap`.
+ */
+export interface SegmentMap {
+  /** 원본 단위(저장된 추출 원문을 `\n`으로 쪼갠 줄) 총수. */
+  source_unit_count: number
+  /** 쉬운 글 단위 총수 — `units` 배열의 길이와 같다. */
+  easy_unit_count: number
+  /** 쉬운 글 단위 색인 순서 그대로, `easy_unit_count`개. */
+  units: SegmentMapUnit[]
+}
+
 /** 변환 상태·결과. 완료 전에는 결과 필드가 비어 있다. */
 export interface ConversionResponse {
   id: string
@@ -211,6 +249,21 @@ export interface ConversionResponse {
   output_tokens: number | null
   /** 실패 사유 코드(예외 클래스명). 본문·모델 응답은 담기지 않는다. */
   failure_code: string | null
+  /**
+   * 원문-쉬운 글 문단 단위 대응표(계약 2.12.0, P0-4). `null`이면 ⑴ 변환이 아직
+   * 완료되지 않았거나 ⑵ 완료됐지만 원문·본문 중 하나를 서버가 지금 읽을 수 없다는
+   * 뜻이다 — 사유 필드를 따로 두지 않는다. `status`와 `easy_text`가 이미 사유를 말한다.
+   *
+   * **서버에 저장되지 않는다.** 매 조회마다 (원문을 마스킹한 것) 대
+   * (`edited_text ?? easy_text`)에서 순수 함수로 유도한다 — 그래서 에디터에서 텍스트를
+   * 수정한 뒤에는 이 응답이 낡는다. 화면은 저장(PUT) 후 새 응답이 올 때까지, 또는
+   * 문단 나누기·합치기 같은 구조 변화에서만 클라이언트가 국소적으로 재계산해도 된다
+   * (서버가 강제하지 않는 클라이언트 재계산).
+   *
+   * 원문 자체(문자열)는 여기 싣지 않는다 — 화면은 이미 `GET /documents/{id}/source`로
+   * 원문을 받고, 본문은 `easy_text`·`edited_text`에 있다. 배열은 색인만 나른다.
+   */
+  segment_map: SegmentMap | null
 }
 
 /** PUT /conversions/{id} 요청 본문. */
