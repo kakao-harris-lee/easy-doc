@@ -16,6 +16,8 @@ import type {
   DocumentSourceResponse,
   DocumentTextRequest,
   ExportFormat,
+  ReconvertUnitRequest,
+  ReconvertUnitResponse,
   WorkspaceListResponse,
   WorkspaceNameRequest,
   WorkspaceResponse,
@@ -37,17 +39,30 @@ export const NETWORK_ERROR_STATUS = 0
 export class ApiError extends Error {
   readonly status: number
   /**
-   * 429 응답의 `Retry-After`(초). 그 헤더가 없거나 정수로 읽지 못하면 null이다 —
-   * 오늘 이 헤더를 계산해 보내는 오퍼레이션은 `POST /auth/email-verification/request`
-   * 하나뿐이다(계약 `TooManyRequests`).
+   * 429·503 응답의 `Retry-After`(초). 그 헤더가 없거나 정수로 읽지 못하면 null이다 —
+   * `POST /auth/email-verification/request`(계약 `TooManyRequests`)와
+   * `reconvertUnit`의 503(`ReconversionConcurrencyLimited`)이 이 헤더를 낸다.
    */
   readonly retryAfterSeconds: number | null
+  /**
+   * `reconvertUnit`의 429(`ReconversionBudgetExhausted`) 응답이 내는
+   * `X-Remaining-Call-Budget`(이 예약 시도 시점의 잔여 예산). 그 헤더가 없거나 정수로
+   * 읽지 못하면 null이다 — 오늘 이 헤더를 내는 오퍼레이션은 `reconvertUnit`(2.14.0)
+   * 하나뿐이다.
+   */
+  readonly remainingCallBudget: number | null
 
-  constructor(status: number, message: string, retryAfterSeconds: number | null = null) {
+  constructor(
+    status: number,
+    message: string,
+    retryAfterSeconds: number | null = null,
+    remainingCallBudget: number | null = null,
+  ) {
     super(message)
     this.name = 'ApiError'
     this.status = status
     this.retryAfterSeconds = retryAfterSeconds
+    this.remainingCallBudget = remainingCallBudget
   }
 }
 
@@ -142,19 +157,23 @@ async function send(path: string, options: RequestOptions): Promise<Response> {
     throw new ApiError(
       response.status,
       await readErrorMessage(response),
-      parseRetryAfter(response.headers.get('Retry-After')),
+      parseIntHeader(response.headers.get('Retry-After')),
+      parseIntHeader(response.headers.get('X-Remaining-Call-Budget')),
     )
   }
   return response
 }
 
-/** `Retry-After` 헤더(정수 초, 문자열)를 읽는다. 없거나 정수가 아니면 null. */
-function parseRetryAfter(header: string | null): number | null {
+/**
+ * 정수 하나를 실어 나르는 헤더를 읽는다(`Retry-After`·`X-Remaining-Call-Budget`).
+ * 없거나 정수가 아니면 null.
+ */
+function parseIntHeader(header: string | null): number | null {
   if (header === null) {
     return null
   }
-  const seconds = Number(header)
-  return Number.isFinite(seconds) ? seconds : null
+  const value = Number(header)
+  return Number.isInteger(value) ? value : null
 }
 
 /** JSON 응답을 기대하는 요청. */
@@ -351,4 +370,27 @@ export async function downloadExport(
     blob: await response.blob(),
     filename: parseFilename(response.headers.get('Content-Disposition')),
   }
+}
+
+/**
+ * `POST /conversions/{id}/units/{source_unit_index}/reconvert` — 원본 단위 하나를
+ * 다시 변환한 후보를 받는다(계약 2.14.0, 계획 §4 결정 3).
+ *
+ * **응답은 후보 텍스트뿐이고 변환 본문에는 아무것도 쓰지 않는다.** 채택(바꾸기·삽입)은
+ * 호출한 쪽(`ReviewEditor`)의 몫이다. 동기 호출이라 502(`BadGateway`)·503
+ * (`ReconversionConcurrencyLimited`, `Retry-After`)·429(`ReconversionBudgetExhausted`,
+ * `X-Remaining-Call-Budget`)가 각각 다른 사유로 실패를 알린다 — 호출한 쪽이
+ * `ApiError.status`·`retryAfterSeconds`·`remainingCallBudget`으로 구분한다.
+ *
+ * **멱등하지 않다** — 매 호출이 새 결과를 만들고, 이 함수는 자동으로 재시도하지 않는다.
+ */
+export function reconvertUnit(
+  conversionId: string,
+  sourceUnitIndex: number,
+  body: ReconvertUnitRequest,
+): Promise<ReconvertUnitResponse> {
+  return requestJson<ReconvertUnitResponse>(
+    `/conversions/${conversionId}/units/${sourceUnitIndex}/reconvert`,
+    { method: 'POST', body },
+  )
 }

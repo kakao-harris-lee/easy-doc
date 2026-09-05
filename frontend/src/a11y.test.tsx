@@ -15,8 +15,15 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { ApiError, getConversion, getDocumentSource, listDocuments } from './api/client'
+import {
+  ApiError,
+  getConversion,
+  getDocumentSource,
+  listDocuments,
+  reconvertUnit,
+} from './api/client'
 import { lookupTerm } from './api/dictionary'
+import { computeEasyTextFingerprint } from './review/fingerprint'
 import { AuthContext, type AuthContextValue } from './auth/context'
 import { AppLayout } from './components/AppLayout'
 import { AppRoutes } from './routes/AppRoutes'
@@ -35,6 +42,7 @@ vi.mock('./api/client', async (importOriginal) => ({
   listDocuments: vi.fn(),
   getConversion: vi.fn(),
   getDocumentSource: vi.fn(),
+  reconvertUnit: vi.fn(),
 }))
 
 vi.mock('./api/dictionary', async (importOriginal) => ({
@@ -214,6 +222,50 @@ const SCREENS: readonly {
     },
   },
   {
+    // 재변환 후보 카드(계획 §4 결정 3, §6 S5) — 원문 패널의 「다시 변환」 버튼을 눌러
+    // 카드를 한 번 띄운 채로 스윕한다. 이 카드는 조건에 따라 그 자리에서 나타나고
+    // 사라지는 DOM이라(팝업이 아니다) 다른 화면과 같은 규칙(랜드마크·제목 순서·라이브
+    // 영역 중복)을 지키는지 여기서만 잰다.
+    name: '검수 (재변환 후보 카드)',
+    open: () => {
+      vi.mocked(getConversion).mockResolvedValue(
+        conversion({
+          easy_text: '3월 2일부터 신청할 수 있어요.\n주민센터로 가세요.',
+          segment_map: segmentMap({
+            source_unit_count: 2,
+            units: [
+              segmentMapUnit({ easy_unit_index: 0, source_unit_indexes: [0], confidence: 'high' }),
+              segmentMapUnit({ easy_unit_index: 1, source_unit_indexes: [1], confidence: 'high' }),
+            ],
+          }),
+        }),
+      )
+      renderAt({
+        pathname: '/conversions/c1',
+        state: {
+          sourceText: '3월 2일부터 신청할 수 있습니다.\n주민센터를 방문해 주세요.',
+        },
+      })
+    },
+    settle: async () => {
+      const heading = await screen.findByRole('heading', { name: '쉬운 글 검수' })
+      const fingerprint = await computeEasyTextFingerprint(
+        '3월 2일부터 신청할 수 있어요.\n주민센터로 가세요.',
+      )
+      vi.mocked(reconvertUnit).mockResolvedValue({
+        candidate_text: '3월 2일부터 신청할 수 있습니다.',
+        source_unit_index: 0,
+        easy_unit_indexes: [0],
+        easy_text_fingerprint: fingerprint,
+        llm_calls_used: 1,
+        remaining_call_budget: 19,
+      })
+      fireEvent.click(screen.getByLabelText('원본 1번째 문단 다시 변환'))
+      await screen.findByRole('button', { name: '바꾸기' })
+      return heading
+    },
+  },
+  {
     // §9 «원문을 불러오지 못함»은 로딩·빈 상태와 다른 화면이다 — 접근성도 따로 재야 한다.
     name: '검수 (원문 불러오기 실패)',
     open: () => {
@@ -354,6 +406,7 @@ afterEach(() => {
   vi.mocked(getConversion).mockReset()
   vi.mocked(getDocumentSource).mockReset()
   vi.mocked(lookupTerm).mockReset()
+  vi.mocked(reconvertUnit).mockReset()
 })
 
 describe('①  랜드마크와 건너뛰기 링크', () => {

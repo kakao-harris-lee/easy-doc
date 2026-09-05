@@ -11,9 +11,10 @@ import type { ReactElement } from 'react'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { ApiError, downloadExport, saveFeedback, saveReview } from '../api/client'
+import { ApiError, downloadExport, reconvertUnit, saveFeedback, saveReview } from '../api/client'
 import { lookupTerm } from '../api/dictionary'
-import type { ConversionResponse, FormatPreservation } from '../api/types'
+import type { ConversionResponse, FormatPreservation, ReconvertUnitResponse } from '../api/types'
+import { computeEasyTextFingerprint } from '../review/fingerprint'
 import { setUnsavedChanges } from '../review/unsavedChanges'
 import {
   conversion,
@@ -40,6 +41,7 @@ vi.mock('../api/client', async (importOriginal) => ({
   saveReview: vi.fn(),
   downloadExport: vi.fn(),
   saveFeedback: vi.fn(),
+  reconvertUnit: vi.fn(),
 }))
 
 vi.mock('../api/dictionary', async (importOriginal) => ({
@@ -71,6 +73,7 @@ beforeEach(() => {
   vi.mocked(downloadExport).mockReset()
   vi.mocked(saveFeedback).mockReset()
   vi.mocked(lookupTerm).mockReset()
+  vi.mocked(reconvertUnit).mockReset()
 })
 
 afterEach(() => {
@@ -1442,6 +1445,409 @@ describe('문단 단위 대응(segment_map)', () => {
       expect(screen.getByLabelText('쉬운 글 단위 2, 대응 확인 불가')).toHaveValue('Y줄')
       expect(screen.getByLabelText('쉬운 글 단위 3, 원본 2번째 문단에 대응')).toHaveValue('둘째줄')
     })
+  })
+})
+
+/** `reconvertUnit` 응답. 기본값은 HIGH 1:1 + 지문 불변 — 「바꾸기」 갈래를 탄다. */
+function reconvertResponse(overrides: Partial<ReconvertUnitResponse> = {}): ReconvertUnitResponse {
+  return {
+    candidate_text: '다시 쓴 문장입니다.',
+    source_unit_index: 0,
+    easy_unit_indexes: [0],
+    easy_text_fingerprint: 'a'.repeat(64),
+    llm_calls_used: 1,
+    remaining_call_budget: 19,
+    ...overrides,
+  }
+}
+
+describe('문단 재변환(계획 §4 결정 3, §6 S5)', () => {
+  /** 원본·쉬운 글 각 1단위, high 1:1 대응. 재변환 테스트의 공통 뼈대다. */
+  function renderOneUnit(easyText = '첫 문장') {
+    const map = segmentMap({
+      source_unit_count: 1,
+      units: [segmentMapUnit({ easy_unit_index: 0, source_unit_indexes: [0], confidence: 'high' })],
+    })
+    return render(
+      <ReviewEditor
+        conversion={conversion({ easy_text: easyText, segment_map: map })}
+        source={sourceReady('원본 문단')}
+      />,
+    )
+  }
+
+  it('다시 변환 버튼은 현재 매핑의 easy_unit_indexes와 본문 지문(SHA-256)으로 요청한다', async () => {
+    const user = userEvent.setup()
+    const expectedFingerprint = await computeEasyTextFingerprint('첫 문장')
+    vi.mocked(reconvertUnit).mockResolvedValue(
+      reconvertResponse({ easy_text_fingerprint: expectedFingerprint }),
+    )
+    renderOneUnit()
+
+    await user.click(screen.getByLabelText('원본 1번째 문단 다시 변환'))
+
+    await waitFor(() =>
+      expect(reconvertUnit).toHaveBeenCalledWith('c1', 0, {
+        easy_unit_indexes: [0],
+        easy_text_fingerprint: expectedFingerprint,
+      }),
+    )
+  })
+
+  it('요청이 도는 동안 그 행은 진행 중 표시가 되고 다른 재변환은 걸리지 않는다(이중 제출 방지)', async () => {
+    const user = userEvent.setup()
+    let resolveReconvert: (value: ReconvertUnitResponse) => void = () => undefined
+    vi.mocked(reconvertUnit).mockReturnValue(
+      new Promise((resolve) => {
+        resolveReconvert = resolve
+      }),
+    )
+    renderOneUnit()
+
+    const button = screen.getByLabelText('원본 1번째 문단 다시 변환')
+    await user.click(button)
+    expect(button).toHaveAttribute('aria-busy', 'true')
+    expect(button).toBeDisabled()
+
+    // 응답을 기다리는 동안 다시 눌러도 두 번째 요청을 걸지 않는다.
+    await user.click(button)
+    expect(reconvertUnit).toHaveBeenCalledTimes(1)
+
+    resolveReconvert(reconvertResponse())
+    await waitFor(() => expect(button).not.toBeDisabled())
+  })
+
+  it('HIGH 1:1 + 지문 불변 응답은 「바꾸기」 카드를 보여주고, 누르면 그 단위만 갈아 끼운다', async () => {
+    const user = userEvent.setup()
+    const fingerprint = await computeEasyTextFingerprint('첫 문장')
+    vi.mocked(reconvertUnit).mockResolvedValue(
+      reconvertResponse({ easy_text_fingerprint: fingerprint }),
+    )
+    renderOneUnit()
+
+    await user.click(screen.getByLabelText('원본 1번째 문단 다시 변환'))
+    const replaceButton = await screen.findByRole('button', { name: '바꾸기' })
+    // 지문 불일치 응답이 아니다 — 「이 위치에 넣기」는 뜨지 않는다(계획 §6 S5 수용 기준).
+    expect(screen.queryByRole('button', { name: '이 위치에 넣기' })).not.toBeInTheDocument()
+
+    await user.click(replaceButton)
+
+    expect(screen.getByLabelText('쉬운 글 단위 1, 원본 1번째 문단에 대응')).toHaveValue(
+      '다시 쓴 문장입니다.',
+    )
+    // 단위 수(=지도 길이)는 그대로다 — 갈아 끼우기는 텍스트만 바꾼다.
+    expect(screen.getAllByLabelText(/^쉬운 글 단위/)).toHaveLength(1)
+    expect(screen.queryByRole('button', { name: '바꾸기' })).not.toBeInTheDocument()
+  })
+
+  it('1:N 응답(쉬운 글 단위 여럿)은 「이 위치에 넣기」만 보여준다', async () => {
+    const user = userEvent.setup()
+    const fingerprint = await computeEasyTextFingerprint('첫 문장')
+    vi.mocked(reconvertUnit).mockResolvedValue(
+      reconvertResponse({ easy_unit_indexes: [0, 1], easy_text_fingerprint: fingerprint }),
+    )
+    renderOneUnit()
+
+    await user.click(screen.getByLabelText('원본 1번째 문단 다시 변환'))
+
+    await screen.findByRole('button', { name: '이 위치에 넣기' })
+    expect(screen.queryByRole('button', { name: '바꾸기' })).not.toBeInTheDocument()
+  })
+
+  it('응답 도착 시점에 본문 지문이 바뀌어 있으면 HIGH 1:1이어도 「이 위치에 넣기」만 보여준다', async () => {
+    const user = userEvent.setup()
+    // 응답은 요청 시점(편집 전)의 지문을 그대로 되울린다 — 서버가 그 값으로 판정하지
+    // 않는다(계획 §4 결정 3). 응답이 도착하기 전에 사용자가 결과를 고쳤다고 가정한다.
+    const staleFingerprint = await computeEasyTextFingerprint('첫 문장')
+    let resolveReconvert: (value: ReconvertUnitResponse) => void = () => undefined
+    vi.mocked(reconvertUnit).mockReturnValue(
+      new Promise((resolve) => {
+        resolveReconvert = resolve
+      }),
+    )
+    renderOneUnit()
+
+    await user.click(screen.getByLabelText('원본 1번째 문단 다시 변환'))
+    await user.type(screen.getByLabelText(/쉬운 글 단위 1/), '!')
+    resolveReconvert(reconvertResponse({ easy_text_fingerprint: staleFingerprint }))
+
+    await screen.findByRole('button', { name: '이 위치에 넣기' })
+    expect(screen.queryByRole('button', { name: '바꾸기' })).not.toBeInTheDocument()
+    // 자동으로는 어떤 경우에도 바뀌지 않는다 — 방금 입력한 「!」가 그대로 남아 있다.
+    expect(screen.getByLabelText(/쉬운 글 단위 1/)).toHaveValue('첫 문장!')
+  })
+
+  it('「이 위치에 넣기」는 마지막으로 초점이 있던 단위의 캐럿에 끼워 넣고 단위 수는 그대로다', async () => {
+    const user = userEvent.setup()
+    const fingerprint = await computeEasyTextFingerprint('첫 문장')
+    vi.mocked(reconvertUnit).mockResolvedValue(
+      reconvertResponse({
+        candidate_text: '끼워넣기',
+        easy_unit_indexes: [0, 1],
+        easy_text_fingerprint: fingerprint,
+      }),
+    )
+    renderOneUnit()
+
+    const unit = screen.getByLabelText(/쉬운 글 단위 1/) as HTMLTextAreaElement
+    unit.focus()
+    unit.setSelectionRange(1, 1) // '첫' 뒤
+
+    await user.click(screen.getByLabelText('원본 1번째 문단 다시 변환'))
+    const insertButton = await screen.findByRole('button', { name: '이 위치에 넣기' })
+    await user.click(insertButton)
+
+    expect(screen.getByLabelText(/쉬운 글 단위 1/)).toHaveValue('첫끼워넣기 문장')
+    // 캐럿에 끼워 넣었을 뿐 단위를 나누지 않았다 — 단위 수(지도 길이)는 그대로다.
+    expect(screen.getAllByLabelText(/^쉬운 글 단위/)).toHaveLength(1)
+  })
+
+  it('캐럿을 모르면(초점이 간 적이 없으면) 새 단위로 붙는다', async () => {
+    const user = userEvent.setup()
+    const fingerprint = await computeEasyTextFingerprint('첫 문장')
+    // easy_unit_indexes를 빈 배열로 둔다 — 대응을 찾지 못했다는 뜻이라(HIGH 1:1 조건에
+    // 못 미친다) 「이 위치에 넣기」 갈래를 탄다(계획 §4 결정 3).
+    vi.mocked(reconvertUnit).mockResolvedValue(
+      reconvertResponse({
+        candidate_text: '새 단위',
+        easy_unit_indexes: [],
+        easy_text_fingerprint: fingerprint,
+      }),
+    )
+    renderOneUnit()
+
+    // 결과 단위에 한 번도 초점을 준 적이 없는 채로 바로 재변환을 누른다.
+    await user.click(screen.getByLabelText('원본 1번째 문단 다시 변환'))
+    const insertButton = await screen.findByRole('button', { name: '이 위치에 넣기' })
+    await user.click(insertButton)
+
+    // 단위가 하나 늘었다 — 지도 길이도 함께 늘어난다(SegmentedResultEditor의 정렬 규칙).
+    expect(screen.getAllByLabelText(/^쉬운 글 단위/)).toHaveLength(2)
+    expect(screen.getByLabelText('쉬운 글 단위 2, 원본 1번째 문단에 대응')).toHaveValue('새 단위')
+  })
+
+  it('「바꾸기」 후보 텍스트에 개행이 섞여 있으면(1:N이 아니라 후보 본문 자체) 단위가 늘고 지도 길이도 함께 늘어난다(HIGH 리뷰 1)', async () => {
+    const user = userEvent.setup()
+    const fingerprint = await computeEasyTextFingerprint('첫 문장')
+    vi.mocked(reconvertUnit).mockResolvedValue(
+      reconvertResponse({
+        candidate_text: '다시 쓴 문장 1\n다시 쓴 문장 2',
+        easy_text_fingerprint: fingerprint,
+      }),
+    )
+    renderOneUnit()
+
+    await user.click(screen.getByLabelText('원본 1번째 문단 다시 변환'))
+    const replaceButton = await screen.findByRole('button', { name: '바꾸기' })
+    await user.click(replaceButton)
+
+    // 후보 텍스트의 개행 때문에 단위가 하나 늘었다 — 지도 길이(`unitMap.length`)도
+    // `draft.split('\n').length`와 같게 함께 늘어난다.
+    expect(screen.getAllByLabelText(/^쉬운 글 단위/)).toHaveLength(2)
+    expect(screen.getByLabelText('쉬운 글 단위 1, 원본 1번째 문단에 대응')).toHaveValue(
+      '다시 쓴 문장 1',
+    )
+    // 새로 생긴 두 번째 조각은 원래 단위의 대응을 물려받지 않는다 — 「대응 확인 불가」로
+    // 안전하게 둔다(SegmentedResultEditor.handleUnitTextChange와 같은 규칙).
+    expect(screen.getByLabelText('쉬운 글 단위 2, 대응 확인 불가')).toHaveValue('다시 쓴 문장 2')
+  })
+
+  it('「이 위치에 넣기」 후보 텍스트에 개행이 섞여 있으면 캐럿 자리에서 단위가 나뉘고 지도 길이도 함께 늘어난다(HIGH 리뷰 1)', async () => {
+    const user = userEvent.setup()
+    const fingerprint = await computeEasyTextFingerprint('첫 문장')
+    vi.mocked(reconvertUnit).mockResolvedValue(
+      reconvertResponse({
+        candidate_text: '끼워 1\n끼워 2',
+        easy_unit_indexes: [0, 1],
+        easy_text_fingerprint: fingerprint,
+      }),
+    )
+    renderOneUnit()
+
+    const unit = screen.getByLabelText(/쉬운 글 단위 1/) as HTMLTextAreaElement
+    unit.focus()
+    unit.setSelectionRange(1, 1) // '첫' 뒤
+
+    await user.click(screen.getByLabelText('원본 1번째 문단 다시 변환'))
+    const insertButton = await screen.findByRole('button', { name: '이 위치에 넣기' })
+    await user.click(insertButton)
+
+    // 캐럿 자리에서 갈라져 단위가 하나 늘었다.
+    expect(screen.getAllByLabelText(/^쉬운 글 단위/)).toHaveLength(2)
+    expect(screen.getByLabelText('쉬운 글 단위 1, 원본 1번째 문단에 대응')).toHaveValue('첫끼워 1')
+    expect(screen.getByLabelText('쉬운 글 단위 2, 대응 확인 불가')).toHaveValue('끼워 2 문장')
+  })
+
+  it('재변환 후보 카드가 뜨면 초점이 카드로 옮겨간다(MEDIUM 리뷰 3)', async () => {
+    const user = userEvent.setup()
+    const fingerprint = await computeEasyTextFingerprint('첫 문장')
+    vi.mocked(reconvertUnit).mockResolvedValue(
+      reconvertResponse({ easy_text_fingerprint: fingerprint }),
+    )
+    renderOneUnit()
+
+    await user.click(screen.getByLabelText('원본 1번째 문단 다시 변환'))
+
+    const card = await screen.findByRole('region', { name: '원본 1번째 문단 재변환 후보' })
+    await waitFor(() => expect(card).toHaveFocus())
+    // 카드가 도착했다는 사실 자체를 낭독하는 자리(role="status")도 함께 있다.
+    expect(screen.getByText(/재변환 후보가 도착했습니다/)).toBeInTheDocument()
+  })
+
+  it('재변환 후보 카드를 닫으면 초점이 그 카드를 연 「다시 변환」 버튼으로 돌아간다(MEDIUM 리뷰 3)', async () => {
+    const user = userEvent.setup()
+    const fingerprint = await computeEasyTextFingerprint('첫 문장')
+    vi.mocked(reconvertUnit).mockResolvedValue(
+      reconvertResponse({ easy_text_fingerprint: fingerprint }),
+    )
+    renderOneUnit()
+
+    const triggerButton = screen.getByLabelText('원본 1번째 문단 다시 변환')
+    await user.click(triggerButton)
+
+    await screen.findByRole('region', { name: '원본 1번째 문단 재변환 후보' })
+    await user.click(screen.getByLabelText('재변환 후보 닫기'))
+
+    expect(
+      screen.queryByRole('region', { name: '원본 1번째 문단 재변환 후보' }),
+    ).not.toBeInTheDocument()
+    expect(triggerButton).toHaveFocus()
+  })
+
+  it('「바꾸기」를 연속으로 두 번 눌러도 후보를 두 번 끼워 넣지 않는다', async () => {
+    const user = userEvent.setup()
+    const fingerprint = await computeEasyTextFingerprint('첫 문장')
+    vi.mocked(reconvertUnit).mockResolvedValue(
+      reconvertResponse({ easy_text_fingerprint: fingerprint }),
+    )
+    renderOneUnit()
+
+    await user.click(screen.getByLabelText('원본 1번째 문단 다시 변환'))
+    const replaceButton = await screen.findByRole('button', { name: '바꾸기' })
+    // 두 번 클릭(더블클릭에 준함) — 첫 클릭 뒤 카드가 사라지므로 두 번째는 표적이 없다.
+    fireEvent.click(replaceButton)
+    fireEvent.click(replaceButton)
+
+    expect(screen.getByLabelText('쉬운 글 단위 1, 원본 1번째 문단에 대응')).toHaveValue(
+      '다시 쓴 문장입니다.',
+    )
+  })
+
+  it('429는 예산을 0으로 보여주고 모든 재변환 버튼을 잠근다', async () => {
+    const user = userEvent.setup()
+    vi.mocked(reconvertUnit).mockRejectedValue(
+      new ApiError(429, '재변환 호출 예산을 모두 사용했습니다', null, 0),
+    )
+    const map = segmentMap({
+      source_unit_count: 2,
+      units: [
+        segmentMapUnit({ easy_unit_index: 0, source_unit_indexes: [0], confidence: 'high' }),
+        segmentMapUnit({ easy_unit_index: 1, source_unit_indexes: [1], confidence: 'high' }),
+      ],
+    })
+    render(
+      <ReviewEditor
+        conversion={conversion({ easy_text: '첫 문장\n둘째 문장', segment_map: map })}
+        source={sourceReady('원본 하나\n원본 둘')}
+      />,
+    )
+
+    await user.click(screen.getByLabelText('원본 1번째 문단 다시 변환'))
+
+    // 어느 문단에서 실패했는지 서수를 앞에 붙인다(LOW 리뷰 4).
+    expect(await screen.findByText('1번째 문단: 재변환 예산을 모두 썼습니다.')).toBeInTheDocument()
+    expect(screen.getByText('남은 재변환 0회')).toBeInTheDocument()
+    expect(screen.getByLabelText('원본 1번째 문단 다시 변환')).toBeDisabled()
+    expect(screen.getByLabelText('원본 2번째 문단 다시 변환')).toBeDisabled()
+  })
+
+  it('429 응답의 남은 예산이 1이어도(예약분 2 중 하나만 남음) 소진으로 보고 모든 버튼을 잠근다(MEDIUM-HIGH 리뷰)', async () => {
+    const user = userEvent.setup()
+    vi.mocked(reconvertUnit).mockRejectedValue(
+      new ApiError(429, '재변환 호출 예산을 모두 사용했습니다', null, 1),
+    )
+    const map = segmentMap({
+      source_unit_count: 2,
+      units: [
+        segmentMapUnit({ easy_unit_index: 0, source_unit_indexes: [0], confidence: 'high' }),
+        segmentMapUnit({ easy_unit_index: 1, source_unit_indexes: [1], confidence: 'high' }),
+      ],
+    })
+    render(
+      <ReviewEditor
+        conversion={conversion({ easy_text: '첫 문장\n둘째 문장', segment_map: map })}
+        source={sourceReady('원본 하나\n원본 둘')}
+      />,
+    )
+
+    await user.click(screen.getByLabelText('원본 1번째 문단 다시 변환'))
+
+    expect(await screen.findByText('1번째 문단: 재변환 예산을 모두 썼습니다.')).toBeInTheDocument()
+    expect(screen.getByText('남은 재변환 1회')).toBeInTheDocument()
+    expect(screen.getByLabelText('원본 1번째 문단 다시 변환')).toBeDisabled()
+    expect(screen.getByLabelText('원본 2번째 문단 다시 변환')).toBeDisabled()
+  })
+
+  it('503은 재시도 카운트다운을 보여준다', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      vi.mocked(reconvertUnit).mockRejectedValue(
+        new ApiError(503, '동시 재변환 한도에 도달했습니다', 1, null),
+      )
+      renderOneUnit()
+
+      fireEvent.click(screen.getByLabelText('원본 1번째 문단 다시 변환'))
+      await vi.waitFor(() =>
+        expect(
+          screen.getByText('1번째 문단: 잠시 후 다시 시도해 주세요. (1초)'),
+        ).toBeInTheDocument(),
+      )
+
+      await act(async () => {
+        vi.advanceTimersByTime(1000)
+      })
+
+      expect(
+        screen.queryByText('1번째 문단: 잠시 후 다시 시도해 주세요. (1초)'),
+      ).not.toBeInTheDocument()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('저장이 도는 동안에는 재변환 버튼도 잠긴다', async () => {
+    const user = userEvent.setup()
+    let resolveSave: (value: ConversionResponse) => void = () => undefined
+    vi.mocked(saveReview).mockReturnValue(
+      new Promise((resolve) => {
+        resolveSave = resolve
+      }),
+    )
+    renderOneUnit()
+
+    await user.type(screen.getByLabelText(/쉬운 글 단위 1/), '!')
+    await user.click(screen.getByRole('button', { name: '검수 내용 저장' }))
+
+    expect(screen.getByLabelText('원본 1번째 문단 다시 변환')).toBeDisabled()
+
+    resolveSave(conversion({ edited_text: '첫 문장!', reviewed_at: '2026-08-07T02:00:00Z' }))
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: '검수 내용 저장' })).toBeEnabled(),
+    )
+  })
+
+  it('성공 응답 뒤 남은 재변환 횟수를 패널 머리 가까이 보여준다', async () => {
+    const user = userEvent.setup()
+    const fingerprint = await computeEasyTextFingerprint('첫 문장')
+    vi.mocked(reconvertUnit).mockResolvedValue(
+      reconvertResponse({ easy_text_fingerprint: fingerprint, remaining_call_budget: 18 }),
+    )
+    renderOneUnit()
+
+    expect(screen.queryByText(/^남은 재변환/)).not.toBeInTheDocument()
+    await user.click(screen.getByLabelText('원본 1번째 문단 다시 변환'))
+
+    expect(await screen.findByText('남은 재변환 18회')).toBeInTheDocument()
   })
 })
 

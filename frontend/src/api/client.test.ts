@@ -6,6 +6,7 @@ import {
   NETWORK_ERROR_STATUS,
   downloadExport,
   listDocuments,
+  reconvertUnit,
   setUnauthorizedHandler,
 } from './client'
 import { readToken, writeToken } from './token'
@@ -181,5 +182,92 @@ describe('내보내기', () => {
 
     expect(fetchMock.mock.calls[0]?.[0]).toBe(`${apiBaseUrl}/conversions/c1/export?format=docx`)
     expect(file.filename).toBeNull()
+  })
+})
+
+describe('reconvertUnit', () => {
+  it('경로에 source_unit_index를 싣고 본문에는 매핑·지문만 보낸다', async () => {
+    writeToken('token-abc')
+    const fingerprint = 'a'.repeat(64)
+    fetchMock.mockResolvedValue(
+      jsonResponse(200, {
+        candidate_text: '다시 쓴 문단입니다.',
+        source_unit_index: 2,
+        easy_unit_indexes: [3],
+        easy_text_fingerprint: fingerprint,
+        llm_calls_used: 1,
+        remaining_call_budget: 19,
+      }),
+    )
+
+    const response = await reconvertUnit('c1', 2, {
+      easy_unit_indexes: [3],
+      easy_text_fingerprint: fingerprint,
+    })
+
+    const [url, init] = fetchMock.mock.calls[0] ?? []
+    expect(url).toBe(`${apiBaseUrl}/conversions/c1/units/2/reconvert`)
+    expect(init?.method).toBe('POST')
+    expect(JSON.parse(init?.body as string)).toEqual({
+      easy_unit_indexes: [3],
+      easy_text_fingerprint: fingerprint,
+    })
+    expect(response.candidate_text).toBe('다시 쓴 문단입니다.')
+    expect(response.remaining_call_budget).toBe(19)
+  })
+
+  it('429는 X-Remaining-Call-Budget을 ApiError.remainingCallBudget으로 읽는다', async () => {
+    writeToken('token-abc')
+    fetchMock.mockResolvedValue(
+      new Response(JSON.stringify({ detail: '재변환 호출 예산을 모두 사용했습니다' }), {
+        status: 429,
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Remaining-Call-Budget': '0',
+        },
+      }),
+    )
+
+    await expect(
+      reconvertUnit('c1', 0, { easy_unit_indexes: [], easy_text_fingerprint: 'a'.repeat(64) }),
+    ).rejects.toMatchObject({ status: 429, remainingCallBudget: 0 })
+  })
+
+  it('503은 Retry-After를 ApiError.retryAfterSeconds로 읽는다', async () => {
+    writeToken('token-abc')
+    fetchMock.mockResolvedValue(
+      new Response(JSON.stringify({ detail: '동시 재변환 한도에 도달했습니다' }), {
+        status: 503,
+        headers: { 'Content-Type': 'application/json', 'Retry-After': '1' },
+      }),
+    )
+
+    await expect(
+      reconvertUnit('c1', 0, { easy_unit_indexes: [], easy_text_fingerprint: 'a'.repeat(64) }),
+    ).rejects.toMatchObject({ status: 503, retryAfterSeconds: 1 })
+  })
+
+  it('헤더가 없는 오류(502)는 remainingCallBudget·retryAfterSeconds가 null이다', async () => {
+    writeToken('token-abc')
+    fetchMock.mockResolvedValue(jsonResponse(502, { detail: '구글에 연결하지 못했습니다' }))
+
+    await expect(
+      reconvertUnit('c1', 0, { easy_unit_indexes: [], easy_text_fingerprint: 'a'.repeat(64) }),
+    ).rejects.toMatchObject({ status: 502, retryAfterSeconds: null, remainingCallBudget: null })
+  })
+
+  it('정수가 아닌 헤더 값(LOW 리뷰 5)은 remainingCallBudget·retryAfterSeconds가 null이다', async () => {
+    writeToken('token-abc')
+    fetchMock.mockResolvedValue(
+      new Response(JSON.stringify({ detail: '동시 재변환 한도에 도달했습니다' }), {
+        status: 503,
+        // `Number.isFinite`는 '1.5'도 통과시키지만 초 단위 헤더는 정수여야 한다.
+        headers: { 'Content-Type': 'application/json', 'Retry-After': '1.5' },
+      }),
+    )
+
+    await expect(
+      reconvertUnit('c1', 0, { easy_unit_indexes: [], easy_text_fingerprint: 'a'.repeat(64) }),
+    ).rejects.toMatchObject({ status: 503, retryAfterSeconds: null })
   })
 })

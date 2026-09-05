@@ -1,18 +1,33 @@
 import { useEffect, useId, useRef, useState, useSyncExternalStore, type KeyboardEvent } from 'react'
 import { Download, Save, ShieldAlert } from 'lucide-react'
 
-import { ApiError, downloadExport, saveReview } from '../api/client'
+import { ApiError, downloadExport, reconvertUnit, saveReview } from '../api/client'
 import type { ConversionResponse, ExportFormat, SegmentMapUnit } from '../api/types'
 import { cn } from '../lib/utils'
+import { computeEasyTextFingerprint } from '../review/fingerprint'
 import type { DocumentSource } from '../review/sourceText'
+import { insertUnitsAfter, spliceUnitText } from '../review/unitMap'
 import { setUnsavedChanges } from '../review/unsavedChanges'
 import { FormatPreservationPanel, PdfExportNotice } from './FormatPreservationPanel'
 import { ReviewFeedback } from './ReviewFeedback'
-import { MAX_SEGMENTED_UNITS, SegmentedResultEditor } from './SegmentedResultEditor'
+import {
+  MAX_SEGMENTED_UNITS,
+  SegmentedResultEditor,
+  type SegmentedResultEditorCandidate,
+} from './SegmentedResultEditor'
 import { SourceTextPanel } from './SourceTextPanel'
 import { TermLookupPopover } from './TermLookupPopover'
 import { Badge } from './ui/Badge'
 import { Button } from './ui/Button'
+
+/**
+ * 재변환 오류·재시도 안내 문구. `retryAfterSeconds`가 있으면(503) 초 단위로 살아
+ * 있는 카운트다운을 보여준다 — `TermLookupPopover`의 429 카운트다운과 같은 패턴이다.
+ */
+interface ReconvertMessage {
+  text: string
+  retryAfterSeconds: number | null
+}
 
 interface ReviewEditorProps {
   conversion: ConversionResponse
@@ -194,6 +209,31 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
   const [feedback, setFeedback] = useState<Feedback | null>(null)
   const [pending, setPending] = useState<Pending>(null)
   /**
+   * 문단 재변환(계획 §4 결정 3, §6 S5). 지금 응답을 기다리는 원본 단위 색인 — 한 번에
+   * 하나만 진행한다(단순한 전역 단일 진행 상태가 이중 제출·경합하는 후보 카드를 미리
+   * 막는다). `null`이면 재변환이 도는 것이 없다.
+   */
+  const [reconvertPendingIndex, setReconvertPendingIndex] = useState<number | null>(null)
+  /**
+   * 이 문서에 남은 재변환 호출 예산. 아직 한 번도 재변환을 부르지 않았으면 `null`이라
+   * 배지를 그리지 않는다 — 부르지도 않은 예산을 숫자로 지어내지 않는다.
+   */
+  const [remainingCallBudget, setRemainingCallBudget] = useState<number | null>(null)
+  /**
+   * 429(예산 소진)를 한 번이라도 받았는지(MEDIUM-HIGH 리뷰).
+   *
+   * 매 재변환 호출은 예산에서 최소 2를 예약한다 — 그래서 429 직후 서버가 알려 준
+   * `remainingCallBudget`이 정확히 0이 아니라 1일 수 있다(예약분 중 하나만 남은 채
+   * 거절된 경우). `remainingCallBudget === 0`만 소진으로 보면 그 1이 남은 상태에서도
+   * 버튼이 눌리고 또 같은 429를 받는다 — 이 값은 그 갈래와 무관하게 한 번 소진되면
+   * 다시 열리지 않는다는 사실을 못박는다.
+   */
+  const [budgetExhausted, setBudgetExhausted] = useState(false)
+  /** 재변환 요청이 실패했을 때의 안내(409·422·429·502·503·그 밖). */
+  const [reconvertMessage, setReconvertMessage] = useState<ReconvertMessage | null>(null)
+  /** 지금 열려 있는 재변환 후보 카드. 한 번에 하나만 연다. */
+  const [candidate, setCandidate] = useState<SegmentedResultEditorCandidate | null>(null)
+  /**
    * 지금 내려받는 중인 형식.
    *
    * PDF 원본은 버튼이 둘일 수 있다(`export_format_choices`) — `pending`만으로는 어느
@@ -234,11 +274,298 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
     draftRef.current = draft
   }, [draft])
 
+  /**
+   * 언제나 최신 `unitMap`을 가리키는 ref — `draftRef`와 같은 이유다. 재변환 응답이
+   * 도착한 시점의 대응(confidence)을 판정하려면 요청을 보낸 시점의 클로저가 아니라
+   * "지금" 값이 필요하다(계획 §4 결정 3 "응답 도착 시점"의 신선도 기준).
+   */
+  const unitMapRef = useRef(unitMap)
+  useEffect(() => {
+    unitMapRef.current = unitMap
+  }, [unitMap])
+
+  /**
+   * 마지막으로 초점을 벗어난 결과 단위와 그 캐럿(계획 §6 S5). 재변환 「이 위치에
+   * 넣기」가 이 값을 참고한다 — 다시 변환 버튼(원본 패널)을 누르는 순간 지금까지
+   * 편집하던 결과 textarea가 초점을 잃으며 이 값을 남긴다. 아직 결과 단위에 한 번도
+   * 초점이 간 적이 없으면 `null`이다.
+   */
+  const lastActiveResultUnitRef = useRef<{ index: number; caret: number } | null>(null)
+  /** 503(`ReconversionConcurrencyLimited`) 카운트다운 인터벌 — `TermLookupPopover`의
+   * 429 카운트다운과 같은 패턴이다. */
+  const reconvertCountdownRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  /**
+   * 재변환 후보 카드를 연 「다시 변환」 버튼(MEDIUM 리뷰 3).
+   *
+   * 카드가 뜨는 순간 초점은 카드로 옮겨 간다(`ReconvertCandidateCard`). 카드를 닫으면
+   * 그 초점을 다시 이 버튼으로 돌려준다 — 그렇지 않으면 초점이 사라진 카드와 함께
+   * `<body>`로 떨어져 키보드 사용자가 원본 패널에서 다시 자리를 찾아야 한다.
+   */
+  const reconvertTriggerRef = useRef<HTMLElement | null>(null)
+
+  const clearReconvertCountdown = () => {
+    if (reconvertCountdownRef.current !== null) {
+      clearInterval(reconvertCountdownRef.current)
+      reconvertCountdownRef.current = null
+    }
+  }
+
+  // 언마운트 시 카운트다운을 정리한다.
+  useEffect(() => clearReconvertCountdown, [])
+
+  function startReconvertCountdown(sourceIndex: number): void {
+    clearReconvertCountdown()
+    reconvertCountdownRef.current = setInterval(() => {
+      setReconvertMessage((prev) => {
+        if (prev === null || prev.retryAfterSeconds === null) {
+          clearReconvertCountdown()
+          return prev
+        }
+        const next = prev.retryAfterSeconds - 1
+        if (next <= 0) {
+          clearReconvertCountdown()
+          return null
+        }
+        return {
+          text: `${sourceIndex + 1}번째 문단: 잠시 후 다시 시도해 주세요. (${next}초)`,
+          retryAfterSeconds: next,
+        }
+      })
+    }, 1000)
+  }
+
+  /** 결과 단위가 초점을 벗어날 때(계획 §6 S5) 마지막 활성 단위·캐럿을 기록한다. */
+  function handleResultUnitBlur(index: number, caret: number): void {
+    lastActiveResultUnitRef.current = { index, caret }
+  }
+
+  /**
+   * 서버가 준 사유를 그대로 보여준다. `ApiError`가 아니면 일반 문구로 대신한다.
+   *
+   * 문단이 여럿인 화면에서는 「어느 문단을 다시 변환하려다 실패했는지」가 문구에 없으면
+   * 사용자가 지금 이 안내가 방금 누른 그 버튼에 대한 것인지 다시 확인해야 한다(LOW
+   * 리뷰 4) — 그래서 원본 단위 서수를 항상 앞에 붙인다.
+   */
+  function reconvertErrorMessage(caught: unknown, sourceIndex: number): ReconvertMessage {
+    const prefix = `${sourceIndex + 1}번째 문단: `
+    if (!(caught instanceof ApiError)) {
+      return {
+        text: `${prefix}재변환하지 못했습니다. 잠시 후 다시 시도해 주세요.`,
+        retryAfterSeconds: null,
+      }
+    }
+    if (caught.status === 429) {
+      setRemainingCallBudget(caught.remainingCallBudget ?? 0)
+      setBudgetExhausted(true)
+      return { text: `${prefix}재변환 예산을 모두 썼습니다.`, retryAfterSeconds: null }
+    }
+    if (caught.status === 503) {
+      const seconds = caught.retryAfterSeconds ?? 1
+      startReconvertCountdown(sourceIndex)
+      return {
+        text: `${prefix}잠시 후 다시 시도해 주세요. (${seconds}초)`,
+        retryAfterSeconds: seconds,
+      }
+    }
+    if (caught.status === 502) {
+      return { text: `${prefix}잠시 후 다시 시도해 주세요.`, retryAfterSeconds: null }
+    }
+    // 409(아직 완료되지 않음)·422(색인·지문 형식 오류)는 서버 문구를 그대로 보여준다.
+    if (caught.status === 409 || caught.status === 422) {
+      return { text: `${prefix}${caught.message}`, retryAfterSeconds: null }
+    }
+    return {
+      text: `${prefix}재변환하지 못했습니다. 잠시 후 다시 시도해 주세요.`,
+      retryAfterSeconds: null,
+    }
+  }
+
+  /**
+   * 원본 단위 하나를 다시 변환한다(계획 §4 결정 3, §6 S5).
+   *
+   * **응답은 후보일 뿐이다 — 여기서 `draft`·`unitMap`을 바꾸지 않는다.** 채택(바꾸기·
+   * 이 위치에 넣기)은 사람이 카드에서 직접 눌러야 한다(`handleCandidateReplace`·
+   * `handleCandidateInsert`).
+   */
+  async function handleReconvertUnit(sourceIndex: number): Promise<void> {
+    // 이중 제출 방지 — 이미 도는 재변환이 있으면 새 요청을 걸지 않는다.
+    if (reconvertPendingIndex !== null) {
+      return
+    }
+    // 이 재변환을 건 「다시 변환」 버튼(MEDIUM 리뷰 3) — 후보 카드를 닫으면 여기로
+    // 초점을 돌려준다. 버튼 클릭은 그 버튼에 초점을 옮긴 다음 일어나므로 이 시점의
+    // `document.activeElement`가 바로 그 버튼이다.
+    reconvertTriggerRef.current =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null
+    setReconvertPendingIndex(sourceIndex)
+    setReconvertMessage(null)
+    clearReconvertCountdown()
+    try {
+      const requestFingerprint = await computeEasyTextFingerprint(draftRef.current)
+      const requestEasyUnitIndexes = unitMapRef.current
+        .filter((unit) => unit.source_unit_indexes.includes(sourceIndex))
+        .map((unit) => unit.easy_unit_index)
+
+      const response = await reconvertUnit(conversion.id, sourceIndex, {
+        easy_unit_indexes: requestEasyUnitIndexes,
+        easy_text_fingerprint: requestFingerprint,
+      })
+      setRemainingCallBudget(response.remaining_call_budget)
+
+      // 응답 도착 시점의 에디터 본문 지문이 여전히 같은지 다시 잰다(계획 §4 결정 3
+      // ⑴) — 기다리는 동안 사용자가 편집했으면 다르다.
+      const currentFingerprint = await computeEasyTextFingerprint(draftRef.current)
+      const fingerprintUnchanged = currentFingerprint === response.easy_text_fingerprint
+      const singleEasyIndex: number | null =
+        response.easy_unit_indexes.length === 1 ? (response.easy_unit_indexes[0] ?? null) : null
+      const targetUnit =
+        singleEasyIndex !== null
+          ? unitMapRef.current.find((unit) => unit.easy_unit_index === singleEasyIndex)
+          : undefined
+      // ⑵ high 대응이고 ⑶ 정확히 한 단위일 때만 「바꾸기」를 제시한다 — 그 밖의 모든
+      // 경우(1:N·N:1·low·빈 배열·지문 불일치)는 카드 + 「이 위치에 넣기」뿐이다.
+      const canReplace =
+        fingerprintUnchanged && singleEasyIndex !== null && targetUnit?.confidence === 'high'
+
+      if (canReplace && singleEasyIndex !== null) {
+        setCandidate({
+          sourceUnitIndex: sourceIndex,
+          candidateText: response.candidate_text,
+          mode: 'replace',
+          anchorEasyUnitIndex: singleEasyIndex,
+        })
+      } else {
+        const totalUnits = Math.max(draftRef.current.split('\n').length, 1)
+        // 카드를 앉힐 자리 — 지금 대응하는 쉬운 글 단위 중 가장 뒤엣것 바로 아래,
+        // 대응이 하나도 없으면 마지막 단위 아래다. 실제 삽입 위치는 캐럿이 있으면
+        // 그 캐럿이고, 없을 때만 이 자리(다음 색인) 뒤에 새 단위로 붙는다.
+        const anchor =
+          response.easy_unit_indexes.length > 0
+            ? Math.min(Math.max(...response.easy_unit_indexes), totalUnits - 1)
+            : totalUnits - 1
+        setCandidate({
+          sourceUnitIndex: sourceIndex,
+          candidateText: response.candidate_text,
+          mode: 'insert',
+          anchorEasyUnitIndex: anchor,
+        })
+      }
+    } catch (caught) {
+      setReconvertMessage(reconvertErrorMessage(caught, sourceIndex))
+    } finally {
+      setReconvertPendingIndex(null)
+    }
+  }
+
+  /**
+   * 「바꾸기」 — `high` + 단일 대응 + 지문 불변일 때만 카드가 제시하는 버튼이다.
+   * 그 쉬운 글 단위 하나만 후보 텍스트로 갈아 끼운다 — 단위 수·지도는 그대로다.
+   *
+   * `setCandidate`의 함수형 업데이터로 이중 실행을 막는다(StrictMode 이중 렌더·버튼
+   * 연속 두 번 클릭 모두 이 가드를 지난다) — 두 번째 호출은 이미 `null`이 된 후보를
+   * 보고 그대로 물러난다.
+   */
+  function handleCandidateReplace(): void {
+    setCandidate((prev) => {
+      if (prev === null || prev.mode !== 'replace') {
+        return prev
+      }
+      const units = draftRef.current.split('\n')
+      if (prev.anchorEasyUnitIndex >= 0 && prev.anchorEasyUnitIndex < units.length) {
+        // 후보 텍스트에 `\n`이 섞여 있으면(1:N 재변환이 여러 줄로 온 경우) 그 자리에서
+        // 갈라지는 것으로 보고 지도도 함께 다시 짠다(HIGH 리뷰 1) — `unitMap.length`가
+        // `draft.split('\n').length`와 어긋나지 않게 `SegmentedResultEditor`와 같은
+        // 규칙을 공유한다.
+        const { units: nextUnits, map: nextMap } = spliceUnitText(
+          units,
+          unitMapRef.current,
+          prev.anchorEasyUnitIndex,
+          prev.candidateText,
+        )
+        setDraft(nextUnits.join('\n'))
+        setUnitMap(nextMap)
+      }
+      return null
+    })
+  }
+
+  /**
+   * 「이 위치에 넣기」 — 마지막으로 초점이 있던 결과 단위의 캐럿에 후보를 끼워
+   * 넣는다(단위 수 불변, 지도 그대로). 초점이 간 적이 없으면(캐럿을 모르면) 후보를
+   * **새 단위**로 만들어 `anchorEasyUnitIndex` 바로 뒤에 붙인다 — 이때만 단위 수가
+   * 늘고, 새 단위는 이 재변환이 나온 원본 단위에 `high`로 대응시킨다.
+   *
+   * `handleCandidateReplace`와 같은 함수형 업데이터 가드를 쓴다.
+   */
+  function handleCandidateInsert(): void {
+    setCandidate((prev) => {
+      if (prev === null) {
+        return prev
+      }
+      const units = draftRef.current.split('\n')
+      const active = lastActiveResultUnitRef.current
+      if (active !== null && active.index >= 0 && active.index < units.length) {
+        const unit = units[active.index] ?? ''
+        const caret = Math.min(Math.max(active.caret, 0), unit.length)
+        const nextText = unit.slice(0, caret) + prev.candidateText + unit.slice(caret)
+        // 캐럿에 끼운 텍스트에 `\n`이 있으면 그 단위가 갈라진다(HIGH 리뷰 1) —
+        // `handleCandidateReplace`와 같은 규칙을 공유한다.
+        const { units: nextUnits, map: nextMap } = spliceUnitText(
+          units,
+          unitMapRef.current,
+          active.index,
+          nextText,
+        )
+        setDraft(nextUnits.join('\n'))
+        setUnitMap(nextMap)
+      } else {
+        // 캐럿을 모르면 새 단위(들)로 붙는다 — 후보 텍스트에 `\n`이 있으면 여러 단위로
+        // 나뉘고, 전부 이 재변환이 나온 원본 단위에 `high`로 대응한다(HIGH 리뷰 1).
+        const { units: nextUnits, map: nextMap } = insertUnitsAfter(
+          units,
+          unitMapRef.current,
+          prev.anchorEasyUnitIndex,
+          prev.candidateText,
+          prev.sourceUnitIndex,
+        )
+        setDraft(nextUnits.join('\n'))
+        setUnitMap(nextMap)
+      }
+      return null
+    })
+  }
+
+  function handleCandidateClose(): void {
+    setCandidate(null)
+    // 카드를 닫으면 초점을 그 카드를 연 「다시 변환」 버튼으로 돌려준다(MEDIUM 리뷰
+    // 3) — 그러지 않으면 사라진 카드와 함께 초점이 `<body>`로 떨어진다.
+    reconvertTriggerRef.current?.focus()
+  }
+
   const dirty = draft !== savedText
   const busy = pending !== null
   /** 내려받기 버튼이 도는 중인지. 저장을 먼저 하는 경로도 같은 버튼이 돈다. */
   const downloading = pending === 'download' || pending === 'saveAndDownload'
   const splitView = useSplitView()
+
+  /**
+   * 재변환 버튼(모든 행 공통) 비활성 사유. 저장·내려받기 중이거나, 예산을 다 썼거나,
+   * 이미 다른 재변환이 도는 중이면 새 요청을 걸지 않는다 — 마지막 조건은 이 화면이
+   * 한 번에 하나만 진행하기로 한 선택(§4 위 주석)을 버튼 상태에도 그대로 반영한다.
+   * 요청이 도는 행 자신은 이 값과 무관하게 `pendingIndex`로 항상 잠긴다.
+   *
+   * **예산 소진은 `=== 0`만으로 판정하지 않는다(MEDIUM-HIGH 리뷰).** 매 요청이 예산에서
+   * 최소 2를 예약하므로, 429 직후 남은 예산이 1이어도 다음 요청은 예약할 몫이 모자라
+   * 마찬가지로 거절된다 — `budgetExhausted`(429를 한 번이라도 받았다는 사실)와
+   * `remainingCallBudget < 2` 둘 중 하나만 참이어도 소진으로 본다.
+   */
+  const reconvertDisabledReason = busy
+    ? '저장 중에는 다시 변환할 수 없습니다.'
+    : budgetExhausted || (remainingCallBudget !== null && remainingCallBudget < 2)
+      ? '재변환 예산을 모두 썼습니다.'
+      : reconvertPendingIndex !== null
+        ? '다른 재변환이 진행 중입니다.'
+        : null
 
   /**
    * 결과 패널을 단위 목록(`SegmentedResultEditor`)으로 그릴지.
@@ -668,6 +995,15 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
                 useSegmentedEditor ? new Set(highlightedSourceIndexes) : undefined
               }
               onHoverUnit={useSegmentedEditor ? setHoveredSourceIndex : undefined}
+              reconvert={
+                useSegmentedEditor
+                  ? {
+                      pendingIndex: reconvertPendingIndex,
+                      disabledReason: reconvertDisabledReason,
+                      onReconvert: (index) => void handleReconvertUnit(index),
+                    }
+                  : undefined
+              }
             />
           </div>
 
@@ -697,8 +1033,23 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
               </Badge>
             </div>
 
+            {/* 재변환 호출 예산(계획 §4 결정 3, §6 S5) — 한 번도 재변환을 부르지
+                않았으면 아직 모르는 값이라 그리지 않는다(부르지도 않은 예산을 숫자로
+                지어내지 않는다). */}
+            {useSegmentedEditor && remainingCallBudget !== null && (
+              <p className="field-hint mb-2" role="status">
+                남은 재변환 {remainingCallBudget}회
+              </p>
+            )}
+            {useSegmentedEditor && reconvertMessage !== null && (
+              <p className="form-error mb-2" role="alert">
+                {reconvertMessage.text}
+              </p>
+            )}
+
             {/* 문단이 상한을 넘어 단위 목록 대신 단일 글상자로 내려앉은 이유를 그
-                자리에서 설명한다(계획 §6 S3) — 재변환은 이 슬라이스 범위 밖이다(S4). */}
+                자리에서 설명한다(계획 §6 S3) — 재변환은 그 화면에 없다(단위가 없으면
+                재변환할 단위도 없다). */}
             {showFallbackBanner && (
               <p className="field-hint mb-2">
                 문단이 {MAX_SEGMENTED_UNITS}개를 넘어 문단별 편집 대신 하나의 글상자로 보여드립니다.
@@ -715,6 +1066,12 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
                 hoveredSourceIndex={hoveredSourceIndex}
                 onHoverUnit={setHighlightedSourceIndexes}
                 disabled={busy}
+                onUnitBlur={handleResultUnitBlur}
+                candidate={candidate}
+                candidateDisabled={busy}
+                onCandidateReplace={handleCandidateReplace}
+                onCandidateInsert={handleCandidateInsert}
+                onCandidateClose={handleCandidateClose}
               />
             ) : (
               <textarea
