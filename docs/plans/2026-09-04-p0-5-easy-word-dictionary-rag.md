@@ -122,7 +122,10 @@
 window**(`InMemorySlidingWindowLookupRateLimiter`, 만료된 창을 스스로 비운다)로 구현됐다
 ⑸ 팝업은 결과 패널뿐 아니라 **원문(읽기 전용) 패널에도 별도 인스턴스로 붙었다**(`applyDisabled`로
 「바꾸기」만 뺀다) — 이 문서 §3.5의 "결과 패널은 순수 textarea" 서술이 가정한 범위보다 넓다.
-조각 6(e2e)과 조각 7(조건부 임베딩)은 여전히 미착수·열려 있다.
+**조각 6(e2e)은 완료(2026-09-06)** — `frontend/e2e/dictionary-lookup.spec.ts`(E19)가 원문
+패널 조회 전용(적용 버튼 없음)과 결과 패널 조회+바꾸기를 한 흐름으로 잰다. `compose.e2e.yml`이
+`backend-api`에 `EASYDOC_DICTIONARY_LOOKUP_ENABLED=true`를 얹어 이 스위트의 스택에서만
+조회 엔드포인트를 연다. 조각 7(조건부 임베딩)은 여전히 미착수·열려 있다.
 
 **조각 1 — 계약 (S, `contracts/`).** 2.11.0: `POST /dictionary/lookup`, 요청·응답 스키마, `x-input-limits.max_term_query_chars: 100`, 422·429 예시. 실패하는 `api/src/test/.../DictionaryLookupContractTest.kt` 골격을 같은 조각에 둔다.
 합격: 계약 테스트가 「경로 없음」으로 실패한다. `version`이 2.11.0이고 P0-4 계획이 쓰는 2.12.0·2.13.0과 충돌하지 않는다.
