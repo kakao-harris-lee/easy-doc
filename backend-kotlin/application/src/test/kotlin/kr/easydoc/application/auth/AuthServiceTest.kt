@@ -287,13 +287,15 @@ private class RecordingUserRepository(private val rehashFails: Boolean) : UserRe
 
     override fun findById(id: UUID): User? = saved.values.firstOrNull { it.user.id == id }?.user
 
+    override fun lockForUpdate(id: UUID): User? = findById(id)
+
     override fun exists(id: UUID): Boolean = saved.values.any { it.user.id == id }
 
     override fun create(
         email: String,
         passwordHash: PasswordHash,
     ): User {
-        val stored = StoredUser(User(UUID.randomUUID(), email, Instant.EPOCH), passwordHash)
+        val stored = StoredUser(User(UUID.randomUUID(), email, Instant.EPOCH, hasPassword = true), passwordHash)
         saved[email] = stored
         return stored.user
     }
@@ -303,7 +305,8 @@ private class RecordingUserRepository(private val rehashFails: Boolean) : UserRe
         emailVerified: Boolean,
     ): User {
         val verifiedAt = if (emailVerified) Instant.EPOCH else null
-        val stored = StoredUser(User(UUID.randomUUID(), email, Instant.EPOCH, verifiedAt), passwordHash = null)
+        val user = User(UUID.randomUUID(), email, Instant.EPOCH, verifiedAt, hasPassword = false)
+        val stored = StoredUser(user, passwordHash = null)
         saved[email] = stored
         return stored.user
     }

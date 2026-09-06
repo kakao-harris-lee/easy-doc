@@ -19,7 +19,7 @@ class AuthDtoLeakTest {
     @Test
     @DisplayName("User·UserResponse 의 toString 이 이메일을 노출하지 않는다")
     fun `도메인·응답 타입이 이메일을 가린다`() {
-        val user = User(UUID.randomUUID(), email, Instant.EPOCH)
+        val user = User(UUID.randomUUID(), email, Instant.EPOCH, hasPassword = true)
 
         listOf(user.toString(), UserResponse.of(user).toString()).forEach { rendered ->
             assertThat(rendered).doesNotContain(email)
@@ -32,7 +32,7 @@ class AuthDtoLeakTest {
     @Test
     @DisplayName("가리는 것은 toString 뿐이다 — 응답에 실리는 값은 그대로다")
     fun `응답 값 자체는 이메일을 그대로 담는다`() {
-        val user = User(UUID.randomUUID(), email, Instant.EPOCH)
+        val user = User(UUID.randomUUID(), email, Instant.EPOCH, hasPassword = true)
 
         assertThat(UserResponse.of(user).email).isEqualTo(email)
         assertThat(user.email).isEqualTo(email)

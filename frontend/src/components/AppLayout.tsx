@@ -74,11 +74,15 @@ function navLinkClass({ isActive }: { isActive: boolean }): string {
 function AccountMenu({
   email,
   identities,
+  hasPassword,
   onSignOut,
+  onUnlinked,
 }: {
   email: string
   identities: UserIdentityResponse[]
+  hasPassword: boolean
   onSignOut: () => void
+  onUnlinked: () => void
 }) {
   const [open, setOpen] = useState(false)
   const panelId = useId()
@@ -168,8 +172,10 @@ function AccountMenu({
               interactive element에 keydown을 거는 대신, 실제 버튼 각각에 건다). */}
           <SocialLinkStatus
             identities={identities}
+            hasPassword={hasPassword}
             className="mt-3"
             onButtonKeyDown={handleEscape}
+            onUnlinked={onUnlinked}
           />
         </div>
       )}
@@ -193,7 +199,7 @@ function AccountMenu({
  * 먼저 물어본다(review/unsavedChanges.ts).
  */
 export function AppLayout({ children }: { children: ReactNode }) {
-  const { status, user, signOut } = useAuth()
+  const { status, user, signOut, refreshMe } = useAuth()
   const [mobileOpen, setMobileOpen] = useState(false)
   // 햄버거도 계정 메뉴와 같은 disclosure다 — 펼쳐지는 nav를 `aria-controls`로 가리켜야
   // 낭독기가 "무엇이 펼쳐졌는지"를 안다. 접혔을 때 nav가 DOM에 없으므로 참조도 그때만 건다.
@@ -249,7 +255,9 @@ export function AppLayout({ children }: { children: ReactNode }) {
                     <AccountMenu
                       email={user.email}
                       identities={user.identities}
+                      hasPassword={user.has_password}
                       onSignOut={guardedSignOut}
+                      onUnlinked={() => void refreshMe()}
                     />
                   </div>
                 )}
@@ -313,7 +321,14 @@ export function AppLayout({ children }: { children: ReactNode }) {
                 <LogOut className="size-4" aria-hidden="true" />
                 로그아웃
               </Button>
-              {user !== null && <SocialLinkStatus identities={user.identities} className="mt-2" />}
+              {user !== null && (
+                <SocialLinkStatus
+                  identities={user.identities}
+                  hasPassword={user.has_password}
+                  className="mt-2"
+                  onUnlinked={() => void refreshMe()}
+                />
+              )}
             </div>
           </nav>
         )}

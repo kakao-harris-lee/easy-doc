@@ -68,6 +68,13 @@ export interface UserResponse {
    * 잇지 않은 계정은 빈 배열이다 — `null`이 아니다.
    */
   identities: UserIdentityResponse[]
+  /**
+   * 비밀번호가 있는지(2.17.0 신설, backlog §1.4 다음 조각). 소셜 로그인으로만 가입한
+   * 계정은 거짓이다. `identities.length === 1 && !has_password`이면 그 신원의 연결
+   * 해제(`DELETE /auth/oauth/{provider}/link`)가 409(마지막 로그인 수단)로 거절된다 —
+   * 화면이 그 버튼을 미리 비활성화하는 재료다.
+   */
+  has_password: boolean
 }
 
 /** `UserResponse.identities`의 항목 하나. 계약 `components/schemas/UserIdentityResponse`. */

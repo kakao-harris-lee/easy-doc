@@ -25,8 +25,18 @@ class JdbcUserRepository(private val jdbc: JdbcClient) : UserRepository {
 
     override fun findById(id: UUID): User? =
         jdbc
-            .sql("SELECT id, email, created_at, email_verified_at FROM users WHERE id = :id")
+            .sql("SELECT id, email, password_hash, created_at, email_verified_at FROM users WHERE id = :id")
             .param("id", id)
+            .query { rs, _ -> toUser(rs) }
+            .optional()
+            .orElse(null)
+
+    /** `SELECT … FOR UPDATE` — [UserRepository.lockForUpdate] KDoc. 반드시 트랜잭션 안에서 부른다. */
+    override fun lockForUpdate(id: UUID): User? =
+        jdbc
+            .sql(
+                "SELECT id, email, password_hash, created_at, email_verified_at FROM users WHERE id = :id FOR UPDATE",
+            ).param("id", id)
             .query { rs, _ -> toUser(rs) }
             .optional()
             .orElse(null)
@@ -52,7 +62,7 @@ class JdbcUserRepository(private val jdbc: JdbcClient) : UserRepository {
                     """
                     INSERT INTO users (id, email, password_hash)
                     VALUES (:id, :email, :passwordHash)
-                    RETURNING id, email, created_at, email_verified_at
+                    RETURNING id, email, password_hash, created_at, email_verified_at
                     """.trimIndent(),
                 ).param("id", id)
                 .param("email", email)
@@ -84,7 +94,7 @@ class JdbcUserRepository(private val jdbc: JdbcClient) : UserRepository {
                     """
                     INSERT INTO users (id, email, password_hash, email_verified_at)
                     VALUES (:id, :email, NULL, CASE WHEN :emailVerified THEN now() ELSE NULL END)
-                    RETURNING id, email, created_at, email_verified_at
+                    RETURNING id, email, password_hash, created_at, email_verified_at
                     """.trimIndent(),
                 ).param("id", id)
                 .param("email", email)
@@ -117,6 +127,7 @@ class JdbcUserRepository(private val jdbc: JdbcClient) : UserRepository {
             .update()
     }
 
+    /** [password_hash] 를 항상 함께 읽는다 — [User.hasPassword] 는 그 존재 여부다(`toStoredUser`도 같은 열에서 읽는다). */
     private fun toUser(rs: ResultSet): User =
         User(
             id = rs.getObject("id", UUID::class.java),
@@ -125,6 +136,7 @@ class JdbcUserRepository(private val jdbc: JdbcClient) : UserRepository {
             // 끼워 넣어 서버 시간대에 따라 값이 달라진다.
             createdAt = rs.getObject("created_at", OffsetDateTime::class.java).toInstant(),
             emailVerifiedAt = rs.getObject("email_verified_at", OffsetDateTime::class.java)?.toInstant(),
+            hasPassword = rs.getString("password_hash") != null,
         )
 
     private fun toStoredUser(rs: ResultSet): StoredUser =

@@ -108,6 +108,17 @@ export function oauthLinkCallback(
 }
 
 /**
+ * DELETE /auth/oauth/{provider}/link — 계정에서 소셜 신원 연결을 끊는다. Bearer 필요,
+ * 성공은 204(본문 없음).
+ *
+ * 연결이 없으면 404, 마지막 로그인 수단(비밀번호가 없고 신원이 이것뿐)이면 409다 —
+ * 호출한 쪽(`SocialLinkStatus`)이 서버 문구를 그대로 보여준다.
+ */
+export function oauthUnlink(provider: OAuthProvider): Promise<void> {
+  return requestVoid(`/auth/oauth/${provider}/link`, { method: 'DELETE' })
+}
+
+/**
  * POST /auth/email-verification/request — 인증 코드를 (재)발급해 로그인 이메일로 보낸다.
  *
  * 본문은 없다 — 대상 이메일은 토큰의 사용자로 고정이다. 재요청 쿨다운(60초) 안에

@@ -110,6 +110,17 @@ class JdbcUserIdentityRepository(private val jdbc: JdbcClient) : UserIdentityRep
         }
     }
 
+    /** 소유 술어(`user_id`+`provider`)가 문장 자신에 있다 — `UserIdentityRepository.deleteByUserAndProvider` KDoc. */
+    override fun deleteByUserAndProvider(
+        userId: UUID,
+        provider: SocialLoginProviderId,
+    ): Boolean =
+        jdbc
+            .sql("DELETE FROM user_identities WHERE user_id = :userId AND provider = :provider")
+            .param("userId", userId)
+            .param("provider", provider.wireValue)
+            .update() > 0
+
     private fun toIdentity(rs: ResultSet): UserIdentity =
         UserIdentity(
             id = rs.getObject("id", UUID::class.java),

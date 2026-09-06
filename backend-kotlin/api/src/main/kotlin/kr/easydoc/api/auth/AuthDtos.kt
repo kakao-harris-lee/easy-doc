@@ -32,6 +32,12 @@ data class UserResponse(
     @get:JsonProperty("id") val id: String,
     @get:JsonProperty("email") val email: String,
     @get:JsonProperty("email_verified") val emailVerified: Boolean,
+    /**
+     * 비밀번호가 있는지(2.17.0 신설, backlog §1.4 다음 조각) — `users.password_hash IS
+     * NOT NULL`. 화면이 "연결 해제"가 마지막 로그인 수단을 없애는 조작인지 미리 판정해
+     * 버튼을 비활성화할 재료다(정본은 `x-social-login.explicit_linking`).
+     */
+    @get:JsonProperty("has_password") val hasPassword: Boolean,
     @get:JsonProperty("identities") val identities: List<UserIdentityResponse>,
 ) {
     /**
@@ -39,7 +45,8 @@ data class UserResponse(
      * 이유로 이미 가리고 있는데 응답 DTO 만 빠져 있었다(게이트 23 privacy-gate 3a).
      * `/auth/me` 는 요청마다 이 객체를 만든다.
      */
-    override fun toString(): String = "UserResponse(id=$id, email=$CONTENT_MASK, emailVerified=$emailVerified)"
+    override fun toString(): String =
+        "UserResponse(id=$id, email=$CONTENT_MASK, emailVerified=$emailVerified, hasPassword=$hasPassword)"
 
     companion object {
         /**
@@ -55,6 +62,7 @@ data class UserResponse(
                 id = user.id.toString(),
                 email = user.email,
                 emailVerified = user.emailVerifiedAt != null,
+                hasPassword = user.hasPassword,
                 identities = identities.map(UserIdentityResponse::of),
             )
     }

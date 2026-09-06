@@ -73,6 +73,7 @@ describe('인증 가드', () => {
       id: 'u1',
       email: 'user@example.com',
       email_verified: true,
+      has_password: true,
       identities: [],
     })
 
@@ -88,6 +89,7 @@ describe('인증 가드', () => {
       id: 'u1',
       email: 'user@example.com',
       email_verified: true,
+      has_password: true,
       identities: [],
     })
     renderAt('/')

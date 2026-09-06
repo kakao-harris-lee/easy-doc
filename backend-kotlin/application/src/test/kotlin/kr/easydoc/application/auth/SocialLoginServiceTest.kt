@@ -7,6 +7,7 @@ import kr.easydoc.core.exceptions.ExternalServiceUnavailableException
 import kr.easydoc.core.exceptions.InvalidCredentialsException
 import kr.easydoc.core.exceptions.InvalidInputException
 import kr.easydoc.core.exceptions.InvalidOAuthStateException
+import kr.easydoc.core.exceptions.NotFoundException
 import kr.easydoc.core.user.PasswordHash
 import kr.easydoc.core.user.StoredUser
 import kr.easydoc.core.user.User
@@ -56,7 +57,7 @@ class SocialLoginServiceTest {
     @DisplayName("이미 연결된 신원은 새 계정을 만들지 않고 로그인한다")
     fun `기존 신원은 로그인이다`() {
         val world = SocialWorld()
-        val existingUser = User(UUID.randomUUID(), "linked@example.test", Instant.EPOCH)
+        val existingUser = User(UUID.randomUUID(), "linked@example.test", Instant.EPOCH, hasPassword = true)
         world.identities.seed(existingUser.id, SocialLoginProviderId.GOOGLE, "google-sub-2")
         world.provider.nextIdentity = SocialIdentity("google-sub-2", "linked@example.test", emailVerified = true)
 
@@ -73,7 +74,10 @@ class SocialLoginServiceTest {
     fun `이메일이 겹치면 409다`() {
         val world = SocialWorld()
         world.users.saved["taken@example.test"] =
-            StoredUser(User(UUID.randomUUID(), "taken@example.test", Instant.EPOCH), PasswordHash("hashed:x"))
+            StoredUser(
+                User(UUID.randomUUID(), "taken@example.test", Instant.EPOCH, hasPassword = true),
+                PasswordHash("hashed:x"),
+            )
         world.provider.nextIdentity = SocialIdentity("google-sub-3", "taken@example.test", emailVerified = true)
 
         val start = world.service.start(SocialLoginProviderId.GOOGLE, REDIRECT_URI)
@@ -549,7 +553,10 @@ class SocialLoginServiceTest {
     fun `네이버도 이메일이 겹치면 409다`() {
         val world = SocialWorld(naverConfigured = true)
         world.users.saved["naver-taken@example.test"] =
-            StoredUser(User(UUID.randomUUID(), "naver-taken@example.test", Instant.EPOCH), PasswordHash("hashed:x"))
+            StoredUser(
+                User(UUID.randomUUID(), "naver-taken@example.test", Instant.EPOCH, hasPassword = true),
+                PasswordHash("hashed:x"),
+            )
         world.naverProvider.nextIdentity =
             SocialIdentity("naver-sub-1c", "naver-taken@example.test", emailVerified = false)
 
@@ -589,7 +596,7 @@ class SocialLoginServiceTest {
     @DisplayName("연결된 네이버 신원으로 다시 콜백을 받으면 이메일 규칙과 무관하게 로그인이다")
     fun `연결된 네이버 신원은 이메일 규칙 없이 로그인한다`() {
         val world = SocialWorld(naverConfigured = true)
-        val existingUser = User(UUID.randomUUID(), "naver-linked@example.test", Instant.EPOCH)
+        val existingUser = User(UUID.randomUUID(), "naver-linked@example.test", Instant.EPOCH, hasPassword = true)
         world.identities.seed(existingUser.id, SocialLoginProviderId.NAVER, "naver-sub-2")
         world.naverProvider.nextIdentity = SocialIdentity("naver-sub-2", email = null, emailVerified = false)
 
@@ -607,6 +614,71 @@ class SocialLoginServiceTest {
         assertThatThrownBy { world.service.start(SocialLoginProviderId.NAVER, NAVER_REDIRECT_URI) }
             .isInstanceOf(InvalidInputException::class.java)
             .hasMessage("네이버 로그인이 설정되지 않았습니다")
+    }
+
+    // ------------------------------------------------------------------ 연결 해제(unlink, backlog §1.4 다음 조각)
+
+    @Test
+    @DisplayName("연결이 없으면 404 — 존재를 숨긴다")
+    fun `연결 없는 제공자를 해제하면 404다`() {
+        val world = SocialWorld()
+        val user = world.users.seedPasswordAccount("no-link@example.test")
+
+        assertThatThrownBy { world.service.unlink(user.id, SocialLoginProviderId.GOOGLE) }
+            .isInstanceOf(NotFoundException::class.java)
+            .hasMessage(SocialLoginService.IDENTITY_NOT_FOUND_MESSAGE)
+    }
+
+    @Test
+    @DisplayName("비밀번호 계정의 유일한 신원도 해제할 수 있다 — 비밀번호가 남은 로그인 수단이다")
+    fun `비밀번호 계정은 마지막 신원도 해제된다`() {
+        val world = SocialWorld()
+        val user = world.users.seedPasswordAccount("has-password@example.test")
+        world.identities.seed(user.id, SocialLoginProviderId.GOOGLE, "google-sub-unlink-1")
+
+        world.service.unlink(user.id, SocialLoginProviderId.GOOGLE)
+
+        assertThat(world.identities.findAllByUser(user.id)).isEmpty()
+    }
+
+    @Test
+    @DisplayName("비밀번호가 없고 신원이 여럿이면 하나를 해제해도 다른 신원이 남는다 — 409가 아니다")
+    fun `비밀번호 없이도 신원이 여럿이면 해제된다`() {
+        val world = SocialWorld()
+        val user = world.users.createWithoutPassword("multi-identity@example.test", emailVerified = true)
+        world.identities.seed(user.id, SocialLoginProviderId.GOOGLE, "google-sub-unlink-2")
+        world.identities.seed(user.id, SocialLoginProviderId.KAKAO, "kakao-sub-unlink-2")
+
+        world.service.unlink(user.id, SocialLoginProviderId.GOOGLE)
+
+        assertThat(world.identities.findAllByUser(user.id).map { it.provider })
+            .containsExactly(SocialLoginProviderId.KAKAO)
+    }
+
+    @Test
+    @DisplayName("비밀번호가 없고 신원이 이것뿐이면 409 — 마지막 로그인 수단이다")
+    fun `비밀번호 없는 마지막 신원은 409다`() {
+        val world = SocialWorld()
+        val user = world.users.createWithoutPassword("last-identity@example.test", emailVerified = true)
+        world.identities.seed(user.id, SocialLoginProviderId.GOOGLE, "google-sub-unlink-3")
+
+        assertThatThrownBy { world.service.unlink(user.id, SocialLoginProviderId.GOOGLE) }
+            .isInstanceOf(ConflictException::class.java)
+            .hasMessage(SocialLoginService.LAST_LOGIN_METHOD_MESSAGE)
+        assertThat(world.identities.findAllByUser(user.id)).hasSize(1)
+    }
+
+    @Test
+    @DisplayName("반복 해제 요청은 404다 — 첫 해제 뒤에는 연결이 없다")
+    fun `이미 해제된 신원을 다시 해제하면 404다`() {
+        val world = SocialWorld()
+        val user = world.users.seedPasswordAccount("repeat-unlink@example.test")
+        world.identities.seed(user.id, SocialLoginProviderId.GOOGLE, "google-sub-unlink-4")
+        world.service.unlink(user.id, SocialLoginProviderId.GOOGLE)
+
+        assertThatThrownBy { world.service.unlink(user.id, SocialLoginProviderId.GOOGLE) }
+            .isInstanceOf(NotFoundException::class.java)
+            .hasMessage(SocialLoginService.IDENTITY_NOT_FOUND_MESSAGE)
     }
 
     private companion object {
@@ -750,6 +822,8 @@ private class RecordingSocialUserRepository : UserRepository {
 
     override fun findById(id: UUID): User? = saved.values.firstOrNull { it.user.id == id }?.user
 
+    override fun lockForUpdate(id: UUID): User? = findById(id)
+
     override fun exists(id: UUID): Boolean = saved.values.any { it.user.id == id }
 
     override fun create(
@@ -762,7 +836,8 @@ private class RecordingSocialUserRepository : UserRepository {
         emailVerified: Boolean,
     ): User {
         val verifiedAt = if (emailVerified) Instant.EPOCH else null
-        val stored = StoredUser(User(UUID.randomUUID(), email, Instant.EPOCH, verifiedAt), passwordHash = null)
+        val user = User(UUID.randomUUID(), email, Instant.EPOCH, verifiedAt, hasPassword = false)
+        val stored = StoredUser(user, passwordHash = null)
         saved[email] = stored
         return stored.user
     }
@@ -786,7 +861,8 @@ private class RecordingSocialUserRepository : UserRepository {
         emailVerified: Boolean = true,
     ): User {
         val verifiedAt = if (emailVerified) Instant.EPOCH else null
-        val stored = StoredUser(User(UUID.randomUUID(), email, Instant.EPOCH, verifiedAt), PasswordHash("hashed:x"))
+        val user = User(UUID.randomUUID(), email, Instant.EPOCH, verifiedAt, hasPassword = true)
+        val stored = StoredUser(user, PasswordHash("hashed:x"))
         saved[email] = stored
         return stored.user
     }
@@ -872,6 +948,16 @@ private class RecordingIdentityRepository : UserIdentityRepository {
         byProvider[provider to providerUserId] = identity
         linked += identity
         return identity
+    }
+
+    override fun deleteByUserAndProvider(
+        userId: UUID,
+        provider: SocialLoginProviderId,
+    ): Boolean {
+        val key = byProvider.entries.firstOrNull { it.value.userId == userId && it.value.provider == provider }?.key
+        if (key == null) return false
+        byProvider.remove(key)
+        return true
     }
 }
 

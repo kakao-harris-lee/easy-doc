@@ -54,6 +54,7 @@ const USER = {
   id: 'u1',
   email: 'gongmuwon@example.test',
   email_verified: true,
+  has_password: true,
   identities: [],
 }
 

@@ -11,16 +11,25 @@ import java.util.UUID
  * 비밀번호로 갓 가입한 계정의 기본값이다. 소셜 로그인 계정은 제공자가 이미 검증한
  * 이메일만 받으므로 생성 시점에 채워진다([kr.easydoc.application.auth.SocialLoginService]).
  * V7 적용 시점에 존재하던 계정은 소급 인증(grandfather)됐다(`V7__email_verification.sql`).
+ *
+ * [hasPassword] 는 `users.password_hash IS NOT NULL` 이다(계약 2.17.0, `UserResponse.has_password`) —
+ * 소셜 로그인으로만 가입한 사용자는 비밀번호가 없다. 소셜 연결 해제
+ * ([kr.easydoc.application.auth.SocialLoginService.unlink])가 "마지막 로그인 수단을
+ * 해제하려는가"를 판정하는 재료라 **기본값을 두지 않는다** — 호출부마다 이 계정이
+ * 비밀번호 계정인지 소셜 전용 계정인지를 스스로 판단해 명시하게 한다(값을 빠뜨리면
+ * 컴파일이 막는다).
  */
 data class User(
     val id: UUID,
     val email: String,
     val createdAt: Instant,
     val emailVerifiedAt: Instant? = null,
+    val hasPassword: Boolean,
 ) {
     /** **이메일을 찍지 않는다.** */
     override fun toString(): String =
-        "User(id=$id, email=$CONTENT_MASK, createdAt=$createdAt, emailVerified=${emailVerifiedAt != null})"
+        "User(id=$id, email=$CONTENT_MASK, createdAt=$createdAt, emailVerified=${emailVerifiedAt != null}, " +
+            "hasPassword=$hasPassword)"
 }
 
 /**

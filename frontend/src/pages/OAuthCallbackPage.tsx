@@ -128,7 +128,10 @@ export function OAuthCallbackPage() {
         if (caught instanceof ApiError && caught.status === 409) {
           setView({
             kind: 'linked-elsewhere',
-            message: `이미 이 이메일로 가입된 계정이 있습니다. 이메일로 로그인하면 ${providerName} 계정을 연결해 드립니다.`,
+            // 비밀번호를 전제하지 않는다(2.17.0 연결 해제 후속 조치) — 기존 계정이
+            // 소셜 로그인으로만 가입했을 수도 있다. "이메일로 로그인하면"은 그 계정에
+            // 비밀번호가 있다고 단정하는 문구였다.
+            message: `이미 이 이메일로 가입된 계정이 있습니다. 그 계정에 로그인한 뒤 계정 설정에서 ${providerName} 계정을 연결하세요.`,
           })
         } else {
           setView({
@@ -157,7 +160,7 @@ export function OAuthCallbackPage() {
         <h1 id="oauth-callback-heading">이미 가입된 이메일입니다</h1>
         <p role="alert">{view.message}</p>
         <p>
-          <Link to={`${LOGIN_PATH}?link=${provider}`}>이메일로 로그인하기</Link>
+          <Link to={`${LOGIN_PATH}?link=${provider}`}>기존 계정으로 로그인하기</Link>
         </p>
       </section>
     )

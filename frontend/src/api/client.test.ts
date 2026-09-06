@@ -10,6 +10,7 @@ import {
   setUnauthorizedHandler,
 } from './client'
 import { readToken, writeToken } from './token'
+import { userResponse } from '../test/factories'
 
 /** JSON 응답을 흉내 낸다. */
 function jsonResponse(status: number, payload: unknown): Response {
@@ -39,9 +40,7 @@ afterEach(() => {
 describe('요청 조립', () => {
   it('저장된 토큰을 Authorization 헤더로 붙인다', async () => {
     writeToken('token-abc')
-    fetchMock.mockResolvedValue(
-      jsonResponse(200, { id: 'u1', email: 'a@example.com', email_verified: true }),
-    )
+    fetchMock.mockResolvedValue(jsonResponse(200, userResponse()))
 
     await fetchMe()
 

@@ -4,6 +4,7 @@ import kr.easydoc.core.exceptions.ConflictException
 import kr.easydoc.core.exceptions.EmailAlreadyRegisteredException
 import kr.easydoc.core.exceptions.InvalidInputException
 import kr.easydoc.core.exceptions.InvalidOAuthStateException
+import kr.easydoc.core.exceptions.NotFoundException
 import java.time.Duration
 import java.util.UUID
 
@@ -204,6 +205,50 @@ class SocialLoginService
             repositories.identities.findAllByUser(userId).map { it.provider }
 
         /**
+         * 연결 해제 — backlog §1.4 다음 조각(계약 2.17.0, `DELETE /auth/oauth/{provider}/link`).
+         *
+         * 갈래:
+         *  1. 계정을 찾지 못했다(토큰은 유효한데 계정이 지워짐) → 404, 신원 없음과 같은 문구.
+         *  2. 호출자가 이 제공자에 연결한 신원이 없다 → 404(존재를 숨긴다 — 다른 사용자의
+         *     자원과 같은 원칙, 반복 호출도 이 갈래라 멱등하다).
+         *  3. 지우면 로그인 수단이 하나도 안 남는다(비밀번호가 없고 신원이 이것뿐) → 409.
+         *  4. 삭제 문장이 지운 행이 없다(경쟁으로 그새 다른 요청이 먼저 지웠다) → 404.
+         *  5. 그 밖은 지운다.
+         *
+         * **`users` 행을 [UserRepository.lockForUpdate] 로 먼저 잠근다.** 신원 목록만 읽고
+         * 개수로 판정하면(낙관적 카운트) 같은 계정에서 서로 다른 제공자를 동시에 해제하는
+         * 두 요청이 각자 자기 트랜잭션 스냅샷으로 "신원이 둘이니 안전하다"고 판정한 뒤
+         * 둘 다 지워 로그인 수단이 0개로 떨어질 수 있다 — `WHERE` 절에 개수 서브쿼리를 건
+         * 조건부 `DELETE` 도 못 막는다(각 문장이 자기 시작 시점의 스냅샷만 보는 것은
+         * READ COMMITTED 에서도 마찬가지다). 행 잠금은 두 번째 트랜잭션을 첫 트랜잭션의
+         * 커밋(또는 롤백)까지 대기시켜 신원 목록 조회부터 삭제까지를 사실상 직렬화한다.
+         *
+         * 갈래마다 다른 판정(404 둘·409·경쟁 후속 404)이 독립 가드라 `ThrowsCount` 를
+         * 억제한다 — `ReconvertUnitService.reconvert` 와 같은 판단이다.
+         */
+        @Suppress("ThrowsCount")
+        fun unlink(
+            userId: UUID,
+            providerId: SocialLoginProviderId,
+        ) {
+            transaction.inTransaction {
+                val user =
+                    repositories.users.lockForUpdate(userId)
+                        ?: throw NotFoundException(IDENTITY_NOT_FOUND_MESSAGE)
+                val identities = repositories.identities.findAllByUser(userId)
+                if (identities.none { it.provider == providerId }) {
+                    throw NotFoundException(IDENTITY_NOT_FOUND_MESSAGE)
+                }
+                if (identities.size == 1 && !user.hasPassword) {
+                    throw ConflictException(LAST_LOGIN_METHOD_MESSAGE)
+                }
+                if (!repositories.identities.deleteByUserAndProvider(userId, providerId)) {
+                    throw NotFoundException(IDENTITY_NOT_FOUND_MESSAGE)
+                }
+            }
+        }
+
+        /**
          * 연결 부수 효과: 제공자가 준 이메일이 **검증됐고** 계정 이메일과 같은데 계정이 아직
          * 미인증이면 그 자리에서 인증 완료로 표시한다(위임 지침의 nice-to-have). 대소문자·
          * 좌우 공백 차이는 [normalizeEmail] 로 흡수한다 — `users.email` 도 항상 정규화된
@@ -340,6 +385,24 @@ class SocialLoginService
 
             /** 계약 `422` 예시 — 허용 목록 밖 `redirect_uri`. */
             const val REDIRECT_URI_NOT_ALLOWED_MESSAGE = "허용되지 않은 redirect_uri 입니다"
+
+            /**
+             * 계약 `oauthUnlink` `404` 예시 — 호출자가 이 제공자에 연결한 신원이
+             * 없다(애초에 없었거나 이미 해제됐다, 둘을 구분하지 않는다 — 다른 사용자의
+             * 자원과 같은 은닉 원칙).
+             */
+            const val IDENTITY_NOT_FOUND_MESSAGE = "연결된 소셜 계정을 찾을 수 없습니다"
+
+            /**
+             * 계약 `oauthUnlink` `409` 예시 — 비밀번호가 없고 이 신원이 유일한 로그인
+             * 수단이다. 해제하면 계정에 로그인할 방법이 하나도 남지 않는다.
+             *
+             * **비밀번호 설정을 안내하지 않는다** — 소셜 전용 계정에 비밀번호를 붙이는
+             * 엔드포인트가 아직 없다(backlog §1.4 후속 과제). 실제로 열려 있는 유일한
+             * 탈출구(다른 소셜 계정 연결)만 안내한다.
+             */
+            const val LAST_LOGIN_METHOD_MESSAGE =
+                "마지막 로그인 수단은 해제할 수 없습니다. 먼저 다른 소셜 계정을 연결하세요."
 
             /** 키가 설정되지 않아 이 제공자가 등록되지 않았다 — 제공자별 문구(사용자 요청). */
             fun providerNotConfiguredMessage(providerId: SocialLoginProviderId): String =
