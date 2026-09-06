@@ -68,7 +68,14 @@ CREATE TABLE IF NOT EXISTS entries (
     risk_level        TEXT NOT NULL
                         CHECK (risk_level IN ('none', 'low', 'high')),
 
-    caution           TEXT,                         -- 치환 시 주의사항 (사람이 읽는 메모)
+    caution           TEXT,                         -- 치환 시 주의사항 (사람이 읽는 메모, 사용자에게 노출됨)
+
+    -- review_note: 내부 검수 메모 (사람이 읽는 빌드/검수 이력). caution과 달리 사용자에게
+    -- 보여주지 않고 export_index(Kotlin이 읽는 easy_dict.index.json)에도 싣지 않는다 —
+    -- export_full(전체 덤프, 감사 추적용)에만 남는다. 이 컬럼이 없던 시절 만들어진 DB는
+    -- review_notes.ensure_review_note_column()이 ALTER TABLE로 뒤늦게 추가한다
+    -- (2026-09-06 caution/review_note 분리 — dictionary/DESIGN.md §3.2 참고).
+    review_note       TEXT,
 
     -- readability: 1(가장 쉬움) ~ 3(여전히 조금 어려움).
     readability       INTEGER NOT NULL
@@ -265,8 +272,16 @@ END;
 -- ============================================================================
 -- v_entry_full: entries + sources + 태그(group_concat) + variant/example 개수.
 -- JSON 익스포트(export_full)와 백엔드 단일 조회가 이 뷰 하나로 끝나야 한다 (§3.1).
+--
+-- 다른 DDL 객체와 달리 IF NOT EXISTS를 쓰지 않는다 — 뷰는 테이블과 달리
+-- 데이터를 담지 않는 파생 정의라 지우고 다시 만들어도 안전하다(재실행해도
+-- 부작용 없음). entries에 새 컬럼(예: review_note, 2026-09-06)이 생겼는데
+-- IF NOT EXISTS로 두면, 그 컬럼이 없던 시절 만들어진 기존 DB의 뷰는 이
+-- schema.sql을 다시 실행해도 옛 컬럼 목록 그대로 남는다 — 매번 지우고
+-- 새로 만들어야 이런 간극이 스스로 메워진다.
 -- ============================================================================
-CREATE VIEW IF NOT EXISTS v_entry_full AS
+DROP VIEW IF EXISTS v_entry_full;
+CREATE VIEW v_entry_full AS
 SELECT
     e.id,
     e.term,
@@ -278,6 +293,7 @@ SELECT
     e.replace_strategy,
     e.risk_level,
     e.caution,
+    e.review_note,
     e.readability,
     e.confidence,
     e.priority,

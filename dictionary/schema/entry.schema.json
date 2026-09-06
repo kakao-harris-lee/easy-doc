@@ -53,7 +53,11 @@
     },
     "caution": {
       "type": ["string", "null"],
-      "description": "치환 시 주의사항(사람이 읽는 메모). 예: '제도 명칭이라 신청 창구에서 다시 써야 합니다. 원어를 지우지 마세요.'"
+      "description": "치환 시 주의사항(사람이 읽는 메모). 사용자에게 보여지고 LLM 프롬프트에도 실린다. 예: '제도 명칭이라 신청 창구에서 다시 써야 합니다. 원어를 지우지 마세요.' 내부 검수 메모는 여기 두지 않는다 — review_note를 쓴다."
+    },
+    "review_note": {
+      "type": ["string", "null"],
+      "description": "내부 검수 메모(사람이 읽는 빌드/검수 이력, 사용자에게 보여주지 않는다). export_index(easy_dict.index.json, easy-doc이 실제로 읽는 파일)에는 절대 포함하지 않는다 — export_full(이 스키마가 기술하는 전체 덤프)에만 감사 추적용으로 남는다. 예: '2026-08-30 검수: easy-doc 내장 목록 대치어 채택으로 substitute 승격 (docs/consumer-overlap-policy.md §3.2)'"
     },
     "readability": {
       "type": "integer",

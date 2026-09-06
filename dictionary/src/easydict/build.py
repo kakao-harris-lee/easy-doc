@@ -18,6 +18,7 @@ from pathlib import Path
 from easydict.models import (
     Entry,
     Example,
+    NEEDS_CONFIRMATION_MARKER,
     Source,
     Variant,
     READABILITY_UNSET,
@@ -27,6 +28,7 @@ from easydict.models import (
     TAG_CATALOG,
     SCHEMA_VERSION,
 )
+from easydict.review_notes import classify_caution
 from easydict.normalize import (
     clean,
     correct_josa_form,
@@ -85,11 +87,9 @@ CATEGORY_TAG_ALIASES: dict[str, str] = {
     "외래어": "loanword", "외국어": "loanword",
 }
 
-# 작성자가 `caution`(주의) 컬럼에 이 표시를 남기면 그 뜻풀이는 법조문 원문
-# 대조 없이는 신뢰할 수 없다는 뜻이다(사용자 지시: "법조문 대조까지 필요한
-# 부분이면 비활용"). classify()가 이 표시를 보면 CSV의 명시 status를
-# 포함해 다른 무엇보다 우선해 status='deprecated'로 강제한다.
-NEEDS_CONFIRMATION_MARKER = "[확인 필요]"
+# NEEDS_CONFIRMATION_MARKER는 models.py로 옮겼다(2026-09-06) — review_notes.py의
+# classify_caution()도 같은 마커를 알아야 caution/review_note 분리 과정에서
+# 이 제어 신호를 지우지 않는다. 여기서는 위 import로 그대로 재사용한다.
 
 # ----------------------------------------------------------------------------
 # 위험도·치환전략 화이트리스트 (DESIGN.md §5.2)
@@ -602,6 +602,13 @@ def row_to_entries(row: dict, colmap: dict[str, str], source: Source, lineno: in
     example_text = _cell(row, colmap, "example") or None
     hanja_col = _cell(row, colmap, "hanja") or None
     note = _cell(row, colmap, "note") or None
+    # caution/review_note 분리(2026-09-06): CSV의 note 컬럼은 사용자 노출용
+    # 안내문과 검수자 내부 메모가 섞여 들어올 수 있다(welfare_seed_*.csv에
+    # 실제로 섞여 있었다 — review_notes.py 모듈 docstring 참고). Entry에
+    # 담기 전에 여기서 갈라 두어야, 이 값이 나중에 caution 그대로 프런트·
+    # LLM 프롬프트로 노출되기 전에 내부 메모가 걸러진다. row_to_entries()가
+    # 파이프라인의 유일한 note 진입점이라 이 한 곳만 지키면 된다.
+    note_split = classify_caution(note)
 
     # 어원 전용 컬럼(국립국어원 다듬은말의 original_term) — 있으면 표제어
     # 괄호 파싱보다 우선해 한자/외래어를 정확히 판정한다.
@@ -676,7 +683,8 @@ def row_to_entries(row: dict, colmap: dict[str, str], source: Source, lineno: in
             term_norm=term_norm,
             term_hanja=term_hanja,
             definition=definition,
-            caution=note,
+            caution=note_split.caution,
+            review_note=note_split.review_note,
             cell_rank=cell_rank,
             source_code=source.code,
             source_ref=f"row:{lineno}",
@@ -1078,9 +1086,9 @@ def upsert(conn: sqlite3.Connection, source: Source, entries: list[Entry]) -> di
                 """
                 INSERT INTO entries (
                     term, term_norm, term_hanja, pos, easy_term, definition,
-                    replace_strategy, risk_level, caution, readability, confidence,
+                    replace_strategy, risk_level, caution, review_note, readability, confidence,
                     priority, cell_rank, frequency, status, source_id, source_ref, checksum
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(term_norm, easy_term) DO UPDATE SET
                     term = excluded.term,
                     term_hanja = excluded.term_hanja,
@@ -1089,6 +1097,7 @@ def upsert(conn: sqlite3.Connection, source: Source, entries: list[Entry]) -> di
                     replace_strategy = excluded.replace_strategy,
                     risk_level = excluded.risk_level,
                     caution = excluded.caution,
+                    review_note = excluded.review_note,
                     readability = excluded.readability,
                     confidence = excluded.confidence,
                     priority = excluded.priority,
@@ -1101,7 +1110,7 @@ def upsert(conn: sqlite3.Connection, source: Source, entries: list[Entry]) -> di
                 """,
                 (entry.term, entry.term_norm, entry.term_hanja, entry.pos,
                  entry.easy_term, entry.definition, entry.replace_strategy,
-                 entry.risk_level, entry.caution, entry.readability,
+                 entry.risk_level, entry.caution, entry.review_note, entry.readability,
                  entry.confidence, entry.priority, entry.cell_rank, entry.frequency,
                  entry.status, source_id, entry.source_ref, entry.checksum()),
             )

@@ -41,6 +41,18 @@ VARIANT_KINDS: tuple[str, ...] = ("conjugation", "spacing", "hanja", "abbrev", "
 # 구분하는 데 쓴다.
 READABILITY_UNSET = 0
 
+# 작성자가 `caution`(주의) 컬럼에 이 표시를 남기면 그 뜻풀이는 법조문 원문
+# 대조 없이는 신뢰할 수 없다는 뜻이다(사용자 지시: "법조문 대조까지 필요한
+# 부분이면 비활용"). build.py의 classify()가 이 표시를 보면 CSV의 명시
+# status를 포함해 다른 무엇보다 우선해 status='deprecated'로 강제한다.
+# review_notes.py에서도 import한다 — caution 분류 규칙이 이 제어 신호를
+# review_note로 옮겨버리면(caution이 비면) 저 강제 로직이 더 이상 신호를
+# 못 보게 되므로, classify_caution()이 이 마커가 있는 caution은 그대로
+# 보존해야 한다(build.py -> review_notes.py -> models.py로 의존 방향이
+# 흐르게 여기 두었다 — review_notes가 build를 거꾸로 import하면 순환
+# 참조가 된다).
+NEEDS_CONFIRMATION_MARKER = "[확인 필요]"
+
 # 태그 표준값 (§3.3): name -> (label, kind)
 TAG_CATALOG: dict[str, tuple[str, str]] = {
     "admin": ("행정", "domain"),
@@ -124,6 +136,11 @@ class Entry:
     replace_strategy: str = "substitute"  # substitute|gloss|keep
     risk_level: str = "low"  # none|low|high
     caution: str | None = None
+    # 내부 검수 메모(사람이 읽는 빌드/검수 이력). caution과 달리 사용자에게 보여주지도,
+    # export_index(Kotlin이 읽는 easy_dict.index.json)에 싣지도 않는다 — export_full(전체
+    # 덤프, 감사 추적용)에만 남는다. review_notes.classify_caution()이 기존 caution 값 중
+    # 검수 메모로 판정된 부분을 여기로 옮긴다(2026-09-06 caution/review_note 분리).
+    review_note: str | None = None
     readability: int = READABILITY_UNSET  # 1~3 범위 밖(=0) = 아직 정해지지 않음, classify()가 채운다
     confidence: float = 0.8
     priority: int = 100
