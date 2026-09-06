@@ -385,9 +385,15 @@ S4(PR #35) · S5(PR #36). 계획과 달라진 점 — ⑴ 429 응답은 본문 �
   `PackagedOriginalReflectorTest` 픽스처 전부) (F) 「모든 줄이 written+inserted+appended 중 정확히
   한 곳」 불변식 (G) 머리말이 본문 사이에 오는 HWPX에서 지도 짝짓기가 머리말 자리를 건너뛰지
   않음.
-- **S6-3 계약·문서·프런트 (S).** 2.16.0 문구, `ConversionExportContractTest`·
-  `ConversionQueryServiceTest` 갱신, `FormatPreservationPanel` 테스트 1건, DESIGN.md §6.5에
-  「지도 소비」 한 문단, backlog §1.3 행, master-plan §4.1 P0-4 상태.
+- **S6-3 계약·문서·프런트 (S) → 완료(2026-09-06).** 계약 2.16.0 — `FormatPreservationStatus`·
+  `FormatPreservation.details` 설명과 `exportConversion` 오퍼레이션 설명에 「지도 소비」
+  문단, x-changelog 신설. `ConversionExportContractTest`·`ConversionQueryServiceTest`는
+  갱신할 것이 없었다 — 둘 다 리터럴 버전 핀도, `available ⇒ details 비어 있음` 불변식도
+  갖고 있지 않았고(그 불변식은 core `FormatPreservationTest`에 있었는데 S6-1이 이미
+  새 상태표로 고쳐 뒀다), 기존 케이스는 전부 병합=0/나눔=0인 참인 경우라 그대로 유효하다.
+  `FormatPreservationPanel.test.tsx` 신설(`available` + details 1건 렌더링). `frontend/src/api/types.ts`는
+  변경 없음(신규 확인). DESIGN.md §6.5 「지도 소비(2026-09-06)」 문단, backlog S6 상태 문단
+  (§1.3 인접, 실제로는 §1 표 아래), master-plan §4.1 P0-4 행 갱신 완료.
 
 ### 10.4 수용 기준
 
