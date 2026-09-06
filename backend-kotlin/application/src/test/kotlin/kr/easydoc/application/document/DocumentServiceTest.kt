@@ -318,6 +318,45 @@ class DocumentServiceTest {
     }
 
     @Test
+    @DisplayName("붙여넣기의 CRLF 는 저장 전에 LF 로 통일된다 — `splitUnits` 가 `\\n` 만 본다")
+    fun `붙여넣기 CRLF 가 LF 로 저장된다`() {
+        val world = World()
+
+        world.service.createFromText(OWNER, "첫 줄\r\n둘째 줄", null, null)
+
+        val (plain, _, field) = world.cipher.sealed.single()
+        assertThat(field).isEqualTo(EncryptedField.DOCUMENT_SOURCE_TEXT)
+        assertThat(plain)
+            .describedAs("`\\r` 이 남으면 문단 대응·문체 판정·화면 지도로 새 나간다")
+            .isEqualTo("첫 줄\n둘째 줄")
+    }
+
+    @Test
+    @DisplayName("파일 추출 결과의 CRLF 도 저장 전에 LF 로 통일된다 — 붙여넣기와 같은 경계를 지난다")
+    fun `파일 추출 CRLF 가 LF 로 저장된다`() {
+        val world = World(extracted = "첫 줄\r\n둘째 줄")
+
+        world.service.createFromFile(OWNER, "a.docx", ORIGINAL_FILE, null, null)
+
+        val sourceText = world.cipher.sealed.single { it.third == EncryptedField.DOCUMENT_SOURCE_TEXT }
+        assertThat(sourceText.first).isEqualTo("첫 줄\n둘째 줄")
+    }
+
+    @Test
+    @DisplayName("길이 상한은 CRLF→LF 정규화 **후** 코드 포인트로 잰다 — `\\r\\n` 을 두 글자로 세지 않는다")
+    fun `길이 상한이 개행 정규화 후에 재진다`() {
+        val world = World()
+        // 정규화 전 코드 포인트 수는 상한+1(`\r\n` 이 두 글자) 이지만, `\r\n` 이 `\n` 하나로
+        // 줄어들면 정확히 상한이라 통과해야 한다.
+        val atLimitAfterNormalization = "가".repeat(MAX_CONVERTIBLE_CHARS - 1) + "\r\n"
+
+        world.service.createFromText(OWNER, atLimitAfterNormalization, null, null)
+
+        val (plain, _, _) = world.cipher.sealed.single()
+        assertThat(plain.codePointCount(0, plain.length)).isEqualTo(MAX_CONVERTIBLE_CHARS)
+    }
+
+    @Test
     @DisplayName("파일 모드에서 제목을 생략하면 **대체 제목**이다 — 본문도 파일 이름도 쓰지 않는다")
     fun `파일 모드는 제목을 생략하면 대체 제목이다`() {
         val world = World(extracted = "복지 급여 안내\n둘째 줄")

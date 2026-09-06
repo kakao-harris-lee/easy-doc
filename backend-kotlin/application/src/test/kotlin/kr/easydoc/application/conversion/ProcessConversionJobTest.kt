@@ -83,6 +83,19 @@ class ProcessConversionJobTest {
             assertThat(world.cipher.sealed.filter { it.third != EncryptedField.DOCUMENT_SOURCE_TEXT })
                 .allMatch { it.second == world.conversionId }
         }
+
+        @Test
+        @DisplayName("LLM 결과의 CRLF 도 저장 전에 LF 로 통일된다 — `splitUnits` 가 `\\n` 만 본다")
+        fun `LLM 결과 CRLF 가 LF 로 저장된다`() {
+            val world = World(provider = FakeLlmProvider.replying("첫 줄\r\n둘째 줄"))
+
+            world.jobs.processNext()
+
+            val easyText = world.cipher.sealed.single { it.third == EncryptedField.CONVERSION_EASY_TEXT }
+            assertThat(easyText.first)
+                .describedAs("`\\r` 이 남으면 segment_map·문체 판정·재변환이 원문과 어긋난 줄 수를 본다")
+                .isEqualTo("첫 줄\n둘째 줄")
+        }
     }
 
     @Nested

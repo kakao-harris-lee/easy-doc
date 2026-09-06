@@ -14,6 +14,7 @@ import kr.easydoc.core.exceptions.InvalidInputException
 import kr.easydoc.core.exceptions.NotFoundException
 import kr.easydoc.core.exceptions.StorageException
 import kr.easydoc.core.privacy.ReviewedBody
+import kr.easydoc.core.text.normalizeLineEndings
 import kr.easydoc.core.text.stripControlChars
 import java.util.UUID
 
@@ -75,15 +76,22 @@ class ConversionReviewService(
     }
 
     /**
-     * 제어문자를 걷어낸 뒤 **그 결과로** 판정한다. 빈 값만 앞뒤 공백을 털고 길이·저장 값은 털지
-     * 않는다(계약이 정규화를 제어문자 제거로만 정의했다). 길이는 **코드 포인트**.
+     * 제어문자를 걷어내고 개행을 통일한 뒤 **그 결과로** 판정한다. 빈 값만 앞뒤 공백을 털고
+     * 그 밖의 길이·저장 값은 털지 않는다(계약이 정규화를 제어문자 제거로만 정의했다). 길이는
+     * **코드 포인트**.
+     *
+     * **개행 통일(CRLF·단독 CR → `\n`)은 계약이 아니라 저장 불변식이다** — `DocumentService`
+     * 가 원문 저장 경계에서 같은 일을 하는 이유와 같다: `core.segment.splitUnits` 가 `\n`
+     * 만으로 줄을 가르므로, 검수 본문(`edited_text`)에 `\r` 이 남으면 재변환·문체 판정·화면
+     * 지도가 원문과 어긋난 줄 수/앵커를 본다. 두 경계 중 하나라도 놓치면 그 경로로 들어온
+     * 문서만 다시 새 나간다.
      */
     private fun normalize(submitted: ReviewedBody): PlainBody {
-        val stripped = stripControlChars(submitted.value)
-        if (stripped.isBlank()) throw InvalidInputException(EMPTY_REVIEW_MESSAGE)
-        if (charCountOf(stripped) > MAX_CONVERTIBLE_CHARS) throw InvalidInputException(REVIEW_TOO_LONG_MESSAGE)
+        val normalized = normalizeLineEndings(stripControlChars(submitted.value))
+        if (normalized.isBlank()) throw InvalidInputException(EMPTY_REVIEW_MESSAGE)
+        if (charCountOf(normalized) > MAX_CONVERTIBLE_CHARS) throw InvalidInputException(REVIEW_TOO_LONG_MESSAGE)
         // 저장 정의역은 `PlainBody` 가 끊는다 — 길이와 다른 축이다.
-        return PlainBody(stripped)
+        return PlainBody(normalized)
     }
 
     /**
