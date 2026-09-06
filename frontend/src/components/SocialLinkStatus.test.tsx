@@ -107,7 +107,7 @@ describe('SocialLinkStatus — 연결 해제', () => {
     expect(describedBy).toBeTruthy()
     const reason = document.getElementById(describedBy as string)
     expect(reason).toHaveTextContent(
-      '마지막 로그인 수단은 해제할 수 없습니다. 먼저 다른 소셜 계정을 연결하세요.',
+      '마지막 로그인 수단은 해제할 수 없습니다. 먼저 비밀번호를 만들거나 다른 소셜 계정을 연결하세요.',
     )
   })
 
@@ -129,7 +129,7 @@ describe('SocialLinkStatus — 연결 해제', () => {
     vi.mocked(oauthUnlink).mockRejectedValue(
       new ApiError(
         409,
-        '마지막 로그인 수단은 해제할 수 없습니다. 먼저 다른 소셜 계정을 연결하세요.',
+        '마지막 로그인 수단은 해제할 수 없습니다. 먼저 비밀번호를 만들거나 다른 소셜 계정을 연결하세요.',
       ),
     )
     render(<SocialLinkStatus identities={[{ provider: 'google' }]} hasPassword={true} />)
@@ -139,7 +139,7 @@ describe('SocialLinkStatus — 연결 해제', () => {
 
     expect(
       await screen.findByText(
-        '마지막 로그인 수단은 해제할 수 없습니다. 먼저 다른 소셜 계정을 연결하세요.',
+        '마지막 로그인 수단은 해제할 수 없습니다. 먼저 비밀번호를 만들거나 다른 소셜 계정을 연결하세요.',
       ),
     ).toBeInTheDocument()
   })

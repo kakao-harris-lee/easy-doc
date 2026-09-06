@@ -168,4 +168,14 @@ export const ROUTES = {
   conversionExport: { method: 'GET', ok: 200 },
   /** 계약 `paths./dictionary/lookup.post` — 200 (P0-5 조각 1, 2.11.0 신설). */
   dictionaryLookup: { path: '/dictionary/lookup', method: 'POST', ok: 200 },
+  /**
+   * 계약 `paths./auth/password-reset/request.post` — 202, `security: []`(2.19.0 신설).
+   * 이메일 존재 여부와 무관하게 항상 202다(존재 은닉).
+   */
+  passwordResetRequest: { path: '/auth/password-reset/request', method: 'POST', accepted: 202 },
+  /**
+   * 계약 `paths./auth/password-reset/confirm.post` — 200, `security: []`(2.19.0 신설).
+   * 성공 응답은 `login`과 같은 `TokenResponse`다.
+   */
+  passwordResetConfirm: { path: '/auth/password-reset/confirm', method: 'POST', ok: 200 },
 } as const

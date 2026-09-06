@@ -5,7 +5,12 @@ import { isOAuthProvider, startSocialLink } from '../auth/socialLogin'
 import { AuthIntro } from '../components/AuthIntro'
 import { CredentialsForm } from '../components/CredentialsForm'
 import { SocialLoginButton } from '../components/SocialLoginButton'
-import { HOME_PATH, SIGNUP_PATH, type FromLocationState } from '../routes/paths'
+import {
+  HOME_PATH,
+  RESET_PASSWORD_PATH,
+  SIGNUP_PATH,
+  type FromLocationState,
+} from '../routes/paths'
 
 /**
  * 로그인 화면.
@@ -73,6 +78,9 @@ export function LoginPage() {
               navigate(from, { replace: true })
             }}
           />
+          <p className="mt-2 text-right text-sm">
+            <Link to={RESET_PASSWORD_PATH}>비밀번호를 잊으셨나요?</Link>
+          </p>
           <div className="mt-5 flex items-center gap-3" aria-hidden="true">
             <span className="h-px flex-1 bg-border" />
             <span className="text-xs text-muted-foreground">또는</span>

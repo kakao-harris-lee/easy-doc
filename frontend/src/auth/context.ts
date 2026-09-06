@@ -28,6 +28,12 @@ export interface AuthContextValue {
     provider: OAuthProvider,
     params: { code: string; state: string; redirectUri: string },
   ) => Promise<UserResponse>
+  /**
+   * 비밀번호 재설정 코드를 확인해 비밀번호를 바꾸고 `signIn`과 같은 방식으로 로그인
+   * 상태로 만든다(2.19.0 신설, backlog §1.4 다음 조각). 실패하면 ApiError를 그대로
+   * 올린다(화면이 문구를 보여준다).
+   */
+  completePasswordReset: (email: string, code: string, newPassword: string) => Promise<void>
   signOut: () => void
   /**
    * 저장된 토큰으로 `/auth/me`를 다시 읽어 `user`를 최신화한다. 이메일 인증처럼

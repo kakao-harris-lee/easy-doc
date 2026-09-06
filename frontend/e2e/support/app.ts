@@ -178,28 +178,30 @@ interface LatestMailResponse {
   text_body: string
 }
 
-/** 인증 코드 메일 본문에서 6자리 숫자를 꺼낸다 — `EmailVerificationService.bodyOf`. */
-const VERIFICATION_CODE_PATTERN = /\d{6}/
+/** 6자리 코드 메일 본문에서 숫자를 꺼낸다 — `EmailVerificationService.bodyOf`·`PasswordResetService.bodyOf`. */
+const SIX_DIGIT_CODE_PATTERN = /\d{6}/
 
 /**
- * 가입 직후 그 주소로 보낸 메일에서 6자리 인증 코드를 읽는다.
+ * 그 주소로 보낸 **가장 최근** 메일에서 6자리 코드를 읽는다 — 이메일 인증 코드
+ * (`EmailVerificationService`)와 비밀번호 재설정 코드(`PasswordResetService`) 둘 다
+ * 같은 모양(6자리 숫자, 본문에 그대로 실림)이라 한 헬퍼를 공유한다.
  *
  * **제품 API 가 아니다.** `e2e` profile 에서만 뜨는 진단 엔드포인트를 부른다
  * (`compose.e2e.yml` 이 `backend-api` 에 그 profile 을 켠다) — `api`/`local`/prod 에는
  * 이 경로가 없다.
  */
-async function latestVerificationCode(page: Page, email: string): Promise<string> {
+export async function latestMailCode(page: Page, email: string): Promise<string> {
   const response = await page.request.get(api(`/__e2e/mail/latest?to=${encodeURIComponent(email)}`))
   if (!response.ok()) {
     throw new Error(
-      `이메일 인증 코드 메일을 찾지 못했다: ${email} (status ${response.status()}) — ` +
+      `${email} 로 보낸 메일을 찾지 못했다 (status ${response.status()}) — ` +
         `e2e profile 이 backend-api 에 켜졌는지 확인하라`,
     )
   }
   const body = (await response.json()) as LatestMailResponse
-  const match = VERIFICATION_CODE_PATTERN.exec(body.text_body)
+  const match = SIX_DIGIT_CODE_PATTERN.exec(body.text_body)
   if (match === null) {
-    throw new Error(`메일 본문에서 6자리 인증 코드를 찾지 못했다: ${body.text_body}`)
+    throw new Error(`메일 본문에서 6자리 코드를 찾지 못했다: ${body.text_body}`)
   }
   return match[0]
 }
@@ -214,7 +216,7 @@ async function latestVerificationCode(page: Page, email: string): Promise<string
  * 저장했다)라야 `/verify-email` 이 로그인 화면으로 튕기지 않는다.
  */
 export async function verifyEmail(page: Page, account: Account): Promise<void> {
-  const code = await latestVerificationCode(page, account.email)
+  const code = await latestMailCode(page, account.email)
   await page.goto('/verify-email')
   await page.getByLabel('인증 코드').fill(code)
   await page.getByRole('button', { name: '확인', exact: true }).click()

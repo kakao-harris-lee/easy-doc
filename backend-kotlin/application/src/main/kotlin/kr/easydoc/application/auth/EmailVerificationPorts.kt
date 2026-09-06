@@ -16,14 +16,18 @@ fun interface PostSignupEmailVerification {
 }
 
 /**
- * 이메일 인증 코드 저장소 — 발급 · 확인. 스키마는 `V7__email_verification.sql`
- * (`email_verification_codes`).
+ * 일회성 숫자 코드 저장소의 공통 계약 — 발급 · 확인.
+ *
+ * 이메일 인증(`email_verification_codes`, V7)과 비밀번호 재설정(`password_reset_codes`,
+ * V11)이 같은 모양을 쓴다 — 6자리 코드, salt를 곁들인 해시 저장, TTL·재발송 쿨다운·시도
+ * 상한. [VerificationCodeStore]·`PasswordResetCodeStore`(`PasswordResetCodeStore.kt`)가 이
+ * 인터페이스를 각자 이름으로 다시 선언해 DI가 두 용도의 빈을 타입으로 구분하게 한다 —
+ * 구현은 `infrastructure`의 `JdbcOneTimeCodeStore` 하나를 테이블 이름만 바꿔 공유한다.
  *
  * 해싱·salt·쿨다운 판정 같은 구현 세부는 이 포트가 알지 못한다(`AuthPorts.kt` 의
- * `PasswordHasher` 와 같은 경계) — 그 결정은 `infrastructure` 어댑터
- * (`JdbcVerificationCodeStore`) 의 몫이다.
+ * `PasswordHasher` 와 같은 경계) — 그 결정은 `infrastructure` 어댑터의 몫이다.
  */
-interface VerificationCodeStore {
+interface OneTimeCodeStore {
     /**
      * 새 코드를 발급한다. **활성 코드가 있으면 무효화하고 이번에 만든 것 하나만 남긴다**
      * ("at most one active code"). 직전 발급이 [cooldown] 안이면(성공·실패를 가리지
@@ -51,3 +55,10 @@ interface VerificationCodeStore {
         maxAttempts: Int,
     ): Boolean
 }
+
+/**
+ * 이메일 인증 코드 저장소 — [OneTimeCodeStore]와 계약이 같다. 스키마는
+ * `V7__email_verification.sql`(`email_verification_codes`). 별도 타입으로 두는 이유는
+ * [OneTimeCodeStore] KDoc을 본다.
+ */
+interface VerificationCodeStore : OneTimeCodeStore

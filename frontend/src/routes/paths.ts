@@ -9,6 +9,12 @@ export const HISTORY_PATH = '/history'
 export const EMAIL_VERIFICATION_PATH = '/verify-email'
 
 /**
+ * 비밀번호 재설정 화면(2.19.0 신설, backlog §1.4 다음 조각). 로그인 화면의 「비밀번호를
+ * 잊으셨나요?」 링크가 이리로 보낸다 — 인증 없이 접근한다.
+ */
+export const RESET_PASSWORD_PATH = '/reset-password'
+
+/**
  * 소셜 로그인 콜백 라우트 패턴. `useParams`의 `provider` 키와 이름을 맞춘다(계약
  * `x-social-login.flow`, 2.13.0부터 카카오도 지원 — `auth/socialLogin.ts`의
  * `oauthCallbackPath`가 실제 provider로 이 패턴을 채운 값을 만든다).

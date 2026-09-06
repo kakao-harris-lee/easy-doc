@@ -14,6 +14,7 @@ import kr.easydoc.application.document.ConversionCiphertexts
 import kr.easydoc.core.crypto.EncryptedField
 import kr.easydoc.core.crypto.PlainBody
 import kr.easydoc.core.user.PasswordHash
+import kr.easydoc.infrastructure.mail.FakeMailSender
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
@@ -51,6 +52,9 @@ class RequestFieldRejectionLayerTest {
 
     @Autowired
     private lateinit var cipher: ContentCipher
+
+    @Autowired
+    private lateinit var mailSender: FakeMailSender
 
     private val json = ObjectMapper()
 
@@ -160,7 +164,41 @@ class RequestFieldRejectionLayerTest {
             NAME_FIELD to ::probeName,
             EDITED_TEXT_FIELD to ::probeEditedText,
             DICTIONARY_LOOKUP_TEXT_FIELD to ::probeDictionaryLookupText,
+            SET_PASSWORD_FIELD to ::probeSetPassword,
+            PASSWORD_RESET_NEW_PASSWORD_FIELD to ::probePasswordResetConfirm,
         )
+
+    /**
+     * `POST /auth/password` — 비밀번호가 없는 계정만 성공(204)할 수 있으므로 매 호출마다
+     * 새 소셜 전용 계정을 만든다(성공한 호출은 그 계정을 "비밀번호 있음"으로 바꿔 버려
+     * 재사용하면 이후 호출이 전부 409로 새 축을 재지 못한다).
+     */
+    private fun probeSetPassword(value: String): Observed {
+        val owner = users.createWithoutPassword(RequestFieldProbes.uniqueEmail(), emailVerified = true).id
+        return postJson(SET_PASSWORD_PATH, json.writeValueAsString(mapOf(NEW_PASSWORD_PROPERTY to value)), owner)
+    }
+
+    /**
+     * `POST /auth/password-reset/confirm` — 정답 코드는 확인 성공 시 소비되므로 매 호출마다
+     * 새 계정으로 재설정을 요청하고 그 메일에서 코드를 읽어 쓴다.
+     */
+    private fun probePasswordResetConfirm(value: String): Observed {
+        val email = RequestFieldProbes.uniqueEmail()
+        users.create(email, STUB_HASH)
+        postJson(PASSWORD_RESET_REQUEST_PATH, json.writeValueAsString(mapOf("email" to email)))
+        val code = latestResetCode(email)
+        return postJson(
+            PASSWORD_RESET_CONFIRM_PATH,
+            json.writeValueAsString(mapOf("email" to email, "code" to code, NEW_PASSWORD_PROPERTY to value)),
+        )
+    }
+
+    /** 발송된 메일 중 그 이메일로 간 가장 최근 것에서 6자리 코드를 뽑는다. */
+    private fun latestResetCode(email: String): String {
+        val mail = mailSender.sent.lastOrNull { it.to.value == email } ?: error("$email 로 보낸 메일이 없다")
+        val match = RESET_CODE_PATTERN.find(mail.textBody) ?: error("메일 본문에서 6자리 코드를 찾지 못했다: ${mail.textBody}")
+        return match.value
+    }
 
     private fun probeText(value: String): Observed =
         postJson(DOCUMENTS_PATH, json.writeValueAsString(mapOf(TEXT_PROPERTY to value)), newOwner())
@@ -271,11 +309,17 @@ class RequestFieldRejectionLayerTest {
         const val DOCUMENTS_PATH = "/documents"
         const val WORKSPACES_PATH = "/workspaces"
         const val DICTIONARY_LOOKUP_PATH = "/dictionary/lookup"
+        const val SET_PASSWORD_PATH = "/auth/password"
+        const val PASSWORD_RESET_REQUEST_PATH = "/auth/password-reset/request"
+        const val PASSWORD_RESET_CONFIRM_PATH = "/auth/password-reset/confirm"
 
         const val TEXT_PROPERTY = "text"
         const val NAME_PROPERTY = "name"
         const val EDITED_TEXT_PROPERTY = "edited_text"
         const val CONVERSION_ID_PROPERTY = "conversion_id"
+        const val NEW_PASSWORD_PROPERTY = "new_password"
+
+        val RESET_CODE_PATTERN = Regex("\\d{6}")
 
         const val CONVERSION_PATH_PREFIX = "/conversions/"
 
@@ -292,6 +336,8 @@ class RequestFieldRejectionLayerTest {
         const val NAME_FIELD = "WorkspaceNameRequest.name"
         const val EDITED_TEXT_FIELD = "ConversionReviewRequest.edited_text"
         const val DICTIONARY_LOOKUP_TEXT_FIELD = "DictionaryLookupRequest.text"
+        const val SET_PASSWORD_FIELD = "SetPasswordRequest.new_password"
+        const val PASSWORD_RESET_NEW_PASSWORD_FIELD = "PasswordResetConfirmRequest.new_password"
 
         /** DTO 가 없는 계약 필드 — 정확 열거 핀. **비어 있다**: F3 다섯이 전부 검사받는다. */
         val PINNED_WITHOUT_DTO = emptySet<String>()

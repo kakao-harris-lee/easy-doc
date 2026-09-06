@@ -8,13 +8,14 @@ import {
   type ReactNode,
 } from 'react'
 import { FilePlus2, History, LogOut, Menu, UserRound, X } from 'lucide-react'
-import { NavLink } from 'react-router-dom'
+import { Link, NavLink } from 'react-router-dom'
 
 import type { UserIdentityResponse } from '../api/types'
 import { useAuth } from '../auth/context'
 import { cn } from '../lib/utils'
 import { confirmDiscardUnsaved } from '../review/unsavedChanges'
-import { HISTORY_PATH, HOME_PATH } from '../routes/paths'
+import { EMAIL_VERIFICATION_PATH, HISTORY_PATH, HOME_PATH } from '../routes/paths'
+import { SetPasswordForm } from './SetPasswordForm'
 import { SocialLinkStatus } from './SocialLinkStatus'
 import { Logo } from './Logo'
 import { WorkspaceMenu } from './WorkspaceMenu'
@@ -71,18 +72,57 @@ function navLinkClass({ isActive }: { isActive: boolean }): string {
  * 패널에 `role="menu"`를 붙이는 반대 방향은 더 나쁘다: 계정 이메일 `<p>`가 `menuitem`이
  * 아니라 곧바로 규격 위반이고, 화살표·Home/End 이동 규약까지 딸려 온다.
  */
+/**
+ * 계정 메뉴·모바일 메뉴가 함께 쓰는 "비밀번호 만들기" 자리(2.19.0 신설, backlog §1.4
+ * 다음 조각).
+ *
+ * `SetPasswordForm`은 이메일이 인증된 계정만 부를 수 있다(`POST /auth/password`가
+ * 403으로 거절한다, `PasswordService.set` KDoc — 네이버처럼 미검증 이메일로도 계정을
+ * 만들 수 있는 제공자가 있어 소셜 로그인 상태만으로는 그 이메일의 소유가 증명되지
+ * 않는다). 그래서 이미 비밀번호가 있으면 아무것도 그리지 않고, 없는데 이메일도
+ * 미인증이면 폼 대신 인증 화면 링크 한 줄만 보여준다 — 눌러도 403만 받을 버튼을
+ * 그리지 않는다.
+ */
+function AccountPasswordSlot({
+  hasPassword,
+  emailVerified,
+  onButtonKeyDown,
+  onCreated,
+}: {
+  hasPassword: boolean
+  emailVerified: boolean
+  onButtonKeyDown?: (event: KeyboardEvent<HTMLButtonElement>) => void
+  onCreated: () => void
+}) {
+  if (hasPassword) {
+    return null
+  }
+  if (!emailVerified) {
+    return (
+      <p className="mt-2 border-t border-border pt-3 text-xs text-muted-foreground">
+        <Link to={EMAIL_VERIFICATION_PATH}>이메일 인증</Link> 후 비밀번호를 만들 수 있어요.
+      </p>
+    )
+  }
+  return <SetPasswordForm onButtonKeyDown={onButtonKeyDown} onCreated={onCreated} />
+}
+
 function AccountMenu({
   email,
   identities,
   hasPassword,
+  emailVerified,
   onSignOut,
   onUnlinked,
+  onPasswordCreated,
 }: {
   email: string
   identities: UserIdentityResponse[]
   hasPassword: boolean
+  emailVerified: boolean
   onSignOut: () => void
   onUnlinked: () => void
+  onPasswordCreated: () => void
 }) {
   const [open, setOpen] = useState(false)
   const panelId = useId()
@@ -177,6 +217,12 @@ function AccountMenu({
             onButtonKeyDown={handleEscape}
             onUnlinked={onUnlinked}
           />
+          <AccountPasswordSlot
+            hasPassword={hasPassword}
+            emailVerified={emailVerified}
+            onButtonKeyDown={handleEscape}
+            onCreated={onPasswordCreated}
+          />
         </div>
       )}
     </div>
@@ -256,8 +302,10 @@ export function AppLayout({ children }: { children: ReactNode }) {
                       email={user.email}
                       identities={user.identities}
                       hasPassword={user.has_password}
+                      emailVerified={user.email_verified}
                       onSignOut={guardedSignOut}
                       onUnlinked={() => void refreshMe()}
+                      onPasswordCreated={() => void refreshMe()}
                     />
                   </div>
                 )}
@@ -327,6 +375,13 @@ export function AppLayout({ children }: { children: ReactNode }) {
                   hasPassword={user.has_password}
                   className="mt-2"
                   onUnlinked={() => void refreshMe()}
+                />
+              )}
+              {user !== null && (
+                <AccountPasswordSlot
+                  hasPassword={user.has_password}
+                  emailVerified={user.email_verified}
+                  onCreated={() => void refreshMe()}
                 />
               )}
             </div>

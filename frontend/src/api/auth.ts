@@ -8,6 +8,9 @@ import type {
   OAuthProvider,
   OAuthStartRequest,
   OAuthStartResponse,
+  PasswordResetConfirmRequest,
+  PasswordResetRequest,
+  SetPasswordRequest,
   TokenResponse,
   UserResponse,
 } from './types'
@@ -137,4 +140,41 @@ export function requestEmailVerification(): Promise<void> {
 export function confirmEmailVerification(code: string): Promise<void> {
   const body: ConfirmEmailVerificationRequest = { code }
   return requestVoid('/auth/email-verification/confirm', { method: 'POST', body })
+}
+
+/**
+ * POST /auth/password — 비밀번호 없는(소셜 전용) 계정에 새 비밀번호를 만든다(2.19.0
+ * 신설, backlog §1.4 다음 조각). 이미 비밀번호가 있으면 409.
+ */
+export function setPassword(newPassword: string): Promise<void> {
+  const body: SetPasswordRequest = { new_password: newPassword }
+  return requestVoid('/auth/password', { method: 'POST', body })
+}
+
+/**
+ * POST /auth/password-reset/request — 비밀번호 재설정 코드를 이메일로 보낸다(2.19.0
+ * 신설). **항상 202다** — 이메일 존재 여부·재요청 빈도를 응답으로 알 수 없다(존재 은닉).
+ * 인증 전 호출이라 `auth: false`.
+ */
+export function passwordResetRequest(email: string): Promise<void> {
+  const body: PasswordResetRequest = { email }
+  return requestVoid('/auth/password-reset/request', { method: 'POST', body, auth: false })
+}
+
+/**
+ * POST /auth/password-reset/confirm — 재설정 코드를 확인하고 비밀번호를 바꾼 뒤 `login`과
+ * 같은 `TokenResponse`를 받는다(2.19.0 신설). 이메일 부재·오답·만료·시도 소진은 전부
+ * 같은 401이다. 인증 전 호출이라 `auth: false`.
+ */
+export function passwordResetConfirm(
+  email: string,
+  code: string,
+  newPassword: string,
+): Promise<TokenResponse> {
+  const body: PasswordResetConfirmRequest = { email, code, new_password: newPassword }
+  return requestJson<TokenResponse>('/auth/password-reset/confirm', {
+    method: 'POST',
+    body,
+    auth: false,
+  })
 }

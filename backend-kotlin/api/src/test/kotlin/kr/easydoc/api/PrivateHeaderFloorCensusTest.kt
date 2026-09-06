@@ -9,6 +9,7 @@ import kr.easydoc.application.crypto.ContentCipher
 import kr.easydoc.application.document.ConversionCiphertexts
 import kr.easydoc.core.crypto.EncryptedField
 import kr.easydoc.core.crypto.PlainBody
+import kr.easydoc.infrastructure.mail.FakeMailSender
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
@@ -50,6 +51,9 @@ class PrivateHeaderFloorCensusTest {
 
     @Autowired
     private lateinit var users: InMemoryUserRepository
+
+    @Autowired
+    private lateinit var mailSender: FakeMailSender
 
     private val json = ObjectMapper()
 
@@ -168,7 +172,14 @@ class PrivateHeaderFloorCensusTest {
     private fun implementedTargets(): List<FloorTarget> =
         floorTargets().filterNot { it.toString() in NOT_YET_IMPLEMENTED }
 
-    /** **조립이 없으면 끊는다** — 건너뛰면 분모가 계약이 아니라 이 `when` 이 된다. */
+    /**
+     * **조립이 없으면 끊는다** — 건너뛰면 분모가 계약이 아니라 이 `when` 이 된다.
+     *
+     * 길이·복잡도 상한을 억제한다 — 이 함수의 복잡도는 하한선 목록의 자리 수다(갈래마다
+     * 독립적인 요청 조립 하나뿐이고 서로 얽히지 않는다). 갈래가 늘 때마다 상한을 다시
+     * 걸기보다, 늘어난 이유(하한선에 새 자리가 생겼다)가 그대로 드러나는 편이 낫다.
+     */
+    @Suppress("LongMethod", "CyclomaticComplexMethod")
     private fun driveSuccess(target: FloorTarget): MockHttpServletResponse =
         when (target.toString()) {
             "POST $SIGNUP_PATH" -> {
@@ -233,6 +244,10 @@ class PrivateHeaderFloorCensusTest {
                     .response
             }
 
+            "POST $PASSWORD_RESET_CONFIRM_PATH" -> {
+                confirmPasswordReset()
+            }
+
             else -> {
                 error(
                     "계약 하한선에 새 자리가 생겼는데 요청 조립이 없다: $target — " +
@@ -271,6 +286,31 @@ class PrivateHeaderFloorCensusTest {
         val conversionId = acceptDocument(token)
         markDone(conversionId)
         return authorizedGet(itemPath(CONVERSION_EXPORT_PATH, GET, conversionId), token)
+    }
+
+    /**
+     * `POST /auth/password-reset/confirm` 성공 팔 — 계정을 만들고 재설정을 요청한 뒤
+     * `FakeMailSender` 가 받은 메일에서 코드를 읽어 확인까지 마친다.
+     */
+    private fun confirmPasswordReset(): MockHttpServletResponse {
+        val email = uniqueEmail()
+        signup(email)
+        postJson(PASSWORD_RESET_REQUEST_PATH, null, json.writeValueAsString(mapOf(EMAIL_PROPERTY to email)))
+        val code = latestResetCode(email)
+        return postJson(
+            PASSWORD_RESET_CONFIRM_PATH,
+            null,
+            json.writeValueAsString(
+                mapOf(EMAIL_PROPERTY to email, CODE_PROPERTY to code, NEW_PASSWORD_PROPERTY to VALID_PASSWORD),
+            ),
+        )
+    }
+
+    /** 그 이메일로 보낸 가장 최근 메일에서 6자리 재설정 코드를 뽑는다. */
+    private fun latestResetCode(email: String): String {
+        val mail = mailSender.sent.lastOrNull { it.to.value == email } ?: error("$email 로 보낸 메일이 없다")
+        val match = RESET_CODE_PATTERN.find(mail.textBody) ?: error("메일 본문에서 6자리 코드를 찾지 못했다: ${mail.textBody}")
+        return match.value
     }
 
     private fun newAccount(): String {
@@ -415,6 +455,8 @@ class PrivateHeaderFloorCensusTest {
         const val CONVERSION_ITEM_PATH = "/conversions/{conversion_id}"
         const val CONVERSION_EXPORT_PATH = "/conversions/{conversion_id}/export"
         const val CONVERSION_FEEDBACK_PATH = "/conversions/{conversion_id}/feedback"
+        const val PASSWORD_RESET_REQUEST_PATH = "/auth/password-reset/request"
+        const val PASSWORD_RESET_CONFIRM_PATH = "/auth/password-reset/confirm"
 
         const val GET = "get"
         const val POST = "post"
@@ -437,10 +479,12 @@ class PrivateHeaderFloorCensusTest {
                 "PATCH /workspaces/{workspace_id}",
                 // 1.5.0 신설 — 자유 의견이 응답에 그대로 되돌아 나간다.
                 "PUT /conversions/{conversion_id}/feedback",
+                // 2.19.0 신설 — login과 같은 이유(응답 본문이 Bearer 토큰 자체다).
+                "POST /auth/password-reset/confirm",
             )
 
         /**
-         * 유보 상한과 인구조사 하한. **실측은 유보 0 · 조사 12** 라 유보 상한은 여유 2 다.
+         * 유보 상한과 인구조사 하한. **실측은 유보 0 · 조사 13** 이라 유보 상한은 여유 2 다.
          * 인상은 Phase 경계에서 리더가.
          */
         const val MAX_DEFERRED_FLOOR_TARGETS = 2
@@ -464,6 +508,10 @@ class PrivateHeaderFloorCensusTest {
         const val DOCUMENT_ID_PROPERTY = "document_id"
         const val ITEMS_PROPERTY = "items"
         const val ID_PROPERTY = "id"
+        const val CODE_PROPERTY = "code"
+        const val NEW_PASSWORD_PROPERTY = "new_password"
+
+        val RESET_CODE_PATTERN = Regex("\\d{6}")
 
         const val VALID_PASSWORD = "correct horse battery"
         const val SAMPLE_TEXT = "하한선 인구조사용 안내문 본문"

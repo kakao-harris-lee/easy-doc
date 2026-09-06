@@ -2,6 +2,8 @@ package kr.easydoc.api.auth
 
 import kr.easydoc.application.auth.AuthService
 import kr.easydoc.application.auth.EmailVerificationService
+import kr.easydoc.application.auth.PasswordResetService
+import kr.easydoc.application.auth.PasswordService
 import kr.easydoc.application.auth.SocialLoginService
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
@@ -12,13 +14,22 @@ import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
 
-/** `/auth/signup` · `/auth/login` · `/auth/me` · `/auth/email-verification/{request,confirm}`. */
+/**
+ * `/auth/signup` · `/auth/login` · `/auth/me` · `/auth/email-verification/{request,confirm}` ·
+ * `/auth/password` · `/auth/password-reset/{request,confirm}`.
+ *
+ * 조립 지점(생성자)의 매개변수 수는 이 컨트롤러가 다루는 유스케이스의 수다 — `AuthConfiguration`
+ * 과 같은 근거로 늘어난다.
+ */
 @RestController
 @RequestMapping("/auth")
+@Suppress("LongParameterList")
 class AuthController(
     private val authService: AuthService,
     private val emailVerification: EmailVerificationService,
     private val socialLogin: SocialLoginService,
+    private val passwordService: PasswordService,
+    private val passwordResetService: PasswordResetService,
 ) {
     /** 계정과 기본 작업 공간을 만든다. **201** 이다 — 자원이 실제로 생겼다. */
     @PostMapping("/signup", consumes = [MediaType.APPLICATION_JSON_VALUE])
@@ -66,6 +77,49 @@ class AuthController(
     ): ResponseEntity<Void> {
         emailVerification.confirm(user.id, request.code)
         return ResponseEntity.noContent().build()
+    }
+
+    /**
+     * 비밀번호 없는(소셜 전용) 계정에 비밀번호를 만든다. 이미 있으면 409(`PasswordService`가
+     * 재설정 이용을 안내한다).
+     */
+    @PostMapping("/password", consumes = [MediaType.APPLICATION_JSON_VALUE])
+    fun setPassword(
+        user: AuthenticatedUser,
+        @RequestBody request: SetPasswordRequest,
+    ): ResponseEntity<Void> {
+        passwordService.set(user.id, request.newPassword)
+        return ResponseEntity.noContent().build()
+    }
+
+    /**
+     * 비밀번호 재설정 코드를 이메일로 보낸다. **이메일 존재 여부·쿨다운과 무관하게 항상
+     * 202다** — `PasswordResetService.request`가 두 신호 모두 삼킨다(존재 은닉).
+     */
+    @PostMapping("/password-reset/request", consumes = [MediaType.APPLICATION_JSON_VALUE])
+    fun requestPasswordReset(
+        @RequestBody request: PasswordResetRequest,
+    ): ResponseEntity<Void> {
+        passwordResetService.request(request.email)
+        return ResponseEntity.status(HttpStatus.ACCEPTED).build()
+    }
+
+    /**
+     * 재설정 코드를 확인하고 비밀번호를 바꾼 뒤 로그인과 같은 토큰을 발급한다. 코드가
+     * 오답·만료·시도 소진이거나 이메일이 존재하지 않으면 401 하나로 묶는다(사유 은닉).
+     */
+    @PostMapping("/password-reset/confirm", consumes = [MediaType.APPLICATION_JSON_VALUE])
+    fun confirmPasswordReset(
+        @RequestBody request: PasswordResetConfirmRequest,
+    ): ResponseEntity<TokenResponse> {
+        val issued = passwordResetService.confirm(request.email, request.code, request.newPassword)
+        return private(HttpStatus.OK).body(
+            TokenResponse(
+                accessToken = issued.token,
+                tokenType = BEARER_TOKEN_TYPE,
+                expiresIn = issued.expiresInSeconds,
+            ),
+        )
     }
 
     /** 고위험 응답에 붙는 하한선 헤더. 값의 정본은 계약 `components/headers` 의 각 컴포넌트다. */

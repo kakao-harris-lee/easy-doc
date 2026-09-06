@@ -41,6 +41,7 @@ function authValue(status: AuthStatus): AuthContextValue {
         has_password: true,
         identities: [],
       }),
+    completePasswordReset: () => Promise.resolve(),
     signOut: () => undefined,
     refreshMe: () => Promise.resolve(),
   }
