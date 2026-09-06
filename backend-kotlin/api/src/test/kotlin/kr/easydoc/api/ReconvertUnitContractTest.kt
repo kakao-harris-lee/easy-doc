@@ -16,6 +16,8 @@ import kr.easydoc.core.crypto.PlainBody
 import kr.easydoc.core.document.SourceFormat
 import kr.easydoc.core.exceptions.LlmProviderException
 import kr.easydoc.core.llm.FakeLlmTurn
+import kr.easydoc.core.segment.SourceStructure
+import kr.easydoc.core.segment.splitUnits
 import kr.easydoc.core.user.PasswordHash
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.BeforeEach
@@ -217,6 +219,7 @@ class ReconvertUnitContractTest {
                     title = "안내문",
                     sourceFormat = SourceFormat.TEXT,
                     charCount = text.length,
+                    structure = SourceStructure.allBody(splitUnits(text).size),
                 ),
             sourceText = cipher.encrypt(PlainBody(text), documentId, EncryptedField.DOCUMENT_SOURCE_TEXT),
         )

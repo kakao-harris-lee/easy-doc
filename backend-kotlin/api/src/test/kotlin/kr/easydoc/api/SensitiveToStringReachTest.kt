@@ -339,8 +339,14 @@ class SensitiveToStringReachTest {
          * core.document `MaskedItemView`, api `MaskedItemResponse`. 마스킹 개념 자체가
          * 코드에서 사라졌으므로 [KNOWN_SENSITIVE_TYPES]·[KNOWN_TEXT_WRAPPERS] 에서도
          * 함께 뺐다.
+         *
+         * P0-4 S8-1 표·목록 구조 힌트(계획 §1.1,
+         * `docs/plans/2026-09-06-p0-4-structure-hints.md`)가 **하나**를 더해 127 이다(마스킹
+         * 제거 126 위에) — core `UnitRun`(`kind`·`startIndex`·`endIndex` 셋뿐, 민감 토큰과
+         * 무관한 색인 값이다 — `Anchor`·`Breakpoint`·`SegmentUnit` 과 같은 판단으로
+         * [KNOWN_SENSITIVE_TYPES] 에 넣지 않는다).
          */
-        const val EXPECTED_SOURCE_DECLARATIONS = 126
+        const val EXPECTED_SOURCE_DECLARATIONS = 127
 
         /** 민감 판정이 반드시 닿아야 하는 타입 — 바닥이다. */
         val KNOWN_SENSITIVE_TYPES =

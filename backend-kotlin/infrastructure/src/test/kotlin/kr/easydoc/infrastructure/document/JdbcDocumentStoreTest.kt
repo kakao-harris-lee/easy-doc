@@ -22,6 +22,8 @@ import kr.easydoc.core.document.SourceFormat
 import kr.easydoc.core.exceptions.ConfigurationException
 import kr.easydoc.core.exceptions.NotFoundException
 import kr.easydoc.core.security.Secret
+import kr.easydoc.core.segment.SourceStructure
+import kr.easydoc.core.segment.splitUnits
 import kr.easydoc.core.user.PasswordHash
 import kr.easydoc.infrastructure.DatabaseHandle
 import kr.easydoc.infrastructure.PostgresTestSupport
@@ -608,7 +610,9 @@ class JdbcDocumentStoreTest {
 
     /** 파일 경로를 쓰는 케이스용 추출기 대역. 이름을 보지 않고 정해진 본문을 돌려준다. */
     private fun fixedExtractor(text: String): DocumentTextExtractor =
-        DocumentTextExtractor { _, _ -> ExtractedDocument(SourceFormat.DOCX, text) }
+        DocumentTextExtractor { _, _ ->
+            ExtractedDocument(SourceFormat.DOCX, text, SourceStructure.allBody(splitUnits(text).size))
+        }
 
     /** 유스케이스 한 벌을 하나의 [DataSource] 위에 조립한다. */
     private fun serviceOn(

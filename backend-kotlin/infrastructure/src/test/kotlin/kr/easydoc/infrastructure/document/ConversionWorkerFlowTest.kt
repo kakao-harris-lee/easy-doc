@@ -21,6 +21,7 @@ import kr.easydoc.core.llm.LlmOptions
 import kr.easydoc.core.llm.LlmPrompt
 import kr.easydoc.core.llm.LlmProvider
 import kr.easydoc.core.security.Secret
+import kr.easydoc.core.segment.SourceStructure
 import kr.easydoc.core.user.PasswordHash
 import kr.easydoc.infrastructure.DatabaseHandle
 import kr.easydoc.infrastructure.PostgresTestSupport
@@ -90,7 +91,10 @@ class ConversionWorkerFlowTest {
                 storage = DocumentStorage(documents, JdbcDocumentOriginalRepository(jdbc), conversions, queue),
                 workspaces = JdbcWorkspaceLookup(jdbc),
                 cipher = cipher,
-                extractor = DocumentTextExtractor { _, _ -> ExtractedDocument(SourceFormat.DOCX, "추출") },
+                extractor =
+                    DocumentTextExtractor { _, _ ->
+                        ExtractedDocument(SourceFormat.DOCX, "추출", SourceStructure.allBody(1))
+                    },
                 transaction = transaction,
                 users = JdbcUserRepository(jdbc),
             )

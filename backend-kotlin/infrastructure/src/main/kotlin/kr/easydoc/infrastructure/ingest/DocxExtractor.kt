@@ -2,7 +2,9 @@ package kr.easydoc.infrastructure.ingest
 
 import kr.easydoc.core.document.SourceFormat
 import kr.easydoc.core.exceptions.DocumentExtractionException
+import kr.easydoc.core.segment.UnitKind
 import org.apache.poi.xwpf.usermodel.XWPFDocument
+import org.w3c.dom.Element
 import org.w3c.dom.Node
 import java.io.ByteArrayInputStream
 import java.io.IOException
@@ -10,10 +12,18 @@ import java.io.IOException
 /** DOCX(OOXML) 본문·표·머리글·바닥글을 **문서 순서대로** 뽑는다. */
 internal class DocxExtractor {
     /** 이어 붙인 본문. */
-    fun extract(data: ByteArray): String {
+    fun extract(data: ByteArray): String = extractStructured(data).text
+
+    /**
+     * 이어 붙인 본문과, 그 줄마다 하나씩 붙은 원본 단위 종류(표·목록 구조 힌트 계획 §1.2 표) —
+     * 표 칸(`w:tc` 조상)은 [UnitKind.TABLE_CELL], 목록 문단(`w:pPr/w:numPr`)은
+     * [UnitKind.LIST_ITEM], 그 외는 [UnitKind.BODY]다. DOCX 는 구조 신호가 XML 에 직접
+     * 있으므로 [kr.easydoc.core.segment.inferUnitKinds] 텍스트 휴리스틱을 더 얹지 않는다.
+     */
+    fun extractStructured(data: ByteArray): ExtractionOutcome {
         val builder = ExtractedTextBuilder(SourceFormat.DOCX, data.size)
         collectInto(data, builder)
-        return builder.build()
+        return ExtractionOutcome(builder.build(), builder.structure())
     }
 
     /** 정규화 **이전**의 블록 목록. */
@@ -59,21 +69,31 @@ internal class DocxExtractor {
         for (part in DocxSectionParts.headerFooterParts(document, body)) elementBlocks(part, sink)
     }
 
-    /** OOXML 조각을 **문서 순서대로** 훑어 문단 단위 텍스트를 모은다. */
+    /**
+     * OOXML 조각을 **문서 순서대로** 훑어 문단 단위 텍스트를 모은다.
+     *
+     * 표 칸 여부는 `TextUnitWalk`(`infrastructure/export`)의 `inHeaderFooter` 프레임과 같은
+     * 요령으로 스택 프레임에 실어 내려보낸다 — `w:tc` 조상 여부는 DOM 을 걷는 동안만 알 수
+     * 있는 값이라 블록이 끊기는 시점(다음 `p`)에 이미 사라져 있으면 안 되기 때문이다.
+     */
     private fun elementBlocks(
         root: Node,
         sink: BlockSink,
     ) {
         val current = StringBuilder()
-        val stack = ArrayDeque<Node>()
-        stack.addLast(root)
+        var currentKind = UnitKind.BODY
+        val stack = ArrayDeque<Frame>()
+        stack.addLast(Frame(root, inCell = false))
         while (stack.isNotEmpty()) {
-            val node = stack.removeLast()
+            val frame = stack.removeLast()
+            val node = frame.node
             if (OoxmlSkips.isAlternateContentFallback(node)) continue
+            val inCell = frame.inCell || OoxmlDom.localName(node) == TABLE_CELL_ELEMENT
             when (OoxmlDom.localName(node)) {
                 "p" -> {
-                    sink.add(current.toString())
+                    sink.add(current.toString(), currentKind)
                     current.setLength(0)
+                    currentKind = kindOf(node as Element, inCell)
                 }
 
                 "t" -> {
@@ -84,10 +104,37 @@ internal class DocxExtractor {
                 }
             }
             // 자식을 역순으로 쌓아야 pop 순서가 문서 순서가 된다.
-            OoxmlDom.childElements(node).asReversed().forEach(stack::addLast)
+            OoxmlDom.childElements(node).asReversed().forEach { stack.addLast(Frame(it, inCell)) }
         }
-        sink.add(current.toString())
+        sink.add(current.toString(), currentKind)
     }
+
+    /** [paragraph] 가 표 칸 안이면 [UnitKind.TABLE_CELL], `w:pPr/w:numPr` 가 있으면 [UnitKind.LIST_ITEM], 그 외 [UnitKind.BODY]. */
+    private fun kindOf(
+        paragraph: Element,
+        inCell: Boolean,
+    ): UnitKind =
+        when {
+            inCell -> UnitKind.TABLE_CELL
+            hasNumberingProperties(paragraph) -> UnitKind.LIST_ITEM
+            else -> UnitKind.BODY
+        }
+
+    /** `w:pPr` 의 자식으로 `w:numPr` 이 있는가 — 목록 문단의 OOXML 표시(계획 §1.2 표). */
+    private fun hasNumberingProperties(paragraph: Element): Boolean {
+        val paragraphProperties =
+            OoxmlDom.childElements(paragraph).firstOrNull { OoxmlDom.localName(it) == PARAGRAPH_PROPERTIES_ELEMENT }
+                ?: return false
+        return OoxmlDom.childElements(paragraphProperties).any {
+            OoxmlDom.localName(it) == NUMBERING_PROPERTIES_ELEMENT
+        }
+    }
+
+    /** 스택 프레임 — [inCell] 은 이 노드가 `w:tc` 조상 안인가를, DOM 을 걷는 동안만 든다. */
+    private class Frame(
+        val node: Node,
+        val inCell: Boolean,
+    )
 
     private fun broken(
         uploadSize: Int,
@@ -109,5 +156,14 @@ internal class DocxExtractor {
                 "변경 추적의 삭제문(w:delText)",
                 "mc:AlternateContent 의 mc:Fallback 가지",
             )
+
+        /** 표 칸 요소(`w:tc`) — 이 조상 안의 문단은 [UnitKind.TABLE_CELL] 이다. */
+        private const val TABLE_CELL_ELEMENT = "tc"
+
+        /** 문단 속성 요소(`w:pPr`) — [NUMBERING_PROPERTIES_ELEMENT] 가 이 밑에 온다. */
+        private const val PARAGRAPH_PROPERTIES_ELEMENT = "pPr"
+
+        /** 번호 매김 속성 요소(`w:numPr`) — 목록 문단의 표시(계획 §1.2 표). */
+        private const val NUMBERING_PROPERTIES_ELEMENT = "numPr"
     }
 }

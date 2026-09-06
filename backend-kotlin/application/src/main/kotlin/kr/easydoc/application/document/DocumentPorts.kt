@@ -10,6 +10,7 @@ import kr.easydoc.core.pilot.EditDistanceSkipReason
 import kr.easydoc.core.pilot.MinutesSpent
 import kr.easydoc.core.pilot.PublishIntent
 import kr.easydoc.core.pilot.QualityScore
+import kr.easydoc.core.segment.SourceStructure
 import java.time.Instant
 import java.util.UUID
 
@@ -20,13 +21,22 @@ import java.util.UUID
 // **평문이 이 경계를 넘지 않는다** — 저장소 포트는 [EncryptedContent] 만 주고받고 `PlainBody` 를
 // **타입으로 보지 못한다.** 암호화하는 층이 `application` 인 근거는 계획 §4.1.
 
-/** 저장 직전의 문서 한 건 — **DB 시계가 채우는 값을 뺀 전부**. */
+/**
+ * 저장 직전의 문서 한 건 — **DB 시계가 채우는 값을 뺀 전부**.
+ *
+ * [structure] 에 기본값을 두지 않는다 — [SourceStructure.allBody] 를 [charCount](글자 수)로
+ * 채우면 크기가 원본 **줄 수**와 다르다(계획 §1.2 불변식 `kinds.size == splitUnits(text).size`
+ * 위반). 호출자는 언제나 `splitUnits(text).size` 로 맞춘 값을 명시적으로 넘긴다 —
+ * `DocumentService.store` 는 실제로 유도한 값을, 구조를 신경 쓰지 않는 fixture 는
+ * `SourceStructure.allBody(splitUnits(text).size)` 를 그대로 넘긴다.
+ */
 class DocumentDraft(
     val id: UUID,
     val workspaceId: UUID,
     val title: String,
     val sourceFormat: SourceFormat,
     val charCount: Int,
+    val structure: SourceStructure,
 ) {
     /** 제목은 길이만 남긴다. [Document.toString] 과 같은 형태다. */
     override fun toString(): String = "DocumentDraft($id, ${sourceFormat.wireName}, 제목 ${title.length}자, ${charCount}자)"
@@ -44,7 +54,27 @@ class StoredSourceText(
     val sourceFormat: SourceFormat,
     val charCount: Int,
     val sourceText: EncryptedContent,
+    /**
+     * 원본 단위 종류(표·목록 구조 힌트 계획 §1.2) — `documents.source_unit_kinds` 컬럼 그대로다.
+     * `null` 은 컬럼이 `null` 인 옛 문서다(이 조각 이전에 만든 문서, 백필하지 않는다) —
+     * [structureOrBody] 로 「전부 BODY」로 읽는다.
+     */
+    val structure: SourceStructure? = null,
 ) {
+    /**
+     * [structure] 를 읽는다 — 없으면(옛 문서) [unitCount] 개 전부 BODY, **있어도 그 크기가
+     * [unitCount] 와 다르면** 마찬가지로 전부 BODY 로 접는다. 크기가 어긋난다는 것은 원문이
+     * 그 사이 바뀌었거나(예: 재봉인·회전 경로가 손대지 않는 열이라 이론상 없어야 하지만)
+     * 계산 실수로 저장된 값이 신뢰할 수 없다는 뜻이다 — `DocumentService.resolveStructure`
+     * 와 같은 「불변식이 깨지면 예외가 아니라 전부 BODY」규칙이다(계획 §1.2). 예외를 던지면
+     * 구조 힌트 하나 때문에 조회 전체가 막히고, 구조는 파생 정보이지 변환을 막을 이유가
+     * 아니다.
+     */
+    fun structureOrBody(unitCount: Int): SourceStructure {
+        val current = structure
+        return if (current != null && current.kinds.size == unitCount) current else SourceStructure.allBody(unitCount)
+    }
+
     /**
      * 식별자·형식과 길이만 남긴다.
      *
