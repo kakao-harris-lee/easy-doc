@@ -126,9 +126,15 @@ test.describe('변환 수직 흐름', () => {
     await expect(page.getByLabel('원본 1번째 문단', { exact: true })).toHaveValue(SOURCE_TEXT)
     await expect(page.getByRole('note')).toHaveText(/AI가 만든 초안입니다/)
 
+    // 폴링이 관측한 상태는 `pending → processing → done` 순서를 거슬러 가지 않아야 한다.
+    // 「pending 을 반드시 봤다」는 단언은 두지 않는다 — fake worker 가 첫 폴링보다 먼저 끝나면
+    // 관측 배열이 `['done']` 하나뿐이어도 정상이고, 그 경우가 CI 에서 실제로 두 번 났다
+    // (2026-09-05·06). 검증 대상은 순서와 실패 부재이지 중간 상태의 목격이 아니다.
+    const statusOrder = ['pending', 'processing', 'done']
+    const ranks = observedStatuses.map((status) => statusOrder.indexOf(status))
     expect(observedStatuses.at(-1)).toBe('done')
-    expect(observedStatuses).toContain('pending')
-    expect(observedStatuses.every((status) => status !== 'failed')).toBe(true)
+    expect(ranks.every((rank) => rank >= 0)).toBe(true) // 'failed' 포함 알 수 없는 상태 없음
+    expect(ranks).toEqual([...ranks].sort((a, b) => a - b))
 
     await editor.fill(REVIEWED_TEXT)
 
