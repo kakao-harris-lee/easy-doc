@@ -22,6 +22,7 @@ import java.time.Instant
 import java.util.UUID
 
 /** 소셜 로그인 유스케이스의 분기를 잰다 — Spring 도 DB 도 실제 Google 도 없이. */
+@Suppress("LargeClass")
 class SocialLoginServiceTest {
     @Test
     @DisplayName("새 신원은 계정과 기본 작업 공간을 같은 트랜잭션에서 만든다")
@@ -92,6 +93,77 @@ class SocialLoginServiceTest {
         }.isInstanceOf(EmailAlreadyRegisteredException::class.java)
             .hasMessage(SocialLoginService.EMAIL_ALREADY_LINKED_MESSAGE)
         assertThat(world.identities.linked).isEmpty()
+    }
+
+    @Test
+    @DisplayName(
+        "동시 최초 콜백이 자기 자신과 경쟁하면(신원 유일 제약 통과 뒤 users.email 에서 걸림) " +
+            "롤백 뒤 재조회로 이긴 쪽 사용자로 로그인 처리한다 — 새 계정·작업 공간을 또 만들지 않는다",
+    )
+    fun `자기 자신과의 경쟁은 승자로 로그인 처리한다`() {
+        val winnerUserId = UUID.randomUUID()
+        val winnerIdentity =
+            UserIdentity(UUID.randomUUID(), winnerUserId, SocialLoginProviderId.GOOGLE, "google-race-sub")
+        val identities = SelfRacedIdentityRepository(winnerAfterRace = winnerIdentity)
+        val users = AlwaysDuplicateEmailUserRepository(SocialLoginService.EMAIL_ALREADY_LINKED_MESSAGE)
+        val workspaces = RecordingSocialWorkspaceRepository()
+        val emailVerification = SocialRecordingEmailVerification(SocialRecordingTransactionRunner())
+        val world =
+            RacedSocialWorld(
+                users = users,
+                identities = identities,
+                workspaces = workspaces,
+                emailVerification = emailVerification,
+                providerUserId = "google-race-sub",
+                email = "raced@example.test",
+            )
+
+        val start = world.service.start(SocialLoginProviderId.GOOGLE, REDIRECT_URI)
+        val token = world.service.callback(SocialLoginProviderId.GOOGLE, "auth-code", start.state, REDIRECT_URI)
+
+        assertThat(token.token).isEqualTo("token:$winnerUserId")
+        assertThat(workspaces.createdFor)
+            .withFailMessage("경쟁에서 진 쪽은 새 작업 공간을 만들면 안 된다 — 이긴 쪽이 이미 만들었다")
+            .isEmpty()
+        assertThat(emailVerification.issuedFor)
+            .withFailMessage("경쟁에서 진 쪽은 이메일 인증 코드를 또 발급하면 안 된다")
+            .isEmpty()
+        assertThat(identities.findByProviderIdentityCallCount)
+            .withFailMessage("첫 조회(트랜잭션 전) + 재조회(롤백 뒤) 두 번이어야 한다")
+            .isEqualTo(2)
+    }
+
+    @Test
+    @DisplayName(
+        "롤백 뒤 재조회해도 신원이 여전히 없으면 진짜 다른 사람의 이메일과 겹친 것이다 — " +
+            "같은 예외를 그대로 409로 올린다",
+    )
+    fun `진짜 중복 이메일은 재조회해도 그대로 409다`() {
+        val identities = SelfRacedIdentityRepository(winnerAfterRace = null)
+        val users = AlwaysDuplicateEmailUserRepository(SocialLoginService.EMAIL_ALREADY_LINKED_MESSAGE)
+        val workspaces = RecordingSocialWorkspaceRepository()
+        val emailVerification = SocialRecordingEmailVerification(SocialRecordingTransactionRunner())
+        val world =
+            RacedSocialWorld(
+                users = users,
+                identities = identities,
+                workspaces = workspaces,
+                emailVerification = emailVerification,
+                providerUserId = "google-race-sub-2",
+                email = "genuinely-taken@example.test",
+            )
+
+        val start = world.service.start(SocialLoginProviderId.GOOGLE, REDIRECT_URI)
+
+        assertThatThrownBy {
+            world.service.callback(SocialLoginProviderId.GOOGLE, "auth-code", start.state, REDIRECT_URI)
+        }.isInstanceOf(EmailAlreadyRegisteredException::class.java)
+            .hasMessage(SocialLoginService.EMAIL_ALREADY_LINKED_MESSAGE)
+        assertThat(workspaces.createdFor).isEmpty()
+        assertThat(emailVerification.issuedFor).isEmpty()
+        assertThat(identities.findByProviderIdentityCallCount)
+            .withFailMessage("재조회까지 두 번 봤어야 진짜 중복으로 판정한다")
+            .isEqualTo(2)
     }
 
     @Test
@@ -722,6 +794,35 @@ private class SocialWorld(
         )
 }
 
+/**
+ * `callback` 자기 경쟁 테스트 전용 세계 — [SocialWorld] 와 배선은 같지만, 재조회 결과와
+ * 예외 발생 시점을 테스트가 직접 통제해야 해서 사용자·신원 저장소를 밖에서 주입받는다.
+ */
+private class RacedSocialWorld(
+    users: UserRepository,
+    identities: UserIdentityRepository,
+    workspaces: WorkspaceRepository,
+    emailVerification: PostSignupEmailVerification,
+    providerUserId: String,
+    email: String,
+) {
+    val states: OAuthStateStore = InMemoryOAuthStateStore()
+    val provider =
+        FakeSocialLoginProvider("http://localhost:5173/auth/google/callback").apply {
+            nextIdentity = SocialIdentity(providerUserId, email, emailVerified = true)
+        }
+    val service =
+        SocialLoginService(
+            providers = mapOf(SocialLoginProviderId.GOOGLE to provider),
+            states = states,
+            repositories = SocialLoginRepositories(users, identities, workspaces),
+            accessTokens = RecordingSocialAccessTokens(configured = true),
+            transaction = SocialRecordingTransactionRunner(),
+            stateTtl = Duration.ofMinutes(10),
+            emailVerification = emailVerification,
+        )
+}
+
 /** 트랜잭션 깊이를 기록한다 — `AuthServiceTest.SocialRecordingTransactionRunner` 와 같은 필요. */
 private class SocialRecordingTransactionRunner : TransactionRunner {
     var depth = 0
@@ -904,6 +1005,39 @@ private class RecordingSocialWorkspaceRepository : WorkspaceRepository {
     }
 }
 
+/**
+ * 콜백 자기 경쟁 테스트 전용 — 트랜잭션 안 `createWithoutPassword` 가 항상
+ * [EmailAlreadyRegisteredException] 을 던지게 해 `users.email` 유일 인덱스 위반을 흉내 낸다.
+ * [findByEmail] 은 `null` 을 돌려준다 — 사전 검사([SocialLoginService.requireEmailNotAlreadyLinked])가
+ * 통과해 흐름이 트랜잭션까지 들어오는 경쟁 창을 재현해야 하기 때문이다.
+ */
+private class AlwaysDuplicateEmailUserRepository(private val message: String) : UserRepository {
+    override fun findByEmail(email: String): StoredUser? = null
+
+    override fun findById(id: UUID): User? = error("이 테스트는 callback 만 부른다")
+
+    override fun exists(id: UUID): Boolean = error("이 테스트는 callback 만 부른다")
+
+    override fun lockForUpdate(id: UUID): User? = error("이 테스트는 callback 만 부른다")
+
+    override fun create(
+        email: String,
+        passwordHash: PasswordHash,
+    ): User = error("소셜 로그인 유스케이스는 비밀번호가 있는 create 를 부르지 않는다")
+
+    override fun createWithoutPassword(
+        email: String,
+        emailVerified: Boolean,
+    ): User = throw EmailAlreadyRegisteredException(message)
+
+    override fun updatePasswordHash(
+        userId: UUID,
+        passwordHash: PasswordHash,
+    ) = error("이 테스트는 callback 만 부른다")
+
+    override fun markEmailVerified(userId: UUID) = error("이 테스트는 callback 만 부른다")
+}
+
 private class RecordingIdentityRepository : UserIdentityRepository {
     val linked: MutableList<UserIdentity> = mutableListOf()
     private val byProvider = mutableMapOf<Pair<SocialLoginProviderId, String>, UserIdentity>()
@@ -959,6 +1093,45 @@ private class RecordingIdentityRepository : UserIdentityRepository {
         byProvider.remove(key)
         return true
     }
+}
+
+/**
+ * 콜백 자기 경쟁 테스트 전용 — 트랜잭션 **전** 첫 `findByProviderIdentity` 는 "아직 없음"을
+ * 돌려주고(둘 다 이 사전 검사를 통과하는 경쟁 창), 트랜잭션이 롤백된 뒤의 재조회는
+ * [winnerAfterRace] 를 돌려준다: 자기 경쟁이면 상대가 이미 커밋해 남긴 신원, 진짜 다른
+ * 사람의 이메일과 겹친 경우면 `null`(여전히 아무도 이 신원을 연결하지 않았다).
+ */
+private class SelfRacedIdentityRepository(private val winnerAfterRace: UserIdentity?) : UserIdentityRepository {
+    var findByProviderIdentityCallCount = 0
+        private set
+
+    override fun findByProviderIdentity(
+        provider: SocialLoginProviderId,
+        providerUserId: String,
+    ): UserIdentity? {
+        findByProviderIdentityCallCount++
+        return if (findByProviderIdentityCallCount == 1) null else winnerAfterRace
+    }
+
+    override fun findByUserAndProvider(
+        userId: UUID,
+        provider: SocialLoginProviderId,
+    ): UserIdentity? = error("이 테스트는 callback 만 부른다")
+
+    override fun findAllByUser(userId: UUID): List<UserIdentity> = error("이 테스트는 callback 만 부른다")
+
+    override fun link(
+        userId: UUID,
+        provider: SocialLoginProviderId,
+        providerUserId: String,
+        email: String?,
+        emailVerified: Boolean,
+    ): UserIdentity = error("경쟁에서 진 쪽은 신원을 연결하면 안 된다 — 이겼다면 상대가 이미 연결했다")
+
+    override fun deleteByUserAndProvider(
+        userId: UUID,
+        provider: SocialLoginProviderId,
+    ): Boolean = error("이 테스트는 callback 만 부른다")
 }
 
 private class RecordingSocialAccessTokens(private val configured: Boolean) : AccessTokens {

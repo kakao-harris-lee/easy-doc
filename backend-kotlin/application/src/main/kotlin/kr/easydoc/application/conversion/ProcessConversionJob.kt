@@ -8,6 +8,7 @@ import kr.easydoc.core.crypto.PlainBody
 import kr.easydoc.core.document.ConversionStatus
 import kr.easydoc.core.exceptions.ConfigurationException
 import kr.easydoc.core.exceptions.StorageException
+import kr.easydoc.core.text.normalizeLineEndings
 import org.slf4j.LoggerFactory
 
 /**
@@ -137,9 +138,15 @@ class ProcessConversionJob(
         lease: ConversionJobLease,
         result: ConversionResult.Converted,
     ): ConversionJobOutcome {
+        // 저장 경계에서 개행을 통일한다 — `DocumentService.store`·`ConversionReviewService.save`
+        // 와 같은 이유(§ 두 KDoc)다: `core.segment.splitUnits` 가 `\n` 만으로 줄을 가르므로,
+        // LLM 이 CRLF 를 섞어 낸 채로 저장되면(어댑터가 보장하지 않는다) `segment_map`·문체
+        // 판정·재변환이 원문과 어긋난 줄 수를 본다. `easyText` 는 1차 결과와 보정 채택 결과를
+        // 이미 하나로 접은 최종 본문이라 이 자리 하나가 이 경로의 유일한 저장 지점이다
+        // (`ConvertDocumentUseCase.Pass.finish` 의 `ConversionResult.Converted.easyText`).
         val easyText =
             stores.cipher.encrypt(
-                PlainBody(result.easyText.value),
+                PlainBody(normalizeLineEndings(result.easyText.value)),
                 lease.conversionId,
                 EncryptedField.CONVERSION_EASY_TEXT,
             )

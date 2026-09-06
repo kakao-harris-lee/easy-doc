@@ -48,6 +48,18 @@ class ConversionReviewServiceTest {
     }
 
     @Test
+    @DisplayName("검수 본문의 CRLF 는 저장 전에 LF 로 통일된다 — `splitUnits` 가 `\\n` 만 본다")
+    fun `검수 본문 CRLF 가 LF 로 저장된다`() {
+        val world = World()
+
+        world.save(world.seedDone(), "첫 줄\r\n둘째 줄")
+
+        assertThat(world.savedPlaintext(EncryptedField.CONVERSION_EDITED_TEXT))
+            .describedAs("`\\r` 이 남으면 재변환·문체 판정·화면 지도가 원문과 어긋난 줄 수를 본다")
+            .isEqualTo("첫 줄\n둘째 줄")
+    }
+
+    @Test
     @DisplayName("길이는 **정규화 후**에 재고 코드 포인트로 센다 — 경계 양쪽을 함께 고정한다")
     fun `길이 판정이 정규화 후 코드 포인트다`() {
         val world = World()

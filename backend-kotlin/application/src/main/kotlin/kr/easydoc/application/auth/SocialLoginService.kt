@@ -88,6 +88,14 @@ class SocialLoginService
          *     이메일이 미검증인 채로 계정을 만들 수 있는 제공자(네이버, [requireEmailPresent])는
          *     커밋 뒤 [emailVerification] 으로 인증 코드를 발급한다 — `AuthService.signup` 과
          *     같은 best-effort 절차(`EmailVerificationService` KDoc).
+         *
+         * **동시 최초 콜백 자기 경쟁(backlog §1.4 남은 결함, 옵션 ⑵).** 같은 신원의 콜백
+         * 둘이 동시에 갈래 3을 타면(둘 다 [requireEmailNotAlreadyLinked] 를 통과한 뒤) 하나만
+         * `users.email` 유일 인덱스를 통과해 커밋하고 나머지는 [EmailAlreadyRegisteredException]
+         * 을 받는다. 그 예외를 곧장 409로 올리지 않고, 트랜잭션이 롤백된 뒤
+         * [UserIdentityRepository.findByProviderIdentity] 를 **한 번 더** 본다 — 그새 상대
+         * 요청이 신원을 연결해 뒀으면(자기 자신과의 경쟁) 그 결과로 로그인 처리하고, 그래도
+         * 없으면(다른 사람의 이메일과 진짜 충돌) 같은 예외를 그대로 올린다.
          */
         fun callback(
             providerId: SocialLoginProviderId,
@@ -111,27 +119,38 @@ class SocialLoginService
             val normalizedEmail = requireEmailPresent(identity, providerId)
             requireEmailNotAlreadyLinked(normalizedEmail)
 
-            val (createdUserId, issued) =
-                transaction.inTransaction {
-                    val user =
-                        repositories.users.createWithoutPassword(
+            // [newUserId] 는 이번 호출이 **새로 만든** 계정일 때만 채워진다 — `null` 이면
+            // 자기 자신과의 경쟁에서 져 재조회로 복구한 로그인이라 이메일 인증 코드를 또
+            // 발급하면 안 된다(반환문을 하나로 유지해 detekt `ReturnCount` 도 지킨다).
+            val (newUserId, issued) =
+                try {
+                    transaction.inTransaction {
+                        val user =
+                            repositories.users.createWithoutPassword(
+                                normalizedEmail,
+                                emailVerified = identity.emailVerified,
+                            )
+                        repositories.workspaces.createDefault(user.id)
+                        repositories.identities.link(
+                            user.id,
+                            providerId,
+                            identity.providerUserId,
                             normalizedEmail,
-                            emailVerified = identity.emailVerified,
+                            identity.emailVerified,
                         )
-                    repositories.workspaces.createDefault(user.id)
-                    repositories.identities.link(
-                        user.id,
-                        providerId,
-                        identity.providerUserId,
-                        normalizedEmail,
-                        identity.emailVerified,
-                    )
-                    user.id to accessTokens.issue(user.id)
+                        user.id to accessTokens.issue(user.id)
+                    }
+                } catch (raced: EmailAlreadyRegisteredException) {
+                    // 트랜잭션은 이미 롤백됐다 — 재조회는 새 트랜잭션 없이 그냥 SELECT 다.
+                    val racedWinner =
+                        repositories.identities.findByProviderIdentity(providerId, identity.providerUserId)
+                            ?: throw raced
+                    null to accessTokens.issue(racedWinner.userId)
                 }
-            if (!identity.emailVerified) {
+            if (newUserId != null && !identity.emailVerified) {
                 // 커밋 **뒤**에 발송한다 — `AuthService.signup` 과 같은 이유(롤백될 수도 있는
                 // 계정에 메일을 먼저 보내지 않는다). best-effort 다.
-                emailVerification.issueAfterSignup(createdUserId)
+                emailVerification.issueAfterSignup(newUserId)
             }
             return issued
         }
@@ -350,6 +369,10 @@ class SocialLoginService
          * 트랜잭션 **밖**에서 먼저 본다 — 흔한 갈래(이미 가입된 이메일)를 커넥션 없이 끝낸다.
          * 동시 가입 경쟁은 DB 유일성 제약(`ix_users_email`)이 마지막 방어선이다
          * (`JdbcUserRepository.create*` 가 `DuplicateKeyException` 을 잡아 같은 예외로 옮긴다).
+         * 그 유일성 제약이 걸렸다고 곧장 409는 아니다 — [callback] 이 그 예외를 잡은 뒤
+         * `findByProviderIdentity` 를 한 번 더 봐서, 이 사전 검사를 통과한 **자기 자신**과
+         * 경쟁한 것인지(→ 로그인으로 복구) 다른 사람의 이메일과 진짜 겹친 것인지(→ 그대로
+         * 409)를 가른다.
          */
         private fun requireEmailNotAlreadyLinked(normalizedEmail: String) {
             if (repositories.users.findByEmail(normalizedEmail) != null) {
