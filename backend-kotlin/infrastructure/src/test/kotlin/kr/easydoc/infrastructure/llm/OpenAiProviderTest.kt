@@ -6,7 +6,6 @@ import kr.easydoc.core.exceptions.LlmProviderException
 import kr.easydoc.core.llm.LlmFinishReason
 import kr.easydoc.core.llm.LlmOptions
 import kr.easydoc.core.llm.LlmPrompt
-import kr.easydoc.core.privacy.maskText
 import kr.easydoc.core.security.Secret
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
@@ -31,7 +30,7 @@ class OpenAiProviderTest {
     }
 
     @Test
-    @DisplayName("Responses API에 저장 비활성화와 마스킹된 입력을 전송한다")
+    @DisplayName("Responses API에 저장 비활성화와 문서 본문을 전송한다")
     fun `요청 계약을 지킨다`() {
         server.replyWith(body = successBody())
 
@@ -42,12 +41,11 @@ class OpenAiProviderTest {
         assertThat(request.path).isEqualTo("/v1/responses")
         assertThat(request.header("authorization")).isEqualTo("Bearer $TEST_API_KEY")
         assertThat(request.header("content-type")).contains("application/json")
-        assertThat(request.wireDump()).doesNotContain(RRN_IN_SOURCE)
 
         val body = json.readTree(request.body)
         assertThat(body.path("model").stringValue("")).isEqualTo(DEFAULT_OPENAI_MODEL)
         assertThat(body.path("instructions").stringValue("")).contains("[변환 규칙]")
-        assertThat(body.path("input").stringValue("")).contains("[[주민등록번호1]]")
+        assertThat(body.path("input").stringValue("")).contains("신청자")
         assertThat(body.path("max_output_tokens").asInt()).isEqualTo(4_096)
         assertThat(body.path("store").asBoolean()).isFalse()
     }
@@ -95,13 +93,12 @@ class OpenAiProviderTest {
     @Test
     @DisplayName("벤더 오류 본문과 API 키를 예외에 노출하지 않는다")
     fun `오류를 안전하게 매핑한다`() {
-        server.replyWith(status = 429, body = """{"error":{"message":"$TEST_API_KEY $RRN_IN_SOURCE"}}""")
+        server.replyWith(status = 429, body = """{"error":{"message":"$TEST_API_KEY 오류가 발생했습니다"}}""")
 
         assertThatThrownBy { provider().complete(conversionPrompt()) }
             .isInstanceOf(LlmProviderException::class.java)
             .hasMessageContaining("openai 호출 실패")
             .hasMessageNotContaining(TEST_API_KEY)
-            .hasMessageNotContaining(RRN_IN_SOURCE)
     }
 
     private fun provider(): OpenAiProvider = OpenAiProvider(settings())
@@ -114,7 +111,7 @@ class OpenAiProviderTest {
 
     private fun conversionPrompt(): LlmPrompt =
         LlmPrompt.forConversion(
-            maskText("신청자 $RRN_IN_SOURCE 님께 안내드립니다.").maskedText,
+            "신청자 님께 안내드립니다.",
             DocumentIdGenerator { "0123456789ab" },
         )
 
@@ -140,6 +137,5 @@ class OpenAiProviderTest {
 
     private companion object {
         const val TEST_API_KEY = "sk-openai-test-DO-NOT-LEAK-0123456789"
-        const val RRN_IN_SOURCE = "900101-1234567"
     }
 }

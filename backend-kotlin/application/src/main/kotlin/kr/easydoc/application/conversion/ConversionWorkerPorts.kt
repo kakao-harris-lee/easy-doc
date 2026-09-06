@@ -85,8 +85,6 @@ class ConversionWorkItem(
 /** 성공 결과를 한 UPDATE 에 실을 값. 암호문은 유스케이스가 봉인한 것이다. */
 class ConversionSuccessWrite(
     val easyText: EncryptedContent,
-    val maskedItems: EncryptedContent,
-    val missingPlaceholders: List<String>,
     val attribution: LlmAttribution,
     val usage: ConversionUsage,
 )

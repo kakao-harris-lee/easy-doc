@@ -4,7 +4,6 @@ import kr.easydoc.core.exceptions.ConfigurationException
 import kr.easydoc.core.llm.DEFAULT_MAX_TOKENS
 import kr.easydoc.core.llm.LlmOptions
 import kr.easydoc.core.security.Secret
-import kr.easydoc.infrastructure.llm.AnthropicTestSupport.RRN_IN_SOURCE
 import kr.easydoc.infrastructure.llm.AnthropicTestSupport.TEST_API_KEY
 import kr.easydoc.infrastructure.llm.AnthropicTestSupport.conversionPrompt
 import kr.easydoc.infrastructure.llm.AnthropicTestSupport.parse
@@ -37,18 +36,6 @@ class AnthropicProviderRequestTest {
 
     private fun provider(effort: AnthropicEffort? = null) =
         AnthropicProvider(settings(baseUrl = server.baseUrl, effort = effort))
-
-    @Test
-    @DisplayName("요청 본문에는 마스킹된 텍스트만 실린다")
-    fun `원문 개인정보가 전송되지 않는다`() {
-        provider().complete(conversionPrompt())
-
-        val wire = server.singleRequest().wireDump()
-        assertThat(wire)
-            .withFailMessage("마스킹 전 주민등록번호가 그대로 전송됐다 — 보안 불변식(마스킹 선행) 위반")
-            .doesNotContain(RRN_IN_SOURCE)
-        assertThat(wire).contains("[[주민등록번호1]]")
-    }
 
     @Test
     @DisplayName("한국어 본문이 UTF-8 로 왕복한다")

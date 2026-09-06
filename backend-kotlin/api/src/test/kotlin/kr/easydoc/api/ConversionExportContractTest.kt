@@ -8,16 +8,12 @@ import kr.easydoc.api.support.InMemoryConversionRepository
 import kr.easydoc.api.support.InMemoryDocumentRepository
 import kr.easydoc.api.support.InMemoryUserRepository
 import kr.easydoc.api.support.InMemoryWorkspaceRepository
-import kr.easydoc.api.support.StubMaskedItemReader
 import kr.easydoc.application.crypto.ContentCipher
 import kr.easydoc.application.document.ConversionCiphertexts
 import kr.easydoc.core.crypto.EncryptedField
 import kr.easydoc.core.crypto.PlainBody
-import kr.easydoc.core.document.MaskedItemView
 import kr.easydoc.core.document.SourceFormat
 import kr.easydoc.core.easyread.ExportFormat
-import kr.easydoc.core.privacy.MaskCategory
-import kr.easydoc.core.security.Secret
 import kr.easydoc.core.user.PasswordHash
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.DisplayName
@@ -291,46 +287,6 @@ class ConversionExportContractTest {
     }
 
     @Test
-    @DisplayName("검수 없는 초안은 자리표시자를 복원하지 않는다 — 계약 복원 보류")
-    fun `검수 전에는 원문을 넣지 않는다`() {
-        val owner = newOwner()
-        val conversionId = acceptDocument(owner).conversionId
-        val item = maskedItem()
-        complete(
-            conversionId,
-            easyText = "등록번호는 ${item.placeholder} 입니다.",
-            masked = listOf(item),
-        )
-
-        val body =
-            String(
-                export(owner, conversionId, ExportFormat.TXT.extension).contentAsByteArray,
-                StandardCharsets.UTF_8,
-            )
-
-        assertThat(body).contains(item.placeholder)
-        assertThat(body).doesNotContain(ORIGINAL)
-    }
-
-    @Test
-    @DisplayName("검수 없는 초안에서 자리표시자가 빠지면 409 · 계약 예시 missing_placeholders")
-    fun `유실된 초안은 409 다`() {
-        val owner = newOwner()
-        val conversionId = acceptDocument(owner).conversionId
-        complete(
-            conversionId,
-            easyText = "주민번호는 생략합니다",
-            masked = listOf(maskedItem()),
-        )
-
-        val response = export(owner, conversionId, format = null)
-
-        assertDeclaredStatus(response, CONFLICT)
-        assertThat(bodyOf(response)[DETAIL])
-            .isEqualTo(ContractSpec.pathExampleDetail(EXPORT_PATH, GET, CONFLICT, MISSING_EXAMPLE))
-    }
-
-    @Test
     @DisplayName("CE-5 제목의 C0·DEL·C1 이 filename* 디코딩 결과에 없다")
     fun `제어문자가 파일명에 없다`() {
         assertFilenameSanitized(forbiddenChars(CONTROL_RANGE))
@@ -465,7 +421,6 @@ class ConversionExportContractTest {
     private fun complete(
         conversionId: String,
         easyText: String,
-        masked: List<MaskedItemView> = emptyList(),
     ) {
         val id = UUID.fromString(conversionId)
         conversions.complete(
@@ -473,17 +428,8 @@ class ConversionExportContractTest {
             ciphertexts =
                 ConversionCiphertexts(
                     easyText = seal(easyText, id, EncryptedField.CONVERSION_EASY_TEXT),
-                    maskedItems =
-                        masked.takeIf { it.isNotEmpty() }?.let { items ->
-                            seal(
-                                StubMaskedItemReader.encodeForStub(items).value,
-                                id,
-                                EncryptedField.CONVERSION_MASKED_ITEMS,
-                            )
-                        },
                     editedText = null,
                 ),
-            missingPlaceholders = emptyList(),
             model = SAMPLE_MODEL,
             providerName = SAMPLE_PROVIDER,
             inputTokens = SAMPLE_TOKENS,
@@ -611,7 +557,6 @@ class ConversionExportContractTest {
         const val QUERY_LOCATION = "query"
 
         const val NOT_DONE_EXAMPLE = "not_done"
-        const val MISSING_EXAMPLE = "missing_placeholders"
         const val MISMATCH_EXAMPLE = "format_mismatch"
         const val CHOICE_REQUIRED_EXAMPLE = "export_format_choice_required"
         const val CHOICE_MISMATCH_EXAMPLE = "export_format_choice_mismatch"
@@ -626,9 +571,5 @@ class ConversionExportContractTest {
 
         val CONTROL_RANGE = 0x00..0x9F
         val RESERVED_RANGE = 0x20..0x7E
-
-        const val ORIGINAL: String = "900101-1234567"
-
-        fun maskedItem(): MaskedItemView = MaskedItemView(MaskCategory.RRN, "[[주민등록번호1]]", Secret(ORIGINAL))
     }
 }

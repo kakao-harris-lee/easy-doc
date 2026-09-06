@@ -1,7 +1,6 @@
 package kr.easydoc.infrastructure.dictionary
 
 import kr.easydoc.core.dictionary.DictionaryContextPolicy
-import kr.easydoc.core.privacy.maskText
 import kr.easydoc.infrastructure.queue.ConversionWorkerConfiguration
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.DisplayName
@@ -21,13 +20,13 @@ class DictionaryContextSourceTest {
         val holder = DictionaryIndexHolder(enabled = true) { index }
         val source = ConversionWorkerConfiguration().dictionaryContextSource(DictionaryProperties(), holder)
 
-        val context = source.contextFor(maskText(WITH_TERMS).maskedText)
+        val context = source.contextFor(WITH_TERMS)
 
         assertThat(context).isNotNull
         assertThat(context).contains("### 바꿔 쓰세요")
         assertThat(context).contains("구비서류")
 
-        val rendered = index.renderPromptContext(maskText(WITH_TERMS).maskedText.value, DictionaryProperties().policy())
+        val rendered = index.renderPromptContext(WITH_TERMS, DictionaryProperties().policy())
         assertThat(rendered.renderedTerms).isGreaterThan(0)
         assertThat(rendered.totalTerms).isGreaterThanOrEqualTo(rendered.renderedTerms)
     }
@@ -44,38 +43,36 @@ class DictionaryContextSourceTest {
             ConversionWorkerConfiguration()
                 .dictionaryContextSource(DictionaryProperties(enabled = false), holder)
 
-        assertThat(source.contextFor(maskText(WITH_TERMS).maskedText)).isNull()
+        assertThat(source.contextFor(WITH_TERMS)).isNull()
     }
 
     @Test
     @DisplayName("매칭이 0건이면 섹션 골격 대신 null 이다 — 근거 없는 지시문만 늘리지 않는다")
     fun `매칭이 없으면 주입하지 않는다`() {
         val source = IndexedDictionaryContextSource(index, DictionaryProperties().policy())
-        val masked = maskText(WITHOUT_TERMS).maskedText
 
         // 이 문장에 사전 용어가 없다는 것을 먼저 못박는다 — 색인이 바뀌어 매칭이 생기면
         // 아래 단언은 「0건이면 null」이 아니라 다른 것을 재게 된다.
-        assertThat(index.findAll(masked.value)).isEmpty()
-        assertThat(source.contextFor(masked)).isNull()
+        assertThat(index.findAll(WITHOUT_TERMS)).isEmpty()
+        assertThat(source.contextFor(WITHOUT_TERMS)).isNull()
 
         // core 는 참조 구현대로 골격을 돌려준다. 그 차이가 곧 이 어댑터의 책임이다.
-        assertThat(index.buildPromptContext(masked.value)).isNotEmpty()
+        assertThat(index.buildPromptContext(WITHOUT_TERMS)).isNotEmpty()
     }
 
     @Test
     @DisplayName("예산이 항목을 전부 밀어내면 주입하지 않는다 — 매칭 0건과 같은 이유다")
     fun `실린 항목이 없으면 주입하지 않는다`() {
         val source = IndexedDictionaryContextSource(index, DictionaryProperties().policy())
-        val masked = maskText(SHORT_WITH_TERMS).maskedText
 
         // 매칭은 **있다** — 이 경계는 「찾은 게 없다」가 아니라 「찾았는데 예산이 다 밀어냈다」다.
-        assertThat(index.findAll(masked.value)).isNotEmpty()
+        assertThat(index.findAll(SHORT_WITH_TERMS)).isNotEmpty()
 
-        val rendered = index.renderPromptContext(masked.value, DictionaryProperties().policy())
+        val rendered = index.renderPromptContext(SHORT_WITH_TERMS, DictionaryProperties().policy())
         assertThat(rendered.totalTerms).isGreaterThan(0)
         assertThat(rendered.renderedTerms).isZero()
 
-        assertThat(source.contextFor(masked)).isNull()
+        assertThat(source.contextFor(SHORT_WITH_TERMS)).isNull()
     }
 
     @Test

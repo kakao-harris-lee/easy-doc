@@ -21,10 +21,10 @@ import java.util.UUID
 /** 행 단위 재암호화의 네 조건 — 게이트 25 X5 / privacy-gate F-5. */
 class EnvelopeRotationTest {
     @Test
-    @DisplayName("옛 세대 행을 새 세대로 다시 봉인한다 — 세 열이 **한 번의** 갱신으로 바뀐다")
+    @DisplayName("옛 세대 행을 새 세대로 다시 봉인한다 — 두 열이 **한 번의** 갱신으로 바뀐다")
     fun `옛 세대를 회전한다`() {
         val world = World()
-        world.conversions.envelope = envelopeOf(OLD_VERSION, "초안", "대응표", "검수본")
+        world.conversions.envelope = envelopeOf(OLD_VERSION, "초안", "검수본")
 
         val outcome = world.rotation.rotateConversion(CONVERSION)
 
@@ -34,7 +34,6 @@ class EnvelopeRotationTest {
         assertThat(rewrite.expected.keyVersion).isEqualTo(OLD_VERSION)
         assertThat(rewrite.keyVersion).isEqualTo(NEW_VERSION)
         assertThat(rewrite.ciphertexts.easyText?.keyVersion).isEqualTo(NEW_VERSION)
-        assertThat(rewrite.ciphertexts.maskedItems?.keyVersion).isEqualTo(NEW_VERSION)
         assertThat(rewrite.ciphertexts.editedText?.keyVersion).isEqualTo(NEW_VERSION)
     }
 
@@ -42,14 +41,13 @@ class EnvelopeRotationTest {
     @DisplayName("**NULL 보존** — 대기 중 변환의 빈 열을 빈 문자열로 암호화하지 않는다")
     fun `NULL 을 보존한다`() {
         val world = World()
-        world.conversions.envelope = envelopeOf(OLD_VERSION, null, null, null)
+        world.conversions.envelope = envelopeOf(OLD_VERSION, null, null)
 
         val outcome = world.rotation.rotateConversion(CONVERSION)
 
         assertThat(outcome).isEqualTo(RotationOutcome.ROTATED)
         val rewrite = world.conversions.rewrites.single()
         assertThat(rewrite.ciphertexts.easyText).isNull()
-        assertThat(rewrite.ciphertexts.maskedItems).isNull()
         assertThat(rewrite.ciphertexts.editedText).isNull()
         assertThat(world.cipher.encryptCalls)
             .describedAs("빈 열을 암호화했다 — 없던 내용을 지어낸 것이고 되돌릴 수 없다")
@@ -61,21 +59,20 @@ class EnvelopeRotationTest {
     @DisplayName("일부만 채워진 행도 채워진 열만 다시 봉인한다")
     fun `일부만 채워진 행`() {
         val world = World()
-        world.conversions.envelope = envelopeOf(OLD_VERSION, "초안", null, null)
+        world.conversions.envelope = envelopeOf(OLD_VERSION, "초안", null)
 
         world.rotation.rotateConversion(CONVERSION)
 
         val rewrite = world.conversions.rewrites.single()
         assertThat(rewrite.ciphertexts.easyText).isNotNull()
-        assertThat(rewrite.ciphertexts.maskedItems).isNull()
         assertThat(rewrite.ciphertexts.editedText).isNull()
     }
 
     @Test
     @DisplayName("**실패 시 전체 중단** — 한 열이라도 열리지 않으면 UPDATE 를 부르지 않는다")
     fun `한 열이라도 실패하면 중단한다`() {
-        val world = World(unopenable = EncryptedField.CONVERSION_MASKED_ITEMS)
-        world.conversions.envelope = envelopeOf(OLD_VERSION, "초안", "대응표", "검수본")
+        val world = World(unopenable = EncryptedField.CONVERSION_EDITED_TEXT)
+        world.conversions.envelope = envelopeOf(OLD_VERSION, "초안", "검수본")
 
         assertThatThrownBy { world.rotation.rotateConversion(CONVERSION) }
             .isInstanceOf(DecryptionFailedException::class.java)
@@ -91,7 +88,7 @@ class EnvelopeRotationTest {
     @DisplayName("이미 쓰기 세대면 아무것도 하지 않는다 — 무의미한 재암호화가 돌지 않는다")
     fun `이미 최신이면 건너뛴다`() {
         val world = World()
-        world.conversions.envelope = envelopeOf(NEW_VERSION, "초안", null, null)
+        world.conversions.envelope = envelopeOf(NEW_VERSION, "초안", null)
 
         val outcome = world.rotation.rotateConversion(CONVERSION)
 
@@ -113,7 +110,7 @@ class EnvelopeRotationTest {
     @DisplayName("**낙관적 조건**에서 지면 CONTENDED — 잠금 전제가 성립하지 않았다는 신호다")
     fun `경합에서 지면 CONTENDED 다`() {
         val world = World()
-        world.conversions.envelope = envelopeOf(OLD_VERSION, "초안", null, null)
+        world.conversions.envelope = envelopeOf(OLD_VERSION, "초안", null)
         world.conversions.updated = false
 
         assertThat(world.rotation.rotateConversion(CONVERSION)).isEqualTo(RotationOutcome.CONTENDED)
@@ -123,7 +120,7 @@ class EnvelopeRotationTest {
     @DisplayName("쓰기 조건이 **읽어 온 행 그 자체**다 — 세대 정수 하나로 좁혀지지 않는다")
     fun `쓰기 조건이 읽은 행 전부다`() {
         val world = World()
-        val loaded = envelopeOf(OLD_VERSION, "초안", "대응표", null)
+        val loaded = envelopeOf(OLD_VERSION, "초안", null)
         world.conversions.envelope = loaded
 
         world.rotation.rotateConversion(CONVERSION)
@@ -134,7 +131,6 @@ class EnvelopeRotationTest {
                 .expected
         assertThat(expected).isSameAs(loaded)
         assertThat(expected.ciphertexts.easyText).isEqualTo(loaded.ciphertexts.easyText)
-        assertThat(expected.ciphertexts.maskedItems).isEqualTo(loaded.ciphertexts.maskedItems)
         assertThat(expected.ciphertexts.editedText)
             .describedAs("비어 있던 열의 `null` 도 조건이다 — 「비었다」가 「채워졌다」로 바뀐 것이 잡아야 할 사건이다")
             .isNull()
@@ -144,13 +140,12 @@ class EnvelopeRotationTest {
     @DisplayName("복호화·재암호화가 **행 식별자와 컬럼에 결속**된 채로 돈다")
     fun `결속을 유지한 채 회전한다`() {
         val world = World()
-        world.conversions.envelope = envelopeOf(OLD_VERSION, "초안", "대응표", "검수본")
+        world.conversions.envelope = envelopeOf(OLD_VERSION, "초안", "검수본")
 
         world.rotation.rotateConversion(CONVERSION)
 
         assertThat(world.cipher.bindings).containsExactlyInAnyOrder(
             CONVERSION to EncryptedField.CONVERSION_EASY_TEXT,
-            CONVERSION to EncryptedField.CONVERSION_MASKED_ITEMS,
             CONVERSION to EncryptedField.CONVERSION_EDITED_TEXT,
         )
     }
@@ -404,7 +399,6 @@ class EnvelopeRotationTest {
                 EncryptedField.DOCUMENT_ORIGINAL_BYTES -> world.rotation.rotateDocumentOriginal(DOCUMENT)
 
                 EncryptedField.CONVERSION_EASY_TEXT,
-                EncryptedField.CONVERSION_MASKED_ITEMS,
                 EncryptedField.CONVERSION_EDITED_TEXT,
                 -> world.rotation.rotateConversion(CONVERSION)
 
@@ -447,7 +441,6 @@ class EnvelopeRotationTest {
         fun envelopeOf(
             keyVersion: Int,
             easy: String?,
-            masked: String?,
             edited: String?,
         ) = ConversionEnvelope(
             conversionId = CONVERSION,
@@ -456,7 +449,6 @@ class EnvelopeRotationTest {
             ciphertexts =
                 ConversionCiphertexts(
                     easyText = easy?.let { sealed(it, keyVersion) },
-                    maskedItems = masked?.let { sealed(it, keyVersion) },
                     editedText = edited?.let { sealed(it, keyVersion) },
                 ),
         )
@@ -487,7 +479,7 @@ class EnvelopeRotationTest {
         fun sealEverythingAtOldVersion() {
             documents.sourceText = sealed("원문", OLD_VERSION)
             originals.original = sealedBytes(ORIGINAL_FILE, OLD_VERSION)
-            conversions.envelope = envelopeOf(OLD_VERSION, "초안", "대응표", "검수본")
+            conversions.envelope = envelopeOf(OLD_VERSION, "초안", "검수본")
             feedback.comment = sealed("의견", OLD_VERSION)
         }
     }

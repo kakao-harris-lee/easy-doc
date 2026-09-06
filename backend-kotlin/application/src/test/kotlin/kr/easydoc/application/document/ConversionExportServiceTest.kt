@@ -4,17 +4,13 @@ import kr.easydoc.core.crypto.EncryptedField
 import kr.easydoc.core.crypto.PlainBody
 import kr.easydoc.core.crypto.PlainBytes
 import kr.easydoc.core.document.ConversionStatus
-import kr.easydoc.core.document.MaskedItemView
 import kr.easydoc.core.document.SourceFormat
 import kr.easydoc.core.easyread.ExportFile
 import kr.easydoc.core.easyread.ExportFormat
-import kr.easydoc.core.easyread.exportContentLines
 import kr.easydoc.core.easyread.exportFileOf
 import kr.easydoc.core.exceptions.ConflictException
 import kr.easydoc.core.exceptions.NotFoundException
 import kr.easydoc.core.exceptions.StorageException
-import kr.easydoc.core.privacy.MaskCategory
-import kr.easydoc.core.security.Secret
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.DisplayName
@@ -22,7 +18,7 @@ import org.junit.jupiter.api.Test
 import java.time.Instant
 import java.util.UUID
 
-/** 내보내기 유스케이스 — HTTP·zip 없이 판정과 복원만 잰다. */
+/** 내보내기 유스케이스 — HTTP·zip 없이 판정만 잰다. */
 class ConversionExportServiceTest {
     @Test
     @DisplayName("남의 변환과 없는 변환이 **같은 404·같은 문구**다")
@@ -55,100 +51,30 @@ class ConversionExportServiceTest {
     }
 
     @Test
-    @DisplayName("검수본이 없고 자리표시자가 빠졌으면 409 — 초안을 그대로 배포하지 않는다")
-    fun `유실된 초안은 막는다`() {
+    @DisplayName("검수본이 없으면 초안을 그대로 내보낸다")
+    fun `검수본이 없으면 초안 그대로다`() {
         val world = World()
         val conversionId = UUID.randomUUID()
-        world.seedDone(
-            conversionId,
-            Seed(easyText = "주민번호는 생략합니다", masked = listOf(item())),
-        )
+        world.seedDone(conversionId, Seed(easyText = "쉬운 글 초안"))
 
-        assertThatThrownBy { world.export(conversionId) }
-            .isInstanceOf(ConflictException::class.java)
-            .hasMessage(EXPORT_MISSING_PLACEHOLDERS_MESSAGE)
-        assertThat(world.exporter.calls).isEmpty()
+        val file = world.export(conversionId)
+
+        assertThat(String(file.content, Charsets.UTF_8)).isEqualTo("쉬운 글 초안")
     }
 
     @Test
-    @DisplayName("검수 없는 초안은 자리표시자를 **복원하지 않는다** — 위조 주입을 막는다")
-    fun `검수 전에는 원문을 넣지 않는다`() {
+    @DisplayName("검수본이 있으면 검수본을 내보낸다 — 초안은 버려진다")
+    fun `검수본이 있으면 검수본을 내보낸다`() {
         val world = World()
         val conversionId = UUID.randomUUID()
         world.seedDone(
             conversionId,
-            Seed(easyText = "등록번호는 $PLACEHOLDER 입니다.", masked = listOf(item())),
+            Seed(easyText = "버려질 초안", editedText = "검수본입니다."),
         )
 
         val file = world.export(conversionId)
 
-        assertThat(String(file.content, Charsets.UTF_8)).isEqualTo("등록번호는 $PLACEHOLDER 입니다.")
-        assertThat(String(file.content, Charsets.UTF_8)).doesNotContain(ORIGINAL)
-    }
-
-    @Test
-    @DisplayName("검수본이 있으면 자리표시자를 원문으로 되돌린다 — 이 경로만 복원한다")
-    fun `검수본은 복원한다`() {
-        val world = World()
-        val conversionId = UUID.randomUUID()
-        world.seedDone(
-            conversionId,
-            Seed(
-                easyText = "버려질 초안 $PLACEHOLDER",
-                editedText = "검수본 $PLACEHOLDER 입니다.",
-                masked = listOf(item()),
-            ),
-        )
-
-        val file = world.export(conversionId)
-
-        assertThat(String(file.content, Charsets.UTF_8)).isEqualTo("검수본 $ORIGINAL 입니다.")
-    }
-
-    /**
-     * 자리표시자가 **줄 하나를 통째로** 차지하는 경우 — S6-2 의 「빈 줄 투영」(계획 §10.2 3항)이
-     * `segment_map` 을 유도할 때 본 줄 수(빈 줄 제거 전)와 복원 후 내보내기가 셀 줄 수(빈 줄
-     * 제거 후)가 어긋나지 않는다는 불변식에 기댄다. 자리표시자 복원은 텍스트 치환일 뿐 줄
-     * 경계를 건드리지 않으므로, 복원 전후로 `exportContentLines` 가 세는 문단 수가 같아야
-     * 한다 — 자리표시자도 실제 값도 둘 다 빈 줄이 아니기 때문이다.
-     */
-    @Test
-    @DisplayName("자리표시자가 줄 전체를 차지해도 복원 전후 문단 수가 같다")
-    fun `자리표시자 전용 줄은 복원해도 문단 수가 같다`() {
-        val world = World()
-        val conversionId = UUID.randomUUID()
-        val beforeRestore = "첫 문단\n$PLACEHOLDER\n셋째 문단"
-        world.seedDone(
-            conversionId,
-            Seed(easyText = "버려질 초안", editedText = beforeRestore, masked = listOf(item())),
-        )
-
-        val file = world.export(conversionId)
-        val afterRestore = String(file.content, Charsets.UTF_8)
-
-        assertThat(afterRestore).isEqualTo("첫 문단\n$ORIGINAL\n셋째 문단")
-        assertThat(exportContentLines(afterRestore))
-            .describedAs("자리표시자 복원이 문단 경계를 바꾸면 안 된다 — S6-2 투영이 기대는 불변식")
-            .hasSameSizeAs(exportContentLines(beforeRestore))
-    }
-
-    @Test
-    @DisplayName("검수본이 있으면 자리표시자가 빠져도 막지 않는다 — 최종 판단은 담당자 몫이다")
-    fun `검수본의 유실은 막지 않는다`() {
-        val world = World()
-        val conversionId = UUID.randomUUID()
-        world.seedDone(
-            conversionId,
-            Seed(
-                easyText = "초안 $PLACEHOLDER",
-                editedText = "담당자가 개인정보를 빼고 다듬은 글입니다.",
-                masked = listOf(item()),
-            ),
-        )
-
-        val file = world.export(conversionId)
-
-        assertThat(String(file.content, Charsets.UTF_8)).isEqualTo("담당자가 개인정보를 빼고 다듬은 글입니다.")
+        assertThat(String(file.content, Charsets.UTF_8)).isEqualTo("검수본입니다.")
     }
 
     @Test
@@ -369,16 +295,15 @@ class ConversionExportServiceTest {
     }
 
     @Test
-    @DisplayName("반영에는 **복원된 본문**이 간다 — 자리표시자 규칙은 한 벌이다")
-    fun `반영에 복원된 본문이 간다`() {
+    @DisplayName("반영에는 검수본이 간다 — 검수본이 있으면 초안 대신 그것을 반영한다")
+    fun `반영에 검수본이 간다`() {
         val world = World()
         val conversionId = UUID.randomUUID()
         world.seedDone(
             conversionId,
             Seed(
-                easyText = "초안 $PLACEHOLDER",
-                editedText = "검수본 $PLACEHOLDER",
-                masked = listOf(item()),
+                easyText = "버려질 초안",
+                editedText = "검수본입니다.",
                 sourceFormat = SourceFormat.HWPX,
             ),
         )
@@ -387,7 +312,7 @@ class ConversionExportServiceTest {
 
         world.export(conversionId)
 
-        assertThat(world.reflector.bodies).containsExactly("검수본 $ORIGINAL")
+        assertThat(world.reflector.bodies).containsExactly("검수본입니다.")
     }
 
     @Test
@@ -422,7 +347,6 @@ class ConversionExportServiceTest {
     private class World {
         val transaction = RecordingTransactionRunner()
         val cipher = FakeContentCipher(writeKeyVersion = 1, transaction = transaction)
-        val maskedItems = RecordingMaskedItemReader()
         val exporter = RecordingDocumentExporter(transaction)
         val originals = FakeDocumentOriginalRepository(transaction)
         val conversions = FakeConversionRepository(transaction, originals)
@@ -433,14 +357,13 @@ class ConversionExportServiceTest {
             ConversionExportService(
                 conversions = conversions,
                 cipher = cipher,
-                maskedItems = maskedItems,
                 rendering =
                     ExportRendering(
                         OriginalReflection(StoredOriginalReader(originals, cipher), reflector),
                         exporter,
                     ),
                 documents = documents,
-                segmentMapDerivation = MaskedSegmentMapDerivation(cipher),
+                segmentMapDerivation = DefaultSegmentMapDerivation(cipher),
                 transaction = transaction,
             )
 
@@ -465,23 +388,16 @@ class ConversionExportServiceTest {
                     ciphertexts =
                         ConversionCiphertexts(
                             easyText = seal(body.easyText, EncryptedField.CONVERSION_EASY_TEXT),
-                            maskedItems =
-                                seal(
-                                    body.masked.takeIf { it.isNotEmpty() }?.joinToString("\n") { it.placeholder },
-                                    EncryptedField.CONVERSION_MASKED_ITEMS,
-                                ),
                             editedText = seal(body.editedText, EncryptedField.CONVERSION_EDITED_TEXT),
                         ),
                     reviewedAt = if (body.editedText == null) null else Instant.EPOCH,
                     feedbackSubmittedAt = null,
-                    missingPlaceholders = emptyList(),
                     model = "test-model",
                     providerName = "fake",
                     inputTokens = 1,
                     outputTokens = 1,
                     failureCode = null,
                 )
-            maskedItems.byPlaceholder = body.masked.associateBy { it.placeholder }
         }
 
         /**
@@ -520,24 +436,9 @@ class ConversionExportServiceTest {
     private data class Seed(
         val easyText: String? = null,
         val editedText: String? = null,
-        val masked: List<MaskedItemView> = emptyList(),
         val status: ConversionStatus = ConversionStatus.DONE,
         val sourceFormat: SourceFormat = SourceFormat.TEXT,
     )
-
-    /** 자리표시자 한 줄을 항목으로 되살린다. 원값은 [byPlaceholder] 가 정한다. */
-    private class RecordingMaskedItemReader : MaskedItemReader {
-        var byPlaceholder: Map<String, MaskedItemView> = emptyMap()
-
-        override fun decode(body: PlainBody): List<MaskedItemView> =
-            body.value
-                .lineSequence()
-                .filter { it.isNotBlank() }
-                .map { placeholder ->
-                    byPlaceholder[placeholder]
-                        ?: MaskedItemView(MaskCategory.RRN, placeholder, Secret("가린값"))
-                }.toList()
-    }
 
     private class RecordingDocumentExporter(private val transaction: RecordingTransactionRunner) : DocumentExporter {
         data class Call(
@@ -563,12 +464,8 @@ class ConversionExportServiceTest {
     private companion object {
         val OWNER: UUID = UUID.fromString("11111111-1111-1111-1111-111111111111")
         val STRANGER: UUID = UUID.fromString("22222222-2222-2222-2222-222222222222")
-        const val PLACEHOLDER: String = "[[주민등록번호1]]"
-        const val ORIGINAL: String = "900101-1234567"
 
         /** 원본 자리에 둘 바이트. 대역 반영기가 열지 않으므로 내용은 아무래도 좋다. */
         val ORIGINAL_BYTES: ByteArray = "원본 바이트".toByteArray()
-
-        fun item(): MaskedItemView = MaskedItemView(MaskCategory.RRN, PLACEHOLDER, Secret(ORIGINAL))
     }
 }

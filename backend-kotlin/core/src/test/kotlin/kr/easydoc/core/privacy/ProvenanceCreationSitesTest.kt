@@ -25,7 +25,7 @@ class ProvenanceCreationSitesTest {
 
         /** provenance 래퍼가 선언된 파일. 감시 대상 자기 대조가 여기를 읽는다. */
         const val PROVENANCE_DECLARATION_FILE =
-            "core/src/main/kotlin/kr/easydoc/core/privacy/Masking.kt"
+            "core/src/main/kotlin/kr/easydoc/core/privacy/DocumentBody.kt"
 
         /** 생성 지점 허용목록. 키는 타입 이름, 값은 `backend-kotlin` 기준 상대 경로 → 호출 수. */
         val ALLOWED: Map<String, Map<String, Int>> =
@@ -33,20 +33,16 @@ class ProvenanceCreationSitesTest {
                 "ModelDraft" to
                     mapOf(
                         "application/src/main/kotlin/kr/easydoc/application/conversion/ConvertDocumentUseCase.kt" to 2,
-                        "application/src/main/kotlin/kr/easydoc/application/document/ConversionExportService.kt" to 1,
                         "core/src/test/kotlin/kr/easydoc/core/easyread/PromptInjectionGuardTest.kt" to 7,
                         "core/src/test/kotlin/kr/easydoc/core/easyread/PromptTextSnapshotTest.kt" to 1,
                         "core/src/test/kotlin/kr/easydoc/core/easyread/PromptsTest.kt" to 6,
                         "core/src/test/kotlin/kr/easydoc/core/llm/LlmPromptTest.kt" to 2,
-                        "core/src/test/kotlin/kr/easydoc/core/privacy/MaskingTest.kt" to 10,
                     ),
                 "ReviewedBody" to
                     mapOf(
                         "api/src/main/kotlin/kr/easydoc/api/document/ConversionController.kt" to 1,
-                        "application/src/main/kotlin/kr/easydoc/application/document/ConversionExportService.kt" to 1,
                         "application/src/test/kotlin/kr/easydoc/application/document/" +
                             "ConversionReviewServiceTest.kt" to 1,
-                        "core/src/test/kotlin/kr/easydoc/core/privacy/MaskingTest.kt" to 4,
                         "infrastructure/src/test/kotlin/kr/easydoc/infrastructure/document/" +
                             "EnvelopeRotationConcurrencyTest.kt" to 1,
                     ),
@@ -76,7 +72,7 @@ class ProvenanceCreationSitesTest {
                 .withFailMessage {
                     "$type 을 허용목록 밖에서 만든다: ${unexpected.sorted()}\n" +
                         "  이 목록은 privacy-gate 판정 X-5 의 수용 조건이다. 줄을 더하기 전에 " +
-                        "Masking.kt 의 「provenance 래퍼 사용 규약」을 읽어라 — " +
+                        "DocumentBody.kt 의 「provenance 래퍼 사용 규약」을 읽어라 — " +
                         "특히 ReviewedBody 는 사람이 제출한 edited_text 를 읽는 어댑터 한 곳뿐이다."
                 }.isEmpty()
         }

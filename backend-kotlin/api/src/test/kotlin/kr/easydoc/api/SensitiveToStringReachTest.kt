@@ -40,7 +40,7 @@ class SensitiveToStringReachTest {
             .withFailMessage {
                 "값을 감싸는 타입 판정이 아래에 닿지 않는다: " +
                     "${KNOWN_TEXT_WRAPPERS - probes.wrapperProbes.map { it.type.simpleName }.toSet()}\n" +
-                    "  `MaskingResult` 가 여기 없으면 A-3′(value-class-first 탈락)가 되살아난 것이다."
+                    "  `ModelDraft` 가 여기 없으면 A-3′(value-class-first 탈락)가 되살아난 것이다."
             }.containsAll(KNOWN_TEXT_WRAPPERS)
     }
 
@@ -54,7 +54,7 @@ class SensitiveToStringReachTest {
                 "아래 data class 의 toString() 이 사용자 콘텐츠·개인정보를 그대로 찍는다:\n" +
                     leaking.joinToString("\n") { "  - $it" } +
                     "\n  `override fun toString()` 으로 값 대신 길이·표식을 내라 " +
-                    "(`Workspace`·`User`·`PlaceholderRestoration` 가 예시다).\n" +
+                    "(`Workspace`·`User`·`RepairPrompt` 가 예시다).\n" +
                     "  **직렬화는 가리지 않는다** — 계약이 required 로 둔 필드는 JSON 에 그대로 나가야 한다."
             }.isEmpty()
     }
@@ -68,10 +68,10 @@ class SensitiveToStringReachTest {
             .withFailMessage {
                 "아래 타입이 감싼 값을 toString() 으로 그대로 내보낸다:\n" +
                     leaking.joinToString("\n") { "  - $it" } +
-                    "\n  이 저장소는 본문·비밀을 래퍼 타입으로 감싸고(`MaskedText`·`ModelDraft`·" +
+                    "\n  이 저장소는 본문·비밀을 래퍼 타입으로 감싸고(`ModelDraft`·" +
                     "`ReviewedBody`·`Secret`), **감싼 쪽이 가린다**는 전제로 그 필드를 든 DTO 를 안전하다고 본다.\n" +
                     "  `@JvmInline value class` 는 컴파일러가 `toString()` 을 만들어 주므로 재정의가 없으면 " +
-                    "값이 그대로 나온다 — 길이만 남기는 재정의를 붙여라(`Masking.kt` 「value class 와 toString」 절)."
+                    "값이 그대로 나온다 — 길이만 남기는 재정의를 붙여라(`DocumentBody.kt` 「value class 와 toString」 절)."
             }.isEmpty()
     }
 
@@ -332,8 +332,15 @@ class SensitiveToStringReachTest {
          * 같은 판단)와 infrastructure `PasswordResetProperties`(TTL·쿨다운·시도 상한
          * 숫자뿐, `EmailVerificationProperties`와 같은 이유로 [KNOWN_SENSITIVE_TYPES] 에
          * 넣지 않는다).
+         *
+         * 마스킹 제거(제품 결정, 2026-09-07 — 공공 배포 문서에는 개인정보가 없다)가
+         * **여섯**을 없애 126 이다(132 아래) — core `MaskedText`(value class)·
+         * `MaskingResult`·`MaskedItem`·`PlaceholderRestoration`(data class 셋),
+         * core.document `MaskedItemView`, api `MaskedItemResponse`. 마스킹 개념 자체가
+         * 코드에서 사라졌으므로 [KNOWN_SENSITIVE_TYPES]·[KNOWN_TEXT_WRAPPERS] 에서도
+         * 함께 뺐다.
          */
-        const val EXPECTED_SOURCE_DECLARATIONS = 132
+        const val EXPECTED_SOURCE_DECLARATIONS = 126
 
         /** 민감 판정이 반드시 닿아야 하는 타입 — 바닥이다. */
         val KNOWN_SENSITIVE_TYPES =
@@ -343,8 +350,6 @@ class SensitiveToStringReachTest {
                 "SentenceIssue",
                 "RepairPrompt",
                 "LlmCompletion",
-                "PlaceholderRestoration",
-                "MaskingResult",
                 "Body",
                 "Adoption",
                 "SignupRequest",
@@ -358,7 +363,6 @@ class SensitiveToStringReachTest {
         /** 값을 감싸는 타입 판정이 반드시 닿아야 하는 것 — 역시 바닥이다. */
         val KNOWN_TEXT_WRAPPERS =
             listOf(
-                "MaskedText",
                 "ModelDraft",
                 "ReviewedBody",
                 "Secret",

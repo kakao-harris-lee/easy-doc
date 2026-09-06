@@ -75,7 +75,7 @@ data class UserIdentityResponse(
     /**
      * 길이만 남긴다. `provider` 자체는 공개 enum 값(`google`)이라 개인정보는 아니지만,
      * 필드 하나짜리 래퍼 DTO 는 `SensitiveToStringReachTest` 가 "감싼 쪽이 가린다"
-     * 전제로 기계적으로 재는 대상이다 — `WorkspaceNameRequest`·`MaskedText` 와 같은 이유.
+     * 전제로 기계적으로 재는 대상이다 — `WorkspaceNameRequest`·`ModelDraft` 와 같은 이유.
      */
     override fun toString(): String = "UserIdentityResponse(${provider.length}자)"
 

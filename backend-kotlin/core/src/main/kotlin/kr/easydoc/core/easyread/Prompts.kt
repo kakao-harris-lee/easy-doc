@@ -1,6 +1,5 @@
 package kr.easydoc.core.easyread
 
-import kr.easydoc.core.privacy.MaskedText
 import kr.easydoc.core.privacy.ModelDraft
 import kr.easydoc.core.privacy.UserContent
 import java.security.SecureRandom
@@ -26,11 +25,8 @@ import java.util.HexFormat
 // 박아 두면 모델에게 지키라고 시킨 수치와 결과를 채점하는 수치가 갈라지고, 통과율이
 // 모델 실력이 아니라 두 기준의 차이를 재게 된다.
 //
-// ## 입력은 반드시 마스킹을 거친다
-//
 // 이 파일이 만드는 문자열이 그대로 LLM 페이로드가 된다 — 사용자 본문이 외부로 나가는
-// 자리다. 그래서 본문을 받는 함수는 [MaskedText] 만 받는다. 원문 `String` 오버로드를
-// 만들지 않는 것이 그 타입이 존재하는 이유 전부다(`Masking.kt` KDoc).
+// 자리다.
 
 /** 원문 구간 구분자 이름. */
 const val DOCUMENT_TAG_NAME = "문서"
@@ -173,19 +169,6 @@ internal const val EXPLAIN_INSTRUCTION =
         "무엇을 가리키는지 원문만으로 알 수 없으면 설명을 지어내지 말고, " +
         "원문에 있는 만큼만 쉬운 말로 적으세요."
 
-/** 마스킹 플레이스홀더가 변형되면 검수 화면에서 원문 복원이 깨진다. */
-const val PLACEHOLDER_INSTRUCTION =
-    "`[[`와 `]]`로 감싸인 표시(예: [[주민등록번호1]])는 개인정보 자리표시자입니다. " +
-        "글자 하나 바꾸지 말고 그대로 유지하세요. " +
-        "자리표시자를 지우거나 다른 말로 풀어 쓰면 안 됩니다. " +
-        "원문에 있던 자리표시자는 개수까지 그대로 결과에 남아 있어야 합니다. " +
-        "민감한 정보처럼 보여도 지우지 마세요. 실제 개인정보는 이미 가려져 있습니다. " +
-        "자리표시자는 읽는 사람에게 주는 정보가 아니라 나중에 원문을 되살리는 표시입니다. " +
-        "읽기 쉽게 만들려고 지우면 원문을 되살릴 수 없으니, 쉬운 글 규칙보다 이 규칙이 먼저입니다.\n" +
-        "가장 자주 실수하는 자리는 괄호 안 예시입니다. 괄호는 풀되 자리표시자는 반드시 남기세요. " +
-        "예: '번호(예: [[주민등록번호1]])를 적으세요' → " +
-        "'번호를 적으세요. 예를 들면 [[주민등록번호1]]입니다.'"
-
 /** 모델은 한 번에 다 지키지 못한다 — 출력 직전에 스스로 훑고 고치게 한다. */
 internal val SELF_CHECK_INSTRUCTION =
     "출력하기 전에 아래를 스스로 확인하고, 어긋나는 곳은 고친 뒤에 최종 결과만 출력하세요.\n" +
@@ -196,15 +179,13 @@ internal val SELF_CHECK_INSTRUCTION =
         "문장을 자연스럽게 다시 써서 없앤다. " +
         "반대로 괄호 안 뜻풀이를 그대로 끼워 넣어 어색해진 문장은 없는가? " +
         "'주는 것 받으세요'·'받음 기간'처럼 말이 되지 않는 자리가 있으면 그 문장을 다시 쓴다.\n" +
-        "4. 자리표시자를 하나도 빠뜨리지 않았는가? " +
-        "원문의 `[[ ]]` 개수와 결과의 `[[ ]]` 개수가 같아야 한다.\n" +
-        "5. 원문에 나온 숫자를 하나도 빠뜨리지 않았는가? " +
+        "4. 원문에 나온 숫자를 하나도 빠뜨리지 않았는가? " +
         "원문의 숫자 개수와 결과의 숫자 개수가 같아야 하고, " +
         "숫자 앞뒤에 붙은 낱말(주기·나이·단위를 나타내는 말)도 원문 표기 그대로여야 한다.\n" +
-        "6. 원문의 대상 조건과 신청 방법이 모두 남아 있는가?\n" +
-        "7. 그 분야를 모르는 사람이 읽으면 뜻을 알 수 없는 말이 남아 있지 않은가? " +
+        "5. 원문의 대상 조건과 신청 방법이 모두 남아 있는가?\n" +
+        "6. 그 분야를 모르는 사람이 읽으면 뜻을 알 수 없는 말이 남아 있지 않은가? " +
         "목록에 없던 말이라도 남아 있으면 그것이 무엇인지 풀어서 알려 준다.\n" +
-        "8. 반대로 원문에 없는 말을 지어내지 않았는가? " +
+        "7. 반대로 원문에 없는 말을 지어내지 않았는가? " +
         "원문에 없는 날짜·금액·기간·나이·비율·자격·조건·연락처나 " +
         "원문에 없는 꾸미는 말이 새로 들어갔으면 지운다."
 
@@ -316,9 +297,9 @@ private fun renderStyleRules(): String =
         .joinToString("\n")
 
 /** 스타일 규칙 SSOT 를 순회해 시스템 프롬프트를 생성한다. */
-fun buildSystemPrompt(maskedText: MaskedText): String {
+fun buildSystemPrompt(documentText: String): String {
     val rules = renderStyleRules()
-    val always = renderReplacements(findDifficultWords(maskedText.value))
+    val always = renderReplacements(findDifficultWords(documentText))
     val conditional = renderReplacements(PROMPT_ONLY_WORDS)
     // 절 사이는 빈 줄 하나로 띄운다. 목록이 비어 있으면(문서에 어려운 낱말이 없으면)
     // 그 자리에 빈 줄이 하나 더 생기는데, 그것까지 스냅샷이 고정한 값이다.
@@ -332,7 +313,6 @@ fun buildSystemPrompt(maskedText: MaskedText): String {
         // 두 목록 절 **뒤에** 둔다. "위 목록은 전부가 아니다"로 시작하는 지시라
         // 목록보다 앞에 오면 가리키는 대상이 없다.
         "[낯선 말 풀어 설명하기]\n$EXPLAIN_INSTRUCTION",
-        "[개인정보 표시]\n$PLACEHOLDER_INSTRUCTION",
         "[문서 취급]\n$INJECTION_GUARD",
         "[출력 전 자가 점검]\n$SELF_CHECK_INSTRUCTION",
         "[출력 형식]\n$OUTPUT_INSTRUCTION",
@@ -343,7 +323,7 @@ fun buildSystemPrompt(maskedText: MaskedText): String {
 private const val SECTION_SEPARATOR = "\n\n"
 
 /**
- * 마스킹된 원문을 난수 id 구분자로 감싸 변환을 지시한다.
+ * 문서 원문을 난수 id 구분자로 감싸 변환을 지시한다.
  *
  * [dictionaryContext] 는 이 문서에만 해당하는 사전 지침 블록이다. 세 가지가 이 인자의 계약이다.
  *
@@ -358,7 +338,7 @@ private const val SECTION_SEPARATOR = "\n\n"
  *    이으면 이음매의 빈 줄 수가 파일마다 달라진다.
  */
 fun buildUserPrompt(
-    maskedText: MaskedText,
+    documentText: String,
     documentIds: DocumentIdGenerator = SecureDocumentIds,
     dictionaryContext: String? = null,
 ): String {
@@ -367,7 +347,7 @@ fun buildUserPrompt(
     val context = if (trimmed == null) "" else trimmed + SECTION_SEPARATOR
     return context +
         "<$DOCUMENT_TAG_NAME id=\"$documentId\">\n" +
-        "${maskedText.value}\n" +
+        "$documentText\n" +
         "</$DOCUMENT_TAG_NAME id=\"$documentId\">\n\n" +
         "위 문서를 쉬운 글로 바꿔 주세요."
 }
@@ -437,7 +417,6 @@ fun buildRepairPrompt(
             REPAIR_ROLE,
             "[지켜야 할 규칙]\n$rules",
             "[고치는 방법]\n$REPAIR_INSTRUCTION",
-            "[개인정보 표시]\n$PLACEHOLDER_INSTRUCTION",
             "[문서 취급]\n$INJECTION_GUARD",
             if (missingFacts.isEmpty()) null else "[빠진 사실 취급]\n$MISSING_FACTS_GUARD",
             "[출력 형식]\n$OUTPUT_INSTRUCTION",

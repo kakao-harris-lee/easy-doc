@@ -127,9 +127,9 @@ describe('변환 폴링', () => {
   /**
    * 여기서 재는 것은 "완료 표시를 아끼는가"다.
    *
-   * 서버는 `pending`·`processing`만 주고 마스킹·LLM 변환 중 어디인지는 알려주지 않는다.
-   * 그런데 네 단계를 보여주는 화면은 진행률 막대처럼 앞 단계를 하나씩 채우고 싶어진다 —
-   * 그 순간 화면은 서버가 말한 적 없는 사실("개인정보 확인이 끝났다")을 단정하게 된다.
+   * 서버는 `pending`·`processing`만 주고 그 안의 어디까지 진행됐는지는 알려주지 않는다.
+   * 그런데 세 단계를 보여주는 화면은 진행률 막대처럼 앞 단계를 하나씩 채우고 싶어진다 —
+   * 그 순간 화면은 서버가 말한 적 없는 사실을 단정하게 된다.
    * 이 테스트가 깨진다면 그 되돌림이 일어난 것이므로, 통과시키려고 기대값을 고치지 말고
    * 단계 표시를 되돌려라(ConversionStages의 주석 참고).
    */
@@ -142,15 +142,12 @@ describe('변환 폴링', () => {
     await act(async () => {})
     // pending: 접수만 끝났고 그 뒤는 아직 시작조차 하지 않았다.
     expect(stage('문서 접수')).toHaveTextContent('완료')
-    expect(stage('개인정보 확인')).not.toHaveTextContent('완료')
     expect(stage('쉬운 글 변환')).not.toHaveTextContent('완료')
     expect(stage('검수 준비')).not.toHaveTextContent('완료')
 
     await tick()
-    // processing: 일이 돌고 있다는 것만 알 뿐 어느 단계인지는 모른다 — 앞 단계를 완료로
-    // 찍지 않고 두 단계를 함께 '진행 중'으로 둔다.
-    expect(stage('개인정보 확인')).toHaveTextContent('진행 중')
-    expect(stage('개인정보 확인')).not.toHaveTextContent('완료')
+    // processing: 일이 돌고 있다는 것만 알 뿐 어디까지 됐는지는 모른다 — 앞 단계를 완료로
+    // 찍지 않고 '진행 중'으로 둔다.
     expect(stage('쉬운 글 변환')).toHaveTextContent('진행 중')
     expect(stage('검수 준비')).not.toHaveTextContent('완료')
   })

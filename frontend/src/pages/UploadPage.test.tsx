@@ -567,15 +567,6 @@ describe('업로드 화면', () => {
     expect(screen.queryByRole('complementary', { name: '다음 할 일' })).not.toBeInTheDocument()
   })
 
-  it('안내 카드는 개인정보 2종만 가린다고 알린다', () => {
-    renderPage()
-
-    const guide = screen.getByRole('region', { name: '이 작업에서 일어나는 일' })
-    expect(within(guide).getByText('개인정보 2종 가림')).toBeInTheDocument()
-    expect(within(guide).getByText(/주민등록번호와 카드번호/)).toBeInTheDocument()
-    // 계약이 가리는 범주는 2종뿐이다 — 없는 보호를 약속하지 않는다.
-    expect(within(guide).queryByText(/전화번호|이메일/)).not.toBeInTheDocument()
-  })
   /**
    * §6.5 마지막 문단 — PDF 로 올린 결과를 PDF 로 다시 받을 수 없다는 사실은 **올리기 전에**
    * 알려야 한다. 겁주지 않는다: 업로드·변환·검수는 그대로 되고 못 하는 것은 내려받기 하나다.

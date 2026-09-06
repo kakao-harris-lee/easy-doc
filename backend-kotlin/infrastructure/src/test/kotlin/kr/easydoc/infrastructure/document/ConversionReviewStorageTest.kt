@@ -148,7 +148,6 @@ class ConversionReviewStorageTest {
             ciphertexts =
                 ConversionCiphertexts(
                     easyText = envelope.ciphertexts.easyText,
-                    maskedItems = envelope.ciphertexts.maskedItems,
                     editedText =
                         cipher.encrypt(
                             PlainBody(EDITED_BODY),

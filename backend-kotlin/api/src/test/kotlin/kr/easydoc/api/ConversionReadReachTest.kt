@@ -10,12 +10,8 @@ import kr.easydoc.core.crypto.PlainBody
 import kr.easydoc.core.document.ConversionStatus
 import kr.easydoc.core.document.FormatPreservationStatus
 import kr.easydoc.core.document.SourceFormat
-import kr.easydoc.core.privacy.MaskCategory
-import kr.easydoc.core.privacy.MaskedItem
-import kr.easydoc.core.security.Secret
 import kr.easydoc.infrastructure.DatabaseHandle
 import kr.easydoc.infrastructure.PostgresTestSupport
-import kr.easydoc.infrastructure.document.MaskedItemCodec
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
@@ -72,35 +68,7 @@ class ConversionReadReachTest {
         assertThat(observed.toSet()).isEqualTo(declaredStatuses.toSet())
     }
 
-    @Test
-    @DisplayName("CR-3 완료 전 상태에서 배열 필드 둘이 `null` 이 아니라 **빈 배열**이다 (X-E3)")
-    fun `완료 전에는 빈 배열이다`() {
-        val token = newAccount()
-        val beforeDone = ContractSpec.schemaEnum(STATUS_SCHEMA).filterNot { it == DONE_STATUS }
-        assertThat(beforeDone).describedAs("완료 전 상태가 계약에 하나도 없다 — 이 케이스가 성립하지 않는다").isNotEmpty()
-
-        beforeDone.forEach { status ->
-            val conversionId = createDocument(token).second
-            if (status != PENDING_STATUS) forceStatus(conversionId, status)
-
-            val body = bodyOf(read(token, conversionId))
-
-            assertThat(body[MASKED_ITEMS_PROPERTY])
-                .withFailMessage(
-                    "상태 %s 의 %s 가 빈 배열이 아니다: %s",
-                    status,
-                    MASKED_ITEMS_PROPERTY,
-                    body[MASKED_ITEMS_PROPERTY],
-                ).isEqualTo(emptyList<Any>())
-            assertThat(body[MISSING_PLACEHOLDERS_PROPERTY])
-                .withFailMessage("상태 %s 의 %s 가 빈 배열이 아니다", status, MISSING_PLACEHOLDERS_PROPERTY)
-                .isEqualTo(emptyList<Any>())
-            assertThat(body[EASY_TEXT_PROPERTY]).describedAs("완료 전인데 초안이 실렸다").isNull()
-            assertThat(body[EDITED_TEXT_PROPERTY]).describedAs("완료 전인데 검수본이 실렸다").isNull()
-        }
-    }
-
-    /** CR-3 의 팔은 결과 열이 NULL 인 행만 밟아 **공허하게 통과한다**. 이 케이스가 메운다. */
+    /** 결과 열이 NULL 인 행에서 결과 필드가 비어 나가는 것은 CR-3b 가 전수로 잰다. */
     @Test
     @DisplayName("CR-3b 완료 전 상태가 결과 열을 **들고 있어도** 결과 필드 아홉이 비어 나가고 **키는 하나도 생략되지 않는다**")
     fun `완료 전 상태는 저장된 결과를 내보내지 않는다`() {
@@ -111,13 +79,7 @@ class ConversionReadReachTest {
         assertThat(ConversionStatus.entries.filter { it.exposesResult }.map { it.wireName })
             .withFailMessage("결과를 내보내는 상태가 계약 `%s` 하나가 아니다", DONE_STATUS)
             .containsExactly(DONE_STATUS)
-        val label = ContractSpec.schemaPropertyEnum(MASKED_ITEM_SCHEMA, CATEGORY_PROPERTY).first()
-        val category = MaskCategory.entries.first { it.label == label }
-        val placeholder = "[[${label}1]]"
-        val item = MaskedItem(category, placeholder, Secret(HIDDEN_ORIGINAL))
-        val stored =
-            DoneResult(STORED_DRAFT, STORED_EDITED, listOf(item), listOf(placeholder), reviewed = true)
-        val emptyArrays = setOf(MASKED_ITEMS_PROPERTY, MISSING_PLACEHOLDERS_PROPERTY)
+        val stored = DoneResult(STORED_DRAFT, STORED_EDITED, reviewed = true)
 
         beforeDone.forEach { status ->
             val (documentId, conversionId) = createDocument(token)
@@ -143,14 +105,13 @@ class ConversionReadReachTest {
             // 첫 위반에서 멈추지 않고 **전부 모은다** — 무엇이 남았는지 한 번에 드러난다.
             val carrying =
                 (ContractSpec.schemaRequired(CONVERSION_SCHEMA) - BEFORE_DONE_FIELDS).filter { field ->
-                    body[field] != (if (field in emptyArrays) emptyList<Any>() else null)
+                    body[field] != null
                 }
             assertThat(carrying)
                 .withFailMessage("상태 %s 에서 비어 있지 않은 결과 필드: %s", status, carrying)
                 .isEmpty()
             assertThat(response.body())
                 .withFailMessage("상태 %s 응답이 저장된 값을 담았다", status)
-                .doesNotContain(HIDDEN_ORIGINAL)
                 .doesNotContain(STORED_DRAFT)
                 .doesNotContain(STORED_EDITED)
                 .doesNotContain(STORED_MODEL)
@@ -183,59 +144,6 @@ class ConversionReadReachTest {
         assertThat(code!!.length).isLessThanOrEqualTo(maxLength)
 
         assertThat(code).doesNotContain("안내문").doesNotContain(body)
-    }
-
-    @Test
-    @DisplayName("CR-5 마스킹 항목의 키 집합이 정확히 계약 required · 범주가 **2종 집합 안**이고 그 밖의 값 0건 · 자리표시자가 계약 pattern 과 맞다 (P-32)")
-    fun `마스킹 항목이 실제 저장 형식을 거쳐 계약대로 나온다`() {
-        val token = newAccount()
-        val conversionId = createDocument(token).second
-
-        val declaredCategories = ContractSpec.schemaPropertyEnum(MASKED_ITEM_SCHEMA, CATEGORY_PROPERTY)
-        val items =
-            declaredCategories.mapIndexed { index, label ->
-                val category = MaskCategory.entries.first { it.label == label }
-                MaskedItem(category, "[[$label${index + 1}]]", Secret("가려진값${index + 1}"))
-            }
-        markDone(conversionId, DoneResult(maskedItems = items))
-
-        val body = bodyOf(read(token, conversionId))
-        val responseItems = body[MASKED_ITEMS_PROPERTY] as List<*>
-
-        assertThat(responseItems).hasSameSizeAs(items)
-        val declaredKeys = ContractSpec.schemaRequired(MASKED_ITEM_SCHEMA)
-        val pattern = Regex(ContractSpec.schemaPropertyPattern(MASKED_ITEM_SCHEMA, PLACEHOLDER_PROPERTY)).toPattern()
-        responseItems.forEach { raw ->
-            val item = raw as Map<*, *>
-            assertThat(item.keys.map { it.toString() }.toSet()).isEqualTo(declaredKeys)
-            assertThat(item[PLACEHOLDER_PROPERTY].toString()).matches(pattern)
-        }
-
-        assertThat(responseItems.map { (it as Map<*, *>)[CATEGORY_PROPERTY].toString() }.toSet())
-            .withFailMessage("범주 값이 계약 enum 과 다르다 — 저장 키가 화면 문구 자리로 샜을 수 있다")
-            .isEqualTo(declaredCategories.toSet())
-
-        assertThat(responseItems.map { (it as Map<*, *>)[ORIGINAL_PROPERTY].toString() })
-            .containsExactlyInAnyOrderElementsOf(items.map { it.original.reveal() })
-    }
-
-    @Test
-    @DisplayName("CR-6 유실 자리표시자의 각 원소가 계약 `items.pattern` 과 맞다")
-    fun `유실 라벨이 계약 형식을 지킨다`() {
-        val token = newAccount()
-        val conversionId = createDocument(token).second
-        val labels = ContractSpec.schemaPropertyEnum(MASKED_ITEM_SCHEMA, CATEGORY_PROPERTY).map { "[[${it}1]]" }
-        markDone(conversionId, DoneResult(missingPlaceholders = labels))
-
-        val body = bodyOf(read(token, conversionId))
-
-        val pattern =
-            Regex(
-                ContractSpec.schemaPropertyPattern(CONVERSION_SCHEMA, MISSING_PLACEHOLDERS_PROPERTY),
-            ).toPattern()
-        val observed = (body[MISSING_PLACEHOLDERS_PROPERTY] as List<*>).map { it.toString() }
-        assertThat(observed).hasSameSizeAs(labels)
-        observed.forEach { assertThat(it).matches(pattern) }
     }
 
     @Test
@@ -383,12 +291,6 @@ class ConversionReadReachTest {
         val sealAs = result.sealAs ?: conversionId
         val easy = sealed(result.easyText, sealAs, EncryptedField.CONVERSION_EASY_TEXT)
         val edited = sealed(result.editedText, sealAs, EncryptedField.CONVERSION_EDITED_TEXT)
-        val table =
-            result.maskedItems
-                .takeIf { it.isNotEmpty() }
-                ?.let { codec.encode(it).value }
-        val masked = sealed(table, sealAs, EncryptedField.CONVERSION_MASKED_ITEMS)
-        val labels = json.writeValueAsString(result.missingPlaceholders).replace("'", "''")
 
         // 규약: SQL 은 **companion 의 상수 리터럴**에 두고 조각만 채운다. 호출부에서 조립하면
         // 스캐너와 `EnvelopeColumnWriteGuardTest` 가 함께 눈을 감는다 — 근거는
@@ -398,10 +300,8 @@ class ConversionReadReachTest {
             MARK_DONE_SQL.format(
                 easy,
                 edited,
-                masked,
                 cipher.writeScheme,
                 cipher.writeKeyVersion,
-                labels,
                 if (result.reviewed) "now()" else "NULL",
                 STORED_MODEL,
                 STORED_PROVIDER,
@@ -780,16 +680,11 @@ class ConversionReadReachTest {
     private data class DoneResult(
         val easyText: String? = "쉬운 글 초안입니다.",
         val editedText: String? = null,
-        val maskedItems: List<MaskedItem> = emptyList(),
-        val missingPlaceholders: List<String> = emptyList(),
         val reviewed: Boolean = false,
         val sealAs: UUID? = null,
     )
 
     companion object {
-        /** 저장 형식의 정본. 제품 클래스다 — 사유는 클래스 KDoc. */
-        private val codec = MaskedItemCodec()
-
         private const val DOCUMENTS_PATH = "/documents"
         private const val DOCUMENT_ITEM_PATH = "/documents/{document_id}"
         private const val DOCUMENT_PATH_PREFIX = "/documents/"
@@ -809,7 +704,6 @@ class ConversionReadReachTest {
         private const val EXPORT_FORMAT_SCHEMA = "ExportFormat"
         private const val PRESERVATION_SCHEMA = "FormatPreservation"
         private const val PRESERVATION_STATUS_SCHEMA = "FormatPreservationStatus"
-        private const val MASKED_ITEM_SCHEMA = "MaskedItemResponse"
         private const val STATUS_SCHEMA = "ConversionStatus"
         private const val ERROR_SCHEMA = "ErrorResponse"
 
@@ -839,14 +733,9 @@ class ConversionReadReachTest {
         private const val DETAILS_PROPERTY = "details"
         private const val EASY_TEXT_PROPERTY = "easy_text"
         private const val EDITED_TEXT_PROPERTY = "edited_text"
-        private const val MASKED_ITEMS_PROPERTY = "masked_items"
-        private const val MISSING_PLACEHOLDERS_PROPERTY = "missing_placeholders"
         private const val MODEL_PROPERTY = "model"
         private const val PROVIDER_NAME_PROPERTY = "provider_name"
         private const val FAILURE_CODE_PROPERTY = "failure_code"
-        private const val CATEGORY_PROPERTY = "category"
-        private const val PLACEHOLDER_PROPERTY = "placeholder"
-        private const val ORIGINAL_PROPERTY = "original"
         private const val DETAIL = "detail"
 
         /**
@@ -865,7 +754,6 @@ class ConversionReadReachTest {
         private const val STORAGE_EXAMPLE = "storage"
 
         /** CR-3b 가 심는 값들. 응답에 **나타나면 안 된다.** 뒤의 둘은 [MARK_DONE_SQL] 이 채워 넣는다. */
-        private const val HIDDEN_ORIGINAL = "900101-1234567"
         private const val STORED_DRAFT = "완료 전인데 저장돼 있던 초안입니다."
         private const val STORED_EDITED = "완료 전인데 저장돼 있던 검수본입니다."
         private const val STORED_MODEL = "stored-model-probe"
@@ -901,7 +789,7 @@ class ConversionReadReachTest {
         private const val VALID_PASSWORD = "correct horse battery"
 
         /**
-         * 결과 열 아홉을 채우는 UPDATE. **봉투 두 값을 같은 문장에서 함께 SET 한다** —
+         * 결과 열을 채우는 UPDATE. **봉투 두 값을 같은 문장에서 함께 SET 한다** —
          * `EnvelopeColumnWriteGuardTest` 의 규약이다. `%s` 자리는 [markDone] 이 채운다.
          */
         val MARK_DONE_SQL =
@@ -910,10 +798,8 @@ class ConversionReadReachTest {
             SET status = 'done',
                 easy_text_encrypted = %s,
                 edited_text_encrypted = %s,
-                masked_items_encrypted = %s,
                 encryption_scheme = '%s',
                 key_version = %s,
-                missing_placeholders = '%s'::jsonb,
                 reviewed_at = %s,
                 model = '%s',
                 provider_name = '%s',

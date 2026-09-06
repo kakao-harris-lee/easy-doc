@@ -48,7 +48,7 @@ class ConversionQueryServiceTest {
     }
 
     @Test
-    @DisplayName("완료 변환은 세 열을 **복호화해서** 돌려준다 — 결속이 변환 행 식별자다")
+    @DisplayName("완료 변환은 두 열을 **복호화해서** 돌려준다 — 결속이 변환 행 식별자다")
     fun `완료 변환의 본문이 복호화된다`() {
         val world = World()
         val conversionId = UUID.randomUUID()
@@ -56,21 +56,18 @@ class ConversionQueryServiceTest {
             conversionId,
             easyText = "쉬운 글 초안",
             editedText = "검수본",
-            maskedLabels = listOf("[[주민등록번호1]]"),
         )
 
         val view = world.service.read(OWNER, conversionId)
 
         assertThat(view.easyText?.value).isEqualTo("쉬운 글 초안")
         assertThat(view.editedText?.value).isEqualTo("검수본")
-        assertThat(view.maskedItems.map { it.placeholder }).containsExactly("[[주민등록번호1]]")
 
         assertThat(world.cipher.decryptions.map { it.first }).containsOnly(conversionId)
         assertThat(world.cipher.decryptions.map { it.second })
             .containsExactlyInAnyOrder(
                 EncryptedField.CONVERSION_EASY_TEXT,
                 EncryptedField.CONVERSION_EDITED_TEXT,
-                EncryptedField.CONVERSION_MASKED_ITEMS,
             )
     }
 
@@ -86,8 +83,6 @@ class ConversionQueryServiceTest {
         assertThat(view.status).isEqualTo(ConversionStatus.PENDING)
         assertThat(view.easyText).isNull()
         assertThat(view.editedText).isNull()
-        assertThat(view.maskedItems).isEmpty()
-        assertThat(view.missingPlaceholders).isEmpty()
 
         assertThat(world.cipher.decryptions).isEmpty()
     }
@@ -109,7 +104,6 @@ class ConversionQueryServiceTest {
                 conversionId,
                 easyText = "완료 전인데 저장돼 있던 초안",
                 editedText = "완료 전인데 저장돼 있던 검수본",
-                maskedLabels = listOf("[[주민등록번호1]]"),
             )
             world.demoteTo(conversionId, status)
 
@@ -125,10 +119,8 @@ class ConversionQueryServiceTest {
             assertThat(view.providerName).isNull()
             assertThat(view.inputTokens).isNull()
             assertThat(view.outputTokens).isNull()
-            assertThat(view.missingPlaceholders).describedAs("배열은 `null` 이 아니라 **빈 목록**이다").isEmpty()
             assertThat(view.easyText).describedAs("상태 %s 인데 초안이 실렸다", status).isNull()
             assertThat(view.editedText).describedAs("상태 %s 인데 검수본이 실렸다", status).isNull()
-            assertThat(view.maskedItems).describedAs("상태 %s 인데 마스킹 대응표가 실렸다", status).isEmpty()
             assertThat(world.cipher.decryptions)
                 .describedAs("상태 %s 에서 복호화가 돌았다 — 버릴 값을 평문으로 만들었다", status)
                 .isEmpty()
@@ -347,16 +339,16 @@ class ConversionQueryServiceTest {
     }
 
     @Test
-    @DisplayName("조회 결과의 `toString` 이 **본문도 가린 값도 담지 않는다** — 개수까지다")
+    @DisplayName("조회 결과의 `toString` 이 **본문을 담지 않는다**")
     fun `조회 결과의 toString 이 본문을 담지 않는다`() {
         val world = World()
         val conversionId = UUID.randomUUID()
-        world.seedResults(conversionId, easyText = "민감한 초안 본문", maskedLabels = listOf("[[카드번호1]]"))
+        world.seedResults(conversionId, easyText = "민감한 초안 본문")
 
         val rendered = world.service.read(OWNER, conversionId).toString()
 
-        assertThat(rendered).doesNotContain("민감한 초안 본문").doesNotContain("가린값")
-        assertThat(rendered).contains(conversionId.toString()).contains("masked=1")
+        assertThat(rendered).doesNotContain("민감한 초안 본문")
+        assertThat(rendered).contains(conversionId.toString())
     }
 
     @Test
@@ -459,7 +451,6 @@ class ConversionQueryServiceTest {
     private class World {
         val transaction = RecordingTransactionRunner()
         val cipher = FakeContentCipher(writeKeyVersion = 1, transaction = transaction)
-        val maskedItems = FakeMaskedItemReader()
         val originals = FakeDocumentOriginalRepository(transaction)
         val conversions = FakeConversionRepository(transaction, originals)
         val reflector = FakeOriginalStructureReflector()
@@ -469,14 +460,13 @@ class ConversionQueryServiceTest {
             ConversionQueryService(
                 conversions = conversions,
                 cipher = cipher,
-                maskedItems = maskedItems,
                 original = OriginalReflection(StoredOriginalReader(originals, cipher), reflector),
                 documents = documents,
-                segmentMapDerivation = MaskedSegmentMapDerivation(cipher),
+                segmentMapDerivation = DefaultSegmentMapDerivation(cipher),
                 transaction = transaction,
             )
 
-        /** 대기 중 변환 한 건 — 암호문 세 열이 전부 `null` 이다(실물 `insertPending` 과 같다). */
+        /** 대기 중 변환 한 건 — 암호문 두 열이 전부 `null` 이다(실물 `insertPending` 과 같다). */
         fun seedPending(
             conversionId: UUID,
             owner: UUID = OWNER,
@@ -488,10 +478,9 @@ class ConversionQueryServiceTest {
                     status = ConversionStatus.PENDING,
                     sourceFormat = SeededOrigin().sourceFormat,
                     hasStoredOriginal = SeededOrigin().hasStoredOriginal,
-                    ciphertexts = ConversionCiphertexts(easyText = null, maskedItems = null, editedText = null),
+                    ciphertexts = ConversionCiphertexts(easyText = null, editedText = null),
                     reviewedAt = null,
                     feedbackSubmittedAt = null,
-                    missingPlaceholders = emptyList(),
                     model = null,
                     providerName = null,
                     inputTokens = null,
@@ -569,7 +558,6 @@ class ConversionQueryServiceTest {
             conversionId: UUID,
             easyText: String? = null,
             editedText: String? = null,
-            maskedLabels: List<String> = emptyList(),
             owner: UUID = OWNER,
         ): UUID {
             fun seal(
@@ -588,17 +576,11 @@ class ConversionQueryServiceTest {
                     ciphertexts =
                         ConversionCiphertexts(
                             easyText = seal(easyText, EncryptedField.CONVERSION_EASY_TEXT),
-                            maskedItems =
-                                seal(
-                                    maskedLabels.takeIf { it.isNotEmpty() }?.joinToString("\n"),
-                                    EncryptedField.CONVERSION_MASKED_ITEMS,
-                                ),
                             editedText = seal(editedText, EncryptedField.CONVERSION_EDITED_TEXT),
                         ),
                     // 결과 필드 **열 전부**를 채운다 — 비워 두면 그 필드가 공허하게 통과한다.
                     reviewedAt = REVIEWED_AT,
                     feedbackSubmittedAt = FEEDBACK_SUBMITTED_AT,
-                    missingPlaceholders = maskedLabels,
                     model = "claude-test",
                     providerName = "anthropic",
                     inputTokens = 11,

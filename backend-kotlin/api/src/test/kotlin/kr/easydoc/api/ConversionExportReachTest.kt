@@ -9,12 +9,8 @@ import kr.easydoc.core.crypto.EncryptedField
 import kr.easydoc.core.crypto.PlainBody
 import kr.easydoc.core.document.FALLBACK_TITLE
 import kr.easydoc.core.document.SourceFormat
-import kr.easydoc.core.privacy.MaskCategory
-import kr.easydoc.core.privacy.MaskedItem
-import kr.easydoc.core.security.Secret
 import kr.easydoc.infrastructure.DatabaseHandle
 import kr.easydoc.infrastructure.PostgresTestSupport
-import kr.easydoc.infrastructure.document.MaskedItemCodec
 import kr.easydoc.infrastructure.ingest.DocumentExtractors
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.DisplayName
@@ -51,17 +47,16 @@ class ConversionExportReachTest {
     private val extractors = DocumentExtractors()
 
     @Test
-    @DisplayName("검수본의 자리표시자가 원문으로 복원되어 txt·docx·hwpx 본문에 실린다 — **각 형식의 원본에서**")
-    fun `검수본은 형식마다 복원한다`() {
+    @DisplayName("검수본이 초안 대신 그대로 txt·docx·hwpx 본문에 실린다 — **각 형식의 원본에서**")
+    fun `검수본은 형식마다 그대로 실린다`() {
         ContractSpec.schemaEnum(FORMAT_SCHEMA).forEach { format ->
             val token = newAccount()
             val conversionId = documentProducing(token, format)
             markDone(
                 conversionId,
                 DoneResult(
-                    easyText = "버려질 초안 $PLACEHOLDER",
-                    editedText = "검수본 $PLACEHOLDER 입니다.",
-                    maskedItems = listOf(hiddenItem()),
+                    easyText = "버려질 초안입니다.",
+                    editedText = "검수본입니다.",
                     reviewed = true,
                 ),
             )
@@ -70,11 +65,11 @@ class ConversionExportReachTest {
             assertDeclaredStatus(response.statusCode(), ContractSpec.successStatus(EXPORT_PATH, GET))
             val body = exportedText(response.body(), format)
             assertThat(body)
-                .withFailMessage("%s 본문에 원문이 없다 — 복원이 빠졌다", format)
-                .contains(ORIGINAL)
+                .withFailMessage("%s 본문에 검수본이 없다", format)
+                .contains("검수본입니다.")
             assertThat(body)
-                .withFailMessage("%s 본문에 자리표시자가 남았다", format)
-                .doesNotContain(PLACEHOLDER)
+                .withFailMessage("%s 본문에 버려졌어야 할 초안이 남았다", format)
+                .doesNotContain("버려질 초안입니다.")
         }
     }
 
@@ -191,24 +186,6 @@ class ConversionExportReachTest {
     }
 
     @Test
-    @DisplayName("검수 전 초안은 자리표시자를 복원하지 않는다 — 위조 주입을 막는다")
-    fun `검수 전에는 원문을 넣지 않는다`() {
-        val token = newAccount()
-        val conversionId = createDocument(token).second
-        markDone(
-            conversionId,
-            DoneResult(
-                easyText = "등록번호는 $PLACEHOLDER 입니다.",
-                maskedItems = listOf(hiddenItem()),
-            ),
-        )
-
-        val body = exportedText(exportBytes(token, conversionId, TXT).body(), TXT)
-        assertThat(body).contains(PLACEHOLDER)
-        assertThat(body).doesNotContain(ORIGINAL)
-    }
-
-    @Test
     @DisplayName("완료 전·실패 변환은 409 이고 계약 예시 not_done 과 같다 — 404 가 아니다")
     fun `완료 전이면 409 다`() {
         val token = newAccount()
@@ -222,25 +199,6 @@ class ConversionExportReachTest {
             assertThat(jsonBody(response)[DETAIL])
                 .isEqualTo(ContractSpec.pathExampleDetail(EXPORT_PATH, GET, CONFLICT, NOT_DONE_EXAMPLE))
         }
-    }
-
-    @Test
-    @DisplayName("검수 없는 초안에서 자리표시자가 빠지면 409 이다")
-    fun `유실된 초안은 409 다`() {
-        val token = newAccount()
-        val conversionId = createDocument(token).second
-        markDone(
-            conversionId,
-            DoneResult(
-                easyText = "주민번호는 생략합니다",
-                maskedItems = listOf(hiddenItem()),
-            ),
-        )
-
-        val response = exportText(token, conversionId, format = null)
-        assertDeclaredStatus(response.statusCode(), CONFLICT)
-        assertThat(jsonBody(response)[DETAIL])
-            .isEqualTo(ContractSpec.pathExampleDetail(EXPORT_PATH, GET, CONFLICT, MISSING_EXAMPLE))
     }
 
     @Test
@@ -415,18 +373,13 @@ class ConversionExportReachTest {
     ) {
         val easy = sealed(result.easyText, conversionId, EncryptedField.CONVERSION_EASY_TEXT)
         val edited = sealed(result.editedText, conversionId, EncryptedField.CONVERSION_EDITED_TEXT)
-        val table = result.maskedItems.takeIf { it.isNotEmpty() }?.let { codec.encode(it).value }
-        val masked = sealed(table, conversionId, EncryptedField.CONVERSION_MASKED_ITEMS)
-        val labels = json.writeValueAsString(emptyList<String>())
 
         database.execute(
             MARK_DONE_SQL.format(
                 easy,
                 edited,
-                masked,
                 cipher.writeScheme,
                 cipher.writeKeyVersion,
-                labels,
                 if (result.reviewed) "now()" else "NULL",
                 conversionId,
             ),
@@ -611,13 +564,10 @@ class ConversionExportReachTest {
     private data class DoneResult(
         val easyText: String? = "쉬운 글 초안입니다.",
         val editedText: String? = null,
-        val maskedItems: List<MaskedItem> = emptyList(),
         val reviewed: Boolean = false,
     )
 
     companion object {
-        private val codec = MaskedItemCodec()
-
         private const val DOCUMENTS_PATH = "/documents"
         private const val EXPORT_PATH = "/conversions/{conversion_id}/export"
         private const val GET = "get"
@@ -634,7 +584,6 @@ class ConversionExportReachTest {
         private const val TXT = "txt"
 
         private const val NOT_DONE_EXAMPLE = "not_done"
-        private const val MISSING_EXAMPLE = "missing_placeholders"
         private const val MISMATCH_EXAMPLE = "format_mismatch"
         private const val CHOICE_REQUIRED_EXAMPLE = "export_format_choice_required"
         private const val CHOICE_MISMATCH_EXAMPLE = "export_format_choice_mismatch"
@@ -683,8 +632,6 @@ class ConversionExportReachTest {
         private const val FILE_PART = "file"
         private const val CONTENT_DISPOSITION = "Content-Disposition"
 
-        private const val PLACEHOLDER = "[[주민등록번호1]]"
-        private const val ORIGINAL = "900101-1234567"
         private const val SAMPLE_TEXT = "내보내기 실측용 안내문 본문"
         private const val VALID_PASSWORD = "correct horse battery"
 
@@ -699,10 +646,8 @@ class ConversionExportReachTest {
             SET status = 'done',
                 easy_text_encrypted = %s,
                 edited_text_encrypted = %s,
-                masked_items_encrypted = %s,
                 encryption_scheme = '%s',
                 key_version = %s,
-                missing_placeholders = '%s'::jsonb,
                 reviewed_at = %s,
                 model = 'export-reach-model',
                 provider_name = 'export-reach-provider',
@@ -722,8 +667,6 @@ class ConversionExportReachTest {
             registry.add("spring.datasource.username") { database.username }
             registry.add("spring.datasource.password") { database.password }
         }
-
-        fun hiddenItem(): MaskedItem = MaskedItem(MaskCategory.RRN, PLACEHOLDER, Secret(ORIGINAL))
     }
 }
 

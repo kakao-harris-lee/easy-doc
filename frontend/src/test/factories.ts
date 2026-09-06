@@ -56,19 +56,12 @@ export function conversion(overrides: Partial<ConversionResponse> = {}): Convers
     // 배열이고, PDF 선택 테스트는 이 필드를 직접 덮어쓴다.
     export_format_choices: [],
     format_preservation: { status: 'not_applicable', details: [] },
-    easy_text: '신청은 3월 2일부터 할 수 있어요. 등록번호는 [[주민등록번호1]]이에요.',
+    easy_text: '신청은 3월 2일부터 할 수 있어요.',
     edited_text: null,
     reviewed_at: null,
     // 계약에서 이 키는 늘 있고 값만 null이 될 수 있다 — 목에서 키를 빼면 화면이
     // "서버가 주지 않는 값"을 상대로 통과해 버린다.
     feedback_submitted_at: null,
-    // category는 서버가 주는 한국어 문자열 그대로다 — 자리표시자에 그대로 박히는
-    // 복원 키라서(`[[주민등록번호1]]`) 영문 코드로 바꿀 수 없다. 범주는 2종뿐이다
-    // (주민등록번호·카드번호, 2026-08-12 축소).
-    masked_items: [
-      { category: '주민등록번호', placeholder: '[[주민등록번호1]]', original: '900101-1234567' },
-    ],
-    missing_placeholders: [],
     model: 'test-model',
     provider_name: 'fake',
     input_tokens: 10,

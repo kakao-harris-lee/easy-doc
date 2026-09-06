@@ -83,10 +83,9 @@ class ReconvertUnitServiceTest {
                 status = status,
                 sourceFormat = SourceFormat.TEXT,
                 hasStoredOriginal = false,
-                ciphertexts = ConversionCiphertexts(null, null, null),
+                ciphertexts = ConversionCiphertexts(null, null),
                 reviewedAt = null,
                 feedbackSubmittedAt = null,
-                missingPlaceholders = emptyList(),
                 model = null,
                 providerName = null,
                 inputTokens = null,
@@ -271,41 +270,6 @@ class ReconvertUnitServiceTest {
     }
 
     @Test
-    @DisplayName("PII 가 있는 원본 단위 — provider 에는 자리표시자만 가고 원문 숫자는 가지 않는다")
-    fun `PII 단위의 재변환은 원문이 아니라 자리표시자를 provider 에 보낸다`() {
-        val conversionId = UUID.randomUUID()
-        val documentId = UUID.randomUUID()
-        conversions.owned[owner to conversionId] =
-            StoredConversion(
-                id = conversionId,
-                documentId = documentId,
-                status = ConversionStatus.DONE,
-                sourceFormat = SourceFormat.TEXT,
-                hasStoredOriginal = false,
-                ciphertexts = ConversionCiphertexts(null, null, null),
-                reviewedAt = null,
-                feedbackSubmittedAt = null,
-                missingPlaceholders = emptyList(),
-                model = null,
-                providerName = null,
-                inputTokens = null,
-                outputTokens = null,
-                failureCode = null,
-            )
-        documents.seed(owner, documentId, PII_SOURCE_UNIT)
-        val provider = FakeLlmProvider(listOf(reply(cleanText)))
-
-        service(provider).reconvert(owner, conversionId, 0, listOf(0), FINGERPRINT)
-
-        val prompt =
-            provider.calls
-                .single()
-                .prompt.user
-        assertThat(prompt).contains("[[주민등록번호1]]")
-        assertThat(prompt).doesNotContain("900101-1234567")
-    }
-
-    @Test
     @DisplayName("지문 형식 위반 — 422(InvalidInputException), LLM 을 부르지 않고 예산도 건드리지 않는다")
     fun `잘못된 지문 형식은 422다`() {
         val conversionId = seedDone()
@@ -351,6 +315,5 @@ class ReconvertUnitServiceTest {
         val FINGERPRINT = "a".repeat(64)
         const val SOURCE_UNIT_0 = "금일 서류를 제출하십시오."
         const val SOURCE_UNIT_1 = "두 번째 줄입니다."
-        const val PII_SOURCE_UNIT = "신청자 900101-1234567 님"
     }
 }

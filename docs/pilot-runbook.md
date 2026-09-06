@@ -8,7 +8,7 @@
 - 실제 변환을 확인할 때만 선택한 provider API key. 유료 호출 없이 상태만 보려면 `EASYDOC_LLM_PROVIDER=fake`(Compose가 `local` 프로필을 켠다)
 - 변환 완료 메일 알림은 `EASYDOC_MAIL_PROVIDER=fake`가 기본값이라 별도 설정 없이도 뜬다(메모리 기록만, 실제 발송 없음). 실제 발송이 필요하면 `EASYDOC_MAIL_PROVIDER=smtp`(임시, Daum 등 소비자 메일 계정 — SES가 의도한 운영 provider이고 smtp는 그 전환 전까지의 임시 조치, 2026-09-04 사용자 결정)로 `EASYDOC_MAIL_SMTP_HOST`·`EASYDOC_MAIL_SMTP_PORT`·`EASYDOC_MAIL_SMTP_SSL`·`EASYDOC_MAIL_SMTP_USERNAME`·`EASYDOC_MAIL_SMTP_PASSWORD`(전부 비밀값, `.env`에만)를 채운다 — 넷 중 host·username·password·from-address 하나라도 비면 기동이 즉시 실패한다. `EASYDOC_MAIL_FROM_ADDRESS`·`EASYDOC_MAIL_TIMEOUT_MS`·`EASYDOC_APP_PUBLIC_BASE_URL`(알림 링크 기준 URL)은 `.env.example` 참고
 
-worker는 lease를 집어 마스킹 → LLM → 결과 저장까지 실행한다. 내보내기는
+worker는 lease를 집어 LLM 호출 → 결과 저장까지 실행한다(개인정보 마스킹은 2026-09-07에 제거됐다 — master-plan 3.2 「제품 전제」). 내보내기는
 `GET /conversions/{conversion_id}/export?format=docx|txt|hwpx`다. `pdf`는 계약상 422다.
 
 ## 전체 스택
@@ -127,9 +127,10 @@ docker compose -f compose.yml -f compose.ci.yml run --rm frontend-check
 - **실제 LLM provider 키와 유료 호출 승인.** `EASYDOC_LLM_PROVIDER=fake`는 고정 문장을
   돌려주므로 품질 판단이 성립하지 않는다 — fake로 채운 10건은 이 게이트의 표본이 아니다.
   비용과 범위는 사용자가 승인한 뒤에 켠다(프로젝트 `CLAUDE.md` 모델·비용 정책).
-- **개인정보가 든 문서는 지양하도록 안내한다.** 마스킹 범주는 주민등록번호·카드번호
-  2종뿐이고(master-plan §3.2), 전화·이메일·계좌는 가려지지 않은 채 provider로 나간다.
-  §8 리스크 표의 「축소한 범주의 개인정보가 그대로 전송」이 이 자리다.
+- **개인정보가 든 문서는 지양하도록 안내한다.** 이 제품은 공공 배포 문서를 전제하며
+  개인정보 마스킹을 하지 않으므로(master-plan §3.2 「제품 전제」, 2026-09-07), 올린 본문은
+  그대로 provider로 나간다. §8 리스크 표의 「개인정보가 든 문서가 올라와 그대로 전송」이 이
+  자리다.
 - 기관의 **기존 방식 소요**를 착수 전에 인터뷰로 받아 아래 「기존 방식 소요」 칸에 적는다.
   이 값이 없으면 기준 ③을 판정할 대조군이 없다(기준 ①은 배포 의향 건수라 대조군이 필요 없다).
 - **게이트 ⓪(긴 문서 처리)이 먼저 판정돼 있어야 한다** — `docs/master-plan.md` §9.
@@ -218,7 +219,7 @@ docker compose -f compose.yml exec -T postgres \
 자유 의견 칸이 문제다. AEAD로 봉해 두었지만 **봉인은 기밀성이지 삭제가 아니다** — 키는
 운영 마스터 키라 계속 열린다. 그리고 그 칸에는 검수자가 문서 본문 조각을 그대로 붙여 넣는
 일이 실제로 일어나고(`V2__conversion_feedback.sql`의 주석 — "○○동 ○○○님께 안내드립니다
-부분이 어색합니다"), 마스킹 범주는 주민등록번호·카드번호 2종뿐이라(master-plan §3.2)
+부분이 어색합니다"), 개인정보 마스킹이 없으므로(master-plan §3.2 「제품 전제」)
 그 조각의 **이름·주소·전화번호는 어디서도 가려지지 않는다.**
 
 **선택지는 둘이다.**
