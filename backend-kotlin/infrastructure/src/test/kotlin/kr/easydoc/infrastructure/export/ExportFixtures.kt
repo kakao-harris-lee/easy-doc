@@ -12,6 +12,26 @@ import kr.easydoc.infrastructure.ingest.IngestFixtures
  */
 internal object ExportFixtures {
     /**
+     * `sample.docx` 의 빈 둘째 문단을 실제 문장으로 갈아 끼운 **본문 단위 셋짜리** 합성 DOCX —
+     * 머리말·꼬리말은 없다(2026-09-06 리뷰 항목 1, 테스트 (C)). `sample.docx` 는 둘, 표
+     * fixture 는 다섯이라 「셋」을 정확히 재는 fixture 가 따로 필요했다.
+     *
+     * 추출 순서: `쉬운 글 변환 안내` → `둘째 문단입니다.` → `이 문서는 추출 테스트용 예시입니다.`
+     */
+    fun threeParagraphDocx(): ByteArray =
+        IngestFixtures.withEntryReplaced(
+            IngestFixtures.bytes("sample.docx"),
+            "word/document.xml",
+            THREE_PARAGRAPH_DOCUMENT_XML.toByteArray(Charsets.UTF_8),
+        )
+
+    private val THREE_PARAGRAPH_DOCUMENT_XML =
+        """
+        <?xml version='1.0' encoding='UTF-8' standalone='yes'?>
+        <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>쉬운 글 변환 안내</w:t></w:r></w:p><w:p><w:r><w:t>둘째 문단입니다.</w:t></w:r></w:p><w:p><w:r><w:t>이 문서는 추출 테스트용 예시입니다.</w:t></w:r></w:p><w:sectPr><w:pgSz w:w="12240" w:h="15840"/></w:sectPr></w:body></w:document>
+        """.trimIndent()
+
+    /**
      * 머리말 컨트롤·표·두 구역을 담은 합성 HWPX. 개인정보가 없는 문장만 담는다.
      *
      * 추출 순서는 이렇다(`HwpxExtractor` 규칙): `머리말 문구` → `첫 문단입니다.` →

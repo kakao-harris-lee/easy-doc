@@ -26,7 +26,8 @@ class DocxOriginalReflectorTest {
     @Test
     @DisplayName("본문 단위 수와 문단 수가 같으면 아무것도 비우거나 덧붙이지 않는다")
     fun `짝이 맞으면 손대는 것이 없다`() {
-        val plan = reflector.outline(IngestFixtures.bytes("sample_rich.docx"), richBodyLines)
+        val plan =
+            reflector.outline(IngestFixtures.bytes("sample_rich.docx"), richBodyLines, map = null, mapAttempted = false)
 
         val outcome = plan!!.outcome()
         assertThat(plan.written).hasSize(7)
@@ -43,7 +44,14 @@ class DocxOriginalReflectorTest {
     fun `본문만 바뀌고 머리글은 남는다`() {
         val rewritten = List(7) { "쉬운 문단 ${it + 1}." }
 
-        val file = reflector.reflect(IngestFixtures.bytes("sample_rich.docx"), "안내문", rewritten)!!
+        val file =
+            reflector.reflect(
+                IngestFixtures.bytes("sample_rich.docx"),
+                "안내문",
+                rewritten,
+                map = null,
+                mapAttempted = false,
+            )!!
 
         assertThat(file.filename).isEqualTo("안내문-쉬운글.docx")
         assertThat(extractors.extract(file.filename, file.content).text)
@@ -55,7 +63,14 @@ class DocxOriginalReflectorTest {
     fun `원본 요소가 살아남는다`() {
         val original = IngestFixtures.bytes("sample_rich.docx")
 
-        val file = reflector.reflect(original, "안내문", List(7) { "쉬운 문단 ${it + 1}." })!!
+        val file =
+            reflector.reflect(
+                original,
+                "안내문",
+                List(7) { "쉬운 문단 ${it + 1}." },
+                map = null,
+                mapAttempted = false,
+            )!!
 
         val before = IngestFixtures.entriesOf(original)
         val after = IngestFixtures.entriesOf(file.content)
@@ -76,8 +91,8 @@ class DocxOriginalReflectorTest {
         val original = IngestFixtures.bytes("sample_rich.docx")
         val short = listOf("쉬운 문단 하나.", "쉬운 문단 둘.")
 
-        val plan = reflector.outline(original, short)!!
-        val file = reflector.reflect(original, "안내문", short)!!
+        val plan = reflector.outline(original, short, map = null, mapAttempted = false)!!
+        val file = reflector.reflect(original, "안내문", short, map = null, mapAttempted = false)!!
 
         assertThat(plan.outcome().emptiedUnits).isEqualTo(5)
         assertThat(extractors.extract(file.filename, file.content).text)
@@ -97,8 +112,8 @@ class DocxOriginalReflectorTest {
         val original = IngestFixtures.bytes("sample_rich.docx")
         val many = richBodyLines.map { "쉬운 $it" } + listOf("덧붙는 문단 하나.", "덧붙는 문단 둘.")
 
-        val plan = reflector.outline(original, many)!!
-        val file = reflector.reflect(original, "안내문", many)!!
+        val plan = reflector.outline(original, many, map = null, mapAttempted = false)!!
+        val file = reflector.reflect(original, "안내문", many, map = null, mapAttempted = false)!!
 
         assertThat(plan.outcome().appendedLines)
             .describedAs("원본 단위가 아홉이고 줄도 아홉이라 넘치는 줄은 없다")
@@ -122,8 +137,8 @@ class DocxOriginalReflectorTest {
         val original = IngestFixtures.bytes("sample_rich.docx")
         val many = List(11) { "문단 ${it + 1}." }
 
-        val plan = reflector.outline(original, many)!!
-        val file = reflector.reflect(original, "안내문", many)!!
+        val plan = reflector.outline(original, many, map = null, mapAttempted = false)!!
+        val file = reflector.reflect(original, "안내문", many, map = null, mapAttempted = false)!!
 
         assertThat(plan.outcome().appendedLines).isEqualTo(2)
         assertThat(plan.outcome().displacedLines).isEqualTo(2)
@@ -144,7 +159,7 @@ class DocxOriginalReflectorTest {
         listOf(1, 6, 7, 8, 9, 12).forEach { count ->
             val lines = List(count) { "검수한 문단 ${it + 1}." }
 
-            val file = reflector.reflect(original, "안내문", lines)!!
+            val file = reflector.reflect(original, "안내문", lines, map = null, mapAttempted = false)!!
 
             val written = extractors.extract(file.filename, file.content).text
             assertThat(lines)
@@ -162,7 +177,7 @@ class DocxOriginalReflectorTest {
         val original = IngestFixtures.bytes("sample_table.docx")
         val lines = listOf("쉬운 제목", "구분은 이렇습니다", "내용은 이렇습니다", "언제까지", "3월 31일까지")
 
-        val file = reflector.reflect(original, "표 문서", lines)!!
+        val file = reflector.reflect(original, "표 문서", lines, map = null, mapAttempted = false)!!
 
         assertThat(extractors.extract(file.filename, file.content).text).isEqualTo(lines.joinToString("\n"))
         assertThat(IngestFixtures.entriesOf(file.content).getValue("word/document.xml").decodeToString())
@@ -175,8 +190,8 @@ class DocxOriginalReflectorTest {
     fun `열 수 없으면 null 이다`() {
         val broken = "zip 이 아니다".toByteArray()
 
-        assertThat(reflector.outline(broken, richBodyLines)).isNull()
-        assertThat(reflector.reflect(broken, "안내문", richBodyLines)).isNull()
+        assertThat(reflector.outline(broken, richBodyLines, map = null, mapAttempted = false)).isNull()
+        assertThat(reflector.reflect(broken, "안내문", richBodyLines, map = null, mapAttempted = false)).isNull()
     }
 
     private fun countOf(

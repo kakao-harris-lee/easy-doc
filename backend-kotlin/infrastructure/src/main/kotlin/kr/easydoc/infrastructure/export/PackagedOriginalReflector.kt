@@ -13,9 +13,10 @@ import kr.easydoc.infrastructure.ingest.ZipBudget
  * 형식별 원본 반영. **판정과 내보내기가 같은 자리 맞춤을 지난다** — 두 팔이 [linesOf] 와
  * [planOf] 를 함께 쓰고, 그 사이에 규칙이 하나도 갈라지지 않는다.
  *
- * **`map` 은 이 조각(S6-1)에서 받되 쓰지 않는다** — 계획 §10.3 S6-1 은 core·application 까지만
- * 닫고, `segment_map` 으로 짝짓는 규칙은 S6-2 가 [planOf] 안으로 들여온다. 받아만 두어도
- * 계약을 어기지 않는 것은 포트 KDoc(`OriginalStructureReflector`)이 그렇게 정했기 때문이다.
+ * **`map` 을 이 조각(S6-2)이 소비한다** — 계획 §10.3 S6-1 은 core·application 까지만 닫았고
+ * (받되 무시), 여기서부터 [projectedMapOf] 로 빈 줄을 투영해 `docx`·`hwpx` 반영기에 넘긴다.
+ * 두 팔이 넘겨받는 것은 이미 투영을 지난 값이라 [ReflectionPlan.planOf] 의 전제 검사는
+ * `sourceUnitCount` 하나만 남는다(계획 §10.2 3항).
  */
 class PackagedOriginalReflector : OriginalStructureReflector {
     private val docx = DocxOriginalReflector()
@@ -25,7 +26,10 @@ class PackagedOriginalReflector : OriginalStructureReflector {
         original: OriginalDocument,
         body: String,
         map: SegmentMap?,
-    ): ReflectionOutcome? = planOf(original, linesOf(body))?.outcome()
+    ): ReflectionOutcome? {
+        val lines = linesOf(body)
+        return planOf(original, lines, projectedMapOf(body, lines, map), map != null)?.outcome()
+    }
 
     override fun reflect(
         original: OriginalDocument,
@@ -34,10 +38,12 @@ class PackagedOriginalReflector : OriginalStructureReflector {
         map: SegmentMap?,
     ): ExportFile? {
         val lines = linesOf(body)
+        val projected = projectedMapOf(body, lines, map)
+        val mapAttempted = map != null
         return when (original.format) {
-            SourceFormat.DOCX -> guardedBudget(original) { docx.reflect(it, title, lines) }
+            SourceFormat.DOCX -> guardedBudget(original) { docx.reflect(it, title, lines, projected, mapAttempted) }
 
-            SourceFormat.HWPX -> guardedBudget(original) { hwpx.reflect(it, title, lines) }
+            SourceFormat.HWPX -> guardedBudget(original) { hwpx.reflect(it, title, lines, projected, mapAttempted) }
 
             // 같은 형식으로 내보낼 수단이 없다(PDF) 또는 원본이 없다(붙여넣기).
             // 부르는 쪽이 이 갈래를 먼저 걸러야 한다 — 여기서 다른 형식으로 접지 않는다.
@@ -54,12 +60,24 @@ class PackagedOriginalReflector : OriginalStructureReflector {
     private fun planOf(
         original: OriginalDocument,
         lines: List<String>,
+        map: SegmentMap?,
+        mapAttempted: Boolean,
     ): ReflectionPlan? =
         when (original.format) {
-            SourceFormat.DOCX -> guardedBudget(original) { docx.outline(it, lines) }
-            SourceFormat.HWPX -> guardedBudget(original) { hwpx.outline(it, lines) }
+            SourceFormat.DOCX -> guardedBudget(original) { docx.outline(it, lines, map, mapAttempted) }
+            SourceFormat.HWPX -> guardedBudget(original) { hwpx.outline(it, lines, map, mapAttempted) }
             SourceFormat.PDF, SourceFormat.TEXT, SourceFormat.TXT -> null
         }
+
+    /**
+     * [map] 을 [lines] 색인에 맞춰 투영한다([projectToContentLines]) — [map] 이 `null` 이면
+     * 투영할 것이 없어 `null` 그대로다(오늘의 차례 짝짓기, `mapAttempted = false` 로 이어진다).
+     */
+    private fun projectedMapOf(
+        body: String,
+        lines: List<String>,
+        map: SegmentMap?,
+    ): SegmentMap? = map?.let { projectToContentLines(it, body, lines.size) }
 
     /**
      * 압축 해제 예산을 **다시** 건 뒤 원본을 연다.
