@@ -134,9 +134,13 @@ class ReflectionOutcome(
      */
     val splitLines: Int = 0,
     /**
-     * 자리가 `LOW` confidence(순서 비례 보간)로 정해진 줄 수(계획 §10.2 3항). 자리 자체는
-     * 규칙대로 넣었지만 그 자리가 **짐작**이므로 [FormatPreservation] 이 `partial` 로 남는
-     * 근거가 된다.
+     * `LOW` confidence(순서 비례 보간)로 자리가 **차례 짝짓기와 다른 곳으로 실제로 옮겨진**
+     * 줄 수(계획 §10.2 3항, 2026-09-06 리뷰 F1 정정). 원본 색인이 하나이고 그 색인이 투영된
+     * 쉬운 글 색인과 같고(즉 차례 그대로) 그 자리에 **갈아 끼워졌으면**(끼워 넣기가 아니면)
+     * 이 수에 넣지 않는다 — 앵커가 하나도 없는 문서는 지도가 전부 `LOW` 인데 개수가 같으면
+     * 지도의 결론이 차례 짝짓기와 바이트 단위로 같아, 그 경우까지 세면 「정보가 아니라
+     * 상수」가 된다. 실제로 자리를 옮긴 줄만 짐작이며, 그 수만큼이 [FormatPreservation] 이
+     * `partial` 로 남는 근거다.
      */
     val lowConfidenceLines: Int = 0,
     /** 이 반영이 지도로 놓였는지, 차례로 짝지었는지, 지도를 거절하고 떨어졌는지. */
@@ -263,7 +267,7 @@ private fun mergedDetail(count: Int): String = "원본 문단 ${count}개는 앞
 
 private fun splitDetail(count: Int): String = "문단 ${count}개는 원본 문단이 나뉘어 그 뒤에 새 문단으로 들어갑니다."
 
-private fun lowConfidenceDetail(count: Int): String = "문단 ${count}개는 원본 자리를 확신할 수 없어 차례로 짐작해 넣었습니다."
+private fun lowConfidenceDetail(count: Int): String = "문단 ${count}개는 원본 자리를 확신할 수 없어 앞뒤 비율로 자리를 옮겨 넣었습니다."
 
 private const val SHIFTED_DETAIL: String = "문단 수가 원본과 달라 뒤쪽 문단의 서식이 밀릴 수 있습니다."
 

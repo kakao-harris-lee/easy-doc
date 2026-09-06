@@ -3,6 +3,7 @@ package kr.easydoc.infrastructure.export
 import kr.easydoc.core.easyread.ExportFile
 import kr.easydoc.core.easyread.ExportFormat
 import kr.easydoc.core.easyread.exportFileOf
+import kr.easydoc.core.segment.SegmentMap
 import kr.easydoc.infrastructure.ingest.OoxmlDom
 import org.w3c.dom.Document
 import org.w3c.dom.Element
@@ -24,20 +25,30 @@ import org.w3c.dom.Node
 internal class HwpxOriginalReflector {
     private val walk = TextUnitWalk(headerFooter = ::isHeaderFooter)
 
-    /** 반영하면 무엇이 달라지는지 미리 센다. 파일은 만들지 않는다. */
+    /**
+     * 반영하면 무엇이 달라지는지 미리 센다. 파일은 만들지 않는다.
+     *
+     * [map]·[mapAttempted] 는 `DocxOriginalReflector.outline` 과 같은 뜻이다 — 기본값을 두지
+     * 않는다(2026-09-06 리뷰 F6): 이 값을 빠뜨리면 지도를 다루지 않는 호출과 지도를 잊은
+     * 호출이 코드에서 같은 모양이 된다.
+     */
     fun outline(
         data: ByteArray,
         lines: List<String>,
-    ): ReflectionPlan? = guarded(data) { opened -> planOf(unitsOf(opened), lines) }
+        map: SegmentMap?,
+        mapAttempted: Boolean,
+    ): ReflectionPlan? = guarded(data) { opened -> planOf(unitsOf(opened), lines, map, mapAttempted) }
 
     /** 원본 구조에 [lines] 를 반영한 파일. */
     fun reflect(
         data: ByteArray,
         title: String,
         lines: List<String>,
+        map: SegmentMap?,
+        mapAttempted: Boolean,
     ): ExportFile? =
         guarded(data) { opened ->
-            val plan = planOf(unitsOf(opened), lines)
+            val plan = planOf(unitsOf(opened), lines, map, mapAttempted)
             apply(opened, plan)
             val parts = LinkedHashMap(opened.parts)
             opened.sections.forEach { section -> parts[section.name] = SectionXml.serialize(section.document) }
@@ -88,6 +99,8 @@ internal class HwpxOriginalReflector {
     ) {
         plan.written.forEach { assignment -> assignment.unit.rewrite(assignment.line) }
         plan.emptied.forEach { unit -> unit.rewrite("") }
+        plan.merged.forEach { unit -> unit.rewrite("") }
+        plan.inserted.forEach(::insertAfter)
         if (plan.appended.isEmpty()) return
         val template =
             plan.appendTemplate
@@ -105,28 +118,49 @@ internal class HwpxOriginalReflector {
 
     /**
      * 자리를 찾지 못한 문단을 **마지막 구역 끝에** 붙인다. 서식은 [ReflectionPlan.appendTemplate]
-     * 에서 **속성만** 베낀다 — 문단을 통째로 복제하면 그 안의 그림·표가 함께 복제된다.
+     * 에서 **속성만** 베낀다([newParagraph]) — 문단을 통째로 복제하면 그 안의 그림·표가 함께
+     * 복제된다.
      */
     private fun append(
         section: Element,
         template: TextUnit,
         lines: List<String>,
     ) {
-        val anchor = template.anchor ?: error("HWPX 단위에 문단 조상이 없다")
-        val sourceText = template.texts.first()
-        val sourceRun = sourceText.parentNode as Element
         // **본을 뜬 문단이 다른 구역에 있을 수 있다.** 구역마다 DOM 문서가 따로라 요소를 그 문서에서
         // 만들지 않으면 붙이는 순간 `WRONG_DOCUMENT_ERR` 로 내보내기가 통째로 실패한다.
         val owner = section.ownerDocument
         for (line in lines) {
-            val paragraph = copiedShell(anchor, owner)
-            val run = copiedShell(sourceRun, owner)
-            val text = owner.createElementNS(sourceText.namespaceURI, sourceText.nodeName)
-            text.appendChild(owner.createTextNode(line))
-            run.appendChild(text)
-            paragraph.appendChild(run)
-            section.appendChild(paragraph)
+            section.appendChild(newParagraph(owner, template, line))
         }
+    }
+
+    /**
+     * `segment_map` 의 1:N 나눔 — [ReflectionPlan.Insertion.afterUnit] 문단 **바로 뒤**에 같은
+     * 속성의 새 문단을 끼워 넣는다(계획 §10.2 3항 1:N, S6-2). 실제 위치 계산·앵커 없음 처리는
+     * [applyInsertion] 하나를 [DocxOriginalReflector] 와 공유한다 — 이 함수는 [newParagraph]
+     * (문단 조립 방식)만 건네준다.
+     */
+    private fun insertAfter(insertion: ReflectionPlan.Insertion) = applyInsertion(insertion, ::newParagraph)
+
+    /**
+     * [template] 의 문단·문자 속성만 베껴 새 문단 하나를 만든다 — [append] 와 [insertAfter] 가
+     * **같은 헬퍼 하나**를 쓴다. 따로 두면 「속성만 복사한다」는 규칙이 두 곳에서 갈릴 수 있다.
+     */
+    private fun newParagraph(
+        owner: Document,
+        template: TextUnit,
+        line: String,
+    ): Element {
+        val anchor = template.anchor ?: error("HWPX 단위에 문단 조상이 없다")
+        val sourceText = template.texts.first()
+        val sourceRun = sourceText.parentNode as Element
+        val paragraph = copiedShell(anchor, owner)
+        val run = copiedShell(sourceRun, owner)
+        val text = owner.createElementNS(sourceText.namespaceURI, sourceText.nodeName)
+        text.appendChild(owner.createTextNode(line))
+        run.appendChild(text)
+        paragraph.appendChild(run)
+        return paragraph
     }
 
     /**

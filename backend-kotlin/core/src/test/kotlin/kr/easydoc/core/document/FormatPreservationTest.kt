@@ -148,7 +148,7 @@ class FormatPreservationTest {
         val judged = reflectedPreservation(outcome(lowConfidenceLines = 4))
 
         assertThat(judged.status).isEqualTo(FormatPreservationStatus.PARTIAL)
-        assertThat(judged.details).containsExactly("문단 4개는 원본 자리를 확신할 수 없어 차례로 짐작해 넣었습니다.")
+        assertThat(judged.details).containsExactly("문단 4개는 원본 자리를 확신할 수 없어 앞뒤 비율로 자리를 옮겨 넣었습니다.")
     }
 
     @Test
@@ -212,7 +212,7 @@ class FormatPreservationTest {
         assertThat(judged.details)
             .containsExactly(
                 "원본 문단 2개는 앞 문단과 합쳐져 빈 문단으로 남습니다.",
-                "문단 1개는 원본 자리를 확신할 수 없어 차례로 짐작해 넣었습니다.",
+                "문단 1개는 원본 자리를 확신할 수 없어 앞뒤 비율로 자리를 옮겨 넣었습니다.",
             )
     }
 
@@ -243,7 +243,7 @@ class FormatPreservationTest {
                 "문단 3개는 원본에 자리가 없어 본문 끝에 덧붙습니다.",
                 "원본 문단 5개는 앞 문단과 합쳐져 빈 문단으로 남습니다.",
                 "문단 6개는 원본 문단이 나뉘어 그 뒤에 새 문단으로 들어갑니다.",
-                "문단 7개는 원본 자리를 확신할 수 없어 차례로 짐작해 넣었습니다.",
+                "문단 7개는 원본 자리를 확신할 수 없어 앞뒤 비율로 자리를 옮겨 넣었습니다.",
                 "원본 구조와 문단 수를 맞출 수 없어 차례대로 반영합니다.",
                 "문단 수가 원본과 달라 뒤쪽 문단의 서식이 밀릴 수 있습니다.",
             )
