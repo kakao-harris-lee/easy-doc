@@ -1,9 +1,16 @@
+@file:Suppress("TooManyFunctions")
+
 package kr.easydoc.core.document
 
 // 원본 서식 유지 상태 — 계약 `FormatPreservationStatus`·`FormatPreservation`.
 //
 // 값 집합의 정본은 계약이고 이 파일은 그 대응이다. **`checking` 은 양쪽 어디에도 없다** —
 // 사유는 [FormatPreservationStatus] KDoc 끝. 값 집합 대조: `ConversionFormatContractTest`.
+//
+// **`TooManyFunctions` 를 억제한다.** [FormatPreservation.details] KDoc 이 이미 정한 규칙 —
+// 「이 파일이 문구를 전부 소유한다」 — 을 지키려면 판정마다 문구 함수 하나씩이 이 파일 안에
+// 있어야 한다. 문구 함수를 다른 파일로 옮기면 그 규칙이 파일 경계 하나로 나뉘어 깨진다
+// (`DocumentConfiguration` 이 조립 지점을 하나로 지키려고 같은 억제를 쓰는 것과 같은 판단).
 
 /**
  * 원본 서식 유지 상태.
@@ -58,6 +65,24 @@ class FormatPreservation(
 }
 
 /**
+ * 반영이 원본 구조와 검수본을 **어떻게 짝지었는가**(계획 §10.2 결정 4, 2026-09-06 리뷰 F1).
+ *
+ * boolean 플래그(`ordinalFallback`) 대신 세 값 enum 인 이유: S6-1 단독으로도 오늘의 판정이
+ * 바이트 그대로 보존돼야 하는데, 두 값으로는 「지도 없음」과 「지도 거절」을 구분할 수 없어
+ * 둘 중 하나의 문구가 틀린다.
+ */
+enum class ReflectionPlacement {
+    /** 지도 없이 오늘처럼 차례로 짝짓는다 — 지도를 아직 쓰지 않는 반영기(S6-1)의 기본값. */
+    ORDINAL,
+
+    /** `segment_map` 으로 놓았다 — 대응을 확신한 반영이다(S6-2). */
+    MAPPED,
+
+    /** 지도를 받았으나 전제 검사에 실패해 차례 짝짓기로 떨어졌다(계획 §10.2 3항 첫 bullet). */
+    ORDINAL_FALLBACK,
+}
+
+/**
  * 원본에 검수본을 반영하면 **실제로 일어나는 일**의 개수.
  *
  * 개수만 든다. 원본 문단의 **문구는 이 경계를 넘지 않는다** — 판정 문구가 문서 본문을 담을
@@ -67,7 +92,16 @@ class FormatPreservation(
  * 자리 맞춤 자체는 원본 구조를 쥔 쪽(infrastructure `export/ReflectionPlan`)이 하고 여기로는
  * 결과만 온다. 「미리 말한 것」과 「실제로 한 것」이 갈릴 수 없는 것은 그 자리 맞춤을 판정과
  * 내보내기가 **같은 함수 하나로** 하기 때문이다.
+ *
+ * 뒤 넷([mergedUnits]·[splitLines]·[lowConfidenceLines]·[placement])은 계획 §10.2 결정 4 —
+ * `segment_map` 으로 짝짓는 S6 부터다. 기본값이 0/[ReflectionPlacement.ORDINAL] 인 것은
+ * 지도를 아직 쓰지 않는 반영기(오늘의 차례 짝짓기)가 이 값을 몰라도 빌드가 서게 하려는 것이다.
+ *
+ * **여덟 필드**라 `LongParameterList` 를 억제한다 — 자리 맞춤이 실제로 낼 수 있는 여덟 갈래를
+ * 하나씩 세는 값 객체이고, 묶어서 줄이면 그중 무엇이 몇 개인지가 필드 이름이 아니라 순서에
+ * 기대게 된다(이 클래스가 막으려는 바로 그 실수).
  */
+@Suppress("LongParameterList")
 class ReflectionOutcome(
     /** 원본 문구를 그대로 두는 머리말·꼬리말 단위 수. **쓰지 않는 것**이 §6.5 의 「유지」다. */
     val headerFooterUnits: Int,
@@ -85,10 +119,33 @@ class ReflectionOutcome(
      * 자리가 머리말의 몫이었다).
      */
     val displacedLines: Int,
+    /**
+     * `segment_map` 의 N:1 합침으로 **비워지는** 원본 단위 수(계획 §10.2 3항 N:1).
+     *
+     * [emptiedUnits] 와 뜻이 다르다 — 저쪽은 「받을 줄이 없어서」 비고, 이쪽은 「쉬운 글 한
+     * 줄이 다른 원본 단위에 이미 쓰여서」 비운다. **뒤 문단이 밀리지 않으므로** 이 값만으로는
+     * [SHIFTED_DETAIL] 을 붙이지 않는다 — 지도가 자리를 정확히 짚었기 때문이다.
+     */
+    val mergedUnits: Int = 0,
+    /**
+     * `segment_map` 의 1:N 나눔으로 원본 단위 문단 **바로 뒤에 새로 끼워 넣는** 줄 수
+     * (계획 §10.2 3항 1:N). 끼워 넣을 뿐 뒤 문단을 밀지 않으므로 역시 [SHIFTED_DETAIL] 을
+     * 붙이지 않는다.
+     */
+    val splitLines: Int = 0,
+    /**
+     * 자리가 `LOW` confidence(순서 비례 보간)로 정해진 줄 수(계획 §10.2 3항). 자리 자체는
+     * 규칙대로 넣었지만 그 자리가 **짐작**이므로 [FormatPreservation] 이 `partial` 로 남는
+     * 근거가 된다.
+     */
+    val lowConfidenceLines: Int = 0,
+    /** 이 반영이 지도로 놓였는지, 차례로 짝지었는지, 지도를 거절하고 떨어졌는지. */
+    val placement: ReflectionPlacement = ReflectionPlacement.ORDINAL,
 ) {
     override fun toString(): String =
         "ReflectionOutcome(머리말·꼬리말 $headerFooterUnits, 비움 $emptiedUnits, " +
-            "덧붙임 $appendedLines, 옮김 $displacedLines)"
+            "덧붙임 $appendedLines, 옮김 $displacedLines, 합침 $mergedUnits, 나눔 $splitLines, " +
+            "저확신 $lowConfidenceLines, 자리 맞춤 $placement)"
 }
 
 /** 되살릴 원본이 **없다**는 판정. 붙여넣기와 원본 바이트가 없는 옛 문서 — 둘 다 영구히 참이다. */
@@ -129,26 +186,66 @@ fun unreadableOriginalPreservation(): FormatPreservation =
  * - 머리말·꼬리말 자리와 겹친 문단도 본문 끝으로 **옮겨 붙인다** — 같은 사유다. 자리를
  *   건너뛰고 뒤 문단을 당겨 오면 본문 전체가 한 칸씩 밀리므로 자리는 그대로 두고 줄만 옮긴다.
  *
- * 어느 쪽도 「대응을 확신한 반영」이 아니다. 그래서 그 수만큼이 그대로 `partial` 의 근거이고
- * [FormatPreservation.details] 가 그것을 개수로 말한다(§6.5 "낙관적으로 추측하지 않는다").
+ * ## `segment_map` 이 짝지은 경우 (계획 §10.2 결정 4, S6)
+ *
+ * 지도가 놓은 합침(N:1)·나눔(1:N)은 **대응을 확신한 반영**이라 그 자체로는 `available`을
+ * 깨지 않는다 — 다만 무슨 일이 일어났는지는 [FormatPreservation.details] 로 말한다(그래서
+ * `available` 에도 details 가 붙을 수 있다). `LOW` confidence 로 짐작한 자리(저확신)와
+ * 지도 전제 검사가 어긋나 차례 짝짓기로 떨어진 경우([ReflectionPlacement.ORDINAL_FALLBACK])는
+ * 여전히 「대응을 확신하지 못한 반영」이라 `partial` 의 근거다.
+ *
+ * [SHIFTED_DETAIL] 은 [ReflectionPlacement.MAPPED] 가 **아니고** 비움·덧붙임이 있을 때
+ * (오늘의 규칙 그대로) 붙고, [ReflectionPlacement.ORDINAL_FALLBACK] 이면 **언제나** 붙는다 —
+ * 폴백은 오늘의 차례 짝짓기와 같은 자리 맞춤이라 짝이 하나만 어긋나도 그 뒤 모든 문단이
+ * 밀리기 때문이다. `MAPPED` 에서는 절대 붙지 않는다 — 지도가 놓은 문단은 밀리지 않는다.
+ *
+ * 머리말·꼬리말은 이 축과 무관하다 — 그 문구가 원본으로 남는 한(§6.5 의 「유지」) 자리 맞춤이
+ * 무엇이든 `available` 이 아니다.
  */
 fun reflectedPreservation(outcome: ReflectionOutcome): FormatPreservation {
-    val details =
-        buildList {
-            if (outcome.headerFooterUnits > 0) add(headerFooterDetail(outcome.headerFooterUnits))
-            if (outcome.displacedLines > 0) add(displacedDetail(outcome.displacedLines))
-            if (outcome.emptiedUnits > 0) add(emptiedDetail(outcome.emptiedUnits))
-            if (outcome.appendedLines > 0) add(appendedDetail(outcome.appendedLines))
-            // 옮겨 붙은 문단은 이 갈래에 넣지 않는다 — 자리를 소비한 채 줄만 끝으로 갔으므로
-            // 원본 문단과 검수본 문단의 짝은 한 칸도 밀리지 않는다.
-            if (outcome.emptiedUnits > 0 || outcome.appendedLines > 0) add(SHIFTED_DETAIL)
-        }
-    return if (details.isEmpty()) {
-        FormatPreservation(FormatPreservationStatus.AVAILABLE, emptyList())
+    val details = detailsOf(outcome)
+    return if (isAvailable(outcome)) {
+        FormatPreservation(FormatPreservationStatus.AVAILABLE, details)
     } else {
         FormatPreservation(FormatPreservationStatus.PARTIAL, details)
     }
 }
+
+/** [reflectedPreservation] 이 말할 항목 전부 — 갈래마다 하나씩, 순서가 사용자에게 보이는 순서다. */
+private fun detailsOf(outcome: ReflectionOutcome): List<String> =
+    buildList {
+        if (outcome.headerFooterUnits > 0) add(headerFooterDetail(outcome.headerFooterUnits))
+        if (outcome.displacedLines > 0) add(displacedDetail(outcome.displacedLines))
+        if (outcome.emptiedUnits > 0) add(emptiedDetail(outcome.emptiedUnits))
+        if (outcome.appendedLines > 0) add(appendedDetail(outcome.appendedLines))
+        if (outcome.mergedUnits > 0) add(mergedDetail(outcome.mergedUnits))
+        if (outcome.splitLines > 0) add(splitDetail(outcome.splitLines))
+        if (outcome.lowConfidenceLines > 0) add(lowConfidenceDetail(outcome.lowConfidenceLines))
+        if (outcome.placement == ReflectionPlacement.ORDINAL_FALLBACK) add(FALLBACK_DETAIL)
+        if (isShifted(outcome)) {
+            // 지도가 놓은(`MAPPED`) 문단은 자리를 지도가 직접 짚었거나(합침·나눔) 자리를
+            // 소비한 채 끝으로 갔으므로(옮김) 뒤 문단이 밀리지 않는다 — `MAPPED` 에서는
+            // 이 갈래에 넣지 않는다.
+            add(SHIFTED_DETAIL)
+        }
+    }
+
+/**
+ * 뒤쪽 문단이 밀릴 수 있는가 — [ReflectionPlacement.MAPPED] 가 아니고 비움·덧붙임이 있을
+ * 때(오늘의 규칙 그대로), 그리고 [ReflectionPlacement.ORDINAL_FALLBACK] 이면 언제나.
+ */
+private fun isShifted(outcome: ReflectionOutcome): Boolean =
+    (outcome.placement != ReflectionPlacement.MAPPED && (outcome.emptiedUnits > 0 || outcome.appendedLines > 0)) ||
+        outcome.placement == ReflectionPlacement.ORDINAL_FALLBACK
+
+/** 짝이 하나도 어긋나지 않았는가 — 합침·나눔은 세지 않는다(대응을 확신한 반영이다). */
+private fun isAvailable(outcome: ReflectionOutcome): Boolean =
+    outcome.headerFooterUnits == 0 &&
+        outcome.displacedLines == 0 &&
+        outcome.emptiedUnits == 0 &&
+        outcome.appendedLines == 0 &&
+        outcome.lowConfidenceLines == 0 &&
+        outcome.placement != ReflectionPlacement.ORDINAL_FALLBACK
 
 /**
  * 사용자에게 그대로 보이는 문구들. **개수와 요소의 종류만 넣는다** — 문서에서 읽은 문자열을
@@ -162,6 +259,14 @@ private fun emptiedDetail(count: Int): String = "원본 문단 ${count}개는 �
 
 private fun appendedDetail(count: Int): String = "문단 ${count}개는 원본에 자리가 없어 본문 끝에 덧붙습니다."
 
+private fun mergedDetail(count: Int): String = "원본 문단 ${count}개는 앞 문단과 합쳐져 빈 문단으로 남습니다."
+
+private fun splitDetail(count: Int): String = "문단 ${count}개는 원본 문단이 나뉘어 그 뒤에 새 문단으로 들어갑니다."
+
+private fun lowConfidenceDetail(count: Int): String = "문단 ${count}개는 원본 자리를 확신할 수 없어 차례로 짐작해 넣었습니다."
+
 private const val SHIFTED_DETAIL: String = "문단 수가 원본과 달라 뒤쪽 문단의 서식이 밀릴 수 있습니다."
+
+private const val FALLBACK_DETAIL: String = "원본 구조와 문단 수를 맞출 수 없어 차례대로 반영합니다."
 
 private const val UNREADABLE_ORIGINAL_DETAIL: String = "원본 파일을 열 수 없어 같은 형식으로 다시 만들 수 없습니다."

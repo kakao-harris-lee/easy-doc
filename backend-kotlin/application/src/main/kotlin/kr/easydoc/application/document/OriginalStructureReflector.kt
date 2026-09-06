@@ -6,6 +6,7 @@ import kr.easydoc.core.crypto.PlainBytes
 import kr.easydoc.core.document.ReflectionOutcome
 import kr.easydoc.core.document.SourceFormat
 import kr.easydoc.core.easyread.ExportFile
+import kr.easydoc.core.segment.SegmentMap
 import java.util.UUID
 
 /**
@@ -26,10 +27,20 @@ class OriginalDocument(
  * 업로드 원본 **구조에 검수본을 반영하는** 포트.
  *
  * 벤더 타입(POI 의 `XWPFDocument`, hwpxlib 의 `HWPXFile`)은 이 경계를 넘지 않는다 — 오가는
- * 것은 바이트와 [ReflectionOutcome] 의 **개수**, 그리고 [ExportFile] 뿐이다.
+ * 것은 바이트와 [ReflectionOutcome] 의 **개수**, [SegmentMap], 그리고 [ExportFile] 뿐이다.
  *
  * 두 팔이 **같은 자리 맞춤**을 써야 한다는 것이 이 포트의 계약이다. [outline] 이 미리 센 것과
  * [reflect] 가 실제로 하는 것이 갈리면 응답의 서식 유지 판정이 파일과 다른 것을 말하게 된다.
+ *
+ * **`map` — 계획 §10.2 결정 2, S6.** `SegmentMapDerivation` 이 유도한 대응표다. `null` 이면
+ * 오늘의 차례 짝짓기 그대로다(회귀 가드의 기준선) — 어댑터가 지도를 아직 쓰지 않아도(S6-1)
+ * `null` 이 아닌 값을 받되 무시하면 이 계약을 어기지 않는다. core 타입([SegmentMap])이
+ * application 포트에 나오는 것은 허용 방향(core → application)이다.
+ *
+ * **기본값을 두지 않는다**(2026-09-06 리뷰 F4) — 이 인자에 기본값이 있으면 실제 유스케이스가
+ * 지도를 빠뜨려도 컴파일이 조용히 통과한다. 어댑터 fixture 테스트가 `map` 을 아직 재지 않는
+ * 자리는 호출부가 `map = null` 을 **명시**한다 — 「이 테스트는 지도를 다루지 않는다」와
+ * 「유스케이스가 지도를 빠뜨렸다」가 코드에서 같은 모양이 되면 안 된다.
  */
 interface OriginalStructureReflector {
     /**
@@ -42,6 +53,7 @@ interface OriginalStructureReflector {
     fun outline(
         original: OriginalDocument,
         body: String,
+        map: SegmentMap?,
     ): ReflectionOutcome?
 
     /**
@@ -52,6 +64,7 @@ interface OriginalStructureReflector {
         original: OriginalDocument,
         title: String,
         body: String,
+        map: SegmentMap?,
     ): ExportFile?
 }
 

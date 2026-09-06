@@ -42,6 +42,7 @@ import kr.easydoc.core.exceptions.DocumentExtractionException
 import kr.easydoc.core.exceptions.UnsupportedFormatException
 import kr.easydoc.core.privacy.MaskCategory
 import kr.easydoc.core.security.Secret
+import kr.easydoc.core.segment.SegmentMap
 import java.time.Instant
 import java.time.temporal.ChronoUnit
 import java.util.UUID
@@ -630,18 +631,28 @@ class SliceOriginalReflector : OriginalStructureReflector {
     /** 내보내기가 원본을 열 수 있는가. `false` 면 500 갈래다. */
     var openable: Boolean = true
 
+    /** `outline`·`reflect` 어느 쪽이든 넘어온 지도 — 유스케이스가 유도한 지도를 실제로 실어 보냈는지 재는 자리다. */
+    val maps = mutableListOf<SegmentMap?>()
+
     override fun outline(
         original: OriginalDocument,
         body: String,
-    ): ReflectionOutcome? = outcome
+        map: SegmentMap?,
+    ): ReflectionOutcome? {
+        maps += map
+        return outcome
+    }
 
     override fun reflect(
         original: OriginalDocument,
         title: String,
         body: String,
-    ): ExportFile? =
-        ExportFormat
+        map: SegmentMap?,
+    ): ExportFile? {
+        maps += map
+        return ExportFormat
             .ofSource(original.format)
             ?.takeIf { openable }
             ?.let { format -> exportFileOf(title, format, body.toByteArray(Charsets.UTF_8)) }
+    }
 }

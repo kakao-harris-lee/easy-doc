@@ -13,13 +13,11 @@ import kr.easydoc.core.document.reflectedPreservation
 import kr.easydoc.core.document.unreadableOriginalPreservation
 import kr.easydoc.core.easyread.ExportFormat
 import kr.easydoc.core.exceptions.NotFoundException
-import kr.easydoc.core.privacy.maskText
 import kr.easydoc.core.segment.SegmentMap
-import kr.easydoc.core.segment.alignSegments
-import kr.easydoc.core.segment.splitUnits
 import java.util.UUID
 
 /** 변환 조회 유스케이스 — **내** 변환 한 건의 상태와 결과를 읽는다. */
+@Suppress("LongParameterList")
 class ConversionQueryService(
     private val conversions: ConversionRepository,
     private val cipher: ContentCipher,
@@ -27,6 +25,8 @@ class ConversionQueryService(
     private val original: OriginalReflection,
     /** `segment_map` 을 유도하려고 원문을 읽는 협력자 — 계획 §6 S2. */
     private val documents: DocumentRepository,
+    /** `segment_map` 계산 — 내보내기(`ConversionExportService`)와 **같은 인스턴스**를 쓴다(계획 §10.2 결정 1). */
+    private val segmentMapDerivation: SegmentMapDerivation,
     private val transaction: TransactionRunner,
 ) {
     /**
@@ -110,6 +110,9 @@ class ConversionQueryService(
         val easyText = open(stored.id, stored.ciphertexts.easyText, EncryptedField.CONVERSION_EASY_TEXT)
         val editedText = open(stored.id, stored.ciphertexts.editedText, EncryptedField.CONVERSION_EDITED_TEXT)
         val body = editedText ?: easyText
+        // 조회 화면이 보여 줄 지도와 서식 유지 판정이 반영에 쓸 지도는 **같은 값**이어야 한다
+        // (계획 §10.1) — 한 번만 유도해 둘 다에 쓴다.
+        val segmentMap = segmentMapDerivation.deriveOrNull(source, body)
         return ConversionView(
             id = stored.id,
             documentId = stored.documentId,
@@ -117,7 +120,7 @@ class ConversionQueryService(
             sourceFormat = stored.sourceFormat,
             exportFormat = ExportFormat.ofSource(stored.sourceFormat),
             exportFormatChoices = ExportFormat.choicesFor(stored.sourceFormat),
-            formatPreservation = donePreservation(stored, opened, body),
+            formatPreservation = donePreservation(stored, opened, body, segmentMap),
             easyText = easyText,
             editedText = editedText,
             reviewedAt = stored.reviewedAt,
@@ -127,41 +130,13 @@ class ConversionQueryService(
                     ?.let(maskedItems::decode)
                     ?: emptyList(),
             missingPlaceholders = stored.missingPlaceholders,
-            segmentMap = segmentMapOf(source, body),
+            segmentMap = segmentMap,
             model = stored.model,
             providerName = stored.providerName,
             inputTokens = stored.inputTokens,
             outputTokens = stored.outputTokens,
             failureCode = stored.failureCode,
         )
-    }
-
-    /**
-     * `segment_map` 을 유도한다 — 계획 §2 결정 2, §3. **저장하지 않는다**: 매 조회마다
-     * (마스킹된 원문, 검수본 ?? 초안)에서 [alignSegments] 로 다시 계산한다.
-     *
-     * 앵커(마스킹 자리표시자·사실)가 원문·본문 양쪽에서 성립하려면 **같은 마스킹을 원문에
-     * 다시 적용해야 한다** — `ConvertDocumentUseCase.Pass.run` 이 LLM 에 넘긴 것이 마스킹된
-     * 원문이고, 그 결과 본문에 남는 것도 그 마스킹이 심은 자리표시자이기 때문이다
-     * (`maskText` 는 결정적이고 줄 수를 바꾸지 않으므로 색인이 원문 그대로와도 일치한다).
-     *
-     * [source] 가 없거나(원문 행이 만료·삭제로 사라진 경합) [body] 가 없으면(초안도 검수본도
-     * 없는 완료 행 — 오늘은 나올 수 없는 갈래) `null` 로 접는다. 예외로 튀지 않는다 — 이
-     * 필드는 파생값이고, 조회 자체를 막을 이유가 아니다.
-     *
-     * 앵커는 **조회 시점의 현재 마스킹 규칙**으로 다시 만든다 — 저장된 값이 아니다. 그래서
-     * 변환을 만든 이후에 마스킹 규칙이 바뀌면, 오래된 변환은 앵커가 더 적게 잡혀 `low`
-     * confidence 로 보일 수 있다. 색인(`sourceUnitIndexes`, 줄 수 불변식)은 절대 깨지지
-     * 않는다 — 다시 계산해도 어긋나는 건 confidence 뿐이다.
-     */
-    private fun segmentMapOf(
-        source: StoredSourceText?,
-        body: PlainBody?,
-    ): SegmentMap? {
-        if (source == null || body == null) return null
-        val sourceText = cipher.decrypt(source.sourceText, source.documentId, EncryptedField.DOCUMENT_SOURCE_TEXT)
-        val maskedSource = maskText(sourceText.value).maskedText.value
-        return alignSegments(splitUnits(maskedSource), splitUnits(body.value))
     }
 
     /**
@@ -198,6 +173,7 @@ class ConversionQueryService(
         stored: StoredConversion,
         opened: OriginalDocument?,
         body: PlainBody?,
+        segmentMap: SegmentMap?,
     ): FormatPreservation? =
         when {
             // 반영이라는 개념 자체가 적용되지 않는다(PDF) — 원본을 열지 않는다.
@@ -228,7 +204,7 @@ class ConversionQueryService(
 
             else -> {
                 original.reflector
-                    .outline(opened, body.value)
+                    .outline(opened, body.value, segmentMap)
                     ?.let(::reflectedPreservation)
                     ?: unreadableOriginalPreservation()
             }

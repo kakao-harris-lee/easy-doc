@@ -32,7 +32,7 @@ class PackagedOriginalReflectorTest {
             val places = extractors.extract(name, original.bytes.value).text.split("\n")
             val marked = places.indices.map { "${it + 1}번 자리" }
 
-            val file = reflector.reflect(original, "차례", marked.joinToString("\n"))!!
+            val file = reflector.reflect(original, "차례", marked.joinToString("\n"), map = null)!!
 
             assertThat(extractors.extract(file.filename, file.content).text.split("\n"))
                 .withFailMessage(
@@ -49,7 +49,7 @@ class PackagedOriginalReflectorTest {
             val original = originalOf(name, format)
             val body = extractors.extract(name, original.bytes.value).text
 
-            val outcome = reflector.outline(original, body)!!
+            val outcome = reflector.outline(original, body, map = null)!!
 
             assertThat(reflectedPreservation(outcome).status)
                 .withFailMessage("%s: 원본과 문단 수가 같은데도 유지 가능이 아니다", name)
@@ -63,8 +63,8 @@ class PackagedOriginalReflectorTest {
         val original = originalOf("sample.docx", SourceFormat.DOCX)
         val body = "\n쉬운 제목\n\n\n쉬운 본문\n\n"
 
-        val outcome = reflector.outline(original, body)!!
-        val file = reflector.reflect(original, "안내", body)!!
+        val outcome = reflector.outline(original, body, map = null)!!
+        val file = reflector.reflect(original, "안내", body, map = null)!!
 
         assertThat(reflectedPreservation(outcome).status).isEqualTo(FormatPreservationStatus.AVAILABLE)
         assertThat(extractors.extract(file.filename, file.content).text).isEqualTo("쉬운 제목\n쉬운 본문")
@@ -86,8 +86,8 @@ class PackagedOriginalReflectorTest {
                 val lines = List(count) { "검수한 문단 ${it + 1}." }
                 val body = lines.joinToString("\n")
 
-                val outcome = reflector.outline(original, body)!!
-                val file = reflector.reflect(original, "안내", body)!!
+                val outcome = reflector.outline(original, body, map = null)!!
+                val file = reflector.reflect(original, "안내", body, map = null)!!
 
                 val written = extractors.extract(file.filename, file.content).text
                 assertThat(lines)
@@ -109,8 +109,8 @@ class PackagedOriginalReflectorTest {
     fun `pdf 는 반영하지 않는다`() {
         val original = originalOf("sample.pdf", SourceFormat.PDF)
 
-        assertThat(reflector.outline(original, "쉬운 본문")).isNull()
-        assertThat(reflector.reflect(original, "안내", "쉬운 본문")).isNull()
+        assertThat(reflector.outline(original, "쉬운 본문", map = null)).isNull()
+        assertThat(reflector.reflect(original, "안내", "쉬운 본문", map = null)).isNull()
     }
 
     @Test
@@ -118,8 +118,8 @@ class PackagedOriginalReflectorTest {
     fun `txt 는 반영하지 않는다`() {
         val original = OriginalDocument(SourceFormat.TXT, PlainBytes("안내문 본문".toByteArray(Charsets.UTF_8)))
 
-        assertThat(reflector.outline(original, "쉬운 본문")).isNull()
-        assertThat(reflector.reflect(original, "안내", "쉬운 본문")).isNull()
+        assertThat(reflector.outline(original, "쉬운 본문", map = null)).isNull()
+        assertThat(reflector.reflect(original, "안내", "쉬운 본문", map = null)).isNull()
     }
 
     @Test
@@ -127,8 +127,8 @@ class PackagedOriginalReflectorTest {
     fun `예산을 넘으면 열지 않는다`() {
         val bomb = originalOf("oversized.zip", SourceFormat.DOCX)
 
-        assertThat(reflector.outline(bomb, "쉬운 본문")).isNull()
-        assertThat(reflector.reflect(bomb, "안내", "쉬운 본문")).isNull()
+        assertThat(reflector.outline(bomb, "쉬운 본문", map = null)).isNull()
+        assertThat(reflector.reflect(bomb, "안내", "쉬운 본문", map = null)).isNull()
     }
 
     /** 머리말·꼬리말이 **있는** 원본. 두 형식의 머리말 자리가 다르다는 것이 여기 둘의 차이다. */

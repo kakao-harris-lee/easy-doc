@@ -14,9 +14,11 @@ import kr.easydoc.application.document.DocumentStorage
 import kr.easydoc.application.document.EnvelopeRotation
 import kr.easydoc.application.document.FeedbackSubmission
 import kr.easydoc.application.document.LockedFeedbackComment
+import kr.easydoc.application.document.MaskedSegmentMapDerivation
 import kr.easydoc.application.document.OriginalReflection
 import kr.easydoc.application.document.RotationOutcome
 import kr.easydoc.application.document.SealedStores
+import kr.easydoc.application.document.SegmentMapDerivation
 import kr.easydoc.application.document.StoredOriginalReader
 import kr.easydoc.core.crypto.EncryptedContent
 import kr.easydoc.core.crypto.EncryptedField
@@ -360,6 +362,7 @@ class EnvelopeRotationConcurrencyTest {
                             PackagedOriginalReflector(),
                         ),
                     documents = JdbcDocumentRepository(client),
+                    segmentMapDerivation = MaskedSegmentMapDerivation(writer),
                     transaction = runner,
                 ),
             transaction = runner,
@@ -410,6 +413,7 @@ class EnvelopeRotationConcurrencyTest {
                             PackagedOriginalReflector(),
                         ),
                     documents = JdbcDocumentRepository(client),
+                    segmentMapDerivation = MaskedSegmentMapDerivation(writer),
                     transaction = runner,
                 ),
             transaction = runner,

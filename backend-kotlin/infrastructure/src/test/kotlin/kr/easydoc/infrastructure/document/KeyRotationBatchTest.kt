@@ -14,8 +14,10 @@ import kr.easydoc.application.document.FeedbackSubmission
 import kr.easydoc.application.document.KeyRotationBatch
 import kr.easydoc.application.document.KeyRotationObserver
 import kr.easydoc.application.document.KeyRotationPolicy
+import kr.easydoc.application.document.MaskedSegmentMapDerivation
 import kr.easydoc.application.document.OriginalReflection
 import kr.easydoc.application.document.SealedStores
+import kr.easydoc.application.document.SegmentMapDerivation
 import kr.easydoc.application.document.StoredOriginal
 import kr.easydoc.application.document.StoredOriginalReader
 import kr.easydoc.core.crypto.EncryptedContent
@@ -406,6 +408,7 @@ class KeyRotationBatchTest {
                             PackagedOriginalReflector(),
                         ),
                     documents = JdbcDocumentRepository(client),
+                    segmentMapDerivation = MaskedSegmentMapDerivation(cipher),
                     transaction = runner,
                 ),
             transaction = runner,
