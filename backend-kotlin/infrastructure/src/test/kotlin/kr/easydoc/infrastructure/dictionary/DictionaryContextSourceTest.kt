@@ -9,8 +9,6 @@ import org.junit.jupiter.api.Test
 
 /** 사전 주입 배선 — 플래그 on/off 와 「매칭 0건이면 싣지 않는다」. */
 class DictionaryContextSourceTest {
-    private val index = DictionaryIndexJsonReader().readClasspathResource()
-
     @Test
     @DisplayName("기본값은 켜짐이다 — 사전에서 흡수 단어를 덜어내는 릴리스와 주입이 함께 켜져야 한다")
     fun `기본값은 켜짐이다`() {
@@ -20,7 +18,8 @@ class DictionaryContextSourceTest {
     @Test
     @DisplayName("켜면 문서에 나온 용어로 컨텍스트를 만든다")
     fun `켜면 컨텍스트를 싣는다`() {
-        val source = ConversionWorkerConfiguration().dictionaryContextSource(DictionaryProperties())
+        val holder = DictionaryIndexHolder(enabled = true) { index }
+        val source = ConversionWorkerConfiguration().dictionaryContextSource(DictionaryProperties(), holder)
 
         val context = source.contextFor(maskText(WITH_TERMS).maskedText)
 
@@ -36,7 +35,14 @@ class DictionaryContextSourceTest {
     @Test
     @DisplayName("끄면 아무것도 싣지 않는다 — 색인을 읽지도 않는다")
     fun `끄면 싣지 않는다`() {
-        val source = ConversionWorkerConfiguration().dictionaryContextSource(DictionaryProperties(enabled = false))
+        // 홀더는 읽을 수 있는 상태(enabled=true)로 둔다 — 그런데도 이 소비자는
+        // DictionaryProperties.enabled=false 를 직접 보고 indexOrNull() 을 부르지 않아야
+        // 한다. loader 가 불리면 즉시 실패해, "읽을 수 있는데도 안 읽는다"를 실제로 확인한다.
+        val holder =
+            DictionaryIndexHolder(enabled = true) { error("worker 주입이 꺼져 있으면 loader 가 호출되면 안 된다") }
+        val source =
+            ConversionWorkerConfiguration()
+                .dictionaryContextSource(DictionaryProperties(enabled = false), holder)
 
         assertThat(source.contextFor(maskText(WITH_TERMS).maskedText)).isNull()
     }
@@ -97,6 +103,13 @@ class DictionaryContextSourceTest {
     }
 
     private companion object {
+        /**
+         * 실제 배포 색인. companion object 프로퍼티라 클래스당 **한 번만** 읽힌다(JUnit5 는
+         * 기본적으로 테스트 메서드마다 새 인스턴스를 만들므로, 인스턴스 프로퍼티였다면 이
+         * 클래스의 테스트 수만큼 1.5MB 색인을 반복해서 읽었을 것이다).
+         */
+        val index = DictionaryIndexJsonReader().readClasspathResource()
+
         /**
          * 사전 용어가 실제로 들어 있는 안내문.
          *

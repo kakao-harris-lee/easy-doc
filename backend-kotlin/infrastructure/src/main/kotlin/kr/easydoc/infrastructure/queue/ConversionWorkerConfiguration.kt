@@ -17,10 +17,11 @@ import kr.easydoc.application.conversion.ProcessConversionJob
 import kr.easydoc.application.crypto.ContentCipher
 import kr.easydoc.application.document.MaskedItemWriter
 import kr.easydoc.application.mail.MailSender
+import kr.easydoc.core.exceptions.ConfigurationException
 import kr.easydoc.core.llm.LlmOptions
 import kr.easydoc.core.llm.LlmProvider
 import kr.easydoc.infrastructure.app.AppProperties
-import kr.easydoc.infrastructure.dictionary.DictionaryIndexJsonReader
+import kr.easydoc.infrastructure.dictionary.DictionaryIndexHolder
 import kr.easydoc.infrastructure.dictionary.DictionaryProperties
 import kr.easydoc.infrastructure.dictionary.IndexedDictionaryContextSource
 import kr.easydoc.infrastructure.document.JdbcConversionNotificationStore
@@ -77,19 +78,34 @@ class ConversionWorkerConfiguration {
         )
 
     /**
-     * 사전 컨텍스트 공급원. **여기가 사전을 적재하는 유일한 자리다** — 이 설정이 worker 프로필
-     * 전용이므로 큐를 소비하지 않는 API 프로세스는 1.5MB 색인을 읽지 않는다.
+     * 사전 컨텍스트 공급원. **색인 적재는 `DictionaryConfiguration.dictionaryIndexHolder` 하나로
+     * 모여 있다(2026-09-06, `docs/kotlin-redevelopment-backlog.md` §1.1 「사전 색인이
+     * API·worker 프로필 동시 기동 시 두 번 적재된다」 해결, 2차 정정으로 즉시 로드를 lazy 로
+     * 바꿨다 — [DictionaryIndexHolder] KDoc 참고)** — 이 빈은 그 공유 홀더를 소비하기만
+     * 하고 자기 색인을 다시 읽지 않는다. API·worker 프로필을 한 프로세스에 함께 켜도 색인
+     * 파일은 한 번만 읽힌다.
      *
-     * 주입을 껐으면 색인을 **읽지도 않는다**. 끈 실행에서 적재만 하는 것은 기동 시간과 힙을
-     * 그대로 쓰면서 아무것도 얻지 않는 것이다.
+     * 주입 스위치([DictionaryProperties.enabled])가 꺼져 있으면 [DictionaryIndexHolder
+     * .indexOrNull] 을 **부르지도 않는다** — 이 클래스는 `@Profile("worker")` 라 API 전용
+     * 프로세스에서는 이 `@Bean` 자체가 존재하지 않지만, worker 프로세스 안에서도 이 스위치가
+     * 꺼져 있으면(조회만 켜진 조합) 홀더가 읽을 수 있는 상태여도 이 소비자는 읽지 않는다.
+     * 켜져 있는데 `indexOrNull()` 이 `null` 이면 구성 조립이 깨진 것이다(이 스위치가 켜져
+     * 있으면 홀더의 `enabled` 도 합집합으로 반드시 참이므로, 이 분기가 켜져 있는 이상 구성상
+     * 발생할 수 없다) — 조용히 사전 없이 흘려보내는 대신 fail-fast 한다.
      */
     @Bean
-    fun dictionaryContextSource(properties: DictionaryProperties): DictionaryContextSource =
+    fun dictionaryContextSource(
+        properties: DictionaryProperties,
+        dictionaryIndexHolder: DictionaryIndexHolder,
+    ): DictionaryContextSource =
         if (properties.enabled) {
-            IndexedDictionaryContextSource(
-                index = DictionaryIndexJsonReader().readClasspathResource(),
-                policy = properties.policy(),
-            )
+            val index =
+                dictionaryIndexHolder.indexOrNull()
+                    ?: throw ConfigurationException(
+                        "easydoc.dictionary.enabled=true 인데 사전 색인이 적재되지 않았다 " +
+                            "— DictionaryConfiguration.dictionaryIndexHolder 조립을 확인한다 (구성상 발생할 수 없다)",
+                    )
+            IndexedDictionaryContextSource(index = index, policy = properties.policy())
         } else {
             NoDictionaryContext
         }
