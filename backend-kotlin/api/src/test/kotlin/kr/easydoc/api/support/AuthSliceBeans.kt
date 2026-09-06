@@ -8,6 +8,9 @@ import kr.easydoc.application.auth.IssuedAccessToken
 import kr.easydoc.application.auth.OAuthChallenge
 import kr.easydoc.application.auth.OAuthStateStore
 import kr.easydoc.application.auth.PasswordHasher
+import kr.easydoc.application.auth.PasswordResetCodeStore
+import kr.easydoc.application.auth.PasswordResetService
+import kr.easydoc.application.auth.PasswordService
 import kr.easydoc.application.auth.SocialIdentity
 import kr.easydoc.application.auth.SocialLoginProvider
 import kr.easydoc.application.auth.SocialLoginProviderId
@@ -132,6 +135,44 @@ class AuthSliceBeans {
             users = users,
             codes = codes,
             mail = mail,
+            codeTtl = Duration.ofMinutes(10),
+            resendCooldown = Duration.ofSeconds(60),
+            maxAttempts = 5,
+        )
+
+    /** `POST /auth/password` 슬라이스 배선 — 제품 조립(`AuthConfiguration.passwordService`)과 같은 모양이다. */
+    @Bean
+    fun passwordService(
+        users: InMemoryUserRepository,
+        hasher: StubPasswordHasher,
+        mail: FakeMailSender,
+        transaction: TransactionRunner,
+    ): PasswordService = PasswordService(users = users, passwords = hasher, mail = mail, transaction = transaction)
+
+    @Bean
+    fun inMemoryPasswordResetCodes(): InMemoryPasswordResetCodeStore = InMemoryPasswordResetCodeStore()
+
+    /**
+     * `POST /auth/password-reset/{request,confirm}` 슬라이스 배선 — 제품 조립
+     * (`AuthConfiguration.passwordResetService`)과 같은 모양이다.
+     */
+    @Suppress("LongParameterList")
+    @Bean
+    fun passwordResetService(
+        users: InMemoryUserRepository,
+        codes: InMemoryPasswordResetCodeStore,
+        mail: FakeMailSender,
+        hasher: StubPasswordHasher,
+        tokens: StubAccessTokens,
+        transaction: TransactionRunner,
+    ): PasswordResetService =
+        PasswordResetService(
+            users = users,
+            codes = codes,
+            mail = mail,
+            passwords = hasher,
+            accessTokens = tokens,
+            transaction = transaction,
             codeTtl = Duration.ofMinutes(10),
             resendCooldown = Duration.ofSeconds(60),
             maxAttempts = 5,
@@ -518,7 +559,12 @@ class InMemoryUserRepository : UserRepository {
         passwordHash: PasswordHash,
     ) {
         val existing = byId[userId] ?: return
-        val replaced = StoredUser(existing.user, passwordHash)
+        // `hasPassword`도 함께 뒤집는다 — 실물(`JdbcUserRepository.toUser`)은 매 조회마다
+        // `password_hash IS NOT NULL`을 다시 읽어 항상 최신이지만, 이 대역은 `User`를
+        // 스냅샷으로 캐시하므로 여기서 갱신하지 않으면 비밀번호가 없던 계정이 `PasswordService.set`
+        // 뒤에도 `has_password: false`로 굳어 있는다(재해시 경로만 부르던 예전에는 이미
+        // 비밀번호가 있는 계정만 거쳤으므로 이 간극이 드러나지 않았다).
+        val replaced = StoredUser(existing.user.copy(hasPassword = true), passwordHash)
         byId[userId] = replaced
         byEmail[existing.user.email] = replaced
     }
@@ -888,6 +934,63 @@ class InMemoryVerificationCodeStore : VerificationCodeStore {
     private var counter = 0
 
     /** 다음 [issue] 를 429 로 거절하게 만든다 — 쿨다운 케이스 전용 스위치. */
+    var cooldownArmed: Boolean = false
+
+    override fun issue(
+        userId: UUID,
+        ttl: Duration,
+        cooldown: Duration,
+    ): String {
+        if (cooldownArmed) {
+            throw RateLimitedException("잠시 후 다시 시도해주세요", cooldown.seconds.coerceAtLeast(1))
+        }
+        val code = String.format(Locale.ROOT, "%06d", ++counter % 1_000_000)
+        active[userId] = ActiveCode(code)
+        return code
+    }
+
+    override fun attempt(
+        userId: UUID,
+        code: String,
+        maxAttempts: Int,
+    ): Boolean {
+        val current = active[userId]
+        val matched = current != null && !current.voided && current.code == code
+        when {
+            current == null || current.voided -> {
+                Unit
+            }
+
+            matched -> {
+                active.remove(userId)
+            }
+
+            else -> {
+                current.attempts++
+                if (current.attempts >= maxAttempts) current.voided = true
+            }
+        }
+        return matched
+    }
+}
+
+/**
+ * 비밀번호 재설정 코드 저장소 대역 — [InMemoryVerificationCodeStore]와 같은 계약(활성 코드
+ * 하나·쿨다운·시도 상한)을 인메모리로 지킨다. 별도 클래스인 이유는 `PasswordResetCodeStore`
+ * 가 `VerificationCodeStore`와 다른 타입이라 DI가 두 빈을 구분해야 하기 때문이다
+ * (`OneTimeCodeStore` KDoc).
+ */
+class InMemoryPasswordResetCodeStore : PasswordResetCodeStore {
+    private data class ActiveCode(
+        val code: String,
+        var attempts: Int = 0,
+        var voided: Boolean = false,
+    )
+
+    private val active = ConcurrentHashMap<UUID, ActiveCode>()
+    private var counter = 0
+
+    /** 다음 [issue] 를 쿨다운으로 거절하게 만든다 — 테스트가 직접 무장한다. */
     var cooldownArmed: Boolean = false
 
     override fun issue(

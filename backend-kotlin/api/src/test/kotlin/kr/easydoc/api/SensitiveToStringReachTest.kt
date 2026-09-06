@@ -324,8 +324,16 @@ class SensitiveToStringReachTest {
          * 이미 가려진다 — `GoogleOAuthSettings`·`KakaoOAuthSettings` 와 같은 판단)와
          * `NaverOAuthProperties`(설정 바인딩, 구글·카카오와 같은 필드 모양이라 같은 이유로
          * [KNOWN_SENSITIVE_TYPES] 에 넣지 않는다).
+         *
+         * 비밀번호 설정·재설정(backlog §1.4 다음 조각, 계약 2.19.0, 2026-09-06)이 **넷**을
+         * 더해 132 다(128 위에) — api `SetPasswordRequest`·`PasswordResetRequest`·
+         * `PasswordResetConfirmRequest`(셋 다 비밀번호·이메일·코드를 들어 손으로 쓴
+         * `toString()`으로 가린다 — `SignupRequest`·`ConfirmEmailVerificationRequest`와
+         * 같은 판단)와 infrastructure `PasswordResetProperties`(TTL·쿨다운·시도 상한
+         * 숫자뿐, `EmailVerificationProperties`와 같은 이유로 [KNOWN_SENSITIVE_TYPES] 에
+         * 넣지 않는다).
          */
-        const val EXPECTED_SOURCE_DECLARATIONS = 128
+        const val EXPECTED_SOURCE_DECLARATIONS = 132
 
         /** 민감 판정이 반드시 닿아야 하는 타입 — 바닥이다. */
         val KNOWN_SENSITIVE_TYPES =

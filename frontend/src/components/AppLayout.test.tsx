@@ -38,6 +38,7 @@ function authValue(overrides: Partial<AuthContextValue> = {}): AuthContextValue 
         has_password: true,
         identities: [],
       }),
+    completePasswordReset: () => Promise.resolve(),
     signOut: () => undefined,
     refreshMe: () => Promise.resolve(),
     ...overrides,
@@ -133,6 +134,45 @@ describe('계정 메뉴', () => {
     expect(panel).not.toBeNull()
     // 가리키는 것이 실제로 그 패널인지까지 본다 — id만 존재하면 통과하는 검사는 약하다.
     expect(panel).toContainElement(screen.getByRole('button', { name: '로그아웃' }))
+  })
+})
+
+describe('계정 메뉴 — 비밀번호 만들기 (2.19.0, backlog §1.4 다음 조각)', () => {
+  it('비밀번호가 없고 이메일이 인증된 계정은 「비밀번호 만들기」 버튼을 보여준다', async () => {
+    const user = userEvent.setup()
+    renderLayout({
+      user: { id: 'u1', email: EMAIL, email_verified: true, has_password: false, identities: [] },
+    })
+
+    await user.click(screen.getByRole('button', { name: '계정 메뉴' }))
+
+    expect(screen.getByRole('button', { name: '비밀번호 만들기' })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: '이메일 인증' })).not.toBeInTheDocument()
+  })
+
+  it('비밀번호가 없고 이메일도 미인증이면 버튼 대신 인증 화면 링크를 보여준다', async () => {
+    const user = userEvent.setup()
+    renderLayout({
+      user: { id: 'u1', email: EMAIL, email_verified: false, has_password: false, identities: [] },
+    })
+
+    await user.click(screen.getByRole('button', { name: '계정 메뉴' }))
+
+    expect(screen.queryByRole('button', { name: '비밀번호 만들기' })).not.toBeInTheDocument()
+    const link = screen.getByRole('link', { name: '이메일 인증' })
+    expect(link).toHaveAttribute('href', '/verify-email')
+  })
+
+  it('이미 비밀번호가 있으면 버튼도 인증 링크도 보여주지 않는다', async () => {
+    const user = userEvent.setup()
+    renderLayout({
+      user: { id: 'u1', email: EMAIL, email_verified: false, has_password: true, identities: [] },
+    })
+
+    await user.click(screen.getByRole('button', { name: '계정 메뉴' }))
+
+    expect(screen.queryByRole('button', { name: '비밀번호 만들기' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: '이메일 인증' })).not.toBeInTheDocument()
   })
 })
 

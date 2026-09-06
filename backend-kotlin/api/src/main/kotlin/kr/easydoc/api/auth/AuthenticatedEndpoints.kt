@@ -9,6 +9,10 @@ object AuthenticatedEndpoints {
             // 이메일 인증 2종(backlog §1.4 P0-1/P0-3) — 대상 이메일은 토큰의 사용자로 고정된다.
             "/auth/email-verification/request",
             "/auth/email-verification/confirm",
+            // 비밀번호 설정(backlog §1.4 후속, 계약 2.19.0) — 대상 계정은 토큰의 사용자로
+            // 고정된다. 재설정(`/auth/password-reset/{request,confirm}`)은 인증 전 호출이라
+            // 여기 없다 — 계약 `security: []`.
+            "/auth/password",
             // 명시적 계정 연결 2종(2.10.0, backlog §1.4) — 대상 계정은 토큰의 사용자로 고정된다.
             // `/auth/oauth/{provider}/start`·`/callback`(공개, security: [])과 경로가
             // 갈리므로 인터셉터 패턴이 로그인 흐름을 잠그지 않는다.

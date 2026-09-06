@@ -65,6 +65,7 @@ function authValue(status: AuthContextValue['status']): AuthContextValue {
     signIn: () => Promise.resolve(),
     signUp: () => Promise.resolve(),
     signInWithSocialProvider: () => Promise.resolve(USER),
+    completePasswordReset: () => Promise.resolve(),
     signOut: () => undefined,
     refreshMe: () => Promise.resolve(),
   }

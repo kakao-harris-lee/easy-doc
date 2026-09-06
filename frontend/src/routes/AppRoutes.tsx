@@ -7,6 +7,7 @@ import { LoginPage } from '../pages/LoginPage'
 import { NotFoundPage } from '../pages/NotFoundPage'
 import { OAuthCallbackPage } from '../pages/OAuthCallbackPage'
 import { OAuthLinkCallbackPage } from '../pages/OAuthLinkCallbackPage'
+import { ResetPasswordPage } from '../pages/ResetPasswordPage'
 import { SignupPage } from '../pages/SignupPage'
 import { UploadPage } from '../pages/UploadPage'
 import { RequireAuth } from './RequireAuth'
@@ -18,6 +19,7 @@ import {
   LOGIN_PATH,
   OAUTH_CALLBACK_PATH,
   OAUTH_LINK_CALLBACK_PATH,
+  RESET_PASSWORD_PATH,
   SIGNUP_PATH,
 } from './paths'
 
@@ -27,6 +29,7 @@ export function AppRoutes() {
     <Routes>
       <Route path={LOGIN_PATH} element={<LoginPage />} />
       <Route path={SIGNUP_PATH} element={<SignupPage />} />
+      <Route path={RESET_PASSWORD_PATH} element={<ResetPasswordPage />} />
       <Route path={OAUTH_CALLBACK_PATH} element={<OAuthCallbackPage />} />
       <Route
         path={OAUTH_LINK_CALLBACK_PATH}

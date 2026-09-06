@@ -94,6 +94,38 @@ data class ConfirmEmailVerificationRequest
         override fun toString(): String = "ConfirmEmailVerificationRequest(...)"
     }
 
+/** `POST /auth/password` 요청. 계약 `SetPasswordRequest`. */
+data class SetPasswordRequest
+    @JsonCreator
+    constructor(
+        @param:JsonProperty("new_password") val newPassword: String,
+    ) {
+        /** 비밀번호가 로그·오류 메시지로 새지 않게 한다. */
+        override fun toString(): String = "SetPasswordRequest(...)"
+    }
+
+/** `POST /auth/password-reset/request` 요청. 계약 `PasswordResetRequest`. */
+data class PasswordResetRequest
+    @JsonCreator
+    constructor(
+        @param:JsonProperty("email") val email: String,
+    ) {
+        /** 이메일이 로그·오류 메시지로 새지 않게 한다 — `SignupRequest`와 같은 규약. */
+        override fun toString(): String = "PasswordResetRequest(...)"
+    }
+
+/** `POST /auth/password-reset/confirm` 요청. 계약 `PasswordResetConfirmRequest`. */
+data class PasswordResetConfirmRequest
+    @JsonCreator
+    constructor(
+        @param:JsonProperty("email") val email: String,
+        @param:JsonProperty("code") val code: String,
+        @param:JsonProperty("new_password") val newPassword: String,
+    ) {
+        /** 이메일·코드·비밀번호가 로그·오류 메시지로 새지 않게 한다. */
+        override fun toString(): String = "PasswordResetConfirmRequest(...)"
+    }
+
 /** 액세스 토큰 응답. 계약 `components/schemas/TokenResponse`. */
 data class TokenResponse(
     @get:JsonProperty("access_token") val accessToken: String,

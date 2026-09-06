@@ -41,7 +41,7 @@ openapi: 3.1.0
 
 info:
   title: Easy-Read AI API
-  version: "2.18.0"
+  version: "2.19.0"
   x-baselined-at: "2026-08-12"       # 초판 기준선을 뜬 날 (동결일이 아니다)
   x-rebased-at: "2026-08-12"         # 계약의 성격을 "개선 대상"으로 다시 정의한 날
   x-source-runtime: "Python 3.12 / FastAPI (app/main.py) — 과거 참고 구현이었고 2026-08-24 저장소에서 제거됨(git 태그 pre-python-removal-20260824). 기준선 출처였을 뿐 정답이 아니었다"
@@ -49,7 +49,7 @@ info:
   description: |
     공공기관용 '쉬운 글' 자동 변환 서비스의 HTTP 계약 v1.
 
-    **엔드포인트는 정확히 25개다** — 제품 24개 + 헬스 체크 1개.
+    **엔드포인트는 정확히 28개다** — 제품 27개 + 헬스 체크 1개.
     계획 §2.2가 센 "14개 HTTP 엔드포인트"는 **그 문서를 쓸 때의 수**이며 `/health`를
     포함해야 맞는 수였다. 1.5.0에서 `PUT /conversions/{conversion_id}/feedback`이,
     2.2.0에서 `GET /documents/{document_id}/source`가, 2.8.0에서 소셜 로그인
@@ -64,7 +64,10 @@ info:
     엔드포인트가 없고, 2.14.0에서 문단 재변환(P0-4 S4) `POST
     /conversions/{conversion_id}/units/{source_unit_index}/reconvert`가 더해져
     24개, 2.17.0에서 소셜 계정 연결 해제(backlog §1.4 다음 조각)
-    `DELETE /auth/oauth/{provider}/link`가 더해져 오늘은 25개다 —
+    `DELETE /auth/oauth/{provider}/link`가 더해져 25개, 2.19.0에서 비밀번호
+    설정·재설정(backlog §1.4 다음 조각) `POST /auth/password`·
+    `POST /auth/password-reset/request`·`POST /auth/password-reset/confirm`
+    셋이 더해져 오늘은 28개다 —
     계획 문서의 수를 고치는 것이 아니라 **수의 정본이 이 계약**이다.
 
     ## 경로 접두사
@@ -781,6 +784,18 @@ x-social-login:
     `has_password`는 이 판정을 클라이언트가 요청 전에 미리 가늠하는 재료다 — 서버
     판정을 대신하지 않는다(경쟁 상태에서는 여전히 409가 정본).
 
+    **비밀번호 설정·재설정(2.19.0 신설, backlog §1.4 다음 조각).** 위 409가 안내하던
+    탈출구는 2.17.0 시점에는 "다른 소셜 계정 연결" 하나뿐이었다 — 소셜 전용 계정에
+    비밀번호를 붙이는 통로가 아직 없었기 때문이다. `POST /auth/password`
+    (`setPassword`, Bearer 필요)가 그 통로를 연다: 비밀번호가 없는 계정만 새 비밀번호를
+    만들 수 있고(이미 있으면 409), 이메일 검증을 요구하지 않는다 — 호출자가 이미
+    소셜 로그인으로 인증된 상태 자체가 계정 소유를 증명했다. `POST
+    /auth/password-reset/request`·`POST /auth/password-reset/confirm`
+    (`passwordResetRequest`·`passwordResetConfirm`, 둘 다 `security: []`)은 비밀번호를
+    잊었거나 아예 없는 계정이 이메일 코드로 비밀번호를 (재)설정하는 별도 흐름이다 —
+    `confirm` 성공은 `login`과 같은 `TokenResponse`를 낸다. 409의 안내 문구도
+    "먼저 비밀번호를 만들거나 다른 소셜 계정을 연결하세요"로 갱신됐다(아래 예시).
+
 # -----------------------------------------------------------------------------
 # 입력 상한 — 전부 계약이다.
 # -----------------------------------------------------------------------------
@@ -1214,6 +1229,16 @@ x-request-field-constraints:
       limit: 100                # 계획 §3.4, core/dictionary/TermLookup.kt TermQuery.MAX_LENGTH
       measured_on: "정규화 후 — 제어문자 제거 + 공백류를 한 칸으로 뭉갬 + 앞뒤 공백 제거(TermQuery.of)"
       detail: ["조회할 문자열이 비어 있다", "조회 문자열이 상한(100자)을 넘는다"]
+    - field: "SetPasswordRequest.new_password"        # backlog §1.4 후속, 2.19.0
+      layer: service
+      limit: 8                  # SignupRequest.password 와 같은 하한 — CredentialRules.requireValidPassword
+      measured_on: "원시 값 — 정규화하지 않는다"
+      detail: "비밀번호는 8자 이상이어야 합니다"
+    - field: "PasswordResetConfirmRequest.new_password"  # backlog §1.4 후속, 2.19.0
+      layer: service
+      limit: 8                  # 위와 같은 규칙(CredentialRules.requireValidPassword) — 코드도 재사용한다
+      measured_on: "원시 값 — 정규화하지 않는다"
+      detail: "비밀번호는 8자 이상이어야 합니다"
 
   x-open-asymmetry: |
     **미결 — Phase 4, `kotlin-implementer`·`parity-verifier` 공동.**
@@ -1543,6 +1568,7 @@ x-private-response-headers:
   applies_to:
     - "POST /auth/signup"              # 이메일이 실린다
     - "POST /auth/login"               # 응답 본문이 Bearer 토큰 자체다
+    - "POST /auth/password-reset/confirm"  # login과 같은 이유 — 응답 본문이 Bearer 토큰 자체다(2.19.0)
     - "GET /auth/me"                   # 이메일이 실린다
     - "GET /documents"                 # 사용자가 적어 준 제목이 실린다 (본문 유도는 폐기 — `x-title-policy`)
     - "GET /documents/{document_id}/source"    # source_text가 **마스킹 전** 원문 그대로다 (주민등록번호·카드번호 포함)
@@ -1558,8 +1584,16 @@ x-private-response-headers:
     `POST /auth/login`은 Bearer 토큰 자체를, 나머지 `/auth` 둘은 이메일을, 문서·작업 공간
     응답은 사용자 콘텐츠를 싣는다. 헤더가 빠지면 **200 OK로 나타나는 보안 사고**라
     본문 검증으로는 절대 잡히지 않는다 — 그래서 전역 규칙과 별개로 개별 단언을 남긴다.
-    이 목록은 `paths` 아래 개별 응답의 헤더 선언과 **1:1로 대응한다** — 조항은 그 대응이지
-    개수가 아니다(개수 대조는 `PrivateHeaderFloorCensusTest`가 한다). 1.5.0에서
+    이 목록의 각 항목은 `paths` 아래 그 오퍼레이션의 헤더 선언과 대응한다(그 방향은
+    실측했다 — 열거된 자리마다 실제로 `headers:` 가 있다). **역방향(1:1)은 성립하지
+    않는다** — `paths` 에는 이 목록보다 **먼저** `Cache-Control`/`X-Content-Type-Options`
+    를 선언한 자리가 이미 있었다(예: `POST /auth/oauth/{provider}/callback`,
+    `POST /dictionary/lookup`, 재변환·이메일 인증 오퍼레이션들 — 전역 필터
+    `x-global-response-headers` 채택 이후 신설된 오퍼레이션은 대체로 명시 선언까지
+    함께 얹는다). 그런 자리를 전부 이 목록에 옮기지 않는다 — **여기는 "개인정보·
+    자격증명이 실리는 응답"이라는 별도 기준으로 고른 하한선**(`x-why-these-ten` 첫
+    문장)이지, `paths` 의 명시적 헤더 선언 전체의 색인이 아니다. 개수 대조는
+    `PrivateHeaderFloorCensusTest`가 한다. 1.5.0에서
     `PUT /conversions/{conversion_id}/feedback`이 더해졌다: 자유 의견은 사용자가 직접 적은
     콘텐츠이고 그 응답이 그것을 그대로 되돌려 주므로 같은 규칙에 걸린다.
     2.2.0에서 `GET /documents/{document_id}/source`가 더해졌다: **이 목록에서 개인정보가
@@ -1783,6 +1817,163 @@ paths:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
               examples:
                 already_verified: { value: { detail: "이미 인증된 이메일입니다" } }
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '500': { $ref: '#/components/responses/InternalError' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+
+  # ===========================================================================
+  # 비밀번호 설정 (2.19.0 신설, backlog §1.4 다음 조각) — POST /auth/password
+  # 소셜 전용(비밀번호 없는) 계정이 처음으로 비밀번호를 만드는 자리. 정본은 최상위
+  # x-social-login.explicit_linking 「비밀번호 설정·재설정」 문단.
+  # ===========================================================================
+  /auth/password:
+    post:
+      tags: [auth]
+      operationId: setPassword
+      summary: 비밀번호 없는 계정에 새 비밀번호를 만든다
+      security: [{ HTTPBearer: [] }]
+      description: |
+        소셜 로그인으로만 가입해 비밀번호가 없는 계정(`readMe.has_password: false`)이
+        처음으로 비밀번호를 만드는 자리다.
+
+        **이메일 인증을 요구한다(2026-09-06 정정).** 호출자가 이미 유효한 Bearer
+        토큰으로 인증된 상태는 *그 소셜 계정*의 소유는 증명하지만, 네이버처럼 이메일이
+        검증되지 않은 채로도 계정을 만들 수 있는 제공자가 있다(`readMe.email_verified:
+        false`, `x-social-login.providers.x-note`). 그 상태에서 비밀번호를 허용하면
+        아무도 소유를 증명하지 않은 이메일 주소로 "이메일+비밀번호" 로그인이 새로
+        열린다 — 그래서 `createDocument`의 이메일 인증 게이트와 **같은 예외·같은
+        문구**를 재사용한다(403, 아래).
+
+        비밀번호를 **바꾸는** 자리가 아니다 — 이미 있으면 409로 거절하고
+        `POST /auth/password-reset/{request,confirm}`(이메일 코드 재설정)을 안내한다.
+        입력 규칙은 `SignupRequest.password`와 같다(최소 8자, `x-request-field-constraints`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SetPasswordRequest' }
+      responses:
+        '204':
+          description: 비밀번호가 만들어졌다
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CacheControlNoStore' }
+            X-Content-Type-Options: { $ref: '#/components/headers/XContentTypeOptions' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: |
+            이메일 인증 전이다 — `createDocument` 403과 같은 예외
+            (`EmailNotVerifiedException`)·같은 문구를 쓴다(같은 게이트를 재사용한다는
+            뜻이지 새 갈래가 아니다). 남의 자원을 감추는 403이 아니다.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+              examples:
+                email_not_verified: { value: { detail: "이메일 인증 후 문서를 변환할 수 있습니다" } }
+        '409':
+          description: 이미 비밀번호가 있는 계정이다 — 재설정을 이용하라고 안내한다.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+              examples:
+                already_has_password:
+                  value:
+                    detail: "이미 비밀번호가 있는 계정입니다. 비밀번호를 바꾸려면 재설정을 이용하세요."
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  # ===========================================================================
+  # 비밀번호 재설정 요청 (2.19.0 신설, backlog §1.4 다음 조각) —
+  # POST /auth/password-reset/request
+  # 인증 없이 호출된다 — 비밀번호를 잊은 사용자는 로그인할 수 없다.
+  # ===========================================================================
+  /auth/password-reset/request:
+    post:
+      tags: [auth]
+      operationId: passwordResetRequest
+      summary: 비밀번호 재설정 코드를 이메일로 보낸다
+      security: []
+      description: |
+        **이메일 존재 여부·재요청 빈도와 무관하게 항상 202다** — 그 이메일의 계정이
+        있으면 6자리 숫자 코드를 발급해 보내고, 없으면 아무 일도 하지 않는다. 60초
+        재발송 쿨다운 안의 재요청도 조용히 202로 끝난다(429를 노출하지 않는다). 두
+        신호 모두 "이 이메일에 계정이 있는가"를 드러내는 존재 확인 수단이 되므로,
+        `x-auth.failure_uniformity`가 로그인 실패에 적용하는 것과 같은 원칙을 여기서는
+        **응답 자체를 하나로 고정**하는 방식으로 지킨다.
+
+        이메일당 재발송 쿨다운(60초)이 사실상의 빈도 제한이다 — IP 단위 요청 빈도
+        제한은 이 계약의 범위 밖이다(backlog §1.4에 별도 과제로 기록).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PasswordResetRequest' }
+      responses:
+        '202':
+          description: 접수됨 — 이메일이 존재하는지, 코드가 실제로 발급됐는지는 이 응답만으로 알 수 없다
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CacheControlNoStore' }
+            X-Content-Type-Options: { $ref: '#/components/headers/XContentTypeOptions' }
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  # ===========================================================================
+  # 비밀번호 재설정 확인 (2.19.0 신설, backlog §1.4 다음 조각) —
+  # POST /auth/password-reset/confirm
+  # 인증 없이 호출된다. 성공 응답은 login 과 같은 TokenResponse 다.
+  # ===========================================================================
+  /auth/password-reset/confirm:
+    post:
+      tags: [auth]
+      operationId: passwordResetConfirm
+      summary: 재설정 코드를 확인하고 비밀번호를 바꾼 뒤 로그인 토큰을 발급한다
+      security: []
+      description: |
+        코드가 유효하면(발급 후 10분 이내, 시도 5회 미만) 비밀번호를 새 값으로
+        바꾸고 — **비밀번호가 없던 계정(소셜 전용)에도 이 자리에서 비밀번호가
+        생긴다** — 코드를 소비 처리한 뒤 `readMe.email_verified`를 참으로 표시한다
+        (코드를 이메일로 받았다는 사실 자체가 그 이메일 소유를 증명한다). 마지막으로
+        `login`과 **완전히 같은 모양**의 `TokenResponse`를 발급한다.
+
+        이메일이 존재하지 않거나, 코드가 오답·만료·시도 상한(5회) 소진이면 **전부
+        같은 401**로 묶는다 — 사유를 가르면 공격자가 "이 이메일에 계정이 있다"거나
+        "이 코드가 한때 존재했다"는 정보를 얻는다(`InvalidVerificationCodeException`
+        이 이메일 인증 코드에 적용하는 것과 같은 원칙을 계정 존재 축까지 넓힌 것).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PasswordResetConfirmRequest' }
+      responses:
+        '200':
+          description: 비밀번호가 바뀌고 토큰이 발급됨 — `login`과 같은 응답 모양
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CacheControlNoStore' }
+            X-Content-Type-Options: { $ref: '#/components/headers/XContentTypeOptions' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TokenResponse' }
+        '401':
+          description: |
+            재설정 코드가 오답·만료·시도 상한(5회) 소진이거나 이메일이 존재하지 않는다
+            — 사유를 구분하지 않는다. 이 오퍼레이션은 Bearer 토큰을 검증하는 것이
+            아니지만, "제시된 자격 증명이 유효하지 않다"는 성격이 같아 공유
+            `Unauthorized` 컴포넌트와 같은 헤더 계약(`WWW-Authenticate: Bearer`)을
+            쓴다 — 문구만 이 오퍼레이션 전용이다.
+          headers:
+            WWW-Authenticate: { $ref: '#/components/headers/WWWAuthenticateBearer' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+              examples:
+                invalid_reset_code:
+                  value: { detail: "재설정 코드가 올바르지 않거나 만료되었습니다" }
         '415': { $ref: '#/components/responses/UnsupportedMediaType' }
         '422':
           $ref: '#/components/responses/ValidationFailed'
@@ -2148,7 +2339,7 @@ paths:
               examples:
                 last_login_method:
                   value:
-                    detail: "마지막 로그인 수단은 해제할 수 없습니다. 먼저 다른 소셜 계정을 연결하세요."
+                    detail: "마지막 로그인 수단은 해제할 수 없습니다. 먼저 비밀번호를 만들거나 다른 소셜 계정을 연결하세요."
         '422':
           description: 지원하지 않는 `provider` — **배열**(스키마 층, 경로 값이 enum으로 해석되지 않는다).
           content:
@@ -3933,6 +4124,55 @@ components:
             다섯 필드의 "요청 본문은 서비스 층에서만 잰다"는 원칙의 예외이며 이유가 같다).
             형식은 맞지만 값이 틀리면 400(코드 오답)이지 422가 아니다.
 
+    SetPasswordRequest:
+      type: object
+      required: [new_password]
+      description: "`POST /auth/password` 요청. backlog §1.4 다음 조각, 2.19.0 신설."
+      properties:
+        new_password:
+          type: string
+          x-service-constraint: { min_length: 8, measured_on: raw }
+          description: |
+            최소 8자. `SignupRequest.password`와 같은 규칙(`x-request-field-constraints`)
+            — 판정은 서비스 층이라 위반은 422 **문자열** detail이다.
+            **이 값은 응답 본문·로그 어디에도 반향되지 않는다.**
+
+    PasswordResetRequest:
+      type: object
+      required: [email]
+      description: |
+        `POST /auth/password-reset/request` 요청. backlog §1.4 다음 조각, 2.19.0 신설.
+        형식·길이 제약을 두지 않는다 — 이 오퍼레이션은 이메일 형식 자체로도 계정
+        존재를 흘리지 않기 위해 항상 202이므로, 형식 검증을 별도로 두어도 응답이
+        갈리지 않게 하려면 형식 오류도 같은 202로 삼켜야 한다. 서비스가 판정 전에
+        걸러야 할 별도 위험이 없으므로 스키마도 서비스도 형식을 검사하지 않는다.
+      properties:
+        email:
+          type: string
+          examples: ["user@example.test"]
+
+    PasswordResetConfirmRequest:
+      type: object
+      required: [email, code, new_password]
+      description: "`POST /auth/password-reset/confirm` 요청. backlog §1.4 다음 조각, 2.19.0 신설."
+      properties:
+        email: { type: string, examples: ["user@example.test"] }
+        code:
+          type: string
+          minLength: 6
+          maxLength: 6
+          description: |
+            메일로 받은 6자리 숫자 코드. `ConfirmEmailVerificationRequest.code`와 같은
+            이유로 `minLength`/`maxLength`를 스키마 층에 둔다. 형식은 맞지만 값이
+            틀리면(오답·만료·시도 소진) 401이지 422가 아니다 — 이 오퍼레이션은 이메일
+            존재 여부도 같은 401로 묶는다.
+        new_password:
+          type: string
+          x-service-constraint: { min_length: 8, measured_on: raw }
+          description: |
+            최소 8자. [SetPasswordRequest.new_password]와 같은 규칙 — 위반은 422
+            **문자열** detail이다. **이 값은 응답 본문·로그 어디에도 반향되지 않는다.**
+
     TokenResponse:
       type: object
       required: [access_token, token_type, expires_in]
@@ -4896,6 +5136,60 @@ components:
 # 변경 이력
 # =============================================================================
 x-changelog:
+  - version: "2.19.0"
+    date: "2026-09-06"
+    revision: "PASSWORD-SET-RESET"   # backlog §1.4 다음 조각 — 비밀번호 설정·재설정
+    author: contract-keeper
+    change: |
+      **소셜 전용 계정에 비밀번호 경로를 연다.** 2.17.0의 `oauthUnlink` 409가
+      "비밀번호 설정을 안내하지 않는다 — 그 엔드포인트가 아직 없다"고 적어 두었던
+      자리다.
+
+      ⑴ **오퍼레이션 3종 신설.**
+         - `POST /auth/password`(`setPassword`, Bearer 필요, 204) — 비밀번호가 없는
+           계정만 새 비밀번호를 만든다. 이미 있으면 409. **이메일 인증을 요구한다**
+           (독립 리뷰 지적, 2026-09-06 정정) — 네이버처럼 이메일 미검증 상태로도
+           계정을 만들 수 있는 제공자가 있어, 호출자가 이미 인증된 상태만으로는
+           *그 이메일 주소*의 소유까지 증명되지 않는다. 미인증이면 403
+           (`createDocument`의 이메일 인증 게이트와 같은 예외·같은 문구를 재사용한다).
+           성공하면 등록된 이메일로 "비밀번호가 만들어졌습니다" 알림 메일을 best-effort로
+           보낸다.
+         - `POST /auth/password-reset/request`(`passwordResetRequest`,
+           `security: []`, 202) — 이메일 존재 여부·재요청 빈도와 무관하게 항상 202다
+           (존재 은닉). 60초 재발송 쿨다운은 조용히 흡수한다.
+         - `POST /auth/password-reset/confirm`(`passwordResetConfirm`,
+           `security: []`, 200) — 코드를 확인해 비밀번호를 바꾸고(비밀번호 없던
+           계정에도 새로 생긴다) `readMe.email_verified`를 참으로 표시한 뒤 `login`과
+           같은 `TokenResponse`를 낸다. 이메일 부재·오답·만료·시도 소진을 전부 같은
+           401로 묶는다. 코드 확인·비밀번호 갱신·이메일 인증 표시를 한 트랜잭션으로
+           묶는다 — 갱신이 실패해도 코드가 소비된 채로 남지 않는다(독립 리뷰 지적,
+           2026-09-06 정정). 성공하면 "비밀번호가 바뀌었습니다" 알림 메일도
+           best-effort로 보낸다(재설정 코드 메일과 별개로 한 통 더).
+      ⑵ **스키마 3종 신설** — `SetPasswordRequest`(`new_password`)·
+         `PasswordResetRequest`(`email`)·`PasswordResetConfirmRequest`(`email`·
+         `code`·`new_password`). `new_password` 필드 둘은 `SignupRequest.password`와
+         같은 서비스 층 규칙(최소 8자)을 `x-request-field-constraints`에 추가한다.
+      ⑶ **`oauthUnlink` 409 문구 갱신** — "먼저 다른 소셜 계정을 연결하세요"에서
+         "먼저 비밀번호를 만들거나 다른 소셜 계정을 연결하세요"로. 탈출구가 하나
+         늘었으니 안내도 함께 넓힌다(`x-social-login.explicit_linking`).
+      ⑷ **`x-private-response-headers.applies_to`에 `POST
+         /auth/password-reset/confirm` 추가** — `login`과 같은 이유(응답 본문이
+         Bearer 토큰 자체다). 같은 절의 "1:1 대응" 문구도 함께 정정했다 — 그 대응은
+         이 목록이 `paths`의 명시 선언과 갖는 관계의 **한 방향**일 뿐이었고(이 목록에
+         없어도 이미 명시 선언된 자리가 여럿 있었다), 정정 전 문구는 그 사실을
+         "1:1"이라고 잘못 좁혀 적고 있었다(독립 리뷰 지적, 2026-09-06 정정 — 이
+         변경 단위 이전부터 사실과 달랐다).
+      ⑸ **엔드포인트 수 25 → 28.**
+    ground: |
+      **G1 — 사용자 요청(2026-09-06).** backlog §1.4 "소셜 전용 계정은 비밀번호
+      경로가 없다"는 공백을 이번 변경 단위로 닫는다. **G4(계약이 사실과 다름)** —
+      ⑴·⑷의 정정은 독립 리뷰가 병합 전에 잡은 문제를 이 버전 자체에 반영한
+      것이다(별도 버전을 새로 열지 않는다 — 아직 배포되지 않았다).
+    compatibility: |
+      **넓히는 변경이다.** 새 오퍼레이션 3종과 새 스키마 3종. 기존 오퍼레이션의
+      요청·응답 모양은 `oauthUnlink` 409의 `detail` **값**만 바뀐다 — 상태 코드·본문
+      키(`detail` 하나)는 그대로라 그 값을 손으로 비교하는 소비자만 갱신이 필요하다.
+
   - version: "2.18.0"
     date: "2026-09-06"
     revision: "P0-4-S7-COMPLIANT-SOURCE-UNITS"   # P0-4 S7 — segment_map.compliant_source_units

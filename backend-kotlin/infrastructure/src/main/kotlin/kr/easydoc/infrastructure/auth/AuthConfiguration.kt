@@ -5,6 +5,9 @@ import kr.easydoc.application.auth.AuthService
 import kr.easydoc.application.auth.EmailVerificationService
 import kr.easydoc.application.auth.OAuthStateStore
 import kr.easydoc.application.auth.PasswordHasher
+import kr.easydoc.application.auth.PasswordResetCodeStore
+import kr.easydoc.application.auth.PasswordResetService
+import kr.easydoc.application.auth.PasswordService
 import kr.easydoc.application.auth.SocialLoginProvider
 import kr.easydoc.application.auth.SocialLoginProviderId
 import kr.easydoc.application.auth.SocialLoginRepositories
@@ -73,6 +76,24 @@ data class Argon2Properties(
  */
 @ConfigurationProperties(prefix = "easydoc.email-verification")
 data class EmailVerificationProperties(
+    val codeTtlMinutes: Long = 10,
+    val resendCooldownSeconds: Long = 60,
+    val maxAttempts: Int = 5,
+)
+
+/**
+ * 비밀번호 재설정 설정. 바인딩 접두사는 `easydoc.password-reset` — [EmailVerificationProperties]
+ * 와 나란한 형제 접두사다(`easydoc.auth.*` 아래로 넣지 않는다: `AuthProperties` 는
+ * JWT·Argon2 처럼 로그인 경로 전반이 쓰는 설정이고, 이 값은 재설정 코드 유스케이스
+ * 하나만 쓴다 — 같은 층위의 다른 설정 그룹과 접두사 성격을 맞춘다).
+ *
+ * 값 셋(TTL·쿨다운·시도 상한)의 의미는 [EmailVerificationProperties] 와 같고 기본값도
+ * 같다 — 위임 지침이 "재사용하거나 미러링하라"고 선택지를 열어 둔 자리에서, 두 유스케이스가
+ * 운영 중 서로 다른 시점에 다른 값으로 조정될 수 있어야 하므로(예: 재설정만 시도 상한을
+ * 먼저 낮추는 실험) 별도 설정으로 미러링하는 쪽을 골랐다.
+ */
+@ConfigurationProperties(prefix = "easydoc.password-reset")
+data class PasswordResetProperties(
     val codeTtlMinutes: Long = 10,
     val resendCooldownSeconds: Long = 60,
     val maxAttempts: Int = 5,
@@ -267,6 +288,48 @@ class AuthConfiguration {
             users = users,
             codes = codes,
             mail = mailSender,
+            codeTtl = Duration.ofMinutes(properties.codeTtlMinutes),
+            resendCooldown = Duration.ofSeconds(properties.resendCooldownSeconds),
+            maxAttempts = properties.maxAttempts,
+        )
+
+    /** `POST /auth/password` — 비밀번호 없는 계정에 비밀번호를 만든다(backlog §1.4 후속). */
+    @Bean
+    fun passwordService(
+        users: UserRepository,
+        passwordHasher: PasswordHasher,
+        mailSender: MailSender,
+        transactionRunner: TransactionRunner,
+    ): PasswordService =
+        PasswordService(users = users, passwords = passwordHasher, mail = mailSender, transaction = transactionRunner)
+
+    @Bean
+    fun passwordResetCodeStore(jdbcClient: JdbcClient): PasswordResetCodeStore =
+        JdbcPasswordResetCodeStore(jdbcClient, Clock.systemUTC())
+
+    /**
+     * `POST /auth/password-reset/{request,confirm}` — 이메일 코드로 비밀번호를 재설정한다
+     * (backlog §1.4 후속). 조립 지점의 매개변수 수는 협력자의 수다 — 클래스 KDoc과 같은
+     * 근거로 억제한다.
+     */
+    @Suppress("LongParameterList")
+    @Bean
+    fun passwordResetService(
+        users: UserRepository,
+        codes: PasswordResetCodeStore,
+        mailSender: MailSender,
+        passwordHasher: PasswordHasher,
+        accessTokens: AccessTokens,
+        transactionRunner: TransactionRunner,
+        properties: PasswordResetProperties,
+    ): PasswordResetService =
+        PasswordResetService(
+            users = users,
+            codes = codes,
+            mail = mailSender,
+            passwords = passwordHasher,
+            accessTokens = accessTokens,
+            transaction = transactionRunner,
             codeTtl = Duration.ofMinutes(properties.codeTtlMinutes),
             resendCooldown = Duration.ofSeconds(properties.resendCooldownSeconds),
             maxAttempts = properties.maxAttempts,

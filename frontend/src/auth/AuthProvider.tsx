@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 
-import { fetchMe, login, oauthCallback, signup } from '../api/auth'
+import { fetchMe, login, oauthCallback, passwordResetConfirm, signup } from '../api/auth'
 import { setUnauthorizedHandler } from '../api/client'
 import { clearToken, readToken, writeToken } from '../api/token'
 import type { OAuthProvider, UserResponse } from '../api/types'
@@ -89,6 +89,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [applyToken],
   )
 
+  const completePasswordReset = useCallback(
+    async (email: string, code: string, newPassword: string) => {
+      const token = await passwordResetConfirm(email, code, newPassword)
+      await applyToken(token.access_token)
+    },
+    [applyToken],
+  )
+
   const signOut = useCallback(() => {
     clearToken()
     setUser(null)
@@ -101,8 +109,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const value = useMemo<AuthContextValue>(
-    () => ({ status, user, signIn, signUp, signInWithSocialProvider, signOut, refreshMe }),
-    [status, user, signIn, signUp, signInWithSocialProvider, signOut, refreshMe],
+    () => ({
+      status,
+      user,
+      signIn,
+      signUp,
+      signInWithSocialProvider,
+      completePasswordReset,
+      signOut,
+      refreshMe,
+    }),
+    [
+      status,
+      user,
+      signIn,
+      signUp,
+      signInWithSocialProvider,
+      completePasswordReset,
+      signOut,
+      refreshMe,
+    ],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

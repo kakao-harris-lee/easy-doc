@@ -125,6 +125,24 @@ export interface ConfirmEmailVerificationRequest {
   code: string
 }
 
+/** POST /auth/password 요청 본문(2.19.0 신설, backlog §1.4 다음 조각). */
+export interface SetPasswordRequest {
+  new_password: string
+}
+
+/** POST /auth/password-reset/request 요청 본문(2.19.0 신설). */
+export interface PasswordResetRequest {
+  email: string
+}
+
+/** POST /auth/password-reset/confirm 요청 본문(2.19.0 신설). */
+export interface PasswordResetConfirmRequest {
+  email: string
+  /** 메일로 받은 6자리 숫자 코드. */
+  code: string
+  new_password: string
+}
+
 // --- documents ---
 
 /** POST /documents 요청 본문 (붙여넣기 모드). */

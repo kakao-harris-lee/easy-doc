@@ -397,12 +397,13 @@ class SocialLoginService
              * 계약 `oauthUnlink` `409` 예시 — 비밀번호가 없고 이 신원이 유일한 로그인
              * 수단이다. 해제하면 계정에 로그인할 방법이 하나도 남지 않는다.
              *
-             * **비밀번호 설정을 안내하지 않는다** — 소셜 전용 계정에 비밀번호를 붙이는
-             * 엔드포인트가 아직 없다(backlog §1.4 후속 과제). 실제로 열려 있는 유일한
-             * 탈출구(다른 소셜 계정 연결)만 안내한다.
+             * **비밀번호 설정을 함께 안내한다**(backlog §1.4 후속, `PasswordService`가
+             * `POST /auth/password`를 열면서 갱신 — 이전에는 이 탈출구가 없어 다른 소셜
+             * 계정 연결만 안내했다). 지금은 열려 있는 탈출구가 둘이다 — 비밀번호 만들기와
+             * 다른 소셜 계정 연결.
              */
             const val LAST_LOGIN_METHOD_MESSAGE =
-                "마지막 로그인 수단은 해제할 수 없습니다. 먼저 다른 소셜 계정을 연결하세요."
+                "마지막 로그인 수단은 해제할 수 없습니다. 먼저 비밀번호를 만들거나 다른 소셜 계정을 연결하세요."
 
             /** 키가 설정되지 않아 이 제공자가 등록되지 않았다 — 제공자별 문구(사용자 요청). */
             fun providerNotConfiguredMessage(providerId: SocialLoginProviderId): String =
