@@ -100,6 +100,9 @@ export function segmentMap(overrides: Partial<SegmentMap> = {}): SegmentMap {
   return {
     source_unit_count: 1,
     easy_unit_count: units.length,
+    // 대부분의 기존 테스트는 「이미 통과한 문단」 배지를 다루지 않는다 — 배지가
+    // 필요한 테스트만 이 필드를 명시로 덮어쓴다.
+    compliant_source_units: [],
     ...overrides,
     units,
   }

@@ -89,17 +89,21 @@ data class SegmentMapUnitResponse(
 }
 
 /**
- * 원문-쉬운 글 문단 대응표. 계약 `components/schemas/SegmentMap` — 세 필드가 전부다.
+ * 원문-쉬운 글 문단 대응표. 계약 `components/schemas/SegmentMap` — 네 필드가 전부다.
  *
  * **저장하지 않고 매 조회마다 유도한다**(`core/segment/SegmentAlignment.kt`,
  * `docs/plans/2026-09-04-p0-4-paragraph-mapping-reconversion.md` §2 결정 2) — 클라이언트가
  * 검수본을 수정한 뒤에는 이 응답이 낡으므로, 화면은 편집 시점마다 자신이 가진 두 본문으로
  * 다시 계산해도 된다(같은 순수 함수를 프런트가 다시 부르는 것도 계약이 막지 않는다).
+ *
+ * [compliantSourceUnits] 는 계약 2.18.0(P0-4 S7, 계획 §11)에서 더한 필드다 — 이미 쉬운 글
+ * 스타일 게이트를 통과한 원본 단위 색인이며, 정수 색인일 뿐이라 본문을 담지 않는다.
  */
 data class SegmentMapResponse(
     @get:JsonProperty("source_unit_count") val sourceUnitCount: Int,
     @get:JsonProperty("easy_unit_count") val easyUnitCount: Int,
     @get:JsonProperty("units") val units: List<SegmentMapUnitResponse>,
+    @get:JsonProperty("compliant_source_units") val compliantSourceUnits: List<Int>,
 ) {
     companion object {
         fun of(map: SegmentMap): SegmentMapResponse =
@@ -107,6 +111,7 @@ data class SegmentMapResponse(
                 sourceUnitCount = map.sourceUnitCount,
                 easyUnitCount = map.easyUnitCount,
                 units = map.units.map(SegmentMapUnitResponse::of),
+                compliantSourceUnits = map.compliantSourceUnits,
             )
     }
 }

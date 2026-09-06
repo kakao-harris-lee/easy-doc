@@ -6,6 +6,7 @@ import kr.easydoc.core.crypto.PlainBody
 import kr.easydoc.core.privacy.maskText
 import kr.easydoc.core.segment.SegmentMap
 import kr.easydoc.core.segment.alignSegments
+import kr.easydoc.core.segment.compliantSourceUnits
 import kr.easydoc.core.segment.splitUnits
 
 /**
@@ -61,6 +62,10 @@ class MaskedSegmentMapDerivation(private val cipher: ContentCipher) : SegmentMap
         if (source == null || body == null) return null
         val sourceText = cipher.decrypt(source.sourceText, source.documentId, EncryptedField.DOCUMENT_SOURCE_TEXT)
         val maskedSource = maskText(sourceText.value).maskedText.value
-        return alignSegments(splitUnits(maskedSource), splitUnits(body.value))
+        val map = alignSegments(splitUnits(maskedSource), splitUnits(body.value))
+        // 스타일 게이트는 마스킹 전 원문에 건다(계획 §11.1) — 화면이 읽는 문단이지 LLM 이 본
+        // 마스킹 본문이 아니다. `maskText` 가 줄 수를 바꾸지 않으므로 색인은 위 정렬과 같은
+        // 좌표(`units[].sourceUnitIndexes`)를 그대로 쓴다.
+        return map.copy(compliantSourceUnits = compliantSourceUnits(splitUnits(sourceText.value)))
     }
 }

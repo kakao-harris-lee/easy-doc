@@ -178,6 +178,9 @@ const SCREENS: readonly {
               segmentMapUnit({ easy_unit_index: 1, source_unit_indexes: [1], confidence: 'high' }),
               segmentMapUnit({ easy_unit_index: 2, source_unit_indexes: [], confidence: 'low' }),
             ],
+            // 「이미 통과」 배지·경고(계획 §11)의 aria-describedby 참조도 이 스윕이
+            // 훑도록 원본 단위 하나를 통과 목록에 둔다.
+            compliant_source_units: [0],
           }),
         }),
       )

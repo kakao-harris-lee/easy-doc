@@ -1,4 +1,12 @@
-import { useEffect, useId, useRef, useState, useSyncExternalStore, type KeyboardEvent } from 'react'
+import {
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type KeyboardEvent,
+} from 'react'
 import { Download, Save, ShieldAlert } from 'lucide-react'
 
 import { ApiError, downloadExport, reconvertUnit, saveReview } from '../api/client'
@@ -579,6 +587,15 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
   const showFallbackBanner = conversion.segment_map !== null && unitCount > MAX_SEGMENTED_UNITS
 
   /**
+   * 이미 쉬운 글 규칙을 통과한 원본 단위 색인(계획 §11). 원문은 읽기 전용이라 이 목록을
+   * 클라이언트가 다시 계산하지 않는다 — 서버가 조회마다 유도해 준 값을 그대로 쓴다.
+   */
+  const compliantSourceUnits = useMemo(
+    () => new Set(conversion.segment_map?.compliant_source_units ?? []),
+    [conversion.segment_map],
+  )
+
+  /**
    * 좁은 화면에서 탭으로 바꿀지.
    *
    * 원문이 아직 없으면(불러오는 중이거나 못 불러왔으면) 탭을 만들지 않는다. 고를 수
@@ -995,6 +1012,7 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
                 useSegmentedEditor ? new Set(highlightedSourceIndexes) : undefined
               }
               onHoverUnit={useSegmentedEditor ? setHoveredSourceIndex : undefined}
+              compliantSourceUnits={useSegmentedEditor ? compliantSourceUnits : undefined}
               reconvert={
                 useSegmentedEditor
                   ? {
