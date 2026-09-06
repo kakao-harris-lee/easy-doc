@@ -117,6 +117,37 @@ class JdbcDocumentStructureTest {
         assertThat(stored.structureOrBody(2).kinds).containsExactly(UnitKind.BODY, UnitKind.BODY)
     }
 
+    @Test
+    @DisplayName("손상된 source_unit_kinds 는 조회를 막지 않는다 — 전부 BODY 로 접힌다(리뷰 BLOCK 1)")
+    fun `손상된 구조 컬럼도 조회가 깨지지 않는다`() {
+        val owner = newUser()
+        val workspace = workspaces.create(owner, "손상구조").id
+        val documentId = UUID.randomUUID()
+        jdbc
+            .sql(
+                """
+                INSERT INTO documents (id, user_id, workspace_id, title, source_format,
+                                       source_text_encrypted, char_count, encryption_scheme, key_version,
+                                       source_unit_kinds)
+                VALUES (:id, :owner, :workspace, '손상 문서', 'text', :bytes, 2, :scheme, 1, :garbage)
+                """.trimIndent(),
+            ).param("id", documentId)
+            .param("owner", owner)
+            .param("workspace", workspace)
+            .param("bytes", byteArrayOf(0))
+            .param("scheme", EncryptionScheme.AES_256_GCM_V1)
+            .param("garbage", "이것은 유효한 인코딩이 아니다")
+            .update()
+
+        val stored = documents.findOwnedSource(owner, documentId)
+
+        checkNotNull(stored)
+        assertThat(stored.structure)
+            .withFailMessage("손상된 값을 그대로 던졌다 — 구조는 파생 정보라 조회를 막으면 안 된다")
+            .isNull()
+        assertThat(stored.structureOrBody(2).kinds).containsExactly(UnitKind.BODY, UnitKind.BODY)
+    }
+
     private fun newUser(): UUID =
         users.create("u${UUID.randomUUID()}@example.com", PasswordHash(DUMMY_PHC)).id.also(users::markEmailVerified)
 

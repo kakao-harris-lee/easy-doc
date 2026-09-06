@@ -14,6 +14,7 @@ import kr.easydoc.core.document.SourceFormat
 import kr.easydoc.core.easyread.ExportFile
 import kr.easydoc.core.easyread.exportContentLines
 import kr.easydoc.core.segment.SegmentMap
+import kr.easydoc.core.segment.SourceStructure
 import java.time.Instant
 import java.util.UUID
 
@@ -573,6 +574,7 @@ internal class FakeQueryDocumentRepository(private val transaction: RecordingTra
         documentId: UUID,
         text: String,
         format: SourceFormat = SourceFormat.TEXT,
+        structure: SourceStructure? = null,
     ) {
         rows[ownerId to documentId] =
             StoredSourceText(
@@ -580,6 +582,7 @@ internal class FakeQueryDocumentRepository(private val transaction: RecordingTra
                 sourceFormat = format,
                 charCount = text.length,
                 sourceText = EncryptedContent(text.toByteArray(Charsets.UTF_8), EncryptionScheme.AES_256_GCM_V1, 1),
+                structure = structure,
             )
     }
 

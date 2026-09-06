@@ -31,10 +31,12 @@ class LlmPrompt private constructor(
             documentText: String,
             documentIds: DocumentIdGenerator = SecureDocumentIds,
             dictionaryContext: String? = null,
+            /** [buildUserPrompt]의 `structureSection`으로 그대로 내려간다(계획 §1.3). */
+            structureSection: String? = null,
         ): LlmPrompt =
             LlmPrompt(
-                system = buildSystemPrompt(documentText),
-                user = buildUserPrompt(documentText, documentIds, dictionaryContext),
+                system = buildSystemPrompt(documentText, structureSection),
+                user = buildUserPrompt(documentText, documentIds, dictionaryContext, structureSection),
             )
 
         /**
@@ -46,8 +48,10 @@ class LlmPrompt private constructor(
             violations: List<SentenceIssue>,
             missingFacts: List<FactIssue> = emptyList(),
             documentIds: DocumentIdGenerator = SecureDocumentIds,
+            /** [buildRepairPrompt]의 `structureSection`으로 그대로 내려간다(계획 §1.3). */
+            structureSection: String? = null,
         ): LlmPrompt {
-            val repair = buildRepairPrompt(converted, violations, missingFacts, documentIds)
+            val repair = buildRepairPrompt(converted, violations, missingFacts, documentIds, structureSection)
             return LlmPrompt(system = repair.system, user = repair.user)
         }
 

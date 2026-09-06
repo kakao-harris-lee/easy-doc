@@ -8,6 +8,7 @@ import kr.easydoc.core.llm.LlmFinishReason
 import kr.easydoc.core.llm.LlmOptions
 import kr.easydoc.core.llm.LlmPrompt
 import kr.easydoc.core.llm.LlmProvider
+import kr.easydoc.infrastructure.document.StructureHintProperties
 import kr.easydoc.infrastructure.llm.LlmProperties
 import kr.easydoc.infrastructure.llm.MAX_OUTPUT_TOKENS_CEILING
 import org.assertj.core.api.Assertions.assertThat
@@ -34,6 +35,7 @@ class ConversionWorkerConfigurationTest {
                 provider = recordingProvider,
                 dictionary = NoDictionaryContext,
                 properties = LlmProperties(maxOutputTokens = 4_321),
+                structureHintProperties = StructureHintProperties(),
             )
 
         useCase.convert("변환할 원문입니다.")
@@ -52,6 +54,7 @@ class ConversionWorkerConfigurationTest {
                 provider = recordingProvider,
                 dictionary = NoDictionaryContext,
                 properties = LlmProperties(),
+                structureHintProperties = StructureHintProperties(),
             )
 
         useCase.convert("변환할 원문입니다.")
@@ -69,6 +72,7 @@ class ConversionWorkerConfigurationTest {
                 provider = RecordingProvider(),
                 dictionary = NoDictionaryContext,
                 properties = LlmProperties(maxOutputTokens = 0),
+                structureHintProperties = StructureHintProperties(),
             )
         }.isInstanceOf(ConfigurationException::class.java)
             .hasMessageContaining("easydoc.llm.max-output-tokens")
@@ -84,6 +88,7 @@ class ConversionWorkerConfigurationTest {
                 provider = RecordingProvider(),
                 dictionary = NoDictionaryContext,
                 properties = LlmProperties(maxOutputTokens = -1),
+                structureHintProperties = StructureHintProperties(),
             )
         }.isInstanceOf(ConfigurationException::class.java)
     }
@@ -98,6 +103,7 @@ class ConversionWorkerConfigurationTest {
                 provider = RecordingProvider(),
                 dictionary = NoDictionaryContext,
                 properties = LlmProperties(maxOutputTokens = MAX_OUTPUT_TOKENS_CEILING + 1),
+                structureHintProperties = StructureHintProperties(),
             )
         }.isInstanceOf(ConfigurationException::class.java)
             .hasMessageContaining("easydoc.llm.max-output-tokens")
@@ -115,6 +121,7 @@ class ConversionWorkerConfigurationTest {
                 provider = recordingProvider,
                 dictionary = NoDictionaryContext,
                 properties = LlmProperties(maxOutputTokens = MAX_OUTPUT_TOKENS_CEILING),
+                structureHintProperties = StructureHintProperties(),
             )
 
         useCase.convert("변환할 원문입니다.")

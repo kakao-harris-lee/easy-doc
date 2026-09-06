@@ -218,6 +218,10 @@ class DocumentStorageContextTest {
                 // `DocumentConfiguration.reconvertUnitService` 가 요구한다.
                 ReconversionProperties::class.java,
                 Supplier { ReconversionProperties() },
+            ).withBean(
+                // `DocumentConfiguration.convertDocumentUseCase` 가 요구한다(P0-4 S8-2).
+                StructureHintProperties::class.java,
+                Supplier { StructureHintProperties() },
             )
     }
 

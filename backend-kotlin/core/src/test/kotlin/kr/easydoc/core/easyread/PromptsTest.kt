@@ -1,6 +1,8 @@
 package kr.easydoc.core.easyread
 
 import kr.easydoc.core.privacy.ModelDraft
+import kr.easydoc.core.segment.SourceStructure
+import kr.easydoc.core.segment.UnitKind
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Nested
@@ -224,6 +226,89 @@ class PromptsTest {
         fun `앞뒤 공백은 이음매를 바꾸지 않는다`() {
             assertThat(buildUserPrompt(documentText, fixedIds, "\n$context\n\n"))
                 .isEqualTo(buildUserPrompt(documentText, fixedIds, context))
+        }
+    }
+
+    @Nested
+    @DisplayName("구조 절(structureSection) 배치 — P0-4 S8-2")
+    inner class StructureSectionPlacement {
+        private val fixedIds = DocumentIdGenerator { "0123456789ab" }
+        private val documentText = "구분\n금액\n비고"
+        private val units = listOf("구분", "금액", "비고")
+        private val structure = SourceStructure(List(3) { UnitKind.TABLE_CELL })
+
+        @Test
+        @DisplayName("주지 않으면 사용자 프롬프트가 기존과 한 글자도 다르지 않다 — B1")
+        fun `null 이면 기존 출력이다`() {
+            assertThat(buildUserPrompt(documentText, fixedIds, null, null))
+                .isEqualTo(buildUserPrompt(documentText, fixedIds))
+        }
+
+        @Test
+        @DisplayName("주지 않으면 보정 프롬프트도 기존과 한 글자도 다르지 않다 — B1")
+        fun `보정 프롬프트도 null 이면 기존 출력이다`() {
+            val draft = ModelDraft("변환문입니다.")
+            assertThat(buildRepairPrompt(draft, emptyList(), documentIds = fixedIds, structureSection = null).user)
+                .isEqualTo(buildRepairPrompt(draft, emptyList(), documentIds = fixedIds).user)
+        }
+
+        @Test
+        @DisplayName("표 run 렌더링이 <문서> 구간 뒤, 안내 문구 앞에 붙는다 — B2")
+        fun `표 run 이 문서 구간 뒤에 붙는다`() {
+            val section = renderStructureSection(structure, units, fixedIds, maxRuns = 40)!!
+
+            val prompt = buildUserPrompt(documentText, fixedIds, null, section)
+
+            assertThat(prompt).contains(section)
+            val closeTag = "</$DOCUMENT_TAG_NAME id=\"0123456789ab\">"
+            assertThat(prompt.indexOf(closeTag)).isLessThan(prompt.indexOf(section))
+            assertThat(prompt).endsWith("위 문서를 쉬운 글로 바꿔 주세요.")
+            assertThat(prompt).contains("표:")
+            assertThat(prompt).contains("「구분」")
+        }
+
+        @Test
+        @DisplayName("목록 run 도 같은 자리에 실린다 — B2")
+        fun `목록 run 도 문서 구간 뒤에 붙는다`() {
+            val listUnits = listOf("① 첫째", "- 둘째")
+            val listStructure = SourceStructure(List(2) { UnitKind.LIST_ITEM })
+            val section = renderStructureSection(listStructure, listUnits, fixedIds, maxRuns = 40)!!
+
+            val prompt = buildUserPrompt("① 첫째\n- 둘째", fixedIds, null, section)
+
+            assertThat(prompt).contains("목록:")
+            assertThat(prompt).contains("「① 첫째」")
+        }
+
+        @Test
+        @DisplayName("보정 프롬프트도 <변환문> 구간 뒤 [고칠 곳] 앞에 같은 절을 싣는다 — B3")
+        fun `보정 프롬프트도 같은 절을 싣는다`() {
+            val section = renderStructureSection(structure, units, fixedIds, maxRuns = 40)!!
+            val draft = ModelDraft("변환문입니다.")
+
+            val user = buildRepairPrompt(draft, emptyList(), documentIds = fixedIds, structureSection = section).user
+
+            assertThat(user).contains(section)
+            val closeTag = "</$CONVERTED_TAG_NAME id=\"0123456789ab\">"
+            assertThat(user.indexOf(closeTag)).isLessThan(user.indexOf(section))
+            assertThat(user.indexOf(section)).isLessThan(user.indexOf("[고칠 곳]"))
+        }
+
+        @Test
+        @DisplayName("run 수 상한을 넘으면 접힌 문장이 그대로 두 프롬프트 모두에 실린다 — B3")
+        fun `상한 초과 접힘 문장도 그대로 실린다`() {
+            val manyKinds = (1..10).flatMap { listOf(UnitKind.TABLE_CELL, UnitKind.BODY) }
+            val manyUnits = manyKinds.indices.map { "줄$it" }
+            val manyStructure = SourceStructure(manyKinds)
+            val section = renderStructureSection(manyStructure, manyUnits, fixedIds, maxRuns = 5)!!
+
+            val userPrompt = buildUserPrompt(documentText, fixedIds, null, section)
+            val repairPrompt =
+                buildRepairPrompt(ModelDraft("변환문"), emptyList(), documentIds = fixedIds, structureSection = section)
+            val repairUser = repairPrompt.user
+
+            assertThat(userPrompt).contains("표·목록이 많습니다")
+            assertThat(repairUser).contains("표·목록이 많습니다")
         }
     }
 

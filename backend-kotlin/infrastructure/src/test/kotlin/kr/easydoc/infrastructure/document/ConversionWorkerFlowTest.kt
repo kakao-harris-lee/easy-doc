@@ -159,6 +159,27 @@ class ConversionWorkerFlowTest {
         assertThat(again.ciphertexts.easyText?.bytes).isEqualTo(original)
     }
 
+    @Test
+    @DisplayName("손상된 source_unit_kinds 는 작업 큐 조회를 막지 않는다 — structure 가 null 로 접힌다(리뷰 BLOCK 1)")
+    fun `손상된 구조 컬럼도 loadForProcessing 이 성공한다`() {
+        val owner = newUser()
+        val workspace = workspaces.create(owner, "공간").id
+        val accepted = service.createFromText(owner, "복지 급여를 안내합니다.", null, workspace.toString())
+
+        jdbc
+            .sql("UPDATE documents SET source_unit_kinds = :garbage WHERE id = :id")
+            .param("garbage", "이것은 유효한 인코딩이 아니다")
+            .param("id", accepted.documentId)
+            .update()
+
+        val item = work.loadForProcessing(accepted.conversionId)
+
+        checkNotNull(item)
+        assertThat(item.structure)
+            .withFailMessage("손상된 값을 그대로 던졌다 — 구조는 파생 정보라 조회를 막으면 안 된다")
+            .isNull()
+    }
+
     private fun processor(provider: LlmProvider): ProcessConversionJob =
         ProcessConversionJob(
             stores =

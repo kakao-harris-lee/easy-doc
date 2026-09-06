@@ -345,8 +345,14 @@ class SensitiveToStringReachTest {
          * 제거 126 위에) — core `UnitRun`(`kind`·`startIndex`·`endIndex` 셋뿐, 민감 토큰과
          * 무관한 색인 값이다 — `Anchor`·`Breakpoint`·`SegmentUnit` 과 같은 판단으로
          * [KNOWN_SENSITIVE_TYPES] 에 넣지 않는다).
+         *
+         * P0-4 S8-2 프롬프트 구조 절(계획 §1.3)이 **둘**을 더해 129 이다(S8-1 127 위에) —
+         * core `StructureHintOptions`(`maxRuns: Int` 하나뿐)와 infrastructure
+         * `StructureHintProperties`(`structureMaxRuns: Int` 하나뿐). 둘 다 run 수 상한이라는
+         * 운영 구성값뿐이라 민감 토큰과 무관하다 — `LlmOptions`·`FeedbackProperties` 와 같은
+         * 판단으로 [KNOWN_SENSITIVE_TYPES] 에 넣지 않는다.
          */
-        const val EXPECTED_SOURCE_DECLARATIONS = 127
+        const val EXPECTED_SOURCE_DECLARATIONS = 129
 
         /** 민감 판정이 반드시 닿아야 하는 타입 — 바닥이다. */
         val KNOWN_SENSITIVE_TYPES =
