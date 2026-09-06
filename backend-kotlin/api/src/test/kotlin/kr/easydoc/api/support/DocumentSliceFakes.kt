@@ -38,6 +38,8 @@ import kr.easydoc.core.easyread.exportFileOf
 import kr.easydoc.core.exceptions.DocumentExtractionException
 import kr.easydoc.core.exceptions.UnsupportedFormatException
 import kr.easydoc.core.segment.SegmentMap
+import kr.easydoc.core.segment.SourceStructure
+import kr.easydoc.core.segment.splitUnits
 import java.time.Instant
 import java.time.temporal.ChronoUnit
 import java.util.UUID
@@ -571,7 +573,7 @@ class StubDocumentTextExtractor : DocumentTextExtractor {
                 )
         val text = runCatching { String(bytes, Charsets.UTF_8) }.getOrNull()
         if (text.isNullOrBlank()) throw DocumentExtractionException("문서에서 텍스트를 찾을 수 없습니다")
-        return ExtractedDocument(format, text)
+        return ExtractedDocument(format, text, SourceStructure.allBody(splitUnits(text).size))
     }
 }
 

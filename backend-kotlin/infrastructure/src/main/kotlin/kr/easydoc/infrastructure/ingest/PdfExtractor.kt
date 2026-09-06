@@ -10,13 +10,20 @@ import java.io.IOException
 
 /** PDF 페이지별 텍스트를 뽑아 잇는다. */
 internal class PdfExtractor {
-    fun extract(data: ByteArray): String =
+    fun extract(data: ByteArray): String = extractStructured(data).text
+
+    /**
+     * 이어 붙인 본문과, 그 줄마다 하나씩 [kr.easydoc.core.segment.UnitKind.BODY] 인 구조 —
+     * PDF 는 표·목록 구조 힌트 범위 밖이다(계획 §1.6). 렌더러를 들이지 않는 한 셀·항목 경계를
+     * 알 방법이 없으므로 전부 본문으로 둔다.
+     */
+    fun extractStructured(data: ByteArray): ExtractionOutcome =
         guarded(data.size) { Loader.loadPDF(data) }.use { opened -> readPages(opened, data.size) }
 
     private fun readPages(
         document: PDDocument,
         uploadSize: Int,
-    ): String {
+    ): ExtractionOutcome {
         val pageCount = document.numberOfPages
         if (pageCount == 0) {
             ExtractionFailureLog.record(SourceFormat.PDF, uploadSize, "no_pages")
@@ -38,7 +45,7 @@ internal class PdfExtractor {
             ExtractionFailureLog.record(SourceFormat.PDF, uploadSize, "no_text_layer")
             throw DocumentExtractionException(ExtractionMessages.PDF_NO_TEXT_LAYER)
         }
-        return extracted
+        return ExtractionOutcome(extracted, builder.structure())
     }
 
     /** PDFBox 호출을 감싸 라이브러리 예외를 도메인 예외로 바꾼다. */

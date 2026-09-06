@@ -2,6 +2,9 @@ package kr.easydoc.infrastructure.ingest
 
 import kr.easydoc.core.document.SourceFormat
 import kr.easydoc.core.exceptions.DocumentExtractionException
+import kr.easydoc.core.segment.SourceStructure
+import kr.easydoc.core.segment.inferUnitKinds
+import kr.easydoc.core.segment.splitUnits
 import java.nio.ByteBuffer
 import java.nio.charset.CharacterCodingException
 import java.nio.charset.Charset
@@ -52,11 +55,21 @@ import java.nio.charset.CodingErrorAction
  * 없는 파일과, 우리가 지원하지 않는 세 번째 인코딩을 섞어 부르지 않는다.
  */
 internal class TxtExtractor {
-    fun extract(data: ByteArray): String {
+    fun extract(data: ByteArray): String = extractStructured(data).text
+
+    /**
+     * 이어 붙인 본문과, 그 줄마다 하나씩 붙은 원본 단위 종류(표·목록 구조 힌트 계획 §1.2 표) —
+     * 평문에는 셀이 없으므로 [kr.easydoc.core.segment.inferUnitKinds] 텍스트 휴리스틱만으로
+     * [kr.easydoc.core.segment.UnitKind.LIST_ITEM] 인지 [kr.easydoc.core.segment.UnitKind.BODY]
+     * 인지 가른다. 최종 줄(`splitUnits(text)`)에 바로 적용한다 — 블록 하나가 여러 줄로 쪼개질
+     * 수 있어 원시 바이트 줄과 최종 줄이 다를 수 있기 때문이다.
+     */
+    fun extractStructured(data: ByteArray): ExtractionOutcome {
         val decoded = decode(data) ?: throw broken(data.size)
         val builder = ExtractedTextBuilder(SourceFormat.TXT, data.size)
         builder.add(stripBom(decoded))
-        return builder.build()
+        val text = builder.build()
+        return ExtractionOutcome(text, SourceStructure(inferUnitKinds(splitUnits(text))))
     }
 
     /** 판정 순서는 클래스 KDoc의 5단계 그대로다. */

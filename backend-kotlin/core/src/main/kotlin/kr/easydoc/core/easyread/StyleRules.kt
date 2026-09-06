@@ -46,8 +46,13 @@ private val SENTENCE_SPLIT = unicodeRegex("""(?<=[.!?])\s+|\n+""")
 /**
  * 개조식 항목 마커("1.", "가.", "①)")는 문장이 아니라 번호다.
  * 분리 후 남는 마커 조각을 버려야 문장 수·평균 길이가 왜곡되지 않는다.
+ *
+ * `internal` 인 것은 이 파일 밖에서도 재사용하기 위해서다 —
+ * [kr.easydoc.core.segment.inferUnitKinds](표·목록 구조 힌트 계획 §1.2)가 「줄 머리가
+ * 이 마커로 시작하는가」를 같은 정의로 판정한다. 정의가 갈리면 문장 분리와 원본 단위 종류
+ * 판정이 서로 다른 기준으로 "번호"를 셀 수 있다.
  */
-private val LIST_MARKER = unicodeRegex("""(?:\d+|[가-힣]|[①-⑳])\s*[.)]""")
+internal val LIST_MARKER = unicodeRegex("""(?:\d+|[가-힣]|[①-⑳])\s*[.)]""")
 
 /** 마침표·물음표·느낌표·줄바꿈 기준의 단순 문장 분리. */
 fun splitSentences(text: String): List<String> =

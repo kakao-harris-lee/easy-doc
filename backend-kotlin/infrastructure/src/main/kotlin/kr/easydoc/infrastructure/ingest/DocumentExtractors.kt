@@ -37,19 +37,19 @@ class DocumentExtractors internal constructor(
             ZipBudget.ensureWithinBudget(bytes, format)
         }
 
-        val text =
+        val outcome =
             when (format) {
-                SourceFormat.DOCX -> docx.extract(bytes)
+                SourceFormat.DOCX -> docx.extractStructured(bytes)
 
-                SourceFormat.PDF -> pdf.extract(bytes)
+                SourceFormat.PDF -> pdf.extractStructured(bytes)
 
-                SourceFormat.HWPX -> hwpx.extract(bytes)
+                SourceFormat.HWPX -> hwpx.extractStructured(bytes)
 
-                SourceFormat.TXT -> txt.extract(bytes)
+                SourceFormat.TXT -> txt.extractStructured(bytes)
 
                 // 붙여넣기는 이 경로로 오지 않는다 — `ofUploadFilename` 이 업로드 형식만 돌려준다.
                 SourceFormat.TEXT -> error("붙여넣기는 추출기를 지나지 않는다")
             }
-        return ExtractedDocument(format, text)
+        return ExtractedDocument(format, outcome.text, outcome.structure)
     }
 }
