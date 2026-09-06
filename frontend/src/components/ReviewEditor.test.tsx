@@ -1851,6 +1851,65 @@ describe('문단 재변환(계획 §4 결정 3, §6 S5)', () => {
   })
 })
 
+describe('이미 통과한 문단 경고(계획 §11, segment_map.compliant_source_units)', () => {
+  function renderTwoUnits(compliantSourceUnits: number[]) {
+    const map = segmentMap({
+      source_unit_count: 2,
+      units: [
+        segmentMapUnit({ easy_unit_index: 0, source_unit_indexes: [0], confidence: 'high' }),
+        segmentMapUnit({ easy_unit_index: 1, source_unit_indexes: [1], confidence: 'high' }),
+      ],
+      compliant_source_units: compliantSourceUnits,
+    })
+    return render(
+      <ReviewEditor
+        conversion={conversion({ easy_text: '첫 문장\n둘째 문장', segment_map: map })}
+        source={sourceReady('원본 문단 하나\n원본 문단 둘')}
+      />,
+    )
+  }
+
+  it('목록에 있는 원본 단위 행에만 배지가 붙고, 그 행의 다시 변환 버튼은 여전히 활성이다', () => {
+    renderTwoUnits([0])
+
+    expect(screen.getByLabelText('원본 1번째 문단').closest('[role="listitem"]')).toHaveTextContent(
+      '이미 쉬운 글 규칙을 통과한 문단',
+    )
+    expect(
+      screen.getByLabelText('원본 2번째 문단').closest('[role="listitem"]'),
+    ).not.toHaveTextContent('이미 쉬운 글 규칙을 통과한 문단')
+
+    const reconvertButton = screen.getByLabelText('원본 1번째 문단 다시 변환')
+    expect(reconvertButton).toBeEnabled()
+
+    const describedBy = reconvertButton.getAttribute('aria-describedby')
+    expect(describedBy).not.toBeNull()
+    expect(document.getElementById(describedBy as string)).toHaveTextContent(
+      '이 문단은 이미 쉬운 글 규칙을 통과합니다. 다시 쓰면 나빠질 수 있습니다.',
+    )
+
+    // 다른 비활성 사유가 없으면 title도 같은 경고 문구를 낸다.
+    expect(reconvertButton).toHaveAttribute(
+      'title',
+      '이 문단은 이미 쉬운 글 규칙을 통과합니다. 다시 쓰면 나빠질 수 있습니다.',
+    )
+
+    // 통과하지 못한 행에는 설명 참조도, 경고 title도 없다.
+    const otherButton = screen.getByLabelText('원본 2번째 문단 다시 변환')
+    expect(otherButton).not.toHaveAttribute('aria-describedby')
+    expect(otherButton).not.toHaveAttribute('title')
+  })
+
+  it('목록이 비어 있으면 배지가 하나도 없다', () => {
+    renderTwoUnits([])
+
+    expect(screen.queryByText('이미 쉬운 글 규칙을 통과한 문단')).not.toBeInTheDocument()
+    expect(screen.getByLabelText('원본 1번째 문단 다시 변환')).not.toHaveAttribute(
+      'aria-describedby',
+    )
+  })
+})
+
 describe('저장 중 경합 방지(MEDIUM 리뷰)', () => {
   it('저장·내려받기가 도는 동안 단위 textarea를 잠근다', async () => {
     const user = userEvent.setup()

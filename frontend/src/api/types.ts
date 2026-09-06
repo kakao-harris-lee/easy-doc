@@ -204,6 +204,14 @@ export interface SegmentMap {
   easy_unit_count: number
   /** 쉬운 글 단위 색인 순서 그대로, `easy_unit_count`개. */
   units: SegmentMapUnit[]
+  /**
+   * 원본 단위 중 이미 쉬운 글 규칙(`checkStyle`)을 위반 0건으로 통과하고 공백만이
+   * 아닌 단위의 0 기반 색인. `source_unit_indexes`와 같은 좌표(저장된 추출 원문을
+   * `\n`으로 쪼갠 줄). 오름차순·중복 없음. 재변환을 막지 않는다 — 화면이 이 목록에
+   * 있는 원본 단위 행에 「다시 쓰면 나빠질 수 있습니다」 경고만 덧붙인다(계획
+   * `docs/plans/2026-09-04-p0-4-paragraph-mapping-reconversion.md` §11).
+   */
+  compliant_source_units: number[]
 }
 
 /** 변환 상태·결과. 완료 전에는 결과 필드가 비어 있다. */

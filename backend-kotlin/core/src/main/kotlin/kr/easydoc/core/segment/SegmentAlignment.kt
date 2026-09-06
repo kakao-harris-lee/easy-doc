@@ -32,15 +32,21 @@ data class SegmentUnit(
  * 원본 단위와 쉬운 글 단위 사이의 대응표. **저장하지 않고** (원본, 쉬운 글) 문자열 쌍에서
  * [alignSegments] 로 매번 유도한다(계획 §2 결정 2) — 검수 저장마다 낡는 두 번째 진실을
  * 만들지 않는다.
+ *
+ * `compliantSourceUnits` 필드는 [alignSegments] 가 채우지 않는다(정렬만 안다, 기본값 빈
+ * 목록) — P0-4 S7(계획 §11)에서 이 파일 최상위의 `compliantSourceUnits` 함수(이름이 같은
+ * 별개 선언이다)로 원본 전용 계산을 더하는 `application` 의 파생 함수가 `copy` 로 채운다.
  */
 data class SegmentMap(
     val sourceUnitCount: Int,
     val easyUnitCount: Int,
     val units: List<SegmentUnit>,
+    val compliantSourceUnits: List<Int> = emptyList(),
 ) {
     /** 색인·개수만 남긴다 — 본문을 담지 않는 값 타입이지만 다른 값 타입과 같은 규약을 지킨다. */
     override fun toString(): String =
-        "SegmentMap(sourceUnitCount=$sourceUnitCount, easyUnitCount=$easyUnitCount, units=${units.size})"
+        "SegmentMap(sourceUnitCount=$sourceUnitCount, easyUnitCount=$easyUnitCount, " +
+            "units=${units.size}, compliantSourceUnits=${compliantSourceUnits.size})"
 }
 
 /** 마스킹 자리표시자 모양(`[[주민등록번호1]]` 등) — `Masking.kt`·`FactPreservation.kt` 와 같은 구성. */

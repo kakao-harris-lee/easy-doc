@@ -206,6 +206,18 @@ class SegmentAlignmentTest {
     }
 
     @Nested
+    @DisplayName("compliantSourceUnits — alignSegments 는 정렬만 안다(P0-4 S7, 계획 §11)")
+    inner class CompliantSourceUnitsDefault {
+        @Test
+        @DisplayName("alignSegments 직접 호출은 compliantSourceUnits 를 채우지 않는다 — 항상 빈 목록")
+        fun `alignSegments 는 compliantSourceUnits 를 비워 둔다`() {
+            val result = alignSegments(sourceUnits = listOf("짧은 문장입니다."), easyUnits = listOf("짧은 문장입니다."))
+
+            assertThat(result.compliantSourceUnits).isEmpty()
+        }
+    }
+
+    @Nested
     @DisplayName("성능 — 20,000자에 가까운 입력도 2,000ms 안에 끝난다")
     inner class Performance {
         @Test
