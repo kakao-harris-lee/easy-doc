@@ -299,6 +299,45 @@ class TestOtherExportsUnaffectedRegression(ExportTestCase):
         self.assertNotIn("폐지된용어", all_terms, "deprecated는 기존과 동일하게 제외되어야 한다")
 
 
+class TestReviewNoteFieldHandling(ExportTestCase):
+    """2026-09-06 계약: `review_note`(내부 검수 메모)는 export_full에만 실리고
+    export_index(Kotlin이 읽는 easy_dict.index.json)에는 절대 포함되지 않는다.
+
+    caution/review_note 분리 배경은 review_notes.py 모듈 docstring 참고 —
+    caution은 프런트/LLM 프롬프트에 그대로 노출되므로 내부 메모가 섞이면
+    정보 유출이 된다.
+    """
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.conn.execute(
+            "UPDATE entries SET caution = ?, review_note = ? WHERE id = ?",
+            ("사용자에게 보여줄 안내문", "내부 검수 메모: 2026-09-06 승격", self.naebang_id),
+        )
+        self.conn.commit()
+
+    def test_export_full_includes_review_note(self) -> None:
+        out = export_mod.export_full(self.conn, self.tmpdir / "easy_dict.json")
+        doc = json.loads(out.read_text(encoding="utf-8"))
+        entry = next(e for e in doc["entries"] if e["id"] == self.naebang_id)
+        self.assertEqual(entry["caution"], "사용자에게 보여줄 안내문")
+        self.assertEqual(entry["review_note"], "내부 검수 메모: 2026-09-06 승격")
+
+    def test_export_index_never_leaks_review_note(self) -> None:
+        out = export_mod.export_index(self.conn, self.tmpdir / "easy_dict.index.json")
+        raw_text = out.read_text(encoding="utf-8")
+        doc = json.loads(raw_text)
+
+        entry = doc["entries"][str(self.naebang_id)]
+        self.assertEqual(entry["c"], "사용자에게 보여줄 안내문", "caution은 여전히 실려야 한다")
+        self.assertNotIn("rn", entry)
+        self.assertNotIn("review_note", entry)
+        self.assertNotIn(
+            "내부 검수 메모", raw_text,
+            "review_note 내용이 index.json 어디에도 문자열로 새어나가면 안 된다",
+        )
+
+
 class TestDeprecatedHandlingAcrossExports(ExportTestCase):
     """2026-08-28 계약: `status='deprecated'` 엔트리가 산출물 3종에서 서로 다르게
     취급된다.

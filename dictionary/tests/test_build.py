@@ -180,6 +180,65 @@ class TestKeepClassificationEndToEnd(unittest.TestCase):
 
 
 @unittest.skipUnless(_IMPORT_ERROR is None, f"easydict.build import 실패: {_IMPORT_ERROR}")
+class TestRowToEntriesSplitsCautionAtIngest(unittest.TestCase):
+    """2026-09-06 회귀 방지: row_to_entries()가 note를 caution에 그대로 담지
+    않고 classify_caution()으로 갈라야 한다 — 그렇지 않으면 다음 빌드가
+    같은 CSV(welfare_seed_*.csv 등)를 다시 읽을 때마다 검수 메모가 caution에
+    재적재되어 유출이 되풀이된다(HIGH-2, 독립 리뷰 지적).
+
+    합성 픽스처를 쓴다 — 이 결함은 note 컬럼의 "형태"(메모+안내 혼합)에만
+    의존하고 실제 CSV 파일 내용에는 의존하지 않는다.
+    """
+
+    def _row_to_single_entry(self, note: str) -> Entry:
+        from easydict.models import Source
+
+        colmap = {"term": "term", "easy_term": "easy_term", "note": "note"}
+        row = {"term": "면제", "easy_term": "안 내도 됨", "note": note}
+        source = Source(code="test:src", name="테스트용 출처")
+        entries = build.row_to_entries(row, colmap, source, lineno=2)
+        self.assertEqual(len(entries), 1)
+        return entries[0]
+
+    def test_pure_review_memo_moves_entirely_to_review_note(self) -> None:
+        memo = "2026-08-30 검수: easy-doc 내장 목록 대치어 채택으로 substitute 승격 (docs/consumer-overlap-policy.md §3.2)"
+        entry = self._row_to_single_entry(memo)
+        self.assertIsNone(entry.caution)
+        self.assertEqual(entry.review_note, memo)
+
+    def test_guidance_and_memo_glued_by_closing_paren_is_split(self) -> None:
+        """실측 결함(id 1926 '면제'): 메모가 마침표 없이 ')'로 끝나고 바로
+        사용자 안내 문장이 이어진다 — 안내가 caution에 남아야 한다."""
+        note = (
+            "2026-08-30 검수: easy-doc 내장 목록 대치어 채택으로 substitute 승격 "
+            "(docs/consumer-overlap-policy.md §3.2) 돈이 아닌 의무의 면제(교육·검사 등)면 "
+            "'안 내도 됨' 대신 '하지 않아도 됨'으로 푼다."
+        )
+        entry = self._row_to_single_entry(note)
+        self.assertEqual(
+            entry.caution,
+            "돈이 아닌 의무의 면제(교육·검사 등)면 '안 내도 됨' 대신 '하지 않아도 됨'으로 푼다.",
+        )
+        self.assertTrue(entry.review_note.startswith("2026-08-30 검수"))
+
+    def test_legit_guidance_only_note_stays_as_caution(self) -> None:
+        note = "법령·지침의 공식 명칭(고유명사)이므로 원어를 지우거나 다른 말로 바꾸지 않는다."
+        entry = self._row_to_single_entry(note)
+        self.assertEqual(entry.caution, note)
+        self.assertIsNone(entry.review_note)
+
+    def test_needs_confirmation_marker_survives_ingest_split(self) -> None:
+        """[확인 필요]가 caution에서 사라지면 classify()의 deprecated 강제
+        로직(build.py NEEDS_CONFIRMATION_MARKER 검사)이 신호를 잃는다."""
+        note = f"{build.NEEDS_CONFIRMATION_MARKER} 2026-08-30 검수 전이라 법조문 원문 대조가 필요합니다."
+        entry = self._row_to_single_entry(note)
+        self.assertEqual(entry.caution, note)
+        self.assertIn(build.NEEDS_CONFIRMATION_MARKER, entry.caution)
+        classified = build.classify(entry)
+        self.assertEqual(classified.status, "deprecated")
+
+
+@unittest.skipUnless(_IMPORT_ERROR is None, f"easydict.build import 실패: {_IMPORT_ERROR}")
 class TestDedupe(unittest.TestCase):
     """§5⑥ (term_norm, easy_term) 유일화. 완전중복만 제거, 대안은 보존."""
 

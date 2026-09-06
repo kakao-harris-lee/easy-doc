@@ -19,6 +19,14 @@
 - **도달 가능성** — 폐기(deprecated)되지 않은 모든 엔트리가 `index.json`의
   `surface_index`에서 **자기 자신의 표제어(term)로 조회 가능**해야 한다
   (`가설`·`거치`·`내방`이 사전에 있는데 영영 안 나온 사고, DESIGN.md 참고)
+- **caution의 검수 메모 잔존 금지** (2026-09-06) — 배포 색인(`index.json`)의
+  `caution`(`c`)이 `review_notes.REVIEW_NOTE_PATTERN`에 매칭되면 안 된다.
+  `caution`은 프런트(`TermLookupPopover`)와 LLM 프롬프트(`DictionaryContextLines`)에
+  그대로 노출되므로, 내부 검수 메모가 여기 남으면 유출이다. `build.py`가
+  잉제스트 시점에 `classify_caution()`으로 걸러내지만, 이 검사는 그 게이트를
+  우회하는 경로(수동 UPDATE, 마이그레이션 재실행 누락 등)가 생겨도 산출물에서
+  다시 잡는다. `NEEDS_CONFIRMATION_MARKER`(`[확인 필요]`)가 있는 caution은
+  제어 신호라 예외로 둔다(review_notes.classify_caution()과 같은 규칙)
 - **보호 엔트리 승리** — 같은 표면형에 후보가 여럿이고 그중 하나라도
   risk_level이 다른 후보보다 높으면, `surface_index`의 승자(첫 원소)는
   risk가 더 낮은 후보가 되면 안 된다(§6.8 키①, `export.winner_sort_key`가
@@ -50,6 +58,8 @@ if str(_SRC_DIR) not in sys.path:
 
 from easydict.export import _RISK_WINNER_RANK, SOURCE_TRUST_TIER  # noqa: E402  (읽기 전용 재사용 — 새 순위표를 만들지 않는다)
 from easydict.lookup import EasyDict  # noqa: E402  (읽기 전용 — dist/를 조회만 한다)
+from easydict.models import NEEDS_CONFIRMATION_MARKER  # noqa: E402
+from easydict.review_notes import REVIEW_NOTE_PATTERN  # noqa: E402  (판정 규칙 재사용 — 새 패턴을 만들지 않는다)
 
 DEFAULT_DB_PATH = REPO_ROOT / "dist" / "easy_dict.sqlite3"
 DEFAULT_INDEX_JSON_PATH = REPO_ROOT / "dist" / "easy_dict.index.json"
@@ -258,6 +268,36 @@ def check_protected_entry_wins(entries: list[dict], index_doc: dict) -> list[Vio
     return out
 
 
+def check_caution_free_of_review_notes(index_doc: dict) -> list[Violation]:
+    """배포 색인(`index.json`)의 `caution`에 검수 메모 신호가 남아 있으면 안 된다.
+
+    2026-09-06 이전에는 `entries.caution`이 사용자 노출용 안내문과 검수자
+    내부 메모(예: "2026-08-30 검수: ... 승격 (docs/consumer-overlap-policy.md
+    §3.2)")를 섞어 담고 있었다 — `caution`은 프런트(`TermLookupPopover`)와
+    LLM 프롬프트(`DictionaryContextLines`)에 그대로 노출되므로 이는 정보
+    유출이었다. `review_notes.classify_caution()`이 이 신호를 `review_note`로
+    옮기고, `build.py`가 잉제스트 시점에 그 함수를 호출해 이 상태가 앞으로도
+    유지되게 한다. 이 검사는 그 게이트가 실제로 지켜지는지 산출물에서 다시
+    확인한다 — 우회 경로(수동 UPDATE, 마이그레이션 누락, `review_notes.py`
+    수정 중 회귀 등)가 생겨도 여기서 잡는다.
+
+    `NEEDS_CONFIRMATION_MARKER`(`[확인 필요]`)가 있는 caution은 예외다 —
+    build.py가 이 마커를 보고 status=deprecated를 강제하는 제어 신호라
+    `classify_caution()`도 그대로 보존하기 때문이다.
+    """
+    out = []
+    for entry_id, entry in index_doc.get("entries", {}).items():
+        caution = entry.get("c")
+        if not caution or NEEDS_CONFIRMATION_MARKER in caution:
+            continue
+        if REVIEW_NOTE_PATTERN.search(caution):
+            out.append(Violation(
+                "caution에 검수 메모 잔존(index.json)",
+                f"entry_id={entry_id} caution={caution!r}",
+            ))
+    return out
+
+
 def check_source_attribution(conn: sqlite3.Connection) -> list[Violation]:
     """등록된 원천 중 `export.SOURCE_TRUST_TIER`에 없는 원천이 엔트리를 소유하는가.
 
@@ -321,6 +361,7 @@ def run(db_path: Path, index_json_path: Path, simple_jsonl_path: Path) -> list[V
     violations += check_simple_jsonl_contract(entries, simple_lines)
     violations += check_reachability(entries, db_path)
     violations += check_protected_entry_wins(entries, index_doc)
+    violations += check_caution_free_of_review_notes(index_doc)
     violations += check_source_attribution(conn)
     conn.close()
     return violations

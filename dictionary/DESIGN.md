@@ -130,7 +130,8 @@ SQLite를 **정본(source of truth)** 으로 두고 JSON은 파생 산출물로 
 | `definition` | TEXT | | 한 문장 풀이(초등 3~4학년 수준) |
 | `replace_strategy` | TEXT | ● | `substitute\|gloss\|keep` (§2.1) |
 | `risk_level` | TEXT | ● | `none\|low\|high` |
-| `caution` | TEXT | | 치환 시 주의사항(사람이 읽는 메모) |
+| `caution` | TEXT | | 치환 시 주의사항(사람이 읽는 메모, **사용자에게 노출**) |
+| `review_note` | TEXT | | 내부 검수 메모(사람이 읽는 빌드/검수 이력, **사용자에게 비노출**) |
 | `readability` | INTEGER | ● | 1(가장 쉬움)~3(여전히 조금 어려움) |
 | `confidence` | REAL | ● | 0~1. 자동 치환 신뢰도 |
 | `priority` | INTEGER | ● | 겹칠 때 큰 값 우선. 기본 `100 + len(term)*10` |
@@ -142,6 +143,8 @@ SQLite를 **정본(source of truth)** 으로 두고 JSON은 파생 산출물로 
 | `created_at` / `updated_at` | TEXT | ● | |
 
 제약: `UNIQUE(term_norm, easy_term)` — 같은 원어에 서로 다른 순화어가 여러 개 오는 것은 **허용한다**(문맥별 대안). 완전 중복만 막는다.
+
+**`caution` vs `review_note` (2026-09-06)**: 둘 다 "사람이 읽는 메모"지만 독자가 다르다. `caution`은 치환 시 사용자에게 보여줄 안내문이라 프런트(`TermLookupPopover`)가 그대로 렌더링하고 `DictionaryContextLines`가 `DetailTier.MAX`에서 LLM 프롬프트에도 싣는다 — **사용자와 LLM 둘 다에게 노출**된다. `review_note`는 반대로 검수자가 남긴 내부 결정 이력(예: "2026-08-30 검수: easy-doc 내장 목록 대치어 채택으로 substitute 승격 (docs/consumer-overlap-policy.md §3.2)")이고, `export_index`(easy-doc이 실제로 읽는 `easy_dict.index.json`)는 이 필드를 절대 내보내지 않는다 — `export_full`(전체 덤프, 감사 추적용)에만 남는다. 두 필드가 나뉘기 전에는 `caution` 하나에 둘을 섞어 써서 내부 검수 메모가 사용자·LLM에 그대로 유출됐다(474건 중 372건). `dictionary/src/easydict/review_notes.py`의 `classify_caution()`이 날짜·검수/승격/비활성화/채택·`§`·`docs/`·`consumer-overlap`·`골든 코퍼스`·`내장 목록`·참고용/프롬프트에 신호로 판정한다. 이 함수는 두 곳에서 쓰여 **상시 파이프라인 불변식**이 된다 — ⑴ `build.py`의 `row_to_entries()`가 CSV의 `note` 컬럼을 Entry에 담기 **직전**에 호출해, 다음에 같은 CSV(welfare_seed_*.csv 등)를 다시 읽어도 검수 메모가 caution에 재적재되지 않는다(잉제스트 시점 게이트), ⑵ 기존 `dist/easy_dict.sqlite3`에 이미 쌓여 있던 474건은 `migrate_existing_cautions()`(같은 파일 하단 CLI, `python3 -m easydict.review_notes`)로 한 번 정리했다. 산출물 쪽에는 `tools/check_invariants.py`의 "caution의 검수 메모 잔존 금지" 검사가 `check.sh`에 묶여 있어, 두 게이트를 모두 우회하는 경로가 생겨도 `easy_dict.index.json`의 `caution`에 이 패턴이 남으면 빌드가 실패한다. `NEEDS_CONFIRMATION_MARKER`(`[확인 필요]`, `models.py`)가 있는 caution은 build.py가 status=deprecated를 강제하는 제어 신호라 이 세 지점 모두에서 예외로 보존한다.
 
 ### 3.3 태그 표준값
 

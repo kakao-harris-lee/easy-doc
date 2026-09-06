@@ -45,6 +45,30 @@ class DictionaryIndexJsonReaderTest {
     }
 
     @Test
+    @DisplayName("모르는 엔트리 필드는 무시한다 — review_note 같은 내부 필드가 실려 와도 거절하지 않는다")
+    fun `알 수 없는 엔트리 필드를 무시한다`() {
+        // review_note(내부 검수 메모, easy-dictionary 2026-09-06)는 export_index가 절대
+        // 내보내지 않지만, 혹시라도 색인에 낯선 키가 섞여 들어와도 이 리더가 죽거나 그
+        // 값을 엉뚱한 필드로 읽어서는 안 된다 — 필드별로 이름 지정해 읽으므로(node.path)
+        // 선언하지 않은 키는 자연히 무시된다.
+        val withUnknownField =
+            json(ENTRY_SAMPLE).replace(
+                """"c": "기초생활수급자와 다른 자격입니다.",""",
+                """"c": "기초생활수급자와 다른 자격입니다.", "rn": "2026-08-30 검수: 내부 결정 메모",""",
+            )
+
+        val entry =
+            reader
+                .read(withUnknownField.byteInputStream())
+                .findAll("차상위계층 안내입니다.")
+                .single()
+                .entry
+
+        assertThat(entry.caution).isEqualTo("기초생활수급자와 다른 자격입니다.")
+        assertThat(entry.term).isEqualTo("차상위계층")
+    }
+
+    @Test
     @DisplayName("표면형 변형형도 같은 엔트리로 잇는다")
     fun `변형형을 싣는다`() {
         val index = reader.read(json(ENTRY_SAMPLE, extraSurface = "\"차상위 계층\": [1],").byteInputStream())

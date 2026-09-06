@@ -244,6 +244,7 @@ def export_full(conn: sqlite3.Connection, out: Path) -> Path:
                 "replace_strategy": row["replace_strategy"],
                 "risk_level": row["risk_level"],
                 "caution": row["caution"],
+                "review_note": row["review_note"],
                 "readability": row["readability"],
                 "confidence": row["confidence"],
                 "priority": row["priority"],
@@ -368,6 +369,10 @@ def export_index(conn: sqlite3.Connection, out: Path) -> Path:
             "g": tags,
             "c": row["caution"],
             "x": examples,
+            # review_note는 의도적으로 싣지 않는다 — 내부 검수 메모라 사용자에게
+            # 보여주거나 LLM 프롬프트에 실으면 안 된다(2026-09-06 caution/review_note
+            # 분리, review_notes.py 모듈 docstring 참고). export_full(감사 추적용
+            # 전체 덤프)에만 남긴다.
         }
 
         _add_surface(row["term"], entry_id)
