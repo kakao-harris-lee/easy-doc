@@ -32,6 +32,20 @@ interface UserRepository {
     /** 그 식별자의 계정이 **아직 있는지**만 본다. */
     fun exists(id: UUID): Boolean
 
+    /**
+     * 식별자로 찾으면서 그 행을 **잠근다**(`SELECT … FOR UPDATE`) — [findById] 와 같은
+     * 열을 읽지만 트랜잭션이 끝날 때까지 다른 트랜잭션의 같은 행 잠금 시도를 막는다.
+     *
+     * [kr.easydoc.application.auth.SocialLoginService.unlink] 전용이다 — 같은 사용자가
+     * 서로 다른 제공자를 동시에 해제하는 요청 둘 다 "이 계정의 남은 신원 수·비밀번호
+     * 유무"를 같은 스냅샷으로 판정하면, 낙관적 개수 검사(READ COMMITTED에서도 각자
+     * 자기 문장 시점의 스냅샷만 본다)로는 **둘 다 통과해 로그인 수단이 0개로 떨어지는
+     * 경쟁**을 막지 못한다. 이 잠금이 두 번째 트랜잭션을 첫 트랜잭션의 커밋(또는
+     * 롤백)까지 대기시켜 판정을 직렬화한다. 계정이 없으면(토큰은 유효한데 삭제된
+     * 경우) `null` — [findById] 와 같은 원칙.
+     */
+    fun lockForUpdate(id: UUID): User?
+
     /** 새 사용자를 만든다. */
     fun create(
         email: String,

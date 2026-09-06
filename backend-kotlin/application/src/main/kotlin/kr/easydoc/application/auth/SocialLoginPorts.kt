@@ -153,4 +153,21 @@ interface UserIdentityRepository {
         email: String?,
         emailVerified: Boolean,
     ): UserIdentity
+
+    /**
+     * 연결을 끊는다 — 연결 해제(backlog §1.4, 계약 2.17.0). `(user_id, provider)` 소유
+     * 술어를 SQL 문장 자신에 건다(`OwnershipPredicateGuardTest` 관례) — 이 사용자가 이
+     * 제공자에 연결한 신원이 아니면 지우지 않는다.
+     *
+     * 지운 행이 있으면 `true` — 없으면(이미 해제됐거나 애초에 없던 연결) `false`.
+     * [SocialLoginService.unlink] 는 이 값을 **두 자리**에서 쓴다: 호출 전 존재 확인이
+     * 이미 404 를 걸러내는 정상 경로 하나, 그리고 [kr.easydoc.application.auth.UserRepository.lockForUpdate]
+     * 로 행을 잠근 뒤에도 이 문장이 아무것도 지우지 못하는 **경쟁 후속 갈래**
+     * 하나(잠금 시점과 이 삭제 문장 사이에 이 신원을 지운 다른 트랜잭션이 먼저
+     * 커밋한 경우) — 그 갈래도 같은 404 로 접는다.
+     */
+    fun deleteByUserAndProvider(
+        userId: UUID,
+        provider: SocialLoginProviderId,
+    ): Boolean
 }

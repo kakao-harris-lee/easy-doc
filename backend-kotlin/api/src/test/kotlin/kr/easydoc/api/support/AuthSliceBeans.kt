@@ -483,6 +483,9 @@ class InMemoryUserRepository : UserRepository {
 
     override fun findById(id: UUID): User? = byId[id]?.user
 
+    /** 슬라이스는 단일 스레드로 도는 `MockMvc` 요청뿐이라 실제 잠금이 필요 없다 — `findById` 와 같다. */
+    override fun lockForUpdate(id: UUID): User? = findById(id)
+
     override fun exists(id: UUID): Boolean = byId.containsKey(id)
 
     override fun create(
@@ -501,7 +504,8 @@ class InMemoryUserRepository : UserRepository {
         emailVerified: Boolean,
     ): User {
         val verifiedAt = if (emailVerified) Instant.EPOCH else null
-        val stored = StoredUser(User(UUID.randomUUID(), email, Instant.EPOCH, verifiedAt), passwordHash)
+        val user = User(UUID.randomUUID(), email, Instant.EPOCH, verifiedAt, hasPassword = passwordHash != null)
+        val stored = StoredUser(user, passwordHash)
         if (byEmail.putIfAbsent(email, stored) != null) {
             throw EmailAlreadyRegisteredException("이미 가입된 이메일입니다")
         }
@@ -690,6 +694,14 @@ class InMemoryUserIdentityRepository : UserIdentityRepository {
         val identity = UserIdentity(UUID.randomUUID(), userId, provider, providerUserId)
         byProvider[provider to providerUserId] = identity
         return identity
+    }
+
+    override fun deleteByUserAndProvider(
+        userId: UUID,
+        provider: SocialLoginProviderId,
+    ): Boolean {
+        val key = byProvider.entries.firstOrNull { it.value.userId == userId && it.value.provider == provider }?.key
+        return key != null && byProvider.remove(key) != null
     }
 }
 

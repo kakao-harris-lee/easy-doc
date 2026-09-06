@@ -76,6 +76,7 @@ describe('구글 로그인 콜백', () => {
       id: 'u1',
       email: 'user@example.com',
       email_verified: true,
+      has_password: true,
       identities: [],
     })
 
@@ -138,10 +139,10 @@ describe('구글 로그인 콜백', () => {
 
     expect(
       await screen.findByText(
-        '이미 이 이메일로 가입된 계정이 있습니다. 이메일로 로그인하면 구글 계정을 연결해 드립니다.',
+        '이미 이 이메일로 가입된 계정이 있습니다. 그 계정에 로그인한 뒤 계정 설정에서 구글 계정을 연결하세요.',
       ),
     ).toBeInTheDocument()
-    const link = screen.getByRole('link', { name: '이메일로 로그인하기' })
+    const link = screen.getByRole('link', { name: '기존 계정으로 로그인하기' })
     expect(link).toBeInTheDocument()
     // LoginPage가 로그인 성공 직후 연결을 이어서 시작할 수 있도록 표시를 싣는다.
     expect(link).toHaveAttribute('href', '/login?link=google')
@@ -185,6 +186,7 @@ describe('카카오 로그인 콜백', () => {
       id: 'u1',
       email: 'user@example.com',
       email_verified: true,
+      has_password: true,
       identities: [],
     })
 
@@ -223,10 +225,10 @@ describe('카카오 로그인 콜백', () => {
 
     expect(
       await screen.findByText(
-        '이미 이 이메일로 가입된 계정이 있습니다. 이메일로 로그인하면 카카오 계정을 연결해 드립니다.',
+        '이미 이 이메일로 가입된 계정이 있습니다. 그 계정에 로그인한 뒤 계정 설정에서 카카오 계정을 연결하세요.',
       ),
     ).toBeInTheDocument()
-    const link = screen.getByRole('link', { name: '이메일로 로그인하기' })
+    const link = screen.getByRole('link', { name: '기존 계정으로 로그인하기' })
     expect(link).toHaveAttribute('href', '/login?link=kakao')
   })
 })
@@ -255,6 +257,7 @@ describe('네이버 로그인 콜백', () => {
         id: 'u1',
         email: 'user@example.com',
         email_verified: false,
+        has_password: true,
         identities: [],
       })
 

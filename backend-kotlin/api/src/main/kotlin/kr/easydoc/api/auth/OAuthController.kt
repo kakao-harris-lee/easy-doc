@@ -6,6 +6,7 @@ import kr.easydoc.application.auth.SocialLoginService
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
+import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
@@ -75,6 +76,19 @@ class OAuthController(private val socialLogin: SocialLoginService) {
         @Valid @RequestBody request: OAuthCallbackRequest,
     ): ResponseEntity<Void> {
         socialLogin.linkCallback(user.id, provider, request.code, request.state, request.redirectUri)
+        return private(HttpStatus.NO_CONTENT).build()
+    }
+
+    /**
+     * [user] 계정에서 [provider] 신원 연결을 끊는다 — 연결 해제(2.17.0, backlog §1.4 다음
+     * 조각). 연결이 없으면 404, 마지막 로그인 수단이면 409(`SocialLoginService.unlink` KDoc).
+     */
+    @DeleteMapping("/{provider}/link")
+    fun unlink(
+        user: AuthenticatedUser,
+        @PathVariable provider: SocialLoginProviderId,
+    ): ResponseEntity<Void> {
+        socialLogin.unlink(user.id, provider)
         return private(HttpStatus.NO_CONTENT).build()
     }
 

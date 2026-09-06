@@ -5,6 +5,7 @@ import kr.easydoc.api.support.AuthSliceBeans
 import kr.easydoc.api.support.ContractSpec
 import kr.easydoc.api.support.FakeGoogleSocialLoginProvider
 import kr.easydoc.api.support.InMemoryUserRepository
+import kr.easydoc.application.auth.SocialLoginService
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
@@ -15,6 +16,7 @@ import org.springframework.http.HttpHeaders
 import org.springframework.http.MediaType
 import org.springframework.mock.web.MockHttpServletResponse
 import org.springframework.test.web.servlet.MockMvc
+import org.springframework.test.web.servlet.delete
 import org.springframework.test.web.servlet.get
 import org.springframework.test.web.servlet.post
 import tools.jackson.databind.ObjectMapper
@@ -31,6 +33,7 @@ import java.nio.charset.StandardCharsets
  */
 @WebMvcTest
 @Import(PrivateResponseHeadersConfig::class, AuthSliceBeans::class)
+@Suppress("LargeClass")
 class OAuthContractTest {
     @Autowired
     private lateinit var mockMvc: MockMvc
@@ -607,6 +610,102 @@ class OAuthContractTest {
         assertDeclaredStatus(response, BAD_GATEWAY, LINK_CALLBACK_PATH, POST)
     }
 
+    // ------------------------------------------------------------------ 연결 해제(unlink, 2.17.0)
+
+    @Test
+    @DisplayName("인증 없이는 401이다")
+    fun `해제는 인증이 필요하다`() {
+        val response = deleteJson("/auth/oauth/google/link")
+
+        assertDeclaredStatus(response, UNAUTHORIZED, UNLINK_PATH, DELETE)
+    }
+
+    @Test
+    @DisplayName("연결이 없으면 404다 — 존재를 숨긴다")
+    fun `연결 없는 제공자를 해제하면 404다`() {
+        val email = uniqueEmail()
+        signupAndVerify(email)
+        val bearer = login(email)
+
+        val response = deleteAuthorized("/auth/oauth/google/link", bearer)
+
+        assertDeclaredStatus(response, NOT_FOUND, UNLINK_PATH, DELETE)
+        assertThat(detailText(response)).isEqualTo("연결된 소셜 계정을 찾을 수 없습니다")
+    }
+
+    @Test
+    @DisplayName("연결된 신원을 해제하면 204이고 readMe.identities에서 사라진다")
+    fun `연결된 신원은 해제된다`() {
+        val email = uniqueEmail()
+        signupAndVerify(email)
+        val bearer = login(email)
+        linkCallback(bearer, code = "google-unlink-sub-1|unlink1@example.test|true", state = linkStartState(bearer))
+        assertThat((body(getAuthorized("/auth/me", bearer))["identities"] as List<*>)).isNotEmpty()
+
+        val response = deleteAuthorized("/auth/oauth/google/link", bearer)
+
+        assertThat(response.status).isEqualTo(ContractSpec.successStatus(UNLINK_PATH, DELETE))
+        assertPrivateHeaders(response)
+        assertThat((body(getAuthorized("/auth/me", bearer))["identities"] as List<*>)).isEmpty()
+    }
+
+    @Test
+    @DisplayName("이미 해제된 신원을 다시 해제하면 404다 — 반복 호출도 존재를 숨긴다")
+    fun `반복 해제는 404다`() {
+        val email = uniqueEmail()
+        signupAndVerify(email)
+        val bearer = login(email)
+        linkCallback(bearer, code = "google-unlink-sub-2|unlink2@example.test|true", state = linkStartState(bearer))
+        deleteAuthorized("/auth/oauth/google/link", bearer)
+
+        val response = deleteAuthorized("/auth/oauth/google/link", bearer)
+
+        assertDeclaredStatus(response, NOT_FOUND, UNLINK_PATH, DELETE)
+    }
+
+    @Test
+    @DisplayName("비밀번호가 없고 신원이 이것뿐이면 409다 — 마지막 로그인 수단")
+    fun `비밀번호 없는 마지막 신원은 409다`() {
+        val callbackResponse = callback(code = "google-sole-sub-1|sole@example.test|true", state = startState())
+        val bearer = body(callbackResponse)["access_token"] as String
+        assertThat(body(getAuthorized("/auth/me", bearer))["has_password"]).isEqualTo(false)
+
+        val response = deleteAuthorized("/auth/oauth/google/link", bearer)
+
+        assertDeclaredStatus(response, CONFLICT, UNLINK_PATH, DELETE)
+        assertThat(detailText(response)).isEqualTo(SocialLoginService.LAST_LOGIN_METHOD_MESSAGE)
+    }
+
+    @Test
+    @DisplayName("지원하지 않는 provider(foo)는 422 배열이다")
+    fun `해제의 지원하지 않는 provider는 422다`() {
+        val email = uniqueEmail()
+        signupAndVerify(email)
+        val bearer = login(email)
+
+        val response = deleteAuthorized("/auth/oauth/foo/link", bearer)
+
+        assertDeclaredStatus(response, UNPROCESSABLE_CONTENT, UNLINK_PATH, DELETE)
+        val detail = body(response)["detail"]
+        assertThat(detail).isInstanceOf(List::class.java)
+        val items = (detail as List<*>).map { it as Map<*, *> }
+        assertThat(items.map { it["loc"] }).contains(listOf("path", "provider"))
+    }
+
+    @Test
+    @DisplayName("readMe.has_password가 계정 종류를 반영한다 — 비밀번호 계정은 참, 소셜 전용 계정은 거짓")
+    fun `has_password가 계정 종류를 반영한다`() {
+        val passwordEmail = uniqueEmail()
+        signupAndVerify(passwordEmail)
+        val passwordBearer = login(passwordEmail)
+        assertThat(body(getAuthorized("/auth/me", passwordBearer))["has_password"]).isEqualTo(true)
+
+        val socialOnlyBearer =
+            body(callback(code = "google-sole-sub-2|sole2@example.test|true", state = startState()))["access_token"]
+                as String
+        assertThat(body(getAuthorized("/auth/me", socialOnlyBearer))["has_password"]).isEqualTo(false)
+    }
+
     // ------------------------------------------------------------------ 헬퍼
 
     private fun start(
@@ -668,6 +767,19 @@ class OAuthContractTest {
     ): MockHttpServletResponse =
         mockMvc
             .get(path) {
+                header(HttpHeaders.AUTHORIZATION, "Bearer $bearer")
+            }.andReturn()
+            .response
+
+    /** 인증 없는 DELETE — 401 시나리오 전용. */
+    private fun deleteJson(path: String): MockHttpServletResponse = mockMvc.delete(path).andReturn().response
+
+    private fun deleteAuthorized(
+        path: String,
+        bearer: String,
+    ): MockHttpServletResponse =
+        mockMvc
+            .delete(path) {
                 header(HttpHeaders.AUTHORIZATION, "Bearer $bearer")
             }.andReturn()
             .response
@@ -759,11 +871,14 @@ class OAuthContractTest {
         const val CALLBACK_PATH = "/auth/oauth/{provider}/callback"
         const val LINK_START_PATH = "/auth/oauth/{provider}/link/start"
         const val LINK_CALLBACK_PATH = "/auth/oauth/{provider}/link/callback"
+        const val UNLINK_PATH = "/auth/oauth/{provider}/link"
         const val RECONVERT_UNIT_PATH = "/conversions/{conversion_id}/units/{source_unit_index}/reconvert"
         const val POST = "post"
+        const val DELETE = "delete"
         const val UNPROCESSABLE_CONTENT = 422
         const val CONFLICT = 409
         const val UNAUTHORIZED = 401
+        const val NOT_FOUND = 404
         const val BAD_GATEWAY = 502
         const val BAD_REQUEST = 400
         const val NO_CONTENT = 204

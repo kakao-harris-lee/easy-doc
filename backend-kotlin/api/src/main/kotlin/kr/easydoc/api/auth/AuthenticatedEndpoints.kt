@@ -14,6 +14,9 @@ object AuthenticatedEndpoints {
             // 갈리므로 인터셉터 패턴이 로그인 흐름을 잠그지 않는다.
             "/auth/oauth/{provider}/link/start",
             "/auth/oauth/{provider}/link/callback",
+            // 연결 해제(2.17.0, backlog §1.4 다음 조각) — 경로가 위 둘과 세그먼트 수가 달라
+            // 인터셉터 패턴이 겹치지 않는다. 대상 계정은 여기서도 토큰의 사용자로 고정된다.
+            "/auth/oauth/{provider}/link",
             // `GET`·`PUT /conversions/{conversion_id}` 와 `GET .../export` 는 경로가 다르다.
             // 인터셉터 패턴은 하위 경로를 덮지 않으므로 export 를 **따로** 넣는다.
             "/conversions/{conversion_id}",

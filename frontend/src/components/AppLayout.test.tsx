@@ -27,11 +27,17 @@ function LocationProbe() {
 function authValue(overrides: Partial<AuthContextValue> = {}): AuthContextValue {
   return {
     status: 'authenticated',
-    user: { id: 'u1', email: EMAIL, email_verified: true, identities: [] },
+    user: { id: 'u1', email: EMAIL, email_verified: true, has_password: true, identities: [] },
     signIn: () => Promise.resolve(),
     signUp: () => Promise.resolve(),
     signInWithSocialProvider: () =>
-      Promise.resolve({ id: 'u1', email: EMAIL, email_verified: true, identities: [] }),
+      Promise.resolve({
+        id: 'u1',
+        email: EMAIL,
+        email_verified: true,
+        has_password: true,
+        identities: [],
+      }),
     signOut: () => undefined,
     refreshMe: () => Promise.resolve(),
     ...overrides,
@@ -206,7 +212,9 @@ describe('저장하지 않은 수정 가드', () => {
 describe('계정 메뉴 — 구글 계정 연결', () => {
   it('연결돼 있지 않으면 연결 버튼을 보여준다', async () => {
     const user = userEvent.setup()
-    renderLayout({ user: { id: 'u1', email: EMAIL, email_verified: true, identities: [] } })
+    renderLayout({
+      user: { id: 'u1', email: EMAIL, email_verified: true, has_password: true, identities: [] },
+    })
 
     await user.click(screen.getByRole('button', { name: '계정 메뉴' }))
 
@@ -221,6 +229,7 @@ describe('계정 메뉴 — 구글 계정 연결', () => {
         id: 'u1',
         email: EMAIL,
         email_verified: true,
+        has_password: true,
         identities: [{ provider: 'google' }],
       },
     })
@@ -238,7 +247,9 @@ describe('계정 메뉴 — 구글 계정 연결', () => {
       state: 'link-state',
     })
     const assign = mockLocationAssign()
-    renderLayout({ user: { id: 'u1', email: EMAIL, email_verified: true, identities: [] } })
+    renderLayout({
+      user: { id: 'u1', email: EMAIL, email_verified: true, has_password: true, identities: [] },
+    })
 
     await user.click(screen.getByRole('button', { name: '계정 메뉴' }))
     await user.click(screen.getByRole('button', { name: '구글 계정 연결' }))
@@ -262,7 +273,9 @@ describe('계정 메뉴 — 구글 계정 연결', () => {
       new ApiError(422, '구글 로그인이 설정되지 않았습니다'),
     )
     const assign = mockLocationAssign()
-    renderLayout({ user: { id: 'u1', email: EMAIL, email_verified: true, identities: [] } })
+    renderLayout({
+      user: { id: 'u1', email: EMAIL, email_verified: true, has_password: true, identities: [] },
+    })
 
     await user.click(screen.getByRole('button', { name: '계정 메뉴' }))
     await user.click(screen.getByRole('button', { name: '구글 계정 연결' }))
@@ -276,7 +289,9 @@ describe('계정 메뉴 — 구글 계정 연결', () => {
 describe('계정 메뉴 — 카카오 계정 연결', () => {
   it('연결돼 있지 않으면 연결 버튼을 보여준다', async () => {
     const user = userEvent.setup()
-    renderLayout({ user: { id: 'u1', email: EMAIL, email_verified: true, identities: [] } })
+    renderLayout({
+      user: { id: 'u1', email: EMAIL, email_verified: true, has_password: true, identities: [] },
+    })
 
     await user.click(screen.getByRole('button', { name: '계정 메뉴' }))
 
@@ -291,6 +306,7 @@ describe('계정 메뉴 — 카카오 계정 연결', () => {
         id: 'u1',
         email: EMAIL,
         email_verified: true,
+        has_password: true,
         identities: [{ provider: 'kakao' }],
       },
     })
@@ -308,7 +324,9 @@ describe('계정 메뉴 — 카카오 계정 연결', () => {
       state: 'link-state',
     })
     const assign = mockLocationAssign()
-    renderLayout({ user: { id: 'u1', email: EMAIL, email_verified: true, identities: [] } })
+    renderLayout({
+      user: { id: 'u1', email: EMAIL, email_verified: true, has_password: true, identities: [] },
+    })
 
     await user.click(screen.getByRole('button', { name: '계정 메뉴' }))
     await user.click(screen.getByRole('button', { name: '카카오 계정 연결' }))
@@ -333,6 +351,7 @@ describe('계정 메뉴 — 두 제공자를 함께 보여준다', () => {
         id: 'u1',
         email: EMAIL,
         email_verified: true,
+        has_password: true,
         identities: [{ provider: 'google' }],
       },
     })

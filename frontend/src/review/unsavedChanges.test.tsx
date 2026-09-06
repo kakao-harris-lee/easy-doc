@@ -57,6 +57,7 @@ beforeEach(() => {
     id: 'u1',
     email: 'user@example.com',
     email_verified: true,
+    has_password: true,
     identities: [],
   })
   vi.mocked(getConversion).mockResolvedValue(conversion({ easy_text: '초안입니다.' }))

@@ -168,7 +168,8 @@ private class VerificationUserRepository : UserRepository {
     fun seedVerified(): User = seed(emailVerifiedAt = Instant.EPOCH)
 
     private fun seed(emailVerifiedAt: Instant?): User {
-        val user = User(UUID.randomUUID(), "user${byId.size}@example.test", Instant.EPOCH, emailVerifiedAt)
+        val user =
+            User(UUID.randomUUID(), "user${byId.size}@example.test", Instant.EPOCH, emailVerifiedAt, hasPassword = true)
         byId[user.id] = user
         return user
     }
@@ -176,6 +177,8 @@ private class VerificationUserRepository : UserRepository {
     override fun findByEmail(email: String): StoredUser? = error(NOT_USED_MESSAGE)
 
     override fun findById(id: UUID): User? = byId[id]
+
+    override fun lockForUpdate(id: UUID): User? = error(NOT_USED_MESSAGE)
 
     override fun exists(id: UUID): Boolean = error(NOT_USED_MESSAGE)
 

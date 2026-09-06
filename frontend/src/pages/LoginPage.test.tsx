@@ -96,6 +96,7 @@ describe('로그인 화면', () => {
       id: 'u1',
       email: 'user@example.com',
       email_verified: true,
+      has_password: true,
       identities: [],
     })
     renderAt('/login')
@@ -270,6 +271,7 @@ describe('구글 계정 연결 이어가기 (?link=google)', () => {
       id: 'u1',
       email: 'user@example.com',
       email_verified: true,
+      has_password: true,
       identities: [],
     })
     vi.mocked(oauthLinkStart).mockResolvedValue({
@@ -308,6 +310,7 @@ describe('구글 계정 연결 이어가기 (?link=google)', () => {
       id: 'u1',
       email: 'user@example.com',
       email_verified: true,
+      has_password: true,
       identities: [],
     })
     vi.mocked(oauthLinkStart).mockRejectedValue(
@@ -333,6 +336,7 @@ describe('구글 계정 연결 이어가기 (?link=google)', () => {
       id: 'u1',
       email: 'user@example.com',
       email_verified: true,
+      has_password: true,
       identities: [],
     })
     renderAt('/login')
@@ -358,6 +362,7 @@ describe('카카오 계정 연결 이어가기 (?link=kakao)', () => {
       id: 'u1',
       email: 'user@example.com',
       email_verified: true,
+      has_password: true,
       identities: [],
     })
     vi.mocked(oauthLinkStart).mockResolvedValue({
@@ -396,6 +401,7 @@ describe('네이버 계정 연결 이어가기 (?link=naver)', () => {
       id: 'u1',
       email: 'user@example.com',
       email_verified: true,
+      has_password: true,
       identities: [],
     })
     vi.mocked(oauthLinkStart).mockResolvedValue({

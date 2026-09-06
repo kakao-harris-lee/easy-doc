@@ -125,6 +125,33 @@ class JdbcUserIdentityRepositoryTest {
     }
 
     @Test
+    @DisplayName("소유자의 (user_id, provider) 삭제는 행을 지우고 true 를 돌려준다 — 연결 해제(2.17.0)")
+    fun `소유자가 삭제하면 행이 지워지고 true 다`() {
+        val user = users.createWithoutPassword(uniqueEmail(), emailVerified = true)
+        identities.link(user.id, SocialLoginProviderId.GOOGLE, "delete-owner-sub", user.email, true)
+
+        val deleted = identities.deleteByUserAndProvider(user.id, SocialLoginProviderId.GOOGLE)
+
+        assertThat(deleted).isTrue()
+        assertThat(identities.findByUserAndProvider(user.id, SocialLoginProviderId.GOOGLE)).isNull()
+    }
+
+    @Test
+    @DisplayName("다른 사용자의 (user_id, provider) 는 지우지 않고 false 를 돌려준다 — 소유 술어가 문장 자신에 있다")
+    fun `다른 사용자의 신원은 지워지지 않고 false 다`() {
+        val owner = users.createWithoutPassword(uniqueEmail(), emailVerified = true)
+        val stranger = users.createWithoutPassword(uniqueEmail(), emailVerified = true)
+        identities.link(owner.id, SocialLoginProviderId.GOOGLE, "delete-stranger-sub", owner.email, true)
+
+        val deleted = identities.deleteByUserAndProvider(stranger.id, SocialLoginProviderId.GOOGLE)
+
+        assertThat(deleted).isFalse()
+        assertThat(identities.findByUserAndProvider(owner.id, SocialLoginProviderId.GOOGLE))
+            .withFailMessage("다른 사용자 id 로 지우려 한 요청이 실제로는 소유자의 행을 지웠다")
+            .isNotNull()
+    }
+
+    @Test
     @DisplayName("계정을 지우면 연결된 신원도 함께 사라진다 — ON DELETE CASCADE")
     fun `계정 삭제가 신원까지 지운다`() {
         val user = users.createWithoutPassword(uniqueEmail(), emailVerified = true)

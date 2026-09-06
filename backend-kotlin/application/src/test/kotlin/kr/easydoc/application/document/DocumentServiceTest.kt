@@ -546,7 +546,15 @@ class DocumentServiceTest {
         override fun findByEmail(email: String): StoredUser? = error(NOT_USED_MESSAGE)
 
         override fun findById(id: UUID): User =
-            User(id, "$id@example.test", Instant.EPOCH, emailVerifiedAt = if (emailVerified) Instant.EPOCH else null)
+            User(
+                id,
+                "$id@example.test",
+                Instant.EPOCH,
+                emailVerifiedAt = if (emailVerified) Instant.EPOCH else null,
+                hasPassword = true,
+            )
+
+        override fun lockForUpdate(id: UUID): User = findById(id)
 
         override fun exists(id: UUID): Boolean = error(NOT_USED_MESSAGE)
 
