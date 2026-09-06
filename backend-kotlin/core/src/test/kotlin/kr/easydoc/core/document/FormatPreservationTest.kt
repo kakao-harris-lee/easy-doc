@@ -93,6 +93,10 @@ class FormatPreservationTest {
                 reflectedPreservation(outcome(headerFooterUnits = 2, appendedLines = 6)),
                 reflectedPreservation(outcome(headerFooterUnits = 1, emptiedUnits = 8)),
                 reflectedPreservation(outcome(headerFooterUnits = 4, displacedLines = 4)),
+                reflectedPreservation(outcome(mergedUnits = 5)),
+                reflectedPreservation(outcome(splitLines = 7)),
+                reflectedPreservation(outcome(lowConfidenceLines = 9)),
+                reflectedPreservation(outcome(placement = ReflectionPlacement.ORDINAL_FALLBACK)),
             )
 
         assertThat(judgments.flatMap { it.details })
@@ -101,6 +105,148 @@ class FormatPreservationTest {
                     .withFailMessage("판정 문구가 숫자와 고정 문장 밖의 값을 담았다: %s", detail)
                     .matches("""[가-힣·, ]*\d*[가-힣·, ]*(\d+[가-힣]+[가-힣·, ]*)*\.""")
             }
+    }
+
+    // --- S6: segment_map 을 쓴 짝짓기의 새 어휘(계획 §10.2 결정 4) — 전 조합 상태표. ---
+
+    @Test
+    @DisplayName("N:1 합침만 있으면 대응을 확신한 반영이라 `available` 이다 — 무슨 일이 있었는지는 말한다")
+    fun `합침만 있으면 유지 가능이다`() {
+        val judged = reflectedPreservation(outcome(mergedUnits = 2))
+
+        assertThat(judged.status)
+            .describedAs("2.16.0부터 available 에도 details 가 붙을 수 있다")
+            .isEqualTo(FormatPreservationStatus.AVAILABLE)
+        assertThat(judged.details).containsExactly("원본 문단 2개는 앞 문단과 합쳐져 빈 문단으로 남습니다.")
+    }
+
+    @Test
+    @DisplayName("1:N 나눔만 있으면 대응을 확신한 반영이라 `available` 이다")
+    fun `나눔만 있으면 유지 가능이다`() {
+        val judged = reflectedPreservation(outcome(splitLines = 3))
+
+        assertThat(judged.status).isEqualTo(FormatPreservationStatus.AVAILABLE)
+        assertThat(judged.details).containsExactly("문단 3개는 원본 문단이 나뉘어 그 뒤에 새 문단으로 들어갑니다.")
+    }
+
+    @Test
+    @DisplayName("합침과 나눔이 함께 있어도 `available` 이고 둘 다 말한다")
+    fun `합침과 나눔이 함께여도 유지 가능이다`() {
+        val judged = reflectedPreservation(outcome(mergedUnits = 1, splitLines = 2))
+
+        assertThat(judged.status).isEqualTo(FormatPreservationStatus.AVAILABLE)
+        assertThat(judged.details)
+            .containsExactly(
+                "원본 문단 1개는 앞 문단과 합쳐져 빈 문단으로 남습니다.",
+                "문단 2개는 원본 문단이 나뉘어 그 뒤에 새 문단으로 들어갑니다.",
+            )
+    }
+
+    @Test
+    @DisplayName("LOW confidence 로 짐작한 자리가 있으면 `partial` 이다 — 자리가 짐작이다")
+    fun `저확신 자리가 있으면 일부 유지다`() {
+        val judged = reflectedPreservation(outcome(lowConfidenceLines = 4))
+
+        assertThat(judged.status).isEqualTo(FormatPreservationStatus.PARTIAL)
+        assertThat(judged.details).containsExactly("문단 4개는 원본 자리를 확신할 수 없어 앞뒤 비율로 자리를 옮겨 넣었습니다.")
+    }
+
+    @Test
+    @DisplayName("지도 전제 검사가 어긋나 차례 폴백으로 떨어지면 `partial` 이고 밀릴 수 있다고 말한다")
+    fun `차례 폴백이면 일부 유지고 밀림을 말한다`() {
+        val judged = reflectedPreservation(outcome(placement = ReflectionPlacement.ORDINAL_FALLBACK))
+
+        assertThat(judged.status).isEqualTo(FormatPreservationStatus.PARTIAL)
+        assertThat(judged.details)
+            .containsExactly(
+                "원본 구조와 문단 수를 맞출 수 없어 차례대로 반영합니다.",
+                "문단 수가 원본과 달라 뒤쪽 문단의 서식이 밀릴 수 있습니다.",
+            )
+    }
+
+    @Test
+    @DisplayName("합침·나눔이 폴백과 함께 있어도 밀림은 폴백 하나가 말한다 — 두 번 붙지 않는다")
+    fun `폴백과 합침이 함께여도 밀림 문구는 하나다`() {
+        val judged =
+            reflectedPreservation(
+                outcome(mergedUnits = 1, splitLines = 1, placement = ReflectionPlacement.ORDINAL_FALLBACK),
+            )
+
+        assertThat(judged.status).isEqualTo(FormatPreservationStatus.PARTIAL)
+        assertThat(judged.details.count { it == "문단 수가 원본과 달라 뒤쪽 문단의 서식이 밀릴 수 있습니다." }).isEqualTo(1)
+    }
+
+    @Test
+    @DisplayName("`MAPPED` 로 놓였으면 비움·덧붙임이 있어도 밀린다고 말하지 않는다")
+    fun `지도로 놓이면 비움 덧붙임도 밀림이 아니다`() {
+        val judged =
+            reflectedPreservation(
+                outcome(emptiedUnits = 1, appendedLines = 1, placement = ReflectionPlacement.MAPPED),
+            )
+
+        assertThat(judged.status).isEqualTo(FormatPreservationStatus.PARTIAL)
+        assertThat(judged.details)
+            .describedAs("MAPPED 는 지도가 자리를 직접 짚어 뒤 문단이 밀리지 않는다")
+            .doesNotContain("문단 수가 원본과 달라 뒤쪽 문단의 서식이 밀릴 수 있습니다.")
+    }
+
+    @Test
+    @DisplayName("머리말과 합침이 함께 있으면 합침은 available을 깨지 않아도 머리말 때문에 partial이다")
+    fun `머리말과 합침이 함께면 일부 유지다`() {
+        val judged = reflectedPreservation(outcome(headerFooterUnits = 1, mergedUnits = 2))
+
+        assertThat(judged.status).isEqualTo(FormatPreservationStatus.PARTIAL)
+        assertThat(judged.details)
+            .containsExactly(
+                "머리말·꼬리말 1곳은 원본 문구를 그대로 둡니다.",
+                "원본 문단 2개는 앞 문단과 합쳐져 빈 문단으로 남습니다.",
+            )
+    }
+
+    @Test
+    @DisplayName("저확신과 합침이 함께 있으면 저확신 때문에 partial이다 — 합침 문구도 함께 붙는다")
+    fun `저확신과 합침이 함께면 일부 유지다`() {
+        val judged = reflectedPreservation(outcome(lowConfidenceLines = 1, mergedUnits = 2))
+
+        assertThat(judged.status).isEqualTo(FormatPreservationStatus.PARTIAL)
+        assertThat(judged.details)
+            .containsExactly(
+                "원본 문단 2개는 앞 문단과 합쳐져 빈 문단으로 남습니다.",
+                "문단 1개는 원본 자리를 확신할 수 없어 앞뒤 비율로 자리를 옮겨 넣었습니다.",
+            )
+    }
+
+    /** 상태표 여덟 갈래를 **전부** 채운 최대 조합 — details 순서를 통째로 고정한다. */
+    @Test
+    @DisplayName("모든 갈래가 함께 있으면 details 순서가 고정된 순서 그대로다")
+    fun `모든 갈래가 함께면 순서가 고정된다`() {
+        val judged =
+            reflectedPreservation(
+                outcome(
+                    headerFooterUnits = 1,
+                    emptiedUnits = 2,
+                    appendedLines = 3,
+                    displacedLines = 4,
+                    mergedUnits = 5,
+                    splitLines = 6,
+                    lowConfidenceLines = 7,
+                    placement = ReflectionPlacement.ORDINAL_FALLBACK,
+                ),
+            )
+
+        assertThat(judged.status).isEqualTo(FormatPreservationStatus.PARTIAL)
+        assertThat(judged.details)
+            .containsExactly(
+                "머리말·꼬리말 1곳은 원본 문구를 그대로 둡니다.",
+                "머리말·꼬리말 자리와 겹친 문단 4개는 본문 끝으로 옮겨 붙습니다.",
+                "원본 문단 2개는 반영할 내용이 없어 빈 문단으로 남습니다.",
+                "문단 3개는 원본에 자리가 없어 본문 끝에 덧붙습니다.",
+                "원본 문단 5개는 앞 문단과 합쳐져 빈 문단으로 남습니다.",
+                "문단 6개는 원본 문단이 나뉘어 그 뒤에 새 문단으로 들어갑니다.",
+                "문단 7개는 원본 자리를 확신할 수 없어 앞뒤 비율로 자리를 옮겨 넣었습니다.",
+                "원본 구조와 문단 수를 맞출 수 없어 차례대로 반영합니다.",
+                "문단 수가 원본과 달라 뒤쪽 문단의 서식이 밀릴 수 있습니다.",
+            )
     }
 
     @Test
@@ -131,17 +277,32 @@ class FormatPreservationTest {
             .containsExactly("첫 문단", "둘째 문단", "셋째 문단")
     }
 
-    /** 이 시험이 재는 것은 **갈래의 조합**이라 세지 않는 값은 0 이다. */
+    /**
+     * 이 시험이 재는 것은 **갈래의 조합**이라 세지 않는 값은 0/`false` 다.
+     *
+     * `LongParameterList` 를 억제한다 — [ReflectionOutcome] 자체가 상태표 여덟 갈래를
+     * 하나씩 세는 값 객체라(같은 클래스 KDoc), 그 상태표를 조합하는 시험 도우미도 같은
+     * 수의 매개변수를 그대로 받아야 어느 조합을 세팅했는지 이름으로 드러난다.
+     */
+    @Suppress("LongParameterList")
     private fun outcome(
         headerFooterUnits: Int = 0,
         emptiedUnits: Int = 0,
         appendedLines: Int = 0,
         displacedLines: Int = 0,
+        mergedUnits: Int = 0,
+        splitLines: Int = 0,
+        lowConfidenceLines: Int = 0,
+        placement: ReflectionPlacement = ReflectionPlacement.ORDINAL,
     ): ReflectionOutcome =
         ReflectionOutcome(
             headerFooterUnits = headerFooterUnits,
             emptiedUnits = emptiedUnits,
             appendedLines = appendedLines,
             displacedLines = displacedLines,
+            mergedUnits = mergedUnits,
+            splitLines = splitLines,
+            lowConfidenceLines = lowConfidenceLines,
+            placement = placement,
         )
 }

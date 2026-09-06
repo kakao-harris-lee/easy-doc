@@ -16,6 +16,7 @@ import kr.easydoc.core.easyread.ExportFile
 import kr.easydoc.core.easyread.exportContentLines
 import kr.easydoc.core.privacy.MaskCategory
 import kr.easydoc.core.security.Secret
+import kr.easydoc.core.segment.SegmentMap
 import java.time.Instant
 import java.util.UUID
 
@@ -513,6 +514,12 @@ internal class FakeOriginalStructureReflector(
     val bodies = mutableListOf<String>()
 
     /**
+     * `outline`·`reflect` 어느 쪽이든 넘어온 지도 — 조회·내보내기가 유도한 `segment_map` 을
+     * 실제로 이 포트에 실어 보냈는지 재는 자리다(계획 §10.2 결정 2, 2026-09-06 리뷰 F3).
+     */
+    val maps = mutableListOf<SegmentMap?>()
+
+    /**
      * 원본 본문 단위 수. 설정하면 [outline] 이 [outcome] 대신 **넘어온 본문의 문단 수와
      * 짝지어** 판정을 계산한다.
      *
@@ -535,9 +542,11 @@ internal class FakeOriginalStructureReflector(
     override fun outline(
         original: OriginalDocument,
         body: String,
+        map: SegmentMap?,
     ): ReflectionOutcome? {
         outlined += original.format
         outlinedBodies += body
+        maps += map
         val units = originalUnits ?: return outcome
         val paragraphs = exportContentLines(body).size
         return ReflectionOutcome(
@@ -552,9 +561,11 @@ internal class FakeOriginalStructureReflector(
         original: OriginalDocument,
         title: String,
         body: String,
+        map: SegmentMap?,
     ): ExportFile? {
         reflected += original.format
         bodies += body
+        maps += map
         return file
     }
 }

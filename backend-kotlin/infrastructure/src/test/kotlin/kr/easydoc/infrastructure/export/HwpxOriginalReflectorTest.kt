@@ -34,8 +34,8 @@ class HwpxOriginalReflectorTest {
     fun `머리말은 원본으로 남고 겹친 줄은 옮겨 붙는다`() {
         val lines = listOf("쉬운 머리말", "쉬운 첫 문단", "쉬운 셀 하나", "쉬운 셀 둘", "쉬운 표 뒤", "쉬운 둘째 구역")
 
-        val plan = reflector.outline(rich, lines)!!
-        val file = reflector.reflect(rich, "안내", lines)!!
+        val plan = reflector.outline(rich, lines, map = null, mapAttempted = false)!!
+        val file = reflector.reflect(rich, "안내", lines, map = null, mapAttempted = false)!!
 
         assertThat(plan.outcome().headerFooterUnits).isEqualTo(1)
         assertThat(plan.outcome().emptiedUnits).isZero()
@@ -53,7 +53,7 @@ class HwpxOriginalReflectorTest {
     fun `원본 요소가 살아남는다`() {
         val lines = listOf("쉬운 머리말", "쉬운 첫 문단", "쉬운 셀 하나", "쉬운 셀 둘", "쉬운 표 뒤", "쉬운 둘째 구역")
 
-        val file = reflector.reflect(rich, "안내", lines)!!
+        val file = reflector.reflect(rich, "안내", lines, map = null, mapAttempted = false)!!
 
         val before = IngestFixtures.entriesOf(rich)
         val after = IngestFixtures.entriesOf(file.content)
@@ -79,8 +79,8 @@ class HwpxOriginalReflectorTest {
     fun `모자라면 비운다`() {
         val short = listOf("쉬운 머리말", "쉬운 첫 문단")
 
-        val plan = reflector.outline(rich, short)!!
-        val file = reflector.reflect(rich, "안내", short)!!
+        val plan = reflector.outline(rich, short, map = null, mapAttempted = false)!!
+        val file = reflector.reflect(rich, "안내", short, map = null, mapAttempted = false)!!
 
         assertThat(plan.outcome().emptiedUnits).isEqualTo(4)
         assertThat(extractors.extract(file.filename, file.content).text)
@@ -96,8 +96,8 @@ class HwpxOriginalReflectorTest {
     fun `남으면 덧붙인다`() {
         val many = List(8) { "문단 ${it + 1}." }
 
-        val plan = reflector.outline(rich, many)!!
-        val file = reflector.reflect(rich, "안내", many)!!
+        val plan = reflector.outline(rich, many, map = null, mapAttempted = false)!!
+        val file = reflector.reflect(rich, "안내", many, map = null, mapAttempted = false)!!
 
         assertThat(plan.outcome().appendedLines).isEqualTo(2)
         assertThat(plan.outcome().displacedLines).isEqualTo(1)
@@ -119,7 +119,7 @@ class HwpxOriginalReflectorTest {
         listOf(1, 2, 5, 6, 7, 9).forEach { count ->
             val lines = List(count) { "검수한 문단 ${it + 1}." }
 
-            val file = reflector.reflect(rich, "안내", lines)!!
+            val file = reflector.reflect(rich, "안내", lines, map = null, mapAttempted = false)!!
 
             val written = extractors.extract(file.filename, file.content).text
             assertThat(lines)
@@ -137,8 +137,8 @@ class HwpxOriginalReflectorTest {
         val original = IngestFixtures.bytes("sample.hwpx")
         val lines = listOf("쉬운 한 줄", "쉬운 두 줄", "쉬운 세 줄")
 
-        val plan = reflector.outline(original, lines)!!
-        val file = reflector.reflect(original, "안내", lines)!!
+        val plan = reflector.outline(original, lines, map = null, mapAttempted = false)!!
+        val file = reflector.reflect(original, "안내", lines, map = null, mapAttempted = false)!!
 
         assertThat(plan.outcome().headerFooterUnits).isZero()
         assertThat(plan.outcome().emptiedUnits).isZero()
@@ -152,8 +152,8 @@ class HwpxOriginalReflectorTest {
     fun `열 수 없으면 null 이다`() {
         val broken = "zip 이 아니다".toByteArray()
 
-        assertThat(reflector.outline(broken, listOf("한 줄"))).isNull()
-        assertThat(reflector.reflect(broken, "안내", listOf("한 줄"))).isNull()
+        assertThat(reflector.outline(broken, listOf("한 줄"), map = null, mapAttempted = false)).isNull()
+        assertThat(reflector.reflect(broken, "안내", listOf("한 줄"), map = null, mapAttempted = false)).isNull()
     }
 
     @Test
@@ -161,7 +161,7 @@ class HwpxOriginalReflectorTest {
     fun `구역이 없으면 null 이다`() {
         val hollow = IngestFixtures.zipOf(mapOf("mimetype" to "application/hwp+zip".toByteArray()))
 
-        assertThat(reflector.outline(hollow, listOf("한 줄"))).isNull()
+        assertThat(reflector.outline(hollow, listOf("한 줄"), map = null, mapAttempted = false)).isNull()
     }
 
     private fun countOf(

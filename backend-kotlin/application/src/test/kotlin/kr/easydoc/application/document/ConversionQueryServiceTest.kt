@@ -156,8 +156,9 @@ class ConversionQueryServiceTest {
     fun `원본이 있으면 반영 결과로 판정한다`() {
         val world = World()
         val conversionId = UUID.randomUUID()
-        world.seedResults(conversionId, easyText = "쉬운 글 초안")
+        val documentId = world.seedResults(conversionId, easyText = "쉬운 글 초안\n둘째 문단")
         world.seedOrigin(conversionId, SeededOrigin(SourceFormat.DOCX, hasStoredOriginal = true))
+        world.documents.seed(OWNER, documentId, "원본 문단 하나\n원본 문단 둘")
         world.reflector.outcome =
             ReflectionOutcome(headerFooterUnits = 2, emptiedUnits = 1, appendedLines = 0, displacedLines = 0)
 
@@ -168,6 +169,14 @@ class ConversionQueryServiceTest {
             .containsExactly(SourceFormat.DOCX)
         assertThat(view.formatPreservation?.status).isEqualTo(FormatPreservationStatus.PARTIAL)
         assertThat(view.formatPreservation?.details).hasSize(3)
+        // 이 대역은 `placement` 를 세팅하지 않는다(기본값 `ORDINAL`) — 어댑터가 지도를 아직
+        // 쓰지 않는 S6-1 규약과 같다. 그래도 판정 포트로 **실제 지도**는 넘어가야 한다 —
+        // 조회 응답이 노출한 segment_map 과 반영기가 받은 지도가 같은 인스턴스인지 잰다
+        // (2026-09-06 리뷰 F3).
+        assertThat(view.segmentMap).isNotNull()
+        assertThat(world.reflector.maps)
+            .describedAs("판정이 반영기에 넘긴 지도는 응답이 노출한 segment_map 과 같아야 한다")
+            .containsExactly(view.segmentMap)
     }
 
     @Test
@@ -463,6 +472,7 @@ class ConversionQueryServiceTest {
                 maskedItems = maskedItems,
                 original = OriginalReflection(StoredOriginalReader(originals, cipher), reflector),
                 documents = documents,
+                segmentMapDerivation = MaskedSegmentMapDerivation(cipher),
                 transaction = transaction,
             )
 

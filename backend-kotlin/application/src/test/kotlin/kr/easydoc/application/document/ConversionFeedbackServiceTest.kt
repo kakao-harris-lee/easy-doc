@@ -364,6 +364,7 @@ class ConversionFeedbackServiceTest {
                                 FakeOriginalStructureReflector(),
                             ),
                         documents = FakeQueryDocumentRepository(transaction),
+                        segmentMapDerivation = MaskedSegmentMapDerivation(cipher),
                         transaction = transaction,
                     ),
                 transaction = transaction,

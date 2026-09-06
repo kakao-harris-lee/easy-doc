@@ -19,9 +19,11 @@ import kr.easydoc.application.document.DocumentStorage
 import kr.easydoc.application.document.DocumentTextExtractor
 import kr.easydoc.application.document.EnvelopeRotation
 import kr.easydoc.application.document.MaskedItemReader
+import kr.easydoc.application.document.MaskedSegmentMapDerivation
 import kr.easydoc.application.document.OriginalReflection
 import kr.easydoc.application.document.OriginalStructureReflector
 import kr.easydoc.application.document.SealedStores
+import kr.easydoc.application.document.SegmentMapDerivation
 import kr.easydoc.application.document.StoredOriginalReader
 import kr.easydoc.application.document.WorkspaceLookup
 import kr.easydoc.core.llm.LlmOptions
@@ -140,6 +142,14 @@ class DocumentConfiguration {
             reflector = reflector,
         )
 
+    /**
+     * `segment_map` 계산 — 조회(`conversionQueryService`)와 내보내기
+     * (`DocumentExportConfiguration.conversionExportService`)가 **같은 빈**을 주입받는다
+     * (계획 §10.2 결정 1). 둘로 나누면 화면이 보여 준 지도와 파일에 적용된 지도가 갈릴 수 있다.
+     */
+    @Bean
+    fun segmentMapDerivation(cipher: ContentCipher): SegmentMapDerivation = MaskedSegmentMapDerivation(cipher = cipher)
+
     /** 변환 조회 유스케이스. */
     @Suppress("LongParameterList")
     @Bean
@@ -149,6 +159,7 @@ class DocumentConfiguration {
         maskedItems: MaskedItemReader,
         original: OriginalReflection,
         documents: DocumentRepository,
+        segmentMapDerivation: SegmentMapDerivation,
         transactionRunner: TransactionRunner,
     ): ConversionQueryService =
         ConversionQueryService(
@@ -157,6 +168,7 @@ class DocumentConfiguration {
             maskedItems = maskedItems,
             original = original,
             documents = documents,
+            segmentMapDerivation = segmentMapDerivation,
             transaction = transactionRunner,
         )
 

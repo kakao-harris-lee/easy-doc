@@ -510,7 +510,9 @@ class ConversionReadReachTest {
     fun `완료된 업로드 문서가 원본으로 판정된다`() {
         val token = newAccount()
         val conversionId = uploadDocument(token, "안내문.docx", UploadFixtures.sampleDocx())
-        // `sample.docx` 의 본문 단위는 둘이다(추출 결과 두 줄, 머리글·바닥글 파트 없음).
+        // `sample.docx` 의 본문 단위는 둘이다(추출 결과 두 줄, 머리글·바닥글 파트 없음). 앵커 없는
+        // 전부 `LOW` 지도가 차례 그대로면(2026-09-06 리뷰 F1 면제 규칙) 오늘의 차례 짝짓기와
+        // 같아 `available` 그대로다.
         markDone(conversionId, DoneResult(easyText = "쉬운 제목입니다.\n쉬운 본문입니다."))
 
         val body = bodyOf(read(token, conversionId))

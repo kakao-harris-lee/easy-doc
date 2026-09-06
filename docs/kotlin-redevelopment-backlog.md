@@ -25,9 +25,15 @@
 
 **2026-09-05:** P0-4 문단 단위 대응·재변환은 S1–S5(원문·쉬운 글 단위 정렬, `segment_map` 조회
 API, 검수 화면의 단위별 대응·편집 UI, 재변환 엔드포인트, 재변환 UI) 전부 병합됐다(PR #25, #28,
-#30, #35, #36). S6(내보내기의 지도 소비)과 `segment_map.compliant_source_units`는 아직
-범위 밖으로 남아 있다 — 계획은
-`docs/plans/2026-09-04-p0-4-paragraph-mapping-reconversion.md`.
+#30, #35, #36).
+
+**S6(내보내기의 지도 소비) → 구현·병합(2026-09-06, PR #42·#43·#44 → #45, 계약 2.16.0).**
+내보내기 반영이
+`segment_map`을 소비해 조회 화면이 보여 준 대응과 파일의 대응이 갈리지 않는다 — 합침·나눔이
+`HIGH` confidence면 `유지 가능`이 깨지지 않고, 지도가 없거나 전제가 어긋나면 차례 짝짓기로
+떨어진다(오늘까지의 동작과 같다). `segment_map.compliant_source_units`는 이번에도 범위 밖으로
+남아 있다 — 계획은
+`docs/plans/2026-09-04-p0-4-paragraph-mapping-reconversion.md` §10.
 
 ## 1.1 추후 개선 항목 (동작에는 문제 없음)
 

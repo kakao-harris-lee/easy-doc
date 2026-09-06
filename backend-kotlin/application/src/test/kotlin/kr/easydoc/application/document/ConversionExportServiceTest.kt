@@ -8,6 +8,7 @@ import kr.easydoc.core.document.MaskedItemView
 import kr.easydoc.core.document.SourceFormat
 import kr.easydoc.core.easyread.ExportFile
 import kr.easydoc.core.easyread.ExportFormat
+import kr.easydoc.core.easyread.exportContentLines
 import kr.easydoc.core.easyread.exportFileOf
 import kr.easydoc.core.exceptions.ConflictException
 import kr.easydoc.core.exceptions.NotFoundException
@@ -102,6 +103,33 @@ class ConversionExportServiceTest {
         val file = world.export(conversionId)
 
         assertThat(String(file.content, Charsets.UTF_8)).isEqualTo("검수본 $ORIGINAL 입니다.")
+    }
+
+    /**
+     * 자리표시자가 **줄 하나를 통째로** 차지하는 경우 — S6-2 의 「빈 줄 투영」(계획 §10.2 3항)이
+     * `segment_map` 을 유도할 때 본 줄 수(빈 줄 제거 전)와 복원 후 내보내기가 셀 줄 수(빈 줄
+     * 제거 후)가 어긋나지 않는다는 불변식에 기댄다. 자리표시자 복원은 텍스트 치환일 뿐 줄
+     * 경계를 건드리지 않으므로, 복원 전후로 `exportContentLines` 가 세는 문단 수가 같아야
+     * 한다 — 자리표시자도 실제 값도 둘 다 빈 줄이 아니기 때문이다.
+     */
+    @Test
+    @DisplayName("자리표시자가 줄 전체를 차지해도 복원 전후 문단 수가 같다")
+    fun `자리표시자 전용 줄은 복원해도 문단 수가 같다`() {
+        val world = World()
+        val conversionId = UUID.randomUUID()
+        val beforeRestore = "첫 문단\n$PLACEHOLDER\n셋째 문단"
+        world.seedDone(
+            conversionId,
+            Seed(easyText = "버려질 초안", editedText = beforeRestore, masked = listOf(item())),
+        )
+
+        val file = world.export(conversionId)
+        val afterRestore = String(file.content, Charsets.UTF_8)
+
+        assertThat(afterRestore).isEqualTo("첫 문단\n$ORIGINAL\n셋째 문단")
+        assertThat(exportContentLines(afterRestore))
+            .describedAs("자리표시자 복원이 문단 경계를 바꾸면 안 된다 — S6-2 투영이 기대는 불변식")
+            .hasSameSizeAs(exportContentLines(beforeRestore))
     }
 
     @Test
@@ -315,6 +343,31 @@ class ConversionExportServiceTest {
         assertThat(String(file.content, Charsets.UTF_8)).isEqualTo("반영된 원본")
     }
 
+    /**
+     * 원본이 있으면 `segmentMapDerivation` 이 유도한 지도를 실제로 반영 포트에 실어 보내야
+     * 한다(계획 §10.2 결정 2, 2026-09-06 리뷰 F3) — 유도만 하고 부르는 쪽이 넘기지 않으면
+     * 어댑터가 영원히 `null` 만 받는다.
+     */
+    @Test
+    @DisplayName("원본이 있으면 반영기에 유도한 지도를 실어 보낸다")
+    fun `원본이 있으면 반영기가 지도를 받는다`() {
+        val world = World()
+        val conversionId = UUID.randomUUID()
+        world.seedDone(conversionId, Seed(easyText = "쉬운 글\n둘째 문단", sourceFormat = SourceFormat.DOCX))
+        world.seedOriginal(conversionId)
+        val documentId =
+            world.conversions.owned
+                .getValue(OWNER to conversionId)
+                .documentId
+        world.documents.seed(OWNER, documentId, "원본 문단 하나\n원본 문단 둘", SourceFormat.DOCX)
+        world.reflector.file = exportFileOf("안내문", ExportFormat.DOCX, "반영된 원본".toByteArray())
+
+        world.export(conversionId)
+
+        assertThat(world.reflector.maps).hasSize(1)
+        assertThat(world.reflector.maps.single()).isNotNull()
+    }
+
     @Test
     @DisplayName("반영에는 **복원된 본문**이 간다 — 자리표시자 규칙은 한 벌이다")
     fun `반영에 복원된 본문이 간다`() {
@@ -374,6 +427,7 @@ class ConversionExportServiceTest {
         val originals = FakeDocumentOriginalRepository(transaction)
         val conversions = FakeConversionRepository(transaction, originals)
         val reflector = FakeOriginalStructureReflector()
+        val documents = FakeQueryDocumentRepository(transaction)
         var documentTitle: String = "안내문"
         val service =
             ConversionExportService(
@@ -385,6 +439,8 @@ class ConversionExportServiceTest {
                         OriginalReflection(StoredOriginalReader(originals, cipher), reflector),
                         exporter,
                     ),
+                documents = documents,
+                segmentMapDerivation = MaskedSegmentMapDerivation(cipher),
                 transaction = transaction,
             )
 
