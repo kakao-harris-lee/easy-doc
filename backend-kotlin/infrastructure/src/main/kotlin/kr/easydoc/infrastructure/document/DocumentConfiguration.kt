@@ -3,6 +3,7 @@ package kr.easydoc.infrastructure.document
 import kr.easydoc.application.auth.TransactionRunner
 import kr.easydoc.application.auth.UserRepository
 import kr.easydoc.application.conversion.ConvertDocumentUseCase
+import kr.easydoc.application.conversion.LlmCallLedger
 import kr.easydoc.application.conversion.ReconvertUnitService
 import kr.easydoc.application.crypto.ContentCipher
 import kr.easydoc.application.document.ConversionFeedbackRepository
@@ -205,6 +206,14 @@ class DocumentConfiguration {
     ): ConvertDocumentUseCase =
         ConvertDocumentUseCase(provider, defaultOptions = LlmOptions(maxTokens = properties.validatedMaxOutputTokens()))
 
+    /**
+     * LLM 호출 원장(U1) — `ProcessConversionJob`(worker)과 [reconvertUnitService](api/local)이
+     * 같은 빈을 주입받는다. 이 클래스가 `@Profile("!$MIGRATE_PROFILE")` 이라 두 프로필 모두에서
+     * 선다(`ConversionWorkerConfiguration` 은 `@Profile("worker")` 로 그 부분집합이다).
+     */
+    @Bean
+    fun llmCallLedger(jdbcClient: JdbcClient): LlmCallLedger = JdbcLlmCallLedger(jdbcClient)
+
     /** 재변환 유스케이스 — `easydoc.reconversion.call-budget` 은 [ReconversionProperties] 가 문다. */
     @Suppress("LongParameterList")
     @Bean
@@ -215,6 +224,7 @@ class DocumentConfiguration {
         convert: ConvertDocumentUseCase,
         transactionRunner: TransactionRunner,
         properties: ReconversionProperties,
+        ledger: LlmCallLedger,
     ): ReconvertUnitService =
         ReconvertUnitService(
             conversions = conversions,
@@ -224,6 +234,7 @@ class DocumentConfiguration {
             transaction = transactionRunner,
             callBudget = properties.callBudget,
             concurrencyLimit = properties.concurrency,
+            ledger = ledger,
         )
 
     /** 파일럿 피드백 저장소. 문서·변환과 **수명이 분리된** 표라 저장소도 따로 선다. */

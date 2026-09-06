@@ -118,6 +118,7 @@ class InMemoryDocumentRepository : DocumentRepository {
                     sourceFormat = it.document.sourceFormat,
                     charCount = it.document.charCount,
                     sourceText = it.sourceText,
+                    workspaceId = it.workspaceId,
                 )
             }
 

@@ -24,6 +24,7 @@ import kr.easydoc.application.auth.VerificationCodeStore
 import kr.easydoc.application.auth.WorkspaceDeletionState
 import kr.easydoc.application.auth.WorkspaceRepository
 import kr.easydoc.application.conversion.ConvertDocumentUseCase
+import kr.easydoc.application.conversion.LlmCallLedger
 import kr.easydoc.application.conversion.ReconvertUnitService
 import kr.easydoc.application.crypto.ContentCipher
 import kr.easydoc.application.dictionary.DictionaryAttribution
@@ -406,6 +407,8 @@ class AuthSliceBeans {
             transaction = transaction,
             callBudget = SLICE_RECONVERSION_CALL_BUDGET,
             concurrencyLimit = SLICE_RECONVERSION_CONCURRENCY,
+            // 슬라이스 테스트는 원장을 재지 않는다 — no-op 대역.
+            ledger = LlmCallLedger { },
         )
 
     @Bean

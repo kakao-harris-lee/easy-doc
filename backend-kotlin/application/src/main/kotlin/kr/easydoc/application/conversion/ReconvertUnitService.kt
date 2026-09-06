@@ -13,6 +13,8 @@ import kr.easydoc.core.exceptions.InvalidInputException
 import kr.easydoc.core.exceptions.NotFoundException
 import kr.easydoc.core.exceptions.ReconversionBudgetExhaustedException
 import kr.easydoc.core.exceptions.ReconversionConcurrencyExhaustedException
+import kr.easydoc.core.llm.LlmCallPurpose
+import kr.easydoc.core.llm.LlmCallRecord
 import kr.easydoc.core.privacy.CONTENT_MASK
 import kr.easydoc.core.privacy.maskText
 import kr.easydoc.core.segment.maskedUnitOf
@@ -68,6 +70,12 @@ class ReconvertUnitService(
      * 전역의 동시 in-flight 상한이다 — 제공자 과부하를 막는 bulkhead(코드 리뷰 item 2).
      */
     private val concurrencyLimit: Int,
+    /**
+     * LLM 호출 원장(U1). **필수다** — 조립 지점(`DocumentConfiguration.llmCallLedger`)이 실제
+     * 구현을 항상 넣는다(`ProcessConversionJob` 과 같은 판단). 테스트는 각자 no-op 대역을
+     * 명시한다.
+     */
+    private val ledger: LlmCallLedger,
 ) {
     /** [concurrencyLimit] 개의 허가를 두는 bulkhead — LLM 호출 구간만 감싼다. */
     private val reconversionGate = Semaphore(concurrencyLimit)
@@ -117,29 +125,70 @@ class ReconvertUnitService(
         // 동시 in-flight 상한 — 여기서부터 LLM 호출 구간만 감싼다(리뷰 item 2 "LLM 구간만").
         if (!reconversionGate.tryAcquire()) {
             // 호출을 시작하지 못했다 — 예약 전액을 환불한다(트랜잭션 2), LLM 호출 0회.
-            settle(ownerId, conversionId, actualUsed = 0)
+            settle(ownerId, stored.documentId, source.workspaceId, conversionId, actualUsed = 0)
             throw ReconversionConcurrencyExhaustedException(CONCURRENCY_LIMIT_MESSAGE)
         }
         // 외부 호출은 트랜잭션 밖이다 — 장시간 LLM 호출을 DB 트랜잭션 안에서 돌리지 않는다.
+        // purpose = RECONVERT — 1차·보정 호출 둘 다 원장에 `reconvert` 로 남는다
+        // (`ConvertDocumentUseCase.convertMasked` KDoc 「purpose 매개변수」).
         val unitMasking = maskedUnitOf(fullMasking, sourceUnitIndex)
         val result =
             try {
-                convert.convertMasked(unitMasking)
+                convert.convertMasked(unitMasking, purpose = LlmCallPurpose.RECONVERT)
             } finally {
                 reconversionGate.release()
             }
 
-        return when (result) {
+        return finishResult(
+            ownerId,
+            stored.documentId,
+            source.workspaceId,
+            conversionId,
+            sourceUnitIndex,
+            easyUnitIndexes,
+            easyTextFingerprint,
+            result,
+        )
+    }
+
+    /** LLM 호출 뒤 정산하고 결과를 만든다 — [reconvert] 에서 갈라낸 자리(`LongMethod`). */
+    @Suppress("LongParameterList")
+    private fun finishResult(
+        ownerId: UUID,
+        documentId: UUID,
+        workspaceId: UUID,
+        conversionId: UUID,
+        sourceUnitIndex: Int,
+        easyUnitIndexes: List<Int>,
+        easyTextFingerprint: String,
+        result: ConversionResult,
+    ): ReconvertUnitResult =
+        when (result) {
             is ConversionResult.Failed -> {
                 // 첫 호출 자체가 실패했어도 `CompletionBudget.spend`는 호출 **전** spent 를
                 // 올린다 — 시도 자체가 실제 사용량 1회다(제공자가 과금했을 수도 있다).
                 // 그래서 0이 아니라 result.usage.llmCalls(=1)만큼만 환불에서 제외한다.
-                settle(ownerId, conversionId, actualUsed = result.usage.llmCalls)
+                settle(
+                    ownerId,
+                    documentId,
+                    workspaceId,
+                    conversionId,
+                    actualUsed = result.usage.llmCalls,
+                    calls = result.usage.calls,
+                )
                 throw ExternalServiceUnavailableException(PROVIDER_UNREACHABLE_MESSAGE)
             }
 
             is ConversionResult.Converted -> {
-                val remaining = settle(ownerId, conversionId, actualUsed = result.usage.llmCalls)
+                val remaining =
+                    settle(
+                        ownerId,
+                        documentId,
+                        workspaceId,
+                        conversionId,
+                        actualUsed = result.usage.llmCalls,
+                        calls = result.usage.calls,
+                    )
                 ReconvertUnitResult(
                     sourceUnitIndex = sourceUnitIndex,
                     easyUnitIndexes = easyUnitIndexes,
@@ -150,22 +199,48 @@ class ReconvertUnitService(
                 )
             }
         }
-    }
 
-    /** 정산(트랜잭션 2). */
+    /**
+     * 정산(트랜잭션 2) — 예산 환불과 **같은 트랜잭션**에서 원장([calls])도 함께 쓴다
+     * (`ProcessConversionJob.finishSuccess` 와 같은 판단, 계획 §2 결정 2). [calls] 가 비어
+     * 있으면(호출을 아예 시작하지 못한 경로) 원장에 아무것도 쓰지 않는다.
+     *
+     * **`calledAt` 을 여기서 다시 재지 않는다** — 각 [LlmCallRecord.calledAt] 이 이미
+     * `ConvertDocumentUseCase.Pass.complete` 에서 호출 직후 캡처한 값이다(`ProcessConversionJob
+     * .ledgerEntriesOf` 와 같은 이유).
+     */
     private fun settle(
         ownerId: UUID,
+        documentId: UUID,
+        workspaceId: UUID,
         conversionId: UUID,
         actualUsed: Int,
+        calls: List<LlmCallRecord> = emptyList(),
     ): Int =
         transaction.inTransaction {
-            conversions.settleReconversionCalls(
-                ownerId = ownerId,
-                conversionId = conversionId,
-                reservedAmount = RECONVERSION_CALL_COST,
-                actualUsed = actualUsed,
-                budget = callBudget,
-            )
+            val remaining =
+                conversions.settleReconversionCalls(
+                    ownerId = ownerId,
+                    conversionId = conversionId,
+                    reservedAmount = RECONVERSION_CALL_COST,
+                    actualUsed = actualUsed,
+                    budget = callBudget,
+                )
+            if (calls.isNotEmpty()) {
+                ledger.append(
+                    calls.map { record ->
+                        LlmCallEntry(
+                            conversionId = conversionId,
+                            documentId = documentId,
+                            workspaceId = workspaceId,
+                            userId = ownerId,
+                            record = record,
+                            calledAt = record.calledAt,
+                        )
+                    },
+                )
+            }
+            remaining
         }
 
     private companion object {

@@ -39,6 +39,21 @@ API, 검수 화면의 단위별 대응·편집 UI, 재변환 엔드포인트, �
 문단에 「이미 쉬운 글 규칙을 통과한 문단」 배지와 경고를 달고 재변환은 막지 않는다. 계획 §11,
 CPU 실측 ≈24ms/20,000자.
 
+**U1(LLM 호출 원장) → 구현(2026-09-07).** `llm_calls`(V12)가 호출 1건 = 행 1건으로
+purpose(`convert`·`repair`·`reconvert`)·provider·model·토큰·지연·예상 비용·단가 스냅샷·
+`char_count`를 남긴다 — 지금까지 구조화 로그로만 나가고 어디에도 저장되지 않던 값이다.
+모델별 단가(`easydoc.llm.pricing.models.<model-id>`)가 단일 값 위에 얹혔고, 응답 model로
+찾아 없으면 단일 값, 그것도 없으면 `null`로 떨어진다. `ProcessConversionJob`은 완료/실패
+저장과 같은 트랜잭션에서, `ReconvertUnitService`는 정산 트랜잭션에서 원장을 쓴다 — 실패한
+provider 호출(예외)은 토큰이 없어 기록하지 않지만, 절단·빈 결과처럼 완성 자체는 받은
+실패는 실제 사용량이 있어 기록한다. 재변환은 1차·보정 호출 둘 다 `reconvert` 하나로 묶인다
+(`ConvertDocumentUseCase.convertMasked`의 `purpose` 매개변수 — 사후 재라벨링 대신 유스케이스가
+직접 결정하는 쪽을 선택했다). 보존 정책을 정정했다 — 문서·변환 삭제는 원장 참조만
+`SET NULL`로 끊고 행을 남긴다(원장은 본문이 없어 개인정보 보존 사유가 적용되지 않고,
+청구 근거가 문서 파기와 함께 사라지면 안 된다). 워크스페이스·계정 삭제만 원장을 함께
+지운다(`ON DELETE CASCADE`). 계획 `docs/plans/2026-09-07-usage-ledger-and-report.md` §3
+U1. 집계(U2)·운영 리포트(U3)는 이 조각 밖이다.
+
 ## 1.1 추후 개선 항목 (동작에는 문제 없음)
 
 | 항목 | 현재 상태 | 판단이 필요한 것 |

@@ -88,7 +88,7 @@ class JdbcDocumentRepository(private val jdbc: JdbcClient) : DocumentRepository 
         jdbc
             .sql(
                 """
-                SELECT id, source_format, char_count,
+                SELECT id, source_format, char_count, workspace_id,
                        source_text_encrypted, encryption_scheme, key_version
                 FROM documents
                 WHERE id = :id AND user_id = :ownerId
@@ -206,6 +206,7 @@ class JdbcDocumentRepository(private val jdbc: JdbcClient) : DocumentRepository 
                     scheme = rs.getString("encryption_scheme"),
                     keyVersion = rs.getInt("key_version"),
                 ),
+            workspaceId = rs.getObject("workspace_id", UUID::class.java),
         )
 
     private fun toListing(rs: ResultSet): DocumentListing {

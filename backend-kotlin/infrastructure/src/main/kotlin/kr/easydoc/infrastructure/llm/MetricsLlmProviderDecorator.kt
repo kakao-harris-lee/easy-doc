@@ -80,7 +80,15 @@ class StructuredLogLlmCallObserver : LlmCallObserver {
 /** 선택된 provider를 감싸 호출 결과에 비용·성능 관측값을 추가한다. */
 class MetricsLlmProviderDecorator(
     private val delegate: LlmProvider,
+    /** 모델별 단가에 없을 때 쓰는 기본값. `easydoc.llm.pricing.input/output-usd-per-million-tokens`. */
     private val pricing: TokenPricing?,
+    /**
+     * 응답이 보고한 model 문자열로 찾는 모델별 단가(`easydoc.llm.pricing.models.<model-id>`).
+     * 없으면 [pricing] 으로 떨어진다 — `LlmPricingProperties` KDoc 「모델별 단가」와 같은 순서다.
+     * 기본값 `emptyMap()` 이 기존 호출부·테스트를 그대로 통과시킨다(모델별 단가를 쓰지
+     * 않던 시절과 동작이 같다).
+     */
+    private val modelPricing: Map<String, TokenPricing> = emptyMap(),
     private val observer: LlmCallObserver = LlmCallObserver.NONE,
     private val nanoTime: () -> Long = System::nanoTime,
 ) : LlmProvider {
@@ -118,8 +126,15 @@ class MetricsLlmProviderDecorator(
         completion: LlmCompletion,
         latencyMs: Long,
     ): LlmCompletion {
-        val cost = pricing?.estimate(completion.inputTokens, completion.outputTokens)
-        val observed = completion.copy(latencyMs = latencyMs, estimatedCostUsd = cost)
+        val resolvedPricing = modelPricing[completion.model] ?: pricing
+        val cost = resolvedPricing?.estimate(completion.inputTokens, completion.outputTokens)
+        val observed =
+            completion.copy(
+                latencyMs = latencyMs,
+                estimatedCostUsd = cost,
+                pricingInputUsdPerMtok = resolvedPricing?.inputUsdPerMillionTokens,
+                pricingOutputUsdPerMtok = resolvedPricing?.outputUsdPerMillionTokens,
+            )
         recordSafely(
             LlmCallObservation(
                 provider = observed.provider,

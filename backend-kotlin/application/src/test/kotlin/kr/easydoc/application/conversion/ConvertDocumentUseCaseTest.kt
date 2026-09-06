@@ -7,12 +7,17 @@ import kr.easydoc.core.exceptions.LlmProviderException
 import kr.easydoc.core.exceptions.LlmTruncatedException
 import kr.easydoc.core.llm.FakeLlmProvider
 import kr.easydoc.core.llm.FakeLlmTurn
+import kr.easydoc.core.llm.LlmCallPurpose
 import kr.easydoc.core.llm.LlmFinishReason
+import kr.easydoc.core.privacy.maskText
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
+import java.time.Clock
+import java.time.Instant
+import java.time.ZoneId
 
 /** 변환 오케스트레이션 — CNV-01(호출 상한)·CNV-02(4대 예외)·CNV-04(보정 채택). */
 class ConvertDocumentUseCaseTest {
@@ -551,4 +556,85 @@ class ConvertDocumentUseCaseTest {
             assertThat(rendered).contains("자")
         }
     }
+
+    @Nested
+    @DisplayName("LLM 호출 원장 (U1)")
+    inner class LlmCallLedgerRecords {
+        @Test
+        @DisplayName("깨끗한 1차 결과는 CONVERT 행 하나를 남기고 charCount는 마스킹 본문 길이다")
+        fun `1차만 통과하면 CONVERT 한 행이다`() {
+            val provider = FakeLlmProvider(listOf(reply(cleanText)))
+
+            val result = useCase(provider).convert(source)
+
+            assertThat(result.usage.calls).hasSize(1)
+            val call = result.usage.calls.single()
+            assertThat(call.purpose).isEqualTo(LlmCallPurpose.CONVERT)
+            assertThat(call.provider).isEqualTo(provider.name)
+            assertThat(call.charCount).isEqualTo(maskText(source).maskedText.value.length)
+        }
+
+        @Test
+        @DisplayName("보정까지 가면 CONVERT·REPAIR 두 행이 남는다")
+        fun `보정까지 가면 두 행이다`() {
+            val provider = FakeLlmProvider(List(10) { reply(draftWithIssue) })
+
+            val result = useCase(provider).convert(source)
+
+            assertThat(result.usage.calls.map { it.purpose })
+                .containsExactly(LlmCallPurpose.CONVERT, LlmCallPurpose.REPAIR)
+        }
+
+        @Test
+        @DisplayName("호출 자체가 실패하면 원장에 아무것도 남지 않는다")
+        fun `provider 예외는 0행이다`() {
+            val provider = FakeLlmProvider(listOf(FakeLlmTurn.Fail(LlmProviderException("호출 실패"))))
+
+            val result = useCase(provider).convert(source)
+
+            assertThat(result.usage.calls).isEmpty()
+        }
+
+        @Test
+        @DisplayName("단가가 설정되지 않으면 비용·단가 스냅샷이 모두 null이다 — 0으로 섞이지 않는다")
+        fun `단가 미설정은 스냅샷도 null이다`() {
+            val provider = FakeLlmProvider(listOf(reply(cleanText, inputTokens = 10, outputTokens = 5)))
+
+            val result = useCase(provider).convert(source)
+
+            val call = result.usage.calls.single()
+            assertThat(call.estimatedCostUsd).isNull()
+            assertThat(call.pricingInputUsdPerMtok).isNull()
+            assertThat(call.pricingOutputUsdPerMtok).isNull()
+            assertThat(call.latencyMs).isNull()
+        }
+
+        @Test
+        @DisplayName("보정까지 두 번 부르면 각 행의 calledAt은 호출 시각이라 서로 다르고 시간순으로 증가한다")
+        fun `두 호출의 calledAt은 서로 다르고 증가한다`() {
+            val first = Instant.parse("2026-09-07T00:00:00Z")
+            val second = Instant.parse("2026-09-07T00:00:05Z")
+            val clock = SteppingClock(listOf(first, second))
+            val provider = FakeLlmProvider(List(10) { reply(draftWithIssue) })
+            val useCase = ConvertDocumentUseCase(provider, fixedIds, clock = clock)
+
+            val result = useCase.convert(source)
+
+            assertThat(result.usage.calls.map { it.calledAt }).containsExactly(first, second)
+        }
+    }
+}
+
+/**
+ * 호출마다 미리 정해 둔 시각을 순서대로 내주는 시계 — **호출 시각과 저장 시각을 가르는 것**이
+ * 그 테스트의 요점이라 `Clock.fixed` 로는 재지 못한다.
+ */
+private class SteppingClock(times: List<Instant>) : Clock() {
+    private val queue = ArrayDeque(times)
+
+    override fun getZone(): ZoneId = ZoneId.of("UTC")
+
+    override fun withZone(zone: ZoneId): Clock = this
+
+    override fun instant(): Instant = queue.removeFirst()
 }

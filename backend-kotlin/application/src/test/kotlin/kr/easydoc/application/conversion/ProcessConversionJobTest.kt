@@ -16,6 +16,7 @@ import kr.easydoc.core.document.ConversionStatus
 import kr.easydoc.core.exceptions.LlmProviderException
 import kr.easydoc.core.llm.FakeLlmProvider
 import kr.easydoc.core.llm.FakeLlmTurn
+import kr.easydoc.core.llm.LlmCallPurpose
 import kr.easydoc.core.llm.LlmFinishReason
 import kr.easydoc.core.llm.LlmOptions
 import kr.easydoc.core.llm.LlmPrompt
@@ -237,6 +238,98 @@ class ProcessConversionJobTest {
         assertThat(world.heartbeat.renewed).containsExactly(world.lease)
     }
 
+    @Nested
+    @DisplayName("LLM 호출 원장 (U1)")
+    inner class LlmCallLedgerWrites {
+        @Test
+        @DisplayName("완료는 완료 저장과 같은 트랜잭션에서 원장 항목 하나를 남긴다")
+        fun `완료는 원장 한 행을 남긴다`() {
+            val world = World()
+            var depthWhenAppended: Int? = null
+            world.ledger.onAppend = { depthWhenAppended = world.transaction.depth }
+
+            world.jobs.processNext()
+
+            assertThat(world.ledger.appended).hasSize(1)
+            val entry = world.ledger.appended.single()
+            assertThat(entry.conversionId).isEqualTo(world.conversionId)
+            assertThat(entry.documentId).isEqualTo(world.documentId)
+            assertThat(entry.workspaceId).isEqualTo(world.workspaceId)
+            assertThat(entry.userId).isEqualTo(world.userId)
+            assertThat(entry.record.purpose).isEqualTo(LlmCallPurpose.CONVERT)
+            assertThat(depthWhenAppended).withFailMessage("원장 쓰기가 완료 저장과 같은 트랜잭션에 있지 않다").isEqualTo(1)
+        }
+
+        @Test
+        @DisplayName("provider 예외 실패는 원장에 아무것도 남기지 않는다")
+        fun `provider 예외 실패는 0행이다`() {
+            val world =
+                World(
+                    provider = FakeLlmProvider(listOf(FakeLlmTurn.Fail(LlmProviderException("호출 실패")))),
+                    attempts = 3,
+                )
+
+            world.jobs.processNext()
+
+            assertThat(world.ledger.appended).isEmpty()
+        }
+
+        @Test
+        @DisplayName("절단(재시도 불가) 실패도 실제 토큰을 썼으니 원장에 한 행을 남긴다")
+        fun `절단 실패는 실제 사용량을 원장에 남긴다`() {
+            val world =
+                World(
+                    provider =
+                        FakeLlmProvider(
+                            listOf(
+                                FakeLlmTurn.Reply(
+                                    text = "쉬운 글이 도중에",
+                                    inputTokens = 10,
+                                    outputTokens = 5,
+                                    finishReason = LlmFinishReason.MAX_TOKENS,
+                                ),
+                            ),
+                        ),
+                    attempts = 1,
+                )
+
+            world.jobs.processNext()
+
+            val appended = world.ledger.appended
+            assertThat(appended).hasSize(1)
+            val onlyEntry = appended.single()
+            assertThat(onlyEntry.record.inputTokens).isEqualTo(10)
+        }
+
+        @Test
+        @DisplayName("REFUSAL 은 재시도 대상(PROVIDER_ERROR)이어도 실제 토큰을 썼으므로 재시도 예정과 별개로 원장에 남는다")
+        fun `REFUSAL 은 재시도 예정이어도 원장에 남는다`() {
+            val world =
+                World(
+                    provider =
+                        FakeLlmProvider(
+                            listOf(
+                                FakeLlmTurn.Reply(
+                                    text = "",
+                                    inputTokens = 7,
+                                    outputTokens = 0,
+                                    finishReason = LlmFinishReason.REFUSAL,
+                                ),
+                            ),
+                        ),
+                    attempts = 1,
+                )
+
+            val outcome = world.jobs.processNext()
+
+            assertThat(outcome).isEqualTo(ConversionJobOutcome.RETRY_SCHEDULED)
+            val appended = world.ledger.appended
+            assertThat(appended).hasSize(1)
+            val onlyEntry = appended.single()
+            assertThat(onlyEntry.record.inputTokens).isEqualTo(7)
+        }
+    }
+
     private class World(
         source: String = "복지 급여를 안내합니다.",
         provider: FakeLlmProvider = FakeLlmProvider.replying("오늘 서류를 내세요."),
@@ -246,18 +339,21 @@ class ProcessConversionJobTest {
     ) {
         val conversionId: UUID = lease?.conversionId ?: UUID.randomUUID()
         val documentId: UUID = UUID.randomUUID()
+        val workspaceId: UUID = UUID.randomUUID()
+        val userId: UUID = UUID.randomUUID()
         val lease: ConversionJobLease? =
             lease?.let { ConversionJobLease(conversionId, it.owner, attempts) }
         val transaction = RecordingDepth()
         val cipher = RecordingCipher(transaction)
         val sourceSealed = cipher.encrypt(PlainBody(source), documentId, EncryptedField.DOCUMENT_SOURCE_TEXT)
         val leases = FakeLeases(this.lease, transaction, exhausted)
-        val work = FakeWork(conversionId, documentId, sourceSealed, transaction)
+        val work = FakeWork(conversionId, documentId, workspaceId, userId, sourceSealed, transaction)
         val provider = SpyingProvider(provider)
         val heartbeat = RenewingHeartbeat(leases)
         val notificationStore = FakeNotificationStore()
         val mailSender = RecordingMailSender()
         val notifier = ConversionCompletedNotifier(notificationStore, mailSender, "http://localhost:5173")
+        val ledger = RecordingLedger()
         val jobs =
             ProcessConversionJob(
                 stores =
@@ -281,7 +377,19 @@ class ProcessConversionJobTest {
                             ),
                     ),
                 notifier = notifier,
+                ledger = ledger,
             )
+    }
+
+    /** 원장에 실제로 쓴 항목을 기록하는 대역 — U1 검증용. */
+    private class RecordingLedger : LlmCallLedger {
+        val appended = mutableListOf<LlmCallEntry>()
+        var onAppend: () -> Unit = {}
+
+        override fun append(entries: List<LlmCallEntry>) {
+            onAppend()
+            appended += entries
+        }
     }
 
     private class FakeNotificationStore : ConversionNotificationStore {
@@ -408,6 +516,8 @@ class ProcessConversionJobTest {
     private class FakeWork(
         private val conversionId: UUID,
         private val documentId: UUID,
+        private val workspaceId: UUID,
+        private val userId: UUID,
         private val sourceText: EncryptedContent,
         private val transaction: RecordingDepth,
     ) : ConversionWorkStore {
@@ -423,6 +533,8 @@ class ProcessConversionJobTest {
                 documentId = documentId,
                 status = status,
                 sourceText = sourceText,
+                workspaceId = workspaceId,
+                userId = userId,
             )
 
         override fun markProcessing(conversionId: UUID): Boolean {

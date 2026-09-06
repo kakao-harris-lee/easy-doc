@@ -52,5 +52,6 @@ class MaskedSegmentMapDerivationTest {
             sourceFormat = SourceFormat.TEXT,
             charCount = text.length,
             sourceText = cipher.encrypt(PlainBody(text), documentId, EncryptedField.DOCUMENT_SOURCE_TEXT),
+            workspaceId = UUID.randomUUID(),
         )
 }

@@ -59,6 +59,16 @@ easydoc:
     pricing:
       input-usd-per-million-tokens: ${EASYDOC_LLM_INPUT_USD_PER_MILLION_TOKENS:}
       output-usd-per-million-tokens: ${EASYDOC_LLM_OUTPUT_USD_PER_MILLION_TOKENS:}
+      # 모델별 단가(선택, U1). api 의 같은 자리와 같은 설명 — 키가 임의 모델 식별자라
+      # .env.example 환경변수 하나로는 표현할 수 없다. LLM 을 실제로 호출하는 것이 이
+      # 프로세스이므로 이 값이 닿아야 하는 자리는 여기다.
+      # models:
+      #   claude-sonnet-5:
+      #     input-usd-per-million-tokens: 2.00
+      #     output-usd-per-million-tokens: 10.00
+      # 모델 id 에 점이 있으면(gpt-4.1 등) api 의 같은 자리와 같은 이유로 이 YAML 중첩
+      # 매핑에서는 키를 그대로 적으면 된다 — 대괄호 표기(`models[gpt-4.1]`)는 평평한 키
+      # 형태(커맨드라인 인자·환경변수)로 채울 때만 필요하다.
   worker:
     owner: ${EASYDOC_WORKER_OWNER:}
     lease-duration-seconds: ${EASYDOC_WORKER_LEASE_DURATION_SECONDS:120}
