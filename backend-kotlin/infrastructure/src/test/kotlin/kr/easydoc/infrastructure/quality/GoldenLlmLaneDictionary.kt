@@ -2,6 +2,8 @@ package kr.easydoc.infrastructure.quality
 
 import kr.easydoc.application.conversion.DictionaryContextSource
 import kr.easydoc.application.conversion.NoDictionaryContext
+import kr.easydoc.infrastructure.dictionary.DictionaryConfiguration
+import kr.easydoc.infrastructure.dictionary.DictionaryLookupProperties
 import kr.easydoc.infrastructure.dictionary.DictionaryProperties
 import kr.easydoc.infrastructure.queue.ConversionWorkerConfiguration
 import java.nio.file.Path
@@ -165,9 +167,27 @@ internal class LaneDictionary private constructor(
          * 제품과 같은 조립. [DictionaryProperties] 를 기본값 그대로 넘긴다 — worker
          * `application.yml` 에 override 가 없어 배포 값도 코드 기본값과 같다
          * (`DictionaryProperties` KDoc 「enabled 의 기본값이 켜짐인 것은 정책이다」).
+         *
+         * 색인 적재는 이제 `DictionaryConfiguration.dictionaryIndexHolder` 하나로 모여 있다
+         * (2026-09-06, `docs/kotlin-redevelopment-backlog.md` §1.1, 2차 정정으로 lazy 홀더로
+         * 바뀌었다) — 여기서도 그 조립을 그대로 불러 얻은 홀더를
+         * [ConversionWorkerConfiguration.dictionaryContextSource] 에 넘긴다. 두 스위치 모두
+         * 기본값([DictionaryLookupProperties.enabled]=꺼짐, [DictionaryProperties.enabled]=
+         * 켜짐)이라 실제 제품 조립과 같은 색인을 얻는다. `dictionaryContextSource` 가
+         * `properties.enabled=true` 분기에서 즉시 `indexOrNull()` 을 부르므로, 실제 읽기는
+         * 이 함수 안에서 곧바로 일어난다(레인은 Spring 컨테이너를 띄우지 않고 이 메서드들을
+         * 직접 호출하므로 "lazy" 는 "Spring 조립 시점에 미루지 않는다"는 뜻이지 이 호출
+         * 자체를 미루지는 않는다) — 아래 `catch (exc: IllegalStateException)` 이 여전히
+         * 같은 시점에 같은 예외를 잡는다.
          */
-        private fun defaultProductAssembly(): DictionaryContextSource =
-            ConversionWorkerConfiguration().dictionaryContextSource(DictionaryProperties())
+        private fun defaultProductAssembly(): DictionaryContextSource {
+            // 제품 조립은 두 소비자에 같은 DictionaryProperties 싱글턴 빈을 주입한다 —
+            // 여기서도 인스턴스 하나를 만들어 두 호출에 그대로 넘겨 그 배선을 그대로 흉내 낸다.
+            val dictionaryProperties = DictionaryProperties()
+            val holder =
+                DictionaryConfiguration().dictionaryIndexHolder(DictionaryLookupProperties(), dictionaryProperties)
+            return ConversionWorkerConfiguration().dictionaryContextSource(dictionaryProperties, holder)
+        }
 
         /**
          * 실행 **전에** 전부 읽는다. 개수를 알아야 측정 조건을 요약에 적을 수 있고, 읽지 못하는

@@ -5,7 +5,7 @@ import kr.easydoc.application.dictionary.DictionaryAttributionProvider
 import kr.easydoc.application.dictionary.LookupRateLimiter
 import kr.easydoc.application.dictionary.TermCandidateSource
 import kr.easydoc.application.dictionary.TermLookupService
-import kr.easydoc.core.dictionary.DictionaryIndex
+import kr.easydoc.core.exceptions.ConfigurationException
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import java.time.Clock
@@ -15,45 +15,87 @@ import java.time.Clock
  *
  * 이전에는 `ConversionWorkerConfiguration`(`@Profile("worker")`)만 색인을 읽어, API
  * 프로세스는 이 색인에 닿을 방법이 없었다(계획 §1 "API 프로세스는 색인을 읽지 않는다").
- * 이 설정은 **프로필에 묶이지 않는다** - 나중에 조회 엔드포인트(조각 4)가 API 프로세스에서
- * 같은 색인을 쓰려면 worker 프로필 밖에서도 조립 가능한 자리가 있어야 하기 때문이다.
+ * 이 설정은 **프로필에 묶이지 않는다** - 조회 엔드포인트(조각 4)를 포함해 API 프로세스에서
+ * 도 같은 색인을 쓰려면 worker 프로필 밖에서도 조립 가능한 자리가 있어야 하기 때문이다.
  *
- * **꺼져 있으면 읽지도 않는다.** [dictionaryIndex] 는 [DictionaryLookupProperties.enabled]
- * 가 거짓이면 `null` 을 돌려주고, Spring 은 `@Bean` 메서드가 `null` 을 돌려주면 그 빈을
- * 등록하지 않는다 - 소비자는 nullable 파라미터로 받아 "적재되지 않았다"를 그대로 잇는다.
+ * **단일 적재, 두 스위치의 합집합(2026-09-06 정정, `docs/kotlin-redevelopment-backlog.md`
+ * §1.1 「사전 색인이 API·worker 프로필 동시 기동 시 두 번 적재된다」 해결).** [dictionaryIndexHolder]
+ * 가 [DictionaryLookupProperties.enabled](조회)와 [DictionaryProperties.enabled](worker
+ * 프롬프트 주입) **둘 중 하나라도** 켜져 있으면 색인을 읽을 수 있게 [DictionaryIndexHolder]
+ * 를 만든다. **`ConversionWorkerConfiguration.dictionaryContextSource` 는 이제 이 빈을
+ * 그대로 소비한다** — 더 이상 자기 색인을 따로 읽지 않는다. API·worker 두 프로필을 한
+ * 프로세스에 동시에 켜도 색인은 [DictionaryIndexHolder] 가 한 번만 읽고, 두 소비자(worker
+ * 의 컨텍스트 주입, 여기의 조회)가 같은 인스턴스를 공유한다.
+ *
+ * **`@Bean` 이 즉석에서 읽으면 안 되는 이유 (2026-09-06 2차 정정).** 처음에는 이 조립 지점이
+ * `@Bean fun dictionaryIndex(): DictionaryIndex?` 형태로 두 스위치의 합집합을 계산해 **그
+ * 자리에서** 색인을 읽어 돌려줬다. 그런데 이 클래스는 `@Profile` 이 없어 항상 조립되고,
+ * [DictionaryProperties.enabled] 의 기본값은 **켜짐**이다 — Spring 이 `@Bean` 메서드를
+ * 조립 시점(`preInstantiateSingletons`)에 즉시 호출하는 성질과 맞물려 **API 전용
+ * 컨텍스트조차** worker 스위치 기본값 때문에 조립 시점에 1.5MB 색인을 무조건 읽었다. 여러
+ * `@SpringBootTest` 컨텍스트가 캐시돼 함께 떠 있는 `:api:test` 스위트에서 이 무조건 로드가
+ * 겹쳐 힙을 실제로 고갈시켰다(`Java heap space`). [DictionaryIndexHolder] 가 실제 읽기를
+ * `by lazy` 로 미루고, 두 소비자가 **자기 스위치가 켜졌을 때만** `indexOrNull()` 을 부르게
+ * 바꿔 고쳤다 — [DictionaryIndexHolder] KDoc 참고.
+ *
+ * **두 스위치의 의미는 분리된 채로 남는다.** 합쳐진 것은 "적재 여부"뿐이다 — 조회를 껐어도
+ * worker 주입이 켜져 있으면(또는 그 반대) 홀더의 `enabled` 는 참이 되지만, 각 소비자는 자기
+ * 스위치를 **따로** 확인해 `indexOrNull()` 을 부를지 말지, 그리고 그 결과로 기능을 켜고
+ * 끈다. [termCandidateSource] 는 [DictionaryLookupProperties.enabled] 를 직접 보고
+ * 판단한다 — 공유 홀더 이후로는 조회가 꺼져 있어도 홀더가 non-null 을 돌려줄 수 있으므로,
+ * `indexOrNull()` 의 결과만으로는 "조회 기능이 켜져 있는가"를 답할 수 없다.
+ * `ConversionWorkerConfiguration.dictionaryContextSource` 도 같은 원칙으로
+ * [DictionaryProperties.enabled] 를 직접 본다.
+ *
  * 기본값이 꺼짐인 이유는 [DictionaryLookupProperties] KDoc 을 본다.
  *
- * **`ConversionWorkerConfiguration.dictionaryContextSource` 는 이 빈을 쓰지 않는다.** 그
- * 배선은 `DictionaryProperties.enabled`(기본 켜짐)라는 다른 스위치로 이미 동작하고 있고,
- * 이 빈을 공유하게 바꾸면 두 스위치의 합집합 논리가 필요해져 "worker 를 그대로 둔다"는
- * 조건을 벗어난다. 색인 적재 호출이 두 곳(worker, 이 빈)에 남는 대신 worker 회귀가 없다.
- *
- * **2026-09-05 정정.** 조각 4(아래 [dictionaryIndex]·[termCandidateSource] 관계 KDoc)가
- * API 컨트롤러를 놓았지만, 이 두 적재 경로의 통합은 하지 않았다 — `ConversionWorkerConfiguration`
- * 은 여전히 자기 색인을 따로 만든다. API·worker 프로필을 동시에 켠 프로세스 하나는 같은
- * 색인 파일을 두 번 읽어 메모리에 두 벌 든다(기능상 틀리지는 않지만 낭비다). 통합은 여전히
- * 미뤄져 있다 — `docs/kotlin-redevelopment-backlog.md` §1.1 참고.
- *
- * 2026-09-05 리뷰 - 이 저장소에서 **첫 nullable `@Bean`** 이다. S4(조각 3 이후) 에서
- * 소비자 쪽 nullable 배선을 null object(예: 빈 `DictionaryIndex`)로 바꿀 계획이며, 이 빈
- * 자체를 지금 바꾸지는 않는다(계획이 그 정리를 S4로 미룬다).
+ * 2026-09-05 리뷰 - 이 저장소에서 **첫 nullable `@Bean`** 이었다(지금은 [DictionaryIndexHolder]
+ * 로 대체돼 `DictionaryIndex` 자체는 더 이상 `@Bean` 이 아니다). 소비자 쪽 nullable 배선은
+ * 여전히 null object 로 흡수한다.
  *
  * **정리(2026-09-05, 조각 4).** [termCandidateSource] 가 그 null object 다 —
- * [dictionaryIndex] 가 `null` 이면 [NoTermCandidateSource] 를 골라, 컨트롤러가 nullable
- * 을 직접 다루지 않는다. [dictionaryIndex] 자체는 여전히 nullable 을 돌려준다(Spring 이
- * `null` `@Bean` 을 등록하지 않는 메커니즘을 그대로 쓴다) — 이 정리는 **소비자 쪽**의
- * null 처분만 흡수한다.
+ * 조회가 꺼져 있으면(위 참고) [NoTermCandidateSource] 를 골라, 컨트롤러가 nullable 을
+ * 직접 다루지 않는다.
  */
 @Configuration(proxyBeanMethods = false)
 class DictionaryConfiguration {
+    /**
+     * 두 스위치 중 하나라도 켜져 있으면 **읽을 수 있는** 홀더를 만든다 — 실제로 읽는지는
+     * [DictionaryIndexHolder] 의 `by lazy` 와 소비자가 `indexOrNull()` 을 부르는지에
+     * 달렸다. 이 `@Bean` 메서드 자체는 값싸다(객체 하나를 조립할 뿐 I/O 가 없다).
+     */
     @Bean
-    fun dictionaryIndex(properties: DictionaryLookupProperties): DictionaryIndex? =
-        if (properties.enabled) DictionaryIndexJsonReader().readClasspathResource() else null
+    fun dictionaryIndexHolder(
+        lookupProperties: DictionaryLookupProperties,
+        dictionaryProperties: DictionaryProperties,
+    ): DictionaryIndexHolder =
+        DictionaryIndexHolder(
+            enabled = lookupProperties.enabled || dictionaryProperties.enabled,
+            loader = { DictionaryIndexJsonReader().readClasspathResource() },
+        )
 
-    /** [dictionaryIndex] 가 없으면(조회 기능이 꺼짐) [NoTermCandidateSource] 가 422 로 거절한다. */
+    /**
+     * 조회 기능 스위치([DictionaryLookupProperties.enabled])를 직접 본다 — 꺼져 있으면
+     * [DictionaryIndexHolder.indexOrNull] 을 **부르지도 않고** [NoTermCandidateSource] 로
+     * 422 를 거절한다(worker 주입만 켜져 홀더가 읽을 수 있는 상태여도 이 소비자는 읽지
+     * 않는다).
+     */
     @Bean
-    fun termCandidateSource(dictionaryIndex: DictionaryIndex?): TermCandidateSource =
-        dictionaryIndex?.let(::IndexedTermCandidateSource) ?: NoTermCandidateSource
+    fun termCandidateSource(
+        properties: DictionaryLookupProperties,
+        dictionaryIndexHolder: DictionaryIndexHolder,
+    ): TermCandidateSource =
+        if (!properties.enabled) {
+            NoTermCandidateSource
+        } else {
+            val index =
+                dictionaryIndexHolder.indexOrNull()
+                    ?: throw ConfigurationException(
+                        "easydoc.dictionary.lookup.enabled=true 인데 사전 색인이 적재되지 않았다 " +
+                            "— dictionaryIndexHolder 빈 조립을 확인한다 (구성상 발생할 수 없다)",
+                    )
+            IndexedTermCandidateSource(index)
+        }
 
     /** `TermLookupService` 는 `@Component` 가 아니다 — 다른 유스케이스(`AuthService` 등)와 같이 조립 지점이 만든다. */
     @Bean
