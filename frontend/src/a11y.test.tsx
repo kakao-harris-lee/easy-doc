@@ -221,7 +221,10 @@ const SCREENS: readonly {
       textarea.focus()
       textarea.setSelectionRange(0, 2)
       fireEvent.mouseUp(textarea)
-      await screen.findByRole('dialog', { name: '쉬운 말 후보' })
+      // 이 파일은 axe 실측을 위해 실제 타이머를 쓴다(가짜 타이머로 바꾸지 않는다).
+      // 250ms 디바운스 + 조회 왕복이 기본 1000ms 타임아웃 안에 못 들어가 부하가 걸린
+      // CI 러너에서 한 번 실패했다(PR #49, 2026-09-06) — 타임아웃만 5s로 늘려 흡수한다.
+      await screen.findByRole('dialog', { name: '쉬운 말 후보' }, { timeout: 5000 })
       return heading
     },
   },
