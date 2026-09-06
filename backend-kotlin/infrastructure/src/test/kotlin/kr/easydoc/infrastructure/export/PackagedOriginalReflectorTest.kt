@@ -298,7 +298,7 @@ class PackagedOriginalReflectorTest {
         assertThat(fallbackOutcome.emptiedUnits).isEqualTo(ordinalOutcome.emptiedUnits)
         assertThat(fallbackOutcome.appendedLines).isEqualTo(ordinalOutcome.appendedLines)
         assertThat(fallbackOutcome.displacedLines).isEqualTo(ordinalOutcome.displacedLines)
-        assertThat(fallbackFile.content).isEqualTo(ordinalFile.content)
+        assertSameZipContent(fallbackFile.content, ordinalFile.content)
         assertThat(reflectedPreservation(fallbackOutcome).status).isEqualTo(FormatPreservationStatus.PARTIAL)
         assertThat(reflectedPreservation(fallbackOutcome).details).anyMatch { it.contains("차례대로 반영") }
     }
@@ -361,7 +361,7 @@ class PackagedOriginalReflectorTest {
         assertThat(fallbackOutcome.emptiedUnits).isEqualTo(ordinalOutcome.emptiedUnits)
         assertThat(fallbackOutcome.appendedLines).isEqualTo(ordinalOutcome.appendedLines)
         assertThat(fallbackOutcome.displacedLines).isEqualTo(ordinalOutcome.displacedLines)
-        assertThat(fallbackFile.content).isEqualTo(ordinalFile.content)
+        assertSameZipContent(fallbackFile.content, ordinalFile.content)
     }
 
     /**
@@ -543,4 +543,28 @@ class PackagedOriginalReflectorTest {
         haystack: String,
         needle: String,
     ): Int = haystack.split(needle).size - 1
+
+    /**
+     * 두 zip 산출물이 **같은 문서**인지 잰다 — 원문 바이트가 아니라 항목 차례와 항목별 내용으로.
+     *
+     * `reflect()` 두 번이 만든 zip 을 원문 바이트로 그대로 비교하면, 로컬/중앙 헤더에 찍히는
+     * DOS 시각(2초 단위)이 호출 사이 경계를 넘을 때 항목마다 한 바이트씩 달라져 우연히 깨진다
+     * (2026-09-06 CI 관찰). 판정 대상은 "지도가 없을 때와 같은 문서가 나오는가"이지 타임스탬프가
+     * 아니므로, 항목 이름의 차례와 항목별 압축 해제 바이트로 재는 것이 맞는 잣대다.
+     */
+    private fun assertSameZipContent(
+        actual: ByteArray,
+        expected: ByteArray,
+    ) {
+        val actualEntries = IngestFixtures.entriesOf(actual)
+        val expectedEntries = IngestFixtures.entriesOf(expected)
+        assertThat(actualEntries.keys.toList())
+            .describedAs("zip 항목 차례가 같아야 한다")
+            .isEqualTo(expectedEntries.keys.toList())
+        actualEntries.forEach { (name, bytes) ->
+            assertThat(bytes)
+                .describedAs("zip 항목 %s 의 바이트가 같아야 한다", name)
+                .isEqualTo(expectedEntries.getValue(name))
+        }
+    }
 }
