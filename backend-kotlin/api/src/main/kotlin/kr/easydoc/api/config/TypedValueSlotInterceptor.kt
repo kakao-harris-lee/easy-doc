@@ -26,14 +26,22 @@ class TypedValueSlotInterceptor : HandlerInterceptor {
         return true
     }
 
-    /** 이 파라미터가 값 자리를 갖고 그 값이 공백뿐이면 형식 오류와 **같은 예외**로 끊는다. */
+    /**
+     * 이 파라미터가 값 자리를 갖고 그 값이 공백뿐이면 형식 오류와 **같은 예외**로 끊는다.
+     *
+     * **문자열 파라미터도 대상이다** (2.20.0, U2 `from`/`to` 추가로 드러난 자리 —
+     * 이전에는 강제 변환이 있는 타입만 대상이었다: 그때까지 선언된 쿼리·경로 값 자리가
+     * 전부 `Int`·`UUID`·enum 이라 문자열 자리에서 흡수가 일어난 적이 없었다). `String`
+     * 값 자리는 Spring 이 타입 변환을 하지 않아 공백이 그대로 컨트롤러에 들어간다 —
+     * 다른 타입처럼 여기서 걸러 주지 않으면 서비스 층 규칙(도메인 형식 오류, `detail`
+     * 문자열)으로 새는데, 계약 `ValidationFailed`의 경계(§ 배열 — 스키마에 실제로 제약이
+     * 선언된 쿼리 파라미터)는 **값 자체가 없는 것과 같은 자리**(빈 문자열·공백뿐)를
+     * 스키마 층으로 본다 — 그 값으로는 무엇을 읽을지조차 정할 수 없기 때문이다.
+     */
     private fun rejectBlank(
         request: HttpServletRequest,
         parameter: MethodParameter,
     ) {
-        // 문자열 파라미터는 강제 변환이 없어 흡수가 일어나지 않는다 — 대상이 아니다.
-        if (CharSequence::class.java.isAssignableFrom(parameter.parameterType)) return
-
         queryName(parameter)?.let { name ->
             request.getParameterValues(name)?.firstOrNull { it.isBlank() }?.let {
                 throw mismatch(it, name, parameter)

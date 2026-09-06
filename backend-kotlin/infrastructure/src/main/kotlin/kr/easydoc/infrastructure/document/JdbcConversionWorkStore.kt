@@ -21,7 +21,7 @@ class JdbcConversionWorkStore(private val jdbc: JdbcClient) : ConversionWorkStor
                 """
                 SELECT c.id, c.document_id, c.status,
                        d.source_text_encrypted, d.encryption_scheme, d.key_version,
-                       d.workspace_id, d.user_id
+                       d.workspace_id, d.user_id, d.char_count
                 FROM conversions c
                 JOIN documents d ON d.id = c.document_id
                 WHERE c.id = :id
@@ -41,6 +41,7 @@ class JdbcConversionWorkStore(private val jdbc: JdbcClient) : ConversionWorkStor
                         ),
                     workspaceId = rs.getObject("workspace_id", UUID::class.java),
                     userId = rs.getObject("user_id", UUID::class.java),
+                    charCount = rs.getInt("char_count"),
                 )
             }.optional()
             .orElse(null)

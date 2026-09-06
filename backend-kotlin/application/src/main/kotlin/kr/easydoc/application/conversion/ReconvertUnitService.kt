@@ -125,7 +125,14 @@ class ReconvertUnitService(
         // 동시 in-flight 상한 — 여기서부터 LLM 호출 구간만 감싼다(리뷰 item 2 "LLM 구간만").
         if (!reconversionGate.tryAcquire()) {
             // 호출을 시작하지 못했다 — 예약 전액을 환불한다(트랜잭션 2), LLM 호출 0회.
-            settle(ownerId, stored.documentId, source.workspaceId, conversionId, actualUsed = 0)
+            settle(
+                ownerId,
+                stored.documentId,
+                source.workspaceId,
+                conversionId,
+                actualUsed = 0,
+                documentCharCount = source.charCount,
+            )
             throw ReconversionConcurrencyExhaustedException(CONCURRENCY_LIMIT_MESSAGE)
         }
         // 외부 호출은 트랜잭션 밖이다 — 장시간 LLM 호출을 DB 트랜잭션 안에서 돌리지 않는다.
@@ -148,6 +155,7 @@ class ReconvertUnitService(
             easyUnitIndexes,
             easyTextFingerprint,
             result,
+            documentCharCount = source.charCount,
         )
     }
 
@@ -162,6 +170,7 @@ class ReconvertUnitService(
         easyUnitIndexes: List<Int>,
         easyTextFingerprint: String,
         result: ConversionResult,
+        documentCharCount: Int,
     ): ReconvertUnitResult =
         when (result) {
             is ConversionResult.Failed -> {
@@ -175,6 +184,7 @@ class ReconvertUnitService(
                     conversionId,
                     actualUsed = result.usage.llmCalls,
                     calls = result.usage.calls,
+                    documentCharCount = documentCharCount,
                 )
                 throw ExternalServiceUnavailableException(PROVIDER_UNREACHABLE_MESSAGE)
             }
@@ -188,6 +198,7 @@ class ReconvertUnitService(
                         conversionId,
                         actualUsed = result.usage.llmCalls,
                         calls = result.usage.calls,
+                        documentCharCount = documentCharCount,
                     )
                 ReconvertUnitResult(
                     sourceUnitIndex = sourceUnitIndex,
@@ -209,12 +220,14 @@ class ReconvertUnitService(
      * `ConvertDocumentUseCase.Pass.complete` 에서 호출 직후 캡처한 값이다(`ProcessConversionJob
      * .ledgerEntriesOf` 와 같은 이유).
      */
+    @Suppress("LongParameterList")
     private fun settle(
         ownerId: UUID,
         documentId: UUID,
         workspaceId: UUID,
         conversionId: UUID,
         actualUsed: Int,
+        documentCharCount: Int,
         calls: List<LlmCallRecord> = emptyList(),
     ): Int =
         transaction.inTransaction {
@@ -236,6 +249,7 @@ class ReconvertUnitService(
                             userId = ownerId,
                             record = record,
                             calledAt = record.calledAt,
+                            documentCharCount = documentCharCount,
                         )
                     },
                 )

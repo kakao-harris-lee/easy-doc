@@ -342,8 +342,16 @@ class SensitiveToStringReachTest {
          * 않는다), infrastructure `ModelPricing`(`easydoc.llm.pricing.models.<model-id>`
          * 설정 바인딩 — `LlmPricingProperties` 와 같은 필드 모양의 운영 단가값이라
          * [KNOWN_SENSITIVE_TYPES] 에 넣지 않는다).
+         *
+         * 사용량 집계 U2(같은 계획, 2026-09-07, 2026-09-08 리뷰로 청구 근거 정정)가
+         * **여덟**을 더해 143 이다(135 위에) — application `PurposeUsage`·`WorkspaceUsage`·
+         * `UsageQueryService.Period`, infrastructure `UsageProperties`·
+         * `JdbcUsageReadRepository.DocumentTotals`·`.CallTotals`, api
+         * `WorkspaceUsageResponse`·`PurposeUsageItemResponse`. (`OwnedWorkspaceUsage`는
+         * U2가 쓰지 않는 죽은 코드라 리뷰로 걷어냈다 — U3가 실제로 필요한 모양을 새로
+         * 정의한다.)
          */
-        const val EXPECTED_SOURCE_DECLARATIONS = 135
+        const val EXPECTED_SOURCE_DECLARATIONS = 143
 
         /** 민감 판정이 반드시 닿아야 하는 타입 — 바닥이다. */
         val KNOWN_SENSITIVE_TYPES =

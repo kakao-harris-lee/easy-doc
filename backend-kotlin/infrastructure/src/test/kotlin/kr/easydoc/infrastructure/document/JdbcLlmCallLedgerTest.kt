@@ -26,8 +26,11 @@ import javax.sql.DataSource
 
 /**
  * `llm_calls` 원장(V12) — 실물 PostgreSQL. 다중 VALUES 삽입과, 보존 결정의 정정(계획 §2
- * 결정 1, 리뷰로 2차 정정 — 문서·변환·**워크스페이스**는 `SET NULL`, 사용자만 `CASCADE`)을
- * 실제 FK 로 잰다.
+ * 결정 1, 2026-09-08 리뷰로 3차 정정)을 실제 FK 로 잰다.
+ *
+ * **`conversion_id`·`document_id`는 FK가 없다** — 참조 대상이 지워져도 원장 행의 값은
+ * 그대로 남는다(V12 머리주석 3차 정정). **`workspace_id`만 여전히 `SET NULL`**이고,
+ * `user_id`만 `CASCADE`다.
  *
  * `OwnershipPredicateGuardTest`·`EnvelopeColumnWriteGuardTest` 대상이 아니다 — 둘 다
  * [kr.easydoc.core.crypto.EncryptedField] 가 아는 표만 훑는데, `llm_calls` 는 암호화 대상
@@ -87,16 +90,16 @@ class JdbcLlmCallLedgerTest {
     }
 
     @Test
-    @DisplayName("문서를 지우면 conversion_id·document_id 는 NULL 이 되고 행은 남는다")
-    fun `문서 삭제는 참조만 끊고 행을 남긴다`() {
+    @DisplayName("문서를 지워도 conversion_id·document_id 값은 그대로 남는다 — FK가 없다")
+    fun `문서 삭제 후에도 참조값이 남는다`() {
         val seeded = seed()
         appendConvertRow(seeded)
 
         jdbc.sql("DELETE FROM documents WHERE id = :id").param("id", seeded.documentId).update()
 
         val row = singleRowOf(seeded.workspaceId)
-        assertThat(row.conversionId).isNull()
-        assertThat(row.documentId).isNull()
+        assertThat(row.conversionId).isEqualTo(seeded.conversionId)
+        assertThat(row.documentId).isEqualTo(seeded.documentId)
     }
 
     @Test
@@ -111,22 +114,23 @@ class JdbcLlmCallLedgerTest {
     }
 
     @Test
-    @DisplayName("문서를 먼저 지운 뒤 워크스페이스를 지우면 workspace_id 도 NULL 이 되고 행은 남는다")
-    fun `워크스페이스 삭제는 참조만 끊고 행을 남긴다`() {
+    @DisplayName("문서를 먼저 지운 뒤 워크스페이스를 지우면 workspace_id 만 NULL 이 되고 나머지 참조값은 남는다")
+    fun `워크스페이스 삭제는 workspace_id 참조만 끊는다`() {
         val seeded = seed()
         appendConvertRow(seeded)
         // documents.workspace_id 는 NO ACTION 이라 참조 문서가 있으면 워크스페이스를
-        // 지울 수 없다 — 원장 행이 참조를 끊긴 채로도 살아남는지 재려면 문서부터 지운다.
+        // 지울 수 없다 — 원장 행이 워크스페이스 삭제에서도 살아남는지 재려면 문서부터 지운다.
         jdbc.sql("DELETE FROM documents WHERE id = :id").param("id", seeded.documentId).update()
 
         jdbc.sql("DELETE FROM workspaces WHERE id = :id").param("id", seeded.workspaceId).update()
 
-        // 이 시점엔 conversion_id·document_id·workspace_id 셋 다 NULL 이라 그 열로는 행을
-        // 다시 찾을 수 없다 — CASCADE 로 지워지지 않는 user_id 로 찾는다.
+        // 이 시점엔 workspace_id 만 NULL 이라 그 열로는 행을 다시 찾을 수 없다 — CASCADE 로
+        // 지워지지 않는 user_id 로 찾는다. conversion_id·document_id 는 FK가 없으므로 이
+        // 워크스페이스 삭제와 무관하게 원래 값 그대로다.
         val row = singleRowByUser(seeded.owner)
         assertThat(row.workspaceId).isNull()
-        assertThat(row.conversionId).isNull()
-        assertThat(row.documentId).isNull()
+        assertThat(row.conversionId).isEqualTo(seeded.conversionId)
+        assertThat(row.documentId).isEqualTo(seeded.documentId)
     }
 
     private fun appendConvertRow(seeded: Seeded) {
@@ -162,6 +166,7 @@ class JdbcLlmCallLedgerTest {
                     calledAt = Instant.now(),
                 ),
             calledAt = Instant.now(),
+            documentCharCount = DOCUMENT_CHAR_COUNT,
         )
 
     private fun seed(): Seeded {
@@ -232,5 +237,8 @@ class JdbcLlmCallLedgerTest {
 
     private companion object {
         const val DUMMY_PHC = "\$argon2id\$v=19\$m=19456,t=2,p=1\$c29tZXNhbHQ\$aGFzaGhhc2hoYXNoaGFzaGhhc2g"
+
+        /** `documents.char_count` 스냅샷 — 이 테스트는 그 값을 재지 않으므로 고정값이면 충분하다. */
+        const val DOCUMENT_CHAR_COUNT: Int = 4
     }
 }

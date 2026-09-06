@@ -10,6 +10,7 @@ import { OAuthLinkCallbackPage } from '../pages/OAuthLinkCallbackPage'
 import { ResetPasswordPage } from '../pages/ResetPasswordPage'
 import { SignupPage } from '../pages/SignupPage'
 import { UploadPage } from '../pages/UploadPage'
+import { UsagePage } from '../pages/UsagePage'
 import { RequireAuth } from './RequireAuth'
 import {
   CONVERSION_PATH,
@@ -21,6 +22,7 @@ import {
   OAUTH_LINK_CALLBACK_PATH,
   RESET_PASSWORD_PATH,
   SIGNUP_PATH,
+  USAGE_PATH,
 } from './paths'
 
 /** 라우팅 표. 테스트에서 임의의 라우터로 감쌀 수 있도록 App과 분리한다. */
@@ -68,6 +70,14 @@ export function AppRoutes() {
         element={
           <RequireAuth>
             <HistoryPage />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path={USAGE_PATH}
+        element={
+          <RequireAuth>
+            <UsagePage />
           </RequireAuth>
         }
       />

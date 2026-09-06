@@ -4,10 +4,12 @@ import type {
   ConversionResponse,
   DocumentListItem,
   DocumentSourceResponse,
+  PurposeUsageItem,
   SegmentMap,
   SegmentMapUnit,
   UserResponse,
   WorkspaceListItem,
+  WorkspaceUsageResponse,
 } from '../api/types'
 import type { AuthContextValue } from '../auth/context'
 import type { DocumentSource, SourceFailure } from '../review/sourceText'
@@ -134,6 +136,36 @@ export function workspaceContext(
     select: () => undefined,
     create: () => Promise.resolve(),
     rename: () => Promise.resolve(),
+    ...overrides,
+  }
+}
+
+/** 목적별 사용량 한 줄(U2). */
+export function purposeUsageItem(overrides: Partial<PurposeUsageItem> = {}): PurposeUsageItem {
+  return {
+    purpose: 'convert',
+    llm_calls: 1,
+    input_tokens: 100,
+    output_tokens: 50,
+    estimated_cost_usd: '0.001000',
+    ...overrides,
+  }
+}
+
+/** GET /workspaces/{id}/usage 응답(U2, 계약 2.20.0). 기본값은 비용을 아는 경우다. */
+export function workspaceUsage(
+  overrides: Partial<WorkspaceUsageResponse> = {},
+): WorkspaceUsageResponse {
+  return {
+    documents: 1,
+    characters: 1500,
+    credits: 2,
+    llm_calls: 1,
+    input_tokens: 100,
+    output_tokens: 50,
+    estimated_cost_usd: '0.001000',
+    cost_unknown_calls: 0,
+    by_purpose: [purposeUsageItem()],
     ...overrides,
   }
 }

@@ -165,6 +165,7 @@ class ProcessConversionJob(
                 userId = item.userId,
                 record = record,
                 calledAt = record.calledAt,
+                documentCharCount = item.charCount,
             )
         }
 

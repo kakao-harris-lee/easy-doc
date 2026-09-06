@@ -41,7 +41,7 @@ openapi: 3.1.0
 
 info:
   title: Easy-Read AI API
-  version: "2.19.0"
+  version: "2.20.0"
   x-baselined-at: "2026-08-12"       # 초판 기준선을 뜬 날 (동결일이 아니다)
   x-rebased-at: "2026-08-12"         # 계약의 성격을 "개선 대상"으로 다시 정의한 날
   x-source-runtime: "Python 3.12 / FastAPI (app/main.py) — 과거 참고 구현이었고 2026-08-24 저장소에서 제거됨(git 태그 pre-python-removal-20260824). 기준선 출처였을 뿐 정답이 아니었다"
@@ -49,7 +49,7 @@ info:
   description: |
     공공기관용 '쉬운 글' 자동 변환 서비스의 HTTP 계약 v1.
 
-    **엔드포인트는 정확히 28개다** — 제품 27개 + 헬스 체크 1개.
+    **엔드포인트는 정확히 29개다** — 제품 28개 + 헬스 체크 1개.
     계획 §2.2가 센 "14개 HTTP 엔드포인트"는 **그 문서를 쓸 때의 수**이며 `/health`를
     포함해야 맞는 수였다. 1.5.0에서 `PUT /conversions/{conversion_id}/feedback`이,
     2.2.0에서 `GET /documents/{document_id}/source`가, 2.8.0에서 소셜 로그인
@@ -67,7 +67,9 @@ info:
     `DELETE /auth/oauth/{provider}/link`가 더해져 25개, 2.19.0에서 비밀번호
     설정·재설정(backlog §1.4 다음 조각) `POST /auth/password`·
     `POST /auth/password-reset/request`·`POST /auth/password-reset/confirm`
-    셋이 더해져 오늘은 28개다 —
+    셋이 더해져 28개, 2.20.0에서 워크스페이스 사용량 집계(U2,
+    `docs/plans/2026-09-07-usage-ledger-and-report.md`) `GET
+    /workspaces/{workspace_id}/usage`가 더해져 오늘은 29개다 —
     계획 문서의 수를 고치는 것이 아니라 **수의 정본이 이 계약**이다.
 
     ## 경로 접두사
@@ -3392,6 +3394,144 @@ paths:
         '503': { $ref: '#/components/responses/ServiceUnavailable' }
 
   # ===========================================================================
+  # 워크스페이스 사용량 집계 (2.20.0 신설, U2) — GET /workspaces/{workspace_id}/usage
+  # 정본: docs/plans/2026-09-07-usage-ledger-and-report.md §2 결정 5-6.
+  # `documents`(등록 기준)·`llm_calls`(호출 기준, U1) 두 원장을 워크스페이스·기간으로
+  # 집계한다. 크레딧 잔액·차감은 이 묶음 밖이다(§5 범위 밖) — 이 오퍼레이션은 조회뿐이다.
+  # ===========================================================================
+  /workspaces/{workspace_id}/usage:
+    get:
+      tags: [workspaces]
+      operationId: readWorkspaceUsage
+      summary: 워크스페이스의 기간별 사용량을 집계한다
+      security: [{ HTTPBearer: [] }]
+      parameters:
+        - name: workspace_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: from
+          in: query
+          required: false
+          description: |
+            `YYYY-MM-DD`. 생략하면 `easydoc.usage.zone`(기본 `Asia/Seoul`) 기준 **이번 달
+            1일**이다.
+
+            형식이 `YYYY-MM-DD`로 읽히지 않으면 422(문자열 detail) — 스키마 제약이 아니라
+            서비스 층의 형식 규칙이라 `ValidationFailed`의 **문자열** 갈래다
+            (`x-request-field-constraints`가 아니라 이 오퍼레이션 고유의 날짜 형식 규칙,
+            대표 자리는 `POST /documents`의 `workspace_id` 형식 오류와 같은 경계).
+          schema: { type: string, examples: ["2026-09-01"] }
+        - name: to
+          in: query
+          required: false
+          description: |
+            `YYYY-MM-DD`, **포함** 상한이다(그 날짜 `zone` 자정 직전까지 포함, 다음날
+            자정은 제외). 생략하면 `zone` 기준 **오늘**이다.
+
+            `to`가 `from`보다 앞이거나(422) 구간이 366일을 넘으면(422) 둘 다 문자열
+            detail이다 — 형식 오류와 같은 이유로 서비스 층 규칙이다.
+          schema: { type: string, examples: ["2026-09-07"] }
+      description: |
+        **문서 수·문자 수·크레딧(문서별 `ceil(char_count/1000)`의 합)은 `documents` 표를
+        참조하지 않는다(2026-09-08 리뷰 정정).** 그 기간에 **완료된 LLM 호출이 하나라도
+        있던**(`llm_calls.called_at` 기준, `document_id`로 distinct) 문서만 센다 — 등록만
+        되고 한 번도 변환되지 않은 문서는 비용도 크레딧도 쓰지 않았으므로 포함되지
+        않는다. 값의 출처는 `llm_calls.document_char_count`(그 호출이 속한 문서의
+        `documents.char_count` 스냅샷)이며, 문서가 보존 만료·삭제로 없어져도 이 값은
+        바뀌지 않는다 — 청구 근거를 남기려고 만든 원장이 문서 삭제로 스스로의 근거를
+        잃으면 안 되기 때문이다(U1 계획 §2 결정 1, 2026-09-08 리뷰로 3차 정정).
+
+        LLM 호출 수·토큰·예상 비용도 **호출이 끝난 시각**(`llm_calls.called_at`) 기준이며,
+        원장의 `char_count`(호출별 마스킹 입력 길이 — `document_char_count`와는 다른 값)는
+        어디에도 합산하지 않는다 — 변환·보정 두 행이 문서 전체 길이를 각자 담아 합치면
+        중복이 된다.
+
+        **예상 비용은 알려진 호출만 더한다.** 단가가 설정되지 않아 비용을 모르는 호출은
+        합계에 0으로 섞이지 않고 `cost_unknown_calls`로만 센다(계획 §2 결정 4). 그
+        기간에 알려진 비용이 하나도 없으면 `estimated_cost_usd`는 `null`이다(문자열
+        `"0"`이 아니다 — 「모른다」와 「0달러다」는 다른 사실이다).
+
+        **검증 순서.** `from`/`to` 형식·범위(위 파라미터 설명)가 먼저 걸리고(422), 그
+        다음이 소유 판정(404)이다 — 날짜를 읽지 못하면 워크스페이스 조회 자체를 시작할
+        이유가 없다. 이 순서는 `exportConversion`의 "소유 판정이 먼저"와 다른 자리다 —
+        그쪽은 형식이 이미 유효한 값들 사이의 우선순위였고, 여기는 값을 아직 읽지도
+        못한 단계다.
+
+        **워크스페이스가 삭제되며 `llm_calls.workspace_id`가 `SET NULL`된 행은 이
+        집계 밖이다** — 그 행은 더 이상 어느 워크스페이스에도 속하지 않는다(U1 계획
+        §2 결정 1 「보존 결정의 정정」). 사용자 단위로 그 행까지 모으는 리포트는 이
+        오퍼레이션이 아니라 U3(운영 리포트, `usage-report` 프로필)의 몫이다.
+      responses:
+        '200':
+          description: 집계 결과
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CacheControlNoStore' }
+            X-Content-Type-Options: { $ref: '#/components/headers/XContentTypeOptions' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkspaceUsageResponse' }
+              examples:
+                with_cost:
+                  value:
+                    documents: 12
+                    characters: 18000
+                    credits: 18
+                    llm_calls: 20
+                    input_tokens: 40000
+                    output_tokens: 12000
+                    estimated_cost_usd: "0.184000"
+                    cost_unknown_calls: 0
+                    by_purpose:
+                      - { purpose: convert, llm_calls: 12, input_tokens: 24000, output_tokens: 8000, estimated_cost_usd: "0.112000" }
+                      - { purpose: repair, llm_calls: 8, input_tokens: 16000, output_tokens: 4000, estimated_cost_usd: "0.072000" }
+                cost_unknown:
+                  value:
+                    documents: 1
+                    characters: 500
+                    credits: 1
+                    llm_calls: 1
+                    input_tokens: 800
+                    output_tokens: 200
+                    estimated_cost_usd: null
+                    cost_unknown_calls: 1
+                    by_purpose:
+                      - { purpose: convert, llm_calls: 1, input_tokens: 800, output_tokens: 200, estimated_cost_usd: null }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404':
+          description: 지정한 작업 공간이 없거나 내 것이 아니다 (존재 은닉)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+              examples:
+                workspace_not_found: { value: { detail: "작업 공간을 찾을 수 없습니다" } }
+        '422':
+          description: |
+            네 가지가 이 상태로 나간다.
+              1. `from`·`to` 형식 오류(서비스 층 규칙) → 문자열 detail
+              2. `to`가 `from`보다 앞(서비스 층 규칙) → 문자열 detail
+              3. 구간이 366일 초과(서비스 층 규칙) → 문자열 detail
+              4. **빈 값**(`?from=`처럼 값 자체가 없는 자리, 공백뿐인 값 포함) → **배열**
+                 detail — 이 경우만 스키마 층이다. `from`·`to`는 자유 형식 문자열이라
+                 Spring이 변환에 실패하지 않는 만큼, 값 자체가 없는 자리는
+                 `TypedValueSlotInterceptor`가 다른 타입의 값 자리와 같은 방식으로
+                 거절한다(형식 오류처럼 "값은 있는데 읽을 수 없다"가 아니라 "읽을 값
+                 자체가 없다"는 차이 — `ValidationFailed`의 스키마/서비스 경계 참고).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+              examples:
+                malformed_date: { value: { detail: "from·to는 YYYY-MM-DD 형식이어야 합니다" } }
+                to_before_from: { value: { detail: "to는 from보다 앞일 수 없습니다" } }
+                range_too_wide: { value: { detail: "조회 기간은 366일을 넘을 수 없습니다" } }
+                blank_value:
+                  value:
+                    detail:
+                      - { loc: ["query", "from"], msg: "Input should be a valid string", type: "string_parsing" }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+
+  # ===========================================================================
   # #23 POST /dictionary/lookup — 200 (P0-5 조각 1, 2.11.0 신설)
   # 검수 화면에서 지목한 문자열 하나로 사전 후보를 찾는다. 계획 §3.4.
   # ===========================================================================
@@ -5006,6 +5146,93 @@ components:
           description: '만든 순서. **첫 번째가 기본 작업 공간이다.**'
 
     # ---------------------------------------------------------------------
+    # 워크스페이스 사용량 집계 (2.20.0 신설, U2)
+    # ---------------------------------------------------------------------
+    UsagePurpose:
+      type: string
+      enum: [convert, repair, reconvert]
+      description: |
+        `llm_calls.purpose`(V12, U1)와 같은 값 — 문서 1차 변환·조건부 보정·문단
+        재변환. `LlmCallPurpose.wireName`이 정본이다.
+
+    PurposeUsageItem:
+      type: object
+      required: [purpose, llm_calls, input_tokens, output_tokens, estimated_cost_usd]
+      description: 워크스페이스 집계 안의 목적별 한 줄. `WorkspaceUsageResponse.by_purpose`.
+      properties:
+        purpose: { $ref: '#/components/schemas/UsagePurpose' }
+        llm_calls: { type: integer, minimum: 0 }
+        input_tokens: { type: integer, minimum: 0 }
+        output_tokens: { type: integer, minimum: 0 }
+        estimated_cost_usd:
+          description: |
+            USD 소수를 **문자열**로 싣는다(부동소수 반올림 오차를 피한다 —
+            `x-request-field-constraints`의 금액 필드와 같은 관행). 이 목적으로 알려진
+            비용이 하나도 없으면(전부 단가 미상) `null`이다 — `"0"`이 아니다.
+          anyOf:
+            - { type: string, examples: ["0.112000"] }
+            - { type: 'null' }
+
+    WorkspaceUsageResponse:
+      type: object
+      required:
+        - documents
+        - characters
+        - credits
+        - llm_calls
+        - input_tokens
+        - output_tokens
+        - estimated_cost_usd
+        - cost_unknown_calls
+        - by_purpose
+      description: |
+        `GET /workspaces/{workspace_id}/usage` 응답 — 계획
+        `docs/plans/2026-09-07-usage-ledger-and-report.md` §2 결정 5-6(U2,
+        2026-09-08 리뷰로 `documents`·`characters`·`credits`의 출처를 정정).
+      properties:
+        documents:
+          type: integer
+          minimum: 0
+          description: |
+            그 기간에 **완료된 LLM 호출이 하나라도 있던**(`llm_calls.called_at` 기준,
+            문서 단위로 distinct) 문서 수 — `documents.created_at`(등록 시각) 기준이
+            **아니다**. 등록만 되고 한 번도 변환되지 않은 문서는 비용도 크레딧도 쓰지
+            않았으므로 여기 포함되지 않는다. 문서가 보존 만료·삭제로 없어져도 이 값은
+            바뀌지 않는다 — `llm_calls`가 그 문서의 문자 수 스냅샷을 원장 행 자체에
+            들고 있다(청구 근거가 문서 삭제로 사라지면 안 된다).
+        characters:
+          type: integer
+          minimum: 0
+          description: |
+            위 `documents`가 센 문서들의 `char_count` **스냅샷** 합 — 문서가 지워진
+            뒤에도 원장에 남은 값이라 지금의 `documents` 표를 다시 읽지 않는다.
+        credits:
+          type: integer
+          minimum: 0
+          description: 문서별 `ceil(char_count/1000)`을 각각 올림해 더한 값(합계를 한 번에 올린 값이 아니다). `characters`와 같은 스냅샷 출처를 쓴다.
+        llm_calls:
+          type: integer
+          minimum: 0
+          description: 그 기간에 끝난(`llm_calls.called_at`) 호출 수.
+        input_tokens: { type: integer, minimum: 0 }
+        output_tokens: { type: integer, minimum: 0 }
+        estimated_cost_usd:
+          description: |
+            알려진 비용(`estimated_cost_usd IS NOT NULL`)만 더한 합. 그 기간에 알려진
+            비용이 하나도 없으면 `null`이다(0달러가 아니다 — CLAUDE.md 「미설정은 null」).
+          anyOf:
+            - { type: string, examples: ["0.184000"] }
+            - { type: 'null' }
+        cost_unknown_calls:
+          type: integer
+          minimum: 0
+          description: 단가 미상이라 위 합계에 들어가지 않은 호출 수.
+        by_purpose:
+          type: array
+          items: { $ref: '#/components/schemas/PurposeUsageItem' }
+          description: 목적(purpose)별 소계. 그 기간에 호출이 없던 목적은 목록에 없다(0행을 채우지 않는다).
+
+    # ---------------------------------------------------------------------
     # dictionary (P0-5, 2.11.0)
     # ---------------------------------------------------------------------
     DictionaryLookupRequest:
@@ -5138,6 +5365,66 @@ components:
 # 변경 이력
 # =============================================================================
 x-changelog:
+  - version: "2.20.0"
+    date: "2026-09-07"
+    revision: "USAGE-U2-AGGREGATE"   # 사용량 가시화 U2 — 워크스페이스·기간 집계
+    author: contract-keeper
+    change: |
+      **워크스페이스 사용량 집계 오퍼레이션을 연다.** 정본은
+      `docs/plans/2026-09-07-usage-ledger-and-report.md`§2 결정 5-6 — U1(2.19.0과
+      같은 브랜치 계열에서 병행, `llm_calls` 원장 V12)이 남긴 호출 원장을 워크스페이스·
+      기간으로 묶어 화면·운영 리포트(U3)가 쓸 조회 하나를 연다. 크레딧 **차감**(잔액·
+      거절)은 이 변경 단위 밖이다 — 집계가 먼저 서야 얹을 수 있다(계획 목표 문단).
+
+      ⑴ **오퍼레이션 1종 신설** — `GET /workspaces/{workspace_id}/usage`
+         (`readWorkspaceUsage`, Bearer 필요, 200). 소유자만 조회할 수 있고 아니면
+         404(존재 은닉, 기존 워크스페이스 오퍼레이션과 같은 원칙). 쿼리 `from`·`to`는
+         `YYYY-MM-DD`이고 **포함** 상한이며, 생략하면 `easydoc.usage.zone`(기본
+         `Asia/Seoul`) 기준 이번 달 1일~오늘이다. 형식 오류·`to < from`·366일 초과
+         구간은 422(문자열 detail) — 스키마 제약이 아니라 서비스 층 규칙이라
+         `ValidationFailed`의 문자열 갈래를 쓴다(대표 자리는 `POST /documents`의
+         `workspace_id` 형식 오류와 같은 경계, 2026-08-23 신설 조항). **빈 값**
+         (`?from=`, 공백뿐인 값)은 네 번째 갈래로 배열 detail이다 — 이 오퍼레이션이
+         처음으로 자유 형식(`type: string`, 제약 없음) 쿼리 파라미터를 열어
+         `TypedValueSlotInterceptor`의 문자열 파라미터 제외를 걷어냈다(2026-09-08
+         리뷰 — 그 인터셉터는 강제 변환이 있는 타입만 다뤘는데, 이 파라미터가 처음으로
+         강제 변환 없는 문자열 값 자리를 계약에 들여 「값 자체가 없다」와 「형식이
+         틀렸다」를 가를 필요가 생겼다).
+
+      ⑵ **스키마 3종 신설** — `WorkspaceUsageResponse`(문서·문자·크레딧·호출·토큰·
+         예상 비용·비용 미상 건수·목적별 소계), `PurposeUsageItem`, `UsagePurpose`
+         (`convert`·`repair`·`reconvert` — `llm_calls.purpose`, V12와 같은 값).
+         비용 필드는 **문자열**(부동소수 반올림 오차를 피한다)이고, 알려진 비용이
+         하나도 없으면 `null`이다(0달러가 아니다 — 프로젝트 CLAUDE.md 「미설정은
+         null」).
+
+      ⑶ **`documents`·`characters`·`credits`는 `documents` 표를 참조하지 않는다**
+         (2026-09-08 리뷰 정정, 착수 당일 병합 전 잡힌 문제라 별도 버전을 새로 열지
+         않는다). 최초 설계는 이 셋을 `documents.created_at` 기준으로 그 표에서 직접
+         셌는데, `documents` 행이 보존 만료·계정 삭제로 지워지면 지난달 청구 근거가
+         이 조회에서도 함께 사라진다 — U1이 `llm_calls`를 append-only 원장으로 만든
+         이유와 정면으로 어긋난다. 그래서 셋 다 `llm_calls.document_char_count`(그
+         호출이 속한 문서의 `documents.char_count` 스냅샷, U1도 같은 날 이 열을 더해
+         정정했다)에서 유도한다 — **그 기간에 완료된 LLM 호출이 하나라도 있던 문서만
+         센다**(등록만 되고 변환되지 않은 문서는 비용·크레딧이 없으므로 제외되는 것이
+         맞다).
+
+      ⑷ **`AuthenticatedEndpoints`에 `/workspaces/{workspace_id}/usage` 추가** —
+         `/workspaces/{workspace_id}`가 하위 경로를 덮지 않아 기존 관행대로
+         따로 넣는다(`export`·`feedback`·`reconvert`와 같은 이유).
+
+      ⑸ **엔드포인트 수 28 → 29.**
+    ground: |
+      **G1 — 사용자 요청(2026-09-07).** 「1·2·3 묶음으로 진행, 권고대로 결정」 —
+      계획 §3 슬라이스 U2. 집계 경계(zone 자정, 366일 상한, 비용 미상 처리)는 같은
+      계획 §2 결정 5·4가 이미 확정한 값이고 이 변경 단위는 그 결정을 계약으로 옮긴다.
+      **G4(계약이 사실과 다름)** — ⑶의 정정은 독립 리뷰가 병합 전에 잡은 문제를 이
+      버전 자체에 반영한 것이다(비밀번호 설정·재설정 2.19.0 changelog의 같은 처분).
+    compatibility: |
+      **넓히는 변경이다.** 새 오퍼레이션 1종과 새 스키마 3종뿐이고 기존 오퍼레이션의
+      요청·응답은 바뀌지 않는다. ⑶의 정정은 아직 배포되지 않은 응답의 **의미**만
+      바꾼다 — 필드 이름·타입·필수 여부는 그대로다.
+
   - version: "2.19.0"
     date: "2026-09-06"
     revision: "PASSWORD-SET-RESET"   # backlog §1.4 다음 조각 — 비밀번호 설정·재설정
