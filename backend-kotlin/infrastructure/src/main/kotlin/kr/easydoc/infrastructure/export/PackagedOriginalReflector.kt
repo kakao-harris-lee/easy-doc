@@ -6,11 +6,16 @@ import kr.easydoc.core.document.ReflectionOutcome
 import kr.easydoc.core.document.SourceFormat
 import kr.easydoc.core.easyread.ExportFile
 import kr.easydoc.core.easyread.exportContentLines
+import kr.easydoc.core.segment.SegmentMap
 import kr.easydoc.infrastructure.ingest.ZipBudget
 
 /**
  * 형식별 원본 반영. **판정과 내보내기가 같은 자리 맞춤을 지난다** — 두 팔이 [linesOf] 와
  * [planOf] 를 함께 쓰고, 그 사이에 규칙이 하나도 갈라지지 않는다.
+ *
+ * **`map` 은 이 조각(S6-1)에서 받되 쓰지 않는다** — 계획 §10.3 S6-1 은 core·application 까지만
+ * 닫고, `segment_map` 으로 짝짓는 규칙은 S6-2 가 [planOf] 안으로 들여온다. 받아만 두어도
+ * 계약을 어기지 않는 것은 포트 KDoc(`OriginalStructureReflector`)이 그렇게 정했기 때문이다.
  */
 class PackagedOriginalReflector : OriginalStructureReflector {
     private val docx = DocxOriginalReflector()
@@ -19,12 +24,14 @@ class PackagedOriginalReflector : OriginalStructureReflector {
     override fun outline(
         original: OriginalDocument,
         body: String,
+        map: SegmentMap?,
     ): ReflectionOutcome? = planOf(original, linesOf(body))?.outcome()
 
     override fun reflect(
         original: OriginalDocument,
         title: String,
         body: String,
+        map: SegmentMap?,
     ): ExportFile? {
         val lines = linesOf(body)
         return when (original.format) {

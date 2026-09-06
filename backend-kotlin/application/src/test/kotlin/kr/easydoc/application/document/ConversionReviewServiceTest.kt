@@ -319,6 +319,7 @@ class ConversionReviewServiceTest {
                         maskedItems = FakeMaskedItemReader(),
                         original = OriginalReflection(StoredOriginalReader(originals, cipher), reflector),
                         documents = FakeQueryDocumentRepository(transaction),
+                        segmentMapDerivation = MaskedSegmentMapDerivation(cipher),
                         transaction = transaction,
                     ),
                 transaction = transaction,

@@ -39,7 +39,9 @@ import kr.easydoc.application.document.DocumentStorage
 import kr.easydoc.application.document.DocumentTextExtractor
 import kr.easydoc.application.document.ExportRendering
 import kr.easydoc.application.document.MaskedItemReader
+import kr.easydoc.application.document.MaskedSegmentMapDerivation
 import kr.easydoc.application.document.OriginalReflection
+import kr.easydoc.application.document.SegmentMapDerivation
 import kr.easydoc.application.document.StoredOriginalReader
 import kr.easydoc.application.document.WorkspaceLookup
 import kr.easydoc.application.mail.MailSender
@@ -281,6 +283,13 @@ class AuthSliceBeans {
         cipher: ContentCipher,
     ): DocumentSourceService = DocumentSourceService(documents = documents, cipher = cipher)
 
+    /**
+     * `segment_map` 계산 — 조회·내보내기 슬라이스 빈이 **같은 인스턴스**를 주입받는다(계획
+     * §10.2 결정 1, 제품 조립 `DocumentConfiguration.segmentMapDerivation` 과 같은 모양).
+     */
+    @Bean
+    fun segmentMapDerivation(cipher: ContentCipher): SegmentMapDerivation = MaskedSegmentMapDerivation(cipher = cipher)
+
     /** 조회 유스케이스도 실물이다 — 제품 조립과 같은 모양으로 나눈다. */
     @Suppress("LongParameterList")
     @Bean
@@ -290,6 +299,7 @@ class AuthSliceBeans {
         maskedItems: MaskedItemReader,
         original: OriginalReflection,
         documents: InMemoryDocumentRepository,
+        segmentMapDerivation: SegmentMapDerivation,
         transaction: TransactionRunner,
     ): ConversionQueryService =
         ConversionQueryService(
@@ -298,6 +308,7 @@ class AuthSliceBeans {
             maskedItems = maskedItems,
             original = original,
             documents = documents,
+            segmentMapDerivation = segmentMapDerivation,
             transaction = transaction,
         )
 
@@ -400,12 +411,15 @@ class AuthSliceBeans {
         exporter: DocumentExporter,
     ): ExportRendering = ExportRendering(reflection = reflection, exporter = exporter)
 
+    @Suppress("LongParameterList")
     @Bean
     fun conversionExportService(
         conversions: InMemoryConversionRepository,
         cipher: ContentCipher,
         maskedItems: MaskedItemReader,
         rendering: ExportRendering,
+        documents: InMemoryDocumentRepository,
+        segmentMapDerivation: SegmentMapDerivation,
         transaction: TransactionRunner,
     ): ConversionExportService =
         ConversionExportService(
@@ -413,6 +427,8 @@ class AuthSliceBeans {
             cipher = cipher,
             maskedItems = maskedItems,
             rendering = rendering,
+            documents = documents,
+            segmentMapDerivation = segmentMapDerivation,
             transaction = transaction,
         )
 

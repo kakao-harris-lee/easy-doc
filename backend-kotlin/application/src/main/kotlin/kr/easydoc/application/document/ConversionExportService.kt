@@ -15,6 +15,7 @@ import kr.easydoc.core.privacy.MaskedItem
 import kr.easydoc.core.privacy.ModelDraft
 import kr.easydoc.core.privacy.ReviewedBody
 import kr.easydoc.core.privacy.restoreForExport
+import kr.easydoc.core.segment.SegmentMap
 import java.util.UUID
 
 /**
@@ -25,11 +26,16 @@ import java.util.UUID
  * 유도 규칙을 여기 옮겨 적지 않고 [ExportFormat.ofSource] 하나를 쓴다 — 조회 응답의
  * `export_format` 도 같은 함수를 지나므로(`ConversionQueryService`) 두 자리가 갈릴 수 없다.
  */
+@Suppress("LongParameterList")
 class ConversionExportService(
     private val conversions: ConversionRepository,
     private val cipher: ContentCipher,
     private val maskedItems: MaskedItemReader,
     private val rendering: ExportRendering,
+    /** `segment_map` 을 유도하려고 원문을 읽는 협력자 — 조회와 같은 저장소(계획 §10.2 결정 1). */
+    private val documents: DocumentRepository,
+    /** `segment_map` 계산 — 조회(`ConversionQueryService`)와 **같은 인스턴스**를 쓴다. */
+    private val segmentMapDerivation: SegmentMapDerivation,
     private val transaction: TransactionRunner,
 ) {
     /**
@@ -65,7 +71,7 @@ class ConversionExportService(
                 ?: return rendering.exporter.export(prepared.title, prepared.body, prepared.format)
         // **텍스트 전용 파일로 조용히 대체하지 않는다**(§6.5). 원본을 열 수 없으면 그 사실이
         // 오류로 드러나고, 같은 사유가 조회 응답에서는 `failed` 로 이미 보인다.
-        return rendering.reflection.reflector.reflect(opened, prepared.title, prepared.body)
+        return rendering.reflection.reflector.reflect(opened, prepared.title, prepared.body, prepared.segmentMap)
             ?: throw StorageException(UNREADABLE_ORIGINAL_MESSAGE)
     }
 
@@ -90,20 +96,30 @@ class ConversionExportService(
         // 선택지가 있는 원본(PDF)은 원본을 **읽지 않는다** — 반영이라는 개념 자체가 적용되지
         // 않으므로 굳이 복호화해 열 이유가 없다(§6.5 재결정, `choiceExportPreservation`).
         val reflectOriginal = ExportFormat.choicesFor(stored.result.sourceFormat).isEmpty()
+        // 조회의 판정과 **같은 원본**을 연다. 붙여넣기 문서에는 행이 없어 언제나 `null` 이다.
+        val original =
+            if (!reflectOriginal) {
+                null
+            } else {
+                rendering.reflection.originals.read(ownerId, stored.result.documentId, stored.result.sourceFormat)
+            }
         return PreparedExport(
             title = stored.documentTitle,
             format = format,
             body = restoredBody(draft, reviewed, items),
             reflectOriginal = reflectOriginal,
-            // 조회의 판정과 **같은 원본**을 연다. 붙여넣기 문서에는 행이 없어 언제나 `null` 이다.
-            original =
-                if (!reflectOriginal) {
+            original = original,
+            // 열 원본이 없으면(PDF·붙여넣기·옛 업로드) 지도도 구하지 않는다 — `reflect` 를
+            // 아예 부르지 않는 것과 **같은 조건**이다(`reflectOrAssemble`). 붙여넣기 문서를
+            // 내보낼 때마다 원문을 헛되이 읽지 않으려는 것이다. 본문은 조회와 같은 값
+            // (edited_text ?: easy_text, 복원 전) — 계획 §10.2 결정 1.
+            segmentMap =
+                if (original == null) {
                     null
                 } else {
-                    rendering.reflection.originals.read(
-                        ownerId,
-                        stored.result.documentId,
-                        stored.result.sourceFormat,
+                    segmentMapDerivation.deriveOrNull(
+                        documents.findOwnedSource(ownerId, stored.result.documentId),
+                        reviewed ?: draft,
                     )
                 },
         )
@@ -212,10 +228,12 @@ class ConversionExportService(
          */
         val reflectOriginal: Boolean,
         val original: OriginalDocument?,
+        /** [reflectOriginal] 이 `true` 일 때만 유도한다 — 조회와 같은 값(계획 §10.2 결정 1). */
+        val segmentMap: SegmentMap?,
     ) {
         override fun toString(): String =
             "PreparedExport(제목 ${title.length}자, ${format.extension}, 본문 ${body.length}자, " +
-                "반영 $reflectOriginal, 원본 $original)"
+                "반영 $reflectOriginal, 원본 $original, 지도 $segmentMap)"
     }
 
     private companion object {
