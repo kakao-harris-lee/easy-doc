@@ -234,10 +234,8 @@ class ReconvertUnitContractTest {
             ciphertexts =
                 ConversionCiphertexts(
                     easyText = cipher.encrypt(PlainBody("쉬운 글 초안"), conversionId, EncryptedField.CONVERSION_EASY_TEXT),
-                    maskedItems = null,
                     editedText = null,
                 ),
-            missingPlaceholders = emptyList(),
             model = "fake-model",
             providerName = "fake",
             inputTokens = 0,

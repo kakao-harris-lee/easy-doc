@@ -21,7 +21,6 @@ import java.util.UUID
 class ConversionQueryService(
     private val conversions: ConversionRepository,
     private val cipher: ContentCipher,
-    private val maskedItems: MaskedItemReader,
     private val original: OriginalReflection,
     /** `segment_map` 을 유도하려고 원문을 읽는 협력자 — 계획 §6 S2. */
     private val documents: DocumentRepository,
@@ -92,8 +91,6 @@ class ConversionQueryService(
             // 완료 전 변환에는 피드백을 낼 수 없다(#15 의 409). 행이 있을 수 없으므로
             // 읽어 온 값을 쓰지 않고 여기서도 결과 필드와 함께 비운다.
             feedbackSubmittedAt = null,
-            maskedItems = emptyList(),
-            missingPlaceholders = emptyList(),
             segmentMap = null,
             model = null,
             providerName = null,
@@ -125,11 +122,6 @@ class ConversionQueryService(
             editedText = editedText,
             reviewedAt = stored.reviewedAt,
             feedbackSubmittedAt = stored.feedbackSubmittedAt,
-            maskedItems =
-                open(stored.id, stored.ciphertexts.maskedItems, EncryptedField.CONVERSION_MASKED_ITEMS)
-                    ?.let(maskedItems::decode)
-                    ?: emptyList(),
-            missingPlaceholders = stored.missingPlaceholders,
             segmentMap = segmentMap,
             model = stored.model,
             providerName = stored.providerName,

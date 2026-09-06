@@ -1,16 +1,14 @@
 package kr.easydoc.core.easyread
 
 import kr.easydoc.core.privacy.ModelDraft
-import kr.easydoc.core.privacy.maskText
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
-import java.lang.reflect.Modifier
 
 /** 프롬프트 생성의 성질을 고정한다. 문자열 전문 대조는 `PromptTextSnapshotTest` 가 한다. */
 class PromptsTest {
-    private fun systemPromptOf(text: String): String = buildSystemPrompt(maskText(text).maskedText)
+    private fun systemPromptOf(text: String): String = buildSystemPrompt(text)
 
     /** `[어려운 표현 바꾸기]` 절에 실린 낱말만 뽑는다. */
     private fun listedAlways(prompt: String): List<String> = listedWords(prompt, "[어려운 표현 바꾸기]", "[문맥을 보고 판단할 표현]")
@@ -195,62 +193,37 @@ class PromptsTest {
     @Nested
     @DisplayName("사전 컨텍스트 주입")
     inner class DictionaryContext {
-        private val masked = maskText("금일 서류를 지참하세요.").maskedText
+        private val documentText = "금일 서류를 지참하세요."
         private val fixedIds = DocumentIdGenerator { "0123456789ab" }
         private val context = "[문서 사전]\n- 금일: 오늘"
 
         @Test
         @DisplayName("주지 않으면 기존 사용자 프롬프트와 한 글자도 다르지 않다")
         fun `null 이면 기존 출력이다`() {
-            assertThat(buildUserPrompt(masked, fixedIds, null)).isEqualTo(buildUserPrompt(masked, fixedIds))
+            assertThat(buildUserPrompt(documentText, fixedIds, null)).isEqualTo(buildUserPrompt(documentText, fixedIds))
         }
 
         @Test
         @DisplayName("공백뿐인 컨텍스트는 없는 것으로 본다")
         fun `blank 는 null 과 같다`() {
-            assertThat(buildUserPrompt(masked, fixedIds, "   \n  ")).isEqualTo(buildUserPrompt(masked, fixedIds))
+            assertThat(buildUserPrompt(documentText, fixedIds, "   \n  "))
+                .isEqualTo(buildUserPrompt(documentText, fixedIds))
         }
 
         @Test
         @DisplayName("컨텍스트는 문서 구분자보다 앞에, 빈 줄 하나를 두고 실린다")
         fun `문서보다 앞에 붙인다`() {
-            val prompt = buildUserPrompt(masked, fixedIds, context)
+            val prompt = buildUserPrompt(documentText, fixedIds, context)
 
             assertThat(prompt).startsWith("$context\n\n<$DOCUMENT_TAG_NAME id=\"0123456789ab\">")
-            assertThat(prompt).isEqualTo("$context\n\n" + buildUserPrompt(masked, fixedIds))
+            assertThat(prompt).isEqualTo("$context\n\n" + buildUserPrompt(documentText, fixedIds))
         }
 
         @Test
         @DisplayName("파일에서 읽은 컨텍스트의 앞뒤 공백이 이음매를 흔들지 않는다")
         fun `앞뒤 공백은 이음매를 바꾸지 않는다`() {
-            assertThat(buildUserPrompt(masked, fixedIds, "\n$context\n\n"))
-                .isEqualTo(buildUserPrompt(masked, fixedIds, context))
-        }
-    }
-
-    @Nested
-    @DisplayName("마스킹 선행 강제")
-    inner class MaskingPrecedence {
-        /** 원문 `String` 오버로드가 생기지 않았는지 실행으로 확인한다. */
-        @Test
-        @DisplayName("본문을 받는 함수에 생 String 오버로드가 없다")
-        fun `원문 String 오버로드가 없다`() {
-            val promptsClass = Class.forName("kr.easydoc.core.easyread.PromptsKt")
-            val publicMethods =
-                promptsClass.declaredMethods.filter { Modifier.isPublic(it.modifiers) }
-
-            for (base in listOf("buildSystemPrompt", "buildUserPrompt", "buildRepairPrompt")) {
-                val related = publicMethods.filter { it.name.startsWith(base) }
-                assertThat(related)
-                    .withFailMessage("$base 가 사라졌다 — 테스트가 아무것도 지키지 않는 상태다.")
-                    .isNotEmpty()
-                assertThat(related.map { it.name })
-                    .withFailMessage(
-                        "%s 에 이름이 변형되지 않은 오버로드가 있다 = 인라인 클래스가 아닌 인자를 받는다. " +
-                            "마스킹을 거치지 않은 원문이 LLM 페이로드로 들어가는 경로다.",
-                        base,
-                    ).allMatch { it != base }
-            }
+            assertThat(buildUserPrompt(documentText, fixedIds, "\n$context\n\n"))
+                .isEqualTo(buildUserPrompt(documentText, fixedIds, context))
         }
     }
 

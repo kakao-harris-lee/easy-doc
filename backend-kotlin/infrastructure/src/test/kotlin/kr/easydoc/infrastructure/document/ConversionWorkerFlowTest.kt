@@ -162,7 +162,6 @@ class ConversionWorkerFlowTest {
                     leases = queue,
                     work = work,
                     cipher = cipher,
-                    maskedItems = MaskedItemCodec(),
                 ),
             convert = ConvertDocumentUseCase(provider),
             transaction = transaction,

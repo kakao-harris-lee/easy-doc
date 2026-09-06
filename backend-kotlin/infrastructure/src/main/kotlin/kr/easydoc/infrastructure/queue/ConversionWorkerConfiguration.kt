@@ -15,7 +15,6 @@ import kr.easydoc.application.conversion.DictionaryContextSource
 import kr.easydoc.application.conversion.NoDictionaryContext
 import kr.easydoc.application.conversion.ProcessConversionJob
 import kr.easydoc.application.crypto.ContentCipher
-import kr.easydoc.application.document.MaskedItemWriter
 import kr.easydoc.application.mail.MailSender
 import kr.easydoc.core.exceptions.ConfigurationException
 import kr.easydoc.core.llm.LlmOptions
@@ -143,8 +142,7 @@ class ConversionWorkerConfiguration {
         leases: ConversionJobLeasePort,
         work: ConversionWorkStore,
         cipher: ContentCipher,
-        maskedItems: MaskedItemWriter,
-    ): ConversionWorkerStores = ConversionWorkerStores(leases, work, cipher, maskedItems)
+    ): ConversionWorkerStores = ConversionWorkerStores(leases, work, cipher)
 
     @Bean
     fun conversionNotificationStore(jdbcClient: JdbcClient): ConversionNotificationStore =

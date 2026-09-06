@@ -5,22 +5,17 @@ import kr.easydoc.application.crypto.ContentCipher
 import kr.easydoc.core.crypto.EncryptedContent
 import kr.easydoc.core.crypto.EncryptedField
 import kr.easydoc.core.crypto.PlainBody
-import kr.easydoc.core.document.MaskedItemView
 import kr.easydoc.core.easyread.ExportFile
 import kr.easydoc.core.easyread.ExportFormat
 import kr.easydoc.core.exceptions.ConflictException
 import kr.easydoc.core.exceptions.NotFoundException
 import kr.easydoc.core.exceptions.StorageException
-import kr.easydoc.core.privacy.MaskedItem
-import kr.easydoc.core.privacy.ModelDraft
-import kr.easydoc.core.privacy.ReviewedBody
-import kr.easydoc.core.privacy.restoreForExport
 import kr.easydoc.core.segment.SegmentMap
 import java.util.UUID
 
 /**
- * 변환 결과 내보내기 — 소유 확인·**형식 합의**·완료 여부·자리표시자 복원을 한 자리에서
- * 판정한다. 파일 바이트 조립은 [DocumentExporter] 가 한다.
+ * 변환 결과 내보내기 — 소유 확인·**형식 합의**·완료 여부를 한 자리에서 판정한다. 파일 바이트
+ * 조립은 [DocumentExporter] 가 한다.
  *
  * **형식은 서버가 정한다**(계약 `x-export-format-derivation.enforcement`, `DESIGN.md` §6.5).
  * 유도 규칙을 여기 옮겨 적지 않고 [ExportFormat.ofSource] 하나를 쓴다 — 조회 응답의
@@ -30,7 +25,6 @@ import java.util.UUID
 class ConversionExportService(
     private val conversions: ConversionRepository,
     private val cipher: ContentCipher,
-    private val maskedItems: MaskedItemReader,
     private val rendering: ExportRendering,
     /** `segment_map` 을 유도하려고 원문을 읽는 협력자 — 조회와 같은 저장소(계획 §10.2 결정 1). */
     private val documents: DocumentRepository,
@@ -88,11 +82,6 @@ class ConversionExportService(
         val draft = requireDraft(stored)
         val reviewed =
             open(stored.result.id, stored.result.ciphertexts.editedText, EncryptedField.CONVERSION_EDITED_TEXT)
-        val items =
-            open(stored.result.id, stored.result.ciphertexts.maskedItems, EncryptedField.CONVERSION_MASKED_ITEMS)
-                ?.let(maskedItems::decode)
-                .orEmpty()
-                .map(::toMaskedItem)
         // 선택지가 있는 원본(PDF)은 원본을 **읽지 않는다** — 반영이라는 개념 자체가 적용되지
         // 않으므로 굳이 복호화해 열 이유가 없다(§6.5 재결정, `choiceExportPreservation`).
         val reflectOriginal = ExportFormat.choicesFor(stored.result.sourceFormat).isEmpty()
@@ -106,13 +95,13 @@ class ConversionExportService(
         return PreparedExport(
             title = stored.documentTitle,
             format = format,
-            body = restoredBody(draft, reviewed, items),
+            body = (reviewed ?: draft).value,
             reflectOriginal = reflectOriginal,
             original = original,
             // 열 원본이 없으면(PDF·붙여넣기·옛 업로드) 지도도 구하지 않는다 — `reflect` 를
             // 아예 부르지 않는 것과 **같은 조건**이다(`reflectOrAssemble`). 붙여넣기 문서를
             // 내보낼 때마다 원문을 헛되이 읽지 않으려는 것이다. 본문은 조회와 같은 값
-            // (edited_text ?: easy_text, 복원 전) — 계획 §10.2 결정 1.
+            // (edited_text ?: easy_text) — 계획 §10.2 결정 1.
             segmentMap =
                 if (original == null) {
                     null
@@ -187,32 +176,11 @@ class ConversionExportService(
         open(stored.result.id, stored.result.ciphertexts.easyText, EncryptedField.CONVERSION_EASY_TEXT)
             ?: throw StorageException(UNREADABLE_EXPORT_MESSAGE)
 
-    private fun restoredBody(
-        draft: PlainBody,
-        reviewed: PlainBody?,
-        items: List<MaskedItem>,
-    ): String {
-        // 검수본이 없으면 자리표시자를 복원하지 않는다. 계약 GET export 복원 규칙과 같다.
-        val restoration =
-            restoreForExport(
-                ModelDraft(draft.value),
-                reviewed?.let { ReviewedBody(it.value) },
-                items,
-            )
-        if (reviewed == null && restoration.missing.isNotEmpty()) {
-            throw ConflictException(EXPORT_MISSING_PLACEHOLDERS_MESSAGE)
-        }
-        return restoration.text
-    }
-
     private fun open(
         record: UUID,
         column: EncryptedContent?,
         field: EncryptedField,
     ): PlainBody? = column?.let { cipher.decrypt(it, record, field) }
-
-    private fun toMaskedItem(view: MaskedItemView): MaskedItem =
-        MaskedItem(view.category, view.placeholder, view.original)
 
     private class PreparedExport(
         val title: String,

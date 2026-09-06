@@ -14,8 +14,6 @@ import kr.easydoc.core.exceptions.NotFoundException
 import kr.easydoc.core.exceptions.ReconversionBudgetExhaustedException
 import kr.easydoc.core.exceptions.ReconversionConcurrencyExhaustedException
 import kr.easydoc.core.privacy.CONTENT_MASK
-import kr.easydoc.core.privacy.maskText
-import kr.easydoc.core.segment.maskedUnitOf
 import kr.easydoc.core.segment.splitUnits
 import java.util.UUID
 import java.util.concurrent.Semaphore
@@ -43,10 +41,9 @@ data class ReconvertUnitResult(
  * 몫이고(자동 교체는 어떤 경우에도 없다), 서버는 후보를 만들어 돌려주는 것과 예산을
  * 지키는 것만 한다.
  *
- * **입력은 「문서 전체를 마스킹한 뒤의 n번째 줄」이다** — 단위만 따로 마스킹하면 자리표시자
- * 번호가 저장된 대응표와 어긋난다(`maskedUnitOf` KDoc). `ConvertDocumentUseCase.convertMasked`
- * 가 그 마스킹된 단위를 받아 1차 변환·조건부 보정·채택 판정까지 **자동 변환과 완전히 같은
- * 경로**를 탄다 — 최대 1회 변환 + 1회 조건부 보정.
+ * **입력은 「원본 문서의 n번째 줄」이다** — `splitUnits(sourceText)[sourceUnitIndex]`.
+ * `ConvertDocumentUseCase.convert` 가 그 단위를 받아 1차 변환·조건부 보정·채택 판정까지
+ * **자동 변환과 완전히 같은 경로**를 탄다 — 최대 1회 변환 + 1회 조건부 보정.
  *
  * **예산은 요청이 아니라 LLM 호출 수로 센다.** 호출 전 [ConversionRepository.reserveReconversionCalls]
  * 로 2회를 예약하고(트랜잭션 1), 호출 뒤 실제 사용량만 남기고
@@ -94,9 +91,8 @@ class ReconvertUnitService(
             documents.findOwnedSource(ownerId, stored.documentId)
                 ?: throw NotFoundException(CONVERSION_NOT_FOUND_MESSAGE)
         val sourceText = cipher.decrypt(source.sourceText, source.documentId, EncryptedField.DOCUMENT_SOURCE_TEXT)
-        val fullMasking = maskText(sourceText.value)
-        val maskedUnitCount = splitUnits(fullMasking.maskedText.value).size
-        if (sourceUnitIndex !in 0 until maskedUnitCount) {
+        val sourceUnits = splitUnits(sourceText.value)
+        if (sourceUnitIndex !in sourceUnits.indices) {
             throw InvalidInputException(OUT_OF_RANGE_MESSAGE)
         }
         // 형식만 본다 — 에디터 현재 본문과 실제로 일치하는지는 서버가 판정하지 않는다
@@ -121,10 +117,10 @@ class ReconvertUnitService(
             throw ReconversionConcurrencyExhaustedException(CONCURRENCY_LIMIT_MESSAGE)
         }
         // 외부 호출은 트랜잭션 밖이다 — 장시간 LLM 호출을 DB 트랜잭션 안에서 돌리지 않는다.
-        val unitMasking = maskedUnitOf(fullMasking, sourceUnitIndex)
+        val unit = sourceUnits[sourceUnitIndex]
         val result =
             try {
-                convert.convertMasked(unitMasking)
+                convert.convert(unit)
             } finally {
                 reconversionGate.release()
             }

@@ -25,8 +25,8 @@ data class ConversionView(
     val exportFormat: ExportFormat?,
     /**
      * [exportFormat] 이 `null` 이고 이 원본에 사용자가 고를 수 있는 형식이 있을 때만
-     * 비어 있지 않다([ExportFormat.choicesFor]). 그 밖에는 빈 목록이다 — `null` 이 아니라
-     * `[]` 인 것은 `maskedItems` 와 같은 규칙이다. 오늘 비어 있지 않은 원본은 PDF 하나뿐이다.
+     * 비어 있지 않다([ExportFormat.choicesFor]). 그 밖에는 빈 목록이다. 오늘 비어 있지 않은
+     * 원본은 PDF 하나뿐이다.
      */
     val exportFormatChoices: List<ExportFormat>,
     /** 서식 유지 판정. `null` 은 「유지 불가」가 아니라 **서버가 아직 판정하지 않았다**. */
@@ -42,8 +42,6 @@ data class ConversionView(
      * `ConversionResponse.feedback_submitted_at` 의 설명이 정본이다.
      */
     val feedbackSubmittedAt: Instant?,
-    val maskedItems: List<MaskedItemView>,
-    val missingPlaceholders: List<String>,
     /**
      * 원문-쉬운 글 문단 대응표. **저장하지 않고 매 조회마다 유도한다**
      * (`core/segment/SegmentAlignment.kt` — 계획 §2 결정 2). 완료 전이거나 두 본문 중 하나를
@@ -76,15 +74,13 @@ data class ConversionView(
                 inputTokens,
                 outputTokens,
                 segmentMap,
-            ).any { it != null } ||
-                maskedItems.isNotEmpty() ||
-                missingPlaceholders.isNotEmpty()
+            ).any { it != null }
 
     /**
-     * 로그 허용목록 그대로 — 식별자·상태·실패 코드와 **개수**뿐이다.
+     * 로그 허용목록 그대로 — 식별자·상태·실패 코드뿐이다.
      * 형식은 문서 메타이지 사용자 콘텐츠가 아니라 남긴다(`Document.toString` 과 같은 판단).
      */
     override fun toString(): String =
         "ConversionView($id, ${status.wireName}, ${sourceFormat.wireName}, failure=$failureCode, " +
-            "masked=${maskedItems.size}, missing=${missingPlaceholders.size}, segmentMap=$segmentMap)"
+            "segmentMap=$segmentMap)"
 }

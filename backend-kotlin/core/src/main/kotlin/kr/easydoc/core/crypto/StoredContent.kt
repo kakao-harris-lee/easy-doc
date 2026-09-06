@@ -117,9 +117,6 @@ enum class EncryptedField(val wireName: String) {
     /** AI 초안. `conversions.easy_text_encrypted`. */
     CONVERSION_EASY_TEXT("conversions.easy_text_encrypted"),
 
-    /** 마스킹 대응표. `conversions.masked_items_encrypted`. 자리표시자↔원값 표라 최고 민감도다. */
-    CONVERSION_MASKED_ITEMS("conversions.masked_items_encrypted"),
-
     /** 담당자 검수 수정본. `conversions.edited_text_encrypted` (Alembic 0004). */
     CONVERSION_EDITED_TEXT("conversions.edited_text_encrypted"),
 

@@ -7,19 +7,15 @@ import kr.easydoc.api.support.ContractSpec
 import kr.easydoc.api.support.InMemoryConversionRepository
 import kr.easydoc.api.support.InMemoryUserRepository
 import kr.easydoc.api.support.InMemoryWorkspaceRepository
-import kr.easydoc.api.support.StubMaskedItemReader
 import kr.easydoc.application.crypto.ContentCipher
 import kr.easydoc.application.document.ConversionCiphertexts
 import kr.easydoc.core.crypto.EncryptedField
 import kr.easydoc.core.crypto.PlainBody
 import kr.easydoc.core.document.ConversionStatus
 import kr.easydoc.core.document.ConversionView
-import kr.easydoc.core.document.MaskedItemView
 import kr.easydoc.core.document.SourceFormat
 import kr.easydoc.core.document.noOriginalPreservation
 import kr.easydoc.core.easyread.ExportFormat
-import kr.easydoc.core.privacy.MaskCategory
-import kr.easydoc.core.security.Secret
 import kr.easydoc.core.segment.SegmentConfidence
 import kr.easydoc.core.segment.SegmentMap
 import kr.easydoc.core.segment.SegmentUnit
@@ -97,34 +93,6 @@ class ConversionReadContractTest {
     }
 
     @Test
-    @DisplayName("CR-1 마스킹 항목의 키 집합이 정확히 MaskedItemResponse.required 이고 범주가 계약 enum 안이다 (P-32)")
-    fun `마스킹 항목의 모양이 계약과 같다`() {
-        val owner = newOwner()
-        val conversionId = completedConversion(owner)
-
-        val items = bodyOf(read(owner, conversionId))[MASKED_ITEMS_PROPERTY] as List<*>
-
-        assertThat(items).describedAs("대역이 항목을 심었는데 응답이 비었다").isNotEmpty()
-        val declaredKeys = ContractSpec.schemaRequired(MASKED_ITEM_SCHEMA)
-
-        val declaredCategories = ContractSpec.schemaPropertyEnum(MASKED_ITEM_SCHEMA, CATEGORY_PROPERTY)
-        val placeholderPattern = Regex(ContractSpec.schemaPropertyPattern(MASKED_ITEM_SCHEMA, PLACEHOLDER_PROPERTY))
-
-        items.forEach { raw ->
-            val item = raw as Map<*, *>
-            assertThat(item.keys.map { it.toString() }.toSet())
-                .withFailMessage("마스킹 항목의 키 집합이 계약 %s 와 다르다: %s", MASKED_ITEM_SCHEMA, item.keys)
-                .isEqualTo(declaredKeys)
-            assertThat(item[CATEGORY_PROPERTY].toString())
-                .withFailMessage("범주가 계약 enum %s 밖이다 — 영문 코드가 새면 화면 문구가 갈린다", declaredCategories)
-                .isIn(declaredCategories)
-            assertThat(item[PLACEHOLDER_PROPERTY].toString())
-                .withFailMessage("자리표시자가 계약 pattern 과 맞지 않는다 — 형태가 달라지면 원문 복원이 어긋난다")
-                .matches(placeholderPattern.toPattern())
-        }
-    }
-
-    @Test
     @DisplayName("완료 변환의 segment_map 키 집합이 정확히 SegmentMap.required 이고 단위마다 SegmentMapUnit.required 다 (P0-4 S2)")
     fun `segment_map 모양이 계약과 같다`() {
         val owner = newOwner()
@@ -174,21 +142,6 @@ class ConversionReadContractTest {
             .withFailMessage("키가 생략됐다 — React 가 undefined 를 받아 분기가 갈린다")
             .contains(SEGMENT_MAP_PROPERTY)
         assertThat(response[SEGMENT_MAP_PROPERTY]).isNull()
-    }
-
-    @Test
-    @DisplayName("CR-1 계약 범주 enum 이 `MaskCategory` **전부**를 덮는다 — 원소가 빠지면 여기가 먼저 깨진다 (N-26)")
-    fun `계약 범주 집합이 구현 범주 전부를 덮는다`() {
-        val declared = ContractSpec.schemaPropertyEnum(MASKED_ITEM_SCHEMA, CATEGORY_PROPERTY)
-
-        assertThat(declared)
-            .withFailMessage(
-                "계약 %s.%s 의 enum 이 구현 범주 전부를 덮지 않는다 — 계약 %s / 구현 %s",
-                MASKED_ITEM_SCHEMA,
-                CATEGORY_PROPERTY,
-                declared,
-                MaskCategory.entries.map { it.label },
-            ).containsExactlyInAnyOrderElementsOf(MaskCategory.entries.map { it.label })
     }
 
     @Test
@@ -247,15 +200,12 @@ class ConversionReadContractTest {
         val draft = "매퍼 가드가 막아야 하는 초안"
         val hidden = "900101-1234567"
         val base = beforeDoneView()
-        val item = MaskedItemView(MaskCategory.RRN, PLACEHOLDER, Secret(hidden))
         val carrying =
             mapOf(
                 "easy_text" to base.copy(easyText = PlainBody(draft)),
                 "edited_text" to base.copy(editedText = PlainBody(draft)),
-                "masked_items" to base.copy(maskedItems = listOf(item)),
                 "reviewed_at" to base.copy(reviewedAt = Instant.EPOCH),
                 "feedback_submitted_at" to base.copy(feedbackSubmittedAt = Instant.EPOCH),
-                "missing_placeholders" to base.copy(missingPlaceholders = listOf(PLACEHOLDER)),
                 "segment_map" to
                     base.copy(
                         segmentMap = SegmentMap(1, 1, listOf(SegmentUnit(0, listOf(0), SegmentConfidence.HIGH))),
@@ -305,8 +255,6 @@ class ConversionReadContractTest {
             editedText = null,
             reviewedAt = null,
             feedbackSubmittedAt = null,
-            maskedItems = emptyList(),
-            missingPlaceholders = emptyList(),
             segmentMap = null,
             model = null,
             providerName = null,
@@ -338,28 +286,13 @@ class ConversionReadContractTest {
         }
         val conversionId = UUID.fromString(bodyOf(created)[CONVERSION_ID_PROPERTY].toString())
 
-        val category =
-            MaskCategory.entries.first {
-                it.label in
-                    ContractSpec.schemaPropertyEnum(MASKED_ITEM_SCHEMA, CATEGORY_PROPERTY)
-            }
-        val placeholder = "[[${category.label}1]]"
-        val items = listOf(MaskedItemView(category, placeholder, Secret("실제값")))
-
         conversions.complete(
             conversionId = conversionId,
             ciphertexts =
                 ConversionCiphertexts(
                     easyText = seal("쉬운 글 초안입니다.", conversionId, EncryptedField.CONVERSION_EASY_TEXT),
-                    maskedItems =
-                        seal(
-                            StubMaskedItemReader.encodeForStub(items).value,
-                            conversionId,
-                            EncryptedField.CONVERSION_MASKED_ITEMS,
-                        ),
                     editedText = null,
                 ),
-            missingPlaceholders = emptyList(),
             model = "stub-model",
             providerName = "stub-provider",
             inputTokens = 12,
@@ -449,8 +382,6 @@ class ConversionReadContractTest {
                 "format_preservation",
             )
 
-        const val PLACEHOLDER = "[[주민등록번호1]]"
-
         const val DOCUMENTS_PATH = "/documents"
         const val CONVERSION_ITEM_PATH = "/conversions/{conversion_id}"
         const val GET = "get"
@@ -458,7 +389,6 @@ class ConversionReadContractTest {
         const val UNPROCESSABLE = 422
 
         const val CONVERSION_SCHEMA = "ConversionResponse"
-        const val MASKED_ITEM_SCHEMA = "MaskedItemResponse"
         const val VALIDATION_ITEM_SCHEMA = "ValidationErrorItem"
         const val SEGMENT_MAP_SCHEMA = "SegmentMap"
         const val SEGMENT_MAP_UNIT_SCHEMA = "SegmentMapUnit"
@@ -466,14 +396,11 @@ class ConversionReadContractTest {
 
         const val TEXT_PROPERTY = "text"
         const val CONVERSION_ID_PROPERTY = "conversion_id"
-        const val MASKED_ITEMS_PROPERTY = "masked_items"
         const val REVIEWED_AT_PROPERTY = "reviewed_at"
         const val FEEDBACK_SUBMITTED_AT_PROPERTY = "feedback_submitted_at"
 
         /** 대역이 심는 피드백 제출 시각. 값 자체는 아무래도 좋고 **왕복하는가**만 잰다. */
         val FEEDBACK_SUBMITTED_AT: Instant = Instant.EPOCH.plusSeconds(120)
-        const val CATEGORY_PROPERTY = "category"
-        const val PLACEHOLDER_PROPERTY = "placeholder"
         const val DETAIL = "detail"
         const val SEGMENT_MAP_PROPERTY = "segment_map"
         const val UNITS_PROPERTY = "units"

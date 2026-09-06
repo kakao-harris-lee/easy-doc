@@ -1,7 +1,6 @@
 package kr.easydoc.infrastructure.quality
 
 import kr.easydoc.application.conversion.NoDictionaryContext
-import kr.easydoc.core.privacy.maskText
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
@@ -93,7 +92,7 @@ class GoldenLlmLaneDictionaryTest {
     fun `기본 조립은 실제로 동작한다`() {
         val dictionary = ready(LaneDictionary.plan(env(LaneDictionary.PRODUCT_ENV to "1"), listOf("001")))
 
-        val context = dictionary.contextSource.contextFor(maskText(WITH_TERMS).maskedText)
+        val context = dictionary.contextSource.contextFor(WITH_TERMS)
 
         assertThat(context).isNotNull
         assertThat(context).contains("구비서류")

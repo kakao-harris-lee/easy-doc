@@ -198,9 +198,6 @@
   .review-source {
     @apply bg-secondary;
   }
-  .review-warning {
-    @apply mb-4 rounded-[10px] border border-danger/25 bg-danger-surface px-4 py-3 text-danger;
-  }
   .review-actions {
     @apply my-4 flex flex-wrap gap-2;
   }
@@ -211,22 +208,17 @@
     @apply border border-input bg-card text-foreground hover:bg-secondary;
   }
 
-  .history-table,
-  .masked-table {
+  .history-table {
     @apply w-full border-collapse;
   }
-  .history-table caption,
-  .masked-table caption {
+  .history-table caption {
     @apply py-4 text-left text-sm text-muted-foreground;
   }
   .history-table th,
-  .history-table td,
-  .masked-table th,
-  .masked-table td {
+  .history-table td {
     @apply border-t border-border px-3 py-3 text-left align-middle;
   }
-  .history-table thead th,
-  .masked-table thead th {
+  .history-table thead th {
     @apply bg-background text-sm font-semibold text-muted-foreground;
   }
   .history-table button {

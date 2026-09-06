@@ -55,7 +55,7 @@ class SegmentMapDerivationSharingTest {
         val conversions = FakeConversionRepository(transaction, originals)
         val documents = FakeQueryDocumentRepository(transaction)
         val reflector = FakeOriginalStructureReflector()
-        val derivation = RecordingSegmentMapDerivation(MaskedSegmentMapDerivation(cipher))
+        val derivation = RecordingSegmentMapDerivation(DefaultSegmentMapDerivation(cipher))
 
         val conversionId: UUID = UUID.randomUUID()
         val documentId: UUID = UUID.randomUUID()
@@ -64,7 +64,6 @@ class SegmentMapDerivationSharingTest {
             ConversionQueryService(
                 conversions = conversions,
                 cipher = cipher,
-                maskedItems = FakeMaskedItemReader(),
                 original = OriginalReflection(StoredOriginalReader(originals, cipher), reflector),
                 documents = documents,
                 segmentMapDerivation = derivation,
@@ -75,7 +74,6 @@ class SegmentMapDerivationSharingTest {
             ConversionExportService(
                 conversions = conversions,
                 cipher = cipher,
-                maskedItems = FakeMaskedItemReader(),
                 rendering =
                     ExportRendering(
                         OriginalReflection(StoredOriginalReader(originals, cipher), reflector),
@@ -100,10 +98,9 @@ class SegmentMapDerivationSharingTest {
                     status = ConversionStatus.DONE,
                     sourceFormat = SourceFormat.DOCX,
                     hasStoredOriginal = true,
-                    ciphertexts = ConversionCiphertexts(easyText = easyText, maskedItems = null, editedText = null),
+                    ciphertexts = ConversionCiphertexts(easyText = easyText, editedText = null),
                     reviewedAt = null,
                     feedbackSubmittedAt = null,
-                    missingPlaceholders = emptyList(),
                     model = null,
                     providerName = null,
                     inputTokens = null,
@@ -130,7 +127,7 @@ class SegmentMapDerivationSharingTest {
 
 /**
  * [SegmentMapDerivation] 을 감싸 호출 인자를 기록하는 데코레이터 — [DocumentExporter] 처럼
- * 포트를 새 구현으로 바꾸지 않고 실물([MaskedSegmentMapDerivation])에 위임한다.
+ * 포트를 새 구현으로 바꾸지 않고 실물([DefaultSegmentMapDerivation])에 위임한다.
  *
  * **본문 원문은 기록하지 않는다**(길이만) — 사용자 문서 조각이 시험 실패 메시지·리포트에
  * 그대로 찍히지 않게 하는 저장소 관례다(`FormatPreservation.details`·`PreparedExport.toString`

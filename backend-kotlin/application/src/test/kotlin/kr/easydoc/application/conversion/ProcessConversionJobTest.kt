@@ -2,7 +2,6 @@ package kr.easydoc.application.conversion
 
 import kr.easydoc.application.auth.TransactionRunner
 import kr.easydoc.application.crypto.ContentCipher
-import kr.easydoc.application.document.MaskedItemWriter
 import kr.easydoc.application.mail.EmailAddress
 import kr.easydoc.application.mail.MailDelivery
 import kr.easydoc.application.mail.MailSender
@@ -72,14 +71,14 @@ class ProcessConversionJobTest {
         }
 
         @Test
-        @DisplayName("완료 결과의 본문·대응표는 변환 행 식별자로 봉인한다")
+        @DisplayName("완료 결과의 본문은 변환 행 식별자로 봉인한다")
         fun `결과 결속은 변환 식별자다`() {
             val world = World()
 
             world.jobs.processNext()
 
             val fields = world.cipher.sealed.map { it.third }
-            assertThat(fields).contains(EncryptedField.CONVERSION_EASY_TEXT, EncryptedField.CONVERSION_MASKED_ITEMS)
+            assertThat(fields).contains(EncryptedField.CONVERSION_EASY_TEXT)
             assertThat(world.cipher.sealed.filter { it.third != EncryptedField.DOCUMENT_SOURCE_TEXT })
                 .allMatch { it.second == world.conversionId }
         }
@@ -95,25 +94,6 @@ class ProcessConversionJobTest {
             assertThat(easyText.first)
                 .describedAs("`\\r` 이 남으면 segment_map·문체 판정·재변환이 원문과 어긋난 줄 수를 본다")
                 .isEqualTo("첫 줄\n둘째 줄")
-        }
-    }
-
-    @Nested
-    @DisplayName("마스킹 선행")
-    inner class MaskingFirst {
-        @Test
-        @DisplayName("원문 개인정보는 LlmProvider 프롬프트에 실리지 않는다")
-        fun `마스킹된 본문만 나간다`() {
-            val world = World(source = "신청자 900101-1234567 님께 안내합니다.")
-
-            world.jobs.processNext()
-
-            assertThat(world.provider.calls).isNotEmpty()
-            world.provider.calls.forEach { call ->
-                assertThat(call.prompt.user).doesNotContain("900101-1234567")
-                assertThat(call.prompt.system).doesNotContain("900101-1234567")
-                assertThat(call.prompt.user).contains("[[주민등록번호1]]")
-            }
         }
     }
 
@@ -265,7 +245,6 @@ class ProcessConversionJobTest {
                         leases = leases,
                         work = work,
                         cipher = cipher,
-                        maskedItems = MaskedItemWriter { items -> PlainBody(items.joinToString { it.placeholder }) },
                     ),
                 convert = ConvertDocumentUseCase(this.provider),
                 transaction = transaction,

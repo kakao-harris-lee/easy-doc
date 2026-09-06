@@ -14,7 +14,6 @@ import kr.easydoc.core.document.DocumentListing
 import kr.easydoc.core.document.FALLBACK_TITLE
 import kr.easydoc.core.document.MAX_CONVERTIBLE_CHARS
 import kr.easydoc.core.document.MAX_UPLOAD_BYTES
-import kr.easydoc.core.document.MaskedItemView
 import kr.easydoc.core.document.SourceFormat
 import kr.easydoc.core.exceptions.DocumentExtractionException
 import kr.easydoc.core.exceptions.EmailNotVerifiedException
@@ -22,8 +21,6 @@ import kr.easydoc.core.exceptions.InvalidInputException
 import kr.easydoc.core.exceptions.NotFoundException
 import kr.easydoc.core.exceptions.StorageException
 import kr.easydoc.core.exceptions.UploadTooLargeException
-import kr.easydoc.core.privacy.MaskCategory
-import kr.easydoc.core.security.Secret
 import kr.easydoc.core.user.PasswordHash
 import kr.easydoc.core.user.StoredUser
 import kr.easydoc.core.user.User

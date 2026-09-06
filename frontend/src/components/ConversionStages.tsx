@@ -21,10 +21,9 @@ interface Stage {
   hint: string
 }
 
-/** DESIGN.md §6.3이 요구하는 네 단계. 순서가 곧 사용자가 이해하는 작업 순서다. */
+/** DESIGN.md §6.3이 요구하는 세 단계. 순서가 곧 사용자가 이해하는 작업 순서다. */
 const STAGES: readonly Stage[] = [
   { label: '문서 접수', hint: '문서를 받아 변환 차례에 넣습니다.' },
-  { label: '개인정보 확인', hint: '주민등록번호와 카드번호를 가립니다.' },
   { label: '쉬운 글 변환', hint: '쉬운 문장으로 다시 씁니다.' },
   { label: '검수 준비', hint: '고칠 수 있는 검수 화면을 엽니다.' },
 ]
@@ -38,25 +37,19 @@ const STATE_TEXT: Record<StageState, string> = {
 }
 
 /**
- * 서버 상태 → 네 단계의 표시 상태.
+ * 서버 상태 → 세 단계의 표시 상태.
  *
  * ## 왜 진행률처럼 채우지 않는가 (되돌리지 마라)
  *
  * 서버가 주는 상태는 `pending`·`processing`·`done`·`failed` 넷뿐이다(계약
- * `ConversionStatus`). 워커는 마스킹과 LLM 변환을 **하나의 작업**으로 처리하고 그 안의
- * 어느 지점인지는 응답에 싣지 않는다. 그래서 "개인정보 확인 완료 → 쉬운 글 변환 중"
- * 같은 표시는 서버가 알려준 적 없는 사실을 화면이 지어내는 것이다. 사용자가 그 표시를
- * 믿고 "개인정보는 이미 처리됐구나"라고 판단하면 제품이 거짓말을 한 셈이 된다.
+ * `ConversionStatus`). 그 안의 어느 지점인지는 응답에 싣지 않는다. 그래서 진행률
+ * 막대처럼 앞 단계를 하나씩 채우는 표시는 서버가 알려준 적 없는 사실을 화면이
+ * 지어내는 것이다.
  *
  * 그래서 이 함수가 `done`을 주는 근거는 딱 하나다.
  *
  * - `문서 접수`: 변환 조회가 응답했다는 것은 서버에 이 변환 레코드가 있다는 뜻이므로
  *   접수는 실제로 끝났다. 첫 응답 전(`null`)에는 그것조차 모르므로 `current`에 둔다.
- *
- * `processing`에서 `개인정보 확인`과 `쉬운 글 변환`을 **둘 다** `current`로 두는 것도
- * 같은 이유다. 서버는 "일이 돌고 있다"까지만 알려주고 둘 중 어디인지는 말해주지 않는다.
- * 앞의 것을 `done`으로 찍으면 근거 없는 완료 선언이고, 뒤의 것만 `current`로 찍으면
- * 근거 없는 진행 선언이다. 아는 만큼만 말하려면 둘을 한 덩어리로 두어야 한다.
  *
  * `검수 준비`는 이 화면에서 절대 `done`이 되지 않는다 — `done` 상태가 되는 순간
  * 페이지가 검수 에디터로 바뀌기 때문이다.
@@ -66,13 +59,13 @@ const STATE_TEXT: Record<StageState, string> = {
  */
 function stageStates(status: StageStatus): StageState[] {
   if (status === 'processing') {
-    return ['done', 'current', 'current', 'next']
+    return ['done', 'current', 'next']
   }
   if (status === 'pending') {
-    return ['done', 'next', 'waiting', 'waiting']
+    return ['done', 'next', 'waiting']
   }
   // 첫 응답 전 — 접수됐는지조차 아직 확인하지 못했다.
-  return ['current', 'next', 'waiting', 'waiting']
+  return ['current', 'next', 'waiting']
 }
 
 /** 상태별 표식. 반복 모션은 화면 전체에서 하나만 쓰므로(§12) 여기서는 돌리지 않는다. */

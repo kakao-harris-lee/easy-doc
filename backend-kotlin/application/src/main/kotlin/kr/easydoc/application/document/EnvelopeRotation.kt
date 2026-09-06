@@ -82,27 +82,21 @@ class EnvelopeRotation(
             if (updated) RotationOutcome.ROTATED else RotationOutcome.CONTENDED
         }
 
-    /** `conversions` 한 행을 회전한다. 암호문 세 열을 함께 다시 봉인한다. */
+    /** `conversions` 한 행을 회전한다. 암호문 두 열을 함께 다시 봉인한다. */
     fun rotateConversion(conversionId: UUID): RotationOutcome =
         transaction.inTransaction {
             val envelope = stores.conversions.lockEnvelope(conversionId) ?: return@inTransaction RotationOutcome.MISSING
             if (isCurrent(envelope.scheme, envelope.keyVersion)) return@inTransaction RotationOutcome.ALREADY_CURRENT
 
             val columns = envelope.ciphertexts
-            // 「실패 시 전체 중단」 — 세 열을 **먼저 전부** 연다. 하나라도 열리지 않으면
+            // 「실패 시 전체 중단」 — 두 열을 **먼저 전부** 연다. 하나라도 열리지 않으면
             // 여기서 예외가 나가고 아래 UPDATE 는 아예 불리지 않는다.
             val easyText = columns.easyText?.let { open(it, conversionId, EncryptedField.CONVERSION_EASY_TEXT) }
-            val maskedItems =
-                columns.maskedItems?.let { open(it, conversionId, EncryptedField.CONVERSION_MASKED_ITEMS) }
             val editedText = columns.editedText?.let { open(it, conversionId, EncryptedField.CONVERSION_EDITED_TEXT) }
 
             val resealed =
                 ConversionCiphertexts(
                     easyText = easyText?.let { cipher.encrypt(it, conversionId, EncryptedField.CONVERSION_EASY_TEXT) },
-                    maskedItems =
-                        maskedItems?.let {
-                            cipher.encrypt(it, conversionId, EncryptedField.CONVERSION_MASKED_ITEMS)
-                        },
                     editedText =
                         editedText?.let {
                             cipher.encrypt(it, conversionId, EncryptedField.CONVERSION_EDITED_TEXT)

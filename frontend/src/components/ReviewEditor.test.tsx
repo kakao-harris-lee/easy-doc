@@ -181,16 +181,10 @@ describe('검수 에디터', () => {
     expect(screen.queryByRole('button', { name: '원문 다시 불러오기' })).not.toBeInTheDocument()
   })
 
-  it('AI 초안임을 알리는 배너와 자리표시자 유실 경고를 보여준다', () => {
-    render(
-      <ReviewEditor
-        conversion={conversion({ missing_placeholders: ['[[카드번호1]]'] })}
-        source={sourceFailed()}
-      />,
-    )
+  it('AI 초안임을 알리는 배너를 보여준다', () => {
+    render(<ReviewEditor conversion={conversion()} source={sourceFailed()} />)
 
     expect(screen.getByRole('note')).toHaveTextContent('AI가 만든 초안입니다')
-    expect(screen.getByText(/\[\[카드번호1\]\]가 결과에서 빠졌습니다/)).toBeInTheDocument()
   })
 
   it('수정하면 저장 안 됨이 되고, 저장하면 저장한 시각을 남긴다', async () => {
@@ -496,23 +490,6 @@ describe('검수 에디터', () => {
       vi.unstubAllGlobals()
     },
   )
-
-  it('마스킹 항목이 결과에 남아 있는지 표로 알려준다', async () => {
-    const user = userEvent.setup()
-    render(
-      <ReviewEditor
-        conversion={conversion({ easy_text: '등록번호는 [[주민등록번호1]]이에요.' })}
-        source={sourceFailed()}
-      />,
-    )
-
-    expect(screen.getByRole('row', { name: /주민등록번호1/ })).toHaveTextContent('있음')
-
-    // 검수하다 자리표시자를 지우면 그 사실이 표에 바로 드러나야 한다.
-    await user.clear(screen.getByLabelText('쉬운 글 결과 (고칠 수 있습니다)'))
-
-    expect(screen.getByRole('row', { name: /주민등록번호1/ })).toHaveTextContent('없음')
-  })
 
   describe('좁은 화면', () => {
     it('원문이 있으면 원문·쉬운 글 탭으로 나누고 키보드로 옮길 수 있다', async () => {
@@ -1131,7 +1108,7 @@ describe('저장하고 내려받기', () => {
     vi.mocked(saveReview).mockResolvedValue(
       conversion({ edited_text: '초안. 수정', reviewed_at: '2026-08-07T02:00:00Z' }),
     )
-    vi.mocked(downloadExport).mockRejectedValue(new ApiError(409, '자리표시자가 빠졌습니다'))
+    vi.mocked(downloadExport).mockRejectedValue(new ApiError(409, '아직 완료되지 않았습니다'))
     render(<ReviewEditor conversion={conversion({ easy_text: '초안.' })} source={sourceFailed()} />)
 
     await user.type(screen.getByLabelText('쉬운 글 결과 (고칠 수 있습니다)'), ' 수정')
@@ -1139,7 +1116,7 @@ describe('저장하고 내려받기', () => {
 
     const alert = await screen.findByRole('alert')
     expect(alert).toHaveTextContent('검수 내용은 저장했습니다')
-    expect(alert).toHaveTextContent('자리표시자가 빠졌습니다')
+    expect(alert).toHaveTextContent('아직 완료되지 않았습니다')
     expect(alert).toHaveTextContent('내려받기를 다시 눌러 주세요')
     // 저장은 실제로 끝났다 — 그 사실이 상태 라벨에도 남는다(§9).
     expect(await screen.findByText(/^저장됨 · /)).toBeInTheDocument()

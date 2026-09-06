@@ -5,34 +5,9 @@ import com.fasterxml.jackson.annotation.JsonProperty
 import kr.easydoc.application.conversion.ReconvertUnitResult
 import kr.easydoc.core.document.ConversionView
 import kr.easydoc.core.document.FormatPreservation
-import kr.easydoc.core.document.MaskedItemView
 import kr.easydoc.core.privacy.CONTENT_MASK
 import kr.easydoc.core.segment.SegmentMap
 import kr.easydoc.core.segment.SegmentUnit
-
-/** 마스킹 항목 한 건. 계약 `components/schemas/MaskedItemResponse` — 세 필드가 전부다. */
-data class MaskedItemResponse(
-    @get:JsonProperty("category") val category: String,
-    @get:JsonProperty("placeholder") val placeholder: String,
-    @get:JsonProperty("original") val original: String,
-) {
-    /**
-     * **원값을 찍지 않는다.** 자리표시자는 라벨이라 남긴다 — 계약이
-     * `missing_placeholders` 를 두고 *"라벨뿐이라 개인정보가 아니다"* 라고 적은 것과 같은 판단.
-     */
-    override fun toString(): String =
-        "MaskedItemResponse(category=$category, placeholder=$placeholder, original=$CONTENT_MASK)"
-
-    companion object {
-        fun of(item: MaskedItemView): MaskedItemResponse =
-            MaskedItemResponse(
-                category = item.category.label,
-                placeholder = item.placeholder,
-                // 이 저장소에서 가린 값이 평문 문자열이 되는 **유일한** 호출이다.
-                original = item.original.reveal(),
-            )
-    }
-}
 
 /**
  * PUT 요청 본문. 계약 `ConversionReviewRequest`. **제약을 애너테이션으로 걸지 않는다** —
@@ -51,8 +26,7 @@ data class ConversionReviewRequest
  * 서식 유지 상태 한 건. 계약 `components/schemas/FormatPreservation` — 두 필드가 전부다.
  *
  * **`details` 는 사용자에게 그대로 보여 줄 문구 목록이지 본문이 아니다** — 담을 수 있는
- * 것은 구조 요소의 종류와 개수뿐이라 `toString` 이 가리지 않는다(`missing_placeholders`
- * 가 라벨을 그대로 남기는 것과 같은 판단).
+ * 것은 구조 요소의 종류와 개수뿐이라 `toString` 이 가리지 않는다.
  */
 data class FormatPreservationResponse(
     @get:JsonProperty("status") val status: String,
@@ -117,7 +91,7 @@ data class SegmentMapResponse(
 }
 
 /**
- * `GET`·`PUT /conversions/{conversion_id}` 응답. 계약 `ConversionResponse` — **열아홉 필드가
+ * `GET`·`PUT /conversions/{conversion_id}` 응답. 계약 `ConversionResponse` — **열일곱 필드가
  * 전부다.** 생성자와 `copy()` 가 `private` 인 것은 [of] 의 노출 판정을 우회하는 조립 지점이
  * 생기지 않게 한다.
  *
@@ -145,8 +119,6 @@ data class ConversionResponse private constructor(
     @get:JsonProperty("reviewed_at") val reviewedAt: String?,
     /** 피드백을 마지막으로 제출한 시각. **`reviewed_at` 과 다른 사실이다**(계약 설명이 정본). */
     @get:JsonProperty("feedback_submitted_at") val feedbackSubmittedAt: String?,
-    @get:JsonProperty("masked_items") val maskedItems: List<MaskedItemResponse>,
-    @get:JsonProperty("missing_placeholders") val missingPlaceholders: List<String>,
     /** `null` 은 완료 전이거나 두 본문 중 하나를 읽을 수 없다는 뜻이다(계약 설명이 정본). */
     @get:JsonProperty("segment_map") val segmentMap: SegmentMapResponse?,
     @get:JsonProperty("model") val model: String?,
@@ -155,14 +127,13 @@ data class ConversionResponse private constructor(
     @get:JsonProperty("output_tokens") val outputTokens: Int?,
     @get:JsonProperty("failure_code") val failureCode: String?,
 ) {
-    /** 본문 둘은 표식과 길이만, 마스킹 항목은 **개수만** 남긴다. */
+    /** 본문 둘은 표식과 길이만 남긴다. */
     override fun toString(): String =
         "ConversionResponse(id=$id, documentId=$documentId, status=$status, " +
             "sourceFormat=$sourceFormat, exportFormat=$exportFormat, exportFormatChoices=$exportFormatChoices, " +
             "formatPreservation=$formatPreservation, " +
             "easyText=$CONTENT_MASK ${easyText?.length ?: 0}자, editedText=$CONTENT_MASK ${editedText?.length ?: 0}자, " +
-            "reviewedAt=$reviewedAt, feedbackSubmittedAt=$feedbackSubmittedAt, maskedItems=${maskedItems.size}건, " +
-            "missingPlaceholders=$missingPlaceholders, segmentMap=$segmentMap, " +
+            "reviewedAt=$reviewedAt, feedbackSubmittedAt=$feedbackSubmittedAt, segmentMap=$segmentMap, " +
             "model=$CONTENT_MASK, providerName=$CONTENT_MASK, " +
             "inputTokens=$inputTokens, outputTokens=$outputTokens, failureCode=$failureCode)"
 
@@ -173,7 +144,7 @@ data class ConversionResponse private constructor(
          */
         fun of(view: ConversionView): ConversionResponse {
             require(view.status.exposesResult || !view.carriesResult) {
-                "완료 전 변환에 결과가 실렸다: ${view.status.wireName} masked=${view.maskedItems.size}"
+                "완료 전 변환에 결과가 실렸다: ${view.status.wireName}"
             }
             return ConversionResponse(
                 id = view.id.toString(),
@@ -189,8 +160,6 @@ data class ConversionResponse private constructor(
                 editedText = view.editedText?.value,
                 reviewedAt = view.reviewedAt?.toString(),
                 feedbackSubmittedAt = view.feedbackSubmittedAt?.toString(),
-                maskedItems = view.maskedItems.map(MaskedItemResponse::of),
-                missingPlaceholders = view.missingPlaceholders,
                 segmentMap = view.segmentMap?.let(SegmentMapResponse::of),
                 model = view.model,
                 providerName = view.providerName,

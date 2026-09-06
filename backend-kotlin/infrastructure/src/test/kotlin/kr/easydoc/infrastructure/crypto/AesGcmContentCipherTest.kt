@@ -455,12 +455,12 @@ class AesGcmContentCipherTest {
     fun `표준 AES-256-GCM 으로 열린다`() {
         val cipher = cipherWith(mapOf(3 to KEY_GEN_1), writeKeyVersion = 3)
         val plain = "표준 AEAD 로 열려야 한다"
-        val sealed = cipher.encrypt(PlainBody(plain), RECORD, EncryptedField.CONVERSION_MASKED_ITEMS)
+        val sealed = cipher.encrypt(PlainBody(plain), RECORD, EncryptedField.CONVERSION_EDITED_TEXT)
 
         val opened =
             openWithJca(
                 sealed,
-                aadOf(EncryptionScheme.AES_256_GCM_V1, 3, EncryptedField.CONVERSION_MASKED_ITEMS),
+                aadOf(EncryptionScheme.AES_256_GCM_V1, 3, EncryptedField.CONVERSION_EDITED_TEXT),
             )
 
         assertThat(opened).isEqualTo(plain)

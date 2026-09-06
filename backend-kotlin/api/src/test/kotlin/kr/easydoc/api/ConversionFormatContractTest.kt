@@ -337,8 +337,6 @@ class ConversionFormatContractTest {
             editedText = null,
             reviewedAt = null,
             feedbackSubmittedAt = null,
-            maskedItems = emptyList(),
-            missingPlaceholders = emptyList(),
             segmentMap = null,
             model = "stub-model",
             providerName = "stub-provider",

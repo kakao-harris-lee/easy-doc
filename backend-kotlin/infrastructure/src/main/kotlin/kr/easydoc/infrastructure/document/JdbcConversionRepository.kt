@@ -14,8 +14,6 @@ import kr.easydoc.core.document.SourceFormat
 import kr.easydoc.core.exceptions.StorageException
 import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.jdbc.core.simple.JdbcClient
-import tools.jackson.core.JacksonException
-import tools.jackson.databind.json.JsonMapper
 import java.sql.ResultSet
 import java.time.OffsetDateTime
 import java.util.UUID
@@ -69,12 +67,12 @@ class JdbcConversionRepository(private val jdbc: JdbcClient) : ConversionReposit
             .optional()
             .orElse(null)
 
-    /** 암호문 세 열과 봉투를 읽고 **행을 잠근다**(`FOR NO KEY UPDATE`). */
+    /** 암호문 두 열과 봉투를 읽고 **행을 잠근다**(`FOR NO KEY UPDATE`). */
     override fun lockEnvelope(conversionId: UUID): ConversionEnvelope? =
         jdbc
             .sql(
                 """
-                SELECT id, easy_text_encrypted, masked_items_encrypted, edited_text_encrypted,
+                SELECT id, easy_text_encrypted, edited_text_encrypted,
                        encryption_scheme, key_version
                 FROM conversions WHERE id = :id
                 FOR NO KEY UPDATE
@@ -84,7 +82,7 @@ class JdbcConversionRepository(private val jdbc: JdbcClient) : ConversionReposit
             .optional()
             .orElse(null)
 
-    /** 세 열과 봉투 두 값을 **한 UPDATE 로** 바꾼다. */
+    /** 두 열과 봉투 두 값을 **한 UPDATE 로** 바꾼다. */
     override fun rewriteEnvelope(
         expected: ConversionEnvelope,
         scheme: String,
@@ -96,7 +94,6 @@ class JdbcConversionRepository(private val jdbc: JdbcClient) : ConversionReposit
                 """
                 UPDATE conversions
                 SET easy_text_encrypted = :easyText,
-                    masked_items_encrypted = :maskedItems,
                     edited_text_encrypted = :editedText,
                     encryption_scheme = :scheme,
                     key_version = :keyVersion
@@ -104,11 +101,9 @@ class JdbcConversionRepository(private val jdbc: JdbcClient) : ConversionReposit
                   AND encryption_scheme = :expectedScheme
                   AND key_version = :expectedKeyVersion
                   AND easy_text_encrypted IS NOT DISTINCT FROM CAST(:expectedEasyText AS bytea)
-                  AND masked_items_encrypted IS NOT DISTINCT FROM CAST(:expectedMaskedItems AS bytea)
                   AND edited_text_encrypted IS NOT DISTINCT FROM CAST(:expectedEditedText AS bytea)
                 """.trimIndent(),
             ).param("easyText", ciphertexts.easyText?.bytes)
-            .param("maskedItems", ciphertexts.maskedItems?.bytes)
             .param("editedText", ciphertexts.editedText?.bytes)
             .param("scheme", scheme)
             .param("keyVersion", keyVersion)
@@ -116,7 +111,6 @@ class JdbcConversionRepository(private val jdbc: JdbcClient) : ConversionReposit
             .param("expectedScheme", expected.scheme)
             .param("expectedKeyVersion", expected.keyVersion)
             .param("expectedEasyText", expected.ciphertexts.easyText?.bytes)
-            .param("expectedMaskedItems", expected.ciphertexts.maskedItems?.bytes)
             .param("expectedEditedText", expected.ciphertexts.editedText?.bytes)
             .update() > 0
 
@@ -163,7 +157,6 @@ class JdbcConversionRepository(private val jdbc: JdbcClient) : ConversionReposit
         jdbc
             .sql(SAVE_REVIEW_SQL)
             .param("easyText", updated.ciphertexts.easyText?.bytes)
-            .param("maskedItems", updated.ciphertexts.maskedItems?.bytes)
             .param("editedText", updated.ciphertexts.editedText?.bytes)
             .param("scheme", updated.scheme)
             .param("keyVersion", updated.keyVersion)
@@ -173,7 +166,6 @@ class JdbcConversionRepository(private val jdbc: JdbcClient) : ConversionReposit
             .param("expectedScheme", expected.scheme)
             .param("expectedKeyVersion", expected.keyVersion)
             .param("expectedEasyText", expected.ciphertexts.easyText?.bytes)
-            .param("expectedMaskedItems", expected.ciphertexts.maskedItems?.bytes)
             .param("expectedEditedText", expected.ciphertexts.editedText?.bytes)
             .update() > 0
 
@@ -248,7 +240,7 @@ class JdbcConversionRepository(private val jdbc: JdbcClient) : ConversionReposit
          */
         val LOCK_OWNED_FOR_REVIEW_SQL =
             """
-            SELECT c.id, c.status, c.easy_text_encrypted, c.masked_items_encrypted, c.edited_text_encrypted,
+            SELECT c.id, c.status, c.easy_text_encrypted, c.edited_text_encrypted,
                    c.encryption_scheme, c.key_version
             FROM conversions c
             JOIN documents d ON d.id = c.document_id
@@ -273,7 +265,6 @@ class JdbcConversionRepository(private val jdbc: JdbcClient) : ConversionReposit
             """
             UPDATE conversions
             SET easy_text_encrypted = :easyText,
-                masked_items_encrypted = :maskedItems,
                 edited_text_encrypted = :editedText,
                 encryption_scheme = :scheme,
                 key_version = :keyVersion,
@@ -287,7 +278,6 @@ class JdbcConversionRepository(private val jdbc: JdbcClient) : ConversionReposit
               AND encryption_scheme = :expectedScheme
               AND key_version = :expectedKeyVersion
               AND easy_text_encrypted IS NOT DISTINCT FROM CAST(:expectedEasyText AS bytea)
-              AND masked_items_encrypted IS NOT DISTINCT FROM CAST(:expectedMaskedItems AS bytea)
               AND edited_text_encrypted IS NOT DISTINCT FROM CAST(:expectedEditedText AS bytea)
             """.trimIndent()
 
@@ -311,9 +301,8 @@ class JdbcConversionRepository(private val jdbc: JdbcClient) : ConversionReposit
          * `JdbcExpiredDocumentPurge` 의 `retention_expires_at <= now()` 와 **정확한 여집합**이다
          * (`JdbcDocumentRepository.findOwnedSource` 와 같은 형태). 파기는 매일 03:00 배치 한
          * 번이라(`RetentionPurgeScheduler`) 만료와 파기 사이의 창이 **최대 24시간**이고, 이
-         * 응답은 그 창에서 `masked_items[].original` 로 **가려졌던 실제 주민등록번호·카드번호를
-         * 평문으로** 돌려준다(계약 `MaskedItemResponse`). 노출 크기는 원문 조회보다 작아도
-         * **범주는 같다.**
+         * 응답은 그 창에서 검수 전 초안·검수본을 그대로 돌려준다. 노출 크기는 원문 조회보다
+         * 작아도 **범주는 같다.**
          *
          * 이 질의를 조회와 내보내기가 **함께 쓴다** — 그래서 두 오퍼레이션이 한 술어로 닫힌다.
          * 만료가 「없음」·「타인」과 같은 갈래로 접히는 것도 의도다(존재 은폐).
@@ -329,9 +318,9 @@ class JdbcConversionRepository(private val jdbc: JdbcClient) : ConversionReposit
                    EXISTS (
                        SELECT 1 FROM document_originals o WHERE o.document_id = d.id
                    ) AS has_stored_original,
-                   c.easy_text_encrypted, c.masked_items_encrypted, c.edited_text_encrypted,
+                   c.easy_text_encrypted, c.edited_text_encrypted,
                    c.encryption_scheme, c.key_version,
-                   c.reviewed_at, f.submitted_at AS feedback_submitted_at, c.missing_placeholders,
+                   c.reviewed_at, f.submitted_at AS feedback_submitted_at,
                    c.model, c.provider_name, c.input_tokens, c.output_tokens, c.failure_code
             FROM conversions c
             JOIN documents d ON d.id = c.document_id
@@ -396,9 +385,6 @@ class JdbcConversionRepository(private val jdbc: JdbcClient) : ConversionReposit
 
 /** `conversions` 행 → 도메인 타입 매핑. 접근과 매핑을 가른다. */
 private object ConversionRows {
-    /** `missing_placeholders` 를 읽을 때만 쓴다. 봉인 대상의 코덱과 인스턴스를 공유하지 않는다. */
-    private val json = JsonMapper.builder().build()
-
     fun toConversion(rs: ResultSet): Conversion =
         Conversion(
             id = rs.getObject("id", UUID::class.java),
@@ -424,48 +410,16 @@ private object ConversionRows {
             ciphertexts =
                 ConversionCiphertexts(
                     easyText = sealedOrNull(rs, "easy_text_encrypted", scheme, keyVersion),
-                    maskedItems = sealedOrNull(rs, "masked_items_encrypted", scheme, keyVersion),
                     editedText = sealedOrNull(rs, "edited_text_encrypted", scheme, keyVersion),
                 ),
             reviewedAt = rs.getObject("reviewed_at", OffsetDateTime::class.java)?.toInstant(),
             feedbackSubmittedAt = rs.getObject("feedback_submitted_at", OffsetDateTime::class.java)?.toInstant(),
-            missingPlaceholders = placeholderLabels(rs.getString("missing_placeholders")),
             model = rs.getString("model"),
             providerName = rs.getString("provider_name"),
             inputTokens = rs.getObject("input_tokens", Int::class.javaObjectType),
             outputTokens = rs.getObject("output_tokens", Int::class.javaObjectType),
             failureCode = rs.getString("failure_code"),
         )
-    }
-
-    /** `missing_placeholders` 의 `jsonb` 값을 라벨 목록으로 읽는다. */
-    private fun placeholderLabels(raw: String?): List<String> {
-        if (raw == null) return emptyList()
-        val root =
-            try {
-                json.readTree(raw)
-            } catch (exc: JacksonException) {
-                throw malformedPlaceholders(exc::class.java.simpleName)
-            }
-        // `JsonNode.values()` 를 쓰는 이유는 [MaskedItemCodec.decode] 와 같다 — Jackson 3 의
-        // `JsonNode.map(Function)` 이 Kotlin 의 `Iterable.map` 을 가린다.
-        //
-        // 판정을 **한 자리에 모은다.** 갈래마다 `throw` 를 쓰면 detekt `ThrowsCount` 가 울리고,
-        // 그 규칙이 옳게 가리키는 것은 「실패 경로가 흩어져 있다」다 — 사유 토큰만 다르므로
-        // 하나로 접는 편이 읽기도 낫다.
-        val reason =
-            when {
-                !root.isArray -> "not-an-array"
-                root.values().any { !it.isString } -> "element-not-a-string"
-                else -> null
-            }
-        if (reason != null) throw malformedPlaceholders(reason)
-        return root.values().map { it.stringValue("") }
-    }
-
-    private fun malformedPlaceholders(reason: String): StorageException {
-        DocumentStorageLog.malformedStoredValue(MISSING_PLACEHOLDERS_COLUMN, reason)
-        return StorageException(UNREADABLE_RESULT_MESSAGE)
     }
 
     /** 잠근 행 — 상태와 봉투. */
@@ -482,7 +436,6 @@ private object ConversionRows {
             ciphertexts =
                 ConversionCiphertexts(
                     easyText = sealedOrNull(rs, "easy_text_encrypted", scheme, keyVersion),
-                    maskedItems = sealedOrNull(rs, "masked_items_encrypted", scheme, keyVersion),
                     editedText = sealedOrNull(rs, "edited_text_encrypted", scheme, keyVersion),
                 ),
         )
@@ -495,9 +448,4 @@ private object ConversionRows {
         scheme: String,
         keyVersion: Int,
     ): EncryptedContent? = rs.getBytes(column)?.let { EncryptedContent(it, scheme, keyVersion) }
-
-    private const val MISSING_PLACEHOLDERS_COLUMN = "conversions.missing_placeholders"
-
-    /** 저장된 값이 우리 형식이 아닐 때의 문구. [MaskedItemCodec] 이 쓰는 것과 **같은 문자열**이다. */
-    private const val UNREADABLE_RESULT_MESSAGE = "저장된 변환 결과를 읽을 수 없습니다"
 }

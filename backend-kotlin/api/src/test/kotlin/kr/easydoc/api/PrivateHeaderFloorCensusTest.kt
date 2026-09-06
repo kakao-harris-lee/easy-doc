@@ -356,10 +356,8 @@ class PrivateHeaderFloorCensusTest {
             ciphertexts =
                 ConversionCiphertexts(
                     easyText = cipher.encrypt(PlainBody(SAMPLE_DRAFT), id, EncryptedField.CONVERSION_EASY_TEXT),
-                    maskedItems = null,
                     editedText = null,
                 ),
-            missingPlaceholders = emptyList(),
             model = SAMPLE_MODEL,
             providerName = SAMPLE_PROVIDER,
             inputTokens = SAMPLE_TOKENS,

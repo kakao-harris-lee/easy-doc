@@ -6,6 +6,7 @@ import kr.easydoc.application.document.ConversionEnvelope
 import kr.easydoc.application.document.ConversionFeedbackService
 import kr.easydoc.application.document.ConversionQueryService
 import kr.easydoc.application.document.ConversionRepository
+import kr.easydoc.application.document.DefaultSegmentMapDerivation
 import kr.easydoc.application.document.DocumentService
 import kr.easydoc.application.document.DocumentStorage
 import kr.easydoc.application.document.EnvelopeRotation
@@ -14,7 +15,6 @@ import kr.easydoc.application.document.FeedbackSubmission
 import kr.easydoc.application.document.KeyRotationBatch
 import kr.easydoc.application.document.KeyRotationObserver
 import kr.easydoc.application.document.KeyRotationPolicy
-import kr.easydoc.application.document.MaskedSegmentMapDerivation
 import kr.easydoc.application.document.OriginalReflection
 import kr.easydoc.application.document.SealedStores
 import kr.easydoc.application.document.SegmentMapDerivation
@@ -293,18 +293,15 @@ class KeyRotationBatchTest {
         i: Int,
     ) {
         val draft = cipher.encrypt(PlainBody("초안 $i"), conversionId, EncryptedField.CONVERSION_EASY_TEXT)
-        val masked =
-            cipher.encrypt(MaskedItemCodec().encode(emptyList()), conversionId, EncryptedField.CONVERSION_MASKED_ITEMS)
         jdbc
             .sql(
                 """
                 UPDATE conversions
-                SET status = 'done', easy_text_encrypted = :easyText, masked_items_encrypted = :maskedItems,
+                SET status = 'done', easy_text_encrypted = :easyText,
                     encryption_scheme = :scheme, key_version = :keyVersion
                 WHERE id = :id
                 """.trimIndent(),
             ).param("easyText", draft.bytes)
-            .param("maskedItems", masked.bytes)
             .param("scheme", EncryptionScheme.AES_256_GCM_V1)
             .param("keyVersion", OLD_GENERATION)
             .param("id", conversionId)
@@ -401,14 +398,13 @@ class KeyRotationBatchTest {
                 ConversionQueryService(
                     conversions = JdbcConversionRepository(client),
                     cipher = cipher,
-                    maskedItems = MaskedItemCodec(),
                     original =
                         OriginalReflection(
                             StoredOriginalReader(JdbcDocumentOriginalRepository(client), cipher),
                             PackagedOriginalReflector(),
                         ),
                     documents = JdbcDocumentRepository(client),
-                    segmentMapDerivation = MaskedSegmentMapDerivation(cipher),
+                    segmentMapDerivation = DefaultSegmentMapDerivation(cipher),
                     transaction = runner,
                 ),
             transaction = runner,

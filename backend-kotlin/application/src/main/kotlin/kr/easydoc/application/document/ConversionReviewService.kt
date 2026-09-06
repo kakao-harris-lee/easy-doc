@@ -107,14 +107,12 @@ class ConversionReviewService(
         if (envelope.scheme == cipher.writeScheme && envelope.keyVersion == cipher.writeKeyVersion) {
             return ConversionCiphertexts(
                 easyText = envelope.ciphertexts.easyText,
-                maskedItems = envelope.ciphertexts.maskedItems,
                 editedText = editedSealed,
             )
         }
         val record = envelope.conversionId
         return ConversionCiphertexts(
             easyText = reseal(record, envelope.ciphertexts.easyText, EncryptedField.CONVERSION_EASY_TEXT),
-            maskedItems = reseal(record, envelope.ciphertexts.maskedItems, EncryptedField.CONVERSION_MASKED_ITEMS),
             editedText = editedSealed,
         )
     }

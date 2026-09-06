@@ -4,7 +4,6 @@ import kr.easydoc.application.conversion.NoDictionaryContext
 import kr.easydoc.core.dictionary.TermQuery
 import kr.easydoc.core.exceptions.ConfigurationException
 import kr.easydoc.core.exceptions.RateLimitedException
-import kr.easydoc.core.privacy.maskText
 import kr.easydoc.infrastructure.queue.ConversionWorkerConfiguration
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
@@ -162,7 +161,7 @@ class DictionaryConfigurationTest {
         assertThat(loadCount).isEqualTo(1)
 
         assertThat(termSource.candidatesFor(TermQuery.of("구비서류"))).isNotEmpty()
-        assertThat(contextSource.contextFor(maskText("구비서류를 지참하세요.").maskedText)).isNotNull()
+        assertThat(contextSource.contextFor("구비서류를 지참하세요.")).isNotNull()
         assertThat(loadCount).isEqualTo(1)
     }
 

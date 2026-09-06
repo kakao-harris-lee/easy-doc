@@ -11,9 +11,6 @@ import java.nio.charset.StandardCharsets
 // - **DOCX·HWPX 렌더링**: POI/ZIP 의존이라 `infrastructure` 몫이고 Phase 4다. 이 파일이
 //   `core` 에 있는 조건은 "fixture 파일 하나와 순수 함수만으로 검증 가능한가"이고
 //   (kotlin-spring-conventions §1), zip 컨테이너 조립은 그 조건을 만족하지 않는다.
-// - **자리표시자 복원**: 이미 `privacy/Masking.kt::restoreForExport` 에 있다. 여기 다시
-//   만들지 않는다 — 복원 규칙(정확히 1회일 때만·검수본 없으면 보류)은 마스킹 쪽 결정이고
-//   두 벌로 두면 한쪽만 고쳐지는 날이 온다. 판단 근거는 `restoreForExport` KDoc에 있다.
 
 /** 내보내기 형식. 값이 그대로 확장자다. */
 enum class ExportFormat(

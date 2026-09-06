@@ -241,7 +241,7 @@ class PackagedOriginalReflectorTest {
     }
 
     /**
-     * (I) 앵커(마스킹 자리표시자·사실)가 하나도 없는 문서 — `segment_map` 이 전부 `LOW` 로
+     * (I) 앵커(사실)가 하나도 없는 문서 — `segment_map` 이 전부 `LOW` 로
      * 차례 그대로 짚어도(계획 §10.2 3항 면제 규칙, 2026-09-06 리뷰 F1) `available` 로 남는다.
      * 결론이 차례 짝짓기와 바이트 단위로 같은데 `partial` 로 낮추면 정보가 아니라 상수가 된다.
      */

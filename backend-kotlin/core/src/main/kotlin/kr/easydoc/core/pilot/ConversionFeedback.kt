@@ -25,7 +25,7 @@ import kr.easydoc.core.exceptions.StorageException
 // (`GeneratedToStringProbes.INERT_VALUES` 에 `Int` 가 있어 `carriesText = false` 다) —
 // 아래 둘은 사용자가 고른 척도값이지 사용자 콘텐츠가 아니므로 가릴 것이 없고, 값이 보이는
 // 편이 로그에서 쓸모가 있다. 문자열을 감싸는 래퍼를 이 파일에 더하게 되면 그때는
-// `MaskedText`·`ModelDraft` 처럼 길이만 남기는 재정의가 필요하다.
+// `ModelDraft` 처럼 길이만 남기는 재정의가 필요하다.
 
 /** 검수자가 이 변환 결과를 실제로 쓸 것인가 — 게이트 ① 통과 기준 ①의 판정 대상이다. */
 enum class PublishIntent(val wireName: String) {

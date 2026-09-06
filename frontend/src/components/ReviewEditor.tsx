@@ -789,7 +789,7 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
         announce: true,
       })
     } catch (caught) {
-      // 자리표시자가 빠진 초안은 내려받을 수 없다(409) — 그 사유도 백엔드 문구로 온다.
+      // 내려받기가 막히는 사유는 백엔드 문구로 온다.
       const message =
         needsSave && !saved
           ? `검수 내용을 저장하지 못해 ${name} 파일을 내려받지 않았습니다.${reasonOf(caught)} 고친 내용은 화면에 그대로 있습니다. 다시 시도해 주세요.`
@@ -1002,7 +1002,6 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
             <SourceTextPanel
               source={source}
               textareaId={`${editorId}-source`}
-              failureNote="가린 개인정보는 아래 대응표에서 확인할 수 있습니다."
               units={
                 useSegmentedEditor && source.state.status === 'ready'
                   ? source.state.text.split('\n')
@@ -1124,15 +1123,6 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
           applyDisabled
         />
 
-        {/* 내려받기를 막는 이유는 내려받기 버튼 가까이에 둔다(§6.4). */}
-        {conversion.missing_placeholders.length > 0 && (
-          <p className="review-warning mt-4 mb-0">
-            <strong>주의:</strong> 가린 개인정보 자리표시자{' '}
-            {conversion.missing_placeholders.join(', ')}가 결과에서 빠졌습니다. 해당 내용이 필요하면
-            아래 표를 보고 직접 넣어 주세요. 자리표시자가 빠진 채로는 파일을 내려받을 수 없습니다.
-          </p>
-        )}
-
         {/* §6.5 — 내려받기 버튼을 누르기 직전에 원본 서식이 어떻게 되는지 읽게 한다.
             DOCX·HWPX가 아니면 패널은 스스로 아무것도 그리지 않고, PDF는 내려받기 버튼이
             없는 이유를 대신 말한다. */}
@@ -1210,47 +1200,6 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
           재게 된다. 이 화면은 status가 done일 때만 그려지므로(ConversionPage) 서버가
           409로 막는 조건과 화면이 같다. */}
       <ReviewFeedback conversionId={conversion.id} onSubmitted={setFeedbackSubmittedAt} />
-
-      <section
-        className="overflow-x-auto rounded-[12px] border border-border bg-card p-5"
-        aria-labelledby="masked-heading"
-      >
-        <h2 className="font-bold" id="masked-heading">
-          가린 개인정보
-        </h2>
-        {conversion.masked_items.length === 0 ? (
-          <p className="field-hint">가린 개인정보가 없습니다.</p>
-        ) : (
-          <table className="masked-table">
-            <caption>
-              변환 전에 가린 항목입니다. 결과의 자리표시자를 원래 값으로 바꿔 확인하세요. 내려받는
-              파일에서는 자동으로 원래 값이 들어갑니다.
-            </caption>
-            <thead>
-              <tr>
-                <th scope="col">종류</th>
-                <th scope="col">자리표시자</th>
-                <th scope="col">원래 값</th>
-                <th scope="col">결과에 있는지</th>
-              </tr>
-            </thead>
-            <tbody>
-              {conversion.masked_items.map((item) => (
-                <tr key={item.placeholder}>
-                  <td>{item.category}</td>
-                  <td>
-                    <code>{item.placeholder}</code>
-                  </td>
-                  <td>{item.original}</td>
-                  {/* 지금 고치고 있는 글을 기준으로 본다 — 저장 전 수정으로 자리표시자를
-                      지웠다면 그 자리에서 알아야 한다. */}
-                  <td>{draft.includes(item.placeholder) ? '있음' : '없음'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </section>
     </section>
   )
 }
