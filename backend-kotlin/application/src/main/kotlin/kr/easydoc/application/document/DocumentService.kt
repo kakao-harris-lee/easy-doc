@@ -19,6 +19,7 @@ import kr.easydoc.core.exceptions.InvalidInputException
 import kr.easydoc.core.exceptions.NotFoundException
 import kr.easydoc.core.exceptions.StorageException
 import kr.easydoc.core.exceptions.UploadTooLargeException
+import kr.easydoc.core.text.normalizeLineEndings
 import java.util.UUID
 
 /** 업로드 접수 결과. 계약 `DocumentCreatedResponse` 의 네 필드 그대로다. */
@@ -146,7 +147,12 @@ class DocumentService(
         givenTitle: String?,
         requestedWorkspaceId: () -> UUID?,
     ): AcceptedUpload {
-        val charCount = charCountOf(content.text)
+        // 저장 경계에서 개행을 통일한다 — 붙여넣기·파일 추출 두 팔이 함께 지나는 이 자리
+        // 하나가 CRLF·단독 CR 을 걸러 내는 유일한 곳이다. 이 뒤로 흐르는 길이 판정(20,000자
+        // 상한)과 봉인은 전부 이 정규화된 텍스트를 본다 — `core.segment.splitUnits` 가 `\n`
+        // 만으로 줄을 가르므로, 정규화가 없으면 CRLF 문서의 각 줄 끝에 `\r` 이 남는다.
+        val normalizedText = normalizeLineEndings(content.text)
+        val charCount = charCountOf(normalizedText)
         if (charCount > MAX_CONVERTIBLE_CHARS) throw InvalidInputException(BODY_TOO_LONG_MESSAGE)
 
         // 작업 공간 단계 — 형식(422) 다음 소유권(404). 형식은 여기, 소유권은 트랜잭션 안이다.
@@ -162,7 +168,7 @@ class DocumentService(
         // 열린 트랜잭션 안에서 돌리면 스냅샷과 연결을 그만큼 오래 붙잡는다. UUID 를 먼저
         // 뽑아 두면 결속에 필요한 것이 전부 갖춰지므로 트랜잭션을 열 이유가 없다
         // (프로젝트 `CLAUDE.md` 「장시간 작업을 DB transaction 안에서 실행하지 않는다」).
-        val sealed = cipher.encrypt(PlainBody(content.text), documentId, EncryptedField.DOCUMENT_SOURCE_TEXT)
+        val sealed = cipher.encrypt(PlainBody(normalizedText), documentId, EncryptedField.DOCUMENT_SOURCE_TEXT)
         // 붙여넣기 경로에는 원본이 없다 — `null` 이 그대로 「봉할 것이 없다」다.
         val sealedOriginal =
             content.original?.let {

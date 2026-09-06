@@ -58,3 +58,42 @@ class TextNormalizationTest {
         assertThat(stripControlChars("가\u0000 나\u0007다\u007F라")).isEqualTo("가 나다라")
     }
 }
+
+/**
+ * 저장 경계에서 개행을 `\n` 하나로 통일한다 — `splitUnits`(`\n` 기준 분리)가 `\r` 을 삼키지
+ * 않으므로, CRLF 문서가 저장되면 각 줄 끝에 `\r` 이 남아 문단 대응·문체 판정·화면 지도로
+ * 새 나간다(2026-09-06 PR #51 리뷰에서 발견). `splitUnits`/`joinUnits` 자체는 바꾸지 않는다 —
+ * 그 왕복 불변식(`SourceUnitsTest`)을 지키는 것이 이 함수가 존재하는 이유다.
+ */
+class NormalizeLineEndingsTest {
+    @Test
+    fun `CRLF 를 LF 로 바꾼다`() {
+        assertThat(normalizeLineEndings("a\r\nb")).isEqualTo("a\nb")
+    }
+
+    @Test
+    fun `단독 CR 도 LF 로 바꾼다`() {
+        assertThat(normalizeLineEndings("a\rb")).isEqualTo("a\nb")
+    }
+
+    @Test
+    fun `연속된 CRLF 두 쌍도 모두 바꾼다`() {
+        assertThat(normalizeLineEndings("a\r\n\r\nb")).isEqualTo("a\n\nb")
+    }
+
+    @Test
+    fun `CRLF 하나뿐이어도 바뀐다`() {
+        assertThat(normalizeLineEndings("\r\n")).isEqualTo("\n")
+    }
+
+    @Test
+    fun `CR 이 없는 텍스트는 한 글자도 바뀌지 않는다`() {
+        val text = "이 안내문에는 복귀 문자가 없습니다.\n두 번째 줄입니다."
+        assertThat(normalizeLineEndings(text)).isEqualTo(text)
+    }
+
+    @Test
+    fun `LF 뿐인 텍스트는 그대로다`() {
+        assertThat(normalizeLineEndings("\n")).isEqualTo("\n")
+    }
+}

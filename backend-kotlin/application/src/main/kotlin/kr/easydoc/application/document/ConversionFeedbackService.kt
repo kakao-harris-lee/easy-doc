@@ -166,6 +166,14 @@ class ConversionFeedbackService(
      *
      * 저장 정의역은 [PlainBody] 가 끊는다 — 길이와 **다른 축**이고, 봉인해 저장하는 값이라
      * 검수본과 같은 조항이 걸린다(계약 `x-stored-text-domain`).
+     *
+     * **개행은 여기서 통일하지 않는다** — `DocumentService`·`ConversionReviewService`·
+     * `ProcessConversionJob` 이 개행을 통일하는 이유는 그 세 열이 전부 `EncryptedField
+     * .DOCUMENT_SOURCE_TEXT`·`CONVERSION_EDITED_TEXT`·`CONVERSION_EASY_TEXT` 로
+     * `core.segment.splitUnits`(`\n` 기준 분리)를 지나기 때문이다. 피드백 의견
+     * (`CONVERSION_FEEDBACK_COMMENT`)은 `splitUnits` 로 가는 어떤 경로에도 들어가지
+     * 않는 자유 서술 텍스트라 CRLF 가 남아도 문단 대응·문체 판정·화면 지도가 어긋나지
+     * 않는다 — 그래서 이 자리는 세 곳과 다른 정규화 표면을 의도적으로 유지한다.
      */
     private fun normalizeComment(comment: String?): PlainBody? {
         val stripped = stripControlChars(comment ?: return null)
