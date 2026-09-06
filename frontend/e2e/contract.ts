@@ -166,4 +166,6 @@ export const ROUTES = {
   conversionFeedback: { method: 'PUT', ok: 200 },
   /** 계약 `paths./conversions/{conversion_id}/export.get` — 200 (파일). */
   conversionExport: { method: 'GET', ok: 200 },
+  /** 계약 `paths./dictionary/lookup.post` — 200 (P0-5 조각 1, 2.11.0 신설). */
+  dictionaryLookup: { path: '/dictionary/lookup', method: 'POST', ok: 200 },
 } as const
