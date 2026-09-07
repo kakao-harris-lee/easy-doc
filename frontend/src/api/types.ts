@@ -446,6 +446,57 @@ export interface WorkspaceCreditsResponse {
   transactions: CreditTransaction[]
 }
 
+// --- 세금계산서 요청 기록 (계약 2.24.0) ---
+
+/** `invoice_requests.status`(V16)와 같은 값. 계약 `components/schemas/InvoiceRequestStatus`. */
+export type InvoiceRequestStatus = 'requested' | 'issued' | 'rejected'
+
+/**
+ * `POST /workspaces/{workspace_id}/invoice-requests` 요청 본문. 계약
+ * `components/schemas/InvoiceRequestCreate`.
+ *
+ * `business_number`는 하이픈·공백을 포함해 보내도 된다 — 서버가 숫자만 남겨 정규화하고
+ * 국세청 체크섬을 검증한다.
+ */
+export interface InvoiceRequestCreate {
+  business_number: string
+  company_name: string
+  representative_name?: string | null
+  contact_email: string
+  address?: string | null
+  /** `YYYY-MM-DD`. */
+  period_from: string
+  /** `YYYY-MM-DD`. */
+  period_to: string
+}
+
+/**
+ * `POST`·`GET /workspaces/{workspace_id}/invoice-requests` 응답 항목. 계약
+ * `components/schemas/InvoiceRequestResponse`.
+ */
+export interface InvoiceRequestResponse {
+  id: string
+  workspace_id: string | null
+  business_number: string
+  company_name: string
+  representative_name: string | null
+  contact_email: string
+  address: string | null
+  period_from: string
+  period_to: string
+  status: InvoiceRequestStatus
+  operator_note: string | null
+  /** ISO 8601 문자열. */
+  requested_at: string
+  /** ISO 8601 문자열. 처리 전이면 `null`. */
+  handled_at: string | null
+}
+
+/** `GET /workspaces/{workspace_id}/invoice-requests` 응답. 계약 `components/schemas/InvoiceRequestListResponse`. */
+export interface InvoiceRequestListResponse {
+  items: InvoiceRequestResponse[]
+}
+
 // --- 문단 재변환 (P0-4 S4/S5, 계약 2.14.0) ---
 
 /**
