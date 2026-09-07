@@ -1,6 +1,15 @@
 /** 테스트에서 쓰는 API 응답 만들기. 필요한 필드만 덮어써서 의도를 드러낸다. */
 
 import type {
+  ActiveAnnouncementResponse,
+  AdminConversionItem,
+  AdminErrorItem,
+  AdminErrorsResponse,
+  AdminFailureCount,
+  AdminWorkspaceDetailResponse,
+  AdminWorkspaceListResponse,
+  AdminWorkspaceSummary,
+  AnnouncementResponse,
   ConversionResponse,
   CreditTransaction,
   DocumentListItem,
@@ -27,6 +36,8 @@ export function userResponse(overrides: Partial<UserResponse> = {}): UserRespons
     email_verified: true,
     has_password: true,
     identities: [],
+    // 기본값은 일반 사용자다(2.25.0 신설) — 관리자 화면 테스트만 명시로 참을 덮어쓴다.
+    is_admin: false,
     ...overrides,
   }
 }
@@ -274,4 +285,127 @@ export function sourceFailed(
   retry: () => void = () => undefined,
 ): DocumentSource {
   return { state: { status: 'failed', failure }, retry }
+}
+
+// --- 어드민 최소 (계약 2.25.0) ---
+
+/** `GET /admin/workspaces` 목록 항목. */
+export function adminWorkspaceSummary(
+  overrides: Partial<AdminWorkspaceSummary> = {},
+): AdminWorkspaceSummary {
+  return {
+    workspace_id: 'w1',
+    name: '기본 작업 공간',
+    owner_email: 'owner@example.test',
+    created_at: '2026-08-01T00:00:00Z',
+    credit_balance: 10,
+    credit_reserved: 3,
+    credit_available: 7,
+    month_documents: 2,
+    month_credits: 4,
+    month_cost_usd: '0.001000',
+    ...overrides,
+  }
+}
+
+/** `AdminWorkspaceDetailResponse.recent_conversions` 항목. */
+export function adminConversionItem(
+  overrides: Partial<AdminConversionItem> = {},
+): AdminConversionItem {
+  return {
+    id: 'c1',
+    title: '재난지원금 안내',
+    status: 'done',
+    failure_code: null,
+    created_at: '2026-09-01T00:00:00Z',
+    ...overrides,
+  }
+}
+
+/** `GET /admin/workspaces/{id}` 응답. */
+export function adminWorkspaceDetail(
+  overrides: Partial<AdminWorkspaceDetailResponse> = {},
+): AdminWorkspaceDetailResponse {
+  return {
+    summary: adminWorkspaceSummary(),
+    transactions: [creditTransaction()],
+    invoice_requests: [invoiceRequest()],
+    recent_conversions: [adminConversionItem()],
+    ...overrides,
+  }
+}
+
+/** `GET /admin/workspaces` 응답. */
+export function adminWorkspaceListResponse(
+  overrides: Partial<AdminWorkspaceListResponse> = {},
+): AdminWorkspaceListResponse {
+  const items = overrides.items ?? [adminWorkspaceSummary()]
+  return {
+    items,
+    page: 1,
+    size: 20,
+    total: items.length,
+    ...overrides,
+  }
+}
+
+/** `GET /admin/errors`의 코드별 건수 항목. */
+export function adminFailureCount(overrides: Partial<AdminFailureCount> = {}): AdminFailureCount {
+  return {
+    failure_code: 'llm_error',
+    count: 3,
+    ...overrides,
+  }
+}
+
+/** `GET /admin/errors`의 최근 목록 항목. */
+export function adminErrorItem(overrides: Partial<AdminErrorItem> = {}): AdminErrorItem {
+  return {
+    id: 'c1',
+    workspace_id: 'w1',
+    created_at: '2026-09-01T00:00:00Z',
+    failure_code: 'llm_error',
+    ...overrides,
+  }
+}
+
+/** `GET /admin/errors` 응답. */
+export function adminErrorsResponse(
+  overrides: Partial<AdminErrorsResponse> = {},
+): AdminErrorsResponse {
+  return {
+    counts: [adminFailureCount()],
+    recent: [adminErrorItem()],
+    ...overrides,
+  }
+}
+
+// `GET /admin/usage`(JSON 사용량 리포트)는 A2 화면 범위 밖이라 그 팩토리도 두지
+// 않는다 — `api/admin.ts`의 같은 결정 참고.
+
+/** `GET`·`POST /admin/announcements`·`PATCH /admin/announcements/{id}` 응답 한 건. */
+export function announcementResponse(
+  overrides: Partial<AnnouncementResponse> = {},
+): AnnouncementResponse {
+  return {
+    id: 'a1',
+    body: '9월 정기 점검 안내입니다.',
+    active: true,
+    created_by: 'u1',
+    created_at: '2026-09-01T00:00:00Z',
+    updated_at: '2026-09-01T00:00:00Z',
+    ...overrides,
+  }
+}
+
+/** `GET /announcements/active` 응답 항목. */
+export function activeAnnouncement(
+  overrides: Partial<ActiveAnnouncementResponse> = {},
+): ActiveAnnouncementResponse {
+  return {
+    id: 'a1',
+    body: '9월 정기 점검 안내입니다.',
+    created_at: '2026-09-01T00:00:00Z',
+    ...overrides,
+  }
 }

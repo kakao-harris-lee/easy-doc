@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import type { ChangeEvent, FormEvent, RefObject } from 'react'
 import {
+  AlertTriangle,
   ArrowRight,
   CircleCheck,
   FileCheck2,
@@ -225,6 +226,11 @@ export function UploadPage() {
   // 실제로 지켜지는 이유이지, 여기서 따로 지우는 처리를 하지 않아도 된다).
   const [homeNotice] = useState<string | null>(
     () => (location.state as HomeNoticeState | null)?.notice ?? null,
+  )
+  // 배너 색 — 생략하면 성공(기존 기본값과 같다). `RequireAdmin`이 돌려보낼 때는
+  // 'warning'을 싣는다(거절 안내에 초록 체크 배지를 쓰면 안 된다).
+  const [homeNoticeTone] = useState<'success' | 'warning'>(
+    () => (location.state as HomeNoticeState | null)?.noticeTone ?? 'success',
   )
   // 지금 고른 작업 공간에 담는다. 아직 목록을 못 받았으면(null) 서버가 기본 작업
   // 공간에 담는다 — 업로드를 막는 대신 늘 갈 곳이 있게 한다.
@@ -550,15 +556,24 @@ export function UploadPage() {
 
       {/* 구글 계정 연결 성공 등, 다른 화면이 넘겨준 한 번짜리 안내(§9 — 상태를
       토스트로 흘려보내지 않고 화면에 남긴다). */}
-      {homeNotice !== null && (
-        <p
-          className="mb-6 flex items-center gap-2 rounded-[10px] border border-success/25 bg-success-surface px-4 py-3 font-semibold text-success"
-          role="status"
-        >
-          <CircleCheck className="size-5 shrink-0" aria-hidden="true" />
-          {homeNotice}
-        </p>
-      )}
+      {homeNotice !== null &&
+        (homeNoticeTone === 'warning' ? (
+          <p
+            className="mb-6 flex items-center gap-2 rounded-[10px] border border-warning/25 bg-warning-surface px-4 py-3 font-semibold text-warning"
+            role="status"
+          >
+            <AlertTriangle className="size-5 shrink-0" aria-hidden="true" />
+            {homeNotice}
+          </p>
+        ) : (
+          <p
+            className="mb-6 flex items-center gap-2 rounded-[10px] border border-success/25 bg-success-surface px-4 py-3 font-semibold text-success"
+            role="status"
+          >
+            <CircleCheck className="size-5 shrink-0" aria-hidden="true" />
+            {homeNotice}
+          </p>
+        ))}
 
       {/* 이메일 미인증 안내 — 막지 않는다(§비차단 배너). 입력은 그대로 할 수 있고,
       실제로 막는 판단은 서버(403)가 한다. 이 자리는 폼보다 앞이라 제출 전에 먼저

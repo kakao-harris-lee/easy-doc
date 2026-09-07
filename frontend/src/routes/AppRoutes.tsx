@@ -1,5 +1,6 @@
 import { Route, Routes } from 'react-router-dom'
 
+import { AdminPage } from '../pages/AdminPage'
 import { ConversionPage } from '../pages/ConversionPage'
 import { EmailVerificationPage } from '../pages/EmailVerificationPage'
 import { HistoryPage } from '../pages/HistoryPage'
@@ -11,8 +12,10 @@ import { ResetPasswordPage } from '../pages/ResetPasswordPage'
 import { SignupPage } from '../pages/SignupPage'
 import { UploadPage } from '../pages/UploadPage'
 import { UsagePage } from '../pages/UsagePage'
+import { RequireAdmin } from './RequireAdmin'
 import { RequireAuth } from './RequireAuth'
 import {
+  ADMIN_PATH,
   CONVERSION_PATH,
   EMAIL_VERIFICATION_PATH,
   HISTORY_PATH,
@@ -78,6 +81,16 @@ export function AppRoutes() {
         element={
           <RequireAuth>
             <UsagePage />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path={ADMIN_PATH}
+        element={
+          <RequireAuth>
+            <RequireAdmin>
+              <AdminPage />
+            </RequireAdmin>
           </RequireAuth>
         }
       />

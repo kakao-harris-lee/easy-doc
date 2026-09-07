@@ -75,6 +75,14 @@ export interface UserResponse {
    * 화면이 그 버튼을 미리 비활성화하는 재료다.
    */
   has_password: boolean
+  /**
+   * 관리자인지(2.25.0 신설, 어드민 최소 계획 `docs/plans/2026-09-07-admin-minimum.md` §2
+   * 결정 1) — `users.is_admin`. 화면이 계정 메뉴에 「관리」 링크를 보여줄지 판단하는
+   * 표시값일 뿐이다 — 실제 관리자 API 접근은 매 요청 DB를 다시 읽는 `AdminGuard`가
+   * 판정한다(이 값이 참이어도 이메일이 미검증이면 관리자 API는 403이다). 부여·회수는
+   * `admin-grant --email=<이메일> [--revoke]` 운영 프로필뿐이다 — 이 API로는 바꿀 수 없다.
+   */
+  is_admin: boolean
 }
 
 /** `UserResponse.identities`의 항목 하나. 계약 `components/schemas/UserIdentityResponse`. */
@@ -642,4 +650,207 @@ export interface DictionaryLookupResponse {
   query: string
   candidates: DictionaryLookupCandidate[]
   dictionary: DictionaryAttribution
+}
+
+// --- 어드민 최소 (계약 2.25.0, docs/plans/2026-09-07-admin-minimum.md §2) ---
+
+/**
+ * `GET /admin/workspaces`(목록 항목)·`GET /admin/workspaces/{workspace_id}`(상세의
+ * `summary`) 공용. 계약 `components/schemas/AdminWorkspaceSummary`.
+ */
+export interface AdminWorkspaceSummary {
+  workspace_id: string
+  name: string
+  owner_email: string
+  /** ISO 8601 문자열. */
+  created_at: string
+  /** 부여 합계 − 소비 합계. 집행이 꺼진 상태에서는 음수일 수 있다. */
+  credit_balance: number
+  credit_reserved: number
+  /** `credit_balance − credit_reserved`. 음수일 수 있다. */
+  credit_available: number
+  /** 이번 달(자연월) 사용량 — `readWorkspaceUsage`의 기본 기간(이번 달 1일~오늘)과 같다. */
+  month_documents: number
+  month_credits: number
+  /** `BigDecimal`을 문자열로 싣는다. 비용을 알 수 없는 호출만 있으면 `null`. */
+  month_cost_usd: string | null
+}
+
+/** `GET /admin/workspaces` 응답. 계약 `components/schemas/AdminWorkspaceListResponse`. */
+export interface AdminWorkspaceListResponse {
+  items: AdminWorkspaceSummary[]
+  page: number
+  size: number
+  /** 검색 조건에 맞는 전체 워크스페이스 수(페이지와 무관). */
+  total: number
+}
+
+/**
+ * `AdminWorkspaceDetailResponse.recent_conversions` 항목. 계약
+ * `components/schemas/AdminConversionItem`. **본문·프롬프트는 어디에도 없다.**
+ */
+export interface AdminConversionItem {
+  id: string
+  title: string
+  status: ConversionStatus
+  failure_code: string | null
+  /** ISO 8601 문자열. */
+  created_at: string
+}
+
+/**
+ * `GET /admin/workspaces/{workspace_id}` 응답. 계약
+ * `components/schemas/AdminWorkspaceDetailResponse`.
+ */
+export interface AdminWorkspaceDetailResponse {
+  summary: AdminWorkspaceSummary
+  /** 최근 거래 최신순 50건 — `readWorkspaceCredits.transactions`와 같은 모양. */
+  transactions: CreditTransaction[]
+  /** 그 워크스페이스의 세금계산서 요청 최근 50건, 최신순. */
+  invoice_requests: InvoiceRequestResponse[]
+  /** 최근 변환 20건, 최신순. */
+  recent_conversions: AdminConversionItem[]
+}
+
+/**
+ * 워크스페이스 크레딧 수동 조정 사유. `credit-grant` CLI가 받는 사유 셋과 같다 —
+ * 가입 보너스·문서 변환 전용 사유는 화면에서 만들 수 없다.
+ */
+export type AdminCreditAdjustmentReason = 'plan_monthly' | 'manual' | 'refund'
+
+/**
+ * `POST /admin/workspaces/{workspace_id}/credits` 요청 본문. 계약
+ * `components/schemas/AdminCreditAdjustmentRequest`.
+ */
+export interface AdminCreditAdjustmentRequest {
+  /** 0이 될 수 없다. 0 이상이면 부여(grant), 음수면 조정(adjust). */
+  credits: number
+  reason: AdminCreditAdjustmentReason
+  /** 선택, 200자 이내(`credit_transactions.note` 상한과 같다) — 초과는 422. */
+  note?: string | null
+}
+
+/**
+ * `GET /admin/invoice-requests` 응답. 계약
+ * `components/schemas/AdminInvoiceRequestListResponse`.
+ */
+export interface AdminInvoiceRequestListResponse {
+  items: InvoiceRequestResponse[]
+  page: number
+  size: number
+  total: number
+}
+
+/**
+ * `POST /admin/invoice-requests/{id}/handle` 요청 본문 — `invoice-handle` CLI의
+ * `--status`·`--note`와 같은 필드. 계약 `components/schemas/AdminInvoiceRequestHandleRequest`.
+ */
+export interface AdminInvoiceRequestHandleRequest {
+  status: 'issued' | 'rejected'
+  /** 선택, 500자 이하 — `InvoiceRequestResponse.operator_note`와 같은 상한. */
+  note?: string | null
+}
+
+/** `GET /admin/errors`의 코드별 건수 항목. 계약 `components/schemas/AdminFailureCount`. */
+export interface AdminFailureCount {
+  failure_code: string
+  count: number
+}
+
+/**
+ * `GET /admin/errors`의 최근 목록 항목. 계약 `components/schemas/AdminErrorItem`.
+ * **본문·프롬프트는 어디에도 없다.**
+ */
+export interface AdminErrorItem {
+  id: string
+  workspace_id: string
+  /** ISO 8601 문자열. */
+  created_at: string
+  failure_code: string
+}
+
+/** `GET /admin/errors` 응답. 계약 `components/schemas/AdminErrorsResponse`. */
+export interface AdminErrorsResponse {
+  counts: AdminFailureCount[]
+  /** 최근 50건, 최신순. */
+  recent: AdminErrorItem[]
+}
+
+/** `usage-report`(U3) CSV 행과 같은 값. 계약 `components/schemas/AdminUsageRow`. */
+export interface AdminUsageRow {
+  user_id: string
+  owner_email: string
+  /** 워크스페이스가 나중에 삭제됐으면 `null`(요청 이력은 보존한다). */
+  workspace_id: string | null
+  workspace_name: string | null
+  documents: number
+  characters: number
+  credits: number
+  llm_calls: number
+  input_tokens: number
+  output_tokens: number
+  estimated_cost_usd: string | null
+  cost_unknown_calls: number
+}
+
+/** `GET /admin/usage` 응답. 계약 `components/schemas/AdminUsageResponse`. */
+export interface AdminUsageResponse {
+  rows: AdminUsageRow[]
+  /** `YYYY-MM-DD`. */
+  from: string
+  /** `YYYY-MM-DD`. */
+  to: string
+}
+
+/** `POST /admin/announcements` 요청 본문. 계약 `components/schemas/AnnouncementCreateRequest`. */
+export interface AnnouncementCreateRequest {
+  /** 제어문자를 걷어내고 앞뒤 공백을 턴 뒤 500자 이하 — 비어 있으면 422. */
+  body: string
+}
+
+/**
+ * `PATCH /admin/announcements/{id}` 요청 본문 — 둘 다 선택, 준 필드만 바꾼다. 명시적
+ * `null`은 생략과 같다. 계약 `components/schemas/AnnouncementUpdateRequest`.
+ */
+export interface AnnouncementUpdateRequest {
+  body?: string | null
+  active?: boolean | null
+}
+
+/**
+ * `GET`·`POST /admin/announcements`·`PATCH /admin/announcements/{id}` 응답 한 건. 계약
+ * `components/schemas/AnnouncementResponse`.
+ */
+export interface AnnouncementResponse {
+  id: string
+  body: string
+  active: boolean
+  created_by: string
+  /** ISO 8601 문자열. */
+  created_at: string
+  /** ISO 8601 문자열. */
+  updated_at: string
+}
+
+/** `GET /admin/announcements` 응답. 계약 `components/schemas/AnnouncementListResponse`. */
+export interface AnnouncementListResponse {
+  /** 활성·비활성 전부, 최신순. */
+  items: AnnouncementResponse[]
+}
+
+/**
+ * `GET /announcements/active` 응답 항목 — 사용자 화면 배너용, 관리자 필드(작성자 등)
+ * 없음. 계약 `components/schemas/ActiveAnnouncementResponse`.
+ */
+export interface ActiveAnnouncementResponse {
+  id: string
+  body: string
+  /** ISO 8601 문자열. */
+  created_at: string
+}
+
+/** `GET /announcements/active` 응답. 계약 `components/schemas/ActiveAnnouncementListResponse`. */
+export interface ActiveAnnouncementListResponse {
+  /** 활성 공지 최신순 최대 5건. */
+  items: ActiveAnnouncementResponse[]
 }

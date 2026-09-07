@@ -153,6 +153,11 @@ export const ROUTES = {
    * `path`를 두지 않는다. 부르는 쪽이 실제 workspace id로 전체 경로를 조립한다.
    */
   readWorkspaceCredits: { method: 'GET', ok: 200 },
+  /**
+   * 계약 `paths./announcements/active.get` — 200 (어드민 계획 §2.5, 2.25.0 신설).
+   * 공지 배너가 인증 세션당 한 번 조회한다.
+   */
+  activeAnnouncements: { method: 'GET', path: '/announcements/active', ok: 200 },
   /** 계약 `components/responses/Unauthorized` — 401. */
   unauthorized: 401,
   /** 계약 `components/responses/ValidationFailed` — 422. */

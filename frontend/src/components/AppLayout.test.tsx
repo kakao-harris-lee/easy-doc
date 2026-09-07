@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { oauthLinkStart } from '../api/auth'
 import { ApiError } from '../api/client'
+import { listActiveAnnouncements } from '../api/announcements'
 import { AuthContext } from '../auth/context'
 import type { AuthContextValue } from '../auth/context'
 import { setUnsavedChanges } from '../review/unsavedChanges'
@@ -19,6 +20,12 @@ vi.mock('../api/auth', () => ({
   oauthLinkStart: vi.fn(),
 }))
 
+// 인증된 사용자로 그릴 때마다 AppLayout이 활성 공지를 조회한다 — 이 파일의 관심사가
+// 아니지만 모킹하지 않으면 진짜 요청이 나간다(test/setup.ts).
+vi.mock('../api/announcements', () => ({
+  listActiveAnnouncements: vi.fn(),
+}))
+
 /** 지금 주소를 화면에 적는다 — 가드가 이동을 막았는지 렌더 결과로 확인한다. */
 function LocationProbe() {
   return <p data-testid="location">{useLocation().pathname}</p>
@@ -27,7 +34,14 @@ function LocationProbe() {
 function authValue(overrides: Partial<AuthContextValue> = {}): AuthContextValue {
   return {
     status: 'authenticated',
-    user: { id: 'u1', email: EMAIL, email_verified: true, has_password: true, identities: [] },
+    user: {
+      id: 'u1',
+      email: EMAIL,
+      email_verified: true,
+      has_password: true,
+      identities: [],
+      is_admin: false,
+    },
     signIn: () => Promise.resolve(),
     signUp: () => Promise.resolve(),
     signInWithSocialProvider: () =>
@@ -37,6 +51,7 @@ function authValue(overrides: Partial<AuthContextValue> = {}): AuthContextValue 
         email_verified: true,
         has_password: true,
         identities: [],
+        is_admin: false,
       }),
     completePasswordReset: () => Promise.resolve(),
     signOut: () => undefined,
@@ -66,6 +81,7 @@ function renderLayout(auth: Partial<AuthContextValue> = {}, initialPath = '/') {
 beforeEach(() => {
   window.sessionStorage.clear()
   vi.mocked(oauthLinkStart).mockReset()
+  vi.mocked(listActiveAnnouncements).mockReset().mockResolvedValue({ items: [] })
 })
 
 afterEach(() => {
@@ -137,11 +153,128 @@ describe('계정 메뉴', () => {
   })
 })
 
+describe('계정 메뉴 — 관리 링크 (어드민 최소, 계약 2.25.0)', () => {
+  it('관리자가 아니면 「관리」 링크를 보여주지 않는다', async () => {
+    const user = userEvent.setup()
+    renderLayout({
+      user: {
+        id: 'u1',
+        email: EMAIL,
+        email_verified: true,
+        has_password: true,
+        identities: [],
+        is_admin: false,
+      },
+    })
+
+    await user.click(screen.getByRole('button', { name: '계정 메뉴' }))
+
+    expect(screen.queryByRole('link', { name: '관리' })).not.toBeInTheDocument()
+  })
+
+  it('관리자면 「관리」 링크가 /admin으로 간다', async () => {
+    const user = userEvent.setup()
+    renderLayout({
+      user: {
+        id: 'u1',
+        email: EMAIL,
+        email_verified: true,
+        has_password: true,
+        identities: [],
+        is_admin: true,
+      },
+    })
+
+    await user.click(screen.getByRole('button', { name: '계정 메뉴' }))
+
+    const link = screen.getByRole('link', { name: '관리' })
+    expect(link).toHaveAttribute('href', '/admin')
+  })
+
+  it('저장하지 않은 수정이 있으면 다른 이동 링크와 같이 확인을 거쳐야 한다', async () => {
+    const user = userEvent.setup()
+    setUnsavedChanges(true)
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    renderLayout({
+      user: {
+        id: 'u1',
+        email: EMAIL,
+        email_verified: true,
+        has_password: true,
+        identities: [],
+        is_admin: true,
+      },
+    })
+
+    await user.click(screen.getByRole('button', { name: '계정 메뉴' }))
+    await user.click(screen.getByRole('link', { name: '관리' }))
+
+    expect(confirm).toHaveBeenCalled()
+    expect(screen.getByTestId('location')).toHaveTextContent('/')
+    // 거절했으면 메뉴도 열린 채 그대로다.
+    expect(screen.getByRole('link', { name: '관리' })).toBeInTheDocument()
+
+    confirm.mockReturnValue(true)
+    await user.click(screen.getByRole('link', { name: '관리' }))
+
+    expect(screen.getByTestId('location')).toHaveTextContent('/admin')
+    // 확인을 통과하면 메뉴를 닫는다 — 그대로 두면 이 컴포넌트는 라우트가 바뀐 뒤에도
+    // AppLayout과 함께 살아남아 열린 채로 남는다.
+    expect(screen.queryByRole('link', { name: '관리' })).not.toBeInTheDocument()
+  })
+})
+
+describe('모바일 메뉴 — 관리 링크 (어드민 최소, 계약 2.25.0)', () => {
+  it('관리자가 아니면 모바일 메뉴에도 「관리」 링크가 없다', async () => {
+    const user = userEvent.setup()
+    renderLayout({
+      user: {
+        id: 'u1',
+        email: EMAIL,
+        email_verified: true,
+        has_password: true,
+        identities: [],
+        is_admin: false,
+      },
+    })
+
+    await user.click(screen.getByRole('button', { name: '메뉴 열기' }))
+
+    expect(screen.queryByRole('link', { name: '관리' })).not.toBeInTheDocument()
+  })
+
+  it('관리자면 모바일 메뉴에 「관리」 링크가 /admin으로 간다', async () => {
+    const user = userEvent.setup()
+    renderLayout({
+      user: {
+        id: 'u1',
+        email: EMAIL,
+        email_verified: true,
+        has_password: true,
+        identities: [],
+        is_admin: true,
+      },
+    })
+
+    await user.click(screen.getByRole('button', { name: '메뉴 열기' }))
+
+    const link = screen.getByRole('link', { name: '관리' })
+    expect(link).toHaveAttribute('href', '/admin')
+  })
+})
+
 describe('계정 메뉴 — 비밀번호 만들기 (2.19.0, backlog §1.4 다음 조각)', () => {
   it('비밀번호가 없고 이메일이 인증된 계정은 「비밀번호 만들기」 버튼을 보여준다', async () => {
     const user = userEvent.setup()
     renderLayout({
-      user: { id: 'u1', email: EMAIL, email_verified: true, has_password: false, identities: [] },
+      user: {
+        id: 'u1',
+        email: EMAIL,
+        email_verified: true,
+        has_password: false,
+        identities: [],
+        is_admin: false,
+      },
     })
 
     await user.click(screen.getByRole('button', { name: '계정 메뉴' }))
@@ -153,7 +286,14 @@ describe('계정 메뉴 — 비밀번호 만들기 (2.19.0, backlog §1.4 다음
   it('비밀번호가 없고 이메일도 미인증이면 버튼 대신 인증 화면 링크를 보여준다', async () => {
     const user = userEvent.setup()
     renderLayout({
-      user: { id: 'u1', email: EMAIL, email_verified: false, has_password: false, identities: [] },
+      user: {
+        id: 'u1',
+        email: EMAIL,
+        email_verified: false,
+        has_password: false,
+        identities: [],
+        is_admin: false,
+      },
     })
 
     await user.click(screen.getByRole('button', { name: '계정 메뉴' }))
@@ -166,7 +306,14 @@ describe('계정 메뉴 — 비밀번호 만들기 (2.19.0, backlog §1.4 다음
   it('이미 비밀번호가 있으면 버튼도 인증 링크도 보여주지 않는다', async () => {
     const user = userEvent.setup()
     renderLayout({
-      user: { id: 'u1', email: EMAIL, email_verified: false, has_password: true, identities: [] },
+      user: {
+        id: 'u1',
+        email: EMAIL,
+        email_verified: false,
+        has_password: true,
+        identities: [],
+        is_admin: false,
+      },
     })
 
     await user.click(screen.getByRole('button', { name: '계정 메뉴' }))
@@ -253,7 +400,14 @@ describe('계정 메뉴 — 구글 계정 연결', () => {
   it('연결돼 있지 않으면 연결 버튼을 보여준다', async () => {
     const user = userEvent.setup()
     renderLayout({
-      user: { id: 'u1', email: EMAIL, email_verified: true, has_password: true, identities: [] },
+      user: {
+        id: 'u1',
+        email: EMAIL,
+        email_verified: true,
+        has_password: true,
+        identities: [],
+        is_admin: false,
+      },
     })
 
     await user.click(screen.getByRole('button', { name: '계정 메뉴' }))
@@ -271,6 +425,7 @@ describe('계정 메뉴 — 구글 계정 연결', () => {
         email_verified: true,
         has_password: true,
         identities: [{ provider: 'google' }],
+        is_admin: false,
       },
     })
 
@@ -288,7 +443,14 @@ describe('계정 메뉴 — 구글 계정 연결', () => {
     })
     const assign = mockLocationAssign()
     renderLayout({
-      user: { id: 'u1', email: EMAIL, email_verified: true, has_password: true, identities: [] },
+      user: {
+        id: 'u1',
+        email: EMAIL,
+        email_verified: true,
+        has_password: true,
+        identities: [],
+        is_admin: false,
+      },
     })
 
     await user.click(screen.getByRole('button', { name: '계정 메뉴' }))
@@ -314,7 +476,14 @@ describe('계정 메뉴 — 구글 계정 연결', () => {
     )
     const assign = mockLocationAssign()
     renderLayout({
-      user: { id: 'u1', email: EMAIL, email_verified: true, has_password: true, identities: [] },
+      user: {
+        id: 'u1',
+        email: EMAIL,
+        email_verified: true,
+        has_password: true,
+        identities: [],
+        is_admin: false,
+      },
     })
 
     await user.click(screen.getByRole('button', { name: '계정 메뉴' }))
@@ -330,7 +499,14 @@ describe('계정 메뉴 — 카카오 계정 연결', () => {
   it('연결돼 있지 않으면 연결 버튼을 보여준다', async () => {
     const user = userEvent.setup()
     renderLayout({
-      user: { id: 'u1', email: EMAIL, email_verified: true, has_password: true, identities: [] },
+      user: {
+        id: 'u1',
+        email: EMAIL,
+        email_verified: true,
+        has_password: true,
+        identities: [],
+        is_admin: false,
+      },
     })
 
     await user.click(screen.getByRole('button', { name: '계정 메뉴' }))
@@ -348,6 +524,7 @@ describe('계정 메뉴 — 카카오 계정 연결', () => {
         email_verified: true,
         has_password: true,
         identities: [{ provider: 'kakao' }],
+        is_admin: false,
       },
     })
 
@@ -365,7 +542,14 @@ describe('계정 메뉴 — 카카오 계정 연결', () => {
     })
     const assign = mockLocationAssign()
     renderLayout({
-      user: { id: 'u1', email: EMAIL, email_verified: true, has_password: true, identities: [] },
+      user: {
+        id: 'u1',
+        email: EMAIL,
+        email_verified: true,
+        has_password: true,
+        identities: [],
+        is_admin: false,
+      },
     })
 
     await user.click(screen.getByRole('button', { name: '계정 메뉴' }))
@@ -393,6 +577,7 @@ describe('계정 메뉴 — 두 제공자를 함께 보여준다', () => {
         email_verified: true,
         has_password: true,
         identities: [{ provider: 'google' }],
+        is_admin: false,
       },
     })
 

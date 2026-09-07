@@ -217,6 +217,75 @@ CLI one-off다(Compose 상시 서비스가 아니다).
    먼저 켜면 그 순간부터 모든 등록이 402가 된다(계획 §6 리스크 1). 파일럿에 참여하는
    워크스페이스 전부에 위 1~3단계로 잔액을 부여해 둔 뒤에만 켠다.
 
+## 관리자 부여
+
+관리자는 `users.is_admin` DB 플래그다(V17, 계획 `docs/plans/2026-09-07-admin-minimum.md` §2
+결정 1). 설정 파일·환경변수로 관리자를 정하지 않고, 화면에도 부여·회수 기능이 없다 —
+운영자가 `admin-grant` 일회성 프로필로만 바꾼다(`credit-grant`·`usage-report`와 같은
+Compose one-off, 상시 서비스가 아니다).
+
+**사전 조건: 대상 계정의 이메일이 검증된 상태여야 한다**(`email_verified=true`). 미검증
+이메일로 부여를 시도하면 exit 1이고 아무것도 바뀌지 않는다 — 이메일 미검증 계정을 도용해
+관리자 권한을 얻는 경로를 막기 위해서다(계획 §5 리스크 2). 검증 여부는 대상 계정으로
+`GET /auth/me`의 `email_verified`를 보거나, 본인이 이메일 인증 화면에서 인증을 마쳤는지
+확인한다.
+
+**절차:**
+
+1. **부여한다.** `--email`은 대상 계정의 로그인 이메일이다:
+   ```bash
+   docker compose -f compose.yml run --rm backend-api \
+     java -jar /app/easy-doc-api.jar --spring.profiles.active=admin-grant \
+     --email=operator@example.test
+   ```
+   표준출력에 `user_id`·반영된 `is_admin` 값만 찍힌다(`관리자 권한 반영 — user_id=… is_admin=true`)
+   — 이메일은 담지 않는다(`credit-grant`의 "이름·이메일은 내지 않는다"와 같은 규약). 종료
+   코드 0이면 반영된 것이고, 1이면 알 수 없는 이메일·이메일 미검증·인자 오류 중 하나다
+   (메시지 한 줄만 남는다 — 로그에서 확인한다).
+2. **회수한다.** `--revoke` 플래그만 더한다(값을 받지 않는다):
+   ```bash
+   docker compose -f compose.yml run --rm backend-api \
+     java -jar /app/easy-doc-api.jar --spring.profiles.active=admin-grant \
+     --email=operator@example.test --revoke
+   ```
+   **회수는 다음 요청부터 즉시 반영된다** — 관리자 판정은 토큰에 넣지 않고 매 요청 DB에서
+   다시 읽는다(`AdminGuard`, 계획 §2 결정 2). 이미 발급된 액세스 토큰을 들고 있어도 그
+   사용자의 다음 관리자 API 호출은 403 「관리자 권한이 필요합니다」다.
+3. **확인한다.** 대상 계정으로 로그인해 `GET /auth/me`의 `is_admin`을 보거나(부여 뒤 계정
+   메뉴에 「관리」 링크가 뜬다), 화면에서 `/admin`에 들어가 본다.
+
+## 어드민 화면 운영
+
+`/admin` 화면(계약 2.25.0)은 관리자로 로그인하면 계정 메뉴 「관리」 링크로 들어간다 — 탭
+넷이다: 「워크스페이스」(검색·크레딧 조회·수동 조정), 「세금계산서」(상태별 목록·발급/거절
+처리), 「오류」(기간별 실패 코드 집계·최근 목록), 「공지」(작성·활성 토글·본문 고치기).
+
+**화면이 대신하는 CLI 작업:**
+
+- 위 「크레딧 충전」 1~3단계(`credit-grant` 프로필) — 「워크스페이스」 탭 상세의 크레딧
+  조정 폼이 같은 서비스 경로(`AdminCreditAdjustmentService`)를 쓴다. 관리자가 화면에서
+  조정하면 거래에 `actor_user_id`(V17)가 남아 누가 조정했는지 감사할 수 있다 — CLI
+  경로(`credit-grant`)는 이 필드가 비어 있다.
+- 위 「월간 청구」 6단계(`invoice-handle` 프로필) — 「세금계산서」 탭의 처리 폼이 같은
+  유스케이스(`InvoiceRequestService.handle`)를 쓴다. `handled_by`(V17)가 남고, 처리 뒤
+  요청자 메일은 CLI 경로와 동일하게 나간다.
+- 사용량 조회 — 「워크스페이스」 탭 목록·상세가 그 워크스페이스의 이번 달 사용량을
+  보여준다(`UsageQueryService` 재사용). 오류 조회는 「오류」 탭이 기간별로 보여준다.
+
+**CLI로만 남는 것:**
+
+- **`usage-report` CSV 산출** — 월간 청구서를 사람이 만들 때 쓰는 원본 파일이다. 화면의
+  `GET /admin/usage`(`AdminUsageResponse`)는 같은 행을 JSON으로 화면 조회용으로만 내고,
+  BOM 포함 CSV 파일 자체는 여전히 `usage-report` 프로필이 만든다 — 위 「월간 청구」 1~2단계
+  그대로다.
+- **`admin-grant`(관리자 부여·회수)** — 위 「관리자 부여」절 그대로다. `/admin` 화면 어디에도
+  다른 계정을 관리자로 만들거나 회수하는 조작이 없다(계획 §2 결정 1 "이 API로는 바꿀 수
+  없다") — 관리자 후보 계정을 늘리는 조작은 운영자가 서버에 직접 접근할 수 있을 때만
+  일어나야 한다는 판단이다.
+
+닫기(공지 배너)·워크스페이스 검색 같은 화면 전용 조작은 계약에 없다 — 서버 상태를
+바꾸지 않는 순수 화면 기능이기 때문이다.
+
 ---
 
 ## 게이트 ① 판정
