@@ -1,5 +1,10 @@
 package kr.easydoc.application.auth
 
+import kr.easydoc.application.credit.CreditAccountRepository
+import kr.easydoc.application.credit.CreditAccountService
+import kr.easydoc.application.credit.NoopCreditAccountRepository
+import kr.easydoc.core.credit.CreditReason
+import kr.easydoc.core.credit.Credits
 import kr.easydoc.core.exceptions.ConfigurationException
 import kr.easydoc.core.exceptions.ConflictException
 import kr.easydoc.core.exceptions.EmailAlreadyRegisteredException
@@ -24,6 +29,35 @@ import java.util.UUID
 /** 소셜 로그인 유스케이스의 분기를 잰다 — Spring 도 DB 도 실제 Google 도 없이. */
 @Suppress("LargeClass")
 class SocialLoginServiceTest {
+    @Test
+    @DisplayName("새 신원은 크레딧 계정도 같은 트랜잭션에서 만든다")
+    fun `새 신원은 크레딧 계정을 만든다`() {
+        val world = SocialWorld()
+        world.provider.nextIdentity = SocialIdentity("google-sub-credit", "credit@example.test", emailVerified = true)
+
+        val start = world.service.start(SocialLoginProviderId.GOOGLE, REDIRECT_URI)
+        world.service.callback(SocialLoginProviderId.GOOGLE, "auth-code", start.state, REDIRECT_URI)
+
+        assertThat(world.creditRepository.ensuredFor).hasSize(1)
+        assertThat(world.creditRepository.grantCalls).isEmpty()
+    }
+
+    @Test
+    @DisplayName("가입 부여가 설정되면 소셜 신규 가입도 grant 거래를 만든다")
+    fun `소셜 가입 부여가 설정되면 grant 한다`() {
+        val world = SocialWorld(signupGrant = 50)
+        world.provider.nextIdentity = SocialIdentity("google-sub-grant", "grant@example.test", emailVerified = true)
+
+        val start = world.service.start(SocialLoginProviderId.GOOGLE, REDIRECT_URI)
+        world.service.callback(SocialLoginProviderId.GOOGLE, "auth-code", start.state, REDIRECT_URI)
+
+        assertThat(world.creditRepository.grantCalls).hasSize(1)
+        val (workspaceId, credits, reason) = world.creditRepository.grantCalls.single()
+        assertThat(workspaceId).isEqualTo(world.creditRepository.ensuredFor.single())
+        assertThat(credits).isEqualTo(50)
+        assertThat(reason).isEqualTo(CreditReason.SIGNUP)
+    }
+
     @Test
     @DisplayName("새 신원은 계정과 기본 작업 공간을 같은 트랜잭션에서 만든다")
     fun `새 신원이 계정을 만든다`() {
@@ -908,6 +942,7 @@ private class SocialWorld(
     googleConfigured: Boolean = true,
     kakaoConfigured: Boolean = false,
     naverConfigured: Boolean = false,
+    signupGrant: Int = 0,
 ) {
     val users = RecordingSocialUserRepository()
     val workspaces = RecordingSocialWorkspaceRepository()
@@ -919,6 +954,8 @@ private class SocialWorld(
     val naverProvider = FakeSocialLoginProvider("http://localhost:5173/auth/naver/callback")
     val transaction = SocialRecordingTransactionRunner()
     val emailVerification = SocialRecordingEmailVerification(transaction)
+    val creditRepository = RecordingSocialCreditAccountRepository()
+    val credits = CreditAccountService(creditRepository, enforced = false, signupGrant = signupGrant)
     val service =
         SocialLoginService(
             providers =
@@ -933,7 +970,33 @@ private class SocialWorld(
             transaction = transaction,
             stateTtl = Duration.ofMinutes(10),
             emailVerification = emailVerification,
+            credits = credits,
         )
+}
+
+/**
+ * 크레딧 계정 호출을 기록하는 대역 — 소셜 가입 경로도 `AuthService` 와 같은 규약을 진다.
+ * `ensureAccount`·`grant` 만 재정의하고 나머지는 [NoopCreditAccountRepository] 에
+ * 위임한다(리뷰 MEDIUM-11).
+ */
+private class RecordingSocialCreditAccountRepository : CreditAccountRepository by NoopCreditAccountRepository {
+    val ensuredFor: MutableList<UUID> = mutableListOf()
+    val grantCalls: MutableList<Triple<UUID, Int, CreditReason>> = mutableListOf()
+
+    override fun ensureAccount(workspaceId: UUID) {
+        ensuredFor += workspaceId
+    }
+
+    override fun grant(
+        workspaceId: UUID,
+        ownerUserId: UUID,
+        credits: Int,
+        reason: CreditReason,
+        note: String?,
+    ): Int {
+        grantCalls += Triple(workspaceId, credits, reason)
+        return credits
+    }
 }
 
 /**
@@ -962,6 +1025,7 @@ private class RacedSocialWorld(
             transaction = SocialRecordingTransactionRunner(),
             stateTtl = Duration.ofMinutes(10),
             emailVerification = emailVerification,
+            credits = CreditAccountService(RecordingSocialCreditAccountRepository(), enforced = false),
         )
 }
 

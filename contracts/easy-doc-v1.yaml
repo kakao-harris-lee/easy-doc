@@ -41,7 +41,7 @@ openapi: 3.1.0
 
 info:
   title: Easy-Read AI API
-  version: "2.21.0"
+  version: "2.22.0"
   x-baselined-at: "2026-08-12"       # 초판 기준선을 뜬 날 (동결일이 아니다)
   x-rebased-at: "2026-08-12"         # 계약의 성격을 "개선 대상"으로 다시 정의한 날
   x-source-runtime: "Python 3.12 / FastAPI (app/main.py) — 과거 참고 구현이었고 2026-08-24 저장소에서 제거됨(git 태그 pre-python-removal-20260824). 기준선 출처였을 뿐 정답이 아니었다"
@@ -2379,8 +2379,16 @@ paths:
 
         검사 순서: **이메일 인증(403)** → 파일 크기(413) → 추출(422) → 본문 길이(422) →
         **작업 공간: 형식(422) 다음 소유권(404)** → **저장 정의역(422)** →
-        **저장과 큐 등록(한 트랜잭션)** → 커밋.
+        **크레딧 예약(402)** → **저장과 큐 등록(한 트랜잭션)** → 커밋.
         작업 공간 확인이 저장보다 **먼저**여야 거절당한 업로드가 기본 공간에 남지 않는다.
+
+        **크레딧 예약이 402 다(2.22.0 신설, 크레딧 계정 계획 §2 결정 4, C1).** 필요
+        크레딧은 `ceil(char_count / 1000)`이고, `documents`/`conversions` insert **앞**
+        같은 트랜잭션에서 예약한다 — 거절되면(집행 스위치 `easydoc.credits.enforced`
+        가 켜진 상태에서 가용 잔액 부족) 문서가 아무 데도 생기지 않는다. 집행 스위치가
+        꺼져 있으면 예약은 잔액과 무관하게 항상 성공하고 잔액이 음수로 기록된다.
+        `X-Credit-Balance`(예약 직후 가용 잔액)는 스위치와 무관하게 202 응답에
+        항상 실린다.
 
         **이메일 인증이 맨 앞이다(2.9.0 신설, backlog §1.4 P0-1/P0-3).** 본문을 전혀
         보지 않은 채로 거절한다 — 애초에 이 호출자가 할 수 없는 일이면 파일 크기·본문
@@ -2450,10 +2458,22 @@ paths:
                 포함되어야 브라우저 JS가 읽을 수 있다.**
               required: true
               schema: { type: string, examples: ["/conversions/00000000-0000-4000-8000-000000000001"] }
+            X-Credit-Balance:
+              description: |
+                크레딧 예약 **직후**의 가용 잔액(`balance − reserved`, 정수, 문자열로
+                인코딩) — 크레딧 계정 계획 §2 결정 7(C1). 집행 스위치
+                (`easydoc.credits.enforced`)와 무관하게 항상 실린다 — 화면이 잔액을
+                안다. **스키마(`type`·`examples`)는 이 헤더가 나타나는 모든 자리에서
+                문자열 그대로 같아야 한다**(`InsufficientCredits.headers.X-Credit-Balance`
+                와, `Retry-After`가 이미 지키는 것과 같은 `ContractSpec.collectHeaders`
+                전역 규약).
+              required: true
+              schema: { type: string, examples: ["0", "1"] }
           content:
             application/json:
               schema: { $ref: '#/components/schemas/DocumentCreatedResponse' }
         '401': { $ref: '#/components/responses/Unauthorized' }
+        '402': { $ref: '#/components/responses/InsufficientCredits' }
         '403':
           description: |
             이메일 인증 전이다(2.9.0 신설) — 남의 자원을 감추는 403이 **아니다**. 위
@@ -3520,6 +3540,87 @@ paths:
         '503': { $ref: '#/components/responses/ServiceUnavailable' }
 
   # ===========================================================================
+  # #24 GET /workspaces/{workspace_id}/credits — 200 (크레딧 계정 계획 §2 결정 7, 2.22.0 신설)
+  # 워크스페이스 크레딧 잔액·예약·최근 거래 50건을 조회한다. C1.
+  # ===========================================================================
+  /workspaces/{workspace_id}/credits:
+    get:
+      tags: [workspaces]
+      operationId: readWorkspaceCredits
+      summary: 워크스페이스의 크레딧 계정을 조회한다
+      security: [{ HTTPBearer: [] }]
+      parameters:
+        - name: workspace_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      description: |
+        **가용 = balance − reserved.** `balance`는 부여 합계 − 소비 합계, `reserved`는
+        등록됐지만 아직 끝나지 않은 문서의 몫이다(크레딧 계정 계획
+        `docs/plans/2026-09-07-credit-accounts.md` §2 결정 2).
+
+        `enforced`는 `easydoc.credits.enforced`(기본 `false`) 그대로다 — 꺼져 있으면
+        `createDocument`의 예약이 잔액과 무관하게 항상 성공한다.
+
+        `transactions`는 최근 **50건**을 최신순으로 담는다 — `credit_transactions`는
+        append-only 원장이고, 그 합계가 곧 `balance − reserved`다(정합 불변식, 계획
+        §4). `consume`(완료 확정)의 `credits`도 `reserve`와 같은 크기의 음수다 —
+        2026-09-07 리뷰로 저장은 `balance_delta`·`reserved_delta` 두 열로 나뉘었지만,
+        이 API 값은 계획 §2 결정 2의 원래 부호 규약(`grant`·`release`는 +, `reserve`·
+        `consume`·`adjust`는 방향대로)을 그대로 유지한다.
+      responses:
+        '200':
+          description: 크레딧 계정
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CacheControlNoStore' }
+            X-Content-Type-Options: { $ref: '#/components/headers/XContentTypeOptions' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkspaceCreditsResponse' }
+              examples:
+                with_transactions:
+                  value:
+                    workspace_id: "00000000-0000-4000-8000-000000000001"
+                    balance: 47
+                    reserved: 3
+                    available: 44
+                    enforced: true
+                    transactions:
+                      - id: "00000000-0000-4000-8000-000000000005"
+                        kind: consume
+                        credits: -3
+                        reason: conversion
+                        note: null
+                        document_id: "00000000-0000-4000-8000-000000000006"
+                        created_at: "2026-09-07T09:05:00Z"
+                      - id: "00000000-0000-4000-8000-000000000002"
+                        kind: reserve
+                        credits: -3
+                        reason: conversion
+                        note: null
+                        document_id: "00000000-0000-4000-8000-000000000003"
+                        created_at: "2026-09-07T09:00:00Z"
+                      - id: "00000000-0000-4000-8000-000000000004"
+                        kind: grant
+                        credits: 50
+                        reason: signup
+                        note: null
+                        document_id: null
+                        created_at: "2026-09-01T00:00:00Z"
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404':
+          description: 지정한 작업 공간이 없거나 내 것이 아니다 (존재 은닉)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+              examples:
+                workspace_not_found: { value: { detail: "작업 공간을 찾을 수 없습니다" } }
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '500': { $ref: '#/components/responses/InternalError' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+
+  # ===========================================================================
   # #23 POST /dictionary/lookup — 200 (P0-5 조각 1, 2.11.0 신설)
   # 검수 화면에서 지목한 문자열 하나로 사전 후보를 찾는다. 계획 §3.4.
   # ===========================================================================
@@ -3812,6 +3913,29 @@ components:
           schema: { $ref: '#/components/schemas/ErrorResponse' }
           examples:
             budget_exhausted: { value: { detail: "재변환 호출 예산을 모두 사용했습니다" } }
+
+    InsufficientCredits:
+      description: |
+        워크스페이스 크레딧이 모자라 문서 등록을 예약하지 못했다 — `createDocument`
+        (2.22.0) 전용, 크레딧 계정 계획 §2 결정 4(C1). `easydoc.credits.enforced`가
+        `true`일 때만 나간다 — 꺼져 있으면 잔액이 음수로 기록되며 등록은 계속된다.
+
+        **잔여값은 몸체가 아니라 헤더로 낸다** — `ReconversionBudgetExhausted`와 같은
+        이유(`x-error-body-universality`가 오류 응답 본문을 `detail` 하나로 고정한다).
+      headers:
+        X-Credit-Balance:
+          description: 이 예약 시도 시점의 가용 크레딧(`balance − reserved`, 정수, 문자열로 인코딩).
+          required: true
+          schema: { type: string, examples: ["0", "1"] }
+        X-Credits-Required:
+          description: 이 요청이 필요로 한 크레딧(`ceil(char_count / 1000)`, 정수, 문자열로 인코딩).
+          required: true
+          schema: { type: string, examples: ["2", "20"] }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+          examples:
+            insufficient_credits: { value: { detail: "크레딧이 부족합니다. 충전 후 다시 시도하세요." } }
 
     ReconversionConcurrencyLimited:
       description: |
@@ -5163,6 +5287,75 @@ components:
           description: 목적(purpose)별 소계. 그 기간에 호출이 없던 목적은 목록에 없다(0행을 채우지 않는다).
 
     # ---------------------------------------------------------------------
+    # 크레딧 계정 (2.22.0 신설, C1) — docs/plans/2026-09-07-credit-accounts.md
+    # ---------------------------------------------------------------------
+    CreditTransactionKind:
+      type: string
+      enum: [grant, reserve, consume, release, adjust]
+      description: |
+        `credit_transactions.kind`(V15)와 같은 값 — 부여 · 예약 · 소비 확정 · 해제 ·
+        운영자 수동 조정. `kr.easydoc.core.credit.CreditTransactionKind.wireName`이
+        정본이다.
+
+    CreditReason:
+      type: string
+      enum: [signup, plan_monthly, manual, refund, conversion]
+      description: |
+        `credit_transactions.reason`(V15)와 같은 값 — 가입 부여 · 월 구독 갱신 ·
+        운영자 수동 · 환급 · 문서 변환.
+
+    CreditTransaction:
+      type: object
+      required: [id, kind, credits, reason, note, document_id, created_at]
+      description: 크레딧 계정 거래 한 건. `WorkspaceCreditsResponse.transactions` 항목.
+      properties:
+        id: { type: string, format: uuid }
+        kind: { $ref: '#/components/schemas/CreditTransactionKind' }
+        credits:
+          type: integer
+          description: |
+            부호 있음 — `grant`·`release`는 항상 양수, `reserve`·`consume`은 항상 음수
+            (등록 시 예약분과 완료 시 실제 청구분이 같은 크기다), `adjust`는 운영자가
+            준 부호 그대로.
+        reason: { $ref: '#/components/schemas/CreditReason' }
+        note:
+          description: 운영자 메모(`credit-grant` 프로필의 `--note`). 없으면 `null`.
+          anyOf:
+            - { type: string, maxLength: 200 }
+            - { type: 'null' }
+        document_id:
+          description: '`reserve`·`consume`·`release`가 문서를 가리킨다. `grant`·`adjust`는 `null`.'
+          anyOf:
+            - { type: string, format: uuid }
+            - { type: 'null' }
+        created_at: { type: string, format: date-time }
+
+    WorkspaceCreditsResponse:
+      type: object
+      required: [workspace_id, balance, reserved, available, enforced, transactions]
+      description: |
+        `GET /workspaces/{workspace_id}/credits` 응답 — 크레딧 계정 계획 §2 결정 2·7.
+      properties:
+        workspace_id: { type: string, format: uuid }
+        balance:
+          type: integer
+          description: 부여 합계 − 소비 합계. 집행이 꺼진 상태에서는 음수로 기록될 수 있다.
+        reserved:
+          type: integer
+          minimum: 0
+          description: 등록됐지만 아직 끝나지 않은 문서의 예약 합.
+        available:
+          type: integer
+          description: '`balance − reserved`. 음수일 수 있다(집행 꺼짐).'
+        enforced:
+          type: boolean
+          description: '`easydoc.credits.enforced` 그대로 — 꺼져 있으면 등록 예약이 잔액과 무관하게 항상 성공한다.'
+        transactions:
+          type: array
+          items: { $ref: '#/components/schemas/CreditTransaction' }
+          description: 최근 거래 최신순 50건.
+
+    # ---------------------------------------------------------------------
     # dictionary (P0-5, 2.11.0)
     # ---------------------------------------------------------------------
     DictionaryLookupRequest:
@@ -5295,6 +5488,55 @@ components:
 # 변경 이력
 # =============================================================================
 x-changelog:
+  - version: "2.22.0"
+    date: "2026-09-07"
+    revision: "CREDIT-ACCOUNTS-C1"   # 크레딧 계정·차감 — 워크스페이스 잔액, 등록 시 예약, 완료 시 소비
+    author: contract-keeper
+    change: |
+      **워크스페이스 크레딧 계정을 연다.** 정본은
+      `docs/plans/2026-09-07-credit-accounts.md`§2 — 2.21.0(U2)이 연 사용량 집계 위에
+      실제 **차감**(예약·소비·해제·402 거절)을 얹는다. 문서 등록 때 필요한 크레딧을
+      예약하고 변환이 끝나면 소비하며, 집행 스위치가 켜진 상태에서 잔액이 모자라면
+      등록을 거절한다. 충전(부여)은 운영자가 수동으로 한다 — 이 변경 단위는 조회·API
+      경로만 열고 `credit-grant` 프로필은 C2(다음 슬라이스)가 연다.
+
+      ⑴ **오퍼레이션 1종 신설** — `GET /workspaces/{workspace_id}/credits`
+         (`readWorkspaceCredits`, Bearer 필요, 200). 소유자만 조회할 수 있고 아니면
+         404(존재 은닉, `readWorkspaceUsage`와 같은 원칙). 최근 거래 50건을 최신순으로
+         담는다. `workspace_id` 형식 오류는 공유 `ValidationFailed`(422) — 경로 값
+         자리 하나뿐인 `readDocumentSource`와 같은 처분(`ValueSlotInvariantReachTest`).
+
+      ⑵ **`createDocument`에 402와 헤더 2종을 더한다.** 크레딧 예약이
+         `documents`/`conversions` insert **앞**, 같은 트랜잭션에서 돈다 — 거절되면
+         (집행 중 가용 잔액 부족) 문서가 아무 데도 생기지 않는다. 402 본문은 공유
+         `InsufficientCredits`이고 `X-Credit-Balance`(가용)·`X-Credits-Required`(필요)
+         헤더를 싣는다 — `ReconversionBudgetExhausted`(429)와 같은 이유로 몸체가 아니라
+         헤더다(`x-error-body-universality`). **202 응답에도** `X-Credit-Balance`
+         (예약 직후 가용 잔액)가 항상 실린다 — 집행 스위치와 무관하게 화면이 잔액을
+         안다.
+
+      ⑶ **스키마 4종 신설** — `WorkspaceCreditsResponse`(잔액·예약·가용·집행 여부·
+         거래 목록), `CreditTransaction`, `CreditTransactionKind`(`grant`·`reserve`·
+         `consume`·`release`·`adjust` — `credit_transactions.kind`, V15와 같은 값),
+         `CreditReason`(`signup`·`plan_monthly`·`manual`·`refund`·`conversion`). 공유
+         응답 `InsufficientCredits` 1종도 신설.
+
+      ⑷ **`AuthenticatedEndpoints`에 `/workspaces/{workspace_id}/credits` 추가** —
+         `/workspaces/{workspace_id}`가 하위 경로를 덮지 않아 기존 관행대로 따로
+         넣는다(`usage`·`export`·`feedback`·`reconvert`와 같은 이유).
+
+      ⑸ **엔드포인트 수 29 → 30** — 2.21.0(`USAGE-U2-AGGREGATE`)이 연 29 위에 이
+         오퍼레이션 1종을 더한다.
+    ground: |
+      **G1 — 사용자 요청(2026-09-07).** 「크레딧 계정·차감 스팩 쓰고 진행」 — 계획
+      §2의 결정을 계약으로 옮긴다. 402·헤더 패턴은 같은 계획 §1.5가 인용한
+      `ReconversionBudgetExhausted`(429) 선례를 그대로 따른다.
+    compatibility: |
+      **넓히는 변경이다.** 새 오퍼레이션 1종, 새 스키마 4종·공유 응답 1종을 더하고
+      기존 오퍼레이션(`createDocument`)에는 **새 실패 갈래(402)와 헤더**만 더한다 —
+      기존 성공 응답의 필드는 바뀌지 않는다(202 본문은 그대로이고 헤더만 하나
+      늘었다).
+
   - version: "2.21.0"
     date: "2026-09-07"
     revision: "USAGE-U2-AGGREGATE"   # 사용량 가시화 U2 — 워크스페이스·기간 집계

@@ -1,10 +1,12 @@
 package kr.easydoc.infrastructure.document
 
 import kr.easydoc.application.conversion.ConversionAcquire
+import kr.easydoc.application.credit.CreditAccountService
 import kr.easydoc.application.document.PurgeExpiredDocuments
 import kr.easydoc.application.document.RetentionPurgeObserver
 import kr.easydoc.application.document.RetentionPurgePolicy
 import kr.easydoc.application.document.RetentionPurgeResult
+import kr.easydoc.core.credit.Credits
 import kr.easydoc.core.crypto.EncryptionScheme
 import kr.easydoc.core.document.SourceFormat
 import kr.easydoc.core.user.PasswordHash
@@ -12,6 +14,7 @@ import kr.easydoc.infrastructure.DatabaseHandle
 import kr.easydoc.infrastructure.PostgresTestSupport
 import kr.easydoc.infrastructure.auth.JdbcUserRepository
 import kr.easydoc.infrastructure.auth.JdbcWorkspaceRepository
+import kr.easydoc.infrastructure.credit.JdbcCreditAccountRepository
 import kr.easydoc.infrastructure.db.SpringTransactionRunner
 import kr.easydoc.infrastructure.queue.JdbcConversionQueue
 import org.assertj.core.api.Assertions.assertThat
@@ -37,6 +40,7 @@ class JdbcRetentionPurgeTest {
     private lateinit var workspaces: JdbcWorkspaceRepository
     private lateinit var conversions: JdbcConversionRepository
     private lateinit var queue: JdbcConversionQueue
+    private lateinit var credits: CreditAccountService
     private lateinit var dataSource: DataSource
 
     @BeforeAll
@@ -54,6 +58,7 @@ class JdbcRetentionPurgeTest {
         workspaces = JdbcWorkspaceRepository(jdbc)
         conversions = JdbcConversionRepository(jdbc)
         queue = JdbcConversionQueue(jdbc)
+        credits = CreditAccountService(JdbcCreditAccountRepository(jdbc), enforced = false)
     }
 
     @BeforeEach
@@ -75,6 +80,22 @@ class JdbcRetentionPurgeTest {
         assertThat(documentExists(seeded.documentId)).isFalse()
         assertThat(conversionExists(seeded.conversionId)).isFalse()
         assertThat(jobExists(seeded.conversionId)).isFalse()
+    }
+
+    @Test
+    @DisplayName("만료 문서가 끝나지 않은 크레딧 예약을 쥐고 있으면 파기 전에 해제한다 — 리뷰 HIGH-1")
+    fun `파기는 끝나지 않은 예약을 해제한다`() {
+        val seeded = seedDocument(creditsReserved = 5)
+        expire(seeded.documentId)
+
+        val result = purge(dryRun = false).run()
+
+        assertThat(result.purgedDocuments).isEqualTo(1)
+        val row = checkNotNull(creditRow(seeded.workspaceId)) { "크레딧 계정 행이 없다" }
+        assertThat(row.balance).isZero()
+        assertThat(row.reserved)
+            .withFailMessage("파기가 예약을 해제하지 않아 크레딧이 영원히 묶였다")
+            .isZero()
     }
 
     @Test
@@ -143,13 +164,13 @@ class JdbcRetentionPurgeTest {
         batchSize: Int = BATCH,
     ): PurgeExpiredDocuments =
         PurgeExpiredDocuments(
-            store = JdbcExpiredDocumentPurge(jdbc),
+            store = JdbcExpiredDocumentPurge(jdbc, credits),
             transaction = SpringTransactionRunner(TransactionTemplate(DataSourceTransactionManager(dataSource))),
             observer = NoopObserver,
             policy = RetentionPurgePolicy(enabled = true, dryRun = dryRun, batchSize = batchSize),
         )
 
-    private fun seedDocument(): Seeded {
+    private fun seedDocument(creditsReserved: Int = 0): Seeded {
         val owner = users.create("u${UUID.randomUUID()}@example.com", PasswordHash(DUMMY_PHC)).id
         val workspace = workspaces.create(owner, "공간").id
         val documentId = UUID.randomUUID()
@@ -168,9 +189,14 @@ class JdbcRetentionPurgeTest {
             .param("bytes", byteArrayOf(1, 2, 3, 4))
             .param("scheme", EncryptionScheme.AES_256_GCM_V1)
             .update()
-        conversions.insertPending(conversionId, documentId, EncryptionScheme.AES_256_GCM_V1, 1)
+        conversions.insertPending(conversionId, documentId, EncryptionScheme.AES_256_GCM_V1, 1, creditsReserved)
         queue.enqueue(conversionId)
-        return Seeded(documentId, conversionId)
+        if (creditsReserved > 0) {
+            // 실제 등록 흐름과 같은 순서 — 계정을 만들고 예약한다(리뷰 HIGH-1 재현 준비).
+            credits.ensureAccount(workspace)
+            credits.reserve(owner, workspace, documentId, Credits(creditsReserved))
+        }
+        return Seeded(documentId, conversionId, owner, workspace)
     }
 
     private fun expire(documentId: UUID) {
@@ -211,6 +237,19 @@ class JdbcRetentionPurgeTest {
             .query { rs, _ -> rs.getInt(1) }
             .single() > 0
 
+    private fun creditRow(workspaceId: UUID): CreditRow? =
+        jdbc
+            .sql("SELECT balance, reserved FROM workspace_credit_accounts WHERE workspace_id = :id")
+            .param("id", workspaceId)
+            .query { rs, _ -> CreditRow(rs.getInt("balance"), rs.getInt("reserved")) }
+            .optional()
+            .orElse(null)
+
+    private class CreditRow(
+        val balance: Int,
+        val reserved: Int,
+    )
+
     private fun jobState(id: UUID): String =
         jdbc
             .sql("SELECT state FROM conversion_jobs WHERE conversion_id = :id")
@@ -221,6 +260,8 @@ class JdbcRetentionPurgeTest {
     private class Seeded(
         val documentId: UUID,
         val conversionId: UUID,
+        val ownerId: UUID = UUID.randomUUID(),
+        val workspaceId: UUID = UUID.randomUUID(),
     )
 
     private object NoopObserver : RetentionPurgeObserver {

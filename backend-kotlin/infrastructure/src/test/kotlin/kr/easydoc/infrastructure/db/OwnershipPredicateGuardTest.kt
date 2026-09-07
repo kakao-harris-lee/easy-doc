@@ -434,9 +434,17 @@ class OwnershipPredicateGuardTest {
                 "$DOCUMENT/JdbcConversionRepository.kt | UPDATE [conversions, documents]",
                 "$DOCUMENT/JdbcConversionRepository.kt | SELECT [conversions, documents]",
                 "$DOCUMENT/JdbcConversionRepository.kt | UPDATE [conversions, documents]",
+                // 문서 삭제 예약 조회(리뷰 HIGH-1, `lockPendingReservation`) — 사용자 요청 경로
+                // (`DocumentService.delete`)라 소유 술어(`d.user_id = :ownerId`)가 문장 자신에
+                // 있다. 아래 미방어 목록에는 없다.
+                "$DOCUMENT/JdbcConversionRepository.kt | SELECT [conversions, documents]",
                 "$DOCUMENT/JdbcConversionWorkStore.kt | SELECT [conversions, documents]",
                 "$DOCUMENT/JdbcConversionWorkStore.kt | UPDATE [conversions]",
                 "$DOCUMENT/JdbcConversionWorkStore.kt | UPDATE [conversions]",
+                "$DOCUMENT/JdbcConversionWorkStore.kt | UPDATE [conversions]",
+                // 크레딧 예약 CAS 정산(리뷰 HIGH-1, `settleCreditsReserved`) — worker 가 자신이
+                // 리스를 쥔 변환의 `credits_reserved` 를 한 번만 0 으로 낮춘다. 소유자를 받을
+                // 자리가 없다(위 worker 내부 경로들과 같은 사유).
                 "$DOCUMENT/JdbcConversionWorkStore.kt | UPDATE [conversions]",
                 "$DOCUMENT/JdbcConversionWorkStore.kt | UPDATE [conversions]",
                 // 업로드 원본(V3). 잠금 SELECT 와 회전 UPDATE 는 아래 미방어 목록에 있고,
@@ -465,6 +473,10 @@ class OwnershipPredicateGuardTest {
                 "$DOCUMENT/JdbcExpiredDocumentPurge.kt | SELECT [conversions]",
                 "$DOCUMENT/JdbcExpiredDocumentPurge.kt | DELETE [documents]",
                 "$DOCUMENT/JdbcExpiredDocumentPurge.kt | SELECT [conversions, documents]",
+                "$DOCUMENT/JdbcExpiredDocumentPurge.kt | SELECT [conversions, documents]",
+                // 파기 전 크레딧 예약 해제 배치(2026-09-07 리뷰 HIGH-1,
+                // `releasePendingReservations`) — worker 시스템 배치라 소유자를 받을 자리가
+                // 없다. 아래 미방어 목록에도 같은 자리에 있다.
                 "$DOCUMENT/JdbcExpiredDocumentPurge.kt | SELECT [conversions, documents]",
                 // 피드백 자유 의견 파기 배치(2026-09-04, backlog §1.1 「conversion_feedback 의
                 // 삭제 경로」 판단 ⑵). 봉투 세 열을 NULL 로 만드는 UPDATE 와 잠금 SELECT 둘
@@ -512,6 +524,9 @@ class OwnershipPredicateGuardTest {
                 "$DOCUMENT/JdbcConversionWorkStore.kt | UPDATE [conversions]",
                 "$DOCUMENT/JdbcConversionWorkStore.kt | UPDATE [conversions]",
                 "$DOCUMENT/JdbcConversionWorkStore.kt | UPDATE [conversions]",
+                // 크레딧 예약 CAS 정산(리뷰 HIGH-1, `settleCreditsReserved`) — 위 EXPECTED_STATEMENTS
+                // 주석과 같은 사유.
+                "$DOCUMENT/JdbcConversionWorkStore.kt | UPDATE [conversions]",
                 "$DOCUMENT/JdbcConversionWorkStore.kt | UPDATE [conversions]",
                 // 업로드 원본의 키 회전 세 문장 (V3, 회전 후보 커서 하나 포함). 사유는 위 KDoc
                 // 과 같다 — 회전 배치다. 이 파일의 INSERT·조회는 여기 없다: 사용자 경로라
@@ -526,6 +541,9 @@ class OwnershipPredicateGuardTest {
                 "$DOCUMENT/JdbcExpiredDocumentPurge.kt | SELECT [conversions]",
                 "$DOCUMENT/JdbcExpiredDocumentPurge.kt | DELETE [documents]",
                 "$DOCUMENT/JdbcExpiredDocumentPurge.kt | SELECT [conversions, documents]",
+                "$DOCUMENT/JdbcExpiredDocumentPurge.kt | SELECT [conversions, documents]",
+                // 파기 전 크레딧 예약 해제 배치(2026-09-07 리뷰 HIGH-1) — 위 EXPECTED_STATEMENTS
+                // 주석과 같은 사유.
                 "$DOCUMENT/JdbcExpiredDocumentPurge.kt | SELECT [conversions, documents]",
                 // 피드백 자유 의견 파기 배치(2026-09-04) — 같은 사유. 봉투 세 열을 NULL 로
                 // 만드는 UPDATE 와 잠금 SELECT 둘 다 여기 있다(순서는 파일 안 정의 순서).
@@ -559,7 +577,17 @@ class OwnershipPredicateGuardTest {
          * 26 → 28 은 변환 완료 메일 알림(P0-3, 2026-09-04)의 대상 조회·`notified_at` 표시
          * 둘이다. worker 가 완료 커밋 뒤 자신이 방금 처리한 `conversionId` 로 스스로 부르는
          * 경로라 — 위 파기·회전 배치들과 같은 사유로 소유자를 받을 자리가 없다.
+         *
+         * 28 → 29 는 크레딧 예약 CAS 정산(2026-09-07 리뷰 HIGH-1, `JdbcConversionWorkStore.
+         * settleCreditsReserved`)이다. worker 가 자신이 리스를 쥔 변환의 `credits_reserved`
+         * 를 한 번만 0 으로 낮춰 재시도·병행 정산의 이중 청구/이중 환불을 막는다 — 위
+         * worker 내부 경로들과 같은 사유로 소유자를 받을 자리가 없다.
+         *
+         * 29 → 30 은 만료 문서 파기 전 크레딧 예약 해제 배치(2026-09-07 리뷰 HIGH-1,
+         * `JdbcExpiredDocumentPurge.releasePendingReservations`)다. 파기 대상 문서가 아직
+         * 끝나지 않은 예약을 쥐고 있으면 삭제 전에 풀어준다 — `DocumentService.delete` 의
+         * 단건 해제와 같은 사유의 배치판이라 소유자를 받을 자리가 없다.
          */
-        const val MAX_UNGUARDED_STATEMENTS = 28
+        const val MAX_UNGUARDED_STATEMENTS = 30
     }
 }

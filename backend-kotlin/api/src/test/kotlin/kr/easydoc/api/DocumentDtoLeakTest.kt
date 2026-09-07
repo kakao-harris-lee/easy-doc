@@ -53,6 +53,7 @@ class DocumentDtoLeakTest {
                     conversionId = UUID.randomUUID(),
                     status = ConversionStatus.PENDING,
                     charCount = BODY.length,
+                    creditBalance = 0,
                 ),
             )
 

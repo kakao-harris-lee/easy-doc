@@ -7,8 +7,10 @@ import kr.easydoc.application.auth.SocialLoginProvider
 import kr.easydoc.application.auth.SocialLoginProviderId
 import kr.easydoc.application.auth.SocialLoginRepositories
 import kr.easydoc.application.auth.SocialLoginService
+import kr.easydoc.application.credit.CreditAccountService
 import kr.easydoc.infrastructure.DatabaseHandle
 import kr.easydoc.infrastructure.PostgresTestSupport
+import kr.easydoc.infrastructure.credit.JdbcCreditAccountRepository
 import kr.easydoc.infrastructure.db.SpringTransactionRunner
 import org.assertj.core.api.Assertions.assertThat
 import org.flywaydb.core.Flyway
@@ -152,6 +154,7 @@ class SocialLoginCallbackConcurrencyTest {
             // 두 신원 모두 emailVerified = true 로 준비한다 — 이 테스트는 이메일 인증 코드
             // 발급 경로(네이버 전용)를 재지 않는다.
             emailVerification = { error("이 테스트는 이메일 인증 코드 발급을 부르지 않는다") },
+            credits = CreditAccountService(JdbcCreditAccountRepository(client), enforced = false),
         )
     }
 

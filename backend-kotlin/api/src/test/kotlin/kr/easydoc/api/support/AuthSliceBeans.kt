@@ -26,6 +26,12 @@ import kr.easydoc.application.auth.WorkspaceRepository
 import kr.easydoc.application.conversion.ConvertDocumentUseCase
 import kr.easydoc.application.conversion.LlmCallLedger
 import kr.easydoc.application.conversion.ReconvertUnitService
+import kr.easydoc.application.credit.CreditAccountRepository
+import kr.easydoc.application.credit.CreditAccountRow
+import kr.easydoc.application.credit.CreditAccountService
+import kr.easydoc.application.credit.CreditConsistencyViolation
+import kr.easydoc.application.credit.CreditTransactionView
+import kr.easydoc.application.credit.ReservationResult
 import kr.easydoc.application.crypto.ContentCipher
 import kr.easydoc.application.dictionary.DictionaryAttribution
 import kr.easydoc.application.dictionary.DictionaryAttributionProvider
@@ -53,6 +59,9 @@ import kr.easydoc.application.usage.UsageReadRepository
 import kr.easydoc.application.usage.WorkspaceUsage
 import kr.easydoc.application.workspace.DUPLICATE_WORKSPACE_NAME_MESSAGE
 import kr.easydoc.application.workspace.WorkspaceService
+import kr.easydoc.core.credit.CreditReason
+import kr.easydoc.core.credit.CreditTransactionKind
+import kr.easydoc.core.credit.Credits
 import kr.easydoc.core.dictionary.DictionaryExample
 import kr.easydoc.core.dictionary.ReplaceStrategy
 import kr.easydoc.core.dictionary.RiskLevel
@@ -120,7 +129,8 @@ class AuthSliceBeans {
         tokens: StubAccessTokens,
         transaction: TransactionRunner,
         emailVerification: EmailVerificationService,
-    ): AuthService = AuthService(users, workspaces, hasher, tokens, transaction, emailVerification)
+        credits: CreditAccountService,
+    ): AuthService = AuthService(users, workspaces, hasher, tokens, transaction, emailVerification, credits)
 
     @Bean
     fun fakeMailSender(): FakeMailSender = FakeMailSender()
@@ -223,6 +233,7 @@ class AuthSliceBeans {
         tokens: StubAccessTokens,
         transaction: TransactionRunner,
         emailVerification: EmailVerificationService,
+        credits: CreditAccountService,
     ): SocialLoginService =
         SocialLoginService(
             providers =
@@ -237,6 +248,7 @@ class AuthSliceBeans {
             transaction = transaction,
             stateTtl = java.time.Duration.ofMinutes(10),
             emailVerification = emailVerification,
+            credits = credits,
         )
 
     /**
@@ -247,7 +259,21 @@ class AuthSliceBeans {
     fun workspaceService(
         workspaces: InMemoryWorkspaceRepository,
         transaction: TransactionRunner,
-    ): WorkspaceService = WorkspaceService(workspaces, transaction)
+        credits: CreditAccountService,
+    ): WorkspaceService = WorkspaceService(workspaces, transaction, credits)
+
+    /**
+     * 크레딧 계정(C1) — `CreditController`도 `@WebMvcTest` 슬라이스에 전부 들어가므로
+     * 위 `workspaceService`와 같은 이유로 필요하다. `enforced = false` 가 기본값과 같은
+     * 이유는 이 대역을 주입받는 기존 업로드 슬라이스(`DocumentContractTest` 등)가 잔액을
+     * 미리 채우지 않기 때문이다 — 집행이 꺼져 있으면 예약이 항상 성공한다.
+     */
+    @Bean
+    fun inMemoryCreditAccounts(): InMemoryCreditAccountRepository = InMemoryCreditAccountRepository()
+
+    @Bean
+    fun creditAccountService(repository: InMemoryCreditAccountRepository): CreditAccountService =
+        CreditAccountService(repository, enforced = false)
 
     /**
      * 사용량 집계(2.20.0, U2)도 `WorkspaceController`가 물고 있어 `@WebMvcTest`가 컨트롤러를
@@ -321,6 +347,7 @@ class AuthSliceBeans {
         extractor: DocumentTextExtractor,
         transaction: TransactionRunner,
         users: InMemoryUserRepository,
+        credits: CreditAccountService,
     ): DocumentService =
         DocumentService(
             storage = storage,
@@ -329,6 +356,7 @@ class AuthSliceBeans {
             extractor = extractor,
             transaction = transaction,
             users = users,
+            credits = credits,
         )
 
     /** 원문 조회 유스케이스도 실물이다. 협력자는 저장소 하나와 암호 하나뿐이다. */
@@ -682,6 +710,141 @@ class InMemoryWorkspaceRepository : WorkspaceRepository {
     }
 
     private fun Row.toWorkspace(): Workspace = Workspace(id, name, createdAt)
+}
+
+/**
+ * 크레딧 계정(C1) 대역 — 소유 판정은 재지 않는다(계정 존재 여부만 본다). 소유권이 걸린
+ * 404 는 `CreditsReachTest`(실 PostgreSQL)가 잰다 — 이 슬라이스는 실물
+ * `CreditAccountService` 가 예약·소비·해제·부여 로직을 그대로 밟는지, HTTP 배선(상태
+ * 코드·헤더·바디 모양)이 맞는지만 본다.
+ */
+class InMemoryCreditAccountRepository : CreditAccountRepository {
+    private class Account {
+        var balance: Int = 0
+        var reserved: Int = 0
+        val transactions: MutableList<CreditTransactionView> = mutableListOf()
+    }
+
+    private val accounts = mutableMapOf<UUID, Account>()
+
+    override fun ensureAccount(workspaceId: UUID) {
+        accounts.getOrPut(workspaceId) { Account() }
+    }
+
+    override fun reserve(
+        ownerId: UUID,
+        workspaceId: UUID,
+        documentId: UUID,
+        amount: Credits,
+        enforced: Boolean,
+    ): ReservationResult {
+        val account = accounts.getOrPut(workspaceId) { Account() }
+        val available = account.balance - account.reserved
+        if (enforced && available < amount.amount) {
+            return ReservationResult.Insufficient(available)
+        }
+        account.reserved += amount.amount
+        account.transactions +=
+            CreditTransactionView(
+                id = UUID.randomUUID(),
+                kind = CreditTransactionKind.RESERVE,
+                balanceDelta = 0,
+                reservedDelta = amount.amount,
+                reason = CreditReason.CONVERSION,
+                note = null,
+                documentId = documentId,
+                createdAt = Instant.now(),
+            )
+        return ReservationResult.Reserved(account.balance, account.reserved)
+    }
+
+    override fun consume(
+        workspaceId: UUID,
+        ownerId: UUID,
+        documentId: UUID,
+        conversionId: UUID,
+        amount: Credits,
+    ) {
+        val account = accounts.getOrPut(workspaceId) { Account() }
+        account.balance -= amount.amount
+        account.reserved -= amount.amount
+        account.transactions +=
+            CreditTransactionView(
+                id = UUID.randomUUID(),
+                kind = CreditTransactionKind.CONSUME,
+                balanceDelta = -amount.amount,
+                reservedDelta = -amount.amount,
+                reason = CreditReason.CONVERSION,
+                note = null,
+                documentId = documentId,
+                createdAt = Instant.now(),
+            )
+    }
+
+    override fun release(
+        workspaceId: UUID,
+        ownerId: UUID,
+        documentId: UUID,
+        conversionId: UUID,
+        amount: Credits,
+    ) {
+        val account = accounts.getOrPut(workspaceId) { Account() }
+        account.reserved -= amount.amount
+        account.transactions +=
+            CreditTransactionView(
+                id = UUID.randomUUID(),
+                kind = CreditTransactionKind.RELEASE,
+                balanceDelta = 0,
+                reservedDelta = -amount.amount,
+                reason = CreditReason.CONVERSION,
+                note = null,
+                documentId = documentId,
+                createdAt = Instant.now(),
+            )
+    }
+
+    override fun grant(
+        workspaceId: UUID,
+        ownerUserId: UUID,
+        credits: Int,
+        reason: CreditReason,
+        note: String?,
+    ): Int {
+        val account = accounts.getOrPut(workspaceId) { Account() }
+        account.balance += credits
+        val kind = if (credits >= 0) CreditTransactionKind.GRANT else CreditTransactionKind.ADJUST
+        account.transactions +=
+            CreditTransactionView(
+                id = UUID.randomUUID(),
+                kind = kind,
+                balanceDelta = credits,
+                reservedDelta = 0,
+                reason = reason,
+                note = note,
+                documentId = null,
+                createdAt = Instant.now(),
+            )
+        return account.balance
+    }
+
+    override fun read(
+        ownerId: UUID,
+        workspaceId: UUID,
+    ): CreditAccountRow? {
+        val account = accounts[workspaceId] ?: return null
+        return CreditAccountRow(
+            workspaceId,
+            account.balance,
+            account.reserved,
+            account.transactions.sortedByDescending { it.createdAt }.take(TRANSACTION_HISTORY_LIMIT),
+        )
+    }
+
+    override fun consistencyViolations(): List<CreditConsistencyViolation> = emptyList()
+
+    private companion object {
+        const val TRANSACTION_HISTORY_LIMIT = 50
+    }
 }
 
 /**

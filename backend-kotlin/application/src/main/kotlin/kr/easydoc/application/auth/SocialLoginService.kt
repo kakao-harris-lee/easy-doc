@@ -1,5 +1,6 @@
 package kr.easydoc.application.auth
 
+import kr.easydoc.application.credit.CreditAccountService
 import kr.easydoc.core.exceptions.ConflictException
 import kr.easydoc.core.exceptions.EmailAlreadyRegisteredException
 import kr.easydoc.core.exceptions.InvalidInputException
@@ -55,6 +56,7 @@ class SocialLoginService
         private val transaction: TransactionRunner,
         private val stateTtl: Duration,
         private val emailVerification: PostSignupEmailVerification,
+        private val credits: CreditAccountService,
     ) {
         /**
          * 제공자 인가 URL과 CSRF 방지 `state` 를 만든다.
@@ -132,7 +134,12 @@ class SocialLoginService
                                 normalizedEmail,
                                 emailVerified = identity.emailVerified,
                             )
-                        repositories.workspaces.createDefault(user.id)
+                        val workspaceId = repositories.workspaces.createDefault(user.id)
+                        // 크레딧 계정도 같은 트랜잭션에서 만든다 — `AuthService.signup` 과
+                        // 같은 규약(크레딧 계정 계획 §2 결정 4). `signupGrant` 판단은
+                        // `CreditAccountService.grantSignupBonus` 가 중앙에서 진다(리뷰 MEDIUM-9).
+                        credits.ensureAccount(workspaceId)
+                        credits.grantSignupBonus(workspaceId, user.id)
                         repositories.identities.link(
                             user.id,
                             providerId,

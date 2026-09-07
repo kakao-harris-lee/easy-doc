@@ -2,6 +2,7 @@ package kr.easydoc.infrastructure.workspace
 
 import kr.easydoc.application.auth.TransactionRunner
 import kr.easydoc.application.auth.WorkspaceRepository
+import kr.easydoc.application.credit.CreditAccountService
 import kr.easydoc.application.workspace.WorkspaceService
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
@@ -13,5 +14,6 @@ class WorkspaceConfiguration {
     fun workspaceService(
         workspaces: WorkspaceRepository,
         transactionRunner: TransactionRunner,
-    ): WorkspaceService = WorkspaceService(workspaces = workspaces, transaction = transactionRunner)
+        credits: CreditAccountService,
+    ): WorkspaceService = WorkspaceService(workspaces = workspaces, transaction = transactionRunner, credits = credits)
 }

@@ -1,6 +1,7 @@
 package kr.easydoc.infrastructure.document
 
 import kr.easydoc.application.auth.TransactionRunner
+import kr.easydoc.application.credit.noCredits
 import kr.easydoc.application.crypto.ContentCipher
 import kr.easydoc.application.document.ConversionEnvelope
 import kr.easydoc.application.document.ConversionFeedbackService
@@ -385,6 +386,7 @@ class KeyRotationBatchTest {
             cipher = cipher,
             extractor = { _, _ -> error("이 테스트는 파일 경로를 쓰지 않는다") },
             transaction = SpringTransactionRunner(TransactionTemplate(DataSourceTransactionManager(dataSource))),
+            credits = noCredits(),
         )
     }
 

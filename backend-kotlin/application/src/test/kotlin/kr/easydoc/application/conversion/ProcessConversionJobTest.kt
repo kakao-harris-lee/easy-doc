@@ -1,11 +1,15 @@
 package kr.easydoc.application.conversion
 
 import kr.easydoc.application.auth.TransactionRunner
+import kr.easydoc.application.credit.CreditAccountRepository
+import kr.easydoc.application.credit.CreditAccountService
+import kr.easydoc.application.credit.NoopCreditAccountRepository
 import kr.easydoc.application.crypto.ContentCipher
 import kr.easydoc.application.mail.EmailAddress
 import kr.easydoc.application.mail.MailDelivery
 import kr.easydoc.application.mail.MailSender
 import kr.easydoc.application.mail.OutboundMail
+import kr.easydoc.core.credit.Credits
 import kr.easydoc.core.crypto.EncryptedContent
 import kr.easydoc.core.crypto.EncryptedField
 import kr.easydoc.core.crypto.EncryptionScheme
@@ -310,12 +314,90 @@ class ProcessConversionJobTest {
         }
     }
 
+    @Nested
+    @DisplayName("크레딧 계정 (C1)")
+    inner class CreditAccounting {
+        @Test
+        @DisplayName("완료는 예약을 소비로 확정한다")
+        fun `완료는 소비를 확정한다`() {
+            val world = World()
+
+            world.jobs.processNext()
+
+            assertThat(world.creditRepository.consumeCalls).containsExactly(world.conversionId to FAKE_CREDITS_RESERVED)
+            assertThat(world.creditRepository.releaseCalls).isEmpty()
+        }
+
+        @Test
+        @DisplayName("재시도 예정 실패는 소비도 해제도 부르지 않는다")
+        fun `재시도 예정은 손대지 않는다`() {
+            val world =
+                World(
+                    provider = FakeLlmProvider(listOf(FakeLlmTurn.Fail(LlmProviderException("호출 실패")))),
+                    attempts = 1,
+                )
+
+            assertThat(world.jobs.processNext()).isEqualTo(ConversionJobOutcome.RETRY_SCHEDULED)
+            assertThat(world.creditRepository.consumeCalls).isEmpty()
+            assertThat(world.creditRepository.releaseCalls).isEmpty()
+        }
+
+        @Test
+        @DisplayName("상한 도달 영구 실패는 예약을 해제한다")
+        fun `영구 실패는 해제한다`() {
+            val world =
+                World(
+                    provider = FakeLlmProvider(listOf(FakeLlmTurn.Fail(LlmProviderException("호출 실패")))),
+                    attempts = 3,
+                )
+
+            assertThat(world.jobs.processNext()).isEqualTo(ConversionJobOutcome.FAILED)
+            assertThat(world.creditRepository.releaseCalls).containsExactly(world.conversionId to FAKE_CREDITS_RESERVED)
+            assertThat(world.creditRepository.consumeCalls).isEmpty()
+        }
+
+        @Test
+        @DisplayName("획득 시점에 이미 상한을 넘긴 작업도 예약을 해제한다")
+        fun `조기 소진도 해제한다`() {
+            val world = World(exhausted = true)
+
+            assertThat(world.jobs.processNext()).isEqualTo(ConversionJobOutcome.FAILED)
+            assertThat(world.creditRepository.releaseCalls).containsExactly(world.conversionId to FAKE_CREDITS_RESERVED)
+        }
+
+        @Test
+        @DisplayName("0 크레딧(V15 이전 문서)의 완료는 저장소를 부르지 않는다")
+        fun `레거시 문서는 소비를 부르지 않는다`() {
+            val world = World(creditsReserved = 0)
+
+            world.jobs.processNext()
+
+            assertThat(world.creditRepository.consumeCalls).isEmpty()
+        }
+
+        @Test
+        @DisplayName("0 크레딧(V15 이전 문서)의 영구 실패는 저장소를 부르지 않는다")
+        fun `레거시 문서는 해제를 부르지 않는다`() {
+            val world =
+                World(
+                    provider = FakeLlmProvider(listOf(FakeLlmTurn.Fail(LlmProviderException("호출 실패")))),
+                    attempts = 3,
+                    creditsReserved = 0,
+                )
+
+            world.jobs.processNext()
+
+            assertThat(world.creditRepository.releaseCalls).isEmpty()
+        }
+    }
+
     private class World(
         source: String = "복지 급여를 안내합니다.",
         provider: FakeLlmProvider = FakeLlmProvider.replying("오늘 서류를 내세요."),
         lease: ConversionJobLease? = ConversionJobLease(UUID.randomUUID(), OWNER, attempts = 1),
         attempts: Int = 1,
         exhausted: Boolean = false,
+        creditsReserved: Int = FAKE_CREDITS_RESERVED,
     ) {
         val conversionId: UUID = lease?.conversionId ?: UUID.randomUUID()
         val documentId: UUID = UUID.randomUUID()
@@ -327,13 +409,15 @@ class ProcessConversionJobTest {
         val cipher = RecordingCipher(transaction)
         val sourceSealed = cipher.encrypt(PlainBody(source), documentId, EncryptedField.DOCUMENT_SOURCE_TEXT)
         val leases = FakeLeases(this.lease, transaction, exhausted)
-        val work = FakeWork(conversionId, documentId, workspaceId, userId, sourceSealed, transaction)
+        val work = FakeWork(conversionId, documentId, workspaceId, userId, sourceSealed, transaction, creditsReserved)
         val provider = SpyingProvider(provider)
         val heartbeat = RenewingHeartbeat(leases)
         val notificationStore = FakeNotificationStore()
         val mailSender = RecordingMailSender()
         val notifier = ConversionCompletedNotifier(notificationStore, mailSender, "http://localhost:5173")
         val ledger = RecordingLedger()
+        val creditRepository = RecordingCreditAccountRepository()
+        val credits = CreditAccountService(creditRepository, enforced = false)
         val jobs =
             ProcessConversionJob(
                 stores =
@@ -357,7 +441,37 @@ class ProcessConversionJobTest {
                     ),
                 notifier = notifier,
                 ledger = ledger,
+                creditAccountService = credits,
             )
+    }
+
+    /**
+     * 소비·해제 호출을 기록하는 대역 — C1 검증용. `consume`·`release` 만 재정의하고 나머지는
+     * [NoopCreditAccountRepository] 에 위임한다(리뷰 MEDIUM-11).
+     */
+    private class RecordingCreditAccountRepository : CreditAccountRepository by NoopCreditAccountRepository {
+        val consumeCalls = mutableListOf<Pair<UUID, Int>>()
+        val releaseCalls = mutableListOf<Pair<UUID, Int>>()
+
+        override fun consume(
+            workspaceId: UUID,
+            ownerId: UUID,
+            documentId: UUID,
+            conversionId: UUID,
+            amount: Credits,
+        ) {
+            consumeCalls += conversionId to amount.amount
+        }
+
+        override fun release(
+            workspaceId: UUID,
+            ownerId: UUID,
+            documentId: UUID,
+            conversionId: UUID,
+            amount: Credits,
+        ) {
+            releaseCalls += conversionId to amount.amount
+        }
     }
 
     /** 원장에 실제로 쓴 항목을 기록하는 대역 — U1 검증용. */
@@ -492,6 +606,7 @@ class ProcessConversionJobTest {
         }
     }
 
+    @Suppress("LongParameterList")
     private class FakeWork(
         private val conversionId: UUID,
         private val documentId: UUID,
@@ -499,12 +614,24 @@ class ProcessConversionJobTest {
         private val userId: UUID,
         private val sourceText: EncryptedContent,
         private val transaction: RecordingDepth,
+        private val creditsReserved: Int = FAKE_CREDITS_RESERVED,
     ) : ConversionWorkStore {
         var status: ConversionStatus = ConversionStatus.PENDING
         var failureCode: String? = null
         var saveSuccessSucceeds: Boolean = true
+
+        /** [saveFailure] 를 실패(0행)로 흉내내려면 끈다 — 리뷰 HIGH-1 이중 정산 가드용. */
+        var saveFailureSucceeds: Boolean = true
         val successWrites = mutableListOf<ConversionSuccessWrite>()
         val depthWhenMarked = mutableListOf<Int>()
+
+        /**
+         * `conversions.credits_reserved` 대역 — [settleCreditsReserved] 가 CAS 로
+         * `0` 으로 낮춘다. [loadForProcessing] 은 이 값을 그대로 돌려줘 두 번째 정산
+         * 시도가 "이미 0" 임을 보게 한다(리뷰 HIGH-1 멱등성 테스트).
+         */
+        private var creditsReservedColumn: Int = creditsReserved
+        val settleAttempts = mutableListOf<Int>()
 
         override fun loadForProcessing(conversionId: UUID): ConversionWorkItem =
             ConversionWorkItem(
@@ -517,6 +644,7 @@ class ProcessConversionJobTest {
                 // 원장 스냅샷(documentCharCount)이 요구하는 값 — 이 테스트는 그 값을 재지
                 // 않으므로 고정값이면 충분하다.
                 charCount = FAKE_DOCUMENT_CHAR_COUNT,
+                creditsReserved = creditsReservedColumn,
             )
 
         override fun markProcessing(conversionId: UUID): Boolean {
@@ -541,8 +669,19 @@ class ProcessConversionJobTest {
             usage: ConversionUsage,
             attribution: LlmAttribution,
         ): Boolean {
+            if (!saveFailureSucceeds) return false
             this.failureCode = failureCode
             status = ConversionStatus.FAILED
+            return true
+        }
+
+        override fun settleCreditsReserved(
+            conversionId: UUID,
+            expectedAmount: Int,
+        ): Boolean {
+            settleAttempts += expectedAmount
+            if (creditsReservedColumn != expectedAmount) return false
+            creditsReservedColumn = 0
             return true
         }
 
@@ -580,5 +719,8 @@ class ProcessConversionJobTest {
 
         /** `ConversionWorkItem.charCount`(원장 스냅샷 출처) — 이 테스트가 재지 않는 고정값. */
         const val FAKE_DOCUMENT_CHAR_COUNT: Int = 1000
+
+        /** `ConversionWorkItem.creditsReserved` 기본값 — 소비·해제 검증이 재는 고정값. */
+        const val FAKE_CREDITS_RESERVED: Int = 3
     }
 }

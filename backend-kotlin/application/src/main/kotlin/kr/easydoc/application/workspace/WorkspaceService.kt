@@ -3,6 +3,7 @@ package kr.easydoc.application.workspace
 import kr.easydoc.application.auth.TransactionRunner
 import kr.easydoc.application.auth.WorkspaceDeletionState
 import kr.easydoc.application.auth.WorkspaceRepository
+import kr.easydoc.application.credit.CreditAccountService
 import kr.easydoc.core.exceptions.ConflictException
 import kr.easydoc.core.exceptions.NotFoundException
 import kr.easydoc.core.workspace.Workspace
@@ -13,15 +14,27 @@ import java.util.UUID
 class WorkspaceService(
     private val workspaces: WorkspaceRepository,
     private val transaction: TransactionRunner,
+    private val credits: CreditAccountService,
 ) {
     /** 만든 순서대로 돌려준다. **첫 번째가 기본 작업 공간이다**(계약 `GET /workspaces`). */
     fun list(ownerId: UUID): List<WorkspaceListing> = workspaces.listOwned(ownerId)
 
-    /** 이름을 정규화·검사한 뒤 만든다. 같은 이름이 이미 있으면 저장소가 409 를 던진다. */
+    /**
+     * 이름을 정규화·검사한 뒤 만든다. 같은 이름이 이미 있으면 저장소가 409 를 던진다.
+     *
+     * **크레딧 계정도 같은 트랜잭션에서 만든다**(0 잔액, 크레딧 계정 계획 §2 결정 4) —
+     * 추가로 만든 워크스페이스는 가입 부여를 받지 않는다(가입 기본 워크스페이스만 받는다,
+     * `AuthService.signup`).
+     */
     fun create(
         ownerId: UUID,
         rawName: String,
-    ): Workspace = workspaces.create(ownerId, validName(rawName))
+    ): Workspace =
+        transaction.inTransaction {
+            val workspace = workspaces.create(ownerId, validName(rawName))
+            credits.ensureAccount(workspace.id)
+            workspace
+        }
 
     /** 이름을 바꾼다. */
     fun rename(

@@ -32,7 +32,10 @@
 
 ## 3. 슬라이스
 
-- **C1 백엔드·계약 (M).** V15(두 표 + backfill + `conversions.credits_reserved`), core `Credits` 값 객체·`CreditTransactionKind/Reason` enum, application `CreditAccountService`(reserve/consume/release/grant, 포트 `CreditAccountRepository`), `DocumentService.store` 예약 삽입, `ProcessConversionJob` 정산, 워크스페이스 생성·가입 시 계정 행/가입 부여, `CreditsProperties(enforced, signupGrant)`, 402 예외·헤더, 계약 2.22.0(`createDocument` 402·헤더, `readWorkspaceCredits`, `InsufficientCredits`), 인구조사·`OwnershipPredicateGuardTest`. 테스트: 예약 성공/402/집행 꺼짐 음수 허용, 소비·해제 트랜잭션, 재시도 무영향, V15 이전 문서(0) 무영향, 실 DB 동시 등록 경쟁(가용 1에 문서 2건 → 하나만 성공), 거래 합 = 계정 잔액.
+- **C1 백엔드·계약 (M) — 구현(2026-09-07).** V15(두 표 + backfill + `conversions.credits_reserved`), core `Credits` 값 객체·`CreditTransactionKind/Reason` enum, application `CreditAccountService`(reserve/consume/release/grant, 포트 `CreditAccountRepository`), `DocumentService.store` 예약 삽입, `ProcessConversionJob` 정산, 워크스페이스 생성·가입 시 계정 행/가입 부여, `CreditsProperties(enforced, signupGrant)`, 402 예외·헤더, 계약 2.22.0(`createDocument` 402·헤더, `readWorkspaceCredits`, `InsufficientCredits`), 인구조사·`OwnershipPredicateGuardTest`. 테스트: 예약 성공/402/집행 꺼짐 음수 허용, 소비·해제 트랜잭션, 재시도 무영향, V15 이전 문서(0) 무영향, 실 DB 동시 등록 경쟁(가용 1에 문서 2건 → 하나만 성공), 거래 합 = 계정 잔액.
+  - `consume` 거래의 `credits` 는 항상 `0`이다(구현 확정) — `reserve` 가 예약 시점에 이미 `-n`을 기록했으므로, 완료 확정이 잔액-예약 합계를 다시 바꾸지 않는 것이 §4 정합 불변식(거래 합 = balance − reserved)이 각 거래 시점마다 성립하도록 강제한 결과다.
+  - `CreditAccountService.reserve`는 `enforced` 를 인자로 받지 않고 서비스 생성 시점(`easydoc.credits.enforced`)에 고정한다 — 이 저장소에 호출자가 하나(`DocumentService`)뿐이라 매 호출 인자로 갈릴 이유가 없고, 정책 판단을 서비스 하나에 모은다(리포지토리 포트의 `reserve`는 계획 원안대로 `enforced` 를 받는다).
+  - `DocumentService`·`ProcessConversionJob` 은 크레딧과 무관한 기존 실 DB 테스트가 새 협력자를 배선하지 않아도 되도록 `NoopCreditAccountRepository`(`application.credit`, 항상 성공)를 공유 대역으로 공개했다 — 실 조립(`CreditAccountConfiguration`)은 쓰지 않는다.
 - **C2 운영·프런트 (S).** `credit-grant` 프로필 + 테스트, `/usage` 크레딧 카드·거래 표, 업로드 화면 필요/가용·402 안내, Vitest, e2e 1건(집행 켠 e2e 스택에서 잔액 0 → 402; 프로필로 부여 → 202)은 e2e 스택 구성 변경이 크면 생략하고 backlog에 남긴다. 러너북 「크레딧 충전」 절(계좌이체 확인 → `credit-grant`).
 
 ## 4. 수용 기준
@@ -51,5 +54,5 @@ PG 결제, 플랜 자동 갱신·만료, 세금계산서 요청 기록, 어드�
 ## 6. 리스크
 
 1. 집행을 켜는 시점 운영 실수(잔액 미부여) → 전체 402. 완화: 스위치 기본 꺼짐, 러너북에 「부여 → 확인 → 켜기」 순서.
-2. 예약 후 worker가 죽어 영원히 pending인 문서는 예약을 잡고 있다. 기존 lease 만료·재시도가 영구 실패로 끝내면 해제된다. 그 밖의 고아 예약은 backlog(정합 검사 쿼리로 발견).
+2. 예약 후 worker가 죽어 영원히 pending인 문서는 예약을 잡고 있다. 기존 lease 만료·재시도가 영구 실패로 끝내면 해제된다. 사용자가 그 문서를 직접 지우거나(`DocumentService.delete`) 보존 만료 파기(`JdbcExpiredDocumentPurge`)가 돌면, 삭제 전에 끝나지 않은 예약을 조회해 해제한다(2026-09-07 리뷰 HIGH-1) — worker 크래시로 문서가 영원히 pending에 남아도 삭제·파기 경로가 예약을 끝까지 붙잡아 두지 않는다.
 3. 사용량 화면의 「크레딧」(원장 파생)과 계정 거래의 `consume` 합이 다를 수 있다(원장은 완료 호출 기준, 계정은 문서 완료 기준 — 보정 호출은 둘 다 문서 1건). 화면에서 둘의 이름을 구분한다: 「사용 크레딧」(원장) vs 「잔액」(계정).

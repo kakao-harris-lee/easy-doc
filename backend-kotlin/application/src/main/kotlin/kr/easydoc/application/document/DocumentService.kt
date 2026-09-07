@@ -2,7 +2,9 @@ package kr.easydoc.application.document
 
 import kr.easydoc.application.auth.TransactionRunner
 import kr.easydoc.application.auth.UserRepository
+import kr.easydoc.application.credit.CreditAccountService
 import kr.easydoc.application.crypto.ContentCipher
+import kr.easydoc.core.credit.Credits
 import kr.easydoc.core.crypto.EncryptedField
 import kr.easydoc.core.crypto.PlainBody
 import kr.easydoc.core.crypto.PlainBytes
@@ -26,12 +28,17 @@ import kr.easydoc.core.text.normalizeLineEndings
 import org.slf4j.LoggerFactory
 import java.util.UUID
 
-/** 업로드 접수 결과. 계약 `DocumentCreatedResponse` 의 네 필드 그대로다. */
+/**
+ * 업로드 접수 결과. 계약 `DocumentCreatedResponse` 의 네 필드에 [creditBalance] 가
+ * 더해졌다 — 크레딧 예약 **직후**의 가용 잔액이며, 202 응답의 `X-Credit-Balance` 헤더
+ * 값이다(계획 `docs/plans/2026-09-07-credit-accounts.md` §2 결정 7).
+ */
 data class AcceptedUpload(
     val documentId: UUID,
     val conversionId: UUID,
     val status: ConversionStatus,
     val charCount: Int,
+    val creditBalance: Int,
 )
 
 /**
@@ -55,6 +62,7 @@ private class UploadContent(
 )
 
 /** 문서 등록 유스케이스 — 붙여넣기·파일 두 입력을 받아 **저장하고 작업을 등록한다.** */
+@Suppress("LongParameterList")
 class DocumentService(
     private val storage: DocumentStorage,
     private val workspaces: WorkspaceLookup,
@@ -62,6 +70,14 @@ class DocumentService(
     private val extractor: DocumentTextExtractor,
     private val transaction: TransactionRunner,
     private val users: UserRepository,
+    /**
+     * 크레딧 계정. **기본값이 없다**(리뷰 2026-09-07) — 실 조립
+     * (`DocumentConfiguration.documentService`)은 언제나 명시적으로 넘기고, 크레딧과
+     * 무관한 저장 경로만 재는 테스트는 `kr.easydoc.application.credit.noCredits()` 를
+     * 한 줄 그대로 넘긴다. 기본값을 두면 실수로 생략한 프로덕션 배선도 조용히
+     * 컴파일되므로, 협력자 여덟 곳의 테스트 호출부를 명시적으로 고치는 쪽을 택했다.
+     */
+    private val credits: CreditAccountService,
 ) {
     private val log = LoggerFactory.getLogger(DocumentService::class.java)
 
@@ -136,12 +152,23 @@ class DocumentService(
         return storage.documents.listOwned(ownerId, workspaceId, limit + 1, offset)
     }
 
-    /** 문서 한 건을 **즉시 파기한다.** 보존 기간(30일)을 기다리지 않는 경로이고 복구 수단이 없다. */
+    /**
+     * 문서 한 건을 **즉시 파기한다.** 보존 기간(30일)을 기다리지 않는 경로이고 복구 수단이 없다.
+     *
+     * **크레딧 예약을 삭제 앞에서 해제한다**(리뷰 HIGH-1). 변환이 아직 끝나지 않은 채
+     * (`pending`/`processing`) 예약을 쥐고 있는데 문서를 지우면, cascade 삭제로 변환
+     * 행이 함께 사라지는 순간 그 예약을 되돌릴 방법이 사라져 `reserved` 가 영원히
+     * 부풀어 오른다 — 되돌릴 수 없는 파기이므로 되돌릴 수 없는 예약도 함께 만들면 안 된다.
+     */
     fun delete(
         ownerId: UUID,
         documentId: UUID,
     ) {
         transaction.inTransaction {
+            val reservation = storage.conversions.lockPendingReservation(ownerId, documentId)
+            reservation?.let {
+                credits.release(it.workspaceId, ownerId, documentId, it.conversionId, Credits(it.creditsReserved))
+            }
             // 0행은 「없다」와 「남의 것」을 합친 상태다. 저장소가 그 둘을 가르지 않으므로
             // 여기서도 가를 수 없고, 그것이 소유권 은닉의 형태다.
             if (!storage.documents.deleteOwned(ownerId, documentId)) {
@@ -196,8 +223,15 @@ class DocumentService(
                 )
             }
 
+        val requiredCredits = Credits.requiredFor(charCount)
+
         return transaction.inTransaction {
             val resolvedWorkspaceId = resolveWorkspaceId(ownerId, workspaceId)
+
+            // 크레딧 예약이 `documents`/`conversions` insert **앞**이다(계획 §2 결정 4) —
+            // 거절되면(집행 중 잔액 부족, 402) 문서가 아무 데도 생기지 않는다. 실패는
+            // `InsufficientCreditsException` 이 던져지고, 이 트랜잭션 전체가 롤백된다.
+            val reservation = credits.reserve(ownerId, resolvedWorkspaceId, documentId, requiredCredits)
 
             val draft =
                 DocumentDraft(
@@ -224,6 +258,7 @@ class DocumentService(
                     documentId = documentId,
                     scheme = cipher.writeScheme,
                     keyVersion = cipher.writeKeyVersion,
+                    creditsReserved = requiredCredits.amount,
                 )
             storage.queue.enqueue(conversionId)
 
@@ -232,6 +267,7 @@ class DocumentService(
                 conversionId = conversionId,
                 status = conversion.status,
                 charCount = charCount,
+                creditBalance = reservation.available,
             )
         }
     }

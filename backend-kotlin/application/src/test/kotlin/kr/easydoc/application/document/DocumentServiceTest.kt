@@ -2,7 +2,11 @@ package kr.easydoc.application.document
 
 import kr.easydoc.application.auth.TransactionRunner
 import kr.easydoc.application.auth.UserRepository
+import kr.easydoc.application.credit.CreditAccountRepository
+import kr.easydoc.application.credit.CreditAccountService
+import kr.easydoc.application.credit.NoopCreditAccountRepository
 import kr.easydoc.application.crypto.ContentCipher
+import kr.easydoc.core.credit.Credits
 import kr.easydoc.core.crypto.EncryptedContent
 import kr.easydoc.core.crypto.EncryptedField
 import kr.easydoc.core.crypto.EncryptionScheme
@@ -522,6 +526,42 @@ class DocumentServiceTest {
     }
 
     @Test
+    @DisplayName("리뷰 HIGH-1 — 끝나지 않은 변환이 예약을 쥐고 있으면 삭제 앞에서 해제한다")
+    fun `삭제는 끝나지 않은 예약을 해제한다`() {
+        val world = World()
+        val documentId = UUID.randomUUID()
+        val conversionId = UUID.randomUUID()
+        val workspaceId = UUID.randomUUID()
+        world.documents.deletable += documentId
+        world.conversions.pendingReservation =
+            PendingCreditsReservation(
+                conversionId = conversionId,
+                documentId = documentId,
+                workspaceId = workspaceId,
+                ownerId = OWNER,
+                creditsReserved = 3,
+            )
+
+        world.service.delete(OWNER, documentId)
+
+        assertThat(world.creditRepository.releaseCalls)
+            .containsExactly(ReleaseCall(workspaceId, OWNER, documentId, conversionId, 3))
+    }
+
+    @Test
+    @DisplayName("해제할 예약이 없으면(끝났거나 0) 삭제가 크레딧 저장소를 건드리지 않는다")
+    fun `해제할 예약이 없으면 손대지 않는다`() {
+        val world = World()
+        val documentId = UUID.randomUUID()
+        world.documents.deletable += documentId
+        // world.conversions.pendingReservation 은 기본값 null 이다 — 심지 않는다.
+
+        world.service.delete(OWNER, documentId)
+
+        assertThat(world.creditRepository.releaseCalls).isEmpty()
+    }
+
+    @Test
     @DisplayName("A5 — 붙여넣기 본문은 정규화된 최종 본문에서 구조를 새로 유도한다")
     fun `붙여넣기는 정규화된 본문으로 구조를 유도한다`() {
         val world = World()
@@ -596,6 +636,8 @@ class DocumentServiceTest {
         val workspaces = FakeWorkspaceLookup(defaultWorkspace)
         val queue = FakeConversionQueue(transaction, queueFailure)
         val users = FakeUserRepository(emailVerified)
+        val creditRepository = RecordingReleaseCreditAccountRepository()
+        val credits = CreditAccountService(creditRepository, enforced = false)
         var extractorCalls: Int = 0
             private set
 
@@ -617,8 +659,32 @@ class DocumentServiceTest {
                 },
                 transaction = transaction,
                 users = users,
+                credits = credits,
             )
     }
+
+    /** 삭제 앞 예약 해제(리뷰 HIGH-1) 호출만 기록한다 — 나머지는 [NoopCreditAccountRepository] 에 위임한다. */
+    private class RecordingReleaseCreditAccountRepository : CreditAccountRepository by NoopCreditAccountRepository {
+        val releaseCalls = mutableListOf<ReleaseCall>()
+
+        override fun release(
+            workspaceId: UUID,
+            ownerId: UUID,
+            documentId: UUID,
+            conversionId: UUID,
+            amount: Credits,
+        ) {
+            releaseCalls += ReleaseCall(workspaceId, ownerId, documentId, conversionId, amount.amount)
+        }
+    }
+
+    private data class ReleaseCall(
+        val workspaceId: UUID,
+        val ownerId: UUID,
+        val documentId: UUID,
+        val conversionId: UUID,
+        val amount: Int,
+    )
 
     /** `OWNER` 하나만 안다 — 문서 유스케이스는 [findById] 외의 연산을 부르지 않는다. */
     private class FakeUserRepository(private val emailVerified: Boolean) : UserRepository {
