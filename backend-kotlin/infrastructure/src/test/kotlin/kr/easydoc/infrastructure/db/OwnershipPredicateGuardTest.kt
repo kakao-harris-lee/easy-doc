@@ -394,6 +394,13 @@ class OwnershipPredicateGuardTest {
         /** 문서·변환에 닿는 제품 SQL 전부. 소유 술어가 있는 것도 함께 적는다. */
         val EXPECTED_STATEMENTS =
             listOf(
+                // 미검증 계정 파기 배치(2026-09-07, backlog §1.4 ⑵ ⓐ) — 후보 선택 SELECT 와
+                // 건너뛴 건수 카운트 SELECT 둘 다 아래 미방어 목록에 있다. 문서를 가진 계정을
+                // 고르는 `NOT EXISTS`/`EXISTS` 서브쿼리가 `documents.user_id` 를 훑지만 값을
+                // `:ownerId` 가 아니라 바깥 `users.id` 와 비교한다 — 소유자 요청이 아니라
+                // worker 가 스스로 도는 시스템 배치라 소유자를 인자로 받을 자리가 없다.
+                "$AUTH/JdbcUnverifiedAccountPurge.kt | SELECT [documents]",
+                "$AUTH/JdbcUnverifiedAccountPurge.kt | SELECT [documents]",
                 "$AUTH/JdbcWorkspaceRepository.kt | SELECT [documents]",
                 "$AUTH/JdbcWorkspaceRepository.kt | SELECT [documents]",
                 // 피드백 upsert. 덮어쓰기 팔에 소유 술어가 걸려 아래 미방어 목록에는 없다.
@@ -502,6 +509,11 @@ class OwnershipPredicateGuardTest {
          */
         val EXPECTED_UNGUARDED =
             listOf(
+                // 미검증 계정 파기 배치(2026-09-07) — 같은 사유. 후보 선택 SELECT 와 건너뛴
+                // 건수 카운트 SELECT 둘 다 `documents.user_id` 를 `users.id` 와 비교할 뿐
+                // `:ownerId` 매개변수를 받지 않는다(위 KDoc).
+                "$AUTH/JdbcUnverifiedAccountPurge.kt | SELECT [documents]",
+                "$AUTH/JdbcUnverifiedAccountPurge.kt | SELECT [documents]",
                 "$AUTH/JdbcWorkspaceRepository.kt | SELECT [documents]",
                 "$DOCUMENT/JdbcConversionFeedbackRepository.kt | SELECT [conversion_feedback]",
                 "$DOCUMENT/JdbcConversionFeedbackRepository.kt | UPDATE [conversion_feedback]",
@@ -587,7 +599,13 @@ class OwnershipPredicateGuardTest {
          * `JdbcExpiredDocumentPurge.releasePendingReservations`)다. 파기 대상 문서가 아직
          * 끝나지 않은 예약을 쥐고 있으면 삭제 전에 풀어준다 — `DocumentService.delete` 의
          * 단건 해제와 같은 사유의 배치판이라 소유자를 받을 자리가 없다.
+         *
+         * 30 → 32 는 미검증 계정 파기 배치(2026-09-07, backlog §1.4 ⑵ ⓐ)의 후보 선택
+         * SELECT 와 건너뛴 건수 카운트 SELECT 둘이다. 두 문장 다 `documents.user_id` 를
+         * `users.id` 와 비교해 문서를 가진 계정을 골라낼 뿐 `:ownerId` 매개변수를 받지
+         * 않는다 — worker 가 스스로 도는 일일 배치라 위 파기 배치들과 같은 사유로 소유자를
+         * 받을 자리가 없다.
          */
-        const val MAX_UNGUARDED_STATEMENTS = 30
+        const val MAX_UNGUARDED_STATEMENTS = 32
     }
 }

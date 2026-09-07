@@ -280,17 +280,21 @@ class AuthConfiguration {
     fun verificationCodeStore(jdbcClient: JdbcClient): VerificationCodeStore =
         JdbcVerificationCodeStore(jdbcClient, Clock.systemUTC())
 
+    /** 조립 지점의 매개변수 수는 협력자의 수다 — 클래스 KDoc과 같은 근거로 억제한다. */
+    @Suppress("LongParameterList")
     @Bean
     fun emailVerificationService(
         users: UserRepository,
         codes: VerificationCodeStore,
         mailSender: MailSender,
+        transactionRunner: TransactionRunner,
         properties: EmailVerificationProperties,
     ): EmailVerificationService =
         EmailVerificationService(
             users = users,
             codes = codes,
             mail = mailSender,
+            transaction = transactionRunner,
             codeTtl = Duration.ofMinutes(properties.codeTtlMinutes),
             resendCooldown = Duration.ofSeconds(properties.resendCooldownSeconds),
             maxAttempts = properties.maxAttempts,

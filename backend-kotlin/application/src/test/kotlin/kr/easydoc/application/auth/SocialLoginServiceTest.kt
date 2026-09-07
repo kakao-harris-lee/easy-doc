@@ -1155,11 +1155,14 @@ private class RecordingSocialUserRepository : UserRepository {
     ) = error("소셜 로그인 유스케이스는 비밀번호를 재해시하지 않는다")
 
     /** `linkCallback` 의 부수 효과(검증된 이메일이 일치하면 인증 완료로 표시)를 재는 자리에서 쓴다. */
-    override fun markEmailVerified(userId: UUID) {
-        val existing = saved.values.firstOrNull { it.user.id == userId } ?: return
-        if (existing.user.emailVerifiedAt != null) return
-        val replaced = StoredUser(existing.user.copy(emailVerifiedAt = Instant.EPOCH), existing.passwordHash)
-        saved[existing.user.email] = replaced
+    override fun markEmailVerified(userId: UUID): Boolean {
+        val existing = saved.values.firstOrNull { it.user.id == userId } ?: return false
+        val eligible = existing.user.emailVerifiedAt == null
+        if (eligible) {
+            val replaced = StoredUser(existing.user.copy(emailVerifiedAt = Instant.EPOCH), existing.passwordHash)
+            saved[existing.user.email] = replaced
+        }
+        return eligible
     }
 
     /** 비밀번호 계정을 직접 심는다 — `linkCallback` 이 "이미 로그인한 계정"을 전제하는 시나리오용. */
@@ -1241,7 +1244,7 @@ private class AlwaysDuplicateEmailUserRepository(private val message: String) : 
         passwordHash: PasswordHash,
     ) = error("이 테스트는 callback 만 부른다")
 
-    override fun markEmailVerified(userId: UUID) = error("이 테스트는 callback 만 부른다")
+    override fun markEmailVerified(userId: UUID): Boolean = error("이 테스트는 callback 만 부른다")
 }
 
 private class RecordingIdentityRepository : UserIdentityRepository {
