@@ -1,7 +1,6 @@
 package kr.easydoc.application.usage
 
 import kr.easydoc.application.workspace.WORKSPACE_NOT_FOUND_MESSAGE
-import kr.easydoc.core.exceptions.InvalidInputException
 import kr.easydoc.core.exceptions.NotFoundException
 import kr.easydoc.core.llm.LlmCallPurpose
 import java.math.BigDecimal
@@ -9,9 +8,6 @@ import java.time.Clock
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
-import java.time.format.DateTimeFormatter
-import java.time.format.DateTimeParseException
-import java.time.temporal.ChronoUnit
 import java.util.UUID
 
 /** 목적(purpose)별 집계 한 줄 — 계약 `WorkspaceUsageResponse.by_purpose` 항목. */
@@ -92,15 +88,6 @@ interface UsageReadRepository {
     ): WorkspaceUsage?
 }
 
-/** `from`/`to` 가 `YYYY-MM-DD` 로 읽히지 않는다. */
-internal const val MALFORMED_USAGE_DATE_MESSAGE = "from·to는 YYYY-MM-DD 형식이어야 합니다"
-
-/** `to`가 `from`보다 앞이다. */
-internal const val USAGE_TO_BEFORE_FROM_MESSAGE = "to는 from보다 앞일 수 없습니다"
-
-/** 조회 기간이 366일을 넘는다. */
-internal const val USAGE_RANGE_TOO_WIDE_MESSAGE = "조회 기간은 366일을 넘을 수 없습니다"
-
 /**
  * 워크스페이스 사용량 조회 유스케이스 — `GET /workspaces/{workspace_id}/usage`(계약 2.20.0).
  *
@@ -128,42 +115,14 @@ class UsageQueryService(
             ?: throw NotFoundException(WORKSPACE_NOT_FOUND_MESSAGE)
     }
 
+    /** 날짜 파싱·범위 검증은 [UsagePeriodResolver]가 U3([UsageReportService])와 공유한다. */
     private fun resolvePeriod(
         rawFrom: String?,
         rawTo: String?,
-    ): Period {
+    ): UsagePeriod {
         val today = LocalDate.now(clock.withZone(zone))
-        val fromDate = rawFrom?.let(::parseDate) ?: today.withDayOfMonth(1)
-        val toDate = rawTo?.let(::parseDate) ?: today
-
-        if (toDate.isBefore(fromDate)) throw InvalidInputException(USAGE_TO_BEFORE_FROM_MESSAGE)
-        // 포함 상한이므로 날짜 수는 (일수 차이 + 1)이다 — from·to가 같은 날이면 1일이다.
-        val inclusiveDays = ChronoUnit.DAYS.between(fromDate, toDate) + 1
-        if (inclusiveDays > MAX_RANGE_DAYS) {
-            throw InvalidInputException(USAGE_RANGE_TOO_WIDE_MESSAGE)
-        }
-
-        return Period(
-            fromInstant = fromDate.atStartOfDay(zone).toInstant(),
-            // 포함 상한 `to`의 다음날 자정을 배타 상한으로 쓴다 — `to` 날짜 23:59:59.999...는
-            // 포함되고 다음날 00:00:00은 제외된다.
-            toExclusiveInstant = toDate.plusDays(1).atStartOfDay(zone).toInstant(),
-        )
-    }
-
-    private fun parseDate(raw: String): LocalDate =
-        try {
-            LocalDate.parse(raw, DateTimeFormatter.ISO_LOCAL_DATE)
-        } catch (_: DateTimeParseException) {
-            throw InvalidInputException(MALFORMED_USAGE_DATE_MESSAGE)
-        }
-
-    private data class Period(
-        val fromInstant: Instant,
-        val toExclusiveInstant: Instant,
-    )
-
-    private companion object {
-        const val MAX_RANGE_DAYS = 366L
+        val fromDate = rawFrom?.let(UsagePeriodResolver::parseDate) ?: today.withDayOfMonth(1)
+        val toDate = rawTo?.let(UsagePeriodResolver::parseDate) ?: today
+        return UsagePeriodResolver.resolve(fromDate, toDate, zone)
     }
 }

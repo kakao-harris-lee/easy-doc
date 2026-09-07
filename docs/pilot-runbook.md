@@ -103,6 +103,55 @@ docker compose -f compose.yml -f compose.ci.yml run --rm frontend-check
 `write-key-version`이 키 링에 없으면 기동 자체가 거부된다(기존 기동 자기점검을 그대로
 탄다, 이 프로필만의 우회는 없다).
 
+## 월간 청구
+
+`llm_calls`(V12) 원장을 사용자·워크스페이스별로 집계해 CSV로 낸다. 결제 PG가 MVP
+범위 밖이라(master-plan §4.0) 청구는 사람이 수기로 진행한다 — `usage-report` profile이
+그 절차의 첫 단계(집계)만 자동화한다. `migrate`·`rotate-keys`와 같은 CLI one-off다.
+계획 `docs/plans/2026-09-07-usage-ledger-and-report.md` §3 U3.
+
+**절차:**
+
+1. **월초에 리포트를 뽑는다.** `docker compose run --rm`은 실행이 끝나면 그 컨테이너를
+   지우므로, 컨테이너 안에 CSV를 썼다가 나중에 `docker compose cp`로 꺼내려 하면 이미
+   지워진 컨테이너를 가리켜 아무 파일도 호스트에 남지 않는다. **호스트 디렉터리를
+   같은 실행에 바인드 마운트**해 컨테이너가 그 자리에 바로 쓰게 한다. 인자를 생략하면
+   지난달 1일~마지막날이 기본이다:
+   ```bash
+   docker compose -f compose.yml run --rm -v "$PWD:/out" backend-api \
+     java -jar /app/easy-doc-api.jar --spring.profiles.active=usage-report \
+     --out=/out/usage-report.csv
+   ```
+   **`--out`을 반드시 마운트 경로(`/out/...`) 아래로 지정한다** — 생략하면 기본값
+   `./usage-report.csv`가 컨테이너 안 작업 디렉터리(`/app`)에 떨어지고, 그 컨테이너는
+   `--rm`으로 곧 지워지므로 파일이 호스트에 남지 않는다. 특정 기간을 지정하려면
+   `--from=YYYY-MM-DD --to=YYYY-MM-DD`를 더한다(포함 상한, 366일 초과는 거절). CSV는
+   UTF-8 **BOM 포함**으로 쓴다 — 엑셀이 BOM 없는 UTF-8을 열면 한글 워크스페이스 이름이
+   깨져 보인다(저장소에 CSV 내보내기 선례가 없어 이번에 정했다). 행은 사용자 ×
+   워크스페이스 단위이고, 워크스페이스가 나중에 삭제된 행은 `workspace_id`가 비고
+   `workspace_name`이 `(삭제된 워크스페이스)`로 남는다 — 삭제 이후에도 그 달의 문서
+   수·문자 수·크레딧·비용이 청구 대상에서 빠지지 않는다.
+2. **CSV를 보고 사용자별 청구서를 만든다.** 열은
+   `workspace_id,workspace_name,owner_email,documents,characters,credits,llm_calls,input_tokens,output_tokens,estimated_cost_usd,cost_unknown_calls`다.
+   **그 기간에 호출이 한 번도 없던 워크스페이스는 행 자체가 없다** — `/usage` 화면이
+   그런 워크스페이스도 0으로 채워 보여 주는 것과 다르다(이 리포트는 `llm_calls`에
+   실제로 행이 있는 사용자·워크스페이스 조합만 훑는다). 청구서를 사람 손으로 만들
+   때 "리포트에 없다"를 "그 기간 사용량 0"으로 읽으면 된다 — 다만 워크스페이스
+   자체의 존재를 이 CSV로 확인할 수는 없다. `estimated_cost_usd`는 참고용 원가
+   추정치이지 고객에게 청구할 금액이 아니다 — 실제 청구는 크레딧(1,000자 = 1크레딧,
+   master-plan §3.3 요금제 한도)과 별도 계약 단가를 기준으로 사람이 산정한다.
+   `cost_unknown_calls`가 0이 아니면 그 기간 일부 호출의 원가가 단가 미설정으로
+   잡히지 않았다는 뜻이다 — 청구서 발송 전에 원인(단가 설정 누락)을 확인한다.
+3. **계좌이체 확인.** PG가 없으므로 결제는 계좌이체다 — 입금 내역을 수기로 대조한다.
+4. **세금계산서를 수동 발급한다.** 국세청 홈택스 등 별도 채널로 발급하고, 문의가 오면
+   사업자번호를 안내한다(제품에 사업자번호 저장·조회 기능이 없다 — 운영자가 별도로
+   관리한다).
+
+리포트 CSV에는 소유자 이메일·워크스페이스 이름이 실리므로 발송 전까지만 보관하고,
+공유 스토리지에 영구 보관하지 않는다(사용자 문서 본문·개인정보를 로그에 남기지
+않는다는 원칙과 같은 이유 — 이 CSV는 로그가 아니라 운영 산출물이지만 마찬가지로
+최소 보관한다).
+
 ---
 
 ## 게이트 ① 판정

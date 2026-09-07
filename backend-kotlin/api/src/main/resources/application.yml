@@ -278,3 +278,21 @@ spring:
       on-profile: rotate-keys
   main:
     web-application-type: none
+
+---
+# usage-report profile — 지난달(기본) 사용자·워크스페이스별 사용량을 CSV로 쓰고 종료한다.
+# CLI one-off 용이다(migrate·rotate-keys 와 같다 — Compose 상시 서비스가 아니다). 절차는
+# `docs/pilot-runbook.md` 「월간 청구」. 계획 `docs/plans/2026-09-07-usage-ledger-and-report.md`
+# §3 U3. 인자는 `--from=YYYY-MM-DD --to=YYYY-MM-DD --out=path`(전부 선택, 기본 지난달 전체·
+# `./usage-report.csv`).
+#
+# rotate-keys 와 같은 선택으로 **아무것도 면제하지 않는다.** 본문 암호화 키·LLM provider
+# 조립을 그대로 요구한다 — 이 리포트는 그 값을 쓰지 않지만(`llm_calls`·`users`·`workspaces`
+# 세 표는 암호화 대상이 아니다, V12 머리주석), 이 프로필만을 위한 우회는 두지 않는다
+# (`KeyRotationConfiguration` KDoc과 같은 이유).
+spring:
+  config:
+    activate:
+      on-profile: usage-report
+  main:
+    web-application-type: none

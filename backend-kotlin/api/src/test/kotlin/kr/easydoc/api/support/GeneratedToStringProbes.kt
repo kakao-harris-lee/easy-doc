@@ -6,6 +6,7 @@ import java.lang.reflect.Modifier
 import java.math.BigDecimal
 import java.time.Duration
 import java.time.Instant
+import java.time.LocalDate
 import java.util.UUID
 import javax.xml.parsers.DocumentBuilderFactory
 import kotlin.reflect.KClass
@@ -311,6 +312,7 @@ class GeneratedToStringProbes(
                 Char::class to ' ',
                 UUID::class to FIXED_UUID,
                 Instant::class to Instant.EPOCH,
+                LocalDate::class to LocalDate.of(1970, 1, 1),
                 Duration::class to Duration.ZERO,
                 BigDecimal::class to BigDecimal.ZERO,
                 ByteArray::class to ByteArray(0),

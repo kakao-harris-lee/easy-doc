@@ -49,7 +49,34 @@
   질의에도 `user_id = :ownerId`를 각자 건다(defense-in-depth, `OwnershipPredicateGuardTest`).
   `UsageReadRepository.aggregateAllOwned`는 U2가 쓰지 않고 U3를 위해 지금 포트에
   얹었다(테스트로 고정).
-- **U3 운영 리포트 (S).** `usage-report` 프로필, CSV 작성, 종료 코드, `docs/pilot-runbook.md`에 청구 절차 한 단락(월초 리포트 → 청구서 → 계좌이체 확인 → 세금계산서 수동). U2의 집계 서비스를 재사용하므로 U2 뒤.
+- **U3 운영 리포트 (S) → 구현(2026-09-07).** `usage-report` 프로필이 지난달(기본) 전체
+  사용자·워크스페이스별 사용량을 CSV로 쓰고 종료한다. `application`에 `UsageReportRow`·
+  `UsageReportRepository`·`UsageReportService`를 더했고, U2의 날짜 파싱·검증(형식 오류·
+  역순·366일 초과)은 `UsagePeriodResolver`(내부 공용 객체)로 뽑아 U2·U3가 함께 쓴다 —
+  U2의 기본 기간(이번 달 1일~오늘)과 U3의 기본 기간(지난달 전체)만 각자 정한다.
+  `JdbcUsageReportRepository`(infrastructure)는 **한 SQL**(CTE 둘)로 `(user_id,
+  workspace_id)` 단위로 묶어 `workspace_id IS NULL`(워크스페이스가 나중에 삭제된) 행도
+  포함한다 — U2([UsageReadRepository])는 워크스페이스 하나를 소유 확인 뒤 집계하는
+  포트라 이 행을 다루지 않는다. CSV 헤더는
+  `workspace_id,workspace_name,owner_email,documents,characters,credits,llm_calls,input_tokens,output_tokens,estimated_cost_usd,cost_unknown_calls`
+  (RFC 4180 quoting, 비용은 소수 문자열이거나 빈 칸, 정렬은 owner_email 다음
+  workspace_name), 삭제된 워크스페이스 행은 `workspace_id`가 비고 `workspace_name`이
+  `(삭제된 워크스페이스)`다. `api` 모듈은 `infrastructure`를 `runtimeOnly`로만 의존해
+  `JdbcUsageReportRepository`를 컴파일 시점에 볼 수 없으므로, 그 어댑터 조립은
+  `infrastructure`의 `UsageConfiguration`이 (U2의 `usageQueryService`와 같이) 프로필과
+  무관하게 상시 조립하고, `usage-report` 전용 `UsageReportConfiguration`(`api`)은 이미
+  조립된 `UsageReportService` 빈을 받아 CLI 실행부 `UsageReportRunner`(`--from --to
+  --out`, `ApplicationRunner`+`ExitCodeGenerator`)만 배선한다 — `rotate-keys`
+  (`KeyRotationConfiguration`/`KeyRotationRunner`)와 같은 자리다. `rotate-keys`와 같은
+  선택으로 이 프로필도 본문 암호화 키·LLM provider 조립을 면제하지 않는다(이 프로필만을
+  위한 우회는 두지 않는다). **CSV는 UTF-8 BOM을 붙여 쓴다** — 저장소에 CSV 내보내기
+  선례가 없어 새로 정했다: 청구 담당자가 여는 도구가 엑셀이고, BOM 없는 UTF-8을 엑셀이
+  열면 한글이 깨진다. 테스트: `UsageReportServiceTest`(기본 기간·검증·CSV 렌더링·정렬·
+  quoting), `JdbcUsageReportRepositoryTest`(실 Postgres — 두 사용자×두 워크스페이스,
+  삭제된 워크스페이스 행, 자정 경계, 빈 기간, 비용 미상), `UsageReportProfileTest`(실
+  Postgres — 시딩된 원장을 CSV로 쓰고 종료 코드 0, 잘못된 `--to`는 종료 코드 1).
+  `docs/pilot-runbook.md` 「월간 청구」에 절차(월초 리포트 → 청구서 → 계좌이체 확인 →
+  세금계산서 수동 발급)를 남겼다.
 
 ## 4. 수용 기준
 

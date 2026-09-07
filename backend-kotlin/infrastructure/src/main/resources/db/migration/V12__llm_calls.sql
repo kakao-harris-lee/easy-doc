@@ -87,3 +87,9 @@ CREATE INDEX ix_llm_calls_workspace_id_called_at ON llm_calls USING btree (works
 -- U2 문서 단위 집계(distinct document_id)가 이 열로 좁힌다 — workspace_id·called_at
 -- 색인은 GROUP/DISTINCT 대상 열(document_id)을 포함하지 않아 그 작업을 돕지 못한다.
 CREATE INDEX ix_llm_calls_document_id ON llm_calls USING btree (document_id);
+
+-- U3 운영 리포트(JdbcUsageReportRepository.REPORT_SQL)가 워크스페이스로 좁히지 않고
+-- called_at 구간만으로 **소유자 전체**를 훑는다 — ix_llm_calls_workspace_id_called_at는
+-- workspace_id가 선두 컬럼이라 이 질의(모든 workspace_id를 대상으로 한 날짜 범위
+-- 스캔)를 돕지 못한다.
+CREATE INDEX ix_llm_calls_called_at ON llm_calls USING btree (called_at);

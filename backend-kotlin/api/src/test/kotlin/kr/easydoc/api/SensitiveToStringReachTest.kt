@@ -350,8 +350,21 @@ class SensitiveToStringReachTest {
          * `WorkspaceUsageResponse`·`PurposeUsageItemResponse`. (`OwnedWorkspaceUsage`는
          * U2가 쓰지 않는 죽은 코드라 리뷰로 걷어냈다 — U3가 실제로 필요한 모양을 새로
          * 정의한다.)
+         *
+         * 운영 리포트 U3(같은 계획 §3, 2026-09-07)가 **둘**을 더해 145 다(143 위에) —
+         * application `UsageReportRow`·`UsageReport`. `UsageQueryService.Period`(사설
+         * nested data class)는 U2·U3가 함께 쓰는 `UsagePeriod`(같은 패키지 최상위 data
+         * class)로 뽑히며 이름만 바뀌었으므로 순증감 0 — 제거 1 + 추가 1이다.
+         * `UsageReportRepository`(인터페이스)·`UsageReportService`(일반 class)·
+         * `JdbcUsageReportRepository`(내부 사설 data class 없음, `ResultSet`을 바로
+         * `UsageReportRow`로 매핑)는 `data`/`value class`가 아니라 세지 않는다.
+         * `UsageReportRow`는 `ownerEmail`(`email` 토큰)·`workspaceName`(`name` 토큰) 두
+         * 필드가 민감 판정에 걸려 `toString()`을 손으로 써 가린다 — `User`·`Workspace`와
+         * 같은 규약. `UsageReport.csv`는 이름이 토큰에 걸리지 않아 자동 판정 밖이지만,
+         * 소유자 이메일·워크스페이스 이름을 그대로 담은 CSV 본문이라 예방적으로 길이만
+         * 남기는 `toString()`을 함께 붙였다.
          */
-        const val EXPECTED_SOURCE_DECLARATIONS = 143
+        const val EXPECTED_SOURCE_DECLARATIONS = 145
 
         /** 민감 판정이 반드시 닿아야 하는 타입 — 바닥이다. */
         val KNOWN_SENSITIVE_TYPES =
