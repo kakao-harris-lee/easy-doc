@@ -2,6 +2,7 @@ package kr.easydoc.application.conversion
 
 import kr.easydoc.core.crypto.EncryptedContent
 import kr.easydoc.core.document.ConversionStatus
+import kr.easydoc.core.segment.SourceStructure
 import java.time.Duration
 import java.util.UUID
 
@@ -90,6 +91,13 @@ class ConversionWorkItem(
     val workspaceId: UUID,
     val userId: UUID,
     val charCount: Int,
+    /**
+     * 원본 단위 종류(표·목록 구조 힌트 계획 §1.2) — `documents.source_unit_kinds` 컬럼 그대로다.
+     * `null` 은 컬럼이 `null` 인 옛 문서다 — [ProcessConversionJob] 이 `SourceStructure.allBody`
+     * 로 접어서 [ConvertDocumentUseCase.convert] 에 넘긴다([StoredSourceText.structureOrBody]
+     * 와 같은 방침).
+     */
+    val structure: SourceStructure? = null,
 ) {
     override fun toString(): String =
         "ConversionWorkItem($conversionId, doc=$documentId, ${status.wireName}, " +

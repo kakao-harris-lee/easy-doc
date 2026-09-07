@@ -296,14 +296,26 @@ private fun renderStyleRules(): String =
         .mapIndexed { index, principle -> "${index + 1}. $principle" }
         .joinToString("\n")
 
-/** 스타일 규칙 SSOT 를 순회해 시스템 프롬프트를 생성한다. */
-fun buildSystemPrompt(documentText: String): String {
+/**
+ * 스타일 규칙 SSOT 를 순회해 시스템 프롬프트를 생성한다.
+ *
+ * [structureSection] 은 [buildUserPrompt] 에 실을 `[구조]` 절과 **같은 값**을 받는다 —
+ * 렌더링 자체가 아니라 [hasQuotedStructureSnippets] 로 인용 유무만 본다. 인용이 있으면
+ * (다중 run 경로) [STRUCTURE_QUOTE_GUARD] 절을 추가하고, 없으면(`null`, 상한 접힘 문장,
+ * 단위 문장 경로) 아무것도 늘지 않는다 — B1 이 이 인자의 기본값(`null`)에서 유지된다.
+ */
+fun buildSystemPrompt(
+    documentText: String,
+    structureSection: String? = null,
+): String {
     val rules = renderStyleRules()
     val always = renderReplacements(findDifficultWords(documentText))
     val conditional = renderReplacements(PROMPT_ONLY_WORDS)
+    val structureGuard =
+        if (hasQuotedStructureSnippets(structureSection)) "[구조 절 취급]\n$STRUCTURE_QUOTE_GUARD" else null
     // 절 사이는 빈 줄 하나로 띄운다. 목록이 비어 있으면(문서에 어려운 낱말이 없으면)
     // 그 자리에 빈 줄이 하나 더 생기는데, 그것까지 스냅샷이 고정한 값이다.
-    return listOf(
+    return listOfNotNull(
         ROLE,
         "[변환 규칙]\n$rules",
         "[문장 길이와 쉼표]\n$LENGTH_INSTRUCTION",
@@ -314,6 +326,7 @@ fun buildSystemPrompt(documentText: String): String {
         // 목록보다 앞에 오면 가리키는 대상이 없다.
         "[낯선 말 풀어 설명하기]\n$EXPLAIN_INSTRUCTION",
         "[문서 취급]\n$INJECTION_GUARD",
+        structureGuard,
         "[출력 전 자가 점검]\n$SELF_CHECK_INSTRUCTION",
         "[출력 형식]\n$OUTPUT_INSTRUCTION",
     ).joinToString(SECTION_SEPARATOR)
@@ -341,15 +354,28 @@ fun buildUserPrompt(
     documentText: String,
     documentIds: DocumentIdGenerator = SecureDocumentIds,
     dictionaryContext: String? = null,
+    /**
+     * [renderStructureSection]이 만든 `[구조]` 절(계획 §1.3) — `<$DOCUMENT_TAG_NAME>` 구간
+     * **뒤**에 [SECTION_SEPARATOR]로 붙는다. `null`이면(표·목록이 없거나 인자를 안 주면)
+     * 아래 출력은 이 인자가 생기기 전과 한 글자도 다르지 않다 — B1(계획 §2 S8-2 수용 기준).
+     */
+    structureSection: String? = null,
 ): String {
     val documentId = documentIds.next()
     val trimmed = dictionaryContext?.trim()?.takeIf(String::isNotEmpty)
     val context = if (trimmed == null) "" else trimmed + SECTION_SEPARATOR
+    val closing = "</$DOCUMENT_TAG_NAME id=\"$documentId\">"
+    val instruction = "위 문서를 쉬운 글로 바꿔 주세요."
+    val tail =
+        if (structureSection == null) {
+            "$closing\n\n$instruction"
+        } else {
+            "$closing\n\n$structureSection\n\n$instruction"
+        }
     return context +
         "<$DOCUMENT_TAG_NAME id=\"$documentId\">\n" +
         "$documentText\n" +
-        "</$DOCUMENT_TAG_NAME id=\"$documentId\">\n\n" +
-        "위 문서를 쉬운 글로 바꿔 주세요."
+        tail
 }
 
 /** 위반을 문장 단위로 묶어 `문장 + 사유들 (+ 뜻풀이 안내)` 로 렌더링한다. */
@@ -407,6 +433,12 @@ fun buildRepairPrompt(
     violations: List<SentenceIssue>,
     missingFacts: List<FactIssue> = emptyList(),
     documentIds: DocumentIdGenerator = SecureDocumentIds,
+    /**
+     * [buildUserPrompt]의 [structureSection] 과 같은 것 — 1차 변환에 실은 `[구조]` 절을
+     * 보정 패스에도 실어 2차 호출이 표·목록 구조를 되돌리지 않게 한다(계획 §1.3). `null`이면
+     * (기본값) 아래 출력은 이 인자가 생기기 전과 한 글자도 다르지 않다.
+     */
+    structureSection: String? = null,
 ): RepairPrompt {
     val rules = renderStyleRules()
     val listed = renderViolations(violations)
@@ -419,17 +451,20 @@ fun buildRepairPrompt(
             "[고치는 방법]\n$REPAIR_INSTRUCTION",
             "[문서 취급]\n$INJECTION_GUARD",
             if (missingFacts.isEmpty()) null else "[빠진 사실 취급]\n$MISSING_FACTS_GUARD",
+            if (hasQuotedStructureSnippets(structureSection)) "[구조 절 취급]\n$STRUCTURE_QUOTE_GUARD" else null,
             "[출력 형식]\n$OUTPUT_INSTRUCTION",
         ).joinToString(SECTION_SEPARATOR)
     val convertedId = documentIds.next()
     // 빠진 사실 값은 [고칠 곳] 지시문이 아니라 그 뒤에 따로 붙는 난수 구분자 구간 안에만
     // 싣는다(renderMissingFactsBlock) — 닫는 변환문 태그 뒤 신뢰 영역에 두지 않는다.
     val factsBlock = renderMissingFactsBlock(missingFacts, documentIds)
+    val structureBlock = if (structureSection == null) "" else "\n\n$structureSection"
     val user =
         "<$CONVERTED_TAG_NAME id=\"$convertedId\">\n" +
             "${converted.value}\n" +
-            "</$CONVERTED_TAG_NAME id=\"$convertedId\">\n\n" +
-            "[고칠 곳]\n$listed$factsBlock\n\n" +
+            "</$CONVERTED_TAG_NAME id=\"$convertedId\">" +
+            structureBlock +
+            "\n\n[고칠 곳]\n$listed$factsBlock\n\n" +
             "위 문제만 고친 뒤, 고친 글 전체를 처음부터 끝까지 출력해 주세요."
     return RepairPrompt(system = system, user = user)
 }

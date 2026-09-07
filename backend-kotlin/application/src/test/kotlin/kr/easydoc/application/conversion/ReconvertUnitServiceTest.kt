@@ -25,6 +25,8 @@ import kr.easydoc.core.llm.LlmFinishReason
 import kr.easydoc.core.llm.LlmOptions
 import kr.easydoc.core.llm.LlmPrompt
 import kr.easydoc.core.llm.LlmProvider
+import kr.easydoc.core.segment.SourceStructure
+import kr.easydoc.core.segment.UnitKind
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.DisplayName
@@ -77,7 +79,10 @@ class ReconvertUnitServiceTest {
     )
 
     /** 완료 상태 변환 한 건과 그 원문을 심는다 — 원본 단위 0 은 항상 [SOURCE_UNIT_0]. */
-    private fun seedDone(status: ConversionStatus = ConversionStatus.DONE): UUID {
+    private fun seedDone(
+        status: ConversionStatus = ConversionStatus.DONE,
+        structure: SourceStructure? = null,
+    ): UUID {
         val conversionId = UUID.randomUUID()
         val documentId = UUID.randomUUID()
         conversions.owned[owner to conversionId] =
@@ -96,7 +101,13 @@ class ReconvertUnitServiceTest {
                 outputTokens = null,
                 failureCode = null,
             )
-        documents.seed(owner, documentId, "$SOURCE_UNIT_0\n$SOURCE_UNIT_1", workspaceId = workspaceId)
+        documents.seed(
+            owner,
+            documentId,
+            "$SOURCE_UNIT_0\n$SOURCE_UNIT_1",
+            workspaceId = workspaceId,
+            structure = structure,
+        )
         return conversionId
     }
 
@@ -348,6 +359,56 @@ class ReconvertUnitServiceTest {
         assertThat(conversions.reconversionBudgetOf(conversionId))
             .withFailMessage("지문 형식 위반인데 예산을 건드렸다")
             .isEqualTo(0 to 0)
+    }
+
+    @Test
+    @DisplayName("대상 단위가 표 칸이면 프롬프트에 단위 단위 문장이 실린다 — P0-4 S8-2 B4")
+    fun `표 칸 재변환은 구조 문장을 싣는다`() {
+        val structure = SourceStructure(listOf(UnitKind.TABLE_CELL, UnitKind.BODY))
+        val conversionId = seedDone(structure = structure)
+        val provider = FakeLlmProvider(listOf(reply(cleanText)))
+
+        service(provider).reconvert(owner, conversionId, 0, listOf(0), FINGERPRINT)
+
+        assertThat(provider.calls).hasSize(1)
+        assertThat(provider.calls[0].prompt.user).contains("이 문단은 표의 칸입니다")
+        // 재변환은 단위 하나만 넘기므로 줄 번호·인용 구분자는 쓰지 않는다.
+        assertThat(provider.calls[0].prompt.user).doesNotContain("째 줄")
+    }
+
+    @Test
+    @DisplayName("대상 단위가 목록 항목이면 프롬프트에 단위 단위 문장이 실린다 — P0-4 S8-2 B4")
+    fun `목록 항목 재변환은 구조 문장을 싣는다`() {
+        val structure = SourceStructure(listOf(UnitKind.LIST_ITEM, UnitKind.BODY))
+        val conversionId = seedDone(structure = structure)
+        val provider = FakeLlmProvider(listOf(reply(cleanText)))
+
+        service(provider).reconvert(owner, conversionId, 0, listOf(0), FINGERPRINT)
+
+        assertThat(provider.calls[0].prompt.user).contains("이 문단은 목록 항목입니다")
+    }
+
+    @Test
+    @DisplayName("대상 단위가 BODY 면 구조 절이 없다")
+    fun `BODY 재변환은 구조 절이 없다`() {
+        val structure = SourceStructure(listOf(UnitKind.BODY, UnitKind.TABLE_CELL))
+        val conversionId = seedDone(structure = structure)
+        val provider = FakeLlmProvider(listOf(reply(cleanText)))
+
+        service(provider).reconvert(owner, conversionId, 0, listOf(0), FINGERPRINT)
+
+        assertThat(provider.calls[0].prompt.user).doesNotContain("[구조]")
+    }
+
+    @Test
+    @DisplayName("구조 컬럼이 없는 옛 문서(null)는 전부 BODY 로 읽어 구조 절이 없다")
+    fun `구조가 null 이면 절이 없다`() {
+        val conversionId = seedDone(structure = null)
+        val provider = FakeLlmProvider(listOf(reply(cleanText)))
+
+        service(provider).reconvert(owner, conversionId, 0, listOf(0), FINGERPRINT)
+
+        assertThat(provider.calls[0].prompt.user).doesNotContain("[구조]")
     }
 
     /**

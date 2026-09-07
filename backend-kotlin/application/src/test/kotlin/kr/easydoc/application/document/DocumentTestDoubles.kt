@@ -14,6 +14,7 @@ import kr.easydoc.core.document.SourceFormat
 import kr.easydoc.core.easyread.ExportFile
 import kr.easydoc.core.easyread.exportContentLines
 import kr.easydoc.core.segment.SegmentMap
+import kr.easydoc.core.segment.SourceStructure
 import java.time.Instant
 import java.util.UUID
 
@@ -568,12 +569,14 @@ internal class FakeQueryDocumentRepository(private val transaction: RecordingTra
     /** 조회가 불린 시점의 트랜잭션 깊이. `segment_map` 이 읽는 원문도 같은 경계 안에서 읽는다. */
     val depthWhenRead = mutableListOf<Int>()
 
+    @Suppress("LongParameterList")
     fun seed(
         ownerId: UUID,
         documentId: UUID,
         text: String,
         format: SourceFormat = SourceFormat.TEXT,
         workspaceId: UUID = UUID.randomUUID(),
+        structure: SourceStructure? = null,
     ) {
         rows[ownerId to documentId] =
             StoredSourceText(
@@ -582,6 +585,7 @@ internal class FakeQueryDocumentRepository(private val transaction: RecordingTra
                 charCount = text.length,
                 sourceText = EncryptedContent(text.toByteArray(Charsets.UTF_8), EncryptionScheme.AES_256_GCM_V1, 1),
                 workspaceId = workspaceId,
+                structure = structure,
             )
     }
 

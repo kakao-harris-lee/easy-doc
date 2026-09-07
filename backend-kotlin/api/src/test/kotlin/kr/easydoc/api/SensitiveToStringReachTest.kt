@@ -346,9 +346,15 @@ class SensitiveToStringReachTest {
          * 무관한 색인 값이다 — `Anchor`·`Breakpoint`·`SegmentUnit` 과 같은 판단으로
          * [KNOWN_SENSITIVE_TYPES] 에 넣지 않는다).
          *
+         * P0-4 S8-2 프롬프트 구조 절(계획 §1.3)이 **둘**을 더해 129 이다(S8-1 127 위에) —
+         * core `StructureHintOptions`(`maxRuns: Int` 하나뿐)와 infrastructure
+         * `StructureHintProperties`(`structureMaxRuns: Int` 하나뿐). 둘 다 run 수 상한이라는
+         * 운영 구성값뿐이라 민감 토큰과 무관하다 — `LlmOptions`·`FeedbackProperties` 와 같은
+         * 판단으로 [KNOWN_SENSITIVE_TYPES] 에 넣지 않는다.
+         *
          * **2026-09-07 병합(usage-ledger → main).** LLM 호출 원장 U1(계획
-         * `docs/plans/2026-09-07-usage-ledger-and-report.md`)이 **셋**을 더해 130 이다(구조
-         * 힌트 127 위에) — core `LlmCallRecord`(원장 행 하나의 호출 값 — purpose·provider·
+         * `docs/plans/2026-09-07-usage-ledger-and-report.md`)이 **셋**을 더해 132 이다(구조
+         * 절 129 위에) — core `LlmCallRecord`(원장 행 하나의 호출 값 — purpose·provider·
          * model·토큰·지연·비용·단가 스냅샷·charCount, 숫자와 벤더 식별자뿐이라 손으로 쓴
          * `toString()` 이 없다 — 민감 판정 토큰 어디에도 걸리지 않는다), application
          * `LlmCallEntry`(원장 항목의 소유 문맥 — conversionId·documentId·workspaceId·
@@ -358,14 +364,14 @@ class SensitiveToStringReachTest {
          * [KNOWN_SENSITIVE_TYPES] 에 넣지 않는다).
          *
          * 사용량 집계 U2(같은 계획, 2026-09-08 리뷰로 청구 근거 정정)가 **여덟**을 더해
-         * 138 이다(130 위에) — application `PurposeUsage`·`WorkspaceUsage`·
+         * 140 이다(132 위에) — application `PurposeUsage`·`WorkspaceUsage`·
          * `UsageQueryService.Period`, infrastructure `UsageProperties`·
          * `JdbcUsageReadRepository.DocumentTotals`·`.CallTotals`, api
          * `WorkspaceUsageResponse`·`PurposeUsageItemResponse`. (`OwnedWorkspaceUsage`는
          * U2가 쓰지 않는 죽은 코드라 리뷰로 걷어냈다 — U3가 실제로 필요한 모양을 새로
          * 정의한다.)
          *
-         * 운영 리포트 U3(같은 계획 §3)가 **둘**을 더해 140 이다(138 위에) — application
+         * 운영 리포트 U3(같은 계획 §3)가 **둘**을 더해 142 다(140 위에) — application
          * `UsageReportRow`·`UsageReport`. `UsageQueryService.Period`(사설 nested data
          * class)는 U2·U3가 함께 쓰는 `UsagePeriod`(같은 패키지 최상위 data class)로 뽑히며
          * 이름만 바뀌었으므로 순증감 0 — 제거 1 + 추가 1이다. `UsageReportRepository`
@@ -378,7 +384,7 @@ class SensitiveToStringReachTest {
          * 이메일·워크스페이스 이름을 그대로 담은 CSV 본문이라 예방적으로 길이만 남기는
          * `toString()`을 함께 붙였다.
          */
-        const val EXPECTED_SOURCE_DECLARATIONS = 140
+        const val EXPECTED_SOURCE_DECLARATIONS = 142
 
         /** 민감 판정이 반드시 닿아야 하는 타입 — 바닥이다. */
         val KNOWN_SENSITIVE_TYPES =

@@ -9,7 +9,6 @@ import kr.easydoc.core.document.Document
 import kr.easydoc.core.document.DocumentListing
 import kr.easydoc.core.document.SourceFormat
 import kr.easydoc.core.exceptions.StorageException
-import kr.easydoc.core.segment.SourceStructure
 import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.jdbc.core.simple.JdbcClient
 import java.sql.ResultSet
@@ -197,9 +196,10 @@ class JdbcDocumentRepository(private val jdbc: JdbcClient) : DocumentRepository 
             retentionExpiresAt = rs.getObject("retention_expires_at", OffsetDateTime::class.java).toInstant(),
         )
 
-    private fun toSourceText(rs: ResultSet): StoredSourceText =
-        StoredSourceText(
-            documentId = rs.getObject("id", UUID::class.java),
+    private fun toSourceText(rs: ResultSet): StoredSourceText {
+        val documentId = rs.getObject("id", UUID::class.java)
+        return StoredSourceText(
+            documentId = documentId,
             sourceFormat = SourceFormat.ofWireName(rs.getString("source_format")),
             charCount = rs.getInt("char_count"),
             sourceText =
@@ -209,9 +209,11 @@ class JdbcDocumentRepository(private val jdbc: JdbcClient) : DocumentRepository 
                     keyVersion = rs.getInt("key_version"),
                 ),
             workspaceId = rs.getObject("workspace_id", UUID::class.java),
-            // `null` 은 이 조각 이전에 만든 문서다 — 백필하지 않는다(계획 §1.2).
-            structure = rs.getString("source_unit_kinds")?.let { SourceStructure.decode(it) },
+            // `null` 은 이 조각 이전에 만든 문서이거나(백필하지 않는다, 계획 §1.2) 저장된
+            // 값이 손상됐다는 뜻이다(리뷰 BLOCK 1) — 두 경우 모두 조회를 막지 않는다.
+            structure = rs.getString("source_unit_kinds")?.let { decodeStructureOrNull(it, documentId) },
         )
+    }
 
     private fun toListing(rs: ResultSet): DocumentListing {
         val conversionId = rs.getObject("conversion_id", UUID::class.java)

@@ -16,6 +16,7 @@ import kr.easydoc.core.exceptions.ReconversionConcurrencyExhaustedException
 import kr.easydoc.core.llm.LlmCallPurpose
 import kr.easydoc.core.llm.LlmCallRecord
 import kr.easydoc.core.privacy.CONTENT_MASK
+import kr.easydoc.core.segment.SourceStructure
 import kr.easydoc.core.segment.splitUnits
 import java.util.UUID
 import java.util.concurrent.Semaphore
@@ -135,9 +136,13 @@ class ReconvertUnitService(
         // purpose = RECONVERT — 1차·보정 호출 둘 다 원장에 `reconvert` 로 남는다
         // (`ConvertDocumentUseCase.convert` KDoc 「purpose 매개변수」).
         val unit = sourceUnits[sourceUnitIndex]
+        // 대상 단위의 종류(표 칸·목록 항목)만 담은 크기 1짜리 구조를 넘긴다(계획 §1.3) — 이
+        // 호출의 원문이 그 단위 하나뿐이라 splitUnits(unit).size 도 언제나 1이다.
+        val targetKind = source.structureOrBody(sourceUnits.size).kinds[sourceUnitIndex]
+        val unitStructure = SourceStructure(listOf(targetKind))
         val result =
             try {
-                convert.convert(unit, purpose = LlmCallPurpose.RECONVERT)
+                convert.convert(unit, structure = unitStructure, purpose = LlmCallPurpose.RECONVERT)
             } finally {
                 reconversionGate.release()
             }

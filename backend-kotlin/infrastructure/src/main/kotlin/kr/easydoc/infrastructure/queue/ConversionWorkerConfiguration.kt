@@ -26,6 +26,7 @@ import kr.easydoc.infrastructure.dictionary.DictionaryProperties
 import kr.easydoc.infrastructure.dictionary.IndexedDictionaryContextSource
 import kr.easydoc.infrastructure.document.JdbcConversionNotificationStore
 import kr.easydoc.infrastructure.document.JdbcConversionWorkStore
+import kr.easydoc.infrastructure.document.StructureHintProperties
 import kr.easydoc.infrastructure.llm.LlmProperties
 import org.slf4j.LoggerFactory
 import org.springframework.boot.context.properties.ConfigurationProperties
@@ -70,11 +71,13 @@ class ConversionWorkerConfiguration {
         provider: LlmProvider,
         dictionary: DictionaryContextSource,
         properties: LlmProperties,
+        structureHintProperties: StructureHintProperties,
     ): ConvertDocumentUseCase =
         ConvertDocumentUseCase(
             provider,
             dictionary = dictionary,
             defaultOptions = LlmOptions(maxTokens = properties.validatedMaxOutputTokens()),
+            structureHintOptions = structureHintProperties.toStructureHintOptions(),
         )
 
     /**

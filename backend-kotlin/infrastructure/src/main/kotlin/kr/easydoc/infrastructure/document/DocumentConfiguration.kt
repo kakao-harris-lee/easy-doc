@@ -196,8 +196,13 @@ class DocumentConfiguration {
     fun convertDocumentUseCase(
         provider: LlmProvider,
         properties: LlmProperties,
+        structureHintProperties: StructureHintProperties,
     ): ConvertDocumentUseCase =
-        ConvertDocumentUseCase(provider, defaultOptions = LlmOptions(maxTokens = properties.validatedMaxOutputTokens()))
+        ConvertDocumentUseCase(
+            provider,
+            defaultOptions = LlmOptions(maxTokens = properties.validatedMaxOutputTokens()),
+            structureHintOptions = structureHintProperties.toStructureHintOptions(),
+        )
 
     /**
      * LLM 호출 원장(U1) — `ProcessConversionJob`(worker)과 [reconvertUnitService](api/local)이

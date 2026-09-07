@@ -8,6 +8,8 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kr.easydoc.core.privacy.ModelDraft
+import kr.easydoc.core.segment.SourceStructure
+import kr.easydoc.core.segment.UnitKind
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
@@ -74,6 +76,81 @@ class PromptTextSnapshotTest {
         val prompt = buildRepairPrompt(ModelDraft(convertedText), violations, documentIds = FIXED_IDS)
         assertThat(prompt.system).isEqualTo(expectedSystem)
         assertThat(prompt.user).isEqualTo(expectedUser)
+    }
+
+    // ── [구조 절 취급] 방어 — P0-4 S8-2 리뷰 HIGH-2 ────────────────────────────────────
+    //
+    // 인용을 담은 [구조] 절이 실릴 때만 시스템 프롬프트에 방어 문구가 붙어야 한다. 위의
+    // 파라미터화 스냅샷 테스트(`buildSystemPrompt(sourceText)`)는 이미 `structureSection`
+    // 인자 없이(기본값 `null`) 부르므로, 이 인자가 생긴 뒤에도 그 골든 스냅샷이 그대로
+    // 통과한다는 사실 자체가 B1(널 경로 불변)의 증거다 — 아래는 그 사실을 명시적으로도
+    // 고정하고, 인용이 있는/없는 두 갈래를 함께 고정한다.
+
+    @Test
+    @DisplayName("구조 절 인자가 없으면(널) 시스템 프롬프트에 방어 절이 없다 — B1 널 경로 불변")
+    fun `구조 절이 없으면 방어 문구도 없다`() {
+        val withoutArg = buildSystemPrompt("본문입니다.")
+        val withExplicitNull = buildSystemPrompt("본문입니다.", null)
+
+        assertThat(withoutArg).isEqualTo(withExplicitNull)
+        assertThat(withoutArg).doesNotContain("[구조 절 취급]")
+    }
+
+    @Test
+    @DisplayName("인용이 있는 [구조] 절(다중 run)이 실리면 시스템 프롬프트에 방어 절이 붙는다")
+    fun `인용이 있으면 방어 절이 붙는다`() {
+        val structure =
+            renderStructureSection(
+                SourceStructure(listOf(UnitKind.TABLE_CELL, UnitKind.TABLE_CELL)),
+                listOf("구분", "금액"),
+                FIXED_IDS,
+                maxRuns = 40,
+            )
+
+        val system = buildSystemPrompt("본문입니다.", structure)
+
+        assertThat(system).contains("[구조 절 취급]")
+        assertThat(system).contains(STRUCTURE_QUOTE_GUARD)
+        // 문서 취급 절과 자가 점검 절 사이에 온다 — INJECTION_GUARD 뒤, SELF_CHECK 앞.
+        assertThat(system.indexOf("[문서 취급]")).isLessThan(system.indexOf("[구조 절 취급]"))
+        assertThat(system.indexOf("[구조 절 취급]")).isLessThan(system.indexOf("[출력 전 자가 점검]"))
+    }
+
+    @Test
+    @DisplayName("인용이 없는 단위 문장 경로(재변환)는 방어 절을 붙이지 않는다")
+    fun `단위 문장 경로는 방어 절이 없다`() {
+        val unitSentence =
+            renderStructureSection(
+                SourceStructure(listOf(UnitKind.TABLE_CELL)),
+                listOf("구분"),
+                FIXED_IDS,
+                maxRuns = 40,
+            )
+        checkNotNull(unitSentence)
+        assertThat(unitSentence).doesNotContain(STRUCTURE_TAG_NAME)
+
+        val system = buildSystemPrompt("본문입니다.", unitSentence)
+
+        assertThat(system).doesNotContain("[구조 절 취급]")
+    }
+
+    @Test
+    @DisplayName("보정 시스템 프롬프트도 인용이 있을 때만 같은 방어 절을 붙인다")
+    fun `보정 프롬프트도 인용 유무에 따라 방어 절을 붙인다`() {
+        val structure =
+            renderStructureSection(
+                SourceStructure(listOf(UnitKind.TABLE_CELL, UnitKind.TABLE_CELL)),
+                listOf("구분", "금액"),
+                FIXED_IDS,
+                maxRuns = 40,
+            )
+        val draft = ModelDraft("변환문입니다.")
+
+        val withStructure = buildRepairPrompt(draft, emptyList(), documentIds = FIXED_IDS, structureSection = structure)
+        val withoutStructure = buildRepairPrompt(draft, emptyList(), documentIds = FIXED_IDS)
+
+        assertThat(withStructure.system).contains("[구조 절 취급]")
+        assertThat(withoutStructure.system).doesNotContain("[구조 절 취급]")
     }
 
     companion object {
