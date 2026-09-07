@@ -95,8 +95,10 @@ class SocialLoginService
          * 을 받는다. 그 예외를 곧장 409로 올리지 않고, 트랜잭션이 롤백된 뒤
          * [UserIdentityRepository.findByProviderIdentity] 를 **한 번 더** 본다 — 그새 상대
          * 요청이 신원을 연결해 뒀으면(자기 자신과의 경쟁) 그 결과로 로그인 처리하고, 그래도
-         * 없으면(다른 사람의 이메일과 진짜 충돌) 같은 예외를 그대로 올린다.
+         * 없으면(다른 사람의 이메일과 진짜 충돌) [EMAIL_ALREADY_LINKED_MESSAGE] 로 같은 409를
+         * 올린다 — 원래 예외를 그대로 다시 던지지 않는다(PR #54 리뷰 후속 B, catch 절 KDoc).
          */
+        @Suppress("SwallowedException")
         fun callback(
             providerId: SocialLoginProviderId,
             code: String,
@@ -142,9 +144,18 @@ class SocialLoginService
                     }
                 } catch (raced: EmailAlreadyRegisteredException) {
                     // 트랜잭션은 이미 롤백됐다 — 재조회는 새 트랜잭션 없이 그냥 SELECT 다.
+                    //
+                    // **`raced` 를 그대로 다시 던지지 않는다(PR #54 리뷰 후속 B).** 이 예외는
+                    // `UserRepository.createWithoutPassword` 가 `users.email` 유일 인덱스
+                    // 위반에서 던진 것이라 문구가 그 계층의 것(`JdbcUserRepository.DUPLICATE_EMAIL_MESSAGE`,
+                    // "이미 가입된 이메일입니다")이다. 재조회로도 자기 자신과의 경쟁이 아님이
+                    // 확인됐다는 것은 [requireEmailNotAlreadyLinked] 사전 검사가 잡았어야 할
+                    // 진짜 중복과 같은 사실이므로, 계약이 정하는 문구([EMAIL_ALREADY_LINKED_MESSAGE])로
+                    // 새 예외를 만들어 던진다 — 사전 검사 갈래와 이 경쟁 후속 갈래가 같은 문구를
+                    // 내야 호출자 관점에서 두 경로가 한 계약처럼 보인다.
                     val racedWinner =
                         repositories.identities.findByProviderIdentity(providerId, identity.providerUserId)
-                            ?: throw raced
+                            ?: throw EmailAlreadyRegisteredException(EMAIL_ALREADY_LINKED_MESSAGE)
                     null to accessTokens.issue(racedWinner.userId)
                 }
             if (newUserId != null && !identity.emailVerified) {
@@ -185,6 +196,14 @@ class SocialLoginService
          *  2. 같은 신원이 **다른 사용자**에 연결돼 있다 → 409.
          *  3. 이 사용자가 이 제공자에 **다른** 신원을 이미 연결했다 → 409(제공자당 하나).
          *  4. 완전히 새로운 연결 → 신원을 만든다.
+         *
+         * **동시 연결 콜백 자기 경쟁(PR #54 리뷰 후속 A).** 같은 사용자·같은 신원의 연결 콜백
+         * 둘이 동시에 오면 위 사전 검사(갈래 1~3) 둘 다 통과한 뒤(둘 다 "아직 없음"을 본 창)
+         * `repositories.identities.link` 에서 하나만 유일 인덱스(V6 또는 V9)를 통과해 커밋하고
+         * 나머지는 [ConflictException] 을 받는다 — `JdbcUserIdentityRepository.link` KDoc.
+         * 그 예외를 곧장 409로 올리지 않고 [recoverFromLinkRace] 로 재조회해 자기 자신과의
+         * 경쟁인지(→ 멱등 성공으로 되돌린다, 아래에서 [markEmailVerifiedIfMatching] 도 그대로
+         * 부른다) 진짜 다른 충돌인지를 가른다 — [callback] 의 자기 경쟁 복구와 같은 원칙이다.
          */
         fun linkCallback(
             userId: UUID,
@@ -209,14 +228,54 @@ class SocialLoginService
             }
 
             val normalizedEmail = identity.email?.let(::normalizeEmail)
-            repositories.identities.link(
-                userId,
-                providerId,
-                identity.providerUserId,
-                normalizedEmail,
-                identity.emailVerified,
-            )
+            try {
+                repositories.identities.link(
+                    userId,
+                    providerId,
+                    identity.providerUserId,
+                    normalizedEmail,
+                    identity.emailVerified,
+                )
+            } catch (raced: ConflictException) {
+                recoverFromLinkRace(userId, providerId, identity.providerUserId, raced)
+            }
             markEmailVerifiedIfMatching(userId, normalizedEmail, identity.emailVerified)
+        }
+
+        /**
+         * [linkCallback] 이 유일성 위반(409)을 받은 뒤 재조회로 갈래를 가른다 — 새 트랜잭션 없이
+         * 그냥 `SELECT` 다([callback] 의 재조회와 같은 이유, 이 서비스는 `link` 호출을 감싸는
+         * 트랜잭션을 따로 열지 않으므로 롤백을 기다릴 필요도 없다).
+         *
+         * 1. [UserIdentityRepository.findByProviderIdentity] 가 **이 사용자** 소유의 신원을
+         *    돌려주면 → 자기 자신과의 경쟁이다, 정상 반환(호출자가 멱등 성공으로 이어간다).
+         * 2. **다른 사용자** 소유면 → 그 신원은 이미 다른 사용자에게 연결됐다(409).
+         * 3. 신원 자체를 못 찾았지만 [UserIdentityRepository.findByUserAndProvider] 가 이
+         *    사용자의 **다른** 신원을 찾으면 → 제공자당 하나 제약(V9)에 걸린 것이다(409).
+         * 4. 그래도 설명되지 않으면 → 재조회로도 원인을 알 수 없는 경쟁이다, [original] 을
+         *    그대로 다시 던진다.
+         *
+         * 갈래마다 다른 판정(자기 경쟁 정상 반환·다른 사용자 409·다른 신원 409·원인 불명
+         * 재던지기)이 독립 가드라 `ThrowsCount` 를 억제한다 — [unlink] 와 같은 판단이다.
+         */
+        @Suppress("ThrowsCount")
+        private fun recoverFromLinkRace(
+            userId: UUID,
+            providerId: SocialLoginProviderId,
+            providerUserId: String,
+            original: ConflictException,
+        ) {
+            val winner = repositories.identities.findByProviderIdentity(providerId, providerUserId)
+            if (winner != null) {
+                if (winner.userId == userId) {
+                    return
+                }
+                throw ConflictException(identityAlreadyLinkedToOtherUserMessage(providerId))
+            }
+            if (repositories.identities.findByUserAndProvider(userId, providerId) != null) {
+                throw ConflictException(providerAlreadyLinkedMessage(providerId))
+            }
+            throw original
         }
 
         /** `readMe.identities` — 이 사용자가 연결한 제공자 목록. */

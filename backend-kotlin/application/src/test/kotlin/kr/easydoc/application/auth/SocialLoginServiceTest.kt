@@ -140,7 +140,12 @@ class SocialLoginServiceTest {
     )
     fun `진짜 중복 이메일은 재조회해도 그대로 409다`() {
         val identities = SelfRacedIdentityRepository(winnerAfterRace = null)
-        val users = AlwaysDuplicateEmailUserRepository(SocialLoginService.EMAIL_ALREADY_LINKED_MESSAGE)
+        // 실물 `JdbcUserRepository.createWithoutPassword` 가 `users.email` 유일 인덱스 위반에서
+        // 던지는 것은 `EMAIL_ALREADY_LINKED_MESSAGE`(사전 검사 문구)가 아니라
+        // `JdbcUserRepository.DUPLICATE_EMAIL_MESSAGE`("이미 가입된 이메일입니다")다 — 이 대역이
+        // 그 실제 DB 계층 문구를 그대로 흉내 내야 "재조회로도 못 찾으면 재조회 전 사전 검사와
+        // 같은 문구로 409를 낸다"는 요구(PR #54 리뷰 후속 B)를 이 테스트가 실제로 잰다.
+        val users = AlwaysDuplicateEmailUserRepository(SIMULATED_DB_DUPLICATE_EMAIL_MESSAGE)
         val workspaces = RecordingSocialWorkspaceRepository()
         val emailVerification = SocialRecordingEmailVerification(SocialRecordingTransactionRunner())
         val world =
@@ -158,7 +163,10 @@ class SocialLoginServiceTest {
         assertThatThrownBy {
             world.service.callback(SocialLoginProviderId.GOOGLE, "auth-code", start.state, REDIRECT_URI)
         }.isInstanceOf(EmailAlreadyRegisteredException::class.java)
-            .hasMessage(SocialLoginService.EMAIL_ALREADY_LINKED_MESSAGE)
+            .withFailMessage(
+                "재조회로도 못 찾은 진짜 중복은 사전 검사와 같은 EMAIL_ALREADY_LINKED_MESSAGE 여야 하는데, " +
+                    "DB 계층이 던진 원래 예외를 그대로 올리면 문구가 갈린다",
+            ).hasMessage(SocialLoginService.EMAIL_ALREADY_LINKED_MESSAGE)
         assertThat(workspaces.createdFor).isEmpty()
         assertThat(emailVerification.issuedFor).isEmpty()
         assertThat(identities.findByProviderIdentityCallCount)
@@ -476,6 +484,133 @@ class SocialLoginServiceTest {
         ).isNull()
     }
 
+    // ------------------------------------------------------------------ linkCallback 자기 경쟁(PR #54 리뷰 후속 A)
+
+    @Test
+    @DisplayName(
+        "같은 사용자·같은 신원의 연결 콜백 둘이 동시에 오면(사전 검사 통과 뒤 DB 유일성 제약에서 " +
+            "경쟁) 재조회로 이미 이 사용자에게 연결됐음을 확인하고 멱등 성공 처리한다 — " +
+            "이메일이 일치하면 인증 완료 표시도 그대로 한다",
+    )
+    fun `연결 콜백 자기 경쟁은 멱등 성공이다`() {
+        val users = RecordingSocialUserRepository()
+        val user = users.seedPasswordAccount("self-link-race@example.test", emailVerified = false)
+        val winnerIdentity =
+            UserIdentity(UUID.randomUUID(), user.id, SocialLoginProviderId.GOOGLE, "google-link-race-1")
+        val identities = RacingLinkIdentityRepository(winnerAfterRace = winnerIdentity)
+        val world =
+            RacedSocialWorld(
+                users = users,
+                identities = identities,
+                workspaces = RecordingSocialWorkspaceRepository(),
+                emailVerification = { error("linkCallback 은 이메일 인증 코드를 발급하지 않는다") },
+                providerUserId = "google-link-race-1",
+                email = "Self-Link-Race@Example.Test",
+            )
+        val state = world.service.linkStart(user.id, SocialLoginProviderId.GOOGLE, REDIRECT_URI).state
+
+        world.service.linkCallback(user.id, SocialLoginProviderId.GOOGLE, "auth-code", state, REDIRECT_URI)
+
+        assertThat(identities.linkCalled).isTrue()
+        assertThat(identities.findByProviderIdentityCallCount)
+            .withFailMessage("사전 검사 + 경쟁 후 재조회 두 번이어야 한다")
+            .isEqualTo(2)
+        assertThat(
+            users.saved
+                .getValue("self-link-race@example.test")
+                .user.emailVerifiedAt,
+        ).withFailMessage("자기 경쟁으로 복구된 연결도 이메일이 일치하면 인증 완료로 표시해야 한다")
+            .isNotNull()
+    }
+
+    @Test
+    @DisplayName(
+        "연결 콜백이 다른 사용자와 경쟁해 DB 유일성 제약에 걸리면(재조회 결과가 다른 사용자) " +
+            "409 — 그 신원이 이미 다른 사용자에게 연결됐다는 문구다",
+    )
+    fun `연결 콜백이 다른 사용자와 경쟁하면 409다`() {
+        val users = RecordingSocialUserRepository()
+        val user = users.seedPasswordAccount("other-user-link-race@example.test")
+        val otherUserId = UUID.randomUUID()
+        val winnerIdentity =
+            UserIdentity(UUID.randomUUID(), otherUserId, SocialLoginProviderId.GOOGLE, "google-link-race-2")
+        val identities = RacingLinkIdentityRepository(winnerAfterRace = winnerIdentity)
+        val world =
+            RacedSocialWorld(
+                users = users,
+                identities = identities,
+                workspaces = RecordingSocialWorkspaceRepository(),
+                emailVerification = { error("linkCallback 은 이메일 인증 코드를 발급하지 않는다") },
+                providerUserId = "google-link-race-2",
+                email = "other-user-link-race-social@example.test",
+            )
+        val state = world.service.linkStart(user.id, SocialLoginProviderId.GOOGLE, REDIRECT_URI).state
+
+        assertThatThrownBy {
+            world.service.linkCallback(user.id, SocialLoginProviderId.GOOGLE, "auth-code", state, REDIRECT_URI)
+        }.isInstanceOf(ConflictException::class.java)
+            .hasMessage(SocialLoginService.identityAlreadyLinkedToOtherUserMessage(SocialLoginProviderId.GOOGLE))
+    }
+
+    @Test
+    @DisplayName(
+        "연결 콜백이 같은 사용자의 다른 신원과 경쟁해 DB 유일성 제약(V9)에 걸리면(재조회 결과가 " +
+            "이 사용자의 다른 신원) 409 — 제공자당 하나라는 문구다",
+    )
+    fun `연결 콜백이 같은 사용자의 다른 신원과 경쟁하면 409다`() {
+        val users = RecordingSocialUserRepository()
+        val user = users.seedPasswordAccount("multi-identity-link-race@example.test")
+        val ownerIdentity =
+            UserIdentity(UUID.randomUUID(), user.id, SocialLoginProviderId.GOOGLE, "google-link-race-3-existing")
+        val identities = RacingLinkIdentityRepository(winnerAfterRace = null, ownerAfterRace = ownerIdentity)
+        val world =
+            RacedSocialWorld(
+                users = users,
+                identities = identities,
+                workspaces = RecordingSocialWorkspaceRepository(),
+                emailVerification = { error("linkCallback 은 이메일 인증 코드를 발급하지 않는다") },
+                providerUserId = "google-link-race-3",
+                email = "multi-identity-link-race-social@example.test",
+            )
+        val state = world.service.linkStart(user.id, SocialLoginProviderId.GOOGLE, REDIRECT_URI).state
+
+        assertThatThrownBy {
+            world.service.linkCallback(user.id, SocialLoginProviderId.GOOGLE, "auth-code", state, REDIRECT_URI)
+        }.isInstanceOf(ConflictException::class.java)
+            .hasMessage(SocialLoginService.providerAlreadyLinkedMessage(SocialLoginProviderId.GOOGLE))
+    }
+
+    @Test
+    @DisplayName(
+        "재조회 두 곳(신원·사용자+제공자) 모두 아무것도 못 찾으면 자기 경쟁이 아니다 — " +
+            "DB 가 던진 원래 409 를 그대로 올린다",
+    )
+    fun `연결 콜백이 재조회로도 설명되지 않으면 원래 예외를 그대로 올린다`() {
+        val users = RecordingSocialUserRepository()
+        val user = users.seedPasswordAccount("unexplained-link-race@example.test")
+        val identities =
+            RacingLinkIdentityRepository(
+                winnerAfterRace = null,
+                ownerAfterRace = null,
+                linkConflictMessage = "unique constraint violation detail",
+            )
+        val world =
+            RacedSocialWorld(
+                users = users,
+                identities = identities,
+                workspaces = RecordingSocialWorkspaceRepository(),
+                emailVerification = { error("linkCallback 은 이메일 인증 코드를 발급하지 않는다") },
+                providerUserId = "google-link-race-4",
+                email = "unexplained-link-race-social@example.test",
+            )
+        val state = world.service.linkStart(user.id, SocialLoginProviderId.GOOGLE, REDIRECT_URI).state
+
+        assertThatThrownBy {
+            world.service.linkCallback(user.id, SocialLoginProviderId.GOOGLE, "auth-code", state, REDIRECT_URI)
+        }.isInstanceOf(ConflictException::class.java)
+            .hasMessage("unique constraint violation detail")
+    }
+
     // ------------------------------------------------------------------ 카카오(계약 2.13.0)
 
     @Test
@@ -757,6 +892,13 @@ class SocialLoginServiceTest {
         const val REDIRECT_URI = "http://localhost:5173/auth/google/callback"
         const val KAKAO_REDIRECT_URI = "http://localhost:5173/auth/kakao/callback"
         const val NAVER_REDIRECT_URI = "http://localhost:5173/auth/naver/callback"
+
+        /**
+         * `JdbcUserRepository.DUPLICATE_EMAIL_MESSAGE` 를 그대로 옮긴 값이다(다른 모듈이라
+         * 상수를 직접 참조할 수 없다) — `users.email` 유일 인덱스 위반이 실제로 던지는 문구.
+         * `SocialLoginService.EMAIL_ALREADY_LINKED_MESSAGE`(사전 검사 문구)와 **의도적으로 다르다**.
+         */
+        const val SIMULATED_DB_DUPLICATE_EMAIL_MESSAGE = "이미 가입된 이메일입니다"
     }
 }
 
@@ -1132,6 +1274,63 @@ private class SelfRacedIdentityRepository(private val winnerAfterRace: UserIdent
         userId: UUID,
         provider: SocialLoginProviderId,
     ): Boolean = error("이 테스트는 callback 만 부른다")
+}
+
+/**
+ * `linkCallback` 자기 경쟁 테스트 전용(PR #54 리뷰 후속 A) — 사전 검사 두 곳
+ * (`findByProviderIdentity`·`findByUserAndProvider`)은 첫 호출에서 "아직 없음"을 돌려줘 흐름이
+ * `link()` 까지 들어오게 하고, `link()` 는 항상 [ConflictException] 을 던져 DB 유일성 제약
+ * 위반을 흉내 낸다. 그 뒤 `SocialLoginService` 가 부르는 재조회는 두 번째 호출부터
+ * [winnerAfterRace]·[ownerAfterRace] 를 돌려준다 — 갈래 넷을 이 하나의 대역으로 다 흉내 낸다:
+ * 자기 경쟁([winnerAfterRace] 가 호출자 소유), 다른 사용자 경쟁([winnerAfterRace] 가 다른
+ * 사용자 소유), 같은 사용자의 다른 신원 경쟁([winnerAfterRace] 는 `null`, [ownerAfterRace] 는
+ * 존재), 설명되지 않는 경쟁(둘 다 `null` — 원래 예외를 그대로 올려야 한다).
+ */
+private class RacingLinkIdentityRepository(
+    private val winnerAfterRace: UserIdentity?,
+    private val ownerAfterRace: UserIdentity? = null,
+    private val linkConflictMessage: String = "simulated-unique-violation",
+) : UserIdentityRepository {
+    var findByProviderIdentityCallCount = 0
+        private set
+    var findByUserAndProviderCallCount = 0
+        private set
+    var linkCalled = false
+        private set
+
+    override fun findByProviderIdentity(
+        provider: SocialLoginProviderId,
+        providerUserId: String,
+    ): UserIdentity? {
+        findByProviderIdentityCallCount++
+        return if (findByProviderIdentityCallCount == 1) null else winnerAfterRace
+    }
+
+    override fun findByUserAndProvider(
+        userId: UUID,
+        provider: SocialLoginProviderId,
+    ): UserIdentity? {
+        findByUserAndProviderCallCount++
+        return if (findByUserAndProviderCallCount == 1) null else ownerAfterRace
+    }
+
+    override fun findAllByUser(userId: UUID): List<UserIdentity> = error("이 테스트는 linkCallback 만 부른다")
+
+    override fun link(
+        userId: UUID,
+        provider: SocialLoginProviderId,
+        providerUserId: String,
+        email: String?,
+        emailVerified: Boolean,
+    ): UserIdentity {
+        linkCalled = true
+        throw ConflictException(linkConflictMessage)
+    }
+
+    override fun deleteByUserAndProvider(
+        userId: UUID,
+        provider: SocialLoginProviderId,
+    ): Boolean = error("이 테스트는 linkCallback 만 부른다")
 }
 
 private class RecordingSocialAccessTokens(private val configured: Boolean) : AccessTokens {
