@@ -192,6 +192,12 @@ docker compose -f compose.yml -f compose.ci.yml run --rm frontend-check
 운영자가 `credit-grant` profile로 수동 부여한다 — `usage-report`·`rotate-keys`와 같은
 CLI one-off다(Compose 상시 서비스가 아니다).
 
+**정책(2026-09-08 결정, 계획 §7):** 부여한 크레딧은 **만료·이월 없이** 소진할 때까지
+남는다. 월 구독 갱신은 **월초에 운영자가 `credit-grant --reason=plan_monthly`를 수동으로**
+돌리는 것이고(자동 부여 없음), 가입 시 기본 워크스페이스에는 `EASYDOC_CREDITS_SIGNUP_GRANT=50`
+(Starter 한 달치)을 1회 부여한다. 집행(`EASYDOC_CREDITS_ENFORCED=true`)은 아래 4번대로
+**부여 직후** 켠다 — 파일럿 내내 꺼 두지 않는다.
+
 **절차:**
 
 1. **계좌이체 확인.** 입금 내역을 수기로 대조한다(위 「월간 청구」 3번과 같다).
@@ -215,7 +221,7 @@ CLI one-off다(Compose 상시 서비스가 아니다).
    `backend-api` 서비스(그 환경변수 전부)로 돌려야 기동 자기점검을 통과한다.
 3. **확인한다.** 인증된 그 워크스페이스 소유자로 `GET /workspaces/{workspace_id}/credits`를
    불러 잔액·거래 1건이 반영됐는지 본다(화면이면 `/usage` 크레딧 카드).
-4. **집행을 켠다(선택, 파일럿 준비가 끝난 뒤).** 기본값 `easydoc.credits.enforced=false`는
+4. **집행을 켠다(파일럿 워크스페이스 부여가 끝난 직후 — 2026-09-08 결정).** 기본값 `easydoc.credits.enforced=false`는
    꺼져 있어도 예약·소비·거래를 그대로 기록한다(잔액이 음수로 남을 수 있다) — 켜는
    순간부터 가용 크레딧이 모자란 등록이 402로 거절된다. `EASYDOC_CREDITS_ENFORCED=true`를
    `.env`(또는 배포 환경변수)에 넣고 `backend-api`를 재기동한다.
