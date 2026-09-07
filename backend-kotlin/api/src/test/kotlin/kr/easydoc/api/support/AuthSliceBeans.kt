@@ -10,6 +10,7 @@ import kr.easydoc.application.admin.AdminFailureCount
 import kr.easydoc.application.admin.AdminGrantService
 import kr.easydoc.application.admin.AdminGuard
 import kr.easydoc.application.admin.AdminMonthUsage
+import kr.easydoc.application.admin.AdminProviderFailureCount
 import kr.easydoc.application.admin.AdminQueryService
 import kr.easydoc.application.admin.AdminWorkspaceQueryRepository
 import kr.easydoc.application.admin.AdminWorkspaceRow
@@ -1607,6 +1608,11 @@ class InMemoryAdminConversionQueryRepository : AdminConversionQueryRepository {
         toExclusive: Instant,
         limit: Int,
     ): List<AdminErrorRow> = emptyList()
+
+    override fun providerFailureCounts(
+        from: Instant,
+        toExclusive: Instant,
+    ): List<AdminProviderFailureCount> = emptyList()
 }
 
 /** 운영 리포트(U3) 대역 — `AdminUsageController`가 처음으로 이 서비스를 HTTP에 노출한다. */

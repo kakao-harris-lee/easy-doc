@@ -31,7 +31,7 @@ beforeEach(() => {
     size: 20,
     total: 0,
   })
-  vi.mocked(readAdminErrors).mockResolvedValue({ counts: [], recent: [] })
+  vi.mocked(readAdminErrors).mockResolvedValue({ counts: [], recent: [], provider_failures: [] })
   vi.mocked(listAdminAnnouncements).mockResolvedValue({ items: [] })
 })
 

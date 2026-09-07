@@ -31,7 +31,7 @@ class JdbcLlmCallLedger(private val jdbc: JdbcClient) : LlmCallLedger {
         "(:id$index, :conversionId$index, :documentId$index, :workspaceId$index, :userId$index, " +
             ":purpose$index, :provider$index, :model$index, :inputTokens$index, :outputTokens$index, " +
             ":latencyMs$index, :estimatedCostUsd$index, :pricingInput$index, :pricingOutput$index, " +
-            ":charCount$index, :documentCharCount$index, :calledAt$index)"
+            ":charCount$index, :documentCharCount$index, :calledAt$index, :outcome$index, :failureClass$index)"
 
     private fun bind(
         spec: JdbcClient.StatementSpec,
@@ -59,15 +59,25 @@ class JdbcLlmCallLedger(private val jdbc: JdbcClient) : LlmCallLedger {
             // 짝을 맞춘다 — 이 표의 유일한 쓰기 경로라 `java.sql.Timestamp` 대신 이 표현으로
             // 통일해도 다른 어댑터와 부딪히지 않는다.
             .param("calledAt$index", OffsetDateTime.ofInstant(entry.calledAt, ZoneOffset.UTC))
+            // V18 — 실패 호출 원장 추적. 성공 경로는 기본값과 같은 "completed"·null 이다.
+            .param("outcome$index", entry.record.outcome.wireName)
+            // 오늘은 항상 "LlmProviderException"(20자)이라 이 자름이 실제로 발동하지
+            // 않는다(`LlmCallOutcome` KDoc) — 그래도 미래에 더 긴 이름의 예외 서브타입이
+            // 생기면 이 INSERT가 `varchar(64)` 제약(V18)에 걸려 트랜잭션 전체(완료 저장
+            // 포함)를 실패시킨다. 원장 열 하나의 값 손실이 완료 저장 실패보다 싸다.
+            .param("failureClass$index", entry.record.failureClass?.take(FAILURE_CLASS_MAX_LENGTH))
 
     private companion object {
+        /** `llm_calls.failure_class` 열 폭(V18 `character varying(64)`)과 같은 값. */
+        const val FAILURE_CLASS_MAX_LENGTH = 64
+
         val INSERT_PREFIX =
             """
             INSERT INTO llm_calls (
                 id, conversion_id, document_id, workspace_id, user_id,
                 purpose, provider, model, input_tokens, output_tokens,
                 latency_ms, estimated_cost_usd, pricing_input_usd_per_mtok, pricing_output_usd_per_mtok,
-                char_count, document_char_count, called_at
+                char_count, document_char_count, called_at, outcome, failure_class
             ) VALUES
             """.trimIndent()
     }

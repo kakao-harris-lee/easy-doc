@@ -19,6 +19,7 @@ import kr.easydoc.core.exceptions.ReconversionBudgetExhaustedException
 import kr.easydoc.core.exceptions.ReconversionConcurrencyExhaustedException
 import kr.easydoc.core.llm.FakeLlmProvider
 import kr.easydoc.core.llm.FakeLlmTurn
+import kr.easydoc.core.llm.LlmCallOutcome
 import kr.easydoc.core.llm.LlmCallPurpose
 import kr.easydoc.core.llm.LlmCompletion
 import kr.easydoc.core.llm.LlmFinishReason
@@ -184,8 +185,8 @@ class ReconvertUnitServiceTest {
     }
 
     @Test
-    @DisplayName("provider 호출 실패는 원장에 아무것도 남기지 않는다 (U1)")
-    fun `provider 실패는 원장 0행이다`() {
+    @DisplayName("provider 호출 실패도 원장에 RECONVERT·provider_error 행 하나를 남긴다 (V18, 백로그 「실패 호출 원장 추적」)")
+    fun `provider 실패는 원장에 provider_error 행 하나다`() {
         val conversionId = seedDone()
         val provider = FakeLlmProvider(listOf(FakeLlmTurn.Fail(LlmProviderException("실패"))))
         val ledger = RecordingLedger()
@@ -194,7 +195,13 @@ class ReconvertUnitServiceTest {
             service(provider, ledger = ledger).reconvert(owner, conversionId, 0, listOf(0), FINGERPRINT)
         }.isInstanceOf(ExternalServiceUnavailableException::class.java)
 
-        assertThat(ledger.appended).isEmpty()
+        assertThat(ledger.appended).hasSize(1)
+        val entry = ledger.appended.single()
+        assertThat(entry.record.purpose).isEqualTo(LlmCallPurpose.RECONVERT)
+        assertThat(entry.record.outcome).isEqualTo(LlmCallOutcome.PROVIDER_ERROR)
+        assertThat(entry.record.failureClass).isEqualTo("LlmProviderException")
+        assertThat(entry.record.inputTokens).isZero()
+        assertThat(entry.record.outputTokens).isZero()
     }
 
     @Test

@@ -30,10 +30,17 @@ data class ConversionUsage(
     val outputTokens: Int,
     /**
      * 호출 단위 원장 항목(U1, 계획 §3) — 어느 호출이 보정이었는지, 각 호출의 비용까지 담는다.
-     * [llmCalls]·[inputTokens]·[outputTokens] 는 이 목록의 합산과 같아야 하지만, 그 세
-     * 필드는 이 목록이 생기기 전부터 있던 요약값이라 그대로 둔다(기존 호출부가 바뀌지
-     * 않게). 기본값 `emptyList()` 가 실패·중단 경로(`ConversionUsage(llmCalls = 0, …)`)를
-     * 그대로 통과시킨다 — 실패한 호출은 원장에 남기지 않는다(계획 §2 결정 2).
+     * **[llmCalls] 와 이 목록의 크기는 같다** — `ConvertDocumentUseCase.Pass.complete` 가
+     * 시도할 때마다(`CompletionBudget.spend`) 성공이든 [kr.easydoc.core.exceptions
+     * .LlmProviderException] 이든 항목을 정확히 하나 남긴다(백로그 「실패 호출 원장
+     * 추적」, 2026-09-08 — 계획 §2 결정 2 「실패한 호출은 기록하지 않는다」는 이 변경으로
+     * 뒤집혔다. 벤더가 실패한 요청의 입력 토큰에 과금할 수 있어(계획 §6 리스크 1) 이 행이
+     * 없으면 그 청구를 대조할 방법이 없었다). [inputTokens]·[outputTokens] 는 이 목록의
+     * **완성 응답을 받은**(`outcome = completed`) 항목만 합산한 값과 같다 — provider
+     * 예외 항목은 토큰이 0이다. 이 세 필드는 이 목록이 생기기 전부터 있던 요약값이라
+     * 그대로 둔다(기존 호출부가 바뀌지 않게). 기본값 `emptyList()` 는
+     * `ConversionAcquire.Exhausted` 처럼 LLM 을 아예 부르지 못한 경로
+     * (`ConversionUsage(llmCalls = 0, …)`)를 그대로 통과시킨다.
      */
     val calls: List<LlmCallRecord> = emptyList(),
 )

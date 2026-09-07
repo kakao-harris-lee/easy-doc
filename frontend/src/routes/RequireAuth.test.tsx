@@ -175,7 +175,7 @@ describe('관리자 가드 (어드민 최소, 계약 2.25.0)', () => {
       size: 20,
       total: 0,
     })
-    vi.mocked(readAdminErrors).mockResolvedValue({ counts: [], recent: [] })
+    vi.mocked(readAdminErrors).mockResolvedValue({ counts: [], recent: [], provider_failures: [] })
     vi.mocked(listAdminAnnouncements).mockResolvedValue({ items: [] })
 
     renderAt('/admin')

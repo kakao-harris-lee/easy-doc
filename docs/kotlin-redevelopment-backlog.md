@@ -47,8 +47,10 @@ provider·model·토큰·지연·예상 비용·단가 스냅샷·`char_count`(�
 리뷰로 신설)를 남긴다 — 지금까지 구조화 로그로만 나가고 어디에도 저장되지 않던 값이다.
 모델별 단가(`easydoc.llm.pricing.models.<model-id>`)가 단일 값 위에 얹혔고, 응답 model로
 찾아 없으면 단일 값, 그것도 없으면 `null`로 떨어진다. `ProcessConversionJob`은 완료/실패
-저장과 같은 트랜잭션에서, `ReconvertUnitService`는 정산 트랜잭션에서 원장을 쓴다 — 실패한
-provider 호출(예외)은 토큰이 없어 기록하지 않지만, 절단·빈 결과처럼 완성 자체는 받은
+저장과 같은 트랜잭션에서, `ReconvertUnitService`는 정산 트랜잭션에서 원장을 쓴다 —
+**2026-09-08 정정(§1 「실패 호출 원장 추적」):** 이전에는 실패한 provider 호출(예외)을
+토큰이 없다는 이유로 기록하지 않았지만, 지금은 `outcome = provider_error`로 토큰
+0·비용 `null`로 남긴다. 절단·빈 결과처럼 완성 자체는 받은
 실패는 실제 사용량이 있어 기록한다. 재변환은 1차·보정 호출 둘 다 `reconvert` 하나로 묶인다
 (`ConvertDocumentUseCase.convertMasked`의 `purpose` 매개변수 — 사후 재라벨링 대신 유스케이스가
 직접 결정하는 쪽을 선택했다). **보존 정책 — 3차 정정(2026-09-08).** `conversion_id`·
@@ -88,6 +90,30 @@ UTF-8 한글을 깨뜨린다). `docs/pilot-runbook.md`에 「월간 청구」 �
 청구서 → 계좌이체 확인 → 세금계산서 수동 발급)를 남겼다. 계획
 `docs/plans/2026-09-07-usage-ledger-and-report.md` §3 U3. 크레딧 잔액·차감·거절, PG
 결제, 세금계산서 자동 발급은 이 조각 밖이다.
+
+**실패 호출 원장 추적 → 구현(2026-09-08, 계약 2.26.0, V18, U1 §6 리스크 1 후속).**
+완성 자체가 나지 않은 provider 예외(`LlmProviderException`)는 U1이 `llm_calls`에
+아예 기록하지 않았다 — 벤더는 실패한 요청의 입력 토큰에도 과금할 수 있어, 그 청구를
+원장만으로 대조(reconcile)할 방법이 없었다(계획 §6 리스크 1). 이 조각이 그 배제를
+뒤집는다: `llm_calls`에 `outcome`(`completed | provider_error`, 기본값
+`completed`)·`failure_class`(예외 클래스의 단순 이름, 메시지는 담지 않는다) 열을
+더하고(V18), `model` 열의 `NOT NULL`을 걷어냈다(응답 자체가 없으면 모델도 모른다).
+`ConvertDocumentUseCase.Pass.complete`가 `LlmProviderException`을 잡을 때도 원장
+항목 하나를 남긴다 — 토큰 0, 비용 `null`. `ProcessConversionJob`·
+`ReconvertUnitService`는 이미 `usage.calls`를 그대로 원장에 옮기던 경로라 추가
+배선이 필요 없었다. 집계(U2 `GET /workspaces/{workspace_id}/usage`, U3
+`usage-report`·`GET /admin/usage`)는 `outcome = completed`인 행만 문서·문자·크레딧·
+토큰·비용에 합산하고, 실패 건수는 `failed_calls`(워크스페이스 집계·목적별 소계·리포트
+행 전부에 신설, CSV는 `llm_calls` 바로 뒤 열)로 따로 낸다 — 실패 호출만 있고 완료가
+하나도 없는 문서·목적·워크스페이스·사용자도 집계에서 사라지지 않는다. 어드민
+`GET /admin/errors`에 `provider_failures`(`AdminProviderFailureCount`, `failure_class`
+별 건수)를 더했다 — 기존 `counts`(`conversions.failure_code`, 변환이 최종적으로
+실패로 보고된 사유)와 다른 축으로, 재시도로 결국 성공한 변환의 실패 호출도 잡는다.
+프런트 `/usage` 합계 표는 `failed_calls > 0`일 때만 「실패 호출」 열을 보여주고,
+어드민 오류 탭은 `provider_failures` 표를 추가로 낸다. 계획
+`docs/plans/2026-09-07-usage-ledger-and-report.md` §2 결정 2·§6 리스크 1(둘 다
+2026-09-08 정정). 실제 벤더 청구서와의 금액 대조 자체(자동화)는 이 조각 밖이다 —
+건수·사유만 보인다.
 
 ## 1.1 추후 개선 항목 (동작에는 문제 없음)
 

@@ -57,10 +57,14 @@ data class AdminWorkspaceDetail(
     val recentConversions: List<AdminConversionRow>,
 )
 
-/** `GET /admin/errors` 응답 — 코드별 건수 + 최근 목록. */
+/**
+ * `GET /admin/errors` 응답 — 코드별 건수 + 최근 목록 + provider 실패 건수(V18, 백로그
+ * 「실패 호출 원장 추적」, 2026-09-08).
+ */
 data class AdminErrorsView(
     val counts: List<AdminFailureCount>,
     val recent: List<AdminErrorRow>,
+    val providerFailures: List<AdminProviderFailureCount>,
 )
 
 /**
@@ -127,7 +131,8 @@ class AdminQueryService(
         val period = resolvePeriod(from, to)
         val counts = conversions.failureCounts(period.first, period.second)
         val recent = conversions.recentFailures(period.first, period.second, RECENT_ERRORS_LIMIT)
-        return AdminErrorsView(counts, recent)
+        val providerFailures = conversions.providerFailureCounts(period.first, period.second)
+        return AdminErrorsView(counts, recent, providerFailures)
     }
 
     /** `UsageReportService`가 CSV로 굳히기 전의 행 그대로 — `GET /admin/usage`가 JSON으로 낸다. */

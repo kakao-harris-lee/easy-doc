@@ -33,13 +33,20 @@ data class UsageReportRow(
     val outputTokens: Long,
     val estimatedCostUsd: BigDecimal?,
     val costUnknownCalls: Int,
+    /**
+     * 완성 자체가 나지 않은 호출 수(`outcome = provider_error`, V18) — 백로그 「실패 호출
+     * 원장 추적」, 2026-09-08. [llmCalls]·[inputTokens]·[outputTokens]·[estimatedCostUsd]
+     * 에는 들어가지 않는다.
+     */
+    val failedCalls: Int,
 ) {
     /** **이메일·워크스페이스 이름을 찍지 않는다** — `User`·`Workspace`와 같은 규약. */
     override fun toString(): String =
         "UsageReportRow(userId=$userId, ownerEmail=$CONTENT_MASK, workspaceId=$workspaceId, " +
             "workspaceName=${workspaceName?.let { CONTENT_MASK }}, documents=$documents, " +
             "characters=$characters, credits=$credits, llmCalls=$llmCalls, inputTokens=$inputTokens, " +
-            "outputTokens=$outputTokens, estimatedCostUsd=$estimatedCostUsd, costUnknownCalls=$costUnknownCalls)"
+            "outputTokens=$outputTokens, estimatedCostUsd=$estimatedCostUsd, costUnknownCalls=$costUnknownCalls, " +
+            "failedCalls=$failedCalls)"
 }
 
 /**
@@ -160,6 +167,8 @@ class UsageReportService(
             row.characters.toString(),
             row.credits.toString(),
             row.llmCalls.toString(),
+            // llm_calls 바로 뒤 — 완성 자체가 나지 않은 호출 수(V18).
+            row.failedCalls.toString(),
             row.inputTokens.toString(),
             row.outputTokens.toString(),
             row.estimatedCostUsd?.toPlainString().orEmpty(),
@@ -201,6 +210,6 @@ class UsageReportService(
         val FORMULA_TRIGGER_CHARS = charArrayOf('=', '+', '-', '@', '\t')
         const val HEADER =
             "workspace_id,workspace_name,owner_email,documents,characters,credits," +
-                "llm_calls,input_tokens,output_tokens,estimated_cost_usd,cost_unknown_calls"
+                "llm_calls,failed_calls,input_tokens,output_tokens,estimated_cost_usd,cost_unknown_calls"
     }
 }

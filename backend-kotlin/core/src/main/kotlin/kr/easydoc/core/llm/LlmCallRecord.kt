@@ -21,6 +21,35 @@ enum class LlmCallPurpose(
 }
 
 /**
+ * `llm_calls.outcome`(V18) 이 담는 값 — 이 호출이 **완성 응답을 받았는지**.
+ *
+ * [COMPLETED] 는 응답을 실제로 받은 호출이다(절단·빈 결과·거절처럼 파이프라인이 실패로
+ * 분류한 완성도 포함 — `ConvertDocumentUseCase.Pass.complete` KDoc). [PROVIDER_ERROR] 는
+ * `LlmProviderException` 으로 완성 자체가 나지 않은 호출이다 — 벤더가 실패한 요청의 입력
+ * 토큰에 과금할 수 있어(계획 §6 리스크 1) 실제 사용량 없이도 원장에 남긴다(백로그
+ * 「실패 호출 원장 추적」, 2026-09-08). 실패 호출은 토큰이 0이고 비용은 `null` 이다 —
+ * 알 수 없는 사용량을 0으로 보고하지 않는다(CLAUDE.md 「미설정은 null」).
+ *
+ * **오늘 실제로 던져지는 것은 `LlmProviderException`(기반 클래스) 뿐이다.**
+ * `LlmTruncatedException`·`LlmEmptyResultException`은 `OpenAiProvider`·`AnthropicProvider`
+ * 어느 쪽도 던지지 않는다 — 두 어댑터는 실패를 전부 `LlmProviderException(message)`로
+ * 던진다(`failure()` 헬퍼). 절단·빈 결과는 예외가 아니라 **받은 완성 응답**을
+ * `ConvertDocumentUseCase`의 `classify(completion: LlmCompletion)`이 값(`finishReason`·
+ * 빈 본문)으로 분류한 것이고, 이 갈래는 [PROVIDER_ERROR]가 아니라 [COMPLETED]로
+ * 남는다(완성 자체는 받았다). `ConversionFailureKind.failureKind(exc)`의
+ * `is LlmTruncatedException`·`is LlmEmptyResultException` 분기는 어댑터가 그 서브타입을
+ * 던지기 시작하기 전까지는 도달하지 않는다 — 죽은 코드가 아니라 **아직 쓰이지 않는
+ * 확장점**이다(새 provider가 세분화된 실패를 던지고 싶을 때 쓴다).
+ */
+enum class LlmCallOutcome(
+    /** `llm_calls.outcome` 컬럼에 그대로 들어가는 값(V18 CHECK 제약과 같은 어휘). */
+    val wireName: String,
+) {
+    COMPLETED("completed"),
+    PROVIDER_ERROR("provider_error"),
+}
+
+/**
  * LLM 호출 원장(`llm_calls`) 행 하나에 실릴 **호출 자체의 값** — 어느 문서·워크스페이스의
  * 호출인지는 이 타입 밖(`kr.easydoc.application.conversion.LlmCallEntry`)이 안다.
  *
@@ -37,7 +66,11 @@ enum class LlmCallPurpose(
 data class LlmCallRecord(
     val purpose: LlmCallPurpose,
     val provider: String,
-    val model: String,
+    /**
+     * **응답이 보고한** 모델 이름 — [outcome] 이 [LlmCallOutcome.PROVIDER_ERROR] 면 응답
+     * 자체가 없었으므로 `null` 이다(`LlmAttribution.model` 과 같은 규약).
+     */
+    val model: String?,
     val inputTokens: Int,
     val outputTokens: Int,
     val latencyMs: Long?,
@@ -52,7 +85,8 @@ data class LlmCallRecord(
      */
     val charCount: Int,
     /**
-     * 이 호출이 **실제로 일어난 시각** — provider 가 완성 응답을 돌려준 직후,
+     * 이 호출이 **실제로 일어난 시각** — provider 가 완성 응답을 돌려준 직후(또는
+     * [LlmCallOutcome.PROVIDER_ERROR] 면 예외가 난 직후),
      * `ConvertDocumentUseCase.Pass.complete` 안에서 캡처한다. 한 변환이 호출 두 건(1차·보정)을
      * 쓰면 이 값도 두 건이 서로 다르고 시간순으로 증가한다.
      *
@@ -62,4 +96,34 @@ data class LlmCallRecord(
      * `kr.easydoc.application.conversion.LlmCallEntry.calledAt` 은 이 값을 그대로 옮긴다.
      */
     val calledAt: Instant,
-)
+    /**
+     * 완성 응답을 받았는지(V18, 백로그 「실패 호출 원장 추적」 2026-09-08). 기본값
+     * [LlmCallOutcome.COMPLETED] — 기존 호출부(성공 경로)는 이 필드를 몰라도 그대로
+     * 컴파일된다. `ConvertDocumentUseCase.Pass.complete` 의 `catch (exc:
+     * LlmProviderException)` 갈래만 [LlmCallOutcome.PROVIDER_ERROR] 로 명시한다.
+     */
+    val outcome: LlmCallOutcome = LlmCallOutcome.COMPLETED,
+    /**
+     * [outcome] 이 [LlmCallOutcome.PROVIDER_ERROR] 일 때만 값이 있다 — 예외 클래스의
+     * 단순 이름이다. **오늘은 항상 `"LlmProviderException"`** 이다(위 [LlmCallOutcome]
+     * KDoc 「오늘 실제로 던져지는 것은…」) — `LlmTruncatedException`·
+     * `LlmEmptyResultException` 서브타입은 아직 어느 adapter 도 던지지 않는다. 그래도 값을
+     * `exc.javaClass.simpleName`(호출부, `ConvertDocumentUseCase.Pass.recordFailure`)로
+     * 그대로 읽어 두는 것은 새 provider 가 세분화된 서브타입을 던지기 시작하면 코드 변경
+     * 없이 그 이름이 그대로 실리기 때문이다. **예외 메시지를 담지 않는다** — 벤더 응답
+     * 문구가 새어 들 수 있다(CLAUDE.md 「예외 메시지를 로그에 남기지 않는다」와 같은 이유).
+     */
+    val failureClass: String? = null,
+) {
+    init {
+        // outcome·model·failureClass 셋이 서로 어긋나면(예: PROVIDER_ERROR 인데 model 이
+        // 있음) 원장이 「완성 자체가 없었다」와 「응답을 알고 있다」를 동시에 주장하는
+        // 모순된 행을 쓴다 — 값 자체는 새지 않게 메시지에서 뺀다(CLAUDE.md 규약).
+        require((outcome == LlmCallOutcome.COMPLETED) == (model != null)) {
+            "model 은 outcome=COMPLETED 일 때만 있어야 한다"
+        }
+        require((outcome == LlmCallOutcome.PROVIDER_ERROR) == (failureClass != null)) {
+            "failureClass 는 outcome=PROVIDER_ERROR 일 때만 있어야 한다"
+        }
+    }
+}

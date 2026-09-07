@@ -178,6 +178,37 @@ export function AdminErrorsTab() {
           </div>
 
           <div className="rounded-[12px] border border-border bg-card px-5 pb-5 shadow-[0_1px_2px_rgba(20,33,31,0.04)]">
+            {/* llm_calls(V18) provider 실패 — 위 표(conversions.failure_code)와 다른 축이다.
+            개별 LLM 호출이 완성 자체를 못 받은 사유이며, 재시도로 결국 성공한 변환의
+            실패 호출도 잡힌다(계약 2.26.0). */}
+            <table className="usage-table">
+              <caption>이 기간 LLM 호출 실패를 사유별 건수로 낸 표입니다.</caption>
+              <thead>
+                <tr>
+                  <th scope="col">실패 사유</th>
+                  <th scope="col">건수</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.provider_failures.length === 0 ? (
+                  <tr>
+                    <td colSpan={2} className="text-muted-foreground">
+                      이 기간에 실패한 LLM 호출이 없습니다.
+                    </td>
+                  </tr>
+                ) : (
+                  data.provider_failures.map((count) => (
+                    <tr key={count.failure_class}>
+                      <th scope="row">{count.failure_class}</th>
+                      <td className="tabular-nums">{formatCount(count.count)}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="rounded-[12px] border border-border bg-card px-5 pb-5 shadow-[0_1px_2px_rgba(20,33,31,0.04)]">
             {/* 본문·프롬프트는 계약이 애초에 실어 보내지 않는다(x-admin-only 노트). */}
             <table className="usage-table">
               <caption>최근 실패 50건입니다. 본문·프롬프트는 담지 않습니다.</caption>

@@ -9,6 +9,7 @@ import kr.easydoc.core.exceptions.LlmProviderException
 import kr.easydoc.core.exceptions.LlmTruncatedException
 import kr.easydoc.core.llm.FakeLlmProvider
 import kr.easydoc.core.llm.FakeLlmTurn
+import kr.easydoc.core.llm.LlmCallOutcome
 import kr.easydoc.core.llm.LlmCallPurpose
 import kr.easydoc.core.llm.LlmFinishReason
 import kr.easydoc.core.segment.SourceStructure
@@ -550,13 +551,33 @@ class ConvertDocumentUseCaseTest {
         }
 
         @Test
-        @DisplayName("호출 자체가 실패하면 원장에 아무것도 남지 않는다")
-        fun `provider 예외는 0행이다`() {
+        @DisplayName("호출 자체가 실패해도 원장에 provider_error 행 하나가 남는다 (V18, 백로그 「실패 호출 원장 추적」)")
+        fun `provider 예외는 provider_error 행 하나다`() {
             val provider = FakeLlmProvider(listOf(FakeLlmTurn.Fail(LlmProviderException("호출 실패"))))
 
             val result = useCase(provider).convert(source)
 
-            assertThat(result.usage.calls).isEmpty()
+            assertThat(result.usage.calls).hasSize(1)
+            val call = result.usage.calls.single()
+            assertThat(call.purpose).isEqualTo(LlmCallPurpose.CONVERT)
+            assertThat(call.outcome).isEqualTo(LlmCallOutcome.PROVIDER_ERROR)
+            assertThat(call.failureClass).isEqualTo("LlmProviderException")
+            assertThat(call.model).isNull()
+            assertThat(call.inputTokens).isZero()
+            assertThat(call.outputTokens).isZero()
+            assertThat(call.estimatedCostUsd).isNull()
+            assertThat(call.charCount).isEqualTo(source.length)
+        }
+
+        @Test
+        @DisplayName("완성 응답을 받은 호출은 outcome=completed다")
+        fun `완성 응답은 completed다`() {
+            val provider = FakeLlmProvider(listOf(reply(cleanText)))
+
+            val result = useCase(provider).convert(source)
+
+            val call = result.usage.calls.single()
+            assertThat(call.outcome).isEqualTo(LlmCallOutcome.COMPLETED)
         }
 
         @Test

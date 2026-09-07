@@ -35,6 +35,7 @@ class UsageQueryServiceTest {
             outputTokens = 0,
             estimatedCostUsd = null,
             costUnknownCalls = 0,
+            failedCalls = 0,
             byPurpose = emptyList(),
         )
 
@@ -149,10 +150,11 @@ class UsageQueryServiceTest {
                 outputTokens = 200,
                 estimatedCostUsd = BigDecimal("0.012345"),
                 costUnknownCalls = 1,
+                failedCalls = 1,
                 byPurpose =
                     listOf(
-                        PurposeUsage(LlmCallPurpose.CONVERT, 3, 60, 120, BigDecimal("0.01")),
-                        PurposeUsage(LlmCallPurpose.REPAIR, 2, 40, 80, null),
+                        PurposeUsage(LlmCallPurpose.CONVERT, 3, 60, 120, BigDecimal("0.01"), failedCalls = 0),
+                        PurposeUsage(LlmCallPurpose.REPAIR, 2, 40, 80, null, failedCalls = 1),
                     ),
             )
         val service = UsageQueryService(FakeUsageReadRepository(usage), zone, clock)

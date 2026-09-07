@@ -84,6 +84,42 @@ class WorkspaceUsageReachTest {
     }
 
     @Test
+    @DisplayName("U-1b 실패 호출(provider_error, V18)은 llm_calls·비용에서 빠지고 failed_calls로 센다")
+    fun `실패 호출은 failed_calls로 센다`() {
+        val token = newAccount()
+        val userId = subjectOf(token)
+        val workspaceId = defaultWorkspaceId(token)
+        val documentId = UUID.randomUUID().toString()
+        insertLlmCall(
+            workspaceId,
+            userId,
+            purpose = "convert",
+            documentId = documentId,
+            documentCharCount = 500,
+            inputTokens = 30,
+            outputTokens = 15,
+            costUsd = "0.002000",
+        )
+        insertLlmCall(
+            workspaceId,
+            userId,
+            purpose = "repair",
+            documentId = documentId,
+            documentCharCount = 500,
+            inputTokens = 0,
+            outputTokens = 0,
+            costUsd = null,
+            outcome = "provider_error",
+        )
+
+        val body = bodyOf(usage(token, workspaceId))
+
+        assertThat(body["llm_calls"]).isEqualTo(1)
+        assertThat(body["failed_calls"]).isEqualTo(1)
+        assertThat(body["estimated_cost_usd"]).isEqualTo("0.002000")
+    }
+
+    @Test
     @DisplayName("U-2 예상 비용은 문자열이다 — 부동소수 오차를 피하는 계약(x-request-field-constraints 관행과 같은 이유)")
     fun `비용 필드가 문자열이다`() {
         val token = newAccount()
@@ -276,15 +312,16 @@ class WorkspaceUsageReachTest {
         inputTokens: Int,
         outputTokens: Int,
         costUsd: String?,
+        outcome: String = "completed",
     ) {
         val costLiteral = costUsd?.let { "'$it'" } ?: "NULL"
         database.execute(
             """
             INSERT INTO llm_calls
                 (id, workspace_id, user_id, document_id, purpose, provider, model, input_tokens, output_tokens,
-                 estimated_cost_usd, char_count, document_char_count)
+                 estimated_cost_usd, char_count, document_char_count, outcome)
             VALUES ('${UUID.randomUUID()}', '$workspaceId', '$userId', '$documentId', '$purpose', 'anthropic',
-                    'claude-sonnet-5', $inputTokens, $outputTokens, $costLiteral, 40, $documentCharCount)
+                    'claude-sonnet-5', $inputTokens, $outputTokens, $costLiteral, 40, $documentCharCount, '$outcome')
             """.trimIndent(),
         )
     }

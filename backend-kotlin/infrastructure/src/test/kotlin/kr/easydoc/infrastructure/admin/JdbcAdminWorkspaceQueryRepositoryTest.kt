@@ -10,6 +10,9 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import org.springframework.jdbc.core.simple.JdbcClient
 import org.springframework.jdbc.datasource.DriverManagerDataSource
+import java.time.Instant
+import java.time.OffsetDateTime
+import java.time.ZoneOffset
 import java.util.UUID
 import javax.sql.DataSource
 
@@ -102,6 +105,37 @@ class JdbcAdminWorkspaceQueryRepositoryTest {
         assertThat(repository.find(UUID.randomUUID())).isNull()
     }
 
+    @Test
+    @DisplayName("실패 호출(provider_error, V18)만 있는 문서는 월간 문서·크레딧 집계에 잡히지 않는다")
+    fun `실패만 있는 문서는 월간 집계에서 빠진다`() {
+        val (owner, workspaceId) = newOwnedWorkspace("실패만-${UUID.randomUUID()}", "owner-failure")
+        val at = Instant.parse("2026-08-15T02:00:00Z")
+        insertLlmCall(workspaceId, owner, documentCharCount = 500, outcome = "provider_error", calledAt = at)
+
+        val usage =
+            repository.monthUsage(listOf(workspaceId), at.minusSeconds(3600), at.plusSeconds(3600))
+        val summary = usage[workspaceId]
+
+        assertThat(summary?.documents ?: 0).isEqualTo(0)
+        assertThat(summary?.credits ?: 0).isEqualTo(0)
+        assertThat(summary?.estimatedCostUsd).isNull()
+    }
+
+    @Test
+    @DisplayName("완료 호출은 월간 문서·크레딧 집계에 그대로 잡힌다 — 위 테스트와의 대조")
+    fun `완료 호출은 월간 집계에 잡힌다`() {
+        val (owner, workspaceId) = newOwnedWorkspace("완료-${UUID.randomUUID()}", "owner-completed")
+        val at = Instant.parse("2026-08-15T02:00:00Z")
+        insertLlmCall(workspaceId, owner, documentCharCount = 1500, outcome = "completed", calledAt = at)
+
+        val usage =
+            repository.monthUsage(listOf(workspaceId), at.minusSeconds(3600), at.plusSeconds(3600))
+        val summary = usage[workspaceId]
+
+        assertThat(summary?.documents).isEqualTo(1)
+        assertThat(summary?.credits).isEqualTo(2)
+    }
+
     private fun newOwnedWorkspace(
         name: String,
         emailPrefix: String,
@@ -121,6 +155,35 @@ class JdbcAdminWorkspaceQueryRepositoryTest {
             .param("name", name)
             .update()
         return ownerId to workspaceId
+    }
+
+    /** `llm_calls`(V18) 행 하나를 심는다 — [outcome]은 `completed`·`provider_error`. */
+    @Suppress("LongParameterList")
+    private fun insertLlmCall(
+        workspaceId: UUID,
+        userId: UUID,
+        documentCharCount: Int,
+        outcome: String,
+        calledAt: Instant,
+    ) {
+        jdbc
+            .sql(
+                """
+                INSERT INTO llm_calls
+                    (id, workspace_id, user_id, document_id, purpose, provider, model, input_tokens,
+                     output_tokens, char_count, document_char_count, outcome, called_at)
+                VALUES
+                    (:id, :workspaceId, :userId, :documentId, 'convert', 'anthropic', 'claude-sonnet-5', 0,
+                     0, 10, :documentCharCount, :outcome, :calledAt)
+                """.trimIndent(),
+            ).param("id", UUID.randomUUID())
+            .param("workspaceId", workspaceId)
+            .param("userId", userId)
+            .param("documentId", UUID.randomUUID())
+            .param("documentCharCount", documentCharCount)
+            .param("outcome", outcome)
+            .param("calledAt", OffsetDateTime.ofInstant(calledAt, ZoneOffset.UTC))
+            .update()
     }
 
     private fun ownerEmailOf(ownerId: UUID): String =

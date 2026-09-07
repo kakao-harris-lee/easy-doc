@@ -5,6 +5,7 @@ import kr.easydoc.application.usage.UsageReadRepository
 import kr.easydoc.application.usage.UsageReportRepository
 import kr.easydoc.core.crypto.EncryptionScheme
 import kr.easydoc.core.document.SourceFormat
+import kr.easydoc.core.llm.LlmCallOutcome
 import kr.easydoc.core.llm.LlmCallPurpose
 import kr.easydoc.core.llm.LlmCallRecord
 import kr.easydoc.core.user.PasswordHash
@@ -276,6 +277,38 @@ class JdbcUsageReportRepositoryTest {
         assertThat(u3Row.outputTokens).isEqualTo(u2Usage.outputTokens)
         assertThat(u3Row.estimatedCostUsd).isEqualByComparingTo(u2Usage.estimatedCostUsd)
         assertThat(u3Row.costUnknownCalls).isEqualTo(u2Usage.costUnknownCalls).isEqualTo(1)
+        assertThat(u3Row.failedCalls).isEqualTo(u2Usage.failedCalls).isEqualTo(1)
+    }
+
+    @Test
+    @DisplayName("실패 호출만 있고 완료가 하나도 없는 워크스페이스도 (llm_calls=0, failedCalls>0) 행으로 남는다")
+    fun `실패만 있던 워크스페이스도 리포트에서 사라지지 않는다`() {
+        val owner = newOwner()
+        val ws = workspaces.create(owner, "공간-${UUID.randomUUID()}")
+        val at = Instant.parse("2026-08-20T02:00:00Z")
+        val doc = insertDocument(ws.id, owner, charCount = 300, createdAt = at)
+        appendCall(
+            ws.id,
+            owner,
+            LlmCallPurpose.CONVERT,
+            documentId = doc,
+            documentCharCount = 300,
+            inputTokens = 0,
+            outputTokens = 0,
+            costUsd = null,
+            calledAt = at,
+            outcome = LlmCallOutcome.PROVIDER_ERROR,
+            failureClass = "LlmProviderException",
+        )
+
+        val rows = repository.reportRows(zoneMidnight(2026, 8, 20), zoneMidnight(2026, 8, 21))
+        val row = rows.first { it.userId == owner }
+
+        assertThat(row.documents).isEqualTo(0)
+        assertThat(row.llmCalls).isEqualTo(0)
+        assertThat(row.failedCalls).isEqualTo(1)
+        assertThat(row.estimatedCostUsd).isNull()
+        assertThat(row.costUnknownCalls).isEqualTo(0)
     }
 
     /**
@@ -327,6 +360,16 @@ class JdbcUsageReportRepositoryTest {
             costUsd = null,
             calledAt = at.plusSeconds(1),
         )
+        seedCrossConsistencyBoundaryAndFailure(workspaceId, owner, doc2, at)
+    }
+
+    /** [seedCrossConsistencyLedger]에서 갈라낸 자리(`LongMethod`) — 경계 밖 호출과 실패 호출. */
+    private fun seedCrossConsistencyBoundaryAndFailure(
+        workspaceId: UUID,
+        owner: UUID,
+        doc2: UUID,
+        at: Instant,
+    ) {
         // 경계 밖 호출 — 기간(8월) 다음 달 1일이라 두 집계 모두에서 제외돼야 한다.
         val outOfRangeDoc = insertDocument(workspaceId, owner, charCount = 999, createdAt = at)
         appendCall(
@@ -339,6 +382,21 @@ class JdbcUsageReportRepositoryTest {
             outputTokens = 999,
             costUsd = BigDecimal("9.999999"),
             calledAt = Instant.parse("2026-09-01T00:00:00Z"), // 2026-09-01 09:00 KST — 8월 밖.
+        )
+        // 실패 호출(provider_error, V18) — llmCalls·토큰·비용에는 들어가지 않고
+        // failedCalls로만 센다(두 집계 경로가 같은 규칙을 쓰는지 이 테스트가 확인한다).
+        appendCall(
+            workspaceId,
+            owner,
+            LlmCallPurpose.REPAIR,
+            documentId = doc2,
+            documentCharCount = 2001,
+            inputTokens = 0,
+            outputTokens = 0,
+            costUsd = null,
+            calledAt = at.plusSeconds(2),
+            outcome = LlmCallOutcome.PROVIDER_ERROR,
+            failureClass = "LlmProviderException",
         )
     }
 
@@ -392,6 +450,8 @@ class JdbcUsageReportRepositoryTest {
         outputTokens: Int,
         costUsd: BigDecimal?,
         calledAt: Instant,
+        outcome: LlmCallOutcome = LlmCallOutcome.COMPLETED,
+        failureClass: String? = null,
     ) {
         ledger.append(
             listOf(
@@ -404,7 +464,9 @@ class JdbcUsageReportRepositoryTest {
                         LlmCallRecord(
                             purpose = purpose,
                             provider = "anthropic",
-                            model = "claude-sonnet-5",
+                            // LlmCallRecord.init 이 outcome=COMPLETED <=> model!=null 을
+                            // 강제한다 — 실패 행은 model 도 null 이어야 한다.
+                            model = if (outcome == LlmCallOutcome.COMPLETED) "claude-sonnet-5" else null,
                             inputTokens = inputTokens,
                             outputTokens = outputTokens,
                             latencyMs = 100,
@@ -413,6 +475,8 @@ class JdbcUsageReportRepositoryTest {
                             pricingOutputUsdPerMtok = if (costUsd != null) BigDecimal("10.00") else null,
                             charCount = 40,
                             calledAt = calledAt,
+                            outcome = outcome,
+                            failureClass = failureClass,
                         ),
                     calledAt = calledAt,
                     documentCharCount = documentCharCount,

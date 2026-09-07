@@ -33,6 +33,19 @@ interface AdminConversionQueryRepository {
         toExclusive: Instant,
         limit: Int,
     ): List<AdminErrorRow>
+
+    /**
+     * 기간 내 `llm_calls`(V18) 실패 호출(`outcome = provider_error`)의 `failure_class`별
+     * 건수 — 백로그 「실패 호출 원장 추적」, 2026-09-08. [failureCounts]가 `conversions
+     * .failure_code`(변환이 사용자에게 최종적으로 실패로 보고된 사유)를 세는 것과 달리,
+     * 이건 **개별 LLM 호출**이 완성 자체를 못 받은 사유다 — 재시도로 결국 성공한
+     * 변환의 실패 호출도 여기 잡힌다(벤더 과금 대조가 목적이라 재시도 성공 여부와
+     * 무관하다).
+     */
+    fun providerFailureCounts(
+        from: Instant,
+        toExclusive: Instant,
+    ): List<AdminProviderFailureCount>
 }
 
 /** `GET /admin/workspaces/{workspace_id}` 상세의 「최근 변환」 항목 하나. */
@@ -61,4 +74,13 @@ data class AdminErrorRow(
     val workspaceId: UUID,
     val createdAt: Instant,
     val failureCode: String,
+)
+
+/**
+ * `GET /admin/errors`의 `failure_class`별 건수 한 줄(V18, `llm_calls.outcome =
+ * 'provider_error'`) — 백로그 「실패 호출 원장 추적」, 2026-09-08.
+ */
+data class AdminProviderFailureCount(
+    val failureClass: String,
+    val count: Long,
 )

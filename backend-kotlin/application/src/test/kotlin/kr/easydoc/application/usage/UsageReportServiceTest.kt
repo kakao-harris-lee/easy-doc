@@ -47,6 +47,7 @@ class UsageReportServiceTest {
         outputTokens: Long = 5,
         estimatedCostUsd: BigDecimal? = BigDecimal("0.001000"),
         costUnknownCalls: Int = 0,
+        failedCalls: Int = 0,
     ): UsageReportRow =
         UsageReportRow(
             userId = userId,
@@ -61,6 +62,7 @@ class UsageReportServiceTest {
             outputTokens = outputTokens,
             estimatedCostUsd = estimatedCostUsd,
             costUnknownCalls = costUnknownCalls,
+            failedCalls = failedCalls,
         )
 
     @Test
@@ -130,7 +132,7 @@ class UsageReportServiceTest {
         assertThat(report.rowCount).isEqualTo(0)
         assertThat(report.csv).isEqualTo(
             "workspace_id,workspace_name,owner_email,documents,characters,credits," +
-                "llm_calls,input_tokens,output_tokens,estimated_cost_usd,cost_unknown_calls\r\n",
+                "llm_calls,failed_calls,input_tokens,output_tokens,estimated_cost_usd,cost_unknown_calls\r\n",
         )
     }
 
@@ -144,7 +146,7 @@ class UsageReportServiceTest {
         assertThat(report.csv.lineSequence().first())
             .isEqualTo(
                 "workspace_id,workspace_name,owner_email,documents,characters,credits," +
-                    "llm_calls,input_tokens,output_tokens,estimated_cost_usd,cost_unknown_calls",
+                    "llm_calls,failed_calls,input_tokens,output_tokens,estimated_cost_usd,cost_unknown_calls",
             )
     }
 
@@ -176,8 +178,25 @@ class UsageReportServiceTest {
                 .drop(1)
                 .first()
         assertThat(dataLine).isEqualTo(
-            "$workspaceId,공간1,owner@example.com,3,3000,3,5,100,200,0.012345,1",
+            "$workspaceId,공간1,owner@example.com,3,3000,3,5,0,100,200,0.012345,1",
         )
+    }
+
+    @Test
+    @DisplayName("실패 호출 수는 llm_calls 바로 뒤 열에 실린다 (V18)")
+    fun `실패 호출 수는 llm_calls 다음 열이다`() {
+        val rowValue =
+            row(ownerEmail = "owner@example.com", llmCalls = 5, failedCalls = 2)
+        val service = UsageReportService(FakeUsageReportRepository(listOf(rowValue)), zone, clock)
+
+        val report = service.generateCsv(from = "2026-01-01", to = "2026-01-31")
+
+        val dataLine =
+            report.csv
+                .lineSequence()
+                .drop(1)
+                .first()
+        assertThat(dataLine.split(",")).containsSequence("5", "2")
     }
 
     @Test

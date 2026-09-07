@@ -41,7 +41,7 @@ openapi: 3.1.0
 
 info:
   title: Easy-Read AI API
-  version: "2.25.0"
+  version: "2.26.0"
   x-baselined-at: "2026-08-12"       # 초판 기준선을 뜬 날 (동결일이 아니다)
   x-rebased-at: "2026-08-12"         # 계약의 성격을 "개선 대상"으로 다시 정의한 날
   x-source-runtime: "Python 3.12 / FastAPI (app/main.py) — 과거 참고 구현이었고 2026-08-24 저장소에서 제거됨(git 태그 pre-python-removal-20260824). 기준선 출처였을 뿐 정답이 아니었다"
@@ -5880,7 +5880,7 @@ components:
 
     PurposeUsageItem:
       type: object
-      required: [purpose, llm_calls, input_tokens, output_tokens, estimated_cost_usd]
+      required: [purpose, llm_calls, input_tokens, output_tokens, estimated_cost_usd, failed_calls]
       description: 워크스페이스 집계 안의 목적별 한 줄. `WorkspaceUsageResponse.by_purpose`.
       properties:
         purpose: { $ref: '#/components/schemas/UsagePurpose' }
@@ -5895,6 +5895,15 @@ components:
           anyOf:
             - { type: string, examples: ["0.112000"] }
             - { type: 'null' }
+        failed_calls:
+          type: integer
+          minimum: 0
+          description: |
+            2.26.0 신설. 이 목적으로 완성 자체가 나지 않은 호출 수(`llm_calls.outcome =
+            provider_error`). `llm_calls`·`input_tokens`·`output_tokens`·
+            `estimated_cost_usd`에는 들어가지 않는다 — 실제로 쓴 자원이 없다. 그 목적으로
+            실패 호출만 있고 완료가 하나도 없어도 `llm_calls`가 0인 행으로 목록에 남는다
+            (완료가 없다고 목적 자체가 사라지지 않는다).
 
     WorkspaceUsageResponse:
       type: object
@@ -5907,11 +5916,13 @@ components:
         - output_tokens
         - estimated_cost_usd
         - cost_unknown_calls
+        - failed_calls
         - by_purpose
       description: |
         `GET /workspaces/{workspace_id}/usage` 응답 — 계획
         `docs/plans/2026-09-07-usage-ledger-and-report.md` §2 결정 5-6(U2,
-        2026-09-08 리뷰로 `documents`·`characters`·`credits`의 출처를 정정).
+        2026-09-08 리뷰로 `documents`·`characters`·`credits`의 출처를 정정.
+        `failed_calls`는 2.26.0 신설, 실패 호출 원장 추적 백로그).
       properties:
         documents:
           type: integer
@@ -5950,6 +5961,15 @@ components:
           type: integer
           minimum: 0
           description: 단가 미상이라 위 합계에 들어가지 않은 호출 수.
+        failed_calls:
+          type: integer
+          minimum: 0
+          description: |
+            2.26.0 신설(실패 호출 원장 추적 백로그). 그 기간에 완성 자체가 나지 않은
+            호출 수(`llm_calls.outcome = provider_error`) — `documents`·`characters`·
+            `credits`·`llm_calls`·`input_tokens`·`output_tokens`·`estimated_cost_usd`는
+            전부 완료(`outcome = completed`)된 행만 센다. 벤더가 실패한 요청의 입력
+            토큰에 과금할 수 있어 이 값이 그 청구를 대조할 단서가 된다.
         by_purpose:
           type: array
           items: { $ref: '#/components/schemas/PurposeUsageItem' }
@@ -6265,9 +6285,22 @@ components:
         created_at: { type: string, format: date-time }
         failure_code: { type: string }
 
+    AdminProviderFailureCount:
+      type: object
+      required: [failure_class, count]
+      description: |
+        2.26.0 신설(실패 호출 원장 추적 백로그) — `llm_calls.outcome = provider_error`
+        (V18)의 `failure_class`별 건수. 위 `AdminFailureCount`(`conversions
+        .failure_code` — 변환이 최종적으로 실패로 보고된 사유)와는 다른 축이다: 이건
+        **개별 LLM 호출**이 완성 자체를 못 받은 사유라, 재시도로 결국 성공한 변환의
+        실패 호출도 여기 잡힌다(벤더 과금 대조 목적이라 재시도 성공 여부와 무관하다).
+      properties:
+        failure_class: { type: string, description: 예외 클래스의 단순 이름(예 'LlmProviderException'). 메시지는 담지 않는다. }
+        count: { type: integer, minimum: 0 }
+
     AdminErrorsResponse:
       type: object
-      required: [counts, recent]
+      required: [counts, recent, provider_failures]
       properties:
         counts:
           type: array
@@ -6276,12 +6309,16 @@ components:
           type: array
           items: { $ref: '#/components/schemas/AdminErrorItem' }
           description: 최근 50건, 최신순.
+        provider_failures:
+          type: array
+          items: { $ref: '#/components/schemas/AdminProviderFailureCount' }
+          description: 2.26.0 신설. `llm_calls`(V18) 실패 호출의 `failure_class`별 건수.
 
     AdminUsageRow:
       type: object
       required:
         [user_id, owner_email, workspace_id, workspace_name, documents, characters, credits,
-         llm_calls, input_tokens, output_tokens, estimated_cost_usd, cost_unknown_calls]
+         llm_calls, failed_calls, input_tokens, output_tokens, estimated_cost_usd, cost_unknown_calls]
       description: '`usage-report`(U3) CSV 행과 같은 값 — `UsageReportRow`.'
       properties:
         user_id: { type: string, format: uuid }
@@ -6299,6 +6336,10 @@ components:
         characters: { type: integer }
         credits: { type: integer }
         llm_calls: { type: integer }
+        failed_calls:
+          type: integer
+          minimum: 0
+          description: 2.26.0 신설. 완성 자체가 나지 않은 호출 수(`outcome = provider_error`). `llm_calls` 바로 뒤 CSV 열과 같은 위치다.
         input_tokens: { type: integer }
         output_tokens: { type: integer }
         estimated_cost_usd:
@@ -6514,6 +6555,67 @@ components:
 # 변경 이력
 # =============================================================================
 x-changelog:
+  - version: "2.26.0"
+    date: "2026-09-08"
+    revision: "LEDGER-FAILED-CALLS"   # 실패 호출 원장 추적 — provider 예외도 llm_calls에 기록, 워크스페이스·리포트·어드민 오류 화면에 노출
+    author: contract-keeper
+    change: |
+      **실패 호출을 LLM 원장에서 보이게 한다.** 정본은 백로그 「실패 호출 원장 추적」
+      (`docs/plans/2026-09-07-usage-ledger-and-report.md` §6 리스크 1). U1(2.20.0)은
+      완성 자체가 나지 않은 호출(`LlmProviderException`)을 `llm_calls`에 아예 남기지
+      않았다 — 그런데 벤더는 실패한 요청의 입력 토큰에도 과금할 수 있어, 그 청구를
+      원장만으로는 대조(reconcile)할 수 없었다. 이 개정은 그 배제를 뒤집는다 —
+      provider 예외도 `llm_calls` 행 하나를 남기되(`outcome = provider_error`), 실제
+      토큰이 없으므로 토큰은 0, 비용은 `null`(미상)로 남긴다. 집계는 그 행을
+      문서·문자·크레딧·토큰·비용에서 제외하고(`outcome = completed`인 행만 센다) 대신
+      `failed_calls`로 실패 건수를 따로 낸다.
+
+      ⑴ **`WorkspaceUsageResponse`·`PurposeUsageItem`에 `failed_calls`(필수) 신설** —
+         `GET /workspaces/{workspace_id}/usage`(U2, 2.20.0) 응답에 그 기간 완성 자체가
+         나지 않은 호출 수를 더한다. 목적별 소계(`by_purpose`)도 같은 필드를 받는다 —
+         그 목적으로 실패 호출만 있고 완료가 하나도 없어도 `llm_calls=0`인 행으로
+         목록에 남는다(완료가 없다고 목적 자체가 사라지지 않는다).
+
+      ⑵ **`AdminUsageRow`에 `failed_calls`(필수) 신설, `llm_calls` 바로 뒤** — 운영
+         리포트(U3, `usage-report` CSV·`GET /admin/usage` JSON) CSV 열 순서도 같다
+         (`workspace_id,workspace_name,owner_email,documents,characters,credits,
+         llm_calls,failed_calls,input_tokens,output_tokens,estimated_cost_usd,
+         cost_unknown_calls`). 실패 호출만 있고 완료가 하나도 없는 워크스페이스·
+         사용자도 리포트 행에서 사라지지 않는다.
+
+      ⑶ **`AdminProviderFailureCount` 스키마 신설, `AdminErrorsResponse`에
+         `provider_failures`(필수) 신설** — `GET /admin/errors`가 `llm_calls`
+         실패 호출의 `failure_class`별 건수를 함께 낸다. 기존 `counts`
+         (`AdminFailureCount`, `conversions.failure_code` — 변환이 최종적으로 실패로
+         보고된 사유)와는 다른 축이다: `provider_failures`는 **개별 LLM 호출**이
+         완성 자체를 못 받은 사유라, 재시도로 결국 성공한 변환의 실패 호출도 잡힌다.
+
+      ⑷ **`llm_calls`(V14) 표에 `outcome`·`failure_class` 열, `model` 열의
+         `NOT NULL` 제거(V18, 계약 밖 DB 변경, 참고 기록)** — `outcome`은
+         `completed | provider_error`(기본값 `completed`, 기존 행과 값이 같아
+         백필 불필요), `failure_class`는 `provider_error`일 때만 값이 있는 예외
+         클래스의 단순 이름(메시지는 담지 않는다). `model`은 실패 호출이 응답 자체를
+         못 받아 `null`일 수 있다.
+
+      ⑸ **엔드포인트 수는 43으로 그대로다.** 새 오퍼레이션 없이 기존 응답 스키마
+         셋에 필드를 더하고 스키마 하나(`AdminProviderFailureCount`)를 새로 만들 뿐이다.
+    ground: |
+      **G1 — 벤더 청구 대조 공백(계획 §6 리스크 1, U1 리뷰가 이미 예고).** 「벤더가
+      실패 호출의 입력 토큰에 과금하면 원장이 실제보다 적게 센다」는 리스크가 그대로
+      현실화됐다 — 완성 자체가 나지 않은 호출은 원장에 행이 없어 그 차이를 원장
+      **안에서** 추적할 방법이 없었다(로그 관측에는 남지만 구조화 집계·리포트·화면
+      어디에도 반영되지 않는다). 사용자가 이 백로그 항목을 지정해 이번 개정을
+      요청했다.
+    compatibility: |
+      **넓히는 변경이다.** `WorkspaceUsageResponse`·`PurposeUsageItem`·`AdminUsageRow`
+      에 필수 필드 `failed_calls`를 더하고, `AdminErrorsResponse`에 필수 필드
+      `provider_failures`와 새 스키마 `AdminProviderFailureCount`를 더할 뿐 — 필드
+      추가는 이 계약의 파괴성 판정 기준상 비파괴다(제거·이름 변경·타입 축소만
+      파괴). 기존 필드·오퍼레이션의 모양은 하나도 바뀌지 않는다. `failed_calls`가
+      **필수**인데도 비파괴인 이유는 서버가 항상 채우는 값(실패가 없으면 0)이라
+      기존 클라이언트가 이 필드를 몰라도 응답을 그대로 파싱할 수 있기 때문이다 —
+      필수 신설 필드가 파괴적인 경우는 클라이언트가 **보내는** 요청 스키마에
+      한정된다(이 개정은 응답 스키마만 바꾼다).
   - version: "2.25.0"
     date: "2026-09-07"
     revision: "ADMIN-MINIMUM"   # 어드민 최소 — 관리자 플래그, 고객·사용량·오류 조회, 크레딧 수동 조정, 세금계산서 처리, 공지

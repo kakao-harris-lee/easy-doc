@@ -33,6 +33,8 @@ data class AdminUsageRowResponse(
     @get:JsonProperty("characters") val characters: Long,
     @get:JsonProperty("credits") val credits: Long,
     @get:JsonProperty("llm_calls") val llmCalls: Int,
+    /** 완성 자체가 나지 않은 호출 수(`outcome = provider_error`, V18). 계약 2.26.0 신설. */
+    @get:JsonProperty("failed_calls") val failedCalls: Int,
     @get:JsonProperty("input_tokens") val inputTokens: Long,
     @get:JsonProperty("output_tokens") val outputTokens: Long,
     @get:JsonProperty("estimated_cost_usd") val estimatedCostUsd: String?,
@@ -42,8 +44,8 @@ data class AdminUsageRowResponse(
     override fun toString(): String =
         "AdminUsageRowResponse(userId=$userId, ownerEmail=$CONTENT_MASK, workspaceId=$workspaceId, " +
             "workspaceName=${workspaceName?.let { CONTENT_MASK }}, documents=$documents, characters=$characters, " +
-            "credits=$credits, llmCalls=$llmCalls, inputTokens=$inputTokens, outputTokens=$outputTokens, " +
-            "estimatedCostUsd=$estimatedCostUsd, costUnknownCalls=$costUnknownCalls)"
+            "credits=$credits, llmCalls=$llmCalls, failedCalls=$failedCalls, inputTokens=$inputTokens, " +
+            "outputTokens=$outputTokens, estimatedCostUsd=$estimatedCostUsd, costUnknownCalls=$costUnknownCalls)"
 
     companion object {
         fun of(row: UsageReportRow): AdminUsageRowResponse =
@@ -56,6 +58,7 @@ data class AdminUsageRowResponse(
                 characters = row.characters,
                 credits = row.credits,
                 llmCalls = row.llmCalls,
+                failedCalls = row.failedCalls,
                 inputTokens = row.inputTokens,
                 outputTokens = row.outputTokens,
                 estimatedCostUsd = row.estimatedCostUsd?.toPlainString(),
