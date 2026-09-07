@@ -7,7 +7,10 @@
   "required_facts": [
     {
       "canonical": "2026년 12월11일",
-      "accept": []
+      "accept": [
+        "2026년 12월 11일",
+        "12월 11일"
+      ]
     },
     {
       "canonical": "300,000원",
