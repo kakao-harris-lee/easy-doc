@@ -23,7 +23,9 @@
     },
     {
       "canonical": "1개월 이내",
-      "accept": []
+      "accept": [
+        "1개월 안에"
+      ]
     },
     {
       "canonical": "1개월",

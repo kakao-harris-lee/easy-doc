@@ -7,23 +7,37 @@
   "required_facts": [
     {
       "canonical": "2022년1월",
-      "accept": []
+      "accept": [
+        "2022년 1월"
+      ]
     },
     {
       "canonical": "2년이내",
-      "accept": []
+      "accept": [
+        "2년 이내",
+        "2년 안에"
+      ]
     },
     {
       "canonical": "30일이내",
-      "accept": []
+      "accept": [
+        "30일 이내",
+        "30일 안에"
+      ]
     },
     {
       "canonical": "40일이내",
-      "accept": []
+      "accept": [
+        "40일 이내",
+        "40일 안에"
+      ]
     },
     {
       "canonical": "250일이내",
-      "accept": []
+      "accept": [
+        "250일 이내",
+        "250일 안에"
+      ]
     }
   ],
   "source": {
