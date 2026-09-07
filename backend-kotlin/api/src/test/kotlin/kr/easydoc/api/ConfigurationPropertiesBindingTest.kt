@@ -9,6 +9,7 @@ import kr.easydoc.infrastructure.auth.GoogleOAuthProperties
 import kr.easydoc.infrastructure.auth.KakaoOAuthProperties
 import kr.easydoc.infrastructure.auth.NaverOAuthProperties
 import kr.easydoc.infrastructure.auth.OAuthProperties
+import kr.easydoc.infrastructure.billing.BillingProperties
 import kr.easydoc.infrastructure.credit.CreditsProperties
 import kr.easydoc.infrastructure.crypto.EncryptionProperties
 import kr.easydoc.infrastructure.dictionary.DictionaryLookupProperties
@@ -413,6 +414,18 @@ class ConfigurationPropertiesBindingTest {
             )
         assertThat(credits.enforced).isTrue()
         assertThat(credits.signupGrant).isEqualTo(50)
+    }
+
+    @Test
+    @DisplayName("청구 운영 설정이 기본값과 다른 값을 싣는다 — 운영자 알림 주소")
+    fun `청구 설정이 기본값과 다른 값을 싣는다`() {
+        val billing =
+            bind(
+                "easydoc.billing",
+                BillingProperties::class.java,
+                mapOf("easydoc.billing.operator-email" to "billing@easydoc.kr"),
+            )
+        assertThat(billing.operatorEmail).isEqualTo("billing@easydoc.kr")
     }
 
     @Test

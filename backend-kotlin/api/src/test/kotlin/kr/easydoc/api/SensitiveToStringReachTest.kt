@@ -405,8 +405,42 @@ class SensitiveToStringReachTest {
          * 153 → 154 는 C2(계획 §3 C2)가 더한 `api.credit.CreditGrantArgs` 하나다 —
          * `credit-grant` 프로필의 CLI 인자(워크스페이스 id·정수 크레딧·사유(enum)·메모)를
          * 담을 뿐이라 민감 판정 토큰에 걸리지 않는다. [KNOWN_SENSITIVE_TYPES] 에는 넣지 않는다.
+         *
+         * 세금계산서 요청 기록(`docs/plans/2026-09-07-invoice-requests.md`, 계약 2.23.0)이
+         * **열**을 더해 164 다(154 위에). core `BusinessNumber`는 **이 숫자에 없다** —
+         * `@JvmInline value class` 가 아니라 `EmailAddress` 와 같은 형태(일반 class + private
+         * 생성자 + `of()` 팩터리)로 만들었다: value class 였다면 `GeneratedToStringProbes`
+         * 의 자동 표본화가 임의 문자열로 **주 생성자를 직접** 호출해 보는데, 그 검증이
+         * 주 생성자의 `init` 블록에 있어야 하고 임의 문자열은 국세청 체크섬 형식을
+         * 만족하지 못해 그 검증이 곧바로 예외를 던져 이 게이트 자체가 죽는다(구현 중
+         * 실측 — 최초 시도는 value class였다). 대신 `BusinessNumber` 는 `@UserContent` 를
+         * 달아 **R-10(일반 class) 축**의 자동 판정 대상에 스스로 들어간다 — 필드 이름
+         * (`digits`)이 민감 판정 토큰에 걸리지 않아 애너테이션 없이는 이 테스트가 이
+         * 타입에 닿지 못했을 것이다. 검증이 `of()` 로 옮겨져 원시 생성자 자체는 형식을
+         * 가리지 않으므로 R-10 표본화는 예외 없이 인스턴스를 만들고, 손으로 쓴
+         * `toString()` 이 값을 가리는지를 `일반 class 의 손으로 쓴 toString 이 값을 찍지
+         * 않는다`(R-10) 테스트가 실제로 잰다 — `data class` 축([EXPECTED_SOURCE_DECLARATIONS])
+         * 숫자는 그대로다. 나머지 열은 application `invoice` 패키지의
+         * `InvoiceRequestRow`·
+         * `InvoiceRequestView`·`InvoiceRequestInput`·`InvoiceRequestCreation.Created`·
+         * `InvoiceRequestHandling.Handled`(다섯 다 사업자등록번호·상호·대표자·주소·연락
+         * 이메일·운영자 메모를 들거나 그 값을 든 행을 감싸 손으로 쓴 `toString()` 으로
+         * 가린다 — `Created`·`Handled`는 필드 이름(`row`)이 토큰에 걸리지 않지만 내부
+         * `InvoiceRequestRow` 자체가 이미 가리므로 기본 생성 `toString()` 이 값을 새지
+         * 않는다), infrastructure `BillingProperties`(운영자 알림 주소 설정 하나 —
+         * `MailProperties.fromAddress` 와 같은 이유로 길이만 남긴다), api
+         * `InvoiceRequestCreate`·`InvoiceRequestResponse`(요청·응답 DTO, application
+         * 타입과 같은 축이라 같은 필드를 손으로 가린다)·`InvoiceRequestListResponse`(항목
+         * 배열 하나뿐 — 필드 이름 `items` 가 토큰과 무관하고 원소 자체가 이미 가려 기본
+         * `toString()` 으로 둔다)·`InvoiceHandleArgs`(`invoice-handle` 프로필의 CLI 인자 —
+         * `note` 는 필드 이름이 민감 판정 토큰에 걸리지 않지만 운영자가 남기는 메모라
+         * `CreditGrantArgs` 와 달리 방어적으로 가린다). `InvoiceRequestCreation
+         * .WorkspaceNotFound`·`.DuplicateOpenPeriod`·`InvoiceRequestHandling.NotFound`·
+         * `.AlreadyHandled` 넷은 **이 숫자에 없다** — 담은 값이 없어 `data object` 가 아니라
+         * 평범한 `object` 로 선언했다(`ReconversionReservation.Reserved` 와 같은 사유 —
+         * `data` 를 붙이면 인자 없는 주 생성자가 판정 불가로 이 테스트를 실패시킨다).
          */
-        const val EXPECTED_SOURCE_DECLARATIONS = 154
+        const val EXPECTED_SOURCE_DECLARATIONS = 164
 
         /** 민감 판정이 반드시 닿아야 하는 타입 — 바닥이다. */
         val KNOWN_SENSITIVE_TYPES =

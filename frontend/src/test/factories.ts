@@ -5,6 +5,7 @@ import type {
   CreditTransaction,
   DocumentListItem,
   DocumentSourceResponse,
+  InvoiceRequestResponse,
   PurposeUsageItem,
   SegmentMap,
   SegmentMapUnit,
@@ -190,6 +191,28 @@ export function workspaceCredits(
     available: 7,
     enforced: true,
     transactions: [creditTransaction()],
+    ...overrides,
+  }
+}
+
+/** GET/POST /workspaces/{id}/invoice-requests 응답 항목(계약 2.23.0). 기본값은 요청됨 상태다. */
+export function invoiceRequest(
+  overrides: Partial<InvoiceRequestResponse> = {},
+): InvoiceRequestResponse {
+  return {
+    id: 'inv1',
+    workspace_id: 'w1',
+    business_number: '2208162517',
+    company_name: '쉬운글 주식회사',
+    representative_name: '홍길동',
+    contact_email: 'billing@example.test',
+    address: '서울시 어딘가',
+    period_from: '2026-08-01',
+    period_to: '2026-08-31',
+    status: 'requested',
+    operator_note: null,
+    requested_at: '2026-09-01T00:00:00Z',
+    handled_at: null,
     ...overrides,
   }
 }

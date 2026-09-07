@@ -43,6 +43,10 @@ object RequestFieldProbes {
             "DictionaryLookupRequest.text" to FieldShape(ProbeShape.PLAIN, Noise.CONTROL_CHAR),
             "SetPasswordRequest.new_password" to FieldShape(ProbeShape.PLAIN, Noise.CONTROL_CHAR),
             "PasswordResetConfirmRequest.new_password" to FieldShape(ProbeShape.PLAIN, Noise.CONTROL_CHAR),
+            "InvoiceRequestCreate.company_name" to FieldShape(ProbeShape.PLAIN, Noise.CONTROL_CHAR),
+            "InvoiceRequestCreate.representative_name" to FieldShape(ProbeShape.PLAIN, Noise.CONTROL_CHAR),
+            "InvoiceRequestCreate.address" to FieldShape(ProbeShape.PLAIN, Noise.CONTROL_CHAR),
+            "InvoiceRequestCreate.contact_email" to FieldShape(ProbeShape.EMAIL, Noise.LEADING_SPACE),
         )
 
     /** 계약이 지목한 요청 필드 이름 전부. */
