@@ -73,6 +73,7 @@ class LlmPrompt private constructor(
 
         private const val JUDGE_SYSTEM: String =
             "너는 쉬운 글 변환의 사실 보존을 채점한다. 필수 사실이 변환문에 남았으면 " +
-                "첫 줄에 yes, 빠졌으면 no 만 답한다. 본문을 되풀이하지 않는다."
+                "첫 줄에 yes, 빠졌으면 no 만 답한다. no 이면 둘째 줄에 어떤 필수 사실이 " +
+                "빠졌거나 틀렸는지 한 줄로 적는다. 본문을 되풀이하지 않는다."
     }
 }
