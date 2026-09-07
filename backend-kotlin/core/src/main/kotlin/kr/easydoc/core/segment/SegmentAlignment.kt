@@ -34,17 +34,23 @@ data class SegmentUnit(
  * `compliantSourceUnits` 필드는 [alignSegments] 가 채우지 않는다(정렬만 안다, 기본값 빈
  * 목록) — P0-4 S7(계획 §11)에서 이 파일 최상위의 `compliantSourceUnits` 함수(이름이 같은
  * 별개 선언이다)로 원본 전용 계산을 더하는 `application` 의 파생 함수가 `copy` 로 채운다.
+ *
+ * `sourceUnitKinds` 필드도 같은 이유로 [alignSegments] 가 채우지 않는다(기본값 빈 목록) —
+ * P0-4 S8-3(계획 §1.5·§2)에서 `application` 의 파생 함수가 저장된 [SourceStructure] 에서
+ * `copy` 로 채운다. 채워질 때는 `kinds.size == sourceUnitCount` 다.
  */
 data class SegmentMap(
     val sourceUnitCount: Int,
     val easyUnitCount: Int,
     val units: List<SegmentUnit>,
     val compliantSourceUnits: List<Int> = emptyList(),
+    val sourceUnitKinds: List<UnitKind> = emptyList(),
 ) {
     /** 색인·개수만 남긴다 — 본문을 담지 않는 값 타입이지만 다른 값 타입과 같은 규약을 지킨다. */
     override fun toString(): String =
         "SegmentMap(sourceUnitCount=$sourceUnitCount, easyUnitCount=$easyUnitCount, " +
-            "units=${units.size}, compliantSourceUnits=${compliantSourceUnits.size})"
+            "units=${units.size}, compliantSourceUnits=${compliantSourceUnits.size}, " +
+            "sourceUnitKinds=${sourceUnitKinds.size})"
 }
 
 /**

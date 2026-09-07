@@ -218,6 +218,18 @@ class SegmentAlignmentTest {
     }
 
     @Nested
+    @DisplayName("S8-3 — sourceUnitKinds 기본값")
+    inner class SourceUnitKindsDefault {
+        @Test
+        @DisplayName("alignSegments 직접 호출은 sourceUnitKinds 를 채우지 않는다 — 항상 빈 목록")
+        fun `alignSegments 는 sourceUnitKinds 를 비워 둔다`() {
+            val result = alignSegments(sourceUnits = listOf("짧은 문장입니다."), easyUnits = listOf("짧은 문장입니다."))
+
+            assertThat(result.sourceUnitKinds).isEmpty()
+        }
+    }
+
+    @Nested
     @DisplayName("성능 — 20,000자에 가까운 입력도 2,000ms 안에 끝난다")
     inner class Performance {
         @Test

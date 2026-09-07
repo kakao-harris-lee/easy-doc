@@ -63,7 +63,7 @@ data class SegmentMapUnitResponse(
 }
 
 /**
- * 원문-쉬운 글 문단 대응표. 계약 `components/schemas/SegmentMap` — 네 필드가 전부다.
+ * 원문-쉬운 글 문단 대응표. 계약 `components/schemas/SegmentMap` — 다섯 필드가 전부다.
  *
  * **저장하지 않고 매 조회마다 유도한다**(`core/segment/SegmentAlignment.kt`,
  * `docs/plans/2026-09-04-p0-4-paragraph-mapping-reconversion.md` §2 결정 2) — 클라이언트가
@@ -72,12 +72,18 @@ data class SegmentMapUnitResponse(
  *
  * [compliantSourceUnits] 는 계약 2.18.0(P0-4 S7, 계획 §11)에서 더한 필드다 — 이미 쉬운 글
  * 스타일 게이트를 통과한 원본 단위 색인이며, 정수 색인일 뿐이라 본문을 담지 않는다.
+ *
+ * [sourceUnitKinds] 는 계약 2.23.0(P0-4 S8-3, `docs/plans/2026-09-06-p0-4-structure-hints.md`
+ * §1.5·§2)에서 더한 필드다 — `source_unit_count` 와 같은 좌표·길이로, 원본 단위마다
+ * 저장된 종류(`kr.easydoc.core.segment.UnitKind`)를 계약 wire 값(소문자)으로 옮긴다. 화면은
+ * 이 값으로 표·목록 구간에 배지를 달 뿐 재변환을 막지 않는다.
  */
 data class SegmentMapResponse(
     @get:JsonProperty("source_unit_count") val sourceUnitCount: Int,
     @get:JsonProperty("easy_unit_count") val easyUnitCount: Int,
     @get:JsonProperty("units") val units: List<SegmentMapUnitResponse>,
     @get:JsonProperty("compliant_source_units") val compliantSourceUnits: List<Int>,
+    @get:JsonProperty("source_unit_kinds") val sourceUnitKinds: List<String>,
 ) {
     companion object {
         fun of(map: SegmentMap): SegmentMapResponse =
@@ -86,6 +92,8 @@ data class SegmentMapResponse(
                 easyUnitCount = map.easyUnitCount,
                 units = map.units.map(SegmentMapUnitResponse::of),
                 compliantSourceUnits = map.compliantSourceUnits,
+                // 계약 `SourceUnitKind` 의 값은 영문 소문자다 — enum 이름을 그대로 낮춘다.
+                sourceUnitKinds = map.sourceUnitKinds.map { it.name.lowercase() },
             )
     }
 }

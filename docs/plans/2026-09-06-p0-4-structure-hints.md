@@ -118,7 +118,8 @@ S7의 `compliant_source_units`와 겹치는 일이 많다 — 두 배지가 같�
 
 계약: `segment_map.source_unit_kinds: string[]`(enum `body`·`table_cell`·`list_item`, 길이
 `source_unit_count`, **required**) — S7과 같은 자리·같은 좌표. 옛 문서(컬럼 `null`)는 전부
-`body`로 낸다. 계약 **2.19.0**.
+`body`로 낸다. 계약 **2.23.0**(작성 시 2.19.0으로 적었으나 그 사이 비밀번호 재설정 2.19.0·마스킹 제거
+2.20.0·사용량 2.21.0·크레딧 2.22.0이 들어와 착수 시점의 다음 빈 번호로 정정, 2026-09-07).
 
 ### 1.6 하지 않는 것
 

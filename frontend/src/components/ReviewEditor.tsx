@@ -1012,6 +1012,9 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
               }
               onHoverUnit={useSegmentedEditor ? setHoveredSourceIndex : undefined}
               compliantSourceUnits={useSegmentedEditor ? compliantSourceUnits : undefined}
+              sourceUnitKinds={
+                useSegmentedEditor ? conversion.segment_map?.source_unit_kinds : undefined
+              }
               reconvert={
                 useSegmentedEditor
                   ? {

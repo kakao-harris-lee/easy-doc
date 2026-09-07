@@ -186,22 +186,25 @@ const SCREENS: readonly {
         conversion({
           easy_text: '3월 2일부터 신청할 수 있어요.\n주민센터로 가세요.\n자세한 안내가 이어집니다.',
           segment_map: segmentMap({
-            source_unit_count: 2,
+            source_unit_count: 4,
             units: [
               segmentMapUnit({ easy_unit_index: 0, source_unit_indexes: [0], confidence: 'high' }),
-              segmentMapUnit({ easy_unit_index: 1, source_unit_indexes: [1], confidence: 'high' }),
+              segmentMapUnit({ easy_unit_index: 1, source_unit_indexes: [3], confidence: 'high' }),
               segmentMapUnit({ easy_unit_index: 2, source_unit_indexes: [], confidence: 'low' }),
             ],
             // 「이미 통과」 배지·경고(계획 §11)의 aria-describedby 참조도 이 스윕이
             // 훑도록 원본 단위 하나를 통과 목록에 둔다.
             compliant_source_units: [0],
+            // P0-4 S8 — 표 칸 run 하나(1·2번째 줄)를 넣어 구조 배지·그룹(role="group")·
+            // 구조 aria-describedby 노트도 이 스윕이 훑게 한다.
+            source_unit_kinds: ['body', 'table_cell', 'table_cell', 'body'],
           }),
         }),
       )
       renderAt({
         pathname: '/conversions/c1',
         state: {
-          sourceText: '3월 2일부터 신청할 수 있습니다.\n주민센터를 방문해 주세요.',
+          sourceText: '3월 2일부터 신청할 수 있습니다.\n구분\n금액\n주민센터를 방문해 주세요.',
         },
       })
     },
