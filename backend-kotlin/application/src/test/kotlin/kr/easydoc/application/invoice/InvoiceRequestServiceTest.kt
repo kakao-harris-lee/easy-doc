@@ -332,6 +332,7 @@ class InvoiceRequestServiceTest {
             status: InvoiceRequestStatus,
             note: String?,
             handledAt: Instant,
+            handledBy: UUID?,
         ): InvoiceRequestHandling {
             val existing = rows[id]
             return when {
@@ -349,6 +350,19 @@ class InvoiceRequestServiceTest {
                     InvoiceRequestHandling.Handled(updated)
                 }
             }
+        }
+
+        override fun listAll(
+            status: InvoiceRequestStatus?,
+            page: Int,
+            size: Int,
+        ): InvoiceRequestPage {
+            val filtered =
+                rows.values
+                    .filter { status == null || it.status == status }
+                    .sortedByDescending { it.requestedAt }
+            val offset = (page - 1) * size
+            return InvoiceRequestPage(filtered.drop(offset).take(size), filtered.size)
         }
     }
 

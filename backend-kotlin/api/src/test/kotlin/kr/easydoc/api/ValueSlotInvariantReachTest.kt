@@ -5,6 +5,7 @@ import kr.easydoc.api.support.ContractQueryParameter
 import kr.easydoc.api.support.ContractSpec
 import kr.easydoc.api.support.ContractValueSlot
 import kr.easydoc.api.support.ServedOperations
+import kr.easydoc.api.support.TestJwt
 import kr.easydoc.infrastructure.DatabaseHandle
 import kr.easydoc.infrastructure.PostgresTestSupport
 import org.assertj.core.api.Assertions.assertThat
@@ -103,6 +104,7 @@ class ValueSlotInvariantReachTest {
     @DisplayName("부정(쿼리) — 매핑된 **모든** 오퍼레이션에서, 선언 타입으로 해석되지 않는 값 자리는 성공 응답을 만들지 못한다")
     fun `해석되지 않는 쿼리 값 자리는 성공하지 못한다`() {
         val token = newAccount()
+        val adminToken = newAdminAccount()
         createDocument(token)
         val live = liveSlots().filter { it.slot.location == QUERY_LOCATION }
         assertThat(live)
@@ -111,9 +113,10 @@ class ValueSlotInvariantReachTest {
 
         val slips = mutableListOf<String>()
         live.forEach { (slot, method) ->
+            val callerToken = if (ContractSpec.adminOnly(slot.path, method)) adminToken else token
             val parameter = queryParameterOf(slot)
             uninterpretableSamples(parameter).forEach { (label, encoded) ->
-                val response = sendToSlot(token, slot, method, "${slot.name}=$encoded")
+                val response = sendToSlot(callerToken, slot, method, "${slot.name}=$encoded")
                 if (response.statusCode() in SUCCESS_RANGE) {
                     slips += "${slot.label} $label → ${response.statusCode()} ${response.body().take(120)}"
                     return@forEach
@@ -136,13 +139,15 @@ class ValueSlotInvariantReachTest {
     @DisplayName("부정(경로 변수) — 매핑된 **모든** 오퍼레이션에서 공백뿐인 경로 조각이 흡수되지 않고, 계약이 선언한 상태로 거절된다")
     fun `해석되지 않는 경로 값 자리는 성공하지 못한다`() {
         val token = newAccount()
+        val adminToken = newAdminAccount()
         val live = liveSlots().filter { it.slot.location == PATH_LOCATION }
         assertThat(live)
             .withFailMessage("매핑된 오퍼레이션에 경로 값 자리가 하나도 없다 — 이 케이스는 아무것도 재지 않는다")
             .isNotEmpty()
 
         live.forEach { (slot, method) ->
-            val response = sendToSlot(token, slot, method, rawQuery = null)
+            val callerToken = if (ContractSpec.adminOnly(slot.path, method)) adminToken else token
+            val response = sendToSlot(callerToken, slot, method, rawQuery = null)
 
             assertThat(response.statusCode() in SUCCESS_RANGE)
                 .withFailMessage("%s 의 공백 경로 조각이 성공 응답을 받았다 — 흡수됐다", slot.label)
@@ -406,6 +411,17 @@ class ValueSlotInvariantReachTest {
         return bodyOf(login).required("access_token").toString()
     }
 
+    /**
+     * `x-admin-only` 값 자리를 재려면 관리자 토큰이 필요하다 — 아니면 `AdminGuard`가
+     * 값 자리 검증보다 먼저 403을 낸다(어드민 최소 계획 §2 결정 2).
+     */
+    private fun newAdminAccount(): String {
+        val token = newAccount()
+        val userId = TestJwt.payload(token)["sub"].toString()
+        database.execute("UPDATE users SET is_admin = true WHERE id = '$userId'")
+        return token
+    }
+
     private fun createWorkspace(
         token: String,
         name: String,
@@ -489,6 +505,11 @@ class ValueSlotInvariantReachTest {
                     """{"business_number":"2208162517","company_name":"가",""" +
                     """"contact_email":"probe@example.test","period_from":"2026-08-01",""" +
                     """"period_to":"2026-08-31"}""",
+                // 어드민 최소(A1, 2.25.0) — 이 표본들도 경로·쿼리 값 자리 해석 여부만 잰다.
+                "AdminCreditAdjustmentRequest" to """{"credits":1,"reason":"manual"}""",
+                "AdminInvoiceRequestHandleRequest" to """{"status":"issued"}""",
+                "AnnouncementCreateRequest" to """{"body":"가"}""",
+                "AnnouncementUpdateRequest" to """{"active":true}""",
             )
 
         private const val LIST_SCHEMA = "DocumentListResponse"

@@ -64,12 +64,28 @@ internal const val CREDIT_GRANT_PROFILE = "credit-grant"
 internal const val INVOICE_HANDLE_PROFILE = "invoice-handle"
 
 /**
+ * `admin-grant` profile 이름. 검증된 이메일 계정에 관리자 권한을 부여·회수하고 종료하는
+ * 실행 모드다(어드민 최소 계획 `docs/plans/2026-09-07-admin-minimum.md` §2 결정 1).
+ *
+ * `CREDIT_GRANT_PROFILE`·`INVOICE_HANDLE_PROFILE`과 같은 이유로 `infrastructure`가 아니라
+ * `application`이 조립하는 [kr.easydoc.application.admin.AdminGrantService] 빈만 받는다.
+ */
+internal const val ADMIN_GRANT_PROFILE = "admin-grant"
+
+/**
  * 컨텍스트 초기화 중에 [ApplicationRunner][org.springframework.boot.ApplicationRunner] 로
- * 이미 도는 one-shot profile 전부 — 회전 배치·운영 리포트·크레딧 부여·세금계산서 처리.
- * `main` 이 이 집합 하나로 판정해 조건의 순환 복잡도를 갈래 수와 무관하게 1로 유지한다.
+ * 이미 도는 one-shot profile 전부 — 회전 배치·운영 리포트·크레딧 부여·세금계산서 처리·
+ * 관리자 부여. `main` 이 이 집합 하나로 판정해 조건의 순환 복잡도를 갈래 수와 무관하게
+ * 1로 유지한다.
  */
 private val ONE_SHOT_PROFILES: Set<String> =
-    setOf(ROTATE_KEYS_PROFILE, USAGE_REPORT_PROFILE, CREDIT_GRANT_PROFILE, INVOICE_HANDLE_PROFILE)
+    setOf(
+        ROTATE_KEYS_PROFILE,
+        USAGE_REPORT_PROFILE,
+        CREDIT_GRANT_PROFILE,
+        INVOICE_HANDLE_PROFILE,
+        ADMIN_GRANT_PROFILE,
+    )
 
 fun main(args: Array<String>) {
     val context = runApplication<ApiApplication>(*args)

@@ -83,6 +83,7 @@ class JdbcCreditAccountRepository(private val jdbc: JdbcClient) : CreditAccountR
             reservedDelta = amount.amount,
             reason = CreditReason.CONVERSION,
             note = null,
+            actorUserId = null,
         )
         return ReservationResult.Reserved(balance, reservedTotal)
     }
@@ -112,7 +113,8 @@ class JdbcCreditAccountRepository(private val jdbc: JdbcClient) : CreditAccountR
             balanceDelta = -amount.amount,
             reservedDelta = -amount.amount,
             CreditReason.CONVERSION,
-            null,
+            note = null,
+            actorUserId = null,
         )
     }
 
@@ -141,7 +143,8 @@ class JdbcCreditAccountRepository(private val jdbc: JdbcClient) : CreditAccountR
             balanceDelta = 0,
             reservedDelta = -amount.amount,
             CreditReason.CONVERSION,
-            null,
+            note = null,
+            actorUserId = null,
         )
     }
 
@@ -157,6 +160,7 @@ class JdbcCreditAccountRepository(private val jdbc: JdbcClient) : CreditAccountR
         credits: Int,
         reason: CreditReason,
         note: String?,
+        actorUserId: UUID?,
     ): Int {
         val balance =
             jdbc
@@ -182,6 +186,7 @@ class JdbcCreditAccountRepository(private val jdbc: JdbcClient) : CreditAccountR
             reservedDelta = 0,
             reason = reason,
             note = note,
+            actorUserId = actorUserId,
         )
         return balance
     }
@@ -257,13 +262,16 @@ class JdbcCreditAccountRepository(private val jdbc: JdbcClient) : CreditAccountR
         reservedDelta: Int,
         reason: CreditReason,
         note: String?,
+        actorUserId: UUID?,
     ) {
         jdbc
             .sql(
                 """
                 INSERT INTO credit_transactions
-                    (id, workspace_id, owner_user_id, document_id, kind, balance_delta, reserved_delta, reason, note)
-                VALUES (:id, :workspaceId, :ownerId, :documentId, :kind, :balanceDelta, :reservedDelta, :reason, :note)
+                    (id, workspace_id, owner_user_id, document_id, kind, balance_delta, reserved_delta, reason, note,
+                     actor_user_id)
+                VALUES (:id, :workspaceId, :ownerId, :documentId, :kind, :balanceDelta, :reservedDelta, :reason, :note,
+                        :actorUserId)
                 """.trimIndent(),
             ).param("id", UUID.randomUUID())
             .param("workspaceId", workspaceId)
@@ -274,6 +282,7 @@ class JdbcCreditAccountRepository(private val jdbc: JdbcClient) : CreditAccountR
             .param("reservedDelta", reservedDelta)
             .param("reason", reason.wireName)
             .param("note", note)
+            .param("actorUserId", actorUserId)
             .update()
     }
 

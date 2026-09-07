@@ -39,6 +39,13 @@ data class UserResponse(
      */
     @get:JsonProperty("has_password") val hasPassword: Boolean,
     @get:JsonProperty("identities") val identities: List<UserIdentityResponse>,
+    /**
+     * 관리자인지(2.25.0 신설, 어드민 최소 계획 `docs/plans/2026-09-07-admin-minimum.md`
+     * §2 결정 1) — `users.is_admin`. 화면이 계정 메뉴에 「관리」 링크를 보여줄지 판단하는
+     * 표시값일 뿐이다 — 실제 관리자 API 접근은 매 요청 DB를 다시 읽는 `AdminGuard`가
+     * 판정한다(이 값이 참이어도 이메일이 미검증이면 관리자 API는 403이다).
+     */
+    @get:JsonProperty("is_admin") val isAdmin: Boolean,
 ) {
     /**
      * **이메일을 찍지 않는다.** 형제 요청 DTO 둘(`SignupRequest`·`LoginRequest`)이 같은
@@ -46,7 +53,8 @@ data class UserResponse(
      * `/auth/me` 는 요청마다 이 객체를 만든다.
      */
     override fun toString(): String =
-        "UserResponse(id=$id, email=$CONTENT_MASK, emailVerified=$emailVerified, hasPassword=$hasPassword)"
+        "UserResponse(id=$id, email=$CONTENT_MASK, emailVerified=$emailVerified, hasPassword=$hasPassword, " +
+            "isAdmin=$isAdmin)"
 
     companion object {
         /**
@@ -64,6 +72,7 @@ data class UserResponse(
                 emailVerified = user.emailVerifiedAt != null,
                 hasPassword = user.hasPassword,
                 identities = identities.map(UserIdentityResponse::of),
+                isAdmin = user.isAdmin,
             )
     }
 }

@@ -144,14 +144,20 @@ interface CreditAccountRepository {
      * 계정 행이 없으면(워크스페이스가 지워졌거나 잘못된 식별자) [kr.easydoc.core.exceptions.NotFoundException] —
      * 스프링 데이터 접근 예외가 API 경계로 새지 않는다.
      *
+     * [actorUserId] 는 감사 흔적이다(어드민 최소 계획 `docs/plans/2026-09-07-admin-minimum.md`
+     * §2 결정 3, `credit_transactions.actor_user_id` V17) — 관리자 화면 경유는 관리자 id,
+     * `credit-grant` 프로필·가입 보너스 같은 자동 경로는 `null`.
+     *
      * @return 반영 뒤 잔액.
      */
+    @Suppress("LongParameterList")
     fun grant(
         workspaceId: UUID,
         ownerUserId: UUID,
         credits: Int,
         reason: CreditReason,
         note: String?,
+        actorUserId: UUID?,
     ): Int
 
     /**

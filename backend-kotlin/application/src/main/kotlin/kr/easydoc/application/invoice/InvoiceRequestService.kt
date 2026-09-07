@@ -145,18 +145,23 @@ class InvoiceRequestService(
         return rows.map(InvoiceRequestView::of)
     }
 
-    /** `invoice-handle` 프로필 전용. [status] 는 `ISSUED`·`REJECTED` 만 허용한다. */
+    /**
+     * `invoice-handle` 프로필과 관리자 화면(`POST /admin/invoice-requests/{id}/handle`)
+     * 공용. [status] 는 `ISSUED`·`REJECTED` 만 허용한다. [handledBy] 는 관리자 화면
+     * 경유일 때만 관리자 id — CLI 는 `null`(어드민 최소 계획 §2 결정 3).
+     */
     fun handle(
         id: UUID,
         status: InvoiceRequestStatus,
         note: String?,
+        handledBy: UUID? = null,
     ): InvoiceRequestView {
         require(status != InvoiceRequestStatus.REQUESTED) {
             "handle 은 issued·rejected 로만 상태를 바꿀 수 있다: $status"
         }
         val validatedNote = requireValidOperatorNote(note)
 
-        val result = repository.handle(id, status, validatedNote, clock.instant())
+        val result = repository.handle(id, status, validatedNote, clock.instant(), handledBy)
         val row =
             when (result) {
                 is InvoiceRequestHandling.Handled -> result.row

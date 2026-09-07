@@ -13,11 +13,11 @@ import java.sql.ResultSet
 import java.time.OffsetDateTime
 import java.util.UUID
 
-/** `users` 테이블 접근. 스키마는 `V1__initial_schema.sql` 이 정한다. */
+/** `users` 테이블 접근. 스키마는 `V1__initial_schema.sql` 이 정한다(`is_admin`은 `V17__admin.sql`). */
 class JdbcUserRepository(private val jdbc: JdbcClient) : UserRepository {
     override fun findByEmail(email: String): StoredUser? =
         jdbc
-            .sql("SELECT id, email, password_hash, created_at, email_verified_at FROM users WHERE email = :email")
+            .sql("SELECT $USER_COLUMNS FROM users WHERE email = :email")
             .param("email", email)
             .query { rs, _ -> toStoredUser(rs) }
             .optional()
@@ -25,7 +25,7 @@ class JdbcUserRepository(private val jdbc: JdbcClient) : UserRepository {
 
     override fun findById(id: UUID): User? =
         jdbc
-            .sql("SELECT id, email, password_hash, created_at, email_verified_at FROM users WHERE id = :id")
+            .sql("SELECT $USER_COLUMNS FROM users WHERE id = :id")
             .param("id", id)
             .query { rs, _ -> toUser(rs) }
             .optional()
@@ -34,9 +34,8 @@ class JdbcUserRepository(private val jdbc: JdbcClient) : UserRepository {
     /** `SELECT … FOR UPDATE` — [UserRepository.lockForUpdate] KDoc. 반드시 트랜잭션 안에서 부른다. */
     override fun lockForUpdate(id: UUID): User? =
         jdbc
-            .sql(
-                "SELECT id, email, password_hash, created_at, email_verified_at FROM users WHERE id = :id FOR UPDATE",
-            ).param("id", id)
+            .sql("SELECT $USER_COLUMNS FROM users WHERE id = :id FOR UPDATE")
+            .param("id", id)
             .query { rs, _ -> toUser(rs) }
             .optional()
             .orElse(null)
@@ -62,7 +61,7 @@ class JdbcUserRepository(private val jdbc: JdbcClient) : UserRepository {
                     """
                     INSERT INTO users (id, email, password_hash)
                     VALUES (:id, :email, :passwordHash)
-                    RETURNING id, email, password_hash, created_at, email_verified_at
+                    RETURNING id, email, password_hash, created_at, email_verified_at, is_admin
                     """.trimIndent(),
                 ).param("id", id)
                 .param("email", email)
@@ -94,7 +93,7 @@ class JdbcUserRepository(private val jdbc: JdbcClient) : UserRepository {
                     """
                     INSERT INTO users (id, email, password_hash, email_verified_at)
                     VALUES (:id, :email, NULL, CASE WHEN :emailVerified THEN now() ELSE NULL END)
-                    RETURNING id, email, password_hash, created_at, email_verified_at
+                    RETURNING id, email, password_hash, created_at, email_verified_at, is_admin
                     """.trimIndent(),
                 ).param("id", id)
                 .param("email", email)
@@ -141,12 +140,16 @@ class JdbcUserRepository(private val jdbc: JdbcClient) : UserRepository {
             createdAt = rs.getObject("created_at", OffsetDateTime::class.java).toInstant(),
             emailVerifiedAt = rs.getObject("email_verified_at", OffsetDateTime::class.java)?.toInstant(),
             hasPassword = rs.getString("password_hash") != null,
+            isAdmin = rs.getBoolean("is_admin"),
         )
 
     private fun toStoredUser(rs: ResultSet): StoredUser =
         StoredUser(toUser(rs), rs.getString("password_hash")?.let(::PasswordHash))
 
     private companion object {
+        /** `findByEmail`·`findById`·`lockForUpdate` 공용 열 목록. */
+        const val USER_COLUMNS = "id, email, password_hash, created_at, email_verified_at, is_admin"
+
         /** 계약 `components/responses/Conflict` 의 `duplicate_email` 예시와 같은 값. */
         const val DUPLICATE_EMAIL_MESSAGE = "이미 가입된 이메일입니다"
 

@@ -48,7 +48,7 @@ class JdbcCreditAccountRepositoryTest {
     @DisplayName("예약은 가용 잔액이 충분하면 성공하고 거래를 남긴다")
     fun `예약 성공`() {
         val (ownerId, workspaceId) = newOwnedWorkspace()
-        repository.grant(workspaceId, ownerId, 10, CreditReason.SIGNUP, note = null)
+        repository.grant(workspaceId, ownerId, 10, CreditReason.SIGNUP, note = null, actorUserId = null)
 
         val result = repository.reserve(ownerId, workspaceId, UUID.randomUUID(), Credits(3), enforced = true)
 
@@ -63,7 +63,7 @@ class JdbcCreditAccountRepositoryTest {
     @DisplayName("집행 중 가용 잔액이 모자라면 예약이 거절되고 잔여 가용량을 돌려준다")
     fun `예약 실패`() {
         val (ownerId, workspaceId) = newOwnedWorkspace()
-        repository.grant(workspaceId, ownerId, 2, CreditReason.SIGNUP, note = null)
+        repository.grant(workspaceId, ownerId, 2, CreditReason.SIGNUP, note = null, actorUserId = null)
 
         val result = repository.reserve(ownerId, workspaceId, UUID.randomUUID(), Credits(3), enforced = true)
 
@@ -87,7 +87,7 @@ class JdbcCreditAccountRepositoryTest {
     @DisplayName("소비는 잔액과 예약을 함께 줄이고 두 델타 모두 -3 거래를 남긴다")
     fun `소비`() {
         val (ownerId, workspaceId) = newOwnedWorkspace()
-        repository.grant(workspaceId, ownerId, 10, CreditReason.SIGNUP, note = null)
+        repository.grant(workspaceId, ownerId, 10, CreditReason.SIGNUP, note = null, actorUserId = null)
         val documentId = UUID.randomUUID()
         val conversionId = UUID.randomUUID()
         repository.reserve(ownerId, workspaceId, documentId, Credits(3), enforced = true)
@@ -106,7 +106,7 @@ class JdbcCreditAccountRepositoryTest {
     @DisplayName("해제는 예약만 되돌리고 잔액은 그대로다")
     fun `해제`() {
         val (ownerId, workspaceId) = newOwnedWorkspace()
-        repository.grant(workspaceId, ownerId, 10, CreditReason.SIGNUP, note = null)
+        repository.grant(workspaceId, ownerId, 10, CreditReason.SIGNUP, note = null, actorUserId = null)
         val documentId = UUID.randomUUID()
         val conversionId = UUID.randomUUID()
         repository.reserve(ownerId, workspaceId, documentId, Credits(3), enforced = true)
@@ -126,10 +126,12 @@ class JdbcCreditAccountRepositoryTest {
     fun `부여와 조정`() {
         val (ownerId, workspaceId) = newOwnedWorkspace()
 
-        val afterGrant = repository.grant(workspaceId, ownerId, 50, CreditReason.PLAN_MONTHLY, note = "월 구독")
+        val afterGrant =
+            repository.grant(workspaceId, ownerId, 50, CreditReason.PLAN_MONTHLY, note = "월 구독", actorUserId = null)
         assertThat(afterGrant).isEqualTo(50)
 
-        val afterAdjust = repository.grant(workspaceId, ownerId, -10, CreditReason.MANUAL, note = "환급 취소")
+        val afterAdjust =
+            repository.grant(workspaceId, ownerId, -10, CreditReason.MANUAL, note = "환급 취소", actorUserId = null)
         assertThat(afterAdjust).isEqualTo(40)
 
         val row = repository.read(ownerId, workspaceId)!!
@@ -150,7 +152,9 @@ class JdbcCreditAccountRepositoryTest {
     @DisplayName("최근 거래는 50건으로 잘리고 최신순이다")
     fun `거래는 최근 50건 최신순이다`() {
         val (ownerId, workspaceId) = newOwnedWorkspace()
-        repeat(55) { i -> repository.grant(workspaceId, ownerId, 1, CreditReason.MANUAL, note = "grant-$i") }
+        repeat(55) { i ->
+            repository.grant(workspaceId, ownerId, 1, CreditReason.MANUAL, note = "grant-$i", actorUserId = null)
+        }
 
         val row = repository.read(ownerId, workspaceId)!!
 
@@ -162,7 +166,7 @@ class JdbcCreditAccountRepositoryTest {
     @DisplayName("정합 검사 — 거래 합계가 balance - reserved 와 어긋나면 잡아낸다")
     fun `정합 검사가 어긋난 계정을 찾는다`() {
         val (ownerId, workspaceId) = newOwnedWorkspace()
-        repository.grant(workspaceId, ownerId, 10, CreditReason.SIGNUP, note = null)
+        repository.grant(workspaceId, ownerId, 10, CreditReason.SIGNUP, note = null, actorUserId = null)
         assertThat(repository.consistencyViolations().map { it.workspaceId }).doesNotContain(workspaceId)
 
         // 거래 없이 계정 행만 직접 뒤튼다 — 정합이 깨진 상태를 인위로 만든다.
@@ -208,7 +212,7 @@ class JdbcCreditAccountRepositoryTest {
     @DisplayName("V15 이전 문서(0 크레딧)는 소비·해제가 계정을 바꾸지 않는다 — 서비스 층 no-op 과 별개로, 0 인자를 그대로 넣어도 금액이 0이라 무해하다")
     fun `0 크레딧 소비는 무해하다`() {
         val (ownerId, workspaceId) = newOwnedWorkspace()
-        repository.grant(workspaceId, ownerId, 10, CreditReason.SIGNUP, note = null)
+        repository.grant(workspaceId, ownerId, 10, CreditReason.SIGNUP, note = null, actorUserId = null)
 
         repository.consume(workspaceId, ownerId, UUID.randomUUID(), UUID.randomUUID(), Credits(0))
 
@@ -221,7 +225,7 @@ class JdbcCreditAccountRepositoryTest {
     @DisplayName("동시 등록 2건, 가용 1 → 정확히 하나만 예약에 성공한다")
     fun `동시 예약은 하나만 성공한다`() {
         val (ownerId, workspaceId) = newOwnedWorkspace()
-        repository.grant(workspaceId, ownerId, 1, CreditReason.SIGNUP, note = null)
+        repository.grant(workspaceId, ownerId, 1, CreditReason.SIGNUP, note = null, actorUserId = null)
 
         val barrier = CyclicBarrier(2)
         val firstAttempt =
@@ -259,7 +263,14 @@ class JdbcCreditAccountRepositoryTest {
     fun `부여 대상이 없으면 NotFoundException`() {
         assertThat(
             org.junit.jupiter.api.assertThrows<kr.easydoc.core.exceptions.NotFoundException> {
-                repository.grant(UUID.randomUUID(), UUID.randomUUID(), 10, CreditReason.SIGNUP, note = null)
+                repository.grant(
+                    UUID.randomUUID(),
+                    UUID.randomUUID(),
+                    10,
+                    CreditReason.SIGNUP,
+                    note = null,
+                    actorUserId = null,
+                )
             },
         ).isNotNull()
     }

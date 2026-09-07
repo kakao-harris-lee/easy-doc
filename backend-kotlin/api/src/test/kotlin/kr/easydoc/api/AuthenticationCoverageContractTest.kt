@@ -1,5 +1,6 @@
 package kr.easydoc.api
 
+import kr.easydoc.api.admin.AdminEndpoints
 import kr.easydoc.api.auth.AuthenticatedEndpoints
 import kr.easydoc.api.config.PrivateResponseHeadersConfig
 import kr.easydoc.api.support.AuthSliceBeans
@@ -86,6 +87,68 @@ class AuthenticationCoverageContractTest {
 
         println("인증 대상인데 아직 구현되지 않은 경로: ${remaining.ifEmpty { listOf("없음") }}")
         assertThat(remaining).doesNotContain(ME_PATH)
+    }
+
+    @Test
+    @DisplayName("x-admin-only 오퍼레이션은 전부 /admin/ 아래에 있다 — 두 번째 축")
+    fun `관리자 전용 표식이 admin 경로에만 있다`() {
+        val adminOnlyOps = ContractSpec.operations().filter { (path, method) -> ContractSpec.adminOnly(path, method) }
+
+        assertThat(adminOnlyOps)
+            .withFailMessage("x-admin-only 오퍼레이션이 하나도 없다 — 이 축이 아무것도 재지 않는다")
+            .isNotEmpty()
+
+        val outsideAdmin = adminOnlyOps.filterNot { (path, _) -> path.startsWith("/admin/") }
+        assertThat(labelled(outsideAdmin.toSet()))
+            .withFailMessage("x-admin-only 오퍼레이션이 /admin/ 밖에 있다: %s", labelled(outsideAdmin.toSet()))
+            .isEmpty()
+    }
+
+    @Test
+    @DisplayName("AdminEndpoints.ADMIN_ONLY_PATH_PATTERNS 가 계약의 x-admin-only 경로 집합과 정확히 같다 — 양방향")
+    fun `관리자 전용 경로 목록이 계약과 정확히 같다`() {
+        val declared = AdminEndpoints.ADMIN_ONLY_PATH_PATTERNS.toSet()
+        val contractAdminPaths =
+            ContractSpec
+                .operations()
+                .filter { (path, method) -> ContractSpec.adminOnly(path, method) }
+                .map { it.first }
+                .toSet()
+
+        assertThat(declared)
+            .withFailMessage(
+                "AdminEndpoints.ADMIN_ONLY_PATH_PATTERNS 가 계약의 x-admin-only 경로와 다르다 — " +
+                    "선언에만 있음: %s / 계약에만 있음: %s",
+                declared - contractAdminPaths,
+                contractAdminPaths - declared,
+            ).isEqualTo(contractAdminPaths)
+    }
+
+    @Test
+    @DisplayName("/admin/ 아래 경로는 전부 x-admin-only다 — 표식을 빠뜨린 관리자 경로가 없다")
+    fun `admin 경로는 전부 관리자 전용 표식이 있다`() {
+        val adminPathOps = ContractSpec.operations().filter { (path, _) -> path.startsWith("/admin/") }
+        assertThat(adminPathOps)
+            .withFailMessage("/admin/ 아래 오퍼레이션이 하나도 없다 — 이 대조가 아무것도 재지 않는다")
+            .isNotEmpty()
+
+        val untagged = adminPathOps.filterNot { (path, method) -> ContractSpec.adminOnly(path, method) }
+        assertThat(labelled(untagged.toSet()))
+            .withFailMessage("/admin/ 아래인데 x-admin-only 표식이 없다: %s", labelled(untagged.toSet()))
+            .isEmpty()
+    }
+
+    @Test
+    @DisplayName("x-admin-only 오퍼레이션은 전부 인증도 필요하다 — 관리자 확인은 인증 뒤에 걸린다")
+    fun `관리자 전용 오퍼레이션은 인증도 필요하다`() {
+        val adminOnlyButPublic =
+            ContractSpec.operations().filter { (path, method) ->
+                ContractSpec.adminOnly(path, method) && !requiresAuth(path, method)
+            }
+
+        assertThat(labelled(adminOnlyButPublic.toSet()))
+            .withFailMessage("관리자 전용인데 계약이 공개(security: [])로 선언했다: %s", labelled(adminOnlyButPublic.toSet()))
+            .isEmpty()
     }
 
     @Test
