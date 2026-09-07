@@ -77,6 +77,17 @@ U1. 집계(U2)·운영 리포트(U3)는 이 조각 밖이다.
 운영 리포트(U3, `usage-report` 프로필, 소유자 전체 워크스페이스 집계는 U2가 쓰지 않고
 U3가 새로 정의한다)는 이 조각 밖이다.
 
+**U3(운영 리포트) → 구현(2026-09-07).** `usage-report` 프로필이 지난달(기본, `--from`·
+`--to`로 지정 가능) 전체 사용자·워크스페이스별 사용량을 CSV로 쓰고 종료 코드 0/1로
+끝난다(`rotate-keys`·`migrate`와 같은 CLI one-off, Compose 상시 서비스가 아니다).
+`JdbcUsageReportRepository`가 **한 SQL**로 `(user_id, workspace_id)` 단위 — U2가 다루지
+않는 `workspace_id IS NULL`(워크스페이스가 나중에 삭제된) 행까지 — 를 훑는다. CSV는
+UTF-8 **BOM 포함**으로 쓴다(저장소에 CSV 선례가 없어 새로 정함 — 엑셀이 BOM 없는
+UTF-8 한글을 깨뜨린다). `docs/pilot-runbook.md`에 「월간 청구」 절차(월초 리포트 →
+청구서 → 계좌이체 확인 → 세금계산서 수동 발급)를 남겼다. 계획
+`docs/plans/2026-09-07-usage-ledger-and-report.md` §3 U3. 크레딧 잔액·차감·거절, PG
+결제, 세금계산서 자동 발급은 이 조각 밖이다.
+
 ## 1.1 추후 개선 항목 (동작에는 문제 없음)
 
 | 항목 | 현재 상태 | 판단이 필요한 것 |

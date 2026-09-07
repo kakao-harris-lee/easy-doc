@@ -31,6 +31,19 @@ internal const val ROTATE_KEYS_PROFILE = "rotate-keys"
  */
 internal const val E2E_PROFILE = "e2e"
 
+/**
+ * `usage-report` profile 이름. 지난달(기본) 사용자·워크스페이스별 사용량을 CSV 로 쓰고
+ * 종료하는 실행 모드다(계획 `docs/plans/2026-09-07-usage-ledger-and-report.md` §3 U3).
+ *
+ * `ROTATE_KEYS_PROFILE`과 같은 이유로 `infrastructure`가 아니라 `application`이 조립하는
+ * [kr.easydoc.application.usage.UsageReportService] 빈만 받는다 — `api`가 `infrastructure`를
+ * `runtimeOnly`로만 의존해 `JdbcUsageReportRepository`를 컴파일 시점에 보지 못하기 때문에,
+ * 그 어댑터 조립은 `infrastructure`의 `UsageConfiguration`이 상시(프로필 무관) 맡고 이
+ * profile 은 `UsageReportConfiguration`(`api`)에서 실행부([kr.easydoc.api.usage.UsageReportRunner])만
+ * 배선한다.
+ */
+internal const val USAGE_REPORT_PROFILE = "usage-report"
+
 fun main(args: Array<String>) {
     val context = runApplication<ApiApplication>(*args)
     val profiles = context.environment.activeProfiles.toSet()
@@ -40,10 +53,11 @@ fun main(args: Array<String>) {
         context.close()
     }
 
-    // 회전 배치(KeyRotationRunner)는 ApplicationRunner 로 컨텍스트 초기화 중에 이미 돌았다.
-    // SpringApplication.exit 가 컨텍스트의 ExitCodeGenerator 빈을 읽어 종료 코드를 내고
-    // 컨텍스트를 닫는다 — 실패(배치 예외·미완주)면 0이 아닌 코드로 프로세스를 끝낸다.
-    if (profiles.contains(ROTATE_KEYS_PROFILE)) {
+    // 회전 배치(KeyRotationRunner)·운영 리포트(UsageReportRunner) 둘 다 ApplicationRunner 로
+    // 컨텍스트 초기화 중에 이미 돌았다. SpringApplication.exit 가 컨텍스트의
+    // ExitCodeGenerator 빈을 읽어 종료 코드를 내고 컨텍스트를 닫는다 — 실패(배치 예외·
+    // 미완주)면 0이 아닌 코드로 프로세스를 끝낸다. 둘 다 one-shot profile 이라 같은 자리를 쓴다.
+    if (profiles.any { it == ROTATE_KEYS_PROFILE || it == USAGE_REPORT_PROFILE }) {
         val exitCode = SpringApplication.exit(context)
         if (exitCode != 0) {
             exitProcess(exitCode)
