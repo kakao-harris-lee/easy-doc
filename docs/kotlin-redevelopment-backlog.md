@@ -39,20 +39,43 @@ API, 검수 화면의 단위별 대응·편집 UI, 재변환 엔드포인트, �
 문단에 「이미 쉬운 글 규칙을 통과한 문단」 배지와 경고를 달고 재변환은 막지 않는다. 계획 §11,
 CPU 실측 ≈24ms/20,000자.
 
-**U1(LLM 호출 원장) → 구현(2026-09-07).** `llm_calls`(V12)가 호출 1건 = 행 1건으로
-purpose(`convert`·`repair`·`reconvert`)·provider·model·토큰·지연·예상 비용·단가 스냅샷·
-`char_count`를 남긴다 — 지금까지 구조화 로그로만 나가고 어디에도 저장되지 않던 값이다.
+**U1(LLM 호출 원장) → 구현(2026-09-07, 2026-09-08 리뷰로 보존 정책 3차 정정).**
+`llm_calls`(V12)가 호출 1건 = 행 1건으로 purpose(`convert`·`repair`·`reconvert`)·
+provider·model·토큰·지연·예상 비용·단가 스냅샷·`char_count`(호출별 마스킹 입력 길이)·
+`document_char_count`(그 호출이 속한 문서의 `documents.char_count` 스냅샷, 2026-09-08
+리뷰로 신설)를 남긴다 — 지금까지 구조화 로그로만 나가고 어디에도 저장되지 않던 값이다.
 모델별 단가(`easydoc.llm.pricing.models.<model-id>`)가 단일 값 위에 얹혔고, 응답 model로
 찾아 없으면 단일 값, 그것도 없으면 `null`로 떨어진다. `ProcessConversionJob`은 완료/실패
 저장과 같은 트랜잭션에서, `ReconvertUnitService`는 정산 트랜잭션에서 원장을 쓴다 — 실패한
 provider 호출(예외)은 토큰이 없어 기록하지 않지만, 절단·빈 결과처럼 완성 자체는 받은
 실패는 실제 사용량이 있어 기록한다. 재변환은 1차·보정 호출 둘 다 `reconvert` 하나로 묶인다
 (`ConvertDocumentUseCase.convertMasked`의 `purpose` 매개변수 — 사후 재라벨링 대신 유스케이스가
-직접 결정하는 쪽을 선택했다). 보존 정책을 정정했다 — 문서·변환 삭제는 원장 참조만
-`SET NULL`로 끊고 행을 남긴다(원장은 본문이 없어 개인정보 보존 사유가 적용되지 않고,
-청구 근거가 문서 파기와 함께 사라지면 안 된다). 워크스페이스·계정 삭제만 원장을 함께
-지운다(`ON DELETE CASCADE`). 계획 `docs/plans/2026-09-07-usage-ledger-and-report.md` §3
+직접 결정하는 쪽을 선택했다). **보존 정책 — 3차 정정(2026-09-08).** `conversion_id`·
+`document_id`는 **FK 자체가 없다** — 참조 대상이 지워져도 원장 행의 값은 그대로 남는다
+(당초 권고한 CASCADE, 1차 리뷰의 SET NULL 둘 다 뒤집혔다 — U2가 워크스페이스 사용량의
+문서 수·문자 수·크레딧을 이 원장에서 유도하도록 다시 설계되면서, SET NULL조차 「문서
+삭제 시 그 문서의 청구 근거가 원장에서도 사라진다」는 문제를 그대로 남긴다는 것이
+드러났다). `workspace_id`만 여전히 `SET NULL`이고 `user_id`만 `CASCADE`다(계정이
+없으면 청구 대상도 없다). 계획 `docs/plans/2026-09-07-usage-ledger-and-report.md` §3
 U1. 집계(U2)·운영 리포트(U3)는 이 조각 밖이다.
+
+**U2(워크스페이스 사용량 집계) → 구현(2026-09-07, 계약 2.20.0, 2026-09-08 리뷰로
+집계 출처 정정).** `GET /workspaces/{workspace_id}/usage`가 **`llm_calls`(V12)
+하나만** 읽어 워크스페이스·기간(`from`~`to`, 포함 상한, 생략 시 `easydoc.usage.zone`
+기본 `Asia/Seoul` 기준 이번 달 1일~오늘)으로 집계한다. **문서 수·문자 수·크레딧은
+`documents` 표를 참조하지 않는다** — 최초 설계(`documents.created_at` 기준)는 문서가
+보존 만료로 지워지면 그 문서의 청구 근거까지 집계에서 사라지는 결함이 있어, 그 기간에
+완료된 LLM 호출이 하나라도 있던 문서만(`document_id`로 distinct) `document_char_count`
+스냅샷으로 세도록 리뷰로 정정했다 — 등록만 되고 변환되지 않은 문서는 비용·크레딧이
+없으므로 이 집계에도 없다. LLM 호출 수·토큰·예상 비용(알려진 호출만 합산, 단가 미상은
+`cost_unknown_calls`로만 센다)·목적별 소계도 `llm_calls.called_at` 기준이다. 소유자가
+아니면 404, `from`·`to` 형식 오류·역순·366일 초과는 422(문자열 detail — 스키마 제약이
+아니라 서비스 층 규칙이다), 빈 값(`?from=`)은 422 배열 detail(스키마 층,
+`TypedValueSlotInterceptor`). 프런트 `/usage` 화면이 기간(이번 달·지난달·직접 입력)을
+고르고 합계·목적별 표 둘을 보여준다. 계획
+`docs/plans/2026-09-07-usage-ledger-and-report.md` §3 U2. 크레딧 차감(잔액·거절)과
+운영 리포트(U3, `usage-report` 프로필, 소유자 전체 워크스페이스 집계는 U2가 쓰지 않고
+U3가 새로 정의한다)는 이 조각 밖이다.
 
 ## 1.1 추후 개선 항목 (동작에는 문제 없음)
 

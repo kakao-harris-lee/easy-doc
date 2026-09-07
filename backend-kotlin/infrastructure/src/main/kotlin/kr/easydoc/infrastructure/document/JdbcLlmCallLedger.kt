@@ -31,7 +31,7 @@ class JdbcLlmCallLedger(private val jdbc: JdbcClient) : LlmCallLedger {
         "(:id$index, :conversionId$index, :documentId$index, :workspaceId$index, :userId$index, " +
             ":purpose$index, :provider$index, :model$index, :inputTokens$index, :outputTokens$index, " +
             ":latencyMs$index, :estimatedCostUsd$index, :pricingInput$index, :pricingOutput$index, " +
-            ":charCount$index, :calledAt$index)"
+            ":charCount$index, :documentCharCount$index, :calledAt$index)"
 
     private fun bind(
         spec: JdbcClient.StatementSpec,
@@ -54,6 +54,7 @@ class JdbcLlmCallLedger(private val jdbc: JdbcClient) : LlmCallLedger {
             .param("pricingInput$index", entry.record.pricingInputUsdPerMtok)
             .param("pricingOutput$index", entry.record.pricingOutputUsdPerMtok)
             .param("charCount$index", entry.record.charCount)
+            .param("documentCharCount$index", entry.documentCharCount)
             // 읽는 쪽 관례(`rs.getObject(..., OffsetDateTime::class.java).toInstant()`)와
             // 짝을 맞춘다 — 이 표의 유일한 쓰기 경로라 `java.sql.Timestamp` 대신 이 표현으로
             // 통일해도 다른 어댑터와 부딪히지 않는다.
@@ -66,7 +67,7 @@ class JdbcLlmCallLedger(private val jdbc: JdbcClient) : LlmCallLedger {
                 id, conversion_id, document_id, workspace_id, user_id,
                 purpose, provider, model, input_tokens, output_tokens,
                 latency_ms, estimated_cost_usd, pricing_input_usd_per_mtok, pricing_output_usd_per_mtok,
-                char_count, called_at
+                char_count, document_char_count, called_at
             ) VALUES
             """.trimIndent()
     }

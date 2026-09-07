@@ -17,6 +17,7 @@ import kr.easydoc.infrastructure.document.KeyRotationProperties
 import kr.easydoc.infrastructure.document.RetentionProperties
 import kr.easydoc.infrastructure.llm.LlmProperties
 import kr.easydoc.infrastructure.mail.MailProperties
+import kr.easydoc.infrastructure.usage.UsageProperties
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
@@ -382,6 +383,19 @@ class ConfigurationPropertiesBindingTest {
         assertThat(mail.smtp.ssl).isTrue()
         assertThat(mail.smtp.username).isEqualTo("pilot")
         assertThat(mail.smtp.password.reveal()).isEqualTo(SECRET_VALUE)
+    }
+
+    @Test
+    @DisplayName("사용량 집계 설정이 기본값과 다른 값을 싣는다 — 시간대(U2)")
+    fun `사용량 설정이 기본값과 다른 값을 싣는다`() {
+        val usage =
+            bind(
+                "easydoc.usage",
+                UsageProperties::class.java,
+                mapOf("easydoc.usage.zone" to "UTC"),
+            )
+        assertThat(usage.zone).isEqualTo("UTC")
+        assertThat(usage.zoneId()).isEqualTo(java.time.ZoneId.of("UTC"))
     }
 
     @Test

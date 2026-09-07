@@ -212,21 +212,26 @@
   }
 
   .history-table,
-  .masked-table {
+  .masked-table,
+  .usage-table {
     @apply w-full border-collapse;
   }
   .history-table caption,
-  .masked-table caption {
+  .masked-table caption,
+  .usage-table caption {
     @apply py-4 text-left text-sm text-muted-foreground;
   }
   .history-table th,
   .history-table td,
   .masked-table th,
-  .masked-table td {
+  .masked-table td,
+  .usage-table th,
+  .usage-table td {
     @apply border-t border-border px-3 py-3 text-left align-middle;
   }
   .history-table thead th,
-  .masked-table thead th {
+  .masked-table thead th,
+  .usage-table thead th {
     @apply bg-background text-sm font-semibold text-muted-foreground;
   }
   .history-table button {

@@ -5,6 +5,9 @@ export const LOGIN_PATH = '/login'
 export const SIGNUP_PATH = '/signup'
 export const HISTORY_PATH = '/history'
 
+/** 워크스페이스 사용량 화면 (U2, 계약 2.20.0). */
+export const USAGE_PATH = '/usage'
+
 /** 이메일 인증 화면. 가입(이메일·비밀번호) 직후 이리로 보낸다. */
 export const EMAIL_VERIFICATION_PATH = '/verify-email'
 

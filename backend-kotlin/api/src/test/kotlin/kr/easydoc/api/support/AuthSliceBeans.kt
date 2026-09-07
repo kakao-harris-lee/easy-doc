@@ -49,6 +49,9 @@ import kr.easydoc.application.document.SegmentMapDerivation
 import kr.easydoc.application.document.StoredOriginalReader
 import kr.easydoc.application.document.WorkspaceLookup
 import kr.easydoc.application.mail.MailSender
+import kr.easydoc.application.usage.UsageQueryService
+import kr.easydoc.application.usage.UsageReadRepository
+import kr.easydoc.application.usage.WorkspaceUsage
 import kr.easydoc.application.workspace.DUPLICATE_WORKSPACE_NAME_MESSAGE
 import kr.easydoc.application.workspace.WorkspaceService
 import kr.easydoc.core.dictionary.DictionaryExample
@@ -82,6 +85,7 @@ import org.springframework.context.annotation.Bean
 import java.time.Clock
 import java.time.Duration
 import java.time.Instant
+import java.time.ZoneId
 import java.util.Locale
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
@@ -245,6 +249,20 @@ class AuthSliceBeans {
         workspaces: InMemoryWorkspaceRepository,
         transaction: TransactionRunner,
     ): WorkspaceService = WorkspaceService(workspaces, transaction)
+
+    /**
+     * 사용량 집계(2.20.0, U2)도 `WorkspaceController`가 물고 있어 `@WebMvcTest`가 컨트롤러를
+     * 전부 슬라이스에 넣는 대상이다 — 위 `workspaceService`와 같은 이유. 기간 경계 계산은
+     * `UsageQueryServiceTest`(순수 단위)·`JdbcUsageReadRepositoryTest`(실 DB)가 이미 재므로,
+     * 이 슬라이스는 HTTP 배선(상태 코드·바디 모양·404)만 잰다 — 그래서 대역은 기간을 보지
+     * 않고 소유자·워크스페이스만 맞으면 심어 둔 값을 그대로 돌려준다.
+     */
+    @Bean
+    fun inMemoryUsage(): FakeUsageReadRepository = FakeUsageReadRepository()
+
+    @Bean
+    fun usageQueryService(usage: FakeUsageReadRepository): UsageQueryService =
+        UsageQueryService(usage, ZoneId.of("Asia/Seoul"), Clock.systemUTC())
 
     @Bean
     fun inMemoryDocuments(): InMemoryDocumentRepository = InMemoryDocumentRepository()
@@ -673,6 +691,38 @@ class InMemoryWorkspaceRepository : WorkspaceRepository {
     }
 
     private fun Row.toWorkspace(): Workspace = Workspace(id, name, createdAt)
+}
+
+/**
+ * 사용량 집계(2.20.0, U2) 대역. 기간(`from`/`to`)은 보지 않는다 — 그 계산은
+ * `UsageQueryServiceTest`·`JdbcUsageReadRepositoryTest`가 이미 재므로, 이 슬라이스는
+ * `(ownerId, workspaceId)`가 [seed]로 심은 값과 맞는지만 본다. 심지 않은 조합은 `null`
+ * (404) — 남의 워크스페이스와 없는 워크스페이스를 슬라이스에서도 구분하지 못하게 한다.
+ */
+class FakeUsageReadRepository : UsageReadRepository {
+    private data class Row(
+        val ownerId: UUID,
+        val workspaceId: UUID,
+        val usage: WorkspaceUsage,
+    )
+
+    private val rows = mutableListOf<Row>()
+
+    fun seed(
+        ownerId: UUID,
+        workspaceId: UUID,
+        usage: WorkspaceUsage,
+    ) {
+        rows.removeIf { it.ownerId == ownerId && it.workspaceId == workspaceId }
+        rows += Row(ownerId, workspaceId, usage)
+    }
+
+    override fun aggregate(
+        ownerId: UUID,
+        workspaceId: UUID,
+        from: Instant,
+        toExclusive: Instant,
+    ): WorkspaceUsage? = rows.firstOrNull { it.ownerId == ownerId && it.workspaceId == workspaceId }?.usage
 }
 
 /** 해시를 흉내만 낸다 — Argon2 를 슬라이스 테스트에서 돌리지 않는다. */

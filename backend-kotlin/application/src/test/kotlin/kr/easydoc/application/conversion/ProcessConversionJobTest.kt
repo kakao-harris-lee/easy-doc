@@ -535,6 +535,9 @@ class ProcessConversionJobTest {
                 sourceText = sourceText,
                 workspaceId = workspaceId,
                 userId = userId,
+                // 원장 스냅샷(documentCharCount)이 요구하는 값 — 이 테스트는 그 값을 재지
+                // 않으므로 고정값이면 충분하다.
+                charCount = FAKE_DOCUMENT_CHAR_COUNT,
             )
 
         override fun markProcessing(conversionId: UUID): Boolean {
@@ -595,5 +598,8 @@ class ProcessConversionJobTest {
 
     private companion object {
         const val OWNER: String = "worker-a"
+
+        /** `ConversionWorkItem.charCount`(원장 스냅샷 출처) — 이 테스트가 재지 않는 고정값. */
+        const val FAKE_DOCUMENT_CHAR_COUNT: Int = 1000
     }
 }

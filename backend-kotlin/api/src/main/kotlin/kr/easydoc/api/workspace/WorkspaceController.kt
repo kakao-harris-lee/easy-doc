@@ -1,6 +1,7 @@
 package kr.easydoc.api.workspace
 
 import kr.easydoc.api.auth.AuthenticatedUser
+import kr.easydoc.application.usage.UsageQueryService
 import kr.easydoc.application.workspace.WorkspaceService
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
@@ -12,13 +13,17 @@ import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
+import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
 import java.util.UUID
 
-/** `GET·POST /workspaces` · `PATCH·DELETE /workspaces/{workspace_id}`. */
+/** `GET·POST /workspaces` · `PATCH·DELETE /workspaces/{workspace_id}` · `GET .../usage`(2.20.0, U2). */
 @RestController
 @RequestMapping("/workspaces")
-class WorkspaceController(private val workspaceService: WorkspaceService) {
+class WorkspaceController(
+    private val workspaceService: WorkspaceService,
+    private val usageQueryService: UsageQueryService,
+) {
     /** 만든 순서대로 돌려준다. **첫 번째가 기본 작업 공간이다.** */
     @GetMapping
     fun list(user: AuthenticatedUser): ResponseEntity<WorkspaceListResponse> =
@@ -56,6 +61,24 @@ class WorkspaceController(private val workspaceService: WorkspaceService) {
         workspaceService.delete(user.id, workspaceId)
         return ResponseEntity.noContent().build()
     }
+
+    /**
+     * `GET /workspaces/{workspace_id}/usage` — 기간별 사용량 집계(2.20.0, U2).
+     * `from`·`to`를 여기서 파싱하지 않는다 — 형식·범위 검증은 [UsageQueryService]가 한다
+     * (스키마 제약이 아니라 서비스 층 규칙이라 문자열 detail 422를 내야 한다,
+     * `DocumentController.createFromFile`의 `workspace_id`와 같은 이유로 원시 문자열을
+     * 그대로 넘긴다).
+     */
+    @GetMapping("/{workspace_id}/usage")
+    fun usage(
+        user: AuthenticatedUser,
+        @PathVariable("workspace_id") workspaceId: UUID,
+        @RequestParam(name = "from", required = false) from: String?,
+        @RequestParam(name = "to", required = false) to: String?,
+    ): ResponseEntity<WorkspaceUsageResponse> =
+        private(HttpStatus.OK).body(
+            WorkspaceUsageResponse.of(usageQueryService.usageOf(user.id, workspaceId, from, to)),
+        )
 
     /** 고위험 응답에 붙는 하한선 헤더. 값의 정본은 계약 `components/headers` 의 각 컴포넌트다. */
     private fun private(status: HttpStatus): ResponseEntity.BodyBuilder =
