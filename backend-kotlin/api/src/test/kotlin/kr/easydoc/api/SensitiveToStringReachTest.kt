@@ -351,8 +351,40 @@ class SensitiveToStringReachTest {
          * `StructureHintProperties`(`structureMaxRuns: Int` 하나뿐). 둘 다 run 수 상한이라는
          * 운영 구성값뿐이라 민감 토큰과 무관하다 — `LlmOptions`·`FeedbackProperties` 와 같은
          * 판단으로 [KNOWN_SENSITIVE_TYPES] 에 넣지 않는다.
+         *
+         * **2026-09-07 병합(usage-ledger → main).** LLM 호출 원장 U1(계획
+         * `docs/plans/2026-09-07-usage-ledger-and-report.md`)이 **셋**을 더해 132 이다(구조
+         * 절 129 위에) — core `LlmCallRecord`(원장 행 하나의 호출 값 — purpose·provider·
+         * model·토큰·지연·비용·단가 스냅샷·charCount, 숫자와 벤더 식별자뿐이라 손으로 쓴
+         * `toString()` 이 없다 — 민감 판정 토큰 어디에도 걸리지 않는다), application
+         * `LlmCallEntry`(원장 항목의 소유 문맥 — conversionId·documentId·workspaceId·
+         * userId·record·calledAt, 전부 식별자·시각이라 같은 이유로 가리지 않는다),
+         * infrastructure `ModelPricing`(`easydoc.llm.pricing.models.<model-id>` 설정
+         * 바인딩 — `LlmPricingProperties` 와 같은 필드 모양의 운영 단가값이라
+         * [KNOWN_SENSITIVE_TYPES] 에 넣지 않는다).
+         *
+         * 사용량 집계 U2(같은 계획, 2026-09-08 리뷰로 청구 근거 정정)가 **여덟**을 더해
+         * 140 이다(132 위에) — application `PurposeUsage`·`WorkspaceUsage`·
+         * `UsageQueryService.Period`, infrastructure `UsageProperties`·
+         * `JdbcUsageReadRepository.DocumentTotals`·`.CallTotals`, api
+         * `WorkspaceUsageResponse`·`PurposeUsageItemResponse`. (`OwnedWorkspaceUsage`는
+         * U2가 쓰지 않는 죽은 코드라 리뷰로 걷어냈다 — U3가 실제로 필요한 모양을 새로
+         * 정의한다.)
+         *
+         * 운영 리포트 U3(같은 계획 §3)가 **둘**을 더해 142 다(140 위에) — application
+         * `UsageReportRow`·`UsageReport`. `UsageQueryService.Period`(사설 nested data
+         * class)는 U2·U3가 함께 쓰는 `UsagePeriod`(같은 패키지 최상위 data class)로 뽑히며
+         * 이름만 바뀌었으므로 순증감 0 — 제거 1 + 추가 1이다. `UsageReportRepository`
+         * (인터페이스)·`UsageReportService`(일반 class)·`JdbcUsageReportRepository`(내부
+         * 사설 data class 없음, `ResultSet`을 바로 `UsageReportRow`로 매핑)는
+         * `data`/`value class`가 아니라 세지 않는다. `UsageReportRow`는 `ownerEmail`
+         * (`email` 토큰)·`workspaceName`(`name` 토큰) 두 필드가 민감 판정에 걸려
+         * `toString()`을 손으로 써 가린다 — `User`·`Workspace`와 같은 규약.
+         * `UsageReport.csv`는 이름이 토큰에 걸리지 않아 자동 판정 밖이지만, 소유자
+         * 이메일·워크스페이스 이름을 그대로 담은 CSV 본문이라 예방적으로 길이만 남기는
+         * `toString()`을 함께 붙였다.
          */
-        const val EXPECTED_SOURCE_DECLARATIONS = 129
+        const val EXPECTED_SOURCE_DECLARATIONS = 142
 
         /** 민감 판정이 반드시 닿아야 하는 타입 — 바닥이다. */
         val KNOWN_SENSITIVE_TYPES =

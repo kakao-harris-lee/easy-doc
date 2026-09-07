@@ -207,6 +207,8 @@ class ConversionWorkerFlowTest {
                     mailSender = FakeMailSender(),
                     publicBaseUrl = "http://localhost:5173",
                 ),
+            // 실물 원장 — 이 파일은 실 PostgreSQL 을 쓰므로 제품 조립과 같은 어댑터를 그대로 쓴다.
+            ledger = JdbcLlmCallLedger(jdbc),
         )
 
     // 이메일 인증 게이트는 `POST /documents` 앞이다 — 이 파일은 그 게이트를 재지 않으므로

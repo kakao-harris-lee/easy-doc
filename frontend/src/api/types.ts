@@ -350,6 +350,45 @@ export interface WorkspaceNameRequest {
   name: string
 }
 
+// --- 워크스페이스 사용량 집계 (U2, 계약 2.20.0) ---
+
+/** `llm_calls.purpose`(V12)와 같은 값 — 문서 1차 변환·조건부 보정·문단 재변환. */
+export type UsagePurpose = 'convert' | 'repair' | 'reconvert'
+
+/**
+ * `WorkspaceUsageResponse.by_purpose` 항목. 계약
+ * `components/schemas/PurposeUsageItem`.
+ *
+ * `estimated_cost_usd`는 그 목적으로 알려진 비용이 하나도 없으면(전부 단가 미상)
+ * `null`이다 — `"0"`이 아니다.
+ */
+export interface PurposeUsageItem {
+  purpose: UsagePurpose
+  llm_calls: number
+  input_tokens: number
+  output_tokens: number
+  estimated_cost_usd: string | null
+}
+
+/**
+ * `GET /workspaces/{workspace_id}/usage` 응답. 계약
+ * `components/schemas/WorkspaceUsageResponse`.
+ *
+ * `estimated_cost_usd`는 USD 소수를 **문자열**로 싣는다(부동소수 반올림 오차를
+ * 피한다) — 알려진 비용이 하나도 없으면 `null`이다.
+ */
+export interface WorkspaceUsageResponse {
+  documents: number
+  characters: number
+  credits: number
+  llm_calls: number
+  input_tokens: number
+  output_tokens: number
+  estimated_cost_usd: string | null
+  cost_unknown_calls: number
+  by_purpose: PurposeUsageItem[]
+}
+
 // --- 문단 재변환 (P0-4 S4/S5, 계약 2.14.0) ---
 
 /**

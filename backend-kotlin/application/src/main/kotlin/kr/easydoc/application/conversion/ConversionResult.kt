@@ -1,5 +1,6 @@
 package kr.easydoc.application.conversion
 
+import kr.easydoc.core.llm.LlmCallRecord
 import kr.easydoc.core.privacy.ModelDraft
 
 /** 변환이 실패한 종류. */
@@ -27,6 +28,14 @@ data class ConversionUsage(
     val llmCalls: Int,
     val inputTokens: Int,
     val outputTokens: Int,
+    /**
+     * 호출 단위 원장 항목(U1, 계획 §3) — 어느 호출이 보정이었는지, 각 호출의 비용까지 담는다.
+     * [llmCalls]·[inputTokens]·[outputTokens] 는 이 목록의 합산과 같아야 하지만, 그 세
+     * 필드는 이 목록이 생기기 전부터 있던 요약값이라 그대로 둔다(기존 호출부가 바뀌지
+     * 않게). 기본값 `emptyList()` 가 실패·중단 경로(`ConversionUsage(llmCalls = 0, …)`)를
+     * 그대로 통과시킨다 — 실패한 호출은 원장에 남기지 않는다(계획 §2 결정 2).
+     */
+    val calls: List<LlmCallRecord> = emptyList(),
 )
 
 /** 호출한 벤더와 응답 모델. 완성 요청이 예외로 끝나면 [model] 은 `null`. */

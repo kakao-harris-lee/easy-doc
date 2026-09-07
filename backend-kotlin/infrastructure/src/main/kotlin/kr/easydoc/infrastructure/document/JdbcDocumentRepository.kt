@@ -89,7 +89,7 @@ class JdbcDocumentRepository(private val jdbc: JdbcClient) : DocumentRepository 
         jdbc
             .sql(
                 """
-                SELECT id, source_format, char_count, source_unit_kinds,
+                SELECT id, source_format, char_count, workspace_id, source_unit_kinds,
                        source_text_encrypted, encryption_scheme, key_version
                 FROM documents
                 WHERE id = :id AND user_id = :ownerId
@@ -208,6 +208,7 @@ class JdbcDocumentRepository(private val jdbc: JdbcClient) : DocumentRepository 
                     scheme = rs.getString("encryption_scheme"),
                     keyVersion = rs.getInt("key_version"),
                 ),
+            workspaceId = rs.getObject("workspace_id", UUID::class.java),
             // `null` 은 이 조각 이전에 만든 문서이거나(백필하지 않는다, 계획 §1.2) 저장된
             // 값이 손상됐다는 뜻이다(리뷰 BLOCK 1) — 두 경우 모두 조회를 막지 않는다.
             structure = rs.getString("source_unit_kinds")?.let { decodeStructureOrNull(it, documentId) },

@@ -23,6 +23,7 @@ import {
   reconvertUnit,
 } from './api/client'
 import { lookupTerm } from './api/dictionary'
+import { getWorkspaceUsage } from './api/usage'
 import { computeEasyTextFingerprint } from './review/fingerprint'
 import { AuthContext, type AuthContextValue } from './auth/context'
 import { AppLayout } from './components/AppLayout'
@@ -34,6 +35,7 @@ import {
   segmentMap,
   segmentMapUnit,
   workspaceContext,
+  workspaceUsage,
 } from './test/factories'
 import { WorkspaceContext } from './workspace/context'
 
@@ -48,6 +50,11 @@ vi.mock('./api/client', async (importOriginal) => ({
 vi.mock('./api/dictionary', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./api/dictionary')>()),
   lookupTerm: vi.fn(),
+}))
+
+vi.mock('./api/usage', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./api/usage')>()),
+  getWorkspaceUsage: vi.fn(),
 }))
 
 const USER = {
@@ -289,6 +296,14 @@ const SCREENS: readonly {
     settle: () => screen.findByText('재난지원금 안내'),
   },
   {
+    name: '사용량',
+    open: () => {
+      vi.mocked(getWorkspaceUsage).mockResolvedValue(workspaceUsage())
+      renderAt('/usage')
+    },
+    settle: () => screen.findByRole('table', { name: /이 기간 사용량 합계입니다/ }),
+  },
+  {
     name: '찾을 수 없는 화면',
     open: () => renderAt('/없는-주소'),
     settle: () => screen.findByRole('heading', { name: '찾을 수 없는 화면입니다' }),
@@ -415,6 +430,7 @@ afterEach(() => {
   vi.mocked(getDocumentSource).mockReset()
   vi.mocked(lookupTerm).mockReset()
   vi.mocked(reconvertUnit).mockReset()
+  vi.mocked(getWorkspaceUsage).mockReset()
 })
 
 describe('①  랜드마크와 건너뛰기 링크', () => {

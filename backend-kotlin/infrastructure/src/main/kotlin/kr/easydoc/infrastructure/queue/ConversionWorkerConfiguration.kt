@@ -12,6 +12,7 @@ import kr.easydoc.application.conversion.ConversionWorkerRuntime
 import kr.easydoc.application.conversion.ConversionWorkerStores
 import kr.easydoc.application.conversion.ConvertDocumentUseCase
 import kr.easydoc.application.conversion.DictionaryContextSource
+import kr.easydoc.application.conversion.LlmCallLedger
 import kr.easydoc.application.conversion.NoDictionaryContext
 import kr.easydoc.application.conversion.ProcessConversionJob
 import kr.easydoc.application.crypto.ContentCipher
@@ -163,6 +164,7 @@ class ConversionWorkerConfiguration {
         appProperties: AppProperties,
     ): ConversionCompletedNotifier = ConversionCompletedNotifier(store, mailSender, appProperties.publicBaseUrl)
 
+    @Suppress("LongParameterList")
     @Bean
     fun processConversionJob(
         stores: ConversionWorkerStores,
@@ -170,6 +172,7 @@ class ConversionWorkerConfiguration {
         transactionRunner: TransactionRunner,
         runtime: ConversionWorkerRuntime,
         notifier: ConversionCompletedNotifier,
+        ledger: LlmCallLedger,
     ): ProcessConversionJob =
         ProcessConversionJob(
             stores = stores,
@@ -177,6 +180,7 @@ class ConversionWorkerConfiguration {
             transaction = transactionRunner,
             runtime = runtime,
             notifier = notifier,
+            ledger = ledger,
         )
 
     private fun hostOwner(): String =

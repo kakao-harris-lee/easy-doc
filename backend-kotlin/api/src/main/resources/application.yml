@@ -149,6 +149,20 @@ easydoc:
     pricing:
       input-usd-per-million-tokens: ${EASYDOC_LLM_INPUT_USD_PER_MILLION_TOKENS:}
       output-usd-per-million-tokens: ${EASYDOC_LLM_OUTPUT_USD_PER_MILLION_TOKENS:}
+      # 모델별 단가(선택, U1 — docs/plans/2026-09-07-usage-ledger-and-report.md §2 결정 3).
+      # 키가 임의 문자열(응답이 보고하는 model 식별자)이라 .env.example 의 환경변수 하나로는
+      # 표현할 수 없다 — 여러 모델을 동시에 쓰거나 모델을 바꿔도 지난 단가를 유지하고 싶을
+      # 때만 이 맵을 채운다. 표에 없는 model 은 위 단일 값으로, 그것도 없으면 null 로 떨어진다.
+      # 공개 단가라 비밀이 아니다(2026-09-04 재확인, platform.claude.com/docs/en/about-claude/pricing).
+      # models:
+      #   claude-sonnet-5:
+      #     input-usd-per-million-tokens: 2.00
+      #     output-usd-per-million-tokens: 10.00
+      # 모델 id 에 점이 있으면(gpt-4.1 등) YAML 중첩 매핑(여기 이 자리)에서는 키를 그대로
+      # 적으면 된다 — YAML 은 키를 문자열 그대로 읽고 점으로 쪼개지 않는다. 점이 중첩
+      # 구분자로 해석되는 자리는 **평평한 키 형태**(커맨드라인 인자·환경변수·`.properties`)
+      # 뿐이고, 그런 경로로 이 맵을 채울 때만 대괄호로 묶는다:
+      #   easydoc.llm.pricing.models[gpt-4.1].input-usd-per-million-tokens=2.00
   # 저장 암호화(AES-256-GCM). 키는 base64 32바이트이고 **환경변수로만** 준다 —
   # 값을 이 파일에 적지 않는다(프로젝트 CLAUDE.md 보안 규칙).
   #
@@ -268,5 +282,23 @@ spring:
   config:
     activate:
       on-profile: rotate-keys
+  main:
+    web-application-type: none
+
+---
+# usage-report profile — 지난달(기본) 사용자·워크스페이스별 사용량을 CSV로 쓰고 종료한다.
+# CLI one-off 용이다(migrate·rotate-keys 와 같다 — Compose 상시 서비스가 아니다). 절차는
+# `docs/pilot-runbook.md` 「월간 청구」. 계획 `docs/plans/2026-09-07-usage-ledger-and-report.md`
+# §3 U3. 인자는 `--from=YYYY-MM-DD --to=YYYY-MM-DD --out=path`(전부 선택, 기본 지난달 전체·
+# `./usage-report.csv`).
+#
+# rotate-keys 와 같은 선택으로 **아무것도 면제하지 않는다.** 본문 암호화 키·LLM provider
+# 조립을 그대로 요구한다 — 이 리포트는 그 값을 쓰지 않지만(`llm_calls`·`users`·`workspaces`
+# 세 표는 암호화 대상이 아니다, V12 머리주석), 이 프로필만을 위한 우회는 두지 않는다
+# (`KeyRotationConfiguration` KDoc과 같은 이유).
+spring:
+  config:
+    activate:
+      on-profile: usage-report
   main:
     web-application-type: none

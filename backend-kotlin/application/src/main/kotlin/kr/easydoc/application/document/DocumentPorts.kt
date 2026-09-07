@@ -55,6 +55,13 @@ class StoredSourceText(
     val charCount: Int,
     val sourceText: EncryptedContent,
     /**
+     * 이 문서가 속한 작업 공간 — U1(LLM 호출 원장)이 더했다. `ReconvertUnitService` 가
+     * `LlmCallEntry` 를 지으려면 워크스페이스 식별자가 필요한데, 이 조회가 이미 잠그지
+     * 않고 읽은 `documents` 행에 그 열이 있어 질의를 늘릴 이유가 없다
+     * (`ConversionWorkItem.workspaceId` 와 같은 판단).
+     */
+    val workspaceId: UUID,
+    /**
      * 원본 단위 종류(표·목록 구조 힌트 계획 §1.2) — `documents.source_unit_kinds` 컬럼 그대로다.
      * `null` 은 컬럼이 `null` 인 옛 문서다(이 조각 이전에 만든 문서, 백필하지 않는다) —
      * [structureOrBody] 로 「전부 BODY」로 읽는다.

@@ -45,6 +45,7 @@ class StoredSourceTextTest {
             sourceFormat = SourceFormat.TEXT,
             charCount = 4,
             sourceText = EncryptedContent(byteArrayOf(0), EncryptionScheme.AES_256_GCM_V1, 1),
+            workspaceId = UUID.randomUUID(),
             structure = structure,
         )
 }

@@ -7,14 +7,14 @@ import {
   type MouseEvent,
   type ReactNode,
 } from 'react'
-import { FilePlus2, History, LogOut, Menu, UserRound, X } from 'lucide-react'
+import { BarChart3, FilePlus2, History, LogOut, Menu, UserRound, X } from 'lucide-react'
 import { Link, NavLink } from 'react-router-dom'
 
 import type { UserIdentityResponse } from '../api/types'
 import { useAuth } from '../auth/context'
 import { cn } from '../lib/utils'
 import { confirmDiscardUnsaved } from '../review/unsavedChanges'
-import { EMAIL_VERIFICATION_PATH, HISTORY_PATH, HOME_PATH } from '../routes/paths'
+import { EMAIL_VERIFICATION_PATH, HISTORY_PATH, HOME_PATH, USAGE_PATH } from '../routes/paths'
 import { SetPasswordForm } from './SetPasswordForm'
 import { SocialLinkStatus } from './SocialLinkStatus'
 import { Logo } from './Logo'
@@ -291,6 +291,10 @@ export function AppLayout({ children }: { children: ReactNode }) {
                   <History className="size-4" aria-hidden="true" />
                   변환 기록
                 </NavLink>
+                <NavLink to={USAGE_PATH} onClick={guard} className={navLinkClass}>
+                  <BarChart3 className="size-4" aria-hidden="true" />
+                  사용량
+                </NavLink>
               </nav>
               <div className="ml-auto flex min-w-0 items-center gap-3">
                 <div className="hidden min-w-0 lg:block">
@@ -353,6 +357,9 @@ export function AppLayout({ children }: { children: ReactNode }) {
               </NavLink>
               <NavLink to={HISTORY_PATH} onClick={guard} className={navLinkClass}>
                 변환 기록
+              </NavLink>
+              <NavLink to={USAGE_PATH} onClick={guard} className={navLinkClass}>
+                사용량
               </NavLink>
               {/* 좁은 화면에서는 이 메뉴가 계정 메뉴를 겸한다 — 이메일도 여기서만 보인다. */}
               {user !== null && (

@@ -12,6 +12,8 @@ import kr.easydoc.core.easyread.renderStructureSection
 import kr.easydoc.core.exceptions.LlmEmptyResultException
 import kr.easydoc.core.exceptions.LlmProviderException
 import kr.easydoc.core.exceptions.LlmTruncatedException
+import kr.easydoc.core.llm.LlmCallPurpose
+import kr.easydoc.core.llm.LlmCallRecord
 import kr.easydoc.core.llm.LlmCompletion
 import kr.easydoc.core.llm.LlmFinishReason
 import kr.easydoc.core.llm.LlmOptions
@@ -21,6 +23,7 @@ import kr.easydoc.core.privacy.ModelDraft
 import kr.easydoc.core.segment.SourceStructure
 import kr.easydoc.core.segment.splitUnits
 import org.slf4j.LoggerFactory
+import java.time.Clock
 
 /** 문서 1건을 쉬운 글로 바꾼다 — 프롬프트 → LLM → 후처리 → (조건부 보정 → 채택 판정). */
 class ConvertDocumentUseCase(
@@ -42,6 +45,12 @@ class ConvertDocumentUseCase(
      * [dictionary] 가 trailing lambda 자리라 마지막이어야 한다(바로 아래 KDoc과 같은 이유).
      */
     private val structureHintOptions: StructureHintOptions = StructureHintOptions(),
+    /**
+     * 완성 호출의 `calledAt`(U1 원장)을 캡처할 시계. `dictionary` 보다 앞에 둔다 — 뒤 인자가
+     * SAM 변환 대상이라 trailing lambda 문법(`ConvertDocumentUseCase(provider, ids) { context }`)
+     * 이 마지막 자리를 가리켜야 한다.
+     */
+    private val clock: Clock = Clock.systemUTC(),
     private val dictionary: DictionaryContextSource = NoDictionaryContext,
 ) {
     /** worker 가 변환 유스케이스에 들어가기 전 실패를 기록할 때 쓰는 벤더 이름. */
@@ -67,12 +76,27 @@ class ConvertDocumentUseCase(
      * 않아 이 인자가 생기기 전과 프롬프트가 한 글자도 다르지 않다. `structure.kinds.size` 가
      * `splitUnits(source).size` 와 다르면(불변식 위반) 전부 BODY 로 접는다 — 계획 §1.2 방침과
      * 같다.
+     *
+     * **[purpose] 매개변수 — 원장(U1) 라벨을 유스케이스가 결정한다.** LLM 호출 원장
+     * (`llm_calls`)은 목적을 셋(`convert`·`repair`·`reconvert`)만 안다. 일반 문서 변환은
+     * 기본값 [LlmCallPurpose.CONVERT] 를 그대로 쓰고, 1차 호출은 `convert`, 조건부 보정 호출은
+     * `repair` 로 갈린다. **재변환은 다르다** — `ReconvertUnitService` 가 이 메서드를
+     * [LlmCallPurpose.RECONVERT] 로 직접 부르면, 1차 호출과(있었다면) 그 보정 호출 **둘 다**
+     * `reconvert` 로 기록된다. 대안(호출자가 반환된 `ConversionUsage.calls` 를 사후에 재라벨링)도
+     * 가능했지만, 그러면 「이 호출이 어느 라벨인가」를 판정하는 로직이 `Pass`(호출 순서를 아는
+     * 곳)와 호출자(라벨을 아는 곳) 둘로 쪼개진다 — 재변환의 보정 호출까지 `repair` 로 잘못 세는
+     * 조용한 버그가 그 이음매에서 생기기 쉽다. 매개변수 하나로 `Pass` 안에서 완결하는 쪽이 더 작다.
+     *
+     * **2026-09-07 정정: PR #58 로 개인정보 마스킹이 제거됐다.** 이전에는 재변환이 문서 전체를
+     * 다시 마스킹하지 않으려고 이미 마스킹된 입력을 받는 `convertMasked` 진입점이 따로 있었다.
+     * 마스킹 자체가 사라져 그 구분이 필요 없어졌고, 모든 호출자가 이 메서드 하나로 합쳐졌다.
      */
     fun convert(
         source: String,
         options: LlmOptions = defaultOptions,
         dictionaryContext: String? = null,
         structure: SourceStructure = SourceStructure.allBody(splitUnits(source).size),
+        purpose: LlmCallPurpose = LlmCallPurpose.CONVERT,
     ): ConversionResult =
         Pass(
             provider,
@@ -81,6 +105,8 @@ class ConvertDocumentUseCase(
             dictionaryContext,
             dictionary,
             StructureInput(structure, structureHintOptions),
+            purpose,
+            clock,
         ).run(source)
 }
 
@@ -94,6 +120,7 @@ private class StructureInput(
 )
 
 /** 변환 1건의 실행 상태. */
+@Suppress("LongParameterList")
 private class Pass(
     private val provider: LlmProvider,
     private val documentIds: DocumentIdGenerator,
@@ -101,11 +128,21 @@ private class Pass(
     private val dictionaryContext: String?,
     private val dictionary: DictionaryContextSource,
     private val structureInput: StructureInput,
+    private val purpose: LlmCallPurpose,
+    private val clock: Clock,
 ) {
     private val budget = CompletionBudget()
     private var inputTokens = 0
     private var outputTokens = 0
     private var lastModel: String? = null
+    private val calls = mutableListOf<LlmCallRecord>()
+
+    /**
+     * 보정 호출의 원장 라벨 — 일반 변환([purpose] = [LlmCallPurpose.CONVERT])은 `repair`,
+     * 재변환 맥락은 [purpose] 를 그대로 쓴다(`ConvertDocumentUseCase.convert` KDoc).
+     */
+    private val repairPurpose: LlmCallPurpose
+        get() = if (purpose == LlmCallPurpose.CONVERT) LlmCallPurpose.REPAIR else purpose
 
     fun run(source: String): ConversionResult {
         val context = dictionaryContext ?: dictionary.contextFor(source)
@@ -119,9 +156,10 @@ private class Pass(
         val maxRuns = structureInput.options.maxRuns
         val structureSection = renderStructureSection(safeStructure, sourceUnits, documentIds, maxRuns)
         val prompt = LlmPrompt.forConversion(source, documentIds, context, structureSection)
+        val charCount = source.length
 
         // ① 변환 패스 — 항상 정확히 1회.
-        return when (val first = complete(prompt)) {
+        return when (val first = complete(prompt, purpose, charCount)) {
             is Outcome.Rejected -> {
                 ConversionResult.Failed(
                     kind = first.kind,
@@ -179,24 +217,55 @@ private class Pass(
         // ModelDraft 로 감싸는 것이 허용되는 자리다 — 값의 출처가 LLM 출력의 후처리 결과다
         // (`DocumentBody.kt` 「provenance 래퍼 사용 규약」).
         val prompt = LlmPrompt.forRepair(ModelDraft(draft), issues, factIssues, documentIds, structureSection)
-        val candidate = (complete(prompt) as? Outcome.Body)?.text ?: return Adoption.keep(draft)
+        val candidate =
+            (complete(prompt, repairPurpose, source.length) as? Outcome.Body)?.text
+                ?: return Adoption.keep(draft)
 
         val decision = decideRepairAdoption(original = draft, candidate = candidate, source = source)
         return if (decision.accepted) Adoption(candidate, repaired = true) else Adoption.keep(draft)
     }
 
-    /** 완성 요청 1건. 예산을 쓰고, 응답을 후처리까지 마친 뒤 결과를 분류한다. */
-    private fun complete(prompt: LlmPrompt): Outcome {
+    /**
+     * 완성 요청 1건. 예산을 쓰고, 응답을 후처리까지 마친 뒤 결과를 분류한다.
+     *
+     * **provider 예외가 아니면 원장에 기록한다** — 절단·빈 결과·거절([classify] 이 [Outcome
+     * .Rejected] 로 분류하는 것들)도 실제로 완성 응답을 받았고 토큰을 썼으므로 기록 대상이다.
+     * 기록하지 않는 것은 [LlmProviderException] 으로 완성 자체가 나지 않은 경우뿐이다
+     * (계획 §2 결정 2 「실패한 호출은 기록하지 않는다」— 여기서 「실패」는 이 예외를 뜻한다).
+     */
+    private fun complete(
+        prompt: LlmPrompt,
+        callPurpose: LlmCallPurpose,
+        charCount: Int,
+    ): Outcome {
         val completion =
             try {
                 budget.spend { provider.complete(prompt, options) }
             } catch (exc: LlmProviderException) {
                 return Outcome.Rejected(failureKind(exc))
             }
+        // 호출이 실제로 끝난 시각을 여기서 캡처한다 — 저장은 한참 뒤(트랜잭션 재진입·암호화
+        // 이후)에 일어나므로, 그때 시계를 읽으면 호출 시각이 아니라 저장 시각이 찍힌다
+        // (`LlmCallRecord.calledAt` KDoc).
+        val calledAt = clock.instant()
 
         lastModel = completion.model
         inputTokens += completion.inputTokens
         outputTokens += completion.outputTokens
+        calls +=
+            LlmCallRecord(
+                purpose = callPurpose,
+                provider = provider.name,
+                model = completion.model,
+                inputTokens = completion.inputTokens,
+                outputTokens = completion.outputTokens,
+                latencyMs = completion.latencyMs,
+                estimatedCostUsd = completion.estimatedCostUsd,
+                pricingInputUsdPerMtok = completion.pricingInputUsdPerMtok,
+                pricingOutputUsdPerMtok = completion.pricingOutputUsdPerMtok,
+                charCount = charCount,
+                calledAt = calledAt,
+            )
         return classify(completion)
     }
 
@@ -205,6 +274,7 @@ private class Pass(
             llmCalls = budget.spent,
             inputTokens = inputTokens,
             outputTokens = outputTokens,
+            calls = calls.toList(),
         )
 
     /**

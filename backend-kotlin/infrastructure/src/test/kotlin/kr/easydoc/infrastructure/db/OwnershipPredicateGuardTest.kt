@@ -474,6 +474,11 @@ class OwnershipPredicateGuardTest {
                 "$DOCUMENT/JdbcFeedbackCommentPurge.kt | UPDATE [conversion_feedback]",
                 "$DOCUMENT/JdbcFeedbackCommentPurge.kt | SELECT [conversion_feedback]",
             )
+        // 사용량 집계(2.20.0, U2, `JdbcUsageReadRepository`)는 이 인구조사에 없다 —
+        // 2026-09-08 리뷰로 `documents` 표 대신 `llm_calls`(V14)에서 문서 수·문자 수·
+        // 크레딧을 유도하도록 바뀌었고, 소유 확인 질의는 `workspaces` 를 읽는다.
+        // `documents`·`conversions`·`conversion_feedback`·`document_originals` 넷 다
+        // 건드리지 않으므로 이 스캐너의 대상 표 밖이라 애초에 잡히지 않는다.
 
         /**
          * 그중 소유 매개변수가 걸리지 않은 문장. worker 내부 경로가 변환 행을 집는다.

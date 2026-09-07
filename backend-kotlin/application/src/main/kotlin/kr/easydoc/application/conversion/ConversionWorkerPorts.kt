@@ -71,12 +71,26 @@ interface ConversionJobLeasePort {
     fun fail(lease: ConversionJobLease): Boolean
 }
 
-/** worker 가 변환 행·원문을 읽고 결과를 쓸 때 쓰는 포트. 사용자 조회 포트와 축이 다르다. */
+/**
+ * worker 가 변환 행·원문을 읽고 결과를 쓸 때 쓰는 포트. 사용자 조회 포트와 축이 다르다.
+ *
+ * [workspaceId]·[userId]·[charCount] 는 U1(LLM 호출 원장)이 더했다 — `ProcessConversionJob`
+ * 이 완료 저장과 같은 트랜잭션에서 `LlmCallLedger.append` 를 부르는데, 그 항목이 요구하는
+ * 소유 문맥과 [LlmCallEntry.documentCharCount] 스냅샷이 이 조회가 이미 잠그고 읽은
+ * `documents` 행에 있다(`loadForProcessing` 이 `documents` 를 조인하므로 값을 얻으려고
+ * 질의를 늘릴 이유가 없다). [charCount] 는 `documents.char_count` 그대로다 — 원장 열
+ * `document_char_count` 의 스냅샷 출처이며, 문서가 나중에 지워져도(보존 파기) 이미 쓴
+ * 원장 행의 값은 바뀌지 않는다(2026-09-08 리뷰, `LlmCallEntry` KDoc).
+ */
+@Suppress("LongParameterList")
 class ConversionWorkItem(
     val conversionId: UUID,
     val documentId: UUID,
     val status: ConversionStatus,
     val sourceText: EncryptedContent,
+    val workspaceId: UUID,
+    val userId: UUID,
+    val charCount: Int,
     /**
      * 원본 단위 종류(표·목록 구조 힌트 계획 §1.2) — `documents.source_unit_kinds` 컬럼 그대로다.
      * `null` 은 컬럼이 `null` 인 옛 문서다 — [ProcessConversionJob] 이 `SourceStructure.allBody`

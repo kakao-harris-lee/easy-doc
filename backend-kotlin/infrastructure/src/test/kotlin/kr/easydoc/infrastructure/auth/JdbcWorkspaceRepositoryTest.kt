@@ -155,9 +155,17 @@ class JdbcWorkspaceRepositoryTest {
         assertThat(workspaces.listOwned(owner)).hasSize(1)
     }
 
-    /** A-2 — `delete` 의 「터질 수 있는 제약은 하나뿐」 전제를 지키는 장치. */
+    /**
+     * A-2 — `delete` 의 「터질 수 있는 제약은 하나뿐」 전제를 지키는 장치.
+     *
+     * `ON DELETE CASCADE`(`confdeltype = 'c'`)·`ON DELETE SET NULL`(`confdeltype = 'n'`) 로
+     * 걸린 FK 는 뺀다 — 둘 다 삭제를 막지 않고(참조 행을 지우거나 참조만 끊는다) 위반을
+     * 내지 않는다. `delete` 가 잡아야 하는 것은 삭제를 **막는**(`NO ACTION`/`RESTRICT`)
+     * 제약뿐이다. U1(`fk_llm_calls_workspace_id_workspaces`, V14, 리뷰로 CASCADE → SET NULL
+     * 정정)이 `workspaces` 를 참조하지만 `SET NULL` 이라 이 전제를 건드리지 않는다.
+     */
     @Test
-    @DisplayName("workspaces 를 참조하는 외래 키가 정확히 하나다 — delete 의 409 단정이 서는 전제")
+    @DisplayName("workspaces 를 참조하며 삭제를 막을 수 있는 외래 키가 정확히 하나다 — delete 의 409 단정이 서는 전제")
     fun `작업 공간을 참조하는 제약이 하나뿐이다`() {
         val referencing =
             jdbcClient
@@ -165,15 +173,16 @@ class JdbcWorkspaceRepositoryTest {
                     """
                     SELECT conname FROM pg_constraint
                     WHERE contype = 'f' AND confrelid = 'workspaces'::regclass
+                      AND confdeltype NOT IN ('c', 'n')
                     """.trimIndent(),
                 ).query { rs, _ -> rs.getString("conname") }
                 .list()
 
         assertThat(referencing)
             .withFailMessage(
-                "workspaces 를 참조하는 FK 가 %s 다. delete 는 무결성 위반을 메시지도 보지 않고 " +
-                    "「문서가 남아 있습니다」 409 로 옮기므로, 참조가 늘면 다른 위반이 그 문구로 둔갑한다. " +
-                    "제약을 늘렸다면 delete 의 예외 분류를 함께 고친다.",
+                "workspaces 를 참조하며 삭제를 막을 수 있는 FK 가 %s 다. delete 는 무결성 위반을 메시지도 " +
+                    "보지 않고 「문서가 남아 있습니다」 409 로 옮기므로, 참조가 늘면 다른 위반이 그 문구로 " +
+                    "둔갑한다. 제약을 늘렸다면 delete 의 예외 분류를 함께 고친다.",
                 referencing,
             ).containsExactly(DOCUMENTS_WORKSPACE_FK)
     }

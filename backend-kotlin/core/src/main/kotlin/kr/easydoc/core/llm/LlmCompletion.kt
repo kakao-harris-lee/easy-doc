@@ -35,6 +35,15 @@ data class LlmCompletion(
     val latencyMs: Long? = null,
     /** 설정된 모델 단가로 계산한 예상 비용. 단가가 없으면 `null`이며 0달러로 오인하지 않는다. */
     val estimatedCostUsd: BigDecimal? = null,
+    /**
+     * [estimatedCostUsd] 를 계산한 **입력 토큰 단가 스냅샷**(USD/백만 토큰). `MetricsLlmProviderDecorator`
+     * 가 이 응답의 model 로 조회한 단가를 여기 채운다 — 이후 단가가 바뀌어도 이 값은 호출
+     * 시점 그대로다(`LlmCallRecord.pricingInputUsdPerMtok` 로 원장에 그대로 옮겨진다).
+     * 단가가 미설정이면 [estimatedCostUsd] 와 함께 `null`이다.
+     */
+    val pricingInputUsdPerMtok: BigDecimal? = null,
+    /** [pricingInputUsdPerMtok] 과 같은 스냅샷의 출력 토큰 단가. */
+    val pricingOutputUsdPerMtok: BigDecimal? = null,
 ) {
     /** 출력 상한에 걸려 잘렸는가. */
     val truncated: Boolean
@@ -44,5 +53,6 @@ data class LlmCompletion(
     override fun toString(): String =
         "LlmCompletion(provider=$provider, model=$model, text=${text.length}자, " +
             "inputTokens=$inputTokens, outputTokens=$outputTokens, finishReason=$finishReason, " +
-            "latencyMs=$latencyMs, estimatedCostUsd=$estimatedCostUsd)"
+            "latencyMs=$latencyMs, estimatedCostUsd=$estimatedCostUsd, " +
+            "pricingInputUsdPerMtok=$pricingInputUsdPerMtok, pricingOutputUsdPerMtok=$pricingOutputUsdPerMtok)"
 }

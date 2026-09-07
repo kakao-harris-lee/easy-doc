@@ -19,6 +19,7 @@ import kr.easydoc.core.exceptions.ReconversionBudgetExhaustedException
 import kr.easydoc.core.exceptions.ReconversionConcurrencyExhaustedException
 import kr.easydoc.core.llm.FakeLlmProvider
 import kr.easydoc.core.llm.FakeLlmTurn
+import kr.easydoc.core.llm.LlmCallPurpose
 import kr.easydoc.core.llm.LlmCompletion
 import kr.easydoc.core.llm.LlmFinishReason
 import kr.easydoc.core.llm.LlmOptions
@@ -44,6 +45,7 @@ class ReconvertUnitServiceTest {
     private val documents = FakeQueryDocumentRepository(transaction)
 
     private val owner = UUID.randomUUID()
+    private val workspaceId = UUID.randomUUID()
 
     /** 규칙 위반이 남아 있는 1차 변환 결과 — '금일'이 어려운 말 사전에 있다. */
     private val draftWithIssue = "금일 서류를 내세요."
@@ -64,6 +66,7 @@ class ReconvertUnitServiceTest {
         provider: LlmProvider,
         callBudget: Int = DEFAULT_BUDGET,
         concurrencyLimit: Int = DEFAULT_CONCURRENCY,
+        ledger: LlmCallLedger = LlmCallLedger { },
     ) = ReconvertUnitService(
         conversions = conversions,
         documents = documents,
@@ -72,6 +75,7 @@ class ReconvertUnitServiceTest {
         transaction = transaction,
         callBudget = callBudget,
         concurrencyLimit = concurrencyLimit,
+        ledger = ledger,
     )
 
     /** 완료 상태 변환 한 건과 그 원문을 심는다 — 원본 단위 0 은 항상 [SOURCE_UNIT_0]. */
@@ -97,8 +101,23 @@ class ReconvertUnitServiceTest {
                 outputTokens = null,
                 failureCode = null,
             )
-        documents.seed(owner, documentId, "$SOURCE_UNIT_0\n$SOURCE_UNIT_1", structure = structure)
+        documents.seed(
+            owner,
+            documentId,
+            "$SOURCE_UNIT_0\n$SOURCE_UNIT_1",
+            workspaceId = workspaceId,
+            structure = structure,
+        )
         return conversionId
+    }
+
+    /** 원장에 실제로 쓴 항목을 기록하는 대역 — U1 검증용. */
+    private class RecordingLedger : LlmCallLedger {
+        val appended = mutableListOf<LlmCallEntry>()
+
+        override fun append(entries: List<LlmCallEntry>) {
+            appended += entries
+        }
     }
 
     @Test
@@ -124,6 +143,58 @@ class ReconvertUnitServiceTest {
         assertThat(result.remainingCallBudget).isEqualTo(DEFAULT_BUDGET - 1)
 
         assertThat(conversions.reconversionBudgetOf(conversionId)).isEqualTo(0 to 1)
+    }
+
+    @Test
+    @DisplayName("행복 경로는 원장에 RECONVERT 행 하나를 남기고 charCount는 단위 길이다 (U1)")
+    fun `행복 경로는 원장에 reconvert 행 하나를 남긴다`() {
+        val conversionId = seedDone()
+        val provider = FakeLlmProvider(listOf(reply(cleanText)))
+        val ledger = RecordingLedger()
+
+        service(provider, ledger = ledger).reconvert(
+            ownerId = owner,
+            conversionId = conversionId,
+            sourceUnitIndex = 0,
+            easyUnitIndexes = listOf(0),
+            easyTextFingerprint = FINGERPRINT,
+        )
+
+        assertThat(ledger.appended).hasSize(1)
+        val entry = ledger.appended.single()
+        assertThat(entry.conversionId).isEqualTo(conversionId)
+        assertThat(entry.workspaceId).isEqualTo(workspaceId)
+        assertThat(entry.userId).isEqualTo(owner)
+        assertThat(entry.record.purpose).isEqualTo(LlmCallPurpose.RECONVERT)
+        assertThat(entry.record.charCount).isEqualTo(SOURCE_UNIT_0.length)
+    }
+
+    @Test
+    @DisplayName("보정까지 쓰면 원장에 RECONVERT 행 둘 다 남는다 — 보정도 reconvert 로 묶인다")
+    fun `보정 경로는 원장에 reconvert 행 둘을 남긴다`() {
+        val conversionId = seedDone()
+        val provider = FakeLlmProvider(List(10) { reply(draftWithIssue) })
+        val ledger = RecordingLedger()
+
+        service(provider, ledger = ledger).reconvert(owner, conversionId, 0, listOf(0), FINGERPRINT)
+
+        assertThat(ledger.appended).hasSize(2)
+        assertThat(ledger.appended.map { it.record.purpose })
+            .containsExactly(LlmCallPurpose.RECONVERT, LlmCallPurpose.RECONVERT)
+    }
+
+    @Test
+    @DisplayName("provider 호출 실패는 원장에 아무것도 남기지 않는다 (U1)")
+    fun `provider 실패는 원장 0행이다`() {
+        val conversionId = seedDone()
+        val provider = FakeLlmProvider(listOf(FakeLlmTurn.Fail(LlmProviderException("실패"))))
+        val ledger = RecordingLedger()
+
+        assertThatThrownBy {
+            service(provider, ledger = ledger).reconvert(owner, conversionId, 0, listOf(0), FINGERPRINT)
+        }.isInstanceOf(ExternalServiceUnavailableException::class.java)
+
+        assertThat(ledger.appended).isEmpty()
     }
 
     @Test

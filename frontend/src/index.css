@@ -208,17 +208,22 @@
     @apply border border-input bg-card text-foreground hover:bg-secondary;
   }
 
-  .history-table {
+  .history-table,
+  .usage-table {
     @apply w-full border-collapse;
   }
-  .history-table caption {
+  .history-table caption,
+  .usage-table caption {
     @apply py-4 text-left text-sm text-muted-foreground;
   }
   .history-table th,
-  .history-table td {
+  .history-table td,
+  .usage-table th,
+  .usage-table td {
     @apply border-t border-border px-3 py-3 text-left align-middle;
   }
-  .history-table thead th {
+  .history-table thead th,
+  .usage-table thead th {
     @apply bg-background text-sm font-semibold text-muted-foreground;
   }
   .history-table button {

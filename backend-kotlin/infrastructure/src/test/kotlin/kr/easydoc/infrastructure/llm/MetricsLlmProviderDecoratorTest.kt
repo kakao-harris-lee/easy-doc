@@ -59,6 +59,45 @@ class MetricsLlmProviderDecoratorTest {
 
         assertThat(completion.latencyMs).isEqualTo(5)
         assertThat(completion.estimatedCostUsd).isNull()
+        assertThat(completion.pricingInputUsdPerMtok).isNull()
+        assertThat(completion.pricingOutputUsdPerMtok).isNull()
+    }
+
+    @Test
+    @DisplayName("모델별 단가가 있으면 응답 model 로 찾아 그 단가로 계산하고 스냅샷을 채운다")
+    fun `모델별 단가를 우선한다`() {
+        val times = ArrayDeque(listOf(0L, 1_000_000L))
+        val decorator =
+            MetricsLlmProviderDecorator(
+                delegate = successfulProvider(inputTokens = 1_000_000, outputTokens = 1_000_000, model = "gpt-test"),
+                pricing = TokenPricing(BigDecimal("999.00"), BigDecimal("999.00")),
+                modelPricing = mapOf("gpt-test" to TokenPricing(BigDecimal("2.00"), BigDecimal("10.00"))),
+                nanoTime = times::removeFirst,
+            )
+
+        val completion = decorator.complete(prompt())
+
+        assertThat(completion.estimatedCostUsd).isEqualByComparingTo("12.00")
+        assertThat(completion.pricingInputUsdPerMtok).isEqualByComparingTo("2.00")
+        assertThat(completion.pricingOutputUsdPerMtok).isEqualByComparingTo("10.00")
+    }
+
+    @Test
+    @DisplayName("응답 model이 모델별 단가 표에 없으면 기본 단가로 떨어지고 스냅샷도 그 값이다")
+    fun `모델별 단가에 없으면 기본값으로 떨어진다`() {
+        val times = ArrayDeque(listOf(0L, 1_000_000L))
+        val decorator =
+            MetricsLlmProviderDecorator(
+                delegate = successfulProvider(inputTokens = 1_000_000, outputTokens = 0, model = "다른-모델"),
+                pricing = TokenPricing(BigDecimal("3.00"), BigDecimal("15.00")),
+                modelPricing = mapOf("gpt-test" to TokenPricing(BigDecimal("2.00"), BigDecimal("10.00"))),
+                nanoTime = times::removeFirst,
+            )
+
+        val completion = decorator.complete(prompt())
+
+        assertThat(completion.estimatedCostUsd).isEqualByComparingTo("3.00")
+        assertThat(completion.pricingInputUsdPerMtok).isEqualByComparingTo("3.00")
     }
 
     @Test
@@ -92,6 +131,7 @@ class MetricsLlmProviderDecoratorTest {
     private fun successfulProvider(
         inputTokens: Int,
         outputTokens: Int,
+        model: String = "gpt-test",
     ): LlmProvider =
         object : LlmProvider {
             override val name = "openai"
@@ -102,7 +142,7 @@ class MetricsLlmProviderDecoratorTest {
             ) = LlmCompletion(
                 text = "결과",
                 provider = name,
-                model = "gpt-test",
+                model = model,
                 inputTokens = inputTokens,
                 outputTokens = outputTokens,
             )
