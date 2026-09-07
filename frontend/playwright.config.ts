@@ -38,6 +38,9 @@ const frontendPort = new URL(FRONTEND_ORIGIN).port
 
 export default defineConfig({
   testDir: './e2e',
+  // E22(크레딧 집행 켜짐)는 별도 스택·설정(`playwright.enforced.config.ts`)에서만 돈다 —
+  // 기본 스택은 집행이 꺼져 있어 그 스펙의 402 기대가 성립하지 않는다.
+  testIgnore: 'credits-enforced.spec.ts',
   // 케이스마다 계정을 새로 만들지만(계획 §4-4), 서버 배압 때문에 직렬로 돈다.
   fullyParallel: false,
   workers: 1,
