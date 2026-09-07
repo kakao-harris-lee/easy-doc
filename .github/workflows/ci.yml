@@ -22,6 +22,8 @@ jobs:
         run: docker compose -f compose.yml -f compose.ci.yml --profile ci config --quiet
       - name: E2E override 모델 검증
         run: docker compose -f compose.yml -f compose.e2e.yml config --quiet
+      - name: E2E 집행 켜짐 override 모델 검증
+        run: docker compose -f compose.yml -f compose.e2e.yml -f compose.e2e-enforced.yml config --quiet
 
   backend:
     runs-on: ubuntu-latest
@@ -95,11 +97,34 @@ jobs:
           E2E_SKIP_STACK: "1"
           E2E_API_BASE_URL: http://localhost:8100
         run: frontend/e2e/run-local.sh
-      - name: Compose 로그 보관
+      - name: Compose 로그 보관 (기본 스택)
         if: always()
         run: |
           mkdir -p frontend/test-results
           docker compose -f compose.yml -f compose.e2e.yml logs --no-color > frontend/test-results/compose.log
+      # --- E22(크레딧 집행 켜짐 변형, 계획 §3 C2 후속) ---------------------------------
+      # 위 기본 스택은 `easydoc.credits.enforced=false`라 모든 문서 등록이 202다.
+      # `compose.e2e-enforced.yml`이 **같은 컨테이너**(같은 compose 프로젝트 `easy-doc`)의
+      # `backend-api`만 env 변경으로 다시 만든다 — postgres·frontend·backend-worker는
+      # 그대로 재사용되므로(이미지 레이어도 도커 빌드 캐시로 재사용) 이 두 번째 기동은
+      # 첫 기동보다 훨씬 빠르다. 같은 스택에 이 override를 얹지 않는 이유는 스펙
+      # 파일(`credits-enforced.spec.ts`) 자신의 주석과 `compose.e2e-enforced.yml` 주석에
+      # 적었다 — 나머지 e2e 스펙 전부가 402로 깨진다.
+      - name: Compose 스택 갱신 (집행 켜짐, E22)
+        run: >
+          docker compose -f compose.yml -f compose.e2e.yml -f compose.e2e-enforced.yml
+          up -d --build --wait
+      - name: Kotlin API + React E2E (집행 켜짐, E22)
+        env:
+          E2E_SKIP_STACK: "1"
+          E2E_API_BASE_URL: http://localhost:8100
+        run: frontend/e2e/run-local.sh -c playwright.enforced.config.ts
+      - name: Compose 로그 보관 (집행 켜짐, E22)
+        if: always()
+        run: |
+          mkdir -p frontend/test-results-enforced
+          docker compose -f compose.yml -f compose.e2e.yml -f compose.e2e-enforced.yml \
+            logs --no-color > frontend/test-results-enforced/compose.log
       - name: E2E 아티팩트
         if: always()
         uses: actions/upload-artifact@v4
@@ -107,6 +132,8 @@ jobs:
           name: e2e-artifacts
           path: |
             frontend/playwright-report
+            frontend/playwright-report-enforced
             frontend/test-results
+            frontend/test-results-enforced
           retention-days: 7
           if-no-files-found: warn
