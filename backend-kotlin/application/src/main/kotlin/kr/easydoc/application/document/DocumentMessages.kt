@@ -60,10 +60,6 @@ const val CONVERSION_NOT_DONE_MESSAGE: String = "변환이 끝난 뒤에 수정�
 /** 계약 GET export 409 예시 `not_done`. 검수 저장 409 와 **문구가 다르다.** */
 const val EXPORT_NOT_DONE_MESSAGE: String = "변환이 끝난 뒤에 내려받을 수 있습니다"
 
-/** 계약 GET export 409 예시 `missing_placeholders`. */
-const val EXPORT_MISSING_PLACEHOLDERS_MESSAGE: String =
-    "변환에서 유실된 개인정보 표시가 있습니다 — 검수 화면에서 수정 후 내보내세요"
-
 /**
  * 계약 GET export 409 예시 `format_mismatch` — 요청한 형식이 **이 변환의 원본**과 다르다.
  *

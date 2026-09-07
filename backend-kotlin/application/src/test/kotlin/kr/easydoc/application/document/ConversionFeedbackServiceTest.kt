@@ -357,14 +357,13 @@ class ConversionFeedbackServiceTest {
                     ConversionQueryService(
                         conversions = conversions,
                         cipher = cipher,
-                        maskedItems = FakeMaskedItemReader(),
                         original =
                             OriginalReflection(
                                 StoredOriginalReader(originals, cipher),
                                 FakeOriginalStructureReflector(),
                             ),
                         documents = FakeQueryDocumentRepository(transaction),
-                        segmentMapDerivation = MaskedSegmentMapDerivation(cipher),
+                        segmentMapDerivation = DefaultSegmentMapDerivation(cipher),
                         transaction = transaction,
                     ),
                 transaction = transaction,
@@ -408,10 +407,9 @@ class ConversionFeedbackServiceTest {
                     status = status,
                     sourceFormat = SourceFormat.TEXT,
                     hasStoredOriginal = false,
-                    ciphertexts = ConversionCiphertexts(seal(draft), null, seal(edited)),
+                    ciphertexts = ConversionCiphertexts(seal(draft), seal(edited)),
                     reviewedAt = edited?.let { Instant.EPOCH },
                     feedbackSubmittedAt = null,
-                    missingPlaceholders = emptyList(),
                     model = null,
                     providerName = null,
                     inputTokens = null,

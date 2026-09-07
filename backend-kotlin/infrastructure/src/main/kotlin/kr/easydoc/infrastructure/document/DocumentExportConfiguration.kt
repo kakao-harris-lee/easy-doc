@@ -7,7 +7,6 @@ import kr.easydoc.application.document.ConversionRepository
 import kr.easydoc.application.document.DocumentExporter
 import kr.easydoc.application.document.DocumentRepository
 import kr.easydoc.application.document.ExportRendering
-import kr.easydoc.application.document.MaskedItemReader
 import kr.easydoc.application.document.OriginalReflection
 import kr.easydoc.application.document.SegmentMapDerivation
 import kr.easydoc.infrastructure.crypto.MIGRATE_PROFILE
@@ -44,7 +43,6 @@ class DocumentExportConfiguration {
     fun conversionExportService(
         conversions: ConversionRepository,
         cipher: ContentCipher,
-        maskedItems: MaskedItemReader,
         rendering: ExportRendering,
         documents: DocumentRepository,
         segmentMapDerivation: SegmentMapDerivation,
@@ -53,7 +51,6 @@ class DocumentExportConfiguration {
         ConversionExportService(
             conversions = conversions,
             cipher = cipher,
-            maskedItems = maskedItems,
             rendering = rendering,
             documents = documents,
             segmentMapDerivation = segmentMapDerivation,

@@ -14,7 +14,7 @@ import java.util.UUID
  *
  * U2([JdbcUsageReadRepository])는 워크스페이스 하나를 소유 확인 뒤 집계하지만, 이 리포트는
  * 청구서 발송 대상인 **모든 사용자**를 한 번에 훑어야 하고 `workspace_id IS NULL`
- * (워크스페이스가 나중에 삭제된, V12 `SET NULL`) 행도 자기 행으로 포함해야 한다 — U2가
+ * (워크스페이스가 나중에 삭제된, V14 `SET NULL`) 행도 자기 행으로 포함해야 한다 — U2가
  * 워크스페이스 단위 조회라 다루지 않는 행이다(`UsageReadRepository` KDoc).
  *
  * 문서 수·문자 수·크레딧은 U2와 같은 규칙을 쓴다 — 같은 문서를 대상으로 한 여러 행

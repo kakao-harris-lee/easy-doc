@@ -52,9 +52,9 @@ enum class FormatPreservationStatus(val wireName: String) {
 /**
  * 서식 유지 판정 한 건. 계약 `FormatPreservation` — 두 필드가 전부다.
  *
- * **[details] 에 문서 본문·개인정보를 담지 않는다.** 담을 수 있는 것은 구조 요소의 종류와
- * 개수뿐이며, 그 규칙은 `missing_placeholders` 가 라벨만 싣는 것과 같은 판단이다. 이 파일이
- * 문구를 **전부 소유하는 것**이 그 규칙의 형태다 — 문서에서 읽은 문자열이 흘러들 자리가 없다.
+ * **[details] 에 문서 본문을 담지 않는다.** 담을 수 있는 것은 구조 요소의 종류와 개수뿐이다.
+ * 이 파일이 문구를 **전부 소유하는 것**이 그 규칙의 형태다 — 문서에서 읽은 문자열이 흘러들
+ * 자리가 없다.
  */
 class FormatPreservation(
     val status: FormatPreservationStatus,

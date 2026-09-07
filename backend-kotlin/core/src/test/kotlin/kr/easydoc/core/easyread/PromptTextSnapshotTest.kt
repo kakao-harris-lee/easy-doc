@@ -8,7 +8,6 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kr.easydoc.core.privacy.ModelDraft
-import kr.easydoc.core.privacy.maskText
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
@@ -46,17 +45,9 @@ class PromptTextSnapshotTest {
     fun `시스템 프롬프트가 전문 일치한다`(
         @Suppress("UNUSED_PARAMETER") name: String,
         sourceText: String,
-        maskedText: String,
         expected: String,
     ) {
-        val masked = maskText(sourceText).maskedText
-        assertThat(masked.value)
-            .withFailMessage(
-                "마스킹 결과가 갈렸다. 프롬프트가 맞아도 모델이 받는 본문이 다르다.\n기대: %s\n실제: %s",
-                maskedText,
-                masked.value,
-            ).isEqualTo(maskedText)
-        assertThat(buildSystemPrompt(masked)).isEqualTo(expected)
+        assertThat(buildSystemPrompt(sourceText)).isEqualTo(expected)
     }
 
     @ParameterizedTest(name = "{0}")
@@ -65,13 +56,9 @@ class PromptTextSnapshotTest {
     fun `사용자 프롬프트가 전문 일치한다`(
         @Suppress("UNUSED_PARAMETER") name: String,
         sourceText: String,
-        maskedText: String,
         expected: String,
     ) {
-        val masked = maskText(sourceText).maskedText
-        assertThat(masked.value).isEqualTo(maskedText)
-
-        assertThat(buildUserPrompt(masked, FIXED_IDS)).isEqualTo(expected)
+        assertThat(buildUserPrompt(sourceText, FIXED_IDS)).isEqualTo(expected)
     }
 
     @ParameterizedTest(name = "{0}")
@@ -119,7 +106,6 @@ class PromptTextSnapshotTest {
                 "_SPLIT_EXAMPLES" to SPLIT_EXAMPLES,
                 "_REPLACEMENT_INSTRUCTION" to REPLACEMENT_INSTRUCTION,
                 "_EXPLAIN_INSTRUCTION" to EXPLAIN_INSTRUCTION,
-                "PLACEHOLDER_INSTRUCTION" to PLACEHOLDER_INSTRUCTION,
                 "_SELF_CHECK_INSTRUCTION" to SELF_CHECK_INSTRUCTION,
                 "_CONDITIONAL_INSTRUCTION" to CONDITIONAL_INSTRUCTION,
                 "INJECTION_GUARD" to INJECTION_GUARD,
@@ -140,7 +126,6 @@ class PromptTextSnapshotTest {
                 Arguments.of(
                     case.string("name"),
                     case.string("source_text"),
-                    case.string("masked_text"),
                     case.string("expected"),
                 )
             }

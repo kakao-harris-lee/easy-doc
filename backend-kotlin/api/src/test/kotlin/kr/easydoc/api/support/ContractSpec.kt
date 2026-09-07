@@ -710,7 +710,7 @@ object ContractSpec {
         return map("components", "schemas", ref.substringAfterLast('/'))
     }
 
-    /** **P-32 — 스키마 속성의 `enum` 값 집합.** (`MaskedItemResponse.category` 처럼) */
+    /** **P-32 — 스키마 속성의 `enum` 값 집합.** (`SegmentConfidence` 처럼) */
     fun schemaPropertyEnum(
         schema: String,
         property: String,
@@ -750,7 +750,7 @@ object ContractSpec {
         if (direct != null) return direct
         val items = node["items"] as? Map<*, *>
         return items?.get("pattern")?.toString()
-            ?: error("$schema.$property 에 pattern 이 없다(직접도 items 아래도) — 자리표시자 형식의 정본이 사라졌다")
+            ?: error("$schema.$property 에 pattern 이 없다(직접도 items 아래도) — 형식 제약의 정본이 사라졌다")
     }
 
     /**

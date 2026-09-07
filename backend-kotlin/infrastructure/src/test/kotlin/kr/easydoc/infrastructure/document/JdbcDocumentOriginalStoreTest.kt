@@ -14,6 +14,8 @@ import kr.easydoc.core.crypto.PlainBytes
 import kr.easydoc.core.document.SourceFormat
 import kr.easydoc.core.exceptions.StorageException
 import kr.easydoc.core.security.Secret
+import kr.easydoc.core.segment.SourceStructure
+import kr.easydoc.core.segment.splitUnits
 import kr.easydoc.core.user.PasswordHash
 import kr.easydoc.infrastructure.DatabaseHandle
 import kr.easydoc.infrastructure.PostgresTestSupport
@@ -86,7 +88,11 @@ class JdbcDocumentOriginalStoreTest {
                 workspaces = JdbcWorkspaceLookup(jdbc),
                 users = JdbcUserRepository(jdbc),
                 // 추출 결과는 고정이다 — 이 파일이 재는 것은 파서가 아니라 **원본 바이트의 왕복**이다.
-                extractor = DocumentTextExtractor { _, _ -> ExtractedDocument(SourceFormat.DOCX, EXTRACTED_TEXT) },
+                extractor =
+                    DocumentTextExtractor { _, _ ->
+                        val structure = SourceStructure.allBody(splitUnits(EXTRACTED_TEXT).size)
+                        ExtractedDocument(SourceFormat.DOCX, EXTRACTED_TEXT, structure)
+                    },
                 cipher = cipher,
                 transaction = SpringTransactionRunner(TransactionTemplate(DataSourceTransactionManager(dataSource))),
             )

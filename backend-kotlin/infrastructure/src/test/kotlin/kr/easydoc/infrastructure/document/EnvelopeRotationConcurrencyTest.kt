@@ -8,13 +8,13 @@ import kr.easydoc.application.document.ConversionFeedbackService
 import kr.easydoc.application.document.ConversionQueryService
 import kr.easydoc.application.document.ConversionRepository
 import kr.easydoc.application.document.ConversionReviewService
+import kr.easydoc.application.document.DefaultSegmentMapDerivation
 import kr.easydoc.application.document.DocumentRepository
 import kr.easydoc.application.document.DocumentService
 import kr.easydoc.application.document.DocumentStorage
 import kr.easydoc.application.document.EnvelopeRotation
 import kr.easydoc.application.document.FeedbackSubmission
 import kr.easydoc.application.document.LockedFeedbackComment
-import kr.easydoc.application.document.MaskedSegmentMapDerivation
 import kr.easydoc.application.document.OriginalReflection
 import kr.easydoc.application.document.RotationOutcome
 import kr.easydoc.application.document.SealedStores
@@ -312,7 +312,7 @@ class EnvelopeRotationConcurrencyTest {
         )
     }
 
-    /** 초안·대응표가 찬 **완료** 상태의 옛 세대 변환. 검수본은 비어 있다. */
+    /** 초안이 찬 **완료** 상태의 옛 세대 변환. 검수본은 비어 있다. */
     private fun seededConversion(): Pair<UUID, UUID> {
         val owner = newUser()
         val workspace = workspaces.create(owner, "회전 경합 ${UUID.randomUUID()}").id
@@ -320,21 +320,17 @@ class EnvelopeRotationConcurrencyTest {
         val writer = cipherWith(OLD_GENERATION)
         val conversionId = accepted.conversionId
         val draft = writer.encrypt(PlainBody(DRAFT_BODY), conversionId, EncryptedField.CONVERSION_EASY_TEXT)
-        val masked =
-            writer.encrypt(MaskedItemCodec().encode(emptyList()), conversionId, EncryptedField.CONVERSION_MASKED_ITEMS)
         jdbc
             .sql(
                 """
                 UPDATE conversions
                 SET status = 'done',
                     easy_text_encrypted = :easyText,
-                    masked_items_encrypted = :maskedItems,
                     encryption_scheme = :scheme,
                     key_version = :keyVersion
                 WHERE id = :id
                 """.trimIndent(),
             ).param("easyText", draft.bytes)
-            .param("maskedItems", masked.bytes)
             .param("scheme", EncryptionScheme.AES_256_GCM_V1)
             .param("keyVersion", OLD_GENERATION)
             .param("id", conversionId)
@@ -355,14 +351,13 @@ class EnvelopeRotationConcurrencyTest {
                 ConversionQueryService(
                     conversions = conversions,
                     cipher = writer,
-                    maskedItems = MaskedItemCodec(),
                     original =
                         OriginalReflection(
                             StoredOriginalReader(JdbcDocumentOriginalRepository(client), writer),
                             PackagedOriginalReflector(),
                         ),
                     documents = JdbcDocumentRepository(client),
-                    segmentMapDerivation = MaskedSegmentMapDerivation(writer),
+                    segmentMapDerivation = DefaultSegmentMapDerivation(writer),
                     transaction = runner,
                 ),
             transaction = runner,
@@ -406,14 +401,13 @@ class EnvelopeRotationConcurrencyTest {
                 ConversionQueryService(
                     conversions = JdbcConversionRepository(client),
                     cipher = writer,
-                    maskedItems = MaskedItemCodec(),
                     original =
                         OriginalReflection(
                             StoredOriginalReader(JdbcDocumentOriginalRepository(client), writer),
                             PackagedOriginalReflector(),
                         ),
                     documents = JdbcDocumentRepository(client),
-                    segmentMapDerivation = MaskedSegmentMapDerivation(writer),
+                    segmentMapDerivation = DefaultSegmentMapDerivation(writer),
                     transaction = runner,
                 ),
             transaction = runner,

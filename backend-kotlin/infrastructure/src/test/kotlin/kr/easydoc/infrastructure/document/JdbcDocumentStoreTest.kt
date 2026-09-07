@@ -22,6 +22,8 @@ import kr.easydoc.core.document.SourceFormat
 import kr.easydoc.core.exceptions.ConfigurationException
 import kr.easydoc.core.exceptions.NotFoundException
 import kr.easydoc.core.security.Secret
+import kr.easydoc.core.segment.SourceStructure
+import kr.easydoc.core.segment.splitUnits
 import kr.easydoc.core.user.PasswordHash
 import kr.easydoc.infrastructure.DatabaseHandle
 import kr.easydoc.infrastructure.PostgresTestSupport
@@ -175,7 +177,7 @@ class JdbcDocumentStoreTest {
         assertThat(envelopeOf("conversions", accepted.conversionId))
             .isEqualTo(EncryptionScheme.AES_256_GCM_V1 to 1)
         assertThat(conversionCiphertextsAllNull(accepted.conversionId))
-            .describedAs("대기 중 변환의 암호문 세 열은 NULL 이어야 한다")
+            .describedAs("대기 중 변환의 암호문 두 열은 NULL 이어야 한다")
             .isTrue()
     }
 
@@ -529,14 +531,14 @@ class JdbcDocumentStoreTest {
                 conversionId = accepted.conversionId,
                 scheme = EncryptionScheme.AES_256_GCM_V1,
                 keyVersion = 1,
-                ciphertexts = ConversionCiphertexts(null, null, null),
+                ciphertexts = ConversionCiphertexts(null, null),
             )
         val updated =
             conversions.rewriteEnvelope(
                 expected = stale,
                 scheme = EncryptionScheme.AES_256_GCM_V1,
                 keyVersion = 2,
-                ciphertexts = ConversionCiphertexts(null, null, null),
+                ciphertexts = ConversionCiphertexts(null, null),
             )
 
         assertThat(updated).isFalse()
@@ -608,7 +610,9 @@ class JdbcDocumentStoreTest {
 
     /** 파일 경로를 쓰는 케이스용 추출기 대역. 이름을 보지 않고 정해진 본문을 돌려준다. */
     private fun fixedExtractor(text: String): DocumentTextExtractor =
-        DocumentTextExtractor { _, _ -> ExtractedDocument(SourceFormat.DOCX, text) }
+        DocumentTextExtractor { _, _ ->
+            ExtractedDocument(SourceFormat.DOCX, text, SourceStructure.allBody(splitUnits(text).size))
+        }
 
     /** 유스케이스 한 벌을 하나의 [DataSource] 위에 조립한다. */
     private fun serviceOn(
@@ -730,7 +734,7 @@ class JdbcDocumentStoreTest {
         jdbc
             .sql(
                 """
-                SELECT easy_text_encrypted IS NULL AND masked_items_encrypted IS NULL
+                SELECT easy_text_encrypted IS NULL
                        AND edited_text_encrypted IS NULL
                 FROM conversions WHERE id = :id
                 """.trimIndent(),
@@ -738,10 +742,9 @@ class JdbcDocumentStoreTest {
             .query { rs, _ -> rs.getBoolean(1) }
             .single()
 
-    /** 완료된 변환처럼 세 열을 채운다. 워커(Phase 5)가 할 일을 여기서는 손으로 만든다. */
+    /** 완료된 변환처럼 열을 채운다. 워커(Phase 5)가 할 일을 여기서는 손으로 만든다. */
     private fun fillConversionResult(conversionId: UUID) {
         val writer = cipherWith(writeKeyVersion = 1)
-        val codec = MaskedItemCodec()
 
         val current = checkNotNull(conversions.lockEnvelope(conversionId)) { "변환 행이 없다" }
         conversions.rewriteEnvelope(
@@ -755,12 +758,6 @@ class JdbcDocumentStoreTest {
                             PlainBody(DRAFT_BODY),
                             conversionId,
                             EncryptedField.CONVERSION_EASY_TEXT,
-                        ),
-                    maskedItems =
-                        writer.encrypt(
-                            codec.encode(emptyList()),
-                            conversionId,
-                            EncryptedField.CONVERSION_MASKED_ITEMS,
                         ),
                     editedText = null,
                 ),

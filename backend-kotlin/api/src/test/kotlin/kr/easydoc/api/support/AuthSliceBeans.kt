@@ -36,14 +36,13 @@ import kr.easydoc.application.document.ConversionExportService
 import kr.easydoc.application.document.ConversionFeedbackService
 import kr.easydoc.application.document.ConversionQueryService
 import kr.easydoc.application.document.ConversionReviewService
+import kr.easydoc.application.document.DefaultSegmentMapDerivation
 import kr.easydoc.application.document.DocumentExporter
 import kr.easydoc.application.document.DocumentService
 import kr.easydoc.application.document.DocumentSourceService
 import kr.easydoc.application.document.DocumentStorage
 import kr.easydoc.application.document.DocumentTextExtractor
 import kr.easydoc.application.document.ExportRendering
-import kr.easydoc.application.document.MaskedItemReader
-import kr.easydoc.application.document.MaskedSegmentMapDerivation
 import kr.easydoc.application.document.OriginalReflection
 import kr.easydoc.application.document.SegmentMapDerivation
 import kr.easydoc.application.document.StoredOriginalReader
@@ -286,10 +285,6 @@ class AuthSliceBeans {
     @Bean
     fun stubTextExtractor(): DocumentTextExtractor = StubDocumentTextExtractor()
 
-    /** 마스킹 대응표 읽기 대역. 저장 형식을 흉내 내지 않는다 — 사유는 그 클래스 KDoc. */
-    @Bean
-    fun stubMaskedItemReader(): MaskedItemReader = StubMaskedItemReader()
-
     /**
      * 업로드가 한 트랜잭션에서 쓰는 네 저장소를 제품 조립과 같은 모양으로 묶는다
      * (`DocumentConfiguration.documentStorage`). 셋을 유스케이스에 따로 넘기면 그중
@@ -348,7 +343,7 @@ class AuthSliceBeans {
      * §10.2 결정 1, 제품 조립 `DocumentConfiguration.segmentMapDerivation` 과 같은 모양).
      */
     @Bean
-    fun segmentMapDerivation(cipher: ContentCipher): SegmentMapDerivation = MaskedSegmentMapDerivation(cipher = cipher)
+    fun segmentMapDerivation(cipher: ContentCipher): SegmentMapDerivation = DefaultSegmentMapDerivation(cipher = cipher)
 
     /** 조회 유스케이스도 실물이다 — 제품 조립과 같은 모양으로 나눈다. */
     @Suppress("LongParameterList")
@@ -356,7 +351,6 @@ class AuthSliceBeans {
     fun conversionQueryService(
         conversions: InMemoryConversionRepository,
         cipher: ContentCipher,
-        maskedItems: MaskedItemReader,
         original: OriginalReflection,
         documents: InMemoryDocumentRepository,
         segmentMapDerivation: SegmentMapDerivation,
@@ -365,7 +359,6 @@ class AuthSliceBeans {
         ConversionQueryService(
             conversions = conversions,
             cipher = cipher,
-            maskedItems = maskedItems,
             original = original,
             documents = documents,
             segmentMapDerivation = segmentMapDerivation,
@@ -478,7 +471,6 @@ class AuthSliceBeans {
     fun conversionExportService(
         conversions: InMemoryConversionRepository,
         cipher: ContentCipher,
-        maskedItems: MaskedItemReader,
         rendering: ExportRendering,
         documents: InMemoryDocumentRepository,
         segmentMapDerivation: SegmentMapDerivation,
@@ -487,7 +479,6 @@ class AuthSliceBeans {
         ConversionExportService(
             conversions = conversions,
             cipher = cipher,
-            maskedItems = maskedItems,
             rendering = rendering,
             documents = documents,
             segmentMapDerivation = segmentMapDerivation,

@@ -12,7 +12,7 @@ import java.util.UUID
  * 운영 리포트(U3, `usage-report` 프로필) 행 하나 — 사용자 × 워크스페이스 × 기간.
  *
  * [workspaceId]가 `null`이면 그 기간에 그 사용자가 낸 호출 중 워크스페이스가 나중에
- * 삭제된(`llm_calls.workspace_id` `SET NULL`, V12) 행들을 묶은 것이다 — U2의
+ * 삭제된(`llm_calls.workspace_id` `SET NULL`, V14) 행들을 묶은 것이다 — U2의
  * [WorkspaceUsage]와 달리 이 리포트는 그 행까지 다뤄야 사용자별 월간 청구 총액이
  * 워크스페이스 삭제로 누락되지 않는다(계획
  * `docs/plans/2026-09-07-usage-ledger-and-report.md` §2 결정 5).

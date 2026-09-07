@@ -9,10 +9,10 @@ import java.time.Instant
  * [CONVERT] 는 문서 1차 변환, [REPAIR] 는 조건부 보정 패스, [RECONVERT] 는 문단 재변환
  * (`ReconvertUnitService`)의 1차·보정 호출을 **한 목적으로 묶은 값**이다 — 재변환은 표준
  * 문서 변환 경로가 아니라 별도 예산·과금 축이라, 그 안에서 보정이 있었는지는 이 열이
- * 구분하지 않는다(`ConvertDocumentUseCase.convertMasked` KDoc 「purpose 매개변수」).
+ * 구분하지 않는다(`ConvertDocumentUseCase.convert` KDoc 「purpose 매개변수」).
  */
 enum class LlmCallPurpose(
-    /** `llm_calls.purpose` 컬럼에 그대로 들어가는 값(V12 CHECK 제약과 같은 어휘). */
+    /** `llm_calls.purpose` 컬럼에 그대로 들어가는 값(V14 CHECK 제약과 같은 어휘). */
     val wireName: String,
 ) {
     CONVERT("convert"),
@@ -45,8 +45,10 @@ data class LlmCallRecord(
     val pricingInputUsdPerMtok: BigDecimal?,
     val pricingOutputUsdPerMtok: BigDecimal?,
     /**
-     * 이 호출이 처리한 **마스킹된 입력**의 문자 수 — 변환·보정은 문서 전체 마스킹 본문,
-     * 재변환은 그 단위(`maskedUnitOf`)의 길이다(`ConvertDocumentUseCase.Pass` KDoc).
+     * 이 호출이 처리한 **프롬프트 입력**의 문자 수 — 변환·보정은 문서 전체 본문, 재변환은
+     * 그 단위 하나의 길이다(`ConvertDocumentUseCase.Pass` KDoc). **2026-09-07 정정:** PR
+     * #58 로 개인정보 마스킹이 제거돼 이 값은 더 이상 마스킹된 입력이 아니라 평문 프롬프트
+     * 입력 그대로의 길이다.
      */
     val charCount: Int,
     /**

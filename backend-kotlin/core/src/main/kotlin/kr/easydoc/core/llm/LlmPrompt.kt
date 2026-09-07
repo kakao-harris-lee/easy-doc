@@ -7,15 +7,14 @@ import kr.easydoc.core.easyread.SentenceIssue
 import kr.easydoc.core.easyread.buildRepairPrompt
 import kr.easydoc.core.easyread.buildSystemPrompt
 import kr.easydoc.core.easyread.buildUserPrompt
-import kr.easydoc.core.privacy.MaskedText
 import kr.easydoc.core.privacy.ModelDraft
 import kr.easydoc.core.quality.RequiredFact
 
 /** LLM 에 실제로 나가는 `(system, user)` 페이로드. */
 class LlmPrompt private constructor(
-    /** 시스템 프롬프트. 스타일 규칙·어려운 말 사전·자리표시자 지시가 들어 있다. */
+    /** 시스템 프롬프트. 스타일 규칙·어려운 말 사전 지시가 들어 있다. */
     val system: String,
-    /** 사용자 프롬프트. 마스킹을 거친 본문이 난수 구분자 안에 들어 있다. */
+    /** 사용자 프롬프트. 문서 본문이 난수 구분자 안에 들어 있다. */
     val user: String,
 ) {
     /** 길이만 남긴다. 본문·프롬프트 문구는 로그에 싣지 않는다. */
@@ -23,19 +22,19 @@ class LlmPrompt private constructor(
 
     companion object {
         /**
-         * 1차 변환 프롬프트. 마스킹을 거친 본문만 받는다.
+         * 1차 변환 프롬프트. 문서 원문을 받는다.
          *
          * [dictionaryContext] 는 [buildUserPrompt] 로 그대로 내려간다 — 계약은 그쪽 KDoc 에 있다.
          * 시스템 프롬프트는 문서에 따라 달라지지 않으므로 건드리지 않는다.
          */
         fun forConversion(
-            maskedText: MaskedText,
+            documentText: String,
             documentIds: DocumentIdGenerator = SecureDocumentIds,
             dictionaryContext: String? = null,
         ): LlmPrompt =
             LlmPrompt(
-                system = buildSystemPrompt(maskedText),
-                user = buildUserPrompt(maskedText, documentIds, dictionaryContext),
+                system = buildSystemPrompt(documentText),
+                user = buildUserPrompt(documentText, documentIds, dictionaryContext),
             )
 
         /**

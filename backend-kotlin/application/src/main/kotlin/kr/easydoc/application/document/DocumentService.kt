@@ -19,7 +19,11 @@ import kr.easydoc.core.exceptions.InvalidInputException
 import kr.easydoc.core.exceptions.NotFoundException
 import kr.easydoc.core.exceptions.StorageException
 import kr.easydoc.core.exceptions.UploadTooLargeException
+import kr.easydoc.core.segment.SourceStructure
+import kr.easydoc.core.segment.inferUnitKinds
+import kr.easydoc.core.segment.splitUnits
 import kr.easydoc.core.text.normalizeLineEndings
+import org.slf4j.LoggerFactory
 import java.util.UUID
 
 /** 업로드 접수 결과. 계약 `DocumentCreatedResponse` 의 네 필드 그대로다. */
@@ -41,6 +45,13 @@ private class UploadContent(
     val text: String,
     val sourceFormat: SourceFormat,
     val original: PlainBytes?,
+    /**
+     * 파일 팔이 추출 시점에 XML 에서 유도한 구조 힌트(표·목록 구조 힌트 계획 §1.2) — 붙여넣기는
+     * 저장할 원문이 곧 사용자 입력이라 `store` 안에서 정규화된 최종 본문으로 새로 유도한다
+     * (그래서 이 필드가 `null`이다). 파일 팔의 값도 `store` 가 정규화 뒤 다시 검증한다 —
+     * 정규화가 줄 수를 바꿀 수 있어 추출 시점 값을 무조건 믿지 않는다.
+     */
+    val extractedStructure: SourceStructure? = null,
 )
 
 /** 문서 등록 유스케이스 — 붙여넣기·파일 두 입력을 받아 **저장하고 작업을 등록한다.** */
@@ -52,6 +63,8 @@ class DocumentService(
     private val transaction: TransactionRunner,
     private val users: UserRepository,
 ) {
+    private val log = LoggerFactory.getLogger(DocumentService::class.java)
+
     /**
      * 붙여넣은 본문으로 문서를 만들고 변환을 요청한다.
      *
@@ -106,7 +119,8 @@ class DocumentService(
         // 남기지 않으면 붙여넣기와 같은 길로 가서 `not_applicable` 로 정확히 판정되고, 내보내기는
         // 검수본으로 새 텍스트 파일을 만드는 자연스러운 경로를 그대로 탄다.
         val original = if (extracted.format == SourceFormat.TXT) null else PlainBytes(bytes)
-        return store(ownerId, UploadContent(extracted.text, extracted.format, original), title) {
+        val content = UploadContent(extracted.text, extracted.format, original, extracted.structure)
+        return store(ownerId, content, title) {
             parseWorkspaceId(rawWorkspaceId)
         }
     }
@@ -154,6 +168,10 @@ class DocumentService(
         val normalizedText = normalizeLineEndings(content.text)
         val charCount = charCountOf(normalizedText)
         if (charCount > MAX_CONVERTIBLE_CHARS) throw InvalidInputException(BODY_TOO_LONG_MESSAGE)
+        // 표·목록 구조 힌트(계획 §1.2) — 정규화된 **최종** 본문 기준으로 정한다. 붙여넣기는
+        // 저장할 원문이 곧 사용자 입력이라 여기서 새로 유도하고, 파일 팔은 추출 시점 값을
+        // 재검증한다(정규화가 줄 수를 바꿀 수 있어 추출 시점 값을 무조건 믿지 않는다).
+        val structure = resolveStructure(content, splitUnits(normalizedText))
 
         // 작업 공간 단계 — 형식(422) 다음 소유권(404). 형식은 여기, 소유권은 트랜잭션 안이다.
         val workspaceId = requestedWorkspaceId()
@@ -190,6 +208,7 @@ class DocumentService(
                     title = resolveTitle(givenTitle),
                     sourceFormat = content.sourceFormat,
                     charCount = charCount,
+                    structure = structure,
                 )
 
             storage.documents.insert(ownerId, draft, sealed)
@@ -231,6 +250,42 @@ class DocumentService(
         val user = users.findById(ownerId) ?: return
         if (user.emailVerifiedAt == null) {
             throw EmailNotVerifiedException(EMAIL_VERIFICATION_REQUIRED_MESSAGE)
+        }
+    }
+
+    /**
+     * 저장할 원본 단위 종류를 정한다(표·목록 구조 힌트 계획 §1.2).
+     *
+     * 붙여넣기([UploadContent.extractedStructure] 가 `null`)는 정규화된 [units] 에서 새로
+     * 유도한다 — 저장할 원문이 곧 사용자 입력이라 추출기를 거치지 않는다.
+     *
+     * 파일 팔은 추출 시점 값을 **재검증**한다. 정규화(`normalizeLineEndings`)가 줄 수를 바꿀 수
+     * 있어 그 값을 무조건 믿으면 [SourceStructure] 의 불변식(`kinds.size == splitUnits(text).size`)
+     * 이 깨질 수 있다 — 어긋나면 예외로 변환을 막지 않고 전부 [kr.easydoc.core.segment.UnitKind.BODY]
+     * 로 접는다. 구조 힌트는 파생 정보이지 변환을 막을 이유가 아니기 때문이다(계획 §1.2).
+     */
+    private fun resolveStructure(
+        content: UploadContent,
+        units: List<String>,
+    ): SourceStructure {
+        val extracted = content.extractedStructure
+        return when {
+            extracted == null -> {
+                SourceStructure(inferUnitKinds(units))
+            }
+
+            extracted.kinds.size == units.size -> {
+                extracted
+            }
+
+            else -> {
+                log.warn(
+                    "원본 단위 종류 수가 줄 수와 어긋나 전부 BODY 로 접는다: extractedKinds={}, expectedUnits={}",
+                    extracted.kinds.size,
+                    units.size,
+                )
+                SourceStructure.allBody(units.size)
+            }
         }
     }
 

@@ -1,18 +1,16 @@
 package kr.easydoc.application.document
 
 import kr.easydoc.core.crypto.EncryptedContent
-import kr.easydoc.core.crypto.PlainBody
 import kr.easydoc.core.document.Conversion
 import kr.easydoc.core.document.ConversionStatus
 import kr.easydoc.core.document.Document
 import kr.easydoc.core.document.DocumentListing
-import kr.easydoc.core.document.MaskedItemView
 import kr.easydoc.core.document.SourceFormat
 import kr.easydoc.core.pilot.EditDistanceSkipReason
 import kr.easydoc.core.pilot.MinutesSpent
 import kr.easydoc.core.pilot.PublishIntent
 import kr.easydoc.core.pilot.QualityScore
-import kr.easydoc.core.privacy.MaskedItem
+import kr.easydoc.core.segment.SourceStructure
 import java.time.Instant
 import java.util.UUID
 
@@ -23,13 +21,22 @@ import java.util.UUID
 // **평문이 이 경계를 넘지 않는다** — 저장소 포트는 [EncryptedContent] 만 주고받고 `PlainBody` 를
 // **타입으로 보지 못한다.** 암호화하는 층이 `application` 인 근거는 계획 §4.1.
 
-/** 저장 직전의 문서 한 건 — **DB 시계가 채우는 값을 뺀 전부**. */
+/**
+ * 저장 직전의 문서 한 건 — **DB 시계가 채우는 값을 뺀 전부**.
+ *
+ * [structure] 에 기본값을 두지 않는다 — [SourceStructure.allBody] 를 [charCount](글자 수)로
+ * 채우면 크기가 원본 **줄 수**와 다르다(계획 §1.2 불변식 `kinds.size == splitUnits(text).size`
+ * 위반). 호출자는 언제나 `splitUnits(text).size` 로 맞춘 값을 명시적으로 넘긴다 —
+ * `DocumentService.store` 는 실제로 유도한 값을, 구조를 신경 쓰지 않는 fixture 는
+ * `SourceStructure.allBody(splitUnits(text).size)` 를 그대로 넘긴다.
+ */
 class DocumentDraft(
     val id: UUID,
     val workspaceId: UUID,
     val title: String,
     val sourceFormat: SourceFormat,
     val charCount: Int,
+    val structure: SourceStructure,
 ) {
     /** 제목은 길이만 남긴다. [Document.toString] 과 같은 형태다. */
     override fun toString(): String = "DocumentDraft($id, ${sourceFormat.wireName}, 제목 ${title.length}자, ${charCount}자)"
@@ -54,7 +61,27 @@ class StoredSourceText(
      * (`ConversionWorkItem.workspaceId` 와 같은 판단).
      */
     val workspaceId: UUID,
+    /**
+     * 원본 단위 종류(표·목록 구조 힌트 계획 §1.2) — `documents.source_unit_kinds` 컬럼 그대로다.
+     * `null` 은 컬럼이 `null` 인 옛 문서다(이 조각 이전에 만든 문서, 백필하지 않는다) —
+     * [structureOrBody] 로 「전부 BODY」로 읽는다.
+     */
+    val structure: SourceStructure? = null,
 ) {
+    /**
+     * [structure] 를 읽는다 — 없으면(옛 문서) [unitCount] 개 전부 BODY, **있어도 그 크기가
+     * [unitCount] 와 다르면** 마찬가지로 전부 BODY 로 접는다. 크기가 어긋난다는 것은 원문이
+     * 그 사이 바뀌었거나(예: 재봉인·회전 경로가 손대지 않는 열이라 이론상 없어야 하지만)
+     * 계산 실수로 저장된 값이 신뢰할 수 없다는 뜻이다 — `DocumentService.resolveStructure`
+     * 와 같은 「불변식이 깨지면 예외가 아니라 전부 BODY」규칙이다(계획 §1.2). 예외를 던지면
+     * 구조 힌트 하나 때문에 조회 전체가 막히고, 구조는 파생 정보이지 변환을 막을 이유가
+     * 아니다.
+     */
+    fun structureOrBody(unitCount: Int): SourceStructure {
+        val current = structure
+        return if (current != null && current.kinds.size == unitCount) current else SourceStructure.allBody(unitCount)
+    }
+
     /**
      * 식별자·형식과 길이만 남긴다.
      *
@@ -88,8 +115,8 @@ interface DocumentRepository {
      * **세 경우를 구분하지 않는다.**
      *
      * 만료가 여기 함께 있는 이유: 파기는 워커 배치가 실제로 지울 때 일어나므로 만료 시각과
-     * 다음 배치 사이에 창이 열리고, 이 포트가 돌려주는 것은 **마스킹 전 문서 전문**이라 그
-     * 창에서 노출되는 양이 다른 조회와 다르다. 판정을 질의 자신이 지는 사유는 소유 술어와
+     * 다음 배치 사이에 창이 열리고, 이 포트가 돌려주는 것은 **문서 전문**이라 그 창에서
+     * 노출되는 양이 다른 조회와 다르다. 판정을 질의 자신이 지는 사유는 소유 술어와
      * 같다 — 읽고 나서 비교하는 형태면 이미 평문이 이 경계를 넘은 뒤다.
      *
      * [lockSourceText] 와 갈린 이유는 [DocumentOriginalRepository.findOwned] 가
@@ -214,10 +241,9 @@ interface DocumentOriginalRepository {
     ): List<UUID>
 }
 
-/** 한 변환 행의 암호문 세 열. **셋을 함께 다루는 것이 요점이다.** */
+/** 한 변환 행의 암호문 두 열. **함께 다루는 것이 요점이다.** */
 class ConversionCiphertexts(
     val easyText: EncryptedContent?,
-    val maskedItems: EncryptedContent?,
     val editedText: EncryptedContent?,
 )
 
@@ -254,17 +280,16 @@ data class StoredConversion(
      * `ConversionResponse.feedback_submitted_at` — 봉인된 자유 의견은 여기로 나가지 않는다.
      */
     val feedbackSubmittedAt: Instant?,
-    val missingPlaceholders: List<String>,
     val model: String?,
     val providerName: String?,
     val inputTokens: Int?,
     val outputTokens: Int?,
     val failureCode: String?,
 ) {
-    /** 로그 허용목록 그대로 — 식별자·상태·형식·실패 코드와 **개수**뿐이다. */
+    /** 로그 허용목록 그대로 — 식별자·상태·형식·실패 코드뿐이다. */
     override fun toString(): String =
         "StoredConversion($id, doc=$documentId, ${status.wireName}, ${sourceFormat.wireName}, " +
-            "failure=$failureCode, missing=${missingPlaceholders.size})"
+            "failure=$failureCode)"
 }
 
 /** 내보내기가 읽는 행 — 변환 결과와 **파일명에 쓸 문서 제목**. */
@@ -300,9 +325,8 @@ interface ConversionRepository {
      * **내** 변환 한 건을 읽는다. 없거나 내 것이 아니거나 **문서의 보존 기간이 지났으면**
      * `null` — **세 경우를 구분하지 않는다.**
      *
-     * 만료가 여기 함께 있는 이유: 이 결과의 `masked_items[].original` 은 가려졌던 실제
-     * 개인정보이고(계약 `MaskedItemResponse`), 파기 배치는 하루 한 번이라 만료와 파기
-     * 사이의 창이 최대 24시간이다. 그 창에서 나가는 양은 원문 조회보다 작아도 **범주는 같다.**
+     * 만료가 여기 함께 있는 이유: 파기 배치는 하루 한 번이라 만료와 파기 사이의 창이 최대
+     * 24시간이다. 그 창에서 나가는 양은 원문 조회보다 작아도 **범주는 같다.**
      */
     fun findOwnedResult(
         ownerId: UUID,
@@ -536,17 +560,6 @@ interface ConversionFeedbackRepository {
         after: UUID,
         limit: Int,
     ): List<UUID>
-}
-
-/** 마스킹 대응표를 **읽는** 포트. */
-fun interface MaskedItemReader {
-    /** 복호화된 대응표 JSON 을 항목 목록으로 되살린다. */
-    fun decode(body: PlainBody): List<MaskedItemView>
-}
-
-/** 마스킹 대응표를 **저장용 JSON 으로 만드는** 포트. 결과는 반드시 암호화해서 저장한다. */
-fun interface MaskedItemWriter {
-    fun encode(items: List<MaskedItem>): PlainBody
 }
 
 /** 변환 작업 큐. */

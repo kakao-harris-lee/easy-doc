@@ -1,7 +1,5 @@
 package kr.easydoc.core.easyread
 
-import kr.easydoc.core.privacy.MaskCategory
-
 // 사실 보존 기계 검사 — backlog §1.3.
 //
 // checkStyle 이 문체를 검사하듯, 이 파일은 "숫자·연락처·날짜 등 원문의 사실이 변환문에
@@ -38,8 +36,7 @@ data class FactIssue(
 /**
  * [source] 에 있던 사실 중 [draft] 에 하나도 남아 있지 않은 것을 찾는다.
  *
- * [source] 에는 **마스킹을 거친 뒤 실제로 LLM 에 나간 텍스트**를 넘긴다 — 마스킹
- * 자리표시자(`[[주민등록번호1]]` 등)는 사실이 아니므로 추출 전에 걷어낸다.
+ * [source] 에는 **실제로 LLM 에 나간 문서 원문**을 넘긴다.
  *
  * 규칙 기반 추출이며 LLM 을 부르지 않는다. 같은 추출 규칙을 [source] 와 [draft] 양쪽에
  * 적용해 비교한다 — 값이 같으면 표기가 달라도(구분자·전각·오전오후·한글 수사 등) 보존으로 본다.
@@ -100,8 +97,8 @@ private data class RawMatch(
     override fun toString(): String = "RawMatch(kind=$kind)"
 }
 
-// 우선순위 순서. 먼저 처리된 종류가 구간을 점유하면 뒤 종류는 그 구간을 다시 쓰지 못한다
-// (`Masking.kt` 의 구간 점유 방식과 같은 발상). 금액·백분율이 숫자보다 먼저인 것은
+// 우선순위 순서. 먼저 처리된 종류가 구간을 점유하면 뒤 종류는 그 구간을 다시 쓰지 못한다.
+// 금액·백분율이 숫자보다 먼저인 것은
 // "1원"·"3%" 처럼 단위 없는 한 자리 숫자도 그 종류로는 사실로 세기 위해서다 — NUMBER 의
 // 한 자리 단위 목록에서 원·%를 빼도 되는 이유가 이것이다(더 구체적인 종류가 먼저 가져간다).
 // 한글 수사 패턴(WORD_NUMBER·WORD_AMOUNT, `KoreanAmountWords.kt`)은 Arabic 숫자와 겹치는
@@ -145,13 +142,6 @@ private val PATTERNS: List<Pair<FactKind, Regex>> =
         FactKind.NUMBER to WORD_NUMBER,
     )
 
-/** 마스킹 자리표시자 모양(`[[주민등록번호1]]` 등) — [MaskCategory] 라벨에서 만든다. */
-private val PLACEHOLDER: Regex =
-    run {
-        val categories = MaskCategory.entries.joinToString("|") { Regex.escape(it.label) }
-        Regex("""\[\[(?:$categories)[0-9]+]]""")
-    }
-
 /** 전각 숫자(０-９) → 반각. 길이를 바꾸지 않아 뒤 정규식의 오프셋에 영향이 없다. */
 private fun normalizeFullWidthDigits(text: String): String =
     buildString(text.length) {
@@ -159,9 +149,6 @@ private fun normalizeFullWidthDigits(text: String): String =
             append(if (ch in '０'..'９') '0' + (ch - '０') else ch)
         }
     }
-
-/** 자리표시자를 같은 길이의 공백으로 지운다 — 사실 추출 대상에서 빼되 오프셋은 유지한다. */
-private fun stripPlaceholders(text: String): String = PLACEHOLDER.replace(text) { " ".repeat(it.value.length) }
 
 internal fun digitsOnly(text: String): String = text.filter { it.isDigit() }
 
@@ -204,7 +191,7 @@ private fun compareKeyOf(raw: RawMatch): String =
 // 재사용한다 — 공개 API 확대가 아니라 같은 core 모듈 안에서만 보이는 `internal` 좁히기다.
 
 internal fun extractFacts(text: String): List<ExtractedFact> {
-    val normalized = normalizeFullWidthDigits(stripPlaceholders(text))
+    val normalized = normalizeFullWidthDigits(text)
     return extractRawMatches(normalized)
         .map { raw ->
             val year = if (raw.kind == FactKind.DATE) dateComponents(raw.text)?.first else null

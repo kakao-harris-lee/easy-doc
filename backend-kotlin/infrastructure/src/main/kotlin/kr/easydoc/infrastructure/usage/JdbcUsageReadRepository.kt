@@ -13,7 +13,7 @@ import java.time.ZoneOffset
 import java.util.UUID
 
 /**
- * 워크스페이스·기간별 사용량 집계(U2) — `llm_calls`(V12) **한 표만** 읽는다.
+ * 워크스페이스·기간별 사용량 집계(U2) — `llm_calls`(V14) **한 표만** 읽는다.
  *
  * **`documents` 표를 참조하지 않는다(2026-09-08 리뷰 정정).** 처음 설계는 [documents]·
  * [characters]·[credits]를 `documents.created_at` 기준으로 그 표에서 직접 셌다 — 그런데
@@ -21,7 +21,7 @@ import java.util.UUID
  * 문서의 문자 수·크레딧이 이번 조회에서 사라진다. U1이 `llm_calls`를 append-only
  * 원장으로 만든 이유가 정확히 이 문제를 막는 것이었는데, 이 저장소가 `documents`를
  * 그대로 계속 읽으면 그 목적이 무의미해진다(`LlmCallEntry.documentCharCount` KDoc,
- * V12 머리주석 3차 정정).
+ * V14 머리주석 3차 정정).
  *
  * 그래서 [documents]·[characters]·[credits]도 `llm_calls.document_char_count`(그 호출이
  * 속한 문서의 `documents.char_count` 스냅샷)에서 유도한다 — **그 기간에 완료된 LLM 호출이
@@ -188,7 +188,7 @@ class JdbcUsageReadRepository(private val jdbc: JdbcClient) : UsageReadRepositor
         LlmCallPurpose.entries.firstOrNull { it.wireName == wireName }
             ?: error(
                 "llm_calls.purpose '$wireName' 이 LlmCallPurpose 안에 없다 — " +
-                    "V12 CHECK 제약과 이 enum이 서로 어긋났다",
+                    "V14 CHECK 제약과 이 enum이 서로 어긋났다",
             )
 
     /** 읽는 쪽 관례 — `JdbcLlmCallLedger`의 쓰는 쪽과 짝을 맞춘다(UTC 오프셋으로 통일). */

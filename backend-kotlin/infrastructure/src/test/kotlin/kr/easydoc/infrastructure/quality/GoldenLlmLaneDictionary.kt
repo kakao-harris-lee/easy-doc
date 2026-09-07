@@ -35,10 +35,9 @@ import kotlin.io.path.readText
  * `checkDictionaryIndex` 가 `check` 태스크에서 늘 확인한다. 여기서 경로를 따로 받으면 제품에
  * 없는 자리를 레인이 새로 만드는 것이다.
  *
- * 제품 조립을 쓰면 [contextFor] 는 문서마다 **항상 `null`** 이다 — 실제 컨텍스트는 마스킹을
- * 마친 뒤에야 만들 수 있어 여기서 미리 뽑아 둘 수 없고, [ConvertDocumentUseCase] 가 마스킹
- * 직후 [contextSource] 포트로 물어야 나온다([DictionaryContextSource] KDoc 「인자가
- * MaskedText 인 것이 이 포트의 요점」). 파일 주입은 반대로 [contextSource] 가
+ * 제품 조립을 쓰면 [contextFor] 는 문서마다 **항상 `null`** 이다 — 실제 컨텍스트는
+ * [ConvertDocumentUseCase] 가 프롬프트에 실제로 실릴 문서 본문으로 [contextSource] 포트에
+ * 물어야 나오고, 여기서 미리 뽑아 둘 수 없다. 파일 주입은 반대로 [contextSource] 가
  * [NoDictionaryContext] 다 — 문서마다 이미 뽑아 둔 문자열을
  * `ConvertDocumentUseCase.convert` 의 명시 인자로 싣기 때문이다(그 함수 KDoc 「명시 인자가
  * 이긴다」). 포트도 함께 실 소스로 두면 같은 문서에 두 경로가 동시에 값을 대는 자리가 생긴다.

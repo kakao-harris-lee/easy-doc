@@ -3,6 +3,7 @@ package kr.easydoc.infrastructure.ingest
 import kr.easydoc.application.document.DocumentTextExtractor
 import kr.easydoc.application.document.ExtractedDocument
 import kr.easydoc.core.document.SourceFormat
+import kr.easydoc.core.segment.SourceStructure
 import org.apache.poi.openxml4j.util.ZipSecureFile
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.AfterEach
@@ -93,7 +94,7 @@ class IngestDefensesTest {
 
                     release.await(AWAIT_SECONDS, TimeUnit.SECONDS)
                     inFlight.decrementAndGet()
-                    ExtractedDocument(SourceFormat.DOCX, "")
+                    ExtractedDocument(SourceFormat.DOCX, "", SourceStructure.allBody(1))
                 },
             )
 

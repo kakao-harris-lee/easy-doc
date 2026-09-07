@@ -66,14 +66,14 @@ class DocumentSourceReachTest {
     }
 
     @Test
-    @DisplayName("DS-1 **마스킹 전** 값이 그대로 실린다 — 그래서 이 응답이 하한선 열거에 있다")
-    fun `마스킹 전 값이 그대로 실린다`() {
+    @DisplayName("DS-1 문서 원문 값이 그대로 실린다 — 그래서 이 응답이 하한선 열거에 있다")
+    fun `원문 값이 그대로 실린다`() {
         val token = newAccount()
 
         val body = bodyOf(readSource(token, createDocument(token, SOURCE_WITH_RRN)))
 
         assertThat(body[SOURCE_TEXT_PROPERTY].toString())
-            .describedAs("자리표시자로 바뀌어 나오면 검수 화면이 원문과 초안을 비교할 수 없다")
+            .describedAs("내용이 가공되어 나오면 검수 화면이 원문과 초안을 비교할 수 없다")
             .contains(RRN)
         assertThat(ContractSpec.privateResponseHeaderTargets())
             .describedAs("개인정보가 실리는데 하한선 열거에 없으면 그 응답은 목록 밖으로 샌다")

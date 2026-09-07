@@ -33,7 +33,7 @@ data class PurposeUsage(
  * - **문서가 보존 만료·삭제로 없어져도 이 집계는 바뀌지 않는다** — `llm_calls`가
  *   `document_char_count`(그 호출이 속한 문서의 `documents.char_count` 스냅샷)를 원장
  *   행 자체에 들고 있어 `documents` 표를 다시 읽지 않는다(`LlmCallEntry.documentCharCount`
- *   KDoc, V12 머리주석 3차 정정). 청구 근거를 남기려고 만든 원장이 문서 삭제로
+ *   KDoc, V14 머리주석 3차 정정). 청구 근거를 남기려고 만든 원장이 문서 삭제로
  *   스스로의 근거를 잃으면 안 된다는 것이 이 정정의 이유다.
  *
  * [credits] 는 문서별 `ceil(document_char_count / 1000)` 을 각각 올림해 합한 값이지
@@ -43,7 +43,7 @@ data class PurposeUsage(
  * [llmCalls]·[inputTokens]·[outputTokens] 도 `llm_calls.called_at` 기준이며
  * `llm_calls.char_count` (그 호출이 실제로 본 마스킹 입력 길이) 는 어디에도 합산하지
  * 않는다 — 변환·보정 두 행이 문서 전체 마스킹 본문의 길이를 각자 담아 문서 단위로
- * 합치면 중복 계산이 된다(V12 머리주석, `LlmCallRecord.charCount` KDoc).
+ * 합치면 중복 계산이 된다(V14 머리주석, `LlmCallRecord.charCount` KDoc).
  *
  * [estimatedCostUsd] 는 `estimated_cost_usd` 가 `null` 이 아닌 행만 합한 값이다. 단가
  * 미설정 호출은 0으로 섞이지 않고 [costUnknownCalls] 로만 센다(계획 §2 결정 4).

@@ -13,7 +13,6 @@ import kr.easydoc.application.document.DocumentTextExtractor
 import kr.easydoc.application.document.ExtractedDocument
 import kr.easydoc.application.document.LockedConversion
 import kr.easydoc.application.document.LockedFeedbackComment
-import kr.easydoc.application.document.MaskedItemReader
 import kr.easydoc.application.document.OriginalDocument
 import kr.easydoc.application.document.OriginalStructureReflector
 import kr.easydoc.application.document.ReconversionReservation
@@ -26,13 +25,11 @@ import kr.easydoc.application.document.WorkspaceLookup
 import kr.easydoc.core.crypto.EncryptedContent
 import kr.easydoc.core.crypto.EncryptedField
 import kr.easydoc.core.crypto.EncryptionScheme
-import kr.easydoc.core.crypto.PlainBody
 import kr.easydoc.core.crypto.PlainBytes
 import kr.easydoc.core.document.Conversion
 import kr.easydoc.core.document.ConversionStatus
 import kr.easydoc.core.document.Document
 import kr.easydoc.core.document.DocumentListing
-import kr.easydoc.core.document.MaskedItemView
 import kr.easydoc.core.document.ReflectionOutcome
 import kr.easydoc.core.document.SourceFormat
 import kr.easydoc.core.easyread.ExportFile
@@ -40,9 +37,9 @@ import kr.easydoc.core.easyread.ExportFormat
 import kr.easydoc.core.easyread.exportFileOf
 import kr.easydoc.core.exceptions.DocumentExtractionException
 import kr.easydoc.core.exceptions.UnsupportedFormatException
-import kr.easydoc.core.privacy.MaskCategory
-import kr.easydoc.core.security.Secret
 import kr.easydoc.core.segment.SegmentMap
+import kr.easydoc.core.segment.SourceStructure
+import kr.easydoc.core.segment.splitUnits
 import java.time.Instant
 import java.time.temporal.ChronoUnit
 import java.util.UUID
@@ -216,7 +213,6 @@ class InMemoryConversionRepository(
         var reviewedAt: Instant?,
         /** 실물에서는 `conversion_feedback` 을 왼쪽 조인해 읽는 값이다. 낸 적이 없으면 `null`. */
         var feedbackSubmittedAt: Instant?,
-        var missingPlaceholders: List<String>,
         var model: String?,
         var providerName: String?,
         var inputTokens: Int?,
@@ -245,14 +241,12 @@ class InMemoryConversionRepository(
                         ciphertexts =
                             ConversionCiphertexts(
                                 easyText = null,
-                                maskedItems = null,
                                 editedText = null,
                             ),
                     ),
                 status = ConversionStatus.PENDING,
                 reviewedAt = null,
                 feedbackSubmittedAt = null,
-                missingPlaceholders = emptyList(),
                 model = null,
                 providerName = null,
                 inputTokens = null,
@@ -288,7 +282,6 @@ class InMemoryConversionRepository(
                     ciphertexts = row.envelope.ciphertexts,
                     reviewedAt = row.reviewedAt,
                     feedbackSubmittedAt = row.feedbackSubmittedAt,
-                    missingPlaceholders = row.missingPlaceholders,
                     model = row.model,
                     providerName = row.providerName,
                     inputTokens = row.inputTokens,
@@ -367,7 +360,6 @@ class InMemoryConversionRepository(
     fun complete(
         conversionId: UUID,
         ciphertexts: ConversionCiphertexts,
-        missingPlaceholders: List<String>,
         model: String,
         providerName: String,
         inputTokens: Int,
@@ -376,7 +368,6 @@ class InMemoryConversionRepository(
         val row = rows.getValue(conversionId)
         row.envelope = ConversionEnvelope(conversionId, row.envelope.scheme, row.envelope.keyVersion, ciphertexts)
         row.status = ConversionStatus.DONE
-        row.missingPlaceholders = missingPlaceholders
         row.model = model
         row.providerName = providerName
         row.inputTokens = inputTokens
@@ -570,36 +561,6 @@ class StubContentCipher : ContentCipher {
     }
 }
 
-/** 마스킹 대응표 읽기 대역. */
-class StubMaskedItemReader : MaskedItemReader {
-    override fun decode(body: PlainBody): List<MaskedItemView> =
-        body.value
-            .lineSequence()
-            .filter { it.isNotBlank() }
-            .map { line ->
-                val parts = line.split(SEPARATOR, limit = FIELD_COUNT)
-                require(parts.size == FIELD_COUNT) { "대역 형식이 아니다 — 필드 ${parts.size}개" }
-                MaskedItemView(
-                    category = MaskCategory.entries.first { it.label == parts[0] },
-                    placeholder = parts[1],
-                    original = Secret(parts[2]),
-                )
-            }.toList()
-
-    companion object {
-        private const val SEPARATOR = "|"
-        private const val FIELD_COUNT = 3
-
-        /** 테스트가 이 대역이 읽을 평문을 만든다. 암호화는 호출자가 [ContentCipher] 로 한다. */
-        fun encodeForStub(items: List<MaskedItemView>): PlainBody =
-            PlainBody(
-                items.joinToString("\n") { item ->
-                    listOf(item.category.label, item.placeholder, item.original.reveal()).joinToString(SEPARATOR)
-                },
-            )
-    }
-}
-
 /** 파일 추출 대역. */
 class StubDocumentTextExtractor : DocumentTextExtractor {
     override fun extract(
@@ -613,7 +574,7 @@ class StubDocumentTextExtractor : DocumentTextExtractor {
                 )
         val text = runCatching { String(bytes, Charsets.UTF_8) }.getOrNull()
         if (text.isNullOrBlank()) throw DocumentExtractionException("문서에서 텍스트를 찾을 수 없습니다")
-        return ExtractedDocument(format, text)
+        return ExtractedDocument(format, text, SourceStructure.allBody(splitUnits(text).size))
     }
 }
 

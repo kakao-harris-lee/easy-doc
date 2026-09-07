@@ -9,6 +9,7 @@ import kr.easydoc.core.pilot.EditDistanceSkipReason
 import kr.easydoc.core.pilot.MinutesSpent
 import kr.easydoc.core.pilot.PublishIntent
 import kr.easydoc.core.pilot.QualityScore
+import kr.easydoc.core.segment.SourceStructure
 import kr.easydoc.core.user.PasswordHash
 import kr.easydoc.infrastructure.DatabaseHandle
 import kr.easydoc.infrastructure.PostgresTestSupport
@@ -119,6 +120,9 @@ class FeedbackJoinStorageTest {
                     title = "안내문",
                     sourceFormat = SourceFormat.TEXT,
                     charCount = 1,
+                    // 이 파일이 재는 것은 피드백 조인이지 본문이 아니다 — 1자 자리 채움과
+                    // 짝을 맞춘 자리 채움 구조다(줄 하나, BODY 하나).
+                    structure = SourceStructure.allBody(1),
                 ),
                 // 이 파일은 봉인 내용을 열지 않는다 — 열이 NOT NULL 이라 자리만 채운다.
                 EncryptedContent(byteArrayOf(0), EncryptionScheme.AES_256_GCM_V1, KEY_VERSION),

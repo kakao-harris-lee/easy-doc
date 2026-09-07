@@ -2,7 +2,6 @@ package kr.easydoc.core.llm
 
 import kr.easydoc.core.easyread.DocumentIdGenerator
 import kr.easydoc.core.exceptions.LlmProviderException
-import kr.easydoc.core.privacy.maskText
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.DisplayName
@@ -15,7 +14,7 @@ import org.junit.jupiter.api.Test
 class FakeLlmProviderTest {
     private val fixedIds = DocumentIdGenerator { "0123456789ab" }
 
-    private fun prompt() = LlmPrompt.forConversion(maskText("행정 안내문 본문입니다.").maskedText, fixedIds)
+    private fun prompt() = LlmPrompt.forConversion("행정 안내문 본문입니다.", fixedIds)
 
     @Test
     @DisplayName("준비한 응답을 순서대로 돌려준다")

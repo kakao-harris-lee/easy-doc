@@ -5,12 +5,8 @@ import kr.easydoc.api.support.OwnershipConcealment
 import kr.easydoc.application.crypto.ContentCipher
 import kr.easydoc.core.crypto.EncryptedField
 import kr.easydoc.core.crypto.PlainBody
-import kr.easydoc.core.privacy.MaskCategory
-import kr.easydoc.core.privacy.MaskedItem
-import kr.easydoc.core.security.Secret
 import kr.easydoc.infrastructure.DatabaseHandle
 import kr.easydoc.infrastructure.PostgresTestSupport
-import kr.easydoc.infrastructure.document.MaskedItemCodec
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
@@ -67,24 +63,22 @@ class RetentionReadGuardReachTest {
             .isEqualTo(ContractSpec.pathExampleDetail(CONVERSION_ITEM_PATH, GET, NOT_FOUND, NOT_FOUND_EXAMPLE))
     }
 
-    /** 이 변경의 핵심이다 — 거절 본문이 가려졌던 값을 흘리면 술어가 아무것도 막지 못한 것이다. */
+    /** 이 변경의 핵심이다 — 거절 본문이 저장된 본문을 흘리면 술어가 아무것도 막지 못한 것이다. */
     @Test
-    @DisplayName("RG-1 만료 404 본문에 **`masked_items` 조각이 하나도 없다** — 실제 개인정보·자리표시자·키 이름 전부")
-    fun `만료 404 가 마스킹 대응표를 흘리지 않는다`() {
+    @DisplayName("RG-1 만료 404 본문에 **저장된 본문 조각이 하나도 없다**")
+    fun `만료 404 가 저장된 본문을 흘리지 않는다`() {
         val fixture = completedConversion()
         // 만료 전에는 실제로 실린다 — 그래야 아래 부재가 「원래 없었다」가 아니게 된다.
-        assertThat(maskedOriginals(read(fixture.token, fixture.conversionId)))
-            .describedAs("만료 전 조회에 원값이 없으면 이 케이스의 전제가 깨진다")
-            .containsExactly(HIDDEN_RRN)
+        assertThat(bodyOf(read(fixture.token, fixture.conversionId))[EASY_TEXT_PROPERTY])
+            .describedAs("만료 전 조회에 초안이 없으면 이 케이스의 전제가 깨진다")
+            .isEqualTo(STORED_DRAFT)
 
         expireIn(fixture.documentId, PAST)
 
         val refused = read(fixture.token, fixture.conversionId).body()
 
-        assertThat(refused).doesNotContain(HIDDEN_RRN)
-        assertThat(refused).doesNotContain(PLACEHOLDER)
-        assertThat(refused).doesNotContain(MASKED_ITEMS_PROPERTY)
         assertThat(refused).doesNotContain(STORED_DRAFT)
+        assertThat(refused).doesNotContain(STORED_EDITED)
     }
 
     @Test
@@ -113,7 +107,7 @@ class RetentionReadGuardReachTest {
             GET,
             ContractSpec.successStatus(CONVERSION_ITEM_PATH, GET),
         )
-        assertThat(maskedOriginals(response)).containsExactly(HIDDEN_RRN)
+        assertThat(bodyOf(response)[EASY_TEXT_PROPERTY]).isEqualTo(STORED_DRAFT)
     }
 
     @Test
@@ -132,7 +126,7 @@ class RetentionReadGuardReachTest {
     // ================================================ GET /conversions/{id}/export
 
     @Test
-    @DisplayName("RG-2 만료된 문서의 내보내기는 404 다 — 자리표시자가 복원된 최종본이 나가지 않는다")
+    @DisplayName("RG-2 만료된 문서의 내보내기는 404 다 — 검수·변환을 거친 최종본이 나가지 않는다")
     fun `만료된 변환 내보내기는 404 다`() {
         val fixture = completedConversion()
         expireIn(fixture.documentId, PAST)
@@ -140,7 +134,7 @@ class RetentionReadGuardReachTest {
         val response = export(fixture.token, fixture.conversionId)
 
         assertDeclaredStatus(response, CONVERSION_EXPORT_PATH, GET, NOT_FOUND)
-        assertThat(response.body()).doesNotContain(HIDDEN_RRN)
+        assertThat(response.body()).doesNotContain(STORED_EDITED)
     }
 
     @Test
@@ -303,17 +297,15 @@ class RetentionReadGuardReachTest {
 
     // ================================================================ 배경 세우기
 
-    /** 완료된 변환 하나 — 마스킹 대응표까지 채워 **조회가 실제로 개인정보를 싣는** 상태다. */
+    /** 완료된 변환 하나 — 초안·검수본까지 채워 **조회가 실제로 본문을 싣는** 상태다. */
     private fun completedConversion(): Fixture {
         val token = newAccount()
         val (documentId, conversionId) = createDocument(token)
         val edited = cipher.encrypt(PlainBody(STORED_EDITED), conversionId, EncryptedField.CONVERSION_EDITED_TEXT)
-        val table = codec.encode(listOf(MaskedItem(MaskCategory.RRN, PLACEHOLDER, Secret(HIDDEN_RRN))))
         database.execute(
             MARK_DONE_SQL.format(
                 hex(cipher.encrypt(PlainBody(STORED_DRAFT), conversionId, EncryptedField.CONVERSION_EASY_TEXT).bytes),
                 hex(edited.bytes),
-                hex(cipher.encrypt(table, conversionId, EncryptedField.CONVERSION_MASKED_ITEMS).bytes),
                 cipher.writeScheme,
                 cipher.writeKeyVersion,
                 conversionId,
@@ -481,12 +473,6 @@ class RetentionReadGuardReachTest {
 
     // ================================================================== 단언 보조
 
-    /** 응답의 `masked_items[].original` 목록. 없으면 빈 목록이다. */
-    private fun maskedOriginals(response: HttpResponse<String>): List<String> {
-        val items = bodyOf(response)[MASKED_ITEMS_PROPERTY] as? List<*> ?: return emptyList()
-        return items.map { (it as Map<*, *>)[ORIGINAL_PROPERTY].toString() }
-    }
-
     private fun assertDeclaredStatus(
         response: HttpResponse<String>,
         path: String,
@@ -524,8 +510,7 @@ class RetentionReadGuardReachTest {
         private const val ID_PROPERTY = "id"
         private const val DOCUMENT_ID_PROPERTY = "document_id"
         private const val CONVERSION_ID_PROPERTY = "conversion_id"
-        private const val MASKED_ITEMS_PROPERTY = "masked_items"
-        private const val ORIGINAL_PROPERTY = "original"
+        private const val EASY_TEXT_PROPERTY = "easy_text"
         private const val EDITED_TEXT_PROPERTY = "edited_text"
         private const val EMAIL_PROPERTY = "email"
         private const val PASSWORD_PROPERTY = "password"
@@ -566,12 +551,6 @@ class RetentionReadGuardReachTest {
         private const val STORED_EDITED = "만료 창에서 새어 나오면 안 되는 검수본입니다."
         private const val LATE_REVIEW = "만료 뒤에 저장을 시도한 검수본입니다."
 
-        /** 합성 주민등록번호. 조회가 `masked_items[].original` 로 **평문으로** 돌려주는 값이다. */
-        private const val HIDDEN_RRN = "900101-1234567"
-        private const val PLACEHOLDER = "[[주민등록번호1]]"
-
-        private val codec = MaskedItemCodec()
-
         /**
          * 결과 열을 채우는 UPDATE. **봉투 두 값을 같은 문장에서 함께 SET 한다** —
          * `EnvelopeColumnWriteGuardTest` 의 규약이다.
@@ -586,10 +565,8 @@ class RetentionReadGuardReachTest {
             SET status = 'done',
                 easy_text_encrypted = decode('%s', 'hex'),
                 edited_text_encrypted = decode('%s', 'hex'),
-                masked_items_encrypted = decode('%s', 'hex'),
                 encryption_scheme = '%s',
                 key_version = %s,
-                missing_placeholders = '[]'::jsonb,
                 reviewed_at = now(),
                 model = 'retention-guard-model',
                 provider_name = 'retention-guard-provider',

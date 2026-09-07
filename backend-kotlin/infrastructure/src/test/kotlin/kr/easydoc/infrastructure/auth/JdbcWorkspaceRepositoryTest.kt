@@ -161,7 +161,7 @@ class JdbcWorkspaceRepositoryTest {
      * `ON DELETE CASCADE`(`confdeltype = 'c'`)·`ON DELETE SET NULL`(`confdeltype = 'n'`) 로
      * 걸린 FK 는 뺀다 — 둘 다 삭제를 막지 않고(참조 행을 지우거나 참조만 끊는다) 위반을
      * 내지 않는다. `delete` 가 잡아야 하는 것은 삭제를 **막는**(`NO ACTION`/`RESTRICT`)
-     * 제약뿐이다. U1(`fk_llm_calls_workspace_id_workspaces`, V12, 리뷰로 CASCADE → SET NULL
+     * 제약뿐이다. U1(`fk_llm_calls_workspace_id_workspaces`, V14, 리뷰로 CASCADE → SET NULL
      * 정정)이 `workspaces` 를 참조하지만 `SET NULL` 이라 이 전제를 건드리지 않는다.
      */
     @Test

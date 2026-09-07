@@ -146,7 +146,7 @@ class JdbcUsageReportRepositoryTest {
             costUsd = null,
             calledAt = at,
         )
-        // 워크스페이스 삭제로 SET NULL 된 상태를 직접 흉내 낸다(V12 FK ON DELETE SET NULL).
+        // 워크스페이스 삭제로 SET NULL 된 상태를 직접 흉내 낸다(V14 FK ON DELETE SET NULL).
         jdbc
             .sql("UPDATE llm_calls SET workspace_id = NULL WHERE document_id = :id")
             .param("id", deletedWsDoc)

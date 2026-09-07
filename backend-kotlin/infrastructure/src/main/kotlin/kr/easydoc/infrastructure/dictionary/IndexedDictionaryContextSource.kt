@@ -4,7 +4,6 @@ import kr.easydoc.application.conversion.DictionaryContextSource
 import kr.easydoc.core.dictionary.DictionaryContextPolicy
 import kr.easydoc.core.dictionary.DictionaryIndex
 import kr.easydoc.core.dictionary.RenderedDictionaryContext
-import kr.easydoc.core.privacy.MaskedText
 import org.slf4j.LoggerFactory
 
 /**
@@ -32,8 +31,8 @@ class IndexedDictionaryContextSource(
 ) : DictionaryContextSource {
     private val log = LoggerFactory.getLogger(IndexedDictionaryContextSource::class.java)
 
-    override fun contextFor(maskedText: MaskedText): String? {
-        val rendered = index.renderPromptContext(maskedText.value, policy)
+    override fun contextFor(documentText: String): String? {
+        val rendered = index.renderPromptContext(documentText, policy)
         if (rendered.renderedTerms == 0) {
             // **개수만 남긴다.** 본문·용어·컨텍스트는 로그에 넣지 않는다(CLAUDE.md 관측 규칙).
             log.debug("사전 {}건을 찾았으나 실린 항목이 없다 — 컨텍스트를 싣지 않는다", rendered.totalTerms)

@@ -25,16 +25,16 @@ import java.util.UUID
 import javax.sql.DataSource
 
 /**
- * `llm_calls` 원장(V12) — 실물 PostgreSQL. 다중 VALUES 삽입과, 보존 결정의 정정(계획 §2
+ * `llm_calls` 원장(V14) — 실물 PostgreSQL. 다중 VALUES 삽입과, 보존 결정의 정정(계획 §2
  * 결정 1, 2026-09-08 리뷰로 3차 정정)을 실제 FK 로 잰다.
  *
  * **`conversion_id`·`document_id`는 FK가 없다** — 참조 대상이 지워져도 원장 행의 값은
- * 그대로 남는다(V12 머리주석 3차 정정). **`workspace_id`만 여전히 `SET NULL`**이고,
+ * 그대로 남는다(V14 머리주석 3차 정정). **`workspace_id`만 여전히 `SET NULL`**이고,
  * `user_id`만 `CASCADE`다.
  *
  * `OwnershipPredicateGuardTest`·`EnvelopeColumnWriteGuardTest` 대상이 아니다 — 둘 다
  * [kr.easydoc.core.crypto.EncryptedField] 가 아는 표만 훑는데, `llm_calls` 는 암호화 대상
- * 열이 없어 그 목록에 없다(V12 머리주석, `JdbcLlmCallLedger` KDoc).
+ * 열이 없어 그 목록에 없다(V14 머리주석, `JdbcLlmCallLedger` KDoc).
  */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class JdbcLlmCallLedgerTest {

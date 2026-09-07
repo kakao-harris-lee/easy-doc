@@ -1,13 +1,11 @@
 package kr.easydoc.core.segment
 
 import kr.easydoc.core.easyread.extractFacts
-import kr.easydoc.core.privacy.MaskCategory
 
 // P0-4 문단 대응 — 계획 §2 「정렬 알고리즘 — patience 방식 앵커 + 차례 보간」.
 //
 // 차례만 쓰면 대응이 대부분의 문서에서 틀린다(문단을 여러 줄로 나누는 것이 프롬프트 규칙상
 // 정상이라 그 뒤가 전부 밀린다). 그래서 다시 쓰기를 견뎌 살아남는 토큰만 앵커로 쓴다 —
-// ⑴ 마스킹 자리표시자(`[[…]]`, 개수 보존이 프롬프트 규칙이자 검사 대상) ⑵
 // `FactPreservation.extractFacts` 의 사실 추출 결과(숫자·날짜·시각·금액·백분율·연락처·URL).
 //
 // Spring 도 DB 도 I/O 도 모른다 — (원본 단위 목록, 쉬운 글 단위 목록) 의 순수 함수다.
@@ -15,7 +13,7 @@ import kr.easydoc.core.privacy.MaskCategory
 /**
  * 쉬운 글 단위 하나가 원본 단위에 대응하는지에 대한 신뢰도.
  *
- * [HIGH] 는 앵커(자리표시자·사실)로 뒷받침된 대응이고, [LOW] 는 앵커가 없어 순서 비례
+ * [HIGH] 는 앵커(사실)로 뒷받침된 대응이고, [LOW] 는 앵커가 없어 순서 비례
  * 보간으로만 나온 추정이다. 화면은 [HIGH] 만 대응으로 주장하고 [LOW] 는 「대응을 확인하지
  * 못했습니다」로 표시한다(계획 §2).
  */
@@ -48,13 +46,6 @@ data class SegmentMap(
         "SegmentMap(sourceUnitCount=$sourceUnitCount, easyUnitCount=$easyUnitCount, " +
             "units=${units.size}, compliantSourceUnits=${compliantSourceUnits.size})"
 }
-
-/** 마스킹 자리표시자 모양(`[[주민등록번호1]]` 등) — `Masking.kt`·`FactPreservation.kt` 와 같은 구성. */
-private val PLACEHOLDER: Regex =
-    run {
-        val categories = MaskCategory.entries.joinToString("|") { Regex.escape(it.label) }
-        Regex("""\[\[(?:$categories)[0-9]+]]""")
-    }
 
 /**
  * 원본 단위 목록과 쉬운 글 단위 목록 사이의 대응을 구한다.
@@ -188,7 +179,6 @@ private fun chooseAnchors(
  */
 private fun anchorKeys(unit: String): Set<String> {
     val keys = mutableSetOf<String>()
-    PLACEHOLDER.findAll(unit).forEach { keys += it.value }
     extractFacts(unit).forEach { fact -> keys += "FACT:${fact.kind}:${fact.compareKey}" }
     return keys
 }

@@ -14,7 +14,6 @@ import kr.easydoc.core.document.DocumentListing
 import kr.easydoc.core.document.FALLBACK_TITLE
 import kr.easydoc.core.document.MAX_CONVERTIBLE_CHARS
 import kr.easydoc.core.document.MAX_UPLOAD_BYTES
-import kr.easydoc.core.document.MaskedItemView
 import kr.easydoc.core.document.SourceFormat
 import kr.easydoc.core.exceptions.DocumentExtractionException
 import kr.easydoc.core.exceptions.EmailNotVerifiedException
@@ -22,8 +21,9 @@ import kr.easydoc.core.exceptions.InvalidInputException
 import kr.easydoc.core.exceptions.NotFoundException
 import kr.easydoc.core.exceptions.StorageException
 import kr.easydoc.core.exceptions.UploadTooLargeException
-import kr.easydoc.core.privacy.MaskCategory
-import kr.easydoc.core.security.Secret
+import kr.easydoc.core.segment.SourceStructure
+import kr.easydoc.core.segment.UnitKind
+import kr.easydoc.core.segment.splitUnits
 import kr.easydoc.core.user.PasswordHash
 import kr.easydoc.core.user.StoredUser
 import kr.easydoc.core.user.User
@@ -521,6 +521,39 @@ class DocumentServiceTest {
         assertThat(world.queue.enqueued).isEmpty()
     }
 
+    @Test
+    @DisplayName("A5 — 붙여넣기 본문은 정규화된 최종 본문에서 구조를 새로 유도한다")
+    fun `붙여넣기는 정규화된 본문으로 구조를 유도한다`() {
+        val world = World()
+
+        world.service.createFromText(OWNER, "1. 첫째\n본문", null, null)
+
+        val structure =
+            world.documents.inserted
+                .single()
+                .first.structure
+        assertThat(structure.kinds).containsExactly(UnitKind.LIST_ITEM, UnitKind.BODY)
+    }
+
+    @Test
+    @DisplayName("A6 — 추출 구조 수가 줄 수와 어긋나면 예외 없이 전부 BODY 로 접는다")
+    fun `구조 불변식이 깨지면 전부 BODY 로 접는다`() {
+        val extracted = "첫 줄\n둘째 줄"
+        // 일부러 어긋난 크기(1) — 실제 줄 수(2)와 다르다.
+        val world = World(extracted = extracted, extractedStructure = SourceStructure(listOf(UnitKind.LIST_ITEM)))
+
+        world.service.createFromFile(OWNER, "a.docx", ORIGINAL_FILE, null, null)
+
+        val structure =
+            world.documents.inserted
+                .single()
+                .first.structure
+        assertThat(structure.kinds)
+            .describedAs("종류 수(1)가 줄 수(2)와 어긋나 예외 대신 전부 BODY 로 접힌다")
+            .containsExactly(UnitKind.BODY, UnitKind.BODY)
+        assertThat(splitUnits(extracted)).hasSize(structure.kinds.size)
+    }
+
     private companion object {
         val OWNER: UUID = UUID.fromString("00000000-0000-4000-8000-0000000000a1")
         val OWNED_WORKSPACE: UUID = UUID.fromString("00000000-0000-4000-8000-0000000000b1")
@@ -548,6 +581,12 @@ class DocumentServiceTest {
         originalFailure: RuntimeException? = null,
         /** 기본값 참 — 이 플래그와 무관한 케이스가 매번 인증 상태를 신경 쓰지 않게 한다. */
         emailVerified: Boolean = true,
+        /**
+         * 추출기가 돌려주는 구조 힌트. 기본값(`null`)은 [extracted] 줄 수에 맞는 all-BODY 다 —
+         * 구조와 무관한 케이스가 매번 채우지 않아도 되게 한다. A6(종류 수≠줄 수)를 재는 케이스만
+         * 일부러 어긋난 크기를 준다.
+         */
+        extractedStructure: SourceStructure? = null,
     ) {
         val transaction = RecordingTransactionRunner()
         val cipher = FakeContentCipher(writeKeyVersion, transaction)
@@ -573,7 +612,8 @@ class DocumentServiceTest {
                 cipher = cipher,
                 extractor = { _, _ ->
                     extractorCalls++
-                    ExtractedDocument(extractedFormat, extracted)
+                    val structure = extractedStructure ?: SourceStructure.allBody(splitUnits(extracted).size)
+                    ExtractedDocument(extractedFormat, extracted, structure)
                 },
                 transaction = transaction,
                 users = users,

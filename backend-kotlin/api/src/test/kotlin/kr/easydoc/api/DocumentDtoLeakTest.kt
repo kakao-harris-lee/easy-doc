@@ -8,7 +8,6 @@ import kr.easydoc.core.crypto.EncryptedContent
 import kr.easydoc.core.crypto.PlainBody
 import kr.easydoc.core.document.ConversionStatus
 import kr.easydoc.core.privacy.CONTENT_MASK
-import kr.easydoc.core.privacy.MaskedText
 import kr.easydoc.core.privacy.ModelDraft
 import kr.easydoc.core.privacy.ReviewedBody
 import org.assertj.core.api.Assertions.assertThat
@@ -138,12 +137,11 @@ class DocumentDtoLeakTest {
         val FORBIDDEN_TYPES: Set<KClass<*>> =
             setOf(
                 PlainBody::class,
-                MaskedText::class,
                 ModelDraft::class,
                 ReviewedBody::class,
                 EncryptedContent::class,
             )
 
-        const val EXPECTED_FORBIDDEN_TYPES = 5
+        const val EXPECTED_FORBIDDEN_TYPES = 4
     }
 }

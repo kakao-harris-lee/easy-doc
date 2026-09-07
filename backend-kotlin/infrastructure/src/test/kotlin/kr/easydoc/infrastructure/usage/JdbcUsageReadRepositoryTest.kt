@@ -32,7 +32,7 @@ import javax.sql.DataSource
  * 워크스페이스·기간별 사용량 집계(U2) — 실물 PostgreSQL. `easydoc.usage.zone` 자정 경계·
  * 다른 사용자 404·빈 기간 0·비용 미상 건수·문서 삭제 후 청구 근거 보존을 실제 DB 로 잰다.
  *
- * **문서 수·문자 수·크레딧은 `llm_calls`(V12) 에서 유도한다 — `documents` 표를 참조하지
+ * **문서 수·문자 수·크레딧은 `llm_calls`(V14) 에서 유도한다 — `documents` 표를 참조하지
  * 않는다**(2026-09-08 리뷰, `JdbcUsageReadRepository` KDoc). 그래서 이 파일의 픽스처는
  * `documents` 행을 심는 것과 별개로, 그 문서를 대상으로 한 `llm_calls` 행을 반드시
  * `document_char_count` 스냅샷과 함께 남긴다 — 그것이 집계가 실제로 읽는 값이다.
@@ -223,7 +223,7 @@ class JdbcUsageReadRepositoryTest {
         val before = repository.aggregate(owner, workspaceId, from, toExclusive)!!
 
         // 보존 만료·즉시 삭제를 흉내 낸다 — llm_calls.document_id 는 FK가 없어 이 삭제에
-        // 영향받지 않는다(V12 머리주석 3차 정정).
+        // 영향받지 않는다(V14 머리주석 3차 정정).
         jdbc.sql("DELETE FROM documents WHERE id = :id").param("id", documentId).update()
 
         val after = repository.aggregate(owner, workspaceId, from, toExclusive)!!
@@ -297,7 +297,7 @@ class JdbcUsageReadRepositoryTest {
         )
 
         // 워크스페이스가 삭제돼 workspace_id 가 SET NULL 된 상태를 직접 만든다 — 실제로는
-        // fk_llm_calls_workspace_id_workspaces 가 이 값을 만든다(V12).
+        // fk_llm_calls_workspace_id_workspaces 가 이 값을 만든다(V14).
         val excludedDoc = insertDocument(workspaceId, owner, charCount = 999, createdAt = at)
         appendCall(
             workspaceId,

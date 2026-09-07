@@ -9,7 +9,6 @@ import kr.easydoc.core.llm.FakeLlmProvider
 import kr.easydoc.core.llm.FakeLlmTurn
 import kr.easydoc.core.llm.LlmCallPurpose
 import kr.easydoc.core.llm.LlmFinishReason
-import kr.easydoc.core.privacy.maskText
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.DisplayName
@@ -297,7 +296,7 @@ class ConvertDocumentUseCaseTest {
     @DisplayName("보정 채택 판정 (CNV-04)")
     inner class RepairAdoption {
         @Test
-        @DisplayName("자리표시자를 지키며 위반을 줄이면 보정문을 채택한다")
+        @DisplayName("위반을 줄이면 보정문을 채택한다")
         fun `개선하면 채택한다`() {
             val provider =
                 FakeLlmProvider(
@@ -332,70 +331,6 @@ class ConvertDocumentUseCaseTest {
             assertThat(result.repaired).isFalse()
             assertThat(result.usage.inputTokens).isEqualTo(200)
             assertThat(result.usage.outputTokens).isEqualTo(75)
-        }
-
-        @Test
-        @DisplayName("보정이 자리표시자를 잃으면 기각하고, 유실 목록은 채택본 기준으로 비어 있다")
-        fun `자리표시자를 잃으면 기각한다`() {
-            val withRrn = "금일 등록번호 900101-1234567 을 확인하십시오."
-            val provider =
-                FakeLlmProvider(
-                    listOf(
-                        reply("금일 [[주민등록번호1]]을 확인하세요."),
-                        reply("오늘 번호를 확인하세요."),
-                    ),
-                )
-
-            val result = converted(useCase(provider).convert(withRrn))
-
-            assertThat(result.easyText.value).isEqualTo("금일 [[주민등록번호1]]을 확인하세요.")
-            assertThat(result.repaired).isFalse()
-
-            assertThat(result.missingPlaceholders).isEmpty()
-        }
-    }
-
-    @Nested
-    @DisplayName("자리표시자 유실 보고 (CNV-02 · INV-03 인접)")
-    inner class MissingPlaceholders {
-        private val withRrn = "금일 등록번호 900101-1234567 을 확인하십시오."
-
-        @Test
-        @DisplayName("지워지면 라벨을 담되 예외로 막지 않는다")
-        fun `유실은 보고하되 실패시키지 않는다`() {
-            val provider = FakeLlmProvider(listOf(reply("오늘 번호를 확인하세요.")))
-
-            val result = converted(useCase(provider).convert(withRrn))
-
-            assertThat(result.missingPlaceholders).containsExactly("[[주민등록번호1]]")
-        }
-
-        @Test
-        @DisplayName("기준 본문은 채택된 최종 결과다 — 보정이 되살렸으면 목록은 비어 있다")
-        fun `기준은 채택본이다`() {
-            val provider =
-                FakeLlmProvider(
-                    listOf(
-                        reply("금일 번호를 확인하세요."),
-                        reply("오늘 [[주민등록번호1]]을 확인하세요."),
-                    ),
-                )
-
-            val result = converted(useCase(provider).convert(withRrn))
-
-            assertThat(result.repaired).isTrue()
-            assertThat(result.missingPlaceholders).isEmpty()
-        }
-
-        @Test
-        @DisplayName("둘 중 하나만 사라지면 사라진 것만 보고한다")
-        fun `사라진 것만 담는다`() {
-            val both = "금일 등록번호 900101-1234567 과 카드 4111-1111-1111-1111 을 확인하십시오."
-            val provider = FakeLlmProvider(listOf(reply("오늘 [[주민등록번호1]]을 확인하세요.")))
-
-            val result = converted(useCase(provider).convert(both))
-
-            assertThat(result.missingPlaceholders).containsExactly("[[카드번호1]]")
         }
     }
 
@@ -452,22 +387,19 @@ class ConvertDocumentUseCaseTest {
         }
 
         @Test
-        @DisplayName("포트가 보는 것은 마스킹된 본문이다 — 배선이 마스킹을 우회하면 안 된다")
-        fun `포트에 원문이 가지 않는다`() {
+        @DisplayName("포트는 실제로 프롬프트에 실릴 문서 본문을 그대로 받는다")
+        fun `포트에 문서 본문이 그대로 간다`() {
             val provider = FakeLlmProvider(listOf(reply(cleanText)))
             val seen = mutableListOf<String>()
             val useCase =
-                ConvertDocumentUseCase(provider, fixedIds) { masked ->
-                    seen += masked.value
+                ConvertDocumentUseCase(provider, fixedIds) { documentText ->
+                    seen += documentText
                     null
                 }
 
-            useCase.convert("금일 신청자 900101-1234567 님께 안내하십시오.")
+            useCase.convert("금일 신청 안내입니다.")
 
-            assertThat(seen).hasSize(1)
-            assertThat(seen[0])
-                .withFailMessage("마스킹 전 원문이 사전 포트로 나갔다")
-                .doesNotContain("900101-1234567")
+            assertThat(seen).containsExactly("금일 신청 안내입니다.")
         }
     }
 
@@ -526,25 +458,8 @@ class ConvertDocumentUseCaseTest {
     }
 
     @Nested
-    @DisplayName("마스킹 선행 불변식")
-    inner class MaskingComesFirst {
-        @Test
-        @DisplayName("원문 개인정보는 어느 프롬프트에도 실리지 않는다")
-        fun `프롬프트에 원문이 없다`() {
-            val withRrn = "금일 신청자 900101-1234567 님께 안내하십시오."
-            val provider = FakeLlmProvider(listOf(reply(draftWithIssue), reply(cleanText)))
-
-            useCase(provider).convert(withRrn)
-
-            assertThat(provider.calls).hasSize(2)
-            provider.calls.forEach { call ->
-                assertThat(call.prompt.user)
-                    .withFailMessage("마스킹 전 원문이 프롬프트에 실렸다 — 개인정보가 그대로 외부 모델로 나간다")
-                    .doesNotContain("900101-1234567")
-                assertThat(call.prompt.system).doesNotContain("900101-1234567")
-            }
-        }
-
+    @DisplayName("결과 toString 안전성")
+    inner class ResultToStringSafety {
         @Test
         @DisplayName("결과 문자열 표현에 본문이 실리지 않는다")
         fun `toString 이 본문을 흘리지 않는다`() {
@@ -561,7 +476,7 @@ class ConvertDocumentUseCaseTest {
     @DisplayName("LLM 호출 원장 (U1)")
     inner class LlmCallLedgerRecords {
         @Test
-        @DisplayName("깨끗한 1차 결과는 CONVERT 행 하나를 남기고 charCount는 마스킹 본문 길이다")
+        @DisplayName("깨끗한 1차 결과는 CONVERT 행 하나를 남기고 charCount는 프롬프트 입력 길이다")
         fun `1차만 통과하면 CONVERT 한 행이다`() {
             val provider = FakeLlmProvider(listOf(reply(cleanText)))
 
@@ -571,7 +486,7 @@ class ConvertDocumentUseCaseTest {
             val call = result.usage.calls.single()
             assertThat(call.purpose).isEqualTo(LlmCallPurpose.CONVERT)
             assertThat(call.provider).isEqualTo(provider.name)
-            assertThat(call.charCount).isEqualTo(maskText(source).maskedText.value.length)
+            assertThat(call.charCount).isEqualTo(source.length)
         }
 
         @Test

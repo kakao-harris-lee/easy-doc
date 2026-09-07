@@ -2,7 +2,6 @@ package kr.easydoc.application.conversion
 
 import kr.easydoc.application.auth.TransactionRunner
 import kr.easydoc.application.crypto.ContentCipher
-import kr.easydoc.application.document.MaskedItemWriter
 import kr.easydoc.core.crypto.EncryptedField
 import kr.easydoc.core.crypto.PlainBody
 import kr.easydoc.core.document.ConversionStatus
@@ -12,7 +11,7 @@ import kr.easydoc.core.text.normalizeLineEndings
 import org.slf4j.LoggerFactory
 
 /**
- * 큐에서 작업 한 건을 집어 마스킹 → LLM → 결과 저장까지 실행한다.
+ * 큐에서 작업 한 건을 집어 LLM → 결과 저장까지 실행한다.
  *
  * LLM 호출은 **트랜잭션 밖**이다. 장시간 외부 호출이 행 잠금을 붙잡고 있으면 삭제·검수·
  * 다른 worker 의 회수가 함께 멈춘다.
@@ -186,12 +185,6 @@ class ProcessConversionJob(
                 lease.conversionId,
                 EncryptedField.CONVERSION_EASY_TEXT,
             )
-        val table =
-            stores.cipher.encrypt(
-                stores.maskedItems.encode(result.maskedItems),
-                lease.conversionId,
-                EncryptedField.CONVERSION_MASKED_ITEMS,
-            )
         val saved =
             transaction.inTransaction {
                 if (!stores.leases.lockIfHeld(lease)) return@inTransaction false
@@ -200,8 +193,6 @@ class ProcessConversionJob(
                         lease.conversionId,
                         ConversionSuccessWrite(
                             easyText = easyText,
-                            maskedItems = table,
-                            missingPlaceholders = result.missingPlaceholders,
                             attribution = result.attribution,
                             usage = result.usage,
                         ),
@@ -282,10 +273,9 @@ class ConversionWorkerRuntime(
     val policy: ConversionWorkerPolicy,
 )
 
-/** 저장소·암호·대응표 포트. 생성자 인자 수를 한 자리로 묶는다. */
+/** 저장소·암호 포트. 생성자 인자 수를 한 자리로 묶는다. */
 class ConversionWorkerStores(
     val leases: ConversionJobLeasePort,
     val work: ConversionWorkStore,
     val cipher: ContentCipher,
-    val maskedItems: MaskedItemWriter,
 )

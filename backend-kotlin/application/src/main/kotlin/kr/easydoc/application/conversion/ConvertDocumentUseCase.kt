@@ -17,12 +17,10 @@ import kr.easydoc.core.llm.LlmFinishReason
 import kr.easydoc.core.llm.LlmOptions
 import kr.easydoc.core.llm.LlmPrompt
 import kr.easydoc.core.llm.LlmProvider
-import kr.easydoc.core.privacy.MaskingResult
 import kr.easydoc.core.privacy.ModelDraft
-import kr.easydoc.core.privacy.maskText
 import java.time.Clock
 
-/** 문서 1건을 쉬운 글로 바꾼다 — 마스킹 → 프롬프트 → LLM → 후처리 → (조건부 보정 → 채택 판정). */
+/** 문서 1건을 쉬운 글로 바꾼다 — 프롬프트 → LLM → 후처리 → (조건부 보정 → 채택 판정). */
 class ConvertDocumentUseCase(
     private val provider: LlmProvider,
     private val documentIds: DocumentIdGenerator = SecureDocumentIds,
@@ -49,7 +47,9 @@ class ConvertDocumentUseCase(
         get() = provider.name
 
     /**
-     * 원문 [source] 를 쉬운 글로 바꾼다.
+     * 원문 [source] 를 쉬운 글로 바꾼다. 재변환(`ReconvertUnitService`)도 이 진입점을 그대로
+     * 쓴다 — 넘기는 [source] 가 문서 전체냐 단위 하나냐의 차이일 뿐, 프롬프트·보정·채택
+     * 판정 경로는 완전히 같다.
      *
      * [dictionaryContext] 는 이 문서에만 해당하는 사전 지침이며 **①차 변환 프롬프트에만** 실린다
      * (계약은 `buildUserPrompt` KDoc). 보정 패스에 함께 넘기지 않는 것이 이 인자의 요점이다 —
@@ -59,41 +59,28 @@ class ConvertDocumentUseCase(
      * 골든 LLM 레인(`GoldenLlmLaneDictionary`)이 문서마다 미리 뽑아 둔 컨텍스트를 실어 A/B 를
      * 재는데, 포트가 그것을 덮어쓰면 레인은 자기가 실은 것과 다른 것을 재고도 실은 것을 쟀다고
      * 적게 된다. 「호출자가 무엇을 실을지 이미 정했으면 그대로」가 두 경로를 함께 성립시킨다.
+     *
+     * **[purpose] 매개변수 — 원장(U1) 라벨을 유스케이스가 결정한다.** LLM 호출 원장
+     * (`llm_calls`)은 목적을 셋(`convert`·`repair`·`reconvert`)만 안다. 일반 문서 변환은
+     * 기본값 [LlmCallPurpose.CONVERT] 를 그대로 쓰고, 1차 호출은 `convert`, 조건부 보정 호출은
+     * `repair` 로 갈린다. **재변환은 다르다** — `ReconvertUnitService` 가 이 메서드를
+     * [LlmCallPurpose.RECONVERT] 로 직접 부르면, 1차 호출과(있었다면) 그 보정 호출 **둘 다**
+     * `reconvert` 로 기록된다. 대안(호출자가 반환된 `ConversionUsage.calls` 를 사후에 재라벨링)도
+     * 가능했지만, 그러면 「이 호출이 어느 라벨인가」를 판정하는 로직이 `Pass`(호출 순서를 아는
+     * 곳)와 호출자(라벨을 아는 곳) 둘로 쪼개진다 — 재변환의 보정 호출까지 `repair` 로 잘못 세는
+     * 조용한 버그가 그 이음매에서 생기기 쉽다. 매개변수 하나로 `Pass` 안에서 완결하는 쪽이 더 작다.
+     *
+     * **2026-09-07 정정: PR #58 로 개인정보 마스킹이 제거됐다.** 이전에는 재변환이 문서 전체를
+     * 다시 마스킹하지 않으려고 이미 마스킹된 입력을 받는 `convertMasked` 진입점이 따로 있었다.
+     * 마스킹 자체가 사라져 그 구분이 필요 없어졌고, 모든 호출자가 이 메서드 하나로 합쳐졌다.
      */
     fun convert(
         source: String,
         options: LlmOptions = defaultOptions,
         dictionaryContext: String? = null,
-    ): ConversionResult = convertMasked(maskText(source), options, dictionaryContext)
-
-    /**
-     * 재변환 전용 진입점 — 호출자가 이미 마스킹을 마친 [masking] 을 그대로 쓴다.
-     * **다시 마스킹하지 않는다** (`docs/plans/2026-09-04-p0-4-paragraph-mapping-reconversion.md`
-     * §4 결정 3). 재변환 서비스가 문서 전체를 `maskText` 로 한 번 마스킹한 뒤
-     * `maskedUnitOf` 로 한 단위만 잘라 여기로 넘긴다 — 그래야 그 단위의 자리표시자 번호가
-     * 문서 전체의 마스킹 순서를 그대로 따르고, 저장된 `segment_map` 대응표와 어긋나지 않는다.
-     *
-     * 이 지점부터는 [convert] 와 완전히 같은 경로(프롬프트·보정·채택 판정)를 탄다 — 갈라지는
-     * 것은 마스킹을 다시 하지 않는다는 점뿐이다.
-     *
-     * **[purpose] 매개변수 — 원장(U1) 라벨을 유스케이스가 결정한다.** LLM 호출 원장
-     * (`llm_calls`)은 목적을 셋(`convert`·`repair`·`reconvert`)만 안다. 일반 문서 변환은
-     * [convert] 가 기본값 [LlmCallPurpose.CONVERT] 를 그대로 쓰고, 1차 호출은 `convert`,
-     * 조건부 보정 호출은 `repair` 로 갈린다. **재변환은 다르다** — `ReconvertUnitService` 가
-     * 이 메서드를 [LlmCallPurpose.RECONVERT] 로 직접 부르면, 1차 호출과(있었다면) 그 보정
-     * 호출 **둘 다** `reconvert` 로 기록된다. 대안(호출자가 반환된 `ConversionUsage.calls`
-     * 를 사후에 재라벨링)도 가능했지만, 그러면 「이 호출이 어느 라벨인가」를 판정하는 로직이
-     * `Pass`(호출 순서를 아는 곳)와 호출자(라벨을 아는 곳) 둘로 쪼개진다 — 재변환의 보정
-     * 호출까지 `repair` 로 잘못 세는 조용한 버그가 그 이음매에서 생기기 쉽다. 매개변수 하나로
-     * `Pass` 안에서 완결하는 쪽이 더 작다.
-     */
-    fun convertMasked(
-        masking: MaskingResult,
-        options: LlmOptions = defaultOptions,
-        dictionaryContext: String? = null,
         purpose: LlmCallPurpose = LlmCallPurpose.CONVERT,
     ): ConversionResult =
-        Pass(provider, documentIds, options, dictionaryContext, dictionary, purpose, clock).run(masking)
+        Pass(provider, documentIds, options, dictionaryContext, dictionary, purpose, clock).run(source)
 }
 
 /** 변환 1건의 실행 상태. */
@@ -115,17 +102,15 @@ private class Pass(
 
     /**
      * 보정 호출의 원장 라벨 — 일반 변환([purpose] = [LlmCallPurpose.CONVERT])은 `repair`,
-     * 재변환 맥락은 [purpose] 를 그대로 쓴다(`ConvertDocumentUseCase.convertMasked` KDoc).
+     * 재변환 맥락은 [purpose] 를 그대로 쓴다(`ConvertDocumentUseCase.convert` KDoc).
      */
     private val repairPurpose: LlmCallPurpose
         get() = if (purpose == LlmCallPurpose.CONVERT) LlmCallPurpose.REPAIR else purpose
 
-    fun run(masking: MaskingResult): ConversionResult {
-        // 사전은 **마스킹된 본문**으로 묻는다. 프롬프트에 실제로 들어가는 것이 그 본문이고,
-        // 원문으로 물으면 배선이 마스킹 규칙을 우회하는 통로가 된다.
-        val context = dictionaryContext ?: dictionary.contextFor(masking.maskedText)
-        val prompt = LlmPrompt.forConversion(masking.maskedText, documentIds, context)
-        val charCount = masking.maskedText.value.length
+    fun run(source: String): ConversionResult {
+        val context = dictionaryContext ?: dictionary.contextFor(source)
+        val prompt = LlmPrompt.forConversion(source, documentIds, context)
+        val charCount = source.length
 
         // ① 변환 패스 — 항상 정확히 1회.
         return when (val first = complete(prompt, purpose, charCount)) {
@@ -138,7 +123,7 @@ private class Pass(
             }
 
             is Outcome.Body -> {
-                finish(first.text, masking)
+                finish(first.text, source)
             }
         }
     }
@@ -149,14 +134,10 @@ private class Pass(
      */
     private fun finish(
         draft: String,
-        masking: MaskingResult,
+        source: String,
     ): ConversionResult {
-        // 보정 트리거는 **마스킹된 본문**(=실제로 LLM 에 나간 텍스트) 대 초안을 잰다 —
-        // 원문을 다시 마스킹하지 않는다(마스킹은 이 패스 시작에서 이미 한 번 끝났다).
-        val maskedSource = masking.maskedText.value
         val issues = checkStyle(draft).issues
-        val factIssues = findMissingFacts(maskedSource, draft)
-        val placeholders = masking.items.map { it.placeholder }
+        val factIssues = findMissingFacts(source, draft)
 
         // ② 보정 패스 — 기계 검출된 위반(문체 또는 사실 누락)이 있을 때만, 정확히 1회.
         //
@@ -167,17 +148,12 @@ private class Pass(
             if (issues.isEmpty() && factIssues.isEmpty()) {
                 Adoption.keep(draft)
             } else {
-                repairOnce(draft, issues, factIssues, placeholders, maskedSource)
+                repairOnce(draft, issues, factIssues, source)
             }
 
         return ConversionResult.Converted(
             easyText = ModelDraft(adopted.text),
             repaired = adopted.repaired,
-            // 기준 본문은 **채택된 최종 결과**다. 1차 결과에 대고 산출하면 사용자가 받은
-            // 본문에 멀쩡히 있는 라벨을 유실로 신고하게 되고, 목록이 비어 있지 않으면
-            // 내보내기가 409 로 막혀 정상 결과를 못 받는다(인벤토리 §3.1 (마)).
-            missingPlaceholders = placeholders.filter { it !in adopted.text },
-            maskedItems = masking.items,
             usage = usage(),
             attribution = LlmAttribution(provider.name, lastModel),
         )
@@ -188,23 +164,16 @@ private class Pass(
         draft: String,
         issues: List<SentenceIssue>,
         factIssues: List<FactIssue>,
-        placeholders: List<String>,
-        maskedSource: String,
+        source: String,
     ): Adoption {
         // ModelDraft 로 감싸는 것이 허용되는 자리다 — 값의 출처가 LLM 출력의 후처리 결과다
-        // (`Masking.kt` 「provenance 래퍼 사용 규약」).
+        // (`DocumentBody.kt` 「provenance 래퍼 사용 규약」).
         val prompt = LlmPrompt.forRepair(ModelDraft(draft), issues, factIssues, documentIds)
         val candidate =
-            (complete(prompt, repairPurpose, maskedSource.length) as? Outcome.Body)?.text
+            (complete(prompt, repairPurpose, source.length) as? Outcome.Body)?.text
                 ?: return Adoption.keep(draft)
 
-        val decision =
-            decideRepairAdoption(
-                original = draft,
-                candidate = candidate,
-                placeholders = placeholders,
-                maskedSource = maskedSource,
-            )
+        val decision = decideRepairAdoption(original = draft, candidate = candidate, source = source)
         return if (decision.accepted) Adoption(candidate, repaired = true) else Adoption.keep(draft)
     }
 
@@ -267,7 +236,7 @@ private sealed interface Outcome {
     data class Body(val text: String) : Outcome {
         /**
          * **본문을 찍지 않는다.** 여기 담긴 것은 후처리를 마친 변환 결과 전문이다
-         * (`Masking.kt` 「`toString()` 과 본문」 — 개인정보가 없어도 본문은 금지).
+         * (`DocumentBody.kt` 「`toString()` 과 본문」 — 본문은 로그 금지다).
          */
         override fun toString(): String = "Body(${text.length}자)"
     }

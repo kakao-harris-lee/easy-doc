@@ -40,7 +40,7 @@ class SensitiveToStringReachTest {
             .withFailMessage {
                 "값을 감싸는 타입 판정이 아래에 닿지 않는다: " +
                     "${KNOWN_TEXT_WRAPPERS - probes.wrapperProbes.map { it.type.simpleName }.toSet()}\n" +
-                    "  `MaskingResult` 가 여기 없으면 A-3′(value-class-first 탈락)가 되살아난 것이다."
+                    "  `ModelDraft` 가 여기 없으면 A-3′(value-class-first 탈락)가 되살아난 것이다."
             }.containsAll(KNOWN_TEXT_WRAPPERS)
     }
 
@@ -54,7 +54,7 @@ class SensitiveToStringReachTest {
                 "아래 data class 의 toString() 이 사용자 콘텐츠·개인정보를 그대로 찍는다:\n" +
                     leaking.joinToString("\n") { "  - $it" } +
                     "\n  `override fun toString()` 으로 값 대신 길이·표식을 내라 " +
-                    "(`Workspace`·`User`·`PlaceholderRestoration` 가 예시다).\n" +
+                    "(`Workspace`·`User`·`RepairPrompt` 가 예시다).\n" +
                     "  **직렬화는 가리지 않는다** — 계약이 required 로 둔 필드는 JSON 에 그대로 나가야 한다."
             }.isEmpty()
     }
@@ -68,10 +68,10 @@ class SensitiveToStringReachTest {
             .withFailMessage {
                 "아래 타입이 감싼 값을 toString() 으로 그대로 내보낸다:\n" +
                     leaking.joinToString("\n") { "  - $it" } +
-                    "\n  이 저장소는 본문·비밀을 래퍼 타입으로 감싸고(`MaskedText`·`ModelDraft`·" +
+                    "\n  이 저장소는 본문·비밀을 래퍼 타입으로 감싸고(`ModelDraft`·" +
                     "`ReviewedBody`·`Secret`), **감싼 쪽이 가린다**는 전제로 그 필드를 든 DTO 를 안전하다고 본다.\n" +
                     "  `@JvmInline value class` 는 컴파일러가 `toString()` 을 만들어 주므로 재정의가 없으면 " +
-                    "값이 그대로 나온다 — 길이만 남기는 재정의를 붙여라(`Masking.kt` 「value class 와 toString」 절)."
+                    "값이 그대로 나온다 — 길이만 남기는 재정의를 붙여라(`DocumentBody.kt` 「value class 와 toString」 절)."
             }.isEmpty()
     }
 
@@ -333,38 +333,52 @@ class SensitiveToStringReachTest {
          * 숫자뿐, `EmailVerificationProperties`와 같은 이유로 [KNOWN_SENSITIVE_TYPES] 에
          * 넣지 않는다).
          *
-         * LLM 호출 원장 U1(계획 `docs/plans/2026-09-07-usage-ledger-and-report.md`, 2026-09-07)이
-         * **셋**을 더해 135 다(132 위에) — core `LlmCallRecord`(원장 행 하나의 호출 값 —
-         * purpose·provider·model·토큰·지연·비용·단가 스냅샷·charCount, 숫자와 벤더 식별자뿐이라
-         * 손으로 쓴 `toString()` 이 없다 — 민감 판정 토큰 어디에도 걸리지 않는다),
-         * application `LlmCallEntry`(원장 항목의 소유 문맥 — conversionId·documentId·
-         * workspaceId·userId·record·calledAt, 전부 식별자·시각이라 같은 이유로 가리지
-         * 않는다), infrastructure `ModelPricing`(`easydoc.llm.pricing.models.<model-id>`
-         * 설정 바인딩 — `LlmPricingProperties` 와 같은 필드 모양의 운영 단가값이라
+         * 마스킹 제거(제품 결정, 2026-09-07 — 공공 배포 문서에는 개인정보가 없다)가
+         * **여섯**을 없애 126 이다(132 아래) — core `MaskedText`(value class)·
+         * `MaskingResult`·`MaskedItem`·`PlaceholderRestoration`(data class 셋),
+         * core.document `MaskedItemView`, api `MaskedItemResponse`. 마스킹 개념 자체가
+         * 코드에서 사라졌으므로 [KNOWN_SENSITIVE_TYPES]·[KNOWN_TEXT_WRAPPERS] 에서도
+         * 함께 뺐다.
+         *
+         * P0-4 S8-1 표·목록 구조 힌트(계획 §1.1,
+         * `docs/plans/2026-09-06-p0-4-structure-hints.md`)가 **하나**를 더해 127 이다(마스킹
+         * 제거 126 위에) — core `UnitRun`(`kind`·`startIndex`·`endIndex` 셋뿐, 민감 토큰과
+         * 무관한 색인 값이다 — `Anchor`·`Breakpoint`·`SegmentUnit` 과 같은 판단으로
          * [KNOWN_SENSITIVE_TYPES] 에 넣지 않는다).
          *
-         * 사용량 집계 U2(같은 계획, 2026-09-07, 2026-09-08 리뷰로 청구 근거 정정)가
-         * **여덟**을 더해 143 이다(135 위에) — application `PurposeUsage`·`WorkspaceUsage`·
+         * **2026-09-07 병합(usage-ledger → main).** LLM 호출 원장 U1(계획
+         * `docs/plans/2026-09-07-usage-ledger-and-report.md`)이 **셋**을 더해 130 이다(구조
+         * 힌트 127 위에) — core `LlmCallRecord`(원장 행 하나의 호출 값 — purpose·provider·
+         * model·토큰·지연·비용·단가 스냅샷·charCount, 숫자와 벤더 식별자뿐이라 손으로 쓴
+         * `toString()` 이 없다 — 민감 판정 토큰 어디에도 걸리지 않는다), application
+         * `LlmCallEntry`(원장 항목의 소유 문맥 — conversionId·documentId·workspaceId·
+         * userId·record·calledAt, 전부 식별자·시각이라 같은 이유로 가리지 않는다),
+         * infrastructure `ModelPricing`(`easydoc.llm.pricing.models.<model-id>` 설정
+         * 바인딩 — `LlmPricingProperties` 와 같은 필드 모양의 운영 단가값이라
+         * [KNOWN_SENSITIVE_TYPES] 에 넣지 않는다).
+         *
+         * 사용량 집계 U2(같은 계획, 2026-09-08 리뷰로 청구 근거 정정)가 **여덟**을 더해
+         * 138 이다(130 위에) — application `PurposeUsage`·`WorkspaceUsage`·
          * `UsageQueryService.Period`, infrastructure `UsageProperties`·
          * `JdbcUsageReadRepository.DocumentTotals`·`.CallTotals`, api
          * `WorkspaceUsageResponse`·`PurposeUsageItemResponse`. (`OwnedWorkspaceUsage`는
          * U2가 쓰지 않는 죽은 코드라 리뷰로 걷어냈다 — U3가 실제로 필요한 모양을 새로
          * 정의한다.)
          *
-         * 운영 리포트 U3(같은 계획 §3, 2026-09-07)가 **둘**을 더해 145 다(143 위에) —
-         * application `UsageReportRow`·`UsageReport`. `UsageQueryService.Period`(사설
-         * nested data class)는 U2·U3가 함께 쓰는 `UsagePeriod`(같은 패키지 최상위 data
-         * class)로 뽑히며 이름만 바뀌었으므로 순증감 0 — 제거 1 + 추가 1이다.
-         * `UsageReportRepository`(인터페이스)·`UsageReportService`(일반 class)·
-         * `JdbcUsageReportRepository`(내부 사설 data class 없음, `ResultSet`을 바로
-         * `UsageReportRow`로 매핑)는 `data`/`value class`가 아니라 세지 않는다.
-         * `UsageReportRow`는 `ownerEmail`(`email` 토큰)·`workspaceName`(`name` 토큰) 두
-         * 필드가 민감 판정에 걸려 `toString()`을 손으로 써 가린다 — `User`·`Workspace`와
-         * 같은 규약. `UsageReport.csv`는 이름이 토큰에 걸리지 않아 자동 판정 밖이지만,
-         * 소유자 이메일·워크스페이스 이름을 그대로 담은 CSV 본문이라 예방적으로 길이만
-         * 남기는 `toString()`을 함께 붙였다.
+         * 운영 리포트 U3(같은 계획 §3)가 **둘**을 더해 140 이다(138 위에) — application
+         * `UsageReportRow`·`UsageReport`. `UsageQueryService.Period`(사설 nested data
+         * class)는 U2·U3가 함께 쓰는 `UsagePeriod`(같은 패키지 최상위 data class)로 뽑히며
+         * 이름만 바뀌었으므로 순증감 0 — 제거 1 + 추가 1이다. `UsageReportRepository`
+         * (인터페이스)·`UsageReportService`(일반 class)·`JdbcUsageReportRepository`(내부
+         * 사설 data class 없음, `ResultSet`을 바로 `UsageReportRow`로 매핑)는
+         * `data`/`value class`가 아니라 세지 않는다. `UsageReportRow`는 `ownerEmail`
+         * (`email` 토큰)·`workspaceName`(`name` 토큰) 두 필드가 민감 판정에 걸려
+         * `toString()`을 손으로 써 가린다 — `User`·`Workspace`와 같은 규약.
+         * `UsageReport.csv`는 이름이 토큰에 걸리지 않아 자동 판정 밖이지만, 소유자
+         * 이메일·워크스페이스 이름을 그대로 담은 CSV 본문이라 예방적으로 길이만 남기는
+         * `toString()`을 함께 붙였다.
          */
-        const val EXPECTED_SOURCE_DECLARATIONS = 145
+        const val EXPECTED_SOURCE_DECLARATIONS = 140
 
         /** 민감 판정이 반드시 닿아야 하는 타입 — 바닥이다. */
         val KNOWN_SENSITIVE_TYPES =
@@ -374,8 +388,6 @@ class SensitiveToStringReachTest {
                 "SentenceIssue",
                 "RepairPrompt",
                 "LlmCompletion",
-                "PlaceholderRestoration",
-                "MaskingResult",
                 "Body",
                 "Adoption",
                 "SignupRequest",
@@ -389,7 +401,6 @@ class SensitiveToStringReachTest {
         /** 값을 감싸는 타입 판정이 반드시 닿아야 하는 것 — 역시 바닥이다. */
         val KNOWN_TEXT_WRAPPERS =
             listOf(
-                "MaskedText",
                 "ModelDraft",
                 "ReviewedBody",
                 "Secret",

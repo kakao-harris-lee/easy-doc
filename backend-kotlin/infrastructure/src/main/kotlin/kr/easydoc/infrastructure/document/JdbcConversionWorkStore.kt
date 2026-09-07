@@ -8,13 +8,10 @@ import kr.easydoc.application.conversion.LlmAttribution
 import kr.easydoc.core.crypto.EncryptedContent
 import kr.easydoc.core.document.ConversionStatus
 import org.springframework.jdbc.core.simple.JdbcClient
-import tools.jackson.databind.json.JsonMapper
 import java.util.UUID
 
 /** worker 가 `conversions`·`documents` 를 읽고 결과를 쓴다. */
 class JdbcConversionWorkStore(private val jdbc: JdbcClient) : ConversionWorkStore {
-    private val json = JsonMapper.builder().build()
-
     override fun loadForProcessing(conversionId: UUID): ConversionWorkItem? =
         jdbc
             .sql(
@@ -69,8 +66,6 @@ class JdbcConversionWorkStore(private val jdbc: JdbcClient) : ConversionWorkStor
                 UPDATE conversions
                 SET status = :done,
                     easy_text_encrypted = :easyText,
-                    masked_items_encrypted = :maskedItems,
-                    missing_placeholders = CAST(:placeholders AS jsonb),
                     encryption_scheme = :scheme,
                     key_version = :keyVersion,
                     model = :model,
@@ -86,8 +81,6 @@ class JdbcConversionWorkStore(private val jdbc: JdbcClient) : ConversionWorkStor
             .param("pending", ConversionStatus.PENDING.wireName)
             .param("processing", ConversionStatus.PROCESSING.wireName)
             .param("easyText", write.easyText.bytes)
-            .param("maskedItems", write.maskedItems.bytes)
-            .param("placeholders", labelsJson(write.missingPlaceholders))
             .param("scheme", write.easyText.scheme)
             .param("keyVersion", write.easyText.keyVersion)
             .param("model", write.attribution.model)
@@ -138,12 +131,6 @@ class JdbcConversionWorkStore(private val jdbc: JdbcClient) : ConversionWorkStor
             .param("pending", ConversionStatus.PENDING.wireName)
             .param("processing", ConversionStatus.PROCESSING.wireName)
             .update() > 0
-
-    private fun labelsJson(labels: List<String>): String {
-        val array = json.createArrayNode()
-        labels.forEach { array.add(it) }
-        return json.writeValueAsString(array)
-    }
 
     private companion object {
         /** 계약 `ConversionResponse.failure_code.maxLength`. */

@@ -9,13 +9,10 @@ import kr.easydoc.core.crypto.PlainBody
 import kr.easydoc.core.crypto.PlainBytes
 import kr.easydoc.core.document.Conversion
 import kr.easydoc.core.document.ConversionStatus
-import kr.easydoc.core.document.MaskedItemView
 import kr.easydoc.core.document.ReflectionOutcome
 import kr.easydoc.core.document.SourceFormat
 import kr.easydoc.core.easyread.ExportFile
 import kr.easydoc.core.easyread.exportContentLines
-import kr.easydoc.core.privacy.MaskCategory
-import kr.easydoc.core.security.Secret
 import kr.easydoc.core.segment.SegmentMap
 import java.time.Instant
 import java.util.UUID
@@ -360,13 +357,12 @@ internal class FakeConversionRepository(
         return lockedRow && columns
     }
 
-    /** 세 열이 행에 있는 그대로인가 — `IS NOT DISTINCT FROM` 셋과 같다(`null` 도 같으면 참). */
+    /** 두 열이 행에 있는 그대로인가 — `IS NOT DISTINCT FROM` 둘과 같다(`null` 도 같으면 참). */
     private fun sameColumns(
         row: ConversionCiphertexts,
         expected: ConversionCiphertexts,
     ): Boolean =
         row.easyText == expected.easyText &&
-            row.maskedItems == expected.maskedItems &&
             row.editedText == expected.editedText
 
     /** 재변환 호출 예산 — conversionId → (reserved, used). 소유 술어는 [owned] 를 그대로 묻는다. */
@@ -475,20 +471,6 @@ internal class FakeConversionFeedbackRepository(private val transaction: Recordi
 
     private companion object {
         const val ROTATION_PORT_MESSAGE = "피드백 저장 경로가 회전 포트를 부르면 안 된다"
-    }
-}
-
-/** 대응표 읽기 대역. 형식은 한 줄에 자리표시자 하나다 — 실물 JSON 을 흉내 내지 않는다. */
-internal class FakeMaskedItemReader : MaskedItemReader {
-    val decoded = mutableListOf<PlainBody>()
-
-    override fun decode(body: PlainBody): List<MaskedItemView> {
-        decoded += body
-        return body.value
-            .lineSequence()
-            .filter { it.isNotBlank() }
-            .map { MaskedItemView(MaskCategory.RRN, it, Secret("가린값")) }
-            .toList()
     }
 }
 

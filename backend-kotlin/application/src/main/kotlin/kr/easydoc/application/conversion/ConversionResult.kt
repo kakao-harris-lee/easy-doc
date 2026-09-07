@@ -1,7 +1,6 @@
 package kr.easydoc.application.conversion
 
 import kr.easydoc.core.llm.LlmCallRecord
-import kr.easydoc.core.privacy.MaskedItem
 import kr.easydoc.core.privacy.ModelDraft
 
 /** 변환이 실패한 종류. */
@@ -61,15 +60,12 @@ sealed interface ConversionResult {
     class Converted(
         val easyText: ModelDraft,
         val repaired: Boolean,
-        val missingPlaceholders: List<String>,
-        val maskedItems: List<MaskedItem>,
         override val usage: ConversionUsage,
         override val attribution: LlmAttribution,
     ) : ConversionResult {
-        /** 본문은 길이만, 대응표는 건수만 남긴다. */
+        /** 본문은 길이만 남긴다. */
         override fun toString(): String =
             "Converted(easyText=${easyText.value.length}자, repaired=$repaired, " +
-                "missingPlaceholders=${missingPlaceholders.size}, maskedItems=${maskedItems.size}, " +
                 "attribution=$attribution, usage=$usage)"
     }
 

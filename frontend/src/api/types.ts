@@ -167,9 +167,6 @@ export interface DocumentCreatedResponse {
  *
  * 소유자만 볼 수 있고, 남의 것·없는 것·보관 기간이 지나 파기된 것은 모두 404다.
  * 값은 문서 등록 시점에 확정돼 변하지 않으므로 화면은 **한 번만** 가져온다.
- *
- * `source_text`에는 **마스킹 전 개인정보가 그대로 들어 있을 수 있다.** 화면에 그리는
- * 것 외에 저장·로그·분석 이벤트 어디로도 보내지 않는다.
  */
 export interface DocumentSourceResponse {
   document_id: string
@@ -179,19 +176,12 @@ export interface DocumentSourceResponse {
   source_text: string
 }
 
-/** 검수 화면에 보여줄 마스킹 항목. original은 가려졌던 실제 값이다. */
-export interface MaskedItemResponse {
-  category: string
-  placeholder: string
-  original: string
-}
-
 /**
  * 쉬운 글 단위 하나가 원본 단위에 대응한다는 판정의 신뢰도. 계약
  * `components/schemas/SegmentConfidence`.
  *
- * `high`는 다시 쓰기를 견뎌 살아남는 앵커(마스킹 자리표시자·숫자·날짜·시각·금액·백분율·
- * 연락처·URL)로 뒷받침된 대응이다. `low`는 앵커가 없어 순서 비례 보간으로만 나온
+ * `high`는 다시 쓰기를 견뎌 살아남는 앵커(숫자·날짜·시각·금액·백분율·연락처·URL)로
+ * 뒷받침된 대응이다. `low`는 앵커가 없어 순서 비례 보간으로만 나온
  * 추정이다 — 화면은 `high`만 대응으로 주장하고 `low`는 「대응 확인 불가」로 표시한다.
  */
 export type SegmentConfidence = 'high' | 'low'
@@ -252,7 +242,7 @@ export interface ConversionResponse {
   /**
    * `export_format`이 `null`이고 사용자가 고를 수 있는 형식이 있을 때만 비어 있지 않은
    * 배열이다. 그 밖에는(`export_format`이 값을 냈거나, `null`이지만 고를 형식도 없을
-   * 때) 빈 배열이다 — `masked_items`와 같은 규칙으로 `null`이 아니라 `[]`다.
+   * 때) 빈 배열이다 — 「없음」은 `null`이 아니라 `[]`로 표현한다.
    *
    * 오늘 이 배열이 비어 있지 않은 원본은 PDF 하나뿐이고 값은 `['docx', 'hwpx']`다.
    * 계약 `x-export-format-derivation.choices`가 정본이다.
@@ -277,8 +267,6 @@ export interface ConversionResponse {
    * 이상을 말하지 않는다.
    */
   feedback_submitted_at: string | null
-  masked_items: MaskedItemResponse[]
-  missing_placeholders: string[]
   model: string | null
   provider_name: string | null
   input_tokens: number | null
@@ -290,7 +278,7 @@ export interface ConversionResponse {
    * 완료되지 않았거나 ⑵ 완료됐지만 원문·본문 중 하나를 서버가 지금 읽을 수 없다는
    * 뜻이다 — 사유 필드를 따로 두지 않는다. `status`와 `easy_text`가 이미 사유를 말한다.
    *
-   * **서버에 저장되지 않는다.** 매 조회마다 (원문을 마스킹한 것) 대
+   * **서버에 저장되지 않는다.** 매 조회마다 원문 대
    * (`edited_text ?? easy_text`)에서 순수 함수로 유도한다 — 그래서 에디터에서 텍스트를
    * 수정한 뒤에는 이 응답이 낡는다. 화면은 저장(PUT) 후 새 응답이 올 때까지, 또는
    * 문단 나누기·합치기 같은 구조 변화에서만 클라이언트가 국소적으로 재계산해도 된다

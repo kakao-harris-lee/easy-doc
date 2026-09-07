@@ -14,7 +14,7 @@ import java.util.UUID
  * 창이 생긴다 — 이 문 하나가 원자적이다.
  *
  * **이 표는 [kr.easydoc.core.crypto.EncryptedField] 밖이다.** `llm_calls` 가 담는 열은
- * 숫자와 이름(provider·model 식별자)뿐이라 암호화 대상이 아니다(V12 머리주석) — 그래서
+ * 숫자와 이름(provider·model 식별자)뿐이라 암호화 대상이 아니다(V14 머리주석) — 그래서
  * `OwnershipPredicateGuardTest`·`EnvelopeColumnWriteGuardTest`(둘 다
  * [kr.easydoc.core.crypto.EncryptedField] 가 아는 표만 훑는다) 인구조사 대상도 아니다.
  */

@@ -2,6 +2,8 @@ package kr.easydoc.infrastructure.ingest
 
 import kr.easydoc.core.document.SourceFormat
 import kr.easydoc.core.exceptions.DocumentExtractionException
+import kr.easydoc.core.segment.SourceStructure
+import kr.easydoc.core.segment.UnitKind
 
 /** 블록(문단 · 표 셀 · 페이지 · 구역) 텍스트를 정규화해 개행 하나로 잇는다. */
 internal class ExtractedTextBuilder(
@@ -10,13 +12,23 @@ internal class ExtractedTextBuilder(
 ) : BlockSink {
     private val builder = StringBuilder()
 
-    /** 블록 하나를 더한다. 줄 단위로 좌우 공백을 털고 빈 줄을 버린다. */
-    override fun add(block: String) {
+    /**
+     * 유지되는 줄마다 하나씩 쌓는 종류 — [add] 가 버리는 빈 줄은 여기 들어오지 않으므로
+     * 크기가 언제나 [build] 결과의 줄 수와 같다(표·목록 구조 힌트 계획 §1.2).
+     */
+    private val kinds = mutableListOf<UnitKind>()
+
+    /** 블록 하나를 더한다. 줄 단위로 좌우 공백을 털고 빈 줄을 버린다. 남는 줄마다 [kind] 를 붙인다. */
+    override fun add(
+        block: String,
+        kind: UnitKind,
+    ) {
         for (line in block.lineSequence()) {
             val trimmed = line.trim()
             if (trimmed.isEmpty()) continue
             if (builder.isNotEmpty()) builder.append('\n')
             builder.append(trimmed)
+            kinds += kind
             ensureWithinLimit(builder.length.toLong())
         }
     }
@@ -33,6 +45,9 @@ internal class ExtractedTextBuilder(
     /** 이어 붙인 결과. */
     fun build(): String = builder.toString()
 
+    /** [build] 결과의 줄마다 하나씩 붙은 종류 — 크기가 [build] 결과의 줄 수와 같다. */
+    fun structure(): SourceStructure = SourceStructure(kinds.toList())
+
     private fun ensureWithinLimit(measured: Long) {
         if (measured <= MAX_EXTRACTED_CHARS) return
         ExtractionFailureLog.record(format, uploadSize, "extracted_too_long")
@@ -40,9 +55,25 @@ internal class ExtractedTextBuilder(
     }
 }
 
+/**
+ * 이어 붙은 본문과, 그 줄마다 하나씩 붙은 [SourceStructure] — [ExtractedTextBuilder.build] +
+ * [ExtractedTextBuilder.structure] 를 한 값으로 묶는다(표·목록 구조 힌트 계획 §1.2).
+ */
+internal class ExtractionOutcome(
+    val text: String,
+    val structure: SourceStructure,
+) {
+    /** 길이만 남긴다. 본문은 나가지 않는다. */
+    override fun toString(): String = "ExtractionOutcome(${text.length}자, $structure)"
+}
+
 /** 블록을 받아 가는 곳. 파서는 **다 모은 뒤 넘기지 않고** 이 포트로 흘려보낸다. */
 internal interface BlockSink {
-    fun add(block: String)
+    /** [kind] 기본값은 [UnitKind.BODY] — 구조를 모르는 호출자는 종전처럼 한 인자로 부른다. */
+    fun add(
+        block: String,
+        kind: UnitKind = UnitKind.BODY,
+    )
 
     fun ensureRoomFor(pendingChars: Int)
 }
@@ -60,7 +91,11 @@ internal class BlockList(
 
     val blocks: List<String> get() = collected
 
-    override fun add(block: String) {
+    /** 종류는 받지 않는다 — 이 sink 는 원본과 블록 단위로 대조하는 오라클이고 구조를 재지 않는다. */
+    override fun add(
+        block: String,
+        kind: UnitKind,
+    ) {
         ensureRoomFor(block.length)
         totalChars += block.length
         collected += block

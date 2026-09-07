@@ -12,6 +12,7 @@ import kr.easydoc.application.document.ConversionQueryService
 import kr.easydoc.application.document.ConversionQueue
 import kr.easydoc.application.document.ConversionRepository
 import kr.easydoc.application.document.ConversionReviewService
+import kr.easydoc.application.document.DefaultSegmentMapDerivation
 import kr.easydoc.application.document.DocumentOriginalRepository
 import kr.easydoc.application.document.DocumentRepository
 import kr.easydoc.application.document.DocumentService
@@ -19,8 +20,6 @@ import kr.easydoc.application.document.DocumentSourceService
 import kr.easydoc.application.document.DocumentStorage
 import kr.easydoc.application.document.DocumentTextExtractor
 import kr.easydoc.application.document.EnvelopeRotation
-import kr.easydoc.application.document.MaskedItemReader
-import kr.easydoc.application.document.MaskedSegmentMapDerivation
 import kr.easydoc.application.document.OriginalReflection
 import kr.easydoc.application.document.OriginalStructureReflector
 import kr.easydoc.application.document.SealedStores
@@ -68,10 +67,6 @@ class DocumentConfiguration {
     /** 사유는 클래스 KDoc 의 「`WorkspaceLookup` 빈이 따로 있는 이유」. */
     @Bean
     fun workspaceLookup(jdbcClient: JdbcClient): WorkspaceLookup = JdbcWorkspaceLookup(jdbcClient)
-
-    /** 마스킹 대응표 코덱. 읽기·쓰기 포트는 이 한 빈이 모두 만족한다. */
-    @Bean
-    fun maskedItemCodec(): MaskedItemCodec = MaskedItemCodec()
 
     /** 업로드가 한 트랜잭션에서 쓰는 네 저장소. 묶는 사유는 [DocumentStorage] KDoc. */
     @Bean
@@ -149,7 +144,7 @@ class DocumentConfiguration {
      * (계획 §10.2 결정 1). 둘로 나누면 화면이 보여 준 지도와 파일에 적용된 지도가 갈릴 수 있다.
      */
     @Bean
-    fun segmentMapDerivation(cipher: ContentCipher): SegmentMapDerivation = MaskedSegmentMapDerivation(cipher = cipher)
+    fun segmentMapDerivation(cipher: ContentCipher): SegmentMapDerivation = DefaultSegmentMapDerivation(cipher = cipher)
 
     /** 변환 조회 유스케이스. */
     @Suppress("LongParameterList")
@@ -157,7 +152,6 @@ class DocumentConfiguration {
     fun conversionQueryService(
         conversions: ConversionRepository,
         cipher: ContentCipher,
-        maskedItems: MaskedItemReader,
         original: OriginalReflection,
         documents: DocumentRepository,
         segmentMapDerivation: SegmentMapDerivation,
@@ -166,7 +160,6 @@ class DocumentConfiguration {
         ConversionQueryService(
             conversions = conversions,
             cipher = cipher,
-            maskedItems = maskedItems,
             original = original,
             documents = documents,
             segmentMapDerivation = segmentMapDerivation,

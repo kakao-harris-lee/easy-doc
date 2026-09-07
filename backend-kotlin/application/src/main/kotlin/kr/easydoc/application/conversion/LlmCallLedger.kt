@@ -5,7 +5,7 @@ import java.time.Instant
 import java.util.UUID
 
 /**
- * LLM 호출 원장(`llm_calls`, V12) 한 행에 실릴 값 — [record] 가 호출 자체의 값이고
+ * LLM 호출 원장(`llm_calls`, V14) 한 행에 실릴 값 — [record] 가 호출 자체의 값이고
  * 나머지는 그 호출이 일어난 문맥이다.
  *
  * **쓰는 시점**에는 [conversionId]·[documentId]·[workspaceId]·[userId]·[documentCharCount]

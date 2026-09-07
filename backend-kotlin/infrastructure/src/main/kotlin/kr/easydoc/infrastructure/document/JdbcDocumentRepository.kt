@@ -9,6 +9,7 @@ import kr.easydoc.core.document.Document
 import kr.easydoc.core.document.DocumentListing
 import kr.easydoc.core.document.SourceFormat
 import kr.easydoc.core.exceptions.StorageException
+import kr.easydoc.core.segment.SourceStructure
 import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.jdbc.core.simple.JdbcClient
 import java.sql.ResultSet
@@ -42,6 +43,7 @@ class JdbcDocumentRepository(private val jdbc: JdbcClient) : DocumentRepository 
                 .param("scheme", sourceText.scheme)
                 .param("keyVersion", sourceText.keyVersion)
                 .param("charCount", draft.charCount)
+                .param("sourceUnitKinds", draft.structure.encode())
                 .query { rs, _ -> toDocument(rs) }
                 .single()
         } catch (failure: DataIntegrityViolationException) {
@@ -88,7 +90,7 @@ class JdbcDocumentRepository(private val jdbc: JdbcClient) : DocumentRepository 
         jdbc
             .sql(
                 """
-                SELECT id, source_format, char_count, workspace_id,
+                SELECT id, source_format, char_count, workspace_id, source_unit_kinds,
                        source_text_encrypted, encryption_scheme, key_version
                 FROM documents
                 WHERE id = :id AND user_id = :ownerId
@@ -207,6 +209,8 @@ class JdbcDocumentRepository(private val jdbc: JdbcClient) : DocumentRepository 
                     keyVersion = rs.getInt("key_version"),
                 ),
             workspaceId = rs.getObject("workspace_id", UUID::class.java),
+            // `null` 은 이 조각 이전에 만든 문서다 — 백필하지 않는다(계획 §1.2).
+            structure = rs.getString("source_unit_kinds")?.let { SourceStructure.decode(it) },
         )
 
     private fun toListing(rs: ResultSet): DocumentListing {
@@ -229,9 +233,9 @@ class JdbcDocumentRepository(private val jdbc: JdbcClient) : DocumentRepository 
             """
             INSERT INTO documents
                 (id, user_id, workspace_id, title, source_format, source_text_encrypted,
-                 encryption_scheme, key_version, char_count)
+                 encryption_scheme, key_version, char_count, source_unit_kinds)
             VALUES (:id, :ownerId, :workspaceId, :title, :sourceFormat, :sourceText,
-                    :scheme, :keyVersion, :charCount)
+                    :scheme, :keyVersion, :charCount, :sourceUnitKinds)
             RETURNING id, title, source_format, char_count, created_at, retention_expires_at
             """.trimIndent()
 

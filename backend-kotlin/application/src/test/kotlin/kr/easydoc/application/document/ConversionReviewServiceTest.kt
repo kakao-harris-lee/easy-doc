@@ -159,10 +159,10 @@ class ConversionReviewServiceTest {
     }
 
     @Test
-    @DisplayName("행이 **이미 쓰기 세대**면 초안·대응표는 읽은 바이트 그대로 되쓴다 — 그래야 초안 보존을 바이트로 잰다")
-    fun `같은 세대면 나머지 두 열이 그대로다`() {
+    @DisplayName("행이 **이미 쓰기 세대**면 초안은 읽은 바이트 그대로 되쓴다 — 그래야 초안 보존을 바이트로 잰다")
+    fun `같은 세대면 나머지 열이 그대로다`() {
         val world = World()
-        val conversionId = world.seedDone(draft = DRAFT, maskedTable = TABLE)
+        val conversionId = world.seedDone(draft = DRAFT)
         val locked =
             world.conversions.lockedForReview
                 .getValue(OWNER to conversionId)
@@ -177,15 +177,14 @@ class ConversionReviewServiceTest {
         assertThat(written.easyText)
             .withFailMessage("행이 이미 쓰기 세대인데 초안을 다시 봉인했다 — 암호문이 바뀌면 「덮어쓰지 않았다」를 바이트로 못 잰다")
             .isSameAs(locked.ciphertexts.easyText)
-        assertThat(written.maskedItems).isSameAs(locked.ciphertexts.maskedItems)
         assertThat(written.editedText).isNotNull()
     }
 
     @Test
-    @DisplayName("행 세대가 **뒤처져 있으면** 세 열을 전부 쓰기 세대로 올리고 평문 셋이 보존된다 — 옛 키로 쓰지 않는다")
+    @DisplayName("행 세대가 **뒤처져 있으면** 두 열을 전부 쓰기 세대로 올리고 평문 둘이 보존된다 — 옛 키로 쓰지 않는다")
     fun `세대가 뒤처지면 행 전체를 올린다`() {
         val world = World(writeKeyVersion = NEXT_KEY_VERSION)
-        val conversionId = world.seedDone(draft = DRAFT, maskedTable = TABLE, keyVersion = 1)
+        val conversionId = world.seedDone(draft = DRAFT, keyVersion = 1)
 
         world.save(conversionId, VALID)
 
@@ -195,16 +194,14 @@ class ConversionReviewServiceTest {
             .isEqualTo(NEXT_KEY_VERSION)
         listOf(
             call.updated.ciphertexts.easyText,
-            call.updated.ciphertexts.maskedItems,
             call.updated.ciphertexts.editedText,
         ).forEach {
             assertThat(it?.keyVersion)
-                .withFailMessage("세 열 중 하나가 옛 세대로 남았다 — 봉투는 행 단위라 셋이 같은 세대여야 한다")
+                .withFailMessage("두 열 중 하나가 옛 세대로 남았다 — 봉투는 행 단위라 둘이 같은 세대여야 한다")
                 .isEqualTo(NEXT_KEY_VERSION)
         }
         // 평문이 그대로여야 한다 — 재봉인이 값을 바꾸면 조용한 손상이다.
         assertThat(world.savedPlaintext(EncryptedField.CONVERSION_EASY_TEXT)).isEqualTo(DRAFT)
-        assertThat(world.savedPlaintext(EncryptedField.CONVERSION_MASKED_ITEMS)).isEqualTo(TABLE)
     }
 
     @Test
@@ -285,7 +282,6 @@ class ConversionReviewServiceTest {
 
         const val VALID = "담당자가 다듬은 문장입니다."
         const val DRAFT = "쉬운 글 초안입니다."
-        const val TABLE = "대응표 자리"
         const val NOISE = 5
         const val NEXT_KEY_VERSION = 2
 
@@ -328,10 +324,9 @@ class ConversionReviewServiceTest {
                     ConversionQueryService(
                         conversions = conversions,
                         cipher = cipher,
-                        maskedItems = FakeMaskedItemReader(),
                         original = OriginalReflection(StoredOriginalReader(originals, cipher), reflector),
                         documents = FakeQueryDocumentRepository(transaction),
-                        segmentMapDerivation = MaskedSegmentMapDerivation(cipher),
+                        segmentMapDerivation = DefaultSegmentMapDerivation(cipher),
                         transaction = transaction,
                     ),
                 transaction = transaction,
@@ -347,7 +342,6 @@ class ConversionReviewServiceTest {
         fun seedDone(
             status: ConversionStatus = ConversionStatus.DONE,
             draft: String? = null,
-            maskedTable: String? = null,
             keyVersion: Int = cipher.writeKeyVersion,
         ): UUID {
             val conversionId = UUID.randomUUID()
@@ -357,7 +351,6 @@ class ConversionReviewServiceTest {
             val ciphertexts =
                 ConversionCiphertexts(
                     seal(draft),
-                    seal(maskedTable),
                     null,
                 )
             conversions.lockedForReview[OWNER to conversionId] =
@@ -380,7 +373,6 @@ class ConversionReviewServiceTest {
                     // 검수본이 없는」 행은 실물에 존재할 수 없다. 시각은 저장이 찍는다.
                     reviewedAt = null,
                     feedbackSubmittedAt = null,
-                    missingPlaceholders = emptyList(),
                     model = null,
                     providerName = null,
                     inputTokens = null,
@@ -429,7 +421,6 @@ class ConversionReviewServiceTest {
             val column =
                 when (field) {
                     EncryptedField.CONVERSION_EASY_TEXT -> call.updated.ciphertexts.easyText
-                    EncryptedField.CONVERSION_MASKED_ITEMS -> call.updated.ciphertexts.maskedItems
                     EncryptedField.CONVERSION_EDITED_TEXT -> call.updated.ciphertexts.editedText
                     EncryptedField.DOCUMENT_SOURCE_TEXT -> error("검수 저장이 원문 열을 쓰지 않는다")
                     EncryptedField.DOCUMENT_ORIGINAL_BYTES -> error("검수 저장이 원본 파일 열을 쓰지 않는다")

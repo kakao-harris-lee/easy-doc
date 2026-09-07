@@ -86,15 +86,6 @@ class FactPreservationTest {
     }
 
     @Test
-    @DisplayName("마스킹 자리표시자는 사실이 아니다 — 스킵한다")
-    fun `자리표시자를 사실로 세지 않는다`() {
-        val source = "[[주민등록번호1]]을 확인하세요."
-        val dropped = "확인하세요."
-
-        assertThat(findMissingFacts(source, dropped)).isEmpty()
-    }
-
-    @Test
     @DisplayName("단위 없는 한 자리 숫자는 사실로 세지 않는다")
     fun `단위 없는 한 자리 숫자는 무시한다`() {
         val source = "가 3 있습니다."

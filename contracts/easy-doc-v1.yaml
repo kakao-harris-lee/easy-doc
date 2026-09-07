@@ -41,7 +41,7 @@ openapi: 3.1.0
 
 info:
   title: Easy-Read AI API
-  version: "2.20.0"
+  version: "2.21.0"
   x-baselined-at: "2026-08-12"       # 초판 기준선을 뜬 날 (동결일이 아니다)
   x-rebased-at: "2026-08-12"         # 계약의 성격을 "개선 대상"으로 다시 정의한 날
   x-source-runtime: "Python 3.12 / FastAPI (app/main.py) — 과거 참고 구현이었고 2026-08-24 저장소에서 제거됨(git 태그 pre-python-removal-20260824). 기준선 출처였을 뿐 정답이 아니었다"
@@ -67,7 +67,8 @@ info:
     `DELETE /auth/oauth/{provider}/link`가 더해져 25개, 2.19.0에서 비밀번호
     설정·재설정(backlog §1.4 다음 조각) `POST /auth/password`·
     `POST /auth/password-reset/request`·`POST /auth/password-reset/confirm`
-    셋이 더해져 28개, 2.20.0에서 워크스페이스 사용량 집계(U2,
+    셋이 더해져 28개, 2.20.0(개인정보 마스킹 전면 제거)은 오퍼레이션 추가·삭제 없이
+    기존 응답 모양만 줄여 28개 그대로였고, 2.21.0에서 워크스페이스 사용량 집계(U2,
     `docs/plans/2026-09-07-usage-ledger-and-report.md`) `GET
     /workspaces/{workspace_id}/usage`가 더해져 오늘은 29개다 —
     계획 문서의 수를 고치는 것이 아니라 **수의 정본이 이 계약**이다.
@@ -943,7 +944,7 @@ x-export-format-derivation:
     (`x-change-policy.invariants` 「소유권 은닉 404」). 409는 행을 읽은 **뒤**의 판정이라
     남의 자원에서는 404가 먼저 나가고 이 갈래에 닿지 않는다.
 
-    이 오퍼레이션의 기존 409 둘(완료 전·자리표시자 유실)도 같은 성질이다: 요청은
+    이 오퍼레이션의 기존 409(완료 전)도 같은 성질이다: 요청은
     온전한데 **이 변환의 상태**가 내보내기를 허락하지 않는다. 새 갈래 둘을 그 옆에 두면
     같은 종류의 판정이 한 상태 코드 아래 모이고, 오퍼레이션의 상태 집합은 그대로다.
 
@@ -1008,23 +1009,23 @@ x-title-policy:
     **그 조항은 폐기됐다.** 30자 목표·어절 경계·`…` 부착을 규정하는 조항은 계약 어디에도
     남지 않는다 — 한 곳이라도 남으면 그것이 이 절과 다투는 정본을 주장한다.
   rationale: |
-    **유도된 제목은 방어 둘을 동시에 우회하고, 얻는 것은 목록 화면의 편의뿐이다.**
+    **유도된 제목은 암호화 경계를 우회하고, 얻는 것은 목록 화면의 편의뿐이다.**
 
-    1. **암호화 우회** — 문서 원문은 AEAD로 봉인해 저장하는데, 그 첫 줄 조각이
-       **평문 열** `documents.title`에 복제된다. 봉인의 보호 범위가 그 조각만큼 줄고
-       DB·백업·덤프·향후 검색 표면에 전부 걸린다.
-    2. **마스킹 우회** — 마스킹은 LLM 전송 직전(워커)의 일이라 **업로드 시점에는 돌지
-       않는다.** 붙여넣기 본문 첫 줄에 주민등록번호가 있으면 그대로 평문으로 저장된다.
+    문서 원문은 AEAD로 봉인해 저장하는데, 본문 첫 줄 조각을 제목으로 유도하면 그것이
+    **평문 열** `documents.title`에 복제된다. 봉인의 보호 범위가 그 조각만큼 줄고
+    DB·백업·덤프·향후 검색 표면에 전부 걸린다 — 이 서비스가 다루는 문서 자체에
+    개인정보가 없다는 사실(제품 결정, 2026-09-07)과 무관하게, 암호화 경계를 이유 없이
+    좁히지 않는다는 원칙은 그대로다.
 
-    **파일 이름도 같은 이유로 쓰지 않는다.** `홍길동_주민등록등본.docx` 같은 이름은 그
-    자체가 개인정보이며, 이름 안의 개인정보를 걸러낼 수단이 업로드 시점에는 없다.
+    **파일 이름도 같은 이유로 쓰지 않는다.** 업로드 파일명은 사용자가 임의로 붙인
+    문자열이라 내용을 예측할 수 없고, 제목으로 그대로 쓰면 같은 평문 열 우회가 반복된다.
     이 결정은 `migration-safety-gate` **I-4**(차단 등급)의 보장
     *"파일명은 아예 저장하지 않는다"*와 **같은 계열이고 그 조항을 강화한다** —
     이제 파일 이름도 본문도 제목이 되지 않는다.
 
     **왜 사유를 계약에 적는가**: 이 계약은 「현재 동작의 스냅샷」이 아니라 요구사항이
     요구하는 인터페이스다(`x-change-policy`). 유도를 버린 사유가 여기 없으면 다음 사람이
-    **목록 편의**를 이유로 되살리고, 그때 되살아나는 것은 편의가 아니라 위 두 우회다.
+    **목록 편의**를 이유로 되살리고, 그때 되살아나는 것은 편의가 아니라 위 우회다.
   x-what-this-does-not-change: |
     **사용자가 준 제목의 처분은 그대로다.** 255자까지 자르기만 하고 거절하지 않는다
     (`x-input-limits.max_title_length`). `fallback_title`은 고정 문구라 그 상한에 닿을 일이
@@ -1573,8 +1574,8 @@ x-private-response-headers:
     - "POST /auth/password-reset/confirm"  # login과 같은 이유 — 응답 본문이 Bearer 토큰 자체다(2.19.0)
     - "GET /auth/me"                   # 이메일이 실린다
     - "GET /documents"                 # 사용자가 적어 준 제목이 실린다 (본문 유도는 폐기 — `x-title-policy`)
-    - "GET /documents/{document_id}/source"    # source_text가 **마스킹 전** 원문 그대로다 (주민등록번호·카드번호 포함)
-    - "GET /conversions/{conversion_id}"       # masked_items[].original에 실제 개인정보
+    - "GET /documents/{document_id}/source"    # source_text가 사용자가 올린 원문 그대로다
+    - "GET /conversions/{conversion_id}"       # easy_text·edited_text에 사용자 문서 본문
     - "PUT /conversions/{conversion_id}"       # GET과 같은 응답 스키마
     - "GET /conversions/{conversion_id}/export"  # 검수 후 원문이 복원될 수 있는 최종본
     - "GET /workspaces"                # 작업 공간 이름도 사용자가 적은 콘텐츠
@@ -1598,12 +1599,10 @@ x-private-response-headers:
     `PrivateHeaderFloorCensusTest`가 한다. 1.5.0에서
     `PUT /conversions/{conversion_id}/feedback`이 더해졌다: 자유 의견은 사용자가 직접 적은
     콘텐츠이고 그 응답이 그것을 그대로 되돌려 주므로 같은 규칙에 걸린다.
-    2.2.0에서 `GET /documents/{document_id}/source`가 더해졌다: **이 목록에서 개인정보가
-    가장 날것으로 실리는 자리다.** 다른 자리들은 사용자가 적어 준 콘텐츠이거나 이미
-    골라낸 항목(`masked_items`)인데, 원문은 **마스킹 전 문서 전체**라 주민등록번호·카드번호가
-    본문 안 어디에 있든 그대로 나간다. 새로 여는 범주는 아니다 — 같은 소유자에게
-    `GET /conversions/{conversion_id}`가 이미 그 값들을 `masked_items[].original`로
-    돌려주고 있고, 원문 조회는 그보다 넓은 범주를 열지 않는다.
+    2.2.0에서 `GET /documents/{document_id}/source`가 더해졌다: 사용자가 올린 문서
+    원문이 그대로 나가는 자리다. 새로 여는 범주는 아니다 — 같은 소유자에게
+    `GET /conversions/{conversion_id}`가 이미 변환 본문을 그대로 돌려주고 있고,
+    원문 조회는 그보다 넓은 범주를 열지 않는다.
     **키 이름의 `ten`은 목록이 열 자리이던 때의 안정 id다**
     (연혁은 `x-global-response-headers.x-origin-of-the-ten`).
   x-not-a-scope: |
@@ -2615,18 +2614,19 @@ paths:
         업로드 파일 자체를 내려받는 경로는 없고, 이 응답의 `char_count`는
         `DocumentListItem.char_count`와 같은 값이다(같은 열을 읽는다).
 
-        **마스킹 전 개인정보가 실린다.** 저장된 원문은 줄바꿈만 저장 시점에 통일되고
-        (CRLF·단독 CR → LF) 그 밖에는 사용자가 올린 그대로이며, 마스킹은 LLM에
-        넘기기 직전에만 적용된다 — 그래서 이 오퍼레이션이
+        **사용자가 올린 문서 원문이 그대로 실린다.** 저장된 원문은 줄바꿈만 저장 시점에
+        통일되고(CRLF·단독 CR → LF) 그 밖에는 사용자가 올린 그대로다 — 이 서비스가
+        다루는 문서는 공공기관이 이미 공개 배포한 안내문이라 개인정보를 담지 않는다(제품
+        결정, 2026-09-07). 그래도 사용자 문서 본문이라 이 오퍼레이션이
         `x-private-response-headers.applies_to`에 있고 캐시 금지 헤더가 필수다.
         **새로 여는 표면은 아니다**: 같은 소유자에게
-        `GET /conversions/{conversion_id}`가 이미 `masked_items[].original`로
-        가려졌던 실제 값을 돌려주고 있으므로, 원문 조회는 그보다 넓은 범주를 열지 않는다.
+        `GET /conversions/{conversion_id}`가 이미 `easy_text`·`edited_text`로 변환 본문을
+        돌려주고 있으므로, 원문 조회는 그보다 넓은 범주를 열지 않는다.
 
         **보존 기간(30일)이 지난 문서는 파기 전이라도 404다.** 파기는 워커 배치가 실제로
         행을 지울 때 일어나므로 만료 시각과 다음 배치 사이에 창이 열리는데, 이 응답은
-        **마스킹 전 문서 전문**이라 그 창에서 나가는 양이 다른 조회와 다르다 — 배치가 늦으면
-        master-plan §3.2의 「30일 뒤 자동 삭제」가 가장 날것인 데이터에서 먼저 깨진다.
+        **문서 전문**이라 그 창에서 나가는 양이 다른 조회보다 크다 — 배치가 늦으면
+        master-plan §3.2의 「30일 뒤 자동 삭제」가 가장 큰 데이터에서 먼저 깨진다.
         그래서 **이 오퍼레이션만** 조회 질의에 만료 술어를 함께 건다(다른 조회의 처분은
         `docs/kotlin-redevelopment-backlog.md` §1.1의 추후 개선 항목이다).
         즉시 파기된 문서도, 남의 문서도, 없는 식별자도 **같은 404다** — 넷이 구분되지 않아야
@@ -2677,14 +2677,14 @@ paths:
       summary: 변환 상태와 결과를 조회한다
       security: [{ HTTPBearer: [] }]
       description: |
-        **`masked_items[].original`에 가려졌던 실제 개인정보가 실린다** — 소유자 인증을
+        **변환된 문서 본문이 실린다** — 소유자 인증을
         통과한 조회에서만 나간다. 그래서 캐시 금지 헤더가 필수다.
 
         **보존 기간(30일)이 지난 문서의 변환은 파기 전이라도 404다.** 파기는 하루 한 번
         배치이므로(`RetentionPurgeScheduler`) 만료와 파기 사이의 창이 **최대 24시간**인데,
-        이 응답은 그 창에서 실제 주민등록번호·카드번호를 평문으로 내준다 — 노출 크기는
+        이 응답은 그 창에서 문서 본문을 그대로 내준다 — 노출 크기는
         `GET /documents/{document_id}/source`보다 작아도 **범주는 같다.**
-        완료(`done`) 전에는 `easy_text`·`edited_text`·`masked_items`가 비어 있고
+        완료(`done`) 전에는 `easy_text`·`edited_text`가 비어 있고
         상태와 `failure_code`, 그리고 **형식 셋**(`source_format`·`export_format`·
         `format_preservation`)만 나간다 — 형식 셋은 변환 결과가 아니라 문서 메타에서
         오므로 완료 여부와 무관하다(`ConversionResponse` 설명).
@@ -2806,8 +2806,7 @@ paths:
         응답을 기다리는 동안 편집했다) 클라이언트가 스스로 판단해 카드로만 보여준다 —
         서버는 그 판정에 관여하지 않는다.
 
-        **입력은 문서 전체를 마스킹한 뒤의 `source_unit_index`번째 줄이다** — 단위만
-        따로 마스킹하면 자리표시자 번호가 `segment_map`과 어긋난다. 변환 경로(1차
+        **입력은 원본 문서의 `source_unit_index`번째 줄이다.** 변환 경로(1차
         변환 → 조건부 보정 → 채택 판정)는 자동 변환과 완전히 같다 — 최대 1회 변환 +
         1회 조건부 보정.
 
@@ -2890,17 +2889,10 @@ paths:
       summary: 검수 완료 문서를 파일로 내려받는다
       security: [{ HTTPBearer: [] }]
       description: |
-        **이 응답에서만** 마스킹 자리표시자가 원문으로 복원될 수 있다 — 담당자가
-        그대로 배포할 최종 산출물이기 때문이다. 마스킹 선행 불변식의 유일한 예외이며,
-        다른 어떤 경로도 복원본을 만들지 않는다.
-
         본문 선택 규칙: 검수본이 있으면 그것이 최종본이고, 없으면 AI 초안이다
-        (`edited_text ?? easy_text`).
-
-        복원 규칙: 검수본이 있을 때만 자리표시자를 원문으로 되돌린다. 검수 없는 초안은
-        자리표시자를 그대로 둔다 — 모델이 자리를 옮기거나 위조 라벨을 넣어도 원문을
-        주입하지 않기 위해서다. 검수본에서 자리표시자가 빠져 있어도 막지 않는다(최종
-        판단은 담당자 몫 — HITL).
+        (`edited_text ?? easy_text`). 이 서비스가 다루는 문서는 공공기관이 이미 공개
+        배포한 안내문이라 개인정보를 담지 않으므로(제품 결정, 2026-09-07) 본문을 가리거나
+        되돌리는 처리는 없다 — 저장된 값을 그대로 내보낸다.
 
         **결과 형식은 서버가 원본에서 정한다** (2.0.0 — `DESIGN.md` §6.5 「들어온 형식
         그대로 나간다」). 규칙과 처분의 정본은 최상위 `x-export-format-derivation`이고
@@ -2915,24 +2907,22 @@ paths:
         — 원본 서식을 반영하는 것이 아니므로 `format_preservation`은 언제나
         `not_applicable`이다.
 
-        409가 나는 경우가 다섯이다:
+        409가 나는 경우가 넷이다:
           1. 아직 완료되지 않아 내보낼 결과가 없다
-          2. 검수본이 없는데 자리표시자가 결과에서 사라졌다 — 그 자리의 정보가 통째로
-             빠졌다는 뜻이라, 검수를 거치지 않은 초안을 그대로 배포하게 둘 수 없다.
-          3. `format`이 이 변환의 원본이 정한 형식과 다르다 (`enforcement.on_mismatch`)
-          4. **PDF 원본인데 `format`을 생략했다** (`enforcement.on_absent_with_choices`)
+          2. `format`이 이 변환의 원본이 정한 형식과 다르다 (`enforcement.on_mismatch`)
+          3. **PDF 원본인데 `format`을 생략했다** (`enforcement.on_absent_with_choices`)
              — 서버가 대신 고르지 않는다. 「내보낼 형식을 골라주세요」가 이 갈래의 문구다.
-          5. **PDF 원본인데 `format`이 `export_format_choices` 밖이다**
+          4. **PDF 원본인데 `format`이 `export_format_choices` 밖이다**
              (`enforcement.on_choice_mismatch`) — 값 집합(`ExportFormat`) 안이어도 이
              원본이 고를 수 있는 형식이 아니면 거절한다.
 
-          PDF가 아닌 원본에는 4·5가 일어나지 않는다 — `export_format_choices`가 비어
-          있으므로 `format`을 생략하면 그대로 1·2·3의 갈래를 지난다(2.0.0부터의 동작과
+          PDF가 아닌 원본에는 3·4가 일어나지 않는다 — `export_format_choices`가 비어
+          있으므로 `format`을 생략하면 그대로 1·2의 갈래를 지난다(2.0.0부터의 동작과
           같다). `choices`도 없는 원본이 생기면(오늘은 없다) 그때는 옛 `no_exportable_format`
           409가 어떤 `format` 값도·생략도 통과시키지 않는다
           (`enforcement.on_null_mapping`, `x-export-format-derivation.x-null-is-not-unknown`).
 
-        **1·2와 3·4·5의 순서**: 형식 판정이 먼저다. 3·4·5는 기다려도 바뀌지 않는 사실이고
+        **1과 2·3·4의 순서**: 형식 판정이 먼저다. 2·3·4는 기다려도 바뀌지 않는 사실이고
         1은 시간이 푸는 사실이라, 결국 거절될 요청에 「끝난 뒤에 다시 오라」고 답하면
         틀린 행동을 권하게 된다. 소유 판정(404)은 그 전부보다 먼저다.
 
@@ -2963,7 +2953,7 @@ paths:
         본문 문자열로 새 문서를 만든다. 그 갈래의 판정이 `not_applicable`이고 영구히 참이다.
 
         **보존 기간이 지난 문서의 변환은 404다** — 조회와 **같은 질의**가 그 판정을 지므로
-        두 오퍼레이션이 갈릴 수 없다. 이 응답은 자리표시자가 원문으로 복원된 최종본이라
+        두 오퍼레이션이 갈릴 수 없다. 이 응답은 검수·변환을 거친 최종본이라
         만료 창에서 나가면 안 되는 값이다.
 
         **저장된 원본을 열 수 없으면 500이다.** 텍스트 전용 파일로 조용히 대체하지
@@ -3088,16 +3078,14 @@ paths:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
         '409':
           description: |
-            내보낼 수 없는 변환이다 — 완료 전 · 자리표시자 유실 · 원본과 다른 형식 요청 ·
+            내보낼 수 없는 변환이다 — 완료 전 · 원본과 다른 형식 요청 ·
             선택지 있는 원본(PDF)에서 형식 생략·선택지 밖 요청 · 내보낼 형식 자체가 없음.
-            여섯의 구분과 순서는 `description`에 있다.
+            다섯의 구분과 순서는 `description`에 있다.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
               examples:
                 not_done: { value: { detail: "변환이 끝난 뒤에 내려받을 수 있습니다" } }
-                missing_placeholders:
-                  value: { detail: "변환에서 유실된 개인정보 표시가 있습니다 — 검수 화면에서 수정 후 내보내세요" }
                 format_mismatch:
                   value: { detail: "원본과 같은 형식으로만 내려받을 수 있습니다" }
                 export_format_choice_required:
@@ -3394,7 +3382,7 @@ paths:
         '503': { $ref: '#/components/responses/ServiceUnavailable' }
 
   # ===========================================================================
-  # 워크스페이스 사용량 집계 (2.20.0 신설, U2) — GET /workspaces/{workspace_id}/usage
+  # 워크스페이스 사용량 집계 (2.21.0 신설, U2) — GET /workspaces/{workspace_id}/usage
   # 정본: docs/plans/2026-09-07-usage-ledger-and-report.md §2 결정 5-6.
   # `documents`(등록 기준)·`llm_calls`(호출 기준, U1) 두 원장을 워크스페이스·기간으로
   # 집계한다. 크레딧 잔액·차감은 이 묶음 밖이다(§5 범위 밖) — 이 오퍼레이션은 조회뿐이다.
@@ -3566,7 +3554,7 @@ paths:
         (`"사전 조회가 꺼져 있습니다"`)로 거절한다.
 
         **`text`를 로그·메트릭에 남기지 않는다.** 검수 담당자가 지목한 문서 조각이라
-        사용자 콘텐츠다(마스킹 원칙과 같은 경계) — 운영에서 남기는 것은 개수와
+        사용자 콘텐츠다 — 운영에서 남기는 것은 개수와
         `match_kind` 분포뿐이다(계획 §3.6).
       requestBody:
         required: true
@@ -4159,14 +4147,13 @@ components:
             사용자에게 그대로 보여 줄 **영향 항목** 문구 목록(§6.5). 위 `examples`가
             실제로 나오는 문장 그대로다 — 지어낸 예시가 아니다.
 
-            **개인정보도 문서 본문도 담지 않는다.** 담을 수 있는 것은 구조 요소의 종류와
-            개수뿐이며, 그 규칙은 `missing_placeholders`가 라벨만 싣는 것과 같은 판단이다.
-            구현에서 이 문구들은 **고정 문장 + 개수**로만 만들어진다 — 문서에서 읽은
-            문자열이 끼어들 형식 인자가 하나도 없다(Kotlin
+            **문서 본문을 담지 않는다.** 담을 수 있는 것은 구조 요소의 종류와
+            개수뿐이다. 구현에서 이 문구들은 **고정 문장 + 개수**로만 만들어진다 — 문서에서
+            읽은 문자열이 끼어들 형식 인자가 하나도 없다(Kotlin
             `core/document/FormatPreservation.kt`).
 
             `not_applicable`에서는 **빈 배열**이다 — 알릴 영향 항목이 없다. `null`이 아니라
-            `[]`인 것은 `masked_items`와 같은 규칙이다. `partial`·`failed`에서는 비어
+            `[]`인 것은 응답의 다른 배열 필드와 같은 규칙이다. `partial`·`failed`에서는 비어
             있지 않다: 「일부」라고 말해 놓고 무엇이 달라지는지 말하지 않으면 사용자가
             취할 행동이 없다.
 
@@ -4417,10 +4404,10 @@ components:
             생략하면(또는 정제 후 남는 것이 없으면) **고정 문구 `제목 없음`**이다.
             **본문 첫 줄에서 유도하지 않는다** (2026-08-20 사용자 결정, `x-change-policy` G3).
             유도된 제목은 봉인된 원문의 조각을 평문 열 `documents.title`에 복제해
-            **암호화를 우회**하고, 업로드 시점에는 마스킹이 돌지 않아 **마스킹도 우회**한다 —
-            얻는 것은 목록 화면의 편의뿐이다. 정본과 전문은 **`x-title-policy`**.
+            **암호화를 우회**한다 — 얻는 것은 목록 화면의 편의뿐이다. 정본과 전문은
+            **`x-title-policy`**.
             사용자가 준 제목은 255자까지 자르기만 하고 거절하지 않는다.
-            **파일명은 제목으로 쓰지 않는다** — 파일명 자체가 개인정보일 수 있다.
+            **파일명은 제목으로 쓰지 않는다** — 임의 문자열이라 내용을 예측할 수 없다.
             (이 개정은 그 금지를 **강화한다**: 파일명도 본문도 쓰지 않는다.)
         workspace_id:
           anyOf: [{ type: string, format: uuid }, { type: 'null' }]
@@ -4463,8 +4450,8 @@ components:
             폼 값은 전부 문자열이다. 생략하면(또는 정제 후 남는 것이 없으면)
             **고정 문구 `제목 없음`**이다 — **추출한 본문에서도, `file` 파트의 파일 이름에서도
             유도하지 않는다** (2026-08-20 사용자 결정, `x-change-policy` G3).
-            **파일명은 제목으로 쓰지 않는다** — 파일명 자체가 개인정보일 수 있고
-            (`홍길동_주민등록등본.docx`), 본문 첫 줄은 암호화와 마스킹 두 방어를 우회한다.
+            **파일명은 제목으로 쓰지 않는다** — 임의 문자열이라 내용을 예측할 수 없고,
+            본문 첫 줄은 암호화 경계를 우회한다.
             붙여넣기 모드와 **같은 규칙이다**. 정본과 전문은 **`x-title-policy`**.
         workspace_id:
           type: string
@@ -4487,39 +4474,6 @@ components:
         char_count:
           type: integer
           description: 공백 포함 문자 수. 크레딧 환산(1,000자 = 1크레딧)의 기준값이다.
-
-    MaskedItemResponse:
-      type: object
-      required: [category, placeholder, original]
-      description: |
-        검수 화면에 보여줄 마스킹 항목.
-        **`original`은 가려졌던 실제 개인정보다** — 소유자 인증을 통과한 조회에서만
-        실린다. 이 필드가 있기 때문에 조회·검수 응답에 캐시 금지 헤더가 필수다.
-
-        **마스킹 범주는 2종뿐이다** (2026-08-12 사용자 결정 — `x-change-policy` G3).
-        주민등록번호·카드번호만 가린다. 전화번호·이메일·계좌번호는 **가리지 않는다** —
-        공공기관 안내문에는 담당 부서 연락처처럼 가려서는 안 되는 값이 본문에 그대로
-        들어가고, 그것을 자리표시자로 바꾸면 안내문의 쓸모가 사라진다.
-        고유식별정보(주민등록번호·외국인등록번호)와 금융 식별자(카드번호)만 남긴다.
-      properties:
-        category:
-          type: string
-          enum: ["주민등록번호", "카드번호"]
-          description: |
-            **한국어 값이다.** `MaskCategory` StrEnum의 값이 그대로 실린다 —
-            `"rrn"`·`"phone"` 같은 영문 코드가 아니다. React `ReviewEditor`가 이 값을
-            표에 **그대로 렌더링**하므로(`<td>{item.category}</td>`) 값 자체가 화면 문구다.
-            초판 스펙의 예시 `"phone"`은 어떤 구현에서도 나오지 않는 값이었다
-            (`x-change-policy` G1로 정정, 2026-08-12).
-        placeholder:
-          type: string
-          pattern: '^\[\[(주민등록번호|카드번호)[0-9]+\]\]$'
-          examples: ["[[주민등록번호1]]"]
-          description: |
-            `[[<범주><n>]]` 형식. `n`은 **범주별** 1부터의 일련번호다(전역 카운터가 아니다).
-            자리표시자는 값이지 표기 형식이 아니다 — 형태·번호·개수가 달라지면
-            내보내기 시 원문 복원이 어긋난다.
-        original: { type: string, description: 실제 개인정보 (합성 예시 없음 — 문서에 예시를 적지 않는다) }
 
     ConversionReviewRequest:
       type: object
@@ -4544,7 +4498,7 @@ components:
       required:
         [id, document_id, status, source_format, export_format, export_format_choices,
          format_preservation, easy_text, edited_text, reviewed_at, feedback_submitted_at,
-         masked_items, missing_placeholders, segment_map, model, provider_name,
+         segment_map, model, provider_name,
          input_tokens, output_tokens, failure_code]
       description: |
         변환 상태·결과. 완료 전에는 **결과 필드**가 모두 비어 있다.
@@ -4608,7 +4562,7 @@ components:
             `export_format`이 `null`이고 이 원본에 사용자가 고를 수 있는 형식이 있을 때만
             **비어 있지 않은 배열**이다 — 그 밖에는(`export_format`이 값을 냈거나, `null`
             이지만 고를 형식도 없을 때) **빈 배열**이다. `null`이 아니라 `[]`인 것은
-            `masked_items`와 같은 규칙이다 — React가 `undefined` 분기를 만들지 않는다.
+            응답의 다른 배열 필드와 같은 규칙이다 — React가 `undefined` 분기를 만들지 않는다.
 
             정본은 `x-export-format-derivation.choices[source_format]`이다. 오늘 이 배열이
             비어 있지 않은 원본은 PDF 하나뿐이고 값은 `[docx, hwpx]`다(2.6.0).
@@ -4670,22 +4624,6 @@ components:
             **제출 시각뿐이다.** 배포 의향·만족도·소요 시간·자유 의견은 여기 싣지 않는다 —
             자유 의견은 봉인해 둔 사용자 콘텐츠라 조회 응답에 나가지 않고, 그 값을 되돌려
             주는 자리는 저장 응답(`PUT /conversions/{conversion_id}/feedback`) 하나다.
-        masked_items:
-          type: array
-          items: { $ref: '#/components/schemas/MaskedItemResponse' }
-          description: |
-            `done`이 아니면 빈 배열. null이 아니다.
-            범주는 주민등록번호·카드번호 **2종뿐**이므로, 전화번호·이메일이 든 문서라도
-            이 배열이 비어 있는 것이 정상이다.
-        missing_placeholders:
-          type: array
-          items:
-            type: string
-            pattern: '^\[\[(주민등록번호|카드번호)[0-9]+\]\]$'
-          description: |
-            결과에서 사라진 자리표시자 라벨 목록. 라벨뿐이라 개인정보가 아니다.
-            비어 있지 않고 검수본도 없으면 내보내기가 409로 막힌다.
-            범주 2종만 남으므로 `[[전화번호1]]`·`[[이메일1]]` 같은 라벨은 더 이상 나오지 않는다.
         segment_map:
           anyOf:
             - { $ref: '#/components/schemas/SegmentMap' }
@@ -4696,8 +4634,8 @@ components:
             하나를 서버가 지금 읽을 수 없다는 뜻이다 — 사유 필드를 따로 두지 않는다.
             `status`와 `easy_text`가 이미 사유를 말하고, ⑵는 오늘 관측되지 않는 경합 갈래다.
 
-            **서버에 저장되지 않는다.** 매 조회마다 (원문을 문서 등록 시점과 같은 규칙으로
-            마스킹한 것) 대 (`edited_text ?? easy_text`)에서 순수 함수로 유도한다 — 검수
+            **서버에 저장되지 않는다.** 매 조회마다 (문서 원문) 대
+            (`edited_text ?? easy_text`)에서 순수 함수로 유도한다 — 검수
             저장마다 즉시 낡는 두 번째 진실을 만들지 않기 위해서다. **그래서 클라이언트가
             에디터에서 텍스트를 수정한 뒤에는 이 응답이 낡는다** — 화면은 저장(PUT) 후
             응답이 다시 오는 시점까지, 또는 자신이 가진 원문·수정본으로 **같은 규칙을 다시
@@ -4730,7 +4668,7 @@ components:
       description: |
         쉬운 글 단위 하나가 원본 단위에 대응한다는 판정의 **신뢰도**.
 
-        `high`는 다시 쓰기를 견뎌 살아남는 앵커(마스킹 자리표시자·숫자·날짜·시각·금액·
+        `high`는 다시 쓰기를 견뎌 살아남는 앵커(숫자·날짜·시각·금액·
         백분율·연락처·URL 같은 사실)로 뒷받침된 대응이다. `low`는 그런 앵커가 없어 순서
         비례 보간으로만 나온 추정이다 — 화면은 `high`만 대응으로 주장하고 `low`는 「대응을
         확인하지 못했습니다」로 표시한다(계획 §2).
@@ -4799,8 +4737,7 @@ components:
             표현·치환 비문)을 위반 0건으로 통과하고 공백만이 아닌 원본 단위의 0 기반
             색인 — **오름차순, 중복 없음**. 공백만인 단위는 통과로 세지 않는다.
 
-            **원천은 마스킹 전 원문이다** — 화면이 읽는 문단을 검사하지 LLM이 본 마스킹
-            본문을 검사하지 않는다. `source_unit_indexes`(`SegmentMapUnit`)와 같은 좌표계다
+            **원천은 문서 원문이다.** `source_unit_indexes`(`SegmentMapUnit`)와 같은 좌표계다
             (`\n`으로 쪼갠 원본 줄 색인). 저장하지 않고 매 조회마다 다시 계산한다.
 
             화면은 이 목록에 있는 행에 「이미 쉬운 글 규칙을 통과했다」 표시만 달고
@@ -4955,12 +4892,6 @@ components:
             축인 **저장 정의역**이 함께 걸린다(`x-stored-text-domain` — 텍스트로 왕복하지
             않는 값은 받지 않는다). 봉인의 귀결로 집계 스크립트는 이 값을 읽지 못한다.
 
-            **화면은 「문서 내용은 적지 마세요」 안내를 폼 안에 고정한다.** 마스킹 범주가
-            주민등록번호·카드번호 **2종뿐**이라(master-plan §3.2) 의견에 적힌 전화번호·
-            주소·이름은 어디서도 가려지지 않는다. 계약이 안내 문구까지 정하지는 않지만,
-            **그 안내가 없으면 이 필드가 마스킹을 우회하는 자리가 된다**는 것은 계약이
-            적는다 — `x-title-policy.rationale`이 같은 종류의 우회를 적어 둔 이유와 같다.
-
     ConversionFeedbackResponse:
       type: object
       required:
@@ -5076,8 +5007,7 @@ components:
         source_text:
           type: string
           description: |
-            **마스킹 전 원문 그대로다** — 저장된 값에 주민등록번호·카드번호가 들어 있으면
-            그대로 실린다(마스킹은 LLM에 넘기기 직전에만 적용된다). 이 필드가 있기 때문에
+            **사용자가 올린 문서 원문 그대로다.** 이 필드가 있기 때문에
             이 오퍼레이션에 캐시 금지 헤더가 필수다.
 
             파일 업로드였다면 **파서가 뽑아낸 텍스트**이지 원본 파일 바이트가 아니다 —
@@ -5146,7 +5076,7 @@ components:
           description: '만든 순서. **첫 번째가 기본 작업 공간이다.**'
 
     # ---------------------------------------------------------------------
-    # 워크스페이스 사용량 집계 (2.20.0 신설, U2)
+    # 워크스페이스 사용량 집계 (2.21.0 신설, U2)
     # ---------------------------------------------------------------------
     UsagePurpose:
       type: string
@@ -5365,14 +5295,14 @@ components:
 # 변경 이력
 # =============================================================================
 x-changelog:
-  - version: "2.20.0"
+  - version: "2.21.0"
     date: "2026-09-07"
     revision: "USAGE-U2-AGGREGATE"   # 사용량 가시화 U2 — 워크스페이스·기간 집계
     author: contract-keeper
     change: |
       **워크스페이스 사용량 집계 오퍼레이션을 연다.** 정본은
       `docs/plans/2026-09-07-usage-ledger-and-report.md`§2 결정 5-6 — U1(2.19.0과
-      같은 브랜치 계열에서 병행, `llm_calls` 원장 V12)이 남긴 호출 원장을 워크스페이스·
+      같은 브랜치 계열에서 병행, `llm_calls` 원장 V14)이 남긴 호출 원장을 워크스페이스·
       기간으로 묶어 화면·운영 리포트(U3)가 쓸 조회 하나를 연다. 크레딧 **차감**(잔액·
       거절)은 이 변경 단위 밖이다 — 집계가 먼저 서야 얹을 수 있다(계획 목표 문단).
 
@@ -5393,7 +5323,7 @@ x-changelog:
 
       ⑵ **스키마 3종 신설** — `WorkspaceUsageResponse`(문서·문자·크레딧·호출·토큰·
          예상 비용·비용 미상 건수·목적별 소계), `PurposeUsageItem`, `UsagePurpose`
-         (`convert`·`repair`·`reconvert` — `llm_calls.purpose`, V12와 같은 값).
+         (`convert`·`repair`·`reconvert` — `llm_calls.purpose`, V14와 같은 값).
          비용 필드는 **문자열**(부동소수 반올림 오차를 피한다)이고, 알려진 비용이
          하나도 없으면 `null`이다(0달러가 아니다 — 프로젝트 CLAUDE.md 「미설정은
          null」).
@@ -5413,7 +5343,8 @@ x-changelog:
          `/workspaces/{workspace_id}`가 하위 경로를 덮지 않아 기존 관행대로
          따로 넣는다(`export`·`feedback`·`reconvert`와 같은 이유).
 
-      ⑸ **엔드포인트 수 28 → 29.**
+      ⑸ **엔드포인트 수 28 → 29** — 2.20.0(`REMOVE-MASKING`)이 유지한 28 위에 이
+         오퍼레이션 1종을 더한다.
     ground: |
       **G1 — 사용자 요청(2026-09-07).** 「1·2·3 묶음으로 진행, 권고대로 결정」 —
       계획 §3 슬라이스 U2. 집계 경계(zone 자정, 366일 상한, 비용 미상 처리)는 같은
@@ -5424,6 +5355,50 @@ x-changelog:
       **넓히는 변경이다.** 새 오퍼레이션 1종과 새 스키마 3종뿐이고 기존 오퍼레이션의
       요청·응답은 바뀌지 않는다. ⑶의 정정은 아직 배포되지 않은 응답의 **의미**만
       바꾼다 — 필드 이름·타입·필수 여부는 그대로다.
+
+  - version: "2.20.0"
+    date: "2026-09-07"
+    revision: "REMOVE-MASKING"   # 사용자 결정 — 개인정보 마스킹 파이프라인 전면 제거
+    author: contract-keeper
+    change: |
+      **개인정보 마스킹을 계약에서 걷어낸다. 파괴적 변경이다** — `masked_items`·
+      `missing_placeholders`를 읽던 소비자는 그 필드를 더는 받지 못한다.
+
+      ⑴ **`MaskedItemResponse` 스키마를 삭제했다.** 마스킹 범주(주민등록번호·카드번호)
+         enum, `placeholder`·`missing_placeholders` pattern을 포함해 스키마 전체가
+         계약에서 사라졌다.
+      ⑵ **`ConversionResponse`에서 `masked_items`·`missing_placeholders` 두 필드를
+         제거했다.** `required` 배열에서도 함께 뺐다. 응답 필드 수는 열아홉에서
+         열일곱이 된다.
+      ⑶ **`readDocumentSource`·`readConversion`·`reconvertUnit`·`exportConversion`
+         오퍼레이션 설명에서 마스킹·자리표시자 복원에 관한 서술을 모두 걷어냈다** —
+         `exportConversion`의 409 사유 목록도 다섯에서 넷으로 준다(「검수본이 없는데
+         자리표시자가 결과에서 사라졌다」 사유가 구조적으로 사라진다).
+      ⑷ **`x-title-policy.rationale`·`ConversionFeedbackDtos.comment`·
+         `DocumentSourceResponse.source_text` 등에서 "마스킹 우회"·"마스킹 전 원문"
+         같은 서술을 걷어냈다** — 남는 근거는 암호화 우회·파일명 예측 가능성 등
+         마스킹과 무관한 것만이다.
+      ⑸ **엔드포인트 수는 28로 그대로다** — 오퍼레이션 추가·삭제가 아니라 기존
+         응답 모양을 줄인다.
+      ⑹ **`x-changelog`·`x-improvements`의 과거 항목(1.1.0 `MaskedItemResponse` 도입,
+         V2-5·V2-6 마스킹 범주 5종 → 2종 등)은 이 개정으로 고치지 않는다** — 그
+         시점의 결정을 있는 그대로 남긴 역사 기록이다.
+    ground: |
+      **G3 — 정책 결정이 바뀌었다(사용자 결정, 2026-09-07).** 이 제품이 변환하는
+      문서는 공공기관이 이미 공개 배포한 안내문이라 개인정보를 담지 않는다. 남아 있는
+      마스킹 코드는 실재하지 않는 위협을 가정한 채 계속 손이 가는 헛작업만 만든다는
+      것이 사용자의 명시적 판단이었고, 부분 제거가 아니라 전면 제거를 지시했다.
+    compatibility: |
+      **파괴적이지만 계약 밖 소비자가 없다.** 이 API를 부르는 클라이언트는
+      `frontend/`(같은 저장소) 하나뿐이고 별도 배포로 나가는 SDK나 외부 통합이 없다 —
+      그래서 major bump가 아니라 minor bump를 골랐다(`x-change-policy`에는
+      `versioning` 키가 아직 없고, 2.0.0 `version_note`가 남긴 대로 그 신설은 아직
+      별도 작업이다). React 쪽 대응은 같은 변경 단위(`frontend/`)에서 함께 간다.
+    db_migration: |
+      Flyway `V12__drop_masking_columns.sql` — `conversions.masked_items_encrypted`·
+      `conversions.missing_placeholders` 두 열을 제거한다. 두 열 모두 도메인 모델에서
+      완전히 빠졌으므로 하나만 지우면 고아 열이 남는다.
+    notified: [kotlin-implementer, parity-verifier]
 
   - version: "2.19.0"
     date: "2026-09-06"
