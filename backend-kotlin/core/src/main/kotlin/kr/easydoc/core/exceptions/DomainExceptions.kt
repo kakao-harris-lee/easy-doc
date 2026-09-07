@@ -33,6 +33,14 @@ class UploadTooLargeException(message: String) : EasyDocException(message)
 /** 요청한 리소스가 없다. */
 class NotFoundException(message: String) : EasyDocException(message)
 
+/**
+ * 관리자 권한이 필요한 오퍼레이션을 관리자가 아닌(또는 이메일 미검증인) 사용자가 불렀다 —
+ * 어드민 최소 계획 `docs/plans/2026-09-07-admin-minimum.md` §2 결정 2. 401(인증 자체가
+ * 없음)과 다르다: 토큰은 유효하고 신원도 확실하지만 **그 신원으로는 할 수 없는 일**이라
+ * [EmailNotVerifiedException]과 같은 축의 403이다.
+ */
+class AdminRequiredException(message: String) : EasyDocException(message)
+
 /** 리소스가 지금 상태에서는 받을 수 없는 요청이다 (예: 완료 전 변환에 검수 수정본 저장). */
 class ConflictException(message: String) : EasyDocException(message)
 

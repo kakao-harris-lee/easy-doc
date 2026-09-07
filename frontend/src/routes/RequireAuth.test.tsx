@@ -6,6 +6,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fetchMe, login } from '../api/auth'
 import { listDocuments } from '../api/client'
 import { getWorkspaceCredits } from '../api/credits'
+import {
+  listAdminAnnouncements,
+  listAdminInvoiceRequests,
+  listAdminWorkspaces,
+  readAdminErrors,
+} from '../api/admin'
+import { listActiveAnnouncements } from '../api/announcements'
 import { AuthProvider } from '../auth/AuthProvider'
 import { AppLayout } from '../components/AppLayout'
 import { workspaceContext, workspaceCredits } from '../test/factories'
@@ -32,6 +39,17 @@ vi.mock('../api/credits', () => ({
   getWorkspaceCredits: vi.fn(),
 }))
 
+vi.mock('../api/announcements', () => ({
+  listActiveAnnouncements: vi.fn(),
+}))
+
+vi.mock('../api/admin', () => ({
+  listAdminWorkspaces: vi.fn(),
+  listAdminInvoiceRequests: vi.fn(),
+  readAdminErrors: vi.fn(),
+  listAdminAnnouncements: vi.fn(),
+}))
+
 function renderAt(path: string) {
   return render(
     <AuthProvider>
@@ -54,6 +72,11 @@ beforeEach(() => {
   vi.mocked(fetchMe).mockReset()
   vi.mocked(listDocuments).mockResolvedValue({ items: [], limit: 20, offset: 0, has_more: false })
   vi.mocked(getWorkspaceCredits).mockReset().mockResolvedValue(workspaceCredits())
+  vi.mocked(listActiveAnnouncements).mockReset().mockResolvedValue({ items: [] })
+  vi.mocked(listAdminWorkspaces).mockReset()
+  vi.mocked(listAdminInvoiceRequests).mockReset()
+  vi.mocked(readAdminErrors).mockReset()
+  vi.mocked(listAdminAnnouncements).mockReset()
 })
 
 describe('인증 가드', () => {
@@ -82,6 +105,7 @@ describe('인증 가드', () => {
       email_verified: true,
       has_password: true,
       identities: [],
+      is_admin: false,
     })
 
     renderAt('/')
@@ -98,6 +122,7 @@ describe('인증 가드', () => {
       email_verified: true,
       has_password: true,
       identities: [],
+      is_admin: false,
     })
     renderAt('/')
 
@@ -108,5 +133,55 @@ describe('인증 가드', () => {
 
     expect(await screen.findByRole('heading', { name: '로그인' })).toBeInTheDocument()
     expect(window.localStorage.getItem('easydoc.access_token')).toBeNull()
+  })
+})
+
+describe('관리자 가드 (어드민 최소, 계약 2.25.0)', () => {
+  it('관리자가 아니면 /admin 접근을 홈으로 돌려보내고 안내한다', async () => {
+    window.localStorage.setItem('easydoc.access_token', 'valid-token')
+    vi.mocked(fetchMe).mockResolvedValue({
+      id: 'u1',
+      email: 'user@example.com',
+      email_verified: true,
+      has_password: true,
+      identities: [],
+      is_admin: false,
+    })
+
+    renderAt('/admin')
+
+    expect(await screen.findByRole('heading', { name: '문서 변환하기' })).toBeInTheDocument()
+    expect(screen.getByText('관리자 권한이 필요합니다')).toBeInTheDocument()
+    // API를 부르지 않았어야 한다 — 서버에 물어보기 전에 화면이 미리 걸러야 한다.
+    expect(vi.mocked(listAdminWorkspaces)).not.toHaveBeenCalled()
+  })
+
+  it('관리자면 /admin 화면을 보여준다', async () => {
+    window.localStorage.setItem('easydoc.access_token', 'valid-token')
+    vi.mocked(fetchMe).mockResolvedValue({
+      id: 'u1',
+      email: 'admin@example.com',
+      email_verified: true,
+      has_password: true,
+      identities: [],
+      is_admin: true,
+    })
+    vi.mocked(listAdminWorkspaces).mockResolvedValue({ items: [], page: 1, size: 20, total: 0 })
+    // 탭 넷이 전부 마운트된 채로 시작한다(`AdminPage`) — 나머지 세 탭의 조회도
+    // 마련해 둬야 한다.
+    vi.mocked(listAdminInvoiceRequests).mockResolvedValue({
+      items: [],
+      page: 1,
+      size: 20,
+      total: 0,
+    })
+    vi.mocked(readAdminErrors).mockResolvedValue({ counts: [], recent: [] })
+    vi.mocked(listAdminAnnouncements).mockResolvedValue({ items: [] })
+
+    renderAt('/admin')
+
+    expect(
+      await screen.findByRole('heading', { name: '고객·사용량·오류를 관리합니다' }),
+    ).toBeInTheDocument()
   })
 })

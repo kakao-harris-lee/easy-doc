@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fetchMe, login, oauthCallback, oauthLinkStart, oauthStart } from '../api/auth'
 import { ApiError, listDocuments } from '../api/client'
 import { getWorkspaceCredits } from '../api/credits'
+import { listActiveAnnouncements } from '../api/announcements'
 import { AuthProvider } from '../auth/AuthProvider'
 import { AppLayout } from '../components/AppLayout'
 import { workspaceContext, workspaceCredits } from '../test/factories'
@@ -36,6 +37,10 @@ vi.mock('../api/credits', () => ({
   getWorkspaceCredits: vi.fn(),
 }))
 
+vi.mock('../api/announcements', () => ({
+  listActiveAnnouncements: vi.fn(),
+}))
+
 function renderAt(path: string) {
   return render(
     <AuthProvider>
@@ -62,6 +67,7 @@ beforeEach(() => {
   vi.mocked(oauthLinkStart).mockReset()
   vi.mocked(listDocuments).mockResolvedValue({ items: [], limit: 20, offset: 0, has_more: false })
   vi.mocked(getWorkspaceCredits).mockReset().mockResolvedValue(workspaceCredits())
+  vi.mocked(listActiveAnnouncements).mockReset().mockResolvedValue({ items: [] })
 })
 
 afterEach(() => {
@@ -105,6 +111,7 @@ describe('로그인 화면', () => {
       email_verified: true,
       has_password: true,
       identities: [],
+      is_admin: false,
     })
     renderAt('/login')
 
@@ -280,6 +287,7 @@ describe('구글 계정 연결 이어가기 (?link=google)', () => {
       email_verified: true,
       has_password: true,
       identities: [],
+      is_admin: false,
     })
     vi.mocked(oauthLinkStart).mockResolvedValue({
       authorization_url: 'https://accounts.google.com/o/oauth2/v2/auth?state=link-state',
@@ -319,6 +327,7 @@ describe('구글 계정 연결 이어가기 (?link=google)', () => {
       email_verified: true,
       has_password: true,
       identities: [],
+      is_admin: false,
     })
     vi.mocked(oauthLinkStart).mockRejectedValue(
       new ApiError(422, '구글 로그인이 설정되지 않았습니다'),
@@ -345,6 +354,7 @@ describe('구글 계정 연결 이어가기 (?link=google)', () => {
       email_verified: true,
       has_password: true,
       identities: [],
+      is_admin: false,
     })
     renderAt('/login')
 
@@ -371,6 +381,7 @@ describe('카카오 계정 연결 이어가기 (?link=kakao)', () => {
       email_verified: true,
       has_password: true,
       identities: [],
+      is_admin: false,
     })
     vi.mocked(oauthLinkStart).mockResolvedValue({
       authorization_url: 'https://kauth.kakao.com/oauth/authorize?state=link-state',
@@ -410,6 +421,7 @@ describe('네이버 계정 연결 이어가기 (?link=naver)', () => {
       email_verified: true,
       has_password: true,
       identities: [],
+      is_admin: false,
     })
     vi.mocked(oauthLinkStart).mockResolvedValue({
       authorization_url: 'https://nid.naver.com/oauth2.0/authorize?state=link-state',

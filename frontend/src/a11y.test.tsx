@@ -26,11 +26,20 @@ import { lookupTerm } from './api/dictionary'
 import { getWorkspaceCredits } from './api/credits'
 import { listInvoiceRequests } from './api/invoices'
 import { getWorkspaceUsage } from './api/usage'
+import { listActiveAnnouncements } from './api/announcements'
+import {
+  listAdminAnnouncements,
+  listAdminInvoiceRequests,
+  listAdminWorkspaces,
+  readAdminErrors,
+} from './api/admin'
 import { computeEasyTextFingerprint } from './review/fingerprint'
 import { AuthContext, type AuthContextValue } from './auth/context'
 import { AppLayout } from './components/AppLayout'
 import { AppRoutes } from './routes/AppRoutes'
 import {
+  adminWorkspaceListResponse,
+  adminWorkspaceSummary,
   conversion,
   documentItem,
   documentSource,
@@ -69,21 +78,41 @@ vi.mock('./api/invoices', () => ({
   listInvoiceRequests: vi.fn(),
 }))
 
+// 인증된 사용자로 그릴 때마다 AppLayout이 활성 공지를 조회한다 — 이 파일의 관심사가
+// 아니지만 모킹하지 않으면 진짜 요청이 나간다(test/setup.ts).
+vi.mock('./api/announcements', () => ({
+  listActiveAnnouncements: vi.fn(),
+}))
+
+vi.mock('./api/admin', () => ({
+  listAdminWorkspaces: vi.fn(),
+  listAdminInvoiceRequests: vi.fn(),
+  readAdminErrors: vi.fn(),
+  listAdminAnnouncements: vi.fn(),
+}))
+
 const USER = {
   id: 'u1',
   email: 'gongmuwon@example.test',
   email_verified: true,
   has_password: true,
   identities: [],
+  is_admin: false,
 }
 
-function authValue(status: AuthContextValue['status']): AuthContextValue {
+/** 관리자 화면(`/admin`) 스윕에만 쓴다 — 다른 화면은 일반 사용자로 재는 편이 맞다. */
+const ADMIN_USER = { ...USER, is_admin: true }
+
+function authValue(
+  status: AuthContextValue['status'],
+  user: AuthContextValue['user'] = USER,
+): AuthContextValue {
   return {
     status,
-    user: status === 'authenticated' ? USER : null,
+    user: status === 'authenticated' ? user : null,
     signIn: () => Promise.resolve(),
     signUp: () => Promise.resolve(),
-    signInWithSocialProvider: () => Promise.resolve(USER),
+    signInWithSocialProvider: () => Promise.resolve(user ?? USER),
     completePasswordReset: () => Promise.resolve(),
     signOut: () => undefined,
     refreshMe: () => Promise.resolve(),
@@ -92,9 +121,13 @@ function authValue(status: AuthContextValue['status']): AuthContextValue {
 
 type Entry = string | { pathname: string; state?: unknown }
 
-function renderAt(entry: Entry, status: AuthContextValue['status'] = 'authenticated') {
+function renderAt(
+  entry: Entry,
+  status: AuthContextValue['status'] = 'authenticated',
+  user: AuthContextValue['user'] = USER,
+) {
   return render(
-    <AuthContext.Provider value={authValue(status)}>
+    <AuthContext.Provider value={authValue(status, user)}>
       <WorkspaceContext.Provider value={workspaceContext()}>
         <MemoryRouter initialEntries={[entry]}>
           <AppLayout>
@@ -323,6 +356,27 @@ const SCREENS: readonly {
     open: () => renderAt('/없는-주소'),
     settle: () => screen.findByRole('heading', { name: '찾을 수 없는 화면입니다' }),
   },
+  {
+    // 탭 넷이 전부 마운트된 채로 시작한다(`AdminPage`, `hidden`으로만 감춘다 — 검색어
+    // 등 로컬 상태가 탭 전환에도 살아남게 하려고) — 그래서 이 스윕도 네 탭의 조회를
+    // 모두 마련해 둬야 한다.
+    name: '관리자',
+    open: () => {
+      vi.mocked(listAdminWorkspaces).mockResolvedValue(
+        adminWorkspaceListResponse({ items: [adminWorkspaceSummary()] }),
+      )
+      vi.mocked(listAdminInvoiceRequests).mockResolvedValue({
+        items: [],
+        page: 1,
+        size: 20,
+        total: 0,
+      })
+      vi.mocked(readAdminErrors).mockResolvedValue({ counts: [], recent: [] })
+      vi.mocked(listAdminAnnouncements).mockResolvedValue({ items: [] })
+      renderAt('/admin', 'authenticated', ADMIN_USER)
+    },
+    settle: () => screen.findByRole('heading', { name: '고객·사용량·오류를 관리합니다' }),
+  },
 ]
 
 /** 화면을 열고 다 그려질 때까지 기다린다. */
@@ -439,6 +493,7 @@ beforeEach(() => {
   vi.mocked(getDocumentSource).mockResolvedValue(documentSource())
   vi.mocked(getWorkspaceCredits).mockResolvedValue(workspaceCredits())
   vi.mocked(listInvoiceRequests).mockResolvedValue({ items: [] })
+  vi.mocked(listActiveAnnouncements).mockResolvedValue({ items: [] })
 })
 
 afterEach(() => {
@@ -450,6 +505,11 @@ afterEach(() => {
   vi.mocked(getWorkspaceUsage).mockReset()
   vi.mocked(getWorkspaceCredits).mockReset()
   vi.mocked(listInvoiceRequests).mockReset()
+  vi.mocked(listActiveAnnouncements).mockReset()
+  vi.mocked(listAdminWorkspaces).mockReset()
+  vi.mocked(listAdminInvoiceRequests).mockReset()
+  vi.mocked(readAdminErrors).mockReset()
+  vi.mocked(listAdminAnnouncements).mockReset()
 })
 
 describe('①  랜드마크와 건너뛰기 링크', () => {

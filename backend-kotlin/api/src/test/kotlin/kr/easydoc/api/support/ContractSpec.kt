@@ -110,6 +110,16 @@ object ContractSpec {
         method: String,
     ): List<Any?> = list("paths", path, method, "security")
 
+    /**
+     * 관리자 전용 축 — 계약 `x-admin-only: true` 표식(어드민 최소, 2.25.0). 인증 축
+     * ([security])과 독립이다 — 관리자 전용 오퍼레이션은 인증도 관리자 확인도 필요하다.
+     * 선언이 없으면 거짓이다(관리자 전용이 아니라는 뜻).
+     */
+    fun adminOnly(
+        path: String,
+        method: String,
+    ): Boolean = (map("paths", path, method)["x-admin-only"] as? Boolean) ?: false
+
     /** `paths` 아래 모든 (경로, 메서드) 짝. HTTP 메서드가 아닌 키(`parameters` 등)는 뺀다. */
     fun operations(): List<Pair<String, String>> =
         map("paths").entries.flatMap { (path, operations) ->

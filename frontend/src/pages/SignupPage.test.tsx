@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { fetchMe, oauthCallback, oauthStart, signup } from '../api/auth'
 import { ApiError, listDocuments } from '../api/client'
+import { listActiveAnnouncements } from '../api/announcements'
 import { AuthProvider } from '../auth/AuthProvider'
 import { AppLayout } from '../components/AppLayout'
 import { AppRoutes } from '../routes/AppRoutes'
@@ -23,6 +24,10 @@ vi.mock('../api/auth', () => ({
 vi.mock('../api/client', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api/client')>()),
   listDocuments: vi.fn(),
+}))
+
+vi.mock('../api/announcements', () => ({
+  listActiveAnnouncements: vi.fn(),
 }))
 
 function renderAt(path: string) {
@@ -47,6 +52,7 @@ beforeEach(() => {
   vi.mocked(oauthStart).mockReset()
   vi.mocked(oauthCallback).mockReset()
   vi.mocked(listDocuments).mockResolvedValue({ items: [], limit: 20, offset: 0, has_more: false })
+  vi.mocked(listActiveAnnouncements).mockResolvedValue({ items: [] })
 })
 
 afterEach(() => {

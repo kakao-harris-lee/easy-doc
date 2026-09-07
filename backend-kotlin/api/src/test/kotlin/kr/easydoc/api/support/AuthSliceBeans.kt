@@ -1,5 +1,22 @@
 package kr.easydoc.api.support
 
+import kr.easydoc.application.admin.AdminAccessRepository
+import kr.easydoc.application.admin.AdminConversionQueryRepository
+import kr.easydoc.application.admin.AdminConversionRow
+import kr.easydoc.application.admin.AdminCreditAdjustmentService
+import kr.easydoc.application.admin.AdminCreditBalance
+import kr.easydoc.application.admin.AdminErrorRow
+import kr.easydoc.application.admin.AdminFailureCount
+import kr.easydoc.application.admin.AdminGrantService
+import kr.easydoc.application.admin.AdminGuard
+import kr.easydoc.application.admin.AdminMonthUsage
+import kr.easydoc.application.admin.AdminQueryService
+import kr.easydoc.application.admin.AdminWorkspaceQueryRepository
+import kr.easydoc.application.admin.AdminWorkspaceRow
+import kr.easydoc.application.admin.AdminWorkspaceSearchResult
+import kr.easydoc.application.admin.Announcement
+import kr.easydoc.application.admin.AnnouncementRepository
+import kr.easydoc.application.admin.AnnouncementService
 import kr.easydoc.application.auth.AccessTokens
 import kr.easydoc.application.auth.AuthService
 import kr.easydoc.application.auth.ConsumedOAuthState
@@ -55,12 +72,16 @@ import kr.easydoc.application.document.StoredOriginalReader
 import kr.easydoc.application.document.WorkspaceLookup
 import kr.easydoc.application.invoice.InvoiceRequestCreation
 import kr.easydoc.application.invoice.InvoiceRequestHandling
+import kr.easydoc.application.invoice.InvoiceRequestPage
 import kr.easydoc.application.invoice.InvoiceRequestRepository
 import kr.easydoc.application.invoice.InvoiceRequestRow
 import kr.easydoc.application.invoice.InvoiceRequestService
 import kr.easydoc.application.mail.MailSender
 import kr.easydoc.application.usage.UsageQueryService
 import kr.easydoc.application.usage.UsageReadRepository
+import kr.easydoc.application.usage.UsageReportRepository
+import kr.easydoc.application.usage.UsageReportRow
+import kr.easydoc.application.usage.UsageReportService
 import kr.easydoc.application.usage.WorkspaceUsage
 import kr.easydoc.application.workspace.DUPLICATE_WORKSPACE_NAME_MESSAGE
 import kr.easydoc.application.workspace.WorkspaceService
@@ -313,6 +334,73 @@ class AuthSliceBeans {
         mail: FakeMailSender,
     ): InvoiceRequestService =
         InvoiceRequestService(repository = repository, mail = mail, operatorEmail = "", clock = Clock.systemUTC())
+
+    /**
+     * 어드민 최소(A1, 2.25.0) 배선 — `AdminAccessInterceptor`가 `@WebMvcTest` 슬라이스에도
+     * 걸리므로(그 애너테이션은 `HandlerInterceptor` 빈을 전부 슬라이스에 넣는다) 이 빈이
+     * 없으면 `/admin/…`을 겨누지 않는 테스트도 컨텍스트 조립에서 멈춘다 —
+     * `workspaceService`와 같은 이유.
+     */
+    @Bean
+    fun inMemoryAdminAccess(): InMemoryAdminAccessRepository = InMemoryAdminAccessRepository()
+
+    @Bean
+    fun adminGuard(repository: InMemoryAdminAccessRepository): AdminGuard = AdminGuard(repository)
+
+    @Bean
+    fun adminGrantService(
+        users: InMemoryUserRepository,
+        access: InMemoryAdminAccessRepository,
+    ): AdminGrantService = AdminGrantService(users, access)
+
+    @Bean
+    fun inMemoryAdminWorkspaceQuery(): InMemoryAdminWorkspaceQueryRepository = InMemoryAdminWorkspaceQueryRepository()
+
+    @Bean
+    fun inMemoryAdminConversionQuery(): InMemoryAdminConversionQueryRepository =
+        InMemoryAdminConversionQueryRepository()
+
+    /** `AdminUsageController`가 처음으로 `UsageReportService`를 HTTP에 노출한다 — 그 전에는 `usage-report` CLI 전용이었다. */
+    @Bean
+    fun inMemoryUsageReport(): InMemoryUsageReportRepository = InMemoryUsageReportRepository()
+
+    @Bean
+    fun usageReportService(repository: InMemoryUsageReportRepository): UsageReportService =
+        UsageReportService(repository, ZoneId.of("Asia/Seoul"), Clock.systemUTC())
+
+    @Suppress("LongParameterList")
+    @Bean
+    fun adminQueryService(
+        workspaces: InMemoryAdminWorkspaceQueryRepository,
+        creditAccounts: CreditAccountService,
+        usage: UsageQueryService,
+        invoiceRequests: InMemoryInvoiceRequestRepository,
+        conversions: InMemoryAdminConversionQueryRepository,
+        usageReport: UsageReportService,
+    ): AdminQueryService =
+        AdminQueryService(
+            workspaces = workspaces,
+            creditAccounts = creditAccounts,
+            usage = usage,
+            invoiceRequests = invoiceRequests,
+            conversions = conversions,
+            usageReport = usageReport,
+            zone = ZoneId.of("Asia/Seoul"),
+            clock = Clock.systemUTC(),
+        )
+
+    @Bean
+    fun adminCreditAdjustmentService(
+        repository: InMemoryCreditAccountRepository,
+        service: CreditAccountService,
+    ): AdminCreditAdjustmentService = AdminCreditAdjustmentService(repository, service)
+
+    @Bean
+    fun inMemoryAnnouncements(): InMemoryAnnouncementRepository = InMemoryAnnouncementRepository()
+
+    @Bean
+    fun announcementService(repository: InMemoryAnnouncementRepository): AnnouncementService =
+        AnnouncementService(repository, Clock.systemUTC())
 
     @Bean
     fun inMemoryDocuments(): InMemoryDocumentRepository = InMemoryDocumentRepository()
@@ -842,6 +930,7 @@ class InMemoryCreditAccountRepository : CreditAccountRepository {
         credits: Int,
         reason: CreditReason,
         note: String?,
+        actorUserId: UUID?,
     ): Int {
         val account = accounts.getOrPut(workspaceId) { Account() }
         account.ownerId = account.ownerId ?: ownerUserId
@@ -974,6 +1063,7 @@ class InMemoryInvoiceRequestRepository : InvoiceRequestRepository {
         status: InvoiceRequestStatus,
         note: String?,
         handledAt: Instant,
+        handledBy: UUID?,
     ): InvoiceRequestHandling {
         val index = rows.indexOfFirst { it.id == id }
         return when {
@@ -991,6 +1081,16 @@ class InMemoryInvoiceRequestRepository : InvoiceRequestRepository {
                 InvoiceRequestHandling.Handled(updated)
             }
         }
+    }
+
+    override fun listAll(
+        status: InvoiceRequestStatus?,
+        page: Int,
+        size: Int,
+    ): InvoiceRequestPage {
+        val filtered = rows.filter { status == null || it.status == status }.sortedByDescending { it.requestedAt }
+        val offset = (page - 1) * size
+        return InvoiceRequestPage(filtered.drop(offset).take(size), filtered.size)
     }
 }
 
@@ -1399,4 +1499,163 @@ class FakeTermCandidateSource : TermCandidateSource {
                     ),
             )
     }
+}
+
+/**
+ * 관리자 판정(어드민 최소, 2.25.0) 대역 — `admin_id`가 [markAdmin]으로 등록된 동안만
+ * [isVerifiedAdmin]이 참이다. 실물 `AdminGuard`가 이 대역을 그대로 쓴다 — 슬라이스는
+ * 관리자 축 HTTP 배선(403/200)만 잰다.
+ */
+class InMemoryAdminAccessRepository : AdminAccessRepository {
+    private val admins = mutableSetOf<UUID>()
+    private val verified = mutableSetOf<UUID>()
+
+    /** 테스트가 이 사용자를 관리자로 만든다. [verifiedEmail]이 거짓이면 미검증 관리자를 흉내 낸다. */
+    fun markAdmin(
+        userId: UUID,
+        verifiedEmail: Boolean = true,
+    ) {
+        admins += userId
+        if (verifiedEmail) verified += userId else verified -= userId
+    }
+
+    override fun isVerifiedAdmin(userId: UUID): Boolean = userId in admins && userId in verified
+
+    override fun setIsAdmin(
+        userId: UUID,
+        isAdmin: Boolean,
+    ): Boolean {
+        if (isAdmin) admins += userId else admins -= userId
+        return true
+    }
+}
+
+/**
+ * 관리자 워크스페이스 검색 대역(2.25.0) — `AdminWorkspaceController`가 `@WebMvcTest`
+ * 슬라이스에 전부 들어가므로 필요하다(`inMemoryAdminAccess`와 같은 이유).
+ */
+class InMemoryAdminWorkspaceQueryRepository : AdminWorkspaceQueryRepository {
+    private data class Row(
+        val workspaceId: UUID,
+        val ownerId: UUID,
+        val ownerEmail: String,
+        val name: String,
+        val createdAt: Instant,
+    )
+
+    private val rows = mutableListOf<Row>()
+
+    fun seed(
+        workspaceId: UUID,
+        ownerId: UUID,
+        ownerEmail: String,
+        name: String,
+        createdAt: Instant = Instant.EPOCH,
+    ) {
+        rows += Row(workspaceId, ownerId, ownerEmail, name, createdAt)
+    }
+
+    override fun search(
+        query: String?,
+        page: Int,
+        size: Int,
+    ): AdminWorkspaceSearchResult {
+        val filtered =
+            rows.filter { row ->
+                query == null ||
+                    row.name.contains(query, ignoreCase = true) ||
+                    row.ownerEmail.contains(query, ignoreCase = true)
+            }
+        val offset = (page - 1) * size
+        val items = filtered.drop(offset).take(size).map(::toRow)
+        return AdminWorkspaceSearchResult(items, filtered.size)
+    }
+
+    override fun find(workspaceId: UUID): AdminWorkspaceRow? =
+        rows.firstOrNull { it.workspaceId == workspaceId }?.let(::toRow)
+
+    /** 이 슬라이스는 배치 조회 결과를 검사하지 않는다 — 빈 맵이면 목록 요약이 0/0/0으로 그린다. */
+    override fun creditBalances(workspaceIds: Collection<UUID>): Map<UUID, AdminCreditBalance> = emptyMap()
+
+    override fun monthUsage(
+        workspaceIds: Collection<UUID>,
+        from: Instant,
+        toExclusive: Instant,
+    ): Map<UUID, AdminMonthUsage> = emptyMap()
+
+    private fun toRow(row: Row): AdminWorkspaceRow =
+        AdminWorkspaceRow(row.workspaceId, row.ownerId, row.ownerEmail, row.name, row.createdAt)
+}
+
+/**
+ * 관리자 최근 변환·오류 집계 대역(2.25.0) — 실 DB 집계는 `JdbcAdminConversionQueryRepositoryTest`
+ * 가 잰다. 이 슬라이스는 빈 결과로도 HTTP 배선(200·바디 모양)을 잴 수 있다.
+ */
+class InMemoryAdminConversionQueryRepository : AdminConversionQueryRepository {
+    override fun recentForWorkspace(
+        workspaceId: UUID,
+        limit: Int,
+    ): List<AdminConversionRow> = emptyList()
+
+    override fun failureCounts(
+        from: Instant,
+        toExclusive: Instant,
+    ): List<AdminFailureCount> = emptyList()
+
+    override fun recentFailures(
+        from: Instant,
+        toExclusive: Instant,
+        limit: Int,
+    ): List<AdminErrorRow> = emptyList()
+}
+
+/** 운영 리포트(U3) 대역 — `AdminUsageController`가 처음으로 이 서비스를 HTTP에 노출한다. */
+class InMemoryUsageReportRepository : UsageReportRepository {
+    override fun reportRows(
+        fromInstant: Instant,
+        toExclusiveInstant: Instant,
+    ): List<UsageReportRow> = emptyList()
+}
+
+/** 공지(어드민 최소, 2.25.0) 대역 — `AdminAnnouncementController`·`AnnouncementController` 공용. */
+class InMemoryAnnouncementRepository : AnnouncementRepository {
+    private val rows = mutableListOf<Announcement>()
+
+    override fun create(
+        id: UUID,
+        body: String,
+        createdBy: UUID,
+        createdAt: Instant,
+    ): Announcement {
+        val created =
+            Announcement(id, body, active = true, createdBy = createdBy, createdAt = createdAt, updatedAt = createdAt)
+        rows += created
+        return created
+    }
+
+    override fun listAll(): List<Announcement> = rows.sortedByDescending { it.createdAt }
+
+    override fun find(id: UUID): Announcement? = rows.firstOrNull { it.id == id }
+
+    override fun update(
+        id: UUID,
+        body: String?,
+        active: Boolean?,
+        updatedAt: Instant,
+    ): Announcement? {
+        val index = rows.indexOfFirst { it.id == id }
+        if (index < 0) return null
+        val existing = rows[index]
+        val updated =
+            existing.copy(
+                body = body ?: existing.body,
+                active = active ?: existing.active,
+                updatedAt = updatedAt,
+            )
+        rows[index] = updated
+        return updated
+    }
+
+    override fun listActive(limit: Int): List<Announcement> =
+        rows.filter { it.active }.sortedByDescending { it.createdAt }.take(limit)
 }

@@ -66,6 +66,18 @@ data class UsageReport(
 }
 
 /**
+ * [UsageReportService.rows]의 결과 — `GET /admin/usage`(어드민 최소 계획
+ * `docs/plans/2026-09-07-admin-minimum.md` §2 결정 4)가 CSV로 굳히지 않고 JSON으로 낼 때
+ * 쓴다. [rows]의 각 항목은 이미 `toString()`을 손으로 쥐고 있다([UsageReportRow]) — 이
+ * 컨테이너는 기본 생성 `toString()`으로 둬도 값이 새지 않는다.
+ */
+data class UsageReportRows(
+    val rows: List<UsageReportRow>,
+    val from: LocalDate,
+    val to: LocalDate,
+)
+
+/**
  * 운영 리포트 유스케이스(U3) — `usage-report` 프로필이 부른다. 기본 기간은 [zone] 기준
  * **지난달 전체**다 — U2([UsageQueryService], 이번 달 1일~오늘)와 달리 리포트는 이미 끝난
  * 달을 청구 대상으로 삼는다.
@@ -83,6 +95,31 @@ class UsageReportService(
         from: String?,
         to: String?,
     ): UsageReport {
+        val resolved = resolveRows(from, to)
+        return UsageReport(
+            csv = renderCsv(resolved.rows),
+            rowCount = resolved.rows.size,
+            from = resolved.from,
+            to = resolved.to,
+        )
+    }
+
+    /**
+     * [generateCsv]와 같은 행·같은 기간 규칙을 CSV로 굳히지 않고 그대로 준다 —
+     * `GET /admin/usage`(어드민 최소 계획 §2 결정 4)가 JSON으로 낼 때 쓴다.
+     */
+    fun rows(
+        from: String?,
+        to: String?,
+    ): UsageReportRows {
+        val resolved = resolveRows(from, to)
+        return UsageReportRows(resolved.rows, resolved.from, resolved.to)
+    }
+
+    private fun resolveRows(
+        from: String?,
+        to: String?,
+    ): UsageReportRows {
         val today = LocalDate.now(clock.withZone(zone))
         val previousMonth = today.minusMonths(1)
         val fromDate = from?.let(UsagePeriodResolver::parseDate) ?: previousMonth.withDayOfMonth(1)
@@ -101,12 +138,7 @@ class UsageReportService(
                 ),
             )
 
-        return UsageReport(
-            csv = renderCsv(sorted),
-            rowCount = sorted.size,
-            from = fromDate,
-            to = toDate,
-        )
+        return UsageReportRows(sorted, fromDate, toDate)
     }
 
     private fun renderCsv(rows: List<UsageReportRow>): String =

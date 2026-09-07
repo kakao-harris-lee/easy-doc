@@ -29,6 +29,7 @@ function authValue(status: AuthStatus): AuthContextValue {
             email_verified: true,
             has_password: true,
             identities: [],
+            is_admin: false,
           }
         : null,
     signIn: () => Promise.resolve(),
@@ -40,6 +41,7 @@ function authValue(status: AuthStatus): AuthContextValue {
         email_verified: true,
         has_password: true,
         identities: [],
+        is_admin: false,
       }),
     completePasswordReset: () => Promise.resolve(),
     signOut: () => undefined,

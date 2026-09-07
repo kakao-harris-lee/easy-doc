@@ -124,7 +124,13 @@ class JdbcInvoiceRequestRepositoryTest {
     fun `처리된 뒤에는 같은 기간을 다시 요청할 수 있다`() {
         val (ownerId, workspaceId) = newOwnedWorkspace()
         val first = createRequest(ownerId, workspaceId, from = LocalDate.of(2026, 8, 1), to = LocalDate.of(2026, 8, 31))
-        repository.handle(first.id, InvoiceRequestStatus.ISSUED, note = null, handledAt = Instant.now())
+        repository.handle(
+            first.id,
+            InvoiceRequestStatus.ISSUED,
+            note = null,
+            handledAt = Instant.now(),
+            handledBy = null,
+        )
 
         val second =
             repository.create(
@@ -176,7 +182,14 @@ class JdbcInvoiceRequestRepositoryTest {
         val created = createRequest(ownerId, workspaceId)
         val handledAt = Instant.parse("2026-09-08T00:00:00Z")
 
-        val result = repository.handle(created.id, InvoiceRequestStatus.ISSUED, note = null, handledAt = handledAt)
+        val result =
+            repository.handle(
+                created.id,
+                InvoiceRequestStatus.ISSUED,
+                note = null,
+                handledAt = handledAt,
+                handledBy = null,
+            )
 
         assertThat(result).isInstanceOf(InvoiceRequestHandling.Handled::class.java)
         val row = (result as InvoiceRequestHandling.Handled).row
@@ -191,7 +204,13 @@ class JdbcInvoiceRequestRepositoryTest {
         val created = createRequest(ownerId, workspaceId)
 
         val result =
-            repository.handle(created.id, InvoiceRequestStatus.REJECTED, note = "확인 불가", handledAt = Instant.now())
+            repository.handle(
+                created.id,
+                InvoiceRequestStatus.REJECTED,
+                note = "확인 불가",
+                handledAt = Instant.now(),
+                handledBy = null,
+            )
 
         val row = (result as InvoiceRequestHandling.Handled).row
         assertThat(row.status).isEqualTo(InvoiceRequestStatus.REJECTED)
@@ -201,7 +220,8 @@ class JdbcInvoiceRequestRepositoryTest {
     @Test
     @DisplayName("존재하지 않는 id는 NotFound다")
     fun `존재하지 않는 id는 NotFound다`() {
-        val result = repository.handle(UUID.randomUUID(), InvoiceRequestStatus.ISSUED, null, Instant.now())
+        val result =
+            repository.handle(UUID.randomUUID(), InvoiceRequestStatus.ISSUED, null, Instant.now(), handledBy = null)
 
         assertThat(result).isEqualTo(InvoiceRequestHandling.NotFound)
     }
@@ -211,9 +231,9 @@ class JdbcInvoiceRequestRepositoryTest {
     fun `이미 처리된 요청은 AlreadyHandled다`() {
         val (ownerId, workspaceId) = newOwnedWorkspace()
         val created = createRequest(ownerId, workspaceId)
-        repository.handle(created.id, InvoiceRequestStatus.ISSUED, null, Instant.now())
+        repository.handle(created.id, InvoiceRequestStatus.ISSUED, null, Instant.now(), handledBy = null)
 
-        val second = repository.handle(created.id, InvoiceRequestStatus.REJECTED, null, Instant.now())
+        val second = repository.handle(created.id, InvoiceRequestStatus.REJECTED, null, Instant.now(), handledBy = null)
 
         assertThat(second).isEqualTo(InvoiceRequestHandling.AlreadyHandled)
     }

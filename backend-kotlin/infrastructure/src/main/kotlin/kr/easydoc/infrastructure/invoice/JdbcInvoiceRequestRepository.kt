@@ -2,6 +2,7 @@ package kr.easydoc.infrastructure.invoice
 
 import kr.easydoc.application.invoice.InvoiceRequestCreation
 import kr.easydoc.application.invoice.InvoiceRequestHandling
+import kr.easydoc.application.invoice.InvoiceRequestPage
 import kr.easydoc.application.invoice.InvoiceRequestRepository
 import kr.easydoc.application.invoice.InvoiceRequestRow
 import kr.easydoc.core.invoice.InvoiceRequestStatus
@@ -103,6 +104,7 @@ class JdbcInvoiceRequestRepository(private val jdbc: JdbcClient) : InvoiceReques
         status: InvoiceRequestStatus,
         note: String?,
         handledAt: Instant,
+        handledBy: UUID?,
     ): InvoiceRequestHandling {
         val updated =
             jdbc
@@ -111,6 +113,7 @@ class JdbcInvoiceRequestRepository(private val jdbc: JdbcClient) : InvoiceReques
                 .param("status", status.wireName)
                 .param("note", note)
                 .param("handledAt", handledAt.atOffset(java.time.ZoneOffset.UTC))
+                .param("handledBy", handledBy)
                 .query { rs, _ -> toRow(rs) }
                 .optional()
         if (updated.isPresent) {
@@ -124,6 +127,43 @@ class JdbcInvoiceRequestRepository(private val jdbc: JdbcClient) : InvoiceReques
                 .optional()
                 .isPresent
         return if (exists) InvoiceRequestHandling.AlreadyHandled else InvoiceRequestHandling.NotFound
+    }
+
+    /**
+     * 관리자 목록(`GET /admin/invoice-requests`) — 소유 술어 없이 전체를 훑는다
+     * ([InvoiceRequestRepository] KDoc). [status]가 `null`이면 전체 상태.
+     */
+    override fun listAll(
+        status: InvoiceRequestStatus?,
+        page: Int,
+        size: Int,
+    ): InvoiceRequestPage {
+        val statusWire = status?.wireName
+        val total =
+            jdbc
+                .sql(
+                    "SELECT count(*) FROM invoice_requests WHERE :status::text IS NULL OR status = :status",
+                ).param("status", statusWire)
+                .query { rs, _ -> rs.getInt(1) }
+                .single()
+        val items =
+            jdbc
+                .sql(
+                    """
+                    SELECT $RETURNING_COLUMNS
+                    FROM invoice_requests
+                    WHERE :status::text IS NULL OR status = :status
+                    ORDER BY requested_at DESC, id DESC
+                    LIMIT :limit OFFSET :offset
+                    """.trimIndent(),
+                ).param("status", statusWire)
+                .param("limit", size)
+                // Int 곱은 큰 page·size 조합에서 넘칠 수 있다 — Long 산술로 막는다
+                // (`JdbcAdminWorkspaceQueryRepository.search`와 같은 방어).
+                .param("offset", (page.toLong() - 1) * size)
+                .query { rs, _ -> toRow(rs) }
+                .list()
+        return InvoiceRequestPage(items, total)
     }
 
     private fun toRow(rs: ResultSet): InvoiceRequestRow =
@@ -173,7 +213,7 @@ class JdbcInvoiceRequestRepository(private val jdbc: JdbcClient) : InvoiceReques
         val HANDLE_SQL =
             """
             UPDATE invoice_requests
-            SET status = :status, operator_note = :note, handled_at = :handledAt
+            SET status = :status, operator_note = :note, handled_at = :handledAt, handled_by = :handledBy
             WHERE id = :id AND status = 'requested'
             RETURNING $RETURNING_COLUMNS
             """.trimIndent()

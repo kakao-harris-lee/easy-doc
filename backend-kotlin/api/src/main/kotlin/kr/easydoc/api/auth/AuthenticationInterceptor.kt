@@ -19,6 +19,14 @@ data class AuthenticatedUser(val id: UUID)
 
 // 검증: `DeletedAccountTokenReachTest`.
 
+/**
+ * 인터셉터가 검증 결과를 넘기는 요청 속성 이름 — 이 파일 밖에서는
+ * [kr.easydoc.api.admin.AdminAccessInterceptor] 하나만 읽는다(관리자 가드는 인증 뒤에
+ * 걸리므로 이미 채워진 [AuthenticatedUser]를 다시 읽어야 한다). `internal`이라 같은
+ * `api` 모듈 안에서만 보인다 — 다른 모듈이 이 이름에 기대는 일은 없다.
+ */
+internal const val AUTHENTICATED_USER_ATTRIBUTE = "kr.easydoc.api.auth.AuthenticatedUser"
+
 /** `Authorization: Bearer <token>` 을 검증하는 인터셉터. */
 @Component
 class AuthenticationInterceptor(private val authService: AuthService) : HandlerInterceptor {
@@ -53,9 +61,6 @@ class AuthenticationInterceptor(private val authService: AuthService) : HandlerI
         const val AUTHENTICATION_REQUIRED_MESSAGE = "인증이 필요합니다"
     }
 }
-
-/** 인터셉터가 검증 결과를 넘기는 요청 속성 이름. 이 문자열을 아는 곳은 이 파일뿐이다. */
-private const val AUTHENTICATED_USER_ATTRIBUTE = "kr.easydoc.api.auth.AuthenticatedUser"
 
 /** [AuthenticatedUser] 파라미터를 채운다. */
 @Component

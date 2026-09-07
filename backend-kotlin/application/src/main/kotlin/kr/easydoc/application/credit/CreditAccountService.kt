@@ -88,14 +88,22 @@ class CreditAccountService(
         repository.release(workspaceId, ownerId, documentId, conversionId, amount)
     }
 
-    /** 운영자 수동 부여·조정. `credits` 가 0 이상이면 GRANT, 음수면 ADJUST(저장소가 가른다). */
+    /**
+     * 운영자 수동 부여·조정. `credits` 가 0 이상이면 GRANT, 음수면 ADJUST(저장소가 가른다).
+     *
+     * [actorUserId] 는 감사 흔적이다(어드민 최소 계획 `docs/plans/2026-09-07-admin-minimum.md`
+     * §2 결정 3) — 관리자 화면 경유(`POST /admin/workspaces/{workspace_id}/credits`)는
+     * 관리자 id를 채우고, `credit-grant` 운영 프로필(자동 경로)은 `null`로 둔다.
+     */
+    @Suppress("LongParameterList")
     fun grant(
         workspaceId: UUID,
         ownerUserId: UUID,
         credits: Int,
         reason: CreditReason,
         note: String?,
-    ): Int = repository.grant(workspaceId, ownerUserId, credits, reason, note)
+        actorUserId: UUID? = null,
+    ): Int = repository.grant(workspaceId, ownerUserId, credits, reason, note, actorUserId)
 
     /**
      * 가입 시 기본 워크스페이스에 [signupGrant] 만큼 부여한다 — `AuthService.signup`·
@@ -108,7 +116,7 @@ class CreditAccountService(
         ownerUserId: UUID,
     ) {
         if (signupGrant <= 0) return
-        repository.grant(workspaceId, ownerUserId, signupGrant, CreditReason.SIGNUP, note = null)
+        repository.grant(workspaceId, ownerUserId, signupGrant, CreditReason.SIGNUP, note = null, actorUserId = null)
     }
 
     /** **내** 계정을 읽는다. 없거나 내 것이 아니면 [NotFoundException]. */
@@ -184,6 +192,7 @@ object NoopCreditAccountRepository : CreditAccountRepository {
         credits: Int,
         reason: CreditReason,
         note: String?,
+        actorUserId: UUID?,
     ): Int = credits
 
     override fun read(

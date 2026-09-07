@@ -993,6 +993,7 @@ private class RecordingSocialCreditAccountRepository : CreditAccountRepository b
         credits: Int,
         reason: CreditReason,
         note: String?,
+        actorUserId: UUID?,
     ): Int {
         grantCalls += Triple(workspaceId, credits, reason)
         return credits
