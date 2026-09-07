@@ -7,6 +7,8 @@ import kr.easydoc.core.crypto.PlainBody
 import kr.easydoc.core.document.ConversionStatus
 import kr.easydoc.core.exceptions.ConfigurationException
 import kr.easydoc.core.exceptions.StorageException
+import kr.easydoc.core.segment.SourceStructure
+import kr.easydoc.core.segment.splitUnits
 import kr.easydoc.core.text.normalizeLineEndings
 import org.slf4j.LoggerFactory
 
@@ -108,7 +110,10 @@ class ProcessConversionJob(
         item: ConversionWorkItem,
     ): ConversionResult {
         val source = stores.cipher.decrypt(item.sourceText, item.documentId, EncryptedField.DOCUMENT_SOURCE_TEXT)
-        return runtime.heartbeat.whileHeld(lease) { convert.convert(source.value) }
+        // item.structure 가 null 이면(옛 문서, 계획 §1.2) 전부 BODY 로 접는다 —
+        // ConvertDocumentUseCase.convert 의 기본값과 같은 방침이다.
+        val structure = item.structure ?: SourceStructure.allBody(splitUnits(source.value).size)
+        return runtime.heartbeat.whileHeld(lease) { convert.convert(source.value, structure = structure) }
     }
 
     private fun persist(

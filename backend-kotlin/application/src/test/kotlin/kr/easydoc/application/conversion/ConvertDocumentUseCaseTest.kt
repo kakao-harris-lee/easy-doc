@@ -1,13 +1,18 @@
 package kr.easydoc.application.conversion
 
 import kr.easydoc.core.easyread.DocumentIdGenerator
+import kr.easydoc.core.easyread.StructureHintOptions
 import kr.easydoc.core.easyread.checkStyle
+import kr.easydoc.core.easyread.renderStructureSection
 import kr.easydoc.core.exceptions.LlmEmptyResultException
 import kr.easydoc.core.exceptions.LlmProviderException
 import kr.easydoc.core.exceptions.LlmTruncatedException
 import kr.easydoc.core.llm.FakeLlmProvider
 import kr.easydoc.core.llm.FakeLlmTurn
 import kr.easydoc.core.llm.LlmFinishReason
+import kr.easydoc.core.segment.SourceStructure
+import kr.easydoc.core.segment.UnitKind
+import kr.easydoc.core.segment.splitUnits
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.DisplayName
@@ -450,6 +455,50 @@ class ConvertDocumentUseCaseTest {
                 .withFailMessage("문체만 봤으면 채택됐을 보정이 사실 누락 때문에 기각되지 않았다")
                 .isFalse()
             assertThat(result.easyText.value).isEqualTo(draftWithStyleIssue)
+        }
+    }
+
+    @Nested
+    @DisplayName("구조 힌트 전달 — P0-4 S8-2")
+    inner class StructureHintPropagation {
+        @Test
+        @DisplayName("구조를 주지 않으면 프롬프트가 기존과 달라지지 않는다")
+        fun `기본값은 구조 절을 만들지 않는다`() {
+            val provider = FakeLlmProvider(listOf(reply(cleanText)))
+
+            useCase(provider).convert(source)
+
+            assertThat(provider.calls[0].prompt.user).doesNotContain("[구조]")
+        }
+
+        @Test
+        @DisplayName("표 칸 구조를 주면 1차·보정 두 프롬프트 모두에 같은 [구조] 절이 실린다")
+        fun `1차와 보정이 같은 구조 절을 쓴다`() {
+            val provider = FakeLlmProvider(listOf(reply(draftWithIssue), reply(cleanText)))
+            val tableSource = "구분\n금액"
+            val structure = SourceStructure(listOf(UnitKind.TABLE_CELL, UnitKind.TABLE_CELL))
+            // fixedIds 는 항상 같은 값을 내므로(생성자 상단), 여기서 직접 렌더링한 절이
+            // 유스케이스가 실제로 프롬프트에 실은 절과 글자 단위로 같아야 한다.
+            val expectedSection =
+                renderStructureSection(structure, splitUnits(tableSource), fixedIds, StructureHintOptions().maxRuns)!!
+
+            useCase(provider).convert(tableSource, structure = structure)
+
+            assertThat(provider.calls).hasSize(2)
+            assertThat(provider.calls[0].prompt.user).contains(expectedSection)
+            assertThat(provider.calls[1].prompt.user).contains(expectedSection)
+        }
+
+        @Test
+        @DisplayName("구조의 단위 수가 원문 줄 수와 다르면 전부 BODY 로 접혀 구조 절이 없다")
+        fun `크기가 어긋나면 전부 BODY 로 접힌다`() {
+            val provider = FakeLlmProvider(listOf(reply(cleanText)))
+            // source 는 한 줄인데 구조는 두 칸짜리다 — 불변식 위반.
+            val mismatched = SourceStructure(listOf(UnitKind.TABLE_CELL, UnitKind.TABLE_CELL))
+
+            useCase(provider).convert(source, structure = mismatched)
+
+            assertThat(provider.calls[0].prompt.user).doesNotContain("[구조]")
         }
     }
 

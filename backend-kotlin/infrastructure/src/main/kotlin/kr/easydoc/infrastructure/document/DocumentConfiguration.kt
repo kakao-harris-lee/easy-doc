@@ -195,8 +195,13 @@ class DocumentConfiguration {
     fun convertDocumentUseCase(
         provider: LlmProvider,
         properties: LlmProperties,
+        structureHintProperties: StructureHintProperties,
     ): ConvertDocumentUseCase =
-        ConvertDocumentUseCase(provider, defaultOptions = LlmOptions(maxTokens = properties.validatedMaxOutputTokens()))
+        ConvertDocumentUseCase(
+            provider,
+            defaultOptions = LlmOptions(maxTokens = properties.validatedMaxOutputTokens()),
+            structureHintOptions = structureHintProperties.toStructureHintOptions(),
+        )
 
     /** 재변환 유스케이스 — `easydoc.reconversion.call-budget` 은 [ReconversionProperties] 가 문다. */
     @Suppress("LongParameterList")

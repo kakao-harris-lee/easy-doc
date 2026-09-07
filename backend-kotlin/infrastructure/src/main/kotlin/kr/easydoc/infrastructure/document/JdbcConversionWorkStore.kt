@@ -17,7 +17,7 @@ class JdbcConversionWorkStore(private val jdbc: JdbcClient) : ConversionWorkStor
             .sql(
                 """
                 SELECT c.id, c.document_id, c.status,
-                       d.source_text_encrypted, d.encryption_scheme, d.key_version
+                       d.source_text_encrypted, d.encryption_scheme, d.key_version, d.source_unit_kinds
                 FROM conversions c
                 JOIN documents d ON d.id = c.document_id
                 WHERE c.id = :id
@@ -25,9 +25,10 @@ class JdbcConversionWorkStore(private val jdbc: JdbcClient) : ConversionWorkStor
                 """.trimIndent(),
             ).param("id", conversionId)
             .query { rs, _ ->
+                val documentId = rs.getObject("document_id", UUID::class.java)
                 ConversionWorkItem(
                     conversionId = rs.getObject("id", UUID::class.java),
-                    documentId = rs.getObject("document_id", UUID::class.java),
+                    documentId = documentId,
                     status = ConversionStatus.ofWireName(rs.getString("status")),
                     sourceText =
                         EncryptedContent(
@@ -35,6 +36,10 @@ class JdbcConversionWorkStore(private val jdbc: JdbcClient) : ConversionWorkStor
                             scheme = rs.getString("encryption_scheme"),
                             keyVersion = rs.getInt("key_version"),
                         ),
+                    // null 은 이 조각 이전에 만든 문서이거나(계획 §1.2) 저장된 값이 손상됐다는
+                    // 뜻이다(리뷰 BLOCK 1) — 두 경우 모두 ProcessConversionJob 이
+                    // SourceStructure.allBody 로 접어서 쓴다.
+                    structure = rs.getString("source_unit_kinds")?.let { decodeStructureOrNull(it, documentId) },
                 )
             }.optional()
             .orElse(null)
