@@ -1,6 +1,7 @@
 package kr.easydoc.api.workspace
 
 import kr.easydoc.api.auth.AuthenticatedUser
+import kr.easydoc.application.credit.CreditAccountService
 import kr.easydoc.application.usage.UsageQueryService
 import kr.easydoc.application.workspace.WorkspaceService
 import org.springframework.http.HttpStatus
@@ -17,12 +18,16 @@ import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
 import java.util.UUID
 
-/** `GET·POST /workspaces` · `PATCH·DELETE /workspaces/{workspace_id}` · `GET .../usage`(2.20.0, U2). */
+/**
+ * `GET·POST /workspaces` · `PATCH·DELETE /workspaces/{workspace_id}` · `GET .../usage`(2.20.0, U2) ·
+ * `GET .../credits`(2.22.0, C1).
+ */
 @RestController
 @RequestMapping("/workspaces")
 class WorkspaceController(
     private val workspaceService: WorkspaceService,
     private val usageQueryService: UsageQueryService,
+    private val creditAccountService: CreditAccountService,
 ) {
     /** 만든 순서대로 돌려준다. **첫 번째가 기본 작업 공간이다.** */
     @GetMapping
@@ -78,6 +83,20 @@ class WorkspaceController(
     ): ResponseEntity<WorkspaceUsageResponse> =
         private(HttpStatus.OK).body(
             WorkspaceUsageResponse.of(usageQueryService.usageOf(user.id, workspaceId, from, to)),
+        )
+
+    /**
+     * `GET /workspaces/{workspace_id}/credits` — 크레딧 계정 조회(2.22.0, C1). 없거나 내
+     * 것이 아니면 [CreditAccountService.read] 가 [kr.easydoc.core.exceptions.NotFoundException]
+     * 을 던진다(존재 은닉, `usage`와 같은 규약).
+     */
+    @GetMapping("/{workspace_id}/credits")
+    fun credits(
+        user: AuthenticatedUser,
+        @PathVariable("workspace_id") workspaceId: UUID,
+    ): ResponseEntity<WorkspaceCreditsResponse> =
+        private(HttpStatus.OK).body(
+            WorkspaceCreditsResponse.of(creditAccountService.read(user.id, workspaceId)),
         )
 
     /** 고위험 응답에 붙는 하한선 헤더. 값의 정본은 계약 `components/headers` 의 각 컴포넌트다. */

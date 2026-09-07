@@ -4,6 +4,7 @@ import { fetchMe, login } from './auth'
 import {
   ApiError,
   NETWORK_ERROR_STATUS,
+  createDocumentFromText,
   downloadExport,
   listDocuments,
   reconvertUnit,
@@ -268,5 +269,92 @@ describe('reconvertUnit', () => {
     await expect(
       reconvertUnit('c1', 0, { easy_unit_indexes: [], easy_text_fingerprint: 'a'.repeat(64) }),
     ).rejects.toMatchObject({ status: 503, retryAfterSeconds: null })
+  })
+
+  it('빈 문자열 헤더는 0이 아니라 null이다', async () => {
+    writeToken('token-abc')
+    fetchMock.mockResolvedValue(
+      new Response(JSON.stringify({ detail: '동시 재변환 한도에 도달했습니다' }), {
+        status: 503,
+        // `Number('')`는 0을 낸다 — 빈 문자열을 "없다"가 아니라 "0"으로 잘못 읽으면 안 된다.
+        headers: { 'Content-Type': 'application/json', 'Retry-After': '' },
+      }),
+    )
+
+    await expect(
+      reconvertUnit('c1', 0, { easy_unit_indexes: [], easy_text_fingerprint: 'a'.repeat(64) }),
+    ).rejects.toMatchObject({ status: 503, retryAfterSeconds: null })
+  })
+})
+
+describe('createDocumentFromText — 크레딧 헤더(C1/C2)', () => {
+  it('402는 X-Credit-Balance·X-Credits-Required를 ApiError.creditBalance·creditsRequired로 읽는다', async () => {
+    writeToken('token-abc')
+    fetchMock.mockResolvedValue(
+      new Response(JSON.stringify({ detail: '크레딧이 부족합니다. 충전 후 다시 시도하세요.' }), {
+        status: 402,
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Credit-Balance': '1',
+          'X-Credits-Required': '2',
+        },
+      }),
+    )
+
+    await expect(createDocumentFromText('본문', null, '제목')).rejects.toMatchObject({
+      status: 402,
+      creditBalance: 1,
+      creditsRequired: 2,
+    })
+  })
+
+  it('헤더가 없는 오류는 creditBalance·creditsRequired가 null이다', async () => {
+    writeToken('token-abc')
+    fetchMock.mockResolvedValue(jsonResponse(422, { detail: '글이 너무 깁니다' }))
+
+    await expect(createDocumentFromText('본문', null, '제목')).rejects.toMatchObject({
+      status: 422,
+      creditBalance: null,
+      creditsRequired: null,
+    })
+  })
+
+  it('202는 X-Credit-Balance를 creditBalance로 읽는다', async () => {
+    writeToken('token-abc')
+    fetchMock.mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          document_id: 'd1',
+          conversion_id: 'c1',
+          status: 'pending',
+          char_count: 7,
+        }),
+        {
+          status: 202,
+          headers: { 'Content-Type': 'application/json', 'X-Credit-Balance': '7' },
+        },
+      ),
+    )
+
+    const result = await createDocumentFromText('본문', null, '제목')
+
+    expect(result.document.conversion_id).toBe('c1')
+    expect(result.creditBalance).toBe(7)
+  })
+
+  it('X-Credit-Balance가 없는 202는 creditBalance가 null이다', async () => {
+    writeToken('token-abc')
+    fetchMock.mockResolvedValue(
+      jsonResponse(202, {
+        document_id: 'd1',
+        conversion_id: 'c1',
+        status: 'pending',
+        char_count: 7,
+      }),
+    )
+
+    const result = await createDocumentFromText('본문', null, '제목')
+
+    expect(result.creditBalance).toBeNull()
   })
 })

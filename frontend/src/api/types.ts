@@ -389,6 +389,49 @@ export interface WorkspaceUsageResponse {
   by_purpose: PurposeUsageItem[]
 }
 
+// --- 크레딧 계정 (C1/C2, 계약 2.22.0) ---
+
+/** `credit_transactions.kind`(V15)와 같은 값. 계약 `components/schemas/CreditTransactionKind`. */
+export type CreditTransactionKind = 'grant' | 'reserve' | 'consume' | 'release' | 'adjust'
+
+/** `credit_transactions.reason`(V15)과 같은 값. 계약 `components/schemas/CreditTransactionReason`. */
+export type CreditReason = 'signup' | 'plan_monthly' | 'manual' | 'refund' | 'conversion'
+
+/**
+ * `WorkspaceCreditsResponse.transactions` 항목. 계약 `components/schemas/CreditTransaction`.
+ *
+ * `credits`는 이미 종류별 부호 규약(크레딧 계정 계획 §2 결정 2 — grant/release는 +,
+ * reserve/consume/adjust는 방향대로)이 반영된 값이다 — 화면에서 부호를 다시 계산하지
+ * 않는다.
+ */
+export interface CreditTransaction {
+  id: string
+  kind: CreditTransactionKind
+  credits: number
+  reason: CreditReason
+  note: string | null
+  document_id: string | null
+  /** ISO 8601 문자열. */
+  created_at: string
+}
+
+/**
+ * `GET /workspaces/{workspace_id}/credits` 응답. 계약
+ * `components/schemas/WorkspaceCreditsResponse`.
+ *
+ * `available = balance - reserved`는 서버가 이미 계산해 준다. `enforced`가 거짓이면
+ * `createDocument`의 예약이 잔액과 무관하게 항상 성공한다(잔액이 음수로 기록될 수 있다).
+ * `transactions`는 최근 50건을 최신순으로 담는다.
+ */
+export interface WorkspaceCreditsResponse {
+  workspace_id: string
+  balance: number
+  reserved: number
+  available: number
+  enforced: boolean
+  transactions: CreditTransaction[]
+}
+
 // --- 문단 재변환 (P0-4 S4/S5, 계약 2.14.0) ---
 
 /**

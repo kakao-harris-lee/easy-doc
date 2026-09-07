@@ -61,9 +61,23 @@ class CorsConfig {
         val ALLOWED_REQUEST_HEADERS: List<String> =
             listOf(HttpHeaders.AUTHORIZATION, HttpHeaders.CONTENT_TYPE)
 
-        /** 안전 목록 밖의 응답 헤더는 명시하지 않으면 브라우저 JS 가 읽지 못한다. */
+        /**
+         * 안전 목록 밖의 응답 헤더는 명시하지 않으면 브라우저 JS 가 읽지 못한다. 계약
+         * `x-cors.expose_headers`와 같은 목록이다(`ContractHeaderDeclarationTest.INLINE_HEADERS`가
+         * 같은 여섯 개를 인구조사한다) — **2.22.0 정정**: `Retry-After`·
+         * `X-Remaining-Call-Budget`·`X-Credit-Balance`·`X-Credits-Required` 넷이
+         * 이전까지 이 목록에 없어 교차 출처(Compose: 8080 → 8100)에서 `client.ts`의
+         * 해당 헤더 파싱이 늘 `null`이었다(계약 changelog 2.22.0 ⑹).
+         */
         val EXPOSED_RESPONSE_HEADERS: List<String> =
-            listOf(HttpHeaders.CONTENT_DISPOSITION, HttpHeaders.LOCATION)
+            listOf(
+                HttpHeaders.CONTENT_DISPOSITION,
+                HttpHeaders.LOCATION,
+                HttpHeaders.RETRY_AFTER,
+                "X-Remaining-Call-Budget",
+                "X-Credit-Balance",
+                "X-Credits-Required",
+            )
 
         /** Starlette `CORSMiddleware` 의 기본 `max_age`. Spring 기본값(1800)과 다르다. */
         const val PREFLIGHT_MAX_AGE_SECONDS = 600L

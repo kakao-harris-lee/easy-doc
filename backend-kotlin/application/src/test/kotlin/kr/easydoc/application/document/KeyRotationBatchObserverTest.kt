@@ -130,6 +130,7 @@ class KeyRotationBatchObserverTest {
             documentId: UUID,
             scheme: String,
             keyVersion: Int,
+            creditsReserved: Int,
         ): Conversion = error(UNREACHABLE)
 
         override fun findOwnedResult(
@@ -183,6 +184,11 @@ class KeyRotationBatchObserverTest {
             actualUsed: Int,
             budget: Int,
         ): Int = error(UNREACHABLE)
+
+        override fun lockPendingReservation(
+            ownerId: UUID,
+            documentId: UUID,
+        ): PendingCreditsReservation? = error(UNREACHABLE)
     }
 
     /** 네 번째 가족 — 세 번째가 던지므로 이 자리까지 순회가 닿지 않는다. */

@@ -1,5 +1,6 @@
 package kr.easydoc.infrastructure.document
 
+import kr.easydoc.application.credit.noCredits
 import kr.easydoc.application.crypto.ContentCipher
 import kr.easydoc.application.document.DocumentService
 import kr.easydoc.application.document.DocumentStorage
@@ -75,7 +76,7 @@ class JdbcDocumentOriginalStoreTest {
         workspaces = JdbcWorkspaceRepository(jdbc)
         originals = JdbcDocumentOriginalRepository(jdbc)
         cipher = cipherWith(OLD_GENERATION)
-        purge = JdbcExpiredDocumentPurge(jdbc)
+        purge = JdbcExpiredDocumentPurge(jdbc, noCredits())
         service =
             DocumentService(
                 storage =
@@ -95,6 +96,7 @@ class JdbcDocumentOriginalStoreTest {
                     },
                 cipher = cipher,
                 transaction = SpringTransactionRunner(TransactionTemplate(DataSourceTransactionManager(dataSource))),
+                credits = noCredits(),
             )
         rotation =
             EnvelopeRotation(

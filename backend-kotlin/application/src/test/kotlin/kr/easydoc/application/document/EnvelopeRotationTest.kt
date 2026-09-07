@@ -629,6 +629,7 @@ class EnvelopeRotationTest {
             documentId: UUID,
             scheme: String,
             keyVersion: Int,
+            creditsReserved: Int,
         ): Conversion = error("회전 경로가 변환을 만들지 않는다")
 
         /**
@@ -692,6 +693,12 @@ class EnvelopeRotationTest {
             actualUsed: Int,
             budget: Int,
         ): Int = error("회전 경로가 재변환 예산 포트를 부르면 안 된다")
+
+        /** 회전은 문서 삭제 포트를 쓰지 않는다 — 부르면 이 파일의 케이스가 그 사실로 빨개진다. */
+        override fun lockPendingReservation(
+            ownerId: UUID,
+            documentId: UUID,
+        ): PendingCreditsReservation? = error("회전 경로가 문서 삭제 예약 조회 포트를 부르면 안 된다")
     }
 
     private class FeedbackRewrite(

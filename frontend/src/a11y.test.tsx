@@ -23,6 +23,7 @@ import {
   reconvertUnit,
 } from './api/client'
 import { lookupTerm } from './api/dictionary'
+import { getWorkspaceCredits } from './api/credits'
 import { getWorkspaceUsage } from './api/usage'
 import { computeEasyTextFingerprint } from './review/fingerprint'
 import { AuthContext, type AuthContextValue } from './auth/context'
@@ -35,6 +36,7 @@ import {
   segmentMap,
   segmentMapUnit,
   workspaceContext,
+  workspaceCredits,
   workspaceUsage,
 } from './test/factories'
 import { WorkspaceContext } from './workspace/context'
@@ -55,6 +57,10 @@ vi.mock('./api/dictionary', async (importOriginal) => ({
 vi.mock('./api/usage', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./api/usage')>()),
   getWorkspaceUsage: vi.fn(),
+}))
+
+vi.mock('./api/credits', () => ({
+  getWorkspaceCredits: vi.fn(),
 }))
 
 const USER = {
@@ -422,6 +428,7 @@ beforeEach(() => {
   })
   vi.mocked(getConversion).mockResolvedValue(conversion({ status: 'done' }))
   vi.mocked(getDocumentSource).mockResolvedValue(documentSource())
+  vi.mocked(getWorkspaceCredits).mockResolvedValue(workspaceCredits())
 })
 
 afterEach(() => {
@@ -431,6 +438,7 @@ afterEach(() => {
   vi.mocked(lookupTerm).mockReset()
   vi.mocked(reconvertUnit).mockReset()
   vi.mocked(getWorkspaceUsage).mockReset()
+  vi.mocked(getWorkspaceCredits).mockReset()
 })
 
 describe('①  랜드마크와 건너뛰기 링크', () => {

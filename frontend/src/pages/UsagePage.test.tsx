@@ -4,8 +4,14 @@ import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ApiError } from '../api/client'
+import { getWorkspaceCredits } from '../api/credits'
 import { getWorkspaceUsage } from '../api/usage'
-import { purposeUsageItem, workspaceContext, workspaceUsage } from '../test/factories'
+import {
+  purposeUsageItem,
+  workspaceContext,
+  workspaceCredits,
+  workspaceUsage,
+} from '../test/factories'
 import { WorkspaceContext } from '../workspace/context'
 import type { WorkspaceContextValue } from '../workspace/context'
 import { UsagePage } from './UsagePage'
@@ -13,6 +19,10 @@ import { UsagePage } from './UsagePage'
 vi.mock('../api/usage', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api/usage')>()),
   getWorkspaceUsage: vi.fn(),
+}))
+
+vi.mock('../api/credits', () => ({
+  getWorkspaceCredits: vi.fn(),
 }))
 
 function page(workspace: Partial<WorkspaceContextValue> = {}) {
@@ -31,6 +41,9 @@ function renderPage(workspace: Partial<WorkspaceContextValue> = {}) {
 
 beforeEach(() => {
   vi.mocked(getWorkspaceUsage).mockReset()
+  // 기본값은 크레딧 카드를 다루지 않는 기존 시나리오가 흔들리지 않도록 항상 성공한다.
+  // 크레딧 자체를 재는 테스트만 값을 명시로 덮어쓴다.
+  vi.mocked(getWorkspaceCredits).mockReset().mockResolvedValue(workspaceCredits())
 })
 
 afterEach(() => {
@@ -196,5 +209,144 @@ describe('기간 변경', () => {
       screen.queryByRole('table', { name: /이 기간 사용량 합계입니다/ }),
     ).not.toBeInTheDocument()
     expect(screen.queryByText('9건')).not.toBeInTheDocument()
+  })
+})
+
+describe('크레딧 카드 (C1/C2)', () => {
+  beforeEach(() => {
+    // 이 describe는 크레딧만 재므로, 별도 사용량 화면이 필요로 하는 조회는 기본값으로
+    // 채워 둔다 — 그렇지 않으면 unmocked getWorkspaceUsage가 undefined를 돌려주고
+    // 화면의 .then() 호출이 던진다.
+    vi.mocked(getWorkspaceUsage).mockResolvedValue(workspaceUsage())
+  })
+
+  it('가용·잔액·예약 중을 보여준다', async () => {
+    vi.mocked(getWorkspaceCredits).mockResolvedValue(
+      workspaceCredits({ balance: 10, reserved: 3, available: 7 }),
+    )
+
+    renderPage()
+
+    expect(await screen.findByRole('heading', { name: '크레딧' })).toBeInTheDocument()
+    expect(screen.getByText('가용')).toBeInTheDocument()
+    expect(screen.getByText('7')).toBeInTheDocument()
+    expect(screen.getByText('잔액')).toBeInTheDocument()
+    expect(screen.getByText('10')).toBeInTheDocument()
+    expect(screen.getByText('예약 중')).toBeInTheDocument()
+    expect(screen.getByText('3')).toBeInTheDocument()
+  })
+
+  it('집행이 꺼져 있으면 그 사실을 덧붙인다', async () => {
+    vi.mocked(getWorkspaceCredits).mockResolvedValue(workspaceCredits({ enforced: false }))
+
+    renderPage()
+
+    expect(await screen.findByText('(지금은 집행되지 않습니다)')).toBeInTheDocument()
+  })
+
+  it('집행 중이면 그 안내를 보여주지 않는다', async () => {
+    vi.mocked(getWorkspaceCredits).mockResolvedValue(workspaceCredits({ enforced: true }))
+
+    renderPage()
+
+    await screen.findByRole('heading', { name: '크레딧' })
+    expect(screen.queryByText('(지금은 집행되지 않습니다)')).not.toBeInTheDocument()
+  })
+
+  it('거래 표가 종류·크레딧(부호)·사유·메모·일시를 한국어로 보여준다', async () => {
+    vi.mocked(getWorkspaceCredits).mockResolvedValue(
+      workspaceCredits({
+        transactions: [
+          {
+            id: 't1',
+            kind: 'reserve',
+            credits: -3,
+            reason: 'conversion',
+            note: null,
+            document_id: 'd1',
+            created_at: '2026-09-01T00:00:00Z',
+          },
+          {
+            id: 't2',
+            kind: 'grant',
+            credits: 50,
+            reason: 'manual',
+            note: '파일럿 충전',
+            document_id: null,
+            created_at: '2026-09-02T00:00:00Z',
+          },
+        ],
+      }),
+    )
+
+    renderPage()
+
+    const table = await screen.findByRole('table', { name: /최근 크레딧 거래 내역입니다/ })
+    expect(within(table).getByText('예약')).toBeInTheDocument()
+    expect(within(table).getByText('-3')).toBeInTheDocument()
+    expect(within(table).getByText('문서 변환')).toBeInTheDocument()
+    expect(within(table).getByText('부여')).toBeInTheDocument()
+    expect(within(table).getByText('+50')).toBeInTheDocument()
+    expect(within(table).getByText('수동')).toBeInTheDocument()
+    expect(within(table).getByText('파일럿 충전')).toBeInTheDocument()
+  })
+
+  it('document_id가 있으면 문서로 가는 링크를 보여준다', async () => {
+    vi.mocked(getWorkspaceCredits).mockResolvedValue(
+      workspaceCredits({
+        transactions: [
+          {
+            id: 't1',
+            kind: 'reserve',
+            credits: -3,
+            reason: 'conversion',
+            note: null,
+            document_id: 'd1',
+            created_at: '2026-09-01T00:00:00Z',
+          },
+        ],
+      }),
+    )
+
+    renderPage()
+
+    const table = await screen.findByRole('table', { name: /최근 크레딧 거래 내역입니다/ })
+    expect(within(table).getByRole('link', { name: '문서 d1 보기' })).toHaveAttribute(
+      'href',
+      '/history',
+    )
+  })
+
+  it('document_id가 없으면 링크 대신 대시를 보여준다', async () => {
+    vi.mocked(getWorkspaceCredits).mockResolvedValue(
+      workspaceCredits({
+        transactions: [
+          {
+            id: 't1',
+            kind: 'grant',
+            credits: 50,
+            reason: 'manual',
+            note: null,
+            document_id: null,
+            created_at: '2026-09-01T00:00:00Z',
+          },
+        ],
+      }),
+    )
+
+    renderPage()
+
+    const table = await screen.findByRole('table', { name: /최근 크레딧 거래 내역입니다/ })
+    expect(within(table).queryByRole('link')).not.toBeInTheDocument()
+  })
+
+  it('조회가 실패하면 오류 문구를 보여준다', async () => {
+    vi.mocked(getWorkspaceCredits).mockRejectedValue(
+      new ApiError(500, '크레딧 계정을 불러오지 못했습니다'),
+    )
+
+    renderPage()
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('크레딧 계정을 불러오지 못했습니다')
   })
 })

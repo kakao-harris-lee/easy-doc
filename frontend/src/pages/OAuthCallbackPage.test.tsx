@@ -4,10 +4,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { fetchMe, oauthCallback } from '../api/auth'
 import { ApiError, listDocuments } from '../api/client'
+import { getWorkspaceCredits } from '../api/credits'
 import { AuthProvider } from '../auth/AuthProvider'
 import { AppLayout } from '../components/AppLayout'
 import { AppRoutes } from '../routes/AppRoutes'
-import { workspaceContext } from '../test/factories'
+import { workspaceContext, workspaceCredits } from '../test/factories'
 import { WorkspaceContext } from '../workspace/context'
 
 const STATE_KEY = 'easydoc.oauth.google.state'
@@ -25,6 +26,11 @@ vi.mock('../api/auth', () => ({
 vi.mock('../api/client', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api/client')>()),
   listDocuments: vi.fn(),
+}))
+
+// 홈(업로드 화면)이 가용 크레딧도 조회한다(C2) — 모킹하지 않으면 진짜 요청이 나간다.
+vi.mock('../api/credits', () => ({
+  getWorkspaceCredits: vi.fn(),
 }))
 
 function renderAt(path: string) {
@@ -58,6 +64,7 @@ beforeEach(() => {
   vi.mocked(fetchMe).mockReset()
   vi.mocked(oauthCallback).mockReset()
   vi.mocked(listDocuments).mockResolvedValue({ items: [], limit: 20, offset: 0, has_more: false })
+  vi.mocked(getWorkspaceCredits).mockReset().mockResolvedValue(workspaceCredits())
 })
 
 afterEach(() => {

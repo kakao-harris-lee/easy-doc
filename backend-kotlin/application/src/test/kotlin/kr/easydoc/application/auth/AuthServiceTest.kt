@@ -1,5 +1,10 @@
 package kr.easydoc.application.auth
 
+import kr.easydoc.application.credit.CreditAccountRepository
+import kr.easydoc.application.credit.CreditAccountService
+import kr.easydoc.application.credit.NoopCreditAccountRepository
+import kr.easydoc.core.credit.CreditReason
+import kr.easydoc.core.credit.Credits
 import kr.easydoc.core.exceptions.ConfigurationException
 import kr.easydoc.core.exceptions.InvalidCredentialsException
 import kr.easydoc.core.exceptions.InvalidInputException
@@ -27,6 +32,44 @@ class AuthServiceTest {
         assertThat(user.email).isEqualTo("user@example.test")
         assertThat(world.workspaces.createdFor).containsExactly(user.id)
         assertThat(world.workspaces.depthAtCreation).isEqualTo(1)
+    }
+
+    @Test
+    @DisplayName("가입은 크레딧 계정도 같은 트랜잭션에서 만든다")
+    fun `가입은 크레딧 계정을 만든다`() {
+        val world = World()
+
+        world.service.signup(uniqueEmail(), VALID_PASSWORD)
+
+        assertThat(world.creditRepository.ensuredFor).hasSize(1)
+        assertThat(world.creditRepository.depthAtEnsure).isEqualTo(1)
+        assertThat(world.creditRepository.grantCalls).isEmpty()
+    }
+
+    @Test
+    @DisplayName("가입 부여(signup-grant)가 설정되면 grant 거래를 만든다")
+    fun `가입 부여가 설정되면 grant 한다`() {
+        val world = World(signupGrant = 50)
+
+        val user = world.service.signup(uniqueEmail(), VALID_PASSWORD)
+
+        assertThat(world.creditRepository.grantCalls).hasSize(1)
+        val (workspaceId, credits, reason) = world.creditRepository.grantCalls.single()
+        assertThat(workspaceId).isEqualTo(world.creditRepository.ensuredFor.single())
+        assertThat(credits).isEqualTo(50)
+        assertThat(reason).isEqualTo(CreditReason.SIGNUP)
+        assertThat(world.creditRepository.depthAtGrant).isEqualTo(1)
+        assertThat(user).isNotNull()
+    }
+
+    @Test
+    @DisplayName("가입 부여가 0이면 grant 거래를 만들지 않는다")
+    fun `가입 부여 0은 grant 하지 않는다`() {
+        val world = World(signupGrant = 0)
+
+        world.service.signup(uniqueEmail(), VALID_PASSWORD)
+
+        assertThat(world.creditRepository.grantCalls).isEmpty()
     }
 
     @Test
@@ -206,6 +249,7 @@ private class World(
     tokensConfigured: Boolean = true,
     needsRehash: Boolean = false,
     rehashFails: Boolean = false,
+    signupGrant: Int = 0,
 ) {
     val transaction = RecordingTransactionRunner()
     val hasher = RecordingHasher(transaction, needsRehash)
@@ -213,7 +257,50 @@ private class World(
     val workspaces = RecordingWorkspaceRepository(transaction)
     val tokens = RecordingAccessTokens(tokensConfigured)
     val emailVerification = RecordingEmailVerification(transaction)
-    val service = AuthService(users, workspaces, hasher, tokens, transaction, emailVerification)
+    val creditRepository = RecordingCreditAccountRepository(transaction)
+    val credits = CreditAccountService(creditRepository, enforced = false, signupGrant = signupGrant)
+    val service =
+        AuthService(
+            users,
+            workspaces,
+            hasher,
+            tokens,
+            transaction,
+            emailVerification,
+            credits,
+        )
+}
+
+/**
+ * 크레딧 계정 호출을 기록하는 대역 — C1 검증용. `ensureAccount`·`grant` 만 재정의하고
+ * 나머지는 [NoopCreditAccountRepository] 에 위임한다(리뷰 MEDIUM-11) — 이 테스트가 재는
+ * 것은 가입 흐름이지 예약·소비·해제가 아니다.
+ */
+private class RecordingCreditAccountRepository(private val transaction: RecordingTransactionRunner) :
+    CreditAccountRepository by NoopCreditAccountRepository {
+    val ensuredFor: MutableList<UUID> = mutableListOf()
+    var depthAtEnsure: Int = -1
+        private set
+    val grantCalls: MutableList<Triple<UUID, Int, CreditReason>> = mutableListOf()
+    var depthAtGrant: Int = -1
+        private set
+
+    override fun ensureAccount(workspaceId: UUID) {
+        ensuredFor += workspaceId
+        depthAtEnsure = transaction.depth
+    }
+
+    override fun grant(
+        workspaceId: UUID,
+        ownerUserId: UUID,
+        credits: Int,
+        reason: CreditReason,
+        note: String?,
+    ): Int {
+        grantCalls += Triple(workspaceId, credits, reason)
+        depthAtGrant = transaction.depth
+        return credits
+    }
 }
 
 /**

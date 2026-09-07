@@ -16,7 +16,7 @@ class JdbcConversionWorkStore(private val jdbc: JdbcClient) : ConversionWorkStor
         jdbc
             .sql(
                 """
-                SELECT c.id, c.document_id, c.status,
+                SELECT c.id, c.document_id, c.status, c.credits_reserved,
                        d.source_text_encrypted, d.encryption_scheme, d.key_version,
                        d.workspace_id, d.user_id, d.char_count, d.source_unit_kinds
                 FROM conversions c
@@ -44,6 +44,7 @@ class JdbcConversionWorkStore(private val jdbc: JdbcClient) : ConversionWorkStor
                     // 뜻이다(리뷰 BLOCK 1) — 두 경우 모두 ProcessConversionJob 이
                     // SourceStructure.allBody 로 접어서 쓴다.
                     structure = rs.getString("source_unit_kinds")?.let { decodeStructureOrNull(it, documentId) },
+                    creditsReserved = rs.getInt("credits_reserved"),
                 )
             }.optional()
             .orElse(null)
@@ -122,6 +123,22 @@ class JdbcConversionWorkStore(private val jdbc: JdbcClient) : ConversionWorkStor
             .param("model", attribution.model)
             .param("inputTokens", usage.inputTokens)
             .param("outputTokens", usage.outputTokens)
+            .update() > 0
+
+    /** 리뷰 HIGH-1 — CAS 로 이 변환의 예약을 한 번만 정산 대상으로 넘긴다. */
+    override fun settleCreditsReserved(
+        conversionId: UUID,
+        expectedAmount: Int,
+    ): Boolean =
+        jdbc
+            .sql(
+                """
+                UPDATE conversions
+                SET credits_reserved = 0
+                WHERE id = :id AND credits_reserved = :expectedAmount
+                """.trimIndent(),
+            ).param("id", conversionId)
+            .param("expectedAmount", expectedAmount)
             .update() > 0
 
     override fun revertToPending(conversionId: UUID): Boolean =

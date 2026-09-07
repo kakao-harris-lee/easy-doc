@@ -152,6 +152,46 @@ docker compose -f compose.yml -f compose.ci.yml run --rm frontend-check
 않는다는 원칙과 같은 이유 — 이 CSV는 로그가 아니라 운영 산출물이지만 마찬가지로
 최소 보관한다).
 
+## 크레딧 충전
+
+워크스페이스마다 크레딧 잔액을 두고, 문서 등록 때 필요한 크레딧을 예약하고 변환이
+끝나면 소비하며, 잔액이 모자라면(집행이 켜졌을 때만) 등록을 거절한다(계획
+`docs/plans/2026-09-07-credit-accounts.md`). 충전은 PG가 없으므로 계좌이체 확인 뒤
+운영자가 `credit-grant` profile로 수동 부여한다 — `usage-report`·`rotate-keys`와 같은
+CLI one-off다(Compose 상시 서비스가 아니다).
+
+**절차:**
+
+1. **계좌이체 확인.** 입금 내역을 수기로 대조한다(위 「월간 청구」 3번과 같다).
+2. **`credit-grant`로 부여한다.** `usage-report` 호출과 같은 모양이다 — 바인드 마운트는
+   필요 없다(파일을 쓰지 않는다). `--workspace`는 워크스페이스 uuid,
+   `--credits`는 정수(월 구독 갱신·수동 충전은 양수, 환급 취소 같은 조정은 음수),
+   `--reason`은 `plan_monthly`(월 구독 갱신)·`manual`(수동 부여)·`refund`(환급) 중 하나,
+   `--note`는 선택(200자 이내, 운영자 메모 — 워크스페이스 이름·이메일을 적지 않는다.
+   표준출력·`GET .../credits` 응답 어디에도 이름·이메일은 실리지 않는다):
+   ```bash
+   docker compose -f compose.yml run --rm backend-api \
+     java -jar /app/easy-doc-api.jar --spring.profiles.active=credit-grant \
+     --workspace=00000000-0000-4000-8000-000000000001 --credits=50 \
+     --reason=plan_monthly --note="2026년 9월 정기 충전"
+   ```
+   표준출력에 `workspace_id`·적용 델타·반영 뒤 `balance`/`reserved`/`available`이 한 줄로
+   찍힌다. 종료 코드 0이면 반영된 것이고, 1이면 인자 오류나 존재하지 않는 워크스페이스다
+   (스택트레이스 없이 메시지 한 줄만 남는다 — 로그에서 확인한다).
+   **`usage-report`와 같은 이유로 이 프로필도 아무것도 면제하지 않는다** — 본문 암호화
+   키 전체 세대·LLM provider 조립을 그대로 요구하므로, `docker compose run` 은 위처럼
+   `backend-api` 서비스(그 환경변수 전부)로 돌려야 기동 자기점검을 통과한다.
+3. **확인한다.** 인증된 그 워크스페이스 소유자로 `GET /workspaces/{workspace_id}/credits`를
+   불러 잔액·거래 1건이 반영됐는지 본다(화면이면 `/usage` 크레딧 카드).
+4. **집행을 켠다(선택, 파일럿 준비가 끝난 뒤).** 기본값 `easydoc.credits.enforced=false`는
+   꺼져 있어도 예약·소비·거래를 그대로 기록한다(잔액이 음수로 남을 수 있다) — 켜는
+   순간부터 가용 크레딧이 모자란 등록이 402로 거절된다. `EASYDOC_CREDITS_ENFORCED=true`를
+   `.env`(또는 배포 환경변수)에 넣고 `backend-api`를 재기동한다.
+
+   **⚠ 순서를 지킨다 — 부여 → 확인 → 켜기.** 배포 직후 모든 워크스페이스 잔액이 0이라
+   먼저 켜면 그 순간부터 모든 등록이 402가 된다(계획 §6 리스크 1). 파일럿에 참여하는
+   워크스페이스 전부에 위 1~3단계로 잔액을 부여해 둔 뒤에만 켠다.
+
 ---
 
 ## 게이트 ① 판정

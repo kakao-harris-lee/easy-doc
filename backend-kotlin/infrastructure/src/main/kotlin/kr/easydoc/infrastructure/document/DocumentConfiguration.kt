@@ -5,6 +5,7 @@ import kr.easydoc.application.auth.UserRepository
 import kr.easydoc.application.conversion.ConvertDocumentUseCase
 import kr.easydoc.application.conversion.LlmCallLedger
 import kr.easydoc.application.conversion.ReconvertUnitService
+import kr.easydoc.application.credit.CreditAccountService
 import kr.easydoc.application.crypto.ContentCipher
 import kr.easydoc.application.document.ConversionFeedbackRepository
 import kr.easydoc.application.document.ConversionFeedbackService
@@ -92,6 +93,7 @@ class DocumentConfiguration {
         extractor: DocumentTextExtractor,
         transactionRunner: TransactionRunner,
         users: UserRepository,
+        credits: CreditAccountService,
     ): DocumentService =
         DocumentService(
             storage = storage,
@@ -100,6 +102,7 @@ class DocumentConfiguration {
             extractor = extractor,
             transaction = transactionRunner,
             users = users,
+            credits = credits,
         )
 
     /**
