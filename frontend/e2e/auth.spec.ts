@@ -100,8 +100,12 @@ test.describe('인증 흐름', () => {
     // 깨진다. 대신 **존재를 한 번만** 확인하고, 나머지 호출들의 순서는 그대로 정확히
     // 단언한다.
     const creditsSignature = `${ROUTES.readWorkspaceCredits.method} /workspaces/${listBody.items[0]?.id}/credits ${ROUTES.readWorkspaceCredits.ok}`
+    // 활성 공지 조회(2.25.0)도 같은 이유로 세션당 한 번, 위치는 못박지 않는다.
+    const announcementsSignature = `${ROUTES.activeAnnouncements.method} ${ROUTES.activeAnnouncements.path} ${ROUTES.activeAnnouncements.ok}`
+    const independent = new Set([creditsSignature, announcementsSignature])
     expect(signatures.filter((entry) => entry === creditsSignature)).toHaveLength(1)
-    expect(signatures.filter((entry) => entry !== creditsSignature)).toEqual([
+    expect(signatures.filter((entry) => entry === announcementsSignature)).toHaveLength(1)
+    expect(signatures.filter((entry) => !independent.has(entry))).toEqual([
       `${ROUTES.signup.method} ${ROUTES.signup.path} ${ROUTES.signup.created}`,
       `${ROUTES.login.method} ${ROUTES.login.path} ${ROUTES.login.ok}`,
       `${ROUTES.me.method} ${ROUTES.me.path} ${ROUTES.me.ok}`,
