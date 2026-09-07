@@ -9,7 +9,9 @@ import {
   createDocumentFromText,
   listDocuments,
 } from '../api/client'
-import type { DocumentListItem } from '../api/types'
+import type { DocumentCreationResult } from '../api/client'
+import { getWorkspaceCredits } from '../api/credits'
+import type { DocumentCreatedResponse, DocumentListItem } from '../api/types'
 import { AuthContext } from '../auth/context'
 import type { AuthContextValue } from '../auth/context'
 import {
@@ -17,6 +19,7 @@ import {
   documentItem,
   userResponse,
   workspaceContext,
+  workspaceCredits,
   workspaceItem,
 } from '../test/factories'
 import { WorkspaceContext } from '../workspace/context'
@@ -64,12 +67,36 @@ function selectFileLikeBrowser(input: HTMLInputElement, file: File) {
   fireEvent.change(input, { target: { files: [file] } })
 }
 
+/**
+ * `createDocumentFromText`·`createDocumentFromFile`의 성공 응답(C2) — 202의
+ * `X-Credit-Balance` 헤더를 흉내 낸다. 기본값은 헤더가 없는 경우(null)다.
+ */
+function documentCreationResult(
+  overrides: Partial<DocumentCreatedResponse> = {},
+  creditBalance: number | null = null,
+): DocumentCreationResult {
+  return {
+    document: {
+      document_id: 'd1',
+      conversion_id: 'c1',
+      status: 'pending',
+      char_count: 7,
+      ...overrides,
+    },
+    creditBalance,
+  }
+}
+
 vi.mock('../api/client', async (importOriginal) => ({
   // ApiError는 화면이 instanceof로 가르므로 진짜 클래스를 그대로 쓴다.
   ...(await importOriginal<typeof import('../api/client')>()),
   createDocumentFromText: vi.fn(),
   createDocumentFromFile: vi.fn(),
   listDocuments: vi.fn(),
+}))
+
+vi.mock('../api/credits', () => ({
+  getWorkspaceCredits: vi.fn(),
 }))
 
 /** GET /documents 한 쪽. 「다음 할 일」은 이 응답만 근거로 삼는다(§7). */
@@ -110,17 +137,15 @@ beforeEach(() => {
   // 기본값은 "문서 없음"이다 — 그 경우 이 화면은 아무것도 제안하지 않으므로(제안이
   // 곧 이 화면의 대표 행동과 같은 말이 된다) 나머지 테스트가 제안에 영향받지 않는다.
   vi.mocked(listDocuments).mockReset().mockResolvedValue(documentPage([]))
+  // 기본값은 조회 실패다 — 크레딧을 다루지 않는 나머지 테스트는 "가용" 문구 없이
+  // 필요 크레딧만 보이는 상태로 남는다. 크레딧을 재는 테스트만 명시로 성공을 덮어쓴다.
+  vi.mocked(getWorkspaceCredits).mockReset().mockRejectedValue(new ApiError(500, '조회 실패'))
 })
 
 describe('업로드 화면', () => {
   it('붙여넣은 글을 올리고 변환 화면으로 넘어간다', async () => {
     const user = userEvent.setup()
-    vi.mocked(createDocumentFromText).mockResolvedValue({
-      document_id: 'd1',
-      conversion_id: 'c1',
-      status: 'pending',
-      char_count: 7,
-    })
+    vi.mocked(createDocumentFromText).mockResolvedValue(documentCreationResult())
     renderPage()
 
     await user.type(screen.getByLabelText('문서 제목'), '청년 월세 지원 안내')
@@ -137,12 +162,7 @@ describe('업로드 화면', () => {
 
   it('지금 고른 작업 공간에 담는다', async () => {
     const user = userEvent.setup()
-    vi.mocked(createDocumentFromText).mockResolvedValue({
-      document_id: 'd1',
-      conversion_id: 'c1',
-      status: 'pending',
-      char_count: 7,
-    })
+    vi.mocked(createDocumentFromText).mockResolvedValue(documentCreationResult())
     renderPage({
       workspaces: [workspaceItem({ id: 'w1' }), workspaceItem({ id: 'w2', name: '민원 안내' })],
       currentId: 'w2',
@@ -157,12 +177,7 @@ describe('업로드 화면', () => {
 
   it('작업 공간을 아직 못 받았어도 올릴 수 있다', async () => {
     const user = userEvent.setup()
-    vi.mocked(createDocumentFromText).mockResolvedValue({
-      document_id: 'd1',
-      conversion_id: 'c1',
-      status: 'pending',
-      char_count: 7,
-    })
+    vi.mocked(createDocumentFromText).mockResolvedValue(documentCreationResult())
     renderPage({ workspaces: [], currentId: null })
 
     await user.type(screen.getByLabelText('문서 제목'), '기본 작업 공간 문서')
@@ -198,12 +213,9 @@ describe('업로드 화면', () => {
     // UTF-16으로 2 코드 유닛(surrogate pair)이라 text.length로 세면 4만으로 잘못
     // 잡혀 상한을 넘겼다고 오판한다 — 코드 포인트 2만 개는 실제로는 상한 이내다.
     const user = userEvent.setup()
-    vi.mocked(createDocumentFromText).mockResolvedValue({
-      document_id: 'd1',
-      conversion_id: 'c1',
-      status: 'pending',
-      char_count: 20000,
-    })
+    vi.mocked(createDocumentFromText).mockResolvedValue(
+      documentCreationResult({ char_count: 20000 }),
+    )
     renderPage()
 
     const emoji20000 = '😀'.repeat(20000)
@@ -279,12 +291,7 @@ describe('업로드 화면', () => {
 
   it('txt 파일도 올릴 수 있고 파일 등록으로 제출된다', async () => {
     const user = userEvent.setup()
-    vi.mocked(createDocumentFromFile).mockResolvedValue({
-      document_id: 'd1',
-      conversion_id: 'c1',
-      status: 'pending',
-      char_count: 7,
-    })
+    vi.mocked(createDocumentFromFile).mockResolvedValue(documentCreationResult())
     renderPage()
 
     const input = await chooseFileMode(user)
@@ -402,6 +409,121 @@ describe('업로드 화면', () => {
     expect(screen.getByLabelText('바꿀 글')).toHaveAttribute('aria-invalid', 'false')
   })
 
+  describe('크레딧 안내 (C2)', () => {
+    it('필요 크레딧은 ceil(글자수/1000)이고, 가용 조회 전에는 필요 크레딧만 보여준다', async () => {
+      const user = userEvent.setup()
+      // beforeEach가 조회 실패를 기본값으로 둔다 — "가용"이 끝까지 나타나지 않는다.
+      renderPage()
+
+      await user.click(screen.getByLabelText('바꿀 글'))
+      await user.paste('가'.repeat(1001))
+
+      expect(screen.getByText('필요 크레딧 2')).toBeInTheDocument()
+      expect(screen.queryByText(/가용/)).not.toBeInTheDocument()
+    })
+
+    it('가용 크레딧 조회가 성공하면 필요 크레딧 옆에 가용을 덧붙인다', async () => {
+      vi.mocked(getWorkspaceCredits).mockResolvedValue(workspaceCredits({ available: 5 }))
+      const user = userEvent.setup()
+      renderPage()
+
+      await user.click(screen.getByLabelText('바꿀 글'))
+      await user.paste('가'.repeat(2000))
+
+      expect(await screen.findByText('필요 크레딧 2 / 가용 5')).toBeInTheDocument()
+    })
+
+    it('1,000자 경계 — 정확히 1,000자는 1크레딧, 1자만 넘겨도 2크레딧이다', async () => {
+      const user = userEvent.setup()
+      renderPage()
+
+      await user.click(screen.getByLabelText('바꿀 글'))
+      await user.paste('가'.repeat(1000))
+
+      expect(screen.getByText('필요 크레딧 1')).toBeInTheDocument()
+
+      await user.paste('가')
+
+      expect(screen.getByText('필요 크레딧 2')).toBeInTheDocument()
+    })
+
+    it('집행이 꺼져 있으면 필요/가용 옆에 그 사실을 덧붙인다', async () => {
+      vi.mocked(getWorkspaceCredits).mockResolvedValue(
+        workspaceCredits({ available: 5, enforced: false }),
+      )
+      const user = userEvent.setup()
+      renderPage()
+
+      await user.click(screen.getByLabelText('바꿀 글'))
+      await user.paste('가'.repeat(2000))
+
+      expect(
+        await screen.findByText('필요 크레딧 2 / 가용 5 (지금은 집행되지 않습니다)'),
+      ).toBeInTheDocument()
+    })
+
+    it('집행 중이면 그 안내를 보여주지 않는다', async () => {
+      vi.mocked(getWorkspaceCredits).mockResolvedValue(
+        workspaceCredits({ available: 5, enforced: true }),
+      )
+      const user = userEvent.setup()
+      renderPage()
+
+      await user.click(screen.getByLabelText('바꿀 글'))
+      await user.paste('가'.repeat(2000))
+
+      await screen.findByText('필요 크레딧 2 / 가용 5')
+      expect(screen.queryByText(/지금은 집행되지 않습니다/)).not.toBeInTheDocument()
+    })
+
+    it('워크스페이스당 한 번만 조회한다', async () => {
+      vi.mocked(getWorkspaceCredits).mockResolvedValue(workspaceCredits({ available: 5 }))
+      const user = userEvent.setup()
+      renderPage()
+
+      await screen.findByText(/필요 크레딧/)
+      vi.mocked(getWorkspaceCredits).mockClear()
+
+      await user.click(screen.getByLabelText('바꿀 글'))
+      await user.paste('가')
+      await user.paste('나')
+
+      expect(vi.mocked(getWorkspaceCredits)).not.toHaveBeenCalled()
+    })
+
+    it('크레딧이 부족해 402를 받으면 서버 문구와 필요·가용 크레딧을 함께 보여준다', async () => {
+      const user = userEvent.setup()
+      vi.mocked(createDocumentFromText).mockRejectedValue(
+        new ApiError(402, '크레딧이 부족합니다. 충전 후 다시 시도하세요.', null, null, 1, 2),
+      )
+      renderPage()
+
+      await user.type(screen.getByLabelText('문서 제목'), '청년 월세 지원 안내')
+      await user.type(screen.getByLabelText('바꿀 글'), '신청 안내')
+      await user.click(screen.getByRole('button', { name: '쉬운 글 초안 만들기' }))
+
+      expect(await screen.findByRole('alert')).toHaveTextContent(
+        '크레딧이 부족합니다. 충전 후 다시 시도하세요. 필요 2 · 가용 1',
+      )
+      expect(screen.queryByRole('heading', { name: '변환 화면' })).not.toBeInTheDocument()
+    })
+
+    // 202가 X-Credit-Balance를 실으면 setAvailableCredits를 부른다 — 대부분 곧바로
+    // navigate로 덮이는 「보험」 갱신이라 화면에 남는 값으로는 관찰되지 않는다. 이
+    // 테스트는 그 값이 있어도(4) 제출·이동이 그대로 성공한다는 것만 고정한다.
+    it('202가 X-Credit-Balance를 실어도 제출은 그대로 성공한다', async () => {
+      const user = userEvent.setup()
+      vi.mocked(createDocumentFromText).mockResolvedValue(documentCreationResult({}, 4))
+      renderPage()
+
+      await user.type(screen.getByLabelText('문서 제목'), '청년 월세 지원 안내')
+      await user.type(screen.getByLabelText('바꿀 글'), '신청 안내')
+      await user.click(screen.getByRole('button', { name: '쉬운 글 초안 만들기' }))
+
+      expect(await screen.findByRole('heading', { name: '변환 화면' })).toBeInTheDocument()
+    })
+  })
+
   it('안내 카드의 지원 형식·크기는 코드 상수에서 나온다', () => {
     renderPage()
 
@@ -449,12 +571,7 @@ describe('업로드 화면', () => {
   it('목록 조회가 실패해도 문서 등록은 그대로 동작한다', async () => {
     const user = userEvent.setup()
     vi.mocked(listDocuments).mockRejectedValue(new ApiError(500, '문서를 불러오지 못했습니다'))
-    vi.mocked(createDocumentFromText).mockResolvedValue({
-      document_id: 'd1',
-      conversion_id: 'c1',
-      status: 'pending',
-      char_count: 7,
-    })
+    vi.mocked(createDocumentFromText).mockResolvedValue(documentCreationResult())
     renderPage()
 
     await user.type(screen.getByLabelText('문서 제목'), '청년 월세 지원 안내')

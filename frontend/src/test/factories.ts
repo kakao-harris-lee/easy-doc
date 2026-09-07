@@ -2,12 +2,14 @@
 
 import type {
   ConversionResponse,
+  CreditTransaction,
   DocumentListItem,
   DocumentSourceResponse,
   PurposeUsageItem,
   SegmentMap,
   SegmentMapUnit,
   UserResponse,
+  WorkspaceCreditsResponse,
   WorkspaceListItem,
   WorkspaceUsageResponse,
 } from '../api/types'
@@ -159,6 +161,35 @@ export function workspaceUsage(
     estimated_cost_usd: '0.001000',
     cost_unknown_calls: 0,
     by_purpose: [purposeUsageItem()],
+    ...overrides,
+  }
+}
+
+/** `WorkspaceCreditsResponse.transactions` 항목(C1/C2). 기본값은 문서 등록 예약 1건. */
+export function creditTransaction(overrides: Partial<CreditTransaction> = {}): CreditTransaction {
+  return {
+    id: 't1',
+    kind: 'reserve',
+    credits: -3,
+    reason: 'conversion',
+    note: null,
+    document_id: 'd1',
+    created_at: '2026-09-01T00:00:00Z',
+    ...overrides,
+  }
+}
+
+/** GET /workspaces/{id}/credits 응답(C1/C2, 계약 2.22.0). 기본값은 집행이 켜진 계정이다. */
+export function workspaceCredits(
+  overrides: Partial<WorkspaceCreditsResponse> = {},
+): WorkspaceCreditsResponse {
+  return {
+    workspace_id: 'w1',
+    balance: 10,
+    reserved: 3,
+    available: 7,
+    enforced: true,
+    transactions: [creditTransaction()],
     ...overrides,
   }
 }

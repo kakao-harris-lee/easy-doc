@@ -722,6 +722,10 @@ class InMemoryCreditAccountRepository : CreditAccountRepository {
     private class Account {
         var balance: Int = 0
         var reserved: Int = 0
+
+        // ownerOf(C2)를 흉내 내는 데만 쓴다 — 이 슬라이스는 소유 판정을 재지 않는다(클래스
+        // KDoc), 그래서 처음 만난 ownerId를 그대로 고정해 둔다.
+        var ownerId: UUID? = null
         val transactions: MutableList<CreditTransactionView> = mutableListOf()
     }
 
@@ -739,6 +743,7 @@ class InMemoryCreditAccountRepository : CreditAccountRepository {
         enforced: Boolean,
     ): ReservationResult {
         val account = accounts.getOrPut(workspaceId) { Account() }
+        account.ownerId = account.ownerId ?: ownerId
         val available = account.balance - account.reserved
         if (enforced && available < amount.amount) {
             return ReservationResult.Insufficient(available)
@@ -811,6 +816,7 @@ class InMemoryCreditAccountRepository : CreditAccountRepository {
         note: String?,
     ): Int {
         val account = accounts.getOrPut(workspaceId) { Account() }
+        account.ownerId = account.ownerId ?: ownerUserId
         account.balance += credits
         val kind = if (credits >= 0) CreditTransactionKind.GRANT else CreditTransactionKind.ADJUST
         account.transactions +=
@@ -841,6 +847,8 @@ class InMemoryCreditAccountRepository : CreditAccountRepository {
     }
 
     override fun consistencyViolations(): List<CreditConsistencyViolation> = emptyList()
+
+    override fun ownerOf(workspaceId: UUID): UUID? = accounts[workspaceId]?.ownerId
 
     private companion object {
         const val TRANSACTION_HISTORY_LIMIT = 50

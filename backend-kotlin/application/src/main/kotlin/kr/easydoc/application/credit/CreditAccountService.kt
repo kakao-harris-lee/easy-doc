@@ -192,6 +192,8 @@ object NoopCreditAccountRepository : CreditAccountRepository {
     ): CreditAccountRow? = null
 
     override fun consistencyViolations(): List<CreditConsistencyViolation> = emptyList()
+
+    override fun ownerOf(workspaceId: UUID): UUID? = null
 }
 
 /**

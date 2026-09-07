@@ -496,11 +496,28 @@ x-cors:
   allow_credentials: false     # 쿠키를 쓰지 않는다 — 켜면 CSRF 노출 면적만 넓어진다
   allow_methods: [GET, POST, PUT, PATCH, DELETE]  # OPTIONS는 미들웨어가 스스로 처리
   allow_headers: [Authorization, Content-Type]
-  expose_headers: [Content-Disposition, Location]
+  expose_headers:
+    [
+      Content-Disposition,
+      Location,
+      Retry-After,
+      X-Remaining-Call-Budget,
+      X-Credit-Balance,
+      X-Credits-Required,
+    ]
   x-note: |
     expose_headers가 빠지면 서버 응답은 완전한데 **브라우저 JS만** 헤더를 못 읽는다.
-    다운로드 파일명(Content-Disposition)과 접수 주소(Location)가 그 대상이다.
-    서버 테스트로는 잡히지 않으므로 브라우저 컨텍스트에서 확인한다.
+    다운로드 파일명(Content-Disposition)·접수 주소(Location)·재변환 예산 쿨다운
+    (Retry-After·X-Remaining-Call-Budget)·크레딧 잔액/필요량(X-Credit-Balance·
+    X-Credits-Required)이 그 대상이다. 서버 테스트로는 잡히지 않으므로 브라우저
+    컨텍스트에서 확인한다.
+
+    **2.22.0 정정** — 이 넷(Retry-After·X-Remaining-Call-Budget·X-Credit-Balance·
+    X-Credits-Required)이 이전까지 이 목록에 없었다. `ContractHeaderDeclarationTest`가
+    응답 헤더 선언을 전부 세는 것과 달리, 이 목록은 계약에 헤더를 선언하는 것과는
+    별개의 관문이라 그 테스트가 이 누락을 잡지 못했다 — 프런트(`client.ts`)는 값을
+    파싱하는 코드를 갖췄지만 교차 출처(Compose: 8080 → 8100)에서는 실제로 `null`만
+    받고 있었다.
   # 미처리 500 응답의 CORS 헤더 — Python과 Kotlin이 의도적으로 다른 지점.
   # 이 절이 그 결정의 정본이다(다른 문서에 옮겨 적지 않는다).
   x-unhandled-500-cors:
@@ -5527,6 +5544,16 @@ x-changelog:
 
       ⑸ **엔드포인트 수 29 → 30** — 2.21.0(`USAGE-U2-AGGREGATE`)이 연 29 위에 이
          오퍼레이션 1종을 더한다.
+
+      ⑹ **CORS 노출 목록 정정** — 이전 버전의 브라우저는 재변환 예산·Retry-After
+         헤더를 읽지 못했다. `x-cors.expose_headers`가 `Content-Disposition`·`Location`
+         둘뿐이라, `Retry-After`·`X-Remaining-Call-Budget`(재변환 예산, 2.14.0)과 이번
+         버전이 새로 낸 `X-Credit-Balance`·`X-Credits-Required`가 응답에는 실려도
+         브라우저 JS(`client.ts`)는 교차 출처(Compose: 프런트 8080 → API 8100)에서
+         전부 `null`로 읽고 있었다 — 계약 선언(`ContractHeaderDeclarationTest`)과
+         CORS 노출은 서로 다른 관문이라 그 테스트가 이 누락을 잡지 못했다. 이번 버전
+         안에서(2.22.0, 미배포) 넷을 목록에 더해 정정한다 — 이 변경 단위 자체가
+         아직 나가지 않았으므로 별도 버전을 새로 열지 않는다.
     ground: |
       **G1 — 사용자 요청(2026-09-07).** 「크레딧 계정·차감 스팩 쓰고 진행」 — 계획
       §2의 결정을 계약으로 옮긴다. 402·헤더 패턴은 같은 계획 §1.5가 인용한

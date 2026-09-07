@@ -1,12 +1,142 @@
 import { useEffect, useId, useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 
 import { ApiError } from '../api/client'
+import { getWorkspaceCredits } from '../api/credits'
 import { getWorkspaceUsage } from '../api/usage'
-import type { PurposeUsageItem, WorkspaceUsageResponse } from '../api/types'
+import type {
+  CreditReason,
+  CreditTransaction,
+  CreditTransactionKind,
+  PurposeUsageItem,
+  WorkspaceCreditsResponse,
+  WorkspaceUsageResponse,
+} from '../api/types'
+import { HISTORY_PATH } from '../routes/paths'
 import { useWorkspace } from '../workspace/context'
 import { PageHeader } from '../components/PageHeader'
 
 const LOAD_ERROR_MESSAGE = '사용량을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.'
+
+/** 크레딧 계정을 불러오지 못했을 때 쓰는 문구 — 사용량 조회 실패와 다른 자원이라 문구도 나눈다. */
+const CREDITS_LOAD_ERROR_MESSAGE = '크레딧 계정을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.'
+
+/** 거래 종류를 사람이 읽는 말로. `PURPOSE_LABEL`과 같은 이유로 `Record<string, string>`이다. */
+const KIND_LABEL: Record<string, string> = {
+  grant: '부여',
+  reserve: '예약',
+  consume: '소비',
+  release: '해제',
+  adjust: '조정',
+}
+
+/** 거래 사유를 사람이 읽는 말로. */
+const REASON_LABEL: Record<string, string> = {
+  signup: '가입',
+  plan_monthly: '월 구독',
+  manual: '수동',
+  refund: '환급',
+  conversion: '문서 변환',
+}
+
+/** 부호를 명시한다 — 양수도 `+`를 붙인다(자바스크립트 기본 표기는 양수 부호를 생략한다). */
+function formatSignedCredits(value: number): string {
+  return value > 0 ? `+${value.toLocaleString('ko-KR')}` : value.toLocaleString('ko-KR')
+}
+
+/** 크레딧 계정 요약 카드 — 가용·잔액·예약 중, 집행이 꺼져 있으면 그 사실을 덧붙인다. */
+function CreditsCard({ credits }: { credits: WorkspaceCreditsResponse }) {
+  return (
+    <div className="rounded-[12px] border border-border bg-card p-5 shadow-[0_1px_2px_rgba(20,33,31,0.04)]">
+      <h2 className="text-[15px] font-semibold text-foreground">크레딧</h2>
+      <dl className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <div>
+          <dt className="text-sm text-muted-foreground">가용</dt>
+          <dd className="text-xl font-bold tabular-nums text-foreground">
+            {credits.available.toLocaleString('ko-KR')}
+          </dd>
+        </div>
+        <div>
+          <dt className="text-sm text-muted-foreground">잔액</dt>
+          <dd className="text-xl font-bold tabular-nums text-foreground">
+            {credits.balance.toLocaleString('ko-KR')}
+          </dd>
+        </div>
+        <div>
+          <dt className="text-sm text-muted-foreground">예약 중</dt>
+          <dd className="text-xl font-bold tabular-nums text-foreground">
+            {credits.reserved.toLocaleString('ko-KR')}
+          </dd>
+        </div>
+      </dl>
+      {!credits.enforced && (
+        <p className="mt-3 text-sm text-muted-foreground">(지금은 집행되지 않습니다)</p>
+      )}
+    </div>
+  )
+}
+
+/** 거래 한 줄 — 종류·사유 라벨은 계약이 값을 늘려도 화면이 죽지 않도록 원래 값으로 대체한다. */
+function CreditTransactionRow({ transaction }: { transaction: CreditTransaction }) {
+  const kind: CreditTransactionKind | string = transaction.kind
+  const reason: CreditReason | string = transaction.reason
+  return (
+    <tr>
+      <th scope="row">{KIND_LABEL[kind] ?? kind}</th>
+      <td className="tabular-nums">{formatSignedCredits(transaction.credits)}</td>
+      <td>{REASON_LABEL[reason] ?? reason}</td>
+      <td>{transaction.note ?? '—'}</td>
+      <td>
+        {transaction.document_id !== null ? (
+          <Link
+            className="text-primary underline-offset-4 hover:underline"
+            to={HISTORY_PATH}
+            aria-label={`문서 ${transaction.document_id} 보기`}
+          >
+            문서 보기
+          </Link>
+        ) : (
+          '—'
+        )}
+      </td>
+      <td>{new Date(transaction.created_at).toLocaleString('ko-KR')}</td>
+    </tr>
+  )
+}
+
+/** 최근 거래 50건 표. 계약이 거래를 최신순으로 담아 준다(정렬을 다시 하지 않는다). */
+function CreditTransactionsTable({ transactions }: { transactions: CreditTransaction[] }) {
+  return (
+    <div className="rounded-[12px] border border-border bg-card px-5 pb-5 shadow-[0_1px_2px_rgba(20,33,31,0.04)]">
+      <table className="usage-table">
+        <caption>최근 크레딧 거래 내역입니다.</caption>
+        <thead>
+          <tr>
+            <th scope="col">종류</th>
+            <th scope="col">크레딧</th>
+            <th scope="col">사유</th>
+            <th scope="col">메모</th>
+            <th scope="col">문서</th>
+            <th scope="col">일시</th>
+          </tr>
+        </thead>
+        <tbody>
+          {transactions.length === 0 ? (
+            <tr>
+              <td colSpan={6} className="text-muted-foreground">
+                아직 거래가 없습니다.
+              </td>
+            </tr>
+          ) : (
+            transactions.map((transaction) => (
+              <CreditTransactionRow key={transaction.id} transaction={transaction} />
+            ))
+          )}
+        </tbody>
+      </table>
+    </div>
+  )
+}
 
 /**
  * 목적(purpose)을 사람이 읽는 말로 — `HistoryPage`의 `SOURCE_FORMAT_TEXT`와 같은 관례다.
@@ -122,7 +252,9 @@ function TotalsTable({ usage, caption }: { usage: WorkspaceUsageResponse; captio
           <tr>
             <th scope="col">문서</th>
             <th scope="col">문자</th>
-            <th scope="col">크레딧</th>
+            {/* 원장(`llm_calls`)에서 유도한 「썼어야 할 크레딧」이다 — 계정 거래(`잔액` 카드,
+            §6.3)와 다른 값일 수 있어 이름을 구분한다(계획 §6 리스크 3). */}
+            <th scope="col">사용 크레딧</th>
             <th scope="col">호출</th>
             <th scope="col">입력 토큰</th>
             <th scope="col">출력 토큰</th>
@@ -164,6 +296,13 @@ export function UsagePage() {
   const [usage, setUsage] = useState<WorkspaceUsageResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  // 크레딧 계정은 기간과 무관하다(잔액은 지금 시점의 값이다) — 사용량 조회와 별도
+  // 상태·별도 effect로 둔다. 기간을 바꿔도 다시 부르지 않는다.
+  const [credits, setCredits] = useState<WorkspaceCreditsResponse | null>(null)
+  const [creditsError, setCreditsError] = useState<string | null>(null)
+  // 지연 초기값 — 워크스페이스가 하나도 없어 끝내 정해지지 않는 계정(workspaceId===null)
+  // 이라면 애초에 조회가 나가지 않으므로 "불러오는 중"으로 시작하지 않는다.
+  const [creditsLoading, setCreditsLoading] = useState(() => workspaceId !== null)
 
   const fromId = useId()
   const toId = useId()
@@ -192,6 +331,40 @@ export function UsagePage() {
       setLoading(true)
     }
   }
+
+  // 워크스페이스가 바뀌면 이전 워크스페이스의 크레딧 카드를 그 자리에서 내린다 — 위
+  // `renderedKey`와 같은 "렌더 중 상태 조정" 패턴이다.
+  const [renderedCreditsWorkspaceId, setRenderedCreditsWorkspaceId] = useState(workspaceId)
+  if (renderedCreditsWorkspaceId !== workspaceId) {
+    setRenderedCreditsWorkspaceId(workspaceId)
+    setCredits(null)
+    setCreditsError(null)
+    // 작업 공간이 없어지면(끝내 정해지지 않는 계정 포함) 조회 자체가 나가지 않으므로
+    // 로딩 표시도 여기서 함께 끝낸다 — 아래 effect가 그 갈래에서 조기 반환하기 전에
+    // 렌더 중에 미리 맞춘다("렌더 중 상태 조정" 패턴, effect 안에서 곧바로 setState를
+    // 부르지 않는다).
+    setCreditsLoading(workspaceId !== null)
+  }
+
+  useEffect(() => {
+    if (workspaceId === null) {
+      return
+    }
+    const controller = new AbortController()
+    getWorkspaceCredits(workspaceId, controller.signal)
+      .then((response) => {
+        setCredits(response)
+        setCreditsError(null)
+      })
+      .catch((caught: unknown) => {
+        if (caught instanceof DOMException && caught.name === 'AbortError') {
+          return
+        }
+        setCreditsError(caught instanceof ApiError ? caught.message : CREDITS_LOAD_ERROR_MESSAGE)
+      })
+      .finally(() => setCreditsLoading(false))
+    return () => controller.abort()
+  }, [workspaceId])
 
   useEffect(() => {
     if (workspaceId === null || period === null) {
@@ -292,6 +465,25 @@ export function UsagePage() {
             </div>
           )}
         </fieldset>
+
+        {creditsError !== null && (
+          <p className="form-error" role="alert">
+            {creditsError}
+          </p>
+        )}
+
+        {creditsLoading && (
+          <p className="py-6 text-center text-sm text-primary" role="status">
+            크레딧을 불러오는 중입니다…
+          </p>
+        )}
+
+        {!creditsLoading && creditsError === null && credits !== null && (
+          <>
+            <CreditsCard credits={credits} />
+            <CreditTransactionsTable transactions={credits.transactions} />
+          </>
+        )}
 
         {error !== null && (
           <p className="form-error" role="alert">

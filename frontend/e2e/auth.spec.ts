@@ -50,6 +50,15 @@ test.describe('인증 흐름', () => {
         response.url().startsWith(api(`${ROUTES.documentList.path}?`)) &&
         new URL(response.url()).searchParams.has('workspace_id'),
     )
+    // 가용 크레딧 조회(C2) — 업로드 화면이 워크스페이스당 한 번 부른다. 「다음 할 일」
+    // 제안(위 `suggestionPromise`)과 같은 effect 묶음이지만 그 뒤에 선언돼 있어
+    // (`UploadPage`) 문서 목록 조회보다 나중에 나간다 — 아래 순서 단언이 도착 전에
+    // 돌지 않도록 여기서도 약속을 걸어 둔다.
+    const creditsPromise = page.waitForResponse(
+      (response) =>
+        response.request().method() === ROUTES.readWorkspaceCredits.method &&
+        /\/workspaces\/[^/]+\/credits$/.test(new URL(response.url()).pathname),
+    )
     await signUpAndLand(page, account)
     const listBody = (await (await listPromise).json()) as WorkspaceListBody
 
@@ -80,9 +89,19 @@ test.describe('인증 흐름', () => {
     // 걸려야 한다.
     const suggestion = await suggestionPromise
     expect(new URL(suggestion.url()).searchParams.get('workspace_id')).toBe(listBody.items[0]?.id)
+    await creditsPromise
 
     const calls = await log.apiCalls()
-    expect(calls.map(routeSignature)).toEqual([
+    const signatures = calls.map(routeSignature)
+    // 가용 크레딧 조회는 문서 목록 제안과 **서로 다른 effect가 독립으로 쏘는 요청**이다
+    // — 둘 다 같은 순간(`workspaceId`가 정해진 렌더) 나가므로 어느 응답이 먼저
+    // 도착하는지는 네트워크 타이밍에 달렸다(`NetworkLog`는 도착 순서를 기록한다).
+    // 그래서 정확한 위치로 끼워 넣지 않는다 — 위치를 못박으면 그 경쟁에서 지는 실행마다
+    // 깨진다. 대신 **존재를 한 번만** 확인하고, 나머지 호출들의 순서는 그대로 정확히
+    // 단언한다.
+    const creditsSignature = `${ROUTES.readWorkspaceCredits.method} /workspaces/${listBody.items[0]?.id}/credits ${ROUTES.readWorkspaceCredits.ok}`
+    expect(signatures.filter((entry) => entry === creditsSignature)).toHaveLength(1)
+    expect(signatures.filter((entry) => entry !== creditsSignature)).toEqual([
       `${ROUTES.signup.method} ${ROUTES.signup.path} ${ROUTES.signup.created}`,
       `${ROUTES.login.method} ${ROUTES.login.path} ${ROUTES.login.ok}`,
       `${ROUTES.me.method} ${ROUTES.me.path} ${ROUTES.me.ok}`,

@@ -88,6 +88,14 @@ test.describe('작업 공간', () => {
         response.url().startsWith(api(`${ROUTES.documentList.path}?`)) &&
         new URL(response.url()).searchParams.has('workspace_id'),
     )
+    // 가용 크레딧 재조회(C2) — 위 제안 재조회와 같은 이유로 새 작업 공간으로 옮긴
+    // 뒤 다시 나간다. 이 화면의 **최초** 조회는 위 `toHaveCount(1)` 시점에 이미
+    // 끝났으므로, 여기서 잡는 것은 새 작업 공간에 대한 재조회다.
+    const creditsPromise = page.waitForResponse(
+      (response) =>
+        response.request().method() === ROUTES.readWorkspaceCredits.method &&
+        /\/workspaces\/[^/]+\/credits$/.test(new URL(response.url()).pathname),
+    )
     const [createdResponse] = await Promise.all([
       page.waitForResponse(
         (response) =>
@@ -113,17 +121,25 @@ test.describe('작업 공간', () => {
     // 기준점이 배열 끝이면 뒤에 호출이 하나 붙을 때마다 숫자만 늘리게 되고 그러다
     // 인과 자체가 흐려진다. `slice(createdAt)` 은 여전히 전체 일치라서 예상 밖 호출이
     // 끼어들면 그대로 걸린다.
+    const createdBody = (await createdResponse.json()) as { id: string }
     const suggestion = await suggestionPromise
     // 좁힌 대상이 방금 만든 공간인가 — [routeSignature] 가 걷어낸 쿼리를 여기서 잰다.
-    expect(new URL(suggestion.url()).searchParams.get('workspace_id')).toBe(
-      ((await createdResponse.json()) as { id: string }).id,
-    )
+    expect(new URL(suggestion.url()).searchParams.get('workspace_id')).toBe(createdBody.id)
+    await creditsPromise
 
     const signatures = (await log.apiCalls()).map(routeSignature)
     const createSignature = `${ROUTES.workspaceCreate.method} ${ROUTES.workspaceCreate.path} ${ROUTES.workspaceCreate.created}`
     const createdAt = signatures.indexOf(createSignature)
     expect(createdAt).toBeGreaterThanOrEqual(0)
-    expect(signatures.slice(createdAt)).toEqual([
+    const tail = signatures.slice(createdAt)
+    // 가용 크레딧 재조회는 제안 재조회와 **서로 다른 effect가 독립으로 쏘는 요청**이다
+    // — 둘 다 같은 순간(새 작업 공간으로 `workspaceId`가 바뀐 렌더) 나가므로 어느
+    // 응답이 먼저 도착하는지는 네트워크 타이밍에 달렸다. 그래서 정확한 위치로 끼워
+    // 넣지 않는다 — 존재를 한 번만 확인하고, 나머지 호출의 순서는 그대로 정확히
+    // 단언한다.
+    const creditsSignature = `${ROUTES.readWorkspaceCredits.method} /workspaces/${createdBody.id}/credits ${ROUTES.readWorkspaceCredits.ok}`
+    expect(tail.filter((entry) => entry === creditsSignature)).toHaveLength(1)
+    expect(tail.filter((entry) => entry !== creditsSignature)).toEqual([
       createSignature,
       `${ROUTES.workspaceList.method} ${ROUTES.workspaceList.path} ${ROUTES.workspaceList.ok}`,
       `${ROUTES.documentList.method} ${ROUTES.documentList.path} ${ROUTES.documentList.ok}`,
