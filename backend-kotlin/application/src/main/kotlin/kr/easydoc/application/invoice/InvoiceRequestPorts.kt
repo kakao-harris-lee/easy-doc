@@ -68,6 +68,12 @@ sealed interface InvoiceRequestHandling {
     object AlreadyHandled : InvoiceRequestHandling
 }
 
+/** [InvoiceRequestRepository.listAll] 결과 — `GET /admin/invoice-requests` 페이지 하나. */
+data class InvoiceRequestPage(
+    val items: List<InvoiceRequestRow>,
+    val total: Int,
+)
+
 /**
  * `invoice_requests`(V16) 저장소 — 계획 §2 결정 2·4.
  *
@@ -75,9 +81,14 @@ sealed interface InvoiceRequestHandling {
  * KDoc과 같은 규약) — 사용자 요청 경로(`createInvoiceRequest`·`listInvoiceRequests`)가
  * 호출자가 제출한 `workspace_id`를 그대로 받아 넘기기 때문이다.
  *
- * **[handle] 은 소유 술어가 없다** — 운영자 전용 CLI(`invoice-handle` 프로필)가 id 하나로
- * 처리한다. 인증된 요청자 컨텍스트가 없어(운영자가 CLI 인자로 id만 준다) 소유자를 받을
- * 자리가 원래 없다(`CreditAccountRepository.ownerOf`·`rotate-keys` 배치와 같은 사유).
+ * **[handle] 은 소유 술어가 없다** — 운영자 전용 CLI(`invoice-handle` 프로필)와 관리자
+ * 화면(`POST /admin/invoice-requests/{id}/handle`) 둘 다 id 하나로 처리한다. 인증된
+ * 요청자 컨텍스트가 없거나(CLI) 있어도 워크스페이스 소유자가 아니라 관리자라(화면)
+ * 소유자를 받을 자리가 원래 없다(`CreditAccountRepository.ownerOf`·`rotate-keys` 배치와
+ * 같은 사유).
+ *
+ * **[listAll] 도 소유 술어가 없다** — 관리자 화면(`GET /admin/invoice-requests`) 전용이라
+ * 전체 워크스페이스를 가로지른다(어드민 최소 계획 §2 결정 4).
  */
 interface InvoiceRequestRepository {
     @Suppress("LongParameterList")
@@ -106,10 +117,23 @@ interface InvoiceRequestRepository {
         limit: Int,
     ): List<InvoiceRequestRow>?
 
+    /**
+     * [handledBy] 는 감사 흔적이다(어드민 최소 계획 `docs/plans/2026-09-07-admin-minimum.md`
+     * §2 결정 3, `invoice_requests.handled_by` V17) — 관리자 화면 경유는 관리자 id,
+     * `invoice-handle` 운영 프로필은 `null`.
+     */
     fun handle(
         id: UUID,
         status: InvoiceRequestStatus,
         note: String?,
         handledAt: Instant,
+        handledBy: UUID?,
     ): InvoiceRequestHandling
+
+    /** 관리자 목록 — [status]는 선택 필터, [page]는 1부터, [size]는 1~100. 최신순. */
+    fun listAll(
+        status: InvoiceRequestStatus?,
+        page: Int,
+        size: Int,
+    ): InvoiceRequestPage
 }

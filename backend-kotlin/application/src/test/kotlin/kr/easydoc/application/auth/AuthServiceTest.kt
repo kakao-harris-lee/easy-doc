@@ -296,6 +296,7 @@ private class RecordingCreditAccountRepository(private val transaction: Recordin
         credits: Int,
         reason: CreditReason,
         note: String?,
+        actorUserId: UUID?,
     ): Int {
         grantCalls += Triple(workspaceId, credits, reason)
         depthAtGrant = transaction.depth

@@ -47,6 +47,7 @@ object RequestFieldProbes {
             "InvoiceRequestCreate.representative_name" to FieldShape(ProbeShape.PLAIN, Noise.CONTROL_CHAR),
             "InvoiceRequestCreate.address" to FieldShape(ProbeShape.PLAIN, Noise.CONTROL_CHAR),
             "InvoiceRequestCreate.contact_email" to FieldShape(ProbeShape.EMAIL, Noise.LEADING_SPACE),
+            "AnnouncementCreateRequest.body" to FieldShape(ProbeShape.PLAIN, Noise.CONTROL_CHAR),
         )
 
     /** 계약이 지목한 요청 필드 이름 전부. */

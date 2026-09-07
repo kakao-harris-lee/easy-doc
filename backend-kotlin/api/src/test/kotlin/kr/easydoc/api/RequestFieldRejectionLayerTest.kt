@@ -3,6 +3,7 @@ package kr.easydoc.api
 import kr.easydoc.api.config.PrivateResponseHeadersConfig
 import kr.easydoc.api.support.AuthSliceBeans
 import kr.easydoc.api.support.ContractSpec
+import kr.easydoc.api.support.InMemoryAdminAccessRepository
 import kr.easydoc.api.support.InMemoryConversionRepository
 import kr.easydoc.api.support.InMemoryUserRepository
 import kr.easydoc.api.support.InMemoryWorkspaceRepository
@@ -46,6 +47,9 @@ class RequestFieldRejectionLayerTest {
 
     @Autowired
     private lateinit var workspaces: InMemoryWorkspaceRepository
+
+    @Autowired
+    private lateinit var adminAccess: InMemoryAdminAccessRepository
 
     @Autowired
     private lateinit var conversions: InMemoryConversionRepository
@@ -170,6 +174,7 @@ class RequestFieldRejectionLayerTest {
             INVOICE_REPRESENTATIVE_NAME_FIELD to { value -> probeInvoiceRequest(representativeName = value) },
             INVOICE_ADDRESS_FIELD to { value -> probeInvoiceRequest(address = value) },
             INVOICE_CONTACT_EMAIL_FIELD to { value -> probeInvoiceRequest(contactEmail = value) },
+            ANNOUNCEMENT_BODY_FIELD to ::probeAnnouncement,
         )
 
     /**
@@ -245,6 +250,17 @@ class RequestFieldRejectionLayerTest {
                 ),
             )
         return postJson("$WORKSPACES_PATH/$workspaceId/invoice-requests", body, owner)
+    }
+
+    /**
+     * `POST /admin/announcements` — 관리자 전용이라 매 호출마다 새 검증된 관리자 계정을
+     * 만든다(`AdminAccessInterceptor`가 걸린다).
+     */
+    private fun probeAnnouncement(value: String): Observed {
+        val admin = users.create("announcement-probe-${UUID.randomUUID()}@example.test", STUB_HASH).id
+        users.markEmailVerified(admin)
+        adminAccess.markAdmin(admin)
+        return postJson(ANNOUNCEMENTS_PATH, json.writeValueAsString(mapOf("body" to value)), admin)
     }
 
     /** 검수 저장은 **완료된 내 변환**을 전제한다 — 아니면 409 라 길이 축에 닿지 못한다. */
@@ -344,6 +360,7 @@ class RequestFieldRejectionLayerTest {
         const val DOCUMENTS_PATH = "/documents"
         const val WORKSPACES_PATH = "/workspaces"
         const val DICTIONARY_LOOKUP_PATH = "/dictionary/lookup"
+        const val ANNOUNCEMENTS_PATH = "/admin/announcements"
         const val SET_PASSWORD_PATH = "/auth/password"
         const val PASSWORD_RESET_REQUEST_PATH = "/auth/password-reset/request"
         const val PASSWORD_RESET_CONFIRM_PATH = "/auth/password-reset/confirm"
@@ -377,6 +394,7 @@ class RequestFieldRejectionLayerTest {
         const val INVOICE_REPRESENTATIVE_NAME_FIELD = "InvoiceRequestCreate.representative_name"
         const val INVOICE_ADDRESS_FIELD = "InvoiceRequestCreate.address"
         const val INVOICE_CONTACT_EMAIL_FIELD = "InvoiceRequestCreate.contact_email"
+        const val ANNOUNCEMENT_BODY_FIELD = "AnnouncementCreateRequest.body"
 
         /** 체크섬을 통과하는 사업자번호 — `BusinessNumberTest`와 같은 값 형태(220-81-62517). */
         const val INVOICE_VALID_BUSINESS_NUMBER = "2208162517"

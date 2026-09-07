@@ -41,7 +41,7 @@ openapi: 3.1.0
 
 info:
   title: Easy-Read AI API
-  version: "2.24.0"
+  version: "2.25.0"
   x-baselined-at: "2026-08-12"       # 초판 기준선을 뜬 날 (동결일이 아니다)
   x-rebased-at: "2026-08-12"         # 계약의 성격을 "개선 대상"으로 다시 정의한 날
   x-source-runtime: "Python 3.12 / FastAPI (app/main.py) — 과거 참고 구현이었고 2026-08-24 저장소에서 제거됨(git 태그 pre-python-removal-20260824). 기준선 출처였을 뿐 정답이 아니었다"
@@ -1292,6 +1292,11 @@ x-request-field-constraints:
       limit: 255                 # SignupRequest.email과 같은 규칙(EmailAddress.of 재사용)
       measured_on: "정규화 후 — 앞뒤 공백 제거 + 소문자화"
       detail: "이메일 형식이 올바르지 않습니다"
+    - field: "AnnouncementCreateRequest.body"       # 어드민 최소, 2.25.0
+      layer: service
+      limit: 500                 # announcements.body varchar(500), V17
+      measured_on: "정규화 후 — 제어문자 제거 + 앞뒤 공백 제거(WorkspaceNameRequest.name과 같은 규칙)"
+      detail: ["공지 내용을 입력해 주세요", "공지 내용은 500자 이하여야 합니다"]
 
   x-open-asymmetry: |
     **미결 — Phase 4, `kotlin-implementer`·`parity-verifier` 공동.**
@@ -1687,6 +1692,10 @@ tags:
     description: 작업 공간 목록·만들기·이름 바꾸기·삭제
   - name: dictionary
     description: 어려운 말 사전 조회 — 검수 화면의 대체어 추천(P0-5, 2.11.0)
+  - name: admin
+    description: 관리자 전용 — 고객·사용량·오류 조회, 크레딧 수동 조정, 세금계산서 처리, 공지(어드민 최소, 2.25.0)
+  - name: announcements
+    description: 사용자 화면 상단 배너용 활성 공지 조회(어드민 최소, 2.25.0)
   - name: health
     description: 생존 확인 (인증 불필요)
 
@@ -3898,6 +3907,477 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/HealthResponse' }
 
+  # ===========================================================================
+  # 어드민 최소 (2.25.0 신설) — /admin/… 열한 오퍼레이션 중 열 개(관리자 전용) +
+  # /announcements/active(인증 사용자, 관리자 전용 아님). 정본은
+  # docs/plans/2026-09-07-admin-minimum.md §2. 관리자는 DB 플래그(`users.is_admin`,
+  # V17)이고 부여는 `admin-grant` 운영 프로필뿐이다. `x-admin-only: true`가 붙은
+  # 오퍼레이션은 전부 `AdminGuard`가 걸린다 — 관리자가 아니거나 이메일이 미검증이면
+  # 403 「관리자 권한이 필요합니다」(`AuthenticationCoverageContractTest`의 관리자 축이
+  # 이 표식과 `/admin/` 접두어를 대조한다).
+  # ===========================================================================
+  /admin/workspaces:
+    get:
+      tags: [admin]
+      operationId: listAdminWorkspaces
+      summary: 워크스페이스 목록을 검색한다 (관리자 전용)
+      security: [{ HTTPBearer: [] }]
+      x-admin-only: true
+      description: |
+        `q`는 이름·소유자 이메일 부분 일치(대소문자 무시), 생략하면 전체다. 크레딧
+        잔액·예약·가용, 이번 달 사용량(문서 수·크레딧·비용)을 함께 담는다 —
+        `CreditAccountService.read`·`UsageQueryService.usageOf`를 그 워크스페이스의
+        실제 소유자로 재사용한다(계획 §2 결정 4).
+      parameters:
+        - name: q
+          in: query
+          required: false
+          schema: { type: string }
+        - name: page
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 100000, default: 1 }
+        - name: size
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+      responses:
+        '200':
+          description: 워크스페이스 목록 페이지
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminWorkspaceListResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403':
+          description: 관리자가 아니거나 이메일이 검증되지 않았다
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+              examples:
+                admin_required: { value: { detail: "관리자 권한이 필요합니다" } }
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '500': { $ref: '#/components/responses/InternalError' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+
+  /admin/workspaces/{workspace_id}:
+    parameters:
+      - name: workspace_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [admin]
+      operationId: readAdminWorkspace
+      summary: 워크스페이스 상세를 읽는다 (관리자 전용)
+      security: [{ HTTPBearer: [] }]
+      x-admin-only: true
+      description: |
+        요약 + 최근 거래 50건 + 세금계산서 요청 + 최근 변환 20건(id·문서 제목·status·
+        failure_code·created_at — **본문·프롬프트는 어디에도 없다**, 범위 밖 「관리자도
+        본문을 보지 않는다」). 없으면 404 — 관리자 전용이라 존재 은닉(`/workspaces/{id}`의
+        404와 달리 진짜 404다).
+      responses:
+        '200':
+          description: 워크스페이스 상세
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminWorkspaceDetailResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403':
+          description: 관리자가 아니거나 이메일이 검증되지 않았다
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+              examples:
+                admin_required: { value: { detail: "관리자 권한이 필요합니다" } }
+        '404':
+          description: 워크스페이스가 없다
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+              examples:
+                workspace_not_found: { value: { detail: "작업 공간을 찾을 수 없습니다" } }
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '500': { $ref: '#/components/responses/InternalError' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+
+  /admin/workspaces/{workspace_id}/credits:
+    post:
+      tags: [admin]
+      operationId: adjustAdminWorkspaceCredits
+      summary: 워크스페이스 크레딧을 수동으로 조정한다 (관리자 전용)
+      security: [{ HTTPBearer: [] }]
+      x-admin-only: true
+      parameters:
+        - name: workspace_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      description: |
+        `credit-grant` 운영 프로필(C2)과 같은 경로를 재사용한다 — `credits`가 0 이상이면
+        GRANT, 음수면 ADJUST. `reason`은 `plan_monthly`·`manual`·`refund` 셋만 허용한다
+        (가입 보너스·문서 변환 전용 사유는 화면에서 만들 수 없다). 반영된 거래의
+        `actor_user_id`(V17)에 호출한 관리자의 id가 남는다(계획 §2 결정 3).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AdminCreditAdjustmentRequest' }
+      responses:
+        '200':
+          description: 반영 뒤 크레딧 계정
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkspaceCreditsResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403':
+          description: 관리자가 아니거나 이메일이 검증되지 않았다
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+              examples:
+                admin_required: { value: { detail: "관리자 권한이 필요합니다" } }
+        '404':
+          description: 워크스페이스가 없다
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+              examples:
+                workspace_not_found: { value: { detail: "작업 공간을 찾을 수 없습니다" } }
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
+        '422':
+          description: credits가 0이거나 reason이 허용값 밖이다
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+              examples:
+                zero_credits: { value: { detail: "credits 는 0이 될 수 없습니다" } }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+
+  /admin/invoice-requests:
+    get:
+      tags: [admin]
+      operationId: listAdminInvoiceRequests
+      summary: 전체 세금계산서 요청을 조회한다 (관리자 전용)
+      security: [{ HTTPBearer: [] }]
+      x-admin-only: true
+      description: |
+        워크스페이스를 가로질러 전체를 본다 — `status`(선택, `requested`·`issued`·
+        `rejected`)로 좁힐 수 있다. 최신순.
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema: { type: string, enum: [requested, issued, rejected] }
+        - name: page
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 100000, default: 1 }
+        - name: size
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+      responses:
+        '200':
+          description: 세금계산서 요청 목록 페이지
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminInvoiceRequestListResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403':
+          description: 관리자가 아니거나 이메일이 검증되지 않았다
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+              examples:
+                admin_required: { value: { detail: "관리자 권한이 필요합니다" } }
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '500': { $ref: '#/components/responses/InternalError' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+
+  /admin/invoice-requests/{id}/handle:
+    post:
+      tags: [admin]
+      operationId: handleAdminInvoiceRequest
+      summary: 세금계산서 요청을 발급·거절 처리한다 (관리자 전용)
+      security: [{ HTTPBearer: [] }]
+      x-admin-only: true
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      description: |
+        `invoice-handle` 운영 프로필과 같은 유스케이스([InvoiceRequestService.handle])를
+        재사용한다 — `status`는 `issued`·`rejected`만 허용한다(`requested`는 422).
+        처리된 요청의 `handled_by`(V17)에 호출한 관리자의 id가 남고, 요청자에게 상태
+        안내 메일이 최선 노력으로 간다(요청 흐름과 같은 규약).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AdminInvoiceRequestHandleRequest' }
+      responses:
+        '200':
+          description: 처리된 요청
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InvoiceRequestResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403':
+          description: 관리자가 아니거나 이메일이 검증되지 않았다
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+              examples:
+                admin_required: { value: { detail: "관리자 권한이 필요합니다" } }
+        '404':
+          description: 요청이 없다
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+              examples:
+                request_not_found: { value: { detail: "요청을 찾을 수 없습니다" } }
+        '409':
+          description: 이미 처리된 요청이다
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+              examples:
+                already_handled: { value: { detail: "이미 처리된 요청입니다" } }
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
+        '422':
+          description: status가 issued·rejected가 아니거나 note가 500자를 넘는다
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+              examples:
+                invalid_status: { value: { detail: "status는 issued 또는 rejected여야 합니다" } }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+
+  /admin/errors:
+    get:
+      tags: [admin]
+      operationId: readAdminErrors
+      summary: 기간 내 실패한 변환을 코드별로 집계한다 (관리자 전용)
+      security: [{ HTTPBearer: [] }]
+      x-admin-only: true
+      description: |
+        `from`·`to`(생략 시 이번 달 1일~오늘, `readWorkspaceUsage`와 같은 기본값·범위
+        규칙) 안의 `failed` 변환을 `failure_code`별 건수와 최근 50건 목록으로 낸다.
+        **본문·프롬프트는 어디에도 없다** — id·workspace_id·created_at·failure_code뿐.
+      parameters:
+        - name: from
+          in: query
+          required: false
+          schema: { type: string, examples: ["2026-09-01"] }
+        - name: to
+          in: query
+          required: false
+          schema: { type: string, examples: ["2026-09-07"] }
+      responses:
+        '200':
+          description: 코드별 건수 + 최근 목록
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminErrorsResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403':
+          description: 관리자가 아니거나 이메일이 검증되지 않았다
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+              examples:
+                admin_required: { value: { detail: "관리자 권한이 필요합니다" } }
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '500': { $ref: '#/components/responses/InternalError' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+
+  /admin/usage:
+    get:
+      tags: [admin]
+      operationId: readAdminUsage
+      summary: 운영 리포트 행을 JSON으로 조회한다 (관리자 전용)
+      security: [{ HTTPBearer: [] }]
+      x-admin-only: true
+      description: |
+        `usage-report`(U3) 운영 프로필과 같은 행·같은 기간 규칙(생략 시 지난달 전체)을
+        CSV 대신 JSON으로 낸다. CSV 산출은 계속 그 프로필이 맡는다 — 이 오퍼레이션은
+        화면 조회 전용이다.
+      parameters:
+        - name: from
+          in: query
+          required: false
+          schema: { type: string, examples: ["2026-08-01"] }
+        - name: to
+          in: query
+          required: false
+          schema: { type: string, examples: ["2026-08-31"] }
+      responses:
+        '200':
+          description: 사용자·워크스페이스별 사용량 행
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminUsageResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403':
+          description: 관리자가 아니거나 이메일이 검증되지 않았다
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+              examples:
+                admin_required: { value: { detail: "관리자 권한이 필요합니다" } }
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '500': { $ref: '#/components/responses/InternalError' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+
+  /admin/announcements:
+    get:
+      tags: [admin]
+      operationId: listAdminAnnouncements
+      summary: 공지 전체를 조회한다 (관리자 전용)
+      security: [{ HTTPBearer: [] }]
+      x-admin-only: true
+      description: 활성·비활성 전부, 최신순.
+      responses:
+        '200':
+          description: 공지 목록
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AnnouncementListResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403':
+          description: 관리자가 아니거나 이메일이 검증되지 않았다
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+              examples:
+                admin_required: { value: { detail: "관리자 권한이 필요합니다" } }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+    post:
+      tags: [admin]
+      operationId: createAdminAnnouncement
+      summary: 공지를 만든다 (관리자 전용)
+      security: [{ HTTPBearer: [] }]
+      x-admin-only: true
+      description: |
+        `body`는 필수, 정규화 후(제어문자 제거 + 앞뒤 공백 제거) 500자 이하 —
+        `x-request-field-constraints` 참조. 새로 만든 공지는 항상 `active: true`다.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AnnouncementCreateRequest' }
+      responses:
+        '201':
+          description: 만들어진 공지
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AnnouncementResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403':
+          description: 관리자가 아니거나 이메일이 검증되지 않았다
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+              examples:
+                admin_required: { value: { detail: "관리자 권한이 필요합니다" } }
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
+        '422':
+          description: body가 비었거나 500자를 넘는다
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+              examples:
+                empty_body: { value: { detail: "공지 내용을 입력해 주세요" } }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+
+  /admin/announcements/{id}:
+    patch:
+      tags: [admin]
+      operationId: updateAdminAnnouncement
+      summary: 공지를 수정한다 (관리자 전용)
+      security: [{ HTTPBearer: [] }]
+      x-admin-only: true
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      description: |
+        `body`·`active` 둘 다 선택 — 준 필드만 바꾼다(생략한 필드는 그대로다). **명시적
+        `null`은 생략과 같다** — 그 필드를 바꾸지 않는다. 두 필드 모두 생략·`null`이면
+        아무것도 바꾸지 않는다(`updated_at`도 그대로다) — 무변경 호출을 변경으로 남기지
+        않는다.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AnnouncementUpdateRequest' }
+      responses:
+        '200':
+          description: 수정된 공지
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AnnouncementResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403':
+          description: 관리자가 아니거나 이메일이 검증되지 않았다
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+              examples:
+                admin_required: { value: { detail: "관리자 권한이 필요합니다" } }
+        '404':
+          description: 공지가 없다
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+              examples:
+                announcement_not_found: { value: { detail: "공지를 찾을 수 없습니다" } }
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
+        '422':
+          description: body가 500자를 넘는다
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+              examples:
+                body_too_long: { value: { detail: "공지 내용은 500자 이하여야 합니다" } }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+
+  # ===========================================================================
+  # 사용자용 활성 공지 (2.25.0 신설) — 관리자 전용이 아니다. 인증 사용자면 누구나
+  # 부를 수 있다(전역 공지, 소유 자원이 없다).
+  # ===========================================================================
+  /announcements/active:
+    get:
+      tags: [announcements]
+      operationId: listActiveAnnouncements
+      summary: 활성 공지를 조회한다
+      security: [{ HTTPBearer: [] }]
+      description: |
+        활성(`active: true`) 공지 최신순 최대 5건. `AppLayout`이 상단 배너로 보여준다 —
+        닫기는 브라우저 로컬 저장(공지 id별)이라 계약에 없다.
+      responses:
+        '200':
+          description: 활성 공지 목록
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ActiveAnnouncementListResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+
 components:
 
   securitySchemes:
@@ -4472,7 +4952,7 @@ components:
 
     UserResponse:
       type: object
-      required: [id, email, email_verified, has_password, identities]
+      required: [id, email, email_verified, has_password, identities, is_admin]
       description: 사용자 공개 표현. `password_hash`는 절대 포함하지 않는다.
       properties:
         id: { type: string, format: uuid }
@@ -4503,6 +4983,15 @@ components:
             정본은 `x-social-login.explicit_linking`). 비밀번호 전용 계정, 아직 아무것도
             잇지 않은 계정은 빈 배열이다. 화면이 "구글 계정이 연결돼 있음"을 보여주는
             자리다 — `provider_user_id` 등 신원 상세는 담지 않는다(응답 최소화).
+        is_admin:
+          type: boolean
+          description: |
+            관리자인지(2.25.0 신설, 어드민 최소 계획 `docs/plans/2026-09-07-admin-minimum.md`
+            §2 결정 1) — `users.is_admin`(V17). 화면이 계정 메뉴에 「관리」 링크를 보여줄지
+            판단하는 표시값일 뿐이다 — 실제 관리자 API 접근은 매 요청 DB를 다시 읽는
+            `AdminGuard`가 판정한다(이 값이 참이어도 이메일이 미검증이면 관리자 API는
+            403이다). 부여·회수는 `admin-grant --email=<이메일> [--revoke]` 운영
+            프로필뿐이다 — 이 API로는 바꿀 수 없다.
 
     UserIdentityResponse:
       type: object
@@ -5646,6 +6135,253 @@ components:
           description: 최근 50건, 최신순.
 
     # ---------------------------------------------------------------------
+    # 어드민 최소 (2.25.0 신설) — docs/plans/2026-09-07-admin-minimum.md §2
+    # ---------------------------------------------------------------------
+    AdminWorkspaceSummary:
+      type: object
+      required:
+        [workspace_id, name, owner_email, created_at, credit_balance, credit_reserved,
+         credit_available, month_documents, month_credits, month_cost_usd]
+      description: '`GET /admin/workspaces`(목록 항목)·`GET /admin/workspaces/{workspace_id}`(상세의 `summary`) 공용.'
+      properties:
+        workspace_id: { type: string, format: uuid }
+        name: { type: string }
+        owner_email: { type: string }
+        created_at: { type: string, format: date-time }
+        credit_balance: { type: integer, description: '부여 합계 − 소비 합계. 집행이 꺼진 상태에서는 음수일 수 있다.' }
+        credit_reserved: { type: integer, minimum: 0 }
+        credit_available: { type: integer, description: '`credit_balance − credit_reserved`. 음수일 수 있다.' }
+        month_documents:
+          type: integer
+          description: 이번 달(자연월) 사용량 — `readWorkspaceUsage`의 기본 기간(이번 달 1일~오늘)과 같다.
+        month_credits: { type: integer }
+        month_cost_usd:
+          description: '`BigDecimal`을 문자열로 싣는다 — `readWorkspaceUsage.estimated_cost_usd`와 같은 규칙. 비용을 알 수 없는 호출만 있으면 `null`.'
+          anyOf:
+            - { type: string }
+            - { type: 'null' }
+
+    AdminWorkspaceListResponse:
+      type: object
+      required: [items, page, size, total]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/AdminWorkspaceSummary' }
+        page: { type: integer, minimum: 1 }
+        size: { type: integer, minimum: 1, maximum: 100 }
+        total: { type: integer, minimum: 0, description: 검색 조건에 맞는 전체 워크스페이스 수(페이지와 무관). }
+
+    AdminConversionItem:
+      type: object
+      required: [id, title, status, failure_code, created_at]
+      description: '`AdminWorkspaceDetailResponse.recent_conversions` 항목. **본문·프롬프트는 어디에도 없다.**'
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string }
+        status: { $ref: '#/components/schemas/ConversionStatus' }
+        failure_code:
+          anyOf:
+            - { type: string }
+            - { type: 'null' }
+        created_at: { type: string, format: date-time }
+
+    AdminWorkspaceDetailResponse:
+      type: object
+      required: [summary, transactions, invoice_requests, recent_conversions]
+      properties:
+        summary: { $ref: '#/components/schemas/AdminWorkspaceSummary' }
+        transactions:
+          type: array
+          items: { $ref: '#/components/schemas/CreditTransaction' }
+          description: 최근 거래 최신순 50건 — `readWorkspaceCredits.transactions`와 같은 모양.
+        invoice_requests:
+          type: array
+          items: { $ref: '#/components/schemas/InvoiceRequestResponse' }
+          description: 그 워크스페이스의 세금계산서 요청 최근 50건, 최신순.
+        recent_conversions:
+          type: array
+          items: { $ref: '#/components/schemas/AdminConversionItem' }
+          description: 최근 변환 20건, 최신순.
+
+    AdminCreditAdjustmentRequest:
+      type: object
+      required: [credits, reason]
+      description: '`POST /admin/workspaces/{workspace_id}/credits` 요청 본문.'
+      properties:
+        credits:
+          type: integer
+          description: 0이 될 수 없다. 0 이상이면 부여(grant), 음수면 조정(adjust) — `credit-grant` CLI와 같은 규칙.
+        reason:
+          type: string
+          enum: [plan_monthly, manual, refund]
+          description: '`credit-grant` CLI가 받는 사유 셋과 같다 — 가입 보너스·문서 변환 전용 사유는 화면에서 만들 수 없다.'
+        note:
+          x-service-constraint: { max_length: 200, measured_on: raw }
+          description: '선택. `credit_transactions.note`(V15) 상한과 같다 — 200자 초과는 422.'
+          anyOf:
+            - { type: string, maxLength: 200 }
+            - { type: 'null' }
+
+    AdminInvoiceRequestListResponse:
+      type: object
+      required: [items, page, size, total]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/InvoiceRequestResponse' }
+        page: { type: integer, minimum: 1 }
+        size: { type: integer, minimum: 1, maximum: 100 }
+        total: { type: integer, minimum: 0 }
+
+    AdminInvoiceRequestHandleRequest:
+      type: object
+      required: [status]
+      description: '`POST /admin/invoice-requests/{id}/handle` 요청 본문 — `invoice-handle` CLI의 `--status`·`--note`와 같은 필드.'
+      properties:
+        status:
+          type: string
+          enum: [issued, rejected]
+        note:
+          description: '선택, 500자 이하 — `InvoiceRequestResponse.operator_note`와 같은 상한(`requireValidOperatorNote`).'
+          anyOf:
+            - { type: string, maxLength: 500 }
+            - { type: 'null' }
+
+    AdminFailureCount:
+      type: object
+      required: [failure_code, count]
+      properties:
+        failure_code: { type: string }
+        count: { type: integer, minimum: 0 }
+
+    AdminErrorItem:
+      type: object
+      required: [id, workspace_id, created_at, failure_code]
+      description: '`GET /admin/errors`의 최근 목록 항목. **본문·프롬프트는 어디에도 없다.**'
+      properties:
+        id: { type: string, format: uuid }
+        workspace_id: { type: string, format: uuid }
+        created_at: { type: string, format: date-time }
+        failure_code: { type: string }
+
+    AdminErrorsResponse:
+      type: object
+      required: [counts, recent]
+      properties:
+        counts:
+          type: array
+          items: { $ref: '#/components/schemas/AdminFailureCount' }
+        recent:
+          type: array
+          items: { $ref: '#/components/schemas/AdminErrorItem' }
+          description: 최근 50건, 최신순.
+
+    AdminUsageRow:
+      type: object
+      required:
+        [user_id, owner_email, workspace_id, workspace_name, documents, characters, credits,
+         llm_calls, input_tokens, output_tokens, estimated_cost_usd, cost_unknown_calls]
+      description: '`usage-report`(U3) CSV 행과 같은 값 — `UsageReportRow`.'
+      properties:
+        user_id: { type: string, format: uuid }
+        owner_email: { type: string }
+        workspace_id:
+          description: 워크스페이스가 나중에 삭제됐으면 `null`(요청 이력은 보존한다).
+          anyOf:
+            - { type: string, format: uuid }
+            - { type: 'null' }
+        workspace_name:
+          anyOf:
+            - { type: string }
+            - { type: 'null' }
+        documents: { type: integer }
+        characters: { type: integer }
+        credits: { type: integer }
+        llm_calls: { type: integer }
+        input_tokens: { type: integer }
+        output_tokens: { type: integer }
+        estimated_cost_usd:
+          anyOf:
+            - { type: string }
+            - { type: 'null' }
+        cost_unknown_calls: { type: integer }
+
+    AdminUsageResponse:
+      type: object
+      required: [rows, from, to]
+      properties:
+        rows:
+          type: array
+          items: { $ref: '#/components/schemas/AdminUsageRow' }
+        from: { type: string, format: date }
+        to: { type: string, format: date }
+
+    AnnouncementCreateRequest:
+      type: object
+      required: [body]
+      description: '`POST /admin/announcements` 요청 본문. 길이 규칙은 `x-request-field-constraints` 참조.'
+      properties:
+        body:
+          type: string
+          x-service-constraint: { max_length: 500, non_empty: true, measured_on: normalized }
+          description: 공지 본문. 제어문자를 걷어내고 앞뒤 공백을 턴 뒤 판정한다 — 비어 있으면 422, 500자를 넘으면 422다.
+
+    AnnouncementUpdateRequest:
+      type: object
+      description: '`PATCH /admin/announcements/{id}` 요청 본문 — 둘 다 선택, 준 필드만 바꾼다.'
+      properties:
+        body:
+          x-service-constraint: { max_length: 500, non_empty: true, measured_on: normalized }
+          description: 있으면 `AnnouncementCreateRequest.body`와 같은 규칙으로 판정한다.
+          anyOf:
+            - { type: string }
+            - { type: 'null' }
+        active:
+          anyOf:
+            - { type: boolean }
+            - { type: 'null' }
+
+    AnnouncementResponse:
+      type: object
+      required: [id, body, active, created_by, created_at, updated_at]
+      description: '`GET`·`POST /admin/announcements`·`PATCH /admin/announcements/{id}` 응답 한 건.'
+      properties:
+        id: { type: string, format: uuid }
+        body: { type: string }
+        active: { type: boolean }
+        created_by: { type: string, format: uuid }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    AnnouncementListResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/AnnouncementResponse' }
+          description: 활성·비활성 전부, 최신순.
+
+    ActiveAnnouncementResponse:
+      type: object
+      required: [id, body, created_at]
+      description: '`GET /announcements/active` 응답 항목 — 사용자 화면 배너용, 관리자 필드(작성자 등) 없음.'
+      properties:
+        id: { type: string, format: uuid }
+        body: { type: string }
+        created_at: { type: string, format: date-time }
+
+    ActiveAnnouncementListResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/ActiveAnnouncementResponse' }
+          description: 활성 공지 최신순 최대 5건.
+
+    # ---------------------------------------------------------------------
     # dictionary (P0-5, 2.11.0)
     # ---------------------------------------------------------------------
     DictionaryLookupRequest:
@@ -5778,6 +6514,79 @@ components:
 # 변경 이력
 # =============================================================================
 x-changelog:
+  - version: "2.25.0"
+    date: "2026-09-07"
+    revision: "ADMIN-MINIMUM"   # 어드민 최소 — 관리자 플래그, 고객·사용량·오류 조회, 크레딧 수동 조정, 세금계산서 처리, 공지
+    author: contract-keeper
+    change: |
+      **어드민 최소 화면을 연다.** 정본은 `docs/plans/2026-09-07-admin-minimum.md`§2 —
+      master-plan §4.1 P0-11. 지금 CLI 프로필로만 되는 운영 작업(`usage-report`·
+      `credit-grant`·`invoice-handle`)을 로그인한 **관리자**가 화면에서 할 수 있게 한다.
+      CLI 프로필은 그대로 둔다(배포·자동화용). 결제·플랜 자동화·세밀한 권한 체계는
+      범위 밖이다.
+
+      ⑴ **오퍼레이션 11종 신설** — `GET /admin/workspaces`(`listAdminWorkspaces`)·
+         `GET /admin/workspaces/{workspace_id}`(`readAdminWorkspace`)·
+         `POST /admin/workspaces/{workspace_id}/credits`(`adjustAdminWorkspaceCredits`)·
+         `GET /admin/invoice-requests`(`listAdminInvoiceRequests`)·
+         `POST /admin/invoice-requests/{id}/handle`(`handleAdminInvoiceRequest`)·
+         `GET /admin/errors`(`readAdminErrors`)·`GET /admin/usage`(`readAdminUsage`)·
+         `GET`·`POST /admin/announcements`(`listAdminAnnouncements`·
+         `createAdminAnnouncement`)·`PATCH /admin/announcements/{id}`
+         (`updateAdminAnnouncement`) — 열은 전부 `x-admin-only: true`. 나머지 하나
+         `GET /announcements/active`(`listActiveAnnouncements`)는 인증 사용자 전용이지
+         **관리자 전용이 아니다**(전역 공지 배너).
+
+      ⑵ **`x-admin-only: true` 신설** — 관리자 전용 오퍼레이션을 계약이 직접 표식한다.
+         `AuthenticationCoverageContractTest`가 이 표식이 붙은 오퍼레이션은 전부
+         `/admin/` 아래인지 대조한다(인증 축과 별개인 두 번째 축).
+
+      ⑶ **`UserResponse`에 `is_admin`(필수) 신설** — `users.is_admin`(V17). 화면이
+         계정 메뉴에 「관리」 링크를 보여줄지 판단하는 표시값일 뿐이고, 실제 관리자 API
+         접근은 매 요청 DB를 다시 읽는 `AdminGuard`가 판정한다.
+
+      ⑷ **스키마 다수 신설** — `AdminWorkspaceSummary`·`AdminWorkspaceListResponse`·
+         `AdminConversionItem`·`AdminWorkspaceDetailResponse`·
+         `AdminCreditAdjustmentRequest`·`AdminInvoiceRequestListResponse`·
+         `AdminInvoiceRequestHandleRequest`·`AdminFailureCount`·`AdminErrorItem`·
+         `AdminErrorsResponse`·`AdminUsageRow`·`AdminUsageResponse`·
+         `AnnouncementCreateRequest`·`AnnouncementUpdateRequest`·`AnnouncementResponse`·
+         `AnnouncementListResponse`·`ActiveAnnouncementResponse`·
+         `ActiveAnnouncementListResponse`. 크레딧 조정·세금계산서 처리·워크스페이스
+         상세 응답은 기존 스키마(`WorkspaceCreditsResponse`·`InvoiceRequestResponse`·
+         `CreditTransaction`)를 재사용한다 — 관리자 상세도 **본문·프롬프트는 노출하지
+         않는다**(최근 변환은 id·문서 제목·status·failure_code·created_at뿐).
+
+      ⑸ **`x-request-field-constraints`에 한 필드 신설** —
+         `AnnouncementCreateRequest.body`(500자, 필수, `WorkspaceNameRequest.name`과
+         같은 규칙).
+
+      ⑹ **감사 흔적 2종(V17)** — `credit_transactions.actor_user_id`·
+         `invoice_requests.handled_by`. 관리자 화면 경유 크레딧 조정·세금계산서 처리는
+         관리자 id를 남기고, 자동 경로(예약·소비·해제, 가입 보너스, CLI)는 `NULL`이다.
+         API 응답에는 노출하지 않는다(감사 로그·DB 조회 전용).
+
+      ⑺ **`AuthenticatedEndpoints`에 열 경로 추가** — `/admin/…` 아홉 개(관리자 전용)와
+         `/announcements/active`(인증 사용자 전용) 전부.
+
+      ⑻ **엔드포인트 수 32 → 43** — 2.24.0(`INVOICE-REQUESTS`)이 연 32 위에 이
+         오퍼레이션 11종을 더한다.
+
+      ⑼ **운영 프로필 `admin-grant` 신설(계약 밖 CLI, 참고 기록)** — `--email=<이메일>
+         [--revoke]`로 검증된 이메일 계정에 관리자 권한을 부여·회수한다. HTTP API가
+         아니므로 이 오퍼레이션 목록에는 없다 — `credit-grant`(2.22.0)·
+         `invoice-handle`(2.24.0)과 같은 자리다.
+    ground: |
+      **G1 — 사용자 요청(2026-09-07 「어드민 최소 화면 스팩 쓰고 진행」).**
+      master-plan §4.1 P0-11 「고객·사용량·오류 조회, 크레딧 수동 조정, 공지」를
+      계약으로 옮긴다. 404·403 패턴은 같은 계획 §1.5가 인용한 선례(`readWorkspaceCredits`
+      404 존재 은닉, `EmailNotVerifiedException` 403)를 따른다 — 다만 관리자 전용
+      조회의 404는 **존재 은닉이 아니라 진짜 404**다(관리자에게는 숨길 이유가 없다).
+    compatibility: |
+      **넓히는 변경이다.** 새 오퍼레이션 11종, 새 스키마 다수를 더하고 `UserResponse`에
+      required 필드 `is_admin`을 하나 더할 뿐 — 필드 추가는 이 계약의 파괴성 판정
+      기준상 비파괴다(제거·이름 변경·타입 축소만 파괴). 기존 오퍼레이션의 요청·응답·
+      오류 모양은 하나도 바뀌지 않는다.
   - version: "2.24.0"
     date: "2026-09-07"
     revision: "INVOICE-REQUESTS"   # 세금계산서 요청 기록 — 사업자등록번호로 요청, 운영자 알림, 수동 발급 상태

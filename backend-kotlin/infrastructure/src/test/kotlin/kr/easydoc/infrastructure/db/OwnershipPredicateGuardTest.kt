@@ -390,10 +390,18 @@ class OwnershipPredicateGuardTest {
         private const val MAIN = "infrastructure/src/main/kotlin/kr/easydoc/infrastructure"
         private const val AUTH = "$MAIN/auth"
         private const val DOCUMENT = "$MAIN/document"
+        private const val ADMIN = "$MAIN/admin"
 
         /** 문서·변환에 닿는 제품 SQL 전부. 소유 술어가 있는 것도 함께 적는다. */
         val EXPECTED_STATEMENTS =
             listOf(
+                // 어드민 최소(A1, 2026-09-07) — 관리자 워크스페이스 상세의 「최근 변환」과
+                // 오류 화면(`GET /admin/errors`) 셋 다 아래 미방어 목록에도 있다 — 관리자는
+                // 의도적으로 워크스페이스를 가로지른다(사유는 그쪽에 적었다). `admin`
+                // 패키지가 `auth`보다 알파벳순으로 앞이라 이 목록 맨 앞에 온다.
+                "$ADMIN/JdbcAdminConversionQueryRepository.kt | SELECT [conversions, documents]",
+                "$ADMIN/JdbcAdminConversionQueryRepository.kt | SELECT [conversions]",
+                "$ADMIN/JdbcAdminConversionQueryRepository.kt | SELECT [conversions, documents]",
                 // 미검증 계정 파기 배치(2026-09-07, backlog §1.4 ⑵ ⓐ) — 후보 선택 SELECT 와
                 // 건너뛴 건수 카운트 SELECT 둘 다 아래 미방어 목록에 있다. 문서를 가진 계정을
                 // 고르는 `NOT EXISTS`/`EXISTS` 서브쿼리가 `documents.user_id` 를 훑지만 값을
@@ -509,6 +517,12 @@ class OwnershipPredicateGuardTest {
          */
         val EXPECTED_UNGUARDED =
             listOf(
+                // 어드민 최소(A1, 2026-09-07) — 위 EXPECTED_STATEMENTS 주석과 같은 사유.
+                // 관리자 전용 조회라 소유 술어가 없다(의도적 설계, 관리자는 워크스페이스를
+                // 가로지른다) — `AdminConversionQueryRepository` KDoc.
+                "$ADMIN/JdbcAdminConversionQueryRepository.kt | SELECT [conversions, documents]",
+                "$ADMIN/JdbcAdminConversionQueryRepository.kt | SELECT [conversions]",
+                "$ADMIN/JdbcAdminConversionQueryRepository.kt | SELECT [conversions, documents]",
                 // 미검증 계정 파기 배치(2026-09-07) — 같은 사유. 후보 선택 SELECT 와 건너뛴
                 // 건수 카운트 SELECT 둘 다 `documents.user_id` 를 `users.id` 와 비교할 뿐
                 // `:ownerId` 매개변수를 받지 않는다(위 KDoc).
@@ -605,7 +619,14 @@ class OwnershipPredicateGuardTest {
          * `users.id` 와 비교해 문서를 가진 계정을 골라낼 뿐 `:ownerId` 매개변수를 받지
          * 않는다 — worker 가 스스로 도는 일일 배치라 위 파기 배치들과 같은 사유로 소유자를
          * 받을 자리가 없다.
+         *
+         * 32 → 35 는 어드민 최소(A1, `docs/plans/2026-09-07-admin-minimum.md`)의 관리자
+         * 조회 셋이다 — 워크스페이스 상세의 「최근 변환 20건」·오류 화면(`GET /admin/errors`)의
+         * 코드별 건수·최근 실패 목록. 셋 다 **관리자 전용이라 의도적으로 워크스페이스를
+         * 가로지른다** — 위 배치들과 달리 소유자가 없어서가 아니라, 관리자가 전체를 보는
+         * 것이 이 화면의 목적이라 소유 술어를 붙이지 않는다(어드민 최소 계획 §2 결정 4).
+         * 사용자 요청 경로가 이 상한을 먹는 일은 여전히 없어야 한다.
          */
-        const val MAX_UNGUARDED_STATEMENTS = 32
+        const val MAX_UNGUARDED_STATEMENTS = 35
     }
 }

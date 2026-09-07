@@ -1,6 +1,7 @@
 package kr.easydoc.api.error
 
 import kr.easydoc.application.document.UPLOAD_TOO_LARGE_MESSAGE
+import kr.easydoc.core.exceptions.AdminRequiredException
 import kr.easydoc.core.exceptions.ConfigurationException
 import kr.easydoc.core.exceptions.ConflictException
 import kr.easydoc.core.exceptions.DocumentExtractionException
@@ -294,6 +295,12 @@ private fun mappingFor(exception: EasyDocException): Pair<HttpStatus, HttpHeader
 
         // 이메일 인증 전이라 이 동작을 할 수 없다 — `POST /documents` 전용.
         is EmailNotVerifiedException -> {
+            HttpStatus.FORBIDDEN to null
+        }
+
+        // 관리자 권한이 없다 — `/admin/…`·`AdminGuard` 전용, `EmailNotVerifiedException`과
+        // 같은 축의 403(어드민 최소 계획 §2 결정 2).
+        is AdminRequiredException -> {
             HttpStatus.FORBIDDEN to null
         }
 

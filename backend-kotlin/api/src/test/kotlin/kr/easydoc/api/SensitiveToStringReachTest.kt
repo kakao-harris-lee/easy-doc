@@ -445,8 +445,40 @@ class SensitiveToStringReachTest {
          * `.AlreadyHandled` 넷은 **이 숫자에 없다** — 담은 값이 없어 `data object` 가 아니라
          * 평범한 `object` 로 선언했다(`ReconversionReservation.Reserved` 와 같은 사유 —
          * `data` 를 붙이면 인자 없는 주 생성자가 판정 불가로 이 테스트를 실패시킨다).
+         *
+         * 어드민 최소(A1, `docs/plans/2026-09-07-admin-minimum.md`, 계약 2.25.0)가
+         * **서른둘**을 더해 197 이다(165 위에). api `admin` 패키지 열아홉 —
+         * `AdminWorkspaceSummaryResponse`·`AdminWorkspaceListResponse`·
+         * `AdminConversionItemResponse`·`AdminWorkspaceDetailResponse`·
+         * `AdminCreditAdjustmentRequest`·`AdminInvoiceRequestListResponse`·
+         * `AdminInvoiceRequestHandleRequest`·`AdminFailureCountResponse`·
+         * `AdminErrorItemResponse`·`AdminErrorsResponse`·`AdminUsageRowResponse`·
+         * `AdminUsageResponse`·`AnnouncementCreateRequest`·`AnnouncementUpdateRequest`·
+         * `AnnouncementResponse`·`AnnouncementListResponse`·`ActiveAnnouncementResponse`·
+         * `ActiveAnnouncementListResponse`·`AdminGrantArgs`(`admin-grant` CLI 인자, 이메일
+         * 필드가 있어 손으로 쓴 `toString()`으로 가린다 — `CreditGrantArgs`와 같은 판단).
+         * application `admin` 패키지 열하나 — `AdminWorkspaceSummary`·
+         * `AdminWorkspaceListPage`(U2 `WorkspaceUsage`와 같은 축, 민감 정보 없음)·
+         * `AdminWorkspaceDetail`·`AdminErrorsView`·`AdminWorkspaceRow`(이름·이메일이 있어
+         * 손으로 쓴 `toString()`으로 가린다)·`AdminWorkspaceSearchResult`·`AdminConversionRow`
+         * (문서 제목이 있어 가린다)·`AdminFailureCount`·`AdminErrorRow`(코드·id·시각뿐,
+         * 민감 정보 없음)·`Announcement`(본문이 있어 가린다)·`AdminGrantResult.Applied`
+         * (userId·플래그뿐, 민감 정보 없음). 나머지 둘은 U2·U3·세금계산서와 같은 축의
+         * 리스트 페이지 컨테이너다 — `InvoiceRequestPage`(application.invoice, 항목이 이미
+         * `InvoiceRequestRow`로 가려져 있어 기본 생성 `toString()`으로 둔다)와
+         * `UsageReportRows`(application.usage, 항목이 이미 `UsageReportRow`로 가려져 있어
+         * 같은 이유로 기본값을 둔다).
+         *
+         * 독립 리뷰(A1 배치 조회 지적, 목록 N+1 제거)가 **셋**을 더해 200 이다(197 위에).
+         * `AdminCreditBalance`·`AdminMonthUsage`(둘 다 application.admin, `AdminQueryService
+         * .listWorkspaces`가 페이지의 워크스페이스 id 전부를 모아 한 번에 읽는 배치 결과
+         * 컨테이너다 — `balance`·`reserved`·`documents`·`credits`·`estimatedCostUsd` 뿐이라
+         * 민감 판정 토큰에 걸리는 필드가 없다)와 `JdbcAdminWorkspaceQueryRepository
+         * .DocumentTotals`(infrastructure.admin, 그 배치 질의 내부에서만 쓰는 private 중첩
+         * 클래스 — `documents`·`credits` 뿐, 마찬가지로 민감 정보 없음). 셋 다 기본 생성
+         * `toString()` 으로 두고 `KNOWN_SENSITIVE_TYPES` 에는 추가하지 않는다.
          */
-        const val EXPECTED_SOURCE_DECLARATIONS = 165
+        const val EXPECTED_SOURCE_DECLARATIONS = 200
 
         /** 민감 판정이 반드시 닿아야 하는 타입 — 바닥이다. */
         val KNOWN_SENSITIVE_TYPES =

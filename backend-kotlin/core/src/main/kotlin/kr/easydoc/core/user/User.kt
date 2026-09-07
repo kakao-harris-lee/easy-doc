@@ -25,11 +25,18 @@ data class User(
     val createdAt: Instant,
     val emailVerifiedAt: Instant? = null,
     val hasPassword: Boolean,
+    /**
+     * `users.is_admin`(V17, 어드민 최소 계획 `docs/plans/2026-09-07-admin-minimum.md` §2
+     * 결정 1). 기본값 `false` — 관리자 판정 자체는 이 필드가 아니라 매 요청 DB를 다시
+     * 읽는 `AdminGuard`가 한다([kr.easydoc.application.admin.AdminGuard]); 이 필드는
+     * `UserResponse.is_admin`(화면의 「관리」 메뉴 표시값)에만 쓰인다.
+     */
+    val isAdmin: Boolean = false,
 ) {
     /** **이메일을 찍지 않는다.** */
     override fun toString(): String =
         "User(id=$id, email=$CONTENT_MASK, createdAt=$createdAt, emailVerified=${emailVerifiedAt != null}, " +
-            "hasPassword=$hasPassword)"
+            "hasPassword=$hasPassword, isAdmin=$isAdmin)"
 }
 
 /**

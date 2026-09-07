@@ -1,5 +1,7 @@
 package kr.easydoc.api.auth
 
+import kr.easydoc.api.admin.AdminEndpoints
+
 /** 인증이 필요한 경로 패턴. */
 object AuthenticatedEndpoints {
     /** 계약이 `security: [{ HTTPBearer: [] }]` 로 선언한 경로들. */
@@ -45,5 +47,7 @@ object AuthenticatedEndpoints {
             "/workspaces/{workspace_id}/invoice-requests",
             // 사전 조회(2.11.0, P0-5) — 소유 자원이 없지만 여전히 인증은 필요하다(계약 security).
             "/dictionary/lookup",
-        )
+            // 활성 공지(어드민 최소, 2.25.0) — 인증 사용자 전용, 소유 자원은 없다(전역 공지).
+            "/announcements/active",
+        ) + AdminEndpoints.ADMIN_ONLY_PATH_PATTERNS
 }

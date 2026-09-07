@@ -222,6 +222,7 @@ private class FakeCreditAccountRepository(
         credits: Int,
         reason: CreditReason,
         note: String?,
+        actorUserId: UUID?,
     ): Int {
         grantCalls += Triple(credits, reason, note)
         balance += credits
