@@ -8,6 +8,12 @@ export const HISTORY_PATH = '/history'
 /** 워크스페이스 사용량 화면 (U2, 계약 2.20.0). */
 export const USAGE_PATH = '/usage'
 
+/**
+ * 관리자 화면 (어드민 최소, 계약 2.25.0). 관리자가 아니면 `RequireAdmin`이 `HOME_PATH`로
+ * 돌려보낸다 — `docs/plans/2026-09-07-admin-minimum.md` §2 결정 6.
+ */
+export const ADMIN_PATH = '/admin'
+
 /** 이메일 인증 화면. 가입(이메일·비밀번호) 직후 이리로 보낸다. */
 export const EMAIL_VERIFICATION_PATH = '/verify-email'
 
@@ -48,9 +54,14 @@ export interface FromLocationState {
 /**
  * 홈으로 돌아갈 때 한 번만 보여줄 안내. `OAuthLinkCallbackPage`가 연결 성공 뒤 이
  * 상태를 싣고 홈으로 이동한다 — 라우터 state라 새로고침하면 사라진다(진짜 "한 번"이다).
+ *
+ * `noticeTone`은 배너 색을 정한다 — 생략하면 `'success'`(기존 기본값과 같다).
+ * `RequireAdmin`이 관리자가 아닌 방문을 돌려보낼 때는 `'warning'`을 쓴다(성공이
+ * 아니라 거절이므로 초록 체크 배지를 쓰면 안 된다).
  */
 export interface HomeNoticeState {
   notice?: string
+  noticeTone?: 'success' | 'warning'
 }
 
 /**

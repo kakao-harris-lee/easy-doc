@@ -7,14 +7,30 @@ import {
   type MouseEvent,
   type ReactNode,
 } from 'react'
-import { BarChart3, FilePlus2, History, LogOut, Menu, UserRound, X } from 'lucide-react'
+import {
+  BarChart3,
+  FilePlus2,
+  History,
+  LogOut,
+  Menu,
+  ShieldCheck,
+  UserRound,
+  X,
+} from 'lucide-react'
 import { Link, NavLink } from 'react-router-dom'
 
 import type { UserIdentityResponse } from '../api/types'
 import { useAuth } from '../auth/context'
 import { cn } from '../lib/utils'
 import { confirmDiscardUnsaved } from '../review/unsavedChanges'
-import { EMAIL_VERIFICATION_PATH, HISTORY_PATH, HOME_PATH, USAGE_PATH } from '../routes/paths'
+import {
+  ADMIN_PATH,
+  EMAIL_VERIFICATION_PATH,
+  HISTORY_PATH,
+  HOME_PATH,
+  USAGE_PATH,
+} from '../routes/paths'
+import { AnnouncementBanner } from './AnnouncementBanner'
 import { SetPasswordForm } from './SetPasswordForm'
 import { SocialLinkStatus } from './SocialLinkStatus'
 import { Logo } from './Logo'
@@ -112,6 +128,7 @@ function AccountMenu({
   identities,
   hasPassword,
   emailVerified,
+  isAdmin,
   onSignOut,
   onUnlinked,
   onPasswordCreated,
@@ -120,6 +137,7 @@ function AccountMenu({
   identities: UserIdentityResponse[]
   hasPassword: boolean
   emailVerified: boolean
+  isAdmin: boolean
   onSignOut: () => void
   onUnlinked: () => void
   onPasswordCreated: () => void
@@ -208,6 +226,30 @@ function AccountMenu({
             <LogOut className="size-4" aria-hidden="true" />
             로그아웃
           </Button>
+          {/* 관리자 화면 진입점 — `is_admin`이 참일 때만 보인다(어드민 최소 계획 §2
+              결정 6). 실제 접근은 서버(`AdminGuard`)가 매 요청 다시 판정한다. 로그아웃
+              뒤에 둔다 — 그래야 메뉴가 열릴 때 초점이 가는 "첫 행동"(firstItemRef)이
+              여전히 로그아웃이고, 이 링크 유무로 그 규약이 흔들리지 않는다. 다른
+              이동 링크(로고·주요 메뉴)와 같은 이유로 저장하지 않은 수정을 먼저
+              확인하고, 확인을 통과하면 메뉴를 닫는다(그대로 두면 이 컴포넌트는
+              `AppLayout`과 함께 살아남아 라우트가 바뀐 뒤에도 열린 채로 남는다). */}
+          {isAdmin && (
+            <Link
+              to={ADMIN_PATH}
+              className="mt-2 flex min-h-11 w-full items-center gap-2 rounded-md px-3 font-semibold text-foreground hover:bg-secondary"
+              onClick={(event) => {
+                if (!confirmDiscardUnsaved()) {
+                  event.preventDefault()
+                  return
+                }
+                setOpen(false)
+              }}
+              onKeyDown={handleEscape}
+            >
+              <ShieldCheck className="size-4" aria-hidden="true" />
+              관리
+            </Link>
+          )}
           {/* 패널 안의 다른 버튼과 같은 이유로 Esc를 직접 받는다(non-native
               interactive element에 keydown을 거는 대신, 실제 버튼 각각에 건다). */}
           <SocialLinkStatus
@@ -307,6 +349,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
                       identities={user.identities}
                       hasPassword={user.has_password}
                       emailVerified={user.email_verified}
+                      isAdmin={user.is_admin}
                       onSignOut={guardedSignOut}
                       onUnlinked={() => void refreshMe()}
                       onPasswordCreated={() => void refreshMe()}
@@ -367,6 +410,12 @@ export function AppLayout({ children }: { children: ReactNode }) {
                   <span className="font-semibold">로그인 계정</span> {user.email}
                 </p>
               )}
+              {user !== null && user.is_admin && (
+                <NavLink to={ADMIN_PATH} onClick={guard} className={navLinkClass}>
+                  <ShieldCheck className="size-4" aria-hidden="true" />
+                  관리
+                </NavLink>
+              )}
               <Button
                 variant="ghost"
                 className="min-h-11 justify-start"
@@ -395,6 +444,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
           </nav>
         )}
       </header>
+      {status === 'authenticated' && <AnnouncementBanner />}
       <main id="main" className={cn(CONTAINER, 'flex-1 py-6')}>
         {children}
       </main>
