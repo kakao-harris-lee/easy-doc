@@ -70,12 +70,21 @@ interface ConversionJobLeasePort {
     fun fail(lease: ConversionJobLease): Boolean
 }
 
-/** worker 가 변환 행·원문을 읽고 결과를 쓸 때 쓰는 포트. 사용자 조회 포트와 축이 다르다. */
+/**
+ * worker 가 변환 행·원문을 읽고 결과를 쓸 때 쓰는 포트. 사용자 조회 포트와 축이 다르다.
+ *
+ * [workspaceId]·[userId] 는 U1(LLM 호출 원장)이 더했다 — `ProcessConversionJob` 이 완료
+ * 저장과 같은 트랜잭션에서 `LlmCallLedger.append` 를 부르는데, 그 항목이 요구하는 소유
+ * 문맥이 이 조회가 이미 잠그고 읽은 `documents` 행에 있다(`loadForProcessing` 이 `documents`
+ * 를 조인하므로 두 값을 얻으려고 질의를 늘릴 이유가 없다).
+ */
 class ConversionWorkItem(
     val conversionId: UUID,
     val documentId: UUID,
     val status: ConversionStatus,
     val sourceText: EncryptedContent,
+    val workspaceId: UUID,
+    val userId: UUID,
 ) {
     override fun toString(): String =
         "ConversionWorkItem($conversionId, doc=$documentId, ${status.wireName}, " +

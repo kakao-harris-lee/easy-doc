@@ -332,8 +332,18 @@ class SensitiveToStringReachTest {
          * 같은 판단)와 infrastructure `PasswordResetProperties`(TTL·쿨다운·시도 상한
          * 숫자뿐, `EmailVerificationProperties`와 같은 이유로 [KNOWN_SENSITIVE_TYPES] 에
          * 넣지 않는다).
+         *
+         * LLM 호출 원장 U1(계획 `docs/plans/2026-09-07-usage-ledger-and-report.md`, 2026-09-07)이
+         * **셋**을 더해 135 다(132 위에) — core `LlmCallRecord`(원장 행 하나의 호출 값 —
+         * purpose·provider·model·토큰·지연·비용·단가 스냅샷·charCount, 숫자와 벤더 식별자뿐이라
+         * 손으로 쓴 `toString()` 이 없다 — 민감 판정 토큰 어디에도 걸리지 않는다),
+         * application `LlmCallEntry`(원장 항목의 소유 문맥 — conversionId·documentId·
+         * workspaceId·userId·record·calledAt, 전부 식별자·시각이라 같은 이유로 가리지
+         * 않는다), infrastructure `ModelPricing`(`easydoc.llm.pricing.models.<model-id>`
+         * 설정 바인딩 — `LlmPricingProperties` 와 같은 필드 모양의 운영 단가값이라
+         * [KNOWN_SENSITIVE_TYPES] 에 넣지 않는다).
          */
-        const val EXPECTED_SOURCE_DECLARATIONS = 132
+        const val EXPECTED_SOURCE_DECLARATIONS = 135
 
         /** 민감 판정이 반드시 닿아야 하는 타입 — 바닥이다. */
         val KNOWN_SENSITIVE_TYPES =

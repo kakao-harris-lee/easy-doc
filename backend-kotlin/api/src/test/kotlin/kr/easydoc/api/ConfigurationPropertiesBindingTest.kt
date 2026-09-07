@@ -207,7 +207,7 @@ class ConfigurationPropertiesBindingTest {
     }
 
     @Test
-    @DisplayName("LLM 설정이 기본값과 다른 값을 싣는다 — 출력 토큰 상한 포함")
+    @DisplayName("LLM 설정이 기본값과 다른 값을 싣는다 — 출력 토큰 상한·모델별 단가 포함")
     fun `llm 설정이 기본값과 다른 값을 싣는다`() {
         val llm =
             bind(
@@ -219,6 +219,8 @@ class ConfigurationPropertiesBindingTest {
                     "easydoc.llm.open-ai-api-key" to SECRET_VALUE,
                     "easydoc.llm.pricing.input-usd-per-million-tokens" to "2.00",
                     "easydoc.llm.pricing.output-usd-per-million-tokens" to "8.00",
+                    "easydoc.llm.pricing.models.claude-sonnet-5.input-usd-per-million-tokens" to "2.00",
+                    "easydoc.llm.pricing.models.claude-sonnet-5.output-usd-per-million-tokens" to "10.00",
                     "easydoc.llm.max-output-tokens" to "5000",
                 ),
             )
@@ -227,7 +229,35 @@ class ConfigurationPropertiesBindingTest {
         assertThat(llm.openAiApiKey.reveal()).isEqualTo(SECRET_VALUE)
         assertThat(llm.pricing.inputUsdPerMillionTokens).isEqualByComparingTo(BigDecimal("2.00"))
         assertThat(llm.pricing.outputUsdPerMillionTokens).isEqualByComparingTo(BigDecimal("8.00"))
+        assertThat(llm.pricing.models).containsKey("claude-sonnet-5")
+        val sonnetPricing = llm.pricing.models.getValue("claude-sonnet-5")
+        assertThat(sonnetPricing.inputUsdPerMillionTokens).isEqualByComparingTo(BigDecimal("2.00"))
+        assertThat(sonnetPricing.outputUsdPerMillionTokens).isEqualByComparingTo(BigDecimal("10.00"))
         assertThat(llm.maxOutputTokens).isEqualTo(5000)
+    }
+
+    @Test
+    @DisplayName("모델 id 자체에 점이 있으면(gpt-4.1) 대괄호 표기로 묶어야 한다 — 평평한 키에서 점은 중첩 구분자다")
+    fun `점이 있는 모델 id는 대괄호로 묶는다`() {
+        val llm =
+            bind(
+                "easydoc.llm",
+                LlmProperties::class.java,
+                mapOf(
+                    // `easydoc.llm.pricing.models.gpt-4.1...` 처럼 그냥 이으면 바인더가
+                    // `models` 아래 `gpt-4`.`1` 두 단계로 쪼갠다 — 이 평평한 맵 키 형태
+                    // (`MapConfigurationPropertySource`, 커맨드라인 인자·환경변수와 같은
+                    // 성격)에서만 문제다. YAML 파일의 중첩 매핑(`models:\n  gpt-4.1:`)은
+                    // 키가 문자열 그대로 실려 이 문제가 없다 — `application.yml` 주석 참고.
+                    "easydoc.llm.pricing.models[gpt-4.1].input-usd-per-million-tokens" to "2.00",
+                    "easydoc.llm.pricing.models[gpt-4.1].output-usd-per-million-tokens" to "8.00",
+                ),
+            )
+
+        assertThat(llm.pricing.models).containsKey("gpt-4.1")
+        val gpt41Pricing = llm.pricing.models.getValue("gpt-4.1")
+        assertThat(gpt41Pricing.inputUsdPerMillionTokens).isEqualByComparingTo(BigDecimal("2.00"))
+        assertThat(gpt41Pricing.outputUsdPerMillionTokens).isEqualByComparingTo(BigDecimal("8.00"))
     }
 
     @Test

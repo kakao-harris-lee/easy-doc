@@ -20,7 +20,8 @@ class JdbcConversionWorkStore(private val jdbc: JdbcClient) : ConversionWorkStor
             .sql(
                 """
                 SELECT c.id, c.document_id, c.status,
-                       d.source_text_encrypted, d.encryption_scheme, d.key_version
+                       d.source_text_encrypted, d.encryption_scheme, d.key_version,
+                       d.workspace_id, d.user_id
                 FROM conversions c
                 JOIN documents d ON d.id = c.document_id
                 WHERE c.id = :id
@@ -38,6 +39,8 @@ class JdbcConversionWorkStore(private val jdbc: JdbcClient) : ConversionWorkStor
                             scheme = rs.getString("encryption_scheme"),
                             keyVersion = rs.getInt("key_version"),
                         ),
+                    workspaceId = rs.getObject("workspace_id", UUID::class.java),
+                    userId = rs.getObject("user_id", UUID::class.java),
                 )
             }.optional()
             .orElse(null)

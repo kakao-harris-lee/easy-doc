@@ -47,6 +47,13 @@ class StoredSourceText(
     val sourceFormat: SourceFormat,
     val charCount: Int,
     val sourceText: EncryptedContent,
+    /**
+     * 이 문서가 속한 작업 공간 — U1(LLM 호출 원장)이 더했다. `ReconvertUnitService` 가
+     * `LlmCallEntry` 를 지으려면 워크스페이스 식별자가 필요한데, 이 조회가 이미 잠그지
+     * 않고 읽은 `documents` 행에 그 열이 있어 질의를 늘릴 이유가 없다
+     * (`ConversionWorkItem.workspaceId` 와 같은 판단).
+     */
+    val workspaceId: UUID,
 ) {
     /**
      * 식별자·형식과 길이만 남긴다.

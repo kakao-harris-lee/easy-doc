@@ -90,10 +90,38 @@ data class LlmProperties(
  */
 const val MAX_OUTPUT_TOKENS_CEILING: Int = 64_000
 
+/**
+ * 모델 하나의 단가. [LlmPricingProperties.models] 의 값 타입 — 키는 응답이 보고하는 model
+ * 문자열이다(`easydoc.llm.pricing.models.<model-id>.input-usd-per-million-tokens`).
+ */
+data class ModelPricing(
+    val inputUsdPerMillionTokens: BigDecimal? = null,
+    val outputUsdPerMillionTokens: BigDecimal? = null,
+) {
+    /** [modelId] 는 오류 메시지에만 쓴다 — 어느 모델 설정이 잘못됐는지 운영자가 바로 찾게 한다. */
+    fun toTokenPricing(modelId: String): TokenPricing? {
+        if (inputUsdPerMillionTokens == null && outputUsdPerMillionTokens == null) return null
+        if (inputUsdPerMillionTokens == null || outputUsdPerMillionTokens == null) {
+            throw ConfigurationException("LLM 모델별 단가($modelId)는 입력·출력을 함께 설정해야 합니다")
+        }
+        if (inputUsdPerMillionTokens.signum() < 0 || outputUsdPerMillionTokens.signum() < 0) {
+            throw ConfigurationException("LLM 모델별 단가($modelId)는 0 이상이어야 합니다")
+        }
+        return TokenPricing(inputUsdPerMillionTokens, outputUsdPerMillionTokens)
+    }
+}
+
 /** 모델 가격은 코드 상수가 아니라 배포 설정으로 받는다. */
 data class LlmPricingProperties(
     val inputUsdPerMillionTokens: BigDecimal? = null,
     val outputUsdPerMillionTokens: BigDecimal? = null,
+    /**
+     * 모델별 단가(선택). 응답이 보고한 model 문자열로 찾고, 이 표에 없으면 위 단일 값
+     * ([inputUsdPerMillionTokens]/[outputUsdPerMillionTokens])으로 떨어지고, 그것도 없으면
+     * `null`이다(계획 §2 결정 3). 단가는 호출 시점 값을 [kr.easydoc.core.llm.LlmCallRecord]
+     * 에 스냅샷하므로, 이 표를 나중에 바꿔도 이미 쓴 원장 행의 비용은 다시 계산되지 않는다.
+     */
+    val models: Map<String, ModelPricing> = emptyMap(),
 ) {
     fun toTokenPricing(): TokenPricing? {
         if (inputUsdPerMillionTokens == null && outputUsdPerMillionTokens == null) return null
@@ -105,6 +133,12 @@ data class LlmPricingProperties(
         }
         return TokenPricing(inputUsdPerMillionTokens, outputUsdPerMillionTokens)
     }
+
+    /** [models] 를 [TokenPricing] 표로 바꾼다 — 두 필드가 다 비어 있는 모델은 표에서 뺀다. */
+    fun toModelPricing(): Map<String, TokenPricing> =
+        models
+            .mapNotNull { (modelId, modelPricing) -> modelPricing.toTokenPricing(modelId)?.let { modelId to it } }
+            .toMap()
 }
 
 /**
@@ -165,6 +199,7 @@ class LlmProviderConfiguration {
         return MetricsLlmProviderDecorator(
             delegate = provider,
             pricing = properties.pricing.toTokenPricing(),
+            modelPricing = properties.pricing.toModelPricing(),
             observer = StructuredLogLlmCallObserver(),
         )
     }

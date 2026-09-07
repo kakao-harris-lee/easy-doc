@@ -17,12 +17,20 @@ import org.slf4j.LoggerFactory
  * LLM 호출은 **트랜잭션 밖**이다. 장시간 외부 호출이 행 잠금을 붙잡고 있으면 삭제·검수·
  * 다른 worker 의 회수가 함께 멈춘다.
  */
+@Suppress("LongParameterList")
 class ProcessConversionJob(
     private val stores: ConversionWorkerStores,
     private val convert: ConvertDocumentUseCase,
     private val transaction: TransactionRunner,
     private val runtime: ConversionWorkerRuntime,
     private val notifier: ConversionCompletedNotifier,
+    /**
+     * LLM 호출 원장(U1). **필수다** — 조립 지점(`DocumentConfiguration.llmCallLedger`)이
+     * 실제 구현([kr.easydoc.infrastructure.document.JdbcLlmCallLedger])을 항상 넣는다.
+     * production 조립에서 원장을 빠뜨리는 실수를 컴파일 시점에 막으려고 기본값을 두지
+     * 않는다 — 테스트는 각자 no-op 대역을 명시한다.
+     */
+    private val ledger: LlmCallLedger,
 ) {
     private val log = LoggerFactory.getLogger(ProcessConversionJob::class.java)
 
@@ -67,7 +75,7 @@ class ProcessConversionJob(
         prepared: ConversionWorkItem,
     ): ConversionJobOutcome =
         try {
-            persist(lease, convertHeld(lease, prepared))
+            persist(lease, prepared, convertHeld(lease, prepared))
         } catch (exc: StorageException) {
             failPermanently(lease, exc::class.java.simpleName)
         } catch (exc: ConfigurationException) {
@@ -114,11 +122,12 @@ class ProcessConversionJob(
 
     private fun persist(
         lease: ConversionJobLease,
+        item: ConversionWorkItem,
         result: ConversionResult,
     ): ConversionJobOutcome =
         when (result) {
             is ConversionResult.Converted -> {
-                finishSuccess(lease, result)
+                finishSuccess(lease, item, result)
             }
 
             is ConversionResult.Failed -> {
@@ -129,13 +138,39 @@ class ProcessConversionJob(
                         retryable = result.kind.retryable,
                         usage = result.usage,
                         attribution = result.attribution,
+                        entries = ledgerEntriesOf(item, result.usage),
                     ),
                 )
             }
         }
 
+    /**
+     * [usage] 의 호출 기록을 [item] 의 소유 문맥(원장 [LlmCallEntry])으로 바꾼다. 비어 있으면
+     * 빈 목록 — [LlmCallLedger.append] 가 빈 목록을 아무것도 쓰지 않는 것으로 정의한다.
+     *
+     * **`calledAt` 을 여기서 다시 재지 않는다** — 각 [LlmCallRecord.calledAt] 이 이미
+     * `ConvertDocumentUseCase.Pass.complete` 에서 호출 직후 캡처한 값이다. 여기서 시계를
+     * 새로 읽으면(예: 한 값을 배치 전체에 공유) 저장 시각이 찍히고, 두 호출(1차·보정)의
+     * 실제 호출 간격도 사라진다.
+     */
+    private fun ledgerEntriesOf(
+        item: ConversionWorkItem,
+        usage: ConversionUsage,
+    ): List<LlmCallEntry> =
+        usage.calls.map { record ->
+            LlmCallEntry(
+                conversionId = item.conversionId,
+                documentId = item.documentId,
+                workspaceId = item.workspaceId,
+                userId = item.userId,
+                record = record,
+                calledAt = record.calledAt,
+            )
+        }
+
     private fun finishSuccess(
         lease: ConversionJobLease,
+        item: ConversionWorkItem,
         result: ConversionResult.Converted,
     ): ConversionJobOutcome {
         // 저장 경계에서 개행을 통일한다 — `DocumentService.store`·`ConversionReviewService.save`
@@ -170,6 +205,9 @@ class ProcessConversionJob(
                             usage = result.usage,
                         ),
                     )
+                // 완료 저장과 **같은 트랜잭션**에서 원장을 쓴다(계획 §2 결정 2, §6 리스크 2) —
+                // 원장 쓰기 실패가 곧 이 완료 저장의 롤백이다.
+                if (wrote) ledger.append(ledgerEntriesOf(item, result.usage))
                 stores.leases.complete(lease)
                 wrote
             }
@@ -203,6 +241,14 @@ class ProcessConversionJob(
         val canRetry = failure.retryable && lease.attempts < runtime.policy.maxAttempts
         return transaction.inTransaction {
             if (!stores.leases.lockIfHeld(lease)) return@inTransaction ConversionJobOutcome.DROPPED
+            // 원장은 재시도 여부와 무관하게, **이 트랜잭션에서 항상** 쓴다. `PROVIDER_ERROR`
+            // 는 재시도 대상(retryable)이지만 REFUSAL 처럼 완성 응답을 실제로 받아 토큰을
+            // 쓴 채로 이 종류가 되는 경우가 있다(`ConvertDocumentUseCase` 의 `classify` —
+            // REFUSAL 도 PROVIDER_ERROR 로 분류된다) — 그 호출은 이미 벌어졌고 재시도해도
+            // 이번 시도의 청구 근거가 없어지지 않는다. [failure.entries] 가 비어 있는 것은
+            // `LlmProviderException`(완성 자체가 나지 않은 경우)뿐이라 이 호출은 그 경우
+            // 자연히 no-op이다.
+            ledger.append(failure.entries)
             if (canRetry) {
                 stores.work.revertToPending(lease.conversionId)
                 stores.leases.retry(lease, runtime.policy.retryBackoff)
@@ -220,6 +266,7 @@ class ProcessConversionJob(
         val retryable: Boolean,
         val usage: ConversionUsage,
         val attribution: LlmAttribution,
+        val entries: List<LlmCallEntry> = emptyList(),
     )
 
     companion object {

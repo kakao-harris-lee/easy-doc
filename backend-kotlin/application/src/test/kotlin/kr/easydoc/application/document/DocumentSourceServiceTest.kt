@@ -105,6 +105,7 @@ class DocumentSourceServiceTest {
                     charCount = text.length,
                     // 대역 암호는 바이트를 그대로 든다 — 이 케이스가 재는 것은 결속과 왕복이다.
                     sourceText = EncryptedContent(text.toByteArray(Charsets.UTF_8), SCHEME, 1),
+                    workspaceId = UUID.randomUUID(),
                 )
         }
 
