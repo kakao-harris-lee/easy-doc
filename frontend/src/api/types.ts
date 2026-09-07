@@ -187,6 +187,13 @@ export interface DocumentSourceResponse {
 export type SegmentConfidence = 'high' | 'low'
 
 /**
+ * 원본 단위의 종류(P0-4 S8, 계획 `docs/plans/2026-09-06-p0-4-structure-hints.md` §1.1) —
+ * 표 칸·목록 항목·그 밖의 본문 중 하나. `SegmentMap.source_unit_kinds`의 원소. 계약
+ * `components/schemas/SourceUnitKind`.
+ */
+export type SourceUnitKind = 'body' | 'table_cell' | 'list_item'
+
+/**
  * `SegmentMap.units`의 항목 하나 — 쉬운 글 단위 하나와 그것이 대응하는 원본 단위들.
  * 계약 `components/schemas/SegmentMapUnit`.
  */
@@ -220,6 +227,13 @@ export interface SegmentMap {
    * `docs/plans/2026-09-04-p0-4-paragraph-mapping-reconversion.md` §11).
    */
   compliant_source_units: number[]
+  /**
+   * 원본 단위마다의 종류(P0-4 S8, 계획 §1.1·§1.5). `source_unit_indexes`와 같은 좌표
+   * (저장된 추출 원문을 `\n`으로 쪼갠 줄), 길이는 `source_unit_count`와 같다. 종류가
+   * 연속된 구간(run)이 화면의 표시 단위다 — 옛 문서(저장된 종류가 없는 문서)는 전부
+   * `'body'`로 낸다.
+   */
+  source_unit_kinds: SourceUnitKind[]
 }
 
 /** 변환 상태·결과. 완료 전에는 결과 필드가 비어 있다. */

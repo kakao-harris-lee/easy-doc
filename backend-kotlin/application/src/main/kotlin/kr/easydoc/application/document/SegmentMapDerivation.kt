@@ -54,7 +54,11 @@ class DefaultSegmentMapDerivation(private val cipher: ContentCipher) : SegmentMa
     ): SegmentMap? {
         if (source == null || body == null) return null
         val sourceText = cipher.decrypt(source.sourceText, source.documentId, EncryptedField.DOCUMENT_SOURCE_TEXT)
-        val map = alignSegments(splitUnits(sourceText.value), splitUnits(body.value))
-        return map.copy(compliantSourceUnits = compliantSourceUnits(splitUnits(sourceText.value)))
+        val sourceUnits = splitUnits(sourceText.value)
+        val map = alignSegments(sourceUnits, splitUnits(body.value))
+        return map.copy(
+            compliantSourceUnits = compliantSourceUnits(sourceUnits),
+            sourceUnitKinds = source.structureOrBody(sourceUnits.size).kinds,
+        )
     }
 }

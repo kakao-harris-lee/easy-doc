@@ -1,10 +1,106 @@
-import { memo, useId, type ReactNode } from 'react'
+import { memo, useId, useMemo, type ReactNode } from 'react'
 import { FileText, FileX2, LoaderCircle, RefreshCcw } from 'lucide-react'
 
 import { cn } from '../lib/utils'
+import type { SourceUnitKind } from '../api/types'
 import type { DocumentSource } from '../review/sourceText'
 import { Badge } from './ui/Badge'
 import { Button } from './ui/Button'
+
+/** `'body'`를 뺀 구조 종류 — 배지·구간(run)을 만드는 두 종류뿐이다. */
+type StructuredUnitKind = Exclude<SourceUnitKind, 'body'>
+
+/** run 첫 행의 배지 문구(P0-4 S8, 계획 §1.5). */
+const KIND_BADGE_TEXT: Record<StructuredUnitKind, string> = {
+  table_cell: '표 칸',
+  list_item: '목록',
+}
+
+/** run을 감싸는 그룹의 `aria-label` 앞부분 — 뒤에 `${run.length}개`를 붙인다. */
+const KIND_GROUP_LABEL: Record<StructuredUnitKind, string> = {
+  table_cell: '표 칸',
+  list_item: '목록 항목',
+}
+
+/**
+ * run에 속한 행마다 붙는 `aria-describedby` 노트(계획 §1.5) — 재변환 버튼을 눌러도
+ * 되지만 셀·항목 하나로 유지된다는 것을 스크린리더 사용자에게 알린다.
+ */
+const KIND_NOTE_TEXT: Record<StructuredUnitKind, string> = {
+  table_cell: '이 문단은 표의 칸입니다. 칸 하나로 유지됩니다.',
+  list_item: '이 문단은 목록 항목입니다. 항목 하나로 유지됩니다.',
+}
+
+/** 종류가 연속된 구간(run) 하나 — `body`가 아닌 종류만 run이 된다. */
+interface UnitRun {
+  kind: StructuredUnitKind
+  start: number
+  length: number
+}
+
+/** 원본 단위 하나 — 텍스트와 색인을 함께 들고 다닌다(아래 참고). */
+interface UnitEntry {
+  index: number
+  text: string
+}
+
+/**
+ * 원본 패널이 그릴 블록 하나 — 낱개 행이거나, run 하나를 감싸는 그룹이다.
+ *
+ * 각 항목이 텍스트를 색인이 아니라 값으로 들고 다니는 이유는 `tsconfig`의
+ * `noUncheckedIndexedAccess` 때문이다 — 이 프로젝트에서는 배열 대괄호 접근이 항상
+ * `T | undefined`로 잡히므로, 다시 색인해 값을 찾는 대신 `.map`/`for...of`로 얻은
+ * 이미 좁혀진 값을 그대로 실어 나른다.
+ */
+type RenderBlock =
+  { kind: 'row'; entry: UnitEntry } | { kind: 'group'; run: UnitRun; entries: UnitEntry[] }
+
+/**
+ * 원본 단위 목록을 화면 블록으로 접는다(P0-4 S8, 계획 §1.1·§1.5). 종류가 연속인 구간
+ * (`body` 제외)은 그룹 블록 하나로 묶고, 나머지는 낱개 행 블록이다. `kinds`가 없거나
+ * `units`보다 짧으면(옛 문서·불변식 어긋남) 모자란 자리는 전부 `body`로 읽는다 — 화면은
+ * 그룹 없이 오늘의 낱개 목록으로 내려앉을 뿐 깨지지 않는다.
+ */
+function buildRenderBlocks(
+  units: string[] | undefined,
+  kinds: readonly SourceUnitKind[] | undefined,
+): RenderBlock[] {
+  if (units === undefined) {
+    return []
+  }
+  const blocks: RenderBlock[] = []
+  let currentRun: { kind: StructuredUnitKind; start: number; entries: UnitEntry[] } | null = null
+
+  const flushRun = () => {
+    if (currentRun === null) {
+      return
+    }
+    blocks.push({
+      kind: 'group',
+      run: { kind: currentRun.kind, start: currentRun.start, length: currentRun.entries.length },
+      entries: currentRun.entries,
+    })
+    currentRun = null
+  }
+
+  units.forEach((text, index) => {
+    const kind = kinds?.[index] ?? 'body'
+    if (kind === 'body') {
+      flushRun()
+      blocks.push({ kind: 'row', entry: { index, text } })
+      return
+    }
+    if (currentRun !== null && currentRun.kind === kind) {
+      currentRun.entries.push({ index, text })
+    } else {
+      flushRun()
+      currentRun = { kind, start: index, entries: [{ index, text }] }
+    }
+  })
+  flushRun()
+
+  return blocks
+}
 
 /**
  * 「이미 통과」 경고 문구(계획 §11.2). 배지·`aria-describedby` 대상·활성 title이
@@ -65,6 +161,12 @@ interface SourceTextPanelProps {
    * 아니다). `undefined`면 어떤 행도 통과 표시를 하지 않는다.
    */
   compliantSourceUnits?: ReadonlySet<number>
+  /**
+   * 원본 단위마다의 종류(P0-4 S8, 계획 §1.1, `segment_map.source_unit_kinds`). 단위
+   * 목록 모드에서만 뜻이 있다 — `units`가 없으면(단일 textarea 모드) 이 값은 무시된다.
+   * `undefined`거나 전부 `'body'`면 오늘과 같은 낱개 목록을 그린다.
+   */
+  sourceUnitKinds?: readonly SourceUnitKind[]
 }
 
 interface SourceUnitRowProps {
@@ -84,6 +186,14 @@ interface SourceUnitRowProps {
    * 충돌한다(LOW 리뷰).
    */
   compliantNoteIdPrefix: string
+  /**
+   * 이 행이 속한 원본 단위 종류(P0-4 S8). `'body'`면 표·목록 배지·노트를 그리지 않는다.
+   * 부모가 배열이 아니라 원소 하나만 넘긴다 — `memo`가 참조 비교로 불필요한 리렌더를
+   * 걸러내려면 이 행이 필요한 것만 받아야 한다(위 `SourceUnitRow` 주석과 같은 이유).
+   */
+  kind: SourceUnitKind
+  /** 이 행이 자신이 속한 종류 구간(run)의 첫 행인지 — 배지는 run마다 한 번만 낸다. */
+  runStart: boolean
 }
 
 /**
@@ -102,10 +212,26 @@ const SourceUnitRow = memo(function SourceUnitRow({
   onReconvert,
   compliant,
   compliantNoteIdPrefix,
+  kind,
+  runStart,
 }: SourceUnitRowProps) {
   const compliantNoteId = `${compliantNoteIdPrefix}-source-unit-${index}-compliant-note`
+  const kindNoteId = `${compliantNoteIdPrefix}-source-unit-${index}-kind-note`
+  const hasKindNote = kind !== 'body'
+  // 재변환 버튼이 참조할 노트 id들 — 「이미 통과」와 「표·목록」 둘 다 해당하면 공백으로
+  // 이어 붙인다(`aria-describedby`는 여러 id를 받을 수 있다, 계획 §1.5).
+  const describedByIds = [compliant ? compliantNoteId : null, hasKindNote ? kindNoteId : null]
+    .filter((id): id is string => id !== null)
+    .join(' ')
   return (
     <div role="listitem" className="flex flex-col gap-1">
+      {/* run 첫 행의 구조 배지(표 칸·목록, 계획 §1.5) — 색만으로 뜻을 전하지 않는다
+          (텍스트가 있다). 표제 칸처럼 「이미 통과」와 겹치면 두 배지가 함께 붙는다. */}
+      {runStart && hasKindNote && (
+        <Badge tone="neutral" withIcon={false} className="self-start">
+          {KIND_BADGE_TEXT[kind]}
+        </Badge>
+      )}
       {/* 이미 통과(계획 §11.2) — 색만으로 뜻을 전하지 않는다(텍스트가 있다). 재변환
           버튼은 막지 않으므로 이 배지는 경고이지 금지가 아니다. */}
       {compliant && (
@@ -148,7 +274,7 @@ const SourceUnitRow = memo(function SourceUnitRow({
             // 때만 「이미 통과」 경고를 title로 낸다(계획 §11.2). 버튼 자체는 이미
             // 통과했다는 사실만으로 막지 않는다.
             title={reconvertDisabledReason ?? (compliant ? COMPLIANT_WARNING : undefined)}
-            aria-describedby={compliant ? compliantNoteId : undefined}
+            aria-describedby={describedByIds || undefined}
             disabled={reconvertPending || reconvertDisabledReason !== null}
             className={cn(
               'absolute top-2 right-2 flex size-11 items-center justify-center rounded-full border border-input bg-card text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 hover:bg-secondary hover:text-foreground focus-visible:opacity-100 disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transition-none',
@@ -172,6 +298,13 @@ const SourceUnitRow = memo(function SourceUnitRow({
       {compliant && (
         <p id={compliantNoteId} className="sr-only">
           {COMPLIANT_WARNING}
+        </p>
+      )}
+      {/* `aria-describedby` 대상(계획 §1.5) — run에 속한 모든 행이 낸다(배지는 첫 행뿐
+          이지만, 「칸 하나로 유지됩니다」라는 사실은 행마다 참이다). */}
+      {hasKindNote && (
+        <p id={kindNoteId} className="sr-only">
+          {KIND_NOTE_TEXT[kind]}
         </p>
       )}
     </div>
@@ -217,9 +350,16 @@ export function SourceTextPanel({
   onHoverUnit,
   reconvert,
   compliantSourceUnits,
+  sourceUnitKinds,
 }: SourceTextPanelProps) {
   const listHeadingId = useId()
   const compliantNoteIdPrefix = useId()
+  // 로딩·실패 갈래에서도 훅 차례를 지키려고 이르게 계산한다 — `units`가 아직 없으면
+  // (loading/failed/단일 textarea 모드) 빈 배열을 얻을 뿐 비용이 없다.
+  const renderBlocks = useMemo(
+    () => buildRenderBlocks(units, sourceUnitKinds),
+    [units, sourceUnitKinds],
+  )
 
   if (source.state.status === 'loading') {
     return (
@@ -275,22 +415,64 @@ export function SourceTextPanel({
         {/* 원본 단위마다 읽기 전용 textarea 하나(§6.4, 계획 §6 S3) — 결과 패널의
             `SegmentedResultEditor`와 짝을 이룬다. 큰 textarea 하나 대신 단위로 쪼개는
             이유는 hover·focus로 결과 쪽 단위와 서로 하이라이트를 주고받기 위해서다.
-            textarea 자체가 이미 클릭·포커스를 받는 요소다("클릭 가능"). */}
+            textarea 자체가 이미 클릭·포커스를 받는 요소다("클릭 가능"). run(표 칸·목록
+            항목 구간, P0-4 S8)이 있으면 그 run의 행들을 그룹 하나로 더 감싼다. */}
         <div className="flex flex-col gap-2" role="list" aria-labelledby={listHeadingId}>
-          {units.map((unit, index) => (
-            <SourceUnitRow
-              key={index}
-              index={index}
-              text={unit}
-              highlighted={highlightedIndexes?.has(index) ?? false}
-              onHoverUnit={onHoverUnit}
-              reconvertPending={reconvert?.pendingIndex === index}
-              reconvertDisabledReason={reconvert?.disabledReason ?? null}
-              onReconvert={reconvert !== undefined ? () => reconvert.onReconvert(index) : undefined}
-              compliant={compliantSourceUnits?.has(index) ?? false}
-              compliantNoteIdPrefix={compliantNoteIdPrefix}
-            />
-          ))}
+          {renderBlocks.map((block) => {
+            if (block.kind === 'row') {
+              const { index, text } = block.entry
+              return (
+                <SourceUnitRow
+                  key={index}
+                  index={index}
+                  text={text}
+                  highlighted={highlightedIndexes?.has(index) ?? false}
+                  onHoverUnit={onHoverUnit}
+                  reconvertPending={reconvert?.pendingIndex === index}
+                  reconvertDisabledReason={reconvert?.disabledReason ?? null}
+                  onReconvert={
+                    reconvert !== undefined ? () => reconvert.onReconvert(index) : undefined
+                  }
+                  compliant={compliantSourceUnits?.has(index) ?? false}
+                  compliantNoteIdPrefix={compliantNoteIdPrefix}
+                  kind="body"
+                  runStart={false}
+                />
+              )
+            }
+            const { run, entries } = block
+            return (
+              <div
+                key={run.start}
+                role="group"
+                aria-label={`${KIND_GROUP_LABEL[run.kind]} ${run.length}개`}
+                className={cn(
+                  'flex flex-col gap-2',
+                  run.kind === 'table_cell' && 'rounded-[10px] border border-input p-2',
+                  run.kind === 'list_item' && 'border-l-2 border-input pl-3',
+                )}
+              >
+                {entries.map(({ index, text }, offset) => (
+                  <SourceUnitRow
+                    key={index}
+                    index={index}
+                    text={text}
+                    highlighted={highlightedIndexes?.has(index) ?? false}
+                    onHoverUnit={onHoverUnit}
+                    reconvertPending={reconvert?.pendingIndex === index}
+                    reconvertDisabledReason={reconvert?.disabledReason ?? null}
+                    onReconvert={
+                      reconvert !== undefined ? () => reconvert.onReconvert(index) : undefined
+                    }
+                    compliant={compliantSourceUnits?.has(index) ?? false}
+                    compliantNoteIdPrefix={compliantNoteIdPrefix}
+                    kind={run.kind}
+                    runStart={offset === 0}
+                  />
+                ))}
+              </div>
+            )
+          })}
         </div>
       </>
     )
