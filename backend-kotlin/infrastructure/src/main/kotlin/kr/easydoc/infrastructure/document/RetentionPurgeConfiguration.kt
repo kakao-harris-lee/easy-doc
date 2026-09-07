@@ -1,6 +1,7 @@
 package kr.easydoc.infrastructure.document
 
 import kr.easydoc.application.auth.TransactionRunner
+import kr.easydoc.application.credit.CreditAccountService
 import kr.easydoc.application.document.ExpiredDocumentPurge
 import kr.easydoc.application.document.FeedbackCommentPurge
 import kr.easydoc.application.document.FeedbackCommentPurgeObserver
@@ -34,7 +35,10 @@ data class RetentionProperties(
 @Profile("worker")
 class RetentionPurgeConfiguration {
     @Bean
-    fun expiredDocumentPurge(jdbcClient: JdbcClient): ExpiredDocumentPurge = JdbcExpiredDocumentPurge(jdbcClient)
+    fun expiredDocumentPurge(
+        jdbcClient: JdbcClient,
+        credits: CreditAccountService,
+    ): ExpiredDocumentPurge = JdbcExpiredDocumentPurge(jdbcClient, credits)
 
     @Bean
     fun retentionPurgeObserver(): RetentionPurgeObserver = LoggingRetentionPurgeObserver()

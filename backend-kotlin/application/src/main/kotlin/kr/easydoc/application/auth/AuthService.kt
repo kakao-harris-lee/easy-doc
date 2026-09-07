@@ -1,5 +1,6 @@
 package kr.easydoc.application.auth
 
+import kr.easydoc.application.credit.CreditAccountService
 import kr.easydoc.core.exceptions.InvalidCredentialsException
 import kr.easydoc.core.user.PasswordHash
 import kr.easydoc.core.user.StoredUser
@@ -9,6 +10,7 @@ import org.slf4j.LoggerFactory
 import java.util.UUID
 
 /** 인증 유스케이스 — 가입 · 로그인 · 내 정보. */
+@Suppress("LongParameterList")
 class AuthService(
     private val users: UserRepository,
     private val workspaces: WorkspaceRepository,
@@ -16,10 +18,18 @@ class AuthService(
     private val accessTokens: AccessTokens,
     private val transaction: TransactionRunner,
     private val emailVerification: PostSignupEmailVerification,
+    private val credits: CreditAccountService,
 ) {
     private val log = LoggerFactory.getLogger(AuthService::class.java)
 
-    /** 계정과 **기본 작업 공간**을 같은 트랜잭션에서 만든다. */
+    /**
+     * 계정과 **기본 작업 공간**을 같은 트랜잭션에서 만든다.
+     *
+     * **크레딧 계정도 같은 트랜잭션에서 만든다**(크레딧 계정 계획 §2 결정 4) —
+     * [CreditAccountService.grantSignupBonus] 가 `signupGrant` 설정을 중앙에서 판단한다
+     * (리뷰 MEDIUM-9: `AuthService`·`SocialLoginService` 가 각자 `signupGrant` 를 들고
+     * 있으면 두 값이 갈릴 수 있었다).
+     */
     fun signup(
         email: String,
         password: String,
@@ -37,7 +47,9 @@ class AuthService(
         val created =
             transaction.inTransaction {
                 val created = users.create(normalizedEmail, passwordHash)
-                workspaces.createDefault(created.id)
+                val workspaceId = workspaces.createDefault(created.id)
+                credits.ensureAccount(workspaceId)
+                credits.grantSignupBonus(workspaceId, created.id)
                 created
             }
         // 커밋 **뒤**에 발송한다 — 롤백될 수도 있는 계정에 메일을 먼저 보내지 않는다.

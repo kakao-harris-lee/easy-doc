@@ -15,6 +15,7 @@ import kr.easydoc.application.conversion.DictionaryContextSource
 import kr.easydoc.application.conversion.LlmCallLedger
 import kr.easydoc.application.conversion.NoDictionaryContext
 import kr.easydoc.application.conversion.ProcessConversionJob
+import kr.easydoc.application.credit.CreditAccountService
 import kr.easydoc.application.crypto.ContentCipher
 import kr.easydoc.application.mail.MailSender
 import kr.easydoc.core.exceptions.ConfigurationException
@@ -173,6 +174,7 @@ class ConversionWorkerConfiguration {
         runtime: ConversionWorkerRuntime,
         notifier: ConversionCompletedNotifier,
         ledger: LlmCallLedger,
+        creditAccountService: CreditAccountService,
     ): ProcessConversionJob =
         ProcessConversionJob(
             stores = stores,
@@ -181,6 +183,7 @@ class ConversionWorkerConfiguration {
             runtime = runtime,
             notifier = notifier,
             ledger = ledger,
+            creditAccountService = creditAccountService,
         )
 
     private fun hostOwner(): String =

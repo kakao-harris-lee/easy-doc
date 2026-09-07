@@ -4,6 +4,7 @@ import kr.easydoc.application.document.ConversionCiphertexts
 import kr.easydoc.application.document.ConversionEnvelope
 import kr.easydoc.application.document.ConversionRepository
 import kr.easydoc.application.document.LockedConversion
+import kr.easydoc.application.document.PendingCreditsReservation
 import kr.easydoc.application.document.ReconversionReservation
 import kr.easydoc.application.document.StoredConversion
 import kr.easydoc.application.document.StoredExport
@@ -18,13 +19,19 @@ import java.sql.ResultSet
 import java.time.OffsetDateTime
 import java.util.UUID
 
-/** `conversions` 테이블 접근. 스키마는 `V1__initial_schema.sql` 이 정한다. */
+/**
+ * `conversions` 테이블 접근. 스키마는 `V1__initial_schema.sql` 이 정한다.
+ *
+ * `TooManyFunctions` 를 억제한다 — [ConversionRepository] 와 같은 사유(리뷰 HIGH-1).
+ */
+@Suppress("TooManyFunctions")
 class JdbcConversionRepository(private val jdbc: JdbcClient) : ConversionRepository {
     override fun insertPending(
         id: UUID,
         documentId: UUID,
         scheme: String,
         keyVersion: Int,
+        creditsReserved: Int,
     ): Conversion =
         try {
             jdbc
@@ -34,6 +41,7 @@ class JdbcConversionRepository(private val jdbc: JdbcClient) : ConversionReposit
                 .param("status", ConversionStatus.PENDING.wireName)
                 .param("scheme", scheme)
                 .param("keyVersion", keyVersion)
+                .param("creditsReserved", creditsReserved)
                 .query { rs, _ -> ConversionRows.toConversion(rs) }
                 .single()
         } catch (failure: DataIntegrityViolationException) {
@@ -226,6 +234,25 @@ class JdbcConversionRepository(private val jdbc: JdbcClient) : ConversionReposit
             .map { it.coerceAtLeast(0) }
             .orElse(0)
 
+    override fun lockPendingReservation(
+        ownerId: UUID,
+        documentId: UUID,
+    ): PendingCreditsReservation? =
+        jdbc
+            .sql(LOCK_PENDING_RESERVATION_SQL)
+            .param("documentId", documentId)
+            .param("ownerId", ownerId)
+            .query { rs, _ ->
+                PendingCreditsReservation(
+                    conversionId = rs.getObject("id", UUID::class.java),
+                    documentId = documentId,
+                    workspaceId = rs.getObject("workspace_id", UUID::class.java),
+                    ownerId = ownerId,
+                    creditsReserved = rs.getInt("credits_reserved"),
+                )
+            }.optional()
+            .orElse(null)
+
     private companion object {
         /** 저장소가 만든 고정 문자열. 계약 `InternalError` 의 `storage` 갈래다. */
         const val STORAGE_FAILURE_MESSAGE = "요청을 처리하지 못했습니다"
@@ -332,8 +359,8 @@ class JdbcConversionRepository(private val jdbc: JdbcClient) : ConversionReposit
 
         val INSERT_PENDING_SQL =
             """
-            INSERT INTO conversions (id, document_id, status, encryption_scheme, key_version)
-            VALUES (:id, :documentId, :status, :scheme, :keyVersion)
+            INSERT INTO conversions (id, document_id, status, encryption_scheme, key_version, credits_reserved)
+            VALUES (:id, :documentId, :status, :scheme, :keyVersion, :creditsReserved)
             RETURNING id, document_id, status, failure_code, created_at, updated_at
             """.trimIndent()
 
@@ -379,6 +406,23 @@ class JdbcConversionRepository(private val jdbc: JdbcClient) : ConversionReposit
                   SELECT id FROM documents WHERE user_id = :ownerId
               )
             RETURNING :budget - reconversion_calls_used - reconversion_calls_reserved AS remaining
+            """.trimIndent()
+
+        /**
+         * 즉시 파기 앞의 예약 조회(리뷰 HIGH-1). 소유 술어가 문장 자신에 있고
+         * (`d.user_id = :ownerId`), `FOR NO KEY UPDATE OF c` 로 변환 행을 잠가 worker 의
+         * `loadForProcessing`(같은 잠금 종류)과 직렬화한다 — 둘 중 하나가 커밋될 때까지
+         * 다른 쪽이 기다리므로, 이미 정산된 예약을 이 조회가 다시 볼 일이 없다.
+         */
+        val LOCK_PENDING_RESERVATION_SQL =
+            """
+            SELECT c.id, d.workspace_id, c.credits_reserved
+            FROM conversions c
+            JOIN documents d ON d.id = c.document_id
+            WHERE c.document_id = :documentId AND d.user_id = :ownerId
+              AND c.status IN ('pending', 'processing')
+              AND c.credits_reserved > 0
+            FOR NO KEY UPDATE OF c
             """.trimIndent()
     }
 }

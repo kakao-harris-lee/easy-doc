@@ -20,7 +20,8 @@
 | 골든셋 품질 평가(스타일 규칙 + LLM-as-judge) | 구현 | `./gradlew build`가 스키마·원문 사실·변환 스냅샷 스타일/사실·파일·ID·JSON digest 기준선을 검사한다. LLM-as-judge는 `./gradlew testLlm`이며 비밀값이 없으면 skip |
 | 검수 피드백 기록(게이트 ① 판정 근거) | 구현 | `PUT /conversions/{id}/feedback` 멱등 upsert. 배포 의향·품질 만족도·소요 시간 + 자유 의견(AEAD 봉인). 수정률 지표는 저장 시점에 계산해 평문 숫자로 남긴다. `conversion_feedback`은 문서 30일 파기와 **분리**돼 있다(FK 없음). 집계는 `scripts/pilot-report.sql`, 절차는 `docs/pilot-runbook.md` 「게이트 ① 판정」. 조회 API(`GET`)와 재방문 시 이전 값 표시는 범위 밖 |
 | 변환 완료 이메일 알림(P0-3) | **구현(2026-09-04) — provider: fake·smtp(임시)** | `ConversionCompletedNotifier`가 worker 완료 커밋 뒤(트랜잭션 밖) 문서 소유자에게 제목·링크만 담은 메일을 보낸다. `conversions.notified_at`(migration V5)로 재실행 멱등, 실패해도 변환을 막지 않는다. `MailSender` 포트에 `fake`(메모리 기록, 실제 네트워크 없음)와 `smtp`(2026-09-04 사용자 결정 — Daum 등 소비자 메일 계정을 임시 relay로, SMTPS만 지원) 두 어댑터가 있다. **SES가 의도한 운영 provider이고 smtp는 그 전환 전까지의 임시 조치다** — §1.4의 벤더 조사·요금 비교 결론은 그대로 유효하다 |
-| 결제(카드·계좌이체·세금계산서), 크레딧 차감 | 미구현 | Lean MVP 범위 밖(master-plan 4.0) |
+| 결제(카드·계좌이체·세금계산서) | 미구현 | Lean MVP 범위 밖(master-plan 4.0) |
+| 크레딧 계정·차감(워크스페이스 잔액, 등록 시 예약, 완료 시 소비, 402 거절) | **구현(2026-09-07, C1, 계약 2.22.0)** — 백엔드·API만. `credit-grant` 운영 프로필과 프런트 화면은 C2(미착수) | 계획 `docs/plans/2026-09-07-credit-accounts.md`. V15(`workspace_credit_accounts`·`credit_transactions`·`conversions.credits_reserved`), `GET /workspaces/{workspace_id}/credits`, `createDocument` 402. 충전(부여)은 아직 운영 진입점이 없다 — 계좌이체 확인 후 수동 부여 절차(러너북)는 C2가 연다 |
 | 운영자 어드민 | 미구현 | Lean MVP 범위 밖 |
 
 **2026-09-05:** P0-4 문단 단위 대응·재변환은 S1–S5(원문·쉬운 글 단위 정렬, `segment_map` 조회

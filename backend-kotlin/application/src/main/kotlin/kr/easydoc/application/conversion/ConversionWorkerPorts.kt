@@ -98,6 +98,12 @@ class ConversionWorkItem(
      * 와 같은 방침).
      */
     val structure: SourceStructure? = null,
+    /**
+     * 등록 시 예약한 크레딧 — `conversions.credits_reserved`(V15) 그대로다. `0`은 이 조각
+     * 이전에 만든 문서라 [ProcessConversionJob] 이 정산을 no-op 으로 다룬다(크레딧 계정
+     * 계획 §2 결정 5).
+     */
+    val creditsReserved: Int = 0,
 ) {
     override fun toString(): String =
         "ConversionWorkItem($conversionId, doc=$documentId, ${status.wireName}, " +
@@ -136,6 +142,20 @@ interface ConversionWorkStore {
 
     /** 재시도 전에 사용자에게 다시 대기로 보이게 한다. 이미 끝난 행은 되돌리지 않는다. */
     fun revertToPending(conversionId: UUID): Boolean
+
+    /**
+     * 이 변환의 예약 크레딧을 **한 번만** 정산 대상으로 넘긴다(리뷰 HIGH-1) —
+     * `conversions.credits_reserved` 가 아직 [expectedAmount] 와 같을 때만 `0` 으로 낮추고
+     * `true` 를 돌려준다. 이미 다른 호출(재시도로 겹친 `consumeCredits`/`releaseCredits`,
+     * 또는 [kr.easydoc.application.document.DocumentService.delete] 의 삭제 시
+     * 해제)이 먼저 정산했으면 `false` — 호출자는 그때 [kr.easydoc.application.credit.CreditAccountService.consume]/
+     * `release` 를 **부르지 않는다**. compare-and-swap 가드라 `ProcessConversionJob` 이
+     * 리스 만료·재시도로 같은 완료·실패를 두 번 처리해도 크레딧 계정을 두 번 건드리지 않는다.
+     */
+    fun settleCreditsReserved(
+        conversionId: UUID,
+        expectedAmount: Int,
+    ): Boolean
 }
 
 /** LLM 호출 동안 리스를 연장한다. */

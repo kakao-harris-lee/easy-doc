@@ -9,6 +9,9 @@ import kr.easydoc.application.conversion.ConversionWorkerRuntime
 import kr.easydoc.application.conversion.ConversionWorkerStores
 import kr.easydoc.application.conversion.ConvertDocumentUseCase
 import kr.easydoc.application.conversion.ProcessConversionJob
+import kr.easydoc.application.credit.CreditAccountService
+import kr.easydoc.application.credit.NoopCreditAccountRepository
+import kr.easydoc.application.credit.noCredits
 import kr.easydoc.application.document.DocumentService
 import kr.easydoc.application.document.DocumentStorage
 import kr.easydoc.application.document.DocumentTextExtractor
@@ -97,6 +100,7 @@ class ConversionWorkerFlowTest {
                     },
                 transaction = transaction,
                 users = JdbcUserRepository(jdbc),
+                credits = noCredits(),
             )
     }
 
@@ -209,6 +213,9 @@ class ConversionWorkerFlowTest {
                 ),
             // 실물 원장 — 이 파일은 실 PostgreSQL 을 쓰므로 제품 조립과 같은 어댑터를 그대로 쓴다.
             ledger = JdbcLlmCallLedger(jdbc),
+            // 이 파일은 pending → processing → done|failed 수직 흐름을 재지, 크레딧 계정을
+            // 재지 않는다 — `DocumentService` 도 기본값(Noop)으로 문서를 만든다(아래).
+            creditAccountService = CreditAccountService(NoopCreditAccountRepository, enforced = false),
         )
 
     // 이메일 인증 게이트는 `POST /documents` 앞이다 — 이 파일은 그 게이트를 재지 않으므로

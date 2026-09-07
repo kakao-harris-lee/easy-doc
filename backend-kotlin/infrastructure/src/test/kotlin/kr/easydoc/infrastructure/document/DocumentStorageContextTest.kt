@@ -2,6 +2,8 @@ package kr.easydoc.infrastructure.document
 
 import kr.easydoc.application.auth.TransactionRunner
 import kr.easydoc.application.auth.UserRepository
+import kr.easydoc.application.credit.CreditAccountService
+import kr.easydoc.application.credit.NoopCreditAccountRepository
 import kr.easydoc.application.crypto.ContentCipher
 import kr.easydoc.application.document.DocumentService
 import kr.easydoc.application.document.EnvelopeRotation
@@ -222,6 +224,11 @@ class DocumentStorageContextTest {
                 // `DocumentConfiguration.convertDocumentUseCase` 가 요구한다(P0-4 S8-2).
                 StructureHintProperties::class.java,
                 Supplier { StructureHintProperties() },
+            ).withBean(
+                // `DocumentConfiguration.documentService` 가 요구한다(크레딧 계정 C1) — 이
+                // 테스트는 크레딧 경로를 재지 않으므로 항상 성공하는 대역이면 충분하다.
+                CreditAccountService::class.java,
+                Supplier { CreditAccountService(NoopCreditAccountRepository, enforced = false) },
             )
     }
 

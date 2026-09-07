@@ -1,5 +1,6 @@
 package kr.easydoc.infrastructure.document
 
+import kr.easydoc.application.credit.noCredits
 import kr.easydoc.application.crypto.ContentCipher
 import kr.easydoc.application.document.DocumentService
 import kr.easydoc.application.document.DocumentStorage
@@ -74,6 +75,7 @@ class JdbcDocumentStructureTest {
                 cipher = cipher,
                 extractor = DocumentTextExtractor { _, _ -> error("이 배선은 파일 경로를 쓰지 않는다") },
                 transaction = SpringTransactionRunner(TransactionTemplate(DataSourceTransactionManager(dataSource))),
+                credits = noCredits(),
             )
     }
 

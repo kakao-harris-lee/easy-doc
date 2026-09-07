@@ -39,6 +39,8 @@ object AuthenticatedEndpoints {
             // 사용량 집계(2.20.0, U2)도 같은 사유로 **따로** 넣는다 — 위 항목이 하위
             // 경로를 덮지 않는다.
             "/workspaces/{workspace_id}/usage",
+            // 크레딧 계정 조회(2.22.0, C1)도 같은 사유로 **따로** 넣는다.
+            "/workspaces/{workspace_id}/credits",
             // 사전 조회(2.11.0, P0-5) — 소유 자원이 없지만 여전히 인증은 필요하다(계약 security).
             "/dictionary/lookup",
         )

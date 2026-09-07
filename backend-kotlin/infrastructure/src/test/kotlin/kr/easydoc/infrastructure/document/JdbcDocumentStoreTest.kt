@@ -1,5 +1,6 @@
 package kr.easydoc.infrastructure.document
 
+import kr.easydoc.application.credit.noCredits
 import kr.easydoc.application.crypto.ContentCipher
 import kr.easydoc.application.document.ConversionCiphertexts
 import kr.easydoc.application.document.ConversionEnvelope
@@ -322,17 +323,22 @@ class JdbcDocumentStoreTest {
             .isNull()
     }
 
-    /** 제품 포트로 지운다 + 그것이 한 문장이다. */
+    /**
+     * 제품 포트로 지운다 + 문장 수가 고정이다. **2026-09-07 리뷰 HIGH-1**이 `SELECT`(끝나지
+     * 않은 크레딧 예약 잠금 조회, `lockPendingReservation`) 한 문장을 `DELETE` 앞에 더했다 —
+     * 예약만 하고 아직 소비·해제되지 않은 채로 문서가 지워지면 크레딧이 영원히 묶이는
+     * 결함을 막는다. 예약이 없어도(이 테스트처럼) 조회 자체는 항상 돈다.
+     */
     @Test
-    @DisplayName("포트 경유 삭제가 **한 문장**으로 변환·작업까지 연쇄한다")
-    fun `포트 경유 삭제가 한 문장으로 연쇄한다`() {
+    @DisplayName("포트 경유 삭제가 **두 문장**(예약 조회 + DELETE)으로 변환·작업까지 연쇄한다")
+    fun `포트 경유 삭제가 두 문장으로 연쇄한다`() {
         val owner = newUser()
         val workspace = workspaces.create(owner, "카").id
         val accepted = countedService.createFromText(owner, "본문", null, workspace.toString())
 
         val statements = counting.countStatements { countedService.delete(owner, accepted.documentId) }
 
-        assertThat(statements).describedAs("DELETE 1").isEqualTo(1)
+        assertThat(statements).describedAs("SELECT(예약 조회) 1 + DELETE 1").isEqualTo(2)
         assertThat(documentRow(accepted.documentId)).isNull()
         assertThat(conversionStatus(accepted.conversionId)).isNull()
         assertThat(jobState(accepted.conversionId)).isNull()
@@ -356,7 +362,9 @@ class JdbcDocumentStoreTest {
         val missing = counting.countStatements { runCatching { countedService.delete(owner, UUID.randomUUID()) } }
         val notMine = counting.countStatements { runCatching { countedService.delete(stranger, accepted.documentId) } }
 
-        assertThat(missing).isEqualTo(1)
+        // 리뷰 HIGH-1 이 더한 예약 조회 SELECT 가 항상 먼저 돈다 — 위 "두 문장" 테스트와
+        // 같은 이유. 거절이라도 SELECT(예약 조회, 0행) + DELETE(0행) 로 2 문장이다.
+        assertThat(missing).isEqualTo(2)
         assertThat(notMine)
             .describedAs("없는 것과 남의 것이 다른 만큼 일하면 그 차이가 시간에 남는다")
             .isEqualTo(missing)
@@ -635,6 +643,7 @@ class JdbcDocumentStoreTest {
             cipher = contentCipher,
             extractor = extractor,
             transaction = SpringTransactionRunner(TransactionTemplate(DataSourceTransactionManager(dataSource))),
+            credits = noCredits(),
         )
     }
 

@@ -311,14 +311,28 @@ class LockedConversion(
         "LockedConversion(${envelope.conversionId}, ${status.wireName}, ${envelope.scheme} v${envelope.keyVersion})"
 }
 
-/** `conversions` 저장소. */
+/**
+ * `conversions` 저장소.
+ *
+ * `TooManyFunctions` 를 억제한다 — 2026-09-07 리뷰 HIGH-1 이 더한 [lockPendingReservation]
+ * 하나가 상한을 넘겼을 뿐, 책임이 여럿으로 갈라진 것이 아니다(문서 삭제 예약 조회도
+ * 여전히 "변환 행 접근"이라는 이 인터페이스의 단일 책임 안에 있다).
+ */
+@Suppress("TooManyFunctions")
 interface ConversionRepository {
-    /** 대기 상태 변환을 만든다. **커밋하지 않는다.** */
+    /**
+     * 대기 상태 변환을 만든다. **커밋하지 않는다.**
+     *
+     * [creditsReserved] 는 등록 시 예약한 크레딧을 **저장**한다(크레딧 계정 계획 §2 결정 3) —
+     * worker 정산이 정산 시점에 다시 계산하지 않고 이 값을 읽는다. `0`은 이 조각 이전에
+     * 만든 문서와 같은 의미로 다뤄진다(정산 no-op).
+     */
     fun insertPending(
         id: UUID,
         documentId: UUID,
         scheme: String,
         keyVersion: Int,
+        creditsReserved: Int = 0,
     ): Conversion
 
     /**
@@ -427,7 +441,37 @@ interface ConversionRepository {
         actualUsed: Int,
         budget: Int,
     ): Int
+
+    /**
+     * 즉시 파기(`DocumentService.delete`) **앞**에서 부른다 — 삭제 대상 문서의 변환이
+     * 아직 끝나지 않은 채(`pending`/`processing`) 예약을 쥐고 있으면, cascade 삭제로
+     * 변환 행이 함께 사라지는 순간 그 예약을 되돌릴 방법이 사라져 `reserved` 가 영원히
+     * 부풀어 오른다(리뷰 HIGH-1). 소유 술어가 이 문장 자신에 걸리고([ownerId]),
+     * 반환된 변환 행은 **잠근다**(`FOR NO KEY UPDATE`) — worker 가 같은 행을
+     * `loadForProcessing` 으로 동시에 집으면 둘 중 하나가 커밋될 때까지 이 조회가
+     * 대기해, 이미 소비·해제된 예약을 이중으로 해제하지 않는다.
+     *
+     * 해제할 것이 없으면(끝났거나 `credits_reserved` 가 0) `null`.
+     */
+    fun lockPendingReservation(
+        ownerId: UUID,
+        documentId: UUID,
+    ): PendingCreditsReservation?
 }
+
+/**
+ * 파기 전 해제 대상 — 아직 끝나지 않았고 예약이 남은 변환 한 건.
+ * [ConversionRepository.lockPendingReservation] 과 `JdbcExpiredDocumentPurge` 의 배치
+ * 조회가 공유한다(둘 다 `credits.release(workspaceId, ownerId, documentId, conversionId,
+ * amount)` 호출에 필요한 값을 그대로 담는다).
+ */
+data class PendingCreditsReservation(
+    val conversionId: UUID,
+    val documentId: UUID,
+    val workspaceId: UUID,
+    val ownerId: UUID,
+    val creditsReserved: Int,
+)
 
 /** [ConversionRepository.reserveReconversionCalls] 의 결과. */
 sealed interface ReconversionReservation {

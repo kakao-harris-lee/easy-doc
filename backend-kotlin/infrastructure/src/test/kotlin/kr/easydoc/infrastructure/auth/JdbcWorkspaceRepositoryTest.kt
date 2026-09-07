@@ -1,5 +1,6 @@
 package kr.easydoc.infrastructure.auth
 
+import kr.easydoc.application.credit.CreditAccountService
 import kr.easydoc.application.workspace.WorkspaceService
 import kr.easydoc.core.crypto.EncryptionScheme
 import kr.easydoc.core.exceptions.ConflictException
@@ -7,6 +8,7 @@ import kr.easydoc.core.exceptions.NotFoundException
 import kr.easydoc.core.user.PasswordHash
 import kr.easydoc.infrastructure.DatabaseHandle
 import kr.easydoc.infrastructure.PostgresTestSupport
+import kr.easydoc.infrastructure.credit.JdbcCreditAccountRepository
 import kr.easydoc.infrastructure.db.SpringTransactionRunner
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
@@ -53,13 +55,20 @@ class JdbcWorkspaceRepositoryTest {
         users = JdbcUserRepository(jdbcClient)
         workspaces = JdbcWorkspaceRepository(jdbcClient)
         transaction = SpringTransactionRunner(TransactionTemplate(DataSourceTransactionManager(dataSource)))
-        service = WorkspaceService(workspaces, transaction)
+        service =
+            WorkspaceService(
+                workspaces,
+                transaction,
+                CreditAccountService(JdbcCreditAccountRepository(jdbcClient), enforced = false),
+            )
 
         counting = CountingDataSource(dataSource())
+        val countingClient = JdbcClient.create(counting)
         countedService =
             WorkspaceService(
-                JdbcWorkspaceRepository(JdbcClient.create(counting)),
+                JdbcWorkspaceRepository(countingClient),
                 SpringTransactionRunner(TransactionTemplate(DataSourceTransactionManager(counting))),
+                CreditAccountService(JdbcCreditAccountRepository(countingClient), enforced = false),
             )
     }
 

@@ -8,6 +8,7 @@ import kr.easydoc.core.exceptions.EasyDocException
 import kr.easydoc.core.exceptions.EmailAlreadyRegisteredException
 import kr.easydoc.core.exceptions.EmailNotVerifiedException
 import kr.easydoc.core.exceptions.ExternalServiceUnavailableException
+import kr.easydoc.core.exceptions.InsufficientCreditsException
 import kr.easydoc.core.exceptions.InvalidCredentialsException
 import kr.easydoc.core.exceptions.InvalidInputException
 import kr.easydoc.core.exceptions.InvalidOAuthStateException
@@ -233,6 +234,10 @@ private const val FIELD_REQUIRED_MESSAGE = "Field required"
 /** 계약 `components/responses/ReconversionBudgetExhausted.headers`. */
 private const val RECONVERSION_REMAINING_BUDGET_HEADER = "X-Remaining-Call-Budget"
 
+/** 계약 `components/responses/InsufficientCredits.headers` — 크레딧 계정(C1). */
+private const val CREDIT_BALANCE_HEADER = "X-Credit-Balance"
+private const val CREDITS_REQUIRED_HEADER = "X-Credits-Required"
+
 private const val INVALID_INPUT_MESSAGE = "Input is not valid"
 
 /** `loc` 첫 칸. Python 은 `body`·`query`·`path` 셋만 쓴다. */
@@ -266,11 +271,11 @@ private fun bodyReadItem(exception: HttpMessageNotReadableException): Validation
 /**
  * 도메인 예외 → (상태 코드, 추가 헤더). **정본은 `contracts/easy-doc-v1.yaml` 이다.**
  *
- * 갈래 수가 늘 때마다 순환 복잡도가 함께 는다 — 이 함수의 복잡도는 **매핑 갈래의 수**이지
- * 로직의 얽힘이 아니다(각 갈래는 서로 독립이고 상태 하나만 정한다). 억제는 이 함수 하나에
- * 걸리고 갈래를 나누는 판단 자체로 번지지 않는다.
+ * 갈래 수가 늘 때마다 순환 복잡도·길이가 함께 는다 — 이 함수의 복잡도는 **매핑 갈래의
+ * 수**이지 로직의 얽힘이 아니다(각 갈래는 서로 독립이고 상태 하나만 정한다). 억제는 이
+ * 함수 하나에 걸리고 갈래를 나누는 판단 자체로 번지지 않는다.
  */
-@Suppress("CyclomaticComplexMethod")
+@Suppress("CyclomaticComplexMethod", "LongMethod")
 private fun mappingFor(exception: EasyDocException): Pair<HttpStatus, HttpHeaders?>? =
     when (exception) {
         // 입력 오류·지원하지 않는 형식·추출 실패 → 422.
@@ -313,6 +318,11 @@ private fun mappingFor(exception: EasyDocException): Pair<HttpStatus, HttpHeader
         // 크기 초과만 413으로 가른다 — "파일을 나눠 올리라"는 안내가 형식 오류와 다르다.
         is UploadTooLargeException -> {
             HttpStatus.PAYLOAD_TOO_LARGE to null
+        }
+
+        // 크레딧 부족(집행 중) — 헤더 조립은 `creditHeadersFor`(`InsufficientCreditsException` KDoc).
+        is InsufficientCreditsException -> {
+            HttpStatus.PAYMENT_REQUIRED to creditHeadersFor(exception)
         }
 
         // 이메일 중복·상태 충돌 → 409.
@@ -366,6 +376,13 @@ private fun mappingFor(exception: EasyDocException): Pair<HttpStatus, HttpHeader
         else -> {
             null
         }
+    }
+
+/** 계약 `components/responses/InsufficientCredits.headers` — 402 헤더 둘. */
+private fun creditHeadersFor(exception: InsufficientCreditsException): HttpHeaders =
+    HttpHeaders().apply {
+        set(CREDIT_BALANCE_HEADER, exception.available.toString())
+        set(CREDITS_REQUIRED_HEADER, exception.required.toString())
     }
 
 private fun jsonError(

@@ -220,15 +220,18 @@ internal class FakeConversionRepository(
 ) : ConversionRepository {
     val inserted = mutableListOf<Pair<UUID, Pair<String, Int>>>()
     val depthWhenInserted = mutableListOf<Int>()
+    val insertedCreditsReserved = mutableListOf<Int>()
 
     override fun insertPending(
         id: UUID,
         documentId: UUID,
         scheme: String,
         keyVersion: Int,
+        creditsReserved: Int,
     ): Conversion {
         inserted += id to (scheme to keyVersion)
         depthWhenInserted += transaction.depth
+        insertedCreditsReserved += creditsReserved
         return Conversion(
             id = id,
             documentId = documentId,
@@ -402,6 +405,19 @@ internal class FakeConversionRepository(
 
     /** 케이스가 정산 뒤 상태를 단언하는 자리. */
     fun reconversionBudgetOf(conversionId: UUID): Pair<Int, Int> = reconversionBudgets[conversionId] ?: (0 to 0)
+
+    /**
+     * 즉시 파기 앞의 예약 조회 — [pendingReservation] 을 케이스가 심지 않으면 `null`
+     * (해제할 것이 없다)이다. 이 공유 대역을 쓰는 다른 일곱 곳은 심지 않으므로 영향이
+     * 없고, `DocumentServiceTest` 의 삭제-해제 케이스만 심어서 쓴다. 실 SQL 잠금·소유
+     * 술어는 `JdbcDocumentStoreTest`(실 Postgres)가 잰다.
+     */
+    var pendingReservation: PendingCreditsReservation? = null
+
+    override fun lockPendingReservation(
+        ownerId: UUID,
+        documentId: UUID,
+    ): PendingCreditsReservation? = pendingReservation?.takeIf { it.documentId == documentId }
 
     /** 한 번의 검수 저장 호출 — 조건과 쓴 값, 그리고 **어느 경계에서 돌았는지**를 그대로 든다. */
     internal class SavedReview(

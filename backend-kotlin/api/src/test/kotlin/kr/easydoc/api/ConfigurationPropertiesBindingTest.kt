@@ -9,6 +9,7 @@ import kr.easydoc.infrastructure.auth.GoogleOAuthProperties
 import kr.easydoc.infrastructure.auth.KakaoOAuthProperties
 import kr.easydoc.infrastructure.auth.NaverOAuthProperties
 import kr.easydoc.infrastructure.auth.OAuthProperties
+import kr.easydoc.infrastructure.credit.CreditsProperties
 import kr.easydoc.infrastructure.crypto.EncryptionProperties
 import kr.easydoc.infrastructure.dictionary.DictionaryLookupProperties
 import kr.easydoc.infrastructure.dictionary.DictionaryProperties
@@ -396,6 +397,22 @@ class ConfigurationPropertiesBindingTest {
             )
         assertThat(usage.zone).isEqualTo("UTC")
         assertThat(usage.zoneId()).isEqualTo(java.time.ZoneId.of("UTC"))
+    }
+
+    @Test
+    @DisplayName("크레딧 집행 설정이 기본값과 다른 값을 싣는다 — 스위치와 가입 부여")
+    fun `크레딧 설정이 기본값과 다른 값을 싣는다`() {
+        val credits =
+            bind(
+                "easydoc.credits",
+                CreditsProperties::class.java,
+                mapOf(
+                    "easydoc.credits.enforced" to "true",
+                    "easydoc.credits.signup-grant" to "50",
+                ),
+            )
+        assertThat(credits.enforced).isTrue()
+        assertThat(credits.signupGrant).isEqualTo(50)
     }
 
     @Test

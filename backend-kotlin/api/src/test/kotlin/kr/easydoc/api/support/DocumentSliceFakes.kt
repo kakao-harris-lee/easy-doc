@@ -15,6 +15,7 @@ import kr.easydoc.application.document.LockedConversion
 import kr.easydoc.application.document.LockedFeedbackComment
 import kr.easydoc.application.document.OriginalDocument
 import kr.easydoc.application.document.OriginalStructureReflector
+import kr.easydoc.application.document.PendingCreditsReservation
 import kr.easydoc.application.document.ReconversionReservation
 import kr.easydoc.application.document.StoredConversion
 import kr.easydoc.application.document.StoredExport
@@ -132,6 +133,9 @@ class InMemoryDocumentRepository : DocumentRepository {
     fun sourceFormatOf(documentId: UUID): SourceFormat? =
         rows.firstOrNull { it.document.id == documentId }?.document?.sourceFormat
 
+    /** 그 문서가 속한 작업 공간. 없으면 `null` — `InMemoryConversionRepository.lockPendingReservation` 이 쓴다. */
+    fun workspaceIdOf(documentId: UUID): UUID? = rows.firstOrNull { it.document.id == documentId }?.workspaceId
+
     /**
      * 저장된 제목을 테스트가 직접 바꾼다. 제품 경로의 [resolveTitle] 을 우회해
      * 내보내기 파일명 정제를 재기 위한 자리이다.
@@ -220,6 +224,7 @@ class InMemoryConversionRepository(
         var failureCode: String?,
         var reconversionCallsReserved: Int = 0,
         var reconversionCallsUsed: Int = 0,
+        var creditsReserved: Int = 0,
     )
 
     private val rows = mutableMapOf<UUID, Row>()
@@ -229,6 +234,7 @@ class InMemoryConversionRepository(
         documentId: UUID,
         scheme: String,
         keyVersion: Int,
+        creditsReserved: Int,
     ): Conversion {
         rows[id] =
             Row(
@@ -252,6 +258,7 @@ class InMemoryConversionRepository(
                 inputTokens = null,
                 outputTokens = null,
                 failureCode = null,
+                creditsReserved = creditsReserved,
             )
         return Conversion(
             id = id,
@@ -410,6 +417,26 @@ class InMemoryConversionRepository(
         row.reconversionCallsReserved -= reservedAmount
         row.reconversionCallsUsed += actualUsed
         return (budget - row.reconversionCallsUsed - row.reconversionCallsReserved).coerceAtLeast(0)
+    }
+
+    /** 실물과 같은 술어(소유·상태·예약 잔량) — 대역이라 잠금은 없다. */
+    override fun lockPendingReservation(
+        ownerId: UUID,
+        documentId: UUID,
+    ): PendingCreditsReservation? {
+        val entry =
+            rows.entries
+                .firstOrNull { it.value.documentId == documentId }
+                ?.takeIf { documents.ownerOf(documentId) == ownerId }
+                ?: return null
+        val row = entry.value
+        val pending = row.status == ConversionStatus.PENDING || row.status == ConversionStatus.PROCESSING
+        return documents
+            .workspaceIdOf(documentId)
+            ?.takeIf { pending && row.creditsReserved > 0 }
+            ?.let { workspaceId ->
+                PendingCreditsReservation(entry.key, documentId, workspaceId, ownerId, row.creditsReserved)
+            }
     }
 
     private companion object {

@@ -130,12 +130,19 @@ class DocumentController(
     /** 상한 **+1 바이트**까지만 읽는다. */
     private fun readBounded(file: MultipartFile): ByteArray = file.inputStream.use { it.readNBytes(BOUNDED_READ_BYTES) }
 
-    /** **202 다(201 이 아니다)** — 자원은 생겼지만 변환은 아직 시작 전이다. */
+    /**
+     * **202 다(201 이 아니다)** — 자원은 생겼지만 변환은 아직 시작 전이다.
+     *
+     * `X-Credit-Balance`(크레딧 계정 계획 §2 결정 7, 계약 2.22.0)는 예약 **직후** 가용
+     * 잔액이다 — 집행 스위치(`easydoc.credits.enforced`)와 무관하게 항상 싣는다(화면이
+     * 잔액을 알아야 한다).
+     */
     private fun accepted(upload: AcceptedUpload): ResponseEntity<DocumentCreatedResponse> =
         ResponseEntity
             .status(HttpStatus.ACCEPTED)
             .contentType(MediaType.APPLICATION_JSON)
             .header(HttpHeaders.LOCATION, "$CONVERSION_LOCATION_PREFIX${upload.conversionId}")
+            .header(CREDIT_BALANCE_HEADER, upload.creditBalance.toString())
             .body(DocumentCreatedResponse.of(upload))
 
     private companion object {
@@ -169,6 +176,9 @@ class DocumentController(
 
         /** `Location` 값의 앞부분. 계약 `paths./conversions/{conversion_id}` 와 같은 경로다. */
         const val CONVERSION_LOCATION_PREFIX = "/conversions/"
+
+        /** 계약 `DocumentCreatedResponse` 의 202 응답에 붙는 크레딧 잔액 헤더(2.22.0). */
+        const val CREDIT_BALANCE_HEADER = "X-Credit-Balance"
 
         /** 상한 초과를 관측하기 위한 한 바이트를 더한 값. */
         val BOUNDED_READ_BYTES = (MAX_UPLOAD_BYTES + 1).toInt()

@@ -17,6 +17,7 @@ import kr.easydoc.application.auth.UserIdentityRepository
 import kr.easydoc.application.auth.UserRepository
 import kr.easydoc.application.auth.VerificationCodeStore
 import kr.easydoc.application.auth.WorkspaceRepository
+import kr.easydoc.application.credit.CreditAccountService
 import kr.easydoc.application.mail.MailSender
 import kr.easydoc.core.security.Secret
 import kr.easydoc.infrastructure.auth.google.GoogleOAuthSettings
@@ -263,6 +264,7 @@ class AuthConfiguration {
         accessTokens: AccessTokens,
         transactionRunner: TransactionRunner,
         emailVerification: EmailVerificationService,
+        credits: CreditAccountService,
     ): AuthService =
         AuthService(
             users = users,
@@ -271,6 +273,7 @@ class AuthConfiguration {
             accessTokens = accessTokens,
             transaction = transactionRunner,
             emailVerification = emailVerification,
+            credits = credits,
         )
 
     @Bean
@@ -418,6 +421,7 @@ class AuthConfiguration {
         transactionRunner: TransactionRunner,
         oauthProperties: OAuthProperties,
         emailVerification: EmailVerificationService,
+        credits: CreditAccountService,
     ): SocialLoginService =
         SocialLoginService(
             providers = providers,
@@ -427,6 +431,7 @@ class AuthConfiguration {
             transaction = transactionRunner,
             stateTtl = Duration.ofMinutes(oauthProperties.stateTtlMinutes),
             emailVerification = emailVerification,
+            credits = credits,
         )
 
     private companion object {

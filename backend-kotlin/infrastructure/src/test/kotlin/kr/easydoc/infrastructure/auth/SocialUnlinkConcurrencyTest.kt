@@ -8,9 +8,11 @@ import kr.easydoc.application.auth.OAuthStateStore
 import kr.easydoc.application.auth.SocialLoginProviderId
 import kr.easydoc.application.auth.SocialLoginRepositories
 import kr.easydoc.application.auth.SocialLoginService
+import kr.easydoc.application.credit.CreditAccountService
 import kr.easydoc.core.exceptions.ConflictException
 import kr.easydoc.infrastructure.DatabaseHandle
 import kr.easydoc.infrastructure.PostgresTestSupport
+import kr.easydoc.infrastructure.credit.JdbcCreditAccountRepository
 import kr.easydoc.infrastructure.db.SpringTransactionRunner
 import org.assertj.core.api.Assertions.assertThat
 import org.flywaydb.core.Flyway
@@ -138,6 +140,7 @@ class SocialUnlinkConcurrencyTest {
             transaction = SpringTransactionRunner(TransactionTemplate(DataSourceTransactionManager(dataSource))),
             stateTtl = Duration.ofMinutes(10),
             emailVerification = { error("이 테스트는 unlink 만 부른다 — 이메일 인증 발급은 부르지 않는다") },
+            credits = CreditAccountService(JdbcCreditAccountRepository(client), enforced = false),
         )
     }
 

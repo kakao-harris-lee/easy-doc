@@ -3,11 +3,13 @@ package kr.easydoc.infrastructure.auth
 import kr.easydoc.application.auth.AuthService
 import kr.easydoc.application.auth.PasswordHasher
 import kr.easydoc.application.auth.PostSignupEmailVerification
+import kr.easydoc.application.credit.CreditAccountService
 import kr.easydoc.core.exceptions.InvalidCredentialsException
 import kr.easydoc.core.security.Secret
 import kr.easydoc.core.user.PasswordHash
 import kr.easydoc.infrastructure.DatabaseHandle
 import kr.easydoc.infrastructure.PostgresTestSupport
+import kr.easydoc.infrastructure.credit.JdbcCreditAccountRepository
 import kr.easydoc.infrastructure.db.SpringTransactionRunner
 import org.assertj.core.api.Assertions.assertThat
 import org.flywaydb.core.Flyway
@@ -66,6 +68,7 @@ class AuthenticationWorkUniformityTest {
                 // 이 테스트는 `signup` 을 부르지 않는다(`authenticate`·`login` 시간만 잰다) —
                 // 발급 자체가 관심사가 아니므로 no-op 이면 충분하다.
                 emailVerification = PostSignupEmailVerification { },
+                credits = CreditAccountService(JdbcCreditAccountRepository(countingJdbc), enforced = false),
             )
     }
 

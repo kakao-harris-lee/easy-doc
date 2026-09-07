@@ -383,8 +383,26 @@ class SensitiveToStringReachTest {
          * `UsageReport.csv`는 이름이 토큰에 걸리지 않아 자동 판정 밖이지만, 소유자
          * 이메일·워크스페이스 이름을 그대로 담은 CSV 본문이라 예방적으로 길이만 남기는
          * `toString()`을 함께 붙였다.
+         *
+         * 크레딧 계정 C1(2026-09-07, `docs/plans/2026-09-07-credit-accounts.md`)이
+         * **열**을 더해 152 다(142 위에) — core `Credits`(value class, `amount` 하나),
+         * application `credit` 패키지의 `CreditAccountRow`·`CreditTransactionView`·
+         * `CreditConsistencyViolation`·`ReservationResult.Reserved`·
+         * `ReservationResult.Insufficient`·`CreditAccountView`(여섯 다 워크스페이스
+         * id·정수 잔액/예약량·거래 종류(enum)·사유(enum)·문서 id·시각뿐이라 민감 판정
+         * 토큰에 걸리지 않는다 — `note`는 운영자가 남기는 메모지만 필드 이름 자체가
+         * 토큰과 무관하다), infrastructure `CreditsProperties`(집행 스위치·가입 부여
+         * 정수 설정 둘, `FeedbackProperties`·`RetentionProperties`와 같은 판단),
+         * api `WorkspaceCreditsResponse`·`CreditTransactionResponse`(둘 다 응답 DTO —
+         * 필드가 위 application 타입과 같은 축이라 민감 정보가 없다). [KNOWN_SENSITIVE_TYPES]
+         * 에는 넣지 않는다.
+         *
+         * 152 → 153 은 2026-09-07 리뷰 HIGH-1(`docs/plans/2026-09-07-credit-accounts.md`)이
+         * 더한 `application.document.PendingCreditsReservation` 하나다 —
+         * 변환 id·문서 id·워크스페이스 id·소유자 id·예약 크레딧 정수뿐이라 민감 판정
+         * 토큰에 걸리지 않는다. [KNOWN_SENSITIVE_TYPES] 에는 넣지 않는다.
          */
-        const val EXPECTED_SOURCE_DECLARATIONS = 142
+        const val EXPECTED_SOURCE_DECLARATIONS = 153
 
         /** 민감 판정이 반드시 닿아야 하는 타입 — 바닥이다. */
         val KNOWN_SENSITIVE_TYPES =

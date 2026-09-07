@@ -132,3 +132,19 @@ class ReconversionBudgetExhaustedException(
  * (`Retry-After: 1`) — 문서당 영구 상한인 [ReconversionBudgetExhaustedException] 과 다르다.
  */
 class ReconversionConcurrencyExhaustedException(message: String) : EasyDocException(message)
+
+/**
+ * 워크스페이스 크레딧이 모자라 문서 등록을 예약하지 못했다 — 계획
+ * `docs/plans/2026-09-07-credit-accounts.md` §2 결정 4, `easydoc.credits.enforced` 가
+ * `true` 일 때만 던져진다(꺼져 있으면 잔액이 음수로 기록되며 등록은 계속된다).
+ *
+ * `ReconversionBudgetExhaustedException`(429)과 같은 이유로 **본문이 아니라 헤더**에
+ * 잔여값을 싣는다 — `x-error-body-universality`가 오류 응답 본문을 `detail` 하나로
+ * 고정하므로, [available]·[required] 는 `X-Credit-Balance`·`X-Credits-Required` 헤더로
+ * 나간다(402).
+ */
+class InsufficientCreditsException(
+    message: String,
+    val available: Int,
+    val required: Int,
+) : EasyDocException(message)
