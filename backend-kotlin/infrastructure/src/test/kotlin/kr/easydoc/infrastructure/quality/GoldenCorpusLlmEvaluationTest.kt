@@ -230,7 +230,8 @@ private class LaneGrader(
         }
         val judged = judgeOrRecord(document, converted, journalId)
         if (judged != null && !judged.passed) {
-            report.recordQualityFailure(document.id, "judge 실패")
+            val detail = judged.reason?.let { "judge 실패 — $it" } ?: "judge 실패"
+            report.recordQualityFailure(document.id, detail)
         }
         report.recordDocument(
             LaneMeasurement(

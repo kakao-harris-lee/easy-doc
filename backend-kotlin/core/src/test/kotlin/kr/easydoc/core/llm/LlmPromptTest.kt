@@ -91,6 +91,15 @@ class LlmPromptTest {
     }
 
     @Test
+    @DisplayName("judge 프롬프트는 no 일 때 둘째 줄에 사유를 적으라고 지시한다")
+    fun `judge 시스템 프롬프트에 사유 지시가 있다`() {
+        val prompt = LlmPrompt.forJudge("원문", "변환문", emptyList())
+
+        assertThat(prompt.system).contains("no 이면 둘째 줄에")
+        assertThat(prompt.system).contains("첫 줄에 yes")
+    }
+
+    @Test
     @DisplayName("toString 에 본문이 실리지 않는다")
     fun `toString 은 길이만 남긴다`() {
         val prompt = LlmPrompt.forConversion("대외비 문서 본문입니다.", fixedIds)
