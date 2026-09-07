@@ -146,6 +146,13 @@ export const ROUTES = {
   workspaceCreate: { path: '/workspaces', method: 'POST', created: 201, conflict: 409 },
   /** 계약 `paths./workspaces/{workspace_id}.patch` — 200. **PUT 이 아니다.** */
   workspaceRename: { method: 'PATCH', ok: 200 },
+  /**
+   * 계약 `paths./workspaces/{workspace_id}/credits.get` — 200 (크레딧 계정 계획
+   * §2 결정 7, 2.22.0 신설). 업로드 화면이 워크스페이스당 한 번 조회한다(C2) — 경로에
+   * 실행마다 달라지는 워크스페이스 uuid 가 있어 `workspaceRename`과 같은 이유로
+   * `path`를 두지 않는다. 부르는 쪽이 실제 workspace id로 전체 경로를 조립한다.
+   */
+  readWorkspaceCredits: { method: 'GET', ok: 200 },
   /** 계약 `components/responses/Unauthorized` — 401. */
   unauthorized: 401,
   /** 계약 `components/responses/ValidationFailed` — 422. */

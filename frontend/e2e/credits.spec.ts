@@ -69,14 +69,29 @@ test.describe('크레딧 계정', () => {
     // 3) 등록 뒤 — 가용은 999다. **`잔액`·`예약 중`은 여기서 단언하지 않는다** — fake
     // worker 가 폴링보다 먼저 끝나면(conversion-flow.spec.ts E13 이 이미 관측한 경쟁)
     // 예약(reserve)이 그새 소비(consume)로 넘어가 `balance=999, reserved=0`이 될 수
-    // 있다. 두 상태 모두 `가용 = balance − reserved`는 999로 같으므로 그 값만 잰다.
+    // 있다. 두 상태 모두 `가용 = balance − reserved`는 999로 같으므로 그 값만 잰다
+    // (reserve: (0,+1) → 999, consume: (-1,-1) → 999).
     await page.goto('/usage')
     await expect(page.locator('dt:text-is("가용") + dd')).toHaveText('999')
 
-    // 거래 표도 같은 이유로 종류(예약/소비)를 못박지 않는다 — 사유와 크기(1크레딧)만
-    // 확인한다. `consume`도 `reserve`와 같은 크기의 음수를 낸다(계약 설명, V15 리뷰).
+    // 거래 표는 append-only 원장이라(V15) 예약(reserve) 행이 지워지지 않는다 — worker가
+    // 빠르게 끝나면(실측, conversion-flow.spec.ts E13과 같은 경쟁) 소비(consume) 행도
+    // 곧바로 더해져 **예약·소비 두 행이 동시에** 「문서 변환」 사유로 표에 남는다. 그래서
+    // `getByText('문서 변환')`처럼 표 전체에서 찾으면 strict mode 위반이다 — 종류(kind)
+    // 셀로 행을 좁혀 각 행의 크레딧 셀을 잰다. `consume`도 `reserve`와 같은 크기의
+    // 음수를 낸다(계약 설명, V15 리뷰).
     const updatedTable = page.getByRole('table', { name: /최근 크레딧 거래 내역입니다/ })
-    await expect(updatedTable.getByText('문서 변환')).toBeVisible()
-    await expect(updatedTable.getByText('-1')).toBeVisible()
+    const reserveRow = updatedTable.locator('tr').filter({ hasText: '예약' })
+    await expect(reserveRow).toHaveCount(1)
+    await expect(reserveRow.locator('td').first()).toHaveText('-1')
+
+    // 소비 행은 worker 완주 여부에 달렸다 — 실측상 거의 항상 이미 끝나 있지만
+    // (fake LLM), 혹시 아직 pending/processing 이면 이 행이 없을 수 있다. 있을 때만
+    // 크기까지 잰다(강한 단언은 예약 행 하나로 충분하다).
+    const consumeRow = updatedTable.locator('tr').filter({ hasText: '소비' })
+    if ((await consumeRow.count()) > 0) {
+      await expect(consumeRow).toHaveCount(1)
+      await expect(consumeRow.locator('td').first()).toHaveText('-1')
+    }
   })
 })
