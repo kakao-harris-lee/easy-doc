@@ -1,0 +1,19 @@
+# Playwright E22(크레딧 집행 켜짐 변형, `docs/plans/2026-09-07-credit-accounts.md` §3 C2 후속)
+# 전용 override — `compose.yml` + `compose.e2e.yml` 위에 **추가로** 얹는다.
+#
+# `credits.spec.ts`(E21)를 포함한 나머지 모든 e2e 스펙은 집행 꺼짐
+# (`easydoc.credits.enforced=false`, `compose.e2e.yml`의 기본 상태)을 전제로 문서 등록이
+# 늘 202라고 단언한다. 이 override 를 같은 스택에 얹으면 그 스펙들이 전부 402로
+# 깨진다 — 그래서 **별도 스택 기동**(같은 컨테이너를 이 override 로 갱신)으로
+# `credits-enforced.spec.ts`(E22) 하나만, `playwright.enforced.config.ts`로 상대한다.
+#
+# `EASYDOC_CREDITS_SIGNUP_GRANT=1`(E21의 1000이 아니라 1) — E22 는 가입 직후 1크레딧짜리
+# 문서 하나만 통과시키고 바로 다음 등록에서 402(가용 0 < 필요 1)를 재려는 것이라, 가입
+# 부여를 그 경계에 정확히 맞춘다. `compose.e2e.yml`이 이미 얹은 EASYDOC_LLM_PROVIDER·
+# EASYDOC_DICTIONARY_LOOKUP_ENABLED 는 서비스별 environment 맵 병합으로 그대로 남는다.
+
+services:
+  backend-api:
+    environment:
+      EASYDOC_CREDITS_ENFORCED: "true"
+      EASYDOC_CREDITS_SIGNUP_GRANT: "1"
