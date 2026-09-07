@@ -19,6 +19,13 @@ import java.util.UUID
  * `OwnershipPredicateGuardTest`(그 스캐너는 두 표만 본다) 인구조사 대상이 아니다.
  * [creditBalances]·[monthUsage]가 읽는 `workspace_credit_accounts`·`llm_calls`도 같은
  * 이유로 그 스캐너 밖이다.
+ *
+ * **[monthUsage]는 `outcome = 'completed'`인 행만 문서·크레딧·비용에 센다**(V18, 백로그
+ * 「실패 호출 원장 추적」) — `JdbcUsageReadRepository`·`JdbcUsageReportRepository`와 같은
+ * 규칙이다. 완성 자체가 나지 않은 호출(`provider_error`)만 있는 문서는 실제로 변환되지
+ * 않았으므로 목록 요약(`monthDocuments`·`monthCredits`·`monthCostUsd`)에 청구 대상으로
+ * 잡히면 안 된다 — 이 저장소는 목록 요약이라 [AdminMonthUsage]에 `failedCalls`를 별도로
+ * 내지 않는다(그 값이 필요하면 상세 화면의 `UsageQueryService.usageOf`를 쓴다).
  */
 class JdbcAdminWorkspaceQueryRepository(private val jdbc: JdbcClient) : AdminWorkspaceQueryRepository {
     override fun search(
@@ -182,7 +189,8 @@ class JdbcAdminWorkspaceQueryRepository(private val jdbc: JdbcClient) : AdminWor
         /**
          * `JdbcUsageReadRepository.documentTotalsFromCalls`와 같은 규칙 — `document_id`로
          * distinct 한 뒤에만 문서 단위로 더한다. 워크스페이스별로 나누지 않고 한 번에
-         * `GROUP BY workspace_id`로 묶는다.
+         * `GROUP BY workspace_id`로 묶는다. `outcome = 'completed'`만 본다(V18) —
+         * 완성 자체가 나지 않은 호출만 있는 문서는 변환되지 않았으므로 청구 대상이 아니다.
          */
         val DOCUMENT_TOTALS_BY_WORKSPACE_SQL =
             """
@@ -194,17 +202,24 @@ class JdbcAdminWorkspaceQueryRepository(private val jdbc: JdbcClient) : AdminWor
                 SELECT DISTINCT ON (document_id) document_id, workspace_id, document_char_count
                 FROM llm_calls
                 WHERE workspace_id IN (:ids) AND called_at >= :from AND called_at < :toExclusive
+                  AND outcome = 'completed'
                 ORDER BY document_id
             ) AS distinct_documents
             GROUP BY workspace_id
             """.trimIndent()
 
-        /** `sum()`은 NULL을 건너뛴다 — 비용 미상 호출이 섞여도 0으로 새지 않는다(계획 §2 결정 4). */
+        /**
+         * `sum()`은 NULL을 건너뛴다 — 비용 미상 호출이 섞여도 0으로 새지 않는다(계획 §2 결정 4).
+         * `outcome = 'completed'`만 본다(V18) — 실패 호출은 비용이 항상 `NULL`이라 `sum()`이
+         * 자연히 건너뛰긴 하지만, 그 행이 이 워크스페이스를 결과 맵에 등장시켜 `documents`
+         * 없이 `estimated_cost_usd`만 `NULL`인 행이 뜨는 것도 막는다.
+         */
         val COST_TOTALS_BY_WORKSPACE_SQL =
             """
             SELECT workspace_id, sum(estimated_cost_usd) AS estimated_cost_usd
             FROM llm_calls
             WHERE workspace_id IN (:ids) AND called_at >= :from AND called_at < :toExclusive
+              AND outcome = 'completed'
             GROUP BY workspace_id
             """.trimIndent()
     }

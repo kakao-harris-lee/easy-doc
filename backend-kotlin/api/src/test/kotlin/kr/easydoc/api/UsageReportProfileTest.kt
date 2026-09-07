@@ -64,7 +64,7 @@ class UsageReportProfileTest {
         assertThat(csv.lineSequence().first())
             .isEqualTo(
                 "workspace_id,workspace_name,owner_email,documents,characters,credits," +
-                    "llm_calls,input_tokens,output_tokens,estimated_cost_usd,cost_unknown_calls",
+                    "llm_calls,failed_calls,input_tokens,output_tokens,estimated_cost_usd,cost_unknown_calls",
             )
         assertThat(csv).contains("공간1")
         assertThat(csv).contains("0.001000")

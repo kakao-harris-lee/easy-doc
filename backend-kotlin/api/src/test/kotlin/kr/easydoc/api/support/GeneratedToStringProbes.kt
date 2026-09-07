@@ -1,5 +1,8 @@
 package kr.easydoc.api.support
 
+import kr.easydoc.core.llm.LlmCallOutcome
+import kr.easydoc.core.llm.LlmCallPurpose
+import kr.easydoc.core.llm.LlmCallRecord
 import kr.easydoc.core.privacy.UserContent
 import org.w3c.dom.Element
 import java.lang.reflect.Modifier
@@ -316,6 +319,31 @@ class GeneratedToStringProbes(
                 Duration::class to Duration.ZERO,
                 BigDecimal::class to BigDecimal.ZERO,
                 ByteArray::class to ByteArray(0),
+                // LlmCallRecord 는 필드 이름 어느 것도 민감 판정 토큰에 걸리지 않는
+                // 구조적으로 안전한 타입이다(`LlmCallRecord` KDoc) — 그런데 `model`·
+                // `failureClass` 는 outcome 과 서로 맞물린 값이어야 한다는 도메인 불변식이
+                // `init { require(...) }`(V18, 2026-09-08 리뷰)로 걸려 있어, 이 하네스의
+                // 범용 필드별 채움(모든 nullable String 자리에 무조건 텍스트를 채운다,
+                // nullability를 보지 않는다)으로는 유효한 조합을 만들 수 없다 — 「완료됐는데
+                // failureClass 도 있다」처럼 모순된 조합이 나와 생성자가 예외를 던진다.
+                // 하네스가 도메인 불변식을 아는 것보다, 이 표에 미리 유효한 표본 하나를
+                // 등록해 두는 편이 작다.
+                LlmCallRecord::class to
+                    LlmCallRecord(
+                        purpose = LlmCallPurpose.CONVERT,
+                        provider = "anthropic",
+                        model = "claude-sonnet-5",
+                        inputTokens = 0,
+                        outputTokens = 0,
+                        latencyMs = null,
+                        estimatedCostUsd = null,
+                        pricingInputUsdPerMtok = null,
+                        pricingOutputUsdPerMtok = null,
+                        charCount = 0,
+                        calledAt = Instant.EPOCH,
+                        outcome = LlmCallOutcome.COMPLETED,
+                        failureClass = null,
+                    ),
             )
 
         /** 원소 하나짜리 표본을 만드는 컬렉션 갈래. 모르는 컬렉션은 [slotFor] 가 끊는다. */

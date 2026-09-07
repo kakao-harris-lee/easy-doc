@@ -3,6 +3,7 @@ package kr.easydoc.infrastructure.document
 import kr.easydoc.application.conversion.LlmCallEntry
 import kr.easydoc.core.crypto.EncryptionScheme
 import kr.easydoc.core.document.SourceFormat
+import kr.easydoc.core.llm.LlmCallOutcome
 import kr.easydoc.core.llm.LlmCallPurpose
 import kr.easydoc.core.llm.LlmCallRecord
 import kr.easydoc.core.user.PasswordHash
@@ -76,6 +77,121 @@ class JdbcLlmCallLedgerTest {
         val rows = purposesOf(seeded.conversionId)
         assertThat(rows).containsExactlyInAnyOrder("convert", "repair")
     }
+
+    @Test
+    @DisplayName("성공 행은 outcome=completed·failure_class=NULL이다 — 기본값이 과거 행과 같다(V18)")
+    fun `성공 행은 completed로 쓰인다`() {
+        val seeded = seed()
+        appendConvertRow(seeded)
+
+        val (outcome, failureClass) = outcomeOf(seeded.conversionId)
+        assertThat(outcome).isEqualTo("completed")
+        assertThat(failureClass).isNull()
+    }
+
+    @Test
+    @DisplayName("실패 행은 outcome=provider_error·failure_class·model=NULL·토큰 0으로 쓰인다(V18)")
+    fun `실패 행은 provider_error로 쓰인다`() {
+        val seeded = seed()
+        val failing =
+            LlmCallEntry(
+                conversionId = seeded.conversionId,
+                documentId = seeded.documentId,
+                workspaceId = seeded.workspaceId,
+                userId = seeded.owner,
+                record =
+                    LlmCallRecord(
+                        purpose = LlmCallPurpose.CONVERT,
+                        provider = "anthropic",
+                        model = null,
+                        inputTokens = 0,
+                        outputTokens = 0,
+                        latencyMs = null,
+                        estimatedCostUsd = null,
+                        pricingInputUsdPerMtok = null,
+                        pricingOutputUsdPerMtok = null,
+                        charCount = 40,
+                        calledAt = Instant.now(),
+                        outcome = LlmCallOutcome.PROVIDER_ERROR,
+                        failureClass = "LlmProviderException",
+                    ),
+                calledAt = Instant.now(),
+                documentCharCount = DOCUMENT_CHAR_COUNT,
+            )
+
+        ledger.append(listOf(failing))
+
+        val (outcome, failureClass) = outcomeOf(seeded.conversionId)
+        assertThat(outcome).isEqualTo("provider_error")
+        assertThat(failureClass).isEqualTo("LlmProviderException")
+        val row = failureRowOf(seeded.conversionId)
+        assertThat(row.model).isNull()
+        assertThat(row.inputTokens).isZero()
+        assertThat(row.estimatedCostUsd).isNull()
+    }
+
+    @Test
+    @DisplayName("64자를 넘는 failure_class는 잘려서 쓰인다 — varchar(64) 제약에 INSERT가 걸리지 않는다")
+    fun `긴 failure_class는 64자로 잘린다`() {
+        val seeded = seed()
+        val longClassName = "A".repeat(100)
+        val failing =
+            LlmCallEntry(
+                conversionId = seeded.conversionId,
+                documentId = seeded.documentId,
+                workspaceId = seeded.workspaceId,
+                userId = seeded.owner,
+                record =
+                    LlmCallRecord(
+                        purpose = LlmCallPurpose.CONVERT,
+                        provider = "anthropic",
+                        model = null,
+                        inputTokens = 0,
+                        outputTokens = 0,
+                        latencyMs = null,
+                        estimatedCostUsd = null,
+                        pricingInputUsdPerMtok = null,
+                        pricingOutputUsdPerMtok = null,
+                        charCount = 40,
+                        calledAt = Instant.now(),
+                        outcome = LlmCallOutcome.PROVIDER_ERROR,
+                        failureClass = longClassName,
+                    ),
+                calledAt = Instant.now(),
+                documentCharCount = DOCUMENT_CHAR_COUNT,
+            )
+
+        ledger.append(listOf(failing))
+
+        val (_, failureClass) = outcomeOf(seeded.conversionId)
+        assertThat(failureClass).hasSize(64)
+        assertThat(failureClass).isEqualTo(longClassName.take(64))
+    }
+
+    private fun failureRowOf(conversionId: UUID): FailureRow =
+        jdbc
+            .sql(FAILURE_ROW_SQL)
+            .param("id", conversionId)
+            .query { rs, _ ->
+                FailureRow(
+                    model = rs.getString("model"),
+                    inputTokens = rs.getInt("input_tokens"),
+                    estimatedCostUsd = rs.getBigDecimal("estimated_cost_usd"),
+                )
+            }.single()
+
+    private data class FailureRow(
+        val model: String?,
+        val inputTokens: Int,
+        val estimatedCostUsd: BigDecimal?,
+    )
+
+    private fun outcomeOf(conversionId: UUID): Pair<String, String?> =
+        jdbc
+            .sql("SELECT outcome, failure_class FROM llm_calls WHERE conversion_id = :id")
+            .param("id", conversionId)
+            .query { rs, _ -> rs.getString("outcome") to rs.getString("failure_class") }
+            .single()
 
     @Test
     @DisplayName("빈 목록은 아무것도 쓰지 않는다")
@@ -240,5 +356,12 @@ class JdbcLlmCallLedgerTest {
 
         /** `documents.char_count` 스냅샷 — 이 테스트는 그 값을 재지 않으므로 고정값이면 충분하다. */
         const val DOCUMENT_CHAR_COUNT: Int = 4
+
+        val FAILURE_ROW_SQL =
+            """
+            SELECT model, input_tokens, estimated_cost_usd
+            FROM llm_calls
+            WHERE conversion_id = :id
+            """.trimIndent()
     }
 }

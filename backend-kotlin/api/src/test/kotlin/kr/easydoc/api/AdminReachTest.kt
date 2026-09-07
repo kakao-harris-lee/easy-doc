@@ -291,6 +291,23 @@ class AdminReachTest {
     }
 
     @Test
+    @DisplayName("오류 화면은 llm_calls의 provider 실패도 failure_class별 건수로 낸다 (V18)")
+    fun `오류 화면은 provider 실패를 집계한다`() {
+        val admin = newVerifiedAdminAccount()
+        val userToken = newVerifiedAccount()
+        val workspaceId = defaultWorkspaceId(userToken)
+        val failureClass = "ProbeProviderError-${UUID.randomUUID()}"
+        seedProviderFailureCall(workspaceId, failureClass)
+
+        val response = get(admin, "/admin/errors")
+
+        assertThat(response.statusCode()).isEqualTo(200)
+        val body = bodyOf(response)
+        val providerFailures = (body["provider_failures"] as List<*>).map { it as Map<*, *> }
+        assertThat(providerFailures.any { it["failure_class"] == failureClass }).isTrue()
+    }
+
+    @Test
     @DisplayName("사용량 화면은 워크스페이스별 사용량 행을 JSON으로 낸다")
     fun `사용량 화면은 JSON을 낸다`() {
         val admin = newVerifiedAdminAccount()
@@ -433,6 +450,23 @@ class AdminReachTest {
             """
             INSERT INTO conversions (id, document_id, status, encryption_scheme, key_version, failure_code)
             VALUES ('$conversionId', '$documentId', 'failed', 'aes256gcm-v1', 1, '$failureCode')
+            """.trimIndent(),
+        )
+    }
+
+    /** `llm_calls`(V18)에 provider_error 행 하나를 심는다 — `/admin/errors`의 `provider_failures` 대상. */
+    private fun seedProviderFailureCall(
+        workspaceId: String,
+        failureClass: String,
+    ) {
+        val callId = UUID.randomUUID().toString()
+        database.execute(
+            """
+            INSERT INTO llm_calls (id, workspace_id, user_id, purpose, provider, model, input_tokens, output_tokens,
+                char_count, document_char_count, outcome, failure_class)
+            SELECT '$callId', id, user_id, 'convert', 'anthropic', NULL, 0, 0, 10, 10,
+                'provider_error', '$failureClass'
+            FROM workspaces WHERE id = '$workspaceId'
             """.trimIndent(),
         )
     }

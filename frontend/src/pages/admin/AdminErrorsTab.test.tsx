@@ -4,7 +4,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { readAdminErrors } from '../../api/admin'
 import { ApiError } from '../../api/client'
-import { adminErrorItem, adminErrorsResponse, adminFailureCount } from '../../test/factories'
+import {
+  adminErrorItem,
+  adminErrorsResponse,
+  adminFailureCount,
+  adminProviderFailureCount,
+} from '../../test/factories'
 import { AdminErrorsTab } from './AdminErrorsTab'
 
 vi.mock('../../api/admin', () => ({
@@ -35,6 +40,21 @@ describe('AdminErrorsTab — 오류 (어드민 최소, 계약 2.25.0)', () => {
     expect(occurrences).toHaveLength(2)
     expect(screen.getByText('3')).toBeInTheDocument()
     expect(vi.mocked(readAdminErrors)).toHaveBeenCalledWith({}, expect.anything())
+  })
+
+  it('llm_calls provider 실패도 failure_class별 건수 표로 보여준다 (계약 2.26.0)', async () => {
+    vi.mocked(readAdminErrors).mockResolvedValue(
+      adminErrorsResponse({
+        provider_failures: [
+          adminProviderFailureCount({ failure_class: 'LlmProviderException', count: 5 }),
+        ],
+      }),
+    )
+
+    render(<AdminErrorsTab />)
+
+    expect(await screen.findByText('LlmProviderException')).toBeInTheDocument()
+    expect(screen.getByText('5')).toBeInTheDocument()
   })
 
   it('직접 입력으로 바꾸고 두 날짜를 채우면 그 기간으로 조회한다', async () => {
@@ -73,11 +93,14 @@ describe('AdminErrorsTab — 오류 (어드민 최소, 계약 2.25.0)', () => {
   })
 
   it('실패가 없으면 안내 문구를 보여준다', async () => {
-    vi.mocked(readAdminErrors).mockResolvedValue(adminErrorsResponse({ counts: [], recent: [] }))
+    vi.mocked(readAdminErrors).mockResolvedValue(
+      adminErrorsResponse({ counts: [], recent: [], provider_failures: [] }),
+    )
 
     render(<AdminErrorsTab />)
 
     expect(await screen.findAllByText('이 기간에 실패한 변환이 없습니다.')).toHaveLength(2)
+    expect(screen.getByText('이 기간에 실패한 LLM 호출이 없습니다.')).toBeInTheDocument()
   })
 
   it('조회가 실패하면 서버 문구를 보여준다', async () => {

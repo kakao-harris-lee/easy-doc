@@ -112,6 +112,30 @@ describe('합계 표', () => {
     expect(within(table).getByText('비용 미상 건수')).toBeInTheDocument()
     expect(within(table).getByText('3')).toBeInTheDocument()
   })
+
+  it('실패 호출이 0이면 열 자체가 없다 (계약 2.26.0)', async () => {
+    vi.mocked(getWorkspaceUsage).mockResolvedValue(workspaceUsage({ failed_calls: 0 }))
+
+    renderPage()
+
+    const table = await screen.findByRole('table', {
+      name: /이 기간 사용량 합계입니다/,
+    })
+    expect(within(table).queryByText('실패 호출')).not.toBeInTheDocument()
+  })
+
+  it('실패 호출이 있으면 열이 나타나고 값을 보여준다 (계약 2.26.0)', async () => {
+    // credits 기본값(2)과 겹치지 않는 값을 쓴다 — 같은 표 안에서 텍스트가 유일해야 한다.
+    vi.mocked(getWorkspaceUsage).mockResolvedValue(workspaceUsage({ failed_calls: 5 }))
+
+    renderPage()
+
+    const table = await screen.findByRole('table', {
+      name: /이 기간 사용량 합계입니다/,
+    })
+    expect(within(table).getByText('실패 호출')).toBeInTheDocument()
+    expect(within(table).getByText('5')).toBeInTheDocument()
+  })
 })
 
 describe('목적별 표', () => {
@@ -139,6 +163,36 @@ describe('목적별 표', () => {
 
     const table = await screen.findByRole('table', { name: /목적.*집계입니다/ })
     expect(within(table).getByText('이 기간에 호출이 없습니다.')).toBeInTheDocument()
+  })
+
+  it('모든 행의 실패 호출이 0이면 열 자체가 없다 (계약 2.26.0)', async () => {
+    vi.mocked(getWorkspaceUsage).mockResolvedValue(
+      workspaceUsage({
+        by_purpose: [purposeUsageItem({ purpose: 'convert', failed_calls: 0 })],
+      }),
+    )
+
+    renderPage()
+
+    const table = await screen.findByRole('table', { name: /목적.*집계입니다/ })
+    expect(within(table).queryByText('실패 호출')).not.toBeInTheDocument()
+  })
+
+  it('한 행이라도 실패 호출이 있으면 모든 행에 열이 나타난다 (계약 2.26.0)', async () => {
+    vi.mocked(getWorkspaceUsage).mockResolvedValue(
+      workspaceUsage({
+        by_purpose: [
+          purposeUsageItem({ purpose: 'convert', failed_calls: 0 }),
+          purposeUsageItem({ purpose: 'repair', llm_calls: 0, failed_calls: 4 }),
+        ],
+      }),
+    )
+
+    renderPage()
+
+    const table = await screen.findByRole('table', { name: /목적.*집계입니다/ })
+    expect(within(table).getByText('실패 호출')).toBeInTheDocument()
+    expect(within(table).getByText('4')).toBeInTheDocument()
   })
 })
 

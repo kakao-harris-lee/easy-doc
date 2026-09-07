@@ -19,6 +19,7 @@ import kr.easydoc.core.document.ConversionStatus
 import kr.easydoc.core.exceptions.LlmProviderException
 import kr.easydoc.core.llm.FakeLlmProvider
 import kr.easydoc.core.llm.FakeLlmTurn
+import kr.easydoc.core.llm.LlmCallOutcome
 import kr.easydoc.core.llm.LlmCallPurpose
 import kr.easydoc.core.llm.LlmFinishReason
 import kr.easydoc.core.llm.LlmOptions
@@ -245,8 +246,8 @@ class ProcessConversionJobTest {
         }
 
         @Test
-        @DisplayName("provider 예외 실패는 원장에 아무것도 남기지 않는다")
-        fun `provider 예외 실패는 0행이다`() {
+        @DisplayName("영구 실패로 끝난 provider 예외도 원장에 provider_error 행 하나를 남긴다 (V18)")
+        fun `provider 예외 영구 실패는 provider_error 행 하나다`() {
             val world =
                 World(
                     provider = FakeLlmProvider(listOf(FakeLlmTurn.Fail(LlmProviderException("호출 실패")))),
@@ -255,7 +256,31 @@ class ProcessConversionJobTest {
 
             world.jobs.processNext()
 
-            assertThat(world.ledger.appended).isEmpty()
+            assertThat(world.ledger.appended).hasSize(1)
+            val entry = world.ledger.appended.single()
+            assertThat(entry.record.outcome).isEqualTo(LlmCallOutcome.PROVIDER_ERROR)
+            assertThat(entry.record.failureClass).isEqualTo("LlmProviderException")
+            assertThat(entry.record.model).isNull()
+            assertThat(entry.record.inputTokens).isZero()
+            assertThat(entry.record.outputTokens).isZero()
+            assertThat(entry.record.estimatedCostUsd).isNull()
+        }
+
+        @Test
+        @DisplayName("재시도 예정인 provider 예외도 원장에 provider_error 행 하나를 남긴다 (V18)")
+        fun `provider 예외 재시도 예정도 원장에 남는다`() {
+            val world =
+                World(
+                    provider = FakeLlmProvider(listOf(FakeLlmTurn.Fail(LlmProviderException("호출 실패")))),
+                    attempts = 1,
+                )
+
+            val outcome = world.jobs.processNext()
+
+            assertThat(outcome).isEqualTo(ConversionJobOutcome.RETRY_SCHEDULED)
+            assertThat(world.ledger.appended).hasSize(1)
+            val entry = world.ledger.appended.single()
+            assertThat(entry.record.outcome).isEqualTo(LlmCallOutcome.PROVIDER_ERROR)
         }
 
         @Test

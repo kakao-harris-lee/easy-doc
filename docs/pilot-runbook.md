@@ -132,16 +132,23 @@ docker compose -f compose.yml -f compose.ci.yml run --rm frontend-check
    `workspace_name`이 `(삭제된 워크스페이스)`로 남는다 — 삭제 이후에도 그 달의 문서
    수·문자 수·크레딧·비용이 청구 대상에서 빠지지 않는다.
 2. **CSV를 보고 사용자별 청구서를 만든다.** 열은
-   `workspace_id,workspace_name,owner_email,documents,characters,credits,llm_calls,input_tokens,output_tokens,estimated_cost_usd,cost_unknown_calls`다.
-   **그 기간에 호출이 한 번도 없던 워크스페이스는 행 자체가 없다** — `/usage` 화면이
-   그런 워크스페이스도 0으로 채워 보여 주는 것과 다르다(이 리포트는 `llm_calls`에
-   실제로 행이 있는 사용자·워크스페이스 조합만 훑는다). 청구서를 사람 손으로 만들
-   때 "리포트에 없다"를 "그 기간 사용량 0"으로 읽으면 된다 — 다만 워크스페이스
-   자체의 존재를 이 CSV로 확인할 수는 없다. `estimated_cost_usd`는 참고용 원가
-   추정치이지 고객에게 청구할 금액이 아니다 — 실제 청구는 크레딧(1,000자 = 1크레딧,
-   master-plan §3.3 요금제 한도)과 별도 계약 단가를 기준으로 사람이 산정한다.
-   `cost_unknown_calls`가 0이 아니면 그 기간 일부 호출의 원가가 단가 미설정으로
-   잡히지 않았다는 뜻이다 — 청구서 발송 전에 원인(단가 설정 누락)을 확인한다.
+   `workspace_id,workspace_name,owner_email,documents,characters,credits,llm_calls,failed_calls,input_tokens,output_tokens,estimated_cost_usd,cost_unknown_calls`
+   12열이다(`failed_calls`는 계약 2.26.0 신설, `llm_calls` 바로 뒤). **그 기간에 호출이
+   한 번도 없던 워크스페이스는 행 자체가 없다** — `/usage` 화면이 그런 워크스페이스도
+   0으로 채워 보여 주는 것과 다르다(이 리포트는 `llm_calls`에 실제로 행이 있는
+   사용자·워크스페이스 조합만 훑는다). 청구서를 사람 손으로 만들 때 "리포트에
+   없다"를 "그 기간 사용량 0"으로 읽으면 된다 — 다만 워크스페이스 자체의 존재를 이
+   CSV로 확인할 수는 없다. `estimated_cost_usd`는 참고용 원가 추정치이지 고객에게
+   청구할 금액이 아니다 — 실제 청구는 크레딧(1,000자 = 1크레딧, master-plan §3.3
+   요금제 한도)과 별도 계약 단가를 기준으로 사람이 산정한다. `cost_unknown_calls`가
+   0이 아니면 그 기간 일부 호출의 원가가 단가 미설정으로 잡히지 않았다는 뜻이다 —
+   청구서 발송 전에 원인(단가 설정 누락)을 확인한다. **`failed_calls`가 0이 아니면
+   그 기간에 완성 자체가 나지 않은 호출이 있었다는 뜻이다(토큰·비용에는 들어가지
+   않는다)** — 벤더가 그 실패 요청의 입력 토큰에 과금했을 수 있어, 벤더 청구서와
+   대조할 때 이 건수를 함께 본다. 완성 자체가 나지 않은 호출만 있고 그 기간에 문서가
+   하나도 완료되지 않은 워크스페이스는 `documents 0, llm_calls 0, failed_calls > 0`
+   인 행으로 나타날 수 있다 — "0으로 채워진 이상한 행"이 아니라 "시도는 있었지만
+   완료된 변환이 없다"는 뜻이니 청구서에는 사용량 0으로 반영한다.
 3. **계좌이체 확인.** PG가 없으므로 결제는 계좌이체다 — 입금 내역을 수기로 대조한다.
 4. **세금계산서 요청이 오면 운영자 메일을 확인한다.** 사용자가 `/usage` 화면의
    「세금계산서 요청」 버튼으로 사업자등록번호·상호·기간을 제출하면(계획

@@ -34,6 +34,13 @@ import java.util.UUID
  * **소유 확인이 먼저다.** [aggregate]는 워크스페이스 존재·소유 여부를 별도 질의로 확인해
  * `null`을 돌려줄지 정한 뒤에만 나머지 집계를 돈다 — 그래야 "워크스페이스가 없다"와
  * "그 기간에 값이 0이다"를 구분할 수 있다(둘 다 집계 질의만으로는 0행으로 보인다).
+ *
+ * **실패 호출(`outcome = provider_error`, V18)은 문서·문자·크레딧·토큰·비용 집계에서
+ * 빠진다** — 실제로 쓴 자원이 없다(토큰 0, 비용 미상). `documents`·`callTotals`·
+ * `callTotalsByPurpose` 는 전부 `FILTER (WHERE outcome = 'completed')` 로 그 집계를
+ * 좁힌다. 대신 [WorkspaceUsage.failedCalls]·[PurposeUsage.failedCalls] 가 실패 건수를
+ * 따로 낸다 — `FILTER` 를 성공 집계와 나란히 걸어 실패만 있는 기간·목적도 (0, 실패
+ * 건수)로 드러나게 한다(백로그 「실패 호출 원장 추적」, 2026-09-08).
  */
 class JdbcUsageReadRepository(private val jdbc: JdbcClient) : UsageReadRepository {
     override fun aggregate(
@@ -55,6 +62,7 @@ class JdbcUsageReadRepository(private val jdbc: JdbcClient) : UsageReadRepositor
             outputTokens = calls.outputTokens,
             estimatedCostUsd = calls.estimatedCostUsd,
             costUnknownCalls = calls.costUnknownCalls,
+            failedCalls = calls.failedCalls,
             byPurpose = byPurpose,
         )
     }
@@ -93,10 +101,13 @@ class JdbcUsageReadRepository(private val jdbc: JdbcClient) : UsageReadRepositor
                     -- 문서별로 올림한 뒤 더한다 — 합계 문자수를 나중에 한 번만 올리면 다르다.
                     coalesce(sum(ceil(document_char_count::numeric / 1000)), 0)::bigint AS credits
                 FROM (
+                    -- outcome = 'completed' 만 본다 — 실패 호출(provider_error)만 있던
+                    -- 문서는 실제로 변환되지 않았으므로 문서·문자·크레딧에 넣지 않는다.
                     SELECT DISTINCT ON (document_id) document_id, document_char_count
                     FROM llm_calls
                     WHERE workspace_id = :workspaceId AND user_id = :ownerId
                       AND called_at >= :from AND called_at < :toExclusive
+                      AND outcome = 'completed'
                     ORDER BY document_id
                 ) AS distinct_documents
                 """.trimIndent(),
@@ -112,6 +123,11 @@ class JdbcUsageReadRepository(private val jdbc: JdbcClient) : UsageReadRepositor
                 )
             }.single()
 
+    /**
+     * `outcome = 'completed'` 인 행만 토큰·비용·호출 수에 더한다. **실패 건수는 같은
+     * 질의에서 `FILTER` 로 함께 센다** — 별도 질의로 나누면 그 기간에 실패만 있고
+     * 완료가 하나도 없는 경우를 놓치지 않는다는 확인이 추가로 필요해진다(V18).
+     */
     private fun callTotals(
         ownerId: UUID,
         workspaceId: UUID,
@@ -122,13 +138,15 @@ class JdbcUsageReadRepository(private val jdbc: JdbcClient) : UsageReadRepositor
             .sql(
                 """
                 SELECT
-                    count(*) AS llm_calls,
-                    coalesce(sum(input_tokens), 0) AS input_tokens,
-                    coalesce(sum(output_tokens), 0) AS output_tokens,
+                    count(*) FILTER (WHERE outcome = 'completed') AS llm_calls,
+                    coalesce(sum(input_tokens) FILTER (WHERE outcome = 'completed'), 0) AS input_tokens,
+                    coalesce(sum(output_tokens) FILTER (WHERE outcome = 'completed'), 0) AS output_tokens,
                     -- sum()은 NULL을 건너뛰고, 행이 전부 NULL이면 NULL을 돌려준다 — 미상 비용을
                     -- 0으로 섞지 않는다는 규칙(계획 §2 결정 4)과 그대로 맞아떨어진다.
-                    sum(estimated_cost_usd) AS estimated_cost_usd,
-                    count(*) FILTER (WHERE estimated_cost_usd IS NULL) AS cost_unknown_calls
+                    sum(estimated_cost_usd) FILTER (WHERE outcome = 'completed') AS estimated_cost_usd,
+                    count(*) FILTER (WHERE outcome = 'completed' AND estimated_cost_usd IS NULL)
+                        AS cost_unknown_calls,
+                    count(*) FILTER (WHERE outcome = 'provider_error') AS failed_calls
                 FROM llm_calls
                 WHERE workspace_id = :workspaceId AND user_id = :ownerId
                   AND called_at >= :from AND called_at < :toExclusive
@@ -144,9 +162,15 @@ class JdbcUsageReadRepository(private val jdbc: JdbcClient) : UsageReadRepositor
                     outputTokens = rs.getLong("output_tokens"),
                     estimatedCostUsd = rs.getBigDecimal("estimated_cost_usd"),
                     costUnknownCalls = rs.getInt("cost_unknown_calls"),
+                    failedCalls = rs.getInt("failed_calls"),
                 )
             }.single()
 
+    /**
+     * 목적별 소계 — `GROUP BY purpose` 는 outcome 을 가리지 않는다. 그래야 그 기간에
+     * 실패 호출만 있던 목적(예: 보정이 매번 실패)도 (llm_calls=0, failed_calls>0) 행으로
+     * 나타난다 — outcome 으로 먼저 걸렀다면 그 목적 자체가 목록에서 사라졌을 것이다.
+     */
     private fun callTotalsByPurpose(
         ownerId: UUID,
         workspaceId: UUID,
@@ -158,10 +182,11 @@ class JdbcUsageReadRepository(private val jdbc: JdbcClient) : UsageReadRepositor
                 """
                 SELECT
                     purpose,
-                    count(*) AS llm_calls,
-                    coalesce(sum(input_tokens), 0) AS input_tokens,
-                    coalesce(sum(output_tokens), 0) AS output_tokens,
-                    sum(estimated_cost_usd) AS estimated_cost_usd
+                    count(*) FILTER (WHERE outcome = 'completed') AS llm_calls,
+                    coalesce(sum(input_tokens) FILTER (WHERE outcome = 'completed'), 0) AS input_tokens,
+                    coalesce(sum(output_tokens) FILTER (WHERE outcome = 'completed'), 0) AS output_tokens,
+                    sum(estimated_cost_usd) FILTER (WHERE outcome = 'completed') AS estimated_cost_usd,
+                    count(*) FILTER (WHERE outcome = 'provider_error') AS failed_calls
                 FROM llm_calls
                 WHERE workspace_id = :workspaceId AND user_id = :ownerId
                   AND called_at >= :from AND called_at < :toExclusive
@@ -182,6 +207,7 @@ class JdbcUsageReadRepository(private val jdbc: JdbcClient) : UsageReadRepositor
             inputTokens = rs.getLong("input_tokens"),
             outputTokens = rs.getLong("output_tokens"),
             estimatedCostUsd = rs.getBigDecimal("estimated_cost_usd"),
+            failedCalls = rs.getInt("failed_calls"),
         )
 
     private fun purposeOf(wireName: String): LlmCallPurpose =
@@ -206,5 +232,6 @@ class JdbcUsageReadRepository(private val jdbc: JdbcClient) : UsageReadRepositor
         val outputTokens: Long,
         val estimatedCostUsd: BigDecimal?,
         val costUnknownCalls: Int,
+        val failedCalls: Int,
     )
 }

@@ -29,6 +29,16 @@ import java.util.UUID
  * 그러면 `workspace_id IS NULL`(워크스페이스가 삭제된) 행이 `w`에 매치할 행이 없어
  * INNER 취급으로 조용히 빠진다. `users`만 조인하고 `workspaces`는 이름 표시용으로만
  * `LEFT JOIN`하는 지금 형태가 옳다.
+ *
+ * **실패 호출(`outcome = provider_error`, V18)은 `call_totals`의 `FILTER` 로 걸러
+ * 토큰·비용에서 빠지고 [UsageReportRow.failedCalls] 로 따로 센다** — U2
+ * ([JdbcUsageReadRepository])와 같은 규칙(백로그 「실패 호출 원장 추적」, 2026-09-08).
+ * `document_totals` 도 `outcome = 'completed'` 인 행만 문서로 센다. **`call_totals` 는
+ * `period_calls` 를 outcome 으로 먼저 거르지 않는다** — 그 기간에 실패 호출만 있고
+ * 완료가 하나도 없는 `(user_id, workspace_id)` 쌍도 이 CTE 에 행 하나가 남아야
+ * `llm_calls=0, failed_calls>0` 으로 리포트에 나타난다. 미리 걸렀다면 그 쌍은
+ * `call_totals` 에서 통째로 빠져 리포트 자체에 나타나지 않았을 것이다 — 이 기능의
+ * 목적(실패 호출을 보이게 하는 것)과 정면으로 어긋난다.
  */
 class JdbcUsageReportRepository(private val jdbc: JdbcClient) : UsageReportRepository {
     override fun reportRows(
@@ -56,6 +66,7 @@ class JdbcUsageReportRepository(private val jdbc: JdbcClient) : UsageReportRepos
             outputTokens = rs.getLong("output_tokens"),
             estimatedCostUsd = rs.getBigDecimal("estimated_cost_usd"),
             costUnknownCalls = rs.getInt("cost_unknown_calls"),
+            failedCalls = rs.getInt("failed_calls"),
         )
 
     /** 쓰는 쪽(`JdbcLlmCallLedger`)과 같은 관례 — UTC 오프셋으로 통일한다. */
@@ -66,12 +77,13 @@ class JdbcUsageReportRepository(private val jdbc: JdbcClient) : UsageReportRepos
             """
             WITH period_calls AS (
                 SELECT user_id, workspace_id, document_id, document_char_count, input_tokens, output_tokens,
-                       estimated_cost_usd
+                       estimated_cost_usd, outcome
                 FROM llm_calls
                 WHERE called_at >= :from AND called_at < :toExclusive
             ),
             -- 같은 문서를 대상으로 한 여러 행(재시도·보정)은 document_id로 distinct 한
             -- 뒤에만 문자 수·크레딧을 합한다 — U2(JdbcUsageReadRepository)와 같은 규칙이다.
+            -- outcome = 'completed' 만 본다 — 실패 호출만 있던 문서는 변환되지 않았다.
             document_totals AS (
                 SELECT user_id, workspace_id,
                        count(*) AS documents,
@@ -82,19 +94,25 @@ class JdbcUsageReportRepository(private val jdbc: JdbcClient) : UsageReportRepos
                     SELECT DISTINCT ON (user_id, workspace_id, document_id)
                         user_id, workspace_id, document_id, document_char_count
                     FROM period_calls
+                    WHERE outcome = 'completed'
                     ORDER BY user_id, workspace_id, document_id
                 ) distinct_documents
                 GROUP BY user_id, workspace_id
             ),
+            -- outcome 으로 미리 거르지 않는다(위 클래스 KDoc) — 실패 호출만 있던
+            -- (user_id, workspace_id) 쌍도 이 CTE 에 행 하나를 남겨야 리포트에 나타난다.
+            -- FILTER 로 completed·provider_error 를 나란히 센다.
             call_totals AS (
                 SELECT user_id, workspace_id,
-                       count(*) AS llm_calls,
-                       coalesce(sum(input_tokens), 0) AS input_tokens,
-                       coalesce(sum(output_tokens), 0) AS output_tokens,
+                       count(*) FILTER (WHERE outcome = 'completed') AS llm_calls,
+                       count(*) FILTER (WHERE outcome = 'provider_error') AS failed_calls,
+                       coalesce(sum(input_tokens) FILTER (WHERE outcome = 'completed'), 0) AS input_tokens,
+                       coalesce(sum(output_tokens) FILTER (WHERE outcome = 'completed'), 0) AS output_tokens,
                        -- sum()은 NULL을 건너뛰고 행이 전부 NULL이면 NULL을 돌려준다 — 미상 비용을
                        -- 0으로 섞지 않는다(계획 §2 결정 4).
-                       sum(estimated_cost_usd) AS estimated_cost_usd,
-                       count(*) FILTER (WHERE estimated_cost_usd IS NULL) AS cost_unknown_calls
+                       sum(estimated_cost_usd) FILTER (WHERE outcome = 'completed') AS estimated_cost_usd,
+                       count(*) FILTER (WHERE outcome = 'completed' AND estimated_cost_usd IS NULL)
+                           AS cost_unknown_calls
                 FROM period_calls
                 GROUP BY user_id, workspace_id
             )
@@ -107,6 +125,7 @@ class JdbcUsageReportRepository(private val jdbc: JdbcClient) : UsageReportRepos
                 coalesce(d.characters, 0) AS characters,
                 coalesce(d.credits, 0) AS credits,
                 c.llm_calls,
+                c.failed_calls,
                 c.input_tokens,
                 c.output_tokens,
                 c.estimated_cost_usd,

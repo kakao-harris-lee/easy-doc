@@ -4,6 +4,7 @@ import kr.easydoc.application.conversion.LlmCallEntry
 import kr.easydoc.application.usage.UsageReadRepository
 import kr.easydoc.core.crypto.EncryptionScheme
 import kr.easydoc.core.document.SourceFormat
+import kr.easydoc.core.llm.LlmCallOutcome
 import kr.easydoc.core.llm.LlmCallPurpose
 import kr.easydoc.core.llm.LlmCallRecord
 import kr.easydoc.core.user.PasswordHash
@@ -320,6 +321,90 @@ class JdbcUsageReadRepositoryTest {
         assertThat(usage.llmCalls).isEqualTo(1)
     }
 
+    @Test
+    @DisplayName("실패 호출(provider_error, V18)은 문서·문자·크레딧·토큰·비용에서 빠지고 failedCalls로만 센다")
+    fun `실패 호출은 집계에서 빠지고 failedCalls로 센다`() {
+        val owner = newOwner()
+        val workspaceId = workspaces.create(owner, "공간-${UUID.randomUUID()}").id
+        val at = Instant.parse("2026-08-01T02:00:00Z")
+        val documentId = insertDocument(workspaceId, owner, charCount = 500, createdAt = at)
+        appendCall(
+            workspaceId,
+            owner,
+            LlmCallPurpose.CONVERT,
+            documentId = documentId,
+            documentCharCount = 500,
+            inputTokens = 30,
+            outputTokens = 15,
+            costUsd = BigDecimal("0.002000"),
+            calledAt = at,
+        )
+        appendCall(
+            workspaceId,
+            owner,
+            LlmCallPurpose.REPAIR,
+            documentId = documentId,
+            documentCharCount = 500,
+            inputTokens = 0,
+            outputTokens = 0,
+            costUsd = null,
+            calledAt = at.plusSeconds(1),
+            outcome = LlmCallOutcome.PROVIDER_ERROR,
+            failureClass = "LlmProviderException",
+        )
+
+        val usage =
+            repository.aggregate(owner, workspaceId, zoneMidnight(2026, 8, 1), zoneMidnight(2026, 8, 2))!!
+
+        assertThat(usage.documents).isEqualTo(1)
+        assertThat(usage.characters).isEqualTo(500)
+        assertThat(usage.credits).isEqualTo(1)
+        assertThat(usage.llmCalls).isEqualTo(1)
+        assertThat(usage.inputTokens).isEqualTo(30)
+        assertThat(usage.outputTokens).isEqualTo(15)
+        assertThat(usage.estimatedCostUsd).isEqualByComparingTo(BigDecimal("0.002000"))
+        assertThat(usage.failedCalls).isEqualTo(1)
+        val repair = usage.byPurpose.first { it.purpose == LlmCallPurpose.REPAIR }
+        assertThat(repair.llmCalls).isEqualTo(0)
+        assertThat(repair.failedCalls).isEqualTo(1)
+        val convert = usage.byPurpose.first { it.purpose == LlmCallPurpose.CONVERT }
+        assertThat(convert.failedCalls).isEqualTo(0)
+    }
+
+    @Test
+    @DisplayName("실패 호출만 있고 완료가 하나도 없는 목적도 (llm_calls=0, failedCalls>0) 행으로 남는다")
+    fun `실패만 있던 목적도 목록에서 사라지지 않는다`() {
+        val owner = newOwner()
+        val workspaceId = workspaces.create(owner, "공간-${UUID.randomUUID()}").id
+        val at = Instant.parse("2026-08-05T02:00:00Z")
+        val documentId = insertDocument(workspaceId, owner, charCount = 200, createdAt = at)
+        appendCall(
+            workspaceId,
+            owner,
+            LlmCallPurpose.CONVERT,
+            documentId = documentId,
+            documentCharCount = 200,
+            inputTokens = 0,
+            outputTokens = 0,
+            costUsd = null,
+            calledAt = at,
+            outcome = LlmCallOutcome.PROVIDER_ERROR,
+            failureClass = "LlmProviderException",
+        )
+
+        val usage =
+            repository.aggregate(owner, workspaceId, zoneMidnight(2026, 8, 5), zoneMidnight(2026, 8, 6))!!
+
+        assertThat(usage.documents).isEqualTo(0)
+        assertThat(usage.llmCalls).isEqualTo(0)
+        assertThat(usage.failedCalls).isEqualTo(1)
+        assertThat(usage.byPurpose).hasSize(1)
+        val convert = usage.byPurpose.single()
+        assertThat(convert.purpose).isEqualTo(LlmCallPurpose.CONVERT)
+        assertThat(convert.llmCalls).isEqualTo(0)
+        assertThat(convert.failedCalls).isEqualTo(1)
+    }
+
     private fun zoneMidnight(
         year: Int,
         month: Int,
@@ -371,6 +456,8 @@ class JdbcUsageReadRepositoryTest {
         outputTokens: Int,
         costUsd: BigDecimal?,
         calledAt: Instant,
+        outcome: LlmCallOutcome = LlmCallOutcome.COMPLETED,
+        failureClass: String? = null,
     ) {
         ledger.append(
             listOf(
@@ -383,7 +470,9 @@ class JdbcUsageReadRepositoryTest {
                         LlmCallRecord(
                             purpose = purpose,
                             provider = "anthropic",
-                            model = "claude-sonnet-5",
+                            // LlmCallRecord.init 이 outcome=COMPLETED <=> model!=null 을
+                            // 강제한다 — 실패 행은 model 도 null 이어야 한다.
+                            model = if (outcome == LlmCallOutcome.COMPLETED) "claude-sonnet-5" else null,
                             inputTokens = inputTokens,
                             outputTokens = outputTokens,
                             latencyMs = 100,
@@ -392,6 +481,8 @@ class JdbcUsageReadRepositoryTest {
                             pricingOutputUsdPerMtok = if (costUsd != null) BigDecimal("10.00") else null,
                             charCount = 40,
                             calledAt = calledAt,
+                            outcome = outcome,
+                            failureClass = failureClass,
                         ),
                     calledAt = calledAt,
                     documentCharCount = documentCharCount,

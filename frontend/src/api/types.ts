@@ -390,6 +390,8 @@ export interface PurposeUsageItem {
   input_tokens: number
   output_tokens: number
   estimated_cost_usd: string | null
+  /** 계약 2.26.0 신설. 이 목적으로 완성 자체가 나지 않은 호출 수(`outcome = provider_error`). */
+  failed_calls: number
 }
 
 /**
@@ -408,6 +410,12 @@ export interface WorkspaceUsageResponse {
   output_tokens: number
   estimated_cost_usd: string | null
   cost_unknown_calls: number
+  /**
+   * 계약 2.26.0 신설(실패 호출 원장 추적 백로그). 그 기간에 완성 자체가 나지 않은
+   * 호출 수(`llm_calls.outcome = provider_error`) — 위 필드들은 전부 완료된 호출만
+   * 센다.
+   */
+  failed_calls: number
   by_purpose: PurposeUsageItem[]
 }
 
@@ -769,11 +777,23 @@ export interface AdminErrorItem {
   failure_code: string
 }
 
+/**
+ * 계약 2.26.0 신설. `GET /admin/errors`의 `llm_calls`(V18) 실패 호출 `failure_class`별
+ * 건수 — 위 `AdminFailureCount`(`conversions.failure_code`)와 다른 축이다. 계약
+ * `components/schemas/AdminProviderFailureCount`.
+ */
+export interface AdminProviderFailureCount {
+  failure_class: string
+  count: number
+}
+
 /** `GET /admin/errors` 응답. 계약 `components/schemas/AdminErrorsResponse`. */
 export interface AdminErrorsResponse {
   counts: AdminFailureCount[]
   /** 최근 50건, 최신순. */
   recent: AdminErrorItem[]
+  /** 계약 2.26.0 신설. */
+  provider_failures: AdminProviderFailureCount[]
 }
 
 /** `usage-report`(U3) CSV 행과 같은 값. 계약 `components/schemas/AdminUsageRow`. */
@@ -787,6 +807,8 @@ export interface AdminUsageRow {
   characters: number
   credits: number
   llm_calls: number
+  /** 계약 2.26.0 신설. 완성 자체가 나지 않은 호출 수(`outcome = provider_error`). */
+  failed_calls: number
   input_tokens: number
   output_tokens: number
   estimated_cost_usd: string | null

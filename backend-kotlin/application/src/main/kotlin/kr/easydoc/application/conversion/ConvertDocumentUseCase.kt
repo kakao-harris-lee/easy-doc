@@ -12,6 +12,7 @@ import kr.easydoc.core.easyread.renderStructureSection
 import kr.easydoc.core.exceptions.LlmEmptyResultException
 import kr.easydoc.core.exceptions.LlmProviderException
 import kr.easydoc.core.exceptions.LlmTruncatedException
+import kr.easydoc.core.llm.LlmCallOutcome
 import kr.easydoc.core.llm.LlmCallPurpose
 import kr.easydoc.core.llm.LlmCallRecord
 import kr.easydoc.core.llm.LlmCompletion
@@ -228,10 +229,14 @@ private class Pass(
     /**
      * 완성 요청 1건. 예산을 쓰고, 응답을 후처리까지 마친 뒤 결과를 분류한다.
      *
-     * **provider 예외가 아니면 원장에 기록한다** — 절단·빈 결과·거절([classify] 이 [Outcome
-     * .Rejected] 로 분류하는 것들)도 실제로 완성 응답을 받았고 토큰을 썼으므로 기록 대상이다.
-     * 기록하지 않는 것은 [LlmProviderException] 으로 완성 자체가 나지 않은 경우뿐이다
-     * (계획 §2 결정 2 「실패한 호출은 기록하지 않는다」— 여기서 「실패」는 이 예외를 뜻한다).
+     * **성공·실패 어느 쪽이든 원장에 기록한다.** 절단·빈 결과·거절([classify] 이 [Outcome
+     * .Rejected] 로 분류하는 것들)은 실제로 완성 응답을 받았고 토큰을 썼으므로
+     * [LlmCallOutcome.COMPLETED] 로 남는다. **[LlmProviderException] 으로 완성 자체가 나지
+     * 않은 경우도 이제 기록한다** — [LlmCallOutcome.PROVIDER_ERROR], 토큰 0, 비용
+     * `null`(백로그 「실패 호출 원장 추적」, 2026-09-08). 벤더가 실패한 요청의 입력
+     * 토큰에 과금할 수 있어(계획 §6 리스크 1) 이 행이 없으면 그 청구를 대조할 방법이
+     * 없었다 — U1 결정 2 의 앞선 배제(「완료 자체가 없는 provider 예외만 기록하지
+     * 않는다」)는 이 변경으로 뒤집힌다.
      */
     private fun complete(
         prompt: LlmPrompt,
@@ -242,6 +247,7 @@ private class Pass(
             try {
                 budget.spend { provider.complete(prompt, options) }
             } catch (exc: LlmProviderException) {
+                recordFailure(exc, callPurpose, charCount)
                 return Outcome.Rejected(failureKind(exc))
             }
         // 호출이 실제로 끝난 시각을 여기서 캡처한다 — 저장은 한참 뒤(트랜잭션 재진입·암호화
@@ -265,8 +271,46 @@ private class Pass(
                 pricingOutputUsdPerMtok = completion.pricingOutputUsdPerMtok,
                 charCount = charCount,
                 calledAt = calledAt,
+                outcome = LlmCallOutcome.COMPLETED,
             )
         return classify(completion)
+    }
+
+    /**
+     * [exc] 로 완성 자체가 나지 않은 호출을 원장 항목 하나로 남긴다 — 토큰 0, 비용 `null`
+     * (실제 사용량을 모르므로 0으로 꾸미지 않는다), `model` 도 `null`(응답이 없어 알 수
+     * 없다). [LlmCallRecord.failureClass] 는 예외 클래스의 단순 이름만 담고 메시지는
+     * 담지 않는다 — 벤더 응답 문구가 새어 들 수 있다.
+     *
+     * **`exc.javaClass.simpleName` 을 쓴다, `exc::class.simpleName` 이 아니다** — 후자는
+     * Kotlin 리플렉션 규약상 `String?` 이라 익명 클래스 방어용 fallback 이 필요해지는데,
+     * `LlmProviderException` 과 그 서브타입은 전부 이름이 있는 최상위 클래스라 그 방어가
+     * 실제로 닿지 않는 죽은 분기가 된다(2026-09-08 리뷰). `Class.getSimpleName()` 은
+     * 이런 클래스에서 never-null 이라 fallback 자체가 필요 없다 — 오늘은 항상
+     * `"LlmProviderException"` 이 실린다(`LlmCallOutcome` KDoc 「오늘 실제로 던져지는
+     * 것은…」).
+     */
+    private fun recordFailure(
+        exc: LlmProviderException,
+        callPurpose: LlmCallPurpose,
+        charCount: Int,
+    ) {
+        calls +=
+            LlmCallRecord(
+                purpose = callPurpose,
+                provider = provider.name,
+                model = null,
+                inputTokens = 0,
+                outputTokens = 0,
+                latencyMs = null,
+                estimatedCostUsd = null,
+                pricingInputUsdPerMtok = null,
+                pricingOutputUsdPerMtok = null,
+                charCount = charCount,
+                calledAt = clock.instant(),
+                outcome = LlmCallOutcome.PROVIDER_ERROR,
+                failureClass = exc.javaClass.simpleName,
+            )
     }
 
     private fun usage() =

@@ -449,7 +449,13 @@ function periodParams(mode: PeriodMode, customFrom: string, customTo: string): P
 }
 
 /** 목적별 표. 그 기간에 호출이 없던 목적은 행이 없다(계약 — 0행을 채우지 않는다). */
+/**
+ * 목적별 표는 어느 한 행이라도 `failed_calls > 0`이면(계약 2.26.0) 「실패 호출」 열을
+ * 낸다 — `TotalsTable`과 같은 규칙이다. 행마다 따로 켜고 끄면 열 수가 행마다 달라져
+ * 표 모양이 어긋난다.
+ */
 function PurposeTable({ rows }: { rows: PurposeUsageItem[] }) {
+  const showFailed = rows.some((row) => row.failed_calls > 0)
   return (
     <div className="rounded-[12px] border border-border bg-card px-5 pb-5 shadow-[0_1px_2px_rgba(20,33,31,0.04)]">
       <table className="usage-table">
@@ -458,6 +464,7 @@ function PurposeTable({ rows }: { rows: PurposeUsageItem[] }) {
           <tr>
             <th scope="col">목적</th>
             <th scope="col">호출</th>
+            {showFailed && <th scope="col">실패 호출</th>}
             <th scope="col">입력 토큰</th>
             <th scope="col">출력 토큰</th>
             <th scope="col">예상 비용(USD)</th>
@@ -466,7 +473,7 @@ function PurposeTable({ rows }: { rows: PurposeUsageItem[] }) {
         <tbody>
           {rows.length === 0 ? (
             <tr>
-              <td colSpan={5} className="text-muted-foreground">
+              <td colSpan={showFailed ? 6 : 5} className="text-muted-foreground">
                 이 기간에 호출이 없습니다.
               </td>
             </tr>
@@ -475,6 +482,7 @@ function PurposeTable({ rows }: { rows: PurposeUsageItem[] }) {
               <tr key={row.purpose}>
                 <th scope="row">{PURPOSE_LABEL[row.purpose] ?? row.purpose}</th>
                 <td>{formatCount(row.llm_calls)}</td>
+                {showFailed && <td>{formatCount(row.failed_calls)}</td>}
                 <td>{formatCount(row.input_tokens)}</td>
                 <td>{formatCount(row.output_tokens)}</td>
                 <td>{formatCostUsd(row.estimated_cost_usd)}</td>
@@ -487,9 +495,14 @@ function PurposeTable({ rows }: { rows: PurposeUsageItem[] }) {
   )
 }
 
-/** 합계 표. 비용 미상 건수는 0이면 아예 열을 만들지 않는다(0을 보여줘야 할 만큼 중요하지 않다). */
+/**
+ * 합계 표. 비용 미상 건수·실패 호출 수는 0이면 아예 열을 만들지 않는다(0을 보여줘야
+ * 할 만큼 중요하지 않다). 실패 호출(`failed_calls`, 계약 2.26.0)은 완성 자체가 나지
+ * 않은 호출 수 — 위 문서·문자·크레딧·호출·토큰·비용에는 들어가지 않는다.
+ */
 function TotalsTable({ usage, caption }: { usage: WorkspaceUsageResponse; caption: string }) {
   const showUnknown = usage.cost_unknown_calls > 0
+  const showFailed = usage.failed_calls > 0
   return (
     <div className="rounded-[12px] border border-border bg-card px-5 pb-5 shadow-[0_1px_2px_rgba(20,33,31,0.04)]">
       <table className="usage-table">
@@ -502,6 +515,7 @@ function TotalsTable({ usage, caption }: { usage: WorkspaceUsageResponse; captio
             §6.3)와 다른 값일 수 있어 이름을 구분한다(계획 §6 리스크 3). */}
             <th scope="col">사용 크레딧</th>
             <th scope="col">호출</th>
+            {showFailed && <th scope="col">실패 호출</th>}
             <th scope="col">입력 토큰</th>
             <th scope="col">출력 토큰</th>
             <th scope="col">예상 비용(USD)</th>
@@ -514,6 +528,7 @@ function TotalsTable({ usage, caption }: { usage: WorkspaceUsageResponse; captio
             <td>{formatCount(usage.characters)}자</td>
             <td>{formatCount(usage.credits)}</td>
             <td>{formatCount(usage.llm_calls)}</td>
+            {showFailed && <td>{formatCount(usage.failed_calls)}</td>}
             <td>{formatCount(usage.input_tokens)}</td>
             <td>{formatCount(usage.output_tokens)}</td>
             <td>{formatCostUsd(usage.estimated_cost_usd)}</td>

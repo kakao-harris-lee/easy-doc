@@ -477,8 +477,19 @@ class SensitiveToStringReachTest {
          * .DocumentTotals`(infrastructure.admin, 그 배치 질의 내부에서만 쓰는 private 중첩
          * 클래스 — `documents`·`credits` 뿐, 마찬가지로 민감 정보 없음). 셋 다 기본 생성
          * `toString()` 으로 두고 `KNOWN_SENSITIVE_TYPES` 에는 추가하지 않는다.
+         *
+         * 실패 호출 원장 추적(백로그, 2026-09-08, V18)이 **둘**을 더해 202 다(200 위에) —
+         * application `AdminProviderFailureCount`, api `AdminProviderFailureCountResponse`
+         * (둘 다 `failureClass`·`count` 뿐 — 예외 클래스의 단순 이름과 건수라 민감 판정
+         * 토큰 어디에도 걸리지 않는다). `core.llm.LlmCallOutcome` 은 `enum class` 라 이
+         * 숫자에 들지 않는다(`LlmCallPurpose` 와 같다). `LlmCallRecord`·`LlmCallEntry`·
+         * `WorkspaceUsage`·`PurposeUsage`·`UsageReportRow`·`WorkspaceUsageResponse`·
+         * `PurposeUsageItemResponse`·`AdminErrorsView`·`AdminErrorsResponse`·
+         * `AdminUsageRowResponse` 는 필드(`outcome`·`failureClass`·`model: String?`·
+         * `failedCalls`·`providerFailures`)만 늘었을 뿐 선언 자체는 그대로라 순증감에
+         * 들지 않는다.
          */
-        const val EXPECTED_SOURCE_DECLARATIONS = 200
+        const val EXPECTED_SOURCE_DECLARATIONS = 202
 
         /** 민감 판정이 반드시 닿아야 하는 타입 — 바닥이다. */
         val KNOWN_SENSITIVE_TYPES =

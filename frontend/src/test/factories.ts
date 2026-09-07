@@ -6,6 +6,7 @@ import type {
   AdminErrorItem,
   AdminErrorsResponse,
   AdminFailureCount,
+  AdminProviderFailureCount,
   AdminWorkspaceDetailResponse,
   AdminWorkspaceListResponse,
   AdminWorkspaceSummary,
@@ -161,6 +162,7 @@ export function purposeUsageItem(overrides: Partial<PurposeUsageItem> = {}): Pur
     input_tokens: 100,
     output_tokens: 50,
     estimated_cost_usd: '0.001000',
+    failed_calls: 0,
     ...overrides,
   }
 }
@@ -178,6 +180,7 @@ export function workspaceUsage(
     output_tokens: 50,
     estimated_cost_usd: '0.001000',
     cost_unknown_calls: 0,
+    failed_calls: 0,
     by_purpose: [purposeUsageItem()],
     ...overrides,
   }
@@ -369,6 +372,17 @@ export function adminErrorItem(overrides: Partial<AdminErrorItem> = {}): AdminEr
   }
 }
 
+/** `GET /admin/errors`의 `llm_calls`(V18) provider 실패 건수 항목(계약 2.26.0). */
+export function adminProviderFailureCount(
+  overrides: Partial<AdminProviderFailureCount> = {},
+): AdminProviderFailureCount {
+  return {
+    failure_class: 'LlmProviderException',
+    count: 2,
+    ...overrides,
+  }
+}
+
 /** `GET /admin/errors` 응답. */
 export function adminErrorsResponse(
   overrides: Partial<AdminErrorsResponse> = {},
@@ -376,6 +390,7 @@ export function adminErrorsResponse(
   return {
     counts: [adminFailureCount()],
     recent: [adminErrorItem()],
+    provider_failures: [adminProviderFailureCount()],
     ...overrides,
   }
 }

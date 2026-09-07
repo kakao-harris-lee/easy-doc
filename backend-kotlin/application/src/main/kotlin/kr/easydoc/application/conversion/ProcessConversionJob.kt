@@ -274,9 +274,12 @@ class ProcessConversionJob(
             // 는 재시도 대상(retryable)이지만 REFUSAL 처럼 완성 응답을 실제로 받아 토큰을
             // 쓴 채로 이 종류가 되는 경우가 있다(`ConvertDocumentUseCase` 의 `classify` —
             // REFUSAL 도 PROVIDER_ERROR 로 분류된다) — 그 호출은 이미 벌어졌고 재시도해도
-            // 이번 시도의 청구 근거가 없어지지 않는다. [failure.entries] 가 비어 있는 것은
-            // `LlmProviderException`(완성 자체가 나지 않은 경우)뿐이라 이 호출은 그 경우
-            // 자연히 no-op이다.
+            // 이번 시도의 청구 근거가 없어지지 않는다. **`LlmProviderException`(완성
+            // 자체가 나지 않은 경우)도 이제 항목을 남긴다** — `outcome = provider_error`,
+            // 토큰 0(백로그 「실패 호출 원장 추적」, 2026-09-08) — 벤더가 실패한 요청의
+            // 입력 토큰에 과금할 수 있어 그 행이 없으면 대조할 방법이 없었다.
+            // [failure.entries] 가 비어 있는 것은 LLM 을 아예 부르지 못한 경로
+            // (`ConversionAcquire.Exhausted`처럼 `convert.convert` 자체를 안 부른 경우)뿐이다.
             ledger.append(failure.entries)
             if (canRetry) {
                 // 재시도 예정 — 크레딧 예약에 손대지 않는다(계획 §2 결정 5). 문서는 아직
