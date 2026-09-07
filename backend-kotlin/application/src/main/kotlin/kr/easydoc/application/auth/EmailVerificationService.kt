@@ -17,11 +17,15 @@ import java.util.UUID
  * `AuthService` 와 갈라 세운 이유는 `SocialLoginService` KDoc 과 같다: 겹치는 협력자
  * ([UserRepository]) 는 있지만 나머지(코드 저장소·메일 발송·쿨다운 판정)는 이 클래스만의
  * 책임이라 한 서비스에 계속 붙이면 god service 가 된다.
+ *
+ * 생성자 매개변수 수는 협력자의 수다 — `PasswordResetService` 와 같은 근거로 억제한다.
  */
+@Suppress("LongParameterList")
 class EmailVerificationService(
     private val users: UserRepository,
     private val codes: VerificationCodeStore,
     private val mail: MailSender,
+    private val transaction: TransactionRunner,
     private val codeTtl: Duration,
     private val resendCooldown: Duration,
     private val maxAttempts: Int,
@@ -55,17 +59,37 @@ class EmailVerificationService(
         issueFor(user)
     }
 
-    /** `POST /auth/email-verification/confirm`. */
+    /**
+     * `POST /auth/email-verification/confirm`.
+     *
+     * 미검증 계정 TTL 파기 배치(`PurgeUnverifiedAccounts`)와 경합한다 — 확인 자체가
+     * 계정을 지우지 못하게 막을 수는 없으니(파기가 먼저 커밋되면 계정은 진짜로 없다),
+     * **행을 먼저 잠근다**(`PasswordService.set`과 같은 순서 감각). 잠금 뒤에는 파기의
+     * `FOR UPDATE SKIP LOCKED` 후보 선택이 이 행을 건너뛰므로, 코드 검증·`markEmailVerified`
+     * 가 도는 동안 파기가 같은 행을 지우지 못한다. [users.markEmailVerified] 가 그래도
+     * `false`(영향받은 행 없음)를 돌려주면 — 정상 경로에서는 일어나지 않아야 하지만 —
+     * 성공을 돌려주지 않고 계정 소멸과 같은 예외로 던진다(방어 계층).
+     *
+     * 갈래마다 다른 판정(계정 소멸·이미 인증됨·코드 불일치·방어 계층의 계정 소멸)이
+     * 서로 독립인 가드라 `ThrowsCount` 를 억제한다 — `PasswordService.set` 과 같은 판단이다.
+     */
+    @Suppress("ThrowsCount")
     fun confirm(
         userId: UUID,
         code: String,
     ) {
-        val user = requireUnverified(userId)
-        val matched = codes.attempt(user.id, code, maxAttempts)
-        if (!matched) {
-            throw InvalidVerificationCodeException(INVALID_CODE_MESSAGE)
+        transaction.inTransaction {
+            val locked = users.lockForUpdate(userId) ?: throw InvalidCredentialsException(ACCOUNT_GONE_MESSAGE)
+            if (locked.emailVerifiedAt != null) {
+                throw ConflictException(ALREADY_VERIFIED_MESSAGE)
+            }
+            if (!codes.attempt(locked.id, code, maxAttempts)) {
+                throw InvalidVerificationCodeException(INVALID_CODE_MESSAGE)
+            }
+            if (!users.markEmailVerified(locked.id)) {
+                throw InvalidCredentialsException(ACCOUNT_GONE_MESSAGE)
+            }
         }
-        users.markEmailVerified(user.id)
     }
 
     private fun requireUnverified(userId: UUID): User {

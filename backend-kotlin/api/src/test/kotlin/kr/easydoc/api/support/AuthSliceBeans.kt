@@ -151,11 +151,13 @@ class AuthSliceBeans {
         users: InMemoryUserRepository,
         codes: InMemoryVerificationCodeStore,
         mail: FakeMailSender,
+        transaction: TransactionRunner,
     ): EmailVerificationService =
         EmailVerificationService(
             users = users,
             codes = codes,
             mail = mail,
+            transaction = transaction,
             codeTtl = Duration.ofMinutes(10),
             resendCooldown = Duration.ofSeconds(60),
             maxAttempts = 5,
@@ -297,7 +299,7 @@ class AuthSliceBeans {
         UsageQueryService(usage, ZoneId.of("Asia/Seoul"), Clock.systemUTC())
 
     /**
-     * 세금계산서 요청 기록(2.23.0)도 `InvoiceRequestController`가 `@WebMvcTest` 슬라이스에
+     * 세금계산서 요청 기록(2.24.0)도 `InvoiceRequestController`가 `@WebMvcTest` 슬라이스에
      * 전부 들어가므로 위 `workspaceService`와 같은 이유로 필요하다. 운영자 주소는 빈 문자열
      * 이다 — 이 슬라이스는 메일 발송 성공/실패를 재지 않는다(실물 발송·경고 로그는
      * `InvoiceRequestReachTest`가 실 DB로 잰다).
@@ -632,12 +634,15 @@ class InMemoryUserRepository : UserRepository {
         byEmail[existing.user.email] = replaced
     }
 
-    override fun markEmailVerified(userId: UUID) {
-        val existing = byId[userId] ?: return
-        if (existing.user.emailVerifiedAt != null) return
-        val replaced = StoredUser(existing.user.copy(emailVerifiedAt = Instant.EPOCH), existing.passwordHash)
-        byId[userId] = replaced
-        byEmail[existing.user.email] = replaced
+    override fun markEmailVerified(userId: UUID): Boolean {
+        val existing = byId[userId] ?: return false
+        val eligible = existing.user.emailVerifiedAt == null
+        if (eligible) {
+            val replaced = StoredUser(existing.user.copy(emailVerifiedAt = Instant.EPOCH), existing.passwordHash)
+            byId[userId] = replaced
+            byEmail[existing.user.email] = replaced
+        }
+        return eligible
     }
 
     /** 슬라이스 테스트가 실물 인증 흐름을 건너뛰고 곧장 인증 완료로 만드는 자리. */
@@ -911,7 +916,7 @@ class FakeUsageReadRepository : UsageReadRepository {
 }
 
 /**
- * 세금계산서 요청(2.23.0) 대역 — 소유 판정은 재지 않는다(`InMemoryCreditAccountRepository`와
+ * 세금계산서 요청(2.24.0) 대역 — 소유 판정은 재지 않는다(`InMemoryCreditAccountRepository`와
  * 같은 이유). 소유권이 걸린 404·부분 유니크 색인 409는 `InvoiceRequestReachTest`(실
  * PostgreSQL)가 잰다 — 이 슬라이스는 실물 `InvoiceRequestService`가 검증 순서를 그대로
  * 밟는지, HTTP 배선(상태 코드·바디 모양)이 맞는지만 본다.

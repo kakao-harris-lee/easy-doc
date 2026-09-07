@@ -1887,6 +1887,131 @@ describe('이미 통과한 문단 경고(계획 §11, segment_map.compliant_sour
   })
 })
 
+describe('구조 배지(P0-4 S8, 계획 §1.5, segment_map.source_unit_kinds)', () => {
+  // 「본문 → run 3줄 → 본문」 다섯 줄. run이 중간에 있어 「첫 행에만 배지」·「양 옆 body는
+  // 그룹 밖」을 한 번에 확인할 수 있다. 줄 내용은 배지·노트 문구(「표 칸」·「목록」)와
+  // 우연히 겹치지 않는 중립적인 자리표시자로 둔다 — 겹치면 `toHaveTextContent` 단언이
+  // 배지가 아니라 원문 자체와 매치해 거짓양성이 난다.
+  const sourceText = '본문 A\nline1\nline2\nline3\n본문 B'
+
+  function renderWithKinds(
+    kinds: Array<'body' | 'table_cell' | 'list_item'>,
+    overrides: Partial<ReturnType<typeof segmentMap>> = {},
+  ) {
+    const map = segmentMap({
+      source_unit_count: kinds.length,
+      units: [
+        segmentMapUnit({ easy_unit_index: 0, source_unit_indexes: [0], confidence: 'high' }),
+        segmentMapUnit({ easy_unit_index: 1, source_unit_indexes: [4], confidence: 'high' }),
+      ],
+      source_unit_kinds: kinds,
+      ...overrides,
+    })
+    return render(
+      <ReviewEditor
+        conversion={conversion({ easy_text: '변환 A\n변환 B', segment_map: map })}
+        source={sourceReady(sourceText)}
+      />,
+    )
+  }
+
+  it('run 첫 행에만 배지가 붙고, 그룹 aria-label의 개수가 run 길이와 같다(C2)', () => {
+    renderWithKinds(['body', 'table_cell', 'table_cell', 'table_cell', 'body'])
+
+    // 배지 텍스트는 run 하나당 한 번뿐이다 — 그룹의 aria-label(「표 칸 3개」)과
+    // 겹치지 않는다(속성이지 렌더된 텍스트가 아니다).
+    expect(screen.getAllByText('표 칸')).toHaveLength(1)
+
+    const group = screen.getByRole('group', { name: '표 칸 3개' })
+    const rows = within(group).getAllByRole('listitem')
+    expect(rows).toHaveLength(3)
+    expect(rows[0]).toHaveTextContent('표 칸')
+    expect(rows[1]).not.toHaveTextContent('표 칸')
+    expect(rows[2]).not.toHaveTextContent('표 칸')
+
+    // run 밖의 본문 행은 그룹에 들어가지 않는다.
+    expect(screen.getByLabelText('원본 1번째 문단').closest('[role="listitem"]')).not.toBe(
+      within(group).queryByLabelText('원본 1번째 문단'),
+    )
+  })
+
+  it('목록 run도 같은 규칙을 따른다', () => {
+    renderWithKinds(['body', 'list_item', 'list_item', 'list_item', 'body'])
+
+    expect(screen.getAllByText('목록')).toHaveLength(1)
+    const group = screen.getByRole('group', { name: '목록 항목 3개' })
+    expect(within(group).getAllByRole('listitem')).toHaveLength(3)
+  })
+
+  it('전부 본문이면 배지도 그룹도 없다(C3)', () => {
+    renderWithKinds(['body', 'body', 'body', 'body', 'body'])
+
+    expect(screen.queryByText('표 칸')).not.toBeInTheDocument()
+    expect(screen.queryByText('목록')).not.toBeInTheDocument()
+    // 결과 패널(`SegmentedResultEditor`)도 자기 role="group" 컨테이너를 하나 낸다 —
+    // 그것과 헷갈리지 않도록 구조 그룹의 aria-label(「표 칸 N개」·「목록 항목 N개」)로만
+    // 좁혀서 찾는다.
+    expect(screen.queryByRole('group', { name: /표 칸|목록 항목/ })).not.toBeInTheDocument()
+  })
+
+  it('옛 문서(source_unit_kinds 미지정 → 기본값 전부 body)도 낱개 목록 그대로다', () => {
+    const map = segmentMap({ source_unit_count: 5 })
+    render(
+      <ReviewEditor
+        conversion={conversion({ easy_text: '변환 A', segment_map: map })}
+        source={sourceReady(sourceText)}
+      />,
+    )
+
+    expect(screen.queryByRole('group', { name: /표 칸|목록 항목/ })).not.toBeInTheDocument()
+    expect(screen.queryByText('표 칸')).not.toBeInTheDocument()
+  })
+
+  it('셀 행의 다시 변환 버튼은 활성이고, aria-describedby가 표 칸 노트를 가리킨다', () => {
+    renderWithKinds(['body', 'table_cell', 'table_cell', 'table_cell', 'body'])
+
+    const button = screen.getByLabelText('원본 2번째 문단 다시 변환')
+    expect(button).toBeEnabled()
+
+    const describedBy = button.getAttribute('aria-describedby')
+    expect(describedBy).not.toBeNull()
+    expect(document.getElementById(describedBy as string)).toHaveTextContent(
+      '이 문단은 표의 칸입니다. 칸 하나로 유지됩니다.',
+    )
+  })
+
+  it('목록 행의 다시 변환 버튼은 목록 노트를 가리킨다', () => {
+    renderWithKinds(['body', 'list_item', 'list_item', 'list_item', 'body'])
+
+    const button = screen.getByLabelText('원본 3번째 문단 다시 변환')
+    const describedBy = button.getAttribute('aria-describedby')
+    expect(describedBy).not.toBeNull()
+    expect(document.getElementById(describedBy as string)).toHaveTextContent(
+      '이 문단은 목록 항목입니다. 항목 하나로 유지됩니다.',
+    )
+  })
+
+  it('이미 통과 배지(S7)와 구조 배지(S8)가 같은 행에 함께 붙고, 두 노트를 모두 참조한다', () => {
+    renderWithKinds(['body', 'table_cell', 'table_cell', 'table_cell', 'body'], {
+      compliant_source_units: [1],
+    })
+
+    const row = screen.getByLabelText('원본 2번째 문단').closest('[role="listitem"]')
+    expect(row).toHaveTextContent('표 칸')
+    expect(row).toHaveTextContent('이미 쉬운 글 규칙을 통과한 문단')
+
+    const button = screen.getByLabelText('원본 2번째 문단 다시 변환')
+    expect(button).toBeEnabled()
+    const ids = (button.getAttribute('aria-describedby') ?? '').split(' ').filter(Boolean)
+    expect(ids).toHaveLength(2)
+    const texts = ids.map((id) => document.getElementById(id)?.textContent)
+    expect(texts).toContain(
+      '이 문단은 이미 쉬운 글 규칙을 통과합니다. 다시 쓰면 나빠질 수 있습니다.',
+    )
+    expect(texts).toContain('이 문단은 표의 칸입니다. 칸 하나로 유지됩니다.')
+  })
+})
+
 describe('저장 중 경합 방지(MEDIUM 리뷰)', () => {
   it('저장·내려받기가 도는 동안 단위 textarea를 잠근다', async () => {
     const user = userEvent.setup()

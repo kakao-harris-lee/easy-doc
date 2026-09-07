@@ -1,4 +1,4 @@
-/** 세금계산서 요청 기록 엔드포인트 (계약 2.23.0). */
+/** 세금계산서 요청 기록 엔드포인트 (계약 2.24.0). */
 
 import { requestJson } from './client'
 import type {

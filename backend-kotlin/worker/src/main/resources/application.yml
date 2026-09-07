@@ -81,6 +81,16 @@ easydoc:
     dry-run: ${EASYDOC_RETENTION_DRY_RUN:false}
     cron: ${EASYDOC_RETENTION_CRON:0 0 3 * * *}
     batch-size: ${EASYDOC_RETENTION_BATCH_SIZE:100}
+  # 미검증 계정 TTL 파기(`docs/kotlin-redevelopment-backlog.md` §1.4 ⑵ ⓐ, 2026-09-07 결정).
+  # 가입(비밀번호·소셜 공통) 후 이 시간 안에 이메일을 검증하지 않은 계정을 `RetentionPurgeScheduler`
+  # 세 번째 단계가 지운다 — 미검증 계정이 `ix_users_email`(V1)을 무기한 선점해 진짜 이메일
+  # 소유자의 가입을 막는 문제를 닫는다. 작업 공간·신원·인증 코드는 FK CASCADE 로 함께
+  # 사라지고, 문서를 가진 계정은 건너뛰고 개수만 센다(`UnverifiedAccountPurgeConfiguration` KDoc).
+  auth:
+    unverified-purge:
+      enabled: ${EASYDOC_AUTH_UNVERIFIED_PURGE_ENABLED:true}
+      ttl-hours: ${EASYDOC_AUTH_UNVERIFIED_PURGE_TTL_HOURS:24}
+      batch-size: ${EASYDOC_AUTH_UNVERIFIED_PURGE_BATCH_SIZE:200}
   # `DocumentConfiguration` 이 worker 에도 조립돼(`@Profile("!migrate")`) `ConversionFeedbackService`
   # 빈이 여기서도 서지만, 그 유스케이스를 부르는 `PUT /conversions/{id}/feedback` 컨트롤러는
   # api 에만 있다 — worker 는 이 경로를 실행하지 않는다. 그래도 api 와 **같은 환경변수 이름**을

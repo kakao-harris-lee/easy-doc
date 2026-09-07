@@ -406,8 +406,14 @@ class SensitiveToStringReachTest {
          * `credit-grant` 프로필의 CLI 인자(워크스페이스 id·정수 크레딧·사유(enum)·메모)를
          * 담을 뿐이라 민감 판정 토큰에 걸리지 않는다. [KNOWN_SENSITIVE_TYPES] 에는 넣지 않는다.
          *
-         * 세금계산서 요청 기록(`docs/plans/2026-09-07-invoice-requests.md`, 계약 2.23.0)이
-         * **열**을 더해 164 다(154 위에). core `BusinessNumber`는 **이 숫자에 없다** —
+         * 미검증 계정 TTL 파기(backlog §1.4 ⑵ ⓐ, 2026-09-07)가 **하나**를 더해 155 이다
+         * (C2 154 위에) — infrastructure `UnverifiedAccountProperties`(`enabled`·
+         * `ttlHours`·`batchSize` 셋뿐인 설정 바인딩, 운영 노브 값이라 민감 토큰과 무관 —
+         * `RetentionProperties`·`KeyRotationProperties` 와 같은 판단으로
+         * [KNOWN_SENSITIVE_TYPES] 에 넣지 않는다).
+         *
+         * 세금계산서 요청 기록(`docs/plans/2026-09-07-invoice-requests.md`, 계약 2.24.0)이
+         * **열**을 더해 165 다(155 위에). core `BusinessNumber`는 **이 숫자에 없다** —
          * `@JvmInline value class` 가 아니라 `EmailAddress` 와 같은 형태(일반 class + private
          * 생성자 + `of()` 팩터리)로 만들었다: value class 였다면 `GeneratedToStringProbes`
          * 의 자동 표본화가 임의 문자열로 **주 생성자를 직접** 호출해 보는데, 그 검증이
@@ -440,7 +446,7 @@ class SensitiveToStringReachTest {
          * 평범한 `object` 로 선언했다(`ReconversionReservation.Reserved` 와 같은 사유 —
          * `data` 를 붙이면 인자 없는 주 생성자가 판정 불가로 이 테스트를 실패시킨다).
          */
-        const val EXPECTED_SOURCE_DECLARATIONS = 164
+        const val EXPECTED_SOURCE_DECLARATIONS = 165
 
         /** 민감 판정이 반드시 닿아야 하는 타입 — 바닥이다. */
         val KNOWN_SENSITIVE_TYPES =

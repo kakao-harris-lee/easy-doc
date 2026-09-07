@@ -145,7 +145,7 @@ docker compose -f compose.yml -f compose.ci.yml run --rm frontend-check
 3. **계좌이체 확인.** PG가 없으므로 결제는 계좌이체다 — 입금 내역을 수기로 대조한다.
 4. **세금계산서 요청이 오면 운영자 메일을 확인한다.** 사용자가 `/usage` 화면의
    「세금계산서 요청」 버튼으로 사업자등록번호·상호·기간을 제출하면(계획
-   `docs/plans/2026-09-07-invoice-requests.md` §2, 계약 2.23.0) `easydoc.billing
+   `docs/plans/2026-09-07-invoice-requests.md` §2, 계약 2.24.0) `easydoc.billing
    .operator-email`(환경변수 `EASYDOC_BILLING_OPERATOR_EMAIL`, `.env.example` 참고)로
    알림 메일이 온다(요청 id·워크스페이스 id·사업자번호·상호·기간·연락 이메일을 담는다 —
    비어 있으면 알림이 가지 않고 서버 로그에 경고 한 줄만 남으므로 파일럿 착수 전에

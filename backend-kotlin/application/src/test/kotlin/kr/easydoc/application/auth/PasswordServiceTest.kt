@@ -206,7 +206,7 @@ private class PasswordUserRepository : UserRepository {
         byId[userId]?.let { byId[userId] = it.copy(hasPassword = true) }
     }
 
-    override fun markEmailVerified(userId: UUID) = error(NOT_USED_MESSAGE)
+    override fun markEmailVerified(userId: UUID): Boolean = error(NOT_USED_MESSAGE)
 
     private companion object {
         const val NOT_USED_MESSAGE = "이 유스케이스가 부르지 않는 사용자 연산이다"

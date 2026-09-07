@@ -334,9 +334,10 @@ private class ResetUserRepository : UserRepository {
         byId[userId]?.let { byId[userId] = it.copy(hasPassword = true) }
     }
 
-    override fun markEmailVerified(userId: UUID) {
+    override fun markEmailVerified(userId: UUID): Boolean {
         verifiedIds += userId
         byId[userId]?.let { byId[userId] = it.copy(emailVerifiedAt = Instant.EPOCH) }
+        return true
     }
 
     private companion object {

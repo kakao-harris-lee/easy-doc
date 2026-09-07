@@ -9,6 +9,7 @@ import type {
   PurposeUsageItem,
   SegmentMap,
   SegmentMapUnit,
+  SourceUnitKind,
   UserResponse,
   WorkspaceCreditsResponse,
   WorkspaceListItem,
@@ -96,12 +97,17 @@ export function segmentMapUnit(overrides: Partial<SegmentMapUnit> = {}): Segment
  */
 export function segmentMap(overrides: Partial<SegmentMap> = {}): SegmentMap {
   const units = overrides.units ?? [segmentMapUnit()]
+  const source_unit_count = overrides.source_unit_count ?? 1
   return {
-    source_unit_count: 1,
+    source_unit_count,
     easy_unit_count: units.length,
     // 대부분의 기존 테스트는 「이미 통과한 문단」 배지를 다루지 않는다 — 배지가
     // 필요한 테스트만 이 필드를 명시로 덮어쓴다.
     compliant_source_units: [],
+    // 기본값은 전부 본문이다(옛 문서와 같은 모양) — 표·목록 배지가 필요한 테스트만
+    // 이 필드를 명시로 덮어쓴다. 길이는 `source_unit_count`에서 derive한다 — 계약의
+    // 불변식(길이 == source_unit_count)을 목에서도 어기지 않기 위해서다.
+    source_unit_kinds: Array.from({ length: source_unit_count }, (): SourceUnitKind => 'body'),
     ...overrides,
     units,
   }
@@ -195,7 +201,7 @@ export function workspaceCredits(
   }
 }
 
-/** GET/POST /workspaces/{id}/invoice-requests 응답 항목(계약 2.23.0). 기본값은 요청됨 상태다. */
+/** GET/POST /workspaces/{id}/invoice-requests 응답 항목(계약 2.24.0). 기본값은 요청됨 상태다. */
 export function invoiceRequest(
   overrides: Partial<InvoiceRequestResponse> = {},
 ): InvoiceRequestResponse {
