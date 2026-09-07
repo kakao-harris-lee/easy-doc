@@ -277,6 +277,20 @@ class JdbcCreditAccountRepository(private val jdbc: JdbcClient) : CreditAccountR
             .update()
     }
 
+    /**
+     * `workspaces` 만 읽는다 — 문서·변환에 닿지 않으므로 `OwnershipPredicateGuardTest`
+     * (문서·변환 SQL 전수)의 대상이 아니다. 소유 술어가 없는 이유: 이 조회 자체가 "누가
+     * 소유자인가"를 알아내는 것이 목적이라, 알아내기 전에는 걸 수 있는 소유 술어가 없다
+     * (운영 CLI, `credit-grant` 프로필 하나만 부른다).
+     */
+    override fun ownerOf(workspaceId: UUID): UUID? =
+        jdbc
+            .sql("SELECT user_id FROM workspaces WHERE id = :workspaceId")
+            .param("workspaceId", workspaceId)
+            .query { rs, _ -> rs.getObject("user_id", UUID::class.java) }
+            .optional()
+            .orElse(null)
+
     private fun toTransactionView(rs: ResultSet): CreditTransactionView =
         CreditTransactionView(
             id = rs.getObject("id", UUID::class.java),

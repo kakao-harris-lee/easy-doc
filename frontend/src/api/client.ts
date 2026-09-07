@@ -51,18 +51,34 @@ export class ApiError extends Error {
    * 하나뿐이다.
    */
   readonly remainingCallBudget: number | null
+  /**
+   * `createDocument`의 402(`InsufficientCredits`) 응답이 내는 `X-Credit-Balance`(이 예약
+   * 시도 시점의 가용 크레딧) — 크레딧 계정 계획 §2 결정 7(C1). 그 헤더가 없거나 정수로
+   * 읽지 못하면 null이다.
+   */
+  readonly creditBalance: number | null
+  /**
+   * `createDocument`의 402(`InsufficientCredits`) 응답이 내는
+   * `X-Credits-Required`(이 요청이 필요로 한 크레딧). 그 헤더가 없거나 정수로 읽지
+   * 못하면 null이다.
+   */
+  readonly creditsRequired: number | null
 
   constructor(
     status: number,
     message: string,
     retryAfterSeconds: number | null = null,
     remainingCallBudget: number | null = null,
+    creditBalance: number | null = null,
+    creditsRequired: number | null = null,
   ) {
     super(message)
     this.name = 'ApiError'
     this.status = status
     this.retryAfterSeconds = retryAfterSeconds
     this.remainingCallBudget = remainingCallBudget
+    this.creditBalance = creditBalance
+    this.creditsRequired = creditsRequired
   }
 }
 
@@ -159,6 +175,8 @@ async function send(path: string, options: RequestOptions): Promise<Response> {
       await readErrorMessage(response),
       parseIntHeader(response.headers.get('Retry-After')),
       parseIntHeader(response.headers.get('X-Remaining-Call-Budget')),
+      parseIntHeader(response.headers.get('X-Credit-Balance')),
+      parseIntHeader(response.headers.get('X-Credits-Required')),
     )
   }
   return response
@@ -169,7 +187,9 @@ async function send(path: string, options: RequestOptions): Promise<Response> {
  * 없거나 정수가 아니면 null.
  */
 function parseIntHeader(header: string | null): number | null {
-  if (header === null) {
+  // 빈 문자열은 `Number('')`가 0을 내어(빈 배열처럼 다뤄) 실제로 없는 헤더를 0으로
+  // 잘못 읽는다 — null과 같이 다룬다.
+  if (header === null || header === '') {
     return null
   }
   const value = Number(header)
@@ -188,29 +208,46 @@ export async function requestVoid(path: string, options: RequestOptions = {}): P
 }
 
 /**
+ * `createDocumentFromText`·`createDocumentFromFile` 응답 — 등록 결과에 202의
+ * `X-Credit-Balance` 헤더(예약 직후 가용 잔액, 크레딧 계정 계획 §2 결정 7)를 얹는다.
+ *
+ * `requestJson`을 쓰지 않는 이유는 `downloadExport`의 `DownloadedFile`과 같다 — 헤더가
+ * 필요하면 `send`를 직접 불러 응답 객체에 접근해야 한다.
+ */
+export interface DocumentCreationResult {
+  document: DocumentCreatedResponse
+  /** 헤더가 없거나 정수로 읽지 못하면 null. */
+  creditBalance: number | null
+}
+
+/**
  * POST /documents — 붙여넣은 본문으로 문서를 등록한다 (202, 변환은 그 뒤에 돌아간다).
  *
  * workspaceId가 null이면 싣지 않는다 — 서버가 기본 작업 공간에 담는다. 작업 공간
  * 목록을 아직 못 불러온 상태에서도 업로드가 막히지 않게 하려는 선택이다.
  */
-export function createDocumentFromText(
+export async function createDocumentFromText(
   text: string,
   workspaceId: string | null,
   title?: string,
-): Promise<DocumentCreatedResponse> {
+): Promise<DocumentCreationResult> {
   const body: DocumentTextRequest = { text, title: title ?? null }
   if (workspaceId !== null) {
     body.workspace_id = workspaceId
   }
-  return requestJson<DocumentCreatedResponse>('/documents', { method: 'POST', body })
+  const response = await send('/documents', { method: 'POST', body })
+  return {
+    document: (await response.json()) as DocumentCreatedResponse,
+    creditBalance: parseIntHeader(response.headers.get('X-Credit-Balance')),
+  }
 }
 
 /** POST /documents — 업로드 파일로 문서를 등록한다 (multipart). */
-export function createDocumentFromFile(
+export async function createDocumentFromFile(
   file: File,
   workspaceId: string | null,
   title?: string,
-): Promise<DocumentCreatedResponse> {
+): Promise<DocumentCreationResult> {
   const form = new FormData()
   form.append('file', file)
   if (title !== undefined && title !== '') {
@@ -219,7 +256,11 @@ export function createDocumentFromFile(
   if (workspaceId !== null) {
     form.append('workspace_id', workspaceId)
   }
-  return requestJson<DocumentCreatedResponse>('/documents', { method: 'POST', body: form })
+  const response = await send('/documents', { method: 'POST', body: form })
+  return {
+    document: (await response.json()) as DocumentCreatedResponse,
+    creditBalance: parseIntHeader(response.headers.get('X-Credit-Balance')),
+  }
 }
 
 /** GET /documents — 내 문서를 최신순으로 조회한다 (작업 공간을 주면 그 안만). */

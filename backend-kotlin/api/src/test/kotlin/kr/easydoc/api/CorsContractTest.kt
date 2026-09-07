@@ -1,6 +1,7 @@
 package kr.easydoc.api
 
 import kr.easydoc.api.config.CorsConfig
+import kr.easydoc.api.support.ContractSpec
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
@@ -34,24 +35,46 @@ class CorsContractTest {
     }
 
     @Test
-    @DisplayName("실제 요청에 Expose-Headers 로 Content-Disposition 과 Location 이 노출된다")
+    @DisplayName("실제 요청의 Expose-Headers 가 계약의 인라인 헤더 선언과 정확히 같다")
     fun `실제 요청에 노출 헤더가 있다`() {
         val exposed = simpleRequest(ALLOWED_ORIGIN).getHeader(HttpHeaders.ACCESS_CONTROL_EXPOSE_HEADERS)
 
         assertThat(exposed)
-            .withFailMessage("노출 헤더가 없으면 React 가 파일명과 접수 주소를 읽지 못한다")
+            .withFailMessage("노출 헤더가 없으면 React 가 파일명·접수 주소·크레딧 잔액 등을 읽지 못한다")
             .isNotNull()
-        assertThat(exposed).contains("Content-Disposition")
-        assertThat(exposed).contains("Location")
+        assertExposedHeadersMatchContract(exposed)
     }
 
     @Test
-    @DisplayName("preflight 에도 Expose-Headers 가 실린다")
+    @DisplayName("preflight 의 Expose-Headers 도 계약의 인라인 헤더 선언과 정확히 같다")
     fun `preflight 에 노출 헤더가 있다`() {
         val exposed = preflight(ALLOWED_ORIGIN, "GET").getHeader(HttpHeaders.ACCESS_CONTROL_EXPOSE_HEADERS)
 
-        assertThat(exposed).contains("Content-Disposition")
-        assertThat(exposed).contains("Location")
+        assertExposedHeadersMatchContract(exposed)
+    }
+
+    /**
+     * 계약 `x-cors.expose_headers`(2.22.0 정정)와 정확히 같은 집합인지 잰다 —
+     * `ContractSpec.inlineHeaderNames()`(경로에 `$ref` 없이 직접 적힌 헤더, 곧
+     * `ContractHeaderDeclarationTest.INLINE_HEADERS`와 같은 여섯 개)에서 값을 읽으므로
+     * 계약이 헤더를 늘리거나 줄이면 이 테스트가 하드코딩 없이 함께 움직인다. 이 여섯
+     * 개가 곧 "값을 계산해 프런트가 프로그램으로 읽어야 하는" 헤더 전부다 — 나머지
+     * 계약 헤더(`Cache-Control`·`X-Content-Type-Options`·`WWW-Authenticate`)는 컴포넌트
+     * 참조(고정값이거나 안전 목록)라 노출 목록에 들지 않는다.
+     */
+    private fun assertExposedHeadersMatchContract(exposed: String?) {
+        assertThat(exposed).isNotNull()
+        val actual =
+            exposed!!
+                .split(",")
+                .map { it.trim() }
+                .filter { it.isNotEmpty() }
+                .toSet()
+        assertThat(actual)
+            .withFailMessage {
+                "Access-Control-Expose-Headers($actual)가 계약 인라인 헤더 선언" +
+                    "(${ContractSpec.inlineHeaderNames()})과 다르다 — CorsConfig.EXPOSED_RESPONSE_HEADERS 를 맞춰라"
+            }.isEqualTo(ContractSpec.inlineHeaderNames())
     }
 
     @Test

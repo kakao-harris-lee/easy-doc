@@ -264,6 +264,20 @@ class JdbcCreditAccountRepositoryTest {
         ).isNotNull()
     }
 
+    @Test
+    @DisplayName("워크스페이스 소유자 조회 — credit-grant 프로필(C2)이 쓴다")
+    fun `소유자 조회`() {
+        val (ownerId, workspaceId) = newOwnedWorkspace()
+
+        assertThat(repository.ownerOf(workspaceId)).isEqualTo(ownerId)
+    }
+
+    @Test
+    @DisplayName("없는 워크스페이스의 소유자 조회는 null 이다")
+    fun `없는 워크스페이스는 null`() {
+        assertThat(repository.ownerOf(UUID.randomUUID())).isNull()
+    }
+
     private fun newOwnedWorkspace(): Pair<UUID, UUID> {
         val ownerId = UUID.randomUUID()
         val workspaceId = UUID.randomUUID()

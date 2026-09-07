@@ -401,8 +401,12 @@ class SensitiveToStringReachTest {
          * 더한 `application.document.PendingCreditsReservation` 하나다 —
          * 변환 id·문서 id·워크스페이스 id·소유자 id·예약 크레딧 정수뿐이라 민감 판정
          * 토큰에 걸리지 않는다. [KNOWN_SENSITIVE_TYPES] 에는 넣지 않는다.
+         *
+         * 153 → 154 는 C2(계획 §3 C2)가 더한 `api.credit.CreditGrantArgs` 하나다 —
+         * `credit-grant` 프로필의 CLI 인자(워크스페이스 id·정수 크레딧·사유(enum)·메모)를
+         * 담을 뿐이라 민감 판정 토큰에 걸리지 않는다. [KNOWN_SENSITIVE_TYPES] 에는 넣지 않는다.
          */
-        const val EXPECTED_SOURCE_DECLARATIONS = 153
+        const val EXPECTED_SOURCE_DECLARATIONS = 154
 
         /** 민감 판정이 반드시 닿아야 하는 타입 — 바닥이다. */
         val KNOWN_SENSITIVE_TYPES =

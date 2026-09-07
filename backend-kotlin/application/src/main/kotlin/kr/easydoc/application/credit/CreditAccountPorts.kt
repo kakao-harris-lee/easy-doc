@@ -169,4 +169,12 @@ interface CreditAccountRepository {
      * 찾는다. 운영 리포트가 재사용할 수 있게 저장소에 둔다.
      */
     fun consistencyViolations(): List<CreditConsistencyViolation>
+
+    /**
+     * 워크스페이스 소유자(`workspaces.user_id`) 조회 — `credit-grant` 프로필(C2)이 거래의
+     * `owner_user_id`(NOT NULL FK `users`)를 채우려고 쓴다. 그 프로필은 인증된 요청자가
+     * 없어(운영자가 워크스페이스 식별자만 CLI 인자로 준다) [grant] 에 넘길 실제 사용자
+     * id 를 스스로 찾아야 한다. 워크스페이스가 없으면 `null`.
+     */
+    fun ownerOf(workspaceId: UUID): UUID?
 }

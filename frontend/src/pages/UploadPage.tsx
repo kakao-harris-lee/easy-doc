@@ -18,7 +18,9 @@ import {
   createDocumentFromText,
   listDocuments,
 } from '../api/client'
-import type { DocumentCreatedResponse, DocumentListItem } from '../api/types'
+import type { DocumentCreationResult } from '../api/client'
+import { getWorkspaceCredits } from '../api/credits'
+import type { DocumentListItem } from '../api/types'
 import { useAuth } from '../auth/context'
 import { chooseNextAction } from '../conversion/nextAction'
 import { countChars } from '../lib/charCount'
@@ -42,6 +44,12 @@ const EMAIL_NOT_VERIFIED_DETAIL = '이메일 인증 후 문서를 변환할 수 
 
 /** 한 번에 변환할 수 있는 길이. 백엔드 MAX_CONVERTIBLE_CHARS와 같은 값이다. */
 export const MAX_CHARS = 20000
+
+/**
+ * 크레딧 환산 기준. master-plan §3.3 — 공백 포함 1,000자 = 1크레딧. 백엔드
+ * `Credits.requiredFor`(올림)와 같은 계산을 클라이언트에서도 미리 보여준다.
+ */
+const CHARS_PER_CREDIT = 1000
 
 /** 문서 제목 길이 상한. 백엔드 x-input-limits.max_title_length와 같은 값이다. */
 const MAX_TITLE_LENGTH = 255
@@ -248,6 +256,14 @@ export function UploadPage() {
   // "이 작업 공간에는 문서가 없다"는 서버의 답이다. 두 상태를 한 값으로 합치지 않는다 —
   // §6.2는 완료 상태와 검수 여부가 확인될 때만 제안하라고 했다.
   const [recentDocuments, setRecentDocuments] = useState<DocumentListItem[] | null>(null)
+  // 가용 크레딧(C2). null은 "아직 모른다"이며(조회 전 또는 조회 실패) — 그 경우 화면은
+  // 필요 크레딧만 보여준다. 워크스페이스당 한 번만 조회하고, 등록이 성공하면 202의
+  // X-Credit-Balance 헤더로 갱신한다(재조회하지 않는다).
+  const [availableCredits, setAvailableCredits] = useState<number | null>(null)
+  // 집행 스위치(`easydoc.credits.enforced`). null은 "아직 모른다" — 조회가 끝나기 전에는
+  // 꺼짐 안내를 보여주지 않는다(모른다와 꺼짐은 다른 사실이다). 202 헤더는 이 값을 실어
+  // 오지 않으므로 등록 성공으로는 갱신하지 않는다 — 다음 워크스페이스 조회 때만 갱신된다.
+  const [creditsEnforced, setCreditsEnforced] = useState<boolean | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const fileCardRef = useRef<HTMLDivElement>(null)
   // 제거 버튼을 눌러 파일이 빠졌는지 표시한다. 초점을 되돌릴 시점은 파일 입력이 다시
@@ -263,6 +279,10 @@ export function UploadPage() {
   // 문자를 2로 세어 어긋나므로 countChars로 코드 포인트 수를 맞춘다.
   const charCount = countChars(text)
   const tooLong = charCount > MAX_CHARS
+  // 필요 크레딧 — master-plan §3.3(1,000자 = 1크레딧)을 클라이언트에서 미리 계산한다.
+  // 서버가 최종 판단(`Credits.requiredFor`)하지만, 상한과 같은 이유로 여기서도 먼저
+  // 보여준다.
+  const neededCredits = Math.ceil(charCount / CHARS_PER_CREDIT)
   // 80% 미만에서는 보조 글자색이다. 여유가 많을 때까지 경고색을 쓰면 실제로 위험한
   // 순간에 색이 아무 말도 하지 못한다(§6.2).
   const nearLimit = !tooLong && charCount >= MAX_CHARS * COUNTER_WARNING_RATIO
@@ -284,6 +304,16 @@ export function UploadPage() {
   if (suggestionWorkspaceId !== workspaceId) {
     setSuggestionWorkspaceId(workspaceId)
     setRecentDocuments(null)
+  }
+
+  // 가용 크레딧도 작업 공간이 바뀌면 이전 값을 그 자리에서 내린다 — 위 제안과 같은
+  // "렌더 중 상태 조정" 패턴이다. 새 조회가 끝날 때까지는 "아직 모른다"(null)로 두어
+  // 다른 작업 공간의 잔액을 잠깐이라도 보여주지 않는다.
+  const [creditsWorkspaceId, setCreditsWorkspaceId] = useState(workspaceId)
+  if (creditsWorkspaceId !== workspaceId) {
+    setCreditsWorkspaceId(workspaceId)
+    setAvailableCredits(null)
+    setCreditsEnforced(null)
   }
 
   const nextAction = chooseNextAction(recentDocuments)
@@ -343,6 +373,29 @@ export function UploadPage() {
     return () => controller.abort()
   }, [workspaceId])
 
+  /**
+   * 가용 크레딧을 워크스페이스당 한 번 읽는다(C2, 계획 §2 결정 8).
+   *
+   * 실패하면 조용히 넘어간다 — `availableCredits`가 null로 남아 화면은 필요 크레딧만
+   * 보여준다. 이 조회는 안내이지 이 화면의 핵심 흐름이 아니므로, 실패를 오류로 알리면
+   * 문서 등록을 가리는 소음이 된다.
+   */
+  useEffect(() => {
+    if (workspaceId === null) {
+      return
+    }
+    const controller = new AbortController()
+    getWorkspaceCredits(workspaceId, controller.signal)
+      .then((response) => {
+        setAvailableCredits(response.available)
+        setCreditsEnforced(response.enforced)
+      })
+      .catch(() => {
+        // 취소든 서버 오류든 결론은 같다: 가용 크레딧을 모른다.
+      })
+    return () => controller.abort()
+  }, [workspaceId])
+
   useEffect(() => {
     if (file !== null || !refocusPending.current) {
       return
@@ -396,14 +449,22 @@ export function UploadPage() {
    * sourceText는 붙여넣기 경로에서만 있다 — 그 글이 분할 화면 왼쪽의 원본이 된다.
    */
   async function submit(
-    create: () => Promise<DocumentCreatedResponse>,
+    create: () => Promise<DocumentCreationResult>,
     sourceText?: string,
   ): Promise<void> {
     setSubmitting(true)
     try {
       const created = await create()
+      // 202가 X-Credit-Balance를 실어 오면 재조회 없이 그 값으로 갱신한다(계획 §2 결정 7).
+      // 이 갱신은 대부분 즉시 `navigate`로 덮이므로 눈에 보이는 효과는 거의 없다 —
+      // 그래도 남겨 두는 이유는 **제출이 화면을 떠나지 않는 경로에 대비한 보험**이다
+      // (예: `navigate` 실패, 라우팅 없이 재사용하는 호출자). 그런 경로에서도 가용 표시가
+      // 방금 예약한 만큼 낡아 있지 않게 한다.
+      if (created.creditBalance !== null) {
+        setAvailableCredits(created.creditBalance)
+      }
       const state: SourceTextState = sourceText === undefined ? {} : { sourceText }
-      navigate(conversionPath(created.conversion_id), { state })
+      navigate(conversionPath(created.document.conversion_id), { state })
     } catch (caught) {
       // 이메일 미인증 403은 일반 오류 문단이 아니라 배너로 보여준다 — 조치가 "다시
       // 시도"가 아니라 "인증 화면으로 가기"라 같은 자리에 두면 안내가 어긋난다.
@@ -413,6 +474,18 @@ export function UploadPage() {
         caught.message === EMAIL_NOT_VERIFIED_DETAIL
       ) {
         setEmailVerificationRequired(true)
+        setSubmitting(false)
+        return
+      }
+      // 크레딧 부족 402는 서버 문구 뒤에 필요·가용 크레딧을 덧붙인다 — 계약
+      // `InsufficientCredits`가 몸체가 아니라 헤더로 실어 보내는 값이라(x-error-body-
+      // universality) `ApiError`가 파싱해 둔 필드에서 읽는다.
+      if (caught instanceof ApiError && caught.status === 402) {
+        const suffix =
+          caught.creditsRequired !== null && caught.creditBalance !== null
+            ? ` 필요 ${chars(caught.creditsRequired)} · 가용 ${chars(caught.creditBalance)}`
+            : ''
+        setError(`${caught.message}${suffix}`)
         setSubmitting(false)
         return
       }
@@ -614,6 +687,15 @@ export function UploadPage() {
                     }`}
                   >
                     {chars(charCount)} / {chars(MAX_CHARS)}자
+                  </p>
+                  {/* 필요 크레딧은 언제나 보여준다(N). 가용(M)은 조회가 끝났을 때만
+                  덧붙인다 — 조회 전이거나 실패하면 필요 크레딧만 보여준다(C2). 집행이
+                  꺼져 있으면(조회로 확인된 경우만) 그 사실도 함께 알린다 — `/usage`
+                  크레딧 카드와 같은 문구다. */}
+                  <p className="m-0 text-sm text-muted-foreground">
+                    필요 크레딧 {chars(neededCredits)}
+                    {availableCredits !== null && ` / 가용 ${chars(availableCredits)}`}
+                    {creditsEnforced === false && ' (지금은 집행되지 않습니다)'}
                   </p>
                 </div>
               </div>
