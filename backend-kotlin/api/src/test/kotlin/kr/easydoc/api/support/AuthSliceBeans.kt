@@ -144,11 +144,13 @@ class AuthSliceBeans {
         users: InMemoryUserRepository,
         codes: InMemoryVerificationCodeStore,
         mail: FakeMailSender,
+        transaction: TransactionRunner,
     ): EmailVerificationService =
         EmailVerificationService(
             users = users,
             codes = codes,
             mail = mail,
+            transaction = transaction,
             codeTtl = Duration.ofMinutes(10),
             resendCooldown = Duration.ofSeconds(60),
             maxAttempts = 5,
@@ -609,12 +611,15 @@ class InMemoryUserRepository : UserRepository {
         byEmail[existing.user.email] = replaced
     }
 
-    override fun markEmailVerified(userId: UUID) {
-        val existing = byId[userId] ?: return
-        if (existing.user.emailVerifiedAt != null) return
-        val replaced = StoredUser(existing.user.copy(emailVerifiedAt = Instant.EPOCH), existing.passwordHash)
-        byId[userId] = replaced
-        byEmail[existing.user.email] = replaced
+    override fun markEmailVerified(userId: UUID): Boolean {
+        val existing = byId[userId] ?: return false
+        val eligible = existing.user.emailVerifiedAt == null
+        if (eligible) {
+            val replaced = StoredUser(existing.user.copy(emailVerifiedAt = Instant.EPOCH), existing.passwordHash)
+            byId[userId] = replaced
+            byEmail[existing.user.email] = replaced
+        }
+        return eligible
     }
 
     /** 슬라이스 테스트가 실물 인증 흐름을 건너뛰고 곧장 인증 완료로 만드는 자리. */

@@ -718,7 +718,7 @@ class DocumentServiceTest {
             passwordHash: PasswordHash,
         ) = error(NOT_USED_MESSAGE)
 
-        override fun markEmailVerified(userId: UUID) = error(NOT_USED_MESSAGE)
+        override fun markEmailVerified(userId: UUID): Boolean = error(NOT_USED_MESSAGE)
 
         private companion object {
             const val NOT_USED_MESSAGE = "문서 유스케이스가 부르지 않는 사용자 연산이다"

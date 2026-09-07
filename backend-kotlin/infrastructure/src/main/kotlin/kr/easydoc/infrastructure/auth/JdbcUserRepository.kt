@@ -119,13 +119,17 @@ class JdbcUserRepository(private val jdbc: JdbcClient) : UserRepository {
             .update()
     }
 
-    /** 멱등 — 이미 채워진 행은 `WHERE` 절에서 걸러 다시 건드리지 않는다. */
-    override fun markEmailVerified(userId: UUID) {
+    /**
+     * 멱등 — 이미 채워진 행은 `WHERE` 절에서 걸러 다시 건드리지 않는다.
+     *
+     * 영향받은 행 수를 그대로 돌려준다 — 0이면 이미 인증됐거나(멱등 분기) 그 사이 행이
+     * 지워졌다는 뜻이다(`AuthPorts.markEmailVerified` KDoc).
+     */
+    override fun markEmailVerified(userId: UUID): Boolean =
         jdbc
             .sql("UPDATE users SET email_verified_at = now() WHERE id = :id AND email_verified_at IS NULL")
             .param("id", userId)
-            .update()
-    }
+            .update() > 0
 
     /** [password_hash] 를 항상 함께 읽는다 — [User.hasPassword] 는 그 존재 여부다(`toStoredUser`도 같은 열에서 읽는다). */
     private fun toUser(rs: ResultSet): User =

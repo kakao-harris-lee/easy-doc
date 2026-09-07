@@ -171,17 +171,26 @@ class JdbcUserRepositoryTest {
     }
 
     @Test
-    @DisplayName("markEmailVerified 는 email_verified_at 을 채운다 — 이미 채워졌으면 그대로 둔다(멱등)")
+    @DisplayName(
+        "markEmailVerified 는 email_verified_at 을 채우고 true 를 돌려준다 — " +
+            "이미 채워졌으면 그대로 두고 false 다(멱등)",
+    )
     fun `markEmailVerified 는 채우고 멱등이다`() {
         val email = uniqueEmail()
         val created = users.create(email, HASH)
 
-        users.markEmailVerified(created.id)
+        assertThat(users.markEmailVerified(created.id)).isTrue()
         val firstVerifiedAt = users.findById(created.id)?.emailVerifiedAt
         assertThat(firstVerifiedAt).isNotNull()
 
-        users.markEmailVerified(created.id)
+        assertThat(users.markEmailVerified(created.id)).isFalse()
         assertThat(users.findById(created.id)?.emailVerifiedAt).isEqualTo(firstVerifiedAt)
+    }
+
+    @Test
+    @DisplayName("markEmailVerified 는 없는 계정에 false 를 돌려준다")
+    fun `markEmailVerified 는 없는 계정에 false 다`() {
+        assertThat(users.markEmailVerified(UUID.randomUUID())).isFalse()
     }
 
     @Test

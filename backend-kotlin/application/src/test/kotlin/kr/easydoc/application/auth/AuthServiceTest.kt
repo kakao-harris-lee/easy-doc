@@ -408,11 +408,14 @@ private class RecordingUserRepository(private val rehashFails: Boolean) : UserRe
         rehashed += userId
     }
 
-    override fun markEmailVerified(userId: UUID) {
-        val existing = saved.values.firstOrNull { it.user.id == userId } ?: return
-        if (existing.user.emailVerifiedAt != null) return
-        val verified = existing.user.copy(emailVerifiedAt = Instant.EPOCH)
-        saved[existing.user.email] = StoredUser(verified, existing.passwordHash)
+    override fun markEmailVerified(userId: UUID): Boolean {
+        val existing = saved.values.firstOrNull { it.user.id == userId } ?: return false
+        val eligible = existing.user.emailVerifiedAt == null
+        if (eligible) {
+            val verified = existing.user.copy(emailVerifiedAt = Instant.EPOCH)
+            saved[existing.user.email] = StoredUser(verified, existing.passwordHash)
+        }
+        return eligible
     }
 }
 

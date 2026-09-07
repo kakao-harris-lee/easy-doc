@@ -405,8 +405,14 @@ class SensitiveToStringReachTest {
          * 153 → 154 는 C2(계획 §3 C2)가 더한 `api.credit.CreditGrantArgs` 하나다 —
          * `credit-grant` 프로필의 CLI 인자(워크스페이스 id·정수 크레딧·사유(enum)·메모)를
          * 담을 뿐이라 민감 판정 토큰에 걸리지 않는다. [KNOWN_SENSITIVE_TYPES] 에는 넣지 않는다.
+         *
+         * 미검증 계정 TTL 파기(backlog §1.4 ⑵ ⓐ, 2026-09-07)가 **하나**를 더해 155 이다
+         * (C2 154 위에) — infrastructure `UnverifiedAccountProperties`(`enabled`·
+         * `ttlHours`·`batchSize` 셋뿐인 설정 바인딩, 운영 노브 값이라 민감 토큰과 무관 —
+         * `RetentionProperties`·`KeyRotationProperties` 와 같은 판단으로
+         * [KNOWN_SENSITIVE_TYPES] 에 넣지 않는다).
          */
-        const val EXPECTED_SOURCE_DECLARATIONS = 154
+        const val EXPECTED_SOURCE_DECLARATIONS = 155
 
         /** 민감 판정이 반드시 닿아야 하는 타입 — 바닥이다. */
         val KNOWN_SENSITIVE_TYPES =

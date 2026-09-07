@@ -81,8 +81,14 @@ interface UserRepository {
     /**
      * 이메일 소유 확인을 완료 처리한다 — `email_verified_at` 을 지금 시각으로 채운다.
      * 이미 채워져 있으면(동시 확인 등) 아무것도 바꾸지 않는다(멱등).
+     *
+     * **행이 실제로 갱신됐으면 `true`.** 이미 인증된 상태였거나(멱등 분기) 그 사이 계정이
+     * 지워졌으면(`EmailVerificationService.confirm` 이 잠근 뒤 부르므로 정상 경로에서는
+     * 일어나지 않아야 하지만, 미검증 계정 파기 배치와의 경합에 대한 방어 계층이다) `false`.
+     * 호출자가 `false` 를 「가입했지만 계정이 사라졌다」로 다뤄야 한다면 락을 먼저 잡아야
+     * 한다 — 이 메서드 자체는 락을 걸지 않는다.
      */
-    fun markEmailVerified(userId: UUID)
+    fun markEmailVerified(userId: UUID): Boolean
 }
 
 /** 작업 공간 저장소. */

@@ -4,6 +4,7 @@ import kr.easydoc.application.mail.MailDelivery
 import kr.easydoc.application.mail.MailSender
 import kr.easydoc.application.mail.OutboundMail
 import kr.easydoc.core.exceptions.ConflictException
+import kr.easydoc.core.exceptions.InvalidCredentialsException
 import kr.easydoc.core.exceptions.InvalidVerificationCodeException
 import kr.easydoc.core.exceptions.RateLimitedException
 import kr.easydoc.core.user.PasswordHash
@@ -141,6 +142,41 @@ class EmailVerificationServiceTest {
 
         assertThatCode { world.service.issueAfterSignup(user.id) }.doesNotThrowAnyException()
     }
+
+    @Test
+    @DisplayName("확인은 행을 먼저 잠근다 — 잠금 시점에 계정이 이미 없으면 계정 소멸 예외다")
+    fun `잠금 시점에 계정이 없으면 계정 소멸 예외다`() {
+        // 미검증 계정 파기 배치와의 경합(team lead 리뷰, 2026-09-07) — `lockForUpdate` 가
+        // `null` 을 돌려주는 것은 파기가 이 확인보다 먼저 커밋해 행이 실제로 사라진
+        // 경우를 흉내 낸다. 코드가 맞고 틀리고와 무관하게 계정 소멸로 처리해야 한다.
+        val world = VerificationWorld()
+        val user = world.users.seedUnverified()
+        world.service.requestVerification(user.id)
+        val code = world.codes.lastIssuedCode()
+        world.users.lockForUpdateReturnsNull = true
+
+        assertThatThrownBy { world.service.confirm(user.id, code) }
+            .isInstanceOf(InvalidCredentialsException::class.java)
+        assertThat(world.users.verifiedIds).isEmpty()
+    }
+
+    @Test
+    @DisplayName("markEmailVerified 가 0행을 알리면(방어 계층) 확인은 성공을 돌려주지 않는다")
+    fun `markEmailVerified 가 실패를 알리면 성공하지 않는다`() {
+        // 정상 경로에서는 `lockForUpdate` 로 행을 이미 잠근 뒤라 `markEmailVerified` 가
+        // 영향받은 행 0을 돌려줄 일이 없어야 한다 — 이 테스트는 그 불변식이 깨지는 경우의
+        // 방어 계층 자체를 잰다(원래 버그: UPDATE 가 0행에 성공해도 `confirm()` 이 그냥
+        // 성공을 반환했다).
+        val world = VerificationWorld()
+        val user = world.users.seedUnverified()
+        world.service.requestVerification(user.id)
+        val code = world.codes.lastIssuedCode()
+        world.users.markEmailVerifiedSucceeds = false
+
+        assertThatThrownBy { world.service.confirm(user.id, code) }
+            .isInstanceOf(InvalidCredentialsException::class.java)
+        assertThat(world.users.verifiedIds).isEmpty()
+    }
 }
 
 /** 유스케이스 하나를 돌리는 데 필요한 최소 세계. */
@@ -153,15 +189,26 @@ private class VerificationWorld(mailFails: Boolean = false) {
             users = users,
             codes = codes,
             mail = mail,
+            transaction = PassthroughTransactionRunner,
             codeTtl = Duration.ofMinutes(10),
             resendCooldown = Duration.ofSeconds(60),
             maxAttempts = 5,
         )
 }
 
+private object PassthroughTransactionRunner : TransactionRunner {
+    override fun <T> inTransaction(block: () -> T): T = block()
+}
+
 private class VerificationUserRepository : UserRepository {
     private val byId: MutableMap<UUID, User> = mutableMapOf()
     val verifiedIds: MutableList<UUID> = mutableListOf()
+
+    /** `confirm()` 이 잠금 시점에 계정이 이미 지워진 경우를 흉내 낸다(파기와의 경합). */
+    var lockForUpdateReturnsNull: Boolean = false
+
+    /** `markEmailVerified` 가 영향받은 행 0을 알리는 경우(방어 계층)를 흉내 낸다. */
+    var markEmailVerifiedSucceeds: Boolean = true
 
     fun seedUnverified(): User = seed(emailVerifiedAt = null)
 
@@ -178,7 +225,7 @@ private class VerificationUserRepository : UserRepository {
 
     override fun findById(id: UUID): User? = byId[id]
 
-    override fun lockForUpdate(id: UUID): User? = error(NOT_USED_MESSAGE)
+    override fun lockForUpdate(id: UUID): User? = if (lockForUpdateReturnsNull) null else byId[id]
 
     override fun exists(id: UUID): Boolean = error(NOT_USED_MESSAGE)
 
@@ -197,9 +244,11 @@ private class VerificationUserRepository : UserRepository {
         passwordHash: PasswordHash,
     ) = error(NOT_USED_MESSAGE)
 
-    override fun markEmailVerified(userId: UUID) {
+    override fun markEmailVerified(userId: UUID): Boolean {
+        if (!markEmailVerifiedSucceeds) return false
         verifiedIds += userId
         byId[userId]?.let { byId[userId] = it.copy(emailVerifiedAt = Instant.EPOCH) }
+        return true
     }
 
     private companion object {
