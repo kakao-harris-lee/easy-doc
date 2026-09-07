@@ -482,6 +482,13 @@ class ValueSlotInvariantReachTest {
                     """"redirect_uri":"http://localhost:5173/auth/google/callback"}""",
                 "ReconvertUnitRequest" to
                     """{"easy_unit_indexes":[0],"easy_text_fingerprint":"${"a".repeat(64)}"}""",
+                // 체크섬을 통과하는 사업자번호(220-81-62517) — 이 표본은 경로 값 자리
+                // 해석 여부만 잰다. 필드 판정 자체는 `RequestFieldRejectionLayerTest`·
+                // `InvoiceRequestReachTest`가 잰다.
+                "InvoiceRequestCreate" to
+                    """{"business_number":"2208162517","company_name":"가",""" +
+                    """"contact_email":"probe@example.test","period_from":"2026-08-01",""" +
+                    """"period_to":"2026-08-31"}""",
             )
 
         private const val LIST_SCHEMA = "DocumentListResponse"

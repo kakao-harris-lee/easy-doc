@@ -21,7 +21,19 @@
 
 ## 3. 슬라이스 (한 조각, M)
 
-V16, core `BusinessNumber` 값 객체(정규화·체크섬), application `InvoiceRequestService`(+포트), Jdbc 어댑터, 계약 2.23.0(두 작업, 스키마, 409/422 예시, 변경 기록), 컨트롤러, `AuthenticatedEndpoints`, 메일 두 통, `invoice-handle` 프로필, 프런트 폼·목록, 러너북, backlog. 테스트: 체크섬(유효/무효/하이픈), 409 중복, 422 기간, 404 타 소유자, 메일 발송(FakeMailSender) 및 미설정 운영자 주소, 프로필 3 케이스(발급/거절/이미 처리), 실 DB 삽입·목록, Vitest 폼·목록·오류.
+V16, core `BusinessNumber` 값 객체(정규화·체크섬), application `InvoiceRequestService`(+포트), Jdbc 어댑터, 계약 2.23.0(두 작업, 스키마, 409/422 예시, 변경 기록), 컨트롤러, `AuthenticatedEndpoints`, 메일 두 통, `invoice-handle` 프로필, 프런트 폼·목록, 러너북, backlog. 테스트: 체크섬(유효/무효/하이픈), 409 중복, 422 기간, 404 타 소유자, 메일 발송(FakeMailSender) 및 미설정 운영자 주소, 프로필 3 케이스(발급/거절/이미 처리), 실 DB 삽입·목록, Vitest 폼·목록·오류. → **구현(2026-09-07).**
+
+`BusinessNumber`는 계획 초안과 달리 `@JvmInline value class`가 아니라 `EmailAddress`와 같은
+일반 class + private 생성자 + `of()` 팩터리다 — value class였다면
+`SensitiveToStringReachTest`의 자동 표본화가 임의 문자열로 인스턴스를 만들어 보다가 국세청
+체크섬 `init` 검증에 곧바로 막혀 그 게이트 자체가 예외로 죽었다(구현 중 실측). 계약의
+`x-request-field-constraints`에는 `company_name`·`representative_name`·`address`·
+`contact_email` 넷만 올랐다 — `business_number`(체크섬)와 `period_from`/`period_to`(교차
+필드 날짜 범위)는 그 절의 단일 필드 길이 경계 모델 밖이라 스키마 `x-service-constraint`·
+`description`에만 규칙을 적었다(F3 관측 하네스가 재지 못하는 필드를 재는 척하지 않기
+위해서다). `handle`은 계획대로 소유 술어가 없다 — `invoice-handle` 프로필이 id 하나로
+찾는다. 검증: `backend-kotlin && ./gradlew build`(BUILD SUCCESSFUL), `frontend && npm run
+check && npm run test -- --run(494 passed) && npm run build` 전부 통과.
 
 ## 4. 수용 기준
 

@@ -143,9 +143,34 @@ docker compose -f compose.yml -f compose.ci.yml run --rm frontend-check
    `cost_unknown_calls`가 0이 아니면 그 기간 일부 호출의 원가가 단가 미설정으로
    잡히지 않았다는 뜻이다 — 청구서 발송 전에 원인(단가 설정 누락)을 확인한다.
 3. **계좌이체 확인.** PG가 없으므로 결제는 계좌이체다 — 입금 내역을 수기로 대조한다.
-4. **세금계산서를 수동 발급한다.** 국세청 홈택스 등 별도 채널로 발급하고, 문의가 오면
-   사업자번호를 안내한다(제품에 사업자번호 저장·조회 기능이 없다 — 운영자가 별도로
-   관리한다).
+4. **세금계산서 요청이 오면 운영자 메일을 확인한다.** 사용자가 `/usage` 화면의
+   「세금계산서 요청」 버튼으로 사업자등록번호·상호·기간을 제출하면(계획
+   `docs/plans/2026-09-07-invoice-requests.md` §2, 계약 2.23.0) `easydoc.billing
+   .operator-email`(환경변수 `EASYDOC_BILLING_OPERATOR_EMAIL`, `.env.example` 참고)로
+   알림 메일이 온다(요청 id·워크스페이스 id·사업자번호·상호·기간·연락 이메일을 담는다 —
+   비어 있으면 알림이 가지 않고 서버 로그에 경고 한 줄만 남으므로 파일럿 착수 전에
+   반드시 설정한다).
+5. **홈택스에서 수동 발급한다.** 국세청 홈택스 등 별도 채널에서 메일에 적힌
+   사업자등록번호로 전자세금계산서를 발급한다(제품이 직접 발급하지 않는다 — 홈택스
+   API 연동은 범위 밖).
+6. **`invoice-handle` 프로필로 상태를 반영한다.** `credit-grant`·`usage-report`와 같은
+   일회성 운영 프로필이다(Compose 상시 서비스가 아니다). 발급을 마쳤으면:
+   ```bash
+   docker compose -f compose.yml run --rm backend-api \
+     java -jar /app/easy-doc-api.jar --spring.profiles.active=invoice-handle \
+     --id=<요청 id> --status=issued
+   ```
+   발급할 수 없으면 사유를 `--note`(500자 이내)에 남기고 거절한다:
+   ```bash
+   docker compose -f compose.yml run --rm backend-api \
+     java -jar /app/easy-doc-api.jar --spring.profiles.active=invoice-handle \
+     --id=<요청 id> --status=rejected --note="사업자등록번호 확인 불가"
+   ```
+   표준출력에 요청 id·반영된 상태만 찍힌다. 종료 코드 0이면 반영된 것이고, 1이면
+   인자 오류·존재하지 않는 id·이미 처리된 요청 중 하나다(메시지 한 줄만 남는다 —
+   로그에서 확인한다). 처리 직후 요청자에게 상태 안내 메일(발급 또는 거절+사유)이
+   최선 노력으로 나간다. 처리 결과는 요청자·운영자 모두 `/usage` 화면의 요청 목록에서
+   확인할 수 있다.
 
 리포트 CSV에는 소유자 이메일·워크스페이스 이름이 실리므로 발송 전까지만 보관하고,
 공유 스토리지에 영구 보관하지 않는다(사용자 문서 본문·개인정보를 로그에 남기지

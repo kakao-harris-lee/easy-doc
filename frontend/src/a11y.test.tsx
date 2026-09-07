@@ -24,6 +24,7 @@ import {
 } from './api/client'
 import { lookupTerm } from './api/dictionary'
 import { getWorkspaceCredits } from './api/credits'
+import { listInvoiceRequests } from './api/invoices'
 import { getWorkspaceUsage } from './api/usage'
 import { computeEasyTextFingerprint } from './review/fingerprint'
 import { AuthContext, type AuthContextValue } from './auth/context'
@@ -61,6 +62,11 @@ vi.mock('./api/usage', async (importOriginal) => ({
 
 vi.mock('./api/credits', () => ({
   getWorkspaceCredits: vi.fn(),
+}))
+
+vi.mock('./api/invoices', () => ({
+  createInvoiceRequest: vi.fn(),
+  listInvoiceRequests: vi.fn(),
 }))
 
 const USER = {
@@ -429,6 +435,7 @@ beforeEach(() => {
   vi.mocked(getConversion).mockResolvedValue(conversion({ status: 'done' }))
   vi.mocked(getDocumentSource).mockResolvedValue(documentSource())
   vi.mocked(getWorkspaceCredits).mockResolvedValue(workspaceCredits())
+  vi.mocked(listInvoiceRequests).mockResolvedValue({ items: [] })
 })
 
 afterEach(() => {
@@ -439,6 +446,7 @@ afterEach(() => {
   vi.mocked(reconvertUnit).mockReset()
   vi.mocked(getWorkspaceUsage).mockReset()
   vi.mocked(getWorkspaceCredits).mockReset()
+  vi.mocked(listInvoiceRequests).mockReset()
 })
 
 describe('①  랜드마크와 건너뛰기 링크', () => {

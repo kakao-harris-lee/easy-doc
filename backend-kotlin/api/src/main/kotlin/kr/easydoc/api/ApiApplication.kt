@@ -54,6 +54,23 @@ internal const val USAGE_REPORT_PROFILE = "usage-report"
  */
 internal const val CREDIT_GRANT_PROFILE = "credit-grant"
 
+/**
+ * `invoice-handle` profile 이름. 운영자가 세금계산서 요청 한 건을 처리(발급·거절)하고
+ * 종료하는 실행 모드다(계획 `docs/plans/2026-09-07-invoice-requests.md` §2 결정 4).
+ *
+ * `CREDIT_GRANT_PROFILE`과 같은 이유로 `infrastructure`가 아니라 `application`이 조립하는
+ * [kr.easydoc.application.invoice.InvoiceRequestService] 빈만 받는다.
+ */
+internal const val INVOICE_HANDLE_PROFILE = "invoice-handle"
+
+/**
+ * 컨텍스트 초기화 중에 [ApplicationRunner][org.springframework.boot.ApplicationRunner] 로
+ * 이미 도는 one-shot profile 전부 — 회전 배치·운영 리포트·크레딧 부여·세금계산서 처리.
+ * `main` 이 이 집합 하나로 판정해 조건의 순환 복잡도를 갈래 수와 무관하게 1로 유지한다.
+ */
+private val ONE_SHOT_PROFILES: Set<String> =
+    setOf(ROTATE_KEYS_PROFILE, USAGE_REPORT_PROFILE, CREDIT_GRANT_PROFILE, INVOICE_HANDLE_PROFILE)
+
 fun main(args: Array<String>) {
     val context = runApplication<ApiApplication>(*args)
     val profiles = context.environment.activeProfiles.toSet()
@@ -63,12 +80,9 @@ fun main(args: Array<String>) {
         context.close()
     }
 
-    // 회전 배치(KeyRotationRunner)·운영 리포트(UsageReportRunner)·크레딧 부여
-    // (CreditGrantRunner) 셋 다 ApplicationRunner 로 컨텍스트 초기화 중에 이미 돌았다.
     // SpringApplication.exit 가 컨텍스트의 ExitCodeGenerator 빈을 읽어 종료 코드를 내고
     // 컨텍스트를 닫는다 — 실패(배치 예외·미완주)면 0이 아닌 코드로 프로세스를 끝낸다.
-    // 셋 다 one-shot profile 이라 같은 자리를 쓴다.
-    if (profiles.any { it == ROTATE_KEYS_PROFILE || it == USAGE_REPORT_PROFILE || it == CREDIT_GRANT_PROFILE }) {
+    if (profiles.any { it in ONE_SHOT_PROFILES }) {
         val exitCode = SpringApplication.exit(context)
         if (exitCode != 0) {
             exitProcess(exitCode)

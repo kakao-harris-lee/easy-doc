@@ -5,8 +5,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ApiError } from '../api/client'
 import { getWorkspaceCredits } from '../api/credits'
+import { createInvoiceRequest, listInvoiceRequests } from '../api/invoices'
 import { getWorkspaceUsage } from '../api/usage'
 import {
+  invoiceRequest,
   purposeUsageItem,
   workspaceContext,
   workspaceCredits,
@@ -23,6 +25,11 @@ vi.mock('../api/usage', async (importOriginal) => ({
 
 vi.mock('../api/credits', () => ({
   getWorkspaceCredits: vi.fn(),
+}))
+
+vi.mock('../api/invoices', () => ({
+  createInvoiceRequest: vi.fn(),
+  listInvoiceRequests: vi.fn(),
 }))
 
 function page(workspace: Partial<WorkspaceContextValue> = {}) {
@@ -44,6 +51,10 @@ beforeEach(() => {
   // 기본값은 크레딧 카드를 다루지 않는 기존 시나리오가 흔들리지 않도록 항상 성공한다.
   // 크레딧 자체를 재는 테스트만 값을 명시로 덮어쓴다.
   vi.mocked(getWorkspaceCredits).mockReset().mockResolvedValue(workspaceCredits())
+  // 세금계산서 요청도 같은 이유로 기본값은 빈 목록이다 — 그 화면을 다루는 테스트만
+  // 값을 명시로 덮어쓴다.
+  vi.mocked(listInvoiceRequests).mockReset().mockResolvedValue({ items: [] })
+  vi.mocked(createInvoiceRequest).mockReset()
 })
 
 afterEach(() => {
@@ -348,5 +359,140 @@ describe('크레딧 카드 (C1/C2)', () => {
     renderPage()
 
     expect(await screen.findByRole('alert')).toHaveTextContent('크레딧 계정을 불러오지 못했습니다')
+  })
+})
+
+describe('세금계산서 요청 (2.23.0)', () => {
+  beforeEach(() => {
+    // 이 describe는 세금계산서 요청만 재므로, 이 화면이 함께 부르는 다른 조회는
+    // 기본값으로 채워 둔다 — 그렇지 않으면 unmocked 호출이 undefined를 돌려주고
+    // 화면의 .then() 호출이 던진다.
+    vi.mocked(getWorkspaceUsage).mockResolvedValue(workspaceUsage())
+    vi.mocked(getWorkspaceCredits).mockResolvedValue(workspaceCredits())
+  })
+
+  async function fillAndSubmit(user: ReturnType<typeof userEvent.setup>) {
+    await user.click(screen.getByRole('button', { name: '세금계산서 요청' }))
+    await user.type(screen.getByLabelText('사업자등록번호'), '220-81-62517')
+    await user.type(screen.getByLabelText('상호'), '쉬운글 주식회사')
+    await user.type(screen.getByLabelText('연락 이메일'), 'billing@example.test')
+    await user.click(screen.getByRole('button', { name: '요청 보내기' }))
+  }
+
+  it('목록이 비어 있으면 안내 문구를 보여준다', async () => {
+    renderPage()
+
+    const table = await screen.findByRole('table', { name: /세금계산서 요청 목록입니다/ })
+    expect(within(table).getByText('아직 요청이 없습니다.')).toBeInTheDocument()
+  })
+
+  it('폼을 열면 기간 시작일·종료일이 지난달 1일·말일로 채워져 있다', async () => {
+    const user = userEvent.setup()
+    renderPage()
+    await screen.findByRole('table', { name: /세금계산서 요청 목록입니다/ })
+
+    await user.click(screen.getByRole('button', { name: '세금계산서 요청' }))
+
+    // 화면과 같은 계산(로컬 날짜, YYYY-MM-DD)을 테스트에서도 독립적으로 구해 비교한다 —
+    // 화면 구현의 헬퍼를 그대로 가져오면 구현을 베끼는 대조가 된다.
+    const today = new Date()
+    const pad = (value: number) => String(value).padStart(2, '0')
+    const format = (date: Date) =>
+      `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
+    const expectedFrom = format(new Date(today.getFullYear(), today.getMonth() - 1, 1))
+    const expectedTo = format(new Date(today.getFullYear(), today.getMonth(), 0))
+
+    expect(screen.getByLabelText('기간 시작일')).toHaveValue(expectedFrom)
+    expect(screen.getByLabelText('기간 종료일')).toHaveValue(expectedTo)
+  })
+
+  it('목록이 기간·상호·상태·요청일·운영자 메모를 한국어로 보여준다', async () => {
+    vi.mocked(listInvoiceRequests).mockResolvedValue({
+      items: [
+        invoiceRequest({
+          period_from: '2026-08-01',
+          period_to: '2026-08-31',
+          company_name: '쉬운글 주식회사',
+          status: 'rejected',
+          operator_note: '사업자번호 확인 불가',
+        }),
+      ],
+    })
+
+    renderPage()
+
+    const table = await screen.findByRole('table', { name: /세금계산서 요청 목록입니다/ })
+    expect(within(table).getByText('2026-08-01 ~ 2026-08-31')).toBeInTheDocument()
+    expect(within(table).getByText('쉬운글 주식회사')).toBeInTheDocument()
+    expect(within(table).getByText('거절됨')).toBeInTheDocument()
+    expect(within(table).getByText('사업자번호 확인 불가')).toBeInTheDocument()
+  })
+
+  it('버튼을 누르면 폼이 열리고, 제출에 성공하면 상태 안내와 함께 목록을 다시 부른다', async () => {
+    const user = userEvent.setup()
+    vi.mocked(createInvoiceRequest).mockResolvedValue(invoiceRequest())
+
+    renderPage()
+    await screen.findByRole('table', { name: /세금계산서 요청 목록입니다/ })
+    vi.mocked(listInvoiceRequests).mockClear()
+
+    await fillAndSubmit(user)
+
+    expect(await screen.findByRole('status')).toHaveTextContent('세금계산서 요청을 접수했습니다')
+    expect(createInvoiceRequest).toHaveBeenCalledWith(
+      'w1',
+      expect.objectContaining({
+        business_number: '220-81-62517',
+        company_name: '쉬운글 주식회사',
+        contact_email: 'billing@example.test',
+      }),
+    )
+    await waitFor(() => {
+      expect(listInvoiceRequests).toHaveBeenCalled()
+    })
+    // 폼은 성공 뒤 닫힌다.
+    expect(screen.queryByRole('button', { name: '요청 보내기' })).not.toBeInTheDocument()
+  })
+
+  it('422 응답의 문구를 role=alert로 그대로 보여준다', async () => {
+    const user = userEvent.setup()
+    vi.mocked(createInvoiceRequest).mockRejectedValue(
+      new ApiError(422, '사업자등록번호가 올바르지 않습니다'),
+    )
+
+    renderPage()
+    await screen.findByRole('table', { name: /세금계산서 요청 목록입니다/ })
+
+    await fillAndSubmit(user)
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('사업자등록번호가 올바르지 않습니다')
+  })
+
+  it('409 응답의 문구를 role=alert로 그대로 보여준다', async () => {
+    const user = userEvent.setup()
+    vi.mocked(createInvoiceRequest).mockRejectedValue(
+      new ApiError(409, '같은 기간의 요청이 처리 대기 중입니다'),
+    )
+
+    renderPage()
+    await screen.findByRole('table', { name: /세금계산서 요청 목록입니다/ })
+
+    await fillAndSubmit(user)
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      '같은 기간의 요청이 처리 대기 중입니다',
+    )
+  })
+
+  it('목록 조회가 실패하면 오류 문구를 보여준다', async () => {
+    vi.mocked(listInvoiceRequests).mockRejectedValue(
+      new ApiError(500, '세금계산서 요청 목록을 불러오지 못했습니다'),
+    )
+
+    renderPage()
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      '세금계산서 요청 목록을 불러오지 못했습니다',
+    )
   })
 })

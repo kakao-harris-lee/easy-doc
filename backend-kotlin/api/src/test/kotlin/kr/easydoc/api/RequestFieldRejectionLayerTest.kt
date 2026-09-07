@@ -166,6 +166,10 @@ class RequestFieldRejectionLayerTest {
             DICTIONARY_LOOKUP_TEXT_FIELD to ::probeDictionaryLookupText,
             SET_PASSWORD_FIELD to ::probeSetPassword,
             PASSWORD_RESET_NEW_PASSWORD_FIELD to ::probePasswordResetConfirm,
+            INVOICE_COMPANY_NAME_FIELD to { value -> probeInvoiceRequest(companyName = value) },
+            INVOICE_REPRESENTATIVE_NAME_FIELD to { value -> probeInvoiceRequest(representativeName = value) },
+            INVOICE_ADDRESS_FIELD to { value -> probeInvoiceRequest(address = value) },
+            INVOICE_CONTACT_EMAIL_FIELD to { value -> probeInvoiceRequest(contactEmail = value) },
         )
 
     /**
@@ -209,6 +213,39 @@ class RequestFieldRejectionLayerTest {
 
     private fun probeName(value: String): Observed =
         postJson(WORKSPACES_PATH, json.writeValueAsString(mapOf(NAME_PROPERTY to value)), newOwner())
+
+    /**
+     * `POST /workspaces/{workspace_id}/invoice-requests` — 필드 하나만 바꾸고 나머지는
+     * 유효한 값으로 채운다. 매 호출마다 새 소유자·워크스페이스를 만든다(부분 유니크 색인이
+     * 실물 DB에만 있고 이 슬라이스 대역엔 없어 재사용해도 되지만, 다른 프로브와 같은
+     * 관행을 따른다).
+     */
+    private fun probeInvoiceRequest(
+        companyName: String = "쉬운글 주식회사",
+        representativeName: String = "홍길동",
+        contactEmail: String = RequestFieldProbes.uniqueEmail(),
+        address: String = "서울시 어딘가",
+    ): Observed {
+        // `newOwner()`는 이미 기본 작업 공간을 만든다 — `createDefault`를 다시 부르면
+        // 같은 이름의 두 번째 시도가 409로 막힌다. 그래서 그 반환값(workspace_id)이 필요한
+        // 이 프로브는 별도로 사용자·작업 공간을 만든다.
+        val owner = users.create("invoice-probe-${UUID.randomUUID()}@example.test", STUB_HASH).id
+        users.markEmailVerified(owner)
+        val workspaceId = workspaces.createDefault(owner)
+        val body =
+            json.writeValueAsString(
+                mapOf(
+                    "business_number" to INVOICE_VALID_BUSINESS_NUMBER,
+                    "company_name" to companyName,
+                    "representative_name" to representativeName,
+                    "contact_email" to contactEmail,
+                    "address" to address,
+                    "period_from" to "2026-08-01",
+                    "period_to" to "2026-08-31",
+                ),
+            )
+        return postJson("$WORKSPACES_PATH/$workspaceId/invoice-requests", body, owner)
+    }
 
     /** 검수 저장은 **완료된 내 변환**을 전제한다 — 아니면 409 라 길이 축에 닿지 못한다. */
     private fun probeEditedText(value: String): Observed {
@@ -336,6 +373,13 @@ class RequestFieldRejectionLayerTest {
         const val DICTIONARY_LOOKUP_TEXT_FIELD = "DictionaryLookupRequest.text"
         const val SET_PASSWORD_FIELD = "SetPasswordRequest.new_password"
         const val PASSWORD_RESET_NEW_PASSWORD_FIELD = "PasswordResetConfirmRequest.new_password"
+        const val INVOICE_COMPANY_NAME_FIELD = "InvoiceRequestCreate.company_name"
+        const val INVOICE_REPRESENTATIVE_NAME_FIELD = "InvoiceRequestCreate.representative_name"
+        const val INVOICE_ADDRESS_FIELD = "InvoiceRequestCreate.address"
+        const val INVOICE_CONTACT_EMAIL_FIELD = "InvoiceRequestCreate.contact_email"
+
+        /** 체크섬을 통과하는 사업자번호 — `BusinessNumberTest`와 같은 값 형태(220-81-62517). */
+        const val INVOICE_VALID_BUSINESS_NUMBER = "2208162517"
 
         /** DTO 가 없는 계약 필드 — 정확 열거 핀. **비어 있다**: F3 다섯이 전부 검사받는다. */
         val PINNED_WITHOUT_DTO = emptySet<String>()

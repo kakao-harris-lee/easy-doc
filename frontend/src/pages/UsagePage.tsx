@@ -1,13 +1,18 @@
 import { useEffect, useId, useMemo, useState } from 'react'
+import type { FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 
 import { ApiError } from '../api/client'
 import { getWorkspaceCredits } from '../api/credits'
+import { createInvoiceRequest, listInvoiceRequests } from '../api/invoices'
 import { getWorkspaceUsage } from '../api/usage'
 import type {
   CreditReason,
   CreditTransaction,
   CreditTransactionKind,
+  InvoiceRequestCreate,
+  InvoiceRequestResponse,
+  InvoiceRequestStatus,
   PurposeUsageItem,
   WorkspaceCreditsResponse,
   WorkspaceUsageResponse,
@@ -15,6 +20,7 @@ import type {
 import { HISTORY_PATH } from '../routes/paths'
 import { useWorkspace } from '../workspace/context'
 import { PageHeader } from '../components/PageHeader'
+import { Button } from '../components/ui/Button'
 
 const LOAD_ERROR_MESSAGE = '사용량을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.'
 
@@ -137,6 +143,246 @@ function CreditTransactionsTable({ transactions }: { transactions: CreditTransac
     </div>
   )
 }
+
+/** 세금계산서 요청 상태를 사람이 읽는 말로. `KIND_LABEL`과 같은 이유로 `Record<string, string>`이다. */
+const INVOICE_STATUS_LABEL: Record<string, string> = {
+  requested: '요청됨',
+  issued: '발급됨',
+  rejected: '거절됨',
+}
+
+/** 세금계산서 요청 폼이 관리하는 입력 값. */
+interface InvoiceFormState {
+  businessNumber: string
+  companyName: string
+  representativeName: string
+  contactEmail: string
+  address: string
+  periodFrom: string
+  periodTo: string
+}
+
+/** 기본값 — 기간은 지난달(§4 요구 그대로)이다. */
+function defaultInvoiceFormState(): InvoiceFormState {
+  const { from, to } = lastMonthRange(new Date())
+  return {
+    businessNumber: '',
+    companyName: '',
+    representativeName: '',
+    contactEmail: '',
+    address: '',
+    periodFrom: from,
+    periodTo: to,
+  }
+}
+
+/**
+ * 세금계산서 요청 인라인 폼. 성공하면 [onSuccess]를 부르고(목록 갱신은 호출부 몫), 실패하면
+ * `role=alert`로 서버 문구를 그대로 보여준다.
+ */
+function InvoiceRequestForm({
+  workspaceId,
+  onSuccess,
+  onCancel,
+}: {
+  workspaceId: string
+  onSuccess: (created: InvoiceRequestResponse) => void
+  onCancel: () => void
+}) {
+  const [form, setForm] = useState<InvoiceFormState>(defaultInvoiceFormState)
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const businessNumberId = useId()
+  const companyNameId = useId()
+  const representativeNameId = useId()
+  const contactEmailId = useId()
+  const addressId = useId()
+  const periodFromId = useId()
+  const periodToId = useId()
+
+  function updateField(field: keyof InvoiceFormState) {
+    return (event: { target: { value: string } }) =>
+      setForm((current) => ({ ...current, [field]: event.target.value }))
+  }
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setSubmitting(true)
+    setError(null)
+    const request: InvoiceRequestCreate = {
+      business_number: form.businessNumber,
+      company_name: form.companyName,
+      representative_name: form.representativeName.trim() === '' ? null : form.representativeName,
+      contact_email: form.contactEmail,
+      address: form.address.trim() === '' ? null : form.address,
+      period_from: form.periodFrom,
+      period_to: form.periodTo,
+    }
+    try {
+      const created = await createInvoiceRequest(workspaceId, request)
+      onSuccess(created)
+    } catch (caught: unknown) {
+      setError(caught instanceof ApiError ? caught.message : INVOICE_SUBMIT_ERROR_MESSAGE)
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <form
+      className="flex flex-col gap-4 rounded-[12px] border border-border bg-card p-4"
+      aria-labelledby="invoice-request-form-heading"
+      onSubmit={(event) => {
+        void handleSubmit(event)
+      }}
+    >
+      <h3 id="invoice-request-form-heading" className="text-[15px] font-semibold text-foreground">
+        세금계산서 요청
+      </h3>
+
+      {error !== null && (
+        <p className="form-error" role="alert">
+          {error}
+        </p>
+      )}
+
+      <div className="field">
+        <label htmlFor={businessNumberId}>사업자등록번호</label>
+        <input
+          id={businessNumberId}
+          type="text"
+          inputMode="numeric"
+          required
+          placeholder="000-00-00000"
+          value={form.businessNumber}
+          onChange={updateField('businessNumber')}
+        />
+      </div>
+
+      <div className="field">
+        <label htmlFor={companyNameId}>상호</label>
+        <input
+          id={companyNameId}
+          type="text"
+          required
+          value={form.companyName}
+          onChange={updateField('companyName')}
+        />
+      </div>
+
+      <div className="field">
+        <label htmlFor={representativeNameId}>대표자명</label>
+        <input
+          id={representativeNameId}
+          type="text"
+          value={form.representativeName}
+          onChange={updateField('representativeName')}
+        />
+      </div>
+
+      <div className="field">
+        <label htmlFor={contactEmailId}>연락 이메일</label>
+        <input
+          id={contactEmailId}
+          type="email"
+          required
+          value={form.contactEmail}
+          onChange={updateField('contactEmail')}
+        />
+      </div>
+
+      <div className="field">
+        <label htmlFor={addressId}>주소</label>
+        <input id={addressId} type="text" value={form.address} onChange={updateField('address')} />
+      </div>
+
+      <div className="flex flex-wrap gap-4">
+        <div className="field">
+          <label htmlFor={periodFromId}>기간 시작일</label>
+          <input
+            id={periodFromId}
+            type="date"
+            required
+            value={form.periodFrom}
+            onChange={updateField('periodFrom')}
+          />
+        </div>
+        <div className="field">
+          <label htmlFor={periodToId}>기간 종료일</label>
+          <input
+            id={periodToId}
+            type="date"
+            required
+            value={form.periodTo}
+            onChange={updateField('periodTo')}
+          />
+        </div>
+      </div>
+
+      <div className="flex gap-3">
+        <Button type="submit" loading={submitting}>
+          {submitting ? '요청하는 중…' : '요청 보내기'}
+        </Button>
+        <Button type="button" variant="outline" onClick={onCancel} disabled={submitting}>
+          취소
+        </Button>
+      </div>
+    </form>
+  )
+}
+
+/** 요청 목록 표. 요청이 없으면 안내 문구를 낸다. */
+function InvoiceRequestsTable({ items }: { items: InvoiceRequestResponse[] }) {
+  return (
+    <div className="rounded-[12px] border border-border bg-card px-5 pb-5 shadow-[0_1px_2px_rgba(20,33,31,0.04)]">
+      <table className="usage-table">
+        <caption>세금계산서 요청 목록입니다.</caption>
+        <thead>
+          <tr>
+            <th scope="col">기간</th>
+            <th scope="col">상호</th>
+            <th scope="col">상태</th>
+            <th scope="col">요청일</th>
+            <th scope="col">운영자 메모</th>
+          </tr>
+        </thead>
+        <tbody>
+          {items.length === 0 ? (
+            <tr>
+              <td colSpan={5} className="text-muted-foreground">
+                아직 요청이 없습니다.
+              </td>
+            </tr>
+          ) : (
+            items.map((item) => {
+              const status: InvoiceRequestStatus | string = item.status
+              return (
+                <tr key={item.id}>
+                  <td>
+                    {item.period_from} ~ {item.period_to}
+                  </td>
+                  <th scope="row">{item.company_name}</th>
+                  <td>{INVOICE_STATUS_LABEL[status] ?? status}</td>
+                  <td>{new Date(item.requested_at).toLocaleString('ko-KR')}</td>
+                  <td>{item.operator_note ?? '—'}</td>
+                </tr>
+              )
+            })
+          )}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+/** 세금계산서 요청 접수 실패 시 서버 문구를 읽지 못했을 때 쓰는 문구. */
+const INVOICE_SUBMIT_ERROR_MESSAGE =
+  '세금계산서 요청을 접수하지 못했습니다. 잠시 후 다시 시도해 주세요.'
+
+/** 세금계산서 요청 목록을 불러오지 못했을 때 쓰는 문구. */
+const INVOICE_LIST_LOAD_ERROR_MESSAGE =
+  '세금계산서 요청 목록을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.'
 
 /**
  * 목적(purpose)을 사람이 읽는 말로 — `HistoryPage`의 `SOURCE_FORMAT_TEXT`와 같은 관례다.
@@ -304,6 +550,16 @@ export function UsagePage() {
   // 이라면 애초에 조회가 나가지 않으므로 "불러오는 중"으로 시작하지 않는다.
   const [creditsLoading, setCreditsLoading] = useState(() => workspaceId !== null)
 
+  // 세금계산서 요청도 크레딧 계정과 같은 이유로 기간과 무관한 별도 상태·별도 effect다.
+  const [invoiceRequests, setInvoiceRequests] = useState<InvoiceRequestResponse[] | null>(null)
+  const [invoiceRequestsError, setInvoiceRequestsError] = useState<string | null>(null)
+  const [invoiceRequestsLoading, setInvoiceRequestsLoading] = useState(() => workspaceId !== null)
+  const [showInvoiceForm, setShowInvoiceForm] = useState(false)
+  const [invoiceStatusMessage, setInvoiceStatusMessage] = useState<string | null>(null)
+  // 성공한 요청 뒤 목록을 다시 부르는 신호 — workspaceId가 그대로여도 이 값을 올리면
+  // 아래 effect가 다시 돈다.
+  const [invoiceReloadToken, setInvoiceReloadToken] = useState(0)
+
   const fromId = useId()
   const toId = useId()
 
@@ -346,6 +602,18 @@ export function UsagePage() {
     setCreditsLoading(workspaceId !== null)
   }
 
+  // 워크스페이스가 바뀌면 이전 워크스페이스의 세금계산서 요청 상태도 그 자리에서 내린다 —
+  // 위 `renderedCreditsWorkspaceId`와 같은 "렌더 중 상태 조정" 패턴이다.
+  const [renderedInvoiceWorkspaceId, setRenderedInvoiceWorkspaceId] = useState(workspaceId)
+  if (renderedInvoiceWorkspaceId !== workspaceId) {
+    setRenderedInvoiceWorkspaceId(workspaceId)
+    setInvoiceRequests(null)
+    setInvoiceRequestsError(null)
+    setInvoiceRequestsLoading(workspaceId !== null)
+    setShowInvoiceForm(false)
+    setInvoiceStatusMessage(null)
+  }
+
   useEffect(() => {
     if (workspaceId === null) {
       return
@@ -365,6 +633,36 @@ export function UsagePage() {
       .finally(() => setCreditsLoading(false))
     return () => controller.abort()
   }, [workspaceId])
+
+  useEffect(() => {
+    if (workspaceId === null) {
+      return
+    }
+    const controller = new AbortController()
+    listInvoiceRequests(workspaceId, controller.signal)
+      .then((response) => {
+        setInvoiceRequests(response.items)
+        setInvoiceRequestsError(null)
+      })
+      .catch((caught: unknown) => {
+        if (caught instanceof DOMException && caught.name === 'AbortError') {
+          return
+        }
+        setInvoiceRequestsError(
+          caught instanceof ApiError ? caught.message : INVOICE_LIST_LOAD_ERROR_MESSAGE,
+        )
+      })
+      .finally(() => setInvoiceRequestsLoading(false))
+    return () => controller.abort()
+  }, [workspaceId, invoiceReloadToken])
+
+  function handleInvoiceRequestCreated(created: InvoiceRequestResponse) {
+    setShowInvoiceForm(false)
+    setInvoiceStatusMessage(
+      `세금계산서 요청을 접수했습니다 (${created.period_from} ~ ${created.period_to}).`,
+    )
+    setInvoiceReloadToken((token) => token + 1)
+  }
 
   useEffect(() => {
     if (workspaceId === null || period === null) {
@@ -484,6 +782,52 @@ export function UsagePage() {
             <CreditTransactionsTable transactions={credits.transactions} />
           </>
         )}
+
+        <div className="flex flex-col gap-4">
+          {!showInvoiceForm && workspaceId !== null && (
+            <Button
+              type="button"
+              variant="outline"
+              className="self-start"
+              onClick={() => {
+                setShowInvoiceForm(true)
+                setInvoiceStatusMessage(null)
+              }}
+            >
+              세금계산서 요청
+            </Button>
+          )}
+
+          {invoiceStatusMessage !== null && (
+            <p className="form-success" role="status">
+              {invoiceStatusMessage}
+            </p>
+          )}
+
+          {showInvoiceForm && workspaceId !== null && (
+            <InvoiceRequestForm
+              workspaceId={workspaceId}
+              onSuccess={handleInvoiceRequestCreated}
+              onCancel={() => setShowInvoiceForm(false)}
+            />
+          )}
+
+          {invoiceRequestsError !== null && (
+            <p className="form-error" role="alert">
+              {invoiceRequestsError}
+            </p>
+          )}
+
+          {invoiceRequestsLoading && (
+            <p className="py-6 text-center text-sm text-primary" role="status">
+              세금계산서 요청 목록을 불러오는 중입니다…
+            </p>
+          )}
+
+          {!invoiceRequestsLoading && invoiceRequestsError === null && invoiceRequests !== null && (
+            <InvoiceRequestsTable items={invoiceRequests} />
+          )}
+        </div>
 
         {error !== null && (
           <p className="form-error" role="alert">

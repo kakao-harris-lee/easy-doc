@@ -53,6 +53,11 @@ import kr.easydoc.application.document.OriginalReflection
 import kr.easydoc.application.document.SegmentMapDerivation
 import kr.easydoc.application.document.StoredOriginalReader
 import kr.easydoc.application.document.WorkspaceLookup
+import kr.easydoc.application.invoice.InvoiceRequestCreation
+import kr.easydoc.application.invoice.InvoiceRequestHandling
+import kr.easydoc.application.invoice.InvoiceRequestRepository
+import kr.easydoc.application.invoice.InvoiceRequestRow
+import kr.easydoc.application.invoice.InvoiceRequestService
 import kr.easydoc.application.mail.MailSender
 import kr.easydoc.application.usage.UsageQueryService
 import kr.easydoc.application.usage.UsageReadRepository
@@ -77,6 +82,7 @@ import kr.easydoc.core.exceptions.ExternalServiceUnavailableException
 import kr.easydoc.core.exceptions.InvalidCredentialsException
 import kr.easydoc.core.exceptions.InvalidInputException
 import kr.easydoc.core.exceptions.RateLimitedException
+import kr.easydoc.core.invoice.InvoiceRequestStatus
 import kr.easydoc.core.text.EditDistanceBudget
 import kr.easydoc.core.user.PasswordHash
 import kr.easydoc.core.user.StoredUser
@@ -93,6 +99,7 @@ import org.springframework.context.annotation.Bean
 import java.time.Clock
 import java.time.Duration
 import java.time.Instant
+import java.time.LocalDate
 import java.time.ZoneId
 import java.util.Locale
 import java.util.UUID
@@ -288,6 +295,22 @@ class AuthSliceBeans {
     @Bean
     fun usageQueryService(usage: FakeUsageReadRepository): UsageQueryService =
         UsageQueryService(usage, ZoneId.of("Asia/Seoul"), Clock.systemUTC())
+
+    /**
+     * 세금계산서 요청 기록(2.23.0)도 `InvoiceRequestController`가 `@WebMvcTest` 슬라이스에
+     * 전부 들어가므로 위 `workspaceService`와 같은 이유로 필요하다. 운영자 주소는 빈 문자열
+     * 이다 — 이 슬라이스는 메일 발송 성공/실패를 재지 않는다(실물 발송·경고 로그는
+     * `InvoiceRequestReachTest`가 실 DB로 잰다).
+     */
+    @Bean
+    fun inMemoryInvoiceRequests(): InMemoryInvoiceRequestRepository = InMemoryInvoiceRequestRepository()
+
+    @Bean
+    fun invoiceRequestService(
+        repository: InMemoryInvoiceRequestRepository,
+        mail: FakeMailSender,
+    ): InvoiceRequestService =
+        InvoiceRequestService(repository = repository, mail = mail, operatorEmail = "", clock = Clock.systemUTC())
 
     @Bean
     fun inMemoryDocuments(): InMemoryDocumentRepository = InMemoryDocumentRepository()
@@ -885,6 +908,85 @@ class FakeUsageReadRepository : UsageReadRepository {
         from: Instant,
         toExclusive: Instant,
     ): WorkspaceUsage? = rows.firstOrNull { it.ownerId == ownerId && it.workspaceId == workspaceId }?.usage
+}
+
+/**
+ * 세금계산서 요청(2.23.0) 대역 — 소유 판정은 재지 않는다(`InMemoryCreditAccountRepository`와
+ * 같은 이유). 소유권이 걸린 404·부분 유니크 색인 409는 `InvoiceRequestReachTest`(실
+ * PostgreSQL)가 잰다 — 이 슬라이스는 실물 `InvoiceRequestService`가 검증 순서를 그대로
+ * 밟는지, HTTP 배선(상태 코드·바디 모양)이 맞는지만 본다.
+ */
+class InMemoryInvoiceRequestRepository : InvoiceRequestRepository {
+    private val rows = mutableListOf<InvoiceRequestRow>()
+
+    @Suppress("LongParameterList")
+    override fun create(
+        id: UUID,
+        ownerId: UUID,
+        workspaceId: UUID,
+        businessNumber: String,
+        companyName: String,
+        representativeName: String?,
+        contactEmail: String,
+        address: String?,
+        periodFrom: LocalDate,
+        periodTo: LocalDate,
+        requestedAt: Instant,
+    ): InvoiceRequestCreation {
+        val row =
+            InvoiceRequestRow(
+                id = id,
+                workspaceId = workspaceId,
+                ownerUserId = ownerId,
+                businessNumber = businessNumber,
+                companyName = companyName,
+                representativeName = representativeName,
+                contactEmail = contactEmail,
+                address = address,
+                periodFrom = periodFrom,
+                periodTo = periodTo,
+                status = InvoiceRequestStatus.REQUESTED,
+                operatorNote = null,
+                requestedAt = requestedAt,
+                handledAt = null,
+            )
+        rows += row
+        return InvoiceRequestCreation.Created(row)
+    }
+
+    override fun listForOwner(
+        ownerId: UUID,
+        workspaceId: UUID,
+        limit: Int,
+    ): List<InvoiceRequestRow> =
+        rows
+            .filter { it.ownerUserId == ownerId && it.workspaceId == workspaceId }
+            .sortedByDescending { it.requestedAt }
+            .take(limit)
+
+    override fun handle(
+        id: UUID,
+        status: InvoiceRequestStatus,
+        note: String?,
+        handledAt: Instant,
+    ): InvoiceRequestHandling {
+        val index = rows.indexOfFirst { it.id == id }
+        return when {
+            index < 0 -> {
+                InvoiceRequestHandling.NotFound
+            }
+
+            rows[index].status != InvoiceRequestStatus.REQUESTED -> {
+                InvoiceRequestHandling.AlreadyHandled
+            }
+
+            else -> {
+                val updated = rows[index].copy(status = status, operatorNote = note, handledAt = handledAt)
+                rows[index] = updated
+                InvoiceRequestHandling.Handled(updated)
+            }
+        }
+    }
 }
 
 /** 해시를 흉내만 낸다 — Argon2 를 슬라이스 테스트에서 돌리지 않는다. */
