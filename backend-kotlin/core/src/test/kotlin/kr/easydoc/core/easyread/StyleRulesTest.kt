@@ -51,8 +51,8 @@ class StyleRulesTest {
         @Test
         @DisplayName("결과 순서가 사전 선언 순서를 따른다")
         fun `사전 선언 순서로 돌려준다`() {
-            val found = findDifficultWords("금일 중으로 서류를 제출하고, 완납하고, 신청하고, 접수하세요.")
-            assertThat(found).containsExactly("금일", "제출", "접수", "완납")
+            val found = findDifficultWords("금일 중으로 서류를 동봉하고, 완납하고, 신청하고, 열람하세요.")
+            assertThat(found).containsExactly("금일", "동봉", "열람", "완납")
         }
 
         @Test
@@ -101,46 +101,46 @@ class StyleRulesTest {
         @Test
         @DisplayName("조사·어미가 곧장 붙으면 복합어가 아니라 여전히 잡는다")
         fun `조사와 서술 어미가 붙으면 낱말 경계로 본다`() {
-            assertThat(findDifficultWords("이 규정은 다음 달부터 시행을 시작합니다.")).contains("시행")
-            assertThat(findDifficultWords("법령은 오늘부터 시행합니다.")).contains("시행")
-            assertThat(findDifficultWords("새 규정이 다음 달에 시행됩니다.")).contains("시행")
-            assertThat(findDifficultWords("이 계좌는 대표자 명의로 되어 있습니다.")).contains("명의")
+            assertThat(findDifficultWords("이 규정은 다음 달부터 실시를 시작합니다.")).contains("실시")
+            assertThat(findDifficultWords("법령은 오늘부터 실시합니다.")).contains("실시")
+            assertThat(findDifficultWords("새 규정이 다음 달에 실시됩니다.")).contains("실시")
+            assertThat(findDifficultWords("이 계좌는 대표자 성명으로 되어 있습니다.")).contains("성명")
         }
 
         @Test
         @DisplayName("-ㄴ/-ㄹ/-ㅁ 활용형(선어말 축약 음절)도 낱말 경계로 본다")
         fun `선어말 축약 어미가 붙어도 잡는다`() {
-            assertThat(findDifficultWords("법령을 오늘 시행한다.")).contains("시행")
-            assertThat(findDifficultWords("어제 시행된 규정을 확인하세요.")).contains("시행")
-            assertThat(findDifficultWords("이미 시행한 규정입니다.")).contains("시행")
-            assertThat(findDifficultWords("내년에 시행할 때 다시 안내합니다.")).contains("시행")
-            assertThat(findDifficultWords("시행함으로써 효력이 생깁니다.")).contains("시행")
-            assertThat(findDifficultWords("이 규정은 시행 중입니다.")).contains("시행")
+            assertThat(findDifficultWords("법령을 오늘 실시한다.")).contains("실시")
+            assertThat(findDifficultWords("어제 실시된 규정을 확인하세요.")).contains("실시")
+            assertThat(findDifficultWords("이미 실시한 규정입니다.")).contains("실시")
+            assertThat(findDifficultWords("내년에 실시할 때 다시 안내합니다.")).contains("실시")
+            assertThat(findDifficultWords("실시함으로써 효력이 생깁니다.")).contains("실시")
+            assertThat(findDifficultWords("이 규정은 실시 중입니다.")).contains("실시")
             assertThat(findDifficultWords("업무를 위탁시킨 담당자에게 문의하세요.")).contains("위탁")
         }
 
         @Test
         @DisplayName("낱말 뒤에 문장부호가 오거나 문장 끝이어도 잡는다")
         fun `문장부호나 문장 끝 뒤에서도 낱말 경계로 본다`() {
-            assertThat(findDifficultWords("서류를 오늘 안에 제출.")).contains("제출")
+            assertThat(findDifficultWords("서류를 오늘 안에 동봉.")).contains("동봉")
             assertThat(findDifficultWords("완납")).contains("완납")
         }
 
         @Test
         @DisplayName("괄호 내용이 사전 뜻풀이와 무관하면 뜻풀이로 보지 않는다")
         fun `괄호 안에 한글이 있어도 사전 뜻풀이가 아니면 잡는다`() {
-            // "명의" -> "이름" 이 사전 뜻풀이다 — 괄호 내용이(다듬고 공백을 모은 뒤) 그 값과
+            // "성명" -> "이름" 이 사전 뜻풀이다 — 괄호 내용이(다듬고 공백을 모은 뒤) 그 값과
             // **정확히 같을 때만** 뜻풀이로 본다. 포함 관계는 보지 않는다 — "이름 없음"·
             // "이름표"처럼 "이름"을 부분 문자열로 담아도 뜻이 다른 말까지 억누르면 안 된다.
-            assertThat(DIFFICULT_WORD_REPLACEMENTS.getValue("명의")).isEqualTo("이름")
-            assertThat(findDifficultWords("법령이 시행(예정)입니다.")).contains("시행")
-            assertThat(findDifficultWords("법령이 시행(추후 확정)입니다.")).contains("시행")
-            assertThat(findDifficultWords("명의(공동명의)가 여럿인 계약입니다.")).contains("명의")
-            assertThat(findDifficultWords("이 규정은 시행(2026년 9월)됩니다.")).contains("시행")
-            assertThat(findDifficultWords("명의(이름 없음)가 표시됩니다.")).contains("명의")
-            assertThat(findDifficultWords("명의(이름표)를 확인하세요.")).contains("명의")
-            assertThat(findDifficultWords("명의(이름)가 개인인 리스 차량입니다.")).isEmpty()
-            assertThat(findDifficultWords("명의( 이름 )가 개인인 리스 차량입니다.")).isEmpty()
+            assertThat(DIFFICULT_WORD_REPLACEMENTS.getValue("성명")).isEqualTo("이름")
+            assertThat(findDifficultWords("법령이 실시(예정)입니다.")).contains("실시")
+            assertThat(findDifficultWords("법령이 실시(추후 확정)입니다.")).contains("실시")
+            assertThat(findDifficultWords("성명(공동성명)이 여럿인 계약입니다.")).contains("성명")
+            assertThat(findDifficultWords("이 규정은 실시(2026년 9월)됩니다.")).contains("실시")
+            assertThat(findDifficultWords("성명(이름 없음)이 표시됩니다.")).contains("성명")
+            assertThat(findDifficultWords("성명(이름표)을 확인하세요.")).contains("성명")
+            assertThat(findDifficultWords("성명(이름)이 개인인 리스 차량입니다.")).isEmpty()
+            assertThat(findDifficultWords("성명( 이름 )이 개인인 리스 차량입니다.")).isEmpty()
         }
     }
 
@@ -149,7 +149,7 @@ class StyleRulesTest {
     inner class StyleChecking {
         @Test
         fun `쉼표가 상한을 넘으면 지적한다`() {
-            val result = checkStyle("금일 중으로 서류를 제출하고, 완납하고, 신청하고, 접수하세요.")
+            val result = checkStyle("금일 중으로 서류를 동봉하고, 완납하고, 신청하고, 열람하세요.")
 
             assertThat(result.totalSentences).isEqualTo(1)
             assertThat(result.passed).isFalse()
@@ -157,8 +157,8 @@ class StyleRulesTest {
                 .containsExactly(
                     "쉼표 과다(한 문장 한 정보 위반 의심)",
                     "어려운 표현 잔존(금일)",
-                    "어려운 표현 잔존(제출)",
-                    "어려운 표현 잔존(접수)",
+                    "어려운 표현 잔존(동봉)",
+                    "어려운 표현 잔존(열람)",
                     "어려운 표현 잔존(완납)",
                 )
         }

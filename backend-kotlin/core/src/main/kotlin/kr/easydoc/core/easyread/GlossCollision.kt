@@ -37,6 +37,10 @@ private const val JONGSEONG_MIEUM = 16
  * 이 집합 전체를 포함하는지 불변식으로 강제하므로, 값이 사라진 항목은 여기서도
  * 함께 뺀다 — 남겨 둬도 [NOMINAL_GLOSSES] 계산에는 영향이 없지만(사전에 없는
  * 값은 애초에 걸러지지 않는다) 죽은 참조가 된다.
+ *
+ * 2026-09-08: "널리 알림"(공고)은 backlog §1.5 항목 2 감사로 [DIFFICULT_WORD_REPLACEMENTS]
+ * 에서 "공고" 항목 자체가 빠지면서 값으로도 사라져 함께 뺐다(`DifficultWords.kt` 주석
+ * 참고). "알림"은 "통지"가 남아 있으므로 유지한다.
  */
 val LEXICALIZED_GLOSSES: Set<String> =
     setOf(
@@ -44,7 +48,6 @@ val LEXICALIZED_GLOSSES: Set<String> =
         "밤",
         "처음",
         "알림",
-        "널리 알림",
         "맞춤",
         "붙임",
         "같음",

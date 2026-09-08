@@ -39,7 +39,7 @@ class PromptsTest {
             val listed = listedAlways(systemPromptOf("금일 중 서류를 지참하세요."))
 
             assertThat(listed).containsExactly("금일", "지참")
-            assertThat(listed).doesNotContain("경감", "별도", "제출")
+            assertThat(listed).doesNotContain("경감", "별도", "동봉")
         }
 
         @Test
@@ -51,11 +51,11 @@ class PromptsTest {
         @Test
         @DisplayName("목록 순서는 등장 순서가 아니라 사전 정의 순서다")
         fun `사전 순서로 싣는다`() {
-            val dictionaryOrder = listedAlways(systemPromptOf("금일 지참 제출"))
-            val reversedAppearance = listedAlways(systemPromptOf("제출 지참 금일"))
+            val dictionaryOrder = listedAlways(systemPromptOf("금일 지참 동봉"))
+            val reversedAppearance = listedAlways(systemPromptOf("동봉 지참 금일"))
 
             assertThat(dictionaryOrder).isEqualTo(reversedAppearance)
-            assertThat(dictionaryOrder).containsExactly("금일", "지참", "제출")
+            assertThat(dictionaryOrder).containsExactly("금일", "지참", "동봉")
         }
 
         @Test

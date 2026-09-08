@@ -323,11 +323,13 @@ class ConvertDocumentUseCaseTest {
         @Test
         @DisplayName("악화되면 1차 결과를 채택하되 토큰은 두 호출의 합이다")
         fun `악화되면 기각하고 토큰은 합산한다`() {
+            // draftWithIssue(위반 1건: 금일)보다 위반이 더 많은 보정문 — 위반 2건(금일·지참).
+            val worseThanDraft = "금일 서류를 지참하십시오."
             val provider =
                 FakeLlmProvider(
                     listOf(
                         reply(draftWithIssue, inputTokens = 120, outputTokens = 45),
-                        reply(source, inputTokens = 80, outputTokens = 30),
+                        reply(worseThanDraft, inputTokens = 80, outputTokens = 30),
                     ),
                 )
 

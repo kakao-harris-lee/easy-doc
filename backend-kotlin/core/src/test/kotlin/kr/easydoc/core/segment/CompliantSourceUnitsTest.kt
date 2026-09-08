@@ -30,8 +30,8 @@ class CompliantSourceUnitsTest {
     fun `어려운 표현과 이중 피동 단위도 빠진다`() {
         val result =
             compliantSourceUnits(
-                // "공고를"의 "를"이 낱말 경계 조사라 "공고"가 온전한 낱말로 잡힌다(DifficultWords.kt).
-                listOf("짧은 문장입니다.", "공고를 확인하세요.", "결과가 발표되어지다."),
+                // "통지를"의 "를"이 낱말 경계 조사라 "통지"가 온전한 낱말로 잡힌다(DifficultWords.kt).
+                listOf("짧은 문장입니다.", "통지를 확인하세요.", "결과가 발표되어지다."),
             )
 
         assertThat(result).containsExactly(0)
@@ -48,7 +48,7 @@ class CompliantSourceUnitsTest {
     fun `여러 통과 단위가 오름차순 중복 없이 담긴다`() {
         val result =
             compliantSourceUnits(
-                listOf("짧은 문장입니다.", "공고를 확인하세요.", "다시 짧은 문장이다."),
+                listOf("짧은 문장입니다.", "통지를 확인하세요.", "다시 짧은 문장이다."),
             )
 
         assertThat(result).containsExactly(0, 2)
