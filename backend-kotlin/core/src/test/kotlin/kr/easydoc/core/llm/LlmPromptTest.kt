@@ -59,17 +59,17 @@ class LlmPromptTest {
     fun `보정 프롬프트를 만든다`() {
         val issue =
             SentenceIssue(
-                sentence = "신청을 접수합니다.",
+                sentence = "신청을 열람합니다.",
                 kind = StyleRuleKind.DIFFICULT_WORD,
-                reason = "어려운 낱말: 접수",
-                word = "접수",
+                reason = "어려운 낱말: 열람",
+                word = "열람",
             )
 
-        val prompt = LlmPrompt.forRepair(ModelDraft("신청을 접수합니다."), listOf(issue), documentIds = fixedIds)
+        val prompt = LlmPrompt.forRepair(ModelDraft("신청을 열람합니다."), listOf(issue), documentIds = fixedIds)
 
         assertThat(prompt.user).contains("<변환문 id=\"0123456789ab\">")
         assertThat(prompt.user).contains("[고칠 곳]")
-        assertThat(prompt.user).contains("신청을 접수합니다.")
+        assertThat(prompt.user).contains("신청을 열람합니다.")
         assertThat(prompt.system).contains("[고치는 방법]")
     }
 

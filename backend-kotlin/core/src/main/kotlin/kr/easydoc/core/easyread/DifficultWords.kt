@@ -37,7 +37,23 @@ package kr.easydoc.core.easyread
 // `DIFFICULT_WORD_REPLACEMENTS.values.containsAll(LEXICALIZED_GLOSSES)` 도 불변식으로
 // 강제하므로 그 파일에서도 이 7개를 함께 뺐다(해당 파일 주석 참고).
 
-/** 어려운 한자어·행정 용어 → 쉬운 표현 사전 (167개). */
+// 2026-09-08 감사(backlog §1.5 항목 2, 선택지 ⓐ): 아래 13낱말을 이 목록에서 뺐다 —
+// 머리 주석 원칙 "행정 문서 밖에서는 거의 쓰지 않는 말만 넣는다"에 어긋나는 행정
+// 일반어라서다. 4차 유료 측정(2026-09-07)에서 골든 105의 DIFFICULT_WORD 위반 26건·
+// 042의 21건이 절 제목·공고번호·기관 표기에 쓰인 이 낱말들 때문이었다("선정기준"·
+// "최종 평가"·"공고 제2025-544호"·"절차" 등). 선정 최종 공고 절차 작성 제출 지급
+// 시행 접수 담당자 경과 명의 연간. 이 15낱말은 모두 easy-dictionary 표제어가 아니라
+// 2026-08-30 흡수 81낱말과는 다른 계열의 제거다 — 사전 지침으로 대체하는 것이 아니라
+// "쉬운 글에서도 쓰는 말"이라 지침 자체가 필요 없다는 판단이다. 대상자·신청인은
+// 행정 명사라 뜻풀이 제안은 남기되(맵에는 남는다) "지원 대상자" 같은 제목 표기를
+// 위반으로 세지 않도록 아래 [PROMPT_ONLY_WORDS] 로 옮겼다.
+//
+// 위 제거로 [GlossCollision.kt] 의 `LEXICALIZED_GLOSSES` 가 담고 있던 "널리 알림"
+// (공고의 값)이 더 이상 이 맵의 값으로 존재하지 않게 됐다. `StyleRuleDataSnapshotTest`
+// 가 `DIFFICULT_WORD_REPLACEMENTS.values.containsAll(LEXICALIZED_GLOSSES)` 를
+// 불변식으로 강제하므로 그 파일에서도 "널리 알림"을 함께 뺐다(해당 파일 주석 참고).
+
+/** 어려운 한자어·행정 용어 → 쉬운 표현 사전 (154개). */
 val DIFFICULT_WORD_REPLACEMENTS: Map<String, String> =
     linkedMapOf(
         // --- 때·기간 ---
@@ -49,7 +65,6 @@ val DIFFICULT_WORD_REPLACEMENTS: Map<String, String> =
         "차년도" to "다음 해",
         "당해연도" to "그 해",
         "연내" to "올해 안",
-        "연간" to "한 해 동안",
         "격월" to "두 달마다",
         "야간" to "밤",
         "연중" to "일 년 내내",
@@ -63,7 +78,6 @@ val DIFFICULT_WORD_REPLACEMENTS: Map<String, String> =
         "기일" to "정해진 날",
         "도래" to "다가옴",
         "임박" to "가까워짐",
-        "경과" to "지남",
         "개시" to "시작",
         "착수" to "시작함",
         "연장" to "기간을 늘림",
@@ -75,7 +89,6 @@ val DIFFICULT_WORD_REPLACEMENTS: Map<String, String> =
         "필히" to "반드시",
         "당초" to "처음",
         "최초" to "처음",
-        "최종" to "마지막",
         "우선" to "먼저",
         "통상" to "보통",
         // --- 서류·신청 ---
@@ -88,12 +101,9 @@ val DIFFICULT_WORD_REPLACEMENTS: Map<String, String> =
         // 값 감사(2026-08-09): "적음"은 '양이 적음'과 동음이의라 뜻풀이로 오해를 만든다.
         "표기" to "적는 것",
         "명시" to "분명히 밝힘",
-        "작성" to "쓰기",
         "날인" to "도장 찍기",
         "첨부" to "붙임",
-        "제출" to "내기",
         "미제출" to "내지 않음",
-        "접수" to "받음",
         "접수처" to "받는 곳",
         "문의처" to "물어볼 곳",
         "발급" to "내어 줌",
@@ -103,7 +113,6 @@ val DIFFICULT_WORD_REPLACEMENTS: Map<String, String> =
         "조회" to "찾아봄",
         "구두로" to "말로",
         "통지" to "알림",
-        "공고" to "널리 알림",
         "게첨" to "내붙임",
         "배부" to "나눠 줌",
         "배포" to "널리 나눠 줌",
@@ -135,12 +144,8 @@ val DIFFICULT_WORD_REPLACEMENTS: Map<String, String> =
         "임차" to "빌려 씀",
         "초과" to "넘음",
         // --- 사람·자격·장소 ---
-        "대상자" to "해당하는 사람",
-        "신청인" to "신청한 사람",
         "대리인" to "대신하는 사람",
-        "담당자" to "맡은 사람",
         "성명" to "이름",
-        "명의" to "이름",
         "연령" to "나이",
         "전입" to "이사 옴",
         "전출" to "이사 감",
@@ -151,12 +156,10 @@ val DIFFICULT_WORD_REPLACEMENTS: Map<String, String> =
         "유선" to "전화",
         "퇴거" to "집에서 나감",
         // --- 절차·행정 ---
-        "절차" to "차례",
         "사유" to "이유",
         "결격사유" to "안 되는 이유",
         "유의사항" to "조심할 점",
         "실시" to "진행함",
-        "시행" to "실제로 함",
         "불이행" to "지키지 않음",
         "준수" to "지킴",
         "위반" to "어김",
@@ -183,7 +186,6 @@ val DIFFICULT_WORD_REPLACEMENTS: Map<String, String> =
         // 명사형 값은 그대로 [NOMINAL_GLOSSES] 검출 패턴이 된다.
         "위탁" to "일을 대신 맡기는 것",
         "연계" to "이어 줌",
-        "선정" to "뽑음",
         "선발" to "뽑음",
         "배정" to "나눠 정함",
         "개최" to "엶",
@@ -219,11 +221,14 @@ val DIFFICULT_WORD_REPLACEMENTS: Map<String, String> =
         // --- 문맥 판단이 필요한 표현 (PROMPT_ONLY_WORDS — 자동 채점 제외) ---
         "하기" to "아래",
         "게시" to "붙임",
+        // 2026-09-08 감사: 행정 명사라 뜻풀이 제안은 남기되, "지원 대상자"·"신청인
+        // 확인" 같은 제목 표기를 위반으로 세지 않도록 자동 채점에서 뺐다.
+        "대상자" to "해당하는 사람",
+        "신청인" to "신청한 사람",
         // --- 복합어 안에 박혀 채점에서 내렸다가 복귀한 표현 ---
-        // 낱말 시작 위치 매칭(find_difficult_words)이 "소득인정액"의 '정액',
-        // "대지급금"의 '지급'을 더 이상 위반으로 세지 않으므로 채점 대상으로 돌린다.
+        // 낱말 시작 위치 매칭(find_difficult_words)이 "소득인정액"의 '정액'을 더 이상
+        // 위반으로 세지 않으므로 채점 대상으로 돌린다.
         "정액" to "정해진 금액",
-        "지급" to "드리기",
     )
 
 /** 프롬프트 치환 지시에만 쓰고 자동 채점에서는 제외하는 표현. */
@@ -231,4 +236,6 @@ val PROMPT_ONLY_WORDS: Set<String> =
     setOf(
         "하기",
         "게시",
+        "대상자",
+        "신청인",
     )
