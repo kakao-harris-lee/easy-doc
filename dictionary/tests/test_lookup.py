@@ -728,6 +728,26 @@ class TestGlossStyle(GlossStyleTestCase):
         self.assertIn("과태료 — 뜻: 정해진 날짜보다 늦어서 더 내는 돈", ctx)
         self.assertNotIn("과태료(정해진 날짜보다 늦어서 더 내는 돈)", ctx, "sentence 스타일은 괄호 템플릿을 보여주면 안 된다")
 
+    def test_sentence_style_has_gloss_note_right_after_the_title(self) -> None:
+        # 2026-09-09: 5차 유료 측정에서 '환수'(easy_term=되거둠)가 항목 줄을 치환표로 오독한
+        # 모델에 의해 원형 없이 전부 치환됐다(022 8회·045 4회). "뜻:"이 힌트일 뿐이라는 안내를
+        # GLOSS 구역 제목 바로 다음 줄에 무조건 찍는다 — Kotlin 이식본(GLOSS_SECTION_NOTE)과
+        # 한 글자도 달라선 안 된다.
+        ctx = self.dict.build_prompt_context(self.text)
+        expected_block = (
+            "### 원래 말은 남기고, 바로 다음 문장에서 쉽게 풀어 설명하세요 (원래 말을 지우거나 괄호로 붙이지 마세요)\n"
+            "「뜻:」은 설명에 쓸 힌트일 뿐입니다. 그 말을 원래 말 자리에 넣지 마세요. "
+            "힌트가 어색한 말이면 자연스러운 다른 표현으로 풀어 쓰세요.\n"
+            "- 과태료 — 뜻: 정해진 날짜보다 늦어서 더 내는 돈"
+        )
+        self.assertIn(expected_block, ctx)
+
+    def test_paren_style_does_not_get_the_sentence_style_note(self) -> None:
+        # paren은 Kotlin이 이식하지 않은 폐기 예정 형식이라 대조 대상이 아니다 — sentence 전용
+        # 안내가 새지 않았는지만 확인한다.
+        ctx = self.dict.build_prompt_context(self.text, gloss_style="paren")
+        self.assertNotIn("「뜻:」은 설명에 쓸 힌트일 뿐입니다", ctx)
+
     def test_paren_style_preserves_legacy_format(self) -> None:
         ctx = self.dict.build_prompt_context(self.text, gloss_style="paren")
         self.assertIn("### 원래 말을 남기고 괄호로 설명하세요 (지우면 안 됩니다)", ctx)
@@ -757,6 +777,45 @@ class TestGlossStyle(GlossStyleTestCase):
         ctx = self.dict.build_prompt_context(self.text, gloss_style="paren")
         self.assertIn("전: 내방하세요.", ctx)
         self.assertIn("전: 과태료를 냅니다.", ctx, "paren 스타일은 예문 형식과 모순되지 않으므로 그대로 유지되어야 한다")
+
+
+# ============================================================================
+# GLOSS 안내 줄의 예산 면제 (2026-09-09, 사용자 결정)
+#
+# 안내 줄을 추가한 뒤 참조 픽스처 58건을 재생성했더니 18건에서 낱말 28개가 예산에
+# 밀려 실제로 빠졌다(실측). 안내 줄은 지시문이지 사전이 문서에서 찾아낸 낱말 정보가
+# 아니므로 그 낱말들이 밀려나는 것을 받아들이지 않기로 했다 — build_prompt_context()의
+# 문자 예산 비교는 _budgeted_char_count()로 안내 줄의 길이를 뺀 값과 견준다.
+# ============================================================================
+class TestGlossNoteBudgetExemption(GlossStyleTestCase):
+    def test_note_length_does_not_count_against_the_char_budget(self) -> None:
+        from easydict.lookup import _budgeted_char_count
+
+        full = self.dict.build_prompt_context(self.text)
+        exact_budget = _budgeted_char_count(full, "sentence")
+        # 안내 줄을 포함해 그대로 재면(len) 물리적 길이가 exact_budget보다 커야 한다 —
+        # 그래야 이 테스트가 면제 없이는 반드시 잘림이 일어났을 경계를 재는 것이다.
+        self.assertGreater(len(full), exact_budget)
+
+        result = self.dict.build_prompt_context(self.text, max_chars=exact_budget)
+        self.assertEqual(result, full, "안내 줄 길이만큼 예산이 빠듯해도 잘림이 일어나면 안 된다")
+        self.assertIn("과태료 — 뜻: 정해진 날짜보다 늦어서 더 내는 돈", result)
+        self.assertNotIn("위험도·우선순위가 높은 항목을 우선했으며", result, "잘림 안내가 붙으면 안 된다")
+
+    def test_paren_style_gets_no_exemption_and_respects_max_chars(self) -> None:
+        # 회귀 재현(리뷰 지적): paren 스타일에는 안내 줄이 찍히지 않는데(render()가
+        # gloss_style == "sentence"일 때만 찍는다) _budgeted_char_count()가 스타일을
+        # 가리지 않고 78자를 항상 빼면, paren 출력이 max_chars를 78자까지 초과한다.
+        # 면제는 sentence 스타일에만 적용돼야 한다.
+        full_paren = self.dict.build_prompt_context(self.text, gloss_style="paren")
+        tight_budget = len(full_paren) - 1
+
+        result = self.dict.build_prompt_context(self.text, max_chars=tight_budget, gloss_style="paren")
+        self.assertLessEqual(
+            len(result), tight_budget,
+            f"paren 스타일은 안내 줄이 없으므로 면제 없이 max_chars({tight_budget})를 지켜야 하는데 "
+            f"{len(result)}자를 반환했다",
+        )
 
 
 # ============================================================================

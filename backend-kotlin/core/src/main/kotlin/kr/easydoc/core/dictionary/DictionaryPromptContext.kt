@@ -121,13 +121,17 @@ private fun fitToBudget(
             renderedTerms = ranked.size,
             totalTerms = totalFound,
         )
-    if (budget == null || charCountOf(first.text) <= budget) return first
+    // budgetedCharCount 로 잰다 — GLOSS 안내 줄(지시문이지 낱말 정보가 아니다)의 길이는
+    // 예산 판정에서 뺀다(2026-09-09 사용자 결정). 그러지 않으면 안내 한 줄이 예산 상한에
+    // 걸려 있던 문서에서 낱말 항목 자리를 빼앗는다 — 상세 근거는 DictionaryContextLines.kt
+    // 의 budgetedCharCount KDoc 참고.
+    if (budget == null || budgetedCharCount(first.text) <= budget) return first
 
     // 여기부터는 예산 때문에 반드시 뭔가 잘리므로 잘림 안내를 항상 켠다.
     var best = first
     for (fallback in budgetFallbacks(ranked, totalFound, maxExamples)) {
         best = fallback
-        if (charCountOf(fallback.text) <= budget) break
+        if (budgetedCharCount(fallback.text) <= budget) break
     }
     return best
 }

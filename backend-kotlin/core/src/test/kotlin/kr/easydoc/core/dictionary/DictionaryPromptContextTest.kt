@@ -59,6 +59,7 @@ class DictionaryPromptContextTest {
                 - 내방 → 방문
 
                 ### 원래 말은 남기고, 바로 다음 문장에서 쉽게 풀어 설명하세요 (원래 말을 지우거나 괄호로 붙이지 마세요)
+                「뜻:」은 설명에 쓸 힌트일 뿐입니다. 그 말을 원래 말 자리에 넣지 마세요. 힌트가 어색한 말이면 자연스러운 다른 표현으로 풀어 쓰세요.
                 - 과태료 — 뜻: 정해진 날짜보다 늦어서 더 내는 돈
                   이유: 정해진 날짜를 넘겨서 더 내게 되는 돈입니다.
                   주의: 벌금과는 법적으로 다른 개념입니다. 바꾸지 말고 그대로 쓰세요.
@@ -85,6 +86,145 @@ class DictionaryPromptContextTest {
     }
 
     @Nested
+    @DisplayName("GLOSS 구역 안내 줄 (2026-09-09)")
+    inner class GlossSectionNote {
+        // 5차 유료 측정: '환수'(easy_term=되거둠, risk=high)가 항목 줄("- 환수 — 뜻: 되거둠")을
+        // 치환표로 읽은 모델에 의해 원형 없이 전부 되거두다로 치환됐다(022 8회·045 4회).
+        // "뜻:"이 힌트일 뿐 원래 말 자리에 넣을 문자열이 아니라는 것을 GLOSS 구역에만 명시한다.
+        private val index =
+            DictionaryFixture()
+                .add(
+                    DictionaryEntry(
+                        term = "내방",
+                        easyTerm = "방문",
+                        strategy = ReplaceStrategy.SUBSTITUTE,
+                        risk = RiskLevel.NONE,
+                        priority = 120,
+                    ),
+                ).add(
+                    DictionaryEntry(
+                        term = "환수",
+                        easyTerm = "되거둠",
+                        strategy = ReplaceStrategy.GLOSS,
+                        risk = RiskLevel.HIGH,
+                        priority = 130,
+                    ),
+                ).add(
+                    DictionaryEntry(
+                        term = "국민기초생활 보장법",
+                        easyTerm = "국민기초생활 보장법",
+                        strategy = ReplaceStrategy.KEEP,
+                        risk = RiskLevel.HIGH,
+                        priority = 200,
+                    ),
+                ).build()
+
+        private val text = "내방하여 환수 대상이 되면 국민기초생활 보장법에 따라 처리됩니다."
+
+        @Test
+        @DisplayName("GLOSS 구역 제목 바로 다음 줄에 힌트 안내 문장이 붙는다")
+        fun `GLOSS 구역에 안내 문장이 붙는다`() {
+            val context = index.buildPromptContext(text, unlimited)
+            val expectedBlock =
+                "### 원래 말은 남기고, 바로 다음 문장에서 쉽게 풀어 설명하세요 " +
+                    "(원래 말을 지우거나 괄호로 붙이지 마세요)\n" +
+                    "「뜻:」은 설명에 쓸 힌트일 뿐입니다. 그 말을 원래 말 자리에 넣지 마세요. " +
+                    "힌트가 어색한 말이면 자연스러운 다른 표현으로 풀어 쓰세요.\n" +
+                    "- 환수 — 뜻: 되거둠"
+            assertThat(context).contains(expectedBlock)
+        }
+
+        @Test
+        @DisplayName("GLOSS 항목이 없어도 구역 제목과 같은 조건으로 안내 문장이 붙는다")
+        fun `GLOSS 항목이 없어도 안내 문장이 붙는다`() {
+            val context = index.buildPromptContext("내방하세요.", unlimited)
+            val expectedBlock =
+                "### 원래 말은 남기고, 바로 다음 문장에서 쉽게 풀어 설명하세요 " +
+                    "(원래 말을 지우거나 괄호로 붙이지 마세요)\n" +
+                    "「뜻:」은 설명에 쓸 힌트일 뿐입니다. 그 말을 원래 말 자리에 넣지 마세요. " +
+                    "힌트가 어색한 말이면 자연스러운 다른 표현으로 풀어 쓰세요.\n"
+            assertThat(context).contains(expectedBlock)
+        }
+
+        @Test
+        @DisplayName("SUBSTITUTE·KEEP 구역에는 안내 문장을 넣지 않는다")
+        fun `다른 구역에는 안내 문장이 없다`() {
+            val context = index.buildPromptContext(text, unlimited)
+            val noteLine =
+                "「뜻:」은 설명에 쓸 힌트일 뿐입니다. 그 말을 원래 말 자리에 넣지 마세요. " +
+                    "힌트가 어색한 말이면 자연스러운 다른 표현으로 풀어 쓰세요."
+            assertThat(context.split(noteLine)).hasSize(2) // 딱 한 번만 등장 = GLOSS 구역뿐
+            val substituteSection = context.substringAfter("### 바꿔 쓰세요").substringBefore("###")
+            val keepSection = context.substringAfterLast("### 절대 바꾸지 마세요")
+            assertThat(substituteSection).doesNotContain(noteLine)
+            assertThat(keepSection).doesNotContain(noteLine)
+        }
+    }
+
+    @Nested
+    @DisplayName("GLOSS 안내 줄의 예산 면제 (2026-09-09)")
+    inner class GlossNoteBudgetExemption {
+        // 안내 줄을 처음 추가했을 때 재생성한 참조 픽스처 58건 중 18건에서 낱말 28개가
+        // 예산에 밀려 실제로 빠졌다(실측). 안내 줄은 지시문이지 사전이 문서에서 찾아낸
+        // 내용이 아니므로, 그 낱말들이 밀려나는 것을 사용자가 받아들이지 않기로 했다 —
+        // 예산 비교에서는 안내 줄의 길이를 뺀다(budgetedCharCount).
+        private val index =
+            DictionaryFixture()
+                .add(
+                    DictionaryEntry(
+                        term = "가가",
+                        easyTerm = "쉬운가가",
+                        strategy = ReplaceStrategy.GLOSS,
+                        risk = RiskLevel.HIGH,
+                        priority = 190,
+                        definition = "가가에 대한 설명입니다.",
+                    ),
+                ).add(
+                    DictionaryEntry(
+                        term = "나나",
+                        easyTerm = "쉬운나나",
+                        strategy = ReplaceStrategy.GLOSS,
+                        risk = RiskLevel.HIGH,
+                        priority = 180,
+                        definition = "나나에 대한 설명입니다.",
+                    ),
+                ).build()
+
+        private val text = "가가 나나 안내입니다."
+
+        @Test
+        @DisplayName("안내 줄의 물리적 길이만큼 예산이 빠듯해도 낱말이 밀려나지 않는다")
+        fun `안내 줄 길이는 예산 비교에서 빠진다`() {
+            val full = index.buildPromptContext(text, unlimited)
+            // 이 예산은 "안내 줄을 뺀 길이"와 정확히 같다 — 안내 줄을 예산에 포함해 재면
+            // (charCountOf) 물리적 길이가 이 값보다 커서 반드시 잘림이 일어나야 하지만,
+            // 면제(budgetedCharCount)가 적용되면 잘림 없이 그대로 나와야 한다.
+            val exactBudget = budgetedCharCount(full)
+            assertThat(charCountOf(full)).isGreaterThan(exactBudget)
+
+            val result = index.buildPromptContext(text, unlimited.copy(maxChars = exactBudget))
+            assertThat(result).isEqualTo(full)
+            assertThat(result).contains("- 가가 — 뜻: 쉬운가가", "- 나나 — 뜻: 쉬운나나")
+            assertThat(result).doesNotContain("용어 2개 중")
+        }
+
+        @Test
+        @DisplayName("안내 줄 하나만큼 모자란 예산이면(면제 없이는 실패할 경계) 그래도 두 낱말 다 싣는다")
+        fun `경계값에서도 낱말이 살아남는다`() {
+            val full = index.buildPromptContext(text, unlimited)
+            val exactBudget = budgetedCharCount(full)
+            // charCountOf(full) 과 exactBudget 사이의 모든 예산에서, 면제가 없었다면 잘림이
+            // 일어났을 구간이다. 면제가 적용되면 이 구간 전체에서 잘림이 없어야 한다.
+            for (budget in exactBudget until charCountOf(full)) {
+                val result = index.buildPromptContext(text, unlimited.copy(maxChars = budget))
+                assertThat(result)
+                    .withFailMessage("예산 %s 에서 낱말이 밀려났다:%n%s", budget, result)
+                    .isEqualTo(full)
+            }
+        }
+    }
+
+    @Nested
     @DisplayName("매칭 0건")
     inner class ZeroMatches {
         private val index =
@@ -100,8 +240,9 @@ class DictionaryPromptContextTest {
                 ).build()
 
         /**
-         * 구역 제목만 남은 골격(130자). **빈 문자열이 아니다** — 참조 구현으로 대조 확인한
-         * 값이고, 참조 출력 픽스처가 이 형식에 맞춰 생성돼 있어 바이트 단위로 대조된다.
+         * 구역 제목만 남은 골격(208자, 2026-09-09 GLOSS 안내 줄 추가로 130자에서 늘었다).
+         * **빈 문자열이 아니다** — 참조 구현으로 대조 확인한 값이고, 참조 출력 픽스처가 이
+         * 형식에 맞춰 생성돼 있어 바이트 단위로 대조된다.
          *
          * "매칭이 없으면 프롬프트에 아예 싣지 않는다"는 판단은 **제품 배선 조각의 몫**이지
          * 엔진의 몫이 아니다. 엔진은 참조 구현을 그대로 따른다 — 여기서 빈 문자열로 "고치면"
@@ -114,12 +255,16 @@ class DictionaryPromptContextTest {
             ### 바꿔 쓰세요
 
             ### 원래 말은 남기고, 바로 다음 문장에서 쉽게 풀어 설명하세요 (원래 말을 지우거나 괄호로 붙이지 마세요)
+            「뜻:」은 설명에 쓸 힌트일 뿐입니다. 그 말을 원래 말 자리에 넣지 마세요. 힌트가 어색한 말이면 자연스러운 다른 표현으로 풀어 쓰세요.
 
             ### 절대 바꾸지 마세요
             """.trimIndent() + "\n"
 
-        /** 사전 용어가 하나도 없는 문서. 비율 상한(1.0)이 골격(130자)보다 커지도록 충분히 길다. */
-        private val noTerms = "이 안내문에는 사전에 실린 어려운 말이 하나도 나오지 않습니다. ".repeat(4)
+        /**
+         * 사전 용어가 하나도 없는 문서. 비율 상한(1.0)이 골격(208자, 2026-09-09 GLOSS 안내
+         * 줄 추가로 130자에서 늘었다)보다 커지도록 충분히 길다.
+         */
+        private val noTerms = "이 안내문에는 사전에 실린 어려운 말이 하나도 나오지 않습니다. ".repeat(6)
 
         @Test
         @DisplayName("빈 문자열이 아니라 세 구역 골격을 돌려준다")
@@ -129,7 +274,7 @@ class DictionaryPromptContextTest {
             val context = index.buildPromptContext(noTerms, DictionaryContextPolicy())
             assertThat(context).isNotEmpty()
             assertThat(context).isEqualTo(skeleton)
-            assertThat(charCountOf(context)).isEqualTo(130)
+            assertThat(charCountOf(context)).isEqualTo(208)
         }
 
         @Test
@@ -482,8 +627,11 @@ class DictionaryPromptContextTest {
         @DisplayName("예산이 모자라면 항목이 아니라 예문부터 줄인다")
         fun `예문을 먼저 줄인다`() {
             val full = index.buildPromptContext(text, unlimited)
+            // 예산 판정은 budgetedCharCount(GLOSS 안내 줄 길이를 뺀 값)로 이뤄지므로(2026-09-09),
+            // 실제로 잘림을 일으키려면 그 기준으로 1 모자란 예산을 줘야 한다 — charCountOf 기준
+            // 이면 안내 줄만큼 여유가 생겨 잘림이 아예 일어나지 않는다.
             val reduced =
-                index.buildPromptContext(text, unlimited.copy(maxChars = charCountOf(full) - 1))
+                index.buildPromptContext(text, unlimited.copy(maxChars = budgetedCharCount(full) - 1))
 
             assertThat(reduced).contains("- 마마 → 쉬운마마", "- 바바 → 쉬운바바")
             assertThat(reduced.split("  후: ")).hasSizeLessThan(full.split("  후: ").size)

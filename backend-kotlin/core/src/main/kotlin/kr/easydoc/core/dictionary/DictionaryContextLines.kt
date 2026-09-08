@@ -1,5 +1,6 @@
 package kr.easydoc.core.dictionary
 
+import kr.easydoc.core.document.charCountOf
 import kr.easydoc.core.text.unicodeRegex
 
 // 프롬프트 컨텍스트의 **줄 찍기** — 무엇을 실을지는 `DictionaryPromptContext.kt` 가 정한다.
@@ -21,6 +22,45 @@ private const val SUBSTITUTE_SECTION_TITLE = "### 바꿔 쓰세요"
 
 private const val GLOSS_SECTION_TITLE =
     "### 원래 말은 남기고, 바로 다음 문장에서 쉽게 풀어 설명하세요 (원래 말을 지우거나 괄호로 붙이지 마세요)"
+
+/**
+ * GLOSS 구역 제목 바로 다음 줄에 무조건 찍는 안내 한 줄 (2026-09-09).
+ *
+ * 5차 유료 측정에서 easy-dictionary의 `환수`(`easy_term=되거둠`, `risk=high`)가 항목 줄
+ * (`- 환수 — 뜻: 되거둠`)을 치환표로 오독한 모델에 의해 원형을 하나도 남기지 않고 전부
+ * "되거두다"로 치환됐다(문서 022 8회, 문서 045 4회) — 「되거두다」는 표준 국어 낱말이 아니다.
+ * 구역 제목은 이미 "원래 말을 지우거나 괄호로 붙이지 마세요"라고 말하지만, 실패 지점은
+ * 항목 줄 자체였다: `— 뜻: {easy_term}` 형태가 갈아 끼울 문자열을 그대로 쥐여 준다. 게다가
+ * `easy_term`이 어색한 말일 수 있다는 것도 프롬프트가 말하지 않았다. 이 안내는 그 두 가지를
+ * 보완한다 — "뜻:"은 힌트일 뿐이고, 힌트 자체가 어색하면 자연스럽게 풀어 쓰라고 명시한다.
+ */
+private const val GLOSS_SECTION_NOTE =
+    "「뜻:」은 설명에 쓸 힌트일 뿐입니다. 그 말을 원래 말 자리에 넣지 마세요. " +
+        "힌트가 어색한 말이면 자연스러운 다른 표현으로 풀어 쓰세요."
+
+/**
+ * [GLOSS_SECTION_NOTE] 한 줄이 렌더링 문자열에서 차지하는 길이(안내 문장 + 줄바꿈 1개).
+ *
+ * 상수를 하드코딩하지 않고 안내 문장 자체에서 계산한다 — 문구가 바뀌면 면제 길이도 함께
+ * 움직여야지, 둘이 따로 놀면 예산 판정이 조용히 틀어진다. [budgetedCharCount] 가 이 값을 뺀다.
+ */
+private val GLOSS_SECTION_NOTE_BUDGET_EXEMPTION: Int = charCountOf(GLOSS_SECTION_NOTE) + 1
+
+/**
+ * 문자 예산 **판정**에 쓸 길이 (2026-09-09, 사용자 결정).
+ *
+ * [GLOSS_SECTION_NOTE]는 지시문이지 사전에서 뽑은 낱말 정보가 아니다. 렌더링에는 그대로
+ * 남기되(구역 제목과 같은 조건으로 무조건 찍히므로 이 차감이 항상 정확하다), `DictionaryPromptContext`
+ * 의 예산 비교는 이 함수로 재서 안내 줄의 길이를 뺀 값과 예산을 견준다.
+ *
+ * 그러지 않으면 안내 한 줄이 예산 상한에 걸려 있던 문서에서 낱말 항목 자리를 빼앗는다 —
+ * 이 안내를 처음 추가했을 때 재생성한 참조 픽스처 58건 중 18건에서 낱말 28개가 실제로
+ * 빠졌었다(2026-09-09 실측). 안내 줄은 지시문일 뿐 사전이 문서에서 실제로 찾아낸 내용이
+ * 아니므로, 그 낱말들이 밀려나는 것은 이 기능(§7.2 계층적 상세도)의 목적 자체를 예산 부족
+ * 상황에서 스스로 훼손하는 것과 같다. 렌더링 문자열(`renderContextBlock`)은 손대지 않고
+ * 예산 비교 쪽에서만 보정한다.
+ */
+internal fun budgetedCharCount(text: String): Int = charCountOf(text) - GLOSS_SECTION_NOTE_BUDGET_EXEMPTION
 
 private const val KEEP_SECTION_TITLE = "### 절대 바꾸지 마세요"
 
@@ -48,7 +88,7 @@ internal fun renderContextBlock(
     lines += CONTEXT_HEADER
     lines += ""
     appendSection(lines, SUBSTITUTE_SECTION_TITLE, ordered, ReplaceStrategy.SUBSTITUTE)
-    appendSection(lines, GLOSS_SECTION_TITLE, ordered, ReplaceStrategy.GLOSS)
+    appendSection(lines, GLOSS_SECTION_TITLE, ordered, ReplaceStrategy.GLOSS, sectionNote = GLOSS_SECTION_NOTE)
     appendSection(lines, KEEP_SECTION_TITLE, ordered, ReplaceStrategy.KEEP)
     appendExamples(lines, selected, exampleLimit)
     if (showNotice) lines += truncationNotice(totalFound, selected.size)
@@ -62,8 +102,10 @@ private fun appendSection(
     title: String,
     ordered: List<DictionaryMatch>,
     strategy: ReplaceStrategy,
+    sectionNote: String? = null,
 ) {
     lines += title
+    if (sectionNote != null) lines += sectionNote
     ordered
         .filter { it.entry.strategy == strategy }
         .forEach { lines += renderTermLine(it) }
