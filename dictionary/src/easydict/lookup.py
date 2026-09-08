@@ -79,6 +79,59 @@ _GLOSS_SECTION_TITLE: dict[str, str] = {
 }
 
 # ---------------------------------------------------------------------------
+# "sentence" 스타일 GLOSS 구역 안내 한 줄 (2026-09-09, easy-doc A/B 5차 유료 측정).
+#
+# easy-dictionary의 `환수`(easy_term=되거둠, risk=high)가 항목 줄("- 환수 — 뜻: 되거둠")을
+# 치환표로 오독한 모델에 의해 원형을 하나도 남기지 않고 전부 "되거두다"로 치환됐다(문서 022
+# 8회, 문서 045 4회) — 「되거두다」는 표준 국어 낱말이 아니다. 섹션 제목은 이미 "원래 말을
+# 지우거나 괄호로 붙이지 마세요"라고 말하지만, 실패 지점은 항목 줄 자체였다: `— 뜻:
+# {easy_term}` 형태가 갈아 끼울 문자열을 그대로 쥐여 준다. 게다가 `easy_term`이 어색한 말일
+# 수 있다는 것도 프롬프트가 말하지 않았다. Kotlin 이식본(`DictionaryContextLines.kt`)의
+# `GLOSS_SECTION_NOTE`와 한 글자도 다르지 않아야 한다 — 두 구현이 문자열까지 같은지는
+# `DictionaryReferenceContextTest`가 대조한다. "paren" 스타일에는 넣지 않는다(Kotlin이
+# 이식하지 않은 폐기 예정 형식이라 대조 대상이 아니다).
+# ---------------------------------------------------------------------------
+_GLOSS_SECTION_NOTE = (
+    "「뜻:」은 설명에 쓸 힌트일 뿐입니다. 그 말을 원래 말 자리에 넣지 마세요. "
+    "힌트가 어색한 말이면 자연스러운 다른 표현으로 풀어 쓰세요."
+)
+
+# ---------------------------------------------------------------------------
+# 예산 면제 (2026-09-09, 사용자 결정, easy-doc A/B 실측).
+#
+# 안내 줄을 추가한 뒤 참조 픽스처 58건을 재생성했더니 18건에서 낱말 28개가 실제로 빠졌다 —
+# 안내 줄(약 60자)이 build_prompt_context()의 문자 예산 비교(길이 <= effective_max_chars)에
+# 그대로 잡혀, 이미 예산이 빠듯하던 문서에서 낱말 항목 자리를 빼앗은 것이다. 안내 줄은
+# 지시문이지 사전이 문서에서 찾아낸 낱말 정보가 아니므로, 그 대가를 받아들이지 않기로 했다.
+#
+# 렌더링(`render()`)은 그대로 안내 줄을 포함해 내보내되(구역 제목과 같은 조건으로 무조건
+# 찍히므로 아래 상수 차감이 항상 정확하다), 예산 **비교**만 `_budgeted_char_count()`로 재서
+# 안내 줄의 길이를 뺀다. Kotlin 이식본의 `GLOSS_SECTION_NOTE_BUDGET_EXEMPTION`/
+# `budgetedCharCount()`와 값·역할이 같아야 한다 — 갈리면 `DictionaryReferenceContextTest`의
+# 픽스처 대조가 깨진다.
+#
+# **주의(2026-09-09 리뷰 blocker 수정): 면제는 `gloss_style == "sentence"`일 때만 적용한다.**
+# 안내 줄은 `render()`가 `gloss_style == "sentence"`일 때만 찍는다(`paren`에는 찍지 않는다 —
+# Kotlin이 이식하지 않은 폐기 예정 형식이라 대조 대상이 아니다). `paren` 호출에서도 무조건
+# 78자를 빼면 안내 줄이 없는데 없는 것을 빼는 셈이라 실제 출력이 `max_chars`를 그만큼
+# 넘어서는 회귀가 생긴다(리뷰가 실측: 반환 103자, 요청 25자). Kotlin 이식본은 gloss_style
+# 분기가 없으므로(`sentence` 하나만 이식) 이 조건이 필요 없다 — 대칭을 맞추려고 Kotlin
+# 쪽에 무의미한 분기를 넣지 않는다.
+# ---------------------------------------------------------------------------
+_GLOSS_SECTION_NOTE_BUDGET_EXEMPTION = len(_GLOSS_SECTION_NOTE) + 1  # 안내 문장 + 줄바꿈 1개
+
+
+def _budgeted_char_count(text: str, gloss_style: str) -> int:
+    """문자 예산 판정에 쓸 길이.
+
+    `gloss_style == "sentence"`일 때만 `len(text)`에서 GLOSS 안내 줄의 길이를 뺀다 —
+    안내 줄 자체가 그 스타일에서만 찍히기 때문이다(`paren`에는 뺄 것이 없다).
+    """
+    if gloss_style != "sentence":
+        return len(text)
+    return len(text) - _GLOSS_SECTION_NOTE_BUDGET_EXEMPTION
+
+# ---------------------------------------------------------------------------
 # build_prompt_context()의 계층적 상세도 (D-4).
 #
 # 전략별 기본 상세도: substitute(안전, 설명 불필요)=min, gloss(중간 설명)=mid,
@@ -817,6 +870,7 @@ class EasyDict:
         - 내방 → 방문
         <BLANKLINE>
         ### 원래 말은 남기고, 바로 다음 문장에서 쉽게 풀어 설명하세요 (원래 말을 지우거나 괄호로 붙이지 마세요)
+        「뜻:」은 설명에 쓸 힌트일 뿐입니다. 그 말을 원래 말 자리에 넣지 마세요. 힌트가 어색한 말이면 자연스러운 다른 표현으로 풀어 쓰세요.
         - 과태료 — 뜻: 정해진 날짜보다 늦어서 더 내는 돈
           이유: 정해진 날짜를 넘겨서 더 내게 되는 돈입니다.
           주의: 벌금과는 법적으로 다른 개념입니다. 바꾸지 말고 그대로 쓰세요.
@@ -901,6 +955,8 @@ class EasyDict:
             lines.append("")
 
             lines.append(_GLOSS_SECTION_TITLE[gloss_style])
+            if gloss_style == "sentence":
+                lines.append(_GLOSS_SECTION_NOTE)
             for m in gloss:
                 lines.append(self._render_term_line(m, _detail_tier_for(m.strategy, m.risk), gloss_style))
             lines.append("")
@@ -935,7 +991,12 @@ class EasyDict:
         selected = list(ranked)
         examples_limit = max_examples
         out = render(selected, examples_limit, term_truncated)
-        if len(out) <= effective_max_chars:
+        # _budgeted_char_count()로 잰다 — GLOSS 안내 줄(지시문이지 낱말 정보가 아니다)의
+        # 길이는 예산 판정에서 뺀다(2026-09-09 사용자 결정, 위 _GLOSS_SECTION_NOTE_BUDGET_EXEMPTION
+        # 참고). gloss_style을 함께 넘기는 이유: 안내 줄은 "sentence" 스타일에만 찍히므로
+        # "paren"에서는 면제를 걸면 안 된다(2026-09-09 리뷰 blocker — paren 출력이 max_chars를
+        # 넘어서는 회귀였다).
+        if _budgeted_char_count(out, gloss_style) <= effective_max_chars:
             return out
 
         # 여기부터는 effective_max_chars 때문에 반드시 뭔가 잘려야 하므로 notice를 항상 켠다.
@@ -943,14 +1004,14 @@ class EasyDict:
         while examples_limit > 0:
             examples_limit -= 1
             out = render(selected, examples_limit, True)
-            if len(out) <= effective_max_chars:
+            if _budgeted_char_count(out, gloss_style) <= effective_max_chars:
                 return out
 
         # ② 그래도 넘치면 중요도가 낮은 항목부터(ranked의 끝, 예약석은 보호) 통째로 제거한다.
         while len(selected) > 0:
             selected = selected[:-1]
             out = render(selected, 0, True)
-            if len(out) <= effective_max_chars:
+            if _budgeted_char_count(out, gloss_style) <= effective_max_chars:
                 return out
 
         return out  # 항목을 다 비워도 못 맞추면(헤더만으로도 초과) 그게 최선이다
