@@ -10,6 +10,7 @@ import kr.easydoc.infrastructure.llm.OPENAI_PROVIDER_NAME
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
+import java.math.BigDecimal
 import java.nio.file.Path
 import kotlin.io.path.readText
 
@@ -135,6 +136,86 @@ class GoldenLlmLaneTest {
 
         assertThat(plan).isInstanceOf(LanePlan.Unusable::class.java)
         assertThat((plan as LanePlan.Unusable).reason).contains("A4 20장")
+    }
+
+    @Test
+    @DisplayName("EASYDOC_LLM_INPUT/OUTPUT_USD_PER_MILLION_TOKENS 를 단가로 반영한다")
+    fun `단가를 반영한다`() {
+        val plan =
+            GoldenLlmLane.plan(
+                env(
+                    GoldenLlmLane.PROVIDER_ENV to ANTHROPIC_PROVIDER_NAME,
+                    GoldenLlmLane.ANTHROPIC_KEY_ENV to KEY,
+                    GoldenLlmLane.INPUT_PRICE_ENV to "2",
+                    GoldenLlmLane.OUTPUT_PRICE_ENV to "10",
+                ),
+            )
+
+        assertThat(ready(plan).pricing.inputUsdPerMillionTokens).isEqualByComparingTo(BigDecimal("2"))
+        assertThat(ready(plan).pricing.outputUsdPerMillionTokens).isEqualByComparingTo(BigDecimal("10"))
+    }
+
+    @Test
+    @DisplayName("단가를 설정하지 않으면 0달러가 아니라 null 이다")
+    fun `단가 미설정은 null 이다`() {
+        val plan = GoldenLlmLane.plan(env(GoldenLlmLane.ANTHROPIC_KEY_ENV to KEY))
+
+        assertThat(ready(plan).pricing.inputUsdPerMillionTokens).isNull()
+        assertThat(ready(plan).pricing.outputUsdPerMillionTokens).isNull()
+    }
+
+    @Test
+    @DisplayName("단가가 숫자가 아니면 조용히 접지 않고 실패로 알린다")
+    fun `숫자가 아닌 단가는 거절한다`() {
+        val plan =
+            GoldenLlmLane.plan(
+                env(
+                    GoldenLlmLane.ANTHROPIC_KEY_ENV to KEY,
+                    GoldenLlmLane.INPUT_PRICE_ENV to "abc",
+                ),
+            )
+
+        assertThat(plan).isInstanceOf(LanePlan.Unusable::class.java)
+        assertThat((plan as LanePlan.Unusable).reason)
+            .contains(GoldenLlmLane.INPUT_PRICE_ENV)
+            .contains("abc")
+    }
+
+    @Test
+    @DisplayName("음수 단가는 레인이 다시 검사하지 않고 제품 규칙(toTokenPricing)이 거절한다")
+    fun `음수 단가는 제품 규칙이 거절한다`() {
+        val plan =
+            GoldenLlmLane.plan(
+                env(
+                    GoldenLlmLane.PROVIDER_ENV to ANTHROPIC_PROVIDER_NAME,
+                    GoldenLlmLane.ANTHROPIC_KEY_ENV to KEY,
+                    GoldenLlmLane.INPUT_PRICE_ENV to "2",
+                    GoldenLlmLane.OUTPUT_PRICE_ENV to "-1",
+                ),
+            )
+
+        assertThat(plan).isInstanceOf(LanePlan.Unusable::class.java)
+        assertThat((plan as LanePlan.Unusable).reason)
+            .contains("제품 설정 규칙이 이 레인 설정을 거절했다")
+            .contains("0 이상이어야 합니다")
+    }
+
+    @Test
+    @DisplayName("단가를 한쪽만 설정해도 레인이 다시 검사하지 않고 제품 규칙이 거절한다")
+    fun `단가를 한쪽만 설정하면 제품 규칙이 거절한다`() {
+        val plan =
+            GoldenLlmLane.plan(
+                env(
+                    GoldenLlmLane.PROVIDER_ENV to ANTHROPIC_PROVIDER_NAME,
+                    GoldenLlmLane.ANTHROPIC_KEY_ENV to KEY,
+                    GoldenLlmLane.INPUT_PRICE_ENV to "2",
+                ),
+            )
+
+        assertThat(plan).isInstanceOf(LanePlan.Unusable::class.java)
+        assertThat((plan as LanePlan.Unusable).reason)
+            .contains("제품 설정 규칙이 이 레인 설정을 거절했다")
+            .contains("함께 설정해야 합니다")
     }
 
     @Test

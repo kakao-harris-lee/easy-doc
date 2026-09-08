@@ -8,10 +8,12 @@ import kr.easydoc.core.quality.JudgeLaneDecision
 import kr.easydoc.core.security.Secret
 import kr.easydoc.infrastructure.llm.ANTHROPIC_PROVIDER_NAME
 import kr.easydoc.infrastructure.llm.FAKE_PROVIDER_NAME
+import kr.easydoc.infrastructure.llm.LlmPricingProperties
 import kr.easydoc.infrastructure.llm.LlmProperties
 import kr.easydoc.infrastructure.llm.LlmProviderConfiguration
 import kr.easydoc.infrastructure.llm.OPENAI_PROVIDER_NAME
 import org.springframework.mock.env.MockEnvironment
+import java.math.BigDecimal
 
 /**
  * 골든 LLM 레인이 **제품과 같은 규칙으로** provider 를 만든다.
@@ -42,6 +44,16 @@ internal object GoldenLlmLane {
      * 제품과 다른 조건([GoldenLlmLane] 최상단 KDoc — provider 사고와 같은 계열)을 재게 된다.
      */
     const val MAX_OUTPUT_TOKENS_ENV: String = "EASYDOC_LLM_MAX_OUTPUT_TOKENS"
+
+    /**
+     * 제품 `application.yml`/`.env.example` 과 같은 이름이다(`easydoc.llm.pricing.*`).
+     * 2026-09-08 결정(backlog §1.5 항목 6) — 리포트가 예상 비용을 바로 내야, 사용자가 실제
+     * 지출을 승인 범위와 바로 대조할 수 있다. 3·4차 유료 측정 모두 이 값이 없어 비용을
+     * 손으로 계산해야 했다.
+     */
+    const val INPUT_PRICE_ENV: String = "EASYDOC_LLM_INPUT_USD_PER_MILLION_TOKENS"
+
+    const val OUTPUT_PRICE_ENV: String = "EASYDOC_LLM_OUTPUT_USD_PER_MILLION_TOKENS"
 
     /**
      * [PROVIDER_ENV] 미설정 시 기본값.
@@ -132,6 +144,7 @@ internal object GoldenLlmLane {
             LanePlan.Ready(
                 provider = LlmProviderConfiguration().llmProvider(props, MockEnvironment()),
                 options = LlmOptions(maxTokens = props.validatedMaxOutputTokens()),
+                pricing = props.pricing,
             )
         } catch (exc: ConfigurationException) {
             LanePlan.Unusable("제품 설정 규칙이 이 레인 설정을 거절했다: ${exc.message}")
@@ -152,9 +165,45 @@ internal object GoldenLlmLane {
             anthropicApiKey = secretOf(env(ANTHROPIC_KEY_ENV)),
             openAiApiKey = secretOf(env(OPENAI_KEY_ENV)),
             maxOutputTokens = maxOutputTokensOf(env),
-            // 단가는 받지 않는다. 레인이 내는 값은 통과율과 실패 원인이고, 비용 추정은
-            // 운영 관측(metrics decorator)의 몫이다. 여기서 받으면 파싱 실패 표면만 늘어난다.
+            pricing = pricingOf(env),
         )
+
+    /**
+     * 단가(USD/백만 토큰)를 읽는다. 2026-09-08 결정(backlog §1.5 항목 6) — 리포트가 예상
+     * 비용을 바로 내야 승인 규칙(사용자가 심판 1회를 확인할 때 그 비용·범위를 함께 확인하는
+     * 규칙)이 실제로 작동한다. 모델별 단가(`easydoc.llm.pricing.models.*`)는 환경변수 하나로
+     * 표현할 수 없어 이번 범위에서 뺀다 — 단일 값(모든 모델 공통)만 받는다.
+     */
+    private fun pricingOf(env: (String) -> String?): LlmPricingProperties =
+        LlmPricingProperties(
+            inputUsdPerMillionTokens = priceOf(INPUT_PRICE_ENV, env),
+            outputUsdPerMillionTokens = priceOf(OUTPUT_PRICE_ENV, env),
+        )
+
+    /**
+     * 미설정·빈 값은 `null`(가격 없음)로 접는다 — [LlmPricingProperties] 의 두 값이 모두
+     * `null` 이면 예상 비용도 `null` 이다.
+     *
+     * **값이 있는데 [BigDecimal] 로 파싱되지 않으면 조용히 접지 않는다.** [maxOutputTokensOf]
+     * 와 같은 결로 [IllegalArgumentException] 을 던져 [assemble] 이 [LanePlan.Unusable] 로
+     * 접게 한다(이 파일 KDoc 169~175행과 같은 이유) — 조용히 접으면 운영자가
+     * `EASYDOC_LLM_INPUT_USD_PER_MILLION_TOKENS=2달러` 처럼 잘못 넣었을 때 레인이 그것을
+     * 모르고 단가 없음으로 측정한다.
+     *
+     * **음수·한쪽만 설정 같은 값 규칙은 여기서 다시 적지 않는다.** [LlmPricingProperties.toTokenPricing]
+     * 이 그 규칙의 정본이고, [assemble] 이 [LlmProviderConfiguration.llmProvider] 를 부를 때
+     * 그 규칙을 이미 거친다 — 위반하면 `ConfigurationException` 이 나서 [assemble] 의
+     * `catch (exc: ConfigurationException)` 이 [LanePlan.Unusable] 로 접는다. 레인이 여기서
+     * 다시 검사하면 규칙이 두 벌이 된다(이 파일 최상단 KDoc과 같은 문제).
+     */
+    private fun priceOf(
+        envName: String,
+        env: (String) -> String?,
+    ): BigDecimal? {
+        val raw = env(envName)?.takeIf(String::isNotBlank) ?: return null
+        return raw.toBigDecimalOrNull()
+            ?: throw IllegalArgumentException("$envName='$raw' 은 숫자가 아니다")
+    }
 
     /**
      * 미설정·빈 값은 [LlmProperties] 의 기본값(= core `DEFAULT_MAX_TOKENS`)으로 접는다 —
@@ -189,6 +238,13 @@ internal sealed interface LanePlan {
     class Ready(
         val provider: LlmProvider,
         val options: LlmOptions,
+        /**
+         * 이 회차가 조립에 실제로 쓴 단가([GoldenLlmLane.INPUT_PRICE_ENV]/[OUTPUT_PRICE_ENV]
+         * 해석 결과). 값 자체는 [provider] 를 감싼 metrics decorator 조립에도 이미 실렸다 —
+         * 여기 다시 노출하는 이유는 유료 호출 없이 단가 해석 규칙만 시험하기 위해서다
+         * ([GoldenLlmLaneTest]).
+         */
+        val pricing: LlmPricingProperties,
     ) : LanePlan {
         /**
          * **무엇으로 쟀는지** 한 줄. provider 자신의 `toString` 을 그대로 쓴다 — 어댑터가 실제로
