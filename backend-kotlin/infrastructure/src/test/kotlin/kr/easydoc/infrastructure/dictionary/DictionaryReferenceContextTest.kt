@@ -18,19 +18,23 @@ import java.io.File
  * 그럴듯한 컨텍스트라 사람 눈으로는 안 보이고, 그 사이 원문은 조용히 훼손된다(`CCTV` 에서
  * `CT` 가 매칭돼 `C전류 변성기V` 가 되는 종류).
  *
- * 대조 대상은 [FROZEN_REFERENCE_DOCUMENT_IDS] **고정 56건**뿐이다 — 골든 코퍼스 전건이 아니다.
+ * 대조 대상은 [FROZEN_REFERENCE_DOCUMENT_IDS] **고정 54건**뿐이다 — 골든 코퍼스 전건이 아니다.
  * **결정(2026-09-04, 사용자):** 사전 참조 픽스처를 코퍼스 전건에 결박하지 않는다. 골든 문서를
  * 승인할 때마다 Python 참조 구현을 다시 돌려야 하는 비용이 코퍼스 성장과 함께 커지는 문제였다
  * (`docs/kotlin-redevelopment-backlog.md` §1.1 「사전 참조 픽스처가 골든 문서 전건에 결박」).
  * 2026-08 코퍼스 56건 승격 시점의 문서만 이식본↔참조 구현 동등성을 계속 대조하고, 그 뒤 추가된
- * 문서(2026-09-02 승격 7건 등)는 대조하지 않으며 픽스처도 요구하지 않는다. 입력은 그 56건의
+ * 문서(2026-09-02 승격 7건 등)는 대조하지 않으며 픽스처도 요구하지 않는다. 입력은 그 54건의
  * **원문**이다 — 마스킹된 본문이 아니다. 픽스처를 그렇게 뽑았고, 여기서 재는 것은 배선이 아니라
  * 이식본과 참조 구현의 동등성이기 때문이다. 제품 경로가 마스킹된 본문을 쓰는 것은
  * `IndexedDictionaryContextSource` 쪽 계약이다.
+ *
+ * **결정(2026-09-08, 사용자, backlog §1.5 항목 4):** 고정 목록에 있던 `060`·`062`는 골든
+ * 코퍼스에서 제외됐다 — 추출 상한 밖 보고서에서 사람이 떼어 온 발췌라 제품 입력을 대표하지
+ * 않는다. 픽스처(`reference/060.txt`, `reference/062.txt`)도 함께 삭제했다.
  */
 class DictionaryReferenceContextTest {
     @TestFactory
-    @DisplayName("고정 56건 각각이 참조 출력과 문자열이 같다")
+    @DisplayName("고정 54건 각각이 참조 출력과 문자열이 같다")
     fun `참조 출력과 일치한다`(): List<DynamicTest> {
         val documents = goldenDocuments().filter { it.id in FROZEN_REFERENCE_DOCUMENT_IDS }
         return documents.map { document ->
@@ -54,7 +58,7 @@ class DictionaryReferenceContextTest {
     }
 
     @Test
-    @DisplayName("고정 56건 전원이 참조 픽스처를 갖는다 — 픽스처 삭제를 여기서 잡는다")
+    @DisplayName("고정 54건 전원이 참조 픽스처를 갖는다 — 픽스처 삭제를 여기서 잡는다")
     fun `고정 목록의 픽스처가 전부 있다`() {
         val missing = FROZEN_REFERENCE_DOCUMENT_IDS.filter { referenceOutput(it) == null }
         assertThat(missing)
@@ -150,8 +154,6 @@ class DictionaryReferenceContextTest {
                 "049",
                 "051",
                 "052",
-                "060",
-                "062",
                 "063",
                 "064",
                 "070",
