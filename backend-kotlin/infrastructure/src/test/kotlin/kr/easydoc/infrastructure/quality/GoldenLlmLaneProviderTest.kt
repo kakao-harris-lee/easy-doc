@@ -18,6 +18,7 @@ import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
+import java.math.BigDecimal
 import java.time.Duration
 
 /**
@@ -177,6 +178,59 @@ class GoldenLlmLaneProviderTest {
     }
 
     @Test
+    @DisplayName("호출 비용은 변환·judge 구분 없이 BigDecimal 로 합산한다")
+    fun `비용을 합산한다`() {
+        val journal = LaneJournal()
+
+        journal.recordCall(costed(outputTokens = 100, cost = "1.50"))
+        journal.beginJudge("g-001")
+        journal.recordCall(costed(outputTokens = 5, cost = "0.25"))
+
+        assertThat(journal.estimatedCostUsd).isEqualByComparingTo(BigDecimal("1.75"))
+        assertThat(journal.costUnknownCalls).isZero()
+        assertThat(journal.pricingInputUsdPerMtok).isEqualByComparingTo(BigDecimal("2"))
+        assertThat(journal.pricingOutputUsdPerMtok).isEqualByComparingTo(BigDecimal("10"))
+    }
+
+    @Test
+    @DisplayName("단가가 통째로 없으면 합계도 0달러가 아니라 null 이고 건수만 센다")
+    fun `단가가 전부 없으면 합계는 null 이다`() {
+        val journal = LaneJournal()
+
+        journal.recordCall(draft("본문"))
+        journal.recordCall(draft("본문2"))
+
+        assertThat(journal.estimatedCostUsd).isNull()
+        assertThat(journal.costUnknownCalls).isEqualTo(2)
+    }
+
+    @Test
+    @DisplayName("일부 호출만 단가가 없으면 합계는 아는 만큼만 더하고 모르는 건수를 따로 센다")
+    fun `일부만 단가가 없으면 부분합과 건수를 함께 낸다`() {
+        val journal = LaneJournal()
+
+        journal.recordCall(costed(outputTokens = 100, cost = "1.50"))
+        journal.recordCall(draft("단가 없는 호출"))
+
+        assertThat(journal.estimatedCostUsd).isEqualByComparingTo(BigDecimal("1.50"))
+        assertThat(journal.costUnknownCalls).isEqualTo(1)
+    }
+
+    @Test
+    @DisplayName("단가 없는 호출이 먼저 와도 단가 스냅샷이 null 로 굳지 않는다")
+    fun `단가 없는 호출이 먼저 와도 스냅샷이 굳지 않는다`() {
+        val journal = LaneJournal()
+
+        journal.recordCall(draft("단가 없는 첫 호출"))
+        journal.recordCall(costed(outputTokens = 100, cost = "1.50"))
+
+        assertThat(journal.pricingInputUsdPerMtok).isEqualByComparingTo(BigDecimal("2"))
+        assertThat(journal.pricingOutputUsdPerMtok).isEqualByComparingTo(BigDecimal("10"))
+        assertThat(journal.estimatedCostUsd).isEqualByComparingTo(BigDecimal("1.50"))
+        assertThat(journal.costUnknownCalls).isEqualTo(1)
+    }
+
+    @Test
     @DisplayName("재시도 간격은 지수로 벌어진다 — 서버가 밀어낼수록 더 기다린다")
     fun `backoff 는 지수로 늘어난다`() {
         val policy = LaneRetryPolicy(firstBackoff = Duration.ofSeconds(2), multiplier = 3)
@@ -201,6 +255,23 @@ class GoldenLlmLaneProviderTest {
         AnthropicSettings(apiKey = Secret(AnthropicTestSupport.TEST_API_KEY), baseUrl = server.baseUrl)
 
     private fun draft(text: String): LlmCompletion = reply(text, LlmFinishReason.END_TURN)
+
+    /** 단가가 설정된(비용을 낸) 응답. 입력 2 / 출력 10 USD/MTok 고정 — [cost] 만 호출마다 바꾼다. */
+    private fun costed(
+        outputTokens: Int,
+        cost: String,
+    ): LlmCompletion =
+        LlmCompletion(
+            text = "결과",
+            provider = "scripted",
+            model = "scripted-model",
+            inputTokens = 10,
+            outputTokens = outputTokens,
+            finishReason = LlmFinishReason.END_TURN,
+            estimatedCostUsd = BigDecimal(cost),
+            pricingInputUsdPerMtok = BigDecimal("2"),
+            pricingOutputUsdPerMtok = BigDecimal("10"),
+        )
 
     /** `stop_reason=max_tokens` — 어댑터가 이 값을 보고 `LlmCompletion.truncated` 를 참으로 만든다. */
     private fun truncatedReply(): LlmCompletion = reply("잘린 본문", LlmFinishReason.MAX_TOKENS)

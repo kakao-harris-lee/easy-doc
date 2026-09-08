@@ -5,6 +5,7 @@ import kr.easydoc.core.llm.LlmCompletion
 import kr.easydoc.core.llm.LlmOptions
 import kr.easydoc.core.llm.LlmPrompt
 import kr.easydoc.core.llm.LlmProvider
+import java.math.BigDecimal
 import java.time.Duration
 
 /** 실패 한 건의 기록. 어느 문서에서, 무엇 때문에, 다시 불렀는지. */
@@ -45,6 +46,38 @@ internal class LaneJournal(private val retryBudget: Int = DEFAULT_RETRY_BUDGET) 
 
     var outputTokens: Int = 0
         private set
+
+    /**
+     * 레인 전체가 쓴 예상 비용 합계. 2026-09-08 결정(backlog §1.5 항목 6) — 변환·judge 구분
+     * 없이 **레인 전체 지출**을 더한다(비용은 호출 종류를 가리지 않는다).
+     *
+     * **단가가 통째로 미설정이면 `null`이다** — 0달러로 속이지 않는다([LlmCompletion.estimatedCostUsd]
+     * 와 같은 규칙). 값이 있는 호출과 없는 호출이 섞이면 합계는 값이 있는 만큼만 더해지고,
+     * 없는 호출 수는 [costUnknownCalls] 가 따로 센다 — 섞어서 부분합을 전체합처럼 보이게
+     * 하지 않기 위해서다.
+     */
+    var estimatedCostUsd: BigDecimal? = null
+        private set
+
+    /** [estimatedCostUsd] 를 계산할 때 단가가 없어 더하지 못한 호출 수. */
+    var costUnknownCalls: Int = 0
+        private set
+
+    /**
+     * [estimatedCostUsd] 를 계산한 입력 토큰 단가 스냅샷. 레인 한 회차는 단가 설정이 하나이므로
+     * **처음으로 단가가 있었던(non-null) 호출에서 한 번만** 찍는다 — 이후 호출은 값이 같을
+     * 것이라 다시 찍지 않는다. 맨 처음 호출을 무조건 기준으로 삼지 않는 이유는, 단가 없는
+     * 호출이 먼저 오고 단가 있는 호출이 뒤에 오면(예: 첫 판정에 실패해 재시도로 값이 채워짐)
+     * 스냅샷이 `null` 로 굳어 리포트가 실제로는 있는 단가를 「미설정」으로 오독하기 때문이다.
+     */
+    var pricingInputUsdPerMtok: BigDecimal? = null
+        private set
+
+    /** [pricingInputUsdPerMtok] 과 같은 스냅샷의 출력 토큰 단가. */
+    var pricingOutputUsdPerMtok: BigDecimal? = null
+        private set
+
+    private var pricingCaptured: Boolean = false
 
     /**
      * 관측한 **변환** 호출 하나가 낸 출력 토큰의 최댓값.
@@ -107,6 +140,7 @@ internal class LaneJournal(private val retryBudget: Int = DEFAULT_RETRY_BUDGET) 
         calls++
         inputTokens += completion.inputTokens
         outputTokens += completion.outputTokens
+        recordCost(completion)
         if (judging) {
             if (completion.truncated) {
                 truncatedJudgeCalls++
@@ -123,6 +157,31 @@ internal class LaneJournal(private val retryBudget: Int = DEFAULT_RETRY_BUDGET) 
 
     /** 이 문서의 변환·보정 호출 중 절단된 수. 구간별 집계가 장문 쪽 쏠림을 보려면 문서별이어야 한다. */
     fun truncatedCallsFor(documentId: String): Int = truncatedCallsByDocument[documentId] ?: 0
+
+    /**
+     * [estimatedCostUsd]·[pricingInputUsdPerMtok]/[pricingOutputUsdPerMtok] 를 채운다.
+     *
+     * 단가 스냅샷은 **처음으로 단가가 있었던(`pricingInputUsdPerMtok != null`) 호출**에서만
+     * 찍는다 — 맨 처음 호출로 찍으면, 그 호출에 하필 단가가 없었을 때([completion.estimatedCostUsd]
+     * KDoc과 같은 이유로 `pricingInputUsdPerMtok` 도 함께 `null`) 스냅샷이 영영 `null` 로
+     * 굳어 이후 단가가 있는 호출이 와도 리포트가 「단가 미설정」으로 잘못 읽는다. 레인 한
+     * 회차는 조립이 하나뿐이라 단가가 한 번 찍히면 이후 호출도 같은 값을 내므로 다시 찍지
+     * 않는다. [completion.estimatedCostUsd] 가 `null` 이면(단가 미설정) 합계에 더하지 않고
+     * [costUnknownCalls] 만 늘린다 — 없는 값을 0으로 더하면 부분합이 전체합처럼 보인다.
+     */
+    private fun recordCost(completion: LlmCompletion) {
+        if (!pricingCaptured && completion.pricingInputUsdPerMtok != null) {
+            pricingInputUsdPerMtok = completion.pricingInputUsdPerMtok
+            pricingOutputUsdPerMtok = completion.pricingOutputUsdPerMtok
+            pricingCaptured = true
+        }
+        val cost = completion.estimatedCostUsd
+        if (cost == null) {
+            costUnknownCalls++
+        } else {
+            estimatedCostUsd = (estimatedCostUsd ?: BigDecimal.ZERO) + cost
+        }
+    }
 
     fun recordFault(
         fault: LaneFault,

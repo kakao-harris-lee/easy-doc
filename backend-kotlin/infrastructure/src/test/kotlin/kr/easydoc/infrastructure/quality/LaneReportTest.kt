@@ -7,6 +7,7 @@ import kr.easydoc.core.llm.LlmFinishReason
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
+import java.math.BigDecimal
 import java.time.Duration
 
 /**
@@ -453,6 +454,50 @@ class LaneReportTest {
     }
 
     @Test
+    @DisplayName("단가가 설정되어 있으면 예상 비용을 낸다")
+    fun `단가가 있으면 예상 비용을 낸다`() {
+        journal.recordCall(
+            completion(
+                outputTokens = 100,
+                estimatedCostUsd = BigDecimal("1.5"),
+                pricingInputUsdPerMtok = BigDecimal("2"),
+                pricingOutputUsdPerMtok = BigDecimal("10"),
+            ),
+        )
+
+        assertThat(report.render()).contains("예상 비용 \$1.5000 (단가 입력 2 / 출력 10 USD/MTok)")
+    }
+
+    @Test
+    @DisplayName("단가가 통째로 없으면 미산출이라고 밝히지 0달러로 속이지 않는다")
+    fun `단가가 없으면 미산출이라고 낸다`() {
+        journal.recordCall(completion(outputTokens = 100))
+
+        assertThat(report.render()).contains(
+            "예상 비용 미산출 — EASYDOC_LLM_INPUT_USD_PER_MILLION_TOKENS/" +
+                "EASYDOC_LLM_OUTPUT_USD_PER_MILLION_TOKENS 미설정",
+        )
+    }
+
+    @Test
+    @DisplayName("일부 호출만 단가가 없으면 부분합과 함께 그 건수를 밝힌다")
+    fun `일부만 단가가 없으면 건수를 밝힌다`() {
+        journal.recordCall(
+            completion(
+                outputTokens = 100,
+                estimatedCostUsd = BigDecimal("1.5"),
+                pricingInputUsdPerMtok = BigDecimal("2"),
+                pricingOutputUsdPerMtok = BigDecimal("10"),
+            ),
+        )
+        journal.recordCall(completion(outputTokens = 50))
+
+        assertThat(report.render()).contains(
+            "예상 비용 \$1.5000 (단가 입력 2 / 출력 10 USD/MTok) (호출 1건 단가 없음)",
+        )
+    }
+
+    @Test
     @DisplayName("실패가 없으면 보고할 것도 없다")
     fun `실패가 없으면 비어 있다`() {
         assertThat(report.failures()).isEmpty()
@@ -568,6 +613,9 @@ class LaneReportTest {
     private fun completion(
         outputTokens: Int,
         truncated: Boolean = false,
+        estimatedCostUsd: BigDecimal? = null,
+        pricingInputUsdPerMtok: BigDecimal? = null,
+        pricingOutputUsdPerMtok: BigDecimal? = null,
     ): LlmCompletion =
         LlmCompletion(
             text = "결과",
@@ -576,6 +624,9 @@ class LaneReportTest {
             inputTokens = 10,
             outputTokens = outputTokens,
             finishReason = if (truncated) LlmFinishReason.MAX_TOKENS else LlmFinishReason.END_TURN,
+            estimatedCostUsd = estimatedCostUsd,
+            pricingInputUsdPerMtok = pricingInputUsdPerMtok,
+            pricingOutputUsdPerMtok = pricingOutputUsdPerMtok,
         )
 
     private fun fault(label: String): LaneFault = LaneFault(label, status = null, transient = true)

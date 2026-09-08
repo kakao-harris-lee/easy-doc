@@ -2,6 +2,7 @@ package kr.easydoc.infrastructure.quality
 
 import kr.easydoc.application.conversion.ConversionFailureKind
 import kr.easydoc.core.easyread.StyleRuleKind
+import java.math.RoundingMode
 import java.time.Duration
 import java.util.Locale
 import kotlin.math.ceil
@@ -172,6 +173,7 @@ internal class LaneReport(
             appendDocumentSection()
             appendRunAggregateSection()
             appendLine(callLine())
+            appendLine(costLine())
             appendLine(durationLine())
             appendLine("인프라 오류 분포 — ${distributionLine()}")
             appendSection("품질 실패(절단·사실 누락·judge 판정)", quality)
@@ -222,6 +224,27 @@ internal class LaneReport(
         val exhausted = if (journal.budgetExhausted) "(소진)" else ""
         return "LLM 호출 ${journal.calls}회 · 재시도 ${journal.retries}회/예산 ${journal.budget}$exhausted · " +
             "입력 ${journal.inputTokens} 토큰 · 출력 ${journal.outputTokens} 토큰"
+    }
+
+    /**
+     * 예상 비용. 2026-09-08 결정(backlog §1.5 항목 6) — 리포트가 승인 예산 대비 실제 지출을
+     * 바로 낸다. 3·4차 유료 측정 모두 이 값이 없어 비용을 손으로 계산해야 했다.
+     *
+     * 합계·단가 스냅샷은 전부 [journal] 이 실제 호출에서 잰 값이다([LaneJournal.estimatedCostUsd]
+     * KDoc) — 여기서 새로 계산하지 않는다. 단가가 통째로 미설정이면 [LaneJournal.estimatedCostUsd]
+     * 자체가 `null` 이라 「미산출」로 낸다. 일부 호출만 단가가 없으면 합계는 아는 만큼만 더해진
+     * 값이라 그 사실을 [LaneJournal.costUnknownCalls] 로 함께 밝힌다 — 부분합을 전체합처럼
+     * 보이면 승인 대조가 틀린 숫자로 이뤄진다.
+     */
+    private fun costLine(): String {
+        val cost = journal.estimatedCostUsd
+        if (cost == null) {
+            return "예상 비용 미산출 — ${GoldenLlmLane.INPUT_PRICE_ENV}/${GoldenLlmLane.OUTPUT_PRICE_ENV} 미설정"
+        }
+        val unknownSuffix =
+            if (journal.costUnknownCalls > 0) " (호출 ${journal.costUnknownCalls}건 단가 없음)" else ""
+        return "예상 비용 \$${cost.setScale(COST_SCALE, RoundingMode.HALF_UP)} " +
+            "(단가 입력 ${journal.pricingInputUsdPerMtok} / 출력 ${journal.pricingOutputUsdPerMtok} USD/MTok)$unknownSuffix"
     }
 
     /**
@@ -604,6 +627,9 @@ internal class LaneReport(
         const val P90: Double = 0.9
         const val PERCENT: Double = 100.0
         const val MILLIS_PER_SECOND: Double = 1000.0
+
+        /** 예상 비용 표시 소수 자릿수. USD 센트보다 세밀하게 — 문서 56건 합계가 센트 미만으로 갈릴 수 있다. */
+        const val COST_SCALE: Int = 4
 
         /** nearest-rank 분위수. 표본이 56건이라 보간할 값어치가 없고, 보간하면 없는 값이 생긴다. */
         fun <T : Comparable<T>> quantile(
