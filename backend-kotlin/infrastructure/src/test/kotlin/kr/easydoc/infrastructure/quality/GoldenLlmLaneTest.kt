@@ -219,6 +219,78 @@ class GoldenLlmLaneTest {
     }
 
     @Test
+    @DisplayName("EASYDOC_LLM_READ_TIMEOUT 미설정이면 기본값(120초)으로 Ready 가 나온다")
+    fun `읽기 타임아웃 기본값은 예외 없이 Ready 가 된다`() {
+        val plan = GoldenLlmLane.plan(env(GoldenLlmLane.ANTHROPIC_KEY_ENV to KEY))
+
+        ready(plan)
+    }
+
+    @Test
+    @DisplayName("EASYDOC_LLM_READ_TIMEOUT 을 설정하면 예외 없이 Ready 가 나온다")
+    fun `읽기 타임아웃을 설정하면 Ready 가 된다`() {
+        val plan =
+            GoldenLlmLane.plan(
+                env(
+                    GoldenLlmLane.PROVIDER_ENV to ANTHROPIC_PROVIDER_NAME,
+                    GoldenLlmLane.ANTHROPIC_KEY_ENV to KEY,
+                    GoldenLlmLane.READ_TIMEOUT_ENV to "600",
+                ),
+            )
+
+        ready(plan)
+    }
+
+    @Test
+    @DisplayName("EASYDOC_LLM_READ_TIMEOUT 이 정수가 아니면 기본값으로 접지 않고 실패로 알린다")
+    fun `정수가 아닌 읽기 타임아웃은 거절한다`() {
+        val plan =
+            GoldenLlmLane.plan(
+                env(
+                    GoldenLlmLane.ANTHROPIC_KEY_ENV to KEY,
+                    GoldenLlmLane.READ_TIMEOUT_ENV to "abc",
+                ),
+            )
+
+        assertThat(plan).isInstanceOf(LanePlan.Unusable::class.java)
+        assertThat((plan as LanePlan.Unusable).reason)
+            .contains(GoldenLlmLane.READ_TIMEOUT_ENV)
+            .contains("abc")
+    }
+
+    @Test
+    @DisplayName("EASYDOC_LLM_READ_TIMEOUT=0 은 레인도 제품과 같이 거절한다")
+    fun `0 초 읽기 타임아웃은 거절한다`() {
+        val plan =
+            GoldenLlmLane.plan(
+                env(
+                    GoldenLlmLane.PROVIDER_ENV to ANTHROPIC_PROVIDER_NAME,
+                    GoldenLlmLane.ANTHROPIC_KEY_ENV to KEY,
+                    GoldenLlmLane.READ_TIMEOUT_ENV to "0",
+                ),
+            )
+
+        assertThat(plan).isInstanceOf(LanePlan.Unusable::class.java)
+        assertThat((plan as LanePlan.Unusable).reason).contains("easydoc.llm.read-timeout")
+    }
+
+    @Test
+    @DisplayName("EASYDOC_LLM_READ_TIMEOUT=-1 은 레인도 제품과 같이 거절한다")
+    fun `음수 읽기 타임아웃은 거절한다`() {
+        val plan =
+            GoldenLlmLane.plan(
+                env(
+                    GoldenLlmLane.PROVIDER_ENV to ANTHROPIC_PROVIDER_NAME,
+                    GoldenLlmLane.ANTHROPIC_KEY_ENV to KEY,
+                    GoldenLlmLane.READ_TIMEOUT_ENV to "-1",
+                ),
+            )
+
+        assertThat(plan).isInstanceOf(LanePlan.Unusable::class.java)
+        assertThat((plan as LanePlan.Unusable).reason).contains("easydoc.llm.read-timeout")
+    }
+
+    @Test
     @DisplayName("openai 를 고르면 openai 키를 본다")
     fun `openai 는 openai 키를 본다`() {
         val plan =

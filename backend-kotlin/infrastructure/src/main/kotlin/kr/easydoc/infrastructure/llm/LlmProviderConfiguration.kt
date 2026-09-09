@@ -10,6 +10,7 @@ import org.springframework.context.annotation.Configuration
 import org.springframework.core.env.Environment
 import org.springframework.core.env.Profiles
 import java.math.BigDecimal
+import java.time.Duration
 
 // infrastructure가 LLM composition root를 소유한다. 설정으로 strategy를 선택하고
 // metrics decorator를 조립하므로 서비스와 core는 구체 provider를 알지 못한다.
@@ -35,6 +36,14 @@ data class LlmProperties(
      * `IllegalArgumentException`)에 검증을 맡기지 않는다.
      */
     val maxOutputTokens: Int = DEFAULT_MAX_TOKENS,
+    /**
+     * LLM 호출 읽기 타임아웃. 운영 중 조정될 수 있는 값이라 코드 상수가 아니라 구성값이다
+     * (CLAUDE.md 「상수와 구성 관리」). 기본값은 [ANTHROPIC_READ_TIMEOUT](120초)— 미설정 시
+     * 동작이 바뀌지 않도록 출처를 하나로 유지한다.
+     *
+     * 값을 그대로 쓰지 마라 — [validatedReadTimeout] 를 거쳐라. 이 필드는 운영자 입력이다.
+     */
+    val readTimeout: Duration = ANTHROPIC_READ_TIMEOUT,
 ) {
     /**
      * [maxOutputTokens] 를 운영자 오설정 관점에서 검증한다 — [LlmPricingProperties.toTokenPricing]
@@ -64,6 +73,22 @@ data class LlmProperties(
             )
         }
         return maxOutputTokens
+    }
+
+    /**
+     * [readTimeout] 를 운영자 오설정 관점에서 검증한다 — [validatedMaxOutputTokens] 와 같은
+     * 자리·같은 예외 타입([ConfigurationException])을 쓴다. 0 이하·음수는 배포 환경변수
+     * 오타(빈 문자열이 0으로 바인딩되는 경우 등)이지 호출 코드의 버그가 아니다.
+     *
+     * 호출자는 이 값을 거쳐서만 [AnthropicSettings]/[OpenAiSettings] 를 조립해야 한다.
+     */
+    fun validatedReadTimeout(): Duration {
+        if (readTimeout.isZero || readTimeout.isNegative) {
+            throw ConfigurationException(
+                "easydoc.llm.read-timeout 는 0 보다 커야 합니다 (현재: $readTimeout)",
+            )
+        }
+        return readTimeout
     }
 }
 
@@ -242,12 +267,14 @@ class LlmProviderConfiguration {
             apiKey = properties.anthropicApiKey,
             model = properties.model.nonBlankOr(DEFAULT_ANTHROPIC_MODEL),
             effort = AnthropicEffort.from(properties.effort),
+            readTimeout = properties.validatedReadTimeout(),
         )
 
     private fun openAiSettings(properties: LlmProperties) =
         OpenAiSettings(
             apiKey = properties.openAiApiKey,
             model = properties.model.nonBlankOr(DEFAULT_OPENAI_MODEL),
+            readTimeout = properties.validatedReadTimeout(),
         )
 
     private fun requireFakeAllowed(environment: Environment) {
