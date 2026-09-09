@@ -327,6 +327,73 @@ class FactPreservationTest {
             assertThat(coverage.sourceFactCount).isEqualTo(1)
             assertThat(coverage.ratio).isEqualTo(1.0)
         }
+
+        @Test
+        @DisplayName(
+            "세 번째 축약형 — 일(day) 없이 '’06. 1.'처럼 구분자만 이어져도 " +
+                "변환문 '2006년 1월'로 펴 쓰면 누락이 아니다(8차 유료 측정, 문서 048)",
+        )
+        fun `구분자만 있는 아포스트로피 연도 표기가 보존으로 인정된다`() {
+            val source = "’06. 1.  ∙ 5개 시·도 시범 운영"
+            val kept = "2006년 1월, 5개 시·도에서 시범 운영을 시작했습니다."
+
+            assertThat(findMissingFacts(source, kept)).isEmpty()
+        }
+
+        @Test
+        @DisplayName("공백 없는 '’15.5'도 '2015년 5월'로 펴 써도 누락이 아니다")
+        fun `공백 없는 구분자 전용 축약 연도도 보존으로 인정된다`() {
+            val source = "’15.5  ∙ 학교 밖 청소년 지원에 관한 법률"
+            val kept = "2015년 5월, 학교 밖 청소년 지원에 관한 법률이 제정됐습니다."
+
+            assertThat(findMissingFacts(source, kept)).isEmpty()
+        }
+
+        @Test
+        @DisplayName("구분자 전용 축약 연도도 변환문의 연도가 다르면('2007년') 여전히 누락이다")
+        fun `구분자만 있는 축약 연도도 연도가 다르면 누락이다`() {
+            val source = "’06. 1.  ∙ 5개 시·도 시범 운영"
+            val wrongYear = "2007년 1월, 5개 시·도에서 시범 운영을 시작했습니다."
+
+            assertThat(findMissingFacts(source, wrongYear))
+                .extracting("kind")
+                .containsExactly(FactKind.NUMBER)
+        }
+
+        @Test
+        @DisplayName(
+            "회귀 방지 — 완전한 날짜 '’09.11.27'이 구분자 전용 패턴에 쪼개지지 않고 " +
+                "여전히 DATE 하나로 잡힌다(패턴 순서: 완전한 세 요소 패턴이 먼저 구간을 점유해야 한다)",
+        )
+        fun `완전한 아포스트로피 날짜는 구분자 전용 패턴에 쪼개지지 않는다`() {
+            val source = "’09.11.27  ∙ 관련 규정 개정"
+            val kept = "2009년 11월 27일, 관련 규정이 개정됐습니다."
+
+            val coverage = factCoverage(source, kept)
+
+            assertThat(coverage.missing)
+                .withFailMessage(
+                    "완전한 날짜가 연도(NUMBER)와 나머지(월.일)로 쪼개지면 구분자 전용 패턴이 " +
+                        "먼저 구간을 채간 것이다 — PATTERNS 순서를 확인하라.",
+                ).isEmpty()
+            assertThat(coverage.sourceFactCount)
+                .withFailMessage("완전한 날짜 하나가 여러 사실로 쪼개지면 sourceFactCount 가 1보다 커진다")
+                .isEqualTo(1)
+        }
+
+        @Test
+        @DisplayName("아포스트로피 없는 '05.4'는 연도로 확장하지 않는다 — 소수·순번·조 번호일 수 있어 손대지 않는다(기존 동작 유지)")
+        fun `아포스트로피 없는 두 자리 숫자는 연도로 확장되지 않는다`() {
+            val source = "05.4  ∙ 관련 사업 시작"
+            val expandedAsIfYear = "2005년 4월, 관련 사업이 시작됐습니다."
+
+            assertThat(findMissingFacts(source, expandedAsIfYear))
+                .withFailMessage(
+                    "아포스트로피가 없으면 두 자리 숫자를 연도로 확장하면 안 된다 — 확장하면 " +
+                        "'05'와 '2005'가 같은 값으로 오판된다",
+                ).extracting("kind")
+                .containsExactly(FactKind.NUMBER)
+        }
     }
 
     @Nested
