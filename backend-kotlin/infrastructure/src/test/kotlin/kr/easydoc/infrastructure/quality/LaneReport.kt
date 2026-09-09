@@ -1,6 +1,7 @@
 package kr.easydoc.infrastructure.quality
 
 import kr.easydoc.application.conversion.ConversionFailureKind
+import kr.easydoc.core.easyread.FactCoverage
 import kr.easydoc.core.easyread.StyleRuleKind
 import java.math.RoundingMode
 import java.time.Duration
@@ -48,6 +49,14 @@ internal data class LaneMeasurement(
      * 호출의 `issues` 를 규칙별로 센 값이다. 변환이 실패했으면 빈 맵.
      */
     val styleIssueCounts: Map<StyleRuleKind, Int>,
+    /**
+     * 원문 전체(규칙 기반 추출) 대비 사실 보존 현황 — `required_facts`(문서당 3~6개 큐레이션
+     * 목록)가 아니라 [kr.easydoc.core.easyread.factCoverage] 가 낸 값이다. 계획 S1
+     * (`docs/plans/2026-09-09-content-loss.md`)이 만든 **관측** 항목이라 [failures] 나 게이트
+     * 판정에는 들어가지 않는다 — 리포트에만 실린다. 변환이 실패했으면([convertedChars] `null`)
+     * 잴 본문이 없으므로 `null` — 다른 필드들과 같은 관례.
+     */
+    val factCoverage: FactCoverage?,
 ) {
     /**
      * 출력 팽창비 = 변환 글자 수 / 원문 글자 수.
@@ -168,6 +177,7 @@ internal class LaneReport(
             appendLine("골든 LLM 레인 — $description")
             appendLine(outcomeLine())
             appendLine(qualityLine())
+            appendLine(factCoverageSummaryLine())
             appendTranscriptSkippedLine()
             appendGateSection()
             appendDocumentSection()
@@ -218,6 +228,47 @@ internal class LaneReport(
         val passed = scored.count { it.stylePassedAllRuns }
         return "스타일 규칙 통과 $passed/${scored.size} (${rate(passed, scored.size)}) · " +
             "품질 실패 ${quality.size}건 · 인프라 실패 ${infrastructure.size}건"
+    }
+
+    /**
+     * 계획 S1(`docs/plans/2026-09-09-content-loss.md`)의 요약 줄 — 전체 사실 보존율과
+     * 보존율 70% 미만 문서 목록. **게이트 판정에 넣지 않는다** — [failures] 는 이 값을 읽지
+     * 않고, 이 줄이 무엇을 말하든 통과/실패는 바뀌지 않는다(계획의 명시적 결정).
+     *
+     * 분모·분자는 문서 단위로 축약한다([documentSummaries]) — runs>1 이면 문서 안 회차마다
+     * [LaneMeasurement.factCoverage] 가 따로 있어, 축약 없이 그대로 합치면 회차 수만큼 같은
+     * 문서가 중복으로 잡힌다([DocumentSummary] KDoc과 같은 이유). 원문에 규칙 기반 사실이
+     * 없는 문서(`factSourceCount` 0)나, 그 문서의 모든 회차가 변환에 실패해 `factSourceCount`
+     * 자체가 없는 문서(`null`)는 분모·분자·목록 어디에도 넣지 않는다 — 잴 사실이 없거나 잴
+     * 초안이 없는 문서를 「보존율 낮음」으로 몰면 안 된다.
+     *
+     * `eligible` 은 [DocumentSummary.factCoverageRatio] 가 non-null 인 문서만 남긴 목록이다 —
+     * 그 프로퍼티의 정의상 「분모(factSourceCount)가 0보다 크다」와 「비율이 있다」는 같은
+     * 조건이라, 이렇게 걸러내면 뒤따르는 `low` 필터가 굳이 `?: 1.0` 같은 도달 불가능한
+     * fallback 없이도 확정된 `Double` 을 그대로 쓸 수 있다.
+     */
+    private fun factCoverageSummaryLine(): String {
+        val eligible =
+            documentSummaries().mapNotNull { summary -> summary.factCoverageRatio?.let { summary to it } }
+        if (eligible.isEmpty()) {
+            return "사실 보존 — 관측 대상 없음(원문에 규칙 기반 사실이 없거나 변환이 모두 실패한 문서뿐)"
+        }
+        val totalSource = eligible.sumOf { (summary, _) -> summary.factSourceCount ?: 0 }
+        val totalKept = eligible.sumOf { (summary, _) -> summary.medianFactKeptCount ?: 0 }
+        val low =
+            eligible
+                .filter { (_, ratio) -> ratio < LOW_FACT_COVERAGE_RATIO }
+                .sortedBy { (_, ratio) -> ratio }
+        val lowLabel =
+            if (low.isEmpty()) {
+                "없음"
+            } else {
+                low.joinToString(", ") { (summary, _) ->
+                    "${summary.documentId}(${rate(summary.medianFactKeptCount ?: 0, summary.factSourceCount ?: 0)})"
+                }
+            }
+        return "사실 보존 $totalKept/$totalSource (${rate(totalKept, totalSource)}) · " +
+            "보존율 ${(LOW_FACT_COVERAGE_RATIO * PERCENT).toInt()}% 미만 문서: $lowLabel"
     }
 
     private fun callLine(): String {
@@ -326,18 +377,51 @@ internal class LaneReport(
         appendLine("문서별 측정 (원문 글자 수 내림차순)")
         measurements
             .sortedByDescending { it.sourceChars }
-            .forEach { appendLine("  ${documentLine(it)}") }
+            .forEach { measurement ->
+                appendLine("  ${documentLine(measurement)}")
+                appendMissingFactsLine(measurement)
+            }
     }
 
     private fun documentLine(measurement: LaneMeasurement): String =
         "${measurement.documentId} — 원문 ${measurement.sourceChars} · " +
             "변환 ${measurement.convertedChars?.toString() ?: "-"} · " +
             "팽창비 ${measurement.expansion?.let { String.format(Locale.ROOT, "%.2f", it) } ?: "-"} · " +
+            "사실 보존 ${factCoverageLabel(measurement.factCoverage)} · " +
             "출력 토큰 ${measurement.outputTokens} · " +
             "절단 호출 ${measurement.truncatedCalls} · " +
             "스타일 ${styleLabel(measurement.stylePassed)} · " +
             "문장 ${measurement.sentenceCount} · " +
             "위반 ${styleIssueSummary(measurement)}"
+
+    /** [FactCoverage.sourceFactCount] 가 0 이거나 값 자체가 없으면(변환 실패) "-" — 다른 필드와 같은 관례. */
+    private fun factCoverageLabel(coverage: FactCoverage?): String {
+        if (coverage == null || coverage.sourceFactCount == 0) return "-"
+        return "${coverage.keptCount}/${coverage.sourceFactCount}(${rate(
+            coverage.keptCount,
+            coverage.sourceFactCount,
+        )})"
+    }
+
+    /**
+     * 계획 S2 — 보존율이 [MISSING_FACTS_RATIO_THRESHOLD] 미만인 문서에 한해, 사라진 값을
+     * 최대 [MISSING_FACTS_SAMPLE_SIZE] 개까지 문서 줄 아래에 싣는다. 90% 이상인 문서는 이
+     * 줄 자체를 만들지 않는다 — 계획의 명시적 결정(「리포트가 부풀면 아무도 안 읽는다」).
+     *
+     * [FactCoverage.missing] 의 표시값은 골든 원문(공개 문서)의 수치 조각이다 — 사용자 문서
+     * 본문이 아니고, 이 레인은 원래도 judge 판정 사유를 싣는다(PR #79와 같은 선). 제품
+     * 관측(`MetricsLlmProviderDecorator`·구조화 로그)에는 이 값을 넣지 않는다 — 그쪽은 본문을
+     * 남기지 않는 계약이라 이 레인과 다르다.
+     */
+    private fun StringBuilder.appendMissingFactsLine(measurement: LaneMeasurement) {
+        val coverage = measurement.factCoverage
+        val ratio = coverage?.ratio
+        if (coverage == null || ratio == null || ratio >= MISSING_FACTS_RATIO_THRESHOLD) return
+        val sample = coverage.missing.take(MISSING_FACTS_SAMPLE_SIZE).joinToString(", ") { it.value }
+        val remaining = coverage.missing.size - MISSING_FACTS_SAMPLE_SIZE
+        val more = if (remaining > 0) " 외 ${remaining}개" else ""
+        appendLine("    └ 사라진 사실: $sample$more")
+    }
 
     private fun styleLabel(passed: Boolean?): String =
         when (passed) {
@@ -518,6 +602,10 @@ internal class LaneReport(
      *   중앙값이다 — 출력 토큰·소요 시간은 절단된 회차도 실측값을 낸다.
      * - [truncatedCallsTotal] 은 이 문서의 모든 회차에 걸친 호출 단위 절단 합 — 절단
      *   발생률의 호출 쪽 분자는 여전히 호출 수 기준이라 문서 축약을 거치지 않는다.
+     * - [factSourceCount] 는 [FactCoverage.sourceFactCount] 그대로다 — **원문에서만** 뽑히므로
+     *   회차와 무관하게 항상 같은 값이라 축약 없이 첫 성공 회차의 값을 쓴다. [medianFactKeptCount]
+     *   는 [medianOutputTokens] 와 같은 방식으로 회차 간 중앙값이다 — 값이 회차(변환문)마다
+     *   달라질 수 있어서다.
      */
     private data class DocumentSummary(
         val documentId: String,
@@ -532,7 +620,13 @@ internal class LaneReport(
         val medianOutputTokens: Int,
         val medianElapsedMillis: Long,
         val truncatedCallsTotal: Int,
-    )
+        val factSourceCount: Int?,
+        val medianFactKeptCount: Int?,
+    ) {
+        /** [factCoverageSummaryLine] 이 쓰는 문서 단위 보존율. 잴 사실이 없으면(`0`) `null`. */
+        val factCoverageRatio: Double?
+            get() = factSourceCount?.takeIf { it > 0 }?.let { total -> (medianFactKeptCount ?: 0).toDouble() / total }
+    }
 
     /** [documentId] 별로 묶은, 소요 시간과 짝지은 반복 기록. 처음 나온 순서를 유지한다. */
     private fun runGroups(): List<List<Pair<LaneMeasurement, Long>>> =
@@ -554,6 +648,7 @@ internal class LaneReport(
         val hasConvertedRun = rows.any { (measurement, _) -> measurement.convertedChars != null }
         val convertedExpansions = rows.mapNotNull { (measurement, _) -> measurement.expansion }
         val convertedDensities = rows.mapNotNull { (measurement, _) -> measurement.styleIssueDensity }
+        val convertedFactCoverages = rows.mapNotNull { (measurement, _) -> measurement.factCoverage }
         return DocumentSummary(
             documentId = rows.first().first.documentId,
             sourceChars = rows.first().first.sourceChars,
@@ -570,6 +665,8 @@ internal class LaneReport(
             medianOutputTokens = quantile(rows.map { (measurement, _) -> measurement.outputTokens }.sorted(), MEDIAN),
             medianElapsedMillis = quantile(rows.map { (_, elapsedMillis) -> elapsedMillis }.sorted(), MEDIAN),
             truncatedCallsTotal = rows.sumOf { (measurement, _) -> measurement.truncatedCalls },
+            factSourceCount = convertedFactCoverages.firstOrNull()?.sourceFactCount,
+            medianFactKeptCount = medianOrNull(convertedFactCoverages.map { it.keptCount }),
         )
     }
 
@@ -622,6 +719,19 @@ internal class LaneReport(
          * 권장」도 이 경계를 쓴다.
          */
         const val LONG_DOCUMENT_CHARS: Int = 2_000
+
+        /**
+         * 계획 S1 요약 줄의 「보존율 낮은 문서」 경계. 계획 문서(`docs/plans/2026-09-09-content-loss.md`)
+         * §3 S1 이 그대로 못 박은 값이다 — 게이트 임계값이 아니라 리포트가 눈에 띄게 하는 경계일
+         * 뿐이라 이 값을 바꿔도 통과/실패는 바뀌지 않는다.
+         */
+        const val LOW_FACT_COVERAGE_RATIO: Double = 0.70
+
+        /** 계획 S2 — 문서 줄 아래에 사라진 사실 목록을 붙이는 경계. §3 S2 가 못 박은 값이다. */
+        const val MISSING_FACTS_RATIO_THRESHOLD: Double = 0.90
+
+        /** 계획 S2 — 사라진 사실을 문서 줄 아래에 최대 몇 개까지 나열할지. §3 S2 가 못 박은 값이다. */
+        const val MISSING_FACTS_SAMPLE_SIZE: Int = 8
 
         const val MEDIAN: Double = 0.5
         const val P90: Double = 0.9

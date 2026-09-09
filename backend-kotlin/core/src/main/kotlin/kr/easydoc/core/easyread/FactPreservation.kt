@@ -34,6 +34,79 @@ data class FactIssue(
 }
 
 /**
+ * 원문 사실 총수와 그중 [draft] 에서 사라진 것을 함께 담는다.
+ *
+ * [sourceFactCount] 와 [missing] 은 **같은 중복 제거 기준**(`kind`·`compareKey`)으로 낸
+ * 값이지만, 적용 순서는 다르다 — [sourceFactCount] 는 원문 사실을 먼저 중복 제거한 수이고,
+ * [missing] 은 중복 제거 전 원본 인스턴스 각각을 먼저 판정한 뒤에야 중복 제거로 마무리한다
+ * ([factCoverage] KDoc, 리뷰 blocker 2026-09-09 — 순서를 뒤바꾸면 DATE 의 연도 비대칭
+ * 비교가 조용히 사라진다). `missing` 의 모든 키가 [sourceFactCount] 를 낸 집합의 키
+ * 부분집합이므로 `missing.size <= sourceFactCount` 는 여전히 성립하고 [ratio] 가 1.0 을
+ * 넘지 않는다.
+ *
+ * 관측 슬라이스 S1(`docs/plans/2026-09-09-content-loss.md`)이 만든 값이다. 지금까지
+ * 레인은 문서당 3~6개인 큐레이션 `required_facts` 만으로 사실 보존을 쟀는데, 그 목록 밖의
+ * 수치(예: 요율표의 개월·퍼센트 나열)가 통째로 사라져도 게이트가 못 잡는 간극이 있었다
+ * (`022` 문서, 6차 실측). 이 값은 원문 전체의 규칙 기반 추출 사실을 분모로 써서 그 간극을
+ * 관측한다 — 판정에는 쓰지 않는다.
+ */
+data class FactCoverage(
+    /** 원문에서 뽑은 사실의 수 — 중복 제거 후([factCoverage] KDoc). */
+    val sourceFactCount: Int,
+    /** [sourceFactCount] 중 [draft] 에 하나도 남지 않은 것. */
+    val missing: List<FactIssue>,
+) {
+    /** [sourceFactCount] 에서 [missing] 을 뺀, 변환문에 남은 사실 수. */
+    val keptCount: Int get() = sourceFactCount - missing.size
+
+    /** 보존율 = [keptCount] / [sourceFactCount]. 원문에 사실이 하나도 없으면(`0`) `null` — 0%로 채우지 않는다. */
+    val ratio: Double? get() = sourceFactCount.takeIf { it > 0 }?.let { keptCount.toDouble() / it }
+}
+
+/**
+ * [source] 사실 보존 현황을 [FactCoverage] 로 낸다.
+ *
+ * [FactCoverage.sourceFactCount] 는 [source] 에서 뽑은 사실을 `kind`·`compareKey` 로 중복
+ * 제거한([distinctBy]) 수다. [FactCoverage.missing] 은 **중복 제거 전** 전체 목록에
+ * `filterNot` 을 먼저 적용한 뒤에야 `distinctBy` 로 마무리한다 — 이 순서가 뒤바뀌면 안 된다
+ * (리뷰 blocker, 2026-09-09 재현). 이유는 [FactKind.DATE] 의 비대칭 비교([sameDate])에
+ * 있다: `compareKey` 는 항상 `MMDD` 뿐이고 [ExtractedFact.year] 는 `distinctBy` 키에 없다.
+ * 그래서 같은 월-일이 연도 유무를 달리해 원문에 두 번 나오면(공문에 흔하다) 먼저
+ * `distinctBy` 를 적용해 하나만 남길 경우 **어느 표기가 대표로 남는지에 따라 결과가
+ * 갈린다** — 연도 없는 쪽이 대표로 뽑히면 연도 있는 쪽의 `sameDate()` 검사(원문에 연도가
+ * 있었으면 변환문도 같은 연도를 적어야 한다)가 통째로 사라져, 변환문이 연도를 빼먹어도
+ * 못 잡는다(항상 적게 잡는 방향으로만 새는 미탐). 그래서 `filterNot` 은 **중복 제거 전
+ * 원본 인스턴스 각각**에 적용해 개별 판정을 보존하고, 결과를 표시할 때만(`missing` 안에서도
+ * 같은 사실이 두 번 보고되지 않도록) `distinctBy` 로 마무리한다. `missing` 의 모든 키가
+ * `sourceFacts`(중복 제거된 분모) 의 키 부분집합이므로 `missing.size <= sourceFactCount`
+ * 는 여전히 성립한다. [findMissingFacts] 는 이 함수의 [FactCoverage.missing] 만 돌려주는
+ * 얇은 위임이다 — 비교 규칙(사실 정체성 판정, [FactKind.DATE] 부분 비교)이 이 함수 한
+ * 곳에만 있다.
+ */
+fun factCoverage(
+    source: String,
+    draft: String,
+): FactCoverage {
+    val sourceFactsRaw = extractFacts(source)
+    val sourceFactCount = sourceFactsRaw.distinctBy { it.kind to it.compareKey }.size
+    val draftFacts = extractFacts(draft)
+    val draftKeys = draftFacts.mapTo(HashSet()) { it.kind to it.compareKey }
+
+    val missing =
+        sourceFactsRaw
+            .filterNot { fact ->
+                if (fact.kind == FactKind.DATE) {
+                    draftFacts.any { it.kind == FactKind.DATE && sameDate(fact, it) }
+                } else {
+                    (fact.kind to fact.compareKey) in draftKeys
+                }
+            }.distinctBy { it.kind to it.compareKey }
+            .map { FactIssue(it.kind, it.displayValue) }
+
+    return FactCoverage(sourceFactCount, missing)
+}
+
+/**
  * [source] 에 있던 사실 중 [draft] 에 하나도 남아 있지 않은 것을 찾는다.
  *
  * [source] 에는 **실제로 LLM 에 나간 문서 원문**을 넘긴다.
@@ -41,25 +114,13 @@ data class FactIssue(
  * 규칙 기반 추출이며 LLM 을 부르지 않는다. 같은 추출 규칙을 [source] 와 [draft] 양쪽에
  * 적용해 비교한다 — 값이 같으면 표기가 달라도(구분자·전각·오전오후·한글 수사 등) 보존으로 본다.
  * [FactKind.DATE] 만 예외로 **부분 비교**다: 한쪽에 연도가 없으면 월·일만 맞으면 된다([sameDate] 참고).
+ *
+ * [factCoverage] 로 위임한다 — 비교 규칙은 한 곳(그 함수)에만 있다.
  */
 fun findMissingFacts(
     source: String,
     draft: String,
-): List<FactIssue> {
-    val sourceFacts = extractFacts(source)
-    val draftFacts = extractFacts(draft)
-    val draftKeys = draftFacts.mapTo(HashSet()) { it.kind to it.compareKey }
-
-    return sourceFacts
-        .filterNot { fact ->
-            if (fact.kind == FactKind.DATE) {
-                draftFacts.any { it.kind == FactKind.DATE && sameDate(fact, it) }
-            } else {
-                (fact.kind to fact.compareKey) in draftKeys
-            }
-        }.distinctBy { it.kind to it.compareKey }
-        .map { FactIssue(it.kind, it.displayValue) }
-}
+): List<FactIssue> = factCoverage(source, draft).missing
 
 /**
  * 같은 날짜인가 — [ExtractedFact.compareKey] 는 항상 `MMDD` 라 월·일은 이미 비교된 것이고,
