@@ -35,8 +35,8 @@ class UsageReportServiceTest {
 
     @Suppress("LongParameterList")
     private fun row(
-        userId: UUID = UUID.randomUUID(),
-        ownerEmail: String,
+        userId: UUID? = UUID.randomUUID(),
+        ownerEmail: String?,
         workspaceId: UUID? = UUID.randomUUID(),
         workspaceName: String? = "워크스페이스",
         documents: Int = 1,
@@ -229,6 +229,45 @@ class UsageReportServiceTest {
                 .drop(1)
                 .first()
         assertThat(dataLine).startsWith(",(삭제된 워크스페이스),owner@example.com,")
+    }
+
+    @Test
+    @DisplayName("owner_email이 null이면 소유자 열이 고정 안내문이다 — 탈퇴한 계정(V19)")
+    fun `탈퇴한 계정의 행은 안내문으로 표시된다`() {
+        val rowValue = row(userId = null, ownerEmail = null)
+        val service = UsageReportService(FakeUsageReportRepository(listOf(rowValue)), zone, clock)
+
+        val report = service.generateCsv(from = "2026-01-01", to = "2026-01-31")
+
+        val dataLine =
+            report.csv
+                .lineSequence()
+                .drop(1)
+                .first()
+        assertThat(dataLine).contains(",(탈퇴한 계정 합계),")
+    }
+
+    @Test
+    @DisplayName("탈퇴한 계정 행도 다른 행과 함께 정렬되고 사라지지 않는다")
+    fun `탈퇴한 계정 행도 정렬 목록에 남는다`() {
+        val rows =
+            listOf(
+                row(ownerEmail = "b@example.com", workspaceName = "가"),
+                row(userId = null, ownerEmail = null, workspaceName = "탈퇴한 계정의 공간"),
+                row(ownerEmail = "a@example.com", workspaceName = "나"),
+            )
+        val service = UsageReportService(FakeUsageReportRepository(rows), zone, clock)
+
+        val report = service.generateCsv(from = "2026-01-01", to = "2026-01-31")
+
+        val emails =
+            report.csv
+                .lineSequence()
+                .drop(1)
+                .filter { it.isNotBlank() }
+                .map { it.split(",")[2] }
+                .toList()
+        assertThat(emails).hasSize(3).contains("a@example.com", "b@example.com", "(탈퇴한 계정 합계)")
     }
 
     @Test

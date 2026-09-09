@@ -402,6 +402,11 @@ class OwnershipPredicateGuardTest {
                 "$ADMIN/JdbcAdminConversionQueryRepository.kt | SELECT [conversions, documents]",
                 "$ADMIN/JdbcAdminConversionQueryRepository.kt | SELECT [conversions]",
                 "$ADMIN/JdbcAdminConversionQueryRepository.kt | SELECT [conversions, documents]",
+                // 회원 탈퇴(2.27.0, 계획 `docs/plans/2026-09-09-account-deletion.md`) —
+                // `conversion_feedback`(V2)은 FK가 없어 CASCADE가 닿지 않아 사용자 삭제
+                // 전에 이 DELETE로 명시로 지운다. 소유 술어(`d.user_id = :userId`)는
+                // 서브쿼리 안에 있다 — 아래 미방어 목록에는 없다.
+                "$AUTH/JdbcAccountDeletionRepository.kt | DELETE [conversion_feedback, conversions, documents]",
                 // 미검증 계정 파기 배치(2026-09-07, backlog §1.4 ⑵ ⓐ) — 후보 선택 SELECT 와
                 // 건너뛴 건수 카운트 SELECT 둘 다 아래 미방어 목록에 있다. 문서를 가진 계정을
                 // 고르는 `NOT EXISTS`/`EXISTS` 서브쿼리가 `documents.user_id` 를 훑지만 값을

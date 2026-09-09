@@ -21,8 +21,13 @@ import java.util.UUID
  * 로그에는 남기지 않는다(`UsageReportRunner`).
  */
 data class UsageReportRow(
-    val userId: UUID,
-    val ownerEmail: String,
+    /**
+     * `null`이면 그 사용자가 탈퇴했다(회원 탈퇴 계획 `docs/plans/2026-09-09-account-deletion.md`,
+     * V19 — `llm_calls.user_id ON DELETE SET NULL`). `ownerEmail`도 그때 함께 `null`이다 —
+     * 이 원장 행 자체는 원가·사용량 근거로 남지만 소유자 신원은 사라진다.
+     */
+    val userId: UUID?,
+    val ownerEmail: String?,
     val workspaceId: UUID?,
     val workspaceName: String?,
     val documents: Int,
@@ -139,7 +144,7 @@ class UsageReportService(
         val sorted =
             rows.sortedWith(
                 compareBy(
-                    { it.ownerEmail },
+                    { it.ownerEmail ?: DELETED_ACCOUNT_LABEL },
                     { it.workspaceName ?: DELETED_WORKSPACE_LABEL },
                     { it.workspaceId?.toString().orEmpty() },
                 ),
@@ -162,7 +167,7 @@ class UsageReportService(
         listOf(
             row.workspaceId?.toString().orEmpty(),
             row.workspaceName ?: DELETED_WORKSPACE_LABEL,
-            row.ownerEmail,
+            row.ownerEmail ?: DELETED_ACCOUNT_LABEL,
             row.documents.toString(),
             row.characters.toString(),
             row.credits.toString(),
@@ -201,6 +206,17 @@ class UsageReportService(
     private companion object {
         /** 워크스페이스가 나중에 삭제된 행(`workspace_id IS NULL`)의 표시명. */
         const val DELETED_WORKSPACE_LABEL = "(삭제된 워크스페이스)"
+
+        /**
+         * 소유자가 탈퇴한 행(`owner_email IS NULL`, V19 `llm_calls.user_id SET NULL`)의
+         * 표시명이다. **여러 탈퇴 계정이 이 한 줄로 합쳐질 수 있다** — 저장소의 `GROUP BY
+         * user_id`가 NULL끼리를 한 그룹으로 묶기 때문이다(`JdbcUsageReportRepository`
+         * KDoc). `user_id`가 사라진 시점에 그 사용량이 누구 것이었는지는 설계상 복구
+         * 불가능하므로(회원 탈퇴는 귀속을 없애는 것이 목적이다), 합쳐서 하나의 합계로
+         * 내는 쪽을 택했다 — 그래서 이름에 "합계"를 명시해 운영자가 계정 하나로
+         * 오해하지 않게 한다.
+         */
+        const val DELETED_ACCOUNT_LABEL = "(탈퇴한 계정 합계)"
         const val CRLF = "\r\n"
 
         /** RFC 4180 — 이 문자 중 하나라도 있으면 필드를 큰따옴표로 감싼다. */

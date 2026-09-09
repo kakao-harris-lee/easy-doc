@@ -206,6 +206,106 @@ class JdbcUsageReportRepositoryTest {
         assertThat(row.characters).isEqualTo(100)
     }
 
+    /**
+     * 회원 탈퇴(V19, `docs/plans/2026-09-09-account-deletion.md`)가 `llm_calls.user_id`를
+     * `SET NULL`로 바꿨다 — 그런데 이 저장소가 `JOIN users`(INNER)를 쓰면 그 행이 원장에는
+     * 있는데도 리포트에서 조용히 사라진다. V19가 존재하는 이유(원가·사용량 근거 보존)를
+     * 이 리포트가 스스로 무너뜨리는 결함이다 — `LEFT JOIN`으로 고친다.
+     */
+    @Test
+    @DisplayName("탈퇴한 계정(user_id NULL)의 원장 행도 리포트에서 사라지지 않는다 — 소유자 자리는 null")
+    fun `탈퇴한 계정의 행도 리포트에 남는다`() {
+        val owner = newOwner()
+        val ws = workspaces.create(owner, "공간-${UUID.randomUUID()}")
+        val at = Instant.parse("2026-10-01T02:00:00Z")
+        val doc = insertDocument(ws.id, owner, charCount = 900, createdAt = at)
+        appendCall(
+            ws.id,
+            owner,
+            LlmCallPurpose.CONVERT,
+            documentId = doc,
+            documentCharCount = 900,
+            inputTokens = 9,
+            outputTokens = 9,
+            costUsd = null,
+            calledAt = at,
+        )
+
+        // V19 그대로 — 사용자 삭제가 llm_calls.user_id 를 SET NULL 한다(그 사이
+        // workspace_id 도 workspaces CASCADE 삭제로 함께 SET NULL 된다, V14).
+        jdbc.sql("DELETE FROM users WHERE id = :id").param("id", owner).update()
+
+        val rows = repository.reportRows(zoneMidnight(2026, 10, 1), zoneMidnight(2026, 10, 2))
+        val orphanRow = rows.first { it.characters == 900L }
+
+        assertThat(orphanRow.userId).isNull()
+        assertThat(orphanRow.ownerEmail).isNull()
+        assertThat(orphanRow.workspaceId).isNull()
+        assertThat(orphanRow.documents).isEqualTo(1)
+    }
+
+    /**
+     * 명세다, 버그가 아니다 — 저장소의 `GROUP BY user_id`가 NULL끼리를 한 그룹으로 묶는
+     * SQL 동작을 그대로 쓴 결과다. 탈퇴한 두 계정의 사용량은 이 리포트에서 원래
+     * 하나였던 것처럼 합쳐진다(`JdbcUsageReportRepository` KDoc, `UsageReportService
+     * .DELETED_ACCOUNT_LABEL` KDoc에 이유가 있다).
+     */
+    @Test
+    @DisplayName("탈퇴한 계정이 둘 이상이면 그 사용량이 하나의 합계 행으로 합쳐진다 — 명세다, 버그가 아니다")
+    fun `탈퇴한 계정 여럿의 사용량이 한 행으로 합쳐진다`() {
+        val at = Instant.parse("2026-11-01T02:00:00Z")
+
+        val ownerA = newOwner()
+        val wsA = workspaces.create(ownerA, "공간-${UUID.randomUUID()}")
+        val docA = insertDocument(wsA.id, ownerA, charCount = 400, createdAt = at)
+        appendCall(
+            wsA.id,
+            ownerA,
+            LlmCallPurpose.CONVERT,
+            documentId = docA,
+            documentCharCount = 400,
+            inputTokens = 10,
+            outputTokens = 5,
+            costUsd = BigDecimal("0.001000"),
+            calledAt = at,
+        )
+
+        val ownerB = newOwner()
+        val wsB = workspaces.create(ownerB, "공간-${UUID.randomUUID()}")
+        // 400과 다른 크레딧 올림 값(ceil(1600/1000)=2)이 나오는 글자 수를 골라, 합계가
+        // documents(2)와 우연히 같은 값으로 보이지 않게 한다.
+        val docB = insertDocument(wsB.id, ownerB, charCount = 1600, createdAt = at)
+        appendCall(
+            wsB.id,
+            ownerB,
+            LlmCallPurpose.CONVERT,
+            documentId = docB,
+            documentCharCount = 1600,
+            inputTokens = 20,
+            outputTokens = 15,
+            costUsd = BigDecimal("0.002000"),
+            calledAt = at,
+        )
+
+        // 둘 다 탈퇴 — V19가 각자 user_id 를 SET NULL 한다.
+        jdbc.sql("DELETE FROM users WHERE id = :id").param("id", ownerA).update()
+        jdbc.sql("DELETE FROM users WHERE id = :id").param("id", ownerB).update()
+
+        val rows = repository.reportRows(zoneMidnight(2026, 11, 1), zoneMidnight(2026, 11, 2))
+        val orphanRows = rows.filter { it.userId == null }
+
+        assertThat(orphanRows).hasSize(1)
+        val merged = orphanRows.single()
+        assertThat(merged.ownerEmail).isNull()
+        assertThat(merged.documents).isEqualTo(2)
+        assertThat(merged.characters).isEqualTo(2000)
+        assertThat(merged.credits).isEqualTo(3) // ceil(400/1000)=1 + ceil(1600/1000)=2
+        assertThat(merged.llmCalls).isEqualTo(2)
+        assertThat(merged.inputTokens).isEqualTo(30)
+        assertThat(merged.outputTokens).isEqualTo(20)
+        assertThat(merged.estimatedCostUsd).isEqualByComparingTo(BigDecimal("0.003000"))
+    }
+
     @Test
     @DisplayName("빈 기간은 빈 목록이다")
     fun `빈 기간은 빈 목록이다`() {

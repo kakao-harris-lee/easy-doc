@@ -498,7 +498,7 @@ class SensitiveToStringReachTest {
          * 없어 표본조차 만들지 않는다). `EditDistanceBudget`·`UnitRun` 과 같은 판단으로
          * `KNOWN_SENSITIVE_TYPES` 에는 넣지 않는다.
          */
-        const val EXPECTED_SOURCE_DECLARATIONS = 203
+        const val EXPECTED_SOURCE_DECLARATIONS = 205
 
         /** 민감 판정이 반드시 닿아야 하는 타입 — 바닥이다. */
         val KNOWN_SENSITIVE_TYPES =

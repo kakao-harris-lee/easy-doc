@@ -13,6 +13,7 @@ import {
   History,
   LogOut,
   Menu,
+  Settings,
   ShieldCheck,
   UserRound,
   X,
@@ -24,6 +25,7 @@ import { useAuth } from '../auth/context'
 import { cn } from '../lib/utils'
 import { confirmDiscardUnsaved } from '../review/unsavedChanges'
 import {
+  ACCOUNT_SETTINGS_PATH,
   ADMIN_PATH,
   EMAIL_VERIFICATION_PATH,
   HISTORY_PATH,
@@ -226,6 +228,24 @@ function AccountMenu({
             <LogOut className="size-4" aria-hidden="true" />
             로그아웃
           </Button>
+          {/* 계정 설정(회원 탈퇴) 진입점 — 계획 `docs/plans/2026-09-09-account-deletion.md`.
+              다른 이동 링크와 같은 이유로 저장하지 않은 수정을 먼저 확인하고, 확인을
+              통과하면 메뉴를 닫는다. */}
+          <Link
+            to={ACCOUNT_SETTINGS_PATH}
+            className="mt-2 flex min-h-11 w-full items-center gap-2 rounded-md px-3 font-medium text-foreground hover:bg-secondary"
+            onClick={(event) => {
+              if (!confirmDiscardUnsaved()) {
+                event.preventDefault()
+                return
+              }
+              setOpen(false)
+            }}
+            onKeyDown={handleEscape}
+          >
+            <Settings className="size-4" aria-hidden="true" />
+            계정 설정
+          </Link>
           {/* 관리자 화면 진입점 — `is_admin`이 참일 때만 보인다(어드민 최소 계획 §2
               결정 6). 실제 접근은 서버(`AdminGuard`)가 매 요청 다시 판정한다. 로그아웃
               뒤에 둔다 — 그래야 메뉴가 열릴 때 초점이 가는 "첫 행동"(firstItemRef)이
@@ -414,6 +434,12 @@ export function AppLayout({ children }: { children: ReactNode }) {
                 <NavLink to={ADMIN_PATH} onClick={guard} className={navLinkClass}>
                   <ShieldCheck className="size-4" aria-hidden="true" />
                   관리
+                </NavLink>
+              )}
+              {user !== null && (
+                <NavLink to={ACCOUNT_SETTINGS_PATH} onClick={guard} className={navLinkClass}>
+                  <Settings className="size-4" aria-hidden="true" />
+                  계정 설정
                 </NavLink>
               )}
               <Button

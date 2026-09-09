@@ -1,5 +1,6 @@
 package kr.easydoc.api.auth
 
+import kr.easydoc.application.account.DeleteAccountService
 import kr.easydoc.application.auth.AuthService
 import kr.easydoc.application.auth.EmailVerificationService
 import kr.easydoc.application.auth.PasswordResetService
@@ -16,7 +17,7 @@ import org.springframework.web.bind.annotation.RestController
 
 /**
  * `/auth/signup` · `/auth/login` · `/auth/me` · `/auth/email-verification/{request,confirm}` ·
- * `/auth/password` · `/auth/password-reset/{request,confirm}`.
+ * `/auth/password` · `/auth/password-reset/{request,confirm}` · `/auth/me/deletion`.
  *
  * 조립 지점(생성자)의 매개변수 수는 이 컨트롤러가 다루는 유스케이스의 수다 — `AuthConfiguration`
  * 과 같은 근거로 늘어난다.
@@ -30,6 +31,7 @@ class AuthController(
     private val socialLogin: SocialLoginService,
     private val passwordService: PasswordService,
     private val passwordResetService: PasswordResetService,
+    private val deleteAccountService: DeleteAccountService,
 ) {
     /** 계정과 기본 작업 공간을 만든다. **201** 이다 — 자원이 실제로 생겼다. */
     @PostMapping("/signup", consumes = [MediaType.APPLICATION_JSON_VALUE])
@@ -120,6 +122,22 @@ class AuthController(
                 expiresIn = issued.expiresInSeconds,
             ),
         )
+    }
+
+    /**
+     * 계정을 즉시 파기한다 — 유예·복구 기간이 없다(계획
+     * `docs/plans/2026-09-09-account-deletion.md` §2 결정 3). 재확인 두 겹(비밀번호·확인
+     * 문구)이 틀리면 422, 관리자 계정이면 409다. 성공하면 이 토큰을 포함한 모든 인증
+     * 수단이 같은 트랜잭션에서 사라지므로 이후 요청은 자연히 401이다 — 별도 로그아웃
+     * 처리가 필요 없다.
+     */
+    @PostMapping("/me/deletion", consumes = [MediaType.APPLICATION_JSON_VALUE])
+    fun deleteAccount(
+        user: AuthenticatedUser,
+        @RequestBody request: DeleteAccountRequest,
+    ): ResponseEntity<Void> {
+        deleteAccountService.deleteAccount(user.id, request.password, request.confirmation)
+        return ResponseEntity.noContent().build()
     }
 
     /** 고위험 응답에 붙는 하한선 헤더. 값의 정본은 계약 `components/headers` 의 각 컴포넌트다. */

@@ -41,7 +41,7 @@ openapi: 3.1.0
 
 info:
   title: Easy-Read AI API
-  version: "2.26.0"
+  version: "2.28.0"
   x-baselined-at: "2026-08-12"       # 초판 기준선을 뜬 날 (동결일이 아니다)
   x-rebased-at: "2026-08-12"         # 계약의 성격을 "개선 대상"으로 다시 정의한 날
   x-source-runtime: "Python 3.12 / FastAPI (app/main.py) — 과거 참고 구현이었고 2026-08-24 저장소에서 제거됨(git 태그 pre-python-removal-20260824). 기준선 출처였을 뿐 정답이 아니었다"
@@ -49,7 +49,7 @@ info:
   description: |
     공공기관용 '쉬운 글' 자동 변환 서비스의 HTTP 계약 v1.
 
-    **엔드포인트는 정확히 29개다** — 제품 28개 + 헬스 체크 1개.
+    **엔드포인트는 정확히 44개다** — 제품 43개 + 헬스 체크 1개.
     계획 §2.2가 센 "14개 HTTP 엔드포인트"는 **그 문서를 쓸 때의 수**이며 `/health`를
     포함해야 맞는 수였다. 1.5.0에서 `PUT /conversions/{conversion_id}/feedback`이,
     2.2.0에서 `GET /documents/{document_id}/source`가, 2.8.0에서 소셜 로그인
@@ -75,8 +75,17 @@ info:
     원본 단위 종류)은 새 오퍼레이션 없이 기존 `segment_map` 응답만 넓혀 30개
     그대로였고, 2.24.0에서 세금계산서 요청 기록(계획
     `docs/plans/2026-09-07-invoice-requests.md`) `POST`·
-    `GET /workspaces/{workspace_id}/invoice-requests` 둘이 더해져 오늘은 32개다 —
-    계획 문서의 수를 고치는 것이 아니라 **수의 정본이 이 계약**이다.
+    `GET /workspaces/{workspace_id}/invoice-requests` 둘이 더해져 32개였다.
+    2.25.0(어드민 최소, `docs/plans/2026-09-07-admin-minimum.md`)에서 관리자 전용
+    오퍼레이션 10종(`GET /admin/workspaces`·`GET /admin/workspaces/{workspace_id}`·
+    `POST /admin/workspaces/{workspace_id}/credits`·`GET /admin/invoice-requests`·
+    `POST /admin/invoice-requests/{id}/handle`·`GET /admin/errors`·
+    `GET /admin/usage`·`GET`·`POST /admin/announcements`·
+    `PATCH /admin/announcements/{id}`)와 인증 사용자 전용 `GET /announcements/active`
+    하나를 합친 11종이 더해져 43개였고, 2.26.0(실패 호출 원장 추적)은 새 오퍼레이션 없이 기존
+    응답 스키마만 넓혀 43개 그대로였다. 2.27.0에서 회원 탈퇴(계획
+    `docs/plans/2026-09-09-account-deletion.md`) `POST /auth/me/deletion`이 더해져
+    오늘은 44개다 — 계획 문서의 수를 고치는 것이 아니라 **수의 정본이 이 계약**이다.
 
     ## 경로 접두사
     애플리케이션 경로에는 `/api` 접두사가 없다. `app/api/auth.py`의
@@ -1941,6 +1950,66 @@ paths:
                 already_has_password:
                   value:
                     detail: "이미 비밀번호가 있는 계정입니다. 비밀번호를 바꾸려면 재설정을 이용하세요."
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  # ===========================================================================
+  # 회원 탈퇴 (2.27.0 신설) — POST /auth/me/deletion
+  # 정본은 계획 `docs/plans/2026-09-09-account-deletion.md` §2.
+  # ===========================================================================
+  /auth/me/deletion:
+    post:
+      tags: [auth]
+      operationId: deleteAccount
+      summary: 계정과 개인정보를 즉시 파기한다
+      security: [{ HTTPBearer: [] }]
+      description: |
+        **즉시 파기다. 유예 기간·복구 기간을 두지 않는다.** 성공하면 그 트랜잭션 안에서
+        계정(`users`)과 CASCADE로 묶인 대부분(작업 공간·문서·변환·소셜 연결·크레딧
+        거래·세금계산서 요청 이력)이 함께 사라진다. `conversion_feedback`은 FK가 없어
+        CASCADE가 닿지 않아 이 오퍼레이션이 먼저 명시로 지운다. `llm_calls`는 개인정보가
+        없는 원가·사용량 근거라 지우지 않고 `user_id`만 `NULL`로 남긴다(`SET NULL`, V19).
+
+        **재확인은 두 겹이다.** `readMe.has_password: true`인 계정은 `password`가
+        필수다 — 소셜 전용 계정은 생략해도 된다. 두 경우 모두 `confirmation`이 정확히
+        `"탈퇴합니다"`여야 한다. 둘 중 하나라도 틀리면 **422**다(401이 아니다 — 이미
+        인증된 세션이고, 여기서 401을 내면 화면이 로그아웃 처리로 오해한다).
+
+        **관리자 계정은 409로 거절한다** — `announcements.created_by`가 `NOT NULL
+        CASCADE`라 관리자를 지우면 공지가 함께 사라지고 감사 흔적도 끊긴다.
+        `admin-grant --revoke`로 권한을 회수한 뒤 다시 시도해야 한다.
+
+        처리 대기(`requested`) 세금계산서 요청이 있어도 탈퇴를 막지 않는다 — 대신 요청
+        id만 담은(이름·이메일 없음) 운영자 알림 메일을 best-effort로 보낸다. 발송
+        실패는 탈퇴를 막지 않는다.
+
+        성공하면 이 토큰을 포함한 그 계정의 모든 인증 수단이 같은 트랜잭션에서
+        사라지므로, 같은 토큰으로 하는 다음 요청은 자연히 401이다 — 별도 토큰 폐기
+        절차가 없다.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DeleteAccountRequest' }
+      responses:
+        '204':
+          description: 계정이 파기됐다
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CacheControlNoStore' }
+            X-Content-Type-Options: { $ref: '#/components/headers/XContentTypeOptions' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          description: 관리자 계정이다 — 관리자 권한을 회수한 뒤 다시 시도하라고 안내한다.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+              examples:
+                admin_account:
+                  value:
+                    detail: "관리자 계정은 탈퇴할 수 없습니다. admin-grant --revoke로 관리자 권한을 회수한 뒤 다시 시도하세요."
         '415': { $ref: '#/components/responses/UnsupportedMediaType' }
         '422':
           $ref: '#/components/responses/ValidationFailed'
@@ -5066,6 +5135,28 @@ components:
             최소 8자. [SetPasswordRequest.new_password]와 같은 규칙 — 위반은 422
             **문자열** detail이다. **이 값은 응답 본문·로그 어디에도 반향되지 않는다.**
 
+    DeleteAccountRequest:
+      type: object
+      required: [confirmation]
+      description: |
+        `POST /auth/me/deletion` 요청. 2.27.0 신설, 계획
+        `docs/plans/2026-09-09-account-deletion.md` §2 결정 1·2.
+      properties:
+        password:
+          type: string
+          description: |
+            `readMe.has_password: true`인 계정만 필수다 — 소셜 전용 계정은 생략해도
+            된다. 판정은 서비스 층이다(비밀번호 해시 검증) — 틀리면 422 **문자열**
+            detail이다(401이 아니다, 오퍼레이션 설명 참고). **이 값은 응답 본문·로그
+            어디에도 반향되지 않는다.**
+        confirmation:
+          type: string
+          x-service-constraint: { exact_match: "탈퇴합니다" }
+          description: |
+            정확히 `"탈퇴합니다"`를 그대로 입력받는다. 다르면 422 **문자열** detail —
+            판정은 서비스 층이다(`x-request-field-constraints`의 다섯 필드와 같은
+            층 구조, 값만 다르다: 길이가 아니라 정확 일치).
+
     TokenResponse:
       type: object
       required: [access_token, token_type, expires_in]
@@ -6321,8 +6412,20 @@ components:
          llm_calls, failed_calls, input_tokens, output_tokens, estimated_cost_usd, cost_unknown_calls]
       description: '`usage-report`(U3) CSV 행과 같은 값 — `UsageReportRow`.'
       properties:
-        user_id: { type: string, format: uuid }
-        owner_email: { type: string }
+        user_id:
+          description: |
+            탈퇴한 계정이면 `null`(2.28.0 신설, 계획
+            `docs/plans/2026-09-09-account-deletion.md` V19 —
+            `llm_calls.user_id ON DELETE SET NULL`). `owner_email`도 그때 함께 `null`이다.
+            `workspace_id`와 같은 판단이다.
+          anyOf:
+            - { type: string, format: uuid }
+            - { type: 'null' }
+        owner_email:
+          description: 탈퇴한 계정이면 `null`(2.28.0 신설) — [user_id]와 함께 사라진다.
+          anyOf:
+            - { type: string }
+            - { type: 'null' }
         workspace_id:
           description: 워크스페이스가 나중에 삭제됐으면 `null`(요청 이력은 보존한다).
           anyOf:
@@ -6555,6 +6658,73 @@ components:
 # 변경 이력
 # =============================================================================
 x-changelog:
+  - version: "2.28.0"
+    date: "2026-09-09"
+    revision: "ACCOUNT-DELETION-USAGE-REPORT-FIX"   # V19가 만든 회귀 수정 — 탈퇴한 계정의 원장 행이 U3/admin usage 리포트에서 사라지던 결함
+    author: contract-keeper
+    change: |
+      **2.27.0(회원 탈퇴, V19)이 스스로 만든 결함을 고친다.** V19는
+      `llm_calls.user_id`를 `CASCADE`에서 `SET NULL`로 바꿔 탈퇴한 계정의 원가·사용량
+      원장 행을 남기기로 결정했다 — 그런데 `JdbcUsageReportRepository`(U3
+      `usage-report` CSV·`GET /admin/usage`가 공유하는 같은 질의)가 `users`를
+      `JOIN`(INNER)으로 읽고 있어, `user_id`가 `NULL`인 행은 원장에는 남아도 이
+      리포트에서만 조용히 빠졌다. `LEFT JOIN`으로 고쳐 `workspace_id`(2.21.0부터 이미
+      같은 패턴)와 같은 취급으로 맞춘다.
+
+      ⑴ **`AdminUsageRow.user_id`가 `anyOf: [uuid, null]`로 바뀐다** — 탈퇴한 계정이면
+         `null`. `workspace_id`와 정확히 같은 판단이다.
+      ⑵ **`AdminUsageRow.owner_email`도 `anyOf: [string, null]`로 바뀐다** — [user_id]와
+         함께 사라진다.
+      ⑶ **`usage-report` CSV의 `owner_email` 열은 그대로 문자열이다** — 값이 없으면
+         `workspace_name`과 같은 방식으로 고정 안내문(`(탈퇴한 계정)`)을 채운다. **열
+         수·의미는 바뀌지 않는다.**
+      ⑷ **엔드포인트 수는 44로 그대로다.** 새 오퍼레이션 없이 기존 스키마 필드 둘의
+         널 허용만 넓힌다.
+    ground: |
+      **G1 — 이번 릴리스가 만든 회귀.** 2.27.0의 V19가 "탈퇴해도 원가·사용량 근거는
+      남긴다"고 결정했는데, 같은 릴리스가 그 근거를 리포트에서 숨기는 조회를 함께
+      들여왔다. 오케스트레이터 리뷰가 지적해 같은 변경 단위 안에서 고친다.
+    compatibility: |
+      **넓히는 변경이다.** 기존 필수 필드 둘의 타입을 `null` 허용으로 넓힐 뿐 —
+      이 계약의 파괴성 판정 기준상 타입 축소가 아니라 확장이라 비파괴다(제거·이름
+      변경·타입 축소만 파괴). CSV는 열 구성이 전혀 바뀌지 않는다.
+  - version: "2.27.0"
+    date: "2026-09-09"
+    revision: "ACCOUNT-DELETION"   # 회원 탈퇴와 개인정보 파기 경로 신설
+    author: contract-keeper
+    change: |
+      **회원 탈퇴 경로를 연다.** 정본은 `docs/plans/2026-09-09-account-deletion.md`
+      §2 — `docs/plans/2026-09-09-legal-footer-and-support.md` §4.1이 법 이행
+      구멍으로 지목한 항목이다. 개인정보 보호법은 목적이 끝난 개인정보를 지체 없이
+      파기하도록 하는데, 지금까지 계정을 지우는 경로가 아예 없었다.
+
+      ⑴ **`POST /auth/me/deletion` 신설, 204** — 재확인 두 겹(비밀번호가 있는 계정만
+         `password` 필수, 두 경우 모두 `confirmation == "탈퇴합니다"`)이 틀리면 422
+         (401이 아니다 — 이미 인증된 세션이라 401을 내면 화면이 로그아웃으로
+         오해한다). 관리자 계정은 409. **즉시 파기다** — 유예·복구 기간을 두지 않는다.
+
+      ⑵ **`DeleteAccountRequest` 스키마 신설** — `password`(선택)·
+         `confirmation`(필수, `x-service-constraint.exact_match`).
+
+      ⑶ **파기 범위** — `users` 삭제로 CASCADE가 닿는 대부분(작업 공간·문서·변환·
+         소셜 연결·크레딧 거래·세금계산서 요청 이력)은 그대로 사라진다.
+         `conversion_feedback`(V2)은 FK가 없어 CASCADE가 닿지 않아 서버가 사용자
+         삭제 **전에** 그 사용자의 변환 id로 명시 삭제한다. `llm_calls.user_id`는
+         `CASCADE` → `SET NULL`로 바뀐다(V19, 열 nullable 화 포함) — 개인정보가
+         없고 원가·사용량 집계 근거라 남긴다. `credit_transactions`·
+         `invoice_requests`는 아직 실제 결제가 없어 CASCADE 그대로 지운다(결제
+         도입 시 별도로 다시 연다).
+
+      ⑷ **처리 대기 세금계산서 요청이 있어도 막지 않는다** — 대신 요청 id만 담은
+         (이름·이메일 없음) 운영자 알림 메일을 best-effort로 보낸다.
+
+      ⑸ **엔드포인트 수 43 → 44.**
+    ground: |
+      **G1 — 법 이행 구멍.** 개인정보 보호법상 파기 의무를 이행할 경로가 없었다.
+      사용자가 이 항목을 지정해 이번 개정을 요청했다.
+    compatibility: |
+      **넓히는 변경이다.** 새 오퍼레이션과 새 스키마 하나를 더할 뿐 — 기존
+      오퍼레이션·스키마의 모양은 하나도 바뀌지 않는다.
   - version: "2.26.0"
     date: "2026-09-08"
     revision: "LEDGER-FAILED-CALLS"   # 실패 호출 원장 추적 — provider 예외도 llm_calls에 기록, 워크스페이스·리포트·어드민 오류 화면에 노출

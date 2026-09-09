@@ -151,6 +151,19 @@ export interface PasswordResetConfirmRequest {
   new_password: string
 }
 
+/**
+ * POST /auth/me/deletion 요청 본문(2.27.0 신설, 계획
+ * `docs/plans/2026-09-09-account-deletion.md`).
+ *
+ * `password`는 `readMe.has_password`가 참인 계정만 필수다 — 소셜 전용 계정은 생략한다.
+ * `confirmation`은 두 경우 모두 필수이며 정확히 `"탈퇴합니다"`여야 한다. 서버가 판정하는
+ * 서비스 층 규칙이라 화면은 형식을 검사하지 않고 서버 오류 문구를 그대로 보여준다.
+ */
+export interface DeleteAccountRequest {
+  password?: string
+  confirmation: string
+}
+
 // --- documents ---
 
 /** POST /documents 요청 본문 (붙여넣기 모드). */
@@ -798,8 +811,10 @@ export interface AdminErrorsResponse {
 
 /** `usage-report`(U3) CSV 행과 같은 값. 계약 `components/schemas/AdminUsageRow`. */
 export interface AdminUsageRow {
-  user_id: string
-  owner_email: string
+  /** 탈퇴한 계정이면 `null`(계약 2.28.0 신설, `docs/plans/2026-09-09-account-deletion.md` V19). */
+  user_id: string | null
+  /** 탈퇴한 계정이면 `null`(계약 2.28.0 신설) — `user_id`와 함께 사라진다. */
+  owner_email: string | null
   /** 워크스페이스가 나중에 삭제됐으면 `null`(요청 이력은 보존한다). */
   workspace_id: string | null
   workspace_name: string | null

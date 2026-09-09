@@ -1,5 +1,7 @@
 package kr.easydoc.infrastructure.auth
 
+import kr.easydoc.application.account.AccountDeletionRepository
+import kr.easydoc.application.account.DeleteAccountService
 import kr.easydoc.application.auth.AccessTokens
 import kr.easydoc.application.auth.AuthService
 import kr.easydoc.application.auth.EmailVerificationService
@@ -26,6 +28,7 @@ import kr.easydoc.infrastructure.auth.kakao.KakaoOAuthSettings
 import kr.easydoc.infrastructure.auth.kakao.KakaoSocialLoginProvider
 import kr.easydoc.infrastructure.auth.naver.NaverOAuthSettings
 import kr.easydoc.infrastructure.auth.naver.NaverSocialLoginProvider
+import kr.easydoc.infrastructure.billing.BillingProperties
 import kr.easydoc.infrastructure.db.SpringTransactionRunner
 import org.springframework.boot.context.properties.ConfigurationProperties
 import org.springframework.context.annotation.Bean
@@ -436,6 +439,28 @@ class AuthConfiguration {
             stateTtl = Duration.ofMinutes(oauthProperties.stateTtlMinutes),
             emailVerification = emailVerification,
             credits = credits,
+        )
+
+    /** `POST /auth/me/deletion` — 회원 탈퇴(계획 `docs/plans/2026-09-09-account-deletion.md`). */
+    @Bean
+    fun accountDeletionRepository(jdbcClient: JdbcClient): AccountDeletionRepository =
+        JdbcAccountDeletionRepository(jdbcClient)
+
+    /** 세금계산서 처리 대기 알림도 같은 운영자 주소를 쓴다(`InvoiceRequestConfiguration`과 같은 설정). */
+    @Bean
+    fun deleteAccountService(
+        accounts: AccountDeletionRepository,
+        passwordHasher: PasswordHasher,
+        transactionRunner: TransactionRunner,
+        mailSender: MailSender,
+        billingProperties: BillingProperties,
+    ): DeleteAccountService =
+        DeleteAccountService(
+            accounts = accounts,
+            passwords = passwordHasher,
+            transaction = transactionRunner,
+            mail = mailSender,
+            operatorEmail = billingProperties.operatorEmail,
         )
 
     private companion object {

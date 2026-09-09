@@ -190,4 +190,10 @@ export const ROUTES = {
    * 성공 응답은 `login`과 같은 `TokenResponse`다.
    */
   passwordResetConfirm: { path: '/auth/password-reset/confirm', method: 'POST', ok: 200 },
+  /**
+   * 계약 `paths./auth/me/deletion.post` — 204 · 409(관리자) · 422(재확인 실패), Bearer
+   * 필요(2.27.0 신설, 계획 `docs/plans/2026-09-09-account-deletion.md`). 성공은 즉시
+   * 파기이고 유예 기간이 없다.
+   */
+  deleteAccount: { path: '/auth/me/deletion', method: 'POST', noContent: 204 },
 } as const

@@ -130,7 +130,11 @@ docker compose -f compose.yml -f compose.ci.yml run --rm frontend-check
    깨져 보인다(저장소에 CSV 내보내기 선례가 없어 이번에 정했다). 행은 사용자 ×
    워크스페이스 단위이고, 워크스페이스가 나중에 삭제된 행은 `workspace_id`가 비고
    `workspace_name`이 `(삭제된 워크스페이스)`로 남는다 — 삭제 이후에도 그 달의 문서
-   수·문자 수·크레딧·비용이 청구 대상에서 빠지지 않는다.
+   수·문자 수·크레딧·비용이 청구 대상에서 빠지지 않는다. **`owner_email`이
+   `(탈퇴한 계정 합계)`인 행은 개별 계정이 아니다** — 그 기간에 탈퇴한 계정 전체의
+   사용량을 하나로 합친 값이다(회원 탈퇴, `docs/plans/2026-09-09-account-deletion.md`
+   V19). 탈퇴한 계정은 귀속을 되돌릴 방법이 없어 누구 것인지 가릴 수 없다 — **이 줄로
+   누군가에게 청구서를 보내지 않는다.**
 2. **CSV를 보고 사용자별 청구서를 만든다.** 열은
    `workspace_id,workspace_name,owner_email,documents,characters,credits,llm_calls,failed_calls,input_tokens,output_tokens,estimated_cost_usd,cost_unknown_calls`
    12열이다(`failed_calls`는 계약 2.26.0 신설, `llm_calls` 바로 뒤). **그 기간에 호출이

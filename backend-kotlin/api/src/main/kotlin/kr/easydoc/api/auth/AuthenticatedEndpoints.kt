@@ -15,6 +15,9 @@ object AuthenticatedEndpoints {
             // 고정된다. 재설정(`/auth/password-reset/{request,confirm}`)은 인증 전 호출이라
             // 여기 없다 — 계약 `security: []`.
             "/auth/password",
+            // 회원 탈퇴(2.27.0, 계획 `docs/plans/2026-09-09-account-deletion.md`) — 대상
+            // 계정은 토큰의 사용자로 고정된다.
+            "/auth/me/deletion",
             // 명시적 계정 연결 2종(2.10.0, backlog §1.4) — 대상 계정은 토큰의 사용자로 고정된다.
             // `/auth/oauth/{provider}/start`·`/callback`(공개, security: [])과 경로가
             // 갈리므로 인터셉터 패턴이 로그인 흐름을 잠그지 않는다.
