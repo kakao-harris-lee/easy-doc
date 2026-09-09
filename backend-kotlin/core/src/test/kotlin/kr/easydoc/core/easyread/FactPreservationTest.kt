@@ -196,6 +196,25 @@ class FactPreservationTest {
                 .extracting("kind")
                 .containsExactly(FactKind.DATE)
         }
+
+        @Test
+        @DisplayName("같은 월-일이 연도 유무를 달리해 두 번 나오면 연도 누락을 여전히 잡는다(리뷰 blocker 재현, 2026-09-09)")
+        fun `같은 월일이 중복이어도 연도 누락을 잡는다`() {
+            // compareKey 는 MMDD 뿐이라 이 두 DATE 는 "distinctBy { kind to compareKey }" 기준으로
+            // 같은 사실이다 — 연도 유무가 다른 두 표기가 원문에 함께 있는 흔한 공문 형태.
+            val source = "9월 4일 이후 신청은 받지 않으며, 최종 마감은 2026년 9월 4일입니다."
+            // 변환문이 연도를 빼먹었다 — sameDate() 의 비대칭 비교(원문에 연도가 있었으면
+            // 변환문도 같은 연도를 적어야 한다)로는 누락이어야 한다.
+            val droppedYear = "9월 4일 이후 신청은 받지 않으며, 최종 마감도 9월 4일입니다."
+
+            assertThat(findMissingFacts(source, droppedYear))
+                .withFailMessage(
+                    "distinctBy 를 filterNot 보다 먼저 적용하면 연도 없는 표기가 대표로 뽑혀 " +
+                        "연도 있는 표기의 sameDate() 비대칭 비교(year 비교)가 통째로 사라진다 — " +
+                        "year 는 distinctBy 키(kind, compareKey)에 없기 때문이다.",
+                ).extracting("kind")
+                .containsExactly(FactKind.DATE)
+        }
     }
 
     @Nested
@@ -412,6 +431,86 @@ class FactPreservationTest {
             assertThat(findMissingFacts("만원권을 준비하세요.", "지폐를 준비하세요."))
                 .extracting("kind")
                 .containsExactly(FactKind.AMOUNT)
+        }
+    }
+
+    @Nested
+    @DisplayName("factCoverage — 보존율 관측 (계획 S1, 2026-09-09)")
+    inner class FactCoverageObservation {
+        @Test
+        @DisplayName("사실이 모두 보존되면 보존 수는 전체와 같고 누락은 없다")
+        fun `모두 보존되면 보존율은 1이다`() {
+            val source = "9월 4일 오후 2시까지 02-1234-5678로 신청하세요. 참가비는 10,000원입니다."
+            val draft =
+                "신청 기간은 9월 4일까지이고, 시간은 오후 2시까지입니다. " +
+                    "문의는 02-1234-5678로 하세요. 참가비는 10000원이에요."
+
+            val coverage = factCoverage(source, draft)
+
+            assertThat(coverage.sourceFactCount).isEqualTo(4)
+            assertThat(coverage.missing).isEmpty()
+            assertThat(coverage.keptCount).isEqualTo(4)
+            assertThat(coverage.ratio).isEqualTo(1.0)
+        }
+
+        @Test
+        @DisplayName("일부만 사라지면 보존율이 비례해 낮아진다")
+        fun `일부 누락이면 보존율이 낮아진다`() {
+            val source = "9월 4일까지 10,000원을 내고 02-1234-5678로 문의하세요."
+            val draft = "10,000원을 내고 문의하세요."
+
+            val coverage = factCoverage(source, draft)
+
+            assertThat(coverage.sourceFactCount).isEqualTo(3)
+            assertThat(coverage.missing).extracting("kind").containsExactlyInAnyOrder(FactKind.DATE, FactKind.PHONE)
+            assertThat(coverage.keptCount).isEqualTo(1)
+            assertThat(coverage.ratio).isEqualTo(1.0 / 3.0)
+        }
+
+        @Test
+        @DisplayName("원문에 사실이 하나도 없으면 보존율은 null 이다 — 0%로 채우지 않는다")
+        fun `원문에 사실이 없으면 보존율은 null 이다`() {
+            val coverage = factCoverage("사실이 없는 문장입니다.", "역시 사실이 없습니다.")
+
+            assertThat(coverage.sourceFactCount).isEqualTo(0)
+            assertThat(coverage.missing).isEmpty()
+            assertThat(coverage.ratio).isNull()
+        }
+
+        @Test
+        @DisplayName("원문에 같은 사실이 중복으로 나오면 sourceFactCount 는 중복 제거 후 값이다")
+        fun `중복 사실은 한 번만 센다`() {
+            val source = "참가비는 10,000원입니다. 참가비는 10,000원으로 확정됐습니다."
+            val kept = "참가비는 10000원입니다."
+            val dropped = "참가비를 냅니다."
+
+            val coverageKept = factCoverage(source, kept)
+            val coverageDropped = factCoverage(source, dropped)
+
+            // 같은 원문이므로 sourceFactCount 는 draft 와 무관하게 동일해야 한다(중복 제거 기준 일치).
+            assertThat(coverageKept.sourceFactCount).isEqualTo(1)
+            assertThat(coverageDropped.sourceFactCount).isEqualTo(1)
+            assertThat(coverageKept.missing).isEmpty()
+            assertThat(coverageDropped.missing).hasSize(1)
+        }
+
+        @Test
+        @DisplayName("findMissingFacts 는 factCoverage 의 missing 과 항상 같다")
+        fun `findMissingFacts 와 factCoverage 가 같은 결과를 낸다`() {
+            val source = "9월 4일까지 10,000원을 내고 02-1234-5678로 문의하세요. 참가비는 10,000원입니다."
+            val draft = "10,000원을 내고 문의하세요."
+
+            assertThat(findMissingFacts(source, draft)).isEqualTo(factCoverage(source, draft).missing)
+        }
+
+        @Test
+        @DisplayName("missing 의 크기는 sourceFactCount 를 넘지 않는다 — 같은 분모·분자")
+        fun `missing 은 sourceFactCount 를 넘지 않는다`() {
+            val source = "9월 4일까지 10,000원을 내고 02-1234-5678로 문의하세요."
+            val coverage = factCoverage(source, "아무것도 안 남았습니다.")
+
+            assertThat(coverage.missing.size).isLessThanOrEqualTo(coverage.sourceFactCount)
+            assertThat(coverage.keptCount).isGreaterThanOrEqualTo(0)
         }
     }
 

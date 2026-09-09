@@ -5,6 +5,7 @@ import kr.easydoc.application.conversion.ConversionResult
 import kr.easydoc.application.conversion.ConvertDocumentUseCase
 import kr.easydoc.core.document.charCountOf
 import kr.easydoc.core.easyread.StyleRuleKind
+import kr.easydoc.core.easyread.factCoverage
 import kr.easydoc.core.exceptions.ConfigurationException
 import kr.easydoc.core.exceptions.LlmProviderException
 import kr.easydoc.core.quality.GoldenDocument
@@ -206,6 +207,8 @@ private class LaneGrader(
                 stylePassed = null,
                 sentenceCount = 0,
                 styleIssueCounts = emptyMap(),
+                // 채점할 본문이 없다 — 다른 null 필드와 같은 관례(LaneMeasurement.factCoverage KDoc).
+                factCoverage = null,
             ),
             elapsed,
         )
@@ -228,6 +231,10 @@ private class LaneGrader(
         if (!facts.passed) {
             report.recordQualityFailure(document.id, "사실 누락 ${facts.missing.size}")
         }
+        // 계획 S1(`docs/plans/2026-09-09-content-loss.md`) — 큐레이션된 requiredFacts 를 넘어
+        // 원문 전체의 규칙 기반 사실 보존을 관측한다. 게이트 판정에는 쓰지 않는다(위 facts 만
+        // passed/실패에 영향을 준다) — LaneReport 가 이 값을 리포트에만 싣는다.
+        val coverage = factCoverage(document.sourceText, converted)
         val judged = judgeOrRecord(document, converted, journalId)
         if (judged != null && !judged.passed) {
             val detail = judged.reason?.let { "judge 실패 — $it" } ?: "judge 실패"
@@ -246,6 +253,7 @@ private class LaneGrader(
                 stylePassed = style.passed,
                 sentenceCount = style.result.totalSentences,
                 styleIssueCounts = ruleCountsOf(style),
+                factCoverage = coverage,
             ),
             elapsed,
         )

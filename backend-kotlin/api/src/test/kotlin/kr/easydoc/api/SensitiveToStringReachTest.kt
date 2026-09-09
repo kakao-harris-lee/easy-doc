@@ -488,8 +488,17 @@ class SensitiveToStringReachTest {
          * `AdminUsageRowResponse` 는 필드(`outcome`·`failureClass`·`model: String?`·
          * `failedCalls`·`providerFailures`)만 늘었을 뿐 선언 자체는 그대로라 순증감에
          * 들지 않는다.
+         *
+         * 내용 손실 관측 S1(계획 `docs/plans/2026-09-09-content-loss.md`, 2026-09-09)이
+         * **하나**를 더해 203 이다(202 위에) — core `FactCoverage`(`easyread/FactPreservation.kt`,
+         * `sourceFactCount: Int` 하나와 `FactIssue` 목록 `missing` 뿐이다). `missing` 이라는
+         * 필드 이름 자체는 민감 판정 토큰에 걸리지 않고, 그 원소 타입인 `FactIssue` 는 위
+         * 「사실 보존 기계 검사」 문단(85 위)이 이미 기록했듯 `toString()` 이 값을 가려
+         * 이중으로 안전하다 — `dataClassProbes` 자동 판정에도 걸리지 않는다(민감 토큰 자리가
+         * 없어 표본조차 만들지 않는다). `EditDistanceBudget`·`UnitRun` 과 같은 판단으로
+         * `KNOWN_SENSITIVE_TYPES` 에는 넣지 않는다.
          */
-        const val EXPECTED_SOURCE_DECLARATIONS = 202
+        const val EXPECTED_SOURCE_DECLARATIONS = 203
 
         /** 민감 판정이 반드시 닿아야 하는 타입 — 바닥이다. */
         val KNOWN_SENSITIVE_TYPES =

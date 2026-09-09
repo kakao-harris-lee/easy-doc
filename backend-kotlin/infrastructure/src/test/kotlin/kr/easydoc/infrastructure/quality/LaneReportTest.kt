@@ -1,11 +1,15 @@
 package kr.easydoc.infrastructure.quality
 
 import kr.easydoc.application.conversion.ConversionFailureKind
+import kr.easydoc.core.easyread.FactCoverage
+import kr.easydoc.core.easyread.FactIssue
+import kr.easydoc.core.easyread.FactKind
 import kr.easydoc.core.easyread.StyleRuleKind
 import kr.easydoc.core.llm.LlmCompletion
 import kr.easydoc.core.llm.LlmFinishReason
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.DisplayName
+import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import java.math.BigDecimal
 import java.time.Duration
@@ -174,77 +178,75 @@ class LaneReportTest {
         val documentLines = report.render().lines().filter { it.contains(" — 원문 ") }
 
         assertThat(documentLines).containsExactly(
-            "  g-004 — 원문 3500 · 변환 - · 팽창비 - · 출력 토큰 16000 · 절단 호출 1 · 스타일 - · 문장 0 · 위반 -",
-            "  g-003 — 원문 3000 · 변환 5400 · 팽창비 1.80 · 출력 토큰 9000 · 절단 호출 1 · 스타일 통과 · 문장 40 · " +
-                "위반 4건(밀도 0.100 · LENGTH=0 COMMA=0 DOUBLE_PASSIVE=0 DIFFICULT_WORD=4 GLOSS_COLLISION=0)",
-            "  g-001 — 원문 1000 · 변환 1200 · 팽창비 1.20 · 출력 토큰 2000 · 절단 호출 0 · 스타일 통과 · 문장 20 · " +
-                "위반 0건(밀도 0.000 · LENGTH=0 COMMA=0 DOUBLE_PASSIVE=0 DIFFICULT_WORD=0 GLOSS_COLLISION=0)",
-            "  g-002 — 원문 1000 · 변환 1500 · 팽창비 1.50 · 출력 토큰 2400 · 절단 호출 0 · 스타일 미통과 · 문장 15 · " +
-                "위반 3건(밀도 0.200 · LENGTH=2 COMMA=1 DOUBLE_PASSIVE=0 DIFFICULT_WORD=0 GLOSS_COLLISION=0)",
+            "  g-004 — 원문 3500 · 변환 - · 팽창비 - · 사실 보존 - · 출력 토큰 16000 · 절단 호출 1 · 스타일 - · " +
+                "문장 0 · 위반 -",
+            "  g-003 — 원문 3000 · 변환 5400 · 팽창비 1.80 · 사실 보존 - · 출력 토큰 9000 · 절단 호출 1 · 스타일 통과 · " +
+                "문장 40 · 위반 4건(밀도 0.100 · LENGTH=0 COMMA=0 DOUBLE_PASSIVE=0 DIFFICULT_WORD=4 GLOSS_COLLISION=0)",
+            "  g-001 — 원문 1000 · 변환 1200 · 팽창비 1.20 · 사실 보존 - · 출력 토큰 2000 · 절단 호출 0 · 스타일 통과 · " +
+                "문장 20 · 위반 0건(밀도 0.000 · LENGTH=0 COMMA=0 DOUBLE_PASSIVE=0 DIFFICULT_WORD=0 GLOSS_COLLISION=0)",
+            "  g-002 — 원문 1000 · 변환 1500 · 팽창비 1.50 · 사실 보존 - · 출력 토큰 2400 · 절단 호출 0 · 스타일 미통과 · " +
+                "문장 15 · 위반 3건(밀도 0.200 · LENGTH=2 COMMA=1 DOUBLE_PASSIVE=0 DIFFICULT_WORD=0 GLOSS_COLLISION=0)",
         )
     }
 
     @Test
     @DisplayName("위반 밀도 = 위반 수/문장 수 — 위반이 없으면 0.000, 변환 실패나 문장 0건이면 잴 수 없다")
     fun `위반 밀도를 계산한다`() {
-        val noIssues =
-            LaneMeasurement(
-                documentId = "g-001",
-                sourceChars = 100,
-                convertedChars = 120,
-                outputTokens = 50,
-                truncated = false,
-                truncatedCalls = 0,
-                stylePassed = true,
-                sentenceCount = 10,
-                styleIssueCounts = emptyMap(),
-            )
+        val noIssues = densityMeasurement(DensitySample(convertedChars = 120, stylePassed = true, sentenceCount = 10))
         assertThat(noIssues.styleIssueCount).isEqualTo(0)
         assertThat(noIssues.styleIssueDensity).isEqualTo(0.0)
 
         val someIssues =
-            LaneMeasurement(
-                documentId = "g-002",
-                sourceChars = 100,
-                convertedChars = 120,
-                outputTokens = 50,
-                truncated = false,
-                truncatedCalls = 0,
-                stylePassed = false,
-                sentenceCount = 8,
-                styleIssueCounts = mapOf(StyleRuleKind.LENGTH to 3, StyleRuleKind.COMMA to 1),
+            densityMeasurement(
+                DensitySample(
+                    convertedChars = 120,
+                    stylePassed = false,
+                    sentenceCount = 8,
+                    styleIssueCounts = mapOf(StyleRuleKind.LENGTH to 3, StyleRuleKind.COMMA to 1),
+                ),
             )
         assertThat(someIssues.styleIssueCount).isEqualTo(4)
         assertThat(someIssues.styleIssueDensity).isEqualTo(0.5)
 
         val failed =
-            LaneMeasurement(
-                documentId = "g-003",
-                sourceChars = 100,
-                convertedChars = null,
-                outputTokens = 50,
-                truncated = true,
-                truncatedCalls = 1,
-                stylePassed = null,
-                sentenceCount = 0,
-                styleIssueCounts = emptyMap(),
+            densityMeasurement(
+                DensitySample(
+                    convertedChars = null,
+                    stylePassed = null,
+                    sentenceCount = 0,
+                    truncated = true,
+                    truncatedCalls = 1,
+                ),
             )
         assertThat(failed.styleIssueDensity).isNull()
 
-        val noSentences =
-            LaneMeasurement(
-                documentId = "g-004",
-                sourceChars = 10,
-                convertedChars = 0,
-                outputTokens = 5,
-                truncated = false,
-                truncatedCalls = 0,
-                stylePassed = true,
-                sentenceCount = 0,
-                styleIssueCounts = emptyMap(),
-            )
+        val noSentences = densityMeasurement(DensitySample(convertedChars = 0, stylePassed = true, sentenceCount = 0))
         assertThat(noSentences.styleIssueDensity).isNull()
     }
+
+    /** [위반 밀도를 계산한다] 전용 조립 묶음 — [CharCounts]·[StyleSample] 과 같은 이유로 하나로 묶는다. */
+    private data class DensitySample(
+        val convertedChars: Int?,
+        val stylePassed: Boolean?,
+        val sentenceCount: Int,
+        val styleIssueCounts: Map<StyleRuleKind, Int> = emptyMap(),
+        val truncated: Boolean = false,
+        val truncatedCalls: Int = 0,
+    )
+
+    private fun densityMeasurement(sample: DensitySample): LaneMeasurement =
+        LaneMeasurement(
+            documentId = "g-density",
+            sourceChars = 100,
+            convertedChars = sample.convertedChars,
+            outputTokens = 50,
+            truncated = sample.truncated,
+            truncatedCalls = sample.truncatedCalls,
+            stylePassed = sample.stylePassed,
+            sentenceCount = sample.sentenceCount,
+            styleIssueCounts = sample.styleIssueCounts,
+            factCoverage = null,
+        )
 
     @Test
     @DisplayName("문서별 줄에 규칙별 위반 수를 낸다 — DIFFICULT_WORD 과다 발화를 다른 규칙과 섞지 않고 읽을 수 있다")
@@ -290,6 +292,179 @@ class LaneReportTest {
         assertThat(report.render()).contains("스타일 위반 밀도 중앙값 0.200 (위반 수/문장 수, 표본 3건)")
     }
 
+    @Nested
+    @DisplayName("사실 보존 관측 (계획 S1·S2, 2026-09-09) — 게이트 판정에는 넣지 않는다")
+    inner class FactCoverageObservation {
+        @Test
+        @DisplayName("문서 줄에 팽창비 옆으로 사실 보존 수/전체(비율)를 낸다")
+        fun `문서 줄에 사실 보존을 낸다`() {
+            record(
+                id = "g-001",
+                chars = CharCounts(1_000, 1_200),
+                outputTokens = 2_000,
+                style = StyleSample(passed = true),
+                factCoverage = FactCoverage(sourceFactCount = 91, missing = List(36) { fact("18개월") }),
+            )
+
+            assertThat(report.render()).contains("팽창비 1.20 · 사실 보존 55/91(60.4%) · 출력 토큰 2000")
+        }
+
+        @Test
+        @DisplayName("원문에 사실이 하나도 없으면 사실 보존은 -로 낸다 — 0%로 채우지 않는다")
+        fun `사실이 없으면 대시로 낸다`() {
+            record(
+                id = "g-001",
+                chars = CharCounts(1_000, 1_200),
+                outputTokens = 2_000,
+                style = StyleSample(passed = true),
+                factCoverage = FactCoverage(sourceFactCount = 0, missing = emptyList()),
+            )
+
+            assertThat(report.render()).contains("사실 보존 - · 출력 토큰")
+        }
+
+        @Test
+        @DisplayName("변환 실패 문서는 factCoverage 가 null 이라 사실 보존도 -로 낸다")
+        fun `변환 실패 문서는 사실 보존이 대시다`() {
+            recordTruncated(id = "g-001", sourceChars = 1_000, outputTokens = 2_000)
+
+            assertThat(report.render()).contains("사실 보존 - · 출력 토큰")
+        }
+
+        @Test
+        @DisplayName("보존율 90% 이상이면 사라진 사실 목록을 붙이지 않는다 — 리포트가 부풀지 않는다")
+        fun `보존율이 높으면 사라진 사실 줄이 없다`() {
+            record(
+                id = "g-001",
+                chars = CharCounts(1_000, 1_200),
+                outputTokens = 2_000,
+                style = StyleSample(passed = true),
+                factCoverage = FactCoverage(sourceFactCount = 10, missing = listOf(fact("18개월"))),
+            )
+
+            assertThat(report.render()).doesNotContain("사라진 사실")
+        }
+
+        @Test
+        @DisplayName("보존율 90% 미만이면 사라진 사실을 최대 8개까지 문서 줄 아래에 싣는다")
+        fun `보존율이 낮으면 사라진 사실을 싣는다`() {
+            val missing = (1..10).map { fact("값$it") }
+            record(
+                id = "g-001",
+                chars = CharCounts(1_000, 1_200),
+                outputTokens = 2_000,
+                style = StyleSample(passed = true),
+                // 10개 중 2개만 남아 보존율 20% — 90% 미만이라 사라진 사실 줄이 생긴다.
+                factCoverage = FactCoverage(sourceFactCount = 10, missing = missing),
+            )
+
+            val rendered = report.render()
+
+            assertThat(rendered).contains(
+                "    └ 사라진 사실: 값1, 값2, 값3, 값4, 값5, 값6, 값7, 값8 외 2개",
+            )
+        }
+
+        @Test
+        @DisplayName("요약 줄에 전체 보존율과 70% 미만 문서 목록을 낸다")
+        fun `요약 줄에 전체 보존율과 낮은 문서 목록을 낸다`() {
+            // g-001: 91개 중 55개 보존(60.4%, 70% 미만) · g-002: 20개 중 19개 보존(95%, 정상).
+            record(
+                id = "g-001",
+                chars = CharCounts(1_000, 1_200),
+                outputTokens = 2_000,
+                style = StyleSample(passed = true),
+                factCoverage = FactCoverage(sourceFactCount = 91, missing = List(36) { fact("18개월") }),
+            )
+            record(
+                id = "g-002",
+                chars = CharCounts(1_000, 1_200),
+                outputTokens = 2_000,
+                style = StyleSample(passed = true),
+                factCoverage = FactCoverage(sourceFactCount = 20, missing = listOf(fact("6개월"))),
+            )
+
+            val rendered = report.render()
+
+            // 전체 = (55+19)/(91+20) = 74/111.
+            assertThat(rendered).contains("사실 보존 74/111 (66.7%) · 보존율 70% 미만 문서: g-001(60.4%)")
+        }
+
+        @Test
+        @DisplayName("70% 미만 문서가 없으면 목록은 「없음」이다")
+        fun `낮은 문서가 없으면 없음으로 낸다`() {
+            record(
+                id = "g-001",
+                chars = CharCounts(1_000, 1_200),
+                outputTokens = 2_000,
+                style = StyleSample(passed = true),
+                factCoverage = FactCoverage(sourceFactCount = 10, missing = emptyList()),
+            )
+
+            assertThat(report.render()).contains("사실 보존 10/10 (100.0%) · 보존율 70% 미만 문서: 없음")
+        }
+
+        @Test
+        @DisplayName("원문에 사실이 있는 문서가 하나도 없으면 관측 대상이 없다고 낸다")
+        fun `관측 대상이 없으면 그렇게 낸다`() {
+            record(
+                id = "g-001",
+                chars = CharCounts(1_000, 1_200),
+                outputTokens = 2_000,
+                style = StyleSample(passed = true),
+            )
+
+            assertThat(report.render())
+                .contains("사실 보존 — 관측 대상 없음(원문에 규칙 기반 사실이 없거나 변환이 모두 실패한 문서뿐)")
+        }
+
+        @Test
+        @DisplayName("모든 문서의 모든 회차가 변환에 실패하면(잴 초안이 없음) 관측 대상이 없다고 낸다")
+        fun `변환이 모두 실패하면 관측 대상이 없다고 낸다`() {
+            recordTruncated(id = "g-001", sourceChars = 1_000, outputTokens = 2_000)
+
+            assertThat(report.render())
+                .contains("사실 보존 — 관측 대상 없음(원문에 규칙 기반 사실이 없거나 변환이 모두 실패한 문서뿐)")
+        }
+
+        @Test
+        @DisplayName("같은 문서를 여러 번 돌리면 사실 보존도 문서 단위로 축약해 요약에 낸다 — 회차 수만큼 부풀리지 않는다")
+        fun `반복 실행에서 사실 보존을 문서 단위로 축약한다`() {
+            // sourceFactCount 는 원문에서만 정해지니 회차마다 같다(10) — kept 만 회차별로
+            // 5/4/3 으로 다르다(변환문마다 달라질 수 있는 값).
+            record(
+                id = "g-001",
+                chars = CharCounts(1_000, 1_200),
+                outputTokens = 2_000,
+                style = StyleSample(passed = true),
+                factCoverage = FactCoverage(sourceFactCount = 10, missing = (1..5).map { fact("값$it") }),
+            )
+            record(
+                id = "g-001",
+                chars = CharCounts(1_000, 1_200),
+                outputTokens = 2_000,
+                style = StyleSample(passed = true),
+                factCoverage = FactCoverage(sourceFactCount = 10, missing = (1..6).map { fact("값$it") }),
+            )
+            record(
+                id = "g-001",
+                chars = CharCounts(1_000, 1_200),
+                outputTokens = 2_000,
+                style = StyleSample(passed = true),
+                factCoverage = FactCoverage(sourceFactCount = 10, missing = (1..7).map { fact("값$it") }),
+            )
+
+            val rendered = report.render()
+
+            // kept 5/4/3 의 중앙값(nearest-rank, 3건) = 4 — 문서 하나가 회차 3개로 늘어도
+            // sourceFactCount·keptCount 는 문서 단위로 한 번만 잡힌다(회차 수만큼 3배로 늘지
+            // 않는다). ratio 40% 는 70% 미만이라 낮은 문서 목록에도 문서 하나로 잡힌다.
+            assertThat(rendered).contains("사실 보존 4/10 (40.0%) · 보존율 70% 미만 문서: g-001(40.0%)")
+        }
+
+        private fun fact(value: String): FactIssue = FactIssue(FactKind.NUMBER, value)
+    }
+
     @Test
     @DisplayName("문서를 한 번만 돌리면 반복 집계 섹션이 아예 없다 — runs=1 과 같다")
     fun `한 번만 돌리면 반복 집계가 없다`() {
@@ -313,6 +488,7 @@ class LaneReportTest {
                 stylePassed = true,
                 sentenceCount = 10,
                 styleIssueCounts = mapOf(StyleRuleKind.LENGTH to 1),
+                factCoverage = null,
             ),
             ELAPSED,
         )
@@ -327,6 +503,7 @@ class LaneReportTest {
                 stylePassed = false,
                 sentenceCount = 10,
                 styleIssueCounts = mapOf(StyleRuleKind.LENGTH to 2),
+                factCoverage = null,
             ),
             ELAPSED,
         )
@@ -341,6 +518,7 @@ class LaneReportTest {
                 stylePassed = false,
                 sentenceCount = 10,
                 styleIssueCounts = mapOf(StyleRuleKind.LENGTH to 3),
+                factCoverage = null,
             ),
             ELAPSED,
         )
@@ -539,12 +717,16 @@ class LaneReportTest {
         val issueCounts: Map<StyleRuleKind, Int> = emptyMap(),
     )
 
-    /** 변환에 성공한 문서. 절단된 호출은 없다. */
+    /**
+     * 변환에 성공한 문서. 절단된 호출은 없다. [factCoverage] 기본값은 `null` — 사실 보존을
+     * 재는 시험만 명시로 넘긴다(다른 시험은 이 값과 무관하다).
+     */
     private fun record(
         id: String,
         chars: CharCounts,
         outputTokens: Int,
         style: StyleSample,
+        factCoverage: FactCoverage? = null,
     ) {
         report.recordDocument(
             LaneMeasurement(
@@ -557,6 +739,7 @@ class LaneReportTest {
                 stylePassed = style.passed,
                 sentenceCount = style.sentenceCount,
                 styleIssueCounts = style.issueCounts,
+                factCoverage = factCoverage,
             ),
             ELAPSED,
         )
@@ -584,6 +767,7 @@ class LaneReportTest {
                 stylePassed = style.passed,
                 sentenceCount = style.sentenceCount,
                 styleIssueCounts = style.issueCounts,
+                factCoverage = null,
             ),
             ELAPSED,
         )
@@ -605,6 +789,7 @@ class LaneReportTest {
                 stylePassed = null,
                 sentenceCount = 0,
                 styleIssueCounts = emptyMap(),
+                factCoverage = null,
             ),
             ELAPSED,
         )
