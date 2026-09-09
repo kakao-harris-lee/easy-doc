@@ -218,6 +218,95 @@ class FactPreservationTest {
     }
 
     @Nested
+    @DisplayName("연도 축약 — 아포스트로피 붙은 두 자리 연도 (실측 6차, 문서 106)")
+    inner class ApostropheAbbreviatedYear {
+        @Test
+        @DisplayName("'’26년'을 원문대로 두고 변환문이 '2026년'으로 펴 써도 누락이 아니다 — 지금은 누락으로 잡힌다")
+        fun `아포스트로피 연도 단독 표기가 보존으로 인정된다`() {
+            val source = "’26년 시행 예정입니다."
+            val kept = "2026년에 시행할 예정입니다."
+
+            assertThat(findMissingFacts(source, kept)).isEmpty()
+        }
+
+        @Test
+        @DisplayName("'’26.9.1.'을 원문대로 두고 변환문이 '2026년 9월 1일'로 펴 써도 누락이 아니다")
+        fun `아포스트로피 날짜 표기가 보존으로 인정된다`() {
+            val source = "접수 기간은 ’26.9.1.까지입니다."
+            val kept = "접수 기간은 2026년 9월 1일까지입니다."
+
+            assertThat(findMissingFacts(source, kept)).isEmpty()
+        }
+
+        @Test
+        @DisplayName("'’24년 ~ ’25년'을 원문대로 두고 변환문이 '2024년 ~ 2025년'으로 펴 써도 누락이 아니다")
+        fun `연속된 아포스트로피 연도 두 개가 모두 보존으로 인정된다`() {
+            val source = "사업 기간은 ’24년 ~ ’25년입니다."
+            val kept = "사업 기간은 2024년부터 2025년까지입니다."
+
+            assertThat(findMissingFacts(source, kept)).isEmpty()
+        }
+
+        @Test
+        @DisplayName("아포스트로피가 없는 맨 '26년'은 여전히 숫자 26으로 다뤄진다 — 회귀 방지")
+        fun `아포스트로피 없는 26년은 그대로 숫자로 남는다`() {
+            val source = "26년 동안 근무했습니다." // 기간 표현 — 연도가 아니다.
+            val dropped = "오래 근무했습니다."
+
+            assertThat(findMissingFacts(source, dropped))
+                .withFailMessage("아포스트로피가 없으면 세기 확장을 하지 않아야 한다 — 안 그러면 기간(26년)이 연도(2026년)로 오판된다")
+                .extracting("kind")
+                .containsExactly(FactKind.NUMBER)
+        }
+
+        @Test
+        @DisplayName("원문이 '’26년'인데 변환문이 다른 연도('2027년')를 적으면 누락으로 잡는다 — 정규화가 검사를 없애지 않는다")
+        fun `축약 연도와 다른 연도로 바뀌면 누락이다`() {
+            val source = "’26년 시행 예정입니다."
+            val wrongYear = "2027년에 시행할 예정입니다."
+
+            assertThat(findMissingFacts(source, wrongYear))
+                .extracting("kind")
+                .containsExactly(FactKind.NUMBER)
+        }
+
+        @Test
+        @DisplayName("ASCII 작은따옴표(')도 U+2019(’)와 똑같이 동작한다")
+        fun `ASCII 아포스트로피도 동작한다`() {
+            val source = "'26년 시행 예정입니다." // ASCII '
+            val kept = "2026년에 시행할 예정입니다."
+
+            assertThat(findMissingFacts(source, kept)).isEmpty()
+        }
+
+        @Test
+        @DisplayName("세기 보정 경계 — 50 이상은 20NN 으로 펴지 않는다(1950년대 등과 헷갈릴 수 있어서)")
+        fun `50 이상의 축약 연도는 세기를 보정하지 않는다`() {
+            val source = "’50년 준공됐습니다." // 경계 밖 — 20NN 으로 확정하면 위험한 값.
+            val wrongExpansion = "2050년에 준공됐습니다."
+
+            assertThat(findMissingFacts(source, wrongExpansion))
+                .withFailMessage("50~99는 세기가 애매해 확장하지 않는다 — 그래서 '50'과 '2050'은 다른 사실로 남아야 한다")
+                .extracting("kind")
+                .containsExactly(FactKind.NUMBER)
+        }
+
+        @Test
+        @DisplayName("findMissingFacts 와 factCoverage 가 아포스트로피 연도에도 같은 비교 규칙을 공유한다")
+        fun `factCoverage 도 같은 결과를 낸다`() {
+            val source = "’26년 시행 예정입니다."
+            val kept = "2026년에 시행할 예정입니다."
+
+            val coverage = factCoverage(source, kept)
+
+            assertThat(coverage.missing).isEqualTo(findMissingFacts(source, kept))
+            assertThat(coverage.missing).isEmpty()
+            assertThat(coverage.sourceFactCount).isEqualTo(1)
+            assertThat(coverage.ratio).isEqualTo(1.0)
+        }
+    }
+
+    @Nested
     @DisplayName("시각 — 분 단위 정규화 (리뷰 HIGH-1)")
     inner class TimeMinuteNormalization {
         @Test
