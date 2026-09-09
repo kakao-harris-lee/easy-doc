@@ -3,7 +3,14 @@
 <html lang="ko">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <!-- 파비콘은 PNG 세트로 고정한다: public/favicon.svg는 지금 쓰는 아이콘과
+         전혀 다른 그림이라, 링크로 남겨 두면 브라우저가 SVG를 우선 골라
+         엉뚱한 마크가 탭에 뜬다. 원본은 public/easy-doc-icon-v3.png다. -->
+    <link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/icons/favicon-16.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png" />
+    <link rel="manifest" href="/site.webmanifest" />
+    <meta name="theme-color" content="#5b4bc4" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Easy-Read AI</title>
   </head>
