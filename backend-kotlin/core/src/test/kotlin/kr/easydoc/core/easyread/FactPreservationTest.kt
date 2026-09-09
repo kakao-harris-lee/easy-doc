@@ -221,7 +221,7 @@ class FactPreservationTest {
     @DisplayName("연도 축약 — 아포스트로피 붙은 두 자리 연도 (실측 6차, 문서 106)")
     inner class ApostropheAbbreviatedYear {
         @Test
-        @DisplayName("'’26년'을 원문대로 두고 변환문이 '2026년'으로 펴 써도 누락이 아니다 — 지금은 누락으로 잡힌다")
+        @DisplayName("'’26년'을 원문대로 두고 변환문이 '2026년'으로 펴 써도 누락이 아니다")
         fun `아포스트로피 연도 단독 표기가 보존으로 인정된다`() {
             val source = "’26년 시행 예정입니다."
             val kept = "2026년에 시행할 예정입니다."
@@ -236,6 +236,29 @@ class FactPreservationTest {
             val kept = "접수 기간은 2026년 9월 1일까지입니다."
 
             assertThat(findMissingFacts(source, kept)).isEmpty()
+        }
+
+        @Test
+        @DisplayName(
+            "혼합형 — '’26년 9월 1일'처럼 축약 연도와 월·일이 붙어도 DATE 하나로 잡혀 누락되지 않는다" +
+                "(리뷰 blocker, 2026-09-09 재현: findMissingFacts 실행 시 NUMBER(2026)가 짝을 잃어 누락으로 잡히던 문제)",
+        )
+        fun `혼합형 아포스트로피 날짜가 보존으로 인정된다`() {
+            val source = "접수 기간은 ’26년 9월 1일까지입니다."
+            val kept = "접수 기간은 2026년 9월 1일까지입니다."
+
+            assertThat(findMissingFacts(source, kept)).isEmpty()
+        }
+
+        @Test
+        @DisplayName("혼합형 — 연도가 다르면('2027년') 여전히 누락으로 잡힌다 — 정규화가 검사를 없애지 않는다")
+        fun `혼합형 아포스트로피 날짜는 연도가 다르면 누락이다`() {
+            val source = "접수 기간은 ’26년 9월 1일까지입니다."
+            val wrongYear = "접수 기간은 2027년 9월 1일까지입니다."
+
+            assertThat(findMissingFacts(source, wrongYear))
+                .extracting("kind")
+                .containsExactly(FactKind.DATE)
         }
 
         @Test

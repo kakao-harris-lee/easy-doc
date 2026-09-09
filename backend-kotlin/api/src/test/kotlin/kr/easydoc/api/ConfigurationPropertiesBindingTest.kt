@@ -31,6 +31,7 @@ import org.springframework.boot.context.properties.source.MapConfigurationProper
 import org.springframework.core.convert.ConversionService
 import org.springframework.core.convert.support.DefaultConversionService
 import java.math.BigDecimal
+import java.time.Duration
 
 /** 설정 바인딩이 실제로 값을 싣는지 — 2026-08-19 실측으로 드러난 결함의 회귀 고정판. */
 class ConfigurationPropertiesBindingTest {
@@ -237,6 +238,29 @@ class ConfigurationPropertiesBindingTest {
         assertThat(sonnetPricing.inputUsdPerMillionTokens).isEqualByComparingTo(BigDecimal("2.00"))
         assertThat(sonnetPricing.outputUsdPerMillionTokens).isEqualByComparingTo(BigDecimal("10.00"))
         assertThat(llm.maxOutputTokens).isEqualTo(5000)
+    }
+
+    @Test
+    @DisplayName(
+        "LLM 읽기 타임아웃은 초 단위로 바인딩된다 — 리뷰 blocker(2026-09-09), 접미사 없는 숫자를 " +
+            "밀리초로 해석하던 결함의 회귀 고정판",
+    )
+    fun `read-timeout 은 초 단위로 바인딩된다`() {
+        val explicit =
+            bind(
+                "easydoc.llm",
+                LlmProperties::class.java,
+                mapOf("easydoc.llm.read-timeout" to "600"),
+            )
+        assertThat(explicit.readTimeout).isEqualTo(Duration.ofSeconds(600))
+
+        val default =
+            bind(
+                "easydoc.llm",
+                LlmProperties::class.java,
+                mapOf("easydoc.llm.provider" to "openai"),
+            )
+        assertThat(default.readTimeout).isEqualTo(Duration.ofSeconds(120))
     }
 
     @Test

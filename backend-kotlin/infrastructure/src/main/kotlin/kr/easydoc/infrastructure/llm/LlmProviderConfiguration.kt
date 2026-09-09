@@ -5,12 +5,14 @@ import kr.easydoc.core.llm.DEFAULT_MAX_TOKENS
 import kr.easydoc.core.llm.LlmProvider
 import kr.easydoc.core.security.Secret
 import org.springframework.boot.context.properties.ConfigurationProperties
+import org.springframework.boot.convert.DurationUnit
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.core.env.Environment
 import org.springframework.core.env.Profiles
 import java.math.BigDecimal
 import java.time.Duration
+import java.time.temporal.ChronoUnit
 
 // infrastructure가 LLM composition root를 소유한다. 설정으로 strategy를 선택하고
 // metrics decorator를 조립하므로 서비스와 core는 구체 provider를 알지 못한다.
@@ -42,7 +44,21 @@ data class LlmProperties(
      * 동작이 바뀌지 않도록 출처를 하나로 유지한다.
      *
      * 값을 그대로 쓰지 마라 — [validatedReadTimeout] 를 거쳐라. 이 필드는 운영자 입력이다.
+     *
+     * **`@param:DurationUnit(SECONDS)` 를 반드시 붙인다** — Kotlin data class 생성자 프로퍼티라
+     * `@param:` 접두 없이는 컴파일러가 "현재는 값 파라미터에만 적용되지만, 나중엔 필드에도
+     * 적용될 것"이라는 경고를 내고(`-Werror`) 빌드가 깨진다. Spring Boot 의 constructor
+     * binding(`ValueObjectBinder`)은 생성자 파라미터의 애노테이션만 보므로 값 파라미터
+     * 타겟이 정확히 우리가 원하는 자리이기도 하다. Spring Boot 의 `Duration` 바인더는
+     * 단위 접미사가 없는 맨 숫자를 기본으로 **밀리초**로 해석한다(`Binder(...).bind("x",
+     * Duration::class.java)` 에 `"600"` 을 태우면 `PT0.6S`). 골든 LLM 레인
+     * ([kr.easydoc.infrastructure.quality.GoldenLlmLane.readTimeoutOf])은 같은 이름의
+     * 환경변수를 초 단위로 손수 파싱하므로, 이 애노테이션이 없으면 제품과 레인이 같은
+     * 설정값(`EASYDOC_LLM_READ_TIMEOUT=600`)을 다른 단위로 읽는다 — 리뷰 blocker
+     * (2026-09-09), [kr.easydoc.api.ConfigurationPropertiesBindingTest] 의
+     * 「read-timeout 은 초 단위로 바인딩된다」가 회귀를 고정한다.
      */
+    @param:DurationUnit(ChronoUnit.SECONDS)
     val readTimeout: Duration = ANTHROPIC_READ_TIMEOUT,
 ) {
     /**
