@@ -1,0 +1,21 @@
+{
+  "name": "Easy-Read AI",
+  "short_name": "Easy-Read",
+  "lang": "ko",
+  "theme_color": "#5b4bc4",
+  "background_color": "#ffffff",
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-320.png",
+      "sizes": "320x320",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}
