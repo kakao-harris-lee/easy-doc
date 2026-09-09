@@ -14,6 +14,7 @@ import kr.easydoc.infrastructure.llm.LlmProviderConfiguration
 import kr.easydoc.infrastructure.llm.OPENAI_PROVIDER_NAME
 import org.springframework.mock.env.MockEnvironment
 import java.math.BigDecimal
+import java.time.Duration
 
 /**
  * 골든 LLM 레인이 **제품과 같은 규칙으로** provider 를 만든다.
@@ -44,6 +45,13 @@ internal object GoldenLlmLane {
      * 제품과 다른 조건([GoldenLlmLane] 최상단 KDoc — provider 사고와 같은 계열)을 재게 된다.
      */
     const val MAX_OUTPUT_TOKENS_ENV: String = "EASYDOC_LLM_MAX_OUTPUT_TOKENS"
+
+    /**
+     * 제품 `application.yml` 과 같은 이름이다(`easydoc.llm.read-timeout`). 초 단위 정수
+     * 문자열을 받는다(예: `"600"`) — [MAX_OUTPUT_TOKENS_ENV] 와 같은 이유로, 레인이 제품과
+     * 다른 타임아웃으로 측정하지 않게 한다.
+     */
+    const val READ_TIMEOUT_ENV: String = "EASYDOC_LLM_READ_TIMEOUT"
 
     /**
      * 제품 `application.yml`/`.env.example` 과 같은 이름이다(`easydoc.llm.pricing.*`).
@@ -165,6 +173,7 @@ internal object GoldenLlmLane {
             anthropicApiKey = secretOf(env(ANTHROPIC_KEY_ENV)),
             openAiApiKey = secretOf(env(OPENAI_KEY_ENV)),
             maxOutputTokens = maxOutputTokensOf(env),
+            readTimeout = readTimeoutOf(env),
             pricing = pricingOf(env),
         )
 
@@ -221,6 +230,27 @@ internal object GoldenLlmLane {
             ?: throw IllegalArgumentException(
                 "$MAX_OUTPUT_TOKENS_ENV='$raw' 은 정수가 아니다",
             )
+    }
+
+    /**
+     * 미설정·빈 값은 [LlmProperties] 의 기본값(= [kr.easydoc.infrastructure.llm.ANTHROPIC_READ_TIMEOUT])
+     * 으로 접는다 — 그 기본값을 여기 다시 적으면 출처가 둘이 된다.
+     *
+     * **값이 있는데 정수가 아니면 기본값으로 접지 않는다.** [maxOutputTokensOf] 와 같은 결로
+     * [IllegalArgumentException] 을 던져 [assemble] 이 [LanePlan.Unusable] 로 접게 한다 —
+     * 조용히 접으면 운영자가 잘못 넣은 값을 레인이 모르고 다른 조건으로 측정한다.
+     *
+     * **0·음수 자체의 거절은 여기서 다시 검사하지 않는다.** [maxOutputTokensOf] 와 같은
+     * 이유로 [LlmProperties.validatedReadTimeout] 이 [assemble] 조립 경로에서 이미 검사한다.
+     */
+    private fun readTimeoutOf(env: (String) -> String?): Duration {
+        val raw = env(READ_TIMEOUT_ENV)?.takeIf(String::isNotBlank) ?: return LlmProperties().readTimeout
+        val seconds =
+            raw.toLongOrNull()
+                ?: throw IllegalArgumentException(
+                    "$READ_TIMEOUT_ENV='$raw' 은 정수가 아니다",
+                )
+        return Duration.ofSeconds(seconds)
     }
 
     private fun secretOf(value: String?): Secret = value?.takeIf(String::isNotBlank)?.let(::Secret) ?: Secret.EMPTY

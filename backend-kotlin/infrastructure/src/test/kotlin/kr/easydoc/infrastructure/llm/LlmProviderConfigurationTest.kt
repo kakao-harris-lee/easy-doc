@@ -8,6 +8,7 @@ import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
 import org.springframework.mock.env.MockEnvironment
 import java.math.BigDecimal
+import java.time.Duration
 
 /** provider 조립의 소유자가 `infrastructure` 라는 결정의 회귀 테스트. */
 class LlmProviderConfigurationTest {
@@ -215,6 +216,39 @@ class LlmProviderConfigurationTest {
             )
         }.isInstanceOf(ConfigurationException::class.java)
             .hasMessageContaining("A4 20장")
+    }
+
+    @Test
+    @DisplayName("read-timeout 을 설정하지 않으면 지금과 같은 120초다")
+    fun `read-timeout 미설정은 기존 120초와 같다`() {
+        assertThat(LlmProperties().validatedReadTimeout()).isEqualTo(Duration.ofSeconds(120))
+    }
+
+    @Test
+    @DisplayName("0 이하·음수 read-timeout 은 조립 시점에 거절한다")
+    fun `read-timeout 이 0 이하면 던진다`() {
+        assertThatThrownBy {
+            assemble(LlmProperties(provider = ANTHROPIC_PROVIDER_NAME, readTimeout = Duration.ZERO))
+        }.isInstanceOf(ConfigurationException::class.java)
+            .hasMessageContaining("easydoc.llm.read-timeout")
+
+        assertThatThrownBy {
+            assemble(
+                LlmProperties(provider = ANTHROPIC_PROVIDER_NAME, readTimeout = Duration.ofSeconds(-1)),
+            )
+        }.isInstanceOf(ConfigurationException::class.java)
+            .hasMessageContaining("easydoc.llm.read-timeout")
+    }
+
+    @Test
+    @DisplayName("정상 범위의 read-timeout 은 조립이 성공한다")
+    fun `read-timeout 을 정상 값으로 설정하면 조립된다`() {
+        val provider =
+            assemble(
+                LlmProperties(provider = ANTHROPIC_PROVIDER_NAME, readTimeout = Duration.ofSeconds(600)),
+            )
+
+        assertThat(provider.name).isEqualTo(ANTHROPIC_PROVIDER_NAME)
     }
 
     @Test

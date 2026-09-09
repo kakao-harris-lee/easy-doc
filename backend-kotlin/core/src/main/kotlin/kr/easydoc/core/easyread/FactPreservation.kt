@@ -180,7 +180,30 @@ private val PATTERNS: List<Pair<FactKind, Regex>> =
             Regex("""(?<![\w.+-])[\w.+-]++@[\w-]++\.[\w.-]++|https?://\S++|www\.\S++"""),
         FactKind.PHONE to Regex("""(?<!\d)(?:0\d{1,2}+-\d{3,4}+-\d{4}+|1\d{3}+-\d{4}+)(?!\d)"""),
         FactKind.TIME to Regex("""(?:오전|오후)?\s*+\d{1,2}+시(?:\s*+\d{1,2}+분)?|\d{1,2}+:\d{2}+"""),
-        FactKind.DATE to Regex("""\d{4}+[.\-]\d{1,2}+[.\-]\d{1,2}+|(?:\d{4}+년\s*+)?\d{1,2}+월\s*+\d{1,2}+일"""),
+        // 선택적 연도 그룹이 4자리 연도뿐 아니라 아포스트로피 축약 두 자리 연도도 받는다
+        // ("’26년 9월 1일" 같은 혼합형, 리뷰 blocker 2026-09-09). 이게 없으면 이 DATE 패턴이
+        // "9월 1일"만 잡고 앞의 "’26년"은 별도 NUMBER(축약 연도 전용 패턴)로 떨어져,
+        // compareKeyOf 가 expandAbbreviatedYear 로 편 연도(2026)가 변환문의 DATE 안에
+        // 통째로 흡수된 연도와 짝을 잃는다 — 원문 NUMBER 2026 이 누락으로 오탐된다. 이
+        // DATE 패턴이 먼저(PATTERNS 순서상 앞) 구간을 통째로 점유하면 뒤의 아포스트로피
+        // 전용 NUMBER/DATE 패턴은 claim 에 실패해 중복 판정이 생기지 않는다.
+        FactKind.DATE to
+            Regex(
+                """\d{4}+[.\-]\d{1,2}+[.\-]\d{1,2}+|(?:(?:\d{4}+|['’]\d{2}+)년\s*+)?\d{1,2}+월\s*+\d{1,2}+일""",
+            ),
+        // 공문 관행 연도 축약 — "’26.9.1."·"'24-3-15" 처럼 날짜의 연도 자리에 아포스트로피
+        // (ASCII `'` 또는 U+2019 `’`) + 두 자리 숫자가 온다. 세기 보정(20NN 고정, 00~49 만
+        // 인정)은 [expandAbbreviatedYear] 가 맡는다 — 그 경계와 이유는 그 함수 KDoc에 있다.
+        // 아포스트로피를 반드시 요구하는 것이 핵심이다: 아포스트로피 없는 맨 두 자리 숫자
+        // (예: 기간 표현 "26년 동안")까지 연도로 오인하면 반대 방향 오탐이 생긴다 — 실측에서
+        // 관측된 사례도 전부 아포스트로피가 붙어 있었다. 자릿수가 모두 고정·상한 있는
+        // 수량자(`{2}`·`{1,2}`)라 되무를 자리가 없어 lookbehind 가 필요 없다.
+        FactKind.DATE to Regex("""['’]\d{2}+[.\-]\d{1,2}+[.\-]\d{1,2}+"""),
+        // 날짜가 아니라 연도 단독 축약("’26년"·"'24년") — 위와 같은 이유로 아포스트로피를
+        // 요구한다. 변환문은 이 값을 "2026년"처럼 온전한 4자리 연도로 펴 쓰는데, 그 표기는
+        // "년"이 단위 목록([ARABIC_UNIT_ALTERNATION])에 없어 이미 NUMBER(단위 없는 숫자)로
+        // 잡힌다 — 그래서 이 축약 표기도 NUMBER 로 잡아야 같은 사실로 비교된다.
+        FactKind.NUMBER to Regex("""['’]\d{2}+년"""),
         // 배수 단위(만·억·천·백·십)가 하나도 없는 순수 Arabic 숫자 + 원. 배수 단위가 있는
         // 경우는 전부 WORD_AMOUNT(합성 파서, KoreanAmountWords.kt)가 맡는다 — 부분 매치
         // 사고(리뷰 HIGH-2, "5천만원"이 "만원"=10,000 으로 잘못 잡히던 문제)를 막으려면
@@ -242,11 +265,50 @@ private fun compareKeyOf(raw: RawMatch): String =
         FactKind.AMOUNT -> amountValue(raw.text).toString()
         FactKind.EMAIL_OR_URL -> raw.text.trim().lowercase()
         FactKind.TIME -> timeMinutes(raw.text)?.toString().orEmpty()
-        FactKind.DATE -> dateCompareKey(raw.text).orEmpty()
-        FactKind.NUMBER -> numberCompareKey(raw.text)
+        FactKind.DATE -> dateCompareKey(expandAbbreviatedYear(raw.text)).orEmpty()
+        FactKind.NUMBER -> numberCompareKey(expandAbbreviatedYear(raw.text))
         FactKind.PHONE -> digitsOnly(raw.text)
         FactKind.PERCENT -> percentCompareKey(raw.text)
     }
+
+/** [expandAbbreviatedYear] 가 인정하는 축약 연도의 상한 — 그 함수 KDoc 참고. */
+private const val ABBREVIATED_YEAR_MAX = 49
+
+/** [expandAbbreviatedYear] 가 확정하는 세기 — 이 서비스가 다루는 공공 안내문은 2000년대만 다룬다. */
+private const val ABBREVIATED_YEAR_CENTURY = 2000
+
+/** 아포스트로피(ASCII `'` 또는 U+2019 `’`) + 두 자리 숫자로 시작하는 접두부. */
+private val ABBREVIATED_YEAR_PREFIX = Regex("""^['’](\d{2}+)""")
+
+/**
+ * 공문 관행 연도 축약을 20NN 으로 편다 — [matchText] 가 아포스트로피(ASCII `'` 또는 U+2019
+ * `’`) + 두 자리 숫자로 시작하면 그 자리를 4자리 연도로 바꾸고 나머지는 그대로 이어 돌려준다
+ * (예: `"’26.9.1"` → `"2026.9.1"`, `"’26년"` → `"2026년"`). 그렇지 않으면(아포스트로피가 없거나
+ * 경계를 넘으면) [matchText] 를 그대로 돌려준다 — 무해한 항등 변환이라 [compareKeyOf] ·
+ * [extractFacts] 가 모든 NUMBER·DATE 원시 매치에 조건 없이 걸어도 안전하다.
+ *
+ * **세기는 항상 20NN 으로 고정한다.** 이 제품이 다루는 공공 안내문의 축약 연도는 전부
+ * 2000년대이므로 19NN 판별 로직을 따로 두지 않는다.
+ *
+ * **경계를 00~[ABBREVIATED_YEAR_MAX](49) 로 좁힌다.** 50~99 는 관례상(Y2K 이후 널리 쓰는
+ * windowing 규칙과 같은 방향) 1950~1999 로도 읽힐 수 있어 애매하다 — 애매한 값을 20NN 으로
+ * 확정하면 옛 연도가 엉뚱한 미래 연도로 오판될 위험이 오탐 하나를 고치는 이득보다 크다. 그
+ * 경계 밖은 손대지 않고 그대로 둔다 — 결과는 기존 동작(아포스트로피 없이 두 자리 숫자만
+ * 남는 것)과 같다.
+ *
+ * [matchText] 는 항상 [RawMatch.text](원시 매치)에만 적용한다 — [ExtractedFact.displayValue]
+ * 는 이 확장 전 원문 그대로 남는다.
+ */
+private fun expandAbbreviatedYear(matchText: String): String {
+    val prefix = ABBREVIATED_YEAR_PREFIX.find(matchText)
+    val twoDigitYear = prefix?.groupValues?.get(1)?.toInt()
+    return if (prefix == null || twoDigitYear == null || twoDigitYear > ABBREVIATED_YEAR_MAX) {
+        matchText
+    } else {
+        val fourDigitYear = ABBREVIATED_YEAR_CENTURY + twoDigitYear
+        fourDigitYear.toString() + matchText.substring(prefix.range.last + 1)
+    }
+}
 
 // P0-4 단위 정렬(`core/segment/SegmentAlignment.kt`, 2026-09-05)이 같은 추출 규칙을 앵커로
 // 재사용한다 — 공개 API 확대가 아니라 같은 core 모듈 안에서만 보이는 `internal` 좁히기다.
@@ -255,7 +317,12 @@ internal fun extractFacts(text: String): List<ExtractedFact> {
     val normalized = normalizeFullWidthDigits(text)
     return extractRawMatches(normalized)
         .map { raw ->
-            val year = if (raw.kind == FactKind.DATE) dateComponents(raw.text)?.first else null
+            val year =
+                if (raw.kind == FactKind.DATE) {
+                    dateComponents(expandAbbreviatedYear(raw.text))?.first
+                } else {
+                    null
+                }
             ExtractedFact(raw.kind, compareKeyOf(raw), raw.text.trim(), year)
         }.filter { it.compareKey.isNotEmpty() }
 }

@@ -146,6 +146,11 @@ easydoc:
     # 한도는 운영자 책임이다. core `DEFAULT_MAX_TOKENS`(16,000)는 이 값이 없을 때만
     # 쓰이는 provider 안전 fallback이라 여기 기본값과 다르다.
     max-output-tokens: ${EASYDOC_LLM_MAX_OUTPUT_TOKENS:64000}
+    # LLM 호출 읽기 타임아웃(초). 기본값 120은 지금까지의 동작(ANTHROPIC_READ_TIMEOUT)과
+    # 같다 — 이 값을 바꾸면 안 된다. LlmProperties.readTimeout 이 `@param:DurationUnit(SECONDS)`
+    # 를 달고 있어 접미사 없는 정수를 초로 해석한다(리뷰 blocker 2026-09-09 — 이 애노테이션이
+    # 없으면 Spring Boot Duration 바인더가 접미사 없는 숫자를 밀리초로 읽는다).
+    read-timeout: ${EASYDOC_LLM_READ_TIMEOUT:120}
     pricing:
       input-usd-per-million-tokens: ${EASYDOC_LLM_INPUT_USD_PER_MILLION_TOKENS:}
       output-usd-per-million-tokens: ${EASYDOC_LLM_OUTPUT_USD_PER_MILLION_TOKENS:}
