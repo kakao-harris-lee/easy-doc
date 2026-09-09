@@ -234,6 +234,25 @@ CLI one-off다(Compose 상시 서비스가 아니다).
    먼저 켜면 그 순간부터 모든 등록이 402가 된다(계획 §6 리스크 1). 파일럿에 참여하는
    워크스페이스 전부에 위 1~3단계로 잔액을 부여해 둔 뒤에만 켠다.
 
+## 가입 크레딧은 이메일당 한 번
+
+가입 크레딧(`EASYDOC_CREDITS_SIGNUP_GRANT`)은 이메일당 **정확히 한 번**만 나간다(계획
+`docs/plans/2026-09-09-account-deletion.md` §6~§9 후속). 부여한 이메일의 단방향 해시
+(`HMAC-SHA256(pepper, 정규화된 이메일)`)를 `signup_grant_records`(V20)에 남겨, 탈퇴한
+이메일로 재가입해도 다시 부여하지 않는다 — 대신 그 사실을 이메일 인증을 마친 사용자에게
+크레딧 화면(`GET /workspaces/{workspace_id}/credits`의 `signup_grant_skipped`, 계약
+2.29.0)에서 고지한다.
+
+- **`EASYDOC_CREDITS_SIGNUP_GRANT_PEPPER`가 필수다.** `EASYDOC_CREDITS_SIGNUP_GRANT`가
+  0보다 크면 이 값 없이는 기동이 실패한다(`easydoc.encryption` 키 자기점검과 같은 자리 —
+  조용히 부여해 버리는 fail-open을 만들지 않는다). `EASYDOC_CREDITS_SIGNUP_GRANT=0`이면
+  이 값 없이도 뜬다.
+- **회전하지 않는 값이다.** pepper를 바꾸면 `signup_grant_records`의 기존 행이 새
+  해시와 매칭되지 않아 그 이메일이 이미 가입 부여를 받았어도 다시 부여받는다 — 배포
+  뒤에는 절대 바꾸지 않는다. 유출됐다고 판단되면 회전이 아니라 별도 사고 대응 절차로
+  다룬다(이 계획의 범위 밖).
+- 평문 이메일은 이 표에 담기지 않는다. pepper 없이는 해시로부터 이메일을 역산할 수 없다.
+
 ## 관리자 부여
 
 관리자는 `users.is_admin` DB 플래그다(V17, 계획 `docs/plans/2026-09-07-admin-minimum.md` §2

@@ -50,7 +50,13 @@ function formatSignedCredits(value: number): string {
   return value > 0 ? `+${value.toLocaleString('ko-KR')}` : value.toLocaleString('ko-KR')
 }
 
-/** 크레딧 계정 요약 카드 — 가용·잔액·예약 중, 집행이 꺼져 있으면 그 사실을 덧붙인다. */
+/**
+ * 크레딧 계정 요약 카드 — 가용·잔액·예약 중, 집행이 꺼져 있으면 그 사실을 덧붙인다.
+ *
+ * `signup_grant_skipped`(계약 2.29.0)가 참이면 가입 크레딧이 재수령되지 않았다는 안내를
+ * 덧붙인다 — 서버가 이메일 인증 전에는 이 값을 항상 거짓으로 채워 주므로 화면은 값을
+ * 그대로 보여주면 된다(따로 인증 상태를 확인하지 않는다).
+ */
 function CreditsCard({ credits }: { credits: WorkspaceCreditsResponse }) {
   return (
     <div className="rounded-[12px] border border-border bg-card p-5 shadow-[0_1px_2px_rgba(20,33,31,0.04)]">
@@ -77,6 +83,11 @@ function CreditsCard({ credits }: { credits: WorkspaceCreditsResponse }) {
       </dl>
       {!credits.enforced && (
         <p className="mt-3 text-sm text-muted-foreground">(지금은 집행되지 않습니다)</p>
+      )}
+      {credits.signup_grant_skipped && (
+        <p className="mt-3 text-sm text-muted-foreground">
+          이 이메일은 이전에 가입 크레딧을 받은 적이 있어 이번에는 제공되지 않았습니다.
+        </p>
       )}
     </div>
   )

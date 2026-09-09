@@ -211,6 +211,7 @@ export function workspaceCredits(
     available: 7,
     enforced: true,
     transactions: [creditTransaction()],
+    signup_grant_skipped: false,
     ...overrides,
   }
 }

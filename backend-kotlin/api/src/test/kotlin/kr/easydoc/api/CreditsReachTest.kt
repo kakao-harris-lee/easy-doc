@@ -90,6 +90,8 @@ class CreditsReachTest {
         assertThat(body["available"]).isEqualTo(50)
         assertThat(body["enforced"]).isEqualTo(true)
         assertThat(body["transactions"]).isInstanceOf(List::class.java)
+        // signupGrant 가 이 스위트에서 0(기본값)이라 부여도 건너뜀도 일어나지 않는다.
+        assertThat(body["signup_grant_skipped"]).isEqualTo(false)
     }
 
     @Test

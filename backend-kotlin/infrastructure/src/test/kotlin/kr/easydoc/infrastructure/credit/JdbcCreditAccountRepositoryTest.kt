@@ -149,6 +149,35 @@ class JdbcCreditAccountRepositoryTest {
     }
 
     @Test
+    @DisplayName("읽기는 email_verified 를 users.email_verified_at 그대로 돌려준다 — 기본은 미인증")
+    fun `읽기는 이메일 인증 여부를 돌려준다`() {
+        val (ownerId, workspaceId) = newOwnedWorkspace()
+
+        val unverified = repository.read(ownerId, workspaceId)!!
+        assertThat(unverified.emailVerified).isFalse()
+
+        jdbc.sql("UPDATE users SET email_verified_at = now() WHERE id = :id").param("id", ownerId).update()
+
+        val verified = repository.read(ownerId, workspaceId)!!
+        assertThat(verified.emailVerified).isTrue()
+    }
+
+    @Test
+    @DisplayName("markSignupGrantSkipped 는 계정 행에만 표시를 남기고 거래를 만들지 않는다 (V20)")
+    fun `가입 부여 건너뜀 표시는 거래를 만들지 않는다`() {
+        val (ownerId, workspaceId) = newOwnedWorkspace()
+
+        assertThat(repository.read(ownerId, workspaceId)!!.signupGrantSkipped).isFalse()
+
+        repository.markSignupGrantSkipped(workspaceId)
+
+        val row = repository.read(ownerId, workspaceId)!!
+        assertThat(row.signupGrantSkipped).isTrue()
+        assertThat(row.balance).isEqualTo(0)
+        assertThat(row.transactions).isEmpty()
+    }
+
+    @Test
     @DisplayName("최근 거래는 50건으로 잘리고 최신순이다")
     fun `거래는 최근 50건 최신순이다`() {
         val (ownerId, workspaceId) = newOwnedWorkspace()

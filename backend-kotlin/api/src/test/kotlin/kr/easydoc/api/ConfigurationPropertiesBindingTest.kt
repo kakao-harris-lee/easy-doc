@@ -417,6 +417,18 @@ class ConfigurationPropertiesBindingTest {
     }
 
     @Test
+    @DisplayName("가입 부여 pepper 는 EASYDOC_CREDITS_SIGNUP_GRANT_PEPPER 와 같은 이름으로 Secret 에 실린다")
+    fun `가입 부여 pepper 가 Secret 에 실린다`() {
+        val credits =
+            bind(
+                "easydoc.credits",
+                CreditsProperties::class.java,
+                mapOf("easydoc.credits.signup-grant-pepper" to SECRET_VALUE),
+            )
+        assertThat(credits.signupGrantPepper.reveal()).isEqualTo(SECRET_VALUE)
+    }
+
+    @Test
     @DisplayName("청구 운영 설정이 기본값과 다른 값을 싣는다 — 운영자 알림 주소")
     fun `청구 설정이 기본값과 다른 값을 싣는다`() {
         val billing =

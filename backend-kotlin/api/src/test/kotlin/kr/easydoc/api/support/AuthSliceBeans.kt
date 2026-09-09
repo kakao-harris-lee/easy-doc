@@ -904,6 +904,10 @@ class InMemoryCreditAccountRepository : CreditAccountRepository {
         // KDoc), 그래서 처음 만난 ownerId를 그대로 고정해 둔다.
         var ownerId: UUID? = null
         val transactions: MutableList<CreditTransactionView> = mutableListOf()
+
+        // 가입 크레딧 후속(§7) — 이 슬라이스는 신호 배선만 재므로 이메일 인증은 항상
+        // 됐다고 본다(`CreditsReachTest`가 실 DB 로 가림 여부를 잰다).
+        var signupGrantSkipped: Boolean = false
     }
 
     private val accounts = mutableMapOf<UUID, Account>()
@@ -1017,16 +1021,22 @@ class InMemoryCreditAccountRepository : CreditAccountRepository {
     ): CreditAccountRow? {
         val account = accounts[workspaceId] ?: return null
         return CreditAccountRow(
-            workspaceId,
-            account.balance,
-            account.reserved,
-            account.transactions.sortedByDescending { it.createdAt }.take(TRANSACTION_HISTORY_LIMIT),
+            workspaceId = workspaceId,
+            balance = account.balance,
+            reserved = account.reserved,
+            transactions = account.transactions.sortedByDescending { it.createdAt }.take(TRANSACTION_HISTORY_LIMIT),
+            signupGrantSkipped = account.signupGrantSkipped,
+            emailVerified = true,
         )
     }
 
     override fun consistencyViolations(): List<CreditConsistencyViolation> = emptyList()
 
     override fun ownerOf(workspaceId: UUID): UUID? = accounts[workspaceId]?.ownerId
+
+    override fun markSignupGrantSkipped(workspaceId: UUID) {
+        accounts.getOrPut(workspaceId) { Account() }.signupGrantSkipped = true
+    }
 
     private companion object {
         const val TRANSACTION_HISTORY_LIMIT = 50
