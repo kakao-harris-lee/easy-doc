@@ -139,7 +139,7 @@ class SocialLoginService
                         // 같은 규약(크레딧 계정 계획 §2 결정 4). `signupGrant` 판단은
                         // `CreditAccountService.grantSignupBonus` 가 중앙에서 진다(리뷰 MEDIUM-9).
                         credits.ensureAccount(workspaceId)
-                        credits.grantSignupBonus(workspaceId, user.id)
+                        credits.grantSignupBonus(workspaceId, user.id, normalizedEmail)
                         repositories.identities.link(
                             user.id,
                             providerId,

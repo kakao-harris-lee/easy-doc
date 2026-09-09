@@ -1,5 +1,6 @@
 package kr.easydoc.infrastructure.credit
 
+import kr.easydoc.core.security.Secret
 import org.springframework.boot.context.properties.ConfigurationProperties
 
 /**
@@ -13,9 +14,18 @@ import org.springframework.boot.context.properties.ConfigurationProperties
  *
  * [signupGrant] 기본값 `0` — 기본 워크스페이스가 만들어질 때(가입) 이 수만큼
  * `grant/signup` 거래를 넣는다. `0`이면 거래를 만들지 않는다.
+ *
+ * [signupGrantPepper] — 가입 부여 중복 방지 원장(`signup_grant_records`, V20)의 이메일
+ * 해시에 섞는 비밀값(`kr.easydoc.application.credit.SignupGrantEmailHasher`, 가입 크레딧
+ * 후속 §7 결정 2). 환경변수 `EASYDOC_CREDITS_SIGNUP_GRANT_PEPPER` 하나로만 주입된다.
+ * `signupGrant > 0` 인데 이 값이 비어 있으면 [CreditAccountConfiguration] 의 기동
+ * 자기점검이 앱을 띄우지 않는다(§7 결정 3, `signupGrant = 0` 이면 pepper 없이도 뜬다).
+ * **회전하지 않는 값이다** — 바꾸면 기존 `signup_grant_records` 행이 새 해시와 매칭되지
+ * 않아 그 이메일이 다시 부여받는다(`.env.example`·러너북 「크레딧 충전」에 명시).
  */
 @ConfigurationProperties(prefix = "easydoc.credits")
 data class CreditsProperties(
     val enforced: Boolean = false,
     val signupGrant: Int = 0,
+    val signupGrantPepper: Secret = Secret.EMPTY,
 )

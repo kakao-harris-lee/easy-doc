@@ -41,7 +41,7 @@ openapi: 3.1.0
 
 info:
   title: Easy-Read AI API
-  version: "2.28.0"
+  version: "2.29.0"
   x-baselined-at: "2026-08-12"       # 초판 기준선을 뜬 날 (동결일이 아니다)
   x-rebased-at: "2026-08-12"         # 계약의 성격을 "개선 대상"으로 다시 정의한 날
   x-source-runtime: "Python 3.12 / FastAPI (app/main.py) — 과거 참고 구현이었고 2026-08-24 저장소에서 제거됨(git 태그 pre-python-removal-20260824). 기준선 출처였을 뿐 정답이 아니었다"
@@ -6112,9 +6112,10 @@ components:
 
     WorkspaceCreditsResponse:
       type: object
-      required: [workspace_id, balance, reserved, available, enforced, transactions]
+      required: [workspace_id, balance, reserved, available, enforced, transactions, signup_grant_skipped]
       description: |
-        `GET /workspaces/{workspace_id}/credits` 응답 — 크레딧 계정 계획 §2 결정 2·7.
+        `GET /workspaces/{workspace_id}/credits` 응답 — 크레딧 계정 계획 §2 결정 2·7,
+        `signup_grant_skipped`는 가입 크레딧 후속 §7 결정 6(2.29.0).
       properties:
         workspace_id: { type: string, format: uuid }
         balance:
@@ -6134,6 +6135,15 @@ components:
           type: array
           items: { $ref: '#/components/schemas/CreditTransaction' }
           description: 최근 거래 최신순 50건.
+        signup_grant_skipped:
+          type: boolean
+          description: |
+            이 계정의 가입 부여가 「이 이메일이 전에 가입 부여를 받은 적이 있어 건너뛰었다」로
+            판정됐는지(가입 크레딧 후속 §7). 참이면 화면이 "이 이메일은 이전에 가입 크레딧을
+            받은 적이 있어 이번에는 제공되지 않았습니다."를 안내한다. **이메일이 인증되기
+            전에는 항상 `false`다** — 인증 전 노출은 그 이메일의 가입 이력을 캐내는 창구가
+            된다(아무 주소나 넣어 보고 참이 뜨는지로 그 주소가 이 서비스를 쓴 적이 있는지
+            알 수 있다).
 
     # ---------------------------------------------------------------------
     # 세금계산서 요청 기록 (2.24.0 신설) — docs/plans/2026-09-07-invoice-requests.md
@@ -6658,6 +6668,36 @@ components:
 # 변경 이력
 # =============================================================================
 x-changelog:
+  - version: "2.29.0"
+    date: "2026-09-09"
+    revision: "SIGNUP-GRANT-ONCE"   # 가입 크레딧은 이메일당 한 번 — 재가입 고지
+    author: contract-keeper
+    change: |
+      **회원 탈퇴(2.27.0)가 열어 둔 구멍을 닫는다** — 탈퇴한 이메일로 재가입하면 가입
+      부여(`easydoc.credits.signup-grant`)를 반복 수령할 수 있었다(2.27.0 §2 결정 8이
+      "알려진 구멍"으로 남겨 뒀던 것). 사용자 결정: 재가입은 허용하되 가입 크레딧은
+      다시 주지 않고, 그 사실을 이메일 인증을 마친 사용자에게 고지한다.
+
+      ⑴ **`WorkspaceCreditsResponse`에 `signup_grant_skipped`(boolean, required) 신설.**
+         이 계정의 가입 부여가 「이미 가입 부여를 받은 이메일이라 건너뛰었다」로
+         판정됐는지. **이메일이 인증되기 전에는 항상 `false`다** — 인증 전 노출은
+         아무 이메일 주소나 넣어 보고 참이 뜨는지로 그 주소의 가입 이력을 캐내는
+         창구가 된다.
+      ⑵ **새 엔드포인트 없음.** 기존 `GET /workspaces/{workspace_id}/credits`(2.22.0)
+         응답에 스키마 필드 하나만 더한다 — 엔드포인트 수는 44로 그대로다.
+      ⑶ **서버 쪽 저장:** 부여받은 이메일의 단방향 해시(`HMAC-SHA256(pepper, 정규화된
+         이메일)`)를 `signup_grant_records`(V20)에 **부여 시점**(탈퇴 시점이 아니다)에
+         남긴다. 평문 이메일은 어디에도 저장하지 않는다. 거래 내역(`credit_transactions`)
+         에는 아무것도 남기지 않는다 — 부여가 없었으므로 "0 거래"를 만들어 넣지 않는다.
+    ground: |
+      계획 `docs/plans/2026-09-09-account-deletion.md` §6~§9(후속 「가입 크레딧은
+      계정당 한 번」) — 사용자 결정 2026-09-09: "탈퇴한 이메일로 재가입은 허용하되,
+      가입 크레딧은 제공되지 않도록 하고, 재가입 시 이미 가입 크레딧을 사용한 내역이
+      있음을 고지한다."
+    compatibility: |
+      **넓히는 변경이다.** 기존 응답에 required 필드 하나를 더할 뿐 기존 필드는 손대지
+      않는다 — 이 계약의 파괴성 판정 기준상 필드 추가는 비파괴(제거·이름 변경·타입
+      축소만 파괴)다. 옛 클라이언트는 새 필드를 무시하면 그대로 동작한다.
   - version: "2.28.0"
     date: "2026-09-09"
     revision: "ACCOUNT-DELETION-USAGE-REPORT-FIX"   # V19가 만든 회귀 수정 — 탈퇴한 계정의 원장 행이 U3/admin usage 리포트에서 사라지던 결함

@@ -49,7 +49,7 @@ class AuthService(
                 val created = users.create(normalizedEmail, passwordHash)
                 val workspaceId = workspaces.createDefault(created.id)
                 credits.ensureAccount(workspaceId)
-                credits.grantSignupBonus(workspaceId, created.id)
+                credits.grantSignupBonus(workspaceId, created.id, normalizedEmail)
                 created
             }
         // 커밋 **뒤**에 발송한다 — 롤백될 수도 있는 계정에 메일을 먼저 보내지 않는다.

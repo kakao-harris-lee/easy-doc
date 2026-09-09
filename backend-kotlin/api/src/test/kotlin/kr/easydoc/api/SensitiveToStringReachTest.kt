@@ -497,8 +497,16 @@ class SensitiveToStringReachTest {
          * 이중으로 안전하다 — `dataClassProbes` 자동 판정에도 걸리지 않는다(민감 토큰 자리가
          * 없어 표본조차 만들지 않는다). `EditDistanceBudget`·`UnitRun` 과 같은 판단으로
          * `KNOWN_SENSITIVE_TYPES` 에는 넣지 않는다.
+         *
+         * 가입 크레딧은 이메일당 한 번(가입 크레딧 후속, 2026-09-09)이 **하나**를 더해
+         * 206 이다(205 위에) — infrastructure `JdbcCreditAccountRepository.AccountSnapshot`
+         * (`read()` 내부에서만 쓰는 `private` 중첩 클래스, `balance`·`reserved`·
+         * `signupGrantSkipped`·`emailVerified` 뿐이다 — 정수 둘과 boolean 둘이라 민감 판정
+         * 토큰 어디에도 걸리지 않는다). `CreditAccountRow`·`CreditAccountView`(둘 다 기존
+         * 선언)는 필드(`signupGrantSkipped`·`emailVerified`)만 늘었을 뿐 선언 자체는
+         * 그대로라 순증감에 들지 않는다. `KNOWN_SENSITIVE_TYPES` 에는 넣지 않는다.
          */
-        const val EXPECTED_SOURCE_DECLARATIONS = 205
+        const val EXPECTED_SOURCE_DECLARATIONS = 206
 
         /** 민감 판정이 반드시 닿아야 하는 타입 — 바닥이다. */
         val KNOWN_SENSITIVE_TYPES =

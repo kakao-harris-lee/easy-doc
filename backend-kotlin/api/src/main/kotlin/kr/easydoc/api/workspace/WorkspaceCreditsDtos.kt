@@ -6,7 +6,10 @@ import kr.easydoc.application.credit.CreditTransactionView
 import kr.easydoc.core.credit.CreditTransactionKind
 import java.time.Instant
 
-/** `GET /workspaces/{workspace_id}/credits` 응답. 계약 `components/schemas/WorkspaceCreditsResponse`(2.22.0). */
+/**
+ * `GET /workspaces/{workspace_id}/credits` 응답. 계약 `components/schemas/WorkspaceCreditsResponse`
+ * (2.22.0, `signup_grant_skipped`는 2.29.0).
+ */
 data class WorkspaceCreditsResponse(
     @get:JsonProperty("workspace_id") val workspaceId: String,
     @get:JsonProperty("balance") val balance: Int,
@@ -14,6 +17,7 @@ data class WorkspaceCreditsResponse(
     @get:JsonProperty("available") val available: Int,
     @get:JsonProperty("enforced") val enforced: Boolean,
     @get:JsonProperty("transactions") val transactions: List<CreditTransactionResponse>,
+    @get:JsonProperty("signup_grant_skipped") val signupGrantSkipped: Boolean,
 ) {
     companion object {
         fun of(view: CreditAccountView): WorkspaceCreditsResponse =
@@ -24,6 +28,7 @@ data class WorkspaceCreditsResponse(
                 available = view.available,
                 enforced = view.enforced,
                 transactions = view.transactions.map(CreditTransactionResponse::of),
+                signupGrantSkipped = view.signupGrantSkipped,
             )
     }
 }

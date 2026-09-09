@@ -32,12 +32,26 @@ sealed interface ReservationResult {
     data class Insufficient(val available: Int) : ReservationResult
 }
 
-/** 저장소가 돌려주는 계정 스냅샷 — [kr.easydoc.infrastructure.credit.CreditsProperties.enforced] 를 모른다. */
+/**
+ * 저장소가 돌려주는 계정 스냅샷 — [kr.easydoc.infrastructure.credit.CreditsProperties.enforced] 를 모른다.
+ *
+ * [signupGrantSkipped] 는 `workspace_credit_accounts.signup_grant_skipped`(V20) 그대로다 —
+ * [emailVerified] 로 가리기 **전**의 원값이다([CreditAccountService.read] 가 가린다).
+ *
+ * [emailVerified] 는 이 계정 소유자의 `users.email_verified_at IS NOT NULL`이다.
+ * `signup_grant_skipped` 안내(계약 2.29.0 `signup_grant_skipped`)를 **이메일 인증 전에는
+ * 절대 보여주지 않기 위한** 재료다(가입 크레딧 후속 §7 결정 5) — 인증 전에 노출하면
+ * 아무 주소나 넣어 보고 "전에 받은 적 있음"이 뜨는지로 그 이메일의 가입 이력을
+ * 캐낼 수 있다. 기본값 `false` — 값을 채우지 않는 구현(옛 대역)이 실수로 노출 쪽으로
+ * 기울지 않도록 안전한 기본값을 거부(deny) 방향으로 둔다.
+ */
 data class CreditAccountRow(
     val workspaceId: UUID,
     val balance: Int,
     val reserved: Int,
     val transactions: List<CreditTransactionView>,
+    val signupGrantSkipped: Boolean = false,
+    val emailVerified: Boolean = false,
 )
 
 /**
@@ -183,4 +197,44 @@ interface CreditAccountRepository {
      * id 를 스스로 찾아야 한다. 워크스페이스가 없으면 `null`.
      */
     fun ownerOf(workspaceId: UUID): UUID?
+
+    /**
+     * 가입 부여를 **건너뛴 사실**을 계정 행에 남긴다 —
+     * `workspace_credit_accounts.signup_grant_skipped = true`(V20). [grant] 와 달리
+     * `credit_transactions` 에는 아무것도 남기지 않는다(가입 크레딧 후속 §7 결정 7 —
+     * 없었던 거래를 0으로 만들어 넣지 않는다). [CreditAccountService.grantSignupBonus]
+     * 가 [SignupGrantLedger.hasGranted] 로 이미 받은 이메일임을 확인했을 때만 부른다.
+     */
+    fun markSignupGrantSkipped(workspaceId: UUID)
+}
+
+/**
+ * `signup_grant_records`(V20) 접근 — 이메일 해시 하나가 가입 부여를 이미 받았는지
+ * 판정한다. **평문 이메일이 아니라 해시만** 오간다(`SignupGrantEmailHasher`) — 이
+ * 포트는 그 사실을 모르고 그저 문자열 키로만 다룬다.
+ *
+ * [hasGranted] → [record] 순서는 호출자([CreditAccountService.grantSignupBonus])가
+ * 진다 — 이 포트는 원자적 "없으면 넣기"를 제공하지 않는다. 동시 최초 가입 경쟁은
+ * `signup_grant_records` 기본키(email_hash) 유일 제약이 마지막 방어선이다(같은 이메일로
+ * 동시에 두 계정이 만들어지는 경로 자체가 `users.email` 유일 인덱스로 이미 막혀 있어
+ * 실제로는 닿지 않는다 — 이 포트의 경쟁은 이론상의 이중 기록 방지용이다).
+ */
+interface SignupGrantLedger {
+    /** 이 이메일 해시가 전에 가입 부여를 받았는지. */
+    fun hasGranted(emailHash: String): Boolean
+
+    /** 부여 **직후** 기록한다 — 호출자의 트랜잭션 안에서, 커밋하지 않는다. */
+    fun record(emailHash: String)
+}
+
+/**
+ * 항상 "처음 가입"으로 보는 대역 — `signupGrant <= 0` 배포에서는
+ * [CreditAccountService.grantSignupBonus] 가 조회 전에 이미 반환하므로 실제로 불릴 일이
+ * 없다. [CreditAccountService] 의 기본 인자([NoopCreditAccountRepository] 와 같은 자리)라
+ * `internal` 이 아니라 공개한다.
+ */
+object NoopSignupGrantLedger : SignupGrantLedger {
+    override fun hasGranted(emailHash: String): Boolean = false
+
+    override fun record(emailHash: String) = Unit
 }

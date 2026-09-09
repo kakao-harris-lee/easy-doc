@@ -14,7 +14,15 @@ import java.sql.ResultSet
 import java.time.OffsetDateTime
 import java.util.UUID
 
-/** `workspace_credit_accounts`·`credit_transactions` 접근. 스키마는 `V15__credit_accounts.sql`. */
+/**
+ * `workspace_credit_accounts`·`credit_transactions` 접근. 스키마는 `V15__credit_accounts.sql`
+ * (`signup_grant_skipped`는 V20).
+ *
+ * `TooManyFunctions` 를 억제한다 — [CreditAccountRepository] 포트가 요구하는 메서드가
+ * 늘어난 것이지([markSignupGrantSkipped] 가 V20으로 하나 더해졌다) 책임이 갈린 것이
+ * 아니다(`SocialLoginService` 와 같은 판단).
+ */
+@Suppress("TooManyFunctions")
 class JdbcCreditAccountRepository(private val jdbc: JdbcClient) : CreditAccountRepository {
     override fun ensureAccount(workspaceId: UUID) {
         jdbc
@@ -191,6 +199,11 @@ class JdbcCreditAccountRepository(private val jdbc: JdbcClient) : CreditAccountR
         return balance
     }
 
+    /**
+     * `users` 를 함께 조인해 `email_verified_at IS NOT NULL` 도 돌려준다 — `signup_grant_skipped`
+     * 를 [CreditAccountService][kr.easydoc.application.credit.CreditAccountService] 가 이메일
+     * 인증 전에는 가리기 위한 재료다([CreditAccountRow] KDoc, 가입 크레딧 후속 §7 결정 5).
+     */
     override fun read(
         ownerId: UUID,
         workspaceId: UUID,
@@ -199,14 +212,16 @@ class JdbcCreditAccountRepository(private val jdbc: JdbcClient) : CreditAccountR
             jdbc
                 .sql(
                     """
-                    SELECT a.workspace_id, a.balance, a.reserved
+                    SELECT a.workspace_id, a.balance, a.reserved, a.signup_grant_skipped,
+                           u.email_verified_at IS NOT NULL AS email_verified
                     FROM workspace_credit_accounts a
                     JOIN workspaces w ON w.id = a.workspace_id
+                    JOIN users u ON u.id = w.user_id
                     WHERE a.workspace_id = :workspaceId AND w.user_id = :ownerId
                     """.trimIndent(),
                 ).param("workspaceId", workspaceId)
                 .param("ownerId", ownerId)
-                .query { rs, _ -> Pair(rs.getInt("balance"), rs.getInt("reserved")) }
+                .query { rs, _ -> toAccountSnapshot(rs) }
                 .optional()
                 .orElse(null) ?: return null
 
@@ -225,7 +240,46 @@ class JdbcCreditAccountRepository(private val jdbc: JdbcClient) : CreditAccountR
                 .query { rs, _ -> toTransactionView(rs) }
                 .list()
 
-        return CreditAccountRow(workspaceId, account.first, account.second, transactions)
+        return CreditAccountRow(
+            workspaceId = workspaceId,
+            balance = account.balance,
+            reserved = account.reserved,
+            transactions = transactions,
+            signupGrantSkipped = account.signupGrantSkipped,
+            emailVerified = account.emailVerified,
+        )
+    }
+
+    /** [markSignupGrantSkipped] 를 지원하려고 `read` 의 계정 스냅샷을 값으로 뽑아 둔다. */
+    private data class AccountSnapshot(
+        val balance: Int,
+        val reserved: Int,
+        val signupGrantSkipped: Boolean,
+        val emailVerified: Boolean,
+    )
+
+    private fun toAccountSnapshot(rs: ResultSet): AccountSnapshot =
+        AccountSnapshot(
+            balance = rs.getInt("balance"),
+            reserved = rs.getInt("reserved"),
+            signupGrantSkipped = rs.getBoolean("signup_grant_skipped"),
+            emailVerified = rs.getBoolean("email_verified"),
+        )
+
+    /**
+     * 가입 부여를 건너뛴 사실만 남긴다 — `credit_transactions` 에는 아무것도 넣지 않는다
+     * ([kr.easydoc.application.credit.CreditAccountRepository.markSignupGrantSkipped] KDoc).
+     */
+    override fun markSignupGrantSkipped(workspaceId: UUID) {
+        jdbc
+            .sql(
+                """
+                UPDATE workspace_credit_accounts
+                SET signup_grant_skipped = true, updated_at = now()
+                WHERE workspace_id = :workspaceId
+                """.trimIndent(),
+            ).param("workspaceId", workspaceId)
+            .update()
     }
 
     /** 두 불변식을 함께 확인한다 — `sum(balance_delta) = balance`, `sum(reserved_delta) = reserved`. */

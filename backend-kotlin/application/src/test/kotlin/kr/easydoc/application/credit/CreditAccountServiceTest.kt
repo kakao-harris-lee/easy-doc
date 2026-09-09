@@ -4,6 +4,7 @@ import kr.easydoc.core.credit.CreditReason
 import kr.easydoc.core.credit.Credits
 import kr.easydoc.core.exceptions.InsufficientCreditsException
 import kr.easydoc.core.exceptions.NotFoundException
+import kr.easydoc.core.security.Secret
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.DisplayName
@@ -121,7 +122,7 @@ class CreditAccountServiceTest {
         val repo = FakeCreditAccountRepository(balance = 0)
         val service = CreditAccountService(repo, enforced = true, signupGrant = 50)
 
-        service.grantSignupBonus(workspaceId, ownerId)
+        service.grantSignupBonus(workspaceId, ownerId, "user@example.com")
 
         assertThat(repo.grantCalls).containsExactly(Triple(50, CreditReason.SIGNUP, null as String?))
     }
@@ -132,9 +133,75 @@ class CreditAccountServiceTest {
         val repo = FakeCreditAccountRepository(balance = 0)
         val service = CreditAccountService(repo, enforced = true, signupGrant = 0)
 
-        service.grantSignupBonus(workspaceId, ownerId)
+        service.grantSignupBonus(workspaceId, ownerId, "user@example.com")
 
         assertThat(repo.grantCalls).isEmpty()
+    }
+
+    @Test
+    @DisplayName("가입 부여 전에 원장을 조회한다 — 없으면 부여하고 부여 직후 기록한다")
+    fun `원장에 없으면 부여하고 기록한다`() {
+        val repo = FakeCreditAccountRepository(balance = 0)
+        val ledger = FakeSignupGrantLedger()
+        val hasher = SignupGrantEmailHasher(Secret("pepper"))
+        val service =
+            CreditAccountService(
+                repo,
+                enforced = true,
+                signupGrant = 50,
+                signupGrantLedger = ledger,
+                emailHasher = hasher,
+            )
+
+        service.grantSignupBonus(workspaceId, ownerId, "user@example.com")
+
+        assertThat(repo.grantCalls).containsExactly(Triple(50, CreditReason.SIGNUP, null as String?))
+        assertThat(repo.markSkippedCalls).isEmpty()
+        assertThat(ledger.recorded).containsExactly(hasher.hash("user@example.com"))
+    }
+
+    @Test
+    @DisplayName("원장에 이미 있으면 부여하지 않고 건너뛴 사실만 남긴다 — 거래를 만들지 않는다")
+    fun `원장에 있으면 건너뛴 사실만 남긴다`() {
+        val repo = FakeCreditAccountRepository(balance = 0)
+        val hasher = SignupGrantEmailHasher(Secret("pepper"))
+        val ledger = FakeSignupGrantLedger(alreadyGranted = setOf(hasher.hash("user@example.com")))
+        val service =
+            CreditAccountService(
+                repo,
+                enforced = true,
+                signupGrant = 50,
+                signupGrantLedger = ledger,
+                emailHasher = hasher,
+            )
+
+        service.grantSignupBonus(workspaceId, ownerId, "user@example.com")
+
+        assertThat(repo.grantCalls).isEmpty()
+        assertThat(repo.markSkippedCalls).containsExactly(workspaceId)
+        assertThat(ledger.recorded).isEmpty()
+    }
+
+    @Test
+    @DisplayName("읽기 결과의 signup_grant_skipped 는 이메일 인증 전에는 항상 거짓이다")
+    fun `이메일 미인증이면 항상 거짓`() {
+        val repo = FakeCreditAccountRepository(balance = 0, signupGrantSkipped = true, emailVerified = false)
+        val service = CreditAccountService(repo, enforced = true)
+
+        val view = service.read(ownerId, workspaceId)
+
+        assertThat(view.signupGrantSkipped).isFalse()
+    }
+
+    @Test
+    @DisplayName("읽기 결과의 signup_grant_skipped 는 이메일 인증 뒤에는 원값 그대로다")
+    fun `이메일 인증 뒤에는 원값 그대로`() {
+        val repo = FakeCreditAccountRepository(balance = 0, signupGrantSkipped = true, emailVerified = true)
+        val service = CreditAccountService(repo, enforced = true)
+
+        val view = service.read(ownerId, workspaceId)
+
+        assertThat(view.signupGrantSkipped).isTrue()
     }
 
     @Test
@@ -170,12 +237,15 @@ class CreditAccountServiceTest {
 private class FakeCreditAccountRepository(
     var balance: Int,
     private val exists: Boolean = true,
+    private val signupGrantSkipped: Boolean = false,
+    private val emailVerified: Boolean = false,
 ) : CreditAccountRepository by NoopCreditAccountRepository {
     var reserved: Int = 0
     val reserveCalls = mutableListOf<Credits>()
     val consumeCalls = mutableListOf<Credits>()
     val releaseCalls = mutableListOf<Credits>()
     val grantCalls = mutableListOf<Triple<Int, CreditReason, String?>>()
+    val markSkippedCalls = mutableListOf<UUID>()
 
     override fun reserve(
         ownerId: UUID,
@@ -232,5 +302,27 @@ private class FakeCreditAccountRepository(
     override fun read(
         ownerId: UUID,
         workspaceId: UUID,
-    ): CreditAccountRow? = if (!exists) null else CreditAccountRow(workspaceId, balance, reserved, emptyList())
+    ): CreditAccountRow? =
+        if (!exists) {
+            null
+        } else {
+            CreditAccountRow(workspaceId, balance, reserved, emptyList(), signupGrantSkipped, emailVerified)
+        }
+
+    override fun markSignupGrantSkipped(workspaceId: UUID) {
+        markSkippedCalls += workspaceId
+    }
+}
+
+/** [SignupGrantLedger] 대역 — 부여를 이미 받은 이메일 해시 집합을 흉내 낸다. */
+private class FakeSignupGrantLedger(alreadyGranted: Set<String> = emptySet()) : SignupGrantLedger {
+    private val granted = alreadyGranted.toMutableSet()
+    val recorded = mutableListOf<String>()
+
+    override fun hasGranted(emailHash: String): Boolean = emailHash in granted
+
+    override fun record(emailHash: String) {
+        recorded += emailHash
+        granted += emailHash
+    }
 }

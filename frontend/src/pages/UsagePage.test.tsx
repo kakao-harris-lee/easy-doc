@@ -318,6 +318,35 @@ describe('크레딧 카드 (C1/C2)', () => {
     expect(screen.queryByText('(지금은 집행되지 않습니다)')).not.toBeInTheDocument()
   })
 
+  it('signup_grant_skipped가 참이면 가입 크레딧 재수령 불가 안내를 보여준다', async () => {
+    vi.mocked(getWorkspaceCredits).mockResolvedValue(
+      workspaceCredits({ signup_grant_skipped: true }),
+    )
+
+    renderPage()
+
+    expect(
+      await screen.findByText(
+        '이 이메일은 이전에 가입 크레딧을 받은 적이 있어 이번에는 제공되지 않았습니다.',
+      ),
+    ).toBeInTheDocument()
+  })
+
+  it('signup_grant_skipped가 거짓이면 그 안내를 보여주지 않는다', async () => {
+    vi.mocked(getWorkspaceCredits).mockResolvedValue(
+      workspaceCredits({ signup_grant_skipped: false }),
+    )
+
+    renderPage()
+
+    await screen.findByRole('heading', { name: '크레딧' })
+    expect(
+      screen.queryByText(
+        '이 이메일은 이전에 가입 크레딧을 받은 적이 있어 이번에는 제공되지 않았습니다.',
+      ),
+    ).not.toBeInTheDocument()
+  })
+
   it('거래 표가 종류·크레딧(부호)·사유·메모·일시를 한국어로 보여준다', async () => {
     vi.mocked(getWorkspaceCredits).mockResolvedValue(
       workspaceCredits({

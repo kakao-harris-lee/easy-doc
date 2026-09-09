@@ -465,6 +465,10 @@ export interface CreditTransaction {
  * `available = balance - reserved`는 서버가 이미 계산해 준다. `enforced`가 거짓이면
  * `createDocument`의 예약이 잔액과 무관하게 항상 성공한다(잔액이 음수로 기록될 수 있다).
  * `transactions`는 최근 50건을 최신순으로 담는다.
+ *
+ * `signup_grant_skipped`(계약 2.29.0) — 이 계정의 가입 부여가 「이미 가입 부여를 받은
+ * 이메일이라 건너뛰었다」로 판정됐는지. **이메일이 인증되기 전에는 서버가 항상
+ * `false`로 채운다** — 화면은 이 값을 그대로 보여주면 된다(따로 가릴 필요가 없다).
  */
 export interface WorkspaceCreditsResponse {
   workspace_id: string
@@ -473,6 +477,7 @@ export interface WorkspaceCreditsResponse {
   available: number
   enforced: boolean
   transactions: CreditTransaction[]
+  signup_grant_skipped: boolean
 }
 
 // --- 세금계산서 요청 기록 (계약 2.24.0) ---

@@ -17,6 +17,10 @@
 # 확인·소비할 수 있게 한다 — `easydoc.credits.enforced`는 그대로 꺼둔다(기본값). 켜면
 # 잔액이 없던 기존 스펙(문서 등록이 늘 202를 기대한다)이 전부 402로 깨진다. 이 값은
 # **집행과 무관하게** 가입 부여 거래·잔액을 만드는 것뿐이라 다른 스펙에 영향이 없다.
+#
+# `EASYDOC_CREDITS_SIGNUP_GRANT_PEPPER`는 `EASYDOC_CREDITS_SIGNUP_GRANT > 0`일 때
+# 필수다(가입 크레딧 후속 §7 결정 3, 기동 자기점검) — `.env`가 실제 배포용 값을 비워
+# 두므로(`.env.example`) 이 스택 전용 값을 여기서 채운다. e2e 전용이라 회전 걱정이 없다.
 
 services:
   backend-api:
@@ -25,6 +29,7 @@ services:
       EASYDOC_LLM_PROVIDER: fake
       EASYDOC_DICTIONARY_LOOKUP_ENABLED: "true"
       EASYDOC_CREDITS_SIGNUP_GRANT: "1000"
+      EASYDOC_CREDITS_SIGNUP_GRANT_PEPPER: "e2e-only-pepper-not-a-secret"
 
   backend-worker:
     environment:
