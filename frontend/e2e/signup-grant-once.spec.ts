@@ -15,7 +15,7 @@
 import { expect, test } from '@playwright/test'
 
 import { ROUTES } from './contract'
-import { newAccount, signUpAndLand, submitCredentials, verifyEmail } from './support/app'
+import { newAccount, signUpAndLand, verifyEmail } from './support/app'
 
 test.describe('가입 크레딧은 이메일당 한 번', () => {
   test('E-가입크레딧한번 가입 → 탈퇴 → 같은 이메일 재가입 → 인증 → 크레딧 0 + 안내 문구', async ({
@@ -58,8 +58,10 @@ test.describe('가입 크레딧은 이메일당 한 번', () => {
 
     // 3) 같은 이메일로 재가입한다 — 응답 자체는 아직 아무 안내도 싣지 않는다(이메일
     // 인증 전에는 signup_grant_skipped 가 항상 거짓이다, §7 결정 5 — 존재 은닉).
-    await page.goto('/signup')
-    await submitCredentials(page, account, '가입하기')
+    // `signUpAndLand`로 착지(작업 공간 메뉴가 뜰 때까지)를 기다린 뒤에만 `/usage`로
+    // 옮긴다 — 재가입 응답이 토큰을 저장하기 전에 이동하면 인증이 없어 로그인 화면으로
+    // 튕기고, 「가용」 요소 자체가 없어 아래 단언이 타임아웃으로 실패한다(리뷰 2026-09-10).
+    await signUpAndLand(page, account)
     await page.goto('/usage')
     await expect(page.locator('dt:text-is("가용") + dd')).toHaveText('0')
     await expect(
