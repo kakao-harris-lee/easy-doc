@@ -406,6 +406,94 @@ class FactPreservationTest {
     }
 
     @Nested
+    @DisplayName("한글 단위 동의어 — 번/회, 살/세 (7차 유료 측정 023 재현)")
+    inner class UnitSynonyms {
+        // 한 자리 Arabic 숫자(예: "3회"·"5세")와 한글 수사 형태(예: "세 번"·"다섯 살")만 이
+        // 별칭의 영향을 받는다 — `numberCompareKey` 가 단위 문자를 비교 키에 담는 경우가 그
+        // 둘뿐이기 때문이다([UNIT_ALIASES] KDoc "적용 범위의 한계" 참고). 아래 두 자리
+        // 숫자(023 재현의 실제 값 "10회"·요청서의 "65세") 테스트는 별도 nested class
+        // (RawTwoDigitReproduction)에서 그 한계를 문서화한다 — 별칭이 있든 없든 결과가 같다.
+
+        @Test
+        @DisplayName("'3회'(원문)를 '3번'(쉬운 글)으로 자연스럽게 바꿔 써도 누락이 아니다")
+        fun `회를 번으로 바꿔 써도 보존이다`() {
+            assertThat(findMissingFacts("장갑은 하루 3회 사용합니다.", "장갑은 하루 3번 사용해요."))
+                .withFailMessage(
+                    "쉬운 글로 자연스럽게 바꿔 쓴 '번'을 벌점으로 세면, 원문을 그대로 베낀 표기가 " +
+                        "오히려 점수를 더 받는 역전이 생긴다(7차 유료 측정 023 문서 실측, 023의 실제 " +
+                        "값은 두 자리라 이 파일만으로는 안 고쳐진다 — 위 KDoc 한계 참고. 이 테스트는 " +
+                        "같은 뿌리(단위 불일치)의 한 자리 사례로 고정한다).",
+                ).isEmpty()
+        }
+
+        @Test
+        @DisplayName("'5세'(원문)를 '5살'(쉬운 글)로 바꿔 써도 누락이 아니다")
+        fun `세를 살로 바꿔 써도 보존이다`() {
+            assertThat(findMissingFacts("만 5세부터 신청할 수 있습니다.", "만 5살부터 신청할 수 있어요.")).isEmpty()
+        }
+
+        @Test
+        @DisplayName("반대 방향('3번'을 '3회'로) 도 보존이다 — 별칭은 대칭이다")
+        fun `번을 회로 바꿔 써도 보존이다`() {
+            assertThat(findMissingFacts("하루 3번 복용하세요.", "하루 3회 복용하세요.")).isEmpty()
+        }
+
+        @Test
+        @DisplayName("한글 수사 형태('다섯 살'↔'다섯 세')도 같은 별칭을 탄다")
+        fun `한글 수사 나이 표현도 별칭이 적용된다`() {
+            assertThat(findMissingFacts("다섯 세 어린이도 신청할 수 있습니다.", "다섯 살 어린이도 신청할 수 있어요.")).isEmpty()
+        }
+
+        @Test
+        @DisplayName("단위는 같아도 값이 다르면 여전히 누락이다 — 별칭이 검사를 없애지 않는다")
+        fun `값이 다르면 단위가 같아도 누락이다`() {
+            val missing = findMissingFacts("하루 3회 복용하세요.", "하루 5번 복용하세요.")
+
+            assertThat(missing)
+                .withFailMessage("번/회 별칭이 단위만 맞추는 것이지 값(3 vs 5) 비교까지 없애면 안 된다")
+                .extracting("kind")
+                .containsExactly(FactKind.NUMBER)
+        }
+
+        @Test
+        @DisplayName("뜻이 다른 단위(개·명)는 여전히 구분된다 — 회귀 방지")
+        fun `개와 명은 여전히 다른 단위다`() {
+            val missing = findMissingFacts("사탕은 3개입니다.", "사람은 3명입니다.")
+
+            assertThat(missing)
+                .withFailMessage("개↔명처럼 뜻이 다른 단위까지 번/회·살/세 별칭에 딸려 같아지면 안 된다")
+                .extracting("kind")
+                .containsExactly(FactKind.NUMBER)
+        }
+    }
+
+    @Nested
+    @DisplayName("한글 단위 동의어 — 두 자리 이상 값은 이 파일 범위 밖 (직접 확인, 2026-09-09)")
+    inner class RawTwoDigitReproduction {
+        // 7차 유료 측정 023 문서의 실제 값("10회"↔"10번")과 이번 요청서의 예시("65세"↔"65살")를
+        // extractFacts 로 직접 찍어 확인한 결과, 두 자리 이상 Arabic 숫자는 raw match 가 숫자만
+        // ("10"·"65")이고 단위 문자가 애초에 비교 키에 들어오지 않는다 — `FactPreservation.kt`
+        // PATTERNS 의 NUMBER 정규식이 두 자리 이상에는 단위 소비 대체를 두지 않기 때문이다.
+        // 그래서 아래 둘은 UNIT_ALIASES 변경 **전에도** 이미 보존으로 판정됐다(TDD 의 "먼저
+        // 실패" 전제가 성립하지 않는다) — 별칭 유무와 무관한 결과라는 뜻이며, 이 사실을
+        // 회귀 가드로 고정해 둔다. 두 자리 이상까지 단위를 비교 키에 담으려면 그 정규식
+        // 자체를 넓혀야 하고, 이는 이번 변경 범위(이 파일의 UNIT_ALIASES map)를 벗어난다.
+
+        @Test
+        @DisplayName("'10회'와 '10번'은 오늘도 이미 같은 사실이다 — 단위가 비교 키에 없어서(별칭과 무관)")
+        fun `두 자리 회번은 별칭과 무관하게 이미 보존이다`() {
+            assertThat(findMissingFacts("장갑 500원×100개×10회 = 500천원", "장갑 500원씩 100개를 10번 사용하면 500천원입니다."))
+                .isEmpty()
+        }
+
+        @Test
+        @DisplayName("'65세'와 '65살'도 오늘도 이미 같은 사실이다 — 단위가 비교 키에 없어서(별칭과 무관)")
+        fun `두 자리 세살은 별칭과 무관하게 이미 보존이다`() {
+            assertThat(findMissingFacts("만 65세부터 신청할 수 있습니다.", "만 65살부터 신청할 수 있어요.")).isEmpty()
+        }
+    }
+
+    @Nested
     @DisplayName("숫자·백분율 정체성 — 단위·소수점도 값이다 (리뷰 HIGH-1)")
     inner class NumberAndPercentIdentity {
         @Test
