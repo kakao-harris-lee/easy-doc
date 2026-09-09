@@ -14,6 +14,12 @@ export const USAGE_PATH = '/usage'
  */
 export const ADMIN_PATH = '/admin'
 
+/**
+ * 계정 설정 화면 (회원 탈퇴, 계약 2.27.0). 계정 메뉴의 「계정 설정」 링크가 이리로
+ * 보낸다 — `docs/plans/2026-09-09-account-deletion.md`.
+ */
+export const ACCOUNT_SETTINGS_PATH = '/account'
+
 /** 이메일 인증 화면. 가입(이메일·비밀번호) 직후 이리로 보낸다. */
 export const EMAIL_VERIFICATION_PATH = '/verify-email'
 

@@ -219,14 +219,19 @@ class JdbcLlmCallLedgerTest {
     }
 
     @Test
-    @DisplayName("사용자를 지우면 행도 함께 사라진다")
-    fun `사용자 삭제는 행을 지운다`() {
+    @DisplayName(
+        "사용자를 지우면 user_id 만 NULL 이 되고 행은 남는다 — V19, 회원 탈퇴 계획 §2 결정 4 " +
+            "(개인정보가 없는 원가·사용량 근거라 CASCADE 가 아니라 SET NULL 이다)",
+    )
+    fun `사용자 삭제는 user_id 만 지운다`() {
         val seeded = seed()
         appendConvertRow(seeded)
 
         jdbc.sql("DELETE FROM users WHERE id = :id").param("id", seeded.owner).update()
 
-        assertThat(purposesOf(seeded.conversionId)).isEmpty()
+        // 행 자체는 남는다 — CASCADE 였던 예전과 달리 지금은 user_id 만 끊긴다.
+        assertThat(purposesOf(seeded.conversionId)).containsExactly("convert")
+        assertThat(userIdOf(seeded.conversionId)).isNull()
     }
 
     @Test
@@ -315,6 +320,20 @@ class JdbcLlmCallLedgerTest {
             .param("id", conversionId)
             .query { rs, _ -> rs.getString("purpose") }
             .list()
+
+    /**
+     * V19(회원 탈퇴 계획) — 사용자 삭제 뒤 `user_id` 가 실제로 NULL 인지 잰다. Kotlin
+     * `List.single()`을 쓴다 — `JdbcClient`의 `.single()`은 매핑 결과 자체가 `null`인
+     * 것을 허용하지 않는다(다른 헬퍼들처럼 `null`을 필드로 감싼 객체가 아니라 이 값
+     * 자체가 `null`일 수 있는 자리라 갈린다).
+     */
+    private fun userIdOf(conversionId: UUID): UUID? =
+        jdbc
+            .sql("SELECT user_id FROM llm_calls WHERE conversion_id = :id")
+            .param("id", conversionId)
+            .query { rs, _ -> rs.getObject("user_id", UUID::class.java) }
+            .list()
+            .single()
 
     private fun singleRowOf(workspaceId: UUID): LedgerRow =
         jdbc

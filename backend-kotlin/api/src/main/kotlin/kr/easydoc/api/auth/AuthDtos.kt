@@ -135,6 +135,24 @@ data class PasswordResetConfirmRequest
         override fun toString(): String = "PasswordResetConfirmRequest(...)"
     }
 
+/**
+ * `POST /auth/me/deletion` 요청. 계약 `DeleteAccountRequest`, 2.27.0 신설(계획
+ * `docs/plans/2026-09-09-account-deletion.md`).
+ *
+ * [password]는 비밀번호가 있는 계정(`readMe.has_password: true`)에만 필수다 — 소셜 전용
+ * 계정은 `null`로 보내도 된다. [confirmation]은 두 경우 모두 필수이며 정확히
+ * `"탈퇴합니다"`여야 한다(`DeleteAccountService.CONFIRMATION_PHRASE`).
+ */
+data class DeleteAccountRequest
+    @JsonCreator
+    constructor(
+        @param:JsonProperty("password") val password: String?,
+        @param:JsonProperty("confirmation") val confirmation: String,
+    ) {
+        /** 비밀번호가 로그·오류 메시지로 새지 않게 한다. */
+        override fun toString(): String = "DeleteAccountRequest(...)"
+    }
+
 /** 액세스 토큰 응답. 계약 `components/schemas/TokenResponse`. */
 data class TokenResponse(
     @get:JsonProperty("access_token") val accessToken: String,

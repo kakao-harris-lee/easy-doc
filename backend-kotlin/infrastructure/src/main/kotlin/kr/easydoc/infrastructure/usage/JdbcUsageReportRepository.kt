@@ -27,8 +27,13 @@ import java.util.UUID
  * 확정, 이관 기능 없음)이므로 값 자체는 워크스페이스 소유자 이메일과 같다. 그래도
  * `workspaces`를 `w.user_id = c.user_id`로 한 번 더 좁히는 조인은 **일부러 하지 않는다** —
  * 그러면 `workspace_id IS NULL`(워크스페이스가 삭제된) 행이 `w`에 매치할 행이 없어
- * INNER 취급으로 조용히 빠진다. `users`만 조인하고 `workspaces`는 이름 표시용으로만
- * `LEFT JOIN`하는 지금 형태가 옳다.
+ * INNER 취급으로 조용히 빠진다. `users`도 같은 이유로 **`LEFT JOIN`이다**(2026-09-09
+ * 정정 — 회원 탈퇴 계획 `docs/plans/2026-09-09-account-deletion.md`, V19가
+ * `llm_calls.user_id`를 `CASCADE`에서 `SET NULL`로 바꿨는데 여기가 `JOIN`(INNER)이면
+ * 탈퇴한 계정의 행이 원장에는 있어도 이 리포트에서만 조용히 사라진다 — V19가 원가·사용량
+ * 근거를 남기려고 판 자리를 이 조회가 스스로 무너뜨리는 결함이었다). `user_id`가
+ * `NULL`이면 `owner_email`도 `NULL`이고, [kr.easydoc.application.usage.UsageReportService]가
+ * `workspace_name`과 같은 방식(고정 안내문)으로 화면·CSV에 채운다.
  *
  * **실패 호출(`outcome = provider_error`, V18)은 `call_totals`의 `FILTER` 로 걸러
  * 토큰·비용에서 빠지고 [UsageReportRow.failedCalls] 로 따로 센다** — U2
@@ -54,6 +59,7 @@ class JdbcUsageReportRepository(private val jdbc: JdbcClient) : UsageReportRepos
 
     private fun toRow(rs: ResultSet): UsageReportRow =
         UsageReportRow(
+            // 탈퇴한 계정(V19, SET NULL)이면 둘 다 null이다 — 클래스 KDoc.
             userId = rs.getObject("user_id", UUID::class.java),
             ownerEmail = rs.getString("owner_email"),
             workspaceId = rs.getObject("workspace_id", UUID::class.java),
@@ -84,6 +90,13 @@ class JdbcUsageReportRepository(private val jdbc: JdbcClient) : UsageReportRepos
             -- 같은 문서를 대상으로 한 여러 행(재시도·보정)은 document_id로 distinct 한
             -- 뒤에만 문자 수·크레딧을 합한다 — U2(JdbcUsageReadRepository)와 같은 규칙이다.
             -- outcome = 'completed' 만 본다 — 실패 호출만 있던 문서는 변환되지 않았다.
+            --
+            -- 이 GROUP BY(와 아래 call_totals의 것)는 user_id가 NULL인 행끼리도 한
+            -- 그룹으로 묶는다(SQL이 NULL을 그룹 키에서 같다고 본다) — 탈퇴한 계정이
+            -- 둘 이상이면 그 사용량이 하나로 합쳐진다는 뜻이다. 의도적이다: user_id가
+            -- 사라진 시점에 그 사용량이 누구 것이었는지는 되돌릴 방법이 없고(회원 탈퇴가
+            -- 귀속을 없애는 것이 목적이다), document_id로 다시 쪼개면 사용자·워크스페이스
+            -- 단위 행 사이에 문서 단위 행이 섞여 리포트의 낟알이 흐트러진다.
             document_totals AS (
                 SELECT user_id, workspace_id,
                        count(*) AS documents,
@@ -114,6 +127,8 @@ class JdbcUsageReportRepository(private val jdbc: JdbcClient) : UsageReportRepos
                        count(*) FILTER (WHERE outcome = 'completed' AND estimated_cost_usd IS NULL)
                            AS cost_unknown_calls
                 FROM period_calls
+                -- document_totals와 같은 GROUP BY — 같은 이유로 탈퇴한 계정들의 호출
+                -- 합계도 하나로 합쳐진다(위 document_totals 주석).
                 GROUP BY user_id, workspace_id
             )
             SELECT
@@ -131,13 +146,19 @@ class JdbcUsageReportRepository(private val jdbc: JdbcClient) : UsageReportRepos
                 c.estimated_cost_usd,
                 c.cost_unknown_calls
             FROM call_totals c
-            JOIN users u ON u.id = c.user_id
+            -- LEFT JOIN이다(2026-09-09 정정, 클래스 KDoc) — user_id가 NULL(탈퇴한 계정,
+            -- V19)이면 이 조인이 매치할 행이 없어 INNER 취급이면 행 전체가 사라진다.
+            LEFT JOIN users u ON u.id = c.user_id
             -- workspace_id가 NULL인 행(삭제된 워크스페이스)은 이름도 NULL로 남는다 — 서비스
             -- 층(UsageReportService)이 그 자리를 고정 안내문으로 바꾼다.
             LEFT JOIN workspaces w ON w.id = c.workspace_id
+            -- user_id도 IS NOT DISTINCT FROM이다 — workspace_id와 같은 이유(위 정정).
+            -- 일반 `=`는 두 쪽 다 NULL일 때 NULL(불일치)로 평가돼 탈퇴한 계정의
+            -- document_totals가 매치되지 않고 문서·문자·크레딧이 전부 0으로 새 나간다.
             LEFT JOIN document_totals d
-                ON d.user_id = c.user_id AND d.workspace_id IS NOT DISTINCT FROM c.workspace_id
-            ORDER BY u.email, w.name
+                ON d.user_id IS NOT DISTINCT FROM c.user_id
+                    AND d.workspace_id IS NOT DISTINCT FROM c.workspace_id
+            ORDER BY u.email NULLS LAST, w.name NULLS LAST
             """.trimIndent()
     }
 }

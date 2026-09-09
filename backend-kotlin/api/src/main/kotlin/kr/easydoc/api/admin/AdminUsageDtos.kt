@@ -25,8 +25,14 @@ data class AdminUsageResponse(
 }
 
 data class AdminUsageRowResponse(
-    @get:JsonProperty("user_id") val userId: String,
-    @get:JsonProperty("owner_email") val ownerEmail: String,
+    /**
+     * 탈퇴한 계정이면 `null`이다(회원 탈퇴 계획 `docs/plans/2026-09-09-account-deletion.md`,
+     * V19 `llm_calls.user_id SET NULL`, 계약 2.28.0) — `workspace_id`와 같은 이유로
+     * `anyOf: [uuid, null]`이다.
+     */
+    @get:JsonProperty("user_id") val userId: String?,
+    /** 탈퇴한 계정이면 `null`이다 — [userId]와 함께 사라진다. */
+    @get:JsonProperty("owner_email") val ownerEmail: String?,
     @get:JsonProperty("workspace_id") val workspaceId: String?,
     @get:JsonProperty("workspace_name") val workspaceName: String?,
     @get:JsonProperty("documents") val documents: Int,
@@ -50,7 +56,7 @@ data class AdminUsageRowResponse(
     companion object {
         fun of(row: UsageReportRow): AdminUsageRowResponse =
             AdminUsageRowResponse(
-                userId = row.userId.toString(),
+                userId = row.userId?.toString(),
                 ownerEmail = row.ownerEmail,
                 workspaceId = row.workspaceId?.toString(),
                 workspaceName = row.workspaceName,

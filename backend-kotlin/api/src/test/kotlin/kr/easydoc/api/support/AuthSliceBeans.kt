@@ -1,5 +1,8 @@
 package kr.easydoc.api.support
 
+import kr.easydoc.application.account.AccountDeletionRepository
+import kr.easydoc.application.account.DeleteAccountService
+import kr.easydoc.application.account.LockedAccount
 import kr.easydoc.application.admin.AdminAccessRepository
 import kr.easydoc.application.admin.AdminConversionQueryRepository
 import kr.easydoc.application.admin.AdminConversionRow
@@ -221,6 +224,26 @@ class AuthSliceBeans {
             codeTtl = Duration.ofMinutes(10),
             resendCooldown = Duration.ofSeconds(60),
             maxAttempts = 5,
+        )
+
+    /** `POST /auth/me/deletion`(2.27.0) 슬라이스 배선. */
+    @Bean
+    fun inMemoryAccountDeletion(users: InMemoryUserRepository): InMemoryAccountDeletionRepository =
+        InMemoryAccountDeletionRepository(users)
+
+    @Bean
+    fun deleteAccountService(
+        accounts: InMemoryAccountDeletionRepository,
+        hasher: StubPasswordHasher,
+        transaction: TransactionRunner,
+        mail: FakeMailSender,
+    ): DeleteAccountService =
+        DeleteAccountService(
+            accounts = accounts,
+            passwords = hasher,
+            transaction = transaction,
+            mail = mail,
+            operatorEmail = "",
         )
 
     @Bean
@@ -739,10 +762,47 @@ class InMemoryUserRepository : UserRepository {
         byEmail[email]?.let { markEmailVerified(it.user.id) }
     }
 
+    /** 비밀번호 해시까지 함께 읽는다 — `InMemoryAccountDeletionRepository` 전용. */
+    fun storedById(id: UUID): StoredUser? = byId[id]
+
     /** 계정 삭제 시나리오(M-3)를 위한 자리. 토큰은 유효한데 계정이 없는 상태를 만든다. */
     fun remove(userId: UUID) {
         val existing = byId.remove(userId) ?: return
         byEmail.remove(existing.user.email)
+    }
+}
+
+/**
+ * 회원 탈퇴(2.27.0) 저장소 대역. 관리자 판정은 [InMemoryUserRepository] 의
+ * `User.isAdmin`(항상 `false`, 그 필드에 세터가 없다)을 재지 않는다 — [markAdmin] 으로
+ * 별도로 추적한다(`InMemoryCreditAccountRepository`와 같은 "소유 판정은 재지 않는다" 관행).
+ * 실 FK 동작(CASCADE·NO ACTION 통과, `llm_calls` SET NULL)은 실 PostgreSQL로만 잴 수 있어
+ * `JdbcAccountDeletionRepositoryTest`가 맡는다.
+ */
+class InMemoryAccountDeletionRepository(private val users: InMemoryUserRepository) : AccountDeletionRepository {
+    private val admins = mutableSetOf<UUID>()
+    val pending: MutableMap<UUID, MutableList<UUID>> = mutableMapOf()
+    val usersDeleted: MutableList<UUID> = mutableListOf()
+    val feedbackDeletedFor: MutableList<UUID> = mutableListOf()
+
+    fun markAdmin(userId: UUID) {
+        admins += userId
+    }
+
+    override fun lockForDeletion(userId: UUID): LockedAccount? {
+        val stored = users.storedById(userId) ?: return null
+        return LockedAccount(isAdmin = userId in admins, passwordHash = stored.passwordHash)
+    }
+
+    override fun pendingInvoiceRequestIds(userId: UUID): List<UUID> = pending[userId] ?: emptyList()
+
+    override fun deleteConversionFeedback(userId: UUID) {
+        feedbackDeletedFor += userId
+    }
+
+    override fun deleteUser(userId: UUID) {
+        usersDeleted += userId
+        users.remove(userId)
     }
 }
 

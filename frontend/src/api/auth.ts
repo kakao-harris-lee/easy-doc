@@ -4,6 +4,7 @@ import { requestJson, requestVoid } from './client'
 import type {
   ConfirmEmailVerificationRequest,
   CredentialsRequest,
+  DeleteAccountRequest,
   OAuthCallbackRequest,
   OAuthProvider,
   OAuthStartRequest,
@@ -177,4 +178,17 @@ export function passwordResetConfirm(
     body,
     auth: false,
   })
+}
+
+/**
+ * POST /auth/me/deletion — 계정과 개인정보를 즉시 파기한다(2.27.0 신설, 계획
+ * `docs/plans/2026-09-09-account-deletion.md`). 유예 기간이 없다 — 성공(204)하면 그
+ * 트랜잭션 안에서 계정이 이미 사라졌으므로 호출한 쪽이 곧바로 세션을 정리해야 한다.
+ *
+ * `password`는 비밀번호가 있는 계정(`readMe.has_password: true`)만 보낸다 — 소셜 전용
+ * 계정은 생략한다. `confirmation`은 항상 정확히 `"탈퇴합니다"`여야 한다. 틀리면 422다
+ * (401이 아니다 — 이미 인증된 세션이다). 관리자 계정은 409.
+ */
+export function deleteAccount(request: DeleteAccountRequest): Promise<void> {
+  return requestVoid('/auth/me/deletion', { method: 'POST', body: request })
 }
