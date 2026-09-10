@@ -22,7 +22,11 @@ test.describe('크레딧 계정', () => {
     const account = newAccount()
     await signUpAndLand(page, account)
 
-    // 1) 가입 직후 — 잔액 1000, 가용 1000, 예약 0, 거래 1건(부여/가입).
+    // 1) 가입 직후 — 잔액 1000, 가용 1000, 예약 0, 거래 1건(주기 설정/가입). 가입 부여는
+    // 「더하기」(grant)가 아니라 비갱신 주기를 여는 「설정」(setAllowance)이라 kind 표시는
+    // 「주기 설정」이다(크레딧을 「구독 주기에 포함된 이용량」으로 바꾼 사용자 결정
+    // 2026-09-10). kind 표시는 무료 체험을 넣는 방식이 바뀌면 함께 바뀔 수 있으므로,
+    // 아래 단언은 reason(「가입」)을 우선한다 — 그 사실은 방식이 바뀌어도 그대로다.
     await page.goto('/usage')
     await expect(page.getByRole('heading', { name: '크레딧' })).toBeVisible()
     await expect(page.locator('dt:text-is("가용") + dd')).toHaveText('1,000')
@@ -33,8 +37,9 @@ test.describe('크레딧 계정', () => {
     await expect(page.getByText('(지금은 집행되지 않습니다)')).toBeVisible()
 
     const creditsTable = page.getByRole('table', { name: /최근 크레딧 거래 내역입니다/ })
-    await expect(creditsTable.getByText('부여')).toBeVisible()
+    // reason(「가입」)을 우선 단언한다 — kind(「주기 설정」)는 참고로 함께 잰다.
     await expect(creditsTable.getByText('가입')).toBeVisible()
+    await expect(creditsTable.getByText('주기 설정')).toBeVisible()
     await expect(creditsTable.getByText('+1,000')).toBeVisible()
 
     // 2) 문서를 등록한다 — 이메일 인증을 먼저 마쳐야 POST /documents 가 열린다(계약 2.9.0).

@@ -6,6 +6,7 @@ import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
 import org.springframework.boot.DefaultApplicationArguments
+import java.time.Instant
 import java.util.UUID
 
 /**
@@ -159,5 +160,132 @@ class CreditGrantArgsTest {
             )
 
         assertThat(args.note).isEqualTo(note)
+    }
+
+    @Test
+    @DisplayName("--cycle-ends-at 이 없으면 null 이다 — 기존 grant 경로")
+    fun `cycle-ends-at 없이도 통과한다`() {
+        val args =
+            CreditGrantArgs.parse(
+                DefaultApplicationArguments("--workspace=$workspaceId", "--credits=10", "--reason=manual"),
+            )
+
+        assertThat(args.cycleEndsAt).isNull()
+    }
+
+    @Test
+    @DisplayName("--cycle-ends-at 은 ISO-8601 순간으로 파싱된다")
+    fun `cycle-ends-at 파싱`() {
+        val args =
+            CreditGrantArgs.parse(
+                DefaultApplicationArguments(
+                    "--workspace=$workspaceId",
+                    "--credits=50",
+                    "--reason=plan_monthly",
+                    "--cycle-ends-at=2026-10-10T00:00:00Z",
+                ),
+            )
+
+        assertThat(args.cycleEndsAt).isEqualTo(Instant.parse("2026-10-10T00:00:00Z"))
+    }
+
+    @Test
+    @DisplayName("--cycle-ends-at 형식이 올바르지 않으면 거절된다")
+    fun `cycle-ends-at 형식 오류`() {
+        assertThatThrownBy {
+            CreditGrantArgs.parse(
+                DefaultApplicationArguments(
+                    "--workspace=$workspaceId",
+                    "--credits=50",
+                    "--reason=plan_monthly",
+                    "--cycle-ends-at=2026-10-10",
+                ),
+            )
+        }.isInstanceOf(IllegalArgumentException::class.java)
+            .hasMessageContaining("--cycle-ends-at")
+    }
+
+    @Test
+    @DisplayName("--cycle-ends-at 과 함께면 --credits 음수는 거절된다 — 주기 이용량은 음수일 수 없다")
+    fun `cycle-ends-at 과 함께 음수 credits 는 거절된다`() {
+        assertThatThrownBy {
+            CreditGrantArgs.parse(
+                DefaultApplicationArguments(
+                    "--workspace=$workspaceId",
+                    "--credits=-10",
+                    "--reason=plan_monthly",
+                    "--cycle-ends-at=2026-10-10T00:00:00Z",
+                ),
+            )
+        }.isInstanceOf(IllegalArgumentException::class.java)
+            .hasMessageContaining("--cycle-ends-at")
+            .hasMessageContaining("--credits")
+    }
+
+    @Test
+    @DisplayName("--cycle-renews 가 없으면 false 다 — 기본은 종료되는 주기(무료 체험)")
+    fun `cycle-renews 없으면 false`() {
+        val args =
+            CreditGrantArgs.parse(
+                DefaultApplicationArguments(
+                    "--workspace=$workspaceId",
+                    "--credits=50",
+                    "--reason=plan_monthly",
+                    "--cycle-ends-at=2026-10-10T00:00:00Z",
+                ),
+            )
+
+        assertThat(args.renews).isFalse()
+    }
+
+    @Test
+    @DisplayName("--cycle-renews 를 값 없이 붙이면 true 다")
+    fun `cycle-renews 플래그만 있으면 true`() {
+        val args =
+            CreditGrantArgs.parse(
+                DefaultApplicationArguments(
+                    "--workspace=$workspaceId",
+                    "--credits=50",
+                    "--reason=plan_monthly",
+                    "--cycle-ends-at=2026-10-10T00:00:00Z",
+                    "--cycle-renews",
+                ),
+            )
+
+        assertThat(args.renews).isTrue()
+    }
+
+    @Test
+    @DisplayName("--cycle-renews=true 는 true 다")
+    fun `cycle-renews=true`() {
+        val args =
+            CreditGrantArgs.parse(
+                DefaultApplicationArguments(
+                    "--workspace=$workspaceId",
+                    "--credits=50",
+                    "--reason=plan_monthly",
+                    "--cycle-ends-at=2026-10-10T00:00:00Z",
+                    "--cycle-renews=true",
+                ),
+            )
+
+        assertThat(args.renews).isTrue()
+    }
+
+    @Test
+    @DisplayName("--cycle-renews=false 는 false 다")
+    fun `cycle-renews=false`() {
+        val args =
+            CreditGrantArgs.parse(
+                DefaultApplicationArguments(
+                    "--workspace=$workspaceId",
+                    "--credits=50",
+                    "--reason=plan_monthly",
+                    "--cycle-ends-at=2026-10-10T00:00:00Z",
+                    "--cycle-renews=false",
+                ),
+            )
+
+        assertThat(args.renews).isFalse()
     }
 }

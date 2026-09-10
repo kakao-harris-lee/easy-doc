@@ -347,6 +347,31 @@ describe('크레딧 카드 (C1/C2)', () => {
     ).not.toBeInTheDocument()
   })
 
+  it('cycle_ends_at이 있으면 이번 주기 이용량·남은 양·초기화일을 보여준다', async () => {
+    const cycleEndsAt = '2026-10-10T00:00:00Z'
+    vi.mocked(getWorkspaceCredits).mockResolvedValue(
+      workspaceCredits({ allowance: 50, available: 34, cycle_ends_at: cycleEndsAt }),
+    )
+
+    renderPage()
+
+    const expectedDate = new Date(cycleEndsAt).toLocaleDateString('ko-KR')
+    expect(
+      await screen.findByText(`이번 주기 50 중 34 남음 · ${expectedDate} 초기화`),
+    ).toBeInTheDocument()
+  })
+
+  it('cycle_ends_at이 없으면(주기 없음) 기존 문구를 유지하고 주기 문구를 보여주지 않는다', async () => {
+    vi.mocked(getWorkspaceCredits).mockResolvedValue(
+      workspaceCredits({ allowance: 0, cycle_ends_at: null }),
+    )
+
+    renderPage()
+
+    await screen.findByRole('heading', { name: '크레딧' })
+    expect(screen.queryByText(/이번 주기/)).not.toBeInTheDocument()
+  })
+
   it('거래 표가 종류·크레딧(부호)·사유·메모·일시를 한국어로 보여준다', async () => {
     vi.mocked(getWorkspaceCredits).mockResolvedValue(
       workspaceCredits({

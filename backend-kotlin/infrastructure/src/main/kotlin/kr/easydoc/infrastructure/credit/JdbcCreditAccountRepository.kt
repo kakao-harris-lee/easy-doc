@@ -11,6 +11,8 @@ import kr.easydoc.core.credit.Credits
 import kr.easydoc.core.exceptions.NotFoundException
 import org.springframework.jdbc.core.simple.JdbcClient
 import java.sql.ResultSet
+import java.sql.Timestamp
+import java.time.Instant
 import java.time.OffsetDateTime
 import java.util.UUID
 
@@ -200,6 +202,51 @@ class JdbcCreditAccountRepository(private val jdbc: JdbcClient) : CreditAccountR
     }
 
     /**
+     * 새 주기를 연다 — `balance`를 [allowance] 로 **설정**한다(더하지 않는다). 설정 전
+     * 잔액을 같은 문장에서 함께 읽어(`old` CTE) [CreditTransactionKind.CYCLE_SET] 거래의
+     * `balance_delta`(= 설정 후 − 설정 전)를 계산한다 — "거래 합 = 잔액" 불변식
+     * ([consistencyViolations]) 이 이 종류에서도 성립하게 하려는 것이다.
+     *
+     * [renews] 를 `cycle_renews` 열에 그대로 남긴다 — 주기 종료 배치([JdbcCreditCycleReset])
+     * 가 이 값으로 갱신(플랜)·종료(무료 체험) 갈래를 가른다.
+     *
+     * 계정 행이 없으면 [NotFoundException] — [grant] 와 같은 규약.
+     */
+    override fun setAllowance(
+        workspaceId: UUID,
+        ownerUserId: UUID,
+        allowance: Int,
+        cycleEndsAt: Instant,
+        renews: Boolean,
+        reason: CreditReason,
+        note: String?,
+        actorUserId: UUID?,
+    ): Int {
+        val oldBalance =
+            jdbc
+                .sql(SET_ALLOWANCE_SQL)
+                .param("workspaceId", workspaceId)
+                .param("allowance", allowance)
+                .param("cycleEndsAt", Timestamp.from(cycleEndsAt))
+                .param("renews", renews)
+                .query { rs, _ -> rs.getInt("old_balance") }
+                .optional()
+                .orElseThrow { NotFoundException(WORKSPACE_NOT_FOUND_MESSAGE) }
+        insertTransaction(
+            workspaceId = workspaceId,
+            ownerId = ownerUserId,
+            documentId = null,
+            kind = CreditTransactionKind.CYCLE_SET,
+            balanceDelta = allowance - oldBalance,
+            reservedDelta = 0,
+            reason = reason,
+            note = note,
+            actorUserId = actorUserId,
+        )
+        return allowance
+    }
+
+    /**
      * `users` 를 함께 조인해 `email_verified_at IS NOT NULL` 도 돌려준다 — `signup_grant_skipped`
      * 를 [CreditAccountService][kr.easydoc.application.credit.CreditAccountService] 가 이메일
      * 인증 전에는 가리기 위한 재료다([CreditAccountRow] KDoc, 가입 크레딧 후속 §7 결정 5).
@@ -213,6 +260,7 @@ class JdbcCreditAccountRepository(private val jdbc: JdbcClient) : CreditAccountR
                 .sql(
                     """
                     SELECT a.workspace_id, a.balance, a.reserved, a.signup_grant_skipped,
+                           a.allowance, a.cycle_started_at, a.cycle_ends_at,
                            u.email_verified_at IS NOT NULL AS email_verified
                     FROM workspace_credit_accounts a
                     JOIN workspaces w ON w.id = a.workspace_id
@@ -247,6 +295,9 @@ class JdbcCreditAccountRepository(private val jdbc: JdbcClient) : CreditAccountR
             transactions = transactions,
             signupGrantSkipped = account.signupGrantSkipped,
             emailVerified = account.emailVerified,
+            allowance = account.allowance,
+            cycleStartedAt = account.cycleStartedAt,
+            cycleEndsAt = account.cycleEndsAt,
         )
     }
 
@@ -256,6 +307,9 @@ class JdbcCreditAccountRepository(private val jdbc: JdbcClient) : CreditAccountR
         val reserved: Int,
         val signupGrantSkipped: Boolean,
         val emailVerified: Boolean,
+        val allowance: Int,
+        val cycleStartedAt: Instant,
+        val cycleEndsAt: Instant?,
     )
 
     private fun toAccountSnapshot(rs: ResultSet): AccountSnapshot =
@@ -264,6 +318,9 @@ class JdbcCreditAccountRepository(private val jdbc: JdbcClient) : CreditAccountR
             reserved = rs.getInt("reserved"),
             signupGrantSkipped = rs.getBoolean("signup_grant_skipped"),
             emailVerified = rs.getBoolean("email_verified"),
+            allowance = rs.getInt("allowance"),
+            cycleStartedAt = rs.getObject("cycle_started_at", OffsetDateTime::class.java).toInstant(),
+            cycleEndsAt = rs.getObject("cycle_ends_at", OffsetDateTime::class.java)?.toInstant(),
         )
 
     /**
@@ -394,6 +451,29 @@ class JdbcCreditAccountRepository(private val jdbc: JdbcClient) : CreditAccountR
             FROM workspace_credit_accounts a
             WHERE a.workspace_id = :workspaceId
               AND EXISTS (SELECT 1 FROM workspaces WHERE id = :workspaceId AND user_id = :ownerId)
+            """.trimIndent()
+
+        /**
+         * [setAllowance] — `old` CTE 로 갱신 **전** 잔액을 같은 문장에서 함께 읽는다(별도
+         * SELECT 왕복 없이). `FOR UPDATE` 로 그 사이 다른 트랜잭션이 잔액을 바꾸지
+         * 못하게 잠근다 — [grant] 의 단일 `UPDATE … RETURNING` 과 달리 이 문장은 갱신 전
+         * 값이 별도로 필요해 CTE 로 나뉜다.
+         */
+        val SET_ALLOWANCE_SQL =
+            """
+            WITH old AS (
+                SELECT balance FROM workspace_credit_accounts WHERE workspace_id = :workspaceId FOR UPDATE
+            )
+            UPDATE workspace_credit_accounts a
+            SET balance = :allowance,
+                allowance = :allowance,
+                cycle_started_at = now(),
+                cycle_ends_at = :cycleEndsAt,
+                cycle_renews = :renews,
+                updated_at = now()
+            FROM old
+            WHERE a.workspace_id = :workspaceId
+            RETURNING old.balance AS old_balance
             """.trimIndent()
     }
 }

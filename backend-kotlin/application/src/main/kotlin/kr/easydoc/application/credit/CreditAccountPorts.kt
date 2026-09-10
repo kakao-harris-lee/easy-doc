@@ -44,6 +44,11 @@ sealed interface ReservationResult {
  * 아무 주소나 넣어 보고 "전에 받은 적 있음"이 뜨는지로 그 이메일의 가입 이력을
  * 캐낼 수 있다. 기본값 `false` — 값을 채우지 않는 구현(옛 대역)이 실수로 노출 쪽으로
  * 기울지 않도록 안전한 기본값을 거부(deny) 방향으로 둔다.
+ *
+ * [allowance]·[cycleStartedAt]·[cycleEndsAt] 는 `workspace_credit_accounts`(V21) 그대로다 —
+ * 크레딧을 「구독 주기에 포함된 이용량」으로 바꾼 사용자 결정(2026-09-10). [cycleEndsAt]
+ * 이 `null`이면 이 계정은 주기가 없다(기존 계정, 또는 아직 플랜을 배정받지 않은 계정) —
+ * 주기 종료 배치([kr.easydoc.application.credit.CreditCycleReset])가 건드리지 않는다.
  */
 data class CreditAccountRow(
     val workspaceId: UUID,
@@ -52,6 +57,9 @@ data class CreditAccountRow(
     val transactions: List<CreditTransactionView>,
     val signupGrantSkipped: Boolean = false,
     val emailVerified: Boolean = false,
+    val allowance: Int = 0,
+    val cycleStartedAt: Instant = Instant.EPOCH,
+    val cycleEndsAt: Instant? = null,
 )
 
 /**
@@ -169,6 +177,38 @@ interface CreditAccountRepository {
         workspaceId: UUID,
         ownerUserId: UUID,
         credits: Int,
+        reason: CreditReason,
+        note: String?,
+        actorUserId: UUID?,
+    ): Int
+
+    /**
+     * 새 주기를 연다 — `balance`를 [allowance] 로 **설정**한다(더하지 않는다, [grant] 와
+     * 다르다). `allowance`·`cycle_started_at`(지금)·`cycle_ends_at`([cycleEndsAt])·
+     * `cycle_renews`([renews]) 열도 함께 갱신한다. `reserved`는 건드리지 않는다. 거래
+     * 1건([CreditTransactionKind.CYCLE_SET])을 남긴다 — [CreditTransactionView.balanceDelta]
+     * 는 설정 전후 잔액의 실제 차이다(음수일 수 있다), "거래 합 = 잔액" 불변식
+     * ([consistencyViolations])을 지키기 위해서다.
+     *
+     * [renews] 는 주기 종료 배치([kr.easydoc.application.credit.CreditCycleReset])가 이
+     * 계정을 종료 시 **갱신**할지(`true` — 잔액을 [allowance] 로 다시 채우고 다음 주기로
+     * 민다) **닫을지**(`false` — 잔액·이용량을 0으로, 주기를 닫아 더는 건드리지 않는다)
+     * 가른다. 계정당 이용량은 하나뿐이다(사용자 확정, 2026-09-10) — 무료 체험(`renews =
+     * false`, [CreditAccountService.grantSignupBonus])과 플랜(`renews = true`, 운영자가
+     * `credit-grant` CLI `--cycle-renews`로 연다)이 별도 잔액이 아니라 같은 열 하나로
+     * 갈린다.
+     *
+     * 계정 행이 없으면 [kr.easydoc.core.exceptions.NotFoundException] — [grant] 와 같은 규약.
+     *
+     * @return 반영 뒤 잔액(= [allowance]).
+     */
+    @Suppress("LongParameterList")
+    fun setAllowance(
+        workspaceId: UUID,
+        ownerUserId: UUID,
+        allowance: Int,
+        cycleEndsAt: Instant,
+        renews: Boolean,
         reason: CreditReason,
         note: String?,
         actorUserId: UUID?,

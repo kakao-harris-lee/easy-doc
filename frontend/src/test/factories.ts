@@ -200,7 +200,10 @@ export function creditTransaction(overrides: Partial<CreditTransaction> = {}): C
   }
 }
 
-/** GET /workspaces/{id}/credits 응답(C1/C2, 계약 2.22.0). 기본값은 집행이 켜진 계정이다. */
+/**
+ * GET /workspaces/{id}/credits 응답(C1/C2, 계약 2.22.0, `allowance`·`cycle_ends_at`는
+ * 2.30.0). 기본값은 집행이 켜진, 주기 없는 계정이다(`cycle_ends_at: null`).
+ */
 export function workspaceCredits(
   overrides: Partial<WorkspaceCreditsResponse> = {},
 ): WorkspaceCreditsResponse {
@@ -212,6 +215,8 @@ export function workspaceCredits(
     enforced: true,
     transactions: [creditTransaction()],
     signup_grant_skipped: false,
+    allowance: 0,
+    cycle_ends_at: null,
     ...overrides,
   }
 }

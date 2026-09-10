@@ -93,6 +93,15 @@ easydoc:
       enabled: ${EASYDOC_AUTH_UNVERIFIED_PURGE_ENABLED:true}
       ttl-hours: ${EASYDOC_AUTH_UNVERIFIED_PURGE_TTL_HOURS:24}
       batch-size: ${EASYDOC_AUTH_UNVERIFIED_PURGE_BATCH_SIZE:200}
+  # 크레딧 주기 초기화 — 크레딧을 「구독 주기에 포함된 이용량」으로 바꾼 사용자 결정
+  # (2026-09-10). `cycle_ends_at`이 지난 계정마다 남은 잔액을 버리고 그 주기의 이용량
+  # (`allowance`)으로 다시 채운다(`CreditCycleResetScheduler`, 매일 03:30). `cycle_ends_at
+  # IS NULL`인 계정(주기 없음)은 건드리지 않는다 — 배포 직후 기존 계정 전부가 이 상태다.
+  credits:
+    cycle-reset:
+      enabled: ${EASYDOC_CREDITS_CYCLE_RESET_ENABLED:true}
+      cron: ${EASYDOC_CREDITS_CYCLE_RESET_CRON:0 30 3 * * *}
+      batch-size: ${EASYDOC_CREDITS_CYCLE_RESET_BATCH_SIZE:200}
   # `DocumentConfiguration` 이 worker 에도 조립돼(`@Profile("!migrate")`) `ConversionFeedbackService`
   # 빈이 여기서도 서지만, 그 유스케이스를 부르는 `PUT /conversions/{id}/feedback` 컨트롤러는
   # api 에만 있다 — worker 는 이 경로를 실행하지 않는다. 그래도 api 와 **같은 환경변수 이름**을

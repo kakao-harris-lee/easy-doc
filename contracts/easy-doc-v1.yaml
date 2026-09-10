@@ -3737,6 +3737,8 @@ paths:
                     reserved: 3
                     available: 44
                     enforced: true
+                    allowance: 50
+                    cycle_ends_at: "2026-10-01T00:00:00Z"
                     transactions:
                       - id: "00000000-0000-4000-8000-000000000005"
                         kind: consume
@@ -3753,7 +3755,7 @@ paths:
                         document_id: "00000000-0000-4000-8000-000000000003"
                         created_at: "2026-09-07T09:00:00Z"
                       - id: "00000000-0000-4000-8000-000000000004"
-                        kind: grant
+                        kind: cycle_set
                         credits: 50
                         reason: signup
                         note: null
@@ -6114,18 +6116,20 @@ components:
     # ---------------------------------------------------------------------
     CreditTransactionKind:
       type: string
-      enum: [grant, reserve, consume, release, adjust]
+      enum: [grant, reserve, consume, release, adjust, cycle_set, cycle_reset]
       description: |
-        `credit_transactions.kind`(V15)와 같은 값 — 부여 · 예약 · 소비 확정 · 해제 ·
-        운영자 수동 조정. `kr.easydoc.core.credit.CreditTransactionKind.wireName`이
-        정본이다.
+        `credit_transactions.kind`(V15, `cycle_set`·`cycle_reset`는 V21)와 같은 값 —
+        부여 · 예약 · 소비 확정 · 해제 · 운영자 수동 조정 · 주기 설정 · 주기 초기화.
+        `kr.easydoc.core.credit.CreditTransactionKind.wireName`이 정본이다.
 
     CreditReason:
       type: string
-      enum: [signup, plan_monthly, manual, refund, conversion]
+      enum: [signup, plan_monthly, manual, refund, conversion, cycle_end]
       description: |
-        `credit_transactions.reason`(V15)와 같은 값 — 가입 부여 · 월 구독 갱신 ·
-        운영자 수동 · 환급 · 문서 변환.
+        `credit_transactions.reason`(V15, `cycle_end`는 V21)와 같은 값 — 가입 부여 ·
+        월 구독 갱신 · 운영자 수동 · 환급 · 문서 변환 · 주기 종료(갱신 없이 닫힘).
+        `cycle_end`는 `kind=cycle_reset`이면서 `renews=false`인 초기화에 쓴다 — 갱신
+        (`plan_monthly`)과 헷갈리면 없었던 구독이 있었던 것처럼 보인다.
 
     CreditTransaction:
       type: object
@@ -6155,10 +6159,23 @@ components:
 
     WorkspaceCreditsResponse:
       type: object
-      required: [workspace_id, balance, reserved, available, enforced, transactions, signup_grant_skipped]
+      required:
+        [
+          workspace_id,
+          balance,
+          reserved,
+          available,
+          enforced,
+          transactions,
+          signup_grant_skipped,
+          allowance,
+          cycle_ends_at,
+        ]
       description: |
         `GET /workspaces/{workspace_id}/credits` 응답 — 크레딧 계정 계획 §2 결정 2·7,
-        `signup_grant_skipped`는 가입 크레딧 후속 §7 결정 6(2.29.0).
+        `signup_grant_skipped`는 가입 크레딧 후속 §7 결정 6(2.29.0), `allowance`·
+        `cycle_ends_at`는 크레딧을 「구독 주기에 포함된 이용량」으로 바꾼 사용자 결정
+        (2026-09-10, 2.30.0).
       properties:
         workspace_id: { type: string, format: uuid }
         balance:
@@ -6187,6 +6204,26 @@ components:
             전에는 항상 `false`다** — 인증 전 노출은 그 이메일의 가입 이력을 캐내는 창구가
             된다(아무 주소나 넣어 보고 참이 뜨는지로 그 주소가 이 서비스를 쓴 적이 있는지
             알 수 있다).
+        allowance:
+          type: integer
+          minimum: 0
+          description: |
+            이번 주기에 제공된 이용량(2.30.0) — `workspace_credit_accounts.allowance`
+            (V21). `cycle_ends_at`이 `null`이면(주기 없음) 이 계정의 현재 잔액과 같은
+            값으로 유지된다(마이그레이션 backfill) — 주기를 열기 전에는 화면의
+            "이번 주기 N 중 M 남음" 표시가 잔액과 어긋나지 않는다.
+        cycle_ends_at:
+          description: |
+            이번 주기가 끝나는 시각(2.30.0). **`null`이면 이 계정은 주기가 없다**(기존
+            계정, 또는 아직 플랜을 배정받지 않은 계정) — 이때 화면은 주기 관련 문구를
+            보여주지 않는다. 주기가 있으면 매일 도는 배치가 이 시각이 지난 계정마다
+            남은 잔액을 버리고 `allowance`로 다시 채운다(이월 없음 — 「몬딱 솔루션은
+            별도 구매·충전 기능을 제공하지 않는다. 플랜의 크레딧은 각 결제주기에
+            포함된 문서변환 이용량이며, 결제주기 종료 시 초기화하고 이월하지 않는다」,
+            사용자 결정 2026-09-10).
+          anyOf:
+            - { type: string, format: date-time }
+            - { type: 'null' }
 
     # ---------------------------------------------------------------------
     # 세금계산서 요청 기록 (2.24.0 신설) — docs/plans/2026-09-07-invoice-requests.md
@@ -6727,7 +6764,7 @@ x-changelog:
       ⑵ **`DocumentTextRequest`·`DocumentFileRequest`에 `personal_data_acknowledged`
          (boolean, 선택, 기본 거짓) 신설.** 검출됐는데 이 값이 참이 아니면 `createDocument`
          가 **422**를 낸다 — 문서도 변환도 만들어지지 않는다(`x-stored-text-domain`과
-         같은 자리, 소유권 확인 뒤 저장 정의역 앞). 참이면 정상 등록(202)된다.
+         같은 갈래, 본문 길이 뒤 작업 공간 판정 앞). 참이면 정상 등록(202)된다.
       ⑶ **오류 본문은 `{detail}` 고정 문구뿐이다** — 검출된 종류·값·위치·건수는 어디에도
          없다. 종류만 새 헤더 `X-Personal-Data-Kinds`(정렬된 소문자, 쉼표 구분: 예
          `card,rrn`)로 낸다 — `x-error-body-universality`가 이미 지키는 패턴
@@ -6748,6 +6785,47 @@ x-changelog:
       화면에 경고와 재전송 수단이 없으면 그 등록이 막힌 것처럼 보일 수 있다 — 프런트는
       이 버전과 같은 변경 단위에서 422 + `X-Personal-Data-Kinds`를 안내와 "이대로
       진행" 재전송으로 처리하도록 갱신됐다.
+  - version: "2.30.0"
+    date: "2026-09-10"
+    revision: "CYCLE-ALLOWANCE"   # 크레딧을 「구독 주기에 포함된 이용량」으로 — 이월 없음
+    author: contract-keeper
+    change: |
+      **사용자 결정(2026-09-10)**: 몬딱 솔루션은 별도 구매·충전 기능을 제공하지 않는다.
+      플랜의 크레딧은 독립된 선불 상품이 아니라 각 결제주기에 포함된 문서변환
+      이용량이며, 결제주기 종료 시 초기화하고 이월하지 않는다. 플랜·구독 엔티티는
+      아직 없다 — 주기는 워크스페이스 크레딧 계정(V21) 자체에 붙는다.
+
+      ⑴ **`WorkspaceCreditsResponse`에 `allowance`(integer, required)·`cycle_ends_at`
+         (string date-time | null, required) 신설.** `allowance`는 이번 주기에 제공된
+         이용량. `cycle_ends_at`이 `null`이면 이 계정은 주기가 없다(기존 계정, 또는
+         아직 플랜을 배정받지 않은 계정) — 이때 화면은 기존 문구를 유지한다.
+
+      ⑵ **`CreditTransactionKind`에 `cycle_set`·`cycle_reset` 추가.** `cycle_set`은
+         운영자가 새 주기를 연 거래(`credit-grant` CLI의 `--cycle-ends-at`) — 잔액을
+         `allowance`로 **설정**한다(더하지 않는다). `cycle_reset`은 매일 도는 배치가
+         주기 종료일이 지난 계정마다 남은 잔액을 버리고 이용량으로 다시 채운
+         거래다. 둘 다 `credits`(응답 필드)는 설정/초기화 전후 잔액 차(음수 가능).
+         `cycle_reset`의 사유는 갱신이면 `plan_monthly`, 갱신 없이 닫히면(무료 체험을
+         포함해 `renews=false`로 연 모든 주기) `CreditReason`에 함께 더한 `cycle_end`다
+         — `kind`는 무엇을 했는지, `reason`은 왜 그랬는지를 말한다.
+
+      ⑶ **엔드포인트 신설 없음.** 기존 `GET /workspaces/{workspace_id}/credits`
+         (2.22.0)이 확장 필드를 함께 낸다. `credit-grant` CLI·관리자 화면의 크레딧
+         조정(`POST /admin/workspaces/{workspace_id}/credits`)은 그대로 `grant`(더하기)
+         를 쓴다 — 운영자의 수동 보정은 주기 설정과 다른 일이다.
+
+      ⑷ **가입 크레딧(무료 체험)의 거래 종류가 `grant`에서 `cycle_set`으로 바뀐다** —
+         계정당 이용량은 하나뿐이라(무료 체험·플랜을 별도 잔액으로 쪼개지 않는다,
+         사용자 확정) 가입 부여도 이 주기 모델을 그대로 쓴다: 이제 가입 시 잔액을
+         더하지 않고 `signupGrant` 값으로 **설정**하며, 주기 종료일을 부여 시점 +
+         `easydoc.credits.signup-grant-validity`(기본 1개월)로 연다. 이 주기는
+         **갱신되지 않는다** — 유효기간이 지나면 매일 도는 배치가 잔액·이용량을 0으로
+         만들고 주기를 닫는다(다시 채워지지 않는다, 사유 `cycle_end`). `WorkspaceCreditsResponse`
+         스키마 자체는 변하지 않는다 — `transactions[].kind` 값 하나가 바뀔 뿐이다.
+
+      ⑸ **참고 배경** — `docs/plans/2026-09-09-signup-to-invoice-process.md` §8은 만료
+         묶음(bucket) 모델을 다뤘으나, 이 조각은 더 단순한 단일 주기 모델로 구현한다
+         (플랜·구독 엔티티가 아직 없어서다) — §8의 「이월 없음」 결론은 유지한다.
   - version: "2.29.0"
     date: "2026-09-09"
     revision: "SIGNUP-GRANT-ONCE"   # 가입 크레딧은 이메일당 한 번 — 재가입 고지
