@@ -47,9 +47,6 @@ private val SINO_ONES: Map<String, Int> =
         "십" to 10,
     )
 
-/** 개수 단위 앞에 오는 수사 — 고유어·한자어 모두 받는다(계약: "두 명"·"세 달"·"이 층" 모두 인정). */
-private val COUNT_WORDS: Map<String, Int> = NATIVE_ONES + SINO_ONES
-
 /**
  * 개수를 세는 단위. `FactPreservation.kt` [PATTERNS] 의 NUMBER 항(Arabic 숫자 + 단위)과 같은
  * 목록에 `달`(개월의 고유어)을 더한다 — "세 달"이 "3개월"과 같은 사실이 되려면 이 목록에 있어야 한다.
@@ -97,9 +94,11 @@ internal val ARABIC_UNIT_ALTERNATION: String =
  *
  * **적용 범위의 한계(직접 확인, 2026-09-09)**: 이 정규화는 [numberCompareKey] 가 단위를
  * 뽑아낸 경우에만 의미가 있다. 그런데 `FactPreservation.kt` [PATTERNS] 의 NUMBER 항은
- * **두 자리 이상 Arabic 숫자에는 단위 문자를 애초에 소비하지 않는다**(`\d{2,}+` 가
+ * **두 자리 이상 Arabic 숫자에는 단위 문자를 애초에 소비하지 않는다**(`\d{2,4}+` 가
  * possessive 로 숫자만 삼키고 멈춘다 — 단위 소비는 `\d(?:$ARABIC_UNIT_ALTERNATION)`
- * 처럼 **한 자리** 숫자 전용 대체에만 있다). 그래서 위 023 사례의 실제 값 "10회"·"10번"과
+ * 처럼 **한 자리** 숫자 전용 대체에만 있다). 5자리 이상 대체(`\d{5,}+(?=단위)`)도 단위를
+ * **lookahead 로만 확인하고 소비하지 않아** 같은 성질이 그대로 적용된다 — "값:단위 불변식
+ * 밖"으로 보이지만, 실은 2~4자리와 같은 기존 동작이다. 그래서 위 023 사례의 실제 값 "10회"·"10번"과
  * 요청서의 "65세"·"65살"은 raw match 가 "10"·"65"뿐이라 단위가 애초에 비교 키에 들어오지
  * 않고, 오늘도 이미 같은 사실로(둘 다 값만 보고) 판정된다 — 이 별칭이 있든 없든 결과가
  * 같다(직접 추출해 확인함). 이 별칭이 실제로 판정을 바꾸는 것은 **한 자리** Arabic
@@ -126,13 +125,31 @@ internal fun canonicalUnit(unit: String): String = UNIT_ALIASES[unit] ?: unit
 
 /**
  * "두 명"·"세 달"처럼 **수사 낱말 + 공백 + 단위**. 공백을 반드시 요구한다 — 공백이 없으면
- * "세금"·"세계"처럼 수사와 무관한 낱말의 접두부(예: "세")를 오탐할 위험이 커진다. 공백을
- * 요구해도 "한 개인정보"처럼 우연히 겹치는 사례는 남는다(위 파일 KDoc의 오탐 여지와 같은 종류).
+ * "세금"·"세계"처럼 수사와 무관한 낱말의 접두부(예: "세")를 오탐할 위험이 커진다.
+ *
+ * **왼쪽 경계(`(?<![가-힣A-Za-z0-9])`)를 요구하고, 수사는 고유어([NATIVE_ONES])로만 받는다**
+ * (판단거리 9 ⓓ, 2026-09-10, 원문·8차 변환문 58건 실측). 예전 구현(한자어 포함, 경계 없음)은
+ * 매치가 64건이었다. 네 후보를 같은 58건에 걸어 비교했다 — 왼쪽 경계만 추가하면 20건(잔존
+ * 오탐 "구 분"·"이 분"), 왼쪽+오른쪽 경계는 조사 때문에 "한 달에"·"한 개를" 같은 진짜
+ * 사례까지 죽인다(쉬운 글 "한 달" 매치가 39→5건으로 줄었다). **왼쪽 경계 + 고유어만**이
+ * 64건을 9건으로 줄였고, **남은 9건은 전부 진짜 수사였다**("한 번"3·"한 개"2·"한 명"·
+ * "두 달"·"다섯 명"·"한 달"). 제외된 55건은 표본으로 문맥을 열어 봤을 때 진짜 수사로 볼
+ * 만한 것이 없었다(전수 판정은 아니다) — "판매행**사 개**최"("사"=한자어 4)·"교체**한
+ * 개**인"·"주차가능**한 개**인사유지"·"거주지가 속**한 시**･군･구"·"충분**한 시**간적
+ * 여유"(모두 "한"=고유어 1이 동사·형용사 활용형 끝 음절과 우연히 겹친다)·표 머리글
+ * "구 분"(letter-spacing 된 "구분", "구"=한자어 9)·"한두 건"(070 문서, "한두"의 "두"가
+ * 걸린 것). 한자어 수사는 [SINO_ONES] 로 남아 있다 — 배수 단위 금액([LEADING_COUNT],
+ * "삼만 원")에서 계속 쓰인다.
+ *
+ * **미탐 위험(측정 안 됨, 0건 관측)**: 쉬운 글이 "이 층"·"사 개"처럼 한자어 수사로 개수를
+ * 적으면 이 정규식이 못 잡는다 — 반대 방향(원문 "2층"이 변환문 "이 층"으로 바뀌었는데
+ * 누락으로 오판)의 위험이다. 58건 실측에서는 이런 표기가 한 번도 없었지만, 이 파일의
+ * 오탐/미탐 비대칭 원칙(`FactPreservation.kt` 파일 KDoc)대로 미탐 쪽을 선택한다.
  */
 internal val WORD_NUMBER: Regex =
     run {
-        val words = COUNT_WORDS.keys.sortedByDescending { it.length }.joinToString("|") { Regex.escape(it) }
-        Regex("""(?:$words)\s(?:$COUNT_UNIT_ALTERNATION)""")
+        val words = NATIVE_ONES.keys.sortedByDescending { it.length }.joinToString("|") { Regex.escape(it) }
+        Regex("""(?<![가-힣A-Za-z0-9])(?:$words)\s(?:$COUNT_UNIT_ALTERNATION)""")
     }
 
 /** 배수 단위 — 억·만·천·백·십. 한 자리 문자 클래스라 겹치는 접두부 걱정이 없다. */
@@ -216,9 +233,17 @@ private fun leadingCountValue(countText: String): BigInteger =
         else -> BigInteger.valueOf((SINO_ONES[countText] ?: 1).toLong())
     }
 
-/** [matchText] 가 [COUNT_WORDS] 낱말로 시작하면 그 값을 낸다(개수 단위 앞 한글 수사). */
+/**
+ * [matchText] 가 [NATIVE_ONES] 낱말로 시작하면 그 값을 낸다(개수 단위 앞 한글 수사).
+ *
+ * [WORD_NUMBER] 가 고유어만 잡으므로(판단거리 9 ⓓ) 이 함수도 고유어만 본다 — 예전에는
+ * `COUNT_WORDS`(고유어+한자어)를 봤지만, [WORD_NUMBER] 매치가 애초에 한자어로 시작할 수
+ * 없어(경계·수사 제한 둘 다) 한자어 분기는 절대 도달하지 않는 코드였다. 도달 불가 코드를
+ * 남기지 않으려고 지운다 — [SINO_ONES] 자체는 [LEADING_COUNT](배수 단위 금액)에서 계속
+ * 쓰이므로 맵은 그대로 둔다.
+ */
 internal fun countWordValue(matchText: String): Int? =
-    COUNT_WORDS.entries.firstOrNull { (word, _) -> matchText.startsWith(word) }?.value
+    NATIVE_ONES.entries.firstOrNull { (word, _) -> matchText.startsWith(word) }?.value
 
 /**
  * "10,000원"·"1만 원"·"5억원"·"천 원"·"삼만 원"·"5천만원"·"3,650천원"·"1억5천만원"을

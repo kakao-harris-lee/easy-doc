@@ -469,6 +469,87 @@ class FactPreservationTest {
     }
 
     @Nested
+    @DisplayName("한글 수사 — 왼쪽 경계·고유어 제한 (판단거리 9 ⓓ, 2026-09-10, 원문 58건 실측)")
+    inner class KoreanNumeralWordBoundary {
+        @Test
+        @DisplayName("105 문서 재현 — '판매행사 개최'의 '사 개'는 수사로 잡히지 않는다")
+        fun `행사 개최의 사 개는 수사가 아니다`() {
+            val source = "이번 판매행사 개최를 알려드립니다."
+            val draft = "이번 행사를 안내합니다."
+
+            assertThat(factCoverage(source, draft).sourceFactCount)
+                .withFailMessage("한자어 수사 '사'가 '행사'의 끝 음절과 겹쳐 오탐하면 안 된다")
+                .isEqualTo(0)
+        }
+
+        @Test
+        @DisplayName("022 문서 재현 — '교체한 개인'의 '한 개'는 수사로 잡히지 않는다")
+        fun `교체한 개인의 한 개는 수사가 아니다`() {
+            val source = "부품을 교체한 개인은 신고하세요."
+            val draft = "부품을 바꾼 사람은 신고하세요."
+
+            assertThat(factCoverage(source, draft).sourceFactCount)
+                .withFailMessage("'교체한'의 끝 음절 '한'이 수사로 오탐하면 안 된다")
+                .isEqualTo(0)
+        }
+
+        @Test
+        @DisplayName("039 문서 재현 — '거주지가 속한 시･군･구'의 '한 시'는 수사로 잡히지 않는다")
+        fun `속한 시의 한 시는 수사가 아니다`() {
+            val source = "거주지가 속한 시･군･구를 확인하세요."
+            val draft = "사는 지역을 확인하세요."
+
+            assertThat(factCoverage(source, draft).sourceFactCount)
+                .withFailMessage("'속한'의 끝 음절 '한'이 수사로 오탐하면 안 된다")
+                .isEqualTo(0)
+        }
+
+        @Test
+        @DisplayName("107 문서 재현 — '충분한 시간적 여유'의 '한 시'는 수사로 잡히지 않는다")
+        fun `충분한 시간적 여유의 한 시는 수사가 아니다`() {
+            val source = "충분한 시간적 여유를 두고 준비하세요."
+            val draft = "여유 있게 준비하세요."
+
+            assertThat(factCoverage(source, draft).sourceFactCount)
+                .withFailMessage("'충분한'의 끝 음절 '한'이 수사로 오탐하면 안 된다")
+                .isEqualTo(0)
+        }
+
+        @Test
+        @DisplayName("022·042·105·106 문서 재현 — letter-spacing 된 표 머리글 '구 분'은 수사로 잡히지 않는다")
+        fun `표 머리글 구 분은 수사가 아니다`() {
+            val source = "구 분  대상  비대상"
+            val draft = "구분  대상  비대상"
+
+            assertThat(factCoverage(source, draft).sourceFactCount)
+                .withFailMessage("한자어 수사 '구'가 표 머리글 '구 분'에서 오탐하면 안 된다")
+                .isEqualTo(0)
+        }
+
+        @Test
+        @DisplayName("여전히 잡히는 것 — 문장 시작·공백 뒤의 고유어 수사는 그대로 사실이다")
+        fun `경계가 있으면 고유어 수사는 여전히 사실이다`() {
+            val source = "한 달 안에 두 건을 처리하고 다섯 명과 한 번 더 만납니다."
+            val dropped = "처리하고 만납니다."
+
+            val coverage = factCoverage(source, dropped)
+
+            assertThat(coverage.sourceFactCount)
+                .withFailMessage("공백·문장 시작 뒤의 진짜 고유어 수사(한 달·두 건·다섯 명·한 번)는 여전히 사실이어야 한다")
+                .isEqualTo(4)
+            assertThat(coverage.missing).hasSize(4)
+        }
+
+        @Test
+        @DisplayName("등가 회귀 — 원문 '3개월'과 변환문 '세 달'은 여전히 같은 사실이다")
+        fun `개월과 달의 등가는 경계 제한 뒤에도 깨지지 않는다`() {
+            assertThat(findMissingFacts("3개월 안에 답합니다.", "세 달 안에 답해요."))
+                .withFailMessage("왼쪽 경계·고유어 제한이 '3개월'↔'세 달' 등가까지 깨면 ⓓ가 막으려던 오탐을 되살린 것이다")
+                .isEmpty()
+        }
+    }
+
+    @Nested
     @DisplayName("한글 수사 — '개월'과 '개' 단위 충돌 (리뷰 재검토 HIGH-1)")
     inner class MonthVersusPieceUnit {
         @Test
@@ -618,6 +699,80 @@ class FactPreservationTest {
         @DisplayName("소수점이 같은 값으로 남아 있으면 보존이다")
         fun `소수점이 지켜지면 보존이다`() {
             assertThat(findMissingFacts("1.5% 인상됩니다.", "1.5퍼센트 인상돼요. 1.5% 로 조정합니다.")).isEmpty()
+        }
+    }
+
+    @Nested
+    @DisplayName("단위·구분자 없는 5자리 이상 맨 숫자열 (판단거리 9 ⓒ, 2026-09-10, 원문 58건 실측)")
+    inner class BareLongDigitRuns {
+        @Test
+        @DisplayName("063 문서 재현 — 표 셀이 뭉개진 숫자열은 사실로 잡히지 않는다")
+        fun `표 셀 뭉개짐 숫자열은 사실이 아니다`() {
+            val source = "…추가검토대상20200 0 0 0 0 020211 1 0 0 0 02022140 14140 0…"
+            val draft = "관련 내용이 사라졌습니다."
+
+            assertThat(findMissingFacts(source, draft))
+                .withFailMessage("표 셀 뭉개짐으로 생긴 5자리 이상 맨 숫자열까지 사실로 잡으면 안 된다")
+                .isEmpty()
+        }
+
+        @Test
+        @DisplayName("064 문서 재현 — '14858208' 같은 8자리 맨 숫자열은 사실로 잡히지 않는다")
+        fun `8자리 맨 숫자열은 사실이 아니다`() {
+            val source = "문서번호는 14858208입니다."
+            val draft = "문서번호가 있습니다."
+
+            assertThat(findMissingFacts(source, draft)).isEmpty()
+        }
+
+        @Test
+        @DisplayName("003 문서 재현 — 주민등록번호 예시('850312-2345678')는 사실로 잡히지 않는다")
+        fun `주민등록번호 예시는 사실이 아니다`() {
+            val source = "주민등록번호 전체(예: 850312-2345678)를 적어주세요."
+            val draft = "주민등록번호를 적어주세요."
+
+            assertThat(findMissingFacts(source, draft)).isEmpty()
+        }
+
+        @Test
+        @DisplayName("098 문서 재현 — 파일명 접두 '250114'는 사실에서 빠지고 연도 '2025'만 남는다")
+        fun `파일명 접두 숫자열은 사실에서 빠진다`() {
+            val source = "250114 2025년도 정부관리양곡 매출지침(알림).pdf 파일을 확인하세요."
+            val draft = "파일을 확인해 주세요."
+
+            val coverage = factCoverage(source, draft)
+
+            assertThat(coverage.sourceFactCount)
+                .withFailMessage("'250114'까지 사실로 잡히면 5자리 이상 맨 숫자열 제외가 안 된 것이다")
+                .isEqualTo(1)
+            assertThat(coverage.missing).extracting("kind").containsExactly(FactKind.NUMBER)
+        }
+
+        @Test
+        @DisplayName("여전히 잡히는 것 — 4자리 연도·콤마 숫자·단위 붙은 5자리 이상 숫자는 그대로 사실이다")
+        fun `짧은 숫자·콤마 숫자·단위 붙은 긴 숫자는 여전히 사실이다`() {
+            val source = "2026년 기준 1,600대가 등록됐고 12000명이 신청했습니다."
+            val dropped = "등록되고 신청했습니다."
+
+            val coverage = factCoverage(source, dropped)
+
+            assertThat(coverage.sourceFactCount)
+                .withFailMessage("4자리 연도·콤마 숫자·단위 붙은 5자리 이상 숫자 셋 다 여전히 사실이어야 한다")
+                .isEqualTo(3)
+            assertThat(coverage.missing)
+                .extracting("kind")
+                .containsExactly(FactKind.NUMBER, FactKind.NUMBER, FactKind.NUMBER)
+        }
+
+        @Test
+        @DisplayName("회귀 — '12000명'이 변환문에서 사라지면 여전히 누락으로 잡힌다(단위 붙은 5자리 이상 예외)")
+        fun `단위 붙은 5자리 이상 숫자 누락은 여전히 검출된다`() {
+            val source = "신청자는 12000명입니다."
+            val dropped = "많은 사람이 신청했습니다."
+
+            assertThat(findMissingFacts(source, dropped))
+                .extracting("kind")
+                .containsExactly(FactKind.NUMBER)
         }
     }
 
