@@ -9,6 +9,11 @@ import kr.easydoc.application.auth.UnverifiedAccountPurge
 import kr.easydoc.application.auth.UnverifiedAccountPurgeObserver
 import kr.easydoc.application.auth.UnverifiedAccountPurgePolicy
 import kr.easydoc.application.auth.UnverifiedAccountPurgeResult
+import kr.easydoc.application.credit.PurgeSignupGrantRecords
+import kr.easydoc.application.credit.SignupGrantRecordPurge
+import kr.easydoc.application.credit.SignupGrantRecordPurgeObserver
+import kr.easydoc.application.credit.SignupGrantRecordPurgePolicy
+import kr.easydoc.application.credit.SignupGrantRecordPurgeResult
 import kr.easydoc.application.document.ExpiredDocumentPurge
 import kr.easydoc.application.document.FeedbackCommentPurge
 import kr.easydoc.application.document.FeedbackCommentPurgeObserver
@@ -27,35 +32,40 @@ import org.slf4j.LoggerFactory
 import java.time.Clock
 import java.time.Duration
 import java.time.Instant
+import java.time.Period
 import java.time.ZoneOffset
 
 /**
  * `RetentionPurgeScheduler` 는 Spring 도 DB 도 없이 대역으로 돈다 — 문서 파기, 피드백
- * 자유 의견 파기, 미검증 계정 파기가 서로의 실패를 가리지 않는지가 이 테스트의 대상이다.
+ * 자유 의견 파기, 미검증 계정 파기, 가입 크레딧 원장 파기가 서로의 실패를 가리지 않는지가
+ * 이 테스트의 대상이다.
  */
 class RetentionPurgeSchedulerTest {
     @Test
-    @DisplayName("세 파기 단계가 모두 돈다")
-    fun `세 파기 단계가 모두 돈다`() {
+    @DisplayName("네 파기 단계가 모두 돈다")
+    fun `네 파기 단계가 모두 돈다`() {
         val documentStore = RecordingExpiredDocumentPurge()
         val feedbackStore = RecordingFeedbackCommentPurge()
         val unverifiedStore = RecordingUnverifiedAccountPurge()
+        val signupGrantStore = RecordingSignupGrantRecordPurge()
 
-        scheduler(documentStore, feedbackStore, unverifiedStore).run()
+        scheduler(documentStore, feedbackStore, unverifiedStore, signupGrantStore).run()
 
         assertThat(documentStore.calls).isEqualTo(1)
         assertThat(feedbackStore.calls).isEqualTo(1)
         assertThat(unverifiedStore.calls).isEqualTo(1)
+        assertThat(signupGrantStore.calls).isEqualTo(1)
     }
 
     @Test
-    @DisplayName("문서 파기가 실패해도 나머지 두 파기는 그대로 돈다")
+    @DisplayName("문서 파기가 실패해도 나머지 세 파기는 그대로 돈다")
     fun `문서 파기 실패가 나머지 파기를 막지 않는다`() {
         val documentStore = RecordingExpiredDocumentPurge(failing = true)
         val feedbackStore = RecordingFeedbackCommentPurge()
         val unverifiedStore = RecordingUnverifiedAccountPurge()
+        val signupGrantStore = RecordingSignupGrantRecordPurge()
 
-        scheduler(documentStore, feedbackStore, unverifiedStore).run()
+        scheduler(documentStore, feedbackStore, unverifiedStore, signupGrantStore).run()
 
         assertThat(documentStore.calls).isEqualTo(1)
         assertThat(feedbackStore.calls)
@@ -63,6 +73,9 @@ class RetentionPurgeSchedulerTest {
             .isEqualTo(1)
         assertThat(unverifiedStore.calls)
             .describedAs("문서 파기 단계의 예외가 세 번째 단계 실행을 막으면 안 된다")
+            .isEqualTo(1)
+        assertThat(signupGrantStore.calls)
+            .describedAs("문서 파기 단계의 예외가 네 번째 단계 실행을 막으면 안 된다")
             .isEqualTo(1)
     }
 
@@ -72,8 +85,9 @@ class RetentionPurgeSchedulerTest {
         val documentStore = RecordingExpiredDocumentPurge()
         val feedbackStore = RecordingFeedbackCommentPurge(failing = true)
         val unverifiedStore = RecordingUnverifiedAccountPurge()
+        val signupGrantStore = RecordingSignupGrantRecordPurge()
 
-        scheduler(documentStore, feedbackStore, unverifiedStore).run()
+        scheduler(documentStore, feedbackStore, unverifiedStore, signupGrantStore).run()
 
         assertThat(documentStore.calls)
             .describedAs("뒤에 도는 단계의 실패가 앞 단계가 이미 낸 결과를 무효로 만들면 안 된다")
@@ -82,36 +96,61 @@ class RetentionPurgeSchedulerTest {
         assertThat(unverifiedStore.calls)
             .describedAs("가운데 단계의 실패가 세 번째 단계 실행을 막으면 안 된다")
             .isEqualTo(1)
+        assertThat(signupGrantStore.calls)
+            .describedAs("가운데 단계의 실패가 네 번째 단계 실행을 막으면 안 된다")
+            .isEqualTo(1)
     }
 
     @Test
-    @DisplayName("미검증 계정 파기가 실패해도 앞의 두 파기는 이미 자기 몫을 끝냈다")
-    fun `미검증 계정 파기 실패가 앞 단계를 가리지 않는다`() {
+    @DisplayName("미검증 계정 파기가 실패해도 다른 단계는 각자 자기 몫을 한다")
+    fun `미검증 계정 파기 실패가 다른 단계를 가리지 않는다`() {
         val documentStore = RecordingExpiredDocumentPurge()
         val feedbackStore = RecordingFeedbackCommentPurge()
         val unverifiedStore = RecordingUnverifiedAccountPurge(failing = true)
+        val signupGrantStore = RecordingSignupGrantRecordPurge()
 
-        scheduler(documentStore, feedbackStore, unverifiedStore).run()
+        scheduler(documentStore, feedbackStore, unverifiedStore, signupGrantStore).run()
 
         assertThat(documentStore.calls).isEqualTo(1)
         assertThat(feedbackStore.calls).isEqualTo(1)
         assertThat(unverifiedStore.calls).isEqualTo(1)
+        assertThat(signupGrantStore.calls)
+            .describedAs("세 번째 단계의 실패가 네 번째 단계 실행을 막으면 안 된다")
+            .isEqualTo(1)
     }
 
     @Test
-    @DisplayName("세 단계가 모두 실패해도 스케줄 실행 자체는 예외를 던지지 않는다")
-    fun `셋 다 실패해도 run 은 예외를 던지지 않는다`() {
+    @DisplayName("가입 크레딧 원장 파기가 실패해도 앞의 세 파기는 이미 자기 몫을 끝냈다")
+    fun `가입 크레딧 원장 파기 실패가 앞 단계를 가리지 않는다`() {
+        val documentStore = RecordingExpiredDocumentPurge()
+        val feedbackStore = RecordingFeedbackCommentPurge()
+        val unverifiedStore = RecordingUnverifiedAccountPurge()
+        val signupGrantStore = RecordingSignupGrantRecordPurge(failing = true)
+
+        scheduler(documentStore, feedbackStore, unverifiedStore, signupGrantStore).run()
+
+        assertThat(documentStore.calls).isEqualTo(1)
+        assertThat(feedbackStore.calls).isEqualTo(1)
+        assertThat(unverifiedStore.calls).isEqualTo(1)
+        assertThat(signupGrantStore.calls).isEqualTo(1)
+    }
+
+    @Test
+    @DisplayName("네 단계가 모두 실패해도 스케줄 실행 자체는 예외를 던지지 않는다")
+    fun `넷 다 실패해도 run 은 예외를 던지지 않는다`() {
         val documentStore = RecordingExpiredDocumentPurge(failing = true)
         val feedbackStore = RecordingFeedbackCommentPurge(failing = true)
         val unverifiedStore = RecordingUnverifiedAccountPurge(failing = true)
+        val signupGrantStore = RecordingSignupGrantRecordPurge(failing = true)
 
         assertThatCode {
-            scheduler(documentStore, feedbackStore, unverifiedStore).run()
+            scheduler(documentStore, feedbackStore, unverifiedStore, signupGrantStore).run()
         }.doesNotThrowAnyException()
 
         assertThat(documentStore.calls).isEqualTo(1)
         assertThat(feedbackStore.calls).isEqualTo(1)
         assertThat(unverifiedStore.calls).isEqualTo(1)
+        assertThat(signupGrantStore.calls).isEqualTo(1)
     }
 
     @Test
@@ -120,8 +159,10 @@ class RetentionPurgeSchedulerTest {
         val documentStore = RecordingExpiredDocumentPurge(failing = true)
         val feedbackStore = RecordingFeedbackCommentPurge()
         val unverifiedStore = RecordingUnverifiedAccountPurge()
+        val signupGrantStore = RecordingSignupGrantRecordPurge()
 
-        val events = captureLog { scheduler(documentStore, feedbackStore, unverifiedStore).run() }
+        val events =
+            captureLog { scheduler(documentStore, feedbackStore, unverifiedStore, signupGrantStore).run() }
 
         val failureEvent =
             events.singleOrNull { it.level == Level.ERROR }
@@ -156,6 +197,7 @@ class RetentionPurgeSchedulerTest {
         documentStore: ExpiredDocumentPurge,
         feedbackStore: FeedbackCommentPurge,
         unverifiedStore: UnverifiedAccountPurge,
+        signupGrantStore: SignupGrantRecordPurge,
     ): RetentionPurgeScheduler =
         RetentionPurgeScheduler(
             documentPurge =
@@ -191,6 +233,19 @@ class RetentionPurgeSchedulerTest {
                         ),
                     clock = Clock.fixed(Instant.parse("2026-09-07T00:00:00Z"), ZoneOffset.UTC),
                 ),
+            signupGrantRecordPurge =
+                PurgeSignupGrantRecords(
+                    store = signupGrantStore,
+                    transaction = PassthroughTransactionRunner,
+                    observer = NoopSignupGrantRecordObserver,
+                    policy =
+                        SignupGrantRecordPurgePolicy(
+                            enabled = true,
+                            ttl = Period.ofYears(2),
+                            batchSize = BATCH,
+                        ),
+                    clock = Clock.fixed(Instant.parse("2026-09-10T00:00:00Z"), ZoneOffset.UTC),
+                ),
         )
 
     private object PassthroughTransactionRunner : TransactionRunner {
@@ -207,6 +262,10 @@ class RetentionPurgeSchedulerTest {
 
     private object NoopUnverifiedAccountObserver : UnverifiedAccountPurgeObserver {
         override fun record(result: UnverifiedAccountPurgeResult) = Unit
+    }
+
+    private object NoopSignupGrantRecordObserver : SignupGrantRecordPurgeObserver {
+        override fun record(result: SignupGrantRecordPurgeResult) = Unit
     }
 
     private class RecordingExpiredDocumentPurge(private val failing: Boolean = false) : ExpiredDocumentPurge {
@@ -256,6 +315,20 @@ class RetentionPurgeSchedulerTest {
             calls++
             if (failing) error("unverified account purge boom")
             return UnverifiedAccountPurgeResult(enabled = true, deleted = 0, skippedWithDocuments = 0)
+        }
+    }
+
+    private class RecordingSignupGrantRecordPurge(private val failing: Boolean = false) : SignupGrantRecordPurge {
+        var calls: Int = 0
+            private set
+
+        override fun purge(
+            grantedBefore: Instant,
+            batchSize: Int,
+        ): SignupGrantRecordPurgeResult {
+            calls++
+            if (failing) error("signup grant record purge boom")
+            return SignupGrantRecordPurgeResult(enabled = true, deleted = 0)
         }
     }
 

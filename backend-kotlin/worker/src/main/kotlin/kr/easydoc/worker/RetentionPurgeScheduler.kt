@@ -1,6 +1,7 @@
 package kr.easydoc.worker
 
 import kr.easydoc.application.auth.PurgeUnverifiedAccounts
+import kr.easydoc.application.credit.PurgeSignupGrantRecords
 import kr.easydoc.application.document.PurgeExpiredDocuments
 import kr.easydoc.application.document.PurgeFeedbackComments
 import org.slf4j.LoggerFactory
@@ -8,14 +9,19 @@ import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Component
 
 /**
- * 보존 만료 문서, 피드백 자유 의견, 미검증 계정을 주기적으로 파기한다. 기본 시각은 매일
- * 03:00 이다.
+ * 보존 만료 문서, 피드백 자유 의견, 미검증 계정, 가입 크레딧 원장을 주기적으로 파기한다.
+ * 기본 시각은 매일 03:00 이다.
  *
  * 미검증 계정 파기(`docs/kotlin-redevelopment-backlog.md` §1.4 ⑵ ⓐ, 2026-09-07 결정)는
  * 앞의 두 파기와 같은 스케줄에 세 번째 단계로 얹는다 — 가입 후 이메일을 검증하지 않은
  * 계정이 `ix_users_email`(V1)을 무기한 선점하는 문제를 같은 일일 배치로 닫는다.
  *
- * 세 단계를 각각 독립된 예외 경계로 감싼다 — 한쪽이 실패해도 다른 쪽은 그대로 돈다. 한
+ * 가입 크레딧 원장(`signup_grant_records`, V20) 파기(로드맵 5-1c, 2026-09-10 사용자 확정
+ * 「이메일 해시는 부여 시점 기준 2년이면 충분해」)는 네 번째 단계로 얹는다 — 그 표는
+ * `users`에 FK 가 없어 계정 삭제의 부산물로 지워지지 않으므로, 이 배치가 유일한 소거
+ * 경로다.
+ *
+ * 네 단계를 각각 독립된 예외 경계로 감싼다 — 한쪽이 실패해도 다른 쪽은 그대로 돈다. 한
  * 파기가 던지면 그날 다른 파기가 함께 건너뛰는 일이 없어야 한다(서로 다른 표를 건드리는
  * 별개의 정책이라 한쪽의 실패가 다른 쪽 결과를 가리면 안 된다).
  */
@@ -24,6 +30,7 @@ class RetentionPurgeScheduler(
     private val documentPurge: PurgeExpiredDocuments,
     private val feedbackCommentPurge: PurgeFeedbackComments,
     private val unverifiedAccountPurge: PurgeUnverifiedAccounts,
+    private val signupGrantRecordPurge: PurgeSignupGrantRecords,
 ) {
     private val log = LoggerFactory.getLogger(RetentionPurgeScheduler::class.java)
 
@@ -32,6 +39,7 @@ class RetentionPurgeScheduler(
         runStep(DOCUMENT_STEP) { documentPurge.run() }
         runStep(FEEDBACK_COMMENT_STEP) { feedbackCommentPurge.run() }
         runStep(UNVERIFIED_ACCOUNT_STEP) { unverifiedAccountPurge.run() }
+        runStep(SIGNUP_GRANT_RECORD_STEP) { signupGrantRecordPurge.run() }
     }
 
     /**
@@ -59,5 +67,6 @@ class RetentionPurgeScheduler(
         const val DOCUMENT_STEP = "document"
         const val FEEDBACK_COMMENT_STEP = "feedback-comment"
         const val UNVERIFIED_ACCOUNT_STEP = "unverified-account"
+        const val SIGNUP_GRANT_RECORD_STEP = "signup-grant-record"
     }
 }
