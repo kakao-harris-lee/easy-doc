@@ -19,8 +19,10 @@ import kr.easydoc.core.exceptions.DocumentExtractionException
 import kr.easydoc.core.exceptions.EmailNotVerifiedException
 import kr.easydoc.core.exceptions.InvalidInputException
 import kr.easydoc.core.exceptions.NotFoundException
+import kr.easydoc.core.exceptions.PersonalDataDetectedException
 import kr.easydoc.core.exceptions.StorageException
 import kr.easydoc.core.exceptions.UploadTooLargeException
+import kr.easydoc.core.privacy.detectPersonalData
 import kr.easydoc.core.segment.SourceStructure
 import kr.easydoc.core.segment.inferUnitKinds
 import kr.easydoc.core.segment.splitUnits
@@ -92,12 +94,22 @@ class DocumentService(
         text: String,
         title: String?,
         rawWorkspaceId: String?,
+        /**
+         * 개인정보 경고용 검출(계획 §2.2)을 확인했는지 — 기본값 거짓. 검출됐는데 이 값이
+         * 참이 아니면 [PersonalDataDetectedException] 이 던져진다(`store`).
+         */
+        personalDataAcknowledged: Boolean = false,
     ): AcceptedUpload {
         requireVerifiedEmail(ownerId)
         if (text.isBlank()) throw InvalidInputException(EMPTY_BODY_MESSAGE)
         // 제목을 안 주면 대체 제목이다. 본문은 제목이 되지 않는다.
         // 붙여넣기에는 원본 파일이 없다 — `null` 이 그 사실이다.
-        return store(ownerId, UploadContent(text, SourceFormat.TEXT, original = null), title) {
+        return store(
+            ownerId,
+            UploadContent(text, SourceFormat.TEXT, original = null),
+            title,
+            personalDataAcknowledged,
+        ) {
             parseWorkspaceId(rawWorkspaceId)
         }
     }
@@ -114,6 +126,8 @@ class DocumentService(
         bytes: ByteArray,
         title: String?,
         rawWorkspaceId: String?,
+        /** [createFromText] 의 같은 이름 인자와 같다 — 두 팔이 같은 검출·확인 규칙을 탄다. */
+        personalDataAcknowledged: Boolean = false,
     ): AcceptedUpload {
         requireVerifiedEmail(ownerId)
         // 크기 판정이 추출보다 먼저다 — 계약이 정한 순서이고, 상한을 넘는 바이트를 파서에
@@ -136,7 +150,7 @@ class DocumentService(
         // 검수본으로 새 텍스트 파일을 만드는 자연스러운 경로를 그대로 탄다.
         val original = if (extracted.format == SourceFormat.TXT) null else PlainBytes(bytes)
         val content = UploadContent(extracted.text, extracted.format, original, extracted.structure)
-        return store(ownerId, content, title) {
+        return store(ownerId, content, title, personalDataAcknowledged) {
             parseWorkspaceId(rawWorkspaceId)
         }
     }
@@ -186,6 +200,7 @@ class DocumentService(
         ownerId: UUID,
         content: UploadContent,
         givenTitle: String?,
+        personalDataAcknowledged: Boolean,
         requestedWorkspaceId: () -> UUID?,
     ): AcceptedUpload {
         // 저장 경계에서 개행을 통일한다 — 붙여넣기·파일 추출 두 팔이 함께 지나는 이 자리
@@ -195,6 +210,15 @@ class DocumentService(
         val normalizedText = normalizeLineEndings(content.text)
         val charCount = charCountOf(normalizedText)
         if (charCount > MAX_CONVERTIBLE_CHARS) throw InvalidInputException(BODY_TOO_LONG_MESSAGE)
+
+        // 개인정보 경고용 검출(계획 §2.2) — 본문 길이 다음, 작업 공간 판정 앞이다(계약
+        // `POST /documents` 검사 순서). 정규화된 최종 본문을 본다 — 검출기가 값·위치·건수를
+        // 돌려주지 않고 종류의 집합만 주므로(계획 §2.4) 여기서도 그 이상을 들고 다니지 않는다.
+        val detectedKinds = detectPersonalData(normalizedText)
+        if (detectedKinds.isNotEmpty() && !personalDataAcknowledged) {
+            throw PersonalDataDetectedException(PERSONAL_DATA_DETECTED_MESSAGE, detectedKinds)
+        }
+
         // 표·목록 구조 힌트(계획 §1.2) — 정규화된 **최종** 본문 기준으로 정한다. 붙여넣기는
         // 저장할 원문이 곧 사용자 입력이라 여기서 새로 유도하고, 파일 팔은 추출 시점 값을
         // 재검증한다(정규화가 줄 수를 바꿀 수 있어 추출 시점 값을 무조건 믿지 않는다).

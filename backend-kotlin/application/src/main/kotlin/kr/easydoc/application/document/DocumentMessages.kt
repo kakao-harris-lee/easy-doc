@@ -28,6 +28,13 @@ val BODY_TOO_LONG_MESSAGE: String =
     "현재는 ${String.format(Locale.ROOT, "%,d", MAX_CONVERTIBLE_CHARS)}자 이하 문서만 변환할 수 있습니다"
 
 /**
+ * 계약 `POST /documents` 422 예시 `personal_data_detected` — 개인정보 경고용 검출 계획
+ * `docs/plans/2026-09-10-personal-data-warning.md` §2.3. 검출된 종류는 이 문구가 아니라
+ * `X-Personal-Data-Kinds` 헤더로 나간다.
+ */
+const val PERSONAL_DATA_DETECTED_MESSAGE: String = "개인정보로 보이는 내용이 있습니다. 확인 후 다시 시도하세요."
+
+/**
  * 파일에서 뽑은 본문이 공백뿐일 때. 원본 `app/services/documents.py` 의
  * `DocumentExtractionError("문서에서 텍스트를 찾을 수 없습니다")` 와 같은 자리다.
  */

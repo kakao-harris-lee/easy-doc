@@ -56,6 +56,22 @@ object UploadFixtures {
         return rebuild(entries, document.substring(0, bodyEnd) + paragraph + document.substring(bodyEnd))
     }
 
+    /**
+     * 본문에 [text]를 그대로 심은 정상 docx — 개인정보 경고용 검출처럼 **특정 문자열**이
+     * 추출 텍스트에 있어야 하는 케이스가 쓴다. [text]는 XML 특수문자(`&`·`<` 등)를 담지
+     * 않는다고 가정한다 — 호출부가 숫자·하이픈·한글만 넣는다.
+     */
+    fun docxWithBody(text: String): ByteArray {
+        val entries = readEntries(sampleDocx())
+        val document =
+            requireNotNull(entries[DOCUMENT_PART]) { "sample.docx 에 $DOCUMENT_PART 가 없다" }
+                .toString(Charsets.UTF_8)
+        val bodyEnd = document.indexOf(BODY_END)
+        require(bodyEnd >= 0) { "$DOCUMENT_PART 에 $BODY_END 가 없다 — 단락을 끼울 자리를 찾지 못했다" }
+        val paragraph = "<w:p><w:r><w:t>$text</w:t></w:r></w:p>"
+        return rebuild(entries, document.substring(0, bodyEnd) + paragraph + document.substring(bodyEnd))
+    }
+
     /** 압축 해제량이 예산을 넘는 zip (DC-15 의 압축 폭탄 갈래). */
     fun zipOverBudget(uncompressedBytes: Int): ByteArray {
         val sink = ByteArrayOutputStream()

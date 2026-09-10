@@ -15,6 +15,7 @@ import kr.easydoc.core.exceptions.InvalidInputException
 import kr.easydoc.core.exceptions.InvalidOAuthStateException
 import kr.easydoc.core.exceptions.InvalidVerificationCodeException
 import kr.easydoc.core.exceptions.NotFoundException
+import kr.easydoc.core.exceptions.PersonalDataDetectedException
 import kr.easydoc.core.exceptions.RateLimitedException
 import kr.easydoc.core.exceptions.ReconversionBudgetExhaustedException
 import kr.easydoc.core.exceptions.ReconversionConcurrencyExhaustedException
@@ -239,6 +240,9 @@ private const val RECONVERSION_REMAINING_BUDGET_HEADER = "X-Remaining-Call-Budge
 private const val CREDIT_BALANCE_HEADER = "X-Credit-Balance"
 private const val CREDITS_REQUIRED_HEADER = "X-Credits-Required"
 
+/** 계약 `POST /documents` 422 헤더 — 개인정보 경고용 검출 계획 §2.3. */
+private const val PERSONAL_DATA_KINDS_HEADER = "X-Personal-Data-Kinds"
+
 private const val INVALID_INPUT_MESSAGE = "Input is not valid"
 
 /** `loc` 첫 칸. Python 은 `body`·`query`·`path` 셋만 쓴다. */
@@ -286,6 +290,18 @@ private fun mappingFor(exception: EasyDocException): Pair<HttpStatus, HttpHeader
         is DocumentExtractionException,
         -> {
             HttpStatus.UNPROCESSABLE_ENTITY to null
+        }
+
+        // 개인정보 경고용 검출(계획 §2.2) — 종류는 본문이 아니라 헤더로 낸다
+        // (`PersonalDataDetectedException` KDoc). **정렬된 소문자, 쉼표 구분**이다.
+        is PersonalDataDetectedException -> {
+            val sortedKinds =
+                exception.kinds
+                    .map { it.wireName }
+                    .sorted()
+                    .joinToString(",")
+            HttpStatus.UNPROCESSABLE_ENTITY to
+                HttpHeaders().apply { set(PERSONAL_DATA_KINDS_HEADER, sortedKinds) }
         }
 
         // 인증 코드가 오답·만료·무효 — 사유를 가르지 않는다(`InvalidVerificationCodeException` KDoc).

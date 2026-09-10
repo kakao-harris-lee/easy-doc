@@ -358,3 +358,54 @@ describe('createDocumentFromText — 크레딧 헤더(C1/C2)', () => {
     expect(result.creditBalance).toBeNull()
   })
 })
+
+describe('createDocumentFromText — 개인정보 경고용 검출 헤더', () => {
+  it('422는 X-Personal-Data-Kinds를 ApiError.personalDataKinds로 읽는다 — 정렬된 소문자, 쉼표 구분', async () => {
+    writeToken('token-abc')
+    fetchMock.mockResolvedValue(
+      new Response(
+        JSON.stringify({ detail: '개인정보로 보이는 내용이 있습니다. 확인 후 다시 시도하세요.' }),
+        {
+          status: 422,
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Personal-Data-Kinds': 'card,rrn',
+          },
+        },
+      ),
+    )
+
+    await expect(createDocumentFromText('본문', null, '제목')).rejects.toMatchObject({
+      status: 422,
+      personalDataKinds: ['card', 'rrn'],
+    })
+  })
+
+  it('헤더에 종류 하나만 실려도 그대로 읽는다', async () => {
+    writeToken('token-abc')
+    fetchMock.mockResolvedValue(
+      new Response(
+        JSON.stringify({ detail: '개인정보로 보이는 내용이 있습니다. 확인 후 다시 시도하세요.' }),
+        {
+          status: 422,
+          headers: { 'Content-Type': 'application/json', 'X-Personal-Data-Kinds': 'rrn' },
+        },
+      ),
+    )
+
+    await expect(createDocumentFromText('본문', null, '제목')).rejects.toMatchObject({
+      status: 422,
+      personalDataKinds: ['rrn'],
+    })
+  })
+
+  it('헤더가 없는 422(다른 갈래)는 personalDataKinds가 null이다', async () => {
+    writeToken('token-abc')
+    fetchMock.mockResolvedValue(jsonResponse(422, { detail: '지원 형식: docx, pdf, hwpx, txt' }))
+
+    await expect(createDocumentFromText('본문', null, '제목')).rejects.toMatchObject({
+      status: 422,
+      personalDataKinds: null,
+    })
+  })
+})

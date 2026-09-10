@@ -248,6 +248,19 @@ export function UploadPage() {
   const [file, setFile] = useState<File | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
+  // 개인정보 경고용 검출(422, `X-Personal-Data-Kinds`) 안내. `error`와 다른 상태로 두는
+  // 이유는 이 갈래만 "이대로 진행" 재전송 버튼을 함께 보여줘야 하기 때문이다 — 일반
+  // 오류 문단은 재전송 수단이 없다.
+  //
+  // **서버 문구만 담는다 — 재전송 콜백은 여기 담지 않는다.** 콜백을 담으면 그 콜백이
+  // 만들어질 때의 text·file·title·workspaceId를 클로저로 가둔다 — 경고가 뜬 뒤 사용자가
+  // 개인정보를 지우고 "이대로 진행"을 눌러도 지우기 **전** 내용이 나가는 결함이 된다
+  // (리뷰 지적, 2026-09-10). 재전송(`handleProceedWithPersonalData`)은 그래서 누르는
+  // **시점의** state를 다시 읽는다 — 아래 렌더 함수로 둔다.
+  //
+  // **본문·파일·모드가 바뀌면 이 경고를 지운다** — 경고는 그 입력에만 해당하고, 남겨
+  // 두면 이미 고친 내용에 대해 낡은 경고와 재전송 버튼이 계속 보인다.
+  const [personalDataWarning, setPersonalDataWarning] = useState<string | null>(null)
   // 배너 표시 근거. `user.email_verified`를 매 렌더 그대로 읽지 않고 별도 상태로 두는
   // 이유는 서버 403(EMAIL_NOT_VERIFIED_DETAIL)로도 같은 배너를 켜야 하기 때문이다 —
   // 인증 상태가 아직 갱신되지 않은 순간에도(예: 다른 탭에서 방금 가입) 서버가 막았다는
@@ -422,6 +435,12 @@ export function UploadPage() {
     fileCardRef.current?.focus()
   }, [file])
 
+  function handleTextChange(event: ChangeEvent<HTMLTextAreaElement>) {
+    setText(event.target.value)
+    // 본문이 바뀌면 이전 본문에 대한 개인정보 경고는 더 이상 맞지 않는다 — 지운다.
+    setPersonalDataWarning(null)
+  }
+
   function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
     const selected = event.target.files?.[0] ?? null
     // 대화상자를 취소해 고른 파일이 없으면 파일 입력이 그대로 보이고 초점도 거기 남는다
@@ -430,6 +449,8 @@ export function UploadPage() {
     cardFocusPending.current = selected !== null
     setFile(selected)
     setError(null)
+    // 파일이 바뀌면 이전 파일에 대한 개인정보 경고는 더 이상 맞지 않는다 — 지운다.
+    setPersonalDataWarning(null)
   }
 
   /**
@@ -447,6 +468,7 @@ export function UploadPage() {
     refocusPending.current = true
     setFile(null)
     setError(null)
+    setPersonalDataWarning(null)
   }
 
   /**
@@ -459,6 +481,7 @@ export function UploadPage() {
     sourceText?: string,
   ): Promise<void> {
     setSubmitting(true)
+    setPersonalDataWarning(null)
     try {
       const created = await create()
       // 202가 X-Credit-Balance를 실어 오면 재조회 없이 그 값으로 갱신한다(계획 §2 결정 7).
@@ -495,6 +518,20 @@ export function UploadPage() {
         setSubmitting(false)
         return
       }
+      // 개인정보 경고용 검출(422) — `X-Personal-Data-Kinds`가 실렸을 때만 이 갈래다.
+      // 일반 오류 문단이 아니라 "이대로 진행" 재전송이 딸린 배너로 보여준다(검출
+      // 종류 자체는 화면에 나열하지 않는다 — 서버 문구만으로 충분하다). 재전송 콜백을
+      // 여기 담지 않는다 — `handleProceedWithPersonalData`가 누르는 시점의 state를
+      // 다시 읽는다(위 `personalDataWarning` state 주석).
+      if (
+        caught instanceof ApiError &&
+        caught.status === 422 &&
+        caught.personalDataKinds !== null
+      ) {
+        setPersonalDataWarning(caught.message)
+        setSubmitting(false)
+        return
+      }
       // 백엔드 오류 메시지는 사용자에게 보이려고 만든 한국어 문구다(입력값 미포함).
       // 413(크기 초과)·422(형식·길이)·502(변환 서비스)·503(설정) 모두 여기로 온다.
       setError(
@@ -509,6 +546,7 @@ export function UploadPage() {
   async function handleSubmit(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault()
     setError(null)
+    setPersonalDataWarning(null)
     if (titleTrimmed === '') {
       setError('문서 제목을 입력해 주세요.')
       return
@@ -540,9 +578,32 @@ export function UploadPage() {
     await submit(() => createDocumentFromFile(file, workspaceId, titleTrimmed))
   }
 
+  /**
+   * 개인정보 경고용 검출(422) 뒤 "이대로 진행"을 누르면 부른다.
+   *
+   * **클로저에 갇힌 옛 값이 아니라, 이 함수가 호출되는 시점의 현재 `mode`·`text`·
+   * `file`·`workspaceId`·`titleTrimmed`를 그대로 읽는다** — 컴포넌트 렌더마다 새로
+   * 만들어지는 함수라 항상 최신 state를 본다. 경고가 뜬 뒤 사용자가 개인정보를 지우고
+   * 눌러도 지운 **후** 내용이 나가는 이유가 이것이다(리뷰 지적, 2026-09-10 — 예전에는
+   * 경고를 낸 요청을 만들 때의 클로저를 그대로 재전송해 지우기 **전** 내용이 나갔다).
+   */
+  async function handleProceedWithPersonalData(): Promise<void> {
+    if (mode === 'text') {
+      await submit(() => createDocumentFromText(text, workspaceId, titleTrimmed, true), text)
+      return
+    }
+    if (file === null) {
+      setPersonalDataWarning(null)
+      return
+    }
+    await submit(() => createDocumentFromFile(file, workspaceId, titleTrimmed, true))
+  }
+
   function selectMode(next: InputMode) {
     setMode(next)
     setError(null)
+    // 모드가 바뀌면 이전 모드의 입력에 대한 개인정보 경고는 더 이상 맞지 않는다.
+    setPersonalDataWarning(null)
   }
 
   return (
@@ -618,6 +679,31 @@ export function UploadPage() {
               </p>
             )}
 
+            {/* 개인정보 경고용 검출(422) — 검출됐을 때만 말한다. 통과했을 때는 아무
+            말도 하지 않는다(이름·주소는 잡지 못하므로 "안전합니다"류는 보증처럼
+            읽힌다). "이대로 진행"을 누르면 같은 요청을 확인 플래그만 참으로 바꿔
+            다시 보낸다 — 값 자체는 바꾸지 않는다(자동 마스킹이 아니다). */}
+            {personalDataWarning !== null && (
+              <div
+                className="flex flex-col items-start gap-3 rounded-[10px] border border-warning/25 bg-warning-surface px-4 py-3"
+                role="alert"
+              >
+                <p className="m-0 flex items-center gap-2 font-semibold text-warning">
+                  <AlertTriangle className="size-5 shrink-0" aria-hidden="true" />
+                  {personalDataWarning}
+                </p>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  loading={submitting}
+                  onClick={() => void handleProceedWithPersonalData()}
+                >
+                  이대로 진행
+                </Button>
+              </div>
+            )}
+
             <div className="field">
               <label htmlFor={titleFieldId}>문서 제목</label>
               <input
@@ -679,7 +765,7 @@ export function UploadPage() {
                   rows={14}
                   aria-describedby={tooLong ? `${overflowId} ${counterId}` : counterId}
                   aria-invalid={tooLong}
-                  onChange={(event) => setText(event.target.value)}
+                  onChange={handleTextChange}
                 />
                 {/* 글자 수 안내를 라이브 영역으로 두지 않는다 — 한 글자마다 낭독기가 숫자를
                 읽고, 상한을 넘으면 제출 오류와 같은 말을 두 번 알리게 된다. 입력 칸이

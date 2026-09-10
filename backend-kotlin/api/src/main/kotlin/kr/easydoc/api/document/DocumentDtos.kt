@@ -30,10 +30,27 @@ data class DocumentTextRequest
         @param:JsonProperty("workspace_id")
         @param:JsonSetter(nulls = Nulls.SET)
         val workspaceId: String?,
+        /**
+         * 개인정보 경고용 검출(계획 `docs/plans/2026-09-10-personal-data-warning.md` §2.2)을
+         * 이용자가 확인했는지 — 선택, 기본 거짓.
+         *
+         * **`Boolean?`로 받는다.** 이 프로젝트는 `jackson-module-kotlin`을 쓰지 않아
+         * (`libs.versions.toml` 참고) Jackson이 Kotlin 기본 인자를 모른다 — 생략된 원시
+         * `boolean` 자리를 전역 `Nulls.FAIL`(`JsonRequestStrictnessConfig`)이 걸러 422로
+         * 거절한다. `title`·`workspace_id`가 이미 쓰는 `Nulls.SET` 우회와 같은 이유로
+         * 널을 받아 [personalDataAcknowledged] 에서 `false`로 접는다.
+         */
+        @param:JsonProperty("personal_data_acknowledged")
+        @param:JsonSetter(nulls = Nulls.SET)
+        val personalDataAcknowledgedRaw: Boolean? = null,
     ) {
+        /** 검출됐는데 이 값이 참이 아니면 422다. 생략·명시적 `null` 은 거짓이다. */
+        val personalDataAcknowledged: Boolean get() = personalDataAcknowledgedRaw ?: false
+
         /** **본문도 제목도 작업 공간 원문도 찍지 않는다** — 셋 다 사용자가 준 임의 문자열이다. */
         override fun toString(): String =
-            "DocumentTextRequest(text=$CONTENT_MASK ${text.length}자, title=$CONTENT_MASK, workspaceId=$CONTENT_MASK)"
+            "DocumentTextRequest(text=$CONTENT_MASK ${text.length}자, title=$CONTENT_MASK, workspaceId=$CONTENT_MASK, " +
+                "personalDataAcknowledged=$personalDataAcknowledged)"
     }
 
 /**
