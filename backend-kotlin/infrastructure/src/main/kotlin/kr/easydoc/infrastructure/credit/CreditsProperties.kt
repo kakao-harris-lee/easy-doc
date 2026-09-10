@@ -29,6 +29,19 @@ import org.springframework.boot.context.properties.ConfigurationProperties
  * 자기점검이 앱을 띄우지 않는다(§7 결정 3, `signupGrant = 0` 이면 pepper 없이도 뜬다).
  * **회전하지 않는 값이다** — 바꾸면 기존 `signup_grant_records` 행이 새 해시와 매칭되지
  * 않아 그 이메일이 다시 부여받는다(`.env.example`·러너북 「크레딧 충전」에 명시).
+ *
+ * [signupGrantRecordTtl] — `signup_grant_records`(V20) 이메일 해시의 보유기간, ISO-8601
+ * Period 문자열(기본 `P2Y` = 2년). 사용자 확정 2026-09-10 — 「이메일 해시는 부여 시점
+ * 기준 2년이면 충분해」(로드맵 5-1c, `docs/plans/2026-09-10-legal-tax-policy-final.md` §6,
+ * 개인정보 보호법 §21 — 보유기간이 지나면 지체 없이 파기한다). `granted_at`(부여
+ * **시점**, 탈퇴 시점이 아니다) 을 기준으로 잰다 — [SignupGrantRecordPurgeConfiguration]
+ * 이 [java.time.Period.parse] 로 읽는다. `signupGrantValidity`와 같은 이유로 `String`
+ * 으로 받는다(이 저장소는 java.time 타입을 `@ConfigurationProperties` 필드로 직접
+ * 바인딩하지 않는다).
+ *
+ * [signupGrantRecordPurgeEnabled]·[signupGrantRecordPurgeBatchSize] — worker 의 가입
+ * 크레딧 원장 파기 배치 스위치·배치 크기(`RetentionPurgeScheduler`
+ * `signup-grant-record` 단계).
  */
 @ConfigurationProperties(prefix = "easydoc.credits")
 data class CreditsProperties(
@@ -36,4 +49,11 @@ data class CreditsProperties(
     val signupGrant: Int = 0,
     val signupGrantValidity: String = "P1M",
     val signupGrantPepper: Secret = Secret.EMPTY,
-)
+    val signupGrantRecordTtl: String = "P2Y",
+    val signupGrantRecordPurgeEnabled: Boolean = true,
+    val signupGrantRecordPurgeBatchSize: Int = DEFAULT_SIGNUP_GRANT_RECORD_PURGE_BATCH_SIZE,
+) {
+    companion object {
+        const val DEFAULT_SIGNUP_GRANT_RECORD_PURGE_BATCH_SIZE: Int = 200
+    }
+}
