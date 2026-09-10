@@ -4,6 +4,7 @@ import kr.easydoc.application.credit.NoopCreditAccountRepository
 import kr.easydoc.application.credit.NoopSignupGrantLedger
 import kr.easydoc.core.exceptions.ConfigurationException
 import kr.easydoc.core.security.Secret
+import kr.easydoc.infrastructure.usage.UsageProperties
 import org.assertj.core.api.Assertions.assertThatCode
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.DisplayName
@@ -23,7 +24,12 @@ class CreditAccountConfigurationTest {
         val properties = CreditsProperties(enforced = false, signupGrant = 50, signupGrantPepper = Secret.EMPTY)
 
         assertThatThrownBy {
-            configuration.creditAccountService(NoopCreditAccountRepository, NoopSignupGrantLedger, properties)
+            configuration.creditAccountService(
+                NoopCreditAccountRepository,
+                NoopSignupGrantLedger,
+                properties,
+                UsageProperties(),
+            )
         }.isInstanceOf(ConfigurationException::class.java)
             .hasMessageContaining("signup-grant-pepper")
     }
@@ -38,7 +44,12 @@ class CreditAccountConfigurationTest {
         // 이 갈래가 계속 실패로 남는지(회귀 방지)를 고정한다. 통과하면 고정된 약한 키로
         // HMAC 을 돌리면서 기동만 조용히 성공하는 fail-open 이 된다.
         assertThatThrownBy {
-            configuration.creditAccountService(NoopCreditAccountRepository, NoopSignupGrantLedger, properties)
+            configuration.creditAccountService(
+                NoopCreditAccountRepository,
+                NoopSignupGrantLedger,
+                properties,
+                UsageProperties(),
+            )
         }.isInstanceOf(ConfigurationException::class.java)
             .hasMessageContaining("signup-grant-pepper")
     }
@@ -49,7 +60,12 @@ class CreditAccountConfigurationTest {
         val properties = CreditsProperties(enforced = false, signupGrant = 0, signupGrantPepper = Secret.EMPTY)
 
         assertThatCode {
-            configuration.creditAccountService(NoopCreditAccountRepository, NoopSignupGrantLedger, properties)
+            configuration.creditAccountService(
+                NoopCreditAccountRepository,
+                NoopSignupGrantLedger,
+                properties,
+                UsageProperties(),
+            )
         }.doesNotThrowAnyException()
     }
 
@@ -60,7 +76,12 @@ class CreditAccountConfigurationTest {
             CreditsProperties(enforced = false, signupGrant = 50, signupGrantPepper = Secret("real-pepper"))
 
         assertThatCode {
-            configuration.creditAccountService(NoopCreditAccountRepository, NoopSignupGrantLedger, properties)
+            configuration.creditAccountService(
+                NoopCreditAccountRepository,
+                NoopSignupGrantLedger,
+                properties,
+                UsageProperties(),
+            )
         }.doesNotThrowAnyException()
     }
 }

@@ -117,6 +117,8 @@ describe('AdminWorkspacesTab — 워크스페이스 (어드민 최소, 계약 2.
       enforced: true,
       transactions: [],
       signup_grant_skipped: false,
+      allowance: 0,
+      cycle_ends_at: null,
     })
 
     render(<AdminWorkspacesTab />)
@@ -155,6 +157,8 @@ describe('AdminWorkspacesTab — 워크스페이스 (어드민 최소, 계약 2.
       enforced: true,
       transactions: [],
       signup_grant_skipped: false,
+      allowance: 0,
+      cycle_ends_at: null,
     })
 
     render(<AdminWorkspacesTab />)

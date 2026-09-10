@@ -92,6 +92,10 @@ class CreditsReachTest {
         assertThat(body["transactions"]).isInstanceOf(List::class.java)
         // signupGrant 가 이 스위트에서 0(기본값)이라 부여도 건너뜀도 일어나지 않는다.
         assertThat(body["signup_grant_skipped"]).isEqualTo(false)
+        // grantCredits 는 balance 만 SQL로 직접 올린다 — allowance·cycle_ends_at 은
+        // ensureAccount(가입)가 남긴 기본값(0, null) 그대로다. 주기가 없으므로 null.
+        assertThat(body["allowance"]).isEqualTo(0)
+        assertThat(body["cycle_ends_at"]).isNull()
     }
 
     @Test

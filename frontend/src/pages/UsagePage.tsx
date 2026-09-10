@@ -34,6 +34,8 @@ const KIND_LABEL: Record<string, string> = {
   consume: '소비',
   release: '해제',
   adjust: '조정',
+  cycle_set: '주기 설정',
+  cycle_reset: '주기 초기화',
 }
 
 /** 거래 사유를 사람이 읽는 말로. */
@@ -43,6 +45,7 @@ const REASON_LABEL: Record<string, string> = {
   manual: '수동',
   refund: '환급',
   conversion: '문서 변환',
+  cycle_end: '주기 종료',
 }
 
 /** 부호를 명시한다 — 양수도 `+`를 붙인다(자바스크립트 기본 표기는 양수 부호를 생략한다). */
@@ -56,6 +59,10 @@ function formatSignedCredits(value: number): string {
  * `signup_grant_skipped`(계약 2.29.0)가 참이면 가입 크레딧이 재수령되지 않았다는 안내를
  * 덧붙인다 — 서버가 이메일 인증 전에는 이 값을 항상 거짓으로 채워 주므로 화면은 값을
  * 그대로 보여주면 된다(따로 인증 상태를 확인하지 않는다).
+ *
+ * `cycle_ends_at`(계약 2.30.0)이 있으면 「이번 주기 {allowance} 중 {available} 남음 ·
+ * {날짜} 초기화」를 덧붙인다 — 크레딧을 「구독 주기에 포함된 이용량」으로 바꾼 사용자
+ * 결정(2026-09-10). `null`이면(주기 없음) 기존 문구를 그대로 유지한다.
  */
 function CreditsCard({ credits }: { credits: WorkspaceCreditsResponse }) {
   return (
@@ -81,6 +88,13 @@ function CreditsCard({ credits }: { credits: WorkspaceCreditsResponse }) {
           </dd>
         </div>
       </dl>
+      {credits.cycle_ends_at !== null && (
+        <p className="mt-3 text-sm text-muted-foreground">
+          이번 주기 {credits.allowance.toLocaleString('ko-KR')} 중{' '}
+          {credits.available.toLocaleString('ko-KR')} 남음 ·{' '}
+          {new Date(credits.cycle_ends_at).toLocaleDateString('ko-KR')} 초기화
+        </p>
+      )}
       {!credits.enforced && (
         <p className="mt-3 text-sm text-muted-foreground">(지금은 집행되지 않습니다)</p>
       )}
