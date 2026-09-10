@@ -6,12 +6,20 @@ import kr.easydoc.core.credit.Credits
 import kr.easydoc.core.exceptions.InsufficientCreditsException
 import kr.easydoc.core.exceptions.NotFoundException
 import kr.easydoc.core.security.Secret
+import java.time.Clock
+import java.time.Instant
+import java.time.Period
+import java.time.ZoneId
+import java.time.ZonedDateTime
 import java.util.UUID
 
 /** 예약 성공 뒤 계정 상태 — [ReservationResult.Reserved] 를 그대로 노출한다. */
 typealias Reservation = ReservationResult.Reserved
 
-/** `GET /workspaces/{workspace_id}/credits` 응답 — 계약 `WorkspaceCreditsResponse`(2.22.0). */
+/**
+ * `GET /workspaces/{workspace_id}/credits` 응답 — 계약 `WorkspaceCreditsResponse`(2.22.0,
+ * [allowance]·[cycleEndsAt] 는 2.30.0).
+ */
 data class CreditAccountView(
     val workspaceId: UUID,
     val balance: Int,
@@ -27,6 +35,13 @@ data class CreditAccountView(
      * §7 결정 5).
      */
     val signupGrantSkipped: Boolean,
+    /** 이번 주기에 제공된 이용량(계약 2.30.0) — `workspace_credit_accounts.allowance`(V21). */
+    val allowance: Int,
+    /**
+     * 이번 주기가 끝나는 시각(계약 2.30.0) — `null`이면 이 계정은 주기가 없다(기존 계정,
+     * 또는 아직 플랜을 배정받지 않은 계정). 화면은 이때 기존 문구를 유지한다.
+     */
+    val cycleEndsAt: Instant?,
 )
 
 /**
@@ -45,6 +60,7 @@ data class CreditAccountView(
  * 를 통해서만 쓰게 해, 두 가입 경로가 서로 다른 값을 배선받아 갈리는 사고(리뷰
  * 2026-09-07 지적)를 구조로 막는다.
  */
+@Suppress("LongParameterList")
 class CreditAccountService(
     private val repository: CreditAccountRepository,
     private val enforced: Boolean,
@@ -61,6 +77,28 @@ class CreditAccountService(
      * 기본값을 그대로 쓰다 무관한 예외로 깨지지 않게 한다.
      */
     private val emailHasher: SignupGrantEmailHasher = SignupGrantEmailHasher(Secret("unused-default-pepper")),
+    /**
+     * 가입 크레딧(무료 체험)의 유효기간 — `easydoc.credits.signup-grant-validity`(기본
+     * `P1M`, ISO-8601 Period). [grantSignupBonus] 가 이 기간 뒤 **저절로 끝나는**
+     * 비갱신 주기를 연다(사용자 확정 2026-09-10 — 무료 이용량은 1개월 이내 종료). 코드에
+     * 한 달을 박지 않고 구성값으로 받는다(프로젝트 `CLAUDE.md` 「상수와 구성 관리」).
+     */
+    private val signupGrantValidity: Period = Period.ofMonths(1),
+    /** [grantSignupBonus] 가 주기 종료 시각을 계산하는 데 쓴다. 기본은 시스템 UTC 시계. */
+    private val clock: Clock = Clock.systemUTC(),
+    /**
+     * [grantSignupBonus] 가 [signupGrantValidity] 를 더할 달력 시간대 — 사용량 집계
+     * (`UsageQueryService`·`UsageReportService`)가 이미 쓰는 `easydoc.usage.zone`(기본
+     * `Asia/Seoul`, [kr.easydoc.infrastructure.usage.UsageProperties])과 **같은 값**을
+     * 재사용한다(리뷰 지적 — UTC로 달력 연산을 하면 한국 사용자 기준의 "한 달"과
+     * UTC/KST 가 갈리는 매일 9시간 창에서 어긋난다). `application` 은 `infrastructure` 를
+     * 의존할 수 없어 이 클래스가 그 상수를 직접 참조하지 못한다 — 그래서 문자열이 아니라
+     * 인자로 받는다. 실제 조립(`CreditAccountConfiguration`)은 이 기본값을 쓰지 않고
+     * `UsageProperties.zoneId()` 를 그대로 넘긴다(같은 값을 두 곳에서 각자 정하지
+     * 않는다는 뜻에서 `emailHasher` 기본값과 같은 자리) — 이 기본값은 시간대를 지정하지
+     * 않는 기존 테스트가 무관한 예외로 깨지지 않게 하는 것이 유일한 목적이다.
+     */
+    private val zoneId: ZoneId = ZoneId.of("Asia/Seoul"),
 ) {
     /** 계정 행이 없으면 0 잔액으로 만든다. */
     fun ensureAccount(workspaceId: UUID) = repository.ensureAccount(workspaceId)
@@ -127,10 +165,40 @@ class CreditAccountService(
     ): Int = repository.grant(workspaceId, ownerUserId, credits, reason, note, actorUserId)
 
     /**
-     * 가입 시 기본 워크스페이스에 [signupGrant] 만큼 부여한다 — `AuthService.signup`·
-     * `SocialLoginService.callback` 의 새 사용자 갈래가 **둘 다** 이 메서드 하나만
-     * 부른다(리뷰 2026-09-07 — 두 경로가 각자 `signupGrant` 를 인자로 받으면 배선이
-     * 갈릴 수 있었다). `signupGrant` 가 0 이하면 아무것도 하지 않는다.
+     * 새 주기를 연다 — `balance`를 [allowance] 로 설정한다(더하지 않는다). 운영자 CLI의
+     * `--cycle-ends-at` 경로([kr.easydoc.api.credit.CreditGrantRunner])가 부른다.
+     * [CreditAccountRepository.setAllowance] KDoc 참고 — [renews] 가 주기 종료 배치의
+     * 갱신/종료 갈래를 가른다.
+     */
+    @Suppress("LongParameterList")
+    fun setAllowance(
+        workspaceId: UUID,
+        ownerUserId: UUID,
+        allowance: Int,
+        cycleEndsAt: Instant,
+        renews: Boolean,
+        reason: CreditReason,
+        note: String?,
+        actorUserId: UUID? = null,
+    ): Int =
+        repository.setAllowance(workspaceId, ownerUserId, allowance, cycleEndsAt, renews, reason, note, actorUserId)
+
+    /**
+     * 가입 시 기본 워크스페이스에 [signupGrant] 만큼의 **무료 체험 주기**를 연다 —
+     * `AuthService.signup`·`SocialLoginService.callback` 의 새 사용자 갈래가 **둘 다** 이
+     * 메서드 하나만 부른다(리뷰 2026-09-07 — 두 경로가 각자 `signupGrant` 를 인자로
+     * 받으면 배선이 갈릴 수 있었다). `signupGrant` 가 0 이하면 아무것도 하지 않는다.
+     *
+     * **2026-09-10 사용자 확정으로 「더하기」(`grant`)가 아니라 [setAllowance] 를 쓴다** —
+     * 무료 이용량은 결제주기가 아니라 [signupGrantValidity](기본 1개월) 뒤 **저절로
+     * 끝나야 하고 다시 채워지면 안 된다.** `renews = false` 로 열어, 주기 종료 배치
+     * ([kr.easydoc.application.credit.CreditCycleReset])가 그 시각에 잔액·이용량을 0으로
+     * 만들고 주기를 닫는다(플랜처럼 갱신되지 않는다). 가입 직후 새 워크스페이스는 잔액이
+     * 항상 0이므로 「설정」과 「더하기」가 이 경로에서는 같은 결과다.
+     *
+     * [signupGrantValidity] 를 더하는 달력은 [zoneId] 기준이다(리뷰 지적 — UTC로 계산하면
+     * KST 자정과 어긋나는 매일 9시간 창이 생긴다). `JdbcCreditCycleReset` 도 같은 값
+     * (`easydoc.usage.zone`)을 쓴다 — 두 계산이 서로 다른 "한 달"을 쓰면 안 된다.
      *
      * **가입 크레딧은 계정당(정확히는 이메일당) 한 번이다**(가입 크레딧 후속 §7 결정 1) —
      * 부여하기 **전에** [signupGrantLedger] 로 [normalizedEmail] 이 전에 가입 부여를 받은
@@ -153,7 +221,17 @@ class CreditAccountService(
             repository.markSignupGrantSkipped(workspaceId)
             return
         }
-        repository.grant(workspaceId, ownerUserId, signupGrant, CreditReason.SIGNUP, note = null, actorUserId = null)
+        val cycleEndsAt = ZonedDateTime.ofInstant(Instant.now(clock), zoneId).plus(signupGrantValidity).toInstant()
+        repository.setAllowance(
+            workspaceId,
+            ownerUserId,
+            signupGrant,
+            cycleEndsAt,
+            renews = false,
+            reason = CreditReason.SIGNUP,
+            note = null,
+            actorUserId = null,
+        )
         signupGrantLedger.record(emailHash)
     }
 
@@ -173,6 +251,8 @@ class CreditAccountService(
                 // 이메일 미인증이면 항상 false — CreditAccountRow KDoc·CreditAccountView.
                 // signupGrantSkipped KDoc(가입 크레딧 후속 §7 결정 5).
                 signupGrantSkipped = row.emailVerified && row.signupGrantSkipped,
+                allowance = row.allowance,
+                cycleEndsAt = row.cycleEndsAt,
             )
         } ?: throw NotFoundException(WORKSPACE_NOT_FOUND_MESSAGE)
 
@@ -235,6 +315,17 @@ object NoopCreditAccountRepository : CreditAccountRepository {
         note: String?,
         actorUserId: UUID?,
     ): Int = credits
+
+    override fun setAllowance(
+        workspaceId: UUID,
+        ownerUserId: UUID,
+        allowance: Int,
+        cycleEndsAt: Instant,
+        renews: Boolean,
+        reason: CreditReason,
+        note: String?,
+        actorUserId: UUID?,
+    ): Int = allowance
 
     override fun read(
         ownerId: UUID,

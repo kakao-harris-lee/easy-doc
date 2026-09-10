@@ -908,6 +908,10 @@ class InMemoryCreditAccountRepository : CreditAccountRepository {
         // 가입 크레딧 후속(§7) — 이 슬라이스는 신호 배선만 재므로 이메일 인증은 항상
         // 됐다고 본다(`CreditsReachTest`가 실 DB 로 가림 여부를 잰다).
         var signupGrantSkipped: Boolean = false
+
+        // 크레딧 주기(V21) — 이 슬라이스는 배선만 재므로 기본값은 "주기 없음"이다.
+        var allowance: Int = 0
+        var cycleEndsAt: Instant? = null
     }
 
     private val accounts = mutableMapOf<UUID, Account>()
@@ -1015,6 +1019,36 @@ class InMemoryCreditAccountRepository : CreditAccountRepository {
         return account.balance
     }
 
+    override fun setAllowance(
+        workspaceId: UUID,
+        ownerUserId: UUID,
+        allowance: Int,
+        cycleEndsAt: Instant,
+        renews: Boolean,
+        reason: CreditReason,
+        note: String?,
+        actorUserId: UUID?,
+    ): Int {
+        val account = accounts.getOrPut(workspaceId) { Account() }
+        account.ownerId = account.ownerId ?: ownerUserId
+        val delta = allowance - account.balance
+        account.balance = allowance
+        account.allowance = allowance
+        account.cycleEndsAt = cycleEndsAt
+        account.transactions +=
+            CreditTransactionView(
+                id = UUID.randomUUID(),
+                kind = CreditTransactionKind.CYCLE_SET,
+                balanceDelta = delta,
+                reservedDelta = 0,
+                reason = reason,
+                note = note,
+                documentId = null,
+                createdAt = Instant.now(),
+            )
+        return account.balance
+    }
+
     override fun read(
         ownerId: UUID,
         workspaceId: UUID,
@@ -1027,6 +1061,8 @@ class InMemoryCreditAccountRepository : CreditAccountRepository {
             transactions = account.transactions.sortedByDescending { it.createdAt }.take(TRANSACTION_HISTORY_LIMIT),
             signupGrantSkipped = account.signupGrantSkipped,
             emailVerified = true,
+            allowance = account.allowance,
+            cycleEndsAt = account.cycleEndsAt,
         )
     }
 

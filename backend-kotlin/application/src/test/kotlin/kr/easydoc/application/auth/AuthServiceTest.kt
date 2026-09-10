@@ -47,29 +47,32 @@ class AuthServiceTest {
     }
 
     @Test
-    @DisplayName("가입 부여(signup-grant)가 설정되면 grant 거래를 만든다")
+    @DisplayName("가입 부여(signup-grant)가 설정되면 비갱신 주기를 여는 setAllowance 거래를 만든다")
     fun `가입 부여가 설정되면 grant 한다`() {
         val world = World(signupGrant = 50)
 
         val user = world.service.signup(uniqueEmail(), VALID_PASSWORD)
 
-        assertThat(world.creditRepository.grantCalls).hasSize(1)
-        val (workspaceId, credits, reason) = world.creditRepository.grantCalls.single()
-        assertThat(workspaceId).isEqualTo(world.creditRepository.ensuredFor.single())
-        assertThat(credits).isEqualTo(50)
-        assertThat(reason).isEqualTo(CreditReason.SIGNUP)
-        assertThat(world.creditRepository.depthAtGrant).isEqualTo(1)
+        assertThat(world.creditRepository.grantCalls).isEmpty()
+        assertThat(world.creditRepository.setAllowanceCalls).hasSize(1)
+        val call = world.creditRepository.setAllowanceCalls.single()
+        assertThat(call.workspaceId).isEqualTo(world.creditRepository.ensuredFor.single())
+        assertThat(call.allowance).isEqualTo(50)
+        assertThat(call.renews).isFalse()
+        assertThat(call.reason).isEqualTo(CreditReason.SIGNUP)
+        assertThat(world.creditRepository.depthAtSetAllowance).isEqualTo(1)
         assertThat(user).isNotNull()
     }
 
     @Test
-    @DisplayName("가입 부여가 0이면 grant 거래를 만들지 않는다")
+    @DisplayName("가입 부여가 0이면 setAllowance 거래를 만들지 않는다")
     fun `가입 부여 0은 grant 하지 않는다`() {
         val world = World(signupGrant = 0)
 
         world.service.signup(uniqueEmail(), VALID_PASSWORD)
 
         assertThat(world.creditRepository.grantCalls).isEmpty()
+        assertThat(world.creditRepository.setAllowanceCalls).isEmpty()
     }
 
     @Test
@@ -271,10 +274,18 @@ private class World(
         )
 }
 
+/** [RecordingCreditAccountRepository.setAllowanceCalls] 가 기록하는 호출 한 건. */
+private data class RecordedSetAllowance(
+    val workspaceId: UUID,
+    val allowance: Int,
+    val renews: Boolean,
+    val reason: CreditReason,
+)
+
 /**
- * 크레딧 계정 호출을 기록하는 대역 — C1 검증용. `ensureAccount`·`grant` 만 재정의하고
- * 나머지는 [NoopCreditAccountRepository] 에 위임한다(리뷰 MEDIUM-11) — 이 테스트가 재는
- * 것은 가입 흐름이지 예약·소비·해제가 아니다.
+ * 크레딧 계정 호출을 기록하는 대역 — C1 검증용. `ensureAccount`·`grant`·`setAllowance` 만
+ * 재정의하고 나머지는 [NoopCreditAccountRepository] 에 위임한다(리뷰 MEDIUM-11) — 이
+ * 테스트가 재는 것은 가입 흐름이지 예약·소비·해제가 아니다.
  */
 private class RecordingCreditAccountRepository(private val transaction: RecordingTransactionRunner) :
     CreditAccountRepository by NoopCreditAccountRepository {
@@ -283,6 +294,9 @@ private class RecordingCreditAccountRepository(private val transaction: Recordin
         private set
     val grantCalls: MutableList<Triple<UUID, Int, CreditReason>> = mutableListOf()
     var depthAtGrant: Int = -1
+        private set
+    val setAllowanceCalls: MutableList<RecordedSetAllowance> = mutableListOf()
+    var depthAtSetAllowance: Int = -1
         private set
 
     override fun ensureAccount(workspaceId: UUID) {
@@ -301,6 +315,21 @@ private class RecordingCreditAccountRepository(private val transaction: Recordin
         grantCalls += Triple(workspaceId, credits, reason)
         depthAtGrant = transaction.depth
         return credits
+    }
+
+    override fun setAllowance(
+        workspaceId: UUID,
+        ownerUserId: UUID,
+        allowance: Int,
+        cycleEndsAt: Instant,
+        renews: Boolean,
+        reason: CreditReason,
+        note: String?,
+        actorUserId: UUID?,
+    ): Int {
+        setAllowanceCalls += RecordedSetAllowance(workspaceId, allowance, renews, reason)
+        depthAtSetAllowance = transaction.depth
+        return allowance
     }
 }
 

@@ -9,6 +9,11 @@ import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
+import java.time.Clock
+import java.time.Instant
+import java.time.OffsetDateTime
+import java.time.Period
+import java.time.ZoneOffset
 import java.util.UUID
 
 /**
@@ -117,14 +122,92 @@ class CreditAccountServiceTest {
     }
 
     @Test
-    @DisplayName("가입 부여(signupGrant)가 설정되면 grantSignupBonus 가 grant 를 부른다")
+    @DisplayName("주기 설정은 저장소에 그대로 위임한다 — 더하지 않고 설정한다")
+    fun `주기 설정은 위임한다`() {
+        val repo = FakeCreditAccountRepository(balance = 30)
+        val service = CreditAccountService(repo, enforced = true)
+        val cycleEndsAt = Instant.parse("2026-10-10T00:00:00Z")
+
+        val resultBalance =
+            service.setAllowance(
+                workspaceId,
+                ownerId,
+                50,
+                cycleEndsAt,
+                renews = true,
+                reason = CreditReason.PLAN_MONTHLY,
+                note = null,
+            )
+
+        assertThat(resultBalance).isEqualTo(50)
+        assertThat(repo.balance).isEqualTo(50)
+        assertThat(repo.setAllowanceCalls)
+            .containsExactly(SetAllowanceCall(50, cycleEndsAt, renews = true, CreditReason.PLAN_MONTHLY))
+    }
+
+    @Test
+    @DisplayName("주기 설정의 renews 는 저장소에 그대로 전달된다")
+    fun `주기 설정은 renews 를 전달한다`() {
+        val repo = FakeCreditAccountRepository(balance = 0)
+        val service = CreditAccountService(repo, enforced = true)
+        val cycleEndsAt = Instant.parse("2026-10-10T00:00:00Z")
+
+        service.setAllowance(
+            workspaceId,
+            ownerId,
+            50,
+            cycleEndsAt,
+            renews = false,
+            reason = CreditReason.SIGNUP,
+            note = null,
+        )
+
+        assertThat(repo.setAllowanceCalls.single().renews).isFalse()
+    }
+
+    @Test
+    @DisplayName("읽기 결과는 allowance·cycle_ends_at 을 저장소 값 그대로 채운다")
+    fun `읽기는 allowance와 cycle_ends_at 을 채운다`() {
+        val cycleEndsAt = Instant.parse("2026-10-10T00:00:00Z")
+        val repo = FakeCreditAccountRepository(balance = 50, allowance = 50, cycleEndsAt = cycleEndsAt)
+        val service = CreditAccountService(repo, enforced = true)
+
+        val view = service.read(ownerId, workspaceId)
+
+        assertThat(view.allowance).isEqualTo(50)
+        assertThat(view.cycleEndsAt).isEqualTo(cycleEndsAt)
+    }
+
+    @Test
+    @DisplayName("주기가 없으면(cycle_ends_at null) 읽기 결과도 null 이다")
+    fun `주기 없음은 null 로 읽힌다`() {
+        val repo = FakeCreditAccountRepository(balance = 10, cycleEndsAt = null)
+        val service = CreditAccountService(repo, enforced = true)
+
+        val view = service.read(ownerId, workspaceId)
+
+        assertThat(view.cycleEndsAt).isNull()
+    }
+
+    @Test
+    @DisplayName("가입 부여(signupGrant)가 설정되면 grantSignupBonus 가 비갱신 1개월 주기를 연다")
     fun `가입 부여가 설정되면 부른다`() {
         val repo = FakeCreditAccountRepository(balance = 0)
-        val service = CreditAccountService(repo, enforced = true, signupGrant = 50)
+        val service =
+            CreditAccountService(
+                repo,
+                enforced = true,
+                signupGrant = 50,
+                clock = FIXED_CLOCK,
+            )
 
         service.grantSignupBonus(workspaceId, ownerId, "user@example.com")
 
-        assertThat(repo.grantCalls).containsExactly(Triple(50, CreditReason.SIGNUP, null as String?))
+        assertThat(repo.grantCalls).isEmpty()
+        assertThat(repo.setAllowanceCalls)
+            .containsExactly(
+                SetAllowanceCall(50, plusUtc(FIXED_NOW, Period.ofMonths(1)), renews = false, CreditReason.SIGNUP),
+            )
     }
 
     @Test
@@ -136,10 +219,11 @@ class CreditAccountServiceTest {
         service.grantSignupBonus(workspaceId, ownerId, "user@example.com")
 
         assertThat(repo.grantCalls).isEmpty()
+        assertThat(repo.setAllowanceCalls).isEmpty()
     }
 
     @Test
-    @DisplayName("가입 부여 전에 원장을 조회한다 — 없으면 부여하고 부여 직후 기록한다")
+    @DisplayName("가입 부여 전에 원장을 조회한다 — 없으면 비갱신 주기를 열고 부여 직후 기록한다")
     fun `원장에 없으면 부여하고 기록한다`() {
         val repo = FakeCreditAccountRepository(balance = 0)
         val ledger = FakeSignupGrantLedger()
@@ -151,11 +235,15 @@ class CreditAccountServiceTest {
                 signupGrant = 50,
                 signupGrantLedger = ledger,
                 emailHasher = hasher,
+                clock = FIXED_CLOCK,
             )
 
         service.grantSignupBonus(workspaceId, ownerId, "user@example.com")
 
-        assertThat(repo.grantCalls).containsExactly(Triple(50, CreditReason.SIGNUP, null as String?))
+        assertThat(repo.setAllowanceCalls)
+            .containsExactly(
+                SetAllowanceCall(50, plusUtc(FIXED_NOW, Period.ofMonths(1)), renews = false, CreditReason.SIGNUP),
+            )
         assertThat(repo.markSkippedCalls).isEmpty()
         assertThat(ledger.recorded).containsExactly(hasher.hash("user@example.com"))
     }
@@ -178,8 +266,29 @@ class CreditAccountServiceTest {
         service.grantSignupBonus(workspaceId, ownerId, "user@example.com")
 
         assertThat(repo.grantCalls).isEmpty()
+        assertThat(repo.setAllowanceCalls).isEmpty()
         assertThat(repo.markSkippedCalls).containsExactly(workspaceId)
         assertThat(ledger.recorded).isEmpty()
+    }
+
+    @Test
+    @DisplayName("가입 부여 유효기간은 구성값(signupGrantValidity)을 그대로 쓴다 — 기본은 1개월이 아닐 수도 있다")
+    fun `가입 부여 유효기간은 구성값을 쓴다`() {
+        val repo = FakeCreditAccountRepository(balance = 0)
+        val service =
+            CreditAccountService(
+                repo,
+                enforced = true,
+                signupGrant = 20,
+                signupGrantValidity = Period.ofDays(14),
+                clock = FIXED_CLOCK,
+            )
+
+        service.grantSignupBonus(workspaceId, ownerId, "user@example.com")
+
+        val call = repo.setAllowanceCalls.single()
+        assertThat(call.cycleEndsAt).isEqualTo(plusUtc(FIXED_NOW, Period.ofDays(14)))
+        assertThat(call.renews).isFalse()
     }
 
     @Test
@@ -227,7 +336,26 @@ class CreditAccountServiceTest {
         assertThat(view.available).isEqualTo(6)
         assertThat(view.enforced).isTrue()
     }
+
+    private companion object {
+        val FIXED_NOW: Instant = Instant.parse("2026-09-10T00:00:00Z")
+        val FIXED_CLOCK: Clock = Clock.fixed(FIXED_NOW, ZoneOffset.UTC)
+
+        /** [CreditAccountService.grantSignupBonus] 와 같은 산술 — UTC 달력에 [period] 를 더한다. */
+        fun plusUtc(
+            instant: Instant,
+            period: Period,
+        ): Instant = OffsetDateTime.ofInstant(instant, ZoneOffset.UTC).plus(period).toInstant()
+    }
 }
+
+/** [FakeCreditAccountRepository.setAllowanceCalls] 가 기록하는 호출 한 건. */
+private data class SetAllowanceCall(
+    val allowance: Int,
+    val cycleEndsAt: Instant,
+    val renews: Boolean,
+    val reason: CreditReason,
+)
 
 /**
  * 최소 상태만 흉내 내는 대역 — 실제 SQL 불변식은 `JdbcCreditAccountRepositoryTest` 가 잰다.
@@ -239,12 +367,15 @@ private class FakeCreditAccountRepository(
     private val exists: Boolean = true,
     private val signupGrantSkipped: Boolean = false,
     private val emailVerified: Boolean = false,
+    var allowance: Int = 0,
+    var cycleEndsAt: Instant? = null,
 ) : CreditAccountRepository by NoopCreditAccountRepository {
     var reserved: Int = 0
     val reserveCalls = mutableListOf<Credits>()
     val consumeCalls = mutableListOf<Credits>()
     val releaseCalls = mutableListOf<Credits>()
     val grantCalls = mutableListOf<Triple<Int, CreditReason, String?>>()
+    val setAllowanceCalls = mutableListOf<SetAllowanceCall>()
     val markSkippedCalls = mutableListOf<UUID>()
 
     override fun reserve(
@@ -299,6 +430,23 @@ private class FakeCreditAccountRepository(
         return balance
     }
 
+    override fun setAllowance(
+        workspaceId: UUID,
+        ownerUserId: UUID,
+        allowance: Int,
+        cycleEndsAt: Instant,
+        renews: Boolean,
+        reason: CreditReason,
+        note: String?,
+        actorUserId: UUID?,
+    ): Int {
+        setAllowanceCalls += SetAllowanceCall(allowance, cycleEndsAt, renews, reason)
+        balance = allowance
+        this.allowance = allowance
+        this.cycleEndsAt = cycleEndsAt
+        return balance
+    }
+
     override fun read(
         ownerId: UUID,
         workspaceId: UUID,
@@ -306,7 +454,17 @@ private class FakeCreditAccountRepository(
         if (!exists) {
             null
         } else {
-            CreditAccountRow(workspaceId, balance, reserved, emptyList(), signupGrantSkipped, emailVerified)
+            CreditAccountRow(
+                workspaceId,
+                balance,
+                reserved,
+                emptyList(),
+                signupGrantSkipped,
+                emailVerified,
+                allowance,
+                cycleStartedAt = Instant.EPOCH,
+                cycleEndsAt = cycleEndsAt,
+            )
         }
 
     override fun markSignupGrantSkipped(workspaceId: UUID) {

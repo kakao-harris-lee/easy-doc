@@ -12,8 +12,15 @@ import org.springframework.boot.context.properties.ConfigurationProperties
  * (러너북 「크레딧 충전」 절). 꺼져 있어도 예약·소비·거래는 **똑같이 기록된다** — 잔액이
  * 음수가 될 수 있고, 그 사실이 곧 청구 근거다.
  *
- * [signupGrant] 기본값 `0` — 기본 워크스페이스가 만들어질 때(가입) 이 수만큼
- * `grant/signup` 거래를 넣는다. `0`이면 거래를 만들지 않는다.
+ * [signupGrant] 기본값 `0` — 기본 워크스페이스가 만들어질 때(가입) 이 수만큼 `cycle_set`
+ * 거래로 비갱신(1개월) 주기를 연다(2026-09-10 사용자 확정 — 「크레딧을 구독 주기에
+ * 포함된 이용량으로」, [kr.easydoc.application.credit.CreditAccountService.grantSignupBonus]).
+ * `0`이면 거래를 만들지 않는다.
+ *
+ * [signupGrantValidity] — 가입 크레딧(무료 체험)의 유효기간, ISO-8601 Period 문자열(기본
+ * `P1M` = 1개월). [kr.easydoc.application.credit.CreditAccountService] 가 [java.time.Period.parse]
+ * 로 읽어 주기 종료일을 계산한다. 코드에 한 달을 박지 않고 구성값으로 받는다(프로젝트
+ * `CLAUDE.md` 「상수와 구성 관리」).
  *
  * [signupGrantPepper] — 가입 부여 중복 방지 원장(`signup_grant_records`, V20)의 이메일
  * 해시에 섞는 비밀값(`kr.easydoc.application.credit.SignupGrantEmailHasher`, 가입 크레딧
@@ -27,5 +34,6 @@ import org.springframework.boot.context.properties.ConfigurationProperties
 data class CreditsProperties(
     val enforced: Boolean = false,
     val signupGrant: Int = 0,
+    val signupGrantValidity: String = "P1M",
     val signupGrantPepper: Secret = Secret.EMPTY,
 )

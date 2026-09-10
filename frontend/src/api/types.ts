@@ -434,11 +434,20 @@ export interface WorkspaceUsageResponse {
 
 // --- 크레딧 계정 (C1/C2, 계약 2.22.0) ---
 
-/** `credit_transactions.kind`(V15)와 같은 값. 계약 `components/schemas/CreditTransactionKind`. */
-export type CreditTransactionKind = 'grant' | 'reserve' | 'consume' | 'release' | 'adjust'
+/**
+ * `credit_transactions.kind`(V15, `cycle_set`·`cycle_reset`는 V21)와 같은 값. 계약
+ * `components/schemas/CreditTransactionKind`.
+ */
+export type CreditTransactionKind =
+  'grant' | 'reserve' | 'consume' | 'release' | 'adjust' | 'cycle_set' | 'cycle_reset'
 
-/** `credit_transactions.reason`(V15)과 같은 값. 계약 `components/schemas/CreditTransactionReason`. */
-export type CreditReason = 'signup' | 'plan_monthly' | 'manual' | 'refund' | 'conversion'
+/**
+ * `credit_transactions.reason`(V15, `cycle_end`는 V21)과 같은 값. 계약
+ * `components/schemas/CreditTransactionReason`. `cycle_end`는 `kind=cycle_reset`이면서
+ * 갱신 없이 주기가 닫힐 때다 — 갱신(`plan_monthly`)과 구분된다.
+ */
+export type CreditReason =
+  'signup' | 'plan_monthly' | 'manual' | 'refund' | 'conversion' | 'cycle_end'
 
 /**
  * `WorkspaceCreditsResponse.transactions` 항목. 계약 `components/schemas/CreditTransaction`.
@@ -469,6 +478,10 @@ export interface CreditTransaction {
  * `signup_grant_skipped`(계약 2.29.0) — 이 계정의 가입 부여가 「이미 가입 부여를 받은
  * 이메일이라 건너뛰었다」로 판정됐는지. **이메일이 인증되기 전에는 서버가 항상
  * `false`로 채운다** — 화면은 이 값을 그대로 보여주면 된다(따로 가릴 필요가 없다).
+ *
+ * `allowance`·`cycle_ends_at`(계약 2.30.0) — 크레딧을 「구독 주기에 포함된 이용량」으로
+ * 바꾼 사용자 결정(2026-09-10). `cycle_ends_at`이 `null`이면 이 계정은 주기가 없다(기존
+ * 계정, 또는 아직 플랜을 배정받지 않은 계정) — 화면은 이때 기존 문구를 유지한다.
  */
 export interface WorkspaceCreditsResponse {
   workspace_id: string
@@ -478,6 +491,10 @@ export interface WorkspaceCreditsResponse {
   enforced: boolean
   transactions: CreditTransaction[]
   signup_grant_skipped: boolean
+  /** 이번 주기에 제공된 이용량. */
+  allowance: number
+  /** 이번 주기가 끝나는 시각(ISO 8601 문자열). `null`이면 주기가 없다. */
+  cycle_ends_at: string | null
 }
 
 // --- 세금계산서 요청 기록 (계약 2.24.0) ---

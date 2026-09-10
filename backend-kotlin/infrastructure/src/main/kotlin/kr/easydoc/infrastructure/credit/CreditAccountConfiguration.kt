@@ -5,9 +5,13 @@ import kr.easydoc.application.credit.CreditAccountService
 import kr.easydoc.application.credit.SignupGrantEmailHasher
 import kr.easydoc.application.credit.SignupGrantLedger
 import kr.easydoc.core.exceptions.ConfigurationException
+import kr.easydoc.infrastructure.usage.UsageProperties
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.jdbc.core.simple.JdbcClient
+import java.time.Clock
+import java.time.Period
+import java.time.format.DateTimeParseException
 
 /**
  * 크레딧 계정 유스케이스 조립(C1) — 가입 부여 중복 방지 원장(V20)과 기동 자기점검을
@@ -23,11 +27,17 @@ class CreditAccountConfiguration {
     @Bean
     fun signupGrantLedger(jdbcClient: JdbcClient): SignupGrantLedger = JdbcSignupGrantLedger(jdbcClient)
 
+    /**
+     * [usageProperties] 는 `easydoc.usage.zone`(기본 `Asia/Seoul`) 을 그대로 재사용한다 —
+     * [CreditAccountService] KDoc(리뷰 지적: 사용량 집계와 가입 크레딧 유효기간 계산이
+     * 같은 "한 달"을 써야 한다. 새 `easydoc.credits.zone` 을 만들지 않는다).
+     */
     @Bean
     fun creditAccountService(
         repository: CreditAccountRepository,
         signupGrantLedger: SignupGrantLedger,
         properties: CreditsProperties,
+        usageProperties: UsageProperties,
     ): CreditAccountService {
         verifyPepperConfigured(properties)
         return CreditAccountService(
@@ -36,6 +46,10 @@ class CreditAccountConfiguration {
             signupGrant = properties.signupGrant,
             signupGrantLedger = signupGrantLedger,
             emailHasher = SignupGrantEmailHasher(properties.signupGrantPepper),
+            signupGrantValidity = parseSignupGrantValidity(properties),
+            // `AuthConfiguration.accessTokens` 와 같은 판단(서버 시계는 NTP 동기를 전제한다).
+            clock = Clock.systemUTC(),
+            zoneId = usageProperties.zoneId(),
         )
     }
 
@@ -57,4 +71,26 @@ class CreditAccountConfiguration {
             )
         }
     }
+
+    /**
+     * `easydoc.credits.signup-grant-validity`(기본 `P1M`)를 [Period] 로 읽는다. 형식이
+     * 잘못되면(`Period.parse` 가 던지는 프레임워크 예외를) 도메인 예외로 옮겨 앱을
+     * 띄우지 않는다 — 다른 기동 자기점검과 같은 fail-fast 판단.
+     */
+    private fun parseSignupGrantValidity(properties: CreditsProperties): Period =
+        try {
+            Period.parse(properties.signupGrantValidity)
+        } catch (failure: DateTimeParseException) {
+            throw invalidSignupGrantValidity(properties, failure)
+        }
+
+    private fun invalidSignupGrantValidity(
+        properties: CreditsProperties,
+        failure: DateTimeParseException,
+    ): ConfigurationException =
+        ConfigurationException(
+            "easydoc.credits.signup-grant-validity(EASYDOC_CREDITS_SIGNUP_GRANT_VALIDITY) 값이 " +
+                "ISO-8601 Period 형식이 아니다(예: P1M): ${properties.signupGrantValidity} " +
+                "(${failure.message})",
+        )
 }

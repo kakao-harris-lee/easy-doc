@@ -1,5 +1,6 @@
 package kr.easydoc.infrastructure.credit
 
+import kr.easydoc.application.credit.CreditAccountService
 import kr.easydoc.application.credit.ReservationResult
 import kr.easydoc.core.credit.CreditReason
 import kr.easydoc.core.credit.CreditTransactionKind
@@ -14,6 +15,10 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import org.springframework.jdbc.core.simple.JdbcClient
 import org.springframework.jdbc.datasource.DriverManagerDataSource
+import java.time.Clock
+import java.time.Instant
+import java.time.OffsetDateTime
+import java.time.ZoneOffset
 import java.util.UUID
 import java.util.concurrent.CyclicBarrier
 import java.util.concurrent.ExecutorService
@@ -140,6 +145,138 @@ class JdbcCreditAccountRepositoryTest {
     }
 
     @Test
+    @DisplayName("주기 설정은 기존 잔액과 무관하게 balance 를 allowance 로 설정한다 — 더하지 않는다")
+    fun `주기 설정은 더하지 않고 설정한다`() {
+        val (ownerId, workspaceId) = newOwnedWorkspace()
+        repository.grant(workspaceId, ownerId, 30, CreditReason.SIGNUP, note = null, actorUserId = null)
+        val cycleEndsAt = Instant.parse("2026-10-10T00:00:00Z")
+
+        val afterSet =
+            repository.setAllowance(
+                workspaceId,
+                ownerId,
+                50,
+                cycleEndsAt,
+                renews = true,
+                reason = CreditReason.PLAN_MONTHLY,
+                note = "주기 개시",
+                actorUserId = null,
+            )
+
+        assertThat(afterSet).isEqualTo(50)
+        val row = repository.read(ownerId, workspaceId)!!
+        assertThat(row.balance).isEqualTo(50)
+        assertThat(row.allowance).isEqualTo(50)
+        assertThat(row.cycleEndsAt).isEqualTo(cycleEndsAt)
+        val setTx = row.transactions.first { it.kind == CreditTransactionKind.CYCLE_SET }
+        // 30 → 50, delta = +20 (80이 아니다 — 더한 것이 아니라 설정한 것이다).
+        assertThat(setTx.balanceDelta).isEqualTo(20)
+        assertThat(setTx.reservedDelta).isEqualTo(0)
+        assertThat(setTx.note).isEqualTo("주기 개시")
+    }
+
+    @Test
+    @DisplayName("주기 설정은 reserved 를 건드리지 않는다")
+    fun `주기 설정은 reserved 를 보존한다`() {
+        val (ownerId, workspaceId) = newOwnedWorkspace()
+        repository.grant(workspaceId, ownerId, 30, CreditReason.SIGNUP, note = null, actorUserId = null)
+        repository.reserve(ownerId, workspaceId, UUID.randomUUID(), Credits(5), enforced = true)
+
+        repository.setAllowance(
+            workspaceId,
+            ownerId,
+            50,
+            Instant.parse("2026-10-10T00:00:00Z"),
+            renews = true,
+            reason = CreditReason.PLAN_MONTHLY,
+            note = null,
+            actorUserId = null,
+        )
+
+        val row = repository.read(ownerId, workspaceId)!!
+        assertThat(row.reserved).isEqualTo(5)
+    }
+
+    @Test
+    @DisplayName("주기 설정의 renews 는 cycle_renews 열에 그대로 남는다")
+    fun `주기 설정은 renews 를 남긴다`() {
+        val (ownerId, workspaceId) = newOwnedWorkspace()
+
+        repository.setAllowance(
+            workspaceId,
+            ownerId,
+            50,
+            Instant.parse("2026-10-10T00:00:00Z"),
+            renews = false,
+            reason = CreditReason.SIGNUP,
+            note = null,
+            actorUserId = null,
+        )
+
+        val renews =
+            jdbc
+                .sql("SELECT cycle_renews FROM workspace_credit_accounts WHERE workspace_id = :id")
+                .param("id", workspaceId)
+                .query { rs, _ -> rs.getBoolean("cycle_renews") }
+                .single()
+        assertThat(renews).isFalse()
+    }
+
+    @Test
+    @DisplayName(
+        "가입 부여(CreditAccountService.grantSignupBonus)는 비갱신 1개월 주기를 연다 — " +
+            "더하지 않고 설정한다",
+    )
+    fun `가입 부여는 비갱신 1개월 주기를 연다`() {
+        val (ownerId, workspaceId) = newOwnedWorkspace()
+        val fixedNow = Instant.parse("2026-09-10T00:00:00Z")
+        val service =
+            CreditAccountService(
+                repository,
+                enforced = false,
+                signupGrant = 50,
+                clock = Clock.fixed(fixedNow, ZoneOffset.UTC),
+            )
+
+        service.grantSignupBonus(workspaceId, ownerId, "signup-cycle-$workspaceId@example.test")
+
+        val row = repository.read(ownerId, workspaceId)!!
+        assertThat(row.balance).isEqualTo(50)
+        assertThat(row.allowance).isEqualTo(50)
+        val expectedCycleEndsAt = OffsetDateTime.ofInstant(fixedNow, ZoneOffset.UTC).plusMonths(1).toInstant()
+        assertThat(row.cycleEndsAt).isEqualTo(expectedCycleEndsAt)
+        val renews =
+            jdbc
+                .sql("SELECT cycle_renews FROM workspace_credit_accounts WHERE workspace_id = :id")
+                .param("id", workspaceId)
+                .query { rs, _ -> rs.getBoolean("cycle_renews") }
+                .single()
+        assertThat(renews).isFalse()
+        val setTx = row.transactions.first { it.kind == CreditTransactionKind.CYCLE_SET }
+        assertThat(setTx.balanceDelta).isEqualTo(50)
+        assertThat(setTx.reason).isEqualTo(CreditReason.SIGNUP)
+    }
+
+    @Test
+    @DisplayName("주기 설정 대상 계정 행이 없으면 NotFoundException")
+    fun `주기 설정 대상이 없으면 NotFoundException`() {
+        assertThat(
+            org.junit.jupiter.api.assertThrows<kr.easydoc.core.exceptions.NotFoundException> {
+                repository.setAllowance(
+                    UUID.randomUUID(),
+                    UUID.randomUUID(),
+                    50,
+                    Instant.parse("2026-10-10T00:00:00Z"),
+                    renews = true,
+                    reason = CreditReason.PLAN_MONTHLY,
+                    note = null,
+                    actorUserId = null,
+                )
+            },
+        ).isNotNull()
+    }
+
+    @Test
     @DisplayName("읽기는 남의 워크스페이스면 null 이다 — 존재 은닉")
     fun `남의 워크스페이스는 null`() {
         val (_, workspaceId) = newOwnedWorkspace()
@@ -189,6 +326,26 @@ class JdbcCreditAccountRepositoryTest {
 
         assertThat(row.transactions).hasSize(50)
         assertThat(row.transactions.map { it.note }.first()).isEqualTo("grant-54")
+    }
+
+    @Test
+    @DisplayName("주기 설정 뒤에도 거래 합 = 잔액 불변식이 성립한다")
+    fun `주기 설정 뒤 정합이 성립한다`() {
+        val (ownerId, workspaceId) = newOwnedWorkspace()
+        repository.grant(workspaceId, ownerId, 30, CreditReason.SIGNUP, note = null, actorUserId = null)
+
+        repository.setAllowance(
+            workspaceId,
+            ownerId,
+            50,
+            Instant.parse("2026-10-10T00:00:00Z"),
+            renews = true,
+            reason = CreditReason.PLAN_MONTHLY,
+            note = null,
+            actorUserId = null,
+        )
+
+        assertThat(repository.consistencyViolations().map { it.workspaceId }).doesNotContain(workspaceId)
     }
 
     @Test
@@ -285,6 +442,98 @@ class JdbcCreditAccountRepositoryTest {
 
         val row = repository.read(ownerId, workspaceId)!!
         assertThat(row.balance - row.reserved).isEqualTo(0)
+    }
+
+    @Test
+    @DisplayName(
+        "주기 설정과 예약이 동시에 일어나도 예약(reserved)이 보존되고 정합이 깨지지 않는다 — " +
+            "MEDIUM 리뷰 지적",
+    )
+    fun `주기 설정과 예약 동시 실행은 안전하다`() {
+        val (ownerId, workspaceId) = newOwnedWorkspace()
+        repository.grant(workspaceId, ownerId, 30, CreditReason.SIGNUP, note = null, actorUserId = null)
+
+        val barrier = CyclicBarrier(2)
+        val setAllowanceAttempt =
+            interference.submit {
+                barrier.await(TASK_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+                JdbcCreditAccountRepository(JdbcClient.create(dataSource()))
+                    .setAllowance(
+                        workspaceId,
+                        ownerId,
+                        50,
+                        Instant.parse("2026-10-10T00:00:00Z"),
+                        renews = true,
+                        reason = CreditReason.PLAN_MONTHLY,
+                        note = null,
+                        actorUserId = null,
+                    )
+            }
+        val reserveAttempt =
+            interference.submit<ReservationResult> {
+                barrier.await(TASK_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+                JdbcCreditAccountRepository(JdbcClient.create(dataSource()))
+                    .reserve(ownerId, workspaceId, UUID.randomUUID(), Credits(5), enforced = false)
+            }
+
+        setAllowanceAttempt.get(TASK_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+        val reserveResult = reserveAttempt.get(TASK_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+
+        assertThat(reserveResult).isInstanceOf(ReservationResult.Reserved::class.java)
+        val row = repository.read(ownerId, workspaceId)!!
+        // 예약(5)이 보존된다 — 주기 설정이 reserved 를 건드리지 않는다는 설계가 동시
+        // 실행에서도 성립한다(row lock 이 두 UPDATE를 직렬화한다).
+        assertThat(row.reserved).isEqualTo(5)
+        // 주기 설정 결과(더한 것이 아니라 설정한 50)가 손실 없이 반영된다.
+        assertThat(row.balance).isEqualTo(50)
+        assertThat(row.allowance).isEqualTo(50)
+        // 거래 합 = 잔액/예약 불변식이 동시 실행 뒤에도 성립한다.
+        assertThat(repository.consistencyViolations().map { it.workspaceId }).doesNotContain(workspaceId)
+    }
+
+    @Test
+    @DisplayName(
+        "주기 설정과 소비(consume)가 동시에 일어나도 정합이 깨지지 않는다 — MEDIUM 리뷰 지적",
+    )
+    fun `주기 설정과 소비 동시 실행은 안전하다`() {
+        val (ownerId, workspaceId) = newOwnedWorkspace()
+        repository.grant(workspaceId, ownerId, 30, CreditReason.SIGNUP, note = null, actorUserId = null)
+        val documentId = UUID.randomUUID()
+        repository.reserve(ownerId, workspaceId, documentId, Credits(10), enforced = true)
+
+        val barrier = CyclicBarrier(2)
+        val setAllowanceAttempt =
+            interference.submit {
+                barrier.await(TASK_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+                JdbcCreditAccountRepository(JdbcClient.create(dataSource()))
+                    .setAllowance(
+                        workspaceId,
+                        ownerId,
+                        50,
+                        Instant.parse("2026-10-10T00:00:00Z"),
+                        renews = false,
+                        reason = CreditReason.SIGNUP,
+                        note = null,
+                        actorUserId = null,
+                    )
+            }
+        val consumeAttempt =
+            interference.submit {
+                barrier.await(TASK_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+                JdbcCreditAccountRepository(JdbcClient.create(dataSource()))
+                    .consume(workspaceId, ownerId, documentId, UUID.randomUUID(), Credits(10))
+            }
+
+        setAllowanceAttempt.get(TASK_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+        consumeAttempt.get(TASK_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+
+        val row = repository.read(ownerId, workspaceId)!!
+        // 소비가 예약을 마저 정리한다 — 동시에 주기가 설정돼도 reserved 는 0으로
+        // 떨어져야 한다(소비 자신이 자기 몫을 뺀다, 주기 설정과 무관하다).
+        assertThat(row.reserved).isZero()
+        // 거래 합 = 잔액/예약 불변식이 동시 실행 뒤에도 성립한다 — 순서와 무관하게
+        // 어느 쪽이 이겨도 정합은 깨지지 않는다(row lock 이 직렬화한다).
+        assertThat(repository.consistencyViolations().map { it.workspaceId }).doesNotContain(workspaceId)
     }
 
     @Test

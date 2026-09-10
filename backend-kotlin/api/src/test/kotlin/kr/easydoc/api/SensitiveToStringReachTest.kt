@@ -505,8 +505,24 @@ class SensitiveToStringReachTest {
          * 토큰 어디에도 걸리지 않는다). `CreditAccountRow`·`CreditAccountView`(둘 다 기존
          * 선언)는 필드(`signupGrantSkipped`·`emailVerified`)만 늘었을 뿐 선언 자체는
          * 그대로라 순증감에 들지 않는다. `KNOWN_SENSITIVE_TYPES` 에는 넣지 않는다.
+         *
+         * 크레딧을 「구독 주기에 포함된 이용량」으로 바꾼 사용자 결정(2026-09-10)이 **둘**을
+         * 더해 208 이다(206 위에) — infrastructure `CreditCycleResetProperties`(설정
+         * 바인딩, `enabled`·`batchSize` 뿐)와 `JdbcCreditCycleReset.Candidate`(`reset()`
+         * 내부에서만 쓰는 `private` 중첩 클래스, `workspaceId`·`ownerId`·`balance`·
+         * `allowance`·`cycleEndsAt`·`renews` 뿐 — 식별자·숫자·시각·boolean 이라 민감 판정
+         * 토큰에 걸리지 않는다). `CreditAccountRow`·`CreditAccountView`·`CreditsProperties`·
+         * `CreditGrantArgs`(전부 기존 선언)는 `allowance`·`cycleEndsAt`·`signupGrantValidity`
+         * 등 필드만 늘었을 뿐 선언 자체는 그대로라 순증감에 들지 않는다. `KNOWN_SENSITIVE_TYPES`
+         * 에는 넣지 않는다.
+         *
+         * 독립 리뷰(HIGH 1건·MEDIUM 3건 수정)가 **하나**를 더해 209 이다(208 위에) —
+         * infrastructure `JdbcCreditCycleReset.ResetOutcome`(`renewOne`/`closeOne` 결과를
+         * `insertTransaction`에 넘기는 `private` 중첩 클래스, `balanceDelta`·`reason`·
+         * `note` 뿐 — `note`는 "N개 주기를 건너뛰었다" 같은 운영 문구이지 사용자 콘텐츠가
+         * 아니다). `KNOWN_SENSITIVE_TYPES`에는 넣지 않는다.
          */
-        const val EXPECTED_SOURCE_DECLARATIONS = 206
+        const val EXPECTED_SOURCE_DECLARATIONS = 209
 
         /** 민감 판정이 반드시 닿아야 하는 타입 — 바닥이다. */
         val KNOWN_SENSITIVE_TYPES =

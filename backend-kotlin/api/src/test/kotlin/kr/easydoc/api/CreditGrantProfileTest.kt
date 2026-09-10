@@ -205,6 +205,111 @@ class CreditGrantProfileUnknownWorkspaceTest {
     }
 }
 
+/**
+ * `--cycle-ends-at`이 있으면 [CreditGrantRunner] 가 [kr.easydoc.application.credit.CreditAccountService.setAllowance]
+ * 를 대신 부른다는 것을 프로필 배선으로 확인한다 — 기존 잔액(30)이 있어도 `--credits`(50)
+ * 로 **더하지 않고 설정**되고(80이 아니라 50), `allowance`·`cycle_ends_at`도 함께 반영된다.
+ */
+@SpringBootTest(
+    webEnvironment = SpringBootTest.WebEnvironment.NONE,
+    properties = ["spring.profiles.active=credit-grant"],
+    args = [
+        "--workspace=00000000-0000-4000-8000-000000000002",
+        "--credits=50",
+        "--reason=plan_monthly",
+        "--cycle-ends-at=2026-10-10T00:00:00Z",
+    ],
+)
+class CreditGrantCycleEndsAtProfileTest {
+    @Autowired
+    private lateinit var context: ApplicationContext
+
+    @Test
+    @DisplayName("cycle-ends-at 이 있으면 잔액을 더하지 않고 설정하고 주기 열을 반영한다")
+    fun `주기를 열면 잔액이 설정된다`() {
+        val runner = context.getBean(CreditGrantRunner::class.java)
+
+        assertThat(runner.exitCode).isZero()
+
+        val jdbc = JdbcClient.create(dataSourceOf(database))
+        val account =
+            jdbc
+                .sql(
+                    "SELECT balance, allowance, cycle_ends_at FROM workspace_credit_accounts " +
+                        "WHERE workspace_id = :id",
+                ).param("id", WORKSPACE_ID)
+                .query { rs, _ ->
+                    Triple(
+                        rs.getInt("balance"),
+                        rs.getInt("allowance"),
+                        rs.getObject("cycle_ends_at", java.time.OffsetDateTime::class.java).toInstant(),
+                    )
+                }.single()
+        assertThat(account.first).isEqualTo(50)
+        assertThat(account.second).isEqualTo(50)
+        assertThat(account.third).isEqualTo(java.time.Instant.parse("2026-10-10T00:00:00Z"))
+
+        // --cycle-renews 를 주지 않았으므로 기본값 false(무료 체험처럼 종료되는 주기)다.
+        val renews =
+            jdbc
+                .sql("SELECT cycle_renews FROM workspace_credit_accounts WHERE workspace_id = :id")
+                .param("id", WORKSPACE_ID)
+                .query { rs, _ -> rs.getBoolean("cycle_renews") }
+                .single()
+        assertThat(renews).isFalse()
+
+        val transactions =
+            jdbc
+                .sql("SELECT kind, balance_delta, reason FROM credit_transactions WHERE workspace_id = :id")
+                .param("id", WORKSPACE_ID)
+                .query { rs, _ -> Triple(rs.getString("kind"), rs.getInt("balance_delta"), rs.getString("reason")) }
+                .list()
+        assertThat(transactions).hasSize(1)
+        // 설정 전 30 → 설정 후 50, delta = +20 (더한 것이 아니라 "80 - 30"이 아니다).
+        assertThat(transactions.single()).isEqualTo(Triple("cycle_set", 20, "plan_monthly"))
+    }
+
+    companion object {
+        private val WORKSPACE_ID = UUID.fromString("00000000-0000-4000-8000-000000000002")
+        private val OWNER_ID = UUID.randomUUID()
+
+        private val database: DatabaseHandle by lazy {
+            PostgresTestSupport.createEmptyDatabase("credit_grant_profile_cycle")
+        }
+
+        @JvmStatic
+        @DynamicPropertySource
+        fun datasourceProperties(registry: DynamicPropertyRegistry) {
+            registry.add("spring.datasource.url") { database.jdbcUrl }
+            registry.add("spring.datasource.username") { database.username }
+            registry.add("spring.datasource.password") { database.password }
+        }
+
+        @JvmStatic
+        @BeforeAll
+        fun seed() {
+            migrate(database)
+            val jdbc = JdbcClient.create(dataSourceOf(database))
+            jdbc
+                .sql("INSERT INTO users (id, email, password_hash) VALUES (:id, :email, :hash)")
+                .param("id", OWNER_ID)
+                .param("email", "owner-$OWNER_ID@example.com")
+                .param("hash", DUMMY_PHC)
+                .update()
+            jdbc
+                .sql("INSERT INTO workspaces (id, user_id, name) VALUES (:id, :userId, :name)")
+                .param("id", WORKSPACE_ID)
+                .param("userId", OWNER_ID)
+                .param("name", "주기 대상 공간")
+                .update()
+            jdbc
+                .sql("INSERT INTO workspace_credit_accounts (workspace_id, balance, reserved) VALUES (:id, 30, 0)")
+                .param("id", WORKSPACE_ID)
+                .update()
+        }
+    }
+}
+
 private const val DUMMY_PHC = "\$argon2id\$v=19\$m=19456,t=2,p=1\$c29tZXNhbHQ\$aGFzaGhhc2hoYXNoaGFzaGhhc2g"
 
 private fun migrate(database: DatabaseHandle) {

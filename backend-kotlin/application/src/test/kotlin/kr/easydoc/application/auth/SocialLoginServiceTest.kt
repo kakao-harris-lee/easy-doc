@@ -43,7 +43,7 @@ class SocialLoginServiceTest {
     }
 
     @Test
-    @DisplayName("가입 부여가 설정되면 소셜 신규 가입도 grant 거래를 만든다")
+    @DisplayName("가입 부여가 설정되면 소셜 신규 가입도 비갱신 주기를 여는 setAllowance 거래를 만든다")
     fun `소셜 가입 부여가 설정되면 grant 한다`() {
         val world = SocialWorld(signupGrant = 50)
         world.provider.nextIdentity = SocialIdentity("google-sub-grant", "grant@example.test", emailVerified = true)
@@ -51,11 +51,13 @@ class SocialLoginServiceTest {
         val start = world.service.start(SocialLoginProviderId.GOOGLE, REDIRECT_URI)
         world.service.callback(SocialLoginProviderId.GOOGLE, "auth-code", start.state, REDIRECT_URI)
 
-        assertThat(world.creditRepository.grantCalls).hasSize(1)
-        val (workspaceId, credits, reason) = world.creditRepository.grantCalls.single()
-        assertThat(workspaceId).isEqualTo(world.creditRepository.ensuredFor.single())
-        assertThat(credits).isEqualTo(50)
-        assertThat(reason).isEqualTo(CreditReason.SIGNUP)
+        assertThat(world.creditRepository.grantCalls).isEmpty()
+        assertThat(world.creditRepository.setAllowanceCalls).hasSize(1)
+        val call = world.creditRepository.setAllowanceCalls.single()
+        assertThat(call.workspaceId).isEqualTo(world.creditRepository.ensuredFor.single())
+        assertThat(call.allowance).isEqualTo(50)
+        assertThat(call.renews).isFalse()
+        assertThat(call.reason).isEqualTo(CreditReason.SIGNUP)
     }
 
     @Test
@@ -974,14 +976,23 @@ private class SocialWorld(
         )
 }
 
+/** [RecordingSocialCreditAccountRepository.setAllowanceCalls] 가 기록하는 호출 한 건. */
+private data class SocialRecordedSetAllowance(
+    val workspaceId: UUID,
+    val allowance: Int,
+    val renews: Boolean,
+    val reason: CreditReason,
+)
+
 /**
  * 크레딧 계정 호출을 기록하는 대역 — 소셜 가입 경로도 `AuthService` 와 같은 규약을 진다.
- * `ensureAccount`·`grant` 만 재정의하고 나머지는 [NoopCreditAccountRepository] 에
- * 위임한다(리뷰 MEDIUM-11).
+ * `ensureAccount`·`grant`·`setAllowance` 만 재정의하고 나머지는 [NoopCreditAccountRepository]
+ * 에 위임한다(리뷰 MEDIUM-11).
  */
 private class RecordingSocialCreditAccountRepository : CreditAccountRepository by NoopCreditAccountRepository {
     val ensuredFor: MutableList<UUID> = mutableListOf()
     val grantCalls: MutableList<Triple<UUID, Int, CreditReason>> = mutableListOf()
+    val setAllowanceCalls: MutableList<SocialRecordedSetAllowance> = mutableListOf()
 
     override fun ensureAccount(workspaceId: UUID) {
         ensuredFor += workspaceId
@@ -997,6 +1008,20 @@ private class RecordingSocialCreditAccountRepository : CreditAccountRepository b
     ): Int {
         grantCalls += Triple(workspaceId, credits, reason)
         return credits
+    }
+
+    override fun setAllowance(
+        workspaceId: UUID,
+        ownerUserId: UUID,
+        allowance: Int,
+        cycleEndsAt: Instant,
+        renews: Boolean,
+        reason: CreditReason,
+        note: String?,
+        actorUserId: UUID?,
+    ): Int {
+        setAllowanceCalls += SocialRecordedSetAllowance(workspaceId, allowance, renews, reason)
+        return allowance
     }
 }
 
