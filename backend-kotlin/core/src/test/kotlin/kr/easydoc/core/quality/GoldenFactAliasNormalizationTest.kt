@@ -45,6 +45,27 @@ class GoldenFactAliasNormalizationTest {
     }
 
     @Test
+    @DisplayName("퍼센트포인트 흡수는 막지 않는다(의도된 통과) — 099")
+    fun `퍼센트포인트 흡수를 의도적으로 허용한다`() {
+        // 리뷰 지적: `presentIn` 이 %→퍼센트 로 정규화한 뒤 부분 문자열로 보므로,
+        // 필수 사실 "1.6%" 가 "1.6%포인트"·"1.6퍼센트포인트" 양쪽에 걸려 통과한다.
+        // 막지 않는 이유는 셋이다 — ⑴ 같은 흡수가 "%" 표기로는 정규화 이전부터 이미
+        // 일어난다(9차 유료 회차, `099` 변환문 "1.6%포인트를 더한 값입니다"에서 필수
+        // 사실 "1.6%" 가 그대로 통과했다). ⑵ 그러니 "퍼센트" 철자만 막으면 같은 뜻의
+        // 두 표기(%포인트 / 퍼센트포인트)가 다르게 판정되는 앞뒤 안 맞는 게이트가 된다.
+        // ⑶ `099` 의 실제 문맥(기준금리 가산)에서는 "%포인트"가 더 정확한 표기다 —
+        // 막으면 옳게 쓴 변환문을 실패로 만든다. 그래서 이 테스트는 회귀 방지가 아니라
+        // **현행 동작(양쪽 다 통과)을 고정**한다.
+        val facts = listOf(RequiredFact("1.6%"))
+
+        val viaSymbol = evaluateFacts("099", "이자율은 0에서 1.6%포인트를 더한 값입니다.", facts)
+        val viaHangul = evaluateFacts("099", "이자율은 0에서 1.6퍼센트포인트를 더한 값입니다.", facts)
+
+        assertThat(viaSymbol.passed).isTrue()
+        assertThat(viaHangul.passed).isTrue()
+    }
+
+    @Test
     @DisplayName("전각 숫자로 쓰인 사실도 있다고 판정한다")
     fun `전각 숫자 별칭을 인정한다`() {
         val facts = listOf(RequiredFact("60만원"))
