@@ -2,6 +2,7 @@ package kr.easydoc.core.quality
 
 import kr.easydoc.core.easyread.StyleCheckResult
 import kr.easydoc.core.easyread.checkStyle
+import kr.easydoc.core.easyread.normalizeFullWidthDigits
 
 /** 한 문서의 스타일 규칙 평가. 외부 API 없이 [checkStyle] 만 쓴다. */
 class StyleEvaluation(
@@ -133,7 +134,32 @@ fun baselineMismatch(
     return "골든 기준선이 바뀌었다 — ${parts.joinToString("; ")}. 기준선 파일은 리뷰 승인 후에만 고친다."
 }
 
-internal fun RequiredFact.presentIn(text: String): Boolean = variants.any { it.isNotEmpty() && it in text }
+internal fun RequiredFact.presentIn(text: String): Boolean {
+    val normalizedText = normalizeForFactMatch(text)
+    return variants.any { it.isNotEmpty() && normalizeForFactMatch(it) in normalizedText }
+}
+
+/**
+ * 사실 존재 여부 비교 전에 변환문과 variant 양쪽에 거는 **표기 별칭** 정규화.
+ *
+ * 8차 유료 회차에서 `required_facts` 누락 오탐 4건이 전부 이 세 겹으로 걷혔다 —
+ * 사실은 옮겨졌는데 표기만 쉬운 말로 바뀌어 정확 문자열 매칭에 걸린 경우다
+ * (`1.6%` → "1.6퍼센트", `２５%` 같은 전각 숫자, `40일이내` → "40일 이내"의 공백).
+ * 적용 순서는 선언 순서(전각→반각 → %→퍼센트 → 공백 제거)와 같다.
+ *
+ * 딱 이 셋만 두고 늘리지 않는다 — 그 이상은 오탐 방지가 아니라 **문장 재구성**을
+ * 흡수하려는 시도가 된다. 같은 회차에서 `049`(9세 이상 → 9세부터 24세까지)와
+ * `092`(월 최대 60만원 → 한 달에 최대 60만원까지)는 표기 변주가 아니라 재구성이었고,
+ * 이걸 규칙으로 흡수하려면 "이상"·"이내" 같은 상한·하한 제약어를 정규화가 무시해야
+ * 한다. 그런데 같은 회차의 `063`은 원문 "1회 연장가능(40일이내)"의 "이내"를 변환문이
+ * 실제로 빠뜨린 **진짜 손실**이었다 — 제약어를 무시하는 정규화는 그 손실을 놓친다.
+ * `049`·`092`를 흡수할지는 골든 코퍼스 `accept` 목록을 사람이 늘릴 **데이터 결정**이고
+ * 이 함수의 범위 밖이다.
+ */
+private fun normalizeForFactMatch(text: String): String =
+    normalizeFullWidthDigits(text)
+        .replace("%", "퍼센트")
+        .filterNot { it.isWhitespace() }
 
 private fun validateDocument(document: GoldenDocument): List<GoldenSchemaIssue> {
     val id = document.id.ifBlank { null }
