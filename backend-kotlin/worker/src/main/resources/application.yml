@@ -93,6 +93,17 @@ easydoc:
       enabled: ${EASYDOC_AUTH_UNVERIFIED_PURGE_ENABLED:true}
       ttl-hours: ${EASYDOC_AUTH_UNVERIFIED_PURGE_TTL_HOURS:24}
       batch-size: ${EASYDOC_AUTH_UNVERIFIED_PURGE_BATCH_SIZE:200}
+    # 만료 인증 아티팩트(이메일 인증 코드·비밀번호 재설정 코드·OAuth state) 파기
+    # (`docs/plans/2026-09-10-personal-data-inventory.md` §2.2 확정 결함). 앞의 두 표는
+    # `users` FK CASCADE 로만 사라져 10분이면 만료되는 코드가 계정이 사는 동안 계속
+    # 쌓이고, `oauth_states`는 `user_id`가 NULL인 행(가입·로그인 전 흐름)은 CASCADE
+    # 경로가 아예 없어 영구 잔존·단조 증가한다 — `RetentionPurgeScheduler` 다섯 번째
+    # 단계가 이 배치로 닫는다. 기본 보존기간 24시간은 코드 TTL(10분)·재발송 쿨다운
+    # (60초)을 크게 웃돌아 어떤 기능도 건드리지 않는다(`ExpiredAuthArtifactPurgeConfiguration` KDoc).
+    ephemeral-purge:
+      enabled: ${EASYDOC_AUTH_EPHEMERAL_PURGE_ENABLED:true}
+      retention-hours: ${EASYDOC_AUTH_EPHEMERAL_PURGE_RETENTION_HOURS:24}
+      batch-size: ${EASYDOC_AUTH_EPHEMERAL_PURGE_BATCH_SIZE:500}
   # 크레딧 주기 초기화 — 크레딧을 「구독 주기에 포함된 이용량」으로 바꾼 사용자 결정
   # (2026-09-10). `cycle_ends_at`이 지난 계정마다 남은 잔액을 버리고 그 주기의 이용량
   # (`allowance`)으로 다시 채운다(`CreditCycleResetScheduler`, 매일 03:30). `cycle_ends_at

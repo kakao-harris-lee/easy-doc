@@ -521,8 +521,18 @@ class SensitiveToStringReachTest {
          * `insertTransaction`에 넘기는 `private` 중첩 클래스, `balanceDelta`·`reason`·
          * `note` 뿐 — `note`는 "N개 주기를 건너뛰었다" 같은 운영 문구이지 사용자 콘텐츠가
          * 아니다). `KNOWN_SENSITIVE_TYPES`에는 넣지 않는다.
+         *
+         * 만료 인증 아티팩트(이메일 인증 코드·비밀번호 재설정 코드·OAuth state) 파기
+         * (`docs/plans/2026-09-10-personal-data-inventory.md` §2.2)가 **하나**를 더해 210
+         * 이다(209 위에) — infrastructure `AuthEphemeralPurgeProperties`(설정 바인딩,
+         * `enabled`·`retentionHours`·`batchSize` 뿐 — boolean 하나와 정수 둘이라 민감 판정
+         * 토큰 어디에도 걸리지 않는다). 이 파기의 결과 타입
+         * `ExpiredAuthArtifactPurgeResult`(application.auth)는 `SignupGrantRecordPurgeResult`·
+         * `UnverifiedAccountPurgeResult`와 같은 판단으로 **일반 `class`**에 표별 건수만
+         * 남기는 커스텀 `toString()`을 직접 두므로(해시·salt·state·nonce는 결과 객체 자리에
+         * 없다) 이 숫자에 들지 않는다. `KNOWN_SENSITIVE_TYPES`에는 넣지 않는다.
          */
-        const val EXPECTED_SOURCE_DECLARATIONS = 209
+        const val EXPECTED_SOURCE_DECLARATIONS = 210
 
         /** 민감 판정이 반드시 닿아야 하는 타입 — 바닥이다. */
         val KNOWN_SENSITIVE_TYPES =
