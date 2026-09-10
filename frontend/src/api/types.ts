@@ -446,7 +446,8 @@ export type CreditTransactionKind =
  * `components/schemas/CreditTransactionReason`. `cycle_end`는 `kind=cycle_reset`이면서
  * 갱신 없이 주기가 닫힐 때다 — 갱신(`plan_monthly`)과 구분된다.
  */
-export type CreditReason = 'signup' | 'plan_monthly' | 'manual' | 'refund' | 'conversion' | 'cycle_end'
+export type CreditReason =
+  'signup' | 'plan_monthly' | 'manual' | 'refund' | 'conversion' | 'cycle_end'
 
 /**
  * `WorkspaceCreditsResponse.transactions` 항목. 계약 `components/schemas/CreditTransaction`.
