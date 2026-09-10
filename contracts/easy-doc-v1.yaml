@@ -41,7 +41,7 @@ openapi: 3.1.0
 
 info:
   title: Easy-Read AI API
-  version: "2.29.0"
+  version: "2.31.0"
   x-baselined-at: "2026-08-12"       # 초판 기준선을 뜬 날 (동결일이 아니다)
   x-rebased-at: "2026-08-12"         # 계약의 성격을 "개선 대상"으로 다시 정의한 날
   x-source-runtime: "Python 3.12 / FastAPI (app/main.py) — 과거 참고 구현이었고 2026-08-24 저장소에서 제거됨(git 태그 pre-python-removal-20260824). 기준선 출처였을 뿐 정답이 아니었다"
@@ -518,13 +518,14 @@ x-cors:
       X-Remaining-Call-Budget,
       X-Credit-Balance,
       X-Credits-Required,
+      X-Personal-Data-Kinds,
     ]
   x-note: |
     expose_headers가 빠지면 서버 응답은 완전한데 **브라우저 JS만** 헤더를 못 읽는다.
     다운로드 파일명(Content-Disposition)·접수 주소(Location)·재변환 예산 쿨다운
     (Retry-After·X-Remaining-Call-Budget)·크레딧 잔액/필요량(X-Credit-Balance·
-    X-Credits-Required)이 그 대상이다. 서버 테스트로는 잡히지 않으므로 브라우저
-    컨텍스트에서 확인한다.
+    X-Credits-Required)·개인정보 경고용 검출 종류(X-Personal-Data-Kinds)가 그 대상이다.
+    서버 테스트로는 잡히지 않으므로 브라우저 컨텍스트에서 확인한다.
 
     **2.22.0 정정** — 이 넷(Retry-After·X-Remaining-Call-Budget·X-Credit-Balance·
     X-Credits-Required)이 이전까지 이 목록에 없었다. `ContractHeaderDeclarationTest`가
@@ -532,6 +533,8 @@ x-cors:
     별개의 관문이라 그 테스트가 이 누락을 잡지 못했다 — 프런트(`client.ts`)는 값을
     파싱하는 코드를 갖췄지만 교차 출처(Compose: 8080 → 8100)에서는 실제로 `null`만
     받고 있었다.
+
+    **2.31.0** — `X-Personal-Data-Kinds`(개인정보 경고용 검출)를 같은 이유로 더한다.
   # 미처리 500 응답의 CORS 헤더 — Python과 Kotlin이 의도적으로 다른 지점.
   # 이 절이 그 결정의 정본이다(다른 문서에 옮겨 적지 않는다).
   x-unhandled-500-cors:
@@ -2506,9 +2509,18 @@ paths:
         확인하는 수단이 된다.
 
         검사 순서: **이메일 인증(403)** → 파일 크기(413) → 추출(422) → 본문 길이(422) →
-        **작업 공간: 형식(422) 다음 소유권(404)** → **저장 정의역(422)** →
-        **크레딧 예약(402)** → **저장과 큐 등록(한 트랜잭션)** → 커밋.
+        **개인정보 검출(422)** → **작업 공간: 형식(422) 다음 소유권(404)** →
+        **저장 정의역(422)** → **크레딧 예약(402)** → **저장과 큐 등록(한 트랜잭션)** →
+        커밋.
         작업 공간 확인이 저장보다 **먼저**여야 거절당한 업로드가 기본 공간에 남지 않는다.
+
+        **개인정보 검출이 본문 길이 다음, 작업 공간 판정 앞이다(2.31.0 신설, 개인정보
+        경고용 검출 계획 §2.2).** 정규화된 본문에서 주민등록번호(검증식 통과)·카드번호
+        (Luhn 통과)를 찾아, 찾았는데 `personal_data_acknowledged`가 참이 아니면 422를
+        내고 문서를 만들지 않는다 — 값·위치·건수는 남기지 않고 검출된 종류만
+        `X-Personal-Data-Kinds` 헤더(정렬된 소문자, 쉼표 구분)로 낸다. 이용자가
+        확인하면(`personal_data_acknowledged: true`) 같은 요청을 그대로 다시 보내
+        등록한다 — 값을 바꾸지 않는다(자동 마스킹이 아니다).
 
         **크레딧 예약이 402 다(2.22.0 신설, 크레딧 계정 계획 §2 결정 4, C1).** 필요
         크레딧은 `ceil(char_count / 1000)`이고, `documents`/`conversions` insert **앞**
@@ -2624,12 +2636,22 @@ paths:
         '415': { $ref: '#/components/responses/UnsupportedMediaType' }
         '422':
           description: |
-            빈 본문 · 20,000자 초과 · 지원하지 않는 형식 · 추출 실패 ·
+            빈 본문 · 20,000자 초과 · **개인정보 경고용 검출**(2.31.0, 아래 헤더 참고) ·
+            지원하지 않는 형식 · 추출 실패 ·
             **텍스트로 저장할 수 없는 문자**(`x-stored-text-domain`) · 잘못된 JSON ·
             `workspace_id` 형식 오류 · 필드 누락.
             앞의 것들은 문자열 detail, 마지막은 배열 detail이다.
             **이 목록도 `examples`도 전칭이 아니다** — 새 거절 갈래가 생기면 그 갈래의
             조항과 예시를 같은 변경 단위에서 더한다.
+          headers:
+            X-Personal-Data-Kinds:
+              description: |
+                **`personal_data_detected` 갈래에서만 실린다** — 나머지 422 갈래에는
+                없다. 검출된 종류의 집합을 **정렬된 소문자, 쉼표 구분**으로 낸다(예
+                `card,rrn`) — 개인정보 경고용 검출 계획 §2.3. 값·위치·건수는 어디에도
+                없다. **CORS `expose_headers`에 포함되어야 브라우저 JS가 읽을 수 있다.**
+              required: false
+              schema: { type: string, examples: ["rrn", "card,rrn"] }
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
@@ -2638,6 +2660,8 @@ paths:
                   value: { detail: "본문이 비어 있습니다" }
                 too_long:
                   value: { detail: "현재는 20,000자 이하 문서만 변환할 수 있습니다" }
+                personal_data_detected:
+                  value: { detail: "개인정보로 보이는 내용이 있습니다. 확인 후 다시 시도하세요." }
                 unsupported_format:
                   value: { detail: "지원 형식: docx, pdf, hwpx, txt" }
                 undecodable_text:
@@ -5284,6 +5308,18 @@ components:
             역직렬화 층에서 재면 배열 `detail`이 나가 위 문장을 위반한다. 검사가 놓이는
             **순서**는 `paths./documents.post.description`이 정한다 — 형식은 소유권의
             선결이므로 같은 단계이고 크기·추출·본문 길이보다 **뒤다.**
+        personal_data_acknowledged:
+          type: boolean
+          default: false
+          description: |
+            개인정보 경고용 검출(2.31.0, 개인정보 경고용 검출 계획 §2.2)을 이용자가
+            확인했는지. 생략하면 거짓이다.
+
+            서버가 정규화된 본문에서 주민등록번호(검증식 통과)·카드번호(Luhn 통과)를
+            찾았는데 이 값이 참이 아니면 **422**이고 문서·변환 어느 것도 만들어지지
+            않는다 — 검출된 종류는 `X-Personal-Data-Kinds` 헤더로 낸다.
+            이용자가 화면의 "이대로 진행"을 누르면 **같은 요청**을 이 값만 `true`로
+            바꿔 다시 보낸다 — 값 자체는 바꾸지 않는다(자동 마스킹이 아니다).
 
     DocumentFileRequest:
       type: object
@@ -5291,7 +5327,8 @@ components:
       description: |
         파일 업로드 요청 (multipart/form-data 모드).
         **FastAPI 자동 생성 OpenAPI에는 이 요청 본문이 없다** — 손으로 적었다.
-        React `createDocumentFromFile`은 `file`과 `workspace_id`만 보낸다.
+        React `createDocumentFromFile`은 `file`·`workspace_id`·(검출 재전송일 때만)
+        `personal_data_acknowledged`를 보낸다.
       properties:
         file:
           type: string
@@ -5315,6 +5352,12 @@ components:
           description: |
             빈 문자열은 미지정과 같게 다룬다. UUID 형식이 아니면 422
             ("작업 공간 식별자 형식이 올바르지 않습니다") — **값 자체는 메시지에 담지 않는다.**
+        personal_data_acknowledged:
+          type: string
+          description: |
+            폼 값은 전부 문자열이다 — `"true"`만 참으로 다루고, 생략·그 밖의 값은 거짓이다.
+            `DocumentTextRequest.personal_data_acknowledged`와 같은 규칙(2.31.0, 개인정보
+            경고용 검출 계획 §2.2)이며 두 팔이 같은 검출·확인 처분을 탄다.
 
     DocumentCreatedResponse:
       type: object
@@ -6668,6 +6711,43 @@ components:
 # 변경 이력
 # =============================================================================
 x-changelog:
+  - version: "2.31.0"
+    date: "2026-09-10"
+    revision: "PERSONAL-DATA-WARNING"   # 등록 전 개인정보 경고용 검출 — 막지 않고, 값을 바꾸지 않는다
+    author: contract-keeper
+    change: |
+      **문서 등록 전에 한 번 멈춰 세우는 경고용 검출을 더한다.** 2026-09-07에 제거한
+      자동 마스킹(PR #58, 2.20.0)을 되살리는 것이 **아니다** — 값을 바꾸지 않는다.
+      사용자 결정: "경고용 검출로만 진행" — 막지 않고, 검출값을 저장하지 않는다.
+
+      ⑴ **주민등록번호(검증식 통과)와 카드번호(Luhn 통과) 둘만 검출한다.** 전화번호·
+         이메일은 대상이 아니다 — 공공 안내문에 담당자 연락처가 정상적으로 들어 있어
+         경고하면 소음이 된다. 자릿수만 보는 검출은 오탐이 쏟아지므로 검증식을 통과한
+         것만 경고한다.
+      ⑵ **`DocumentTextRequest`·`DocumentFileRequest`에 `personal_data_acknowledged`
+         (boolean, 선택, 기본 거짓) 신설.** 검출됐는데 이 값이 참이 아니면 `createDocument`
+         가 **422**를 낸다 — 문서도 변환도 만들어지지 않는다(`x-stored-text-domain`과
+         같은 자리, 소유권 확인 뒤 저장 정의역 앞). 참이면 정상 등록(202)된다.
+      ⑶ **오류 본문은 `{detail}` 고정 문구뿐이다** — 검출된 종류·값·위치·건수는 어디에도
+         없다. 종류만 새 헤더 `X-Personal-Data-Kinds`(정렬된 소문자, 쉼표 구분: 예
+         `card,rrn`)로 낸다 — `x-error-body-universality`가 이미 지키는 패턴
+         (`InsufficientCredits`의 `X-Credit-Balance`·`X-Credits-Required`)과 같다.
+         **CORS `expose_headers`에 추가한다** — 빠뜨리면 브라우저 JS가 못 읽는다.
+      ⑷ **마이그레이션 없음.** 검출은 `core`의 순수 함수이고 DB에 아무것도 남기지
+         않는다 — 거절된 등록은 흔적이 없다.
+      ⑸ **엔드포인트 수는 44로 그대로다.** 기존 `POST /documents`에 선택 필드 하나와
+         422 갈래 하나, 헤더 하나만 더한다.
+    ground: |
+      계획 `docs/plans/2026-09-10-personal-data-warning.md` §2 — 사용자 결정
+      "경고용 검출로만 진행. 막지 않고, 값을 바꾸지 않고, 검출값을 저장하지 않는다."
+      근거는 `docs/plans/2026-09-10-legal-tax-policy-final.md` §3.5-7, master-plan P0-15.
+    compatibility: |
+      **넓히는 변경이다.** 요청 필드는 선택(기본 거짓)이라 기존 클라이언트는 이 필드
+      없이도 그대로 동작한다 — 검출되지 않는 본문은 이전과 똑같이 202를 받는다.
+      검출되는 본문만 새로 422를 받으므로, 그 본문을 이미 보내고 있던 옛 클라이언트는
+      화면에 경고와 재전송 수단이 없으면 그 등록이 막힌 것처럼 보일 수 있다 — 프런트는
+      이 버전과 같은 변경 단위에서 422 + `X-Personal-Data-Kinds`를 안내와 "이대로
+      진행" 재전송으로 처리하도록 갱신됐다.
   - version: "2.29.0"
     date: "2026-09-09"
     revision: "SIGNUP-GRANT-ONCE"   # 가입 크레딧은 이메일당 한 번 — 재가입 고지

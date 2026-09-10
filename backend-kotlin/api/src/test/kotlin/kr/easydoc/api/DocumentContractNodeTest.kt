@@ -160,7 +160,13 @@ class DocumentContractNodeTest {
     fun `파일 요청 파트 이름이 계약과 같다`() {
         val properties = ContractSpec.schemaPropertyNames(FILE_REQUEST_SCHEMA)
 
-        assertThat(properties).containsExactlyInAnyOrder(FILE_PROPERTY, TITLE_PROPERTY, WORKSPACE_ID_PROPERTY)
+        assertThat(properties)
+            .containsExactlyInAnyOrder(
+                FILE_PROPERTY,
+                TITLE_PROPERTY,
+                WORKSPACE_ID_PROPERTY,
+                PERSONAL_DATA_ACKNOWLEDGED_PROPERTY,
+            )
         assertThat(ContractSpec.schemaRequired(FILE_REQUEST_SCHEMA)).containsExactly(FILE_PROPERTY)
 
         assertThat(ContractSpec.text(COMPONENTS, SCHEMAS, FILE_REQUEST_SCHEMA, PROPERTIES, FILE_PROPERTY, DESCRIPTION))
@@ -328,6 +334,7 @@ class DocumentContractNodeTest {
         const val TITLE_PROPERTY = "title"
         const val FILE_PROPERTY = "file"
         const val WORKSPACE_ID_PROPERTY = "workspace_id"
+        const val PERSONAL_DATA_ACKNOWLEDGED_PROPERTY = "personal_data_acknowledged"
 
         const val JSON_MEDIA_TYPE = "application/json"
         const val MULTIPART_MEDIA_TYPE = "multipart/form-data"

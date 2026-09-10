@@ -524,6 +524,139 @@ describe('업로드 화면', () => {
     })
   })
 
+  describe('개인정보 경고용 검출 (422)', () => {
+    /** `X-Personal-Data-Kinds`가 실린 422 — `createDocumentFromText`·`createDocumentFromFile`이 던진다. */
+    function personalDataDetected(kinds: string[] = ['rrn']): ApiError {
+      return new ApiError(
+        422,
+        '개인정보로 보이는 내용이 있습니다. 확인 후 다시 시도하세요.',
+        null,
+        null,
+        null,
+        null,
+        kinds,
+      )
+    }
+
+    it('붙여넣기에서 검출되면 경고와 "이대로 진행"이 보이고, 누르면 재전송되어 성공한다', async () => {
+      const user = userEvent.setup()
+      vi.mocked(createDocumentFromText)
+        .mockRejectedValueOnce(personalDataDetected())
+        .mockResolvedValueOnce(documentCreationResult())
+      renderPage()
+
+      await user.type(screen.getByLabelText('문서 제목'), '주민등록번호 안내')
+      await user.type(screen.getByLabelText('바꿀 글'), '주민등록번호는 900101-1234568 입니다')
+      await user.click(screen.getByRole('button', { name: '쉬운 글 초안 만들기' }))
+
+      const warning = await screen.findByRole('alert')
+      const proceed = within(warning).getByRole('button', { name: '이대로 진행' })
+
+      await user.click(proceed)
+
+      expect(vi.mocked(createDocumentFromText)).toHaveBeenNthCalledWith(
+        1,
+        '주민등록번호는 900101-1234568 입니다',
+        'w1',
+        '주민등록번호 안내',
+      )
+      expect(vi.mocked(createDocumentFromText)).toHaveBeenNthCalledWith(
+        2,
+        '주민등록번호는 900101-1234568 입니다',
+        'w1',
+        '주민등록번호 안내',
+        true,
+      )
+      expect(await screen.findByRole('heading', { name: '변환 화면' })).toBeInTheDocument()
+    })
+
+    it('파일 업로드에서 검출되면 경고와 "이대로 진행"이 보이고, 누르면 재전송되어 성공한다', async () => {
+      const user = userEvent.setup()
+      vi.mocked(createDocumentFromFile)
+        .mockRejectedValueOnce(personalDataDetected(['card']))
+        .mockResolvedValueOnce(documentCreationResult())
+      renderPage()
+
+      const input = await chooseFileMode(user)
+      await user.upload(input, docxFile())
+      await user.type(screen.getByLabelText('문서 제목'), '카드번호 안내')
+      await user.click(screen.getByRole('button', { name: '쉬운 글 초안 만들기' }))
+
+      const warning = await screen.findByRole('alert')
+      await user.click(within(warning).getByRole('button', { name: '이대로 진행' }))
+
+      expect(vi.mocked(createDocumentFromFile)).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({ name: '안내문.docx' }),
+        'w1',
+        '카드번호 안내',
+        true,
+      )
+      expect(await screen.findByRole('heading', { name: '변환 화면' })).toBeInTheDocument()
+    })
+
+    it('검출 없이 일반 422를 받으면 경고 대신 일반 오류 문단을 보여준다', async () => {
+      const user = userEvent.setup()
+      vi.mocked(createDocumentFromText).mockRejectedValue(
+        new ApiError(422, '지원 형식: docx, pdf, hwpx, txt'),
+      )
+      renderPage()
+
+      await user.type(screen.getByLabelText('문서 제목'), '안내문')
+      await user.type(screen.getByLabelText('바꿀 글'), '본문')
+      await user.click(screen.getByRole('button', { name: '쉬운 글 초안 만들기' }))
+
+      expect(await screen.findByRole('alert')).toHaveTextContent('지원 형식: docx, pdf, hwpx, txt')
+      expect(screen.queryByRole('button', { name: '이대로 진행' })).not.toBeInTheDocument()
+    })
+
+    it('경고가 뜬 뒤 본문을 바꾸면 경고가 사라진다 — 그 경고는 지운 입력에만 해당한다', async () => {
+      const user = userEvent.setup()
+      vi.mocked(createDocumentFromText).mockRejectedValue(personalDataDetected())
+      renderPage()
+
+      await user.type(screen.getByLabelText('문서 제목'), '주민등록번호 안내')
+      await user.type(screen.getByLabelText('바꿀 글'), '주민등록번호는 900101-1234568 입니다')
+      await user.click(screen.getByRole('button', { name: '쉬운 글 초안 만들기' }))
+      await screen.findByRole('alert')
+
+      await user.type(screen.getByLabelText('바꿀 글'), ' 추가 입력')
+
+      expect(screen.queryByRole('button', { name: '이대로 진행' })).not.toBeInTheDocument()
+    })
+
+    it(
+      '제목을 바꾼 뒤 "이대로 진행"을 누르면 바뀐 현재 제목으로 재전송한다 ' +
+        '(경고가 떴을 때의 옛 값을 클로저에 가둔 채 재전송하면 안 된다)',
+      async () => {
+        const user = userEvent.setup()
+        vi.mocked(createDocumentFromText)
+          .mockRejectedValueOnce(personalDataDetected())
+          .mockResolvedValueOnce(documentCreationResult())
+        renderPage()
+
+        await user.type(screen.getByLabelText('문서 제목'), '처음 제목')
+        await user.type(screen.getByLabelText('바꿀 글'), '주민등록번호는 900101-1234568 입니다')
+        await user.click(screen.getByRole('button', { name: '쉬운 글 초안 만들기' }))
+        await screen.findByRole('alert')
+
+        // 제목은 본문·파일·모드가 아니므로 바꿔도 경고가 남아 있다 — "이대로 진행"이
+        // 재전송 시점에 현재 제목을 다시 읽는지가 이 테스트의 요점이다.
+        await user.type(screen.getByLabelText('문서 제목'), ' (수정됨)')
+        await user.click(screen.getByRole('button', { name: '이대로 진행' }))
+
+        expect(vi.mocked(createDocumentFromText)).toHaveBeenNthCalledWith(
+          2,
+          '주민등록번호는 900101-1234568 입니다',
+          'w1',
+          '처음 제목 (수정됨)',
+          true,
+        )
+        expect(await screen.findByRole('heading', { name: '변환 화면' })).toBeInTheDocument()
+      },
+    )
+  })
+
   it('안내 카드의 지원 형식·크기는 코드 상수에서 나온다', () => {
     renderPage()
 

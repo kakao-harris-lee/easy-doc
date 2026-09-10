@@ -65,6 +65,7 @@ class ContractHeaderDeclarationTest {
                 "X-Remaining-Call-Budget",
                 "X-Credit-Balance",
                 "X-Credits-Required",
+                "X-Personal-Data-Kinds",
             )
 
         /** 반드시 세어져야 하는 헤더 — 바닥이다(정확 일치가 아니라 포함). */
@@ -79,6 +80,7 @@ class ContractHeaderDeclarationTest {
                 "X-Remaining-Call-Budget",
                 "X-Credit-Balance",
                 "X-Credits-Required",
+                "X-Personal-Data-Kinds",
             )
     }
 }

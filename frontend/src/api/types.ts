@@ -172,6 +172,11 @@ export interface DocumentTextRequest {
   title?: string | null
   /** 담을 작업 공간. 없으면 서버가 기본(가장 먼저 만든) 작업 공간에 담는다. */
   workspace_id?: string | null
+  /**
+   * 개인정보 경고용 검출을 확인했는지. 생략하면 거짓이다 — 검출됐는데 참이 아니면
+   * 422(`X-Personal-Data-Kinds` 헤더로 종류를 낸다).
+   */
+  personal_data_acknowledged?: boolean
 }
 
 /** POST /documents 응답 (202 — 변환은 아직 시작 전). */

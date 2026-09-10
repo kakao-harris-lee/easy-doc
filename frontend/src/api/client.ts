@@ -63,6 +63,13 @@ export class ApiError extends Error {
    * 못하면 null이다.
    */
   readonly creditsRequired: number | null
+  /**
+   * `createDocument`의 422(개인정보 경고용 검출) 응답이 내는 `X-Personal-Data-Kinds`
+   * (정렬된 소문자, 쉼표 구분: 예 `["card","rrn"]`) — 개인정보 경고용 검출 계획 §2.3.
+   * 그 헤더가 없으면(이 갈래가 아닌 다른 422) null이다. 이 값이 `null`이 아니면 화면이
+   * 일반 오류 문단 대신 경고 배너와 "이대로 진행" 재전송을 보여준다.
+   */
+  readonly personalDataKinds: string[] | null
 
   constructor(
     status: number,
@@ -71,6 +78,7 @@ export class ApiError extends Error {
     remainingCallBudget: number | null = null,
     creditBalance: number | null = null,
     creditsRequired: number | null = null,
+    personalDataKinds: string[] | null = null,
   ) {
     super(message)
     this.name = 'ApiError'
@@ -79,6 +87,7 @@ export class ApiError extends Error {
     this.remainingCallBudget = remainingCallBudget
     this.creditBalance = creditBalance
     this.creditsRequired = creditsRequired
+    this.personalDataKinds = personalDataKinds
   }
 }
 
@@ -177,6 +186,7 @@ async function send(path: string, options: RequestOptions): Promise<Response> {
       parseIntHeader(response.headers.get('X-Remaining-Call-Budget')),
       parseIntHeader(response.headers.get('X-Credit-Balance')),
       parseIntHeader(response.headers.get('X-Credits-Required')),
+      parseListHeader(response.headers.get('X-Personal-Data-Kinds')),
     )
   }
   return response
@@ -194,6 +204,17 @@ function parseIntHeader(header: string | null): number | null {
   }
   const value = Number(header)
   return Number.isInteger(value) ? value : null
+}
+
+/** 쉼표로 구분한 값 목록을 실어 나르는 헤더를 읽는다(`X-Personal-Data-Kinds`). 없으면 null. */
+function parseListHeader(header: string | null): string[] | null {
+  if (header === null || header.trim() === '') {
+    return null
+  }
+  return header
+    .split(',')
+    .map((value) => value.trim())
+    .filter((value) => value !== '')
 }
 
 /** JSON 응답을 기대하는 요청. */
@@ -225,15 +246,23 @@ export interface DocumentCreationResult {
  *
  * workspaceId가 null이면 싣지 않는다 — 서버가 기본 작업 공간에 담는다. 작업 공간
  * 목록을 아직 못 불러온 상태에서도 업로드가 막히지 않게 하려는 선택이다.
+ *
+ * `personalDataAcknowledged`는 개인정보 경고용 검출(422, `X-Personal-Data-Kinds`)을
+ * 이용자가 확인하고 "이대로 진행"을 눌렀을 때만 참으로 보낸다 — 값 자체는 바꾸지
+ * 않는다(자동 마스킹이 아니다).
  */
 export async function createDocumentFromText(
   text: string,
   workspaceId: string | null,
   title?: string,
+  personalDataAcknowledged = false,
 ): Promise<DocumentCreationResult> {
   const body: DocumentTextRequest = { text, title: title ?? null }
   if (workspaceId !== null) {
     body.workspace_id = workspaceId
+  }
+  if (personalDataAcknowledged) {
+    body.personal_data_acknowledged = true
   }
   const response = await send('/documents', { method: 'POST', body })
   return {
@@ -242,11 +271,17 @@ export async function createDocumentFromText(
   }
 }
 
-/** POST /documents — 업로드 파일로 문서를 등록한다 (multipart). */
+/**
+ * POST /documents — 업로드 파일로 문서를 등록한다 (multipart).
+ *
+ * `personalDataAcknowledged`는 [createDocumentFromText]와 같다 — 두 팔이 같은 검출·확인
+ * 규칙을 탄다.
+ */
 export async function createDocumentFromFile(
   file: File,
   workspaceId: string | null,
   title?: string,
+  personalDataAcknowledged = false,
 ): Promise<DocumentCreationResult> {
   const form = new FormData()
   form.append('file', file)
@@ -255,6 +290,9 @@ export async function createDocumentFromFile(
   }
   if (workspaceId !== null) {
     form.append('workspace_id', workspaceId)
+  }
+  if (personalDataAcknowledged) {
+    form.append('personal_data_acknowledged', 'true')
   }
   const response = await send('/documents', { method: 'POST', body: form })
   return {

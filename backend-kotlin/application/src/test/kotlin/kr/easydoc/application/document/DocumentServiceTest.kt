@@ -23,8 +23,10 @@ import kr.easydoc.core.exceptions.DocumentExtractionException
 import kr.easydoc.core.exceptions.EmailNotVerifiedException
 import kr.easydoc.core.exceptions.InvalidInputException
 import kr.easydoc.core.exceptions.NotFoundException
+import kr.easydoc.core.exceptions.PersonalDataDetectedException
 import kr.easydoc.core.exceptions.StorageException
 import kr.easydoc.core.exceptions.UploadTooLargeException
+import kr.easydoc.core.privacy.PersonalDataKind
 import kr.easydoc.core.segment.SourceStructure
 import kr.easydoc.core.segment.UnitKind
 import kr.easydoc.core.segment.splitUnits
@@ -134,6 +136,95 @@ class DocumentServiceTest {
         val accepted = world.service.createFromText(OWNER, body, null, null)
 
         assertThat(accepted.charCount).isEqualTo(MAX_CONVERTIBLE_CHARS)
+    }
+
+    @Test
+    @DisplayName("주민등록번호가 검출되면 확인 없이는 422 — 문서가 남지 않는다")
+    fun `주민등록번호 검출은 확인 없이 거절한다`() {
+        val world = World()
+
+        assertThatThrownBy {
+            world.service.createFromText(OWNER, "주민등록번호는 $VALID_RRN 입니다", null, null)
+        }.isInstanceOf(PersonalDataDetectedException::class.java)
+            .hasMessage(PERSONAL_DATA_DETECTED_MESSAGE)
+            .extracting { (it as PersonalDataDetectedException).kinds }
+            .isEqualTo(setOf(PersonalDataKind.RRN))
+
+        assertThat(world.documents.inserted).isEmpty()
+    }
+
+    @Test
+    @DisplayName("카드번호가 검출되면 확인 없이는 422 — 문서가 남지 않는다")
+    fun `카드번호 검출은 확인 없이 거절한다`() {
+        val world = World()
+
+        assertThatThrownBy {
+            world.service.createFromText(OWNER, "카드번호는 $VALID_CARD 입니다", null, null)
+        }.isInstanceOf(PersonalDataDetectedException::class.java)
+            .extracting { (it as PersonalDataDetectedException).kinds }
+            .isEqualTo(setOf(PersonalDataKind.CARD))
+
+        assertThat(world.documents.inserted).isEmpty()
+    }
+
+    @Test
+    @DisplayName("개인정보 검출이 작업 공간 조회보다 먼저다 — 본문 길이 다음, 작업 공간 앞이다")
+    fun `개인정보 검출이 작업 공간 조회보다 먼저다`() {
+        val world = World()
+
+        assertThatThrownBy {
+            world.service.createFromText(OWNER, "카드번호는 $VALID_CARD 입니다", null, null)
+        }.isInstanceOf(PersonalDataDetectedException::class.java)
+
+        assertThat(world.workspaces.lookups).describedAs("작업 공간을 먼저 조회했다").isZero()
+    }
+
+    @Test
+    @DisplayName("전화번호·이메일만 있는 본문은 검출되지 않고 정상 접수된다 — 오탐 억제(A5)")
+    fun `전화번호와 이메일만 있는 본문은 통과한다`() {
+        val world = World()
+
+        val accepted =
+            world.service.createFromText(OWNER, "문의: 02-1234-5678, 이메일 help@example.test", null, null)
+
+        assertThat(accepted).isNotNull()
+        assertThat(world.documents.inserted).hasSize(1)
+    }
+
+    @Test
+    @DisplayName("확인 플래그를 참으로 보내면 검출돼도 정상 등록된다")
+    fun `확인하면 검출돼도 등록된다`() {
+        val world = World()
+
+        val accepted =
+            world.service.createFromText(
+                OWNER,
+                "주민등록번호는 $VALID_RRN 입니다",
+                null,
+                null,
+                personalDataAcknowledged = true,
+            )
+
+        assertThat(accepted).isNotNull()
+        assertThat(world.documents.inserted).hasSize(1)
+    }
+
+    @Test
+    @DisplayName("파일 업로드 경로도 같은 검출 규칙을 탄다 — 확인 없이는 422, 문서가 남지 않는다")
+    fun `파일 업로드도 개인정보 검출을 탄다`() {
+        val world = World(extracted = "카드번호는 $VALID_CARD 입니다")
+
+        assertThatThrownBy {
+            world.service.createFromFile(OWNER, "a.docx", ORIGINAL_FILE, null, null)
+        }.isInstanceOf(PersonalDataDetectedException::class.java)
+
+        assertThat(world.documents.inserted).isEmpty()
+
+        val acknowledged =
+            world.service.createFromFile(OWNER, "a.docx", ORIGINAL_FILE, null, null, personalDataAcknowledged = true)
+
+        assertThat(acknowledged).isNotNull()
+        assertThat(world.documents.inserted).hasSize(1)
     }
 
     @Test
@@ -605,6 +696,12 @@ class DocumentServiceTest {
          */
         val ORIGINAL_FILE: ByteArray =
             byteArrayOf(0x50, 0x4B, 0x03, 0x04, 0x80.toByte(), 0xFF.toByte(), 0x00, 0xC0.toByte())
+
+        /** 검증식(모듈러스 11)을 통과하는 합성 주민등록번호 — 실존 인물과 무관하다. */
+        const val VALID_RRN = "900101-1234568"
+
+        /** Luhn 을 통과하는 표준 테스트 카드번호(Visa 공개 테스트 번호). */
+        const val VALID_CARD = "4111-1111-1111-1111"
     }
 
     /**

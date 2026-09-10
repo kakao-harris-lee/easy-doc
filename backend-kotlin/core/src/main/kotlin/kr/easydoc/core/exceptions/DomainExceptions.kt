@@ -1,5 +1,7 @@
 package kr.easydoc.core.exceptions
 
+import kr.easydoc.core.privacy.PersonalDataKind
+
 /** 도메인 예외 정의. `app/exceptions.py` 를 그대로 옮긴 것이다. */
 open class EasyDocException(message: String) : RuntimeException(message)
 
@@ -155,4 +157,18 @@ class InsufficientCreditsException(
     message: String,
     val available: Int,
     val required: Int,
+) : EasyDocException(message)
+
+/**
+ * 등록하려는 본문에서 개인정보로 보이는 값이 검출됐는데 이용자가 확인하지 않았다 —
+ * 개인정보 경고용 검출 계획 `docs/plans/2026-09-10-personal-data-warning.md` §2.2,
+ * `DocumentService.store` 전용.
+ *
+ * **값·위치·건수를 담지 않는다** — [kinds] 는 검출된 **종류의 집합뿐**이다(같은 계획 §2.3).
+ * `detail` 은 고정 문구이고, 종류는 `InsufficientCreditsException` 과 같은 이유로 본문이
+ * 아니라 `X-Personal-Data-Kinds` 헤더로 나간다(`x-error-body-universality`).
+ */
+class PersonalDataDetectedException(
+    message: String,
+    val kinds: Set<PersonalDataKind>,
 ) : EasyDocException(message)

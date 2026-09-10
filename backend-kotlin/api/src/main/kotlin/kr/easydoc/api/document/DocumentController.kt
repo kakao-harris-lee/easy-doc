@@ -51,6 +51,7 @@ class DocumentController(
                 text = request.text,
                 title = request.title,
                 rawWorkspaceId = request.workspaceId,
+                personalDataAcknowledged = request.personalDataAcknowledged,
             ),
         )
 
@@ -71,6 +72,7 @@ class DocumentController(
                 bytes = readBounded(file),
                 title = request.getParameter(TITLE_PART),
                 rawWorkspaceId = request.getParameter(WORKSPACE_ID_PART),
+                personalDataAcknowledged = request.getParameter(PERSONAL_DATA_ACKNOWLEDGED_PART) == TRUE_VALUE,
             ),
         )
     }
@@ -161,6 +163,10 @@ class DocumentController(
 
         /** 파일 모드의 파트 이름이자 **`GET` 의 쿼리 파라미터 이름**이다. */
         const val WORKSPACE_ID_PART = "workspace_id"
+
+        /** 계약 `DocumentFileRequest.personal_data_acknowledged` — 폼 값은 문자열이라 [TRUE_VALUE] 와 비교한다. */
+        const val PERSONAL_DATA_ACKNOWLEDGED_PART = "personal_data_acknowledged"
+        const val TRUE_VALUE = "true"
 
         /** 계약 `paths./documents.get.parameters` 의 이름 둘. */
         const val LIMIT_PARAM = "limit"
