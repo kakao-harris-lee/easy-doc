@@ -10,3 +10,8 @@ easy-read-ai
 # OMC 세션 상태. 저장소 루트 .gitignore(:21 `.omc/`)가 이미 무시하지만, prettier 는
 # 자기 디렉터리의 .gitignore 만 읽어 여기서 다시 적어야 한다. 범위는 그 줄과 같다.
 .omc
+
+# 이용약관·개인정보처리방침 원본(P0-13). `docs/legal/README.md`의 버전 규칙이 이
+# 파일들의 바이트 그대로를 「동의받은 판」으로 삼는다 — prettier가 표 정렬 등으로
+# 자동 개행·공백을 바꾸면 그 규칙과 맞지 않는 변경이 조용히 섞인다.
+src/content/legal

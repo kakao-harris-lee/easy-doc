@@ -9,8 +9,10 @@ import { LoginPage } from '../pages/LoginPage'
 import { NotFoundPage } from '../pages/NotFoundPage'
 import { OAuthCallbackPage } from '../pages/OAuthCallbackPage'
 import { OAuthLinkCallbackPage } from '../pages/OAuthLinkCallbackPage'
+import { PrivacyPolicyPage } from '../pages/PrivacyPolicyPage'
 import { ResetPasswordPage } from '../pages/ResetPasswordPage'
 import { SignupPage } from '../pages/SignupPage'
+import { TermsPage } from '../pages/TermsPage'
 import { UploadPage } from '../pages/UploadPage'
 import { UsagePage } from '../pages/UsagePage'
 import { RequireAdmin } from './RequireAdmin'
@@ -25,8 +27,10 @@ import {
   LOGIN_PATH,
   OAUTH_CALLBACK_PATH,
   OAUTH_LINK_CALLBACK_PATH,
+  PRIVACY_PATH,
   RESET_PASSWORD_PATH,
   SIGNUP_PATH,
+  TERMS_PATH,
   USAGE_PATH,
 } from './paths'
 
@@ -37,6 +41,9 @@ export function AppRoutes() {
       <Route path={LOGIN_PATH} element={<LoginPage />} />
       <Route path={SIGNUP_PATH} element={<SignupPage />} />
       <Route path={RESET_PASSWORD_PATH} element={<ResetPasswordPage />} />
+      {/* 로그인 없이 열린다 — 가입 전에도 약관·방침을 읽을 수 있어야 한다(P0-13). */}
+      <Route path={TERMS_PATH} element={<TermsPage />} />
+      <Route path={PRIVACY_PATH} element={<PrivacyPolicyPage />} />
       <Route path={OAUTH_CALLBACK_PATH} element={<OAuthCallbackPage />} />
       <Route
         path={OAUTH_LINK_CALLBACK_PATH}
