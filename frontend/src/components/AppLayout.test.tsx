@@ -597,6 +597,13 @@ describe('머리말 구성', () => {
     expect(screen.getByRole('link', { name: 'Easy-Read AI 홈' })).toBeInTheDocument()
   })
 
+  it('익명 상태에도 푸터가 그려진다 (전자상거래법의 사업자 정보 초기 화면 표시 의무)', () => {
+    renderLayout({ status: 'anonymous', user: null })
+
+    expect(screen.getByRole('contentinfo')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: '개인정보처리방침' })).toBeInTheDocument()
+  })
+
   it('작업 공간이 계정 메뉴보다 앞에 온다', () => {
     render(
       <AuthContext.Provider value={authValue()}>

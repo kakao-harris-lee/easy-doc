@@ -5,6 +5,14 @@ export const LOGIN_PATH = '/login'
 export const SIGNUP_PATH = '/signup'
 export const HISTORY_PATH = '/history'
 
+/**
+ * 이용약관·개인정보처리방침 화면(P0-13, 계획
+ * `docs/plans/2026-09-09-legal-footer-and-support.md` §5.2). 로그인 없이 열린다 —
+ * `AppRoutes`에서 `RequireAuth`로 감싸지 않는다.
+ */
+export const TERMS_PATH = '/terms'
+export const PRIVACY_PATH = '/privacy'
+
 /** 워크스페이스 사용량 화면 (U2, 계약 2.20.0). */
 export const USAGE_PATH = '/usage'
 

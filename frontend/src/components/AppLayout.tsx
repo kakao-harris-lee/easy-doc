@@ -33,6 +33,7 @@ import {
   USAGE_PATH,
 } from '../routes/paths'
 import { AnnouncementBanner } from './AnnouncementBanner'
+import { Footer } from './Footer'
 import { SetPasswordForm } from './SetPasswordForm'
 import { SocialLinkStatus } from './SocialLinkStatus'
 import { Logo } from './Logo'
@@ -49,7 +50,7 @@ import { Button } from './ui/Button'
  * 검수 화면만 1360px까지 넓힐 수 있다는 예외(§5.2)가 아직 남아 있어 한 곳에 모아 둔다 —
  * 그때 넓히는 것은 이 상수와 그것을 쓰는 `main` 한 곳이다.
  */
-const CONTAINER = 'mx-auto w-full max-w-[1200px] px-4 md:px-6 xl:px-8'
+export const CONTAINER = 'mx-auto w-full max-w-[1200px] px-4 md:px-6 xl:px-8'
 
 /**
  * 주요 메뉴 링크의 모양.
@@ -474,6 +475,12 @@ export function AppLayout({ children }: { children: ReactNode }) {
       <main id="main" className={cn(CONTAINER, 'flex-1 py-6')}>
         {children}
       </main>
+      {/*
+        로그인 여부와 무관하게 모든 화면에 나온다(전자상거래법의 사업자 정보 초기
+        화면 표시 의무) — 위 머리말 메뉴들과 달리 `status === 'authenticated'`로
+        가리지 않는다.
+      */}
+      <Footer />
     </>
   )
 }
