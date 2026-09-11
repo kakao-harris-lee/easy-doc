@@ -1,6 +1,5 @@
 package kr.easydoc.api.accesslog
 
-import kr.easydoc.application.accesslog.PersonalDataAccessLogRow
 import kr.easydoc.application.accesslog.PersonalDataAccessReportService
 import org.slf4j.LoggerFactory
 import org.springframework.boot.ApplicationArguments
@@ -44,7 +43,7 @@ class AccessLogReportRunner(private val service: PersonalDataAccessReportService
                 val outPath = args.singleOptionValue(OUT_OPTION) ?: DEFAULT_OUT_PATH
 
                 val report = service.generate(from, to)
-                writeCsvWithBom(outPath, renderCsv(report.rows))
+                writeCsvWithBom(outPath, report.csv)
 
                 println(
                     "접속기록 점검 보고서 — 기간 ${report.from}~${report.to}, 총 ${report.totalCount}건, " +
@@ -63,37 +62,6 @@ class AccessLogReportRunner(private val service: PersonalDataAccessReportService
 
     private fun ApplicationArguments.singleOptionValue(name: String): String? =
         if (containsOption(name)) getOptionValues(name)?.firstOrNull() else null
-
-    private fun renderCsv(rows: List<PersonalDataAccessLogRow>): String =
-        buildString {
-            append(HEADER)
-            append(CRLF)
-            rows.forEach { row ->
-                append(csvLineOf(row))
-                append(CRLF)
-            }
-        }
-
-    private fun csvLineOf(row: PersonalDataAccessLogRow): String =
-        listOf(
-            row.id.toString(),
-            row.actorUserId.toString(),
-            row.accessedAt.toString(),
-            row.clientIp,
-            row.operation,
-            row.subjectScope.orEmpty(),
-            row.outcome.wireName,
-        ).joinToString(",", transform = ::csvField)
-
-    /** `UsageReportService.csvField`와 같은 CSV 인젝션 방어 + RFC 4180 quoting. */
-    private fun csvField(value: String): String {
-        val escaped = if (value.isNotEmpty() && value[0] in FORMULA_TRIGGER_CHARS) "'$value" else value
-        return if (escaped.any(NEEDS_QUOTING_CHARS::contains)) {
-            "\"" + escaped.replace("\"", "\"\"") + "\""
-        } else {
-            escaped
-        }
-    }
 
     /** UTF-8 BOM(`EF BB BF`)을 붙여 쓴다 — `UsageReportRunner`와 같은 이유(엑셀 호환). */
     private fun writeCsvWithBom(
@@ -115,10 +83,6 @@ class AccessLogReportRunner(private val service: PersonalDataAccessReportService
         const val TO_OPTION = "to"
         const val OUT_OPTION = "out"
         const val DEFAULT_OUT_PATH = "./access-log-report.csv"
-        const val CRLF = "\r\n"
-        const val HEADER = "id,actor_user_id,accessed_at,client_ip,operation,subject_scope,outcome"
-        val NEEDS_QUOTING_CHARS = charArrayOf(',', '"', '\n', '\r')
-        val FORMULA_TRIGGER_CHARS = charArrayOf('=', '+', '-', '@', '\t')
         val UTF8_BOM = byteArrayOf(0xEF.toByte(), 0xBB.toByte(), 0xBF.toByte())
     }
 }

@@ -93,17 +93,8 @@ class UsageReportProfileTest {
             // 이전 실행이 남긴 파일이 있으면 이번 실행이 실제로 파일을 다시 썼는지 가려낼
             // 수 없다 — 지우고 시작한다.
             Files.deleteIfExists(File(OUT_PATH).toPath())
-            migrate()
+            migrate(database)
             seedLedgerRow()
-        }
-
-        private fun migrate() {
-            Flyway
-                .configure()
-                .dataSource(database.jdbcUrl, database.username, database.password)
-                .locations("classpath:db/migration")
-                .load()
-                .migrate()
         }
 
         private fun seedLedgerRow() {
@@ -163,8 +154,6 @@ class UsageReportProfileTest {
                 .param("calledAt", OffsetDateTime.ofInstant(SEED_AT, ZoneOffset.UTC))
                 .update()
         }
-
-        private const val DUMMY_PHC = "\$argon2id\$v=19\$m=19456,t=2,p=1\$c29tZXNhbHQ\$aGFzaGhhc2hoYXNoaGFzaGhhc2g"
     }
 }
 
@@ -179,6 +168,7 @@ class UsageReportProfileTest {
     args = [
         "--to=not-a-date",
         "--out=build/test-usage-report/invalid.csv",
+        "--actor-email=$ACTOR_EMAIL",
     ],
 )
 class UsageReportProfileInvalidArgsTest {
@@ -208,6 +198,19 @@ class UsageReportProfileInvalidArgsTest {
             registry.add("spring.datasource.username") { database.username }
             registry.add("spring.datasource.password") { database.password }
         }
+
+        /**
+         * `--actor-email` 해석이 먼저 돌므로, 이 테스트가 재려는 실패 갈래(형식이 어긋난
+         * `--to`)에 닿으려면 그 이메일에 대응하는 사용자가 먼저 있어야 한다 — 없으면
+         * 액터 해석 단계에서 먼저 끝나 의도한 경로를 재지 못한다(`CreditGrantProfileTest`의
+         * `migrateOnly`와 같은 이유).
+         */
+        @JvmStatic
+        @BeforeAll
+        fun migrateOnly() {
+            migrate(database)
+            seedActor(database)
+        }
     }
 }
 
@@ -220,7 +223,7 @@ class UsageReportProfileInvalidArgsTest {
 @SpringBootTest(
     webEnvironment = SpringBootTest.WebEnvironment.NONE,
     properties = ["spring.profiles.active=usage-report"],
-    args = ["--out=build"],
+    args = ["--out=build", "--actor-email=$ACTOR_EMAIL"],
 )
 class UsageReportProfileUnwritableOutTest {
     @Autowired
@@ -246,8 +249,42 @@ class UsageReportProfileUnwritableOutTest {
             registry.add("spring.datasource.username") { database.username }
             registry.add("spring.datasource.password") { database.password }
         }
+
+        /** `UsageReportProfileInvalidArgsTest.migrateOnly`와 같은 이유 — 액터 해석이 먼저 돈다. */
+        @JvmStatic
+        @BeforeAll
+        fun migrateOnly() {
+            migrate(database)
+            seedActor(database)
+        }
     }
 }
 
 /** `--actor-email` 인자와 시딩된 소유자 계정이 공유하는 값 — `UsageReportProfileTest`. */
 private const val ACTOR_EMAIL: String = "usage-report-actor@example.test"
+
+private const val DUMMY_PHC = "\$argon2id\$v=19\$m=19456,t=2,p=1\$c29tZXNhbHQ\$aGFzaGhhc2hoYXNoaGFzaGhhc2g"
+
+private fun migrate(database: DatabaseHandle) {
+    Flyway
+        .configure()
+        .dataSource(database.jdbcUrl, database.username, database.password)
+        .locations("classpath:db/migration")
+        .load()
+        .migrate()
+}
+
+/**
+ * `--actor-email`(ACTOR_EMAIL)이 가리킬 사용자만 심는다 — 원장 행이 없는 컨텍스트(형식
+ * 오류·쓸 수 없는 out 경로 테스트)에서 액터 해석이 먼저 통과해야 그 뒤의 실패 갈래를
+ * 실제로 잰다(`CreditGrantProfileTest.seedActor`와 같은 형태).
+ */
+private fun seedActor(database: DatabaseHandle) {
+    JdbcClient
+        .create(DriverManagerDataSource(database.jdbcUrl, database.username, database.password))
+        .sql("INSERT INTO users (id, email, password_hash) VALUES (:id, :email, :hash)")
+        .param("id", UUID.randomUUID())
+        .param("email", ACTOR_EMAIL)
+        .param("hash", DUMMY_PHC)
+        .update()
+}

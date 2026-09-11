@@ -67,6 +67,78 @@ class PersonalDataAccessReportServiceTest {
             .isThrownBy { service.generate(from = "not-a-date", to = null) }
     }
 
+    @Test
+    @DisplayName("빈 결과는 헤더만 있는 CSV다 — UsageReportService와 같은 헤더 계약")
+    fun `빈 결과는 헤더만 낸다`() {
+        val service =
+            PersonalDataAccessReportService(
+                FakeRepository(),
+                ZoneId.of("Asia/Seoul"),
+                Clock.fixed(FIXED_NOW, ZoneOffset.UTC),
+            )
+
+        val report = service.generate(from = "2026-08-01", to = "2026-08-31")
+
+        assertThat(report.csv).isEqualTo("id,actor_user_id,accessed_at,client_ip,operation,subject_scope,outcome\r\n")
+    }
+
+    @Test
+    @DisplayName("행 값이 그대로 CSV에 실린다")
+    fun `행 값이 CSV에 그대로 실린다`() {
+        val actorId = UUID.randomUUID()
+        val logRow =
+            PersonalDataAccessLogRow(
+                id = UUID.fromString("11111111-1111-1111-1111-111111111111"),
+                actorUserId = actorId,
+                accessedAt = Instant.parse("2026-08-15T00:00:00Z"),
+                clientIp = "127.0.0.1",
+                operation = "listAdminWorkspaces",
+                subjectScope = "page=1",
+                outcome = PersonalDataAccessOutcome.SUCCESS,
+            )
+        val service =
+            PersonalDataAccessReportService(
+                FakeRepository(listOf(logRow)),
+                ZoneId.of("Asia/Seoul"),
+                Clock.fixed(FIXED_NOW, ZoneOffset.UTC),
+            )
+
+        val report = service.generate(from = "2026-08-01", to = "2026-08-31")
+
+        val dataLine =
+            report.csv
+                .lineSequence()
+                .drop(1)
+                .first()
+        assertThat(dataLine).isEqualTo(
+            "11111111-1111-1111-1111-111111111111,$actorId,2026-08-15T00:00:00Z,127.0.0.1," +
+                "listAdminWorkspaces,page=1,success",
+        )
+    }
+
+    @Test
+    @DisplayName("subject_scope 에 콤마·큰따옴표가 있으면 RFC 4180대로 감싸진다 — UsageReportService와 같은 이스케이프")
+    fun `콤마와 큰따옴표가 있으면 인용된다`() {
+        val logRow =
+            row(UUID.randomUUID(), "listAdminWorkspaces", PersonalDataAccessOutcome.SUCCESS)
+                .copy(subjectScope = "q=\"특별\",1")
+        val service =
+            PersonalDataAccessReportService(
+                FakeRepository(listOf(logRow)),
+                ZoneId.of("Asia/Seoul"),
+                Clock.fixed(FIXED_NOW, ZoneOffset.UTC),
+            )
+
+        val report = service.generate(from = "2026-08-01", to = "2026-08-31")
+
+        val dataLine =
+            report.csv
+                .lineSequence()
+                .drop(1)
+                .first()
+        assertThat(dataLine).contains("\"q=\"\"특별\"\",1\"")
+    }
+
     private fun row(
         actorId: UUID,
         operation: String,
