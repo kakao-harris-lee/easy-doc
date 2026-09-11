@@ -1,5 +1,8 @@
 package kr.easydoc.api.support
 
+import kr.easydoc.application.accesslog.PersonalDataAccessLogEntry
+import kr.easydoc.application.accesslog.PersonalDataAccessLogWriter
+import kr.easydoc.application.accesslog.RecordPersonalDataAccess
 import kr.easydoc.application.account.AccountDeletionRepository
 import kr.easydoc.application.account.DeleteAccountService
 import kr.easydoc.application.account.LockedAccount
@@ -370,6 +373,19 @@ class AuthSliceBeans {
 
     @Bean
     fun adminGuard(repository: InMemoryAdminAccessRepository): AdminGuard = AdminGuard(repository)
+
+    /**
+     * 접속기록(계획 `docs/plans/2026-09-11-access-log-retention.md`) 배선 — `AdminAccessInterceptor`
+     * 가 이제 [RecordPersonalDataAccess]도 받으므로 `inMemoryAdminAccess`와 같은 이유로
+     * 이 빈이 없으면 컨텍스트 조립이 멈춘다.
+     */
+    @Bean
+    fun inMemoryPersonalDataAccessLogWriter(): InMemoryPersonalDataAccessLogWriter =
+        InMemoryPersonalDataAccessLogWriter()
+
+    @Bean
+    fun recordPersonalDataAccess(writer: InMemoryPersonalDataAccessLogWriter): RecordPersonalDataAccess =
+        RecordPersonalDataAccess(writer, Clock.systemUTC())
 
     @Bean
     fun adminGrantService(
@@ -1634,6 +1650,18 @@ class InMemoryAdminAccessRepository : AdminAccessRepository {
     ): Boolean {
         if (isAdmin) admins += userId else admins -= userId
         return true
+    }
+}
+
+/**
+ * 접속기록 삽입 대역 — `InMemoryAdminAccessRepository`와 같은 이유로 슬라이스 조립에
+ * 필요하다. [seen]으로 관리자 축 HTTP 테스트가 기록 여부(성공·거절)를 확인할 수 있다.
+ */
+class InMemoryPersonalDataAccessLogWriter : PersonalDataAccessLogWriter {
+    val seen = mutableListOf<PersonalDataAccessLogEntry>()
+
+    override fun insert(entry: PersonalDataAccessLogEntry) {
+        seen += entry
     }
 }
 

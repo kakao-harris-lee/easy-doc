@@ -38,6 +38,7 @@ import javax.sql.DataSource
         "--credits=50",
         "--reason=manual",
         "--note=파일럿 충전",
+        "--actor-email=$CREDIT_GRANT_ACTOR_EMAIL",
     ],
 )
 class CreditGrantProfileTest {
@@ -96,10 +97,13 @@ class CreditGrantProfileTest {
         fun seed() {
             migrate(database)
             val jdbc = JdbcClient.create(dataSourceOf(database))
+            // 이메일을 `--actor-email`(CREDIT_GRANT_ACTOR_EMAIL)과 같은 값으로 심는다 —
+            // `CliActor.resolveActorId`가 이 이메일로 actor_user_id 를 찾으면서, 별도
+            // 사용자를 더 심을 필요가 없다(어차피 이 워크스페이스의 소유자 행 하나로 충분하다).
             jdbc
                 .sql("INSERT INTO users (id, email, password_hash) VALUES (:id, :email, :hash)")
                 .param("id", OWNER_ID)
-                .param("email", "owner-$OWNER_ID@example.com")
+                .param("email", CREDIT_GRANT_ACTOR_EMAIL)
                 .param("hash", DUMMY_PHC)
                 .update()
             jdbc
@@ -127,7 +131,12 @@ class CreditGrantProfileTest {
 @SpringBootTest(
     webEnvironment = SpringBootTest.WebEnvironment.NONE,
     properties = ["spring.profiles.active=credit-grant"],
-    args = ["--workspace=not-a-uuid", "--credits=10", "--reason=manual"],
+    args = [
+        "--workspace=not-a-uuid",
+        "--credits=10",
+        "--reason=manual",
+        "--actor-email=$CREDIT_GRANT_ACTOR_EMAIL",
+    ],
 )
 class CreditGrantProfileInvalidArgsTest {
     @Autowired
@@ -154,10 +163,17 @@ class CreditGrantProfileInvalidArgsTest {
             registry.add("spring.datasource.password") { database.password }
         }
 
+        /**
+         * `--actor-email` 해석이 먼저 돌므로, 실제로 이 테스트가 재려는 실패 갈래
+         * (`--workspace` 형식 오류)에 닿으려면 그 이메일에 대응하는 사용자가 있어야
+         * 한다 — 없으면 액터 해석 단계에서 먼저 끝나 이 테스트가 의도한 경로를 재지
+         * 못한다.
+         */
         @JvmStatic
         @BeforeAll
         fun migrateOnly() {
             migrate(database)
+            seedActor(database)
         }
     }
 }
@@ -170,7 +186,12 @@ class CreditGrantProfileInvalidArgsTest {
 @SpringBootTest(
     webEnvironment = SpringBootTest.WebEnvironment.NONE,
     properties = ["spring.profiles.active=credit-grant"],
-    args = ["--workspace=00000000-0000-4000-8000-000000000099", "--credits=10", "--reason=manual"],
+    args = [
+        "--workspace=00000000-0000-4000-8000-000000000099",
+        "--credits=10",
+        "--reason=manual",
+        "--actor-email=$CREDIT_GRANT_ACTOR_EMAIL",
+    ],
 )
 class CreditGrantProfileUnknownWorkspaceTest {
     @Autowired
@@ -197,10 +218,12 @@ class CreditGrantProfileUnknownWorkspaceTest {
             registry.add("spring.datasource.password") { database.password }
         }
 
+        /** `CreditGrantProfileInvalidArgsTest.migrateOnly`와 같은 이유 — 액터 해석이 먼저 돈다. */
         @JvmStatic
         @BeforeAll
         fun migrateOnly() {
             migrate(database)
+            seedActor(database)
         }
     }
 }
@@ -218,6 +241,7 @@ class CreditGrantProfileUnknownWorkspaceTest {
         "--credits=50",
         "--reason=plan_monthly",
         "--cycle-ends-at=2026-10-10T00:00:00Z",
+        "--actor-email=$CREDIT_GRANT_ACTOR_EMAIL",
     ],
 )
 class CreditGrantCycleEndsAtProfileTest {
@@ -293,7 +317,7 @@ class CreditGrantCycleEndsAtProfileTest {
             jdbc
                 .sql("INSERT INTO users (id, email, password_hash) VALUES (:id, :email, :hash)")
                 .param("id", OWNER_ID)
-                .param("email", "owner-$OWNER_ID@example.com")
+                .param("email", CREDIT_GRANT_ACTOR_EMAIL)
                 .param("hash", DUMMY_PHC)
                 .update()
             jdbc
@@ -312,6 +336,9 @@ class CreditGrantCycleEndsAtProfileTest {
 
 private const val DUMMY_PHC = "\$argon2id\$v=19\$m=19456,t=2,p=1\$c29tZXNhbHQ\$aGFzaGhhc2hoYXNoaGFzaGhhc2g"
 
+/** `--actor-email` 인자와 시딩된 사용자가 공유하는 값 — 이 파일의 `credit-grant` 프로필 테스트 전부. */
+private const val CREDIT_GRANT_ACTOR_EMAIL: String = "credit-grant-actor@example.test"
+
 private fun migrate(database: DatabaseHandle) {
     Flyway
         .configure()
@@ -323,3 +350,18 @@ private fun migrate(database: DatabaseHandle) {
 
 private fun dataSourceOf(database: DatabaseHandle): DataSource =
     DriverManagerDataSource(database.jdbcUrl, database.username, database.password)
+
+/**
+ * `--actor-email`(CREDIT_GRANT_ACTOR_EMAIL) 이 가리킬 사용자만 심는다 — 워크스페이스가
+ * 없는 컨텍스트(잘못된 형식·알 수 없는 워크스페이스 테스트)에서 액터 해석이 먼저
+ * 통과해야 그 뒤의 실패 갈래를 실제로 잰다.
+ */
+private fun seedActor(database: DatabaseHandle) {
+    JdbcClient
+        .create(dataSourceOf(database))
+        .sql("INSERT INTO users (id, email, password_hash) VALUES (:id, :email, :hash)")
+        .param("id", UUID.randomUUID())
+        .param("email", CREDIT_GRANT_ACTOR_EMAIL)
+        .param("hash", DUMMY_PHC)
+        .update()
+}

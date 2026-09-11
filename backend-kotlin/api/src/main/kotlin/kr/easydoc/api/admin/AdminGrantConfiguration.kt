@@ -1,20 +1,27 @@
 package kr.easydoc.api.admin
 
 import kr.easydoc.api.ADMIN_GRANT_PROFILE
+import kr.easydoc.application.accesslog.RecordPersonalDataAccess
 import kr.easydoc.application.admin.AdminGrantService
+import kr.easydoc.application.auth.UserRepository
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.context.annotation.Profile
 
 /**
- * `admin-grant` profile 전용 조립. [AdminGrantService] 는 `infrastructure`의
- * `AdminConfiguration`이 프로필과 무관하게 이미 조립한 빈이다(`CreditGrantConfiguration`
+ * `admin-grant` profile 전용 조립. [AdminGrantService]·[UserRepository]·
+ * [RecordPersonalDataAccess]는 `infrastructure`의 `AdminConfiguration`·`AuthConfiguration`·
+ * `AccessLogConfiguration`이 프로필과 무관하게 이미 조립한 빈이다(`CreditGrantConfiguration`
  * KDoc과 같은 이유 — `api`는 `infrastructure`를 `runtimeOnly`로만 의존한다). 이 클래스는
- * 그 빈을 받아 CLI 실행부([AdminGrantRunner])만 배선한다.
+ * 그 빈들을 받아 CLI 실행부([AdminGrantRunner])만 배선한다.
  */
 @Configuration(proxyBeanMethods = false)
 @Profile(ADMIN_GRANT_PROFILE)
 class AdminGrantConfiguration {
     @Bean
-    fun adminGrantRunner(service: AdminGrantService): AdminGrantRunner = AdminGrantRunner(service)
+    fun adminGrantRunner(
+        service: AdminGrantService,
+        users: UserRepository,
+        accessLog: RecordPersonalDataAccess,
+    ): AdminGrantRunner = AdminGrantRunner(service, users, accessLog)
 }

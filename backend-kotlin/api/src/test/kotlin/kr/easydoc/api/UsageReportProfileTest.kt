@@ -44,6 +44,7 @@ import javax.sql.DataSource
         "--from=2026-03-01",
         "--to=2026-03-31",
         "--out=build/test-usage-report/report.csv",
+        "--actor-email=$ACTOR_EMAIL",
     ],
 )
 class UsageReportProfileTest {
@@ -109,11 +110,14 @@ class UsageReportProfileTest {
             val dataSource: DataSource = DriverManagerDataSource(database.jdbcUrl, database.username, database.password)
             val jdbc = JdbcClient.create(dataSource)
 
+            // 이메일을 `--actor-email` 인자(ACTOR_EMAIL)와 같은 값으로 심는다 —
+            // `CliActor.resolveActorId`가 이 이메일로 actor_user_id 를 찾으면서, 별도
+            // 사용자를 더 심을 필요가 없다(어차피 이 리포트의 소유자 행 하나로 충분하다).
             val owner = UUID.randomUUID()
             jdbc
                 .sql("INSERT INTO users (id, email, password_hash) VALUES (:id, :email, :hash)")
                 .param("id", owner)
-                .param("email", "owner-$owner@example.com")
+                .param("email", ACTOR_EMAIL)
                 .param("hash", DUMMY_PHC)
                 .update()
             val workspaceId = UUID.randomUUID()
@@ -244,3 +248,6 @@ class UsageReportProfileUnwritableOutTest {
         }
     }
 }
+
+/** `--actor-email` 인자와 시딩된 소유자 계정이 공유하는 값 — `UsageReportProfileTest`. */
+private const val ACTOR_EMAIL: String = "usage-report-actor@example.test"

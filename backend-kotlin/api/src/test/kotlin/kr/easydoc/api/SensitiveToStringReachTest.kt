@@ -531,8 +531,25 @@ class SensitiveToStringReachTest {
          * `UnverifiedAccountPurgeResult`와 같은 판단으로 **일반 `class`**에 표별 건수만
          * 남기는 커스텀 `toString()`을 직접 두므로(해시·salt·state·nonce는 결과 객체 자리에
          * 없다) 이 숫자에 들지 않는다. `KNOWN_SENSITIVE_TYPES`에는 넣지 않는다.
+         *
+         * 개인정보처리시스템 접속기록(계획 `docs/plans/2026-09-11-access-log-retention.md`,
+         * V22)이 **다섯**을 더해 215 다(210 위에) — application `accesslog` 패키지의
+         * `PersonalDataAccessLogEntry`·`PersonalDataAccessLogRow`(둘 다 `clientIp` 필드가
+         * **접속지 정보(IP)**를 담는다 — 필드 이름 자체는 민감 판정 토큰 어디에도 걸리지
+         * 않아 `dataClassProbes` 자동 표본에는 잡히지 않지만, `User`·`Workspace`와 같은
+         * 규약으로 손으로 쓴 `toString()`이 `CONTENT_MASK`로 값을 가린다 — 자동 판정
+         * 밖이라고 가리지 않은 것이 아니다)와 `PersonalDataAccessReport`(위 두 타입의
+         * 집계 컨테이너 — `rows: List<PersonalDataAccessLogRow>`가 이미 가려진 원소를
+         * 담으므로 기본 생성 `toString()`으로 둔다, `InvoiceRequestPage`·`UsageReportRows`
+         * 와 같은 판단), infrastructure `AccessLogProperties`(설정 바인딩, `zone`·
+         * `retention` 뿐 — 운영 구성값이라 민감 판정과 무관, `UsageProperties`와 같은
+         * 판단), api `AdminOperationCatalog.Route`(그 오브젝트 내부에서만 쓰는 `private`
+         * 중첩 클래스 — (HTTP 메서드, 경로 패턴) 문자열 쌍뿐이라 민감 정보가 없다).
+         * `client_ip`·`actor_user_id`를 담는 타입 둘 다 이미 개별적으로 가려지므로
+         * `KNOWN_SENSITIVE_TYPES`에는 넣지 않는다 — 그 목록은 **자동 판정이 실제로 닿는**
+         * 타입의 바닥이고, 이 둘은 토큰 불일치로 애초에 자동 판정 대상이 아니다.
          */
-        const val EXPECTED_SOURCE_DECLARATIONS = 210
+        const val EXPECTED_SOURCE_DECLARATIONS = 215
 
         /** 민감 판정이 반드시 닿아야 하는 타입 — 바닥이다. */
         val KNOWN_SENSITIVE_TYPES =
