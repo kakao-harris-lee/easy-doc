@@ -229,6 +229,51 @@
   .history-table button {
     @apply inline-flex h-9 items-center rounded-[10px] border border-input bg-card px-3 text-sm font-semibold text-foreground hover:bg-secondary disabled:opacity-50;
   }
+
+  /*
+   * 약관·개인정보처리방침 렌더(P0-13). `src/content/legal/*.md`가 원본이고 여기서는 표시만
+   * 맡는다 — 문구를 TSX로 옮기지 않는다(react-markdown + remark-gfm 출력에 건다).
+   * 표는 좁은 화면에서 넘칠 수 있어 페이지 쪽에서 `overflow-x-auto` 컨테이너로 감싼다.
+   */
+  .legal-document :where(h1, h2, h3) {
+    @apply mt-8 mb-3 font-bold text-foreground first:mt-0;
+  }
+  .legal-document h1 {
+    @apply text-2xl;
+  }
+  .legal-document h2 {
+    @apply text-xl;
+  }
+  .legal-document h3 {
+    @apply text-lg;
+  }
+  .legal-document p,
+  .legal-document ul,
+  .legal-document ol {
+    @apply my-3 leading-relaxed text-foreground;
+  }
+  .legal-document ul {
+    @apply list-disc pl-6;
+  }
+  .legal-document ol {
+    @apply list-decimal pl-6;
+  }
+  .legal-document hr {
+    @apply my-8 border-border;
+  }
+  .legal-document code {
+    @apply rounded-sm bg-secondary px-1 py-0.5 text-[0.9em];
+  }
+  .legal-document table {
+    @apply w-full border-collapse;
+  }
+  .legal-document th,
+  .legal-document td {
+    @apply border border-border px-3 py-2 text-left align-top;
+  }
+  .legal-document thead th {
+    @apply bg-background text-sm font-semibold text-muted-foreground;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
