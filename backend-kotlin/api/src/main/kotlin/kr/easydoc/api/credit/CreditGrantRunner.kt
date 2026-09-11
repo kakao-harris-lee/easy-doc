@@ -1,6 +1,9 @@
 package kr.easydoc.api.credit
 
+import kr.easydoc.api.accesslog.CliActor
+import kr.easydoc.application.accesslog.RecordPersonalDataAccess
 import kr.easydoc.application.auth.TransactionRunner
+import kr.easydoc.application.auth.UserRepository
 import kr.easydoc.application.credit.CreditAccountRepository
 import kr.easydoc.application.credit.CreditAccountService
 import kr.easydoc.core.credit.CreditReason
@@ -54,11 +57,23 @@ import java.util.UUID
  * 처리 중인 경우) 존재하지 않는 소유자로 거래를 남기지 않는다(리뷰 HIGH-1). 반영 뒤
  * 읽기([CreditAccountService.read])는 그 트랜잭션이 커밋된 뒤 별도로 돈다 — 조회는
  * 쓰기와 같은 원자성 경계를 공유할 이유가 없다.
+ *
+ * **`--actor-email=<이메일>`(필수)** — 접속기록(`personal_data_access_logs`, V22)의
+ * `actor_user_id`를 채운다(계획 `docs/plans/2026-09-11-access-log-retention.md` §3.2).
+ * `admin-grant --email`과 같은 형태다 — 운영자는 자기 user_id를 모른다.
+ *
+ * **접속기록은 위 트랜잭션이 커밋된 직후 남긴다** — 워크스페이스 소유자를 실제로 찾고
+ * 크레딧을 반영한 시점이다(`UsageReportRunner`와 같은 원칙 — 명령의 성패가 아니라
+ * 개인정보에 접근했는지를 남긴다). `--actor-email` 해석 실패·워크스페이스를 찾지 못해
+ * 트랜잭션이 실패하는 경우처럼 **읽기 전에** 끝나는 실패는 기록을 남기지 않는다.
  */
+@Suppress("TooGenericExceptionCaught")
 class CreditGrantRunner(
     private val service: CreditAccountService,
     private val repository: CreditAccountRepository,
     private val transaction: TransactionRunner,
+    private val users: UserRepository,
+    private val accessLog: RecordPersonalDataAccess,
 ) : ApplicationRunner,
     ExitCodeGenerator {
     private val log = LoggerFactory.getLogger(CreditGrantRunner::class.java)
@@ -66,59 +81,85 @@ class CreditGrantRunner(
     @Volatile
     private var exitCode: Int = 0
 
-    @Suppress("TooGenericExceptionCaught")
     override fun run(args: ApplicationArguments) {
-        exitCode =
-            try {
-                val grantArgs = CreditGrantArgs.parse(args)
-                val cycleEndsAt = grantArgs.cycleEndsAt
-                val ownerId =
-                    transaction.inTransaction {
-                        val resolvedOwnerId =
-                            repository.ownerOf(grantArgs.workspaceId)
-                                ?: throw NotFoundException("워크스페이스를 찾을 수 없습니다: ${grantArgs.workspaceId}")
-                        if (cycleEndsAt != null) {
-                            service.setAllowance(
-                                grantArgs.workspaceId,
-                                resolvedOwnerId,
-                                grantArgs.credits,
-                                cycleEndsAt,
-                                grantArgs.renews,
-                                grantArgs.reason,
-                                grantArgs.note,
-                            )
-                        } else {
-                            service.grant(
-                                grantArgs.workspaceId,
-                                resolvedOwnerId,
-                                grantArgs.credits,
-                                grantArgs.reason,
-                                grantArgs.note,
-                            )
-                        }
-                        resolvedOwnerId
-                    }
-                val view = service.read(ownerId, grantArgs.workspaceId)
-
-                println(
-                    "크레딧 반영 — workspace_id=${grantArgs.workspaceId} 적용=${grantArgs.credits} " +
-                        "balance=${view.balance} reserved=${view.reserved} available=${view.available}" +
-                        (cycleEndsAt?.let { " cycle_ends_at=$it" } ?: ""),
-                )
-                SUCCESS
-            } catch (failure: Exception) {
-                // 메시지만 남긴다 — 워크스페이스 이름·이메일은 이 갈래의 예외 메시지에
-                // 담기지 않는다(도메인 예외·인자 검증 메시지 모두 형식·범위 오류뿐이다).
-                log.error("크레딧 부여가 실패했다: {}", failure.message)
-                FAILURE
-            }
+        val actorId = resolveActorOrFail(args) ?: return
+        exitCode = applyGrant(args, actorId)
     }
+
+    /** 읽기 전 실패(이메일 해석) — 기록 없이 종료 코드 1. */
+    private fun resolveActorOrFail(args: ApplicationArguments): UUID? =
+        try {
+            CliActor.resolveActorId(users, CliActor.parseEmail(args))
+        } catch (failure: Exception) {
+            log.error("크레딧 부여가 실패했다: {}", failure.message)
+            exitCode = FAILURE
+            null
+        }
+
+    private fun applyGrant(
+        args: ApplicationArguments,
+        actorId: UUID,
+    ): Int =
+        try {
+            val grantArgs = CreditGrantArgs.parse(args)
+            val cycleEndsAt = grantArgs.cycleEndsAt
+            val ownerId =
+                transaction.inTransaction {
+                    val resolvedOwnerId =
+                        repository.ownerOf(grantArgs.workspaceId)
+                            ?: throw NotFoundException("워크스페이스를 찾을 수 없습니다: ${grantArgs.workspaceId}")
+                    if (cycleEndsAt != null) {
+                        service.setAllowance(
+                            grantArgs.workspaceId,
+                            resolvedOwnerId,
+                            grantArgs.credits,
+                            cycleEndsAt,
+                            grantArgs.renews,
+                            grantArgs.reason,
+                            grantArgs.note,
+                        )
+                    } else {
+                        service.grant(
+                            grantArgs.workspaceId,
+                            resolvedOwnerId,
+                            grantArgs.credits,
+                            grantArgs.reason,
+                            grantArgs.note,
+                        )
+                    }
+                    resolvedOwnerId
+                }
+            // 여기가 실제로 소유자를 찾고 반영한 시점이다 — 클래스 KDoc. 아래 조회가
+            // 실패해도(표준출력용일 뿐이다) 이 기록은 되돌리지 않는다.
+            accessLog.recordSuccess(
+                actorId,
+                CliActor.clientIp(),
+                OPERATION,
+                "workspace_id=${grantArgs.workspaceId}",
+            )
+            val view = service.read(ownerId, grantArgs.workspaceId)
+
+            println(
+                "크레딧 반영 — workspace_id=${grantArgs.workspaceId} 적용=${grantArgs.credits} " +
+                    "balance=${view.balance} reserved=${view.reserved} available=${view.available}" +
+                    (cycleEndsAt?.let { " cycle_ends_at=$it" } ?: ""),
+            )
+            SUCCESS
+        } catch (failure: Exception) {
+            // 메시지만 남긴다 — 워크스페이스 이름·이메일은 이 갈래의 예외 메시지에
+            // 담기지 않는다(도메인 예외·인자 검증 메시지 모두 형식·범위 오류뿐이다).
+            log.error("크레딧 부여가 실패했다: {}", failure.message)
+            FAILURE
+        }
 
     override fun getExitCode(): Int = exitCode
 
     private companion object {
         const val SUCCESS = 0
         const val FAILURE = 1
+
+        /** `ApiApplication.CREDIT_GRANT_PROFILE` 과 같은 값 — 접속기록 `operation` 열에 그대로 쓴다. */
+        const val OPERATION = "credit-grant"
     }
 }
 

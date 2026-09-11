@@ -120,8 +120,12 @@ docker compose -f compose.yml -f compose.ci.yml run --rm frontend-check
    ```bash
    docker compose -f compose.yml run --rm -v "$PWD:/out" backend-api \
      java -jar /app/easy-doc-api.jar --spring.profiles.active=usage-report \
-     --out=/out/usage-report.csv
+     --out=/out/usage-report.csv --actor-email=<이 CLI를 실행하는 운영자 이메일>
    ```
+   **`--actor-email`(필수)** — 접속기록(`personal_data_access_logs`, V22) 의무 때문이다
+   (개인정보의 안전성 확보조치 기준, 접속기록 1년 이상 보관·월 1회 이상 점검). 이 CLI를
+   실행하는 사람(운영자) 자신의 로그인 이메일을 준다 — `admin-grant --email`과 같은
+   형태이지 대상이 아니다. 등록된 계정이 아니면 exit 1이고 아무것도 쓰지 않는다.
    **`--out`을 반드시 마운트 경로(`/out/...`) 아래로 지정한다** — 생략하면 기본값
    `./usage-report.csv`가 컨테이너 안 작업 디렉터리(`/app`)에 떨어지고, 그 컨테이너는
    `--rm`으로 곧 지워지므로 파일이 호스트에 남지 않는다. 특정 기간을 지정하려면
@@ -215,8 +219,11 @@ CLI one-off다(Compose 상시 서비스가 아니다).
    docker compose -f compose.yml run --rm backend-api \
      java -jar /app/easy-doc-api.jar --spring.profiles.active=credit-grant \
      --workspace=00000000-0000-4000-8000-000000000001 --credits=50 \
-     --reason=plan_monthly --note="2026년 9월 정기 충전"
+     --reason=plan_monthly --note="2026년 9월 정기 충전" \
+     --actor-email=<이 CLI를 실행하는 운영자 이메일>
    ```
+   **`--actor-email`(필수)** — `usage-report`와 같은 이유(접속기록 의무). 이 CLI를 실행하는
+   운영자 자신의 이메일이다.
    표준출력에 `workspace_id`·적용 델타·반영 뒤 `balance`/`reserved`/`available`이 한 줄로
    찍힌다. 종료 코드 0이면 반영된 것이고, 1이면 인자 오류나 존재하지 않는 워크스페이스다
    (스택트레이스 없이 메시지 한 줄만 남는다 — 로그에서 확인한다).
@@ -268,11 +275,13 @@ Compose one-off, 상시 서비스가 아니다).
 
 **절차:**
 
-1. **부여한다.** `--email`은 대상 계정의 로그인 이메일이다:
+1. **부여한다.** `--email`은 **대상** 계정의 로그인 이메일이고, `--actor-email`은 이 CLI를
+   실행하는 **운영자 자신**의 이메일이다(접속기록 의무, `usage-report`와 같은 이유 — 둘을
+   혼동하지 않는다):
    ```bash
    docker compose -f compose.yml run --rm backend-api \
      java -jar /app/easy-doc-api.jar --spring.profiles.active=admin-grant \
-     --email=operator@example.test
+     --email=operator@example.test --actor-email=<이 CLI를 실행하는 운영자 이메일>
    ```
    표준출력에 `user_id`·반영된 `is_admin` 값만 찍힌다(`관리자 권한 반영 — user_id=… is_admin=true`)
    — 이메일은 담지 않는다(`credit-grant`의 "이름·이메일은 내지 않는다"와 같은 규약). 종료
@@ -282,13 +291,40 @@ Compose one-off, 상시 서비스가 아니다).
    ```bash
    docker compose -f compose.yml run --rm backend-api \
      java -jar /app/easy-doc-api.jar --spring.profiles.active=admin-grant \
-     --email=operator@example.test --revoke
+     --email=operator@example.test --revoke --actor-email=<이 CLI를 실행하는 운영자 이메일>
    ```
    **회수는 다음 요청부터 즉시 반영된다** — 관리자 판정은 토큰에 넣지 않고 매 요청 DB에서
    다시 읽는다(`AdminGuard`, 계획 §2 결정 2). 이미 발급된 액세스 토큰을 들고 있어도 그
    사용자의 다음 관리자 API 호출은 403 「관리자 권한이 필요합니다」다.
 3. **확인한다.** 대상 계정으로 로그인해 `GET /auth/me`의 `is_admin`을 보거나(부여 뒤 계정
    메뉴에 「관리」 링크가 뜬다), 화면에서 `/admin`에 들어가 본다.
+
+## 접속기록 점검
+
+개인정보의 안전성 확보조치 기준이 요구하는 **접속기록 월 1회 이상 점검**을 위한
+CLI다(계획 `docs/plans/2026-09-11-access-log-retention.md` §3.5). 화면은 없다 — 취급자가
+운영자 한 명뿐이고 점검은 월 1회이므로 CLI 보고서로 충분하다.
+
+관리자 API(`x-admin-only` 10개 오퍼레이션)와 CLI 프로필 셋(`usage-report`·`credit-grant`·
+`admin-grant`)의 접속·실행이 `personal_data_access_logs`(V22)에 자동으로 쌓인다 — 이
+점검 자체는 그 표를 읽기만 한다.
+
+**매달 한 번:**
+
+```bash
+docker compose -f compose.yml run --rm -v "$PWD:/out" backend-api \
+  java -jar /app/easy-doc-api.jar --spring.profiles.active=access-log-report \
+  --out=/out/access-log-report.csv
+```
+
+인자를 생략하면 지난달 전체다(`--from=YYYY-MM-DD --to=YYYY-MM-DD`로 지정 가능,
+366일 초과는 거절). 표준출력에 기간·총 건수·거절 건수·취급자별 횟수·업무별 횟수가
+찍히고, `--out`(BOM 포함 UTF-8 CSV)에는 원시 목록(건마다 취급자·접속 일시·접속지·업무·
+조회 범위·성공 또는 거절)이 실린다. **거절(rejected) 건이 있으면 그 기간에 권한 없는
+접근 시도가 있었다는 뜻**이니 원시 목록에서 어떤 계정이 어떤 업무를 시도했는지 확인한다.
+
+**점검을 수행했다는 사실 자체는 이 CLI가 기록하지 않는다** — 위 CSV 파일이 그 증거이고,
+보관은 운영 절차(예: 발송한 메일함, 사내 문서함)로 한다.
 
 ## 어드민 화면 운영
 

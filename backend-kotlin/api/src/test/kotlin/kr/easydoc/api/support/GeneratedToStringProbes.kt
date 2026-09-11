@@ -10,6 +10,7 @@ import java.math.BigDecimal
 import java.time.Duration
 import java.time.Instant
 import java.time.LocalDate
+import java.time.Period
 import java.util.UUID
 import javax.xml.parsers.DocumentBuilderFactory
 import kotlin.reflect.KClass
@@ -317,6 +318,11 @@ class GeneratedToStringProbes(
                 Instant::class to Instant.EPOCH,
                 LocalDate::class to LocalDate.of(1970, 1, 1),
                 Duration::class to Duration.ZERO,
+                // AccessLogProperties.retention(접속기록 계획 §3.3, 보관기간을 나중에
+                // 파기에 붙일 자리로 구성값에 둔다)이 `@ConfigurationProperties`에
+                // java.time.Period 를 직접 바인딩한다 — `LlmProviderConfiguration
+                // .readTimeout`(Duration)과 같은 선례다.
+                Period::class to Period.ZERO,
                 BigDecimal::class to BigDecimal.ZERO,
                 ByteArray::class to ByteArray(0),
                 // LlmCallRecord 는 필드 이름 어느 것도 민감 판정 토큰에 걸리지 않는

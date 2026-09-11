@@ -73,10 +73,20 @@ internal const val INVOICE_HANDLE_PROFILE = "invoice-handle"
 internal const val ADMIN_GRANT_PROFILE = "admin-grant"
 
 /**
+ * `access-log-report` profile 이름. 접속기록(`personal_data_access_logs`, V22) 월 1회
+ * 점검용 보고서를 CSV 로 쓰고 종료하는 실행 모드다(계획
+ * `docs/plans/2026-09-11-access-log-retention.md` §3.5).
+ *
+ * `USAGE_REPORT_PROFILE`과 같은 이유로 `infrastructure`가 아니라 `application`이 조립하는
+ * [kr.easydoc.application.accesslog.PersonalDataAccessReportService] 빈만 받는다.
+ */
+internal const val ACCESS_LOG_REPORT_PROFILE = "access-log-report"
+
+/**
  * 컨텍스트 초기화 중에 [ApplicationRunner][org.springframework.boot.ApplicationRunner] 로
  * 이미 도는 one-shot profile 전부 — 회전 배치·운영 리포트·크레딧 부여·세금계산서 처리·
- * 관리자 부여. `main` 이 이 집합 하나로 판정해 조건의 순환 복잡도를 갈래 수와 무관하게
- * 1로 유지한다.
+ * 관리자 부여·접속기록 점검 보고서. `main` 이 이 집합 하나로 판정해 조건의 순환 복잡도를
+ * 갈래 수와 무관하게 1로 유지한다.
  */
 private val ONE_SHOT_PROFILES: Set<String> =
     setOf(
@@ -85,6 +95,7 @@ private val ONE_SHOT_PROFILES: Set<String> =
         CREDIT_GRANT_PROFILE,
         INVOICE_HANDLE_PROFILE,
         ADMIN_GRANT_PROFILE,
+        ACCESS_LOG_REPORT_PROFILE,
     )
 
 fun main(args: Array<String>) {
