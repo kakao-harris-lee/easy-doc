@@ -44,6 +44,12 @@ describe('Footer', () => {
     expect(privacyLink.className).not.toBe(termsLink.className)
   })
 
+  it('이용 가이드 링크가 /guide 로 걸린다', () => {
+    renderFooter()
+
+    expect(screen.getByRole('link', { name: '이용 가이드' })).toHaveAttribute('href', '/guide')
+  })
+
   it('고객지원 이메일이 mailto 링크로 걸린다', () => {
     renderFooter()
 
