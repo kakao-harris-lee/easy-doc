@@ -14,37 +14,37 @@ import type { ReactNode } from 'react'
  *
  * Fluent light 테마는 `brand[80]` 을 `colorBrandBackground`, `brand[70]` 을 hover,
  * `brand[160]` 을 `colorBrandBackground2`(옅은 브랜드 면)로 쓴다. 그래서 그 세 단을
- * DESIGN.md §8.1 의 `--primary`(#5b4bc4), `--primary-hover`(#493ba5),
- * `--accent`(#efedff)에 정확히 고정했다. 이렇게 하지 않으면 Fluent 버튼과 Tailwind
- * `bg-primary` 버튼이 같은 화면에서 다른 보라로 갈린다.
+ * DESIGN.md §8.1 의 `--primary`(#0f6b63), `--primary-hover`(#0c564f),
+ * `--accent`(#e7f5f2)에 정확히 고정했다. 이렇게 하지 않으면 Fluent 버튼과 Tailwind
+ * `bg-primary` 버튼이 같은 화면에서 다른 청록으로 갈린다.
  *
  * 나머지 13단은 Fluent 기본 파랑 램프(brandWeb)의 OKLab 명도 곡선을 위 세 앵커에
- * 맞춰 다시 사상하고, 색상각은 #5b4bc4 의 것으로 고정해 만들었다. 80 보다 밝은 쪽은
- * 채도를 명도에 따라 선형으로 낮춘다 — 보라는 밝은 영역에서 sRGB 를 쉽게 벗어나
- * 그대로 두면 형광빛으로 튀기 때문이다(DESIGN.md §8: 「채도를 낮춘다」).
+ * 맞춰 다시 사상하고, 색상각은 #0f6b63 의 것으로 고정해 만들었다. 80 보다 밝은 쪽은
+ * 채도를 명도에 따라 선형으로 낮춘다(DESIGN.md §8: 「채도를 낮춘다」). 청록은 보라와
+ * 달리 밝은 영역에서도 sRGB 안에 머물러 형광빛으로 튈 위험이 없다.
  */
-const easyReadPurple: BrandVariants = {
-  10: '#0f0e23',
-  20: '#191637',
-  30: '#221e49',
-  40: '#2c275e',
-  50: '#362e75',
-  60: '#41368c',
-  70: '#493ba5',
-  80: '#5b4bc4',
-  90: '#736dd2',
-  100: '#8b89dd',
-  110: '#9897e2',
-  120: '#a4a4e7',
-  130: '#b6b7ee',
-  140: '#c8caf5',
-  150: '#dadbfa',
-  160: '#efedff',
+const easyReadTeal: BrandVariants = {
+  10: '#03110f',
+  20: '#061c1a',
+  30: '#082724',
+  40: '#0a332f',
+  50: '#0b3f3a',
+  60: '#0b4b46',
+  70: '#0c564f',
+  80: '#0f6b63',
+  90: '#2d8279',
+  100: '#4a9890',
+  110: '#67ada5',
+  120: '#85c1ba',
+  130: '#a4d4ce',
+  140: '#c2e5e1',
+  150: '#d6efec',
+  160: '#e7f5f2',
 }
 
 const theme = {
   ...webLightTheme,
-  ...createLightTheme(easyReadPurple),
+  ...createLightTheme(easyReadTeal),
   // 중성 색은 `index.css` 의 :root 값과 같은 면을 가리켜야 Fluent 컴포넌트가
   // Tailwind 로 그린 주변 면 위에서 떠 보이지 않는다.
   colorNeutralBackground1: '#ffffff', // --card

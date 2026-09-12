@@ -125,7 +125,7 @@ export function EmailVerificationPage() {
 
   return (
     <section
-      className="mx-auto w-full max-w-[440px] rounded-[16px] border border-border bg-card p-6 shadow-[0_8px_28px_rgba(35,31,70,0.06)] sm:p-8"
+      className="mx-auto w-full max-w-[440px] rounded-[16px] border border-border bg-card p-6 shadow-card sm:p-8"
       aria-labelledby="verify-email-heading"
     >
       <h1
