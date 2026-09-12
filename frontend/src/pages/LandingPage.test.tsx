@@ -31,7 +31,7 @@ describe('랜딩 화면', () => {
     renderLanding()
 
     const table = screen.getByRole('table', {
-      name: 'ChatGPT·Gemini 같은 일반 AI 채팅과 Easy-Read AI의 차이',
+      name: 'ChatGPT·Gemini 같은 일반 AI 채팅과 EASY-DOC AI의 차이',
     })
     expect(table).toBeInTheDocument()
     expect(screen.getByRole('columnheader', { name: 'ChatGPT · Gemini' })).toBeInTheDocument()

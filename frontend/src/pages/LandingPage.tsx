@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom'
 
+import { SERVICE_NAME } from '../components/Logo'
 import { GUIDE_PATH, LOGIN_PATH, SIGNUP_PATH } from '../routes/paths'
 
 const CONCERNS = [
@@ -65,7 +66,7 @@ export function LandingPage() {
         </h1>
         <p className="mt-4 text-[17px] leading-7 text-muted-foreground">
           ChatGPT나 Gemini에 물어봐도 초안은 나옵니다. 다만 배포할 안내문은 사실·형식·검수가
-          남습니다. Easy-Read AI는 그 남은 일을 맡는 변환 작업실입니다.
+          남습니다. {SERVICE_NAME}는 그 남은 일을 맡는 변환 작업실입니다.
         </p>
         <div className="mt-6 flex flex-wrap gap-3">
           <Link to={SIGNUP_PATH} className={PRIMARY_LINK}>
@@ -116,7 +117,7 @@ export function LandingPage() {
         <div className="mt-6 overflow-x-auto rounded-[16px] border border-border bg-card shadow-card">
           <table className="w-full min-w-[36rem] border-collapse text-left text-sm leading-6">
             <caption className="sr-only">
-              ChatGPT·Gemini 같은 일반 AI 채팅과 Easy-Read AI의 차이
+              ChatGPT·Gemini 같은 일반 AI 채팅과 {SERVICE_NAME}의 차이
             </caption>
             <thead>
               <tr className="border-b border-border bg-background text-muted-foreground">
@@ -124,7 +125,7 @@ export function LandingPage() {
                   ChatGPT · Gemini
                 </th>
                 <th scope="col" className="px-5 py-3 font-semibold">
-                  Easy-Read AI
+                  {SERVICE_NAME}
                 </th>
               </tr>
             </thead>

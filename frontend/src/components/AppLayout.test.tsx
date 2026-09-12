@@ -358,7 +358,7 @@ describe('저장하지 않은 수정 가드', () => {
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
     renderLayout({}, '/history')
 
-    await user.click(screen.getByRole('link', { name: 'Easy-Read AI 홈' }))
+    await user.click(screen.getByRole('link', { name: 'EASY-DOC AI 홈' }))
 
     expect(confirm).toHaveBeenCalled()
     expect(screen.getByTestId('location')).toHaveTextContent('/history')
@@ -594,7 +594,7 @@ describe('머리말 구성', () => {
 
     expect(screen.queryByRole('navigation', { name: '주요 메뉴' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '계정 메뉴' })).not.toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Easy-Read AI 홈' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'EASY-DOC AI 홈' })).toBeInTheDocument()
   })
 
   it('익명 상태에서는 이용 가이드·로그인·가입 링크를 보여 준다', () => {

@@ -40,7 +40,7 @@ import { AnnouncementBanner } from './AnnouncementBanner'
 import { Footer } from './Footer'
 import { SetPasswordForm } from './SetPasswordForm'
 import { SocialLinkStatus } from './SocialLinkStatus'
-import { Logo } from './Logo'
+import { Logo, SERVICE_NAME } from './Logo'
 import { WorkspaceMenu } from './WorkspaceMenu'
 import { Button } from './ui/Button'
 
@@ -344,7 +344,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
             to={HOME_PATH}
             end
             onClick={guard}
-            aria-label="Easy-Read AI 홈"
+            aria-label={`${SERVICE_NAME} 홈`}
           >
             <Logo />
           </NavLink>
