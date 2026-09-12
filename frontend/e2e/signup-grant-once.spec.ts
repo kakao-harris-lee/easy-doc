@@ -27,8 +27,14 @@ test.describe('가입 크레딧은 이메일당 한 번', () => {
 
     // 1) 처음 가입 — 가입 부여를 정상 수령한다(E21과 같은 전제).
     await signUpAndLand(page, account)
+    const firstCredits = page.waitForResponse(
+      (response) =>
+        /\/workspaces\/[^/]+\/credits$/.test(response.url()) &&
+        response.request().method() === 'GET',
+    )
     await page.goto('/usage')
-    await expect(page.locator('dt:text-is("가용") + dd')).toHaveText('1,000')
+    await expect(page.getByText('이용량 제한 없음')).toBeVisible()
+    expect((await (await firstCredits).json()).available).toBe(1000)
     await expect(
       page.getByText(
         '이 이메일은 이전에 가입 크레딧을 받은 적이 있어 이번에는 제공되지 않았습니다.',
@@ -60,10 +66,16 @@ test.describe('가입 크레딧은 이메일당 한 번', () => {
     // 인증 전에는 signup_grant_skipped 가 항상 거짓이다, §7 결정 5 — 존재 은닉).
     // `signUpAndLand`로 착지(작업 공간 메뉴가 뜰 때까지)를 기다린 뒤에만 `/usage`로
     // 옮긴다 — 재가입 응답이 토큰을 저장하기 전에 이동하면 인증이 없어 로그인 화면으로
-    // 튕기고, 「가용」 요소 자체가 없어 아래 단언이 타임아웃으로 실패한다(리뷰 2026-09-10).
+    // 튕기고, 사용량 화면 자체가 없어 아래 단언이 타임아웃으로 실패한다(리뷰 2026-09-10).
     await signUpAndLand(page, account)
+    const skippedCredits = page.waitForResponse(
+      (response) =>
+        /\/workspaces\/[^/]+\/credits$/.test(response.url()) &&
+        response.request().method() === 'GET',
+    )
     await page.goto('/usage')
-    await expect(page.locator('dt:text-is("가용") + dd')).toHaveText('0')
+    await expect(page.getByText('이용량 제한 없음')).toBeVisible()
+    expect((await (await skippedCredits).json()).available).toBe(0)
     await expect(
       page.getByText(
         '이 이메일은 이전에 가입 크레딧을 받은 적이 있어 이번에는 제공되지 않았습니다.',
@@ -73,15 +85,19 @@ test.describe('가입 크레딧은 이메일당 한 번', () => {
     // 4) 이메일 인증을 마친 뒤에야 안내가 보인다.
     await page.goto('/')
     await verifyEmail(page, account)
+    const verifiedCredits = page.waitForResponse(
+      (response) =>
+        /\/workspaces\/[^/]+\/credits$/.test(response.url()) &&
+        response.request().method() === 'GET',
+    )
     await page.goto('/usage')
-    await expect(page.locator('dt:text-is("가용") + dd')).toHaveText('0')
+    await expect(page.getByText('이용량 제한 없음')).toBeVisible()
+    expect((await (await verifiedCredits).json()).available).toBe(0)
     await expect(
       page.getByText(
         '이 이메일은 이전에 가입 크레딧을 받은 적이 있어 이번에는 제공되지 않았습니다.',
       ),
     ).toBeVisible()
-
-    const creditsTable = page.getByRole('table', { name: /최근 크레딧 거래 내역입니다/ })
-    await expect(creditsTable.getByText('아직 거래가 없습니다.')).toBeVisible()
+    await expect(page.getByRole('table')).toHaveCount(0)
   })
 })
