@@ -9,6 +9,7 @@ import {
 } from 'react'
 import {
   BarChart3,
+  HelpCircle,
   FilePlus2,
   History,
   LogOut,
@@ -28,6 +29,7 @@ import {
   ACCOUNT_SETTINGS_PATH,
   ADMIN_PATH,
   EMAIL_VERIFICATION_PATH,
+  GUIDE_PATH,
   HISTORY_PATH,
   HOME_PATH,
   USAGE_PATH,
@@ -358,6 +360,10 @@ export function AppLayout({ children }: { children: ReactNode }) {
                   <BarChart3 className="size-4" aria-hidden="true" />
                   사용량
                 </NavLink>
+                <NavLink to={GUIDE_PATH} onClick={guard} className={navLinkClass}>
+                  <HelpCircle className="size-4" aria-hidden="true" />
+                  이용 가이드
+                </NavLink>
               </nav>
               <div className="ml-auto flex min-w-0 items-center gap-3">
                 <div className="hidden min-w-0 lg:block">
@@ -424,6 +430,9 @@ export function AppLayout({ children }: { children: ReactNode }) {
               </NavLink>
               <NavLink to={USAGE_PATH} onClick={guard} className={navLinkClass}>
                 사용량
+              </NavLink>
+              <NavLink to={GUIDE_PATH} onClick={guard} className={navLinkClass}>
+                이용 가이드
               </NavLink>
               {/* 좁은 화면에서는 이 메뉴가 계정 메뉴를 겸한다 — 이메일도 여기서만 보인다. */}
               {user !== null && (

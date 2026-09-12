@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom'
 
 import { BUSINESS_INFO_LOOKUP_URL, COMPANY_INFO, type CompanyInfo } from '../config/company'
 import { cn } from '../lib/utils'
-import { PRIVACY_PATH, TERMS_PATH } from '../routes/paths'
+import { GUIDE_PATH, PRIVACY_PATH, TERMS_PATH } from '../routes/paths'
 import { CONTAINER } from './AppLayout'
 
 /** 정책 열의 일반 링크 — 개인정보처리방침만 이 모양과 구분되게 그린다(아래 참고). */
@@ -18,8 +18,8 @@ const POLICY_LINK_CLASS =
  * 이 컴포넌트를 `status === 'authenticated'` 조건 밖에 두는 것만으로 로그인 전
  * 화면에도 그려진다. 머리말의 메뉴들과 달리 조건부 렌더를 걸지 않는 이유다.
  *
- * 요금 안내·이용 가이드가 아직 없어 계획이 제안한 「서비스」 열은 이번에 만들지
- * 않는다 — 링크할 화면이 생기면 그때 넷째 열로 추가한다.
+ * 이용 가이드는 「정책」 열에 둔다. 요금 안내 화면이 아직 없어 계획이 제안한
+ * 「서비스」 열은 만들지 않는다 — 링크할 화면이 생기면 그때 넷째 열로 추가한다.
  *
  * 계획 §5.2가 「정책」 열에 나열한 항목 중 **환불 정책**과 **AI 윤리**도 이번에는
  * 뺐다 — 이유가 서로 다르다.
@@ -89,6 +89,11 @@ export function Footer({ company = COMPANY_INFO }: { company?: CompanyInfo } = {
           <div>
             <h2 className="mb-3 text-sm font-semibold text-foreground">정책</h2>
             <ul className="space-y-2 text-sm">
+              <li>
+                <Link to={GUIDE_PATH} className={POLICY_LINK_CLASS}>
+                  이용 가이드
+                </Link>
+              </li>
               <li>
                 <Link to={TERMS_PATH} className={POLICY_LINK_CLASS}>
                   이용약관

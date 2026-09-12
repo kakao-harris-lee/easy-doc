@@ -172,6 +172,11 @@ const SCREENS: readonly {
     settle: () => screen.findByRole('heading', { name: '가입하기', level: 1 }),
   },
   {
+    name: '이용 가이드',
+    open: () => renderAt('/guide', 'anonymous'),
+    settle: () => screen.findByRole('heading', { name: '이용 가이드', level: 1 }),
+  },
+  {
     name: '새 변환',
     open: () => renderAt('/'),
     settle: () => screen.findByRole('heading', { name: '문서 변환하기' }),

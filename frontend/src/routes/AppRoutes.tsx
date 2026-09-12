@@ -4,6 +4,7 @@ import { AccountSettingsPage } from '../pages/AccountSettingsPage'
 import { AdminPage } from '../pages/AdminPage'
 import { ConversionPage } from '../pages/ConversionPage'
 import { EmailVerificationPage } from '../pages/EmailVerificationPage'
+import { GuidePage } from '../pages/GuidePage'
 import { HistoryPage } from '../pages/HistoryPage'
 import { LoginPage } from '../pages/LoginPage'
 import { NotFoundPage } from '../pages/NotFoundPage'
@@ -22,6 +23,7 @@ import {
   ADMIN_PATH,
   CONVERSION_PATH,
   EMAIL_VERIFICATION_PATH,
+  GUIDE_PATH,
   HISTORY_PATH,
   HOME_PATH,
   LOGIN_PATH,
@@ -44,6 +46,7 @@ export function AppRoutes() {
       {/* 로그인 없이 열린다 — 가입 전에도 약관·방침을 읽을 수 있어야 한다(P0-13). */}
       <Route path={TERMS_PATH} element={<TermsPage />} />
       <Route path={PRIVACY_PATH} element={<PrivacyPolicyPage />} />
+      <Route path={GUIDE_PATH} element={<GuidePage />} />
       <Route path={OAUTH_CALLBACK_PATH} element={<OAuthCallbackPage />} />
       <Route
         path={OAUTH_LINK_CALLBACK_PATH}
