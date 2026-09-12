@@ -74,8 +74,8 @@ test.describe('크레딧 계정 (집행 켜짐)', () => {
     // 4) /usage 크레딧 카드 — 가용 0, 집행이 켜져 있으므로 "지금은 집행되지 않습니다"
     // 안내는 뜨지 않는다(`CreditsCard`는 `!credits.enforced`일 때만 그 문단을 그린다).
     await page.goto('/usage')
-    await expect(page.getByRole('heading', { name: '크레딧' })).toBeVisible()
-    await expect(page.locator('dt:text-is("가용") + dd')).toHaveText('0')
-    await expect(page.getByText('(지금은 집행되지 않습니다)')).not.toBeVisible()
+    await expect(page.getByRole('heading', { name: '이번 달 사용량' })).toBeVisible()
+    await expect(page.locator('dt:text-is("남은 이용량") + dd')).toHaveText('0크레딧')
+    await expect(page.getByText('이용량 제한 없음')).not.toBeVisible()
   })
 })

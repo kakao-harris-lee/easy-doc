@@ -25,6 +25,7 @@ import {
 import { lookupTerm } from './api/dictionary'
 import { getWorkspaceCredits } from './api/credits'
 import { listInvoiceRequests } from './api/invoices'
+import { getSubscription } from './api/subscriptions'
 import { getWorkspaceUsage } from './api/usage'
 import { listActiveAnnouncements } from './api/announcements'
 import {
@@ -71,6 +72,10 @@ vi.mock('./api/usage', async (importOriginal) => ({
 
 vi.mock('./api/credits', () => ({
   getWorkspaceCredits: vi.fn(),
+}))
+
+vi.mock('./api/subscriptions', () => ({
+  getSubscription: vi.fn(),
 }))
 
 vi.mock('./api/invoices', () => ({
@@ -363,7 +368,7 @@ const SCREENS: readonly {
       vi.mocked(getWorkspaceUsage).mockResolvedValue(workspaceUsage())
       renderAt('/usage')
     },
-    settle: () => screen.findByRole('table', { name: /이 기간 사용량 합계입니다/ }),
+    settle: () => screen.findByText('2크레딧 사용'),
   },
   {
     name: '찾을 수 없는 화면',
@@ -501,6 +506,12 @@ function liveRegionTexts(): string[] {
 }
 
 beforeEach(() => {
+  vi.mocked(getSubscription).mockResolvedValue({
+    mock_enabled: false,
+    plans: [],
+    subscription: null,
+    payments: [],
+  })
   vi.mocked(listDocuments).mockResolvedValue({
     items: [documentItem()],
     limit: 20,
@@ -522,6 +533,7 @@ afterEach(() => {
   vi.mocked(reconvertUnit).mockReset()
   vi.mocked(getWorkspaceUsage).mockReset()
   vi.mocked(getWorkspaceCredits).mockReset()
+  vi.mocked(getSubscription).mockReset()
   vi.mocked(listInvoiceRequests).mockReset()
   vi.mocked(listActiveAnnouncements).mockReset()
   vi.mocked(listAdminWorkspaces).mockReset()
