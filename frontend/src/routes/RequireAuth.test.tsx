@@ -80,19 +80,30 @@ beforeEach(() => {
 })
 
 describe('인증 가드', () => {
-  it('토큰이 없으면 보호 화면 대신 로그인 화면을 보여준다', async () => {
+  it('토큰이 없으면 홈은 공개 랜딩을 보여 준다', async () => {
     renderAt('/')
 
-    expect(await screen.findByRole('heading', { name: '로그인' })).toBeInTheDocument()
+    expect(
+      await screen.findByRole('heading', {
+        name: '어려운 공공 안내문을, 누구나 읽는 쉬운 글로',
+      }),
+    ).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: '문서 변환하기' })).not.toBeInTheDocument()
     expect(vi.mocked(fetchMe)).not.toHaveBeenCalled()
   })
 
-  it('토큰이 만료됐으면 확인 후 로그인 화면으로 보낸다', async () => {
+  it('토큰이 없으면 보호 화면은 로그인으로 보낸다', async () => {
+    renderAt('/history')
+
+    expect(await screen.findByRole('heading', { name: '로그인' })).toBeInTheDocument()
+    expect(vi.mocked(fetchMe)).not.toHaveBeenCalled()
+  })
+
+  it('토큰이 만료됐으면 확인 후 보호 화면은 로그인으로 보낸다', async () => {
     window.localStorage.setItem('easydoc.access_token', 'expired-token')
     vi.mocked(fetchMe).mockRejectedValue(new Error('unauthorized'))
 
-    renderAt('/')
+    renderAt('/history')
 
     expect(await screen.findByRole('heading', { name: '로그인' })).toBeInTheDocument()
   })
@@ -113,7 +124,7 @@ describe('인증 가드', () => {
     expect(await screen.findByRole('heading', { name: '문서 변환하기' })).toBeInTheDocument()
   })
 
-  it('로그아웃하면 토큰을 지우고 로그인 화면으로 돌아간다', async () => {
+  it('로그아웃하면 토큰을 지우고 공개 랜딩으로 돌아간다', async () => {
     const user = userEvent.setup()
     window.localStorage.setItem('easydoc.access_token', 'valid-token')
     vi.mocked(fetchMe).mockResolvedValue({
@@ -131,7 +142,11 @@ describe('인증 가드', () => {
     await user.click(await screen.findByRole('button', { name: '계정 메뉴' }))
     await user.click(screen.getByRole('button', { name: '로그아웃' }))
 
-    expect(await screen.findByRole('heading', { name: '로그인' })).toBeInTheDocument()
+    expect(
+      await screen.findByRole('heading', {
+        name: '어려운 공공 안내문을, 누구나 읽는 쉬운 글로',
+      }),
+    ).toBeInTheDocument()
     expect(window.localStorage.getItem('easydoc.access_token')).toBeNull()
   })
 })

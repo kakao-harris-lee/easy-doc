@@ -1,5 +1,9 @@
 /** 라우트 경로 상수와 가드가 주고받는 상태 타입. */
 
+/**
+ * 홈. 로그인 전에는 공개 랜딩, 로그인 뒤에는 새 변환(업로드)이다.
+ * `AppRoutes`에서 `RequireAuth`로 감싸지 않는다 — 가리면 가치 제안이 로그인 뒤로 숨는다.
+ */
 export const HOME_PATH = '/'
 export const LOGIN_PATH = '/login'
 export const SIGNUP_PATH = '/signup'

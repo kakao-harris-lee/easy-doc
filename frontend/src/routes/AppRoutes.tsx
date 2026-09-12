@@ -6,6 +6,7 @@ import { ConversionPage } from '../pages/ConversionPage'
 import { EmailVerificationPage } from '../pages/EmailVerificationPage'
 import { GuidePage } from '../pages/GuidePage'
 import { HistoryPage } from '../pages/HistoryPage'
+import { HomePage } from '../pages/HomePage'
 import { LoginPage } from '../pages/LoginPage'
 import { NotFoundPage } from '../pages/NotFoundPage'
 import { OAuthCallbackPage } from '../pages/OAuthCallbackPage'
@@ -14,7 +15,6 @@ import { PrivacyPolicyPage } from '../pages/PrivacyPolicyPage'
 import { ResetPasswordPage } from '../pages/ResetPasswordPage'
 import { SignupPage } from '../pages/SignupPage'
 import { TermsPage } from '../pages/TermsPage'
-import { UploadPage } from '../pages/UploadPage'
 import { UsagePage } from '../pages/UsagePage'
 import { RequireAdmin } from './RequireAdmin'
 import { RequireAuth } from './RequireAuth'
@@ -64,14 +64,7 @@ export function AppRoutes() {
           </RequireAuth>
         }
       />
-      <Route
-        path={HOME_PATH}
-        element={
-          <RequireAuth>
-            <UploadPage />
-          </RequireAuth>
-        }
-      />
+      <Route path={HOME_PATH} element={<HomePage />} />
       <Route
         path={CONVERSION_PATH}
         element={

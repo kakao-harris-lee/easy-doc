@@ -1,5 +1,8 @@
 import { FileUp, PencilLine, Download } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
+import { Link } from 'react-router-dom'
+
+import { HOME_PATH } from '../routes/paths'
 
 interface Step {
   icon: LucideIcon
@@ -75,7 +78,8 @@ export function AuthIntro({ headingId, summary }: AuthIntroProps) {
         ))}
       </ol>
       <p className="mt-6 hidden text-sm leading-[22px] text-muted-foreground md:block">
-        변환 결과는 언제나 AI 초안입니다. 사실관계와 신청 방법은 담당자가 확인한 뒤 사용해 주세요.
+        변환 결과는 언제나 AI 초안입니다. 사실관계와 신청 방법은 담당자가 확인한 뒤 사용해 주세요.{' '}
+        <Link to={HOME_PATH}>ChatGPT·Gemini와 무엇이 다른지 보기</Link>
       </p>
     </aside>
   )
