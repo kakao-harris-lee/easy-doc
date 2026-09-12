@@ -662,7 +662,7 @@ export function UploadPage() {
       DOM 순서 그대로 폼 **뒤에** 놓여 입력과 대표 버튼 사이에 끼지 않는다. */}
       <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,3fr)_minmax(18rem,2fr)]">
         <form
-          className="rounded-2xl border border-border bg-card shadow-[0_8px_28px_rgba(35,31,70,0.06)]"
+          className="rounded-2xl border border-border bg-card shadow-card"
           onSubmit={(event) => void handleSubmit(event)}
           noValidate
         >

@@ -27,7 +27,7 @@ export function SignupPage() {
         className="w-full max-w-[440px] justify-self-center lg:order-2"
         aria-labelledby="signup-heading"
       >
-        <div className="rounded-[16px] border border-border bg-card p-6 shadow-[0_8px_28px_rgba(35,31,70,0.06)] sm:p-8">
+        <div className="rounded-[16px] border border-border bg-card p-6 shadow-card sm:p-8">
           <h1
             id="signup-heading"
             className="text-[28px] font-extrabold leading-9 tracking-tight text-foreground"
