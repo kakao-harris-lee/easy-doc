@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -589,12 +589,24 @@ describe('계정 메뉴 — 두 제공자를 함께 보여준다', () => {
 })
 
 describe('머리말 구성', () => {
-  it('익명 상태에서는 이동 메뉴와 계정 메뉴를 그리지 않는다', () => {
+  it('익명 상태에서는 업무 메뉴와 계정 메뉴를 그리지 않는다', () => {
     renderLayout({ status: 'anonymous', user: null })
 
     expect(screen.queryByRole('navigation', { name: '주요 메뉴' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '계정 메뉴' })).not.toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Easy-Read AI 홈' })).toBeInTheDocument()
+  })
+
+  it('익명 상태에서는 이용 가이드·로그인·가입 링크를 보여 준다', () => {
+    renderLayout({ status: 'anonymous', user: null })
+
+    const start = screen.getByRole('navigation', { name: '시작 메뉴' })
+    expect(within(start).getByRole('link', { name: '이용 가이드' })).toHaveAttribute(
+      'href',
+      '/guide',
+    )
+    expect(within(start).getByRole('link', { name: '로그인' })).toHaveAttribute('href', '/login')
+    expect(within(start).getByRole('link', { name: '가입하기' })).toHaveAttribute('href', '/signup')
   })
 
   it('익명 상태에도 푸터가 그려진다 (전자상거래법의 사업자 정보 초기 화면 표시 의무)', () => {

@@ -175,7 +175,7 @@ test.describe('인증 흐름', () => {
     const bootLog = new NetworkLog(page, API_BASE_URL)
     await page.goto('/login')
     await plantToken(page, INVALID_TOKEN)
-    await page.goto('/')
+    await page.goto('/history')
 
     await expect(page.getByRole('heading', { name: '로그인' })).toBeVisible()
     expect(new URL(page.url()).pathname).toBe('/login')

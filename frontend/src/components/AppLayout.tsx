@@ -32,6 +32,8 @@ import {
   GUIDE_PATH,
   HISTORY_PATH,
   HOME_PATH,
+  LOGIN_PATH,
+  SIGNUP_PATH,
   USAGE_PATH,
 } from '../routes/paths'
 import { AnnouncementBanner } from './AnnouncementBanner'
@@ -329,7 +331,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
   }
 
   return (
-    <>
+    <div className="flex min-h-dvh flex-col">
       <a className="skip-link" href="#main">
         본문으로 건너뛰기
       </a>
@@ -346,6 +348,23 @@ export function AppLayout({ children }: { children: ReactNode }) {
           >
             <Logo />
           </NavLink>
+          {status === 'anonymous' && (
+            <nav aria-label="시작 메뉴" className="ml-auto flex items-center gap-1">
+              <NavLink to={GUIDE_PATH} className={navLinkClass}>
+                <HelpCircle className="size-4" aria-hidden="true" />
+                이용 가이드
+              </NavLink>
+              <NavLink to={LOGIN_PATH} className={navLinkClass}>
+                로그인
+              </NavLink>
+              <NavLink
+                to={SIGNUP_PATH}
+                className="inline-flex min-h-11 items-center justify-center rounded-md bg-primary px-3 text-[15px] font-semibold text-primary-foreground hover:bg-primary-hover"
+              >
+                가입하기
+              </NavLink>
+            </nav>
+          )}
           {status === 'authenticated' && (
             <>
               <nav aria-label="주요 메뉴" className="ml-4 hidden items-center gap-1 lg:flex">
@@ -490,6 +509,6 @@ export function AppLayout({ children }: { children: ReactNode }) {
         가리지 않는다.
       */}
       <Footer />
-    </>
+    </div>
   )
 }
