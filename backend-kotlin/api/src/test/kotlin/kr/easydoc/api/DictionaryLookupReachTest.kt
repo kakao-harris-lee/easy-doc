@@ -68,6 +68,19 @@ class DictionaryLookupReachTest {
     }
 
     @Test
+    fun `무관한 단어와 여러 단어 선택은 실제 API에서도 후보가 없다`() {
+        val token = issueToken()
+        listOf("소득", "소득은", "주소", "자녀", "고지대", "구비서류 제출", "필요한 구비서류").forEach { query ->
+            val response = lookup(token, query)
+
+            assertThat(response.statusCode()).isEqualTo(OK)
+            assertThat(bodyOf(response)["candidates"] as List<*>)
+                .describedAs("'%s'에 무관한 후보가 노출되면 안 된다", query)
+                .isEmpty()
+        }
+    }
+
+    @Test
     @DisplayName("토큰 없이 부르면 401, text/plain 은 415, 101자는 422 — 실물 배선에서도 같다")
     fun `실물 배선에서도 401 415 422 다`() {
         assertThat(post("/dictionary/lookup", null, "{\"text\":\"구비서류\"}", "application/json").statusCode())

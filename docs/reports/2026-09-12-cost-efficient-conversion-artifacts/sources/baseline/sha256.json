@@ -1,0 +1,16 @@
+{
+  "core/src/main/kotlin/kr/easydoc/core/easyread/Prompts.kt": "90e56572bddb78011131a0dea55e50543e8e5f1c7315028ff0ea483839148260",
+  "core/src/main/kotlin/kr/easydoc/core/easyread/FactPreservation.kt": "433548fe35a54557355216b36f34ad3d8df19043f0eb535ad0871195b624d224",
+  "core/src/main/kotlin/kr/easydoc/core/easyread/NumberIdentity.kt": "c30d5873e9f05a9395126437e12b07f8152ae217337045e65351dfcc33e69c7e",
+  "core/src/main/kotlin/kr/easydoc/core/easyread/StyleRules.kt": "a3326db6ca1f08f5f0acb243968c17018774853b4514d6dd34dc078fdc8ea84c",
+  "core/src/main/kotlin/kr/easydoc/core/easyread/TemporalFacts.kt": "df6849c4ebf2e091a379bfad6b1b58d182a2f721e140d4591f8929740f7840ce",
+  "core/src/main/kotlin/kr/easydoc/core/llm/LlmPrompt.kt": "7ba3d455bab8b037d9cfdf1a123994682cc10d08d43c61f812ae0619a2025e52",
+  "application/src/main/kotlin/kr/easydoc/application/conversion/ConvertDocumentUseCase.kt": "31c1158eeed21b03713bf85aa538bd7f561dee73251e25d0904dfda218fbba6d",
+  "application/src/main/kotlin/kr/easydoc/application/conversion/RepairDecision.kt": "0526bb6231c16fca96326e5d43adacd53990fbf5b57c525b0a4314538fef2782",
+  "infrastructure/src/main/kotlin/kr/easydoc/infrastructure/llm/OpenAiProvider.kt": "dd6710ddbe1a319a6ca83cd24dc6f3e5e0536a539c20c17b7b70130c28552d16",
+  "infrastructure/src/main/kotlin/kr/easydoc/infrastructure/llm/AnthropicProvider.kt": "50bd7e468b66c48c1e1e780be09d95f0db1af10d42c65808f1b4317137b7a6c7",
+  "infrastructure/src/main/resources/dictionary/easy_dict.index.json": "97c41d321b8e9a15e5e32f5c7a0cdc06c7782e560a6874f146d8711e8b89b2e6",
+  "infrastructure/src/test/kotlin/kr/easydoc/infrastructure/quality/LaneConversionTrace.kt": "fc4f4fe7dd05bfbf717c0f06656770e58aa3476550b7c7bfb32da7470cab6936",
+  "infrastructure/src/test/kotlin/kr/easydoc/infrastructure/quality/LaneTranscript.kt": "4123e9174f44f03e0d37ca207a9f437e621a127d60f0638758912cb3d2fd3180",
+  "infrastructure/src/test/kotlin/kr/easydoc/infrastructure/quality/GoldenCorpusLlmEvaluationTest.kt": "0f863dd1c35f8a521106afe75a05400c6229abccbb8214d7b97afd136873a428"
+}

@@ -549,7 +549,7 @@ class SensitiveToStringReachTest {
          * `KNOWN_SENSITIVE_TYPES`에는 넣지 않는다 — 그 목록은 **자동 판정이 실제로 닿는**
          * 타입의 바닥이고, 이 둘은 토큰 불일치로 애초에 자동 판정 대상이 아니다.
          */
-        const val EXPECTED_SOURCE_DECLARATIONS = 215
+        const val EXPECTED_SOURCE_DECLARATIONS = 237 // main 215 + 관리자 의견 4 + 구독 10 + Toss application 3, API 5
 
         /** 민감 판정이 반드시 닿아야 하는 타입 — 바닥이다. */
         val KNOWN_SENSITIVE_TYPES =

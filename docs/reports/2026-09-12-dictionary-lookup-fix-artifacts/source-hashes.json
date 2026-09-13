@@ -1,0 +1,11 @@
+{
+  "at": "2026-09-12T06:38:29.455Z",
+  "hashes": {
+    "backend-kotlin/core/src/main/kotlin/kr/easydoc/core/dictionary/DictionaryIndex.kt": "fb773d5b74840c7427f2b0edff13f2ada1e3dfda68110d066f732ecff2b8f574",
+    "backend-kotlin/core/src/main/kotlin/kr/easydoc/core/dictionary/TermLookup.kt": "f36af3e04a92eaa77e9664275d734c449601b07ea695674fbbd2f4a9eca9dadf",
+    "backend-kotlin/core/src/test/kotlin/kr/easydoc/core/dictionary/TermLookupTest.kt": "158bc415aeb35e73fbd85b3c836003511fd6576137648f6b6871eb95b3bbed9a",
+    "backend-kotlin/core/src/test/resources/kr/easydoc/core/dictionary/lookup-fixture.json": "cd59963ec8c002e21f524214ab59b22f5041979a41a92208d504f9ed665a806d",
+    "backend-kotlin/infrastructure/src/test/kotlin/kr/easydoc/infrastructure/dictionary/TermLookupFixtureTest.kt": "55209281b211f5b57f033aeff774e76ea1d7cb9ec5b78011baa941cb484f2642",
+    "backend-kotlin/api/src/test/kotlin/kr/easydoc/api/DictionaryLookupReachTest.kt": "eda5cbb4f0e49e59d832b68716e3338856f0ffa45bc723a7b082e7969974990c"
+  }
+}

@@ -315,6 +315,7 @@ class EnvelopeColumnWriteGuardTest {
          */
         val EXPECTED_FILES =
             listOf(
+                "api/src/test/kotlin/kr/easydoc/api/AdminReachTest.kt",
                 "api/src/test/kotlin/kr/easydoc/api/ConversionExportReachTest.kt",
                 // 피드백 실경로 테스트도 완료 상태를 SQL 로 심는다 — 그 문장이 봉투를 함께 쓴다.
                 "api/src/test/kotlin/kr/easydoc/api/ConversionFeedbackReachTest.kt",
@@ -342,6 +343,7 @@ class EnvelopeColumnWriteGuardTest {
                 // 회전 배치 통합 테스트도 옛 세대 변환을 완료 상태로 심는다 — 그 문장이 봉투를
                 // 함께 쓴다(`completeConversion`).
                 "infrastructure/src/test/kotlin/kr/easydoc/infrastructure/document/KeyRotationBatchTest.kt",
+                "infrastructure/src/test/kotlin/kr/easydoc/infrastructure/subscription/TossStoreTest.kt",
             )
 
         /**
@@ -373,6 +375,6 @@ class EnvelopeColumnWriteGuardTest {
          * 같은 불변식을 진다. `ReviewedBody` 를 만들 수 있는 자리가 아니라(privacy-gate X-5)
          * 제품 검수 저장 경로 대신 이 원시 SQL 을 쓴다 — 사유는 그 함수 KDoc.
          */
-        const val EXPECTED_STATEMENTS = 20
+        const val EXPECTED_STATEMENTS = 23
     }
 }

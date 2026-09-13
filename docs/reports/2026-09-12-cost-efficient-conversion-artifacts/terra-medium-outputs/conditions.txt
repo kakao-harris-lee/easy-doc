@@ -1,0 +1,1 @@
+provider=openai settings=MetricsLlmProviderDecorator(delegate=OpenAiProvider(model=gpt-5.6-terra, effort=MEDIUM)) max_tokens=8192 · dictContext=product · transcript=/private/tmp/easydoc-cost-quality-20260912/terra-medium-outputs · runs=1 cap_usd=1.6

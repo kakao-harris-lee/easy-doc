@@ -134,8 +134,7 @@ export function ReviewFeedback({ conversionId, onSubmitted }: ReviewFeedbackProp
         이번 결과에 대한 의견
       </h2>
       <p className="field-hint">
-        파일럿 판정에 쓰는 기록입니다. 문서 한 건마다 한 번만 보내면 되고, 다시 보내면 앞서 보낸
-        내용을 덮어씁니다.
+        결과 개선에 참고할 의견입니다. 문서 한 건마다 한 번만 보내 주세요.
       </p>
 
       {/* 자유 의견에 문서 본문이 섞여 들어오지 않게 하는 고지. 조건 없이 늘 보인다 —

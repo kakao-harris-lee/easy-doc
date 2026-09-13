@@ -1,0 +1,58 @@
+{
+  "checkedAt": "2026-09-12T02:15:25.770Z",
+  "containers": [
+    {
+      "service": "backend-api",
+      "id": "009bc6740ff68f1ef1123c3e29c039605d2c4084549fb699e89d64251fa6e254",
+      "image": "sha256:0423da43a228c478250bfe4e6d369ebc79eb36a27a12ec3603fa34a6b9031eaf",
+      "status": "running",
+      "health": "healthy",
+      "settings": {
+        "EASYDOC_DICTIONARY_LOOKUP_ENABLED": "true",
+        "EASYDOC_LLM_MODEL": "gpt-6-astra",
+        "EASYDOC_LLM_OUTPUT_USD_PER_MILLION_TOKENS": "50",
+        "EASYDOC_LLM_PROVIDER": "openai",
+        "EASYDOC_LLM_EFFORT": "medium",
+        "EASYDOC_LLM_INPUT_USD_PER_MILLION_TOKENS": "10",
+        "EASYDOC_DICTIONARY_ENABLED": "true"
+      }
+    },
+    {
+      "service": "backend-worker",
+      "id": "337035ce17ceab4a361d45e4af3bf93c9bef039b4f0d1f8261331e935fdbcba9",
+      "image": "sha256:0423da43a228c478250bfe4e6d369ebc79eb36a27a12ec3603fa34a6b9031eaf",
+      "status": "running",
+      "settings": {
+        "EASYDOC_DICTIONARY_ENABLED": "true",
+        "EASYDOC_LLM_OUTPUT_USD_PER_MILLION_TOKENS": "50",
+        "EASYDOC_LLM_PROVIDER": "openai",
+        "EASYDOC_LLM_INPUT_USD_PER_MILLION_TOKENS": "10",
+        "EASYDOC_LLM_EFFORT": "medium",
+        "EASYDOC_DICTIONARY_LOOKUP_ENABLED": "true",
+        "EASYDOC_LLM_MODEL": "gpt-6-astra"
+      }
+    }
+  ],
+  "health": [
+    {
+      "url": "http://localhost:8100/health",
+      "result": {
+        "status": "ok",
+        "checks": {
+          "database": true,
+          "queue": true
+        }
+      }
+    },
+    {
+      "url": "http://localhost:8080/api/health",
+      "result": {
+        "status": "ok",
+        "checks": {
+          "database": true,
+          "queue": true
+        }
+      }
+    }
+  ]
+}

@@ -5,6 +5,8 @@ import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.ValueSource
 
 /**
  * P0-5 조각 2 회귀 - docs/plans/2026-09-04-p0-5-easy-word-dictionary-rag.md 4장.
@@ -124,6 +126,57 @@ class TermLookupTest {
         assertThat(candidate.term).isEqualTo("저소득")
         assertThat(candidate.matchKind).isEqualTo(TermMatchKind.COMPOUND_PART)
         assertThat(candidate.applicable).isFalse()
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = ["소득", "소득은", "주소", "소식", "자녀", "자연", "고지대"])
+    fun `무관한 단어를 잘라 후보를 만들지 않는다`(query: String) {
+        val ambiguous =
+            DictionaryFixture()
+                .add(DictionaryEntry("소", "소송", ReplaceStrategy.GLOSS, RiskLevel.HIGH, 110))
+                .add(DictionaryEntry("자", "사람", ReplaceStrategy.SUBSTITUTE, RiskLevel.NONE, 110))
+                .add(DictionaryEntry("고지", "공식으로 알림", ReplaceStrategy.GLOSS, RiskLevel.LOW, 120))
+                .build()
+
+        assertThat(TermLookup.candidates(TermQuery.of(query), ambiguous)).isEmpty()
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = ["구비서류 제출", "필요한 구비서류", "구비서류, 과태료", "구비서류 2부", "구비서류는 필요합니다"])
+    fun `선택한 문구 일부의 일치를 전체 일치로 반환하지 않는다`(query: String) {
+        assertThat(TermLookup.candidates(TermQuery.of(query), index)).isEmpty()
+    }
+
+    @Test
+    fun `조사 연쇄만 남은 선택은 정상 조회한다`() {
+        val candidate = TermLookup.candidates(TermQuery.of("구비서류에서만은"), index).single()
+
+        assertThat(candidate.term).isEqualTo("구비서류")
+        assertThat(candidate.matchKind).isEqualTo(TermMatchKind.EXACT)
+        assertThat(candidate.applicable).isTrue()
+    }
+
+    @Test
+    fun `확인된 복합어에는 조사를 허용하되 다른 단어까지 확장하지 않는다`() {
+        val candidate = TermLookup.candidates(TermQuery.of("저소득가구는"), index).single()
+
+        assertThat(candidate.term).isEqualTo("저소득")
+        assertThat(candidate.matchKind).isEqualTo(TermMatchKind.COMPOUND_PART)
+        assertThat(candidate.applicable).isFalse()
+        assertThat(TermLookup.candidates(TermQuery.of("저소득가구원"), index)).isEmpty()
+        assertThat(TermLookup.candidates(TermQuery.of("저소득가구 지원"), index)).isEmpty()
+    }
+
+    @Test
+    fun `부분 설명의 뜻풀이가 고위험이거나 검토 필요하면 노출하지 않는다`() {
+        listOf(
+            DictionaryEntry("저소득", "적은 수입", ReplaceStrategy.GLOSS, RiskLevel.HIGH, 130),
+            DictionaryEntry("저소득", "적은 수입", ReplaceStrategy.GLOSS, RiskLevel.LOW, 130, tags = listOf("needs_review")),
+        ).forEach { entry ->
+            val unsafe = DictionaryFixture().add(entry).build()
+
+            assertThat(TermLookup.candidates(TermQuery.of("저소득가구"), unsafe)).isEmpty()
+        }
     }
 
     @Test

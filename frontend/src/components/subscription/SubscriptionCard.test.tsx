@@ -1,3 +1,4 @@
+import { openTossBilling } from '../../billing/toss'
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, expect, it, vi } from 'vitest'
@@ -7,6 +8,8 @@ import {
   type SubscriptionOverview,
 } from '../../api/subscriptions'
 import { SubscriptionCard } from './SubscriptionCard'
+
+vi.mock('../../billing/toss', () => ({ openTossBilling: vi.fn() }))
 
 vi.mock('../../api/subscriptions', () => ({
   getSubscription: vi.fn(),
@@ -91,4 +94,20 @@ it('admin uses admin endpoint and does not show checkout controls', async () => 
   await screen.findByText('선택한 플랜 없음')
   expect(getSubscription).toHaveBeenCalledWith('w2', expect.any(AbortSignal), true)
   expect(screen.queryByRole('button', { name: '플랜 선택' })).not.toBeInTheDocument()
+})
+
+it('opens Toss billing for the selected plan when the server enables Toss test mode', async () => {
+  vi.mocked(getSubscription).mockResolvedValue({
+    ...available,
+    mock_enabled: false,
+    toss_enabled: true,
+  })
+  vi.mocked(openTossBilling).mockResolvedValue()
+  const user = userEvent.setup()
+  render(<SubscriptionCard workspaceId="w1" />)
+  await user.click(await screen.findByRole('button', { name: '플랜 선택' }))
+  await user.click(screen.getByRole('radio', { name: 'Pro' }))
+  await user.click(screen.getByRole('button', { name: '토스 테스트 카드 등록' }))
+  expect(openTossBilling).toHaveBeenCalledWith('w1', 'pro', false)
+  expect(checkoutSubscription).not.toHaveBeenCalled()
 })

@@ -16,6 +16,7 @@ import kr.easydoc.core.crypto.EncryptionScheme
 import kr.easydoc.core.crypto.PlainBody
 import kr.easydoc.core.crypto.PlainBytes
 import kr.easydoc.core.document.ConversionStatus
+import kr.easydoc.core.document.SourceFormat
 import kr.easydoc.core.exceptions.LlmProviderException
 import kr.easydoc.core.llm.FakeLlmProvider
 import kr.easydoc.core.llm.FakeLlmTurn
@@ -669,6 +670,7 @@ class ProcessConversionJobTest {
                 // 원장 스냅샷(documentCharCount)이 요구하는 값 — 이 테스트는 그 값을 재지
                 // 않으므로 고정값이면 충분하다.
                 charCount = FAKE_DOCUMENT_CHAR_COUNT,
+                sourceFormat = SourceFormat.TEXT,
                 creditsReserved = creditsReservedColumn,
             )
 

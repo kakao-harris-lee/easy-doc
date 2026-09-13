@@ -1,0 +1,90 @@
+{
+  "sonnet-low": {
+    "source": "phase1",
+    "provider": "anthropic",
+    "model": "claude-sonnet-5",
+    "effort": "low",
+    "input": 2,
+    "output": 10,
+    "runs": 1,
+    "corpus": "corpus",
+    "cap": 2.5
+  },
+  "sonnet-high": {
+    "source": "phase1",
+    "provider": "anthropic",
+    "model": "claude-sonnet-5",
+    "effort": "high",
+    "input": 2,
+    "output": 10,
+    "runs": 1,
+    "corpus": "corpus",
+    "cap": 2.5
+  },
+  "sol-medium": {
+    "source": "phase1",
+    "provider": "openai",
+    "model": "gpt-5.6-sol",
+    "effort": "medium",
+    "input": 4,
+    "output": 20,
+    "runs": 1,
+    "corpus": "corpus",
+    "cap": 4
+  },
+  "sonnet-low-r1": {
+    "source": "phase1",
+    "provider": "anthropic",
+    "model": "claude-sonnet-5",
+    "effort": "low",
+    "input": 2,
+    "output": 10,
+    "runs": 1,
+    "corpus": "corpus",
+    "cap": 2.5
+  },
+  "sol-improved": {
+    "source": "phase2",
+    "provider": "openai",
+    "model": "gpt-5.6-sol",
+    "effort": "medium",
+    "input": 4,
+    "output": 20,
+    "runs": 1,
+    "corpus": "corpus",
+    "cap": 3
+  },
+  "astra-improved": {
+    "source": "phase2",
+    "provider": "openai",
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "input": 10,
+    "output": 50,
+    "runs": 1,
+    "corpus": "corpus",
+    "cap": 6
+  },
+  "astra-validation": {
+    "source": "phase2",
+    "provider": "openai",
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "input": 10,
+    "output": 50,
+    "runs": 1,
+    "corpus": "validation-corpus",
+    "cap": 6.1
+  },
+  "astra-final": {
+    "source": "phase3",
+    "provider": "openai",
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "input": 10,
+    "output": 50,
+    "runs": 1,
+    "corpus": "validation-final",
+    "cap": 6.1
+  }
+}

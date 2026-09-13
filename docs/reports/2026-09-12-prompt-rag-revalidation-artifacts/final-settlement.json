@@ -1,0 +1,14 @@
+{
+  "settledAt": "2026-09-12T02:19:14.283Z",
+  "previousMeasurementsUsd": 8.552242,
+  "benchmarkUsd": 8.422188,
+  "firstLiveUsd": 0.12551,
+  "finalLiveUsd": 0.13435,
+  "thisRevalidationUsd": 8.682048,
+  "cumulativeUsd": 17.23429,
+  "userCapUsd": 50,
+  "unspentUsd": 32.76571,
+  "openPaidRuns": 0,
+  "reservationsReleased": true,
+  "costBasis": "Provider token usage times verified rates; excludes tax, invoice adjustments and server cost."
+}

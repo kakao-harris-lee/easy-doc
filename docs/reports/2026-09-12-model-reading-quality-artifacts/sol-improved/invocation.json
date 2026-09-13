@@ -1,0 +1,29 @@
+{
+  "arm": "sol-improved",
+  "source": "phase2",
+  "provider": "openai",
+  "model": "gpt-5.6-sol",
+  "effort": "medium",
+  "input": 4,
+  "output": 20,
+  "runs": 1,
+  "corpus": "corpus",
+  "cap": 3,
+  "priorReservedUsd": 4.198994,
+  "previousTurnCostUsd": 1.464392,
+  "combinedLimitUsd": 20,
+  "startedAt": "2026-09-11T15:39:19.924Z",
+  "args": [
+    ":infrastructure:testLlm",
+    "--tests",
+    "*GoldenCorpusLlmEvaluationTest",
+    "-Peasydoc.golden.documents.dir=/private/tmp/easydoc-model-quality-20260912/corpus",
+    "--console=plain"
+  ],
+  "hashes": {
+    "backend-kotlin/core/src/main/kotlin/kr/easydoc/core/easyread/Prompts.kt": "777e6a985fd1c89a9b50bdd03a76b8ba98e689fccd9b850008ef63f37fac7815",
+    "backend-kotlin/core/src/main/kotlin/kr/easydoc/core/easyread/FactPreservation.kt": "433548fe35a54557355216b36f34ad3d8df19043f0eb535ad0871195b624d224",
+    "backend-kotlin/core/src/main/kotlin/kr/easydoc/core/llm/LlmPrompt.kt": "7ba3d455bab8b037d9cfdf1a123994682cc10d08d43c61f812ae0619a2025e52",
+    "backend-kotlin/infrastructure/src/main/kotlin/kr/easydoc/infrastructure/llm/OpenAiProvider.kt": "dd6710ddbe1a319a6ca83cd24dc6f3e5e0536a539c20c17b7b70130c28552d16"
+  }
+}

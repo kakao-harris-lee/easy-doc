@@ -918,3 +918,16 @@ export interface ActiveAnnouncementListResponse {
   /** 활성 공지 최신순 최대 5건. */
   items: ActiveAnnouncementResponse[]
 }
+
+export interface AdminFeedbackItem extends ConversionFeedbackResponse {
+  comment_unreadable: boolean
+  user_id: string | null
+  owner_email: string | null
+}
+
+export interface AdminFeedbackListResponse {
+  items: AdminFeedbackItem[]
+  page: number
+  size: number
+  total: number
+}

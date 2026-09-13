@@ -53,30 +53,42 @@ describe('Footer', () => {
   it('고객지원 이메일이 mailto 링크로 걸린다', () => {
     renderFooter()
 
-    const emailLink = screen.getByRole('link', { name: COMPANY_INFO.supportEmail })
+    const emailLink = screen.getByRole('link', { name: `고객지원 ${COMPANY_INFO.supportEmail}` })
     expect(emailLink).toHaveAttribute('href', `mailto:${COMPANY_INFO.supportEmail}`)
   })
 
   it('사업자정보 확인은 새 창으로 여는 외부 링크다', () => {
     renderFooter()
 
-    const lookupLink = screen.getByRole('link', { name: '사업자정보 확인' })
+    const lookupLink = screen.getByRole('link', { name: /^사업자정보 확인:/ })
     expect(lookupLink).toHaveAttribute('target', '_blank')
     expect(lookupLink).toHaveAttribute('rel', 'noopener noreferrer')
   })
 
-  it('카피라이트 줄이 구성값의 회사명·연도로 채워진다', () => {
+  it('회사명은 한 번만 표시하고 카피라이트에 구성값의 연도를 쓴다', () => {
     renderFooter({ ...COMPANY_INFO, name: '테스트 회사', serviceLaunchYear: 2030 })
 
-    expect(screen.getByText(/© 2030 테스트 회사\. All rights reserved\./)).toBeInTheDocument()
+    expect(screen.getAllByText('테스트 회사')).toHaveLength(1)
+    expect(screen.getByText('© 2030 All rights reserved.')).toBeInTheDocument()
   })
 
-  it('contentinfo 랜드마크이고 열 제목은 heading이다', () => {
+  it('contentinfo 랜드마크와 정책 탐색을 제공한다', () => {
     renderFooter()
-
     expect(screen.getByRole('contentinfo')).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: '회사' })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: '고객지원' })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: '정책' })).toBeInTheDocument()
+    expect(screen.getByRole('navigation', { name: '정책' })).toBeInTheDocument()
+  })
+
+  it('대표와 개인정보 보호책임자가 같으면 이름을 합쳐 표시한다', () => {
+    renderFooter()
+    expect(screen.getAllByText(new RegExp(COMPANY_INFO.representativeName))).toHaveLength(1)
+    expect(
+      screen.getByText('대표 · 개인정보 보호책임자 ' + COMPANY_INFO.representativeName),
+    ).toBeInTheDocument()
+  })
+
+  it('개인정보 보호책임자가 다르면 별도로 표시한다', () => {
+    renderFooter({ ...COMPANY_INFO, privacyOfficerName: '김담당', privacyOfficerRole: '관리자' })
+    expect(screen.getByText('대표 ' + COMPANY_INFO.representativeName)).toBeInTheDocument()
+    expect(screen.getByText('개인정보 보호책임자 김담당 (관리자)')).toBeInTheDocument()
   })
 })

@@ -142,6 +142,29 @@ const PRIORITY_CASES: Case[] = [
 ]
 
 describe('규칙 기반 다음 할 일', () => {
+  it('의견만 제출한 변환도 검수 완료로 취급한다', () => {
+    const item = { ...unreviewed, feedback_submitted_at: '2026-09-12T01:00:00Z' }
+    expect(chooseNextAction([item])?.kind).toBe('reviewed')
+    expect(chooseNextAction([item])?.actionLabel).toBe('문서 열기')
+  })
+
+  it('의견을 제출한 변환을 건너뛰고 미검수 변환을 제안한다', () => {
+    const completed = {
+      ...reviewed,
+      reviewed_at: null,
+      feedback_submitted_at: '2026-09-12T01:00:00Z',
+    }
+    expect(chooseNextAction([completed, unreviewed])?.conversionId).toBe(unreviewed.conversion_id)
+    expect(chooseNextAction([completed, unreviewed])?.kind).toBe('review')
+  })
+
+  it('완료 시각 필드가 누락되어도 검수 완료로 판단하지 않는다', () => {
+    const item: Partial<DocumentListItem> = { ...unreviewed }
+    delete item.reviewed_at
+    delete item.feedback_submitted_at
+    expect(chooseNextAction([item as DocumentListItem])?.kind).toBe('review')
+  })
+
   it.each(SINGLE_CONDITIONS)(
     '$name 이면 $kind 를 제안한다',
     ({ documents, kind, message, conversionId }) => {

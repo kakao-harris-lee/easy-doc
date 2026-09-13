@@ -7,6 +7,7 @@ import kr.easydoc.core.credit.Credits
 import kr.easydoc.core.crypto.EncryptedField
 import kr.easydoc.core.crypto.PlainBody
 import kr.easydoc.core.document.ConversionStatus
+import kr.easydoc.core.document.SourceFormat
 import kr.easydoc.core.exceptions.ConfigurationException
 import kr.easydoc.core.exceptions.StorageException
 import kr.easydoc.core.segment.SourceStructure
@@ -140,9 +141,13 @@ class ProcessConversionJob(
         item: ConversionWorkItem,
     ): ConversionResult {
         val source = stores.cipher.decrypt(item.sourceText, item.documentId, EncryptedField.DOCUMENT_SOURCE_TEXT)
-        // item.structure 가 null 이면(옛 문서, 계획 §1.2) 전부 BODY 로 접는다 —
-        // ConvertDocumentUseCase.convert 의 기본값과 같은 방침이다.
-        val structure = item.structure ?: SourceStructure.allBody(splitUnits(source.value).size)
+        // 평문에 추정한 목록은 화면 비교용이다. 줄 수를 고정하면 붙여넣기로 깨진 표와
+        // 문단을 재구성할 수 없으므로 생성 힌트에서만 제외하고 저장된 구조는 유지한다.
+        val structure =
+            when (item.sourceFormat) {
+                SourceFormat.TEXT, SourceFormat.TXT -> null
+                else -> item.structure
+            } ?: SourceStructure.allBody(splitUnits(source.value).size)
         return runtime.heartbeat.whileHeld(lease) { convert.convert(source.value, structure = structure) }
     }
 

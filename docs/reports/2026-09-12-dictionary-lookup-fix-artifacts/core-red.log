@@ -1,0 +1,128 @@
+> Task :infrastructure:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :core:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :application:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :application:processResources NO-SOURCE
+> Task :infrastructure:processResources UP-TO-DATE
+> Task :infrastructure:processTestFixturesResources UP-TO-DATE
+> Task :infrastructure:processTestResources UP-TO-DATE
+> Task :core:compileKotlin UP-TO-DATE
+> Task :core:compileJava NO-SOURCE
+> Task :core:processResources NO-SOURCE
+> Task :core:classes UP-TO-DATE
+> Task :core:jar UP-TO-DATE
+> Task :application:compileKotlin UP-TO-DATE
+> Task :application:compileJava NO-SOURCE
+> Task :application:classes UP-TO-DATE
+> Task :application:jar UP-TO-DATE
+> Task :core:compileTestFixturesKotlin UP-TO-DATE
+> Task :core:compileTestFixturesJava NO-SOURCE
+> Task :core:processTestFixturesResources NO-SOURCE
+> Task :core:testFixturesClasses UP-TO-DATE
+> Task :core:testFixturesJar UP-TO-DATE
+> Task :infrastructure:compileKotlin UP-TO-DATE
+> Task :infrastructure:compileJava NO-SOURCE
+> Task :infrastructure:classes UP-TO-DATE
+> Task :infrastructure:jar UP-TO-DATE
+> Task :infrastructure:compileTestFixturesKotlin UP-TO-DATE
+> Task :infrastructure:compileTestFixturesJava NO-SOURCE
+> Task :infrastructure:testFixturesClasses UP-TO-DATE
+> Task :infrastructure:testFixturesJar UP-TO-DATE
+> Task :core:processTestResources UP-TO-DATE
+> Task :core:compileTestKotlin
+> Task :core:compileTestJava NO-SOURCE
+> Task :core:testClasses UP-TO-DATE
+> Task :infrastructure:compileTestKotlin
+> Task :infrastructure:compileTestJava NO-SOURCE
+> Task :infrastructure:testClasses UP-TO-DATE
+
+> Task :core:test FAILED
+
+TermLookupTest > 확인된 복합어에는 조사를 허용하되 다른 단어까지 확장하지 않는다() FAILED
+    java.lang.AssertionError: 
+    Expecting empty but was: [TermCandidate(term=저소득, easyTerm=적은 수입, strategy=GLOSS, risk=LOW, definition=null, caution=null, tags=[], examples=[], matchKind=COMPOUND_PART, applicable=false, entryId=5)]
+        at kr.easydoc.core.dictionary.TermLookupTest.확인된 복합어에는 조사를 허용하되 다른 단어까지 확장하지 않는다(TermLookupTest.kt:166)
+
+TermLookupTest > 무관한 단어를 잘라 후보를 만들지 않는다(String) > [1] "소득" FAILED
+    java.lang.AssertionError: 
+    Expecting empty but was: [TermCandidate(term=소, easyTerm=소송, strategy=GLOSS, risk=HIGH, definition=null, caution=null, tags=[], examples=[], matchKind=COMPOUND_PART, applicable=false, entryId=1)]
+        at kr.easydoc.core.dictionary.TermLookupTest.무관한 단어를 잘라 후보를 만들지 않는다(TermLookupTest.kt:141)
+
+TermLookupTest > 무관한 단어를 잘라 후보를 만들지 않는다(String) > [2] "소득은" FAILED
+    java.lang.AssertionError: 
+    Expecting empty but was: [TermCandidate(term=소, easyTerm=소송, strategy=GLOSS, risk=HIGH, definition=null, caution=null, tags=[], examples=[], matchKind=COMPOUND_PART, applicable=false, entryId=1)]
+        at kr.easydoc.core.dictionary.TermLookupTest.무관한 단어를 잘라 후보를 만들지 않는다(TermLookupTest.kt:141)
+
+TermLookupTest > 무관한 단어를 잘라 후보를 만들지 않는다(String) > [3] "주소" FAILED
+    java.lang.AssertionError: 
+    Expecting empty but was: [TermCandidate(term=소, easyTerm=소송, strategy=GLOSS, risk=HIGH, definition=null, caution=null, tags=[], examples=[], matchKind=COMPOUND_PART, applicable=false, entryId=1)]
+        at kr.easydoc.core.dictionary.TermLookupTest.무관한 단어를 잘라 후보를 만들지 않는다(TermLookupTest.kt:141)
+
+TermLookupTest > 무관한 단어를 잘라 후보를 만들지 않는다(String) > [4] "소식" FAILED
+    java.lang.AssertionError: 
+    Expecting empty but was: [TermCandidate(term=소, easyTerm=소송, strategy=GLOSS, risk=HIGH, definition=null, caution=null, tags=[], examples=[], matchKind=COMPOUND_PART, applicable=false, entryId=1)]
+        at kr.easydoc.core.dictionary.TermLookupTest.무관한 단어를 잘라 후보를 만들지 않는다(TermLookupTest.kt:141)
+
+TermLookupTest > 무관한 단어를 잘라 후보를 만들지 않는다(String) > [5] "자녀" FAILED
+    java.lang.AssertionError: 
+    Expecting empty but was: [TermCandidate(term=자, easyTerm=사람, strategy=SUBSTITUTE, risk=NONE, definition=null, caution=null, tags=[], examples=[], matchKind=COMPOUND_PART, applicable=false, entryId=2)]
+        at kr.easydoc.core.dictionary.TermLookupTest.무관한 단어를 잘라 후보를 만들지 않는다(TermLookupTest.kt:141)
+
+TermLookupTest > 무관한 단어를 잘라 후보를 만들지 않는다(String) > [6] "자연" FAILED
+    java.lang.AssertionError: 
+    Expecting empty but was: [TermCandidate(term=자, easyTerm=사람, strategy=SUBSTITUTE, risk=NONE, definition=null, caution=null, tags=[], examples=[], matchKind=COMPOUND_PART, applicable=false, entryId=2)]
+        at kr.easydoc.core.dictionary.TermLookupTest.무관한 단어를 잘라 후보를 만들지 않는다(TermLookupTest.kt:141)
+
+TermLookupTest > 무관한 단어를 잘라 후보를 만들지 않는다(String) > [7] "고지대" FAILED
+    java.lang.AssertionError: 
+    Expecting empty but was: [TermCandidate(term=고지, easyTerm=공식으로 알림, strategy=GLOSS, risk=LOW, definition=null, caution=null, tags=[], examples=[], matchKind=COMPOUND_PART, applicable=false, entryId=3)]
+        at kr.easydoc.core.dictionary.TermLookupTest.무관한 단어를 잘라 후보를 만들지 않는다(TermLookupTest.kt:141)
+
+TermLookupTest > 선택한 문구 일부의 일치를 전체 일치로 반환하지 않는다(String) > [1] "구비서류 제출" FAILED
+    java.lang.AssertionError: 
+    Expecting empty but was: [TermCandidate(term=구비서류, easyTerm=준비할 서류, strategy=SUBSTITUTE, risk=NONE, definition=null, caution=null, tags=[], examples=[], matchKind=EXACT, applicable=true, entryId=1)]
+        at kr.easydoc.core.dictionary.TermLookupTest.선택한 문구 일부의 일치를 전체 일치로 반환하지 않는다(TermLookupTest.kt:147)
+
+TermLookupTest > 선택한 문구 일부의 일치를 전체 일치로 반환하지 않는다(String) > [2] "필요한 구비서류" FAILED
+    java.lang.AssertionError: 
+    Expecting empty but was: [TermCandidate(term=구비서류, easyTerm=준비할 서류, strategy=SUBSTITUTE, risk=NONE, definition=null, caution=null, tags=[], examples=[], matchKind=EXACT, applicable=true, entryId=1)]
+        at kr.easydoc.core.dictionary.TermLookupTest.선택한 문구 일부의 일치를 전체 일치로 반환하지 않는다(TermLookupTest.kt:147)
+
+TermLookupTest > 선택한 문구 일부의 일치를 전체 일치로 반환하지 않는다(String) > [3] "구비서류, 과태료" FAILED
+    java.lang.AssertionError: 
+    Expecting empty but was: [TermCandidate(term=구비서류, easyTerm=준비할 서류, strategy=SUBSTITUTE, risk=NONE, definition=null, caution=null, tags=[], examples=[], matchKind=EXACT, applicable=true, entryId=1),
+        TermCandidate(term=과태료, easyTerm=규칙을 안 지켜서 내는 돈, strategy=GLOSS, risk=HIGH, definition=null, caution=null, tags=[], examples=[], matchKind=EXACT, applicable=false, entryId=2)]
+        at kr.easydoc.core.dictionary.TermLookupTest.선택한 문구 일부의 일치를 전체 일치로 반환하지 않는다(TermLookupTest.kt:147)
+
+TermLookupTest > 선택한 문구 일부의 일치를 전체 일치로 반환하지 않는다(String) > [4] "구비서류 2부" FAILED
+    java.lang.AssertionError: 
+    Expecting empty but was: [TermCandidate(term=구비서류, easyTerm=준비할 서류, strategy=SUBSTITUTE, risk=NONE, definition=null, caution=null, tags=[], examples=[], matchKind=EXACT, applicable=true, entryId=1)]
+        at kr.easydoc.core.dictionary.TermLookupTest.선택한 문구 일부의 일치를 전체 일치로 반환하지 않는다(TermLookupTest.kt:147)
+
+TermLookupTest > 선택한 문구 일부의 일치를 전체 일치로 반환하지 않는다(String) > [5] "구비서류는 필요합니다" FAILED
+    java.lang.AssertionError: 
+    Expecting empty but was: [TermCandidate(term=구비서류, easyTerm=준비할 서류, strategy=SUBSTITUTE, risk=NONE, definition=null, caution=null, tags=[], examples=[], matchKind=EXACT, applicable=true, entryId=1)]
+        at kr.easydoc.core.dictionary.TermLookupTest.선택한 문구 일부의 일치를 전체 일치로 반환하지 않는다(TermLookupTest.kt:147)
+
+28 tests completed, 13 failed
+
+> Task :infrastructure:test
+
+[Incubating] Problems report is available at: file:///Users/harris/Development/private/easy-doc/backend-kotlin/build/reports/problems/problems-report.html
+
+FAILURE: Build failed with an exception.
+
+* What went wrong:
+Execution failed for task ':core:test'.
+> There were failing tests. See the report at: file:///Users/harris/Development/private/easy-doc/backend-kotlin/core/build/reports/tests/test/index.html
+
+* Try:
+> Run with --scan to generate a Build Scan (Powered by Develocity).
+
+Deprecated Gradle features were used in this build, making it incompatible with Gradle 10.
+
+You can use '--warning-mode all' to show the individual deprecation warnings and determine if they come from your own scripts or plugins.
+
+For more on this, please refer to https://docs.gradle.org/9.1.0/userguide/command_line_interface.html#sec:command_line_warnings in the Gradle documentation.
+
+BUILD FAILED in 5s
+18 actionable tasks: 4 executed, 14 up-to-date

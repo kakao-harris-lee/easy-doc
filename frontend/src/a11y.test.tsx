@@ -290,6 +290,7 @@ const SCREENS: readonly {
         ],
         dictionary: { name: '쉬운 말 사전', license: 'CC-BY', schema_version: '1.0.0' },
       })
+      fireEvent.click(screen.getByRole('button', { name: '문단별 상세 비교' }))
       const textarea = screen.getByLabelText(
         '쉬운 글 단위 1, 원본 1번째 문단에 대응',
       ) as HTMLTextAreaElement
@@ -342,6 +343,7 @@ const SCREENS: readonly {
         llm_calls_used: 1,
         remaining_call_budget: 19,
       })
+      fireEvent.click(screen.getByRole('button', { name: '문단별 상세 비교' }))
       fireEvent.click(screen.getByLabelText('원본 1번째 문단 다시 변환'))
       await screen.findByRole('button', { name: '바꾸기' })
       return heading
@@ -398,7 +400,7 @@ const SCREENS: readonly {
       vi.mocked(listAdminAnnouncements).mockResolvedValue({ items: [] })
       renderAt('/admin', 'authenticated', ADMIN_USER)
     },
-    settle: () => screen.findByRole('heading', { name: '고객·사용량·오류를 관리합니다' }),
+    settle: () => screen.findByRole('heading', { name: '고객과 사용자 의견을 확인합니다' }),
   },
 ]
 

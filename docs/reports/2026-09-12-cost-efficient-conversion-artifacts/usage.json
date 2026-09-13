@@ -1,0 +1,243 @@
+{
+  "previousEstimatedUsd": 5.565252,
+  "thisBatchEstimatedUsd": 2.98699,
+  "cumulativeEstimatedUsd": 8.552242,
+  "thisBatchReservedUsd": 12.982679999999998,
+  "combinedLimitUsd": 20,
+  "arms": [
+    {
+      "arm": "astra-baseline",
+      "documents": [
+        {
+          "id": "001-current",
+          "repairAdopted": true,
+          "productCostUsd": 0.39657,
+          "repairCostUsd": 0.20007,
+          "inputTokens": 11987,
+          "outputTokens": 5534
+        },
+        {
+          "id": "087",
+          "repairAdopted": true,
+          "productCostUsd": 0.29881,
+          "repairCostUsd": 0.15698,
+          "inputTokens": 10226,
+          "outputTokens": 3931
+        },
+        {
+          "id": "097",
+          "repairAdopted": true,
+          "productCostUsd": 0.43843,
+          "repairCostUsd": 0.22435,
+          "inputTokens": 13538,
+          "outputTokens": 6061
+        }
+      ],
+      "calls": 9,
+      "productCostUsd": 1.13381,
+      "meanProductCostUsd": 0.37793666666666664,
+      "judgeCostUsd": 0.17317000000000027,
+      "totalEstimatedUsd": 1.3069800000000003,
+      "reservedUsd": 5.92014,
+      "exit": {
+        "code": 1,
+        "finishedAt": "2026-09-11T22:48:09.697Z"
+      }
+    },
+    {
+      "arm": "sonnet-low",
+      "documents": [
+        {
+          "id": "001-current",
+          "repairAdopted": true,
+          "productCostUsd": 0.095104,
+          "repairCostUsd": 0.049118,
+          "inputTokens": 19537,
+          "outputTokens": 5603
+        },
+        {
+          "id": "087",
+          "repairAdopted": true,
+          "productCostUsd": 0.076972,
+          "repairCostUsd": 0.0399,
+          "inputTokens": 17656,
+          "outputTokens": 4166
+        },
+        {
+          "id": "097",
+          "repairAdopted": true,
+          "productCostUsd": 0.10434399999999999,
+          "repairCostUsd": 0.054056,
+          "inputTokens": 21967,
+          "outputTokens": 6041
+        }
+      ],
+      "calls": 9,
+      "productCostUsd": 0.27642,
+      "meanProductCostUsd": 0.09214,
+      "judgeCostUsd": 0.035078,
+      "totalEstimatedUsd": 0.311498,
+      "reservedUsd": 1.157238,
+      "exit": {
+        "code": 0,
+        "finishedAt": "2026-09-11T22:53:58.764Z"
+      }
+    },
+    {
+      "arm": "sol-low",
+      "documents": [
+        {
+          "id": "001-current",
+          "repairAdopted": true,
+          "productCostUsd": 0.133348,
+          "repairCostUsd": 0.066148,
+          "inputTokens": 11167,
+          "outputTokens": 4434
+        },
+        {
+          "id": "087",
+          "repairAdopted": true,
+          "productCostUsd": 0.10008,
+          "repairCostUsd": 0.047644,
+          "inputTokens": 9340,
+          "outputTokens": 3136
+        },
+        {
+          "id": "097",
+          "repairAdopted": true,
+          "productCostUsd": 0.13872,
+          "repairCostUsd": 0.068848,
+          "inputTokens": 12295,
+          "outputTokens": 4477
+        }
+      ],
+      "calls": 9,
+      "productCostUsd": 0.37214800000000003,
+      "meanProductCostUsd": 0.12404933333333334,
+      "judgeCostUsd": 0.06443199999999999,
+      "totalEstimatedUsd": 0.43658,
+      "reservedUsd": 2.2961,
+      "exit": {
+        "code": 1,
+        "finishedAt": "2026-09-11T22:56:42.005Z"
+      }
+    },
+    {
+      "arm": "terra-medium",
+      "documents": [
+        {
+          "id": "001-current",
+          "repairAdopted": true,
+          "productCostUsd": 0.082232,
+          "repairCostUsd": 0.042416,
+          "inputTokens": 11374,
+          "outputTokens": 4957
+        },
+        {
+          "id": "087",
+          "repairAdopted": true,
+          "productCostUsd": 0.058454,
+          "repairCostUsd": 0.02949,
+          "inputTokens": 9409,
+          "outputTokens": 3303
+        },
+        {
+          "id": "097",
+          "repairAdopted": true,
+          "productCostUsd": 0.08771999999999999,
+          "repairCostUsd": 0.043488,
+          "inputTokens": 12498,
+          "outputTokens": 5227
+        }
+      ],
+      "calls": 9,
+      "productCostUsd": 0.228406,
+      "meanProductCostUsd": 0.07613533333333333,
+      "judgeCostUsd": 0.038521999999999945,
+      "totalEstimatedUsd": 0.26692799999999994,
+      "reservedUsd": 1.298114,
+      "exit": {
+        "code": 1,
+        "finishedAt": "2026-09-11T22:59:05.305Z"
+      }
+    },
+    {
+      "arm": "sonnet-medium",
+      "documents": [
+        {
+          "id": "001-current",
+          "repairAdopted": true,
+          "productCostUsd": 0.097832,
+          "repairCostUsd": 0.051162,
+          "inputTokens": 20176,
+          "outputTokens": 5748
+        },
+        {
+          "id": "087",
+          "repairAdopted": true,
+          "productCostUsd": 0.07438600000000001,
+          "repairCostUsd": 0.038614,
+          "inputTokens": 17288,
+          "outputTokens": 3981
+        },
+        {
+          "id": "097",
+          "repairAdopted": true,
+          "productCostUsd": 0.128206,
+          "repairCostUsd": 0.078636,
+          "inputTokens": 22033,
+          "outputTokens": 8414
+        }
+      ],
+      "calls": 9,
+      "productCostUsd": 0.300424,
+      "meanProductCostUsd": 0.10014133333333335,
+      "judgeCostUsd": 0.04480799999999996,
+      "totalEstimatedUsd": 0.345232,
+      "reservedUsd": 1.158474,
+      "exit": {
+        "code": 0,
+        "finishedAt": "2026-09-11T23:02:25.116Z"
+      }
+    },
+    {
+      "arm": "sonnet-clear",
+      "documents": [
+        {
+          "id": "001-current",
+          "repairAdopted": true,
+          "productCostUsd": 0.097204,
+          "repairCostUsd": 0.05061,
+          "inputTokens": 19082,
+          "outputTokens": 5904
+        },
+        {
+          "id": "087",
+          "repairAdopted": true,
+          "productCostUsd": 0.078194,
+          "repairCostUsd": 0.041396,
+          "inputTokens": 16912,
+          "outputTokens": 4437
+        },
+        {
+          "id": "097",
+          "repairAdopted": true,
+          "productCostUsd": 0.108508,
+          "repairCostUsd": 0.0592,
+          "inputTokens": 21614,
+          "outputTokens": 6528
+        }
+      ],
+      "calls": 9,
+      "productCostUsd": 0.283906,
+      "meanProductCostUsd": 0.09463533333333334,
+      "judgeCostUsd": 0.03586600000000001,
+      "totalEstimatedUsd": 0.319772,
+      "reservedUsd": 1.152614,
+      "exit": {
+        "code": 0,
+        "finishedAt": "2026-09-11T23:09:02.113Z"
+      }
+    }
+  ]
+}

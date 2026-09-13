@@ -27,6 +27,11 @@ spring:
     enabled: false
 
 easydoc:
+  payment:
+    provider: ${EASYDOC_PAYMENT_PROVIDER:stub}
+    mock-enabled: ${EASYDOC_PAYMENT_MOCK_ENABLED:false}
+    toss-client-key: ${EASYDOC_TOSS_CLIENT_KEY:}
+    toss-secret-key: ${EASYDOC_TOSS_SECRET_KEY:}
   # worker 도 같은 키를 갖는다 — 변환 결과·마스킹 대응표를 쓰는 쪽이 여기다.
   # api 와 **같은 환경변수 이름**을 읽는다. 두 프로세스가 다른 키를 들면 한쪽이 쓴 행을
   # 다른 쪽이 열지 못하고, 그 실패는 단일 예외라 원인이 드러나지 않는다.

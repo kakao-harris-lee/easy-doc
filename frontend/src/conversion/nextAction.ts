@@ -40,6 +40,11 @@ function isOpenable(item: DocumentListItem): item is OpenableDocument {
   return item.conversion_id !== null
 }
 
+/** 변환 기록과 같은 완료 기준: 검수 저장 또는 의견 제출. 누락된 시각은 미완료다. */
+function isReviewed(item: DocumentListItem): boolean {
+  return typeof item.reviewed_at === 'string' || typeof item.feedback_submitted_at === 'string'
+}
+
 interface Rule {
   kind: NextActionKind
   message: string
@@ -61,9 +66,7 @@ const RULES: readonly Rule[] = [
     kind: 'review',
     message: '쉬운 글 초안을 검수해 주세요',
     actionLabel: '검수 열기',
-    // 「done이고 미검수」다. 변환이 끝났다는 사실만으로는 부족하고, 검수본이 저장되지
-    // 않았다는 것까지 맞아야 한다 — reviewed_at이 null이면 아직 AI 초안 그대로다.
-    matches: (item) => item.status === 'done' && item.reviewed_at === null,
+    matches: (item) => item.status === 'done' && !isReviewed(item),
   },
   {
     kind: 'inProgress',
@@ -93,7 +96,7 @@ const RULES: readonly Rule[] = [
      */
     message: '검수한 내용을 파일로 내려받을 수 있습니다',
     actionLabel: '문서 열기',
-    matches: (item) => item.status === 'done' && item.reviewed_at !== null,
+    matches: (item) => item.status === 'done' && isReviewed(item),
   },
 ]
 

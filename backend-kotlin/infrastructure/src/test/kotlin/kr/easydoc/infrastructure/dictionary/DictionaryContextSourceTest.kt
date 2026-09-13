@@ -9,6 +9,40 @@ import org.junit.jupiter.api.Test
 /** 사전 주입 배선 — 플래그 on/off 와 「매칭 0건이면 싣지 않는다」. */
 class DictionaryContextSourceTest {
     @Test
+    fun `웹 링크에 운동장 치환 후보를 주입하지 않는다`() {
+        val matches = index.findAll("신청 링크를 통해 온라인으로 접수합니다.")
+        assertThat(matches.filter { it.entry.term == "링크" }).isEmpty()
+    }
+
+    @Test
+    fun `거주의 뜻은 주입하고 검수 메모는 조회 자료로 남긴다`() {
+        val context =
+            index.buildPromptContext(
+                "해당 지역 거주 주민입니다.",
+                DictionaryContextPolicy(maxChars = null, maxCharsRatio = null),
+            )
+        assertThat(context).contains("거주 — 뜻:", "살다", "문맥")
+        assertThat(context).doesNotContain("거주 — 뜻: 사는 것", "→", "### 참고 예문")
+        assertThat(context).doesNotContain("거주하는 주민", "사는 주민")
+        val entry = index.findAll("거주 주민").first { it.entry.term == "거주" }.entry
+        assertThat(entry.caution).contains("사는 주민")
+    }
+
+    @Test
+    fun `고급 정의와 잘못된 환수 후보를 쉬운 설명으로 고친다`() {
+        val terms = index.findAll("시술 및 환수 안내").associate { it.entry.term to it.entry }
+        assertThat(terms.getValue("시술").easyTerm).contains("치료").doesNotContain("처치")
+        assertThat(terms.getValue("환수").easyTerm).contains("다시").doesNotContain("되거둠")
+    }
+
+    @Test
+    fun `중위소득과 정부가 정하는 기준 중위소득의 뜻을 구분한다`() {
+        val terms = index.findAll("중위소득 및 기준 중위소득 안내").associate { it.entry.term to it.entry }
+        assertThat(terms.getValue("중위소득").definition).contains("가운데").doesNotContain("해마다 정해서 발표")
+        assertThat(terms.getValue("기준 중위소득").definition).contains("나라가 해마다 정해")
+    }
+
+    @Test
     @DisplayName("기본값은 켜짐이다 — 사전에서 흡수 단어를 덜어내는 릴리스와 주입이 함께 켜져야 한다")
     fun `기본값은 켜짐이다`() {
         assertThat(DictionaryProperties().enabled).isTrue()
@@ -23,7 +57,7 @@ class DictionaryContextSourceTest {
         val context = source.contextFor(WITH_TERMS)
 
         assertThat(context).isNotNull
-        assertThat(context).contains("### 바꿔 쓰세요")
+        assertThat(context).contains("### 쉬운 표현 후보")
         assertThat(context).contains("구비서류")
 
         val rendered = index.renderPromptContext(WITH_TERMS, DictionaryProperties().policy())

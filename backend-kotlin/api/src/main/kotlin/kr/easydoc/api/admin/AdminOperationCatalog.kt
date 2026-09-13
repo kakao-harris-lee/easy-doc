@@ -27,6 +27,9 @@ object AdminOperationCatalog {
             Route("GET", "/admin/announcements") to "listAdminAnnouncements",
             Route("POST", "/admin/announcements") to "createAdminAnnouncement",
             Route("PATCH", "/admin/announcements/{id}") to "updateAdminAnnouncement",
+            Route("GET", "/admin/feedback") to "listAdminFeedback",
+            Route("GET", "/admin/workspaces/{workspace_id}/subscription") to "getAdminWorkspaceSubscription",
+            Route("POST", "/admin/workspaces/{workspace_id}/payments/{id}/refund") to "refundTossPayment",
         )
 
     fun operationIdFor(

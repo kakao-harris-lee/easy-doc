@@ -1,0 +1,129 @@
+> Task :infrastructure:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :application:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :core:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :application:processResources NO-SOURCE
+> Task :infrastructure:processResources UP-TO-DATE
+> Task :infrastructure:processTestFixturesResources UP-TO-DATE
+> Task :infrastructure:processTestResources UP-TO-DATE
+> Task :core:compileKotlin UP-TO-DATE
+> Task :core:compileJava NO-SOURCE
+> Task :core:processResources NO-SOURCE
+> Task :core:classes UP-TO-DATE
+> Task :core:jar UP-TO-DATE
+> Task :core:compileTestFixturesKotlin UP-TO-DATE
+> Task :core:compileTestFixturesJava NO-SOURCE
+> Task :core:processTestFixturesResources NO-SOURCE
+> Task :core:testFixturesClasses UP-TO-DATE
+> Task :core:testFixturesJar UP-TO-DATE
+> Task :application:compileKotlin UP-TO-DATE
+> Task :application:compileJava NO-SOURCE
+> Task :application:classes UP-TO-DATE
+> Task :application:jar UP-TO-DATE
+> Task :infrastructure:compileKotlin UP-TO-DATE
+> Task :infrastructure:compileJava NO-SOURCE
+> Task :infrastructure:classes UP-TO-DATE
+> Task :infrastructure:jar UP-TO-DATE
+> Task :infrastructure:compileTestFixturesKotlin UP-TO-DATE
+> Task :infrastructure:compileTestFixturesJava NO-SOURCE
+> Task :infrastructure:testFixturesClasses UP-TO-DATE
+> Task :infrastructure:testFixturesJar UP-TO-DATE
+> Task :infrastructure:compileTestKotlin UP-TO-DATE
+> Task :infrastructure:compileTestJava NO-SOURCE
+> Task :infrastructure:testClasses UP-TO-DATE
+
+> Task :infrastructure:testLlm
+
+GoldenCorpusLlmEvaluationTest > 비밀값이 있으면 제품과 같은 설정으로 골든 변환 결과를 채점한다 STANDARD_OUT
+    LLM budget: reserved_usd=0.125396 cap_usd=2.5
+    00:29:20.739 [Test worker] INFO kr.easydoc.infrastructure.llm.StructuredLogLlmCallObserver -- llm_call provider=anthropic model=claude-sonnet-5 outcome=SUCCESS latency_ms=70327 input_tokens=8080 output_tokens=8192 estimated_cost_usd=0.09808
+    LLM budget: reserved_usd=0.246826 cap_usd=2.5
+    00:30:11.727 [Test worker] INFO kr.easydoc.infrastructure.llm.StructuredLogLlmCallObserver -- llm_call provider=anthropic model=claude-sonnet-5 outcome=SUCCESS latency_ms=50981 input_tokens=7088 output_tokens=5954 estimated_cost_usd=0.073716
+    LLM budget: reserved_usd=0.371090 cap_usd=2.5
+    00:30:47.450 [Test worker] INFO kr.easydoc.infrastructure.llm.StructuredLogLlmCallObserver -- llm_call provider=anthropic model=claude-sonnet-5 outcome=SUCCESS latency_ms=35691 input_tokens=7497 output_tokens=4036 estimated_cost_usd=0.055354
+    LLM budget: reserved_usd=0.485088 cap_usd=2.5
+    00:30:49.496 [Test worker] INFO kr.easydoc.infrastructure.llm.StructuredLogLlmCallObserver -- llm_call provider=anthropic model=claude-sonnet-5 outcome=SUCCESS latency_ms=2009 input_tokens=5152 output_tokens=78 estimated_cost_usd=0.011084
+    LLM budget: reserved_usd=0.616658 cap_usd=2.5
+    00:31:42.151 [Test worker] INFO kr.easydoc.infrastructure.llm.StructuredLogLlmCallObserver -- llm_call provider=anthropic model=claude-sonnet-5 outcome=SUCCESS latency_ms=52622 input_tokens=9219 output_tokens=6499 estimated_cost_usd=0.083428
+    LLM budget: reserved_usd=0.748674 cap_usd=2.5
+    00:32:52.560 [Test worker] INFO kr.easydoc.infrastructure.llm.StructuredLogLlmCallObserver -- llm_call provider=anthropic model=claude-sonnet-5 outcome=SUCCESS latency_ms=70399 input_tokens=9134 output_tokens=8192 estimated_cost_usd=0.100188
+    LLM budget: reserved_usd=0.867596 cap_usd=2.5
+    00:32:53.887 [Test worker] INFO kr.easydoc.infrastructure.llm.StructuredLogLlmCallObserver -- llm_call provider=anthropic model=claude-sonnet-5 outcome=SUCCESS latency_ms=1318 input_tokens=6200 output_tokens=4 estimated_cost_usd=0.01244
+    골든 LLM 레인 — provider=anthropic settings=MetricsLlmProviderDecorator(delegate=AnthropicProvider(model=claude-sonnet-5, effort=HIGH)) max_tokens=8192 · dictContext=product · transcript=/private/tmp/easydoc-model-quality-20260912/sonnet-high-outputs · runs=1 cap_usd=2.5
+    문서 3건 · 변환 성공 2 · 절단으로 실패 1 (33.3%) · 그 밖의 변환 실패 0
+    스타일 규칙 통과 0/2 (0.0%) · 품질 실패 3건 · 인프라 실패 0건
+    사실 보존 22/23 (95.7%) · 보존율 70% 미만 문서: 없음
+    변환문 보존 — 건너뜀 1건(변환 실패, 남길 본문 없음): 001-current
+    게이트 ⓪ 측정 (backlog §1.2) — 팽창비=변환 글자 수/원문 글자 수(공백 포함), 출력 토큰=문서당 합계(변환 1회+보정 1회), 세 값은 중앙값/p90/최대
+      2000자 이하 — 문서 1 · 변환 성공 1 · 절단 문서 0 (0.0%) / 호출 0 · 스타일 통과 0/1(변환 회차 있는 문서) (0.0%) · 팽창비 1.28/1.28/1.28 · 출력 토큰 9990/9990/9990
+      2000자 초과 — 문서 2 · 변환 성공 1 · 절단 문서 1 (50.0%) / 호출 2 · 스타일 통과 0/1(변환 회차 있는 문서) (0.0%) · 팽창비 1.00/1.00/1.00 · 출력 토큰 8192/14691/14691
+      전체 — 문서 3 · 변환 성공 2 · 절단 문서 1 (33.3%) / 호출 2 · 스타일 통과 0/2(변환 회차 있는 문서) (0.0%) · 팽창비 1.00/1.28/1.28 · 출력 토큰 9990/14691/14691
+      스타일 위반 밀도 중앙값 0.014 (위반 수/문장 수, 표본 2건)
+      절단 — 문서 단위 1/3 (33.3%, 변환 실패) · 호출 단위 2/5 (40.0%, 변환+보정)
+      └ 차이 1회 = 보정 호출이 잘렸지만 원본 초안이 채택돼 성공으로 끝난 횟수 (상한에 닿았으나 실패로 보이지 않는다)
+      단일 호출 최대 출력 토큰 8192 / 상한 8192 (easydoc.llm.max-output-tokens, 변환+보정 호출 기준)
+    문서별 측정 (원문 글자 수 내림차순)
+      097 — 원문 2605 · 변환 2595 · 팽창비 1.00 · 사실 보존 10/11(90.9%) · 출력 토큰 14691 · 절단 호출 1 · 스타일 미통과 · 문장 76 · 위반 20건(밀도 0.263 · LENGTH=17 COMMA=1 DOUBLE_PASSIVE=0 DIFFICULT_WORD=2 GLOSS_COLLISION=0)
+      001-current — 원문 2197 · 변환 - · 팽창비 - · 사실 보존 - · 출력 토큰 8192 · 절단 호출 1 · 스타일 - · 문장 0 · 위반 -
+      087 — 원문 1799 · 변환 2300 · 팽창비 1.28 · 사실 보존 12/12(100.0%) · 출력 토큰 9990 · 절단 호출 0 · 스타일 미통과 · 문장 71 · 위반 1건(밀도 0.014 · LENGTH=1 COMMA=0 DOUBLE_PASSIVE=0 DIFFICULT_WORD=0 GLOSS_COLLISION=0)
+    LLM 호출 7회 · 재시도 0회/예산 20 · 입력 52370 토큰 · 출력 32955 토큰
+    예상 비용 $0.4343 (단가 입력 2 / 출력 10 USD/MTok)
+    문서 소요 — 합계 280.1초 · 중앙값 86.7초 · 최대 123.0초
+    인프라 오류 분포 — 없음
+    품질 실패(절단·사실 누락·judge 판정): 3건
+      - 001-current: 변환 실패 TRUNCATED — 원인 미기록, 재시도 0회
+      - 087: 사실 누락 1
+      - 087: judge 실패 — [어휘] "사회보장급여 신청(변경)서.hwp"를 "사회보장급여 신청(바꾸기)서.hwp"로 서류명을 임의로 바꿔 원문과 달라짐
+    인프라 실패(provider 오류): 0건
+
+GoldenCorpusLlmEvaluationTest > 비밀값이 있으면 제품과 같은 설정으로 골든 변환 결과를 채점한다 FAILED
+    java.lang.AssertionError: 골든 LLM 레인 — provider=anthropic settings=MetricsLlmProviderDecorator(delegate=AnthropicProvider(model=claude-sonnet-5, effort=HIGH)) max_tokens=8192 · dictContext=product · transcript=/private/tmp/easydoc-model-quality-20260912/sonnet-high-outputs · runs=1 cap_usd=2.5
+    문서 3건 · 변환 성공 2 · 절단으로 실패 1 (33.3%) · 그 밖의 변환 실패 0
+    스타일 규칙 통과 0/2 (0.0%) · 품질 실패 3건 · 인프라 실패 0건
+    사실 보존 22/23 (95.7%) · 보존율 70% 미만 문서: 없음
+    변환문 보존 — 건너뜀 1건(변환 실패, 남길 본문 없음): 001-current
+    게이트 ⓪ 측정 (backlog §1.2) — 팽창비=변환 글자 수/원문 글자 수(공백 포함), 출력 토큰=문서당 합계(변환 1회+보정 1회), 세 값은 중앙값/p90/최대
+      2000자 이하 — 문서 1 · 변환 성공 1 · 절단 문서 0 (0.0%) / 호출 0 · 스타일 통과 0/1(변환 회차 있는 문서) (0.0%) · 팽창비 1.28/1.28/1.28 · 출력 토큰 9990/9990/9990
+      2000자 초과 — 문서 2 · 변환 성공 1 · 절단 문서 1 (50.0%) / 호출 2 · 스타일 통과 0/1(변환 회차 있는 문서) (0.0%) · 팽창비 1.00/1.00/1.00 · 출력 토큰 8192/14691/14691
+      전체 — 문서 3 · 변환 성공 2 · 절단 문서 1 (33.3%) / 호출 2 · 스타일 통과 0/2(변환 회차 있는 문서) (0.0%) · 팽창비 1.00/1.28/1.28 · 출력 토큰 9990/14691/14691
+      스타일 위반 밀도 중앙값 0.014 (위반 수/문장 수, 표본 2건)
+      절단 — 문서 단위 1/3 (33.3%, 변환 실패) · 호출 단위 2/5 (40.0%, 변환+보정)
+      └ 차이 1회 = 보정 호출이 잘렸지만 원본 초안이 채택돼 성공으로 끝난 횟수 (상한에 닿았으나 실패로 보이지 않는다)
+      단일 호출 최대 출력 토큰 8192 / 상한 8192 (easydoc.llm.max-output-tokens, 변환+보정 호출 기준)
+    문서별 측정 (원문 글자 수 내림차순)
+      097 — 원문 2605 · 변환 2595 · 팽창비 1.00 · 사실 보존 10/11(90.9%) · 출력 토큰 14691 · 절단 호출 1 · 스타일 미통과 · 문장 76 · 위반 20건(밀도 0.263 · LENGTH=17 COMMA=1 DOUBLE_PASSIVE=0 DIFFICULT_WORD=2 GLOSS_COLLISION=0)
+      001-current — 원문 2197 · 변환 - · 팽창비 - · 사실 보존 - · 출력 토큰 8192 · 절단 호출 1 · 스타일 - · 문장 0 · 위반 -
+      087 — 원문 1799 · 변환 2300 · 팽창비 1.28 · 사실 보존 12/12(100.0%) · 출력 토큰 9990 · 절단 호출 0 · 스타일 미통과 · 문장 71 · 위반 1건(밀도 0.014 · LENGTH=1 COMMA=0 DOUBLE_PASSIVE=0 DIFFICULT_WORD=0 GLOSS_COLLISION=0)
+    LLM 호출 7회 · 재시도 0회/예산 20 · 입력 52370 토큰 · 출력 32955 토큰
+    예상 비용 $0.4343 (단가 입력 2 / 출력 10 USD/MTok)
+    문서 소요 — 합계 280.1초 · 중앙값 86.7초 · 최대 123.0초
+    인프라 오류 분포 — 없음
+    품질 실패(절단·사실 누락·judge 판정): 3건
+      - 001-current: 변환 실패 TRUNCATED — 원인 미기록, 재시도 0회
+      - 087: 사실 누락 1
+      - 087: judge 실패 — [어휘] "사회보장급여 신청(변경)서.hwp"를 "사회보장급여 신청(바꾸기)서.hwp"로 서류명을 임의로 바꿔 원문과 달라짐
+    인프라 실패(provider 오류): 0건
+        at kr.easydoc.infrastructure.quality.GoldenCorpusLlmEvaluationTest.골든 변환을 채점한다(GoldenCorpusLlmEvaluationTest.kt:122)
+
+1 test completed, 1 failed
+
+> Task :infrastructure:testLlm FAILED
+
+[Incubating] Problems report is available at: file:///private/tmp/easydoc-model-quality-20260912/phase1/backend-kotlin/build/reports/problems/problems-report.html
+
+FAILURE: Build failed with an exception.
+
+* What went wrong:
+Execution failed for task ':infrastructure:testLlm'.
+> There were failing tests. See the report at: file:///private/tmp/easydoc-model-quality-20260912/phase1/backend-kotlin/infrastructure/build/reports/tests/testLlm/index.html
+
+* Try:
+> Run with --scan to generate a Build Scan (Powered by Develocity).
+
+Deprecated Gradle features were used in this build, making it incompatible with Gradle 10.
+
+You can use '--warning-mode all' to show the individual deprecation warnings and determine if they come from your own scripts or plugins.
+
+For more on this, please refer to https://docs.gradle.org/9.1.0/userguide/command_line_interface.html#sec:command_line_warnings in the Gradle documentation.
+
+BUILD FAILED in 4m 45s
+15 actionable tasks: 1 executed, 14 up-to-date

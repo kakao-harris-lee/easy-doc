@@ -1,0 +1,55 @@
+{
+  "verifiedAt": "2026-09-11T23:20:51.089Z",
+  "services": {
+    "easy-doc-backend-api-1": {
+      "image": "sha256:ae4a333f7cc9af971792c3cfe7beceae785f63749dbe54bb08cb06e9ab31ffa8",
+      "expectedImage": "sha256:ae4a333f7cc9af971792c3cfe7beceae785f63749dbe54bb08cb06e9ab31ffa8",
+      "imageMatches": true,
+      "state": "running",
+      "health": "healthy",
+      "env": {
+        "EASYDOC_LLM_READ_TIMEOUT": "600",
+        "EASYDOC_LLM_EFFORT": "medium",
+        "EASYDOC_LLM_INPUT_USD_PER_MILLION_TOKENS": "10",
+        "EASYDOC_LLM_MODEL": "gpt-6-astra",
+        "EASYDOC_LLM_OUTPUT_USD_PER_MILLION_TOKENS": "50",
+        "EASYDOC_LLM_PROVIDER": "openai"
+      },
+      "maxOutputTokensEffective": "64000 (application default)"
+    },
+    "easy-doc-backend-worker-1": {
+      "image": "sha256:ae4a333f7cc9af971792c3cfe7beceae785f63749dbe54bb08cb06e9ab31ffa8",
+      "expectedImage": "sha256:ae4a333f7cc9af971792c3cfe7beceae785f63749dbe54bb08cb06e9ab31ffa8",
+      "imageMatches": true,
+      "state": "running",
+      "health": "not configured",
+      "env": {
+        "EASYDOC_LLM_PROVIDER": "openai",
+        "EASYDOC_LLM_EFFORT": "medium",
+        "EASYDOC_LLM_OUTPUT_USD_PER_MILLION_TOKENS": "50",
+        "EASYDOC_LLM_READ_TIMEOUT": "600",
+        "EASYDOC_LLM_INPUT_USD_PER_MILLION_TOKENS": "10",
+        "EASYDOC_LLM_MODEL": "gpt-6-astra"
+      },
+      "maxOutputTokensEffective": "64000 (application default)"
+    }
+  },
+  "health": {
+    "direct": {
+      "status": "ok",
+      "checks": {
+        "database": true,
+        "queue": true
+      }
+    },
+    "frontendProxy": {
+      "status": "ok",
+      "checks": {
+        "database": true,
+        "queue": true
+      }
+    }
+  },
+  "pendingJobsBeforeRestart": 0,
+  "newPaidConversionsViaProduct": 0
+}

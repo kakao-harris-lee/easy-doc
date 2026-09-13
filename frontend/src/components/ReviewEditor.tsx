@@ -8,13 +8,15 @@ import {
   type KeyboardEvent,
 } from 'react'
 import { Download, Save, ShieldAlert } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { HISTORY_PATH } from '../routes/paths'
 
 import { ApiError, downloadExport, reconvertUnit, saveReview } from '../api/client'
 import type { ConversionResponse, ExportFormat, SegmentMapUnit } from '../api/types'
 import { cn } from '../lib/utils'
 import { computeEasyTextFingerprint } from '../review/fingerprint'
 import type { DocumentSource } from '../review/sourceText'
-import { insertUnitsAfter, spliceUnitText } from '../review/unitMap'
+import { insertUnitsAfter, reconcileUnitMap, spliceUnitText } from '../review/unitMap'
 import { setUnsavedChanges } from '../review/unsavedChanges'
 import { FormatPreservationPanel, PdfExportNotice } from './FormatPreservationPanel'
 import { ReviewFeedback } from './ReviewFeedback'
@@ -191,6 +193,11 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
    * 값이 실제로 시각 문자열일 때만 참으로 둔다.
    */
   const hasFeedback = typeof feedbackSubmittedAt === 'string'
+  const [feedbackJustSubmitted, setFeedbackJustSubmitted] = useState(false)
+  const feedbackSuccessRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (feedbackJustSubmitted) feedbackSuccessRef.current?.focus()
+  }, [feedbackJustSubmitted])
   /**
    * 서버가 마지막으로 준 서식 유지 판정.
    *
@@ -210,6 +217,12 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
    * 재계산). 저장이 끝나면 서버가 다시 잰 값으로 덮어써 낡은 추정을 남기지 않는다.
    */
   const [unitMap, setUnitMap] = useState<SegmentMapUnit[]>(conversion.segment_map?.units ?? [])
+  const [paragraphComparison, setParagraphComparison] = useState(false)
+
+  function handleDraftChange(next: string) {
+    setUnitMap((current) => reconcileUnitMap(draft, next, current))
+    setDraft(next)
+  }
   /** 결과 단위 hover·focus가 밝힌, 지금 하이라이트해야 할 원본 단위 색인들. */
   const [highlightedSourceIndexes, setHighlightedSourceIndexes] = useState<number[]>([])
   /** 원본 단위 hover·focus 중인 색인. 결과 쪽 단위 하이라이트를 계산하는 재료다. */
@@ -575,16 +588,11 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
         ? '다른 재변환이 진행 중입니다.'
         : null
 
-  /**
-   * 결과 패널을 단위 목록(`SegmentedResultEditor`)으로 그릴지.
-   *
-   * 대응표가 없으면(`segment_map: null`) 애초에 비교할 지도가 없으니 옛 단일 textarea
-   * 그대로다. 단위 수가 상한(`MAX_SEGMENTED_UNITS`)을 넘으면 지도가 있어도 내려앉는다
-   * — 계획 §6 S3 "단위 수가 200을 넘으면 지금의 단일 textarea로 내려앉는다".
-   */
+  /** 기본은 한 문서로 편집하고, 대응표와 재변환은 상세 비교를 열었을 때만 표시한다. */
   const unitCount = draft.split('\n').length
-  const useSegmentedEditor = conversion.segment_map !== null && unitCount <= MAX_SEGMENTED_UNITS
-  const showFallbackBanner = conversion.segment_map !== null && unitCount > MAX_SEGMENTED_UNITS
+  const useSegmentedEditor =
+    paragraphComparison && conversion.segment_map !== null && unitCount <= MAX_SEGMENTED_UNITS
+  const showFallbackBanner = paragraphComparison && unitCount > MAX_SEGMENTED_UNITS
 
   /**
    * 이미 쉬운 글 규칙을 통과한 원본 단위 색인(계획 §11). 원문은 읽기 전용이라 이 목록을
@@ -950,6 +958,24 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
       {/* 편집 영역과 그 행동을 한 묶음으로 둔다. 아래 행동 줄이 붙어 있는 구간이 이
           묶음 안에서 끝나야 피드백 폼과 대응표를 가리지 않는다(§10). */}
       <div className="flex flex-col">
+        {conversion.segment_map !== null && (
+          <div className="mb-3 flex justify-end">
+            <Button
+              type="button"
+              variant="outline"
+              aria-pressed={paragraphComparison}
+              disabled={busy || reconvertPendingIndex !== null || candidate !== null}
+              onClick={() => {
+                setParagraphComparison((current) => !current)
+                setHighlightedSourceIndexes([])
+                setHoveredSourceIndex(null)
+                lastActiveResultUnitRef.current = null
+              }}
+            >
+              {paragraphComparison ? '한 문서로 보기' : '문단별 상세 비교'}
+            </Button>
+          </div>
+        )}
         {showTabs && (
           <div
             className="mb-3 flex gap-1 rounded-[12px] border border-border bg-muted p-1"
@@ -1002,6 +1028,7 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
             <SourceTextPanel
               source={source}
               textareaId={`${editorId}-source`}
+              rows={20}
               units={
                 useSegmentedEditor && source.state.status === 'ready'
                   ? source.state.text.split('\n')
@@ -1094,14 +1121,21 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
                 onCandidateClose={handleCandidateClose}
               />
             ) : (
-              <textarea
-                id={editorId}
-                className="review-textarea text-[17px] leading-[1.75]"
-                value={draft}
-                rows={20}
-                onChange={(event) => setDraft(event.target.value)}
-                disabled={busy}
-              />
+              <>
+                <p id={`${editorId}-hint`} className="mb-3 text-sm text-muted-foreground">
+                  글 전체를 이어서 읽고 수정하세요. 바꾸고 싶은 단어를 선택하면 쉬운 말 후보가
+                  나타납니다.
+                </p>
+                <textarea
+                  id={editorId}
+                  aria-describedby={`${editorId}-hint`}
+                  className="review-textarea text-[17px] leading-[1.9]"
+                  value={draft}
+                  rows={20}
+                  onChange={(event) => handleDraftChange(event.target.value)}
+                  disabled={busy}
+                />
+              </>
             )}
           </div>
         </div>
@@ -1110,15 +1144,17 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
             글자를 선택하면(더블클릭 포함) 250ms 뒤 후보를 띄운다. 위치 자체는 포털이라
             이 자리에 둘 필요는 없지만, 결과 편집 영역과 논리적으로 묶어 둔다. */}
         <TermLookupPopover
+          key={`result-${useSegmentedEditor}`}
           containerRef={resultPanelRef}
           value={draft}
-          onApply={setDraft}
+          onApply={handleDraftChange}
           disabled={busy}
         />
 
         {/* 원문(읽기 전용) 패널에도 같은 조회를 별도 인스턴스로 붙인다(HIGH 리뷰 1) —
             글을 고칠 대상이 없어 `applyDisabled`로 바꾸기 버튼을 뺀다. */}
         <TermLookupPopover
+          key={`source-${useSegmentedEditor}`}
           containerRef={sourcePanelRef}
           value={draft}
           onApply={setDraft}
@@ -1202,7 +1238,30 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
       {/* 결과를 다 보고 난 자리에 둔다 — 검수 전에 묻는 만족도는 결과가 아니라 기대치를
           재게 된다. 이 화면은 status가 done일 때만 그려지므로(ConversionPage) 서버가
           409로 막는 조건과 화면이 같다. */}
-      <ReviewFeedback conversionId={conversion.id} onSubmitted={setFeedbackSubmittedAt} />
+      {!hasFeedback && (
+        <ReviewFeedback
+          conversionId={conversion.id}
+          onSubmitted={(submittedAt) => {
+            setFeedbackSubmittedAt(submittedAt)
+            setFeedbackJustSubmitted(true)
+          }}
+        />
+      )}
+      {feedbackJustSubmitted && (
+        <div
+          ref={feedbackSuccessRef}
+          tabIndex={-1}
+          className="rounded-xl border border-border bg-card p-4"
+        >
+          <p>의견을 보냈습니다. 감사합니다.</p>
+          <Link
+            to={HISTORY_PATH}
+            className="inline-flex min-h-11 items-center font-semibold text-primary"
+          >
+            변환 기록으로 돌아가기
+          </Link>
+        </div>
+      )}
     </section>
   )
 }

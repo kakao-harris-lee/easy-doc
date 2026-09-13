@@ -23,6 +23,9 @@ const val MAX_COMMAS_PER_SENTENCE = 2
 /** 한 문장 한 정보 검사에 쓰는 쉼표(반각·전각·모점). */
 internal val COMMA_CHARS: List<Char> = listOf(',', '，', '、')
 
+/** 2026-09-12: 금액 표의 천 단위 쉼표를 문장 분할 대상으로 오인하지 않는다. */
+private val GROUPED_NUMBER = Regex("""(?<![\d,])\d{1,3}+(?:,\d{3}+)++(?!\d)""")
+
 /** 이중 피동 등 피해야 할 서술 패턴. */
 val DOUBLE_PASSIVE_PATTERNS: List<String> = listOf("되어지", "보여지", "쓰여지", "믿겨지", "잊혀지")
 
@@ -32,8 +35,8 @@ val DOUBLE_PASSIVE_PATTERNS: List<String> = listOf("되어지", "보여지", "�
  */
 val STYLE_PRINCIPLES: List<String> =
     listOf(
-        "한 문장에는 정보를 하나만 담는다. 쉼표는 한 문장에 ${MAX_COMMAS_PER_SENTENCE}개까지만 쓴다.",
-        "문장은 ${MAX_SENTENCE_CHARS}자를 넘기지 않는다.",
+        "한 문장에는 밀접한 정보를 담는다. 쉼표는 가급적 한 문장에 ${MAX_COMMAS_PER_SENTENCE}개 이하로 쓴다.",
+        "문장은 가급적 ${MAX_SENTENCE_CHARS}자 안으로 쓰되 의미와 조건의 관계를 먼저 보존한다.",
         "어려운 한자어·행정 용어는 쉬운 말로 바꾼다.",
         "능동태로 쓰고 이중 피동(예: '되어지다')을 쓰지 않는다.",
         "날짜·금액·연락처·신청 방법 등 중요한 정보는 빠뜨리지 않는다.",
@@ -249,7 +252,8 @@ fun checkStyle(text: String): StyleCheckResult {
                 if (sentence.codePointCount(0, sentence.length) > MAX_SENTENCE_CHARS) {
                     this += SentenceIssue(sentence, StyleRuleKind.LENGTH, "문장 길이 초과")
                 }
-                if (COMMA_CHARS.sumOf { comma -> sentence.count { it == comma } } > MAX_COMMAS_PER_SENTENCE) {
+                val prose = GROUPED_NUMBER.replace(sentence, "0")
+                if (COMMA_CHARS.sumOf { comma -> prose.count { it == comma } } > MAX_COMMAS_PER_SENTENCE) {
                     this += SentenceIssue(sentence, StyleRuleKind.COMMA, "쉼표 과다(한 문장 한 정보 위반 의심)")
                 }
                 for (pattern in DOUBLE_PASSIVE_PATTERNS) {

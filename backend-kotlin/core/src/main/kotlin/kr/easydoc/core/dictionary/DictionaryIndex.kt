@@ -56,6 +56,14 @@ class DictionaryIndex private constructor(
         return accepted.sortedBy { it.start }
     }
 
+    /** 선택한 문자열 전체가 표면형과 뒤따르는 조사로만 이루어졌는지 확인한다. */
+    internal fun coversSelection(
+        text: String,
+        surface: String,
+    ): Boolean =
+        text.startsWith(surface) &&
+            josaChainReachesWordBoundary(text, surface.length, requireSelectionEnd = true)
+
     /**
      * LLM 프롬프트에 주입할 컨텍스트 블록을 만든다 (§7.2).
      *
@@ -200,6 +208,7 @@ class DictionaryIndex private constructor(
     private fun josaChainReachesWordBoundary(
         text: String,
         from: Int,
+        requireSelectionEnd: Boolean = false,
     ): Boolean {
         val visited = HashSet<Int>()
         val pending = ArrayDeque<Int>()
@@ -207,7 +216,7 @@ class DictionaryIndex private constructor(
         pending.addLast(from)
         while (pending.isNotEmpty()) {
             val at = pending.removeFirst()
-            if (at >= text.length || !text[at].isHangulSyllable()) return true
+            if (at >= text.length || (!requireSelectionEnd && !text[at].isHangulSyllable())) return true
             for (particle in josa) {
                 val next = at + particle.length
                 if (text.startsWith(particle, at) && visited.add(next)) pending.addLast(next)

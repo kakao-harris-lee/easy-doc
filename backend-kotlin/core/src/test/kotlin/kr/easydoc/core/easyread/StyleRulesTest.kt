@@ -148,6 +148,15 @@ class StyleRulesTest {
     @DisplayName("스타일 검사")
     inner class StyleChecking {
         @Test
+        fun `천 단위 숫자의 쉼표는 문장 나열로 세지 않는다`() {
+            val sentence = "책은 2,345,678원, 준비물은 85,040원입니다."
+            assertThat(checkStyle(sentence).issues.map { it.kind }).doesNotContain(StyleRuleKind.COMMA)
+            assertThat(checkStyle("1,2,3,4 중 고르세요.").issues.map { it.kind }).contains(StyleRuleKind.COMMA)
+            assertThat(checkStyle("1,000원, 2,000원, 3,000원, 4,000원입니다.").issues.map { it.kind })
+                .contains(StyleRuleKind.COMMA)
+        }
+
+        @Test
         fun `쉼표가 상한을 넘으면 지적한다`() {
             val result = checkStyle("금일 중으로 서류를 동봉하고, 완납하고, 신청하고, 열람하세요.")
 

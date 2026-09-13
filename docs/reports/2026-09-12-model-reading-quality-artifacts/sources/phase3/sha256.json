@@ -1,0 +1,14 @@
+{
+  "backend-kotlin/core/src/main/kotlin/kr/easydoc/core/easyread/Prompts.kt": "90e56572bddb78011131a0dea55e50543e8e5f1c7315028ff0ea483839148260",
+  "backend-kotlin/core/src/main/kotlin/kr/easydoc/core/easyread/FactPreservation.kt": "433548fe35a54557355216b36f34ad3d8df19043f0eb535ad0871195b624d224",
+  "backend-kotlin/core/src/main/kotlin/kr/easydoc/core/easyread/NumberIdentity.kt": "c30d5873e9f05a9395126437e12b07f8152ae217337045e65351dfcc33e69c7e",
+  "backend-kotlin/core/src/main/kotlin/kr/easydoc/core/easyread/TemporalFacts.kt": "df6849c4ebf2e091a379bfad6b1b58d182a2f721e140d4591f8929740f7840ce",
+  "backend-kotlin/core/src/main/kotlin/kr/easydoc/core/llm/LlmPrompt.kt": "7ba3d455bab8b037d9cfdf1a123994682cc10d08d43c61f812ae0619a2025e52",
+  "backend-kotlin/core/src/main/kotlin/kr/easydoc/core/quality/JudgeLane.kt": "afb58810aa9406950b5dd3f0c41ff34562ca6c4e0698fe5afa39f7e0e92e85c3",
+  "backend-kotlin/application/src/main/kotlin/kr/easydoc/application/conversion/RepairDecision.kt": "0526bb6231c16fca96326e5d43adacd53990fbf5b57c525b0a4314538fef2782",
+  "backend-kotlin/application/src/main/kotlin/kr/easydoc/application/conversion/ConvertDocumentUseCase.kt": "31c1158eeed21b03713bf85aa538bd7f561dee73251e25d0904dfda218fbba6d",
+  "backend-kotlin/infrastructure/src/main/kotlin/kr/easydoc/infrastructure/llm/OpenAiProvider.kt": "dd6710ddbe1a319a6ca83cd24dc6f3e5e0536a539c20c17b7b70130c28552d16",
+  "backend-kotlin/infrastructure/src/test/kotlin/kr/easydoc/infrastructure/quality/GoldenLlmLaneProvider.kt": "9fe09dba9c1e759f59b4b557a5abc7a617d06e1d9fd07a443a26b866004a7835",
+  "backend-kotlin/infrastructure/src/test/kotlin/kr/easydoc/infrastructure/quality/GoldenCorpusLlmEvaluationTest.kt": "22bc9a1454c88c9cf236a28f39803e7a16057dbef75a630a86330fdea3f34f68",
+  "dictionary/dist/easy_dict.index.json": "97c41d321b8e9a15e5e32f5c7a0cdc06c7782e560a6874f146d8711e8b89b2e6"
+}

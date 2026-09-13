@@ -1,0 +1,80 @@
+{
+  "astra-baseline": {
+    "source": "/Users/harris/Development/private/easy-doc",
+    "provider": "openai",
+    "model": "gpt-6-astra",
+    "effort": "medium",
+    "input": 10,
+    "output": 50,
+    "runs": 1,
+    "corpus": "corpus",
+    "cap": 6.2
+  },
+  "sonnet-low": {
+    "source": "/Users/harris/Development/private/easy-doc",
+    "provider": "anthropic",
+    "model": "claude-sonnet-5",
+    "effort": "low",
+    "input": 2,
+    "output": 10,
+    "runs": 1,
+    "corpus": "corpus",
+    "cap": 1.4
+  },
+  "sol-low": {
+    "source": "/Users/harris/Development/private/easy-doc",
+    "provider": "openai",
+    "model": "gpt-5.6-sol",
+    "effort": "low",
+    "input": 4,
+    "output": 20,
+    "runs": 1,
+    "corpus": "corpus",
+    "cap": 2.4
+  },
+  "terra-medium": {
+    "source": "/Users/harris/Development/private/easy-doc",
+    "provider": "openai",
+    "model": "gpt-5.6-terra",
+    "effort": "medium",
+    "input": 2,
+    "output": 12,
+    "runs": 1,
+    "corpus": "corpus",
+    "cap": 1.6
+  },
+  "sonnet-medium": {
+    "source": "/Users/harris/Development/private/easy-doc",
+    "provider": "anthropic",
+    "model": "claude-sonnet-5",
+    "effort": "medium",
+    "input": 2,
+    "output": 10,
+    "runs": 1,
+    "corpus": "corpus",
+    "cap": 1.4
+  },
+  "sonnet-high-16k": {
+    "source": "/Users/harris/Development/private/easy-doc",
+    "provider": "anthropic",
+    "model": "claude-sonnet-5",
+    "effort": "high",
+    "input": 2,
+    "output": 10,
+    "runs": 1,
+    "corpus": "corpus",
+    "cap": 2.15,
+    "maxTokens": 16384
+  },
+  "sonnet-clear": {
+    "source": "/Users/harris/Development/private/easy-doc",
+    "provider": "anthropic",
+    "model": "claude-sonnet-5",
+    "effort": "low",
+    "input": 2,
+    "output": 10,
+    "runs": 1,
+    "corpus": "corpus",
+    "cap": 1.4
+  }
+}

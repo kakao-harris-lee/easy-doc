@@ -1,0 +1,11 @@
+{
+  "startedAt": "2026-09-12T07:21:45.012Z",
+  "args": [
+    ":infrastructure:testLlm",
+    "--tests",
+    "*GoldenCorpusLlmEvaluationTest",
+    "-Peasydoc.golden.documents.dir=/Users/harris/Development/private/easy-doc/docs/reports/2026-09-12-document-markers-artifacts/inputs",
+    "--console=plain"
+  ],
+  "plan": "plan.json"
+}

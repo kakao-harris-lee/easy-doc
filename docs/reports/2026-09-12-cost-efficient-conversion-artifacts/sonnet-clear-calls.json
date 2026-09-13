@@ -1,0 +1,83 @@
+[
+  {
+    "provider": "anthropic",
+    "model": "claude-sonnet-5",
+    "outcome": "SUCCESS",
+    "latencyMs": 26613,
+    "inputTokens": 9017,
+    "outputTokens": 2856,
+    "estimatedCostUsd": 0.046594
+  },
+  {
+    "provider": "anthropic",
+    "model": "claude-sonnet-5",
+    "outcome": "SUCCESS",
+    "latencyMs": 26738,
+    "inputTokens": 10065,
+    "outputTokens": 3048,
+    "estimatedCostUsd": 0.05061
+  },
+  {
+    "provider": "anthropic",
+    "model": "claude-sonnet-5",
+    "outcome": "SUCCESS",
+    "latencyMs": 926,
+    "inputTokens": 6039,
+    "outputTokens": 4,
+    "estimatedCostUsd": 0.012118
+  },
+  {
+    "provider": "anthropic",
+    "model": "claude-sonnet-5",
+    "outcome": "SUCCESS",
+    "latencyMs": 22487,
+    "inputTokens": 8009,
+    "outputTokens": 2078,
+    "estimatedCostUsd": 0.036798
+  },
+  {
+    "provider": "anthropic",
+    "model": "claude-sonnet-5",
+    "outcome": "SUCCESS",
+    "latencyMs": 23044,
+    "inputTokens": 8903,
+    "outputTokens": 2359,
+    "estimatedCostUsd": 0.041396
+  },
+  {
+    "provider": "anthropic",
+    "model": "claude-sonnet-5",
+    "outcome": "SUCCESS",
+    "latencyMs": 1083,
+    "inputTokens": 5127,
+    "outputTokens": 4,
+    "estimatedCostUsd": 0.010294
+  },
+  {
+    "provider": "anthropic",
+    "model": "claude-sonnet-5",
+    "outcome": "SUCCESS",
+    "latencyMs": 23962,
+    "inputTokens": 10144,
+    "outputTokens": 2902,
+    "estimatedCostUsd": 0.049308
+  },
+  {
+    "provider": "anthropic",
+    "model": "claude-sonnet-5",
+    "outcome": "SUCCESS",
+    "latencyMs": 29031,
+    "inputTokens": 11470,
+    "outputTokens": 3626,
+    "estimatedCostUsd": 0.0592
+  },
+  {
+    "provider": "anthropic",
+    "model": "claude-sonnet-5",
+    "outcome": "SUCCESS",
+    "latencyMs": 1430,
+    "inputTokens": 6707,
+    "outputTokens": 4,
+    "estimatedCostUsd": 0.013454
+  }
+]

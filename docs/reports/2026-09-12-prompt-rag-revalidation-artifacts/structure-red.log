@@ -1,0 +1,176 @@
+> Task :application:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :core:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :infrastructure:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :application:processResources NO-SOURCE
+> Task :infrastructure:processResources UP-TO-DATE
+> Task :infrastructure:processTestFixturesResources UP-TO-DATE
+> Task :infrastructure:processTestResources UP-TO-DATE
+> Task :core:compileKotlin UP-TO-DATE
+> Task :core:compileJava NO-SOURCE
+> Task :core:processResources NO-SOURCE
+> Task :core:classes UP-TO-DATE
+> Task :core:jar UP-TO-DATE
+> Task :application:compileKotlin UP-TO-DATE
+> Task :application:compileJava NO-SOURCE
+> Task :application:classes UP-TO-DATE
+> Task :application:jar UP-TO-DATE
+> Task :core:compileTestFixturesKotlin UP-TO-DATE
+> Task :core:compileTestFixturesJava NO-SOURCE
+> Task :core:processTestFixturesResources NO-SOURCE
+> Task :core:testFixturesClasses UP-TO-DATE
+> Task :core:testFixturesJar UP-TO-DATE
+> Task :infrastructure:compileKotlin UP-TO-DATE
+> Task :infrastructure:compileJava NO-SOURCE
+> Task :infrastructure:classes UP-TO-DATE
+> Task :infrastructure:jar UP-TO-DATE
+> Task :infrastructure:compileTestFixturesKotlin UP-TO-DATE
+> Task :infrastructure:compileTestFixturesJava NO-SOURCE
+> Task :infrastructure:testFixturesClasses UP-TO-DATE
+> Task :infrastructure:testFixturesJar UP-TO-DATE
+> Task :infrastructure:compileTestKotlin
+> Task :infrastructure:compileTestJava NO-SOURCE
+> Task :infrastructure:testClasses UP-TO-DATE
+
+> Task :infrastructure:test
+
+ConversionWorkerFlowTest > 평문 파일만 줄 고정을 생략하고 추출된 파일 표는 보호한다(SourceFormat) > [4] TXT FAILED
+    java.lang.AssertionError: 
+    Expecting actual:
+      "<문서 id="d9aee1ad974d">
+    신청 안내
+    주민센터에 신청서를 내세요.
+    </문서 id="d9aee1ad974d">
+
+    [구조]
+    <구조인용 id="a401a00e6843">
+    표: 1~2째 줄(「신청 안내」부터 「주민센터에 신청서를 내세요.」까지)은 표의 칸입니다. 한 줄이 칸 하나(또는 칸 안 문단 하나)입니다.
+      - 칸을 합치거나 나누지 마세요. 줄 수와 순서를 그대로 두세요.
+      - 칸 안에서는 줄을 바꾸지 말고, 길면 마침표로 문장을 나누세요.
+      - 낱말 하나뿐인 칸(표제)은 바꾸지 말고 그대로 쓰세요.
+    </구조인용 id="a401a00e6843">
+    위 규칙 중 '나열할 것이 있으면 줄을 바꿔 한 줄에 하나씩'은 표·목록 밖에서만 적용합니다.
+
+    위 문서를 쉬운 글로 바꿔 주세요."
+    not to contain:
+      "[구조]"
+        at kr.easydoc.infrastructure.document.ConversionWorkerFlowTest.평문 파일만 줄 고정을 생략하고 추출된 파일 표는 보호한다(ConversionWorkerFlowTest.kt:144)
+
+ConversionWorkerFlowTest > 붙여넣기 목록이 많아도 전체 줄 수를 고정하지 않고 저장된 비교 구조는 유지한다() FAILED
+    java.lang.AssertionError: 
+    Expecting actual:
+      "<문서 id="362307232d04">
+    - 안내
+    주민센터에 신청서를 내세요.
+    - 안내
+    주민센터에 신청서를 내세요.
+    - 안내
+    주민센터에 신청서를 내세요.
+    - 안내
+    주민센터에 신청서를 내세요.
+    - 안내
+    주민센터에 신청서를 내세요.
+    - 안내
+    주민센터에 신청서를 내세요.
+    - 안내
+    주민센터에 신청서를 내세요.
+    - 안내
+    주민센터에 신청서를 내세요.
+    - 안내
+    주민센터에 신청서를 내세요.
+    - 안내
+    주민센터에 신청서를 내세요.
+    - 안내
+    주민센터에 신청서를 내세요.
+    - 안내
+    주민센터에 신청서를 내세요.
+    - 안내
+    주민센터에 신청서를 내세요.
+    - 안내
+    주민센터에 신청서를 내세요.
+    - 안내
+    주민센터에 신청서를 내세요.
+    - 안내
+    주민센터에 신청서를 내세요.
+    - 안내
+    주민센터에 신청서를 내세요.
+    - 안내
+    주민센터에 신청서를 내세요.
+    - 안내
+    주민센터에 신청서를 내세요.
+    - 안내
+    주민센터에 신청서를 내세요.
+    - 안내
+    주민센터에 신청서를 내세요.
+    - 안내
+    주민센터에 신청서를 내세요.
+    - 안내
+    주민센터에 신청서를 내세요.
+    - 안내
+    주민센터에 신청서를 내세요.
+    - 안내
+    주민센터에 신청서를 내세요.
+    - 안내
+    주민센터에 신청서를 내세요.
+    - 안내
+    주민센터에 신청서를 내세요.
+    - 안내
+    주민센터에 신청서를 내세요.
+    - 안내
+    주민센터에 신청서를 내세요.
+    - 안내
+    주민센터에 신청서를 내세요.
+    - 안내
+    주민센터에 신청서를 내세요.
+    - 안내
+    주민센터에 신청서를 내세요.
+    - 안내
+    주민센터에 신청서를 내세요.
+    - 안내
+    주민센터에 신청서를 내세요.
+    - 안내
+    주민센터에 신청서를 내세요.
+    - 안내
+    주민센터에 신청서를 내세요.
+    - 안내
+    주민센터에 신청서를 내세요.
+    - 안내
+    주민센터에 신청서를 내세요.
+    - 안내
+    주민센터에 신청서를 내세요.
+    - 안내
+    주민센터에 신청서를 내세요.
+    - 안내
+    주민센터에 신청서를 내세요.
+    </문서 id="362307232d04">
+
+    [구조]
+    이 문서에는 표·목록이 많습니다. 줄 수와 순서를 그대로 두세요.
+
+    위 문서를 쉬운 글로 바꿔 주세요."
+    not to contain:
+      "[구조]"
+        at kr.easydoc.infrastructure.document.ConversionWorkerFlowTest.붙여넣기 목록이 많아도 전체 줄 수를 고정하지 않고 저장된 비교 구조는 유지한다(ConversionWorkerFlowTest.kt:123)
+
+8 tests completed, 2 failed
+
+> Task :infrastructure:test FAILED
+
+[Incubating] Problems report is available at: file:///Users/harris/Development/private/easy-doc/backend-kotlin/build/reports/problems/problems-report.html
+
+FAILURE: Build failed with an exception.
+
+* What went wrong:
+Execution failed for task ':infrastructure:test'.
+> There were failing tests. See the report at: file:///Users/harris/Development/private/easy-doc/backend-kotlin/infrastructure/build/reports/tests/test/index.html
+
+* Try:
+> Run with --scan to generate a Build Scan (Powered by Develocity).
+
+Deprecated Gradle features were used in this build, making it incompatible with Gradle 10.
+
+You can use '--warning-mode all' to show the individual deprecation warnings and determine if they come from your own scripts or plugins.
+
+For more on this, please refer to https://docs.gradle.org/9.1.0/userguide/command_line_interface.html#sec:command_line_warnings in the Gradle documentation.
+
+BUILD FAILED in 9s
+15 actionable tasks: 2 executed, 13 up-to-date

@@ -1,0 +1,246 @@
+> Task :worker:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :core:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :infrastructure:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :application:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :api:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :application:processResources NO-SOURCE
+> Task :api:processResources UP-TO-DATE
+> Task :infrastructure:processResources UP-TO-DATE
+> Task :infrastructure:processTestFixturesResources UP-TO-DATE
+> Task :worker:processResources UP-TO-DATE
+> Task :infrastructure:checkDictionaryIndex
+> Task :core:processResources NO-SOURCE
+> Task :core:processTestFixturesResources NO-SOURCE
+> Task :worker:detekt UP-TO-DATE
+> Task :application:detekt UP-TO-DATE
+> Task :worker:loadKtlintReporters UP-TO-DATE
+> Task :application:loadKtlintReporters UP-TO-DATE
+> Task :application:runKtlintCheckOverKotlinScripts UP-TO-DATE
+> Task :worker:runKtlintCheckOverKotlinScripts UP-TO-DATE
+> Task :application:ktlintKotlinScriptCheck UP-TO-DATE
+> Task :worker:ktlintKotlinScriptCheck UP-TO-DATE
+> Task :application:runKtlintCheckOverMainSourceSet UP-TO-DATE
+> Task :worker:runKtlintCheckOverMainSourceSet UP-TO-DATE
+> Task :application:ktlintMainSourceSetCheck UP-TO-DATE
+> Task :worker:ktlintMainSourceSetCheck UP-TO-DATE
+> Task :application:runKtlintCheckOverTestSourceSet UP-TO-DATE
+> Task :worker:runKtlintCheckOverTestSourceSet UP-TO-DATE
+> Task :application:ktlintTestSourceSetCheck UP-TO-DATE
+> Task :application:processTestResources NO-SOURCE
+> Task :worker:ktlintTestSourceSetCheck UP-TO-DATE
+> Task :worker:processTestResources NO-SOURCE
+> Task :core:detekt
+> Task :core:loadKtlintReporters UP-TO-DATE
+> Task :core:runKtlintCheckOverKotlinScripts UP-TO-DATE
+> Task :core:ktlintKotlinScriptCheck UP-TO-DATE
+> Task :core:runKtlintCheckOverTestFixturesSourceSet UP-TO-DATE
+> Task :core:ktlintTestFixturesSourceSetCheck UP-TO-DATE
+> Task :core:runKtlintCheckOverTestSourceSet UP-TO-DATE
+> Task :core:ktlintTestSourceSetCheck UP-TO-DATE
+> Task :core:processTestResources UP-TO-DATE
+> Task :core:compileKotlin
+> Task :core:compileJava NO-SOURCE
+> Task :core:classes UP-TO-DATE
+> Task :core:jar UP-TO-DATE
+> Task :application:compileKotlin UP-TO-DATE
+> Task :application:compileJava NO-SOURCE
+> Task :application:classes UP-TO-DATE
+> Task :application:jar UP-TO-DATE
+> Task :application:assemble UP-TO-DATE
+> Task :core:compileTestFixturesKotlin UP-TO-DATE
+> Task :core:compileTestFixturesJava NO-SOURCE
+> Task :core:testFixturesClasses UP-TO-DATE
+> Task :core:testFixturesJar UP-TO-DATE
+> Task :core:assemble UP-TO-DATE
+> Task :core:compileTestKotlin UP-TO-DATE
+> Task :core:compileTestJava NO-SOURCE
+> Task :core:testClasses UP-TO-DATE
+
+> Task :worker:moduleBoundaryCheck
+[worker] 모듈 경계 확인: 선언 종류 + compileClasspath 양쪽 통과.
+
+> Task :worker:compileKotlin
+> Task :worker:compileJava NO-SOURCE
+> Task :worker:classes UP-TO-DATE
+> Task :worker:resolveMainClassName UP-TO-DATE
+> Task :worker:jar UP-TO-DATE
+> Task :application:compileTestKotlin
+> Task :application:compileTestJava NO-SOURCE
+> Task :application:testClasses UP-TO-DATE
+> Task :api:detekt
+> Task :api:compileKotlin UP-TO-DATE
+> Task :api:compileJava NO-SOURCE
+> Task :api:classes UP-TO-DATE
+> Task :api:resolveMainClassName UP-TO-DATE
+> Task :api:jar UP-TO-DATE
+> Task :api:loadKtlintReporters UP-TO-DATE
+> Task :api:runKtlintCheckOverKotlinScripts UP-TO-DATE
+> Task :api:ktlintKotlinScriptCheck UP-TO-DATE
+> Task :api:runKtlintCheckOverMainSourceSet UP-TO-DATE
+> Task :api:ktlintMainSourceSetCheck UP-TO-DATE
+> Task :api:runKtlintCheckOverTestSourceSet UP-TO-DATE
+> Task :api:ktlintTestSourceSetCheck UP-TO-DATE
+
+> Task :api:moduleBoundaryCheck
+[api] 모듈 경계 확인: 선언 종류 + compileClasspath 양쪽 통과.
+
+> Task :api:processTestResources NO-SOURCE
+> Task :infrastructure:detekt
+> Task :infrastructure:compileKotlin UP-TO-DATE
+> Task :infrastructure:compileJava NO-SOURCE
+> Task :infrastructure:classes UP-TO-DATE
+> Task :infrastructure:jar UP-TO-DATE
+> Task :infrastructure:compileTestFixturesKotlin UP-TO-DATE
+> Task :infrastructure:compileTestFixturesJava NO-SOURCE
+> Task :infrastructure:testFixturesClasses UP-TO-DATE
+> Task :infrastructure:testFixturesJar UP-TO-DATE
+> Task :infrastructure:assemble UP-TO-DATE
+> Task :infrastructure:loadKtlintReporters UP-TO-DATE
+> Task :infrastructure:runKtlintCheckOverKotlinScripts UP-TO-DATE
+> Task :infrastructure:ktlintKotlinScriptCheck UP-TO-DATE
+> Task :infrastructure:runKtlintCheckOverMainSourceSet UP-TO-DATE
+> Task :infrastructure:ktlintMainSourceSetCheck UP-TO-DATE
+> Task :infrastructure:runKtlintCheckOverTestFixturesSourceSet UP-TO-DATE
+> Task :infrastructure:ktlintTestFixturesSourceSetCheck UP-TO-DATE
+> Task :infrastructure:runKtlintCheckOverTestSourceSet UP-TO-DATE
+> Task :infrastructure:ktlintTestSourceSetCheck UP-TO-DATE
+> Task :infrastructure:compileTestKotlin UP-TO-DATE
+> Task :infrastructure:compileTestJava NO-SOURCE
+> Task :infrastructure:processTestResources UP-TO-DATE
+> Task :infrastructure:testClasses UP-TO-DATE
+> Task :worker:bootJar
+> Task :worker:assemble
+> Task :api:bootJar
+> Task :api:assemble
+> Task :api:compileTestKotlin UP-TO-DATE
+> Task :api:compileTestJava NO-SOURCE
+> Task :api:testClasses UP-TO-DATE
+> Task :worker:compileTestKotlin
+> Task :worker:compileTestJava NO-SOURCE
+> Task :worker:testClasses UP-TO-DATE
+> Task :application:test
+> Task :application:check
+> Task :application:build
+> Task :core:runKtlintCheckOverMainSourceSet
+> Task :core:test
+> Task :core:ktlintMainSourceSetCheck
+> Task :core:check
+> Task :core:build
+2026-09-12T15:36:13.122+09:00  INFO 99943 --- [easy-doc-worker] [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Shutdown initiated...
+2026-09-12T15:36:13.179+09:00  INFO 99943 --- [easy-doc-worker] [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Shutdown completed.
+> Task :worker:test
+> Task :worker:check
+> Task :worker:build
+> Task :infrastructure:test
+> Task :api:test
+
+2026-09-12T15:38:31.438+09:00  INFO 99942 --- [easy-doc-api] [ionShutdownHook] o.s.boot.tomcat.GracefulShutdown         : Commencing graceful shutdown. Waiting for active requests to complete
+2026-09-12T15:38:32.442+09:00  INFO 99942 --- [easy-doc-api] [tomcat-shutdown] o.s.boot.tomcat.GracefulShutdown         : Graceful shutdown complete
+2026-09-12T15:38:32.443+09:00  INFO 99942 --- [easy-doc-api] [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-18 - Shutdown initiated...
+2026-09-12T15:38:32.444+09:00  INFO 99942 --- [easy-doc-api] [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-18 - Shutdown completed.
+2026-09-12T15:38:32.446+09:00  INFO 99942 --- [easy-doc-api] [ionShutdownHook] o.s.boot.tomcat.GracefulShutdown         : Commencing graceful shutdown. Waiting for active requests to complete
+2026-09-12T15:38:32.447+09:00  INFO 99942 --- [easy-doc-api] [tomcat-shutdown] o.s.boot.tomcat.GracefulShutdown         : Graceful shutdown complete
+2026-09-12T15:38:32.448+09:00  INFO 99942 --- [easy-doc-api] [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-19 - Shutdown initiated...
+2026-09-12T15:38:32.449+09:00  INFO 99942 --- [easy-doc-api] [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-19 - Shutdown completed.
+2026-09-12T15:38:32.451+09:00  INFO 99942 --- [easy-doc-api] [ionShutdownHook] o.s.boot.tomcat.GracefulShutdown         : Commencing graceful shutdown. Waiting for active requests to complete
+2026-09-12T15:38:32.453+09:00  INFO 99942 --- [easy-doc-api] [tomcat-shutdown] o.s.boot.tomcat.GracefulShutdown         : Graceful shutdown complete
+2026-09-12T15:38:32.454+09:00  INFO 99942 --- [easy-doc-api] [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-20 - Shutdown initiated...
+2026-09-12T15:38:32.454+09:00  INFO 99942 --- [easy-doc-api] [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-20 - Shutdown completed.
+2026-09-12T15:38:32.456+09:00  INFO 99942 --- [easy-doc-api] [ionShutdownHook] o.s.boot.tomcat.GracefulShutdown         : Commencing graceful shutdown. Waiting for active requests to complete
+2026-09-12T15:38:32.459+09:00  INFO 99942 --- [easy-doc-api] [tomcat-shutdown] o.s.boot.tomcat.GracefulShutdown         : Graceful shutdown complete
+2026-09-12T15:38:32.460+09:00  INFO 99942 --- [easy-doc-api] [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-21 - Shutdown initiated...
+2026-09-12T15:38:32.460+09:00  INFO 99942 --- [easy-doc-api] [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-21 - Shutdown completed.
+2026-09-12T15:38:32.462+09:00  INFO 99942 --- [easy-doc-api] [ionShutdownHook] o.s.boot.tomcat.GracefulShutdown         : Commencing graceful shutdown. Waiting for active requests to complete
+2026-09-12T15:38:32.463+09:00  INFO 99942 --- [easy-doc-api] [tomcat-shutdown] o.s.boot.tomcat.GracefulShutdown         : Graceful shutdown complete
+2026-09-12T15:38:32.464+09:00  INFO 99942 --- [easy-doc-api] [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-22 - Shutdown initiated...
+2026-09-12T15:38:32.465+09:00  INFO 99942 --- [easy-doc-api] [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-22 - Shutdown completed.
+2026-09-12T15:38:32.467+09:00  INFO 99942 --- [easy-doc-api] [ionShutdownHook] o.s.boot.tomcat.GracefulShutdown         : Commencing graceful shutdown. Waiting for active requests to complete
+2026-09-12T15:38:32.469+09:00  INFO 99942 --- [easy-doc-api] [tomcat-shutdown] o.s.boot.tomcat.GracefulShutdown         : Graceful shutdown complete
+2026-09-12T15:38:32.469+09:00  INFO 99942 --- [easy-doc-api] [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-23 - Shutdown initiated...
+2026-09-12T15:38:32.470+09:00  INFO 99942 --- [easy-doc-api] [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-23 - Shutdown completed.
+2026-09-12T15:38:32.471+09:00  INFO 99942 --- [easy-doc-api] [ionShutdownHook] o.s.boot.tomcat.GracefulShutdown         : Commencing graceful shutdown. Waiting for active requests to complete
+2026-09-12T15:38:32.473+09:00  INFO 99942 --- [easy-doc-api] [tomcat-shutdown] o.s.boot.tomcat.GracefulShutdown         : Graceful shutdown complete
+2026-09-12T15:38:32.474+09:00  INFO 99942 --- [easy-doc-api] [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-24 - Shutdown initiated...
+2026-09-12T15:38:32.475+09:00  INFO 99942 --- [easy-doc-api] [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-24 - Shutdown completed.
+2026-09-12T15:38:32.476+09:00  INFO 99942 --- [easy-doc-api] [ionShutdownHook] o.s.boot.tomcat.GracefulShutdown         : Commencing graceful shutdown. Waiting for active requests to complete
+2026-09-12T15:38:32.479+09:00  INFO 99942 --- [easy-doc-api] [tomcat-shutdown] o.s.boot.tomcat.GracefulShutdown         : Graceful shutdown complete
+2026-09-12T15:38:32.479+09:00  INFO 99942 --- [easy-doc-api] [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-25 - Shutdown initiated...
+2026-09-12T15:38:32.480+09:00  INFO 99942 --- [easy-doc-api] [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-25 - Shutdown completed.
+2026-09-12T15:38:32.482+09:00  INFO 99942 --- [easy-doc-api] [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-26 - Shutdown initiated...
+2026-09-12T15:38:32.482+09:00  INFO 99942 --- [easy-doc-api] [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-26 - Shutdown completed.
+2026-09-12T15:38:32.482+09:00  INFO 99942 --- [easy-doc-api] [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-27 - Shutdown initiated...
+2026-09-12T15:38:32.483+09:00  INFO 99942 --- [easy-doc-api] [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-27 - Shutdown completed.
+2026-09-12T15:38:32.483+09:00  INFO 99942 --- [easy-doc-api] [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-28 - Shutdown initiated...
+2026-09-12T15:38:32.483+09:00  INFO 99942 --- [easy-doc-api] [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-28 - Shutdown completed.
+2026-09-12T15:38:32.484+09:00  INFO 99942 --- [easy-doc-api] [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-29 - Shutdown initiated...
+2026-09-12T15:38:32.484+09:00  INFO 99942 --- [easy-doc-api] [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-29 - Shutdown completed.
+2026-09-12T15:38:32.485+09:00  INFO 99942 --- [easy-doc-api] [ionShutdownHook] o.s.boot.tomcat.GracefulShutdown         : Commencing graceful shutdown. Waiting for active requests to complete
+2026-09-12T15:38:32.487+09:00  INFO 99942 --- [easy-doc-api] [tomcat-shutdown] o.s.boot.tomcat.GracefulShutdown         : Graceful shutdown complete
+2026-09-12T15:38:32.488+09:00  INFO 99942 --- [easy-doc-api] [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-30 - Shutdown initiated...
+2026-09-12T15:38:32.488+09:00  INFO 99942 --- [easy-doc-api] [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-30 - Shutdown completed.
+2026-09-12T15:38:32.491+09:00  INFO 99942 --- [easy-doc-api] [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-31 - Shutdown initiated...
+2026-09-12T15:38:32.491+09:00  INFO 99942 --- [easy-doc-api] [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-31 - Shutdown completed.
+2026-09-12T15:38:32.491+09:00  INFO 99942 --- [easy-doc-api] [ionShutdownHook] o.s.boot.tomcat.GracefulShutdown         : Commencing graceful shutdown. Waiting for active requests to complete
+2026-09-12T15:38:34.499+09:00  INFO 99942 --- [easy-doc-api] [tomcat-shutdown] o.s.boot.tomcat.GracefulShutdown         : Graceful shutdown complete
+2026-09-12T15:38:34.499+09:00  INFO 99942 --- [easy-doc-api] [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-32 - Shutdown initiated...
+2026-09-12T15:38:34.500+09:00  INFO 99942 --- [easy-doc-api] [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-32 - Shutdown completed.
+2026-09-12T15:38:34.501+09:00  INFO 99942 --- [easy-doc-api] [ionShutdownHook] o.s.boot.tomcat.GracefulShutdown         : Commencing graceful shutdown. Waiting for active requests to complete
+2026-09-12T15:38:34.503+09:00  INFO 99942 --- [easy-doc-api] [tomcat-shutdown] o.s.boot.tomcat.GracefulShutdown         : Graceful shutdown complete
+2026-09-12T15:38:34.504+09:00  INFO 99942 --- [easy-doc-api] [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-33 - Shutdown initiated...
+2026-09-12T15:38:34.505+09:00  INFO 99942 --- [easy-doc-api] [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-33 - Shutdown completed.
+2026-09-12T15:38:34.506+09:00  INFO 99942 --- [easy-doc-api] [ionShutdownHook] o.s.boot.tomcat.GracefulShutdown         : Commencing graceful shutdown. Waiting for active requests to complete
+2026-09-12T15:38:36.511+09:00  INFO 99942 --- [easy-doc-api] [tomcat-shutdown] o.s.boot.tomcat.GracefulShutdown         : Graceful shutdown complete
+2026-09-12T15:38:36.511+09:00  INFO 99942 --- [easy-doc-api] [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-34 - Shutdown initiated...
+2026-09-12T15:38:36.512+09:00  INFO 99942 --- [easy-doc-api] [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-34 - Shutdown completed.
+2026-09-12T15:38:36.514+09:00  INFO 99942 --- [easy-doc-api] [ionShutdownHook] o.s.boot.tomcat.GracefulShutdown         : Commencing graceful shutdown. Waiting for active requests to complete
+2026-09-12T15:38:37.518+09:00  INFO 99942 --- [easy-doc-api] [tomcat-shutdown] o.s.boot.tomcat.GracefulShutdown         : Graceful shutdown complete
+2026-09-12T15:38:37.519+09:00  INFO 99942 --- [easy-doc-api] [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-35 - Shutdown initiated...
+2026-09-12T15:38:37.519+09:00  INFO 99942 --- [easy-doc-api] [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-35 - Shutdown completed.
+2026-09-12T15:38:37.521+09:00  INFO 99942 --- [easy-doc-api] [ionShutdownHook] o.s.boot.tomcat.GracefulShutdown         : Commencing graceful shutdown. Waiting for active requests to complete
+2026-09-12T15:38:37.524+09:00  INFO 99942 --- [easy-doc-api] [tomcat-shutdown] o.s.boot.tomcat.GracefulShutdown         : Graceful shutdown complete
+2026-09-12T15:38:37.524+09:00  INFO 99942 --- [easy-doc-api] [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-36 - Shutdown initiated...
+2026-09-12T15:38:37.525+09:00  INFO 99942 --- [easy-doc-api] [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-36 - Shutdown completed.
+2026-09-12T15:38:37.526+09:00  INFO 99942 --- [easy-doc-api] [ionShutdownHook] o.s.boot.tomcat.GracefulShutdown         : Commencing graceful shutdown. Waiting for active requests to complete
+2026-09-12T15:38:37.529+09:00  INFO 99942 --- [easy-doc-api] [tomcat-shutdown] o.s.boot.tomcat.GracefulShutdown         : Graceful shutdown complete
+2026-09-12T15:38:37.530+09:00  INFO 99942 --- [easy-doc-api] [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-37 - Shutdown initiated...
+2026-09-12T15:38:37.530+09:00  INFO 99942 --- [easy-doc-api] [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-37 - Shutdown completed.
+2026-09-12T15:38:37.532+09:00  INFO 99942 --- [easy-doc-api] [ionShutdownHook] o.s.boot.tomcat.GracefulShutdown         : Commencing graceful shutdown. Waiting for active requests to complete
+2026-09-12T15:38:37.533+09:00  INFO 99942 --- [easy-doc-api] [tomcat-shutdown] o.s.boot.tomcat.GracefulShutdown         : Graceful shutdown complete
+2026-09-12T15:38:37.534+09:00  INFO 99942 --- [easy-doc-api] [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-38 - Shutdown initiated...
+2026-09-12T15:38:37.534+09:00  INFO 99942 --- [easy-doc-api] [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-38 - Shutdown completed.
+2026-09-12T15:38:37.536+09:00  INFO 99942 --- [easy-doc-api] [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-39 - Shutdown initiated...
+2026-09-12T15:38:37.536+09:00  INFO 99942 --- [easy-doc-api] [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-39 - Shutdown completed.
+2026-09-12T15:38:37.536+09:00  INFO 99942 --- [easy-doc-api] [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-40 - Shutdown initiated...
+2026-09-12T15:38:37.537+09:00  INFO 99942 --- [easy-doc-api] [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-40 - Shutdown completed.
+2026-09-12T15:38:37.537+09:00  INFO 99942 --- [easy-doc-api] [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-41 - Shutdown initiated...
+2026-09-12T15:38:37.537+09:00  INFO 99942 --- [easy-doc-api] [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-41 - Shutdown completed.
+2026-09-12T15:38:37.538+09:00  INFO 99942 --- [easy-doc-api] [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-42 - Shutdown initiated...
+2026-09-12T15:38:37.538+09:00  INFO 99942 --- [easy-doc-api] [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-42 - Shutdown completed.
+2026-09-12T15:38:37.539+09:00  INFO 99942 --- [easy-doc-api] [ionShutdownHook] o.s.boot.tomcat.GracefulShutdown         : Commencing graceful shutdown. Waiting for active requests to complete
+2026-09-12T15:38:37.541+09:00  INFO 99942 --- [easy-doc-api] [tomcat-shutdown] o.s.boot.tomcat.GracefulShutdown         : Graceful shutdown complete
+2026-09-12T15:38:37.542+09:00  INFO 99942 --- [easy-doc-api] [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-43 - Shutdown initiated...
+2026-09-12T15:38:37.542+09:00  INFO 99942 --- [easy-doc-api] [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-43 - Shutdown completed.
+2026-09-12T15:38:37.544+09:00  INFO 99942 --- [easy-doc-api] [ionShutdownHook] o.s.boot.tomcat.GracefulShutdown         : Commencing graceful shutdown. Waiting for active requests to complete
+
+> Task :infrastructure:check
+> Task :infrastructure:build
+2026-09-12T15:38:39.548+09:00  INFO 99942 --- [easy-doc-api] [tomcat-shutdown] o.s.boot.tomcat.GracefulShutdown         : Graceful shutdown complete
+2026-09-12T15:38:39.548+09:00  INFO 99942 --- [easy-doc-api] [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-44 - Shutdown initiated...
+2026-09-12T15:38:39.549+09:00  INFO 99942 --- [easy-doc-api] [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-44 - Shutdown completed.
+2026-09-12T15:38:39.550+09:00  INFO 99942 --- [easy-doc-api] [ionShutdownHook] o.s.boot.tomcat.GracefulShutdown         : Commencing graceful shutdown. Waiting for active requests to complete
+2026-09-12T15:38:39.552+09:00  INFO 99942 --- [easy-doc-api] [tomcat-shutdown] o.s.boot.tomcat.GracefulShutdown         : Graceful shutdown complete
+2026-09-12T15:38:39.553+09:00  INFO 99942 --- [easy-doc-api] [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-45 - Shutdown initiated...
+2026-09-12T15:38:39.554+09:00  INFO 99942 --- [easy-doc-api] [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-45 - Shutdown completed.
+> Task :api:check
+> Task :api:build
+
+[Incubating] Problems report is available at: file:///Users/harris/Development/private/easy-doc/backend-kotlin/build/reports/problems/problems-report.html
+
+Deprecated Gradle features were used in this build, making it incompatible with Gradle 10.
+
+You can use '--warning-mode all' to show the individual deprecation warnings and determine if they come from your own scripts or plugins.
+
+For more on this, please refer to https://docs.gradle.org/9.1.0/userguide/command_line_interface.html#sec:command_line_warnings in the Gradle documentation.
+
+BUILD SUCCESSFUL in 2m 36s
+81 actionable tasks: 19 executed, 62 up-to-date

@@ -1,0 +1,57 @@
+{
+  "command": "cd backend-kotlin && ./gradlew build",
+  "result": "BUILD SUCCESSFUL",
+  "elapsed": "2m 50s",
+  "modules": {
+    "core": {
+      "tests": 637,
+      "skipped": 0,
+      "failures": 0,
+      "errors": 0,
+      "suites": 102
+    },
+    "application": {
+      "tests": 482,
+      "skipped": 0,
+      "failures": 0,
+      "errors": 0,
+      "suites": 57
+    },
+    "infrastructure": {
+      "tests": 936,
+      "skipped": 0,
+      "failures": 0,
+      "errors": 0,
+      "suites": 105
+    },
+    "api": {
+      "tests": 714,
+      "skipped": 0,
+      "failures": 0,
+      "errors": 0,
+      "suites": 88
+    },
+    "worker": {
+      "tests": 13,
+      "skipped": 0,
+      "failures": 0,
+      "errors": 0,
+      "suites": 2
+    }
+  },
+  "totalTests": 2782,
+  "ordinaryTestTaskOnly": true,
+  "composeConfig": "passed",
+  "gitDiffCheck": "passed",
+  "additionalTypedDetektTest": {
+    "result": "not clean",
+    "remainingFindings": 9,
+    "locations": [
+      "GoldenLlmLane",
+      "LaneRuns",
+      "IngestFixtures",
+      "LaneReport"
+    ],
+    "requiredBuildPassed": true
+  }
+}

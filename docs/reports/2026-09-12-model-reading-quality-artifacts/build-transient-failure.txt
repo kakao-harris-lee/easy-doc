@@ -1,0 +1,6 @@
+ValueSlotInvariantReachTest > 부정(경로 변수) — 매핑된 **모든** 오퍼레이션에서 공백뿐인 경로 조각이 흡수되지 않고, 계약이 선언한 상태로 거절된다 FAILED
+    org.postgresql.util.PSQLException: The connection attempt failed.
+ValueSlotInvariantReachTest > 부정(쿼리) — 매핑된 **모든** 오퍼레이션에서, 선언 타입으로 해석되지 않는 값 자리는 성공 응답을 만들지 못한다 FAILED
+    org.postgresql.util.PSQLException: FATAL: the database system is in recovery mode
+714 tests completed, 2 failed
+BUILD FAILED in 3m 51s

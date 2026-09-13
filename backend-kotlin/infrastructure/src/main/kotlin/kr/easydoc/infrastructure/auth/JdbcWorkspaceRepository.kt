@@ -137,6 +137,8 @@ class JdbcWorkspaceRepository(private val jdbc: JdbcClient) : WorkspaceRepositor
         workspaceId: UUID,
     ): Boolean =
         try {
+            kr.easydoc.infrastructure.subscription.BillingDeletionGuard
+                .check(jdbc, ownerId, workspaceId)
             jdbc
                 .sql("DELETE FROM workspaces WHERE id = :id AND user_id = :ownerId")
                 .param("id", workspaceId)

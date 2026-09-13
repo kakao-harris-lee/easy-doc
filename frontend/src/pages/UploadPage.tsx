@@ -900,32 +900,35 @@ export function UploadPage() {
       {/*
         규칙 기반 「다음 할 일」 한 건(§7).
 
-        `newConversion` 제안(열 변환이 없는 경우)은 여기서 그리지 않는다 — 이 화면이 곧
+        검수가 끝난 문서의 안내는 할 일이 아니므로 숨긴다.
+        `newConversion` 제안(열 변환이 없는 경우)도 여기서 그리지 않는다 — 이 화면이 곧
         새 변환이고, 그 제안은 바로 위 제출 버튼과 같은 말을 두 번 하는 것이다(§15의 3:
         "화면에 이미 더 강한 대표 행동이 있는가?"). 그래서 화면에 나타나는 제안은 언제나
         0개 또는 1개이며, 있을 때도 대표 행동보다 약하다: 페이지 맨 아래, 구분선 하나,
         채운 버튼이 아닌 글자 크기의 링크다(§5.3, §6.2, §14). 터치 대상 44px은 §10을
         따라 링크 높이로 지킨다.
       */}
-      {nextAction !== null && nextAction.conversionId !== null && (
-        <aside
-          aria-label="다음 할 일"
-          className="mt-8 flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-t border-border pt-4"
-        >
-          <p className="m-0 text-sm text-muted-foreground">
-            <span className="font-semibold text-foreground">‘{nextAction.documentTitle}’</span>{' '}
-            {nextAction.message}
-          </p>
-          <Link
-            to={conversionPath(nextAction.conversionId)}
-            aria-label={`‘${nextAction.documentTitle}’ ${nextAction.actionLabel}`}
-            className="inline-flex min-h-11 items-center gap-1 text-sm font-semibold text-primary underline underline-offset-4 hover:text-primary-hover"
+      {nextAction !== null &&
+        nextAction.kind !== 'reviewed' &&
+        nextAction.conversionId !== null && (
+          <aside
+            aria-label="다음 할 일"
+            className="mt-8 flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-t border-border pt-4"
           >
-            {nextAction.actionLabel}
-            <ArrowRight className="size-[18px]" aria-hidden="true" />
-          </Link>
-        </aside>
-      )}
+            <p className="m-0 text-sm text-muted-foreground">
+              <span className="font-semibold text-foreground">‘{nextAction.documentTitle}’</span>{' '}
+              {nextAction.message}
+            </p>
+            <Link
+              to={conversionPath(nextAction.conversionId)}
+              aria-label={`‘${nextAction.documentTitle}’ ${nextAction.actionLabel}`}
+              className="inline-flex min-h-11 items-center gap-1 text-sm font-semibold text-primary underline underline-offset-4 hover:text-primary-hover"
+            >
+              {nextAction.actionLabel}
+              <ArrowRight className="size-[18px]" aria-hidden="true" />
+            </Link>
+          </aside>
+        )}
     </section>
   )
 }

@@ -38,7 +38,81 @@ class AdminReachTest {
     @Autowired
     private lateinit var mailSender: FakeMailSender
 
+    @Autowired
+    private lateinit var cipher: kr.easydoc.application.crypto.ContentCipher
+
+    @Test
+    fun `관리자는 삭제된 변환의 의견도 복호화해 페이지로 읽는다`() {
+        val admin = newVerifiedAdminAccount()
+        val owner = newVerifiedAccount()
+        val id = UUID.randomUUID()
+        val sealed =
+            cipher.encrypt(
+                kr.easydoc.core.crypto
+                    .PlainBody("설명 순서가 좋았습니다"),
+                id,
+                kr.easydoc.core.crypto.EncryptedField.CONVERSION_FEEDBACK_COMMENT,
+            )
+        val hex = sealed.bytes.joinToString("") { "%02x".format(it) }
+        database.execute(
+            """
+            INSERT INTO conversion_feedback
+                (conversion_id, user_id, publish_intent, quality_score, minutes_spent,
+                 comment_encrypted, encryption_scheme, key_version)
+            VALUES ('$id', '${subjectOf(owner)}', 'as_is', 5, 12,
+                    decode('$hex', 'hex'), '${sealed.scheme}', ${sealed.keyVersion})
+            """.trimIndent(),
+        )
+        val response = get(admin, "/admin/feedback?size=1")
+        assertThat(response.statusCode()).isEqualTo(200)
+        assertThat(response.headers().firstValue("Cache-Control").orElse("")).contains("no-store")
+        assertThat(response.headers().firstValue("X-Content-Type-Options").orElse("")).isEqualTo("nosniff")
+        val item = (bodyOf(response)["items"] as List<*>).single() as Map<*, *>
+        assertThat(item["conversion_id"]).isEqualTo(id.toString())
+        assertThat(item["comment"]).isEqualTo("설명 순서가 좋았습니다")
+        assertThat(item["quality_score"]).isEqualTo(5)
+        assertThat(item["owner_email"]).isEqualTo(lastEmail)
+        assertThat(item.keys.map { it.toString() }).containsExactlyInAnyOrderElementsOf(
+            ContractSpec.schemaRequired("AdminFeedbackItem"),
+        )
+        assertThat(item.keys.map { it.toString() }).doesNotContain("easy_text", "original_text", "prompt")
+        assertUnreadableComment(admin, id)
+        database.execute(
+            """
+            UPDATE conversion_feedback
+            SET comment_encrypted = NULL, encryption_scheme = NULL, key_version = NULL
+            WHERE conversion_id = '$id'
+            """.trimIndent(),
+        )
+        val cleared = (bodyOf(get(admin, "/admin/feedback?size=1"))["items"] as List<*>).single() as Map<*, *>
+        assertThat(cleared.keys.map { it.toString() }).contains("comment")
+        assertThat(cleared["comment"]).isNull()
+        assertThat(bodyOf(get(admin, "/admin/feedback?page=100000&size=100"))["items"] as List<*>).isEmpty()
+        assertThat(get(admin, "/admin/feedback?page=0").statusCode()).isEqualTo(422)
+        assertThat(get(admin, "/admin/feedback?size=101").statusCode()).isEqualTo(422)
+        assertThat(get(owner, "/admin/feedback").statusCode()).isEqualTo(403)
+    }
+
     private val json = ObjectMapper()
+
+    private fun assertUnreadableComment(
+        admin: String,
+        id: UUID,
+    ) {
+        database.execute(
+            """
+            UPDATE conversion_feedback
+            SET comment_encrypted = decode('00', 'hex'), encryption_scheme = 'aes256gcm-v1', key_version = 1
+            WHERE conversion_id = '$id'
+            """.trimIndent(),
+        )
+        val response = get(admin, "/admin/feedback?size=1")
+        assertThat(response.statusCode()).isEqualTo(200)
+        val item = (bodyOf(response)["items"] as List<*>).single() as Map<*, *>
+        assertThat(item["comment"]).isNull()
+        assertThat(item["comment_unreadable"]).isEqualTo(true)
+        assertThat(item["quality_score"]).isEqualTo(5)
+    }
 
     /**
      * 스윕 대상을 **계약에서 직접 유도한다** — 손으로 적은 목록이면 새 `x-admin-only`

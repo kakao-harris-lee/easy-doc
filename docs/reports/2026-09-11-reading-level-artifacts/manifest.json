@@ -1,0 +1,56 @@
+{
+  "baselineCommit": "27454421338f0331ef9b3e9293149a5a87515956",
+  "capUsd": 10,
+  "armCapUsd": {
+    "before": 10,
+    "after": 6.458934,
+    "after-no-dict": 2.84105
+  },
+  "model": "claude-sonnet-5",
+  "effort": "low",
+  "maxOutputTokens": 16000,
+  "runsPerDocument": 2,
+  "documents": [
+    "001-current.json",
+    "087-발달장애인-부모상담지원사업.json",
+    "097-기존주택등-매입임대주택-지원사업.json"
+  ],
+  "sameJudgeSha256": "ec16825f643df8c934a9b2abb3b3a45031f4a4a35b5ef14a7db79816b5683838",
+  "pricePerMillion": {
+    "input": 2,
+    "output": 10
+  },
+  "sourceSha256": "f621fa56d82a7e11206d50d4c0710ca857f16af55f501921c0da219eca4ed787",
+  "notes": [
+    "before condition uses HEAD conversion and dictionary, with identical new judge and budget instrumentation only",
+    "after condition freezes current workspace backend changes",
+    "three public documents; exploratory paired repetition, not population inference",
+    "User revised total cap from USD20 to USD10 while before arm was running; after cap subtracts all before reservations without refund."
+  ],
+  "inputFiles": {
+    "001-current.json": "82f0620ab2d7cfb12aeac9a8a651ba9c24322c67d48cc5563b306f44e7bb3961",
+    "087-발달장애인-부모상담지원사업.json": "86c30aa00eadab2ead330faf1cc4b7aa52d80c61ff5b7b4ce2db78b4db83e30b",
+    "097-기존주택등-매입임대주택-지원사업.json": "3f79d4f402c5490e99628010acc8da49dbb828b936f62329e51449276839ccbb"
+  },
+  "implementations": {
+    "before": {
+      "backend-kotlin/core/src/main/kotlin/kr/easydoc/core/easyread/Prompts.kt": "e544e02623d550831333ebdeaf59438e72a11fdfd6dc2ec5265e040564eec01c",
+      "backend-kotlin/core/src/main/kotlin/kr/easydoc/core/dictionary/DictionaryContextLines.kt": "0bd8f7dc87aa58e96a450dd2534653e7ddb1aa0e2ba344b611b6654ac77c43b4",
+      "backend-kotlin/infrastructure/src/main/resources/dictionary/easy_dict.index.json": "d4994c7103c146e25365c09b10b2080037c7c538a16de3289ea6373ca3e857b2",
+      "backend-kotlin/core/src/main/kotlin/kr/easydoc/core/llm/LlmPrompt.kt": "867d85811fabd889d95ff0fdc0cc3c873142b0b94a825ad5d3eb0ec077a16aaa"
+    },
+    "after": {
+      "backend-kotlin/core/src/main/kotlin/kr/easydoc/core/easyread/Prompts.kt": "0db70ec7ec9b1ad83f5a5f5e86972c06c33024e5bd3e30975a9e0e0d4888dde4",
+      "backend-kotlin/core/src/main/kotlin/kr/easydoc/core/dictionary/DictionaryContextLines.kt": "abbd5e88e77fb4f249ca48dd31bd59429d6355bd5aeb5d150d9b4a021f49ec7e",
+      "backend-kotlin/infrastructure/src/main/resources/dictionary/easy_dict.index.json": "97c41d321b8e9a15e5e32f5c7a0cdc06c7782e560a6874f146d8711e8b89b2e6",
+      "backend-kotlin/core/src/main/kotlin/kr/easydoc/core/llm/LlmPrompt.kt": "7fa702334b31e9aeda441f872c731e4ff5ef5e1b3d5418b238b061b39d249201"
+    }
+  },
+  "supplement": {
+    "arm": "after-no-dict",
+    "dictionaryContext": false,
+    "runsPerDocument": 1,
+    "implementation": "same after snapshot",
+    "preRegisteredBeforeSupplementCalls": true
+  }
+}

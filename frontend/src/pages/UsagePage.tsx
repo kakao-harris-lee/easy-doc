@@ -121,6 +121,7 @@ export function UsagePage() {
   const { workspaces, currentId } = useWorkspace()
   const currentName = workspaces.find((workspace) => workspace.id === currentId)?.name
   const [reload, setReload] = useState(0)
+  const [subscriptionReload, setSubscriptionReload] = useState(0)
 
   return (
     <section aria-labelledby="usage-heading" className="mx-auto max-w-5xl">
@@ -133,7 +134,7 @@ export function UsagePage() {
       <div className="grid gap-4 md:grid-cols-2">
         {currentId !== null && (
           <SubscriptionCard
-            key={currentId}
+            key={`subscription:${currentId}:${subscriptionReload}`}
             workspaceId={currentId}
             onChanged={() => setReload((value) => value + 1)}
           />
@@ -141,7 +142,7 @@ export function UsagePage() {
         {currentId === null ? (
           <p className={CARD_CLASS}>작업 공간을 선택하면 사용량을 볼 수 있습니다.</p>
         ) : (
-          <WorkspaceUsage key={`${currentId}:${reload}`} workspaceId={currentId} />
+          <WorkspaceUsage key={`usage:${currentId}:${reload}`} workspaceId={currentId} />
         )}
       </div>
       <div className="mt-4">
@@ -161,7 +162,10 @@ export function UsagePage() {
               type="button"
               variant="ghost"
               className="min-h-11"
-              onClick={() => setReload((value) => value + 1)}
+              onClick={() => {
+                setReload((value) => value + 1)
+                setSubscriptionReload((value) => value + 1)
+              }}
             >
               새로고침
             </Button>

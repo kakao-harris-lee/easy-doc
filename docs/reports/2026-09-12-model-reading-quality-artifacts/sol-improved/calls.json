@@ -1,0 +1,92 @@
+[
+  {
+    "index": 1,
+    "provider": "openai",
+    "model": "gpt-5.6-sol",
+    "outcome": "SUCCESS",
+    "latencyMs": 50673,
+    "inputTokens": 5341,
+    "outputTokens": 3340,
+    "estimatedCostUsd": 0.088164
+  },
+  {
+    "index": 2,
+    "provider": "openai",
+    "model": "gpt-5.6-sol",
+    "outcome": "SUCCESS",
+    "latencyMs": 32416,
+    "inputTokens": 5544,
+    "outputTokens": 2707,
+    "estimatedCostUsd": 0.076316
+  },
+  {
+    "index": 3,
+    "provider": "openai",
+    "model": "gpt-5.6-sol",
+    "outcome": "SUCCESS",
+    "latencyMs": 10329,
+    "inputTokens": 3930,
+    "outputTokens": 760,
+    "estimatedCostUsd": 0.03092
+  },
+  {
+    "index": 4,
+    "provider": "openai",
+    "model": "gpt-5.6-sol",
+    "outcome": "SUCCESS",
+    "latencyMs": 111144,
+    "inputTokens": 4557,
+    "outputTokens": 4498,
+    "estimatedCostUsd": 0.108188
+  },
+  {
+    "index": 5,
+    "provider": "openai",
+    "model": "gpt-5.6-sol",
+    "outcome": "SUCCESS",
+    "latencyMs": 34134,
+    "inputTokens": 4850,
+    "outputTokens": 2515,
+    "estimatedCostUsd": 0.0697
+  },
+  {
+    "index": 6,
+    "provider": "openai",
+    "model": "gpt-5.6-sol",
+    "outcome": "SUCCESS",
+    "latencyMs": 6742,
+    "inputTokens": 3067,
+    "outputTokens": 440,
+    "estimatedCostUsd": 0.021068
+  },
+  {
+    "index": 7,
+    "provider": "openai",
+    "model": "gpt-5.6-sol",
+    "outcome": "SUCCESS",
+    "latencyMs": 57561,
+    "inputTokens": 6101,
+    "outputTokens": 3698,
+    "estimatedCostUsd": 0.098364
+  },
+  {
+    "index": 8,
+    "provider": "openai",
+    "model": "gpt-5.6-sol",
+    "outcome": "SUCCESS",
+    "latencyMs": 30944,
+    "inputTokens": 5902,
+    "outputTokens": 2916,
+    "estimatedCostUsd": 0.081928
+  },
+  {
+    "index": 9,
+    "provider": "openai",
+    "model": "gpt-5.6-sol",
+    "outcome": "SUCCESS",
+    "latencyMs": 6205,
+    "inputTokens": 4546,
+    "outputTokens": 447,
+    "estimatedCostUsd": 0.027124
+  }
+]

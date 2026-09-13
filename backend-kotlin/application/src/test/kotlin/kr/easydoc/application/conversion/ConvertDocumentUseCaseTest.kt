@@ -26,18 +26,89 @@ import java.time.ZoneId
 
 /** 변환 오케스트레이션 — CNV-01(호출 상한)·CNV-02(4대 예외)·CNV-04(보정 채택). */
 class ConvertDocumentUseCaseTest {
+    @Test
+    fun `제목 목록과 문장 안 주의 표식만 빠져도 한 번 보정한다`() {
+        val source = "○ 선정 과정\n- 심사 결과를 알립니다. ※통과한 사람에게만 알립니다.\n * 전화로 면접합니다."
+        val draft = "선정 과정\n심사 결과를 알립니다.\n- 통과한 사람에게만 알립니다.\n전화로 면접합니다."
+        val fixed = "○ 선정 과정\n- 심사 결과를 알립니다.\n※ 통과한 사람에게만 알립니다.\n * 전화로 면접합니다."
+        val provider = FakeLlmProvider(listOf(reply(draft), reply(fixed)))
+
+        val result = converted(useCase(provider).convert(source))
+
+        assertThat(provider.calls).hasSize(2)
+        assertThat(provider.calls[1].prompt.user).contains("[표식 복원]")
+        assertThat(result.easyText.value).isEqualTo(fixed)
+        assertThat(result.repaired).isTrue()
+    }
+
+    @Test
+    fun `문체를 고쳐도 기존 표식을 지운 보정문은 채택하지 않는다`() {
+        val provider = FakeLlmProvider(listOf(reply("○ 결과가 보여지고 있습니다."), reply("결과를 볼 수 있습니다.")))
+        val result = converted(useCase(provider).convert("○ 결과를 볼 수 있습니다."))
+        assertThat(result.easyText.value).isEqualTo("○ 결과가 보여지고 있습니다.")
+        assertThat(result.repaired).isFalse()
+        assertThat(result.usage.llmCalls).isEqualTo(2)
+    }
+
+    @Test
+    fun `표식과 뜻을 보존한 첫 변환은 추가 호출하지 않는다`() {
+        val provider = FakeLlmProvider(listOf(reply("○ 선정 과정\n- 결과를 알립니다.\n※ 통과한 사람에게만 알립니다.")))
+        val result = converted(useCase(provider).convert("○ 선정 과정\n- 결과 발표 ※통과자만 안내"))
+        assertThat(result.repaired).isFalse()
+        assertThat(result.usage.llmCalls).isEqualTo(1)
+    }
+
+    @Test
+    fun `표식 복원에 실패해도 보정을 반복 호출하지 않는다`() {
+        val provider = FakeLlmProvider(List(3) { reply("결과를 알립니다.") })
+        val result = converted(useCase(provider).convert("○ 결과를 알립니다."))
+        assertThat(result.easyText.value).isEqualTo("결과를 알립니다.")
+        assertThat(result.repaired).isFalse()
+        assertThat(result.usage.llmCalls).isEqualTo(2)
+        assertThat(provider.unusedTurns).isEqualTo(1)
+    }
+
+    @Test
+    fun `문체 참고 지적만 남으면 첫 초안을 유지하고 추가 비용을 쓰지 않는다`() {
+        val text = "지원 대상자로 뽑힌 뒤 정당한 이유 없이 2개월 이상 연속으로 서비스를 이용하지 않으면 지원을 멈출 수 있습니다.\n금일 서류, 사진, 도장, 봉투를 가져오세요."
+        val provider = FakeLlmProvider(listOf(FakeLlmTurn.Reply(text = text)))
+        val result = ConvertDocumentUseCase(provider).convert(text) as ConversionResult.Converted
+        assertThat(result.usage.llmCalls).isEqualTo(1)
+        assertThat(result.easyText.value).isEqualTo(text)
+        assertThat(result.repaired).isFalse()
+    }
+
+    @Test
+    fun `그대로 보존한 파일 이름만 지적되면 추가 유료 보정을 부르지 않는다`() {
+        val name = "도서대출 신청(변경)서.hwp"
+        val provider = FakeLlmProvider(listOf(FakeLlmTurn.Reply(text = name)))
+        val result = ConvertDocumentUseCase(provider).convert(name)
+        assertThat(result.usage.llmCalls).isEqualTo(1)
+        assertThat((result as ConversionResult.Converted).easyText.value).isEqualTo(name)
+    }
+
     private val fixedIds = DocumentIdGenerator { "0123456789ab" }
 
     /** fixture 가 쓰는 것과 같은 원문. 위반이 있는 1차 결과를 만들기 위한 입력이다. */
     private val source = "금일 서류를 제출하십시오."
 
-    /** 규칙 위반이 남아 있는 1차 변환 결과 — '금일'이 어려운 말 사전에 있다. */
-    private val draftWithIssue = "금일 서류를 내세요."
+    /** 자동 보정이 필요한 1차 결과 — 이중 피동은 문체 참고 지적과 구분한다. */
+    private val draftWithIssue = "오늘 서류가 보여지고 있습니다."
 
     /** 위반이 없는 결과. */
     private val cleanText = "오늘 서류를 내세요."
 
     private fun useCase(provider: FakeLlmProvider) = ConvertDocumentUseCase(provider, fixedIds)
+
+    @Test
+    fun `보정 요청은 원문을 문서 구분자 안에 함께 전달한다`() {
+        val provider = FakeLlmProvider(listOf(reply(draftWithIssue), reply(cleanText)))
+        useCase(provider).convert(source)
+        val repair = provider.calls[1].prompt
+        assertThat(repair.user).contains("<문서 id=\"0123456789ab\">\n$source\n</문서 id=\"0123456789ab\">")
+        assertThat(repair.system).contains("초등학교 5~6학년", "원문과 대조")
+        assertThat(repair.system).doesNotContain("글자 하나 바꾸지 말고")
+    }
 
     private fun reply(
         text: String,
@@ -323,8 +394,8 @@ class ConvertDocumentUseCaseTest {
         @Test
         @DisplayName("악화되면 1차 결과를 채택하되 토큰은 두 호출의 합이다")
         fun `악화되면 기각하고 토큰은 합산한다`() {
-            // draftWithIssue(위반 1건: 금일)보다 위반이 더 많은 보정문 — 위반 2건(금일·지참).
-            val worseThanDraft = "금일 서류를 지참하십시오."
+            // 하나였던 이중 피동 오류를 두 개로 늘린 보정 후보다.
+            val worseThanDraft = "오늘 서류가 보여지고 제출되어지고 있습니다."
             val provider =
                 FakeLlmProvider(
                     listOf(
@@ -449,8 +520,8 @@ class ConvertDocumentUseCaseTest {
         @DisplayName("보정문이 다른 사실을 새로 빠뜨리면 기각한다 — 문체만 봤으면 채택했을 사례")
         fun `보정이 다른 사실을 빠뜨리면 기각한다`() {
             val source = "금일 02-1234-5678로 문의하세요."
-            // 1차 결과: 문체 위반('금일')은 있지만 사실(전화번호)은 지켜졌다.
-            val draftWithStyleIssue = "금일 문의는 02-1234-5678입니다."
+            // 1차 결과: 이중 피동은 있지만 사실(전화번호)은 지켜졌다.
+            val draftWithStyleIssue = "문의 전화는 02-1234-5678로 보여지고 있습니다."
             // 보정 후보: 문체는 고쳤지만 전화번호를 통째로 날렸다.
             val candidateDroppingFact = "오늘 문의하세요."
             val provider = FakeLlmProvider(listOf(reply(draftWithStyleIssue), reply(candidateDroppingFact)))

@@ -1,0 +1,420 @@
+package kr.easydoc.core.easyread
+
+// 사실 보존 기계 검사 — backlog §1.3.
+//
+// checkStyle 이 문체를 검사하듯, 이 파일은 "숫자·연락처·날짜 등 원문의 사실이 변환문에
+// 남아 있는가"를 결정적으로 검사한다. 판정은 보수적이어야 한다 — 오탐(false positive)은
+// 유료 보정 호출을 하나 태우고, 모델이 이미 잘 바꿔 쓴 표현을 억지로 "복원"시킬 수도 있다.
+// 미탐(false negative)은 오늘의 현상 유지일 뿐이다. 그래서 이 파일은 "확실히 같은 값"만
+// 보존으로 인정하고, 애매하면(단위 없는 한 자리 숫자 등) 아예 사실로 세지 않는다.
+//
+// 이 파일은 추출 파이프라인 오케스트레이션만 맡는다. 배수·수사 낱말 해석은
+// `KoreanAmountWords.kt`, 날짜·시각 구성요소 해석은 `TemporalFacts.kt`, 숫자·백분율
+// 정체성(단위·소수점 정규화)은 `NumberIdentity.kt` 에 있다(한 파일 함수 수 상한 —
+// detekt `TooManyFunctions`).
+
+/** 원문에서 놓치면 안 되는 사실의 종류. */
+enum class FactKind {
+    DOCUMENT_NAME,
+    NUMBER,
+    PHONE,
+    TIME,
+    DATE,
+    AMOUNT,
+    PERCENT,
+    EMAIL_OR_URL,
+}
+
+/** 원문에는 있었는데 변환문에서 사라진 사실 하나. */
+data class FactIssue(
+    val kind: FactKind,
+    val value: String,
+) {
+    /** **값을 찍지 않는다.** [SentenceIssue] 와 같은 이유(개인정보는 아니지만 사용자 본문 조각이다). */
+    override fun toString(): String = "FactIssue(kind=$kind)"
+}
+
+/**
+ * 원문 사실 총수와 그중 [draft] 에서 사라진 것을 함께 담는다.
+ *
+ * [sourceFactCount] 와 [missing] 은 **같은 중복 제거 기준**(`kind`·`compareKey`)으로 낸
+ * 값이지만, 적용 순서는 다르다 — [sourceFactCount] 는 원문 사실을 먼저 중복 제거한 수이고,
+ * [missing] 은 중복 제거 전 원본 인스턴스 각각을 먼저 판정한 뒤에야 중복 제거로 마무리한다
+ * ([factCoverage] KDoc, 리뷰 blocker 2026-09-09 — 순서를 뒤바꾸면 DATE 의 연도 비대칭
+ * 비교가 조용히 사라진다). `missing` 의 모든 키가 [sourceFactCount] 를 낸 집합의 키
+ * 부분집합이므로 `missing.size <= sourceFactCount` 는 여전히 성립하고 [ratio] 가 1.0 을
+ * 넘지 않는다.
+ *
+ * 관측 슬라이스 S1(`docs/plans/2026-09-09-content-loss.md`)이 만든 값이다. 지금까지
+ * 레인은 문서당 3~6개인 큐레이션 `required_facts` 만으로 사실 보존을 쟀는데, 그 목록 밖의
+ * 수치(예: 요율표의 개월·퍼센트 나열)가 통째로 사라져도 게이트가 못 잡는 간극이 있었다
+ * (`022` 문서, 6차 실측). 이 값은 원문 전체의 규칙 기반 추출 사실을 분모로 써서 그 간극을
+ * 관측한다 — 판정에는 쓰지 않는다.
+ */
+data class FactCoverage(
+    /** 원문에서 뽑은 사실의 수 — 중복 제거 후([factCoverage] KDoc). */
+    val sourceFactCount: Int,
+    /** [sourceFactCount] 중 [draft] 에 하나도 남지 않은 것. */
+    val missing: List<FactIssue>,
+) {
+    /** [sourceFactCount] 에서 [missing] 을 뺀, 변환문에 남은 사실 수. */
+    val keptCount: Int get() = sourceFactCount - missing.size
+
+    /** 보존율 = [keptCount] / [sourceFactCount]. 원문에 사실이 하나도 없으면(`0`) `null` — 0%로 채우지 않는다. */
+    val ratio: Double? get() = sourceFactCount.takeIf { it > 0 }?.let { keptCount.toDouble() / it }
+}
+
+/**
+ * [source] 사실 보존 현황을 [FactCoverage] 로 낸다.
+ *
+ * [FactCoverage.sourceFactCount] 는 [source] 에서 뽑은 사실을 `kind`·`compareKey` 로 중복
+ * 제거한([distinctBy]) 수다. [FactCoverage.missing] 은 **중복 제거 전** 전체 목록에
+ * `filterNot` 을 먼저 적용한 뒤에야 `distinctBy` 로 마무리한다 — 이 순서가 뒤바뀌면 안 된다
+ * (리뷰 blocker, 2026-09-09 재현). 이유는 [FactKind.DATE] 의 비대칭 비교([sameDate])에
+ * 있다: `compareKey` 는 항상 `MMDD` 뿐이고 [ExtractedFact.year] 는 `distinctBy` 키에 없다.
+ * 그래서 같은 월-일이 연도 유무를 달리해 원문에 두 번 나오면(공문에 흔하다) 먼저
+ * `distinctBy` 를 적용해 하나만 남길 경우 **어느 표기가 대표로 남는지에 따라 결과가
+ * 갈린다** — 연도 없는 쪽이 대표로 뽑히면 연도 있는 쪽의 `sameDate()` 검사(원문에 연도가
+ * 있었으면 변환문도 같은 연도를 적어야 한다)가 통째로 사라져, 변환문이 연도를 빼먹어도
+ * 못 잡는다(항상 적게 잡는 방향으로만 새는 미탐). 그래서 `filterNot` 은 **중복 제거 전
+ * 원본 인스턴스 각각**에 적용해 개별 판정을 보존하고, 결과를 표시할 때만(`missing` 안에서도
+ * 같은 사실이 두 번 보고되지 않도록) `distinctBy` 로 마무리한다. `missing` 의 모든 키가
+ * `sourceFacts`(중복 제거된 분모) 의 키 부분집합이므로 `missing.size <= sourceFactCount`
+ * 는 여전히 성립한다. [findMissingFacts] 는 이 함수의 [FactCoverage.missing] 만 돌려주는
+ * 얇은 위임이다 — 비교 규칙(사실 정체성 판정, [FactKind.DATE] 부분 비교)이 이 함수 한
+ * 곳에만 있다.
+ */
+fun factCoverage(
+    source: String,
+    draft: String,
+): FactCoverage {
+    val sourceFactsRaw = extractFacts(source)
+    val sourceFactCount = sourceFactsRaw.distinctBy { it.kind to it.compareKey }.size
+    val draftFacts = extractFacts(draft)
+    val draftKeys = draftFacts.mapTo(HashSet()) { it.kind to it.compareKey }
+    val normalizedDraft = draft.filterNot(Char::isWhitespace)
+
+    val missing =
+        sourceFactsRaw
+            .filterNot { fact ->
+                if (fact.kind == FactKind.DOCUMENT_NAME) {
+                    fact.compareKey in normalizedDraft
+                } else if (fact.kind == FactKind.DATE) {
+                    draftFacts.any { it.kind == FactKind.DATE && sameDate(fact, it) }
+                } else {
+                    (fact.kind to fact.compareKey) in draftKeys || untypedAmountKept(fact, draftKeys)
+                }
+            }.distinctBy { it.kind to it.compareKey }
+            .map { FactIssue(it.kind, it.displayValue) }
+
+    return FactCoverage(sourceFactCount, missing)
+}
+
+/**
+ * [source] 에 있던 사실 중 [draft] 에 하나도 남아 있지 않은 것을 찾는다.
+ *
+ * [source] 에는 **실제로 LLM 에 나간 문서 원문**을 넘긴다.
+ *
+ * 규칙 기반 추출이며 LLM 을 부르지 않는다. 같은 추출 규칙을 [source] 와 [draft] 양쪽에
+ * 적용해 비교한다 — 값이 같으면 표기가 달라도(구분자·전각·오전오후·한글 수사 등) 보존으로 본다.
+ * [FactKind.DATE] 만 예외로 **부분 비교**다: 한쪽에 연도가 없으면 월·일만 맞으면 된다([sameDate] 참고).
+ *
+ * [factCoverage] 로 위임한다 — 비교 규칙은 한 곳(그 함수)에만 있다.
+ */
+fun findMissingFacts(
+    source: String,
+    draft: String,
+): List<FactIssue> = factCoverage(source, draft).missing
+
+/**
+ * 같은 날짜인가 — [ExtractedFact.compareKey] 는 항상 `MMDD` 라 월·일은 이미 비교된 것이고,
+ * 연도 비교는 **비대칭**이다(리뷰 MEDIUM-5). **원문에 연도가 있었으면 변환문도 같은 연도를
+ * 적어야 한다** — 원문이 "2026년 9월 4일"인데 변환문이 "9월 4일"로 연도를 빼먹었으면 그
+ * 자체가 사실 누락이다. 원문에 애초에 연도가 없었을 때만("9월 4일까지" 같은 표기) 월·일만
+ * 맞으면 되고, 그때는 변환문이 연도를 붙이든 안 붙이든 상관없다 — 원문에 없던 정보를
+ * 판정 대상으로 삼지 않는다는 원칙과 같다.
+ */
+private fun sameDate(
+    sourceFact: ExtractedFact,
+    draftFact: ExtractedFact,
+): Boolean {
+    if (sourceFact.compareKey != draftFact.compareKey) return false
+    return sourceFact.year?.let { it == draftFact.year } ?: true
+}
+
+/** 추출된 사실 하나. [compareKey] 가 같으면 같은 사실로 본다(표기가 달라도). [year] 는 [FactKind.DATE] 전용. */
+internal data class ExtractedFact(
+    val kind: FactKind,
+    val compareKey: String,
+    val displayValue: String,
+    val year: Int? = null,
+    val untypedGroupedNumber: Boolean = false,
+) {
+    /** [displayValue] 는 원문·변환문 조각이다 — [SentenceIssue] 와 같은 이유로 값을 찍지 않는다. */
+    override fun toString(): String = "ExtractedFact(kind=$kind)"
+}
+
+/** 정규식 매칭 하나 — 아직 비교 키로 정규화되지 않은 원시 결과. 구간은 점유 판정에만 쓰이고 남지 않는다. */
+private data class RawMatch(
+    val kind: FactKind,
+    val text: String,
+    val untypedGroupedNumber: Boolean = false,
+) {
+    /** [text] 는 원문·변환문 조각이다 — [SentenceIssue] 와 같은 이유로 값을 찍지 않는다. */
+    override fun toString(): String = "RawMatch(kind=$kind)"
+}
+
+// 우선순위 순서. 먼저 처리된 종류가 구간을 점유하면 뒤 종류는 그 구간을 다시 쓰지 못한다.
+// 금액·백분율이 숫자보다 먼저인 것은
+// "1원"·"3%" 처럼 단위 없는 한 자리 숫자도 그 종류로는 사실로 세기 위해서다 — NUMBER 의
+// 한 자리 단위 목록에서 원·%를 빼도 되는 이유가 이것이다(더 구체적인 종류가 먼저 가져간다).
+// 한글 수사 패턴(WORD_NUMBER·WORD_AMOUNT, `KoreanAmountWords.kt`)은 Arabic 숫자와 겹치는
+// 구간이 없어(다른 문자라) 우선순위가 문제되지 않는다 — 각자의 Arabic 짝 옆에 둔다.
+//
+// **모든 `+`·`{n,}`·`{n,m}` 수량자를 possessive 로 적었다**(리뷰 재검토 HIGH-3, 1차 재현:
+// 20,000 자리 숫자열에서 21.6초). possessive 는 한 조각 **안에서** 되무르는 것만 막는다 —
+// 그 조각을 담은 바깥 `(?:...)?`(선택)나 상위 대체가 이 조각 전체를 통째로 "없음"으로
+// 다시 시도하면, `findAll` 이 매 시작 위치마다 그 통째 재시도를 반복해 여전히 O(n²) 가
+// 될 수 있다(2차 재현: possessive 만으로는 6.6초·1초). 그래서 **뒤에 아무것도 안 이어지면
+// 실패하는 무한정 수량자**(`\d++` 같은 것)에는 `(?<!\d)` 류 lookbehind 를 앞에 더해
+// "숫자·콤마가 아닌 자리에서만 시도"하게 만든다 — 그러면 한 숫자열 뭉치당 시도가 정확히
+// 한 번이라 전체가 O(n) 이다. 정확히 고정 자릿수(`{4}`·`{3,4}`·`{2}` 등)는 되무를 자리가
+// 없어 애초에 대상이 아니다.
+private val PATTERNS: List<Pair<FactKind, Regex>> =
+    listOf(
+        FactKind.DOCUMENT_NAME to
+            Regex(
+                """(?m)^[\h*•-]*+(?:\[[^\r\n\]]{1,40}\]\h*+)?""" +
+                    """[\p{L}0-9(][^\r\n<>:/]{0,160}\.(?:hwpx|hwp|pdf|docx|xlsx)\h*+$""",
+            ),
+        FactKind.EMAIL_OR_URL to
+            Regex("""(?<![\w.+-])[\w.+-]++@[\w-]++\.[\w.-]++|https?://\S++|www\.\S++"""),
+        FactKind.PHONE to Regex("""(?<!\d)(?:0\d{1,2}+-\d{3,4}+-\d{4}+|1\d{3}+-\d{4}+)(?!\d)"""),
+        FactKind.TIME to Regex("""(?:오전|오후)?\s*+\d{1,2}+시(?:\s*+\d{1,2}+분)?|\d{1,2}+:\d{2}+"""),
+        // 선택적 연도 그룹이 4자리 연도뿐 아니라 아포스트로피 축약 두 자리 연도도 받는다
+        // ("’26년 9월 1일" 같은 혼합형, 리뷰 blocker 2026-09-09). 이게 없으면 이 DATE 패턴이
+        // "9월 1일"만 잡고 앞의 "’26년"은 별도 NUMBER(축약 연도 전용 패턴)로 떨어져,
+        // compareKeyOf 가 expandAbbreviatedYear 로 편 연도(2026)가 변환문의 DATE 안에
+        // 통째로 흡수된 연도와 짝을 잃는다 — 원문 NUMBER 2026 이 누락으로 오탐된다. 이
+        // DATE 패턴이 먼저(PATTERNS 순서상 앞) 구간을 통째로 점유하면 뒤의 아포스트로피
+        // 전용 NUMBER/DATE 패턴은 claim 에 실패해 중복 판정이 생기지 않는다.
+        FactKind.DATE to
+            Regex(
+                """\d{4}+[.\-]\h*+\d{1,2}+[.\-]\h*+\d{1,2}+|(?:(?:\d{4}+|['’]\d{2}+)년\s*+)?\d{1,2}+월\s*+\d{1,2}+일""",
+            ),
+        // 공문 관행 연도 축약 — "’26.9.1."·"'24-3-15" 처럼 날짜의 연도 자리에 아포스트로피
+        // (ASCII `'` 또는 U+2019 `’`) + 두 자리 숫자가 온다. 세기 보정(20NN 고정, 00~49 만
+        // 인정)은 [expandAbbreviatedYear] 가 맡는다 — 그 경계와 이유는 그 함수 KDoc에 있다.
+        // 아포스트로피를 반드시 요구하는 것이 핵심이다: 아포스트로피 없는 맨 두 자리 숫자
+        // (예: 기간 표현 "26년 동안")까지 연도로 오인하면 반대 방향 오탐이 생긴다 — 실측에서
+        // 관측된 사례도 전부 아포스트로피가 붙어 있었다. 자릿수가 모두 고정·상한 있는
+        // 수량자(`{2}`·`{1,2}`)라 되무를 자리가 없어 lookbehind 가 필요 없다.
+        FactKind.DATE to Regex("""['’]\d{2}+[.\-]\d{1,2}+[.\-]\d{1,2}+"""),
+        // 세 번째 축약형 — 연혁 표에 흔한 "’05. 4."·"’15.5"처럼 일(day) 없이 아포스트로피
+        // + 두 자리 연도 뒤에 구분자(`.` 또는 `-`)만 오고 그다음이 이어지는 표기(8차 유료
+        // 측정, 문서 048). 위의 완전한 세 요소 패턴(연도.월.일)에는 안 걸린다 — 일이 없어서다.
+        // "년"도 없어 바로 위 연도 단독 패턴에도 안 걸린다. 안 걸리면 일반 NUMBER 의
+        // `\d{2,}+` 가 "05"를 그냥 두 자리 숫자로 잡는데, 변환문은 이걸 "2005년 4월"처럼
+        // 온전히 편다 — 그러면 두 자리(05)와 네 자리(2005)가 값이 달라져 제품이 옳게 편
+        // 것에 누락 벌점을 준다. 그래서 구분자를 **lookahead 로만 확인하고 소비하지 않는다**
+        // (`(?=[.\-])`) — 뒤의 월 숫자("4"·"5")는 그대로 두어 일반 NUMBER/단위 패턴이 따로
+        // 잡게 한다. 위 완전한 세 요소 패턴이 이 패턴보다 **먼저** 나와야 한다 — 그러지
+        // 않으면 "’09.11.27" 같은 완전한 날짜에서 이 패턴이 "’09"만 먼저 채가 연도와 나머지
+        // (11.27)가 별개 숫자로 쪼개진다. `claim()` 이 구간을 먼저 점유한 뒤라 이 패턴은
+        // 그 구간에서 실패하므로(순서상 이 패턴이 뒤에 있으면) 안전하다. 자릿수가 고정
+        // (`{2}`) 이라 되무를 자리가 없어 lookbehind 가 필요 없다.
+        FactKind.NUMBER to Regex("""['’]\d{2}+(?=[.\-])"""),
+        // 날짜가 아니라 연도 단독 축약("’26년"·"'24년") — 위와 같은 이유로 아포스트로피를
+        // 요구한다. 변환문은 이 값을 "2026년"처럼 온전한 4자리 연도로 펴 쓰는데, 그 표기는
+        // "년"이 단위 목록([ARABIC_UNIT_ALTERNATION])에 없어 이미 NUMBER(단위 없는 숫자)로
+        // 잡힌다 — 그래서 이 축약 표기도 NUMBER 로 잡아야 같은 사실로 비교된다.
+        FactKind.NUMBER to Regex("""['’]\d{2}+년"""),
+        // 배수 단위(만·억·천·백·십)가 하나도 없는 순수 Arabic 숫자 + 원. 배수 단위가 있는
+        // 경우는 전부 WORD_AMOUNT(합성 파서, KoreanAmountWords.kt)가 맡는다 — 부분 매치
+        // 사고(리뷰 HIGH-2, "5천만원"이 "만원"=10,000 으로 잘못 잡히던 문제)를 막으려면
+        // 배수 단위가 있는 구간은 그 파서가 **통째로** 소비해야 한다. `\d{1,3}+(?:,\d{3}+)++`
+        // 는 콤마가 없으면 즉시 실패해(고정 최대 3자리 뒤 콤마 검사) 원래도 O(n) 이었다 —
+        // lookbehind 가 필요한 것은 뒤가 안 이어져도 끝까지 삼키는 `\d++` 뿐이다.
+        FactKind.AMOUNT to Regex("""\d{1,3}+(?:,\d{3}+)++\s*+원|(?<!\d)\d++\s*+원"""),
+        FactKind.AMOUNT to WORD_AMOUNT,
+        FactKind.PERCENT to Regex("""(?<!\d)\d++(?:\.\d++)?\s*+(?:%|퍼센트|프로)"""),
+        // 2~4자리 숫자(구분자 없이), 또는 단위가 붙은 한 자리 숫자. 원·%는 위에서 이미
+        // 더 구체적인 종류로 가져가므로 이 목록에 넣지 않는다. 단위 문자를 **소비한다**
+        // (전에는 lookahead 로 흘려보내 raw.text 에 단위가 안 남았다 — 리뷰 HIGH-1 재현
+        // 사례: "3명"과 "3층"이 둘 다 raw.text="3"이 되어 같은 사실로 오판됐다). 단위
+        // 대체는 [ARABIC_UNIT_ALTERNATION](`KoreanAmountWords.kt`) 을 그대로 쓴다 — 긴
+        // 단위(개월·시간·분기)가 짧은 단위(개·시·분)보다 먼저 와야 "3개월"이 "3개"로
+        // 잘못 잘리지 않는다(리뷰 재검토 HIGH-1 재현 사례).
+        //
+        // **단위·구분자 없는 5자리 이상 맨 숫자열은 사실로 세지 않는다**(판단거리 9 ⓒ,
+        // 2026-09-10, 원문·8차 변환문 58건 실측). 콤마·단위 없이 5자리 이상 이어지는 숫자열은
+        // 실측 32건 전부가 표 셀 뭉개짐(예: 063 문서 "…추가검토대상20200 0 0 0 0 020211
+        // 1 0 0 0 02022140 14140 0…")·주민등록번호 예시(003 문서 "850312-2345678")·
+        // 파일명 접두(098 문서 "250114 2025년도…") 중 하나였다. 단위가 붙은 5자리 이상 맨
+        // 숫자열은 원문·변환문 어디에도 관측되지 않았다 — 그래서 경계는 5자리다. 이걸
+        // 방치하면 `findMissingFacts` 가 뭉개진 숫자열을 "빠졌다"고 보고해 유료 보정 호출을
+        // 태우고, `Prompts.kt` `renderMissingFactsBlock` 이 그 값을 "문장에 그대로 되살려
+        // 넣으라"고 모델에 지시하는 경로로 이어진다.
+        //
+        // **미탐이 생기는 것을 안다.** 계좌번호·문서번호처럼 진짜 식별자가 5자리 이상 맨
+        // 숫자열이면 변환이 놓쳐도 이 검사가 더는 못 잡는다 — 이 파일 KDoc 이 이미 선언한
+        // 원칙("오탐은 유료 보정 호출을 태우고 잘못된 복원을 밀지만, 미탐은 오늘의 현상
+        // 유지일 뿐이다")과 같은 방향이라 미탐 쪽을 택한다.
+        //
+        // `(?<!\d)\d{2,4}+(?!\d)` 는 lookbehind·lookahead 가 둘 다 있어야 한다 — `(?!\d)`
+        // 만 있으면 possessive 수량자가 되무르지 못해 5자리 이상 숫자열의 **앞 4자리만**
+        // 잘라 잡는 사고가 난다(예: "14858208"의 "1485"). `(?<!\d)` 까지 있어야 그 시도
+        // 자체가 숫자열 시작 위치에서 한 번뿐이라 뭉치 전체가 2~4자리로는 아예 안 잡힌다.
+        //
+        // `(?<!\d)\d{5,}+(?=\s*+(?:$ARABIC_UNIT_ALTERNATION))` 는 5자리 이상 숫자열을 **단위가
+        // 뒤따를 때만**("12000명") 사실로 인정한다. 단위는 lookahead 로만 확인하고
+        // **소비하지 않는다** — 소비하면 `numberCompareKey` 가 그 값을 `값:단위` 키로 만들어
+        // 단위 없는 2~4자리 숫자와 비교 방식이 달라진다(기존 판정이 바뀐다). 뒤에 단위가
+        // 없으면 끝까지 삼킨 뒤에야 실패하는 무한정 수량자(`\d{5,}+`)라 `(?<!\d)` 가 반드시
+        // 앞에 와야 숫자열마다 시도가 한 번뿐이라 O(n) 이다 — 없으면 숫자열 시작마다 같은
+        // 소비를 다시 시도해 O(n²) 로 되돌아간다.
+        //
+        // `\d{1,3}+(?:,\d{3}+)++` 는 콤마가 없으면 즉시 실패해(고정 최대 3자리 뒤 콤마 검사)
+        // 원래도 O(n) 이었다 — lookbehind 가 필요 없다.
+        FactKind.NUMBER to
+            Regex(
+                """\d{1,3}+(?:,\d{3}+)++|(?<!\d)\d{2,4}+(?!\d)|""" +
+                    """(?<!\d)\d{5,}+(?=\s*+(?:$ARABIC_UNIT_ALTERNATION))|\d(?:$ARABIC_UNIT_ALTERNATION)""",
+            ),
+        FactKind.NUMBER to WORD_NUMBER,
+    )
+
+/**
+ * 전각 숫자(０-９) → 반각. 길이를 바꾸지 않아 뒤 정규식의 오프셋에 영향이 없다.
+ * [kr.easydoc.core.quality.GoldenEvaluation] 의 표기 별칭 정규화도 이 함수를 재사용한다.
+ */
+internal fun normalizeFullWidthDigits(text: String): String =
+    buildString(text.length) {
+        for (ch in text) {
+            append(if (ch in '０'..'９') '0' + (ch - '０') else ch)
+        }
+    }
+
+internal fun digitsOnly(text: String): String = text.filter { it.isDigit() }
+
+/** [range] 가 비어 있지 않고 아직 아무도 점유하지 않았으면 점유하고 `true` 를 돌려준다. */
+private fun claim(
+    claimed: BooleanArray,
+    range: IntRange,
+): Boolean {
+    if (range.isEmpty() || range.any { claimed[it] }) return false
+    for (index in range) claimed[index] = true
+    return true
+}
+
+/** 우선순위 순서로 구간을 점유하며 겹치지 않는 매칭만 남긴다. */
+private fun extractRawMatches(text: String): List<RawMatch> {
+    val claimed = BooleanArray(text.length)
+    val results = mutableListOf<RawMatch>()
+    for ((kind, regex) in PATTERNS) {
+        for (match in regex.findAll(text)) {
+            if (claim(claimed, match.range)) {
+                // 콤마 NUMBER 패턴은 뒤 단위를 소비하지 않는다. '125,300명'에 돈 단위를
+                // 붙여도 된다고 오인하지 않도록, 같은 줄의 뒤 문자가 글자인지 따로 확인한다.
+                val untyped =
+                    kind == FactKind.NUMBER && ',' in match.value && !followedByWord(text, match.range.last + 1)
+                results += RawMatch(kind, match.value, untyped)
+            }
+        }
+    }
+    return results
+}
+
+private fun compareKeyOf(raw: RawMatch): String =
+    when (raw.kind) {
+        FactKind.DOCUMENT_NAME -> {
+            raw.text
+                .trim()
+                .trimStart('-', '*', '•')
+                .filterNot(Char::isWhitespace)
+        }
+
+        FactKind.AMOUNT -> {
+            amountValue(raw.text).toString()
+        }
+
+        FactKind.EMAIL_OR_URL -> {
+            raw.text.trim().lowercase()
+        }
+
+        FactKind.TIME -> {
+            timeMinutes(raw.text)?.toString().orEmpty()
+        }
+
+        FactKind.DATE -> {
+            dateCompareKey(expandAbbreviatedYear(raw.text)).orEmpty()
+        }
+
+        FactKind.NUMBER -> {
+            numberCompareKey(expandAbbreviatedYear(raw.text))
+        }
+
+        FactKind.PHONE -> {
+            digitsOnly(raw.text)
+        }
+
+        FactKind.PERCENT -> {
+            percentCompareKey(raw.text)
+        }
+    }
+
+/** [expandAbbreviatedYear] 가 인정하는 축약 연도의 상한 — 그 함수 KDoc 참고. */
+private const val ABBREVIATED_YEAR_MAX = 49
+
+/** [expandAbbreviatedYear] 가 확정하는 세기 — 이 서비스가 다루는 공공 안내문은 2000년대만 다룬다. */
+private const val ABBREVIATED_YEAR_CENTURY = 2000
+
+/** 아포스트로피(ASCII `'` 또는 U+2019 `’`) + 두 자리 숫자로 시작하는 접두부. */
+private val ABBREVIATED_YEAR_PREFIX = Regex("""^['’](\d{2}+)""")
+
+/**
+ * 공문 관행 연도 축약을 20NN 으로 편다 — [matchText] 가 아포스트로피(ASCII `'` 또는 U+2019
+ * `’`) + 두 자리 숫자로 시작하면 그 자리를 4자리 연도로 바꾸고 나머지는 그대로 이어 돌려준다
+ * (예: `"’26.9.1"` → `"2026.9.1"`, `"’26년"` → `"2026년"`). 그렇지 않으면(아포스트로피가 없거나
+ * 경계를 넘으면) [matchText] 를 그대로 돌려준다 — 무해한 항등 변환이라 [compareKeyOf] ·
+ * [extractFacts] 가 모든 NUMBER·DATE 원시 매치에 조건 없이 걸어도 안전하다.
+ *
+ * **세기는 항상 20NN 으로 고정한다.** 이 제품이 다루는 공공 안내문의 축약 연도는 전부
+ * 2000년대이므로 19NN 판별 로직을 따로 두지 않는다.
+ *
+ * **경계를 00~[ABBREVIATED_YEAR_MAX](49) 로 좁힌다.** 50~99 는 관례상(Y2K 이후 널리 쓰는
+ * windowing 규칙과 같은 방향) 1950~1999 로도 읽힐 수 있어 애매하다 — 애매한 값을 20NN 으로
+ * 확정하면 옛 연도가 엉뚱한 미래 연도로 오판될 위험이 오탐 하나를 고치는 이득보다 크다. 그
+ * 경계 밖은 손대지 않고 그대로 둔다 — 결과는 기존 동작(아포스트로피 없이 두 자리 숫자만
+ * 남는 것)과 같다.
+ *
+ * [matchText] 는 항상 [RawMatch.text](원시 매치)에만 적용한다 — [ExtractedFact.displayValue]
+ * 는 이 확장 전 원문 그대로 남는다.
+ */
+private fun expandAbbreviatedYear(matchText: String): String {
+    val prefix = ABBREVIATED_YEAR_PREFIX.find(matchText)
+    val twoDigitYear = prefix?.groupValues?.get(1)?.toInt()
+    return if (prefix == null || twoDigitYear == null || twoDigitYear > ABBREVIATED_YEAR_MAX) {
+        matchText
+    } else {
+        val fourDigitYear = ABBREVIATED_YEAR_CENTURY + twoDigitYear
+        fourDigitYear.toString() + matchText.substring(prefix.range.last + 1)
+    }
+}
+
+// P0-4 단위 정렬(`core/segment/SegmentAlignment.kt`, 2026-09-05)이 같은 추출 규칙을 앵커로
+// 재사용한다 — 공개 API 확대가 아니라 같은 core 모듈 안에서만 보이는 `internal` 좁히기다.
+
+internal fun extractFacts(text: String): List<ExtractedFact> {
+    val normalized = normalizeFullWidthDigits(text)
+    return extractRawMatches(normalized)
+        .map { raw ->
+            val year =
+                if (raw.kind == FactKind.DATE) {
+                    dateComponents(expandAbbreviatedYear(raw.text))?.first
+                } else {
+                    null
+                }
+            ExtractedFact(raw.kind, compareKeyOf(raw), raw.text.trim(), year, raw.untypedGroupedNumber)
+        }.filter { it.compareKey.isNotEmpty() }
+}

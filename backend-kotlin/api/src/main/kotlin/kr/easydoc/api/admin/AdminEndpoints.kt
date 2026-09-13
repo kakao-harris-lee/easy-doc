@@ -10,9 +10,12 @@ package kr.easydoc.api.admin
 object AdminEndpoints {
     val ADMIN_ONLY_PATH_PATTERNS: List<String> =
         listOf(
+            "/admin/workspaces/{workspace_id}/subscription",
+            "/admin/workspaces/{workspace_id}/payments/{id}/refund",
             "/admin/workspaces",
             "/admin/workspaces/{workspace_id}",
             "/admin/workspaces/{workspace_id}/credits",
+            "/admin/feedback",
             "/admin/invoice-requests",
             "/admin/invoice-requests/{id}/handle",
             "/admin/errors",

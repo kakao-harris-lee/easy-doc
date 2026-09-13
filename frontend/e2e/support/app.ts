@@ -85,12 +85,12 @@ export function workspaceMenu(page: Page): Locator {
 
 /** 머리말의 작업 공간 선택 상자 — 지금 보이는 메뉴 안의 것. */
 export function workspaceSelect(page: Page): Locator {
-  return workspaceMenu(page).getByLabel('작업 공간')
+  return workspaceMenu(page).getByRole('button', { name: /^작업 공간:/ })
 }
 
 /** 선택 상자의 옵션 문구를 보이는 순서대로. */
 export async function workspaceNames(page: Page): Promise<string[]> {
-  return workspaceSelect(page).locator('option').allTextContents()
+  return workspaceMenu(page).locator('[aria-pressed]').allTextContents()
 }
 
 /**
@@ -110,8 +110,7 @@ export function workspaceAlert(page: Page): Locator {
 
 /** 지금 선택된 작업 공간 이름. */
 export async function selectedWorkspaceName(page: Page): Promise<string> {
-  const value = await workspaceSelect(page).inputValue()
-  return workspaceSelect(page).locator(`option[value="${value}"]`).innerText()
+  return workspaceSelect(page).innerText()
 }
 
 /** 작업 공간 대화상자의 확인 버튼 이름 — 여는 버튼과 확인 버튼의 문구가 다르다. */
@@ -147,6 +146,9 @@ export async function answerPrompt(page: Page, buttonName: string, answer: strin
   // 돌아가 다시 여는 것이 아니라 값을 고쳐 다시 확인하는 것이고, 애초에 배경이 `inert`
   // 라 여는 버튼에 닿지도 않는다. 반복 시도를 재는 테스트(E6·E7)가 그 흐름을 탄다.
   if (!(await dialog.isVisible())) {
+    if ((await workspaceSelect(page).getAttribute('aria-expanded')) !== 'true') {
+      await workspaceSelect(page).click()
+    }
     await page
       .getByRole('button', { name: buttonName, exact: true })
       .filter({ visible: true })

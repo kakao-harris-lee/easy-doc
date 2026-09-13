@@ -29,6 +29,40 @@ import java.time.Duration
  */
 class GoldenLlmLaneProviderTest {
     @Test
+    fun `예산이 부족하면 네트워크 호출 전에 거절한다`() {
+        val limit = LaneSpendLimit(BigDecimal("0.000001"), BigDecimal("2"), BigDecimal("10"))
+        var calls = 0
+        val delegate =
+            object : LlmProvider {
+                override val name = "test"
+
+                override fun complete(
+                    prompt: LlmPrompt,
+                    options: LlmOptions,
+                ): LlmCompletion {
+                    calls++
+                    error("호출하면 안 된다")
+                }
+            }
+        val provider = LaneInstrumentedProvider(delegate, LaneJournal(), spendLimit = limit)
+        assertThatThrownBy { provider.complete(AnthropicTestSupport.conversionPrompt(), LlmOptions()) }
+            .isInstanceOf(IllegalStateException::class.java)
+            .hasMessageContaining("USD")
+        assertThat(calls).isZero()
+    }
+
+    @Test
+    fun `예산은 실패한 시도도 돌려주지 않고 누적 예약한다`() {
+        val limit = LaneSpendLimit(BigDecimal("1"), BigDecimal("2"), BigDecimal("10"))
+        val prompt = AnthropicTestSupport.conversionPrompt()
+        limit.reserve(prompt, LlmOptions())
+        val first = limit.reservedUsd
+        assertThat(first).isGreaterThan(BigDecimal.ZERO)
+        limit.reserve(prompt, LlmOptions())
+        assertThat(limit.reservedUsd).isEqualByComparingTo(first.multiply(BigDecimal("2")))
+    }
+
+    @Test
     @DisplayName("429 는 일시적 실패로 보고 상한까지 다시 부른다")
     fun `429 는 다시 부른다`() {
         StubLlmServer().use { server ->
@@ -145,9 +179,9 @@ class GoldenLlmLaneProviderTest {
         val journal = LaneJournal()
         val provider =
             LaneInstrumentedProvider(
-                // ① 스타일 위반(50자 초과 한 문장)이 있는 초안 → 유스케이스가 보정을 부른다.
+                // ① 자동 보정 대상인 이중 피동이 있는 초안 → 유스케이스가 보정을 부른다.
                 // ② 보정 응답이 max_tokens 로 잘림 → `as? Outcome.Body` 가 실패해 원본 초안이 채택된다.
-                delegate = ScriptedProvider(listOf(draft(LONG_SENTENCE), truncatedReply())),
+                delegate = ScriptedProvider(listOf(draft(REPAIRABLE_TEXT), truncatedReply())),
                 journal = journal,
                 pause = { },
             )
@@ -310,9 +344,7 @@ class GoldenLlmLaneProviderTest {
         val SLOW_REPLY: Duration = Duration.ofMillis(300)
         val SHORT_READ_TIMEOUT: Duration = Duration.ofMillis(80)
 
-        /** `MAX_SENTENCE_CHARS`(50자)를 넘는 한 문장. 이것이 보정 패스를 부르는 조건이다. */
-        const val LONG_SENTENCE: String =
-            "이 안내문은 신청 기간과 제출 서류와 문의 방법과 접수 장소를 한 문장에 모두 담아 " +
-                "아주 길게 이어지도록 쓴 문장이라 스타일 규칙의 길이 상한을 확실히 넘깁니다."
+        /** 문서 길이에 관계없이 보정을 요청하는 이중 피동 표현이다. */
+        const val REPAIRABLE_TEXT: String = "신청 안내문이 보여지고 있습니다."
     }
 }

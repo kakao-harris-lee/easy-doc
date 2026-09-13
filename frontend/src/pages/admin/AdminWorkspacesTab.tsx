@@ -12,6 +12,7 @@ import type {
   AdminWorkspaceDetailResponse,
   AdminWorkspaceSummary,
 } from '../../api/types'
+import { SubscriptionCard } from '../../components/subscription/SubscriptionCard'
 import { Button } from '../../components/ui/Button'
 
 /** 한 쪽에 담을 개수. 계약 기본값(20)과 같다. */
@@ -157,6 +158,7 @@ function WorkspaceDetailPanel({
         {detail.summary.name} 상세
       </h3>
 
+      <SubscriptionCard key={workspaceId} workspaceId={workspaceId} admin />
       <dl className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <div>
           <dt className="text-sm text-muted-foreground">가용</dt>
@@ -221,7 +223,7 @@ function WorkspaceDetailPanel({
               }))
             }
           >
-            <option value="plan_monthly">월 구독 갱신</option>
+            <option value="plan_monthly">월 제공량 수동 보정</option>
             <option value="manual">수동 부여</option>
             <option value="refund">환급</option>
           </select>

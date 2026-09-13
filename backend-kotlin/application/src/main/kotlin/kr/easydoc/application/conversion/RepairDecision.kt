@@ -1,7 +1,8 @@
 package kr.easydoc.application.conversion
 
-import kr.easydoc.core.easyread.checkStyle
+import kr.easydoc.core.easyread.checkRepairStyle
 import kr.easydoc.core.easyread.findMissingFacts
+import kr.easydoc.core.easyread.hasMarkerChanges
 
 /** 보정 채택 판정의 결과. */
 data class RepairDecision(
@@ -13,8 +14,10 @@ data class RepairDecision(
 )
 
 /**
- * 보정 결과를 채택할지 판정한다. 문체 위반이 늘지 않고, 보정문이 새로 빠뜨린 사실이 없어야
- * 채택한다.
+ * 보정 결과를 채택할지 판정한다. 새로 빠뜨린 사실이 없어야 한다. 누락된 사실을 복원하는
+ * 보정은 문체 위반이 늘어도 채택하고, 사실 누락이 같으면 자동 보정 대상 문체 위반이
+ * 늘지 않아야 한다. 원문 표식을 바꾸거나 빠뜨린 보정문도 채택하지 않는다.
+ * 길이·쉼표·낱말 지적은 이 판정에서 쓰지 않는다.
  *
  * [source] 는 실제 LLM 에 나간 문서 원문이다 — **기본값이 없다.** 잊고 안 넘기면 컴파일이
  * 막혀야 한다(리뷰 MEDIUM-3) — 기본값 빈 문자열은 조용히 사실 보존 게이트를 끄는 효과라
@@ -34,13 +37,14 @@ fun decideRepairAdoption(
     candidate: String,
     source: String,
 ): RepairDecision {
-    val before = checkStyle(original).issues.size
-    val after = checkStyle(candidate).issues.size
+    val before = checkRepairStyle(source, original).issues.size
+    val after = checkRepairStyle(source, candidate).issues.size
     val factsMissingBefore = findMissingFacts(source, original)
     val factsMissingAfter = findMissingFacts(source, candidate)
     val noNewFactMissing = factsMissingBefore.toSet().containsAll(factsMissingAfter.toSet())
+    val restoresFacts = factsMissingAfter.size < factsMissingBefore.size
     return RepairDecision(
-        accepted = after <= before && noNewFactMissing,
+        accepted = noNewFactMissing && !hasMarkerChanges(source, candidate) && (restoresFacts || after <= before),
         originalIssueCount = before,
         candidateIssueCount = after,
         factsMissingBefore = factsMissingBefore.size,

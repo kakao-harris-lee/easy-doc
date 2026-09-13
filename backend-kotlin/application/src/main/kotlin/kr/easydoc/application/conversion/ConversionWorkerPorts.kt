@@ -2,6 +2,7 @@ package kr.easydoc.application.conversion
 
 import kr.easydoc.core.crypto.EncryptedContent
 import kr.easydoc.core.document.ConversionStatus
+import kr.easydoc.core.document.SourceFormat
 import kr.easydoc.core.segment.SourceStructure
 import java.time.Duration
 import java.util.UUID
@@ -91,6 +92,8 @@ class ConversionWorkItem(
     val workspaceId: UUID,
     val userId: UUID,
     val charCount: Int,
+    /** 평문 입력은 추정한 줄 구조를 생성 제약으로 사용하지 않는다. */
+    val sourceFormat: SourceFormat,
     /**
      * 원본 단위 종류(표·목록 구조 힌트 계획 §1.2) — `documents.source_unit_kinds` 컬럼 그대로다.
      * `null` 은 컬럼이 `null` 인 옛 문서다 — [ProcessConversionJob] 이 `SourceStructure.allBody`

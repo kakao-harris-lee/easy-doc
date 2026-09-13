@@ -1,0 +1,1 @@
+provider=openai settings=MetricsLlmProviderDecorator(delegate=OpenAiProvider(model=gpt-6-astra, effort=MEDIUM)) max_tokens=8192 · dictContext=product · transcript=/private/tmp/easydoc-cost-quality-20260912/astra-baseline-outputs · runs=1 cap_usd=6.2

@@ -1,0 +1,83 @@
+[
+  {
+    "provider": "openai",
+    "model": "gpt-5.6-terra",
+    "outcome": "SUCCESS",
+    "latencyMs": 19215,
+    "inputTokens": 5538,
+    "outputTokens": 2395,
+    "estimatedCostUsd": 0.039816
+  },
+  {
+    "provider": "openai",
+    "model": "gpt-5.6-terra",
+    "outcome": "SUCCESS",
+    "latencyMs": 18748,
+    "inputTokens": 5836,
+    "outputTokens": 2562,
+    "estimatedCostUsd": 0.042416
+  },
+  {
+    "provider": "openai",
+    "model": "gpt-5.6-terra",
+    "outcome": "SUCCESS",
+    "latencyMs": 6195,
+    "inputTokens": 4080,
+    "outputTokens": 519,
+    "estimatedCostUsd": 0.014388
+  },
+  {
+    "provider": "openai",
+    "model": "gpt-5.6-terra",
+    "outcome": "SUCCESS",
+    "latencyMs": 18197,
+    "inputTokens": 4756,
+    "outputTokens": 1621,
+    "estimatedCostUsd": 0.028964
+  },
+  {
+    "provider": "openai",
+    "model": "gpt-5.6-terra",
+    "outcome": "SUCCESS",
+    "latencyMs": 14044,
+    "inputTokens": 4653,
+    "outputTokens": 1682,
+    "estimatedCostUsd": 0.02949
+  },
+  {
+    "provider": "openai",
+    "model": "gpt-5.6-terra",
+    "outcome": "SUCCESS",
+    "latencyMs": 6497,
+    "inputTokens": 2842,
+    "outputTokens": 462,
+    "estimatedCostUsd": 0.011228
+  },
+  {
+    "provider": "openai",
+    "model": "gpt-5.6-terra",
+    "outcome": "SUCCESS",
+    "latencyMs": 20740,
+    "inputTokens": 6300,
+    "outputTokens": 2636,
+    "estimatedCostUsd": 0.044232
+  },
+  {
+    "provider": "openai",
+    "model": "gpt-5.6-terra",
+    "outcome": "SUCCESS",
+    "latencyMs": 16349,
+    "inputTokens": 6198,
+    "outputTokens": 2591,
+    "estimatedCostUsd": 0.043488
+  },
+  {
+    "provider": "openai",
+    "model": "gpt-5.6-terra",
+    "outcome": "SUCCESS",
+    "latencyMs": 4561,
+    "inputTokens": 4665,
+    "outputTokens": 298,
+    "estimatedCostUsd": 0.012906
+  }
+]

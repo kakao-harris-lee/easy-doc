@@ -15,6 +15,14 @@ class LlmProviderConfigurationTest {
     private val configuration = LlmProviderConfiguration()
 
     @Test
+    fun `openai 추론 강도를 어댑터로 넘기고 잘못된 값은 거절한다`() {
+        val provider = assemble(LlmProperties(model = "gpt-5.6-sol", effort = "medium"))
+        assertThat(provider.toString()).contains("effort=MEDIUM")
+        assertThatThrownBy { assemble(LlmProperties(model = "gpt-5.6-sol", effort = "turbo")) }
+            .isInstanceOf(ConfigurationException::class.java)
+    }
+
+    @Test
     @DisplayName("기본 설정이면 OpenAI 어댑터를 metrics decorator로 감싼다")
     fun `기본값은 openai 이다`() {
         val provider = assemble(LlmProperties())

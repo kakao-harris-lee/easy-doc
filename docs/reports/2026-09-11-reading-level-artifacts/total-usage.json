@@ -1,0 +1,8 @@
+{
+  "calls": 45,
+  "inputTokens": 304381,
+  "outputTokens": 85563,
+  "costUsd": 1.464392,
+  "reservedUsd": 8.935236,
+  "callLatencyMs": 828449
+}

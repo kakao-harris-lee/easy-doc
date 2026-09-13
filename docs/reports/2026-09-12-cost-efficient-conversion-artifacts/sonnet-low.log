@@ -1,0 +1,87 @@
+> Task :application:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :infrastructure:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :core:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :application:processResources NO-SOURCE
+> Task :infrastructure:processResources UP-TO-DATE
+> Task :infrastructure:processTestFixturesResources UP-TO-DATE
+> Task :infrastructure:processTestResources UP-TO-DATE
+> Task :core:processResources NO-SOURCE
+> Task :core:processTestFixturesResources NO-SOURCE
+> Task :core:compileKotlin
+> Task :core:compileJava NO-SOURCE
+> Task :core:classes UP-TO-DATE
+> Task :core:jar
+> Task :application:compileKotlin UP-TO-DATE
+> Task :core:compileTestFixturesKotlin UP-TO-DATE
+> Task :core:compileTestFixturesJava NO-SOURCE
+> Task :application:compileJava NO-SOURCE
+> Task :application:classes UP-TO-DATE
+> Task :core:testFixturesClasses UP-TO-DATE
+> Task :application:jar UP-TO-DATE
+> Task :core:testFixturesJar UP-TO-DATE
+> Task :infrastructure:compileKotlin UP-TO-DATE
+> Task :infrastructure:compileJava NO-SOURCE
+> Task :infrastructure:classes UP-TO-DATE
+> Task :infrastructure:jar UP-TO-DATE
+> Task :infrastructure:compileTestFixturesKotlin UP-TO-DATE
+> Task :infrastructure:compileTestFixturesJava NO-SOURCE
+> Task :infrastructure:testFixturesClasses UP-TO-DATE
+> Task :infrastructure:testFixturesJar UP-TO-DATE
+> Task :infrastructure:compileTestKotlin
+> Task :infrastructure:compileTestJava NO-SOURCE
+> Task :infrastructure:testClasses UP-TO-DATE
+
+> Task :infrastructure:testLlm
+
+GoldenCorpusLlmEvaluationTest > 비밀값이 있으면 제품과 같은 설정으로 골든 변환 결과를 채점한다 STANDARD_OUT
+    LLM budget: reserved_usd=0.131386 cap_usd=1.4
+    07:51:56.994 [Test worker] INFO kr.easydoc.infrastructure.llm.StructuredLogLlmCallObserver -- llm_call provider=anthropic model=claude-sonnet-5 outcome=SUCCESS latency_ms=26513 input_tokens=9403 output_tokens=2718 estimated_cost_usd=0.045986
+    LLM budget: reserved_usd=0.266464 cap_usd=1.4
+    07:52:23.849 [Test worker] INFO kr.easydoc.infrastructure.llm.StructuredLogLlmCallObserver -- llm_call provider=anthropic model=claude-sonnet-5 outcome=SUCCESS latency_ms=26790 input_tokens=10134 output_tokens=2885 estimated_cost_usd=0.049118
+    LLM budget: reserved_usd=0.382960 cap_usd=1.4
+    07:52:25.214 [Test worker] INFO kr.easydoc.infrastructure.llm.StructuredLogLlmCallObserver -- llm_call provider=anthropic model=claude-sonnet-5 outcome=SUCCESS latency_ms=1292 input_tokens=5876 output_tokens=4 estimated_cost_usd=0.011792
+    LLM budget: reserved_usd=0.510380 cap_usd=1.4
+    07:52:45.851 [Test worker] INFO kr.easydoc.infrastructure.llm.StructuredLogLlmCallObserver -- llm_call provider=anthropic model=claude-sonnet-5 outcome=SUCCESS latency_ms=20609 input_tokens=8411 output_tokens=2025 estimated_cost_usd=0.037072
+    LLM budget: reserved_usd=0.642638 cap_usd=1.4
+    07:53:06.580 [Test worker] INFO kr.easydoc.infrastructure.llm.StructuredLogLlmCallObserver -- llm_call provider=anthropic model=claude-sonnet-5 outcome=SUCCESS latency_ms=20723 input_tokens=9245 output_tokens=2141 estimated_cost_usd=0.0399
+    LLM budget: reserved_usd=0.755590 cap_usd=1.4
+    07:53:07.789 [Test worker] INFO kr.easydoc.infrastructure.llm.StructuredLogLlmCallObserver -- llm_call provider=anthropic model=claude-sonnet-5 outcome=SUCCESS latency_ms=1173 input_tokens=4910 output_tokens=4 estimated_cost_usd=0.00986
+    LLM budget: reserved_usd=0.893150 cap_usd=1.4
+    07:53:32.405 [Test worker] INFO kr.easydoc.infrastructure.llm.StructuredLogLlmCallObserver -- llm_call provider=anthropic model=claude-sonnet-5 outcome=SUCCESS latency_ms=24608 input_tokens=10544 output_tokens=2920 estimated_cost_usd=0.050288
+    LLM budget: reserved_usd=1.035754 cap_usd=1.4
+    07:53:56.837 [Test worker] INFO kr.easydoc.infrastructure.llm.StructuredLogLlmCallObserver -- llm_call provider=anthropic model=claude-sonnet-5 outcome=SUCCESS latency_ms=24421 input_tokens=11423 output_tokens=3121 estimated_cost_usd=0.054056
+    LLM budget: reserved_usd=1.157238 cap_usd=1.4
+    07:53:58.233 [Test worker] INFO kr.easydoc.infrastructure.llm.StructuredLogLlmCallObserver -- llm_call provider=anthropic model=claude-sonnet-5 outcome=SUCCESS latency_ms=1348 input_tokens=6693 output_tokens=4 estimated_cost_usd=0.013426
+    골든 LLM 레인 — provider=anthropic settings=MetricsLlmProviderDecorator(delegate=AnthropicProvider(model=claude-sonnet-5, effort=LOW)) max_tokens=8192 · dictContext=product · transcript=/private/tmp/easydoc-cost-quality-20260912/sonnet-low-outputs · runs=1 cap_usd=1.4
+    문서 3건 · 변환 성공 3 · 절단으로 실패 0 (0.0%) · 그 밖의 변환 실패 0
+    스타일 규칙 통과 0/3 (0.0%) · 품질 실패 0건 · 인프라 실패 0건
+    사실 보존 76/76 (100.0%) · 보존율 70% 미만 문서: 없음
+    게이트 ⓪ 측정 (backlog §1.2) — 팽창비=변환 글자 수/원문 글자 수(공백 포함), 출력 토큰=문서당 합계(변환 1회+보정 1회), 세 값은 중앙값/p90/최대
+      2000자 이하 — 문서 1 · 변환 성공 1 · 절단 문서 0 (0.0%) / 호출 0 · 스타일 통과 0/1(변환 회차 있는 문서) (0.0%) · 팽창비 1.16/1.16/1.16 · 출력 토큰 4166/4166/4166
+      2000자 초과 — 문서 2 · 변환 성공 2 · 절단 문서 0 (0.0%) / 호출 0 · 스타일 통과 0/2(변환 회차 있는 문서) (0.0%) · 팽창비 1.17/1.38/1.38 · 출력 토큰 5603/6041/6041
+      전체 — 문서 3 · 변환 성공 3 · 절단 문서 0 (0.0%) / 호출 0 · 스타일 통과 0/3(변환 회차 있는 문서) (0.0%) · 팽창비 1.17/1.38/1.38 · 출력 토큰 5603/6041/6041
+      스타일 위반 밀도 중앙값 0.148 (위반 수/문장 수, 표본 3건)
+      절단 — 문서 단위 0/3 (0.0%, 변환 실패) · 호출 단위 0/6 (0.0%, 변환+보정)
+      └ 차이 없음 — 상한에 닿은 호출이 모두 문서 실패로 나타났다(조용히 넘어간 절단 없음)
+      단일 호출 최대 출력 토큰 3121 / 상한 8192 (easydoc.llm.max-output-tokens, 변환+보정 호출 기준)
+    문서별 측정 (원문 글자 수 내림차순)
+      097 — 원문 2605 · 변환 3059 · 팽창비 1.17 · 사실 보존 13/13(100.0%) · 출력 토큰 6041 · 절단 호출 0 · 스타일 미통과 · 문장 82 · 위반 16건(밀도 0.195 · LENGTH=16 COMMA=0 DOUBLE_PASSIVE=0 DIFFICULT_WORD=0 GLOSS_COLLISION=0)
+      001-current — 원문 2197 · 변환 3021 · 팽창비 1.38 · 사실 보존 49/49(100.0%) · 출력 토큰 5603 · 절단 호출 0 · 스타일 미통과 · 문장 105 · 위반 5건(밀도 0.048 · LENGTH=5 COMMA=0 DOUBLE_PASSIVE=0 DIFFICULT_WORD=0 GLOSS_COLLISION=0)
+      087 — 원문 1799 · 변환 2085 · 팽창비 1.16 · 사실 보존 14/14(100.0%) · 출력 토큰 4166 · 절단 호출 0 · 스타일 미통과 · 문장 61 · 위반 9건(밀도 0.148 · LENGTH=8 COMMA=0 DOUBLE_PASSIVE=0 DIFFICULT_WORD=1 GLOSS_COLLISION=0)
+    LLM 호출 9회 · 재시도 0회/예산 20 · 입력 76639 토큰 · 출력 15822 토큰
+    예상 비용 $0.3115 (단가 입력 2 / 출력 10 USD/MTok)
+    문서 소요 — 합계 143.8초 · 중앙값 49.1초 · 최대 53.4초
+    인프라 오류 분포 — 없음
+    품질 실패(절단·사실 누락·judge 판정): 0건
+    인프라 실패(provider 오류): 0건
+
+[Incubating] Problems report is available at: file:///Users/harris/Development/private/easy-doc/backend-kotlin/build/reports/problems/problems-report.html
+
+Deprecated Gradle features were used in this build, making it incompatible with Gradle 10.
+
+You can use '--warning-mode all' to show the individual deprecation warnings and determine if they come from your own scripts or plugins.
+
+For more on this, please refer to https://docs.gradle.org/9.1.0/userguide/command_line_interface.html#sec:command_line_warnings in the Gradle documentation.
+
+BUILD SUCCESSFUL in 2m 30s
+15 actionable tasks: 4 executed, 11 up-to-date

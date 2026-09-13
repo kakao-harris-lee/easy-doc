@@ -1,0 +1,1 @@
+provider=openai settings=MetricsLlmProviderDecorator(delegate=OpenAiProvider(model=gpt-6-astra, effort=MEDIUM)) max_tokens=16384 · dictContext=product · transcript=/private/tmp/easydoc-prompt-rag-20260912/reference-long-outputs · runs=1 cap_usd=4.5

@@ -1,0 +1,127 @@
+> Task :core:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :infrastructure:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :application:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :application:processResources NO-SOURCE
+> Task :infrastructure:processResources
+> Task :infrastructure:processTestFixturesResources
+> Task :infrastructure:processTestResources
+> Task :core:compileKotlin FROM-CACHE
+> Task :core:compileJava NO-SOURCE
+> Task :core:processResources NO-SOURCE
+> Task :core:classes UP-TO-DATE
+> Task :core:jar
+> Task :core:compileTestFixturesKotlin FROM-CACHE
+> Task :core:compileTestFixturesJava NO-SOURCE
+> Task :core:processTestFixturesResources NO-SOURCE
+> Task :core:testFixturesClasses UP-TO-DATE
+> Task :core:testFixturesJar
+> Task :application:compileKotlin FROM-CACHE
+> Task :application:compileJava NO-SOURCE
+> Task :application:classes UP-TO-DATE
+> Task :application:jar
+> Task :infrastructure:compileKotlin FROM-CACHE
+> Task :infrastructure:compileJava NO-SOURCE
+> Task :infrastructure:classes
+> Task :infrastructure:jar
+> Task :infrastructure:compileTestFixturesKotlin FROM-CACHE
+> Task :infrastructure:compileTestFixturesJava NO-SOURCE
+> Task :infrastructure:testFixturesClasses
+> Task :infrastructure:testFixturesJar
+> Task :infrastructure:compileTestKotlin FROM-CACHE
+> Task :infrastructure:compileTestJava NO-SOURCE
+> Task :infrastructure:testClasses
+
+> Task :infrastructure:testLlm
+
+GoldenCorpusLlmEvaluationTest > 비밀값이 있으면 제품과 같은 설정으로 골든 변환 결과를 채점한다 STANDARD_OUT
+    LLM budget: reserved_usd=0.637100 cap_usd=6.1
+    00:52:16.519 [Test worker] INFO kr.easydoc.infrastructure.llm.StructuredLogLlmCallObserver -- llm_call provider=openai model=gpt-6-astra outcome=SUCCESS latency_ms=39125 input_tokens=4758 output_tokens=2095 estimated_cost_usd=0.15233
+    LLM budget: reserved_usd=1.317100 cap_usd=6.1
+    00:52:49.708 [Test worker] INFO kr.easydoc.infrastructure.llm.StructuredLogLlmCallObserver -- llm_call provider=openai model=gpt-6-astra outcome=SUCCESS latency_ms=33156 input_tokens=5603 output_tokens=2092 estimated_cost_usd=0.16063
+    LLM budget: reserved_usd=1.912640 cap_usd=6.1
+    00:52:55.594 [Test worker] INFO kr.easydoc.infrastructure.llm.StructuredLogLlmCallObserver -- llm_call provider=openai model=gpt-6-astra outcome=SUCCESS latency_ms=5850 input_tokens=3531 output_tokens=150 estimated_cost_usd=0.04281
+    LLM budget: reserved_usd=2.528130 cap_usd=6.1
+    00:53:20.900 [Test worker] INFO kr.easydoc.infrastructure.llm.StructuredLogLlmCallObserver -- llm_call provider=openai model=gpt-6-astra outcome=SUCCESS latency_ms=25270 input_tokens=4243 output_tokens=1264 estimated_cost_usd=0.10563
+    LLM budget: reserved_usd=3.133230 cap_usd=6.1
+    00:53:43.267 [Test worker] INFO kr.easydoc.infrastructure.llm.StructuredLogLlmCallObserver -- llm_call provider=openai model=gpt-6-astra outcome=SUCCESS latency_ms=22358 input_tokens=3959 output_tokens=1127 estimated_cost_usd=0.09594
+    LLM budget: reserved_usd=3.671830 cap_usd=6.1
+    00:53:47.646 [Test worker] INFO kr.easydoc.infrastructure.llm.StructuredLogLlmCallObserver -- llm_call provider=openai model=gpt-6-astra outcome=SUCCESS latency_ms=4364 input_tokens=2305 output_tokens=101 estimated_cost_usd=0.0281
+    LLM budget: reserved_usd=4.327510 cap_usd=6.1
+    00:54:24.790 [Test worker] INFO kr.easydoc.infrastructure.llm.StructuredLogLlmCallObserver -- llm_call provider=openai model=gpt-6-astra outcome=SUCCESS latency_ms=37135 input_tokens=5432 output_tokens=2174 estimated_cost_usd=0.16302
+    LLM budget: reserved_usd=5.006260 cap_usd=6.1
+    00:55:01.634 [Test worker] INFO kr.easydoc.infrastructure.llm.StructuredLogLlmCallObserver -- llm_call provider=openai model=gpt-6-astra outcome=SUCCESS latency_ms=36832 input_tokens=5879 output_tokens=2253 estimated_cost_usd=0.17144
+    LLM budget: reserved_usd=5.611960 cap_usd=6.1
+    00:55:07.014 [Test worker] INFO kr.easydoc.infrastructure.llm.StructuredLogLlmCallObserver -- llm_call provider=openai model=gpt-6-astra outcome=SUCCESS latency_ms=5353 input_tokens=4096 output_tokens=91 estimated_cost_usd=0.04551
+    골든 LLM 레인 — provider=openai settings=MetricsLlmProviderDecorator(delegate=OpenAiProvider(model=gpt-6-astra, effort=MEDIUM)) max_tokens=8192 · dictContext=product · transcript=/private/tmp/easydoc-model-quality-20260912/astra-final-outputs · runs=1 cap_usd=6.1
+    문서 3건 · 변환 성공 3 · 절단으로 실패 0 (0.0%) · 그 밖의 변환 실패 0
+    스타일 규칙 통과 0/3 (0.0%) · 품질 실패 1건 · 인프라 실패 0건
+    사실 보존 35/35 (100.0%) · 보존율 70% 미만 문서: 없음
+    게이트 ⓪ 측정 (backlog §1.2) — 팽창비=변환 글자 수/원문 글자 수(공백 포함), 출력 토큰=문서당 합계(변환 1회+보정 1회), 세 값은 중앙값/p90/최대
+      2000자 이하 — 문서 2 · 변환 성공 2 · 절단 문서 0 (0.0%) / 호출 0 · 스타일 통과 0/2(변환 회차 있는 문서) (0.0%) · 팽창비 1.54/1.88/1.88 · 출력 토큰 2391/4187/4187
+      2000자 초과 — 문서 1 · 변환 성공 1 · 절단 문서 0 (0.0%) / 호출 0 · 스타일 통과 0/1(변환 회차 있는 문서) (0.0%) · 팽창비 1.78/1.78/1.78 · 출력 토큰 4427/4427/4427
+      전체 — 문서 3 · 변환 성공 3 · 절단 문서 0 (0.0%) / 호출 0 · 스타일 통과 0/3(변환 회차 있는 문서) (0.0%) · 팽창비 1.78/1.88/1.88 · 출력 토큰 4187/4427/4427
+      스타일 위반 밀도 중앙값 0.024 (위반 수/문장 수, 표본 3건)
+      절단 — 문서 단위 0/3 (0.0%, 변환 실패) · 호출 단위 0/6 (0.0%, 변환+보정)
+      └ 차이 없음 — 상한에 닿은 호출이 모두 문서 실패로 나타났다(조용히 넘어간 절단 없음)
+      단일 호출 최대 출력 토큰 2253 / 상한 8192 (easydoc.llm.max-output-tokens, 변환+보정 호출 기준)
+    문서별 측정 (원문 글자 수 내림차순)
+      090 — 원문 2030 · 변환 3621 · 팽창비 1.78 · 사실 보존 14/14(100.0%) · 출력 토큰 4427 · 절단 호출 0 · 스타일 미통과 · 문장 127 · 위반 3건(밀도 0.024 · LENGTH=3 COMMA=0 DOUBLE_PASSIVE=0 DIFFICULT_WORD=0 GLOSS_COLLISION=0)
+      087 — 원문 1799 · 변환 3382 · 팽창비 1.88 · 사실 보존 14/14(100.0%) · 출력 토큰 4187 · 절단 호출 0 · 스타일 미통과 · 문장 111 · 위반 1건(밀도 0.009 · LENGTH=0 COMMA=0 DOUBLE_PASSIVE=0 DIFFICULT_WORD=1 GLOSS_COLLISION=0)
+      088 — 원문 1090 · 변환 1684 · 팽창비 1.54 · 사실 보존 7/7(100.0%) · 출력 토큰 2391 · 절단 호출 0 · 스타일 미통과 · 문장 56 · 위반 3건(밀도 0.054 · LENGTH=1 COMMA=0 DOUBLE_PASSIVE=0 DIFFICULT_WORD=2 GLOSS_COLLISION=0)
+    LLM 호출 9회 · 재시도 0회/예산 20 · 입력 39806 토큰 · 출력 11347 토큰
+    예상 비용 $0.9654 (단가 입력 10 / 출력 50 USD/MTok)
+    문서 소요 — 합계 194.0초 · 중앙값 72.4초 · 최대 74.0초
+    인프라 오류 분포 — 없음
+    품질 실패(절단·사실 누락·judge 판정): 1건
+      - 088: judge 실패 — [어휘] ‘비금여’를 원문에 적힌 말이라고만 소개하고 어떤 비용인지 쉽게 설명하지 않아 지원금으로 낼 수 있는 비용의 범위를 이해하기 어렵습니다.
+    인프라 실패(provider 오류): 0건
+
+GoldenCorpusLlmEvaluationTest > 비밀값이 있으면 제품과 같은 설정으로 골든 변환 결과를 채점한다 FAILED
+    java.lang.AssertionError: 골든 LLM 레인 — provider=openai settings=MetricsLlmProviderDecorator(delegate=OpenAiProvider(model=gpt-6-astra, effort=MEDIUM)) max_tokens=8192 · dictContext=product · transcript=/private/tmp/easydoc-model-quality-20260912/astra-final-outputs · runs=1 cap_usd=6.1
+    문서 3건 · 변환 성공 3 · 절단으로 실패 0 (0.0%) · 그 밖의 변환 실패 0
+    스타일 규칙 통과 0/3 (0.0%) · 품질 실패 1건 · 인프라 실패 0건
+    사실 보존 35/35 (100.0%) · 보존율 70% 미만 문서: 없음
+    게이트 ⓪ 측정 (backlog §1.2) — 팽창비=변환 글자 수/원문 글자 수(공백 포함), 출력 토큰=문서당 합계(변환 1회+보정 1회), 세 값은 중앙값/p90/최대
+      2000자 이하 — 문서 2 · 변환 성공 2 · 절단 문서 0 (0.0%) / 호출 0 · 스타일 통과 0/2(변환 회차 있는 문서) (0.0%) · 팽창비 1.54/1.88/1.88 · 출력 토큰 2391/4187/4187
+      2000자 초과 — 문서 1 · 변환 성공 1 · 절단 문서 0 (0.0%) / 호출 0 · 스타일 통과 0/1(변환 회차 있는 문서) (0.0%) · 팽창비 1.78/1.78/1.78 · 출력 토큰 4427/4427/4427
+      전체 — 문서 3 · 변환 성공 3 · 절단 문서 0 (0.0%) / 호출 0 · 스타일 통과 0/3(변환 회차 있는 문서) (0.0%) · 팽창비 1.78/1.88/1.88 · 출력 토큰 4187/4427/4427
+      스타일 위반 밀도 중앙값 0.024 (위반 수/문장 수, 표본 3건)
+      절단 — 문서 단위 0/3 (0.0%, 변환 실패) · 호출 단위 0/6 (0.0%, 변환+보정)
+      └ 차이 없음 — 상한에 닿은 호출이 모두 문서 실패로 나타났다(조용히 넘어간 절단 없음)
+      단일 호출 최대 출력 토큰 2253 / 상한 8192 (easydoc.llm.max-output-tokens, 변환+보정 호출 기준)
+    문서별 측정 (원문 글자 수 내림차순)
+      090 — 원문 2030 · 변환 3621 · 팽창비 1.78 · 사실 보존 14/14(100.0%) · 출력 토큰 4427 · 절단 호출 0 · 스타일 미통과 · 문장 127 · 위반 3건(밀도 0.024 · LENGTH=3 COMMA=0 DOUBLE_PASSIVE=0 DIFFICULT_WORD=0 GLOSS_COLLISION=0)
+      087 — 원문 1799 · 변환 3382 · 팽창비 1.88 · 사실 보존 14/14(100.0%) · 출력 토큰 4187 · 절단 호출 0 · 스타일 미통과 · 문장 111 · 위반 1건(밀도 0.009 · LENGTH=0 COMMA=0 DOUBLE_PASSIVE=0 DIFFICULT_WORD=1 GLOSS_COLLISION=0)
+      088 — 원문 1090 · 변환 1684 · 팽창비 1.54 · 사실 보존 7/7(100.0%) · 출력 토큰 2391 · 절단 호출 0 · 스타일 미통과 · 문장 56 · 위반 3건(밀도 0.054 · LENGTH=1 COMMA=0 DOUBLE_PASSIVE=0 DIFFICULT_WORD=2 GLOSS_COLLISION=0)
+    LLM 호출 9회 · 재시도 0회/예산 20 · 입력 39806 토큰 · 출력 11347 토큰
+    예상 비용 $0.9654 (단가 입력 10 / 출력 50 USD/MTok)
+    문서 소요 — 합계 194.0초 · 중앙값 72.4초 · 최대 74.0초
+    인프라 오류 분포 — 없음
+    품질 실패(절단·사실 누락·judge 판정): 1건
+      - 088: judge 실패 — [어휘] ‘비금여’를 원문에 적힌 말이라고만 소개하고 어떤 비용인지 쉽게 설명하지 않아 지원금으로 낼 수 있는 비용의 범위를 이해하기 어렵습니다.
+    인프라 실패(provider 오류): 0건
+        at kr.easydoc.infrastructure.quality.GoldenCorpusLlmEvaluationTest.골든 변환을 채점한다(GoldenCorpusLlmEvaluationTest.kt:122)
+
+1 test completed, 1 failed
+
+> Task :infrastructure:testLlm FAILED
+
+[Incubating] Problems report is available at: file:///private/tmp/easydoc-model-quality-20260912/phase3/backend-kotlin/build/reports/problems/problems-report.html
+
+FAILURE: Build failed with an exception.
+
+* What went wrong:
+Execution failed for task ':infrastructure:testLlm'.
+> There were failing tests. See the report at: file:///private/tmp/easydoc-model-quality-20260912/phase3/backend-kotlin/infrastructure/build/reports/tests/testLlm/index.html
+
+* Try:
+> Run with --scan to generate a Build Scan (Powered by Develocity).
+
+Deprecated Gradle features were used in this build, making it incompatible with Gradle 10.
+
+You can use '--warning-mode all' to show the individual deprecation warnings and determine if they come from your own scripts or plugins.
+
+For more on this, please refer to https://docs.gradle.org/9.1.0/userguide/command_line_interface.html#sec:command_line_warnings in the Gradle documentation.
+
+BUILD FAILED in 3m 32s
+15 actionable tasks: 9 executed, 6 from cache

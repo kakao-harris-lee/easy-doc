@@ -1,0 +1,20 @@
+{
+  "capturedAt": "2026-09-12T01:53:30.854Z",
+  "note": "Deployed candidate after URL extraction fix; prompt and dictionary unchanged from final measured arms.",
+  "hashes": {
+    "backend-kotlin/infrastructure/src/main/resources/dictionary/easy_dict.index.json": "d0ef7c29a6ce181bb281c578173b2a5a0384a5d33fc09afe13e572f54e8cb113",
+    "backend-kotlin/core/src/main/kotlin/kr/easydoc/core/easyread/StyleRules.kt": "e6ff2c76f55f616caf3051714f4bac58d032c4e080c757a9a5a3a941b10395cb",
+    "backend-kotlin/core/src/main/kotlin/kr/easydoc/core/easyread/Prompts.kt": "3c4d440ad5be778aa56c1c327abdd322f38793cb8b7b557cb87a2ad0d0187a39",
+    "backend-kotlin/core/src/main/kotlin/kr/easydoc/core/easyread/FactPreservation.kt": "c78827f312771dda899b8cbc6928d37500ea521cfe1b4840e3b7cea4102266c2",
+    "backend-kotlin/core/src/main/kotlin/kr/easydoc/core/llm/LlmPrompt.kt": "824b1d7778567a9f8da095bf9ffb2654b1135858450472987176a30958732e61",
+    "backend-kotlin/core/src/main/kotlin/kr/easydoc/core/dictionary/DictionaryContextLines.kt": "5c80aa4b6aef5ea0c21ec6b046c16febe05d268607fb07e682f299e47919ceab",
+    "backend-kotlin/core/src/main/kotlin/kr/easydoc/core/dictionary/DictionaryContextPolicy.kt": "3e384071c3745b927dbdef3907b8e0c1907e568bf08054342ff30489cf792d13",
+    "backend-kotlin/core/src/main/kotlin/kr/easydoc/core/easyread/RepairStyle.kt": "00c10506614537d750d479d0653fffa18e3bc19a2e9f788aeafc33f590511f5e",
+    "backend-kotlin/application/src/main/kotlin/kr/easydoc/application/conversion/RepairDecision.kt": "17d22a1dffcdae72b43fc29804380f28277165099aa4e332a8c0040f9f0886af",
+    "backend-kotlin/infrastructure/src/main/kotlin/kr/easydoc/infrastructure/llm/OpenAiProvider.kt": "dd6710ddbe1a319a6ca83cd24dc6f3e5e0536a539c20c17b7b70130c28552d16",
+    "backend-kotlin/core/src/main/kotlin/kr/easydoc/core/easyread/NumberIdentity.kt": "7de323ff6328f06d01a9e7ffce287c57ac81ee1c1142036d1b01b8b11a3cd0cc",
+    "backend-kotlin/core/src/main/kotlin/kr/easydoc/core/easyread/TemporalFacts.kt": "df6849c4ebf2e091a379bfad6b1b58d182a2f721e140d4591f8929740f7840ce",
+    "backend-kotlin/core/src/main/kotlin/kr/easydoc/core/easyread/DateRangePart.kt": "8873d635874bf85f33cbbc34efb476a91593d68d51d3c8ccc6aa0bdd83bec1e5",
+    "backend-kotlin/core/src/main/kotlin/kr/easydoc/core/easyread/ReferenceIdentity.kt": "50841697bd2306419b7802c6bda42782839df943fa4fe1855837bd9bc0fa9141"
+  }
+}

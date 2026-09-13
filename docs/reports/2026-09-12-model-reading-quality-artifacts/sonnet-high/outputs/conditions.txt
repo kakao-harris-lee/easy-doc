@@ -1,0 +1,1 @@
+provider=anthropic settings=MetricsLlmProviderDecorator(delegate=AnthropicProvider(model=claude-sonnet-5, effort=HIGH)) max_tokens=8192 · dictContext=product · transcript=/private/tmp/easydoc-model-quality-20260912/sonnet-high-outputs · runs=1 cap_usd=2.5

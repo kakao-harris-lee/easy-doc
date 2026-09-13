@@ -61,6 +61,13 @@ class TermLookupFixtureTest {
         val positives = outcomes.filter { it.case.expectedTerm != null }
         val metrics = Metrics.of(positives)
 
+        // 치환 버튼이 없어도 무관한 뜻풀이 후보 자체가 오답이다.
+        outcomes.filter { it.case.expectedTerm == null }.forEach { outcome ->
+            assertThat(outcome.actual)
+                .describedAs("무결과를 기대한 '%s'의 잘못된 후보", outcome.case.query)
+                .isEmpty()
+        }
+
         val unsafeApplicable =
             outcomes.filter { outcome ->
                 !outcome.case.expectedApplicable && outcome.actual.any(TermCandidate::applicable)

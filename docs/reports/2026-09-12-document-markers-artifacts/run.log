@@ -1,0 +1,76 @@
+> Task :application:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :core:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :infrastructure:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :application:processResources NO-SOURCE
+> Task :infrastructure:processResources UP-TO-DATE
+> Task :infrastructure:processTestFixturesResources UP-TO-DATE
+> Task :infrastructure:processTestResources UP-TO-DATE
+> Task :core:compileKotlin UP-TO-DATE
+> Task :core:compileJava NO-SOURCE
+> Task :core:processResources NO-SOURCE
+> Task :core:classes UP-TO-DATE
+> Task :core:jar UP-TO-DATE
+> Task :application:compileKotlin UP-TO-DATE
+> Task :application:compileJava NO-SOURCE
+> Task :application:classes UP-TO-DATE
+> Task :application:jar UP-TO-DATE
+> Task :core:compileTestFixturesKotlin UP-TO-DATE
+> Task :core:compileTestFixturesJava NO-SOURCE
+> Task :core:processTestFixturesResources NO-SOURCE
+> Task :core:testFixturesClasses UP-TO-DATE
+> Task :core:testFixturesJar UP-TO-DATE
+> Task :infrastructure:compileKotlin
+> Task :infrastructure:compileJava NO-SOURCE
+> Task :infrastructure:classes UP-TO-DATE
+> Task :infrastructure:jar UP-TO-DATE
+> Task :infrastructure:compileTestFixturesKotlin
+> Task :infrastructure:compileTestFixturesJava NO-SOURCE
+> Task :infrastructure:testFixturesClasses UP-TO-DATE
+> Task :infrastructure:testFixturesJar UP-TO-DATE
+> Task :infrastructure:compileTestKotlin
+> Task :infrastructure:compileTestJava NO-SOURCE
+> Task :infrastructure:testClasses UP-TO-DATE
+
+> Task :infrastructure:testLlm
+
+GoldenCorpusLlmEvaluationTest > 비밀값이 있으면 제품과 같은 설정으로 골든 변환 결과를 채점한다 STANDARD_OUT
+    LLM budget: reserved_usd=0.577210 cap_usd=3.50
+    16:22:16.306 [Test worker] INFO kr.easydoc.infrastructure.llm.StructuredLogLlmCallObserver -- llm_call provider=openai model=gpt-6-astra outcome=SUCCESS latency_ms=28930 input_tokens=3514 output_tokens=2004 estimated_cost_usd=0.13534
+    LLM budget: reserved_usd=1.160800 cap_usd=3.50
+    16:22:19.767 [Test worker] INFO kr.easydoc.infrastructure.llm.StructuredLogLlmCallObserver -- llm_call provider=openai model=gpt-6-astra outcome=SUCCESS latency_ms=3378 input_tokens=3937 output_tokens=49 estimated_cost_usd=0.04182
+    LLM budget: reserved_usd=1.673330 cap_usd=3.50
+    16:22:24.975 [Test worker] INFO kr.easydoc.infrastructure.llm.StructuredLogLlmCallObserver -- llm_call provider=openai model=gpt-6-astra outcome=SUCCESS latency_ms=5174 input_tokens=1651 output_tokens=180 estimated_cost_usd=0.02551
+    LLM budget: reserved_usd=2.158650 cap_usd=3.50
+    16:22:26.713 [Test worker] INFO kr.easydoc.infrastructure.llm.StructuredLogLlmCallObserver -- llm_call provider=openai model=gpt-6-astra outcome=SUCCESS latency_ms=1732 input_tokens=991 output_tokens=5 estimated_cost_usd=0.01016
+    골든 LLM 레인 — provider=openai settings=MetricsLlmProviderDecorator(delegate=OpenAiProvider(model=gpt-6-astra, effort=MEDIUM)) max_tokens=8192 · dictContext=product · transcript=/Users/harris/Development/private/easy-doc/docs/reports/2026-09-12-document-markers-artifacts/outputs · runs=1 cap_usd=3.50
+    문서 2건 · 변환 성공 2 · 절단으로 실패 0 (0.0%) · 그 밖의 변환 실패 0
+    스타일 규칙 통과 1/2 (50.0%) · 품질 실패 0건 · 인프라 실패 0건
+    사실 보존 55/55 (100.0%) · 보존율 70% 미만 문서: 없음
+    게이트 ⓪ 측정 (backlog §1.2) — 팽창비=변환 글자 수/원문 글자 수(공백 포함), 출력 토큰=문서당 합계(변환 1회+보정 1회), 세 값은 중앙값/p90/최대
+      2000자 이하 — 문서 1 · 변환 성공 1 · 절단 문서 0 (0.0%) / 호출 0 · 스타일 통과 1/1(변환 회차 있는 문서) (100.0%) · 팽창비 1.31/1.31/1.31 · 출력 토큰 180/180/180
+      2000자 초과 — 문서 1 · 변환 성공 1 · 절단 문서 0 (0.0%) / 호출 0 · 스타일 통과 0/1(변환 회차 있는 문서) (0.0%) · 팽창비 1.37/1.37/1.37 · 출력 토큰 2004/2004/2004
+      전체 — 문서 2 · 변환 성공 2 · 절단 문서 0 (0.0%) / 호출 0 · 스타일 통과 1/2(변환 회차 있는 문서) (50.0%) · 팽창비 1.31/1.37/1.37 · 출력 토큰 180/2004/2004
+      스타일 위반 밀도 중앙값 0.000 (위반 수/문장 수, 표본 2건)
+      절단 — 문서 단위 0/2 (0.0%, 변환 실패) · 호출 단위 0/2 (0.0%, 변환+보정)
+      └ 차이 없음 — 상한에 닿은 호출이 모두 문서 실패로 나타났다(조용히 넘어간 절단 없음)
+      단일 호출 최대 출력 토큰 2004 / 상한 8192 (easydoc.llm.max-output-tokens, 변환+보정 호출 기준)
+    문서별 측정 (원문 글자 수 내림차순)
+      001-current — 원문 2197 · 변환 3004 · 팽창비 1.37 · 사실 보존 49/49(100.0%) · 출력 토큰 2004 · 절단 호출 0 · 스타일 미통과 · 문장 118 · 위반 9건(밀도 0.076 · LENGTH=5 COMMA=0 DOUBLE_PASSIVE=0 DIFFICULT_WORD=4 GLOSS_COLLISION=0)
+      002-markers-excerpt — 원문 213 · 변환 279 · 팽창비 1.31 · 사실 보존 6/6(100.0%) · 출력 토큰 180 · 절단 호출 0 · 스타일 통과 · 문장 14 · 위반 0건(밀도 0.000 · LENGTH=0 COMMA=0 DOUBLE_PASSIVE=0 DIFFICULT_WORD=0 GLOSS_COLLISION=0)
+    LLM 호출 4회 · 재시도 0회/예산 20 · 입력 10093 토큰 · 출력 2238 토큰
+    예상 비용 $0.2128 (단가 입력 10 / 출력 50 USD/MTok)
+    문서 소요 — 합계 34.2초 · 중앙값 5.2초 · 최대 29.0초
+    인프라 오류 분포 — 없음
+    품질 실패(절단·사실 누락·judge 판정): 0건
+    인프라 실패(provider 오류): 0건
+
+[Incubating] Problems report is available at: file:///Users/harris/Development/private/easy-doc/backend-kotlin/build/reports/problems/problems-report.html
+
+Deprecated Gradle features were used in this build, making it incompatible with Gradle 10.
+
+You can use '--warning-mode all' to show the individual deprecation warnings and determine if they come from your own scripts or plugins.
+
+For more on this, please refer to https://docs.gradle.org/9.1.0/userguide/command_line_interface.html#sec:command_line_warnings in the Gradle documentation.
+
+BUILD SUCCESSFUL in 42s
+15 actionable tasks: 4 executed, 11 up-to-date

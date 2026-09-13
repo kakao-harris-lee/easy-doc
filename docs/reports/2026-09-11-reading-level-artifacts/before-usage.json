@@ -1,0 +1,120 @@
+{
+  "totals": {
+    "calls": 18,
+    "inputTokens": 114979,
+    "outputTokens": 37468,
+    "costUsd": 0.604638,
+    "callLatencyMs": 354956,
+    "reservedUsd": 3.541066
+  },
+  "calls": [
+    {
+      "latencyMs": 32824,
+      "inputTokens": 9186,
+      "outputTokens": 3168,
+      "costUsd": 0.050052
+    },
+    {
+      "latencyMs": 27016,
+      "inputTokens": 4588,
+      "outputTokens": 3168,
+      "costUsd": 0.040856
+    },
+    {
+      "latencyMs": 3215,
+      "inputTokens": 5766,
+      "outputTokens": 72,
+      "costUsd": 0.012252
+    },
+    {
+      "latencyMs": 32125,
+      "inputTokens": 9190,
+      "outputTokens": 3095,
+      "costUsd": 0.04933
+    },
+    {
+      "latencyMs": 26681,
+      "inputTokens": 4683,
+      "outputTokens": 3106,
+      "costUsd": 0.040426
+    },
+    {
+      "latencyMs": 2014,
+      "inputTokens": 5704,
+      "outputTokens": 73,
+      "costUsd": 0.012138
+    },
+    {
+      "latencyMs": 23628,
+      "inputTokens": 8036,
+      "outputTokens": 2340,
+      "costUsd": 0.039472
+    },
+    {
+      "latencyMs": 25235,
+      "inputTokens": 3903,
+      "outputTokens": 2854,
+      "costUsd": 0.036346
+    },
+    {
+      "latencyMs": 1285,
+      "inputTokens": 4737,
+      "outputTokens": 4,
+      "costUsd": 0.009514
+    },
+    {
+      "latencyMs": 25382,
+      "inputTokens": 8042,
+      "outputTokens": 2247,
+      "costUsd": 0.038554
+    },
+    {
+      "latencyMs": 24509,
+      "inputTokens": 3632,
+      "outputTokens": 2704,
+      "costUsd": 0.034304
+    },
+    {
+      "latencyMs": 2747,
+      "inputTokens": 4641,
+      "outputTokens": 173,
+      "costUsd": 0.011012
+    },
+    {
+      "latencyMs": 28232,
+      "inputTokens": 10163,
+      "outputTokens": 3381,
+      "costUsd": 0.054136
+    },
+    {
+      "latencyMs": 36604,
+      "inputTokens": 4941,
+      "outputTokens": 4095,
+      "costUsd": 0.050832
+    },
+    {
+      "latencyMs": 3959,
+      "inputTokens": 6587,
+      "outputTokens": 166,
+      "costUsd": 0.014834
+    },
+    {
+      "latencyMs": 26144,
+      "inputTokens": 10159,
+      "outputTokens": 3079,
+      "costUsd": 0.051108
+    },
+    {
+      "latencyMs": 29005,
+      "inputTokens": 4700,
+      "outputTokens": 3465,
+      "costUsd": 0.04405
+    },
+    {
+      "latencyMs": 4351,
+      "inputTokens": 6321,
+      "outputTokens": 278,
+      "costUsd": 0.015422
+    }
+  ]
+}

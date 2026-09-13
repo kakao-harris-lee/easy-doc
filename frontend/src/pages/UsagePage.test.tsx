@@ -144,6 +144,7 @@ describe('플랜과 사용량', () => {
     expect(screen.getByText('이용량 제한 없음')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: '새로고침' }))
     expect(await screen.findByText('2크레딧 사용')).toBeInTheDocument()
+    expect(getSubscription).toHaveBeenCalledTimes(2)
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 

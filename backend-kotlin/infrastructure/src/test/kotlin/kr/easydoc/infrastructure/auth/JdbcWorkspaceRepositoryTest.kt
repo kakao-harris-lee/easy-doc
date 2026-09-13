@@ -363,8 +363,8 @@ class JdbcWorkspaceRepositoryTest {
         /** 삭제가 거절되는 두 갈래(없음·타인)가 도는 SQL 문 수 — `lockForDeletion` 의 잠금 질의 하나. */
         const val DELETE_MISS_STATEMENTS = 1
 
-        /** 소유 자원 삭제가 도는 SQL 문 수 — 잠금 + 문서 수 + DELETE. */
-        const val DELETE_OWNED_STATEMENTS = 3
+        /** 소유 자원 삭제가 도는 SQL 문 수 — 잠금 + 문서 수 + 결제 삭제 잠금/상태 확인 + DELETE. */
+        const val DELETE_OWNED_STATEMENTS = 5
 
         /** 목록 요청 하나가 도는 SQL 문 수. 문서 수가 같은 질의에 담기므로 1 이다. */
         const val LIST_STATEMENTS = 1

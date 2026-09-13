@@ -207,6 +207,7 @@ class JdbcCreditCycleReset(
             JOIN workspaces w ON w.id = a.workspace_id
             WHERE a.cycle_ends_at IS NOT NULL
               AND a.cycle_ends_at <= :now
+              AND NOT EXISTS (SELECT 1 FROM workspace_subscriptions s WHERE s.workspace_id = a.workspace_id)
             ORDER BY a.cycle_ends_at ASC, a.workspace_id ASC
             LIMIT :limit
             FOR UPDATE OF a SKIP LOCKED

@@ -16,6 +16,44 @@ export function reindexUnitMap(units: SegmentMapUnit[]): SegmentMapUnit[] {
   return units.map((unit, index) => ({ ...unit, easy_unit_index: index }))
 }
 
+/** 전체 글상자 편집 후 바뀌지 않은 앞뒤 문단의 대응만 보존한다.
+ * 줄바꿈이 달라진 범위는 대응을 추정하지 않는다. 같은 문단 안의 글자 수정은 기존
+ * 문단별 편집과 같이 대응을 유지한다. 전체 diff 행렬 없이 문자열을 한 번씩 훑는다.
+ */
+export function reconcileUnitMap(
+  previous: string,
+  next: string,
+  map: SegmentMapUnit[],
+): SegmentMapUnit[] {
+  if (previous === next) return map
+  let start = 0
+  while (start < previous.length && start < next.length && previous[start] === next[start]) {
+    start++
+  }
+  let oldEnd = previous.length
+  let newEnd = next.length
+  while (oldEnd > start && newEnd > start && previous[oldEnd - 1] === next[newEnd - 1]) {
+    oldEnd--
+    newEnd--
+  }
+  const currentMap = alignUnitMap(map, previous.split('\n').length)
+  if (!previous.slice(start, oldEnd).includes('\n') && !next.slice(start, newEnd).includes('\n')) {
+    return currentMap
+  }
+  const firstUnit = previous.slice(0, start).split('\n').length - 1
+  const lastOldUnit = previous.slice(0, oldEnd).split('\n').length - 1
+  const lastNewUnit = next.slice(0, newEnd).split('\n').length - 1
+  return reindexUnitMap([
+    ...currentMap.slice(0, firstUnit),
+    ...Array.from({ length: lastNewUnit - firstUnit + 1 }, () => ({
+      easy_unit_index: 0,
+      source_unit_indexes: [],
+      confidence: 'low' as const,
+    })),
+    ...currentMap.slice(lastOldUnit + 1),
+  ])
+}
+
 /**
  * `unitMap`이 `unitCount`와 길이가 다르면 안전하게 맞춘다.
  *

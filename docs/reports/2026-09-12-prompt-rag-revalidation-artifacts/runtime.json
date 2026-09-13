@@ -1,0 +1,36 @@
+{
+  "checkedAt": "2026-09-12T01:56:06.091Z",
+  "containers": [
+    {
+      "service": "backend-api",
+      "id": "b48ba4d5c662c293bd7c1599014d55fb44180516962e5dd55eaa4b943645469c",
+      "image": "sha256:bd1b11d2f17c972b36688c52ab862729a8aa22fe212aa4af0d7f5484116cc938",
+      "status": "running",
+      "health": "healthy",
+      "settings": {
+        "EASYDOC_LLM_EFFORT": "medium",
+        "EASYDOC_DICTIONARY_LOOKUP_ENABLED": "true",
+        "EASYDOC_LLM_INPUT_USD_PER_MILLION_TOKENS": "10",
+        "EASYDOC_LLM_PROVIDER": "openai",
+        "EASYDOC_DICTIONARY_ENABLED": "true",
+        "EASYDOC_LLM_OUTPUT_USD_PER_MILLION_TOKENS": "50",
+        "EASYDOC_LLM_MODEL": "gpt-6-astra"
+      }
+    },
+    {
+      "service": "backend-worker",
+      "id": "38cb85e7cd1b04678e76e376d5e80e0c4da68608a939f5c6b59ee688cc42f5d1",
+      "image": "sha256:bd1b11d2f17c972b36688c52ab862729a8aa22fe212aa4af0d7f5484116cc938",
+      "status": "running",
+      "settings": {
+        "EASYDOC_DICTIONARY_ENABLED": "true",
+        "EASYDOC_LLM_INPUT_USD_PER_MILLION_TOKENS": "10",
+        "EASYDOC_LLM_MODEL": "gpt-6-astra",
+        "EASYDOC_DICTIONARY_LOOKUP_ENABLED": "true",
+        "EASYDOC_LLM_PROVIDER": "openai",
+        "EASYDOC_LLM_OUTPUT_USD_PER_MILLION_TOKENS": "50",
+        "EASYDOC_LLM_EFFORT": "medium"
+      }
+    }
+  ]
+}

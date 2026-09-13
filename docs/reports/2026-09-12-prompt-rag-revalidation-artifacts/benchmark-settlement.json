@@ -1,0 +1,57 @@
+{
+  "closedAt": "2026-09-12T01:43:57.310Z",
+  "costs": [
+    {
+      "arm": "baseline",
+      "costUsd": 1.30837
+    },
+    {
+      "arm": "confirmed-short",
+      "costUsd": 0.43626
+    },
+    {
+      "arm": "final-sol",
+      "costUsd": 0.242444
+    },
+    {
+      "arm": "focused-final",
+      "costUsd": 0.51663
+    },
+    {
+      "arm": "focused-rag",
+      "costUsd": 0.50742
+    },
+    {
+      "arm": "lean-no-rag",
+      "costUsd": 0.92645
+    },
+    {
+      "arm": "lean-rag",
+      "costUsd": 1.01229
+    },
+    {
+      "arm": "reference-long",
+      "costUsd": 0.8091
+    },
+    {
+      "arm": "reference-rag",
+      "costUsd": 0.98501
+    },
+    {
+      "arm": "reference-short",
+      "costUsd": 0.54067
+    },
+    {
+      "arm": "reference-sol-high",
+      "costUsd": 0.724872
+    },
+    {
+      "arm": "reference-sol",
+      "costUsd": 0.412672
+    }
+  ],
+  "previousCostUsd": 8.552242,
+  "settledCumulativeUsd": 16.97443,
+  "remainingUserBudgetUsd": 33.02557,
+  "oneLiveSmokeReservedUsd": 25
+}

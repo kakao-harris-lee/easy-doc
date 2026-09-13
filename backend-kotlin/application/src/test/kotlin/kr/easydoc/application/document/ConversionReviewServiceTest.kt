@@ -420,6 +420,7 @@ class ConversionReviewServiceTest {
             val call = conversions.savedReviews.single()
             val column =
                 when (field) {
+                    EncryptedField.BILLING_SESSION, EncryptedField.BILLING_ORDER -> error("검수는 결제 열을 쓰지 않는다")
                     EncryptedField.CONVERSION_EASY_TEXT -> call.updated.ciphertexts.easyText
                     EncryptedField.CONVERSION_EDITED_TEXT -> call.updated.ciphertexts.editedText
                     EncryptedField.DOCUMENT_SOURCE_TEXT -> error("검수 저장이 원문 열을 쓰지 않는다")

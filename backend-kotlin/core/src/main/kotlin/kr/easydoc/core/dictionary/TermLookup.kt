@@ -71,8 +71,8 @@ class TermQuery private constructor(val text: String) {
  *
  * - [EXACT]: 매치 표면형이 표제어와 같고, 질의에 남는 것은 조사뿐이다.
  * - [INFLECTED]: 표면형이 표제어와 다르다([DictionaryMatch.isInflected]) — 활용형·이형태.
- * - [COMPOUND_PART]: 질의 전체가 아니라 그 일부(앞·뒤 부분 문자열)만 사전에 있다. 복합어
- *   안에 든 아는 말을 설명으로만 보여주는 자리라 [TermCandidate.applicable] 은 항상 거짓이다.
+ * - [COMPOUND_PART]: 뜻의 관계를 확인한 복합어 안의 용어를 설명한다. 임의로 자른 부분
+ *   문자열은 후보가 아니다. [TermCandidate.applicable] 은 항상 거짓이다.
  */
 enum class TermMatchKind { EXACT, INFLECTED, COMPOUND_PART }
 
@@ -108,59 +108,59 @@ data class TermCandidate(
 /**
  * 선택된 문자열 하나에서 사전 후보를 산출한다 (P0-5 조각 2).
  *
- * 기존 `DictionaryIndex`·`DictionaryEntry` 는 손대지 않는다 — 이 객체는 그 공개 표면
- * ([DictionaryIndex.findAll]) 만 쓰는 소비자다.
+ * 문서용 색인의 경계 검사와 조사 목록을 재사용하되 선택 범위 전체를 추가로 검사한다.
+ * 조회에만 적용하는 복합어 정책은 생성용 RAG와 분리한다.
  */
 object TermLookup {
     /**
+     * 기존 손작성 조회 사례에서 뜻의 관계를 확인한 복합어만 허용한다.
+     * 임의의 접두·접미 조각을 찾지 않는다. 항목을 늘릴 때는 전체 표현의 의미와
+     * 선택 범위를 함께 검토해야 하며, 이 목록은 원문 생성용 RAG에는 쓰이지 않는다.
+     */
+    private val REVIEWED_COMPOUNDS =
+        mapOf(
+            "저소득가구" to "저소득",
+            "고령운전자" to "고령",
+            "무직저소득" to "저소득",
+        )
+
+    /**
      * 질의에 대한 후보 목록을 만든다. 매칭이 없으면 빈 목록이다(예외가 아니다).
      *
-     * 1. 질의 전체에 [DictionaryIndex.findAll] 을 돌린다. 결과가 있으면 그 매칭들이 이미
-     *    경계 규칙(어절 경계·조사 연쇄·로마자/숫자 경계)을 통과한 것이므로, 매칭마다
-     *    [DictionaryMatch.isInflected] 로 [TermMatchKind.EXACT]/[TermMatchKind.INFLECTED] 만
-     *    가르면 된다.
-     * 2. 1차 결과가 없으면 — 복합어라 전체 일치가 없다는 뜻이다 — [findEmbeddedTerm] 으로
-     *    질의의 앞·뒤 부분 문자열 중 사전에 있는 가장 긴 것을 찾는다. 그것도 없으면 빈 목록,
-     *    즉 정직한 "사전에 없는 말"이다.
+     * 1. 원래 경계 검사에 더해, 선택 범위가 매치 표면형과 조사로만 구성된 경우에만
+     *    EXACT/INFLECTED로 반환한다. 문장 안에서 찾은 단어를 전체 선택의 대체어로 쓰지 않는다.
+     * 2. 전체 일치가 없으면 [REVIEWED_COMPOUNDS]에 있는 표현만 설명 후보로 조회한다.
+     *    나머지는 빈 목록이다. 단어를 잘라 문서 끝으로 보이게 만들던 경계 우회를 하지 않는다.
      */
     fun candidates(
         query: TermQuery,
         index: DictionaryIndex,
     ): List<TermCandidate> {
-        val direct = index.findAll(query.text)
+        val direct =
+            index.findAll(query.text).filter { match ->
+                match.start == 0 && index.coversSelection(query.text, match.surface)
+            }
         return if (direct.isNotEmpty()) {
             direct.map { match ->
                 toCandidate(match, if (match.isInflected) TermMatchKind.INFLECTED else TermMatchKind.EXACT)
             }
         } else {
-            findEmbeddedTerm(query.text, index)
+            findReviewedCompound(query.text, index)
                 ?.let { embedded -> listOf(toCandidate(embedded, TermMatchKind.COMPOUND_PART)) }
                 ?: emptyList()
         }
     }
 
-    /**
-     * 질의 전체가 사전에 없을 때, 앞에서 줄이거나 뒤에서 줄인 부분 문자열 중 사전에 있는
-     * 가장 긴 것을 찾는다(§3.1 "복합어 부분 일치").
-     *
-     * [DictionaryIndex.findAll] 을 그대로 재사용한다 — 새 매칭 엔진을 만들지 않는다. 부분
-     * 문자열 자체를 독립된 텍스트로 넘기면, 그 문자열의 끝이 곧 원래 함수가 보는 "문서 끝"이라
-     * 오른쪽 경계 검사([DictionaryIndex] 의 `boundaryOk`)가 항상 통과한다 — 복합어 안에서
-     * 조사가 아닌 다른 낱말이 뒤따른다는 이유로 매칭이 거부되는 것을 피할 수 있는 이유가
-     * 그것이다. 접두·접미 양쪽에서 각각 가장 긴 것부터 시도해 처음 찾은 것을 후보로 모으고,
-     * 그중 매칭 길이가 가장 긴 것을 채택한다 — 가운데에 파묻힌 낱말은 다루지 않는다(§3.1의
-     * 요구는 접두·접미 복합어이지 임의 부분 문자열 스캐너가 아니다).
-     */
-    private fun findEmbeddedTerm(
+    /** 확인된 복합어 전체와 조사만 선택됐을 때, 그 안의 확인된 용어를 설명으로 돌려준다. */
+    private fun findReviewedCompound(
         text: String,
         index: DictionaryIndex,
     ): DictionaryMatch? {
-        val prefixes = (text.length - 1 downTo 1).map { text.substring(0, it) }
-        val suffixes = (text.length - 1 downTo 1).map { text.substring(text.length - it) }
-        return (prefixes + suffixes)
-            .asSequence()
-            .mapNotNull { candidate -> index.findAll(candidate).firstOrNull() }
-            .maxByOrNull { it.end - it.start }
+        val term = REVIEWED_COMPOUNDS.entries.firstOrNull { index.coversSelection(text, it.key) }?.value ?: return null
+        return index.findAll(term).singleOrNull()?.takeIf { match ->
+            match.start == 0 && match.end == term.length &&
+                match.entry.risk != RiskLevel.HIGH && "needs_review" !in match.entry.tags
+        }
     }
 
     private fun toCandidate(

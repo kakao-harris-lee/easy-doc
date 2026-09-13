@@ -102,6 +102,9 @@ class EncryptedContent(
 
 /** 암호문이 들어가는 **컬럼**. AEAD 의 associated data 에 실려 **바꿔치기를 거부**한다. */
 enum class EncryptedField(val wireName: String) {
+    BILLING_SESSION("toss_billing_sessions.payload_encrypted"),
+    BILLING_ORDER("toss_billing_orders.payload_encrypted"),
+
     /** 업로드 원문. `documents.source_text_encrypted` (V1 baseline). */
     DOCUMENT_SOURCE_TEXT("documents.source_text_encrypted"),
 

@@ -8,6 +8,105 @@ import org.junit.jupiter.api.Test
 /** 사실 보존 기계 검사 — backlog §1.3. `findMissingFacts` 는 결정적이고 보수적이어야 한다. */
 class FactPreservationTest {
     @Test
+    fun `웹주소를 감싼 닫는 괄호와 조사는 주소의 일부가 아니다`() {
+        val urlWithParentheses = "https://example.org/wiki/Topic_(part)"
+        assertThat(findMissingFacts("e나라도움(http://www.gosims.go.kr) 적용", "누리집: http://www.gosims.go.kr")).isEmpty()
+        assertThat(findMissingFacts("e나라도움(www.gosims.go.kr)을 통해", "e나라도움(www.gosims.go.kr)에서")).isEmpty()
+        assertThat(findMissingFacts("($urlWithParentheses)를", urlWithParentheses)).isEmpty()
+        assertThat(findMissingFacts(urlWithParentheses, "https://example.org/wiki/Topic_(other)"))
+            .isNotEmpty()
+        assertThat(findMissingFacts("www.example.org)에서 10명", "www.example.org)에서 11명")).isNotEmpty()
+        assertThat(findMissingFacts("www.example.org)에서10명", "www.example.org)에서11명")).isNotEmpty()
+    }
+
+    @Test
+    fun `날짜 범위의 반복 연도와 월을 생략해도 같은 기간이다`() {
+        val source = "2027. 3. 5.(수) ~ 3. 14.(금)"
+        assertThat(findMissingFacts(source, "2027년 3월 5일부터 3월 14일까지입니다.")).isEmpty()
+        assertThat(findMissingFacts("2027. 3. 5. ~ 2027. 3. 14.", "2027년 3월 5일부터 14일까지입니다.")).isEmpty()
+        assertThat(findMissingFacts(source, "2027년 3월 5일부터 13일까지입니다.")).isNotEmpty()
+        assertThat(findMissingFacts(source, "2028년 3월 5일부터 14일까지입니다.")).isNotEmpty()
+    }
+
+    @Test
+    fun `다른 문장과 연도가 바뀌는 범위에는 앞 연도를 임의로 전파하지 않는다`() {
+        val source = "마감 2027년 3월 14일"
+        assertThat(findMissingFacts(source, "시작 2027년 3월 5일. 마감 3월 14일.")).isNotEmpty()
+        assertThat(findMissingFacts(source, "시작 2027년 3월 5일\n마감 3월 14일.")).isNotEmpty()
+        assertThat(findMissingFacts(source, "2026년 3월 5일부터 2026년 3월 14일까지입니다.")).isNotEmpty()
+        assertThat(findMissingFacts("2028년 1월 2일", "2027년 12월 31일부터 1월 2일까지입니다.")).isNotEmpty()
+        assertThat(findMissingFacts("2027년 3월 14일", "값은 3.14입니다.")).isNotEmpty()
+    }
+
+    @Test
+    fun `전각 숫자가 있는 공식 파일 이름의 보존도 같은 기준으로 비교한다`() {
+        val fileName = "２０２７년 신청(변경)서.hwp"
+        assertThat(findMissingFacts(fileName, fileName)).isEmpty()
+        assertThat(findMissingFacts(fileName, "２０２７년 신청(바꿈)서.hwp")).isNotEmpty()
+    }
+
+    @Test
+    fun `공식 서류 파일 이름 안의 낱말을 바꾸면 누락으로 잡는다`() {
+        val source = "- 도서대출 신청(변경)서.hwp"
+        assertThat(findMissingFacts(source, "도서대출 신청(변경)서.hwp")).isEmpty()
+        assertThat(findMissingFacts(source, "도서대출 신청(바꿈)서.hwp")).isNotEmpty()
+    }
+
+    @Test
+    fun `공문 날짜의 공백을 인식하고 같은 월일의 다른 연도도 확인한다`() {
+        val source = "접수 2027. 3. 5. 최종 발표 2026. 4. 11."
+        assertThat(findMissingFacts(source, "접수 2027년 3월 5일. 최종 발표 2026년 4월 11일.")).isEmpty()
+        assertThat(findMissingFacts(source, "접수 2027년 3월 5일. 최종 발표 2027년 4월 11일."))
+            .extracting("kind")
+            .contains(FactKind.DATE)
+    }
+
+    @Test
+    fun `퍼센트 표현을 동치로 비교하되 숫자와 비율은 구분한다`() {
+        assertThat(findMissingFacts("소득 기준 70% 이하", "소득 기준 70퍼센트 이하")).isEmpty()
+        assertThat(findMissingFacts("소득 기준 70퍼센트 이하", "소득 기준 70% 이하")).isEmpty()
+        assertThat(findMissingFacts("70%", "70명")).isNotEmpty()
+    }
+
+    @Test
+    fun `백분율의 분수 표기를 풀어 써도 같은 비율이다`() {
+        assertThat(findMissingFacts("기준 중위소득의 100분의 50 이하", "기준 중위소득의 50% 이하")).isEmpty()
+        assertThat(findMissingFacts("0.5%", "100분의 0.5")).isEmpty()
+        assertThat(findMissingFacts("100 분의 50", "50퍼센트")).isEmpty()
+        assertThat(findMissingFacts("100분의 50", "5% 또는 100% 또는 50명")).isNotEmpty()
+        assertThat(findMissingFacts("1000분의 50", "50%")).isNotEmpty()
+        assertThat(factCoverage("100분의 50", "50%").sourceFactCount).isEqualTo(1)
+    }
+
+    @Test
+    fun `HTML 문자로 남은 축약 연도도 같은 연도로 비교한다`() {
+        assertThat(findMissingFacts("&rsquo;26. 1월 이후", "2026년 1월 이후")).isEmpty()
+        assertThat(findMissingFacts("&rsquo;26년 시행", "’26년 시행")).isEmpty()
+        assertThat(findMissingFacts("&rsquo;26년 9월 1일", "2026년 9월 1일")).isEmpty()
+        assertThat(findMissingFacts("&rsquo;26.9.1", "2026년 9월 1일")).isEmpty()
+        assertThat(findMissingFacts("&rsquo;26. 1월 이후", "2027년 1월 이후")).isNotEmpty()
+        assertThat(findMissingFacts("&rsquo;50년", "2050년")).isNotEmpty()
+        assertThat(findMissingFacts("26년 동안", "2026년부터")).isNotEmpty()
+    }
+
+    @Test
+    fun `왼쪽 작은따옴표로 표시한 공고 연도도 같은 연도로 비교한다`() {
+        assertThat(findMissingFacts("‘25.7월 시행", "2025년 7월 시행")).isEmpty()
+        assertThat(findMissingFacts("‘25년 9월 1일", "2025년 9월 1일")).isEmpty()
+        assertThat(findMissingFacts("‘25.7월 시행", "2026년 7월 시행")).isNotEmpty()
+    }
+
+    @Test
+    fun `표의 단위 없는 구분자 숫자에 원을 붙여도 같은 수치로 본다`() {
+        assertThat(findMissingFacts("건강보험료 125,300", "건강보험료는 125,300원입니다.")).isEmpty()
+        assertThat(findMissingFacts("125,300원", "125,300명")).isNotEmpty()
+        assertThat(findMissingFacts("3명", "3원")).isNotEmpty()
+        assertThat(findMissingFacts("125,300명", "125,300원")).isNotEmpty()
+        assertThat(findMissingFacts("125,300 명", "125,300원")).isNotEmpty()
+        assertThat(findMissingFacts("125,300", "125,301원")).isNotEmpty()
+    }
+
+    @Test
     @DisplayName("숫자 — 천 단위 구분자가 있어도 같은 값이면 보존으로 본다")
     fun `숫자 구분자를 무시하고 비교한다`() {
         val source = "참가자는 10,000명입니다."

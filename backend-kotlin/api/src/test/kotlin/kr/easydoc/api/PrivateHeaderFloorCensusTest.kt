@@ -53,6 +53,9 @@ class PrivateHeaderFloorCensusTest {
     private lateinit var users: InMemoryUserRepository
 
     @Autowired
+    private lateinit var adminAccess: kr.easydoc.api.support.InMemoryAdminAccessRepository
+
+    @Autowired
     private lateinit var mailSender: FakeMailSender
 
     private val json = ObjectMapper()
@@ -194,6 +197,13 @@ class PrivateHeaderFloorCensusTest {
 
             "GET $ME_PATH" -> {
                 authorizedGet(ME_PATH, newAccount())
+            }
+
+            "GET /admin/feedback" -> {
+                val token = newAccount()
+                val userId = bodyOf(authorizedGet(ME_PATH, token))["id"].toString()
+                adminAccess.markAdmin(UUID.fromString(userId))
+                authorizedGet("/admin/feedback", token)
             }
 
             "GET $DOCUMENTS_PATH" -> {
@@ -466,6 +476,7 @@ class PrivateHeaderFloorCensusTest {
                 "POST /auth/signup",
                 "POST /auth/login",
                 "GET /auth/me",
+                "GET /admin/feedback",
                 "GET /documents",
                 // 2.2.0 신설 — 저장된 원문이 **마스킹 전** 그대로 나간다.
                 "GET /documents/{document_id}/source",

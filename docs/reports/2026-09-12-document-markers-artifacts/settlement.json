@@ -1,0 +1,20 @@
+{
+  "paidCalls": 4,
+  "conversionCalls": 2,
+  "repairCalls": 0,
+  "judgeCalls": 2,
+  "retries": 0,
+  "callCostsUsd": [
+    0.13534,
+    0.04182,
+    0.02551,
+    0.01016
+  ],
+  "thisTaskUsd": 0.21283,
+  "priorSettledUsd": 17.23429,
+  "cumulativeUsd": 17.44712,
+  "userCapUsd": 50,
+  "batchCapUsd": 3.5,
+  "checked": "Both results preserve source marker order and corresponding section content. Excerpt markers: ○ - ※ - * - ※. Source dates, deadlines and notification conditions retained. Full source fact check 49/49; excerpt 6/6.",
+  "basis": "Token usage and configured rates; not a finalized invoice."
+}

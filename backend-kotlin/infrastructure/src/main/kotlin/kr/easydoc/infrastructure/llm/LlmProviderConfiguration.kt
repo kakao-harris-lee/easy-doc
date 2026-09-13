@@ -290,6 +290,7 @@ class LlmProviderConfiguration {
         OpenAiSettings(
             apiKey = properties.openAiApiKey,
             model = properties.model.nonBlankOr(DEFAULT_OPENAI_MODEL),
+            effort = OpenAiEffort.from(properties.effort),
             readTimeout = properties.validatedReadTimeout(),
         )
 

@@ -1,3 +1,5 @@
+import { PaymentActions } from './PaymentActions'
+import { openTossBilling } from '../../billing/toss'
 import { useEffect, useRef, useState } from 'react'
 import { ApiError } from '../../api/client'
 import {
@@ -46,6 +48,10 @@ export function SubscriptionCard({
     setError(null)
     setMessage(null)
     try {
+      if (!cancel && view?.toss_enabled) {
+        await openTossBilling(workspaceId, plan, fail)
+        return
+      }
       if (
         !cancel &&
         (order.current === null || order.current.plan !== plan || order.current.fail !== fail)
@@ -80,6 +86,24 @@ export function SubscriptionCard({
     }
   }
 
+  async function changeCard() {
+    if (!view?.subscription) return
+    setBusy(true)
+    setError(null)
+    try {
+      if (view.subscription.status === 'active') setView(await cancelSubscription(workspaceId))
+      await openTossBilling(workspaceId, view.subscription.plan_id, false)
+    } catch (cause) {
+      setError(
+        cause instanceof ApiError
+          ? cause.message
+          : '카드 변경을 완료하지 못했습니다. 새 카드로 구독 재개를 눌러 다시 시도하세요.',
+      )
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const current = view?.subscription
   const active = current?.status === 'active' || current?.status === 'canceling'
   return (
@@ -106,11 +130,11 @@ export function SubscriptionCard({
           <p className="mt-3 text-2xl font-bold">
             {active
               ? (view.plans.find((item) => item.id === current.plan_id)?.name ?? current.plan_id)
-              : view.mock_enabled
+              : view.mock_enabled || view.toss_enabled
                 ? '선택한 플랜 없음'
                 : '구독 서비스 준비 중'}
           </p>
-          {(view.mock_enabled || current) && (
+          {(view.mock_enabled || view.toss_enabled || current) && (
             <p className="mt-2 text-sm font-medium text-primary">테스트 결제 · 실제 청구 없음</p>
           )}
           {active && (
@@ -130,7 +154,7 @@ export function SubscriptionCard({
           {current?.status === 'expired' && (
             <p className="mt-2 text-sm text-muted-foreground">이전 구독이 종료되었습니다.</p>
           )}
-          {!view.mock_enabled && !current && (
+          {!(view.mock_enabled || view.toss_enabled) && !current && (
             <p className="mt-2 text-sm text-muted-foreground">
               현재는 무료 파일럿으로 운영하며, 월 구독 결제를 받지 않습니다.
             </p>
@@ -159,7 +183,7 @@ export function SubscriptionCard({
                       <span className="mt-1 block text-sm text-muted-foreground">
                         월 {item.allowance}크레딧 · {charLabel}
                       </span>
-                      {view.mock_enabled && (
+                      {(view.mock_enabled || view.toss_enabled) && (
                         <span className="mt-1 block text-xs text-muted-foreground">
                           표시가 {won(item.monthly_price)} · 테스트용
                         </span>
@@ -175,7 +199,7 @@ export function SubscriptionCard({
                             name="plan"
                             className="mt-1"
                             checked={plan === item.id}
-                            disabled={busy}
+                            disabled={busy || view?.pending}
                             aria-label={item.name}
                             onChange={() => setPlan(item.id)}
                           />
@@ -193,14 +217,34 @@ export function SubscriptionCard({
               </p>
             </div>
           )}
-          {!admin && view.mock_enabled && !active && (
+          {!admin && (view.mock_enabled || view.toss_enabled) && !active && (
             <Button className="mt-4" onClick={() => setSelecting(!selecting)}>
               플랜 선택
             </Button>
           )}
-          {!admin && view.mock_enabled && current?.status === 'active' && (
+          {!admin && (view.mock_enabled || view.toss_enabled) && current?.status === 'active' && (
             <Button variant="ghost" className="mt-4" disabled={busy} onClick={() => void act(true)}>
               구독 갱신 중단
+            </Button>
+          )}
+          {!admin && view.toss_enabled && !active && view.billing_state === 'authorizing' && (
+            <Button
+              variant="ghost"
+              className="mt-4"
+              disabled={busy || view.pending}
+              onClick={() => void act(true)}
+            >
+              카드 등록 취소
+            </Button>
+          )}
+          {!admin && view.toss_enabled && active && (
+            <Button
+              variant="ghost"
+              className="mt-4"
+              disabled={busy || view.pending}
+              onClick={() => void changeCard()}
+            >
+              {current.status === 'canceling' ? '새 카드로 구독 재개' : '결제 카드 변경'}
             </Button>
           )}
           {selecting && (
@@ -219,9 +263,19 @@ export function SubscriptionCard({
                 결제 실패 테스트
               </label>
               <Button disabled={busy} onClick={() => void act(false)}>
-                {busy ? '처리 중…' : '테스트 결제'}
+                {busy ? '처리 중…' : view.toss_enabled ? '토스 테스트 카드 등록' : '테스트 결제'}
               </Button>
             </div>
+          )}
+          {view.billing_state === 'issuing' && (
+            <p role="status" className="mt-3 text-sm">
+              카드 등록 결과 확인 중입니다. 잠시 후 새로고침해 주세요.
+            </p>
+          )}
+          {view.pending && (
+            <p role="status" className="mt-3 text-sm">
+              결제 결과 확인 중입니다. 잠시 후 새로고침해 주세요.
+            </p>
           )}
           {view.payments.length > 0 && (
             <details className="mt-4 border-t border-border pt-3 text-sm">
@@ -233,7 +287,21 @@ export function SubscriptionCard({
                 {view.payments.map((payment) => (
                   <li key={payment.id}>
                     {date(payment.created_at)} · {won(payment.amount)} ·{' '}
-                    {payment.status === 'paid' ? '성공' : '실패'}
+                    {
+                      {
+                        paid: '성공',
+                        failed: '실패',
+                        partially_refunded: '부분 환불',
+                        refunded: '환불 완료',
+                      }[payment.status]
+                    }
+                    <PaymentActions
+                      workspace={workspaceId}
+                      payment={payment}
+                      admin={admin}
+                      pending={view.pending}
+                      onChanged={setView}
+                    />
                   </li>
                 ))}
               </ul>

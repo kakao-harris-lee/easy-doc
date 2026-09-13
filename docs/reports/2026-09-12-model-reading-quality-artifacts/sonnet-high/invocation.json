@@ -1,0 +1,29 @@
+{
+  "arm": "sonnet-high",
+  "source": "phase1",
+  "provider": "anthropic",
+  "model": "claude-sonnet-5",
+  "effort": "high",
+  "input": 2,
+  "output": 10,
+  "runs": 1,
+  "corpus": "corpus",
+  "cap": 2.5,
+  "priorReservedUsd": 1.105802,
+  "previousTurnCostUsd": 1.464392,
+  "combinedLimitUsd": 20,
+  "startedAt": "2026-09-11T15:28:08.442Z",
+  "args": [
+    ":infrastructure:testLlm",
+    "--tests",
+    "*GoldenCorpusLlmEvaluationTest",
+    "-Peasydoc.golden.documents.dir=/private/tmp/easydoc-model-quality-20260912/corpus",
+    "--console=plain"
+  ],
+  "hashes": {
+    "backend-kotlin/core/src/main/kotlin/kr/easydoc/core/easyread/Prompts.kt": "0db70ec7ec9b1ad83f5a5f5e86972c06c33024e5bd3e30975a9e0e0d4888dde4",
+    "backend-kotlin/core/src/main/kotlin/kr/easydoc/core/easyread/FactPreservation.kt": "bacaa5c4b11cdf00a4e9e2876154526aa51a002bf84a707b2739bd4ebdd65f41",
+    "backend-kotlin/core/src/main/kotlin/kr/easydoc/core/llm/LlmPrompt.kt": "7ba3d455bab8b037d9cfdf1a123994682cc10d08d43c61f812ae0619a2025e52",
+    "backend-kotlin/infrastructure/src/main/kotlin/kr/easydoc/infrastructure/llm/OpenAiProvider.kt": "dd6710ddbe1a319a6ca83cd24dc6f3e5e0536a539c20c17b7b70130c28552d16"
+  }
+}

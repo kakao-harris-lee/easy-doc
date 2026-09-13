@@ -1,0 +1,18 @@
+{
+  "core/src/main/kotlin/kr/easydoc/core/easyread/Prompts.kt": "3295f1f33c407b561b4aae89e75a5e774b0c2a9ddd36e2b2ab49d56e1820fc44",
+  "core/src/main/kotlin/kr/easydoc/core/easyread/FactPreservation.kt": "e5bb4b72379f8ee520ea034d9ba775b1633e4b8f7ccec8ab5e2ea926c71765a9",
+  "core/src/main/kotlin/kr/easydoc/core/easyread/NumberIdentity.kt": "c30d5873e9f05a9395126437e12b07f8152ae217337045e65351dfcc33e69c7e",
+  "core/src/main/kotlin/kr/easydoc/core/easyread/DateRangePart.kt": "8873d635874bf85f33cbbc34efb476a91593d68d51d3c8ccc6aa0bdd83bec1e5",
+  "core/src/main/kotlin/kr/easydoc/core/easyread/RepairStyle.kt": "8b697fcdf82cc5abec5e1bc1a37c7dfa21f6874c6feeca0ff933b8fd3795ca24",
+  "core/src/main/kotlin/kr/easydoc/core/easyread/StyleRules.kt": "a3326db6ca1f08f5f0acb243968c17018774853b4514d6dd34dc078fdc8ea84c",
+  "core/src/main/kotlin/kr/easydoc/core/easyread/TemporalFacts.kt": "df6849c4ebf2e091a379bfad6b1b58d182a2f721e140d4591f8929740f7840ce",
+  "core/src/main/kotlin/kr/easydoc/core/llm/LlmPrompt.kt": "7ba3d455bab8b037d9cfdf1a123994682cc10d08d43c61f812ae0619a2025e52",
+  "application/src/main/kotlin/kr/easydoc/application/conversion/ConvertDocumentUseCase.kt": "8e723cf30546697052ee50808cb967c818e2ea42a6ed207d21b3c911b42ae6aa",
+  "application/src/main/kotlin/kr/easydoc/application/conversion/RepairDecision.kt": "05837209256e61a40ea929b6997e435a15f92fdf601df58fe10fe12a7dd18dae",
+  "infrastructure/src/main/kotlin/kr/easydoc/infrastructure/llm/OpenAiProvider.kt": "dd6710ddbe1a319a6ca83cd24dc6f3e5e0536a539c20c17b7b70130c28552d16",
+  "infrastructure/src/main/kotlin/kr/easydoc/infrastructure/llm/AnthropicProvider.kt": "50bd7e468b66c48c1e1e780be09d95f0db1af10d42c65808f1b4317137b7a6c7",
+  "infrastructure/src/main/resources/dictionary/easy_dict.index.json": "97c41d321b8e9a15e5e32f5c7a0cdc06c7782e560a6874f146d8711e8b89b2e6",
+  "infrastructure/src/test/kotlin/kr/easydoc/infrastructure/quality/LaneConversionTrace.kt": "fd90a62bf592ae5baefa96ede9bdb2aaaf852ba460d0b1aada482fc38c929772",
+  "infrastructure/src/test/kotlin/kr/easydoc/infrastructure/quality/LaneTranscript.kt": "4123e9174f44f03e0d37ca207a9f437e621a127d60f0638758912cb3d2fd3180",
+  "infrastructure/src/test/kotlin/kr/easydoc/infrastructure/quality/GoldenCorpusLlmEvaluationTest.kt": "c520768ecaa5542a93230f80e24d92bd1bec9ea541d4ca777018edc4bb1a4ae8"
+}

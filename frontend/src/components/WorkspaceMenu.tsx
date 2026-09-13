@@ -1,5 +1,5 @@
-import { useId, useRef, useState, type FormEvent } from 'react'
-import { Pencil, Plus } from 'lucide-react'
+import { useEffect, useId, useRef, useState, type FormEvent } from 'react'
+import { Check, ChevronDown, Pencil, Plus } from 'lucide-react'
 
 import { ApiError } from '../api/client'
 import { useWorkspace } from '../workspace/context'
@@ -26,12 +26,27 @@ type DialogMode = 'create' | 'rename'
 export function WorkspaceMenu() {
   const { workspaces, currentId, select, create, rename } = useWorkspace()
   const ids = useId()
-  const selectId = `${ids}-select`
+  const menuId = `${ids}-menu`
   const titleId = `${ids}-title`
   const descriptionId = `${ids}-description`
   const nameId = `${ids}-name`
   const hintId = `${ids}-hint`
   const errorId = `${ids}-error`
+
+  const rootRef = useRef<HTMLDivElement>(null)
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  const [expanded, setExpanded] = useState(false)
+
+  useEffect(() => {
+    if (!expanded) return
+    function dismiss(event: PointerEvent) {
+      if (event.target instanceof Node && !rootRef.current?.contains(event.target)) {
+        setExpanded(false)
+      }
+    }
+    document.addEventListener('pointerdown', dismiss)
+    return () => document.removeEventListener('pointerdown', dismiss)
+  }, [expanded])
 
   const nameRef = useRef<HTMLInputElement>(null)
   const [mode, setMode] = useState<DialogMode | null>(null)
@@ -48,6 +63,8 @@ export function WorkspaceMenu() {
   const current = workspaces.find((workspace) => workspace.id === currentId) ?? null
 
   function open(next: DialogMode, initial: string): void {
+    setExpanded(false)
+    triggerRef.current?.focus()
     setMode(next)
     setName(initial)
     setError(null)
@@ -97,56 +114,91 @@ export function WorkspaceMenu() {
   const confirmLabel = creating ? '만들기' : '바꾸기'
   const busyLabel = creating ? '만드는 중…' : '바꾸는 중…'
 
+  // 자식 버튼에서 올라오는 Esc를 받아 메뉴를 닫는다. 그룹 자체는 초점 대상이 아니다.
   return (
-    <div className="workspace-menu relative flex flex-wrap items-center gap-2">
-      <label className="text-sm font-semibold text-muted-foreground" htmlFor={selectId}>
-        작업 공간
-      </label>
-      <select
-        // §10 은 이 행을 «모바일에서 감춰지지 않아야 하는 것»으로 못박았다 — 그렇다면
-        // 그 행의 조작 대상도 44px 이어야 한다. 예전 h-9(36px)·sm 버튼(32px)은
-        // 손가락으로 고르는 화면에서 규정에 못 미쳤다.
-        className="h-11 min-w-44 rounded-[10px] border border-input bg-card px-3 text-sm text-foreground"
-        id={selectId}
-        value={current?.id ?? ''}
-        onChange={(event) => select(event.target.value)}
-      >
-        {/* 문서 수는 적지 않는다. 목록은 로그인할 때 한 번 읽으므로, 올리거나 지운
-            뒤에는 틀린 수가 그대로 남는다 — 틀린 숫자는 없는 숫자보다 나쁘다.
-            (서버는 문서 수를 준다: 빈 작업 공간만 지울 수 있다는 판정에 쓰인다.) */}
-        {workspaces.map((workspace) => (
-          <option key={workspace.id} value={workspace.id}>
-            {workspace.name}
-          </option>
-        ))}
-      </select>
+    // eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions
+    <div
+      ref={rootRef}
+      role="group"
+      aria-label="작업 공간 관리"
+      className="workspace-menu relative min-w-0 max-w-full"
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) setExpanded(false)
+      }}
+      onKeyDown={(event) => {
+        if (event.key === 'Escape' && expanded) {
+          event.stopPropagation()
+          setExpanded(false)
+          triggerRef.current?.focus()
+        }
+      }}
+    >
       <Button
-        className="min-h-11"
+        ref={triggerRef}
+        className="min-h-11 max-w-full justify-between"
         variant="outline"
-        size="sm"
         type="button"
-        onClick={() => open('create', '')}
+        aria-label={'작업 공간: ' + (current?.name ?? '선택해 주세요')}
+        aria-expanded={expanded}
+        aria-controls={menuId}
+        onClick={() => setExpanded(!expanded)}
       >
-        <Plus className="size-4" aria-hidden="true" />
-        새로 만들기
+        <span className="max-w-56 truncate">{current?.name ?? '작업 공간 선택'}</span>
+        <ChevronDown
+          className={'size-4 shrink-0 transition-transform ' + (expanded ? 'rotate-180' : '')}
+          aria-hidden="true"
+        />
       </Button>
-      <Button
-        className="min-h-11"
-        variant="ghost"
-        size="sm"
-        type="button"
-        disabled={current === null}
-        onClick={() => {
-          if (current === null) {
-            return
-          }
-          // 기존 이름을 채워 둬야 한 글자만 고치는 일이 쉬워진다.
-          open('rename', current.name)
-        }}
+      <div
+        id={menuId}
+        hidden={!expanded}
+        className="absolute left-0 top-full z-40 mt-2 w-72 max-w-[calc(100vw-2rem)] rounded-xl border border-border bg-card p-1.5 text-card-foreground shadow-lg"
       >
-        <Pencil className="size-4" aria-hidden="true" />
-        이름 바꾸기
-      </Button>
+        <p className="px-3 py-2 text-xs font-semibold text-muted-foreground">작업 공간</p>
+        <div className="max-h-64 overflow-y-auto" role="group" aria-label="작업 공간 목록">
+          {workspaces.map((workspace) => (
+            <button
+              key={workspace.id}
+              type="button"
+              aria-pressed={workspace.id === currentId}
+              className="flex min-h-11 w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm hover:bg-secondary aria-pressed:bg-secondary aria-pressed:font-semibold"
+              onClick={() => {
+                select(workspace.id)
+                setExpanded(false)
+                triggerRef.current?.focus()
+              }}
+            >
+              <span className="min-w-0 flex-1 break-words">{workspace.name}</span>
+              {workspace.id === currentId && (
+                <Check className="size-4 shrink-0 text-primary" aria-hidden="true" />
+              )}
+            </button>
+          ))}
+        </div>
+        <div className="mt-1 border-t border-border pt-1">
+          <Button
+            className="min-h-11 w-full justify-start"
+            variant="ghost"
+            type="button"
+            onClick={() => open('create', '')}
+          >
+            <Plus className="size-4" aria-hidden="true" />
+            새로 만들기
+          </Button>
+          <Button
+            className="min-h-11 w-full justify-start"
+            variant="ghost"
+            type="button"
+            disabled={current === null}
+            onClick={() => {
+              if (current !== null) open('rename', current.name)
+            }}
+          >
+            <Pencil className="size-4" aria-hidden="true" />
+            이름 바꾸기
+          </Button>
+        </div>
+      </div>
 
       <ModalDialog
         open={mode !== null}

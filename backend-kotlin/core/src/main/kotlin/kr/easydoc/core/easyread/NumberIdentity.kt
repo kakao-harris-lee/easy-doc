@@ -18,6 +18,29 @@ import java.math.BigDecimal
  */
 private val NUMBER_UNIT_SUFFIX = Regex("""($ARABIC_UNIT_ALTERNATION|달)$""")
 
+/** 단위 없는 표 숫자를 금액으로 풀어 쓴 경우. 원문에 명시된 단위의 변경은 허용하지 않는다. */
+internal fun untypedAmountKept(
+    fact: ExtractedFact,
+    draftKeys: Set<Pair<FactKind, String>>,
+): Boolean =
+    fact.kind == FactKind.NUMBER &&
+        fact.untypedGroupedNumber &&
+        ':' !in fact.compareKey &&
+        (FactKind.AMOUNT to fact.compareKey) in draftKeys
+
+/** 숫자 뒤 같은 줄의 글자를 확인한다. 공백 꼬리를 매번 복사하지 않는다. */
+internal fun followedByWord(
+    text: String,
+    start: Int,
+): Boolean {
+    var index = start
+    while (index < text.length && text[index].isWhitespace()) {
+        if (text[index] == '\n' || text[index] == '\r') return false
+        index++
+    }
+    return text.getOrNull(index)?.isLetter() == true
+}
+
 /**
  * NUMBER 의 정체성은 **(정규화된 값, 단위)** 쌍이다 — 값만 보면 "3명"과 "3층"이 같은 사실로
  * 오판된다(리뷰 HIGH-1). 단위가 없는 순수 숫자(2자리 이상 Arabic 숫자)는 단위 자리를 빈
@@ -34,7 +57,9 @@ internal fun numberCompareKey(matchText: String): String {
 
 /** `1.5%` 를 "15" 로 뭉개지 않도록 소수점을 보존해 [BigDecimal] 로 정규화한다(리뷰 HIGH-1). */
 internal fun percentCompareKey(matchText: String): String {
-    val numeric = Regex("""\d++(?:\.\d++)?""").find(matchText)?.value ?: return ""
+    val numeric = Regex("""\d++(?:\.\d++)?""").find(matchText.substringAfter("분의"))?.value ?: return ""
     val value = BigDecimal(numeric).stripTrailingZeros()
     return if (value.compareTo(BigDecimal.ZERO) == 0) "0" else value.toPlainString()
 }
+
+internal fun digitsOnly(text: String): String = text.filter { it.isDigit() }

@@ -137,6 +137,25 @@ import java.util.concurrent.ConcurrentHashMap
 @TestConfiguration(proxyBeanMethods = false)
 class AuthSliceBeans {
     @Bean
+    fun tossBillingService(): kr.easydoc.application.subscription.TossBillingService =
+        org.mockito.Mockito.mock(kr.easydoc.application.subscription.TossBillingService::class.java)
+
+    @Bean
+    fun subscriptionService(): kr.easydoc.application.subscription.SubscriptionService =
+        org.mockito.Mockito.mock(kr.easydoc.application.subscription.SubscriptionService::class.java)
+
+    @Bean
+    fun adminFeedbackQuery(): kr.easydoc.application.admin.AdminFeedbackQuery =
+        object : kr.easydoc.application.admin.AdminFeedbackQuery {
+            override fun list(
+                page: Int,
+                size: Int,
+            ): kr.easydoc.application.admin.AdminFeedbackPage =
+                kr.easydoc.application.admin
+                    .AdminFeedbackPage(emptyList(), 0)
+        }
+
+    @Bean
     fun inMemoryUsers(): InMemoryUserRepository = InMemoryUserRepository()
 
     @Bean

@@ -1,0 +1,8 @@
+checked_at=2026-09-12T01:45:35.993Z
+method=Compiled product FactPreservationKt.factCoverage and RepairStyleKt.checkRepairStyle on saved paid first draft; no LLM call
+original_utf16_chars=6718
+original_code_points=6712
+source_facts=28
+kept=28
+missing=0
+repair_style_issues=0

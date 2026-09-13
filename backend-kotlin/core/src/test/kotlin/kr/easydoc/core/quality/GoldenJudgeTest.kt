@@ -1,6 +1,9 @@
 package kr.easydoc.core.quality
 
 import kr.easydoc.core.llm.FakeLlmProvider
+import kr.easydoc.core.llm.FakeLlmTurn
+import kr.easydoc.core.llm.LlmFinishReason
+import kr.easydoc.core.llm.LlmOptions
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
@@ -10,6 +13,26 @@ import org.junit.jupiter.api.Test
  * 사유가 있어야 유료 골든 런 뒤에 「왜」 no 인지 사람이 다시 손으로 재구성하지 않는다.
  */
 class GoldenJudgeTest {
+    @Test
+    fun `judge 출력 상한을 전달하고 잘린 yes는 거절한다`() {
+        val provider = FakeLlmProvider(listOf(FakeLlmTurn.Reply("yes", finishReason = LlmFinishReason.MAX_TOKENS)))
+        val score = GoldenJudge(provider, LlmOptions(maxTokens = 1_024)).score(document, "표본")
+        assertThat(
+            provider.calls
+                .single()
+                .options.maxTokens,
+        ).isEqualTo(1_024)
+        assertThat(score.passed).isFalse()
+    }
+
+    @Test
+    fun `yes 로 시작하는 설명이나 상반된 판정은 통과시키지 않는다`() {
+        listOf("yesterday", "yes\n하지만 날짜가 바뀌었습니다", "yes, no").forEach { response ->
+            val score = GoldenJudge(FakeLlmProvider.replying(response)).score(document, "표본")
+            assertThat(score.passed).isFalse()
+        }
+    }
+
     private val document =
         GoldenDocument(
             id = "062",

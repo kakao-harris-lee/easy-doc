@@ -1,0 +1,207 @@
+{
+  "basis": "Existing response-token estimates at measurement prices, not invoice amounts; no additional paid calls. Each arm has three complete documents with convert, repair, then judge, zero retries and truncation. Phase2 is the matched comparison. Phase1/phase3 are not pooled with phase2.",
+  "arms": [
+    {
+      "arm": "sonnet-low-r1",
+      "phase": "phase1",
+      "sourceSha256": "608e9460730dad7e16e0043229a9ddfd0e62735771c5ad0918e16d3dac94fd22",
+      "documents": [
+        {
+          "id": "001-current",
+          "convertUsd": 0.042652,
+          "repairUsd": 0.04943,
+          "judgeUsd": 0.011474,
+          "productUsd": 0.092082
+        },
+        {
+          "id": "087",
+          "convertUsd": 0.033446,
+          "repairUsd": 0.034918,
+          "judgeUsd": 0.010342,
+          "productUsd": 0.068364
+        },
+        {
+          "id": "097",
+          "convertUsd": 0.045454,
+          "repairUsd": 0.046946,
+          "judgeUsd": 0.013466,
+          "productUsd": 0.0924
+        }
+      ],
+      "totals": {
+        "convertUsd": 0.121552,
+        "repairUsd": 0.131294,
+        "judgeUsd": 0.035282,
+        "productUsd": 0.252846,
+        "productInputTokens": 48713,
+        "productOutputTokens": 15542
+      },
+      "meanProductUsd": 0.084282,
+      "repairCostShare": 0.519264691,
+      "hypothetical10000DocumentsUsd": 842.82
+    },
+    {
+      "arm": "sol-medium",
+      "phase": "phase1",
+      "sourceSha256": "b214ba695b64b2d048c4f814187262d0a9fb7a340b4ee24bd6c93533214819de",
+      "documents": [
+        {
+          "id": "001-current",
+          "convertUsd": 0.085648,
+          "repairUsd": 0.076936,
+          "judgeUsd": 0.023992,
+          "productUsd": 0.162584
+        },
+        {
+          "id": "087",
+          "convertUsd": 0.084984,
+          "repairUsd": 0.059896,
+          "judgeUsd": 0.029704,
+          "productUsd": 0.14488
+        },
+        {
+          "id": "097",
+          "convertUsd": 0.09106,
+          "repairUsd": 0.07292,
+          "judgeUsd": 0.02856,
+          "productUsd": 0.16398
+        }
+      ],
+      "totals": {
+        "convertUsd": 0.261692,
+        "repairUsd": 0.209752,
+        "judgeUsd": 0.082256,
+        "productUsd": 0.471444,
+        "productInputTokens": 28491,
+        "productOutputTokens": 17874
+      },
+      "meanProductUsd": 0.157148,
+      "repairCostShare": 0.444913924,
+      "hypothetical10000DocumentsUsd": 1571.48
+    },
+    {
+      "arm": "sol-improved",
+      "phase": "phase2",
+      "sourceSha256": "2162b95a5b502a370bd4649947262f45a0f7b87ba8d6e7661c09bc87d60e04d4",
+      "documents": [
+        {
+          "id": "001-current",
+          "convertUsd": 0.088164,
+          "repairUsd": 0.076316,
+          "judgeUsd": 0.03092,
+          "productUsd": 0.16448
+        },
+        {
+          "id": "087",
+          "convertUsd": 0.108188,
+          "repairUsd": 0.0697,
+          "judgeUsd": 0.021068,
+          "productUsd": 0.177888
+        },
+        {
+          "id": "097",
+          "convertUsd": 0.098364,
+          "repairUsd": 0.081928,
+          "judgeUsd": 0.027124,
+          "productUsd": 0.180292
+        }
+      ],
+      "totals": {
+        "convertUsd": 0.294716,
+        "repairUsd": 0.227944,
+        "judgeUsd": 0.079112,
+        "productUsd": 0.52266,
+        "productInputTokens": 32295,
+        "productOutputTokens": 19674
+      },
+      "meanProductUsd": 0.17422,
+      "repairCostShare": 0.43612291,
+      "hypothetical10000DocumentsUsd": 1742.2
+    },
+    {
+      "arm": "astra-improved",
+      "phase": "phase2",
+      "sourceSha256": "e7c62089b8921d5e678263cda635d1783be67ad5b9740f732b8f1b3e48a35ad3",
+      "documents": [
+        {
+          "id": "001-current",
+          "convertUsd": 0.19176,
+          "repairUsd": 0.20132,
+          "judgeUsd": 0.05088,
+          "productUsd": 0.39308
+        },
+        {
+          "id": "087",
+          "convertUsd": 0.14028,
+          "repairUsd": 0.14579,
+          "judgeUsd": 0.04178,
+          "productUsd": 0.28607
+        },
+        {
+          "id": "097",
+          "convertUsd": 0.20289,
+          "repairUsd": 0.2145,
+          "judgeUsd": 0.06836,
+          "productUsd": 0.41739
+        }
+      ],
+      "totals": {
+        "convertUsd": 0.53493,
+        "repairUsd": 0.56161,
+        "judgeUsd": 0.16102,
+        "productUsd": 1.09654,
+        "productInputTokens": 34669,
+        "productOutputTokens": 14997
+      },
+      "meanProductUsd": 0.365513333,
+      "repairCostShare": 0.512165539,
+      "hypothetical10000DocumentsUsd": 3655.133333333
+    },
+    {
+      "arm": "astra-final",
+      "phase": "phase3",
+      "sourceSha256": "a7c5bfad1aa4be3ba1e1ed7f14d88b41fd337f1c0c30e160222cba2488ca7a98",
+      "documents": [
+        {
+          "id": "087",
+          "convertUsd": 0.15233,
+          "repairUsd": 0.16063,
+          "judgeUsd": 0.04281,
+          "productUsd": 0.31296
+        },
+        {
+          "id": "088",
+          "convertUsd": 0.10563,
+          "repairUsd": 0.09594,
+          "judgeUsd": 0.0281,
+          "productUsd": 0.20157
+        },
+        {
+          "id": "090",
+          "convertUsd": 0.16302,
+          "repairUsd": 0.17144,
+          "judgeUsd": 0.04551,
+          "productUsd": 0.33446
+        }
+      ],
+      "totals": {
+        "convertUsd": 0.42098,
+        "repairUsd": 0.42801,
+        "judgeUsd": 0.11642,
+        "productUsd": 0.84899,
+        "productInputTokens": 29874,
+        "productOutputTokens": 11005
+      },
+      "meanProductUsd": 0.282996667,
+      "repairCostShare": 0.504140214,
+      "hypothetical10000DocumentsUsd": 2829.966666667
+    }
+  ],
+  "matchedPhase2": {
+    "astraToSolProductCostRatio": 2.097998699,
+    "astraOutputTokenReduction": 0.237724916,
+    "astraInputCostShare": 0.316167217,
+    "astraFirstPassMeanUsd": 0.17831,
+    "hypotheticalEscalationBreakEvenRate": 0.523355281
+  }
+}

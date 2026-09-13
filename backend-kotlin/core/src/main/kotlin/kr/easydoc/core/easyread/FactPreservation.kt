@@ -15,6 +15,7 @@ package kr.easydoc.core.easyread
 
 /** 원문에서 놓치면 안 되는 사실의 종류. */
 enum class FactKind {
+    DOCUMENT_NAME,
     NUMBER,
     PHONE,
     TIME,
@@ -91,14 +92,17 @@ fun factCoverage(
     val sourceFactCount = sourceFactsRaw.distinctBy { it.kind to it.compareKey }.size
     val draftFacts = extractFacts(draft)
     val draftKeys = draftFacts.mapTo(HashSet()) { it.kind to it.compareKey }
+    val normalizedDraft = normalizeFullWidthDigits(draft).filterNot(Char::isWhitespace)
 
     val missing =
         sourceFactsRaw
             .filterNot { fact ->
-                if (fact.kind == FactKind.DATE) {
+                if (fact.kind == FactKind.DOCUMENT_NAME) {
+                    fact.compareKey in normalizedDraft
+                } else if (fact.kind == FactKind.DATE) {
                     draftFacts.any { it.kind == FactKind.DATE && sameDate(fact, it) }
                 } else {
-                    (fact.kind to fact.compareKey) in draftKeys
+                    (fact.kind to fact.compareKey) in draftKeys || untypedAmountKept(fact, draftKeys)
                 }
             }.distinctBy { it.kind to it.compareKey }
             .map { FactIssue(it.kind, it.displayValue) }
@@ -144,6 +148,7 @@ internal data class ExtractedFact(
     val compareKey: String,
     val displayValue: String,
     val year: Int? = null,
+    val untypedGroupedNumber: Boolean = false,
 ) {
     /** [displayValue] 는 원문·변환문 조각이다 — [SentenceIssue] 와 같은 이유로 값을 찍지 않는다. */
     override fun toString(): String = "ExtractedFact(kind=$kind)"
@@ -153,6 +158,8 @@ internal data class ExtractedFact(
 private data class RawMatch(
     val kind: FactKind,
     val text: String,
+    val untypedGroupedNumber: Boolean = false,
+    val comparisonText: String = text,
 ) {
     /** [text] 는 원문·변환문 조각이다 — [SentenceIssue] 와 같은 이유로 값을 찍지 않는다. */
     override fun toString(): String = "RawMatch(kind=$kind)"
@@ -174,8 +181,16 @@ private data class RawMatch(
 // "숫자·콤마가 아닌 자리에서만 시도"하게 만든다 — 그러면 한 숫자열 뭉치당 시도가 정확히
 // 한 번이라 전체가 O(n) 이다. 정확히 고정 자릿수(`{4}`·`{3,4}`·`{2}` 등)는 되무를 자리가
 // 없어 애초에 대상이 아니다.
+// 공고의 양쪽 작은따옴표와 수집 원문에 HTML 엔티티로 남은 표지도 같은 연도 표지다.
+private const val YEAR_APOSTROPHE = "(?:['‘’]|&rsquo;)"
+
 private val PATTERNS: List<Pair<FactKind, Regex>> =
     listOf(
+        FactKind.DOCUMENT_NAME to
+            Regex(
+                """(?m)^[\h*•-]*+(?:\[[^\r\n\]]{1,40}\]\h*+)?""" +
+                    """[\p{L}0-9(][^\r\n<>:/]{0,160}\.(?:hwpx|hwp|pdf|docx|xlsx)\h*+$""",
+            ),
         FactKind.EMAIL_OR_URL to
             Regex("""(?<![\w.+-])[\w.+-]++@[\w-]++\.[\w.-]++|https?://\S++|www\.\S++"""),
         FactKind.PHONE to Regex("""(?<!\d)(?:0\d{1,2}+-\d{3,4}+-\d{4}+|1\d{3}+-\d{4}+)(?!\d)"""),
@@ -189,7 +204,8 @@ private val PATTERNS: List<Pair<FactKind, Regex>> =
         // 전용 NUMBER/DATE 패턴은 claim 에 실패해 중복 판정이 생기지 않는다.
         FactKind.DATE to
             Regex(
-                """\d{4}+[.\-]\d{1,2}+[.\-]\d{1,2}+|(?:(?:\d{4}+|['’]\d{2}+)년\s*+)?\d{1,2}+월\s*+\d{1,2}+일""",
+                """\d{4}+[.\-]\h*+\d{1,2}+[.\-]\h*+\d{1,2}+|""" +
+                    """(?:(?:\d{4}+|$YEAR_APOSTROPHE\d{2}+)년\s*+)?\d{1,2}+월\s*+\d{1,2}+일""",
             ),
         // 공문 관행 연도 축약 — "’26.9.1."·"'24-3-15" 처럼 날짜의 연도 자리에 아포스트로피
         // (ASCII `'` 또는 U+2019 `’`) + 두 자리 숫자가 온다. 세기 보정(20NN 고정, 00~49 만
@@ -198,7 +214,7 @@ private val PATTERNS: List<Pair<FactKind, Regex>> =
         // (예: 기간 표현 "26년 동안")까지 연도로 오인하면 반대 방향 오탐이 생긴다 — 실측에서
         // 관측된 사례도 전부 아포스트로피가 붙어 있었다. 자릿수가 모두 고정·상한 있는
         // 수량자(`{2}`·`{1,2}`)라 되무를 자리가 없어 lookbehind 가 필요 없다.
-        FactKind.DATE to Regex("""['’]\d{2}+[.\-]\d{1,2}+[.\-]\d{1,2}+"""),
+        FactKind.DATE to Regex("""$YEAR_APOSTROPHE\d{2}+[.\-]\d{1,2}+[.\-]\d{1,2}+"""),
         // 세 번째 축약형 — 연혁 표에 흔한 "’05. 4."·"’15.5"처럼 일(day) 없이 아포스트로피
         // + 두 자리 연도 뒤에 구분자(`.` 또는 `-`)만 오고 그다음이 이어지는 표기(8차 유료
         // 측정, 문서 048). 위의 완전한 세 요소 패턴(연도.월.일)에는 안 걸린다 — 일이 없어서다.
@@ -212,12 +228,12 @@ private val PATTERNS: List<Pair<FactKind, Regex>> =
         // (11.27)가 별개 숫자로 쪼개진다. `claim()` 이 구간을 먼저 점유한 뒤라 이 패턴은
         // 그 구간에서 실패하므로(순서상 이 패턴이 뒤에 있으면) 안전하다. 자릿수가 고정
         // (`{2}`) 이라 되무를 자리가 없어 lookbehind 가 필요 없다.
-        FactKind.NUMBER to Regex("""['’]\d{2}+(?=[.\-])"""),
+        FactKind.NUMBER to Regex("""$YEAR_APOSTROPHE\d{2}+(?=[.\-])"""),
         // 날짜가 아니라 연도 단독 축약("’26년"·"'24년") — 위와 같은 이유로 아포스트로피를
         // 요구한다. 변환문은 이 값을 "2026년"처럼 온전한 4자리 연도로 펴 쓰는데, 그 표기는
         // "년"이 단위 목록([ARABIC_UNIT_ALTERNATION])에 없어 이미 NUMBER(단위 없는 숫자)로
         // 잡힌다 — 그래서 이 축약 표기도 NUMBER 로 잡아야 같은 사실로 비교된다.
-        FactKind.NUMBER to Regex("""['’]\d{2}+년"""),
+        FactKind.NUMBER to Regex("""$YEAR_APOSTROPHE\d{2}+년"""),
         // 배수 단위(만·억·천·백·십)가 하나도 없는 순수 Arabic 숫자 + 원. 배수 단위가 있는
         // 경우는 전부 WORD_AMOUNT(합성 파서, KoreanAmountWords.kt)가 맡는다 — 부분 매치
         // 사고(리뷰 HIGH-2, "5천만원"이 "만원"=10,000 으로 잘못 잡히던 문제)를 막으려면
@@ -226,7 +242,9 @@ private val PATTERNS: List<Pair<FactKind, Regex>> =
         // lookbehind 가 필요한 것은 뒤가 안 이어져도 끝까지 삼키는 `\d++` 뿐이다.
         FactKind.AMOUNT to Regex("""\d{1,3}+(?:,\d{3}+)++\s*+원|(?<!\d)\d++\s*+원"""),
         FactKind.AMOUNT to WORD_AMOUNT,
-        FactKind.PERCENT to Regex("""(?<!\d)\d++(?:\.\d++)?\s*+%"""),
+        FactKind.PERCENT to Regex("""(?<!\d)\d++(?:\.\d++)?\s*+(?:%|퍼센트|프로)"""),
+        // '100분의 50'과 '50%'는 같은 비율이다. 분모가 100인 경우만 통째로 점유한다.
+        FactKind.PERCENT to Regex("""(?<![\d.])100\h*+분의\h*+\d++(?:\.\d++)?"""),
         // 2~4자리 숫자(구분자 없이), 또는 단위가 붙은 한 자리 숫자. 원·%는 위에서 이미
         // 더 구체적인 종류로 가져가므로 이 목록에 넣지 않는다. 단위 문자를 **소비한다**
         // (전에는 lookahead 로 흘려보내 raw.text 에 단위가 안 남았다 — 리뷰 HIGH-1 재현
@@ -284,8 +302,6 @@ internal fun normalizeFullWidthDigits(text: String): String =
         }
     }
 
-internal fun digitsOnly(text: String): String = text.filter { it.isDigit() }
-
 /** [range] 가 비어 있지 않고 아직 아무도 점유하지 않았으면 점유하고 `true` 를 돌려준다. */
 private fun claim(
     claimed: BooleanArray,
@@ -300,25 +316,71 @@ private fun claim(
 private fun extractRawMatches(text: String): List<RawMatch> {
     val claimed = BooleanArray(text.length)
     val results = mutableListOf<RawMatch>()
+    var rangesAdded = false
     for ((kind, regex) in PATTERNS) {
+        if (kind == FactKind.DATE && !rangesAdded) {
+            results += claimedDateRangeMatches(text, claimed)
+            rangesAdded = true
+        }
         for (match in regex.findAll(text)) {
-            if (claim(claimed, match.range)) {
-                results += RawMatch(kind, match.value)
+            val value = if (kind == FactKind.EMAIL_OR_URL) trimReferenceSuffix(match.value) else match.value
+            val range = match.range.first until (match.range.first + value.length)
+            if (claim(claimed, range)) {
+                // 콤마 NUMBER 패턴은 뒤 단위를 소비하지 않는다. '125,300명'에 돈 단위를
+                // 붙여도 된다고 오인하지 않도록, 같은 줄의 뒤 문자가 글자인지 따로 확인한다.
+                val untyped =
+                    kind == FactKind.NUMBER && ',' in match.value && !followedByWord(text, match.range.last + 1)
+                results += RawMatch(kind, value, untyped)
             }
         }
     }
     return results
 }
 
+private fun claimedDateRangeMatches(
+    text: String,
+    claimed: BooleanArray,
+): List<RawMatch> =
+    dateRangeParts(text)
+        .filter { claim(claimed, it.range) }
+        .map { RawMatch(FactKind.DATE, text.substring(it.range), comparisonText = it.canonical) }
+
 private fun compareKeyOf(raw: RawMatch): String =
     when (raw.kind) {
-        FactKind.AMOUNT -> amountValue(raw.text).toString()
-        FactKind.EMAIL_OR_URL -> raw.text.trim().lowercase()
-        FactKind.TIME -> timeMinutes(raw.text)?.toString().orEmpty()
-        FactKind.DATE -> dateCompareKey(expandAbbreviatedYear(raw.text)).orEmpty()
-        FactKind.NUMBER -> numberCompareKey(expandAbbreviatedYear(raw.text))
-        FactKind.PHONE -> digitsOnly(raw.text)
-        FactKind.PERCENT -> percentCompareKey(raw.text)
+        FactKind.DOCUMENT_NAME -> {
+            raw.text
+                .trim()
+                .trimStart('-', '*', '•')
+                .filterNot(Char::isWhitespace)
+        }
+
+        FactKind.AMOUNT -> {
+            amountValue(raw.text).toString()
+        }
+
+        FactKind.EMAIL_OR_URL -> {
+            raw.text.trim().lowercase()
+        }
+
+        FactKind.TIME -> {
+            timeMinutes(raw.text)?.toString().orEmpty()
+        }
+
+        FactKind.DATE -> {
+            dateCompareKey(expandAbbreviatedYear(raw.comparisonText)).orEmpty()
+        }
+
+        FactKind.NUMBER -> {
+            numberCompareKey(expandAbbreviatedYear(raw.text))
+        }
+
+        FactKind.PHONE -> {
+            digitsOnly(raw.text)
+        }
+
+        FactKind.PERCENT -> {
+            percentCompareKey(raw.text)
+        }
     }
 
 /** [expandAbbreviatedYear] 가 인정하는 축약 연도의 상한 — 그 함수 KDoc 참고. */
@@ -328,7 +390,7 @@ private const val ABBREVIATED_YEAR_MAX = 49
 private const val ABBREVIATED_YEAR_CENTURY = 2000
 
 /** 아포스트로피(ASCII `'` 또는 U+2019 `’`) + 두 자리 숫자로 시작하는 접두부. */
-private val ABBREVIATED_YEAR_PREFIX = Regex("""^['’](\d{2}+)""")
+private val ABBREVIATED_YEAR_PREFIX = Regex("""^$YEAR_APOSTROPHE(\d{2}+)""")
 
 /**
  * 공문 관행 연도 축약을 20NN 으로 편다 — [matchText] 가 아포스트로피(ASCII `'` 또는 U+2019
@@ -369,10 +431,10 @@ internal fun extractFacts(text: String): List<ExtractedFact> {
         .map { raw ->
             val year =
                 if (raw.kind == FactKind.DATE) {
-                    dateComponents(expandAbbreviatedYear(raw.text))?.first
+                    dateComponents(expandAbbreviatedYear(raw.comparisonText))?.first
                 } else {
                     null
                 }
-            ExtractedFact(raw.kind, compareKeyOf(raw), raw.text.trim(), year)
+            ExtractedFact(raw.kind, compareKeyOf(raw), raw.text.trim(), year, raw.untypedGroupedNumber)
         }.filter { it.compareKey.isNotEmpty() }
 }

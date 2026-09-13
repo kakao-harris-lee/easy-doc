@@ -16,6 +16,34 @@ class LlmPromptTest {
     private val fixedIds = DocumentIdGenerator { "0123456789ab" }
 
     @Test
+    fun `변환은 고학년 독해 수준과 문맥 보존을 함께 지시한다`() {
+        val prompt = LlmPrompt.forConversion("기한 내 보완하지 않으면 신청이 취소될 수 있습니다.")
+        assertThat(prompt.system).contains("초등학교 5~6학년", "문장 사이", "취소될 수 있습니다")
+        assertThat(prompt.system).doesNotContain("이 규칙에는 예외가 없습니다", "그 자리에서 문장을 끝내고")
+        assertThat(prompt.system).doesNotContain("신청이 취소됩니다", "숫자 개수가 같아야")
+    }
+
+    @Test
+    fun `judge는 사실뿐 아니라 독해 수준과 문맥을 평가한다`() {
+        val prompt = LlmPrompt.forJudge("원문", "짧지만 이해하기 어려운 변환문", emptyList())
+        assertThat(prompt.system).contains("초등학교 5~6학년", "문맥", "조건", "뜻을 설명")
+    }
+
+    @Test
+    fun `judge는 전체 작성 수준과 국소적인 표현 개선을 구분한다`() {
+        val prompt = LlmPrompt.forJudge("원문", "변환문", emptyList())
+        assertThat(prompt.system).contains("문서 전반", "국소적인", "의미 오류")
+        assertThat(prompt.system).doesNotContain("하나라도 어기면", "모든 단어")
+    }
+
+    @Test
+    fun `보정에서도 공식 이름 보존과 이해를 돕는 설명을 지시한다`() {
+        val prompt = LlmPrompt.forRepair(ModelDraft("초안"), emptyList(), sourceText = "원문")
+        assertThat(prompt.system).contains("공식 이름", "원문의 오류", "역할", "서류명")
+        assertThat(prompt.system).contains("일상적인 말", "처음 설명한 뜻을 반복")
+    }
+
+    @Test
     @DisplayName("LlmPrompt 를 만드는 통로가 하나뿐이다")
     fun `생성자가 열려 있지 않다`() {
         val declared =
@@ -65,7 +93,13 @@ class LlmPromptTest {
                 word = "열람",
             )
 
-        val prompt = LlmPrompt.forRepair(ModelDraft("신청을 열람합니다."), listOf(issue), documentIds = fixedIds)
+        val prompt =
+            LlmPrompt.forRepair(
+                ModelDraft("신청을 열람합니다."),
+                listOf(issue),
+                documentIds = fixedIds,
+                sourceText = "원문",
+            )
 
         assertThat(prompt.user).contains("<변환문 id=\"0123456789ab\">")
         assertThat(prompt.user).contains("[고칠 곳]")
@@ -84,6 +118,7 @@ class LlmPromptTest {
                 emptyList(),
                 listOf(fact),
                 fixedIds,
+                sourceText = "원문",
             )
 
         assertThat(prompt.user).contains("[빠진 사실]")

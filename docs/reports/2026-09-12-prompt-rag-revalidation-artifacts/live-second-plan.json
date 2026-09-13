@@ -1,0 +1,20 @@
+{
+  "createdAt": "2026-09-12T02:09:24.465Z",
+  "priorCumulativeUsd": 17.09994,
+  "reservedUsd": 25,
+  "userTotalCapUsd": 50,
+  "newDocuments": 1,
+  "sourceConversionId": "3a0c09fc-3016-4b89-b585-7b6ce95b9977",
+  "sourceChars": 2197,
+  "model": "gpt-6-astra",
+  "effort": "medium",
+  "maxOutputTokens": 64000,
+  "maxWorkerAttempts": 3,
+  "maxProductCallsPerAttempt": 2,
+  "judgeCalls": 0,
+  "reason": "Verify actual TEXT worker path after excluding inferred structure from generation hints; keep stored alignment and genuine file tables.",
+  "conversionId": "8d97e705-0903-4ce8-9e94-ed14b3801558",
+  "status": "completed",
+  "settledCostUsd": 0.13435,
+  "reservationReleased": true
+}

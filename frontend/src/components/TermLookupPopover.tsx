@@ -18,6 +18,7 @@ import type {
   TermStrategy,
 } from '../api/types'
 import { cn } from '../lib/utils'
+import { textareaSelectionRect } from '../review/selectionRect'
 import { Badge } from './ui/Badge'
 import { Button } from './ui/Button'
 
@@ -227,7 +228,7 @@ export function TermLookupPopover({
       selectionEnd: number,
       query: string,
     ) => {
-      const anchorRect = target.getBoundingClientRect()
+      const anchorRect = textareaSelectionRect(target, selectionStart)
       const anchor = clampToViewport(anchorRect)
 
       if (disabledForSessionRef.current) {
@@ -443,6 +444,21 @@ export function TermLookupPopover({
     return () => document.removeEventListener('mousedown', handlePointerDown)
   }, [state, closePopover, containerRef])
 
+  // 화면이나 본문이 스크롤되면 이전 좌표에 선택창을 남기지 않는다.
+  useEffect(() => {
+    if (state === null) return
+    const dismiss = (event: Event) => {
+      if (event.target instanceof Node && panelRef.current?.contains(event.target)) return
+      closePopover(null)
+    }
+    window.addEventListener('scroll', dismiss, true)
+    window.addEventListener('resize', dismiss)
+    return () => {
+      window.removeEventListener('scroll', dismiss, true)
+      window.removeEventListener('resize', dismiss)
+    }
+  }, [state, closePopover])
+
   // 초점 가두기(§11) — 열리는 순간(닫힘→열림 전이) 다이얼로그 안 첫 요소(닫기 버튼)로
   // 초점을 옮긴다. 상태 갱신(loading→success 등)마다 다시 뺏지 않도록 `isOpen`이 실제로
   // 바뀔 때만 돈다.
@@ -575,8 +591,13 @@ export function TermLookupPopover({
       role="dialog"
       aria-modal="true"
       aria-label="쉬운 말 후보"
-      style={{ position: 'fixed', top: anchor.top, left: anchor.left }}
-      className="z-50 w-[min(22rem,90vw)] rounded-[12px] border border-border bg-card p-4 text-card-foreground shadow-lg motion-reduce:transition-none"
+      style={{
+        position: 'fixed',
+        top: anchor.top,
+        left: anchor.left,
+        maxHeight: Math.min(384, window.innerHeight * 0.6, window.innerHeight - anchor.top - 8),
+      }}
+      className="z-50 max-h-[min(60vh,24rem)] w-[min(22rem,90vw)] overflow-y-auto rounded-[12px] border border-border bg-card p-4 text-card-foreground shadow-lg motion-reduce:transition-none"
       onKeyDown={handlePanelKeyDown}
     >
       <div className="mb-2 flex items-start justify-between gap-2">

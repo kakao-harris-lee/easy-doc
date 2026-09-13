@@ -1,0 +1,100 @@
+> Task :api:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :infrastructure:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :application:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :core:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :application:processResources NO-SOURCE
+> Task :infrastructure:processResources UP-TO-DATE
+> Task :infrastructure:processTestFixturesResources UP-TO-DATE
+> Task :api:processResources UP-TO-DATE
+> Task :api:processTestResources NO-SOURCE
+> Task :infrastructure:processTestResources UP-TO-DATE
+> Task :core:compileKotlin UP-TO-DATE
+> Task :core:compileJava NO-SOURCE
+> Task :core:processResources NO-SOURCE
+> Task :core:classes UP-TO-DATE
+> Task :core:jar UP-TO-DATE
+> Task :application:compileKotlin UP-TO-DATE
+> Task :application:compileJava NO-SOURCE
+> Task :application:classes UP-TO-DATE
+> Task :application:jar UP-TO-DATE
+> Task :core:compileTestFixturesKotlin UP-TO-DATE
+> Task :core:compileTestFixturesJava NO-SOURCE
+> Task :core:processTestFixturesResources NO-SOURCE
+> Task :core:testFixturesClasses UP-TO-DATE
+> Task :core:testFixturesJar UP-TO-DATE
+> Task :infrastructure:compileKotlin UP-TO-DATE
+> Task :infrastructure:compileJava NO-SOURCE
+> Task :infrastructure:classes UP-TO-DATE
+> Task :infrastructure:jar UP-TO-DATE
+> Task :infrastructure:compileTestFixturesKotlin UP-TO-DATE
+> Task :infrastructure:compileTestFixturesJava NO-SOURCE
+> Task :infrastructure:testFixturesClasses UP-TO-DATE
+> Task :api:compileKotlin UP-TO-DATE
+> Task :infrastructure:testFixturesJar UP-TO-DATE
+> Task :api:compileJava NO-SOURCE
+> Task :api:classes UP-TO-DATE
+> Task :api:jar UP-TO-DATE
+> Task :infrastructure:compileTestKotlin UP-TO-DATE
+> Task :infrastructure:compileTestJava NO-SOURCE
+> Task :infrastructure:testClasses UP-TO-DATE
+> Task :api:compileTestKotlin
+> Task :api:compileTestJava NO-SOURCE
+> Task :api:testClasses UP-TO-DATE
+
+> Task :infrastructure:test FAILED
+
+TermLookupFixtureTest > top-1 엔트리 정확도, 위험한 applicable, 양성 케이스 무결과율 FAILED
+    java.lang.AssertionError: [무결과를 기대한 '소득'의 잘못된 후보] 
+    Expecting empty but was: [TermCandidate(term=소, easyTerm=소송, strategy=GLOSS, risk=HIGH, definition=null, caution=null, tags=[hanja, needs_review], examples=[], matchKind=COMPOUND_PART, applicable=false, entryId=793)]
+        at kr.easydoc.infrastructure.dictionary.TermLookupFixtureTest.실제 색인이 세 지표 임계값을 만족한다(TermLookupFixtureTest.kt:68)
+
+2 tests completed, 1 failed
+
+> Task :api:test
+
+DictionaryLookupReachTest > 무관한 단어와 여러 단어 선택은 실제 API에서도 후보가 없다() FAILED
+    java.lang.AssertionError: ['소득'에 무관한 후보가 노출되면 안 된다] 
+    Expecting empty but was: [{"applicable"=false, "caution"=null, "definition"=null, "easy_term"="소송", "examples"=[], "match_kind"="compound_part", "risk"="high", "strategy"="gloss", "tags"=["hanja", "needs_review"], "term"="소"}]
+        at kr.easydoc.api.DictionaryLookupReachTest.무관한 단어와 여러 단어 선택은 실제 API에서도 후보가 없다(DictionaryLookupReachTest.kt:79)
+
+2026-09-12T15:32:55.428+09:00  INFO 87495 --- [easy-doc-api] [ionShutdownHook] o.s.boot.tomcat.GracefulShutdown         : Commencing graceful shutdown. Waiting for active requests to complete
+2026-09-12T15:32:56.439+09:00  INFO 87495 --- [easy-doc-api] [tomcat-shutdown] o.s.boot.tomcat.GracefulShutdown         : Graceful shutdown complete
+2026-09-12T15:32:56.442+09:00  INFO 87495 --- [easy-doc-api] [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Shutdown initiated...
+2026-09-12T15:32:56.443+09:00  INFO 87495 --- [easy-doc-api] [ionShutdownHook] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Shutdown completed.
+
+> Task :api:test FAILED
+
+5 tests completed, 1 failed
+
+[Incubating] Problems report is available at: file:///Users/harris/Development/private/easy-doc/backend-kotlin/build/reports/problems/problems-report.html
+
+FAILURE: Build completed with 2 failures.
+
+1: Task failed with an exception.
+-----------
+* What went wrong:
+Execution failed for task ':infrastructure:test'.
+> There were failing tests. See the report at: file:///Users/harris/Development/private/easy-doc/backend-kotlin/infrastructure/build/reports/tests/test/index.html
+
+* Try:
+> Run with --scan to generate a Build Scan (Powered by Develocity).
+==============================================================================
+
+2: Task failed with an exception.
+-----------
+* What went wrong:
+Execution failed for task ':api:test'.
+> There were failing tests. See the report at: file:///Users/harris/Development/private/easy-doc/backend-kotlin/api/build/reports/tests/test/index.html
+
+* Try:
+> Run with --scan to generate a Build Scan (Powered by Develocity).
+==============================================================================
+
+Deprecated Gradle features were used in this build, making it incompatible with Gradle 10.
+
+You can use '--warning-mode all' to show the individual deprecation warnings and determine if they come from your own scripts or plugins.
+
+For more on this, please refer to https://docs.gradle.org/9.1.0/userguide/command_line_interface.html#sec:command_line_warnings in the Gradle documentation.
+
+BUILD FAILED in 11s
+20 actionable tasks: 3 executed, 17 up-to-date

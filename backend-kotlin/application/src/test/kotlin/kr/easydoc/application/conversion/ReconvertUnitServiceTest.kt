@@ -48,8 +48,8 @@ class ReconvertUnitServiceTest {
     private val owner = UUID.randomUUID()
     private val workspaceId = UUID.randomUUID()
 
-    /** 규칙 위반이 남아 있는 1차 변환 결과 — '금일'이 어려운 말 사전에 있다. */
-    private val draftWithIssue = "금일 서류를 내세요."
+    /** 자동 보정이 필요한 이중 피동을 남긴 1차 변환 결과다. */
+    private val draftWithIssue = "오늘 서류가 보여지고 있습니다."
     private val cleanText = "오늘 서류를 내세요."
 
     private fun reply(
@@ -219,10 +219,10 @@ class ReconvertUnitServiceTest {
     }
 
     @Test
-    @DisplayName("보정을 건너뛴 나머지 1회는 환불된다 — 예약 2에서 사용 1만 남는다")
+    @DisplayName("낱말 지적만 있어 보정을 건너뛰면 예약 2에서 사용 1만 남는다")
     fun `건너뛴 보정은 환불된다`() {
         val conversionId = seedDone()
-        val provider = FakeLlmProvider(listOf(reply(cleanText)))
+        val provider = FakeLlmProvider(listOf(reply("금일 서류를 내세요.")))
 
         service(provider).reconvert(owner, conversionId, 0, emptyList(), FINGERPRINT)
 

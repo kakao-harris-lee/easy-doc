@@ -1,0 +1,78 @@
+{
+  "arms": [
+    {
+      "arm": "sonnet-low",
+      "calls": 0,
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "estimatedCostUsd": 0,
+      "reservedUsd": 0,
+      "latencySeconds": 0
+    },
+    {
+      "arm": "sonnet-low-r1",
+      "calls": 9,
+      "inputTokens": 65689,
+      "outputTokens": 15675,
+      "estimatedCostUsd": 0.288128,
+      "reservedUsd": 1.105802,
+      "latencySeconds": 155.479
+    },
+    {
+      "arm": "sonnet-high",
+      "calls": 7,
+      "inputTokens": 52370,
+      "outputTokens": 32955,
+      "estimatedCostUsd": 0.43429,
+      "reservedUsd": 0.867596,
+      "latencySeconds": 283.347
+    },
+    {
+      "arm": "sol-medium",
+      "calls": 9,
+      "inputTokens": 40415,
+      "outputTokens": 19602,
+      "estimatedCostUsd": 0.5537,
+      "reservedUsd": 2.225596,
+      "latencySeconds": 311.529
+    },
+    {
+      "arm": "sol-improved",
+      "calls": 9,
+      "inputTokens": 43838,
+      "outputTokens": 21321,
+      "estimatedCostUsd": 0.601772,
+      "reservedUsd": 2.284452,
+      "latencySeconds": 340.148
+    },
+    {
+      "arm": "astra-improved",
+      "calls": 9,
+      "inputTokens": 47641,
+      "outputTokens": 15623,
+      "estimatedCostUsd": 1.25756,
+      "reservedUsd": 5.86419,
+      "latencySeconds": 252.206
+    },
+    {
+      "arm": "astra-final",
+      "calls": 9,
+      "inputTokens": 39806,
+      "outputTokens": 11347,
+      "estimatedCostUsd": 0.96541,
+      "reservedUsd": 5.61196,
+      "latencySeconds": 209.443
+    }
+  ],
+  "totals": {
+    "calls": 52,
+    "inputTokens": 289759,
+    "outputTokens": 116523,
+    "estimatedCostUsd": 4.10086,
+    "priorMeasurementUsd": 1.464392,
+    "combinedEstimatedCostUsd": 5.565252,
+    "reservedUsd": 17.959596,
+    "reservedPlusPriorCostUsd": 19.423988,
+    "approvedCapUsd": 20
+  }
+}

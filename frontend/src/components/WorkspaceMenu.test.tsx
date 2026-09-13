@@ -36,13 +36,22 @@ beforeEach(() => {
 })
 
 describe('작업 공간 메뉴', () => {
-  it('작업 공간을 모두 보여주고 지금 고른 것을 표시한다', () => {
+  it('하나의 버튼을 펼치면 작업 공간을 보여준다', async () => {
+    const user = userEvent.setup()
     renderMenu({ currentId: 'w2' })
 
-    const menu = screen.getByLabelText('작업 공간')
-    expect(menu).toHaveValue('w2')
-    expect(screen.getByRole('option', { name: '기본 작업 공간' })).toBeInTheDocument()
-    expect(screen.getByRole('option', { name: '민원 안내' })).toBeInTheDocument()
+    expect(screen.getAllByRole('button')).toHaveLength(1)
+    const menu = screen.getByRole('button', { name: '작업 공간: 민원 안내' })
+    await user.click(menu)
+    expect(menu).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByRole('button', { name: '기본 작업 공간' })).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    )
+    expect(screen.getByRole('button', { name: '민원 안내' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
   })
 
   it('다른 작업 공간을 고르면 전환한다', async () => {
@@ -50,15 +59,36 @@ describe('작업 공간 메뉴', () => {
     const select = vi.fn()
     renderMenu({ select })
 
-    await user.selectOptions(screen.getByLabelText('작업 공간'), 'w2')
+    await user.click(screen.getByRole('button', { name: /^작업 공간:/ }))
+    await user.click(screen.getByRole('button', { name: '민원 안내' }))
+    expect(screen.getByRole('button', { name: /^작업 공간:/ })).toHaveFocus()
+    expect(screen.queryByRole('group', { name: '작업 공간 목록' })).not.toBeInTheDocument()
 
     expect(select).toHaveBeenCalledWith('w2')
+  })
+
+  it('Esc, 바깥 클릭, Tab으로 메뉴를 닫는다', async () => {
+    const user = userEvent.setup()
+    renderMenu()
+    const trigger = screen.getByRole('button', { name: /^작업 공간:/ })
+    await user.click(trigger)
+    await user.tab()
+    expect(screen.getByRole('button', { name: '기본 작업 공간' })).toHaveFocus()
+    await user.keyboard('{Escape}')
+    expect(trigger).toHaveFocus()
+    expect(trigger).toHaveAttribute('aria-expanded', 'false')
+    await user.click(trigger)
+    await user.click(document.body)
+    expect(trigger).toHaveAttribute('aria-expanded', 'false')
+    await user.click(trigger)
+    await user.tab({ shift: true })
+    expect(trigger).toHaveAttribute('aria-expanded', 'false')
   })
 
   it('목록을 아직 못 받았으면 아무것도 그리지 않는다', () => {
     renderMenu({ workspaces: [], currentId: null })
 
-    expect(screen.queryByLabelText('작업 공간')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^작업 공간:/ })).not.toBeInTheDocument()
   })
 })
 
@@ -67,6 +97,7 @@ describe('작업 공간 대화상자', () => {
     const user = userEvent.setup()
     renderMenu()
 
+    await user.click(screen.getByRole('button', { name: /^작업 공간:/ }))
     await user.click(screen.getByRole('button', { name: '새로 만들기' }))
 
     expect(screen.getByRole('dialog')).toHaveAccessibleName('새 작업 공간')
@@ -76,9 +107,10 @@ describe('작업 공간 대화상자', () => {
   it('Esc로 닫히고 초점이 열었던 버튼으로 돌아온다', async () => {
     const user = userEvent.setup()
     renderMenu()
-    const trigger = screen.getByRole('button', { name: '새로 만들기' })
+    const trigger = screen.getByRole('button', { name: /^작업 공간:/ })
 
     await user.click(trigger)
+    await user.click(screen.getByRole('button', { name: '새로 만들기' }))
     await user.keyboard('{Escape}')
 
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
@@ -89,6 +121,7 @@ describe('작업 공간 대화상자', () => {
     const user = userEvent.setup()
     renderMenu()
 
+    await user.click(screen.getByRole('button', { name: /^작업 공간:/ }))
     await user.click(screen.getByRole('button', { name: '새로 만들기' }))
     const dialog = screen.getByRole('dialog')
 
@@ -108,6 +141,7 @@ describe('작업 공간 대화상자', () => {
     const user = userEvent.setup()
     const { container } = renderMenu()
 
+    await user.click(screen.getByRole('button', { name: /^작업 공간:/ }))
     await user.click(screen.getByRole('button', { name: '새로 만들기' }))
 
     expect(container).toHaveAttribute('aria-hidden', 'true')
@@ -128,6 +162,7 @@ describe('작업 공간 만들기', () => {
     const create = vi.fn().mockResolvedValue(undefined)
     renderMenu({ create })
 
+    await user.click(screen.getByRole('button', { name: /^작업 공간:/ }))
     await user.click(screen.getByRole('button', { name: '새로 만들기' }))
     await user.type(nameInput(), '  복지 안내  ')
     await user.click(screen.getByRole('button', { name: '만들기' }))
@@ -142,6 +177,7 @@ describe('작업 공간 만들기', () => {
     const create = vi.fn()
     renderMenu({ create })
 
+    await user.click(screen.getByRole('button', { name: /^작업 공간:/ }))
     await user.click(screen.getByRole('button', { name: '새로 만들기' }))
     await user.type(nameInput(), '복지 안내')
     await user.click(screen.getByRole('button', { name: '취소' }))
@@ -155,6 +191,7 @@ describe('작업 공간 만들기', () => {
     const create = vi.fn().mockRejectedValue(new ApiError(409, '같은 이름의 작업 공간이 있습니다'))
     renderMenu({ create })
 
+    await user.click(screen.getByRole('button', { name: /^작업 공간:/ }))
     await user.click(screen.getByRole('button', { name: '새로 만들기' }))
     await user.type(nameInput(), '민원 안내')
     await user.click(screen.getByRole('button', { name: '만들기' }))
@@ -175,6 +212,7 @@ describe('작업 공간 이름 바꾸기', () => {
     const rename = vi.fn().mockResolvedValue(undefined)
     renderMenu({ currentId: 'w2', rename })
 
+    await user.click(screen.getByRole('button', { name: /^작업 공간:/ }))
     await user.click(screen.getByRole('button', { name: '이름 바꾸기' }))
 
     // 기존 이름이 기본값으로 들어가야 한 글자만 고치는 일이 쉬워진다.
@@ -194,6 +232,7 @@ describe('작업 공간 이름 바꾸기', () => {
     const rename = vi.fn().mockRejectedValue(new ApiError(422, '작업 공간 이름을 입력해 주세요'))
     renderMenu({ currentId: 'w2', rename })
 
+    await user.click(screen.getByRole('button', { name: /^작업 공간:/ }))
     await user.click(screen.getByRole('button', { name: '이름 바꾸기' }))
     await user.clear(nameInput())
     await user.type(nameInput(), '   ')

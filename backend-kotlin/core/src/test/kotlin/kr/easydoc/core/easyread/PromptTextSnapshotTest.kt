@@ -179,16 +179,15 @@ class PromptTextSnapshotTest {
         fun instructionConstants(): List<Arguments> =
             listOf(
                 "_ROLE" to ROLE,
-                "_LENGTH_INSTRUCTION" to LENGTH_INSTRUCTION,
                 "_SPLIT_EXAMPLES" to SPLIT_EXAMPLES,
                 "_TABLE_INSTRUCTION" to TABLE_INSTRUCTION,
+                "_MARKER_INSTRUCTION" to MARKER_INSTRUCTION,
                 "_REPLACEMENT_INSTRUCTION" to REPLACEMENT_INSTRUCTION,
                 "_EXPLAIN_INSTRUCTION" to EXPLAIN_INSTRUCTION,
+                "_SOURCE_FIDELITY_INSTRUCTION" to SOURCE_FIDELITY_INSTRUCTION,
                 "_SELF_CHECK_INSTRUCTION" to SELF_CHECK_INSTRUCTION,
-                "_CONDITIONAL_INSTRUCTION" to CONDITIONAL_INSTRUCTION,
                 "INJECTION_GUARD" to INJECTION_GUARD,
                 "_OUTPUT_INSTRUCTION" to OUTPUT_INSTRUCTION,
-                "_REPAIR_ROLE" to REPAIR_ROLE,
                 "_REPAIR_INSTRUCTION" to REPAIR_INSTRUCTION,
             ).map { (key, actual) -> Arguments.of(key, actual) }
 

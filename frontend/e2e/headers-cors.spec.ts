@@ -19,7 +19,7 @@ import {
   newAccount,
   signUpAndLand,
   uniqueWorkspaceName,
-  workspaceSelect,
+  workspaceMenu,
 } from './support/app'
 import { CdpNetworkLog, headerValues } from './support/network'
 
@@ -58,7 +58,7 @@ test.describe('전역 응답 헤더와 CORS', () => {
     // 가입·로그인·조회·생성·재조회를 한 번에 훑는다 — 성공 응답 여러 종을 한 실행에서 본다.
     await signUpAndLand(page, newAccount())
     await answerPrompt(page, '새로 만들기', uniqueWorkspaceName())
-    await expect(workspaceSelect(page).locator('option')).toHaveCount(2)
+    await expect(workspaceMenu(page).locator('[aria-pressed]')).toHaveCount(2)
 
     const observed = log.api()
     expect(observed.length).toBeGreaterThan(0)
@@ -116,7 +116,7 @@ test.describe('전역 응답 헤더와 CORS', () => {
     await answerPrompt(page, '이름 바꾸기', renamed)
     // 이름이 실제로 바뀔 때까지 기다린다. 항목 **개수**로 기다리면 이름 변경은 개수를
     // 바꾸지 않아 단언이 즉시 참이 되고, PATCH 가 끝나기도 전에 관측을 읽게 된다.
-    await expect(workspaceSelect(page).locator('option')).toHaveText([renamed])
+    await expect(workspaceMenu(page).locator('[aria-pressed]')).toHaveText([renamed])
 
     const preflights = log.preflights()
     expect(preflights.length, '브라우저가 프리플라이트를 보내지 않았다').toBeGreaterThan(0)

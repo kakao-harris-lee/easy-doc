@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
+  listAdminFeedback,
   listAdminAnnouncements,
   listAdminInvoiceRequests,
   listAdminWorkspaces,
@@ -12,6 +13,7 @@ import { adminWorkspaceListResponse } from '../test/factories'
 import { AdminPage } from './AdminPage'
 
 vi.mock('../api/admin', () => ({
+  listAdminFeedback: vi.fn(),
   listAdminWorkspaces: vi.fn(),
   readAdminWorkspace: vi.fn(),
   adjustAdminWorkspaceCredits: vi.fn(),
@@ -24,6 +26,7 @@ vi.mock('../api/admin', () => ({
 }))
 
 beforeEach(() => {
+  vi.mocked(listAdminFeedback).mockResolvedValue({ items: [], page: 1, size: 20, total: 0 })
   vi.mocked(listAdminWorkspaces).mockResolvedValue(adminWorkspaceListResponse())
   vi.mocked(listAdminInvoiceRequests).mockResolvedValue({
     items: [],
@@ -40,12 +43,13 @@ afterEach(() => {
 })
 
 describe('AdminPage — 탭 (어드민 최소, 계약 2.25.0)', () => {
-  it('탭 4개를 role=tablist로 보여주고 첫 탭(워크스페이스)이 선택돼 있다', async () => {
+  it('탭 5개를 role=tablist로 보여주고 첫 탭(워크스페이스)이 선택돼 있다', async () => {
     render(<AdminPage />)
 
     const tabs = await screen.findAllByRole('tab')
     expect(tabs.map((tab) => tab.textContent)).toEqual([
       '워크스페이스',
+      '사용자 의견',
       '세금계산서',
       '오류',
       '공지',
@@ -73,7 +77,7 @@ describe('AdminPage — 탭 (어드민 최소, 계약 2.25.0)', () => {
 
     await user.keyboard('{ArrowRight}')
 
-    const invoicesTab = screen.getByRole('tab', { name: '세금계산서' })
+    const invoicesTab = screen.getByRole('tab', { name: '사용자 의견' })
     expect(invoicesTab).toHaveFocus()
     expect(invoicesTab).toHaveAttribute('aria-selected', 'true')
   })

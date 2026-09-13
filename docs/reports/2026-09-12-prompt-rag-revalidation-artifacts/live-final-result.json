@@ -1,0 +1,31 @@
+{
+  "conversionId": "8d97e705-0903-4ce8-9e94-ed14b3801558",
+  "url": "http://localhost:8080/conversions/8d97e705-0903-4ce8-9e94-ed14b3801558",
+  "sourceChars": 2197,
+  "outputChars": 3119,
+  "sourceFormat": "text",
+  "model": "gpt-6-astra",
+  "effort": "medium",
+  "inputTokens": 3375,
+  "outputTokens": 2012,
+  "costUsd": 0.13435,
+  "latencyMs": 32922,
+  "attempts": 1,
+  "productCalls": 1,
+  "repairCalls": 0,
+  "judgeCalls": 0,
+  "outcome": "completed",
+  "cumulativeUsd": 17.23429,
+  "userCapUsd": 50,
+  "outputArtifact": "live-final-output.txt",
+  "outputCapture": "Read textarea value through supported Chrome DOM API, transcribed unchanged; browser and artifact UTF-16 length 3119 and Java-style checksum 681713535 agree.",
+  "outputSha256": "bbba02f0c07512532686c5585e376ed3022cfaa0a687ba771d7ea48b130ad68f",
+  "observations": [
+    "One continuous result textarea; source stays readonly.",
+    "Pasted table reorganized into six household-size sections with labeled income and health-insurance values.",
+    "Eligibility exclusions, OR alternatives, document conditions, amount relationships, submitting deadline and contacts preserved by direct reading.",
+    "Source inconsistent 2024/2025 dates and 7-month label preserved, not silently corrected.",
+    "Some official names and local terms such as 공황 and 판정위원회 remain; no claim that every word is familiar.",
+    "TXT download action displayed successful download notice; no human-review save or feedback was submitted."
+  ]
+}

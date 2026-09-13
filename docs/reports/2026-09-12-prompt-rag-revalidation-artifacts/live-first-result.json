@@ -1,0 +1,26 @@
+{
+  "conversionId": "647beb22-f6b3-4f80-9d1c-aec399b45599",
+  "sourceFormat": "text",
+  "sourceUnits": 204,
+  "inferredListUnits": 47,
+  "model": "gpt-6-astra",
+  "effort": "medium",
+  "inputTokens": 3396,
+  "outputTokens": 1831,
+  "costUsd": 0.12551,
+  "latencyMs": 29440,
+  "attempts": 1,
+  "outcome": "completed",
+  "quality": "Integration mismatch: many inferred list runs add global line-count preservation; pasted table remains a vertical list of values.",
+  "cumulativeUsd": 17.09994,
+  "observedVia": "Chrome accessibility tree and local llm_calls/conversion_jobs/documents metadata",
+  "dictionaryLookup": {
+    "selected": "시술은",
+    "match": "정확히 일치",
+    "candidates": 1,
+    "strategy": "설명 추가",
+    "definition": "의료 기구나 기술을 써서 몸의 병이나 상처를 치료하는 일",
+    "verified": "Chrome screenshot; popover displays updated runtime dictionary definition; no edit/save was submitted."
+  },
+  "inferredListRuns": 47
+}

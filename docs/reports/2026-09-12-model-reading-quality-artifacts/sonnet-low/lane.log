@@ -1,0 +1,63 @@
+> Task :infrastructure:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :core:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :application:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :application:processResources NO-SOURCE
+> Task :infrastructure:processResources
+> Task :infrastructure:processTestFixturesResources
+> Task :infrastructure:processTestResources
+> Task :core:compileKotlin FROM-CACHE
+> Task :core:compileJava NO-SOURCE
+> Task :core:processResources NO-SOURCE
+> Task :core:classes UP-TO-DATE
+> Task :core:jar
+> Task :core:compileTestFixturesKotlin FROM-CACHE
+> Task :core:compileTestFixturesJava NO-SOURCE
+> Task :core:processTestFixturesResources NO-SOURCE
+> Task :core:testFixturesClasses UP-TO-DATE
+> Task :core:testFixturesJar
+> Task :application:compileKotlin FROM-CACHE
+> Task :application:compileJava NO-SOURCE
+> Task :application:classes UP-TO-DATE
+> Task :application:jar
+> Task :infrastructure:compileKotlin FROM-CACHE
+> Task :infrastructure:compileJava NO-SOURCE
+> Task :infrastructure:classes
+> Task :infrastructure:jar
+> Task :infrastructure:compileTestFixturesKotlin FROM-CACHE
+> Task :infrastructure:compileTestFixturesJava NO-SOURCE
+> Task :infrastructure:testFixturesClasses
+> Task :infrastructure:testFixturesJar
+> Task :infrastructure:compileTestKotlin FROM-CACHE
+> Task :infrastructure:compileTestJava NO-SOURCE
+> Task :infrastructure:testClasses
+> Task :infrastructure:testLlm FAILED
+
+[Incubating] Problems report is available at: file:///private/tmp/easydoc-model-quality-20260912/phase1/backend-kotlin/build/reports/problems/problems-report.html
+
+FAILURE: Build failed with an exception.
+
+* What went wrong:
+A problem was found with the configuration of task ':infrastructure:testLlm' (type 'Test').
+  - Type 'org.gradle.api.tasks.testing.Test' property 'goldenConversions' specifies directory '/private/tmp/easydoc-model-quality-20260912/phase1/data/golden/conversions' which doesn't exist.
+    
+    Reason: An input file was expected to be present but it doesn't exist.
+    
+    Possible solutions:
+      1. Make sure the directory exists before the task is called.
+      2. Make sure that the task which produces the directory is declared as an input.
+    
+    For more information, please refer to https://docs.gradle.org/9.1.0/userguide/validation_problems.html#input_file_does_not_exist in the Gradle documentation.
+
+* Try:
+> Make sure the directory exists before the task is called
+> Make sure that the task which produces the directory is declared as an input
+> Run with --scan to generate a Build Scan (Powered by Develocity).
+
+Deprecated Gradle features were used in this build, making it incompatible with Gradle 10.
+
+You can use '--warning-mode all' to show the individual deprecation warnings and determine if they come from your own scripts or plugins.
+
+For more on this, please refer to https://docs.gradle.org/9.1.0/userguide/command_line_interface.html#sec:command_line_warnings in the Gradle documentation.
+
+BUILD FAILED in 1s
+15 actionable tasks: 9 executed, 6 from cache

@@ -1,0 +1,46 @@
+{
+  "closedAt": "2026-09-12T01:28:13.100Z",
+  "arms": [
+    {
+      "arm": "baseline",
+      "costUsd": 1.3083699999999998
+    },
+    {
+      "arm": "focused-final",
+      "costUsd": 0.5166299999999999
+    },
+    {
+      "arm": "focused-rag",
+      "costUsd": 0.50742
+    },
+    {
+      "arm": "lean-no-rag",
+      "costUsd": 0.9264500000000001
+    },
+    {
+      "arm": "lean-rag",
+      "costUsd": 1.01229
+    },
+    {
+      "arm": "reference-rag",
+      "costUsd": 0.98501
+    },
+    {
+      "arm": "reference-short",
+      "costUsd": 0.54067
+    },
+    {
+      "arm": "reference-sol-high",
+      "costUsd": 0.724872
+    },
+    {
+      "arm": "reference-sol",
+      "costUsd": 0.412672
+    }
+  ],
+  "settledCostUsd": 15.486626,
+  "nextBatchCapUsd": 9.1,
+  "liveSmokeReservedUsd": 25,
+  "combinedWorstCaseUsd": 49.586625999999995,
+  "userCapUsd": 50
+}

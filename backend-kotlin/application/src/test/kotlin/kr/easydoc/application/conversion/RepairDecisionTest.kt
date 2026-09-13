@@ -7,6 +7,20 @@ import org.junit.jupiter.api.Test
 
 /** 보정 채택 판정식(CNV-04) — 인벤토리 §3.1 (다). */
 class RepairDecisionTest {
+    @Test
+    fun `잘못된 사실을 복원하는 보정은 문체 지적보다 우선한다`() {
+        val context = "신청한 모든 사람은 발표일에 안내된 결과와 다음에 해야 하는 일을 확인하세요."
+        val decision =
+            decideRepairAdoption(
+                source = "발표일은 2026. 4. 11.입니다. $context",
+                original = "발표일은 2027년 4월 11일입니다.",
+                candidate = "발표일은 2026년 4월 11일로 보여지고 있습니다. $context",
+            )
+        assertThat(decision.candidateIssueCount).isGreaterThan(decision.originalIssueCount)
+        assertThat(decision.factsMissingAfter).isZero()
+        assertThat(decision.accepted).isTrue()
+    }
+
     /** 규칙 위반이 없는 문장. 두 축을 섞지 않기 위해 건수는 항상 0으로 고정한다. */
     private val plain = "오늘 서류를 내세요."
 

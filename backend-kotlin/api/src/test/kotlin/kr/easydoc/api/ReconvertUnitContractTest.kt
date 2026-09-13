@@ -95,7 +95,7 @@ class ReconvertUnitContractTest {
     @DisplayName("보정이 필요한 1차 결과 → llm_calls_used 가 2다")
     fun `보정 경로는 llm_calls_used 가 2다`() {
         val (owner, conversionId) = doneConversion(text = "금일 서류를 제출하십시오.")
-        provider.willReturn(FakeLlmTurn.Reply("금일 서류를 내세요."), FakeLlmTurn.Reply("금일 서류를 내세요."))
+        provider.willReturn(FakeLlmTurn.Reply("오늘 서류가 보여지고 있습니다."), FakeLlmTurn.Reply("오늘 서류를 내세요."))
 
         val response = reconvert(owner, conversionId, 0, VALID_BODY)
 

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -699,6 +699,34 @@ describe('업로드 화면', () => {
     // 대표 행동은 여전히 제출 버튼 하나뿐이다(§5.3, §14) — 제안은 링크로만 나타난다.
     expect(screen.getAllByRole('button', { name: '쉬운 글 초안 만들기' })).toHaveLength(1)
     expect(within(suggestion).queryByRole('button')).not.toBeInTheDocument()
+  })
+
+  it('검수가 모두 끝났으면 홈에 완료 문서 안내와 링크를 표시하지 않는다', async () => {
+    vi.mocked(listDocuments).mockResolvedValue(
+      documentPage([
+        documentItem({
+          status: 'done',
+          conversion_id: 'c1',
+          reviewed_at: null,
+          feedback_submitted_at: '2026-09-12T01:00:00Z',
+          title: '완료 문서',
+        }),
+        documentItem({
+          id: 'd2',
+          status: 'done',
+          conversion_id: 'c2',
+          reviewed_at: '2026-09-12T01:00:00Z',
+          feedback_submitted_at: null,
+        }),
+      ]),
+    )
+    await act(async () => {
+      renderPage()
+    })
+    expect(listDocuments).toHaveBeenCalled()
+    expect(screen.queryByRole('complementary', { name: '다음 할 일' })).not.toBeInTheDocument()
+    expect(screen.queryByText('검수한 내용을 파일로 내려받을 수 있습니다')).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /문서 열기/ })).not.toBeInTheDocument()
   })
 
   it('목록 조회가 실패해도 문서 등록은 그대로 동작한다', async () => {

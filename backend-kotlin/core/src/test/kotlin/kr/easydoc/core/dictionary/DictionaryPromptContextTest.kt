@@ -6,12 +6,7 @@ import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 
-/**
- * 프롬프트 컨텍스트 블록의 회귀 테스트 — `dictionary/DESIGN.md` §7.2.
- *
- * **출력 문자열은 계약이다.** 섹션 제목·머리말·잘림 안내는 참조 구현(`lookup.py`)과 한 글자도
- * 달라선 안 되므로, 여기서는 `contains` 가 아니라 통짜 비교로 고정한다.
- */
+/** Kotlin 독해 정책의 컨텍스트 렌더링과 예산 경계를 검증한다. */
 class DictionaryPromptContextTest {
     /**
      * 문자 예산을 끈 정책. [DictionaryContextPolicy] 의 기본값은 실측 정책값이라
@@ -19,6 +14,26 @@ class DictionaryPromptContextTest {
      * 잘려 나가 렌더링 자체를 볼 수 없다. 예산 동작은 아래 Budget 절이 따로 본다.
      */
     private val unlimited = DictionaryContextPolicy(maxChars = null, maxCharsRatio = null)
+
+    @Test
+    fun `생성 자료에 다른 사업의 주의 문구를 주입하지 않는다`() {
+        val index =
+            DictionaryFixture()
+                .add(
+                    DictionaryEntry(
+                        term = "지원",
+                        easyTerm = "도움",
+                        strategy = ReplaceStrategy.GLOSS,
+                        risk = RiskLevel.LOW,
+                        priority = 120,
+                        definition = "필요한 일을 도와줌",
+                        caution = "다른 사업에서는 월 3만 원을 냅니다.",
+                    ),
+                ).build()
+        val context = index.buildPromptContext("지원을 받습니다.", unlimited)
+        assertThat(context).contains("도움", "필요한 일을 도와줌")
+        assertThat(context).doesNotContain("3만 원", "다른 사업", "바꿔 쓰세요", "절대 바꾸지")
+    }
 
     @Nested
     @DisplayName("세 구역 렌더링")
@@ -53,18 +68,18 @@ class DictionaryPromptContextTest {
 
             val expected =
                 """
-                ## 이 문서에 나온 어려운 말 (반드시 아래 지침대로 처리하세요)
+                ## 어려운 말 참고 (문맥에 맞는 뜻만 사용하세요)
 
-                ### 바꿔 쓰세요
-                - 내방 → 방문
+                ### 쉬운 표현 후보
+                - 내방 — 뜻: 방문
+                  설명: 찾아옴
 
-                ### 원래 말은 남기고, 바로 다음 문장에서 쉽게 풀어 설명하세요 (원래 말을 지우거나 괄호로 붙이지 마세요)
+                ### 뜻풀이 참고
                 「뜻:」은 설명에 쓸 힌트일 뿐입니다. 그 말을 원래 말 자리에 넣지 마세요. 힌트가 어색한 말이면 자연스러운 다른 표현으로 풀어 쓰세요.
                 - 과태료 — 뜻: 정해진 날짜보다 늦어서 더 내는 돈
-                  이유: 정해진 날짜를 넘겨서 더 내게 되는 돈입니다.
-                  주의: 벌금과는 법적으로 다른 개념입니다. 바꾸지 말고 그대로 쓰세요.
+                  설명: 정해진 날짜를 넘겨서 더 내게 되는 돈입니다.
 
-                ### 절대 바꾸지 마세요
+                ### 공식 이름 참고
                 """.trimIndent() + "\n"
             assertThat(context).isEqualTo(expected)
         }
@@ -73,7 +88,7 @@ class DictionaryPromptContextTest {
         @DisplayName("문서에 없는 용어는 싣지 않는다")
         fun `등장하지 않은 용어는 빠진다`() {
             val context = index.buildPromptContext("내방을 하실 때", unlimited)
-            assertThat(context).contains("- 내방 → 방문")
+            assertThat(context).contains("- 내방 — 뜻: 방문")
             assertThat(context).doesNotContain("과태료")
         }
 
@@ -81,7 +96,7 @@ class DictionaryPromptContextTest {
         @DisplayName("같은 엔트리가 여러 번 나와도 한 번만 싣는다")
         fun `엔트리 기준으로 중복을 제거한다`() {
             val context = index.buildPromptContext("내방을 하실 때. 내방 시 확인하세요.", unlimited)
-            assertThat(context.split("- 내방 → 방문")).hasSize(2)
+            assertThat(context.split("- 내방 — 뜻: 방문")).hasSize(2)
         }
     }
 
@@ -126,8 +141,7 @@ class DictionaryPromptContextTest {
         fun `GLOSS 구역에 안내 문장이 붙는다`() {
             val context = index.buildPromptContext(text, unlimited)
             val expectedBlock =
-                "### 원래 말은 남기고, 바로 다음 문장에서 쉽게 풀어 설명하세요 " +
-                    "(원래 말을 지우거나 괄호로 붙이지 마세요)\n" +
+                "### 뜻풀이 참고\n" +
                     "「뜻:」은 설명에 쓸 힌트일 뿐입니다. 그 말을 원래 말 자리에 넣지 마세요. " +
                     "힌트가 어색한 말이면 자연스러운 다른 표현으로 풀어 쓰세요.\n" +
                     "- 환수 — 뜻: 되거둠"
@@ -139,8 +153,7 @@ class DictionaryPromptContextTest {
         fun `GLOSS 항목이 없어도 안내 문장이 붙는다`() {
             val context = index.buildPromptContext("내방하세요.", unlimited)
             val expectedBlock =
-                "### 원래 말은 남기고, 바로 다음 문장에서 쉽게 풀어 설명하세요 " +
-                    "(원래 말을 지우거나 괄호로 붙이지 마세요)\n" +
+                "### 뜻풀이 참고\n" +
                     "「뜻:」은 설명에 쓸 힌트일 뿐입니다. 그 말을 원래 말 자리에 넣지 마세요. " +
                     "힌트가 어색한 말이면 자연스러운 다른 표현으로 풀어 쓰세요.\n"
             assertThat(context).contains(expectedBlock)
@@ -154,8 +167,8 @@ class DictionaryPromptContextTest {
                 "「뜻:」은 설명에 쓸 힌트일 뿐입니다. 그 말을 원래 말 자리에 넣지 마세요. " +
                     "힌트가 어색한 말이면 자연스러운 다른 표현으로 풀어 쓰세요."
             assertThat(context.split(noteLine)).hasSize(2) // 딱 한 번만 등장 = GLOSS 구역뿐
-            val substituteSection = context.substringAfter("### 바꿔 쓰세요").substringBefore("###")
-            val keepSection = context.substringAfterLast("### 절대 바꾸지 마세요")
+            val substituteSection = context.substringAfter("### 쉬운 표현 후보").substringBefore("###")
+            val keepSection = context.substringAfterLast("### 공식 이름 참고")
             assertThat(substituteSection).doesNotContain(noteLine)
             assertThat(keepSection).doesNotContain(noteLine)
         }
@@ -250,21 +263,21 @@ class DictionaryPromptContextTest {
          */
         private val skeleton =
             """
-            ## 이 문서에 나온 어려운 말 (반드시 아래 지침대로 처리하세요)
+            ## 어려운 말 참고 (문맥에 맞는 뜻만 사용하세요)
 
-            ### 바꿔 쓰세요
+            ### 쉬운 표현 후보
 
-            ### 원래 말은 남기고, 바로 다음 문장에서 쉽게 풀어 설명하세요 (원래 말을 지우거나 괄호로 붙이지 마세요)
+            ### 뜻풀이 참고
             「뜻:」은 설명에 쓸 힌트일 뿐입니다. 그 말을 원래 말 자리에 넣지 마세요. 힌트가 어색한 말이면 자연스러운 다른 표현으로 풀어 쓰세요.
 
-            ### 절대 바꾸지 마세요
+            ### 공식 이름 참고
             """.trimIndent() + "\n"
 
         /**
          * 사전 용어가 하나도 없는 문서. 비율 상한(1.0)이 골격(208자, 2026-09-09 GLOSS 안내
          * 줄 추가로 130자에서 늘었다)보다 커지도록 충분히 길다.
          */
-        private val noTerms = "이 안내문에는 사전에 실린 어려운 말이 하나도 나오지 않습니다. ".repeat(6)
+        private val noTerms = "이 안내문에는 사전에 실린 어려운 말이 하나도 나오지 않습니다. ".repeat(12)
 
         @Test
         @DisplayName("빈 문자열이 아니라 세 구역 골격을 돌려준다")
@@ -274,7 +287,6 @@ class DictionaryPromptContextTest {
             val context = index.buildPromptContext(noTerms, DictionaryContextPolicy())
             assertThat(context).isNotEmpty()
             assertThat(context).isEqualTo(skeleton)
-            assertThat(charCountOf(context)).isEqualTo(208)
         }
 
         @Test
@@ -315,8 +327,8 @@ class DictionaryPromptContextTest {
                 .buildPromptContext("${entry.term} 안내입니다.", unlimited)
 
         @Test
-        @DisplayName("substitute + risk none 은 최소 상세도 — 지시문 한 줄뿐이다")
-        fun `substitute 는 이유 줄을 붙이지 않는다`() {
+        @DisplayName("substitute도 문맥 판단을 위한 정의를 제공한다")
+        fun `substitute 도 정의만 싣는다`() {
             val context =
                 contextFor(
                     DictionaryEntry(
@@ -326,17 +338,17 @@ class DictionaryPromptContextTest {
                         risk = RiskLevel.NONE,
                         priority = 120,
                         definition = "가지고 옴",
-                        caution = "이 줄은 나오면 안 된다",
+                        caution = "문맥에 맞는 뜻인지 확인하세요.",
                     ),
                 )
-            assertThat(context).contains("- 지참 → 가져오기")
-            assertThat(context).doesNotContain("이유:")
+            assertThat(context).contains("- 지참 — 뜻: 가져오기")
+            assertThat(context).contains("설명: 가지고 옴")
             assertThat(context).doesNotContain("주의:")
         }
 
         @Test
         @DisplayName("risk high 는 전략과 무관하게 최대 상세도로 올린다")
-        fun `고위험 substitute 도 이유와 주의를 싣는다`() {
+        fun `고위험 substitute 도 정의만 싣는다`() {
             val context =
                 contextFor(
                     DictionaryEntry(
@@ -349,13 +361,13 @@ class DictionaryPromptContextTest {
                         caution = "금액 표기를 함께 확인하세요.",
                     ),
                 )
-            assertThat(context).contains("  이유: 세금을 물림")
-            assertThat(context).contains("  주의: 금액 표기를 함께 확인하세요.")
+            assertThat(context).contains("  설명: 세금을 물림")
+            assertThat(context).doesNotContain("  주의: 금액 표기를 함께 확인하세요.")
         }
 
         @Test
-        @DisplayName("gloss + risk low 는 중간 상세도 — 주의 줄은 붙지 않는다")
-        fun `중간 상세도는 이유까지만 싣는다`() {
+        @DisplayName("gloss도 정의를 제공하고 검수 메모는 제외한다")
+        fun `gloss 는 정의만 싣는다`() {
             val context =
                 contextFor(
                     DictionaryEntry(
@@ -365,11 +377,11 @@ class DictionaryPromptContextTest {
                         risk = RiskLevel.LOW,
                         priority = 130,
                         definition = "소득이 기준보다 조금 높은",
-                        caution = "이 줄은 나오면 안 된다",
+                        caution = "문맥에 맞는 뜻인지 확인하세요.",
                     ),
                 )
-            assertThat(context).contains("  이유: 소득이 기준보다 조금 높은")
-            assertThat(context).doesNotContain("주의:")
+            assertThat(context).contains("  설명: 소득이 기준보다 조금 높은")
+            assertThat(context).doesNotContain("주의: 문맥에 맞는 뜻인지 확인하세요.")
         }
 
         @Test
@@ -387,7 +399,7 @@ class DictionaryPromptContextTest {
                     ),
                 )
             assertThat(context).contains("- 내방 — 뜻: 찾아옴")
-            assertThat(context).doesNotContain("이유:")
+            assertThat(context).doesNotContain("설명:")
         }
 
         @Test
@@ -405,8 +417,8 @@ class DictionaryPromptContextTest {
                         caution = "법령명은 절대 바꾸지 않습니다.",
                     ),
                 )
-            assertThat(context).contains("- 국민기초생활 보장법\n  이유: 법 이름입니다.")
-            assertThat(context).contains("  주의: 법령명은 절대 바꾸지 않습니다.")
+            assertThat(context).contains("- 국민기초생활 보장법\n  설명: 법 이름입니다.")
+            assertThat(context).doesNotContain("  주의: 법령명은 절대 바꾸지 않습니다.")
             assertThat(context).doesNotContain("→")
         }
     }
@@ -475,7 +487,7 @@ class DictionaryPromptContextTest {
         }
 
         @Test
-        @DisplayName("maxTerms 잘림은 risk → priority 내림차순으로 상위만 남긴다")
+        @DisplayName("maxTerms 잘림은 risk — 뜻: priority 내림차순으로 상위만 남긴다")
         fun `중요도 순으로 남긴다`() {
             val context = index.buildPromptContext(text, unlimited.copy(maxTerms = 4, minSubstitute = 0))
             assertThat(context).contains("- 가가", "- 나나", "- 다다", "- 라라")
@@ -486,7 +498,7 @@ class DictionaryPromptContextTest {
         @DisplayName("min_substitute 예약석은 maxTerms 잘림에서 보호된다")
         fun `예약석이 maxTerms 잘림을 견딘다`() {
             val context = index.buildPromptContext(text, unlimited.copy(maxTerms = 4, minSubstitute = 2))
-            assertThat(context).contains("- 마마 → 쉬운마마", "- 바바 → 쉬운바바")
+            assertThat(context).contains("- 마마 — 뜻: 쉬운마마", "- 바바 — 뜻: 쉬운바바")
             assertThat(context).doesNotContain("- 다다", "- 라라")
         }
 
@@ -498,7 +510,7 @@ class DictionaryPromptContextTest {
                 val context =
                     index.buildPromptContext(text, unlimited.copy(maxChars = budget, minSubstitute = 2))
                 val shownOthers = nonReservedTerms.filter { context.contains("- $it") }
-                if (!context.contains("- 마마 → ")) {
+                if (!context.contains("- 마마 — 뜻: ")) {
                     assertThat(shownOthers)
                         .withFailMessage(
                             "예약석(마마)이 비예약석보다 먼저 제거됐다. 예산 %s 에서 남은 항목: %s",
@@ -521,8 +533,9 @@ class DictionaryPromptContextTest {
                 val context = index.buildPromptContext(text, unlimited.copy(maxChars = budget))
                 if (context.contains("- 다다")) {
                     assertThat(context)
-                        .withFailMessage("keep 항목이 예산 %s 에서 이유·주의를 잃었다:%n%s", budget, context)
-                        .contains("  이유: 바꾸면 안 되는 이름입니다.", "  주의: 제도 명칭이라 그대로 두세요.")
+                        .withFailMessage("keep 항목이 예산 %s 에서 정의를 잃었다:%n%s", budget, context)
+                        .contains("  설명: 바꾸면 안 되는 이름입니다.")
+                        .doesNotContain("주의:")
                 }
             }
         }
@@ -543,7 +556,7 @@ class DictionaryPromptContextTest {
         @DisplayName("항목을 다 비워도 물리적 하한을 못 맞추면 최선을 돌려준다")
         fun `하한 아래 예산에서도 블록을 돌려준다`() {
             val context = index.buildPromptContext(text, unlimited.copy(maxChars = 1))
-            assertThat(context).contains("## 이 문서에 나온 어려운 말")
+            assertThat(context).contains("## 어려운 말 참고")
             assertThat(charCountOf(context)).isGreaterThan(1)
         }
 
@@ -616,11 +629,8 @@ class DictionaryPromptContextTest {
         fun `검수 완료 예문을 우선한다`() {
             val context = index.buildPromptContext(text, unlimited)
             assertThat(context).contains("### 참고 예문")
-            // 3번만 검수 완료라, priority 가 더 낮은 '바바'의 예문인데도 맨 앞에 온다.
-            assertThat(context.indexOf("- 전: 3번")).isLessThan(context.indexOf("- 전: 1번"))
-            // 검수되지 않은 것끼리는 엔트리 priority 순 — '마마'(150)가 '바바'(140)보다 먼저다.
-            assertThat(context.indexOf("- 전: 1번")).isLessThan(context.indexOf("- 전: 2번"))
-            assertThat(context).doesNotContain("- 전: 4번")
+            assertThat(context).contains("- 전: 3번")
+            assertThat(context).doesNotContain("- 전: 1번", "- 전: 2번", "- 전: 4번")
         }
 
         @Test
@@ -633,7 +643,7 @@ class DictionaryPromptContextTest {
             val reduced =
                 index.buildPromptContext(text, unlimited.copy(maxChars = budgetedCharCount(full) - 1))
 
-            assertThat(reduced).contains("- 마마 → 쉬운마마", "- 바바 → 쉬운바바")
+            assertThat(reduced).contains("- 마마 — 뜻: 쉬운마마", "- 바바 — 뜻: 쉬운바바")
             assertThat(reduced.split("  후: ")).hasSizeLessThan(full.split("  후: ").size)
         }
 
@@ -649,7 +659,7 @@ class DictionaryPromptContextTest {
                             strategy = ReplaceStrategy.GLOSS,
                             risk = RiskLevel.HIGH,
                             priority = 190,
-                            examples = listOf(exampleAt(9)),
+                            examples = listOf(exampleAt(9).copy(isGolden = true)),
                         ),
                     ).add(
                         DictionaryEntry(
@@ -658,7 +668,7 @@ class DictionaryPromptContextTest {
                             strategy = ReplaceStrategy.SUBSTITUTE,
                             risk = RiskLevel.NONE,
                             priority = 150,
-                            examples = listOf(exampleAt(1)),
+                            examples = listOf(exampleAt(1).copy(isGolden = true)),
                         ),
                     ).build()
 

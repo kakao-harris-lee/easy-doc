@@ -35,6 +35,13 @@ import java.time.Clock
 @Configuration(proxyBeanMethods = false)
 class AdminConfiguration {
     @Bean
+    @org.springframework.context.annotation.Profile("!migrate")
+    fun adminFeedbackQuery(
+        jdbcClient: JdbcClient,
+        cipher: kr.easydoc.application.crypto.ContentCipher,
+    ): kr.easydoc.application.admin.AdminFeedbackQuery = JdbcAdminFeedbackQuery(jdbcClient, cipher)
+
+    @Bean
     fun adminAccessRepository(jdbcClient: JdbcClient): AdminAccessRepository = JdbcAdminAccessRepository(jdbcClient)
 
     @Bean

@@ -373,7 +373,13 @@ class EnvelopeRotationTest {
             .describedAs("봉인 열이 하나도 없다 — 이 대조가 0건을 훑고 통과한다")
             .isNotEmpty()
 
-        val uncovered = EncryptedField.entries.filterNot { field -> field in rotationOf(field) }
+        // Billing envelopes have a JDBC CAS rotation verified by TossStoreTest.
+        val documentFields =
+            EncryptedField.entries.filterNot {
+                it in
+                    setOf(EncryptedField.BILLING_SESSION, EncryptedField.BILLING_ORDER)
+            }
+        val uncovered = documentFields.filterNot { field -> field in rotationOf(field) }
 
         assertThat(uncovered)
             .withFailMessage {
@@ -394,6 +400,8 @@ class EnvelopeRotationTest {
 
         val outcome =
             when (field) {
+                EncryptedField.BILLING_SESSION, EncryptedField.BILLING_ORDER -> error("결제 회전은 TossStoreTest에서 검증한다")
+
                 EncryptedField.DOCUMENT_SOURCE_TEXT -> world.rotation.rotateDocument(DOCUMENT)
 
                 EncryptedField.DOCUMENT_ORIGINAL_BYTES -> world.rotation.rotateDocumentOriginal(DOCUMENT)

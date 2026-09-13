@@ -48,6 +48,19 @@ class OpenAiProviderTest {
         assertThat(body.path("input").stringValue("")).contains("신청자")
         assertThat(body.path("max_output_tokens").asInt()).isEqualTo(4_096)
         assertThat(body.path("store").asBoolean()).isFalse()
+        assertThat(body.has("reasoning")).isFalse()
+    }
+
+    @Test
+    fun `추론 강도를 Responses API로 전달한다`() {
+        server.replyWith(body = successBody())
+        OpenAiProvider(settings().copy(model = "gpt-5.6-sol", effort = OpenAiEffort.HIGH))
+            .complete(conversionPrompt())
+
+        val body = json.readTree(server.singleRequest().body)
+        assertThat(body.path("reasoning").path("effort").stringValue("")).isEqualTo("high")
+        assertThat(body.path("store").asBoolean()).isFalse()
+        assertThat(body.path("prompt_cache_options").path("mode").stringValue("")).isEqualTo("explicit")
     }
 
     @Test

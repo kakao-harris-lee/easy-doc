@@ -1,0 +1,168 @@
+ Image easy-doc-backend:local Building 
+#1 [internal] load local bake definitions
+#1 reading from stdin 669B done
+#1 DONE 0.0s
+
+#2 [internal] load build definition from Dockerfile
+#2 transferring dockerfile: 3.30kB done
+#2 DONE 0.0s
+
+#3 [internal] load metadata for docker.io/library/eclipse-temurin:21.0.4_7-jre-noble
+#3 ...
+
+#4 [internal] load metadata for docker.io/library/eclipse-temurin:21.0.4_7-jdk-noble
+#4 DONE 1.7s
+
+#3 [internal] load metadata for docker.io/library/eclipse-temurin:21.0.4_7-jre-noble
+#3 DONE 1.7s
+
+#5 [internal] load .dockerignore
+#5 transferring context: 428B done
+#5 DONE 0.0s
+
+#6 [runtime 1/6] FROM docker.io/library/eclipse-temurin:21.0.4_7-jre-noble@sha256:4ad5efd6a61a2cabceaf9bb4dbe8c5a25a64e6c2f7bb2760cc541bf5eb448a26
+#6 resolve docker.io/library/eclipse-temurin:21.0.4_7-jre-noble@sha256:4ad5efd6a61a2cabceaf9bb4dbe8c5a25a64e6c2f7bb2760cc541bf5eb448a26 done
+#6 DONE 0.0s
+
+#7 [build  1/18] FROM docker.io/library/eclipse-temurin:21.0.4_7-jdk-noble@sha256:f28b2e70aa0f94f89369bf0c7adac6cae3cc9c03211b5ed4f7acc216fa78ab33
+#7 resolve docker.io/library/eclipse-temurin:21.0.4_7-jdk-noble@sha256:f28b2e70aa0f94f89369bf0c7adac6cae3cc9c03211b5ed4f7acc216fa78ab33 0.0s done
+#7 DONE 0.0s
+
+#8 [internal] load build context
+#8 transferring context: 277.30kB 0.1s done
+#8 DONE 0.1s
+
+#9 [build  2/18] WORKDIR /build
+#9 CACHED
+
+#10 [build  9/18] COPY infrastructure/build.gradle.kts infrastructure/gradle.lockfile infrastructure/
+#10 CACHED
+
+#11 [build 10/18] COPY api/build.gradle.kts api/gradle.lockfile api/
+#11 CACHED
+
+#12 [build  3/18] COPY gradlew settings.gradle.kts build.gradle.kts gradle.properties ./
+#12 CACHED
+
+#13 [build  4/18] COPY gradle ./gradle
+#13 CACHED
+
+#14 [build  7/18] COPY core/build.gradle.kts core/gradle.lockfile core/
+#14 CACHED
+
+#15 [build  8/18] COPY application/build.gradle.kts application/gradle.lockfile application/
+#15 CACHED
+
+#16 [build  5/18] COPY config ./config
+#16 CACHED
+
+#17 [build  6/18] COPY .editorconfig ./
+#17 CACHED
+
+#18 [build 11/18] COPY worker/build.gradle.kts worker/gradle.lockfile worker/
+#18 CACHED
+
+#19 [build 12/18] RUN ./gradlew --no-daemon dependencies --quiet || true
+#19 CACHED
+
+#20 [build 13/18] COPY core core
+#20 DONE 0.0s
+
+#21 [build 14/18] COPY application application
+#21 DONE 0.0s
+
+#22 [build 15/18] COPY infrastructure infrastructure
+#22 DONE 0.1s
+
+#23 [build 16/18] COPY api api
+#23 DONE 0.0s
+
+#24 [build 17/18] COPY worker worker
+#24 DONE 0.0s
+
+#25 [build 18/18] RUN ./gradlew --no-daemon :api:bootJar :worker:bootJar -x test
+#25 1.540 
+#25 1.540 Welcome to Gradle 9.1.0!
+#25 1.540 
+#25 1.541 Here are the highlights of this release:
+#25 1.541  - Full Java 25 support
+#25 1.541  - Native task graph visualization
+#25 1.541  - Enhanced console output
+#25 1.541 
+#25 1.541 For more details see https://docs.gradle.org/9.1.0/release-notes.html
+#25 1.542 
+#25 1.739 To honour the JVM settings for this build a single-use Daemon process will be forked. For more on this, please refer to https://docs.gradle.org/9.1.0/userguide/gradle_daemon.html#sec:disabling_the_daemon in the Gradle documentation.
+#25 3.740 Daemon will be stopped at the end of the build 
+#25 18.34 > Task :core:checkKotlinGradlePluginConfigurationErrors SKIPPED
+#25 18.34 > Task :application:checkKotlinGradlePluginConfigurationErrors SKIPPED
+#25 18.34 > Task :worker:checkKotlinGradlePluginConfigurationErrors SKIPPED
+#25 18.34 > Task :api:checkKotlinGradlePluginConfigurationErrors SKIPPED
+#25 18.34 > Task :infrastructure:checkKotlinGradlePluginConfigurationErrors SKIPPED
+#25 18.44 > Task :application:processResources NO-SOURCE
+#25 18.54 > Task :api:processResources
+#25 18.54 > Task :worker:processResources
+#25 18.54 > Task :infrastructure:processResources
+#25 27.64 > Task :core:processResources NO-SOURCE
+#25 48.34 > Task :core:compileKotlin
+#25 50.04 > Task :core:compileJava NO-SOURCE
+#25 50.04 > Task :core:classes UP-TO-DATE
+#25 50.14 > Task :core:jar
+#25 63.94 > Task :application:compileKotlin
+#25 64.04 > Task :application:compileJava NO-SOURCE
+#25 64.04 > Task :application:classes UP-TO-DATE
+#25 64.04 > Task :application:jar
+#25 77.64 > Task :worker:compileKotlin
+#25 77.74 > Task :worker:compileJava NO-SOURCE
+#25 77.74 > Task :worker:classes
+#25 77.84 > Task :worker:resolveMainClassName
+#25 81.74 > Task :api:compileKotlin
+#25 81.74 > Task :api:compileJava NO-SOURCE
+#25 81.74 > Task :api:classes
+#25 81.84 > Task :api:resolveMainClassName
+#25 88.54 > Task :infrastructure:compileKotlin
+#25 88.54 > Task :infrastructure:compileJava NO-SOURCE
+#25 88.54 > Task :infrastructure:classes
+#25 88.64 > Task :infrastructure:jar
+#25 94.24 > Task :worker:bootJar
+#25 94.34 > Task :api:bootJar
+#25 94.54 
+#25 94.54 [Incubating] Problems report is available at: file:///build/build/reports/problems/problems-report.html
+#25 94.54 
+#25 94.54 Deprecated Gradle features were used in this build, making it incompatible with Gradle 10.
+#25 94.54 
+#25 94.54 You can use '--warning-mode all' to show the individual deprecation warnings and determine if they come from your own scripts or plugins.
+#25 94.54 
+#25 94.54 For more on this, please refer to https://docs.gradle.org/9.1.0/userguide/command_line_interface.html#sec:command_line_warnings in the Gradle documentation.
+#25 94.54 
+#25 94.54 BUILD SUCCESSFUL in 1m 34s
+#25 94.54 15 actionable tasks: 15 executed
+#25 DONE 95.1s
+
+#26 [runtime 2/6] RUN apt-get update     && apt-get install -y --no-install-recommends curl     && rm -rf /var/lib/apt/lists/*
+#26 CACHED
+
+#27 [runtime 3/6] RUN useradd --system --create-home --uid 10001 easydoc
+#27 CACHED
+
+#28 [runtime 4/6] WORKDIR /app
+#28 CACHED
+
+#29 [runtime 5/6] COPY --from=build /build/api/build/libs/easy-doc-api.jar /app/easy-doc-api.jar
+#29 DONE 0.1s
+
+#30 [runtime 6/6] COPY --from=build /build/worker/build/libs/easy-doc-worker.jar /app/easy-doc-worker.jar
+#30 DONE 0.1s
+
+#31 exporting to image
+#31 exporting layers
+#31 exporting layers 1.1s done
+#31 exporting manifest sha256:902ab62d64abc5bd7ea42a773408aab0fc0ba386a41739f5e855715f8eb9ac21 done
+#31 exporting config sha256:a02bd7840ea5bdadbe3bb0679583a0d435cce6b5292fe669589b60fe20795006 done
+#31 exporting attestation manifest sha256:05d1bb92685f37b8a0d1fad85c91bb30dec946a894707b1f78be958526c0aec6 done
+#31 exporting manifest list sha256:b7f5f90763946a60e6c7e1fdda68f95d5e9f7bca319082b2ff20cc4f1af2a4ff done
+#31 naming to docker.io/library/easy-doc-backend:local done
+#31 DONE 1.2s
+
+#32 resolving provenance for metadata file
+#32 DONE 0.0s
+ Image easy-doc-backend:local Built 

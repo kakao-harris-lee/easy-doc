@@ -1,0 +1,1 @@
+provider=openai settings=MetricsLlmProviderDecorator(delegate=OpenAiProvider(model=gpt-6-astra, effort=MEDIUM)) max_tokens=8192 · dictContext=product · transcript=/Users/harris/Development/private/easy-doc/docs/reports/2026-09-12-document-markers-artifacts/outputs · runs=1 cap_usd=3.50

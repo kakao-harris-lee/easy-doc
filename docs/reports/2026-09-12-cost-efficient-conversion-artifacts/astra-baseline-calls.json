@@ -1,0 +1,83 @@
+[
+  {
+    "provider": "openai",
+    "model": "gpt-6-astra",
+    "outcome": "SUCCESS",
+    "latencyMs": 46937,
+    "inputTokens": 5540,
+    "outputTokens": 2822,
+    "estimatedCostUsd": 0.1965
+  },
+  {
+    "provider": "openai",
+    "model": "gpt-6-astra",
+    "outcome": "SUCCESS",
+    "latencyMs": 36730,
+    "inputTokens": 6447,
+    "outputTokens": 2712,
+    "estimatedCostUsd": 0.20007
+  },
+  {
+    "provider": "openai",
+    "model": "gpt-6-astra",
+    "outcome": "SUCCESS",
+    "latencyMs": 6560,
+    "inputTokens": 4543,
+    "outputTokens": 197,
+    "estimatedCostUsd": 0.05528
+  },
+  {
+    "provider": "openai",
+    "model": "gpt-6-astra",
+    "outcome": "SUCCESS",
+    "latencyMs": 30514,
+    "inputTokens": 4748,
+    "outputTokens": 1887,
+    "estimatedCostUsd": 0.14183
+  },
+  {
+    "provider": "openai",
+    "model": "gpt-6-astra",
+    "outcome": "SUCCESS",
+    "latencyMs": 31387,
+    "inputTokens": 5478,
+    "outputTokens": 2044,
+    "estimatedCostUsd": 0.15698
+  },
+  {
+    "provider": "openai",
+    "model": "gpt-6-astra",
+    "outcome": "SUCCESS",
+    "latencyMs": 5664,
+    "inputTokens": 3456,
+    "outputTokens": 118,
+    "estimatedCostUsd": 0.04046
+  },
+  {
+    "provider": "openai",
+    "model": "gpt-6-astra",
+    "outcome": "SUCCESS",
+    "latencyMs": 46208,
+    "inputTokens": 6298,
+    "outputTokens": 3022,
+    "estimatedCostUsd": 0.21408
+  },
+  {
+    "provider": "openai",
+    "model": "gpt-6-astra",
+    "outcome": "SUCCESS",
+    "latencyMs": 43563,
+    "inputTokens": 7240,
+    "outputTokens": 3039,
+    "estimatedCostUsd": 0.22435
+  },
+  {
+    "provider": "openai",
+    "model": "gpt-6-astra",
+    "outcome": "SUCCESS",
+    "latencyMs": 13307,
+    "inputTokens": 5198,
+    "outputTokens": 509,
+    "estimatedCostUsd": 0.07743
+  }
+]

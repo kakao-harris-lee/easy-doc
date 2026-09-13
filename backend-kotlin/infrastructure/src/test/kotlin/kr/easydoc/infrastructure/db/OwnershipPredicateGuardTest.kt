@@ -402,6 +402,9 @@ class OwnershipPredicateGuardTest {
                 "$ADMIN/JdbcAdminConversionQueryRepository.kt | SELECT [conversions, documents]",
                 "$ADMIN/JdbcAdminConversionQueryRepository.kt | SELECT [conversions]",
                 "$ADMIN/JdbcAdminConversionQueryRepository.kt | SELECT [conversions, documents]",
+                // 관리자 전용 의견 목록과 전체 건수. AdminReachTest가 권한 경계를 검증한다.
+                "$ADMIN/JdbcAdminFeedbackQuery.kt | SELECT [conversion_feedback]",
+                "$ADMIN/JdbcAdminFeedbackQuery.kt | SELECT [conversion_feedback]",
                 // 회원 탈퇴(2.27.0, 계획 `docs/plans/2026-09-09-account-deletion.md`) —
                 // `conversion_feedback`(V2)은 FK가 없어 CASCADE가 닿지 않아 사용자 삭제
                 // 전에 이 DELETE로 명시로 지운다. 소유 술어(`d.user_id = :userId`)는
@@ -505,6 +508,21 @@ class OwnershipPredicateGuardTest {
                 // (`nullOutSql` 이 `LOCK_EXPIRED_COMMENTS_SQL` 보다 위에 있다).
                 "$DOCUMENT/JdbcFeedbackCommentPurge.kt | UPDATE [conversion_feedback]",
                 "$DOCUMENT/JdbcFeedbackCommentPurge.kt | SELECT [conversion_feedback]",
+                // Billing: public operations first lockOwned(owner, workspace); order ownership is rechecked
+                // before receipt/refund. The same durable store is used by trusted renewal/reconciliation workers.
+                // TossReachTest covers foreign-owner 404, administrator-only refund and forged webhooks.
+                "$BILLING/BillingDeletionGuard.kt | SELECT [toss_billing_orders, toss_billing_sessions]",
+                "$BILLING/JdbcTossBillingStore.kt | SELECT [toss_billing_sessions]",
+                "$BILLING/JdbcTossBillingStore.kt | INSERT [toss_billing_sessions]",
+                "$BILLING/JdbcTossBillingStore.kt | SELECT [toss_billing_orders]",
+                "$BILLING/JdbcTossBillingStore.kt | INSERT [toss_billing_orders]",
+                "$BILLING/JdbcTossBillingStore.kt | SELECT [toss_billing_orders]",
+                "$BILLING/JdbcTossBillingStore.kt | UPDATE [toss_billing_orders]",
+                "$BILLING/JdbcTossBillingStore.kt | UPDATE [toss_billing_orders]",
+                "$BILLING/JdbcTossBillingStore.kt | SELECT [toss_billing_orders]",
+                "$BILLING/JdbcTossBillingStore.kt | UPDATE [toss_billing_orders]",
+                "$BILLING/JdbcTossBillingStore.kt | SELECT [toss_billing_sessions]",
+                "$BILLING/JdbcTossBillingStore.kt | SELECT [toss_billing_sessions]",
             )
         // 사용량 집계(2.20.0, U2, `JdbcUsageReadRepository`)는 이 인구조사에 없다 —
         // 2026-09-08 리뷰로 `documents` 표 대신 `llm_calls`(V14)에서 문서 수·문자 수·
@@ -528,6 +546,9 @@ class OwnershipPredicateGuardTest {
                 "$ADMIN/JdbcAdminConversionQueryRepository.kt | SELECT [conversions, documents]",
                 "$ADMIN/JdbcAdminConversionQueryRepository.kt | SELECT [conversions]",
                 "$ADMIN/JdbcAdminConversionQueryRepository.kt | SELECT [conversions, documents]",
+                // 관리자 전용 의견 목록과 전체 건수. AdminReachTest가 권한 경계를 검증한다.
+                "$ADMIN/JdbcAdminFeedbackQuery.kt | SELECT [conversion_feedback]",
+                "$ADMIN/JdbcAdminFeedbackQuery.kt | SELECT [conversion_feedback]",
                 // 미검증 계정 파기 배치(2026-09-07) — 같은 사유. 후보 선택 SELECT 와 건너뛴
                 // 건수 카운트 SELECT 둘 다 `documents.user_id` 를 `users.id` 와 비교할 뿐
                 // `:ownerId` 매개변수를 받지 않는다(위 KDoc).
@@ -580,6 +601,21 @@ class OwnershipPredicateGuardTest {
                 // 만드는 UPDATE 와 잠금 SELECT 둘 다 여기 있다(순서는 파일 안 정의 순서).
                 "$DOCUMENT/JdbcFeedbackCommentPurge.kt | UPDATE [conversion_feedback]",
                 "$DOCUMENT/JdbcFeedbackCommentPurge.kt | SELECT [conversion_feedback]",
+                // Billing: public operations first lockOwned(owner, workspace); order ownership is rechecked
+                // before receipt/refund. The same durable store is used by trusted renewal/reconciliation workers.
+                // TossReachTest covers foreign-owner 404, administrator-only refund and forged webhooks.
+                "$BILLING/BillingDeletionGuard.kt | SELECT [toss_billing_orders, toss_billing_sessions]",
+                "$BILLING/JdbcTossBillingStore.kt | SELECT [toss_billing_sessions]",
+                "$BILLING/JdbcTossBillingStore.kt | INSERT [toss_billing_sessions]",
+                "$BILLING/JdbcTossBillingStore.kt | SELECT [toss_billing_orders]",
+                "$BILLING/JdbcTossBillingStore.kt | INSERT [toss_billing_orders]",
+                "$BILLING/JdbcTossBillingStore.kt | SELECT [toss_billing_orders]",
+                "$BILLING/JdbcTossBillingStore.kt | UPDATE [toss_billing_orders]",
+                "$BILLING/JdbcTossBillingStore.kt | UPDATE [toss_billing_orders]",
+                "$BILLING/JdbcTossBillingStore.kt | SELECT [toss_billing_orders]",
+                "$BILLING/JdbcTossBillingStore.kt | UPDATE [toss_billing_orders]",
+                "$BILLING/JdbcTossBillingStore.kt | SELECT [toss_billing_sessions]",
+                "$BILLING/JdbcTossBillingStore.kt | SELECT [toss_billing_sessions]",
             )
 
         /**
@@ -631,7 +667,11 @@ class OwnershipPredicateGuardTest {
          * 가로지른다** — 위 배치들과 달리 소유자가 없어서가 아니라, 관리자가 전체를 보는
          * 것이 이 화면의 목적이라 소유 술어를 붙이지 않는다(어드민 최소 계획 §2 결정 4).
          * 사용자 요청 경로가 이 상한을 먹는 일은 여전히 없어야 한다.
+         *
+         * 35 → 37: 사용자 요청(2026-09-12)의 관리자 의견 목록/건수 두 SELECT.
+         * AdminEndpoints와 AdminReachTest가 검증된 관리자에게만 열리는 경계를 지킨다.
          */
-        const val MAX_UNGUARDED_STATEMENTS = 35
+        const val BILLING = "infrastructure/src/main/kotlin/kr/easydoc/infrastructure/subscription"
+        const val MAX_UNGUARDED_STATEMENTS = 49
     }
 }

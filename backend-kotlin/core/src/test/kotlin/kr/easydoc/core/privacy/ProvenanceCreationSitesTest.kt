@@ -33,10 +33,10 @@ class ProvenanceCreationSitesTest {
                 "ModelDraft" to
                     mapOf(
                         "application/src/main/kotlin/kr/easydoc/application/conversion/ConvertDocumentUseCase.kt" to 2,
-                        "core/src/test/kotlin/kr/easydoc/core/easyread/PromptInjectionGuardTest.kt" to 7,
+                        "core/src/test/kotlin/kr/easydoc/core/easyread/PromptInjectionGuardTest.kt" to 8,
                         "core/src/test/kotlin/kr/easydoc/core/easyread/PromptTextSnapshotTest.kt" to 2,
-                        "core/src/test/kotlin/kr/easydoc/core/easyread/PromptsTest.kt" to 9,
-                        "core/src/test/kotlin/kr/easydoc/core/llm/LlmPromptTest.kt" to 2,
+                        "core/src/test/kotlin/kr/easydoc/core/easyread/PromptsTest.kt" to 13,
+                        "core/src/test/kotlin/kr/easydoc/core/llm/LlmPromptTest.kt" to 3,
                     ),
                 "ReviewedBody" to
                     mapOf(

@@ -1,0 +1,11 @@
+{
+  "approvedTotalUsd": 20,
+  "settledPriorEstimatedUsd": 5.565252,
+  "newReservationCapUsd": 14,
+  "unallocatedUsd": 0.434748,
+  "settlementEvidence": [
+    "../2026-09-12-model-reading-quality-artifacts/usage.json",
+    "../2026-09-11-reading-level-artifacts/"
+  ],
+  "withinBatchReservationRefunds": false
+}

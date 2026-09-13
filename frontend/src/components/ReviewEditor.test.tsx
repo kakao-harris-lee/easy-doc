@@ -36,6 +36,14 @@ function render(ui: ReactElement) {
   return renderInDom(<MemoryRouter>{ui}</MemoryRouter>)
 }
 
+/** 문단 대응과 재변환 회귀 검증은 사용자가 상세 비교를 연 상태에서 실행한다. */
+function renderDetailed(ui: ReactElement) {
+  const result = render(ui)
+  const toggle = screen.queryByRole('button', { name: '문단별 상세 비교' })
+  if (toggle) fireEvent.click(toggle)
+  return result
+}
+
 vi.mock('../api/client', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api/client')>()),
   saveReview: vi.fn(),
@@ -97,6 +105,63 @@ function withoutFeedbackKey(response: ConversionResponse): ConversionResponse {
 }
 
 describe('검수 에디터', () => {
+  it('대응표가 있어도 원본과 결과를 각각 한 글상자로 보여주고 줄바꿈을 보존해 저장한다', async () => {
+    const user = userEvent.setup()
+    const original = '제목\n\n첫 문장\n둘째 문장'
+    vi.mocked(saveReview).mockResolvedValue(conversion({ edited_text: `${original}!` }))
+    render(
+      <ReviewEditor
+        conversion={conversion({ easy_text: original, segment_map: segmentMap() })}
+        source={sourceReady(original)}
+      />,
+    )
+    const editor = screen.getByLabelText('쉬운 글 결과 (고칠 수 있습니다)')
+    expect(editor).toHaveValue(original)
+    expect(screen.getByLabelText('원본 (읽기 전용)')).toHaveValue(original)
+    expect(screen.queryByLabelText(/쉬운 글 단위/)).not.toBeInTheDocument()
+    expect(screen.queryByLabelText(/원본 1번째 문단/)).not.toBeInTheDocument()
+    expect(screen.queryByText('추정')).not.toBeInTheDocument()
+    fireEvent.change(editor, { target: { value: `${original}!` } })
+    await user.click(screen.getByRole('button', { name: '검수 내용 저장' }))
+    expect(saveReview).toHaveBeenCalledWith('c1', `${original}!`)
+  })
+
+  it('전체 편집에서 줄을 추가한 뒤 상세 비교를 열어도 뒤 문단의 대응이 밀리지 않는다', async () => {
+    const user = userEvent.setup()
+    const original = '첫 문장\n둘째 문장\n마지막 문장'
+    render(
+      <ReviewEditor
+        conversion={conversion({
+          easy_text: original,
+          segment_map: segmentMap({
+            source_unit_count: 3,
+            units: [0, 1, 2].map((index) =>
+              segmentMapUnit({
+                easy_unit_index: index,
+                source_unit_indexes: [index],
+                confidence: 'high',
+              }),
+            ),
+          }),
+        })}
+        source={sourceReady(original)}
+      />,
+    )
+    const next = '첫 문장\n둘째\n새 문장\n마지막 문장'
+    fireEvent.change(screen.getByLabelText('쉬운 글 결과 (고칠 수 있습니다)'), {
+      target: { value: next },
+    })
+    await user.click(screen.getByRole('button', { name: '문단별 상세 비교' }))
+    expect(screen.getByLabelText('쉬운 글 단위 1, 원본 1번째 문단에 대응')).toHaveValue('첫 문장')
+    expect(screen.getByLabelText('쉬운 글 단위 2, 대응 확인 불가')).toHaveValue('둘째')
+    expect(screen.getByLabelText('쉬운 글 단위 3, 대응 확인 불가')).toHaveValue('새 문장')
+    expect(screen.getByLabelText('쉬운 글 단위 4, 원본 3번째 문단에 대응')).toHaveValue(
+      '마지막 문장',
+    )
+    await user.click(screen.getByRole('button', { name: '한 문서로 보기' }))
+    expect(screen.getByLabelText('쉬운 글 결과 (고칠 수 있습니다)')).toHaveValue(next)
+  })
+
   it('저장한 수정본이 있으면 그것을 초기값으로 쓴다', () => {
     render(
       <ReviewEditor
@@ -246,6 +311,7 @@ describe('검수 에디터', () => {
     // 「아직 …이 없습니다」는 할 일이 남았다는 말로 읽혀 제출 실패로 오해된다.
     expect(screen.queryByText(/아직 저장한 검수 내용이 없습니다/)).not.toBeInTheDocument()
     expect(screen.getByText(/^의견 보냄 · /)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '의견 보내기' })).not.toBeInTheDocument()
   })
 
   it('의견을 보낸 적이 없으면 의견 보냄을 적지 않는다', () => {
@@ -304,10 +370,12 @@ describe('검수 에디터', () => {
     await user.click(screen.getByRole('button', { name: '의견 보내기' }))
 
     expect(await screen.findByText(/^의견 보냄 · /)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '의견 보내기' })).not.toBeInTheDocument()
+    expect(screen.getByText('의견을 보냈습니다. 감사합니다.').parentElement).toHaveFocus()
     // 화면을 대신 넘기지 않는다 — 검수 화면은 그대로 있고 돌아가는 길만 생긴다.
     expect(screen.getByLabelText('쉬운 글 결과 (고칠 수 있습니다)')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: '변환 기록으로 돌아가기' })).toBeInTheDocument()
-    // 제출 성공은 폼의 안내가 이미 낭독한다. 상태 패널이 같은 사실을 한 번 더 읽지 않게
+    // 제출 성공 안내로 초점이 이동한다. 상태 패널이 같은 사실을 한 번 더 읽지 않게
     // 이 배지는 `role="status"` 바깥에 있다(§11 중복 낭독 금지).
     const announced = screen.getAllByRole('status').map((node) => node.textContent ?? '')
     expect(announced.filter((text) => text.includes('의견 보냄'))).toHaveLength(0)
@@ -1131,7 +1199,7 @@ describe('저장하고 내려받기', () => {
  */
 describe('문단 단위 대응(segment_map)', () => {
   it('segment_map이 null이면 옛 단일 에디터를 그대로 쓴다', () => {
-    render(
+    renderDetailed(
       <ReviewEditor
         conversion={conversion({ segment_map: null, easy_text: '첫 문단\n둘째 문단' })}
         source={sourceFailed()}
@@ -1152,7 +1220,7 @@ describe('문단 단위 대응(segment_map)', () => {
         segmentMapUnit({ easy_unit_index: 1, source_unit_indexes: [], confidence: 'low' }),
       ],
     })
-    render(
+    renderDetailed(
       <ReviewEditor
         conversion={conversion({ easy_text: '첫 문장\n둘째 문장', segment_map: map })}
         source={sourceReady('원본 문단 하나\n원본 문단 둘')}
@@ -1176,7 +1244,7 @@ describe('문단 단위 대응(segment_map)', () => {
         segmentMapUnit({ easy_unit_index: 1, source_unit_indexes: [1], confidence: 'high' }),
       ],
     })
-    render(
+    renderDetailed(
       <ReviewEditor
         conversion={conversion({ easy_text: '첫 문장\n둘째 문장', segment_map: map })}
         source={sourceReady('원본 하나\n원본 둘')}
@@ -1207,7 +1275,7 @@ describe('문단 단위 대응(segment_map)', () => {
       source_unit_count: 1,
       units: [segmentMapUnit({ easy_unit_index: 0, source_unit_indexes: [0], confidence: 'low' })],
     })
-    render(
+    renderDetailed(
       <ReviewEditor
         conversion={conversion({ easy_text: '문장 하나', segment_map: map })}
         source={sourceReady('원본 하나')}
@@ -1225,7 +1293,7 @@ describe('문단 단위 대응(segment_map)', () => {
       source_unit_count: 1,
       units: [segmentMapUnit({ easy_unit_index: 0, source_unit_indexes: [0], confidence: 'high' })],
     })
-    render(
+    renderDetailed(
       <ReviewEditor
         conversion={conversion({ easy_text: '첫줄', segment_map: map })}
         source={sourceFailed()}
@@ -1256,7 +1324,7 @@ describe('문단 단위 대응(segment_map)', () => {
         segment_map: map,
       }),
     )
-    render(
+    renderDetailed(
       <ReviewEditor
         conversion={conversion({ easy_text: '첫줄', segment_map: map })}
         source={sourceFailed()}
@@ -1283,7 +1351,7 @@ describe('문단 단위 대응(segment_map)', () => {
         segmentMapUnit({ easy_unit_index: 1, source_unit_indexes: [1], confidence: 'low' }),
       ],
     })
-    render(
+    renderDetailed(
       <ReviewEditor
         conversion={conversion({ easy_text: '첫줄\n둘째줄', segment_map: map })}
         source={sourceFailed()}
@@ -1308,7 +1376,7 @@ describe('문단 단위 대응(segment_map)', () => {
         segmentMapUnit({ easy_unit_index: 1, source_unit_indexes: [1], confidence: 'high' }),
       ],
     })
-    render(
+    renderDetailed(
       <ReviewEditor
         conversion={conversion({ easy_text: '첫줄\n둘째줄', segment_map: map })}
         source={sourceFailed()}
@@ -1341,7 +1409,7 @@ describe('문단 단위 대응(segment_map)', () => {
         }),
       ),
     })
-    render(
+    renderDetailed(
       <ReviewEditor
         conversion={conversion({ easy_text: bigText, segment_map: map })}
         source={sourceFailed()}
@@ -1372,7 +1440,7 @@ describe('문단 단위 대응(segment_map)', () => {
           segmentMapUnit({ easy_unit_index: 1, source_unit_indexes: [1], confidence: 'high' }),
         ],
       })
-      render(
+      renderDetailed(
         <ReviewEditor
           conversion={conversion({ easy_text: '첫줄\n둘째줄', segment_map: map })}
           source={sourceFailed()}
@@ -1445,7 +1513,7 @@ describe('문단 재변환(계획 §4 결정 3, §6 S5)', () => {
       source_unit_count: 1,
       units: [segmentMapUnit({ easy_unit_index: 0, source_unit_indexes: [0], confidence: 'high' })],
     })
-    return render(
+    return renderDetailed(
       <ReviewEditor
         conversion={conversion({ easy_text: easyText, segment_map: map })}
         source={sourceReady('원본 문단')}
@@ -1722,7 +1790,7 @@ describe('문단 재변환(계획 §4 결정 3, §6 S5)', () => {
         segmentMapUnit({ easy_unit_index: 1, source_unit_indexes: [1], confidence: 'high' }),
       ],
     })
-    render(
+    renderDetailed(
       <ReviewEditor
         conversion={conversion({ easy_text: '첫 문장\n둘째 문장', segment_map: map })}
         source={sourceReady('원본 하나\n원본 둘')}
@@ -1750,7 +1818,7 @@ describe('문단 재변환(계획 §4 결정 3, §6 S5)', () => {
         segmentMapUnit({ easy_unit_index: 1, source_unit_indexes: [1], confidence: 'high' }),
       ],
     })
-    render(
+    renderDetailed(
       <ReviewEditor
         conversion={conversion({ easy_text: '첫 문장\n둘째 문장', segment_map: map })}
         source={sourceReady('원본 하나\n원본 둘')}
@@ -1838,7 +1906,7 @@ describe('이미 통과한 문단 경고(계획 §11, segment_map.compliant_sour
       ],
       compliant_source_units: compliantSourceUnits,
     })
-    return render(
+    return renderDetailed(
       <ReviewEditor
         conversion={conversion({ easy_text: '첫 문장\n둘째 문장', segment_map: map })}
         source={sourceReady('원본 문단 하나\n원본 문단 둘')}
@@ -1907,7 +1975,7 @@ describe('구조 배지(P0-4 S8, 계획 §1.5, segment_map.source_unit_kinds)', 
       source_unit_kinds: kinds,
       ...overrides,
     })
-    return render(
+    return renderDetailed(
       <ReviewEditor
         conversion={conversion({ easy_text: '변환 A\n변환 B', segment_map: map })}
         source={sourceReady(sourceText)}
@@ -1956,7 +2024,7 @@ describe('구조 배지(P0-4 S8, 계획 §1.5, segment_map.source_unit_kinds)', 
 
   it('옛 문서(source_unit_kinds 미지정 → 기본값 전부 body)도 낱개 목록 그대로다', () => {
     const map = segmentMap({ source_unit_count: 5 })
-    render(
+    renderDetailed(
       <ReviewEditor
         conversion={conversion({ easy_text: '변환 A', segment_map: map })}
         source={sourceReady(sourceText)}
@@ -2019,7 +2087,7 @@ describe('저장 중 경합 방지(MEDIUM 리뷰)', () => {
     const map = segmentMap({
       units: [segmentMapUnit({ easy_unit_index: 0, source_unit_indexes: [0], confidence: 'high' })],
     })
-    render(
+    renderDetailed(
       <ReviewEditor
         conversion={conversion({ easy_text: '첫줄', segment_map: map })}
         source={sourceFailed()}
@@ -2039,7 +2107,9 @@ describe('저장 중 경합 방지(MEDIUM 리뷰)', () => {
         resolveSave = resolve
       }),
     )
-    render(<ReviewEditor conversion={conversion({ easy_text: '초안' })} source={sourceFailed()} />)
+    renderDetailed(
+      <ReviewEditor conversion={conversion({ easy_text: '초안' })} source={sourceFailed()} />,
+    )
 
     const textarea = screen.getByLabelText('쉬운 글 결과 (고칠 수 있습니다)') as HTMLTextAreaElement
     await user.click(screen.getByRole('button', { name: '검수 내용 저장' }))

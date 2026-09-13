@@ -196,7 +196,7 @@ describe('관리자 가드 (어드민 최소, 계약 2.25.0)', () => {
     renderAt('/admin')
 
     expect(
-      await screen.findByRole('heading', { name: '고객·사용량·오류를 관리합니다' }),
+      await screen.findByRole('heading', { name: '고객과 사용자 의견을 확인합니다' }),
     ).toBeInTheDocument()
   })
 })

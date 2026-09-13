@@ -22,7 +22,7 @@ import {
   uniqueWorkspaceName,
   workspaceAlert,
   workspaceNames,
-  workspaceSelect,
+  workspaceMenu,
 } from './support/app'
 import { NetworkLog, routeSignature, signature } from './support/network'
 
@@ -49,7 +49,7 @@ test.describe('작업 공간', () => {
     const bodyA = (await (await listA).json()) as WorkspaceListBody
 
     await answerPrompt(page, '새로 만들기', nameA)
-    await expect(workspaceSelect(page).locator('option')).toHaveCount(2)
+    await expect(workspaceMenu(page).locator('[aria-pressed]')).toHaveCount(2)
     expect(await workspaceNames(page)).toContain(nameA)
 
     // 로그아웃하면 보호 화면에서 밀려난다.
@@ -75,7 +75,7 @@ test.describe('작업 공간', () => {
   test('E5 작업 공간을 만들면 새 공간이 선택된다', async ({ page }) => {
     const log = new NetworkLog(page, API_BASE_URL)
     await signUpAndLand(page, newAccount())
-    await expect(workspaceSelect(page).locator('option')).toHaveCount(1)
+    await expect(workspaceMenu(page).locator('[aria-pressed]')).toHaveCount(1)
 
     const created = uniqueWorkspaceName()
     // 현재 작업 공간이 새 공간으로 바뀌면 「다음 할 일」 제안이 그 공간의 문서 목록을
@@ -106,7 +106,7 @@ test.describe('작업 공간', () => {
     ])
 
     // --- 화면 -----------------------------------------------------------------
-    await expect(workspaceSelect(page).locator('option')).toHaveCount(2)
+    await expect(workspaceMenu(page).locator('[aria-pressed]')).toHaveCount(2)
     expect(await workspaceNames(page)).toContain(created)
     // 만든 뒤 그쪽으로 옮겨 간다 — 방금 만든 곳에 바로 올릴 수 있어야 한다.
     expect((await selectedWorkspaceName(page)).trim()).toBe(created)
@@ -150,7 +150,7 @@ test.describe('작업 공간', () => {
     await signUpAndLand(page, newAccount())
     const name = uniqueWorkspaceName()
     await answerPrompt(page, '새로 만들기', name)
-    await expect(workspaceSelect(page).locator('option')).toHaveCount(2)
+    await expect(workspaceMenu(page).locator('[aria-pressed]')).toHaveCount(2)
 
     const [conflict] = await Promise.all([
       page.waitForResponse(
@@ -172,7 +172,7 @@ test.describe('작업 공간', () => {
     expect(shown).toBe(((await conflict.json()) as { detail: string }).detail)
 
     // 목록은 그대로다 — 실패한 생성이 화면 상태를 바꾸지 않는다.
-    await expect(workspaceSelect(page).locator('option')).toHaveCount(2)
+    await expect(workspaceMenu(page).locator('[aria-pressed]')).toHaveCount(2)
   })
 
   test('E7 빈 이름·공백만 이름은 422 이고 `detail` 이 문자열이다', async ({ page }) => {
@@ -202,7 +202,7 @@ test.describe('작업 공간', () => {
     }
 
     // 아무것도 만들어지지 않았다.
-    await expect(workspaceSelect(page).locator('option')).toHaveCount(1)
+    await expect(workspaceMenu(page).locator('[aria-pressed]')).toHaveCount(1)
   })
 
   test('E8 이름을 바꾸면 메뉴 항목이 바뀐다', async ({ page }) => {
@@ -214,7 +214,7 @@ test.describe('작업 공간', () => {
     await answerPrompt(page, '이름 바꾸기', renamed)
 
     // --- 화면 -----------------------------------------------------------------
-    await expect(workspaceSelect(page).locator('option')).toHaveText([renamed])
+    await expect(workspaceMenu(page).locator('[aria-pressed]')).toHaveText([renamed])
     expect(await workspaceNames(page)).not.toEqual(before)
 
     // --- 네트워크 -------------------------------------------------------------

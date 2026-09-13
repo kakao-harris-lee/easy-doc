@@ -1,3 +1,4 @@
+import { BillingCallbackPage } from '../pages/BillingCallbackPage'
 import { Route, Routes } from 'react-router-dom'
 
 import { AccountSettingsPage } from '../pages/AccountSettingsPage'
@@ -40,6 +41,14 @@ import {
 export function AppRoutes() {
   return (
     <Routes>
+      <Route
+        path="/billing/callback"
+        element={
+          <RequireAuth>
+            <BillingCallbackPage />
+          </RequireAuth>
+        }
+      />
       <Route path={LOGIN_PATH} element={<LoginPage />} />
       <Route path={SIGNUP_PATH} element={<SignupPage />} />
       <Route path={RESET_PASSWORD_PATH} element={<ResetPasswordPage />} />

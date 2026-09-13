@@ -1,0 +1,13 @@
+{
+  "arm": "after-no-dict",
+  "args": [
+    ":infrastructure:testLlm",
+    "--tests",
+    "*GoldenCorpusLlmEvaluationTest",
+    "-Peasydoc.golden.documents.dir=/private/tmp/easydoc-reading-measurement-20260911/corpus",
+    "--console=plain"
+  ],
+  "startedAt": "2026-09-11T15:04:01.278Z",
+  "approvedCombinedCapUsd": 10,
+  "armCapUsd": 2.84105
+}

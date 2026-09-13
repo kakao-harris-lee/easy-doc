@@ -53,6 +53,8 @@ class JdbcAccountDeletionRepository(private val jdbc: JdbcClient) : AccountDelet
 
     /** CASCADE로 나머지 대부분(`workspaces`·`documents`·`conversions`·… )이 함께 사라진다. */
     override fun deleteUser(userId: UUID) {
+        kr.easydoc.infrastructure.subscription.BillingDeletionGuard
+            .check(jdbc, userId)
         jdbc
             .sql("DELETE FROM users WHERE id = :userId")
             .param("userId", userId)

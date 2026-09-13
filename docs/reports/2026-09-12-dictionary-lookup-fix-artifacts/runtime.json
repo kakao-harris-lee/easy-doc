@@ -1,0 +1,35 @@
+{
+  "checkedAt": "2026-09-12T06:43:24.946Z",
+  "containers": [
+    {
+      "service": "backend-api",
+      "image": "sha256:1f9ea56f024fb4f47b0861bd1ebfd31b406a325f900b2701e395c8f61ddd0107",
+      "status": "running",
+      "health": "healthy",
+      "config": {
+        "EASYDOC_DICTIONARY_ENABLED": "true",
+        "EASYDOC_DICTIONARY_LOOKUP_ENABLED": "true",
+        "EASYDOC_LLM_MODEL": "gpt-6-astra",
+        "EASYDOC_LLM_PROVIDER": "openai",
+        "EASYDOC_LLM_EFFORT": "medium"
+      }
+    },
+    {
+      "service": "backend-worker",
+      "image": "sha256:1f9ea56f024fb4f47b0861bd1ebfd31b406a325f900b2701e395c8f61ddd0107",
+      "status": "running",
+      "config": {
+        "EASYDOC_DICTIONARY_LOOKUP_ENABLED": "true",
+        "EASYDOC_LLM_MODEL": "gpt-6-astra",
+        "EASYDOC_LLM_EFFORT": "medium",
+        "EASYDOC_LLM_PROVIDER": "openai",
+        "EASYDOC_DICTIONARY_ENABLED": "true"
+      }
+    }
+  ],
+  "health": {
+    "api": "{\"status\":\"ok\",\"checks\":{\"database\":true,\"queue\":true}}",
+    "frontendProxy": "{\"status\":\"ok\",\"checks\":{\"database\":true,\"queue\":true}}"
+  },
+  "additionalPaidCostUsd": 0
+}

@@ -1,0 +1,21 @@
+{
+  "createdAt": "2026-09-12T01:56:21.164Z",
+  "sourceConversionId": "3a0c09fc-3016-4b89-b585-7b6ce95b9977",
+  "sourceChars": 2197,
+  "newDocuments": 1,
+  "model": "gpt-6-astra",
+  "effort": "medium",
+  "maxOutputTokens": 64000,
+  "maxWorkerAttempts": 3,
+  "maxProductCallsPerAttempt": 2,
+  "reservedUsd": 25,
+  "priorCumulativeUsd": 16.97443,
+  "userTotalCapUsd": 50,
+  "judgeCalls": 0,
+  "method": "Submit copied original text once through current authenticated Chrome tab; inspect result, dictionary selection and recorded usage.",
+  "conversionId": "647beb22-f6b3-4f80-9d1c-aec399b45599",
+  "authenticationNote": "Initial HTTP request required renewed login and created no job or LLM call. Renewed existing linked Google login through normal UI, then submitted this one conversion.",
+  "status": "completed",
+  "settledCostUsd": 0.12551,
+  "reservationReleased": true
+}

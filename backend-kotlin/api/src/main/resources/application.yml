@@ -86,6 +86,11 @@ server:
       enabled: false
 
 easydoc:
+  payment:
+    provider: ${EASYDOC_PAYMENT_PROVIDER:stub}
+    mock-enabled: ${EASYDOC_PAYMENT_MOCK_ENABLED:false}
+    toss-client-key: ${EASYDOC_TOSS_CLIENT_KEY:}
+    toss-secret-key: ${EASYDOC_TOSS_SECRET_KEY:}
   cors-origins:
     - http://localhost:5173
     - http://localhost:8080

@@ -174,3 +174,15 @@ export function updateAdminAnnouncement(
     body: request,
   })
 }
+
+/** 검증된 관리자만 자유 의견을 읽는다. */
+export function listAdminFeedback(
+  params: { page?: number; size?: number } = {},
+  signal?: AbortSignal,
+): Promise<import('./types').AdminFeedbackListResponse> {
+  const query = new URLSearchParams({
+    page: String(params.page ?? 1),
+    size: String(params.size ?? 20),
+  })
+  return requestJson('/admin/feedback?' + query.toString(), { signal })
+}

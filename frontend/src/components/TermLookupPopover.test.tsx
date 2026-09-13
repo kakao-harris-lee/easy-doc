@@ -274,22 +274,25 @@ describe('바꾸기 적용', () => {
     expect(screen.getByLabelText('단위 1')).toHaveValue('다음 문단은 그대로')
   })
 
-  it('단일 textarea 폴백에서도 선택만 바꾼다', async () => {
+  it('한 글상자의 뒤 문단에서 선택한 단어만 바꾸고 줄바꿈과 같은 단어의 다른 출현은 보존한다', async () => {
     vi.mocked(lookupTerm).mockResolvedValue({
       query: '구비서류',
       candidates: [APPLICABLE_CANDIDATE],
       dictionary: DICTIONARY,
     })
-    render(<Harness initialValue="구비서류를 내세요" segmented={false} />)
+    const prefix = '구비서류 안내\n\n다음 문단: '
+    render(<Harness initialValue={`${prefix}구비서류를 내세요`} segmented={false} />)
     const textarea = screen.getByLabelText('단위 0') as HTMLTextAreaElement
 
-    selectRange(textarea, 0, 4)
+    selectRange(textarea, prefix.length, prefix.length + 4)
     await advance(250)
     screen.getByRole('dialog', { name: '쉬운 말 후보' })
 
     fireEvent.click(screen.getByRole('button', { name: '바꾸기' }))
 
-    expect(textarea).toHaveValue('준비할 서류를 내세요')
+    expect(textarea).toHaveValue(`${prefix}준비할 서류를 내세요`)
+    expect(textarea).toHaveFocus()
+    expect(textarea.selectionStart).toBe(prefix.length + '준비할 서류'.length)
   })
 })
 

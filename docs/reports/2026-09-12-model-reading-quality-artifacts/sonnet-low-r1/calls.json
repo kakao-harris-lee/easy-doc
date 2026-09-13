@@ -1,0 +1,92 @@
+[
+  {
+    "index": 1,
+    "provider": "anthropic",
+    "model": "claude-sonnet-5",
+    "outcome": "SUCCESS",
+    "latencyMs": 24638,
+    "inputTokens": 8086,
+    "outputTokens": 2648,
+    "estimatedCostUsd": 0.042652
+  },
+  {
+    "index": 2,
+    "provider": "anthropic",
+    "model": "claude-sonnet-5",
+    "outcome": "SUCCESS",
+    "latencyMs": 33202,
+    "inputTokens": 7795,
+    "outputTokens": 3384,
+    "estimatedCostUsd": 0.04943
+  },
+  {
+    "index": 3,
+    "provider": "anthropic",
+    "model": "claude-sonnet-5",
+    "outcome": "SUCCESS",
+    "latencyMs": 1723,
+    "inputTokens": 5717,
+    "outputTokens": 4,
+    "estimatedCostUsd": 0.011474
+  },
+  {
+    "index": 4,
+    "provider": "anthropic",
+    "model": "claude-sonnet-5",
+    "outcome": "SUCCESS",
+    "latencyMs": 20052,
+    "inputTokens": 7088,
+    "outputTokens": 1927,
+    "estimatedCostUsd": 0.033446
+  },
+  {
+    "index": 5,
+    "provider": "anthropic",
+    "model": "claude-sonnet-5",
+    "outcome": "SUCCESS",
+    "latencyMs": 19690,
+    "inputTokens": 7274,
+    "outputTokens": 2037,
+    "estimatedCostUsd": 0.034918
+  },
+  {
+    "index": 6,
+    "provider": "anthropic",
+    "model": "claude-sonnet-5",
+    "outcome": "SUCCESS",
+    "latencyMs": 1974,
+    "inputTokens": 4826,
+    "outputTokens": 69,
+    "estimatedCostUsd": 0.010342
+  },
+  {
+    "index": 7,
+    "provider": "anthropic",
+    "model": "claude-sonnet-5",
+    "outcome": "SUCCESS",
+    "latencyMs": 28607,
+    "inputTokens": 9217,
+    "outputTokens": 2702,
+    "estimatedCostUsd": 0.045454
+  },
+  {
+    "index": 8,
+    "provider": "anthropic",
+    "model": "claude-sonnet-5",
+    "outcome": "SUCCESS",
+    "latencyMs": 23531,
+    "inputTokens": 9253,
+    "outputTokens": 2844,
+    "estimatedCostUsd": 0.046946
+  },
+  {
+    "index": 9,
+    "provider": "anthropic",
+    "model": "claude-sonnet-5",
+    "outcome": "SUCCESS",
+    "latencyMs": 2062,
+    "inputTokens": 6433,
+    "outputTokens": 60,
+    "estimatedCostUsd": 0.013466
+  }
+]

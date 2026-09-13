@@ -12,85 +12,50 @@ import org.junit.jupiter.api.Test
 class PromptsTest {
     private fun systemPromptOf(text: String): String = buildSystemPrompt(text)
 
-    /** `[어려운 표현 바꾸기]` 절에 실린 낱말만 뽑는다. */
-    private fun listedAlways(prompt: String): List<String> = listedWords(prompt, "[어려운 표현 바꾸기]", "[문맥을 보고 판단할 표현]")
-
-    /** `[문맥을 보고 판단할 표현]` 절에 실린 낱말만 뽑는다. */
-    private fun listedConditional(prompt: String): List<String> =
-        listedWords(prompt, "[문맥을 보고 판단할 표현]", "[낯선 말 풀어 설명하기]")
-
-    private fun listedWords(
-        prompt: String,
-        from: String,
-        to: String,
-    ): List<String> =
-        prompt
-            .substring(prompt.indexOf(from), prompt.indexOf(to))
-            .lineSequence()
-            .mapNotNull { Regex("""^- (.+) \(뜻: .+\)$""").find(it)?.groupValues?.get(1) }
-            .toList()
-
-    @Nested
-    @DisplayName("동적 어려운 말 목록")
-    inner class DynamicWordList {
-        @Test
-        @DisplayName("문서에 나온 낱말만 싣는다")
-        fun `등장한 낱말만 실린다`() {
-            val listed = listedAlways(systemPromptOf("금일 중 서류를 지참하세요."))
-
-            assertThat(listed).containsExactly("금일", "지참")
-            assertThat(listed).doesNotContain("경감", "별도", "동봉")
+    @Test
+    fun `제목과 안내 표식은 변환과 보정에서 같은 항목에 보존한다`() {
+        val prompts = listOf(systemPromptOf("○ 안내"), buildRepairPrompt(ModelDraft("안내"), emptyList()).system)
+        for (prompt in prompts) {
+            assertThat(prompt).contains("○", "※", "같은 항목", "새 표식", "표식은 그대로")
+            assertThat(prompt).doesNotContain("설명이 필요한 기호는 말로 풀고")
         }
+    }
 
-        @Test
-        @DisplayName("아무 낱말도 없으면 목록이 빈다")
-        fun `해당 낱말이 없으면 빈 목록이다`() {
-            assertThat(listedAlways(systemPromptOf("오늘 신청을 받습니다."))).isEmpty()
-        }
+    @Test
+    fun `표식이 바뀐 보정 요청은 원문 기준의 복원을 명시한다`() {
+        val prompt = buildRepairPrompt(ModelDraft("결과 안내"), emptyList(), sourceText = "○ 결과 안내")
+        assertThat(prompt.user).contains("[표식 복원]", "같은 항목")
+        assertThat(buildRepairPrompt(ModelDraft("○ 결과 안내"), emptyList(), sourceText = "○ 결과 안내").user)
+            .doesNotContain("[표식 복원]")
+    }
 
-        @Test
-        @DisplayName("목록 순서는 등장 순서가 아니라 사전 정의 순서다")
-        fun `사전 순서로 싣는다`() {
-            val dictionaryOrder = listedAlways(systemPromptOf("금일 지참 동봉"))
-            val reversedAppearance = listedAlways(systemPromptOf("동봉 지참 금일"))
+    @Test
+    fun `기한의 행동과 압축된 비교 기준을 함께 보존하도록 안내한다`() {
+        assertThat(systemPromptOf("본문")).contains("작성·제출·도착", "누구의 무엇과 비교")
+        assertThat(SPLIT_EXAMPLES).contains("작성하여 제출", "고쳐서 내지 않으면")
+    }
 
-            assertThat(dictionaryOrder).isEqualTo(reversedAppearance)
-            assertThat(dictionaryOrder).containsExactly("금일", "지참", "동봉")
-        }
+    @Test
+    fun `본문 표의 출력과 원본 파일 구조의 보존을 구분한다`() {
+        assertThat(systemPromptOf("본문")).contains("마크다운 표를 새로 만들지", "[구조] 지시")
+    }
 
-        @Test
-        @DisplayName("낱말 시작 위치가 아니면 싣지 않는다")
-        fun `복합어 안쪽은 싣지 않는다`() {
-            assertThat(listedAlways(systemPromptOf("소득인정액과 대지급금 안내"))).isEmpty()
-        }
+    @Test
+    fun `문서 어휘를 시스템 지시로 중복 주입하지 않는다`() {
+        assertThat(systemPromptOf("금일 지참 동봉 하기 내용"))
+            .isEqualTo(systemPromptOf("오늘 신청을 받습니다."))
+        assertThat(systemPromptOf("금일 지참"))
+            .doesNotContain("- 금일 (뜻:", "- 하기 (뜻:")
+    }
 
-        @Test
-        @DisplayName("문맥 판단 그룹은 입력과 무관하게 항상 싣는다")
-        fun `PROMPT_ONLY_WORDS 는 항상 실린다`() {
-            val absent = listedConditional(systemPromptOf("아무 상관 없는 본문입니다."))
-            val present = listedConditional(systemPromptOf("하기 내용을 확인하기 바랍니다."))
-
-            assertThat(absent).containsExactlyElementsOf(PROMPT_ONLY_WORDS)
-            assertThat(present).containsExactlyElementsOf(PROMPT_ONLY_WORDS)
-        }
-
-        @Test
-        @DisplayName("문맥 판단 그룹은 치환 목록에 실리지 않는다")
-        fun `PROMPT_ONLY_WORDS 는 치환 목록에 없다`() {
-            val listed = listedAlways(systemPromptOf("하기 내용을 확인하기 바랍니다. 게시하세요."))
-
-            assertThat(listed).doesNotContainAnyElementsOf(PROMPT_ONLY_WORDS)
-        }
-
-        @Test
-        @DisplayName("목록을 좁혀도 출력 검사는 사전 전량 기준이다")
-        fun `필터링이 검출력을 깎지 않는다`() {
-            val input = "오늘 신청을 받습니다."
-            assertThat(listedAlways(systemPromptOf(input))).isEmpty()
-
-            val modelOutput = "금일 중 서류를 지참하세요."
-            val issues = checkStyle(modelOutput).issues.mapNotNull { it.word }
-            assertThat(issues).contains("금일", "지참")
+    @Test
+    fun `변환과 보정에서 편집 기준을 한 번씩 공유한다`() {
+        val prompts = listOf(systemPromptOf("본문"), buildRepairPrompt(ModelDraft("초안"), emptyList()).system)
+        for (prompt in prompts) {
+            for (instruction in listOf(ROLE, SOURCE_FIDELITY_INSTRUCTION, EXPLAIN_INSTRUCTION)) {
+                assertThat(prompt.windowed(instruction.length).count { it == instruction }).isEqualTo(1)
+            }
+            assertThat(prompt).doesNotContain("원문과 사전으로 뜻을 확정할 수 없으면", "각 줄은 그 줄만 읽어도")
         }
     }
 
@@ -114,8 +79,8 @@ class PromptsTest {
         fun `임계값을 하드코딩하지 않는다`() {
             val prompt = systemPromptOf("본문입니다.")
 
-            assertThat(prompt).contains("${MAX_SENTENCE_CHARS}자를 넘기면 안 됩니다")
-            assertThat(prompt).contains("쉼표(,)는 ${MAX_COMMAS_PER_SENTENCE}개까지만 씁니다")
+            assertThat(prompt).contains("${MAX_SENTENCE_CHARS}자 안으로")
+            assertThat(prompt).contains("쉼표는 가급적 한 문장에 ${MAX_COMMAS_PER_SENTENCE}개 이하로")
         }
     }
 

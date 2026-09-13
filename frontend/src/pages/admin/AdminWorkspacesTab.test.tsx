@@ -1,3 +1,4 @@
+import { getSubscription } from '../../api/subscriptions'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -21,7 +22,15 @@ vi.mock('../../api/admin', () => ({
   adjustAdminWorkspaceCredits: vi.fn(),
 }))
 
+vi.mock('../../api/subscriptions', () => ({ getSubscription: vi.fn() }))
+
 beforeEach(() => {
+  vi.mocked(getSubscription).mockResolvedValue({
+    mock_enabled: false,
+    plans: [],
+    subscription: null,
+    payments: [],
+  })
   vi.mocked(listAdminWorkspaces).mockReset()
   vi.mocked(readAdminWorkspace).mockReset()
   vi.mocked(adjustAdminWorkspaceCredits).mockReset()

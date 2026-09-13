@@ -148,7 +148,7 @@ else
 
   # --- ④ API 기동 (Flyway 는 api 기동 시 자동 적용) ------------------------------
   log "Kotlin API 기동 (profile=api, ${API_BASE_URL})"
-  java -jar "$API_JAR" --spring.profiles.active=api >"${LOG_DIR}/backend-api.log" 2>&1 &
+  java -jar "$API_JAR" --spring.profiles.active="${E2E_API_PROFILES:-api}" >"${LOG_DIR}/backend-api.log" 2>&1 &
   api_pid=$!
 
   healthy=0

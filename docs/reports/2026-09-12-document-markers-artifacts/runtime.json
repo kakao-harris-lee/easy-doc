@@ -1,0 +1,32 @@
+{
+  "checkedAt": "2026-09-12T08:50:21.043Z",
+  "services": [
+    {
+      "service": "backend-api",
+      "image": "sha256:b7f5f90763946a60e6c7e1fdda68f95d5e9f7bca319082b2ff20cc4f1af2a4ff",
+      "status": "running",
+      "health": "healthy"
+    },
+    {
+      "service": "backend-worker",
+      "image": "sha256:b7f5f90763946a60e6c7e1fdda68f95d5e9f7bca319082b2ff20cc4f1af2a4ff",
+      "status": "running"
+    }
+  ],
+  "health": {
+    "api": {
+      "status": "ok",
+      "checks": {
+        "database": true,
+        "queue": true
+      }
+    },
+    "proxy": {
+      "status": "ok",
+      "checks": {
+        "database": true,
+        "queue": true
+      }
+    }
+  }
+}

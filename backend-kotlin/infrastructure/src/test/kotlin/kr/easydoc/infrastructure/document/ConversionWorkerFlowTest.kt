@@ -25,6 +25,8 @@ import kr.easydoc.core.llm.LlmPrompt
 import kr.easydoc.core.llm.LlmProvider
 import kr.easydoc.core.security.Secret
 import kr.easydoc.core.segment.SourceStructure
+import kr.easydoc.core.segment.UnitKind
+import kr.easydoc.core.segment.splitUnits
 import kr.easydoc.core.user.PasswordHash
 import kr.easydoc.infrastructure.DatabaseHandle
 import kr.easydoc.infrastructure.PostgresTestSupport
@@ -40,6 +42,8 @@ import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.EnumSource
 import org.springframework.jdbc.core.simple.JdbcClient
 import org.springframework.jdbc.datasource.DataSourceTransactionManager
 import org.springframework.jdbc.datasource.DriverManagerDataSource
@@ -89,19 +93,61 @@ class ConversionWorkerFlowTest {
                 random = SecureRandom(),
             )
         transaction = SpringTransactionRunner(TransactionTemplate(DataSourceTransactionManager(dataSource)))
-        service =
-            DocumentService(
-                storage = DocumentStorage(documents, JdbcDocumentOriginalRepository(jdbc), conversions, queue),
-                workspaces = JdbcWorkspaceLookup(jdbc),
-                cipher = cipher,
-                extractor =
-                    DocumentTextExtractor { _, _ ->
-                        ExtractedDocument(SourceFormat.DOCX, "추출", SourceStructure.allBody(1))
-                    },
-                transaction = transaction,
-                users = JdbcUserRepository(jdbc),
-                credits = noCredits(),
-            )
+        service = documentService(ExtractedDocument(SourceFormat.DOCX, "추출", SourceStructure.allBody(1)))
+    }
+
+    private fun documentService(extracted: ExtractedDocument): DocumentService =
+        DocumentService(
+            storage = DocumentStorage(documents, JdbcDocumentOriginalRepository(jdbc), conversions, queue),
+            workspaces = JdbcWorkspaceLookup(jdbc),
+            cipher = cipher,
+            extractor = DocumentTextExtractor { _, _ -> extracted },
+            transaction = transaction,
+            users = JdbcUserRepository(jdbc),
+            credits = noCredits(),
+        )
+
+    @Test
+    fun `붙여넣기 목록이 많아도 전체 줄 수를 고정하지 않고 저장된 비교 구조는 유지한다`() {
+        val owner = newUser()
+        val workspace = workspaces.create(owner, "공간").id
+        val source = List(41) { "- 안내\n주민센터에 신청서를 내세요." }.joinToString("\n")
+        val accepted = service.createFromText(owner, source, null, workspace.toString())
+        val provider = FakeLlmProvider.replying(source)
+
+        assertThat(processor(provider).processNext()).isEqualTo(ConversionJobOutcome.COMPLETED)
+
+        assertThat(provider.calls).hasSize(1)
+        val prompt = provider.calls.single().prompt
+        assertThat(prompt.system).isEqualTo(LlmPrompt.forConversion(source).system)
+        assertThat(prompt.user).doesNotContain("[구조]")
+        val stored = checkNotNull(work.loadForProcessing(accepted.conversionId))
+        assertThat(checkNotNull(stored.structure).kinds.count { it == UnitKind.LIST_ITEM }).isEqualTo(41)
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = SourceFormat::class, names = ["TXT", "DOCX", "HWPX", "PDF"])
+    fun `평문 파일만 줄 고정을 생략하고 추출된 파일 표는 보호한다`(format: SourceFormat) {
+        val owner = newUser()
+        val workspace = workspaces.create(owner, "공간").id
+        val source = "신청 안내\n주민센터에 신청서를 내세요."
+        val structure = SourceStructure(List(splitUnits(source).size) { UnitKind.TABLE_CELL })
+        val upload = documentService(ExtractedDocument(format, source, structure))
+        val accepted = upload.createFromFile(owner, "안내.${format.wireName}", byteArrayOf(1), null, workspace.toString())
+        val provider = FakeLlmProvider.replying(source)
+
+        assertThat(processor(provider).processNext()).isEqualTo(ConversionJobOutcome.COMPLETED)
+
+        assertThat(provider.calls).hasSize(1)
+        val prompt = provider.calls.single().prompt
+        if (format == SourceFormat.TXT) {
+            assertThat(prompt.user).doesNotContain("[구조]")
+            assertThat(prompt.system).isEqualTo(LlmPrompt.forConversion(source).system)
+        } else {
+            assertThat(prompt.user).contains("[구조]", "칸을 합치거나 나누지 마세요")
+        }
+        assertThat(checkNotNull(work.loadForProcessing(accepted.conversionId)).structure?.encode())
+            .isEqualTo(structure.encode())
     }
 
     @Test

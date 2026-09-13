@@ -1,0 +1,26 @@
+{
+  "priorSettledUsd": 17.23429,
+  "userTotalCapUsd": 50,
+  "batchCapUsd": 3.5,
+  "provider": "openai",
+  "model": "gpt-6-astra",
+  "effort": "medium",
+  "maxOutputTokens": 8192,
+  "runs": 1,
+  "documents": [
+    "001-current",
+    "002-markers-excerpt"
+  ],
+  "acceptance": [
+    "두 원문의 표식 종류, 개수, 순서 보존",
+    "제보 구간의 표식이 같은 제목, 심사, 면접, 안내 항목에 대응",
+    "날짜, 연도, 기한, 대상 조건 보존",
+    "설명을 위한 새 목록 표식 추가 없음"
+  ],
+  "sourceHashes": {
+    "core/src/main/kotlin/kr/easydoc/core/easyread/Prompts.kt": "4368009eef3c04e92cc5148c32e84471ca99709c7c01fafe9313641244c89760",
+    "core/src/main/kotlin/kr/easydoc/core/easyread/DocumentMarkers.kt": "1770b6cca8aa6b16a2364f8cb299549c0529731604764ec4b0b0b2ad965bf9ec",
+    "application/src/main/kotlin/kr/easydoc/application/conversion/ConvertDocumentUseCase.kt": "39e9072a87593f777b0794861a447706c84fb90df033f6b6a5651d9a7114e3b5",
+    "application/src/main/kotlin/kr/easydoc/application/conversion/RepairDecision.kt": "8d45a1e190af3d3478ee6481f9180e1b66b3d3f1b1c2c0ff3bd2f65403f7f911"
+  }
+}

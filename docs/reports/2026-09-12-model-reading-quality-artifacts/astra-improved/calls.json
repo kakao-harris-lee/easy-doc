@@ -1,0 +1,92 @@
+[
+  {
+    "index": 1,
+    "provider": "openai",
+    "model": "gpt-6-astra",
+    "outcome": "SUCCESS",
+    "latencyMs": 44112,
+    "inputTokens": 5341,
+    "outputTokens": 2767,
+    "estimatedCostUsd": 0.19176
+  },
+  {
+    "index": 2,
+    "provider": "openai",
+    "model": "gpt-6-astra",
+    "outcome": "SUCCESS",
+    "latencyMs": 42803,
+    "inputTokens": 6272,
+    "outputTokens": 2772,
+    "estimatedCostUsd": 0.20132
+  },
+  {
+    "index": 3,
+    "provider": "openai",
+    "model": "gpt-6-astra",
+    "outcome": "SUCCESS",
+    "latencyMs": 4208,
+    "inputTokens": 4518,
+    "outputTokens": 114,
+    "estimatedCostUsd": 0.05088
+  },
+  {
+    "index": 4,
+    "provider": "openai",
+    "model": "gpt-6-astra",
+    "outcome": "SUCCESS",
+    "latencyMs": 32177,
+    "inputTokens": 4553,
+    "outputTokens": 1895,
+    "estimatedCostUsd": 0.14028
+  },
+  {
+    "index": 5,
+    "provider": "openai",
+    "model": "gpt-6-astra",
+    "outcome": "SUCCESS",
+    "latencyMs": 30380,
+    "inputTokens": 5094,
+    "outputTokens": 1897,
+    "estimatedCostUsd": 0.14579
+  },
+  {
+    "index": 6,
+    "provider": "openai",
+    "model": "gpt-6-astra",
+    "outcome": "SUCCESS",
+    "latencyMs": 5152,
+    "inputTokens": 3368,
+    "outputTokens": 162,
+    "estimatedCostUsd": 0.04178
+  },
+  {
+    "index": 7,
+    "provider": "openai",
+    "model": "gpt-6-astra",
+    "outcome": "SUCCESS",
+    "latencyMs": 42429,
+    "inputTokens": 6099,
+    "outputTokens": 2838,
+    "estimatedCostUsd": 0.20289
+  },
+  {
+    "index": 8,
+    "provider": "openai",
+    "model": "gpt-6-astra",
+    "outcome": "SUCCESS",
+    "latencyMs": 40490,
+    "inputTokens": 7310,
+    "outputTokens": 2828,
+    "estimatedCostUsd": 0.2145
+  },
+  {
+    "index": 9,
+    "provider": "openai",
+    "model": "gpt-6-astra",
+    "outcome": "SUCCESS",
+    "latencyMs": 10455,
+    "inputTokens": 5086,
+    "outputTokens": 350,
+    "estimatedCostUsd": 0.06836
+  }
+]

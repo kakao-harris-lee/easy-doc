@@ -1,0 +1,42 @@
+{
+  "command": "cd backend-kotlin && ./gradlew build",
+  "result": "BUILD SUCCESSFUL",
+  "perModule": [
+    {
+      "module": "core",
+      "tests": 631,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "module": "application",
+      "tests": 481,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "module": "infrastructure",
+      "tests": 933,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "module": "api",
+      "tests": 714,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    {
+      "module": "worker",
+      "tests": 13,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  ],
+  "total": 2772
+}

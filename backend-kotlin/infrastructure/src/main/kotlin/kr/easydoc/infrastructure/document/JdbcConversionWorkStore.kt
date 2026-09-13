@@ -7,6 +7,7 @@ import kr.easydoc.application.conversion.ConversionWorkStore
 import kr.easydoc.application.conversion.LlmAttribution
 import kr.easydoc.core.crypto.EncryptedContent
 import kr.easydoc.core.document.ConversionStatus
+import kr.easydoc.core.document.SourceFormat
 import org.springframework.jdbc.core.simple.JdbcClient
 import java.util.UUID
 
@@ -18,7 +19,7 @@ class JdbcConversionWorkStore(private val jdbc: JdbcClient) : ConversionWorkStor
                 """
                 SELECT c.id, c.document_id, c.status, c.credits_reserved,
                        d.source_text_encrypted, d.encryption_scheme, d.key_version,
-                       d.workspace_id, d.user_id, d.char_count, d.source_unit_kinds
+                       d.workspace_id, d.user_id, d.char_count, d.source_unit_kinds, d.source_format
                 FROM conversions c
                 JOIN documents d ON d.id = c.document_id
                 WHERE c.id = :id
@@ -40,6 +41,7 @@ class JdbcConversionWorkStore(private val jdbc: JdbcClient) : ConversionWorkStor
                     workspaceId = rs.getObject("workspace_id", UUID::class.java),
                     userId = rs.getObject("user_id", UUID::class.java),
                     charCount = rs.getInt("char_count"),
+                    sourceFormat = SourceFormat.ofWireName(rs.getString("source_format")),
                     // null 은 이 조각 이전에 만든 문서이거나(계획 §1.2) 저장된 값이 손상됐다는
                     // 뜻이다(리뷰 BLOCK 1) — 두 경우 모두 ProcessConversionJob 이
                     // SourceStructure.allBody 로 접어서 쓴다.

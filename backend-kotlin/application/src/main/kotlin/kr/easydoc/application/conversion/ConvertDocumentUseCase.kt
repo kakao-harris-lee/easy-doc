@@ -5,8 +5,9 @@ import kr.easydoc.core.easyread.FactIssue
 import kr.easydoc.core.easyread.SecureDocumentIds
 import kr.easydoc.core.easyread.SentenceIssue
 import kr.easydoc.core.easyread.StructureHintOptions
-import kr.easydoc.core.easyread.checkStyle
+import kr.easydoc.core.easyread.checkRepairStyle
 import kr.easydoc.core.easyread.findMissingFacts
+import kr.easydoc.core.easyread.hasMarkerChanges
 import kr.easydoc.core.easyread.postprocess
 import kr.easydoc.core.easyread.renderStructureSection
 import kr.easydoc.core.exceptions.LlmEmptyResultException
@@ -184,16 +185,17 @@ private class Pass(
         source: String,
         structureSection: String?,
     ): ConversionResult {
-        val issues = checkStyle(draft).issues
+        val issues = checkRepairStyle(source, draft).issues
         val factIssues = findMissingFacts(source, draft)
 
-        // ② 보정 패스 — 기계 검출된 위반(문체 또는 사실 누락)이 있을 때만, 정확히 1회.
+        // ② 보정 패스 — 뜻풀이 충돌·이중 피동, 사실 누락 또는 원문 표식 변경이 있을 때만 1회.
+        // 길이·쉼표·낱말 지적만으로는 정확한 문서를 전체 재서술하지 않는다.
         //
         // **이 자리에 루프가 없다는 것이 상한의 실체다.** 보정 결과에 위반이 남아 있어도,
         // 보정을 기각했어도 다시 부르지 않는다. `while (issues.isNotEmpty())` 로 바꾸는 순간
         // 상한은 사라지고 지연·비용의 하한도 없어진다(인벤토리 §3.1 (가) 2).
         val adopted =
-            if (issues.isEmpty() && factIssues.isEmpty()) {
+            if (issues.isEmpty() && factIssues.isEmpty() && !hasMarkerChanges(source, draft)) {
                 Adoption.keep(draft)
             } else {
                 repairOnce(draft, issues, factIssues, source, structureSection)
@@ -217,7 +219,7 @@ private class Pass(
     ): Adoption {
         // ModelDraft 로 감싸는 것이 허용되는 자리다 — 값의 출처가 LLM 출력의 후처리 결과다
         // (`DocumentBody.kt` 「provenance 래퍼 사용 규약」).
-        val prompt = LlmPrompt.forRepair(ModelDraft(draft), issues, factIssues, documentIds, structureSection)
+        val prompt = LlmPrompt.forRepair(ModelDraft(draft), issues, factIssues, documentIds, structureSection, source)
         val candidate =
             (complete(prompt, repairPurpose, source.length) as? Outcome.Body)?.text
                 ?: return Adoption.keep(draft)
