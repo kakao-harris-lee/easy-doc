@@ -54,7 +54,7 @@ EASYDOC_TOSS_SECRET_KEY=<같은 상점의 test_sk_ 키>
 - `TossGatewayTest`: 토스 HTTP 형식, 인증, 멱등키, 오류 분류.
 - `TossReachTest`: Kotlin HTTP→PostgreSQL→결제 어댑터 대역. 응답 유실 재조회, 중복 반영 방지, 소유권, 관리자 환불, 해지 만료.
 - `TossStoreTest`: 두 결제 봉투의 실제 DB 키 회전과 AAD 바꿔치기 거절.
-- `frontend/e2e/toss-billing.spec.ts`: 공개 테스트 키를 사용하는 외부 토스 E2E. 명시적 `E2E_TOSS_TEST=1`일 때만 실행한다. 일반 테스트는 외부 토스를 호출하지 않는다. 실행 결과는 완료 후 아래에 기록한다.
+- `frontend/e2e/toss-billing.spec.ts`: 테스트 키를 사용하는 외부 토스 E2E. 명시적 `E2E_TOSS_TEST=1`일 때만 실행한다. 일반 테스트는 외부 토스를 호출하지 않는다. 공개 체험 MID와 본인 상점 MID의 결제창 차이를 모두 처리한다.
 
 ```sh
 E2E_TOSS_TEST=1 E2E_API_PROFILES=api,local,e2e EASYDOC_PAYMENT_PROVIDER=toss_test \
@@ -71,11 +71,17 @@ E2E_TOSS_TEST=1 E2E_API_PROFILES=api,local,e2e EASYDOC_PAYMENT_PROVIDER=toss_tes
 
 공개 키는 본인 상점 대시보드에 연결되지 않는다. 본인 상점의 테스트 MID/키, 인터넷에서 접근 가능한 HTTPS URL을 설정한 후 토스에서 발생한 실제 웹훅의 수신과 재전송을 별도로 확인해야 한다. 공개 웹훅 엔드포인트의 위조/중복 방어는 서버 통합 테스트로 검증했다.
 
+## 본인 상점 테스트 키 검증 (2026-09-13)
+
+개발자센터의 API 개별 연동 테스트 클라이언트 키와 같은 상점의 테스트 시크릿 키를 Git에서 제외되는 로컬 `.env`에 적용했다. 상점 테스트 MID의 카드 등록창은 공개 체험 MID와 달리 카드 정보 다음에 휴대폰 본인인증 단계를 표시한다. 토스 공식 테스트 절차에 따라 합성 이름·생년월일·휴대폰번호와 테스트 인증번호 `000000`을 사용했으며 실제 문자는 발송되지 않았다.
+
+본인 상점 키 + 합성 카드 + 일회용 PostgreSQL에서 외부 토스 E2E 1건이 1.1분에 통과했다. 카드 등록, 빌링키 발급, 최초 1,000원 테스트 승인, worker 월 갱신 승인, 영수증 조회, 두 승인 건의 전액 부분 환불, 멱등 재요청, 구독 갱신 중단과 빌링키 삭제까지 확인했다. 두 테스트 승인은 모두 전액 환불했으며 실제 청구·출금은 없다. 로컬 키의 원문은 문서와 로그에 남기지 않았다.
+
 ## 최종 검증 및 로컬 반영 (2026-09-13)
 
-- Backend `./gradlew build --no-parallel --continue`: 성공. JUnit 결과 2,877건, 실패·오류·건너뜀 0건. 로그 `/tmp/easydoc-toss-build-verified.log`.
-- Frontend `npm run check`, `npm run test -- --run`, `npm run build`: 성공. 49개 테스트 파일, 619건 통과.
+- Backend `./gradlew build --no-parallel`: 성공.
+- Frontend `npm run check`, `npm run test -- --run`, `npm run build`: 성공. 49개 테스트 파일, 620건 통과.
 - `docker compose config --quiet`: 성공.
-- 최종 산출물로 외부 토스 E2E 재실행: 1건 통과(1.1분). 로그 `/tmp/easydoc-toss-e2e-final.log`.
+- 본인 상점 테스트 키로 외부 토스 E2E 재실행: 1건 통과(1.1분).
 - localhost의 API·worker·프런트 이미지를 교체하고 세 컨테이너의 healthy 상태를 확인했다. V23/V24 마이그레이션 성공, `/api/health` 및 `/billing/callback` HTTP 200, nginx 설정 검사 성공.
-- 로컬은 공개 체험 키의 `toss_test` 모드다. 실결제는 활성화하지 않았다. 키 설정은 Git에서 제외되는 `.env`에만 두었다.
+- 로컬은 본인 상점 테스트 키의 `toss_test` 모드다. 실결제는 활성화하지 않았다. 키 설정은 Git에서 제외되는 `.env`에만 두었다.

@@ -350,7 +350,10 @@ export function AppLayout({ children }: { children: ReactNode }) {
           </NavLink>
           {status === 'anonymous' && (
             <nav aria-label="시작 메뉴" className="ml-auto flex items-center gap-1">
-              <NavLink to={GUIDE_PATH} className={navLinkClass}>
+              <NavLink
+                to={GUIDE_PATH}
+                className={(state) => cn(navLinkClass(state), 'hidden sm:flex')}
+              >
                 <HelpCircle className="size-4" aria-hidden="true" />
                 이용 가이드
               </NavLink>
