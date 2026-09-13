@@ -31,10 +31,7 @@ beforeEach(() => {
   vi.resetAllMocks()
   vi.mocked(getSubscription).mockResolvedValue({
     mock_enabled: false,
-    plans: [
-      { id: 'starter', name: 'Starter', allowance: 50, monthly_price: 1000 },
-      { id: 'pro', name: 'Pro', allowance: 200, monthly_price: 3000 },
-    ],
+    plans: [{ id: 'start', name: 'Start', allowance: 50, monthly_price: 99_000 }],
     subscription: null,
     payments: [],
   })
@@ -47,8 +44,10 @@ describe('플랜과 사용량', () => {
     render(page())
     expect(screen.getByRole('heading', { name: '월 구독 플랜' })).toBeInTheDocument()
     expect(await screen.findByText('구독 서비스 준비 중')).toBeInTheDocument()
-    const catalog = screen.getByRole('list', { name: '테스트 플랜 구성' })
-    expect(within(catalog).getByText('Starter')).toBeInTheDocument()
+    expect(screen.queryByText('테스트 구성 · 동작 확인용')).not.toBeInTheDocument()
+    const catalog = screen.getByRole('list', { name: '목표 플랜 구성' })
+    expect(within(catalog).getByText('Start')).toBeInTheDocument()
+    expect(within(catalog).getByText('Basic')).toBeInTheDocument()
     expect(within(catalog).getByText('Pro')).toBeInTheDocument()
     expect(within(catalog).getByText(/월 50크레딧/)).toBeInTheDocument()
     expect(within(catalog).getByText(/월 200크레딧/)).toBeInTheDocument()
@@ -62,19 +61,19 @@ describe('플랜과 사용량', () => {
     expect(createInvoiceRequest).not.toHaveBeenCalled()
   })
 
-  it('테스트 플랜 구성과 목표 플랜 구성(연구안)을 함께 보여준다', async () => {
+  it('실제 목표 플랜 가격과 Start 테스트 결제 상태를 보여준다', async () => {
     render(page())
     expect(await screen.findByText('구독 서비스 준비 중')).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: '목표 플랜 구성' })).toBeInTheDocument()
-    expect(screen.getByText('연구안 · 판매 가격이 아닙니다.')).toBeInTheDocument()
     const targetCatalog = screen.getByRole('list', { name: '목표 플랜 구성' })
-    expect(within(targetCatalog).getByText('Basic')).toBeInTheDocument()
+    expect(within(targetCatalog).getByText('Start')).toBeInTheDocument()
     expect(within(targetCatalog).getByText('99,000원')).toBeInTheDocument()
+    expect(within(targetCatalog).getByText('Basic')).toBeInTheDocument()
+    expect(within(targetCatalog).getByText('190,000원')).toBeInTheDocument()
     expect(within(targetCatalog).getByText(/200크레딧/)).toBeInTheDocument()
     expect(within(targetCatalog).getByText('Pro')).toBeInTheDocument()
-    expect(within(targetCatalog).getByText('290,000원')).toBeInTheDocument()
-    expect(within(targetCatalog).getByText('Enterprise')).toBeInTheDocument()
-    expect(within(targetCatalog).getByText(/1,000,000원/)).toBeInTheDocument()
+    expect(within(targetCatalog).getByText('599,000원')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Start 테스트 결제' })).toBeDisabled()
     expect(screen.queryByRole('table')).not.toBeInTheDocument()
     expect(screen.queryByText(/토큰|예상 비용|LLM 호출/)).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '세금계산서 요청' })).not.toBeInTheDocument()

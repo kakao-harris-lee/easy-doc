@@ -46,7 +46,7 @@ class TossGatewayTest {
                 Secret("synthetic-customer"),
                 order,
                 1000,
-                "Starter",
+                "Start",
                 false,
             )
         assertThat(payment.amount).isEqualTo(1000)
@@ -72,7 +72,7 @@ class TossGatewayTest {
             exchange.responseBody.use { it.write(body) }
         }
         assertThatThrownBy {
-            gateway.charge(Secret("billing-test"), Secret("customer-test"), UUID.randomUUID(), 1000, "starter", true)
+            gateway.charge(Secret("billing-test"), Secret("customer-test"), UUID.randomUUID(), 1000, "start", true)
         }.isInstanceOf(kr.easydoc.application.subscription.TossDeclined::class.java)
     }
 }

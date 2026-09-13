@@ -49,7 +49,7 @@ class TossReachTest {
         val token = account()
         val workspace = workspace(token)
         val base = "/workspaces/$workspace/subscription"
-        val started = send("$base/billing", token, "POST", """{"plan_id":"starter"}""")
+        val started = send("$base/billing", token, "POST", """{"plan_id":"start"}""")
         assertThat(started.statusCode()).isEqualTo(200)
         val session = json.readTree(started.body())
         val id = UUID.fromString(session["session_id"].asString())
@@ -110,7 +110,7 @@ class TossReachTest {
         val token = account()
         val workspace = workspace(token)
         val base = "/workspaces/$workspace/subscription"
-        val started = json.readTree(send("$base/billing", token, "POST", """{"plan_id":"pro"}""").body())
+        val started = json.readTree(send("$base/billing", token, "POST", """{"plan_id":"start"}""").body())
         val id = started["session_id"].asString()
         val customer = started["customer_key"].asString()
         val bad = """{"session_id":"$id","customer_key":"${UUID.randomUUID()}","auth_key":"synthetic-auth"}"""
@@ -135,7 +135,7 @@ class TossReachTest {
         val token = account()
         val workspace = workspace(token)
         val base = "/workspaces/$workspace/subscription"
-        val session = json.readTree(send("$base/billing", token, "POST", """{"plan_id":"starter"}""").body())
+        val session = json.readTree(send("$base/billing", token, "POST", """{"plan_id":"start"}""").body())
         val id = UUID.fromString(session["session_id"].asString())
         gateway.loseIssueResponse.add(id)
         val payload = """{"session_id":"$id","customer_key":"${session["customer_key"].asString()}",
@@ -238,7 +238,7 @@ class TossReachTest {
         val base = "/workspaces/$workspace/subscription"
         // Replacing a card first revokes the previous key and resumes the same paid period without a new charge.
         assertThat(send(base, token, "DELETE").statusCode()).isEqualTo(200)
-        val replacement = json.readTree(send("$base/billing", token, "POST", """{"plan_id":"starter"}""").body())
+        val replacement = json.readTree(send("$base/billing", token, "POST", """{"plan_id":"start"}""").body())
         val replacementBody = """{"session_id":"${replacement["session_id"].asString()}",
             "customer_key":"${replacement["customer_key"].asString()}","auth_key":"synthetic-replacement"}"""
         assertThat(send("$base/billing/complete", token, "POST", replacementBody).statusCode()).isEqualTo(200)

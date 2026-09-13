@@ -476,8 +476,7 @@ class TossBillingService(
 
     private fun plan(id: String): SubscriptionPlan =
         when (id) {
-            "starter" -> SubscriptionPlan(id, "Starter", STARTER_CREDITS, STARTER_PRICE)
-            "pro" -> SubscriptionPlan(id, "Pro", PRO_CREDITS, PRO_PRICE)
+            "start" -> SubscriptionPlan(id, "Start", START_CREDITS, START_PRICE)
             else -> throw InvalidInputException("알 수 없는 구독 플랜입니다")
         }
 
@@ -486,10 +485,8 @@ class TossBillingService(
         const val AUTH_KEY_MAX_LENGTH = 300
         const val RETRY_SECONDS = 30L
         const val RETRY_MAX_DAYS = 14
-        const val STARTER_CREDITS = 50
-        const val STARTER_PRICE = 1000
-        const val PRO_CREDITS = 200
-        const val PRO_PRICE = 3000
+        const val START_CREDITS = 50
+        const val START_PRICE = 99_000
     }
 
     private fun conflict(message: String): Nothing = throw ConflictException(message)

@@ -52,13 +52,13 @@ export class ApiError extends Error {
    */
   readonly remainingCallBudget: number | null
   /**
-   * `createDocument`의 402(`InsufficientCredits`) 응답이 내는 `X-Credit-Balance`(이 예약
-   * 시도 시점의 가용 크레딧) — 크레딧 계정 계획 §2 결정 7(C1). 그 헤더가 없거나 정수로
-   * 읽지 못하면 null이다.
+   * `createDocument`·`reconvertUnit`의 402(`InsufficientCredits`) 응답이 내는
+   * `X-Credit-Balance`(이 예약 시도 시점의 가용 크레딧). 그 헤더가 없거나 정수로 읽지
+   * 못하면 null이다.
    */
   readonly creditBalance: number | null
   /**
-   * `createDocument`의 402(`InsufficientCredits`) 응답이 내는
+   * `createDocument`·`reconvertUnit`의 402(`InsufficientCredits`) 응답이 내는
    * `X-Credits-Required`(이 요청이 필요로 한 크레딧). 그 헤더가 없거나 정수로 읽지
    * 못하면 null이다.
    */

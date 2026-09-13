@@ -291,7 +291,7 @@ describe('createDocumentFromText — 크레딧 헤더(C1/C2)', () => {
   it('402는 X-Credit-Balance·X-Credits-Required를 ApiError.creditBalance·creditsRequired로 읽는다', async () => {
     writeToken('token-abc')
     fetchMock.mockResolvedValue(
-      new Response(JSON.stringify({ detail: '크레딧이 부족합니다. 충전 후 다시 시도하세요.' }), {
+      new Response(JSON.stringify({ detail: '크레딧이 부족합니다. 상위 플랜을 선택해 주세요.' }), {
         status: 402,
         headers: {
           'Content-Type': 'application/json',

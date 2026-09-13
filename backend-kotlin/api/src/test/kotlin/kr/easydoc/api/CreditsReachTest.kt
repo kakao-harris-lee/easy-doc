@@ -68,7 +68,7 @@ class CreditsReachTest {
         assertDeclaredStatus(response, PAYMENT_REQUIRED)
         assertThat(response.headers().firstValue(CREDIT_BALANCE_HEADER)).hasValue("1")
         assertThat(response.headers().firstValue(CREDITS_REQUIRED_HEADER)).hasValue("2")
-        assertThat(bodyOf(response)["detail"]).isEqualTo("크레딧이 부족합니다. 충전 후 다시 시도하세요.")
+        assertThat(bodyOf(response)["detail"]).isEqualTo("크레딧이 부족합니다. 상위 플랜을 선택해 주세요.")
         assertThat(documentCount(token)).isZero()
     }
 

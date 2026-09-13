@@ -1,28 +1,47 @@
 import { render, screen, within } from '@testing-library/react'
-import { expect, it } from 'vitest'
+import userEvent from '@testing-library/user-event'
+import { expect, it, vi } from 'vitest'
 
 import { TargetPlanCatalog } from './TargetPlanCatalog'
 
-it('연구안 목표 플랜 구성을 판매 가격이 아니라고 표시하며 체크아웃 버튼이 없다', () => {
-  render(<TargetPlanCatalog />)
+it('실제 월 플랜 가격과 제공량을 표시한다', () => {
+  render(<TargetPlanCatalog workspaceId={null} />)
   expect(screen.getByRole('heading', { name: '목표 플랜 구성' })).toBeInTheDocument()
-  expect(screen.getByText('연구안 · 판매 가격이 아닙니다.')).toBeInTheDocument()
 
   const catalog = screen.getByRole('list', { name: '목표 플랜 구성' })
-  expect(within(catalog).getByText('Basic')).toBeInTheDocument()
+  expect(within(catalog).getByText('Start')).toBeInTheDocument()
   expect(within(catalog).getByText('99,000원')).toBeInTheDocument()
+  expect(within(catalog).getByText(/50크레딧/)).toBeInTheDocument()
+  expect(within(catalog).getByText('Basic')).toBeInTheDocument()
+  expect(within(catalog).getByText('190,000원')).toBeInTheDocument()
   expect(within(catalog).getByText(/200크레딧/)).toBeInTheDocument()
   expect(within(catalog).getByText('Pro')).toBeInTheDocument()
-  expect(within(catalog).getByText('290,000원')).toBeInTheDocument()
+  expect(within(catalog).getByText('599,000원')).toBeInTheDocument()
+  expect(within(catalog).getByText(/1,000크레딧/)).toBeInTheDocument()
   expect(within(catalog).getAllByText('HWPX 내려받기').length).toBeGreaterThan(0)
-  expect(within(catalog).getByText('Enterprise')).toBeInTheDocument()
-  expect(within(catalog).getByText(/1,000,000원/)).toBeInTheDocument()
-  expect(within(catalog).getByText('부서 계정 공유')).toBeInTheDocument()
-  expect(within(catalog).getByText('CSAP 대응 옵션')).toBeInTheDocument()
+  expect(screen.getByText(/재변환도 대상 원문 분량만큼 이용량에 포함/)).toBeInTheDocument()
+})
 
-  expect(screen.getByText(/페이지 상당량은 비교용/)).toBeInTheDocument()
-  expect(screen.getByText(/정책 확정 필요/)).toBeInTheDocument()
-  expect(screen.queryByRole('table')).not.toBeInTheDocument()
-  expect(screen.queryByRole('button')).not.toBeInTheDocument()
-  expect(screen.queryByText(/문의하기|견적 요청|지금 시작/)).not.toBeInTheDocument()
+it('모든 플랜을 선택할 수 있지만 Start만 테스트 결제를 연다', async () => {
+  const user = userEvent.setup()
+  const checkout = vi.fn()
+  render(
+    <TargetPlanCatalog
+      workspaceId="w1"
+      checkoutEnabled
+      tossEnabled={false}
+      pending={false}
+      busy={false}
+      activePlanId={null}
+      onCheckout={checkout}
+    />,
+  )
+
+  await user.click(screen.getByRole('radio', { name: 'Basic' }))
+  expect(screen.getByRole('button', { name: 'Basic 결제 준비 중' })).toBeDisabled()
+  await user.click(screen.getByRole('radio', { name: 'Pro' }))
+  expect(screen.getByRole('button', { name: 'Pro 결제 준비 중' })).toBeDisabled()
+  await user.click(screen.getByRole('radio', { name: 'Start' }))
+  await user.click(screen.getByRole('button', { name: 'Start 테스트 결제' }))
+  expect(checkout).toHaveBeenCalledOnce()
 })

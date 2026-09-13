@@ -485,14 +485,14 @@ class ValueSlotInvariantReachTest {
         /** 오퍼레이션이 요청 본문을 요구할 때 쓰는 최소 유효 본문 — 스키마 이름별. */
         private val MINIMAL_BODIES =
             mapOf(
-                "TossBeginRequest" to """{"plan_id":"starter"}""",
+                "TossBeginRequest" to """{"plan_id":"start"}""",
                 "TossCompleteRequest" to
                     """{"session_id":"00000000-0000-0000-0000-000000000001",
                 "customer_key":"00000000-0000-0000-0000-000000000002",
                 "auth_key":"test-auth"}""",
                 "TossRefundRequest" to """{"operation_id":"00000000-0000-0000-0000-000000000001","amount":100}""",
                 "SubscriptionCheckoutRequest" to
-                    """{"plan_id":"starter","order_id":"00000000-0000-0000-0000-000000000001"}""",
+                    """{"plan_id":"start","order_id":"00000000-0000-0000-0000-000000000001"}""",
                 "WorkspaceNameRequest" to """{"name":"가"}""",
                 "ConversionReviewRequest" to """{"edited_text":"가"}""",
                 // 계약 required 셋만 담는다 — `comment` 는 선택이라 최소 본문에 없다.

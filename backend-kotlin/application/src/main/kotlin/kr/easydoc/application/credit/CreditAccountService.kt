@@ -260,7 +260,7 @@ class CreditAccountService(
     fun consistencyViolations(): List<CreditConsistencyViolation> = repository.consistencyViolations()
 
     private companion object {
-        const val INSUFFICIENT_CREDITS_MESSAGE = "크레딧이 부족합니다. 충전 후 다시 시도하세요."
+        const val INSUFFICIENT_CREDITS_MESSAGE = "크레딧이 부족합니다. 상위 플랜을 선택해 주세요."
     }
 }
 

@@ -21,7 +21,7 @@ import { api, newAccount, signUpAndLand, verifyEmail } from './support/app'
 const SOURCE_TEXT = '국민건강보험료를 납부하려면 가까운 지사를 방문하세요.'
 
 /** 계약 `InsufficientCredits` 예시 문구(`contracts/easy-doc-v1.yaml`). */
-const INSUFFICIENT_CREDITS_DETAIL = '크레딧이 부족합니다. 충전 후 다시 시도하세요.'
+const INSUFFICIENT_CREDITS_DETAIL = '크레딧이 부족합니다. 상위 플랜을 선택해 주세요.'
 
 test.describe('크레딧 계정 (집행 켜짐)', () => {
   test('E22 가입 부여(1) → 첫 등록 202/가용0 → 두 번째 등록 402 → 화면·/usage 반영', async ({

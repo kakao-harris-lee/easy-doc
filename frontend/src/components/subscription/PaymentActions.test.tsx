@@ -8,7 +8,7 @@ vi.mock('../../api/subscriptions', () => ({ getTossReceipt: vi.fn(), refundTossP
 beforeEach(() => vi.resetAllMocks())
 const payment = {
   id: 'payment',
-  plan_id: 'starter',
+  plan_id: 'start',
   amount: 1000,
   status: 'paid' as const,
   created_at: '2026-09-13',

@@ -10,7 +10,7 @@ import java.time.Instant
 import java.time.ZoneId
 import java.util.UUID
 
-/** Test prices only. Commercial prices and real Toss billing are not enabled. */
+/** 서버가 허용하는 테스트 결제 플랜. 실제 청구는 test/stub 프로필에서만 가능하다. */
 data class SubscriptionPlan(
     val id: String,
     val name: String,
@@ -96,8 +96,7 @@ class SubscriptionService(
     private val zone: ZoneId,
     private val toss: TossBillingService? = null,
 ) {
-    private val plans =
-        listOf(SubscriptionPlan("starter", "Starter", 50, 1000), SubscriptionPlan("pro", "Pro", 200, 3000))
+    private val plans = listOf(SubscriptionPlan("start", "Start", 50, 99_000))
 
     fun read(
         ownerId: UUID,

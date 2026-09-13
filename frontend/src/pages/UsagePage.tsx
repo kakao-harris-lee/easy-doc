@@ -79,7 +79,7 @@ function WorkspaceUsage({ workspaceId }: { workspaceId: string }) {
   }, [workspaceId])
 
   return (
-    <section aria-labelledby="monthly-usage-heading" className={CARD_CLASS}>
+    <section aria-labelledby="monthly-usage-heading" className={`order-2 ${CARD_CLASS}`}>
       <h2 id="monthly-usage-heading" className="text-sm font-semibold text-muted-foreground">
         이번 달 사용량
       </h2>
@@ -128,7 +128,7 @@ export function UsagePage() {
       <PageHeader
         context={currentName ?? '사용량'}
         title="플랜과 사용량"
-        description="테스트 구성과 연구 중인 목표 구성을 함께 보여 준다."
+        description="월 플랜을 선택하고 남은 이용량과 이번 달 사용량을 확인한다."
         titleId="usage-heading"
       />
       <div className="grid gap-4 md:grid-cols-2">
@@ -140,13 +140,13 @@ export function UsagePage() {
           />
         )}
         {currentId === null ? (
-          <p className={CARD_CLASS}>작업 공간을 선택하면 사용량을 볼 수 있습니다.</p>
+          <>
+            <p className={`order-1 ${CARD_CLASS}`}>작업 공간을 선택하면 사용량을 볼 수 있습니다.</p>
+            <TargetPlanCatalog workspaceId={null} className="order-3 md:col-span-2" />
+          </>
         ) : (
           <WorkspaceUsage key={`usage:${currentId}:${reload}`} workspaceId={currentId} />
         )}
-      </div>
-      <div className="mt-4">
-        <TargetPlanCatalog />
       </div>
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-sm text-muted-foreground">
         <p>1크레딧은 공백 포함 1,000자 분량입니다.</p>
