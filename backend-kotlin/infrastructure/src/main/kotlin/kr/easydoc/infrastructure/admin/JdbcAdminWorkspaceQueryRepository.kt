@@ -20,11 +20,13 @@ import java.util.UUID
  * [creditBalances]·[monthUsage]가 읽는 `workspace_credit_accounts`·`llm_calls`도 같은
  * 이유로 그 스캐너 밖이다.
  *
- * **[monthUsage]는 `outcome = 'completed'`인 행만 문서·크레딧·비용에 센다**(V18, 백로그
+ * **[monthUsage]는 `outcome = 'completed'`인 행만 문서·비용에 센다**(V18, 백로그
  * 「실패 호출 원장 추적」) — `JdbcUsageReadRepository`·`JdbcUsageReportRepository`와 같은
  * 규칙이다. 완성 자체가 나지 않은 호출(`provider_error`)만 있는 문서는 실제로 변환되지
  * 않았으므로 목록 요약(`monthDocuments`·`monthCredits`·`monthCostUsd`)에 청구 대상으로
- * 잡히면 안 된다 — 이 저장소는 목록 요약이라 [AdminMonthUsage]에 `failedCalls`를 별도로
+ * 잡히면 안 된다. 크레딧은 실제 `consume/conversion` 거래 합을 우선해 재변환까지 세고,
+ * 거래가 전혀 없는 V15 이전 데이터만 문서별 계산값으로 대체한다. 이 저장소는 목록
+ * 요약이라 [AdminMonthUsage]에 `failedCalls`를 별도로
  * 내지 않는다(그 값이 필요하면 상세 화면의 `UsageQueryService.usageOf`를 쓴다).
  */
 class JdbcAdminWorkspaceQueryRepository(private val jdbc: JdbcClient) : AdminWorkspaceQueryRepository {
@@ -85,12 +87,13 @@ class JdbcAdminWorkspaceQueryRepository(private val jdbc: JdbcClient) : AdminWor
     ): Map<UUID, AdminMonthUsage> {
         if (workspaceIds.isEmpty()) return emptyMap()
         val documents = documentTotalsByWorkspace(workspaceIds, from, toExclusive)
+        val credits = creditTotalsByWorkspace(workspaceIds, from, toExclusive)
         val costs = costTotalsByWorkspace(workspaceIds, from, toExclusive)
-        return (documents.keys + costs.keys).associateWith { id ->
+        return (documents.keys + credits.keys + costs.keys).associateWith { id ->
             val totals = documents[id]
             AdminMonthUsage(
                 documents = totals?.documents ?: 0,
-                credits = totals?.credits ?: 0,
+                credits = credits[id] ?: totals?.credits ?: 0,
                 estimatedCostUsd = costs[id],
             )
         }
@@ -110,6 +113,20 @@ class JdbcAdminWorkspaceQueryRepository(private val jdbc: JdbcClient) : AdminWor
                 rs.getObject("workspace_id", UUID::class.java) to
                     DocumentTotals(documents = rs.getInt("documents"), credits = rs.getLong("credits"))
             }.list()
+            .toMap()
+
+    private fun creditTotalsByWorkspace(
+        workspaceIds: Collection<UUID>,
+        from: Instant,
+        toExclusive: Instant,
+    ): Map<UUID, Long> =
+        jdbc
+            .sql(CREDIT_TOTALS_BY_WORKSPACE_SQL)
+            .param("ids", workspaceIds.toList())
+            .param("from", from.toOffsetDateTime())
+            .param("toExclusive", toExclusive.toOffsetDateTime())
+            .query { rs, _ -> rs.getObject("workspace_id", UUID::class.java) to rs.getLong("credits") }
+            .list()
             .toMap()
 
     private fun costTotalsByWorkspace(
@@ -220,6 +237,15 @@ class JdbcAdminWorkspaceQueryRepository(private val jdbc: JdbcClient) : AdminWor
             FROM llm_calls
             WHERE workspace_id IN (:ids) AND called_at >= :from AND called_at < :toExclusive
               AND outcome = 'completed'
+            GROUP BY workspace_id
+            """.trimIndent()
+
+        val CREDIT_TOTALS_BY_WORKSPACE_SQL =
+            """
+            SELECT workspace_id, -sum(balance_delta)::bigint AS credits
+            FROM credit_transactions
+            WHERE workspace_id IN (:ids) AND created_at >= :from AND created_at < :toExclusive
+              AND kind = 'consume' AND reason = 'conversion'
             GROUP BY workspace_id
             """.trimIndent()
     }

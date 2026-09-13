@@ -119,6 +119,47 @@ class JdbcUsageReadRepositoryTest {
     }
 
     @Test
+    @DisplayName("성공한 재변환 소비는 같은 문서라도 이번 달 사용 크레딧에 추가한다")
+    fun `재변환 소비를 사용 크레딧에 더한다`() {
+        val owner = newOwner()
+        val workspaceId = workspaces.create(owner, "공간-${UUID.randomUUID()}").id
+        val at = Instant.parse("2026-03-20T02:00:00Z")
+        val documentId = insertDocument(workspaceId, owner, charCount = 1500, createdAt = at)
+        appendCall(
+            workspaceId,
+            owner,
+            LlmCallPurpose.CONVERT,
+            documentId,
+            documentCharCount = 1500,
+            inputTokens = 10,
+            outputTokens = 5,
+            costUsd = null,
+            calledAt = at,
+        )
+        appendCall(
+            workspaceId,
+            owner,
+            LlmCallPurpose.RECONVERT,
+            documentId,
+            documentCharCount = 1500,
+            inputTokens = 4,
+            outputTokens = 2,
+            costUsd = null,
+            calledAt = at.plusSeconds(1),
+        )
+        insertCreditConsume(workspaceId, owner, documentId, credits = 2, at = at)
+        insertCreditConsume(workspaceId, owner, documentId, credits = 1, at = at.plusSeconds(1))
+
+        val usage =
+            repository.aggregate(owner, workspaceId, zoneMidnight(2026, 3, 1), zoneMidnight(2026, 4, 1))!!
+
+        assertThat(usage.documents).isEqualTo(1)
+        assertThat(usage.characters).isEqualTo(1500)
+        assertThat(usage.credits).isEqualTo(3)
+        assertThat(usage.llmCalls).isEqualTo(2)
+    }
+
+    @Test
     @DisplayName("zone 자정 경계 — to 날짜 23:59:59 KST(호출 시각)는 포함, 다음날 00:00:00 KST는 제외")
     fun `자정 경계에서 정확히 나뉜다`() {
         val owner = newOwner()
@@ -489,6 +530,31 @@ class JdbcUsageReadRepositoryTest {
                 ),
             ),
         )
+    }
+
+    private fun insertCreditConsume(
+        workspaceId: UUID,
+        ownerId: UUID,
+        documentId: UUID,
+        credits: Int,
+        at: Instant,
+    ) {
+        jdbc
+            .sql(
+                """
+                INSERT INTO credit_transactions
+                    (id, workspace_id, owner_user_id, document_id, kind, balance_delta,
+                     reserved_delta, reason, created_at)
+                VALUES (:id, :workspaceId, :ownerId, :documentId, 'consume', :delta,
+                        :delta, 'conversion', :createdAt)
+                """.trimIndent(),
+            ).param("id", UUID.randomUUID())
+            .param("workspaceId", workspaceId)
+            .param("ownerId", ownerId)
+            .param("documentId", documentId)
+            .param("delta", -credits)
+            .param("createdAt", OffsetDateTime.ofInstant(at, ZoneOffset.UTC))
+            .update()
     }
 
     private companion object {

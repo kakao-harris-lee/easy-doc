@@ -3824,14 +3824,19 @@ paths:
             detail이다 — 형식 오류와 같은 이유로 서비스 층 규칙이다.
           schema: { type: string, examples: ["2026-09-07"] }
       description: |
-        **문서 수·문자 수·크레딧(문서별 `ceil(char_count/1000)`의 합)은 `documents` 표를
-        참조하지 않는다(2026-09-08 리뷰 정정).** 그 기간에 **완료된 LLM 호출이 하나라도
+        **문서 수·문자 수는 `documents` 표를 참조하지 않는다(2026-09-08 리뷰 정정).**
+        그 기간에 **완료된 LLM 호출이 하나라도
         있던**(`llm_calls.called_at` 기준, `document_id`로 distinct) 문서만 센다 — 등록만
         되고 한 번도 변환되지 않은 문서는 비용도 크레딧도 쓰지 않았으므로 포함되지
         않는다. 값의 출처는 `llm_calls.document_char_count`(그 호출이 속한 문서의
         `documents.char_count` 스냅샷)이며, 문서가 보존 만료·삭제로 없어져도 이 값은
         바뀌지 않는다 — 청구 근거를 남기려고 만든 원장이 문서 삭제로 스스로의 근거를
         잃으면 안 되기 때문이다(U1 계획 §2 결정 1, 2026-09-08 리뷰로 3차 정정).
+
+        **크레딧은 실제 소비 확정 거래 기준이다.** 조회 기간에 기록된
+        `credit_transactions.kind=consume`, `reason=conversion`의 차감량을 합하므로 최초
+        변환과 성공한 재변환을 모두 센다. 소비 거래가 전혀 없는 V15 이전 데이터만 문서별
+        `ceil(document_char_count/1000)` 합으로 대체한다.
 
         LLM 호출 수·토큰·예상 비용도 **호출이 끝난 시각**(`llm_calls.called_at`) 기준이며,
         원장의 `char_count`(호출별 마스킹 입력 길이 — `document_char_count`와는 다른 값)는
@@ -6414,7 +6419,7 @@ components:
       description: |
         `GET /workspaces/{workspace_id}/usage` 응답 — 계획
         `docs/plans/2026-09-07-usage-ledger-and-report.md` §2 결정 5-6(U2,
-        2026-09-08 리뷰로 `documents`·`characters`·`credits`의 출처를 정정.
+        2026-09-08 리뷰로 `documents`·`characters`의 출처를 정정.
         `failed_calls`는 2.26.0 신설, 실패 호출 원장 추적 백로그).
       properties:
         documents:
@@ -6436,7 +6441,11 @@ components:
         credits:
           type: integer
           minimum: 0
-          description: 문서별 `ceil(char_count/1000)`을 각각 올림해 더한 값(합계를 한 번에 올린 값이 아니다). `characters`와 같은 스냅샷 출처를 쓴다.
+          description: |
+            조회 기간에 소비로 확정된 변환 크레딧 합. `credit_transactions`의
+            `kind=consume`, `reason=conversion`을 사용해 최초 변환과 성공한 재변환을 모두
+            센다. 해당 거래가 전혀 없는 V15 이전 데이터만 문서별
+            `ceil(document_char_count/1000)` 합으로 대체한다.
         llm_calls:
           type: integer
           minimum: 0
@@ -6460,8 +6469,9 @@ components:
           description: |
             2.26.0 신설(실패 호출 원장 추적 백로그). 그 기간에 완성 자체가 나지 않은
             호출 수(`llm_calls.outcome = provider_error`) — `documents`·`characters`·
-            `credits`·`llm_calls`·`input_tokens`·`output_tokens`·`estimated_cost_usd`는
-            전부 완료(`outcome = completed`)된 행만 센다. 벤더가 실패한 요청의 입력
+            `llm_calls`·`input_tokens`·`output_tokens`·`estimated_cost_usd`는 전부 완료
+            (`outcome = completed`)된 행만 센다. `credits`는 성공한 요청의 소비 확정
+            거래만 세므로 실패 호출의 예약 반환분은 포함하지 않는다. 벤더가 실패한 요청의 입력
             토큰에 과금할 수 있어 이 값이 그 청구를 대조할 단서가 된다.
         by_purpose:
           type: array

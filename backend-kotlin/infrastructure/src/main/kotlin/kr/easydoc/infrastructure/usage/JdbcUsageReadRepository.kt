@@ -18,25 +18,29 @@ import java.util.UUID
  * **`documents` 표를 참조하지 않는다(2026-09-08 리뷰 정정).** 처음 설계는 [documents]·
  * [characters]·[credits]를 `documents.created_at` 기준으로 그 표에서 직접 셌다 — 그런데
  * `documents` 행은 보존 만료·사용자 삭제로 지워지고, 그러면 지난달 이미 청구했어야 할
- * 문서의 문자 수·크레딧이 이번 조회에서 사라진다. U1이 `llm_calls`를 append-only
+ * 문서의 문자 수가 이번 조회에서 사라진다. U1이 `llm_calls`를 append-only
  * 원장으로 만든 이유가 정확히 이 문제를 막는 것이었는데, 이 저장소가 `documents`를
  * 그대로 계속 읽으면 그 목적이 무의미해진다(`LlmCallEntry.documentCharCount` KDoc,
  * V14 머리주석 3차 정정).
  *
- * 그래서 [documents]·[characters]·[credits]도 `llm_calls.document_char_count`(그 호출이
+ * 그래서 [documents]·[characters]는 `llm_calls.document_char_count`(그 호출이
  * 속한 문서의 `documents.char_count` 스냅샷)에서 유도한다 — **그 기간에 완료된 LLM 호출이
  * 하나라도 있던 문서만 센다.** 등록만 되고 한 번도 변환되지 않은 문서는 비용도 크레딧도
  * 없으므로 셀 이유가 없다(호출이 없으면 이 표에 그 문서의 행 자체가 없다). 같은 문서를
  * 대상으로 하는 여러 행(변환·보정·재시도)이 같은 `document_char_count` 값을 반복해
  * 담으므로, `document_id`로 distinct 한 뒤에만 합한다 — distinct 하지 않으면 재시도 한
- * 번마다 그 문서의 문자 수가 다시 더해진다.
+ * 번마다 그 문서의 문자 수가 다시 더해진다. [WorkspaceUsage.credits]는 실제 차감 원장인
+ * `credit_transactions`의 `consume/conversion` 합을 쓴다. 이 값에는 최초 변환뿐 아니라
+ * 성공한 재변환도 들어간다. V15 이전 호출처럼 차감 원장이 전혀 없는 기간만 문서별
+ * `ceil(document_char_count / 1000)` 합으로 대체한다.
  *
  * **소유 확인이 먼저다.** [aggregate]는 워크스페이스 존재·소유 여부를 별도 질의로 확인해
  * `null`을 돌려줄지 정한 뒤에만 나머지 집계를 돈다 — 그래야 "워크스페이스가 없다"와
  * "그 기간에 값이 0이다"를 구분할 수 있다(둘 다 집계 질의만으로는 0행으로 보인다).
  *
- * **실패 호출(`outcome = provider_error`, V18)은 문서·문자·크레딧·토큰·비용 집계에서
- * 빠진다** — 실제로 쓴 자원이 없다(토큰 0, 비용 미상). `documents`·`callTotals`·
+ * **실패 호출(`outcome = provider_error`, V18)은 문서·문자·토큰·비용 집계에서
+ * 빠진다** — 실제로 쓴 자원이 없다(토큰 0, 비용 미상). 크레딧도 소비 확정 거래가
+ * 없으므로 합계에 들어가지 않는다. `documents`·`callTotals`·
  * `callTotalsByPurpose` 는 전부 `FILTER (WHERE outcome = 'completed')` 로 그 집계를
  * 좁힌다. 대신 [WorkspaceUsage.failedCalls]·[PurposeUsage.failedCalls] 가 실패 건수를
  * 따로 낸다 — `FILTER` 를 성공 집계와 나란히 걸어 실패만 있는 기간·목적도 (0, 실패
@@ -51,12 +55,13 @@ class JdbcUsageReadRepository(private val jdbc: JdbcClient) : UsageReadRepositor
     ): WorkspaceUsage? {
         ownedWorkspaceName(ownerId, workspaceId) ?: return null
         val documents = documentTotalsFromCalls(ownerId, workspaceId, from, toExclusive)
+        val consumedCredits = consumedCredits(ownerId, workspaceId, from, toExclusive)
         val calls = callTotals(ownerId, workspaceId, from, toExclusive)
         val byPurpose = callTotalsByPurpose(ownerId, workspaceId, from, toExclusive)
         return WorkspaceUsage(
             documents = documents.documents,
             characters = documents.characters,
-            credits = documents.credits,
+            credits = consumedCredits ?: documents.credits,
             llmCalls = calls.llmCalls,
             inputTokens = calls.inputTokens,
             outputTokens = calls.outputTokens,
@@ -102,7 +107,7 @@ class JdbcUsageReadRepository(private val jdbc: JdbcClient) : UsageReadRepositor
                     coalesce(sum(ceil(document_char_count::numeric / 1000)), 0)::bigint AS credits
                 FROM (
                     -- outcome = 'completed' 만 본다 — 실패 호출(provider_error)만 있던
-                    -- 문서는 실제로 변환되지 않았으므로 문서·문자·크레딧에 넣지 않는다.
+                    -- 문서는 실제로 변환되지 않았으므로 문서·문자에 넣지 않는다.
                     SELECT DISTINCT ON (document_id) document_id, document_char_count
                     FROM llm_calls
                     WHERE workspace_id = :workspaceId AND user_id = :ownerId
@@ -122,6 +127,31 @@ class JdbcUsageReadRepository(private val jdbc: JdbcClient) : UsageReadRepositor
                     credits = rs.getLong("credits"),
                 )
             }.single()
+
+    /** 실제 소비 확정 거래의 합. 행이 없으면 V15 이전 원장 대체를 위해 `null`을 돌린다. */
+    private fun consumedCredits(
+        ownerId: UUID,
+        workspaceId: UUID,
+        from: Instant,
+        toExclusive: Instant,
+    ): Long? =
+        jdbc
+            .sql(
+                """
+                SELECT -sum(balance_delta)::bigint AS credits
+                FROM credit_transactions
+                WHERE workspace_id = :workspaceId AND owner_user_id = :ownerId
+                  AND kind = 'consume' AND reason = 'conversion'
+                  AND created_at >= :from AND created_at < :toExclusive
+                HAVING count(*) > 0
+                """.trimIndent(),
+            ).param("workspaceId", workspaceId)
+            .param("ownerId", ownerId)
+            .param("from", from.toOffsetDateTime())
+            .param("toExclusive", toExclusive.toOffsetDateTime())
+            .query { rs, _ -> rs.getLong("credits") }
+            .optional()
+            .orElse(null)
 
     /**
      * `outcome = 'completed'` 인 행만 토큰·비용·호출 수에 더한다. **실패 건수는 같은

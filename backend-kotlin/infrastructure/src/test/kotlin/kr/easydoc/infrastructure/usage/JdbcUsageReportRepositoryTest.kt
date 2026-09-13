@@ -117,6 +117,48 @@ class JdbcUsageReportRepositoryTest {
     }
 
     @Test
+    @DisplayName("운영 리포트도 성공한 재변환의 실제 소비 크레딧을 센다")
+    fun `재변환 소비를 운영 리포트에 더한다`() {
+        val owner = newOwner()
+        val ws = workspaces.create(owner, "공간-${UUID.randomUUID()}")
+        val at = Instant.parse("2026-03-20T02:00:00Z")
+        val doc = insertDocument(ws.id, owner, charCount = 1500, createdAt = at)
+        appendCall(
+            ws.id,
+            owner,
+            LlmCallPurpose.CONVERT,
+            documentId = doc,
+            documentCharCount = 1500,
+            inputTokens = 10,
+            outputTokens = 5,
+            costUsd = null,
+            calledAt = at,
+        )
+        appendCall(
+            ws.id,
+            owner,
+            LlmCallPurpose.RECONVERT,
+            documentId = doc,
+            documentCharCount = 1500,
+            inputTokens = 4,
+            outputTokens = 2,
+            costUsd = null,
+            calledAt = at.plusSeconds(1),
+        )
+        insertCreditConsume(ws.id, owner, doc, credits = 2, at = at)
+        insertCreditConsume(ws.id, owner, doc, credits = 1, at = at.plusSeconds(1))
+
+        val row =
+            repository
+                .reportRows(zoneMidnight(2026, 3, 1), zoneMidnight(2026, 4, 1))
+                .first { it.workspaceId == ws.id }
+
+        assertThat(row.documents).isEqualTo(1)
+        assertThat(row.characters).isEqualTo(1500)
+        assertThat(row.credits).isEqualTo(3)
+    }
+
+    @Test
     @DisplayName("워크스페이스가 삭제된(workspace_id NULL) 행은 자기 행으로 남는다 — 이름은 NULL")
     fun `삭제된 워크스페이스 행은 별도로 남는다`() {
         val owner = newOwner()
@@ -583,6 +625,31 @@ class JdbcUsageReportRepositoryTest {
                 ),
             ),
         )
+    }
+
+    private fun insertCreditConsume(
+        workspaceId: UUID,
+        ownerId: UUID,
+        documentId: UUID,
+        credits: Int,
+        at: Instant,
+    ) {
+        jdbc
+            .sql(
+                """
+                INSERT INTO credit_transactions
+                    (id, workspace_id, owner_user_id, document_id, kind, balance_delta,
+                     reserved_delta, reason, created_at)
+                VALUES (:id, :workspaceId, :ownerId, :documentId, 'consume', :delta,
+                        :delta, 'conversion', :createdAt)
+                """.trimIndent(),
+            ).param("id", UUID.randomUUID())
+            .param("workspaceId", workspaceId)
+            .param("ownerId", ownerId)
+            .param("documentId", documentId)
+            .param("delta", -credits)
+            .param("createdAt", OffsetDateTime.ofInstant(at, ZoneOffset.UTC))
+            .update()
     }
 
     private companion object {
