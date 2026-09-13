@@ -186,7 +186,7 @@ const SCREENS: readonly {
     open: () => renderAt('/', 'anonymous'),
     settle: () =>
       screen.findByRole('heading', {
-        name: '어려운 공공 안내문을, 누구나 읽는 쉬운 글로',
+        name: '어려운 안내문을 읽히는 문서로 바꾸세요',
         level: 1,
       }),
   },

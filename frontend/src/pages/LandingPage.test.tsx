@@ -13,40 +13,51 @@ function renderLanding() {
 }
 
 describe('랜딩 화면', () => {
-  it('가치 제안 제목과 세 가지 고민을 보여 준다', () => {
+  it('서비스가 제공하는 결과와 문서 변환 이미지를 보여 준다', () => {
     renderLanding()
 
     expect(
       screen.getByRole('heading', {
-        name: '어려운 공공 안내문을, 누구나 읽는 쉬운 글로',
+        name: '어려운 안내문을 읽히는 문서로 바꾸세요',
         level: 1,
       }),
     ).toBeInTheDocument()
-    expect(screen.getByText(/정책 안내문을 만들 때마다/)).toBeInTheDocument()
-    expect(screen.getByText(/공공기관 웹사이트에 있는 정보가 너무 어려워서/)).toBeInTheDocument()
-    expect(screen.getByText(/장애인, 고령자, 어린이 고객을 위한 정보를/)).toBeInTheDocument()
+    expect(
+      screen.getByRole('img', {
+        name: '복잡한 문서가 짧고 읽기 쉬운 문장으로 바뀌는 모습',
+      }),
+    ).toBeInTheDocument()
+    expect(screen.getByText(/원문과 비교해 고친 뒤 문서로 내려받을 수 있어요/)).toBeInTheDocument()
   })
 
-  it('일반 AI 채팅과의 차이를 표로 적는다', () => {
+  it('문서 변환 과정을 세 단계로 안내한다', () => {
     renderLanding()
 
-    const table = screen.getByRole('table', {
-      name: 'ChatGPT·Gemini 같은 일반 AI 채팅과 EASY-DOC AI의 차이',
-    })
-    expect(table).toBeInTheDocument()
-    expect(screen.getByRole('columnheader', { name: 'ChatGPT · Gemini' })).toBeInTheDocument()
-    expect(
-      screen.getByText(/공공 안내문을 쉬운 글로 푸는 규칙이 이미 들어 있습니다/),
-    ).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '문서를 올려요' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '쉬운 글로 바꿔요' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '확인하고 내려받아요' })).toBeInTheDocument()
+  })
+
+  it('실제 변환 예시와 검수 기능을 짧게 보여 준다', () => {
+    renderLanding()
+
+    expect(screen.getByText(/신청 기한 내에 구비서류를 완비하여/)).toBeInTheDocument()
+    expect(screen.getByText(/기간 안에 서류를 모두 챙겨/)).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '사실관계 확인' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '문단별 다시 쓰기' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '쉬운 낱말 찾기' })).toBeInTheDocument()
   })
 
   it('가입과 이용 가이드로 보낸다', () => {
     renderLanding()
 
-    expect(screen.getAllByRole('link', { name: '가입하고 변환해 보기' })[0]).toHaveAttribute(
+    expect(screen.getByRole('link', { name: '무료로 변환 시작하기' })).toHaveAttribute(
       'href',
       '/signup',
     )
-    expect(screen.getByRole('link', { name: '이용 가이드 보기' })).toHaveAttribute('href', '/guide')
+    expect(screen.getByRole('link', { name: '자세한 이용 가이드 보기' })).toHaveAttribute(
+      'href',
+      '/guide',
+    )
   })
 })

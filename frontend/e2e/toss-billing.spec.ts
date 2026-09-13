@@ -11,10 +11,7 @@ import {
 test.use({ trace: 'off', screenshot: 'off', video: 'off' })
 
 test.describe('Toss test billing', () => {
-  test.skip(
-    process.env.E2E_TOSS_TEST !== '1',
-    'Explicit Toss test mode and public test keys required',
-  )
+  test.skip(process.env.E2E_TOSS_TEST !== '1', 'Explicit Toss test mode and test keys required')
   test('card registration and subscription approval', async ({ page, request }) => {
     test.setTimeout(240_000)
     page.setDefaultTimeout(30_000)
@@ -53,12 +50,40 @@ test.describe('Toss test billing', () => {
     await frame.getByLabel('카드번호 9 ~ 12 자리', { exact: true }).fill('0000')
     await frame.getByLabel('카드번호 13 ~ 16 자리', { exact: true }).fill('0000')
     await frame.getByLabel('카드 유효기간', { exact: true }).fill('1230')
-    await frame.getByLabel('주민등록번호 생년월일', { exact: true }).fill('900101')
-    await frame.getByLabel('주민등록번호 성별', { exact: true }).fill('1')
+    // The hosted form differs by test MID. Toss's public sample MID asks for identity
+    // fragments, while an automatic-billing merchant test MID can omit them.
+    const birthDate = frame.getByLabel('주민등록번호 생년월일', { exact: true })
+    if ((await birthDate.count()) > 0) {
+      await birthDate.fill('900101')
+      await frame.getByLabel('주민등록번호 성별', { exact: true }).fill('1')
+    }
     await frame
       .getByRole('checkbox', { name: '[필수] 서비스 이용 약관, 개인정보 처리 동의', exact: true })
       .check()
     await frame.getByRole('button', { name: '다음', exact: true }).click()
+    await expect
+      .poll(
+        () =>
+          page.url().includes('/billing/callback') ||
+          page.frames().some((current) => current.url().includes('sms-authentication')),
+      )
+      .toBe(true)
+    const verification = page
+      .frames()
+      .find((current) => current.url().includes('sms-authentication'))
+    if (verification) {
+      // Merchant test MIDs can add Toss's sandbox identity step. The documented
+      // test code is accepted without sending an SMS, so no personal data is used.
+      await verification.locator('input[name="customerName"]').fill('김토스')
+      await verification.getByLabel('주민등록번호 생년월일', { exact: true }).fill('900101')
+      await verification.getByLabel('주민등록번호 성별', { exact: true }).fill('1')
+      await verification.locator('button[aria-label="통신사 선택"]').click()
+      await verification.getByText('SKT', { exact: true }).click()
+      await verification.locator('input[name="phoneNumber"]').fill('01012345678')
+      await verification.locator('button[aria-label="인증번호 받기"]').click()
+      await verification.getByLabel('인증번호', { exact: true }).fill('000000')
+      await verification.getByRole('button', { name: '확인', exact: true }).click()
+    }
     await expect(page.getByRole('status')).not.toContainText(
       '카드 등록과 테스트 결제 결과를 확인하고 있습니다',
       { timeout: 90_000 },
