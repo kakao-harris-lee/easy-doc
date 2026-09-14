@@ -5,6 +5,7 @@ import kr.easydoc.application.credit.CreditAccountService
 import kr.easydoc.application.credit.NoopCreditAccountRepository
 import kr.easydoc.core.credit.CreditReason
 import kr.easydoc.core.exceptions.ConflictException
+import kr.easydoc.core.exceptions.InvalidInputException
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
@@ -68,36 +69,49 @@ class SubscriptionServiceTest {
     @Test
     fun `successful checkout applies one allowance and retry does not replenish it`() {
         val id = UUID.randomUUID()
-        val result = service().checkout(owner, workspace, "starter", id, false)
+        val result = service().checkout(owner, workspace, "start", id, false)
+        assertThat(result.plans).containsExactly(SubscriptionPlan("start", "Start", 50, 99_000))
         assertThat(result.subscription?.cycleEndsAt).isEqualTo(Instant.parse("2026-02-28T03:00:00Z"))
-        service().checkout(owner, workspace, "starter", id, false)
+        service().checkout(owner, workspace, "start", id, false)
         assertThat(grants).isEqualTo(1)
         assertThat(store.payments).hasSize(1)
         assertThatThrownBy {
-            service().checkout(owner, workspace, "pro", id, false)
+            service().checkout(owner, workspace, "start", id, true)
         }.isInstanceOf(ConflictException::class.java)
     }
 
     @Test
     fun `decline records failure without subscription or allowance`() {
-        val result = service().checkout(owner, workspace, "pro", UUID.randomUUID(), true)
+        val result = service().checkout(owner, workspace, "start", UUID.randomUUID(), true)
         assertThat(result.subscription).isNull()
         assertThat(result.payments.single().status).isEqualTo("failed")
         assertThat(grants).isZero()
     }
 
     @Test
-    fun `active subscription cannot be bought again with a new order`() {
-        service().checkout(owner, workspace, "starter", UUID.randomUUID(), false)
+    fun `only Start is available for test checkout`() {
+        assertThat(service().read(owner, workspace).plans)
+            .containsExactly(SubscriptionPlan("start", "Start", 50, 99_000))
+        assertThatThrownBy {
+            service().checkout(owner, workspace, "basic", UUID.randomUUID(), false)
+        }.isInstanceOf(InvalidInputException::class.java)
         assertThatThrownBy {
             service().checkout(owner, workspace, "pro", UUID.randomUUID(), false)
+        }.isInstanceOf(InvalidInputException::class.java)
+    }
+
+    @Test
+    fun `active subscription cannot be bought again with a new order`() {
+        service().checkout(owner, workspace, "start", UUID.randomUUID(), false)
+        assertThatThrownBy {
+            service().checkout(owner, workspace, "start", UUID.randomUUID(), false)
         }.isInstanceOf(ConflictException::class.java)
         assertThat(grants).isEqualTo(1)
     }
 
     @Test
     fun `cancellation preserves paid period and ends without renewal charge`() {
-        service().checkout(owner, workspace, "starter", UUID.randomUUID(), false)
+        service().checkout(owner, workspace, "start", UUID.randomUUID(), false)
         service().cancel(owner, workspace)
         assertThat(store.current?.status).isEqualTo("canceling")
         assertThat(grants).isEqualTo(1)
@@ -109,7 +123,7 @@ class SubscriptionServiceTest {
 
     @Test
     fun `renewal charges once and replaces allowance even after missed months`() {
-        service().checkout(owner, workspace, "starter", UUID.randomUUID(), false)
+        service().checkout(owner, workspace, "start", UUID.randomUUID(), false)
         val later = service(Instant.parse("2026-05-02T03:00:00Z"))
         later.renewDue()
         later.renewDue()
@@ -120,7 +134,7 @@ class SubscriptionServiceTest {
 
     @Test
     fun `failed renewal closes allowance and is not repeatedly charged`() {
-        service().checkout(owner, workspace, "starter", UUID.randomUUID(), false)
+        service().checkout(owner, workspace, "start", UUID.randomUUID(), false)
         val later = service(now.plusSeconds(40L * 86400), decline = true)
         later.renewDue()
         later.renewDue()
@@ -132,7 +146,7 @@ class SubscriptionServiceTest {
 
     @Test
     fun `disabling mock ends existing cycles without charging or freezing allowance`() {
-        service().checkout(owner, workspace, "starter", UUID.randomUUID(), false)
+        service().checkout(owner, workspace, "start", UUID.randomUUID(), false)
         service(now.plusSeconds(40L * 86400), enabled = false).renewDue()
         assertThat(store.current?.status).isEqualTo("expired")
         assertThat(store.payments).hasSize(1)

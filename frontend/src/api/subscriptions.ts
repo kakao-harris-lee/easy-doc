@@ -1,5 +1,8 @@
 import { requestJson } from './client'
 
+/** 서버가 현재 테스트 결제에 노출하는 유일한 플랜. */
+export type TestSubscriptionPlanId = 'start'
+
 export interface SubscriptionOverview {
   mock_enabled: boolean
   toss_enabled?: boolean
@@ -33,7 +36,7 @@ export function getSubscription(workspace: string, signal?: AbortSignal, admin =
 
 export function checkoutSubscription(
   workspace: string,
-  plan: string,
+  plan: TestSubscriptionPlanId,
   order: string,
   fail: boolean,
 ) {
@@ -54,7 +57,7 @@ export interface TossSession {
   customer_key: string
   client_key: string
 }
-export function beginTossBilling(workspace: string, plan: string) {
+export function beginTossBilling(workspace: string, plan: TestSubscriptionPlanId) {
   return requestJson<TossSession>(`/workspaces/${workspace}/subscription/billing`, {
     method: 'POST',
     body: { plan_id: plan },

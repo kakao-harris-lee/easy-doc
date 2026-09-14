@@ -609,6 +609,7 @@ class AuthSliceBeans {
         cipher: ContentCipher,
         convert: ConvertDocumentUseCase,
         transaction: TransactionRunner,
+        creditAccountService: CreditAccountService,
     ): ReconvertUnitService =
         ReconvertUnitService(
             conversions = conversions,
@@ -620,6 +621,7 @@ class AuthSliceBeans {
             concurrencyLimit = SLICE_RECONVERSION_CONCURRENCY,
             // 슬라이스 테스트는 원장을 재지 않는다 — no-op 대역.
             ledger = LlmCallLedger { },
+            credits = creditAccountService,
         )
 
     @Bean

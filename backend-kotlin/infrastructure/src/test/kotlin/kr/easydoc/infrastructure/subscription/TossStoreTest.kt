@@ -38,14 +38,14 @@ class TossStoreTest {
                 workspace,
                 UUID.randomUUID(),
                 UUID.randomUUID(),
-                "starter",
+                "start",
                 Instant.now(),
                 Secret("synthetic-auth-secret"),
                 Secret("synthetic-billing-secret"),
                 "active",
             )
         old.saveSession(session)
-        val order = BillingOrder(UUID.randomUUID(), workspace, "starter", 1000, Instant.now(), Instant.now())
+        val order = BillingOrder(UUID.randomUUID(), workspace, "start", 1000, Instant.now(), Instant.now())
         old.saveOrder(
             order.copy(
                 payment =

@@ -226,6 +226,7 @@ class DocumentConfiguration {
         transactionRunner: TransactionRunner,
         properties: ReconversionProperties,
         ledger: LlmCallLedger,
+        creditAccountService: CreditAccountService,
     ): ReconvertUnitService =
         ReconvertUnitService(
             conversions = conversions,
@@ -236,6 +237,7 @@ class DocumentConfiguration {
             callBudget = properties.callBudget,
             concurrencyLimit = properties.concurrency,
             ledger = ledger,
+            credits = creditAccountService,
         )
 
     /** 파일럿 피드백 저장소. 문서·변환과 **수명이 분리된** 표라 저장소도 따로 선다. */

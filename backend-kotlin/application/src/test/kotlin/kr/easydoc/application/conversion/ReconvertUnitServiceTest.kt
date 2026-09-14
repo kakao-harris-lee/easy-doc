@@ -1,5 +1,10 @@
 package kr.easydoc.application.conversion
 
+import kr.easydoc.application.credit.CreditAccountRepository
+import kr.easydoc.application.credit.CreditAccountService
+import kr.easydoc.application.credit.NoopCreditAccountRepository
+import kr.easydoc.application.credit.ReservationResult
+import kr.easydoc.application.credit.noCredits
 import kr.easydoc.application.document.ConversionCiphertexts
 import kr.easydoc.application.document.ConversionEnvelope
 import kr.easydoc.application.document.FakeContentCipher
@@ -8,10 +13,12 @@ import kr.easydoc.application.document.FakeDocumentOriginalRepository
 import kr.easydoc.application.document.FakeQueryDocumentRepository
 import kr.easydoc.application.document.RecordingTransactionRunner
 import kr.easydoc.application.document.StoredConversion
+import kr.easydoc.core.credit.Credits
 import kr.easydoc.core.document.ConversionStatus
 import kr.easydoc.core.document.SourceFormat
 import kr.easydoc.core.exceptions.ConflictException
 import kr.easydoc.core.exceptions.ExternalServiceUnavailableException
+import kr.easydoc.core.exceptions.InsufficientCreditsException
 import kr.easydoc.core.exceptions.InvalidInputException
 import kr.easydoc.core.exceptions.LlmProviderException
 import kr.easydoc.core.exceptions.NotFoundException
@@ -68,6 +75,7 @@ class ReconvertUnitServiceTest {
         callBudget: Int = DEFAULT_BUDGET,
         concurrencyLimit: Int = DEFAULT_CONCURRENCY,
         ledger: LlmCallLedger = LlmCallLedger { },
+        credits: CreditAccountService = noCredits(),
     ) = ReconvertUnitService(
         conversions = conversions,
         documents = documents,
@@ -77,6 +85,7 @@ class ReconvertUnitServiceTest {
         callBudget = callBudget,
         concurrencyLimit = concurrencyLimit,
         ledger = ledger,
+        credits = credits,
     )
 
     /** 완료 상태 변환 한 건과 그 원문을 심는다 — 원본 단위 0 은 항상 [SOURCE_UNIT_0]. */
@@ -121,14 +130,60 @@ class ReconvertUnitServiceTest {
         }
     }
 
+    private class RecordingCreditRepository(private var balance: Int) :
+        CreditAccountRepository by NoopCreditAccountRepository {
+        private var reserved = 0
+        val reserveCalls = mutableListOf<Int>()
+        val consumeCalls = mutableListOf<Int>()
+        val releaseCalls = mutableListOf<Int>()
+
+        override fun reserve(
+            ownerId: UUID,
+            workspaceId: UUID,
+            documentId: UUID,
+            amount: Credits,
+            enforced: Boolean,
+        ): ReservationResult {
+            val available = balance - reserved
+            if (enforced && available < amount.amount) return ReservationResult.Insufficient(available)
+            reserveCalls += amount.amount
+            reserved += amount.amount
+            return ReservationResult.Reserved(balance, reserved)
+        }
+
+        override fun consume(
+            workspaceId: UUID,
+            ownerId: UUID,
+            documentId: UUID,
+            conversionId: UUID,
+            amount: Credits,
+        ) {
+            consumeCalls += amount.amount
+            balance -= amount.amount
+            reserved -= amount.amount
+        }
+
+        override fun release(
+            workspaceId: UUID,
+            ownerId: UUID,
+            documentId: UUID,
+            conversionId: UUID,
+            amount: Credits,
+        ) {
+            releaseCalls += amount.amount
+            reserved -= amount.amount
+        }
+    }
+
     @Test
     @DisplayName("행복 경로 — 보정 없이 통과하면 호출 1회, 예약 2에서 1이 환불된다")
     fun `행복 경로는 호출 1회다`() {
         val conversionId = seedDone()
         val provider = FakeLlmProvider(listOf(reply(cleanText)))
+        val creditRepository = RecordingCreditRepository(balance = 10)
 
         val result =
-            service(provider).reconvert(
+            service(provider, credits = CreditAccountService(creditRepository, enforced = true)).reconvert(
                 ownerId = owner,
                 conversionId = conversionId,
                 sourceUnitIndex = 0,
@@ -144,6 +199,9 @@ class ReconvertUnitServiceTest {
         assertThat(result.remainingCallBudget).isEqualTo(DEFAULT_BUDGET - 1)
 
         assertThat(conversions.reconversionBudgetOf(conversionId)).isEqualTo(0 to 1)
+        assertThat(creditRepository.reserveCalls).containsExactly(1)
+        assertThat(creditRepository.consumeCalls).containsExactly(1)
+        assertThat(creditRepository.releaseCalls).isEmpty()
     }
 
     @Test
@@ -238,7 +296,13 @@ class ReconvertUnitServiceTest {
     fun `예산이 없으면 던지고 호출하지 않는다`() {
         val conversionId = seedDone()
         val provider = FakeLlmProvider(listOf(reply(cleanText)))
-        val exhausted = service(provider, callBudget = 1)
+        val creditRepository = RecordingCreditRepository(balance = 10)
+        val exhausted =
+            service(
+                provider,
+                callBudget = 1,
+                credits = CreditAccountService(creditRepository, enforced = true),
+            )
 
         assertThatThrownBy { exhausted.reconvert(owner, conversionId, 0, listOf(0), FINGERPRINT) }
             .isInstanceOf(ReconversionBudgetExhaustedException::class.java)
@@ -246,6 +310,29 @@ class ReconvertUnitServiceTest {
             .isEqualTo(1)
 
         assertThat(provider.calls).withFailMessage("예산 소진인데 LLM 을 호출했다").isEmpty()
+        assertThat(creditRepository.reserveCalls).containsExactly(1)
+        assertThat(creditRepository.releaseCalls).containsExactly(1)
+        assertThat(creditRepository.consumeCalls).isEmpty()
+    }
+
+    @Test
+    @DisplayName("재변환 크레딧이 부족하면 LLM과 호출 예산을 쓰지 않고 402다")
+    fun `재변환 크레딧이 부족하면 호출하지 않는다`() {
+        val conversionId = seedDone()
+        val provider = FakeLlmProvider(listOf(reply(cleanText)))
+        val creditRepository = RecordingCreditRepository(balance = 0)
+
+        assertThatThrownBy {
+            service(
+                provider,
+                credits = CreditAccountService(creditRepository, enforced = true),
+            ).reconvert(owner, conversionId, 0, listOf(0), FINGERPRINT)
+        }.isInstanceOf(InsufficientCreditsException::class.java)
+
+        assertThat(provider.calls).isEmpty()
+        assertThat(conversions.reconversionBudgetOf(conversionId)).isEqualTo(0 to 0)
+        assertThat(creditRepository.consumeCalls).isEmpty()
+        assertThat(creditRepository.releaseCalls).isEmpty()
     }
 
     @Test
@@ -253,15 +340,20 @@ class ReconvertUnitServiceTest {
     fun `provider 실패는 실제 사용량만 환불하고 502다`() {
         val conversionId = seedDone()
         val provider = FakeLlmProvider(listOf(FakeLlmTurn.Fail(LlmProviderException("실패"))))
+        val creditRepository = RecordingCreditRepository(balance = 10)
 
-        assertThatThrownBy { service(provider).reconvert(owner, conversionId, 0, listOf(0), FINGERPRINT) }
-            .isInstanceOf(ExternalServiceUnavailableException::class.java)
+        assertThatThrownBy {
+            service(provider, credits = CreditAccountService(creditRepository, enforced = true))
+                .reconvert(owner, conversionId, 0, listOf(0), FINGERPRINT)
+        }.isInstanceOf(ExternalServiceUnavailableException::class.java)
 
         // CompletionBudget.spend 는 호출 전에 spent 를 올린다 — 실패한 첫 호출도 시도
         // 자체가 실제 사용량 1회다(제공자가 과금했을 수도 있다). 예약 2에서 1만 환불된다.
         assertThat(conversions.reconversionBudgetOf(conversionId))
             .withFailMessage("provider 실패인데 실제 사용량(1회)만큼만 남기고 환불되지 않았다")
             .isEqualTo(0 to 1)
+        assertThat(creditRepository.releaseCalls).containsExactly(1)
+        assertThat(creditRepository.consumeCalls).isEmpty()
     }
 
     @Test
@@ -269,15 +361,21 @@ class ReconvertUnitServiceTest {
     fun `동시성 한도가 0이면 호출하지 않고 전액 환불한다`() {
         val conversionId = seedDone()
         val provider = FakeLlmProvider(listOf(reply(cleanText)))
+        val creditRepository = RecordingCreditRepository(balance = 10)
 
         assertThatThrownBy {
-            service(provider, concurrencyLimit = 0).reconvert(owner, conversionId, 0, listOf(0), FINGERPRINT)
+            service(
+                provider,
+                concurrencyLimit = 0,
+                credits = CreditAccountService(creditRepository, enforced = true),
+            ).reconvert(owner, conversionId, 0, listOf(0), FINGERPRINT)
         }.isInstanceOf(ReconversionConcurrencyExhaustedException::class.java)
 
         assertThat(provider.calls).withFailMessage("동시성 한도 소진인데 LLM 을 호출했다").isEmpty()
         assertThat(conversions.reconversionBudgetOf(conversionId))
             .withFailMessage("동시성 한도 소진인데 예약이 전액 환불되지 않았다")
             .isEqualTo(0 to 0)
+        assertThat(creditRepository.releaseCalls).containsExactly(1)
     }
 
     @Test

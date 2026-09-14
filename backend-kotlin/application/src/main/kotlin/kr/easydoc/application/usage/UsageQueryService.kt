@@ -30,9 +30,9 @@ data class PurposeUsage(
 /**
  * 워크스페이스 × `[from, to]`(포함) 기간 집계 — 계획
  * `docs/plans/2026-09-07-usage-ledger-and-report.md` §2 결정 5(2026-09-08 리뷰로
- * [documents]·[characters]·[credits]의 출처를 `documents` 표에서 `llm_calls` 로 정정).
+ * [documents]·[characters]의 출처를 `documents` 표에서 `llm_calls` 로 정정).
  *
- * **[documents]·[characters]·[credits]는 `documents` 표가 아니라 `llm_calls.called_at`
+ * **[documents]·[characters]는 `documents` 표가 아니라 `llm_calls.called_at`
  * 기준으로, 그 기간에 완료된 LLM 호출이 하나라도 있던 문서만 센다**(distinct
  * `document_id`). 두 가지가 이 정의에서 곧바로 따라 나온다.
  * - **등록만 되고 한 번도 변환되지 않은 문서는 포함되지 않는다** — 비용도 크레딧도
@@ -43,9 +43,9 @@ data class PurposeUsage(
  *   KDoc, V14 머리주석 3차 정정). 청구 근거를 남기려고 만든 원장이 문서 삭제로
  *   스스로의 근거를 잃으면 안 된다는 것이 이 정정의 이유다.
  *
- * [credits] 는 문서별 `ceil(document_char_count / 1000)` 을 각각 올림해 합한 값이지
- * [characters] 를 나중에 한 번에 올림한 값이 **아니다**(문서 100개가 각 999자씩이면
- * 크레딧은 100이지 올림한 합계 문자수 하나로 다시 나누면 99가 된다).
+ * [credits]는 그 기간에 소비로 확정된 `credit_transactions`의 `consume/conversion`
+ * 합이다. 따라서 최초 변환뿐 아니라 성공한 재변환도 포함한다. 차감 원장이 전혀 없는
+ * V15 이전 그룹만 문서별 `ceil(document_char_count / 1000)` 합으로 대체한다.
  *
  * [llmCalls]·[inputTokens]·[outputTokens] 도 `llm_calls.called_at` 기준이며
  * `llm_calls.char_count` (그 호출이 실제로 본 마스킹 입력 길이) 는 어디에도 합산하지
@@ -70,7 +70,7 @@ data class WorkspaceUsage(
     val costUnknownCalls: Int,
     /**
      * 그 기간에 완성 자체가 나지 않은 호출 수(`outcome = provider_error`, V18 — 백로그
-     * 「실패 호출 원장 추적」, 2026-09-08). [documents]·[characters]·[credits]·[llmCalls]·
+     * 「실패 호출 원장 추적」, 2026-09-08). [documents]·[characters]·[llmCalls]·
      * [inputTokens]·[outputTokens]·[estimatedCostUsd] 는 전부 `outcome = 'completed'` 인
      * 행만 센다 — 실패 호출은 실제로 쓴 자원이 없으므로(토큰 0, 비용 미상) 이 값들을
      * 왜곡하지 않는다. 대신 이 필드가 그 존재를 드러낸다 — 벤더가 실패한 요청에도

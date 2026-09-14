@@ -494,7 +494,7 @@ describe('업로드 화면', () => {
     it('크레딧이 부족해 402를 받으면 서버 문구와 필요·가용 크레딧을 함께 보여준다', async () => {
       const user = userEvent.setup()
       vi.mocked(createDocumentFromText).mockRejectedValue(
-        new ApiError(402, '크레딧이 부족합니다. 충전 후 다시 시도하세요.', null, null, 1, 2),
+        new ApiError(402, '크레딧이 부족합니다. 상위 플랜을 선택해 주세요.', null, null, 1, 2),
       )
       renderPage()
 
@@ -503,7 +503,7 @@ describe('업로드 화면', () => {
       await user.click(screen.getByRole('button', { name: '쉬운 글 초안 만들기' }))
 
       expect(await screen.findByRole('alert')).toHaveTextContent(
-        '크레딧이 부족합니다. 충전 후 다시 시도하세요. 필요 2 · 가용 1',
+        '크레딧이 부족합니다. 상위 플랜을 선택해 주세요. 필요 2 · 가용 1',
       )
       expect(screen.queryByRole('heading', { name: '변환 화면' })).not.toBeInTheDocument()
     })

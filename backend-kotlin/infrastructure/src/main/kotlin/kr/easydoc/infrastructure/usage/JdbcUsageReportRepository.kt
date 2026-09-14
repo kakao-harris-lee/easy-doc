@@ -17,8 +17,10 @@ import java.util.UUID
  * (워크스페이스가 나중에 삭제된, V14 `SET NULL`) 행도 자기 행으로 포함해야 한다 — U2가
  * 워크스페이스 단위 조회라 다루지 않는 행이다(`UsageReadRepository` KDoc).
  *
- * 문서 수·문자 수·크레딧은 U2와 같은 규칙을 쓴다 — 같은 문서를 대상으로 한 여러 행
+ * 문서 수·문자 수는 U2와 같은 규칙을 쓴다 — 같은 문서를 대상으로 한 여러 행
  * (재시도·보정)은 `document_id`로 distinct 한 뒤에만 합산한다(`document_totals` CTE).
+ * 크레딧은 실제 소비 원장(`credit_transactions`, `consume/conversion`)을 우선해 성공한
+ * 재변환도 센다. V15 이전처럼 소비 원장이 없는 그룹만 문서별 계산값으로 대체한다.
  * `call_totals`는 U2의 `callTotals`와 같은 식으로 비용 미상(`estimated_cost_usd IS NULL`)을
  * 0으로 섞지 않고 [UsageReportRow.costUnknownCalls]로만 센다.
  *
@@ -130,6 +132,14 @@ class JdbcUsageReportRepository(private val jdbc: JdbcClient) : UsageReportRepos
                 -- document_totals와 같은 GROUP BY — 같은 이유로 탈퇴한 계정들의 호출
                 -- 합계도 하나로 합쳐진다(위 document_totals 주석).
                 GROUP BY user_id, workspace_id
+            ),
+            credit_totals AS (
+                SELECT owner_user_id AS user_id, workspace_id,
+                       -sum(balance_delta)::bigint AS credits
+                FROM credit_transactions
+                WHERE created_at >= :from AND created_at < :toExclusive
+                  AND kind = 'consume' AND reason = 'conversion'
+                GROUP BY owner_user_id, workspace_id
             )
             SELECT
                 c.user_id,
@@ -138,7 +148,7 @@ class JdbcUsageReportRepository(private val jdbc: JdbcClient) : UsageReportRepos
                 w.name AS workspace_name,
                 coalesce(d.documents, 0) AS documents,
                 coalesce(d.characters, 0) AS characters,
-                coalesce(d.credits, 0) AS credits,
+                coalesce(t.credits, d.credits, 0) AS credits,
                 c.llm_calls,
                 c.failed_calls,
                 c.input_tokens,
@@ -154,10 +164,13 @@ class JdbcUsageReportRepository(private val jdbc: JdbcClient) : UsageReportRepos
             LEFT JOIN workspaces w ON w.id = c.workspace_id
             -- user_id도 IS NOT DISTINCT FROM이다 — workspace_id와 같은 이유(위 정정).
             -- 일반 `=`는 두 쪽 다 NULL일 때 NULL(불일치)로 평가돼 탈퇴한 계정의
-            -- document_totals가 매치되지 않고 문서·문자·크레딧이 전부 0으로 새 나간다.
+            -- document_totals가 매치되지 않고 문서·문자가 0으로 새 나간다.
             LEFT JOIN document_totals d
                 ON d.user_id IS NOT DISTINCT FROM c.user_id
                     AND d.workspace_id IS NOT DISTINCT FROM c.workspace_id
+            LEFT JOIN credit_totals t
+                ON t.user_id IS NOT DISTINCT FROM c.user_id
+                    AND t.workspace_id IS NOT DISTINCT FROM c.workspace_id
             ORDER BY u.email NULLS LAST, w.name NULLS LAST
             """.trimIndent()
     }

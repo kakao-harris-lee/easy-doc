@@ -1,10 +1,12 @@
 package kr.easydoc.application.conversion
 
 import kr.easydoc.application.auth.TransactionRunner
+import kr.easydoc.application.credit.CreditAccountService
 import kr.easydoc.application.crypto.ContentCipher
 import kr.easydoc.application.document.ConversionRepository
 import kr.easydoc.application.document.DocumentRepository
 import kr.easydoc.application.document.ReconversionReservation
+import kr.easydoc.core.credit.Credits
 import kr.easydoc.core.crypto.EncryptedField
 import kr.easydoc.core.document.ConversionStatus
 import kr.easydoc.core.exceptions.ConflictException
@@ -74,6 +76,8 @@ class ReconvertUnitService(
      * 명시한다.
      */
     private val ledger: LlmCallLedger,
+    /** 재변환 대상 원문 단위도 월 제공 이용량에서 차감한다. */
+    private val credits: CreditAccountService,
 ) {
     /** [concurrencyLimit] 개의 허가를 두는 bulkhead — LLM 호출 구간만 감싼다. */
     private val reconversionGate = Semaphore(concurrencyLimit)
@@ -110,11 +114,13 @@ class ReconvertUnitService(
             throw InvalidInputException(INVALID_FINGERPRINT_MESSAGE)
         }
 
-        // 예약(트랜잭션 1) — 커밋하고 나간다. 실패면 LLM 호출 0회로 429.
+        val unit = sourceUnits[sourceUnitIndex]
+        val requiredCredits = Credits.requiredFor(unit.length)
+
+        // 예약(트랜잭션 1) — 대상 원문 분량의 크레딧과 최대 LLM 호출을 함께 잡는다.
+        // 호출 예산이 없으면 같은 트랜잭션에서 크레딧 예약을 즉시 되돌리고 429로 끝낸다.
         val reservation =
-            transaction.inTransaction {
-                conversions.reserveReconversionCalls(ownerId, conversionId, RECONVERSION_CALL_COST, callBudget)
-            }
+            reserveCapacity(ownerId, source.workspaceId, stored.documentId, conversionId, requiredCredits)
         if (reservation is ReconversionReservation.Exhausted) {
             throw ReconversionBudgetExhaustedException(BUDGET_EXHAUSTED_MESSAGE, reservation.remainingCallBudget)
         }
@@ -129,13 +135,14 @@ class ReconvertUnitService(
                 conversionId,
                 actualUsed = 0,
                 documentCharCount = source.charCount,
+                requiredCredits = requiredCredits,
+                consumeCredits = false,
             )
             throw ReconversionConcurrencyExhaustedException(CONCURRENCY_LIMIT_MESSAGE)
         }
         // 외부 호출은 트랜잭션 밖이다 — 장시간 LLM 호출을 DB 트랜잭션 안에서 돌리지 않는다.
         // purpose = RECONVERT — 1차·보정 호출 둘 다 원장에 `reconvert` 로 남는다
         // (`ConvertDocumentUseCase.convert` KDoc 「purpose 매개변수」).
-        val unit = sourceUnits[sourceUnitIndex]
         // 대상 단위의 종류(표 칸·목록 항목)만 담은 크기 1짜리 구조를 넘긴다(계획 §1.3) — 이
         // 호출의 원문이 그 단위 하나뿐이라 splitUnits(unit).size 도 언제나 1이다.
         val targetKind = source.structureOrBody(sourceUnits.size).kinds[sourceUnitIndex]
@@ -157,8 +164,28 @@ class ReconvertUnitService(
             easyTextFingerprint,
             result,
             documentCharCount = source.charCount,
+            requiredCredits = requiredCredits,
         )
     }
+
+    /** 크레딧과 호출 예산을 한 트랜잭션에서 예약한다. */
+    private fun reserveCapacity(
+        ownerId: UUID,
+        workspaceId: UUID,
+        documentId: UUID,
+        conversionId: UUID,
+        requiredCredits: Credits,
+    ): ReconversionReservation =
+        transaction.inTransaction {
+            credits.reserve(ownerId, workspaceId, documentId, requiredCredits)
+            conversions
+                .reserveReconversionCalls(ownerId, conversionId, RECONVERSION_CALL_COST, callBudget)
+                .also { reservedCalls ->
+                    if (reservedCalls is ReconversionReservation.Exhausted) {
+                        credits.release(workspaceId, ownerId, documentId, conversionId, requiredCredits)
+                    }
+                }
+        }
 
     /** LLM 호출 뒤 정산하고 결과를 만든다 — [reconvert] 에서 갈라낸 자리(`LongMethod`). */
     @Suppress("LongParameterList")
@@ -172,6 +199,7 @@ class ReconvertUnitService(
         easyTextFingerprint: String,
         result: ConversionResult,
         documentCharCount: Int,
+        requiredCredits: Credits,
     ): ReconvertUnitResult =
         when (result) {
             is ConversionResult.Failed -> {
@@ -186,6 +214,8 @@ class ReconvertUnitService(
                     actualUsed = result.usage.llmCalls,
                     calls = result.usage.calls,
                     documentCharCount = documentCharCount,
+                    requiredCredits = requiredCredits,
+                    consumeCredits = false,
                 )
                 throw ExternalServiceUnavailableException(PROVIDER_UNREACHABLE_MESSAGE)
             }
@@ -200,6 +230,8 @@ class ReconvertUnitService(
                         actualUsed = result.usage.llmCalls,
                         calls = result.usage.calls,
                         documentCharCount = documentCharCount,
+                        requiredCredits = requiredCredits,
+                        consumeCredits = true,
                     )
                 ReconvertUnitResult(
                     sourceUnitIndex = sourceUnitIndex,
@@ -230,6 +262,8 @@ class ReconvertUnitService(
         actualUsed: Int,
         documentCharCount: Int,
         calls: List<LlmCallRecord> = emptyList(),
+        requiredCredits: Credits,
+        consumeCredits: Boolean,
     ): Int =
         transaction.inTransaction {
             val remaining =
@@ -254,6 +288,11 @@ class ReconvertUnitService(
                         )
                     },
                 )
+            }
+            if (consumeCredits) {
+                credits.consume(workspaceId, ownerId, documentId, conversionId, requiredCredits)
+            } else {
+                credits.release(workspaceId, ownerId, documentId, conversionId, requiredCredits)
             }
             remaining
         }

@@ -47,7 +47,7 @@ class SubscriptionReachTest {
         val workspace = workspace(token)
         database.execute("UPDATE workspace_credit_accounts SET balance=12, reserved=3 WHERE workspace_id='$workspace'")
         val path = "/workspaces/$workspace/subscription/checkout"
-        val payload = """{"plan_id":"starter","order_id":"${UUID.randomUUID()}"}"""
+        val payload = """{"plan_id":"start","order_id":"${UUID.randomUUID()}"}"""
         val pool = Executors.newFixedThreadPool(2)
         try {
             val jobs = (1..2).map { pool.submit<HttpResponse<String>> { send(path, token, "POST", payload) } }
@@ -65,7 +65,7 @@ class SubscriptionReachTest {
             database.queryInt("SELECT reserved FROM workspace_credit_accounts WHERE workspace_id='$workspace'"),
         ).isEqualTo(3)
         val response = send("/workspaces/$workspace/subscription", token)
-        assertThat(json.readTree(response.body())["subscription"]["plan_id"].asString()).isEqualTo("starter")
+        assertThat(json.readTree(response.body())["subscription"]["plan_id"].asString()).isEqualTo("start")
         assertThat(response.headers().firstValue("Cache-Control")).hasValue("no-store")
         assertThat(response.headers().firstValue("X-Content-Type-Options")).hasValue("nosniff")
         val cancel = send("/workspaces/$workspace/subscription", token, "DELETE")
@@ -84,7 +84,7 @@ class SubscriptionReachTest {
                 "/workspaces/$workspace/subscription/checkout",
                 token,
                 "POST",
-                """{"plan_id":"pro","order_id":"${UUID.randomUUID()}","simulate_failure":true}""",
+                """{"plan_id":"start","order_id":"${UUID.randomUUID()}","simulate_failure":true}""",
             )
         assertThat(response.statusCode()).isEqualTo(200)
         assertThat(json.readTree(response.body())["payments"][0]["status"].asString()).isEqualTo("failed")
@@ -97,11 +97,27 @@ class SubscriptionReachTest {
     }
 
     @Test
+    fun `Basic and Pro are not available through test checkout`() {
+        val token = account()
+        val workspace = workspace(token)
+        listOf("basic", "pro").forEach { plan ->
+            val response =
+                send(
+                    "/workspaces/$workspace/subscription/checkout",
+                    token,
+                    "POST",
+                    """{"plan_id":"$plan","order_id":"${UUID.randomUUID()}"}""",
+                )
+            assertThat(response.statusCode()).isEqualTo(422)
+        }
+    }
+
+    @Test
     fun `authentication ownership and admin guards cover every subscription route`() {
         val owner = account()
         val other = account()
         val workspace = workspace(owner)
-        val payload = """{"plan_id":"starter","order_id":"${UUID.randomUUID()}"}"""
+        val payload = """{"plan_id":"start","order_id":"${UUID.randomUUID()}"}"""
         val base = "/workspaces/$workspace/subscription"
         assertThat(send(base, null).statusCode()).isEqualTo(401)
         assertThat(send("$base/checkout", null, "POST", "{}").statusCode()).isEqualTo(401)
@@ -123,7 +139,7 @@ class SubscriptionReachTest {
         val token = account()
         val workspace = workspace(token)
         val base = "/workspaces/$workspace/subscription"
-        val payload = """{"plan_id":"starter","order_id":"${UUID.randomUUID()}"}"""
+        val payload = """{"plan_id":"start","order_id":"${UUID.randomUUID()}"}"""
         assertThat(send("$base/checkout", token, "POST", payload).statusCode()).isEqualTo(200)
         database.execute(
             "UPDATE workspace_subscriptions SET cycle_ends_at=now()-interval '1 day' WHERE workspace_id='$workspace'",

@@ -136,6 +136,22 @@ class JdbcAdminWorkspaceQueryRepositoryTest {
         assertThat(summary?.credits).isEqualTo(2)
     }
 
+    @Test
+    @DisplayName("월간 요약은 문서 중복 없이 재변환 소비 크레딧을 추가한다")
+    fun `재변환 소비를 월간 요약에 더한다`() {
+        val (owner, workspaceId) = newOwnedWorkspace("재변환-${UUID.randomUUID()}", "owner-reconvert")
+        val at = Instant.parse("2026-08-15T02:00:00Z")
+        insertLlmCall(workspaceId, owner, documentCharCount = 1500, outcome = "completed", calledAt = at)
+        insertCreditConsume(workspaceId, owner, credits = 2, at = at)
+        insertCreditConsume(workspaceId, owner, credits = 1, at = at.plusSeconds(1))
+
+        val summary =
+            repository.monthUsage(listOf(workspaceId), at.minusSeconds(3600), at.plusSeconds(3600))[workspaceId]
+
+        assertThat(summary?.documents).isEqualTo(1)
+        assertThat(summary?.credits).isEqualTo(3)
+    }
+
     private fun newOwnedWorkspace(
         name: String,
         emailPrefix: String,
@@ -183,6 +199,27 @@ class JdbcAdminWorkspaceQueryRepositoryTest {
             .param("documentCharCount", documentCharCount)
             .param("outcome", outcome)
             .param("calledAt", OffsetDateTime.ofInstant(calledAt, ZoneOffset.UTC))
+            .update()
+    }
+
+    private fun insertCreditConsume(
+        workspaceId: UUID,
+        ownerId: UUID,
+        credits: Int,
+        at: Instant,
+    ) {
+        jdbc
+            .sql(
+                """
+                INSERT INTO credit_transactions
+                    (id, workspace_id, owner_user_id, kind, balance_delta, reserved_delta, reason, created_at)
+                VALUES (:id, :workspaceId, :ownerId, 'consume', :delta, :delta, 'conversion', :createdAt)
+                """.trimIndent(),
+            ).param("id", UUID.randomUUID())
+            .param("workspaceId", workspaceId)
+            .param("ownerId", ownerId)
+            .param("delta", -credits)
+            .param("createdAt", OffsetDateTime.ofInstant(at, ZoneOffset.UTC))
             .update()
     }
 

@@ -116,30 +116,30 @@ Pricing rules:
 - Product billing unit is “변환 토큰”. 1 token = 1,000 characters including spaces, rounded up.
 - “페이지 상당량” is only a comparison aid. 1 page equivalent = 2,000 characters = 2 conversion tokens.
 - Actual deduction is based on extracted character count, never the physical page count.
-- Annual prepayment is 20% cheaper than twelve monthly payments.
 
 Plans:
-- Basic: small welfare centers and schools; 100 page equivalents / 200 tokens per month; ₩99,000 monthly; ₩950,400 annually, equivalent to ₩79,200 per month; text conversion and easy-word dictionary recommendations.
-- Pro: community centers and district-office teams; 500 page equivalents / 1,000 tokens per month; ₩290,000 monthly; ₩2,784,000 annually, equivalent to ₩232,000 per month; all Basic features plus HWPX download.
-- Enterprise: city/province integrated departments; unlimited* or negotiated usage; from ₩1,000,000 per month; custom quote; all Pro features plus shared department accounts and a “CSAP 대응 옵션” label. Do not claim that CSAP certification has already been acquired.
+- Start: small teams; 25 page equivalents / 50 credits per month; ₩99,000 monthly including VAT; text conversion and easy-word dictionary recommendations.
+- Basic: welfare centers, schools, and operating departments; 100 page equivalents / 200 credits per month; ₩190,000 monthly including VAT; all Start features plus HWPX download.
+- Pro: institution-wide regular use; 500 page equivalents / 1,000 credits per month; ₩599,000 monthly including VAT; all Basic features with a larger allowance.
+- All three plans are selectable. Only Start exposes test checkout; Basic and Pro must show `결제 준비 중`. Do not render a separate `테스트 구성 · 동작 확인용` catalog.
+- One credit means 1,000 source characters including spaces. Initial conversion and reconversion both consume credits; unused credits do not roll over.
 
 Public pricing page requirements:
-- Header, concise value proposition, monthly/annual toggle, visible “20% 할인” badge
+- Header and concise value proposition
 - Three pricing cards with target customer, allowance, price, major features, and CTA
-- Make Pro visually recommended without making Basic look unusable
-- Enterprise CTA is “도입 및 견적 문의”
+- Make the selected plan clear without disguising Basic or Pro as purchasable.
 - Immediately below cards, explain token/page conversion with the example “2,450자 문서 = 3토큰”
 - Feature comparison table including text conversion, dictionary, HWPX, shared accounts, security consultation, support, and billing documents
 - Clearly distinguish “현재 제공”, “도입 예정”, and “문의” feature states. The prototype must not imply that unimplemented features are currently available.
 - Current product scope supports HWPX export, not legacy .hwp and not a verified promise of preserving the original layout. Label the feature “HWPX 내려받기” unless a future implementation is explicitly selected.
 - FAQ covering actual deduction, unused-token rollover, overage, plan changes, cancellation/refund, tax invoice, and fair-use policy
-- Show “정책 확정 필요” badges for VAT, rollover, overage, refund, and grace-period items rather than inventing rules
+- Show unresolved plan-change, refund, and grace-period rules as undecided rather than inventing rules
 - Footer area for company and transaction-condition disclosures
 
 Authenticated subscription views:
 - Current plan and renewal date
 - Remaining allowance and recent deductions
-- Monthly versus annual change preview
+- Plan change preview
 - Payment method, billing contact, estimate/invoice/tax-document list
 - Cancellation path that is as easy to find as upgrade
 - Payment-failed, cancellation-scheduled, expired, and Enterprise-manual-contract states
@@ -234,8 +234,8 @@ At the end, add a review page listing every screen, state, responsive breakpoint
 - [ ] 현재 제품의 4,000자·10MB·docx/pdf/hwpx 범위를 지켰는가?
 - [ ] `AI 초안`과 사람 검수가 핵심으로 보이는가?
 - [ ] 실행 전에 예상 토큰, 실행 후 잔액을 알 수 있는가?
-- [ ] Basic/Pro/Enterprise 가격과 연 할인 계산이 정확한가?
-- [ ] Enterprise 보안을 인증 완료처럼 과장하지 않았는가?
+- [ ] Start/Basic/Pro 가격과 월 제공량이 정확한가?
+- [ ] Start만 테스트 결제가 가능하고 Basic/Pro는 준비 중인가?
 - [ ] 빈 상태·오류·지연·잔액 부족·권한 없음이 있는가?
 - [ ] 관리자 화면에 원문이나 변환문이 없는가?
 - [ ] 모바일과 키보드만으로 주요 흐름을 완료할 수 있는가?
