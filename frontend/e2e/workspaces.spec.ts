@@ -52,9 +52,12 @@ test.describe('작업 공간', () => {
     await expect(workspaceMenu(page).locator('[aria-pressed]')).toHaveCount(2)
     expect(await workspaceNames(page)).toContain(nameA)
 
-    // 로그아웃하면 보호 화면에서 밀려난다.
+    // 홈에서 로그아웃하면 인증 전 공개 랜딩으로 전환한다.
     await signOut(page)
-    await expect(page.getByRole('heading', { name: '로그인' })).toBeVisible()
+    await expect(
+      page.getByRole('heading', { name: '어려운 안내문을 읽히는 문서로 바꾸세요' }),
+    ).toBeVisible()
+    expect(new URL(page.url()).pathname).toBe('/')
 
     // --- 계정 B ---------------------------------------------------------------
     const accountB = newAccount()
@@ -246,8 +249,11 @@ test.describe('작업 공간', () => {
     expect(rejected.status()).toBe(ROUTES.unauthorized)
     expect(rejected.status()).not.toBe(ROUTES.unprocessable)
 
-    // 화면도 422 문구가 아니라 로그인 화면이다.
-    await expect(page.getByRole('heading', { name: '로그인' })).toBeVisible()
-    expect(new URL(page.url()).pathname).toBe('/login')
+    // 화면도 422 문구가 아니라 인증 전 공개 랜딩이다. 홈은 공개 경로이므로 로그인으로
+    // 강제 이동하지 않지만, 만료된 세션으로 작업 공간 화면을 계속 보여주지는 않는다.
+    await expect(
+      page.getByRole('heading', { name: '어려운 안내문을 읽히는 문서로 바꾸세요' }),
+    ).toBeVisible()
+    expect(new URL(page.url()).pathname).toBe('/')
   })
 })

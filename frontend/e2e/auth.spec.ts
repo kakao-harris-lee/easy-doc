@@ -167,7 +167,7 @@ test.describe('인증 흐름', () => {
     ])
   })
 
-  test('E3 세션 만료 — 기동 갈래와 사용 중 갈래 둘 다 로그인 화면으로 간다', async ({ page }) => {
+  test('E3 세션 만료 — 보호 화면은 로그인으로, 공개 홈은 랜딩으로 간다', async ({ page }) => {
     // ── 갈래 A: 기동 시점. 저장된 토큰이 유효하지 않다 ─────────────────────────
     //
     // `addInitScript` 를 쓰지 않는다 — 뒤 갈래의 `goto` 마다 토큰이 다시 심겨
@@ -213,9 +213,12 @@ test.describe('인증 흐름', () => {
     ])
     expect(expired.status()).toBe(ROUTES.unauthorized)
 
-    // 화면이 실제로 움직인다 — 머리말의 오류 문단이 아니라 로그인 화면이다.
-    await expect(page.getByRole('heading', { name: '로그인' })).toBeVisible()
-    expect(new URL(page.url()).pathname).toBe('/login')
+    // 홈은 로그인 전에도 열리는 공개 랜딩이다. 따라서 홈에서 세션이 만료되면 로그인
+    // 화면으로 강제 이동하지 않고, 인증 전 랜딩으로 전환해 다시 시작할 통로를 보여준다.
+    await expect(
+      page.getByRole('heading', { name: '어려운 안내문을 읽히는 문서로 바꾸세요' }),
+    ).toBeVisible()
+    expect(new URL(page.url()).pathname).toBe('/')
     expect(await storedToken(page)).toBeNull()
     await expect(workspaceSelect(page)).toHaveCount(0)
     expect((await liveLog.apiCalls()).map(signature)).toContain(

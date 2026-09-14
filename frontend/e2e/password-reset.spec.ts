@@ -22,6 +22,13 @@ test.describe('비밀번호 재설정', () => {
     const account = newAccount()
     await signUpAndLand(page, account)
     await signOut(page)
+
+    // 홈에서 로그아웃하면 공개 랜딩으로 돌아간다. 머리말의 로그인 통로를 거쳐
+    // 비밀번호 재설정 링크가 있는 자격증명 화면으로 이동한다.
+    await expect(
+      page.getByRole('heading', { name: '어려운 안내문을 읽히는 문서로 바꾸세요' }),
+    ).toBeVisible()
+    await page.getByRole('banner').getByRole('link', { name: '로그인', exact: true }).click()
     await expect(page.getByRole('heading', { name: '로그인' })).toBeVisible()
 
     await page.getByRole('link', { name: '비밀번호를 잊으셨나요?' }).click()

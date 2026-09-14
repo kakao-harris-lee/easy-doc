@@ -963,6 +963,7 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
             <Button
               type="button"
               variant="outline"
+              className="min-h-11"
               aria-pressed={paragraphComparison}
               disabled={busy || reconvertPendingIndex !== null || candidate !== null}
               onClick={() => {
