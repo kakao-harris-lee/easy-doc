@@ -79,7 +79,9 @@ test.describe('사전 팝업 조회 흐름', () => {
     })
 
     // --- ① 원문(읽기 전용) 패널: 조회는 되지만 적용 버튼은 없다(계획 §3.5) -------------
-    const sourceTextarea = page.getByLabel('원본 1번째 문단', { exact: true })
+    // fake LLM 응답에 segment_map이 있으면 문단별 편집기, 없으면 단일 편집기가 열린다.
+    // 사전 조회 계약은 어느 표시 방식에서도 같으므로 실제로 그려진 원본 입력을 받는다.
+    const sourceTextarea = page.getByLabel(/^(원본 1번째 문단|원본 \(읽기 전용\))$/)
     await expect(sourceTextarea).toHaveValue(SOURCE_TEXT)
     const [sourceStart, sourceEnd] = offsetsOf(SOURCE_TEXT, HEADWORD)
 
@@ -104,9 +106,9 @@ test.describe('사전 팝업 조회 흐름', () => {
     await expect(dialog).not.toBeVisible()
 
     // --- ② 결과 패널: 조회 + 바꾸기로 실제 치환까지 된다 -------------------------------
-    // 문단 하나뿐이라 단위도 하나 — 대응 확인 앵커가 없어 라벨은 "대응 확인 불가"다
-    // (`SegmentedResultEditor.unitLabel`, E13 과 같은 근거).
-    const resultEditor = page.getByLabel('쉬운 글 단위 1, 대응 확인 불가')
+    // segment_map 유무에 따라 문단별 편집기와 단일 편집기 중 하나가 열린다. 두 경로 모두
+    // 같은 TermLookupPopover를 사용하므로 현재 화면의 결과 입력을 대상으로 삼는다.
+    const resultEditor = page.getByLabel(/^(쉬운 글 단위 1, .+|쉬운 글 결과 \(고칠 수 있습니다\))$/)
     await resultEditor.fill(RESULT_TEXT)
     const [resultStart, resultEnd] = offsetsOf(RESULT_TEXT, HEADWORD)
 

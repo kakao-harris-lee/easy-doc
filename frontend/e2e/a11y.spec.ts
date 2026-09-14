@@ -322,6 +322,15 @@ test.describe('접근성 — 키보드', () => {
     // 펼치면 초점이 첫 행동으로 옮겨 간다 — Tab 을 더 누르지 않아도 닿아야 한다.
     expect(await focusedStop(page)).toContain('로그아웃')
     await page.keyboard.press('Enter')
+
+    // 홈에서 로그아웃하면 공개 랜딩으로 돌아간다. 마우스를 쓰지 않고 머리말의 로그인
+    // 링크까지 이동해 자격증명 화면으로 들어간다.
+    await expect(
+      page.getByRole('heading', { name: '어려운 안내문을 읽히는 문서로 바꾸세요' }),
+    ).toBeVisible()
+    await restartTabbing(page)
+    await tabTo(page, '로그인')
+    await page.keyboard.press('Enter')
     await expect(page.getByRole('heading', { name: '로그인', level: 1 })).toBeVisible()
 
     // --- 로그인 ------------------------------------------------------------------

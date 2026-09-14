@@ -6,7 +6,7 @@ import { GUIDE_PATH, PRIVACY_PATH, TERMS_PATH } from '../routes/paths'
 import { CONTAINER } from './AppLayout'
 
 const POLICY_LINK_CLASS =
-  'text-muted-foreground underline-offset-2 hover:text-foreground hover:underline'
+  'inline-flex min-h-11 min-w-11 items-center text-muted-foreground underline-offset-2 hover:text-foreground hover:underline'
 
 /** 모든 화면에서 회사 정보와 정책·문의 링크를 제공한다. */
 export function Footer({ company = COMPANY_INFO }: { company?: CompanyInfo } = {}) {
@@ -32,16 +32,10 @@ export function Footer({ company = COMPANY_INFO }: { company?: CompanyInfo } = {
         <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-1">
           <span className="font-semibold text-foreground">{name}</span>
           <nav aria-label="정책" className="flex flex-wrap items-center gap-x-4">
-            <Link
-              to={GUIDE_PATH}
-              className={cn(POLICY_LINK_CLASS, 'inline-flex min-h-11 items-center')}
-            >
+            <Link to={GUIDE_PATH} className={POLICY_LINK_CLASS}>
               이용 가이드
             </Link>
-            <Link
-              to={TERMS_PATH}
-              className={cn(POLICY_LINK_CLASS, 'inline-flex min-h-11 items-center')}
-            >
+            <Link to={TERMS_PATH} className={POLICY_LINK_CLASS}>
               이용약관
             </Link>
             <Link
