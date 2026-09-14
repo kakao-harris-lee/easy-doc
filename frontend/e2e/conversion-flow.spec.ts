@@ -114,16 +114,12 @@ test.describe('변환 수직 흐름', () => {
       timeout: 90_000,
     })
 
-    // 문단 단위 대응(계약 2.12.0, P0-4 S3) — 원문·결과가 각각 한 줄이라 단위도 하나씩이다.
-    // «대응 확인 불가»인 이유는 두 문장 사이에 앵커(숫자·날짜 등)가 전혀
-    // 없어서다(계획 §2 A2). 결과 패널이 단위 목록(`role="group"`)으로 그려졌는지가
-    // 이 흐름에서 확인하는 유일한 P0-4 단언이다 — 나머지 검수 흐름은 단위가 하나뿐이라
-    // 옛 단일 에디터와 상호작용이 같다.
-    await expect(page.getByRole('group', { name: '쉬운 글 결과 (고칠 수 있습니다)' })).toBeVisible()
-    const editor = page.getByLabel('쉬운 글 단위 1, 대응 확인 불가')
+    // segment_map이 있으면 문단별 편집기, 없으면 단일 편집기가 열린다. E13의 책임은
+    // 등록부터 내보내기까지의 수직 흐름이므로 두 정상 표시 방식에서 같은 결과 입력을
+    // 이어서 사용한다. 문단 대응 자체는 Kotlin 계약 테스트와 React 단위 테스트가 잰다.
+    const editor = page.getByLabel(/^(쉬운 글 단위 1, .+|쉬운 글 결과 \(고칠 수 있습니다\))$/)
     await expect(editor).toHaveValue(FAKE_EASY_TEXT)
-    // S5 이후 「원본 1번째 문단 다시 변환」 버튼이 같은 접두를 가지므로 정확 일치로 textarea 만 고른다.
-    await expect(page.getByLabel('원본 1번째 문단', { exact: true })).toHaveValue(SOURCE_TEXT)
+    await expect(page.getByLabel(/^(원본 1번째 문단|원본 \(읽기 전용\))$/)).toHaveValue(SOURCE_TEXT)
     await expect(page.getByRole('note')).toHaveText(/AI가 만든 초안입니다/)
 
     // 폴링이 관측한 상태는 `pending → processing → done` 순서를 거슬러 가지 않아야 한다.
