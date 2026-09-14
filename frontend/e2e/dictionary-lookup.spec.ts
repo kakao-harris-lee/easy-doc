@@ -108,9 +108,7 @@ test.describe('사전 팝업 조회 흐름', () => {
     // --- ② 결과 패널: 조회 + 바꾸기로 실제 치환까지 된다 -------------------------------
     // segment_map 유무에 따라 문단별 편집기와 단일 편집기 중 하나가 열린다. 두 경로 모두
     // 같은 TermLookupPopover를 사용하므로 현재 화면의 결과 입력을 대상으로 삼는다.
-    const resultEditor = page.getByLabel(
-      /^(쉬운 글 단위 1, 대응 확인 불가|쉬운 글 결과 \(고칠 수 있습니다\))$/,
-    )
+    const resultEditor = page.getByLabel(/^(쉬운 글 단위 1, .+|쉬운 글 결과 \(고칠 수 있습니다\))$/)
     await resultEditor.fill(RESULT_TEXT)
     const [resultStart, resultEnd] = offsetsOf(RESULT_TEXT, HEADWORD)
 
