@@ -340,7 +340,7 @@ class ConversionReadReachTest {
     fun `업로드 문서의 형식 셋이 계약대로 나온다`() {
         val derivation = ContractSpec.exportFormatDerivation()
         val choices = ContractSpec.exportFormatChoices()
-        // PDF(선택지 원본, 2.6.0)·txt(원본 미저장) 는 완료 전에도 즉시 `not_applicable` 이다.
+        // PDF(TXT 기본, 원본 구조 미반영)·txt(원본 미저장)는 완료 전에도 즉시 `not_applicable` 이다.
         val uploads =
             mapOf(
                 SourceFormat.DOCX to ("안내문.docx" to UploadFixtures.sampleDocx()),

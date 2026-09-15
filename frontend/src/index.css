@@ -275,6 +275,48 @@
   .legal-document thead th {
     @apply bg-background text-sm font-semibold text-muted-foreground;
   }
+
+  /*
+   * 이용 가이드는 약관과 같은 Markdown 원본을 쓰되, 처음 방문한 사용자가 핵심 흐름을
+   * 먼저 훑을 수 있도록 그림과 첫 단계 목록에만 별도 위계를 준다. 문서 안의 실제 문구는
+   * 계속 `src/content/guide/user-guide.md` 한 곳에서 관리한다.
+   */
+  .guide-page {
+    @apply mx-auto max-w-[920px] rounded-[20px] border border-border bg-card px-5 py-7 shadow-card sm:px-8 sm:py-9 lg:px-12 lg:py-11;
+  }
+  .guide-page .legal-document h1 {
+    @apply text-[30px] font-extrabold tracking-tight md:text-[36px];
+  }
+  .guide-page .legal-document h2 {
+    @apply clear-both mt-12 border-t border-border pt-10 text-[22px] font-extrabold;
+  }
+  .guide-page .legal-document h3 {
+    @apply mt-7 text-[17px] font-bold;
+  }
+  .guide-page .legal-document hr {
+    @apply hidden;
+  }
+  .guide-page .legal-document blockquote {
+    @apply my-6 rounded-[12px] border border-warning/25 bg-warning-surface px-4 py-3 text-[15px];
+  }
+  .guide-page .legal-document blockquote p {
+    @apply my-0 leading-6;
+  }
+  .guide-page .legal-document img {
+    @apply mx-auto my-6 block w-full max-w-[430px] rounded-[16px] md:float-right md:mt-0 md:mb-4 md:ml-8 md:w-[320px];
+  }
+  .guide-page .legal-document > ol:first-of-type {
+    @apply my-6 grid list-none gap-3 p-0 md:grid-cols-3;
+  }
+  .guide-page .legal-document > ol:first-of-type li {
+    @apply m-0 rounded-[12px] border border-border bg-background p-4 text-[15px] leading-6;
+  }
+  .guide-page .legal-document table {
+    @apply text-[15px];
+  }
+  .guide-page .legal-document tbody tr:nth-child(even) {
+    @apply bg-background/70;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

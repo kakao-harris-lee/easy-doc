@@ -233,8 +233,8 @@ class ConversionQueryServiceTest {
     }
 
     @Test
-    @DisplayName("원본이 PDF 면 `exportFormat` 이 `null` 이고 `exportFormatChoices` 가 그 자리를 채운다")
-    fun `PDF 는 선택지로 내보낸다`() {
+    @DisplayName("원본이 PDF 면 `exportFormat` 은 TXT 이고 선택지는 없다")
+    fun `PDF 는 TXT 로 내보낸다`() {
         val world = World()
         val conversionId = UUID.randomUUID()
         world.seedResults(conversionId, easyText = "쉬운 글 초안")
@@ -244,11 +244,11 @@ class ConversionQueryServiceTest {
 
         assertThat(view.sourceFormat).isEqualTo(SourceFormat.PDF)
         assertThat(view.exportFormat)
-            .describedAs("서버가 하나로 정하지 않는다 — 사용자가 exportFormatChoices 중 하나를 고른다")
-            .isNull()
+            .describedAs("PDF 레이아웃은 반영하지 않고 검수 본문만 TXT 로 내보낸다")
+            .isEqualTo(ExportFormat.TXT)
         assertThat(view.exportFormatChoices)
-            .describedAs("PDF 는 DOCX·HWPX 중 하나를 고른다 (2.6.0 재결정)")
-            .containsExactlyInAnyOrder(ExportFormat.DOCX, ExportFormat.HWPX)
+            .describedAs("서버가 TXT 를 기본값으로 정했으므로 사용자가 고를 형식이 없다")
+            .isEmpty()
         assertThat(view.formatPreservation?.status)
             .describedAs("원본을 열어 반영하지 않는다 — 완료 후에도 즉시 not_applicable 이다")
             .isEqualTo(FormatPreservationStatus.NOT_APPLICABLE)
@@ -267,7 +267,8 @@ class ConversionQueryServiceTest {
         val view = world.service.read(OWNER, conversionId)
 
         assertThat(view.status).isEqualTo(ConversionStatus.PENDING)
-        assertThat(view.exportFormatChoices).containsExactlyInAnyOrder(ExportFormat.DOCX, ExportFormat.HWPX)
+        assertThat(view.exportFormat).isEqualTo(ExportFormat.TXT)
+        assertThat(view.exportFormatChoices).isEmpty()
         assertThat(view.formatPreservation?.status).isEqualTo(FormatPreservationStatus.NOT_APPLICABLE)
         assertThat(world.reflector.outlined).isEmpty()
     }

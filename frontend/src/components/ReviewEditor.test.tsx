@@ -494,7 +494,20 @@ describe('검수 에디터', () => {
     expect(screen.queryByRole('button', { name: 'HWPX로 내려받기' })).not.toBeInTheDocument()
   })
 
-  it('내려받을 수단이 없으면(export_format null, 선택지도 없음) 내려받기 행동을 제시하지 않는다', () => {
+  it('PDF 원본은 기본 형식인 TXT 내려받기만 제시한다', () => {
+    render(
+      <ReviewEditor
+        conversion={conversion({ source_format: 'pdf', export_format: 'txt' })}
+        source={sourceFailed()}
+      />,
+    )
+
+    expect(screen.getByRole('button', { name: 'TXT로 내려받기' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'DOCX로 내려받기' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'HWPX로 내려받기' })).not.toBeInTheDocument()
+  })
+
+  it('구버전 응답에 내려받을 수단이 없으면 내려받기 행동을 제시하지 않는다', () => {
     render(
       <ReviewEditor
         conversion={conversion({ source_format: 'pdf', export_format: null })}
@@ -507,7 +520,7 @@ describe('검수 에디터', () => {
     expect(screen.queryByRole('button', { name: /내려받기$/ })).not.toBeInTheDocument()
   })
 
-  it('PDF 원본에 선택지가 있으면(export_format_choices) 형식마다 버튼을 하나씩 그린다', () => {
+  it('구버전 PDF 응답에 선택지가 있으면 형식마다 버튼을 하나씩 그린다', () => {
     render(
       <ReviewEditor
         conversion={conversion({
@@ -929,10 +942,10 @@ describe('원본 서식 유지 패널', () => {
   })
 
   /**
-   * PDF는 §6.5 표에서 서식 유지 패널의 대상이 아니다. 대신 내려받기 버튼이 **없는 이유**를
-   * 말한다 — 아무 설명 없이 자리를 비우면 화면이 고장 난 것처럼 보인다.
+   * PDF는 §6.5 표에서 서식 유지 패널의 대상이 아니다. 배포 시차로 남은 구버전 응답에
+   * 내려받기 버튼이 없으면 그 이유를 말한다.
    */
-  it('PDF 원본에 선택지가 없으면 상태 표시 대신 내려받기가 없는 이유를 말한다', () => {
+  it('구버전 PDF 응답에 선택지가 없으면 내려받기가 없는 이유를 말한다', () => {
     render(
       <ReviewEditor
         conversion={conversion({ source_format: 'pdf', export_format: null })}
@@ -946,6 +959,20 @@ describe('원본 서식 유지 패널', () => {
     // 곧 될 것처럼 적지 않는다 — 하지 않기로 정해진 범위다.
     expect(screen.queryByText(/준비 중/)).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /내려받기$/ })).not.toBeInTheDocument()
+  })
+
+  it('PDF 원본을 TXT로 받을 때 레이아웃과 스타일이 유지되지 않음을 말한다', () => {
+    render(
+      <ReviewEditor
+        conversion={conversion({ source_format: 'pdf', export_format: 'txt' })}
+        source={sourceFailed()}
+      />,
+    )
+
+    expect(screen.queryByRole('region', { name: '원본 서식 유지' })).not.toBeInTheDocument()
+    expect(screen.getByText(/원본 레이아웃과 스타일은 유지되지 않습니다/)).toBeInTheDocument()
+    expect(screen.getByText(/검수한 내용만 TXT로 내려받습니다/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'TXT로 내려받기' })).toBeInTheDocument()
   })
 
   /**
@@ -1396,7 +1423,7 @@ describe('문단 단위 대응(segment_map)', () => {
     expect(unit1).toHaveFocus()
   })
 
-  it('단위가 200개를 넘으면 단일 textarea로 내려앉고 배너가 사유를 적는다', () => {
+  it('단위가 200개를 넘으면 제공할 수 없는 상세 비교 버튼을 노출하지 않는다', () => {
     const unitCount = 201
     const bigText = Array.from({ length: unitCount }, (_, index) => `문장 ${index}`).join('\n')
     const map = segmentMap({
@@ -1409,14 +1436,15 @@ describe('문단 단위 대응(segment_map)', () => {
         }),
       ),
     })
-    renderDetailed(
+    render(
       <ReviewEditor
         conversion={conversion({ easy_text: bigText, segment_map: map })}
         source={sourceFailed()}
       />,
     )
 
-    expect(screen.getByText(/문단이 200개를 넘어/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '문단별 상세 비교' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '한 문서로 보기' })).not.toBeInTheDocument()
     expect(screen.queryByLabelText(/쉬운 글 단위 1,/)).not.toBeInTheDocument()
     expect(screen.getByLabelText('쉬운 글 결과 (고칠 수 있습니다)')).toHaveValue(bigText)
     // 재변환은 이 슬라이스(S3) 범위 밖이다(S4) — 이 화면에서 그런 버튼을 만들지 않는다.

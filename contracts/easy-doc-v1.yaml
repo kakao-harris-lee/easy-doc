@@ -41,7 +41,7 @@ openapi: 3.1.0
 
 info:
   title: Easy-Read AI API
-  version: "2.34.0"
+  version: "2.36.0"
   x-baselined-at: "2026-08-12"       # 초판 기준선을 뜬 날 (동결일이 아니다)
   x-rebased-at: "2026-08-12"         # 계약의 성격을 "개선 대상"으로 다시 정의한 날
   x-source-runtime: "Python 3.12 / FastAPI (app/main.py) — 과거 참고 구현이었고 2026-08-24 저장소에서 제거됨(git 태그 pre-python-removal-20260824). 기준선 출처였을 뿐 정답이 아니었다"
@@ -893,7 +893,7 @@ x-input-limits:
   retention_days: 30
 
 # -----------------------------------------------------------------------------
-# 내보내기 형식 유도 — **들어온 형식 그대로 나간다** (`DESIGN.md` §6.5, 2026-08-26)
+# 내보내기 형식 유도 — 구조화 문서는 원본 형식, 평문·PDF는 TXT
 #
 # 이 표가 `ConversionResponse.export_format` 값의 정본이다. 그 필드의 산문은 규칙을
 # 설명하고, 대조는 이 표를 읽는다 — 산문에서 값을 뽑는 규칙은 문장이 바뀌면 조용히
@@ -904,39 +904,30 @@ x-input-limits:
 x-export-format-derivation:
   ground: G2
   decided_at: "2026-08-26"
-  basis: "DESIGN.md §6.5 — 파일 형식 선택은 사용자가 검수 과정에서 해결해야 할 문제가 아니다"
+  revised_at: "2026-09-15"
+  basis: "파일 형식 선택은 사용자가 검수 과정에서 해결하지 않고 서버가 원본 형식별 기본값을 정한다"
   # 키는 `SourceFormat` 값, 값은 `ExportFormat` 값 또는 `null`.
   # **정의역이 `SourceFormat` 전부여야 한다** — 빠진 형식은 「모른다」가 아니라 누락이다.
   mapping:
     text: txt      # 붙여넣기는 파일이 아니었다. UTF-8 텍스트로 내려받는다
     docx: docx
     hwpx: hwpx
-    pdf: null      # 서버가 정하지 않는다 — 사용자가 고른다. 아래 `choices`·`x-null-is-not-unknown`
+    pdf: txt       # PDF 레이아웃·스타일은 반영하지 않고 검수한 본문만 UTF-8 TXT로 내보낸다
     txt: txt       # 2.4.0. 업로드된 평문도 같은 렌더러로 나간다 — 반영할 원본 구조가 없다는
                    # 점만 `text`와 다르고(아래 `x-not-a-rename`), 나가는 형식은 같다
   # ---------------------------------------------------------------------------
   # 선택지 (2.6.0, 2026-09-02 사용자 결정) — `mapping`이 `null`인 원본에서 사용자가
   # 고를 수 있는 형식. **정의역 불변식**: `mapping`이 `null`인 키는 여기 반드시 나타나야
-  # 하고(값은 `[]`여도 된다 — 「선택지도 없다」는 사실을 명시적으로 적는다), `mapping`이
+  # 하고(고를 값이 없다면 키도 두지 않는다), `mapping`이
   # 값을 낸 키는 여기 나타나면 안 된다(선택의 여지가 없다). `DocumentContractNodeTest`가
   # 이 정의역 대조를 잰다.
   # ---------------------------------------------------------------------------
-  choices:
-    pdf: [docx, hwpx]
+  choices: {}
   x-null-is-not-unknown: |
-    `null`은 「모른다」가 아니라 **「서버가 정하지 않는다」**다. 그 뜻은 두 갈래로 갈린다:
-
-    ⑴ **`choices`에 값이 있는 원본(오늘은 `pdf`뿐)** — 서버가 못 정하는 것이 아니라
-       **사용자가 고른다** (2.6.0 재결정, `DESIGN.md` §6.5). PDF는 편집 가능한 문서
-       구조가 아니라 「들어온 형식 그대로」가 성립하지 않고, PDF 렌더러도 없다 — 그래서
-       사용자가 `docx`·`hwpx` 중 하나를 골라 **신문서 조립**으로 받는다. 이것은
-       §6.5가 금지한 *조용한* 대체가 아니다 — 사용자가 명시적으로 고른 두 구조화
-       형식 사이의 선택이고, 아무 것도 고르지 않으면 내보내지 않는다(아래 `enforcement`).
-    ⑵ **`choices`에도 없는 원본(오늘은 없다)** — 이때만 원래 뜻 그대로
-       「같은 형식으로 내보낼 수단이 없다」이고 대체 형식으로 접지 않는다. §6.5가
-       "PDF 다운로드 기능이 준비되기 전까지 다른 형식으로의 우회 다운로드를 기본
-       행동으로 제공하지 않는다"고 정한 자리는 이제 이 갈래(⑵)에 적용된다 — PDF는
-       ⑴로 옮겨졌다. 화면은 이 `null`을 보고 내려받기 행동을 제시하지 않는다.
+    `null`은 「모른다」가 아니라 **「서버가 기본 형식을 정하지 않는다」**다. 현재는 모든
+    `SourceFormat`이 `mapping`에서 값을 내므로 이 갈래에 드는 원본이 없다. 미래에 `null`
+    매핑을 추가하면 `choices`에 그 키를 반드시 함께 선언하고, 선택지도 비어 있으면 화면은
+    내려받기 행동을 제시하지 않는다.
   x-not-a-rename: |
     `text → txt`는 유도이지 이름 변환이 아니다. 두 값 집합은 서로 다른 축이고
     (`SourceFormat`은 「어디서 왔는가」, `ExportFormat`은 「무엇으로 나가는가」),
@@ -1001,11 +992,12 @@ x-export-format-derivation:
     **`format` 누락이 422였던 갈래도 함께 폐기됐다.** 이제 누락은 오류가 아니라 기본
     경로다(`enforcement.on_absent`). 422는 **값 집합 밖**에서만 남는다.
 
-    **2.6.0의 `choices` 갈래는 이 폐기를 되살리는 것이 아니다.** 옛 조항은 「원본과
+    **2.6.0의 `choices` 갈래는 이 폐기를 되살리는 것이 아니었다.** 옛 조항은 「원본과
     무관하게 아무 값이나 통과한다」였고, `choices`는 그 반대다 — 값 집합이 **원본별로
-    좁혀진 목록**(오늘은 PDF의 `[docx, hwpx]`뿐)이고, 목록 밖 값은 여전히 409로 거절되며
+    좁혀진 목록이었고, 목록 밖 값은 여전히 409로 거절되며
     (`on_choice_mismatch`), 생략도 통과하지 않는다(`on_absent_with_choices`). 서버가
-    「하나로 정하지 않는다」일 뿐 「아무거나 받는다」가 아니다.
+    「하나로 정하지 않는다」일 뿐 「아무거나 받는다」가 아니었다. **2.36.0에서 PDF도
+    `txt`로 기본값을 정하면서 현재 선택지 갈래는 비었다.**
 
 # -----------------------------------------------------------------------------
 # 문서 제목 — **제목은 문서 내용에서 만들지 않는다**
@@ -3303,29 +3295,21 @@ paths:
         `mapping[source_format]`으로 정하고, 주면 그 값과 **같아야** 한다.
         그 값은 이 변환의 `ConversionResponse.export_format`과 언제나 같다.
 
-        **PDF는 다르다 — 서버가 정하지 않고 사용자가 고른다** (2.6.0 재결정,
-        `x-export-format-derivation.choices`). 원본이 PDF면 `export_format`이 `null`이고
-        `export_format_choices`가 `[docx, hwpx]`다. `format`은 그 배열 안의 값이어야
-        하고(생략은 409), 원본을 여닫지 않은 채 **고른 형식의 새 문서**를 조립해 내보낸다
-        — 원본 서식을 반영하는 것이 아니므로 `format_preservation`은 언제나
-        `not_applicable`이다.
+        **PDF는 TXT가 기본이다** (2.36.0). 원본이 PDF면 `export_format`은 `txt`이고
+        `export_format_choices`는 빈 배열이다. `format`을 생략하거나 `txt`를 주면 검수한
+        본문만 UTF-8 TXT로 내보낸다. 저장된 PDF 바이트는 열지 않고 레이아웃·스타일도
+        반영하지 않으므로 `format_preservation`은 언제나 `not_applicable`이다.
 
-        409가 나는 경우가 넷이다:
+        409가 나는 현재 경우는 둘이다:
           1. 아직 완료되지 않아 내보낼 결과가 없다
           2. `format`이 이 변환의 원본이 정한 형식과 다르다 (`enforcement.on_mismatch`)
-          3. **PDF 원본인데 `format`을 생략했다** (`enforcement.on_absent_with_choices`)
-             — 서버가 대신 고르지 않는다. 「내보낼 형식을 골라주세요」가 이 갈래의 문구다.
-          4. **PDF 원본인데 `format`이 `export_format_choices` 밖이다**
-             (`enforcement.on_choice_mismatch`) — 값 집합(`ExportFormat`) 안이어도 이
-             원본이 고를 수 있는 형식이 아니면 거절한다.
 
-          PDF가 아닌 원본에는 3·4가 일어나지 않는다 — `export_format_choices`가 비어
-          있으므로 `format`을 생략하면 그대로 1·2의 갈래를 지난다(2.0.0부터의 동작과
-          같다). `choices`도 없는 원본이 생기면(오늘은 없다) 그때는 옛 `no_exportable_format`
-          409가 어떤 `format` 값도·생략도 통과시키지 않는다
+          미래에 `mapping`이 `null`인 원본이 생기면 선택지 생략·선택지 밖 요청도 409가
+          될 수 있다. `choices`도 없는 원본이 생기면 `no_exportable_format` 409가 어떤
+          `format` 값도·생략도 통과시키지 않는다
           (`enforcement.on_null_mapping`, `x-export-format-derivation.x-null-is-not-unknown`).
 
-        **1과 2·3·4의 순서**: 형식 판정이 먼저다. 2·3·4는 기다려도 바뀌지 않는 사실이고
+        **1과 2의 순서**: 형식 판정이 먼저다. 2는 기다려도 바뀌지 않는 사실이고
         1은 시간이 푸는 사실이라, 결국 거절될 요청에 「끝난 뒤에 다시 오라」고 답하면
         틀린 행동을 권하게 된다. 소유 판정(404)은 그 전부보다 먼저다.
 
@@ -3387,10 +3371,8 @@ paths:
             **누락은 더 이상 422가 아니다.** 그 갈래는 폐기됐다(`x-superseded`) —
             되살리면 내보내기가 다시 「클라이언트가 형식을 고르는」 오퍼레이션이 된다.
 
-            **PDF 원본(2.6.0)**: `ConversionResponse.export_format`이 `null`이라 위 규칙이
-            적용되지 않는다. 대신 `export_format_choices`(`[docx, hwpx]`) 안의 값이어야
-            한다 — **생략은 여기서도 409**다(서버가 대신 고르지 않는다), 배열 밖의 값 집합
-            안 값(예: `txt`)도 409다.
+            **PDF 원본(2.36.0)**: `ConversionResponse.export_format`은 `txt`다. 생략이 기본
+            경로이고, 명시하려면 `format=txt`만 일치한다. `docx`·`hwpx`는 409다.
           schema: { $ref: '#/components/schemas/ExportFormat' }
       responses:
         '200':
@@ -3482,8 +3464,8 @@ paths:
         '409':
           description: |
             내보낼 수 없는 변환이다 — 완료 전 · 원본과 다른 형식 요청 ·
-            선택지 있는 원본(PDF)에서 형식 생략·선택지 밖 요청 · 내보낼 형식 자체가 없음.
-            다섯의 구분과 순서는 `description`에 있다.
+            미래의 선택지 있는 원본에서 형식 생략·선택지 밖 요청 · 내보낼 형식 자체가 없음.
+            구분과 순서는 `description`에 있다.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
@@ -3805,8 +3787,11 @@ paths:
           in: query
           required: false
           description: |
-            `YYYY-MM-DD`. 생략하면 `easydoc.usage.zone`(기본 `Asia/Seoul`) 기준 **이번 달
-            1일**이다.
+            `YYYY-MM-DD`. `from`·`to`를 **둘 다 생략하면** 현재 유효한 크레딧 이용
+            주기의 정확한 `cycle_started_at`부터 요청 시각까지 집계한다. 아직 결제가
+            완료되지 않았거나 결제 실패·만료로 유효한 주기가 없으면 사용량은 0이다.
+            날짜 파라미터를 하나라도 명시한 조회에서 `from`만 생략하면
+            `easydoc.usage.zone`(기본 `Asia/Seoul`) 기준 이번 달 1일이다.
 
             형식이 `YYYY-MM-DD`로 읽히지 않으면 422(문자열 detail) — 스키마 제약이 아니라
             서비스 층의 형식 규칙이라 `ValidationFailed`의 **문자열** 갈래다
@@ -3818,12 +3803,20 @@ paths:
           required: false
           description: |
             `YYYY-MM-DD`, **포함** 상한이다(그 날짜 `zone` 자정 직전까지 포함, 다음날
-            자정은 제외). 생략하면 `zone` 기준 **오늘**이다.
+            자정은 제외). 날짜 파라미터를 하나라도 명시한 조회에서 생략하면 `zone` 기준
+            **오늘**이다. 둘 다 생략한 조회는 `from` 설명의 현재 이용 주기 규칙을 따른다.
 
             `to`가 `from`보다 앞이거나(422) 구간이 366일을 넘으면(422) 둘 다 문자열
             detail이다 — 형식 오류와 같은 이유로 서비스 층 규칙이다.
           schema: { type: string, examples: ["2026-09-07"] }
       description: |
+        **기본 기간은 달력 월이 아니라 현재 이용 주기다(2.35.0).** `from`·`to`를 모두
+        생략하면 실제 결제 완료(또는 무료 이용량 부여)로 allowance가 설정된 정확한
+        `cycle_started_at`부터 요청 시각까지 센다. 잔액을 모두 소진해도 allowance와 종료
+        시각이 유효한 동안은 같은 주기를 계속 집계한다. 미결제·결제 실패·만료처럼 유효한
+        주기가 없으면 과거 호출을 섞지 않고 0을 돌려준다. 운영자가 날짜를 하나라도
+        명시하면 기존 날짜 범위 조회를 그대로 쓸 수 있다.
+
         **문서 수·문자 수는 `documents` 표를 참조하지 않는다(2026-09-08 리뷰 정정).**
         그 기간에 **완료된 LLM 호출이 하나라도
         있던**(`llm_calls.called_at` 기준, `document_id`로 distinct) 문서만 센다 — 등록만
@@ -5251,8 +5244,8 @@ components:
         **`pdf`를 여기 더하지 않는다** (2026-08-26 재확인). PDF 렌더러가 없고
         `GET /conversions/{conversion_id}/export?format=pdf`는 오늘 422다
         (`docs/pilot-runbook.md`도 PDF를 범위 밖으로 적는다). 값을 먼저 넣으면 계약이
-        없는 기능을 약속한다. 원본이 PDF인 변환의 `ConversionResponse.export_format`이
-        `null`인 것이 이 부재를 응답에서 말하는 방법이다.
+        없는 기능을 약속한다. 원본이 PDF인 변환은 PDF를 다시 만드는 대신 검수한 본문을
+        `txt`로 내보낸다(2.36.0).
 
     SourceFormat:
       type: string
@@ -5302,10 +5295,9 @@ components:
           ⑶ 업로드된 평문(`source_format: txt`, 2.4.0) — 파일은 맞지만 평문에는 애초에
              유지할 서식이 없다(굵기·글꼴·표·머리말 같은 구조가 없다). ⑴과 사유가 같으므로
              `document_originals`에 원본을 남기지 않는다 — 남겨도 반영할 대상이 없다.
-          ⑷ PDF(`source_format: pdf`, 2.6.0) — 원본 파일 바이트는 저장돼 있을 수 있지만
-             **반영할 대상 자체가 없다.** 사용자가 `export_format_choices` 중 하나를 골라
-             그 형식의 **새 문서**로 조립해 받는다(`x-export-format-derivation.choices`) —
-             원본 구조를 여닫지 않으므로 판정할 「짝」이 없다. ⑵와 사유가 다르다 — 바이트가
+          ⑷ PDF(`source_format: pdf`, 2.36.0) — 원본 파일 바이트는 저장돼 있을 수 있지만
+             **반영할 대상 자체가 없다.** 검수한 본문만 기본 형식인 TXT로 직렬화하고 원본
+             구조를 여닫지 않으므로 판정할 「짝」이 없다. ⑵와 사유가 다르다 — 바이트가
              없어서가 아니라 반영이라는 개념 자체가 이 갈래에 적용되지 않는다.
           네 갈래 모두 **영구히 참**이고, **완료 전에도** 이 값이 즉시 선다 — 짝지을
           검수본을 기다릴 이유가 없다(아래 `format_preservation: null`의 조건 ⑴ 참고).
@@ -5795,7 +5787,7 @@ components:
             - { type: 'null' }
           description: |
             이 변환을 내려받을 때 나오는 형식. 서버가 `source_format`에서 유도한다:
-            `text → txt` · `docx → docx` · `hwpx → hwpx` · **`pdf → null`**.
+            `text → txt` · `docx → docx` · `hwpx → hwpx` · **`pdf → txt`** · `txt → txt`.
             유도표의 정본은 최상위 `x-export-format-derivation`이다.
 
             **2.0.0부터 「나오는 값」이자 「요청할 수 있는 유일한 값」이다.**
@@ -5805,18 +5797,15 @@ components:
             **정의를 바꾸지 않고** 강제만 붙었다. 그 오퍼레이션의 `format`을 생략하면
             서버가 여기 적힌 값을 그대로 쓴다.
 
-            **`null`이면 서버가 하나로 정하지 않았다는 뜻이다.** 두 갈래로 갈린다 —
+            **`null`이면 서버가 하나로 정하지 않았다는 뜻이다.** 현재는 모든 원본 형식에
+            기본값이 있어 `null`이 나오지 않는다. 미래에 이 값이 생기면 두 갈래로 갈린다 —
             `export_format_choices`가 **비어 있으면** 어떤 `format` 값도 생략도 통과하지
             못하고(내려받기 자체가 없다), **비어 있지 않으면** 그 배열 안의 값 하나를
             `format`으로 골라야 한다(생략은 409). 아래 두 문단이 그 사유다.
 
-            **`null`은 「모른다」가 아니라 「서버가 정하지 않는다」다.** 오늘 이 값이 나오는
-            원본은 PDF뿐이다. PDF는 편집 가능한 문서 구조가 아니라서 「들어온 형식 그대로」
-            (§6.5)가 성립하지 않고 PDF 렌더러도 없다 — 그래서 **사용자가**
-            `export_format_choices`(`[docx, hwpx]`) 중 하나를 골라 그 형식의 새 문서로
-            받는다(2.6.0 재결정, `x-export-format-derivation.choices`). 그 전(2.0.0–2.5.1)
-            에는 PDF에 선택지도 없어 이 `null`이 곧 「내보낼 수단이 없다」였다 — 오늘도
-            `choices`가 비는 원본이 생기면(현재는 없다) 그 원본에서는 이 옛 뜻이 그대로다.
+            **PDF는 이 `null` 갈래가 아니다(2.36.0).** PDF 렌더러 없이 검수한 본문만
+            UTF-8 TXT로 직렬화하므로 `export_format`은 `txt`다. 원본 레이아웃·스타일은
+            반영하지 않는다.
         export_format_choices:
           type: array
           items: { $ref: '#/components/schemas/ExportFormat' }
@@ -5826,8 +5815,8 @@ components:
             이지만 고를 형식도 없을 때) **빈 배열**이다. `null`이 아니라 `[]`인 것은
             응답의 다른 배열 필드와 같은 규칙이다 — React가 `undefined` 분기를 만들지 않는다.
 
-            정본은 `x-export-format-derivation.choices[source_format]`이다. 오늘 이 배열이
-            비어 있지 않은 원본은 PDF 하나뿐이고 값은 `[docx, hwpx]`다(2.6.0).
+            정본은 `x-export-format-derivation.choices[source_format]`이다. 오늘은 모든
+            원본에 기본 형식이 정해져 있으므로 언제나 빈 배열이다(2.36.0).
 
             `GET /conversions/{conversion_id}/export`의 `format`은 이 배열이 비어 있지
             않으면 그 안의 값이어야 한다(생략은 409 — `enforcement.on_absent_with_choices`).
@@ -6536,13 +6525,14 @@ components:
           transactions,
           signup_grant_skipped,
           allowance,
+          cycle_started_at,
           cycle_ends_at,
         ]
       description: |
         `GET /workspaces/{workspace_id}/credits` 응답 — 크레딧 계정 계획 §2 결정 2·7,
         `signup_grant_skipped`는 가입 크레딧 후속 §7 결정 6(2.29.0), `allowance`·
         `cycle_ends_at`는 크레딧을 「구독 주기에 포함된 이용량」으로 바꾼 사용자 결정
-        (2026-09-10, 2.30.0).
+        (2026-09-10, 2.30.0), `cycle_started_at`은 현재 이용 주기 사용량 표시(2.35.0).
       properties:
         workspace_id: { type: string, format: uuid }
         balance:
@@ -6579,6 +6569,15 @@ components:
             (V21). `cycle_ends_at`이 `null`이면(주기 없음) 이 계정의 현재 잔액과 같은
             값으로 유지된다(마이그레이션 backfill) — 주기를 열기 전에는 화면의
             "이번 주기 N 중 M 남음" 표시가 잔액과 어긋나지 않는다.
+        cycle_started_at:
+          description: |
+            현재 유효한 이용 주기가 시작된 정확한 시각(2.35.0). 카드 결제 완료 또는 무료
+            이용량 부여로 allowance가 설정된 시각이다. 미결제·결제 실패·만료·주기 종료로
+            진행 중인 주기가 없으면 `null`이다. 잔액을 모두 소진했더라도 allowance가 0보다
+            크고 종료 전이면 시작 시각을 유지한다.
+          anyOf:
+            - { type: string, format: date-time }
+            - { type: 'null' }
         cycle_ends_at:
           description: |
             이번 주기가 끝나는 시각(2.30.0). **`null`이면 이 계정은 주기가 없다**(기존
@@ -7139,6 +7138,41 @@ components:
 # 변경 이력
 # =============================================================================
 x-changelog:
+  - version: "2.36.0"
+    date: "2026-09-15"
+    revision: "PDF-DEFAULT-TXT-EXPORT"
+    author: codex
+    change: |
+      사용자 요청: 원본별 기본 내려받기를 `HWPX → HWPX`, `DOCX → DOCX`,
+      `text·TXT → TXT`, `PDF → TXT`로 고정한다. PDF의 `export_format`을 `null`에서
+      `txt`로 바꾸고 `export_format_choices`를 빈 배열로 바꾼다. `format`을 생략한
+      PDF 내보내기는 검수한 본문만 UTF-8 TXT로 직렬화하며 원본 PDF 바이트와
+      레이아웃·스타일은 반영하지 않는다.
+    ground: |
+      PDF를 DOCX·HWPX 중에서 고르게 하면 원본 스타일이 유지될 것처럼 보이지만 실제로는
+      신문서 조립이라 레이아웃과 스타일이 사라진다. 기본 결과를 TXT로 명시해 결과의 성격과
+      버튼의 기대를 일치시킨다.
+    compatibility: |
+      PDF 변환의 응답과 내보내기 처분이 바뀐다. 기존 `export_format: null`과
+      `[docx, hwpx]` 선택지를 기대한 소비자는 `export_format: txt`, 빈 선택지와 기본
+      `GET .../export` 성공을 받아들여야 한다. 다른 원본 형식의 매핑은 그대로다.
+  - version: "2.35.0"
+    date: "2026-09-14"
+    revision: "USAGE-CREDIT-CYCLE"
+    author: codex
+    change: |
+      사용자 요청: `/usage`의 기본 사용량 기간을 달력 월이 아니라 실제 이용 주기로 맞춘다.
+      `GET /workspaces/{workspace_id}/usage`에서 날짜를 모두 생략하면 유효한
+      `cycle_started_at`부터 요청 시각까지 집계하고, 유효한 주기가 없으면 0을 돌려준다.
+      `WorkspaceCreditsResponse.cycle_started_at`을 필수 nullable 응답 필드로 추가해 화면이
+      시작일을 정확히 안내한다. 소진 완료 주기는 종료 전까지 유지하고, 결제 실패·만료로
+      allowance가 0인 계정은 진행 중인 주기로 노출하지 않는다.
+    ground: |
+      달력 월 집계는 결제일이 매월 1일이 아닌 사용자의 이전 주기 사용량을 섞거나 현재
+      주기 초반 사용량을 누락해, 남은 크레딧과 사용량의 기준 기간을 다르게 보이게 했다.
+    compatibility: |
+      응답에는 nullable 필드를 하나 추가하는 비파괴 변경이다. 사용량 엔드포인트의 날짜
+      명시 조회는 유지되지만, 날짜를 모두 생략한 기본 집계 의미는 현재 이용 주기로 바뀐다.
   - version: "2.34.0"
     date: "2026-09-13"
     revision: "TOSS-TEST-BILLING"

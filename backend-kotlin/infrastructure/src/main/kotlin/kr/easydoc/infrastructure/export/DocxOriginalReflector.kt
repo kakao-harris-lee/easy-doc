@@ -103,10 +103,10 @@ internal class DocxOriginalReflector {
     ) {
         plan.written.forEach { assignment ->
             assignment.unit.rewrite(assignment.line)
-            // 앞뒤 공백이 있는 줄은 이 표시가 없으면 Word 가 삼킨다.
+            // 여러 run 으로 나뉜 조각 각각의 앞뒤 공백을 Word 가 삼키지 않게 한다.
             assignment.unit.texts
-                .firstOrNull()
-                ?.let(::preserveSpace)
+                .filter { OoxmlDom.leadingText(it).isNotEmpty() }
+                .forEach(::preserveSpace)
         }
         plan.emptied.forEach { it.rewrite("") }
         plan.merged.forEach { it.rewrite("") }

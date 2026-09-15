@@ -29,7 +29,7 @@
 
 `.env.example`은 `EASYDOC_PAYMENT_PROVIDER=stub`, `EASYDOC_PAYMENT_MOCK_ENABLED=false`가 기본이다. 사용자가 요청한 로컬 `.env`만 mock을 켠다. API·worker 모두 같은 설정을 읽는다. mock 활성화는 local/test 프로필에서만 허용하고 prod/production과 함께 켜면 기동을 거부한다.
 
-`EASYDOC_CREDITS_ENFORCED`는 별도 설정이며 이번 변경으로 켜지 않는다. mock 구독을 선택해도 기존 무료 파일럿 전체에 이용 제한을 소급 적용하지 않는다.
+이 문서 작성 당시에는 `EASYDOC_CREDITS_ENFORCED`를 켜지 않았다. 2026-09-15 후속 결정으로 운영 기본값은 `true`, 가입 부여는 `0`이 됐다. 관리자도 예외 없이 미결제 상태에서는 402이고, Start 테스트 결제가 성공하면 한 달 50크레딧을 사용한다. 폭넓은 기존 회귀 E2E만 명시적으로 집행을 끄며, 결제·소진 경계는 E22·E23에서 별도로 검증한다.
 
 ## 남은 범위
 

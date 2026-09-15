@@ -20,7 +20,7 @@ const STEPS: readonly Step[] = [
   {
     icon: FileUp,
     title: '원문 올리기',
-    detail: '붙여넣거나 DOCX·PDF·HWPX 파일을 올립니다.',
+    detail: '가능하면 글을 붙여넣고, 필요하면 DOCX·PDF·HWPX 파일을 올립니다.',
   },
   {
     icon: PencilLine,

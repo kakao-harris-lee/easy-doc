@@ -8,5 +8,9 @@ import { LegalDocument } from '../components/LegalDocument'
  * 한다. 푸터와 로그인 뒤 상단 메뉴가 이리로 보낸다.
  */
 export function GuidePage() {
-  return <LegalDocument content={guideMarkdown} />
+  return (
+    <article className="guide-page">
+      <LegalDocument content={guideMarkdown} />
+    </article>
+  )
 }

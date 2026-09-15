@@ -70,8 +70,7 @@ export function conversion(overrides: Partial<ConversionResponse> = {}): Convers
     // 기본값은 붙여넣기다 — 원본 파일이 없으니 유지할 서식도 없고, TXT로 내려받는다.
     source_format: 'text',
     export_format: 'txt',
-    // 계약에서 이 배열이 비어 있지 않은 원본은 PDF뿐이다 — 기본값(붙여넣기)은 늘 빈
-    // 배열이고, PDF 선택 테스트는 이 필드를 직접 덮어쓴다.
+    // 모든 원본에 기본 내보내기 형식이 있으므로 현재 계약에서는 늘 빈 배열이다.
     export_format_choices: [],
     format_preservation: { status: 'not_applicable', details: [] },
     easy_text: '신청은 3월 2일부터 할 수 있어요.',
@@ -202,7 +201,7 @@ export function creditTransaction(overrides: Partial<CreditTransaction> = {}): C
 
 /**
  * GET /workspaces/{id}/credits 응답(C1/C2, 계약 2.22.0, `allowance`·`cycle_ends_at`는
- * 2.30.0). 기본값은 집행이 켜진, 주기 없는 계정이다(`cycle_ends_at: null`).
+ * 2.30.0, `cycle_started_at`은 2.35.0). 기본값은 집행이 켜진, 주기 없는 계정이다.
  */
 export function workspaceCredits(
   overrides: Partial<WorkspaceCreditsResponse> = {},
@@ -216,6 +215,7 @@ export function workspaceCredits(
     transactions: [creditTransaction()],
     signup_grant_skipped: false,
     allowance: 0,
+    cycle_started_at: null,
     cycle_ends_at: null,
     ...overrides,
   }

@@ -246,9 +246,6 @@ class DocumentContractNodeTest {
         val choices = ContractSpec.exportFormatChoices()
         val nullMappedSources = mapping.filterValues { it == null }.keys
 
-        assertThat(nullMappedSources)
-            .withFailMessage("유도표에 null 갈래가 하나도 없다 — 이 대조가 공허해진다")
-            .isNotEmpty()
         assertThat(choices.keys)
             .withFailMessage(
                 "choices 의 정의역이 mapping 의 null 갈래와 다르다 — 값을 낸 원본이 choices 에 있거나, " +
@@ -257,7 +254,7 @@ class DocumentContractNodeTest {
                 choices.keys,
             ).isEqualTo(nullMappedSources)
         assertThat(choices.values)
-            .withFailMessage("choices 에 값을 나열했는데 빈 배열이다 — 「선택지가 없다」는 그 키를 아예 빼서 말한다")
+            .withFailMessage("choices 에 키를 나열했는데 값이 비었다 — 선택지가 없으면 그 키를 빼서 말한다")
             .allSatisfy { assertThat(it).isNotEmpty() }
     }
 

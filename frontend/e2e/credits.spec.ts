@@ -30,7 +30,7 @@ test.describe('크레딧 계정', () => {
         response.request().method() === 'GET',
     )
     await page.goto('/usage')
-    await expect(page.getByRole('heading', { name: '이번 달 사용량' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: '현재 이용 기간 사용량' })).toBeVisible()
     await expect(page.getByText('이용량 제한 없음')).toBeVisible()
     const initial = await (await initialCredits).json()
     expect(initial.available).toBe(1000)

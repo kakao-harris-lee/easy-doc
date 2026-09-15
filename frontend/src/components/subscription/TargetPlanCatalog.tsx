@@ -44,19 +44,13 @@ export function TargetPlanCatalog({
 
   return (
     <section
-      aria-labelledby="target-plan-heading"
+      aria-label="플랜 선택 및 결제"
       className={`rounded-xl border border-border bg-card p-5 ${className}`.trim()}
     >
-      <div className="flex flex-wrap items-center gap-2">
-        <h2 id="target-plan-heading" className="text-sm font-semibold text-muted-foreground">
-          목표 플랜 구성
-        </h2>
-        <Badge tone="info">월 구독</Badge>
-      </div>
-      <p className="mt-2 text-sm text-muted-foreground">
+      <p className="text-sm text-muted-foreground">
         플랜을 선택해 월 제공량과 결제 금액을 확인하세요.
       </p>
-      <ul aria-label="목표 플랜 구성" className="mt-4 grid gap-3 sm:grid-cols-3">
+      <ul aria-label="월 플랜 선택" className="mt-4 grid gap-3 sm:grid-cols-3">
         {TARGET_PLANS.map((plan) => {
           const selected = selectedPlanId === plan.id
           const active = activePlanId === plan.id

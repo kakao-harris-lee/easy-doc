@@ -26,4 +26,6 @@ dist-ssr
 # Playwright 실행 산출물 (보고서·추적·스크린샷). 커밋하지 않는다.
 playwright-report
 test-results
+playwright-report-enforced
+test-results-enforced
 blob-report

@@ -23,8 +23,7 @@ test.describe('Toss test billing', () => {
     await expect(page.getByRole('heading', { name: '문서 변환하기' })).toBeVisible()
     await verifyEmail(page, account)
     await page.goto('/usage')
-    await page.getByRole('button', { name: '플랜 선택', exact: true }).click()
-    await page.getByRole('button', { name: '토스 테스트 카드 등록', exact: true }).click()
+    await page.getByRole('button', { name: 'Start 토스 테스트 카드 등록', exact: true }).click()
     await expect.poll(() => page.frames().length).toBeGreaterThan(1)
     // The hosted provider UI must load; synthetic-card interactions are added from observed labels.
     await expect
@@ -93,7 +92,7 @@ test.describe('Toss test billing', () => {
     })
     expect(new URL(page.url()).search).toBe('')
     await page.getByRole('link', { name: '사용량으로 돌아가기' }).click()
-    await expect(page.getByText('월 1,000원 · 50크레딧', { exact: true })).toBeVisible()
+    await expect(page.getByText('월 99,000원 · 50크레딧', { exact: true })).toBeVisible()
     const token = await storedToken(page)
     const headers = { Authorization: `Bearer ${token}` }
     const workspaces = await (await request.get(`${API_BASE_URL}/workspaces`, { headers })).json()
@@ -146,7 +145,7 @@ test.describe('Toss test billing', () => {
     // Refund both real test approvals; replay each operation to verify idempotency at the HTTP boundary.
     for (const payment of renewed.payments as Array<{ id: string }>) {
       const path = `${API_BASE_URL}/admin/workspaces/${workspace}/payments/${payment.id}/refund`
-      for (const amount of [400, 600]) {
+      for (const amount of [40_000, 59_000]) {
         const data = { operation_id: crypto.randomUUID(), amount }
         expect((await request.post(path, { headers, data })).status()).toBe(200)
         expect((await request.post(path, { headers, data })).status()).toBe(200)
@@ -156,7 +155,7 @@ test.describe('Toss test billing', () => {
     expect(
       refunded.payments.every(
         (p: { status: string; refunded_amount: number }) =>
-          p.status === 'refunded' && p.refunded_amount === 1000,
+          p.status === 'refunded' && p.refunded_amount === 99_000,
       ),
     ).toBe(true)
     await page.reload()

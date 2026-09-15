@@ -221,6 +221,49 @@ class JdbcUsageReadRepositoryTest {
     }
 
     @Test
+    @DisplayName("유효한 이용 주기는 소진 후에도 결제 완료 시각을 시작점으로 돌려준다")
+    fun `소진한 유효 주기도 시작 시각을 유지한다`() {
+        val owner = newOwner()
+        val workspaceId = workspaces.create(owner, "공간-${UUID.randomUUID()}").id
+        val startedAt = Instant.parse("2026-09-03T06:24:30Z")
+        val now = Instant.parse("2026-09-14T03:00:00Z")
+        setCreditCycle(
+            workspaceId,
+            balance = 0,
+            allowance = 50,
+            startedAt = startedAt,
+            endsAt = now.plusSeconds(86400),
+        )
+
+        assertThat(repository.activeCycleStartedAt(owner, workspaceId, now)).isEqualTo(startedAt)
+    }
+
+    @Test
+    @DisplayName("미결제·결제 실패·만료 주기는 활성 시작 시각을 돌려주지 않는다")
+    fun `활성 주기가 아니면 시작 시각이 없다`() {
+        val owner = newOwner()
+        val workspaceId = workspaces.create(owner, "공간-${UUID.randomUUID()}").id
+        val now = Instant.parse("2026-09-14T03:00:00Z")
+        setCreditCycle(
+            workspaceId,
+            balance = 0,
+            allowance = 0,
+            startedAt = now.minusSeconds(86400),
+            endsAt = now.plusSeconds(86400),
+        )
+
+        assertThat(repository.activeCycleStartedAt(owner, workspaceId, now)).isNull()
+        setCreditCycle(
+            workspaceId,
+            balance = 50,
+            allowance = 50,
+            startedAt = now.minusSeconds(172800),
+            endsAt = now.minusSeconds(86400),
+        )
+        assertThat(repository.activeCycleStartedAt(owner, workspaceId, now)).isNull()
+    }
+
+    @Test
     @DisplayName("다른 사용자의 워크스페이스는 null — 404 판정 근거")
     fun `소유가 아니면 null`() {
         val owner = newOwner()
@@ -240,6 +283,33 @@ class JdbcUsageReadRepositoryTest {
         val usage = repository.aggregate(owner, UUID.randomUUID(), zoneMidnight(2020, 1, 1), zoneMidnight(2020, 2, 1))
 
         assertThat(usage).isNull()
+    }
+
+    private fun setCreditCycle(
+        workspaceId: UUID,
+        balance: Int,
+        allowance: Int,
+        startedAt: Instant,
+        endsAt: Instant,
+    ) {
+        jdbc
+            .sql(
+                """
+                INSERT INTO workspace_credit_accounts
+                    (workspace_id, balance, reserved, allowance, cycle_started_at, cycle_ends_at)
+                VALUES (:workspaceId, :balance, 0, :allowance, :startedAt, :endsAt)
+                ON CONFLICT (workspace_id) DO UPDATE
+                SET balance = EXCLUDED.balance,
+                    allowance = EXCLUDED.allowance,
+                    cycle_started_at = EXCLUDED.cycle_started_at,
+                    cycle_ends_at = EXCLUDED.cycle_ends_at
+                """.trimIndent(),
+            ).param("workspaceId", workspaceId)
+            .param("balance", balance)
+            .param("allowance", allowance)
+            .param("startedAt", OffsetDateTime.ofInstant(startedAt, ZoneOffset.UTC))
+            .param("endsAt", OffsetDateTime.ofInstant(endsAt, ZoneOffset.UTC))
+            .update()
     }
 
     @Test

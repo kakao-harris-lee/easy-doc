@@ -6,9 +6,9 @@ import { TargetPlanCatalog } from './TargetPlanCatalog'
 
 it('실제 월 플랜 가격과 제공량을 표시한다', () => {
   render(<TargetPlanCatalog workspaceId={null} />)
-  expect(screen.getByRole('heading', { name: '목표 플랜 구성' })).toBeInTheDocument()
+  expect(screen.queryByText('목표 플랜 구성')).not.toBeInTheDocument()
 
-  const catalog = screen.getByRole('list', { name: '목표 플랜 구성' })
+  const catalog = screen.getByRole('list', { name: '월 플랜 선택' })
   expect(within(catalog).getByText('Start')).toBeInTheDocument()
   expect(within(catalog).getByText('99,000원')).toBeInTheDocument()
   expect(within(catalog).getByText(/50크레딧/)).toBeInTheDocument()
@@ -18,7 +18,15 @@ it('실제 월 플랜 가격과 제공량을 표시한다', () => {
   expect(within(catalog).getByText('Pro')).toBeInTheDocument()
   expect(within(catalog).getByText('599,000원')).toBeInTheDocument()
   expect(within(catalog).getByText(/1,000크레딧/)).toBeInTheDocument()
-  expect(within(catalog).getAllByText('HWPX 내려받기').length).toBeGreaterThan(0)
+  for (const plan of ['Start', 'Basic', 'Pro']) {
+    const card = screen.getByRole('radio', { name: plan }).closest('li')
+    expect(card).not.toBeNull()
+    expect(
+      within(card!)
+        .getAllByRole('listitem')
+        .map((item) => item.textContent),
+    ).toEqual(['텍스트 변환', '쉬운 말 사전 추천', 'DOCX, HWPX, TEXT 내려받기'])
+  }
   expect(screen.getByText(/재변환도 대상 원문 분량만큼 이용량에 포함/)).toBeInTheDocument()
 })
 

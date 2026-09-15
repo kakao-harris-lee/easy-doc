@@ -89,9 +89,9 @@ type PanelKey = (typeof PANELS)[number]['key']
  * 나간다」). 종전에는 `['docx','hwpx','txt']` 상수라 원본과 무관하게 버튼 셋을 그렸고,
  * 서버가 형식을 강제하기 시작한 뒤로 그중 둘은 **반드시 409로 실패한다.**
  *
- * `export_format`이 null이면 두 갈래로 갈린다(2.6.0, `export_format_choices`):
- * - 배열이 비어 있지 않으면(오늘은 PDF뿐) **그 배열 전부**를 버튼으로 그린다 — 사용자가
- *   `docx`·`hwpx` 중 하나를 직접 골라 새 문서로 받는다(§6.5 2026-09-02 재결정).
+ * `export_format`이 null이면 두 갈래로 갈린다(`export_format_choices`):
+ * - 배열이 비어 있지 않으면 **그 배열 전부**를 버튼으로 그린다 — 미래 계약이 원본별
+ *   선택지를 다시 제공해도 응답을 그대로 따른다.
  * - 배열이 비어 있으면 빈 목록이다 — 내려받을 수단이 없는 변환에서는 내려받기 행동을
  *   제시하지 않는다(§6.5 "화면은 이 null을 보고 내려받기 행동을 제시하지 않는다"). 버튼이
  *   없는 이유는 `PdfExportNotice`가 그 자리 위에서 말한다.
@@ -588,11 +588,16 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
         ? '다른 재변환이 진행 중입니다.'
         : null
 
-  /** 기본은 한 문서로 편집하고, 대응표와 재변환은 상세 비교를 열었을 때만 표시한다. */
+  /**
+   * 기본은 한 문서로 편집하고, 대응표와 재변환은 상세 비교를 열었을 때만 표시한다.
+   *
+   * 상한을 넘은 문서는 상세 비교 버튼도 내지 않는다. 버튼을 눌러도 단일 글상자로
+   * 되돌아가는 상태는 서로 다른 보기처럼 보이지만 실제 결과가 같아 사용자를 속인다.
+   */
   const unitCount = draft.split('\n').length
-  const useSegmentedEditor =
-    paragraphComparison && conversion.segment_map !== null && unitCount <= MAX_SEGMENTED_UNITS
-  const showFallbackBanner = paragraphComparison && unitCount > MAX_SEGMENTED_UNITS
+  const supportsParagraphComparison =
+    conversion.segment_map !== null && unitCount <= MAX_SEGMENTED_UNITS
+  const useSegmentedEditor = paragraphComparison && supportsParagraphComparison
 
   /**
    * 이미 쉬운 글 규칙을 통과한 원본 단위 색인(계획 §11). 원문은 읽기 전용이라 이 목록을
@@ -958,7 +963,7 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
       {/* 편집 영역과 그 행동을 한 묶음으로 둔다. 아래 행동 줄이 붙어 있는 구간이 이
           묶음 안에서 끝나야 피드백 폼과 대응표를 가리지 않는다(§10). */}
       <div className="flex flex-col">
-        {conversion.segment_map !== null && (
+        {supportsParagraphComparison && (
           <div className="mb-3 flex justify-end">
             <Button
               type="button"
@@ -1095,15 +1100,6 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
               </p>
             )}
 
-            {/* 문단이 상한을 넘어 단위 목록 대신 단일 글상자로 내려앉은 이유를 그
-                자리에서 설명한다(계획 §6 S3) — 재변환은 그 화면에 없다(단위가 없으면
-                재변환할 단위도 없다). */}
-            {showFallbackBanner && (
-              <p className="field-hint mb-2">
-                문단이 {MAX_SEGMENTED_UNITS}개를 넘어 문단별 편집 대신 하나의 글상자로 보여드립니다.
-              </p>
-            )}
-
             {useSegmentedEditor ? (
               <SegmentedResultEditor
                 headingId={resultHeadingId}
@@ -1164,8 +1160,8 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
         />
 
         {/* §6.5 — 내려받기 버튼을 누르기 직전에 원본 서식이 어떻게 되는지 읽게 한다.
-            DOCX·HWPX가 아니면 패널은 스스로 아무것도 그리지 않고, PDF는 내려받기 버튼이
-            없는 이유를 대신 말한다. */}
+            DOCX·HWPX가 아니면 패널은 스스로 아무것도 그리지 않고, PDF는 TXT에 원본
+            레이아웃·스타일이 반영되지 않는다는 사실을 대신 말한다. */}
         <FormatPreservationPanel
           sourceFormat={conversion.source_format}
           preservation={preservation}
@@ -1205,8 +1201,8 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
             {pending === 'save' ? '저장 중…' : '검수 내용 저장'}
           </Button>
           {downloadFormats(conversion).map((format) => {
-            // 이 버튼을 눌러서 도는 중인지 — PDF 원본은 버튼이 둘일 수 있어(위
-            // `pendingFormat`) `pending`만으로는 어느 버튼인지 구분되지 않는다.
+            // 이 버튼을 눌러서 도는 중인지 — 선택지가 둘 이상인 미래 응답에서는
+            // `pendingFormat` 없이 `pending`만으로 어느 버튼인지 구분되지 않는다.
             const thisDownloading = downloading && pendingFormat === format
             return (
               <Button

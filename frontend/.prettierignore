@@ -4,6 +4,8 @@ node_modules
 package-lock.json
 playwright-report
 test-results
+playwright-report-enforced
+test-results-enforced
 blob-report
 easy-read-ai
 

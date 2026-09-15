@@ -168,67 +168,23 @@ class ConversionExportContractTest {
         val trulyUnexportable =
             SourceFormat.entries.filter { ExportFormat.ofSource(it) == null && ExportFormat.choicesFor(it).isEmpty() }
         assertThat(trulyUnexportable)
-            .describedAs("오늘은 이 갈래에 드는 원본이 없다 — PDF 는 `choicesFor` 가 채운다")
+            .describedAs("오늘은 모든 원본에 기본 내보내기 형식이 있다")
             .isEmpty()
     }
 
     @Test
-    @DisplayName("PDF 원본에서 `format` 을 생략하면 409 · 계약 예시 export_format_choice_required")
-    fun `PDF 는 형식 생략이 409 다`() {
-        val declared = ContractSpec.exportEnforcement()
-        assertThat(declared.onAbsentWithChoices).isEqualTo(CONFLICT)
+    @DisplayName("PDF 원본에서 `format` 을 생략하면 기본 TXT를 내려받는다")
+    fun `PDF 는 기본 TXT 성공 응답을 낸다`() {
+        val success = ContractSpec.successStatus(EXPORT_PATH, GET)
         val owner = newOwner()
         val conversionId = completedConversion(owner, SourceFormat.PDF)
 
         val response = export(owner, conversionId, format = null)
 
-        assertDeclaredStatus(response, CONFLICT)
-        assertThat(bodyOf(response)[DETAIL])
-            .isEqualTo(ContractSpec.pathExampleDetail(EXPORT_PATH, GET, CONFLICT, CHOICE_REQUIRED_EXAMPLE))
-    }
-
-    @Test
-    @DisplayName("PDF 원본에서 선택지 밖의 값(값 집합 안이어도)은 409 · 계약 예시 export_format_choice_mismatch")
-    fun `PDF 는 선택지 밖 요청이 409 다`() {
-        val declared = ContractSpec.exportEnforcement()
-        assertThat(declared.onChoiceMismatch).isEqualTo(CONFLICT)
-        val owner = newOwner()
-        val conversionId = completedConversion(owner, SourceFormat.PDF)
-        val choices = ExportFormat.choicesFor(SourceFormat.PDF)
-
-        ExportFormat.entries.filterNot { it in choices }.forEach { outsider ->
-            val response = export(owner, conversionId, outsider.extension)
-
-            assertDeclaredStatus(response, CONFLICT)
-            assertThat(bodyOf(response)[DETAIL])
-                .withFailMessage("PDF 원본 · 요청 %s 의 처분이 계약과 다르다", outsider.extension)
-                .isEqualTo(ContractSpec.pathExampleDetail(EXPORT_PATH, GET, CONFLICT, CHOICE_MISMATCH_EXAMPLE))
-        }
-    }
-
-    @Test
-    @DisplayName("PDF 원본은 선택지(docx·hwpx) 중 하나를 고르면 200 이고 그 형식의 미디어 타입·filename* 을 낸다")
-    fun `PDF 는 선택지로 성공 응답을 낸다`() {
-        val success = ContractSpec.successStatus(EXPORT_PATH, GET)
-        val choices = ExportFormat.choicesFor(SourceFormat.PDF)
-        assertThat(choices).isNotEmpty()
-
-        choices.forEach { choice ->
-            val owner = newOwner()
-            val conversionId = completedConversion(owner, SourceFormat.PDF)
-
-            val response = export(owner, conversionId, choice.extension)
-
-            assertThat(response.status)
-                .withFailMessage(
-                    "PDF · %s 내보내기가 %d 가 아니다: %s",
-                    choice.extension,
-                    success,
-                    response.getContentAsString(),
-                ).isEqualTo(success)
-            assertMediaType(response, choice.mediaType)
-            assertThat(decodedFilename(assertFilenameStar(response))).endsWith(".${choice.extension}")
-        }
+        assertThat(response.status).isEqualTo(success)
+        assertMediaType(response, ExportFormat.TXT.mediaType)
+        assertThat(decodedFilename(assertFilenameStar(response))).endsWith(".txt")
+        assertThat(response.contentAsString).isEqualTo("쉬운 글 초안입니다.")
     }
 
     @Test
@@ -558,8 +514,6 @@ class ConversionExportContractTest {
 
         const val NOT_DONE_EXAMPLE = "not_done"
         const val MISMATCH_EXAMPLE = "format_mismatch"
-        const val CHOICE_REQUIRED_EXAMPLE = "export_format_choice_required"
-        const val CHOICE_MISMATCH_EXAMPLE = "export_format_choice_mismatch"
 
         const val SAMPLE_TEXT = "내보내기 계약 검사용 안내문 본문"
         const val SAMPLE_MODEL = "stub-model"

@@ -18,7 +18,7 @@ typealias Reservation = ReservationResult.Reserved
 
 /**
  * `GET /workspaces/{workspace_id}/credits` 응답 — 계약 `WorkspaceCreditsResponse`(2.22.0,
- * [allowance]·[cycleEndsAt] 는 2.30.0).
+ * [allowance]·[cycleEndsAt] 는 2.30.0, [cycleStartedAt]은 2.35.0).
  */
 data class CreditAccountView(
     val workspaceId: UUID,
@@ -37,6 +37,8 @@ data class CreditAccountView(
     val signupGrantSkipped: Boolean,
     /** 이번 주기에 제공된 이용량(계약 2.30.0) — `workspace_credit_accounts.allowance`(V21). */
     val allowance: Int,
+    /** 현재 유효한 이용 주기가 시작된 시각. 주기가 없거나 끝났으면 `null`. */
+    val cycleStartedAt: Instant?,
     /**
      * 이번 주기가 끝나는 시각(계약 2.30.0) — `null`이면 이 계정은 주기가 없다(기존 계정,
      * 또는 아직 플랜을 배정받지 않은 계정). 화면은 이때 기존 문구를 유지한다.
@@ -241,6 +243,8 @@ class CreditAccountService(
         workspaceId: UUID,
     ): CreditAccountView =
         repository.read(ownerId, workspaceId)?.let { row ->
+            val activeCycleEndsAt =
+                row.cycleEndsAt?.takeIf { row.allowance > 0 && Instant.now(clock).isBefore(it) }
             CreditAccountView(
                 workspaceId = row.workspaceId,
                 balance = row.balance,
@@ -252,7 +256,8 @@ class CreditAccountService(
                 // signupGrantSkipped KDoc(가입 크레딧 후속 §7 결정 5).
                 signupGrantSkipped = row.emailVerified && row.signupGrantSkipped,
                 allowance = row.allowance,
-                cycleEndsAt = row.cycleEndsAt,
+                cycleStartedAt = activeCycleEndsAt?.let { row.cycleStartedAt },
+                cycleEndsAt = activeCycleEndsAt,
             )
         } ?: throw NotFoundException(WORKSPACE_NOT_FOUND_MESSAGE)
 

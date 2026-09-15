@@ -522,7 +522,13 @@ beforeEach(() => {
   })
   vi.mocked(getConversion).mockResolvedValue(conversion({ status: 'done' }))
   vi.mocked(getDocumentSource).mockResolvedValue(documentSource())
-  vi.mocked(getWorkspaceCredits).mockResolvedValue(workspaceCredits())
+  vi.mocked(getWorkspaceCredits).mockResolvedValue(
+    workspaceCredits({
+      allowance: 50,
+      cycle_started_at: '2026-09-03T06:24:30Z',
+      cycle_ends_at: '2099-10-03T06:24:30Z',
+    }),
+  )
   vi.mocked(listInvoiceRequests).mockResolvedValue({ items: [] })
   vi.mocked(listActiveAnnouncements).mockResolvedValue({ items: [] })
 })

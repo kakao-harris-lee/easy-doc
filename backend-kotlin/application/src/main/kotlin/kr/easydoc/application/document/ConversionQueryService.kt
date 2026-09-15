@@ -7,8 +7,9 @@ import kr.easydoc.core.crypto.EncryptedField
 import kr.easydoc.core.crypto.PlainBody
 import kr.easydoc.core.document.ConversionView
 import kr.easydoc.core.document.FormatPreservation
-import kr.easydoc.core.document.choiceExportPreservation
+import kr.easydoc.core.document.SourceFormat
 import kr.easydoc.core.document.noOriginalPreservation
+import kr.easydoc.core.document.nonReflectingSourcePreservation
 import kr.easydoc.core.document.reflectedPreservation
 import kr.easydoc.core.document.unreadableOriginalPreservation
 import kr.easydoc.core.easyread.ExportFormat
@@ -61,12 +62,12 @@ class ConversionQueryService(
      * 서식 유지 판정에 원본 바이트가 필요한가.
      *
      * 셋을 **모두** 지나야 연다 — 최대 10MB 를 복호화하고 파싱하는 일이라 갈래를 좁게 둔다.
-     * ⑴ 원본 행이 있고, ⑵ 같은 형식으로 내보낼 수단이 있고(선택지가 있는 원본 제외 —
-     * PDF 는 오늘 원본을 열어 반영하지 않는다), ⑶ 판정의 다른 한쪽인 검수본이 이미 있다(완료).
+     * ⑴ 원본 행이 있고, ⑵ 원본 구조를 반영하는 DOCX·HWPX이고, ⑶ 판정의 다른 한쪽인
+     * 검수본이 이미 있다(완료). PDF는 TXT로 내보내므로 원본을 열지 않는다.
      */
     private fun needsOriginal(stored: StoredConversion): Boolean =
         stored.hasStoredOriginal &&
-            ExportFormat.ofSource(stored.sourceFormat) != null &&
+            (stored.sourceFormat == SourceFormat.DOCX || stored.sourceFormat == SourceFormat.HWPX) &&
             stored.status.exposesResult
 
     /**
@@ -134,7 +135,7 @@ class ConversionQueryService(
     /**
      * 완료 **전**의 서식 유지 판정.
      *
-     * 선택지가 있는 원본(PDF)과 되살릴 원본이 없는 문서는 지금 이미 확실하다 — 그 판정은
+     * 원본 구조를 반영하지 않는 PDF와 되살릴 원본이 없는 문서는 지금 이미 확실하다 — 그 판정은
      * 영구히 참이고 검수본을 기다릴 이유가 없다. 그 밖에 원본이 있으면 `null` 이고, 그것은
      * 「유지 불가」가 아니라 **아직 판정하지 않았다**는 뜻이다: 판정의 다른 한쪽인 검수본이
      * 아직 없고, 없는 값으로 세는 짝은 추측이다.
@@ -145,7 +146,7 @@ class ConversionQueryService(
      */
     private fun beforeDonePreservation(stored: StoredConversion): FormatPreservation? =
         when {
-            ExportFormat.choicesFor(stored.sourceFormat).isNotEmpty() -> choiceExportPreservation()
+            stored.sourceFormat == SourceFormat.PDF -> nonReflectingSourcePreservation()
             !stored.hasStoredOriginal -> noOriginalPreservation()
             else -> null
         }
@@ -156,8 +157,8 @@ class ConversionQueryService(
      * 판정과 내보내기가 같은 [OriginalStructureReflector] 를 지나고 그 안에서 같은 자리
      * 맞춤을 쓰므로, 여기서 말한 개수와 파일에 실제로 들어가는 개수가 갈릴 수 없다.
      *
-     * 선택지가 있는 원본(PDF)은 언제나 `not_applicable` 이다 — 원본을 열어 반영한다는
-     * 개념 자체가 적용되지 않는다(2.6.0 재결정, [choiceExportPreservation]). 「유지 불가」로
+     * PDF는 언제나 `not_applicable` 이다 — TXT로 내보내므로 원본을 열어 반영한다는
+     * 개념 자체가 적용되지 않는다([nonReflectingSourcePreservation]). 「유지 불가」로
      * 접지 않는 이유는 그것이 원본 구조에 대한 판정이 아니라 애초에 반영을 시도하지 않는다는
      * 사실이기 때문이다.
      */
@@ -169,8 +170,8 @@ class ConversionQueryService(
     ): FormatPreservation? =
         when {
             // 반영이라는 개념 자체가 적용되지 않는다(PDF) — 원본을 열지 않는다.
-            ExportFormat.choicesFor(stored.sourceFormat).isNotEmpty() -> {
-                choiceExportPreservation()
+            stored.sourceFormat == SourceFormat.PDF -> {
+                nonReflectingSourcePreservation()
             }
 
             !stored.hasStoredOriginal -> {

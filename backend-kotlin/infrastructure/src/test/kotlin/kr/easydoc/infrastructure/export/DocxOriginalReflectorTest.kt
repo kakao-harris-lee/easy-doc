@@ -86,6 +86,27 @@ class DocxOriginalReflectorTest {
     }
 
     @Test
+    @DisplayName("한 문단의 여러 run 에 검수본을 나눠 써서 문자 서식을 남긴다")
+    fun `문자 서식 run 을 유지한다`() {
+        val file =
+            reflector.reflect(
+                ExportFixtures.styledRunsDocx(),
+                "안내문",
+                listOf("쉬운 문장"),
+                map = null,
+                mapAttempted = false,
+            )!!
+
+        val body = IngestFixtures.entriesOf(file.content).getValue("word/document.xml").decodeToString()
+        assertThat(body).contains("<w:b").contains("<w:i")
+        assertThat(body).contains(">쉬운</w:t>").contains("> 문장</w:t>")
+        assertThat(body)
+            .describedAs("두 번째 run 의 앞 공백도 Word 가 보존해야 한다")
+            .contains("xml:space=\"preserve\"> 문장</w:t>")
+        assertThat(extractors.extract(file.filename, file.content).text).isEqualTo("쉬운 문장")
+    }
+
+    @Test
     @DisplayName("문단이 모자라면 남은 원본 문단을 비운다 — 원본 문구를 남기지 않는다")
     fun `모자라면 비운다`() {
         val original = IngestFixtures.bytes("sample_rich.docx")

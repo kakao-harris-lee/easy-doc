@@ -75,6 +75,24 @@ class HwpxOriginalReflectorTest {
     }
 
     @Test
+    @DisplayName("한 문단의 여러 run 에 검수본을 나눠 써서 문자 모양 참조를 남긴다")
+    fun `문자 모양 run 을 유지한다`() {
+        val file =
+            reflector.reflect(
+                ExportFixtures.styledRunsHwpx(),
+                "안내",
+                listOf("쉬운 문장"),
+                map = null,
+                mapAttempted = false,
+            )!!
+
+        val section = IngestFixtures.entriesOf(file.content).getValue("Contents/section0.xml").decodeToString()
+        assertThat(section).contains("charPrIDRef=\"3\"").contains("charPrIDRef=\"7\"")
+        assertThat(section).contains(">쉬운</hp:t>").contains("> 문장</hp:t>")
+        assertThat(extractors.extract(file.filename, file.content).text).isEqualTo("쉬운 문장")
+    }
+
+    @Test
     @DisplayName("문단이 모자라면 남은 본문 단위를 비운다 — 원본 문구를 남기지 않는다")
     fun `모자라면 비운다`() {
         val short = listOf("쉬운 머리말", "쉬운 첫 문단")

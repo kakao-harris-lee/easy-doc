@@ -14,6 +14,8 @@ import { useWorkspace } from '../workspace/context'
 
 const CARD_CLASS = 'rounded-xl border border-border bg-card p-5'
 const count = (value: number) => value.toLocaleString('ko-KR')
+const usageDate = (value: string) =>
+  new Date(value).toLocaleDateString('ko-KR', { timeZone: 'Asia/Seoul' })
 
 function RemainingUsage({ credits }: { credits: WorkspaceCreditsResponse }) {
   return (
@@ -30,6 +32,19 @@ function RemainingUsage({ credits }: { credits: WorkspaceCreditsResponse }) {
           {new Date(credits.cycle_ends_at).toLocaleDateString('ko-KR')} 이용 기간 종료
         </p>
       )}
+      {credits.enforced && credits.cycle_started_at === null && (
+        <p className="mt-2 text-sm text-muted-foreground">
+          진행 중인 이용 기간이 없습니다. 플랜 결제가 완료되면 이용량이 제공됩니다.
+        </p>
+      )}
+      {credits.enforced &&
+        credits.cycle_started_at !== null &&
+        credits.balance <= 0 &&
+        credits.reserved === 0 && (
+          <p className="mt-2 text-sm font-medium text-danger">
+            이번 이용 기간의 제공량을 모두 사용했습니다.
+          </p>
+        )}
       {credits.enforced && credits.reserved > 0 && (
         <p className="mt-2 text-sm text-muted-foreground">
           변환 중인 {count(credits.reserved)}크레딧을 제외한 수량입니다.
@@ -60,7 +75,7 @@ function WorkspaceUsage({ workspaceId }: { workspaceId: string }) {
       .catch((error: unknown) => {
         if (!controller.signal.aborted) {
           setUsageError(
-            error instanceof ApiError ? error.message : '이번 달 사용량을 불러오지 못했습니다.',
+            error instanceof ApiError ? error.message : '이용 기간 사용량을 불러오지 못했습니다.',
           )
         }
       })
@@ -79,18 +94,25 @@ function WorkspaceUsage({ workspaceId }: { workspaceId: string }) {
   }, [workspaceId])
 
   return (
-    <section aria-labelledby="monthly-usage-heading" className={`order-2 ${CARD_CLASS}`}>
-      <h2 id="monthly-usage-heading" className="text-sm font-semibold text-muted-foreground">
-        이번 달 사용량
+    <section aria-labelledby="cycle-usage-heading" className={`order-2 ${CARD_CLASS}`}>
+      <h2 id="cycle-usage-heading" className="text-sm font-semibold text-muted-foreground">
+        현재 이용 기간 사용량
       </h2>
       {usageError !== null ? (
         <p role="alert" className="mt-3 text-sm text-danger">
           {usageError}
         </p>
-      ) : usage === null ? (
+      ) : usage === null || (credits === null && creditsError === null) ? (
         <p role="status" className="mt-3 text-sm text-muted-foreground">
           사용량을 불러오는 중입니다…
         </p>
+      ) : credits !== null && credits.cycle_started_at === null ? (
+        <div className="mt-3">
+          <p className="text-lg font-semibold text-foreground">사용 중인 이용 기간이 없습니다.</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            미결제·결제 실패·만료 상태의 과거 사용량은 현재 사용량에 포함하지 않습니다.
+          </p>
+        </div>
       ) : (
         <>
           <p className="mt-3 text-3xl font-bold tabular-nums text-foreground">
@@ -99,7 +121,11 @@ function WorkspaceUsage({ workspaceId }: { workspaceId: string }) {
           <p className="mt-2 text-sm text-muted-foreground">
             문서 {count(usage.documents)}건 · {count(usage.characters)}자
           </p>
-          <p className="mt-1 text-xs text-muted-foreground">매월 1일부터 오늘까지</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {credits?.cycle_started_at !== null && credits?.cycle_started_at !== undefined
+              ? `${usageDate(credits.cycle_started_at)} 이용 시작일부터 오늘까지`
+              : '현재 이용 기간 시작일부터 오늘까지'}
+          </p>
         </>
       )}
       {creditsError !== null ? (
@@ -128,7 +154,7 @@ export function UsagePage() {
       <PageHeader
         context={currentName ?? '사용량'}
         title="플랜과 사용량"
-        description="월 플랜을 선택하고 남은 이용량과 이번 달 사용량을 확인한다."
+        description="월 플랜을 선택하고 현재 이용 기간의 사용량과 남은 이용량을 확인한다."
         titleId="usage-heading"
       />
       <div className="grid gap-4 md:grid-cols-2">

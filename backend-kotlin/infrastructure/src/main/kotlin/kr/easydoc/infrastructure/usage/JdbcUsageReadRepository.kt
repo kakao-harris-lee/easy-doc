@@ -47,6 +47,28 @@ import java.util.UUID
  * 건수)로 드러나게 한다(백로그 「실패 호출 원장 추적」, 2026-09-08).
  */
 class JdbcUsageReadRepository(private val jdbc: JdbcClient) : UsageReadRepository {
+    override fun activeCycleStartedAt(
+        ownerId: UUID,
+        workspaceId: UUID,
+        now: Instant,
+    ): Instant? =
+        jdbc
+            .sql(
+                """
+                SELECT a.cycle_started_at
+                FROM workspace_credit_accounts a
+                JOIN workspaces w ON w.id = a.workspace_id
+                WHERE a.workspace_id = :workspaceId AND w.user_id = :ownerId
+                  AND a.allowance > 0
+                  AND a.cycle_ends_at > :now
+                """.trimIndent(),
+            ).param("workspaceId", workspaceId)
+            .param("ownerId", ownerId)
+            .param("now", now.toOffsetDateTime())
+            .query { rs, _ -> rs.getObject("cycle_started_at", OffsetDateTime::class.java).toInstant() }
+            .optional()
+            .orElse(null)
+
     override fun aggregate(
         ownerId: UUID,
         workspaceId: UUID,

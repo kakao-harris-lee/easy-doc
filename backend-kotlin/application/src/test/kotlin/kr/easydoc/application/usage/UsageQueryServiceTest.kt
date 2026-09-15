@@ -39,7 +39,10 @@ class UsageQueryServiceTest {
             byPurpose = emptyList(),
         )
 
-    private class FakeUsageReadRepository(private val result: WorkspaceUsage?) : UsageReadRepository {
+    private class FakeUsageReadRepository(
+        private val result: WorkspaceUsage?,
+        private val activeCycleStartedAt: Instant? = null,
+    ) : UsageReadRepository {
         var lastFrom: Instant? = null
         var lastToExclusive: Instant? = null
 
@@ -53,11 +56,42 @@ class UsageQueryServiceTest {
             lastToExclusive = toExclusive
             return result
         }
+
+        override fun activeCycleStartedAt(
+            ownerId: UUID,
+            workspaceId: UUID,
+            now: Instant,
+        ): Instant? = activeCycleStartedAt
     }
 
     @Test
-    @DisplayName("from·to를 생략하면 이번 달 1일부터 오늘까지다")
-    fun `기본 기간은 이번 달 1일부터 오늘까지다`() {
+    @DisplayName("현재 이용 주기는 결제 완료 시각부터 요청 시각까지 정확히 집계한다")
+    fun `현재 이용 주기는 시작 시각부터 지금까지다`() {
+        val startedAt = Instant.parse("2026-09-03T06:24:30Z")
+        val repository = FakeUsageReadRepository(emptyUsage, activeCycleStartedAt = startedAt)
+        val service = UsageQueryService(repository, zone, clock)
+
+        service.currentCycleUsageOf(owner, workspaceId)
+
+        assertThat(repository.lastFrom).isEqualTo(startedAt)
+        assertThat(repository.lastToExclusive).isEqualTo(Instant.parse("2026-09-07T03:00:00Z"))
+    }
+
+    @Test
+    @DisplayName("미결제·결제 실패·만료로 유효한 주기가 없으면 과거 사용량을 포함하지 않는다")
+    fun `유효한 주기가 없으면 빈 구간을 집계한다`() {
+        val repository = FakeUsageReadRepository(emptyUsage)
+        val service = UsageQueryService(repository, zone, clock)
+
+        service.currentCycleUsageOf(owner, workspaceId)
+
+        assertThat(repository.lastFrom).isEqualTo(Instant.parse("2026-09-07T03:00:00Z"))
+        assertThat(repository.lastToExclusive).isEqualTo(repository.lastFrom)
+    }
+
+    @Test
+    @DisplayName("날짜 범위 조회에서 from·to를 생략하면 이번 달 1일부터 오늘까지다")
+    fun `날짜 범위 기본 기간은 이번 달 1일부터 오늘까지다`() {
         val repository = FakeUsageReadRepository(emptyUsage)
         val service = UsageQueryService(repository, zone, clock)
 

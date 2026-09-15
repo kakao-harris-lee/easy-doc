@@ -166,15 +166,23 @@ class CreditAccountServiceTest {
     }
 
     @Test
-    @DisplayName("읽기 결과는 allowance·cycle_ends_at 을 저장소 값 그대로 채운다")
-    fun `읽기는 allowance와 cycle_ends_at 을 채운다`() {
+    @DisplayName("읽기 결과는 유효한 주기의 시작·종료 시각과 allowance를 채운다")
+    fun `읽기는 유효한 주기의 시작과 종료 시각을 채운다`() {
+        val cycleStartedAt = Instant.parse("2026-09-10T00:00:00Z")
         val cycleEndsAt = Instant.parse("2026-10-10T00:00:00Z")
-        val repo = FakeCreditAccountRepository(balance = 50, allowance = 50, cycleEndsAt = cycleEndsAt)
-        val service = CreditAccountService(repo, enforced = true)
+        val repo =
+            FakeCreditAccountRepository(
+                balance = 50,
+                allowance = 50,
+                cycleStartedAt = cycleStartedAt,
+                cycleEndsAt = cycleEndsAt,
+            )
+        val service = CreditAccountService(repo, enforced = true, clock = FIXED_CLOCK)
 
         val view = service.read(ownerId, workspaceId)
 
         assertThat(view.allowance).isEqualTo(50)
+        assertThat(view.cycleStartedAt).isEqualTo(cycleStartedAt)
         assertThat(view.cycleEndsAt).isEqualTo(cycleEndsAt)
     }
 
@@ -186,6 +194,23 @@ class CreditAccountServiceTest {
 
         val view = service.read(ownerId, workspaceId)
 
+        assertThat(view.cycleStartedAt).isNull()
+        assertThat(view.cycleEndsAt).isNull()
+    }
+
+    @Test
+    @DisplayName("결제 실패·만료로 allowance가 0이면 저장된 종료일이 남아 있어도 활성 주기로 노출하지 않는다")
+    fun `제공량이 0인 주기는 활성 주기가 아니다`() {
+        val repo =
+            FakeCreditAccountRepository(
+                balance = 0,
+                allowance = 0,
+                cycleStartedAt = FIXED_NOW,
+                cycleEndsAt = Instant.parse("2026-10-10T00:00:00Z"),
+            )
+        val view = CreditAccountService(repo, enforced = true, clock = FIXED_CLOCK).read(ownerId, workspaceId)
+
+        assertThat(view.cycleStartedAt).isNull()
         assertThat(view.cycleEndsAt).isNull()
     }
 
@@ -362,12 +387,14 @@ private data class SetAllowanceCall(
  * [NoopCreditAccountRepository] 에 위임하고 이 서비스가 실제로 판정하는 갈래(잔액·예약
  * 상태 전이, 부여 호출 인자)만 재정의한다(리뷰 2026-09-07 — 다섯 대역의 복붙을 줄인다).
  */
+@Suppress("LongParameterList")
 private class FakeCreditAccountRepository(
     var balance: Int,
     private val exists: Boolean = true,
     private val signupGrantSkipped: Boolean = false,
     private val emailVerified: Boolean = false,
     var allowance: Int = 0,
+    var cycleStartedAt: Instant = Instant.EPOCH,
     var cycleEndsAt: Instant? = null,
 ) : CreditAccountRepository by NoopCreditAccountRepository {
     var reserved: Int = 0
@@ -462,7 +489,7 @@ private class FakeCreditAccountRepository(
                 signupGrantSkipped,
                 emailVerified,
                 allowance,
-                cycleStartedAt = Instant.EPOCH,
+                cycleStartedAt = cycleStartedAt,
                 cycleEndsAt = cycleEndsAt,
             )
         }

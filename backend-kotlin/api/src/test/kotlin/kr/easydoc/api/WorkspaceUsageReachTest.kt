@@ -16,6 +16,7 @@ import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
+import java.time.Instant
 import java.util.UUID
 
 /**
@@ -81,6 +82,82 @@ class WorkspaceUsageReachTest {
         assertThat(body["input_tokens"]).isEqualTo(120)
         assertThat(body["output_tokens"]).isEqualTo(60)
         assertThat(body["cost_unknown_calls"]).isEqualTo(1)
+    }
+
+    @Test
+    @DisplayName("U-1a 기본 집계는 달력 월이 아니라 정확한 현재 이용 주기 시작 시각부터 센다")
+    fun `기본 집계는 현재 이용 주기만 센다`() {
+        val token = newAccount()
+        val userId = subjectOf(token)
+        val workspaceId = defaultWorkspaceId(token)
+        val now = Instant.now()
+        database.execute(
+            """
+            UPDATE workspace_credit_accounts
+            SET cycle_started_at = '${now.minusSeconds(3600)}', cycle_ends_at = '${now.plusSeconds(86400)}',
+                allowance = 50, balance = 50
+            WHERE workspace_id = '$workspaceId'
+            """.trimIndent(),
+        )
+        insertLlmCall(
+            workspaceId,
+            userId,
+            purpose = "convert",
+            documentId = UUID.randomUUID().toString(),
+            documentCharCount = 900,
+            inputTokens = 10,
+            outputTokens = 5,
+            costUsd = null,
+            calledAt = now.minusSeconds(7200),
+        )
+        insertLlmCall(
+            workspaceId,
+            userId,
+            purpose = "convert",
+            documentId = UUID.randomUUID().toString(),
+            documentCharCount = 1100,
+            inputTokens = 20,
+            outputTokens = 10,
+            costUsd = null,
+            calledAt = now.minusSeconds(1800),
+        )
+
+        val body = bodyOf(usage(token, workspaceId))
+
+        assertThat(body["documents"]).isEqualTo(1)
+        assertThat(body["characters"]).isEqualTo(1100)
+        assertThat(body["credits"]).isEqualTo(2)
+    }
+
+    @Test
+    @DisplayName("U-1aa 미결제·결제 실패·만료로 유효한 주기가 없으면 과거 호출을 0으로 표시한다")
+    fun `유효한 주기가 없으면 현재 사용량은 0이다`() {
+        val token = newAccount()
+        val userId = subjectOf(token)
+        val workspaceId = defaultWorkspaceId(token)
+        database.execute(
+            """
+            UPDATE workspace_credit_accounts
+            SET allowance = 0, balance = 0, cycle_ends_at = NULL
+            WHERE workspace_id = '$workspaceId'
+            """.trimIndent(),
+        )
+        insertLlmCall(
+            workspaceId,
+            userId,
+            purpose = "convert",
+            documentId = UUID.randomUUID().toString(),
+            documentCharCount = 900,
+            inputTokens = 10,
+            outputTokens = 5,
+            costUsd = null,
+        )
+
+        val body = bodyOf(usage(token, workspaceId))
+
+        assertThat(body["documents"]).isEqualTo(0)
+        assertThat(body["characters"]).isEqualTo(0)
+        assertThat(body["credits"]).isEqualTo(0)
     }
 
     @Test
@@ -288,7 +365,18 @@ class WorkspaceUsageReachTest {
         val credentials = json.writeValueAsString(mapOf("email" to email, "password" to VALID_PASSWORD))
         send(jsonRequest("/auth/signup", null).POST(bodyPublisher(credentials)))
         val login = send(jsonRequest("/auth/login", null).POST(bodyPublisher(credentials)))
-        return bodyOf(login).required("access_token").toString()
+        val token = bodyOf(login).required("access_token").toString()
+        val workspaceId = defaultWorkspaceId(token)
+        database.execute(
+            """
+            UPDATE workspace_credit_accounts
+            SET allowance = 50, balance = 50,
+                cycle_started_at = now() - interval '1 day',
+                cycle_ends_at = now() + interval '1 month'
+            WHERE workspace_id = '$workspaceId'
+            """.trimIndent(),
+        )
+        return token
     }
 
     private fun defaultWorkspaceId(token: String): String {
@@ -313,15 +401,17 @@ class WorkspaceUsageReachTest {
         outputTokens: Int,
         costUsd: String?,
         outcome: String = "completed",
+        calledAt: Instant = Instant.now(),
     ) {
         val costLiteral = costUsd?.let { "'$it'" } ?: "NULL"
         database.execute(
             """
             INSERT INTO llm_calls
                 (id, workspace_id, user_id, document_id, purpose, provider, model, input_tokens, output_tokens,
-                 estimated_cost_usd, char_count, document_char_count, outcome)
+                 estimated_cost_usd, char_count, document_char_count, outcome, called_at)
             VALUES ('${UUID.randomUUID()}', '$workspaceId', '$userId', '$documentId', '$purpose', 'anthropic',
-                    'claude-sonnet-5', $inputTokens, $outputTokens, $costLiteral, 40, $documentCharCount, '$outcome')
+                    'claude-sonnet-5', $inputTokens, $outputTokens, $costLiteral, 40, $documentCharCount, '$outcome',
+                    '$calledAt')
             """.trimIndent(),
         )
     }

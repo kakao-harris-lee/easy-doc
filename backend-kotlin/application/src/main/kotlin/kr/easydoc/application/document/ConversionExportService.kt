@@ -5,6 +5,7 @@ import kr.easydoc.application.crypto.ContentCipher
 import kr.easydoc.core.crypto.EncryptedContent
 import kr.easydoc.core.crypto.EncryptedField
 import kr.easydoc.core.crypto.PlainBody
+import kr.easydoc.core.document.SourceFormat
 import kr.easydoc.core.easyread.ExportFile
 import kr.easydoc.core.easyread.ExportFormat
 import kr.easydoc.core.exceptions.ConflictException
@@ -45,8 +46,8 @@ class ConversionExportService(
         requested: ExportFormat?,
     ): ExportFile {
         val prepared = transaction.inTransaction { prepare(ownerId, conversionId, requested) }
-        // 선택지가 있는 원본(PDF)은 [PreparedExport.reflectOriginal] 이 `false` 다 — 원본을
-        // **열지 않고** 고른 형식으로 새 문서를 조립한다(2.6.0 재결정). 이 분기는 그 의도를
+        // 원본 구조를 반영하지 않는 형식은 [PreparedExport.reflectOriginal] 이 `false` 다 —
+        // PDF는 원본을 **열지 않고** 검수 본문만 TXT로 직렬화한다. 이 분기는 그 의도를
         // 읽는다 — `original == null` 을 대신 재면 「원본이 없어서」와 「원본이 있어도 반영
         // 대상이 아니라서」가 코드에서 같은 자리에 놓인다.
         return if (!prepared.reflectOriginal) {
@@ -82,9 +83,10 @@ class ConversionExportService(
         val draft = requireDraft(stored)
         val reviewed =
             open(stored.result.id, stored.result.ciphertexts.editedText, EncryptedField.CONVERSION_EDITED_TEXT)
-        // 선택지가 있는 원본(PDF)은 원본을 **읽지 않는다** — 반영이라는 개념 자체가 적용되지
-        // 않으므로 굳이 복호화해 열 이유가 없다(§6.5 재결정, `choiceExportPreservation`).
-        val reflectOriginal = ExportFormat.choicesFor(stored.result.sourceFormat).isEmpty()
+        // DOCX·HWPX만 원본 구조를 반영한다. PDF는 TXT로 내보내므로 저장된 PDF 바이트를
+        // 굳이 복호화해 열지 않는다. 붙여넣기와 TXT도 반영할 패키지 구조가 없다.
+        val reflectOriginal =
+            stored.result.sourceFormat == SourceFormat.DOCX || stored.result.sourceFormat == SourceFormat.HWPX
         // 조회의 판정과 **같은 원본**을 연다. 붙여넣기 문서에는 행이 없어 언제나 `null` 이다.
         val original =
             if (!reflectOriginal) {
@@ -98,7 +100,7 @@ class ConversionExportService(
             body = (reviewed ?: draft).value,
             reflectOriginal = reflectOriginal,
             original = original,
-            // 열 원본이 없으면(PDF·붙여넣기·옛 업로드) 지도도 구하지 않는다 — `reflect` 를
+            // 열 원본이 없으면(PDF·붙여넣기·TXT·옛 업로드) 지도도 구하지 않는다 — `reflect` 를
             // 아예 부르지 않는 것과 **같은 조건**이다(`reflectOrAssemble`). 붙여넣기 문서를
             // 내보낼 때마다 원문을 헛되이 읽지 않으려는 것이다. 본문은 조회와 같은 값
             // (edited_text ?: easy_text) — 계획 §10.2 결정 1.
@@ -122,8 +124,8 @@ class ConversionExportService(
      * 앞인 것은 이 거절이 **기다려도 바뀌지 않는** 사실이기 때문이다 — 결국 거절될 요청에
      * 「끝난 뒤에 다시 오라」고 답하면 틀린 행동을 권하게 된다.
      *
-     * **원본이 유도값을 내면**(오늘은 PDF 를 뺀 전부) 그 값이 정본이고 요청은 주장일 뿐이다
-     * (계약 `enforcement.on_mismatch`). **유도값이 없으면**(오늘은 PDF 뿐) 선택지를 본다 —
+     * **원본이 유도값을 내면**(오늘은 모든 원본) 그 값이 정본이고 요청은 주장일 뿐이다
+     * (계약 `enforcement.on_mismatch`). **유도값이 없는 미래 원본**은 선택지를 본다 —
      * 선택지가 있으면 요청이 그 안에 있어야 하고(생략은 거절, `on_absent_with_choices`·
      * `on_choice_mismatch`), 선택지도 없으면(오늘은 없는 갈래) 완전히 내보낼 수 없다
      * (`on_null_mapping`).

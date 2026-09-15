@@ -78,6 +78,29 @@ describe('Footer', () => {
     expect(screen.getByRole('navigation', { name: '정책' })).toBeInTheDocument()
   })
 
+  it('좁은 화면에서 회사명과 정책 링크를 서로 다른 행으로 배치한다', () => {
+    renderFooter()
+
+    const companyRow = screen.getByText(COMPANY_INFO.name).parentElement
+    const policyNavigation = screen.getByRole('navigation', { name: '정책' })
+
+    expect(companyRow).toHaveClass('flex-col', 'items-start', 'sm:flex-row', 'sm:items-center')
+    expect(policyNavigation).toHaveClass('w-full', 'justify-between', 'sm:w-auto')
+  })
+
+  it('사업자 정보 행의 텍스트와 링크를 같은 기준선으로 맞춘다', () => {
+    renderFooter()
+
+    const representative = screen.getByText(
+      '대표 · 개인정보 보호책임자 ' + COMPANY_INFO.representativeName,
+    )
+    const businessLookup = screen.getByRole('link', { name: /^사업자정보 확인:/ })
+
+    expect(representative.parentElement).toHaveClass('items-center')
+    expect(representative).toHaveClass('inline-flex', 'min-h-11', 'items-center')
+    expect(businessLookup).toHaveClass('whitespace-nowrap')
+  })
+
   it('대표와 개인정보 보호책임자가 같으면 이름을 합쳐 표시한다', () => {
     renderFooter()
     expect(screen.getAllByText(new RegExp(COMPANY_INFO.representativeName))).toHaveLength(1)

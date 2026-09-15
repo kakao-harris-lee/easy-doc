@@ -11,6 +11,14 @@ import kr.easydoc.infrastructure.ingest.IngestFixtures
  * 같은 시험으로 재려면 HWPX 쪽 fixture 가 필요하다.
  */
 internal object ExportFixtures {
+    /** 굵게·기울임 두 run 이 한 문단을 이루는 DOCX — 텍스트 교체 뒤에도 두 run 이 살아야 한다. */
+    fun styledRunsDocx(): ByteArray =
+        IngestFixtures.withEntryReplaced(
+            IngestFixtures.bytes("sample.docx"),
+            "word/document.xml",
+            STYLED_RUNS_DOCUMENT_XML.toByteArray(Charsets.UTF_8),
+        )
+
     /**
      * `sample.docx` 의 빈 둘째 문단을 실제 문장으로 갈아 끼운 **본문 단위 셋짜리** 합성 DOCX —
      * 머리말·꼬리말은 없다(2026-09-06 리뷰 항목 1, 테스트 (C)). `sample.docx` 는 둘, 표
@@ -43,6 +51,44 @@ internal object ExportFixtures {
             "Contents/section0.xml",
             RICH_SECTION.toByteArray(Charsets.UTF_8),
         )
+
+    /** 서로 다른 문자 모양 참조 두 run 이 한 문단을 이루는 HWPX. */
+    fun styledRunsHwpx(): ByteArray {
+        val firstSection =
+            IngestFixtures.withEntryReplaced(
+                IngestFixtures.bytes("sample.hwpx"),
+                "Contents/section0.xml",
+                STYLED_RUNS_SECTION.toByteArray(Charsets.UTF_8),
+            )
+        return IngestFixtures.withEntryReplaced(
+            firstSection,
+            "Contents/section1.xml",
+            EMPTY_SECTION.toByteArray(Charsets.UTF_8),
+        )
+    }
+
+    private val STYLED_RUNS_DOCUMENT_XML =
+        """
+        <?xml version='1.0' encoding='UTF-8' standalone='yes'?>
+        <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
+        <w:p><w:r><w:rPr><w:b/></w:rPr><w:t>강조</w:t></w:r><w:r><w:rPr><w:i/></w:rPr><w:t xml:space="preserve"> 일반</w:t></w:r></w:p>
+        <w:sectPr><w:pgSz w:w="12240" w:h="15840"/></w:sectPr>
+        </w:body></w:document>
+        """.trimIndent()
+
+    private val STYLED_RUNS_SECTION =
+        """
+        <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+        <hs:sec xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section" xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph">
+        <hp:p id="1" paraPrIDRef="0" styleIDRef="0"><hp:run charPrIDRef="3"><hp:t>강조</hp:t></hp:run><hp:run charPrIDRef="7"><hp:t> 일반</hp:t></hp:run></hp:p>
+        </hs:sec>
+        """.trimIndent()
+
+    private val EMPTY_SECTION =
+        """
+        <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+        <hs:sec xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section" xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph"/>
+        """.trimIndent()
 
     /** 줄바꿈은 **태그 사이에만** 둔다 — 태그 안에서 끊으면 속성이 붙어 버린다. */
     private val RICH_SECTION =

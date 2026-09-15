@@ -6,8 +6,9 @@ import type { WorkspaceUsageResponse } from './types'
 /**
  * GET /workspaces/{workspace_id}/usage — 기간별 사용량을 집계한다.
  *
- * `from`·`to`를 생략하면 서버가 `easydoc.usage.zone`(기본 `Asia/Seoul`) 기준
- * 이번 달 1일~오늘로 채운다. 둘 다 `YYYY-MM-DD`이고 `to`는 포함 상한이다.
+ * `from`·`to`를 모두 생략하면 서버가 현재 유효한 이용 주기의 정확한 시작 시각부터
+ * 요청 시각까지 집계한다. 날짜를 하나라도 지정하면 둘 다 `YYYY-MM-DD`이고 `to`는 포함
+ * 상한이다.
  */
 export function getWorkspaceUsage(
   workspaceId: string,

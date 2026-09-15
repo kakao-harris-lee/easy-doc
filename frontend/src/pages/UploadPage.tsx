@@ -93,26 +93,13 @@ const GUIDE_STEPS = [
   { title: '담당자 직접 검수', detail: '원문과 나란히 놓고 고쳐 저장합니다.' },
 ] as const
 
-/**
- * PDF 제한 한 문장(DESIGN.md §6.5 마지막 문단).
- *
- * **올리기 전에** 알려야 하는 사실이라 이 화면이 말한다. PDF 업로드 자체는 정상 지원이고
- * 변환·검수도 그대로 된다 — 못 하는 것은 **같은 형식으로 다시 내려받는 것** 하나뿐이라
- * 그 하나만 적는다. 다른 형식으로 대신 받으라는 우회는 제시하지 않는다(§6.5).
- *
- * 「준비 중」이라고 쓰지 않는다. 이것은 아직 못 만든 기능이 아니라 **하지 않기로 정해진
- * 범위**다 — PDF는 출력용 형식이고 편집본을 PDF로 다시 만드는 일은 이 제품의 몫이 아니다.
- *
- * 안내 카드와 고른 파일 카드가 같은 문장을 쓴다 — 같은 사실을 두 자리에서 다르게 말하면
- * 어느 쪽이 맞는지 사용자가 알 수 없다.
- */
-const PDF_EXPORT_LIMIT =
-  'PDF는 출력용 형식이라 결과를 같은 PDF 파일로 다시 만들지 않습니다. 업로드와 변환, 검수는 그대로 됩니다.'
-
-/** PDF 확장자 판정. 화면 표시용이라 최종 판단은 서버가 한다(formatOf와 같은 규칙). */
-function isPdf(fileName: string): boolean {
-  return fileName.toLowerCase().endsWith('.pdf')
-}
+/** 입력 방식·형식에 따른 차이를 업로드 전에 알리는 고정 문구. */
+const TEXT_INPUT_RECOMMENDATION =
+  '문서에서 글을 복사해 붙여넣으면 파일 구조의 영향을 받지 않아 가장 안정적입니다.'
+const DOCX_HWPX_STRUCTURE_NOTICE =
+  'DOCX·HWPX는 원본 구조와 서식을 최대한 유지하지만, 변환된 문장 길이가 달라지면 줄바꿈·표·쪽 배치 등 일부 구조가 바뀔 수 있습니다.'
+const PDF_EXTRACTION_NOTICE =
+  'PDF는 읽는 순서·표·다단 구성에 따라 텍스트가 일부 누락되거나 잘못 추출될 수 있습니다. 변환 후 원문과 결과를 꼭 확인해 주세요. 결과는 레이아웃과 스타일 없이 TXT로 내려받습니다.'
 
 type InputMode = 'text' | 'file'
 
@@ -200,9 +187,6 @@ function SelectedFileCard({ file, onRemove, cardRef }: SelectedFileCardProps) {
           <X className="size-[18px]" aria-hidden="true" />
         </Button>
       </div>
-      {/* 고른 파일이 PDF일 때만, 올리기 전 마지막 확인 지점에서 같은 사실을 한 번 더
-          말한다(§6.5). 안내 카드의 문장을 그대로 쓴다. */}
-      {isPdf(file.name) && <p className="field-hint m-0">{PDF_EXPORT_LIMIT}</p>}
     </div>
   )
 }
@@ -241,6 +225,8 @@ export function UploadPage() {
   const counterId = useId()
   const overflowId = useId()
   const guideId = useId()
+  const textInputGuideId = useId()
+  const fileFormatGuideId = useId()
 
   const [mode, setMode] = useState<InputMode>('text')
   const [title, setTitle] = useState('')
@@ -669,7 +655,7 @@ export function UploadPage() {
           <div className="border-b border-border px-5 py-4 sm:px-6">
             <h2 className="text-[17px] font-bold leading-6 text-foreground">원문 입력</h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              글을 붙여넣거나 문서 파일을 올려 주세요.
+              가능하면 문서의 글을 복사해 붙여넣어 주세요. 파일도 올릴 수 있습니다.
             </p>
           </div>
           <div className="flex flex-col gap-5 px-4 py-5 sm:px-6">
@@ -737,7 +723,7 @@ export function UploadPage() {
                   checked={mode === 'text'}
                   onChange={() => selectMode('text')}
                 />
-                <FileText className="size-[18px]" aria-hidden="true" />글 붙여넣기
+                <FileText className="size-[18px]" aria-hidden="true" />글 붙여넣기 (권장)
               </label>
               <label
                 className={`flex min-h-12 cursor-pointer items-center gap-2 rounded-[10px] border px-3.5 font-semibold ${mode === 'file' ? 'border-primary bg-accent text-accent-foreground' : 'border-input bg-background'}`}
@@ -763,10 +749,17 @@ export function UploadPage() {
                   className="upload-textarea min-h-80"
                   value={text}
                   rows={14}
-                  aria-describedby={tooLong ? `${overflowId} ${counterId}` : counterId}
+                  aria-describedby={
+                    tooLong
+                      ? `${textInputGuideId} ${overflowId} ${counterId}`
+                      : `${textInputGuideId} ${counterId}`
+                  }
                   aria-invalid={tooLong}
                   onChange={handleTextChange}
                 />
+                <p id={textInputGuideId} className="field-hint">
+                  {TEXT_INPUT_RECOMMENDATION}
+                </p>
                 {/* 글자 수 안내를 라이브 영역으로 두지 않는다 — 한 글자마다 낭독기가 숫자를
                 읽고, 상한을 넘으면 제출 오류와 같은 말을 두 번 알리게 된다. 입력 칸이
                 aria-describedby로 이 문단을 가리키고, 넘긴 사실은 aria-invalid와 제출
@@ -822,6 +815,18 @@ export function UploadPage() {
                 {file !== null && (
                   <SelectedFileCard file={file} onRemove={removeFile} cardRef={fileCardRef} />
                 )}
+                <section
+                  className="rounded-[10px] border border-warning/25 bg-warning-surface px-4 py-3"
+                  aria-labelledby={fileFormatGuideId}
+                >
+                  <h3 id={fileFormatGuideId} className="text-sm font-semibold text-foreground">
+                    파일 형식별 안내
+                  </h3>
+                  <ul className="mt-2 list-disc space-y-1 pl-5 text-sm leading-[22px] text-muted-foreground">
+                    <li>{DOCX_HWPX_STRUCTURE_NOTICE}</li>
+                    <li>{PDF_EXTRACTION_NOTICE}</li>
+                  </ul>
+                </section>
               </>
             )}
 
@@ -884,15 +889,6 @@ export function UploadPage() {
                 <dd className="font-medium text-foreground">한 번에 {chars(MAX_CHARS)}자까지</dd>
               </div>
             </dl>
-            {/*
-              PDF로 올린 결과를 PDF로 다시 받을 수 없다는 사실은 **올리기 전에** 알려야
-              한다(§6.5). 자리는 이 보조 안내 카드의 맨 아래다 — 형식별 내려받기 결과를
-              말하는 곳이 여기이고, 이 화면의 주 행동(`쉬운 글 초안 만들기`)에서 떨어져 있다.
-              실행 버튼도, 곧 될 것처럼 읽히는 표식도 두지 않는다.
-            */}
-            <p className="mt-4 border-t border-border pt-4 text-sm leading-[22px] text-muted-foreground">
-              {PDF_EXPORT_LIMIT} DOCX·HWPX는 원본 서식을 유지한 같은 형식 파일로 내려받습니다.
-            </p>
           </section>
         </aside>
       </div>

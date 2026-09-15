@@ -119,7 +119,8 @@ export function FormatPreservationPanel({
       </div>
 
       <p className="text-sm text-muted-foreground">
-        원본 문서의 문단, 표, 이미지 위치에 검수한 쉬운 글을 반영합니다.
+        원본 문서의 문단, 표, 이미지 위치에 검수한 쉬운 글을 반영합니다. 문장 길이에 따라 줄바꿈,
+        표, 쪽 배치 등 일부 구조가 달라질 수 있습니다.
       </p>
 
       {/* 서버 문구를 그대로 옮긴다. 개수를 다시 세거나 문장을 합치지 않는다 — 이 줄이
@@ -151,9 +152,9 @@ interface PdfExportNoticeProps {
 /**
  * PDF 원본에서 내려받기 버튼 위에 붙는 설명(§6.5).
  *
- * `export_format === null`은 「모른다」가 아니라 **「서버가 하나로 정하지 않는다」**다.
- * 그 자리를 아무 설명 없이 비워 두면 화면이 고장 난 것처럼 보이므로 사실만 짧게 적는다.
- * 두 갈래로 갈린다(`export_format_choices`, 2.6.0 재결정):
+ * 현재 기본값은 TXT다(2.36.0). PDF 렌더링이나 구조화 문서 변환이 아니라 검수한 본문만
+ * UTF-8 텍스트로 직렬화하므로, 버튼 바로 전에 레이아웃·스타일이 사라진다는 사실을 말한다.
+ * 배포 시차의 이전 응답(`export_format === null`)도 기존 두 갈래로 안전하게 설명한다:
  *
  * ⑴ **고를 형식이 있다** — 아래에 형식별 버튼이 그려지므로, 여기서는 그 버튼이 무엇을
  *    만드는지만 말한다. PDF는 편집 가능한 문서 구조가 아니라 원본 그대로 유지할 수
@@ -166,13 +167,15 @@ interface PdfExportNoticeProps {
  *    한다. 다른 형식으로 대신 받는 우회도 제시하지 않는다.
  */
 export function PdfExportNotice({ conversion }: PdfExportNoticeProps) {
-  if (conversion.source_format !== 'pdf' || conversion.export_format !== null) {
+  if (conversion.source_format !== 'pdf') {
     return null
   }
 
   return (
     <p className="mt-4 text-sm text-muted-foreground">
-      {conversion.export_format_choices.length > 0 ? (
+      {conversion.export_format === 'txt' ? (
+        <>PDF의 원본 레이아웃과 스타일은 유지되지 않습니다. 검수한 내용만 TXT로 내려받습니다.</>
+      ) : conversion.export_format_choices.length > 0 ? (
         <>
           PDF는 편집 가능한 문서 구조가 아니라 원본 레이아웃을 그대로 유지할 수 없습니다. 아래에서
           고른 형식으로 검수한 내용만 담은 새 문서를 만들어 드립니다.

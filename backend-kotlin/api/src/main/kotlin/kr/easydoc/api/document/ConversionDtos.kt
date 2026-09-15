@@ -113,11 +113,11 @@ data class ConversionResponse private constructor(
     @get:JsonProperty("document_id") val documentId: String,
     @get:JsonProperty("status") val status: String,
     @get:JsonProperty("source_format") val sourceFormat: String,
-    /** `null` 이면 서버가 하나로 정하지 않는다 — [exportFormatChoices] 를 보라. */
+    /** 원본별 기본 내보내기 형식. 현재 모든 원본에 값이 있고, PDF는 `txt`다. */
     @get:JsonProperty("export_format") val exportFormat: String?,
     /**
      * [exportFormat] 이 `null` 이고 사용자가 고를 수 있는 형식이 있을 때만 비어 있지
-     * 않다. 그 밖에는 빈 배열이다(2.6.0 — `x-export-format-derivation.choices`).
+     * 않다. 현재는 모든 원본에 기본값이 있으므로 빈 배열이다.
      */
     @get:JsonProperty("export_format_choices") val exportFormatChoices: List<String>,
     /** `null` 은 「유지 불가」가 아니라 **서버가 아직 판정하지 않았다**. */

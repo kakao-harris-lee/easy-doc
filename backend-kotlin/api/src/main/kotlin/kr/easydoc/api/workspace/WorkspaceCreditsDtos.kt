@@ -8,7 +8,8 @@ import java.time.Instant
 
 /**
  * `GET /workspaces/{workspace_id}/credits` 응답. 계약 `components/schemas/WorkspaceCreditsResponse`
- * (2.22.0, `signup_grant_skipped`는 2.29.0, `allowance`·`cycle_ends_at`는 2.30.0).
+ * (2.22.0, `signup_grant_skipped`는 2.29.0, `allowance`·`cycle_ends_at`는 2.30.0,
+ * `cycle_started_at`은 2.35.0).
  */
 data class WorkspaceCreditsResponse(
     @get:JsonProperty("workspace_id") val workspaceId: String,
@@ -20,6 +21,8 @@ data class WorkspaceCreditsResponse(
     @get:JsonProperty("signup_grant_skipped") val signupGrantSkipped: Boolean,
     /** 이번 주기에 제공된 이용량(계약 2.30.0). `workspace_credit_accounts.allowance`(V21). */
     @get:JsonProperty("allowance") val allowance: Int,
+    /** 현재 유효한 이용 주기가 시작된 시각. `null`이면 진행 중인 주기가 없다. */
+    @get:JsonProperty("cycle_started_at") val cycleStartedAt: Instant?,
     /** 이번 주기가 끝나는 시각(계약 2.30.0). `null`이면 이 계정은 주기가 없다. */
     @get:JsonProperty("cycle_ends_at") val cycleEndsAt: Instant?,
 ) {
@@ -34,6 +37,7 @@ data class WorkspaceCreditsResponse(
                 transactions = view.transactions.map(CreditTransactionResponse::of),
                 signupGrantSkipped = view.signupGrantSkipped,
                 allowance = view.allowance,
+                cycleStartedAt = view.cycleStartedAt,
                 cycleEndsAt = view.cycleEndsAt,
             )
     }

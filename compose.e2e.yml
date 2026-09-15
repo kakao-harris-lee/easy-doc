@@ -1,6 +1,7 @@
 # Playwright E2E 전용 override — 유료 LLM 없이 worker 변환을 끝낸다.
 #
-# `EASYDOC_LLM_PROVIDER=fake` 는 **api·worker 에만** 넣는다.
+# `EASYDOC_LLM_PROVIDER=fake`·`EASYDOC_MAIL_PROVIDER=fake` 는 **api·worker 에만** 넣는다.
+# 로컬 `.env`가 SMTP를 선택해도 E2E 인증 메일과 완료 알림은 외부로 발송하지 않는다.
 #
 # `backend-api` 의 `command` 는 `compose.yml` 의 `--spring.profiles.active=api,local` 에
 # `e2e` 를 얹어 덮어쓴다 — `E2eMailInboxController`(`/__e2e/mail/latest`)가 이 profile
@@ -14,9 +15,10 @@
 # `application.yml` 기본값을 바꾸지 않고 이 override 로만 켠다.
 #
 # `EASYDOC_CREDITS_SIGNUP_GRANT=1000`은 `credits.spec.ts`(E21)가 가입 직후 잔액을
-# 확인·소비할 수 있게 한다 — `easydoc.credits.enforced`는 그대로 꺼둔다(기본값). 켜면
-# 잔액이 없던 기존 스펙(문서 등록이 늘 202를 기대한다)이 전부 402로 깨진다. 이 값은
-# **집행과 무관하게** 가입 부여 거래·잔액을 만드는 것뿐이라 다른 스펙에 영향이 없다.
+# 확인·소비할 수 있게 한다. 운영 기본값은 집행 켜짐이므로, 이 폭넓은 회귀 스택만
+# `EASYDOC_CREDITS_ENFORCED=false`를 명시한다. 켜면 잔액이 없던 기존 스펙(문서 등록이 늘
+# 202를 기대한다)이 전부 402로 깨진다. 집행 경계는 compose.e2e-enforced.yml의 E22·E23이
+# 별도로 검증한다.
 #
 # `EASYDOC_CREDITS_SIGNUP_GRANT_PEPPER`는 `EASYDOC_CREDITS_SIGNUP_GRANT > 0`일 때
 # 필수다(가입 크레딧 후속 §7 결정 3, 기동 자기점검) — `.env`가 실제 배포용 값을 비워
@@ -24,13 +26,22 @@
 
 services:
   backend-api:
-    command: ["java", "-jar", "/app/easy-doc-api.jar", "--spring.profiles.active=api,local,e2e"]
+    command:
+      [
+        "java",
+        "-jar",
+        "/app/easy-doc-api.jar",
+        "--spring.profiles.active=api,local,e2e",
+      ]
     environment:
       EASYDOC_LLM_PROVIDER: fake
+      EASYDOC_MAIL_PROVIDER: fake
       EASYDOC_DICTIONARY_LOOKUP_ENABLED: "true"
+      EASYDOC_CREDITS_ENFORCED: "false"
       EASYDOC_CREDITS_SIGNUP_GRANT: "1000"
       EASYDOC_CREDITS_SIGNUP_GRANT_PEPPER: "e2e-only-pepper-not-a-secret"
 
   backend-worker:
     environment:
       EASYDOC_LLM_PROVIDER: fake
+      EASYDOC_MAIL_PROVIDER: fake

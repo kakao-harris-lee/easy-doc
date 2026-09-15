@@ -143,6 +143,14 @@ beforeEach(() => {
 })
 
 describe('업로드 화면', () => {
+  it('파일보다 글 붙여넣기를 권장하고 이유를 먼저 알린다', () => {
+    renderPage()
+
+    expect(screen.getByRole('radio', { name: '글 붙여넣기 (권장)' })).toBeChecked()
+    expect(screen.getByText(/가능하면 문서의 글을 복사해 붙여넣어 주세요/)).toBeInTheDocument()
+    expect(screen.getByText(/파일 구조의 영향을 받지 않아 가장 안정적입니다/)).toBeInTheDocument()
+  })
+
   it('붙여넣은 글을 올리고 변환 화면으로 넘어간다', async () => {
     const user = userEvent.setup()
     vi.mocked(createDocumentFromText).mockResolvedValue(documentCreationResult())
@@ -845,51 +853,49 @@ describe('업로드 화면', () => {
     expect(screen.queryByRole('complementary', { name: '다음 할 일' })).not.toBeInTheDocument()
   })
 
-  /**
-   * §6.5 마지막 문단 — PDF 로 올린 결과를 PDF 로 다시 받을 수 없다는 사실은 **올리기 전에**
-   * 알려야 한다. 겁주지 않는다: 업로드·변환·검수는 그대로 되고 못 하는 것은 내려받기 하나다.
-   * 「준비 중」이라고 쓰지도 않는다 — 못 만든 기능이 아니라 하지 않기로 정해진 범위다.
-   */
-  it('올리기 전에 PDF 는 같은 형식으로 내려받지 않는다고 알린다', () => {
+  it('파일 모드에서 DOCX·HWPX 구조 변형과 PDF 추출 오류 가능성을 올리기 전에 알린다', async () => {
+    const user = userEvent.setup()
     renderPage()
 
-    const guide = screen.getByRole('region', { name: '이 작업에서 일어나는 일' })
-    expect(within(guide).getByText(/PDF는 출력용 형식이라/)).toBeInTheDocument()
-    expect(within(guide).getByText(/업로드와 변환, 검수는 그대로 됩니다/)).toBeInTheDocument()
-    expect(within(guide).queryByText(/준비 중/)).not.toBeInTheDocument()
+    await chooseFileMode(user)
+
+    const notice = screen.getByRole('region', { name: '파일 형식별 안내' })
+    expect(
+      within(notice).getByText(/DOCX·HWPX는 원본 구조와 서식을 최대한 유지하지만/),
+    ).toBeInTheDocument()
+    expect(within(notice).getByText(/일부 구조가 바뀔 수 있습니다/)).toBeInTheDocument()
+    expect(
+      within(notice).getByText(/PDF는 .* 텍스트가 일부 누락되거나 잘못 추출될 수 있습니다/),
+    ).toBeInTheDocument()
+    expect(
+      within(notice).getByText(/결과는 레이아웃과 스타일 없이 TXT로 내려받습니다/),
+    ).toBeInTheDocument()
   })
 
   /**
-   * 이 안내는 정보이지 행동이 아니다 — 실행 버튼을 만들지 않고, 핵심 흐름의 주 행동
-   * (`쉬운 글 초안 만들기`)이 있는 폼이 아니라 보조 안내 카드 안에 둔다(§2).
+   * 형식 제약은 정보이지 행동이 아니다. 경고 자체를 버튼·링크로 만들면
+   * 사용자가 추가 확인이나 설정을 해야 한다고 오해한다.
    */
-  it('PDF 안내를 실행 버튼이나 대표 행동 옆에 두지 않는다', () => {
+  it('파일 형식별 안내를 조작 요소로 만들지 않는다', async () => {
+    const user = userEvent.setup()
     renderPage()
 
-    const guide = screen.getByRole('region', { name: '이 작업에서 일어나는 일' })
-    expect(within(guide).queryByRole('button')).not.toBeInTheDocument()
-    expect(within(guide).queryByRole('link')).not.toBeInTheDocument()
-    const form = screen.getByRole('button', { name: '쉬운 글 초안 만들기' }).closest('form')
-    expect(form).not.toBeNull()
-    expect(within(form as HTMLElement).queryByText(/PDF는 출력용 형식이라/)).not.toBeInTheDocument()
+    await chooseFileMode(user)
+
+    const notice = screen.getByRole('region', { name: '파일 형식별 안내' })
+    expect(within(notice).queryByRole('button')).not.toBeInTheDocument()
+    expect(within(notice).queryByRole('link')).not.toBeInTheDocument()
   })
 
-  it('고른 파일이 PDF 일 때만 파일 카드에서 같은 사실을 한 번 더 말한다', async () => {
+  it('파일을 고른 뒤에도 형식별 안내가 남는다', async () => {
     const user = userEvent.setup()
     renderPage()
 
     const input = await chooseFileMode(user)
-    await user.upload(input, docxFile())
+    await user.upload(input, pdfFile())
 
-    const card = screen.getByRole('group', { name: /선택한 파일/ })
-    expect(within(card).queryByText(/PDF는 출력용 형식이라/)).not.toBeInTheDocument()
-
-    await user.click(screen.getByRole('button', { name: '안내문.docx 파일 제거' }))
-    await user.upload(await chooseFileMode(user), pdfFile())
-
-    expect(
-      within(screen.getByRole('group', { name: /선택한 파일/ })).getByText(/PDF는 출력용 형식이라/),
-    ).toBeInTheDocument()
+    expect(screen.getByRole('group', { name: '선택한 파일 안내문.pdf' })).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: '파일 형식별 안내' })).toBeInTheDocument()
   })
 
   describe('이메일 인증', () => {

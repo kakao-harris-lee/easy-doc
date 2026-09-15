@@ -82,7 +82,13 @@ class WorkspaceController(
         @RequestParam(name = "to", required = false) to: String?,
     ): ResponseEntity<WorkspaceUsageResponse> =
         private(HttpStatus.OK).body(
-            WorkspaceUsageResponse.of(usageQueryService.usageOf(user.id, workspaceId, from, to)),
+            WorkspaceUsageResponse.of(
+                if (from == null && to == null) {
+                    usageQueryService.currentCycleUsageOf(user.id, workspaceId)
+                } else {
+                    usageQueryService.usageOf(user.id, workspaceId, from, to)
+                },
+            ),
         )
 
     /**

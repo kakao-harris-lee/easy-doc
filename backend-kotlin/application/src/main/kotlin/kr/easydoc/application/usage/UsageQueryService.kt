@@ -102,6 +102,16 @@ interface UsageReadRepository {
         from: Instant,
         toExclusive: Instant,
     ): WorkspaceUsage?
+
+    /**
+     * [now]에 유효한 이용 주기의 정확한 시작 시각. 결제 실패·주기 종료처럼 제공량이 0인
+     * 계정과 아직 주기가 없는 계정은 `null`이다. 소유 여부는 [aggregate]가 최종 판정한다.
+     */
+    fun activeCycleStartedAt(
+        ownerId: UUID,
+        workspaceId: UUID,
+        now: Instant,
+    ): Instant? = null
 }
 
 /**
@@ -111,8 +121,9 @@ interface UsageReadRepository {
  * 시간대의 날짜 경계로 `Instant` 구간 `[from 00:00, to+1일 00:00)` 으로 바뀐다 — 자정
  * 직전(`to` 날짜의 23:59:59)까지 포함하고 다음날 자정은 제외한다.
  *
- * 기본값은 [zone] 기준 **오늘**을 [clock]에서 읽어 정한다 — `from` 생략은 이번 달 1일,
- * `to` 생략은 오늘이다.
+ * 날짜를 하나라도 명시하면 [zone] 기준 **오늘**을 [clock]에서 읽어 기존 날짜 조회 규칙을
+ * 적용한다 — `from` 생략은 이번 달 1일, `to` 생략은 오늘이다. 둘 다 생략한 사용자 화면
+ * 조회는 [currentCycleUsageOf]가 담당한다.
  */
 class UsageQueryService(
     private val repository: UsageReadRepository,
@@ -128,6 +139,23 @@ class UsageQueryService(
     ): WorkspaceUsage {
         val period = resolvePeriod(from, to)
         return repository.aggregate(ownerId, workspaceId, period.fromInstant, period.toExclusiveInstant)
+            ?: throw NotFoundException(WORKSPACE_NOT_FOUND_MESSAGE)
+    }
+
+    /**
+     * 현재 유효한 이용 주기의 사용량. 결제가 완료돼 제공량이 설정된 정확한 시각부터 이
+     * 요청 시각 직전까지 센다. 미결제·결제 실패·만료처럼 유효한 주기가 없으면 빈 구간을
+     * 조회해 0을 돌려주되, [UsageReadRepository.aggregate]의 소유권 404 판정은 유지한다.
+     * 잔액이 0이어도 allowance가 남아 있는 소진 완료 주기는 저장소가 유효 주기로 돌려준다.
+     */
+    fun currentCycleUsageOf(
+        ownerId: UUID,
+        workspaceId: UUID,
+    ): WorkspaceUsage {
+        val now = Instant.now(clock)
+        val startedAt = repository.activeCycleStartedAt(ownerId, workspaceId, now)
+        val from = startedAt?.takeIf { it < now } ?: now
+        return repository.aggregate(ownerId, workspaceId, from, now)
             ?: throw NotFoundException(WORKSPACE_NOT_FOUND_MESSAGE)
     }
 

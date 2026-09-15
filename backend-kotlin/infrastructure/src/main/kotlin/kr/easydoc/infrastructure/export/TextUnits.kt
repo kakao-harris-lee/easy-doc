@@ -25,13 +25,47 @@ internal class TextUnit(
     override fun toString(): String = "TextUnit(${text.length}자, t ${texts.size}개)"
 
     /**
-     * 이 덩어리의 텍스트를 [line] 으로 **갈아 끼운다**. 첫 `t` 에 쓰고 나머지는 비운다.
-     *
-     * 원본 문구를 남기지 않는 것이 규칙이다 — 검수를 지나지 않은 원본 문장이 「쉬운 글」
-     * 파일에 섞이면 그 파일이 조용히 거짓말을 한다.
+     * 이 덩어리의 텍스트를 [line] 으로 갈아 끼운다. 여러 `t` 가 서로 다른 문자 서식을
+     * 가리키면 원래 글자 수 비율대로 나눠 써서 그 run 들을 가능한 한 그대로 쓴다.
      */
     fun rewrite(line: String) {
-        texts.forEachIndexed { index, element -> setLeadingText(element, if (index == 0) line else "") }
+        val fragments = distributed(line)
+        texts.forEachIndexed { index, element -> setLeadingText(element, fragments[index]) }
+    }
+
+    /** UTF-16 서로게이트를 자르지 않도록 코드 포인트 수를 기준으로 원래 run 비율을 투영한다. */
+    private fun distributed(line: String): List<String> {
+        val weights =
+            texts.map { element ->
+                val source = OoxmlDom.leadingText(element)
+                source.codePointCount(0, source.length)
+            }
+        val total = weights.sum()
+        return when {
+            texts.size == 1 -> {
+                listOf(line)
+            }
+
+            total == 0 -> {
+                listOf(line) + List(texts.size - 1) { "" }
+            }
+
+            else -> {
+                val target = line.codePoints().toArray()
+                var consumedWeight = 0
+                var start = 0
+                weights.mapIndexed { index, weight ->
+                    consumedWeight += weight
+                    val end =
+                        if (index == weights.lastIndex) {
+                            target.size
+                        } else {
+                            ((consumedWeight.toLong() * target.size + total / 2) / total).toInt()
+                        }
+                    codePointsToString(target, start, end).also { start = end }
+                }
+            }
+        }
     }
 
     /** 시작 태그 뒤의 연속 텍스트 노드를 [text] 하나로 바꾼다 — `OoxmlDom.leadingText` 가 읽는 범위 그대로. */
@@ -49,6 +83,13 @@ internal class TextUnit(
         element.insertBefore(element.ownerDocument.createTextNode(text), element.firstChild)
     }
 }
+
+/** [start] 이상 [end] 미만 코드 포인트를 문자열로 만든다. */
+private fun codePointsToString(
+    points: IntArray,
+    start: Int,
+    end: Int,
+): String = buildString { for (index in start until end) append(Character.toChars(points[index])) }
 
 /**
  * 추출기와 **같은 순서로** 텍스트 덩어리를 모으는 순회.

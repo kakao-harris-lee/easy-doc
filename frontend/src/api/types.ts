@@ -272,11 +272,9 @@ export interface ConversionResponse {
   /**
    * 이 변환을 내려받을 때 **써야 하는** 형식. 서버가 `source_format`에서 유도한다.
    *
-   * `null`은 「모른다」가 아니라 **「서버가 하나로 정하지 않는다」**다. 오늘 이 값이
-   * 나오는 원본은 PDF뿐이고, 두 갈래로 갈린다 — `export_format_choices`가 비어 있지
-   * 않으면 그 배열 중 하나를 사용자가 **직접 골라야** 하고(2.6.0, DESIGN.md §6.5
-   * 2026-09-02 재결정), 비어 있으면 「같은 형식으로 내보낼 수단이 없다」는 뜻이라 다른
-   * 형식으로 우회 다운로드를 제시하지 않는다.
+   * 원본별 기본값은 `text·txt → txt`, `docx → docx`, `hwpx → hwpx`, `pdf → txt`다.
+   * PDF의 TXT에는 원본 레이아웃과 스타일이 반영되지 않는다. `null`은 미래에 서버가
+   * 하나로 정하지 않는 원본을 위한 계약 갈래이며 현재 정상 응답에서는 나오지 않는다.
    */
   export_format: ExportFormat | null
   /**
@@ -284,8 +282,8 @@ export interface ConversionResponse {
    * 배열이다. 그 밖에는(`export_format`이 값을 냈거나, `null`이지만 고를 형식도 없을
    * 때) 빈 배열이다 — 「없음」은 `null`이 아니라 `[]`로 표현한다.
    *
-   * 오늘 이 배열이 비어 있지 않은 원본은 PDF 하나뿐이고 값은 `['docx', 'hwpx']`다.
-   * 계약 `x-export-format-derivation.choices`가 정본이다.
+   * 현재는 모든 원본에 기본값이 있으므로 언제나 빈 배열이다. 계약
+   * `x-export-format-derivation.choices`가 정본이다.
    */
   export_format_choices: ExportFormat[]
   /**
@@ -484,9 +482,8 @@ export interface CreditTransaction {
  * 이메일이라 건너뛰었다」로 판정됐는지. **이메일이 인증되기 전에는 서버가 항상
  * `false`로 채운다** — 화면은 이 값을 그대로 보여주면 된다(따로 가릴 필요가 없다).
  *
- * `allowance`·`cycle_ends_at`(계약 2.30.0) — 크레딧을 「구독 주기에 포함된 이용량」으로
- * 바꾼 사용자 결정(2026-09-10). `cycle_ends_at`이 `null`이면 이 계정은 주기가 없다(기존
- * 계정, 또는 아직 플랜을 배정받지 않은 계정) — 화면은 이때 기존 문구를 유지한다.
+ * `allowance`·`cycle_ends_at`(계약 2.30.0), `cycle_started_at`(2.35.0) — 크레딧을
+ * 「구독 주기에 포함된 이용량」으로 바꾼 사용자 결정(2026-09-10).
  */
 export interface WorkspaceCreditsResponse {
   workspace_id: string
@@ -498,6 +495,8 @@ export interface WorkspaceCreditsResponse {
   signup_grant_skipped: boolean
   /** 이번 주기에 제공된 이용량. */
   allowance: number
+  /** 현재 유효한 이용 주기가 시작된 시각. 진행 중인 주기가 없으면 `null`. */
+  cycle_started_at: string | null
   /** 이번 주기가 끝나는 시각(ISO 8601 문자열). `null`이면 주기가 없다. */
   cycle_ends_at: string | null
 }

@@ -106,9 +106,9 @@ class ConversionFormatContractTest {
                 implemented,
             ).isEqualTo(declared)
 
-        assertThat(declared.values)
-            .describedAs("표에 `null` 갈래가 하나도 없다 — 「내보낼 수단이 없다」를 재는 대조가 공허해진다")
-            .containsNull()
+        assertThat(declared[SourceFormat.PDF.wireName])
+            .describedAs("PDF 는 레이아웃·스타일을 버리고 TXT 로 내보낸다")
+            .isEqualTo(ExportFormat.TXT.extension)
     }
 
     @Test
@@ -218,16 +218,13 @@ class ConversionFormatContractTest {
     }
 
     @Test
-    @DisplayName("내보낼 수 없는 원본은 **PDF 하나뿐**이다 — 문구가 그 형식을 이름으로 부를 수 있는 근거")
-    fun `내보낼 수 없는 원본이 하나뿐이다`() {
+    @DisplayName("모든 원본에 기본 내보내기 형식이 있다")
+    fun `모든 원본을 기본 형식으로 내보낼 수 있다`() {
         val declared = ContractSpec.exportFormatDerivation()
 
         assertThat(declared.filterValues { it == null }.keys)
-            .withFailMessage(
-                "유도표의 `null` 갈래가 늘었다 — `EXPORT_FORMAT_UNAVAILABLE_MESSAGE` 가 PDF 를 이름으로 부르므로 " +
-                    "그 문구가 거짓이 된다: %s",
-                declared,
-            ).containsExactly(SourceFormat.PDF.wireName)
+            .withFailMessage("기본 내보내기 형식이 없는 원본이 있다: %s", declared)
+            .isEmpty()
     }
 
     @Test

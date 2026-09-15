@@ -40,14 +40,11 @@ enum class ExportFormat(
         fun ofWireName(value: String): ExportFormat? = entries.firstOrNull { it.extension == value }
 
         /**
-         * 원본 형식이 정하는 내보내기 형식 — **들어온 형식 그대로 나간다**(`DESIGN.md` §6.5).
+         * 원본 형식이 정하는 기본 내보내기 형식.
          *
-         * `PDF` 만 `null` 이다. `PDF` 를 [ExportFormat] 에 더해 이 `null` 을 없애려 들지
-         * 마라 — 렌더러가 없다. **`null` 이 「내보낼 수 없다」는 아니다** — PDF 는
-         * [choicesFor] 가 대신 답한다(2.6.0 재결정, `x-export-format-derivation.choices`):
-         * 사용자가 `DOCX`·`HWPX` 중 하나를 골라 신문서로 받는다. `null` 을 다른 값으로
-         * **접지** 않는 것은 여전하다 — 서버가 하나로 정하지 않는 것과 대체 형식을 강요하지
-         * 않는 것은 같은 규칙의 두 표현이다.
+         * 구조화 문서는 같은 형식으로 내보내고, 평문과 PDF는 UTF-8 TXT로 내보낸다.
+         * PDF를 TXT로 내보내는 것은 PDF 렌더링이 아니다 — 원본 레이아웃과 스타일을
+         * 버리고 검수한 본문만 [renderTxt]로 직렬화한다.
          *
          * `when` 을 **전수로** 적는다. [SourceFormat] 에 값이 늘면 여기가 컴파일 에러가 되고,
          * 그것이 새 형식의 내보내기 판정을 빠뜨리지 않게 하는 장치다.
@@ -60,7 +57,7 @@ enum class ExportFormat(
 
                 SourceFormat.HWPX -> HWPX
 
-                SourceFormat.PDF -> null
+                SourceFormat.PDF -> TXT
 
                 // 평문 업로드에도 붙여넣기와 같은 렌더러를 쓴다 — 반영할 원본 구조가 없으므로
                 // "그대로 나간다"의 가장 단순한 형태다(`PackagedOriginalReflector` 가 반영을
@@ -69,14 +66,10 @@ enum class ExportFormat(
             }
 
         /**
-         * [ofSource] 가 `null` 인 원본에서 **사용자가 고를 수 있는** 형식 목록
-         * (2.6.0 — `x-export-format-derivation.choices`, `DESIGN.md` §6.5 재결정).
+         * [ofSource] 가 `null` 인 미래 원본에서 사용자가 고를 수 있는 형식 목록.
          *
          * [ofSource] 가 값을 낸 원본은 언제나 빈 목록이다 — 고를 것이 없다(서버가 이미
-         * 정했다). 오늘은 `PDF` 하나만 값을 낸다: PDF 는 편집 가능한 문서 구조가 아니라
-         * "들어온 형식 그대로"가 성립하지 않고 렌더러도 없어, 사용자가 `DOCX`·`HWPX` 중
-         * 하나를 골라 신문서로 받는다. **원본을 열어 반영하지 않는다** — 고른 형식으로
-         * 새 문서를 조립할 뿐이다(`ConversionExportService`).
+         * 정했다). 현재 모든 원본은 [ofSource]가 기본 형식을 정하므로 전부 빈 목록이다.
          *
          * `when` 을 **전수로** 적는다 — 사유는 [ofSource] 와 같다.
          */
@@ -85,7 +78,7 @@ enum class ExportFormat(
                 SourceFormat.TEXT -> emptyList()
                 SourceFormat.DOCX -> emptyList()
                 SourceFormat.HWPX -> emptyList()
-                SourceFormat.PDF -> listOf(DOCX, HWPX)
+                SourceFormat.PDF -> emptyList()
                 SourceFormat.TXT -> emptyList()
             }
     }

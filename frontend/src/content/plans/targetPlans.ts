@@ -16,6 +16,12 @@ export interface TargetPlan {
   features: TargetPlanFeature[]
 }
 
+const COMMON_FEATURES: TargetPlanFeature[] = [
+  { label: '텍스트 변환' },
+  { label: '쉬운 말 사전 추천' },
+  { label: 'DOCX, HWPX, TEXT 내려받기' },
+]
+
 export const TARGET_PLANS: TargetPlan[] = [
   {
     id: 'start',
@@ -25,7 +31,7 @@ export const TARGET_PLANS: TargetPlan[] = [
     pageEquivalent: '약 25페이지 상당',
     monthlyPriceWon: 99_000,
     monthlyPriceLabel: '99,000원',
-    features: [{ label: '텍스트 변환' }, { label: '쉬운 말 사전 추천' }],
+    features: COMMON_FEATURES,
   },
   {
     id: 'basic',
@@ -35,11 +41,7 @@ export const TARGET_PLANS: TargetPlan[] = [
     pageEquivalent: '약 100페이지 상당',
     monthlyPriceWon: 190_000,
     monthlyPriceLabel: '190,000원',
-    features: [
-      { label: '텍스트 변환' },
-      { label: '쉬운 말 사전 추천' },
-      { label: 'HWPX 내려받기' },
-    ],
+    features: COMMON_FEATURES,
   },
   {
     id: 'pro',
@@ -49,10 +51,6 @@ export const TARGET_PLANS: TargetPlan[] = [
     pageEquivalent: '약 500페이지 상당',
     monthlyPriceWon: 599_000,
     monthlyPriceLabel: '599,000원',
-    features: [
-      { label: '텍스트 변환' },
-      { label: '쉬운 말 사전 추천' },
-      { label: 'HWPX 내려받기' },
-    ],
+    features: COMMON_FEATURES,
   },
 ]

@@ -39,6 +39,7 @@
 - **C2 운영·프런트 (S) — 구현(2026-09-07, 독립 리뷰 반영).** `credit-grant` 프로필(`api.credit.CreditGrantRunner`·`CreditGrantConfiguration`, `--workspace --credits --reason --note`, `CreditAccountRepository.ownerOf` 신설로 워크스페이스 소유자를 CLI 스스로 찾음, 소유자 조회+부여는 `TransactionRunner.inTransaction` 한 트랜잭션 — 리뷰 HIGH-1) + 테스트(`CreditGrantArgsTest` 순수 단위, `CreditGrantProfileTest`/`…InvalidArgsTest`/`…UnknownWorkspaceTest` 실 PostgreSQL), `/usage` 크레딧 카드(가용·잔액·예약 중, 집행 꺼짐 안내, 거래 문서 링크에 `aria-label="문서 {id} 보기"`)·합계 표 열 이름 「사용 크레딧」(원장 파생, §6.3 — 거래 표의 「크레딧」과 구분), 업로드 화면 「필요 크레딧 N / 가용 M」(N은 클라이언트 `ceil(chars/1000)`, M은 `GET .../credits` 1회 조회, 집행이 꺼져 있으면 그 사실도 덧붙임)·402 안내(`ApiError.creditBalance`·`creditsRequired` 신설, 빈 헤더는 null)·202 `X-Credit-Balance` 갱신(비-navigate 제출을 위한 보험), `frontend/src/api/credits.ts`, Vitest(`client.test.ts`·`UploadPage.test.tsx`·`UsagePage.test.tsx`, 1,000자 경계 포함).
   - **e2e E21 — 비집행 변형으로 구현.** `compose.e2e.yml`에 `EASYDOC_CREDITS_SIGNUP_GRANT=1000`만 얹었다(`easydoc.credits.enforced`는 그대로 꺼둔다 — 켜면 기존 스펙 전부가 402로 깨진다). `frontend/e2e/credits.spec.ts`가 가입 부여(잔액 1000) → 문서 등록 예약(202의 `X-Credit-Balance: 999`) → `/usage` 가용 999·거래 가시성을 잰다.
   - **e2e E22 — 집행 켜짐 변형으로 구현(2026-09-07 후속).** 기존 스펙(202 기대)과 같은 스택을 쓰지 않는다 — 대신 `compose.e2e-enforced.yml`이 `compose.e2e.yml` 위에 `EASYDOC_CREDITS_ENFORCED=true`·`EASYDOC_CREDITS_SIGNUP_GRANT=1`만 얹어 같은 compose 프로젝트의 `backend-api` 컨테이너를 갱신하고, `playwright.enforced.config.ts`가 `frontend/e2e/credits-enforced.spec.ts` 하나만 그 스택에 상대로 돌린다. 가입 부여 1크레딧 → 첫 등록(202, 가용 0) → 두 번째 등록(402, `X-Credits-Required: 1`·`X-Credit-Balance: 0`, 본문은 `{detail}`뿐) → 업로드 화면의 서버 문구+「필요 1 · 가용 0」 안내 → `/usage` 가용 0·집행 안내 문구 없음까지 잰다. CI `e2e` 잡이 기본 스택 실행 뒤 같은 잡 안에서(이미지·컨테이너 재사용) 이 스택으로 갱신해 이어 돌린다(`.github/workflows/ci.yml`).
+  - **e2e E23 — Start 월 50크레딧의 차감·소진 경계(2026-09-14).** E22와 같은 집행 스택에서 외부 결제 대신 `stub` 테스트 결제를 켜고 Start 구독을 적용한다. 공백 포함 10,000자 요청을 5번 접수해 `X-Credit-Balance`가 `40 → 30 → 20 → 10 → 0`으로 줄어드는지, worker 완료 뒤 `consume -10` 거래가 5건인지, 여섯 번째 요청은 `402`와 `X-Credits-Required: 10`·`X-Credit-Balance: 0`으로 거절되는지 확인한다. LLM은 `fake`, 메일도 `fake`로 고정해 유료 호출과 외부 발송을 하지 않는다.
 
 ## 4. 수용 기준
 
@@ -62,6 +63,8 @@ PG 결제, 플랜 자동 갱신·만료, 세금계산서 요청 기록, 어드�
 ## 7. 운영 정책 결정(2026-09-08, 사용자 — 권고안 채택)
 
 §2 결정 9와 §5가 미뤄 둔 플랜 정책을 사용자가 2026-09-08에 확정했다(「결정이 필요한 항목들은 권고안 대로 우선 진행」). 다섯 항목 모두 권고안이고 **코드 변경은 없다** — 설정값 둘과 러너북 순서로 닫힌다.
+
+> **2026-09-15 후속 결정:** 아래 2~4의 파일럿 수동 부여 절차는 운영 기본값이 아니다. 가입 부여는 `0`, 크레딧 집행은 처음부터 `true`이며, 일반 사용자와 관리자 모두 Start 테스트 결제를 완료해야 한 달 50크레딧을 받는다. 수동 `credit-grant`는 장애 보상·정정에만 쓴다. E21의 비집행/가입 부여 설정은 폭넓은 회귀 검사용 격리 변형이고, 실제 결제·소진 경계는 E22·E23이 담당한다.
 
 1. **월 크레딧 만료·이월 없음.** 부여한 크레딧은 소진할 때까지 남는다. 월말 소멸도, 이월 상한도 두지 않는다 — 만료 배치·`expire` 거래 종류·잔액의 만료 대상/비대상 구분이 전부 불필요하다. 파일럿에서 잔액이 계속 쌓이는 워크스페이스가 보이면 그때 다시 연다.
    - **⚠ 이 결정은 2026-09-09에 뒤집혔다 — 크레딧은 만료된다.** 사용자 판단: 미사용 크레딧은 나중에 제공해야 할 의무, 곧 시스템의 부채이고, 매월 자동 부여하는 구독에서는 그 부채가 빠르게 커진다. 대체 설계(묶음별 유효기간, 만료 임박 순 차감, 자동 소멸 배치, 소멸 예고 알림)는 `docs/plans/2026-09-09-signup-to-invoice-process.md` §8에 있다. **이 항목은 기록으로만 남긴다 — 새 작업의 근거로 쓰지 않는다.** 파일럿 운영은 만료 구현 전까지 현행(만료 없음) 그대로다.

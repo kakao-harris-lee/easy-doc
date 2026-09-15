@@ -31,7 +31,8 @@ it('removes the old test catalog and shows the selectable target plans', async (
   await screen.findByText('선택한 플랜 없음')
   expect(screen.queryByText('테스트 구성 · 동작 확인용')).not.toBeInTheDocument()
   expect(screen.queryByRole('list', { name: '테스트 플랜 구성' })).not.toBeInTheDocument()
-  const catalog = screen.getByRole('list', { name: '목표 플랜 구성' })
+  expect(screen.queryByText('목표 플랜 구성')).not.toBeInTheDocument()
+  const catalog = screen.getByRole('list', { name: '월 플랜 선택' })
   expect(within(catalog).getByText('Start')).toBeInTheDocument()
   expect(within(catalog).getByText('Basic')).toBeInTheDocument()
   expect(within(catalog).getByText('Pro')).toBeInTheDocument()
@@ -81,7 +82,7 @@ it('admin uses admin endpoint and does not show checkout controls', async () => 
   render(<SubscriptionCard workspaceId="w2" admin />)
   await screen.findByText('선택한 플랜 없음')
   expect(getSubscription).toHaveBeenCalledWith('w2', expect.any(AbortSignal), true)
-  expect(screen.queryByRole('heading', { name: '목표 플랜 구성' })).not.toBeInTheDocument()
+  expect(screen.queryByRole('list', { name: '월 플랜 선택' })).not.toBeInTheDocument()
 })
 
 it('opens Toss billing for the selected plan when the server enables Toss test mode', async () => {

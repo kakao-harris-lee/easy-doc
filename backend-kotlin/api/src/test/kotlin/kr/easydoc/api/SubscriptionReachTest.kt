@@ -22,6 +22,7 @@ import java.util.concurrent.TimeUnit
     webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
     properties = [
         "easydoc.auth.jwt-secret=subscription-reach-test-secret-long-enough",
+        "easydoc.credits.enforced=true",
         "easydoc.payment.mock-enabled=true",
     ],
 )
@@ -110,6 +111,39 @@ class SubscriptionReachTest {
                 )
             assertThat(response.statusCode()).isEqualTo(422)
         }
+    }
+
+    @Test
+    fun `admin must buy Start before conversion and receives the same 50 credits`() {
+        val token = account()
+        val workspace = workspace(token)
+        val userId =
+            kr.easydoc.api.support.TestJwt
+                .payload(token)["sub"]
+                .toString()
+        database.execute("UPDATE users SET is_admin=true WHERE id='$userId'")
+
+        val beforePayment = send("/documents", token, "POST", """{"text":"관리자도 결제가 필요합니다"}""")
+        assertThat(beforePayment.statusCode()).isEqualTo(402)
+        assertThat(beforePayment.headers().firstValue("X-Credit-Balance")).hasValue("0")
+
+        val checkout =
+            send(
+                "/workspaces/$workspace/subscription/checkout",
+                token,
+                "POST",
+                """{"plan_id":"start","order_id":"${UUID.randomUUID()}"}""",
+            )
+        assertThat(checkout.statusCode()).isEqualTo(200)
+
+        val credits = json.readTree(send("/workspaces/$workspace/credits", token).body())
+        assertThat(credits["enforced"].asBoolean()).isTrue()
+        assertThat(credits["allowance"].asInt()).isEqualTo(50)
+        assertThat(credits["available"].asInt()).isEqualTo(50)
+
+        val afterPayment = send("/documents", token, "POST", """{"text":"${"가".repeat(1_000)}"}""")
+        assertThat(afterPayment.statusCode()).isEqualTo(202)
+        assertThat(afterPayment.headers().firstValue("X-Credit-Balance")).hasValue("49")
     }
 
     @Test

@@ -211,9 +211,9 @@ class ExportTest {
         }
     }
 
-    /** `choicesFor` — PDF 재결정(2.6.0)의 정본. */
+    /** `choicesFor` — 서버가 기본 형식을 정하지 못하는 미래 원본을 위한 안전망. */
     @Nested
-    @DisplayName("선택지 (2.6.0 PDF 재결정)")
+    @DisplayName("원본별 기본 내보내기 형식")
     inner class Choices {
         @Test
         @DisplayName("`ofSource` 가 값을 내는 원본은 선택지가 없다 — 서버가 이미 정했다")
@@ -228,13 +228,12 @@ class ExportTest {
         }
 
         @Test
-        @DisplayName("PDF 는 DOCX·HWPX 중 하나를 고른다 — 유도값이 없는 유일한 갈래")
-        fun `PDF 는 두 형식 중 하나다`() {
+        @DisplayName("PDF 는 레이아웃을 버리고 TXT 로 내보내며 별도 선택지는 없다")
+        fun `PDF 는 TXT 가 기본이다`() {
             assertThat(ExportFormat.ofSource(SourceFormat.PDF))
-                .describedAs("PDF 는 여전히 유도값이 없다 — 서버가 하나로 정하지 않는다")
-                .isNull()
+                .isEqualTo(ExportFormat.TXT)
             assertThat(ExportFormat.choicesFor(SourceFormat.PDF))
-                .containsExactlyInAnyOrder(ExportFormat.DOCX, ExportFormat.HWPX)
+                .isEmpty()
         }
 
         @Test
