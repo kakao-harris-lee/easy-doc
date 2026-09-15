@@ -324,6 +324,47 @@ describe('계정 메뉴 — 비밀번호 만들기 (2.19.0, backlog §1.4 다음
 })
 
 describe('모바일 메뉴 ARIA', () => {
+  it.each([
+    ['새 변환', '/'],
+    ['변환 기록', '/history'],
+    ['사용량', '/usage'],
+    ['이용 가이드', '/guide'],
+    ['계정 설정', '/account'],
+  ])('%s 선택 후 메뉴를 닫는다 (현재 페이지 포함)', async (name, path) => {
+    const user = userEvent.setup()
+    renderLayout()
+    await user.click(screen.getByRole('button', { name: '메뉴 열기' }))
+    const menu = screen.getByRole('navigation', { name: '주요 메뉴 (모바일)' })
+
+    await user.click(within(menu).getByRole('link', { name }))
+
+    expect(screen.getByTestId('location').textContent).toBe(path)
+    expect(menu).not.toBeInTheDocument()
+    const toggle = screen.getByRole('button', { name: '메뉴 열기' })
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    expect(toggle).not.toHaveAttribute('aria-controls')
+  })
+
+  it('이동을 취소하면 메뉴를 유지하고 승인하면 닫는다', async () => {
+    const user = userEvent.setup()
+    setUnsavedChanges(true)
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    renderLayout()
+    await user.click(screen.getByRole('button', { name: '메뉴 열기' }))
+    const menu = screen.getByRole('navigation', { name: '주요 메뉴 (모바일)' })
+
+    await user.click(within(menu).getByRole('link', { name: '변환 기록' }))
+
+    expect(screen.getByTestId('location').textContent).toBe('/')
+    expect(menu).toBeInTheDocument()
+
+    confirm.mockReturnValue(true)
+    await user.click(within(menu).getByRole('link', { name: '변환 기록' }))
+
+    expect(screen.getByTestId('location').textContent).toBe('/history')
+    expect(menu).not.toBeInTheDocument()
+  })
+
   it('햄버거의 aria-controls가 펼쳐진 nav를 가리킨다', async () => {
     const user = userEvent.setup()
     renderLayout()

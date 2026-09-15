@@ -110,11 +110,13 @@ function AccountPasswordSlot({
   hasPassword,
   emailVerified,
   onButtonKeyDown,
+  onNavigate,
   onCreated,
 }: {
   hasPassword: boolean
   emailVerified: boolean
   onButtonKeyDown?: (event: KeyboardEvent<HTMLButtonElement>) => void
+  onNavigate?: (event: MouseEvent<HTMLAnchorElement>) => void
   onCreated: () => void
 }) {
   if (hasPassword) {
@@ -123,7 +125,10 @@ function AccountPasswordSlot({
   if (!emailVerified) {
     return (
       <p className="mt-2 border-t border-border pt-3 text-xs text-muted-foreground">
-        <Link to={EMAIL_VERIFICATION_PATH}>이메일 인증</Link> 후 비밀번호를 만들 수 있어요.
+        <Link to={EMAIL_VERIFICATION_PATH} onClick={onNavigate}>
+          이메일 인증
+        </Link>{' '}
+        후 비밀번호를 만들 수 있어요.
       </p>
     )
   }
@@ -321,11 +326,14 @@ export function AppLayout({ children }: { children: ReactNode }) {
   function guard(event: MouseEvent): void {
     if (!confirmDiscardUnsaved()) {
       event.preventDefault()
+      return
     }
+    setMobileOpen(false)
   }
 
   function guardedSignOut(): void {
     if (confirmDiscardUnsaved()) {
+      setMobileOpen(false)
       signOut()
     }
   }
@@ -441,7 +449,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
           <nav
             id={mobileNavId}
             aria-label="주요 메뉴 (모바일)"
-            className="border-t border-border bg-card lg:hidden"
+            className="max-h-[50dvh] overflow-y-auto overscroll-contain border-t border-border bg-card lg:hidden"
           >
             <div className={cn(CONTAINER, 'flex flex-col gap-1 py-3')}>
               <NavLink to={HOME_PATH} end onClick={guard} className={navLinkClass}>
@@ -495,6 +503,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
                 <AccountPasswordSlot
                   hasPassword={user.has_password}
                   emailVerified={user.email_verified}
+                  onNavigate={guard}
                   onCreated={() => void refreshMe()}
                 />
               )}
