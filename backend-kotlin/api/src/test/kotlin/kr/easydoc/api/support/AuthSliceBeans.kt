@@ -122,6 +122,7 @@ import kr.easydoc.infrastructure.dictionary.InMemorySlidingWindowLookupRateLimit
 import kr.easydoc.infrastructure.dictionary.NoTermCandidateSource
 import kr.easydoc.infrastructure.document.FeedbackProperties
 import kr.easydoc.infrastructure.mail.FakeMailSender
+import kr.easydoc.infrastructure.mail.defaultNotificationMailFactory
 import org.springframework.boot.test.context.TestConfiguration
 import org.springframework.context.annotation.Bean
 import java.time.Clock
@@ -208,6 +209,7 @@ class AuthSliceBeans {
             codeTtl = Duration.ofMinutes(10),
             resendCooldown = Duration.ofSeconds(60),
             maxAttempts = 5,
+            mailFactory = defaultNotificationMailFactory(),
         )
 
     /** `POST /auth/password` 슬라이스 배선 — 제품 조립(`AuthConfiguration.passwordService`)과 같은 모양이다. */
@@ -217,7 +219,7 @@ class AuthSliceBeans {
         hasher: StubPasswordHasher,
         mail: FakeMailSender,
         transaction: TransactionRunner,
-    ): PasswordService = PasswordService(users = users, passwords = hasher, mail = mail, transaction = transaction)
+    ): PasswordService = PasswordService(users, hasher, mail, transaction, defaultNotificationMailFactory())
 
     @Bean
     fun inMemoryPasswordResetCodes(): InMemoryPasswordResetCodeStore = InMemoryPasswordResetCodeStore()
@@ -246,6 +248,7 @@ class AuthSliceBeans {
             codeTtl = Duration.ofMinutes(10),
             resendCooldown = Duration.ofSeconds(60),
             maxAttempts = 5,
+            mailFactory = defaultNotificationMailFactory(),
         )
 
     /** `POST /auth/me/deletion`(2.27.0) 슬라이스 배선. */

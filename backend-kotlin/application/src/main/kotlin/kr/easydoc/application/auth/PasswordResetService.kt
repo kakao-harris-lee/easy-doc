@@ -2,7 +2,8 @@ package kr.easydoc.application.auth
 
 import kr.easydoc.application.mail.EmailAddress
 import kr.easydoc.application.mail.MailSender
-import kr.easydoc.application.mail.OutboundMail
+import kr.easydoc.application.mail.NotificationMailFactory
+import kr.easydoc.application.mail.NotificationType
 import kr.easydoc.core.exceptions.InvalidCredentialsException
 import kr.easydoc.core.user.User
 import org.slf4j.LoggerFactory
@@ -40,6 +41,7 @@ class PasswordResetService
         private val codeTtl: Duration,
         private val resendCooldown: Duration,
         private val maxAttempts: Int,
+        private val mailFactory: NotificationMailFactory,
     ) {
         private val log = LoggerFactory.getLogger(PasswordResetService::class.java)
 
@@ -52,7 +54,13 @@ class PasswordResetService
             try {
                 val user = users.findByEmail(normalizeEmail(email))?.user ?: return
                 val code = codes.issue(user.id, codeTtl, resendCooldown)
-                mail.send(OutboundMail(EmailAddress.of(user.email), REQUEST_SUBJECT, requestBodyOf(code)))
+                mail.send(
+                    mailFactory.create(
+                        NotificationType.PASSWORD_RESET,
+                        EmailAddress.of(user.email),
+                        mapOf("code" to code, "minutes" to codeTtl.toMinutes().toString()),
+                    ),
+                )
             } catch (
                 @Suppress("TooGenericExceptionCaught") failure: RuntimeException,
             ) {
@@ -127,7 +135,7 @@ class PasswordResetService
 
         private fun notifyPasswordChanged(user: User) {
             try {
-                mail.send(OutboundMail(EmailAddress.of(user.email), CHANGED_SUBJECT, CHANGED_BODY))
+                mail.send(mailFactory.create(NotificationType.PASSWORD_CHANGED, EmailAddress.of(user.email)))
             } catch (
                 @Suppress("TooGenericExceptionCaught") failure: RuntimeException,
             ) {
@@ -139,19 +147,8 @@ class PasswordResetService
             }
         }
 
-        private fun requestBodyOf(code: String): String =
-            "재설정 코드: $code\n\n이 코드는 발급 시점으로부터 ${codeTtl.toMinutes()}분간 유효합니다."
-
         companion object {
-            const val REQUEST_SUBJECT: String = "[쉬운 글] 비밀번호 재설정 코드"
-
             /** 계약 `POST /auth/password-reset/confirm` 401 예시 — 사유를 구분하지 않는다. */
             const val INVALID_RESET_CODE_MESSAGE: String = "재설정 코드가 올바르지 않거나 만료되었습니다"
-
-            const val CHANGED_SUBJECT: String = "[쉬운 글] 비밀번호가 바뀌었습니다"
-
-            /** 고정 문구 — 입력값(비밀번호·코드·이메일)을 담지 않는다. */
-            private const val CHANGED_BODY: String =
-                "방금 이 계정의 비밀번호가 바뀌었습니다. 본인이 한 일이 아니라면 즉시 비밀번호를 다시 재설정해 주세요."
         }
     }

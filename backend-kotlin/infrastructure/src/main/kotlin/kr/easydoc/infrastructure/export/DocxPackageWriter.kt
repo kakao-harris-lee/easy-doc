@@ -8,8 +8,10 @@ import org.apache.poi.xwpf.usermodel.XWPFDocument
 import java.io.ByteArrayOutputStream
 
 /** 복원된 본문을 OOXML 문단으로 담는다. 레이아웃 보존은 Lean MVP 밖이다. */
-internal class DocxPackageWriter {
-    fun write(
+internal class DocxPackageWriter : DocumentPackageWriter {
+    override val format: ExportFormat = ExportFormat.DOCX
+
+    override fun write(
         title: String,
         body: String,
     ): ExportFile {

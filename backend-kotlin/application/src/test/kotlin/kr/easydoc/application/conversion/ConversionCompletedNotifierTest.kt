@@ -5,6 +5,7 @@ import kr.easydoc.application.mail.MailDelivery
 import kr.easydoc.application.mail.MailRejectReason
 import kr.easydoc.application.mail.MailSender
 import kr.easydoc.application.mail.OutboundMail
+import kr.easydoc.application.mail.TestNotificationMailFactory
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatCode
 import org.junit.jupiter.api.DisplayName
@@ -26,7 +27,7 @@ class ConversionCompletedNotifierTest {
                 ),
             )
         val sender = RecordingSender()
-        val notifier = ConversionCompletedNotifier(store, sender, PUBLIC_BASE_URL)
+        val notifier = ConversionCompletedNotifier(store, sender, PUBLIC_BASE_URL, TestNotificationMailFactory)
 
         notifier.notify(conversionId)
 
@@ -47,7 +48,7 @@ class ConversionCompletedNotifierTest {
                 ),
             )
         val sender = RecordingSender()
-        val notifier = ConversionCompletedNotifier(store, sender, PUBLIC_BASE_URL)
+        val notifier = ConversionCompletedNotifier(store, sender, PUBLIC_BASE_URL, TestNotificationMailFactory)
 
         notifier.notify(conversionId)
 
@@ -68,7 +69,7 @@ class ConversionCompletedNotifierTest {
                 ),
             )
         val sender = RecordingSender(result = MailDelivery.Rejected(MailRejectReason.PROVIDER_ERROR))
-        val notifier = ConversionCompletedNotifier(store, sender, PUBLIC_BASE_URL)
+        val notifier = ConversionCompletedNotifier(store, sender, PUBLIC_BASE_URL, TestNotificationMailFactory)
 
         assertThatCode { notifier.notify(conversionId) }.doesNotThrowAnyException()
         assertThat(store.markNotifiedCalls).isEmpty()
@@ -87,7 +88,7 @@ class ConversionCompletedNotifierTest {
                 ),
             )
         val sender = ThrowingSender()
-        val notifier = ConversionCompletedNotifier(store, sender, PUBLIC_BASE_URL)
+        val notifier = ConversionCompletedNotifier(store, sender, PUBLIC_BASE_URL, TestNotificationMailFactory)
 
         assertThatCode { notifier.notify(conversionId) }.doesNotThrowAnyException()
     }
@@ -98,7 +99,7 @@ class ConversionCompletedNotifierTest {
         val conversionId = UUID.randomUUID()
         val store = FakeStore(target = null)
         val sender = RecordingSender()
-        val notifier = ConversionCompletedNotifier(store, sender, PUBLIC_BASE_URL)
+        val notifier = ConversionCompletedNotifier(store, sender, PUBLIC_BASE_URL, TestNotificationMailFactory)
 
         assertThatCode { notifier.notify(conversionId) }.doesNotThrowAnyException()
         assertThat(sender.sent).isEmpty()
@@ -117,7 +118,7 @@ class ConversionCompletedNotifierTest {
                 ),
             )
         val sender = RecordingSender()
-        val notifier = ConversionCompletedNotifier(store, sender, PUBLIC_BASE_URL)
+        val notifier = ConversionCompletedNotifier(store, sender, PUBLIC_BASE_URL, TestNotificationMailFactory)
 
         notifier.notify(conversionId)
 

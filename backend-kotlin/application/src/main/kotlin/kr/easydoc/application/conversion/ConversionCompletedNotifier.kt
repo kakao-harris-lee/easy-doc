@@ -3,6 +3,8 @@ package kr.easydoc.application.conversion
 import kr.easydoc.application.mail.EmailAddress
 import kr.easydoc.application.mail.MailDelivery
 import kr.easydoc.application.mail.MailSender
+import kr.easydoc.application.mail.NotificationMailFactory
+import kr.easydoc.application.mail.NotificationType
 import kr.easydoc.application.mail.OutboundMail
 import org.slf4j.LoggerFactory
 import java.util.UUID
@@ -61,6 +63,7 @@ class ConversionCompletedNotifier(
     private val store: ConversionNotificationStore,
     private val mailSender: MailSender,
     private val publicBaseUrl: String,
+    private val mailFactory: NotificationMailFactory,
 ) {
     private val log = LoggerFactory.getLogger(ConversionCompletedNotifier::class.java)
 
@@ -69,10 +72,10 @@ class ConversionCompletedNotifier(
         if (target == null || target.alreadyNotified) return
 
         val mail =
-            OutboundMail(
-                to = target.ownerEmail,
-                subject = SUBJECT,
-                textBody = body(target.documentTitle, conversionId),
+            mailFactory.create(
+                NotificationType.CONVERSION_COMPLETED,
+                target.ownerEmail,
+                mapOf("title" to target.documentTitle, "url" to "$publicBaseUrl/conversions/$conversionId"),
             )
         when (val result = sendQuietly(conversionId, mail)) {
             null -> {
@@ -119,16 +122,5 @@ class ConversionCompletedNotifier(
         } catch (exc: RuntimeException) {
             log.warn("알림 표시 갱신 실패: conversionId={}", conversionId, exc)
         }
-    }
-
-    private fun body(
-        title: String,
-        conversionId: UUID,
-    ): String =
-        "\"$title\" 문서 변환이 완료됐습니다.\n\n" +
-            "결과 확인: $publicBaseUrl/conversions/$conversionId\n"
-
-    private companion object {
-        const val SUBJECT = "[쉬운 글] 변환이 완료됐습니다"
     }
 }

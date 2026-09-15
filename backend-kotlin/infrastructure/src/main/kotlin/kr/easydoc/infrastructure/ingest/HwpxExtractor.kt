@@ -12,7 +12,9 @@ import javax.xml.stream.XMLStreamException
 import javax.xml.stream.XMLStreamReader
 
 /** HWPX(OWPML) 구역 XML 에서 문단 단위 텍스트를 뽑는다. */
-internal class HwpxExtractor {
+internal class HwpxExtractor : StructuredTextExtractor {
+    override val format: SourceFormat = SourceFormat.HWPX
+
     fun extract(data: ByteArray): String = extractStructured(data).text
 
     /**
@@ -21,7 +23,7 @@ internal class HwpxExtractor {
      * [kr.easydoc.core.segment.inferUnitKinds] 텍스트 휴리스틱으로 [UnitKind.LIST_ITEM] 인지
      * [UnitKind.BODY] 인지 가른다 — HWPX 번호 매김은 스타일 참조라 1차에서 풀지 않는다(계획 §1.2).
      */
-    fun extractStructured(data: ByteArray): ExtractionOutcome {
+    override fun extractStructured(data: ByteArray): ExtractionOutcome {
         val sections = readSections(data)
         if (sections.isEmpty()) {
             // 구역이 하나도 없으면 hwpx 패키지가 아니거나 껍데기다.

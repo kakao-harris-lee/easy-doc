@@ -44,7 +44,7 @@ class IngestDefensesTest {
         ZipSecureFile.setMinInflateRatio(WRONG_MIN_INFLATE_RATIO)
         ZipSecureFile.setMaxFileCount(WRONG_MAX_FILE_COUNT)
 
-        IngestConfiguration().documentTextExtractor()
+        IngestConfiguration().documentTextExtractor(IngestProperties())
 
         assertThat(ZipSecureFile.getMaxEntrySize())
             .withFailMessage(
@@ -83,7 +83,8 @@ class IngestDefensesTest {
         val inFlight = AtomicInteger()
         val peak = AtomicInteger()
         val release = CountDownLatch(1)
-        val entered = CountDownLatch(ConcurrencyLimitedTextExtractor.MAX_CONCURRENT_EXTRACTIONS)
+        val permits = 2
+        val entered = CountDownLatch(permits)
 
         val limited =
             ConcurrencyLimitedTextExtractor(
@@ -96,6 +97,7 @@ class IngestDefensesTest {
                     inFlight.decrementAndGet()
                     ExtractedDocument(SourceFormat.DOCX, "", SourceStructure.allBody(1))
                 },
+                permits = permits,
             )
 
         val pool = Executors.newFixedThreadPool(CALLERS)
@@ -112,22 +114,22 @@ class IngestDefensesTest {
 
         assertThat(peak.get())
             .withFailMessage {
-                "동시 진입이 ${peak.get()} 까지 올라갔다(상한 ${ConcurrencyLimitedTextExtractor.MAX_CONCURRENT_EXTRACTIONS}). " +
+                "동시 진입이 ${peak.get()} 까지 올라갔다(상한 $permits). " +
                     "건당 예산이 수십 MB 라 곱하면 OOM 이다."
-            }.isLessThanOrEqualTo(ConcurrencyLimitedTextExtractor.MAX_CONCURRENT_EXTRACTIONS)
+            }.isLessThanOrEqualTo(permits)
     }
 
     @Test
     @DisplayName("조립이 내는 포트가 제한을 두른 구현이다 — 제한 없는 추출기를 잡을 수 없다")
     fun `조립이 제한을 두른다`() {
-        val bean = IngestConfiguration().documentTextExtractor()
+        val bean = IngestConfiguration().documentTextExtractor(IngestProperties())
 
         assertThat(bean)
             .withFailMessage(
                 "조립이 제한 없는 추출기를 그대로 냈다 — 유스케이스가 무제한 경로를 잡게 된다.",
             ).isInstanceOf(ConcurrencyLimitedTextExtractor::class.java)
         assertThat((bean as ConcurrencyLimitedTextExtractor).availablePermits)
-            .isEqualTo(ConcurrencyLimitedTextExtractor.MAX_CONCURRENT_EXTRACTIONS)
+            .isEqualTo(4)
     }
 
     private companion object {

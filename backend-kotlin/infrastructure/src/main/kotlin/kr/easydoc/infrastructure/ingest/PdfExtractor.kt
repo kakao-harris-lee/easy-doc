@@ -9,7 +9,9 @@ import org.apache.pdfbox.text.PDFTextStripper
 import java.io.IOException
 
 /** PDF 페이지별 텍스트를 뽑아 잇는다. */
-internal class PdfExtractor {
+internal class PdfExtractor : StructuredTextExtractor {
+    override val format: SourceFormat = SourceFormat.PDF
+
     fun extract(data: ByteArray): String = extractStructured(data).text
 
     /**
@@ -17,7 +19,7 @@ internal class PdfExtractor {
      * PDF 는 표·목록 구조 힌트 범위 밖이다(계획 §1.6). 렌더러를 들이지 않는 한 셀·항목 경계를
      * 알 방법이 없으므로 전부 본문으로 둔다.
      */
-    fun extractStructured(data: ByteArray): ExtractionOutcome =
+    override fun extractStructured(data: ByteArray): ExtractionOutcome =
         guarded(data.size) { Loader.loadPDF(data) }.use { opened -> readPages(opened, data.size) }
 
     private fun readPages(

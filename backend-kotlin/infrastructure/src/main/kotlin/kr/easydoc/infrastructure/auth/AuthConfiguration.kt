@@ -21,6 +21,7 @@ import kr.easydoc.application.auth.VerificationCodeStore
 import kr.easydoc.application.auth.WorkspaceRepository
 import kr.easydoc.application.credit.CreditAccountService
 import kr.easydoc.application.mail.MailSender
+import kr.easydoc.application.mail.NotificationMailFactory
 import kr.easydoc.core.security.Secret
 import kr.easydoc.infrastructure.auth.google.GoogleOAuthSettings
 import kr.easydoc.infrastructure.auth.google.GoogleSocialLoginProvider
@@ -292,6 +293,7 @@ class AuthConfiguration {
         mailSender: MailSender,
         transactionRunner: TransactionRunner,
         properties: EmailVerificationProperties,
+        mailFactory: NotificationMailFactory,
     ): EmailVerificationService =
         EmailVerificationService(
             users = users,
@@ -301,6 +303,7 @@ class AuthConfiguration {
             codeTtl = Duration.ofMinutes(properties.codeTtlMinutes),
             resendCooldown = Duration.ofSeconds(properties.resendCooldownSeconds),
             maxAttempts = properties.maxAttempts,
+            mailFactory = mailFactory,
         )
 
     /** `POST /auth/password` — 비밀번호 없는 계정에 비밀번호를 만든다(backlog §1.4 후속). */
@@ -310,8 +313,8 @@ class AuthConfiguration {
         passwordHasher: PasswordHasher,
         mailSender: MailSender,
         transactionRunner: TransactionRunner,
-    ): PasswordService =
-        PasswordService(users = users, passwords = passwordHasher, mail = mailSender, transaction = transactionRunner)
+        mailFactory: NotificationMailFactory,
+    ): PasswordService = PasswordService(users, passwordHasher, mailSender, transactionRunner, mailFactory)
 
     @Bean
     fun passwordResetCodeStore(jdbcClient: JdbcClient): PasswordResetCodeStore =
@@ -332,6 +335,7 @@ class AuthConfiguration {
         accessTokens: AccessTokens,
         transactionRunner: TransactionRunner,
         properties: PasswordResetProperties,
+        mailFactory: NotificationMailFactory,
     ): PasswordResetService =
         PasswordResetService(
             users = users,
@@ -343,6 +347,7 @@ class AuthConfiguration {
             codeTtl = Duration.ofMinutes(properties.codeTtlMinutes),
             resendCooldown = Duration.ofSeconds(properties.resendCooldownSeconds),
             maxAttempts = properties.maxAttempts,
+            mailFactory = mailFactory,
         )
 
     @Bean

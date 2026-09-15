@@ -9,6 +9,7 @@ import kr.easydoc.core.exceptions.InvalidCredentialsException
 import kr.easydoc.infrastructure.DatabaseHandle
 import kr.easydoc.infrastructure.PostgresTestSupport
 import kr.easydoc.infrastructure.db.SpringTransactionRunner
+import kr.easydoc.infrastructure.mail.defaultNotificationMailFactory
 import org.assertj.core.api.Assertions.assertThat
 import org.flywaydb.core.Flyway
 import org.junit.jupiter.api.AfterAll
@@ -155,6 +156,7 @@ class UnverifiedAccountPurgeConfirmRaceTest {
             codeTtl = Duration.ofMinutes(10),
             resendCooldown = Duration.ofSeconds(60),
             maxAttempts = 5,
+            mailFactory = defaultNotificationMailFactory(),
         )
 
     private fun insertUnverifiedUser(ageHours: Int): UUID {

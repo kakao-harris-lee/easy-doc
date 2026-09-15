@@ -3,6 +3,7 @@ package kr.easydoc.application.auth
 import kr.easydoc.application.mail.MailDelivery
 import kr.easydoc.application.mail.MailSender
 import kr.easydoc.application.mail.OutboundMail
+import kr.easydoc.application.mail.TestNotificationMailFactory
 import kr.easydoc.core.exceptions.InvalidCredentialsException
 import kr.easydoc.core.exceptions.InvalidInputException
 import kr.easydoc.core.exceptions.RateLimitedException
@@ -84,8 +85,8 @@ class PasswordResetServiceTest {
         world.service.confirm("known@example.test", code, "new-password-1")
 
         assertThat(world.mail.sent).hasSize(2)
-        assertThat(world.mail.sent[0].subject).isEqualTo(PasswordResetService.REQUEST_SUBJECT)
-        assertThat(world.mail.sent[1].subject).isEqualTo(PasswordResetService.CHANGED_SUBJECT)
+        assertThat(world.mail.sent[0].subject).isEqualTo("PASSWORD_RESET")
+        assertThat(world.mail.sent[1].subject).isEqualTo("PASSWORD_CHANGED")
     }
 
     @Test
@@ -220,6 +221,7 @@ private class ResetWorld {
             codeTtl = Duration.ofMinutes(10),
             resendCooldown = Duration.ofSeconds(60),
             maxAttempts = 5,
+            mailFactory = TestNotificationMailFactory,
         )
 }
 

@@ -2,7 +2,8 @@ package kr.easydoc.application.auth
 
 import kr.easydoc.application.mail.EmailAddress
 import kr.easydoc.application.mail.MailSender
-import kr.easydoc.application.mail.OutboundMail
+import kr.easydoc.application.mail.NotificationMailFactory
+import kr.easydoc.application.mail.NotificationType
 import kr.easydoc.core.exceptions.ConflictException
 import kr.easydoc.core.exceptions.InvalidCredentialsException
 import kr.easydoc.core.exceptions.InvalidVerificationCodeException
@@ -29,6 +30,7 @@ class EmailVerificationService(
     private val codeTtl: Duration,
     private val resendCooldown: Duration,
     private val maxAttempts: Int,
+    private val mailFactory: NotificationMailFactory,
 ) : PostSignupEmailVerification {
     private val log = LoggerFactory.getLogger(EmailVerificationService::class.java)
 
@@ -102,7 +104,12 @@ class EmailVerificationService(
 
     private fun issueFor(user: User) {
         val code = codes.issue(user.id, codeTtl, resendCooldown)
-        val outbound = OutboundMail(EmailAddress.of(user.email), SUBJECT, bodyOf(code))
+        val outbound =
+            mailFactory.create(
+                NotificationType.EMAIL_VERIFICATION,
+                EmailAddress.of(user.email),
+                mapOf("code" to code, "minutes" to codeTtl.toMinutes().toString()),
+            )
         try {
             mail.send(outbound)
         } catch (
@@ -116,11 +123,7 @@ class EmailVerificationService(
         }
     }
 
-    private fun bodyOf(code: String): String = "인증 코드: $code\n\n이 코드는 발급 시점으로부터 ${codeTtl.toMinutes()}분간 유효합니다."
-
     private companion object {
-        const val SUBJECT: String = "[쉬운 글] 이메일 인증 코드"
-
         /** 계약 `POST /auth/email-verification/confirm` 400 예시 — 사유를 구분하지 않는다. */
         const val INVALID_CODE_MESSAGE: String = "인증 코드가 올바르지 않거나 만료되었습니다"
 

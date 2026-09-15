@@ -54,7 +54,9 @@ import java.nio.charset.CodingErrorAction
  * 조용히 뭉개지 않고 손상 파일과 같은 방식으로 거절한다 — 그래야 사용자가 실제로 읽을 수
  * 없는 파일과, 우리가 지원하지 않는 세 번째 인코딩을 섞어 부르지 않는다.
  */
-internal class TxtExtractor {
+internal class TxtExtractor : StructuredTextExtractor {
+    override val format: SourceFormat = SourceFormat.TXT
+
     fun extract(data: ByteArray): String = extractStructured(data).text
 
     /**
@@ -64,7 +66,7 @@ internal class TxtExtractor {
      * 인지 가른다. 최종 줄(`splitUnits(text)`)에 바로 적용한다 — 블록 하나가 여러 줄로 쪼개질
      * 수 있어 원시 바이트 줄과 최종 줄이 다를 수 있기 때문이다.
      */
-    fun extractStructured(data: ByteArray): ExtractionOutcome {
+    override fun extractStructured(data: ByteArray): ExtractionOutcome {
         val decoded = decode(data) ?: throw broken(data.size)
         val builder = ExtractedTextBuilder(SourceFormat.TXT, data.size)
         builder.add(stripBom(decoded))

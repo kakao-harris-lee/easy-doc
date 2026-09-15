@@ -18,6 +18,7 @@ import kr.easydoc.application.conversion.ProcessConversionJob
 import kr.easydoc.application.credit.CreditAccountService
 import kr.easydoc.application.crypto.ContentCipher
 import kr.easydoc.application.mail.MailSender
+import kr.easydoc.application.mail.NotificationMailFactory
 import kr.easydoc.core.exceptions.ConfigurationException
 import kr.easydoc.core.llm.LlmOptions
 import kr.easydoc.core.llm.LlmProvider
@@ -163,7 +164,9 @@ class ConversionWorkerConfiguration {
         store: ConversionNotificationStore,
         mailSender: MailSender,
         appProperties: AppProperties,
-    ): ConversionCompletedNotifier = ConversionCompletedNotifier(store, mailSender, appProperties.publicBaseUrl)
+        mailFactory: NotificationMailFactory,
+    ): ConversionCompletedNotifier =
+        ConversionCompletedNotifier(store, mailSender, appProperties.publicBaseUrl, mailFactory)
 
     @Suppress("LongParameterList")
     @Bean

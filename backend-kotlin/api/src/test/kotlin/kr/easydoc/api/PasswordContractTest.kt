@@ -55,7 +55,7 @@ class PasswordContractTest {
         assertDeclaredStatus(response, NO_CONTENT, SET_PASSWORD_PATH, POST)
         assertPrivateHeaders204(response)
         assertThat(body(getAuthorized("/auth/me", bearer))["has_password"]).isEqualTo(true)
-        assertThat(mailSentTo(email)).containsExactly(PasswordService.CREATED_SUBJECT)
+        assertThat(mailSentTo(email)).containsExactly("[쉬운 글] 비밀번호가 만들어졌습니다")
     }
 
     @Test
@@ -75,7 +75,7 @@ class PasswordContractTest {
         assertThat(body(getAuthorized("/auth/me", bearer))["has_password"]).isEqualTo(false)
         // 미검증 네이버 가입 자체가 이메일 인증 코드 메일을 이미 보냈다(SocialLoginService.callback)
         // — 거절된 설정 요청이 그 위에 알림 메일을 더 보태지 않았는지만 본다.
-        assertThat(mailSentTo(email)).doesNotContain(PasswordService.CREATED_SUBJECT)
+        assertThat(mailSentTo(email)).doesNotContain("[쉬운 글] 비밀번호가 만들어졌습니다")
     }
 
     @Test
@@ -92,7 +92,7 @@ class PasswordContractTest {
         assertThat(detailText(response)).isEqualTo(PasswordService.ALREADY_HAS_PASSWORD_MESSAGE)
         // signup 자체가 이메일 인증 코드 메일을 이미 보냈다 — 거절된 설정 요청이 그 위에
         // 알림 메일을 더 보태지 않았는지만 본다.
-        assertThat(mailSentTo(email)).doesNotContain(PasswordService.CREATED_SUBJECT)
+        assertThat(mailSentTo(email)).doesNotContain("[쉬운 글] 비밀번호가 만들어졌습니다")
     }
 
     @Test
@@ -176,7 +176,7 @@ class PasswordContractTest {
         // signup 자체가 이메일 인증 코드 메일을 먼저 보냈다 — 재설정 코드 메일(요청)과
         // 변경 알림 메일이 그 뒤에 순서대로 이어진다.
         assertThat(mailSentTo(email))
-            .endsWith(PasswordResetService.REQUEST_SUBJECT, PasswordResetService.CHANGED_SUBJECT)
+            .endsWith("[쉬운 글] 비밀번호 재설정 코드", "[쉬운 글] 비밀번호가 바뀌었습니다")
     }
 
     @Test
@@ -212,8 +212,8 @@ class PasswordContractTest {
             .isEqualTo(unknownEmail.getHeader(HttpHeaders.WWW_AUTHENTICATE))
         // signup의 인증 코드 메일에 이어 재설정 코드 메일(요청)까지가 전부다 — 실패한
         // 확인 둘 다 변경 알림을 보내지 않는다.
-        assertThat(mailSentTo(email)).endsWith(PasswordResetService.REQUEST_SUBJECT)
-        assertThat(mailSentTo(email)).doesNotContain(PasswordResetService.CHANGED_SUBJECT)
+        assertThat(mailSentTo(email)).endsWith("[쉬운 글] 비밀번호 재설정 코드")
+        assertThat(mailSentTo(email)).doesNotContain("[쉬운 글] 비밀번호가 바뀌었습니다")
     }
 
     @Test

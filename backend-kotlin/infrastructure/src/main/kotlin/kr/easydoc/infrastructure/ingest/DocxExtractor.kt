@@ -10,7 +10,9 @@ import java.io.ByteArrayInputStream
 import java.io.IOException
 
 /** DOCX(OOXML) 본문·표·머리글·바닥글을 **문서 순서대로** 뽑는다. */
-internal class DocxExtractor {
+internal class DocxExtractor : StructuredTextExtractor {
+    override val format: SourceFormat = SourceFormat.DOCX
+
     /** 이어 붙인 본문. */
     fun extract(data: ByteArray): String = extractStructured(data).text
 
@@ -20,7 +22,7 @@ internal class DocxExtractor {
      * [UnitKind.LIST_ITEM], 그 외는 [UnitKind.BODY]다. DOCX 는 구조 신호가 XML 에 직접
      * 있으므로 [kr.easydoc.core.segment.inferUnitKinds] 텍스트 휴리스틱을 더 얹지 않는다.
      */
-    fun extractStructured(data: ByteArray): ExtractionOutcome {
+    override fun extractStructured(data: ByteArray): ExtractionOutcome {
         val builder = ExtractedTextBuilder(SourceFormat.DOCX, data.size)
         collectInto(data, builder)
         return ExtractionOutcome(builder.build(), builder.structure())

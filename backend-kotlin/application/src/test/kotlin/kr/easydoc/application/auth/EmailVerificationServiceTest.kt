@@ -3,6 +3,7 @@ package kr.easydoc.application.auth
 import kr.easydoc.application.mail.MailDelivery
 import kr.easydoc.application.mail.MailSender
 import kr.easydoc.application.mail.OutboundMail
+import kr.easydoc.application.mail.TestNotificationMailFactory
 import kr.easydoc.core.exceptions.ConflictException
 import kr.easydoc.core.exceptions.InvalidCredentialsException
 import kr.easydoc.core.exceptions.InvalidVerificationCodeException
@@ -193,6 +194,7 @@ private class VerificationWorld(mailFails: Boolean = false) {
             codeTtl = Duration.ofMinutes(10),
             resendCooldown = Duration.ofSeconds(60),
             maxAttempts = 5,
+            mailFactory = TestNotificationMailFactory,
         )
 }
 

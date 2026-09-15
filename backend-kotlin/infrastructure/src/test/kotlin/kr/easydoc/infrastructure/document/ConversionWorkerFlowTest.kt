@@ -35,6 +35,7 @@ import kr.easydoc.infrastructure.auth.JdbcWorkspaceRepository
 import kr.easydoc.infrastructure.crypto.AesGcmContentCipher
 import kr.easydoc.infrastructure.db.SpringTransactionRunner
 import kr.easydoc.infrastructure.mail.FakeMailSender
+import kr.easydoc.infrastructure.mail.defaultNotificationMailFactory
 import kr.easydoc.infrastructure.queue.JdbcConversionQueue
 import org.assertj.core.api.Assertions.assertThat
 import org.flywaydb.core.Flyway
@@ -256,6 +257,7 @@ class ConversionWorkerFlowTest {
                     store = JdbcConversionNotificationStore(jdbc),
                     mailSender = FakeMailSender(),
                     publicBaseUrl = "http://localhost:5173",
+                    mailFactory = defaultNotificationMailFactory(),
                 ),
             // 실물 원장 — 이 파일은 실 PostgreSQL 을 쓰므로 제품 조립과 같은 어댑터를 그대로 쓴다.
             ledger = JdbcLlmCallLedger(jdbc),

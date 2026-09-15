@@ -9,6 +9,7 @@ import kr.easydoc.application.mail.EmailAddress
 import kr.easydoc.application.mail.MailDelivery
 import kr.easydoc.application.mail.MailSender
 import kr.easydoc.application.mail.OutboundMail
+import kr.easydoc.application.mail.TestNotificationMailFactory
 import kr.easydoc.core.credit.Credits
 import kr.easydoc.core.crypto.EncryptedContent
 import kr.easydoc.core.crypto.EncryptedField
@@ -440,7 +441,13 @@ class ProcessConversionJobTest {
         val heartbeat = RenewingHeartbeat(leases)
         val notificationStore = FakeNotificationStore()
         val mailSender = RecordingMailSender()
-        val notifier = ConversionCompletedNotifier(notificationStore, mailSender, "http://localhost:5173")
+        val notifier =
+            ConversionCompletedNotifier(
+                notificationStore,
+                mailSender,
+                "http://localhost:5173",
+                TestNotificationMailFactory,
+            )
         val ledger = RecordingLedger()
         val creditRepository = RecordingCreditAccountRepository()
         val credits = CreditAccountService(creditRepository, enforced = false)

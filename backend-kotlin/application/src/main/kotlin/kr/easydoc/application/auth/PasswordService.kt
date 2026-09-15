@@ -3,7 +3,8 @@ package kr.easydoc.application.auth
 import kr.easydoc.application.document.EMAIL_VERIFICATION_REQUIRED_MESSAGE
 import kr.easydoc.application.mail.EmailAddress
 import kr.easydoc.application.mail.MailSender
-import kr.easydoc.application.mail.OutboundMail
+import kr.easydoc.application.mail.NotificationMailFactory
+import kr.easydoc.application.mail.NotificationType
 import kr.easydoc.core.exceptions.ConflictException
 import kr.easydoc.core.exceptions.EmailNotVerifiedException
 import kr.easydoc.core.exceptions.InvalidCredentialsException
@@ -30,6 +31,7 @@ class PasswordService(
     private val passwords: PasswordHasher,
     private val mail: MailSender,
     private val transaction: TransactionRunner,
+    private val mailFactory: NotificationMailFactory,
 ) {
     private val log = LoggerFactory.getLogger(PasswordService::class.java)
 
@@ -73,7 +75,7 @@ class PasswordService(
 
     private fun notifyPasswordCreated(user: User) {
         try {
-            mail.send(OutboundMail(EmailAddress.of(user.email), CREATED_SUBJECT, CREATED_BODY))
+            mail.send(mailFactory.create(NotificationType.PASSWORD_CREATED, EmailAddress.of(user.email)))
         } catch (
             @Suppress("TooGenericExceptionCaught") failure: RuntimeException,
         ) {
@@ -93,11 +95,5 @@ class PasswordService(
 
         /** 인증된 요청인데 계정이 그 사이 지워진 경우 — `AuthService`·`EmailVerificationService`와 같은 문구. */
         private const val ACCOUNT_GONE_MESSAGE = "이메일 또는 비밀번호가 올바르지 않습니다"
-
-        const val CREATED_SUBJECT: String = "[쉬운 글] 비밀번호가 만들어졌습니다"
-
-        /** 고정 문구 — 입력값(비밀번호·이메일)을 담지 않는다. */
-        private const val CREATED_BODY: String =
-            "방금 이 계정에 비밀번호가 만들어졌습니다. 본인이 한 일이 아니라면 즉시 비밀번호를 재설정해 주세요."
     }
 }

@@ -49,6 +49,8 @@ server:
       enabled: false
 
 easydoc:
+  ingest:
+    max-concurrent-extractions: ${EASYDOC_MAX_CONCURRENT_EXTRACTIONS:4}
   payment:
     provider: ${EASYDOC_PAYMENT_PROVIDER:stub}
     mock-enabled: ${EASYDOC_PAYMENT_MOCK_ENABLED:false}
@@ -102,6 +104,7 @@ easydoc:
     rotation:
       batch-size: ${EASYDOC_ENCRYPTION_ROTATION_BATCH_SIZE:200}
   mail:
+    templates-location: ${EASYDOC_MAIL_TEMPLATES_LOCATION:classpath:mail/notifications.properties}
     provider: ${EASYDOC_MAIL_PROVIDER:fake}
     from-address: ${EASYDOC_MAIL_FROM_ADDRESS:no-reply@easydoc.kr}
     timeout-ms: ${EASYDOC_MAIL_TIMEOUT_MS:5000}

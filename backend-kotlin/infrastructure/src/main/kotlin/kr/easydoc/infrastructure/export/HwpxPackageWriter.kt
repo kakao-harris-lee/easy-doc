@@ -20,8 +20,10 @@ import kr.easydoc.core.text.stripControlChars
  * 라이브러리가 채운다. zip 의 `mimetype` 만 개방형 컨테이너 규칙에 맞춰
  * 첫 STORED 항목으로 다시 얹는다.
  */
-internal class HwpxPackageWriter {
-    fun write(
+internal class HwpxPackageWriter : DocumentPackageWriter {
+    override val format: ExportFormat = ExportFormat.HWPX
+
+    override fun write(
         title: String,
         body: String,
     ): ExportFile {

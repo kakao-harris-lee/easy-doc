@@ -181,7 +181,7 @@ class SensitiveToStringReachTest {
          * 소스 스캐너가 선언을 놓치지 않는지 확인하는 정확한 현재 개수.
          * 선언을 추가하거나 제거할 때 실제 목록을 확인한 뒤 함께 갱신한다.
          */
-        const val EXPECTED_SOURCE_DECLARATIONS = 234
+        const val EXPECTED_SOURCE_DECLARATIONS = 236
 
         /** 민감 판정이 반드시 닿아야 하는 타입 — 바닥이다. */
         val KNOWN_SENSITIVE_TYPES =

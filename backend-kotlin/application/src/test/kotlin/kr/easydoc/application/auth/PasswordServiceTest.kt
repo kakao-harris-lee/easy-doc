@@ -4,6 +4,7 @@ import kr.easydoc.application.document.EMAIL_VERIFICATION_REQUIRED_MESSAGE
 import kr.easydoc.application.mail.MailDelivery
 import kr.easydoc.application.mail.MailSender
 import kr.easydoc.application.mail.OutboundMail
+import kr.easydoc.application.mail.TestNotificationMailFactory
 import kr.easydoc.core.exceptions.ConflictException
 import kr.easydoc.core.exceptions.EmailNotVerifiedException
 import kr.easydoc.core.exceptions.InvalidCredentialsException
@@ -48,7 +49,7 @@ class PasswordServiceTest {
             world.mail.sent
                 .single()
                 .subject,
-        ).isEqualTo(PasswordService.CREATED_SUBJECT)
+        ).isEqualTo("PASSWORD_CREATED")
     }
 
     @Test
@@ -116,7 +117,14 @@ private class PasswordWorld {
     val users = PasswordUserRepository()
     val transaction = RecordingPasswordTransactionRunner()
     val mail = RecordingPasswordMailSender()
-    val service = PasswordService(users = users, passwords = StubHasher(), mail = mail, transaction = transaction)
+    val service =
+        PasswordService(
+            users = users,
+            passwords = StubHasher(),
+            mail = mail,
+            transaction = transaction,
+            mailFactory = TestNotificationMailFactory,
+        )
 }
 
 private class RecordingPasswordTransactionRunner : TransactionRunner {

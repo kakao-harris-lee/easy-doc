@@ -12,6 +12,15 @@ Kotlin/Spring Boot로 구현된 독립 Gradle 프로젝트다. 모듈은 세 개
 
 제품 의존 방향은 `core <- application <- infrastructure`다. `api`와 `worker`는 `application`을 컴파일 의존하고 `infrastructure`는 런타임에만 조립한다.
 
+## 문서 처리·메일 설정
+
+- `EASYDOC_MAX_CONCURRENT_EXTRACTIONS`: 프로세스별 동시 추출 수. 기본값은 `4`이며 양수만 허용한다. 추출 문자 수·압축 해제량의 계약상 보안 상한은 바꾸지 않는다.
+- `EASYDOC_MAIL_TEMPLATES_LOCATION`: 인증·비밀번호·변환 완료 메일의 UTF-8 properties 파일 위치. 기본값은 `classpath:mail/notifications.properties`다. 외부 파일은 `file:/etc/easydoc/notifications.properties`처럼 지정한다.
+
+메일 문구는 [기본 템플릿](infrastructure/src/main/resources/mail/notifications.properties)을 복사해 수정한다. 모든 항목과 본문의 `{code}`, `{minutes}`, `{title}`, `{url}` 등 해당 템플릿의 변수는 유지해야 한다. 제목에는 변수를 넣을 수 없다. 설정은 기동 시 읽으므로 변경 후 프로세스를 재시작한다. 기본 템플릿의 `\n`은 줄바꿈이다.
+
+추출·내보내기 구현은 전략 인터페이스를 구현하고 해당 팩토리에 등록한다. 공통 레지스트리가 지원 형식의 누락·중복을 조립 시 검사한다.
+
 ## 검증
 
 ```bash
