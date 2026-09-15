@@ -1,6 +1,4 @@
-// worker — 변환 worker, 보존 만료 scheduler.
-//
-// api 를 의존하지 않는다 (계획 §3.2). 리스 기반 작업 큐와 보존 파기 scheduler 를 기동한다.
+// 큐·스케줄 작업과 일회성 운영 명령의 실행 모듈. api를 의존하지 않는다.
 
 plugins {
     alias(libs.plugins.kotlin.spring)
@@ -20,6 +18,7 @@ dependencies {
 
     testImplementation(platform(libs.spring.boot.bom))
     testImplementation(libs.spring.boot.starter.test)
+    testImplementation(libs.spring.boot.starter.flyway)
     testImplementation(testFixtures(project(":infrastructure")))
     // 기동 테스트가 DataSource·WebApplicationContext 타입을 참조한다.
     testImplementation(libs.spring.boot.starter.jdbc)

@@ -6,34 +6,17 @@ import kr.easydoc.application.credit.PurgeSignupGrantRecords
 import kr.easydoc.application.document.PurgeExpiredDocuments
 import kr.easydoc.application.document.PurgeFeedbackComments
 import org.slf4j.LoggerFactory
+import org.springframework.context.annotation.Profile
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Component
 
 /**
- * 보존 만료 문서, 피드백 자유 의견, 미검증 계정, 가입 크레딧 원장, 만료 인증 아티팩트를
- * 주기적으로 파기한다. 기본 시각은 매일 03:00 이다.
- *
- * 미검증 계정 파기(`docs/kotlin-redevelopment-backlog.md` §1.4 ⑵ ⓐ, 2026-09-07 결정)는
- * 앞의 두 파기와 같은 스케줄에 세 번째 단계로 얹는다 — 가입 후 이메일을 검증하지 않은
- * 계정이 `ix_users_email`(V1)을 무기한 선점하는 문제를 같은 일일 배치로 닫는다.
- *
- * 가입 크레딧 원장(`signup_grant_records`, V20) 파기(로드맵 5-1c, 2026-09-10 사용자 확정
- * 「이메일 해시는 부여 시점 기준 2년이면 충분해」)는 네 번째 단계로 얹는다 — 그 표는
- * `users`에 FK 가 없어 계정 삭제의 부산물로 지워지지 않으므로, 이 배치가 유일한 소거
- * 경로다.
- *
- * 만료 인증 아티팩트(`email_verification_codes`·`password_reset_codes`·`oauth_states`)
- * 파기(`docs/plans/2026-09-10-personal-data-inventory.md` §2.2 확정 결함)는 다섯 번째
- * 단계로 얹는다 — 앞의 두 표는 `users` FK CASCADE 로만 사라져 10분이면 만료되는 코드가
- * 계정이 사는 동안 계속 쌓이고, `oauth_states`는 `user_id`가 NULL인 행(가입·로그인 전
- * 흐름)은 CASCADE 경로가 아예 없어 영구 잔존·단조 증가한다 — 이 배치가 세 표 모두의
- * 유일한 소거 경로다.
- *
- * 다섯 단계를 각각 독립된 예외 경계로 감싼다 — 한쪽이 실패해도 다른 쪽은 그대로 돈다. 한
- * 파기가 던지면 그날 다른 파기가 함께 건너뛰는 일이 없어야 한다(서로 다른 표를 건드리는
- * 별개의 정책이라 한쪽의 실패가 다른 쪽 결과를 가리면 안 된다).
+ * 문서, 피드백 의견, 미검증 계정, 가입 크레딧 기록과 인증 아티팩트의 보존기간을 매일
+ * 03:00에 적용한다. 각 단계는 독립된 예외 경계에서 실행해 한 단계의 실패가 다른 파기를
+ * 막지 않게 한다.
  */
 @Component
+@Profile(WORKER_PROFILE)
 class RetentionPurgeScheduler(
     private val documentPurge: PurgeExpiredDocuments,
     private val feedbackCommentPurge: PurgeFeedbackComments,

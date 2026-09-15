@@ -80,11 +80,11 @@ docker compose -f compose.yml -f compose.ci.yml run --rm frontend-check
    세대로 저장되고, 옛 세대 행은 읽기만 가능한 채로 남는다.
 3. 회전 배치를 돌린다:
    ```bash
-   docker compose -f compose.yml run --rm backend-api \
-     java -jar /app/easy-doc-api.jar --spring.profiles.active=rotate-keys
+   docker compose -f compose.yml run --rm backend-worker \
+     java -jar /app/easy-doc-worker.jar --spring.profiles.active=rotate-keys
    ```
-   (Compose에 `rotate-keys` 전용 one-shot 서비스는 없다 — `migrate`도 마찬가지로 없고, 위
-   명령처럼 `backend-api` 이미지를 프로필만 바꿔 일회성으로 돌린다.)
+   (Compose에 `rotate-keys` 전용 one-shot 서비스는 없다. 위 명령처럼 `backend-worker`
+   서비스의 worker jar를 운영 프로필로 바꿔 일회성으로 돌린다.)
 4. 로그에서 가족별 `rotated`/`skipped`/`remaining` 집계만 확인한다(행 id·본문은 찍히지
    않는다). 종료 코드 0이면 그 실행에서 회전할 후보를 전부 처리했다는 뜻이다 — 배치가
    예외로 실패하면 0이 아닌 코드로 끝난다.
@@ -121,8 +121,8 @@ docker compose -f compose.yml -f compose.ci.yml run --rm frontend-check
    같은 실행에 바인드 마운트**해 컨테이너가 그 자리에 바로 쓰게 한다. 인자를 생략하면
    지난달 1일~마지막날이 기본이다:
    ```bash
-   docker compose -f compose.yml run --rm -v "$PWD:/out" backend-api \
-     java -jar /app/easy-doc-api.jar --spring.profiles.active=usage-report \
+   docker compose -f compose.yml run --rm -v "$PWD:/out" backend-worker \
+     java -jar /app/easy-doc-worker.jar --spring.profiles.active=usage-report \
      --out=/out/usage-report.csv --actor-email=<이 CLI를 실행하는 운영자 이메일>
    ```
    **`--actor-email`(필수)** — 접속기록(`personal_data_access_logs`, V22) 의무 때문이다
@@ -168,8 +168,8 @@ docker compose -f compose.yml -f compose.ci.yml run --rm frontend-check
    `--note`는 선택(200자 이내, 운영자 메모 — 워크스페이스 이름·이메일을 적지 않는다.
    표준출력·`GET .../credits` 응답 어디에도 이름·이메일은 실리지 않는다):
    ```bash
-   docker compose -f compose.yml run --rm backend-api \
-     java -jar /app/easy-doc-api.jar --spring.profiles.active=credit-grant \
+   docker compose -f compose.yml run --rm backend-worker \
+     java -jar /app/easy-doc-worker.jar --spring.profiles.active=credit-grant \
      --workspace=00000000-0000-4000-8000-000000000001 --credits=50 \
      --reason=plan_monthly --note="2026년 9월 정기 충전" \
      --actor-email=<이 CLI를 실행하는 운영자 이메일>
@@ -227,8 +227,8 @@ Compose one-off, 상시 서비스가 아니다).
    실행하는 **운영자 자신**의 이메일이다(접속기록 의무, `usage-report`와 같은 이유 — 둘을
    혼동하지 않는다):
    ```bash
-   docker compose -f compose.yml run --rm backend-api \
-     java -jar /app/easy-doc-api.jar --spring.profiles.active=admin-grant \
+   docker compose -f compose.yml run --rm backend-worker \
+     java -jar /app/easy-doc-worker.jar --spring.profiles.active=admin-grant \
      --email=operator@example.test --actor-email=<이 CLI를 실행하는 운영자 이메일>
    ```
    표준출력에 `user_id`·반영된 `is_admin` 값만 찍힌다(`관리자 권한 반영 — user_id=… is_admin=true`)
@@ -237,8 +237,8 @@ Compose one-off, 상시 서비스가 아니다).
    (메시지 한 줄만 남는다 — 로그에서 확인한다).
 2. **회수한다.** `--revoke` 플래그만 더한다(값을 받지 않는다):
    ```bash
-   docker compose -f compose.yml run --rm backend-api \
-     java -jar /app/easy-doc-api.jar --spring.profiles.active=admin-grant \
+   docker compose -f compose.yml run --rm backend-worker \
+     java -jar /app/easy-doc-worker.jar --spring.profiles.active=admin-grant \
      --email=operator@example.test --revoke --actor-email=<이 CLI를 실행하는 운영자 이메일>
    ```
    **회수는 다음 요청부터 즉시 반영된다** — 관리자 판정은 토큰에 넣지 않고 매 요청 DB에서
@@ -260,8 +260,8 @@ CLI다(계획 `docs/plans/2026-09-11-access-log-retention.md` §3.5). 화면은 
 **매달 한 번:**
 
 ```bash
-docker compose -f compose.yml run --rm -v "$PWD:/out" backend-api \
-  java -jar /app/easy-doc-api.jar --spring.profiles.active=access-log-report \
+docker compose -f compose.yml run --rm -v "$PWD:/out" backend-worker \
+  java -jar /app/easy-doc-worker.jar --spring.profiles.active=access-log-report \
   --out=/out/access-log-report.csv
 ```
 

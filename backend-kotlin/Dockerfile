@@ -1,5 +1,5 @@
-# Kotlin 백엔드 프로젝트 이미지. API·워커·마이그레이션이 **하나의 이미지**를 공유하고
-# Spring profile 로만 갈린다.
+# Kotlin 백엔드 프로젝트 이미지. API·worker·migration·운영 명령이 하나의 이미지를 공유하고
+# 실행 jar와 Spring profile로 갈린다.
 #
 # 빌드 컨텍스트는 backend-kotlin/ 이다:
 #   docker build -f backend-kotlin/Dockerfile backend-kotlin

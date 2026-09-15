@@ -11,25 +11,9 @@ import java.util.UUID
  * **쓰는 시점**에는 [conversionId]·[documentId]·[workspaceId]·[userId]·[documentCharCount]
  * 모두 실제 값이 있다 — 그 값을 모르는 호출은 애초에 일어날 수 없다.
  *
- * [conversionId]·[documentId] 를 `nullable` 로 둔 것은 필드 자체가 쓰는 시점에 없을 수
- * 있어서가 **아니다** — DB 열이 그 대상이 지워진 뒤에도 값을 그대로 들고 있는다는
- * 사실(2026-09-08 리뷰 정정, 아래)을 타입으로 드러내려면 이 값이 "쓸 때는 항상 있지만
- * 나중에 그 대상이 사라질 수 있는 참조"라는 성격을 갖고 있어야 하기 때문이다 — `UUID`
- * non-null 로 두면 그 성격이 감춰진다.
- *
- * **보존 결정의 정정(계획 §2 결정 1, 2026-09-08 리뷰로 3차 정정).** 청구 근거(원장)는
- * 참조 대상이 지워져도 값이 지워지면 안 된다는 원칙은 그대로이지만, 그 원칙을 지키는
- * 방법이 바뀌었다 — 이전 결정(`conversion_id`·`document_id`에 `ON DELETE SET NULL`)은
- * **원장의 존재 이유와 정면으로 어긋났다**: U2가 워크스페이스 사용량의 `documents`·
- * `characters`·`credits`를 `documents` 표가 아니라 이 원장에서 유도하도록 다시
- * 설계됐는데(2026-09-08 리뷰, `JdbcUsageReadRepository` KDoc), 문서가 보존 만료로
- * 지워지면 `document_id`가 `NULL`이 되어 그 문서가 낸 지난달 청구 근거(문자 수·
- * 크레딧)까지 함께 사라지기 때문이다. 그래서 `conversion_id`·`document_id`는 **FK
- * 자체를 두지 않는다** — 참조 대상이 지워져도 이 열의 값은 그대로 남는 감사 로그
- * (append-only ledger)로 다룬다. **`workspace_id`는 여전히 `ON DELETE SET NULL`이다**
- * — 워크스페이스 단위 사용량(`readWorkspaceUsage`)은 그 워크스페이스가 없어지면 조회
- * 대상 자체가 사라지므로 참조를 끊어도 청구 근거(사용자 단위 리포트, U3)가 없어지지
- * 않는다. [userId] 만 `ON DELETE CASCADE` 다 — 계정 자체가 없으면 청구 대상도 없다.
+ * [conversionId]와 [documentId]는 쓰는 시점에는 존재하지만 참조 대상 삭제 뒤에도 원장에
+ * 값을 보존하기 위해 FK를 두지 않는다. [workspaceId]는 DB에서 `ON DELETE SET NULL`,
+ * [userId]는 `ON DELETE CASCADE` 정책을 따른다.
  *
  * [documentCharCount] 는 이 호출이 속한 **문서**의 `documents.char_count`(원문, 마스킹
  * 전, 등록 시 확정) 스냅샷이다 — [record]의 `charCount`(그 호출이 실제로 본 마스킹된

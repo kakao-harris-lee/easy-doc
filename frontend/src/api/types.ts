@@ -58,30 +58,14 @@ export interface CredentialsRequest {
 export interface UserResponse {
   id: string
   email: string
-  /**
-   * 이메일 소유를 확인했는지(2.9.0 신설). 소셜 로그인 계정과 마이그레이션 이전 기존
-   * 계정은 항상 참이다. 거짓이면 `createDocument`가 403을 낸다.
-   */
+  /** 거짓이면 문서를 만들 수 없다. */
   email_verified: boolean
-  /**
-   * 연결된 소셜 신원의 제공자 목록(2.10.0 신설). 비밀번호 전용 계정, 아직 아무것도
-   * 잇지 않은 계정은 빈 배열이다 — `null`이 아니다.
-   */
   identities: UserIdentityResponse[]
   /**
-   * 비밀번호가 있는지(2.17.0 신설, backlog §1.4 다음 조각). 소셜 로그인으로만 가입한
-   * 계정은 거짓이다. `identities.length === 1 && !has_password`이면 그 신원의 연결
-   * 해제(`DELETE /auth/oauth/{provider}/link`)가 409(마지막 로그인 수단)로 거절된다 —
-   * 화면이 그 버튼을 미리 비활성화하는 재료다.
+   * 소셜 전용 계정은 거짓이다. 마지막 로그인 수단을 해제하지 않도록 화면에서 사용한다.
    */
   has_password: boolean
-  /**
-   * 관리자인지(2.25.0 신설, 어드민 최소 계획 `docs/plans/2026-09-07-admin-minimum.md` §2
-   * 결정 1) — `users.is_admin`. 화면이 계정 메뉴에 「관리」 링크를 보여줄지 판단하는
-   * 표시값일 뿐이다 — 실제 관리자 API 접근은 매 요청 DB를 다시 읽는 `AdminGuard`가
-   * 판정한다(이 값이 참이어도 이메일이 미검증이면 관리자 API는 403이다). 부여·회수는
-   * `admin-grant --email=<이메일> [--revoke]` 운영 프로필뿐이다 — 이 API로는 바꿀 수 없다.
-   */
+  /** 화면 표시용 값이며 관리자 API 권한은 서버가 별도로 확인한다. */
   is_admin: boolean
 }
 
@@ -98,10 +82,6 @@ export interface TokenResponse {
   expires_in: number
 }
 
-/**
- * 지원하는 소셜 로그인 제공자. 계약 `enum`은 `google`·`kakao`·`naver` 셋이다(네이버는
- * 2.15.0 신설, backlog §1.4 — 권고 순서 "구글 → 카카오 → 네이버"의 마지막 제공자).
- */
 export type OAuthProvider = 'google' | 'kakao' | 'naver'
 
 /** POST /auth/oauth/{provider}/start 요청 본문. */
@@ -133,17 +113,14 @@ export interface ConfirmEmailVerificationRequest {
   code: string
 }
 
-/** POST /auth/password 요청 본문(2.19.0 신설, backlog §1.4 다음 조각). */
 export interface SetPasswordRequest {
   new_password: string
 }
 
-/** POST /auth/password-reset/request 요청 본문(2.19.0 신설). */
 export interface PasswordResetRequest {
   email: string
 }
 
-/** POST /auth/password-reset/confirm 요청 본문(2.19.0 신설). */
 export interface PasswordResetConfirmRequest {
   email: string
   /** 메일로 받은 6자리 숫자 코드. */
@@ -151,14 +128,7 @@ export interface PasswordResetConfirmRequest {
   new_password: string
 }
 
-/**
- * POST /auth/me/deletion 요청 본문(2.27.0 신설, 계획
- * `docs/plans/2026-09-09-account-deletion.md`).
- *
- * `password`는 `readMe.has_password`가 참인 계정만 필수다 — 소셜 전용 계정은 생략한다.
- * `confirmation`은 두 경우 모두 필수이며 정확히 `"탈퇴합니다"`여야 한다. 서버가 판정하는
- * 서비스 층 규칙이라 화면은 형식을 검사하지 않고 서버 오류 문구를 그대로 보여준다.
- */
+/** 소셜 전용 계정은 password를 생략하며 confirmation은 서버가 검증한다. */
 export interface DeleteAccountRequest {
   password?: string
   confirmation: string
@@ -212,11 +182,7 @@ export interface DocumentSourceResponse {
  */
 export type SegmentConfidence = 'high' | 'low'
 
-/**
- * 원본 단위의 종류(P0-4 S8, 계획 `docs/plans/2026-09-06-p0-4-structure-hints.md` §1.1) —
- * 표 칸·목록 항목·그 밖의 본문 중 하나. `SegmentMap.source_unit_kinds`의 원소. 계약
- * `components/schemas/SourceUnitKind`.
- */
+/** 원본 단위의 표시 구조. */
 export type SourceUnitKind = 'body' | 'table_cell' | 'list_item'
 
 /**
@@ -249,12 +215,11 @@ export interface SegmentMap {
    * 원본 단위 중 이미 쉬운 글 규칙(`checkStyle`)을 위반 0건으로 통과하고 공백만이
    * 아닌 단위의 0 기반 색인. `source_unit_indexes`와 같은 좌표(저장된 추출 원문을
    * `\n`으로 쪼갠 줄). 오름차순·중복 없음. 재변환을 막지 않는다 — 화면이 이 목록에
-   * 있는 원본 단위 행에 「다시 쓰면 나빠질 수 있습니다」 경고만 덧붙인다(계획
-   * `docs/plans/2026-09-04-p0-4-paragraph-mapping-reconversion.md` §11).
+   * 있는 원본 단위 행에 「다시 쓰면 나빠질 수 있습니다」 경고만 덧붙인다.
    */
   compliant_source_units: number[]
   /**
-   * 원본 단위마다의 종류(P0-4 S8, 계획 §1.1·§1.5). `source_unit_indexes`와 같은 좌표
+   * 원본 단위마다의 종류. `source_unit_indexes`와 같은 좌표
    * (저장된 추출 원문을 `\n`으로 쪼갠 줄), 길이는 `source_unit_count`와 같다. 종류가
    * 연속된 구간(run)이 화면의 표시 단위다 — 옛 문서(저장된 종류가 없는 문서)는 전부
    * `'body'`로 낸다.
@@ -337,7 +302,6 @@ export interface ConversionReviewRequest {
 export interface DocumentListItem {
   id: string
   title: string
-  /** 계약은 2026-08-12부터 enum이었다 — 1.6.0에서 이름 있는 컴포넌트가 되며 타입을 맞췄다. */
   source_format: SourceFormat
   char_count: number
   /** ISO 8601 문자열. */
@@ -388,7 +352,7 @@ export interface WorkspaceNameRequest {
   name: string
 }
 
-// --- 워크스페이스 사용량 집계 (U2, 계약 2.20.0) ---
+// --- 워크스페이스 사용량 집계 ---
 
 /** `llm_calls.purpose`(V12)와 같은 값 — 문서 1차 변환·조건부 보정·문단 재변환. */
 export type UsagePurpose = 'convert' | 'repair' | 'reconvert'
@@ -406,7 +370,7 @@ export interface PurposeUsageItem {
   input_tokens: number
   output_tokens: number
   estimated_cost_usd: string | null
-  /** 계약 2.26.0 신설. 이 목적으로 완성 자체가 나지 않은 호출 수(`outcome = provider_error`). */
+  /** 이 목적으로 완성 자체가 나지 않은 호출 수. */
   failed_calls: number
 }
 
@@ -427,7 +391,7 @@ export interface WorkspaceUsageResponse {
   estimated_cost_usd: string | null
   cost_unknown_calls: number
   /**
-   * 계약 2.26.0 신설(실패 호출 원장 추적 백로그). 그 기간에 완성 자체가 나지 않은
+   * 그 기간에 완성 자체가 나지 않은
    * 호출 수(`llm_calls.outcome = provider_error`) — 위 필드들은 전부 완료된 호출만
    * 센다.
    */
@@ -435,7 +399,7 @@ export interface WorkspaceUsageResponse {
   by_purpose: PurposeUsageItem[]
 }
 
-// --- 크레딧 계정 (C1/C2, 계약 2.22.0) ---
+// --- 크레딧 계정 ---
 
 /**
  * `credit_transactions.kind`(V15, `cycle_set`·`cycle_reset`는 V21)와 같은 값. 계약
@@ -455,7 +419,7 @@ export type CreditReason =
 /**
  * `WorkspaceCreditsResponse.transactions` 항목. 계약 `components/schemas/CreditTransaction`.
  *
- * `credits`는 이미 종류별 부호 규약(크레딧 계정 계획 §2 결정 2 — grant/release는 +,
+ * `credits`는 이미 종류별 부호 규약(grant/release는 +,
  * reserve/consume/adjust는 방향대로)이 반영된 값이다 — 화면에서 부호를 다시 계산하지
  * 않는다.
  */
@@ -483,7 +447,7 @@ export interface CreditTransaction {
  * `false`로 채운다** — 화면은 이 값을 그대로 보여주면 된다(따로 가릴 필요가 없다).
  *
  * `allowance`·`cycle_ends_at`(계약 2.30.0), `cycle_started_at`(2.35.0) — 크레딧을
- * 「구독 주기에 포함된 이용량」으로 바꾼 사용자 결정(2026-09-10).
+ * 「구독 주기에 포함된 이용량」이다.
  */
 export interface WorkspaceCreditsResponse {
   workspace_id: string
@@ -552,11 +516,11 @@ export interface InvoiceRequestListResponse {
   items: InvoiceRequestResponse[]
 }
 
-// --- 문단 재변환 (P0-4 S4/S5, 계약 2.14.0) ---
+// --- 문단 재변환 ---
 
 /**
  * `POST /conversions/{id}/units/{source_unit_index}/reconvert` 요청 본문. 경로의
- * `source_unit_index`는 본문에 되풀이하지 않는다(계획 §4 결정 3).
+ * `source_unit_index`는 경로에 있으므로 본문에 되풀이하지 않는다.
  */
 export interface ReconvertUnitRequest {
   /**
@@ -575,7 +539,7 @@ export interface ReconvertUnitRequest {
  * `POST /conversions/{id}/units/{source_unit_index}/reconvert` 응답 — 재변환 후보.
  *
  * **후보뿐이고 변환 본문(`easy_text`·`edited_text`)에는 아무것도 쓰이지 않는다.** 채택
- * (바꾸기·삽입)은 클라이언트 몫이다(계획 §4 결정 3).
+ * (바꾸기·삽입)은 클라이언트 몫이다.
  */
 export interface ReconvertUnitResponse {
   /** 다시 변환한 후보 본문. 원본 단위 하나에 대응하는 쉬운 글 텍스트다. */
@@ -627,7 +591,7 @@ export interface ConversionFeedbackResponse {
   submitted_at: string
 }
 
-// --- dictionary (P0-5, 계약 2.11.0) ---
+// --- dictionary ---
 
 /**
  * 사전 치환 전략. 계약 `components/schemas/TermStrategy`.
@@ -699,7 +663,7 @@ export interface DictionaryLookupResponse {
   dictionary: DictionaryAttribution
 }
 
-// --- 어드민 최소 (계약 2.25.0, docs/plans/2026-09-07-admin-minimum.md §2) ---
+// --- admin ---
 
 /**
  * `GET /admin/workspaces`(목록 항목)·`GET /admin/workspaces/{workspace_id}`(상세의
@@ -817,7 +781,7 @@ export interface AdminErrorItem {
 }
 
 /**
- * 계약 2.26.0 신설. `GET /admin/errors`의 `llm_calls`(V18) 실패 호출 `failure_class`별
+ * `GET /admin/errors`의 실패 호출을 `failure_class`별로
  * 건수 — 위 `AdminFailureCount`(`conversions.failure_code`)와 다른 축이다. 계약
  * `components/schemas/AdminProviderFailureCount`.
  */
@@ -831,15 +795,14 @@ export interface AdminErrorsResponse {
   counts: AdminFailureCount[]
   /** 최근 50건, 최신순. */
   recent: AdminErrorItem[]
-  /** 계약 2.26.0 신설. */
   provider_failures: AdminProviderFailureCount[]
 }
 
 /** `usage-report`(U3) CSV 행과 같은 값. 계약 `components/schemas/AdminUsageRow`. */
 export interface AdminUsageRow {
-  /** 탈퇴한 계정이면 `null`(계약 2.28.0 신설, `docs/plans/2026-09-09-account-deletion.md` V19). */
+  /** 탈퇴한 계정이면 `null`. */
   user_id: string | null
-  /** 탈퇴한 계정이면 `null`(계약 2.28.0 신설) — `user_id`와 함께 사라진다. */
+  /** 탈퇴한 계정이면 `null`. */
   owner_email: string | null
   /** 워크스페이스가 나중에 삭제됐으면 `null`(요청 이력은 보존한다). */
   workspace_id: string | null
@@ -848,7 +811,7 @@ export interface AdminUsageRow {
   characters: number
   credits: number
   llm_calls: number
-  /** 계약 2.26.0 신설. 완성 자체가 나지 않은 호출 수(`outcome = provider_error`). */
+  /** 완성 자체가 나지 않은 호출 수. */
   failed_calls: number
   input_tokens: number
   output_tokens: number

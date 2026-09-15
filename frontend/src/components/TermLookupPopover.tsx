@@ -673,9 +673,7 @@ export function TermLookupPopover({
                       주의: {candidate.caution}
                     </p>
                   )}
-                  {/* 원문(읽기 전용) 패널에서는 적용 버튼을 아예 그리지 않는다(계획 §3.5,
-                      HIGH 리뷰 1) — busy(§MEDIUM 리뷰 3) 동안에도 마찬가지다. 두 조건이
-                      모두 참일 때만 버튼이 뜬다. */}
+                  {/* 읽기 전용이거나 요청 중이면 적용 버튼을 제공하지 않는다. */}
                   {candidate.applicable && !applyDisabled && !disabled && (
                     <Button
                       type="button"

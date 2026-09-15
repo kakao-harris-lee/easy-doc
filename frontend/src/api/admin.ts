@@ -1,11 +1,3 @@
-/**
- * 관리자 전용 엔드포인트 (어드민 최소, 계약 2.25.0).
- *
- * 전부 `/admin/…` 아래이고 `x-admin-only: true`다 — 관리자가 아니거나 이메일이
- * 미검증이면 403 「관리자 권한이 필요합니다」(`AdminGuard`). 화면은 `ApiError.status`가
- * 403이면 서버 문구를 그대로 보여준다(정본 `docs/plans/2026-09-07-admin-minimum.md` §2).
- */
-
 import { requestJson } from './client'
 import type {
   AdminCreditAdjustmentRequest,
@@ -137,11 +129,6 @@ export function readAdminErrors(
   const suffix = query.size > 0 ? `?${query.toString()}` : ''
   return requestJson<AdminErrorsResponse>(`/admin/errors${suffix}`, { signal })
 }
-
-// GET /admin/usage(JSON 사용량 리포트)는 A2 화면 범위 밖이다 — 이번 어드민 최소
-// 화면은 「워크스페이스」 탭 요약(이번 달 문서·크레딧·비용)으로 사용량을 보여준다
-// (계획 §3 A2). 별도 사용량 탭이 생기면 그때 이 오퍼레이션을 다시 감싼다. CSV 산출은
-// 여전히 `usage-report` 운영 프로필의 몫이다(러너북 「월간 청구」).
 
 /** GET /admin/announcements — 공지 전체(활성·비활성)를 최신순으로 조회한다. */
 export function listAdminAnnouncements(signal?: AbortSignal): Promise<AnnouncementListResponse> {

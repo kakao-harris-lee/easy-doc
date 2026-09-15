@@ -12,18 +12,7 @@ import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.context.annotation.Profile
 
-/**
- * `rotate-keys` profile 이름. 낡은 세대로 봉인된 행을 현재 쓰기 세대로 재봉인하고 종료하는
- * 실행 모드다(backlog §1.1 「키 회전에 운영 진입점이 없음」).
- *
- * `MIGRATE_PROFILE`(`CryptoConfiguration.kt`)과 같은 이름을 `api` 쪽에도 따로 든다 — 이유도
- * 같다: `api` 는 `infrastructure` 를 `runtimeOnly` 로만 의존해 이 모듈의 상수를 컴파일
- * 시점에 보지 못한다(`ApiApplication.kt` 의 `ROTATE_KEYS_PROFILE`).
- *
- * `migrate` 와 달리 이 profile 은 `CryptoConfiguration`·`DocumentConfiguration` 을 **면제하지
- * 않는다**(둘 다 `@Profile("!$MIGRATE_PROFILE")` 이라 `rotate-keys` 에서도 조립된다) — 회전은
- * 본문 암호화 키 전체 세대를 쥐어야 하고, [EnvelopeRotation] 빈이 그대로 필요하기 때문이다.
- */
+/** 저장 데이터를 현재 쓰기 키로 재봉인하는 운영 프로필. */
 const val ROTATE_KEYS_PROFILE: String = "rotate-keys"
 
 /**
@@ -42,10 +31,7 @@ data class KeyRotationProperties(val batchSize: Int = DEFAULT_BATCH_SIZE) {
     }
 }
 
-/**
- * `rotate-keys` profile 전용 조립. [KeyRotationBatch] 는 이미 있는 [EnvelopeRotation]·
- * [SealedStores]·[ContentCipher] 빈을 그대로 받는다 — 회전 로직을 여기서 새로 만들지 않는다.
- */
+/** `rotate-keys` 프로필에서 키 회전 배치를 조립한다. */
 @Configuration(proxyBeanMethods = false)
 @Profile(ROTATE_KEYS_PROFILE)
 class KeyRotationConfiguration {

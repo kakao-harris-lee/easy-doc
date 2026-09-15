@@ -39,7 +39,8 @@ cd backend-kotlin
 ./gradlew :api:bootRun   # API 서버 (:8000). 기동 시 Flyway 마이그레이션을 자동 적용한다
 ```
 
-worker 모듈(`./gradlew :worker:bootRun`)은 현재 Spring Boot 기동 골격뿐이며 작업을 처리하지 않는다(진행 중인 backlog — `docs/kotlin-redevelopment-backlog.md` 1절 참고).
+worker 모듈(`./gradlew :worker:bootRun --args='--spring.profiles.active=worker'`)은 변환 작업과
+정기 유지보수 작업을 처리한다. 운영용 일회성 명령도 같은 worker 실행 파일을 사용한다.
 
 ### 4. 프론트 개발 서버
 
@@ -75,7 +76,7 @@ docker compose up -d --build
 
 - `backend-api`가 기동하면서 Flyway로 스키마를 적용한다. `backend-worker`는 API healthcheck 통과 후, `frontend`도 API healthcheck 통과 후 뜬다.
 - **`--build`를 빼지 않는다**: 코드를 고친 뒤 `docker compose up -d`만 하면 옛 이미지로 만든 컨테이너가 그대로 뜬다.
-- api·worker는 같은 이미지(`easy-doc-backend:local`)를 command(profile)만 달리해 쓴다. 프론트는 별도 이미지(`easy-doc-frontend:local`)다.
+- api·worker는 같은 이미지(`easy-doc-backend:local`)에서 실행 jar와 profile을 달리한다. 프론트는 별도 이미지(`easy-doc-frontend:local`)다.
 - 포트는 모두 `127.0.0.1`에만 바인딩된다(8080 화면, 8100 API). 외부 공개는 앞단 리버스 프록시(TLS·본문 크기 제한)를 두고 한다.
 
 ```bash
@@ -87,7 +88,9 @@ docker compose down                 # 중지 (-v를 붙이면 DB 데이터까지
 
 ## 현재 구현 상태
 
-지금 이 저장소는 Kotlin 재개발 진행 중이며, 계약(`contracts/easy-doc-v1.yaml`)에 있는 기능 중 일부는 아직 Kotlin에 없다. 구현된 API·미구현 기능·재구현 시 반드시 지킬 요구사항의 정본은 [`docs/kotlin-redevelopment-backlog.md`](docs/kotlin-redevelopment-backlog.md)다. 이 README는 그 목록을 다시 베끼지 않는다 — 최신 상태와 어긋날 수 있기 때문이다.
+제품 런타임은 Kotlin/Spring Boot 백엔드와 React 프런트엔드다. 외부 HTTP 동작의 정본은
+`contracts/easy-doc-v1.yaml`, 남은 제품 작업과 결정 사항은
+[`docs/kotlin-redevelopment-backlog.md`](docs/kotlin-redevelopment-backlog.md)에서 관리한다.
 
 ## 데이터
 

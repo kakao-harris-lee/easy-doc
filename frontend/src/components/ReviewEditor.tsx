@@ -154,8 +154,6 @@ function saveBlob(blob: Blob, filename: string): void {
  * 왼쪽은 원본, 오른쪽은 고칠 수 있는 결과다. 초기값은 `edited_text ?? easy_text` —
  * AI 초안은 수정률 KPI의 기준선이라 서버에 그대로 남고, 담당자가 이어서 고칠 대상은
  * 마지막으로 저장한 수정본이다.
- *
- * 화면 맨 위의 "AI가 만든 초안" 배너는 지우지 않는다(master-plan 3.3 HITL).
  */
 export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
   const editorId = useId()
@@ -163,10 +161,7 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
   const tabRefs = useRef<Partial<Record<PanelKey, HTMLButtonElement | null>>>({})
   /** 결과 패널 상자 — 사전 팝업(TermLookupPopover)이 선택 이벤트를 거는 대상이다. */
   const resultPanelRef = useRef<HTMLDivElement>(null)
-  /**
-   * 원문 패널 상자 — 별도의 `TermLookupPopover` 인스턴스가 여기에 선택 이벤트를 건다
-   * (계획 §3.5 "원문 패널(읽기 전용)에서도 조회는 되고 적용 버튼은 없다", HIGH 리뷰 1).
-   */
+  /** 원문 패널의 사전 조회는 읽기 전용이라 적용 버튼을 제공하지 않는다. */
   const sourcePanelRef = useRef<HTMLDivElement>(null)
   const initialText = conversion.edited_text ?? conversion.easy_text ?? ''
 
@@ -183,15 +178,7 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
    * 안다 — 실제로 서버에는 저장돼 있는데도.
    */
   const [feedbackSubmittedAt, setFeedbackSubmittedAt] = useState(conversion.feedback_submitted_at)
-  /**
-   * 「의견을 보냈다」로 볼 수 있는가.
-   *
-   * 계약은 `feedback_submitted_at` 키가 늘 있다고 정하지만, 그것은 서버의 약속이지 이
-   * 컴포넌트가 받는 값의 보장이 아니다. 필드를 아직 안 싣는 서버·배포 시차로 남은 옛
-   * 번들·목을 덜 고친 테스트에서는 `undefined`가 들어오고, `!== null` 비교는 그것을
-   * **보낸 것으로** 읽어 `new Date(undefined)` — `Invalid Date` — 를 배지에 찍는다.
-   * 값이 실제로 시각 문자열일 때만 참으로 둔다.
-   */
+  // 누락된 시각을 제출 완료로 오인하지 않는다.
   const hasFeedback = typeof feedbackSubmittedAt === 'string'
   const [feedbackJustSubmitted, setFeedbackJustSubmitted] = useState(false)
   const feedbackSuccessRef = useRef<HTMLDivElement>(null)
@@ -241,7 +228,7 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
    */
   const [remainingCallBudget, setRemainingCallBudget] = useState<number | null>(null)
   /**
-   * 429(예산 소진)를 한 번이라도 받았는지(MEDIUM-HIGH 리뷰).
+   * 429(예산 소진)를 한 번이라도 받았는지.
    *
    * 매 재변환 호출은 예산에서 최소 2를 예약한다 — 그래서 429 직후 서버가 알려 준
    * `remainingCallBudget`이 정확히 0이 아니라 1일 수 있다(예약분 중 하나만 남은 채
@@ -494,7 +481,7 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
       const units = draftRef.current.split('\n')
       if (prev.anchorEasyUnitIndex >= 0 && prev.anchorEasyUnitIndex < units.length) {
         // 후보 텍스트에 `\n`이 섞여 있으면(1:N 재변환이 여러 줄로 온 경우) 그 자리에서
-        // 갈라지는 것으로 보고 지도도 함께 다시 짠다(HIGH 리뷰 1) — `unitMap.length`가
+        // 갈라지는 것으로 보고 지도도 함께 다시 짠다 — `unitMap.length`가
         // `draft.split('\n').length`와 어긋나지 않게 `SegmentedResultEditor`와 같은
         // 규칙을 공유한다.
         const { units: nextUnits, map: nextMap } = spliceUnitText(
@@ -529,7 +516,7 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
         const unit = units[active.index] ?? ''
         const caret = Math.min(Math.max(active.caret, 0), unit.length)
         const nextText = unit.slice(0, caret) + prev.candidateText + unit.slice(caret)
-        // 캐럿에 끼운 텍스트에 `\n`이 있으면 그 단위가 갈라진다(HIGH 리뷰 1) —
+        // 캐럿에 끼운 텍스트에 `\n`이 있으면 그 단위가 갈라진다 —
         // `handleCandidateReplace`와 같은 규칙을 공유한다.
         const { units: nextUnits, map: nextMap } = spliceUnitText(
           units,
@@ -541,7 +528,7 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
         setUnitMap(nextMap)
       } else {
         // 캐럿을 모르면 새 단위(들)로 붙는다 — 후보 텍스트에 `\n`이 있으면 여러 단위로
-        // 나뉘고, 전부 이 재변환이 나온 원본 단위에 `high`로 대응한다(HIGH 리뷰 1).
+        // 나뉘고, 전부 이 재변환이 나온 원본 단위에 `high`로 대응한다.
         const { units: nextUnits, map: nextMap } = insertUnitsAfter(
           units,
           unitMapRef.current,
@@ -558,8 +545,7 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
 
   function handleCandidateClose(): void {
     setCandidate(null)
-    // 카드를 닫으면 초점을 그 카드를 연 「다시 변환」 버튼으로 돌려준다(MEDIUM 리뷰
-    // 3) — 그러지 않으면 사라진 카드와 함께 초점이 `<body>`로 떨어진다.
+    // 사라진 카드와 함께 초점이 body로 떨어지지 않게 호출 버튼으로 돌린다.
     reconvertTriggerRef.current?.focus()
   }
 
@@ -575,7 +561,7 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
    * 한 번에 하나만 진행하기로 한 선택(§4 위 주석)을 버튼 상태에도 그대로 반영한다.
    * 요청이 도는 행 자신은 이 값과 무관하게 `pendingIndex`로 항상 잠긴다.
    *
-   * **예산 소진은 `=== 0`만으로 판정하지 않는다(MEDIUM-HIGH 리뷰).** 매 요청이 예산에서
+   * **예산 소진은 `=== 0`만으로 판정하지 않는다.** 매 요청이 예산에서
    * 최소 2를 예약하므로, 429 직후 남은 예산이 1이어도 다음 요청은 예약할 몫이 모자라
    * 마찬가지로 거절된다 — `budgetExhausted`(429를 한 번이라도 받았다는 사실)와
    * `remainingCallBudget < 2` 둘 중 하나만 참이어도 소진으로 본다.
@@ -871,9 +857,7 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
           // 의견을 보낸 뒤에는 「아직 …이 없습니다」가 "내 제출이 실패했나"로 읽힌다.
           // 저장하지 않았다는 사실은 그대로 두되, 아직 할 일이 남았다는 뜻으로 들리지
           // 않게 완료형으로 적는다. 무엇을 보냈는지는 옆의 「의견 보냄」이 말한다.
-          // 값의 유무를 `=== null`이 아니라 타입으로 묻는다 — 필드를 아직 안 싣는 서버나
-          // 옛 번들에서는 `undefined`가 오고, 그때 `=== null`은 거짓이라 의견을 낸 적
-          // 없는 화면이 「보냈다」 쪽 문구를 읽는다. 모르면 「아직」이 안전한 오답이다.
+          // 누락된 값은 제출하지 않은 것으로 취급한다.
           detail: hasFeedback
             ? '고쳐서 저장한 내용은 없습니다. 결과는 AI 초안 그대로입니다.'
             : '아직 저장한 검수 내용이 없습니다. AI 초안 그대로입니다.',
@@ -1148,8 +1132,7 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
           disabled={busy}
         />
 
-        {/* 원문(읽기 전용) 패널에도 같은 조회를 별도 인스턴스로 붙인다(HIGH 리뷰 1) —
-            글을 고칠 대상이 없어 `applyDisabled`로 바꾸기 버튼을 뺀다. */}
+        {/* 원문 패널은 읽기 전용이라 바꾸기 버튼을 뺀다. */}
         <TermLookupPopover
           key={`source-${useSegmentedEditor}`}
           containerRef={sourcePanelRef}

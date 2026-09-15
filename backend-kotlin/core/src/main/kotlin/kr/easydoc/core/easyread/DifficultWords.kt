@@ -8,50 +8,9 @@ package kr.easydoc.core.easyread
 // '지원'·'평가'·'조사'처럼 쉬운 글에서도 쓸 수 있는 말은 넣지 않는다. 분야 전용 명사
 // ('의료기술' 같은 말)도 넣지 않는다 — 그 처리는 [EXPLAIN_INSTRUCTION] 의 몫이다.
 
-// 2026-08-30 흡수 정리: 아래 81낱말은 easy-dictionary 소비자 중복 낱말 정책에 따라 이
-// 목록에서 뺐다 — 소유권은 사전(easy-dictionary), 잔존 여부는 위험도로 판단한 단일 출처
-// 정책이다(dictionary/docs/consumer-overlap-policy.md). 감면 거주 거주지 고령 고지
-// 공제 공지 관내 교부 구비서류 구직 근로 기재 기한 납부 납입 내방 내역 내원 누락 당월
-// 당일 동절기 만료 면제 명일 미납 반려 별지 별첨 보완 본인부담금 부과 부양 분기 사본
-// 산정 상기 서면 소급 소명 소요 소재지 송부 수령 신규 신설 실직 완료 요건 요망 위임장
-// 유예 의뢰 익년 전월 정산 정정 제고 제반 조치 종결 증빙 질환 징수 차후 청구 체납 침수
-// 통보 판정 하자 하절기 해당자 해지 향후 허위 현행 환급 환수 회신.
-// 이 낱말들을 이 목록에 다시 넣으면 사전이 이미 내리는 지침과 모순되는 지시가 재발한다.
-// **전제**: 이 제거는 사전 컨텍스트 주입과 같은 릴리스로만 나갈 수 있다 — 제거만 먼저
-// 배포되면 그 사이 이 낱말들은 어느 쪽 지침도 받지 못하는 무지침 상태가 된다(실측:
-// fact miss 24 -> 31). 그래서 한 번 보류했다가, 주입이 worker 변환 경로에 배선되고
-// `DictionaryProperties.enabled` 기본값이 켜짐이 된 뒤에 다시 적용했다. 주입을 끄면
-// 이 무지침 구간이 되살아난다 — 그 설정은 이 목록과 한 몸이다.
-//
-// 부수 정리: 제거 대상 중 "기한"은 [GlossCollision.kt] 의 `COMPOUND_TAIL_KEYS` 가
-// `DIFFICULT_WORD_REPLACEMENTS.getValue("기한")` 로 값을 끌어다 썼다. 이 항목을 그대로
-// 두고 사전 값만 지우면 그 조회가 `NoSuchElementException` 을 던져 클래스 초기화 자체가
-// 깨진다. 그래서 `COMPOUND_TAIL_KEYS` 에서도 "기한"을 함께 뺐다(해당 파일 주석 참고).
-// 같은 이유로 `PROMPT_ONLY_WORDS` 의 "상기"·"반려"·"하자"도 함께 뺐다 — 이 목록에 있는
-// 세 낱말도 제거 대상 81낱말에 포함되는데, `StyleRuleDataSnapshotTest` 가
-// `DIFFICULT_WORD_REPLACEMENTS.keys.containsAll(PROMPT_ONLY_WORDS)` 를 불변식으로 강제한다.
-// 같은 종류의 불변식이 하나 더 있었다 — `GlossCollision.kt` 의 `LEXICALIZED_GLOSSES` 는
-// "지금"(현행)·"바람"(요망)·"돌봄"(부양)·"따로 붙임"(별첨)·"빠짐"(누락)·"걸림"(소요)·
-// "높임"(제고)을 담고 있었는데, 그 출처 낱말이 모두 이번에 빠지면서 사전 값으로는
-// 더 이상 존재하지 않게 됐다. `StyleRuleDataSnapshotTest` 가
-// `DIFFICULT_WORD_REPLACEMENTS.values.containsAll(LEXICALIZED_GLOSSES)` 도 불변식으로
-// 강제하므로 그 파일에서도 이 7개를 함께 뺐다(해당 파일 주석 참고).
-
-// 2026-09-08 감사(backlog §1.5 항목 2, 선택지 ⓐ): 아래 13낱말을 이 목록에서 뺐다 —
-// 머리 주석 원칙 "행정 문서 밖에서는 거의 쓰지 않는 말만 넣는다"에 어긋나는 행정
-// 일반어라서다. 4차 유료 측정(2026-09-07)에서 골든 105의 DIFFICULT_WORD 위반 26건·
-// 042의 21건이 절 제목·공고번호·기관 표기에 쓰인 이 낱말들 때문이었다("선정기준"·
-// "최종 평가"·"공고 제2025-544호"·"절차" 등). 선정 최종 공고 절차 작성 제출 지급
-// 시행 접수 담당자 경과 명의 연간. 이 15낱말은 모두 easy-dictionary 표제어가 아니라
-// 2026-08-30 흡수 81낱말과는 다른 계열의 제거다 — 사전 지침으로 대체하는 것이 아니라
-// "쉬운 글에서도 쓰는 말"이라 지침 자체가 필요 없다는 판단이다. 대상자·신청인은
-// 행정 명사라 뜻풀이 제안은 남기되(맵에는 남는다) "지원 대상자" 같은 제목 표기를
-// 위반으로 세지 않도록 아래 [PROMPT_ONLY_WORDS] 로 옮겼다.
-//
-// 위 제거로 [GlossCollision.kt] 의 `LEXICALIZED_GLOSSES` 가 담고 있던 "널리 알림"
-// (공고의 값)이 더 이상 이 맵의 값으로 존재하지 않게 됐다. `StyleRuleDataSnapshotTest`
-// 가 `DIFFICULT_WORD_REPLACEMENTS.values.containsAll(LEXICALIZED_GLOSSES)` 를
-// 불변식으로 강제하므로 그 파일에서도 "널리 알림"을 함께 뺐다(해당 파일 주석 참고).
+// 사전 컨텍스트가 이미 설명하는 낱말과 쉬운 글에서도 자연스러운 일반어는 넣지 않는다.
+// PROMPT_ONLY_WORDS와 LEXICALIZED_GLOSSES는 이 맵의 키·값 부분집합이어야 하며
+// StyleRuleDataSnapshotTest가 그 불변식을 검사한다.
 
 /** 어려운 한자어·행정 용어 → 쉬운 표현 사전 (154개). */
 val DIFFICULT_WORD_REPLACEMENTS: Map<String, String> =

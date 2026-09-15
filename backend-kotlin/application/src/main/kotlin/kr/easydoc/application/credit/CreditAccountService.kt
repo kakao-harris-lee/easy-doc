@@ -168,7 +168,7 @@ class CreditAccountService(
 
     /**
      * 새 주기를 연다 — `balance`를 [allowance] 로 설정한다(더하지 않는다). 운영자 CLI의
-     * `--cycle-ends-at` 경로([kr.easydoc.api.credit.CreditGrantRunner])가 부른다.
+     * `--cycle-ends-at` 경로가 부른다.
      * [CreditAccountRepository.setAllowance] KDoc 참고 — [renews] 가 주기 종료 배치의
      * 갱신/종료 갈래를 가른다.
      */

@@ -6,11 +6,7 @@ import java.nio.charset.StandardCharsets
 
 // 내보내기 — **순수 문자열·바이트 로직만** 둔다.
 //
-// ## 여기 없는 것과 그 이유
-//
-// - **DOCX·HWPX 렌더링**: POI/ZIP 의존이라 `infrastructure` 몫이고 Phase 4다. 이 파일이
-//   `core` 에 있는 조건은 "fixture 파일 하나와 순수 함수만으로 검증 가능한가"이고
-//   (kotlin-spring-conventions §1), zip 컨테이너 조립은 그 조건을 만족하지 않는다.
+// DOCX·HWPX 렌더링은 POI/ZIP에 의존하므로 infrastructure가 소유한다.
 
 /** 내보내기 형식. 값이 그대로 확장자다. */
 enum class ExportFormat(

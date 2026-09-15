@@ -9,13 +9,7 @@ import org.springframework.context.annotation.Configuration
 import org.springframework.jdbc.core.simple.JdbcClient
 import java.time.Clock
 
-/**
- * 접속기록 조립 — `UsageConfiguration`과 같은 이유로 프로필과 무관하게 상시 조립한다.
- * [RecordPersonalDataAccess]는 `AdminAccessInterceptor`(`api`, 항상 등재)가 관리자 API
- * 요청마다 부르므로 프로필로 gate 할 수 없다. `access-log-report` 프로필 전용
- * `AccessLogReportConfiguration`(`api`)은 여기서 조립된 [PersonalDataAccessReportService]
- * 빈을 받아 CLI 실행부만 배선한다 — `UsageReportConfiguration`과 같은 형태.
- */
+/** API 기록과 worker 보고 명령이 공유하는 접속기록 조립 지점. */
 @Configuration(proxyBeanMethods = false)
 class AccessLogConfiguration {
     @Bean

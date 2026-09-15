@@ -2,82 +2,45 @@ spring:
   application:
     name: easy-doc-api
 
-  # 실행 profile 은 api / worker / migrate 셋이다 (계획 §3.2).
-  # 같은 JAR·같은 레이어를 쓰고 profile 로만 갈린다.
   profiles:
     default: api
 
   datasource:
-    # 기본값은 compose.yml 의 로컬 개발 환경 기준. 운영은 환경변수로 덮어쓴다.
-    # 비밀값을 이 파일에 적지 않는다 — .env/환경변수만 쓴다(프로젝트 CLAUDE.md).
+    # 운영 비밀값은 환경변수로 덮어쓴다.
     url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/easydoc}
     username: ${SPRING_DATASOURCE_USERNAME:postgres}
     password: ${SPRING_DATASOURCE_PASSWORD:postgres}
     hikari:
-      # 기동 시 접속을 시도하지 않는다 — DB가 떠 있지 않아도 앱은 뜨고 /health 로
-      # 진단할 수 있어야 한다. 실제 의존성 상태는 health 진단에서 구분한다.
+      # DB 장애는 기동 실패 대신 /health에서 진단한다.
       initialization-fail-timeout: -1
 
   flyway:
     enabled: true
     locations: classpath:db/migration
-    # baseline-on-migrate 를 켜지 않는다 — 이제 이 값을 쓰는 baseline 판정 로직이
-    # 없으므로 항상 통상적인 마이그레이션 절차(V1부터 순서대로 적용)만 돈다.
     baseline-on-migrate: false
     baseline-version: 1
 
-  # 오류 응답은 GlobalExceptionHandler 가 {"detail": ...} 로 만든다.
-  # Spring 기본 /error 경로가 ProblemDetail 이나 흰 화면을 내지 않도록 막는다.
+  # 오류 본문은 전역 핸들러가 계약 형식으로 만든다.
   mvc:
     problemdetails:
       enabled: false
 
-  # --- multipart (POST /documents 파일 모드) — 계획 §5 D-1 의 L0 ---------------
-  #
-  # **컨테이너 상한은 계약 상한보다 넉넉해야 한다.** 정확한 경계 판정은 서비스가
-  # 한다(`MAX_UPLOAD_BYTES` → UploadTooLargeException → 413 + 계약 문구). 컨테이너가
-  # 경계를 판정하면 문구와 경계가 구현에 좌우되고, Spring 이 컨테이너 초과를 알아내는
-  # 방식이 **Tomcat 예외 메시지 문자열 매칭**이라 메시지가 바뀌면 413 이 조용히 500 이
-  # 된다(계획 §1.5 설계 지점 2 ⑵).
-  #
-  # 기본값을 그대로 두면 **DC-13 이 반드시 깨진다** — `max-file-size` 기본이 1MB 이고
-  # `max-request-size` 기본이 10MB 라, 정확히 계약 상한(10MB)인 파일이 multipart 경계·
-  # 파트 헤더 오버헤드 때문에 요청 전체로는 상한을 넘는다. 그래서 **둘 다** 올린다.
-  #
-  # 두 값이 계약 `x-input-limits.max_upload_bytes` 이상인지는 손으로 지키지 않는다 —
-  # `DocumentEndpointReachTest` 의 「컨테이너 multipart 상한이 계약 업로드 상한 이상이다」가
-  # 실기동 컨텍스트에서 `MultipartProperties` 를 읽어 계약과 대조한다.
-  # (2026-08-21 정정 — 종전 문면은 저장소에 없는 이름을 지목했다. 그 종류는 이제
-  # `NamedReferenceGuardTest` 축 A 가 잰다.)
+  # 컨테이너 상한은 multipart 오버헤드를 포함하므로 계약의 10MB 파일 상한보다 커야 한다.
   servlet:
     multipart:
       max-file-size: 11MB
       max-request-size: 12MB
-      # 파싱 대상을 `multipart/form-data` 로 좁힌다(Boot 4 신설). 판정은
-      # `StandardServletMultipartResolver.isMultipart` 의 `startsWithIgnoreCase` 하나뿐이라
-      # **대소문자 비교는 그대로다** — DC-5(`Multipart/Form-Data`)에 영향이 없다(바이트코드 실측).
       strict-servlet-compliance: true
-      # resolve-lazily 를 켜지 않는다. 켜면 상한 초과 예외가 `checkMultipart` 가 아니라
-      # **핸들러 안(첫 파라미터 접근)** 에서 나고, 그러면 예외가 나는 시점이 인증·라우팅
-      # 뒤로 밀려 어느 갈래가 먼저인지가 구현에 좌우된다.
+      # 상한 초과를 인증·라우팅 전에 판정한다.
       resolve-lazily: false
 
 server:
   port: ${SERVER_PORT:8000}
   tomcat:
-    # 요청 본문을 거절한 뒤 **남은 바이트를 삼키는** 상한 (계획 §5 D-3).
-    #
-    # 기본 2MB 다. 초과분을 삼키지 않으면 Tomcat 이 연결을 리셋하고, 그러면 클라이언트가
-    # **413 본문을 읽지 못한다** — MockMvc 는 이 경로를 재현하지 못하면서 통과하므로
-    # 실제 소켓(C-R)에서만 드러난다.
-    #
-    # `-1`(무제한)을 쓰지 않는다. 무제한은 거절한 요청의 나머지를 **끝까지** 읽어 주는
-    # 것이라, 거절이 곧 방어가 되지 못한다. 위 `max-request-size` 보다 크되 유한한 값이면
-    # 정상 초과 요청은 본문을 받아 보고 악의적 무한 본문은 리셋된다.
+    # 413 본문을 전달할 수 있도록 요청 상한보다 크되 유한하게 둔다.
     max-swallow-size: 16MB
   error:
-    # 오류 응답에 스택 트레이스·예외 메시지·바인딩 오류가 실리지 않게 전부 끈다.
-    # 하나라도 켜지면 문서 본문이나 입력값이 응답 본문으로 새는 경로가 생긴다.
+    # 입력값과 내부 예외가 응답에 노출되지 않게 한다.
     include-stacktrace: never
     include-message: never
     include-binding-errors: never
@@ -97,43 +60,18 @@ easydoc:
     - http://127.0.0.1:8080
   auth:
     jwt-expire-minutes: 60
-  # 소셜 로그인 공통(backlog §1.4 P0-1, 카카오는 계약 2.13.0). 제공자별 클라이언트
-  # id·비밀·redirect_uri 허용 목록은 `easydoc.oauth.{google,kakao,naver}.*` — 값은
-  # `EASYDOC_OAUTH_{GOOGLE,KAKAO,NAVER}_*`(.env.example 참고)에서만 온다. jwt-secret 과
-  # 같은 이유로 여기 플레이스홀더를 두지 않는다: 비밀값은 환경변수로만 주입하고
-  # (CLAUDE.md), yml 은 관여하지 않는다. 네이버는 OIDC 가 없어 jwks-cache-minutes 가
-  # 없다(`NaverOAuthProperties` KDoc).
   oauth:
     state-ttl-minutes: 10
     google:
       jwks-cache-minutes: 60
     kakao:
       jwks-cache-minutes: 60
-  # 파일럿 피드백 저장(`PUT /conversions/{id}/feedback`) 의 편집 거리 계산 CPU 상한.
-  # 요청 스레드에서 도는 O(n·m) Levenshtein 표의 최대 칸 수(접두·접미를 뗀 뒤 크기)를
-  # 막는다 — 넘으면 편집 거리만 null(측정 대상 아님)이고 글자 수 둘은 남는다
-  # (`core/text/EditDistance.kt`, `application/document/ConversionFeedbackService.kt`).
-  # 기본값 2억은 종전 조건(검수본 4,000자 × 초안은 16,000토큰 출력 예산이 허용하던 약 3만 자)의
-  # 최악 조합 약 1.2억 셀이 그대로 계산되던 것을 유지하면서 단일 스레드 0.2~0.5초 안에 드는
-  # 크기다(`FeedbackProperties` KDoc).
   feedback:
     edit-distance-cell-budget: ${EASYDOC_FEEDBACK_EDIT_DISTANCE_CELL_BUDGET:200000000}
-    # 피드백 자유 의견(comment_encrypted·encryption_scheme·key_version)의 보존 일수. worker
-    # 의 보존 파기 배치(`RetentionPurgeScheduler`)만 이 값을 실제로 쓰지만(api 는 그 배치를
-    # 돌리지 않는다), 같은 환경변수 이름을 api 에도 두는 것은 위 편집 거리 예산과 같은 이유다
-    # — 두 프로세스가 값을 요구하면 같은 손잡이여야 한다. 배포 의향·품질 만족도·소요 시간·
-    # 수정률 지표(평문 숫자)는 이 파기가 건드리지 않고 영구히 남는다
-    # (`FeedbackProperties` KDoc, master-plan §3.2).
     comment-retention-days: ${EASYDOC_FEEDBACK_COMMENT_RETENTION_DAYS:30}
-  # 문단 재변환(P0-4 S4) 호출 예산 — 문서 1건당 재변환 LLM 호출 수 상한(요청 수가 아니다).
-  # 기본값 20은 사용자가 정한 비용 정책값이다(계획 §0 게이트 1, 2026-09-05 확정).
   reconversion:
     call-budget: ${EASYDOC_RECONVERSION_CALL_BUDGET:20}
-  # `[구조]` 절(표·목록 구조 힌트, P0-4 S8-2) 설정 — 계획 §1.3·§4.
   prompt:
-    # run(표 칸·목록 항목의 연속 구간) 수 상한. 넘으면 per-run 나열 대신 "표·목록이
-    # 많습니다" 한 문장으로 접는다(계획 §4 리스크 「프롬프트 길이」). 기본값 40은
-    # 코드 기본값(StructureHintOptions.DEFAULT_MAX_RUNS)과 같다.
     structure-max-runs: ${EASYDOC_PROMPT_STRUCTURE_MAX_RUNS:40}
   llm:
     provider: ${EASYDOC_LLM_PROVIDER:anthropic}
@@ -141,83 +79,39 @@ easydoc:
     effort: ${EASYDOC_LLM_EFFORT:}
     anthropic-api-key: ${ANTHROPIC_API_KEY:}
     open-ai-api-key: ${OPENAI_API_KEY:}
-    # 출력 토큰 상한. 운영 중 조정될 수 있는 값이라 코드 상수가 아니라 구성값이다
-    # (CLAUDE.md 「상수와 구성 관리」). 기본값 64000 은 anthropic 기준(게이트 ⓪ 3차
-    # 측정 조건)이다. provider 를 openai 로 바꾸면 그 모델의 출력 한도(gpt-4.1: 32,768)
-    # 이하로 낮춰야 한다 — 알려진 모델(LlmProviderConfiguration 의
-    # KNOWN_MODEL_MAX_OUTPUT_TOKENS 표에 있는 모델. EASYDOC_LLM_MODEL 을 비워 기본
-    # 모델을 쓰거나 gpt-4.1 을 그대로 명시한 경우)이면 기동 시점에 조립을 막는다.
-    # EASYDOC_LLM_MODEL 을 표에 없는 모델로 지정하면 이 검사를 건너뛴다 — 그 모델의
-    # 한도는 운영자 책임이다. core `DEFAULT_MAX_TOKENS`(16,000)는 이 값이 없을 때만
-    # 쓰이는 provider 안전 fallback이라 여기 기본값과 다르다.
+    # 모델의 출력 한도를 넘기면 기동 검증이 실패한다.
     max-output-tokens: ${EASYDOC_LLM_MAX_OUTPUT_TOKENS:64000}
-    # LLM 호출 읽기 타임아웃(초). 기본값 120은 지금까지의 동작(ANTHROPIC_READ_TIMEOUT)과
-    # 같다 — 이 값을 바꾸면 안 된다. LlmProperties.readTimeout 이 `@param:DurationUnit(SECONDS)`
-    # 를 달고 있어 접미사 없는 정수를 초로 해석한다(리뷰 blocker 2026-09-09 — 이 애노테이션이
-    # 없으면 Spring Boot Duration 바인더가 접미사 없는 숫자를 밀리초로 읽는다).
+    # 접미사 없는 값의 단위는 초다.
     read-timeout: ${EASYDOC_LLM_READ_TIMEOUT:120}
     pricing:
       input-usd-per-million-tokens: ${EASYDOC_LLM_INPUT_USD_PER_MILLION_TOKENS:}
       output-usd-per-million-tokens: ${EASYDOC_LLM_OUTPUT_USD_PER_MILLION_TOKENS:}
-      # 모델별 단가(선택, U1 — docs/plans/2026-09-07-usage-ledger-and-report.md §2 결정 3).
-      # 키가 임의 문자열(응답이 보고하는 model 식별자)이라 .env.example 의 환경변수 하나로는
-      # 표현할 수 없다 — 여러 모델을 동시에 쓰거나 모델을 바꿔도 지난 단가를 유지하고 싶을
-      # 때만 이 맵을 채운다. 표에 없는 model 은 위 단일 값으로, 그것도 없으면 null 로 떨어진다.
-      # 공개 단가라 비밀이 아니다(2026-09-04 재확인, platform.claude.com/docs/en/about-claude/pricing).
+      # 여러 모델을 쓰면 모델 ID별 단가를 YAML 맵으로 추가한다.
       # models:
       #   claude-sonnet-5:
       #     input-usd-per-million-tokens: 2.00
       #     output-usd-per-million-tokens: 10.00
-      # 모델 id 에 점이 있으면(gpt-4.1 등) YAML 중첩 매핑(여기 이 자리)에서는 키를 그대로
-      # 적으면 된다 — YAML 은 키를 문자열 그대로 읽고 점으로 쪼개지 않는다. 점이 중첩
-      # 구분자로 해석되는 자리는 **평평한 키 형태**(커맨드라인 인자·환경변수·`.properties`)
-      # 뿐이고, 그런 경로로 이 맵을 채울 때만 대괄호로 묶는다:
-      #   easydoc.llm.pricing.models[gpt-4.1].input-usd-per-million-tokens=2.00
-  # 저장 암호화(AES-256-GCM). 키는 base64 32바이트이고 **환경변수로만** 준다 —
-  # 값을 이 파일에 적지 않는다(프로젝트 CLAUDE.md 보안 규칙).
-  #
-  # 회전 절차: 새 세대를 keys 에 **더하고** write-key-version 을 올린다. 옛 세대를
-  # 목록에 남겨 두는 한 그 세대로 쓴 행은 계속 읽힌다(key_version 컬럼이 가리킨다).
-  #
-  # **값이 비면 앱이 뜨지 않는다.** 게이트 25 F-2·F-3 리더 판정으로 기동 자기점검이
-  # 붙었고, 게이트 26 조치 3 으로 「kcv 만 적히고 값이 빈 세대」와 「값도 kcv 도 없는
-  # 세대」도 기동 실패다. 오설정을 첫 업로드까지 미루면 그 사이에 쓴 행을 되돌릴 수
-  # 없기 때문이다. 자기점검을 끄는 설정은 없다 — 있으면 그것이 곧 배포 시점 우회다.
-  #
-  # 예외는 `migrate` 프로필 하나다. 스키마만 옮기는 실행은 본문 암호화 키를 쥐지 않는다
-  # (아래 migrate 문서 참고).
+  # 암호화 키는 환경변수로만 주입하며 migrate 외에는 기동 시 검증한다.
   encryption:
     write-key-version: ${EASYDOC_ENCRYPTION_WRITE_KEY_VERSION:1}
     keys:
       - version: 1
         value: ${EASYDOC_ENCRYPTION_KEY_V1:}
-        # 키 검사값(12자리 hex). **비밀이 아니다** — 키와 다른 자리에서 받아야 대조가 뜻을
-        # 가진다. 값을 모르면 비워 둔 채 한 번 띄워라. 기동이 실패하면서 계산값을 알려 준다.
+        # KCV는 키와 다른 경로로 주입한다.
         kcv: ${EASYDOC_ENCRYPTION_KCV_V1:}
-    # `rotate-keys` 프로필(아래 문서)이 읽는 배치 크기. 기본값 근거는
-    # `KeyRotationProperties` KDoc. 일반 `api`·`worker` 기동에는 영향이 없다 — 이 값을
-    # 읽는 빈(`KeyRotationConfiguration`)이 `rotate-keys` 에서만 조립된다.
     rotation:
       batch-size: ${EASYDOC_ENCRYPTION_ROTATION_BATCH_SIZE:200}
-  # 변환 완료 메일 알림(P0-3). provider 는 fake·smtp 둘이다 — SES 등 실제 벤더는 아직 없다
-  # (backlog §1.4). smtp 는 임시 relay(2026-09-04 사용자 결정, SES 전환 전까지). fake 는
-  # local/CI/api 실행 어디서나 통과한다(fake LLM 과 달리 프로필로 가두지 않는다 —
-  # MailConfiguration KDoc). fake·smtp 가 아닌 값을 주면 기동이 ConfigurationException 으로
-  # 즉시 실패하고, smtp 인데 host·username·password·from-address 중 하나라도 비어도 같다.
   mail:
     provider: ${EASYDOC_MAIL_PROVIDER:fake}
     from-address: ${EASYDOC_MAIL_FROM_ADDRESS:no-reply@easydoc.kr}
     timeout-ms: ${EASYDOC_MAIL_TIMEOUT_MS:5000}
-    # provider=smtp 일 때만 읽힌다. ssl=true 는 접속 시점 암시적 TLS(SMTPS) — STARTTLS 가
-    # 아니다. host·username·password 는 비밀값이라 기본값을 두지 않는다(.env 로만 채운다).
+    # ssl=true는 SMTPS이며 STARTTLS가 아니다.
     smtp:
       host: ${EASYDOC_MAIL_SMTP_HOST:}
       port: ${EASYDOC_MAIL_SMTP_PORT:465}
       ssl: ${EASYDOC_MAIL_SMTP_SSL:true}
       username: ${EASYDOC_MAIL_SMTP_USERNAME:}
       password: ${EASYDOC_MAIL_SMTP_PASSWORD:}
-  # 알림 메일 링크 등 사용자에게 보이는 절대 URL의 기준. 기본값은 frontend dev 서버 포트
-  # (`frontend/vite.config.ts`, 위 cors-origins 기본값과 같은 자리).
   app:
     public-base-url: ${EASYDOC_APP_PUBLIC_BASE_URL:http://localhost:5173}
 
@@ -225,53 +119,16 @@ logging:
   level:
     root: INFO
     kr.easydoc: INFO
-    # 요청 본문을 찍는 로거는 절대 DEBUG 로 내리지 않는다 — 문서 본문이 로그에 남는다.
+    # 아래 로거는 요청·DB 값 유출을 막기 위해 DEBUG/TRACE로 내리지 않는다.
     org.springframework.web: INFO
-    # ── 요청 값을 실제로 찍는 프레임워크 로거 3종 (게이트 28 P-2 / 원장 조건 18) ──
-    #
-    # 위 주석은 「요청 본문을 찍는 로거」라고 **복수로 선언**하면서 실제로는
-    # org.springframework.web 하나만 가리키고 있었다. 그런데 강제 TRACE 에서 값을 찍는
-    # 로거는 아래 셋이고 그중 어느 것도 그 한 줄에 걸리지 않는다 — 지금까지 조용했던 것은
-    # 우리 고정 덕이 아니라 root: INFO 상속 덕이었다(privacy-gate 기록 ③ 실측:
-    # reviews/03_security-workspaces-fixes_privacy-gate.md).
-    #
-    # 실측으로 확인한 각 로거가 흘리는 것:
-    #   Http11InputBuffer      원시 요청 바이트 — 본문·제목·평문 비밀번호·Bearer 토큰 전부
-    #   StatementCreatorUtils  JDBC 바인딩 파라미터 — 평문으로 저장되는 열(제목·이메일)
-    #   QueryExecutorImpl      PostgreSQL 와이어 프로토콜 — 같은 파라미터의 전송 형태
-    #
-    # 이 고정은 **강제·표현형**이다(방출 자체를 막는다). 은폐형이 아니다 — 은폐형은
-    # 신호를 줄이는 것(무시 패턴·억제·면제 조항)이고, 여기서 줄어드는 신호는 없다.
-    #
-    # **한계: 이것은 열거다.** 다음 판올림이 **네 번째 로거**로 같은 값을 흘리면 이 세 줄은
-    # 아무것도 못 잡는다. 그 빈자리는 목록이 아니라 **실제 방출을 재는 탐지**가 덮는다:
-    # api/src/test/.../DocumentBodyLogLeakReachTest — 루트만 TRACE 로 올리고 로거 이름을
-    # 모른 채 방출 전량을 훑어 카나리 0건인지 본다. 그러므로 ⑴ 이 세 줄을 지우면 ⑵ 네 번째
-    # 로거가 생기면 ⑶ 방어가 사라지면 그 커밋에서 빨개진다. 두 겹을 함께 지운 채로 통과하는
-    # 경로는 없다. 세 줄을 지울 때는 그 회귀부터 돌려라.
     org.apache.coyote.http11.Http11InputBuffer: INFO
     org.springframework.jdbc.core.StatementCreatorUtils: INFO
     org.postgresql.core.v3.QueryExecutorImpl: INFO
-    # 이 고정이 막는 것은 **DEBUG/TRACE 가 기본값을 따라 내려오는 경로 하나**다.
-    # L-1 이 걱정한 유출(Argon2PasswordEncoder 가 깨진 해시에 내는 WARN + 스택트레이스)은
-    # WARN 이 INFO 위라 **여기서 막히지 않는다** — privacy-gate 가 깨진 PHC 를 주입해
-    # 실측했다. 그 자리는 레벨이 아니라 회귀가 지킨다:
-    # api/src/test/.../PasswordHashLogLeakReachTest — 깨진 PHC 를 주입한 로그인의 전체
-    # 로그에 PHC·평문 비밀번호·이메일이 0건인지 본다. 로거를 ERROR 로 올려 닫지 않는다
-    # (진단이 사라지고, 다른 로거가 같은 것을 흘리면 아무도 모른다).
     org.springframework.security: INFO
     org.flywaydb: INFO
 
 ---
-# migrate profile — 스키마만 적용하고 종료한다. CI·로컬 one-off 용(Compose 는 api 기동 시 Flyway).
-#
-# **본문 암호화 키를 요구하지 않는다** (게이트 26 조치 2). CryptoConfiguration 이
-# `@Profile("!migrate")` 라 이 프로필에서는 조립되지 않으므로, 키가 비어 있어도 뜨고
-# 키가 있어도 그것을 SecretKey 로 만들지 않는다 — 스키마만 옮기는 잡이 본문 키를
-# 쥘 이유가 없다(privacy-gate R-2 최소 권한).
-#
-# 자기 전제(DB 도달·Flyway 적용)에 대해서는 그대로 fail-fast 다. 면제된 것은
-# 「본문 암호화 키」 하나뿐이고, 그 경계를 CryptoProfileExemptionTest 가 고정한다.
+# migrate는 암호화 키 없이 Flyway만 실행한다.
 spring:
   config:
     activate:
@@ -280,14 +137,7 @@ spring:
     web-application-type: none
 
 ---
-# rotate-keys profile — 낡은 세대로 봉인된 행을 현재 쓰기 세대로 재봉인하고 종료한다.
-# CLI one-off 용이다(migrate 와 같다 — Compose 상시 서비스가 아니다). 절차는
-# `docs/pilot-runbook.md` 「키 회전 실행」. backlog §1.1 「키 회전에 운영 진입점이 없음」.
-#
-# migrate 와 달리 **본문 암호화 키 전체 세대를 요구한다.** CryptoConfiguration 은
-# `@Profile("!migrate")` 라 이 프로필에서도 그대로 조립되고, 기존 기동 자기점검(위
-# easydoc.encryption 주석 — write-key-version 이 키 링에 없으면 기동을 거부한다)이
-# 그대로 걸린다. 이 프로필만을 위한 우회는 두지 않는다.
+# rotate-keys는 모든 암호화 키 세대를 요구한다.
 spring:
   config:
     activate:
@@ -296,16 +146,7 @@ spring:
     web-application-type: none
 
 ---
-# usage-report profile — 지난달(기본) 사용자·워크스페이스별 사용량을 CSV로 쓰고 종료한다.
-# CLI one-off 용이다(migrate·rotate-keys 와 같다 — Compose 상시 서비스가 아니다). 절차는
-# `docs/pilot-runbook.md` 「월간 청구」. 계획 `docs/plans/2026-09-07-usage-ledger-and-report.md`
-# §3 U3. 인자는 `--from=YYYY-MM-DD --to=YYYY-MM-DD --out=path`(전부 선택, 기본 지난달 전체·
-# `./usage-report.csv`).
-#
-# rotate-keys 와 같은 선택으로 **아무것도 면제하지 않는다.** 본문 암호화 키·LLM provider
-# 조립을 그대로 요구한다 — 이 리포트는 그 값을 쓰지 않지만(`llm_calls`·`users`·`workspaces`
-# 세 표는 암호화 대상이 아니다, V12 머리주석), 이 프로필만을 위한 우회는 두지 않는다
-# (`KeyRotationConfiguration` KDoc과 같은 이유).
+# usage-report는 HTTP 서버 없이 실행한다.
 spring:
   config:
     activate:
@@ -314,17 +155,7 @@ spring:
     web-application-type: none
 
 ---
-# credit-grant profile — 운영자 수동 크레딧 부여·조정 한 건을 반영하고 종료한다.
-# CLI one-off 용이다(migrate·rotate-keys·usage-report 와 같다 — Compose 상시 서비스가
-# 아니다). 절차는 `docs/pilot-runbook.md` 「크레딧 충전」. 계획
-# `docs/plans/2026-09-07-credit-accounts.md` §2 결정 6, §3 C2. 인자는
-# `--workspace=<uuid> --credits=<정수, 0이 아니면 음수 허용> --reason=plan_monthly|manual|refund
-# --note="…"`(마지막은 선택, 200자 이내).
-#
-# usage-report 와 같은 선택으로 **아무것도 면제하지 않는다.** 본문 암호화 키·LLM provider
-# 조립을 그대로 요구한다 — 이 잡은 그 값을 쓰지 않지만(`workspace_credit_accounts`·
-# `credit_transactions`·`workspaces`는 암호화 대상이 아니다, V15 머리주석), 이 프로필만을
-# 위한 우회는 두지 않는다(`KeyRotationConfiguration` KDoc과 같은 이유).
+# credit-grant는 HTTP 서버 없이 실행한다.
 spring:
   config:
     activate:

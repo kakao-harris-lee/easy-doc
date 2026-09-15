@@ -65,7 +65,7 @@ export class ApiError extends Error {
   readonly creditsRequired: number | null
   /**
    * `createDocument`의 422(개인정보 경고용 검출) 응답이 내는 `X-Personal-Data-Kinds`
-   * (정렬된 소문자, 쉼표 구분: 예 `["card","rrn"]`) — 개인정보 경고용 검출 계획 §2.3.
+   * (정렬된 소문자, 쉼표 구분: 예 `["card","rrn"]`).
    * 그 헤더가 없으면(이 갈래가 아닌 다른 422) null이다. 이 값이 `null`이 아니면 화면이
    * 일반 오류 문단 대신 경고 배너와 "이대로 진행" 재전송을 보여준다.
    */
@@ -230,7 +230,7 @@ export async function requestVoid(path: string, options: RequestOptions = {}): P
 
 /**
  * `createDocumentFromText`·`createDocumentFromFile` 응답 — 등록 결과에 202의
- * `X-Credit-Balance` 헤더(예약 직후 가용 잔액, 크레딧 계정 계획 §2 결정 7)를 얹는다.
+ * `X-Credit-Balance` 헤더에는 예약 직후 가용 잔액이 실린다.
  *
  * `requestJson`을 쓰지 않는 이유는 `downloadExport`의 `DownloadedFile`과 같다 — 헤더가
  * 필요하면 `send`를 직접 불러 응답 객체에 접근해야 한다.
@@ -350,9 +350,7 @@ export function createWorkspace(name: string): Promise<WorkspaceResponse> {
 /**
  * PATCH /workspaces/{id} — 이름을 바꾼다.
  *
- * 삭제(DELETE /workspaces/{id})는 여기에 두지 않는다. 화면이 이번 범위에 없어
- * (app/api/workspaces.py 참고) 부를 곳이 없고, 되돌릴 수 없는 조작의 통로를 미리
- * 열어 두면 확인 절차 없이 연결될 위험만 남는다.
+ * 삭제(DELETE /workspaces/{id})는 호출 화면과 확인 절차가 없어 제공하지 않는다.
  */
 export function renameWorkspace(workspaceId: string, name: string): Promise<WorkspaceResponse> {
   const body: WorkspaceNameRequest = { name }
@@ -386,10 +384,10 @@ export function saveReview(conversionId: string, editedText: string): Promise<Co
 }
 
 /**
- * PUT /conversions/{id}/feedback — 파일럿 검수 피드백을 저장한다.
+ * PUT /conversions/{id}/feedback — 검수 피드백을 저장한다.
  *
  * 멱등 upsert다. 한 변환의 피드백은 1건이고 다시 보내면 덮어쓴다 — 실무자가 검수
- * 도중 값을 고쳐 다시 보내도 표에 줄이 늘지 않는다(docs/pilot-runbook.md 게이트 ①).
+ * 도중 값을 고쳐 다시 보내도 표에 줄이 늘지 않는다.
  */
 export function saveFeedback(
   conversionId: string,
@@ -453,7 +451,7 @@ export async function downloadExport(
 
 /**
  * `POST /conversions/{id}/units/{source_unit_index}/reconvert` — 원본 단위 하나를
- * 다시 변환한 후보를 받는다(계약 2.14.0, 계획 §4 결정 3).
+ * 다시 변환한 후보를 받는다.
  *
  * **응답은 후보 텍스트뿐이고 변환 본문에는 아무것도 쓰지 않는다.** 채택(바꾸기·삽입)은
  * 호출한 쪽(`ReviewEditor`)의 몫이다. 동기 호출이라 502(`BadGateway`)·503

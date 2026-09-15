@@ -27,21 +27,7 @@ private const val HANGUL_BASE = 0xAC00
 private const val JONGSEONG_COUNT = 28
 private const val JONGSEONG_MIEUM = 16
 
-/**
- * 명사형(-ㅁ/-음) 값이지만 낱말로 굳어 자연스럽게 쓰이는 것 — 검출 대상에서 뺀다.
- *
- * 2026-08-30: "지금"(현행)·"바람"(요망)·"돌봄"(부양)·"따로 붙임"(별첨)·"빠짐"(누락)·
- * "걸림"(소요)·"높임"(제고)은 easy-dictionary 소비자 중복 정책으로 그 출처 낱말이
- * [DIFFICULT_WORD_REPLACEMENTS] 에서 함께 빠지면서 사전 값으로는 더 이상 존재하지
- * 않는다. `StyleRuleDataSnapshotTest` 가 `DIFFICULT_WORD_REPLACEMENTS.values` 가
- * 이 집합 전체를 포함하는지 불변식으로 강제하므로, 값이 사라진 항목은 여기서도
- * 함께 뺀다 — 남겨 둬도 [NOMINAL_GLOSSES] 계산에는 영향이 없지만(사전에 없는
- * 값은 애초에 걸러지지 않는다) 죽은 참조가 된다.
- *
- * 2026-09-08: "널리 알림"(공고)은 backlog §1.5 항목 2 감사로 [DIFFICULT_WORD_REPLACEMENTS]
- * 에서 "공고" 항목 자체가 빠지면서 값으로도 사라져 함께 뺐다(`DifficultWords.kt` 주석
- * 참고). "알림"은 "통지"가 남아 있으므로 유지한다.
- */
+/** 명사형(-ㅁ/-음) 값이지만 낱말로 굳어 자연스럽게 쓰이므로 검출에서 제외한다. */
 val LEXICALIZED_GLOSSES: Set<String> =
     setOf(
         "이름",
@@ -61,12 +47,7 @@ val LEXICALIZED_GLOSSES: Set<String> =
         "줄임",
     )
 
-/**
- * 복합어 뒷자리에 자주 쓰이는 키("신청 기일"·"매달 정액"). "기한"은 2026-08-30에
- * easy-dictionary 소비자 중복 정책으로 [DIFFICULT_WORD_REPLACEMENTS] 에서 빠졌다
- * (`DifficultWords.kt` 주석 참고) — 이 키가 남아 있으면 `getValue("기한")` 이
- * `NoSuchElementException` 을 던져 클래스 초기화가 깨지므로 여기서도 함께 뺐다.
- */
+/** 복합어 뒷자리에 자주 쓰이는 어려운 말 키. */
 val COMPOUND_TAIL_KEYS: Set<String> = setOf("기일", "정액")
 
 /** [COMPOUND_TAIL_KEYS] 가 복합어를 이룰 때 앞자리에 오는 낱말. */

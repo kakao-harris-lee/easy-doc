@@ -57,11 +57,7 @@ function nextAction(
   if (item.status === 'failed') {
     return '실패'
   }
-  // `!== null`이 아니라 「값이 있는가」로 묻는다. 계약은 두 키가 늘 존재한다고 정하지만
-  // 그것은 서버의 약속이지 이 함수가 받는 값의 보장이 아니다 — 필드를 아직 안 싣는 서버,
-  // 배포 시차로 남아 있는 옛 번들, 목을 덜 고친 테스트에서는 `undefined`가 들어온다.
-  // 그때 `undefined !== null`은 **참**이라, 아무도 손대지 않은 초안이 전부 `검수 완료`로
-  // 뒤집힌다. 없는 값은 「제출 안 함」으로 읽는 쪽이 안전한 오답이다.
+  // 누락된 시각을 제출 완료로 오인하지 않는다.
   if (typeof item.reviewed_at === 'string' || typeof item.feedback_submitted_at === 'string') {
     return '검수 완료'
   }

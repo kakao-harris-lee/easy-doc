@@ -4,7 +4,7 @@
 
 ## 현재 연결
 
-- React 런타임은 `frontend/src`다. `frontend/easy-read-ai`의 billing/admin-subscriptions는 디자인 시안이며 서비스·결제 데이터의 정본이 아니다.
+- React 런타임은 `frontend/src`다.
 - `/usage` → 작업 공간 구독 조회 → 플랜 선택 → 테스트 결제 → DB 결제 기록·구독 저장 → 기존 `CreditAccountService.setAllowance` → 사용량 새로 조회.
 - 관리자 → 작업 공간 목록 → 상세 → 월 구독 플랜·테스트 결제 내역. 기존 크레딧 수동 조정은 추가/차감이며 구독 갱신이 아니다. UI의 잘못된 ‘월 구독 갱신’ 명칭을 ‘월 제공량 수동 보정’으로 수정했다.
 - V21의 주기 이용량/초기화는 이미 구현되어 있다. V23은 `workspace_subscriptions`, `subscription_payments`를 추가한다(접속기록이 V22). 기존 계정의 기간·이용량을 자동 변경하지 않는다.

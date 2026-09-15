@@ -240,8 +240,8 @@ export function UploadPage() {
   //
   // **서버 문구만 담는다 — 재전송 콜백은 여기 담지 않는다.** 콜백을 담으면 그 콜백이
   // 만들어질 때의 text·file·title·workspaceId를 클로저로 가둔다 — 경고가 뜬 뒤 사용자가
-  // 개인정보를 지우고 "이대로 진행"을 눌러도 지우기 **전** 내용이 나가는 결함이 된다
-  // (리뷰 지적, 2026-09-10). 재전송(`handleProceedWithPersonalData`)은 그래서 누르는
+  // 개인정보를 지우고 "이대로 진행"을 눌러도 지우기 **전** 내용이 나가는 결함이 된다.
+  // 재전송(`handleProceedWithPersonalData`)은 그래서 누르는
   // **시점의** state를 다시 읽는다 — 아래 렌더 함수로 둔다.
   //
   // **본문·파일·모드가 바뀌면 이 경고를 지운다** — 경고는 그 입력에만 해당하고, 남겨
@@ -570,8 +570,7 @@ export function UploadPage() {
    * **클로저에 갇힌 옛 값이 아니라, 이 함수가 호출되는 시점의 현재 `mode`·`text`·
    * `file`·`workspaceId`·`titleTrimmed`를 그대로 읽는다** — 컴포넌트 렌더마다 새로
    * 만들어지는 함수라 항상 최신 state를 본다. 경고가 뜬 뒤 사용자가 개인정보를 지우고
-   * 눌러도 지운 **후** 내용이 나가는 이유가 이것이다(리뷰 지적, 2026-09-10 — 예전에는
-   * 경고를 낸 요청을 만들 때의 클로저를 그대로 재전송해 지우기 **전** 내용이 나갔다).
+   * 눌러도 지운 **후** 내용이 나가는 이유가 이것이다.
    */
   async function handleProceedWithPersonalData(): Promise<void> {
     if (mode === 'text') {

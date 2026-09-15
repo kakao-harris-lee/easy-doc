@@ -2,10 +2,12 @@ package kr.easydoc.worker
 
 import kr.easydoc.application.subscription.SubscriptionService
 import org.slf4j.LoggerFactory
+import org.springframework.context.annotation.Profile
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Component
 
 @Component
+@Profile(WORKER_PROFILE)
 class SubscriptionRenewalScheduler(
     private val subscriptions: SubscriptionService,
     private val toss: kr.easydoc.application.subscription.TossBillingService,

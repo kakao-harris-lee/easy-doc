@@ -3,11 +3,13 @@ package kr.easydoc.worker
 import kr.easydoc.application.conversion.ConversionJobOutcome
 import kr.easydoc.application.conversion.ProcessConversionJob
 import org.slf4j.LoggerFactory
+import org.springframework.context.annotation.Profile
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Component
 
 /** `conversion_jobs` 를 주기적으로 집어 한 건씩 처리한다. */
 @Component
+@Profile(WORKER_PROFILE)
 class ConversionJobPoller(private val jobs: ProcessConversionJob) {
     private val log = LoggerFactory.getLogger(ConversionJobPoller::class.java)
 

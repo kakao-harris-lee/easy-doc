@@ -24,11 +24,6 @@ export function setUnsavedChanges(value: boolean): void {
   unsaved = value
 }
 
-/** 저장하지 않은 변경이 있는지 읽는다. */
-export function hasUnsavedChanges(): boolean {
-  return unsaved
-}
-
 /**
  * 화면을 떠나도 되는지 확인한다.
  *

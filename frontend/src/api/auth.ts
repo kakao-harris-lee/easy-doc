@@ -1,5 +1,3 @@
-/** 인증 엔드포인트 (app/api/auth.py). */
-
 import { requestJson, requestVoid } from './client'
 import type {
   ConfirmEmailVerificationRequest,
@@ -16,7 +14,6 @@ import type {
   UserResponse,
 } from './types'
 
-/** POST /auth/signup — 계정을 만든다. 토큰은 발급되지 않는다(가입 후 로그인). */
 export function signup(credentials: CredentialsRequest): Promise<UserResponse> {
   return requestJson<UserResponse>('/auth/signup', {
     method: 'POST',
@@ -25,7 +22,6 @@ export function signup(credentials: CredentialsRequest): Promise<UserResponse> {
   })
 }
 
-/** POST /auth/login — 자격증명을 확인하고 액세스 토큰을 받는다. */
 export function login(credentials: CredentialsRequest): Promise<TokenResponse> {
   return requestJson<TokenResponse>('/auth/login', {
     method: 'POST',
@@ -34,12 +30,10 @@ export function login(credentials: CredentialsRequest): Promise<TokenResponse> {
   })
 }
 
-/** GET /auth/me — 저장된 토큰이 가리키는 사용자를 조회한다. */
 export function fetchMe(signal?: AbortSignal): Promise<UserResponse> {
   return requestJson<UserResponse>('/auth/me', { signal })
 }
 
-/** POST /auth/oauth/{provider}/start — 소셜 로그인 인가 URL을 발급받는다. 인증 불필요. */
 export function oauthStart(
   provider: OAuthProvider,
   redirectUri: string,
@@ -144,8 +138,7 @@ export function confirmEmailVerification(code: string): Promise<void> {
 }
 
 /**
- * POST /auth/password — 비밀번호 없는(소셜 전용) 계정에 새 비밀번호를 만든다(2.19.0
- * 신설, backlog §1.4 다음 조각). 이미 비밀번호가 있으면 409.
+ * 비밀번호 없는 소셜 전용 계정에 비밀번호를 만든다. 이미 있으면 409다.
  */
 export function setPassword(newPassword: string): Promise<void> {
   const body: SetPasswordRequest = { new_password: newPassword }
@@ -153,8 +146,7 @@ export function setPassword(newPassword: string): Promise<void> {
 }
 
 /**
- * POST /auth/password-reset/request — 비밀번호 재설정 코드를 이메일로 보낸다(2.19.0
- * 신설). **항상 202다** — 이메일 존재 여부·재요청 빈도를 응답으로 알 수 없다(존재 은닉).
+ * 비밀번호 재설정 요청은 이메일 존재 여부를 숨기기 위해 항상 202를 반환한다.
  * 인증 전 호출이라 `auth: false`.
  */
 export function passwordResetRequest(email: string): Promise<void> {
@@ -163,8 +155,7 @@ export function passwordResetRequest(email: string): Promise<void> {
 }
 
 /**
- * POST /auth/password-reset/confirm — 재설정 코드를 확인하고 비밀번호를 바꾼 뒤 `login`과
- * 같은 `TokenResponse`를 받는다(2.19.0 신설). 이메일 부재·오답·만료·시도 소진은 전부
+ * 재설정 확인 성공은 `login`과 같은 `TokenResponse`를 반환한다. 이메일 부재·오답·만료·시도 소진은 전부
  * 같은 401이다. 인증 전 호출이라 `auth: false`.
  */
 export function passwordResetConfirm(
@@ -181,8 +172,7 @@ export function passwordResetConfirm(
 }
 
 /**
- * POST /auth/me/deletion — 계정과 개인정보를 즉시 파기한다(2.27.0 신설, 계획
- * `docs/plans/2026-09-09-account-deletion.md`). 유예 기간이 없다 — 성공(204)하면 그
+ * 계정과 개인정보를 즉시 파기한다. 유예 기간이 없다 — 성공(204)하면 그
  * 트랜잭션 안에서 계정이 이미 사라졌으므로 호출한 쪽이 곧바로 세션을 정리해야 한다.
  *
  * `password`는 비밀번호가 있는 계정(`readMe.has_password: true`)만 보낸다 — 소셜 전용

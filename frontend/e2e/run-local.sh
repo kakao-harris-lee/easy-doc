@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Phase 3 브라우저 E2E 로컬 러너 — CI 잡 `e2e` 와 **같은 절차**를 한 명령으로 재현한다.
+# CI의 브라우저 E2E 절차를 로컬에서 재현한다.
 #
 #   frontend/e2e/run-local.sh              # 전체
 #   frontend/e2e/run-local.sh --grep E11   # 인자는 그대로 playwright 로 넘어간다

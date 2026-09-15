@@ -10,8 +10,7 @@ import org.springframework.stereotype.Component
 
 /**
  * `rotate-keys` profile 의 실행부 — 컨텍스트가 뜬 뒤 [KeyRotationBatch] 를 한 번 돌리고
- * 끝낸다. `ApiApplication.main` 이 [ExitCodeGenerator] 를 읽어 `SpringApplication.exit` 로
- * 종료 코드를 낸다 — `migrate` profile 이 Flyway 뒤 컨텍스트를 닫는 것과 같은 자리다.
+ * 끝낸다. worker 진입점이 [ExitCodeGenerator]를 읽어 종료 코드를 낸다.
  *
  * **예외를 밖으로 던지지 않는다.** 던지면 `SpringApplication.run` 이 실패 분석을 거쳐
  * 스택트레이스를 그대로 표준 오류로 남긴다 — 그 메시지에 무엇이 실릴지 이 클래스가 보장할

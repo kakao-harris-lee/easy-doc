@@ -10,7 +10,9 @@ object ProductClasses {
     /** 빌드가 모든 테스트 태스크에 주입하는 Gradle 루트(= `backend-kotlin/`). */
     private const val SOURCE_ROOT_PROPERTY = "easydoc.kotlin.source.root"
 
-    /** 제품 소스가 사는 자리. 모듈 이름을 열거하지 않는다 — 새 모듈이 저절로 들어온다. */
+    /** API 테스트 런타임에 포함되는 제품 모듈. worker 전용 타입은 worker 테스트가 검사한다. */
+    private val API_RUNTIME_MODULES = setOf("core", "application", "infrastructure", "api")
+
     private const val MAIN_SOURCES = "src/main/kotlin"
 
     /** 테스트 런타임 클래스패스의 `kr.easydoc.` 제품 클래스. */
@@ -43,7 +45,7 @@ object ProductClasses {
             )
         val roots =
             (root.listFiles()?.toList() ?: emptyList())
-                .filter { it.isDirectory }
+                .filter { it.isDirectory && it.name in API_RUNTIME_MODULES }
                 .map { it.resolve(MAIN_SOURCES) }
                 .filter { it.isDirectory }
         require(roots.isNotEmpty()) {

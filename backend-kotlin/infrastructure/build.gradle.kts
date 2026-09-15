@@ -33,7 +33,7 @@ dependencies {
     // 메일 발송(P0-3). JavaMailSender 타입은 이 모듈 밖으로 새지 않는다 — `SmtpMailSender`
     // 만 이 SDK 를 알고, 공개 포트는 `application.mail.MailSender`(순수 Kotlin) 다.
     implementation(libs.spring.boot.starter.mail)
-    // 문서 추출(Phase 4). 파서 라이브러리도 이 모듈 밖으로 새지 않는다 — api·worker 는
+    // 문서 파서 라이브러리는 이 모듈 밖으로 노출하지 않는다 — api·worker 는
     // infrastructure 를 runtimeOnly 로만 의존하므로 `org.apache.poi.*`·`org.apache.pdfbox.*`
     // ·`kr.dogfoot.hwpxlib.*` 를 컴파일 시점에 볼 수 없다.
     implementation(libs.poi.ooxml)
@@ -83,7 +83,7 @@ dependencies {
     testImplementation(libs.greenmail.junit5)
 }
 
-// e2e 레인이 쓰는 저장 암호화 키 생성 실행 경로 (게이트 28 C-3).
+// e2e 레인이 쓰는 저장 암호화 키 생성 실행 경로.
 //
 // `e2e` 잡과 `frontend/e2e/run-local.sh` 는 매 실행 새 키로 API 를 띄운다. 그런데
 // `CryptoConfiguration` 의 기동 자기점검이 키와 **검사값(KCV)** 을 함께 요구하고, KCV 는
