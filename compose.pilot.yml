@@ -1,0 +1,72 @@
+# easydoc.kr 파일럿 운영 오버레이.
+# 사용법: docker compose -f compose.yml -f compose.pilot.yml up -d --build --wait
+
+x-pilot-logging: &pilot-logging
+  driver: local
+  options:
+    max-size: "20m"
+    max-file: "5"
+
+services:
+  postgres:
+    # 다른 프로젝트가 호스트 5432를 사용해도 영향을 받지 않으며 DB는 Compose 내부에서만 접근한다.
+    ports: !reset []
+    restart: unless-stopped
+    stop_grace_period: 60s
+    logging: *pilot-logging
+
+  backend-api:
+    # 현재 파일럿 결제는 Toss test라 local profile이 필요하다. LLM provider는 .env에서
+    # 반드시 실제 provider(openai/anthropic)를 선택하고 fake로 두지 않는다.
+    command: ["java", "-jar", "/app/easy-doc-api.jar", "--spring.profiles.active=api,local"]
+    environment:
+      # 브라우저의 fetch POST는 같은 사이트 요청에도 Origin을 보낸다. API 컨테이너는
+      # TLS 앞단 프록시 뒤에 있으므로 공개 Origin을 명시적으로 허용해야 한다.
+      EASYDOC_CORS_ORIGINS_0: https://easydoc.kr
+      EASYDOC_CORS_ORIGINS_1: https://www.easydoc.kr
+    restart: unless-stopped
+    logging: *pilot-logging
+
+  backend-worker:
+    command: ["java", "-jar", "/app/easy-doc-worker.jar", "--spring.profiles.active=worker,local"]
+    environment:
+      # admin-grant 등 일회성 운영 프로필에도 파일럿 결제 설정을 포함한다.
+      SPRING_PROFILES_INCLUDE: local
+    restart: unless-stopped
+    logging: *pilot-logging
+
+  frontend:
+    # 호스트 nginx(/etc/nginx/sites-available/easydoc_kr)의 upstream과 일치시킨다.
+    ports: !override
+      - "127.0.0.1:3100:80"
+    restart: unless-stopped
+    logging: *pilot-logging
+
+  postgres-backup:
+    image: pgvector/pgvector:pg16
+    user: "${POSTGRES_BACKUP_UID:-1000}:${POSTGRES_BACKUP_GID:-1000}"
+    entrypoint: ["/bin/sh", "/usr/local/bin/easydoc-postgres-backup"]
+    environment:
+      PGHOST: postgres
+      PGPORT: 5432
+      PGDATABASE: easydoc
+      PGUSER: ${SPRING_DATASOURCE_USERNAME:-postgres}
+      PGPASSWORD: ${SPRING_DATASOURCE_PASSWORD:?SPRING_DATASOURCE_PASSWORD must be set in .env}
+      POSTGRES_BACKUP_INTERVAL_SECONDS: ${POSTGRES_BACKUP_INTERVAL_SECONDS:-21600}
+      POSTGRES_BACKUP_RETENTION_DAYS: ${POSTGRES_BACKUP_RETENTION_DAYS:-30}
+    volumes:
+      - ./ops/postgres-backup.sh:/usr/local/bin/easydoc-postgres-backup:ro
+      - ${POSTGRES_BACKUP_DIR:-./backups/postgres}:/backups
+    depends_on:
+      postgres:
+        condition: service_healthy
+      backend-api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "test -L /backups/latest.dump && pg_restore --list /backups/latest.dump >/dev/null"]
+      interval: 30m
+      timeout: 30s
+      retries: 2
+      start_period: 2m
+    restart: unless-stopped
+    logging: *pilot-logging

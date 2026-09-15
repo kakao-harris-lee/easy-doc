@@ -16,8 +16,8 @@ x-backend-app: &backend-app
   env_file: .env
   environment:
     SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/easydoc
-    SPRING_DATASOURCE_USERNAME: postgres
-    SPRING_DATASOURCE_PASSWORD: postgres
+    SPRING_DATASOURCE_USERNAME: ${SPRING_DATASOURCE_USERNAME:-postgres}
+    SPRING_DATASOURCE_PASSWORD: ${SPRING_DATASOURCE_PASSWORD:-postgres}
 
 services:
   # PostgreSQL + pgvector. 벡터 컬럼은 아직 없지만, 사전 RAG 도입 시
@@ -26,8 +26,8 @@ services:
     image: pgvector/pgvector:pg16
     environment:
       POSTGRES_DB: easydoc
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_USER: ${SPRING_DATASOURCE_USERNAME:-postgres}
+      POSTGRES_PASSWORD: ${SPRING_DATASOURCE_PASSWORD:-postgres}
     ports:
       # 127.0.0.1 바인딩: 개발용 DB가 외부 네트워크에 노출되지 않게 한다.
       - "127.0.0.1:5432:5432"
@@ -35,7 +35,7 @@ services:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
       # DB 준비 완료 후에만 앱이 붙도록 한다.
-      test: ["CMD-SHELL", "pg_isready -U postgres -d easydoc"]
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
       interval: 5s
       timeout: 5s
       retries: 10

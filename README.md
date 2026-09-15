@@ -79,6 +79,14 @@ docker compose up -d --build
 - api·worker는 같은 이미지(`easy-doc-backend:local`)에서 실행 jar와 profile을 달리한다. 프론트는 별도 이미지(`easy-doc-frontend:local`)다.
 - 포트는 모두 `127.0.0.1`에만 바인딩된다(8080 화면, 8100 API). 외부 공개는 앞단 리버스 프록시(TLS·본문 크기 제한)를 두고 한다.
 
+`https://easydoc.kr` 공개 파일럿 서버에서는 자동 재기동·DB 백업·3100 프록시 포트를 적용하는
+운영 오버레이를 함께 사용한다. 환경변수, 백업 확인과 복구 리허설은
+[`docs/pilot-runbook.md`](docs/pilot-runbook.md)의 「easydoc.kr 파일럿 배포」를 따른다.
+
+```bash
+docker compose -f compose.yml -f compose.pilot.yml up -d --build --wait
+```
+
 ```bash
 curl http://127.0.0.1:8100/health   # {"status":"ok"}
 docker compose logs -f backend-api

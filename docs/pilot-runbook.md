@@ -8,10 +8,22 @@
 - 실제 변환을 확인할 때만 선택한 provider API key. 유료 호출 없이 상태만 보려면 `EASYDOC_LLM_PROVIDER=fake`(Compose가 `local` 프로필을 켠다)
 - 변환 완료 메일 알림은 `EASYDOC_MAIL_PROVIDER=fake`가 기본값이라 별도 설정 없이도 뜬다(메모리 기록만, 실제 발송 없음). 실제 발송이 필요하면 `EASYDOC_MAIL_PROVIDER=smtp`(임시, Daum 등 소비자 메일 계정 — SES가 의도한 운영 provider이고 smtp는 그 전환 전까지의 임시 조치, 2026-09-04 사용자 결정)로 `EASYDOC_MAIL_SMTP_HOST`·`EASYDOC_MAIL_SMTP_PORT`·`EASYDOC_MAIL_SMTP_SSL`·`EASYDOC_MAIL_SMTP_USERNAME`·`EASYDOC_MAIL_SMTP_PASSWORD`(전부 비밀값, `.env`에만)를 채운다 — 넷 중 host·username·password·from-address 하나라도 비면 기동이 즉시 실패한다. `EASYDOC_MAIL_FROM_ADDRESS`·`EASYDOC_MAIL_TIMEOUT_MS`·`EASYDOC_APP_PUBLIC_BASE_URL`(알림 링크 기준 URL)은 `.env.example` 참고
 
+공개 파일럿은 `compose.pilot.yml`을 반드시 함께 쓴다. 이 오버레이는 DB의 호스트 포트를
+닫고, 모든 컨테이너에 `restart: unless-stopped`를 적용하며 PostgreSQL 백업 서비스를
+추가한다. 현재 Toss test 결제가 `local` 프로필을 요구하므로 앱은 `local`을 유지하지만,
+공개 파일럿의 `EASYDOC_LLM_PROVIDER`는 반드시 실제 provider로 두고 `fake`를 사용하지 않는다.
+이 문서 뒤쪽의
+`docker compose -f compose.yml ...` 운영 명령도 공개 서버에서는
+`docker compose -f compose.yml -f compose.pilot.yml ...`로 실행한다.
+파일럿 오버레이는 worker의 일회성 운영 프로필에도 `local`을 포함하므로,
+`admin-grant` 같은 관리 명령에도 파일럿용 결제 설정이 동일하게 적용된다.
+
 worker는 lease를 집어 LLM 호출 → 결과 저장까지 실행한다(개인정보 마스킹은 2026-09-07에 제거됐다 — master-plan 3.2 「제품 전제」). 내보내기는
 `GET /conversions/{conversion_id}/export?format=docx|txt|hwpx`다. `pdf`는 계약상 422다.
 
 ## 전체 스택
+
+로컬 개발 스택은 기존 명령을 사용한다.
 
 ```bash
 cp .env.example .env
@@ -33,6 +45,78 @@ browser -> frontend/nginx -> backend-api -> PostgreSQL
 ```
 
 `backend-api`가 기동하면서 Flyway로 스키마를 적용한다. `backend-worker`는 API가 healthy 한 뒤 시작한다.
+
+### easydoc.kr 파일럿 배포
+
+`.env`에는 운영 도메인과 강한 DB 비밀번호를 넣는다. OAuth 공급자 콘솔에도 아래 두 콜백을
+공급자별로 등록해야 실제 로그인이 끝까지 동작한다.
+
+```dotenv
+SPRING_DATASOURCE_PASSWORD=<openssl rand -hex 32 결과>
+EASYDOC_APP_PUBLIC_BASE_URL=https://easydoc.kr
+EASYDOC_OAUTH_GOOGLE_REDIRECT_URIS=https://easydoc.kr/auth/google/callback,https://easydoc.kr/auth/google/link/callback
+EASYDOC_OAUTH_KAKAO_REDIRECT_URIS=https://easydoc.kr/auth/kakao/callback,https://easydoc.kr/auth/kakao/link/callback
+EASYDOC_OAUTH_NAVER_REDIRECT_URIS=https://easydoc.kr/auth/naver/callback,https://easydoc.kr/auth/naver/link/callback
+```
+
+호스트 nginx 설정은 `ops/nginx/easydoc.kr.conf`를 기준으로 설치한다. 업로드 10MB 허용과
+OAuth·결제 query string 비기록이 기존 TLS 프록시에도 반영되어야 한다.
+
+```bash
+sudo install -m 644 ops/nginx/easydoc.kr.conf /etc/nginx/sites-available/easydoc_kr
+sudo nginx -t
+sudo systemctl reload nginx
+
+docker compose -f compose.yml -f compose.pilot.yml config --quiet
+docker compose -f compose.yml -f compose.pilot.yml up -d --build --wait
+docker compose -f compose.yml -f compose.pilot.yml ps
+curl --fail --silent https://easydoc.kr/api/health
+```
+
+호스트 nginx는 `127.0.0.1:3100`만 보고, API와 DB는 Docker 네트워크 안에서 연결된다.
+파일럿 오버레이는 브라우저가 POST에 보내는 `Origin`을 위해 `https://easydoc.kr`과
+`https://www.easydoc.kr`을 백엔드 CORS 허용 목록으로 주입한다. 이 값이 빠지면 브라우저의
+OAuth 시작 요청 등이 `403 Invalid CORS request`로 거절되지만 Origin 없는 `curl`은 200이라
+단순 health 확인만으로는 발견되지 않는다.
+Docker 서비스가 부팅 시 활성화되어 있으면 서버 재부팅 뒤 컨테이너도 자동으로 복구된다.
+운영 중 `docker compose down`을 실행하면 컨테이너 자체가 없어져 자동 복구되지 않으므로,
+일시 중단에는 `stop` 대신 가급적 재배포 명령의 `up -d`를 사용한다.
+
+### PostgreSQL 영속성과 백업
+
+원본 데이터는 `easy-doc_postgres_data` named volume에 저장되어 컨테이너 재생성·서버 재부팅에도
+남는다. `postgres-backup`은 API와 DB가 healthy가 된 직후 첫 dump를 만들고, 기본 6시간마다
+PostgreSQL custom-format dump와 SHA-256 파일을 `backups/postgres/`에 원자적으로 교체·추가한다.
+timestamp 파일은 기본 30일 보존하며 `latest.dump`가 항상 최신 성공본을 가리킨다.
+
+```bash
+ls -l backups/postgres/
+cd backups/postgres && sha256sum --check latest.dump.sha256
+cd ../..
+docker compose -f compose.yml -f compose.pilot.yml logs --tail=20 postgres-backup
+```
+
+백업에는 개인정보가 포함될 수 있으므로 디렉터리는 700, 파일은 600 권한으로 유지한다.
+기본 백업 경로와 DB volume은 같은 서버 디스크에 있으므로 사용자 실수·논리 손상 복구에는
+도움이 되지만 서버 디스크 고장까지 막지는 못한다. `POSTGRES_BACKUP_DIR`을 별도 마운트로
+바꾸거나 최신 dump와 checksum을 암호화된 외부 저장소로 복제해야 한다. 본문 복호화에 필요한
+`.env`의 암호화 키도 dump와 **분리된** 비밀 저장소에 보관한다.
+
+복구 리허설은 운영 DB를 건드리지 않는 임시 DB에서 수행한다.
+
+```bash
+docker compose -f compose.yml -f compose.pilot.yml exec -T postgres sh -ec \
+  'dropdb --if-exists -U "$POSTGRES_USER" easydoc_restore_check; createdb -U "$POSTGRES_USER" easydoc_restore_check'
+docker compose -f compose.yml -f compose.pilot.yml exec -T postgres sh -ec \
+  'pg_restore -U "$POSTGRES_USER" -d easydoc_restore_check --no-owner --no-privileges' \
+  < backups/postgres/latest.dump
+docker compose -f compose.yml -f compose.pilot.yml exec -T postgres sh -ec \
+  'psql -U "$POSTGRES_USER" -d easydoc_restore_check -c "select count(*) as flyway_migrations from flyway_schema_history"; dropdb -U "$POSTGRES_USER" easydoc_restore_check'
+```
+
+실제 운영 DB 복구는 쓰기를 중단하고 별도 보존본을 만든 뒤 수행해야 하는 파괴적 절차다.
+복구 시점과 대상 dump를 확정하지 않은 상태에서는 실행하지 않는다. 특히
+`docker compose down -v`는 원본 DB volume을 삭제하므로 사용하지 않는다.
 
 ## 확인 순서
 
