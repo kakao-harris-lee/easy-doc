@@ -52,6 +52,7 @@ browser -> frontend/nginx -> backend-api -> PostgreSQL
 공급자별로 등록해야 실제 로그인이 끝까지 동작한다.
 
 ```dotenv
+EASYDOC_DEPLOYMENT_MODE=pilot
 SPRING_DATASOURCE_PASSWORD=<openssl rand -hex 32 결과>
 EASYDOC_APP_PUBLIC_BASE_URL=https://easydoc.kr
 EASYDOC_OAUTH_GOOGLE_REDIRECT_URIS=https://easydoc.kr/auth/google/callback,https://easydoc.kr/auth/google/link/callback
@@ -72,6 +73,10 @@ docker compose -f compose.yml -f compose.pilot.yml up -d --build --wait
 docker compose -f compose.yml -f compose.pilot.yml ps
 curl --fail --silent https://easydoc.kr/api/health
 ```
+
+`EASYDOC_DEPLOYMENT_MODE=pilot`이 설정되어 있으면 `./docker_startup.sh restart`도 위 두
+Compose 파일을 함께 사용한다. `auto` 또는 미설정 상태에서도 공개 URL이면 pilot을 자동
+선택하지만, 운영 서버는 의도를 명시하기 위해 `pilot`로 고정한다.
 
 호스트 nginx는 `127.0.0.1:3100`만 보고, API와 DB는 Docker 네트워크 안에서 연결된다.
 파일럿 오버레이는 브라우저가 POST에 보내는 `Origin`을 위해 `https://easydoc.kr`과

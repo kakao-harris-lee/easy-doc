@@ -82,6 +82,8 @@ docker compose up -d --build
 `https://easydoc.kr` 공개 파일럿 서버에서는 자동 재기동·DB 백업·3100 프록시 포트를 적용하는
 운영 오버레이를 함께 사용한다. 환경변수, 백업 확인과 복구 리허설은
 [`docs/pilot-runbook.md`](docs/pilot-runbook.md)의 「easydoc.kr 파일럿 배포」를 따른다.
+서버 `.env`의 `EASYDOC_DEPLOYMENT_MODE=pilot` 설정 후에는 기동 스크립트가 오버레이를
+자동 적용하므로 `./docker_startup.sh restart`를 사용해도 된다.
 
 ```bash
 docker compose -f compose.yml -f compose.pilot.yml up -d --build --wait
