@@ -8,11 +8,10 @@ import kr.easydoc.core.exceptions.InvalidCredentialsException
 import kr.easydoc.core.exceptions.InvalidInputException
 import kr.easydoc.core.exceptions.InvalidVerificationCodeException
 import kr.easydoc.core.exceptions.StorageException
+import kr.easydoc.core.security.HmacSha256
 import kr.easydoc.core.security.Secret
 import java.time.Duration
 import java.util.UUID
-import javax.crypto.Mac
-import javax.crypto.spec.SecretKeySpec
 
 /** SENS 등 실제 SMS 발송기는 이 좁은 포트만 구현한다. */
 fun interface PhoneVerificationSmsSender {
@@ -66,15 +65,7 @@ class DomesticMobileNumber private constructor(val digits: String) {
 
 /** 단순 해시로 열거 공격을 허용하지 않도록 번호에 서버 비밀값을 섞는다. */
 class PhoneFingerprintHasher(private val pepper: Secret) {
-    fun hash(number: DomesticMobileNumber): String {
-        val mac = Mac.getInstance(ALGORITHM)
-        mac.init(SecretKeySpec(pepper.reveal().toByteArray(Charsets.UTF_8), ALGORITHM))
-        return mac.doFinal(number.digits.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
-    }
-
-    private companion object {
-        const val ALGORITHM = "HmacSHA256"
-    }
+    fun hash(number: DomesticMobileNumber): String = HmacSha256.hex(pepper, number.digits)
 }
 
 /** 휴대폰 인증, 최초 번호당 체험 크레딧 지급, 결제 자격 생성 유스케이스. */
@@ -136,13 +127,7 @@ class PhoneVerificationService(
 
             val granted = trialCredits > 0 && grants.claim(fingerprint)
             if (granted) {
-                val workspaceId =
-                    workspaces
-                        .listOwned(userId)
-                        .firstOrNull()
-                        ?.workspace
-                        ?.id
-                        ?: throw StorageException(STORAGE_FAILURE_MESSAGE)
+                val workspaceId = workspaces.findDefaultId(userId) ?: throw StorageException(STORAGE_FAILURE_MESSAGE)
                 credits.grant(
                     workspaceId = workspaceId,
                     ownerUserId = userId,

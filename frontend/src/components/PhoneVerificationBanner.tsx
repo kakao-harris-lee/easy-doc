@@ -1,9 +1,8 @@
-import { useEffect, type MouseEvent } from 'react'
+import { type MouseEvent } from 'react'
 import { Check, Gift, Smartphone } from 'lucide-react'
 import { Link } from 'react-router-dom'
 
 import { useAuth } from '../auth/context'
-import { writePhoneVerificationCookie } from '../auth/phoneVerificationCookie'
 import { ACCOUNT_SETTINGS_PATH, EMAIL_VERIFICATION_PATH } from '../routes/paths'
 import { CONTAINER } from './layoutStyles'
 
@@ -13,18 +12,9 @@ interface PhoneVerificationBannerProps {
 
 /**
  * 로그인했지만 휴대폰 인증이 남은 사용자에게 무료 체험의 다음 행동을 알려준다.
- *
- * 쿠키는 서버 상태를 그대로 복사할 뿐 배너의 정본으로 읽지 않는다. 같은 브라우저에서
- * 다른 계정으로 로그인해도 이전 계정의 쿠키 때문에 잘못 숨겨지지 않게 하기 위해서다.
  */
 export function PhoneVerificationBanner({ onNavigate }: PhoneVerificationBannerProps) {
   const { user } = useAuth()
-
-  useEffect(() => {
-    if (user !== null) {
-      writePhoneVerificationCookie(user.phone_verified)
-    }
-  }, [user])
 
   if (user === null || user.phone_verified) {
     return null
