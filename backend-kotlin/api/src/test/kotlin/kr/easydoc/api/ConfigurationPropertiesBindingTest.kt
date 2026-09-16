@@ -9,6 +9,7 @@ import kr.easydoc.infrastructure.auth.GoogleOAuthProperties
 import kr.easydoc.infrastructure.auth.KakaoOAuthProperties
 import kr.easydoc.infrastructure.auth.NaverOAuthProperties
 import kr.easydoc.infrastructure.auth.OAuthProperties
+import kr.easydoc.infrastructure.auth.PhoneVerificationProperties
 import kr.easydoc.infrastructure.billing.BillingProperties
 import kr.easydoc.infrastructure.credit.CreditsProperties
 import kr.easydoc.infrastructure.crypto.EncryptionProperties
@@ -18,7 +19,6 @@ import kr.easydoc.infrastructure.document.FeedbackProperties
 import kr.easydoc.infrastructure.document.KeyRotationProperties
 import kr.easydoc.infrastructure.document.RetentionProperties
 import kr.easydoc.infrastructure.llm.LlmProperties
-import kr.easydoc.infrastructure.auth.PhoneVerificationProperties
 import kr.easydoc.infrastructure.mail.MailProperties
 import kr.easydoc.infrastructure.sms.SmsProperties
 import kr.easydoc.infrastructure.usage.UsageProperties
