@@ -111,12 +111,7 @@ class PurgeExpiredAuthArtifacts(
             passwordResetCodesDeleted += batch.passwordResetCodesDeleted
             oauthStatesDeleted += batch.oauthStatesDeleted
             phoneVerificationCodesDeleted += batch.phoneVerificationCodesDeleted
-        } while (
-            batch.emailVerificationCodesDeleted >= policy.batchSize ||
-            batch.passwordResetCodesDeleted >= policy.batchSize ||
-            batch.oauthStatesDeleted >= policy.batchSize ||
-            batch.phoneVerificationCodesDeleted >= policy.batchSize
-        )
+        } while (batch.anyTableReachedLimit(policy.batchSize))
         return ExpiredAuthArtifactPurgeResult(
             enabled = true,
             emailVerificationCodesDeleted = emailVerificationCodesDeleted,
@@ -125,6 +120,15 @@ class PurgeExpiredAuthArtifacts(
             phoneVerificationCodesDeleted = phoneVerificationCodesDeleted,
         )
     }
+
+    /** 네 표 중 하나라도 이번 배치에서 한도만큼 지웠으면 그 표에 대상이 더 남아 있을 수 있다. */
+    private fun ExpiredAuthArtifactPurgeResult.anyTableReachedLimit(batchSize: Int): Boolean =
+        listOf(
+            emailVerificationCodesDeleted,
+            passwordResetCodesDeleted,
+            oauthStatesDeleted,
+            phoneVerificationCodesDeleted,
+        ).any { it >= batchSize }
 
     private fun inactiveResult(): ExpiredAuthArtifactPurgeResult =
         ExpiredAuthArtifactPurgeResult(
