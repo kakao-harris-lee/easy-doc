@@ -106,6 +106,27 @@ class TossReachTest {
     }
 
     @Test
+    fun `begin billing without phone verification is blocked with a contract-declared 403`() {
+        assertThat(
+            kr.easydoc.api.support.ContractSpec.responseStatuses(
+                "/workspaces/{workspace_id}/subscription/billing",
+                "post",
+            ),
+        ).withFailMessage("계약이 beginTossBilling 의 403 을 선언하지 않는다").contains("403")
+
+        val token = account(phoneVerified = false)
+        val workspace = workspace(token)
+
+        val response = send("/workspaces/$workspace/subscription/billing", token, "POST", """{"plan_id":"start"}""")
+
+        assertThat(response.statusCode()).isEqualTo(403)
+        assertThat(json.readTree(response.body()).has("detail")).isTrue()
+        assertThat(
+            database.queryInt("SELECT count(*) FROM toss_billing_sessions WHERE workspace_id='$workspace'"),
+        ).isZero()
+    }
+
+    @Test
     fun `declined card never grants quota and callback cannot be rebound`() {
         val token = account()
         val workspace = workspace(token)
@@ -250,11 +271,12 @@ class TossReachTest {
         ).isEqualTo(17)
     }
 
-    private fun account(): String {
+    private fun account(phoneVerified: Boolean = true): String {
         val email = "subscription-${UUID.randomUUID()}@example.test"
         val payload = """{"email":"$email","password":"correct horse battery"}"""
         assertThat(send("/auth/signup", null, "POST", payload).statusCode()).isEqualTo(201)
-        database.execute("UPDATE users SET email_verified_at=now(), phone_verified_at=now() WHERE email='$email'")
+        val phoneClause = if (phoneVerified) ", phone_verified_at=now()" else ""
+        database.execute("UPDATE users SET email_verified_at=now()$phoneClause WHERE email='$email'")
         return json.readTree(send("/auth/login", null, "POST", payload).body())["access_token"].asString()
     }
 

@@ -18,7 +18,9 @@ import kr.easydoc.infrastructure.document.FeedbackProperties
 import kr.easydoc.infrastructure.document.KeyRotationProperties
 import kr.easydoc.infrastructure.document.RetentionProperties
 import kr.easydoc.infrastructure.llm.LlmProperties
+import kr.easydoc.infrastructure.auth.PhoneVerificationProperties
 import kr.easydoc.infrastructure.mail.MailProperties
+import kr.easydoc.infrastructure.sms.SmsProperties
 import kr.easydoc.infrastructure.usage.UsageProperties
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.DisplayName
@@ -462,6 +464,52 @@ class ConfigurationPropertiesBindingTest {
                 mapOf("easydoc.billing.operator-email" to "billing@easydoc.kr"),
             )
         assertThat(billing.operatorEmail).isEqualTo("billing@easydoc.kr")
+    }
+
+    @Test
+    @DisplayName("휴대폰 인증 설정이 기본값과 다른 값을 싣는다 — 체험 크레딧과 지문 pepper 포함")
+    fun `휴대폰 인증 설정이 기본값과 다른 값을 싣는다`() {
+        val phoneVerification =
+            bind(
+                "easydoc.phone-verification",
+                PhoneVerificationProperties::class.java,
+                mapOf(
+                    "easydoc.phone-verification.code-ttl-minutes" to "9",
+                    "easydoc.phone-verification.resend-cooldown-seconds" to "77",
+                    "easydoc.phone-verification.max-attempts" to "3",
+                    "easydoc.phone-verification.trial-credits" to "10",
+                    "easydoc.phone-verification.fingerprint-pepper" to SECRET_VALUE,
+                ),
+            )
+        assertThat(phoneVerification.codeTtlMinutes).isEqualTo(9)
+        assertThat(phoneVerification.resendCooldownSeconds).isEqualTo(77)
+        assertThat(phoneVerification.maxAttempts).isEqualTo(3)
+        assertThat(phoneVerification.trialCredits).isEqualTo(10)
+        assertThat(phoneVerification.fingerprintPepper.reveal()).isEqualTo(SECRET_VALUE)
+    }
+
+    @Test
+    @DisplayName("SMS 발송 설정이 기본값과 다른 값을 싣는다 — provider 선택 포함")
+    fun `SMS 설정이 기본값과 다른 값을 싣는다`() {
+        val sms =
+            bind(
+                "easydoc.sms",
+                SmsProperties::class.java,
+                mapOf(
+                    "easydoc.sms.provider" to "sens",
+                    "easydoc.sms.service-id" to "ncp-service-id",
+                    "easydoc.sms.access-key" to "ncp-access-key",
+                    "easydoc.sms.secret-key" to SECRET_VALUE,
+                    "easydoc.sms.from" to "01000000000",
+                    "easydoc.sms.timeout-ms" to "9999",
+                ),
+            )
+        assertThat(sms.provider).isEqualTo("sens")
+        assertThat(sms.serviceId).isEqualTo("ncp-service-id")
+        assertThat(sms.accessKey).isEqualTo("ncp-access-key")
+        assertThat(sms.secretKey.reveal()).isEqualTo(SECRET_VALUE)
+        assertThat(sms.from).isEqualTo("01000000000")
+        assertThat(sms.timeoutMs).isEqualTo(9999L)
     }
 
     @Test

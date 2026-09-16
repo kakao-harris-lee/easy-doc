@@ -147,6 +147,34 @@ class SubscriptionReachTest {
     }
 
     @Test
+    fun `checkout without phone verification is blocked with a contract-declared 403`() {
+        assertThat(
+            kr.easydoc.api.support.ContractSpec.responseStatuses(
+                "/workspaces/{workspace_id}/subscription/checkout",
+                "post",
+            ),
+        ).withFailMessage("계약이 checkoutWorkspaceSubscription 의 403 을 선언하지 않는다").contains("403")
+
+        val token = account(phoneVerified = false)
+        val workspace = workspace(token)
+
+        val response =
+            send(
+                "/workspaces/$workspace/subscription/checkout",
+                token,
+                "POST",
+                """{"plan_id":"start","order_id":"${UUID.randomUUID()}"}""",
+            )
+
+        assertThat(response.statusCode()).isEqualTo(403)
+        val body = json.readTree(response.body())
+        assertThat(body.has("detail")).isTrue()
+        assertThat(
+            database.queryInt("SELECT count(*) FROM subscription_payments WHERE workspace_id='$workspace'"),
+        ).isZero()
+    }
+
+    @Test
     fun `authentication ownership and admin guards cover every subscription route`() {
         val owner = account()
         val other = account()
@@ -211,11 +239,12 @@ class SubscriptionReachTest {
         ).isEqualTo(2)
     }
 
-    private fun account(): String {
+    private fun account(phoneVerified: Boolean = true): String {
         val email = "subscription-${UUID.randomUUID()}@example.test"
         val payload = """{"email":"$email","password":"correct horse battery"}"""
         assertThat(send("/auth/signup", null, "POST", payload).statusCode()).isEqualTo(201)
-        database.execute("UPDATE users SET email_verified_at=now(), phone_verified_at=now() WHERE email='$email'")
+        val phoneClause = if (phoneVerified) ", phone_verified_at=now()" else ""
+        database.execute("UPDATE users SET email_verified_at=now()$phoneClause WHERE email='$email'")
         return json.readTree(send("/auth/login", null, "POST", payload).body())["access_token"].asString()
     }
 

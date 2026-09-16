@@ -1908,6 +1908,7 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/SubscriptionOverview' }
         '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { description: 이메일 또는 휴대폰 인증 미완료 }
         '404': { description: '작업 공간을 찾을 수 없음', content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } } }
         '409': { $ref: '#/components/responses/Conflict' }
         '422': { $ref: '#/components/responses/ValidationFailed' }
@@ -5541,6 +5542,7 @@ components:
       properties:
         phone_number:
           type: string
+          maxLength: 20
           description: 국내 010 번호. 하이픈과 공백은 허용하며 서버가 제거한 뒤 검증한다.
 
     ConfirmPhoneVerificationRequest:
@@ -5554,7 +5556,13 @@ components:
       required: [phone_verified, granted_credits]
       properties:
         phone_verified: { type: boolean, const: true }
-        granted_credits: { type: integer, minimum: 0, maximum: 5 }
+        granted_credits:
+          type: integer
+          minimum: 0
+          description: |
+            번호당 최초 인증에 지급한 체험 크레딧 수. 운영자가 설정하는 값
+            (`EASYDOC_PHONE_VERIFICATION_TRIAL_CREDITS`, 기본값 5)이며 상한을 계약에
+            고정하지 않는다.
 
     SetPasswordRequest:
       type: object
@@ -7240,8 +7248,11 @@ x-changelog:
       월 20명 안팎의 제한된 기관 사용자 서비스이므로 PASS 본인확인 대신 건당 SMS를 쓰고,
       평문 번호를 저장하지 않는 HMAC 지문 원장으로 무료 체험 중복만 막는다.
     compatibility: |
-      `UserResponse.phone_verified`가 필수로 추가된다. 결제 시작 API는 기존 이메일 인증에
-      더해 휴대폰 인증이 없으면 403을 반환한다.
+      `UserResponse.phone_verified`가 필수로 추가된다. `beginTossBilling`과
+      `checkoutWorkspaceSubscription` 두 결제 시작 오퍼레이션 모두 기존 이메일 인증에
+      더해 휴대폰 인증이 없으면 403을 반환한다(전자는 최초 반영, 후자는 리뷰 후속
+      조치로 계약에 반영 — `SubscriptionService.checkout`은 이 버전부터 같은 게이트를
+      던졌으나 계약에는 누락돼 있었다).
   - version: "2.36.0"
     date: "2026-09-15"
     revision: "PDF-DEFAULT-TXT-EXPORT"
