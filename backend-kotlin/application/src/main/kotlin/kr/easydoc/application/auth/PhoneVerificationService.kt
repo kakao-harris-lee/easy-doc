@@ -23,6 +23,27 @@ fun interface PhoneVerificationSmsSender {
     )
 }
 
+/** [PhoneVerificationSmsSender] 로 보낸 인증 코드 하나 — e2e 진단 전용. */
+data class SentPhoneVerification(
+    val code: String,
+    val validMinutes: Long,
+) {
+    /** 코드가 로그로 새지 않게 한다 — `LatestMailResponse`·`ConfirmEmailVerificationRequest` 와 같은 규약. */
+    override fun toString(): String = "SentPhoneVerification(codeLength=${code.length}, validMinutes=$validMinutes)"
+}
+
+/**
+ * 발송한 인증 코드를 다시 읽는 포트 — **e2e 진단 전용**이다. [kr.easydoc.application.mail.MailInbox]
+ * 와 같은 이유로 얇게 둔다: 실제 SENS 어댑터는 보낸 문자를 되읽을 방법이 없으므로
+ * `FakeSmsSender`(infrastructure) 만 구현하고, `api` 모듈은 `infrastructure` 를
+ * `runtimeOnly` 로만 의존해 그 구체 타입을 컴파일 시점에 보지 못하므로 이 포트를
+ * `application` 에 둔다.
+ */
+interface PhoneVerificationSmsOutbox {
+    /** 그 번호로 보낸 가장 최근 인증 코드. 없으면 `null`. */
+    fun latestTo(phoneNumber: String): SentPhoneVerification?
+}
+
 /** 번호 지문을 선점해 무료 체험 중복 지급을 원자적으로 막는다. */
 fun interface PhoneTrialGrantLedger {
     fun claim(fingerprint: String): Boolean

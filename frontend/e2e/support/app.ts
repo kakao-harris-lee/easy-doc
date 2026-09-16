@@ -30,6 +30,16 @@ export const INVALID_TOKEN = 'e2e.invalid.token'
 export interface Account {
   readonly email: string
   readonly password: string
+  /** 국내 010 형식(`010` + 8자리) — `verifyPhone` 이 채운다. */
+  readonly phoneNumber: string
+}
+
+/** `id` 의 16진수 문자를 0~9 로 접어 `length` 자리 숫자 문자열을 만든다. */
+function digitsFrom(id: string, length: number): string {
+  const digits = Array.from(id.replace(/-/g, ''))
+    .map((char) => parseInt(char, 16) % 10)
+    .join('')
+  return digits.padEnd(length, '0').slice(0, length)
 }
 
 /**
@@ -38,11 +48,17 @@ export interface Account {
  *
  * 값은 전부 합성이다 — 실재하는 사람·기관의 정보가 로그·추적에 들어가지 않는다.
  * 도메인은 RFC 6761 이 예약한 `.test` 를 쓴다(누구에게도 배달되지 않는다).
+ *
+ * `phoneNumber` 는 이메일과 같은 `crypto.randomUUID()` 하나에서 파생한다 — 휴대폰 인증
+ * 원장(`PhoneTrialGrantLedger`)이 번호 지문으로 체험 크레딧 중복 지급을 막으므로, 테스트
+ * 끼리 번호가 겹치면 한쪽이 지급을 가로챈다.
  */
 export function newAccount(): Account {
+  const id = crypto.randomUUID()
   return {
-    email: `e2e-${crypto.randomUUID()}@example.test`,
+    email: `e2e-${id}@example.test`,
     password: 'e2e-synthetic-password',
+    phoneNumber: `010${digitsFrom(id, 8)}`,
   }
 }
 
@@ -206,6 +222,53 @@ export async function latestMailCode(page: Page, email: string): Promise<string>
     throw new Error(`메일 본문에서 6자리 코드를 찾지 못했다: ${body.text_body}`)
   }
   return match[0]
+}
+
+/** `/__e2e/sms/latest` 응답 모양 — `E2eSmsOutboxController`(api, `e2e` profile 전용)와 같다. */
+interface LatestSmsResponse {
+  code: string
+  valid_minutes: number
+}
+
+/**
+ * 그 번호로 보낸 **가장 최근** 인증 코드.
+ *
+ * **제품 API 가 아니다.** `e2e` profile 에서만 뜨는 진단 엔드포인트를 부른다
+ * (`compose.e2e.yml` 이 `backend-api` 에 그 profile 을 켠다) — `api`/`local`/prod 에는
+ * 이 경로가 없다.
+ */
+export async function latestSmsCode(page: Page, phoneNumber: string): Promise<string> {
+  const response = await page.request.get(
+    api(`/__e2e/sms/latest?to=${encodeURIComponent(phoneNumber)}`),
+  )
+  if (!response.ok()) {
+    throw new Error(
+      `${phoneNumber} 로 보낸 인증 코드를 찾지 못했다 (status ${response.status()}) — ` +
+        `e2e profile 이 backend-api 에 켜졌는지 확인하라`,
+    )
+  }
+  const body = (await response.json()) as LatestSmsResponse
+  return body.code
+}
+
+/**
+ * 계정 설정 화면(`/account`)에서 휴대폰 번호를 인증한다 — 결제·구독 checkout 은
+ * 계약 2.37.0 부터 휴대폰 인증을 전제한다(`PhoneVerificationService`).
+ *
+ * 이메일 인증이 먼저 끝나 있어야 한다 — 화면이 이메일 인증 전에는 휴대폰 인증 절을
+ * 안내 문구로 대신하고 입력 폼을 그리지 않는다(`AccountSettingsPage`).
+ */
+export async function verifyPhone(page: Page, account: Account): Promise<void> {
+  await page.goto('/account')
+  // `getByLabel` 은 `aria-labelledby` 로 이름 붙은 절(section) 에도 걸린다 — 입력란만 고른다.
+  await page.getByRole('textbox', { name: '휴대폰 번호', exact: true }).fill(account.phoneNumber)
+  await page.getByRole('button', { name: '인증번호 받기', exact: true }).click()
+  // 발송 요청이 서버에서 끝난 뒤에야 outbox 에 코드가 남는다 — 화면의 발송 완료 문구를 기다린다.
+  await expect(page.getByRole('status')).toContainText('인증번호를 보냈습니다')
+  const code = await latestSmsCode(page, account.phoneNumber)
+  await page.getByRole('textbox', { name: '인증번호', exact: true }).fill(code)
+  await page.getByRole('button', { name: '인증 완료', exact: true }).click()
+  await expect(page.getByRole('status')).toContainText('휴대폰 인증이 완료')
 }
 
 /**

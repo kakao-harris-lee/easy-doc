@@ -18,9 +18,36 @@ class SmsConfigurationTest {
     fun `provider가 fake면 실제 SMS를 보내지 않는 대역이 등록된다`() {
         val sender = configuration.phoneVerificationSmsSender(SmsProperties(provider = "fake"))
 
-        assertThat(sender).isNotInstanceOf(SensSmsSender::class.java)
-        // 대역은 예외 없이 조용히 아무 것도 하지 않는다.
+        assertThat(sender).isInstanceOf(FakeSmsSender::class.java)
+        // 대역은 예외를 던지지 않고 메모리에 기록한다 — 발송 자체는 부작용이 없다.
         sender.send("01012345678", "123456", 5)
+    }
+
+    @Test
+    fun `e2e profile 전용 outbox는 fake 발송기를 그대로 되읽는 통로로 조립된다`() {
+        val sender = configuration.phoneVerificationSmsSender(SmsProperties(provider = "fake"))
+
+        val outbox = configuration.phoneVerificationSmsOutbox(sender)
+        sender.send("01012345678", "123456", 5)
+
+        assertThat(outbox.latestTo("01012345678")?.code).isEqualTo("123456")
+    }
+
+    @Test
+    fun `e2e profile 전용 outbox는 outbox를 구현하지 않는 발송기면 ConfigurationException`() {
+        val sender =
+            configuration.phoneVerificationSmsSender(
+                SmsProperties(
+                    provider = "sens",
+                    serviceId = "svc",
+                    accessKey = "access",
+                    secretKey = Secret("secret"),
+                    from = "01000000000",
+                ),
+            )
+
+        assertThatThrownBy { configuration.phoneVerificationSmsOutbox(sender) }
+            .isInstanceOf(ConfigurationException::class.java)
     }
 
     @Test

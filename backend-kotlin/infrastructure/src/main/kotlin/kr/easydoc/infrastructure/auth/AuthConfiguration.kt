@@ -330,13 +330,23 @@ class AuthConfiguration {
     @Bean
     fun phoneTrialGrantLedger(jdbcClient: JdbcClient): PhoneTrialGrantLedger = JdbcPhoneTrialGrantLedger(jdbcClient)
 
+    /**
+     * 파라미터 이름을 `phoneVerificationSmsSender` bean 이름과 똑같이 맞춘다 —
+     * `FakeSmsSender` 는 `PhoneVerificationSmsSender`·`PhoneVerificationSmsOutbox` 둘 다
+     * 구현하므로, `e2e` profile 에서 `phoneVerificationSmsOutbox` bean 이 먼저 인스턴스화되면
+     * (같은 인스턴스를 반환하므로) 그 뒤로는 Spring 이 실제 런타임 타입으로 이 자리도
+     * `PhoneVerificationSmsSender` 후보로 다시 잡을 수 있다. 이름이 bean 이름과 같으면
+     * Spring 이 이름 일치로 모호성을 풀어 그 bean 을 고른다(`E2eSmsOutboxController`
+     * KDoc과 같은 규약 — Mail 쪽은 모든 `MailSender` 소비자가 파라미터 이름을 `mailSender`
+     * 로 맞춰서 애초에 이 문제가 없다).
+     */
     @Suppress("LongParameterList")
     @Bean
     fun phoneVerificationService(
         users: UserRepository,
         workspaces: WorkspaceRepository,
         codes: PhoneVerificationCodeStore,
-        sms: PhoneVerificationSmsSender,
+        phoneVerificationSmsSender: PhoneVerificationSmsSender,
         credits: CreditAccountService,
         grants: PhoneTrialGrantLedger,
         transactionRunner: TransactionRunner,
@@ -347,7 +357,7 @@ class AuthConfiguration {
             users = users,
             workspaces = workspaces,
             codes = codes,
-            sms = sms,
+            sms = phoneVerificationSmsSender,
             credits = credits,
             grants = grants,
             hasher = PhoneFingerprintHasher(resolvePhoneVerificationPepper(smsProperties, properties)),
