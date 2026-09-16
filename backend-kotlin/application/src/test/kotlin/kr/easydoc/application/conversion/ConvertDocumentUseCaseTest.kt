@@ -87,6 +87,20 @@ class ConvertDocumentUseCaseTest {
         assertThat((result as ConversionResult.Converted).easyText.value).isEqualTo(name)
     }
 
+    @Test
+    @DisplayName("LLM 응답에 섞인 표식 줄과 빈 줄 런은 후처리로 정리된 뒤 채택된다")
+    fun `표식 잡음 줄과 빈 줄 런은 정리된 뒤 채택된다`() {
+        val cleanSource = "선정 결과를 안내합니다."
+        val noisyReply = "○\n\n\n$cleanSource\n\n○"
+        val provider = FakeLlmProvider(listOf(reply(noisyReply)))
+
+        val result = converted(useCase(provider).convert(cleanSource))
+
+        assertThat(result.easyText.value).isEqualTo(cleanSource)
+        assertThat(result.repaired).isFalse()
+        assertThat(result.usage.llmCalls).isEqualTo(1)
+    }
+
     private val fixedIds = DocumentIdGenerator { "0123456789ab" }
 
     /** fixture 가 쓰는 것과 같은 원문. 위반이 있는 1차 결과를 만들기 위한 입력이다. */

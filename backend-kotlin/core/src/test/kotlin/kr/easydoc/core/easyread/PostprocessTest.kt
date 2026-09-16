@@ -47,6 +47,13 @@ class PostprocessTest {
         assertThat(postprocess(onlyLine)).isEqualTo(onlyLine)
     }
 
+    @Test
+    @DisplayName("펜스를 벗긴 뒤 표식만 남은 줄과 빈 줄 런까지 정리한다")
+    fun `펜스 제거 뒤 잡음 줄 정리까지 이어진다`() {
+        val raw = "```\n선정 결과\n\n○\n\n대상자입니다.\n```"
+        assertThat(postprocess(raw)).isEqualTo("선정 결과\n\n대상자입니다.")
+    }
+
     private companion object {
         const val SNAPSHOT_RESOURCE = "/kr/easydoc/core/easyread/prompt-snapshot.json"
         const val MIN_NEGATIVE_CASES = 9

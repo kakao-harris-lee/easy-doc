@@ -47,13 +47,16 @@ private fun stripPreamble(text: String): String {
 
 // 동작 검증: `PostprocessTest`.
 
-/** 공백·코드 펜스·머리말을 제거한 본문을 돌려준다. */
+/**
+ * 공백·코드 펜스·머리말을 제거한 본문을 돌려준다. 마지막으로 [cleanEasyText] 를 거쳐
+ * 표식만 남은 줄과 빈 줄 런까지 정리한다 — 위 비대칭 원칙을 그대로 따른다.
+ */
 fun postprocess(raw: String): String {
     var text = raw.trimText()
     repeat(PASSES) {
         text = stripPreamble(stripFences(text))
     }
-    return text
+    return cleanEasyText(text)
 }
 
 /** 펜스↔머리말 순서가 뒤바뀐 경우까지 흡수하는 데 필요한 최소 횟수. */

@@ -85,6 +85,15 @@ function buildRenderBlocks(
 
   units.forEach((text, index) => {
     const kind = kinds?.[index] ?? 'body'
+    // 공백뿐인 문단은 감춘다(Part B, §6.4 결과 패널과 짝) — 색인은 그대로 두고 행만
+    // 만들지 않는다. run 중간의 빈 줄도 그냥 건너뛴다 — run을 끊지 않으므로 앞뒤가
+    // 같은 종류면 계속 한 그룹으로 묶인다.
+    if (text.trim() === '') {
+      if (kind === 'body') {
+        flushRun()
+      }
+      return
+    }
     if (kind === 'body') {
       flushRun()
       blocks.push({ kind: 'row', entry: { index, text } })

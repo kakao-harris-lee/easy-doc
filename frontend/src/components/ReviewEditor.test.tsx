@@ -1236,7 +1236,7 @@ describe('문단 단위 대응(segment_map)', () => {
     expect(screen.getByLabelText('쉬운 글 결과 (고칠 수 있습니다)')).toHaveValue(
       '첫 문단\n둘째 문단',
     )
-    expect(screen.queryByLabelText(/쉬운 글 단위 1/)).not.toBeInTheDocument()
+    expect(screen.queryByLabelText(/^쉬운 글 단위 1,/)).not.toBeInTheDocument()
   })
 
   it('HIGH 대응은 「대응 확인」, LOW는 「추정」 배지로 구분하고 각 단위를 textarea로 그린다', () => {
@@ -1327,7 +1327,7 @@ describe('문단 단위 대응(segment_map)', () => {
       />,
     )
 
-    const unit = screen.getByLabelText(/쉬운 글 단위 1/) as HTMLTextAreaElement
+    const unit = screen.getByLabelText(/^쉬운 글 단위 1,/) as HTMLTextAreaElement
     unit.focus()
     unit.setSelectionRange(1, 1)
     fireEvent.keyDown(unit, { key: 'Enter' })
@@ -1358,7 +1358,7 @@ describe('문단 단위 대응(segment_map)', () => {
       />,
     )
 
-    const unit = screen.getByLabelText(/쉬운 글 단위 1/) as HTMLTextAreaElement
+    const unit = screen.getByLabelText(/^쉬운 글 단위 1,/) as HTMLTextAreaElement
     unit.focus()
     unit.setSelectionRange(1, 1)
     fireEvent.keyDown(unit, { key: 'Enter' })
@@ -1385,14 +1385,14 @@ describe('문단 단위 대응(segment_map)', () => {
       />,
     )
 
-    const unit2 = screen.getByLabelText(/쉬운 글 단위 2/) as HTMLTextAreaElement
+    const unit2 = screen.getByLabelText(/^쉬운 글 단위 2,/) as HTMLTextAreaElement
     unit2.focus()
     unit2.setSelectionRange(0, 0)
     fireEvent.keyDown(unit2, { key: 'Backspace' })
 
     // 둘 중 하나가 low였으므로 합친 단위도 low다 — 「대응 확인 불가」로 낮춰 안전하게 그린다.
     expect(screen.getByLabelText('쉬운 글 단위 1, 대응 확인 불가')).toHaveValue('첫줄둘째줄')
-    expect(screen.queryByLabelText(/쉬운 글 단위 2/)).not.toBeInTheDocument()
+    expect(screen.queryByLabelText(/^쉬운 글 단위 2,/)).not.toBeInTheDocument()
   })
 
   it('화살표 위·아래로 단위 사이를 옮긴다', () => {
@@ -1410,8 +1410,8 @@ describe('문단 단위 대응(segment_map)', () => {
       />,
     )
 
-    const unit1 = screen.getByLabelText(/쉬운 글 단위 1/) as HTMLTextAreaElement
-    const unit2 = screen.getByLabelText(/쉬운 글 단위 2/) as HTMLTextAreaElement
+    const unit1 = screen.getByLabelText(/^쉬운 글 단위 1,/) as HTMLTextAreaElement
+    const unit2 = screen.getByLabelText(/^쉬운 글 단위 2,/) as HTMLTextAreaElement
 
     unit1.focus()
     unit1.setSelectionRange(unit1.value.length, unit1.value.length)
@@ -1474,7 +1474,7 @@ describe('문단 단위 대응(segment_map)', () => {
           source={sourceFailed()}
         />,
       )
-      return screen.getByLabelText(/쉬운 글 단위 1/) as HTMLTextAreaElement
+      return screen.getByLabelText(/^쉬운 글 단위 1,/) as HTMLTextAreaElement
     }
 
     it('Shift+Enter로 줄바꿈이 섞여도 지도 길이가 단위 수와 같고 뒤 단위는 원래 대응을 유지한다', async () => {
@@ -1609,7 +1609,7 @@ describe('문단 재변환(계획 §4 결정 3, §6 S5)', () => {
       '다시 쓴 문장입니다.',
     )
     // 단위 수(=지도 길이)는 그대로다 — 갈아 끼우기는 텍스트만 바꾼다.
-    expect(screen.getAllByLabelText(/^쉬운 글 단위/)).toHaveLength(1)
+    expect(screen.getAllByLabelText(/^쉬운 글 단위 \d+,/)).toHaveLength(1)
     expect(screen.queryByRole('button', { name: '바꾸기' })).not.toBeInTheDocument()
   })
 
@@ -1641,13 +1641,13 @@ describe('문단 재변환(계획 §4 결정 3, §6 S5)', () => {
     renderOneUnit()
 
     await user.click(screen.getByLabelText('원본 1번째 문단 다시 변환'))
-    await user.type(screen.getByLabelText(/쉬운 글 단위 1/), '!')
+    await user.type(screen.getByLabelText(/^쉬운 글 단위 1,/), '!')
     resolveReconvert(reconvertResponse({ easy_text_fingerprint: staleFingerprint }))
 
     await screen.findByRole('button', { name: '이 위치에 넣기' })
     expect(screen.queryByRole('button', { name: '바꾸기' })).not.toBeInTheDocument()
     // 자동으로는 어떤 경우에도 바뀌지 않는다 — 방금 입력한 「!」가 그대로 남아 있다.
-    expect(screen.getByLabelText(/쉬운 글 단위 1/)).toHaveValue('첫 문장!')
+    expect(screen.getByLabelText(/^쉬운 글 단위 1,/)).toHaveValue('첫 문장!')
   })
 
   it('「이 위치에 넣기」는 마지막으로 초점이 있던 단위의 캐럿에 끼워 넣고 단위 수는 그대로다', async () => {
@@ -1662,7 +1662,7 @@ describe('문단 재변환(계획 §4 결정 3, §6 S5)', () => {
     )
     renderOneUnit()
 
-    const unit = screen.getByLabelText(/쉬운 글 단위 1/) as HTMLTextAreaElement
+    const unit = screen.getByLabelText(/^쉬운 글 단위 1,/) as HTMLTextAreaElement
     unit.focus()
     unit.setSelectionRange(1, 1) // '첫' 뒤
 
@@ -1670,9 +1670,9 @@ describe('문단 재변환(계획 §4 결정 3, §6 S5)', () => {
     const insertButton = await screen.findByRole('button', { name: '이 위치에 넣기' })
     await user.click(insertButton)
 
-    expect(screen.getByLabelText(/쉬운 글 단위 1/)).toHaveValue('첫끼워넣기 문장')
+    expect(screen.getByLabelText(/^쉬운 글 단위 1,/)).toHaveValue('첫끼워넣기 문장')
     // 캐럿에 끼워 넣었을 뿐 단위를 나누지 않았다 — 단위 수(지도 길이)는 그대로다.
-    expect(screen.getAllByLabelText(/^쉬운 글 단위/)).toHaveLength(1)
+    expect(screen.getAllByLabelText(/^쉬운 글 단위 \d+,/)).toHaveLength(1)
   })
 
   it('캐럿을 모르면(초점이 간 적이 없으면) 새 단위로 붙는다', async () => {
@@ -1695,7 +1695,7 @@ describe('문단 재변환(계획 §4 결정 3, §6 S5)', () => {
     await user.click(insertButton)
 
     // 단위가 하나 늘었다 — 지도 길이도 함께 늘어난다(SegmentedResultEditor의 정렬 규칙).
-    expect(screen.getAllByLabelText(/^쉬운 글 단위/)).toHaveLength(2)
+    expect(screen.getAllByLabelText(/^쉬운 글 단위 \d+,/)).toHaveLength(2)
     expect(screen.getByLabelText('쉬운 글 단위 2, 원본 1번째 문단에 대응')).toHaveValue('새 단위')
   })
 
@@ -1716,7 +1716,7 @@ describe('문단 재변환(계획 §4 결정 3, §6 S5)', () => {
 
     // 후보 텍스트의 개행 때문에 단위가 하나 늘었다 — 지도 길이(`unitMap.length`)도
     // `draft.split('\n').length`와 같게 함께 늘어난다.
-    expect(screen.getAllByLabelText(/^쉬운 글 단위/)).toHaveLength(2)
+    expect(screen.getAllByLabelText(/^쉬운 글 단위 \d+,/)).toHaveLength(2)
     expect(screen.getByLabelText('쉬운 글 단위 1, 원본 1번째 문단에 대응')).toHaveValue(
       '다시 쓴 문장 1',
     )
@@ -1737,7 +1737,7 @@ describe('문단 재변환(계획 §4 결정 3, §6 S5)', () => {
     )
     renderOneUnit()
 
-    const unit = screen.getByLabelText(/쉬운 글 단위 1/) as HTMLTextAreaElement
+    const unit = screen.getByLabelText(/^쉬운 글 단위 1,/) as HTMLTextAreaElement
     unit.focus()
     unit.setSelectionRange(1, 1) // '첫' 뒤
 
@@ -1746,7 +1746,7 @@ describe('문단 재변환(계획 §4 결정 3, §6 S5)', () => {
     await user.click(insertButton)
 
     // 캐럿 자리에서 갈라져 단위가 하나 늘었다.
-    expect(screen.getAllByLabelText(/^쉬운 글 단위/)).toHaveLength(2)
+    expect(screen.getAllByLabelText(/^쉬운 글 단위 \d+,/)).toHaveLength(2)
     expect(screen.getByLabelText('쉬운 글 단위 1, 원본 1번째 문단에 대응')).toHaveValue('첫끼워 1')
     expect(screen.getByLabelText('쉬운 글 단위 2, 대응 확인 불가')).toHaveValue('끼워 2 문장')
   })
@@ -1898,7 +1898,7 @@ describe('문단 재변환(계획 §4 결정 3, §6 S5)', () => {
     )
     renderOneUnit()
 
-    await user.type(screen.getByLabelText(/쉬운 글 단위 1/), '!')
+    await user.type(screen.getByLabelText(/^쉬운 글 단위 1,/), '!')
     await user.click(screen.getByRole('button', { name: '검수 내용 저장' }))
 
     expect(screen.getByLabelText('원본 1번째 문단 다시 변환')).toBeDisabled()
@@ -1921,6 +1921,318 @@ describe('문단 재변환(계획 §4 결정 3, §6 S5)', () => {
     await user.click(screen.getByLabelText('원본 1번째 문단 다시 변환'))
 
     expect(await screen.findByText('남은 재변환 18회')).toBeInTheDocument()
+  })
+})
+
+describe('결과 단위 재시도·되돌리기(Part C-2/C-3)', () => {
+  /** 원본·쉬운 글 각 2단위, 둘 다 high 1:1 대응. */
+  function renderTwoUnits() {
+    const map = segmentMap({
+      source_unit_count: 2,
+      units: [
+        segmentMapUnit({ easy_unit_index: 0, source_unit_indexes: [0], confidence: 'high' }),
+        segmentMapUnit({ easy_unit_index: 1, source_unit_indexes: [1], confidence: 'high' }),
+      ],
+    })
+    return renderDetailed(
+      <ReviewEditor
+        conversion={conversion({ easy_text: '첫 문장\n둘째 문장', segment_map: map })}
+        source={sourceReady('원본 하나\n원본 둘')}
+      />,
+    )
+  }
+
+  it('재시도는 그 단위의 단일 원본 색인으로 재변환을 걸고, 성공하면 그 단위 아래 바꾸기 카드가 뜨며 채택은 그 단위만 바꾼다', async () => {
+    const user = userEvent.setup()
+    const fingerprint = await computeEasyTextFingerprint('첫 문장\n둘째 문장')
+    vi.mocked(reconvertUnit).mockResolvedValue(
+      reconvertResponse({
+        source_unit_index: 1,
+        easy_unit_indexes: [1],
+        easy_text_fingerprint: fingerprint,
+        candidate_text: '다시 쓴 둘째 문장',
+      }),
+    )
+    renderTwoUnits()
+
+    await user.click(screen.getByLabelText('쉬운 글 단위 2 재시도'))
+
+    await waitFor(() =>
+      expect(reconvertUnit).toHaveBeenCalledWith(
+        'c1',
+        1,
+        expect.objectContaining({ easy_unit_indexes: [1] }),
+      ),
+    )
+
+    const replaceButton = await screen.findByRole('button', { name: '바꾸기' })
+    await user.click(replaceButton)
+
+    expect(screen.getByLabelText('쉬운 글 단위 1, 원본 1번째 문단에 대응')).toHaveValue('첫 문장')
+    expect(screen.getByLabelText('쉬운 글 단위 2, 원본 2번째 문단에 대응')).toHaveValue(
+      '다시 쓴 둘째 문장',
+    )
+  })
+
+  it('대응하는 원본 색인이 없으면 재시도가 비활성이고 사유를 알린다', () => {
+    const map = segmentMap({
+      source_unit_count: 1,
+      units: [segmentMapUnit({ easy_unit_index: 0, source_unit_indexes: [], confidence: 'low' })],
+    })
+    renderDetailed(
+      <ReviewEditor
+        conversion={conversion({ easy_text: '첫 문장', segment_map: map })}
+        source={sourceReady('원본')}
+      />,
+    )
+
+    const retryButton = screen.getByLabelText('쉬운 글 단위 1 재시도')
+    expect(retryButton).toBeDisabled()
+    expect(retryButton).toHaveAttribute(
+      'title',
+      '대응하는 원본 문단을 찾지 못했습니다. 원본 패널에서 다시 변환해 주세요.',
+    )
+  })
+
+  it('원본 색인이 둘 이상이면 재시도가 비활성이고 사유를 알린다', () => {
+    const map = segmentMap({
+      source_unit_count: 2,
+      units: [
+        segmentMapUnit({ easy_unit_index: 0, source_unit_indexes: [0, 1], confidence: 'low' }),
+      ],
+    })
+    renderDetailed(
+      <ReviewEditor
+        conversion={conversion({ easy_text: '첫 문장', segment_map: map })}
+        source={sourceReady('원본 하나\n원본 둘')}
+      />,
+    )
+
+    const retryButton = screen.getByLabelText('쉬운 글 단위 1 재시도')
+    expect(retryButton).toBeDisabled()
+    expect(retryButton).toHaveAttribute(
+      'title',
+      '원본 문단 여러 개에 대응합니다. 원본 패널에서 문단을 골라 다시 변환해 주세요.',
+    )
+  })
+
+  it('낮은 신뢰도라도 원본 색인이 하나면 재시도가 활성이다', () => {
+    const map = segmentMap({
+      source_unit_count: 1,
+      units: [segmentMapUnit({ easy_unit_index: 0, source_unit_indexes: [0], confidence: 'low' })],
+    })
+    renderDetailed(
+      <ReviewEditor
+        conversion={conversion({ easy_text: '첫 문장', segment_map: map })}
+        source={sourceReady('원본')}
+      />,
+    )
+
+    expect(screen.getByLabelText('쉬운 글 단위 1 재시도')).toBeEnabled()
+  })
+
+  it('한 재시도가 도는 동안 다른 행의 재시도 버튼은 잠기고, 도는 행만 진행 중 표시다', async () => {
+    const user = userEvent.setup()
+    let resolveReconvert: (value: ReconvertUnitResponse) => void = () => undefined
+    vi.mocked(reconvertUnit).mockReturnValue(
+      new Promise((resolve) => {
+        resolveReconvert = resolve
+      }),
+    )
+    renderTwoUnits()
+
+    const retry1 = screen.getByLabelText('쉬운 글 단위 1 재시도')
+    const retry2 = screen.getByLabelText('쉬운 글 단위 2 재시도')
+    await user.click(retry1)
+
+    expect(retry1).toHaveAttribute('aria-busy', 'true')
+    expect(retry1).toBeDisabled()
+    expect(retry2).toBeDisabled()
+    expect(retry2).toHaveAttribute('title', '다른 재변환이 진행 중입니다.')
+
+    resolveReconvert(reconvertResponse())
+    await waitFor(() => expect(retry1).not.toBeDisabled())
+  })
+
+  it('되돌리기는 처음엔 비활성이고, 고치면 활성화되며 누르면 원래 값과 저장 상태로 돌아간다', async () => {
+    const user = userEvent.setup()
+    renderTwoUnits()
+
+    const revertButton = screen.getByLabelText('쉬운 글 단위 1 되돌리기')
+    expect(revertButton).toBeDisabled()
+    expect(screen.queryByText('저장 안 됨')).not.toBeInTheDocument()
+
+    const unit1 = screen.getByLabelText('쉬운 글 단위 1, 원본 1번째 문단에 대응')
+    fireEvent.change(unit1, { target: { value: '고친 문장' } })
+
+    expect(revertButton).toBeEnabled()
+    expect(screen.getByText('저장 안 됨')).toBeInTheDocument()
+
+    await user.click(revertButton)
+
+    expect(screen.getByLabelText('쉬운 글 단위 1, 원본 1번째 문단에 대응')).toHaveValue('첫 문장')
+    expect(screen.queryByText('저장 안 됨')).not.toBeInTheDocument()
+  })
+
+  it('바꾸기로 채택한 뒤에도 되돌리기는 채택 전 텍스트로 돌아간다', async () => {
+    const user = userEvent.setup()
+    const fingerprint = await computeEasyTextFingerprint('첫 문장\n둘째 문장')
+    vi.mocked(reconvertUnit).mockResolvedValue(
+      reconvertResponse({
+        source_unit_index: 0,
+        easy_unit_indexes: [0],
+        easy_text_fingerprint: fingerprint,
+        candidate_text: '다시 쓴 문장',
+      }),
+    )
+    renderTwoUnits()
+
+    await user.click(screen.getByLabelText('원본 1번째 문단 다시 변환'))
+    const replaceButton = await screen.findByRole('button', { name: '바꾸기' })
+    await user.click(replaceButton)
+    expect(screen.getByLabelText('쉬운 글 단위 1, 원본 1번째 문단에 대응')).toHaveValue(
+      '다시 쓴 문장',
+    )
+
+    await user.click(screen.getByLabelText('쉬운 글 단위 1 되돌리기'))
+
+    expect(screen.getByLabelText('쉬운 글 단위 1, 원본 1번째 문단에 대응')).toHaveValue('첫 문장')
+  })
+
+  it('Enter로 나뉜 두 단위 모두 되돌리기가 비활성이다', () => {
+    const map = segmentMap({
+      units: [segmentMapUnit({ easy_unit_index: 0, source_unit_indexes: [0], confidence: 'high' })],
+    })
+    renderDetailed(
+      <ReviewEditor
+        conversion={conversion({ easy_text: '첫줄', segment_map: map })}
+        source={sourceReady('원본')}
+      />,
+    )
+    const unit = screen.getByLabelText(/^쉬운 글 단위 1,/) as HTMLTextAreaElement
+    unit.focus()
+    unit.setSelectionRange(1, 1)
+    fireEvent.keyDown(unit, { key: 'Enter' })
+
+    expect(screen.getByLabelText('쉬운 글 단위 1 되돌리기')).toBeDisabled()
+    expect(screen.getByLabelText('쉬운 글 단위 2 되돌리기')).toBeDisabled()
+  })
+
+  it('저장 응답의 edited_text가 지금 draft와 같으면 되돌리기가 다시 비활성이다(새 기준선)', async () => {
+    const user = userEvent.setup()
+    vi.mocked(saveReview).mockImplementation((_id, text) =>
+      Promise.resolve(conversion({ edited_text: text })),
+    )
+    renderTwoUnits()
+
+    const unit1 = screen.getByLabelText('쉬운 글 단위 1, 원본 1번째 문단에 대응')
+    fireEvent.change(unit1, { target: { value: '고친 문장' } })
+    expect(screen.getByLabelText('쉬운 글 단위 1 되돌리기')).toBeEnabled()
+
+    await user.click(screen.getByRole('button', { name: '검수 내용 저장' }))
+    await waitFor(() => expect(saveReview).toHaveBeenCalled())
+
+    expect(screen.getByLabelText('쉬운 글 단위 1 되돌리기')).toBeDisabled()
+  })
+
+  it('baseline이 빈 문자열인 단위를 되돌리면(로드 시 공백이던 줄에 나중에 글을 쓴 경우) 행이 사라지지 않고 초점을 유지한다(MEDIUM 리뷰)', async () => {
+    const user = userEvent.setup()
+    vi.mocked(saveReview).mockResolvedValue(conversion({ edited_text: '첫째\n\n둘째' }))
+    const map = segmentMap({
+      source_unit_count: 3,
+      units: [0, 1, 2].map((index) =>
+        segmentMapUnit({
+          easy_unit_index: index,
+          source_unit_indexes: [index],
+          confidence: 'high',
+        }),
+      ),
+    })
+    render(
+      <ReviewEditor
+        conversion={conversion({ easy_text: '첫째\n\n둘째', segment_map: map })}
+        source={sourceReady('가\n\n나')}
+      />,
+    )
+
+    // 단일 글상자 모드에서 처음엔 공백이던 둘째 줄에 글을 쓴다 — 이 시점의
+    // 대응표(baseline 포함)는 구조가 바뀌지 않았으므로 그대로 남는다.
+    const wholeTextarea = screen.getByLabelText('쉬운 글 결과 (고칠 수 있습니다)')
+    fireEvent.change(wholeTextarea, { target: { value: '첫째\n둘째 줄\n둘째' } })
+
+    await user.click(screen.getByRole('button', { name: '문단별 상세 비교' }))
+
+    const revertButton = screen.getByLabelText('쉬운 글 단위 2 되돌리기')
+    expect(revertButton).toBeEnabled()
+    await user.click(revertButton)
+
+    const unit2 = screen.getByLabelText('쉬운 글 단위 2, 원본 2번째 문단에 대응')
+    expect(unit2).toBeInTheDocument()
+    expect(unit2).toHaveFocus()
+    expect(unit2).toHaveValue('')
+
+    await user.click(screen.getByRole('button', { name: '검수 내용 저장' }))
+    expect(saveReview).toHaveBeenCalledWith('c1', '첫째\n\n둘째')
+  })
+
+  it('같은 원본 색인을 공유하는 여러 쉬운 글 단위 중 재시도를 건 행만 진행 중 표시다(MEDIUM 리뷰)', async () => {
+    const user = userEvent.setup()
+    let resolveReconvert: (value: ReconvertUnitResponse) => void = () => undefined
+    vi.mocked(reconvertUnit).mockReturnValue(
+      new Promise((resolve) => {
+        resolveReconvert = resolve
+      }),
+    )
+    const map = segmentMap({
+      source_unit_count: 1,
+      units: [
+        segmentMapUnit({ easy_unit_index: 0, source_unit_indexes: [0], confidence: 'high' }),
+        segmentMapUnit({ easy_unit_index: 1, source_unit_indexes: [0], confidence: 'high' }),
+      ],
+    })
+    renderDetailed(
+      <ReviewEditor
+        conversion={conversion({ easy_text: '첫 문장\n둘째 문장', segment_map: map })}
+        source={sourceReady('원본')}
+      />,
+    )
+
+    const retry1 = screen.getByLabelText('쉬운 글 단위 1 재시도')
+    const retry2 = screen.getByLabelText('쉬운 글 단위 2 재시도')
+    await user.click(retry2)
+
+    expect(retry2).toHaveAttribute('aria-busy', 'true')
+    expect(retry2).toBeDisabled()
+    expect(retry1).not.toHaveAttribute('aria-busy')
+    expect(retry1).toBeDisabled()
+    expect(retry1).toHaveAttribute('title', '다른 재변환이 진행 중입니다.')
+
+    resolveReconvert(reconvertResponse())
+    await waitFor(() => expect(retry2).not.toBeDisabled())
+  })
+
+  it('재시도로 건 재변환이 실패하면 오류 문구가 원본 서수가 아니라 그 쉬운 글 단위를 가리킨다(LOW 리뷰)', async () => {
+    const user = userEvent.setup()
+    vi.mocked(reconvertUnit).mockRejectedValue(new ApiError(502, '변환 서버 오류'))
+    renderTwoUnits()
+
+    await user.click(screen.getByLabelText('쉬운 글 단위 2 재시도'))
+
+    const alert = await screen.findByRole('alert')
+    expect(alert.textContent).toMatch(/^쉬운 글 단위 2:/)
+  })
+
+  it('재시도로 건 503은 그 쉬운 글 단위를 가리키는 카운트다운을 보여준다(LOW 리뷰)', async () => {
+    vi.mocked(reconvertUnit).mockRejectedValue(
+      new ApiError(503, '동시 재변환 한도에 도달했습니다', 1, null),
+    )
+    renderTwoUnits()
+
+    fireEvent.click(screen.getByLabelText('쉬운 글 단위 2 재시도'))
+
+    expect(
+      await screen.findByText('쉬운 글 단위 2: 잠시 후 다시 시도해 주세요. (1초)'),
+    ).toBeInTheDocument()
   })
 })
 
@@ -2108,6 +2420,88 @@ describe('구조 배지(P0-4 S8, 계획 §1.5, segment_map.source_unit_kinds)', 
   })
 })
 
+describe('빈 줄(공백뿐) 단위 숨김(Part B)', () => {
+  /** 3단위(문단 구분 빈 줄 포함) 공통 뼈대. 원본·결과 모두 가운데 줄이 공백뿐이다. */
+  function renderWithBlankMiddleUnit() {
+    const map = segmentMap({
+      source_unit_count: 3,
+      units: [0, 1, 2].map((index) =>
+        segmentMapUnit({
+          easy_unit_index: index,
+          source_unit_indexes: [index],
+          confidence: 'high',
+        }),
+      ),
+    })
+    return renderDetailed(
+      <ReviewEditor
+        conversion={conversion({ easy_text: '첫째\n\n둘째', segment_map: map })}
+        source={sourceReady('가\n\n나')}
+      />,
+    )
+  }
+
+  it('결과 패널은 공백뿐인 단위를 감추지만 나머지 색인은 그대로 둔다', () => {
+    renderWithBlankMiddleUnit()
+
+    expect(screen.getAllByLabelText(/^쉬운 글 단위 \d+,/)).toHaveLength(2)
+    expect(screen.getByLabelText('쉬운 글 단위 1, 원본 1번째 문단에 대응')).toHaveValue('첫째')
+    expect(screen.getByLabelText('쉬운 글 단위 3, 원본 3번째 문단에 대응')).toHaveValue('둘째')
+    expect(screen.queryByLabelText(/^쉬운 글 단위 2,/)).not.toBeInTheDocument()
+  })
+
+  it('원본 패널은 공백뿐인 문단을 감추지만 나머지 색인은 그대로 둔다', () => {
+    renderWithBlankMiddleUnit()
+
+    expect(screen.getByLabelText('원본 3번째 문단')).toHaveValue('나')
+    expect(screen.queryByLabelText('원본 2번째 문단')).not.toBeInTheDocument()
+  })
+
+  it('저장은 감춰진 빈 줄도 그대로 포함해 draft를 보낸다', async () => {
+    const user = userEvent.setup()
+    vi.mocked(saveReview).mockResolvedValue(conversion({ edited_text: '첫째\n\n둘째' }))
+    renderWithBlankMiddleUnit()
+
+    await user.click(screen.getByRole('button', { name: '검수 내용 저장' }))
+
+    expect(saveReview).toHaveBeenCalledWith('c1', '첫째\n\n둘째')
+  })
+
+  it('단위 끝에서 Enter를 누르면 새로 생긴 빈 단위도 그려 초점을 맞추고, 값을 채우지 않고 벗어나면 다시 감춘다', async () => {
+    const map = segmentMap({
+      units: [segmentMapUnit({ easy_unit_index: 0, source_unit_indexes: [0], confidence: 'high' })],
+    })
+    renderDetailed(
+      <ReviewEditor
+        conversion={conversion({ easy_text: '첫줄', segment_map: map })}
+        source={sourceReady('원본')}
+      />,
+    )
+    const unit = screen.getByLabelText(/^쉬운 글 단위 1,/) as HTMLTextAreaElement
+    unit.focus()
+    unit.setSelectionRange(unit.value.length, unit.value.length)
+    fireEvent.keyDown(unit, { key: 'Enter' })
+
+    const newUnit = await screen.findByLabelText(/^쉬운 글 단위 2,/)
+    expect(newUnit).toHaveFocus()
+    expect(newUnit).toHaveValue('')
+
+    fireEvent.blur(newUnit)
+    expect(screen.queryByLabelText(/^쉬운 글 단위 2,/)).not.toBeInTheDocument()
+  })
+
+  it('ArrowDown은 빈 단위를 건너뛰어 다음으로 보이는 단위에 초점을 맞춘다', () => {
+    renderWithBlankMiddleUnit()
+
+    const unit1 = screen.getByLabelText(/^쉬운 글 단위 1,/) as HTMLTextAreaElement
+    unit1.focus()
+    unit1.setSelectionRange(unit1.value.length, unit1.value.length)
+    fireEvent.keyDown(unit1, { key: 'ArrowDown' })
+
+    expect(screen.getByLabelText(/^쉬운 글 단위 3,/)).toHaveFocus()
+  })
+})
+
 describe('저장 중 경합 방지(MEDIUM 리뷰)', () => {
   it('저장·내려받기가 도는 동안 단위 textarea를 잠근다', async () => {
     const user = userEvent.setup()
@@ -2124,7 +2518,7 @@ describe('저장 중 경합 방지(MEDIUM 리뷰)', () => {
 
     await user.click(screen.getByRole('button', { name: '검수 내용 저장' }))
 
-    expect(screen.getByLabelText(/쉬운 글 단위 1/)).toBeDisabled()
+    expect(screen.getByLabelText(/^쉬운 글 단위 1,/)).toBeDisabled()
   })
 
   it('저장이 도는 동안 이어서 고치면 응답이 그 사이의 수정을 덮어쓰지 않는다', async () => {
