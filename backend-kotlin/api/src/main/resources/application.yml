@@ -127,7 +127,7 @@ easydoc:
     resend-cooldown-seconds: ${EASYDOC_PHONE_VERIFICATION_RESEND_COOLDOWN_SECONDS:60}
     max-attempts: ${EASYDOC_PHONE_VERIFICATION_MAX_ATTEMPTS:5}
     trial-credits: ${EASYDOC_PHONE_VERIFICATION_TRIAL_CREDITS:5}
-    fingerprint-pepper: ${EASYDOC_PHONE_VERIFICATION_PEPPER:${EASYDOC_CREDITS_SIGNUP_GRANT_PEPPER:}}
+    fingerprint-pepper: ${EASYDOC_PHONE_VERIFICATION_PEPPER:}
   app:
     public-base-url: ${EASYDOC_APP_PUBLIC_BASE_URL:http://localhost:5173}
 
