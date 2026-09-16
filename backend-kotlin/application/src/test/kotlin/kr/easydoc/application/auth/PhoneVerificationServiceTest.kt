@@ -8,6 +8,7 @@ import kr.easydoc.core.exceptions.EmailNotVerifiedException
 import kr.easydoc.core.exceptions.ExternalServiceUnavailableException
 import kr.easydoc.core.exceptions.InvalidInputException
 import kr.easydoc.core.exceptions.InvalidVerificationCodeException
+import kr.easydoc.core.exceptions.StorageException
 import kr.easydoc.core.security.Secret
 import kr.easydoc.core.user.PasswordHash
 import kr.easydoc.core.user.StoredUser
@@ -116,6 +117,16 @@ class PhoneVerificationServiceTest {
         assertThat(second.granted).isZero()
         assertThat(second.users.current.phoneVerifiedAt).isNotNull()
     }
+
+    @Test
+    fun `기본 작업 공간을 찾지 못하면 StorageException 이고 크레딧을 지급하지 않는다`() {
+        val world = PhoneWorld(hasDefaultWorkspace = false)
+        world.service.request(world.userId, "01012345678")
+
+        assertThatThrownBy { world.service.confirm(world.userId, world.codes.code) }
+            .isInstanceOf(StorageException::class.java)
+        assertThat(world.granted).isZero()
+    }
 }
 
 private class StatefulPhoneTrialGrantLedger : PhoneTrialGrantLedger {
@@ -128,6 +139,7 @@ private class PhoneWorld(
     emailVerified: Boolean = true,
     claimGrant: Boolean = true,
     grants: PhoneTrialGrantLedger = PhoneTrialGrantLedger { claimGrant },
+    hasDefaultWorkspace: Boolean = true,
 ) {
     val userId: UUID = UUID.randomUUID()
     private val workspaceId: UUID = UUID.randomUUID()
@@ -155,7 +167,7 @@ private class PhoneWorld(
     val service =
         PhoneVerificationService(
             users = users,
-            workspaces = PhoneWorkspaceRepository(userId, workspaceId),
+            workspaces = PhoneWorkspaceRepository(userId, workspaceId, hasDefaultWorkspace),
             codes = codes,
             sms = sms,
             credits = creditService,
@@ -282,6 +294,8 @@ private class RecordingPhoneSms : PhoneVerificationSmsSender {
 private class PhoneWorkspaceRepository(
     private val ownerId: UUID,
     private val workspaceId: UUID,
+    /** `false` 면 소유자가 맞아도 기본 작업 공간이 없는 것으로 다룬다 — 저장소 결손 방어선을 잰다. */
+    private val hasDefaultWorkspace: Boolean = true,
 ) : WorkspaceRepository {
     override fun listOwned(ownerId: UUID): List<WorkspaceListing> =
         if (ownerId == this.ownerId) {
@@ -290,7 +304,8 @@ private class PhoneWorkspaceRepository(
             emptyList()
         }
 
-    override fun findDefaultId(ownerId: UUID): UUID? = if (ownerId == this.ownerId) workspaceId else null
+    override fun findDefaultId(ownerId: UUID): UUID? =
+        workspaceId.takeIf { ownerId == this.ownerId && hasDefaultWorkspace }
 
     override fun createDefault(userId: UUID): UUID = error("not used")
 
