@@ -65,4 +65,11 @@ class DocumentMarkersTest {
         val text = "○ 결과\n- 발표\n * 면접\n※ 통과자 안내"
         assertThat(postprocess("```text\n$text\n```")).isEqualTo(text)
     }
+
+    @Test
+    fun `줄바꿈으로 갈라진 ※ 안내는 잡음 줄 정리 뒤에도 표식 변화로 보지 않는다`() {
+        val source = "※ 안내"
+        val draft = "※\n안내"
+        assertThat(hasMarkerChanges(source, cleanEasyText(draft))).isFalse()
+    }
 }

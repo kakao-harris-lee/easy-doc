@@ -12,11 +12,16 @@ import { Link } from 'react-router-dom'
 import { HISTORY_PATH } from '../routes/paths'
 
 import { ApiError, downloadExport, reconvertUnit, saveReview } from '../api/client'
-import type { ConversionResponse, ExportFormat, SegmentMapUnit } from '../api/types'
+import type { ConversionResponse, ExportFormat } from '../api/types'
 import { cn } from '../lib/utils'
 import { computeEasyTextFingerprint } from '../review/fingerprint'
 import type { DocumentSource } from '../review/sourceText'
-import { insertUnitsAfter, reconcileUnitMap, spliceUnitText } from '../review/unitMap'
+import {
+  insertUnitsAfter,
+  reconcileUnitMap,
+  spliceUnitText,
+  withBaselines,
+} from '../review/unitMap'
 import { setUnsavedChanges } from '../review/unsavedChanges'
 import { FormatPreservationPanel, PdfExportNotice } from './FormatPreservationPanel'
 import { ReviewFeedback } from './ReviewFeedback'
@@ -203,7 +208,9 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
    * 국소적으로 갱신한다(계약 `segment_map` 설명 — 서버가 강제하지 않는 클라이언트
    * 재계산). 저장이 끝나면 서버가 다시 잰 값으로 덮어써 낡은 추정을 남기지 않는다.
    */
-  const [unitMap, setUnitMap] = useState<SegmentMapUnit[]>(conversion.segment_map?.units ?? [])
+  const [unitMap, setUnitMap] = useState(
+    withBaselines(conversion.segment_map?.units ?? [], initialText),
+  )
   const [paragraphComparison, setParagraphComparison] = useState(false)
 
   function handleDraftChange(next: string) {
@@ -222,6 +229,15 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
    * 막는다). `null`이면 재변환이 도는 것이 없다.
    */
   const [reconvertPendingIndex, setReconvertPendingIndex] = useState<number | null>(null)
+  /**
+   * 재시도(Part C-2/C-3)로 지금 도는 재변환이 걸린 **쉬운 글** 단위 색인.
+   *
+   * `reconvertPendingIndex`(원본 단위 색인)만으로는 여러 쉬운 글 단위가 같은
+   * 원본 색인에 대응할 때(예: 「이 위치에 넣기」로 늘어난 단위들, MEDIUM 리뷰)
+   * 어느 행이 실제로 기다리는지 가르지 못한다. 원본 패널의 「다시 변환」에서
+   * 걸었을 때는 특정 쉬운 글 단위를 고른 것이 아니므로 `null`이다.
+   */
+  const [reconvertPendingEasyIndex, setReconvertPendingEasyIndex] = useState<number | null>(null)
   /**
    * 이 문서에 남은 재변환 호출 예산. 아직 한 번도 재변환을 부르지 않았으면 `null`이라
    * 배지를 그리지 않는다 — 부르지도 않은 예산을 숫자로 지어내지 않는다.
@@ -394,25 +410,41 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
    * **응답은 후보일 뿐이다 — 여기서 `draft`·`unitMap`을 바꾸지 않는다.** 채택(바꾸기·
    * 이 위치에 넣기)은 사람이 카드에서 직접 눌러야 한다(`handleCandidateReplace`·
    * `handleCandidateInsert`).
+   *
+   * `options.fromEasyUnitIndex`는 결과 패널의 「재시도」 버튼(Part C-2/C-3)이
+   * 준다 — 원본 패널의 「다시 변환」과 달리, 이 경로는 **사람이 이미 어느 쉬운 글
+   * 단위를 바꿀지 골랐다**(그 행의 버튼을 눌렀다). 그래서 서버가 돌려준
+   * `easy_unit_indexes`로 대상을 다시 추론하지 않고 이 값을 그대로 쓴다.
    */
-  async function handleReconvertUnit(sourceIndex: number): Promise<void> {
+  async function handleReconvertUnit(
+    sourceIndex: number,
+    options?: { fromEasyUnitIndex?: number },
+  ): Promise<void> {
     // 이중 제출 방지 — 이미 도는 재변환이 있으면 새 요청을 걸지 않는다.
     if (reconvertPendingIndex !== null) {
       return
     }
-    // 이 재변환을 건 「다시 변환」 버튼(MEDIUM 리뷰 3) — 후보 카드를 닫으면 여기로
-    // 초점을 돌려준다. 버튼 클릭은 그 버튼에 초점을 옮긴 다음 일어나므로 이 시점의
-    // `document.activeElement`가 바로 그 버튼이다.
+    // 이 재변환을 건 「다시 변환」·「재시도」 버튼(MEDIUM 리뷰 3) — 후보 카드를 닫으면
+    // 여기로 초점을 돌려준다. 버튼 클릭은 그 버튼에 초점을 옮긴 다음 일어나므로 이
+    // 시점의 `document.activeElement`가 바로 그 버튼이다(원본 패널 버튼이든 결과
+    // 패널의 재시도 버튼이든 같다).
     reconvertTriggerRef.current =
       document.activeElement instanceof HTMLElement ? document.activeElement : null
     setReconvertPendingIndex(sourceIndex)
+    // 재시도가 아니면(원본 패널의 「다시 변환」) 특정 쉬운 글 단위를 고른 것이
+    // 아니므로 `null`이다(MEDIUM 리뷰) — 그 경로는 여전히 원본 색인 하나로만
+    // 진행 중 행을 가린다.
+    setReconvertPendingEasyIndex(options?.fromEasyUnitIndex ?? null)
     setReconvertMessage(null)
     clearReconvertCountdown()
     try {
       const requestFingerprint = await computeEasyTextFingerprint(draftRef.current)
-      const requestEasyUnitIndexes = unitMapRef.current
-        .filter((unit) => unit.source_unit_indexes.includes(sourceIndex))
-        .map((unit) => unit.easy_unit_index)
+      const requestEasyUnitIndexes =
+        options?.fromEasyUnitIndex !== undefined
+          ? [options.fromEasyUnitIndex]
+          : unitMapRef.current
+              .filter((unit) => unit.source_unit_indexes.includes(sourceIndex))
+              .map((unit) => unit.easy_unit_index)
 
       const response = await reconvertUnit(conversion.id, sourceIndex, {
         easy_unit_indexes: requestEasyUnitIndexes,
@@ -432,15 +464,23 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
           : undefined
       // ⑵ high 대응이고 ⑶ 정확히 한 단위일 때만 「바꾸기」를 제시한다 — 그 밖의 모든
       // 경우(1:N·N:1·low·빈 배열·지문 불일치)는 카드 + 「이 위치에 넣기」뿐이다.
+      //
+      // **재시도(`fromEasyUnitIndex`)는 이 규칙을 타지 않는다.** ⑵·⑶은 "서버가 돌려준
+      // 대응만으로 어느 단위를 바꿀지 추론해도 안전한가"를 묻는 규칙인데, 재시도는
+      // 사람이 그 단위를 이미 직접 골랐으므로 추론이 필요 없다 — 신뢰도(low여도)와
+      // 무관하게 지문만 불변이면 그 단위를 「바꾸기」로 제시한다.
       const canReplace =
-        fingerprintUnchanged && singleEasyIndex !== null && targetUnit?.confidence === 'high'
+        options?.fromEasyUnitIndex !== undefined
+          ? fingerprintUnchanged
+          : fingerprintUnchanged && singleEasyIndex !== null && targetUnit?.confidence === 'high'
+      const replaceAnchor = options?.fromEasyUnitIndex ?? singleEasyIndex
 
-      if (canReplace && singleEasyIndex !== null) {
+      if (canReplace && replaceAnchor !== null) {
         setCandidate({
           sourceUnitIndex: sourceIndex,
           candidateText: response.candidate_text,
           mode: 'replace',
-          anchorEasyUnitIndex: singleEasyIndex,
+          anchorEasyUnitIndex: replaceAnchor,
         })
       } else {
         const totalUnits = Math.max(draftRef.current.split('\n').length, 1)
@@ -462,6 +502,7 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
       setReconvertMessage(reconvertErrorMessage(caught, sourceIndex))
     } finally {
       setReconvertPendingIndex(null)
+      setReconvertPendingEasyIndex(null)
     }
   }
 
@@ -723,8 +764,10 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
     // 조회의 판정으로 메우면 화면이 서버가 하지 않은 말을 하게 된다.
     setPreservation(saved.format_preservation)
     // 대응표도 같은 이유로 서버 응답이 이길 때마다 갱신한다 — 분할·병합으로 만든
-    // 로컬 추정은 서버가 다시 잰 값이 오는 순간 버려진다.
-    setUnitMap(saved.segment_map?.units ?? [])
+    // 로컬 추정은 서버가 다시 잰 값이 오는 순간 버려진다. 방금 저장한 글이 새
+    // 되돌리기 기준선이 된다(Part C-1) — 되돌리기는 마지막 저장 이후의 변경만
+    // 되돌리는 것이지, 그 이전 어느 시점으로도 돌아가지 않는다.
+    setUnitMap(withBaselines(saved.segment_map?.units ?? [], stored))
   }
 
   /** 서버가 준 사유를 문장 뒤에 붙인다. ApiError가 아니면 붙일 사유가 없다. */
@@ -1100,6 +1143,13 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
                 onCandidateReplace={handleCandidateReplace}
                 onCandidateInsert={handleCandidateInsert}
                 onCandidateClose={handleCandidateClose}
+                retry={{
+                  pendingSourceIndex: reconvertPendingIndex,
+                  pendingEasyIndex: reconvertPendingEasyIndex,
+                  disabledReason: reconvertDisabledReason,
+                  onRetry: (easyIndex, sourceIndex) =>
+                    void handleReconvertUnit(sourceIndex, { fromEasyUnitIndex: easyIndex }),
+                }}
               />
             ) : (
               <>
