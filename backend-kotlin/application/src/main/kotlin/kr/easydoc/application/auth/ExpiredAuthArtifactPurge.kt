@@ -6,32 +6,35 @@ import java.time.Duration
 import java.time.Instant
 
 /**
- * 만료 인증 아티팩트(`email_verification_codes`·`password_reset_codes`·`oauth_states`)
- * 파기 한 번의 집계. **표별 삭제 건수만 담는다** — `code_hash`·`salt`·`state`·`nonce`는
- * 어디에도 남지 않는다(`SignupGrantRecordPurgeResult`·`UnverifiedAccountPurgeResult`와
- * 같은 판단).
+ * 만료 인증 아티팩트(`email_verification_codes`·`password_reset_codes`·`oauth_states`·
+ * `phone_verification_codes`) 파기 한 번의 집계. **표별 삭제 건수만 담는다** —
+ * `code_hash`·`salt`·`state`·`nonce`는 어디에도 남지 않는다(`SignupGrantRecordPurgeResult`·
+ * `UnverifiedAccountPurgeResult`와 같은 판단).
  */
 class ExpiredAuthArtifactPurgeResult(
     val enabled: Boolean,
     val emailVerificationCodesDeleted: Int,
     val passwordResetCodesDeleted: Int,
     val oauthStatesDeleted: Int,
+    val phoneVerificationCodesDeleted: Int,
 ) {
     override fun toString(): String =
         "ExpiredAuthArtifactPurgeResult(enabled=$enabled, " +
             "emailVerificationCodesDeleted=$emailVerificationCodesDeleted, " +
             "passwordResetCodesDeleted=$passwordResetCodesDeleted, " +
-            "oauthStatesDeleted=$oauthStatesDeleted)"
+            "oauthStatesDeleted=$oauthStatesDeleted, " +
+            "phoneVerificationCodesDeleted=$phoneVerificationCodesDeleted)"
 }
 
 /**
- * `email_verification_codes`·`password_reset_codes`·`oauth_states` 세 표에서 만료된
- * 행을 고르고 지운다(`docs/plans/2026-09-10-personal-data-inventory.md` §2.2 확정 결함,
- * 개인정보 보호법 §21 — 목적 달성 시 지체 없이 파기). 앞의 두 표는 `users` FK
- * `ON DELETE CASCADE`로 계정 삭제 시에만 사라진다 — 코드 자체는 10분이면 만료되는데
- * 행은 계정이 사는 동안 계속 쌓인다. `oauth_states`는 `user_id`가 NULL인 행(가입·로그인
- * 전 흐름이 채운다)은 CASCADE 경로가 아예 없어 영구 잔존·단조 증가한다 — 이 파기가 세
- * 표 모두의 유일한 소거 경로다.
+ * `email_verification_codes`·`password_reset_codes`·`oauth_states`·`phone_verification_codes`
+ * 네 표에서 만료된 행을 고르고 지운다(`docs/plans/2026-09-10-personal-data-inventory.md`
+ * §2.2 확정 결함, 개인정보 보호법 §21 — 목적 달성 시 지체 없이 파기).
+ * `phone_verification_codes`(V26)는 `email_verification_codes`와 같은 모양·같은 FK
+ * `ON DELETE CASCADE`다. 이 세 코드 표는 계정 삭제 시에만 사라진다 — 코드 자체는 10분이면
+ * 만료되는데 행은 계정이 사는 동안 계속 쌓인다. `oauth_states`는 `user_id`가 NULL인
+ * 행(가입·로그인 전 흐름이 채운다)은 CASCADE 경로가 아예 없어 영구 잔존·단조 증가한다 —
+ * 이 파기가 네 표 모두의 유일한 소거 경로다.
  *
  * **파기 기준은 `created_at`이다 — `consumed_at`·`expires_at`을 쓰지 않는다.**
  * `JdbcOneTimeCodeStore.rejectIfWithinCooldown`(재발송 쿨다운)이 소비·만료 여부를 보지
@@ -65,9 +68,9 @@ class ExpiredAuthArtifactPurgePolicy(
 }
 
 /**
- * 기본 24시간이 지난 세 표의 행을 지운다. `PurgeUnverifiedAccounts`·`PurgeSignupGrantRecords`
+ * 기본 24시간이 지난 네 표의 행을 지운다. `PurgeUnverifiedAccounts`·`PurgeSignupGrantRecords`
  * 와 같은 배치 흐름이다 — 대상량이 배치를 넘으면 배치가 짧아질 때까지 트랜잭션을 반복한다.
- * 세 표를 한 저장소 호출(=한 트랜잭션)에서 함께 지운다 — 세 표 중 하나라도 이번 배치에서
+ * 네 표를 한 저장소 호출(=한 트랜잭션)에서 함께 지운다 — 네 표 중 하나라도 이번 배치에서
  * 한도(`batchSize`)만큼 지웠으면 그 표에 아직 대상이 남아 있을 수 있으므로 반복한다.
  */
 class PurgeExpiredAuthArtifacts(
@@ -98,6 +101,7 @@ class PurgeExpiredAuthArtifacts(
         var emailVerificationCodesDeleted = 0
         var passwordResetCodesDeleted = 0
         var oauthStatesDeleted = 0
+        var phoneVerificationCodesDeleted = 0
         var rounds = 0
         do {
             rounds++
@@ -106,16 +110,19 @@ class PurgeExpiredAuthArtifacts(
             emailVerificationCodesDeleted += batch.emailVerificationCodesDeleted
             passwordResetCodesDeleted += batch.passwordResetCodesDeleted
             oauthStatesDeleted += batch.oauthStatesDeleted
+            phoneVerificationCodesDeleted += batch.phoneVerificationCodesDeleted
         } while (
             batch.emailVerificationCodesDeleted >= policy.batchSize ||
             batch.passwordResetCodesDeleted >= policy.batchSize ||
-            batch.oauthStatesDeleted >= policy.batchSize
+            batch.oauthStatesDeleted >= policy.batchSize ||
+            batch.phoneVerificationCodesDeleted >= policy.batchSize
         )
         return ExpiredAuthArtifactPurgeResult(
             enabled = true,
             emailVerificationCodesDeleted = emailVerificationCodesDeleted,
             passwordResetCodesDeleted = passwordResetCodesDeleted,
             oauthStatesDeleted = oauthStatesDeleted,
+            phoneVerificationCodesDeleted = phoneVerificationCodesDeleted,
         )
     }
 
@@ -125,6 +132,7 @@ class PurgeExpiredAuthArtifacts(
             emailVerificationCodesDeleted = 0,
             passwordResetCodesDeleted = 0,
             oauthStatesDeleted = 0,
+            phoneVerificationCodesDeleted = 0,
         )
 
     private companion object {
@@ -139,11 +147,12 @@ class LoggingExpiredAuthArtifactPurgeObserver : ExpiredAuthArtifactPurgeObserver
     override fun record(result: ExpiredAuthArtifactPurgeResult) {
         log.info(
             "만료 인증 아티팩트 파기: enabled={} emailVerificationCodesDeleted={} " +
-                "passwordResetCodesDeleted={} oauthStatesDeleted={}",
+                "passwordResetCodesDeleted={} oauthStatesDeleted={} phoneVerificationCodesDeleted={}",
             result.enabled,
             result.emailVerificationCodesDeleted,
             result.passwordResetCodesDeleted,
             result.oauthStatesDeleted,
+            result.phoneVerificationCodesDeleted,
         )
     }
 }

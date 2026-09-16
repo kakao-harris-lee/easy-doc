@@ -16,7 +16,10 @@ import java.time.Period
 import java.time.format.DateTimeParseException
 
 /**
- * 가입 크레딧 원장(`signup_grant_records`, V20) 파기 설정(로드맵 5-1c). worker 만 지운다 —
+ * 무료 체험 중복 방지 원장 — 가입 크레딧용 `signup_grant_records`(V20)와 휴대폰 인증
+ * 체험용 `phone_trial_grant_records`(V26) — 파기 설정(로드맵 5-1c, 개인정보처리방침
+ * §3.1 「무료 체험 중복 방지 해시 — 부여 시점부터 2년」이 두 원장을 모두 가리킨다).
+ * 두 원장은 같은 TTL 정책·같은 스케줄 슬롯을 공유한다. worker 만 지운다 —
  * `UnverifiedAccountPurgeConfiguration`(`infrastructure.auth`)과 같은 판단
  * (`CreditAccountConfiguration` 은 api·worker 양쪽이 쓰는 가입 부여 조립이라 건드리지
  * 않는다 — 파기는 그 조립과 변경 이유가 다른, worker 전용 관심사다).

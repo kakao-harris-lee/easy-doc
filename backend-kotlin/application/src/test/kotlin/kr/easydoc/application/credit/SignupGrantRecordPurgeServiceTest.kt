@@ -12,9 +12,10 @@ import java.time.Period
 import java.time.ZoneOffset
 
 /**
- * 가입 크레딧 원장 파기 유스케이스 — Spring 도 DB 도 없이 대역으로 돈다.
- * `UnverifiedAccountPurgeServiceTest`(`application.auth`)와 같은 배치 흐름을 지표
- * (`deleted`)로 잰다.
+ * 무료 체험 중복 방지 원장(가입 크레딧용 `signup_grant_records`·휴대폰 인증 체험용
+ * `phone_trial_grant_records`) 파기 유스케이스 — Spring 도 DB 도 없이 대역으로 돈다.
+ * `UnverifiedAccountPurgeServiceTest`(`application.auth`)와 같은 배치 흐름을 표별 지표
+ * (`signupGrantRecordsDeleted`·`phoneTrialGrantRecordsDeleted`)로 잰다.
  */
 class SignupGrantRecordPurgeServiceTest {
     @Test
@@ -64,19 +65,52 @@ class SignupGrantRecordPurgeServiceTest {
     }
 
     @Test
-    @DisplayName("대상량이 배치를 넘으면 짧은 배치가 나올 때까지 트랜잭션마다 반복한다")
-    fun `대상량이 배치를 넘으면 끝까지 지운다`() {
+    @DisplayName("가입 크레딧 원장이 배치를 넘으면 짧은 배치가 나올 때까지 트랜잭션마다 반복한다")
+    fun `가입 크레딧 원장이 배치를 넘으면 끝까지 지운다`() {
         val world = World(batchSize = BATCH)
         world.store.enqueue(
-            SignupGrantRecordPurgeResult(enabled = true, deleted = BATCH),
-            SignupGrantRecordPurgeResult(enabled = true, deleted = 1),
+            SignupGrantRecordPurgeResult(
+                enabled = true,
+                signupGrantRecordsDeleted = BATCH,
+                phoneTrialGrantRecordsDeleted = 0,
+            ),
+            SignupGrantRecordPurgeResult(
+                enabled = true,
+                signupGrantRecordsDeleted = 1,
+                phoneTrialGrantRecordsDeleted = 0,
+            ),
         )
 
         val result = world.purge.run()
 
         assertThat(world.store.calls).isEqualTo(2)
         assertThat(world.transaction.committed).isEqualTo(2)
-        assertThat(result.deleted).isEqualTo(BATCH + 1)
+        assertThat(result.signupGrantRecordsDeleted).isEqualTo(BATCH + 1)
+        assertThat(world.observer.seen).containsExactly(result)
+    }
+
+    @Test
+    @DisplayName("휴대폰 체험 원장만 배치를 넘어도 짧은 배치가 나올 때까지 트랜잭션마다 반복한다")
+    fun `휴대폰 체험 원장이 배치를 넘으면 끝까지 지운다`() {
+        val world = World(batchSize = BATCH)
+        world.store.enqueue(
+            SignupGrantRecordPurgeResult(
+                enabled = true,
+                signupGrantRecordsDeleted = 0,
+                phoneTrialGrantRecordsDeleted = BATCH,
+            ),
+            SignupGrantRecordPurgeResult(
+                enabled = true,
+                signupGrantRecordsDeleted = 0,
+                phoneTrialGrantRecordsDeleted = 1,
+            ),
+        )
+
+        val result = world.purge.run()
+
+        assertThat(world.store.calls).isEqualTo(2)
+        assertThat(world.transaction.committed).isEqualTo(2)
+        assertThat(result.phoneTrialGrantRecordsDeleted).isEqualTo(BATCH + 1)
         assertThat(world.observer.seen).containsExactly(result)
     }
 
@@ -92,16 +126,22 @@ class SignupGrantRecordPurgeServiceTest {
     }
 
     @Test
-    @DisplayName("결과 문자열에 건수만 있고 이메일 해시는 없다")
-    fun `결과에 이메일 해시가 없다`() {
+    @DisplayName("결과 문자열에 표별 건수만 있고 이메일 해시·전화번호 지문은 없다")
+    fun `결과에 이메일 해시와 전화번호 지문이 없다`() {
         val world = World()
         val hash = "a".repeat(64)
-        world.store.next = SignupGrantRecordPurgeResult(enabled = true, deleted = 1)
+        world.store.next =
+            SignupGrantRecordPurgeResult(
+                enabled = true,
+                signupGrantRecordsDeleted = 1,
+                phoneTrialGrantRecordsDeleted = 2,
+            )
 
         val result = world.purge.run()
 
         assertThat(result.toString()).doesNotContain(hash)
-        assertThat(result.toString()).contains("deleted=1")
+        assertThat(result.toString()).contains("signupGrantRecordsDeleted=1")
+        assertThat(result.toString()).contains("phoneTrialGrantRecordsDeleted=2")
     }
 
     private class World(
@@ -162,8 +202,19 @@ class SignupGrantRecordPurgeServiceTest {
             calls++
             grantedBeforeSeen += grantedBefore
             batchSizesSeen += batchSize
-            if (alwaysFull) return SignupGrantRecordPurgeResult(enabled = true, deleted = batchSize)
-            return queued.removeFirstOrNull() ?: SignupGrantRecordPurgeResult(enabled = true, deleted = 0)
+            if (alwaysFull) {
+                return SignupGrantRecordPurgeResult(
+                    enabled = true,
+                    signupGrantRecordsDeleted = batchSize,
+                    phoneTrialGrantRecordsDeleted = batchSize,
+                )
+            }
+            return queued.removeFirstOrNull()
+                ?: SignupGrantRecordPurgeResult(
+                    enabled = true,
+                    signupGrantRecordsDeleted = 0,
+                    phoneTrialGrantRecordsDeleted = 0,
+                )
         }
     }
 
