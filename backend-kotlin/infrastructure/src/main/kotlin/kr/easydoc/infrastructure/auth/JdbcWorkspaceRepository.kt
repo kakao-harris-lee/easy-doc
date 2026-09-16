@@ -51,6 +51,15 @@ class JdbcWorkspaceRepository(private val jdbc: JdbcClient) : WorkspaceRepositor
             .query { rs, _ -> WorkspaceListing(toWorkspace(rs), rs.getInt("document_count")) }
             .list()
 
+    /** 기본 작업 공간의 id 만 — 문서 수 집계 없이 한 행을 읽는다. */
+    override fun findDefaultId(ownerId: UUID): UUID? =
+        jdbc
+            .sql("SELECT id FROM workspaces WHERE user_id = :ownerId ORDER BY created_at, id LIMIT 1")
+            .param("ownerId", ownerId)
+            .query { rs, _ -> rs.getObject("id", UUID::class.java) }
+            .optional()
+            .orElse(null)
+
     /** 새 작업 공간을 만든다. */
     override fun create(
         ownerId: UUID,

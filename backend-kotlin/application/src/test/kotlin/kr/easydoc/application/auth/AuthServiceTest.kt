@@ -464,6 +464,8 @@ private class RecordingWorkspaceRepository(private val transaction: RecordingTra
 
     override fun listOwned(ownerId: UUID): List<WorkspaceListing> = error(NOT_AUTH_SCOPE)
 
+    override fun findDefaultId(ownerId: UUID): UUID? = error(NOT_AUTH_SCOPE)
+
     override fun create(
         ownerId: UUID,
         name: String,

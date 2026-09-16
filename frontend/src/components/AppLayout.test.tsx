@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -8,7 +8,6 @@ import { ApiError } from '../api/client'
 import { listActiveAnnouncements } from '../api/announcements'
 import { AuthContext } from '../auth/context'
 import type { AuthContextValue } from '../auth/context'
-import { PHONE_VERIFICATION_COOKIE_NAME } from '../auth/phoneVerificationCookie'
 import { setUnsavedChanges } from '../review/unsavedChanges'
 import { ACCOUNT_SETTINGS_PATH, EMAIL_VERIFICATION_PATH } from '../routes/paths'
 import { userResponse, workspaceContext } from '../test/factories'
@@ -84,7 +83,6 @@ function renderLayout(auth: Partial<AuthContextValue> = {}, initialPath = '/') {
 
 beforeEach(() => {
   window.sessionStorage.clear()
-  document.cookie = `${PHONE_VERIFICATION_COOKIE_NAME}=; Path=/; Max-Age=0`
   vi.mocked(oauthLinkStart).mockReset()
   vi.mocked(listActiveAnnouncements).mockReset().mockResolvedValue({ items: [] })
 })
@@ -725,7 +723,7 @@ describe('머리말 구성', () => {
 })
 
 describe('휴대폰 인증 안내', () => {
-  it('미인증 상태를 쿠키에 저장하고 인증 시 받을 5크레딧과 다음 행동을 보여준다', async () => {
+  it('미인증 상태는 인증 시 받을 5크레딧과 다음 행동을 보여준다', async () => {
     renderLayout({ user: userResponse({ phone_verified: false }) })
 
     const banner = screen.getByRole('region', { name: '휴대폰 인증하고 체험 5크레딧 받기' })
@@ -737,18 +735,14 @@ describe('휴대폰 인증 안내', () => {
       'href',
       ACCOUNT_SETTINGS_PATH,
     )
-    await waitFor(() =>
-      expect(document.cookie).toContain(`${PHONE_VERIFICATION_COOKIE_NAME}=false`),
-    )
   })
 
-  it('인증 완료 상태는 쿠키에 저장하고 안내를 숨긴다', async () => {
+  it('인증 완료 상태는 안내를 숨긴다', async () => {
     renderLayout()
 
     expect(
       screen.queryByRole('region', { name: '휴대폰 인증하고 체험 5크레딧 받기' }),
     ).not.toBeInTheDocument()
-    await waitFor(() => expect(document.cookie).toContain(`${PHONE_VERIFICATION_COOKIE_NAME}=true`))
   })
 
   it('이메일 미인증 사용자는 이메일 인증을 먼저 안내한다', () => {

@@ -2,6 +2,7 @@ package kr.easydoc.infrastructure.sms
 
 import kr.easydoc.application.auth.PhoneVerificationSmsSender
 import kr.easydoc.core.exceptions.ExternalServiceUnavailableException
+import kr.easydoc.core.security.HmacSha256
 import kr.easydoc.core.security.Secret
 import org.slf4j.LoggerFactory
 import org.springframework.http.MediaType
@@ -13,9 +14,6 @@ import tools.jackson.databind.json.JsonMapper
 import java.net.http.HttpClient
 import java.time.Clock
 import java.time.Duration
-import java.util.Base64
-import javax.crypto.Mac
-import javax.crypto.spec.SecretKeySpec
 
 data class SensSmsSettings(
     val serviceId: String,
@@ -107,10 +105,5 @@ internal object SensSignature {
         timestamp: String,
         accessKey: String,
         secretKey: Secret,
-    ): String {
-        val value = "POST $path\n$timestamp\n$accessKey"
-        val mac = Mac.getInstance("HmacSHA256")
-        mac.init(SecretKeySpec(secretKey.reveal().toByteArray(Charsets.UTF_8), "HmacSHA256"))
-        return Base64.getEncoder().encodeToString(mac.doFinal(value.toByteArray(Charsets.UTF_8)))
-    }
+    ): String = HmacSha256.base64(secretKey, "POST $path\n$timestamp\n$accessKey")
 }

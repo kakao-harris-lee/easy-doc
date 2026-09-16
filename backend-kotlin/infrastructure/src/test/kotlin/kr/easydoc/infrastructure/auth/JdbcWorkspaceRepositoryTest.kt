@@ -88,6 +88,27 @@ class JdbcWorkspaceRepositoryTest {
     }
 
     @Test
+    @DisplayName("findDefaultId 가 먼저 만든 작업 공간을 돌려준다 — 집계 없이")
+    fun `findDefaultId 가 먼저 만든 것을 돌려준다`() {
+        val owner = newUser()
+        val stranger = newUser()
+        val first = workspaces.create(owner, "가")
+        workspaces.create(owner, "나")
+        workspaces.create(stranger, "남의 것")
+
+        assertThat(workspaces.findDefaultId(owner)).isEqualTo(first.id)
+        assertThat(workspaces.findDefaultId(stranger)).isNotEqualTo(first.id)
+    }
+
+    @Test
+    @DisplayName("findDefaultId 는 소유한 작업 공간이 없으면 null 이다")
+    fun `findDefaultId 는 없으면 null`() {
+        val owner = newUser()
+
+        assertThat(workspaces.findDefaultId(owner)).isNull()
+    }
+
+    @Test
     @DisplayName("document_count 가 LEFT JOIN 의 NULL 행을 세지 않는다 — count(*) 로 쓰면 빈 공간이 1 이 된다")
     fun `빈 작업 공간의 문서 수가 0 이다`() {
         val owner = newUser()

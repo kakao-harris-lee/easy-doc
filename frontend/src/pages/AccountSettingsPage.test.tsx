@@ -72,25 +72,11 @@ describe('계정 설정 화면', () => {
     expect(container.firstElementChild).toHaveClass('mx-auto', 'w-full', 'max-w-5xl')
   })
 
-  it('미인증 사용자는 010 번호 인증 후 지급된 5크레딧을 안내한다', async () => {
-    vi.mocked(requestPhoneVerification).mockResolvedValue(undefined)
-    vi.mocked(confirmPhoneVerification).mockResolvedValue({
-      phone_verified: true,
-      granted_credits: 5,
-    })
-    const refreshMe = vi.fn().mockResolvedValue(undefined)
-    const user = userEvent.setup()
-    renderPage({ user: userResponse({ phone_verified: false }), refreshMe })
+  it('휴대폰 인증 절이 렌더된다', () => {
+    renderPage({ user: userResponse({ phone_verified: false }) })
 
-    await user.type(screen.getByLabelText('휴대폰 번호'), '010-1234-5678')
-    await user.click(screen.getByRole('button', { name: '인증번호 받기' }))
-    await user.type(await screen.findByLabelText('인증번호'), '123456')
-    await user.click(screen.getByRole('button', { name: '인증 완료' }))
-
-    expect(requestPhoneVerification).toHaveBeenCalledWith('010-1234-5678')
-    expect(confirmPhoneVerification).toHaveBeenCalledWith('123456')
-    expect(await screen.findByText(/체험용 5크레딧/)).toBeInTheDocument()
-    expect(refreshMe).toHaveBeenCalledOnce()
+    expect(screen.getByLabelText('휴대폰 번호')).toBeInTheDocument()
+    // 세부 흐름(재발송 쿨다운·확인 결과 문구 등)은 PhoneVerificationSection.test.tsx가 다룬다.
   })
 
   it('처음에는 확인 폼을 보여주지 않는다 — 「회원 탈퇴」 버튼만 있다', () => {

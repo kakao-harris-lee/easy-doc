@@ -872,6 +872,13 @@ class InMemoryWorkspaceRepository : WorkspaceRepository {
             .sortedWith(compareBy({ it.createdAt }, { it.id }))
             .map { WorkspaceListing(it.toWorkspace(), documentCounts[it.id] ?: 0) }
 
+    override fun findDefaultId(ownerId: UUID): UUID? =
+        rows
+            .filter { it.ownerId == ownerId }
+            .sortedWith(compareBy({ it.createdAt }, { it.id }))
+            .firstOrNull()
+            ?.id
+
     override fun create(
         ownerId: UUID,
         name: String,

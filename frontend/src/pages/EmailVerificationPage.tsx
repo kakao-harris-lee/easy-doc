@@ -5,14 +5,10 @@ import { Navigate, useNavigate } from 'react-router-dom'
 import { confirmEmailVerification, requestEmailVerification } from '../api/auth'
 import { ApiError } from '../api/client'
 import { useAuth } from '../auth/context'
+import { ONE_TIME_CODE_LENGTH, sanitizeOneTimeCode } from '../auth/oneTimeCode'
+import { DEFAULT_RESEND_COOLDOWN_SECONDS, useResendCooldown } from '../auth/useResendCooldown'
 import { Button } from '../components/ui/Button'
 import { HOME_PATH } from '../routes/paths'
-
-/** 코드 재발송 뒤 로컬로 시작하는 대기 시간(초). 계약 재발송 쿨다운(60초)과 같다. */
-const RESEND_COOLDOWN_SECONDS = 60
-
-/** 인증 코드 길이. 계약 `ConfirmEmailVerificationRequest.code`(6자리 고정). */
-const CODE_LENGTH = 6
 
 /** 서버 문구를 못 읽었을 때(네트워크 등)만 쓰는 문구. */
 const GENERIC_ERROR_MESSAGE = '요청을 처리하지 못했습니다. 다시 시도해 주세요.'
@@ -34,17 +30,8 @@ export function EmailVerificationPage() {
   const [error, setError] = useState<string | null>(null)
   const [confirming, setConfirming] = useState(false)
   const [resending, setResending] = useState(false)
-  const [cooldown, setCooldown] = useState(0)
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const { cooldown, startCooldown } = useResendCooldown()
   const codeInputRef = useRef<HTMLInputElement>(null)
-
-  useEffect(() => {
-    return () => {
-      if (timerRef.current !== null) {
-        clearInterval(timerRef.current)
-      }
-    }
-  }, [])
 
   // 이 화면에 왔다는 것은 곧 할 일이 코드 입력이라는 뜻이다 — 네이티브 `autoFocus`
   // 대신 ref로 직접 옮긴다(UploadPage의 파일 카드 초점 이동과 같은 이유:
@@ -52,26 +39,6 @@ export function EmailVerificationPage() {
   useEffect(() => {
     codeInputRef.current?.focus()
   }, [])
-
-  /** 재발송 대기 시간을 시작하고 1초마다 줄인다. */
-  function startCooldown(seconds: number): void {
-    if (timerRef.current !== null) {
-      clearInterval(timerRef.current)
-    }
-    setCooldown(seconds)
-    timerRef.current = setInterval(() => {
-      setCooldown((current) => {
-        if (current <= 1) {
-          if (timerRef.current !== null) {
-            clearInterval(timerRef.current)
-            timerRef.current = null
-          }
-          return 0
-        }
-        return current - 1
-      })
-    }, 1000)
-  }
 
   // 이미 인증된 계정(다른 탭에서 먼저 인증했거나, 소셜 로그인처럼 처음부터 인증된
   // 계정이 주소를 직접 친 경우)은 여기 머물 이유가 없다.
@@ -106,11 +73,11 @@ export function EmailVerificationPage() {
     setResending(true)
     try {
       await requestEmailVerification()
-      startCooldown(RESEND_COOLDOWN_SECONDS)
+      startCooldown(DEFAULT_RESEND_COOLDOWN_SECONDS)
     } catch (caught) {
       if (caught instanceof ApiError && caught.status === 429) {
         // 서버가 계산한 남은 시간을 그대로 쓴다 — 로컬 60초 고정값보다 정확하다.
-        startCooldown(caught.retryAfterSeconds ?? RESEND_COOLDOWN_SECONDS)
+        startCooldown(caught.retryAfterSeconds ?? DEFAULT_RESEND_COOLDOWN_SECONDS)
       } else if (caught instanceof ApiError && caught.status === 409) {
         await refreshMe()
         navigate(HOME_PATH, { replace: true })
@@ -158,19 +125,17 @@ export function EmailVerificationPage() {
             type="text"
             inputMode="numeric"
             autoComplete="one-time-code"
-            maxLength={CODE_LENGTH}
+            maxLength={ONE_TIME_CODE_LENGTH}
             value={code}
             aria-invalid={error !== null}
-            onChange={(event) =>
-              setCode(event.target.value.replace(/\D/g, '').slice(0, CODE_LENGTH))
-            }
+            onChange={(event) => setCode(sanitizeOneTimeCode(event.target.value))}
           />
         </div>
         <Button
           type="submit"
           className="h-11"
           loading={confirming}
-          disabled={code.length !== CODE_LENGTH}
+          disabled={code.length !== ONE_TIME_CODE_LENGTH}
           fullWidth
         >
           {confirming ? '확인하는 중…' : '확인'}

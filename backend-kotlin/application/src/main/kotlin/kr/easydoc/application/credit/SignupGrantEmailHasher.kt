@@ -1,8 +1,7 @@
 package kr.easydoc.application.credit
 
+import kr.easydoc.core.security.HmacSha256
 import kr.easydoc.core.security.Secret
-import javax.crypto.Mac
-import javax.crypto.spec.SecretKeySpec
 
 /**
  * 가입 부여 중복 방지용 이메일 해시 — `HMAC-SHA256(pepper, 정규화된 이메일)`의 16진 64자
@@ -19,14 +18,5 @@ import javax.crypto.spec.SecretKeySpec
  */
 class SignupGrantEmailHasher(private val pepper: Secret) {
     /** [normalizedEmail] 의 HMAC-SHA256 을 소문자 16진 64자로 돌려준다. */
-    fun hash(normalizedEmail: String): String {
-        val mac = Mac.getInstance(ALGORITHM)
-        mac.init(SecretKeySpec(pepper.reveal().toByteArray(Charsets.UTF_8), ALGORITHM))
-        val digest = mac.doFinal(normalizedEmail.toByteArray(Charsets.UTF_8))
-        return digest.joinToString(separator = "") { byte -> "%02x".format(byte) }
-    }
-
-    private companion object {
-        const val ALGORITHM = "HmacSHA256"
-    }
+    fun hash(normalizedEmail: String): String = HmacSha256.hex(pepper, normalizedEmail)
 }

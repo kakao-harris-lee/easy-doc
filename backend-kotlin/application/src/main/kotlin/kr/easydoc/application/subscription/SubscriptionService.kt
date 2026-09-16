@@ -120,14 +120,7 @@ class SubscriptionService(
             store.lockOwned(ownerId, workspaceId)
             requireEnabled()
             val user = users.findById(ownerId)
-            if (user?.emailVerifiedAt == null) {
-                throw kr.easydoc.core.exceptions
-                    .EmailNotVerifiedException("이메일 인증 후 결제하세요")
-            }
-            if (user.phoneVerifiedAt == null) {
-                throw kr.easydoc.core.exceptions
-                    .PhoneNotVerifiedException("휴대폰 인증 후 결제하세요")
-            }
+            requirePaymentEligible(user, PaymentAction.CHECKOUT)
             val plan = plans.find { it.id == planId } ?: throw InvalidInputException("알 수 없는 구독 플랜입니다")
             val previous = store.payment(workspaceId, orderId)
             if (previous != null) {

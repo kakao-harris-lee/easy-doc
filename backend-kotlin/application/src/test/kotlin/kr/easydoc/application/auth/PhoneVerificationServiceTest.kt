@@ -290,6 +290,8 @@ private class PhoneWorkspaceRepository(
             emptyList()
         }
 
+    override fun findDefaultId(ownerId: UUID): UUID? = if (ownerId == this.ownerId) workspaceId else null
+
     override fun createDefault(userId: UUID): UUID = error("not used")
 
     override fun create(

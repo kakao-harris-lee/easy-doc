@@ -122,6 +122,13 @@ interface WorkspaceRepository {
      */
     fun listOwned(ownerId: UUID): List<WorkspaceListing>
 
+    /**
+     * 기본 작업 공간(가장 먼저 만든 것)의 id. [listOwned] 와 같은 순서 규칙
+     * (`ORDER BY created_at, id`)으로 첫 행 하나만 읽는다 — 문서 수 집계 없이. 소유한
+     * 작업 공간이 없으면 `null`.
+     */
+    fun findDefaultId(ownerId: UUID): UUID?
+
     /** 새 작업 공간을 만든다. 같은 사용자 안에서 이름이 겹치면 `ConflictException`. */
     fun create(
         ownerId: UUID,
