@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { deleteAccount } from '../api/auth'
+import { confirmPhoneVerification, deleteAccount, requestPhoneVerification } from '../api/auth'
 import { ApiError } from '../api/client'
 import { getWorkspaceCredits } from '../api/credits'
 import { listInvoiceRequests } from '../api/invoices'
@@ -21,6 +21,8 @@ import { AccountSettingsPage } from './AccountSettingsPage'
 
 vi.mock('../api/auth', () => ({
   deleteAccount: vi.fn(),
+  requestPhoneVerification: vi.fn(),
+  confirmPhoneVerification: vi.fn(),
 }))
 
 vi.mock('../api/credits', () => ({
@@ -55,6 +57,8 @@ function renderPage(
 
 beforeEach(() => {
   vi.mocked(deleteAccount).mockReset()
+  vi.mocked(requestPhoneVerification).mockReset()
+  vi.mocked(confirmPhoneVerification).mockReset()
   vi.mocked(getWorkspaceCredits)
     .mockReset()
     .mockResolvedValue(workspaceCredits({ available: 12 }))
@@ -62,6 +66,33 @@ beforeEach(() => {
 })
 
 describe('계정 설정 화면', () => {
+  it('내용을 가운데 정렬한 동일 너비 영역에 배치한다', () => {
+    const { container } = renderPage()
+
+    expect(container.firstElementChild).toHaveClass('mx-auto', 'w-full', 'max-w-5xl')
+  })
+
+  it('미인증 사용자는 010 번호 인증 후 지급된 5크레딧을 안내한다', async () => {
+    vi.mocked(requestPhoneVerification).mockResolvedValue(undefined)
+    vi.mocked(confirmPhoneVerification).mockResolvedValue({
+      phone_verified: true,
+      granted_credits: 5,
+    })
+    const refreshMe = vi.fn().mockResolvedValue(undefined)
+    const user = userEvent.setup()
+    renderPage({ user: userResponse({ phone_verified: false }), refreshMe })
+
+    await user.type(screen.getByLabelText('휴대폰 번호'), '010-1234-5678')
+    await user.click(screen.getByRole('button', { name: '인증번호 받기' }))
+    await user.type(await screen.findByLabelText('인증번호'), '123456')
+    await user.click(screen.getByRole('button', { name: '인증 완료' }))
+
+    expect(requestPhoneVerification).toHaveBeenCalledWith('010-1234-5678')
+    expect(confirmPhoneVerification).toHaveBeenCalledWith('123456')
+    expect(await screen.findByText(/체험용 5크레딧/)).toBeInTheDocument()
+    expect(refreshMe).toHaveBeenCalledOnce()
+  })
+
   it('처음에는 확인 폼을 보여주지 않는다 — 「회원 탈퇴」 버튼만 있다', () => {
     renderPage()
 

@@ -9,6 +9,9 @@ import type {
   OAuthStartResponse,
   PasswordResetConfirmRequest,
   PasswordResetRequest,
+  PhoneVerificationResponse,
+  RequestPhoneVerificationRequest,
+  ConfirmPhoneVerificationRequest,
   SetPasswordRequest,
   TokenResponse,
   UserResponse,
@@ -135,6 +138,19 @@ export function requestEmailVerification(): Promise<void> {
 export function confirmEmailVerification(code: string): Promise<void> {
   const body: ConfirmEmailVerificationRequest = { code }
   return requestVoid('/auth/email-verification/confirm', { method: 'POST', body })
+}
+
+export function requestPhoneVerification(phoneNumber: string): Promise<void> {
+  const body: RequestPhoneVerificationRequest = { phone_number: phoneNumber }
+  return requestVoid('/auth/phone-verification/request', { method: 'POST', body })
+}
+
+export function confirmPhoneVerification(code: string): Promise<PhoneVerificationResponse> {
+  const body: ConfirmPhoneVerificationRequest = { code }
+  return requestJson<PhoneVerificationResponse>('/auth/phone-verification/confirm', {
+    method: 'POST',
+    body,
+  })
 }
 
 /**

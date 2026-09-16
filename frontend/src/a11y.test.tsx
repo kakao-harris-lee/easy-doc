@@ -100,6 +100,7 @@ const USER = {
   id: 'u1',
   email: 'gongmuwon@example.test',
   email_verified: true,
+  phone_verified: true,
   has_password: true,
   identities: [],
   is_admin: false,

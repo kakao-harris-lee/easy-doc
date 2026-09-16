@@ -23,7 +23,7 @@ type DialogMode = 'create' | 'rename'
  * `AppLayout`이 이 컴포넌트를 DOM에 두 벌(데스크톱 자리 + 모바일 행) 그린다. 열림 상태와
  * `useId` 모두 인스턴스마다 따로이므로 두 벌이 함께 열리거나 id가 겹치지 않는다.
  */
-export function WorkspaceMenu() {
+export function WorkspaceMenu({ align = 'left' }: { align?: 'left' | 'right' }) {
   const { workspaces, currentId, select, create, rename } = useWorkspace()
   const ids = useId()
   const menuId = `${ids}-menu`
@@ -152,7 +152,9 @@ export function WorkspaceMenu() {
       <div
         id={menuId}
         hidden={!expanded}
-        className="absolute left-0 top-full z-40 mt-2 w-72 max-w-[calc(100vw-2rem)] rounded-xl border border-border bg-card p-1.5 text-card-foreground shadow-lg"
+        className={`absolute top-full z-40 mt-2 w-72 max-w-[calc(100vw-2rem)] rounded-xl border border-border bg-card p-1.5 text-card-foreground shadow-lg ${
+          align === 'right' ? 'right-0' : 'left-0'
+        }`}
       >
         <p className="px-3 py-2 text-xs font-semibold text-muted-foreground">작업 공간</p>
         <div className="max-h-64 overflow-y-auto" role="group" aria-label="작업 공간 목록">

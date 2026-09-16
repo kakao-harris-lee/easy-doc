@@ -35,6 +35,7 @@ export function userResponse(overrides: Partial<UserResponse> = {}): UserRespons
     id: 'u1',
     email: 'user@example.com',
     email_verified: true,
+    phone_verified: true,
     has_password: true,
     identities: [],
     // 기본값은 일반 사용자다(2.25.0 신설) — 관리자 화면 테스트만 명시로 참을 덮어쓴다.

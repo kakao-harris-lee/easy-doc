@@ -14,6 +14,7 @@ import java.time.OffsetDateTime
 import java.util.UUID
 
 /** `users` 테이블 접근. 스키마는 `V1__initial_schema.sql` 이 정한다(`is_admin`은 `V17__admin.sql`). */
+@Suppress("TooManyFunctions") // UserRepository의 인증 상태 전이를 그대로 구현한다.
 class JdbcUserRepository(private val jdbc: JdbcClient) : UserRepository {
     override fun findByEmail(email: String): StoredUser? =
         jdbc
@@ -61,7 +62,7 @@ class JdbcUserRepository(private val jdbc: JdbcClient) : UserRepository {
                     """
                     INSERT INTO users (id, email, password_hash)
                     VALUES (:id, :email, :passwordHash)
-                    RETURNING id, email, password_hash, created_at, email_verified_at, is_admin
+                    RETURNING $USER_COLUMNS
                     """.trimIndent(),
                 ).param("id", id)
                 .param("email", email)
@@ -93,7 +94,7 @@ class JdbcUserRepository(private val jdbc: JdbcClient) : UserRepository {
                     """
                     INSERT INTO users (id, email, password_hash, email_verified_at)
                     VALUES (:id, :email, NULL, CASE WHEN :emailVerified THEN now() ELSE NULL END)
-                    RETURNING id, email, password_hash, created_at, email_verified_at, is_admin
+                    RETURNING $USER_COLUMNS
                     """.trimIndent(),
                 ).param("id", id)
                 .param("email", email)
@@ -130,6 +131,43 @@ class JdbcUserRepository(private val jdbc: JdbcClient) : UserRepository {
             .param("id", userId)
             .update() > 0
 
+    override fun setPendingPhoneFingerprint(
+        userId: UUID,
+        fingerprint: String,
+    ) {
+        jdbc
+            .sql("UPDATE users SET pending_phone_fingerprint = :fingerprint WHERE id = :id")
+            .param("fingerprint", fingerprint)
+            .param("id", userId)
+            .update()
+    }
+
+    override fun clearPendingPhoneFingerprint(
+        userId: UUID,
+        fingerprint: String,
+    ) {
+        jdbc
+            .sql(
+                """
+                UPDATE users SET pending_phone_fingerprint = NULL
+                WHERE id = :id AND pending_phone_fingerprint = :fingerprint
+                """.trimIndent(),
+            ).param("id", userId)
+            .param("fingerprint", fingerprint)
+            .update()
+    }
+
+    override fun markPhoneVerified(userId: UUID): Boolean =
+        jdbc
+            .sql(
+                """
+                UPDATE users
+                SET phone_verified_at = now(), pending_phone_fingerprint = NULL
+                WHERE id = :id AND phone_verified_at IS NULL
+                """.trimIndent(),
+            ).param("id", userId)
+            .update() > 0
+
     /** [password_hash] 를 항상 함께 읽는다 — [User.hasPassword] 는 그 존재 여부다(`toStoredUser`도 같은 열에서 읽는다). */
     private fun toUser(rs: ResultSet): User =
         User(
@@ -141,6 +179,8 @@ class JdbcUserRepository(private val jdbc: JdbcClient) : UserRepository {
             emailVerifiedAt = rs.getObject("email_verified_at", OffsetDateTime::class.java)?.toInstant(),
             hasPassword = rs.getString("password_hash") != null,
             isAdmin = rs.getBoolean("is_admin"),
+            phoneVerifiedAt = rs.getObject("phone_verified_at", OffsetDateTime::class.java)?.toInstant(),
+            pendingPhoneFingerprint = rs.getString("pending_phone_fingerprint"),
         )
 
     private fun toStoredUser(rs: ResultSet): StoredUser =
@@ -148,7 +188,9 @@ class JdbcUserRepository(private val jdbc: JdbcClient) : UserRepository {
 
     private companion object {
         /** `findByEmail`·`findById`·`lockForUpdate` 공용 열 목록. */
-        const val USER_COLUMNS = "id, email, password_hash, created_at, email_verified_at, is_admin"
+        const val USER_COLUMNS =
+            "id, email, password_hash, created_at, email_verified_at, is_admin, " +
+                "phone_verified_at, pending_phone_fingerprint"
 
         /** 계약 `components/responses/Conflict` 의 `duplicate_email` 예시와 같은 값. */
         const val DUPLICATE_EMAIL_MESSAGE = "이미 가입된 이메일입니다"

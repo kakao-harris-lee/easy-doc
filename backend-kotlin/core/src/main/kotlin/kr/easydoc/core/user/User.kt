@@ -32,11 +32,16 @@ data class User(
      * `UserResponse.is_admin`(화면의 「관리」 메뉴 표시값)에만 쓰인다.
      */
     val isAdmin: Boolean = false,
+    /** 휴대폰 인증 완료 시각. `null`이면 결제를 시작할 수 없다. */
+    val phoneVerifiedAt: Instant? = null,
+    /** 인증 중인 번호의 HMAC 지문. 평문 전화번호는 저장하지 않는다. */
+    val pendingPhoneFingerprint: String? = null,
 ) {
     /** **이메일을 찍지 않는다.** */
     override fun toString(): String =
         "User(id=$id, email=$CONTENT_MASK, createdAt=$createdAt, emailVerified=${emailVerifiedAt != null}, " +
-            "hasPassword=$hasPassword, isAdmin=$isAdmin)"
+            "hasPassword=$hasPassword, isAdmin=$isAdmin, phoneVerified=${phoneVerifiedAt != null}, " +
+            "phoneVerificationPending=${pendingPhoneFingerprint != null})"
 }
 
 /**

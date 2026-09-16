@@ -91,6 +91,10 @@ abstract class JdbcOneTimeCodeStore
             return matched
         }
 
+        override fun revoke(userId: UUID) {
+            voidActiveCode(userId)
+        }
+
         /**
          * 활성(미소비·미만료·시도 미소진) 코드 하나의 시도 횟수를 올리고 그 행의 해시 재료를
          * 돌려준다. 조건에 걸리는 행이 없으면 아무것도 갱신하지 않고 `null` 이다.

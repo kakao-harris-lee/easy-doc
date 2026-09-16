@@ -43,9 +43,14 @@ class TossBillingService(
     ): BillingSession =
         owned(owner, workspace) {
             requireEnabled()
-            if (users.findById(owner)?.emailVerifiedAt == null) {
+            val ownerUser = users.findById(owner)
+            if (ownerUser?.emailVerifiedAt == null) {
                 throw kr.easydoc.core.exceptions
                     .EmailNotVerifiedException("이메일 인증 후 카드를 등록하세요")
+            }
+            if (ownerUser.phoneVerifiedAt == null) {
+                throw kr.easydoc.core.exceptions
+                    .PhoneNotVerifiedException("휴대폰 인증 후 카드를 등록하세요")
             }
             plan(planId)
             if (store.pending(workspace)) conflict("처리 중인 결제가 있습니다. 결과를 먼저 확인하세요")

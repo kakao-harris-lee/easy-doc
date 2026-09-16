@@ -5,6 +5,7 @@ import { MIN_PASSWORD_LENGTH } from '../auth/validation'
 import { AuthIntro } from '../components/AuthIntro'
 import { CredentialsForm } from '../components/CredentialsForm'
 import { SocialLoginButton } from '../components/SocialLoginButton'
+import { TrialCreditSteps } from '../components/TrialCreditSteps'
 import { EMAIL_VERIFICATION_PATH, HOME_PATH, LOGIN_PATH } from '../routes/paths'
 
 /**
@@ -37,6 +38,7 @@ export function SignupPage() {
           <p className="mt-2 text-sm leading-[22px] text-muted-foreground">
             업무용 이메일로 가입하면 기본 작업 공간이 하나 만들어집니다.
           </p>
+          <TrialCreditSteps className="mt-5" />
           <CredentialsForm
             submitLabel="가입하기"
             passwordAutoComplete="new-password"

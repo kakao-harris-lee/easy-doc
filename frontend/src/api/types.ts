@@ -60,6 +60,8 @@ export interface UserResponse {
   email: string
   /** 거짓이면 문서를 만들 수 없다. */
   email_verified: boolean
+  /** 결제 시작에 필요한 국내 휴대폰 번호 인증 여부. */
+  phone_verified: boolean
   identities: UserIdentityResponse[]
   /**
    * 소셜 전용 계정은 거짓이다. 마지막 로그인 수단을 해제하지 않도록 화면에서 사용한다.
@@ -111,6 +113,19 @@ export interface OAuthCallbackRequest {
 export interface ConfirmEmailVerificationRequest {
   /** 메일로 받은 6자리 숫자 코드. */
   code: string
+}
+
+export interface RequestPhoneVerificationRequest {
+  phone_number: string
+}
+
+export interface ConfirmPhoneVerificationRequest {
+  code: string
+}
+
+export interface PhoneVerificationResponse {
+  phone_verified: true
+  granted_credits: number
 }
 
 export interface SetPasswordRequest {

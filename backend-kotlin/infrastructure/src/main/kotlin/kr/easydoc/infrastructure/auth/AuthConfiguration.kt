@@ -10,6 +10,11 @@ import kr.easydoc.application.auth.PasswordHasher
 import kr.easydoc.application.auth.PasswordResetCodeStore
 import kr.easydoc.application.auth.PasswordResetService
 import kr.easydoc.application.auth.PasswordService
+import kr.easydoc.application.auth.PhoneFingerprintHasher
+import kr.easydoc.application.auth.PhoneTrialGrantLedger
+import kr.easydoc.application.auth.PhoneVerificationCodeStore
+import kr.easydoc.application.auth.PhoneVerificationService
+import kr.easydoc.application.auth.PhoneVerificationSmsSender
 import kr.easydoc.application.auth.SocialLoginProvider
 import kr.easydoc.application.auth.SocialLoginProviderId
 import kr.easydoc.application.auth.SocialLoginRepositories
@@ -31,6 +36,7 @@ import kr.easydoc.infrastructure.auth.naver.NaverOAuthSettings
 import kr.easydoc.infrastructure.auth.naver.NaverSocialLoginProvider
 import kr.easydoc.infrastructure.billing.BillingProperties
 import kr.easydoc.infrastructure.db.SpringTransactionRunner
+import kr.easydoc.infrastructure.sms.SmsProperties
 import org.springframework.boot.context.properties.ConfigurationProperties
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
@@ -102,6 +108,16 @@ data class PasswordResetProperties(
     val codeTtlMinutes: Long = 10,
     val resendCooldownSeconds: Long = 60,
     val maxAttempts: Int = 5,
+)
+
+/** 휴대폰 OTP와 번호당 무료 체험 설정. */
+@ConfigurationProperties(prefix = "easydoc.phone-verification")
+data class PhoneVerificationProperties(
+    val codeTtlMinutes: Long = 5,
+    val resendCooldownSeconds: Long = 60,
+    val maxAttempts: Int = 5,
+    val trialCredits: Int = 5,
+    val fingerprintPepper: Secret = Secret.EMPTY,
 )
 
 /** 소셜 로그인 공통 설정(제공자를 가리지 않는다). 바인딩 접두사는 `easydoc.oauth`. */
@@ -305,6 +321,57 @@ class AuthConfiguration {
             maxAttempts = properties.maxAttempts,
             mailFactory = mailFactory,
         )
+
+    @Bean
+    fun phoneVerificationCodeStore(jdbcClient: JdbcClient): PhoneVerificationCodeStore =
+        JdbcPhoneVerificationCodeStore(jdbcClient, Clock.systemUTC())
+
+    @Bean
+    fun phoneTrialGrantLedger(jdbcClient: JdbcClient): PhoneTrialGrantLedger = JdbcPhoneTrialGrantLedger(jdbcClient)
+
+    @Suppress("LongParameterList")
+    @Bean
+    fun phoneVerificationService(
+        users: UserRepository,
+        workspaces: WorkspaceRepository,
+        codes: PhoneVerificationCodeStore,
+        sms: PhoneVerificationSmsSender,
+        credits: CreditAccountService,
+        grants: PhoneTrialGrantLedger,
+        transactionRunner: TransactionRunner,
+        properties: PhoneVerificationProperties,
+        smsProperties: SmsProperties,
+    ): PhoneVerificationService {
+        if (smsProperties.provider.equals("sens", ignoreCase = true) &&
+            properties.trialCredits > 0 && properties.fingerprintPepper.isBlank()
+        ) {
+            throw kr.easydoc.core.exceptions.ConfigurationException(
+                "휴대폰 인증 체험 크레딧을 사용하려면 EASYDOC_PHONE_VERIFICATION_PEPPER 또는 " +
+                    "EASYDOC_CREDITS_SIGNUP_GRANT_PEPPER가 필요합니다",
+            )
+        }
+        return PhoneVerificationService(
+            users = users,
+            workspaces = workspaces,
+            codes = codes,
+            sms = sms,
+            credits = credits,
+            grants = grants,
+            hasher =
+                PhoneFingerprintHasher(
+                    if (properties.fingerprintPepper.isBlank()) {
+                        Secret("fake-phone-verification-pepper")
+                    } else {
+                        properties.fingerprintPepper
+                    },
+                ),
+            transaction = transactionRunner,
+            codeTtl = Duration.ofMinutes(properties.codeTtlMinutes),
+            resendCooldown = Duration.ofSeconds(properties.resendCooldownSeconds),
+            maxAttempts = properties.maxAttempts,
+            trialCredits = properties.trialCredits,
+        )
+    }
 
     /** `POST /auth/password` — 비밀번호 없는 계정에 비밀번호를 만든다(backlog §1.4 후속). */
     @Bean

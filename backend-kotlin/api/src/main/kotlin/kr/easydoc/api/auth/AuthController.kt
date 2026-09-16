@@ -5,6 +5,7 @@ import kr.easydoc.application.auth.AuthService
 import kr.easydoc.application.auth.EmailVerificationService
 import kr.easydoc.application.auth.PasswordResetService
 import kr.easydoc.application.auth.PasswordService
+import kr.easydoc.application.auth.PhoneVerificationService
 import kr.easydoc.application.auth.SocialLoginService
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
@@ -24,7 +25,7 @@ import org.springframework.web.bind.annotation.RestController
  */
 @RestController
 @RequestMapping("/auth")
-@Suppress("LongParameterList")
+@Suppress("LongParameterList", "TooManyFunctions")
 class AuthController(
     private val authService: AuthService,
     private val emailVerification: EmailVerificationService,
@@ -32,6 +33,7 @@ class AuthController(
     private val passwordService: PasswordService,
     private val passwordResetService: PasswordResetService,
     private val deleteAccountService: DeleteAccountService,
+    private val phoneVerification: PhoneVerificationService,
 ) {
     /** 계정과 기본 작업 공간을 만든다. **201** 이다 — 자원이 실제로 생겼다. */
     @PostMapping("/signup", consumes = [MediaType.APPLICATION_JSON_VALUE])
@@ -79,6 +81,26 @@ class AuthController(
     ): ResponseEntity<Void> {
         emailVerification.confirm(user.id, request.code)
         return ResponseEntity.noContent().build()
+    }
+
+    /** 국내 010 번호로 6자리 인증 코드를 보낸다. */
+    @PostMapping("/phone-verification/request", consumes = [MediaType.APPLICATION_JSON_VALUE])
+    fun requestPhoneVerification(
+        user: AuthenticatedUser,
+        @RequestBody request: RequestPhoneVerificationRequest,
+    ): ResponseEntity<Void> {
+        phoneVerification.request(user.id, request.phoneNumber)
+        return ResponseEntity.noContent().build()
+    }
+
+    /** 휴대폰 인증을 완료하고 번호당 최초 1회 체험 크레딧을 지급한다. */
+    @PostMapping("/phone-verification/confirm", consumes = [MediaType.APPLICATION_JSON_VALUE])
+    fun confirmPhoneVerification(
+        user: AuthenticatedUser,
+        @RequestBody request: ConfirmPhoneVerificationRequest,
+    ): ResponseEntity<PhoneVerificationResponse> {
+        val result = phoneVerification.confirm(user.id, request.code)
+        return private(HttpStatus.OK).body(PhoneVerificationResponse(true, result.grantedCredits))
     }
 
     /**

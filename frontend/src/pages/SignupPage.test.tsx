@@ -59,6 +59,18 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
+describe('가입 화면', () => {
+  it('가입부터 휴대폰 인증과 체험 5크레딧 발급까지의 순서를 보여준다', () => {
+    renderAt('/signup')
+
+    const guide = screen.getByRole('region', { name: '무료 체험 시작 순서' })
+    expect(guide).toHaveTextContent('가입')
+    expect(guide).toHaveTextContent('로그인')
+    expect(guide).toHaveTextContent('휴대폰 인증 요청')
+    expect(guide).toHaveTextContent('체험 5크레딧 발급')
+  })
+})
+
 describe('구글 로그인 시작 (가입 화면)', () => {
   it('시작 요청이 성공하면 redirect_uri를 넘기고 state를 저장한 뒤 인가 URL로 이동한다', async () => {
     const user = userEvent.setup()

@@ -48,10 +48,10 @@ class OAuthContractTest {
 
     @Test
     @DisplayName(
-        "BadGateway(502) 는 oauthCallback·oauthLinkCallback·reconvertUnit 세 오퍼레이션만 선언한다 " +
+        "BadGateway(502) 는 외부 제공자를 동기로 호출하는 네 오퍼레이션만 선언한다 " +
             "(리뷰 후속 조치 LOW — x-retired-responses[0].reinstated_by 의 좁은 범위를 계약 테스트로 고정한다)",
     )
-    fun `502 선언 범위가 정확히 셋이다`() {
+    fun `502 선언 범위가 정확히 넷이다`() {
         val declaring =
             ContractSpec.operations().filter { (path, method) ->
                 BAD_GATEWAY.toString() in ContractSpec.responseStatuses(path, method)
@@ -60,9 +60,10 @@ class OAuthContractTest {
         assertThat(declaring.map { it.first }.toSet())
             .withFailMessage(
                 "502 를 선언한 오퍼레이션이 %s 다 — 정본(x-retired-responses[0].reinstated_by)이 예고한 " +
-                    "셋(oauthCallback·oauthLinkCallback·reconvertUnit)과 달라졌다. 새 오퍼레이션이 늘었다면 그 정본 항목도 함께 갱신하라.",
+                    "넷(oauthCallback·oauthLinkCallback·reconvertUnit·requestPhoneVerification)과 달라졌다. " +
+                    "새 오퍼레이션이 늘었다면 그 정본 항목도 함께 갱신하라.",
                 declaring.map { (path, method) -> "${method.uppercase()} $path" },
-            ).isEqualTo(setOf(CALLBACK_PATH, LINK_CALLBACK_PATH, RECONVERT_UNIT_PATH))
+            ).isEqualTo(setOf(CALLBACK_PATH, LINK_CALLBACK_PATH, RECONVERT_UNIT_PATH, PHONE_VERIFICATION_REQUEST_PATH))
 
         declaring.forEach { (path, method) ->
             val ref = ContractSpec.map("paths", path, method, "responses", BAD_GATEWAY.toString())["\$ref"]
@@ -873,6 +874,7 @@ class OAuthContractTest {
         const val LINK_CALLBACK_PATH = "/auth/oauth/{provider}/link/callback"
         const val UNLINK_PATH = "/auth/oauth/{provider}/link"
         const val RECONVERT_UNIT_PATH = "/conversions/{conversion_id}/units/{source_unit_index}/reconvert"
+        const val PHONE_VERIFICATION_REQUEST_PATH = "/auth/phone-verification/request"
         const val POST = "post"
         const val DELETE = "delete"
         const val UNPROCESSABLE_CONTENT = 422

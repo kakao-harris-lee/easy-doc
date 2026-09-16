@@ -94,6 +94,9 @@ class InvalidVerificationCodeException(message: String) : EasyDocException(messa
  */
 class EmailNotVerifiedException(message: String) : EasyDocException(message)
 
+/** 휴대폰 인증 없이는 결제를 시작할 수 없다. */
+class PhoneNotVerifiedException(message: String) : EasyDocException(message)
+
 /**
  * 재시도 쿨다운 안에서 다시 요청했다 — 재발송 60초 쿨다운이 오늘의 유일한 발생 자리다.
  * [retryAfterSeconds]는 계약이 요구하는 `Retry-After` 헤더 값이다(정수 초, 최소 1 —

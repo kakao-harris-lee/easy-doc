@@ -54,6 +54,9 @@ interface OneTimeCodeStore {
         code: String,
         maxAttempts: Int,
     ): Boolean
+
+    /** 활성 코드를 무효화한다. 외부 발송 실패 뒤 전달되지 않은 코드를 회수할 때 쓴다. */
+    fun revoke(userId: UUID) = Unit
 }
 
 /**
@@ -62,3 +65,6 @@ interface OneTimeCodeStore {
  * [OneTimeCodeStore] KDoc을 본다.
  */
 interface VerificationCodeStore : OneTimeCodeStore
+
+/** 휴대폰 인증 코드 저장소. 이메일 인증과 별도 테이블을 사용한다. */
+interface PhoneVerificationCodeStore : OneTimeCodeStore

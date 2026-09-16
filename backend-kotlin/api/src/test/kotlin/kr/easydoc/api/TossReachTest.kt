@@ -254,7 +254,7 @@ class TossReachTest {
         val email = "subscription-${UUID.randomUUID()}@example.test"
         val payload = """{"email":"$email","password":"correct horse battery"}"""
         assertThat(send("/auth/signup", null, "POST", payload).statusCode()).isEqualTo(201)
-        database.execute("UPDATE users SET email_verified_at=now() WHERE email='$email'")
+        database.execute("UPDATE users SET email_verified_at=now(), phone_verified_at=now() WHERE email='$email'")
         return json.readTree(send("/auth/login", null, "POST", payload).body())["access_token"].asString()
     }
 

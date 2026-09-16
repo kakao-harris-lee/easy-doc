@@ -138,6 +138,10 @@ import java.util.concurrent.ConcurrentHashMap
 @TestConfiguration(proxyBeanMethods = false)
 class AuthSliceBeans {
     @Bean
+    fun phoneVerificationService(): kr.easydoc.application.auth.PhoneVerificationService =
+        org.mockito.Mockito.mock(kr.easydoc.application.auth.PhoneVerificationService::class.java)
+
+    @Bean
     fun tossBillingService(): kr.easydoc.application.subscription.TossBillingService =
         org.mockito.Mockito.mock(kr.easydoc.application.subscription.TossBillingService::class.java)
 

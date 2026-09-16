@@ -38,10 +38,12 @@ import {
 } from '../routes/paths'
 import { AnnouncementBanner } from './AnnouncementBanner'
 import { Footer } from './Footer'
+import { PhoneVerificationBanner } from './PhoneVerificationBanner'
 import { SetPasswordForm } from './SetPasswordForm'
 import { SocialLinkStatus } from './SocialLinkStatus'
 import { Logo, SERVICE_NAME } from './Logo'
 import { WorkspaceMenu } from './WorkspaceMenu'
+import { CONTAINER } from './layoutStyles'
 import { Button } from './ui/Button'
 
 /**
@@ -54,7 +56,7 @@ import { Button } from './ui/Button'
  * 검수 화면만 1360px까지 넓힐 수 있다는 예외(§5.2)가 아직 남아 있어 한 곳에 모아 둔다 —
  * 그때 넓히는 것은 이 상수와 그것을 쓰는 `main` 한 곳이다.
  */
-export const CONTAINER = 'mx-auto w-full max-w-[1200px] px-4 md:px-6 xl:px-8'
+export { CONTAINER } from './layoutStyles'
 
 /**
  * 주요 메뉴 링크의 모양.
@@ -440,8 +442,8 @@ export function AppLayout({ children }: { children: ReactNode }) {
         */}
         {status === 'authenticated' && (
           <div className="border-t border-border bg-card lg:hidden">
-            <div className={cn(CONTAINER, 'py-2')}>
-              <WorkspaceMenu />
+            <div className={cn(CONTAINER, 'flex justify-end py-2')}>
+              <WorkspaceMenu align="right" />
             </div>
           </div>
         )}
@@ -512,6 +514,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
         )}
       </header>
       {status === 'authenticated' && <AnnouncementBanner />}
+      {status === 'authenticated' && <PhoneVerificationBanner onNavigate={guard} />}
       <main id="main" className={cn(CONTAINER, 'flex-1 py-6')}>
         {children}
       </main>

@@ -16,6 +16,7 @@ import kr.easydoc.core.exceptions.InvalidOAuthStateException
 import kr.easydoc.core.exceptions.InvalidVerificationCodeException
 import kr.easydoc.core.exceptions.NotFoundException
 import kr.easydoc.core.exceptions.PersonalDataDetectedException
+import kr.easydoc.core.exceptions.PhoneNotVerifiedException
 import kr.easydoc.core.exceptions.RateLimitedException
 import kr.easydoc.core.exceptions.ReconversionBudgetExhaustedException
 import kr.easydoc.core.exceptions.ReconversionConcurrencyExhaustedException
@@ -310,7 +311,9 @@ private fun mappingFor(exception: EasyDocException): Pair<HttpStatus, HttpHeader
         }
 
         // 이메일 인증 전이라 이 동작을 할 수 없다 — `POST /documents` 전용.
-        is EmailNotVerifiedException -> {
+        is EmailNotVerifiedException,
+        is PhoneNotVerifiedException,
+        -> {
             HttpStatus.FORBIDDEN to null
         }
 

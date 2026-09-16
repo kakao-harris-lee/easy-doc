@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { BUSINESS_INFO_LOOKUP_URL, COMPANY_INFO, type CompanyInfo } from '../config/company'
 import { cn } from '../lib/utils'
 import { GUIDE_PATH, PRIVACY_PATH, TERMS_PATH } from '../routes/paths'
-import { CONTAINER } from './AppLayout'
+import { CONTAINER } from './layoutStyles'
 
 const POLICY_LINK_CLASS =
   'inline-flex min-h-11 min-w-11 shrink-0 items-center whitespace-nowrap text-muted-foreground underline-offset-2 hover:text-foreground hover:underline'

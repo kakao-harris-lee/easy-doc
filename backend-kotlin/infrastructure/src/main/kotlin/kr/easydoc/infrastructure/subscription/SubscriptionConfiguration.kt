@@ -70,6 +70,7 @@ class SubscriptionConfiguration {
         gateway: PaymentGateway,
         properties: PaymentProperties,
         usage: UsageProperties,
+        users: kr.easydoc.application.auth.UserRepository,
         toss: org.springframework.beans.factory.ObjectProvider<kr.easydoc.application.subscription.TossBillingService>,
     ): SubscriptionService =
         SubscriptionService(
@@ -80,6 +81,7 @@ class SubscriptionConfiguration {
             properties.mockEnabled && properties.provider == "stub",
             Clock.systemUTC(),
             usage.zoneId(),
+            users,
             toss.ifAvailable,
         )
 }
