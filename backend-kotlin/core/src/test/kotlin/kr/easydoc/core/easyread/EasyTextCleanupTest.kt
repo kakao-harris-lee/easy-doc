@@ -40,9 +40,56 @@ class EasyTextCleanupTest {
     }
 
     @Test
-    @DisplayName("※만 있는 줄은 지우지 않는다 — DocumentMarkers는 ※를 본문 없이도 표식으로 센다")
-    fun `※만 있는 줄은 지우지 않는다`() {
-        assertThat(cleanEasyText("※\n안내")).isEqualTo("※\n안내")
+    @DisplayName("단독 ※ 줄은 다음 줄에 붙인다 — DocumentMarkers는 ※를 본문 없이도 표식으로 센다")
+    fun `단독 ※ 줄은 다음 줄에 붙인다`() {
+        assertThat(cleanEasyText("※\n신청할 때는 서류를 내야 합니다.")).isEqualTo("※ 신청할 때는 서류를 내야 합니다.")
+    }
+
+    @Test
+    @DisplayName("붙일 다음 줄이 빈 줄이면 ※ 줄은 그냥 지우고 빈 줄 런도 접는다")
+    fun `다음 줄이 빈 줄이면 ※ 줄만 지운다`() {
+        assertThat(cleanEasyText("본문\n※\n\n다음")).isEqualTo("본문\n\n다음")
+    }
+
+    @Test
+    @DisplayName("붙일 다음 줄이 없으면(마지막 줄) ※ 줄은 그냥 지운다")
+    fun `다음 줄이 없으면 ※ 줄만 지운다`() {
+        assertThat(cleanEasyText("본문\n※")).isEqualTo("본문")
+    }
+
+    @Test
+    @DisplayName("다음 줄이 표식만 있는 줄이면 붙이지 않고 ※ 줄만 지운다")
+    fun `다음 줄이 표식만 있는 줄이면 ※ 줄만 지운다`() {
+        assertThat(cleanEasyText("※\n○\n본문")).isEqualTo("본문")
+    }
+
+    @Test
+    @DisplayName("※ 뒤에 본문이 있는 줄은 건드리지 않는다")
+    fun `※ 뒤에 본문이 있는 줄은 그대로 둔다`() {
+        assertThat(cleanEasyText("※ 안내")).isEqualTo("※ 안내")
+    }
+
+    @Test
+    @DisplayName("※가 둘 이상인 줄은 단독 ※ 로 보지 않고 그대로 둔다")
+    fun `※※ 는 그대로 둔다`() {
+        assertThat(cleanEasyText("※※")).isEqualTo("※※")
+    }
+
+    @Test
+    @DisplayName("실제 LLM 응답 꼬리의 단독 ※ 줄도 다음 문장에 붙는다")
+    fun `실제 응답 꼬리에서도 ※가 다음 문장에 붙는다`() {
+        val tail =
+            "신청 기간은 3월 1일부터 3월 31일까지이며 이 기간 안에 신청할 수 있습니다.\n" +
+                "\n" +
+                "※\n" +
+                "신청할 때는 다음 서류를 반드시 함께 내야 합니다.\n" +
+                "임대차계약서 사본: 주민센터에서 확인할 수 있습니다."
+        val expected =
+            "신청 기간은 3월 1일부터 3월 31일까지이며 이 기간 안에 신청할 수 있습니다.\n" +
+                "\n" +
+                "※ 신청할 때는 다음 서류를 반드시 함께 내야 합니다.\n" +
+                "임대차계약서 사본: 주민센터에서 확인할 수 있습니다."
+        assertThat(cleanEasyText(tail)).isEqualTo(expected)
     }
 
     @Test

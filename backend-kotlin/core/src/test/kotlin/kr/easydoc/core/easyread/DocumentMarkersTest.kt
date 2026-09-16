@@ -67,9 +67,11 @@ class DocumentMarkersTest {
     }
 
     @Test
-    fun `줄바꿈으로 갈라진 ※ 안내는 잡음 줄 정리 뒤에도 표식 변화로 보지 않는다`() {
+    fun `줄바꿈으로 갈라진 ※ 안내는 잡음 줄 정리로 다시 한 줄로 붙어 표식 변화가 아니다`() {
         val source = "※ 안내"
         val draft = "※\n안내"
-        assertThat(hasMarkerChanges(source, cleanEasyText(draft))).isFalse()
+        val cleaned = cleanEasyText(draft)
+        assertThat(cleaned).isEqualTo(source)
+        assertThat(hasMarkerChanges(source, cleaned)).isFalse()
     }
 }
