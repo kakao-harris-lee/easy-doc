@@ -2210,6 +2210,30 @@ describe('결과 단위 재시도·되돌리기(Part C-2/C-3)', () => {
     resolveReconvert(reconvertResponse())
     await waitFor(() => expect(retry2).not.toBeDisabled())
   })
+
+  it('재시도로 건 재변환이 실패하면 오류 문구가 원본 서수가 아니라 그 쉬운 글 단위를 가리킨다(LOW 리뷰)', async () => {
+    const user = userEvent.setup()
+    vi.mocked(reconvertUnit).mockRejectedValue(new ApiError(502, '변환 서버 오류'))
+    renderTwoUnits()
+
+    await user.click(screen.getByLabelText('쉬운 글 단위 2 재시도'))
+
+    const alert = await screen.findByRole('alert')
+    expect(alert.textContent).toMatch(/^쉬운 글 단위 2:/)
+  })
+
+  it('재시도로 건 503은 그 쉬운 글 단위를 가리키는 카운트다운을 보여준다(LOW 리뷰)', async () => {
+    vi.mocked(reconvertUnit).mockRejectedValue(
+      new ApiError(503, '동시 재변환 한도에 도달했습니다', 1, null),
+    )
+    renderTwoUnits()
+
+    fireEvent.click(screen.getByLabelText('쉬운 글 단위 2 재시도'))
+
+    expect(
+      await screen.findByText('쉬운 글 단위 2: 잠시 후 다시 시도해 주세요. (1초)'),
+    ).toBeInTheDocument()
+  })
 })
 
 describe('이미 통과한 문단 경고(계획 §11, segment_map.compliant_source_units)', () => {

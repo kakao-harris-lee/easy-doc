@@ -337,7 +337,7 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
   // 언마운트 시 카운트다운을 정리한다.
   useEffect(() => clearReconvertCountdown, [])
 
-  function startReconvertCountdown(sourceIndex: number): void {
+  function startReconvertCountdown(prefix: string): void {
     clearReconvertCountdown()
     reconvertCountdownRef.current = setInterval(() => {
       setReconvertMessage((prev) => {
@@ -351,7 +351,7 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
           return null
         }
         return {
-          text: `${sourceIndex + 1}번째 문단: 잠시 후 다시 시도해 주세요. (${next}초)`,
+          text: `${prefix}잠시 후 다시 시도해 주세요. (${next}초)`,
           retryAfterSeconds: next,
         }
       })
@@ -368,10 +368,13 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
    *
    * 문단이 여럿인 화면에서는 「어느 문단을 다시 변환하려다 실패했는지」가 문구에 없으면
    * 사용자가 지금 이 안내가 방금 누른 그 버튼에 대한 것인지 다시 확인해야 한다(LOW
-   * 리뷰 4) — 그래서 원본 단위 서수를 항상 앞에 붙인다.
+   * 리뷰 4) — 그래서 대상을 가리키는 접두어를 항상 앞에 붙인다.
+   *
+   * 원본 패널의 「다시 변환」은 원본 단위 서수(`N번째 문단:`)로 가리키지만, 결과
+   * 패널의 「재시도」는 사람이 이미 특정 쉬운 글 단위를 골라 누른 것이라(LOW 리뷰)
+   * 그 단위를 가리키는 `쉬운 글 단위 N:`을 쓴다 — 호출한 쪽이 `prefix`로 결정한다.
    */
-  function reconvertErrorMessage(caught: unknown, sourceIndex: number): ReconvertMessage {
-    const prefix = `${sourceIndex + 1}번째 문단: `
+  function reconvertErrorMessage(caught: unknown, prefix: string): ReconvertMessage {
     if (!(caught instanceof ApiError)) {
       return {
         text: `${prefix}재변환하지 못했습니다. 잠시 후 다시 시도해 주세요.`,
@@ -385,7 +388,7 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
     }
     if (caught.status === 503) {
       const seconds = caught.retryAfterSeconds ?? 1
-      startReconvertCountdown(sourceIndex)
+      startReconvertCountdown(prefix)
       return {
         text: `${prefix}잠시 후 다시 시도해 주세요. (${seconds}초)`,
         retryAfterSeconds: seconds,
@@ -499,7 +502,13 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
         })
       }
     } catch (caught) {
-      setReconvertMessage(reconvertErrorMessage(caught, sourceIndex))
+      // 재시도(결과 패널)는 그 쉬운 글 단위를 가리키고, 원본 패널의 「다시 변환」은
+      // 지금까지처럼 원본 서수를 가리킨다(LOW 리뷰).
+      const prefix =
+        options?.fromEasyUnitIndex !== undefined
+          ? `쉬운 글 단위 ${options.fromEasyUnitIndex + 1}: `
+          : `${sourceIndex + 1}번째 문단: `
+      setReconvertMessage(reconvertErrorMessage(caught, prefix))
     } finally {
       setReconvertPendingIndex(null)
       setReconvertPendingEasyIndex(null)
