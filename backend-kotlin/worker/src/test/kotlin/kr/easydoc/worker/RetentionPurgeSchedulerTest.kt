@@ -388,7 +388,11 @@ class RetentionPurgeSchedulerTest {
         ): SignupGrantRecordPurgeResult {
             calls++
             if (failing) error("signup grant record purge boom")
-            return SignupGrantRecordPurgeResult(enabled = true, deleted = 0)
+            return SignupGrantRecordPurgeResult(
+                enabled = true,
+                signupGrantRecordsDeleted = 0,
+                phoneTrialGrantRecordsDeleted = 0,
+            )
         }
     }
 
@@ -407,6 +411,7 @@ class RetentionPurgeSchedulerTest {
                 emailVerificationCodesDeleted = 0,
                 passwordResetCodesDeleted = 0,
                 oauthStatesDeleted = 0,
+                phoneVerificationCodesDeleted = 0,
             )
         }
     }

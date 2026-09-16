@@ -30,7 +30,8 @@ import org.springframework.boot.context.properties.ConfigurationProperties
  * **회전하지 않는 값이다** — 바꾸면 기존 `signup_grant_records` 행이 새 해시와 매칭되지
  * 않아 그 이메일이 다시 부여받는다(`.env.example`·러너북 「크레딧 충전」에 명시).
  *
- * [signupGrantRecordTtl] — `signup_grant_records`(V20) 이메일 해시의 보유기간, ISO-8601
+ * [signupGrantRecordTtl] — `signup_grant_records`(V20) 이메일 해시와 `phone_trial_grant_records`
+ * (V26) 전화번호 지문이 공유하는 보유기간, ISO-8601
  * Period 문자열(기본 `P2Y` = 2년). 사용자 확정 2026-09-10 — 「이메일 해시는 부여 시점
  * 기준 2년이면 충분해」(로드맵 5-1c, `docs/plans/2026-09-10-legal-tax-policy-final.md` §6,
  * 개인정보 보호법 §21 — 보유기간이 지나면 지체 없이 파기한다). `granted_at`(부여
@@ -42,9 +43,9 @@ import org.springframework.boot.context.properties.ConfigurationProperties
  * [java.time.Period] 도 같다) — 형식 오류를 프레임워크 예외가 아니라 이 파기 설정처럼
  * 도메인 예외로 옮겨야 할 때만 `String` + 수동 파싱을 쓴다.
  *
- * [signupGrantRecordPurgeEnabled]·[signupGrantRecordPurgeBatchSize] — worker 의 가입
- * 크레딧 원장 파기 배치 스위치·배치 크기(`RetentionPurgeScheduler`
- * `signup-grant-record` 단계).
+ * [signupGrantRecordPurgeEnabled]·[signupGrantRecordPurgeBatchSize] — worker 의 무료 체험
+ * 중복 방지 원장(가입 크레딧·휴대폰 인증 체험 둘 다) 파기 배치 스위치·배치 크기
+ * (`RetentionPurgeScheduler` `signup-grant-record` 단계).
  */
 @ConfigurationProperties(prefix = "easydoc.credits")
 data class CreditsProperties(

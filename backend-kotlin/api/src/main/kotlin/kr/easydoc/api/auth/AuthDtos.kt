@@ -32,6 +32,7 @@ data class UserResponse(
     @get:JsonProperty("id") val id: String,
     @get:JsonProperty("email") val email: String,
     @get:JsonProperty("email_verified") val emailVerified: Boolean,
+    @get:JsonProperty("phone_verified") val phoneVerified: Boolean,
     /**
      * 비밀번호가 있는지(2.17.0 신설, backlog §1.4 다음 조각) — `users.password_hash IS
      * NOT NULL`. 화면이 "연결 해제"가 마지막 로그인 수단을 없애는 조작인지 미리 판정해
@@ -53,7 +54,8 @@ data class UserResponse(
      * `/auth/me` 는 요청마다 이 객체를 만든다.
      */
     override fun toString(): String =
-        "UserResponse(id=$id, email=$CONTENT_MASK, emailVerified=$emailVerified, hasPassword=$hasPassword, " +
+        "UserResponse(id=$id, email=$CONTENT_MASK, emailVerified=$emailVerified, phoneVerified=$phoneVerified, " +
+            "hasPassword=$hasPassword, " +
             "isAdmin=$isAdmin)"
 
     companion object {
@@ -70,6 +72,7 @@ data class UserResponse(
                 id = user.id.toString(),
                 email = user.email,
                 emailVerified = user.emailVerifiedAt != null,
+                phoneVerified = user.phoneVerifiedAt != null,
                 hasPassword = user.hasPassword,
                 identities = identities.map(UserIdentityResponse::of),
                 isAdmin = user.isAdmin,
@@ -102,6 +105,27 @@ data class ConfirmEmailVerificationRequest
         /** 코드가 로그·오류 메시지로 새지 않게 한다. */
         override fun toString(): String = "ConfirmEmailVerificationRequest(...)"
     }
+
+data class RequestPhoneVerificationRequest
+    @JsonCreator
+    constructor(
+        @param:JsonProperty("phone_number") val phoneNumber: String,
+    ) {
+        override fun toString(): String = "RequestPhoneVerificationRequest(...)"
+    }
+
+data class ConfirmPhoneVerificationRequest
+    @JsonCreator
+    constructor(
+        @param:JsonProperty("code") val code: String,
+    ) {
+        override fun toString(): String = "ConfirmPhoneVerificationRequest(...)"
+    }
+
+data class PhoneVerificationResponse(
+    @get:JsonProperty("phone_verified") val phoneVerified: Boolean,
+    @get:JsonProperty("granted_credits") val grantedCredits: Int,
+)
 
 /** `POST /auth/password` 요청. 계약 `SetPasswordRequest`. */
 data class SetPasswordRequest

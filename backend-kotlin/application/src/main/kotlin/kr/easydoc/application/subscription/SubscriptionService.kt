@@ -1,6 +1,7 @@
 package kr.easydoc.application.subscription
 
 import kr.easydoc.application.auth.TransactionRunner
+import kr.easydoc.application.auth.UserRepository
 import kr.easydoc.application.credit.CreditAccountService
 import kr.easydoc.core.credit.CreditReason
 import kr.easydoc.core.exceptions.ConflictException
@@ -94,6 +95,7 @@ class SubscriptionService(
     private val enabled: Boolean,
     private val clock: Clock,
     private val zone: ZoneId,
+    private val users: UserRepository,
     private val toss: TossBillingService? = null,
 ) {
     private val plans = listOf(SubscriptionPlan("start", "Start", 50, 99_000))
@@ -117,6 +119,15 @@ class SubscriptionService(
         transaction.inTransaction {
             store.lockOwned(ownerId, workspaceId)
             requireEnabled()
+            val user = users.findById(ownerId)
+            if (user?.emailVerifiedAt == null) {
+                throw kr.easydoc.core.exceptions
+                    .EmailNotVerifiedException("이메일 인증 후 결제하세요")
+            }
+            if (user.phoneVerifiedAt == null) {
+                throw kr.easydoc.core.exceptions
+                    .PhoneNotVerifiedException("휴대폰 인증 후 결제하세요")
+            }
             val plan = plans.find { it.id == planId } ?: throw InvalidInputException("알 수 없는 구독 플랜입니다")
             val previous = store.payment(workspaceId, orderId)
             if (previous != null) {

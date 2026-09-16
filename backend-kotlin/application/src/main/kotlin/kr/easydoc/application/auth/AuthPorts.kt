@@ -22,6 +22,7 @@ import java.util.UUID
 // 개선 후보로 남긴다(리뷰를 마친 auth 코드의 import 를 흔들 값어치가 지금은 없다).
 
 /** 사용자 저장소. 이메일은 **정규화된 값**으로만 들어온다([EmailNormalization]). */
+@Suppress("TooManyFunctions") // 사용자 한 행의 인증 상태 전이를 한 저장소가 원자적으로 소유한다.
 interface UserRepository {
     /** 이메일로 찾는다. 없으면 `null` — 로그인 실패와 존재하지 않는 계정을 호출자가 구분하지 않는다. */
     fun findByEmail(email: String): StoredUser?
@@ -89,6 +90,25 @@ interface UserRepository {
      * 한다 — 이 메서드 자체는 락을 걸지 않는다.
      */
     fun markEmailVerified(userId: UUID): Boolean
+
+    /** 휴대폰 인증 요청 번호의 HMAC 지문을 저장한다. 평문 번호는 저장하지 않는다. */
+    fun setPendingPhoneFingerprint(
+        userId: UUID,
+        fingerprint: String,
+    ) {
+        error("setPendingPhoneFingerprint is not implemented")
+    }
+
+    /** 발송 실패 시 같은 요청의 지문만 지운다. */
+    fun clearPendingPhoneFingerprint(
+        userId: UUID,
+        fingerprint: String,
+    ) {
+        error("clearPendingPhoneFingerprint is not implemented")
+    }
+
+    /** 휴대폰 인증을 완료하고 대기 지문을 지운다. 이미 인증됐거나 계정이 없으면 false. */
+    fun markPhoneVerified(userId: UUID): Boolean = error("markPhoneVerified is not implemented")
 }
 
 /** 작업 공간 저장소. */

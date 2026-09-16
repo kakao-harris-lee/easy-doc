@@ -115,6 +115,19 @@ easydoc:
       ssl: ${EASYDOC_MAIL_SMTP_SSL:true}
       username: ${EASYDOC_MAIL_SMTP_USERNAME:}
       password: ${EASYDOC_MAIL_SMTP_PASSWORD:}
+  sms:
+    provider: ${EASYDOC_SMS_PROVIDER:fake}
+    service-id: ${EASYDOC_SENS_SERVICE_ID:}
+    access-key: ${EASYDOC_SENS_ACCESS_KEY:}
+    secret-key: ${EASYDOC_SENS_SECRET_KEY:}
+    from: ${EASYDOC_SMS_FROM:}
+    timeout-ms: ${EASYDOC_SMS_TIMEOUT_MS:5000}
+  phone-verification:
+    code-ttl-minutes: ${EASYDOC_PHONE_VERIFICATION_CODE_TTL_MINUTES:5}
+    resend-cooldown-seconds: ${EASYDOC_PHONE_VERIFICATION_RESEND_COOLDOWN_SECONDS:60}
+    max-attempts: ${EASYDOC_PHONE_VERIFICATION_MAX_ATTEMPTS:5}
+    trial-credits: ${EASYDOC_PHONE_VERIFICATION_TRIAL_CREDITS:5}
+    fingerprint-pepper: ${EASYDOC_PHONE_VERIFICATION_PEPPER:}
   app:
     public-base-url: ${EASYDOC_APP_PUBLIC_BASE_URL:http://localhost:5173}
 

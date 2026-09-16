@@ -17,7 +17,14 @@
 import { expect, test } from '@playwright/test'
 
 import { ROUTES } from './contract'
-import { api, newAccount, signUpAndLand, storedToken, verifyEmail } from './support/app'
+import {
+  api,
+  newAccount,
+  signUpAndLand,
+  storedToken,
+  verifyEmail,
+  verifyPhone,
+} from './support/app'
 
 /** 짧은 붙여넣기 원문 — `ceil(chars/1000) = 1`크레딧이면 충분하다(E21과 같은 길이대). */
 const SOURCE_TEXT = '국민건강보험료를 납부하려면 가까운 지사를 방문하세요.'
@@ -92,6 +99,10 @@ test.describe('크레딧 계정 (집행 켜짐)', () => {
     const account = newAccount()
     await signUpAndLand(page, account)
     await verifyEmail(page, account)
+    // 결제 checkout(Start 구독)은 계약 2.37.0 부터 휴대폰 인증을 전제한다
+    // (`SubscriptionService.checkout`·`TossBillingService.beginBilling`) — 인증 없이는
+    // 403 이라 아래 "Start 테스트 결제" 클릭이 상태 문구를 보지 못한다.
+    await verifyPhone(page, account)
 
     // 1) 월 플랜 목록에서 Start 테스트 결제를 완료하면 가입 부여 1을 더하는 대신
     // 새 월 주기의 allowance·balance를 정확히 50으로 설정한다.

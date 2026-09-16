@@ -295,6 +295,13 @@ private class RecordingVerificationCodeStore : VerificationCodeStore {
         return code
     }
 
+    override fun revoke(
+        userId: UUID,
+        code: String,
+    ) {
+        active[userId]?.let { if (it.code == code) it.voided = true }
+    }
+
     override fun attempt(
         userId: UUID,
         code: String,

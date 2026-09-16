@@ -10,6 +10,11 @@ import kr.easydoc.application.auth.PasswordHasher
 import kr.easydoc.application.auth.PasswordResetCodeStore
 import kr.easydoc.application.auth.PasswordResetService
 import kr.easydoc.application.auth.PasswordService
+import kr.easydoc.application.auth.PhoneFingerprintHasher
+import kr.easydoc.application.auth.PhoneTrialGrantLedger
+import kr.easydoc.application.auth.PhoneVerificationCodeStore
+import kr.easydoc.application.auth.PhoneVerificationService
+import kr.easydoc.application.auth.PhoneVerificationSmsSender
 import kr.easydoc.application.auth.SocialLoginProvider
 import kr.easydoc.application.auth.SocialLoginProviderId
 import kr.easydoc.application.auth.SocialLoginRepositories
@@ -22,6 +27,7 @@ import kr.easydoc.application.auth.WorkspaceRepository
 import kr.easydoc.application.credit.CreditAccountService
 import kr.easydoc.application.mail.MailSender
 import kr.easydoc.application.mail.NotificationMailFactory
+import kr.easydoc.core.exceptions.ConfigurationException
 import kr.easydoc.core.security.Secret
 import kr.easydoc.infrastructure.auth.google.GoogleOAuthSettings
 import kr.easydoc.infrastructure.auth.google.GoogleSocialLoginProvider
@@ -31,6 +37,7 @@ import kr.easydoc.infrastructure.auth.naver.NaverOAuthSettings
 import kr.easydoc.infrastructure.auth.naver.NaverSocialLoginProvider
 import kr.easydoc.infrastructure.billing.BillingProperties
 import kr.easydoc.infrastructure.db.SpringTransactionRunner
+import kr.easydoc.infrastructure.sms.SmsProperties
 import org.springframework.boot.context.properties.ConfigurationProperties
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
@@ -102,6 +109,16 @@ data class PasswordResetProperties(
     val codeTtlMinutes: Long = 10,
     val resendCooldownSeconds: Long = 60,
     val maxAttempts: Int = 5,
+)
+
+/** 휴대폰 OTP와 번호당 무료 체험 설정. */
+@ConfigurationProperties(prefix = "easydoc.phone-verification")
+data class PhoneVerificationProperties(
+    val codeTtlMinutes: Long = 5,
+    val resendCooldownSeconds: Long = 60,
+    val maxAttempts: Int = 5,
+    val trialCredits: Int = 5,
+    val fingerprintPepper: Secret = Secret.EMPTY,
 )
 
 /** 소셜 로그인 공통 설정(제공자를 가리지 않는다). 바인딩 접두사는 `easydoc.oauth`. */
@@ -306,6 +323,75 @@ class AuthConfiguration {
             mailFactory = mailFactory,
         )
 
+    @Bean
+    fun phoneVerificationCodeStore(jdbcClient: JdbcClient): PhoneVerificationCodeStore =
+        JdbcPhoneVerificationCodeStore(jdbcClient, Clock.systemUTC())
+
+    @Bean
+    fun phoneTrialGrantLedger(jdbcClient: JdbcClient): PhoneTrialGrantLedger = JdbcPhoneTrialGrantLedger(jdbcClient)
+
+    /**
+     * 파라미터 이름을 `phoneVerificationSmsSender` bean 이름과 똑같이 맞춘다 —
+     * `FakeSmsSender` 는 `PhoneVerificationSmsSender`·`PhoneVerificationSmsOutbox` 둘 다
+     * 구현하므로, `e2e` profile 에서 `phoneVerificationSmsOutbox` bean 이 먼저 인스턴스화되면
+     * (같은 인스턴스를 반환하므로) 그 뒤로는 Spring 이 실제 런타임 타입으로 이 자리도
+     * `PhoneVerificationSmsSender` 후보로 다시 잡을 수 있다. 이름이 bean 이름과 같으면
+     * Spring 이 이름 일치로 모호성을 풀어 그 bean 을 고른다(`E2eSmsOutboxController`
+     * KDoc과 같은 규약 — Mail 쪽은 모든 `MailSender` 소비자가 파라미터 이름을 `mailSender`
+     * 로 맞춰서 애초에 이 문제가 없다).
+     */
+    @Suppress("LongParameterList")
+    @Bean
+    fun phoneVerificationService(
+        users: UserRepository,
+        workspaces: WorkspaceRepository,
+        codes: PhoneVerificationCodeStore,
+        phoneVerificationSmsSender: PhoneVerificationSmsSender,
+        credits: CreditAccountService,
+        grants: PhoneTrialGrantLedger,
+        transactionRunner: TransactionRunner,
+        properties: PhoneVerificationProperties,
+        smsProperties: SmsProperties,
+    ): PhoneVerificationService =
+        PhoneVerificationService(
+            users = users,
+            workspaces = workspaces,
+            codes = codes,
+            sms = phoneVerificationSmsSender,
+            credits = credits,
+            grants = grants,
+            hasher = PhoneFingerprintHasher(resolvePhoneVerificationPepper(smsProperties, properties)),
+            transaction = transactionRunner,
+            codeTtl = Duration.ofMinutes(properties.codeTtlMinutes),
+            resendCooldown = Duration.ofSeconds(properties.resendCooldownSeconds),
+            maxAttempts = properties.maxAttempts,
+            trialCredits = properties.trialCredits,
+        )
+
+    /**
+     * 지문 pepper 결정 — `easydoc.sms.provider=sens` 면 [PhoneVerificationProperties.trialCredits]
+     * 값과 무관하게 pepper 가 필수다. 실제 번호는 `trialCredits=0` 이어도
+     * `users.pending_phone_fingerprint` 에 지문으로 남으므로(리뷰 MEDIUM 지적 — 이전에는
+     * 체험 크레딧을 안 쓰는 sens 배포가 고정 리터럴로 지문을 만들 수 있었다), 체험 크레딧
+     * 지급 여부로 필수 여부를 가르지 않는다. 리터럴 대체값은 `provider=fake` 에만 허용한다
+     * (`sens`+빈 pepper 는 여기서 이미 막힌다).
+     */
+    internal fun resolvePhoneVerificationPepper(
+        smsProperties: SmsProperties,
+        properties: PhoneVerificationProperties,
+    ): Secret {
+        if (smsProperties.provider.equals("sens", ignoreCase = true) && properties.fingerprintPepper.isBlank()) {
+            throw ConfigurationException(
+                "easydoc.sms.provider=sens 는 휴대폰 인증 지문 pepper(EASYDOC_PHONE_VERIFICATION_PEPPER)가 필요합니다",
+            )
+        }
+        return if (properties.fingerprintPepper.isBlank()) {
+            Secret(FAKE_PHONE_VERIFICATION_PEPPER)
+        } else {
+            properties.fingerprintPepper
+        }
+    }
+
     /** `POST /auth/password` — 비밀번호 없는 계정에 비밀번호를 만든다(backlog §1.4 후속). */
     @Bean
     fun passwordService(
@@ -471,5 +557,8 @@ class AuthConfiguration {
     private companion object {
         /** `Argon2Parameters.ARGON2_VERSION_13`. 인코더가 만드는 PHC 의 `v=` 값이다. */
         const val ARGON2_VERSION_13 = 19
+
+        /** `provider=fake` 전용 대체값 — `sens` 는 [resolvePhoneVerificationPepper] 가 먼저 막는다. */
+        const val FAKE_PHONE_VERIFICATION_PEPPER = "fake-phone-verification-pepper"
     }
 }

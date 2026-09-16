@@ -5,6 +5,7 @@ import {
   newAccount,
   submitCredentials,
   verifyEmail,
+  verifyPhone,
   storedToken,
 } from './support/app'
 
@@ -22,6 +23,9 @@ test.describe('Toss test billing', () => {
     await submitCredentials(page, account, '로그인')
     await expect(page.getByRole('heading', { name: '문서 변환하기' })).toBeVisible()
     await verifyEmail(page, account)
+    // Toss 카드 등록(`TossBillingService.beginBilling`)도 계약 2.37.0 부터 휴대폰 인증을
+    // 전제한다 — 인증 없이는 아래 "Start 토스 테스트 카드 등록" 클릭이 403 으로 막힌다.
+    await verifyPhone(page, account)
     await page.goto('/usage')
     await page.getByRole('button', { name: 'Start 토스 테스트 카드 등록', exact: true }).click()
     await expect.poll(() => page.frames().length).toBeGreaterThan(1)

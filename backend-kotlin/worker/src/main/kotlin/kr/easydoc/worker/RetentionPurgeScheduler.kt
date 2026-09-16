@@ -11,7 +11,8 @@ import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Component
 
 /**
- * 문서, 피드백 의견, 미검증 계정, 가입 크레딧 기록과 인증 아티팩트의 보존기간을 매일
+ * 문서, 피드백 의견, 미검증 계정, 무료 체험 중복 방지 원장(가입 크레딧·휴대폰 인증 체험)과
+ * 인증 아티팩트(이메일 인증·비밀번호 재설정·OAuth state·휴대폰 인증)의 보존기간을 매일
  * 03:00에 적용한다. 각 단계는 독립된 예외 경계에서 실행해 한 단계의 실패가 다른 파기를
  * 막지 않게 한다.
  */

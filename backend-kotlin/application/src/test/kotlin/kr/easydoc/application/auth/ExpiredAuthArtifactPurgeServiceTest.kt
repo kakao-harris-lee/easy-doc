@@ -9,9 +9,9 @@ import java.time.Instant
 import java.time.ZoneOffset
 
 /**
- * 만료 인증 아티팩트(이메일 인증 코드·비밀번호 재설정 코드·OAuth state) 파기 유스케이스 —
- * Spring 도 DB 도 없이 대역으로 돈다. `UnverifiedAccountPurgeServiceTest`와 같은 배치
- * 흐름을 표별 삭제 건수로 잰다.
+ * 만료 인증 아티팩트(이메일 인증 코드·비밀번호 재설정 코드·OAuth state·휴대폰 인증 코드)
+ * 파기 유스케이스 — Spring 도 DB 도 없이 대역으로 돈다. `UnverifiedAccountPurgeServiceTest`와
+ * 같은 배치 흐름을 표별 삭제 건수로 잰다.
  */
 class ExpiredAuthArtifactPurgeServiceTest {
     @Test
@@ -48,22 +48,24 @@ class ExpiredAuthArtifactPurgeServiceTest {
     }
 
     @Test
-    @DisplayName("세 표 중 하나라도 배치 한도만큼 지워지면 짧은 배치가 나올 때까지 반복한다")
+    @DisplayName("네 표 중 하나라도 배치 한도만큼 지워지면 짧은 배치가 나올 때까지 반복한다")
     fun `한 표라도 배치를 넘으면 끝까지 지운다`() {
         val world = World(batchSize = BATCH)
         world.store.enqueue(
-            // oauth_states 만 배치 한도에 닿았다 — 나머지 두 표는 이미 짧은 배치다.
+            // oauth_states 만 배치 한도에 닿았다 — 나머지 세 표는 이미 짧은 배치다.
             ExpiredAuthArtifactPurgeResult(
                 enabled = true,
                 emailVerificationCodesDeleted = 0,
                 passwordResetCodesDeleted = 0,
                 oauthStatesDeleted = BATCH,
+                phoneVerificationCodesDeleted = 0,
             ),
             ExpiredAuthArtifactPurgeResult(
                 enabled = true,
                 emailVerificationCodesDeleted = 0,
                 passwordResetCodesDeleted = 0,
                 oauthStatesDeleted = 1,
+                phoneVerificationCodesDeleted = 0,
             ),
         )
 
@@ -72,6 +74,36 @@ class ExpiredAuthArtifactPurgeServiceTest {
         assertThat(world.store.calls).isEqualTo(2)
         assertThat(world.transaction.committed).isEqualTo(2)
         assertThat(result.oauthStatesDeleted).isEqualTo(BATCH + 1)
+        assertThat(world.observer.seen).containsExactly(result)
+    }
+
+    @Test
+    @DisplayName("휴대폰 인증 코드 표만 배치 한도에 닿아도 짧은 배치가 나올 때까지 반복한다")
+    fun `휴대폰 인증 코드만 배치를 넘어도 끝까지 지운다`() {
+        val world = World(batchSize = BATCH)
+        world.store.enqueue(
+            // phone_verification_codes 만 배치 한도에 닿았다 — 나머지 세 표는 이미 짧은 배치다.
+            ExpiredAuthArtifactPurgeResult(
+                enabled = true,
+                emailVerificationCodesDeleted = 0,
+                passwordResetCodesDeleted = 0,
+                oauthStatesDeleted = 0,
+                phoneVerificationCodesDeleted = BATCH,
+            ),
+            ExpiredAuthArtifactPurgeResult(
+                enabled = true,
+                emailVerificationCodesDeleted = 0,
+                passwordResetCodesDeleted = 0,
+                oauthStatesDeleted = 0,
+                phoneVerificationCodesDeleted = 1,
+            ),
+        )
+
+        val result = world.purge.run()
+
+        assertThat(world.store.calls).isEqualTo(2)
+        assertThat(world.transaction.committed).isEqualTo(2)
+        assertThat(result.phoneVerificationCodesDeleted).isEqualTo(BATCH + 1)
         assertThat(world.observer.seen).containsExactly(result)
     }
 
@@ -85,6 +117,7 @@ class ExpiredAuthArtifactPurgeServiceTest {
                 emailVerificationCodesDeleted = 1,
                 passwordResetCodesDeleted = 2,
                 oauthStatesDeleted = 3,
+                phoneVerificationCodesDeleted = 4,
             )
 
         val result = world.purge.run()
@@ -93,6 +126,7 @@ class ExpiredAuthArtifactPurgeServiceTest {
         assertThat(result.emailVerificationCodesDeleted).isEqualTo(1)
         assertThat(result.passwordResetCodesDeleted).isEqualTo(2)
         assertThat(result.oauthStatesDeleted).isEqualTo(3)
+        assertThat(result.phoneVerificationCodesDeleted).isEqualTo(4)
     }
 
     @Test
@@ -105,6 +139,7 @@ class ExpiredAuthArtifactPurgeServiceTest {
                 emailVerificationCodesDeleted = 1,
                 passwordResetCodesDeleted = 0,
                 oauthStatesDeleted = 0,
+                phoneVerificationCodesDeleted = 0,
             )
 
         val result = world.purge.run()
@@ -177,6 +212,7 @@ class ExpiredAuthArtifactPurgeServiceTest {
                     emailVerificationCodesDeleted = 0,
                     passwordResetCodesDeleted = 0,
                     oauthStatesDeleted = 0,
+                    phoneVerificationCodesDeleted = 0,
                 )
         }
     }

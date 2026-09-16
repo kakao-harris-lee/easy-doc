@@ -75,6 +75,16 @@ afterEach(() => {
 })
 
 describe('로그인 화면', () => {
+  it('휴대폰 인증 뒤 체험 5크레딧을 받는 전체 순서를 보여준다', () => {
+    renderAt('/login')
+
+    const guide = screen.getByRole('region', { name: '무료 체험 시작 순서' })
+    expect(guide).toHaveTextContent('가입')
+    expect(guide).toHaveTextContent('로그인')
+    expect(guide).toHaveTextContent('휴대폰 인증 요청')
+    expect(guide).toHaveTextContent('체험 5크레딧 발급')
+  })
+
   it('입력이 비어 있으면 서버를 부르지 않고 오류를 알린다', async () => {
     const user = userEvent.setup()
     renderAt('/login')
@@ -109,6 +119,7 @@ describe('로그인 화면', () => {
       id: 'u1',
       email: 'user@example.com',
       email_verified: true,
+      phone_verified: true,
       has_password: true,
       identities: [],
       is_admin: false,
@@ -285,6 +296,7 @@ describe('구글 계정 연결 이어가기 (?link=google)', () => {
       id: 'u1',
       email: 'user@example.com',
       email_verified: true,
+      phone_verified: true,
       has_password: true,
       identities: [],
       is_admin: false,
@@ -325,6 +337,7 @@ describe('구글 계정 연결 이어가기 (?link=google)', () => {
       id: 'u1',
       email: 'user@example.com',
       email_verified: true,
+      phone_verified: true,
       has_password: true,
       identities: [],
       is_admin: false,
@@ -352,6 +365,7 @@ describe('구글 계정 연결 이어가기 (?link=google)', () => {
       id: 'u1',
       email: 'user@example.com',
       email_verified: true,
+      phone_verified: true,
       has_password: true,
       identities: [],
       is_admin: false,
@@ -379,6 +393,7 @@ describe('카카오 계정 연결 이어가기 (?link=kakao)', () => {
       id: 'u1',
       email: 'user@example.com',
       email_verified: true,
+      phone_verified: true,
       has_password: true,
       identities: [],
       is_admin: false,
@@ -419,6 +434,7 @@ describe('네이버 계정 연결 이어가기 (?link=naver)', () => {
       id: 'u1',
       email: 'user@example.com',
       email_verified: true,
+      phone_verified: true,
       has_password: true,
       identities: [],
       is_admin: false,

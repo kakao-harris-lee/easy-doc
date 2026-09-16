@@ -33,10 +33,11 @@ import java.util.UUID
 import javax.sql.DataSource
 
 /**
- * 만료 인증 아티팩트(`email_verification_codes`·`password_reset_codes`·`oauth_states`)
- * 파기 — 실제 PostgreSQL 에서 `created_at` 기준 경계 판정, `oauth_states`의 `user_id`
- * NULL 행 파기, 배치 반복, 재발송 쿨다운 비회귀를 잰다(`docs/plans/2026-09-10-personal-data-inventory.md`
- * §2.2). `JdbcSignupGrantRecordPurgeTest`와 비슷한 뼈대다.
+ * 만료 인증 아티팩트(`email_verification_codes`·`password_reset_codes`·`oauth_states`·
+ * `phone_verification_codes`) 파기 — 실제 PostgreSQL 에서 `created_at` 기준 경계 판정,
+ * `oauth_states`의 `user_id` NULL 행 파기, 배치 반복, 재발송 쿨다운 비회귀를 잰다
+ * (`docs/plans/2026-09-10-personal-data-inventory.md` §2.2). `JdbcSignupGrantRecordPurgeTest`와
+ * 비슷한 뼈대다.
  */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class JdbcExpiredAuthArtifactPurgeTest {
@@ -123,6 +124,31 @@ class JdbcExpiredAuthArtifactPurgeTest {
             .describedAs("user_id 가 NULL 인 오래된 oauth_states 행도 지워져야 한다 — 이 조각의 핵심")
             .isFalse()
         assertThat(oauthStateExists(recentOauthNullUser)).isTrue()
+    }
+
+    @Test
+    @DisplayName("휴대폰 인증 코드는 보존기간보다 오래된 행만 지워지고, 최근 행·소비 직후 최근 행은 남는다")
+    fun `휴대폰 인증 코드 파기`() {
+        jdbc.sql("DELETE FROM users").update()
+        val userId = insertUser()
+
+        val old = insertPhoneVerificationCode(userId, createdAt = FIXED_NOW.minus(TWO_DAYS))
+        val recent = insertPhoneVerificationCode(userId, createdAt = FIXED_NOW.minus(ONE_HOUR))
+        val recentConsumed =
+            insertPhoneVerificationCode(
+                userId,
+                createdAt = FIXED_NOW.minus(ONE_HOUR),
+                consumedAt = FIXED_NOW.minus(ONE_HOUR),
+            )
+
+        val result = purgeUseCase(retentionHours = 24, now = FIXED_NOW).run()
+
+        assertThat(result.phoneVerificationCodesDeleted).isEqualTo(1)
+        assertThat(phoneVerificationCodeExists(old)).isFalse()
+        assertThat(phoneVerificationCodeExists(recent)).isTrue()
+        assertThat(phoneVerificationCodeExists(recentConsumed))
+            .describedAs("소비됐어도 created_at 이 보존기간 안이면 지워지면 안 된다 — 재발송 쿨다운 비회귀와 같은 판단")
+            .isTrue()
     }
 
     @Test
@@ -290,6 +316,24 @@ class JdbcExpiredAuthArtifactPurgeTest {
         return id
     }
 
+    private fun insertPhoneVerificationCode(
+        userId: UUID,
+        createdAt: Instant,
+        consumedAt: Instant? = null,
+    ): UUID {
+        val id = UUID.randomUUID()
+        val consumedAtSql = consumedAt?.let { "'${java.sql.Timestamp.from(it)}'" } ?: "NULL"
+        database.execute(
+            """
+            INSERT INTO phone_verification_codes (id, user_id, code_hash, salt, expires_at, consumed_at, created_at)
+            VALUES ('$id', '$userId', 'hash-$id', 'salt-$id',
+                    '${java.sql.Timestamp.from(createdAt.plus(Duration.ofMinutes(10)))}', $consumedAtSql,
+                    '${java.sql.Timestamp.from(createdAt)}');
+            """.trimIndent(),
+        )
+        return id
+    }
+
     private fun oauthSecretValues(id: UUID): List<String> = listOf("state-$id", "nonce-$id")
 
     /** 두 코드 표의 공통 삽입 형태([insertEmailVerificationCode]·[insertPasswordResetCode])가 심는 `code_hash`·`salt` 값. */
@@ -303,6 +347,9 @@ class JdbcExpiredAuthArtifactPurgeTest {
 
     private fun oauthStateExists(id: UUID): Boolean =
         database.queryInt("SELECT count(*) FROM oauth_states WHERE id = '$id'") == 1
+
+    private fun phoneVerificationCodeExists(id: UUID): Boolean =
+        database.queryInt("SELECT count(*) FROM phone_verification_codes WHERE id = '$id'") == 1
 
     private object RecordingObserver : ExpiredAuthArtifactPurgeObserver {
         override fun record(result: ExpiredAuthArtifactPurgeResult) = Unit

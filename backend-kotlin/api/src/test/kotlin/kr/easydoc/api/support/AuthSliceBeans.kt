@@ -138,6 +138,10 @@ import java.util.concurrent.ConcurrentHashMap
 @TestConfiguration(proxyBeanMethods = false)
 class AuthSliceBeans {
     @Bean
+    fun phoneVerificationService(): kr.easydoc.application.auth.PhoneVerificationService =
+        org.mockito.Mockito.mock(kr.easydoc.application.auth.PhoneVerificationService::class.java)
+
+    @Bean
     fun tossBillingService(): kr.easydoc.application.subscription.TossBillingService =
         org.mockito.Mockito.mock(kr.easydoc.application.subscription.TossBillingService::class.java)
 
@@ -1518,6 +1522,13 @@ class InMemoryVerificationCodeStore : VerificationCodeStore {
         return code
     }
 
+    override fun revoke(
+        userId: UUID,
+        code: String,
+    ) {
+        active[userId]?.let { if (it.code == code) it.voided = true }
+    }
+
     override fun attempt(
         userId: UUID,
         code: String,
@@ -1573,6 +1584,13 @@ class InMemoryPasswordResetCodeStore : PasswordResetCodeStore {
         val code = String.format(Locale.ROOT, "%06d", ++counter % 1_000_000)
         active[userId] = ActiveCode(code)
         return code
+    }
+
+    override fun revoke(
+        userId: UUID,
+        code: String,
+    ) {
+        active[userId]?.let { if (it.code == code) it.voided = true }
     }
 
     override fun attempt(

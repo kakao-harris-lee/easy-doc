@@ -1,11 +1,17 @@
 package kr.easydoc.application.subscription
 
 import kr.easydoc.application.auth.TransactionRunner
+import kr.easydoc.application.auth.UserRepository
 import kr.easydoc.application.credit.CreditAccountService
 import kr.easydoc.application.credit.NoopCreditAccountRepository
 import kr.easydoc.core.credit.CreditReason
 import kr.easydoc.core.exceptions.ConflictException
+import kr.easydoc.core.exceptions.EmailNotVerifiedException
 import kr.easydoc.core.exceptions.InvalidInputException
+import kr.easydoc.core.exceptions.PhoneNotVerifiedException
+import kr.easydoc.core.user.PasswordHash
+import kr.easydoc.core.user.StoredUser
+import kr.easydoc.core.user.User
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
@@ -50,6 +56,8 @@ class SubscriptionServiceTest {
         at: Instant = now,
         decline: Boolean = false,
         enabled: Boolean = true,
+        emailVerified: Boolean = true,
+        phoneVerified: Boolean = true,
     ) = SubscriptionService(
         store,
         credits,
@@ -64,7 +72,19 @@ class SubscriptionServiceTest {
         enabled,
         Clock.fixed(at, ZoneOffset.UTC),
         ZoneId.of("Asia/Seoul"),
+        EligibleUserRepository(owner, emailVerified, phoneVerified),
     )
+
+    @Test
+    fun `결제는 이메일과 휴대폰 인증을 모두 요구한다`() {
+        assertThatThrownBy {
+            service(emailVerified = false).checkout(owner, workspace, "start", UUID.randomUUID(), false)
+        }.isInstanceOf(EmailNotVerifiedException::class.java)
+        assertThatThrownBy {
+            service(phoneVerified = false).checkout(owner, workspace, "start", UUID.randomUUID(), false)
+        }.isInstanceOf(PhoneNotVerifiedException::class.java)
+        assertThat(store.payments).isEmpty()
+    }
 
     @Test
     fun `successful checkout applies one allowance and retry does not replenish it`() {
@@ -183,4 +203,45 @@ class SubscriptionServiceTest {
             current?.takeIf { it.status in listOf("active", "canceling") && it.cycleEndsAt <= now }?.let { listOf(it) }
                 ?: emptyList()
     }
+}
+
+private class EligibleUserRepository(
+    private val owner: UUID,
+    emailVerified: Boolean,
+    phoneVerified: Boolean,
+) : UserRepository {
+    private val user =
+        User(
+            id = owner,
+            email = "owner@example.test",
+            createdAt = Instant.EPOCH,
+            emailVerifiedAt = Instant.EPOCH.takeIf { emailVerified },
+            hasPassword = true,
+            phoneVerifiedAt = Instant.EPOCH.takeIf { phoneVerified },
+        )
+
+    override fun findById(id: UUID): User? = user.takeIf { id == owner }
+
+    override fun findByEmail(email: String): StoredUser? = error("not used")
+
+    override fun exists(id: UUID): Boolean = error("not used")
+
+    override fun lockForUpdate(id: UUID): User? = error("not used")
+
+    override fun create(
+        email: String,
+        passwordHash: PasswordHash,
+    ): User = error("not used")
+
+    override fun createWithoutPassword(
+        email: String,
+        emailVerified: Boolean,
+    ): User = error("not used")
+
+    override fun updatePasswordHash(
+        userId: UUID,
+        passwordHash: PasswordHash,
+    ) = error("not used")
+
+    override fun markEmailVerified(userId: UUID): Boolean = error("not used")
 }

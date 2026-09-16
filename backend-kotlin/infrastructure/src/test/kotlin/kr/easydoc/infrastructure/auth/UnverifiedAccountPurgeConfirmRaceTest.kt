@@ -187,6 +187,11 @@ class UnverifiedAccountPurgeConfirmRaceTest {
             code: String,
             maxAttempts: Int,
         ): Boolean = true
+
+        override fun revoke(
+            userId: UUID,
+            code: String,
+        ) = error("이 테스트는 코드 회수를 부르지 않는다")
     }
 
     private object NeverCalledMailSender : MailSender {

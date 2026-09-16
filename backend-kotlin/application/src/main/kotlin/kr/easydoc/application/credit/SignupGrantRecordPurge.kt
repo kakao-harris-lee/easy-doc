@@ -9,29 +9,38 @@ import java.time.Period
 import java.time.ZoneOffset
 
 /**
- * 가입 크레딧 중복 방지 원장(`signup_grant_records`, V20) 파기 한 번의 집계.
- * **이메일 해시를 담지 않는다** — 건수만 감사·메트릭에 남긴다(`UnverifiedAccountPurgeResult`
- * 와 같은 판단). `email_hash`는 이메일에 대응하는 가명 식별자라 개인정보 보호법 §21에
- * 따른 파기 기록에도 건수 이상을 남길 이유가 없다.
+ * 무료 체험 중복 방지 원장 — 가입 크레딧용 `signup_grant_records`(V20)와 휴대폰 인증
+ * 체험용 `phone_trial_grant_records`(V26) — 파기 한 번의 집계. **이메일 해시·전화번호
+ * 지문을 담지 않는다** — 표별 건수만 감사·메트릭에 남긴다(`UnverifiedAccountPurgeResult`
+ * 와 같은 판단). `email_hash`·`phone_fingerprint`는 각각 이메일·전화번호에 대응하는 가명
+ * 식별자라 개인정보 보호법 §21에 따른 파기 기록에도 건수 이상을 남길 이유가 없다.
  */
 class SignupGrantRecordPurgeResult(
     val enabled: Boolean,
-    val deleted: Int,
+    val signupGrantRecordsDeleted: Int,
+    val phoneTrialGrantRecordsDeleted: Int,
 ) {
-    override fun toString(): String = "SignupGrantRecordPurgeResult(enabled=$enabled, deleted=$deleted)"
+    override fun toString(): String =
+        "SignupGrantRecordPurgeResult(enabled=$enabled, " +
+            "signupGrantRecordsDeleted=$signupGrantRecordsDeleted, " +
+            "phoneTrialGrantRecordsDeleted=$phoneTrialGrantRecordsDeleted)"
 }
 
 /**
- * `signup_grant_records`(V20) 보유기간이 지난 행을 고르고 지운다(로드맵 5-1c,
- * `docs/plans/2026-09-10-legal-tax-policy-final.md` §6, 개인정보 보호법 §21 — 보유기간이
- * 지나면 지체 없이 파기한다).
+ * `signup_grant_records`(V20)·`phone_trial_grant_records`(V26) 두 원장에서 같은 보유기간
+ * (2년)이 지난 행을 고르고 지운다(로드맵 5-1c, `docs/plans/2026-09-10-legal-tax-policy-final.md`
+ * §6, 개인정보 보호법 §21 — 보유기간이 지나면 지체 없이 파기한다). 개인정보처리방침 §3.1
+ * 「무료 체험 중복 방지 해시 — 부여 시점부터 2년」이 두 원장을 모두 가리킨다.
  *
- * 이 표는 `users`·`workspaces` 에 FK 가 없다(V20 머리주석 — 탈퇴해도 「이 이메일이 전에
- * 가입 부여를 받았는가」를 판정해야 하므로 일부러 남는다) — 다른 파기처럼 계정 삭제의
- * 부산물로 함께 지워지지 않는다. 이 파기가 유일한 소거 경로다.
+ * 두 표 모두 `users`·`workspaces` 에 FK 가 없다(V20·V26 머리주석 — 탈퇴해도 「이 이메일·
+ * 번호가 전에 체험을 받았는가」를 판정해야 하므로 일부러 남는다) — 다른 파기처럼 계정
+ * 삭제의 부산물로 함께 지워지지 않는다. 이 파기가 두 표 모두의 유일한 소거 경로다.
  */
 interface SignupGrantRecordPurge {
-    /** [grantedBefore] 이전에 부여된(`granted_at < grantedBefore`) 행을 [batchSize] 건까지 지운다. */
+    /**
+     * [grantedBefore] 이전에 부여된(`granted_at < grantedBefore`) 행을 표마다 [batchSize]
+     * 건까지 지운다.
+     */
     fun purge(
         grantedBefore: Instant,
         batchSize: Int,
@@ -57,8 +66,10 @@ class SignupGrantRecordPurgePolicy(
 
 /**
  * 부여 시점(`granted_at`) 기준 [SignupGrantRecordPurgePolicy.ttl](기본 2년) 이 지난
- * `signup_grant_records` 행을 지운다. `PurgeUnverifiedAccounts`(`application.auth`)와
- * 같은 배치 흐름이다 — 대상량이 배치를 넘으면 배치가 짧아질 때까지 트랜잭션을 반복한다.
+ * `signup_grant_records`·`phone_trial_grant_records` 행을 지운다.
+ * `PurgeUnverifiedAccounts`(`application.auth`)와 같은 배치 흐름이다 — 대상량이 배치를
+ * 넘으면 배치가 짧아질 때까지 트랜잭션을 반복한다. `PurgeExpiredAuthArtifacts`와 같은
+ * 판단으로, 두 표 중 하나라도 이번 배치에서 한도만큼 지웠으면 반복한다.
  */
 class PurgeSignupGrantRecords(
     private val store: SignupGrantRecordPurge,
@@ -88,30 +99,44 @@ class PurgeSignupGrantRecords(
     private fun drainPurges(): SignupGrantRecordPurgeResult {
         val grantedBefore =
             OffsetDateTime.ofInstant(Instant.now(clock), ZoneOffset.UTC).minus(policy.ttl).toInstant()
-        var deleted = 0
+        var signupGrantRecordsDeleted = 0
+        var phoneTrialGrantRecordsDeleted = 0
         var rounds = 0
         do {
             rounds++
             check(rounds <= MAX_ROUNDS) { "가입 크레딧 원장 파기 배치가 ${MAX_ROUNDS}회를 넘었다" }
             val batch = oneBatch(grantedBefore)
-            deleted += batch.deleted
-        } while (batch.deleted >= policy.batchSize)
-        return SignupGrantRecordPurgeResult(enabled = true, deleted = deleted)
+            signupGrantRecordsDeleted += batch.signupGrantRecordsDeleted
+            phoneTrialGrantRecordsDeleted += batch.phoneTrialGrantRecordsDeleted
+        } while (
+            batch.signupGrantRecordsDeleted >= policy.batchSize ||
+            batch.phoneTrialGrantRecordsDeleted >= policy.batchSize
+        )
+        return SignupGrantRecordPurgeResult(
+            enabled = true,
+            signupGrantRecordsDeleted = signupGrantRecordsDeleted,
+            phoneTrialGrantRecordsDeleted = phoneTrialGrantRecordsDeleted,
+        )
     }
 
     private fun inactiveResult(): SignupGrantRecordPurgeResult =
-        SignupGrantRecordPurgeResult(enabled = false, deleted = 0)
+        SignupGrantRecordPurgeResult(enabled = false, signupGrantRecordsDeleted = 0, phoneTrialGrantRecordsDeleted = 0)
 
     private companion object {
         const val MAX_ROUNDS: Int = 10_000
     }
 }
 
-/** 건수만 남긴다. 이메일 해시는 자리에 없다. */
+/** 표별 건수만 남긴다. 이메일 해시·전화번호 지문은 자리에 없다. */
 class LoggingSignupGrantRecordPurgeObserver : SignupGrantRecordPurgeObserver {
     private val log = LoggerFactory.getLogger(LoggingSignupGrantRecordPurgeObserver::class.java)
 
     override fun record(result: SignupGrantRecordPurgeResult) {
-        log.info("가입 크레딧 원장 파기: enabled={} deleted={}", result.enabled, result.deleted)
+        log.info(
+            "무료 체험 중복 방지 원장 파기: enabled={} signupGrantRecordsDeleted={} phoneTrialGrantRecordsDeleted={}",
+            result.enabled,
+            result.signupGrantRecordsDeleted,
+            result.phoneTrialGrantRecordsDeleted,
+        )
     }
 }

@@ -32,10 +32,11 @@ import java.util.UUID
 import javax.sql.DataSource
 
 /**
- * 가입 크레딧 원장(`signup_grant_records`, V20) 파기 — 실제 PostgreSQL 에서
- * `granted_at` 기준 경계 판정과 배치 반복을 잰다. `JdbcFeedbackCommentPurgeTest`
+ * 무료 체험 중복 방지 원장 — 가입 크레딧용 `signup_grant_records`(V20)와 휴대폰 인증
+ * 체험용 `phone_trial_grant_records`(V26) — 파기. 실제 PostgreSQL 에서 `granted_at` 기준
+ * 경계 판정과 배치 반복을 표마다 잰다. `JdbcFeedbackCommentPurgeTest`
  * (`infrastructure.document`)와 비슷한 뼈대이지만, [JdbcSignupGrantRecordPurge] 자체는
- * 잠금 후 별도 `DELETE`가 아니라 **한 문장**(서브쿼리 `FOR UPDATE SKIP LOCKED`)으로
+ * 잠금 후 별도 `DELETE`가 아니라 표마다 **한 문장**(서브쿼리 `FOR UPDATE SKIP LOCKED`)으로
  * 끝난다 — 그 판단의 이유는 [JdbcSignupGrantRecordPurge] KDoc.
  */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
@@ -60,54 +61,84 @@ class JdbcSignupGrantRecordPurgeTest {
     @BeforeEach
     fun cleanRecords() {
         jdbc.sql("DELETE FROM signup_grant_records").update()
+        jdbc.sql("DELETE FROM phone_trial_grant_records").update()
     }
 
     @Test
     @DisplayName("보유기간보다 오래된 행만 지워지고 최근 행은 남는다")
     fun `오래된 행만 지운다`() {
-        val old = insertRecord(grantedAt = FIXED_NOW.minus(THREE_YEARS))
-        val recent = insertRecord(grantedAt = FIXED_NOW.minus(ONE_YEAR))
+        val old = insertSignupGrantRecord(grantedAt = FIXED_NOW.minus(THREE_YEARS))
+        val recent = insertSignupGrantRecord(grantedAt = FIXED_NOW.minus(ONE_YEAR))
 
         val store = JdbcSignupGrantRecordPurge(jdbc)
-        val deleted = store.purge(grantedBefore = FIXED_NOW.minus(TWO_YEARS), batchSize = 100).deleted
+        val result = store.purge(grantedBefore = FIXED_NOW.minus(TWO_YEARS), batchSize = 100)
 
-        assertThat(deleted).isEqualTo(1)
-        assertThat(exists(old)).isFalse()
-        assertThat(exists(recent)).isTrue()
+        assertThat(result.signupGrantRecordsDeleted).isEqualTo(1)
+        assertThat(signupGrantRecordExists(old)).isFalse()
+        assertThat(signupGrantRecordExists(recent)).isTrue()
     }
 
     @Test
     @DisplayName("경계값 — grantedBefore 와 정확히 같은 시각의 행은 지우지 않는다(granted_at < grantedBefore)")
     fun `경계값은 남긴다`() {
         val cutoff = FIXED_NOW.minus(TWO_YEARS)
-        val onBoundary = insertRecord(grantedAt = cutoff)
-        val justBefore = insertRecord(grantedAt = cutoff.minusSeconds(1))
+        val onBoundary = insertSignupGrantRecord(grantedAt = cutoff)
+        val justBefore = insertSignupGrantRecord(grantedAt = cutoff.minusSeconds(1))
 
         val store = JdbcSignupGrantRecordPurge(jdbc)
-        val deleted = store.purge(grantedBefore = cutoff, batchSize = 100).deleted
+        val result = store.purge(grantedBefore = cutoff, batchSize = 100)
 
-        assertThat(deleted).isEqualTo(1)
-        assertThat(exists(onBoundary))
+        assertThat(result.signupGrantRecordsDeleted).isEqualTo(1)
+        assertThat(signupGrantRecordExists(onBoundary))
             .describedAs("경계 시각과 정확히 같은 행은 아직 보유기간을 넘기지 않았다 — 남아야 한다")
             .isTrue()
-        assertThat(exists(justBefore)).isFalse()
+        assertThat(signupGrantRecordExists(justBefore)).isFalse()
     }
 
     @Test
     @DisplayName("한 스케줄이 배치를 넘겨 대상을 모두 지운다")
     fun `배치보다 많은 대상을 한 번에 지운다`() {
         val old = FIXED_NOW.minus(THREE_YEARS)
-        val first = insertRecord(grantedAt = old)
-        val second = insertRecord(grantedAt = old.plusSeconds(1))
-        val third = insertRecord(grantedAt = old.plusSeconds(2))
+        val first = insertSignupGrantRecord(grantedAt = old)
+        val second = insertSignupGrantRecord(grantedAt = old.plusSeconds(1))
+        val third = insertSignupGrantRecord(grantedAt = old.plusSeconds(2))
 
         val purge = purgeUseCase(batchSize = 2)
         val result = purge.run()
 
-        assertThat(result.deleted).isEqualTo(3)
-        assertThat(exists(first)).isFalse()
-        assertThat(exists(second)).isFalse()
-        assertThat(exists(third)).isFalse()
+        assertThat(result.signupGrantRecordsDeleted).isEqualTo(3)
+        assertThat(signupGrantRecordExists(first)).isFalse()
+        assertThat(signupGrantRecordExists(second)).isFalse()
+        assertThat(signupGrantRecordExists(third)).isFalse()
+    }
+
+    @Test
+    @DisplayName("휴대폰 체험 원장도 보유기간보다 오래된 행만 지워지고 최근 행은 남는다")
+    fun `휴대폰 체험 원장도 오래된 행만 지운다`() {
+        val old = insertPhoneTrialGrantRecord(grantedAt = FIXED_NOW.minus(THREE_YEARS))
+        val recent = insertPhoneTrialGrantRecord(grantedAt = FIXED_NOW.minus(ONE_YEAR))
+
+        val store = JdbcSignupGrantRecordPurge(jdbc)
+        val result = store.purge(grantedBefore = FIXED_NOW.minus(TWO_YEARS), batchSize = 100)
+
+        assertThat(result.phoneTrialGrantRecordsDeleted).isEqualTo(1)
+        assertThat(phoneTrialGrantRecordExists(old)).isFalse()
+        assertThat(phoneTrialGrantRecordExists(recent)).isTrue()
+    }
+
+    @Test
+    @DisplayName("두 원장이 같은 실행에서 각자의 건수로 함께 지워진다")
+    fun `두 원장을 같이 지운다`() {
+        val oldSignup = insertSignupGrantRecord(grantedAt = FIXED_NOW.minus(THREE_YEARS))
+        val oldPhone = insertPhoneTrialGrantRecord(grantedAt = FIXED_NOW.minus(THREE_YEARS))
+
+        val store = JdbcSignupGrantRecordPurge(jdbc)
+        val result = store.purge(grantedBefore = FIXED_NOW.minus(TWO_YEARS), batchSize = 100)
+
+        assertThat(result.signupGrantRecordsDeleted).isEqualTo(1)
+        assertThat(result.phoneTrialGrantRecordsDeleted).isEqualTo(1)
+        assertThat(signupGrantRecordExists(oldSignup)).isFalse()
+        assertThat(phoneTrialGrantRecordExists(oldPhone)).isFalse()
     }
 
     /**
@@ -116,14 +147,15 @@ class JdbcSignupGrantRecordPurgeTest {
      * `DELETE ... WHERE email_hash IN (:hash0, ...)` 파라미터로 애플리케이션 메모리를
      * 거쳐 다시 밀어 넣는 두 단계 구조였고, 그래서 루트 TRACE 를 켜면 (우리 코드가 아니라)
      * Spring JDBC 드라이버 자신의 바인드 파라미터 트레이스 로그가 해시를 찍어 이 테스트가
-     * 오탐으로 걸렸다. 지금은 [JdbcSignupGrantRecordPurge] 가 서브쿼리 하나로 서버 안에서
-     * 끝나 해시가 JVM 으로 들어오지 않으므로 — 즉 해시를 SQL 파라미터로 보내는 경로 자체가
-     * 사라졌으므로 — 넓은 관문을 그대로 써도 된다.
+     * 오탐으로 걸렸다. 지금은 [JdbcSignupGrantRecordPurge] 가 표마다 서브쿼리 하나로 서버
+     * 안에서 끝나 해시·지문이 JVM 으로 들어오지 않으므로 — 즉 그 값을 SQL 파라미터로 보내는
+     * 경로 자체가 사라졌으므로 — 넓은 관문을 그대로 써도 된다.
      */
     @Test
-    @DisplayName("파기 로그에 이메일 해시 원문이 남지 않는다")
-    fun `로그에 이메일 해시가 새지 않는다`() {
-        val emailHash = insertRecord(grantedAt = FIXED_NOW.minus(THREE_YEARS))
+    @DisplayName("파기 로그에 이메일 해시·전화번호 지문 원문이 남지 않는다")
+    fun `로그에 이메일 해시와 전화번호 지문이 새지 않는다`() {
+        val emailHash = insertSignupGrantRecord(grantedAt = FIXED_NOW.minus(THREE_YEARS))
+        val phoneFingerprint = insertPhoneTrialGrantRecord(grantedAt = FIXED_NOW.minus(THREE_YEARS))
 
         val root = LoggerFactory.getLogger(org.slf4j.Logger.ROOT_LOGGER_NAME) as ch.qos.logback.classic.Logger
         val appender = ListAppender<ILoggingEvent>().apply { start() }
@@ -145,6 +177,9 @@ class JdbcSignupGrantRecordPurgeTest {
         assertThat(rendered)
             .withFailMessage("강제 TRACE 로그에 이메일 해시 원문이 실렸다: %s", emailHash)
             .doesNotContain(emailHash)
+        assertThat(rendered)
+            .withFailMessage("강제 TRACE 로그에 전화번호 지문 원문이 실렸다: %s", phoneFingerprint)
+            .doesNotContain(phoneFingerprint)
     }
 
     private fun purgeUseCase(
@@ -159,7 +194,7 @@ class JdbcSignupGrantRecordPurgeTest {
             clock = Clock.fixed(FIXED_NOW, ZoneOffset.UTC),
         )
 
-    private fun insertRecord(grantedAt: Instant): String {
+    private fun insertSignupGrantRecord(grantedAt: Instant): String {
         val hash = uniqueHash()
         jdbc
             .sql("INSERT INTO signup_grant_records (email_hash, granted_at) VALUES (:hash, :grantedAt)")
@@ -169,14 +204,33 @@ class JdbcSignupGrantRecordPurgeTest {
         return hash
     }
 
-    private fun exists(emailHash: String): Boolean =
+    private fun insertPhoneTrialGrantRecord(grantedAt: Instant): String {
+        val fingerprint = uniqueHash()
+        val insertSql =
+            "INSERT INTO phone_trial_grant_records (phone_fingerprint, granted_at) VALUES (:fingerprint, :grantedAt)"
+        jdbc
+            .sql(insertSql)
+            .param("fingerprint", fingerprint)
+            .param("grantedAt", java.sql.Timestamp.from(grantedAt))
+            .update()
+        return fingerprint
+    }
+
+    private fun signupGrantRecordExists(emailHash: String): Boolean =
         jdbc
             .sql("SELECT count(*) FROM signup_grant_records WHERE email_hash = :hash")
             .param("hash", emailHash)
             .query { rs, _ -> rs.getInt(1) }
             .single() > 0
 
-    /** char(64) PK 를 채우는 합성 해시 — 실제 HMAC 형식과 무관하게 자리만 채운다. */
+    private fun phoneTrialGrantRecordExists(phoneFingerprint: String): Boolean =
+        jdbc
+            .sql("SELECT count(*) FROM phone_trial_grant_records WHERE phone_fingerprint = :fingerprint")
+            .param("fingerprint", phoneFingerprint)
+            .query { rs, _ -> rs.getInt(1) }
+            .single() > 0
+
+    /** char(64) PK 를 채우는 합성 해시·지문 — 실제 HMAC 형식과 무관하게 자리만 채운다. */
     private fun uniqueHash(): String =
         UUID
             .randomUUID()

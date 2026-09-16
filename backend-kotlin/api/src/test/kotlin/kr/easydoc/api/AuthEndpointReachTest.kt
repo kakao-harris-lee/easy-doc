@@ -2,6 +2,7 @@ package kr.easydoc.api
 
 import kr.easydoc.api.support.ContractSpec
 import kr.easydoc.api.support.TestJwt
+import kr.easydoc.application.auth.PhoneVerificationSmsSender
 import kr.easydoc.infrastructure.DatabaseHandle
 import kr.easydoc.infrastructure.PostgresTestSupport
 import kr.easydoc.infrastructure.mail.FakeMailSender
@@ -11,7 +12,10 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
+import org.springframework.boot.test.context.TestConfiguration
 import org.springframework.boot.test.web.server.LocalServerPort
+import org.springframework.context.annotation.Bean
+import org.springframework.context.annotation.Primary
 import org.springframework.test.context.DynamicPropertyRegistry
 import org.springframework.test.context.DynamicPropertySource
 import tools.jackson.databind.ObjectMapper
@@ -36,6 +40,10 @@ class AuthEndpointReachTest {
     /** 기본 provider(`fake`) — 실물 발송 없이 여기서 발급된 코드를 읽는다. */
     @Autowired
     private lateinit var mailSender: FakeMailSender
+
+    /** SMS `fake` provider 는 아무 곳에도 기록하지 않는 no-op 이라 — 코드를 읽으려면 이 대역으로 교체한다. */
+    @Autowired
+    private lateinit var smsSender: CapturingPhoneVerificationSmsSender
 
     private val json = ObjectMapper()
 
@@ -175,12 +183,121 @@ class AuthEndpointReachTest {
             .isEqualTo(401)
     }
 
+    @Test
+    @DisplayName("PV-1 이메일 인증된 사용자의 요청은 204 이고 SMS 로 6자리 코드가 발송된다")
+    fun `휴대폰 인증 요청은 코드를 보낸다`() {
+        val token = signupLoginAndVerifyEmail(uniqueEmail())
+        val before = smsSender.sentCodes.size
+
+        val response = postAuthorized(PHONE_REQUEST_PATH, token, phoneBody(uniquePhone()))
+
+        assertThat(response.statusCode()).isEqualTo(ContractSpec.successStatus(PHONE_REQUEST_PATH, POST))
+        assertThat(smsSender.sentCodes).hasSize(before + 1)
+        assertThat(smsSender.sentCodes.last()).hasSize(PHONE_CODE_LENGTH)
+    }
+
+    @Test
+    @DisplayName("PV-2 정답 코드 확인은 200 이고 phone_verified 와 체험 크레딧을 함께 준다")
+    fun `정답 코드는 인증과 체험 크레딧을 함께 준다`() {
+        val token = signupLoginAndVerifyEmail(uniqueEmail())
+        postAuthorized(PHONE_REQUEST_PATH, token, phoneBody(uniquePhone()))
+        val code = smsSender.sentCodes.last()
+
+        val response = postAuthorized(PHONE_CONFIRM_PATH, token, confirmBody(code))
+
+        assertThat(response.statusCode()).isEqualTo(ContractSpec.successStatus(PHONE_CONFIRM_PATH, POST))
+        val body = bodyOf(response)
+        assertThat(body["phone_verified"]).isEqualTo(true)
+        assertThat((body["granted_credits"] as Number).toInt()).isEqualTo(PHONE_TRIAL_CREDITS)
+    }
+
+    @Test
+    @DisplayName("PV-3 오답 코드는 400이다")
+    fun `휴대폰 오답 코드는 400이다`() {
+        val token = signupLoginAndVerifyEmail(uniqueEmail())
+        postAuthorized(PHONE_REQUEST_PATH, token, phoneBody(uniquePhone()))
+
+        val response = postAuthorized(PHONE_CONFIRM_PATH, token, confirmBody("000000"))
+
+        assertThat(response.statusCode()).isEqualTo(400)
+    }
+
+    @Test
+    @DisplayName("PV-4 이미 인증된 번호의 재요청·재확인은 409다")
+    fun `이미 인증된 휴대폰은 409다`() {
+        val token = signupLoginAndVerifyEmail(uniqueEmail())
+        postAuthorized(PHONE_REQUEST_PATH, token, phoneBody(uniquePhone()))
+        val code = smsSender.sentCodes.last()
+        postAuthorized(PHONE_CONFIRM_PATH, token, confirmBody(code))
+
+        val requestAgain = postAuthorized(PHONE_REQUEST_PATH, token, phoneBody(uniquePhone()))
+        val confirmAgain = postAuthorized(PHONE_CONFIRM_PATH, token, confirmBody(code))
+
+        assertThat(requestAgain.statusCode()).isEqualTo(409)
+        assertThat(confirmAgain.statusCode()).isEqualTo(409)
+    }
+
+    @Test
+    @DisplayName("PV-5 재발송 쿨다운 안의 재요청은 429 이고 Retry-After 가 있다")
+    fun `휴대폰 쿨다운 안의 재요청은 429다`() {
+        val token = signupLoginAndVerifyEmail(uniqueEmail())
+        val phone = uniquePhone()
+        postAuthorized(PHONE_REQUEST_PATH, token, phoneBody(phone))
+
+        val response = postAuthorized(PHONE_REQUEST_PATH, token, phoneBody(phone))
+
+        assertThat(response.statusCode()).isEqualTo(429)
+        assertThat(response.headers().firstValue("Retry-After").orElse(null))
+            .withFailMessage("Retry-After 헤더가 없다")
+            .isNotNull()
+    }
+
+    @Test
+    @DisplayName("PV-6 이메일 미인증 사용자의 휴대폰 인증 요청은 403이다")
+    fun `이메일 미인증은 휴대폰 인증에서 403이다`() {
+        val token = signupAndLogin(uniqueEmail())
+
+        val response = postAuthorized(PHONE_REQUEST_PATH, token, phoneBody(uniquePhone()))
+
+        assertThat(response.statusCode()).isEqualTo(403)
+    }
+
+    @Test
+    @DisplayName("PV-7 인증 없이는 두 오퍼레이션 다 401")
+    fun `휴대폰 인증은 인증 없이 401이다`() {
+        assertThat(postAuthorized(PHONE_REQUEST_PATH, null, phoneBody(uniquePhone())).statusCode()).isEqualTo(401)
+        assertThat(postAuthorized(PHONE_CONFIRM_PATH, null, confirmBody("123456")).statusCode()).isEqualTo(401)
+    }
+
+    @Test
+    @DisplayName("PV-8 010 으로 시작하지 않는 번호는 422다")
+    fun `010 이 아닌 번호는 422다`() {
+        val token = signupLoginAndVerifyEmail(uniqueEmail())
+
+        val response = postAuthorized(PHONE_REQUEST_PATH, token, phoneBody("021234567"))
+
+        assertThat(response.statusCode()).isEqualTo(422)
+    }
+
     private fun signupAndLogin(email: String): String {
         post("/auth/signup", credentials(email, VALID_PASSWORD))
         return bodyOf(post("/auth/login", credentials(email, VALID_PASSWORD)))["access_token"].toString()
     }
 
+    /** 이메일 인증까지 마친 토큰 — 휴대폰 인증 게이트(`requireEligibleForRequest`)를 통과한 상태다. */
+    private fun signupLoginAndVerifyEmail(email: String): String {
+        val token = signupAndLogin(email)
+        val code = codeIn(mailSender.sent.last { it.to.value == email }.textBody)
+        postAuthorized("/auth/email-verification/confirm", token, confirmBody(code))
+        return token
+    }
+
     private fun confirmBody(code: String): String = json.writeValueAsString(mapOf("code" to code))
+
+    private fun phoneBody(phoneNumber: String): String = json.writeValueAsString(mapOf("phone_number" to phoneNumber))
+
+    /** 국내 010 번호 형태를 지키면서 테스트마다 번호를 갈라 체험 크레딧 지문 충돌을 막는다. */
+    private fun uniquePhone(): String = "010" + (phoneCounter++).toString().padStart(8, '0')
 
     private fun codeIn(body: String): String = CODE_PATTERN.find(body)?.value ?: error("메일 본문에서 코드를 찾지 못했다: $body")
 
@@ -651,6 +768,14 @@ class AuthEndpointReachTest {
         private const val CODE_LENGTH = 6
         private val CODE_PATTERN = Regex("\\d{$CODE_LENGTH}")
 
+        private const val PHONE_REQUEST_PATH = "/auth/phone-verification/request"
+        private const val PHONE_CONFIRM_PATH = "/auth/phone-verification/confirm"
+        private const val PHONE_CODE_LENGTH = 6
+
+        /** `easydoc.phone-verification.trial-credits` 기본값(`.env.example`) — 바인딩 자체는
+         * `ConfigurationPropertiesBindingTest` 가 잰다. */
+        private const val PHONE_TRIAL_CREDITS = 5
+
         /**
          * 계약 조항이 시간 축을 요구한다는 표식. 문구 전문을 옮겨 적지 않는다 — 그러면
          * 계약을 코드에 복제하는 것이고, 조항이 조금만 다듬어져도 무관한 실패가 난다.
@@ -695,6 +820,9 @@ class AuthEndpointReachTest {
 
         private var counter = 0
 
+        /** 테스트마다 새 010 번호를 만든다 — 체험 크레딧 지문은 번호당 1회라 재사용하면 테스트가 서로 간섭한다. */
+        private var phoneCounter = 0
+
         /** 이 테스트만 쓰는 DB. 다른 기동 테스트의 행과 섞이지 않게 따로 만든다. */
         val database: DatabaseHandle by lazy { PostgresTestSupport.createEmptyDatabase("auth_reach") }
 
@@ -704,6 +832,27 @@ class AuthEndpointReachTest {
             registry.add("spring.datasource.url") { database.jdbcUrl }
             registry.add("spring.datasource.username") { database.username }
             registry.add("spring.datasource.password") { database.password }
+        }
+    }
+
+    /** SMS `fake` provider(운영 기본값)는 아무 것도 기록하지 않는 no-op 이다(`SmsConfiguration`) —
+     * 이 대역이 그 자리를 대신해 발급된 코드를 테스트가 읽을 수 있게 한다. */
+    @TestConfiguration
+    class PhoneVerificationSmsTestConfiguration {
+        @Bean
+        @Primary
+        fun capturingPhoneVerificationSmsSender() = CapturingPhoneVerificationSmsSender()
+    }
+
+    class CapturingPhoneVerificationSmsSender : PhoneVerificationSmsSender {
+        val sentCodes = java.util.concurrent.CopyOnWriteArrayList<String>()
+
+        override fun send(
+            phoneNumber: String,
+            code: String,
+            validMinutes: Long,
+        ) {
+            sentCodes.add(code)
         }
     }
 }

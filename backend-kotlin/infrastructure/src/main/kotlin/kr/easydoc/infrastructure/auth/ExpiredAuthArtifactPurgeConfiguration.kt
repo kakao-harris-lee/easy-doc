@@ -15,8 +15,8 @@ import java.time.Clock
 import java.time.Duration
 
 /**
- * 만료 인증 아티팩트(`email_verification_codes`·`password_reset_codes`·`oauth_states`)
- * 파기 설정. 바인딩 접두사는 `easydoc.auth.ephemeral-purge`
+ * 만료 인증 아티팩트(`email_verification_codes`·`password_reset_codes`·`oauth_states`·
+ * `phone_verification_codes`) 파기 설정. 바인딩 접두사는 `easydoc.auth.ephemeral-purge`
  * (`docs/plans/2026-09-10-personal-data-inventory.md` §2.2 확정 결함, 개인정보 보호법
  * §21 — 목적 달성 시 지체 없이 파기).
  *

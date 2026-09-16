@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -8,8 +8,10 @@ import { ApiError } from '../api/client'
 import { listActiveAnnouncements } from '../api/announcements'
 import { AuthContext } from '../auth/context'
 import type { AuthContextValue } from '../auth/context'
+import { PHONE_VERIFICATION_COOKIE_NAME } from '../auth/phoneVerificationCookie'
 import { setUnsavedChanges } from '../review/unsavedChanges'
-import { workspaceContext } from '../test/factories'
+import { ACCOUNT_SETTINGS_PATH, EMAIL_VERIFICATION_PATH } from '../routes/paths'
+import { userResponse, workspaceContext } from '../test/factories'
 import { mockLocationAssign } from '../test/location'
 import { WorkspaceContext } from '../workspace/context'
 import { AppLayout } from './AppLayout'
@@ -38,6 +40,7 @@ function authValue(overrides: Partial<AuthContextValue> = {}): AuthContextValue 
       id: 'u1',
       email: EMAIL,
       email_verified: true,
+      phone_verified: true,
       has_password: true,
       identities: [],
       is_admin: false,
@@ -49,6 +52,7 @@ function authValue(overrides: Partial<AuthContextValue> = {}): AuthContextValue 
         id: 'u1',
         email: EMAIL,
         email_verified: true,
+        phone_verified: true,
         has_password: true,
         identities: [],
         is_admin: false,
@@ -80,6 +84,7 @@ function renderLayout(auth: Partial<AuthContextValue> = {}, initialPath = '/') {
 
 beforeEach(() => {
   window.sessionStorage.clear()
+  document.cookie = `${PHONE_VERIFICATION_COOKIE_NAME}=; Path=/; Max-Age=0`
   vi.mocked(oauthLinkStart).mockReset()
   vi.mocked(listActiveAnnouncements).mockReset().mockResolvedValue({ items: [] })
 })
@@ -161,6 +166,7 @@ describe('계정 메뉴 — 관리 링크 (어드민 최소, 계약 2.25.0)', ()
         id: 'u1',
         email: EMAIL,
         email_verified: true,
+        phone_verified: true,
         has_password: true,
         identities: [],
         is_admin: false,
@@ -179,6 +185,7 @@ describe('계정 메뉴 — 관리 링크 (어드민 최소, 계약 2.25.0)', ()
         id: 'u1',
         email: EMAIL,
         email_verified: true,
+        phone_verified: true,
         has_password: true,
         identities: [],
         is_admin: true,
@@ -200,6 +207,7 @@ describe('계정 메뉴 — 관리 링크 (어드민 최소, 계약 2.25.0)', ()
         id: 'u1',
         email: EMAIL,
         email_verified: true,
+        phone_verified: true,
         has_password: true,
         identities: [],
         is_admin: true,
@@ -232,6 +240,7 @@ describe('모바일 메뉴 — 관리 링크 (어드민 최소, 계약 2.25.0)',
         id: 'u1',
         email: EMAIL,
         email_verified: true,
+        phone_verified: true,
         has_password: true,
         identities: [],
         is_admin: false,
@@ -250,6 +259,7 @@ describe('모바일 메뉴 — 관리 링크 (어드민 최소, 계약 2.25.0)',
         id: 'u1',
         email: EMAIL,
         email_verified: true,
+        phone_verified: true,
         has_password: true,
         identities: [],
         is_admin: true,
@@ -271,6 +281,7 @@ describe('계정 메뉴 — 비밀번호 만들기 (2.19.0, backlog §1.4 다음
         id: 'u1',
         email: EMAIL,
         email_verified: true,
+        phone_verified: true,
         has_password: false,
         identities: [],
         is_admin: false,
@@ -290,6 +301,7 @@ describe('계정 메뉴 — 비밀번호 만들기 (2.19.0, backlog §1.4 다음
         id: 'u1',
         email: EMAIL,
         email_verified: false,
+        phone_verified: true,
         has_password: false,
         identities: [],
         is_admin: false,
@@ -310,6 +322,7 @@ describe('계정 메뉴 — 비밀번호 만들기 (2.19.0, backlog §1.4 다음
         id: 'u1',
         email: EMAIL,
         email_verified: false,
+        phone_verified: true,
         has_password: true,
         identities: [],
         is_admin: false,
@@ -445,6 +458,7 @@ describe('계정 메뉴 — 구글 계정 연결', () => {
         id: 'u1',
         email: EMAIL,
         email_verified: true,
+        phone_verified: true,
         has_password: true,
         identities: [],
         is_admin: false,
@@ -464,6 +478,7 @@ describe('계정 메뉴 — 구글 계정 연결', () => {
         id: 'u1',
         email: EMAIL,
         email_verified: true,
+        phone_verified: true,
         has_password: true,
         identities: [{ provider: 'google' }],
         is_admin: false,
@@ -488,6 +503,7 @@ describe('계정 메뉴 — 구글 계정 연결', () => {
         id: 'u1',
         email: EMAIL,
         email_verified: true,
+        phone_verified: true,
         has_password: true,
         identities: [],
         is_admin: false,
@@ -521,6 +537,7 @@ describe('계정 메뉴 — 구글 계정 연결', () => {
         id: 'u1',
         email: EMAIL,
         email_verified: true,
+        phone_verified: true,
         has_password: true,
         identities: [],
         is_admin: false,
@@ -544,6 +561,7 @@ describe('계정 메뉴 — 카카오 계정 연결', () => {
         id: 'u1',
         email: EMAIL,
         email_verified: true,
+        phone_verified: true,
         has_password: true,
         identities: [],
         is_admin: false,
@@ -563,6 +581,7 @@ describe('계정 메뉴 — 카카오 계정 연결', () => {
         id: 'u1',
         email: EMAIL,
         email_verified: true,
+        phone_verified: true,
         has_password: true,
         identities: [{ provider: 'kakao' }],
         is_admin: false,
@@ -587,6 +606,7 @@ describe('계정 메뉴 — 카카오 계정 연결', () => {
         id: 'u1',
         email: EMAIL,
         email_verified: true,
+        phone_verified: true,
         has_password: true,
         identities: [],
         is_admin: false,
@@ -616,6 +636,7 @@ describe('계정 메뉴 — 두 제공자를 함께 보여준다', () => {
         id: 'u1',
         email: EMAIL,
         email_verified: true,
+        phone_verified: true,
         has_password: true,
         identities: [{ provider: 'google' }],
         is_admin: false,
@@ -675,5 +696,67 @@ describe('머리말 구성', () => {
     const account = screen.getByRole('button', { name: '계정 메뉴' })
     expect(workspace).not.toBeNull()
     expect(workspace?.compareDocumentPosition(account)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
+  })
+
+  it('모바일 작업 공간 메뉴는 오른쪽에 놓고 펼침 패널도 오른쪽을 기준으로 연다', async () => {
+    const user = userEvent.setup()
+    const { container } = render(
+      <AuthContext.Provider value={authValue()}>
+        <WorkspaceContext.Provider value={workspaceContext()}>
+          <MemoryRouter>
+            <AppLayout>
+              <LocationProbe />
+            </AppLayout>
+          </MemoryRouter>
+        </WorkspaceContext.Provider>
+      </AuthContext.Provider>,
+    )
+
+    const workspaceMenus = container.querySelectorAll<HTMLElement>('.workspace-menu')
+    expect(workspaceMenus).toHaveLength(2)
+    const mobileWorkspaceMenu = workspaceMenus[1]!
+    expect(mobileWorkspaceMenu.parentElement).toHaveClass('justify-end')
+
+    await user.click(within(mobileWorkspaceMenu).getByRole('button', { name: /^작업 공간:/ }))
+    const panel = mobileWorkspaceMenu.querySelector<HTMLElement>('div[id$="-menu"]')
+    expect(panel).toHaveClass('right-0')
+    expect(panel).not.toHaveClass('left-0')
+  })
+})
+
+describe('휴대폰 인증 안내', () => {
+  it('미인증 상태를 쿠키에 저장하고 인증 시 받을 5크레딧과 다음 행동을 보여준다', async () => {
+    renderLayout({ user: userResponse({ phone_verified: false }) })
+
+    const banner = screen.getByRole('region', { name: '휴대폰 인증하고 체험 5크레딧 받기' })
+    expect(banner).toHaveTextContent('가입 완료')
+    expect(banner).toHaveTextContent('로그인 완료')
+    expect(banner).toHaveTextContent('휴대폰 인증 필요')
+    expect(banner).toHaveTextContent('5크레딧 발급')
+    expect(screen.getByRole('link', { name: '휴대폰 인증하기' })).toHaveAttribute(
+      'href',
+      ACCOUNT_SETTINGS_PATH,
+    )
+    await waitFor(() =>
+      expect(document.cookie).toContain(`${PHONE_VERIFICATION_COOKIE_NAME}=false`),
+    )
+  })
+
+  it('인증 완료 상태는 쿠키에 저장하고 안내를 숨긴다', async () => {
+    renderLayout()
+
+    expect(
+      screen.queryByRole('region', { name: '휴대폰 인증하고 체험 5크레딧 받기' }),
+    ).not.toBeInTheDocument()
+    await waitFor(() => expect(document.cookie).toContain(`${PHONE_VERIFICATION_COOKIE_NAME}=true`))
+  })
+
+  it('이메일 미인증 사용자는 이메일 인증을 먼저 안내한다', () => {
+    renderLayout({ user: userResponse({ email_verified: false, phone_verified: false }) })
+
+    expect(screen.getByRole('link', { name: '이메일 인증하기' })).toHaveAttribute(
+      'href',
+      EMAIL_VERIFICATION_PATH,
+    )
   })
 })
