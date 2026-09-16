@@ -27,6 +27,7 @@ import kr.easydoc.application.auth.WorkspaceRepository
 import kr.easydoc.application.credit.CreditAccountService
 import kr.easydoc.application.mail.MailSender
 import kr.easydoc.application.mail.NotificationMailFactory
+import kr.easydoc.core.exceptions.ConfigurationException
 import kr.easydoc.core.security.Secret
 import kr.easydoc.infrastructure.auth.google.GoogleOAuthSettings
 import kr.easydoc.infrastructure.auth.google.GoogleSocialLoginProvider
@@ -341,36 +342,44 @@ class AuthConfiguration {
         transactionRunner: TransactionRunner,
         properties: PhoneVerificationProperties,
         smsProperties: SmsProperties,
-    ): PhoneVerificationService {
-        if (smsProperties.provider.equals("sens", ignoreCase = true) &&
-            properties.trialCredits > 0 && properties.fingerprintPepper.isBlank()
-        ) {
-            throw kr.easydoc.core.exceptions.ConfigurationException(
-                "휴대폰 인증 체험 크레딧을 사용하려면 EASYDOC_PHONE_VERIFICATION_PEPPER 또는 " +
-                    "EASYDOC_CREDITS_SIGNUP_GRANT_PEPPER가 필요합니다",
-            )
-        }
-        return PhoneVerificationService(
+    ): PhoneVerificationService =
+        PhoneVerificationService(
             users = users,
             workspaces = workspaces,
             codes = codes,
             sms = sms,
             credits = credits,
             grants = grants,
-            hasher =
-                PhoneFingerprintHasher(
-                    if (properties.fingerprintPepper.isBlank()) {
-                        Secret("fake-phone-verification-pepper")
-                    } else {
-                        properties.fingerprintPepper
-                    },
-                ),
+            hasher = PhoneFingerprintHasher(resolvePhoneVerificationPepper(smsProperties, properties)),
             transaction = transactionRunner,
             codeTtl = Duration.ofMinutes(properties.codeTtlMinutes),
             resendCooldown = Duration.ofSeconds(properties.resendCooldownSeconds),
             maxAttempts = properties.maxAttempts,
             trialCredits = properties.trialCredits,
         )
+
+    /**
+     * 지문 pepper 결정 — `easydoc.sms.provider=sens` 면 [PhoneVerificationProperties.trialCredits]
+     * 값과 무관하게 pepper 가 필수다. 실제 번호는 `trialCredits=0` 이어도
+     * `users.pending_phone_fingerprint` 에 지문으로 남으므로(리뷰 MEDIUM 지적 — 이전에는
+     * 체험 크레딧을 안 쓰는 sens 배포가 고정 리터럴로 지문을 만들 수 있었다), 체험 크레딧
+     * 지급 여부로 필수 여부를 가르지 않는다. 리터럴 대체값은 `provider=fake` 에만 허용한다
+     * (`sens`+빈 pepper 는 여기서 이미 막힌다).
+     */
+    internal fun resolvePhoneVerificationPepper(
+        smsProperties: SmsProperties,
+        properties: PhoneVerificationProperties,
+    ): Secret {
+        if (smsProperties.provider.equals("sens", ignoreCase = true) && properties.fingerprintPepper.isBlank()) {
+            throw ConfigurationException(
+                "easydoc.sms.provider=sens 는 휴대폰 인증 지문 pepper(EASYDOC_PHONE_VERIFICATION_PEPPER)가 필요합니다",
+            )
+        }
+        return if (properties.fingerprintPepper.isBlank()) {
+            Secret(FAKE_PHONE_VERIFICATION_PEPPER)
+        } else {
+            properties.fingerprintPepper
+        }
     }
 
     /** `POST /auth/password` — 비밀번호 없는 계정에 비밀번호를 만든다(backlog §1.4 후속). */
@@ -538,5 +547,8 @@ class AuthConfiguration {
     private companion object {
         /** `Argon2Parameters.ARGON2_VERSION_13`. 인코더가 만드는 PHC 의 `v=` 값이다. */
         const val ARGON2_VERSION_13 = 19
+
+        /** `provider=fake` 전용 대체값 — `sens` 는 [resolvePhoneVerificationPepper] 가 먼저 막는다. */
+        const val FAKE_PHONE_VERIFICATION_PEPPER = "fake-phone-verification-pepper"
     }
 }

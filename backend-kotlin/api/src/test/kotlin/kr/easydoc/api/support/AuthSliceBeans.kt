@@ -1522,6 +1522,13 @@ class InMemoryVerificationCodeStore : VerificationCodeStore {
         return code
     }
 
+    override fun revoke(
+        userId: UUID,
+        code: String,
+    ) {
+        active[userId]?.let { if (it.code == code) it.voided = true }
+    }
+
     override fun attempt(
         userId: UUID,
         code: String,
@@ -1577,6 +1584,13 @@ class InMemoryPasswordResetCodeStore : PasswordResetCodeStore {
         val code = String.format(Locale.ROOT, "%06d", ++counter % 1_000_000)
         active[userId] = ActiveCode(code)
         return code
+    }
+
+    override fun revoke(
+        userId: UUID,
+        code: String,
+    ) {
+        active[userId]?.let { if (it.code == code) it.voided = true }
     }
 
     override fun attempt(

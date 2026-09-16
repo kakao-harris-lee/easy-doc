@@ -92,7 +92,7 @@ class PhoneVerificationService(
             @Suppress("TooGenericExceptionCaught") failure: RuntimeException,
         ) {
             transaction.inTransaction {
-                codes.revoke(userId)
+                codes.revoke(userId, code)
                 users.clearPendingPhoneFingerprint(userId, fingerprint)
             }
             throw failure

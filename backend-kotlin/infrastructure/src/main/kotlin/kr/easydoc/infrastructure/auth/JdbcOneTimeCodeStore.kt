@@ -91,9 +91,35 @@ abstract class JdbcOneTimeCodeStore
             return matched
         }
 
-        override fun revoke(userId: UUID) {
-            voidActiveCode(userId)
+        /**
+         * 활성 코드 하나를 읽어 [code]와 일치할 때만 소비 처리한다 — `voidActiveCode`
+         * ("사용자의 활성 코드를 무조건 지운다")를 재사용하지 않는다. 그 함수는 [issue]가
+         * "활성 코드는 최대 하나" 불변식을 지키려고 쓰는 것이고, 여기서는 **이 [code]를
+         * 발급한 요청**만 회수해야 한다([OneTimeCodeStore.revoke] KDoc의 경쟁 시나리오).
+         */
+        override fun revoke(
+            userId: UUID,
+            code: String,
+        ) {
+            val active = activeRow(userId) ?: return
+            if (matches(code, active.salt, active.codeHash)) {
+                consume(active.id, Timestamp.from(clock.instant()))
+            }
         }
+
+        private fun activeRow(userId: UUID): ActiveCodeRow? =
+            jdbc
+                .sql(
+                    """
+                    SELECT id, code_hash, salt FROM $table
+                    WHERE user_id = :userId AND consumed_at IS NULL AND expires_at > :now
+                    ORDER BY created_at DESC LIMIT 1
+                    """.trimIndent(),
+                ).param("userId", userId)
+                .param("now", Timestamp.from(clock.instant()))
+                .query { rs, _ -> toActiveCodeRow(rs) }
+                .optional()
+                .orElse(null)
 
         /**
          * 활성(미소비·미만료·시도 미소진) 코드 하나의 시도 횟수를 올리고 그 행의 해시 재료를

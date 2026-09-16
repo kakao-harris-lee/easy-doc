@@ -23,10 +23,16 @@ data class SensSmsSettings(
     val secretKey: Secret,
     val fromNumber: String,
     val timeout: Duration,
+    /** 운영 기본값은 실제 SENS API — 테스트가 로컬 스텁 서버로 바꿔 끼운다(생성자 주입, Spring 없이). */
+    val baseUrl: String = DEFAULT_BASE_URL,
 ) {
     override fun toString(): String =
         "SensSmsSettings(serviceId=[REDACTED], accessKey=[REDACTED], secretKey=$secretKey, " +
-            "fromNumber=[REDACTED], timeout=$timeout)"
+            "fromNumber=[REDACTED], timeout=$timeout, baseUrl=$baseUrl)"
+
+    companion object {
+        const val DEFAULT_BASE_URL = "https://sens.apigw.ntruss.com"
+    }
 }
 
 /** NAVER Cloud SENS SMS v2 어댑터. 전화번호·인증번호·키는 로그에 남기지 않는다. */
@@ -40,7 +46,7 @@ class SensSmsSender(
     private val client =
         RestClient
             .builder()
-            .baseUrl(SENS_BASE_URL)
+            .baseUrl(settings.baseUrl)
             .requestFactory(
                 JdkClientHttpRequestFactory(
                     HttpClient.newBuilder().connectTimeout(settings.timeout).build(),
@@ -92,10 +98,6 @@ class SensSmsSender(
     private fun unavailable(reason: String): ExternalServiceUnavailableException {
         log.warn("SENS SMS 발송이 완료되지 않았다: 사유={}", reason)
         return ExternalServiceUnavailableException("인증 문자를 보내지 못했습니다. 잠시 후 다시 시도해 주세요")
-    }
-
-    private companion object {
-        const val SENS_BASE_URL = "https://sens.apigw.ntruss.com"
     }
 }
 
