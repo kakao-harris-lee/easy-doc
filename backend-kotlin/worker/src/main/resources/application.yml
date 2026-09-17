@@ -60,6 +60,11 @@ easydoc:
     dry-run: ${EASYDOC_RETENTION_DRY_RUN:false}
     cron: ${EASYDOC_RETENTION_CRON:0 0 3 * * *}
     batch-size: ${EASYDOC_RETENTION_BATCH_SIZE:100}
+  access-log:
+    zone: ${EASYDOC_ACCESS_LOG_ZONE:Asia/Seoul}
+    retention: ${EASYDOC_ACCESS_LOG_RETENTION:P1Y}
+    purge-enabled: ${EASYDOC_ACCESS_LOG_PURGE_ENABLED:true}
+    purge-batch-size: ${EASYDOC_ACCESS_LOG_PURGE_BATCH_SIZE:200}
   auth:
     unverified-purge:
       enabled: ${EASYDOC_AUTH_UNVERIFIED_PURGE_ENABLED:true}
