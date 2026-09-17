@@ -37,6 +37,10 @@ import javax.sql.DataSource
  * 각 파기를 **최대한 관대한 컷오프**(`Instant.now()`·`retentionDays=0`)로 불러 "지울 수
  * 있는 건 전부 지운다"에 가장 가까운 실행을 재현한다 — 그래도 `personal_data_access_logs`
  * 행 수는 그대로여야 한다.
+ *
+ * 여섯 번째 단계(`JdbcPersonalDataAccessLogPurge`)만 이 표를 건드리며 보관기간이 지난
+ * 행만 지운다 — `JdbcPersonalDataAccessLogPurgeTest`(계획
+ * `docs/plans/2026-09-17-access-log-purge.md`).
  */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class RetentionPurgeIsolationTest {

@@ -1,5 +1,6 @@
 package kr.easydoc.worker
 
+import kr.easydoc.application.accesslog.PurgePersonalDataAccessLogs
 import kr.easydoc.application.conversion.ConversionCompletedNotifier
 import kr.easydoc.application.conversion.DictionaryContextSource
 import kr.easydoc.application.conversion.ProcessConversionJob
@@ -38,6 +39,7 @@ class WorkerStartupTest {
         assertThat(context.getBean(PurgeExpiredDocuments::class.java)).isNotNull()
         assertThat(context.getBean(PurgeFeedbackComments::class.java)).isNotNull()
         assertThat(context.getBean(RetentionPurgeScheduler::class.java)).isNotNull()
+        assertThat(context.getBean(PurgePersonalDataAccessLogs::class.java)).isNotNull()
     }
 
     @Test

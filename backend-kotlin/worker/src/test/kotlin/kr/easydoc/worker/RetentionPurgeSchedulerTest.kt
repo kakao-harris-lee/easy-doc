@@ -3,6 +3,11 @@ package kr.easydoc.worker
 import ch.qos.logback.classic.Level
 import ch.qos.logback.classic.spi.ILoggingEvent
 import ch.qos.logback.core.read.ListAppender
+import kr.easydoc.application.accesslog.PersonalDataAccessLogPurge
+import kr.easydoc.application.accesslog.PersonalDataAccessLogPurgeObserver
+import kr.easydoc.application.accesslog.PersonalDataAccessLogPurgePolicy
+import kr.easydoc.application.accesslog.PersonalDataAccessLogPurgeResult
+import kr.easydoc.application.accesslog.PurgePersonalDataAccessLogs
 import kr.easydoc.application.auth.ExpiredAuthArtifactPurge
 import kr.easydoc.application.auth.ExpiredAuthArtifactPurgeObserver
 import kr.easydoc.application.auth.ExpiredAuthArtifactPurgePolicy
@@ -42,38 +47,43 @@ import java.time.ZoneOffset
 
 /**
  * `RetentionPurgeScheduler` 는 Spring 도 DB 도 없이 대역으로 돈다 — 문서 파기, 피드백
- * 자유 의견 파기, 미검증 계정 파기, 가입 크레딧 원장 파기, 만료 인증 아티팩트 파기가
- * 서로의 실패를 가리지 않는지가 이 테스트의 대상이다.
+ * 자유 의견 파기, 미검증 계정 파기, 가입 크레딧 원장 파기, 만료 인증 아티팩트 파기,
+ * 접속기록 파기가 서로의 실패를 가리지 않는지가 이 테스트의 대상이다.
  */
 class RetentionPurgeSchedulerTest {
     @Test
-    @DisplayName("다섯 파기 단계가 모두 돈다")
-    fun `다섯 파기 단계가 모두 돈다`() {
+    @DisplayName("여섯 파기 단계가 모두 돈다")
+    fun `여섯 파기 단계가 모두 돈다`() {
         val documentStore = RecordingExpiredDocumentPurge()
         val feedbackStore = RecordingFeedbackCommentPurge()
         val unverifiedStore = RecordingUnverifiedAccountPurge()
         val signupGrantStore = RecordingSignupGrantRecordPurge()
         val authEphemeralStore = RecordingExpiredAuthArtifactPurge()
+        val accessLogStore = RecordingPersonalDataAccessLogPurge()
 
-        scheduler(documentStore, feedbackStore, unverifiedStore, signupGrantStore, authEphemeralStore).run()
+        scheduler(documentStore, feedbackStore, unverifiedStore, signupGrantStore, authEphemeralStore, accessLogStore)
+            .run()
 
         assertThat(documentStore.calls).isEqualTo(1)
         assertThat(feedbackStore.calls).isEqualTo(1)
         assertThat(unverifiedStore.calls).isEqualTo(1)
         assertThat(signupGrantStore.calls).isEqualTo(1)
         assertThat(authEphemeralStore.calls).isEqualTo(1)
+        assertThat(accessLogStore.calls).isEqualTo(1)
     }
 
     @Test
-    @DisplayName("문서 파기가 실패해도 나머지 네 파기는 그대로 돈다")
+    @DisplayName("문서 파기가 실패해도 나머지 다섯 파기는 그대로 돈다")
     fun `문서 파기 실패가 나머지 파기를 막지 않는다`() {
         val documentStore = RecordingExpiredDocumentPurge(failing = true)
         val feedbackStore = RecordingFeedbackCommentPurge()
         val unverifiedStore = RecordingUnverifiedAccountPurge()
         val signupGrantStore = RecordingSignupGrantRecordPurge()
         val authEphemeralStore = RecordingExpiredAuthArtifactPurge()
+        val accessLogStore = RecordingPersonalDataAccessLogPurge()
 
-        scheduler(documentStore, feedbackStore, unverifiedStore, signupGrantStore, authEphemeralStore).run()
+        scheduler(documentStore, feedbackStore, unverifiedStore, signupGrantStore, authEphemeralStore, accessLogStore)
+            .run()
 
         assertThat(documentStore.calls).isEqualTo(1)
         assertThat(feedbackStore.calls)
@@ -88,6 +98,9 @@ class RetentionPurgeSchedulerTest {
         assertThat(authEphemeralStore.calls)
             .describedAs("문서 파기 단계의 예외가 다섯 번째 단계 실행을 막으면 안 된다")
             .isEqualTo(1)
+        assertThat(accessLogStore.calls)
+            .describedAs("문서 파기 단계의 예외가 여섯 번째 단계 실행을 막으면 안 된다")
+            .isEqualTo(1)
     }
 
     @Test
@@ -98,8 +111,10 @@ class RetentionPurgeSchedulerTest {
         val unverifiedStore = RecordingUnverifiedAccountPurge()
         val signupGrantStore = RecordingSignupGrantRecordPurge()
         val authEphemeralStore = RecordingExpiredAuthArtifactPurge()
+        val accessLogStore = RecordingPersonalDataAccessLogPurge()
 
-        scheduler(documentStore, feedbackStore, unverifiedStore, signupGrantStore, authEphemeralStore).run()
+        scheduler(documentStore, feedbackStore, unverifiedStore, signupGrantStore, authEphemeralStore, accessLogStore)
+            .run()
 
         assertThat(documentStore.calls)
             .describedAs("뒤에 도는 단계의 실패가 앞 단계가 이미 낸 결과를 무효로 만들면 안 된다")
@@ -114,6 +129,9 @@ class RetentionPurgeSchedulerTest {
         assertThat(authEphemeralStore.calls)
             .describedAs("가운데 단계의 실패가 다섯 번째 단계 실행을 막으면 안 된다")
             .isEqualTo(1)
+        assertThat(accessLogStore.calls)
+            .describedAs("가운데 단계의 실패가 여섯 번째 단계 실행을 막으면 안 된다")
+            .isEqualTo(1)
     }
 
     @Test
@@ -124,8 +142,10 @@ class RetentionPurgeSchedulerTest {
         val unverifiedStore = RecordingUnverifiedAccountPurge(failing = true)
         val signupGrantStore = RecordingSignupGrantRecordPurge()
         val authEphemeralStore = RecordingExpiredAuthArtifactPurge()
+        val accessLogStore = RecordingPersonalDataAccessLogPurge()
 
-        scheduler(documentStore, feedbackStore, unverifiedStore, signupGrantStore, authEphemeralStore).run()
+        scheduler(documentStore, feedbackStore, unverifiedStore, signupGrantStore, authEphemeralStore, accessLogStore)
+            .run()
 
         assertThat(documentStore.calls).isEqualTo(1)
         assertThat(feedbackStore.calls).isEqualTo(1)
@@ -135,6 +155,9 @@ class RetentionPurgeSchedulerTest {
             .isEqualTo(1)
         assertThat(authEphemeralStore.calls)
             .describedAs("세 번째 단계의 실패가 다섯 번째 단계 실행을 막으면 안 된다")
+            .isEqualTo(1)
+        assertThat(accessLogStore.calls)
+            .describedAs("세 번째 단계의 실패가 여섯 번째 단계 실행을 막으면 안 된다")
             .isEqualTo(1)
     }
 
@@ -146,8 +169,10 @@ class RetentionPurgeSchedulerTest {
         val unverifiedStore = RecordingUnverifiedAccountPurge()
         val signupGrantStore = RecordingSignupGrantRecordPurge(failing = true)
         val authEphemeralStore = RecordingExpiredAuthArtifactPurge()
+        val accessLogStore = RecordingPersonalDataAccessLogPurge()
 
-        scheduler(documentStore, feedbackStore, unverifiedStore, signupGrantStore, authEphemeralStore).run()
+        scheduler(documentStore, feedbackStore, unverifiedStore, signupGrantStore, authEphemeralStore, accessLogStore)
+            .run()
 
         assertThat(documentStore.calls).isEqualTo(1)
         assertThat(feedbackStore.calls).isEqualTo(1)
@@ -156,37 +181,74 @@ class RetentionPurgeSchedulerTest {
         assertThat(authEphemeralStore.calls)
             .describedAs("네 번째 단계의 실패가 다섯 번째 단계 실행을 막으면 안 된다")
             .isEqualTo(1)
+        assertThat(accessLogStore.calls)
+            .describedAs("네 번째 단계의 실패가 여섯 번째 단계 실행을 막으면 안 된다")
+            .isEqualTo(1)
     }
 
     @Test
-    @DisplayName("만료 인증 아티팩트 파기가 실패해도 앞의 네 파기는 이미 자기 몫을 끝냈다")
-    fun `만료 인증 아티팩트 파기 실패가 앞 단계를 가리지 않는다`() {
+    @DisplayName("만료 인증 아티팩트 파기가 실패해도 앞의 네 파기는 이미 자기 몫을 끝냈고 접속기록 파기는 그대로 돈다")
+    fun `만료 인증 아티팩트 파기 실패가 앞뒤 단계를 가리지 않는다`() {
         val documentStore = RecordingExpiredDocumentPurge()
         val feedbackStore = RecordingFeedbackCommentPurge()
         val unverifiedStore = RecordingUnverifiedAccountPurge()
         val signupGrantStore = RecordingSignupGrantRecordPurge()
         val authEphemeralStore = RecordingExpiredAuthArtifactPurge(failing = true)
+        val accessLogStore = RecordingPersonalDataAccessLogPurge()
 
-        scheduler(documentStore, feedbackStore, unverifiedStore, signupGrantStore, authEphemeralStore).run()
+        scheduler(documentStore, feedbackStore, unverifiedStore, signupGrantStore, authEphemeralStore, accessLogStore)
+            .run()
 
         assertThat(documentStore.calls).isEqualTo(1)
         assertThat(feedbackStore.calls).isEqualTo(1)
         assertThat(unverifiedStore.calls).isEqualTo(1)
         assertThat(signupGrantStore.calls).isEqualTo(1)
         assertThat(authEphemeralStore.calls).isEqualTo(1)
+        assertThat(accessLogStore.calls)
+            .describedAs("다섯 번째 단계의 실패가 여섯 번째 단계 실행을 막으면 안 된다")
+            .isEqualTo(1)
     }
 
     @Test
-    @DisplayName("다섯 단계가 모두 실패해도 스케줄 실행 자체는 예외를 던지지 않는다")
-    fun `다섯 다 실패해도 run 은 예외를 던지지 않는다`() {
+    @DisplayName("접속기록 파기가 실패해도 앞의 다섯 파기는 이미 자기 몫을 끝냈다")
+    fun `접속기록 파기 실패가 앞 단계를 가리지 않는다`() {
+        val documentStore = RecordingExpiredDocumentPurge()
+        val feedbackStore = RecordingFeedbackCommentPurge()
+        val unverifiedStore = RecordingUnverifiedAccountPurge()
+        val signupGrantStore = RecordingSignupGrantRecordPurge()
+        val authEphemeralStore = RecordingExpiredAuthArtifactPurge()
+        val accessLogStore = RecordingPersonalDataAccessLogPurge(failing = true)
+
+        scheduler(documentStore, feedbackStore, unverifiedStore, signupGrantStore, authEphemeralStore, accessLogStore)
+            .run()
+
+        assertThat(documentStore.calls).isEqualTo(1)
+        assertThat(feedbackStore.calls).isEqualTo(1)
+        assertThat(unverifiedStore.calls).isEqualTo(1)
+        assertThat(signupGrantStore.calls).isEqualTo(1)
+        assertThat(authEphemeralStore.calls).isEqualTo(1)
+        assertThat(accessLogStore.calls).isEqualTo(1)
+    }
+
+    @Test
+    @DisplayName("여섯 단계가 모두 실패해도 스케줄 실행 자체는 예외를 던지지 않는다")
+    fun `여섯 다 실패해도 run 은 예외를 던지지 않는다`() {
         val documentStore = RecordingExpiredDocumentPurge(failing = true)
         val feedbackStore = RecordingFeedbackCommentPurge(failing = true)
         val unverifiedStore = RecordingUnverifiedAccountPurge(failing = true)
         val signupGrantStore = RecordingSignupGrantRecordPurge(failing = true)
         val authEphemeralStore = RecordingExpiredAuthArtifactPurge(failing = true)
+        val accessLogStore = RecordingPersonalDataAccessLogPurge(failing = true)
 
         assertThatCode {
-            scheduler(documentStore, feedbackStore, unverifiedStore, signupGrantStore, authEphemeralStore).run()
+            scheduler(
+                documentStore,
+                feedbackStore,
+                unverifiedStore,
+                signupGrantStore,
+                authEphemeralStore,
+                accessLogStore,
+            ).run()
         }.doesNotThrowAnyException()
 
         assertThat(documentStore.calls).isEqualTo(1)
@@ -194,6 +256,7 @@ class RetentionPurgeSchedulerTest {
         assertThat(unverifiedStore.calls).isEqualTo(1)
         assertThat(signupGrantStore.calls).isEqualTo(1)
         assertThat(authEphemeralStore.calls).isEqualTo(1)
+        assertThat(accessLogStore.calls).isEqualTo(1)
     }
 
     @Test
@@ -204,10 +267,18 @@ class RetentionPurgeSchedulerTest {
         val unverifiedStore = RecordingUnverifiedAccountPurge()
         val signupGrantStore = RecordingSignupGrantRecordPurge()
         val authEphemeralStore = RecordingExpiredAuthArtifactPurge()
+        val accessLogStore = RecordingPersonalDataAccessLogPurge()
 
         val events =
             captureLog {
-                scheduler(documentStore, feedbackStore, unverifiedStore, signupGrantStore, authEphemeralStore).run()
+                scheduler(
+                    documentStore,
+                    feedbackStore,
+                    unverifiedStore,
+                    signupGrantStore,
+                    authEphemeralStore,
+                    accessLogStore,
+                ).run()
             }
 
         val failureEvent =
@@ -239,12 +310,14 @@ class RetentionPurgeSchedulerTest {
         return appender.list.toList()
     }
 
+    @Suppress("LongParameterList")
     private fun scheduler(
         documentStore: ExpiredDocumentPurge,
         feedbackStore: FeedbackCommentPurge,
         unverifiedStore: UnverifiedAccountPurge,
         signupGrantStore: SignupGrantRecordPurge,
         authEphemeralStore: ExpiredAuthArtifactPurge,
+        accessLogStore: PersonalDataAccessLogPurge,
     ): RetentionPurgeScheduler =
         RetentionPurgeScheduler(
             documentPurge = documentPurge(documentStore),
@@ -252,6 +325,7 @@ class RetentionPurgeSchedulerTest {
             unverifiedAccountPurge = unverifiedAccountPurge(unverifiedStore),
             signupGrantRecordPurge = signupGrantRecordPurge(signupGrantStore),
             expiredAuthArtifactPurge = expiredAuthArtifactPurge(authEphemeralStore),
+            accessLogPurge = accessLogPurge(accessLogStore),
         )
 
     private fun documentPurge(store: ExpiredDocumentPurge): PurgeExpiredDocuments =
@@ -304,6 +378,15 @@ class RetentionPurgeSchedulerTest {
             clock = Clock.fixed(Instant.parse("2026-09-10T00:00:00Z"), ZoneOffset.UTC),
         )
 
+    private fun accessLogPurge(store: PersonalDataAccessLogPurge): PurgePersonalDataAccessLogs =
+        PurgePersonalDataAccessLogs(
+            store = store,
+            transaction = PassthroughTransactionRunner,
+            observer = NoopPersonalDataAccessLogPurgeObserver,
+            policy = PersonalDataAccessLogPurgePolicy(enabled = true, retention = Period.ofYears(1), batchSize = BATCH),
+            clock = Clock.fixed(Instant.parse("2026-09-10T00:00:00Z"), ZoneOffset.UTC),
+        )
+
     private object PassthroughTransactionRunner : TransactionRunner {
         override fun <T> inTransaction(block: () -> T): T = block()
     }
@@ -326,6 +409,10 @@ class RetentionPurgeSchedulerTest {
 
     private object NoopExpiredAuthArtifactObserver : ExpiredAuthArtifactPurgeObserver {
         override fun record(result: ExpiredAuthArtifactPurgeResult) = Unit
+    }
+
+    private object NoopPersonalDataAccessLogPurgeObserver : PersonalDataAccessLogPurgeObserver {
+        override fun record(result: PersonalDataAccessLogPurgeResult) = Unit
     }
 
     private class RecordingExpiredDocumentPurge(private val failing: Boolean = false) : ExpiredDocumentPurge {
@@ -413,6 +500,21 @@ class RetentionPurgeSchedulerTest {
                 oauthStatesDeleted = 0,
                 phoneVerificationCodesDeleted = 0,
             )
+        }
+    }
+
+    private class RecordingPersonalDataAccessLogPurge(private val failing: Boolean = false) :
+        PersonalDataAccessLogPurge {
+        var calls: Int = 0
+            private set
+
+        override fun purge(
+            accessedBefore: Instant,
+            batchSize: Int,
+        ): PersonalDataAccessLogPurgeResult {
+            calls++
+            if (failing) error("access log purge boom")
+            return PersonalDataAccessLogPurgeResult(enabled = true, deleted = 0)
         }
     }
 

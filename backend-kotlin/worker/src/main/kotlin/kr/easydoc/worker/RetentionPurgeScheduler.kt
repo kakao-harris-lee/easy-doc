@@ -1,5 +1,6 @@
 package kr.easydoc.worker
 
+import kr.easydoc.application.accesslog.PurgePersonalDataAccessLogs
 import kr.easydoc.application.auth.PurgeExpiredAuthArtifacts
 import kr.easydoc.application.auth.PurgeUnverifiedAccounts
 import kr.easydoc.application.credit.PurgeSignupGrantRecords
@@ -11,10 +12,10 @@ import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Component
 
 /**
- * 문서, 피드백 의견, 미검증 계정, 무료 체험 중복 방지 원장(가입 크레딧·휴대폰 인증 체험)과
- * 인증 아티팩트(이메일 인증·비밀번호 재설정·OAuth state·휴대폰 인증)의 보존기간을 매일
- * 03:00에 적용한다. 각 단계는 독립된 예외 경계에서 실행해 한 단계의 실패가 다른 파기를
- * 막지 않게 한다.
+ * 문서, 피드백 의견, 미검증 계정, 무료 체험 중복 방지 원장(가입 크레딧·휴대폰 인증 체험),
+ * 인증 아티팩트(이메일 인증·비밀번호 재설정·OAuth state·휴대폰 인증)와 접속기록의
+ * 보존기간을 매일 03:00에 적용한다. 각 단계는 독립된 예외 경계에서 실행해 한 단계의
+ * 실패가 다른 파기를 막지 않게 한다.
  */
 @Component
 @Profile(WORKER_PROFILE)
@@ -24,6 +25,7 @@ class RetentionPurgeScheduler(
     private val unverifiedAccountPurge: PurgeUnverifiedAccounts,
     private val signupGrantRecordPurge: PurgeSignupGrantRecords,
     private val expiredAuthArtifactPurge: PurgeExpiredAuthArtifacts,
+    private val accessLogPurge: PurgePersonalDataAccessLogs,
 ) {
     private val log = LoggerFactory.getLogger(RetentionPurgeScheduler::class.java)
 
@@ -34,6 +36,7 @@ class RetentionPurgeScheduler(
         runStep(UNVERIFIED_ACCOUNT_STEP) { unverifiedAccountPurge.run() }
         runStep(SIGNUP_GRANT_RECORD_STEP) { signupGrantRecordPurge.run() }
         runStep(AUTH_EPHEMERAL_STEP) { expiredAuthArtifactPurge.run() }
+        runStep(ACCESS_LOG_STEP) { accessLogPurge.run() }
     }
 
     /**
@@ -63,5 +66,6 @@ class RetentionPurgeScheduler(
         const val UNVERIFIED_ACCOUNT_STEP = "unverified-account"
         const val SIGNUP_GRANT_RECORD_STEP = "signup-grant-record"
         const val AUTH_EPHEMERAL_STEP = "auth-ephemeral"
+        const val ACCESS_LOG_STEP = "access-log"
     }
 }
