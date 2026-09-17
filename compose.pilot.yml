@@ -24,6 +24,17 @@ services:
       # TLS 앞단 프록시 뒤에 있으므로 공개 Origin을 명시적으로 허용해야 한다.
       EASYDOC_CORS_ORIGINS_0: https://easydoc.kr
       EASYDOC_CORS_ORIGINS_1: https://www.easydoc.kr
+      # 결제 시작(checkout·beginTossBilling)은 휴대폰 인증을 전제로 403을 건다. .env가
+      # EASYDOC_SMS_PROVIDER를 빠뜨려도 기본값 fake로 조용히 기동해 문자만 안 나가는
+      # 사고를 막기 위해 운영에서는 fake를 허용하지 않고 sens로 리터럴 고정한다. 아래
+      # 값들은 `:?`로 필수화해 .env에 없으면 compose config 단계에서 실패한다(백엔드가
+      # 기동해서 뒤늦게 실패하는 대신 더 앞에서 잡는다).
+      EASYDOC_SMS_PROVIDER: sens
+      EASYDOC_PHONE_VERIFICATION_PEPPER: ${EASYDOC_PHONE_VERIFICATION_PEPPER:?EASYDOC_PHONE_VERIFICATION_PEPPER must be set in .env}
+      EASYDOC_SENS_SERVICE_ID: ${EASYDOC_SENS_SERVICE_ID:?EASYDOC_SENS_SERVICE_ID must be set in .env}
+      EASYDOC_SENS_ACCESS_KEY: ${EASYDOC_SENS_ACCESS_KEY:?EASYDOC_SENS_ACCESS_KEY must be set in .env}
+      EASYDOC_SENS_SECRET_KEY: ${EASYDOC_SENS_SECRET_KEY:?EASYDOC_SENS_SECRET_KEY must be set in .env}
+      EASYDOC_SMS_FROM: ${EASYDOC_SMS_FROM:?EASYDOC_SMS_FROM must be set in .env}
     restart: unless-stopped
     logging: *pilot-logging
 

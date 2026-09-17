@@ -230,11 +230,25 @@ class SocialLoginService
                 }
                 throw ConflictException(identityAlreadyLinkedToOtherUserMessage(providerId))
             }
-            if (repositories.identities.findByUserAndProvider(userId, providerId) != null) {
+            val normalizedEmail = identity.email?.let(::normalizeEmail)
+            val existingForProvider = repositories.identities.findByUserAndProvider(userId, providerId)
+            if (existingForProvider != null) {
+                // 두 사전 검사 사이의 경쟁 창(TOCTOU) — 바로 위 findByProviderIdentity가
+                // "없음"을 본 뒤 이 조회가 실행되기 전에, 자기 자신과의 동시 콜백이 통째로
+                // 커밋할 수 있다. 그 경우 이 조회가 찾는 행은 **자기 자신이 지금 연결하려는
+                // 바로 그 신원**이므로 멱등 성공으로 접어야 한다 — providerUserId가 다를
+                // 때만 "이 제공자에 이미 다른 신원이 연결돼 있다"는 진짜 충돌이다. 이 구분
+                // 없이 곧장 409를 던지면 link() 를 부르기도 전이라 recoverFromLinkRace 가
+                // 전혀 개입하지 못한다.
+                if (existingForProvider.providerUserId == identity.providerUserId) {
+                    // recoverFromLinkRace의 자기 경쟁 분기와 같은 원칙(위 KDoc) — 자기
+                    // 경쟁 복구는 markEmailVerifiedIfMatching도 그대로 부른다.
+                    markEmailVerifiedIfMatching(userId, normalizedEmail, identity.emailVerified)
+                    return
+                }
                 throw ConflictException(providerAlreadyLinkedMessage(providerId))
             }
 
-            val normalizedEmail = identity.email?.let(::normalizeEmail)
             try {
                 repositories.identities.link(
                     userId,

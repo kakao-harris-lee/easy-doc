@@ -444,35 +444,74 @@ test.describe('접근성 — 키보드', () => {
 })
 
 /**
- * 변환 조회 응답을 늦추는 시간. 진행 화면을 재는 동안만 건다.
- *
- * 화면의 폴링 주기(2초)보다 짧게 둔다 — 폴링을 밀리게 하는 것이 아니라 한 응답이 오는
- * 시각만 뒤로 미는 것이다.
- */
-const POLL_DELAY_MS = 1_000
-
-/**
- * 변환 조회(`GET /conversions/:id`) 첫 응답 하나만 `POLL_DELAY_MS`만큼 늦춘다.
+ * 변환 조회(`GET /conversions/:id`) 첫 응답 하나만 `status` 를 `processing`으로 강제한다.
+ * (계약 `ConversionStatus` enum: pending·processing·done·failed. `ConversionPage.tsx`는
+ * done·failed에서만 다른 화면으로 갈리고 `ConversionStages`의 `stageStatus`도 `status`
+ * 하나만 읽으므로, 이 필드 하나면 진행 화면을 결정적으로 붙잡아 둘 수 있다.)
  *
  * fake LLM(`LocalLlmProvider`)으로 도는 worker가 첫 폴링보다 먼저 변환을 끝내면 진행
- * 화면(`쉬운 글로 바꾸는 중`)이 몇 ms만 떴다 사라져, 그 화면을 재는 어서션이 잡지 못하고
- * 지나간다 — 결함이 아니라 경합이다. 그래서 조회 응답이 오는 시각만 뒤로 미뤄 진행 상태를
- * 잴 시간을 만든다. **응답 내용은 위조하지 않고 `route.continue()`로 그대로 통과시킨다** —
- * 진행 화면을 가짜로 띄우는 것이 아니라 실제 진행 상태가 관찰될 시간을 벌 뿐이다.
+ * 화면(`쉬운 글로 바꾸는 중`)이 한 번도 뜨지 않고 곧장 검수 화면으로 넘어가, 그 화면을
+ * 재는 어서션이 잡을 기회조차 없다 — 결함이 아니라 경합이다(worker가 실제로 끝났다는
+ * **사실**은 참이므로 응답 status를 위조하는 것이 이상해 보일 수 있지만, 이 화면이
+ * 검증하는 것은 "진행 화면 자체가 요구를 지키는가"이지 "이 변환이 실제로 몇 초 걸리는가"가
+ * 아니다 — 진행 화면을 뜨게 만드는 것과 진행 화면을 가짜로 그리는 것은 다르다, 아래
+ * "왜 지연 방식이 아닌가" 참고).
  *
- * 늦추는 것은 **첫 응답 하나뿐**이다. 폴링 주기(2초)보다 짧게 두고 이후 요청은 그대로
- * 통과시켜야, 폴링 자체가 밀려 다른 어서션의 타이밍을 어긋나게 하지 않는다. 처리기는
- * 등록한 채로 두고 내부 플래그로 한 번만 늦춘다 — 중간에 `unroute`로 걷어내면 아직 자고
- * 있던 처리기가 깨어나 이미 처리된 요청을 이어 보내려다 죽는다.
+ * 강제하는 것은 **첫 응답 하나뿐**이다. 두 번째 조회부터는 실제 상태를 그대로
+ * 통과시켜야 검수 전환이 밀리지 않는다. 강제한 뒤에는 다음 폴링(`useConversionPolling.ts`의
+ * `POLL_INTERVAL_MS`, 2초)까지는 최소 2초가 남으므로 그 사이 진행 화면을 결정적으로 잡을
+ * 수 있다.
+ *
+ * ## 왜 지연 방식이 아닌가 (되돌리지 마라)
+ *
+ * 이전 버전은 **응답이 나가는 시각**만 `POLL_DELAY_MS`(1초)만큼 늦추고 내용은 그대로
+ * `route.continue()`했다. 응답 내용을 위조하지 않는다는 점은 깔끔했지만 실패로 판명됐다
+ * — CI 아티팩트(run 35071515294)를 받아 보니, 10초 타임아웃 시점에 화면은 이미 검수
+ * 화면이었다(진행 헤딩은 **한 번도 잡히지 않았다**, 늦게 뜬 것이 아니다). 원인은 React
+ * `StrictMode`(`main.tsx`)가 개발 모드에서 마운트 직후 effect를 정리(cleanup)하고 다시
+ * 실행하는 것과 겹친 경합이다 — 이 e2e가 상대하는 프런트는 `playwright.config.ts:28-29`
+ * 의 `webServer`가 `npm run dev`(Vite 개발 서버)로 띄운 것이라(`run-local.sh`도 같다),
+ * StrictMode 이중 마운트가 실제로 일어난다: `useConversionPolling`의 첫 마운트가 쏜 조회가 그 지연
+ * 동안 cleanup의 `AbortController.abort()`에 취소되고, 1ms 뒤 두 번째(진짜) 마운트가
+ * 새 요청을 쏘는데, "첫 응답만 지연" 플래그는 이미 취소된 첫 요청에서 소비돼 버려
+ * 진짜 요청은 지연 없이 그대로 통과했다(트레이스 실측: 같은 URL로 1ms 간격의 두 요청,
+ * 첫 번째 `net::ERR_ABORTED`, 두 번째 지연 없이 16.74ms 만에 200). worker가 그 사이
+ * 이미 끝내 놓았다면 진행 화면은 그 16ms짜리 창이 되고 만다 — **응답이 오는 시각을
+ * 아무리 늦춰도, 그 응답의 내용이 이미 `done`이면 화면은 진행 화면을 그리지 않고 곧장
+ * 검수로 간다.** 그래서 시각이 아니라 **내용**을 고정한다: 첫 응답의 `status`를
+ * `processing`으로 강제하면 실제로 몇 번 요청이 오갔든(취소된 유령 요청 포함) 화면에
+ * 닿는 첫 완결 응답은 항상 진행 중 상태다.
  */
-async function delayFirstConversionRead(page: Page): Promise<void> {
-  let delayedFirstRead = false
+async function forceFirstConversionReadToProcessing(page: Page): Promise<void> {
+  let forced = false
   await page.route(/\/conversions\/[^/?]+$/, async (route) => {
-    if (!delayedFirstRead) {
-      delayedFirstRead = true
-      await new Promise((resolve) => setTimeout(resolve, POLL_DELAY_MS))
+    if (forced) {
+      await route.continue()
+      return
     }
-    await route.continue()
+    try {
+      const response = await route.fetch()
+      if (!response.ok()) {
+        // 위조하지 않는다 — 실제 오류(예: 서버 500)는 그대로 내보내 테스트가 그
+        // 오류로 실패하게 한다. forced도 켜지 않는다 — 다음 요청이 다시 시도한다.
+        await route.fulfill({ response })
+        return
+      }
+      const body = await response.json()
+      await route.fulfill({ response, json: { ...body, status: 'processing' } })
+      forced = true
+    } catch (caught) {
+      // 취소된 요청만 삼긴다 — 실측(로컬): 취소는 route.fetch() 자체가 아니라 뒤이은
+      // response.json() 에서 "apiResponse.json: Response has been disposed"로
+      // 던진다(취소된 요청의 응답은 라우트가 정리되며 폐기된다). 그래서 예외 발생
+      // 지점이 아니라 문구로 가른다 — 취소성이 아닌 오류(예: JSON 파싱 실패)는 실제
+      // 결함일 수 있으므로 다시 던져 테스트가 그대로 실패하게 둔다.
+      const message = caught instanceof Error ? caught.message : String(caught)
+      if (!/disposed|aborted/i.test(message)) {
+        throw caught
+      }
+      await route.abort().catch(() => {})
+    }
   })
 }
 
@@ -505,8 +544,9 @@ test.describe('접근성 — 320px', () => {
     expect(overflow.culprits.join('\n'), '새 변환이 가로로 넘친다').toBe('')
     expect(undersized(await touchTargets(page)), '새 변환의 작은 터치 대상').toEqual([])
 
-    // 변환 진행 — 첫 조회 응답만 늦춰 진행 화면을 결정적으로 잡는다(경합, 결함 아님).
-    await delayFirstConversionRead(page)
+    // 변환 진행 — 첫 조회 응답의 status만 processing으로 강제해 진행 화면을 결정적으로
+    // 잡는다(경합, 결함 아님 — 위 forceFirstConversionReadToProcessing KDoc 참고).
+    await forceFirstConversionReadToProcessing(page)
     await page.getByLabel('문서 제목').fill('320px 확인')
     await page.getByLabel('바꿀 글').fill(SOURCE_TEXT)
     await page.getByRole('button', { name: '쉬운 글 초안 만들기', exact: true }).click()
@@ -552,16 +592,15 @@ test.describe('접근성 — 모션', () => {
     await verifyEmail(page, account)
 
     // 이 앱에서 반복 모션이 도는 유일한 화면은 변환 진행이다(§12).
-    // 첫 조회 응답만 늦춰 진행 화면을 결정적으로 잡는다(E17과 같은 경합, 결함 아님).
-    await delayFirstConversionRead(page)
+    // 첫 조회 응답의 status만 processing으로 강제해 진행 화면을 결정적으로 잡는다
+    // (E17과 같은 경합, 결함 아님).
+    await forceFirstConversionReadToProcessing(page)
     await page.getByLabel('문서 제목').fill('모션 확인')
     await page.getByLabel('바꿀 글').fill(SOURCE_TEXT)
     await page.getByRole('button', { name: '쉬운 글 초안 만들기', exact: true }).click()
-    // 기본 타임아웃(10초)에 조회 지연(POLL_DELAY_MS)만큼 여유를 더한다 — 지연 처리기의
-    // 등록·응답 왕복도 그 여유 안에서 끝난다.
-    await expect(page.getByRole('heading', { name: '쉬운 글로 바꾸는 중' })).toBeVisible({
-      timeout: 10_000 + POLL_DELAY_MS,
-    })
+    // 기본 타임아웃(10초)이면 충분하다 — status 강제가 진행 화면을 결정적으로 붙잡아
+    // 두므로(위 KDoc), f50ac643이 두던 POLL_DELAY_MS 여유는 더 이상 필요 없다.
+    await expect(page.getByRole('heading', { name: '쉬운 글로 바꾸는 중' })).toBeVisible()
 
     const moving = await page.evaluate(() => {
       const running: string[] = []
