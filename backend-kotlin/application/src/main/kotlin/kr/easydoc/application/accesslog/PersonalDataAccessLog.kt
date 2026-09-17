@@ -32,7 +32,8 @@ data class PersonalDataAccessLogEntry(
 /**
  * 접속기록 삽입 전용 포트. **갱신·삭제 메서드를 두지 않는다** — 위·변조 방지 요구에 대한
  * 최소 대응이다(계획 §3.1 「애플리케이션에 수정·삭제 경로를 두지 않는다」, 수용 기준 5).
- * 새 메서드를 이 인터페이스에 추가하기 전에 그 결정을 다시 확인하라.
+ * 새 메서드를 이 인터페이스에 추가하기 전에 그 결정을 다시 확인하라. 삭제는 worker 전용
+ * 별도 포트 [PersonalDataAccessLogPurge](`docs/plans/2026-09-17-access-log-purge.md`)뿐이다.
  */
 fun interface PersonalDataAccessLogWriter {
     fun insert(entry: PersonalDataAccessLogEntry)
