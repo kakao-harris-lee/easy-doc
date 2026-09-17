@@ -46,11 +46,17 @@ class PersonalDataAccessLogPurgeConfiguration {
                 batchSize = properties.purgeBatchSize,
             )
         } catch (failure: IllegalArgumentException) {
-            throw ConfigurationException(
-                "easydoc.access-log.retention(접속기록 보관기간)은 P1Y 이상이어야 한다" +
-                    "(고시 최소 보관기간): ${properties.retention} (${failure.message})",
-            )
+            throw invalidRetention(properties, failure)
         }
+
+    private fun invalidRetention(
+        properties: AccessLogProperties,
+        failure: IllegalArgumentException,
+    ): ConfigurationException =
+        ConfigurationException(
+            "easydoc.access-log.retention(접속기록 보관기간)은 P1Y 이상이어야 한다" +
+                "(고시 최소 보관기간): ${properties.retention} (${failure.message})",
+        )
 
     /** `Clock.systemUTC()` — `SignupGrantRecordPurgeConfiguration.purgeSignupGrantRecords`와 같은 판단. */
     @Bean

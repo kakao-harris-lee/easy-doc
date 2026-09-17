@@ -64,11 +64,14 @@ class PersonalDataAccessLogPurgePolicy(
     companion object {
         val MINIMUM_RETENTION: Period = Period.ofYears(1)
 
+        /** 산술만을 위한 임의 고정 기준일 — 특정 연도의 의미는 없다. */
+        private val EPOCH: LocalDate = LocalDate.of(EPOCH_YEAR, 1, 1)
+
         /** 기준일에서 각각을 뺀 날짜를 비교한다 — 뺀 결과가 더 뒤(늦은 날짜)면 보관기간이 짧다는 뜻이다. */
-        private fun meetsMinimumRetention(retention: Period): Boolean {
-            val epoch = LocalDate.of(2000, 1, 1)
-            return !epoch.minus(retention).isAfter(epoch.minus(MINIMUM_RETENTION))
-        }
+        private fun meetsMinimumRetention(retention: Period): Boolean =
+            !EPOCH.minus(retention).isAfter(EPOCH.minus(MINIMUM_RETENTION))
+
+        private const val EPOCH_YEAR: Int = 2000
     }
 }
 

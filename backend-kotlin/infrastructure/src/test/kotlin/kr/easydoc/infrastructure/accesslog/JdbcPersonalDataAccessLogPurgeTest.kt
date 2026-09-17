@@ -153,7 +153,8 @@ class JdbcPersonalDataAccessLogPurgeTest {
             store = JdbcPersonalDataAccessLogPurge(jdbc),
             transaction = SpringTransactionRunner(TransactionTemplate(DataSourceTransactionManager(dataSource))),
             observer = observer,
-            policy = PersonalDataAccessLogPurgePolicy(enabled = true, retention = Period.ofYears(1), batchSize = batchSize),
+            policy =
+                PersonalDataAccessLogPurgePolicy(enabled = true, retention = Period.ofYears(1), batchSize = batchSize),
             clock = Clock.fixed(FIXED_NOW, ZoneOffset.UTC),
         )
 

@@ -241,8 +241,14 @@ class RetentionPurgeSchedulerTest {
         val accessLogStore = RecordingPersonalDataAccessLogPurge(failing = true)
 
         assertThatCode {
-            scheduler(documentStore, feedbackStore, unverifiedStore, signupGrantStore, authEphemeralStore, accessLogStore)
-                .run()
+            scheduler(
+                documentStore,
+                feedbackStore,
+                unverifiedStore,
+                signupGrantStore,
+                authEphemeralStore,
+                accessLogStore,
+            ).run()
         }.doesNotThrowAnyException()
 
         assertThat(documentStore.calls).isEqualTo(1)
@@ -304,6 +310,7 @@ class RetentionPurgeSchedulerTest {
         return appender.list.toList()
     }
 
+    @Suppress("LongParameterList")
     private fun scheduler(
         documentStore: ExpiredDocumentPurge,
         feedbackStore: FeedbackCommentPurge,
@@ -496,7 +503,8 @@ class RetentionPurgeSchedulerTest {
         }
     }
 
-    private class RecordingPersonalDataAccessLogPurge(private val failing: Boolean = false) : PersonalDataAccessLogPurge {
+    private class RecordingPersonalDataAccessLogPurge(private val failing: Boolean = false) :
+        PersonalDataAccessLogPurge {
         var calls: Int = 0
             private set
 

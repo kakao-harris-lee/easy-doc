@@ -126,7 +126,9 @@ class PersonalDataAccessLogPurgeServiceTest {
     @DisplayName("배치 크기가 1보다 작으면 정책 생성이 거부한다")
     fun `배치 크기 하한 위반은 거부한다`() {
         assertThatIllegalArgumentException()
-            .isThrownBy { PersonalDataAccessLogPurgePolicy(enabled = true, retention = Period.ofYears(1), batchSize = 0) }
+            .isThrownBy {
+                PersonalDataAccessLogPurgePolicy(enabled = true, retention = Period.ofYears(1), batchSize = 0)
+            }
     }
 
     private class World(
@@ -143,7 +145,8 @@ class PersonalDataAccessLogPurgeServiceTest {
                 store = store,
                 transaction = transaction,
                 observer = observer,
-                policy = PersonalDataAccessLogPurgePolicy(enabled = enabled, retention = retention, batchSize = batchSize),
+                policy =
+                    PersonalDataAccessLogPurgePolicy(enabled = enabled, retention = retention, batchSize = batchSize),
                 clock = Clock.fixed(now, ZoneOffset.UTC),
             )
     }
