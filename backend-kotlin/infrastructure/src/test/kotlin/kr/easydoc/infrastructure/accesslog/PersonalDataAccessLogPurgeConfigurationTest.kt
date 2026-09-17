@@ -25,6 +25,20 @@ class PersonalDataAccessLogPurgeConfigurationTest {
             configuration.personalDataAccessLogPurgePolicy(properties)
         }.isInstanceOf(ConfigurationException::class.java)
             .hasMessageContaining("easydoc.access-log.retention")
+            .hasMessageNotContaining("purge-batch-size")
+    }
+
+    @Test
+    @DisplayName("배치 크기가 1보다 작으면 기동을 막고, retention 문제로 오진단하지 않는다")
+    fun `배치 크기 위반은 ConfigurationException 이고 retention 을 언급하지 않는다`() {
+        val properties = AccessLogProperties(purgeBatchSize = 0)
+
+        assertThatThrownBy {
+            configuration.personalDataAccessLogPurgePolicy(properties)
+        }.isInstanceOf(ConfigurationException::class.java)
+            .hasMessageContaining("purge-batch-size")
+            .hasMessageNotContaining("retention")
+            .hasMessageNotContaining("P1Y 이상")
     }
 
     @Test

@@ -33,30 +33,42 @@ class PersonalDataAccessLogPurgeConfiguration {
 
     /**
      * `PersonalDataAccessLogPurgePolicy.init`의 `require`(프로그래밍 오류용
-     * `IllegalArgumentException`)를 여기서 `ConfigurationException`으로 옮긴다 — 운영자가
-     * `easydoc.access-log.retention`을 법정 최소 보관기간(1년) 미만으로 설정하는 사고를
-     * 기동 실패로 막는다(`CreditAccountConfiguration.parseSignupGrantValidity`와 같은 판단).
+     * `IllegalArgumentException`)에 검증을 맡기지 않는다 — `retention`·`batchSize` 두
+     * `require`가 같은 예외 타입을 던져 `try/catch` 하나로는 어느 값이 잘못됐는지 구분할
+     * 수 없다(리뷰 지적: `purge-batch-size` 위반이 `retention` 위반으로 오진단됐다).
+     * 여기서 필드마다 먼저 검사해 필드명이 정확한 `ConfigurationException`을 던진다 —
+     * 운영자가 설정을 고칠 때 어느 키를 봐야 하는지 메시지가 가리켜야 한다.
      */
     @Bean
-    fun personalDataAccessLogPurgePolicy(properties: AccessLogProperties): PersonalDataAccessLogPurgePolicy =
-        try {
-            PersonalDataAccessLogPurgePolicy(
-                enabled = properties.purgeEnabled,
-                retention = properties.retention,
-                batchSize = properties.purgeBatchSize,
-            )
-        } catch (failure: IllegalArgumentException) {
-            throw invalidRetention(properties, failure)
-        }
-
-    private fun invalidRetention(
-        properties: AccessLogProperties,
-        failure: IllegalArgumentException,
-    ): ConfigurationException =
-        ConfigurationException(
-            "easydoc.access-log.retention(접속기록 보관기간)은 P1Y 이상이어야 한다" +
-                "(고시 최소 보관기간): ${properties.retention} (${failure.message})",
+    fun personalDataAccessLogPurgePolicy(properties: AccessLogProperties): PersonalDataAccessLogPurgePolicy {
+        validateBatchSize(properties)
+        validateRetention(properties)
+        return PersonalDataAccessLogPurgePolicy(
+            enabled = properties.purgeEnabled,
+            retention = properties.retention,
+            batchSize = properties.purgeBatchSize,
         )
+    }
+
+    private fun validateBatchSize(properties: AccessLogProperties) {
+        if (properties.purgeBatchSize < 1) {
+            throw ConfigurationException(
+                "easydoc.access-log.purge-batch-size(접속기록 파기 배치 크기)는 1 이상이어야 한다: " +
+                    "${properties.purgeBatchSize}",
+            )
+        }
+    }
+
+    /** 하한 판정은 `PersonalDataAccessLogPurgePolicy.meetsMinimumRetention`을 그대로 재사용한다. */
+    private fun validateRetention(properties: AccessLogProperties) {
+        if (!PersonalDataAccessLogPurgePolicy.meetsMinimumRetention(properties.retention)) {
+            throw ConfigurationException(
+                "easydoc.access-log.retention(접속기록 보관기간)은 " +
+                    "${PersonalDataAccessLogPurgePolicy.MINIMUM_RETENTION} 이상이어야 한다" +
+                    "(고시 최소 보관기간): ${properties.retention}",
+            )
+        }
+    }
 
     /** `Clock.systemUTC()` — `SignupGrantRecordPurgeConfiguration.purgeSignupGrantRecords`와 같은 판단. */
     @Bean
