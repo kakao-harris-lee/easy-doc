@@ -9,6 +9,8 @@ import kr.easydoc.application.document.PurgeFeedbackComments
 import kr.easydoc.application.mail.MailSender
 import kr.easydoc.infrastructure.DatabaseHandle
 import kr.easydoc.infrastructure.PostgresTestSupport
+import kr.easydoc.infrastructure.auth.PhoneVerificationProperties
+import kr.easydoc.infrastructure.sms.SmsProperties
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
@@ -50,6 +52,19 @@ class WorkerStartupTest {
     }
 
     @Test
+    @DisplayName("worker 도 운영 SENS 환경변수와 휴대폰 인증 설정을 바인딩한다")
+    fun `휴대폰 인증 운영 설정이 바인딩된다`() {
+        val sms = context.getBean(SmsProperties::class.java)
+        val verification = context.getBean(PhoneVerificationProperties::class.java)
+
+        assertThat(sms.provider).isEqualTo("sens")
+        assertThat(sms.serviceId).isEqualTo("ncp-sms-service-id")
+        assertThat(sms.accessKey).isEqualTo("ncp-access-key")
+        assertThat(sms.secretKey.isBlank()).isFalse()
+        assertThat(verification.fingerprintPepper.isBlank()).isFalse()
+    }
+
+    @Test
     @DisplayName("worker 는 사전 컨텍스트 공급원을 갖는다 — 색인 적재까지 실제로 도는 자리다")
     fun `사전 공급원이 조립된다`() {
         assertThat(context.getBean(DictionaryContextSource::class.java)).isNotNull()
@@ -85,6 +100,12 @@ class WorkerStartupTest {
             registry.add("spring.datasource.username") { database.username }
             registry.add("spring.datasource.password") { database.password }
             registry.add("spring.task.scheduling.enabled") { "false" }
+            registry.add("EASYDOC_SMS_PROVIDER") { "sens" }
+            registry.add("EASYDOC_SENS_SERVICE_ID") { "ncp-sms-service-id" }
+            registry.add("EASYDOC_SENS_ACCESS_KEY") { "ncp-access-key" }
+            registry.add("EASYDOC_SENS_SECRET_KEY") { "ncp-secret-key" }
+            registry.add("EASYDOC_SMS_FROM") { "01012345678" }
+            registry.add("EASYDOC_PHONE_VERIFICATION_PEPPER") { "worker-test-phone-pepper" }
         }
     }
 }
