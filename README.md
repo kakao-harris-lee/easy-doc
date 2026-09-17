@@ -32,6 +32,8 @@ cp .env.example .env
 
 키를 채우는 법은 `.env.example`의 주석을 따른다. 최소한 `EASYDOC_AUTH_JWT_SECRET`, `EASYDOC_ENCRYPTION_KEY_V1`은 채워야 API가 기동한다(값이 비면 기동 자기점검이 실패한다). LLM 키(`OPENAI_API_KEY` 또는 `ANTHROPIC_API_KEY`)가 없어도 기동·업로드는 되지만 변환은 `failure_code: "ProviderUnavailable"`로 실패한다.
 
+휴대폰 인증 문자(`EASYDOC_SMS_PROVIDER`)의 로컬 기본값은 `fake`다 — 실제로 문자가 나가지 않고 메모리에만 기록되며, e2e profile에서만 되읽을 수 있다. `easydoc.kr` 파일럿(`compose.pilot.yml`)은 운영 오버레이가 `sens`로 고정하므로, SENS 키(`EASYDOC_SENS_SERVICE_ID`·`EASYDOC_SENS_ACCESS_KEY`·`EASYDOC_SENS_SECRET_KEY`)와 발신번호(`EASYDOC_SMS_FROM`), 지문 pepper(`EASYDOC_PHONE_VERIFICATION_PEPPER`)가 `.env`에 없으면 compose 단계에서 바로 실패한다. 운영 절차는 [`docs/pilot-runbook.md`](docs/pilot-runbook.md)의 「휴대폰 인증(SENS) 운영」 절을 따른다.
+
 ### 3. Kotlin API 실행
 
 ```bash

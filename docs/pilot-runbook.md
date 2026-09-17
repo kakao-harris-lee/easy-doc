@@ -560,6 +560,56 @@ docker compose -f compose.yml exec -T postgres \
 - `docs/master-plan.md` §9의 게이트 ① 줄에 결과를 반영한다.
 
 
+## 휴대폰 인증(SENS) 운영
+
+결제 시작(구독 checkout·토스 카드 등록)은 이메일 인증에 더해 **휴대폰 인증**을 요구한다
+(계약 2.37.0, PR #123·#126). 국내 `010` 번호를 처음 인증하면 체험 5크레딧을 한 번 지급한다.
+번호 평문은 저장하지 않고 pepper HMAC 지문만 `phone_trial_grant_records`(V26)에 남긴다.
+문자는 NAVER Cloud SENS로 나간다.
+
+### 설정
+
+`compose.pilot.yml`은 `EASYDOC_SMS_PROVIDER=sens`를 **고정**하고 아래 다섯 값을 `.env`에서
+필수로 받는다. 하나라도 비면 `docker compose ... config` 단계에서 실패하므로 기동 전에 잡힌다.
+값이 있어도 형식이 틀리면 백엔드가 `ConfigurationException`으로 기동을 거부한다
+(`SmsConfiguration.requireSensConfigured`, `AuthConfiguration`의 pepper 점검).
+
+```dotenv
+EASYDOC_SENS_SERVICE_ID=<SENS 콘솔 > SMS > 프로젝트의 서비스 ID>
+EASYDOC_SENS_ACCESS_KEY=<NAVER Cloud API 인증키 Access Key>
+EASYDOC_SENS_SECRET_KEY=<같은 인증키의 Secret Key>
+EASYDOC_SMS_FROM=<SENS 콘솔에서 등록·승인된 발신번호, 숫자만>
+EASYDOC_PHONE_VERIFICATION_PEPPER=<openssl rand -hex 32 결과>
+```
+
+- **발신번호는 SENS 콘솔에서 등록·승인이 끝난 번호여야 한다.** 미승인 번호는 API가 거절한다.
+- **`EASYDOC_PHONE_VERIFICATION_PEPPER`는 회전하지 않는다.** 바꾸면 기존 체험 지급 이력과
+  대조가 끊겨 같은 번호가 다시 5크레딧을 받는다. 가입 크레딧 pepper
+  (`EASYDOC_CREDITS_SIGNUP_GRANT_PEPPER`)와 **별개 값**이며 fallback은 없다(PR #123 리뷰
+  후속 f3f47f70).
+- 한도는 설정값이다: 코드 유효 5분, 재발송 60초, 시도 5회(`EASYDOC_PHONE_VERIFICATION_*`).
+  만료 코드는 인증 산출물 파기 배치(`ExpiredAuthArtifactPurge`)가 24시간 안에 지운다.
+- 로컬·CI·e2e는 `fake`다. 문자가 나가지 않고 `e2e` 프로필의 `/__e2e/sms/latest`로만 되읽는다.
+  운영 오버레이는 `fake`를 허용하지 않는다.
+
+### 배포 뒤 실발송 확인 (첫 배포·키 교체 때마다)
+
+1. 운영자 계정으로 로그인해 계정 설정 화면에서 본인 휴대폰 번호로 인증을 요청한다.
+2. 문자가 **실제로 도착**하는지 본다. 도착하지 않으면 SENS 콘솔의 발송 이력에서 결과 코드를
+   확인한다 — 앱 로그에는 번호·코드가 남지 않으므로(개인정보 불변식) 콘솔이 유일한 대조 수단이다.
+3. 코드를 넣어 확인한 뒤 `GET /auth/me`의 `phone_verified`가 `true`이고 크레딧 화면에 체험
+   5크레딧이 반영됐는지 본다.
+4. 확인 일시·발신번호·결과를 이 문서 아래 「판정 기록」과 같은 방식으로 남긴다. **2026-09-17
+   현재 실서버 실발송 확인 기록은 없다.**
+
+### 장애 시
+
+- SENS 장애나 키 만료면 인증 요청이 502/503으로 실패하고 **결제 시작이 막힌다.** 관리자 수동
+  인증이나 우회 경로는 없다(의도적 — 우회가 생기면 중복 지급 통제가 무너진다).
+- 이미 인증된 사용자는 영향이 없다. 체험 크레딧 정정이 필요하면 「크레딧 수동 조정」을 쓴다.
+- 비용은 SENS 건당 과금이다. 월간 사용량 확인 때 SENS 콘솔 사용량도 함께 본다.
+
+
 ## 토스 테스트 구독 운영
 
 카드 등록·월 승인·worker 갱신·환불·영수증·키 교체·웹훅 설정은 [토스 테스트 구독 결제](plans/2026-09-13-toss-test-billing.md)를 따른다. 공개 체험 키로 실제 토스 테스트 API E2E를 검증했으며 라이브 결제는 차단한다. 관리자 환불은 작업 공간 상세의 테스트 결제 내역에서 처리한다. 환불과 구독 갱신 중단은 별도 동작이다.
