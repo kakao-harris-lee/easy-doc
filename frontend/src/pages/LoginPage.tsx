@@ -58,7 +58,6 @@ export function LoginPage() {
           <p className="mt-2 text-sm leading-[22px] text-muted-foreground">
             마지막으로 보던 작업 공간에서 문서 변환과 검수를 이어서 합니다.
           </p>
-          <TrialCreditSteps className="mt-5" />
           {/* 실패 사유는 폼 맨 위에 남는 문단으로 표시된다(§6.1) — CredentialsForm이
               토스트가 아니라 화면에 유지되는 오류를 그린다. */}
           <CredentialsForm
@@ -99,7 +98,9 @@ export function LoginPage() {
       <AuthIntro
         headingId="login-intro-heading"
         summary="어려운 공공 안내문을 쉬운 우리말 초안으로 바꾸고, 담당자가 검수해 문서로 내려받습니다."
-      />
+      >
+        <TrialCreditSteps className="mt-7" />
+      </AuthIntro>
     </div>
   )
 }

@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -79,6 +79,13 @@ describe('로그인 화면', () => {
     renderAt('/login')
 
     const guide = screen.getByRole('region', { name: '무료 체험 시작 순서' })
+    const login = screen.getByRole('region', { name: '로그인' })
+    const intro = screen.getByRole('complementary')
+
+    expect(
+      within(login).queryByRole('region', { name: '무료 체험 시작 순서' }),
+    ).not.toBeInTheDocument()
+    expect(within(intro).getByRole('region', { name: '무료 체험 시작 순서' })).toBe(guide)
     expect(guide).toHaveTextContent('가입')
     expect(guide).toHaveTextContent('로그인')
     expect(guide).toHaveTextContent('휴대폰 인증 요청')

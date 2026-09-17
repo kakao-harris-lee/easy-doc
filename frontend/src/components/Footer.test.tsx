@@ -81,9 +81,11 @@ describe('Footer', () => {
   it('좁은 화면에서 회사명과 정책 링크를 서로 다른 행으로 배치한다', () => {
     renderFooter()
 
+    const footerContent = screen.getByRole('contentinfo').firstElementChild
     const companyRow = screen.getByText(COMPANY_INFO.name).parentElement
     const policyNavigation = screen.getByRole('navigation', { name: '정책' })
 
+    expect(footerContent).toHaveClass('space-y-0', 'py-2', 'sm:space-y-1', 'sm:py-4')
     expect(companyRow).toHaveClass('flex-col', 'items-start', 'sm:flex-row', 'sm:items-center')
     expect(policyNavigation).toHaveClass('w-full', 'justify-between', 'sm:w-auto')
   })
@@ -97,7 +99,8 @@ describe('Footer', () => {
     const businessLookup = screen.getByRole('link', { name: /^사업자정보 확인:/ })
 
     expect(representative.parentElement).toHaveClass('items-center')
-    expect(representative).toHaveClass('inline-flex', 'min-h-11', 'items-center')
+    expect(representative).toHaveClass('inline-flex', 'items-center', 'sm:min-h-11')
+    expect(representative).not.toHaveClass('min-h-11')
     expect(businessLookup).toHaveClass('whitespace-nowrap')
   })
 
