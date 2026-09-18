@@ -79,4 +79,21 @@ interface OneTimeCodeStore {
 interface VerificationCodeStore : OneTimeCodeStore
 
 /** 휴대폰 인증 코드 저장소. 이메일 인증과 별도 테이블을 사용한다. */
-interface PhoneVerificationCodeStore : OneTimeCodeStore
+interface PhoneVerificationCodeStore : OneTimeCodeStore {
+    fun issuePhoneVerification(
+        userId: UUID,
+        ttl: Duration,
+        cooldown: Duration,
+    ): IssuedPhoneVerification
+
+    /** 같은 발급 요청만 회수한다. 실제로 회수했으면 `true`. */
+    fun revokePhoneVerification(
+        userId: UUID,
+        verificationId: UUID,
+    ): Boolean
+}
+
+data class IssuedPhoneVerification(
+    val id: UUID,
+    val code: String,
+)

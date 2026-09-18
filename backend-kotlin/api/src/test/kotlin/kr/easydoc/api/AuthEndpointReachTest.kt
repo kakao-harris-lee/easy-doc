@@ -223,6 +223,20 @@ class AuthEndpointReachTest {
     }
 
     @Test
+    @DisplayName("PV-3a 실제 DB에서 5회 오답 뒤 정답도 400이다")
+    fun `휴대폰 오답 횟수는 롤백되지 않는다`() {
+        val token = signupLoginAndVerifyEmail(uniqueEmail())
+        postAuthorized(PHONE_REQUEST_PATH, token, phoneBody(uniquePhone()))
+        val correctCode = smsSender.sentCodes.last()
+
+        repeat(PHONE_MAX_ATTEMPTS) {
+            assertThat(postAuthorized(PHONE_CONFIRM_PATH, token, confirmBody("000000")).statusCode()).isEqualTo(400)
+        }
+
+        assertThat(postAuthorized(PHONE_CONFIRM_PATH, token, confirmBody(correctCode)).statusCode()).isEqualTo(400)
+    }
+
+    @Test
     @DisplayName("PV-4 이미 인증된 번호의 재요청·재확인은 409다")
     fun `이미 인증된 휴대폰은 409다`() {
         val token = signupLoginAndVerifyEmail(uniqueEmail())
@@ -771,6 +785,7 @@ class AuthEndpointReachTest {
         private const val PHONE_REQUEST_PATH = "/auth/phone-verification/request"
         private const val PHONE_CONFIRM_PATH = "/auth/phone-verification/confirm"
         private const val PHONE_CODE_LENGTH = 6
+        private const val PHONE_MAX_ATTEMPTS = 5
 
         /** `easydoc.phone-verification.trial-credits` 기본값(`.env.example`) — 바인딩 자체는
          * `ConfigurationPropertiesBindingTest` 가 잰다. */

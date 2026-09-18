@@ -4,7 +4,6 @@ import kr.easydoc.application.auth.TransactionRunner
 import org.slf4j.LoggerFactory
 import java.time.Clock
 import java.time.Instant
-import java.time.LocalDate
 import java.time.OffsetDateTime
 import java.time.Period
 import java.time.ZoneOffset
@@ -46,8 +45,8 @@ fun interface PersonalDataAccessLogPurgeObserver {
  *
  * 보관기간 하한은 고시(개인정보의 안전성 확보조치 기준)가 요구하는 최소 보관기간
  * 1년이다 — 법정 불변식이므로 구성값이 아니라 코드 상수([MINIMUM_RETENTION])다.
- * `Period`는 단위가 섞이면(`P1Y` vs `P365D`) 직접 비교가 애매하므로, 고정 기준일에서
- * 뺀 날짜를 비교해 판정한다(계획 §2.2).
+ * 일 단위 기간은 윤년에서 달력상 1년보다 짧아질 수 있으므로, 연·월 단위로만 최소
+ * 보관기간을 허용한다.
  */
 class PersonalDataAccessLogPurgePolicy(
     val enabled: Boolean,
@@ -64,20 +63,18 @@ class PersonalDataAccessLogPurgePolicy(
     companion object {
         val MINIMUM_RETENTION: Period = Period.ofYears(1)
 
-        /** 산술만을 위한 임의 고정 기준일 — 특정 연도의 의미는 없다. */
-        private val EPOCH: LocalDate = LocalDate.of(EPOCH_YEAR, 1, 1)
-
         /**
-         * 기준일에서 각각을 뺀 날짜를 비교한다 — 뺀 결과가 더 뒤(늦은 날짜)면 보관기간이
-         * 짧다는 뜻이다. `internal`이 아니라 `public`으로 연다 — 이 판정을 재사용하는
+         * `P1Y` 또는 `P12M` 이상만 허용한다. `internal`이 아니라 `public`으로 연다 — 이 판정을 재사용하는
          * `PersonalDataAccessLogPurgeConfiguration`이 `infrastructure` 모듈에 있어
          * `internal`(같은 모듈로 한정)로는 보이지 않는다. 하한 판정 로직을 두 곳에
          * 중복 구현하지 않기 위해서다.
          */
         fun meetsMinimumRetention(retention: Period): Boolean =
-            !EPOCH.minus(retention).isAfter(EPOCH.minus(MINIMUM_RETENTION))
+            retention.years >= MINIMUM_RETENTION_YEARS ||
+                (retention.years == 0 && retention.months >= MONTHS_PER_YEAR)
 
-        private const val EPOCH_YEAR: Int = 2000
+        private const val MINIMUM_RETENTION_YEARS = 1
+        private const val MONTHS_PER_YEAR = 12
     }
 }
 
@@ -112,8 +109,11 @@ class PurgePersonalDataAccessLogs(
      * 시간대(KST) 변환이 필요 없다.
      */
     private fun drainPurges(): PersonalDataAccessLogPurgeResult {
-        val accessedBefore =
-            OffsetDateTime.ofInstant(Instant.now(clock), ZoneOffset.UTC).minus(policy.retention).toInstant()
+        val now = OffsetDateTime.ofInstant(Instant.now(clock), ZoneOffset.UTC)
+        val configuredCutoff = now.minus(policy.retention)
+        // `P365D`처럼 달력상 1년보다 짧아질 수 있는 값은 실제 실행 시각의 P1Y 하한을 쓴다.
+        val legalMinimumCutoff = now.minus(PersonalDataAccessLogPurgePolicy.MINIMUM_RETENTION)
+        val accessedBefore = minOf(configuredCutoff, legalMinimumCutoff).toInstant()
         var deleted = 0
         var rounds = 0
         do {

@@ -66,9 +66,6 @@ class PhoneVerificationServiceTest {
         assertThatThrownBy { world.service.request(world.userId, "01012345678") }
             .isInstanceOf(ExternalServiceUnavailableException::class.java)
 
-        assertThat(world.codes.revokeRequestedFor)
-            .withFailMessage("회수가 userId 만으로 이뤄져 이번 요청이 발급한 코드를 특정하지 못했다")
-            .isEqualTo(world.codes.code)
         assertThat(world.users.current.pendingPhoneFingerprint).isNull()
     }
 
@@ -81,6 +78,35 @@ class PhoneVerificationServiceTest {
             .isInstanceOf(InvalidVerificationCodeException::class.java)
         assertThat(world.granted).isZero()
         assertThat(world.users.current.phoneVerifiedAt).isNull()
+    }
+
+    @Test
+    fun `오답을 최대 횟수만큼 내면 이후 정답도 거절된다`() {
+        val world = PhoneWorld()
+        world.service.request(world.userId, "01012345678")
+
+        repeat(5) {
+            assertThatThrownBy { world.service.confirm(world.userId, "000000") }
+                .isInstanceOf(InvalidVerificationCodeException::class.java)
+        }
+
+        assertThatThrownBy { world.service.confirm(world.userId, world.codes.code) }
+            .isInstanceOf(InvalidVerificationCodeException::class.java)
+    }
+
+    @Test
+    fun `늦게 실패한 이전 발송은 최신 발급의 대기 지문을 지우지 않는다`() {
+        val world = PhoneWorld()
+        world.sms.onFirstSend = {
+            world.service.request(world.userId, "01012345678")
+            throw ExternalServiceUnavailableException(RecordingPhoneSms.SEND_FAILURE_MESSAGE)
+        }
+
+        assertThatThrownBy { world.service.request(world.userId, "01012345678") }
+            .isInstanceOf(ExternalServiceUnavailableException::class.java)
+
+        assertThat(world.users.current.pendingPhoneVerificationId).isEqualTo(world.codes.latestId)
+        assertThat(world.service.confirm(world.userId, world.codes.code).grantedCredits).isEqualTo(5)
     }
 
     @Test
@@ -161,6 +187,20 @@ private class PhoneWorld(
                     granted += credits
                     return granted
                 }
+
+                override fun setAllowance(
+                    workspaceId: UUID,
+                    ownerUserId: UUID,
+                    allowance: Int,
+                    cycleEndsAt: Instant,
+                    renews: Boolean,
+                    reason: CreditReason,
+                    note: String?,
+                    actorUserId: UUID?,
+                ): Int {
+                    granted = allowance
+                    return granted
+                }
             },
             enforced = true,
         )
@@ -204,19 +244,27 @@ private class PhoneUsers(
     override fun setPendingPhoneFingerprint(
         userId: UUID,
         fingerprint: String,
+        verificationId: UUID,
     ) {
-        current = current.copy(pendingPhoneFingerprint = fingerprint)
+        current = current.copy(pendingPhoneFingerprint = fingerprint, pendingPhoneVerificationId = verificationId)
     }
 
     override fun clearPendingPhoneFingerprint(
         userId: UUID,
-        fingerprint: String,
+        verificationId: UUID,
     ) {
-        if (current.pendingPhoneFingerprint == fingerprint) current = current.copy(pendingPhoneFingerprint = null)
+        if (current.pendingPhoneVerificationId == verificationId) {
+            current = current.copy(pendingPhoneFingerprint = null, pendingPhoneVerificationId = null)
+        }
     }
 
     override fun markPhoneVerified(userId: UUID): Boolean {
-        current = current.copy(phoneVerifiedAt = Instant.EPOCH, pendingPhoneFingerprint = null)
+        current =
+            current.copy(
+                phoneVerifiedAt = Instant.EPOCH,
+                pendingPhoneFingerprint = null,
+                pendingPhoneVerificationId = null,
+            )
         return true
     }
 
@@ -243,24 +291,54 @@ private class PhoneUsers(
 }
 
 private class PhoneCodes : PhoneVerificationCodeStore {
-    val code = "123456"
-    private var active = false
-
-    /** [revoke] 가 받은 `code` 인자를 그대로 남긴다 — 회수가 어떤 코드를 지목했는지 잰다. */
-    var revokeRequestedFor: String? = null
+    var code = "123456"
         private set
+    var latestId: UUID? = null
+        private set
+    private var active = false
+    private var activeId: UUID? = null
+    private var attempts = 0
 
     override fun issue(
         userId: UUID,
         ttl: Duration,
         cooldown: Duration,
-    ): String = code.also { active = true }
+    ): String = issuePhoneVerification(userId, ttl, cooldown).code
+
+    override fun issuePhoneVerification(
+        userId: UUID,
+        ttl: Duration,
+        cooldown: Duration,
+    ): IssuedPhoneVerification {
+        code = (code.toInt() + 1).toString().padStart(6, '0')
+        val id = UUID.randomUUID()
+        active = true
+        activeId = id
+        attempts = 0
+        latestId = id
+        return IssuedPhoneVerification(id, code)
+    }
+
+    override fun revokePhoneVerification(
+        userId: UUID,
+        verificationId: UUID,
+    ): Boolean {
+        if (active && activeId == verificationId) {
+            active = false
+            return true
+        }
+        return false
+    }
 
     override fun attempt(
         userId: UUID,
         code: String,
         maxAttempts: Int,
-    ): Boolean = (active && code == this.code).also { if (it) active = false }
+    ): Boolean {
+        if (!active || attempts >= maxAttempts) return false
+        attempts++
+        return (code == this.code).also { if (it) active = false }
+    }
 
     /** 실물([kr.easydoc.infrastructure.auth.JdbcOneTimeCodeStore.revoke])과 같은 계약 —
      * [code] 가 일치할 때만 활성 코드를 지운다. */
@@ -268,7 +346,6 @@ private class PhoneCodes : PhoneVerificationCodeStore {
         userId: UUID,
         code: String,
     ) {
-        revokeRequestedFor = code
         if (code == this.code) active = false
     }
 }
@@ -276,12 +353,14 @@ private class PhoneCodes : PhoneVerificationCodeStore {
 private class RecordingPhoneSms : PhoneVerificationSmsSender {
     var phone: String? = null
     var shouldFail: Boolean = false
+    var onFirstSend: (() -> Unit)? = null
 
     override fun send(
         phoneNumber: String,
         code: String,
         validMinutes: Long,
     ) {
+        onFirstSend?.also { onFirstSend = null }?.invoke()
         if (shouldFail) throw ExternalServiceUnavailableException(SEND_FAILURE_MESSAGE)
         phone = phoneNumber
     }

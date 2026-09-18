@@ -45,6 +45,7 @@ class JdbcExpiredAuthArtifactPurge(private val jdbc: JdbcClient) : ExpiredAuthAr
         val oauthStatesDeleted = deleteExpired(OAUTH_STATES_TABLE, createdBeforeTimestamp, batchSize)
         val phoneVerificationCodesDeleted =
             deleteExpired(PHONE_VERIFICATION_CODES_TABLE, createdBeforeTimestamp, batchSize)
+        clearExpiredPendingPhoneFingerprints(createdBeforeTimestamp)
         return ExpiredAuthArtifactPurgeResult(
             enabled = true,
             emailVerificationCodesDeleted = emailVerificationCodesDeleted,
@@ -69,6 +70,33 @@ class JdbcExpiredAuthArtifactPurge(private val jdbc: JdbcClient) : ExpiredAuthAr
             .param("createdBefore", createdBefore)
             .param("limit", batchSize)
             .update()
+
+    /**
+     * 대기 지문은 그 지문을 만든 인증 요청이 보존기간 안에 있을 때만 남긴다. 새 재발급이
+     * 이미 연결됐다면 그 UUID가 아직 표에 있어 보존되므로, 이전 SMS 실패/만료가 최신 요청을
+     * 지우지 않는다.
+     */
+    private fun clearExpiredPendingPhoneFingerprints(createdBefore: Timestamp) {
+        jdbc
+            .sql(
+                """
+                UPDATE users u
+                SET pending_phone_fingerprint = NULL, pending_phone_verification_id = NULL
+                WHERE u.pending_phone_fingerprint IS NOT NULL
+                  AND NOT EXISTS (
+                    SELECT 1
+                    FROM phone_verification_codes c
+                    WHERE c.user_id = u.id
+                      AND c.created_at >= :createdBefore
+                      AND (
+                        u.pending_phone_verification_id IS NULL
+                        OR c.id = u.pending_phone_verification_id
+                      )
+                  )
+                """.trimIndent(),
+            ).param("createdBefore", createdBefore)
+            .update()
+    }
 
     private companion object {
         const val EMAIL_VERIFICATION_CODES_TABLE = "email_verification_codes"

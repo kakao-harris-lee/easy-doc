@@ -317,6 +317,26 @@ class CreditAccountServiceTest {
     }
 
     @Test
+    @DisplayName("휴대폰 체험도 가입 체험과 같은 비갱신 만료 주기를 연다")
+    fun `휴대폰 체험은 만료 주기를 연다`() {
+        val repo = FakeCreditAccountRepository(balance = 0)
+        val service = CreditAccountService(repo, enforced = true, clock = FIXED_CLOCK)
+
+        service.grantFreeTrial(
+            workspaceId = workspaceId,
+            ownerUserId = ownerId,
+            credits = 5,
+            reason = CreditReason.SIGNUP,
+            note = "phone_verification_trial",
+        )
+
+        assertThat(repo.setAllowanceCalls)
+            .containsExactly(
+                SetAllowanceCall(5, plusUtc(FIXED_NOW, Period.ofMonths(1)), renews = false, CreditReason.SIGNUP),
+            )
+    }
+
+    @Test
     @DisplayName("읽기 결과의 signup_grant_skipped 는 이메일 인증 전에는 항상 거짓이다")
     fun `이메일 미인증이면 항상 거짓`() {
         val repo = FakeCreditAccountRepository(balance = 0, signupGrantSkipped = true, emailVerified = false)

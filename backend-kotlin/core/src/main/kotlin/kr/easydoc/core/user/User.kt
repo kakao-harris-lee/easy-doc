@@ -36,6 +36,8 @@ data class User(
     val phoneVerifiedAt: Instant? = null,
     /** 인증 중인 번호의 HMAC 지문. 평문 전화번호는 저장하지 않는다. */
     val pendingPhoneFingerprint: String? = null,
+    /** 대기 지문을 만든 휴대폰 인증 발급 요청. 이전 발송 실패가 최신 요청을 지우지 않게 한다. */
+    val pendingPhoneVerificationId: UUID? = null,
 ) {
     /** **이메일을 찍지 않는다.** */
     override fun toString(): String =

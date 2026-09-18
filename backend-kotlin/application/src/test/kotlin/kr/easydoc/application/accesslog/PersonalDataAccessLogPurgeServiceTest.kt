@@ -107,7 +107,13 @@ class PersonalDataAccessLogPurgeServiceTest {
     @Test
     @DisplayName("보관기간 1년 미만은 정책 생성이 거부한다")
     fun `보관기간 하한 위반은 거부한다`() {
-        listOf(Period.ofMonths(11), Period.ofDays(364), Period.ZERO, Period.ofDays(-1)).forEach { retention ->
+        listOf(
+            Period.ofMonths(11),
+            Period.ofDays(365),
+            Period.ofDays(364),
+            Period.ZERO,
+            Period.ofDays(-1),
+        ).forEach { retention ->
             assertThatIllegalArgumentException()
                 .describedAs("retention=$retention 은 1년 미만이라 거부돼야 한다")
                 .isThrownBy { PersonalDataAccessLogPurgePolicy(enabled = true, retention = retention, batchSize = 1) }
@@ -117,7 +123,7 @@ class PersonalDataAccessLogPurgeServiceTest {
     @Test
     @DisplayName("보관기간 1년 이상은 정책 생성이 통과한다")
     fun `보관기간 하한을 만족하면 통과한다`() {
-        listOf(Period.ofYears(1), Period.ofMonths(12), Period.ofYears(2), Period.ofDays(365)).forEach { retention ->
+        listOf(Period.ofYears(1), Period.ofMonths(12), Period.ofYears(2)).forEach { retention ->
             PersonalDataAccessLogPurgePolicy(enabled = true, retention = retention, batchSize = 1)
         }
     }

@@ -90,22 +90,23 @@ class PhoneVerificationService(
     ) {
         val number = DomesticMobileNumber.of(rawPhoneNumber)
         val fingerprint = hasher.hash(number)
-        val code =
+        val issued =
             transaction.inTransaction {
                 val user = users.lockForUpdate(userId) ?: throw InvalidCredentialsException(ACCOUNT_GONE_MESSAGE)
                 requireEligibleForRequest(user)
-                codes.issue(userId, codeTtl, resendCooldown).also {
-                    users.setPendingPhoneFingerprint(userId, fingerprint)
+                codes.issuePhoneVerification(userId, codeTtl, resendCooldown).also { issued ->
+                    users.setPendingPhoneFingerprint(userId, fingerprint, issued.id)
                 }
             }
         try {
-            sms.send(number.digits, code, codeTtl.toMinutes())
+            sms.send(number.digits, issued.code, codeTtl.toMinutes())
         } catch (
             @Suppress("TooGenericExceptionCaught") failure: RuntimeException,
         ) {
             transaction.inTransaction {
-                codes.revoke(userId, code)
-                users.clearPendingPhoneFingerprint(userId, fingerprint)
+                if (codes.revokePhoneVerification(userId, issued.id)) {
+                    users.clearPendingPhoneFingerprint(userId, issued.id)
+                }
             }
             throw failure
         }
@@ -115,29 +116,34 @@ class PhoneVerificationService(
     fun confirm(
         userId: UUID,
         code: String,
-    ): PhoneVerificationResult =
-        transaction.inTransaction {
-            val user = users.lockForUpdate(userId) ?: throw InvalidCredentialsException(ACCOUNT_GONE_MESSAGE)
-            if (user.phoneVerifiedAt != null) throw ConflictException(ALREADY_VERIFIED_MESSAGE)
-            val fingerprint = user.pendingPhoneFingerprint
-            if (fingerprint == null || !codes.attempt(userId, code, maxAttempts)) {
-                throw InvalidVerificationCodeException(INVALID_CODE_MESSAGE)
-            }
-            if (!users.markPhoneVerified(userId)) throw InvalidCredentialsException(ACCOUNT_GONE_MESSAGE)
+    ): PhoneVerificationResult {
+        val result =
+            transaction.inTransaction {
+                val user = users.lockForUpdate(userId) ?: throw InvalidCredentialsException(ACCOUNT_GONE_MESSAGE)
+                if (user.phoneVerifiedAt != null) throw ConflictException(ALREADY_VERIFIED_MESSAGE)
+                val fingerprint = user.pendingPhoneFingerprint
+                if (fingerprint == null || !codes.attempt(userId, code, maxAttempts)) {
+                    return@inTransaction null
+                }
+                if (!users.markPhoneVerified(userId)) throw InvalidCredentialsException(ACCOUNT_GONE_MESSAGE)
 
-            val granted = trialCredits > 0 && grants.claim(fingerprint)
-            if (granted) {
-                val workspaceId = workspaces.findDefaultId(userId) ?: throw StorageException(STORAGE_FAILURE_MESSAGE)
-                credits.grant(
-                    workspaceId = workspaceId,
-                    ownerUserId = userId,
-                    credits = trialCredits,
-                    reason = CreditReason.SIGNUP,
-                    note = PHONE_TRIAL_NOTE,
-                )
+                val granted = trialCredits > 0 && grants.claim(fingerprint)
+                if (granted) {
+                    val workspaceId =
+                        workspaces.findDefaultId(userId)
+                            ?: throw StorageException(STORAGE_FAILURE_MESSAGE)
+                    credits.grantFreeTrial(
+                        workspaceId = workspaceId,
+                        ownerUserId = userId,
+                        credits = trialCredits,
+                        reason = CreditReason.SIGNUP,
+                        note = PHONE_TRIAL_NOTE,
+                    )
+                }
+                PhoneVerificationResult(grantedCredits = if (granted) trialCredits else 0)
             }
-            PhoneVerificationResult(grantedCredits = if (granted) trialCredits else 0)
-        }
+        return result ?: throw InvalidVerificationCodeException(INVALID_CODE_MESSAGE)
+    }
 
     private fun requireEligibleForRequest(user: kr.easydoc.core.user.User) {
         if (user.emailVerifiedAt == null) throw EmailNotVerifiedException("이메일 인증을 먼저 완료해 주세요")

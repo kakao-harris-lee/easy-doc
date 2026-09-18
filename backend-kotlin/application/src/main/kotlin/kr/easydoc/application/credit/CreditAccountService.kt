@@ -223,18 +223,35 @@ class CreditAccountService(
             repository.markSignupGrantSkipped(workspaceId)
             return
         }
+        grantFreeTrial(
+            workspaceId = workspaceId,
+            ownerUserId = ownerUserId,
+            credits = signupGrant,
+            reason = CreditReason.SIGNUP,
+            note = null,
+        )
+        signupGrantLedger.record(emailHash)
+    }
+
+    /** 가입·휴대폰 인증이 공용으로 쓰는 한 번뿐인 비갱신 무료 체험 주기. */
+    fun grantFreeTrial(
+        workspaceId: UUID,
+        ownerUserId: UUID,
+        credits: Int,
+        reason: CreditReason,
+        note: String?,
+    ) {
         val cycleEndsAt = ZonedDateTime.ofInstant(Instant.now(clock), zoneId).plus(signupGrantValidity).toInstant()
         repository.setAllowance(
             workspaceId,
             ownerUserId,
-            signupGrant,
+            credits,
             cycleEndsAt,
             renews = false,
-            reason = CreditReason.SIGNUP,
-            note = null,
+            reason = reason,
+            note = note,
             actorUserId = null,
         )
-        signupGrantLedger.record(emailHash)
     }
 
     /** **내** 계정을 읽는다. 없거나 내 것이 아니면 [NotFoundException]. */

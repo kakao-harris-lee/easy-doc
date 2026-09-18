@@ -48,27 +48,35 @@ abstract class JdbcOneTimeCodeStore
             userId: UUID,
             ttl: Duration,
             cooldown: Duration,
-        ): String {
+        ): String = issueWithId(userId, ttl, cooldown).code
+
+        /** 휴대폰 인증처럼 발급 행 식별자가 필요한 호출자를 위한 내부 발급 경로. */
+        protected fun issueWithId(
+            userId: UUID,
+            ttl: Duration,
+            cooldown: Duration,
+        ): IssuedCode {
             rejectIfWithinCooldown(userId, cooldown)
             voidActiveCode(userId)
 
             val code = randomCode()
             val salt = randomSalt()
             val now = clock.instant()
+            val id = UUID.randomUUID()
             jdbc
                 .sql(
                     """
                     INSERT INTO $table (id, user_id, code_hash, salt, expires_at, created_at)
                     VALUES (:id, :userId, :codeHash, :salt, :expiresAt, :now)
                     """.trimIndent(),
-                ).param("id", UUID.randomUUID())
+                ).param("id", id)
                 .param("userId", userId)
                 .param("codeHash", hashOf(code, salt))
                 .param("salt", salt)
                 .param("expiresAt", Timestamp.from(now + ttl))
                 .param("now", Timestamp.from(now))
                 .update()
-            return code
+            return IssuedCode(id, code)
         }
 
         /**
@@ -106,6 +114,20 @@ abstract class JdbcOneTimeCodeStore
                 consume(active.id, Timestamp.from(clock.instant()))
             }
         }
+
+        /** 발급 UUID를 아는 호출자(휴대폰 인증)의 조건부 회수. */
+        protected fun revokeIssued(
+            userId: UUID,
+            id: UUID,
+        ): Boolean =
+            jdbc
+                .sql(
+                    "UPDATE $table SET consumed_at = :now " +
+                        "WHERE id = :id AND user_id = :userId AND consumed_at IS NULL",
+                ).param("now", Timestamp.from(clock.instant()))
+                .param("id", id)
+                .param("userId", userId)
+                .update() > 0
 
         private fun activeRow(userId: UUID): ActiveCodeRow? =
             jdbc
@@ -186,6 +208,11 @@ abstract class JdbcOneTimeCodeStore
             val id: UUID,
             val codeHash: String,
             val salt: String,
+        )
+
+        protected data class IssuedCode(
+            val id: UUID,
+            val code: String,
         )
 
         private fun rejectIfWithinCooldown(

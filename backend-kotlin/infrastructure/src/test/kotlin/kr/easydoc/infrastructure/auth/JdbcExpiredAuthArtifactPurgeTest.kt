@@ -152,6 +152,56 @@ class JdbcExpiredAuthArtifactPurgeTest {
     }
 
     @Test
+    @DisplayName("만료된 휴대폰 코드의 대기 지문만 지우고 최신 재발급의 지문은 보존한다")
+    fun `만료 휴대폰 코드와 대기 지문을 함께 파기한다`() {
+        jdbc.sql("DELETE FROM users").update()
+        val staleUser = insertUser()
+        val freshUser = insertUser()
+        val legacyStaleUser = insertUser()
+        val staleCode = insertPhoneVerificationCode(staleUser, createdAt = FIXED_NOW.minus(TWO_DAYS))
+        val freshCode = insertPhoneVerificationCode(freshUser, createdAt = FIXED_NOW.minus(ONE_HOUR))
+        jdbc
+            .sql(
+                "UPDATE users SET pending_phone_fingerprint = repeat('a', 64), " +
+                    "pending_phone_verification_id = :id WHERE id = :userId",
+            ).param("id", staleCode)
+            .param("userId", staleUser)
+            .update()
+        jdbc
+            .sql(
+                "UPDATE users SET pending_phone_fingerprint = repeat('b', 64), " +
+                    "pending_phone_verification_id = :id WHERE id = :userId",
+            ).param("id", freshCode)
+            .param("userId", freshUser)
+            .update()
+        jdbc
+            .sql("UPDATE users SET pending_phone_fingerprint = repeat('c', 64) WHERE id = :userId")
+            .param("userId", legacyStaleUser)
+            .update()
+
+        purgeUseCase(retentionHours = 24, now = FIXED_NOW).run()
+
+        assertThat(
+            database.queryInt(
+                "SELECT count(*) FROM users WHERE id = '$staleUser' " +
+                    "AND pending_phone_fingerprint IS NULL AND pending_phone_verification_id IS NULL",
+            ),
+        ).isEqualTo(1)
+        assertThat(
+            database.queryInt(
+                "SELECT count(*) FROM users WHERE id = '$legacyStaleUser' " +
+                    "AND pending_phone_fingerprint IS NULL AND pending_phone_verification_id IS NULL",
+            ),
+        ).isEqualTo(1)
+        assertThat(
+            database.queryInt(
+                "SELECT count(*) FROM users WHERE id = '$freshUser' " +
+                    "AND pending_phone_fingerprint IS NOT NULL AND pending_phone_verification_id = '$freshCode'",
+            ),
+        ).isEqualTo(1)
+    }
+
+    @Test
     @DisplayName("배치 크기보다 많은 행에서 반복 파기가 돈다")
     fun `배치보다 많은 대상을 한 번에 지운다`() {
         jdbc.sql("DELETE FROM users").update()

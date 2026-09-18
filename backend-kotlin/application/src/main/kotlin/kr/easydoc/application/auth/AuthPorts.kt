@@ -91,18 +91,19 @@ interface UserRepository {
      */
     fun markEmailVerified(userId: UUID): Boolean
 
-    /** 휴대폰 인증 요청 번호의 HMAC 지문을 저장한다. 평문 번호는 저장하지 않는다. */
+    /** 휴대폰 인증 요청의 식별자와 번호 HMAC 지문을 함께 저장한다. 평문 번호는 저장하지 않는다. */
     fun setPendingPhoneFingerprint(
         userId: UUID,
         fingerprint: String,
+        verificationId: UUID,
     ) {
         error("setPendingPhoneFingerprint is not implemented")
     }
 
-    /** 발송 실패 시 같은 요청의 지문만 지운다. */
+    /** 발송 실패 시 같은 발급 요청의 지문만 지운다. */
     fun clearPendingPhoneFingerprint(
         userId: UUID,
-        fingerprint: String,
+        verificationId: UUID,
     ) {
         error("clearPendingPhoneFingerprint is not implemented")
     }

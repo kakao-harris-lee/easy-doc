@@ -134,26 +134,31 @@ class JdbcUserRepository(private val jdbc: JdbcClient) : UserRepository {
     override fun setPendingPhoneFingerprint(
         userId: UUID,
         fingerprint: String,
+        verificationId: UUID,
     ) {
         jdbc
-            .sql("UPDATE users SET pending_phone_fingerprint = :fingerprint WHERE id = :id")
-            .param("fingerprint", fingerprint)
+            .sql(
+                "UPDATE users SET pending_phone_fingerprint = :fingerprint, " +
+                    "pending_phone_verification_id = :verificationId WHERE id = :id",
+            ).param("fingerprint", fingerprint)
+            .param("verificationId", verificationId)
             .param("id", userId)
             .update()
     }
 
     override fun clearPendingPhoneFingerprint(
         userId: UUID,
-        fingerprint: String,
+        verificationId: UUID,
     ) {
         jdbc
             .sql(
                 """
-                UPDATE users SET pending_phone_fingerprint = NULL
-                WHERE id = :id AND pending_phone_fingerprint = :fingerprint
+                UPDATE users
+                SET pending_phone_fingerprint = NULL, pending_phone_verification_id = NULL
+                WHERE id = :id AND pending_phone_verification_id = :verificationId
                 """.trimIndent(),
             ).param("id", userId)
-            .param("fingerprint", fingerprint)
+            .param("verificationId", verificationId)
             .update()
     }
 
@@ -162,7 +167,7 @@ class JdbcUserRepository(private val jdbc: JdbcClient) : UserRepository {
             .sql(
                 """
                 UPDATE users
-                SET phone_verified_at = now(), pending_phone_fingerprint = NULL
+                SET phone_verified_at = now(), pending_phone_fingerprint = NULL, pending_phone_verification_id = NULL
                 WHERE id = :id AND phone_verified_at IS NULL
                 """.trimIndent(),
             ).param("id", userId)
@@ -181,6 +186,7 @@ class JdbcUserRepository(private val jdbc: JdbcClient) : UserRepository {
             isAdmin = rs.getBoolean("is_admin"),
             phoneVerifiedAt = rs.getObject("phone_verified_at", OffsetDateTime::class.java)?.toInstant(),
             pendingPhoneFingerprint = rs.getString("pending_phone_fingerprint"),
+            pendingPhoneVerificationId = rs.getObject("pending_phone_verification_id", UUID::class.java),
         )
 
     private fun toStoredUser(rs: ResultSet): StoredUser =
@@ -190,7 +196,7 @@ class JdbcUserRepository(private val jdbc: JdbcClient) : UserRepository {
         /** `findByEmail`·`findById`·`lockForUpdate` 공용 열 목록. */
         const val USER_COLUMNS =
             "id, email, password_hash, created_at, email_verified_at, is_admin, " +
-                "phone_verified_at, pending_phone_fingerprint"
+                "phone_verified_at, pending_phone_fingerprint, pending_phone_verification_id"
 
         /** 계약 `components/responses/Conflict` 의 `duplicate_email` 예시와 같은 값. */
         const val DUPLICATE_EMAIL_MESSAGE = "이미 가입된 이메일입니다"
