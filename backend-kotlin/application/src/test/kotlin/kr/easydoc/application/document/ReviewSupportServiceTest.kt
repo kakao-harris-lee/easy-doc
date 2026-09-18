@@ -42,6 +42,25 @@ class ReviewSupportServiceTest {
     }
 
     @Test
+    fun `modified UTF 한계를 넘는 유효 URL 근거도 저장하고 다시 읽는다`() {
+        val world = World()
+        val longUrl = "https://example.test/" + "😀".repeat(17_000)
+        val conversionId = world.seedDone(sourceText = longUrl, easyText = "주소는 원문에서 확인해 주세요.")
+
+        val generated = world.service.analyze(OWNER, conversionId, 1).assessment!!
+        val reopened = world.service.get(OWNER, conversionId).assessment!!
+
+        assertThat(
+            generated.items
+                .first { it.ruleCode == "missing_email_or_url" }
+                .sourceAnchors
+                .single()
+                .quote,
+        ).isEqualTo(longUrl)
+        assertThat(reopened).isEqualTo(generated)
+    }
+
+    @Test
     fun `분석의 본문 CAS와 항목 갱신의 검수 CAS가 각각 409다`() {
         val world = World()
         val conversionId = world.seedDone()
@@ -152,12 +171,15 @@ class ReviewSupportServiceTest {
         val service =
             ReviewSupportService(enabled, conversions, documents, assessments, cipher, transaction)
 
-        fun seedDone(): UUID {
+        fun seedDone(
+            sourceText: String = "신청자는 2026년 10월 1일까지 30,000원을 내야 합니다.",
+            easyText: String = "쉬운 글에는 신청 방법만 있습니다.",
+        ): UUID {
             val conversionId = UUID.randomUUID()
             val documentId = UUID.randomUUID()
             val easyText =
                 cipher.encrypt(
-                    PlainBody("쉬운 글에는 신청 방법만 있습니다."),
+                    PlainBody(easyText),
                     conversionId,
                     EncryptedField.CONVERSION_EASY_TEXT,
                 )
@@ -186,7 +208,7 @@ class ReviewSupportServiceTest {
                     null,
                     1,
                 )
-            documents.seed(OWNER, documentId, "신청자는 2026년 10월 1일까지 30,000원을 내야 합니다.")
+            documents.seed(OWNER, documentId, sourceText)
             return conversionId
         }
     }

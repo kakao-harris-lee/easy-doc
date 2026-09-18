@@ -319,7 +319,7 @@ private object ReviewPayloadCodec {
                 item.sourceAnchors.forEach { anchor ->
                     output.writeInt(anchor.sourceUnitIndexes.size)
                     anchor.sourceUnitIndexes.forEach(output::writeInt)
-                    output.writeUTF(anchor.quote)
+                    output.writeLongText(anchor.quote)
                 }
                 output.writeInt(item.easyUnitIndexes.size)
                 item.easyUnitIndexes.forEach(output::writeInt)
@@ -344,7 +344,7 @@ private object ReviewPayloadCodec {
                     val anchors =
                         List(input.readInt()) {
                             val indexes = List(input.readInt()) { input.readInt() }
-                            SourceAnchor(indexes, input.readUTF())
+                            SourceAnchor(indexes, input.readLongText())
                         }
                     val easyIndexes = List(input.readInt()) { input.readInt() }
                     val state = ReviewItemState.valueOf(input.readUTF())
@@ -362,6 +362,22 @@ private object ReviewPayloadCodec {
     }
 
     private fun DataInputStream.readNullable(): String? = if (readBoolean()) readUTF() else null
+
+    /** `DataOutput.writeUTF`의 65,535바이트 제한을 넘을 수 있는 원문 근거용 길이-prefix UTF-8. */
+    private fun DataOutputStream.writeLongText(value: String) {
+        val bytes = value.toByteArray(Charsets.UTF_8)
+        require(bytes.size <= MAX_ANCHOR_BYTES) { "검수 원문 근거가 너무 깁니다" }
+        writeInt(bytes.size)
+        write(bytes)
+    }
+
+    private fun DataInputStream.readLongText(): String {
+        val size = readInt()
+        require(size in 0..MAX_ANCHOR_BYTES) { "검수 원문 근거 길이가 올바르지 않습니다" }
+        return ByteArray(size).also { readFully(it) }.toString(Charsets.UTF_8)
+    }
+
+    private const val MAX_ANCHOR_BYTES = 80_000
 }
 
 const val REVIEW_REVISION_CONFLICT_MESSAGE: String = "검수 표시가 바뀌었습니다. 다시 불러와 주세요"

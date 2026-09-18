@@ -22,6 +22,8 @@ interface ReviewSupportPanelProps {
   dirty: boolean
   sourceAvailable: boolean
   mappingAvailable: boolean
+  contentConflict: boolean
+  onContentConflict: () => void
   onNavigateSource: (indexes: number[], trigger: HTMLButtonElement) => void
 }
 
@@ -87,6 +89,8 @@ export function ReviewSupportPanel({
   dirty,
   sourceAvailable,
   mappingAvailable,
+  contentConflict,
+  onContentConflict,
   onNavigateSource,
 }: ReviewSupportPanelProps) {
   const headingId = useId()
@@ -115,21 +119,33 @@ export function ReviewSupportPanel({
       })
       setResponse(next)
     } catch (caught) {
-      setError(
-        caught instanceof ApiError
-          ? caught.message
-          : '확인할 내용을 준비하지 못했습니다. 다시 시도해 주세요.',
-      )
+      if (caught instanceof ApiError && caught.status === 409) {
+        onContentConflict()
+        setError('다른 화면에서 본문이 바뀌었습니다. 최신 내용을 불러온 뒤 다시 분석해 주세요.')
+      } else {
+        setError(
+          caught instanceof ApiError
+            ? caught.message
+            : '확인할 내용을 준비하지 못했습니다. 다시 시도해 주세요.',
+        )
+      }
     } finally {
       setLoading(false)
     }
   }
 
-  async function reloadAfterConflict(): Promise<void> {
+  async function reloadAfterConflict(): Promise<ReviewSupportResponse | null> {
     try {
-      setResponse(await getReviewSupport(conversionId))
-    } catch {
-      // 충돌 안내가 더 구체적이다. 재조회까지 실패해도 사용자가 적던 사유는 그대로 둔다.
+      const latest = await getReviewSupport(conversionId)
+      setResponse(latest)
+      return latest
+    } catch (caught) {
+      setError(
+        caught instanceof ApiError
+          ? `최신 검수 상태를 불러오지 못했습니다. ${caught.message}`
+          : '최신 검수 상태를 불러오지 못했습니다. 다시 시도해 주세요.',
+      )
+      return null
     }
   }
 
@@ -158,8 +174,11 @@ export function ReviewSupportPanel({
       setNotice('검수 표시를 저장했습니다.')
     } catch (caught) {
       if (caught instanceof ApiError && caught.status === 409) {
-        setNotice('다른 화면에서 내용이나 검수 표시가 바뀌었습니다. 최신 상태를 불러왔습니다.')
-        await reloadAfterConflict()
+        const latest = await reloadAfterConflict()
+        if (latest !== null) {
+          if (latest.status === 'stale') onContentConflict()
+          setNotice('다른 화면에서 내용이나 검수 표시가 바뀌었습니다. 최신 상태를 불러왔습니다.')
+        }
       } else {
         setError(
           caught instanceof ApiError
@@ -234,6 +253,7 @@ export function ReviewSupportPanel({
                 type="button"
                 variant="outline"
                 className="mt-3"
+                disabled={contentConflict || loading}
                 onClick={() => void analyze()}
               >
                 다시 분석
@@ -249,7 +269,7 @@ export function ReviewSupportPanel({
           {error !== null && (
             <div className="form-error mt-3" role="alert">
               <p>{error}</p>
-              {assessment === null && (
+              {assessment === null && !contentConflict && (
                 <Button
                   type="button"
                   variant="outline"
@@ -295,7 +315,7 @@ export function ReviewSupportPanel({
                 title="누락 의심"
                 items={missingItems}
                 empty="자동 검사에서 누락 의심 항목을 찾지 못했습니다. 조건과 예외는 직접 확인해 주세요."
-                disabled={dirty || stale}
+                disabled={dirty || stale || contentConflict}
                 savingItemId={savingItemId}
                 reasonItemId={reasonItemId}
                 reasonDrafts={reasonDrafts}
@@ -311,7 +331,7 @@ export function ReviewSupportPanel({
                 title="조건 관계 확인"
                 items={relationItems}
                 empty="조건 관계 확인 항목을 불러오지 못했습니다. 문서 전체를 직접 비교해 주세요."
-                disabled={dirty || stale}
+                disabled={dirty || stale || contentConflict}
                 savingItemId={savingItemId}
                 reasonItemId={reasonItemId}
                 reasonDrafts={reasonDrafts}
@@ -411,9 +431,13 @@ function ReviewItemGroup({
                     <textarea
                       id={`review-reason-${item.item_id}`}
                       className="mt-1 min-h-24 w-full rounded-[10px] border border-input bg-background px-3 py-2"
-                      maxLength={500}
                       value={reasonDrafts[item.item_id] ?? item.reason ?? ''}
-                      onChange={(event) => onReasonChange(item.item_id, event.target.value)}
+                      onChange={(event) =>
+                        onReasonChange(
+                          item.item_id,
+                          Array.from(event.target.value).slice(0, 500).join(''),
+                        )
+                      }
                       disabled={disabled || saving}
                     />
                   </div>
