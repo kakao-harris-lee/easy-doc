@@ -7,11 +7,14 @@
 
 import { clearToken, readToken } from './token'
 import type {
+  ActionGuideJob,
+  ActionGuideJobCollection,
+  AnalyzeReviewSupportRequest,
   ConversionFeedbackRequest,
   ConversionFeedbackResponse,
   ConversionResponse,
   ConversionReviewRequest,
-  AnalyzeReviewSupportRequest,
+  CreateActionGuideJobRequest,
   DocumentCreatedResponse,
   DocumentListResponse,
   DocumentSourceResponse,
@@ -424,6 +427,48 @@ export function updateReviewSupportItem(
     `/conversions/${conversionId}/review-support/items/${itemId}`,
     { method: 'PUT', body },
   )
+}
+
+/** GET /conversions/{id}/action-guide-jobs — 실행 중 작업과 최신 작업·크레딧 상태를 읽는다. */
+export function listActionGuideJobs(
+  conversionId: string,
+  signal?: AbortSignal,
+): Promise<ActionGuideJobCollection> {
+  return requestJson<ActionGuideJobCollection>(`/conversions/${conversionId}/action-guide-jobs`, {
+    signal,
+  })
+}
+
+/** GET /conversions/{id}/action-guide-jobs/{jobId} — 행동 안내 작업 한 건의 상태를 읽는다. */
+export function getActionGuideJob(
+  conversionId: string,
+  jobId: string,
+  signal?: AbortSignal,
+): Promise<ActionGuideJob> {
+  return requestJson<ActionGuideJob>(`/conversions/${conversionId}/action-guide-jobs/${jobId}`, {
+    signal,
+  })
+}
+
+export interface ActionGuideJobCreationResult {
+  job: ActionGuideJob
+  /** 예약 직후의 가용 크레딧. 헤더가 없거나 정수가 아니면 null이다. */
+  creditBalance: number | null
+}
+
+/** POST /conversions/{id}/action-guide-jobs — 현재 본문 기준 행동 안내 생성을 접수한다. */
+export async function createActionGuideJob(
+  conversionId: string,
+  body: CreateActionGuideJobRequest,
+): Promise<ActionGuideJobCreationResult> {
+  const response = await send(`/conversions/${conversionId}/action-guide-jobs`, {
+    method: 'POST',
+    body,
+  })
+  return {
+    job: (await response.json()) as ActionGuideJob,
+    creditBalance: parseIntHeader(response.headers.get('X-Credit-Balance')),
+  }
 }
 
 /**

@@ -15,7 +15,7 @@ data class WorkspaceUsageResponse(
     @get:JsonProperty("output_tokens") val outputTokens: Long,
     @get:JsonProperty("estimated_cost_usd") val estimatedCostUsd: String?,
     @get:JsonProperty("cost_unknown_calls") val costUnknownCalls: Int,
-    /** 완성 자체가 나지 않은 호출 수(`outcome = provider_error`, V18). 계약 2.26.0 신설. */
+    /** 완성 결과를 확인하지 못한 호출 수(`provider_error | outcome_unknown`). */
     @get:JsonProperty("failed_calls") val failedCalls: Int,
     @get:JsonProperty("by_purpose") val byPurpose: List<PurposeUsageItemResponse>,
 ) {
@@ -43,7 +43,7 @@ data class PurposeUsageItemResponse(
     @get:JsonProperty("input_tokens") val inputTokens: Long,
     @get:JsonProperty("output_tokens") val outputTokens: Long,
     @get:JsonProperty("estimated_cost_usd") val estimatedCostUsd: String?,
-    /** 이 목적으로 완성 자체가 나지 않은 호출 수. 계약 2.26.0 신설. */
+    /** 이 목적으로 완성 결과를 확인하지 못한 호출 수. */
     @get:JsonProperty("failed_calls") val failedCalls: Int,
 ) {
     companion object {

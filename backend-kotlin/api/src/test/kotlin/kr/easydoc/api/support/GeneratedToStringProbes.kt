@@ -30,7 +30,12 @@ class GeneratedToStringProbes(
 
     /** 민감 파라미터를 든 제품 `data class` 마다 하나. */
     val dataClassProbes: List<ToStringProbe> by lazy {
-        classes.filter { it.isData }.sortedBy { it.qualifiedName }.mapNotNull(::dataClassProbe)
+        // `data object`는 컴파일러 생성 toString을 갖지만 저장 필드와 주 생성자가 없다.
+        // 심을 값 자체가 없으므로 생성자 기반 누출 검사의 분모에서 제외한다.
+        classes
+            .filter { it.isData && it.objectInstance == null }
+            .sortedBy { it.qualifiedName }
+            .mapNotNull(::dataClassProbe)
     }
 
     /**

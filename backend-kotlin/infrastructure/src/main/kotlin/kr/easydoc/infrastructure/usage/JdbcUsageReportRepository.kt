@@ -19,7 +19,7 @@ import java.util.UUID
  *
  * 문서 수·문자 수는 U2와 같은 규칙을 쓴다 — 같은 문서를 대상으로 한 여러 행
  * (재시도·보정)은 `document_id`로 distinct 한 뒤에만 합산한다(`document_totals` CTE).
- * 크레딧은 실제 소비 원장(`credit_transactions`, `consume/conversion`)을 우선해 성공한
+ * 크레딧은 실제 소비 원장(`credit_transactions`, `consume` 중 `conversion`·`action_guide`)을 우선해 성공한
  * 재변환도 센다. V15 이전처럼 소비 원장이 없는 그룹만 문서별 계산값으로 대체한다.
  * `call_totals`는 U2의 `callTotals`와 같은 식으로 비용 미상(`estimated_cost_usd IS NULL`)을
  * 0으로 섞지 않고 [UsageReportRow.costUnknownCalls]로만 센다.
@@ -120,7 +120,7 @@ class JdbcUsageReportRepository(private val jdbc: JdbcClient) : UsageReportRepos
             call_totals AS (
                 SELECT user_id, workspace_id,
                        count(*) FILTER (WHERE outcome = 'completed') AS llm_calls,
-                       count(*) FILTER (WHERE outcome = 'provider_error') AS failed_calls,
+                       count(*) FILTER (WHERE outcome IN ('provider_error', 'outcome_unknown')) AS failed_calls,
                        coalesce(sum(input_tokens) FILTER (WHERE outcome = 'completed'), 0) AS input_tokens,
                        coalesce(sum(output_tokens) FILTER (WHERE outcome = 'completed'), 0) AS output_tokens,
                        -- sum()은 NULL을 건너뛰고 행이 전부 NULL이면 NULL을 돌려준다 — 미상 비용을
@@ -135,10 +135,13 @@ class JdbcUsageReportRepository(private val jdbc: JdbcClient) : UsageReportRepos
             ),
             credit_totals AS (
                 SELECT owner_user_id AS user_id, workspace_id,
-                       -sum(balance_delta)::bigint AS credits
+                       coalesce(
+                           -sum(balance_delta) FILTER (WHERE kind = 'consume'),
+                           0
+                       )::bigint AS credits
                 FROM credit_transactions
                 WHERE created_at >= :from AND created_at < :toExclusive
-                  AND kind = 'consume' AND reason = 'conversion'
+                  AND reason IN ('conversion', 'action_guide')
                 GROUP BY owner_user_id, workspace_id
             )
             SELECT
