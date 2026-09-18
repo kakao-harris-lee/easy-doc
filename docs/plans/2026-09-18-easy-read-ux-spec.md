@@ -1,6 +1,6 @@
 # 쉬운글 개선 UX 명세
 
-작성일: 2026-09-18 · 상태: 설계안. 아래 화면은 미구현이다.
+작성일: 2026-09-18 · 상태: R1 검수 패널 구현·로컬 E2E 완료, R2~R7 화면은 설계안.
 
 연결: [로드맵](2026-09-18-easy-read-improvement-roadmap.md) · [구현 명세](2026-09-18-easy-read-implementation-spec.md) · [검증 기준](2026-09-18-easy-read-validation-release.md).
 

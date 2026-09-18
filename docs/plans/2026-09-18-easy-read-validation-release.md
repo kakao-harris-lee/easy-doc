@@ -1,6 +1,6 @@
 # 쉬운글 개선 검증·출시·운영 계획
 
-작성일: 2026-09-18 · 상태: 향후 실행 절차. 아래 테스트·파일럿·배포를 이번 문서 작성 중 실행한 것은 아니다.
+작성일: 2026-09-18 · 상태: R0·R1 로컬 검증 완료. 유료 평가·원격 CI·파일럿·배포는 미실행.
 
 연결: [로드맵](2026-09-18-easy-read-improvement-roadmap.md) · [구현 명세](2026-09-18-easy-read-implementation-spec.md) · [UX](2026-09-18-easy-read-ux-spec.md) · [작업 ID](2026-09-18-easy-read-delivery-plan.md).
 
@@ -150,6 +150,6 @@ R2의 새 유스케이스 실측은 기존 Kotlin 품질 레인에 opt-in 사례
 
 ## 10. 이번 문서 세트의 완료 범위
 
-완료: 단계별 개발 절차, 구현 제안, UX, 인수·품질·출시 기준 작성.
+완료: 단계별 개발 절차, 구현·UX·인수·품질·출시 기준, R0 표본, R1 Kotlin/React/계약/DB 구현. `./gradlew build --console=plain`, `npm run check`, `npm run test -- --run`(53 파일·689개), `npm run build`, Compose 구성, fake LLM 기반 `E13` Playwright 1건이 통과했다.
 
-미실행: 제품 구현·마이그레이션·실제 LLM 호출·실무자/독자 평가·CI·배포. 이후 ER 작업이 완료될 때 해당 근거를 붙여 상태를 갱신한다.
+미실행: 실제 유료 LLM 호출, 실무자/독자 평가, 원격 CI, 제한 파일럿, 배포와 운영 관측. V28 마이그레이션은 일회용 E2E PostgreSQL에서 적용됐지만 운영 환경에는 적용하지 않았다. 기능 토글 기본값은 OFF다.

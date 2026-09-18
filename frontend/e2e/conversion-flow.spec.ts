@@ -144,11 +144,11 @@ test.describe('변환 수직 흐름', () => {
       page.getByRole('button', { name: /검수할 내용/ }).click(),
     ])
     expect(analysisResponse.status()).toBe(ROUTES.reviewSupportAnalyze.ok)
-    await expect(page.getByText('대상 확인')).toBeVisible()
-    await expect(page.getByText('모두·하나 확인')).toBeVisible()
-    await expect(page.getByText('예외 확인')).toBeVisible()
-    await expect(page.getByText('기한·행동 확인')).toBeVisible()
-    await expect(page.getByText('금액·적용 대상 확인')).toBeVisible()
+    await expect(page.getByText('대상 확인', { exact: true })).toBeVisible()
+    await expect(page.getByText('모두·하나 확인', { exact: true })).toBeVisible()
+    await expect(page.getByText('예외 확인', { exact: true })).toBeVisible()
+    await expect(page.getByText('기한·행동 확인', { exact: true })).toBeVisible()
+    await expect(page.getByText('금액·적용 대상 확인', { exact: true })).toBeVisible()
     await expect(page.getByText(/모든 의미가 보존됐다는 뜻은 아닙니다/)).toBeVisible()
 
     // 첫 항목을 확인하면 assessment/content/review revision을 포함한 CAS 요청으로 저장된다.

@@ -1,6 +1,6 @@
 # 쉬운글 개선 구현 명세
 
-작성일: 2026-09-18 · 상태: **제안 명세, 미구현**. 현행 계약을 변경하지 않았다.
+작성일: 2026-09-18 · 상태: **R1 구현 반영, R2 이후 제안 명세**. 현행 계약은 `easy-doc-v1.yaml` 2.38.0에 R1 경로와 필드를 반영했다.
 
 연결: [로드맵](2026-09-18-easy-read-improvement-roadmap.md) · [작업 분할](2026-09-18-easy-read-delivery-plan.md) · [UX](2026-09-18-easy-read-ux-spec.md) · [인수 기준](2026-09-18-easy-read-validation-release.md).
 
