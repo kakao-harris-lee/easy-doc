@@ -23,16 +23,20 @@ import kr.easydoc.application.document.DocumentTextExtractor
 import kr.easydoc.application.document.EnvelopeRotation
 import kr.easydoc.application.document.OriginalReflection
 import kr.easydoc.application.document.OriginalStructureReflector
+import kr.easydoc.application.document.ReviewAssessmentRepository
+import kr.easydoc.application.document.ReviewSupportService
 import kr.easydoc.application.document.SealedStores
 import kr.easydoc.application.document.SegmentMapDerivation
 import kr.easydoc.application.document.StoredOriginalReader
 import kr.easydoc.application.document.WorkspaceLookup
+import kr.easydoc.core.document.ReviewCapabilities
 import kr.easydoc.core.llm.LlmOptions
 import kr.easydoc.core.llm.LlmProvider
 import kr.easydoc.infrastructure.crypto.MIGRATE_PROFILE
 import kr.easydoc.infrastructure.export.PackagedOriginalReflector
 import kr.easydoc.infrastructure.llm.LlmProperties
 import kr.easydoc.infrastructure.queue.JdbcConversionQueue
+import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.context.annotation.Profile
@@ -49,6 +53,7 @@ import org.springframework.jdbc.core.simple.JdbcClient
  */
 @Suppress("TooManyFunctions")
 @Configuration(proxyBeanMethods = false)
+@EnableConfigurationProperties(ReviewSupportProperties::class)
 @Profile("!$MIGRATE_PROFILE")
 class DocumentConfiguration {
     @Bean
@@ -61,6 +66,10 @@ class DocumentConfiguration {
 
     @Bean
     fun conversionRepository(jdbcClient: JdbcClient): ConversionRepository = JdbcConversionRepository(jdbcClient)
+
+    @Bean
+    fun reviewAssessmentRepository(jdbcClient: JdbcClient): ReviewAssessmentRepository =
+        JdbcReviewAssessmentRepository(jdbcClient)
 
     @Bean
     fun conversionQueue(jdbcClient: JdbcClient): JdbcConversionQueue = JdbcConversionQueue(jdbcClient)
@@ -159,6 +168,7 @@ class DocumentConfiguration {
         documents: DocumentRepository,
         segmentMapDerivation: SegmentMapDerivation,
         transactionRunner: TransactionRunner,
+        reviewSupportProperties: ReviewSupportProperties,
     ): ConversionQueryService =
         ConversionQueryService(
             conversions = conversions,
@@ -167,6 +177,15 @@ class DocumentConfiguration {
             documents = documents,
             segmentMapDerivation = segmentMapDerivation,
             transaction = transactionRunner,
+            reviewCapabilities =
+                ReviewCapabilities(
+                    reviewSupport = reviewSupportProperties.enabled,
+                    actionGuide = false,
+                    tableRelations = false,
+                    reviewHistory = false,
+                    explanations = false,
+                    illustrations = false,
+                ),
         )
 
     /** 검수 저장 유스케이스. 응답 조립은 조회 쪽을 그대로 쓴다. */
@@ -181,6 +200,25 @@ class DocumentConfiguration {
             conversions = conversions,
             cipher = cipher,
             query = query,
+            transaction = transactionRunner,
+        )
+
+    @Suppress("LongParameterList") // Spring 조립점의 포트 수이며 도메인 입력 복잡도가 아니다.
+    @Bean
+    fun reviewSupportService(
+        properties: ReviewSupportProperties,
+        conversions: ConversionRepository,
+        documents: DocumentRepository,
+        assessments: ReviewAssessmentRepository,
+        cipher: ContentCipher,
+        transactionRunner: TransactionRunner,
+    ): ReviewSupportService =
+        ReviewSupportService(
+            enabled = properties.enabled,
+            conversions = conversions,
+            documents = documents,
+            assessments = assessments,
+            cipher = cipher,
             transaction = transactionRunner,
         )
 
@@ -269,12 +307,14 @@ class DocumentConfiguration {
         originals: DocumentOriginalRepository,
         conversions: ConversionRepository,
         feedback: ConversionFeedbackRepository,
+        reviewAssessments: ReviewAssessmentRepository,
     ): SealedStores =
         SealedStores(
             documents = documents,
             originals = originals,
             conversions = conversions,
             feedback = feedback,
+            reviewAssessments = reviewAssessments,
         )
 
     /** 키 회전 유스케이스. 봉인된 열이 사는 저장소를 [SealedStores] 로 **전부** 받는다. */

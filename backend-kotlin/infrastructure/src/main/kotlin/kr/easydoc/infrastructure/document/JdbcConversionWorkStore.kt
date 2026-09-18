@@ -81,6 +81,7 @@ class JdbcConversionWorkStore(private val jdbc: JdbcClient) : ConversionWorkStor
                     input_tokens = :inputTokens,
                     output_tokens = :outputTokens,
                     failure_code = NULL,
+                    content_revision = 1,
                     updated_at = now()
                 WHERE id = :id AND (status = :pending OR status = :processing)
                 """.trimIndent(),

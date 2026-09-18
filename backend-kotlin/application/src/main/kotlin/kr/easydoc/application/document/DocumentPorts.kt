@@ -285,6 +285,7 @@ data class StoredConversion(
     val inputTokens: Int?,
     val outputTokens: Int?,
     val failureCode: String?,
+    val contentRevision: Long = if (status.exposesResult) 1 else 0,
 ) {
     /** 로그 허용목록 그대로 — 식별자·상태·형식·실패 코드뿐이다. */
     override fun toString(): String =
@@ -305,6 +306,7 @@ class StoredExport(
 class LockedConversion(
     val status: ConversionStatus,
     val envelope: ConversionEnvelope,
+    val contentRevision: Long = if (status.exposesResult) 1 else 0,
 ) {
     /** 식별자·상태·세대만 남긴다. */
     override fun toString(): String =
@@ -400,6 +402,20 @@ interface ConversionRepository {
         requiredStatus: ConversionStatus,
         updated: ConversionEnvelope,
     ): Boolean
+
+    /**
+     * 본문 버전 CAS를 포함한 저장. 이전 구현 대역은 기존 팔로 위임해 호환하고, 실물 저장소는
+     * 이 메서드를 재정의해 버전 조건과 증가를 같은 UPDATE에 둔다.
+     */
+    @Suppress("LongParameterList")
+    fun saveReview(
+        ownerId: UUID,
+        expected: ConversionEnvelope,
+        requiredStatus: ConversionStatus,
+        updated: ConversionEnvelope,
+        expectedContentRevision: Long,
+        updatedContentRevision: Long,
+    ): Boolean = saveReview(ownerId, expected, requiredStatus, updated)
 
     /**
      * 재변환 호출 예산을 **호출 전에** 예약한다(계획 §4 결정 3 「비용 상한은 요청이 아니라
@@ -627,6 +643,7 @@ class SealedStores(
     val originals: DocumentOriginalRepository,
     val conversions: ConversionRepository,
     val feedback: ConversionFeedbackRepository,
+    val reviewAssessments: ReviewAssessmentRepository? = null,
 )
 
 /**

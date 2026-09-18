@@ -5,10 +5,14 @@ import {
   ApiError,
   NETWORK_ERROR_STATUS,
   createDocumentFromText,
+  analyzeReviewSupport,
   downloadExport,
+  getReviewSupport,
   listDocuments,
   reconvertUnit,
+  saveReview,
   setUnauthorizedHandler,
+  updateReviewSupportItem,
 } from './client'
 import { readToken, writeToken } from './token'
 import { userResponse } from '../test/factories'
@@ -71,6 +75,62 @@ describe('요청 조립', () => {
     await listDocuments({ limit: 20, offset: 40 })
 
     expect(fetchMock.mock.calls[0]?.[0]).toBe(`${apiBaseUrl}/documents?limit=20&offset=40`)
+  })
+
+  it('본문 저장에 기대 content revision을 함께 보낸다', async () => {
+    fetchMock.mockResolvedValue(jsonResponse(200, { id: 'c1', content_revision: 4 }))
+
+    await saveReview('c1', '고친 글', 3)
+
+    const [url, init] = fetchMock.mock.calls[0] ?? []
+    expect(url).toBe(`${apiBaseUrl}/conversions/c1`)
+    expect(init?.method).toBe('PUT')
+    expect(JSON.parse(init?.body as string)).toEqual({
+      edited_text: '고친 글',
+      expected_content_revision: 3,
+    })
+  })
+})
+
+describe('review support API', () => {
+  it('저장 상태 조회와 현재 revision 분석 경로를 구분한다', async () => {
+    const payload = { status: 'not_generated', assessment: null }
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, payload))
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, payload))
+
+    await getReviewSupport('c1')
+    await analyzeReviewSupport('c1', { expected_content_revision: 7 })
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(`${apiBaseUrl}/conversions/c1/review-support`)
+    expect(fetchMock.mock.calls[0]?.[1]?.method).toBe('GET')
+    expect(fetchMock.mock.calls[1]?.[0]).toBe(`${apiBaseUrl}/conversions/c1/review-support`)
+    expect(fetchMock.mock.calls[1]?.[1]?.method).toBe('POST')
+    expect(JSON.parse(fetchMock.mock.calls[1]?.[1]?.body as string)).toEqual({
+      expected_content_revision: 7,
+    })
+  })
+
+  it('항목 저장에 assessment·본문·검수 revision과 사유를 보낸다', async () => {
+    fetchMock.mockResolvedValue(jsonResponse(200, { status: 'ready', assessment: null }))
+
+    await updateReviewSupportItem('c1', 'item-1', {
+      assessment_id: 'assessment-1',
+      expected_content_revision: 2,
+      expected_review_revision: 5,
+      state: 'not_applicable',
+      reason: '이 문서에는 신청 절차가 없습니다.',
+    })
+
+    const [url, init] = fetchMock.mock.calls[0] ?? []
+    expect(url).toBe(`${apiBaseUrl}/conversions/c1/review-support/items/item-1`)
+    expect(init?.method).toBe('PUT')
+    expect(JSON.parse(init?.body as string)).toEqual({
+      assessment_id: 'assessment-1',
+      expected_content_revision: 2,
+      expected_review_revision: 5,
+      state: 'not_applicable',
+      reason: '이 문서에는 신청 절차가 없습니다.',
+    })
   })
 })
 

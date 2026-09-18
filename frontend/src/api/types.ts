@@ -242,6 +242,16 @@ export interface SegmentMap {
   source_unit_kinds: SourceUnitKind[]
 }
 
+/** 서버가 이 변환에 공개한 단계별 기능. 없는 옛 응답은 화면에서 모두 false로 읽는다. */
+export interface ReviewCapabilities {
+  review_support: boolean
+  action_guide: boolean
+  table_relations: boolean
+  review_history: boolean
+  explanations: boolean
+  illustrations: boolean
+}
+
 /** 변환 상태·결과. 완료 전에는 결과 필드가 비어 있다. */
 export interface ConversionResponse {
   id: string
@@ -306,11 +316,68 @@ export interface ConversionResponse {
    * 원문을 받고, 본문은 `easy_text`·`edited_text`에 있다. 배열은 색인만 나른다.
    */
   segment_map: SegmentMap | null
+  /** 저장된 본문의 서버 관리 버전. 완료 전 0, 첫 완료 1이다. */
+  content_revision: number
+  /** 배포 시차가 있는 옛 응답에는 없을 수 있다. 없으면 기능을 노출하지 않는다. */
+  review_capabilities?: ReviewCapabilities
 }
 
 /** PUT /conversions/{id} 요청 본문. */
 export interface ConversionReviewRequest {
   edited_text: string
+  expected_content_revision: number
+}
+
+// --- R1 검수 지원 ---
+
+export type ReviewItemKind = 'missing_fact' | 'relation_check'
+export type ReviewItemState = 'needs_review' | 'confirmed' | 'not_applicable'
+export type ReviewCoverage = 'supported' | 'limited'
+export type ReviewCoverageLimitation = 'mapping_unavailable' | 'signal_limit' | 'ambiguous_source'
+
+/** 원문 줄 위치. source_unit_indexes는 저장된 추출 원문을 줄로 나눈 0 기반 색인이다. */
+export interface SourceAnchor {
+  source_unit_indexes: number[]
+  quote: string
+}
+
+export interface ReviewItem {
+  item_id: string
+  kind: ReviewItemKind
+  rule_code: string
+  source_anchors: SourceAnchor[]
+  easy_unit_indexes: number[]
+  state: ReviewItemState
+  reason: string | null
+  confirmed_by: string | null
+  confirmed_at: string | null
+}
+
+export interface ReviewAssessment {
+  assessment_id: string
+  content_revision: number
+  analyzer_version: string
+  review_revision: number
+  coverage: ReviewCoverage
+  limitations: ReviewCoverageLimitation[]
+  items: ReviewItem[]
+}
+
+export interface ReviewSupportResponse {
+  status: 'not_generated' | 'ready' | 'stale'
+  assessment: ReviewAssessment | null
+}
+
+export interface AnalyzeReviewSupportRequest {
+  expected_content_revision: number
+}
+
+export interface UpdateReviewItemRequest {
+  assessment_id: string
+  expected_content_revision: number
+  expected_review_revision: number
+  state: ReviewItemState
+  reason: string | null
 }
 
 /** 문서 목록 한 줄 (문서 메타 + 최신 변환 상태). */

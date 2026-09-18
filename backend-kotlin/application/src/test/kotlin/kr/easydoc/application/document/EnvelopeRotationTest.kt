@@ -411,6 +411,8 @@ class EnvelopeRotationTest {
                 -> world.rotation.rotateConversion(CONVERSION)
 
                 EncryptedField.CONVERSION_FEEDBACK_COMMENT -> world.rotation.rotateFeedback(CONVERSION)
+
+                EncryptedField.REVIEW_ASSESSMENT_PAYLOAD -> world.rotation.rotateReviewAssessment(ASSESSMENT)
             }
 
         check(outcome == RotationOutcome.ROTATED) {
@@ -421,6 +423,7 @@ class EnvelopeRotationTest {
 
     private companion object {
         val CONVERSION: UUID = UUID.fromString("00000000-0000-4000-8000-0000000000c1")
+        val ASSESSMENT: UUID = UUID.fromString("00000000-0000-4000-8000-0000000000a1")
         val DOCUMENT: UUID = UUID.fromString("00000000-0000-4000-8000-0000000000d1")
         const val OLD_VERSION = 1
         const val NEW_VERSION = 2
@@ -469,6 +472,7 @@ class EnvelopeRotationTest {
         val originals = FakeDocumentOriginalRepository()
         val conversions = FakeConversionRepository()
         val feedback = FakeRotatingFeedbackRepository()
+        val reviewAssessments = FakeReviewAssessmentRepository()
 
         val rotation =
             EnvelopeRotation(
@@ -478,6 +482,7 @@ class EnvelopeRotationTest {
                         originals = originals,
                         conversions = conversions,
                         feedback = feedback,
+                        reviewAssessments = reviewAssessments,
                     ),
                 cipher = cipher,
                 transaction = transaction,
@@ -489,6 +494,15 @@ class EnvelopeRotationTest {
             originals.original = sealedBytes(ORIGINAL_FILE, OLD_VERSION)
             conversions.envelope = envelopeOf(OLD_VERSION, "초안", "검수본")
             feedback.comment = sealed("의견", OLD_VERSION)
+            reviewAssessments.row =
+                StoredReviewAssessment(
+                    ASSESSMENT,
+                    CONVERSION,
+                    1,
+                    "v1",
+                    0,
+                    sealed("검수 payload", OLD_VERSION),
+                )
         }
     }
 
@@ -743,5 +757,56 @@ class EnvelopeRotationTest {
             after: UUID,
             limit: Int,
         ): List<UUID> = error("회전 배치의 후보 선정은 KeyRotationBatch 몫이다 — EnvelopeRotation 이 부르면 안 된다")
+    }
+
+    private class FakeReviewAssessmentRepository : ReviewAssessmentRepository {
+        var row: StoredReviewAssessment? = null
+
+        override fun findLatestOwned(
+            ownerId: UUID,
+            conversionId: UUID,
+        ): StoredReviewAssessment? = error("회전 전용")
+
+        override fun findExact(
+            ownerId: UUID,
+            conversionId: UUID,
+            contentRevision: Long,
+            analyzerVersion: String,
+        ): StoredReviewAssessment? = error("회전 전용")
+
+        override fun lockOwned(
+            ownerId: UUID,
+            conversionId: UUID,
+            assessmentId: UUID,
+        ): StoredReviewAssessment? = error("회전 전용")
+
+        override fun insert(
+            ownerId: UUID,
+            assessment: StoredReviewAssessment,
+        ): Boolean = error("회전 전용")
+
+        override fun update(
+            ownerId: UUID,
+            assessmentId: UUID,
+            expectedReviewRevision: Long,
+            payload: EncryptedContent,
+            updatedReviewRevision: Long,
+        ): Boolean = error("회전 전용")
+
+        override fun lockEnvelope(assessmentId: UUID): StoredReviewAssessment? = row
+
+        override fun rewriteEnvelope(
+            expected: StoredReviewAssessment,
+            payload: EncryptedContent,
+        ): Boolean {
+            row = expected.copy(payload = payload)
+            return true
+        }
+
+        override fun idsOlderThan(
+            keyVersion: Int,
+            after: UUID,
+            limit: Int,
+        ): List<UUID> = error("배치 전용")
     }
 }

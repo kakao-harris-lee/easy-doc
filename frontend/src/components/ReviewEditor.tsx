@@ -11,7 +11,7 @@ import { Download, Save, ShieldAlert } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { HISTORY_PATH } from '../routes/paths'
 
-import { ApiError, downloadExport, reconvertUnit, saveReview } from '../api/client'
+import { ApiError, downloadExport, getConversion, reconvertUnit, saveReview } from '../api/client'
 import type { ConversionResponse, ExportFormat } from '../api/types'
 import { cn } from '../lib/utils'
 import { computeEasyTextFingerprint } from '../review/fingerprint'
@@ -25,6 +25,7 @@ import {
 import { setUnsavedChanges } from '../review/unsavedChanges'
 import { FormatPreservationPanel, PdfExportNotice } from './FormatPreservationPanel'
 import { ReviewFeedback } from './ReviewFeedback'
+import { ReviewSupportPanel } from './ReviewSupportPanel'
 import {
   MAX_SEGMENTED_UNITS,
   SegmentedResultEditor,
@@ -77,7 +78,7 @@ interface Feedback {
  * 두면 진행 문구가 **도는 도중에 바뀌지 않는다** — `dirty`로 그때그때 고르면 저장이 끝나는
  * 순간 "저장하고 내려받는 중…"이 "내려받는 중…"으로 갈아치워진다.
  */
-type Pending = 'save' | 'download' | 'saveAndDownload' | null
+type Pending = 'save' | 'download' | 'saveAndDownload' | 'refresh' | null
 
 /** 검수 패널. DOM 순서이자 탭 순서이며, §11이 요구하는 「원문 다음 결과」다. */
 const PANELS = [
@@ -174,6 +175,10 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
   /** 마지막으로 서버에 저장된 글. 이것과 draft가 다르면 저장하지 않은 변경이다. */
   const [savedText, setSavedText] = useState(initialText)
   const [reviewedAt, setReviewedAt] = useState(conversion.reviewed_at)
+  /** 본문 저장과 검수 표시가 공유하는 서버 관리 버전(CAS). */
+  const [contentRevision, setContentRevision] = useState(conversion.content_revision)
+  /** 다른 화면의 저장과 충돌해 현재 revision으로는 더 쓸 수 없는 상태. */
+  const [contentConflict, setContentConflict] = useState(false)
   /**
    * 이 변환에 의견을 보낸 시각. 아래 피드백 폼이 보내는 즉시 여기로 올라온다.
    *
@@ -269,6 +274,9 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
   const [activePanel, setActivePanel] = useState<PanelKey>('source')
   /** 저장·내려받기를 누른 버튼. 그 작업이 끝나면 초점을 여기로 돌린다. */
   const refocusRef = useRef<HTMLButtonElement | null>(null)
+  /** 검수 항목의 「원문 보기」에서 이동했다가 돌아갈 버튼과 복귀 UI 상태. */
+  const reviewReturnTargetRef = useRef<HTMLButtonElement | null>(null)
+  const [reviewNavigationActive, setReviewNavigationActive] = useState(false)
   /**
    * 지금 초점이 들어 있는 패널. 어느 쪽에도 없으면 `null`이다.
    *
@@ -752,7 +760,9 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
    */
   async function persistDraft(): Promise<void> {
     const sentDraft = draft
-    const saved = await saveReview(conversion.id, sentDraft)
+    const saved = await saveReview(conversion.id, sentDraft, contentRevision)
+    // 저장 응답의 버전은 로컬 편집이 이어졌더라도 다음 CAS 요청에 반드시 사용한다.
+    setContentRevision(saved.content_revision)
     // 기다리는 동안 사용자가 이어서 고쳤다면(§MEDIUM 리뷰) 이 응답은 그때 보낸
     // `sentDraft`에 대한 것일 뿐, 지금 화면의 최신 draft에 대한 것이 아니다. 그대로
     // 덮어쓰면 방금 고친 내용이 사라지고, `unitMap`도 그 낡은 텍스트의 구조로 다시
@@ -777,6 +787,60 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
     // 되돌리기 기준선이 된다(Part C-1) — 되돌리기는 마지막 저장 이후의 변경만
     // 되돌리는 것이지, 그 이전 어느 시점으로도 돌아가지 않는다.
     setUnitMap(withBaselines(saved.segment_map?.units ?? [], stored))
+    setContentConflict(false)
+  }
+
+  function markContentConflict(): void {
+    setContentConflict(true)
+  }
+
+  async function copyCurrentDraft(): Promise<void> {
+    try {
+      await navigator.clipboard.writeText(draft)
+      setFeedback({ kind: 'success', message: '현재 편집 내용을 복사했습니다.', announce: true })
+    } catch {
+      setFeedback({
+        kind: 'error',
+        message: '현재 편집 내용을 복사하지 못했습니다. 편집 영역에서 직접 선택해 복사해 주세요.',
+        announce: true,
+      })
+    }
+  }
+
+  async function loadLatestConversion(): Promise<void> {
+    setPending('refresh')
+    setFeedback(null)
+    try {
+      const latest = await getConversion(conversion.id)
+      if (latest.status !== 'done') {
+        throw new ApiError(409, '최신 변환이 아직 완료 상태가 아닙니다')
+      }
+      const latestText = latest.edited_text ?? latest.easy_text ?? ''
+      setDraft(latestText)
+      setSavedText(latestText)
+      setContentRevision(latest.content_revision)
+      setReviewedAt(latest.reviewed_at)
+      setFeedbackSubmittedAt(latest.feedback_submitted_at)
+      setPreservation(latest.format_preservation)
+      setUnitMap(withBaselines(latest.segment_map?.units ?? [], latestText))
+      setContentConflict(false)
+      setFeedback({
+        kind: 'success',
+        message: '최신 저장 내용을 불러왔습니다. 이전 편집 내용은 화면에서 바뀌었습니다.',
+        announce: true,
+      })
+    } catch (caught) {
+      setFeedback({
+        kind: 'error',
+        message:
+          caught instanceof ApiError
+            ? `최신 내용을 불러오지 못했습니다. ${caught.message}`
+            : '최신 내용을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.',
+        announce: true,
+      })
+    } finally {
+      setPending(null)
+    }
   }
 
   /** 서버가 준 사유를 문장 뒤에 붙인다. ApiError가 아니면 붙일 사유가 없다. */
@@ -794,12 +858,15 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
       // 보조 수단, §11 중복 낭독 금지).
       setFeedback({ kind: 'success', message: '검수 내용을 저장했습니다.', announce: false })
     } catch (caught) {
+      if (caught instanceof ApiError && caught.status === 409) markContentConflict()
       setFeedback({
         kind: 'error',
         message:
-          caught instanceof ApiError
-            ? caught.message
-            : '저장하지 못했습니다. 잠시 후 다시 시도해 주세요.',
+          caught instanceof ApiError && caught.status === 409
+            ? `다른 화면에서 내용이 바뀌었습니다. ${caught.message} 고친 내용은 화면에 그대로 있습니다. 최신 내용을 확인한 뒤 다시 저장해 주세요.`
+            : caught instanceof ApiError
+              ? caught.message
+              : '저장하지 못했습니다. 잠시 후 다시 시도해 주세요.',
         announce: true,
       })
     } finally {
@@ -840,6 +907,9 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
         announce: true,
       })
     } catch (caught) {
+      if (needsSave && !saved && caught instanceof ApiError && caught.status === 409) {
+        markContentConflict()
+      }
       // 내려받기가 막히는 사유는 백엔드 문구로 온다.
       const message =
         needsSave && !saved
@@ -888,6 +958,43 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
           hidden: activePanel !== key,
         } as const)
       : {}
+  }
+
+  /** 검수 항목의 원문 근거로 이동한다. 지도 사용이 불가능하면 전체 원문 입력으로 간다. */
+  function handleReviewSourceNavigation(indexes: number[], trigger: HTMLButtonElement): void {
+    if (source.state.status !== 'ready') return
+    const sourceText = source.state.text
+    reviewReturnTargetRef.current = trigger
+    setReviewNavigationActive(true)
+    setPanelPickedByUser(true)
+    setActivePanel('source')
+
+    const validIndexes = indexes.filter(
+      (index) => Number.isInteger(index) && index >= 0 && index < sourceText.split('\n').length,
+    )
+    if (supportsParagraphComparison && validIndexes.length > 0) {
+      setParagraphComparison(true)
+      setHighlightedSourceIndexes(validIndexes)
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          const first = validIndexes[0]
+          if (first !== undefined) {
+            const label = `원본 ${first + 1}번째 문단`
+            const target = Array.from(
+              document.querySelectorAll<HTMLTextAreaElement>('textarea'),
+            ).find((element) => element.getAttribute('aria-label') === label)
+            target?.focus()
+          }
+        })
+      })
+      return
+    }
+
+    setParagraphComparison(false)
+    setHighlightedSourceIndexes([])
+    requestAnimationFrame(() => {
+      document.getElementById(`${editorId}-source`)?.focus()
+    })
   }
 
   const status = dirty
@@ -1094,6 +1201,19 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
                   : undefined
               }
             />
+            {reviewNavigationActive && (
+              <Button
+                type="button"
+                variant="outline"
+                className="mt-3"
+                onClick={() => {
+                  setReviewNavigationActive(false)
+                  reviewReturnTargetRef.current?.focus()
+                }}
+              >
+                검수 항목으로 돌아가기
+              </Button>
+            )}
           </div>
 
           {/* 포인트색 경계로 "여기가 고치는 쪽"임을 원문 패널과 구분한다(§6.4). */}
@@ -1222,6 +1342,32 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
           </p>
         )}
 
+        {contentConflict && (
+          <div className="mt-4 rounded-[10px] border border-warning/25 bg-warning-surface p-4">
+            <p className="m-0 text-sm font-semibold text-warning">
+              다른 화면에서 저장한 최신 내용과 충돌했습니다.
+            </p>
+            <p className="m-0 mt-1 text-sm text-muted-foreground">
+              현재 편집 내용을 먼저 복사한 뒤 최신 내용을 불러와 비교해 주세요. 최신 내용을 불러오면
+              이 화면의 편집 내용은 바뀝니다.
+            </p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Button type="button" variant="outline" onClick={() => void copyCurrentDraft()}>
+                현재 편집 내용 복사
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                loading={pending === 'refresh'}
+                disabled={pending !== null}
+                onClick={() => void loadLatestConversion()}
+              >
+                최신 내용 불러오기
+              </Button>
+            </div>
+          </div>
+        )}
+
         {/* 긴 본문을 스크롤하는 동안에도 저장에 닿아야 한다(§6.4). 화면 하단 고정(fixed)이
             아니라 이 편집 묶음 안에서만 붙는 sticky다 — 묶음을 지나가면 함께 흘러가므로
             본문 마지막 요소(피드백·대응표)를 가리지 않는다(§10). 아래 여백은 홈
@@ -1236,7 +1382,7 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
               refocusRef.current = event.currentTarget
               void handleSave()
             }}
-            disabled={busy}
+            disabled={busy || contentConflict}
             loading={pending === 'save'}
           >
             {pending !== 'save' && <Save className="size-[18px]" aria-hidden="true" />}
@@ -1256,7 +1402,7 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
                   refocusRef.current = event.currentTarget
                   void handleDownload(format)
                 }}
-                disabled={busy}
+                disabled={busy || contentConflict}
                 loading={thisDownloading}
               >
                 {!thisDownloading && <Download className="size-[18px]" aria-hidden="true" />}
@@ -1272,6 +1418,19 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
             )
           })}
         </div>
+
+        {conversion.review_capabilities?.review_support === true && (
+          <ReviewSupportPanel
+            conversionId={conversion.id}
+            contentRevision={contentRevision}
+            dirty={dirty}
+            sourceAvailable={source.state.status === 'ready'}
+            mappingAvailable={supportsParagraphComparison}
+            contentConflict={contentConflict}
+            onContentConflict={markContentConflict}
+            onNavigateSource={handleReviewSourceNavigation}
+          />
+        )}
       </div>
 
       {/* 결과를 다 보고 난 자리에 둔다 — 검수 전에 묻는 만족도는 결과가 아니라 기대치를

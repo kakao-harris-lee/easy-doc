@@ -161,6 +161,30 @@ class JdbcConversionRepository(private val jdbc: JdbcClient) : ConversionReposit
         expected: ConversionEnvelope,
         requiredStatus: ConversionStatus,
         updated: ConversionEnvelope,
+    ): Boolean {
+        val revision =
+            jdbc
+                .sql(
+                    """
+                    SELECT c.content_revision FROM conversions c
+                    JOIN documents d ON d.id = c.document_id
+                    WHERE c.id = :id AND d.user_id = :ownerId AND d.retention_expires_at > now()
+                    """.trimIndent(),
+                ).param("id", expected.conversionId)
+                .param("ownerId", ownerId)
+                .query(Long::class.java)
+                .optional()
+                .orElse(-1L)
+        return saveReview(ownerId, expected, requiredStatus, updated, revision, revision)
+    }
+
+    override fun saveReview(
+        ownerId: UUID,
+        expected: ConversionEnvelope,
+        requiredStatus: ConversionStatus,
+        updated: ConversionEnvelope,
+        expectedContentRevision: Long,
+        updatedContentRevision: Long,
     ): Boolean =
         jdbc
             .sql(SAVE_REVIEW_SQL)
@@ -175,6 +199,8 @@ class JdbcConversionRepository(private val jdbc: JdbcClient) : ConversionReposit
             .param("expectedKeyVersion", expected.keyVersion)
             .param("expectedEasyText", expected.ciphertexts.easyText?.bytes)
             .param("expectedEditedText", expected.ciphertexts.editedText?.bytes)
+            .param("expectedContentRevision", expectedContentRevision)
+            .param("updatedContentRevision", updatedContentRevision)
             .update() > 0
 
     /**
@@ -268,7 +294,7 @@ class JdbcConversionRepository(private val jdbc: JdbcClient) : ConversionReposit
         val LOCK_OWNED_FOR_REVIEW_SQL =
             """
             SELECT c.id, c.status, c.easy_text_encrypted, c.edited_text_encrypted,
-                   c.encryption_scheme, c.key_version
+                   c.encryption_scheme, c.key_version, c.content_revision
             FROM conversions c
             JOIN documents d ON d.id = c.document_id
             WHERE c.id = :id AND d.user_id = :ownerId
@@ -295,7 +321,8 @@ class JdbcConversionRepository(private val jdbc: JdbcClient) : ConversionReposit
                 edited_text_encrypted = :editedText,
                 encryption_scheme = :scheme,
                 key_version = :keyVersion,
-                reviewed_at = now()
+                reviewed_at = now(),
+                content_revision = :updatedContentRevision
             WHERE id = :id
               AND document_id IN (
                   SELECT id FROM documents
@@ -306,6 +333,7 @@ class JdbcConversionRepository(private val jdbc: JdbcClient) : ConversionReposit
               AND key_version = :expectedKeyVersion
               AND easy_text_encrypted IS NOT DISTINCT FROM CAST(:expectedEasyText AS bytea)
               AND edited_text_encrypted IS NOT DISTINCT FROM CAST(:expectedEditedText AS bytea)
+              AND content_revision = :expectedContentRevision
             """.trimIndent()
 
         /**
@@ -348,7 +376,8 @@ class JdbcConversionRepository(private val jdbc: JdbcClient) : ConversionReposit
                    c.easy_text_encrypted, c.edited_text_encrypted,
                    c.encryption_scheme, c.key_version,
                    c.reviewed_at, f.submitted_at AS feedback_submitted_at,
-                   c.model, c.provider_name, c.input_tokens, c.output_tokens, c.failure_code
+                   c.model, c.provider_name, c.input_tokens, c.output_tokens, c.failure_code,
+                   c.content_revision
             FROM conversions c
             JOIN documents d ON d.id = c.document_id
             LEFT JOIN conversion_feedback f
@@ -463,12 +492,17 @@ private object ConversionRows {
             inputTokens = rs.getObject("input_tokens", Int::class.javaObjectType),
             outputTokens = rs.getObject("output_tokens", Int::class.javaObjectType),
             failureCode = rs.getString("failure_code"),
+            contentRevision = rs.getLong("content_revision"),
         )
     }
 
     /** 잠근 행 — 상태와 봉투. */
     fun toLocked(rs: ResultSet): LockedConversion =
-        LockedConversion(ConversionStatus.ofWireName(rs.getString("status")), toEnvelope(rs))
+        LockedConversion(
+            ConversionStatus.ofWireName(rs.getString("status")),
+            toEnvelope(rs),
+            rs.getLong("content_revision"),
+        )
 
     fun toEnvelope(rs: ResultSet): ConversionEnvelope {
         val scheme = rs.getString("encryption_scheme")

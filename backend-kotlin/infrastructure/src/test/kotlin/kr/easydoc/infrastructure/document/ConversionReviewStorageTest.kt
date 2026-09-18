@@ -7,6 +7,7 @@ import kr.easydoc.application.document.ConversionEnvelope
 import kr.easydoc.application.document.ConversionQueue
 import kr.easydoc.application.document.DocumentService
 import kr.easydoc.application.document.DocumentStorage
+import kr.easydoc.application.document.StoredReviewAssessment
 import kr.easydoc.core.crypto.EncryptedField
 import kr.easydoc.core.crypto.PlainBody
 import kr.easydoc.core.document.ConversionStatus
@@ -45,6 +46,7 @@ class ConversionReviewStorageTest {
     private lateinit var users: JdbcUserRepository
     private lateinit var workspaces: JdbcWorkspaceRepository
     private lateinit var conversions: JdbcConversionRepository
+    private lateinit var assessments: JdbcReviewAssessmentRepository
     private lateinit var cipher: ContentCipher
     private lateinit var service: DocumentService
 
@@ -63,6 +65,7 @@ class ConversionReviewStorageTest {
         users = JdbcUserRepository(jdbc)
         workspaces = JdbcWorkspaceRepository(jdbc)
         conversions = JdbcConversionRepository(jdbc)
+        assessments = JdbcReviewAssessmentRepository(jdbc)
         cipher = cipherWith(WRITE_GENERATION)
         service =
             DocumentService(
@@ -141,6 +144,65 @@ class ConversionReviewStorageTest {
         assertThat(editedTextOf(conversionId)).isNotNull()
     }
 
+    @Test
+    @DisplayName("검수 지원 payload는 평문 quote와 reason 대신 암호문 한 열로 저장된다")
+    fun `검수 지원 payload가 암호화 저장된다`() {
+        val (owner, conversionId) = doneConversion()
+        val assessmentId = UUID.randomUUID()
+        val plain = PlainBody("원문 인용: 30,000원 / 사유: 원문에 해당 조건이 없음")
+        val sealed = cipher.encrypt(plain, assessmentId, EncryptedField.REVIEW_ASSESSMENT_PAYLOAD)
+
+        assertThat(
+            assessments.insert(
+                owner,
+                StoredReviewAssessment(assessmentId, conversionId, 1, "fact-preservation-v1", 0, sealed),
+            ),
+        ).isTrue()
+
+        val storedBytes =
+            jdbc
+                .sql("SELECT payload_encrypted FROM review_assessments WHERE id = :id")
+                .param("id", assessmentId)
+                .query { rs, _ -> rs.getBytes(1) }
+                .single()
+        val columns =
+            jdbc
+                .sql(
+                    "SELECT column_name FROM information_schema.columns " +
+                        "WHERE table_schema = 'public' AND table_name = 'review_assessments'",
+                ).query(String::class.java)
+                .list()
+
+        assertThat(storedBytes).isNotEqualTo(plain.value.toByteArray())
+        assertThat(cipher.decrypt(sealed, assessmentId, EncryptedField.REVIEW_ASSESSMENT_PAYLOAD)).isEqualTo(plain)
+        assertThat(columns).doesNotContain("quote", "reason", "payload")
+    }
+
+    @Test
+    @DisplayName("검수 지원 조회와 갱신 SQL 자체가 소유권과 보존 기간을 강제한다")
+    fun `검수 지원 저장소가 소유권과 보존 기간을 강제한다`() {
+        val (owner, conversionId) = doneConversion()
+        val stranger = newUser()
+        val assessmentId = UUID.randomUUID()
+        val payload =
+            cipher.encrypt(PlainBody("봉인된 검수 결과"), assessmentId, EncryptedField.REVIEW_ASSESSMENT_PAYLOAD)
+        assessments.insert(
+            owner,
+            StoredReviewAssessment(assessmentId, conversionId, 1, "fact-preservation-v1", 0, payload),
+        )
+
+        assertThat(assessments.findLatestOwned(owner, conversionId)).isNotNull()
+        assertThat(assessments.findLatestOwned(stranger, conversionId)).isNull()
+        assertThat(assessments.lockOwned(stranger, conversionId, assessmentId)).isNull()
+        assertThat(assessments.update(stranger, assessmentId, 0, payload, 1)).isFalse()
+
+        expireDocument(conversionId)
+
+        assertThat(assessments.findLatestOwned(owner, conversionId)).isNull()
+        assertThat(assessments.lockOwned(owner, conversionId, assessmentId)).isNull()
+        assertThat(assessments.update(owner, assessmentId, 0, payload, 1)).isFalse()
+    }
+
     /** 검수본 열만 채운 **쓸 행 버전**. */
     private fun sealed(envelope: ConversionEnvelope): ConversionEnvelope =
         ConversionEnvelope(
@@ -206,6 +268,15 @@ class ConversionReviewStorageTest {
             .query { rs, _ -> rs.getBytes(1) }
             .optional()
             .orElse(null)
+
+    private fun expireDocument(conversionId: UUID) {
+        jdbc
+            .sql(
+                "UPDATE documents SET retention_expires_at = now() - interval '1 second' " +
+                    "WHERE id = (SELECT document_id FROM conversions WHERE id = :conversionId)",
+            ).param("conversionId", conversionId)
+            .update()
+    }
 
     // 이메일 인증 게이트는 `POST /documents` 앞이다 — 이 파일은 그 게이트를 재지 않으므로
     // 실물 인증 흐름 대신 저장소를 직접 인증 완료로 만든다.

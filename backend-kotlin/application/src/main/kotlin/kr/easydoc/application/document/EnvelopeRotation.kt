@@ -136,6 +136,18 @@ class EnvelopeRotation(
             if (updated) RotationOutcome.ROTATED else RotationOutcome.CONTENDED
         }
 
+    /** `review_assessments` 한 행의 원문 인용·담당자 메모 payload를 다시 봉인한다. */
+    fun rotateReviewAssessment(assessmentId: UUID): RotationOutcome =
+        transaction.inTransaction {
+            val repository = stores.reviewAssessments ?: return@inTransaction RotationOutcome.MISSING
+            val current = repository.lockEnvelope(assessmentId) ?: return@inTransaction RotationOutcome.MISSING
+            if (isCurrent(current.payload.scheme, current.payload.keyVersion)) {
+                return@inTransaction RotationOutcome.ALREADY_CURRENT
+            }
+            val resealed = reseal(current.payload, assessmentId, EncryptedField.REVIEW_ASSESSMENT_PAYLOAD)
+            if (repository.rewriteEnvelope(current, resealed)) RotationOutcome.ROTATED else RotationOutcome.CONTENDED
+        }
+
     /** 이 행이 이미 현재 쓰기 봉투인가. 방식과 세대를 **둘 다** 본다 — 방식만 바뀌는 회전도 있다. */
     private fun isCurrent(
         scheme: String,

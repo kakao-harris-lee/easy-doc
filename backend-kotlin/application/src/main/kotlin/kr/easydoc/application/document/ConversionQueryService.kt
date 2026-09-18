@@ -7,6 +7,7 @@ import kr.easydoc.core.crypto.EncryptedField
 import kr.easydoc.core.crypto.PlainBody
 import kr.easydoc.core.document.ConversionView
 import kr.easydoc.core.document.FormatPreservation
+import kr.easydoc.core.document.ReviewCapabilities
 import kr.easydoc.core.document.SourceFormat
 import kr.easydoc.core.document.noOriginalPreservation
 import kr.easydoc.core.document.nonReflectingSourcePreservation
@@ -28,6 +29,7 @@ class ConversionQueryService(
     /** `segment_map` 계산 — 내보내기(`ConversionExportService`)와 **같은 인스턴스**를 쓴다(계획 §10.2 결정 1). */
     private val segmentMapDerivation: SegmentMapDerivation,
     private val transaction: TransactionRunner,
+    private val reviewCapabilities: ReviewCapabilities = ReviewCapabilities.NONE,
 ) {
     /**
      * 내 변환 한 건의 **상태와 결과**를 읽는다. 완료 전에는 결과 필드가 비어 있다.
@@ -98,6 +100,8 @@ class ConversionQueryService(
             inputTokens = null,
             outputTokens = null,
             failureCode = stored.failureCode,
+            contentRevision = 0,
+            reviewCapabilities = reviewCapabilities,
         )
 
     private fun completed(
@@ -129,6 +133,8 @@ class ConversionQueryService(
             inputTokens = stored.inputTokens,
             outputTokens = stored.outputTokens,
             failureCode = stored.failureCode,
+            contentRevision = stored.contentRevision,
+            reviewCapabilities = reviewCapabilities,
         )
     }
 

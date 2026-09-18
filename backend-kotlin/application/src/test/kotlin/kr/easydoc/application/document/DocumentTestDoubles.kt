@@ -281,8 +281,8 @@ internal class FakeConversionRepository(
     ): StoredExport? {
         reads += ownerId to conversionId
         depthWhenRead += transaction.depth
-        val stored = owned[ownerId to conversionId] ?: return null
-        return StoredExport(asRead(stored), titles[conversionId] ?: DEFAULT_EXPORT_TITLE)
+        return owned[ownerId to conversionId]
+            ?.let { stored -> StoredExport(asRead(stored), titles[conversionId] ?: DEFAULT_EXPORT_TITLE) }
     }
 
     override fun lockEnvelope(conversionId: UUID): ConversionEnvelope? = null
@@ -325,18 +325,46 @@ internal class FakeConversionRepository(
         expected: ConversionEnvelope,
         requiredStatus: ConversionStatus,
         updated: ConversionEnvelope,
+    ): Boolean =
+        saveReview(
+            ownerId,
+            expected,
+            requiredStatus,
+            updated,
+            lockedForReview[ownerId to updated.conversionId]?.contentRevision ?: -1,
+            lockedForReview[ownerId to updated.conversionId]?.contentRevision ?: -1,
+        )
+
+    override fun saveReview(
+        ownerId: UUID,
+        expected: ConversionEnvelope,
+        requiredStatus: ConversionStatus,
+        updated: ConversionEnvelope,
+        expectedContentRevision: Long,
+        updatedContentRevision: Long,
     ): Boolean {
         savedReviews += SavedReview(expected, requiredStatus, updated, transaction.depth, transaction.epoch)
         val key = ownerId to updated.conversionId
         val row = lockedForReview[key]
-        if (!saveReviewSucceeds || !updatesOneRow(key, row, expected, requiredStatus)) return false
+        if (!saveReviewSucceeds || row?.contentRevision != expectedContentRevision ||
+            !updatesOneRow(key, row, expected, requiredStatus)
+        ) {
+            return false
+        }
         // 실물이 고치는 것은 **행 하나다.** 한쪽만 반영하면 같은 트랜잭션의 뒤이은 조회가 저장
         // 전 행을 보게 되고(「저장 응답이 방금 저장한 검수본을 싣는가」가 공허해진다), 이어지는
         // 저장은 [updatesOneRow] 의 열 대조에서 0행이 된다. `reviewed_at = now()` 도 같은
         // 문장이 찍으므로 여기서 함께 찍는다.
         reviewClock = reviewClock.plusSeconds(1)
-        lockedForReview[key] = LockedConversion(row!!.status, updated)
-        owned[key]?.let { owned[key] = it.copy(ciphertexts = updated.ciphertexts, reviewedAt = reviewClock) }
+        lockedForReview[key] = LockedConversion(row.status, updated, updatedContentRevision)
+        owned[key]?.let {
+            owned[key] =
+                it.copy(
+                    ciphertexts = updated.ciphertexts,
+                    reviewedAt = reviewClock,
+                    contentRevision = updatedContentRevision,
+                )
+        }
         return true
     }
 

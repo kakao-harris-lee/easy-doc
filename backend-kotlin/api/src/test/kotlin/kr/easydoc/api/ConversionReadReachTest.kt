@@ -760,8 +760,8 @@ class ConversionReadReachTest {
         private const val STORED_PROVIDER = "stored-provider"
 
         /**
-         * 계약 `get.description` 이 완료 전에 나간다고 적은 **여덟** — 앞의 둘은 자원
-         * 식별자이고, 뒤의 넷은 문서 메타에서 오는 **형식 셋**이라 완료 여부와 무관하다.
+         * 계약 `get.description` 이 완료 전에 나간다고 적은 **열** — 식별자·상태·실패 코드,
+         * 문서 메타 형식 셋, 내용 버전과 서버 기능 집합이다.
          */
         private val BEFORE_DONE_FIELDS =
             setOf(
@@ -773,6 +773,8 @@ class ConversionReadReachTest {
                 EXPORT_FORMAT_PROPERTY,
                 EXPORT_FORMAT_CHOICES_PROPERTY,
                 FORMAT_PRESERVATION_PROPERTY,
+                "content_revision",
+                "review_capabilities",
             )
 
         private const val CONTENT_TYPE = "Content-Type"

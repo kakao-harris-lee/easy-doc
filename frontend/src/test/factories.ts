@@ -89,6 +89,8 @@ export function conversion(overrides: Partial<ConversionResponse> = {}): Convers
     // 에디터 경로(§6 S3 "segment_map: null 렌더")를 그대로 탄다. 대응표가 필요한
     // 테스트만 `segmentMap()`으로 명시해 덮어쓴다.
     segment_map: null,
+    content_revision: 1,
+    review_capabilities: undefined,
     ...overrides,
   }
 }

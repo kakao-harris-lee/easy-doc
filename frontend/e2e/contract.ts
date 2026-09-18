@@ -174,6 +174,12 @@ export const ROUTES = {
   conversionRead: { method: 'GET', ok: 200 },
   /** 계약 `paths./conversions/{conversion_id}.put` — 200. */
   conversionReview: { method: 'PUT', ok: 200 },
+  /** 계약 `paths./conversions/{conversion_id}/review-support.get` — 저장된 검수 상태 조회. */
+  reviewSupportRead: { method: 'GET', ok: 200 },
+  /** 계약 `paths./conversions/{conversion_id}/review-support.post` — 현재 본문 검수 항목 생성. */
+  reviewSupportAnalyze: { method: 'POST', ok: 200 },
+  /** 계약 `paths./conversions/{conversion_id}/review-support/items/{item_id}.put` — 항목 판정 저장. */
+  reviewSupportItemUpdate: { method: 'PUT', ok: 200 },
   /** 계약 `paths./conversions/{conversion_id}/feedback.put` — 200 (멱등 upsert). */
   conversionFeedback: { method: 'PUT', ok: 200 },
   /** 계약 `paths./conversions/{conversion_id}/export.get` — 200 (파일). */

@@ -132,6 +132,40 @@ test.describe('변환 수직 흐름', () => {
     expect(ranks.every((rank) => rank >= 0)).toBe(true) // 'failed' 포함 알 수 없는 상태 없음
     expect(ranks).toEqual([...ranks].sort((a, b) => a - b))
 
+    // R1 검수 지원은 결과 화면을 연 것만으로 실행하지 않는다. 사용자가 패널을 펼친
+    // 첫 순간 현재 content_revision으로 분석하고, 고정한 다섯 관계를 모두 보여 준다.
+    const reviewSupportPath = `${conversionPath}/review-support`
+    const [analysisResponse] = await Promise.all([
+      page.waitForResponse(
+        (response) =>
+          response.url() === api(reviewSupportPath) &&
+          response.request().method() === ROUTES.reviewSupportAnalyze.method,
+      ),
+      page.getByRole('button', { name: /검수할 내용/ }).click(),
+    ])
+    expect(analysisResponse.status()).toBe(ROUTES.reviewSupportAnalyze.ok)
+    await expect(page.getByText('대상 확인', { exact: true })).toBeVisible()
+    await expect(page.getByText('모두·하나 확인', { exact: true })).toBeVisible()
+    await expect(page.getByText('예외 확인', { exact: true })).toBeVisible()
+    await expect(page.getByText('기한·행동 확인', { exact: true })).toBeVisible()
+    await expect(page.getByText('금액·적용 대상 확인', { exact: true })).toBeVisible()
+    await expect(page.getByText(/모든 의미가 보존됐다는 뜻은 아닙니다/)).toBeVisible()
+
+    // 첫 항목을 확인하면 assessment/content/review revision을 포함한 CAS 요청으로 저장된다.
+    const itemUpdatePattern = new RegExp(
+      `${reviewSupportPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/items/[^/?]+$`,
+    )
+    const [itemResponse] = await Promise.all([
+      page.waitForResponse(
+        (response) =>
+          itemUpdatePattern.test(response.url()) &&
+          response.request().method() === ROUTES.reviewSupportItemUpdate.method,
+      ),
+      page.getByRole('button', { name: '확인했어요', exact: true }).first().click(),
+    ])
+    expect(itemResponse.status()).toBe(ROUTES.reviewSupportItemUpdate.ok)
+    await expect(page.getByText('검수 표시를 저장했습니다.')).toBeVisible()
+
     await editor.fill(REVIEWED_TEXT)
 
     const [savedResponse] = await Promise.all([
@@ -144,6 +178,23 @@ test.describe('변환 수직 흐름', () => {
     ])
     expect(savedResponse.status()).toBe(ROUTES.conversionReview.ok)
     await expect(page.getByText('검수 내용을 저장했습니다.')).toBeVisible()
+
+    // 본문 revision이 바뀌면 앞서 확인한 항목은 그대로 유효한 것으로 보이지 않아야 한다.
+    await expect(
+      page.getByText('본문이 바뀌었습니다. 확인할 내용을 다시 불러와 주세요.'),
+    ).toBeVisible()
+    const [reanalyzeResponse] = await Promise.all([
+      page.waitForResponse(
+        (response) =>
+          response.url() === api(reviewSupportPath) &&
+          response.request().method() === ROUTES.reviewSupportAnalyze.method,
+      ),
+      page.getByRole('button', { name: '다시 분석', exact: true }).click(),
+    ])
+    expect(reanalyzeResponse.status()).toBe(ROUTES.reviewSupportAnalyze.ok)
+    await expect(
+      page.getByText('본문이 바뀌었습니다. 확인할 내용을 다시 불러와 주세요.'),
+    ).not.toBeVisible()
 
     // 검수를 마친 자리에서 파일럿 판정용 피드백을 남긴다 — 백엔드는 done 이 아닌 변환에
     // 대해 409 로 막으므로, 이 단계는 검수 저장 뒤에 와야 한다.
@@ -205,6 +256,17 @@ test.describe('변환 수직 흐름', () => {
     expect(callSignatures).toContain(
       `${ROUTES.conversionReview.method} ${conversionPath} ${ROUTES.conversionReview.ok}`,
     )
+    expect(callSignatures).toContain(
+      `${ROUTES.reviewSupportAnalyze.method} ${reviewSupportPath} ${ROUTES.reviewSupportAnalyze.ok}`,
+    )
+    expect(
+      calls.some(
+        (call) =>
+          itemUpdatePattern.test(call.path) &&
+          call.method === ROUTES.reviewSupportItemUpdate.method &&
+          call.status === ROUTES.reviewSupportItemUpdate.ok,
+      ),
+    ).toBe(true)
     expect(callSignatures).toContain(
       `${ROUTES.conversionFeedback.method} ${feedbackPath} ${ROUTES.conversionFeedback.ok}`,
     )

@@ -8,6 +8,7 @@
 - API 계약: [`../contracts/easy-doc-v1.yaml`](../contracts/easy-doc-v1.yaml)
 - 파일럿 실행: [`pilot-runbook.md`](pilot-runbook.md)
 - 골든 데이터 수집: [`golden-collection-plan.md`](golden-collection-plan.md)
+- 쉬운글 개선 개발 문서: [로드맵·실행·명세·UX·검증 지도](plans/2026-09-18-easy-read-improvement-roadmap.md) — 문서 작성 완료, 구현 미착수
 
 ## 자료 성격
 
@@ -17,4 +18,3 @@
 - `golden/`, `golden-drafts/`: 원문과 수집 초안. 실행 코드가 아니다.
 
 활성 문서의 명령은 Kotlin/Gradle, React/npm, Docker Compose만 사용한다.
-

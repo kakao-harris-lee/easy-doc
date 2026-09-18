@@ -32,15 +32,35 @@ class ConversionReviewService(
      * 저장하고 **갱신된 조회 결과**를 돌려준다(계약이 `GET` 과 같은 스키마다). 판정 순서는
      * 정규화 → 빈 값 → 길이 → 소유권 → 상태 — 앞의 셋이 **모든 식별자에 같은 응답**이라 먼저다.
      */
+    @Suppress("ThrowsCount") // 입력·소유·CAS·저장 실패를 서로 다른 HTTP 의미로 보존한다.
     fun save(
         ownerId: UUID,
         conversionId: UUID,
         submitted: ReviewedBody,
+        expectedContentRevision: Long? = null,
     ): ConversionView {
+        if (expectedContentRevision != null &&
+            (expectedContentRevision < 0 || expectedContentRevision > MAX_SAFE_REVISION)
+        ) {
+            throw InvalidInputException(CONTENT_REVISION_INVALID_MESSAGE)
+        }
         val normalized = normalize(submitted)
 
         return transaction.inTransaction {
             val locked = lockDone(ownerId, conversionId)
+            if (expectedContentRevision != null && expectedContentRevision != locked.contentRevision) {
+                throw ConflictException(CONTENT_REVISION_CONFLICT_MESSAGE)
+            }
+            val currentBody =
+                locked.envelope.ciphertexts.editedText
+                    ?.let { cipher.decrypt(it, conversionId, EncryptedField.CONVERSION_EDITED_TEXT) }
+                    ?: locked.envelope.ciphertexts.easyText
+                        ?.let { cipher.decrypt(it, conversionId, EncryptedField.CONVERSION_EASY_TEXT) }
+            val bodyChanged = currentBody?.value != normalized.value
+            if (bodyChanged && locked.contentRevision >= MAX_SAFE_REVISION) {
+                throw StorageException(REVIEW_NOT_SAVED_MESSAGE)
+            }
+            val nextRevision = if (bodyChanged) locked.contentRevision + 1 else locked.contentRevision
 
             val saved =
                 conversions.saveReview(
@@ -54,6 +74,8 @@ class ConversionReviewService(
                             keyVersion = cipher.writeKeyVersion,
                             ciphertexts = sealFor(locked.envelope, normalized),
                         ),
+                    expectedContentRevision = locked.contentRevision,
+                    updatedContentRevision = nextRevision,
                 )
             // 잠금 아래에서 조건은 참이다. 거짓이면 상태 충돌이 아니라 **잠금이 서지 않았다는
             // 신호**라 409 로 접지 않는다.
@@ -124,3 +146,6 @@ class ConversionReviewService(
         field: EncryptedField,
     ): EncryptedContent? = column?.let { cipher.encrypt(cipher.decrypt(it, record, field), record, field) }
 }
+
+const val CONTENT_REVISION_CONFLICT_MESSAGE: String = "본문이 바뀌었습니다. 다시 불러와 주세요"
+const val MAX_SAFE_REVISION: Long = 9_007_199_254_740_991L

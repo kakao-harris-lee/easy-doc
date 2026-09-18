@@ -11,9 +11,25 @@ import type { ReactElement } from 'react'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { ApiError, downloadExport, reconvertUnit, saveFeedback, saveReview } from '../api/client'
+import {
+  analyzeReviewSupport,
+  ApiError,
+  downloadExport,
+  getConversion,
+  getReviewSupport,
+  reconvertUnit,
+  saveFeedback,
+  saveReview,
+  updateReviewSupportItem,
+} from '../api/client'
 import { lookupTerm } from '../api/dictionary'
-import type { ConversionResponse, FormatPreservation, ReconvertUnitResponse } from '../api/types'
+import type {
+  ConversionResponse,
+  FormatPreservation,
+  ReconvertUnitResponse,
+  ReviewItem,
+  ReviewSupportResponse,
+} from '../api/types'
 import { computeEasyTextFingerprint } from '../review/fingerprint'
 import { setUnsavedChanges } from '../review/unsavedChanges'
 import {
@@ -50,6 +66,10 @@ vi.mock('../api/client', async (importOriginal) => ({
   downloadExport: vi.fn(),
   saveFeedback: vi.fn(),
   reconvertUnit: vi.fn(),
+  getConversion: vi.fn(),
+  analyzeReviewSupport: vi.fn(),
+  getReviewSupport: vi.fn(),
+  updateReviewSupportItem: vi.fn(),
 }))
 
 vi.mock('../api/dictionary', async (importOriginal) => ({
@@ -82,6 +102,10 @@ beforeEach(() => {
   vi.mocked(saveFeedback).mockReset()
   vi.mocked(lookupTerm).mockReset()
   vi.mocked(reconvertUnit).mockReset()
+  vi.mocked(getConversion).mockReset()
+  vi.mocked(analyzeReviewSupport).mockReset()
+  vi.mocked(getReviewSupport).mockReset()
+  vi.mocked(updateReviewSupportItem).mockReset()
 })
 
 afterEach(() => {
@@ -104,6 +128,56 @@ function withoutFeedbackKey(response: ConversionResponse): ConversionResponse {
   return stripped as ConversionResponse
 }
 
+function reviewItem(overrides: Partial<ReviewItem> = {}): ReviewItem {
+  return {
+    item_id: 'missing-1',
+    kind: 'missing_fact',
+    rule_code: 'missing_date',
+    source_anchors: [{ source_unit_indexes: [0], quote: '신청은 3월 2일까지입니다.' }],
+    easy_unit_indexes: [],
+    state: 'needs_review',
+    reason: null,
+    confirmed_by: null,
+    confirmed_at: null,
+    ...overrides,
+  }
+}
+
+function reviewSupportResponse(
+  overrides: Partial<ReviewSupportResponse> = {},
+): ReviewSupportResponse {
+  const relationCodes = [
+    'target_scope',
+    'all_or_one',
+    'exception_scope',
+    'deadline_action',
+    'amount_subject',
+  ]
+  return {
+    status: 'ready',
+    assessment: {
+      assessment_id: 'assessment-1',
+      content_revision: 1,
+      analyzer_version: 'rules-v1',
+      review_revision: 1,
+      coverage: 'supported',
+      limitations: [],
+      items: [
+        reviewItem(),
+        ...relationCodes.map((rule_code, index) =>
+          reviewItem({
+            item_id: `relation-${index}`,
+            kind: 'relation_check',
+            rule_code,
+            source_anchors: [{ source_unit_indexes: [index], quote: `원문 ${index + 1}` }],
+          }),
+        ),
+      ],
+    },
+    ...overrides,
+  }
+}
+
 describe('검수 에디터', () => {
   it('대응표가 있어도 원본과 결과를 각각 한 글상자로 보여주고 줄바꿈을 보존해 저장한다', async () => {
     const user = userEvent.setup()
@@ -123,7 +197,7 @@ describe('검수 에디터', () => {
     expect(screen.queryByText('추정')).not.toBeInTheDocument()
     fireEvent.change(editor, { target: { value: `${original}!` } })
     await user.click(screen.getByRole('button', { name: '검수 내용 저장' }))
-    expect(saveReview).toHaveBeenCalledWith('c1', `${original}!`)
+    expect(saveReview).toHaveBeenCalledWith('c1', `${original}!`, 1)
   })
 
   it('전체 편집에서 줄을 추가한 뒤 상세 비교를 열어도 뒤 문단의 대응이 밀리지 않는다', async () => {
@@ -433,23 +507,40 @@ describe('검수 에디터', () => {
     await user.type(editor, '고친 글.')
     await user.click(screen.getByRole('button', { name: '검수 내용 저장' }))
 
-    expect(vi.mocked(saveReview)).toHaveBeenCalledWith('c1', '고친 글.')
+    expect(vi.mocked(saveReview)).toHaveBeenCalledWith('c1', '고친 글.', 1)
     expect(await screen.findByText('검수 내용을 저장했습니다.')).toBeInTheDocument()
   })
 
-  it('저장에 실패하면 사유를 알리고 수정 내용을 그대로 둔다', async () => {
+  it('revision 충돌이면 현재 내용을 복사하고 최신 저장본을 불러와 다시 저장한다', async () => {
     const user = userEvent.setup()
-    vi.mocked(saveReview).mockRejectedValue(new ApiError(409, '아직 완료되지 않은 변환입니다'))
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText } })
+    vi.mocked(saveReview)
+      .mockRejectedValueOnce(new ApiError(409, '다른 화면에서 본문이 바뀌었습니다'))
+      .mockResolvedValueOnce(conversion({ edited_text: '최신 내용 추가', content_revision: 3 }))
+    vi.mocked(getConversion).mockResolvedValue(
+      conversion({ edited_text: '최신 내용', content_revision: 2 }),
+    )
     render(<ReviewEditor conversion={conversion({ easy_text: '초안.' })} source={sourceFailed()} />)
 
     const editor = screen.getByLabelText('쉬운 글 결과 (고칠 수 있습니다)')
     await user.type(editor, ' 덧붙임')
     await user.click(screen.getByRole('button', { name: '검수 내용 저장' }))
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('아직 완료되지 않은 변환입니다')
+    expect(await screen.findByRole('alert')).toHaveTextContent('다른 화면에서 본문이 바뀌었습니다')
     expect(editor).toHaveValue('초안. 덧붙임')
-    // 실패했으므로 저장하지 않은 수정이라는 사실이 그대로 남아야 한다.
     expect(screen.getByRole('status')).toHaveTextContent('저장 안 됨')
+
+    await user.click(screen.getByRole('button', { name: '현재 편집 내용 복사' }))
+    expect(writeText).toHaveBeenCalledWith('초안. 덧붙임')
+
+    await user.click(screen.getByRole('button', { name: '최신 내용 불러오기' }))
+    expect(getConversion).toHaveBeenCalledWith('c1')
+    expect(editor).toHaveValue('최신 내용')
+
+    await user.type(editor, ' 추가')
+    await user.click(screen.getByRole('button', { name: '검수 내용 저장' }))
+    expect(saveReview).toHaveBeenLastCalledWith('c1', '최신 내용 추가', 2)
   })
 
   it.each(['docx', 'hwpx', 'txt'] as const)(
@@ -1152,7 +1243,7 @@ describe('저장하고 내려받기', () => {
 
     await user.click(screen.getByRole('button', { name: '저장하고 TXT로 내려받기' }))
 
-    expect(vi.mocked(saveReview)).toHaveBeenCalledWith('c1', '초안. 수정')
+    expect(vi.mocked(saveReview)).toHaveBeenCalledWith('c1', '초안. 수정', 1)
     expect(vi.mocked(downloadExport)).toHaveBeenCalledWith('c1', 'txt')
     expect(
       await screen.findByText('검수 내용을 저장하고 TXT 파일을 내려받았습니다.'),
@@ -1367,7 +1458,7 @@ describe('문단 단위 대응(segment_map)', () => {
 
     // split('\n') ↔ join('\n') 왕복 — 화면이 단위 목록으로 바뀌어도 저장 계약은
     // `updateConversion` 하나뿐이고 값은 그대로 이은 문자열이다(계획 §2).
-    expect(vi.mocked(saveReview)).toHaveBeenCalledWith('c1', '첫\n줄')
+    expect(vi.mocked(saveReview)).toHaveBeenCalledWith('c1', '첫\n줄', 1)
   })
 
   it('맨 앞에서 Backspace를 누르면 앞 단위와 합치고, 둘 다 high일 때만 합친 단위도 high다', () => {
@@ -2172,7 +2263,7 @@ describe('결과 단위 재시도·되돌리기(Part C-2/C-3)', () => {
     expect(unit2).toHaveValue('')
 
     await user.click(screen.getByRole('button', { name: '검수 내용 저장' }))
-    expect(saveReview).toHaveBeenCalledWith('c1', '첫째\n\n둘째')
+    expect(saveReview).toHaveBeenCalledWith('c1', '첫째\n\n둘째', 1)
   })
 
   it('같은 원본 색인을 공유하는 여러 쉬운 글 단위 중 재시도를 건 행만 진행 중 표시다(MEDIUM 리뷰)', async () => {
@@ -2464,7 +2555,7 @@ describe('빈 줄(공백뿐) 단위 숨김(Part B)', () => {
 
     await user.click(screen.getByRole('button', { name: '검수 내용 저장' }))
 
-    expect(saveReview).toHaveBeenCalledWith('c1', '첫째\n\n둘째')
+    expect(saveReview).toHaveBeenCalledWith('c1', '첫째\n\n둘째', 1)
   })
 
   it('단위 끝에서 Enter를 누르면 새로 생긴 빈 단위도 그려 초점을 맞추고, 값을 채우지 않고 벗어나면 다시 감춘다', async () => {
@@ -2598,5 +2689,279 @@ describe('원문 패널의 사전 조회', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+})
+
+describe('R1 검수 지원 패널', () => {
+  const reviewCapabilities = {
+    review_support: true,
+    action_guide: false,
+    table_relations: false,
+    review_history: false,
+    explanations: false,
+    illustrations: false,
+  }
+
+  it('capability가 없는 옛 응답에는 검수 패널을 노출하지 않는다', () => {
+    render(<ReviewEditor conversion={conversion()} source={sourceReady('원문')} />)
+
+    expect(screen.queryByRole('button', { name: /검수할 내용/ })).not.toBeInTheDocument()
+    expect(analyzeReviewSupport).not.toHaveBeenCalled()
+  })
+
+  it('처음 펼칠 때 현재 revision을 분석하고 누락 의심과 관계 5항목을 구분해 보여준다', async () => {
+    const user = userEvent.setup()
+    vi.mocked(analyzeReviewSupport).mockResolvedValue(reviewSupportResponse())
+    render(
+      <ReviewEditor
+        conversion={conversion({ content_revision: 1, review_capabilities: reviewCapabilities })}
+        source={sourceReady('원문 1\n원문 2\n원문 3\n원문 4\n원문 5')}
+      />,
+    )
+
+    await user.click(screen.getByRole('button', { name: /검수할 내용/ }))
+
+    expect(await screen.findByText('대상 확인')).toBeInTheDocument()
+    expect(screen.getByText('모두·하나 확인')).toBeInTheDocument()
+    expect(screen.getByText('예외 확인')).toBeInTheDocument()
+    expect(screen.getByText('기한·행동 확인')).toBeInTheDocument()
+    expect(screen.getByText('금액·적용 대상 확인')).toBeInTheDocument()
+    expect(screen.getByText(/모든 의미가 보존됐다는 뜻은 아닙니다/)).toBeInTheDocument()
+    expect(analyzeReviewSupport).toHaveBeenCalledWith('c1', {
+      expected_content_revision: 1,
+    })
+  })
+
+  it('분석 중 본문 충돌이면 현재 편집을 보호하고 최신 revision으로 다시 분석한다', async () => {
+    const user = userEvent.setup()
+    vi.mocked(analyzeReviewSupport)
+      .mockRejectedValueOnce(new ApiError(409, '본문 revision이 바뀌었습니다'))
+      .mockResolvedValueOnce(
+        reviewSupportResponse({
+          assessment: {
+            ...reviewSupportResponse().assessment!,
+            content_revision: 2,
+          },
+        }),
+      )
+    vi.mocked(getConversion).mockResolvedValue(
+      conversion({
+        edited_text: '최신 저장 내용',
+        content_revision: 2,
+        review_capabilities: reviewCapabilities,
+      }),
+    )
+    render(
+      <ReviewEditor
+        conversion={conversion({ content_revision: 1, review_capabilities: reviewCapabilities })}
+        source={sourceReady('원문')}
+      />,
+    )
+
+    await user.click(screen.getByRole('button', { name: /검수할 내용/ }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('최신 내용을 불러온 뒤')
+    expect(screen.queryByRole('button', { name: '다시 시도' })).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: '최신 내용 불러오기' }))
+    expect(screen.getByLabelText('쉬운 글 결과 (고칠 수 있습니다)')).toHaveValue('최신 저장 내용')
+    await user.click(screen.getByRole('button', { name: '다시 시도' }))
+
+    await screen.findAllByText('누락 의심')
+    expect(analyzeReviewSupport).toHaveBeenLastCalledWith('c1', {
+      expected_content_revision: 2,
+    })
+  })
+
+  it('segment map이 없으면 원문 보기로 전체 원문에 이동하고 돌아갈 수 있다', async () => {
+    const user = userEvent.setup()
+    vi.mocked(analyzeReviewSupport).mockResolvedValue(reviewSupportResponse())
+    render(
+      <ReviewEditor
+        conversion={conversion({ review_capabilities: reviewCapabilities, segment_map: null })}
+        source={sourceReady('신청은 3월 2일까지입니다.\n조건입니다.')}
+      />,
+    )
+
+    await user.click(screen.getByRole('button', { name: /검수할 내용/ }))
+    await screen.findAllByText('누락 의심')
+    expect(
+      screen.getByText('쉬운 글의 정확한 위치 대신 원문 전체에서 비교합니다.'),
+    ).toBeInTheDocument()
+
+    const sourceButton = screen.getAllByRole('button', { name: '원문 보기' })[0]
+    expect(sourceButton).toBeDefined()
+    await user.click(sourceButton!)
+    await waitFor(() => expect(screen.getByLabelText('원본 (읽기 전용)')).toHaveFocus())
+
+    await user.click(screen.getByRole('button', { name: '검수 항목으로 돌아가기' }))
+    expect(sourceButton).toHaveFocus()
+  })
+
+  it('200단위를 넘는 문서에서도 체크리스트를 유지하고 전체 원문 fallback을 쓴다', async () => {
+    const user = userEvent.setup()
+    const unitCount = 201
+    const text = Array.from({ length: unitCount }, (_, index) => `원문 ${index + 1}`).join('\n')
+    const map = segmentMap({
+      source_unit_count: unitCount,
+      units: Array.from({ length: unitCount }, (_, index) =>
+        segmentMapUnit({
+          easy_unit_index: index,
+          source_unit_indexes: [index],
+          confidence: 'high',
+        }),
+      ),
+    })
+    vi.mocked(analyzeReviewSupport).mockResolvedValue(reviewSupportResponse())
+    render(
+      <ReviewEditor
+        conversion={conversion({
+          easy_text: text,
+          segment_map: map,
+          review_capabilities: reviewCapabilities,
+        })}
+        source={sourceReady(text)}
+      />,
+    )
+
+    await user.click(screen.getByRole('button', { name: /검수할 내용/ }))
+    expect(await screen.findByText('조건 관계 확인')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '문단별 상세 비교' })).not.toBeInTheDocument()
+    expect(
+      screen.getByText('쉬운 글의 정확한 위치 대신 원문 전체에서 비교합니다.'),
+    ).toBeInTheDocument()
+
+    await user.click(screen.getAllByRole('button', { name: '원문 보기' })[0]!)
+    await waitFor(() => expect(screen.getByLabelText('원본 (읽기 전용)')).toHaveFocus())
+  })
+
+  it('해당 없음은 사유를 요구하고 assessment·본문·검수 revision으로 저장한다', async () => {
+    const user = userEvent.setup()
+    const current = reviewSupportResponse()
+    vi.mocked(analyzeReviewSupport).mockResolvedValue(current)
+    vi.mocked(updateReviewSupportItem).mockResolvedValue(current)
+    render(
+      <ReviewEditor
+        conversion={conversion({ review_capabilities: reviewCapabilities })}
+        source={sourceReady('원문')}
+      />,
+    )
+
+    await user.click(screen.getByRole('button', { name: /검수할 내용/ }))
+    await screen.findAllByText('누락 의심')
+    await user.click(screen.getAllByRole('button', { name: '해당 없음' })[0]!)
+    await user.click(screen.getByRole('button', { name: '사유와 함께 저장' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('이유를 적어 주세요')
+    expect(updateReviewSupportItem).not.toHaveBeenCalled()
+
+    await user.type(screen.getByLabelText('해당하지 않는 이유'), '이 문서에는 날짜가 없습니다.')
+    await user.click(screen.getByRole('button', { name: '사유와 함께 저장' }))
+    expect(updateReviewSupportItem).toHaveBeenCalledWith('c1', 'missing-1', {
+      assessment_id: 'assessment-1',
+      expected_content_revision: 1,
+      expected_review_revision: 1,
+      state: 'not_applicable',
+      reason: '이 문서에는 날짜가 없습니다.',
+    })
+  })
+
+  it('해당 없음 사유는 서버와 같은 기준으로 이모지 500자를 허용한다', async () => {
+    const user = userEvent.setup()
+    vi.mocked(analyzeReviewSupport).mockResolvedValue(reviewSupportResponse())
+    render(
+      <ReviewEditor
+        conversion={conversion({ review_capabilities: reviewCapabilities })}
+        source={sourceReady('원문')}
+      />,
+    )
+
+    await user.click(screen.getByRole('button', { name: /검수할 내용/ }))
+    await screen.findAllByText('누락 의심')
+    await user.click(screen.getAllByRole('button', { name: '해당 없음' })[0]!)
+    const reason = screen.getByLabelText('해당하지 않는 이유')
+    fireEvent.change(reason, { target: { value: '😀'.repeat(501) } })
+
+    expect(Array.from((reason as HTMLTextAreaElement).value)).toHaveLength(500)
+  })
+
+  it('항목 저장 충돌 뒤 최신 검수 조회까지 실패하면 성공 안내를 표시하지 않는다', async () => {
+    const user = userEvent.setup()
+    vi.mocked(analyzeReviewSupport).mockResolvedValue(reviewSupportResponse())
+    vi.mocked(updateReviewSupportItem).mockRejectedValue(
+      new ApiError(409, '검수 표시가 바뀌었습니다'),
+    )
+    vi.mocked(getReviewSupport).mockRejectedValue(new ApiError(503, '잠시 사용할 수 없습니다'))
+    render(
+      <ReviewEditor
+        conversion={conversion({ review_capabilities: reviewCapabilities })}
+        source={sourceReady('원문')}
+      />,
+    )
+
+    await user.click(screen.getByRole('button', { name: /검수할 내용/ }))
+    await screen.findAllByText('누락 의심')
+    await user.click(screen.getAllByRole('button', { name: '확인했어요' })[0]!)
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      '최신 검수 상태를 불러오지 못했습니다',
+    )
+    expect(screen.queryByText(/최신 상태를 불러왔습니다/)).not.toBeInTheDocument()
+  })
+
+  it('항목 저장 충돌로 stale 상태를 받으면 옛 revision 재분석을 막는다', async () => {
+    const user = userEvent.setup()
+    vi.mocked(analyzeReviewSupport).mockResolvedValue(reviewSupportResponse())
+    vi.mocked(updateReviewSupportItem).mockRejectedValue(
+      new ApiError(409, '검수 표시가 바뀌었습니다'),
+    )
+    vi.mocked(getReviewSupport).mockResolvedValue(reviewSupportResponse({ status: 'stale' }))
+    render(
+      <ReviewEditor
+        conversion={conversion({ review_capabilities: reviewCapabilities })}
+        source={sourceReady('원문')}
+      />,
+    )
+
+    await user.click(screen.getByRole('button', { name: /검수할 내용/ }))
+    await screen.findAllByText('누락 의심')
+    await user.click(screen.getAllByRole('button', { name: '확인했어요' })[0]!)
+
+    expect(await screen.findByText(/최신 상태를 불러왔습니다/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '다시 분석' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: '최신 내용 불러오기' })).toBeInTheDocument()
+  })
+
+  it('본문 저장으로 revision이 바뀌면 이전 확인을 stale로 표시한다', async () => {
+    const user = userEvent.setup()
+    vi.mocked(analyzeReviewSupport).mockResolvedValue(reviewSupportResponse())
+    vi.mocked(saveReview).mockResolvedValue(
+      conversion({
+        edited_text: '바뀐 글',
+        reviewed_at: '2026-09-18T01:00:00Z',
+        content_revision: 2,
+        review_capabilities: reviewCapabilities,
+      }),
+    )
+    render(
+      <ReviewEditor
+        conversion={conversion({
+          easy_text: '원래 글',
+          content_revision: 1,
+          review_capabilities: reviewCapabilities,
+        })}
+        source={sourceReady('원문')}
+      />,
+    )
+
+    await user.click(screen.getByRole('button', { name: /검수할 내용/ }))
+    await screen.findAllByText('누락 의심')
+    const editor = screen.getByLabelText('쉬운 글 결과 (고칠 수 있습니다)')
+    await user.clear(editor)
+    await user.type(editor, '바뀐 글')
+    await user.click(screen.getByRole('button', { name: '검수 내용 저장' }))
+
+    expect(
+      await screen.findByText('본문이 바뀌었습니다. 확인할 내용을 다시 불러와 주세요.'),
+    ).toBeInTheDocument()
+    expect(saveReview).toHaveBeenCalledWith('c1', '바뀐 글', 1)
   })
 })

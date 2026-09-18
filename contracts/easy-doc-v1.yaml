@@ -41,7 +41,7 @@ openapi: 3.1.0
 
 info:
   title: Easy-Read AI API
-  version: "2.37.0"
+  version: "2.38.0"
   x-baselined-at: "2026-08-12"       # 초판 기준선을 뜬 날 (동결일이 아니다)
   x-rebased-at: "2026-08-12"         # 계약의 성격을 "개선 대상"으로 다시 정의한 날
   x-source-runtime: "Python 3.12 / FastAPI (app/main.py) — 과거 참고 구현이었고 2026-08-24 저장소에서 제거됨(git 태그 pre-python-removal-20260824). 기준선 출처였을 뿐 정답이 아니었다"
@@ -49,7 +49,7 @@ info:
   description: |
     공공기관용 '쉬운 글' 자동 변환 서비스의 HTTP 계약 v1.
 
-    **엔드포인트는 정확히 44개다** — 제품 43개 + 헬스 체크 1개.
+    **엔드포인트는 정확히 47개다** — 제품 46개 + 헬스 체크 1개.
     계획 §2.2가 센 "14개 HTTP 엔드포인트"는 **그 문서를 쓸 때의 수**이며 `/health`를
     포함해야 맞는 수였다. 1.5.0에서 `PUT /conversions/{conversion_id}/feedback`이,
     2.2.0에서 `GET /documents/{document_id}/source`가, 2.8.0에서 소셜 로그인
@@ -85,7 +85,9 @@ info:
     하나를 합친 11종이 더해져 43개였고, 2.26.0(실패 호출 원장 추적)은 새 오퍼레이션 없이 기존
     응답 스키마만 넓혀 43개 그대로였다. 2.27.0에서 회원 탈퇴(계획
     `docs/plans/2026-09-09-account-deletion.md`) `POST /auth/me/deletion`이 더해져
-    오늘은 44개다 — 계획 문서의 수를 고치는 것이 아니라 **수의 정본이 이 계약**이다.
+    2.38.0에서 규칙 기반 검수 지원 `GET`·`POST /conversions/{conversion_id}/review-support`와
+    `PUT /conversions/{conversion_id}/review-support/items/{item_id}` 셋이 더해져 오늘은
+    47개다 — 계획 문서의 수를 고치는 것이 아니라 **수의 정본이 이 계약**이다.
 
     ## 경로 접두사
     애플리케이션 경로에는 `/api` 접두사가 없다. `app/api/auth.py`의
@@ -3210,12 +3212,13 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
         '409':
-          description: 아직 완료되지 않은 변환이다
+          description: 아직 완료되지 않았거나 기대한 본문 버전이 바뀌었다
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
               examples:
                 not_done: { value: { detail: "변환이 끝난 뒤에 수정할 수 있습니다" } }
+                stale_revision: { value: { detail: "본문이 바뀌었습니다. 다시 불러와 주세요" } }
         '415': { $ref: '#/components/responses/UnsupportedMediaType' }
         '422':
           description: 수정본이 비었거나 20,000자를 넘었다 / 필드 누락
@@ -3225,6 +3228,126 @@ paths:
               examples:
                 empty: { value: { detail: "수정본이 비어 있습니다" } }
                 too_long: { value: { detail: "수정본은 20,000자 이하여야 합니다" } }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+
+  /conversions/{conversion_id}/review-support:
+    parameters:
+      - name: conversion_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [documents]
+      operationId: getReviewSupport
+      summary: 저장된 조건·사실 검수 지원 결과를 조회한다
+      security: [{ HTTPBearer: [] }]
+      description: |
+        저장된 스냅샷만 읽으며 분석을 시작하지 않는다. 현재 본문·분석기 버전과 맞으면
+        `ready`, 이전 결과만 있으면 `stale`, 없으면 `not_generated`다. 자동 신호는 의미
+        정확성의 증명이 아니며 관계 항목은 담당자가 원문과 직접 대조할 체크리스트다.
+        기능 토글 OFF, 타인·삭제·만료는 모두 404다.
+      responses:
+        '200':
+          description: 저장된 검수 지원 상태
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CacheControlNoStore' }
+            X-Content-Type-Options: { $ref: '#/components/headers/XContentTypeOptions' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReviewSupportResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404':
+          description: 없거나 내 것이 아니거나 만료됐거나 기능이 꺼져 있다
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+    post:
+      tags: [documents]
+      operationId: analyzeReviewSupport
+      summary: 현재 저장 본문을 규칙으로 분석한다
+      security: [{ HTTPBearer: [] }]
+      description: |
+        기존 사실 보존 규칙으로 누락 의심 신호를 만들고 고정 관계 확인 항목 5개를 더한다.
+        LLM 호출과 크레딧 차감은 없다. 같은 본문 버전과 분석기 버전의 스냅샷은 재사용한다.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReviewSupportAnalyzeRequest' }
+      responses:
+        '200':
+          description: 현재 검수 스냅샷
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CacheControlNoStore' }
+            X-Content-Type-Options: { $ref: '#/components/headers/XContentTypeOptions' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReviewSupportResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404':
+          description: 없거나 내 것이 아니거나 만료됐거나 기능이 꺼져 있다
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '409':
+          description: 완료 전이거나 분석 중 본문 버전이 바뀌었다
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+
+  /conversions/{conversion_id}/review-support/items/{item_id}:
+    parameters:
+      - name: conversion_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+      - name: item_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    put:
+      tags: [documents]
+      operationId: updateReviewSupportItem
+      summary: 담당자 확인 상태와 메모를 저장한다
+      security: [{ HTTPBearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReviewSupportItemUpdateRequest' }
+      responses:
+        '200':
+          description: 갱신된 전체 검수 스냅샷
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CacheControlNoStore' }
+            X-Content-Type-Options: { $ref: '#/components/headers/XContentTypeOptions' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReviewSupportResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404':
+          description: 없거나 내 것이 아니거나 만료됐거나 기능이 꺼져 있다
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '409':
+          description: 본문·분석·확인 버전이 바뀌었다
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+              examples:
+                content_changed: { value: { detail: "본문이 바뀌었습니다. 다시 불러와 주세요" } }
+                review_changed: { value: { detail: "검수 표시가 바뀌었습니다. 다시 불러와 주세요" } }
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
         '500': { $ref: '#/components/responses/InternalError' }
         '503': { $ref: '#/components/responses/ServiceUnavailable' }
 
@@ -5845,6 +5968,12 @@ components:
             키워드는 정규화 전 원시 값에 걸린다(`x-request-field-constraints`).
             이 필드도 봉인해 저장하므로 **정의역**이 함께 걸린다(`x-stored-text-domain`) —
             길이와는 다른 축이고, 그 팔의 마감은 이 오퍼레이션을 구현하는 단위다.
+        expected_content_revision:
+          anyOf: [{ type: integer, minimum: 0, maximum: 9007199254740991 }, { type: 'null' }]
+          description: |
+            클라이언트가 읽은 `content_revision`. 있으면 서버가 잠근 현재 값과 같을 때만
+            저장한다. 생략은 레거시 호환이며 낙관적 충돌 방지 보장은 없지만, 실제 본문 변경의
+            버전 증가와 파생 결과 무효화 규칙은 똑같이 적용된다.
 
     ConversionResponse:
       type: object
@@ -5852,7 +5981,7 @@ components:
         [id, document_id, status, source_format, export_format, export_format_choices,
          format_preservation, easy_text, edited_text, reviewed_at, feedback_submitted_at,
          segment_map, model, provider_name,
-         input_tokens, output_tokens, failure_code]
+         input_tokens, output_tokens, failure_code, content_revision, review_capabilities]
       description: |
         변환 상태·결과. 완료 전에는 **결과 필드**가 모두 비어 있다.
 
@@ -6009,6 +6138,127 @@ components:
             필드로 알릴 대상이 없다.
             `"EnqueueFailed"`는 **2026-08-20에 폐기된 값**이다 — Redis/ARQ 전제였고,
             어떤 구현에서도 더는 나오지 않는다(`x-retired-responses`).
+        content_revision:
+          type: integer
+          minimum: 0
+          maximum: 9007199254740991
+          description: |
+            서버가 관리하는 유효 본문 버전. 완료 전 0, 첫 완료 1이다. 제어문자 제거와 개행
+            통일 뒤 `edited_text ?? easy_text`가 실제로 달라질 때만 1 증가한다.
+        review_capabilities:
+          $ref: '#/components/schemas/ReviewCapabilities'
+
+    ReviewCapabilities:
+      type: object
+      required: [review_support, action_guide, table_relations, review_history, explanations, illustrations]
+      properties:
+        review_support: { type: boolean }
+        action_guide: { type: boolean }
+        table_relations: { type: boolean }
+        review_history: { type: boolean }
+        explanations: { type: boolean }
+        illustrations: { type: boolean }
+      description: 서버 설정과 현재 구현 범위에서 유도한 기능별 노출 가능 여부.
+
+    ReviewSupportAnalyzeRequest:
+      type: object
+      required: [expected_content_revision]
+      properties:
+        expected_content_revision: { type: integer, minimum: 1, maximum: 9007199254740991 }
+
+    ReviewSupportItemUpdateRequest:
+      type: object
+      required: [assessment_id, expected_content_revision, expected_review_revision, state]
+      properties:
+        assessment_id: { type: string, format: uuid }
+        expected_content_revision: { type: integer, minimum: 1, maximum: 9007199254740991 }
+        expected_review_revision: { type: integer, minimum: 0, maximum: 9007199254740991 }
+        state: { $ref: '#/components/schemas/ReviewItemState' }
+        reason:
+          anyOf: [{ type: string }, { type: 'null' }]
+          maxLength: 500
+          description: "`not_applicable`일 때 필수인 담당자 메모. 서버가 정규화 후 코드 포인트로 잰다."
+
+    ReviewSupportResponse:
+      type: object
+      required: [status, assessment]
+      properties:
+        status:
+          type: string
+          enum: [not_generated, ready, stale]
+        assessment:
+          anyOf:
+            - { $ref: '#/components/schemas/ReviewAssessment' }
+            - { type: 'null' }
+
+    ReviewAssessment:
+      type: object
+      required: [assessment_id, content_revision, analyzer_version, review_revision, coverage, limitations, items]
+      properties:
+        assessment_id: { type: string, format: uuid }
+        content_revision: { type: integer, minimum: 1 }
+        analyzer_version: { type: string, maxLength: 64 }
+        review_revision: { type: integer, minimum: 0 }
+        coverage:
+          type: string
+          enum: [supported, limited]
+          description: "`supported`도 정해진 규칙을 실행했다는 뜻이며 의미 정확성을 보장하지 않는다."
+        limitations:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+            enum: [mapping_unavailable, signal_limit, ambiguous_source]
+        items:
+          type: array
+          maxItems: 105
+          items: { $ref: '#/components/schemas/ReviewItem' }
+
+    ReviewItem:
+      type: object
+      required: [item_id, kind, rule_code, source_anchors, easy_unit_indexes, state,
+                 reason, confirmed_by, confirmed_at]
+      properties:
+        item_id: { type: string, format: uuid }
+        kind:
+          type: string
+          enum: [missing_fact, relation_check]
+        rule_code:
+          type: string
+          description: |
+            누락 신호는 `missing_` 접두사 규칙 코드다. 관계 확인은 `target_scope`,
+            `all_or_one`, `exception_scope`, `deadline_action`, `amount_subject` 중 하나다.
+        source_anchors:
+          type: array
+          items: { $ref: '#/components/schemas/ReviewSourceAnchor' }
+        easy_unit_indexes:
+          type: array
+          uniqueItems: true
+          items: { type: integer, minimum: 0 }
+        state: { $ref: '#/components/schemas/ReviewItemState' }
+        reason:
+          anyOf: [{ type: string }, { type: 'null' }]
+          maxLength: 500
+        confirmed_by:
+          anyOf: [{ type: string, format: uuid }, { type: 'null' }]
+        confirmed_at:
+          anyOf: [{ type: string, format: date-time }, { type: 'null' }]
+
+    ReviewSourceAnchor:
+      type: object
+      required: [source_unit_indexes, quote]
+      properties:
+        source_unit_indexes:
+          type: array
+          uniqueItems: true
+          items: { type: integer, minimum: 0 }
+        quote:
+          type: string
+          description: 저장된 원문에서 실제로 찾은 인용. 본문과 같이 암호화·비로그 정책을 적용한다.
+
+    ReviewItemState:
+      type: string
+      enum: [needs_review, confirmed, not_applicable]
 
     # ---------------------------------------------------------------------
     # 문단 대응표 (2.12.0 신설, P0-4 S2) — `ConversionResponse.segment_map`이 쓴다.
@@ -7237,6 +7487,19 @@ components:
 # 변경 이력
 # =============================================================================
 x-changelog:
+  - version: "2.38.0"
+    date: "2026-09-18"
+    revision: "EASY-READ-R1-REVIEW-SUPPORT"
+    author: codex
+    change: |
+      변환 응답에 `content_revision`과 `review_capabilities`를 추가하고 검수 저장 CAS 및
+      규칙 기반 검수 지원 조회·분석·항목 확인 API 세 개를 추가했다.
+    ground: |
+      누락 의심은 기존 사실 보존 규칙으로만 만들고, 의미 관계는 자동 완료 판정 없이 담당자
+      확인 항목 5개로 제공한다. 스냅샷은 본문 버전에 묶어 본문 변경 뒤 이전 확인을 stale로 둔다.
+    compatibility: |
+      변환 응답에 필수 필드 둘이 추가된다. `expected_content_revision` 없는 기존 저장 요청은
+      계속 허용되지만 새 소비자는 충돌 방지를 위해 항상 보낸다. 검수 지원 토글 기본값은 OFF다.
   - version: "2.37.0"
     date: "2026-09-15"
     revision: "PHONE-VERIFICATION-PAYMENT-GATE"
