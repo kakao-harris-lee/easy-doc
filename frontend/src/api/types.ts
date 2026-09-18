@@ -380,6 +380,40 @@ export interface UpdateReviewItemRequest {
   reason: string | null
 }
 
+// --- R2 행동 안내 작업 ---
+
+export type ActionGuideJobStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'superseded'
+export type ActionGuideFailureCode = 'generation_failed' | 'result_invalid' | 'outcome_unknown'
+
+export interface ActionGuideJob {
+  job_id: string
+  request_id: string
+  status: ActionGuideJobStatus
+  based_on_content_revision: number
+  reserved_credits: number
+  failure_code: ActionGuideFailureCode | null
+  /** ISO 8601 문자열. */
+  created_at: string
+  /** ISO 8601 문자열. */
+  updated_at: string
+}
+
+export interface ActionGuideJobCollection {
+  /** 현재 실행 중인 작업. queued·running 작업이 없으면 null이다. */
+  active_job: ActionGuideJob | null
+  /** 상태와 무관한 가장 최근 작업. 한 번도 요청하지 않았으면 null이다. */
+  latest_job: ActionGuideJob | null
+  required_credits: number
+  available_credits: number
+}
+
+export interface CreateActionGuideJobRequest {
+  request_id: string
+  expected_content_revision: number
+  /** 처음 만들 때도 필드를 생략하지 않고 null로 보낸다. */
+  expected_guide_revision: number | null
+}
+
 /** 문서 목록 한 줄 (문서 메타 + 최신 변환 상태). */
 export interface DocumentListItem {
   id: string
@@ -437,7 +471,7 @@ export interface WorkspaceNameRequest {
 // --- 워크스페이스 사용량 집계 ---
 
 /** `llm_calls.purpose`(V12)와 같은 값 — 문서 1차 변환·조건부 보정·문단 재변환. */
-export type UsagePurpose = 'convert' | 'repair' | 'reconvert'
+export type UsagePurpose = 'convert' | 'repair' | 'reconvert' | 'action_guide'
 
 /**
  * `WorkspaceUsageResponse.by_purpose` 항목. 계약
@@ -452,7 +486,7 @@ export interface PurposeUsageItem {
   input_tokens: number
   output_tokens: number
   estimated_cost_usd: string | null
-  /** 이 목적으로 완성 자체가 나지 않은 호출 수. */
+  /** 이 목적으로 완성 결과를 확인하지 못한 호출 수. */
   failed_calls: number
 }
 
@@ -473,8 +507,8 @@ export interface WorkspaceUsageResponse {
   estimated_cost_usd: string | null
   cost_unknown_calls: number
   /**
-   * 그 기간에 완성 자체가 나지 않은
-   * 호출 수(`llm_calls.outcome = provider_error`) — 위 필드들은 전부 완료된 호출만
+   * 그 기간에 완성 결과를 확인하지 못한
+   * 호출 수(`provider_error | outcome_unknown`) — 위 필드들은 전부 완료된 호출만
    * 센다.
    */
   failed_calls: number
@@ -496,7 +530,7 @@ export type CreditTransactionKind =
  * 갱신 없이 주기가 닫힐 때다 — 갱신(`plan_monthly`)과 구분된다.
  */
 export type CreditReason =
-  'signup' | 'plan_monthly' | 'manual' | 'refund' | 'conversion' | 'cycle_end'
+  'signup' | 'plan_monthly' | 'manual' | 'refund' | 'conversion' | 'action_guide' | 'cycle_end'
 
 /**
  * `WorkspaceCreditsResponse.transactions` 항목. 계약 `components/schemas/CreditTransaction`.

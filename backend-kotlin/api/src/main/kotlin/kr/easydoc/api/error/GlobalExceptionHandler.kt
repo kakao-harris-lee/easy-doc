@@ -1,5 +1,6 @@
 package kr.easydoc.api.error
 
+import kr.easydoc.application.actionguide.ActionGuideAttemptLimitExceededException
 import kr.easydoc.application.document.UPLOAD_TOO_LARGE_MESSAGE
 import kr.easydoc.core.exceptions.AdminRequiredException
 import kr.easydoc.core.exceptions.ConfigurationException
@@ -339,6 +340,10 @@ private fun mappingFor(exception: EasyDocException): Pair<HttpStatus, HttpHeader
                 HttpHeaders().apply {
                     set(RECONVERSION_REMAINING_BUDGET_HEADER, exception.remainingCallBudget.toString())
                 }
+        }
+
+        is ActionGuideAttemptLimitExceededException -> {
+            HttpStatus.TOO_MANY_REQUESTS to null
         }
 
         // 크기 초과만 413으로 가른다 — "파일을 나눠 올리라"는 안내가 형식 오류와 다르다.

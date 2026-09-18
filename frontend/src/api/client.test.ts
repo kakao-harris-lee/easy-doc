@@ -4,10 +4,13 @@ import { fetchMe, login } from './auth'
 import {
   ApiError,
   NETWORK_ERROR_STATUS,
-  createDocumentFromText,
   analyzeReviewSupport,
+  createActionGuideJob,
+  createDocumentFromText,
   downloadExport,
+  getActionGuideJob,
   getReviewSupport,
+  listActionGuideJobs,
   listDocuments,
   reconvertUnit,
   saveReview,
@@ -131,6 +134,71 @@ describe('review support API', () => {
       state: 'not_applicable',
       reason: '이 문서에는 신청 절차가 없습니다.',
     })
+  })
+})
+
+describe('action guide job API', () => {
+  const job = {
+    job_id: 'job-1',
+    request_id: 'request-1',
+    status: 'queued',
+    based_on_content_revision: 7,
+    reserved_credits: 2,
+    failure_code: null,
+    created_at: '2026-09-18T00:00:00Z',
+    updated_at: '2026-09-18T00:00:00Z',
+  }
+
+  it('목록과 개별 작업 조회 경로를 구분한다', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(200, {
+        active_job: job,
+        latest_job: job,
+        required_credits: 2,
+        available_credits: 8,
+      }),
+    )
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, job))
+
+    await listActionGuideJobs('c1')
+    await getActionGuideJob('c1', 'job-1')
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(`${apiBaseUrl}/conversions/c1/action-guide-jobs`)
+    expect(fetchMock.mock.calls[0]?.[1]?.method).toBe('GET')
+    expect(fetchMock.mock.calls[1]?.[0]).toBe(
+      `${apiBaseUrl}/conversions/c1/action-guide-jobs/job-1`,
+    )
+    expect(fetchMock.mock.calls[1]?.[1]?.method).toBe('GET')
+  })
+
+  it('생성 요청은 멱등 키와 두 revision을 보내고 202 크레딧 헤더를 읽는다', async () => {
+    fetchMock.mockResolvedValue(
+      new Response(JSON.stringify(job), {
+        status: 202,
+        headers: {
+          'Content-Type': 'application/json',
+          Location: '/conversions/c1/action-guide-jobs/job-1',
+          'X-Credit-Balance': '8',
+        },
+      }),
+    )
+
+    const result = await createActionGuideJob('c1', {
+      request_id: 'request-1',
+      expected_content_revision: 7,
+      expected_guide_revision: null,
+    })
+
+    const [url, init] = fetchMock.mock.calls[0] ?? []
+    expect(url).toBe(`${apiBaseUrl}/conversions/c1/action-guide-jobs`)
+    expect(init?.method).toBe('POST')
+    expect(JSON.parse(init?.body as string)).toEqual({
+      request_id: 'request-1',
+      expected_content_revision: 7,
+      expected_guide_revision: null,
+    })
+    expect(result.job).toEqual(job)
+    expect(result.creditBalance).toBe(8)
   })
 })
 

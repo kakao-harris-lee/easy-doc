@@ -99,4 +99,19 @@ class LlmCallRecordTest {
         assertThat(call.model).isNull()
         assertThat(call.failureClass).isEqualTo("LlmProviderException")
     }
+
+    @Test
+    fun `진행 중과 결과 불명확은 응답 모델과 실패 클래스를 모른다`() {
+        listOf(LlmCallOutcome.IN_PROGRESS, LlmCallOutcome.OUTCOME_UNKNOWN).forEach { outcome ->
+            val call = record(model = null, outcome = outcome, failureClass = null)
+
+            assertThat(call.model).isNull()
+            assertThat(call.failureClass).isNull()
+        }
+    }
+
+    @Test
+    fun `행동 안내 목적은 원장 wire name을 고정한다`() {
+        assertThat(LlmCallPurpose.ACTION_GUIDE.wireName).isEqualTo("action_guide")
+    }
 }

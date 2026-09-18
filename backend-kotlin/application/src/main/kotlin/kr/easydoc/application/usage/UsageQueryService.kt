@@ -19,9 +19,9 @@ data class PurposeUsage(
     /** 비용을 알 수 없는 호출은 0이 아니라 이 집계에서 빠진다 — [WorkspaceUsage.costUnknownCalls] 참고. */
     val estimatedCostUsd: BigDecimal?,
     /**
-     * 이 목적으로 완성 자체가 나지 않은 호출 수(`outcome = provider_error`, V18) — 백로그
+     * 이 목적으로 완성 결과를 확인하지 못한 호출 수(`outcome = provider_error | outcome_unknown`) — 백로그
      * 「실패 호출 원장 추적」. [llmCalls]·[inputTokens]·[outputTokens]·[estimatedCostUsd] 에는
-     * 들어가지 않는다(실제로 쓴 자원이 없다). 그 목적으로 실패 호출만 있고 완료가 하나도
+     * 들어가지 않는다(사용량을 확정할 수 없다). 그 목적으로 실패 호출만 있고 완료가 하나도
      * 없어도 [llmCalls] 가 0인 행으로 목록에 남는다 — 실패가 조용히 사라지지 않는다.
      */
     val failedCalls: Int,
@@ -69,10 +69,10 @@ data class WorkspaceUsage(
     val estimatedCostUsd: BigDecimal?,
     val costUnknownCalls: Int,
     /**
-     * 그 기간에 완성 자체가 나지 않은 호출 수(`outcome = provider_error`, V18 — 백로그
+     * 그 기간에 완성 결과를 확인하지 못한 호출 수(`outcome = provider_error | outcome_unknown`) — 백로그
      * 「실패 호출 원장 추적」, 2026-09-08). [documents]·[characters]·[llmCalls]·
      * [inputTokens]·[outputTokens]·[estimatedCostUsd] 는 전부 `outcome = 'completed'` 인
-     * 행만 센다 — 실패 호출은 실제로 쓴 자원이 없으므로(토큰 0, 비용 미상) 이 값들을
+     * 행만 센다 — 실패·불명확 호출은 사용량을 확정할 수 없으므로 이 값들을
      * 왜곡하지 않는다. 대신 이 필드가 그 존재를 드러낸다 — 벤더가 실패한 요청에도
      * 과금할 수 있어(계획 §6 리스크 1) 0으로 숨기면 그 비용을 대조할 단서가 사라진다.
      */
