@@ -11,6 +11,7 @@ import type {
   ConversionFeedbackResponse,
   ConversionResponse,
   ConversionReviewRequest,
+  AnalyzeReviewSupportRequest,
   DocumentCreatedResponse,
   DocumentListResponse,
   DocumentSourceResponse,
@@ -18,6 +19,8 @@ import type {
   ExportFormat,
   ReconvertUnitRequest,
   ReconvertUnitResponse,
+  ReviewSupportResponse,
+  UpdateReviewItemRequest,
   WorkspaceListResponse,
   WorkspaceNameRequest,
   WorkspaceResponse,
@@ -375,12 +378,52 @@ export function getConversion(
 }
 
 /** PUT /conversions/{id} — 검수 수정본을 저장한다 (AI 초안은 그대로 남는다). */
-export function saveReview(conversionId: string, editedText: string): Promise<ConversionResponse> {
-  const body: ConversionReviewRequest = { edited_text: editedText }
+export function saveReview(
+  conversionId: string,
+  editedText: string,
+  expectedContentRevision: number,
+): Promise<ConversionResponse> {
+  const body: ConversionReviewRequest = {
+    edited_text: editedText,
+    expected_content_revision: expectedContentRevision,
+  }
   return requestJson<ConversionResponse>(`/conversions/${conversionId}`, {
     method: 'PUT',
     body,
   })
+}
+
+/** 저장돼 있는 R1 검수 스냅샷을 읽는다. 이 호출은 새 분석을 만들지 않는다. */
+export function getReviewSupport(
+  conversionId: string,
+  signal?: AbortSignal,
+): Promise<ReviewSupportResponse> {
+  return requestJson<ReviewSupportResponse>(`/conversions/${conversionId}/review-support`, {
+    signal,
+  })
+}
+
+/** 현재 저장 본문을 규칙으로 분석한다. 유료 모델 호출이나 크레딧 차감은 없다. */
+export function analyzeReviewSupport(
+  conversionId: string,
+  body: AnalyzeReviewSupportRequest,
+): Promise<ReviewSupportResponse> {
+  return requestJson<ReviewSupportResponse>(`/conversions/${conversionId}/review-support`, {
+    method: 'POST',
+    body,
+  })
+}
+
+/** 검수 항목 하나의 담당자 표시를 낙관적 잠금으로 저장한다. */
+export function updateReviewSupportItem(
+  conversionId: string,
+  itemId: string,
+  body: UpdateReviewItemRequest,
+): Promise<ReviewSupportResponse> {
+  return requestJson<ReviewSupportResponse>(
+    `/conversions/${conversionId}/review-support/items/${itemId}`,
+    { method: 'PUT', body },
+  )
 }
 
 /**

@@ -1,5 +1,6 @@
 package kr.easydoc.api.document
 
+import jakarta.validation.Valid
 import kr.easydoc.api.MIGRATE_PROFILE
 import kr.easydoc.api.auth.AuthenticatedUser
 import kr.easydoc.application.conversion.ReconvertUnitService
@@ -60,13 +61,14 @@ class ConversionController(
     fun updateConversion(
         user: AuthenticatedUser,
         @PathVariable(CONVERSION_ID_VARIABLE) conversionId: UUID,
-        @RequestBody request: ConversionReviewRequest,
+        @Valid @RequestBody request: ConversionReviewRequest,
     ): ResponseEntity<ConversionResponse> {
         val view =
             review.save(
                 ownerId = user.id,
                 conversionId = conversionId,
                 submitted = ReviewedBody(request.editedText),
+                expectedContentRevision = request.expectedContentRevision,
             )
         return ResponseEntity
             .ok()

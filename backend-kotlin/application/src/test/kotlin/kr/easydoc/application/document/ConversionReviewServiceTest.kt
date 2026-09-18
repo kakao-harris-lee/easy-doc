@@ -21,6 +21,47 @@ import java.util.UUID
 /** 검수 저장 유스케이스 — Spring·DB 없이 대역으로 돈다. 실물 SQL 은 별도 테스트가 잰다. */
 class ConversionReviewServiceTest {
     @Test
+    fun `음수 기대 본문 버전은 조회 전에 422다`() {
+        val world = World()
+
+        assertThatThrownBy { world.save(UUID.randomUUID(), "수정", expectedContentRevision = -1) }
+            .isInstanceOf(InvalidInputException::class.java)
+            .hasMessage(CONTENT_REVISION_INVALID_MESSAGE)
+        assertThat(world.conversions.depthWhenLocked).isEmpty()
+    }
+
+    @Test
+    fun `기대 본문 버전이 다르면 저장하지 않고 409다`() {
+        val world = World()
+        val conversionId = world.seedDone(draft = "초안")
+
+        assertThatThrownBy { world.save(conversionId, "수정", expectedContentRevision = 0) }
+            .isInstanceOf(ConflictException::class.java)
+            .hasMessage(CONTENT_REVISION_CONFLICT_MESSAGE)
+        assertThat(world.conversions.savedReviews).isEmpty()
+    }
+
+    @Test
+    fun `정규화된 유효 본문이 같으면 버전을 올리지 않고 달라지면 한 번 올린다`() {
+        val world = World()
+        val conversionId = world.seedDone(draft = "같은 본문")
+
+        world.save(conversionId, "같은 본문", expectedContentRevision = 1)
+        assertThat(
+            world.conversions.owned
+                .getValue(OWNER to conversionId)
+                .contentRevision,
+        ).isEqualTo(1)
+
+        world.save(conversionId, "다른 본문", expectedContentRevision = 1)
+        assertThat(
+            world.conversions.owned
+                .getValue(OWNER to conversionId)
+                .contentRevision,
+        ).isEqualTo(2)
+    }
+
+    @Test
     @DisplayName("판정 순서 — 정규화·길이가 **소유권보다 앞이다**: 없는 자원에도 422 가 먼저 나간다")
     fun `입력 판정이 소유권보다 앞선다`() {
         val world = World()
@@ -336,7 +377,8 @@ class ConversionReviewServiceTest {
             conversionId: UUID,
             text: String,
             owner: UUID = OWNER,
-        ) = service.save(owner, conversionId, ReviewedBody(text))
+            expectedContentRevision: Long? = null,
+        ) = service.save(owner, conversionId, ReviewedBody(text), expectedContentRevision)
 
         /** 변환 한 건을 심는다. 암호문은 [cipher] 를 거친다. */
         fun seedDone(
@@ -426,6 +468,7 @@ class ConversionReviewServiceTest {
                     EncryptedField.DOCUMENT_SOURCE_TEXT -> error("검수 저장이 원문 열을 쓰지 않는다")
                     EncryptedField.DOCUMENT_ORIGINAL_BYTES -> error("검수 저장이 원본 파일 열을 쓰지 않는다")
                     EncryptedField.CONVERSION_FEEDBACK_COMMENT -> error("검수 저장이 피드백 열을 쓰지 않는다")
+                    EncryptedField.REVIEW_ASSESSMENT_PAYLOAD -> error("검수 저장이 R1 스냅샷 열을 쓰지 않는다")
                 }
             return column?.let { cipher.decrypt(it, call.expected.conversionId, field).value }
         }

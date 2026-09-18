@@ -125,6 +125,9 @@ enum class EncryptedField(val wireName: String) {
 
     /** 파일럿 검수자의 자유 의견. `conversion_feedback.comment_encrypted` (V2). 본문 조각이 섞일 수 있다. */
     CONVERSION_FEEDBACK_COMMENT("conversion_feedback.comment_encrypted"),
+
+    /** R1 검수 스냅샷. 원문 인용과 담당자 메모가 들어 있어 본문과 같은 보호를 받는다. */
+    REVIEW_ASSESSMENT_PAYLOAD("review_assessments.payload_encrypted"),
 }
 
 /** `encryption_scheme` 컬럼에 들어가는 방식 이름. */

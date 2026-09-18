@@ -147,6 +147,8 @@ else
   mkdir -p "$LOG_DIR"
 
   # --- ④ API 기동 (Flyway 는 api 기동 시 자동 적용) ------------------------------
+  # 운영 기본값은 false다. 이 일회용 API에서만 R1 검수 지원 수직 흐름을 확인한다.
+  export EASYDOC_REVIEW_SUPPORT_ENABLED=true
   log "Kotlin API 기동 (profile=api, ${API_BASE_URL})"
   java -jar "$API_JAR" --spring.profiles.active="${E2E_API_PROFILES:-api}" >"${LOG_DIR}/backend-api.log" 2>&1 &
   api_pid=$!

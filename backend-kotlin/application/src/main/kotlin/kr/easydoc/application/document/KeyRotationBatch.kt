@@ -119,7 +119,16 @@ class KeyRotationBatch(
                     fetch = { after, limit -> stores.feedback.conversionIdsOlderThan(target, after, limit) },
                     rotateOne = rotation::rotateFeedback,
                 ),
-            )
+            ) +
+                listOfNotNull(
+                    stores.reviewAssessments?.let { repository ->
+                        rotateFamily(
+                            family = FAMILY_REVIEW_ASSESSMENTS,
+                            fetch = { after, limit -> repository.idsOlderThan(target, after, limit) },
+                            rotateOne = rotation::rotateReviewAssessment,
+                        )
+                    },
+                )
         return KeyRotationResult(families)
     }
 
@@ -170,6 +179,7 @@ class KeyRotationBatch(
         const val FAMILY_DOCUMENT_ORIGINALS = "document_originals"
         const val FAMILY_CONVERSIONS = "conversions"
         const val FAMILY_CONVERSION_FEEDBACK = "conversion_feedback"
+        const val FAMILY_REVIEW_ASSESSMENTS = "review_assessments"
 
         /** 가장 작은 UUID — 각 가족 순회의 시작 커서. */
         val ZERO_UUID: UUID = UUID(0L, 0L)

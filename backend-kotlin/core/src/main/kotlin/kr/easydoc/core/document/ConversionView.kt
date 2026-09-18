@@ -53,6 +53,10 @@ data class ConversionView(
     val inputTokens: Int?,
     val outputTokens: Int?,
     val failureCode: String?,
+    /** 저장된 유효 본문의 서버 버전. 완료 전 0, 첫 완료 1이며 본문이 실제로 바뀔 때만 증가한다. */
+    val contentRevision: Long = if (status.exposesResult) 1 else 0,
+    /** 서버 설정과 구현 범위에서 유도한 검수 기능 노출 정보. */
+    val reviewCapabilities: ReviewCapabilities = ReviewCapabilities.NONE,
 ) {
     /**
      * 계약 `ConversionResponse.description` 의 **「결과 필드」 열** 중 하나라도 값을 들었는가.
@@ -82,4 +86,17 @@ data class ConversionView(
     override fun toString(): String =
         "ConversionView($id, ${status.wireName}, ${sourceFormat.wireName}, failure=$failureCode, " +
             "segmentMap=$segmentMap)"
+}
+
+data class ReviewCapabilities(
+    val reviewSupport: Boolean,
+    val actionGuide: Boolean,
+    val tableRelations: Boolean,
+    val reviewHistory: Boolean,
+    val explanations: Boolean,
+    val illustrations: Boolean,
+) {
+    companion object {
+        val NONE = ReviewCapabilities(false, false, false, false, false, false)
+    }
 }

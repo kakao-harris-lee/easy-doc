@@ -73,6 +73,8 @@ easydoc:
     comment-retention-days: ${EASYDOC_FEEDBACK_COMMENT_RETENTION_DAYS:30}
   reconversion:
     call-budget: ${EASYDOC_RECONVERSION_CALL_BUDGET:20}
+  review-support:
+    enabled: ${EASYDOC_REVIEW_SUPPORT_ENABLED:false}
   prompt:
     structure-max-runs: ${EASYDOC_PROMPT_STRUCTURE_MAX_RUNS:40}
   llm:

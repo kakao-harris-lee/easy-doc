@@ -495,6 +495,10 @@ class ValueSlotInvariantReachTest {
                     """{"plan_id":"start","order_id":"00000000-0000-0000-0000-000000000001"}""",
                 "WorkspaceNameRequest" to """{"name":"가"}""",
                 "ConversionReviewRequest" to """{"edited_text":"가"}""",
+                "ReviewSupportAnalyzeRequest" to """{"expected_content_revision":1}""",
+                "ReviewSupportItemUpdateRequest" to
+                    """{"assessment_id":"00000000-0000-0000-0000-000000000001",""" +
+                    """"expected_content_revision":1,"expected_review_revision":0,"state":"confirmed"}""",
                 // 계약 required 셋만 담는다 — `comment` 는 선택이라 최소 본문에 없다.
                 "ConversionFeedbackRequest" to
                     """{"publish_intent":"as_is","quality_score":3,"minutes_spent":1}""",

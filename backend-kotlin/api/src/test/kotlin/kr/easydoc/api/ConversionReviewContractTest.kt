@@ -89,6 +89,15 @@ class ConversionReviewContractTest {
     }
 
     @Test
+    fun `음수 expected content revision은 422다`() {
+        val body = """{"edited_text":"정상 수정본","expected_content_revision":-1}"""
+
+        val response = put(newOwner(), UUID.randomUUID().toString(), body)
+
+        assertThat(response.status).isEqualTo(UNPROCESSABLE)
+    }
+
+    @Test
     @DisplayName("계약이 이 오퍼레이션의 응답 스키마를 `GET` 과 **같은 것**으로 선언한다 — 두 노드를 계약에서 읽어 짝짓는다")
     fun `응답 스키마가 조회와 같다`() {
         val put = ContractSpec.successResponseSchemaRef(CONVERSION_ITEM_PATH, PUT)

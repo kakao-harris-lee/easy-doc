@@ -437,6 +437,8 @@ class OwnershipPredicateGuardTest {
                 "$DOCUMENT/JdbcConversionRepository.kt | UPDATE [conversions]",
                 // 변환 키 회전 배치 후보 커서 — 같은 사유(`rotate-keys`, 「내 것」이 없다).
                 "$DOCUMENT/JdbcConversionRepository.kt | SELECT [conversions]",
+                // 이전 저장 포트 호환 경로도 소유자와 보존기간을 SQL 자체에서 확인한다.
+                "$DOCUMENT/JdbcConversionRepository.kt | SELECT [conversions, documents]",
                 "$DOCUMENT/JdbcConversionRepository.kt | SELECT [conversions, documents]",
                 "$DOCUMENT/JdbcConversionRepository.kt | UPDATE [conversions, documents]",
                 // 조회가 `document_originals` 를 **읽는다** — 원본 바이트가 아니라 행의 유무만
@@ -508,6 +510,21 @@ class OwnershipPredicateGuardTest {
                 // (`nullOutSql` 이 `LOCK_EXPIRED_COMMENTS_SQL` 보다 위에 있다).
                 "$DOCUMENT/JdbcFeedbackCommentPurge.kt | UPDATE [conversion_feedback]",
                 "$DOCUMENT/JdbcFeedbackCommentPurge.kt | SELECT [conversion_feedback]",
+                // 검수 지원 평가 조회·생성·갱신은 사용자 경로라 앞의 다섯 문장이 소유자와
+                // 보존기간을 SQL 자체에서 확인한다. 뒤의 세 문장만 운영자 키 회전 경로다.
+                "$DOCUMENT/JdbcReviewAssessmentRepository.kt | " +
+                    "SELECT [conversions, documents, review_assessments]",
+                "$DOCUMENT/JdbcReviewAssessmentRepository.kt | " +
+                    "SELECT [conversions, documents, review_assessments]",
+                "$DOCUMENT/JdbcReviewAssessmentRepository.kt | " +
+                    "SELECT [conversions, documents, review_assessments]",
+                "$DOCUMENT/JdbcReviewAssessmentRepository.kt | " +
+                    "INSERT [conversions, documents, review_assessments]",
+                "$DOCUMENT/JdbcReviewAssessmentRepository.kt | " +
+                    "UPDATE [conversions, documents, review_assessments]",
+                "$DOCUMENT/JdbcReviewAssessmentRepository.kt | SELECT [review_assessments]",
+                "$DOCUMENT/JdbcReviewAssessmentRepository.kt | UPDATE [review_assessments]",
+                "$DOCUMENT/JdbcReviewAssessmentRepository.kt | SELECT [review_assessments]",
                 // Billing: public operations first lockOwned(owner, workspace); order ownership is rechecked
                 // before receipt/refund. The same durable store is used by trusted renewal/reconciliation workers.
                 // TossReachTest covers foreign-owner 404, administrator-only refund and forged webhooks.
@@ -601,6 +618,11 @@ class OwnershipPredicateGuardTest {
                 // 만드는 UPDATE 와 잠금 SELECT 둘 다 여기 있다(순서는 파일 안 정의 순서).
                 "$DOCUMENT/JdbcFeedbackCommentPurge.kt | UPDATE [conversion_feedback]",
                 "$DOCUMENT/JdbcFeedbackCommentPurge.kt | SELECT [conversion_feedback]",
+                // 검수 지원 payload 키 회전의 잠금·재봉인·후보 커서. 평문을 사용자에게
+                // 내주는 경로가 아니라 운영자 배치라 소유자 매개변수를 받지 않는다.
+                "$DOCUMENT/JdbcReviewAssessmentRepository.kt | SELECT [review_assessments]",
+                "$DOCUMENT/JdbcReviewAssessmentRepository.kt | UPDATE [review_assessments]",
+                "$DOCUMENT/JdbcReviewAssessmentRepository.kt | SELECT [review_assessments]",
                 // Billing: public operations first lockOwned(owner, workspace); order ownership is rechecked
                 // before receipt/refund. The same durable store is used by trusted renewal/reconciliation workers.
                 // TossReachTest covers foreign-owner 404, administrator-only refund and forged webhooks.
@@ -670,8 +692,12 @@ class OwnershipPredicateGuardTest {
          *
          * 35 → 37: 사용자 요청(2026-09-12)의 관리자 의견 목록/건수 두 SELECT.
          * AdminEndpoints와 AdminReachTest가 검증된 관리자에게만 열리는 경계를 지킨다.
+         *
+         * 49 → 52 는 검수 지원 평가 payload의 키 회전 잠금 SELECT·재봉인 UPDATE·후보
+         * 커서 SELECT다. 기존 봉투들과 같은 운영자 회전 경로이고, 사용자 조회·생성·갱신
+         * 다섯 문장은 소유자와 보존기간 술어를 SQL 자체에 둬 이 상한을 먹지 않는다.
          */
         const val BILLING = "infrastructure/src/main/kotlin/kr/easydoc/infrastructure/subscription"
-        const val MAX_UNGUARDED_STATEMENTS = 49
+        const val MAX_UNGUARDED_STATEMENTS = 52
     }
 }

@@ -25,6 +25,7 @@ import {
 import { setUnsavedChanges } from '../review/unsavedChanges'
 import { FormatPreservationPanel, PdfExportNotice } from './FormatPreservationPanel'
 import { ReviewFeedback } from './ReviewFeedback'
+import { ReviewSupportPanel } from './ReviewSupportPanel'
 import {
   MAX_SEGMENTED_UNITS,
   SegmentedResultEditor,
@@ -174,6 +175,8 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
   /** 마지막으로 서버에 저장된 글. 이것과 draft가 다르면 저장하지 않은 변경이다. */
   const [savedText, setSavedText] = useState(initialText)
   const [reviewedAt, setReviewedAt] = useState(conversion.reviewed_at)
+  /** 본문 저장과 검수 표시가 공유하는 서버 관리 버전(CAS). */
+  const [contentRevision, setContentRevision] = useState(conversion.content_revision)
   /**
    * 이 변환에 의견을 보낸 시각. 아래 피드백 폼이 보내는 즉시 여기로 올라온다.
    *
@@ -269,6 +272,9 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
   const [activePanel, setActivePanel] = useState<PanelKey>('source')
   /** 저장·내려받기를 누른 버튼. 그 작업이 끝나면 초점을 여기로 돌린다. */
   const refocusRef = useRef<HTMLButtonElement | null>(null)
+  /** 검수 항목의 「원문 보기」에서 이동했다가 돌아갈 버튼과 복귀 UI 상태. */
+  const reviewReturnTargetRef = useRef<HTMLButtonElement | null>(null)
+  const [reviewNavigationActive, setReviewNavigationActive] = useState(false)
   /**
    * 지금 초점이 들어 있는 패널. 어느 쪽에도 없으면 `null`이다.
    *
@@ -752,7 +758,9 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
    */
   async function persistDraft(): Promise<void> {
     const sentDraft = draft
-    const saved = await saveReview(conversion.id, sentDraft)
+    const saved = await saveReview(conversion.id, sentDraft, contentRevision)
+    // 저장 응답의 버전은 로컬 편집이 이어졌더라도 다음 CAS 요청에 반드시 사용한다.
+    setContentRevision(saved.content_revision)
     // 기다리는 동안 사용자가 이어서 고쳤다면(§MEDIUM 리뷰) 이 응답은 그때 보낸
     // `sentDraft`에 대한 것일 뿐, 지금 화면의 최신 draft에 대한 것이 아니다. 그대로
     // 덮어쓰면 방금 고친 내용이 사라지고, `unitMap`도 그 낡은 텍스트의 구조로 다시
@@ -797,9 +805,11 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
       setFeedback({
         kind: 'error',
         message:
-          caught instanceof ApiError
-            ? caught.message
-            : '저장하지 못했습니다. 잠시 후 다시 시도해 주세요.',
+          caught instanceof ApiError && caught.status === 409
+            ? `다른 화면에서 내용이 바뀌었습니다. ${caught.message} 고친 내용은 화면에 그대로 있습니다. 최신 내용을 확인한 뒤 다시 저장해 주세요.`
+            : caught instanceof ApiError
+              ? caught.message
+              : '저장하지 못했습니다. 잠시 후 다시 시도해 주세요.',
         announce: true,
       })
     } finally {
@@ -888,6 +898,43 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
           hidden: activePanel !== key,
         } as const)
       : {}
+  }
+
+  /** 검수 항목의 원문 근거로 이동한다. 지도 사용이 불가능하면 전체 원문 입력으로 간다. */
+  function handleReviewSourceNavigation(indexes: number[], trigger: HTMLButtonElement): void {
+    if (source.state.status !== 'ready') return
+    const sourceText = source.state.text
+    reviewReturnTargetRef.current = trigger
+    setReviewNavigationActive(true)
+    setPanelPickedByUser(true)
+    setActivePanel('source')
+
+    const validIndexes = indexes.filter(
+      (index) => Number.isInteger(index) && index >= 0 && index < sourceText.split('\n').length,
+    )
+    if (supportsParagraphComparison && validIndexes.length > 0) {
+      setParagraphComparison(true)
+      setHighlightedSourceIndexes(validIndexes)
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          const first = validIndexes[0]
+          if (first !== undefined) {
+            const label = `원본 ${first + 1}번째 문단`
+            const target = Array.from(
+              document.querySelectorAll<HTMLTextAreaElement>('textarea'),
+            ).find((element) => element.getAttribute('aria-label') === label)
+            target?.focus()
+          }
+        })
+      })
+      return
+    }
+
+    setParagraphComparison(false)
+    setHighlightedSourceIndexes([])
+    requestAnimationFrame(() => {
+      document.getElementById(`${editorId}-source`)?.focus()
+    })
   }
 
   const status = dirty
@@ -1094,6 +1141,19 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
                   : undefined
               }
             />
+            {reviewNavigationActive && (
+              <Button
+                type="button"
+                variant="outline"
+                className="mt-3"
+                onClick={() => {
+                  setReviewNavigationActive(false)
+                  reviewReturnTargetRef.current?.focus()
+                }}
+              >
+                검수 항목으로 돌아가기
+              </Button>
+            )}
           </div>
 
           {/* 포인트색 경계로 "여기가 고치는 쪽"임을 원문 패널과 구분한다(§6.4). */}
@@ -1272,6 +1332,17 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
             )
           })}
         </div>
+
+        {conversion.review_capabilities?.review_support === true && (
+          <ReviewSupportPanel
+            conversionId={conversion.id}
+            contentRevision={contentRevision}
+            dirty={dirty}
+            sourceAvailable={source.state.status === 'ready'}
+            mappingAvailable={supportsParagraphComparison}
+            onNavigateSource={handleReviewSourceNavigation}
+          />
+        )}
       </div>
 
       {/* 결과를 다 보고 난 자리에 둔다 — 검수 전에 묻는 만족도는 결과가 아니라 기대치를

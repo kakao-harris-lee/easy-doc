@@ -2,6 +2,8 @@ package kr.easydoc.api.document
 
 import com.fasterxml.jackson.annotation.JsonCreator
 import com.fasterxml.jackson.annotation.JsonProperty
+import com.fasterxml.jackson.annotation.JsonSetter
+import com.fasterxml.jackson.annotation.Nulls
 import kr.easydoc.application.conversion.ReconvertUnitResult
 import kr.easydoc.core.document.ConversionView
 import kr.easydoc.core.document.FormatPreservation
@@ -17,9 +19,14 @@ data class ConversionReviewRequest
     @JsonCreator
     constructor(
         @param:JsonProperty("edited_text") val editedText: String,
+        @param:JsonProperty("expected_content_revision")
+        @param:JsonSetter(nulls = Nulls.SET)
+        val expectedContentRevision: Long? = null,
     ) {
         /** **수정본을 찍지 않는다.** */
-        override fun toString(): String = "ConversionReviewRequest(editedText=$CONTENT_MASK ${editedText.length}자)"
+        override fun toString(): String =
+            "ConversionReviewRequest(editedText=$CONTENT_MASK ${editedText.length}자, " +
+                "expectedContentRevision=$expectedContentRevision)"
     }
 
 /**
@@ -134,6 +141,8 @@ data class ConversionResponse private constructor(
     @get:JsonProperty("input_tokens") val inputTokens: Int?,
     @get:JsonProperty("output_tokens") val outputTokens: Int?,
     @get:JsonProperty("failure_code") val failureCode: String?,
+    @get:JsonProperty("content_revision") val contentRevision: Long,
+    @get:JsonProperty("review_capabilities") val reviewCapabilities: ReviewCapabilitiesResponse,
 ) {
     /** 본문 둘은 표식과 길이만 남긴다. */
     override fun toString(): String =
@@ -174,8 +183,31 @@ data class ConversionResponse private constructor(
                 inputTokens = view.inputTokens,
                 outputTokens = view.outputTokens,
                 failureCode = view.failureCode,
+                contentRevision = view.contentRevision,
+                reviewCapabilities = ReviewCapabilitiesResponse.of(view.reviewCapabilities),
             )
         }
+    }
+}
+
+data class ReviewCapabilitiesResponse(
+    @get:JsonProperty("review_support") val reviewSupport: Boolean,
+    @get:JsonProperty("action_guide") val actionGuide: Boolean,
+    @get:JsonProperty("table_relations") val tableRelations: Boolean,
+    @get:JsonProperty("review_history") val reviewHistory: Boolean,
+    @get:JsonProperty("explanations") val explanations: Boolean,
+    @get:JsonProperty("illustrations") val illustrations: Boolean,
+) {
+    companion object {
+        fun of(value: kr.easydoc.core.document.ReviewCapabilities): ReviewCapabilitiesResponse =
+            ReviewCapabilitiesResponse(
+                value.reviewSupport,
+                value.actionGuide,
+                value.tableRelations,
+                value.reviewHistory,
+                value.explanations,
+                value.illustrations,
+            )
     }
 }
 

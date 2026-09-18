@@ -338,6 +338,9 @@ class EnvelopeColumnWriteGuardTest {
                 // 피드백 자유 의견 파기 배치의 UPDATE (2026-09-04, backlog §1.1 「conversion_feedback
                 // 의 삭제 경로」 판단 ⑵) — 봉투 세 열을 함께 NULL 로 만든다.
                 "infrastructure/src/main/kotlin/kr/easydoc/infrastructure/document/JdbcFeedbackCommentPurge.kt",
+                // R1 검수 payload의 일반 갱신과 키 회전 UPDATE. 인용·사유·상태를 한 봉투로 쓴다.
+                "infrastructure/src/main/kotlin/kr/easydoc/infrastructure/document/" +
+                    "JdbcReviewAssessmentRepository.kt",
                 "infrastructure/src/test/kotlin/kr/easydoc/infrastructure/document/ConversionReviewStorageTest.kt",
                 "infrastructure/src/test/kotlin/kr/easydoc/infrastructure/document/EnvelopeRotationConcurrencyTest.kt",
                 // 회전 배치 통합 테스트도 옛 세대 변환을 완료 상태로 심는다 — 그 문장이 봉투를
@@ -375,6 +378,6 @@ class EnvelopeColumnWriteGuardTest {
          * 같은 불변식을 진다. `ReviewedBody` 를 만들 수 있는 자리가 아니라(privacy-gate X-5)
          * 제품 검수 저장 경로 대신 이 원시 SQL 을 쓴다 — 사유는 그 함수 KDoc.
          */
-        const val EXPECTED_STATEMENTS = 23
+        const val EXPECTED_STATEMENTS = 25
     }
 }
