@@ -7,6 +7,7 @@
 
 import { clearToken, readToken } from './token'
 import type {
+  ActionGuideResource,
   ActionGuideJob,
   ActionGuideJobCollection,
   AnalyzeReviewSupportRequest,
@@ -23,6 +24,7 @@ import type {
   ReconvertUnitRequest,
   ReconvertUnitResponse,
   ReviewSupportResponse,
+  SaveActionGuideRequest,
   UpdateReviewItemRequest,
   WorkspaceListResponse,
   WorkspaceNameRequest,
@@ -429,6 +431,25 @@ export function updateReviewSupportItem(
   )
 }
 
+/** GET /conversions/{id}/action-guide — 저장된 안내문과 재방문용 작업 ID를 읽는다. */
+export function getActionGuide(
+  conversionId: string,
+  signal?: AbortSignal,
+): Promise<ActionGuideResource> {
+  return requestJson<ActionGuideResource>(`/conversions/${conversionId}/action-guide`, { signal })
+}
+
+/** PUT /conversions/{id}/action-guide — 후보 적용·직접 편집·담당자 확인을 저장한다. */
+export function saveActionGuide(
+  conversionId: string,
+  body: SaveActionGuideRequest,
+): Promise<ActionGuideResource> {
+  return requestJson<ActionGuideResource>(`/conversions/${conversionId}/action-guide`, {
+    method: 'PUT',
+    body,
+  })
+}
+
 /** GET /conversions/{id}/action-guide-jobs — 실행 중 작업과 최신 작업·크레딧 상태를 읽는다. */
 export function listActionGuideJobs(
   conversionId: string,
@@ -535,6 +556,18 @@ export async function downloadExport(
     blob: await response.blob(),
     filename: parseFilename(response.headers.get('Content-Disposition')),
   }
+}
+
+/** GET /conversions/{id}/action-guide/export — 확인된 현재 버전만 TXT로 받는다. */
+export async function downloadActionGuide(
+  conversionId: string,
+  guideRevision: number,
+): Promise<DownloadedFile> {
+  const response = await send(
+    `/conversions/${conversionId}/action-guide/export?guide_revision=${guideRevision}`,
+    {},
+  )
+  return { blob: await response.blob(), filename: 'action-guide.txt' }
 }
 
 /**

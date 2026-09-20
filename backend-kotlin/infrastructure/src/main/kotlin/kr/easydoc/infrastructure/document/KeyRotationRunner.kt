@@ -1,6 +1,7 @@
 package kr.easydoc.infrastructure.document
 
 import kr.easydoc.application.document.KeyRotationBatch
+import kr.easydoc.infrastructure.actionguide.ActionGuideContentKeyRotation
 import org.slf4j.LoggerFactory
 import org.springframework.boot.ApplicationArguments
 import org.springframework.boot.ApplicationRunner
@@ -19,8 +20,10 @@ import org.springframework.stereotype.Component
  */
 @Component
 @Profile(ROTATE_KEYS_PROFILE)
-class KeyRotationRunner(private val batch: KeyRotationBatch) :
-    ApplicationRunner,
+class KeyRotationRunner(
+    private val batch: KeyRotationBatch,
+    private val actionGuideContent: ActionGuideContentKeyRotation,
+) : ApplicationRunner,
     ExitCodeGenerator {
     private val log = LoggerFactory.getLogger(KeyRotationRunner::class.java)
 
@@ -32,6 +35,9 @@ class KeyRotationRunner(private val batch: KeyRotationBatch) :
         exitCode =
             try {
                 batch.run()
+                val (candidates, guides) = actionGuideContent.run()
+                log.info("키 회전 [action_guide_candidates]: rotated={}", candidates)
+                log.info("키 회전 [action_guides]: rotated={}", guides)
                 SUCCESS
             } catch (failure: RuntimeException) {
                 // 메시지만 남긴다 — 도메인 예외는 개수만 말하고 행 식별자·본문을 담지 않는다.

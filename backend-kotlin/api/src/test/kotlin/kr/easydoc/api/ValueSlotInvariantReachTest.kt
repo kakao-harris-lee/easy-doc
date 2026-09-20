@@ -502,6 +502,17 @@ class ValueSlotInvariantReachTest {
                 "ActionGuideJobCreateRequest" to
                     """{"request_id":"00000000-0000-0000-0000-000000000001",""" +
                     """"expected_content_revision":1,"expected_guide_revision":null}""",
+                "ActionGuideSaveRequest" to
+                    """{"candidate_id":null,"expected_content_revision":1,
+                    "expected_guide_revision":null,"mark_reviewed":false,
+                    "content":{"schema_version":1,"sections":[
+                    {"kind":"eligibility","status":"not_in_source","items":[]},
+                    {"kind":"benefits","status":"not_in_source","items":[]},
+                    {"kind":"documents","status":"not_in_source","items":[]},
+                    {"kind":"steps","status":"not_in_source","items":[]},
+                    {"kind":"exceptions","status":"not_in_source","items":[]},
+                    {"kind":"contact","status":"not_in_source","items":[]}
+                    ]}}""",
                 // 계약 required 셋만 담는다 — `comment` 는 선택이라 최소 본문에 없다.
                 "ConversionFeedbackRequest" to
                     """{"publish_intent":"as_is","quality_score":3,"minutes_spent":1}""",

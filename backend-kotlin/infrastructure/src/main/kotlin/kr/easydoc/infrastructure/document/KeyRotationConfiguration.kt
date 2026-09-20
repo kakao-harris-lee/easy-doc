@@ -7,10 +7,14 @@ import kr.easydoc.application.document.KeyRotationObserver
 import kr.easydoc.application.document.KeyRotationPolicy
 import kr.easydoc.application.document.LoggingKeyRotationObserver
 import kr.easydoc.application.document.SealedStores
+import kr.easydoc.infrastructure.actionguide.ActionGuideContentKeyRotation
 import org.springframework.boot.context.properties.ConfigurationProperties
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.context.annotation.Profile
+import org.springframework.jdbc.core.simple.JdbcClient
+import org.springframework.transaction.PlatformTransactionManager
+import org.springframework.transaction.support.TransactionTemplate
 
 /** 저장 데이터를 현재 쓰기 키로 재봉인하는 운영 프로필. */
 const val ROTATE_KEYS_PROFILE: String = "rotate-keys"
@@ -35,6 +39,15 @@ data class KeyRotationProperties(val batchSize: Int = DEFAULT_BATCH_SIZE) {
 @Configuration(proxyBeanMethods = false)
 @Profile(ROTATE_KEYS_PROFILE)
 class KeyRotationConfiguration {
+    @Bean
+    fun actionGuideContentKeyRotation(
+        jdbcClient: JdbcClient,
+        cipher: ContentCipher,
+        transactionManager: PlatformTransactionManager,
+        properties: KeyRotationProperties,
+    ): ActionGuideContentKeyRotation =
+        ActionGuideContentKeyRotation(jdbcClient, cipher, TransactionTemplate(transactionManager), properties.batchSize)
+
     @Bean
     fun keyRotationObserver(): KeyRotationObserver = LoggingKeyRotationObserver()
 

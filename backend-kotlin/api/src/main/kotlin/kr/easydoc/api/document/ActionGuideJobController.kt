@@ -7,10 +7,13 @@ import jakarta.validation.constraints.Max
 import jakarta.validation.constraints.Min
 import kr.easydoc.api.MIGRATE_PROFILE
 import kr.easydoc.api.auth.AuthenticatedUser
+import kr.easydoc.application.actionguide.ActionGuideCandidateView
+import kr.easydoc.application.actionguide.ActionGuideContentService
 import kr.easydoc.application.actionguide.ActionGuideJobCollectionView
 import kr.easydoc.application.actionguide.ActionGuideJobCreationView
 import kr.easydoc.application.actionguide.ActionGuideJobService
 import kr.easydoc.application.actionguide.ActionGuideJobView
+import kr.easydoc.core.actionguide.ActionGuideJobStatus
 import org.springframework.context.annotation.Profile
 import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpStatus
@@ -25,7 +28,10 @@ import java.util.UUID
 
 @Profile("!$MIGRATE_PROFILE")
 @RestController
-class ActionGuideJobController(private val service: ActionGuideJobService) {
+class ActionGuideJobController(
+    private val service: ActionGuideJobService,
+    private val contentService: ActionGuideContentService,
+) {
     @GetMapping(ACTION_GUIDE_JOBS_PATH)
     fun list(
         user: AuthenticatedUser,
@@ -55,7 +61,16 @@ class ActionGuideJobController(private val service: ActionGuideJobService) {
         user: AuthenticatedUser,
         @PathVariable(CONVERSION_ID) conversionId: UUID,
         @PathVariable(JOB_ID) jobId: UUID,
-    ): ResponseEntity<ActionGuideJobResponse> = ok(ActionGuideJobResponse.of(service.get(user.id, conversionId, jobId)))
+    ): ResponseEntity<ActionGuideJobResponse> {
+        val job = service.get(user.id, conversionId, jobId)
+        val candidate =
+            if (job.status == ActionGuideJobStatus.SUCCEEDED) {
+                contentService.candidateForJob(user.id, conversionId, jobId)
+            } else {
+                null
+            }
+        return ok(ActionGuideJobResponse.of(job, candidate))
+    }
 
     private fun <T : Any> ok(body: T): ResponseEntity<T> =
         ResponseEntity
@@ -113,9 +128,15 @@ data class ActionGuideJobResponse(
     @get:JsonProperty("failure_code") val failureCode: String?,
     @get:JsonProperty("created_at") val createdAt: String,
     @get:JsonProperty("updated_at") val updatedAt: String,
+    @get:JsonProperty("candidate_id") val candidateId: UUID? = null,
+    @get:JsonProperty("candidate_state") val candidateState: String? = null,
+    @get:JsonProperty("content") val content: ActionGuideContentPayload? = null,
 ) {
     companion object {
-        fun of(view: ActionGuideJobView): ActionGuideJobResponse =
+        fun of(
+            view: ActionGuideJobView,
+            candidate: ActionGuideCandidateView? = null,
+        ): ActionGuideJobResponse =
             ActionGuideJobResponse(
                 view.jobId,
                 view.requestId,
@@ -125,6 +146,9 @@ data class ActionGuideJobResponse(
                 view.failureCode?.wireName,
                 view.createdAt.toString(),
                 view.updatedAt.toString(),
+                candidate?.candidateId,
+                candidate?.state,
+                candidate?.let { ActionGuideContentPayload.of(it.content) },
             )
     }
 }

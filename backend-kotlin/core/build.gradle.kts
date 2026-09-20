@@ -6,6 +6,7 @@ plugins {
 }
 
 dependencies {
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
     // BOM은 테스트 라이브러리 버전 정렬에만 사용하며 Spring jar를 추가하지 않는다.
     testImplementation(platform(libs.spring.boot.bom))
     testImplementation(libs.junit.jupiter)

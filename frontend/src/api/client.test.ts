@@ -8,16 +8,20 @@ import {
   createActionGuideJob,
   createDocumentFromText,
   downloadExport,
+  downloadActionGuide,
+  getActionGuide,
   getActionGuideJob,
   getReviewSupport,
   listActionGuideJobs,
   listDocuments,
   reconvertUnit,
   saveReview,
+  saveActionGuide,
   setUnauthorizedHandler,
   updateReviewSupportItem,
 } from './client'
 import { readToken, writeToken } from './token'
+import type { ActionGuideContent } from './types'
 import { userResponse } from '../test/factories'
 
 /** JSON 응답을 흉내 낸다. */
@@ -138,6 +142,27 @@ describe('review support API', () => {
 })
 
 describe('action guide job API', () => {
+  const content: ActionGuideContent = {
+    schema_version: 1,
+    sections: [
+      {
+        kind: 'eligibility',
+        status: 'available',
+        items: [
+          {
+            text: '19세 이상 신청 가능',
+            cautions: [],
+            source_anchors: [{ source_unit_indexes: [0], quote: '19세 이상 신청 가능' }],
+          },
+        ],
+      },
+      { kind: 'benefits', status: 'not_in_source', items: [] },
+      { kind: 'documents', status: 'not_in_source', items: [] },
+      { kind: 'steps', status: 'not_in_source', items: [] },
+      { kind: 'exceptions', status: 'not_in_source', items: [] },
+      { kind: 'contact', status: 'not_in_source', items: [] },
+    ],
+  }
   const job = {
     job_id: 'job-1',
     request_id: 'request-1',
@@ -147,7 +172,86 @@ describe('action guide job API', () => {
     failure_code: null,
     created_at: '2026-09-18T00:00:00Z',
     updated_at: '2026-09-18T00:00:00Z',
+    candidate_id: null,
+    candidate_state: null,
+    content: null,
   }
+
+  it('생성 완료 작업은 후보 ID, 현재성, 고정 6섹션을 읽는다', async () => {
+    const completed = {
+      ...job,
+      status: 'succeeded',
+      candidate_id: 'candidate-1',
+      candidate_state: 'current',
+      content,
+    }
+    fetchMock.mockResolvedValue(jsonResponse(200, completed))
+
+    const actual = await getActionGuideJob('c1', 'job-1')
+
+    expect(actual.candidate_id).toBe('candidate-1')
+    expect(actual.candidate_state).toBe('current')
+    expect(actual.content?.sections).toHaveLength(6)
+  })
+
+  it('저장 안내문을 읽고 두 revision과 확인 의사를 함께 저장한다', async () => {
+    const resource = {
+      status: 'not_generated',
+      guide: null,
+      active_job_id: 'job-1',
+      latest_job_id: 'job-1',
+    }
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, resource))
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(200, {
+        status: 'draft',
+        guide: {
+          guide_id: 'guide-1',
+          based_on_content_revision: 7,
+          guide_revision: 1,
+          status: 'draft',
+          content,
+          reviewed_at: null,
+          reviewed_by: null,
+        },
+        active_job_id: null,
+        latest_job_id: null,
+      }),
+    )
+
+    expect((await getActionGuide('c1')).active_job_id).toBe('job-1')
+    const saved = await saveActionGuide('c1', {
+      candidate_id: 'candidate-1',
+      expected_content_revision: 7,
+      expected_guide_revision: null,
+      content,
+      mark_reviewed: false,
+    })
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(`${apiBaseUrl}/conversions/c1/action-guide`)
+    expect(fetchMock.mock.calls[1]?.[0]).toBe(`${apiBaseUrl}/conversions/c1/action-guide`)
+    expect(fetchMock.mock.calls[1]?.[1]?.method).toBe('PUT')
+    expect(JSON.parse(fetchMock.mock.calls[1]?.[1]?.body as string)).toMatchObject({
+      candidate_id: 'candidate-1',
+      expected_content_revision: 7,
+      expected_guide_revision: null,
+      mark_reviewed: false,
+    })
+    expect(saved.guide?.guide_revision).toBe(1)
+  })
+
+  it('확인한 안내문 revision을 쿼리로 보내 TXT로 받는다', async () => {
+    fetchMock.mockResolvedValue(new Response('신청 대상\n19세 이상', { status: 200 }))
+
+    const file = await downloadActionGuide('c1', 3)
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      `${apiBaseUrl}/conversions/c1/action-guide/export?guide_revision=3`,
+    )
+    expect(fetchMock.mock.calls[0]?.[1]?.method).toBe('GET')
+    expect(file.filename).toBe('action-guide.txt')
+    expect(await file.blob.text()).toBe('신청 대상\n19세 이상')
+  })
 
   it('목록과 개별 작업 조회 경로를 구분한다', async () => {
     fetchMock.mockResolvedValueOnce(

@@ -463,12 +463,22 @@ class ConversionReviewServiceTest {
             val column =
                 when (field) {
                     EncryptedField.BILLING_SESSION, EncryptedField.BILLING_ORDER -> error("검수는 결제 열을 쓰지 않는다")
+
                     EncryptedField.CONVERSION_EASY_TEXT -> call.updated.ciphertexts.easyText
+
                     EncryptedField.CONVERSION_EDITED_TEXT -> call.updated.ciphertexts.editedText
+
                     EncryptedField.DOCUMENT_SOURCE_TEXT -> error("검수 저장이 원문 열을 쓰지 않는다")
+
                     EncryptedField.DOCUMENT_ORIGINAL_BYTES -> error("검수 저장이 원본 파일 열을 쓰지 않는다")
+
                     EncryptedField.CONVERSION_FEEDBACK_COMMENT -> error("검수 저장이 피드백 열을 쓰지 않는다")
+
                     EncryptedField.REVIEW_ASSESSMENT_PAYLOAD -> error("검수 저장이 R1 스냅샷 열을 쓰지 않는다")
+
+                    EncryptedField.ACTION_GUIDE_CANDIDATE_PAYLOAD,
+                    EncryptedField.ACTION_GUIDE_PAYLOAD,
+                    -> error("검수 저장이 행동 안내문 열을 쓰지 않는다")
                 }
             return column?.let { cipher.decrypt(it, call.expected.conversionId, field).value }
         }

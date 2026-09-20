@@ -325,6 +325,12 @@ class EnvelopeColumnWriteGuardTest {
                 // 함께 쓴다(`MARK_DONE_SQL`). 만료된 변환이 조회·내보내기·검수 저장에서
                 // 404 인지를 재려면 먼저 「내줄 것이 실재하는」 행을 세워야 한다.
                 "api/src/test/kotlin/kr/easydoc/api/RetentionReadGuardReachTest.kt",
+                // R2 후보/안내문 회전 두 문장. 각 표의 payload와 봉투 세대는 함께 바꾼다.
+                "infrastructure/src/main/kotlin/kr/easydoc/infrastructure/actionguide/" +
+                    "ActionGuideContentKeyRotation.kt",
+                // R2 안내문 CAS 갱신 문장도 payload와 봉투를 한 번에 쓴다.
+                "infrastructure/src/main/kotlin/kr/easydoc/infrastructure/actionguide/" +
+                    "JdbcActionGuideContentRepository.kt",
                 // 피드백 의견의 회전 UPDATE. 봉인 열이 하나라 문장도 하나다.
                 "infrastructure/src/main/kotlin/kr/easydoc/infrastructure/document/" +
                     "JdbcConversionFeedbackRepository.kt",
@@ -378,6 +384,6 @@ class EnvelopeColumnWriteGuardTest {
          * 같은 불변식을 진다. `ReviewedBody` 를 만들 수 있는 자리가 아니라(privacy-gate X-5)
          * 제품 검수 저장 경로 대신 이 원시 SQL 을 쓴다 — 사유는 그 함수 KDoc.
          */
-        const val EXPECTED_STATEMENTS = 25
+        const val EXPECTED_STATEMENTS = 28
     }
 }

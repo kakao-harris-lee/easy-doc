@@ -1,5 +1,6 @@
 package kr.easydoc.application.actionguide
 
+import kr.easydoc.core.actionguide.ActionGuideCandidate
 import kr.easydoc.core.actionguide.ActionGuideJobFailureCode
 import kr.easydoc.core.actionguide.ActionGuideJobStatus
 import kr.easydoc.core.credit.Credits
@@ -183,9 +184,22 @@ interface ActionGuideLlmCallLedger {
     )
 }
 
-/** ER-06의 실제 생성기가 구현할 경계. ER-05에서는 fake runner만 사용한다. */
+/** 검증된 후보와 호출 원장 결과를 함께 돌려줘 성공 정산과 후보 저장을 한 트랜잭션에 묶는다. */
+sealed interface ActionGuideRunResult {
+    val record: LlmCallRecord
+
+    data class Valid(
+        override val record: LlmCallRecord,
+        val candidate: ActionGuideCandidate,
+    ) : ActionGuideRunResult
+
+    data class Invalid(override val record: LlmCallRecord) : ActionGuideRunResult
+
+    data class ProviderFailed(override val record: LlmCallRecord) : ActionGuideRunResult
+}
+
 fun interface ActionGuideJobRunner {
-    fun run(job: StoredActionGuideJob): LlmCallRecord
+    fun run(job: StoredActionGuideJob): ActionGuideRunResult
 }
 
 data class ActionGuideJobWorkerPolicy(

@@ -382,6 +382,61 @@ export interface UpdateReviewItemRequest {
 
 // --- R2 행동 안내 작업 ---
 
+export type ActionGuideSectionKind =
+  'eligibility' | 'benefits' | 'documents' | 'steps' | 'exceptions' | 'contact'
+
+export type ActionGuideSectionStatus = 'available' | 'not_in_source' | 'needs_review'
+
+export interface ActionGuideSourceAnchor {
+  source_unit_indexes: number[]
+  quote: string
+}
+
+export interface ActionGuideItem {
+  text: string
+  cautions: string[]
+  source_anchors: ActionGuideSourceAnchor[]
+}
+
+export interface ActionGuideSection {
+  kind: ActionGuideSectionKind
+  status: ActionGuideSectionStatus
+  items: ActionGuideItem[]
+}
+
+/** schema_version 1, 고정 6개 섹션. 전체 사용자 본문 상한은 서버가 검증한다. */
+export interface ActionGuideContent {
+  schema_version: 1
+  sections: ActionGuideSection[]
+}
+
+export type ActionGuideStatus = 'not_generated' | 'draft' | 'reviewed' | 'stale'
+
+export interface ActionGuide {
+  guide_id: string
+  based_on_content_revision: number
+  guide_revision: number
+  status: Exclude<ActionGuideStatus, 'not_generated'>
+  content: ActionGuideContent
+  reviewed_at: string | null
+  reviewed_by: string | null
+}
+
+export interface ActionGuideResource {
+  status: ActionGuideStatus
+  guide: ActionGuide | null
+  active_job_id: string | null
+  latest_job_id: string | null
+}
+
+export interface SaveActionGuideRequest {
+  candidate_id: string | null
+  expected_content_revision: number
+  expected_guide_revision: number | null
+  content: ActionGuideContent
+  mark_reviewed: boolean
+}
+
 export type ActionGuideJobStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'superseded'
 export type ActionGuideFailureCode = 'generation_failed' | 'result_invalid' | 'outcome_unknown'
 
@@ -396,6 +451,9 @@ export interface ActionGuideJob {
   created_at: string
   /** ISO 8601 문자열. */
   updated_at: string
+  candidate_id: string | null
+  candidate_state: 'current' | 'stale' | null
+  content: ActionGuideContent | null
 }
 
 export interface ActionGuideJobCollection {

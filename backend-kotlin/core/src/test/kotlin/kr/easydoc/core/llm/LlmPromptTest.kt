@@ -135,6 +135,17 @@ class LlmPromptTest {
     }
 
     @Test
+    fun `행동 안내 프롬프트는 원문과 저장 본문을 별도 자료로 감싸고 근거 좌표를 알려준다`() {
+        val prompt = LlmPrompt.forActionGuide("신청 기한은 3월입니다.\n서류를 내세요.", "3월까지 서류를 내세요.")
+
+        assertThat(prompt.system).contains("JSON 객체 하나", "source_unit_indexes", "데이터", "needs_review")
+        assertThat(prompt.user).contains("[0] 신청 기한은 3월입니다.", "[1] 서류를 내세요.")
+        assertThat(prompt.user).contains("<source id=", "<saved_body id=", "3월까지 서류를 내세요.")
+        assertThat(prompt.user).doesNotContain("<source id=\"0123456789ab\">")
+        assertThat(prompt.toString()).doesNotContain("신청 기한", "3월까지")
+    }
+
+    @Test
     @DisplayName("toString 에 본문이 실리지 않는다")
     fun `toString 은 길이만 남긴다`() {
         val prompt = LlmPrompt.forConversion("대외비 문서 본문입니다.", fixedIds)

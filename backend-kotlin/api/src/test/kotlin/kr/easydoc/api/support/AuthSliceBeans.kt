@@ -142,6 +142,10 @@ class AuthSliceBeans {
         org.mockito.Mockito.mock(kr.easydoc.application.actionguide.ActionGuideJobService::class.java)
 
     @Bean
+    fun actionGuideContentService(): kr.easydoc.application.actionguide.ActionGuideContentService =
+        org.mockito.Mockito.mock(kr.easydoc.application.actionguide.ActionGuideContentService::class.java)
+
+    @Bean
     fun reviewSupportService(): kr.easydoc.application.document.ReviewSupportService =
         org.mockito.Mockito.mock(kr.easydoc.application.document.ReviewSupportService::class.java)
 
