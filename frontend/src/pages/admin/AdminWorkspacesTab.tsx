@@ -14,6 +14,7 @@ import type {
 } from '../../api/types'
 import { SubscriptionCard } from '../../components/subscription/SubscriptionCard'
 import { Button } from '../../components/ui/Button'
+import { formatCredits, isCreditAmount } from '../../lib/credits'
 
 /** 한 쪽에 담을 개수. 계약 기본값(20)과 같다. */
 const PAGE_SIZE = 20
@@ -104,8 +105,8 @@ function WorkspaceDetailPanel({
     setFormError(null)
     setSuccessMessage(null)
     const credits = Number(form.credits)
-    if (!Number.isInteger(credits) || credits === 0) {
-      setFormError('크레딧은 0이 아닌 정수여야 합니다.')
+    if (!isCreditAmount(credits)) {
+      setFormError('크레딧은 0이 아닌 0.1 단위 숫자여야 합니다.')
       return
     }
     setSubmitting(true)
@@ -163,19 +164,19 @@ function WorkspaceDetailPanel({
         <div>
           <dt className="text-sm text-muted-foreground">가용</dt>
           <dd className="text-lg font-bold tabular-nums text-foreground">
-            {formatCount(detail.summary.credit_available)}
+            {formatCredits(detail.summary.credit_available)}
           </dd>
         </div>
         <div>
           <dt className="text-sm text-muted-foreground">잔액</dt>
           <dd className="text-lg font-bold tabular-nums text-foreground">
-            {formatCount(detail.summary.credit_balance)}
+            {formatCredits(detail.summary.credit_balance)}
           </dd>
         </div>
         <div>
           <dt className="text-sm text-muted-foreground">예약 중</dt>
           <dd className="text-lg font-bold tabular-nums text-foreground">
-            {formatCount(detail.summary.credit_reserved)}
+            {formatCredits(detail.summary.credit_reserved)}
           </dd>
         </div>
       </dl>
@@ -203,6 +204,7 @@ function WorkspaceDetailPanel({
           <input
             id={creditsId}
             type="number"
+            step="0.1"
             required
             value={form.credits}
             onChange={(event) =>
@@ -268,7 +270,7 @@ function WorkspaceDetailPanel({
               detail.transactions.map((transaction) => (
                 <tr key={transaction.id}>
                   <th scope="row">{transaction.kind}</th>
-                  <td className="tabular-nums">{transaction.credits}</td>
+                  <td className="tabular-nums">{formatCredits(transaction.credits)}</td>
                   <td>{transaction.reason}</td>
                   <td>{new Date(transaction.created_at).toLocaleString('ko-KR')}</td>
                 </tr>
@@ -466,11 +468,11 @@ export function AdminWorkspacesTab() {
                     <td>{item.owner_email}</td>
                     <td>{new Date(item.created_at).toLocaleDateString('ko-KR')}</td>
                     <td className="tabular-nums">
-                      {formatCount(item.credit_available)}/{formatCount(item.credit_balance)}/
-                      {formatCount(item.credit_reserved)}
+                      {formatCredits(item.credit_available)}/{formatCredits(item.credit_balance)}/
+                      {formatCredits(item.credit_reserved)}
                     </td>
                     <td className="tabular-nums">
-                      {formatCount(item.month_documents)}/{formatCount(item.month_credits)}/
+                      {formatCount(item.month_documents)}/{formatCredits(item.month_credits)}/
                       {formatCostUsd(item.month_cost_usd)}
                     </td>
                   </tr>

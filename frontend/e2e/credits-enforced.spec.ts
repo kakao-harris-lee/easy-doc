@@ -10,8 +10,7 @@
  * 스택의 stub 테스트 결제로 Start 월 50크레딧을 설정해 10크레딧 단위 차감과 소진 뒤
  * 402를 잰다. 실제 Toss나 유료 LLM은 호출하지 않는다.
  *
- * 가입 부여를 1크레딧으로 좁혀서(설정값 1) "1크레딧짜리 문서 하나는 통과, 다음 등록은
- * 가용 0으로 402"라는 경계를 정확히 재현한다.
+ * 가입 부여 1에서 0.1과 0.9를 차감한 뒤 다음 0.1 요청이 402로 거절되는지 확인한다.
  */
 
 import { expect, test } from '@playwright/test'
@@ -26,17 +25,17 @@ import {
   verifyPhone,
 } from './support/app'
 
-/** 짧은 붙여넣기 원문 — `ceil(chars/1000) = 1`크레딧이면 충분하다(E21과 같은 길이대). */
-const SOURCE_TEXT = '국민건강보험료를 납부하려면 가까운 지사를 방문하세요.'
+/** 정확히 100자로 0.1크레딧 차감을 검증한다. */
+const SOURCE_TEXT = '가'.repeat(100)
 
-/** 공백 포함 정확히 10,000자 — `ceil(10000/1000) = 10`크레딧이다. */
+/** 공백 포함 정확히 10,000자 — 10크레딧이다. */
 const TEN_CREDIT_TEXT = '가'.repeat(10_000)
 
 /** 계약 `InsufficientCredits` 예시 문구(`contracts/easy-doc-v1.yaml`). */
 const INSUFFICIENT_CREDITS_DETAIL = '크레딧이 부족합니다. 상위 플랜을 선택해 주세요.'
 
 test.describe('크레딧 계정 (집행 켜짐)', () => {
-  test('E22 가입 부여(1) → 첫 등록 202/가용0 → 두 번째 등록 402 → 화면·/usage 반영', async ({
+  test('E22 가입 부여(1) → 0.1·0.9 차감 → 다음 0.1 요청 402 → 화면·/usage 반영', async ({
     page,
   }) => {
     const account = newAccount()
@@ -44,7 +43,7 @@ test.describe('크레딧 계정 (집행 켜짐)', () => {
     // 이메일 인증을 먼저 마쳐야 POST /documents 가 열린다(계약 2.9.0) — E21과 같은 이유.
     await verifyEmail(page, account)
 
-    async function registerDocument(title: string) {
+    async function registerDocument(title: string, text = SOURCE_TEXT) {
       return Promise.all([
         page.waitForResponse(
           (response) =>
@@ -53,26 +52,33 @@ test.describe('크레딧 계정 (집행 켜짐)', () => {
         ),
         (async () => {
           await page.getByLabel('문서 제목').fill(title)
-          await page.getByLabel('바꿀 글').fill(SOURCE_TEXT)
+          await page.getByLabel('바꿀 글').fill(text)
           await page.getByRole('button', { name: '쉬운 글 초안 만들기', exact: true }).click()
         })(),
       ])
     }
 
-    // 1) 가입 직후 가용 1 — 첫 등록은 202, 예약 직후 가용은 1 - 1 = 0
+    // 1) 100자는 0.1을 예약하여 0.9를 남긴다.
     // (`X-Credit-Balance` — 크레딧 계정 계획 §2 결정 7, 스위치와 무관하게 202에도 실린다).
     const [firstResponse] = await registerDocument('E2E 크레딧 집행 확인용 안내 1')
     expect(firstResponse.status()).toBe(ROUTES.documentCreate.accepted)
-    expect(firstResponse.headers()['x-credit-balance']).toBe('0')
+    expect(firstResponse.headers()['x-credit-balance']).toBe('0.9')
 
-    // 2) 두 번째 등록 — 가용 0에 1크레딧이 필요 → 402
+    await page.goto('/usage')
+    await expect(page.locator('dt:text-is("남은 이용량") + dd')).toHaveText('0.9크레딧')
+    await page.goto('/')
+    const [remainingResponse] = await registerDocument('E2E 남은 0.9 차감', '가'.repeat(900))
+    expect(remainingResponse.status()).toBe(ROUTES.documentCreate.accepted)
+    expect(Number(remainingResponse.headers()['x-credit-balance'])).toBe(0)
+
+    // 2) 가용 0에서 추가 100자 요청은 필요량 0.1로 402를 반환한다.
     // (`InsufficientCredits`: `X-Credit-Balance`·`X-Credits-Required` 헤더, 몸체는
     // `{detail}` 하나뿐 — `x-error-body-universality`).
     await page.goto('/')
     const [secondResponse] = await registerDocument('E2E 크레딧 집행 확인용 안내 2')
     expect(secondResponse.status()).toBe(402)
-    expect(secondResponse.headers()['x-credits-required']).toBe('1')
-    expect(secondResponse.headers()['x-credit-balance']).toBe('0')
+    expect(secondResponse.headers()['x-credits-required']).toBe('0.1')
+    expect(Number(secondResponse.headers()['x-credit-balance'])).toBe(0)
     const body = (await secondResponse.json()) as Record<string, unknown>
     expect(Object.keys(body)).toEqual(['detail'])
     expect(body.detail).toBe(INSUFFICIENT_CREDITS_DETAIL)
@@ -80,7 +86,7 @@ test.describe('크레딧 계정 (집행 켜짐)', () => {
     // 3) 업로드 화면 — 서버 문구 뒤에 필요·가용 크레딧을 덧붙인다
     // (`UploadPage`의 402 분기: `${message} 필요 ${required} · 가용 ${balance}`).
     await expect(page.getByRole('alert')).toHaveText(
-      `${INSUFFICIENT_CREDITS_DETAIL} 필요 1 · 가용 0`,
+      `${INSUFFICIENT_CREDITS_DETAIL} 필요 0.1 · 가용 0`,
     )
 
     // 4) /usage 크레딧 카드 — 가용 0, 집행이 켜져 있으므로 "지금은 집행되지 않습니다"
@@ -156,7 +162,7 @@ test.describe('크레딧 계정 (집행 켜짐)', () => {
       page.getByRole('button', { name: '쉬운 글 초안 만들기', exact: true }).click(),
     ])
     expect(firstResponse.status()).toBe(ROUTES.documentCreate.accepted)
-    expect(firstResponse.headers()['x-credit-balance']).toBe('40')
+    expect(Number(firstResponse.headers()['x-credit-balance'])).toBe(40)
     await expect.poll(async () => (await readCredits()).available).toBe(40)
 
     // 3) 같은 10크레딧 요청 네 건을 더 접수해 30 → 20 → 10 → 0 경계를 잰다.
@@ -172,7 +178,7 @@ test.describe('크레딧 계정 (집행 켜짐)', () => {
         },
       })
       expect(response.status()).toBe(ROUTES.documentCreate.accepted)
-      expect(response.headers()['x-credit-balance']).toBe(String(expectedBalance))
+      expect(Number(response.headers()['x-credit-balance'])).toBe(expectedBalance)
     }
 
     // 4) 여섯 번째 10크레딧 요청은 잔액을 음수로 만들지 않고 402로 거절한다.
@@ -185,8 +191,8 @@ test.describe('크레딧 계정 (집행 켜짐)', () => {
       },
     })
     expect(denied.status()).toBe(402)
-    expect(denied.headers()['x-credits-required']).toBe('10')
-    expect(denied.headers()['x-credit-balance']).toBe('0')
+    expect(Number(denied.headers()['x-credits-required'])).toBe(10)
+    expect(Number(denied.headers()['x-credit-balance'])).toBe(0)
     expect(await denied.json()).toEqual({ detail: INSUFFICIENT_CREDITS_DETAIL })
 
     // 5) worker가 다섯 예약을 소비로 확정할 때까지 기다린다. 최종 상태는 월 제공량 50,

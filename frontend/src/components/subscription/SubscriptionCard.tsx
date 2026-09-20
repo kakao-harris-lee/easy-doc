@@ -9,6 +9,7 @@ import {
   type SubscriptionOverview,
   type TestSubscriptionPlanId,
 } from '../../api/subscriptions'
+import { formatCredits } from '../../lib/credits'
 import { Button } from '../ui/Button'
 import { TargetPlanCatalog } from './TargetPlanCatalog'
 
@@ -142,7 +143,7 @@ export function SubscriptionCard({
             {active && (
               <>
                 <p className="mt-2 text-sm">
-                  월 {won(current.monthly_price)} · {current.allowance}크레딧
+                  월 {won(current.monthly_price)} · {formatCredits(current.allowance)}크레딧
                 </p>
                 <p className="mt-1 text-sm text-muted-foreground">
                   {date(current.cycle_ends_at)}{' '}

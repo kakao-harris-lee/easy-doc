@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonProperty
 import kr.easydoc.application.credit.CreditAccountView
 import kr.easydoc.application.credit.CreditTransactionView
 import kr.easydoc.core.credit.CreditTransactionKind
+import java.math.BigDecimal
 import java.time.Instant
 
 /**
@@ -13,14 +14,14 @@ import java.time.Instant
  */
 data class WorkspaceCreditsResponse(
     @get:JsonProperty("workspace_id") val workspaceId: String,
-    @get:JsonProperty("balance") val balance: Int,
-    @get:JsonProperty("reserved") val reserved: Int,
-    @get:JsonProperty("available") val available: Int,
+    @get:JsonProperty("balance") val balance: BigDecimal,
+    @get:JsonProperty("reserved") val reserved: BigDecimal,
+    @get:JsonProperty("available") val available: BigDecimal,
     @get:JsonProperty("enforced") val enforced: Boolean,
     @get:JsonProperty("transactions") val transactions: List<CreditTransactionResponse>,
     @get:JsonProperty("signup_grant_skipped") val signupGrantSkipped: Boolean,
     /** 이번 주기에 제공된 이용량(계약 2.30.0). `workspace_credit_accounts.allowance`(V21). */
-    @get:JsonProperty("allowance") val allowance: Int,
+    @get:JsonProperty("allowance") val allowance: BigDecimal,
     /** 현재 유효한 이용 주기가 시작된 시각. `null`이면 진행 중인 주기가 없다. */
     @get:JsonProperty("cycle_started_at") val cycleStartedAt: Instant?,
     /** 이번 주기가 끝나는 시각(계약 2.30.0). `null`이면 이 계정은 주기가 없다. */
@@ -47,7 +48,7 @@ data class WorkspaceCreditsResponse(
 data class CreditTransactionResponse(
     @get:JsonProperty("id") val id: String,
     @get:JsonProperty("kind") val kind: String,
-    @get:JsonProperty("credits") val credits: Int,
+    @get:JsonProperty("credits") val credits: BigDecimal,
     @get:JsonProperty("reason") val reason: String,
     @get:JsonProperty("note") val note: String?,
     @get:JsonProperty("document_id") val documentId: String?,
@@ -72,7 +73,7 @@ data class CreditTransactionResponse(
          * 직접 바꾸는 종류라 [CreditTransactionKind.ADJUST]와 같은 자리 — `balanceDelta`
          * 그대로(설정/초기화 전후 잔액 차, 음수일 수 있다).
          */
-        private fun creditsOf(transaction: CreditTransactionView): Int =
+        private fun creditsOf(transaction: CreditTransactionView): BigDecimal =
             when (transaction.kind) {
                 CreditTransactionKind.RESERVE, CreditTransactionKind.RELEASE -> {
                     -transaction.reservedDelta

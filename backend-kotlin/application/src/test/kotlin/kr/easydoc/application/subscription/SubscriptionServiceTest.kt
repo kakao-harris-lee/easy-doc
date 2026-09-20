@@ -15,6 +15,7 @@ import kr.easydoc.core.user.User
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
+import java.math.BigDecimal
 import java.time.Clock
 import java.time.Instant
 import java.time.ZoneId
@@ -33,13 +34,13 @@ class SubscriptionServiceTest {
                 override fun setAllowance(
                     workspaceId: UUID,
                     ownerUserId: UUID,
-                    allowance: Int,
+                    allowance: BigDecimal,
                     cycleEndsAt: Instant,
                     renews: Boolean,
                     reason: CreditReason,
                     note: String?,
                     actorUserId: UUID?,
-                ): Int {
+                ): BigDecimal {
                     grants++
                     assertThat(renews).isFalse()
                     return allowance

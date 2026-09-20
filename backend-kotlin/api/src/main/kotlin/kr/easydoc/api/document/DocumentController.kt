@@ -144,7 +144,7 @@ class DocumentController(
             .status(HttpStatus.ACCEPTED)
             .contentType(MediaType.APPLICATION_JSON)
             .header(HttpHeaders.LOCATION, "$CONVERSION_LOCATION_PREFIX${upload.conversionId}")
-            .header(CREDIT_BALANCE_HEADER, upload.creditBalance.toString())
+            .header(CREDIT_BALANCE_HEADER, upload.creditBalance.toPlainString())
             .body(DocumentCreatedResponse.of(upload))
 
     private companion object {

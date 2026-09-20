@@ -72,7 +72,7 @@ class JdbcAdminWorkspaceQueryRepository(private val jdbc: JdbcClient) : AdminWor
             .param("ids", workspaceIds.toList())
             .query { rs, _ ->
                 rs.getObject("workspace_id", UUID::class.java) to
-                    AdminCreditBalance(balance = rs.getInt("balance"), reserved = rs.getInt("reserved"))
+                    AdminCreditBalance(balance = rs.getBigDecimal("balance"), reserved = rs.getBigDecimal("reserved"))
             }.list()
             .toMap()
     }
@@ -94,7 +94,7 @@ class JdbcAdminWorkspaceQueryRepository(private val jdbc: JdbcClient) : AdminWor
             val totals = documents[id]
             AdminMonthUsage(
                 documents = totals?.documents ?: 0,
-                credits = credits[id] ?: totals?.credits ?: 0,
+                credits = credits[id] ?: totals?.credits ?: BigDecimal.ZERO,
                 estimatedCostUsd = costs[id],
             )
         }
@@ -112,7 +112,7 @@ class JdbcAdminWorkspaceQueryRepository(private val jdbc: JdbcClient) : AdminWor
             .param("toExclusive", toExclusive.toOffsetDateTime())
             .query { rs, _ ->
                 rs.getObject("workspace_id", UUID::class.java) to
-                    DocumentTotals(documents = rs.getInt("documents"), credits = rs.getLong("credits"))
+                    DocumentTotals(documents = rs.getInt("documents"), credits = rs.getBigDecimal("credits"))
             }.list()
             .toMap()
 
@@ -120,13 +120,13 @@ class JdbcAdminWorkspaceQueryRepository(private val jdbc: JdbcClient) : AdminWor
         workspaceIds: Collection<UUID>,
         from: Instant,
         toExclusive: Instant,
-    ): Map<UUID, Long> =
+    ): Map<UUID, BigDecimal> =
         jdbc
             .sql(CREDIT_TOTALS_BY_WORKSPACE_SQL)
             .param("ids", workspaceIds.toList())
             .param("from", from.toOffsetDateTime())
             .param("toExclusive", toExclusive.toOffsetDateTime())
-            .query { rs, _ -> rs.getObject("workspace_id", UUID::class.java) to rs.getLong("credits") }
+            .query { rs, _ -> rs.getObject("workspace_id", UUID::class.java) to rs.getBigDecimal("credits") }
             .list()
             .toMap()
 
@@ -166,7 +166,7 @@ class JdbcAdminWorkspaceQueryRepository(private val jdbc: JdbcClient) : AdminWor
 
     private data class DocumentTotals(
         val documents: Int,
-        val credits: Long,
+        val credits: BigDecimal,
     )
 
     private companion object {
@@ -215,7 +215,7 @@ class JdbcAdminWorkspaceQueryRepository(private val jdbc: JdbcClient) : AdminWor
             SELECT
                 workspace_id,
                 count(*) AS documents,
-                coalesce(sum(ceil(document_char_count::numeric / 1000)), 0)::bigint AS credits
+                coalesce(sum(ceil(document_char_count::numeric / 1000)), 0)::numeric AS credits
             FROM (
                 SELECT DISTINCT ON (document_id) document_id, workspace_id, document_char_count
                 FROM llm_calls
@@ -245,7 +245,7 @@ class JdbcAdminWorkspaceQueryRepository(private val jdbc: JdbcClient) : AdminWor
         val CREDIT_TOTALS_BY_WORKSPACE_SQL =
             """
             SELECT workspace_id,
-                   -sum(balance_delta)::bigint AS credits
+                   -sum(balance_delta)::numeric AS credits
             FROM credit_transactions
             WHERE workspace_id IN (:ids) AND created_at >= :from AND created_at < :toExclusive
               AND kind = 'consume'

@@ -418,7 +418,7 @@ describe('업로드 화면', () => {
   })
 
   describe('크레딧 안내 (C2)', () => {
-    it('필요 크레딧은 ceil(글자수/1000)이고, 가용 조회 전에는 필요 크레딧만 보여준다', async () => {
+    it('필요 크레딧은 100자마다 0.1을 올림하고, 가용 조회 전에는 필요 크레딧만 보여준다', async () => {
       const user = userEvent.setup()
       // beforeEach가 조회 실패를 기본값으로 둔다 — "가용"이 끝까지 나타나지 않는다.
       renderPage()
@@ -426,7 +426,7 @@ describe('업로드 화면', () => {
       await user.click(screen.getByLabelText('바꿀 글'))
       await user.paste('가'.repeat(1001))
 
-      expect(screen.getByText('필요 크레딧 2')).toBeInTheDocument()
+      expect(screen.getByText('필요 크레딧 1.1')).toBeInTheDocument()
       expect(screen.queryByText(/가용/)).not.toBeInTheDocument()
     })
 
@@ -441,7 +441,7 @@ describe('업로드 화면', () => {
       expect(await screen.findByText('필요 크레딧 2 / 가용 5')).toBeInTheDocument()
     })
 
-    it('1,000자 경계 — 정확히 1,000자는 1크레딧, 1자만 넘겨도 2크레딧이다', async () => {
+    it('1,000자 경계 — 정확히 1,000자는 1크레딧, 1자만 넘겨도 1.1크레딧이다', async () => {
       const user = userEvent.setup()
       renderPage()
 
@@ -452,7 +452,7 @@ describe('업로드 화면', () => {
 
       await user.paste('가')
 
-      expect(screen.getByText('필요 크레딧 2')).toBeInTheDocument()
+      expect(screen.getByText('필요 크레딧 1.1')).toBeInTheDocument()
     })
 
     it('집행이 꺼져 있으면 필요/가용 옆에 그 사실을 덧붙인다', async () => {

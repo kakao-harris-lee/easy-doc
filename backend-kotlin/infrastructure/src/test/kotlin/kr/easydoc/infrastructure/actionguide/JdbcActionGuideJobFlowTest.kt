@@ -20,6 +20,7 @@ import org.springframework.jdbc.core.simple.JdbcClient
 import org.springframework.jdbc.datasource.DataSourceTransactionManager
 import org.springframework.jdbc.datasource.DriverManagerDataSource
 import org.springframework.transaction.support.TransactionTemplate
+import java.math.BigDecimal
 import java.time.Duration
 import java.time.Instant
 import java.util.UUID
@@ -76,7 +77,7 @@ class JdbcActionGuideJobFlowTest {
         assertThat(transactionCount(job.jobId, "reserve")).isEqualTo(1)
         assertThat(transactionCount(job.jobId, "consume")).isEqualTo(1)
         assertThat(accountReserved(fixture.workspaceId)).isZero()
-        assertThat(accountBalance(fixture.workspaceId)).isEqualTo(9)
+        assertThat(accountBalance(fixture.workspaceId)).isEqualByComparingTo("9")
         assertThat(jobs.markSucceeded(lease, NOW.plusSeconds(2))).isFalse()
     }
 
@@ -113,7 +114,7 @@ class JdbcActionGuideJobFlowTest {
         assertThat(transactionCount(job.jobId, "reserve")).isEqualTo(1)
         assertThat(transactionCount(job.jobId, "release")).isEqualTo(1)
         assertThat(accountReserved(fixture.workspaceId)).isZero()
-        assertThat(accountBalance(fixture.workspaceId)).isEqualTo(10)
+        assertThat(accountBalance(fixture.workspaceId)).isEqualByComparingTo("10")
         assertThat(providerAttempts(job.jobId)).isEqualTo(1)
     }
 
@@ -132,7 +133,7 @@ class JdbcActionGuideJobFlowTest {
     @DisplayName("문서 삭제는 활성 작업 예약을 해제하고 superseded로 보존한다")
     fun `문서 삭제 trigger가 예약을 정산한다`() {
         val fixture = seed()
-        val job = fixture.job()
+        val job = fixture.job().copy(reservedCredits = BigDecimal("0.1"))
         createIdempotently(job)
 
         jdbc.sql("DELETE FROM documents WHERE id = :id").param("id", fixture.documentId).update()
@@ -141,13 +142,61 @@ class JdbcActionGuideJobFlowTest {
             .isEqualTo(ActionGuideJobStatus.SUPERSEDED)
         assertThat(transactionCount(job.jobId, "release")).isEqualTo(1)
         assertThat(accountReserved(fixture.workspaceId)).isZero()
+        assertThat(accountBalance(fixture.workspaceId)).isEqualByComparingTo("10")
+        val releaseDelta =
+            jdbc
+                .sql(
+                    "SELECT reserved_delta FROM credit_transactions " +
+                        "WHERE action_guide_job_id = :id AND kind = 'release'",
+                ).param("id", job.jobId)
+                .query { rs, _ -> rs.getBigDecimal(1) }
+                .single()
+        assertThat(releaseDelta).isEqualByComparingTo("-0.1")
+    }
+
+    @Test
+    @DisplayName("소수 예약은 job에 저장된 양으로 성공 정산한다")
+    fun `소수 예약은 저장된 양으로 소비한다`() {
+        val fixture = seed()
+        val job = fixture.job().copy(reservedCredits = BigDecimal("0.1"))
+        createIdempotently(job)
+
+        val lease = (tx.execute { jobs.acquire("worker-a", Duration.ofMinutes(2)) } as ActionGuideJobAcquire.Held).lease
+        tx.executeWithoutResult {
+            val held = jobs.lockIfHeld(lease)!!
+            assertThat(jobs.markSucceeded(lease, NOW.plusSeconds(1))).isTrue()
+            credits.consume(held)
+        }
+
+        assertThat(accountReserved(fixture.workspaceId)).isEqualByComparingTo("0")
+        assertThat(accountBalance(fixture.workspaceId)).isEqualByComparingTo("9.9")
+        val consume =
+            jdbc
+                .sql(
+                    """
+                    SELECT balance_delta, reserved_delta
+                    FROM credit_transactions
+                    WHERE action_guide_job_id = :id AND kind = 'consume'
+                    """.trimIndent(),
+                ).param("id", job.jobId)
+                .query { rs, _ -> rs.getBigDecimal(1) to rs.getBigDecimal(2) }
+                .single()
+        assertThat(consume.first).isEqualByComparingTo("-0.1")
+        assertThat(consume.second).isEqualByComparingTo("-0.1")
     }
 
     private fun createIdempotently(job: StoredActionGuideJob) {
         tx.executeWithoutResult {
             if (jobs.findByRequestId(job.ownerId, job.conversionId, job.requestId) == null) {
-                assertThat(credits.reserve(job.ownerId, job.workspaceId, job.documentId, job.jobId, Credits(1)))
-                    .isInstanceOf(kr.easydoc.application.actionguide.ActionGuideCreditReservation.Reserved::class.java)
+                assertThat(
+                    credits.reserve(
+                        job.ownerId,
+                        job.workspaceId,
+                        job.documentId,
+                        job.jobId,
+                        Credits(job.reservedCredits),
+                    ),
+                ).isInstanceOf(kr.easydoc.application.actionguide.ActionGuideCreditReservation.Reserved::class.java)
                 assertThat(jobs.insert(job)).isInstanceOf(ActionGuideJobInsert.Inserted::class.java)
             }
         }
@@ -234,18 +283,18 @@ class JdbcActionGuideJobFlowTest {
             .query { rs, _ -> rs.getInt(1) }
             .single()
 
-    private fun accountReserved(workspaceId: UUID): Int = accountValue(workspaceId, "reserved")
+    private fun accountReserved(workspaceId: UUID): BigDecimal = accountValue(workspaceId, "reserved")
 
-    private fun accountBalance(workspaceId: UUID): Int = accountValue(workspaceId, "balance")
+    private fun accountBalance(workspaceId: UUID): BigDecimal = accountValue(workspaceId, "balance")
 
     private fun accountValue(
         workspaceId: UUID,
         column: String,
-    ): Int =
+    ): BigDecimal =
         jdbc
             .sql("SELECT $column FROM workspace_credit_accounts WHERE workspace_id=:id")
             .param("id", workspaceId)
-            .query { rs, _ -> rs.getInt(1) }
+            .query { rs, _ -> rs.getBigDecimal(1) }
             .single()
 
     private fun llmOutcome(jobId: UUID): String =
@@ -278,7 +327,7 @@ class JdbcActionGuideJobFlowTest {
                 UUID.randomUUID(),
                 null,
                 1,
-                1,
+                BigDecimal.ONE,
                 ActionGuideJobStatus.QUEUED,
                 null,
                 null,

@@ -5,6 +5,7 @@ import { ApiError } from '../api/client'
 import { getWorkspaceCredits } from '../api/credits'
 import { getWorkspaceUsage } from '../api/usage'
 import type { WorkspaceCreditsResponse, WorkspaceUsageResponse } from '../api/types'
+import { formatCredits } from '../lib/credits'
 import { SubscriptionCard } from '../components/subscription/SubscriptionCard'
 import { TargetPlanCatalog } from '../components/subscription/TargetPlanCatalog'
 import { PageHeader } from '../components/PageHeader'
@@ -23,12 +24,14 @@ function RemainingUsage({ credits }: { credits: WorkspaceCreditsResponse }) {
       <dl>
         <dt className="text-sm text-muted-foreground">남은 이용량</dt>
         <dd className="mt-1 text-2xl font-bold tabular-nums text-foreground">
-          {credits.enforced ? `${count(Math.max(0, credits.available))}크레딧` : '이용량 제한 없음'}
+          {credits.enforced
+            ? `${formatCredits(Math.max(0, credits.available))}크레딧`
+            : '이용량 제한 없음'}
         </dd>
       </dl>
       {credits.enforced && credits.cycle_ends_at !== null && (
         <p className="mt-2 text-sm text-muted-foreground">
-          제공량 {count(credits.allowance)}크레딧 ·{' '}
+          제공량 {formatCredits(credits.allowance)}크레딧 ·{' '}
           {new Date(credits.cycle_ends_at).toLocaleDateString('ko-KR')} 이용 기간 종료
         </p>
       )}
@@ -47,7 +50,7 @@ function RemainingUsage({ credits }: { credits: WorkspaceCreditsResponse }) {
         )}
       {credits.enforced && credits.reserved > 0 && (
         <p className="mt-2 text-sm text-muted-foreground">
-          변환 중인 {count(credits.reserved)}크레딧을 제외한 수량입니다.
+          변환 중인 {formatCredits(credits.reserved)}크레딧을 제외한 수량입니다.
         </p>
       )}
       {credits.signup_grant_skipped && (
@@ -116,7 +119,7 @@ function WorkspaceUsage({ workspaceId }: { workspaceId: string }) {
       ) : (
         <>
           <p className="mt-3 text-3xl font-bold tabular-nums text-foreground">
-            {count(usage.credits)}크레딧 사용
+            {formatCredits(usage.credits)}크레딧 사용
           </p>
           <p className="mt-2 text-sm text-muted-foreground">
             문서 {count(usage.documents)}건 · {count(usage.characters)}자
@@ -175,7 +178,7 @@ export function UsagePage() {
         )}
       </div>
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-sm text-muted-foreground">
-        <p>1크레딧은 공백 포함 1,000자 분량입니다.</p>
+        <p>공백 포함 원문 100자마다 0.1크레딧으로 계산하며, 1자라도 남으면 올림합니다.</p>
         <div className="flex items-center gap-4">
           <Link
             to={HISTORY_PATH}

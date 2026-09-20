@@ -15,6 +15,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import org.springframework.jdbc.core.simple.JdbcClient
 import org.springframework.jdbc.datasource.DriverManagerDataSource
+import java.math.BigDecimal
 import java.time.Clock
 import java.time.Instant
 import java.time.OffsetDateTime
@@ -59,9 +60,9 @@ class JdbcCreditAccountRepositoryTest {
 
         assertThat(result).isInstanceOf(ReservationResult.Reserved::class.java)
         val reserved = result as ReservationResult.Reserved
-        assertThat(reserved.balance).isEqualTo(10)
-        assertThat(reserved.reserved).isEqualTo(3)
-        assertThat(reserved.available).isEqualTo(7)
+        assertThat(reserved.balance).isEqualByComparingTo("10")
+        assertThat(reserved.reserved).isEqualByComparingTo("3")
+        assertThat(reserved.available).isEqualByComparingTo("7")
     }
 
     @Test
@@ -72,7 +73,7 @@ class JdbcCreditAccountRepositoryTest {
 
         val result = repository.reserve(ownerId, workspaceId, UUID.randomUUID(), Credits(3), enforced = true)
 
-        assertThat(result).isEqualTo(ReservationResult.Insufficient(2))
+        assertThat(result).isEqualTo(ReservationResult.Insufficient(BigDecimal.valueOf(2)))
     }
 
     @Test
@@ -84,8 +85,8 @@ class JdbcCreditAccountRepositoryTest {
 
         assertThat(result).isInstanceOf(ReservationResult.Reserved::class.java)
         val reserved = result as ReservationResult.Reserved
-        assertThat(reserved.reserved).isEqualTo(5)
-        assertThat(reserved.available).isEqualTo(-5)
+        assertThat(reserved.reserved).isEqualByComparingTo("5")
+        assertThat(reserved.available).isEqualByComparingTo("-5")
     }
 
     @Test
@@ -100,11 +101,11 @@ class JdbcCreditAccountRepositoryTest {
         repository.consume(workspaceId, ownerId, documentId, conversionId, Credits(3))
 
         val row = repository.read(ownerId, workspaceId)!!
-        assertThat(row.balance).isEqualTo(7)
-        assertThat(row.reserved).isEqualTo(0)
+        assertThat(row.balance).isEqualByComparingTo("7")
+        assertThat(row.reserved).isEqualByComparingTo("0")
         val consumeTx = row.transactions.first { it.kind == CreditTransactionKind.CONSUME }
-        assertThat(consumeTx.balanceDelta).isEqualTo(-3)
-        assertThat(consumeTx.reservedDelta).isEqualTo(-3)
+        assertThat(consumeTx.balanceDelta).isEqualByComparingTo("-3")
+        assertThat(consumeTx.reservedDelta).isEqualByComparingTo("-3")
     }
 
     @Test
@@ -119,11 +120,11 @@ class JdbcCreditAccountRepositoryTest {
         repository.release(workspaceId, ownerId, documentId, conversionId, Credits(3))
 
         val row = repository.read(ownerId, workspaceId)!!
-        assertThat(row.balance).isEqualTo(10)
-        assertThat(row.reserved).isEqualTo(0)
+        assertThat(row.balance).isEqualByComparingTo("10")
+        assertThat(row.reserved).isEqualByComparingTo("0")
         val releaseTx = row.transactions.first { it.kind == CreditTransactionKind.RELEASE }
-        assertThat(releaseTx.balanceDelta).isEqualTo(0)
-        assertThat(releaseTx.reservedDelta).isEqualTo(-3)
+        assertThat(releaseTx.balanceDelta).isEqualByComparingTo("0")
+        assertThat(releaseTx.reservedDelta).isEqualByComparingTo("-3")
     }
 
     @Test
@@ -133,11 +134,11 @@ class JdbcCreditAccountRepositoryTest {
 
         val afterGrant =
             repository.grant(workspaceId, ownerId, 50, CreditReason.PLAN_MONTHLY, note = "월 구독", actorUserId = null)
-        assertThat(afterGrant).isEqualTo(50)
+        assertThat(afterGrant).isEqualByComparingTo("50")
 
         val afterAdjust =
             repository.grant(workspaceId, ownerId, -10, CreditReason.MANUAL, note = "환급 취소", actorUserId = null)
-        assertThat(afterAdjust).isEqualTo(40)
+        assertThat(afterAdjust).isEqualByComparingTo("40")
 
         val row = repository.read(ownerId, workspaceId)!!
         assertThat(row.transactions.map { it.kind })
@@ -163,15 +164,15 @@ class JdbcCreditAccountRepositoryTest {
                 actorUserId = null,
             )
 
-        assertThat(afterSet).isEqualTo(50)
+        assertThat(afterSet).isEqualByComparingTo("50")
         val row = repository.read(ownerId, workspaceId)!!
-        assertThat(row.balance).isEqualTo(50)
-        assertThat(row.allowance).isEqualTo(50)
+        assertThat(row.balance).isEqualByComparingTo("50")
+        assertThat(row.allowance).isEqualByComparingTo("50")
         assertThat(row.cycleEndsAt).isEqualTo(cycleEndsAt)
         val setTx = row.transactions.first { it.kind == CreditTransactionKind.CYCLE_SET }
         // 30 → 50, delta = +20 (80이 아니다 — 더한 것이 아니라 설정한 것이다).
-        assertThat(setTx.balanceDelta).isEqualTo(20)
-        assertThat(setTx.reservedDelta).isEqualTo(0)
+        assertThat(setTx.balanceDelta).isEqualByComparingTo("20")
+        assertThat(setTx.reservedDelta).isEqualByComparingTo("0")
         assertThat(setTx.note).isEqualTo("주기 개시")
     }
 
@@ -194,7 +195,7 @@ class JdbcCreditAccountRepositoryTest {
         )
 
         val row = repository.read(ownerId, workspaceId)!!
-        assertThat(row.reserved).isEqualTo(5)
+        assertThat(row.reserved).isEqualByComparingTo("5")
     }
 
     @Test
@@ -241,8 +242,8 @@ class JdbcCreditAccountRepositoryTest {
         service.grantSignupBonus(workspaceId, ownerId, "signup-cycle-$workspaceId@example.test")
 
         val row = repository.read(ownerId, workspaceId)!!
-        assertThat(row.balance).isEqualTo(50)
-        assertThat(row.allowance).isEqualTo(50)
+        assertThat(row.balance).isEqualByComparingTo("50")
+        assertThat(row.allowance).isEqualByComparingTo("50")
         val expectedCycleEndsAt = OffsetDateTime.ofInstant(fixedNow, ZoneOffset.UTC).plusMonths(1).toInstant()
         assertThat(row.cycleEndsAt).isEqualTo(expectedCycleEndsAt)
         val renews =
@@ -253,7 +254,7 @@ class JdbcCreditAccountRepositoryTest {
                 .single()
         assertThat(renews).isFalse()
         val setTx = row.transactions.first { it.kind == CreditTransactionKind.CYCLE_SET }
-        assertThat(setTx.balanceDelta).isEqualTo(50)
+        assertThat(setTx.balanceDelta).isEqualByComparingTo("50")
         assertThat(setTx.reason).isEqualTo(CreditReason.SIGNUP)
     }
 
@@ -310,7 +311,7 @@ class JdbcCreditAccountRepositoryTest {
 
         val row = repository.read(ownerId, workspaceId)!!
         assertThat(row.signupGrantSkipped).isTrue()
-        assertThat(row.balance).isEqualTo(0)
+        assertThat(row.balance).isEqualByComparingTo("0")
         assertThat(row.transactions).isEmpty()
     }
 
@@ -390,8 +391,8 @@ class JdbcCreditAccountRepositoryTest {
 
         assertThat(result).isInstanceOf(ReservationResult.Reserved::class.java)
         val reserved = result as ReservationResult.Reserved
-        assertThat(reserved.reserved).isEqualTo(5)
-        assertThat(reserved.available).isEqualTo(-5)
+        assertThat(reserved.reserved).isEqualByComparingTo("5")
+        assertThat(reserved.available).isEqualByComparingTo("-5")
     }
 
     @Test
@@ -403,8 +404,8 @@ class JdbcCreditAccountRepositoryTest {
         repository.consume(workspaceId, ownerId, UUID.randomUUID(), UUID.randomUUID(), Credits(0))
 
         val row = repository.read(ownerId, workspaceId)!!
-        assertThat(row.balance).isEqualTo(10)
-        assertThat(row.reserved).isEqualTo(0)
+        assertThat(row.balance).isEqualByComparingTo("10")
+        assertThat(row.reserved).isEqualByComparingTo("0")
     }
 
     @Test
@@ -441,7 +442,7 @@ class JdbcCreditAccountRepositoryTest {
         assertThat(insufficient).hasSize(1)
 
         val row = repository.read(ownerId, workspaceId)!!
-        assertThat(row.balance - row.reserved).isEqualTo(0)
+        assertThat(row.balance - row.reserved).isEqualByComparingTo("0")
     }
 
     @Test
@@ -483,10 +484,10 @@ class JdbcCreditAccountRepositoryTest {
         val row = repository.read(ownerId, workspaceId)!!
         // 예약(5)이 보존된다 — 주기 설정이 reserved 를 건드리지 않는다는 설계가 동시
         // 실행에서도 성립한다(row lock 이 두 UPDATE를 직렬화한다).
-        assertThat(row.reserved).isEqualTo(5)
+        assertThat(row.reserved).isEqualByComparingTo("5")
         // 주기 설정 결과(더한 것이 아니라 설정한 50)가 손실 없이 반영된다.
-        assertThat(row.balance).isEqualTo(50)
-        assertThat(row.allowance).isEqualTo(50)
+        assertThat(row.balance).isEqualByComparingTo("50")
+        assertThat(row.allowance).isEqualByComparingTo("50")
         // 거래 합 = 잔액/예약 불변식이 동시 실행 뒤에도 성립한다.
         assertThat(repository.consistencyViolations().map { it.workspaceId }).doesNotContain(workspaceId)
     }

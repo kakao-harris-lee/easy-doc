@@ -28,6 +28,7 @@ import kr.easydoc.core.segment.inferUnitKinds
 import kr.easydoc.core.segment.splitUnits
 import kr.easydoc.core.text.normalizeLineEndings
 import org.slf4j.LoggerFactory
+import java.math.BigDecimal
 import java.util.UUID
 
 /**
@@ -40,7 +41,7 @@ data class AcceptedUpload(
     val conversionId: UUID,
     val status: ConversionStatus,
     val charCount: Int,
-    val creditBalance: Int,
+    val creditBalance: BigDecimal,
 )
 
 /**

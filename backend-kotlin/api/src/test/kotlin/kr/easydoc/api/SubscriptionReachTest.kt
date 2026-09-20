@@ -10,6 +10,7 @@ import org.springframework.test.context.ActiveProfiles
 import org.springframework.test.context.DynamicPropertyRegistry
 import org.springframework.test.context.DynamicPropertySource
 import tools.jackson.databind.ObjectMapper
+import java.math.BigDecimal
 import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
@@ -59,21 +60,19 @@ class SubscriptionReachTest {
         assertThat(
             database.queryInt("SELECT count(*) FROM subscription_payments WHERE workspace_id='$workspace'"),
         ).isEqualTo(1)
+        assertThat(creditValue("SELECT balance FROM workspace_credit_accounts WHERE workspace_id='$workspace'"))
+            .isEqualByComparingTo("50")
         assertThat(
-            database.queryInt("SELECT balance FROM workspace_credit_accounts WHERE workspace_id='$workspace'"),
-        ).isEqualTo(50)
-        assertThat(
-            database.queryInt("SELECT reserved FROM workspace_credit_accounts WHERE workspace_id='$workspace'"),
-        ).isEqualTo(3)
+            creditValue("SELECT reserved FROM workspace_credit_accounts WHERE workspace_id='$workspace'"),
+        ).isEqualByComparingTo("3")
         val response = send("/workspaces/$workspace/subscription", token)
         assertThat(json.readTree(response.body())["subscription"]["plan_id"].asString()).isEqualTo("start")
         assertThat(response.headers().firstValue("Cache-Control")).hasValue("no-store")
         assertThat(response.headers().firstValue("X-Content-Type-Options")).hasValue("nosniff")
         val cancel = send("/workspaces/$workspace/subscription", token, "DELETE")
         assertThat(json.readTree(cancel.body())["subscription"]["status"].asString()).isEqualTo("canceling")
-        assertThat(
-            database.queryInt("SELECT balance FROM workspace_credit_accounts WHERE workspace_id='$workspace'"),
-        ).isEqualTo(50)
+        assertThat(creditValue("SELECT balance FROM workspace_credit_accounts WHERE workspace_id='$workspace'"))
+            .isEqualByComparingTo("50")
     }
 
     @Test
@@ -92,9 +91,8 @@ class SubscriptionReachTest {
         assertThat(
             database.queryInt("SELECT count(*) FROM workspace_subscriptions WHERE workspace_id='$workspace'"),
         ).isZero()
-        assertThat(
-            database.queryInt("SELECT balance FROM workspace_credit_accounts WHERE workspace_id='$workspace'"),
-        ).isZero()
+        assertThat(creditValue("SELECT balance FROM workspace_credit_accounts WHERE workspace_id='$workspace'"))
+            .isZero()
     }
 
     @Test
@@ -143,7 +141,7 @@ class SubscriptionReachTest {
 
         val afterPayment = send("/documents", token, "POST", """{"text":"${"가".repeat(1_000)}"}""")
         assertThat(afterPayment.statusCode()).isEqualTo(202)
-        assertThat(afterPayment.headers().firstValue("X-Credit-Balance")).hasValue("49")
+        assertThat(afterPayment.headers().firstValue("X-Credit-Balance")).hasValue("49.0")
     }
 
     @Test
@@ -215,14 +213,12 @@ class SubscriptionReachTest {
                 .JdbcCreditCycleReset(jdbc, java.time.ZoneId.of("Asia/Seoul"))
                 .reset(java.time.Instant.now(), 100)
         }
-        assertThat(
-            database.queryInt("SELECT balance FROM workspace_credit_accounts WHERE workspace_id='$workspace'"),
-        ).isEqualTo(7)
+        assertThat(creditValue("SELECT balance FROM workspace_credit_accounts WHERE workspace_id='$workspace'"))
+            .isEqualByComparingTo("7")
         subscriptions.renewDue()
         subscriptions.renewDue()
-        assertThat(
-            database.queryInt("SELECT balance FROM workspace_credit_accounts WHERE workspace_id='$workspace'"),
-        ).isEqualTo(50)
+        assertThat(creditValue("SELECT balance FROM workspace_credit_accounts WHERE workspace_id='$workspace'"))
+            .isEqualByComparingTo("50")
         assertThat(
             database.queryInt("SELECT count(*) FROM subscription_payments WHERE workspace_id='$workspace'"),
         ).isEqualTo(2)
@@ -231,9 +227,8 @@ class SubscriptionReachTest {
             "UPDATE workspace_subscriptions SET cycle_ends_at=now()-interval '1 day' WHERE workspace_id='$workspace'",
         )
         subscriptions.renewDue()
-        assertThat(
-            database.queryInt("SELECT balance FROM workspace_credit_accounts WHERE workspace_id='$workspace'"),
-        ).isZero()
+        assertThat(creditValue("SELECT balance FROM workspace_credit_accounts WHERE workspace_id='$workspace'"))
+            .isZero()
         assertThat(
             database.queryInt("SELECT count(*) FROM subscription_payments WHERE workspace_id='$workspace'"),
         ).isEqualTo(2)
@@ -247,6 +242,8 @@ class SubscriptionReachTest {
         database.execute("UPDATE users SET email_verified_at=now()$phoneClause WHERE email='$email'")
         return json.readTree(send("/auth/login", null, "POST", payload).body())["access_token"].asString()
     }
+
+    private fun creditValue(sql: String): BigDecimal = BigDecimal(database.queryFirstColumn(sql).single())
 
     private fun workspace(token: String): String =
         json.readTree(send("/workspaces", token).body())["items"][0]["id"].asString()

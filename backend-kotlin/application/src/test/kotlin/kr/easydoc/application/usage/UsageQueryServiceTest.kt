@@ -29,7 +29,7 @@ class UsageQueryServiceTest {
         WorkspaceUsage(
             documents = 0,
             characters = 0,
-            credits = 0,
+            credits = BigDecimal.ZERO,
             llmCalls = 0,
             inputTokens = 0,
             outputTokens = 0,
@@ -178,7 +178,7 @@ class UsageQueryServiceTest {
             WorkspaceUsage(
                 documents = 3,
                 characters = 3000,
-                credits = 3,
+                credits = BigDecimal("3.0"),
                 llmCalls = 5,
                 inputTokens = 100,
                 outputTokens = 200,

@@ -128,6 +128,22 @@ describe('행동 안내 화면', () => {
     ).toBeInTheDocument()
   })
 
+  it('소수 첫째 자리 행동 안내 비용과 잔액을 표시한다', async () => {
+    vi.mocked(listActionGuideJobs).mockResolvedValue({
+      ...jobs,
+      required_credits: 0.1,
+      available_credits: 1.1,
+    })
+
+    show()
+
+    expect(
+      await screen.findByText('필요 이용량 0.1크레딧 / 남은 이용량 1.1크레딧'),
+    ).toBeInTheDocument()
+    await userEvent.setup().click(screen.getByRole('button', { name: '안내문 만들기' }))
+    expect(screen.getByRole('button', { name: '0.1크레딧으로 안내문 만들기' })).toBeInTheDocument()
+  })
+
   it('이용량이 부족하면 생성 대신 이용량 화면 이동을 제공한다', async () => {
     vi.mocked(listActionGuideJobs).mockResolvedValue({ ...jobs, available_credits: 1 })
     show()

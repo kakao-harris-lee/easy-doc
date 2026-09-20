@@ -39,7 +39,7 @@ class ActionGuideJobServiceTest {
         val result = world.service.create(OWNER, CONVERSION, REQUEST, 3, null)
 
         assertThat(result.job.status.wireName).isEqualTo("queued")
-        assertThat(result.job.reservedCredits).isEqualTo(2)
+        assertThat(result.job.reservedCredits).isEqualByComparingTo("1.5")
         assertThat(world.credits.reserveCalls).isEqualTo(1)
     }
 
@@ -52,8 +52,8 @@ class ActionGuideJobServiceTest {
 
         assertThat(result.activeJob?.jobId).isEqualTo(JOB)
         assertThat(result.latestJob?.jobId).isEqualTo(JOB)
-        assertThat(result.requiredCredits).isEqualTo(2)
-        assertThat(result.availableCredits).isEqualTo(7)
+        assertThat(result.requiredCredits).isEqualByComparingTo("1.5")
+        assertThat(result.availableCredits).isEqualByComparingTo("7")
     }
 
     @Test

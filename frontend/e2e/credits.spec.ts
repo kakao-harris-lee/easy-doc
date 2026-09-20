@@ -14,7 +14,7 @@ import { expect, test } from '@playwright/test'
 import { ROUTES } from './contract'
 import { api, newAccount, signUpAndLand, verifyEmail } from './support/app'
 
-/** 짧은 붙여넣기 원문 — `ceil(chars/1000) = 1`크레딧이면 충분하다(E13과 같은 길이대). */
+/** 100자 이내 원문은 0.1크레딧을 사용한다. */
 const SOURCE_TEXT = '국민건강보험료를 납부하려면 가까운 지사를 방문하세요.'
 
 test.describe('크레딧 계정', () => {
@@ -56,9 +56,8 @@ test.describe('크레딧 계정', () => {
       page.getByRole('button', { name: '쉬운 글 초안 만들기', exact: true }).click(),
     ])
     expect(createdResponse.status()).toBe(ROUTES.documentCreate.accepted)
-    // 예약 직후 가용 잔액(크레딧 계정 계획 §2 결정 7) — 짧은 원문은 1크레딧만 필요하므로
-    // 1000 - 1 = 999다. 집행 스위치와 무관하게 202에는 항상 실린다.
-    expect(createdResponse.headers()['x-credit-balance']).toBe('999')
+    // 짧은 원문은 0.1크레딧을 예약한다. 집행 스위치와 무관하게 202에 실린다.
+    expect(createdResponse.headers()['x-credit-balance']).toBe('999.9')
     // 값이 실려 있어도 CORS 노출 목록에 없으면 브라우저 JS(`client.ts`)는 이 값을 못
     // 읽는다(계약 2.22.0 ⑹ 정정 — 이전에는 이 헤더가 노출 목록에 없어 교차 출처에서
     // `null`만 받았다). Playwright의 `response.headers()`는 원시 네트워크 응답을
@@ -77,9 +76,9 @@ test.describe('크레딧 계정', () => {
     await page.goto('/usage')
     await expect(page.getByText('이용량 제한 없음')).toBeVisible()
     const updated = await (await updatedCredits).json()
-    expect(updated.available).toBe(999)
+    expect(updated.available).toBe(999.9)
     expect(updated.transactions).toEqual(
-      expect.arrayContaining([expect.objectContaining({ kind: 'reserve', credits: -1 })]),
+      expect.arrayContaining([expect.objectContaining({ kind: 'reserve', credits: -0.1 })]),
     )
     await expect(page.getByRole('table')).toHaveCount(0)
   })

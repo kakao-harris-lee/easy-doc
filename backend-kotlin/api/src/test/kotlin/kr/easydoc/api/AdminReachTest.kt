@@ -14,6 +14,7 @@ import org.springframework.boot.test.web.server.LocalServerPort
 import org.springframework.test.context.DynamicPropertyRegistry
 import org.springframework.test.context.DynamicPropertySource
 import tools.jackson.databind.ObjectMapper
+import java.math.BigDecimal
 import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
@@ -270,7 +271,7 @@ class AdminReachTest {
 
         assertThat(response.statusCode()).isEqualTo(200)
         val body = bodyOf(response)
-        assertThat(body["balance"]).isEqualTo(50)
+        assertThat((body["balance"] as Number).toDouble()).isEqualTo(50.0)
 
         val adminId = subjectOf(admin)
         val actorId =
@@ -289,6 +290,19 @@ class AdminReachTest {
         val workspaceId = defaultWorkspaceId(userToken)
 
         val response = postJson(admin, "/admin/workspaces/$workspaceId/credits", creditBody(0, "manual"))
+
+        assertThat(response.statusCode()).isEqualTo(422)
+    }
+
+    @Test
+    @DisplayName("credits가 0.1 단위가 아니면 422다")
+    fun `크레딧 조정 십분의 일 미만은 422다`() {
+        val admin = newVerifiedAdminAccount()
+        val userToken = newVerifiedAccount()
+        val workspaceId = defaultWorkspaceId(userToken)
+
+        val response =
+            postJson(admin, "/admin/workspaces/$workspaceId/credits", creditBody(BigDecimal("0.01"), "manual"))
 
         assertThat(response.statusCode()).isEqualTo(422)
     }
@@ -468,7 +482,7 @@ class AdminReachTest {
     // ------------------------------------------------------------------ 헬퍼
 
     private fun creditBody(
-        credits: Int,
+        credits: Number,
         reason: String,
     ): String = json.writeValueAsString(mapOf("credits" to credits, "reason" to reason))
 

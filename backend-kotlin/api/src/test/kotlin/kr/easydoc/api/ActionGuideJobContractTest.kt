@@ -28,6 +28,7 @@ import org.springframework.test.web.servlet.get
 import org.springframework.test.web.servlet.post
 import tools.jackson.databind.JsonNode
 import tools.jackson.databind.ObjectMapper
+import java.math.BigDecimal
 import java.time.Instant
 import java.util.UUID
 
@@ -53,7 +54,7 @@ class ActionGuideJobContractTest {
         val requestId = UUID.randomUUID()
         val job = job(requestId = requestId)
         `when`(service.create(owner, conversionId, requestId, 7, null))
-            .thenReturn(ActionGuideJobCreationView(job, availableCredits = 8))
+            .thenReturn(ActionGuideJobCreationView(job, availableCredits = BigDecimal("0.8")))
 
         val response =
             mockMvc
@@ -68,7 +69,7 @@ class ActionGuideJobContractTest {
         assertThat(response.status).isEqualTo(202)
         assertThat(response.getHeader(HttpHeaders.LOCATION))
             .isEqualTo("/conversions/$conversionId/action-guide-jobs/${job.jobId}")
-        assertThat(response.getHeader("X-Credit-Balance")).isEqualTo("8")
+        assertThat(response.getHeader("X-Credit-Balance")).isEqualTo("0.8")
         assertThat(json(response)["status"].asString()).isEqualTo("queued")
         assertThat(json(response).propertyNames())
             .containsExactlyInAnyOrder(
@@ -111,7 +112,14 @@ class ActionGuideJobContractTest {
         val conversionId = UUID.randomUUID()
         val job = job()
         `when`(service.list(owner, conversionId))
-            .thenReturn(ActionGuideJobCollectionView(job, job, requiredCredits = 2, availableCredits = 8))
+            .thenReturn(
+                ActionGuideJobCollectionView(
+                    job,
+                    job,
+                    requiredCredits = BigDecimal("0.2"),
+                    availableCredits = BigDecimal("0.8"),
+                ),
+            )
 
         val response =
             mockMvc
@@ -122,8 +130,8 @@ class ActionGuideJobContractTest {
 
         assertThat(response.status).isEqualTo(200)
         assertThat(json(response)["active_job"]["job_id"].asString()).isEqualTo(job.jobId.toString())
-        assertThat(json(response)["required_credits"].asInt()).isEqualTo(2)
-        assertThat(json(response)["available_credits"].asInt()).isEqualTo(8)
+        assertThat(json(response)["required_credits"].decimalValue().toPlainString()).isEqualTo("0.2")
+        assertThat(json(response)["available_credits"].decimalValue().toPlainString()).isEqualTo("0.8")
     }
 
     @Test
@@ -170,7 +178,7 @@ class ActionGuideJobContractTest {
             requestId = requestId,
             status = ActionGuideJobStatus.QUEUED,
             basedOnContentRevision = 7,
-            reservedCredits = 2,
+            reservedCredits = BigDecimal("0.2"),
             failureCode = null,
             createdAt = at,
             updatedAt = at,

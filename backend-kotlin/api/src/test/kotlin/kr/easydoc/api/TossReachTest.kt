@@ -19,6 +19,7 @@ import org.springframework.test.context.ActiveProfiles
 import org.springframework.test.context.DynamicPropertyRegistry
 import org.springframework.test.context.DynamicPropertySource
 import tools.jackson.databind.ObjectMapper
+import java.math.BigDecimal
 import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
@@ -64,9 +65,8 @@ class TossReachTest {
         toss.process(id)
         toss.process(id)
         assertThat(gateway.charges[id]).isEqualTo(1)
-        assertThat(
-            database.queryInt("SELECT balance FROM workspace_credit_accounts WHERE workspace_id='$workspace'"),
-        ).isEqualTo(50)
+        assertThat(creditValue("SELECT balance FROM workspace_credit_accounts WHERE workspace_id='$workspace'"))
+            .isEqualByComparingTo("50")
         database.execute("UPDATE workspace_credit_accounts SET balance=17 WHERE workspace_id='$workspace'")
         // A forged webhook never changes credits directly, and server reconciliation cannot replenish them.
         val hook = """{"eventType":"PAYMENT_STATUS_CHANGED",
@@ -75,9 +75,8 @@ class TossReachTest {
                 "totalAmount":999999}}"""
         assertThat(send("/payments/toss/webhook", null, "POST", hook).statusCode()).isEqualTo(204)
         toss.runDue()
-        assertThat(
-            database.queryInt("SELECT balance FROM workspace_credit_accounts WHERE workspace_id='$workspace'"),
-        ).isEqualTo(17)
+        assertThat(creditValue("SELECT balance FROM workspace_credit_accounts WHERE workspace_id='$workspace'"))
+            .isEqualByComparingTo("17")
         assertThat(send("/workspaces/$workspace/payments/$id/receipt", token).statusCode()).isEqualTo(200)
         replaceCardPreservingUsage(token, workspace)
         val stranger = account()
@@ -99,9 +98,8 @@ class TossReachTest {
             "UPDATE workspace_subscriptions SET cycle_ends_at=now()-interval '1 day' WHERE workspace_id='$workspace'",
         )
         toss.runDue()
-        assertThat(
-            database.queryInt("SELECT balance FROM workspace_credit_accounts WHERE workspace_id='$workspace'"),
-        ).isZero()
+        assertThat(creditValue("SELECT balance FROM workspace_credit_accounts WHERE workspace_id='$workspace'"))
+            .isZero()
         assertThat(gateway.charges[id]).isEqualTo(1)
     }
 
@@ -266,9 +264,8 @@ class TossReachTest {
         assertThat(
             database.queryInt("SELECT count(*) FROM subscription_payments WHERE workspace_id='$workspace'"),
         ).isEqualTo(1)
-        assertThat(
-            database.queryInt("SELECT balance FROM workspace_credit_accounts WHERE workspace_id='$workspace'"),
-        ).isEqualTo(17)
+        assertThat(creditValue("SELECT balance FROM workspace_credit_accounts WHERE workspace_id='$workspace'"))
+            .isEqualByComparingTo("17")
     }
 
     private fun account(phoneVerified: Boolean = true): String {
@@ -279,6 +276,8 @@ class TossReachTest {
         database.execute("UPDATE users SET email_verified_at=now()$phoneClause WHERE email='$email'")
         return json.readTree(send("/auth/login", null, "POST", payload).body())["access_token"].asString()
     }
+
+    private fun creditValue(sql: String): BigDecimal = BigDecimal(database.queryFirstColumn(sql).single())
 
     private fun workspace(token: String): String =
         json.readTree(send("/workspaces", token).body())["items"][0]["id"].asString()

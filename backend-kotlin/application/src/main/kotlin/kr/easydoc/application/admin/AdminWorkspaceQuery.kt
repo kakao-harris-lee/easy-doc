@@ -52,8 +52,8 @@ interface AdminWorkspaceQueryRepository {
 
 /** [AdminWorkspaceQueryRepository.creditBalances] 결과 한 건. */
 data class AdminCreditBalance(
-    val balance: Int,
-    val reserved: Int,
+    val balance: BigDecimal,
+    val reserved: BigDecimal,
 )
 
 /**
@@ -63,7 +63,7 @@ data class AdminCreditBalance(
  */
 data class AdminMonthUsage(
     val documents: Int,
-    val credits: Long,
+    val credits: BigDecimal,
     val estimatedCostUsd: BigDecimal?,
 )
 

@@ -15,6 +15,7 @@ import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
+import java.math.BigDecimal
 import java.time.Instant
 import java.util.UUID
 
@@ -130,7 +131,7 @@ class KeyRotationBatchObserverTest {
             documentId: UUID,
             scheme: String,
             keyVersion: Int,
-            creditsReserved: Int,
+            creditsReserved: BigDecimal,
         ): Conversion = error(UNREACHABLE)
 
         override fun findOwnedResult(

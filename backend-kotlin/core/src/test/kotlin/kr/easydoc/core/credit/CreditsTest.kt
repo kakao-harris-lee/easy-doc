@@ -5,6 +5,9 @@ import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.CsvSource
+import java.math.BigDecimal
 
 class CreditsTest {
     @Test
@@ -20,20 +23,45 @@ class CreditsTest {
     }
 
     @Test
-    @DisplayName("requiredFor 는 1,000자당 1크레딧을 올림한다")
-    fun `필요 크레딧은 올림한다`() {
-        assertThat(Credits.requiredFor(1).amount).isEqualTo(1)
-        assertThat(Credits.requiredFor(999).amount).isEqualTo(1)
-        assertThat(Credits.requiredFor(1000).amount).isEqualTo(1)
-        assertThat(Credits.requiredFor(1001).amount).isEqualTo(2)
-        assertThat(Credits.requiredFor(2500).amount).isEqualTo(3)
-        assertThat(Credits.requiredFor(0).amount).isEqualTo(0)
+    @DisplayName("0.1 단위 크레딧은 만들 수 있다")
+    fun `소수 첫째 자리 크레딧은 허용된다`() {
+        assertThat(Credits(BigDecimal("0.1")).amount).isEqualByComparingTo("0.1")
+        assertThat(Credits(BigDecimal("5")).amount).isEqualByComparingTo("5.0")
+    }
+
+    @ParameterizedTest(name = "{0}자 -> {1}크레딧")
+    @CsvSource(
+        "0, 0.0",
+        "1, 0.1",
+        "99, 0.1",
+        "100, 0.1",
+        "101, 0.2",
+        "999, 1.0",
+        "1000, 1.0",
+        "1001, 1.1",
+        "2147483647, 2147483.7",
+    )
+    @DisplayName("requiredFor 는 100자당 0.1크레딧으로 올림한다")
+    fun `필요 크레딧은 100자 단위로 올림한다`(
+        charCount: Int,
+        expected: String,
+    ) {
+        assertThat(Credits.requiredFor(charCount).amount).isEqualByComparingTo(expected)
     }
 
     @Test
     @DisplayName("음수 문자 수는 거절된다")
     fun `음수 문자 수는 거절된다`() {
         assertThatThrownBy { Credits.requiredFor(-1) }.isInstanceOf(IllegalArgumentException::class.java)
+    }
+
+    @Test
+    @DisplayName("음수 및 0.1 단위가 아닌 크레딧은 거절된다")
+    fun `음수와 십분의 일 미만 소수는 거절된다`() {
+        assertThatThrownBy { Credits(BigDecimal("-0.1")) }
+            .isInstanceOf(InvalidInputException::class.java)
+        assertThatThrownBy { Credits(BigDecimal("0.01")) }
+            .isInstanceOf(InvalidInputException::class.java)
     }
 }
 

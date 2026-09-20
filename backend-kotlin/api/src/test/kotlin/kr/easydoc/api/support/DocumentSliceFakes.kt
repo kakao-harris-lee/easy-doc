@@ -41,6 +41,7 @@ import kr.easydoc.core.exceptions.UnsupportedFormatException
 import kr.easydoc.core.segment.SegmentMap
 import kr.easydoc.core.segment.SourceStructure
 import kr.easydoc.core.segment.splitUnits
+import java.math.BigDecimal
 import java.time.Instant
 import java.time.temporal.ChronoUnit
 import java.util.UUID
@@ -224,7 +225,7 @@ class InMemoryConversionRepository(
         var failureCode: String?,
         var reconversionCallsReserved: Int = 0,
         var reconversionCallsUsed: Int = 0,
-        var creditsReserved: Int = 0,
+        var creditsReserved: BigDecimal = BigDecimal.ZERO,
     )
 
     private val rows = mutableMapOf<UUID, Row>()
@@ -234,7 +235,7 @@ class InMemoryConversionRepository(
         documentId: UUID,
         scheme: String,
         keyVersion: Int,
-        creditsReserved: Int,
+        creditsReserved: BigDecimal,
     ): Conversion {
         rows[id] =
             Row(
@@ -433,7 +434,7 @@ class InMemoryConversionRepository(
         val pending = row.status == ConversionStatus.PENDING || row.status == ConversionStatus.PROCESSING
         return documents
             .workspaceIdOf(documentId)
-            ?.takeIf { pending && row.creditsReserved > 0 }
+            ?.takeIf { pending && row.creditsReserved > BigDecimal.ZERO }
             ?.let { workspaceId ->
                 PendingCreditsReservation(entry.key, documentId, workspaceId, ownerId, row.creditsReserved)
             }

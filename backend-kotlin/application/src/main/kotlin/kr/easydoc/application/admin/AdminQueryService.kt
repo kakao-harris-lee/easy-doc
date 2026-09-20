@@ -26,11 +26,11 @@ data class AdminWorkspaceSummary(
     val name: String,
     val ownerEmail: String,
     val createdAt: Instant,
-    val creditBalance: Int,
-    val creditReserved: Int,
-    val creditAvailable: Int,
+    val creditBalance: BigDecimal,
+    val creditReserved: BigDecimal,
+    val creditAvailable: BigDecimal,
     val monthDocuments: Int,
-    val monthCredits: Long,
+    val monthCredits: BigDecimal,
     val monthCostUsd: BigDecimal?,
 ) {
     /** 이름·이메일을 찍지 않는다 — `Workspace`·`User`와 같은 규약. */
@@ -152,11 +152,11 @@ class AdminQueryService(
             name = row.name,
             ownerEmail = row.ownerEmail,
             createdAt = row.createdAt,
-            creditBalance = balance?.balance ?: 0,
-            creditReserved = balance?.reserved ?: 0,
-            creditAvailable = (balance?.balance ?: 0) - (balance?.reserved ?: 0),
+            creditBalance = balance?.balance ?: BigDecimal.ZERO,
+            creditReserved = balance?.reserved ?: BigDecimal.ZERO,
+            creditAvailable = (balance?.balance ?: BigDecimal.ZERO) - (balance?.reserved ?: BigDecimal.ZERO),
             monthDocuments = monthUsage?.documents ?: 0,
-            monthCredits = monthUsage?.credits ?: 0,
+            monthCredits = monthUsage?.credits ?: BigDecimal.ZERO,
             monthCostUsd = monthUsage?.estimatedCostUsd,
         )
 

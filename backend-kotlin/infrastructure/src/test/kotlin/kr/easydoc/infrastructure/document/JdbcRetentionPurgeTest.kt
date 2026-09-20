@@ -28,6 +28,7 @@ import org.springframework.jdbc.core.simple.JdbcClient
 import org.springframework.jdbc.datasource.DataSourceTransactionManager
 import org.springframework.jdbc.datasource.DriverManagerDataSource
 import org.springframework.transaction.support.TransactionTemplate
+import java.math.BigDecimal
 import java.time.Duration
 import java.util.UUID
 import javax.sql.DataSource
@@ -85,17 +86,26 @@ class JdbcRetentionPurgeTest {
     @Test
     @DisplayName("만료 문서가 끝나지 않은 크레딧 예약을 쥐고 있으면 파기 전에 해제한다 — 리뷰 HIGH-1")
     fun `파기는 끝나지 않은 예약을 해제한다`() {
-        val seeded = seedDocument(creditsReserved = 5)
+        val seeded = seedDocument(creditsReserved = BigDecimal("0.1"))
         expire(seeded.documentId)
 
         val result = purge(dryRun = false).run()
 
         assertThat(result.purgedDocuments).isEqualTo(1)
         val row = checkNotNull(creditRow(seeded.workspaceId)) { "크레딧 계정 행이 없다" }
-        assertThat(row.balance).isZero()
+        assertThat(row.balance).isEqualByComparingTo("0")
         assertThat(row.reserved)
             .withFailMessage("파기가 예약을 해제하지 않아 크레딧이 영원히 묶였다")
-            .isZero()
+            .isEqualByComparingTo("0")
+        val release =
+            jdbc
+                .sql(
+                    "SELECT reserved_delta FROM credit_transactions " +
+                        "WHERE document_id = :documentId AND kind = 'release'",
+                ).param("documentId", seeded.documentId)
+                .query { rs, _ -> rs.getBigDecimal(1) }
+                .single()
+        assertThat(release).isEqualByComparingTo("-0.1")
     }
 
     @Test
@@ -170,7 +180,7 @@ class JdbcRetentionPurgeTest {
             policy = RetentionPurgePolicy(enabled = true, dryRun = dryRun, batchSize = batchSize),
         )
 
-    private fun seedDocument(creditsReserved: Int = 0): Seeded {
+    private fun seedDocument(creditsReserved: BigDecimal = BigDecimal.ZERO): Seeded {
         val owner = users.create("u${UUID.randomUUID()}@example.com", PasswordHash(DUMMY_PHC)).id
         val workspace = workspaces.create(owner, "공간").id
         val documentId = UUID.randomUUID()
@@ -189,9 +199,15 @@ class JdbcRetentionPurgeTest {
             .param("bytes", byteArrayOf(1, 2, 3, 4))
             .param("scheme", EncryptionScheme.AES_256_GCM_V1)
             .update()
-        conversions.insertPending(conversionId, documentId, EncryptionScheme.AES_256_GCM_V1, 1, creditsReserved)
+        conversions.insertPending(
+            conversionId,
+            documentId,
+            EncryptionScheme.AES_256_GCM_V1,
+            1,
+            creditsReserved,
+        )
         queue.enqueue(conversionId)
-        if (creditsReserved > 0) {
+        if (creditsReserved.signum() > 0) {
             // 실제 등록 흐름과 같은 순서 — 계정을 만들고 예약한다(리뷰 HIGH-1 재현 준비).
             credits.ensureAccount(workspace)
             credits.reserve(owner, workspace, documentId, Credits(creditsReserved))
@@ -241,13 +257,13 @@ class JdbcRetentionPurgeTest {
         jdbc
             .sql("SELECT balance, reserved FROM workspace_credit_accounts WHERE workspace_id = :id")
             .param("id", workspaceId)
-            .query { rs, _ -> CreditRow(rs.getInt("balance"), rs.getInt("reserved")) }
+            .query { rs, _ -> CreditRow(rs.getBigDecimal("balance"), rs.getBigDecimal("reserved")) }
             .optional()
             .orElse(null)
 
     private class CreditRow(
-        val balance: Int,
-        val reserved: Int,
+        val balance: BigDecimal,
+        val reserved: BigDecimal,
     )
 
     private fun jobState(id: UUID): String =

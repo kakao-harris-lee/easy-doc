@@ -136,6 +136,28 @@ describe('플랜과 사용량', () => {
     expect(screen.queryByRole('progressbar')).not.toBeInTheDocument()
   })
 
+  it('소수 첫째 자리 이용량과 잔액을 표시한다', async () => {
+    vi.mocked(getWorkspaceCredits).mockResolvedValue(
+      workspaceCredits({
+        enforced: true,
+        allowance: 1.1,
+        balance: 0.4,
+        available: 0.3,
+        reserved: 0.1,
+        cycle_started_at: '2026-09-03T06:24:30Z',
+        cycle_ends_at: '2099-10-03T06:24:30Z',
+      }),
+    )
+    vi.mocked(getWorkspaceUsage).mockResolvedValue(workspaceUsage({ credits: 0.8 }))
+
+    render(page())
+
+    expect(await screen.findByText('0.8크레딧 사용')).toBeInTheDocument()
+    expect(screen.getByText('0.3크레딧')).toBeInTheDocument()
+    expect(screen.getByText(/제공량 1.1크레딧/)).toBeInTheDocument()
+    expect(screen.getByText('변환 중인 0.1크레딧을 제외한 수량입니다.')).toBeInTheDocument()
+  })
+
   it('미결제·결제 실패·만료로 진행 중인 주기가 없으면 과거 사용량을 표시하지 않는다', async () => {
     vi.mocked(getWorkspaceCredits).mockResolvedValue(
       workspaceCredits({ enforced: true, allowance: 0, balance: 0, available: 0 }),

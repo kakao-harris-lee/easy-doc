@@ -1,6 +1,8 @@
 package kr.easydoc.core.credit
 
 import kr.easydoc.core.exceptions.InvalidInputException
+import java.math.BigDecimal
+import java.math.RoundingMode
 
 /**
  * 크레딧 값 객체 — **항상 0 이상**(계획 `docs/plans/2026-09-07-credit-accounts.md` §2 결정 3).
@@ -10,24 +12,43 @@ import kr.easydoc.core.exceptions.InvalidInputException
  * 아니라 계정 원장의 계산 결과다. 이 타입은 **요청 하나가 필요로 하는/거래 한 건이 옮기는
  * 크레딧 수량**만 표현하고, 그 수량은 항상 음수가 아니다 — 부호는 거래 종류
  * ([CreditTransactionKind])가 정한다.
+ *
+ * 0.1 단위의 정확한 십진수를 사용한다. 정수 생성자는 기존 플랜·체험 제공량을
+ * 같은 수치로 받으며, 소수 생성자는 예약·정산과 DB 어댑터에서 사용한다.
  */
-@JvmInline
-value class Credits(val amount: Int) {
+class Credits(amount: BigDecimal) {
+    val amount: BigDecimal =
+        try {
+            amount.setScale(1, RoundingMode.UNNECESSARY)
+        } catch (_: ArithmeticException) {
+            throw InvalidInputException("크레딧은 0.1 단위여야 합니다: $amount")
+        }
+
     init {
-        if (amount < 0) throw InvalidInputException("크레딧은 음수일 수 없습니다: $amount")
+        if (amount.signum() < 0) throw InvalidInputException("크레딧은 음수일 수 없습니다: $amount")
     }
 
+    constructor(amount: Int) : this(BigDecimal.valueOf(amount.toLong()))
+
+    override fun equals(other: Any?): Boolean = other is Credits && amount.compareTo(other.amount) == 0
+
+    override fun hashCode(): Int = amount.stripTrailingZeros().hashCode()
+
+    override fun toString(): String = "Credits($amount)"
+
     companion object {
-        /** master-plan §3.3 — 공백 포함 1,000자 = 1크레딧. */
-        private const val CHARS_PER_CREDIT = 1000
+        /** 100자 단위로 올림하고 단위당 0.1 크레딧을 부과한다. */
+        private const val CHARS_PER_CREDIT_UNIT = 100
 
         /**
-         * `ceil(charCount / 1000)` 크레딧 — 문서 등록 1회의 필요 크레딧(계획 §2 결정 3).
-         * 정수 나눗셈으로 올림한다(`(charCount + 999) / 1000`) — 부동소수 오차가 없다.
+         * `ceil(charCount / 100) * 0.1` 크레딧 — 문서 등록 1회의 필요 크레딧.
+         * 문자 수는 Long으로 올림해 Int 덧셈 overflow를 피하고, 결과는 BigDecimal로
+         * 만들어 부동소수 오차를 만들지 않는다.
          */
         fun requiredFor(charCount: Int): Credits {
             require(charCount >= 0) { "문자 수는 음수일 수 없습니다: $charCount" }
-            return Credits((charCount + CHARS_PER_CREDIT - 1) / CHARS_PER_CREDIT)
+            val units = (charCount.toLong() + CHARS_PER_CREDIT_UNIT - 1) / CHARS_PER_CREDIT_UNIT
+            return Credits(BigDecimal.valueOf(units, 1))
         }
     }
 }

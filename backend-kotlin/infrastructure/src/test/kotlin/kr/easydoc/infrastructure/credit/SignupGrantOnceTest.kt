@@ -66,7 +66,7 @@ class SignupGrantOnceTest {
         service.grantSignupBonus(workspaceId, ownerId, normalizeEmail(email))
 
         val row = accountRepository.read(ownerId, workspaceId)!!
-        assertThat(row.balance).isEqualTo(SIGNUP_GRANT)
+        assertThat(row.balance).isEqualByComparingTo(SIGNUP_GRANT.toString())
         assertThat(row.signupGrantSkipped).isFalse()
         assertThat(countLedgerRows(hasher.hash(normalizeEmail(email)))).isEqualTo(1)
     }
@@ -88,7 +88,7 @@ class SignupGrantOnceTest {
         service.grantSignupBonus(secondWorkspaceId, secondOwnerId, normalizeEmail(email))
 
         val row = accountRepository.read(secondOwnerId, secondWorkspaceId)!!
-        assertThat(row.balance).isEqualTo(0)
+        assertThat(row.balance).isEqualByComparingTo("0")
         assertThat(row.signupGrantSkipped).isTrue()
         assertThat(countSignupTransactions(secondWorkspaceId)).isEqualTo(0)
     }
@@ -115,7 +115,7 @@ class SignupGrantOnceTest {
         service.grantSignupBonus(secondWorkspaceId, secondOwnerId, normalizeEmail(upper))
 
         val row = accountRepository.read(secondOwnerId, secondWorkspaceId)!!
-        assertThat(row.balance).isEqualTo(0)
+        assertThat(row.balance).isEqualByComparingTo("0")
         assertThat(row.signupGrantSkipped).isTrue()
     }
 
@@ -128,7 +128,7 @@ class SignupGrantOnceTest {
         service.grantSignupBonus(workspaceId, ownerId, normalizeEmail(uniqueEmail()))
 
         val row = accountRepository.read(ownerId, workspaceId)!!
-        assertThat(row.balance).isEqualTo(SIGNUP_GRANT)
+        assertThat(row.balance).isEqualByComparingTo(SIGNUP_GRANT.toString())
         assertThat(row.signupGrantSkipped).isFalse()
     }
 

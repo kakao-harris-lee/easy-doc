@@ -7,6 +7,8 @@ import kr.easydoc.application.workspace.WORKSPACE_NOT_FOUND_MESSAGE
 import kr.easydoc.core.credit.CreditReason
 import kr.easydoc.core.exceptions.InvalidInputException
 import kr.easydoc.core.exceptions.NotFoundException
+import java.math.BigDecimal
+import java.math.RoundingMode
 import java.util.UUID
 
 /**
@@ -28,13 +30,24 @@ fun requireAdminCreditReason(raw: String): CreditReason =
             "알 수 없는 크레딧 사유입니다 (허용값: ${ADMIN_GRANTABLE_REASONS.keys.joinToString(", ")})",
         )
 
-/** `credits`는 0이 될 수 없다(계획 §2 결정 4 `POST /admin/workspaces/{workspace_id}/credits`). */
+/** `credits`는 0이 아니며 0.1 단위여야 한다(관리자 조정 API). */
+fun requireNonZeroCredits(value: BigDecimal): BigDecimal {
+    if (value.signum() == 0) throw InvalidInputException(ZERO_CREDITS_MESSAGE)
+    return try {
+        value.setScale(1, RoundingMode.UNNECESSARY)
+    } catch (_: ArithmeticException) {
+        throw InvalidInputException(FRACTIONAL_CREDITS_MESSAGE)
+    }
+}
+
+/** 기존 내부 호출자와 테스트의 정수 입력도 그대로 허용한다. */
 fun requireNonZeroCredits(value: Int): Int {
     if (value == 0) throw InvalidInputException(ZERO_CREDITS_MESSAGE)
     return value
 }
 
 internal const val ZERO_CREDITS_MESSAGE = "credits 는 0이 될 수 없습니다"
+internal const val FRACTIONAL_CREDITS_MESSAGE = "credits 는 0.1 단위여야 합니다"
 
 /**
  * `note`(선택) — `credit_transactions.note`(V15) 는 `varchar(200)` 이다.
@@ -63,13 +76,22 @@ class AdminCreditAdjustmentService(
 ) {
     fun adjust(
         workspaceId: UUID,
-        credits: Int,
+        credits: BigDecimal,
         reason: CreditReason,
         note: String?,
         actorUserId: UUID,
     ): CreditAccountView {
+        val normalizedCredits = requireNonZeroCredits(credits)
         val ownerId = repository.ownerOf(workspaceId) ?: throw NotFoundException(WORKSPACE_NOT_FOUND_MESSAGE)
-        service.grant(workspaceId, ownerId, credits, reason, note, actorUserId)
+        service.grant(workspaceId, ownerId, normalizedCredits, reason, note, actorUserId)
         return service.read(ownerId, workspaceId)
     }
+
+    fun adjust(
+        workspaceId: UUID,
+        credits: Int,
+        reason: CreditReason,
+        note: String?,
+        actorUserId: UUID,
+    ): CreditAccountView = adjust(workspaceId, BigDecimal.valueOf(credits.toLong()), reason, note, actorUserId)
 }

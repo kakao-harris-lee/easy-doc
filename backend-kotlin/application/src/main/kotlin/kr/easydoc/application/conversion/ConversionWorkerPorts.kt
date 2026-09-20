@@ -4,6 +4,7 @@ import kr.easydoc.core.crypto.EncryptedContent
 import kr.easydoc.core.document.ConversionStatus
 import kr.easydoc.core.document.SourceFormat
 import kr.easydoc.core.segment.SourceStructure
+import java.math.BigDecimal
 import java.time.Duration
 import java.util.UUID
 
@@ -106,7 +107,7 @@ class ConversionWorkItem(
      * 이전에 만든 문서라 [ProcessConversionJob] 이 정산을 no-op 으로 다룬다(크레딧 계정
      * 계획 §2 결정 5).
      */
-    val creditsReserved: Int = 0,
+    val creditsReserved: BigDecimal = BigDecimal.ZERO,
 ) {
     override fun toString(): String =
         "ConversionWorkItem($conversionId, doc=$documentId, ${status.wireName}, " +
@@ -157,7 +158,7 @@ interface ConversionWorkStore {
      */
     fun settleCreditsReserved(
         conversionId: UUID,
-        expectedAmount: Int,
+        expectedAmount: BigDecimal,
     ): Boolean
 }
 

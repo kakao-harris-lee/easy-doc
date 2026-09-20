@@ -9,6 +9,7 @@ import kr.easydoc.core.crypto.EncryptedContent
 import kr.easydoc.core.document.ConversionStatus
 import kr.easydoc.core.document.SourceFormat
 import org.springframework.jdbc.core.simple.JdbcClient
+import java.math.BigDecimal
 import java.util.UUID
 
 /** worker 가 `conversions`·`documents` 를 읽고 결과를 쓴다. */
@@ -46,7 +47,7 @@ class JdbcConversionWorkStore(private val jdbc: JdbcClient) : ConversionWorkStor
                     // 뜻이다(리뷰 BLOCK 1) — 두 경우 모두 ProcessConversionJob 이
                     // SourceStructure.allBody 로 접어서 쓴다.
                     structure = rs.getString("source_unit_kinds")?.let { decodeStructureOrNull(it, documentId) },
-                    creditsReserved = rs.getInt("credits_reserved"),
+                    creditsReserved = rs.getBigDecimal("credits_reserved"),
                 )
             }.optional()
             .orElse(null)
@@ -131,7 +132,7 @@ class JdbcConversionWorkStore(private val jdbc: JdbcClient) : ConversionWorkStor
     /** 리뷰 HIGH-1 — CAS 로 이 변환의 예약을 한 번만 정산 대상으로 넘긴다. */
     override fun settleCreditsReserved(
         conversionId: UUID,
-        expectedAmount: Int,
+        expectedAmount: BigDecimal,
     ): Boolean =
         jdbc
             .sql(

@@ -31,9 +31,16 @@ import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
+import java.math.BigDecimal
 import java.nio.charset.StandardCharsets
 import java.time.Duration
 import java.util.UUID
+
+private fun Number.toBigDecimalExact(): BigDecimal =
+    when (this) {
+        is BigDecimal -> this
+        else -> BigDecimal.valueOf(toLong())
+    }
 
 /** worker 수직 흐름 — 리스·트랜잭션 밖 LLM·CAS. */
 class ProcessConversionJobTest {
@@ -351,7 +358,8 @@ class ProcessConversionJobTest {
 
             world.jobs.processNext()
 
-            assertThat(world.creditRepository.consumeCalls).containsExactly(world.conversionId to FAKE_CREDITS_RESERVED)
+            assertThat(world.creditRepository.consumeCalls)
+                .containsExactly(world.conversionId to BigDecimal("3.0"))
             assertThat(world.creditRepository.releaseCalls).isEmpty()
         }
 
@@ -379,7 +387,8 @@ class ProcessConversionJobTest {
                 )
 
             assertThat(world.jobs.processNext()).isEqualTo(ConversionJobOutcome.FAILED)
-            assertThat(world.creditRepository.releaseCalls).containsExactly(world.conversionId to FAKE_CREDITS_RESERVED)
+            assertThat(world.creditRepository.releaseCalls)
+                .containsExactly(world.conversionId to BigDecimal("3.0"))
             assertThat(world.creditRepository.consumeCalls).isEmpty()
         }
 
@@ -389,7 +398,8 @@ class ProcessConversionJobTest {
             val world = World(exhausted = true)
 
             assertThat(world.jobs.processNext()).isEqualTo(ConversionJobOutcome.FAILED)
-            assertThat(world.creditRepository.releaseCalls).containsExactly(world.conversionId to FAKE_CREDITS_RESERVED)
+            assertThat(world.creditRepository.releaseCalls)
+                .containsExactly(world.conversionId to BigDecimal("3.0"))
         }
 
         @Test
@@ -424,7 +434,7 @@ class ProcessConversionJobTest {
         lease: ConversionJobLease? = ConversionJobLease(UUID.randomUUID(), OWNER, attempts = 1),
         attempts: Int = 1,
         exhausted: Boolean = false,
-        creditsReserved: Int = FAKE_CREDITS_RESERVED,
+        creditsReserved: Number = FAKE_CREDITS_RESERVED,
     ) {
         val conversionId: UUID = lease?.conversionId ?: UUID.randomUUID()
         val documentId: UUID = UUID.randomUUID()
@@ -483,8 +493,8 @@ class ProcessConversionJobTest {
      * [NoopCreditAccountRepository] 에 위임한다(리뷰 MEDIUM-11).
      */
     private class RecordingCreditAccountRepository : CreditAccountRepository by NoopCreditAccountRepository {
-        val consumeCalls = mutableListOf<Pair<UUID, Int>>()
-        val releaseCalls = mutableListOf<Pair<UUID, Int>>()
+        val consumeCalls = mutableListOf<Pair<UUID, BigDecimal>>()
+        val releaseCalls = mutableListOf<Pair<UUID, BigDecimal>>()
 
         override fun consume(
             workspaceId: UUID,
@@ -647,7 +657,7 @@ class ProcessConversionJobTest {
         private val userId: UUID,
         private val sourceText: EncryptedContent,
         private val transaction: RecordingDepth,
-        private val creditsReserved: Int = FAKE_CREDITS_RESERVED,
+        private val creditsReserved: Number = FAKE_CREDITS_RESERVED,
     ) : ConversionWorkStore {
         var status: ConversionStatus = ConversionStatus.PENDING
         var failureCode: String? = null
@@ -663,8 +673,8 @@ class ProcessConversionJobTest {
          * `0` 으로 낮춘다. [loadForProcessing] 은 이 값을 그대로 돌려줘 두 번째 정산
          * 시도가 "이미 0" 임을 보게 한다(리뷰 HIGH-1 멱등성 테스트).
          */
-        private var creditsReservedColumn: Int = creditsReserved
-        val settleAttempts = mutableListOf<Int>()
+        private var creditsReservedColumn: BigDecimal = creditsReserved.toBigDecimalExact()
+        val settleAttempts = mutableListOf<BigDecimal>()
 
         override fun loadForProcessing(conversionId: UUID): ConversionWorkItem =
             ConversionWorkItem(
@@ -711,11 +721,11 @@ class ProcessConversionJobTest {
 
         override fun settleCreditsReserved(
             conversionId: UUID,
-            expectedAmount: Int,
+            expectedAmount: BigDecimal,
         ): Boolean {
             settleAttempts += expectedAmount
             if (creditsReservedColumn != expectedAmount) return false
-            creditsReservedColumn = 0
+            creditsReservedColumn = BigDecimal.ZERO
             return true
         }
 

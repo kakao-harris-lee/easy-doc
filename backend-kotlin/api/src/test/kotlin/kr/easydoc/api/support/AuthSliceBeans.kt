@@ -125,6 +125,7 @@ import kr.easydoc.infrastructure.mail.FakeMailSender
 import kr.easydoc.infrastructure.mail.defaultNotificationMailFactory
 import org.springframework.boot.test.context.TestConfiguration
 import org.springframework.context.annotation.Bean
+import java.math.BigDecimal
 import java.time.Clock
 import java.time.Duration
 import java.time.Instant
@@ -960,8 +961,8 @@ class InMemoryWorkspaceRepository : WorkspaceRepository {
  */
 class InMemoryCreditAccountRepository : CreditAccountRepository {
     private class Account {
-        var balance: Int = 0
-        var reserved: Int = 0
+        var balance: BigDecimal = BigDecimal.ZERO
+        var reserved: BigDecimal = BigDecimal.ZERO
 
         // ownerOf(C2)를 흉내 내는 데만 쓴다 — 이 슬라이스는 소유 판정을 재지 않는다(클래스
         // KDoc), 그래서 처음 만난 ownerId를 그대로 고정해 둔다.
@@ -973,7 +974,7 @@ class InMemoryCreditAccountRepository : CreditAccountRepository {
         var signupGrantSkipped: Boolean = false
 
         // 크레딧 주기(V21) — 이 슬라이스는 배선만 재므로 기본값은 "주기 없음"이다.
-        var allowance: Int = 0
+        var allowance: BigDecimal = BigDecimal.ZERO
         var cycleEndsAt: Instant? = null
     }
 
@@ -1001,7 +1002,7 @@ class InMemoryCreditAccountRepository : CreditAccountRepository {
             CreditTransactionView(
                 id = UUID.randomUUID(),
                 kind = CreditTransactionKind.RESERVE,
-                balanceDelta = 0,
+                balanceDelta = BigDecimal.ZERO,
                 reservedDelta = amount.amount,
                 reason = CreditReason.CONVERSION,
                 note = null,
@@ -1047,7 +1048,7 @@ class InMemoryCreditAccountRepository : CreditAccountRepository {
             CreditTransactionView(
                 id = UUID.randomUUID(),
                 kind = CreditTransactionKind.RELEASE,
-                balanceDelta = 0,
+                balanceDelta = BigDecimal.ZERO,
                 reservedDelta = -amount.amount,
                 reason = CreditReason.CONVERSION,
                 note = null,
@@ -1059,21 +1060,21 @@ class InMemoryCreditAccountRepository : CreditAccountRepository {
     override fun grant(
         workspaceId: UUID,
         ownerUserId: UUID,
-        credits: Int,
+        credits: BigDecimal,
         reason: CreditReason,
         note: String?,
         actorUserId: UUID?,
-    ): Int {
+    ): BigDecimal {
         val account = accounts.getOrPut(workspaceId) { Account() }
         account.ownerId = account.ownerId ?: ownerUserId
         account.balance += credits
-        val kind = if (credits >= 0) CreditTransactionKind.GRANT else CreditTransactionKind.ADJUST
+        val kind = if (credits.signum() >= 0) CreditTransactionKind.GRANT else CreditTransactionKind.ADJUST
         account.transactions +=
             CreditTransactionView(
                 id = UUID.randomUUID(),
                 kind = kind,
                 balanceDelta = credits,
-                reservedDelta = 0,
+                reservedDelta = BigDecimal.ZERO,
                 reason = reason,
                 note = note,
                 documentId = null,
@@ -1085,13 +1086,13 @@ class InMemoryCreditAccountRepository : CreditAccountRepository {
     override fun setAllowance(
         workspaceId: UUID,
         ownerUserId: UUID,
-        allowance: Int,
+        allowance: BigDecimal,
         cycleEndsAt: Instant,
         renews: Boolean,
         reason: CreditReason,
         note: String?,
         actorUserId: UUID?,
-    ): Int {
+    ): BigDecimal {
         val account = accounts.getOrPut(workspaceId) { Account() }
         account.ownerId = account.ownerId ?: ownerUserId
         val delta = allowance - account.balance
@@ -1103,7 +1104,7 @@ class InMemoryCreditAccountRepository : CreditAccountRepository {
                 id = UUID.randomUUID(),
                 kind = CreditTransactionKind.CYCLE_SET,
                 balanceDelta = delta,
-                reservedDelta = 0,
+                reservedDelta = BigDecimal.ZERO,
                 reason = reason,
                 note = note,
                 documentId = null,

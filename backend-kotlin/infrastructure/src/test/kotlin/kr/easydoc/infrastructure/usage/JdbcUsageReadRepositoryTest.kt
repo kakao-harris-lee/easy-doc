@@ -105,7 +105,7 @@ class JdbcUsageReadRepositoryTest {
         assertThat(usage!!.documents).isEqualTo(2)
         assertThat(usage.characters).isEqualTo(2000)
         // ceil(1500/1000)=2, ceil(500/1000)=1 → 합계 3 (합계 2000을 한 번에 올린 2와 다르다).
-        assertThat(usage.credits).isEqualTo(3)
+        assertThat(usage.credits).isEqualByComparingTo("3")
         assertThat(usage.llmCalls).isEqualTo(2)
         assertThat(usage.inputTokens).isEqualTo(120)
         assertThat(usage.outputTokens).isEqualTo(60)
@@ -156,8 +156,34 @@ class JdbcUsageReadRepositoryTest {
 
         assertThat(usage.documents).isEqualTo(1)
         assertThat(usage.characters).isEqualTo(1500)
-        assertThat(usage.credits).isEqualTo(3)
+        assertThat(usage.credits).isEqualByComparingTo("3")
         assertThat(usage.llmCalls).isEqualTo(2)
+    }
+
+    @Test
+    @DisplayName("소비 원장의 0.1 단위 합계를 BigDecimal 그대로 읽는다")
+    fun `소수 소비 원장을 정확히 집계한다`() {
+        val owner = newOwner()
+        val workspaceId = workspaces.create(owner, "공간-${UUID.randomUUID()}").id
+        val at = Instant.parse("2026-03-20T04:00:00Z")
+        val documentId = insertDocument(workspaceId, owner, charCount = 100, createdAt = at)
+        appendCall(
+            workspaceId,
+            owner,
+            LlmCallPurpose.CONVERT,
+            documentId,
+            documentCharCount = 100,
+            inputTokens = 1,
+            outputTokens = 1,
+            costUsd = null,
+            calledAt = at,
+        )
+        insertCreditConsume(workspaceId, owner, documentId, BigDecimal("0.1"), at)
+        insertCreditConsume(workspaceId, owner, documentId, BigDecimal("0.2"), at.plusSeconds(1))
+
+        val usage = repository.aggregate(owner, workspaceId, zoneMidnight(2026, 3, 1), zoneMidnight(2026, 4, 1))!!
+
+        assertThat(usage.credits).isEqualByComparingTo("0.3")
     }
 
     @Test
@@ -186,7 +212,7 @@ class JdbcUsageReadRepositoryTest {
 
         assertThat(usage.documents).isZero()
         assertThat(usage.characters).isZero()
-        assertThat(usage.credits).isZero()
+        assertThat(usage.credits).isEqualByComparingTo("0")
         assertThat(usage.llmCalls).isEqualTo(1)
     }
 
@@ -227,7 +253,7 @@ class JdbcUsageReadRepositoryTest {
 
         assertThat(usage.documents).isEqualTo(1)
         assertThat(usage.characters).isEqualTo(1500)
-        assertThat(usage.credits).isEqualTo(2)
+        assertThat(usage.credits).isEqualByComparingTo("2")
         assertThat(usage.llmCalls).isEqualTo(2)
         assertThat(usage.estimatedCostUsd).isEqualByComparingTo("0.003")
     }
@@ -284,7 +310,7 @@ class JdbcUsageReadRepositoryTest {
 
         assertThat(usage.documents).isEqualTo(0)
         assertThat(usage.characters).isEqualTo(0)
-        assertThat(usage.credits).isEqualTo(0)
+        assertThat(usage.credits).isEqualByComparingTo("0")
         assertThat(usage.llmCalls).isEqualTo(0)
         assertThat(usage.inputTokens).isEqualTo(0)
         assertThat(usage.outputTokens).isEqualTo(0)
@@ -415,7 +441,7 @@ class JdbcUsageReadRepositoryTest {
 
         assertThat(after.documents).isEqualTo(before.documents).isEqualTo(1)
         assertThat(after.characters).isEqualTo(before.characters).isEqualTo(1234)
-        assertThat(after.credits).isEqualTo(before.credits).isEqualTo(2)
+        assertThat(after.credits).isEqualByComparingTo(before.credits).isEqualByComparingTo("2")
         assertThat(after.estimatedCostUsd).isEqualByComparingTo(before.estimatedCostUsd)
     }
 
@@ -456,7 +482,7 @@ class JdbcUsageReadRepositoryTest {
 
         assertThat(usage.documents).isEqualTo(1)
         assertThat(usage.characters).isEqualTo(800)
-        assertThat(usage.credits).isEqualTo(1)
+        assertThat(usage.credits).isEqualByComparingTo("1")
         // 문서는 하나로 세지만 호출은 실제로 벌어진 두 번 다 센다.
         assertThat(usage.llmCalls).isEqualTo(2)
     }
@@ -543,7 +569,7 @@ class JdbcUsageReadRepositoryTest {
 
         assertThat(usage.documents).isEqualTo(1)
         assertThat(usage.characters).isEqualTo(500)
-        assertThat(usage.credits).isEqualTo(1)
+        assertThat(usage.credits).isEqualByComparingTo("1")
         assertThat(usage.llmCalls).isEqualTo(1)
         assertThat(usage.inputTokens).isEqualTo(30)
         assertThat(usage.outputTokens).isEqualTo(15)
@@ -683,7 +709,7 @@ class JdbcUsageReadRepositoryTest {
         workspaceId: UUID,
         ownerId: UUID,
         documentId: UUID,
-        credits: Int,
+        credits: BigDecimal,
         at: Instant,
     ) {
         jdbc
@@ -704,13 +730,21 @@ class JdbcUsageReadRepositoryTest {
             .update()
     }
 
+    private fun insertCreditConsume(
+        workspaceId: UUID,
+        ownerId: UUID,
+        documentId: UUID,
+        credits: Int,
+        at: Instant,
+    ) = insertCreditConsume(workspaceId, ownerId, documentId, BigDecimal.valueOf(credits.toLong()), at)
+
     @Suppress("LongParameterList")
     private fun insertActionGuideCreditTransaction(
         workspaceId: UUID,
         ownerId: UUID,
         documentId: UUID,
         kind: String,
-        reservedDelta: Int,
+        reservedDelta: BigDecimal,
         at: Instant,
     ) {
         jdbc
@@ -731,6 +765,23 @@ class JdbcUsageReadRepositoryTest {
             .param("createdAt", OffsetDateTime.ofInstant(at, ZoneOffset.UTC))
             .update()
     }
+
+    @Suppress("LongParameterList")
+    private fun insertActionGuideCreditTransaction(
+        workspaceId: UUID,
+        ownerId: UUID,
+        documentId: UUID,
+        kind: String,
+        reservedDelta: Int,
+        at: Instant,
+    ) = insertActionGuideCreditTransaction(
+        workspaceId,
+        ownerId,
+        documentId,
+        kind,
+        BigDecimal.valueOf(reservedDelta.toLong()),
+        at,
+    )
 
     private fun insertUnknownCall(
         workspaceId: UUID,

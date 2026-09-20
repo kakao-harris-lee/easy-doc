@@ -412,8 +412,8 @@ private fun mappingFor(exception: EasyDocException): Pair<HttpStatus, HttpHeader
 /** 계약 `components/responses/InsufficientCredits.headers` — 402 헤더 둘. */
 private fun creditHeadersFor(exception: InsufficientCreditsException): HttpHeaders =
     HttpHeaders().apply {
-        set(CREDIT_BALANCE_HEADER, exception.available.toString())
-        set(CREDITS_REQUIRED_HEADER, exception.required.toString())
+        set(CREDIT_BALANCE_HEADER, exception.available.toPlainString())
+        set(CREDITS_REQUIRED_HEADER, exception.required.toPlainString())
     }
 
 private fun jsonError(

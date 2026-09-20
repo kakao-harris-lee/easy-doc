@@ -9,7 +9,7 @@ import java.math.BigDecimal
 data class WorkspaceUsageResponse(
     @get:JsonProperty("documents") val documents: Int,
     @get:JsonProperty("characters") val characters: Long,
-    @get:JsonProperty("credits") val credits: Long,
+    @get:JsonProperty("credits") val credits: BigDecimal,
     @get:JsonProperty("llm_calls") val llmCalls: Int,
     @get:JsonProperty("input_tokens") val inputTokens: Long,
     @get:JsonProperty("output_tokens") val outputTokens: Long,

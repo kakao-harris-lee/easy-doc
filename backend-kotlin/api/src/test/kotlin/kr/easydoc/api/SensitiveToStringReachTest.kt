@@ -182,7 +182,7 @@ class SensitiveToStringReachTest {
          * 선언을 추가하거나 제거할 때 실제 목록을 확인한 뒤 함께 갱신한다.
          * ER-06 행동 안내 후보·저장·API·설정 타입을 추가한 뒤의 선언 수다.
          */
-        const val EXPECTED_SOURCE_DECLARATIONS = 305
+        const val EXPECTED_SOURCE_DECLARATIONS = 304
 
         /** 민감 판정이 반드시 닿아야 하는 타입 — 바닥이다. */
         val KNOWN_SENSITIVE_TYPES =

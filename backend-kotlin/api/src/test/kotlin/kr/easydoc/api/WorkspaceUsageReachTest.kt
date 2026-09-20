@@ -76,8 +76,8 @@ class WorkspaceUsageReachTest {
 
         assertThat(body["documents"]).isEqualTo(1)
         assertThat(body["characters"]).isEqualTo(1500)
-        // ceil(1500/1000) = 2.
-        assertThat(body["credits"]).isEqualTo(2)
+        // V15 이전 사용량 fallback은 역사적 재계산을 보존해 ceil(1500/1000) = 2다.
+        assertThat((body["credits"] as Number).toDouble()).isEqualTo(2.0)
         assertThat(body["llm_calls"]).isEqualTo(2)
         assertThat(body["input_tokens"]).isEqualTo(120)
         assertThat(body["output_tokens"]).isEqualTo(60)
@@ -126,7 +126,7 @@ class WorkspaceUsageReachTest {
 
         assertThat(body["documents"]).isEqualTo(1)
         assertThat(body["characters"]).isEqualTo(1100)
-        assertThat(body["credits"]).isEqualTo(2)
+        assertThat((body["credits"] as Number).toDouble()).isEqualTo(2.0)
     }
 
     @Test
@@ -157,7 +157,7 @@ class WorkspaceUsageReachTest {
 
         assertThat(body["documents"]).isEqualTo(0)
         assertThat(body["characters"]).isEqualTo(0)
-        assertThat(body["credits"]).isEqualTo(0)
+        assertThat((body["credits"] as Number).toDouble()).isEqualTo(0.0)
     }
 
     @Test
@@ -253,7 +253,7 @@ class WorkspaceUsageReachTest {
 
         assertThat(body["documents"]).isEqualTo(0)
         assertThat(body["characters"]).isEqualTo(0)
-        assertThat(body["credits"]).isEqualTo(0)
+        assertThat((body["credits"] as Number).toDouble()).isEqualTo(0.0)
         assertThat(body["llm_calls"]).isEqualTo(0)
         assertThat(body["estimated_cost_usd"]).isNull()
         assertThat(body["cost_unknown_calls"]).isEqualTo(0)

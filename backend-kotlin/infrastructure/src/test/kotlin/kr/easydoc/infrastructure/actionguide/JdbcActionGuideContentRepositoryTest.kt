@@ -17,6 +17,7 @@ import org.springframework.jdbc.core.simple.JdbcClient
 import org.springframework.jdbc.datasource.DataSourceTransactionManager
 import org.springframework.jdbc.datasource.DriverManagerDataSource
 import org.springframework.transaction.support.TransactionTemplate
+import java.math.BigDecimal
 import java.time.Instant
 import java.util.Base64
 import java.util.UUID
@@ -258,7 +259,7 @@ class JdbcActionGuideContentRepositoryTest {
                 UUID.randomUUID(),
                 null,
                 1,
-                1,
+                BigDecimal.ONE,
                 ActionGuideJobStatus.QUEUED,
                 null,
                 null,
