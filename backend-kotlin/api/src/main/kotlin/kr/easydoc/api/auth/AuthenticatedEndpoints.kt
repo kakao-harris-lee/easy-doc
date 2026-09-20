@@ -39,6 +39,8 @@ object AuthenticatedEndpoints {
             "/conversions/{conversion_id}/review-support/items/{item_id}",
             "/conversions/{conversion_id}/action-guide-jobs",
             "/conversions/{conversion_id}/action-guide-jobs/{job_id}",
+            "/conversions/{conversion_id}/action-guide",
+            "/conversions/{conversion_id}/action-guide/export",
             // 재변환(P0-4 S4, 2.14.0)도 같은 사유로 **따로** 넣는다.
             "/conversions/{conversion_id}/units/{source_unit_index}/reconvert",
             "/documents",

@@ -128,6 +128,12 @@ enum class EncryptedField(val wireName: String) {
 
     /** R1 검수 스냅샷. 원문 인용과 담당자 메모가 들어 있어 본문과 같은 보호를 받는다. */
     REVIEW_ASSESSMENT_PAYLOAD("review_assessments.payload_encrypted"),
+
+    /** R2 생성 후보. 원문 인용과 안내 문구를 후보 ID에 결속한다. */
+    ACTION_GUIDE_CANDIDATE_PAYLOAD("action_guide_candidates.payload_encrypted"),
+
+    /** R2 담당자 안내문. 후보와 다른 저장 레코드·AAD를 사용한다. */
+    ACTION_GUIDE_PAYLOAD("action_guides.payload_encrypted"),
 }
 
 /** `encryption_scheme` 컬럼에 들어가는 방식 이름. */

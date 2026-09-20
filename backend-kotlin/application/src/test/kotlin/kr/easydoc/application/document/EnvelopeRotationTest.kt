@@ -373,11 +373,16 @@ class EnvelopeRotationTest {
             .describedAs("봉인 열이 하나도 없다 — 이 대조가 0건을 훑고 통과한다")
             .isNotEmpty()
 
-        // Billing envelopes have a JDBC CAS rotation verified by TossStoreTest.
+        // Billing and action-guide envelopes have separate JDBC CAS rotation tests.
         val documentFields =
             EncryptedField.entries.filterNot {
                 it in
-                    setOf(EncryptedField.BILLING_SESSION, EncryptedField.BILLING_ORDER)
+                    setOf(
+                        EncryptedField.BILLING_SESSION,
+                        EncryptedField.BILLING_ORDER,
+                        EncryptedField.ACTION_GUIDE_CANDIDATE_PAYLOAD,
+                        EncryptedField.ACTION_GUIDE_PAYLOAD,
+                    )
             }
         val uncovered = documentFields.filterNot { field -> field in rotationOf(field) }
 
@@ -413,6 +418,10 @@ class EnvelopeRotationTest {
                 EncryptedField.CONVERSION_FEEDBACK_COMMENT -> world.rotation.rotateFeedback(CONVERSION)
 
                 EncryptedField.REVIEW_ASSESSMENT_PAYLOAD -> world.rotation.rotateReviewAssessment(ASSESSMENT)
+
+                EncryptedField.ACTION_GUIDE_CANDIDATE_PAYLOAD,
+                EncryptedField.ACTION_GUIDE_PAYLOAD,
+                -> error("행동 안내문 회전은 JdbcActionGuideContentRepositoryTest에서 검증한다")
             }
 
         check(outcome == RotationOutcome.ROTATED) {

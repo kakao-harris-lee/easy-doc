@@ -35,7 +35,7 @@ class JdbcActionGuideJobRepository(private val jdbc: JdbcClient) : ActionGuideJo
                     documentId = rs.getObject("document_id", UUID::class.java),
                     conversionId = rs.getObject("conversion_id", UUID::class.java),
                     contentRevision = rs.getLong("content_revision"),
-                    guideRevision = null,
+                    guideRevision = rs.getObject("guide_revision") as? Long,
                     charCount = rs.getInt("char_count"),
                     completed = rs.getString("conversion_status") == "done",
                 )
@@ -295,9 +295,11 @@ class JdbcActionGuideJobRepository(private val jdbc: JdbcClient) : ActionGuideJo
         val LOCK_CONTEXT_SQL =
             """
             SELECT d.workspace_id, d.id AS document_id, c.id AS conversion_id,
-                   c.content_revision, c.status AS conversion_status, d.char_count
+                   c.content_revision, c.status AS conversion_status, d.char_count,
+                   g.guide_revision
             FROM conversions c
             JOIN documents d ON d.id = c.document_id
+            LEFT JOIN action_guides g ON g.conversion_id = c.id
             WHERE c.id = :conversionId
               AND d.user_id = :ownerId
               AND d.retention_expires_at > now()
@@ -390,6 +392,7 @@ class JdbcActionGuideJobRepository(private val jdbc: JdbcClient) : ActionGuideJo
               AND c.content_revision = :revision
               AND d.user_id = :ownerId
               AND d.retention_expires_at > now()
+            FOR NO KEY UPDATE OF c
             """.trimIndent()
 
         val MARK_STARTED_SQL =

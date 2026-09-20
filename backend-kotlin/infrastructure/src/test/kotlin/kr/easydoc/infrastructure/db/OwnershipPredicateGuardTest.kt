@@ -389,6 +389,7 @@ class OwnershipPredicateGuardTest {
         /** 핀 문자열의 경로 앞부분. 목록이 읽히게 하려고 상수로 접는다. */
         private const val MAIN = "infrastructure/src/main/kotlin/kr/easydoc/infrastructure"
         private const val ACTION_GUIDE = "$MAIN/actionguide"
+        private const val ACTION_GUIDE_CONTENT = "$ACTION_GUIDE/JdbcActionGuideContentRepository.kt"
         private const val AUTH = "$MAIN/auth"
         private const val DOCUMENT = "$MAIN/document"
         private const val ADMIN = "$MAIN/admin"
@@ -396,9 +397,26 @@ class OwnershipPredicateGuardTest {
         /** 문서·변환에 닿는 제품 SQL 전부. 소유 술어가 있는 것도 함께 적는다. */
         val EXPECTED_STATEMENTS =
             listOf(
-                // 행동 안내 접수의 소유/보존 검증, worker 완료 직전 본문 버전 재검증,
-                // 호출 시작 원장의 문서 글자 수 스냅샷. 셋 모두 소유자 매개변수로 좁힌다.
-                "$ACTION_GUIDE/JdbcActionGuideJobRepository.kt | SELECT [conversions, documents]",
+                // 회전 배치는 운영자 내부 경로다. 후보/안내문 각각 커서·행 잠금·재봉인을
+                // 수행하며 소유자가 없으므로 아래 미방어 목록에도 정확히 같은 여섯 문장이 있다.
+                "$ACTION_GUIDE/ActionGuideContentKeyRotation.kt | SELECT [action_guide_candidates]",
+                "$ACTION_GUIDE/ActionGuideContentKeyRotation.kt | SELECT [action_guide_candidates]",
+                "$ACTION_GUIDE/ActionGuideContentKeyRotation.kt | UPDATE [action_guide_candidates]",
+                "$ACTION_GUIDE/ActionGuideContentKeyRotation.kt | SELECT [action_guides]",
+                "$ACTION_GUIDE/ActionGuideContentKeyRotation.kt | SELECT [action_guides]",
+                "$ACTION_GUIDE/ActionGuideContentKeyRotation.kt | UPDATE [action_guides]",
+                // provider 입력은 작업의 owner+보존기간+본문 revision을 같은 질의에서 확인한다.
+                "$ACTION_GUIDE/ActionGuideGenerationInput.kt | SELECT [conversions, documents]",
+                // 후보 저장/조회 및 안내문 저장/조회는 모두 사용자 소유·보존 술어가 있다.
+                "$ACTION_GUIDE_CONTENT | INSERT [action_guide_candidates, conversions, documents]",
+                "$ACTION_GUIDE_CONTENT | SELECT [action_guide_candidates, conversions, documents]",
+                "$ACTION_GUIDE_CONTENT | SELECT [action_guide_candidates, conversions, documents]",
+                "$ACTION_GUIDE_CONTENT | SELECT [action_guides, conversions, documents]",
+                "$ACTION_GUIDE_CONTENT | INSERT [action_guides, conversions, documents]",
+                "$ACTION_GUIDE_CONTENT | UPDATE [action_guides, conversions, documents]",
+                // 행동 안내 접수의 소유/보존 검증과 worker 완료 직전 본문 버전 재검증.
+                // 호출 시작 원장의 문서 글자 수 스냅샷도 소유자 매개변수로 좁힌다.
+                "$ACTION_GUIDE/JdbcActionGuideJobRepository.kt | SELECT [action_guides, conversions, documents]",
                 "$ACTION_GUIDE/JdbcActionGuideJobRepository.kt | SELECT [conversions, documents]",
                 "$ACTION_GUIDE/JdbcActionGuideLlmCallLedger.kt | SELECT [documents]",
                 // 어드민 최소(A1, 2026-09-07) — 관리자 워크스페이스 상세의 「최근 변환」과
@@ -563,6 +581,14 @@ class OwnershipPredicateGuardTest {
          */
         val EXPECTED_UNGUARDED =
             listOf(
+                // rotate-keys 운영 경로: 작업이 문서 owner를 인자로 받지 않고, 저장된
+                // 봉투를 같은 행 ID/AAD로 재암호화한다. 사용자 조회 경로와 섞이지 않는다.
+                "$ACTION_GUIDE/ActionGuideContentKeyRotation.kt | SELECT [action_guide_candidates]",
+                "$ACTION_GUIDE/ActionGuideContentKeyRotation.kt | SELECT [action_guide_candidates]",
+                "$ACTION_GUIDE/ActionGuideContentKeyRotation.kt | UPDATE [action_guide_candidates]",
+                "$ACTION_GUIDE/ActionGuideContentKeyRotation.kt | SELECT [action_guides]",
+                "$ACTION_GUIDE/ActionGuideContentKeyRotation.kt | SELECT [action_guides]",
+                "$ACTION_GUIDE/ActionGuideContentKeyRotation.kt | UPDATE [action_guides]",
                 // 어드민 최소(A1, 2026-09-07) — 위 EXPECTED_STATEMENTS 주석과 같은 사유.
                 // 관리자 전용 조회라 소유 술어가 없다(의도적 설계, 관리자는 워크스페이스를
                 // 가로지른다) — `AdminConversionQueryRepository` KDoc.
@@ -704,6 +730,8 @@ class OwnershipPredicateGuardTest {
          * 다섯 문장은 소유자와 보존기간 술어를 SQL 자체에 둬 이 상한을 먹지 않는다.
          */
         const val BILLING = "infrastructure/src/main/kotlin/kr/easydoc/infrastructure/subscription"
-        const val MAX_UNGUARDED_STATEMENTS = 52
+
+        // 52 → 58: R2 암호문 가족 둘의 회전 커서·잠금·재봉인 여섯 문장.
+        const val MAX_UNGUARDED_STATEMENTS = 58
     }
 }

@@ -1,7 +1,12 @@
 package kr.easydoc.application.actionguide
 
 import kr.easydoc.application.auth.TransactionRunner
+import kr.easydoc.application.crypto.ContentCipher
+import kr.easydoc.core.actionguide.ActionGuideCandidateParser
 import kr.easydoc.core.actionguide.ActionGuideJobFailureCode
+import kr.easydoc.core.crypto.EncryptedField
+import kr.easydoc.core.crypto.PlainBody
+import kr.easydoc.core.exceptions.StorageException
 import kr.easydoc.core.llm.LlmCallOutcome
 import kr.easydoc.core.llm.LlmCallPurpose
 import java.time.Clock
@@ -26,6 +31,8 @@ class ProcessActionGuideJob(
     private val jobs: ActionGuideJobRepository,
     private val credits: ActionGuideCreditPort,
     private val ledger: ActionGuideLlmCallLedger,
+    private val contents: ActionGuideContentRepository,
+    private val cipher: ContentCipher,
     private val runner: ActionGuideJobRunner,
     private val transaction: TransactionRunner,
     private val policy: ActionGuideJobWorkerPolicy,
@@ -57,17 +64,17 @@ class ProcessActionGuideJob(
         lease: ActionGuideJobLease,
         started: StartResult.Started,
     ): ActionGuideJobOutcome {
-        val record =
+        val result =
             try {
                 runner.run(started.job).also {
-                    require(it.purpose == LlmCallPurpose.ACTION_GUIDE) {
+                    require(it.record.purpose == LlmCallPurpose.ACTION_GUIDE) {
                         "행동 안내문 runner가 다른 원장 목적을 반환했습니다"
                     }
                 }
             } catch (_: RuntimeException) {
                 return settleUnknown(lease, started.executionId, ActionGuideJobOutcome.FAILED)
             }
-        return settle(lease, started.executionId, record)
+        return settle(lease, started.executionId, result)
     }
 
     private fun start(lease: ActionGuideJobLease): StartResult =
@@ -85,45 +92,74 @@ class ProcessActionGuideJob(
             StartResult.Started(job, executionId)
         }
 
+    @Suppress("LongMethod")
     private fun settle(
         lease: ActionGuideJobLease,
         executionId: UUID,
-        record: kr.easydoc.core.llm.LlmCallRecord,
+        result: ActionGuideRunResult,
     ): ActionGuideJobOutcome =
         transaction.inTransaction {
             val job = jobs.lockIfHeld(lease) ?: return@inTransaction ActionGuideJobOutcome.DROPPED
-            when (record.outcome) {
-                LlmCallOutcome.COMPLETED -> {
+            when (result) {
+                is ActionGuideRunResult.Valid -> {
+                    require(result.record.outcome == LlmCallOutcome.COMPLETED)
                     if (!jobs.hasCurrentInput(lease, job.basedOnContentRevision)) {
                         if (!jobs.markSuperseded(lease, clock.instant())) {
                             return@inTransaction ActionGuideJobOutcome.DROPPED
                         }
-                        ledger.complete(job, executionId, record)
+                        ledger.complete(job, executionId, result.record)
                         credits.release(job)
                         ActionGuideJobOutcome.COMPLETED
                     } else {
                         if (!jobs.markSucceeded(lease, clock.instant())) {
                             return@inTransaction ActionGuideJobOutcome.DROPPED
                         }
-                        ledger.complete(job, executionId, record)
+                        val candidateId = UUID.randomUUID()
+                        val payload =
+                            cipher.encrypt(
+                                PlainBody(ActionGuideCandidateParser.encode(result.candidate)),
+                                candidateId,
+                                EncryptedField.ACTION_GUIDE_CANDIDATE_PAYLOAD,
+                            )
+                        if (
+                            !contents.insertCandidate(
+                                job,
+                                StoredActionGuideCandidate(
+                                    candidateId,
+                                    job.jobId,
+                                    job.conversionId,
+                                    job.basedOnContentRevision,
+                                    payload,
+                                    clock.instant(),
+                                ),
+                            )
+                        ) {
+                            throw StorageException("행동 안내 후보를 저장할 수 없습니다")
+                        }
+                        ledger.complete(job, executionId, result.record)
                         credits.consume(job)
                         ActionGuideJobOutcome.COMPLETED
                     }
                 }
 
-                LlmCallOutcome.PROVIDER_ERROR -> {
-                    if (!jobs.markFailed(lease, ActionGuideJobFailureCode.GENERATION_FAILED, clock.instant())) {
+                is ActionGuideRunResult.Invalid -> {
+                    require(result.record.outcome == LlmCallOutcome.COMPLETED)
+                    if (!jobs.markFailed(lease, ActionGuideJobFailureCode.RESULT_INVALID, clock.instant())) {
                         return@inTransaction ActionGuideJobOutcome.DROPPED
                     }
-                    ledger.complete(job, executionId, record)
+                    ledger.complete(job, executionId, result.record)
                     credits.release(job)
                     ActionGuideJobOutcome.FAILED
                 }
 
-                LlmCallOutcome.IN_PROGRESS,
-                LlmCallOutcome.OUTCOME_UNKNOWN,
-                -> {
-                    settleUnknownHeld(lease, job, executionId, ActionGuideJobOutcome.FAILED)
+                is ActionGuideRunResult.ProviderFailed -> {
+                    require(result.record.outcome == LlmCallOutcome.PROVIDER_ERROR)
+                    if (!jobs.markFailed(lease, ActionGuideJobFailureCode.GENERATION_FAILED, clock.instant())) {
+                        return@inTransaction ActionGuideJobOutcome.DROPPED
+                    }
+                    ledger.complete(job, executionId, result.record)
+                    credits.release(job)
+                    ActionGuideJobOutcome.FAILED
                 }
             }
         }

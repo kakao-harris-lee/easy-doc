@@ -5,6 +5,8 @@ import kr.easydoc.core.llm.LlmCallPurpose
 import kr.easydoc.core.llm.LlmCallRecord
 import kr.easydoc.core.privacy.UserContent
 import org.w3c.dom.Element
+import tools.jackson.databind.JsonNode
+import tools.jackson.databind.ObjectMapper
 import java.lang.reflect.Modifier
 import java.math.BigDecimal
 import java.time.Duration
@@ -166,6 +168,12 @@ class GeneratedToStringProbes(
 
             classifier == String::class -> {
                 ProbeSlot(carriesText = true) { planting -> if (planting) SENTINEL else FILLER }
+            }
+
+            classifier == JsonNode::class -> {
+                ProbeSlot(carriesText = true) { planting ->
+                    ObjectMapper().readTree("\"${if (planting) SENTINEL else FILLER}\"")
+                }
             }
 
             classifier.java.isEnum -> {

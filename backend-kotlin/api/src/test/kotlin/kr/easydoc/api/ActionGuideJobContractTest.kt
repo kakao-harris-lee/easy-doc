@@ -4,6 +4,7 @@ import kr.easydoc.api.config.PrivateResponseHeadersConfig
 import kr.easydoc.api.support.AuthSliceBeans
 import kr.easydoc.api.support.InMemoryUserRepository
 import kr.easydoc.api.support.InMemoryWorkspaceRepository
+import kr.easydoc.application.actionguide.ActionGuideContentService
 import kr.easydoc.application.actionguide.ActionGuideJobCollectionView
 import kr.easydoc.application.actionguide.ActionGuideJobCreationView
 import kr.easydoc.application.actionguide.ActionGuideJobService
@@ -12,6 +13,8 @@ import kr.easydoc.core.actionguide.ActionGuideJobStatus
 import kr.easydoc.core.user.PasswordHash
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
+import org.mockito.Mockito.clearInvocations
+import org.mockito.Mockito.verifyNoInteractions
 import org.mockito.Mockito.`when`
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest
@@ -39,6 +42,8 @@ class ActionGuideJobContractTest {
     @Autowired private lateinit var workspaces: InMemoryWorkspaceRepository
 
     @Autowired private lateinit var service: ActionGuideJobService
+
+    @Autowired private lateinit var contentService: ActionGuideContentService
 
     @Test
     fun `생성은 202와 조회 위치 및 예약 직후 잔액을 반환한다`() {
@@ -74,6 +79,9 @@ class ActionGuideJobContractTest {
                 "failure_code",
                 "created_at",
                 "updated_at",
+                "candidate_id",
+                "candidate_state",
+                "content",
             )
     }
 
@@ -115,6 +123,27 @@ class ActionGuideJobContractTest {
         assertThat(json(response)["active_job"]["job_id"].asString()).isEqualTo(job.jobId.toString())
         assertThat(json(response)["required_credits"].asInt()).isEqualTo(2)
         assertThat(json(response)["available_credits"].asInt()).isEqualTo(8)
+    }
+
+    @Test
+    fun `실행 중 상태에는 완료 후보를 섞어 반환하지 않는다`() {
+        val owner = newOwner()
+        val conversionId = UUID.randomUUID()
+        val job = job().copy(status = ActionGuideJobStatus.RUNNING)
+        `when`(service.get(owner, conversionId, job.jobId)).thenReturn(job)
+        clearInvocations(contentService)
+
+        val response =
+            mockMvc
+                .get("/conversions/$conversionId/action-guide-jobs/${job.jobId}") {
+                    header(HttpHeaders.AUTHORIZATION, "Bearer stub-token:$owner")
+                }.andReturn()
+                .response
+
+        assertThat(response.status).isEqualTo(200)
+        assertThat(json(response)["status"].asString()).isEqualTo("running")
+        assertThat(json(response)["candidate_id"].isNull).isTrue()
+        verifyNoInteractions(contentService)
     }
 
     private fun post(

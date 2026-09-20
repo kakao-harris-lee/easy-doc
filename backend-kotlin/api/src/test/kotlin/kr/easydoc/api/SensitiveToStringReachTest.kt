@@ -180,9 +180,9 @@ class SensitiveToStringReachTest {
         /**
          * 소스 스캐너가 선언을 놓치지 않는지 확인하는 정확한 현재 개수.
          * 선언을 추가하거나 제거할 때 실제 목록을 확인한 뒤 함께 갱신한다.
-         * R1 검수 지원 이후 ER-05 행동 안내 작업의 wire·application·core·설정 타입이 더해졌다.
+         * ER-06 행동 안내 후보·저장·API·설정 타입을 추가한 뒤의 선언 수다.
          */
-        const val EXPECTED_SOURCE_DECLARATIONS = 285
+        const val EXPECTED_SOURCE_DECLARATIONS = 305
 
         /** 민감 판정이 반드시 닿아야 하는 타입 — 바닥이다. */
         val KNOWN_SENSITIVE_TYPES =
