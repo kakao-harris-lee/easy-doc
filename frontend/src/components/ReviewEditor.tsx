@@ -26,6 +26,7 @@ import { setUnsavedChanges } from '../review/unsavedChanges'
 import { FormatPreservationPanel, PdfExportNotice } from './FormatPreservationPanel'
 import { ReviewFeedback } from './ReviewFeedback'
 import { ReviewSupportPanel } from './ReviewSupportPanel'
+import { ActionGuidePanel } from './ActionGuidePanel'
 import {
   MAX_SEGMENTED_UNITS,
   SegmentedResultEditor,
@@ -272,6 +273,13 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
    */
   const [pendingFormat, setPendingFormat] = useState<ExportFormat | null>(null)
   const [activePanel, setActivePanel] = useState<PanelKey>('source')
+  const [activeTask, setActiveTask] = useState<'body' | 'guide'>('body')
+  const [guideVisited, setGuideVisited] = useState(false)
+  const [guideDirty, setGuideDirty] = useState(false)
+  const taskTabRefs = useRef<{ body: HTMLButtonElement | null; guide: HTMLButtonElement | null }>({
+    body: null,
+    guide: null,
+  })
   /** 저장·내려받기를 누른 버튼. 그 작업이 끝나면 초점을 여기로 돌린다. */
   const refocusRef = useRef<HTMLButtonElement | null>(null)
   /** 검수 항목의 「원문 보기」에서 이동했다가 돌아갈 버튼과 복귀 UI 상태. */
@@ -711,8 +719,9 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
   // 탭을 닫거나 새로고침하는 경로. 브라우저는 우리 문구 대신 자기 확인창을 띄우므로
   // preventDefault만 하면 된다(문구 지정은 최신 브라우저에서 무시된다).
   useEffect(() => {
-    setUnsavedChanges(dirty)
-    if (!dirty) {
+    const unsaved = dirty || guideDirty
+    setUnsavedChanges(unsaved)
+    if (!unsaved) {
       return
     }
     function warn(event: BeforeUnloadEvent) {
@@ -720,7 +729,7 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
     }
     window.addEventListener('beforeunload', warn)
     return () => window.removeEventListener('beforeunload', warn)
-  }, [dirty])
+  }, [dirty, guideDirty])
 
   // 화면을 떠날 때 경고 상태를 반드시 끈다 — 켜진 채로 두면 다음 화면에서 이유 없이
   // "저장하지 않은 수정이 있다"고 묻는다.
@@ -758,7 +767,7 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
    * 저장 버튼과 `저장하고 내려받기`가 같은 함수를 지난다 — 두 경로가 저장을 서로 다르게
    * 하면 "저장했는데 파일에는 안 담겼다"는 갈래가 생긴다.
    */
-  async function persistDraft(): Promise<void> {
+  async function persistDraft(): Promise<number | null> {
     const sentDraft = draft
     const saved = await saveReview(conversion.id, sentDraft, contentRevision)
     // 저장 응답의 버전은 로컬 편집이 이어졌더라도 다음 CAS 요청에 반드시 사용한다.
@@ -770,7 +779,7 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
     // 불변식 붕괴). 이 응답이 낡았으면 아무 것도 덮어쓰지 않고 물러난다 — 저장 안 됨
     // 상태는 `savedText`가 그대로 남아 자연히 유지된다.
     if (draftRef.current !== sentDraft) {
-      return
+      return null
     }
     // 서버가 다듬은 결과(제어문자 제거 등)를 그대로 화면에 반영한다 — 우리가 보낸
     // 글을 저장본으로 삼으면 저장 직후에도 "수정됨" 표시가 남는 경우가 생긴다.
@@ -788,6 +797,7 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
     // 되돌리는 것이지, 그 이전 어느 시점으로도 돌아가지 않는다.
     setUnitMap(withBaselines(saved.segment_map?.units ?? [], stored))
     setContentConflict(false)
+    return saved.content_revision
   }
 
   function markContentConflict(): void {
@@ -848,15 +858,25 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
     return caught instanceof ApiError ? ` 사유: ${caught.message}.` : ''
   }
 
-  async function handleSave(): Promise<void> {
+  async function handleSave(): Promise<number | null> {
     setPending('save')
     setFeedback(null)
     try {
-      await persistDraft()
+      const revision = await persistDraft()
+      if (revision === null) {
+        setFeedback({
+          kind: 'error',
+          message:
+            '저장하는 동안 본문이 더 바뀌었습니다. 현재 내용을 확인한 뒤 다시 저장해 주세요.',
+          announce: true,
+        })
+        return null
+      }
       // 저장됐다는 사실은 위 상태 라벨이 `저장됨 · 시각`으로 알린다. 여기 문구는 방금
       // 누른 버튼 옆에 결과를 남기는 보조 수단이라 낭독하지 않는다(§9 성공 토스트는
       // 보조 수단, §11 중복 낭독 금지).
       setFeedback({ kind: 'success', message: '검수 내용을 저장했습니다.', announce: false })
+      return revision
     } catch (caught) {
       if (caught instanceof ApiError && caught.status === 409) markContentConflict()
       setFeedback({
@@ -869,6 +889,7 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
               : '저장하지 못했습니다. 잠시 후 다시 시도해 주세요.',
         announce: true,
       })
+      return null
     } finally {
       setPending(null)
     }
@@ -893,7 +914,16 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
     setFeedback(null)
     try {
       if (needsSave) {
-        await persistDraft()
+        const revision = await persistDraft()
+        if (revision === null) {
+          setFeedback({
+            kind: 'error',
+            message:
+              '저장하는 동안 본문이 더 바뀌었습니다. 현재 내용을 확인한 뒤 다시 내려받아 주세요.',
+            announce: true,
+          })
+          return
+        }
         saved = true
       }
       const downloaded = await downloadExport(conversion.id, format)
@@ -1027,6 +1057,26 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
           detail: null,
         }
 
+  const guideEnabled = conversion.review_capabilities?.action_guide === true
+
+  function handleTaskTabKeyDown(event: KeyboardEvent<HTMLButtonElement>): void {
+    const next =
+      event.key === 'End'
+        ? 'guide'
+        : event.key === 'Home'
+          ? 'body'
+          : event.key === 'ArrowRight' || event.key === 'ArrowLeft'
+            ? activeTask === 'body'
+              ? 'guide'
+              : 'body'
+            : null
+    if (next === null) return
+    event.preventDefault()
+    setActiveTask(next)
+    if (next === 'guide') setGuideVisited(true)
+    taskTabRefs.current[next]?.focus()
+  }
+
   return (
     <section className="flex flex-col gap-5" aria-labelledby="review-heading">
       {/* §6.4 상단 줄: 왼쪽은 HITL 고지, 오른쪽은 저장 상태다.
@@ -1043,7 +1093,13 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
         {/* 이 화면에서 "저장했는가"를 말하는 곳은 여기 하나다. 저장 여부는 토스트로
             흘려보내지 않고 화면에 남긴다(§9). 색만으로 구분하지 않도록 배지에 문구와
             아이콘을 함께 둔다(§8.1). */}
-        <div className="flex shrink-0 flex-col items-start gap-2 sm:items-end">
+        <div
+          hidden={activeTask === 'guide'}
+          className={cn(
+            'flex shrink-0 flex-col items-start gap-2 sm:items-end',
+            activeTask === 'guide' && 'hidden',
+          )}
+        >
           <div className="flex flex-col items-start gap-1 sm:items-end" id={statusId} role="status">
             <Badge tone={status.tone}>{status.label}</Badge>
             {status.detail !== null && (
@@ -1095,17 +1151,61 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
             ref={headingRef}
             tabIndex={-1}
           >
-            쉬운 글 검수
+            {activeTask === 'guide' ? '행동 안내' : '쉬운 글 검수'}
           </h1>
           <p className="mt-1 text-[15px] text-muted-foreground">
-            원문과 AI 초안을 비교하고, 필요한 내용을 직접 고쳐 주세요.
+            {activeTask === 'guide'
+              ? '원문과 별도 안내문을 비교하고, 필요한 내용을 직접 확인해 주세요.'
+              : '원문과 AI 초안을 비교하고, 필요한 내용을 직접 고쳐 주세요.'}
           </p>
         </div>
       </header>
 
+      {guideEnabled && (
+        <div
+          className="flex gap-1 rounded-[12px] border border-border bg-muted p-1"
+          role="tablist"
+          aria-label="작업 선택"
+        >
+          {(['body', 'guide'] as const).map((task) => (
+            <button
+              key={task}
+              ref={(node) => {
+                taskTabRefs.current[task] = node
+              }}
+              type="button"
+              role="tab"
+              id={`${editorId}-${task}-task-tab`}
+              aria-controls={`${editorId}-${task}-task-panel`}
+              aria-selected={activeTask === task}
+              tabIndex={activeTask === task ? 0 : -1}
+              className={cn(
+                'min-h-11 flex-1 rounded-[10px] px-3 text-[15px] font-semibold transition-colors',
+                activeTask === task
+                  ? 'bg-card text-primary shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground',
+              )}
+              onClick={() => {
+                setActiveTask(task)
+                if (task === 'guide') setGuideVisited(true)
+              }}
+              onKeyDown={handleTaskTabKeyDown}
+            >
+              {task === 'body' ? '본문 검수' : '행동 안내'}
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* 편집 영역과 그 행동을 한 묶음으로 둔다. 아래 행동 줄이 붙어 있는 구간이 이
-          묶음 안에서 끝나야 피드백 폼과 대응표를 가리지 않는다(§10). */}
-      <div className="flex flex-col">
+            묶음 안에서 끝나야 피드백 폼과 대응표를 가리지 않는다(§10). */}
+      <div
+        id={guideEnabled ? `${editorId}-body-task-panel` : undefined}
+        role={guideEnabled ? 'tabpanel' : undefined}
+        aria-labelledby={guideEnabled ? `${editorId}-body-task-tab` : undefined}
+        hidden={activeTask === 'guide'}
+        className={cn('flex flex-col', activeTask === 'guide' && 'hidden')}
+      >
         {supportsParagraphComparison && (
           <div className="mb-3 flex justify-end">
             <Button
@@ -1436,28 +1536,53 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
       {/* 결과를 다 보고 난 자리에 둔다 — 검수 전에 묻는 만족도는 결과가 아니라 기대치를
           재게 된다. 이 화면은 status가 done일 때만 그려지므로(ConversionPage) 서버가
           409로 막는 조건과 화면이 같다. */}
-      {!hasFeedback && (
-        <ReviewFeedback
-          conversionId={conversion.id}
-          onSubmitted={(submittedAt) => {
-            setFeedbackSubmittedAt(submittedAt)
-            setFeedbackJustSubmitted(true)
-          }}
-        />
-      )}
-      {feedbackJustSubmitted && (
-        <div
-          ref={feedbackSuccessRef}
-          tabIndex={-1}
-          className="rounded-xl border border-border bg-card p-4"
-        >
-          <p>의견을 보냈습니다. 감사합니다.</p>
-          <Link
-            to={HISTORY_PATH}
-            className="inline-flex min-h-11 items-center font-semibold text-primary"
+      <div hidden={activeTask === 'guide'} className={activeTask === 'body' ? '' : 'hidden'}>
+        {!hasFeedback && (
+          <ReviewFeedback
+            conversionId={conversion.id}
+            onSubmitted={(submittedAt) => {
+              setFeedbackSubmittedAt(submittedAt)
+              setFeedbackJustSubmitted(true)
+            }}
+          />
+        )}
+        {feedbackJustSubmitted && (
+          <div
+            ref={feedbackSuccessRef}
+            tabIndex={-1}
+            className="rounded-xl border border-border bg-card p-4"
           >
-            변환 기록으로 돌아가기
-          </Link>
+            <p>의견을 보냈습니다. 감사합니다.</p>
+            <Link
+              to={HISTORY_PATH}
+              className="inline-flex min-h-11 items-center font-semibold text-primary"
+            >
+              변환 기록으로 돌아가기
+            </Link>
+          </div>
+        )}
+      </div>
+
+      {guideEnabled && (
+        <div
+          id={`${editorId}-guide-task-panel`}
+          role="tabpanel"
+          aria-labelledby={`${editorId}-guide-task-tab`}
+          hidden={activeTask !== 'guide'}
+          className={activeTask === 'guide' ? '' : 'hidden'}
+        >
+          {guideVisited && (
+            <ActionGuidePanel
+              conversionId={conversion.id}
+              contentRevision={contentRevision}
+              bodyDirty={dirty}
+              bodyBusy={busy}
+              bodyConflict={contentConflict}
+              source={source}
+              onSaveBody={handleSave}
+              onDirtyChange={setGuideDirty}
+            />
+          )}
         </div>
       )}
     </section>

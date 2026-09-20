@@ -1,8 +1,8 @@
 # 쉬운글 개선 검증·출시·운영 계획
 
-작성일: 2026-09-18 · 상태: R0·R1과 R2 서버 기능(ER-06) 로컬 검증 완료. 유료 평가·파일럿·배포는 미실행.
+작성일: 2026-09-18 · 상태: R0·R1과 R2 사용자 흐름(ER-07) 로컬 fake E2E 완료. 유료 평가·파일럿·배포는 미실행.
 
-ER-05는 fake runner와 PostgreSQL 통합 테스트로 작업·과금·중복 호출 방지를 확인했다. ER-06은 구조·원문 인용·일부 사실 규칙, 암호화 저장·키 회전, stale 교체·검수 상태·TXT 출력 경계를 확인했다. 실제 provider 호출과 R2 후보 품질 평가는 아직 수행하지 않았다.
+ER-05는 fake runner와 PostgreSQL 통합 테스트로 작업·과금·중복 호출 방지를 확인했다. ER-06은 구조·원문 인용·일부 사실 규칙, 암호화 저장·키 회전, stale 교체·검수 상태·TXT 출력 경계를 확인했다. ER-07은 실제 브라우저·API·DB·fake worker를 거쳐 생성 전 확인, 재방문, 후보 적용, 편집·원문 대조, 저장·TXT, 충돌·stale 경계를 확인했다. 실제 provider 호출과 R2 후보 품질 평가는 아직 수행하지 않았다.
 
 연결: [로드맵](2026-09-18-easy-read-improvement-roadmap.md) · [구현 명세](2026-09-18-easy-read-implementation-spec.md) · [UX](2026-09-18-easy-read-ux-spec.md) · [작업 ID](2026-09-18-easy-read-delivery-plan.md).
 

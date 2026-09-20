@@ -32,6 +32,7 @@ import kr.easydoc.application.document.WorkspaceLookup
 import kr.easydoc.core.document.ReviewCapabilities
 import kr.easydoc.core.llm.LlmOptions
 import kr.easydoc.core.llm.LlmProvider
+import kr.easydoc.infrastructure.actionguide.ActionGuideProperties
 import kr.easydoc.infrastructure.crypto.MIGRATE_PROFILE
 import kr.easydoc.infrastructure.export.PackagedOriginalReflector
 import kr.easydoc.infrastructure.llm.LlmProperties
@@ -53,7 +54,7 @@ import org.springframework.jdbc.core.simple.JdbcClient
  */
 @Suppress("TooManyFunctions")
 @Configuration(proxyBeanMethods = false)
-@EnableConfigurationProperties(ReviewSupportProperties::class)
+@EnableConfigurationProperties(ReviewSupportProperties::class, ActionGuideProperties::class)
 @Profile("!$MIGRATE_PROFILE")
 class DocumentConfiguration {
     @Bean
@@ -169,6 +170,7 @@ class DocumentConfiguration {
         segmentMapDerivation: SegmentMapDerivation,
         transactionRunner: TransactionRunner,
         reviewSupportProperties: ReviewSupportProperties,
+        actionGuideProperties: ActionGuideProperties,
     ): ConversionQueryService =
         ConversionQueryService(
             conversions = conversions,
@@ -177,15 +179,7 @@ class DocumentConfiguration {
             documents = documents,
             segmentMapDerivation = segmentMapDerivation,
             transaction = transactionRunner,
-            reviewCapabilities =
-                ReviewCapabilities(
-                    reviewSupport = reviewSupportProperties.enabled,
-                    actionGuide = false,
-                    tableRelations = false,
-                    reviewHistory = false,
-                    explanations = false,
-                    illustrations = false,
-                ),
+            reviewCapabilities = reviewCapabilitiesFor(reviewSupportProperties, actionGuideProperties),
         )
 
     /** 검수 저장 유스케이스. 응답 조립은 조회 쪽을 그대로 쓴다. */
@@ -325,3 +319,16 @@ class DocumentConfiguration {
         transactionRunner: TransactionRunner,
     ): EnvelopeRotation = EnvelopeRotation(stores = stores, cipher = cipher, transaction = transactionRunner)
 }
+
+internal fun reviewCapabilitiesFor(
+    reviewSupport: ReviewSupportProperties,
+    actionGuide: ActionGuideProperties,
+): ReviewCapabilities =
+    ReviewCapabilities(
+        reviewSupport = reviewSupport.enabled,
+        actionGuide = actionGuide.enabled,
+        tableRelations = false,
+        reviewHistory = false,
+        explanations = false,
+        illustrations = false,
+    )
