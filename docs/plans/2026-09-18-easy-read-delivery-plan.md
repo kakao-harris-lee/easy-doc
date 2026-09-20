@@ -1,6 +1,6 @@
 # 쉬운글 개선 실행 계획과 개발 절차
 
-작성일: 2026-09-18 · 상태(2026-09-20): ER-00~ER-07 구현·fake E2E·원격 CI 완료, ER-08 이후 계획. 출시 검증은 별도 진행.
+작성일: 2026-09-18 · 상태(2026-09-20): ER-00~ER-07 구현·fake E2E·원격 CI 완료, ER-08 opt-in 프롬프트 기반 병합·AC-R3 미완료. 출시 검증은 별도 진행.
 
 정본: [로드맵](2026-09-18-easy-read-improvement-roadmap.md) · [구현 명세](2026-09-18-easy-read-implementation-spec.md) · [UX](2026-09-18-easy-read-ux-spec.md) · [검증·출시](2026-09-18-easy-read-validation-release.md).
 
@@ -27,7 +27,7 @@
 
 ## 3. 작업 분할과 의존성
 
-ER-00~ER-04는 2026-09-18, ER-05는 2026-09-19, ER-06~ER-07은 2026-09-20에 구현과 fake 검증을 마쳤다. [PR #133](https://github.com/kakao-harris-lee/easy-doc/pull/133)은 병합됐고 [최종 원격 CI](https://github.com/kakao-harris-lee/easy-doc/actions/runs/35512616602)가 통과했다. 기능은 기본 OFF이며 유료 품질 평가·배포·파일럿은 수행하지 않았다. ER-08 이후는 미착수다. 각 행은 한 PR의 목표 범위이며 커지면 같은 단계 안에서 분할한다.
+ER-00~ER-04는 2026-09-18, ER-05는 2026-09-19, ER-06~ER-07은 2026-09-20에 구현과 fake 검증을 마쳤다. [PR #133](https://github.com/kakao-harris-lee/easy-doc/pull/133)은 병합됐고 [최종 원격 CI](https://github.com/kakao-harris-lee/easy-doc/actions/runs/35512616602)가 통과했다. [PR #135](https://github.com/kakao-harris-lee/easy-doc/pull/135)는 R3 프롬프트의 선택 경로를 추가했고 [원격 CI](https://github.com/kakao-harris-lee/easy-doc/actions/runs/35516007442)가 통과했다. 기본값은 이전 프롬프트이며, R3의 검수 정의 선별·재변환 첫 등장 판정·실제 생성 품질은 아직 검증되지 않았다. 기능은 기본 OFF이고 유료 품질 평가·배포·파일럿은 수행하지 않았다. 각 행은 한 PR의 목표 범위이며 커지면 같은 단계 안에서 분할한다.
 
 | ID | 의존 | 산출물·수정 경계 | 인수 기준 |
 |---|---|---|---|
