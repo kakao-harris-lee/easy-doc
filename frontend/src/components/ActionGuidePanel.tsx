@@ -126,7 +126,6 @@ export function ActionGuidePanel({
   const editSequenceRef = useRef(0)
   const saveLockedRef = useRef(false)
   const bodySavedRevisionRef = useRef<number | null>(null)
-  const postSaveContextReadyRef = useRef(false)
   const wasBodyDirtyRef = useRef(bodyDirty)
   const createTriggerRef = useRef<HTMLButtonElement>(null)
   const createConfirmRef = useRef<HTMLButtonElement>(null)
@@ -183,7 +182,6 @@ export function ActionGuidePanel({
   useEffect(() => {
     if (bodyDirty && !wasBodyDirtyRef.current) {
       bodySavedRevisionRef.current = null
-      postSaveContextReadyRef.current = false
     }
     wasBodyDirtyRef.current = bodyDirty
   }, [bodyDirty])
@@ -208,7 +206,6 @@ export function ActionGuidePanel({
         dirtyRef.current = false
         editBaseRevisionRef.current = null
         bodySavedRevisionRef.current = null
-        postSaveContextReadyRef.current = false
         setBodySavedForConfirmation(false)
         setGuideConflict(false)
         setReviewChecked(false)
@@ -240,7 +237,6 @@ export function ActionGuidePanel({
           dirtyRef.current = false
           editBaseRevisionRef.current = null
           bodySavedRevisionRef.current = null
-          postSaveContextReadyRef.current = false
           setGuideConflict(false)
           setReviewChecked(false)
           onDirtyChange?.(false)
@@ -389,7 +385,6 @@ export function ActionGuidePanel({
         }
         expectedRevision = saved
         bodySavedRevisionRef.current = saved
-        postSaveContextReadyRef.current = false
         setBodySavedForConfirmation(true)
         setSavedRevision(saved)
       } catch (caught) {
@@ -399,37 +394,37 @@ export function ActionGuidePanel({
         setBusy(false)
       }
     }
-    if (bodySavedRevisionRef.current !== null && !postSaveContextReadyRef.current) {
-      setBusy(true)
-      try {
-        const [refreshed, nextJobs] = await Promise.all([
-          getActionGuide(conversionId),
-          listActionGuideJobs(conversionId),
-        ])
-        setResource(refreshed)
-        setJobs(nextJobs)
-        expectedGuideRevision = refreshed.guide?.guide_revision ?? null
-        if (!dirtyRef.current) setDraft(refreshed.guide?.content ?? null)
-        setReviewChecked(false)
-        postSaveContextReadyRef.current = true
-        if (nextJobs.required_credits !== jobs?.required_credits) {
-          setNotice('필요 이용량이 바뀌었습니다. 새 금액을 확인한 뒤 다시 눌러 주세요.')
-          return
-        }
-        if (nextJobs.available_credits < nextJobs.required_credits) {
-          setError('이용량이 부족합니다. 남은 이용량을 확인해 주세요.')
-          return
-        }
-      } catch {
-        setError(
-          '본문은 저장됐지만 최신 안내문 상태와 이용량을 확인하지 못했습니다. 생성 요청은 보내지 않았습니다. 다시 눌러 상태를 확인해 주세요.',
-        )
+    // 다른 탭에서 본문을 이미 저장했을 수도 있다. 생성 직전마다 서버 기준 이용량과
+    // 안내문 revision을 확인하고, 표시했던 금액이 달라졌다면 새 금액을 다시 확인받는다.
+    setBusy(true)
+    try {
+      const [refreshed, nextJobs] = await Promise.all([
+        getActionGuide(conversionId),
+        listActionGuideJobs(conversionId),
+      ])
+      setResource(refreshed)
+      setJobs(nextJobs)
+      expectedGuideRevision = refreshed.guide?.guide_revision ?? null
+      if (!dirtyRef.current) setDraft(refreshed.guide?.content ?? null)
+      setReviewChecked(false)
+      if (nextJobs.required_credits !== jobs?.required_credits) {
+        setNotice('필요 이용량이 바뀌었습니다. 새 금액을 확인한 뒤 다시 눌러 주세요.')
         return
-      } finally {
-        setBusy(false)
       }
+      if (nextJobs.available_credits < nextJobs.required_credits) {
+        setError('이용량이 부족합니다. 남은 이용량을 확인해 주세요.')
+        return
+      }
+    } catch {
+      setError(
+        bodySavedRevisionRef.current !== null
+          ? '본문은 저장됐지만 최신 안내문 상태와 이용량을 확인하지 못했습니다. 생성 요청은 보내지 않았습니다. 다시 눌러 상태를 확인해 주세요.'
+          : '최신 안내문 상태와 이용량을 확인하지 못했습니다. 생성 요청은 보내지 않았습니다. 다시 눌러 상태를 확인해 주세요.',
+      )
+      return
+    } finally {
+      setBusy(false)
     }
-    if (bodySavedRevisionRef.current !== null && !postSaveContextReadyRef.current) return
     const body = {
       request_id: crypto.randomUUID(),
       expected_content_revision: expectedRevision,
@@ -452,7 +447,6 @@ export function ActionGuidePanel({
   function cancelConfirmation(): void {
     setConfirmCreate(false)
     bodySavedRevisionRef.current = null
-    postSaveContextReadyRef.current = false
     setBodySavedForConfirmation(false)
     window.setTimeout(() => createTriggerRef.current?.focus(), 0)
   }
@@ -823,7 +817,6 @@ export function ActionGuidePanel({
               }
               onClick={() => {
                 bodySavedRevisionRef.current = null
-                postSaveContextReadyRef.current = false
                 setBodySavedForConfirmation(false)
                 setConfirmCreate(true)
               }}

@@ -163,6 +163,7 @@ describe('행동 안내 화면', () => {
     vi.mocked(listActionGuideJobs)
       .mockResolvedValueOnce(jobs)
       .mockResolvedValueOnce({ ...jobs, required_credits: 3 })
+      .mockResolvedValue({ ...jobs, required_credits: 3 })
     vi.mocked(createActionGuideJob).mockResolvedValue({
       job: { ...candidate, status: 'queued' },
       creditBalance: 7,
@@ -170,6 +171,32 @@ describe('행동 안내 화면', () => {
     show({ bodyDirty: true, onSaveBody: vi.fn().mockResolvedValue(2) })
     await user.click(await screen.findByRole('button', { name: '안내문 만들기' }))
     await user.click(screen.getByRole('button', { name: '본문 저장 후 만들기' }))
+    expect(await screen.findByText(/필요 이용량이 바뀌었습니다/)).toBeInTheDocument()
+    expect(createActionGuideJob).not.toHaveBeenCalled()
+    await user.click(screen.getByRole('button', { name: '3크레딧으로 안내문 만들기' }))
+    expect(createActionGuideJob).toHaveBeenCalledWith(
+      'conversion-1',
+      expect.objectContaining({ expected_content_revision: 2 }),
+    )
+  })
+
+  it('다른 탭에서 본문을 저장한 뒤에도 새 이용량을 확인받고 접수한다', async () => {
+    const user = userEvent.setup()
+    vi.mocked(listActionGuideJobs)
+      .mockResolvedValueOnce(jobs)
+      .mockResolvedValueOnce({ ...jobs, required_credits: 3 })
+      .mockResolvedValue({ ...jobs, required_credits: 3 })
+    vi.mocked(createActionGuideJob).mockResolvedValue({
+      job: { ...candidate, status: 'queued' },
+      creditBalance: 7,
+    })
+    const { rerender } = show()
+    await screen.findByText('필요 이용량 2크레딧 / 남은 이용량 10크레딧')
+
+    rerender(<ActionGuidePanel {...defaults} contentRevision={2} />)
+    await user.click(screen.getByRole('button', { name: '안내문 만들기' }))
+    await user.click(screen.getByRole('button', { name: '2크레딧으로 안내문 만들기' }))
+
     expect(await screen.findByText(/필요 이용량이 바뀌었습니다/)).toBeInTheDocument()
     expect(createActionGuideJob).not.toHaveBeenCalled()
     await user.click(screen.getByRole('button', { name: '3크레딧으로 안내문 만들기' }))
