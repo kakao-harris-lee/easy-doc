@@ -28,6 +28,8 @@ services:
       # 골든 fixture 정본은 저장소 루트 data/golden/ 에 있다. 품질 게이트 테스트가
       # backend 루트(/build)의 부모에서 data/golden/documents 를 찾으므로 /data 로 붙인다.
       - ./data/golden:/data/golden:ro
+      # R2 오프라인 회귀는 보존한 실제 모델 응답을 재검증하며 provider를 호출하지 않는다.
+      - ./docs/reports/2026-09-21-r2-model-evaluation-artifacts:/docs/reports/2026-09-21-r2-model-evaluation-artifacts:ro
 
   frontend-check:
     profiles: [ci]

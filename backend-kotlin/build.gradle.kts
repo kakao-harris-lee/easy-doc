@@ -22,6 +22,8 @@ val goldenDocumentsDir: File =
     (findProperty("easydoc.golden.documents.dir") as String?)?.let(::File)
         ?: File(rootDir.parentFile, "data/golden/documents")
 val goldenConversionsDir: File = File(rootDir.parentFile, "data/golden/conversions")
+val r2ModelEvaluationArtifactsDir: File =
+    File(rootDir.parentFile, "docs/reports/2026-09-21-r2-model-evaluation-artifacts")
 
 allprojects {
     group = "kr.easydoc"
@@ -123,6 +125,13 @@ subprojects {
             inputs
                 .dir(goldenConversionsDir)
                 .withPropertyName("goldenConversions")
+                .withPathSensitivity(PathSensitivity.RELATIVE)
+        }
+
+        if (project.name == "infrastructure") {
+            inputs
+                .dir(r2ModelEvaluationArtifactsDir)
+                .withPropertyName("r2ModelEvaluationArtifacts")
                 .withPathSensitivity(PathSensitivity.RELATIVE)
         }
 
