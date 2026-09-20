@@ -114,6 +114,9 @@ describe('행동 안내 화면', () => {
     ).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: '안내문 만들기' }))
     expect(createActionGuideJob).not.toHaveBeenCalled()
+    expect(screen.getByRole('group', { name: '안내문 생성 확인' })).toHaveAccessibleDescription(
+      /필요 이용량 2크레딧.*초안이 만들어지면 이용량이 사용됩니다/,
+    )
     await user.click(screen.getByRole('button', { name: '2크레딧으로 안내문 만들기' }))
     expect(createActionGuideJob).toHaveBeenCalledWith('conversion-1', {
       request_id: 'generated-uuid',
@@ -123,6 +126,18 @@ describe('행동 안내 화면', () => {
     expect(
       await screen.findByText('안내문을 만들고 있어요. 다른 화면으로 이동해도 계속됩니다.'),
     ).toBeInTheDocument()
+  })
+
+  it('이용량이 부족하면 생성 대신 이용량 화면 이동을 제공한다', async () => {
+    vi.mocked(listActionGuideJobs).mockResolvedValue({ ...jobs, available_credits: 1 })
+    show()
+
+    expect(await screen.findByText('필요 이용량 2크레딧 / 남은 이용량 1크레딧')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '안내문 만들기' })).toBeDisabled()
+    expect(screen.getByRole('link', { name: '이용량 화면으로 이동' })).toHaveAttribute(
+      'href',
+      '/usage',
+    )
   })
 
   it('본문이 dirty이면 저장 성공 뒤 새 버전으로 요청한다', async () => {

@@ -19,6 +19,7 @@ import type {
   CreateActionGuideJobRequest,
 } from '../api/types'
 import type { DocumentSource } from '../review/sourceText'
+import { USAGE_PATH } from '../routes/paths'
 import { Button } from './ui/Button'
 
 export interface ActionGuidePanelProps {
@@ -175,6 +176,9 @@ export function ActionGuidePanel({
   const canEdit =
     guide !== null && !stale && !bodyDirty && !bodyBusy && !bodyConflict && !guideConflict
   const isLoading = loading || loadedConversionId !== conversionId
+  const insufficientCredits =
+    (jobs !== null && jobs.available_credits < jobs.required_credits) ||
+    error === '이용량이 부족합니다. 남은 이용량을 확인해 주세요.'
 
   useEffect(() => {
     if (bodyDirty && !wasBodyDirtyRef.current) {
@@ -657,6 +661,14 @@ export function ActionGuidePanel({
           {error}
         </p>
       )}
+      {!isLoading && insufficientCredits && (
+        <a
+          className="inline-flex min-h-11 items-center font-semibold text-primary"
+          href={USAGE_PATH}
+        >
+          이용량 화면으로 이동
+        </a>
+      )}
       {notice && (
         <p role="status" className="text-sm">
           {notice}
@@ -728,10 +740,10 @@ export function ActionGuidePanel({
             현재 저장된 본문으로 별도 안내문을 만듭니다. 본문은 바뀌지 않습니다. 원문에 안내가
             없으면 ‘원문에 안내 없음’으로 표시합니다.
           </p>
-          <p className="font-medium">
+          <p id={`${headingId}-create-cost`} className="font-medium">
             필요 이용량 {jobs.required_credits}크레딧 / 남은 이용량 {jobs.available_credits}크레딧
           </p>
-          <p className="text-sm text-muted-foreground">
+          <p id={`${headingId}-create-policy`} className="text-sm text-muted-foreground">
             초안이 만들어지면 이용량이 사용됩니다. 초안을 적용하지 않아도 사용됩니다. 생성 실패 시
             예약한 이용량은 반환됩니다.
           </p>
@@ -766,6 +778,7 @@ export function ActionGuidePanel({
             <div
               role="group"
               aria-label="안내문 생성 확인"
+              aria-describedby={`${headingId}-create-cost ${headingId}-create-policy`}
               className="flex flex-wrap items-center gap-2"
             >
               {bodyDirty && (
