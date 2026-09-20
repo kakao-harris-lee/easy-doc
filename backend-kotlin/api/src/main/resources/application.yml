@@ -80,6 +80,7 @@ easydoc:
     worker-enabled: ${EASYDOC_ACTION_GUIDE_WORKER_ENABLED:false}
   prompt:
     structure-max-runs: ${EASYDOC_PROMPT_STRUCTURE_MAX_RUNS:40}
+    context-explanation-version: ${EASYDOC_PROMPT_CONTEXT_EXPLANATION_VERSION:BASELINE}
   llm:
     provider: ${EASYDOC_LLM_PROVIDER:anthropic}
     model: ${EASYDOC_LLM_MODEL:}

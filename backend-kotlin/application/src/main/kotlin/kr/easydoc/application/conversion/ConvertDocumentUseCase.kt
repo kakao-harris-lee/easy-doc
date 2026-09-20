@@ -1,6 +1,7 @@
 package kr.easydoc.application.conversion
 
 import kr.easydoc.core.easyread.DocumentIdGenerator
+import kr.easydoc.core.easyread.ExplanationPromptVersion
 import kr.easydoc.core.easyread.FactIssue
 import kr.easydoc.core.easyread.SecureDocumentIds
 import kr.easydoc.core.easyread.SentenceIssue
@@ -27,7 +28,11 @@ import kr.easydoc.core.segment.splitUnits
 import org.slf4j.LoggerFactory
 import java.time.Clock
 
-/** 문서 1건을 쉬운 글로 바꾼다 — 프롬프트 → LLM → 후처리 → (조건부 보정 → 채택 판정). */
+/**
+ * 문서 1건을 쉬운 글로 바꾼다 — 프롬프트 → LLM → 후처리 → (조건부 보정 → 채택 판정).
+ * R3 버전은 API/worker 조립이 고르는 독립 정책이라 생성자에 명시적으로 둔다.
+ */
+@Suppress("LongParameterList")
 class ConvertDocumentUseCase(
     private val provider: LlmProvider,
     private val documentIds: DocumentIdGenerator = SecureDocumentIds,
@@ -53,6 +58,7 @@ class ConvertDocumentUseCase(
      * 이 마지막 자리를 가리켜야 한다.
      */
     private val clock: Clock = Clock.systemUTC(),
+    private val explanationPromptVersion: ExplanationPromptVersion = ExplanationPromptVersion.BASELINE,
     private val dictionary: DictionaryContextSource = NoDictionaryContext,
 ) {
     /** worker 가 변환 유스케이스에 들어가기 전 실패를 기록할 때 쓰는 벤더 이름. */
@@ -100,19 +106,20 @@ class ConvertDocumentUseCase(
             options,
             dictionaryContext,
             dictionary,
-            StructureInput(structure, structureHintOptions),
+            StructureInput(structure, structureHintOptions, explanationPromptVersion),
             purpose,
             clock,
         ).run(source)
 }
 
 /**
- * [Pass] 생성자의 구조 힌트 두 값(원문 구조·run 수 상한)을 하나로 묶는다 — 묶지 않으면
+ * [Pass] 생성자의 프롬프트 관련 설정(원문 구조·run 수 상한·R3 버전)을 하나로 묶는다 — 묶지 않으면
  * `Pass` 의 생성자 매개변수가 detekt `LongParameterList` 상한(7)을 넘는다.
  */
 private class StructureInput(
     val structure: SourceStructure,
     val options: StructureHintOptions,
+    val explanationVersion: ExplanationPromptVersion,
 )
 
 /** 변환 1건의 실행 상태. */
@@ -140,6 +147,16 @@ private class Pass(
     private val repairPurpose: LlmCallPurpose
         get() = if (purpose == LlmCallPurpose.CONVERT) LlmCallPurpose.REPAIR else purpose
 
+    private val explanationVersion: ExplanationPromptVersion
+        get() =
+            if (purpose == LlmCallPurpose.RECONVERT &&
+                structureInput.explanationVersion == ExplanationPromptVersion.R3
+            ) {
+                ExplanationPromptVersion.R3_UNIT
+            } else {
+                structureInput.explanationVersion
+            }
+
     fun run(source: String): ConversionResult {
         val context = dictionaryContext ?: dictionary.contextFor(source)
         // `[구조]` 절은 여기서 **한 번만** 계산해 1차·보정 두 프롬프트에 그대로 재사용한다
@@ -151,7 +168,7 @@ private class Pass(
         val safeStructure = safeStructureFor(structure, sourceUnits)
         val maxRuns = structureInput.options.maxRuns
         val structureSection = renderStructureSection(safeStructure, sourceUnits, documentIds, maxRuns)
-        val prompt = LlmPrompt.forConversion(source, documentIds, context, structureSection)
+        val prompt = LlmPrompt.forConversion(source, documentIds, context, structureSection, explanationVersion)
         val charCount = source.length
 
         // ① 변환 패스 — 항상 정확히 1회.
@@ -213,7 +230,16 @@ private class Pass(
     ): Adoption {
         // ModelDraft 로 감싸는 것이 허용되는 자리다 — 값의 출처가 LLM 출력의 후처리 결과다
         // (`DocumentBody.kt` 「provenance 래퍼 사용 규약」).
-        val prompt = LlmPrompt.forRepair(ModelDraft(draft), issues, factIssues, documentIds, structureSection, source)
+        val prompt =
+            LlmPrompt.forRepair(
+                ModelDraft(draft),
+                issues,
+                factIssues,
+                documentIds,
+                structureSection,
+                source,
+                explanationVersion,
+            )
         val candidate =
             (complete(prompt, repairPurpose, source.length) as? Outcome.Body)?.text
                 ?: return Adoption.keep(draft)

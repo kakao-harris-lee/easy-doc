@@ -1,6 +1,7 @@
 package kr.easydoc.core.llm
 
 import kr.easydoc.core.easyread.DocumentIdGenerator
+import kr.easydoc.core.easyread.ExplanationPromptVersion
 import kr.easydoc.core.easyread.FactIssue
 import kr.easydoc.core.easyread.SecureDocumentIds
 import kr.easydoc.core.easyread.SentenceIssue
@@ -35,9 +36,10 @@ class LlmPrompt private constructor(
             dictionaryContext: String? = null,
             /** [buildUserPrompt]의 `structureSection`으로 그대로 내려간다(계획 §1.3). */
             structureSection: String? = null,
+            explanationVersion: ExplanationPromptVersion = ExplanationPromptVersion.BASELINE,
         ): LlmPrompt =
             LlmPrompt(
-                system = buildSystemPrompt(documentText, structureSection),
+                system = buildSystemPrompt(documentText, structureSection, explanationVersion),
                 user = buildUserPrompt(documentText, documentIds, dictionaryContext, structureSection),
             )
 
@@ -54,9 +56,18 @@ class LlmPrompt private constructor(
             /** [buildRepairPrompt]의 `structureSection`으로 그대로 내려간다(계획 §1.3). */
             structureSection: String? = null,
             sourceText: String,
+            explanationVersion: ExplanationPromptVersion = ExplanationPromptVersion.BASELINE,
         ): LlmPrompt {
             val repair =
-                buildRepairPrompt(converted, violations, missingFacts, documentIds, structureSection, sourceText)
+                buildRepairPrompt(
+                    converted,
+                    violations,
+                    missingFacts,
+                    documentIds,
+                    structureSection,
+                    sourceText,
+                    explanationVersion,
+                )
             return LlmPrompt(system = repair.system, user = repair.user)
         }
 

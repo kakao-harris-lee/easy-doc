@@ -1,5 +1,6 @@
 package kr.easydoc.infrastructure.document
 
+import kr.easydoc.core.easyread.ExplanationPromptVersion
 import kr.easydoc.core.easyread.StructureHintOptions
 import org.springframework.boot.context.properties.ConfigurationProperties
 
@@ -13,7 +14,17 @@ import org.springframework.boot.context.properties.ConfigurationProperties
  * [StructureHintOptions.DEFAULT_MAX_RUNS](40, 계획 §4 예시)와 같다.
  */
 @ConfigurationProperties(prefix = "easydoc.prompt")
-data class StructureHintProperties(val structureMaxRuns: Int = StructureHintOptions.DEFAULT_MAX_RUNS) {
+data class StructureHintProperties(
+    val structureMaxRuns: Int = StructureHintOptions.DEFAULT_MAX_RUNS,
+    /** 기본 BASELINE, `easydoc.prompt.context-explanation-version=r3`에서만 ER-08 지침 사용. */
+    val contextExplanationVersion: ExplanationPromptVersion = ExplanationPromptVersion.BASELINE,
+) {
+    init {
+        require(contextExplanationVersion != ExplanationPromptVersion.R3_UNIT) {
+            "R3_UNIT은 단위 재변환 내부 정책입니다. 설정에는 BASELINE 또는 R3만 사용하세요."
+        }
+    }
+
     /** core 로 넘길 순수 옵션 값으로 바꾼다 — core 는 Spring `@ConfigurationProperties` 를 모른다. */
     fun toStructureHintOptions(): StructureHintOptions = StructureHintOptions(maxRuns = structureMaxRuns)
 }

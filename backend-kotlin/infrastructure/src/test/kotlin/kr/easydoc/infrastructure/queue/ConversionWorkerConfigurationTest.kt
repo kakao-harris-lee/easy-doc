@@ -1,13 +1,16 @@
 package kr.easydoc.infrastructure.queue
 
 import kr.easydoc.application.conversion.NoDictionaryContext
+import kr.easydoc.core.easyread.ExplanationPromptVersion
 import kr.easydoc.core.exceptions.ConfigurationException
 import kr.easydoc.core.llm.DEFAULT_MAX_TOKENS
+import kr.easydoc.core.llm.LlmCallPurpose
 import kr.easydoc.core.llm.LlmCompletion
 import kr.easydoc.core.llm.LlmFinishReason
 import kr.easydoc.core.llm.LlmOptions
 import kr.easydoc.core.llm.LlmPrompt
 import kr.easydoc.core.llm.LlmProvider
+import kr.easydoc.infrastructure.document.DocumentConfiguration
 import kr.easydoc.infrastructure.document.StructureHintProperties
 import kr.easydoc.infrastructure.llm.LlmProperties
 import kr.easydoc.infrastructure.llm.MAX_OUTPUT_TOKENS_CEILING
@@ -24,6 +27,35 @@ import org.junit.jupiter.api.Test
  * 먼저 거절해야 한다.
  */
 class ConversionWorkerConfigurationTest {
+    @Test
+    fun `단위 재변환 내부 버전은 외부 설정으로 선택할 수 없다`() {
+        assertThatThrownBy { StructureHintProperties(contextExplanationVersion = ExplanationPromptVersion.R3_UNIT) }
+            .isInstanceOf(IllegalArgumentException::class.java)
+            .hasMessageContaining("BASELINE 또는 R3")
+    }
+
+    @Test
+    fun `API 재변환과 worker 변환은 같은 명시 버전을 쓰고 기본은 이전 프롬프트다`() {
+        for (version in listOf(ExplanationPromptVersion.BASELINE, ExplanationPromptVersion.R3)) {
+            val settings = StructureHintProperties(contextExplanationVersion = version)
+            val workerProvider = RecordingProvider()
+            val apiProvider = RecordingProvider()
+            ConversionWorkerConfiguration()
+                .convertDocumentUseCase(workerProvider, NoDictionaryContext, LlmProperties(), settings)
+                .convert("결과를 알립니다.")
+            DocumentConfiguration()
+                .convertDocumentUseCase(apiProvider, LlmProperties(), settings)
+                .convert("결과를 알립니다.", purpose = LlmCallPurpose.RECONVERT)
+
+            assertThat(workerProvider.lastPrompt).isNotNull()
+            assertThat(apiProvider.lastPrompt).isNotNull()
+            assertThat(workerProvider.lastPrompt!!.system.contains("검수 상태가 표시되지 않았다면"))
+                .isEqualTo(version == ExplanationPromptVersion.R3)
+            assertThat(apiProvider.lastPrompt!!.system.contains("문서 전체에서 첫 등장인지 알 수 없으므로"))
+                .isEqualTo(version == ExplanationPromptVersion.R3)
+        }
+    }
+
     @Test
     @DisplayName("convertDocumentUseCase 조립이 easydoc.llm.max-output-tokens 값을 LlmOptions 로 전달한다")
     fun `구성값이 LlmOptions 로 흐른다`() {
@@ -138,6 +170,7 @@ class ConversionWorkerConfigurationTest {
     /** 실제 완성 요청에 실린 [LlmOptions] 를 기록만 하는 대역. */
     private class RecordingProvider : LlmProvider {
         var lastOptions: LlmOptions? = null
+        var lastPrompt: LlmPrompt? = null
         override val name: String = "recording"
 
         override fun complete(
@@ -145,6 +178,7 @@ class ConversionWorkerConfigurationTest {
             options: LlmOptions,
         ): LlmCompletion {
             lastOptions = options
+            lastPrompt = prompt
             return LlmCompletion(
                 text = "쉬운 글 결과",
                 provider = name,

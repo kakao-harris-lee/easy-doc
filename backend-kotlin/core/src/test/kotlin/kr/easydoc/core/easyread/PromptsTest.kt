@@ -50,12 +50,42 @@ class PromptsTest {
 
     @Test
     fun `변환과 보정에서 편집 기준을 한 번씩 공유한다`() {
-        val prompts = listOf(systemPromptOf("본문"), buildRepairPrompt(ModelDraft("초안"), emptyList()).system)
+        val draft = ModelDraft("초안")
+        val prompts = listOf(systemPromptOf("본문"), buildRepairPrompt(draft, emptyList()).system)
         for (prompt in prompts) {
             for (instruction in listOf(ROLE, SOURCE_FIDELITY_INSTRUCTION, EXPLAIN_INSTRUCTION)) {
                 assertThat(prompt.windowed(instruction.length).count { it == instruction }).isEqualTo(1)
             }
+            assertThat(prompt).doesNotContain("검수 상태가 표시되지 않았다면")
             assertThat(prompt).doesNotContain("원문과 사전으로 뜻을 확정할 수 없으면", "각 줄은 그 줄만 읽어도")
+        }
+        val r3Prompts =
+            listOf(
+                buildSystemPrompt("본문", explanationVersion = ExplanationPromptVersion.R3),
+                buildRepairPrompt(draft, emptyList(), explanationVersion = ExplanationPromptVersion.R3).system,
+            )
+        for (prompt in r3Prompts) {
+            assertThat(prompt)
+                .contains("기관명·법령명·서류명·첨부파일 이름")
+                .contains("첫 등장")
+                .contains("원문이나 검수된 사전 정의")
+                .contains("검수 상태가 표시되지 않았다면")
+                .contains("뜻을 확인할 수 없으면 공식 이름만")
+                .contains("이후에는 같은 이름")
+                .contains("사업별 자격·금액·기한")
+            assertThat(
+                prompt.windowed(R3_EXPLAIN_INSTRUCTION.length).count { it == R3_EXPLAIN_INSTRUCTION },
+            ).isEqualTo(1)
+        }
+        val unitPrompts =
+            listOf(
+                buildSystemPrompt("본문", explanationVersion = ExplanationPromptVersion.R3_UNIT),
+                buildRepairPrompt(draft, emptyList(), explanationVersion = ExplanationPromptVersion.R3_UNIT).system,
+            )
+        for (prompt in unitPrompts) {
+            assertThat(prompt)
+                .contains("문서 전체에서 첫 등장인지 알 수 없으므로", "새 역할 설명이나 뜻풀이를 추측해 덧붙이지 마세요")
+                .doesNotContain("이후에는 같은 이름", "이해에 필요한 설명을 이름 밖에 덧붙이세요")
         }
     }
 
