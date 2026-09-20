@@ -563,7 +563,10 @@ test.describe('접근성 — 320px', () => {
     expect(undersized(await touchTargets(page)), '검수의 작은 터치 대상').toEqual([])
 
     // 검수 2열의 읽기 순서는 탭으로 갈린 화면에서도 원문 다음 결과다(§11).
-    const tabs = await page.getByRole('tab').allInnerTexts()
+    const tabs = await page
+      .getByRole('tablist', { name: '검수 화면' })
+      .getByRole('tab')
+      .allInnerTexts()
     expect(tabs).toEqual(['원문', '쉬운 글'])
 
     // 변환 기록 — 767px 이하에서는 표가 아니라 카드 목록이다.
