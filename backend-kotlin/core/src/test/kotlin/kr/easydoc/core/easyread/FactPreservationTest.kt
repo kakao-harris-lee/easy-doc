@@ -53,6 +53,62 @@ class FactPreservationTest {
     }
 
     @Test
+    fun `인라인 파일명 숫자는 줄 문서명 인용에서도 보존으로 본다`() {
+        val source = "구비 서류는 '2026 의료급여사업 안내.pdf'입니다."
+        val evidence = "- 2026 의료급여사업 안내.pdf"
+
+        assertThat(findMissingFacts(source, evidence)).isEmpty()
+    }
+
+    @Test
+    fun `서식 표식이 있는 인라인 파일명도 줄 문서명 인용과 같은 사실로 본다`() {
+        val source = "구비 서류 목록: [서식 13] 신혼부부 매입임대주택 공급신청서.hwp."
+        val evidence = "- [서식 13] 신혼부부 매입임대주택 공급신청서.hwp"
+
+        assertThat(findMissingFacts(source, evidence)).isEmpty()
+    }
+
+    @Test
+    fun `인라인 서식 번호가 다른 문서명으로 바뀌면 여전히 누락으로 잡는다`() {
+        val source = "구비 서류는 '[서식 13] 신혼부부 매입임대주택 공급신청서.hwp'입니다."
+        val evidence = "- [서식 12] 신혼부부 매입임대주택 공급신청서.hwp"
+
+        assertThat(findMissingFacts(source, evidence))
+            .extracting("kind")
+            .containsExactly(FactKind.DOCUMENT_NAME)
+    }
+
+    @Test
+    fun `인라인 파일명의 연도가 다른 문서명으로 바뀌면 여전히 누락으로 잡는다`() {
+        val source = "구비 서류는 '2026 의료급여사업 안내.pdf'입니다."
+        val evidence = "- 2025 의료급여사업 안내.pdf"
+
+        assertThat(findMissingFacts(source, evidence))
+            .extracting("kind")
+            .containsExactly(FactKind.DOCUMENT_NAME)
+    }
+
+    @Test
+    fun `인라인 파일명이 같은 연도의 다른 문서명으로 바뀌면 누락으로 잡는다`() {
+        val source = "구비 서류는 '2026 의료급여사업 안내.pdf'입니다."
+        val evidence = "- 2026 의료급여사업 신청서.pdf"
+
+        assertThat(findMissingFacts(source, evidence))
+            .extracting("kind")
+            .containsExactly(FactKind.DOCUMENT_NAME)
+    }
+
+    @Test
+    fun `일반 본문의 숫자는 문서명 연도로 대신 보존했다고 보지 않는다`() {
+        val source = "지원 인원은 2026명입니다."
+        val evidence = "- 2026 사업 안내.pdf"
+
+        assertThat(findMissingFacts(source, evidence))
+            .extracting("kind")
+            .containsExactly(FactKind.NUMBER)
+    }
+
+    @Test
     fun `공문 날짜의 공백을 인식하고 같은 월일의 다른 연도도 확인한다`() {
         val source = "접수 2027. 3. 5. 최종 발표 2026. 4. 11."
         assertThat(findMissingFacts(source, "접수 2027년 3월 5일. 최종 발표 2026년 4월 11일.")).isEmpty()
@@ -169,6 +225,80 @@ class FactPreservationTest {
         assertThat(findMissingFacts(source, dropped))
             .extracting("kind")
             .containsExactly(FactKind.AMOUNT)
+    }
+
+    @Test
+    fun `억원과 억 표기가 같은 금액이면 보존으로 본다`() {
+        val source = "감사 기준은 10억원 이상입니다."
+        val keptDifferentForm = "감사 기준은 10억 이상입니다."
+
+        assertThat(findMissingFacts(source, keptDifferentForm)).isEmpty()
+        assertThat(findMissingFacts("감사 기준은 10억원입니다.", "감사 기준은 10억.")).isEmpty()
+    }
+
+    @Test
+    fun `억원과 억의 값이 다르면 여전히 금액 누락으로 잡는다`() {
+        val source = "감사 기준은 10억원 이상입니다."
+        val differentAmount = "감사 기준은 11억 이상입니다."
+
+        assertThat(findMissingFacts(source, differentAmount))
+            .extracting("kind")
+            .containsExactly(FactKind.AMOUNT)
+    }
+
+    @Test
+    fun `억원과 억명은 같은 금액 표기가 아니다`() {
+        val source = "감사 기준은 10억원 이상입니다."
+        val differentUnit = "감사 기준은 10억명 이상입니다."
+
+        assertThat(findMissingFacts(source, differentUnit))
+            .extracting("kind")
+            .containsExactly(FactKind.AMOUNT)
+    }
+
+    @Test
+    fun `억원과 억 달러는 같은 금액 표기가 아니다`() {
+        val source = "감사 기준은 10억원 이상입니다."
+        val differentUnit = "감사 기준은 10억 달러 이상입니다."
+
+        assertThat(findMissingFacts(source, differentUnit))
+            .extracting("kind")
+            .containsExactly(FactKind.AMOUNT)
+    }
+
+    @Test
+    fun `억원과 억 괄호 단위는 같은 금액 표기가 아니다`() {
+        val source = "감사 기준은 10억원 이상입니다."
+        val differentUnit = "감사 기준은 10억(달러) 이상입니다."
+
+        assertThat(findMissingFacts(source, differentUnit))
+            .extracting("kind")
+            .containsExactly(FactKind.AMOUNT)
+    }
+
+    @Test
+    fun `금액의 소수점 뒤 숫자를 억 단위 금액으로 잘라 읽지 않는다`() {
+        val source = "예산은 5억원 이상입니다."
+        val differentAmount = "예산은 1.5억 이상입니다."
+
+        assertThat(findMissingFacts(source, differentAmount))
+            .extracting("kind")
+            .containsExactly(FactKind.AMOUNT)
+    }
+
+    @Test
+    fun `부호가 다른 금액은 같은 금액으로 보지 않는다`() {
+        val source = "정산 차액은 5억원입니다."
+        val differentAmount = "정산 차액은 -5억 이상입니다."
+
+        assertThat(findMissingFacts(source, differentAmount))
+            .extracting("kind")
+            .containsExactly(FactKind.AMOUNT)
+    }
+
+    @Test
+    fun `금액의 콤마 표기는 같은 값이면 보존으로 본다`() {
+        assertThat(findMissingFacts("예산은 1500억원입니다.", "예산은 1,500억원입니다.")).isEmpty()
     }
 
     @Test
@@ -547,6 +677,27 @@ class FactPreservationTest {
         @DisplayName("'2명'과 '두 명'은 같은 사실이다")
         fun `두 명 표기가 같은 값이면 보존이다`() {
             assertThat(findMissingFacts("정원은 2명입니다.", "정원은 두 명이에요.")).isEmpty()
+        }
+
+        @Test
+        @DisplayName("'한 명'과 '한명'은 같은 사실이다")
+        fun `띄어 쓴 수사와 붙여 쓴 수사가 같은 값이면 보존이다`() {
+            assertThat(findMissingFacts("지원 대상은 한 명입니다.", "지원 대상은 한명입니다.")).isEmpty()
+        }
+
+        @Test
+        @DisplayName("'한 명'이 다른 수사로 바뀌면 누락이다")
+        fun `띄어 쓴 수사와 붙여 쓴 수사의 값이 다르면 누락이다`() {
+            assertThat(findMissingFacts("지원 대상은 한 명입니다.", "지원 대상은 두명입니다."))
+                .extracting("kind")
+                .containsExactly(FactKind.NUMBER)
+        }
+
+        @Test
+        @DisplayName("긴 낱말의 접두부는 붙여 쓴 수사로 세지 않는다")
+        fun `한명으로 시작하는 다른 낱말은 수사가 아니다`() {
+            assertThat(factCoverage("한명사 씨가 방문했습니다.", "방문했습니다.").sourceFactCount)
+                .isZero()
         }
 
         @Test

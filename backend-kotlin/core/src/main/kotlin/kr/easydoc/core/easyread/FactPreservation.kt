@@ -184,13 +184,25 @@ private data class RawMatch(
 // 공고의 양쪽 작은따옴표와 수집 원문에 HTML 엔티티로 남은 표지도 같은 연도 표지다.
 private const val YEAR_APOSTROPHE = "(?:['‘’]|&rsquo;)"
 
+/**
+ * 공식 파일명은 줄 전체에 있거나 인용부호 안에 있다. 인용부호 안의 형태도 문서명 사실로
+ * 인식해야 인라인 안내문과 줄 단위 원문 인용이 같은 사실로 비교된다. 인용부호 밖의 일반
+ * 숫자는 이 패턴에 들어오지 않으므로 파일명 연도가 무관한 숫자를 대신하지 않는다.
+ */
+private val DOCUMENT_NAME_PATTERN =
+    Regex(
+        """(?m)^[\h*•-]*+(?:\[[^\r\n\]]{1,40}\]\h*+)?[\p{L}0-9(][^\r\n<>:/]{0,160}\.(?:hwpx|hwp|pdf|docx|xlsx)\h*+$""" +
+            """|(?<=[\"'‘“「『])(?:\[[^\r\n\]]{1,40}\]\h*+)?""" +
+            """[\p{L}0-9(][^\r\n<>:/\[\]'‘’“”「」『』]{0,160}""" +
+            """\.(?:hwpx|hwp|pdf|docx|xlsx)(?=[\"'’”」』])""" +
+            """|(?<![\p{L}0-9])\[[^\r\n\]]{1,40}\]\h*+""" +
+            """[\p{L}0-9(][^\r\n<>:/\[\]'‘’“”「」『』]{0,160}""" +
+            """\.(?:hwpx|hwp|pdf|docx|xlsx)(?=$|[\s,.;:!?\"'’”」』])""",
+    )
+
 private val PATTERNS: List<Pair<FactKind, Regex>> =
     listOf(
-        FactKind.DOCUMENT_NAME to
-            Regex(
-                """(?m)^[\h*•-]*+(?:\[[^\r\n\]]{1,40}\]\h*+)?""" +
-                    """[\p{L}0-9(][^\r\n<>:/]{0,160}\.(?:hwpx|hwp|pdf|docx|xlsx)\h*+$""",
-            ),
+        FactKind.DOCUMENT_NAME to DOCUMENT_NAME_PATTERN,
         FactKind.EMAIL_OR_URL to
             Regex("""(?<![\w.+-])[\w.+-]++@[\w-]++\.[\w.-]++|https?://\S++|www\.\S++"""),
         FactKind.PHONE to Regex("""(?<!\d)(?:0\d{1,2}+-\d{3,4}+-\d{4}+|1\d{3}+-\d{4}+)(?!\d)"""),
@@ -242,6 +254,7 @@ private val PATTERNS: List<Pair<FactKind, Regex>> =
         // lookbehind 가 필요한 것은 뒤가 안 이어져도 끝까지 삼키는 `\d++` 뿐이다.
         FactKind.AMOUNT to Regex("""\d{1,3}+(?:,\d{3}+)++\s*+원|(?<!\d)\d++\s*+원"""),
         FactKind.AMOUNT to WORD_AMOUNT,
+        FactKind.AMOUNT to BARE_WORD_AMOUNT,
         FactKind.PERCENT to Regex("""(?<!\d)\d++(?:\.\d++)?\s*+(?:%|퍼센트|프로)"""),
         // '100분의 50'과 '50%'는 같은 비율이다. 분모가 100인 경우만 통째로 점유한다.
         FactKind.PERCENT to Regex("""(?<![\d.])100\h*+분의\h*+\d++(?:\.\d++)?"""),
@@ -289,6 +302,7 @@ private val PATTERNS: List<Pair<FactKind, Regex>> =
                     """(?<!\d)\d{5,}+(?=\s*+(?:$ARABIC_UNIT_ALTERNATION))|\d(?:$ARABIC_UNIT_ALTERNATION)""",
             ),
         FactKind.NUMBER to WORD_NUMBER,
+        FactKind.NUMBER to COMPACT_WORD_NUMBER,
     )
 
 /**

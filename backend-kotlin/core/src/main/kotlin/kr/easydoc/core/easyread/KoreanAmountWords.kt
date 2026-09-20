@@ -152,8 +152,31 @@ internal val WORD_NUMBER: Regex =
         Regex("""(?<![가-힣A-Za-z0-9])(?:$words)\s(?:$COUNT_UNIT_ALTERNATION)""")
     }
 
+/**
+ * 공백을 생략한 고유어 수사·단위 표기 중, 문서에서 수사로 안전하게 읽을 수 있는 형태.
+ *
+ * [WORD_NUMBER] 는 `세금`·`세계`처럼 수사 접두부가 다른 낱말에 붙은 경우를 피하려고 공백을
+ * 요구한다. 실제 공문에는 `한명`처럼 명사 단위 앞의 공백만 빠진 표기도 있으므로, 그 표기만
+ * 별도 허용한다. `일`·`시`·`분`은 일반 낱말과의 충돌 여지가 커서 이 보정의 대상에서 뺀다.
+ * 오른쪽에는 조사·서술어 어미만 허용해 `한명사` 같은 더 긴 낱말의 접두부를 사실로 세지 않는다.
+ */
+internal val COMPACT_WORD_NUMBER: Regex =
+    run {
+        val words = NATIVE_ONES.keys.sortedByDescending { it.length }.joinToString("|") { Regex.escape(it) }
+        val units = "개월|명|개|세|살|회|건|층|호|번|달"
+        val suffixes =
+            "은|는|이|가|을|를|도|만|의|에|와|과|으로|로|부터|까지|에서|에게|한테|처럼|보다|마다|씩|" +
+                "뿐|조차|이나|나|라도|이며|이고|이라고|입니다|이에요|예요|이다|인|이라는|이란"
+        Regex(
+            """(?<![가-힣A-Za-z0-9])(?:$words)(?:$units)(?=$|[\s\p{Punct}]|(?:$suffixes))""",
+        )
+    }
+
 /** 배수 단위 — 억·만·천·백·십. 한 자리 문자 클래스라 겹치는 접두부 걱정이 없다. */
 private const val MAGNITUDE_CLASS = "[억만천백십]"
+
+/** `원`을 생략해도 금액 기준으로 읽을 수 있는 뒤따름말. */
+private const val BARE_AMOUNT_QUALIFIERS = "이상|이하|미만|초과|이내|미달|정도|가량|내외|까지|부터"
 
 /** [MAGNITUDE_CLASS] 각 글자의 크기. */
 private val MAGNITUDE_VALUES: Map<Char, BigInteger> =
@@ -208,6 +231,13 @@ internal val WORD_AMOUNT: Regex =
     run {
         val term = """(?:$LEADING_COUNT)?$MAGNITUDE_CLASS"""
         Regex("""(?:$term\s*)++원""")
+    }
+
+/** `10억 이상`처럼 억 단위 뒤에 `원`을 쓰지 않은 금액 비교·기준 표현. */
+internal val BARE_WORD_AMOUNT: Regex =
+    run {
+        val term = """(?<![가-힣A-Za-z0-9.,+-])(?:$LEADING_COUNT)억"""
+        Regex("""$term(?=$|[.!?。！？]|\s*(?:$BARE_AMOUNT_QUALIFIERS))""")
     }
 
 /**
