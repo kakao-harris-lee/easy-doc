@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import org.springframework.jdbc.core.simple.JdbcClient
 import org.springframework.jdbc.datasource.DriverManagerDataSource
+import java.math.BigDecimal
 import java.time.Instant
 import java.time.OffsetDateTime
 import java.time.ZoneOffset
@@ -152,6 +153,38 @@ class JdbcAdminWorkspaceQueryRepositoryTest {
         assertThat(summary?.credits).isEqualTo(3)
     }
 
+    @Test
+    @DisplayName("행동 안내 호출은 월간 문서에서 빼고 비용에는 더하며, 예약·해제는 레거시 변환 크레딧을 가리지 않는다")
+    fun `행동 안내 예약과 해제가 있어도 레거시 변환 월간 크레딧을 유지한다`() {
+        val (owner, workspaceId) = newOwnedWorkspace("행동안내-${UUID.randomUUID()}", "owner-action-guide")
+        val at = Instant.parse("2026-12-15T02:00:00Z")
+        insertLlmCall(
+            workspaceId,
+            owner,
+            documentCharCount = 1500,
+            outcome = "completed",
+            calledAt = at,
+            estimatedCostUsd = BigDecimal("0.001000"),
+        )
+        insertLlmCall(
+            workspaceId,
+            owner,
+            documentCharCount = 300,
+            outcome = "completed",
+            calledAt = at.plusSeconds(1),
+            purpose = "action_guide",
+            estimatedCostUsd = BigDecimal("0.003000"),
+        )
+        insertActionGuideReservationAndRelease(workspaceId, owner, at.plusSeconds(1))
+
+        val summary =
+            repository.monthUsage(listOf(workspaceId), at.minusSeconds(3600), at.plusSeconds(3600))[workspaceId]
+
+        assertThat(summary?.documents).isEqualTo(1)
+        assertThat(summary?.credits).isEqualTo(2)
+        assertThat(summary?.estimatedCostUsd).isEqualByComparingTo(BigDecimal("0.004000"))
+    }
+
     private fun newOwnedWorkspace(
         name: String,
         emailPrefix: String,
@@ -181,22 +214,26 @@ class JdbcAdminWorkspaceQueryRepositoryTest {
         documentCharCount: Int,
         outcome: String,
         calledAt: Instant,
+        purpose: String = "convert",
+        estimatedCostUsd: BigDecimal? = null,
     ) {
         jdbc
             .sql(
                 """
                 INSERT INTO llm_calls
                     (id, workspace_id, user_id, document_id, purpose, provider, model, input_tokens,
-                     output_tokens, char_count, document_char_count, outcome, called_at)
+                     output_tokens, char_count, document_char_count, estimated_cost_usd, outcome, called_at)
                 VALUES
-                    (:id, :workspaceId, :userId, :documentId, 'convert', 'anthropic', 'claude-sonnet-5', 0,
-                     0, 10, :documentCharCount, :outcome, :calledAt)
+                    (:id, :workspaceId, :userId, :documentId, :purpose, 'anthropic', 'claude-sonnet-5', 0,
+                     0, 10, :documentCharCount, :estimatedCostUsd, :outcome, :calledAt)
                 """.trimIndent(),
             ).param("id", UUID.randomUUID())
             .param("workspaceId", workspaceId)
             .param("userId", userId)
             .param("documentId", UUID.randomUUID())
             .param("documentCharCount", documentCharCount)
+            .param("purpose", purpose)
+            .param("estimatedCostUsd", estimatedCostUsd)
             .param("outcome", outcome)
             .param("calledAt", OffsetDateTime.ofInstant(calledAt, ZoneOffset.UTC))
             .update()
@@ -221,6 +258,29 @@ class JdbcAdminWorkspaceQueryRepositoryTest {
             .param("delta", -credits)
             .param("createdAt", OffsetDateTime.ofInstant(at, ZoneOffset.UTC))
             .update()
+    }
+
+    private fun insertActionGuideReservationAndRelease(
+        workspaceId: UUID,
+        ownerId: UUID,
+        at: Instant,
+    ) {
+        listOf("reserve" to 1, "release" to -1).forEach { (kind, reservedDelta) ->
+            jdbc
+                .sql(
+                    """
+                    INSERT INTO credit_transactions
+                        (id, workspace_id, owner_user_id, kind, balance_delta, reserved_delta, reason, created_at)
+                    VALUES (:id, :workspaceId, :ownerId, :kind, 0, :reservedDelta, 'action_guide', :createdAt)
+                    """.trimIndent(),
+                ).param("id", UUID.randomUUID())
+                .param("workspaceId", workspaceId)
+                .param("ownerId", ownerId)
+                .param("kind", kind)
+                .param("reservedDelta", reservedDelta)
+                .param("createdAt", OffsetDateTime.ofInstant(at, ZoneOffset.UTC))
+                .update()
+        }
     }
 
     private fun ownerEmailOf(ownerId: UUID): String =
