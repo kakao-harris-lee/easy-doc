@@ -515,6 +515,13 @@ async function forceFirstConversionReadToProcessing(page: Page): Promise<void> {
   })
 }
 
+// E17/E18의 변환 폴링이 종료 시점에도 진행 중일 수 있다. 페이지가 닫히기 전에
+// 라우트를 해제해 취소된 route.fetch()가 스위트 밖 오류로 보고되지 않게 한다.
+// 테스트 실행 중의 비취소 오류는 위 콜백에서 그대로 던진다.
+test.afterEach(async ({ page }) => {
+  await page.unrouteAll({ behavior: 'ignoreErrors' })
+})
+
 test.describe('접근성 — 320px', () => {
   test('E17 320px 에서 어느 화면도 가로로 넘치지 않고 터치 대상이 44px 이상이다', async ({
     page,
