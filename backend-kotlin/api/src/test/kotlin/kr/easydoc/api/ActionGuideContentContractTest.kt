@@ -1,6 +1,8 @@
 package kr.easydoc.api
 
+import kr.easydoc.api.config.JsonRequestStrictnessConfig
 import kr.easydoc.api.config.PrivateResponseHeadersConfig
+import kr.easydoc.api.document.ActionGuideSaveRequest
 import kr.easydoc.api.support.AuthSliceBeans
 import kr.easydoc.api.support.InMemoryUserRepository
 import kr.easydoc.api.support.InMemoryWorkspaceRepository
@@ -9,6 +11,7 @@ import kr.easydoc.application.actionguide.ActionGuideResourceView
 import kr.easydoc.application.actionguide.ActionGuideStatus
 import kr.easydoc.core.user.PasswordHash
 import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito.`when`
 import org.springframework.beans.factory.annotation.Autowired
@@ -19,18 +22,35 @@ import org.springframework.http.MediaType
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.get
 import org.springframework.test.web.servlet.put
+import tools.jackson.databind.ObjectMapper
 import java.util.UUID
 
 @WebMvcTest
-@Import(PrivateResponseHeadersConfig::class, AuthSliceBeans::class)
+@Import(PrivateResponseHeadersConfig::class, JsonRequestStrictnessConfig::class, AuthSliceBeans::class)
 class ActionGuideContentContractTest {
     @Autowired private lateinit var mockMvc: MockMvc
+
+    @Autowired private lateinit var mapper: ObjectMapper
 
     @Autowired private lateinit var users: InMemoryUserRepository
 
     @Autowired private lateinit var workspaces: InMemoryWorkspaceRepository
 
     @Autowired private lateinit var service: ActionGuideContentService
+
+    @Test
+    fun `저장 요청의 필수 nullable 필드는 명시적 null을 받고 누락은 거절한다`() {
+        val valid =
+            """{"candidate_id":null,"expected_content_revision":1,"expected_guide_revision":null,""" +
+                """"content":{},"mark_reviewed":false}"""
+        val bound = mapper.readValue(valid, ActionGuideSaveRequest::class.java)
+
+        assertThat(bound.candidateId).isNull()
+        assertThat(bound.expectedGuideRevision).isNull()
+        assertThatThrownBy {
+            mapper.readValue(valid.replace("\"candidate_id\":null,", ""), ActionGuideSaveRequest::class.java)
+        }.isInstanceOf(Exception::class.java)
+    }
 
     @Test
     fun `안내문 조회는 상태와 작업 식별자를 반환하고 저장을 막는다`() {

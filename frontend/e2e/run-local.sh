@@ -149,8 +149,14 @@ else
   # --- ④ API 기동 (Flyway 는 api 기동 시 자동 적용) ------------------------------
   # 운영 기본값은 false다. 이 일회용 API에서만 R1 검수 지원 수직 흐름을 확인한다.
   export EASYDOC_REVIEW_SUPPORT_ENABLED=true
-  log "Kotlin API 기동 (profile=api, ${API_BASE_URL})"
-  java -jar "$API_JAR" --spring.profiles.active="${E2E_API_PROFILES:-api,e2e}" >"${LOG_DIR}/backend-api.log" 2>&1 &
+  # R2 행동 안내도 일회용 스택에서만 켠다. worker는 아래 fake profile로 외부 호출을 막는다.
+  export EASYDOC_ACTION_GUIDE_ENABLED=true
+  export EASYDOC_LLM_PROVIDER=fake
+  # 행동 안내의 예약/차감을 실제 API에서 검증하되 일회용 계정에만 합성 크레딧을 부여한다.
+  export EASYDOC_CREDITS_SIGNUP_GRANT=1000
+  export EASYDOC_CREDITS_SIGNUP_GRANT_PEPPER=e2e-only-pepper-not-a-secret
+  log "Kotlin API 기동 (profile=${E2E_API_PROFILES:-api,local,e2e}, ${API_BASE_URL})"
+  java -jar "$API_JAR" --spring.profiles.active="${E2E_API_PROFILES:-api,local,e2e}" >"${LOG_DIR}/backend-api.log" 2>&1 &
   api_pid=$!
 
   healthy=0
@@ -174,9 +180,9 @@ else
   # --- ⑤ worker 기동 ----------------------------------------------------------
   # E13 수직 흐름은 lease 큐를 소비하는 프로세스가 있어야 한다. fake LLM 은 local
   # 프로필에서만 조립되므로 worker,local 을 켠다.
-  export EASYDOC_LLM_PROVIDER=fake
-  log "Kotlin worker 기동 (profile=worker,local, fake LLM)"
-  java -jar "$WORKER_JAR" --spring.profiles.active=worker,local >"${LOG_DIR}/backend-worker.log" 2>&1 &
+  export EASYDOC_ACTION_GUIDE_WORKER_ENABLED=true
+  log "Kotlin worker 기동 (profile=worker,local,action-guide-fake, fake LLM)"
+  java -jar "$WORKER_JAR" --spring.profiles.active=worker,local,action-guide-fake >"${LOG_DIR}/backend-worker.log" 2>&1 &
   worker_pid=$!
   sleep 2
   if ! kill -0 "$worker_pid" 2>/dev/null; then

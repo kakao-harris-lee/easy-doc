@@ -1,5 +1,6 @@
 package kr.easydoc.api
 
+import kr.easydoc.api.config.JsonRequestStrictnessConfig
 import kr.easydoc.api.config.PrivateResponseHeadersConfig
 import kr.easydoc.api.support.AuthSliceBeans
 import kr.easydoc.api.support.InMemoryUserRepository
@@ -31,7 +32,7 @@ import java.time.Instant
 import java.util.UUID
 
 @WebMvcTest
-@Import(PrivateResponseHeadersConfig::class, AuthSliceBeans::class)
+@Import(PrivateResponseHeadersConfig::class, JsonRequestStrictnessConfig::class, AuthSliceBeans::class)
 class ActionGuideJobContractTest {
     @Autowired private lateinit var mockMvc: MockMvc
 

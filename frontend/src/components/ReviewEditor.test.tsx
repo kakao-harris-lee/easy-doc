@@ -15,8 +15,10 @@ import {
   analyzeReviewSupport,
   ApiError,
   downloadExport,
+  getActionGuide,
   getConversion,
   getReviewSupport,
+  listActionGuideJobs,
   reconvertUnit,
   saveFeedback,
   saveReview,
@@ -67,6 +69,8 @@ vi.mock('../api/client', async (importOriginal) => ({
   saveFeedback: vi.fn(),
   reconvertUnit: vi.fn(),
   getConversion: vi.fn(),
+  getActionGuide: vi.fn(),
+  listActionGuideJobs: vi.fn(),
   analyzeReviewSupport: vi.fn(),
   getReviewSupport: vi.fn(),
   updateReviewSupportItem: vi.fn(),
@@ -103,6 +107,8 @@ beforeEach(() => {
   vi.mocked(lookupTerm).mockReset()
   vi.mocked(reconvertUnit).mockReset()
   vi.mocked(getConversion).mockReset()
+  vi.mocked(getActionGuide).mockReset()
+  vi.mocked(listActionGuideJobs).mockReset()
   vi.mocked(analyzeReviewSupport).mockReset()
   vi.mocked(getReviewSupport).mockReset()
   vi.mocked(updateReviewSupportItem).mockReset()
@@ -2963,5 +2969,61 @@ describe('R1 검수 지원 패널', () => {
       await screen.findByText('본문이 바뀌었습니다. 확인할 내용을 다시 불러와 주세요.'),
     ).toBeInTheDocument()
     expect(saveReview).toHaveBeenCalledWith('c1', '바뀐 글', 1)
+  })
+})
+
+describe('ER-07 행동 안내 작업 탭', () => {
+  const capabilities = {
+    review_support: false,
+    action_guide: true,
+    table_relations: false,
+    review_history: false,
+    explanations: false,
+    illustrations: false,
+  }
+
+  it('기능이 꺼져 있으면 새 탭과 API 호출을 만들지 않는다', () => {
+    render(<ReviewEditor conversion={conversion()} source={sourceReady('원문')} />)
+
+    expect(screen.queryByRole('tab', { name: '행동 안내' })).not.toBeInTheDocument()
+    expect(getActionGuide).not.toHaveBeenCalled()
+  })
+
+  it('행동 안내 탭을 처음 열 때 조회하고 본문 편집을 숨기며 돌아오면 보존한다', async () => {
+    const user = userEvent.setup()
+    vi.mocked(getActionGuide).mockResolvedValue({
+      status: 'not_generated',
+      guide: null,
+      active_job_id: null,
+      latest_job_id: null,
+    })
+    vi.mocked(listActionGuideJobs).mockResolvedValue({
+      active_job: null,
+      latest_job: null,
+      required_credits: 2,
+      available_credits: 10,
+    })
+    render(
+      <ReviewEditor
+        conversion={conversion({ review_capabilities: capabilities })}
+        source={sourceReady('원문')}
+      />,
+    )
+
+    const guideTab = screen.getByRole('tab', { name: '행동 안내' })
+    const bodyTab = screen.getByRole('tab', { name: '본문 검수' })
+    const bodyEditor = screen.getByLabelText('쉬운 글 결과 (고칠 수 있습니다)')
+    expect(getActionGuide).not.toHaveBeenCalled()
+    expect(bodyEditor).toBeVisible()
+
+    await user.click(guideTab)
+    await waitFor(() => expect(getActionGuide).toHaveBeenCalledWith('c1', expect.anything()))
+    expect(guideTab).toHaveAttribute('aria-selected', 'true')
+    expect(bodyEditor).not.toBeVisible()
+
+    await user.click(bodyTab)
+    expect(bodyEditor).toBeVisible()
+    await user.click(guideTab)
+    expect(getActionGuide).toHaveBeenCalledTimes(1)
   })
 })

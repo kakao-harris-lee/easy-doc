@@ -184,6 +184,18 @@ export const ROUTES = {
   conversionFeedback: { method: 'PUT', ok: 200 },
   /** 계약 `paths./conversions/{conversion_id}/export.get` — 200 (파일). */
   conversionExport: { method: 'GET', ok: 200 },
+  /** 계약 `paths./conversions/{conversion_id}/action-guide.get` — 저장된 안내문과 작업 위치. */
+  actionGuideRead: { method: 'GET', ok: 200 },
+  /** 계약 `paths./conversions/{conversion_id}/action-guide.put` — 후보 적용·편집·확인 저장. */
+  actionGuideSave: { method: 'PUT', ok: 200, conflict: 409 },
+  /** 계약 `paths./conversions/{conversion_id}/action-guide/export.get` — 확인된 TXT. */
+  actionGuideExport: { method: 'GET', ok: 200, conflict: 409 },
+  /** 계약 `paths./conversions/{conversion_id}/action-guide-jobs.get` — 작업·크레딧 조회. */
+  actionGuideJobs: { method: 'GET', ok: 200 },
+  /** 계약 `paths./conversions/{conversion_id}/action-guide-jobs.post` — 멱등 작업 접수. */
+  actionGuideJobCreate: { method: 'POST', accepted: 202, conflict: 409 },
+  /** 계약 `paths./conversions/{conversion_id}/action-guide-jobs/{job_id}.get` — 작업 상태. */
+  actionGuideJobRead: { method: 'GET', ok: 200 },
   /** 계약 `paths./dictionary/lookup.post` — 200 (P0-5 조각 1, 2.11.0 신설). */
   dictionaryLookup: { path: '/dictionary/lookup', method: 'POST', ok: 200 },
   /**

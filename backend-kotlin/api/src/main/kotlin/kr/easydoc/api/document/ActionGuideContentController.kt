@@ -2,6 +2,8 @@ package kr.easydoc.api.document
 
 import com.fasterxml.jackson.annotation.JsonCreator
 import com.fasterxml.jackson.annotation.JsonProperty
+import com.fasterxml.jackson.annotation.JsonSetter
+import com.fasterxml.jackson.annotation.Nulls
 import jakarta.validation.Valid
 import jakarta.validation.constraints.Max
 import jakarta.validation.constraints.Min
@@ -95,12 +97,15 @@ class ActionGuideContentController(private val service: ActionGuideContentServic
 data class ActionGuideSaveRequest
     @JsonCreator
     constructor(
-        @param:JsonProperty("candidate_id", required = true) val candidateId: UUID?,
+        @param:JsonProperty("candidate_id", required = true)
+        @param:JsonSetter(nulls = Nulls.SET)
+        val candidateId: UUID?,
         @param:JsonProperty("expected_content_revision", required = true)
         @field:Min(1)
         @field:Max(9_007_199_254_740_991)
         val expectedContentRevision: Long,
         @param:JsonProperty("expected_guide_revision", required = true)
+        @param:JsonSetter(nulls = Nulls.SET)
         @field:Min(0)
         @field:Max(9_007_199_254_740_991)
         val expectedGuideRevision: Long?,
