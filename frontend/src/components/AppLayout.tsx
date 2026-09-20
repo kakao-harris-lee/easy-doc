@@ -348,8 +348,8 @@ export function AppLayout({ children }: { children: ReactNode }) {
       <header className="sticky top-0 z-40 border-b border-border bg-card/95 backdrop-blur">
         <div className={cn(CONTAINER, 'flex min-h-16 items-center gap-3 py-2')}>
           <NavLink
-            // 로고 자체는 36px 이지만 머리말에서 실제로 누르는 대상이므로 44px 을
-            // 확보한다(§10). 머리말은 min-h-16 이라 세로 배치는 그대로다.
+            // 로고 자체가 44px 이고, 머리말의 실제 누름 대상도 그보다 작지 않게 한다(§10).
+            // 머리말은 min-h-16 이라 세로 배치는 그대로다.
             className="inline-flex min-h-11 shrink-0 items-center rounded-md"
             to={HOME_PATH}
             end

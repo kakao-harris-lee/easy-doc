@@ -49,7 +49,7 @@ class CreditsReachTest {
         grantCredits(workspaceId, 10)
 
         // ceil(2500/100) / 10 = 2.5.
-        val response = createDocument(token, "가".repeat(2500))
+        val response = createDocument(token, fourWordText(2500))
 
         assertThat(response.statusCode()).isEqualTo(ContractSpec.successStatus(DOCUMENTS_PATH, POST))
         assertThat(response.headers().firstValue(CREDIT_BALANCE_HEADER)).hasValue("7.5")
@@ -63,7 +63,7 @@ class CreditsReachTest {
         grantCredits(workspaceId, 1)
 
         // ceil(1001/100) / 10 = 1.1.
-        val response = createDocument(token, "가".repeat(1001))
+        val response = createDocument(token, fourWordText(1001))
 
         assertDeclaredStatus(response, PAYMENT_REQUIRED)
         assertThat(response.headers().firstValue(CREDIT_BALANCE_HEADER)).hasValue("1")
@@ -125,8 +125,8 @@ class CreditsReachTest {
         try {
             val attempt = {
                 barrier.await(TASK_TIMEOUT_SECONDS, TimeUnit.SECONDS)
-                // ceil(1000/100) / 10 = 1 크레딧.
-                createDocument(token, "가".repeat(1000))
+        // ceil(1000/100) / 10 = 1 크레딧.
+                createDocument(token, fourWordText(1000))
             }
             val first = pool.submit<HttpResponse<String>>(attempt)
             val second = pool.submit<HttpResponse<String>>(attempt)
@@ -167,6 +167,9 @@ class CreditsReachTest {
         val body = json.writeValueAsString(mapOf("text" to text))
         return send(jsonRequest(DOCUMENTS_PATH, token).POST(bodyPublisher(body)))
     }
+
+    /** 공백도 본문 길이·크레딧 산정에 포함하므로 목표 문자 수를 보존한다. */
+    private fun fourWordText(length: Int): String = "가 가 가 " + "가".repeat(length - 6)
 
     private fun credits(
         token: String?,

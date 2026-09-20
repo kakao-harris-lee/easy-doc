@@ -47,6 +47,15 @@ const EMAIL_NOT_VERIFIED_DETAIL = '이메일 인증 후 문서를 변환할 수 
 /** 한 번에 변환할 수 있는 길이. 백엔드 MAX_CONVERTIBLE_CHARS와 같은 값이다. */
 export const MAX_CHARS = 20000
 
+/** 변환할 가치가 있는 최소 어절 수. 백엔드 MIN_CONVERTIBLE_WORDS와 같은 값이다. */
+export const MIN_WORDS = 4
+
+/** 긴 본문 안내를 시작하는 글자 수. 차단하지 않고 처리 시간·비용을 미리 알린다. */
+export const LONG_TEXT_WARNING_CHARS = 1000
+
+/** 문단 분할을 권하는 더 긴 본문의 기준. */
+export const VERY_LONG_TEXT_WARNING_CHARS = 5000
+
 /**
  * 크레딧 환산 기준. 공백 포함 원문 100자마다 0.1크레딧을 올림한다. 백엔드
  * `Credits.requiredFor`와 같은 계산을 클라이언트에서도 미리 보여준다.
@@ -105,6 +114,12 @@ type InputMode = 'text' | 'file'
 /** 상한을 사람이 읽는 표기로. */
 function chars(count: number): string {
   return count.toLocaleString('ko-KR')
+}
+
+/** 백엔드 `wordCountOf`와 같이 공백류로 나눈 어절 수를 센다. */
+function countWords(text: string): number {
+  const trimmed = text.trim()
+  return trimmed === '' ? 0 : trimmed.split(/\s+/u).length
 }
 
 /** 파일 크기를 사람이 읽는 단위로. 10,485,760 → `10MB`. */
@@ -223,6 +238,7 @@ export function UploadPage() {
   const fileId = useId()
   const counterId = useId()
   const overflowId = useId()
+  const shortTextId = useId()
   const guideId = useId()
   const textInputGuideId = useId()
   const fileFormatGuideId = useId()
@@ -283,6 +299,10 @@ export function UploadPage() {
   // 문자를 2로 세어 어긋나므로 countChars로 코드 포인트 수를 맞춘다.
   const charCount = countChars(text)
   const tooLong = charCount > MAX_CHARS
+  const wordCount = countWords(text)
+  const tooShort = wordCount > 0 && wordCount < MIN_WORDS
+  const isVeryLongText = charCount >= VERY_LONG_TEXT_WARNING_CHARS
+  const isLongText = !isVeryLongText && charCount >= LONG_TEXT_WARNING_CHARS
   // 필요 크레딧 — 원문 100자마다 0.1크레딧을 올림해 클라이언트에서 미리 계산한다.
   // 서버가 최종 판단(`Credits.requiredFor`)하지만, 상한과 같은 이유로 여기서도 먼저
   // 보여준다.
@@ -549,6 +569,10 @@ export function UploadPage() {
         setError(`글이 너무 깁니다. ${chars(MAX_CHARS)}자 이내로 줄여 주세요.`)
         return
       }
+      if (tooShort) {
+        setError(`${MIN_WORDS}단어 이상인 문장을 입력해 주세요.`)
+        return
+      }
       await submit(() => createDocumentFromText(text, workspaceId, titleTrimmed), text)
       return
     }
@@ -748,11 +772,11 @@ export function UploadPage() {
                   value={text}
                   rows={14}
                   aria-describedby={
-                    tooLong
-                      ? `${textInputGuideId} ${overflowId} ${counterId}`
+                    tooLong || tooShort
+                      ? `${textInputGuideId} ${tooLong ? overflowId : shortTextId} ${counterId}`
                       : `${textInputGuideId} ${counterId}`
                   }
-                  aria-invalid={tooLong}
+                  aria-invalid={tooLong || tooShort}
                   onChange={handleTextChange}
                 />
                 <p id={textInputGuideId} className="field-hint">
@@ -766,6 +790,21 @@ export function UploadPage() {
                   {tooLong && (
                     <p id={overflowId} className="field-error">
                       상한을 넘었습니다. 문서를 나눠 변환해 주세요.
+                    </p>
+                  )}
+                  {tooShort && (
+                    <p id={shortTextId} className="field-error">
+                      {MIN_WORDS}단어 이상인 문장을 입력해 주세요.
+                    </p>
+                  )}
+                  {isLongText && (
+                    <p className="m-0 text-sm text-warning">
+                      긴 문서입니다. 변환에 시간이 더 걸릴 수 있으니 필요 크레딧을 확인해 주세요.
+                    </p>
+                  )}
+                  {isVeryLongText && (
+                    <p className="m-0 text-sm text-warning">
+                      긴 문서입니다. 문단을 나누어 변환하면 결과를 검토하기 더 쉽습니다.
                     </p>
                   )}
                   <p

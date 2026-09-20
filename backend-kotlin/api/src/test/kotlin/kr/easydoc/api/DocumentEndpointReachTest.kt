@@ -57,6 +57,18 @@ class DocumentEndpointReachTest {
     }
 
     @Test
+    @DisplayName("3어절 이하 본문은 422로 거절되고 변환 작업을 만들지 않는다")
+    fun `짧은 본문은 변환하지 않는다`() {
+        val token = newAccount()
+
+        val response = createFromText(token, textBody("신청하세요 지금 바로"))
+
+        assertDeclaredStatus(response, UNPROCESSABLE)
+        assertThat(bodyOf(response)[DETAIL])
+            .isEqualTo(ContractSpec.pathExampleDetail(DOCUMENTS_PATH, POST, UNPROCESSABLE, TOO_SHORT_BODY_EXAMPLE))
+    }
+
+    @Test
     @DisplayName("컨테이너 multipart 상한이 계약 업로드 상한 **이상**이다 — 경계 판정을 서비스가 지게 하는 전제")
     fun `컨테이너 상한이 계약 상한보다 넉넉하다`() {
         val contractLimit = ContractSpec.inputLimit(MAX_UPLOAD_BYTES_KEY).toLong()
@@ -222,7 +234,8 @@ class DocumentEndpointReachTest {
     @Test
     @DisplayName("DC-29 JSON 팔의 형식 오류 `workspace_id` → 422 · `detail` **문자열**(배열 아님) · 값이 계약 산문 안에 있다")
     fun `JSON 팔의 잘못된 작업 공간 식별자가 문자열 detail 을 낸다`() {
-        val response = createFromText(newAccount(), textBody("본문입니다", SUBMITTED_BAD_WORKSPACE))
+        val response =
+            createFromText(newAccount(), textBody("충분한 단어가 있는 본문입니다", SUBMITTED_BAD_WORKSPACE))
 
         assertDeclaredStatus(response, UNPROCESSABLE)
         val detail = bodyOf(response)[DETAIL]
@@ -266,12 +279,12 @@ class DocumentEndpointReachTest {
     fun `두 입력 팔이 같은 결함에 같은 detail 을 낸다`() {
         val token = newAccount()
 
-        val viaJson = createFromText(token, textBody("본문입니다", SUBMITTED_BAD_WORKSPACE))
+        val viaJson = createFromText(token, textBody("충분한 단어가 있는 본문입니다", SUBMITTED_BAD_WORKSPACE))
         val viaMultipart =
             upload(
                 token,
                 MultipartBody()
-                    .file(FILE_PART, "안내문.docx", UploadFixtures.docxWithBodyChars(1))
+                    .file(FILE_PART, "안내문.docx", UploadFixtures.sampleDocx())
                     .value(WORKSPACE_ID_PART, SUBMITTED_BAD_WORKSPACE),
             )
 
@@ -441,7 +454,7 @@ class DocumentEndpointReachTest {
         val mine = newAccount()
         val othersWorkspace = defaultWorkspaceId(newAccount())
 
-        val response = createFromText(mine, textBody("본문", workspaceId = othersWorkspace))
+        val response = createFromText(mine, textBody("충분한 단어가 있는 본문", workspaceId = othersWorkspace))
 
         assertDeclaredStatus(response, NOT_FOUND)
 
@@ -455,8 +468,13 @@ class DocumentEndpointReachTest {
     @DisplayName("DC-17 없는 작업 공간과 남의 작업 공간의 상태·본문 **원시 바이트**·헤더 이름 집합이 **완전히 같다** (X-B2)")
     fun `없는 것과 남의 것이 구분되지 않는다`() {
         val mine = newAccount()
-        val absent = createFromTextBytes(mine, textBody("본문", workspaceId = UUID.randomUUID().toString()))
-        val others = createFromTextBytes(mine, textBody("본문", workspaceId = defaultWorkspaceId(newAccount())))
+        val absent =
+            createFromTextBytes(mine, textBody("충분한 단어가 있는 본문", workspaceId = UUID.randomUUID().toString()))
+        val others =
+            createFromTextBytes(
+                mine,
+                textBody("충분한 단어가 있는 본문", workspaceId = defaultWorkspaceId(newAccount())),
+            )
 
         OwnershipConcealment.assertIndistinguishable("POST $DOCUMENTS_PATH", absent, others)
     }
@@ -581,13 +599,15 @@ class DocumentEndpointReachTest {
         )
 
     /** 짝 없는 서로게이트를 JSON `\u` 이스케이프로 실은 본문 바이트. */
-    private fun surrogateBodyBytes(): ByteArray = """{"text":"안내$SURROGATE_ESCAPE 문"}""".toByteArray(Charsets.UTF_8)
+    private fun surrogateBodyBytes(): ByteArray =
+        """{"text":"안내$SURROGATE_ESCAPE 문 내용을 확인하세요"}""".toByteArray(Charsets.UTF_8)
 
     private fun surrogateTitleBodyBytes(): ByteArray =
-        """{"text":"정상 본문","title":"$TITLE_PREFIX$SURROGATE_ESCAPE$TITLE_SUFFIX"}""".toByteArray(Charsets.UTF_8)
+        """{"text":"정상 본문 내용을 자세히 안내합니다","title":"$TITLE_PREFIX$SURROGATE_ESCAPE$TITLE_SUFFIX"}"""
+            .toByteArray(Charsets.UTF_8)
 
     private fun onlySurrogateTitleBodyBytes(): ByteArray =
-        """{"text":"정상 본문","title":"$SURROGATE_ESCAPE"}""".toByteArray(Charsets.UTF_8)
+        """{"text":"정상 본문 내용을 자세히 안내합니다","title":"$SURROGATE_ESCAPE"}""".toByteArray(Charsets.UTF_8)
 
     private fun post(
         token: String?,
@@ -731,6 +751,7 @@ class DocumentEndpointReachTest {
 
         private const val UNSUPPORTED_FORMAT_EXAMPLE = "unsupported_format"
         private const val TOO_LONG_BODY_EXAMPLE = "too_long"
+        private const val TOO_SHORT_BODY_EXAMPLE = "too_short"
 
         /** 본문 길이 단계에 닿게 하는 글자 수. */
         private const val OVER_BODY_LIMIT_CHARS = MAX_CONVERTIBLE_CHARS + 1_000

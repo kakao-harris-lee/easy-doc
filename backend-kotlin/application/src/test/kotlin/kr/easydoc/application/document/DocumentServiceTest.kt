@@ -63,7 +63,7 @@ class DocumentServiceTest {
     fun `인증된 계정은 정상 접수된다`() {
         val world = World(emailVerified = true)
 
-        val accepted = world.service.createFromText(OWNER, "본문", null, null)
+        val accepted = world.service.createFromText(OWNER, "충분한 단어가 있는 본문", null, null)
 
         assertThat(accepted).isNotNull()
         assertThat(world.documents.inserted).hasSize(1)
@@ -115,6 +115,20 @@ class DocumentServiceTest {
     }
 
     @Test
+    @DisplayName("3어절 이하 본문은 작업 공간 조회·저장·크레딧 예약 전에 거절한다")
+    fun `짧은 본문은 변환하지 않는다`() {
+        val world = World()
+
+        assertThatThrownBy { world.service.createFromText(OWNER, "신청하세요 지금 바로", null, null) }
+            .isInstanceOf(InvalidInputException::class.java)
+            .hasMessage(BODY_TOO_SHORT_MESSAGE)
+
+        assertThat(world.workspaces.lookups).isZero()
+        assertThat(world.documents.inserted).isEmpty()
+        assertThat(world.queue.enqueued).isEmpty()
+    }
+
+    @Test
     @DisplayName("본문 길이 판정이 작업 공간 조회보다 먼저다 — 두 입력이 만나는 자리에서 한 번 잰다")
     fun `길이 판정이 작업 공간 조회보다 먼저다`() {
         val world = World()
@@ -132,7 +146,7 @@ class DocumentServiceTest {
     fun `길이는 코드 포인트로 잰다`() {
         val world = World()
 
-        val body = "𝓐".repeat(MAX_CONVERTIBLE_CHARS)
+        val body = "𝓐 𝓐 𝓐 " + "𝓐".repeat(MAX_CONVERTIBLE_CHARS - 6)
 
         val accepted = world.service.createFromText(OWNER, body, null, null)
 
@@ -145,7 +159,7 @@ class DocumentServiceTest {
         val world = World()
 
         assertThatThrownBy {
-            world.service.createFromText(OWNER, "주민등록번호는 $VALID_RRN 입니다", null, null)
+            world.service.createFromText(OWNER, "주민등록번호는 $VALID_RRN 입니다 확인해 주세요", null, null)
         }.isInstanceOf(PersonalDataDetectedException::class.java)
             .hasMessage(PERSONAL_DATA_DETECTED_MESSAGE)
             .extracting { (it as PersonalDataDetectedException).kinds }
@@ -160,7 +174,7 @@ class DocumentServiceTest {
         val world = World()
 
         assertThatThrownBy {
-            world.service.createFromText(OWNER, "카드번호는 $VALID_CARD 입니다", null, null)
+            world.service.createFromText(OWNER, "카드번호는 $VALID_CARD 입니다 확인해 주세요", null, null)
         }.isInstanceOf(PersonalDataDetectedException::class.java)
             .extracting { (it as PersonalDataDetectedException).kinds }
             .isEqualTo(setOf(PersonalDataKind.CARD))
@@ -174,7 +188,7 @@ class DocumentServiceTest {
         val world = World()
 
         assertThatThrownBy {
-            world.service.createFromText(OWNER, "카드번호는 $VALID_CARD 입니다", null, null)
+            world.service.createFromText(OWNER, "카드번호는 $VALID_CARD 입니다 확인해 주세요", null, null)
         }.isInstanceOf(PersonalDataDetectedException::class.java)
 
         assertThat(world.workspaces.lookups).describedAs("작업 공간을 먼저 조회했다").isZero()
@@ -200,7 +214,7 @@ class DocumentServiceTest {
         val accepted =
             world.service.createFromText(
                 OWNER,
-                "주민등록번호는 $VALID_RRN 입니다",
+                "주민등록번호는 $VALID_RRN 입니다 확인해 주세요",
                 null,
                 null,
                 personalDataAcknowledged = true,
@@ -213,7 +227,7 @@ class DocumentServiceTest {
     @Test
     @DisplayName("파일 업로드 경로도 같은 검출 규칙을 탄다 — 확인 없이는 422, 문서가 남지 않는다")
     fun `파일 업로드도 개인정보 검출을 탄다`() {
-        val world = World(extracted = "카드번호는 $VALID_CARD 입니다")
+        val world = World(extracted = "카드번호는 $VALID_CARD 입니다 확인해 주세요")
 
         assertThatThrownBy {
             world.service.createFromFile(OWNER, "a.docx", ORIGINAL_FILE, null, null)
@@ -233,8 +247,9 @@ class DocumentServiceTest {
     fun `남의 작업 공간은 404 다`() {
         val world = World()
 
-        assertThatThrownBy { world.service.createFromText(OWNER, "본문", null, STRANGER_WORKSPACE.toString()) }
-            .isInstanceOf(NotFoundException::class.java)
+        assertThatThrownBy {
+            world.service.createFromText(OWNER, "충분한 단어가 있는 본문", null, STRANGER_WORKSPACE.toString())
+        }.isInstanceOf(NotFoundException::class.java)
             .hasMessage(WORKSPACE_NOT_FOUND_FOR_DOCUMENT_MESSAGE)
 
         assertThat(world.documents.inserted).isEmpty()
@@ -247,7 +262,7 @@ class DocumentServiceTest {
     fun `작업 공간이 없으면 5xx 다`() {
         val world = World(defaultWorkspace = null)
 
-        assertThatThrownBy { world.service.createFromText(OWNER, "본문", null, null) }
+        assertThatThrownBy { world.service.createFromText(OWNER, "충분한 단어가 있는 본문", null, null) }
             .isInstanceOf(StorageException::class.java)
             .hasMessage(NO_WORKSPACE_MESSAGE)
     }
@@ -274,7 +289,7 @@ class DocumentServiceTest {
     fun `등록 실패는 트랜잭션을 되돌린다`() {
         val world = World(queueFailure = IllegalStateException("큐 없음"))
 
-        assertThatThrownBy { world.service.createFromText(OWNER, "본문", null, null) }
+        assertThatThrownBy { world.service.createFromText(OWNER, "충분한 단어가 있는 본문", null, null) }
             .isInstanceOf(IllegalStateException::class.java)
 
         assertThat(world.transaction.committed).isZero()
@@ -314,7 +329,7 @@ class DocumentServiceTest {
     fun `붙여넣기는 원본을 남기지 않는다`() {
         val world = World()
 
-        world.service.createFromText(OWNER, "복지 급여 안내", null, null)
+        world.service.createFromText(OWNER, "복지 급여 안내 내용입니다", null, null)
 
         assertThat(world.originals.rows)
             .describedAs("빈 원본 행이 생기면 「원본이 있다」와 「없다」를 스키마가 구분하지 못한다")
@@ -388,7 +403,7 @@ class DocumentServiceTest {
     fun `봉투 두 값이 쓰기 설정에서 온다`() {
         val world = World(writeKeyVersion = 2)
 
-        world.service.createFromText(OWNER, "본문", null, null)
+        world.service.createFromText(OWNER, "충분한 단어가 있는 본문", null, null)
 
         val storedDocument = world.documents.inserted.single()
         assertThat(storedDocument.second.scheme).isEqualTo(EncryptionScheme.AES_256_GCM_V1)
@@ -405,10 +420,10 @@ class DocumentServiceTest {
     fun `본문이 행과 컬럼에 결속된다`() {
         val world = World()
 
-        val accepted = world.service.createFromText(OWNER, "본문", null, null)
+        val accepted = world.service.createFromText(OWNER, "충분한 단어가 있는 본문", null, null)
 
         val (plain, record, field) = world.cipher.sealed.single()
-        assertThat(plain).isEqualTo("본문")
+        assertThat(plain).isEqualTo("충분한 단어가 있는 본문")
         assertThat(record).isEqualTo(accepted.documentId)
         assertThat(field).isEqualTo(EncryptedField.DOCUMENT_SOURCE_TEXT)
     }
@@ -418,24 +433,24 @@ class DocumentServiceTest {
     fun `붙여넣기 CRLF 가 LF 로 저장된다`() {
         val world = World()
 
-        world.service.createFromText(OWNER, "첫 줄\r\n둘째 줄", null, null)
+        world.service.createFromText(OWNER, "첫 줄 내용\r\n둘째 줄 내용", null, null)
 
         val (plain, _, field) = world.cipher.sealed.single()
         assertThat(field).isEqualTo(EncryptedField.DOCUMENT_SOURCE_TEXT)
         assertThat(plain)
             .describedAs("`\\r` 이 남으면 문단 대응·문체 판정·화면 지도로 새 나간다")
-            .isEqualTo("첫 줄\n둘째 줄")
+            .isEqualTo("첫 줄 내용\n둘째 줄 내용")
     }
 
     @Test
     @DisplayName("파일 추출 결과의 CRLF 도 저장 전에 LF 로 통일된다 — 붙여넣기와 같은 경계를 지난다")
     fun `파일 추출 CRLF 가 LF 로 저장된다`() {
-        val world = World(extracted = "첫 줄\r\n둘째 줄")
+        val world = World(extracted = "첫 줄 내용\r\n둘째 줄 내용")
 
         world.service.createFromFile(OWNER, "a.docx", ORIGINAL_FILE, null, null)
 
         val sourceText = world.cipher.sealed.single { it.third == EncryptedField.DOCUMENT_SOURCE_TEXT }
-        assertThat(sourceText.first).isEqualTo("첫 줄\n둘째 줄")
+        assertThat(sourceText.first).isEqualTo("첫 줄 내용\n둘째 줄 내용")
     }
 
     @Test
@@ -444,7 +459,7 @@ class DocumentServiceTest {
         val world = World()
         // 정규화 전 코드 포인트 수는 상한+1(`\r\n` 이 두 글자) 이지만, `\r\n` 이 `\n` 하나로
         // 줄어들면 정확히 상한이라 통과해야 한다.
-        val atLimitAfterNormalization = "가".repeat(MAX_CONVERTIBLE_CHARS - 1) + "\r\n"
+        val atLimitAfterNormalization = "가 가 가 " + "가".repeat(MAX_CONVERTIBLE_CHARS - 7) + "\r\n"
 
         world.service.createFromText(OWNER, atLimitAfterNormalization, null, null)
 
@@ -505,10 +520,10 @@ class DocumentServiceTest {
     fun `접수 응답 모양`() {
         val world = World()
 
-        val accepted = world.service.createFromText(OWNER, "가나다", "제목", null)
+        val accepted = world.service.createFromText(OWNER, "가 나 다 라", "제목", null)
 
         assertThat(accepted.status).isEqualTo(ConversionStatus.PENDING)
-        assertThat(accepted.charCount).isEqualTo(3)
+        assertThat(accepted.charCount).isEqualTo(7)
         assertThat(accepted.documentId).isEqualTo(
             world.documents.inserted
                 .single()
@@ -525,7 +540,7 @@ class DocumentServiceTest {
     @DisplayName("추출한 형식이 그대로 저장된다 — 붙여넣기는 text 다")
     fun `형식이 그대로 저장된다`() {
         val text = World()
-        text.service.createFromText(OWNER, "본문", null, null)
+        text.service.createFromText(OWNER, "충분한 단어가 있는 본문", null, null)
         assertThat(
             text.documents.inserted
                 .single()
@@ -658,7 +673,7 @@ class DocumentServiceTest {
     fun `붙여넣기는 정규화된 본문으로 구조를 유도한다`() {
         val world = World()
 
-        world.service.createFromText(OWNER, "1. 첫째\n본문", null, null)
+        world.service.createFromText(OWNER, "1. 첫째\n본문 내용", null, null)
 
         val structure =
             world.documents.inserted
@@ -711,7 +726,7 @@ class DocumentServiceTest {
      */
     @Suppress("LongParameterList")
     private class World(
-        extracted: String = "추출한 본문",
+        extracted: String = "충분한 단어가 있는 추출 본문",
         extractedFormat: SourceFormat = SourceFormat.DOCX,
         defaultWorkspace: UUID? = OWNED_WORKSPACE,
         writeKeyVersion: Int = 1,

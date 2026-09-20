@@ -85,7 +85,7 @@ class JdbcDocumentStructureTest {
         val owner = newUser()
         val workspace = workspaces.create(owner, "구조").id
 
-        val accepted = service.createFromText(owner, "1. 첫째\n본문", null, workspace.toString())
+        val accepted = service.createFromText(owner, "1. 첫째\n변환할 본문 내용", null, workspace.toString())
 
         val stored = documents.findOwnedSource(owner, accepted.documentId)
         checkNotNull(stored)

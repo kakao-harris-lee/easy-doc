@@ -31,7 +31,7 @@ function formatCount(value: number): string {
   return value.toLocaleString('ko-KR')
 }
 
-/** 크레딧 조정 폼이 관리하는 입력값. */
+/** 크레딧 부여·조정 폼이 관리하는 입력값. */
 interface AdjustFormState {
   credits: string
   reason: AdminCreditAdjustmentReason
@@ -43,7 +43,7 @@ function defaultAdjustFormState(): AdjustFormState {
 }
 
 /**
- * 선택한 워크스페이스의 상세 — 크레딧 요약·조정 폼·최근 거래·세금계산서 요청·최근 변환.
+ * 선택한 워크스페이스의 상세 — 크레딧 요약·부여 폼·최근 거래·세금계산서 요청·최근 변환.
  *
  * 크레딧을 조정하면 이 패널을 다시 읽어 새 잔액을 보여준다. 목록(부모) 쪽 요약도
  * 낡으므로 `onCreditsAdjusted`로 부모에게 알려 목록도 다시 읽게 한다.
@@ -116,7 +116,7 @@ function WorkspaceDetailPanel({
         reason: form.reason,
         note: form.note.trim() === '' ? null : form.note,
       })
-      setSuccessMessage('크레딧을 조정했습니다.')
+      setSuccessMessage('크레딧을 반영했습니다.')
       setForm(defaultAdjustFormState())
       setReloadToken((token) => token + 1)
       onCreditsAdjusted()
@@ -183,10 +183,13 @@ function WorkspaceDetailPanel({
 
       <form
         className="flex flex-col gap-3 rounded-[10px] border border-border p-4"
-        aria-label="크레딧 조정"
+        aria-label="크레딧 부여 및 조정"
         onSubmit={(event) => void handleSubmit(event)}
       >
-        <h4 className="text-sm font-semibold text-foreground">크레딧 조정</h4>
+        <h4 className="text-sm font-semibold text-foreground">크레딧 부여</h4>
+        <p className="text-sm text-muted-foreground">
+          양수는 선택한 사용자의 워크스페이스에 부여하고, 음수는 회수합니다.
+        </p>
 
         {formError !== null && (
           <p className="form-error" role="alert">
@@ -200,7 +203,7 @@ function WorkspaceDetailPanel({
         )}
 
         <div className="field">
-          <label htmlFor={creditsId}>크레딧 (0이 될 수 없음)</label>
+          <label htmlFor={creditsId}>부여할 크레딧 (회수는 음수)</label>
           <input
             id={creditsId}
             type="number"
@@ -243,7 +246,7 @@ function WorkspaceDetailPanel({
         </div>
 
         <Button type="submit" loading={submitting} className="self-start">
-          {submitting ? '조정하는 중…' : '조정하기'}
+          {submitting ? '반영하는 중…' : '크레딧 반영하기'}
         </Button>
       </form>
 
@@ -349,7 +352,7 @@ function WorkspaceDetailPanel({
   )
 }
 
-/** 「워크스페이스」 탭 — 검색·목록·상세·크레딧 조정 (어드민 최소, 계약 2.25.0). */
+/** 「워크스페이스」 탭 — 사용자 검색·목록·상세·크레딧 부여 (어드민 최소, 계약 2.25.0). */
 export function AdminWorkspacesTab() {
   const [q, setQ] = useState('')
   const [appliedQ, setAppliedQ] = useState('')
@@ -403,6 +406,9 @@ export function AdminWorkspacesTab() {
 
   return (
     <div className="flex flex-col gap-4">
+      <p className="rounded-[10px] border border-border bg-muted px-4 py-3 text-sm text-muted-foreground">
+        가입한 사용자의 이메일을 검색한 뒤 워크스페이스를 선택하면 크레딧을 부여할 수 있습니다.
+      </p>
       <form
         className="flex flex-wrap items-end gap-3"
         role="search"

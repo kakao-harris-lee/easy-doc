@@ -258,8 +258,8 @@ class DocumentStorageContextTest {
     )
 
     private companion object {
-        const val PROBE_BODY = "행정복지센터 안내문 본문"
-        const val ROTATION_BODY = "회전 대상 안내문"
+        const val PROBE_BODY = "행정복지센터 안내문 본문 내용"
+        const val ROTATION_BODY = "회전할 대상 안내문 본문"
 
         /** 12자리 hex 이되 어떤 키의 검사값도 아니다. 값의 모양만 맞춘다. */
         const val WRONG_CHECK_VALUE = "000000000000"

@@ -143,7 +143,7 @@ class JdbcDocumentStoreTest {
             serviceOn(dataSource(), cipher, conversionQueue = { ConversionQueue { error("큐 등록 실패") } })
         val jobsBefore = jobCount()
 
-        assertThatThrownBy { failing.createFromText(owner, "본문", null, workspace.toString()) }
+        assertThatThrownBy { failing.createFromText(owner, "변환할 충분한 단어의 본문", null, workspace.toString()) }
             .isInstanceOf(IllegalStateException::class.java)
 
         assertThat(documentCountIn(workspace)).isZero()
@@ -158,7 +158,7 @@ class JdbcDocumentStoreTest {
         workspaces.create(owner, "다")
         val theirs = workspaces.create(stranger, "남의 것").id
 
-        assertThatThrownBy { service.createFromText(owner, "본문", null, theirs.toString()) }
+        assertThatThrownBy { service.createFromText(owner, "변환할 충분한 단어의 본문", null, theirs.toString()) }
             .isInstanceOf(NotFoundException::class.java)
 
         assertThat(documentCountFor(owner)).isZero()
@@ -171,7 +171,7 @@ class JdbcDocumentStoreTest {
         val owner = newUser()
         val workspace = workspaces.create(owner, "라").id
 
-        val accepted = service.createFromText(owner, "본문", null, workspace.toString())
+        val accepted = service.createFromText(owner, "변환할 충분한 단어의 본문", null, workspace.toString())
 
         assertThat(envelopeOf("documents", accepted.documentId))
             .isEqualTo(EncryptionScheme.AES_256_GCM_V1 to 1)
@@ -187,7 +187,7 @@ class JdbcDocumentStoreTest {
     fun `원문이 평문으로 저장되지 않는다`() {
         val owner = newUser()
         val workspace = workspaces.create(owner, "마").id
-        val body = "주민등록번호 안내문 본문"
+        val body = "주민등록번호 안내문 본문 내용"
 
         val accepted = service.createFromText(owner, body, null, workspace.toString())
 
@@ -211,7 +211,7 @@ class JdbcDocumentStoreTest {
         assertNoMarkerInDocumentRow(
             marker = marker,
             documentId = accepted.documentId,
-            what = "본문",
+            what = "변환할 충분한 단어의 본문",
             why =
                 "`documents` 의 모든 열은 사용자 본문을 담지 않는다 — 본문은 " +
                     "`source_text_encrypted` 에 AEAD 로만 들어간다.\n" +
@@ -293,7 +293,7 @@ class JdbcDocumentStoreTest {
         val owner = newUser()
         val workspace = workspaces.create(owner, "아").id
 
-        val accepted = service.createFromText(owner, "본문", null, workspace.toString())
+        val accepted = service.createFromText(owner, "변환할 충분한 단어의 본문", null, workspace.toString())
 
         val days =
             jdbc
@@ -313,7 +313,7 @@ class JdbcDocumentStoreTest {
     fun `삭제가 작업 행까지 연쇄한다`() {
         val owner = newUser()
         val workspace = workspaces.create(owner, "자").id
-        val accepted = service.createFromText(owner, "본문", null, workspace.toString())
+        val accepted = service.createFromText(owner, "변환할 충분한 단어의 본문", null, workspace.toString())
 
         jdbc.sql("DELETE FROM documents WHERE id = :id").param("id", accepted.documentId).update()
 
@@ -334,7 +334,7 @@ class JdbcDocumentStoreTest {
     fun `포트 경유 삭제가 두 문장으로 연쇄한다`() {
         val owner = newUser()
         val workspace = workspaces.create(owner, "카").id
-        val accepted = countedService.createFromText(owner, "본문", null, workspace.toString())
+        val accepted = countedService.createFromText(owner, "변환할 충분한 단어의 본문", null, workspace.toString())
 
         val statements = counting.countStatements { countedService.delete(owner, accepted.documentId) }
 
@@ -352,7 +352,7 @@ class JdbcDocumentStoreTest {
         val stranger = newUser()
         val workspace = workspaces.create(owner, "타").id
         workspaces.create(stranger, "남의 것 4")
-        val accepted = countedService.createFromText(owner, "본문", null, workspace.toString())
+        val accepted = countedService.createFromText(owner, "변환할 충분한 단어의 본문", null, workspace.toString())
 
         assertThat(documents.deleteOwned(stranger, accepted.documentId))
             .describedAs("0행이 아니라 성공이면 남의 문서를 지운 것이다 — 복구 수단이 없다")
@@ -380,8 +380,8 @@ class JdbcDocumentStoreTest {
         val stranger = newUser()
         val workspace = workspaces.create(owner, "차").id
         workspaces.create(stranger, "남의 것")
-        val first = service.createFromText(owner, "첫째", null, workspace.toString()).documentId
-        val second = service.createFromText(owner, "둘째", null, workspace.toString()).documentId
+        val first = service.createFromText(owner, "첫째 문서의 충분한 본문", null, workspace.toString()).documentId
+        val second = service.createFromText(owner, "둘째 문서의 충분한 본문", null, workspace.toString()).documentId
         insertStrangerDocument(stranger)
 
         val listed = documents.listOwned(owner, null, limit = 10, offset = 0)
@@ -398,7 +398,7 @@ class JdbcDocumentStoreTest {
         val stranger = newUser()
         val mine = workspaces.create(owner, "카").id
         val theirs = workspaces.create(stranger, "남의 것 2").id
-        service.createFromText(owner, "내 문서", null, mine.toString())
+        service.createFromText(owner, "나의 변환 대상 문서", null, mine.toString())
 
         assertThat(documents.listOwned(owner, mine, 10, 0)).hasSize(1)
         assertThat(documents.listOwned(owner, theirs, 10, 0))
@@ -411,7 +411,7 @@ class JdbcDocumentStoreTest {
     fun `최신 변환 하나만 실린다`() {
         val owner = newUser()
         val workspace = workspaces.create(owner, "타").id
-        val accepted = service.createFromText(owner, "본문", null, workspace.toString())
+        val accepted = service.createFromText(owner, "변환할 충분한 단어의 본문", null, workspace.toString())
         val newer =
             conversions.insertPending(
                 id = UUID.randomUUID(),
@@ -436,7 +436,10 @@ class JdbcDocumentStoreTest {
         val owner = newUser()
         val workspace = workspaces.create(owner, "파").id.toString()
 
-        val statements = counting.countStatements { countedService.createFromText(owner, "본문", null, workspace) }
+        val statements =
+            counting.countStatements {
+                countedService.createFromText(owner, "변환할 충분한 단어의 본문", null, workspace)
+            }
 
         assertThat(statements)
             .describedAs("작업 공간 소유 판정 1 + 문서 INSERT 1 + 변환 INSERT 1 + 작업 INSERT 1")
@@ -453,7 +456,9 @@ class JdbcDocumentStoreTest {
         val theirs = workspaces.create(stranger, "남의 것 3").id
 
         fun upload(target: String) =
-            counting.countStatements { runCatching { countedService.createFromText(owner, "본문", null, target) } }
+            counting.countStatements {
+                runCatching { countedService.createFromText(owner, "변환할 충분한 단어의 본문", null, target) }
+            }
 
         fun list(target: UUID) =
             counting.countStatements { runCatching { countedService.list(owner, target, LIST_LIMIT, 0) } }
@@ -462,7 +467,7 @@ class JdbcDocumentStoreTest {
         val notMine = upload(theirs.toString())
         val listMissing = list(UUID.randomUUID())
         val listEmpty = list(theirs)
-        repeat(FOREIGN_DOCUMENTS) { service.createFromText(stranger, "남의 안내문 $it", null, theirs.toString()) }
+        repeat(FOREIGN_DOCUMENTS) { service.createFromText(stranger, "남의 변환 안내문 본문 $it", null, theirs.toString()) }
         val listFilled = list(theirs)
 
         // 이메일 인증 조회 1(2.9.0 신설) + 작업 공간 소유 판정 1.
@@ -478,7 +483,7 @@ class JdbcDocumentStoreTest {
     fun `재암호화가 한 문장이다`() {
         val owner = newUser()
         val workspace = workspaces.create(owner, "회전1").id
-        val accepted = service.createFromText(owner, "회전 대상 본문", null, workspace.toString())
+        val accepted = service.createFromText(owner, "회전 대상 안내문 본문", null, workspace.toString())
         fillConversionResult(accepted.conversionId)
 
         val countedRotation =
@@ -498,7 +503,7 @@ class JdbcDocumentStoreTest {
     fun `회전한 행이 새 세대로 열린다`() {
         val owner = newUser()
         val workspace = workspaces.create(owner, "회전2").id
-        val accepted = service.createFromText(owner, "본문", null, workspace.toString())
+        val accepted = service.createFromText(owner, "변환할 충분한 단어의 본문", null, workspace.toString())
         fillConversionResult(accepted.conversionId)
 
         assertThat(rotation.rotateConversion(accepted.conversionId)).isEqualTo(RotationOutcome.ROTATED)
@@ -518,7 +523,7 @@ class JdbcDocumentStoreTest {
     fun `대기 중 변환의 NULL 이 보존된다`() {
         val owner = newUser()
         val workspace = workspaces.create(owner, "회전3").id
-        val accepted = service.createFromText(owner, "본문", null, workspace.toString())
+        val accepted = service.createFromText(owner, "변환할 충분한 단어의 본문", null, workspace.toString())
 
         assertThat(rotation.rotateConversion(accepted.conversionId)).isEqualTo(RotationOutcome.ROTATED)
 
@@ -531,7 +536,7 @@ class JdbcDocumentStoreTest {
     fun `낙관적 조건이 낡은 기대를 거른다`() {
         val owner = newUser()
         val workspace = workspaces.create(owner, "회전4").id
-        val accepted = service.createFromText(owner, "본문", null, workspace.toString())
+        val accepted = service.createFromText(owner, "변환할 충분한 단어의 본문", null, workspace.toString())
         rotation.rotateConversion(accepted.conversionId)
 
         val stale =
@@ -557,7 +562,7 @@ class JdbcDocumentStoreTest {
     fun `문서 원문을 회전한다`() {
         val owner = newUser()
         val workspace = workspaces.create(owner, "회전5").id
-        val body = "회전할 원문"
+        val body = "회전할 변환 대상 원문"
         val accepted = service.createFromText(owner, body, null, workspace.toString())
 
         assertThat(rotation.rotateDocument(accepted.documentId)).isEqualTo(RotationOutcome.ROTATED)
@@ -582,7 +587,7 @@ class JdbcDocumentStoreTest {
                 AesGcmContentCipher(keyMaterial = emptyMap(), writeKeyVersion = 1, random = SecureRandom()),
             )
 
-        assertThatThrownBy { keyless.createFromText(owner, "본문", null, workspace.toString()) }
+        assertThatThrownBy { keyless.createFromText(owner, "변환할 충분한 단어의 본문", null, workspace.toString()) }
             .isInstanceOf(ConfigurationException::class.java)
 
         assertThat(documentCountIn(workspace)).isZero()

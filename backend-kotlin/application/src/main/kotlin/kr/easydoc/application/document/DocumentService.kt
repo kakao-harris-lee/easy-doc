@@ -12,9 +12,11 @@ import kr.easydoc.core.document.ConversionStatus
 import kr.easydoc.core.document.DocumentListing
 import kr.easydoc.core.document.MAX_CONVERTIBLE_CHARS
 import kr.easydoc.core.document.MAX_UPLOAD_BYTES
+import kr.easydoc.core.document.MIN_CONVERTIBLE_WORDS
 import kr.easydoc.core.document.SourceFormat
 import kr.easydoc.core.document.charCountOf
 import kr.easydoc.core.document.resolveTitle
+import kr.easydoc.core.document.wordCountOf
 import kr.easydoc.core.exceptions.DocumentExtractionException
 import kr.easydoc.core.exceptions.EmailNotVerifiedException
 import kr.easydoc.core.exceptions.InvalidInputException
@@ -197,6 +199,7 @@ class DocumentService(
      *
      * [requestedWorkspaceId] 는 **지연 평가다** — 형식 판정의 자리를 아래 한 줄로 못박는다.
      */
+    @Suppress("ThrowsCount")
     private fun store(
         ownerId: UUID,
         content: UploadContent,
@@ -211,8 +214,11 @@ class DocumentService(
         val normalizedText = normalizeLineEndings(content.text)
         val charCount = charCountOf(normalizedText)
         if (charCount > MAX_CONVERTIBLE_CHARS) throw InvalidInputException(BODY_TOO_LONG_MESSAGE)
+        if (wordCountOf(normalizedText) < MIN_CONVERTIBLE_WORDS) {
+            throw InvalidInputException(BODY_TOO_SHORT_MESSAGE)
+        }
 
-        // 개인정보 경고용 검출(계획 §2.2) — 본문 길이 다음, 작업 공간 판정 앞이다(계약
+        // 개인정보 경고용 검출(계획 §2.2) — 본문 길이·어절 수 다음, 작업 공간 판정 앞이다(계약
         // `POST /documents` 검사 순서). 정규화된 최종 본문을 본다 — 검출기가 값·위치·건수를
         // 돌려주지 않고 종류의 집합만 주므로(계획 §2.4) 여기서도 그 이상을 들고 다니지 않는다.
         val detectedKinds = detectPersonalData(normalizedText)

@@ -149,7 +149,7 @@ class ReconvertUnitReachTest {
         const val CONTENT_TYPE = "Content-Type"
         const val JSON_MEDIA_TYPE = "application/json"
 
-        const val SOURCE_TEXT = "금일 서류를 제출하십시오."
+        const val SOURCE_TEXT = "금일 서류를 꼭 제출하십시오."
         const val VALID_PASSWORD = "correct horse battery"
         val FINGERPRINT = "a".repeat(64)
 

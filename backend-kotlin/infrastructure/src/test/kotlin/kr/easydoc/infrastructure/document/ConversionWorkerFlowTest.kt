@@ -157,7 +157,7 @@ class ConversionWorkerFlowTest {
     fun `완료 경로를 관찰한다`() {
         val owner = newUser()
         val workspace = workspaces.create(owner, "공간").id
-        val accepted = service.createFromText(owner, "복지 급여를 안내합니다.", null, workspace.toString())
+        val accepted = service.createFromText(owner, "복지 급여 신청 방법을 안내합니다.", null, workspace.toString())
         assertThat(statusOf(accepted.conversionId)).isEqualTo(ConversionStatus.PENDING.wireName)
 
         val seen = mutableListOf<String>()
@@ -183,7 +183,7 @@ class ConversionWorkerFlowTest {
     fun `끝난 결과는 CAS 로 막는다`() {
         val owner = newUser()
         val workspace = workspaces.create(owner, "공간").id
-        val accepted = service.createFromText(owner, "복지 급여를 안내합니다.", null, workspace.toString())
+        val accepted = service.createFromText(owner, "복지 급여 신청 방법을 안내합니다.", null, workspace.toString())
         assertThat(processor(FakeLlmProvider.replying("오늘 서류를 내세요.")).processNext())
             .isEqualTo(ConversionJobOutcome.COMPLETED)
 
@@ -245,7 +245,7 @@ class ConversionWorkerFlowTest {
     fun `손상된 구조 컬럼도 loadForProcessing 이 성공한다`() {
         val owner = newUser()
         val workspace = workspaces.create(owner, "공간").id
-        val accepted = service.createFromText(owner, "복지 급여를 안내합니다.", null, workspace.toString())
+        val accepted = service.createFromText(owner, "복지 급여 신청 방법을 안내합니다.", null, workspace.toString())
 
         jdbc
             .sql("UPDATE documents SET source_unit_kinds = :garbage WHERE id = :id")

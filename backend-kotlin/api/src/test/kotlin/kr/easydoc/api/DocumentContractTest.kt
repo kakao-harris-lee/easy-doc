@@ -39,7 +39,7 @@ class DocumentContractTest {
     @Test
     @DisplayName("DC-1 붙여넣기 성공 — 계약의 성공 상태 · 사적 헤더 2종(개수까지) · 최상위 키가 정확히 required")
     fun `붙여넣기 성공 응답이 계약과 같다`() {
-        val response = createFromText(newOwner(), textBody("안내문 본문입니다"))
+        val response = createFromText(newOwner(), textBody("변환할 안내문 본문 내용입니다"))
 
         assertThat(response.status).isEqualTo(ContractSpec.successStatus(DOCUMENTS_PATH, POST))
         assertPrivateHeaders(response)
@@ -49,7 +49,7 @@ class DocumentContractTest {
     @Test
     @DisplayName("DC-2 Location 이 계약의 /conversions 경로 템플릿에 본문 conversion_id 를 끼운 것과 같다 (X-D4)")
     fun `Location 이 본문 식별자를 가리킨다`() {
-        val response = createFromText(newOwner(), textBody("안내문 본문입니다"))
+        val response = createFromText(newOwner(), textBody("변환할 안내문 본문 내용입니다"))
 
         val parameter = ContractSpec.pathParameters(CONVERSION_ITEM_PATH).single { it.location == PATH_LOCATION }
         val conversionId = bodyOf(response).required(CONVERSION_ID_PROPERTY).toString()
@@ -77,7 +77,7 @@ class DocumentContractTest {
             .withFailMessage("계약이 성공 응답에 헤더를 하나도 선언하지 않았다 — 대조할 대상이 없다")
             .isNotEmpty()
 
-        val response = createFromText(newOwner(), textBody("안내문 본문입니다"))
+        val response = createFromText(newOwner(), textBody("변환할 안내문 본문 내용입니다"))
         declared.forEach { header ->
             assertThat(response.getHeader(header))
                 .withFailMessage("계약이 선언한 헤더 %s 가 응답에 없다", header)
@@ -114,7 +114,7 @@ class DocumentContractTest {
     fun `정확히 상한인 본문은 통과한다`() {
         val limit = ContractSpec.requestFieldConstraint(TEXT_FIELD).limit
 
-        val response = createFromText(newOwner(), textBody("가".repeat(limit)))
+        val response = createFromText(newOwner(), textBody(fourWordText(limit)))
 
         assertThat(response.status).isEqualTo(ContractSpec.successStatus(DOCUMENTS_PATH, POST))
         assertThat(bodyOf(response).required(CHAR_COUNT_PROPERTY)).isEqualTo(limit)
@@ -171,7 +171,7 @@ class DocumentContractTest {
         val explicitNulls =
             json.writeValueAsString(
                 mapOf(
-                    TEXT_PROPERTY to "본문",
+                    TEXT_PROPERTY to "변환할 충분한 단어의 본문",
                     TITLE_PROPERTY to null,
                     WORKSPACE_ID_PROPERTY to null,
                 ),
@@ -199,6 +199,9 @@ class DocumentContractTest {
             .response
 
     private fun textBody(text: String): String = json.writeValueAsString(mapOf(TEXT_PROPERTY to text))
+
+    /** 공백도 본문 길이에 포함하므로 상한 경계의 문자 수를 보존한다. */
+    private fun fourWordText(length: Int): String = "가 가 가 " + "가".repeat(length - 6)
 
     /** 계정과 기본 작업 공간을 함께 만든다. */
     private fun newOwner(): UUID {

@@ -3,20 +3,20 @@ export const SERVICE_NAME = 'EASY-DOC AI'
 
 export function Logo() {
   return (
-    <span className="inline-flex items-center gap-2.5">
+    <span className="inline-flex items-center gap-3">
       <img
         src="/icons/icon-320.png"
         alt=""
-        width={36}
-        height={36}
-        className="size-9"
+        width={44}
+        height={44}
+        className="size-11 rounded-xl shadow-sm ring-1 ring-primary/15"
         aria-hidden="true"
       />
       <span className="flex flex-col leading-none">
-        <strong className="text-[15px] font-extrabold tracking-tight text-foreground">
+        <strong className="text-[17px] font-black tracking-[-0.03em] text-primary">
           {SERVICE_NAME}
         </strong>
-        <small className="mt-0.5 text-[11px] font-medium text-muted-foreground">
+        <small className="mt-1 text-xs font-semibold tracking-tight text-foreground/75">
           쉬운 우리말 변환
         </small>
       </span>

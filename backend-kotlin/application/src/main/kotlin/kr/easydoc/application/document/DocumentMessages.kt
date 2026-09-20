@@ -23,6 +23,9 @@ const val EMAIL_VERIFICATION_REQUIRED_MESSAGE: String = "이메일 인증 후 �
 /** 계약 `POST /documents` 422 예시 `empty_body`. 붙여넣기 본문이 공백뿐일 때. */
 const val EMPTY_BODY_MESSAGE: String = "본문이 비어 있습니다"
 
+/** 계약 `POST /documents` 422 예시 `too_short`. */
+const val BODY_TOO_SHORT_MESSAGE: String = "4단어 이상인 문장만 변환할 수 있습니다"
+
 /** 계약 `POST /documents` 422 예시 `too_long`. */
 val BODY_TOO_LONG_MESSAGE: String =
     "현재는 ${String.format(Locale.ROOT, "%,d", MAX_CONVERTIBLE_CHARS)}자 이하 문서만 변환할 수 있습니다"

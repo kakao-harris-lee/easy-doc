@@ -24,7 +24,14 @@ import {
 } from '../test/factories'
 import { WorkspaceContext } from '../workspace/context'
 import type { WorkspaceContextValue } from '../workspace/context'
-import { ACCEPTED_EXTENSIONS, MAX_CHARS, MAX_UPLOAD_BYTES, UploadPage } from './UploadPage'
+import {
+  ACCEPTED_EXTENSIONS,
+  LONG_TEXT_WARNING_CHARS,
+  MAX_CHARS,
+  MAX_UPLOAD_BYTES,
+  UploadPage,
+  VERY_LONG_TEXT_WARNING_CHARS,
+} from './UploadPage'
 
 /** 화면이 안내에 쓰는 값은 상수에서 나와야 한다 — 테스트도 같은 상수에서 기대값을 만든다. */
 const EXPECTED_FORMATS = ACCEPTED_EXTENSIONS.split(',')
@@ -157,11 +164,11 @@ describe('업로드 화면', () => {
     renderPage()
 
     await user.type(screen.getByLabelText('문서 제목'), '청년 월세 지원 안내')
-    await user.type(screen.getByLabelText('바꿀 글'), '신청 안내')
+    await user.type(screen.getByLabelText('바꿀 글'), '신청 방법을 자세히 안내합니다')
     await user.click(screen.getByRole('button', { name: '쉬운 글 초안 만들기' }))
 
     expect(vi.mocked(createDocumentFromText)).toHaveBeenCalledWith(
-      '신청 안내',
+      '신청 방법을 자세히 안내합니다',
       'w1',
       '청년 월세 지원 안내',
     )
@@ -177,10 +184,14 @@ describe('업로드 화면', () => {
     })
 
     await user.type(screen.getByLabelText('문서 제목'), '민원 안내')
-    await user.type(screen.getByLabelText('바꿀 글'), '신청 안내')
+    await user.type(screen.getByLabelText('바꿀 글'), '신청 방법을 자세히 안내합니다')
     await user.click(screen.getByRole('button', { name: '쉬운 글 초안 만들기' }))
 
-    expect(vi.mocked(createDocumentFromText)).toHaveBeenCalledWith('신청 안내', 'w2', '민원 안내')
+    expect(vi.mocked(createDocumentFromText)).toHaveBeenCalledWith(
+      '신청 방법을 자세히 안내합니다',
+      'w2',
+      '민원 안내',
+    )
   })
 
   it('작업 공간을 아직 못 받았어도 올릴 수 있다', async () => {
@@ -189,12 +200,12 @@ describe('업로드 화면', () => {
     renderPage({ workspaces: [], currentId: null })
 
     await user.type(screen.getByLabelText('문서 제목'), '기본 작업 공간 문서')
-    await user.type(screen.getByLabelText('바꿀 글'), '신청 안내')
+    await user.type(screen.getByLabelText('바꿀 글'), '신청 방법을 자세히 안내합니다')
     await user.click(screen.getByRole('button', { name: '쉬운 글 초안 만들기' }))
 
     // null이면 서버가 기본 작업 공간에 담는다 — 업로드를 막지 않는다.
     expect(vi.mocked(createDocumentFromText)).toHaveBeenCalledWith(
-      '신청 안내',
+      '신청 방법을 자세히 안내합니다',
       null,
       '기본 작업 공간 문서',
     )
@@ -226,7 +237,7 @@ describe('업로드 화면', () => {
     )
     renderPage()
 
-    const emoji20000 = '😀'.repeat(20000)
+    const emoji20000 = '😀 😀 😀 ' + '😀'.repeat(19994)
     await user.click(screen.getByLabelText('바꿀 글'))
     await user.paste(emoji20000)
     await user.type(screen.getByLabelText('문서 제목'), '이모지 문서')
@@ -257,10 +268,22 @@ describe('업로드 화면', () => {
     const user = userEvent.setup()
     renderPage()
 
-    await user.type(screen.getByLabelText('바꿀 글'), '신청 안내')
+    await user.type(screen.getByLabelText('바꿀 글'), '신청 방법을 자세히 안내합니다')
     await user.click(screen.getByRole('button', { name: '쉬운 글 초안 만들기' }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent('문서 제목을 입력해 주세요.')
+    expect(vi.mocked(createDocumentFromText)).not.toHaveBeenCalled()
+  })
+
+  it('3단어 이하 글은 변환 요청을 보내지 않는다', async () => {
+    const user = userEvent.setup()
+    renderPage()
+
+    await user.type(screen.getByLabelText('문서 제목'), '짧은 안내')
+    await user.type(screen.getByLabelText('바꿀 글'), '신청하세요 지금 바로')
+    await user.click(screen.getByRole('button', { name: '쉬운 글 초안 만들기' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('4단어 이상인 문장을 입력해 주세요.')
     expect(vi.mocked(createDocumentFromText)).not.toHaveBeenCalled()
   })
 
@@ -272,7 +295,7 @@ describe('업로드 화면', () => {
     renderPage()
 
     await user.type(screen.getByLabelText('문서 제목'), '긴 문서')
-    await user.type(screen.getByLabelText('바꿀 글'), '긴 문서')
+    await user.type(screen.getByLabelText('바꿀 글'), '긴 문서를 자세히 안내합니다')
     await user.click(screen.getByRole('button', { name: '쉬운 글 초안 만들기' }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent('변환할 수 있는 길이를 넘었습니다')
@@ -403,7 +426,7 @@ describe('업로드 화면', () => {
 
     const threshold = MAX_CHARS * 0.8
     await user.click(screen.getByLabelText('바꿀 글'))
-    await user.paste('가'.repeat(threshold - 1))
+    await user.paste('가 가 가 ' + '가'.repeat(threshold - 7))
 
     const belowCounter = screen.getByText(`${(threshold - 1).toLocaleString('ko-KR')} / 20,000자`)
     expect(belowCounter).toHaveClass('text-muted-foreground')
@@ -415,6 +438,34 @@ describe('업로드 화면', () => {
     expect(atCounter).toHaveClass('text-warning')
     // 80%는 아직 오류가 아니다 — 입력은 유효한 상태로 남는다.
     expect(screen.getByLabelText('바꿀 글')).toHaveAttribute('aria-invalid', 'false')
+  })
+
+  it('1,000자부터 긴 문서 처리 시간 안내를, 5,000자부터 문단 분할 안내를 보인다', async () => {
+    const user = userEvent.setup()
+    renderPage()
+
+    await user.click(screen.getByLabelText('바꿀 글'))
+    await user.paste('가'.repeat(LONG_TEXT_WARNING_CHARS))
+
+    expect(
+      screen.getByText(
+        '긴 문서입니다. 변환에 시간이 더 걸릴 수 있으니 필요 크레딧을 확인해 주세요.',
+      ),
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByText('긴 문서입니다. 문단을 나누어 변환하면 결과를 검토하기 더 쉽습니다.'),
+    ).not.toBeInTheDocument()
+
+    await user.paste('가'.repeat(VERY_LONG_TEXT_WARNING_CHARS - LONG_TEXT_WARNING_CHARS))
+
+    expect(
+      screen.queryByText(
+        '긴 문서입니다. 변환에 시간이 더 걸릴 수 있으니 필요 크레딧을 확인해 주세요.',
+      ),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.getByText('긴 문서입니다. 문단을 나누어 변환하면 결과를 검토하기 더 쉽습니다.'),
+    ).toBeInTheDocument()
   })
 
   describe('크레딧 안내 (C2)', () => {
@@ -507,7 +558,7 @@ describe('업로드 화면', () => {
       renderPage()
 
       await user.type(screen.getByLabelText('문서 제목'), '청년 월세 지원 안내')
-      await user.type(screen.getByLabelText('바꿀 글'), '신청 안내')
+      await user.type(screen.getByLabelText('바꿀 글'), '신청 방법을 자세히 안내합니다')
       await user.click(screen.getByRole('button', { name: '쉬운 글 초안 만들기' }))
 
       expect(await screen.findByRole('alert')).toHaveTextContent(
@@ -525,7 +576,7 @@ describe('업로드 화면', () => {
       renderPage()
 
       await user.type(screen.getByLabelText('문서 제목'), '청년 월세 지원 안내')
-      await user.type(screen.getByLabelText('바꿀 글'), '신청 안내')
+      await user.type(screen.getByLabelText('바꿀 글'), '신청 방법을 자세히 안내합니다')
       await user.click(screen.getByRole('button', { name: '쉬운 글 초안 만들기' }))
 
       expect(await screen.findByRole('heading', { name: '변환 화면' })).toBeInTheDocument()
@@ -554,7 +605,10 @@ describe('업로드 화면', () => {
       renderPage()
 
       await user.type(screen.getByLabelText('문서 제목'), '주민등록번호 안내')
-      await user.type(screen.getByLabelText('바꿀 글'), '주민등록번호는 900101-1234568 입니다')
+      await user.type(
+        screen.getByLabelText('바꿀 글'),
+        '주민등록번호는 900101-1234568 입니다 확인해 주세요',
+      )
       await user.click(screen.getByRole('button', { name: '쉬운 글 초안 만들기' }))
 
       const warning = await screen.findByRole('alert')
@@ -564,13 +618,13 @@ describe('업로드 화면', () => {
 
       expect(vi.mocked(createDocumentFromText)).toHaveBeenNthCalledWith(
         1,
-        '주민등록번호는 900101-1234568 입니다',
+        '주민등록번호는 900101-1234568 입니다 확인해 주세요',
         'w1',
         '주민등록번호 안내',
       )
       expect(vi.mocked(createDocumentFromText)).toHaveBeenNthCalledWith(
         2,
-        '주민등록번호는 900101-1234568 입니다',
+        '주민등록번호는 900101-1234568 입니다 확인해 주세요',
         'w1',
         '주민등록번호 안내',
         true,
@@ -611,7 +665,7 @@ describe('업로드 화면', () => {
       renderPage()
 
       await user.type(screen.getByLabelText('문서 제목'), '안내문')
-      await user.type(screen.getByLabelText('바꿀 글'), '본문')
+      await user.type(screen.getByLabelText('바꿀 글'), '충분한 단어가 있는 본문')
       await user.click(screen.getByRole('button', { name: '쉬운 글 초안 만들기' }))
 
       expect(await screen.findByRole('alert')).toHaveTextContent('지원 형식: docx, pdf, hwpx, txt')
@@ -624,7 +678,10 @@ describe('업로드 화면', () => {
       renderPage()
 
       await user.type(screen.getByLabelText('문서 제목'), '주민등록번호 안내')
-      await user.type(screen.getByLabelText('바꿀 글'), '주민등록번호는 900101-1234568 입니다')
+      await user.type(
+        screen.getByLabelText('바꿀 글'),
+        '주민등록번호는 900101-1234568 입니다 확인해 주세요',
+      )
       await user.click(screen.getByRole('button', { name: '쉬운 글 초안 만들기' }))
       await screen.findByRole('alert')
 
@@ -644,7 +701,10 @@ describe('업로드 화면', () => {
         renderPage()
 
         await user.type(screen.getByLabelText('문서 제목'), '처음 제목')
-        await user.type(screen.getByLabelText('바꿀 글'), '주민등록번호는 900101-1234568 입니다')
+        await user.type(
+          screen.getByLabelText('바꿀 글'),
+          '주민등록번호는 900101-1234568 입니다 확인해 주세요',
+        )
         await user.click(screen.getByRole('button', { name: '쉬운 글 초안 만들기' }))
         await screen.findByRole('alert')
 
@@ -655,7 +715,7 @@ describe('업로드 화면', () => {
 
         expect(vi.mocked(createDocumentFromText)).toHaveBeenNthCalledWith(
           2,
-          '주민등록번호는 900101-1234568 입니다',
+          '주민등록번호는 900101-1234568 입니다 확인해 주세요',
           'w1',
           '처음 제목 (수정됨)',
           true,
@@ -744,7 +804,7 @@ describe('업로드 화면', () => {
     renderPage()
 
     await user.type(screen.getByLabelText('문서 제목'), '청년 월세 지원 안내')
-    await user.type(screen.getByLabelText('바꿀 글'), '신청 안내')
+    await user.type(screen.getByLabelText('바꿀 글'), '신청 방법을 자세히 안내합니다')
     await user.click(screen.getByRole('button', { name: '쉬운 글 초안 만들기' }))
 
     expect(await screen.findByRole('heading', { name: '변환 화면' })).toBeInTheDocument()
@@ -926,7 +986,7 @@ describe('업로드 화면', () => {
       renderPage()
 
       await user.type(screen.getByLabelText('문서 제목'), '청년 월세 지원 안내')
-      await user.type(screen.getByLabelText('바꿀 글'), '신청 안내')
+      await user.type(screen.getByLabelText('바꿀 글'), '신청 방법을 자세히 안내합니다')
       await user.click(screen.getByRole('button', { name: '쉬운 글 초안 만들기' }))
 
       expect(

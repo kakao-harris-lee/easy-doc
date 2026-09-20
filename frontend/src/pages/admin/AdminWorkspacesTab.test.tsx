@@ -94,7 +94,7 @@ describe('AdminWorkspacesTab — 워크스페이스 (어드민 최소, 계약 2.
     )
   })
 
-  it('행을 누르면 상세와 크레딧 조정 폼을 연다', async () => {
+  it('행을 누르면 상세와 크레딧 부여 폼을 연다', async () => {
     const user = userEvent.setup()
     vi.mocked(listAdminWorkspaces).mockResolvedValue(
       adminWorkspaceListResponse({
@@ -106,11 +106,11 @@ describe('AdminWorkspacesTab — 워크스페이스 (어드민 최소, 계약 2.
     render(<AdminWorkspacesTab />)
     await user.click(await screen.findByRole('button', { name: '복지정책팀' }))
 
-    expect(await screen.findByRole('form', { name: '크레딧 조정' })).toBeInTheDocument()
+    expect(await screen.findByRole('form', { name: '크레딧 부여 및 조정' })).toBeInTheDocument()
     expect(vi.mocked(readAdminWorkspace)).toHaveBeenCalledWith('w1', expect.anything())
   })
 
-  it('크레딧을 조정하면 성공 문구를 보여주고 상세를 다시 읽는다', async () => {
+  it('크레딧을 부여하면 성공 문구를 보여주고 상세를 다시 읽는다', async () => {
     const user = userEvent.setup()
     vi.mocked(listAdminWorkspaces).mockResolvedValue(
       adminWorkspaceListResponse({
@@ -133,13 +133,13 @@ describe('AdminWorkspacesTab — 워크스페이스 (어드민 최소, 계약 2.
 
     render(<AdminWorkspacesTab />)
     await user.click(await screen.findByRole('button', { name: '복지정책팀' }))
-    await screen.findByRole('form', { name: '크레딧 조정' })
+    await screen.findByRole('form', { name: '크레딧 부여 및 조정' })
 
     await user.type(screen.getByLabelText('크레딧 (0이 될 수 없음)'), '0.1')
     await user.selectOptions(screen.getByLabelText('사유'), 'plan_monthly')
     await user.click(screen.getByRole('button', { name: '조정하기' }))
 
-    expect(await screen.findByText('크레딧을 조정했습니다.')).toBeInTheDocument()
+    expect(await screen.findByText('크레딧을 반영했습니다.')).toBeInTheDocument()
     expect(vi.mocked(adjustAdminWorkspaceCredits)).toHaveBeenCalledWith('w1', {
       credits: 0.1,
       reason: 'plan_monthly',
@@ -174,14 +174,14 @@ describe('AdminWorkspacesTab — 워크스페이스 (어드민 최소, 계약 2.
 
     render(<AdminWorkspacesTab />)
     await user.click(await screen.findByRole('button', { name: '복지정책팀' }))
-    await screen.findByRole('form', { name: '크레딧 조정' })
+    await screen.findByRole('form', { name: '크레딧 부여 및 조정' })
 
-    await user.type(screen.getByLabelText('크레딧 (0이 될 수 없음)'), '-3')
+    await user.type(screen.getByLabelText('부여할 크레딧 (회수는 음수)'), '-3')
     await user.selectOptions(screen.getByLabelText('사유'), 'refund')
     await user.type(screen.getByLabelText('메모 (선택)'), '결제 취소 환급')
-    await user.click(screen.getByRole('button', { name: '조정하기' }))
+    await user.click(screen.getByRole('button', { name: '크레딧 반영하기' }))
 
-    expect(await screen.findByText('크레딧을 조정했습니다.')).toBeInTheDocument()
+    expect(await screen.findByText('크레딧을 반영했습니다.')).toBeInTheDocument()
     expect(vi.mocked(adjustAdminWorkspaceCredits)).toHaveBeenCalledWith('w1', {
       credits: -3,
       reason: 'refund',
@@ -200,7 +200,7 @@ describe('AdminWorkspacesTab — 워크스페이스 (어드민 최소, 계약 2.
 
     render(<AdminWorkspacesTab />)
     await user.click(await screen.findByRole('button', { name: '복지정책팀' }))
-    await screen.findByRole('form', { name: '크레딧 조정' })
+    await screen.findByRole('form', { name: '크레딧 부여 및 조정' })
 
     await user.type(screen.getByLabelText('크레딧 (0이 될 수 없음)'), '0.01')
     await user.click(screen.getByRole('button', { name: '조정하기' }))
@@ -225,10 +225,10 @@ describe('AdminWorkspacesTab — 워크스페이스 (어드민 최소, 계약 2.
 
     render(<AdminWorkspacesTab />)
     await user.click(await screen.findByRole('button', { name: '복지정책팀' }))
-    await screen.findByRole('form', { name: '크레딧 조정' })
+    await screen.findByRole('form', { name: '크레딧 부여 및 조정' })
 
-    await user.type(screen.getByLabelText('크레딧 (0이 될 수 없음)'), '10')
-    await user.click(screen.getByRole('button', { name: '조정하기' }))
+    await user.type(screen.getByLabelText('부여할 크레딧 (회수는 음수)'), '10')
+    await user.click(screen.getByRole('button', { name: '크레딧 반영하기' }))
 
     expect(await screen.findByText('credits 는 0이 될 수 없습니다')).toBeInTheDocument()
   })

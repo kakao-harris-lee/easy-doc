@@ -224,7 +224,7 @@ class ConversionReviewStorageTest {
     private fun doneConversion(): Pair<UUID, UUID> {
         val owner = newUser()
         val workspace = workspaces.create(owner, "검수 저장 ${UUID.randomUUID()}").id
-        val accepted = service.createFromText(owner, "원문 본문", null, workspace.toString())
+        val accepted = service.createFromText(owner, "변환 대상 원문 본문", null, workspace.toString())
         val draft = cipher.encrypt(PlainBody(DRAFT_BODY), accepted.conversionId, EncryptedField.CONVERSION_EASY_TEXT)
         jdbc
             .sql(MARK_DONE_SQL)

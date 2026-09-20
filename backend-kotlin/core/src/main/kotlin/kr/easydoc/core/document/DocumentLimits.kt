@@ -14,6 +14,9 @@ package kr.easydoc.core.document
 /** 한 번에 변환할 수 있는 문서 길이. 계약 `x-input-limits.max_convertible_chars`. */
 const val MAX_CONVERTIBLE_CHARS: Int = 20_000
 
+/** 변환할 가치가 있는 최소 어절 수. 계약 `x-input-limits.min_convertible_words`. */
+const val MIN_CONVERTIBLE_WORDS: Int = 4
+
 /** 업로드 파일 크기 상한(바이트). 계약 `x-input-limits.max_upload_bytes`. */
 const val MAX_UPLOAD_BYTES: Long = 10L * 1024 * 1024
 
@@ -25,6 +28,9 @@ const val MAX_TITLE_LENGTH: Int = 255
 
 /** 계약이 말하는 "문자 수" — **코드 포인트 수**다. */
 fun charCountOf(text: String): Int = text.codePointCount(0, text.length)
+
+/** 공백류로 나눈 어절 수. 변환 가치 판정은 형태소 분석이 아니라 입력 단위를 쓴다. */
+fun wordCountOf(text: String): Int = text.trim().split(Regex("\\s+")).count()
 
 /** 앞에서부터 [count] **코드 포인트**만 남긴다. 짧으면 그대로 돌려준다. */
 fun takeCodePoints(

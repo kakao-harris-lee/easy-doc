@@ -125,7 +125,7 @@ class ConversionReadContractTest {
     @DisplayName("완료 전 변환은 segment_map 이 null 이다 — 키는 있고 값이 없다")
     fun `완료 전에는 segment_map 이 null 이다`() {
         val owner = newOwner()
-        val body = json.writeValueAsString(mapOf(TEXT_PROPERTY to "안내문 본문"))
+        val body = json.writeValueAsString(mapOf(TEXT_PROPERTY to "변환할 안내문 본문 내용"))
         val created =
             mockMvc
                 .post(DOCUMENTS_PATH) {
@@ -272,7 +272,7 @@ class ConversionReadContractTest {
 
     /** 문서를 접수해 대기 중 변환을 만들고, 완료 상태로 표시한다. */
     private fun completedConversion(owner: UUID): String {
-        val body = json.writeValueAsString(mapOf(TEXT_PROPERTY to "안내문 본문"))
+        val body = json.writeValueAsString(mapOf(TEXT_PROPERTY to "변환할 안내문 본문 내용"))
         val created =
             mockMvc
                 .post(DOCUMENTS_PATH) {

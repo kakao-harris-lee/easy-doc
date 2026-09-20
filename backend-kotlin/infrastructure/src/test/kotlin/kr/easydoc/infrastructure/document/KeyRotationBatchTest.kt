@@ -122,7 +122,7 @@ class KeyRotationBatchTest {
         val owner = newUser()
         val workspaceId = workspaces.create(owner, "회전 경합 ${UUID.randomUUID()}").id
         val oldCipher = cipherWith(OLD_GENERATION)
-        val accepted = serviceOn(oldCipher).createFromText(owner, "경합 원문", null, workspaceId.toString())
+        val accepted = serviceOn(oldCipher).createFromText(owner, "경합하는 변환 대상 원문", null, workspaceId.toString())
         completeConversion(oldCipher, accepted.conversionId, 0)
 
         // NoTransaction 이라 회전이 실 잠금 없이 SELECT 와 UPDATE 를 두 문장으로 낸다 —
