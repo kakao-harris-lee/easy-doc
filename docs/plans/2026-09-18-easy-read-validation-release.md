@@ -1,6 +1,8 @@
 # 쉬운글 개선 검증·출시·운영 계획
 
-작성일: 2026-09-18 · 상태: R0·R1 로컬 검증 완료. 유료 평가·원격 CI·파일럿·배포는 미실행.
+작성일: 2026-09-18 · 상태: R0·R1과 R2 작업 기반(ER-05) 로컬 검증 완료. 유료 평가·원격 CI·파일럿·배포는 미실행.
+
+ER-05 검증은 fake runner와 PostgreSQL 통합 테스트로 요청 멱등성, 예약 정산, lease/fence, 호출 시작 후 불명확 회수, 삭제·stale·기능 OFF 처리를 확인했다. 실제 provider 호출과 R2 후보 품질 평가는 ER-06 이후 범위다.
 
 연결: [로드맵](2026-09-18-easy-read-improvement-roadmap.md) · [구현 명세](2026-09-18-easy-read-implementation-spec.md) · [UX](2026-09-18-easy-read-ux-spec.md) · [작업 ID](2026-09-18-easy-read-delivery-plan.md).
 

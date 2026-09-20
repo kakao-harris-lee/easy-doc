@@ -499,6 +499,9 @@ class ValueSlotInvariantReachTest {
                 "ReviewSupportItemUpdateRequest" to
                     """{"assessment_id":"00000000-0000-0000-0000-000000000001",""" +
                     """"expected_content_revision":1,"expected_review_revision":0,"state":"confirmed"}""",
+                "ActionGuideJobCreateRequest" to
+                    """{"request_id":"00000000-0000-0000-0000-000000000001",""" +
+                    """"expected_content_revision":1,"expected_guide_revision":null}""",
                 // 계약 required 셋만 담는다 — `comment` 는 선택이라 최소 본문에 없다.
                 "ConversionFeedbackRequest" to
                     """{"publish_intent":"as_is","quality_score":3,"minutes_spent":1}""",

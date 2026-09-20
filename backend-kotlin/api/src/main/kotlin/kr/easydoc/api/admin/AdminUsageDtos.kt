@@ -39,7 +39,7 @@ data class AdminUsageRowResponse(
     @get:JsonProperty("characters") val characters: Long,
     @get:JsonProperty("credits") val credits: Long,
     @get:JsonProperty("llm_calls") val llmCalls: Int,
-    /** 완성 자체가 나지 않은 호출 수(`outcome = provider_error`, V18). 계약 2.26.0 신설. */
+    /** 완성 결과를 확인하지 못한 호출 수(`provider_error | outcome_unknown`). */
     @get:JsonProperty("failed_calls") val failedCalls: Int,
     @get:JsonProperty("input_tokens") val inputTokens: Long,
     @get:JsonProperty("output_tokens") val outputTokens: Long,

@@ -388,6 +388,7 @@ class OwnershipPredicateGuardTest {
 
         /** 핀 문자열의 경로 앞부분. 목록이 읽히게 하려고 상수로 접는다. */
         private const val MAIN = "infrastructure/src/main/kotlin/kr/easydoc/infrastructure"
+        private const val ACTION_GUIDE = "$MAIN/actionguide"
         private const val AUTH = "$MAIN/auth"
         private const val DOCUMENT = "$MAIN/document"
         private const val ADMIN = "$MAIN/admin"
@@ -395,6 +396,11 @@ class OwnershipPredicateGuardTest {
         /** 문서·변환에 닿는 제품 SQL 전부. 소유 술어가 있는 것도 함께 적는다. */
         val EXPECTED_STATEMENTS =
             listOf(
+                // 행동 안내 접수의 소유/보존 검증, worker 완료 직전 본문 버전 재검증,
+                // 호출 시작 원장의 문서 글자 수 스냅샷. 셋 모두 소유자 매개변수로 좁힌다.
+                "$ACTION_GUIDE/JdbcActionGuideJobRepository.kt | SELECT [conversions, documents]",
+                "$ACTION_GUIDE/JdbcActionGuideJobRepository.kt | SELECT [conversions, documents]",
+                "$ACTION_GUIDE/JdbcActionGuideLlmCallLedger.kt | SELECT [documents]",
                 // 어드민 최소(A1, 2026-09-07) — 관리자 워크스페이스 상세의 「최근 변환」과
                 // 오류 화면(`GET /admin/errors`) 셋 다 아래 미방어 목록에도 있다 — 관리자는
                 // 의도적으로 워크스페이스를 가로지른다(사유는 그쪽에 적었다). `admin`

@@ -30,7 +30,7 @@ import java.util.UUID
  * 대상으로 하는 여러 행(변환·보정·재시도)이 같은 `document_char_count` 값을 반복해
  * 담으므로, `document_id`로 distinct 한 뒤에만 합한다 — distinct 하지 않으면 재시도 한
  * 번마다 그 문서의 문자 수가 다시 더해진다. [WorkspaceUsage.credits]는 실제 차감 원장인
- * `credit_transactions`의 `consume/conversion` 합을 쓴다. 이 값에는 최초 변환뿐 아니라
+ * `credit_transactions`의 `consume` 중 `conversion`·`action_guide` 합을 쓴다. 이 값에는 최초 변환뿐 아니라
  * 성공한 재변환도 들어간다. V15 이전 호출처럼 차감 원장이 전혀 없는 기간만 문서별
  * `ceil(document_char_count / 1000)` 합으로 대체한다.
  *
@@ -160,10 +160,13 @@ class JdbcUsageReadRepository(private val jdbc: JdbcClient) : UsageReadRepositor
         jdbc
             .sql(
                 """
-                SELECT -sum(balance_delta)::bigint AS credits
+                SELECT coalesce(
+                    -sum(balance_delta) FILTER (WHERE kind = 'consume'),
+                    0
+                )::bigint AS credits
                 FROM credit_transactions
                 WHERE workspace_id = :workspaceId AND owner_user_id = :ownerId
-                  AND kind = 'consume' AND reason = 'conversion'
+                  AND reason IN ('conversion', 'action_guide')
                   AND created_at >= :from AND created_at < :toExclusive
                 HAVING count(*) > 0
                 """.trimIndent(),
@@ -198,7 +201,7 @@ class JdbcUsageReadRepository(private val jdbc: JdbcClient) : UsageReadRepositor
                     sum(estimated_cost_usd) FILTER (WHERE outcome = 'completed') AS estimated_cost_usd,
                     count(*) FILTER (WHERE outcome = 'completed' AND estimated_cost_usd IS NULL)
                         AS cost_unknown_calls,
-                    count(*) FILTER (WHERE outcome = 'provider_error') AS failed_calls
+                    count(*) FILTER (WHERE outcome IN ('provider_error', 'outcome_unknown')) AS failed_calls
                 FROM llm_calls
                 WHERE workspace_id = :workspaceId AND user_id = :ownerId
                   AND called_at >= :from AND called_at < :toExclusive
@@ -238,7 +241,7 @@ class JdbcUsageReadRepository(private val jdbc: JdbcClient) : UsageReadRepositor
                     coalesce(sum(input_tokens) FILTER (WHERE outcome = 'completed'), 0) AS input_tokens,
                     coalesce(sum(output_tokens) FILTER (WHERE outcome = 'completed'), 0) AS output_tokens,
                     sum(estimated_cost_usd) FILTER (WHERE outcome = 'completed') AS estimated_cost_usd,
-                    count(*) FILTER (WHERE outcome = 'provider_error') AS failed_calls
+                    count(*) FILTER (WHERE outcome IN ('provider_error', 'outcome_unknown')) AS failed_calls
                 FROM llm_calls
                 WHERE workspace_id = :workspaceId AND user_id = :ownerId
                   AND called_at >= :from AND called_at < :toExclusive

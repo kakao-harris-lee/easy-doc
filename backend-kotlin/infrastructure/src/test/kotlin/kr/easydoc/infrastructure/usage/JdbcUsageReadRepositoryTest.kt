@@ -39,6 +39,7 @@ import javax.sql.DataSource
  * `document_char_count` 스냅샷과 함께 남긴다 — 그것이 집계가 실제로 읽는 값이다.
  */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
+@Suppress("LargeClass")
 class JdbcUsageReadRepositoryTest {
     private lateinit var jdbc: JdbcClient
     private lateinit var users: JdbcUserRepository
@@ -157,6 +158,34 @@ class JdbcUsageReadRepositoryTest {
         assertThat(usage.characters).isEqualTo(1500)
         assertThat(usage.credits).isEqualTo(3)
         assertThat(usage.llmCalls).isEqualTo(2)
+    }
+
+    @Test
+    @DisplayName("행동 안내 예약을 해제한 기간은 완료 호출의 문서 크레딧으로 fallback하지 않는다")
+    fun `해제된 행동 안내 예약은 사용 크레딧이 0이다`() {
+        val owner = newOwner()
+        val workspaceId = workspaces.create(owner, "공간-${UUID.randomUUID()}").id
+        val at = Instant.parse("2026-03-21T02:00:00Z")
+        val documentId = insertDocument(workspaceId, owner, charCount = 500, createdAt = at)
+        appendCall(
+            workspaceId,
+            owner,
+            LlmCallPurpose.ACTION_GUIDE,
+            documentId,
+            documentCharCount = 500,
+            inputTokens = 10,
+            outputTokens = 5,
+            costUsd = null,
+            calledAt = at,
+        )
+        insertActionGuideCreditTransaction(workspaceId, owner, documentId, "reserve", 1, at)
+        insertActionGuideCreditTransaction(workspaceId, owner, documentId, "release", -1, at.plusSeconds(1))
+
+        val usage =
+            repository.aggregate(owner, workspaceId, zoneMidnight(2026, 3, 1), zoneMidnight(2026, 4, 1))!!
+
+        assertThat(usage.documents).isEqualTo(1)
+        assertThat(usage.credits).isZero()
     }
 
     @Test
@@ -463,6 +492,7 @@ class JdbcUsageReadRepositoryTest {
             outcome = LlmCallOutcome.PROVIDER_ERROR,
             failureClass = "LlmProviderException",
         )
+        insertUnknownCall(workspaceId, owner, documentId, at.plusSeconds(2))
 
         val usage =
             repository.aggregate(owner, workspaceId, zoneMidnight(2026, 8, 1), zoneMidnight(2026, 8, 2))!!
@@ -474,12 +504,15 @@ class JdbcUsageReadRepositoryTest {
         assertThat(usage.inputTokens).isEqualTo(30)
         assertThat(usage.outputTokens).isEqualTo(15)
         assertThat(usage.estimatedCostUsd).isEqualByComparingTo(BigDecimal("0.002000"))
-        assertThat(usage.failedCalls).isEqualTo(1)
+        assertThat(usage.failedCalls).isEqualTo(2)
         val repair = usage.byPurpose.first { it.purpose == LlmCallPurpose.REPAIR }
         assertThat(repair.llmCalls).isEqualTo(0)
         assertThat(repair.failedCalls).isEqualTo(1)
         val convert = usage.byPurpose.first { it.purpose == LlmCallPurpose.CONVERT }
         assertThat(convert.failedCalls).isEqualTo(0)
+        val actionGuide = usage.byPurpose.first { it.purpose == LlmCallPurpose.ACTION_GUIDE }
+        assertThat(actionGuide.llmCalls).isZero()
+        assertThat(actionGuide.failedCalls).isEqualTo(1)
     }
 
     @Test
@@ -624,6 +657,58 @@ class JdbcUsageReadRepositoryTest {
             .param("documentId", documentId)
             .param("delta", -credits)
             .param("createdAt", OffsetDateTime.ofInstant(at, ZoneOffset.UTC))
+            .update()
+    }
+
+    @Suppress("LongParameterList")
+    private fun insertActionGuideCreditTransaction(
+        workspaceId: UUID,
+        ownerId: UUID,
+        documentId: UUID,
+        kind: String,
+        reservedDelta: Int,
+        at: Instant,
+    ) {
+        jdbc
+            .sql(
+                """
+                INSERT INTO credit_transactions
+                    (id, workspace_id, owner_user_id, document_id, kind, balance_delta,
+                     reserved_delta, reason, created_at)
+                VALUES (:id, :workspaceId, :ownerId, :documentId, :kind, 0,
+                        :reservedDelta, 'action_guide', :createdAt)
+                """.trimIndent(),
+            ).param("id", UUID.randomUUID())
+            .param("workspaceId", workspaceId)
+            .param("ownerId", ownerId)
+            .param("documentId", documentId)
+            .param("kind", kind)
+            .param("reservedDelta", reservedDelta)
+            .param("createdAt", OffsetDateTime.ofInstant(at, ZoneOffset.UTC))
+            .update()
+    }
+
+    private fun insertUnknownCall(
+        workspaceId: UUID,
+        ownerId: UUID,
+        documentId: UUID,
+        at: Instant,
+    ) {
+        jdbc
+            .sql(
+                """
+                INSERT INTO llm_calls
+                    (id, document_id, workspace_id, user_id, purpose, provider, model,
+                     input_tokens, output_tokens, char_count, document_char_count,
+                     called_at, outcome)
+                VALUES (:id, :documentId, :workspaceId, :ownerId, 'action_guide', NULL, NULL,
+                        0, 0, 0, 500, :calledAt, 'outcome_unknown')
+                """.trimIndent(),
+            ).param("id", UUID.randomUUID())
+            .param("documentId", documentId)
+            .param("workspaceId", workspaceId)
+            .param("ownerId", ownerId)
+            .param("calledAt", OffsetDateTime.ofInstant(at, ZoneOffset.UTC))
             .update()
     }
 

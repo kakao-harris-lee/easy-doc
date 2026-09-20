@@ -24,7 +24,8 @@ import java.util.UUID
  * 「실패 호출 원장 추적」) — `JdbcUsageReadRepository`·`JdbcUsageReportRepository`와 같은
  * 규칙이다. 완성 자체가 나지 않은 호출(`provider_error`)만 있는 문서는 실제로 변환되지
  * 않았으므로 목록 요약(`monthDocuments`·`monthCredits`·`monthCostUsd`)에 청구 대상으로
- * 잡히면 안 된다. 크레딧은 실제 `consume/conversion` 거래 합을 우선해 재변환까지 세고,
+ * 잡히면 안 된다. 크레딧은 실제 `consume` 거래 중 `conversion`·`action_guide` 합을
+ * 우선해 재변환과 행동 안내 생성을 세고,
  * 거래가 전혀 없는 V15 이전 데이터만 문서별 계산값으로 대체한다. 이 저장소는 목록
  * 요약이라 [AdminMonthUsage]에 `failedCalls`를 별도로
  * 내지 않는다(그 값이 필요하면 상세 화면의 `UsageQueryService.usageOf`를 쓴다).
@@ -242,10 +243,14 @@ class JdbcAdminWorkspaceQueryRepository(private val jdbc: JdbcClient) : AdminWor
 
         val CREDIT_TOTALS_BY_WORKSPACE_SQL =
             """
-            SELECT workspace_id, -sum(balance_delta)::bigint AS credits
+            SELECT workspace_id,
+                   coalesce(
+                       -sum(balance_delta) FILTER (WHERE kind = 'consume'),
+                       0
+                   )::bigint AS credits
             FROM credit_transactions
             WHERE workspace_id IN (:ids) AND created_at >= :from AND created_at < :toExclusive
-              AND kind = 'consume' AND reason = 'conversion'
+              AND reason IN ('conversion', 'action_guide')
             GROUP BY workspace_id
             """.trimIndent()
     }

@@ -40,7 +40,7 @@ data class UsageReportRow(
     val estimatedCostUsd: BigDecimal?,
     val costUnknownCalls: Int,
     /**
-     * 완성 자체가 나지 않은 호출 수(`outcome = provider_error`, V18) — 백로그 「실패 호출
+     * 완성 결과를 확인하지 못한 호출 수(`outcome = provider_error | outcome_unknown`) — 백로그 「실패 호출
      * 원장 추적」, 2026-09-08. [llmCalls]·[inputTokens]·[outputTokens]·[estimatedCostUsd]
      * 에는 들어가지 않는다.
      */
