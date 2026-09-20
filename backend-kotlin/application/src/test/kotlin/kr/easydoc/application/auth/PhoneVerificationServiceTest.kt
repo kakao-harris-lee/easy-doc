@@ -18,6 +18,7 @@ import kr.easydoc.core.workspace.WorkspaceListing
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
+import java.math.BigDecimal
 import java.time.Duration
 import java.time.Instant
 import java.util.UUID
@@ -32,7 +33,7 @@ class PhoneVerificationServiceTest {
 
         assertThat(world.sms.phone).isEqualTo("01012345678")
         assertThat(result.grantedCredits).isEqualTo(5)
-        assertThat(world.granted).isEqualTo(5)
+        assertThat(world.granted).isEqualByComparingTo("5")
         assertThat(world.users.current.phoneVerifiedAt).isNotNull()
         assertThat(world.users.current.pendingPhoneFingerprint).isNull()
     }
@@ -172,18 +173,18 @@ private class PhoneWorld(
     val users = PhoneUsers(userId, emailVerified)
     val codes = PhoneCodes()
     val sms = RecordingPhoneSms()
-    var granted: Int = 0
+    var granted: BigDecimal = BigDecimal.ZERO
     private val creditService =
         CreditAccountService(
             object : kr.easydoc.application.credit.CreditAccountRepository by NoopCreditAccountRepository {
                 override fun grant(
                     workspaceId: UUID,
                     ownerUserId: UUID,
-                    credits: Int,
+                    credits: BigDecimal,
                     reason: CreditReason,
                     note: String?,
                     actorUserId: UUID?,
-                ): Int {
+                ): BigDecimal {
                     granted += credits
                     return granted
                 }
@@ -191,13 +192,13 @@ private class PhoneWorld(
                 override fun setAllowance(
                     workspaceId: UUID,
                     ownerUserId: UUID,
-                    allowance: Int,
+                    allowance: BigDecimal,
                     cycleEndsAt: Instant,
                     renews: Boolean,
                     reason: CreditReason,
                     note: String?,
                     actorUserId: UUID?,
-                ): Int {
+                ): BigDecimal {
                     granted = allowance
                     return granted
                 }

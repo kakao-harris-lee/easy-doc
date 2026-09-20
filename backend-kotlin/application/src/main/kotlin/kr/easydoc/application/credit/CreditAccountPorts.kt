@@ -3,6 +3,7 @@ package kr.easydoc.application.credit
 import kr.easydoc.core.credit.CreditReason
 import kr.easydoc.core.credit.CreditTransactionKind
 import kr.easydoc.core.credit.Credits
+import java.math.BigDecimal
 import java.time.Instant
 import java.util.UUID
 
@@ -16,11 +17,11 @@ import java.util.UUID
 sealed interface ReservationResult {
     /** 예약에 성공했다 — 예약 **직후** 계정 상태. */
     data class Reserved(
-        val balance: Int,
-        val reserved: Int,
+        val balance: BigDecimal,
+        val reserved: BigDecimal,
     ) : ReservationResult {
         /** 가용 = balance − reserved. */
-        val available: Int get() = balance - reserved
+        val available: BigDecimal get() = balance - reserved
     }
 
     /**
@@ -29,7 +30,7 @@ sealed interface ReservationResult {
      * 그 워크스페이스의 다음 예약은 실제 음수 가용량을 그대로 봐야 한다 — `0`으로
      * 바닥을 씌우면 헤더 `X-Credit-Balance`가 거짓 낙관값을 낸다).
      */
-    data class Insufficient(val available: Int) : ReservationResult
+    data class Insufficient(val available: BigDecimal) : ReservationResult
 }
 
 /**
@@ -52,12 +53,12 @@ sealed interface ReservationResult {
  */
 data class CreditAccountRow(
     val workspaceId: UUID,
-    val balance: Int,
-    val reserved: Int,
+    val balance: BigDecimal,
+    val reserved: BigDecimal,
     val transactions: List<CreditTransactionView>,
     val signupGrantSkipped: Boolean = false,
     val emailVerified: Boolean = false,
-    val allowance: Int = 0,
+    val allowance: BigDecimal = BigDecimal.ZERO,
     val cycleStartedAt: Instant = Instant.EPOCH,
     val cycleEndsAt: Instant? = null,
 )
@@ -82,8 +83,8 @@ data class CreditAccountRow(
 data class CreditTransactionView(
     val id: UUID,
     val kind: CreditTransactionKind,
-    val balanceDelta: Int,
-    val reservedDelta: Int,
+    val balanceDelta: BigDecimal,
+    val reservedDelta: BigDecimal,
     val reason: CreditReason,
     val note: String?,
     val documentId: UUID?,
@@ -96,10 +97,10 @@ data class CreditTransactionView(
  */
 data class CreditConsistencyViolation(
     val workspaceId: UUID,
-    val balance: Int,
-    val reserved: Int,
-    val balanceSum: Int,
-    val reservedSum: Int,
+    val balance: BigDecimal,
+    val reserved: BigDecimal,
+    val balanceSum: BigDecimal,
+    val reservedSum: BigDecimal,
 )
 
 /**
@@ -120,6 +121,7 @@ data class CreditConsistencyViolation(
  * 프로필, C2)이나 가입 직후([kr.easydoc.application.auth.AuthService.signup] 이
  * 방금 만든 워크스페이스)에서만 불려 호출자가 그 워크스페이스를 지어낼 수 없다.
  */
+@Suppress("TooManyFunctions") // 정수 제공량 호출은 소수 정산 메서드로 위임한다.
 interface CreditAccountRepository {
     /** 계정 행이 없으면 0 잔액으로 만든다. 이미 있으면 아무것도 하지 않는다(멱등). */
     fun ensureAccount(workspaceId: UUID)
@@ -176,11 +178,21 @@ interface CreditAccountRepository {
     fun grant(
         workspaceId: UUID,
         ownerUserId: UUID,
+        credits: BigDecimal,
+        reason: CreditReason,
+        note: String?,
+        actorUserId: UUID?,
+    ): BigDecimal
+
+    @Suppress("LongParameterList")
+    fun grant(
+        workspaceId: UUID,
+        ownerUserId: UUID,
         credits: Int,
         reason: CreditReason,
         note: String?,
         actorUserId: UUID?,
-    ): Int
+    ): BigDecimal = grant(workspaceId, ownerUserId, BigDecimal.valueOf(credits.toLong()), reason, note, actorUserId)
 
     /**
      * 새 주기를 연다 — `balance`를 [allowance] 로 **설정**한다(더하지 않는다, [grant] 와
@@ -206,13 +218,35 @@ interface CreditAccountRepository {
     fun setAllowance(
         workspaceId: UUID,
         ownerUserId: UUID,
+        allowance: BigDecimal,
+        cycleEndsAt: Instant,
+        renews: Boolean,
+        reason: CreditReason,
+        note: String?,
+        actorUserId: UUID?,
+    ): BigDecimal
+
+    @Suppress("LongParameterList")
+    fun setAllowance(
+        workspaceId: UUID,
+        ownerUserId: UUID,
         allowance: Int,
         cycleEndsAt: Instant,
         renews: Boolean,
         reason: CreditReason,
         note: String?,
         actorUserId: UUID?,
-    ): Int
+    ): BigDecimal =
+        setAllowance(
+            workspaceId,
+            ownerUserId,
+            BigDecimal.valueOf(allowance.toLong()),
+            cycleEndsAt,
+            renews,
+            reason,
+            note,
+            actorUserId,
+        )
 
     /**
      * **내** 계정을 읽는다. 없거나 내 것이 아니면 `null` — 두 경우를 구분하지 않는다.

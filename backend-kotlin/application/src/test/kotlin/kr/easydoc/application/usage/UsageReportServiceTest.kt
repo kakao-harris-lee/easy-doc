@@ -41,7 +41,7 @@ class UsageReportServiceTest {
         workspaceName: String? = "워크스페이스",
         documents: Int = 1,
         characters: Long = 100,
-        credits: Long = 1,
+        credits: BigDecimal = BigDecimal("1.0"),
         llmCalls: Int = 1,
         inputTokens: Long = 10,
         outputTokens: Long = 5,
@@ -161,7 +161,7 @@ class UsageReportServiceTest {
                 workspaceName = "공간1",
                 documents = 3,
                 characters = 3000,
-                credits = 3,
+                credits = BigDecimal("3.0"),
                 llmCalls = 5,
                 inputTokens = 100,
                 outputTokens = 200,
@@ -178,7 +178,7 @@ class UsageReportServiceTest {
                 .drop(1)
                 .first()
         assertThat(dataLine).isEqualTo(
-            "$workspaceId,공간1,owner@example.com,3,3000,3,5,0,100,200,0.012345,1",
+            "$workspaceId,공간1,owner@example.com,3,3000,3.0,5,0,100,200,0.012345,1",
         )
     }
 

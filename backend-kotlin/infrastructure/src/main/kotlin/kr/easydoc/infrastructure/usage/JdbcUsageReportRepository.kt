@@ -68,7 +68,7 @@ class JdbcUsageReportRepository(private val jdbc: JdbcClient) : UsageReportRepos
             workspaceName = rs.getString("workspace_name"),
             documents = rs.getInt("documents"),
             characters = rs.getLong("characters"),
-            credits = rs.getLong("credits"),
+            credits = rs.getBigDecimal("credits"),
             llmCalls = rs.getInt("llm_calls"),
             inputTokens = rs.getLong("input_tokens"),
             outputTokens = rs.getLong("output_tokens"),
@@ -104,7 +104,7 @@ class JdbcUsageReportRepository(private val jdbc: JdbcClient) : UsageReportRepos
                        count(*) AS documents,
                        coalesce(sum(document_char_count), 0) AS characters,
                        -- 문서별로 올림한 뒤 더한다 — 합계 문자수를 나중에 한 번만 올리면 다르다.
-                       coalesce(sum(ceil(document_char_count::numeric / 1000)), 0)::bigint AS credits
+                       coalesce(sum(ceil(document_char_count::numeric / 1000)), 0)::numeric AS credits
                 FROM (
                     SELECT DISTINCT ON (user_id, workspace_id, document_id)
                         user_id, workspace_id, document_id, document_char_count
@@ -136,7 +136,7 @@ class JdbcUsageReportRepository(private val jdbc: JdbcClient) : UsageReportRepos
             ),
             credit_totals AS (
                 SELECT owner_user_id AS user_id, workspace_id,
-                       -sum(balance_delta)::bigint AS credits
+                       -sum(balance_delta)::numeric AS credits
                 FROM credit_transactions
                 WHERE created_at >= :from AND created_at < :toExclusive
                   AND kind = 'consume'

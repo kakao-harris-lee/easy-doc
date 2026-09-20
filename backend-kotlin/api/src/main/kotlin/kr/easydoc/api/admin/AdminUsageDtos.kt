@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonProperty
 import kr.easydoc.application.usage.UsageReportRow
 import kr.easydoc.application.usage.UsageReportRows
 import kr.easydoc.core.privacy.CONTENT_MASK
+import java.math.BigDecimal
 
 /**
  * `GET /admin/usage` 응답 — `usage-report`(U3, CSV) 프로필과 같은 행을 JSON으로 낸다
@@ -37,7 +38,7 @@ data class AdminUsageRowResponse(
     @get:JsonProperty("workspace_name") val workspaceName: String?,
     @get:JsonProperty("documents") val documents: Int,
     @get:JsonProperty("characters") val characters: Long,
-    @get:JsonProperty("credits") val credits: Long,
+    @get:JsonProperty("credits") val credits: BigDecimal,
     @get:JsonProperty("llm_calls") val llmCalls: Int,
     /** 완성 결과를 확인하지 못한 호출 수(`provider_error | outcome_unknown`). */
     @get:JsonProperty("failed_calls") val failedCalls: Int,

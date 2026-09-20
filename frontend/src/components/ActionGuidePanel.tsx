@@ -19,6 +19,7 @@ import type {
   CreateActionGuideJobRequest,
 } from '../api/types'
 import type { DocumentSource } from '../review/sourceText'
+import { formatCredits } from '../lib/credits'
 import { USAGE_PATH } from '../routes/paths'
 import { Button } from './ui/Button'
 
@@ -735,7 +736,8 @@ export function ActionGuidePanel({
             없으면 ‘원문에 안내 없음’으로 표시합니다.
           </p>
           <p id={`${headingId}-create-cost`} className="font-medium">
-            필요 이용량 {jobs.required_credits}크레딧 / 남은 이용량 {jobs.available_credits}크레딧
+            필요 이용량 {formatCredits(jobs.required_credits)}크레딧 / 남은 이용량{' '}
+            {formatCredits(jobs.available_credits)}크레딧
           </p>
           <p id={`${headingId}-create-policy`} className="text-sm text-muted-foreground">
             초안이 만들어지면 이용량이 사용됩니다. 초안을 적용하지 않아도 사용됩니다. 생성 실패 시
@@ -795,7 +797,7 @@ export function ActionGuidePanel({
               >
                 {bodyDirty && !bodySavedForConfirmation
                   ? '본문 저장 후 만들기'
-                  : `${jobs.required_credits}크레딧으로 안내문 만들기`}
+                  : `${formatCredits(jobs.required_credits)}크레딧으로 안내문 만들기`}
               </Button>
               <Button
                 type="button"

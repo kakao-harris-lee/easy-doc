@@ -7,9 +7,9 @@
 # 깨진다 — 그래서 **별도 스택 기동**(같은 컨테이너를 이 override 로 갱신)으로
 # `credits-enforced.spec.ts`(E22·E23)만, `playwright.enforced.config.ts`로 상대한다.
 #
-# `EASYDOC_CREDITS_SIGNUP_GRANT=1`(E21의 1000이 아니라 1) — E22 는 가입 직후 1크레딧짜리
-# 문서 하나만 통과시키고 바로 다음 등록에서 402(가용 0 < 필요 1)를 재려는 것이라, 가입
-# 부여를 그 경계에 정확히 맞춘다. `compose.e2e.yml`이 이미 얹은 EASYDOC_LLM_PROVIDER·
+# `EASYDOC_CREDITS_SIGNUP_GRANT=1` — E22는 100자에 0.1, 900자에 0.9를 예약한 뒤
+# 다음 100자 요청의 402(가용 0 < 필요 0.1)를 확인한다.
+# `compose.e2e.yml`이 이미 얹은 EASYDOC_LLM_PROVIDER·
 # EASYDOC_DICTIONARY_LOOKUP_ENABLED 는 서비스별 environment 맵 병합으로 그대로 남는다.
 #
 # E23은 같은 스택에서 stub 테스트 결제를 켜 Start 구독의 월 50크레딧을 실제 계정에

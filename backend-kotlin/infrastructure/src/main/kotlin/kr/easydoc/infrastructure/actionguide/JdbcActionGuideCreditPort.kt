@@ -5,6 +5,7 @@ import kr.easydoc.application.actionguide.ActionGuideCreditReservation
 import kr.easydoc.application.actionguide.StoredActionGuideJob
 import kr.easydoc.core.credit.Credits
 import org.springframework.jdbc.core.simple.JdbcClient
+import java.math.BigDecimal
 import java.util.UUID
 
 /** action_guide job id로 예약과 terminal 정산을 각각 한 번만 남긴다. */
@@ -15,7 +16,7 @@ class JdbcActionGuideCreditPort(
     override fun available(
         ownerId: UUID,
         workspaceId: UUID,
-    ): Int =
+    ): BigDecimal =
         jdbc
             .sql(
                 """
@@ -26,9 +27,9 @@ class JdbcActionGuideCreditPort(
                 """.trimIndent(),
             ).param("workspaceId", workspaceId)
             .param("ownerId", ownerId)
-            .query { rs, _ -> rs.getInt(1) }
+            .query { rs, _ -> rs.getBigDecimal(1) }
             .optional()
-            .orElse(0)
+            .orElse(BigDecimal.ZERO)
 
     override fun reserve(
         ownerId: UUID,
@@ -52,7 +53,7 @@ class JdbcActionGuideCreditPort(
             documentId,
             jobId,
             kind = "reserve",
-            balanceDelta = 0,
+            balanceDelta = BigDecimal.ZERO,
             reservedDelta = amount.amount,
         )
         return ActionGuideCreditReservation.Reserved(available(ownerId, workspaceId))
@@ -63,13 +64,13 @@ class JdbcActionGuideCreditPort(
     }
 
     override fun release(job: StoredActionGuideJob) {
-        settle(job, kind = "release", balanceDelta = 0)
+        settle(job, kind = "release", balanceDelta = BigDecimal.ZERO)
     }
 
     private fun settle(
         job: StoredActionGuideJob,
         kind: String,
-        balanceDelta: Int,
+        balanceDelta: BigDecimal,
     ) {
         val updated =
             jdbc
@@ -98,8 +99,8 @@ class JdbcActionGuideCreditPort(
         documentId: UUID,
         jobId: UUID,
         kind: String,
-        balanceDelta: Int,
-        reservedDelta: Int,
+        balanceDelta: BigDecimal,
+        reservedDelta: BigDecimal,
     ) {
         jdbc
             .sql(

@@ -5,6 +5,7 @@ import kr.easydoc.application.credit.CreditCycleResetResult
 import kr.easydoc.core.credit.CreditReason
 import kr.easydoc.core.credit.CreditTransactionKind
 import org.springframework.jdbc.core.simple.JdbcClient
+import java.math.BigDecimal
 import java.sql.ResultSet
 import java.sql.Timestamp
 import java.time.Instant
@@ -149,13 +150,14 @@ class JdbcCreditCycleReset(
                 INSERT INTO credit_transactions
                     (id, workspace_id, owner_user_id, document_id, kind, balance_delta, reserved_delta, reason, note,
                      actor_user_id)
-                VALUES (:id, :workspaceId, :ownerId, NULL, :kind, :balanceDelta, 0, :reason, :note, NULL)
+                VALUES (:id, :workspaceId, :ownerId, NULL, :kind, :balanceDelta, :reservedDelta, :reason, :note, NULL)
                 """.trimIndent(),
             ).param("id", UUID.randomUUID())
             .param("workspaceId", workspaceId)
             .param("ownerId", ownerId)
             .param("kind", CreditTransactionKind.CYCLE_RESET.wireName)
             .param("balanceDelta", outcome.balanceDelta)
+            .param("reservedDelta", BigDecimal.ZERO)
             .param("reason", outcome.reason.wireName)
             .param("note", outcome.note)
             .update()
@@ -169,8 +171,8 @@ class JdbcCreditCycleReset(
         Candidate(
             workspaceId = rs.getObject("workspace_id", UUID::class.java),
             ownerId = rs.getObject("owner_id", UUID::class.java),
-            balance = rs.getInt("balance"),
-            allowance = rs.getInt("allowance"),
+            balance = rs.getBigDecimal("balance"),
+            allowance = rs.getBigDecimal("allowance"),
             cycleEndsAt = rs.getObject("cycle_ends_at", OffsetDateTime::class.java).toInstant(),
             renews = rs.getBoolean("cycle_renews"),
         )
@@ -178,15 +180,15 @@ class JdbcCreditCycleReset(
     private data class Candidate(
         val workspaceId: UUID,
         val ownerId: UUID,
-        val balance: Int,
-        val allowance: Int,
+        val balance: BigDecimal,
+        val allowance: BigDecimal,
         val cycleEndsAt: Instant,
         val renews: Boolean,
     )
 
     /** [renewOne]/[closeOne] 의 결과 — [insertTransaction] 이 그대로 거래 한 건에 싣는다. */
     private data class ResetOutcome(
-        val balanceDelta: Int,
+        val balanceDelta: BigDecimal,
         val reason: CreditReason,
         val note: String?,
     )

@@ -22,6 +22,7 @@ import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
+import java.math.BigDecimal
 import java.time.Duration
 import java.time.Instant
 import java.util.UUID
@@ -55,7 +56,7 @@ class SocialLoginServiceTest {
         assertThat(world.creditRepository.setAllowanceCalls).hasSize(1)
         val call = world.creditRepository.setAllowanceCalls.single()
         assertThat(call.workspaceId).isEqualTo(world.creditRepository.ensuredFor.single())
-        assertThat(call.allowance).isEqualTo(50)
+        assertThat(call.allowance).isEqualByComparingTo("50")
         assertThat(call.renews).isFalse()
         assertThat(call.reason).isEqualTo(CreditReason.SIGNUP)
     }
@@ -979,7 +980,7 @@ private class SocialWorld(
 /** [RecordingSocialCreditAccountRepository.setAllowanceCalls] 가 기록하는 호출 한 건. */
 private data class SocialRecordedSetAllowance(
     val workspaceId: UUID,
-    val allowance: Int,
+    val allowance: BigDecimal,
     val renews: Boolean,
     val reason: CreditReason,
 )
@@ -991,7 +992,7 @@ private data class SocialRecordedSetAllowance(
  */
 private class RecordingSocialCreditAccountRepository : CreditAccountRepository by NoopCreditAccountRepository {
     val ensuredFor: MutableList<UUID> = mutableListOf()
-    val grantCalls: MutableList<Triple<UUID, Int, CreditReason>> = mutableListOf()
+    val grantCalls: MutableList<Triple<UUID, BigDecimal, CreditReason>> = mutableListOf()
     val setAllowanceCalls: MutableList<SocialRecordedSetAllowance> = mutableListOf()
 
     override fun ensureAccount(workspaceId: UUID) {
@@ -1001,11 +1002,11 @@ private class RecordingSocialCreditAccountRepository : CreditAccountRepository b
     override fun grant(
         workspaceId: UUID,
         ownerUserId: UUID,
-        credits: Int,
+        credits: BigDecimal,
         reason: CreditReason,
         note: String?,
         actorUserId: UUID?,
-    ): Int {
+    ): BigDecimal {
         grantCalls += Triple(workspaceId, credits, reason)
         return credits
     }
@@ -1013,13 +1014,13 @@ private class RecordingSocialCreditAccountRepository : CreditAccountRepository b
     override fun setAllowance(
         workspaceId: UUID,
         ownerUserId: UUID,
-        allowance: Int,
+        allowance: BigDecimal,
         cycleEndsAt: Instant,
         renews: Boolean,
         reason: CreditReason,
         note: String?,
         actorUserId: UUID?,
-    ): Int {
+    ): BigDecimal {
         setAllowanceCalls += SocialRecordedSetAllowance(workspaceId, allowance, renews, reason)
         return allowance
     }

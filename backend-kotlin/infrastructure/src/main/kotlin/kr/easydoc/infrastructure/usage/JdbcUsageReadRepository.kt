@@ -127,7 +127,7 @@ class JdbcUsageReadRepository(private val jdbc: JdbcClient) : UsageReadRepositor
                     count(*) AS documents,
                     coalesce(sum(document_char_count), 0) AS characters,
                     -- 문서별로 올림한 뒤 더한다 — 합계 문자수를 나중에 한 번만 올리면 다르다.
-                    coalesce(sum(ceil(document_char_count::numeric / 1000)), 0)::bigint AS credits
+                    coalesce(sum(ceil(document_char_count::numeric / 1000)), 0)::numeric AS credits
                 FROM (
                     -- outcome = 'completed' 만 본다 — 실패 호출(provider_error)만 있던
                     -- 문서는 실제로 변환되지 않았으므로 문서·문자에 넣지 않는다.
@@ -148,7 +148,7 @@ class JdbcUsageReadRepository(private val jdbc: JdbcClient) : UsageReadRepositor
                 DocumentTotals(
                     documents = rs.getInt("documents"),
                     characters = rs.getLong("characters"),
-                    credits = rs.getLong("credits"),
+                    credits = rs.getBigDecimal("credits"),
                 )
             }.single()
 
@@ -158,11 +158,11 @@ class JdbcUsageReadRepository(private val jdbc: JdbcClient) : UsageReadRepositor
         workspaceId: UUID,
         from: Instant,
         toExclusive: Instant,
-    ): Long? =
+    ): BigDecimal? =
         jdbc
             .sql(
                 """
-                SELECT -sum(balance_delta)::bigint AS credits
+                SELECT -sum(balance_delta)::numeric AS credits
                 FROM credit_transactions
                 WHERE workspace_id = :workspaceId AND owner_user_id = :ownerId
                   AND kind = 'consume'
@@ -174,7 +174,7 @@ class JdbcUsageReadRepository(private val jdbc: JdbcClient) : UsageReadRepositor
             .param("ownerId", ownerId)
             .param("from", from.toOffsetDateTime())
             .param("toExclusive", toExclusive.toOffsetDateTime())
-            .query { rs, _ -> rs.getLong("credits") }
+            .query { rs, _ -> rs.getBigDecimal("credits") }
             .optional()
             .orElse(null)
 
@@ -278,7 +278,7 @@ class JdbcUsageReadRepository(private val jdbc: JdbcClient) : UsageReadRepositor
     private data class DocumentTotals(
         val documents: Int,
         val characters: Long,
-        val credits: Long,
+        val credits: BigDecimal,
     )
 
     private data class CallTotals(

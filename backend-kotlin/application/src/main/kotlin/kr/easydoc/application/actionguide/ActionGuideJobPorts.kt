@@ -5,6 +5,7 @@ import kr.easydoc.core.actionguide.ActionGuideJobFailureCode
 import kr.easydoc.core.actionguide.ActionGuideJobStatus
 import kr.easydoc.core.credit.Credits
 import kr.easydoc.core.llm.LlmCallRecord
+import java.math.BigDecimal
 import java.time.Duration
 import java.time.Instant
 import java.util.UUID
@@ -29,7 +30,7 @@ data class StoredActionGuideJob(
     val requestId: UUID,
     val expectedGuideRevision: Long?,
     val basedOnContentRevision: Long,
-    val reservedCredits: Int,
+    val reservedCredits: BigDecimal,
     val status: ActionGuideJobStatus,
     val failureCode: ActionGuideJobFailureCode?,
     val executionId: UUID?,
@@ -137,9 +138,9 @@ interface ActionGuideJobRepository {
 }
 
 sealed interface ActionGuideCreditReservation {
-    data class Reserved(val available: Int) : ActionGuideCreditReservation
+    data class Reserved(val available: BigDecimal) : ActionGuideCreditReservation
 
-    data class Insufficient(val available: Int) : ActionGuideCreditReservation
+    data class Insufficient(val available: BigDecimal) : ActionGuideCreditReservation
 }
 
 /** 행동 안내문 예약은 job_id를 고유 참조로 사용해 변환 예약과 섞이지 않는다. */
@@ -147,7 +148,7 @@ interface ActionGuideCreditPort {
     fun available(
         ownerId: UUID,
         workspaceId: UUID,
-    ): Int
+    ): BigDecimal
 
     @Suppress("LongParameterList")
     fun reserve(

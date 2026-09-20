@@ -13,6 +13,7 @@ import kr.easydoc.core.llm.LlmProvider
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
+import java.math.BigDecimal
 import java.time.Instant
 import java.util.UUID
 
@@ -82,7 +83,7 @@ class ProviderActionGuideJobRunnerTest {
             requestId = UUID.randomUUID(),
             expectedGuideRevision = null,
             basedOnContentRevision = 1,
-            reservedCredits = 1,
+            reservedCredits = BigDecimal.ONE,
             status = ActionGuideJobStatus.RUNNING,
             failureCode = null,
             executionId = UUID.randomUUID(),

@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { TARGET_PLANS, type TargetPlan } from '../../content/plans/targetPlans'
 import { Badge } from '../ui/Badge'
 import { Button } from '../ui/Button'
+import { formatCredits } from '../../lib/credits'
 
 interface TargetPlanCatalogProps {
   workspaceId: string | null
@@ -80,7 +81,7 @@ export function TargetPlanCatalog({
                   </span>
                   <span className="mt-1 block text-xs text-muted-foreground">{plan.audience}</span>
                   <span className="mt-2 block">
-                    월 {plan.monthlyCredits.toLocaleString('ko-KR')}크레딧 · {plan.pageEquivalent}
+                    월 {formatCredits(plan.monthlyCredits)}크레딧 · {plan.pageEquivalent}
                   </span>
                   <span className="mt-2 block text-base font-semibold">
                     {plan.monthlyPriceLabel}
@@ -98,8 +99,8 @@ export function TargetPlanCatalog({
       </ul>
       <div className="mt-4 border-t border-border pt-4">
         <p className="text-xs text-muted-foreground">
-          1크레딧은 공백 포함 원문 1,000자이며, 재변환도 대상 원문 분량만큼 이용량에 포함됩니다.
-          남은 이용량은 다음 결제 주기로 이월되지 않습니다.
+          공백 포함 원문 100자마다 0.1크레딧으로 계산하며, 1자라도 남으면 올림합니다. 재변환도 대상
+          원문 분량만큼 이용량에 포함됩니다. 남은 이용량은 다음 결제 주기로 이월되지 않습니다.
         </p>
         {selectedPlanId === 'start' && checkoutEnabled && activePlanId === null && (
           <label className="mt-3 flex items-center gap-2 text-sm">

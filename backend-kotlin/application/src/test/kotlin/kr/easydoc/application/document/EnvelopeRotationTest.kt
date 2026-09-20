@@ -16,6 +16,7 @@ import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
+import java.math.BigDecimal
 import java.util.UUID
 
 /** 행 단위 재암호화의 네 조건 — 게이트 25 X5 / privacy-gate F-5. */
@@ -660,7 +661,7 @@ class EnvelopeRotationTest {
             documentId: UUID,
             scheme: String,
             keyVersion: Int,
-            creditsReserved: Int,
+            creditsReserved: BigDecimal,
         ): Conversion = error("회전 경로가 변환을 만들지 않는다")
 
         /**

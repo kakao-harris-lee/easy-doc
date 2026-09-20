@@ -13,6 +13,7 @@ import kr.easydoc.core.exceptions.EasyDocException
 import kr.easydoc.core.exceptions.InsufficientCreditsException
 import kr.easydoc.core.exceptions.InvalidInputException
 import kr.easydoc.core.exceptions.NotFoundException
+import java.math.BigDecimal
 import java.time.Clock
 import java.time.Instant
 import java.util.UUID
@@ -22,7 +23,7 @@ data class ActionGuideJobView(
     val requestId: UUID,
     val status: ActionGuideJobStatus,
     val basedOnContentRevision: Long,
-    val reservedCredits: Int,
+    val reservedCredits: BigDecimal,
     val failureCode: ActionGuideJobFailureCode?,
     val createdAt: Instant,
     val updatedAt: Instant,
@@ -31,13 +32,13 @@ data class ActionGuideJobView(
 data class ActionGuideJobCollectionView(
     val activeJob: ActionGuideJobView?,
     val latestJob: ActionGuideJobView?,
-    val requiredCredits: Int,
-    val availableCredits: Int,
+    val requiredCredits: BigDecimal,
+    val availableCredits: BigDecimal,
 )
 
 data class ActionGuideJobCreationView(
     val job: ActionGuideJobView,
-    val availableCredits: Int,
+    val availableCredits: BigDecimal,
 )
 
 class ActionGuideAttemptLimitExceededException(message: String) : EasyDocException(message)

@@ -15,6 +15,7 @@ import kr.easydoc.core.easyread.ExportFile
 import kr.easydoc.core.easyread.exportContentLines
 import kr.easydoc.core.segment.SegmentMap
 import kr.easydoc.core.segment.SourceStructure
+import java.math.BigDecimal
 import java.time.Instant
 import java.util.UUID
 
@@ -220,14 +221,14 @@ internal class FakeConversionRepository(
 ) : ConversionRepository {
     val inserted = mutableListOf<Pair<UUID, Pair<String, Int>>>()
     val depthWhenInserted = mutableListOf<Int>()
-    val insertedCreditsReserved = mutableListOf<Int>()
+    val insertedCreditsReserved = mutableListOf<BigDecimal>()
 
     override fun insertPending(
         id: UUID,
         documentId: UUID,
         scheme: String,
         keyVersion: Int,
-        creditsReserved: Int,
+        creditsReserved: BigDecimal,
     ): Conversion {
         inserted += id to (scheme to keyVersion)
         depthWhenInserted += transaction.depth

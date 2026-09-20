@@ -314,6 +314,19 @@ internal class LaneSpendLimit(
         prompt: LlmPrompt,
         options: LlmOptions,
     ) {
+        val reservation = reservationFor(prompt, options)
+        check(reservedUsd + reservation <= maxUsd) {
+            "USD 예산 상한 초과 전에 중단: 상한=$maxUsd 예약=$reservedUsd 다음요청상계=$reservation"
+        }
+        reservedUsd += reservation
+        println("LLM budget: reserved_usd=$reservedUsd cap_usd=$maxUsd")
+    }
+
+    /** 실제 provider 호출 전에 같은 상계식으로 계획 전체의 예약액을 계산한다. */
+    fun reservationFor(
+        prompt: LlmPrompt,
+        options: LlmOptions,
+    ): BigDecimal {
         // 텍스트 UTF-8 바이트 수를 입력 토큰의 보수적 상계로 사용하며 메시지 포장 여유도 더한다.
         // 이 레인은 텍스트만 보내며 도구·이미지·캐시 쓰기를 사용하지 않는다. 실제 청구액은 별도 계측한다.
         val inputBound =
@@ -322,13 +335,8 @@ internal class LaneSpendLimit(
                 .size
                 .toLong() +
                 prompt.user.toByteArray(Charsets.UTF_8).size + MESSAGE_ALLOWANCE
-        val reservation =
-            (inputPrice * inputBound.toBigDecimal() + outputPrice * options.maxTokens.toBigDecimal()).movePointLeft(6)
-        check(reservedUsd + reservation <= maxUsd) {
-            "USD 예산 상한 초과 전에 중단: 상한=$maxUsd 예약=$reservedUsd 다음요청상계=$reservation"
-        }
-        reservedUsd += reservation
-        println("LLM budget: reserved_usd=$reservedUsd cap_usd=$maxUsd")
+        return (inputPrice * inputBound.toBigDecimal() + outputPrice * options.maxTokens.toBigDecimal())
+            .movePointLeft(6)
     }
 
     private companion object {

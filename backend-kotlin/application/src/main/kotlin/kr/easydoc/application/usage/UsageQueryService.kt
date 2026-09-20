@@ -62,7 +62,7 @@ data class PurposeUsage(
 data class WorkspaceUsage(
     val documents: Int,
     val characters: Long,
-    val credits: Long,
+    val credits: BigDecimal,
     val llmCalls: Int,
     val inputTokens: Long,
     val outputTokens: Long,

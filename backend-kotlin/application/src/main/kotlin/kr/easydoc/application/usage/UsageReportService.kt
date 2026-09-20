@@ -33,7 +33,7 @@ data class UsageReportRow(
     val workspaceName: String?,
     val documents: Int,
     val characters: Long,
-    val credits: Long,
+    val credits: BigDecimal,
     val llmCalls: Int,
     val inputTokens: Long,
     val outputTokens: Long,

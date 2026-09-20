@@ -1,6 +1,7 @@
 package kr.easydoc.core.exceptions
 
 import kr.easydoc.core.privacy.PersonalDataKind
+import java.math.BigDecimal
 
 /** 도메인 예외 정의. `app/exceptions.py` 를 그대로 옮긴 것이다. */
 open class EasyDocException(message: String) : RuntimeException(message)
@@ -158,8 +159,8 @@ class ReconversionConcurrencyExhaustedException(message: String) : EasyDocExcept
  */
 class InsufficientCreditsException(
     message: String,
-    val available: Int,
-    val required: Int,
+    val available: BigDecimal,
+    val required: BigDecimal,
 ) : EasyDocException(message)
 
 /**

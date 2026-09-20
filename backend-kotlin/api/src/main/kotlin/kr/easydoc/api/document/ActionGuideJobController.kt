@@ -26,6 +26,7 @@ import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RestController
+import java.math.BigDecimal
 import java.util.UUID
 
 @Profile("!$MIGRATE_PROFILE")
@@ -90,7 +91,7 @@ class ActionGuideJobController(
             .status(HttpStatus.ACCEPTED)
             .contentType(MediaType.APPLICATION_JSON)
             .header(HttpHeaders.LOCATION, "/conversions/$conversionId/action-guide-jobs/${creation.job.jobId}")
-            .header(CREDIT_BALANCE_HEADER, creation.availableCredits.toString())
+            .header(CREDIT_BALANCE_HEADER, creation.availableCredits.toPlainString())
             .header(HttpHeaders.CACHE_CONTROL, NO_STORE)
             .header(X_CONTENT_TYPE_OPTIONS, NOSNIFF)
             .body(ActionGuideJobResponse.of(creation.job))
@@ -127,7 +128,7 @@ data class ActionGuideJobResponse(
     @get:JsonProperty("request_id") val requestId: UUID,
     @get:JsonProperty("status") val status: String,
     @get:JsonProperty("based_on_content_revision") val basedOnContentRevision: Long,
-    @get:JsonProperty("reserved_credits") val reservedCredits: Int,
+    @get:JsonProperty("reserved_credits") val reservedCredits: BigDecimal,
     @get:JsonProperty("failure_code") val failureCode: String?,
     @get:JsonProperty("created_at") val createdAt: String,
     @get:JsonProperty("updated_at") val updatedAt: String,
@@ -159,8 +160,8 @@ data class ActionGuideJobResponse(
 data class ActionGuideJobCollectionResponse(
     @get:JsonProperty("active_job") val activeJob: ActionGuideJobResponse?,
     @get:JsonProperty("latest_job") val latestJob: ActionGuideJobResponse?,
-    @get:JsonProperty("required_credits") val requiredCredits: Int,
-    @get:JsonProperty("available_credits") val availableCredits: Int,
+    @get:JsonProperty("required_credits") val requiredCredits: BigDecimal,
+    @get:JsonProperty("available_credits") val availableCredits: BigDecimal,
 ) {
     companion object {
         fun of(view: ActionGuideJobCollectionView): ActionGuideJobCollectionResponse =

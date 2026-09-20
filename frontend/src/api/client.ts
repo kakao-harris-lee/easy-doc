@@ -60,14 +60,14 @@ export class ApiError extends Error {
    */
   readonly remainingCallBudget: number | null
   /**
-   * `createDocument`·`reconvertUnit`의 402(`InsufficientCredits`) 응답이 내는
-   * `X-Credit-Balance`(이 예약 시도 시점의 가용 크레딧). 그 헤더가 없거나 정수로 읽지
+   * `createDocument`·`reconvertUnit`·`createActionGuideJob`의 402(`InsufficientCredits`) 응답이 내는
+   * `X-Credit-Balance`(이 예약 시도 시점의 가용 크레딧). 그 헤더가 없거나 유한한 소수로 읽지
    * 못하면 null이다.
    */
   readonly creditBalance: number | null
   /**
-   * `createDocument`·`reconvertUnit`의 402(`InsufficientCredits`) 응답이 내는
-   * `X-Credits-Required`(이 요청이 필요로 한 크레딧). 그 헤더가 없거나 정수로 읽지
+   * `createDocument`·`reconvertUnit`·`createActionGuideJob`의 402(`InsufficientCredits`) 응답이 내는
+   * `X-Credits-Required`(이 요청이 필요로 한 크레딧). 그 헤더가 없거나 유한한 소수로 읽지
    * 못하면 null이다.
    */
   readonly creditsRequired: number | null
@@ -192,8 +192,8 @@ async function send(path: string, options: RequestOptions): Promise<Response> {
       await readErrorMessage(response),
       parseIntHeader(response.headers.get('Retry-After')),
       parseIntHeader(response.headers.get('X-Remaining-Call-Budget')),
-      parseIntHeader(response.headers.get('X-Credit-Balance')),
-      parseIntHeader(response.headers.get('X-Credits-Required')),
+      parseDecimalHeader(response.headers.get('X-Credit-Balance')),
+      parseDecimalHeader(response.headers.get('X-Credits-Required')),
       parseListHeader(response.headers.get('X-Personal-Data-Kinds')),
     )
   }
@@ -212,6 +212,19 @@ function parseIntHeader(header: string | null): number | null {
   }
   const value = Number(header)
   return Number.isInteger(value) ? value : null
+}
+
+/** 유한한 십진수 하나를 실어 나르는 크레딧 헤더를 읽는다. 없거나 형식이 다르면 null. */
+function parseDecimalHeader(header: string | null): number | null {
+  if (header === null) {
+    return null
+  }
+  const value = header.trim()
+  if (value === '' || !/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/.test(value)) {
+    return null
+  }
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : null
 }
 
 /** 쉼표로 구분한 값 목록을 실어 나르는 헤더를 읽는다(`X-Personal-Data-Kinds`). 없으면 null. */
@@ -238,14 +251,14 @@ export async function requestVoid(path: string, options: RequestOptions = {}): P
 
 /**
  * `createDocumentFromText`·`createDocumentFromFile` 응답 — 등록 결과에 202의
- * `X-Credit-Balance` 헤더에는 예약 직후 가용 잔액이 실린다.
+ * `X-Credit-Balance` 헤더에는 예약 직후 가용 잔액이 실린다(소수 첫째 자리 단위).
  *
  * `requestJson`을 쓰지 않는 이유는 `downloadExport`의 `DownloadedFile`과 같다 — 헤더가
  * 필요하면 `send`를 직접 불러 응답 객체에 접근해야 한다.
  */
 export interface DocumentCreationResult {
   document: DocumentCreatedResponse
-  /** 헤더가 없거나 정수로 읽지 못하면 null. */
+  /** 헤더가 없거나 유한한 소수로 읽지 못하면 null. */
   creditBalance: number | null
 }
 
@@ -275,7 +288,7 @@ export async function createDocumentFromText(
   const response = await send('/documents', { method: 'POST', body })
   return {
     document: (await response.json()) as DocumentCreatedResponse,
-    creditBalance: parseIntHeader(response.headers.get('X-Credit-Balance')),
+    creditBalance: parseDecimalHeader(response.headers.get('X-Credit-Balance')),
   }
 }
 
@@ -305,7 +318,7 @@ export async function createDocumentFromFile(
   const response = await send('/documents', { method: 'POST', body: form })
   return {
     document: (await response.json()) as DocumentCreatedResponse,
-    creditBalance: parseIntHeader(response.headers.get('X-Credit-Balance')),
+    creditBalance: parseDecimalHeader(response.headers.get('X-Credit-Balance')),
   }
 }
 
@@ -473,7 +486,7 @@ export function getActionGuideJob(
 
 export interface ActionGuideJobCreationResult {
   job: ActionGuideJob
-  /** 예약 직후의 가용 크레딧. 헤더가 없거나 정수가 아니면 null이다. */
+  /** 예약 직후의 가용 크레딧. 헤더가 없거나 유한한 소수가 아니면 null이다. */
   creditBalance: number | null
 }
 
@@ -488,7 +501,7 @@ export async function createActionGuideJob(
   })
   return {
     job: (await response.json()) as ActionGuideJob,
-    creditBalance: parseIntHeader(response.headers.get('X-Credit-Balance')),
+    creditBalance: parseDecimalHeader(response.headers.get('X-Credit-Balance')),
   }
 }
 

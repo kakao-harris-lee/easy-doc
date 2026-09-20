@@ -13,6 +13,7 @@ import kr.easydoc.application.admin.AdminWorkspaceSummary
 import kr.easydoc.application.invoice.InvoiceRequestView
 import kr.easydoc.core.privacy.CONTENT_MASK
 import kr.easydoc.core.workspace.Workspace
+import java.math.BigDecimal
 import java.time.Instant
 
 /** `GET /admin/workspaces`·`GET /admin/workspaces/{workspace_id}` 공용 요약. */
@@ -21,11 +22,11 @@ data class AdminWorkspaceSummaryResponse(
     @get:JsonProperty("name") val name: String,
     @get:JsonProperty("owner_email") val ownerEmail: String,
     @get:JsonProperty("created_at") val createdAt: Instant,
-    @get:JsonProperty("credit_balance") val creditBalance: Int,
-    @get:JsonProperty("credit_reserved") val creditReserved: Int,
-    @get:JsonProperty("credit_available") val creditAvailable: Int,
+    @get:JsonProperty("credit_balance") val creditBalance: BigDecimal,
+    @get:JsonProperty("credit_reserved") val creditReserved: BigDecimal,
+    @get:JsonProperty("credit_available") val creditAvailable: BigDecimal,
     @get:JsonProperty("month_documents") val monthDocuments: Int,
-    @get:JsonProperty("month_credits") val monthCredits: Long,
+    @get:JsonProperty("month_credits") val monthCredits: BigDecimal,
     @get:JsonProperty("month_cost_usd") val monthCostUsd: String?,
 ) {
     /** 이름·이메일을 찍지 않는다 — [Workspace.toString]과 같은 규약. */
@@ -118,7 +119,7 @@ data class AdminConversionItemResponse(
 data class AdminCreditAdjustmentRequest
     @JsonCreator
     constructor(
-        @param:JsonProperty("credits") val credits: Int,
+        @param:JsonProperty("credits") val credits: BigDecimal,
         @param:JsonProperty("reason") val reason: String,
         // 전역 null 처리는 실패다(`JsonRequestStrictnessConfig`) — 선택 필드는 이 표식으로
         // 그 기본을 뒤집는다(`DocumentTextRequest.title`과 같은 관행).

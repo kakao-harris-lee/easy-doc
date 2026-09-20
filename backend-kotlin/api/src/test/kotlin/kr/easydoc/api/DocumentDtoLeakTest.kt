@@ -13,6 +13,7 @@ import kr.easydoc.core.privacy.ReviewedBody
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
+import java.math.BigDecimal
 import java.util.UUID
 import kotlin.reflect.KClass
 import kotlin.reflect.full.primaryConstructor
@@ -53,7 +54,7 @@ class DocumentDtoLeakTest {
                     conversionId = UUID.randomUUID(),
                     status = ConversionStatus.PENDING,
                     charCount = BODY.length,
-                    creditBalance = 0,
+                    creditBalance = BigDecimal.ZERO,
                 ),
             )
 

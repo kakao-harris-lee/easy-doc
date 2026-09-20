@@ -5,6 +5,7 @@ import kr.easydoc.core.actionguide.ActionGuideJobFailureCode
 import kr.easydoc.core.actionguide.ActionGuideJobStatus
 import kr.easydoc.core.credit.Credits
 import kr.easydoc.core.llm.LlmCallRecord
+import java.math.BigDecimal
 import java.time.Duration
 import java.time.Instant
 import java.util.UUID
@@ -128,7 +129,7 @@ internal open class FakeActionGuideJobs(var context: ActionGuideJobContext? = de
 }
 
 internal class RecordingActionGuideCredits : ActionGuideCreditPort {
-    var available = 7
+    var available = BigDecimal("7.0")
     var reservation: ActionGuideCreditReservation = ActionGuideCreditReservation.Reserved(available)
     var reserveCalls = 0
     var consumes = 0
@@ -137,7 +138,7 @@ internal class RecordingActionGuideCredits : ActionGuideCreditPort {
     override fun available(
         ownerId: UUID,
         workspaceId: UUID,
-    ): Int = available
+    ): BigDecimal = available
 
     override fun reserve(
         ownerId: UUID,
@@ -205,7 +206,7 @@ internal fun storedJob(
     requestId,
     null,
     3,
-    2,
+    BigDecimal("2.0"),
     status,
     null,
     executionId,

@@ -17,6 +17,7 @@ import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
+import java.math.BigDecimal
 import java.time.Instant
 import java.util.UUID
 
@@ -57,7 +58,7 @@ class AuthServiceTest {
         assertThat(world.creditRepository.setAllowanceCalls).hasSize(1)
         val call = world.creditRepository.setAllowanceCalls.single()
         assertThat(call.workspaceId).isEqualTo(world.creditRepository.ensuredFor.single())
-        assertThat(call.allowance).isEqualTo(50)
+        assertThat(call.allowance).isEqualByComparingTo("50")
         assertThat(call.renews).isFalse()
         assertThat(call.reason).isEqualTo(CreditReason.SIGNUP)
         assertThat(world.creditRepository.depthAtSetAllowance).isEqualTo(1)
@@ -277,7 +278,7 @@ private class World(
 /** [RecordingCreditAccountRepository.setAllowanceCalls] 가 기록하는 호출 한 건. */
 private data class RecordedSetAllowance(
     val workspaceId: UUID,
-    val allowance: Int,
+    val allowance: BigDecimal,
     val renews: Boolean,
     val reason: CreditReason,
 )
@@ -292,7 +293,7 @@ private class RecordingCreditAccountRepository(private val transaction: Recordin
     val ensuredFor: MutableList<UUID> = mutableListOf()
     var depthAtEnsure: Int = -1
         private set
-    val grantCalls: MutableList<Triple<UUID, Int, CreditReason>> = mutableListOf()
+    val grantCalls: MutableList<Triple<UUID, BigDecimal, CreditReason>> = mutableListOf()
     var depthAtGrant: Int = -1
         private set
     val setAllowanceCalls: MutableList<RecordedSetAllowance> = mutableListOf()
@@ -307,11 +308,11 @@ private class RecordingCreditAccountRepository(private val transaction: Recordin
     override fun grant(
         workspaceId: UUID,
         ownerUserId: UUID,
-        credits: Int,
+        credits: BigDecimal,
         reason: CreditReason,
         note: String?,
         actorUserId: UUID?,
-    ): Int {
+    ): BigDecimal {
         grantCalls += Triple(workspaceId, credits, reason)
         depthAtGrant = transaction.depth
         return credits
@@ -320,13 +321,13 @@ private class RecordingCreditAccountRepository(private val transaction: Recordin
     override fun setAllowance(
         workspaceId: UUID,
         ownerUserId: UUID,
-        allowance: Int,
+        allowance: BigDecimal,
         cycleEndsAt: Instant,
         renews: Boolean,
         reason: CreditReason,
         note: String?,
         actorUserId: UUID?,
-    ): Int {
+    ): BigDecimal {
         setAllowanceCalls += RecordedSetAllowance(workspaceId, allowance, renews, reason)
         depthAtSetAllowance = transaction.depth
         return allowance

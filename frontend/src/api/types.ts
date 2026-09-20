@@ -169,7 +169,7 @@ export interface DocumentCreatedResponse {
   document_id: string
   conversion_id: string
   status: ConversionStatus
-  /** 공백 포함 문자 수. 크레딧 환산(1,000자 = 1크레딧)의 기준값. */
+  /** 공백 포함 문자 수. 100자마다 0.1크레딧을 올림하는 환산의 기준값. */
   char_count: number
 }
 
@@ -908,7 +908,7 @@ export type AdminCreditAdjustmentReason = 'plan_monthly' | 'manual' | 'refund'
  * `components/schemas/AdminCreditAdjustmentRequest`.
  */
 export interface AdminCreditAdjustmentRequest {
-  /** 0이 될 수 없다. 0 이상이면 부여(grant), 음수면 조정(adjust). */
+  /** 0이 될 수 없고 0.1 단위다. 0 이상이면 부여(grant), 음수면 조정(adjust). */
   credits: number
   reason: AdminCreditAdjustmentReason
   /** 선택, 200자 이내(`credit_transactions.note` 상한과 같다) — 초과는 422. */

@@ -39,6 +39,7 @@ import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
+import java.math.BigDecimal
 import java.util.UUID
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
@@ -130,12 +131,13 @@ class ReconvertUnitServiceTest {
         }
     }
 
-    private class RecordingCreditRepository(private var balance: Int) :
+    private class RecordingCreditRepository(balance: Int) :
         CreditAccountRepository by NoopCreditAccountRepository {
-        private var reserved = 0
-        val reserveCalls = mutableListOf<Int>()
-        val consumeCalls = mutableListOf<Int>()
-        val releaseCalls = mutableListOf<Int>()
+        private var balance = BigDecimal.valueOf(balance.toLong())
+        private var reserved = BigDecimal.ZERO
+        val reserveCalls = mutableListOf<BigDecimal>()
+        val consumeCalls = mutableListOf<BigDecimal>()
+        val releaseCalls = mutableListOf<BigDecimal>()
 
         override fun reserve(
             ownerId: UUID,
@@ -199,8 +201,8 @@ class ReconvertUnitServiceTest {
         assertThat(result.remainingCallBudget).isEqualTo(DEFAULT_BUDGET - 1)
 
         assertThat(conversions.reconversionBudgetOf(conversionId)).isEqualTo(0 to 1)
-        assertThat(creditRepository.reserveCalls).containsExactly(1)
-        assertThat(creditRepository.consumeCalls).containsExactly(1)
+        assertThat(creditRepository.reserveCalls).containsExactly(BigDecimal("0.1"))
+        assertThat(creditRepository.consumeCalls).containsExactly(BigDecimal("0.1"))
         assertThat(creditRepository.releaseCalls).isEmpty()
     }
 
@@ -310,8 +312,8 @@ class ReconvertUnitServiceTest {
             .isEqualTo(1)
 
         assertThat(provider.calls).withFailMessage("예산 소진인데 LLM 을 호출했다").isEmpty()
-        assertThat(creditRepository.reserveCalls).containsExactly(1)
-        assertThat(creditRepository.releaseCalls).containsExactly(1)
+        assertThat(creditRepository.reserveCalls).containsExactly(BigDecimal("0.1"))
+        assertThat(creditRepository.releaseCalls).containsExactly(BigDecimal("0.1"))
         assertThat(creditRepository.consumeCalls).isEmpty()
     }
 
@@ -352,7 +354,7 @@ class ReconvertUnitServiceTest {
         assertThat(conversions.reconversionBudgetOf(conversionId))
             .withFailMessage("provider 실패인데 실제 사용량(1회)만큼만 남기고 환불되지 않았다")
             .isEqualTo(0 to 1)
-        assertThat(creditRepository.releaseCalls).containsExactly(1)
+        assertThat(creditRepository.releaseCalls).containsExactly(BigDecimal("0.1"))
         assertThat(creditRepository.consumeCalls).isEmpty()
     }
 
@@ -375,7 +377,7 @@ class ReconvertUnitServiceTest {
         assertThat(conversions.reconversionBudgetOf(conversionId))
             .withFailMessage("동시성 한도 소진인데 예약이 전액 환불되지 않았다")
             .isEqualTo(0 to 0)
-        assertThat(creditRepository.releaseCalls).containsExactly(1)
+        assertThat(creditRepository.releaseCalls).containsExactly(BigDecimal("0.1"))
     }
 
     @Test

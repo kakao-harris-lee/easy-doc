@@ -6,6 +6,7 @@ import kr.easydoc.application.document.RetentionPurgeResult
 import kr.easydoc.core.credit.Credits
 import kr.easydoc.infrastructure.queue.JdbcConversionQueue
 import org.springframework.jdbc.core.simple.JdbcClient
+import java.math.BigDecimal
 import java.sql.ResultSet
 import java.util.UUID
 
@@ -72,7 +73,7 @@ class JdbcExpiredDocumentPurge(
             documentId = getObject("document_id", UUID::class.java),
             workspaceId = getObject("workspace_id", UUID::class.java),
             ownerId = getObject("owner_id", UUID::class.java),
-            creditsReserved = getInt("credits_reserved"),
+            creditsReserved = getBigDecimal("credits_reserved"),
         )
 
     private fun countSkippedLeased(): Int =
@@ -112,7 +113,7 @@ class JdbcExpiredDocumentPurge(
         val documentId: UUID,
         val workspaceId: UUID,
         val ownerId: UUID,
-        val creditsReserved: Int,
+        val creditsReserved: BigDecimal,
     )
 
     private companion object {

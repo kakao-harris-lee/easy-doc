@@ -4,8 +4,10 @@ import kr.easydoc.application.workspace.WORKSPACE_NOT_FOUND_MESSAGE
 import kr.easydoc.core.credit.CreditReason
 import kr.easydoc.core.credit.Credits
 import kr.easydoc.core.exceptions.InsufficientCreditsException
+import kr.easydoc.core.exceptions.InvalidInputException
 import kr.easydoc.core.exceptions.NotFoundException
 import kr.easydoc.core.security.Secret
+import java.math.BigDecimal
 import java.time.Clock
 import java.time.Instant
 import java.time.Period
@@ -22,9 +24,9 @@ typealias Reservation = ReservationResult.Reserved
  */
 data class CreditAccountView(
     val workspaceId: UUID,
-    val balance: Int,
-    val reserved: Int,
-    val available: Int,
+    val balance: BigDecimal,
+    val reserved: BigDecimal,
+    val available: BigDecimal,
     val enforced: Boolean,
     val transactions: List<CreditTransactionView>,
     /**
@@ -36,7 +38,7 @@ data class CreditAccountView(
      */
     val signupGrantSkipped: Boolean,
     /** 이번 주기에 제공된 이용량(계약 2.30.0) — `workspace_credit_accounts.allowance`(V21). */
-    val allowance: Int,
+    val allowance: BigDecimal,
     /** 현재 유효한 이용 주기가 시작된 시각. 주기가 없거나 끝났으면 `null`. */
     val cycleStartedAt: Instant?,
     /**
@@ -62,7 +64,7 @@ data class CreditAccountView(
  * 를 통해서만 쓰게 해, 두 가입 경로가 서로 다른 값을 배선받아 갈리는 사고(리뷰
  * 2026-09-07 지적)를 구조로 막는다.
  */
-@Suppress("LongParameterList")
+@Suppress("LongParameterList", "TooManyFunctions") // 정수 제공량 오버로드도 동일한 소수 정산 경로를 쓴다.
 class CreditAccountService(
     private val repository: CreditAccountRepository,
     private val enforced: Boolean,
@@ -133,7 +135,7 @@ class CreditAccountService(
         conversionId: UUID,
         amount: Credits,
     ) {
-        if (amount.amount == 0) return
+        if (amount.amount.signum() == 0) return
         repository.consume(workspaceId, ownerId, documentId, conversionId, amount)
     }
 
@@ -145,7 +147,7 @@ class CreditAccountService(
         conversionId: UUID,
         amount: Credits,
     ) {
-        if (amount.amount == 0) return
+        if (amount.amount.signum() == 0) return
         repository.release(workspaceId, ownerId, documentId, conversionId, amount)
     }
 
@@ -160,11 +162,29 @@ class CreditAccountService(
     fun grant(
         workspaceId: UUID,
         ownerUserId: UUID,
+        credits: BigDecimal,
+        reason: CreditReason,
+        note: String?,
+        actorUserId: UUID? = null,
+    ): BigDecimal =
+        repository.grant(
+            workspaceId,
+            ownerUserId,
+            normalizeCreditAmount(credits),
+            reason,
+            note,
+            actorUserId,
+        )
+
+    @Suppress("LongParameterList")
+    fun grant(
+        workspaceId: UUID,
+        ownerUserId: UUID,
         credits: Int,
         reason: CreditReason,
         note: String?,
         actorUserId: UUID? = null,
-    ): Int = repository.grant(workspaceId, ownerUserId, credits, reason, note, actorUserId)
+    ): BigDecimal = grant(workspaceId, ownerUserId, BigDecimal.valueOf(credits.toLong()), reason, note, actorUserId)
 
     /**
      * 새 주기를 연다 — `balance`를 [allowance] 로 설정한다(더하지 않는다). 운영자 CLI의
@@ -176,14 +196,45 @@ class CreditAccountService(
     fun setAllowance(
         workspaceId: UUID,
         ownerUserId: UUID,
+        allowance: BigDecimal,
+        cycleEndsAt: Instant,
+        renews: Boolean,
+        reason: CreditReason,
+        note: String?,
+        actorUserId: UUID? = null,
+    ): BigDecimal =
+        repository.setAllowance(
+            workspaceId,
+            ownerUserId,
+            normalizeAllowance(allowance),
+            cycleEndsAt,
+            renews,
+            reason,
+            note,
+            actorUserId,
+        )
+
+    @Suppress("LongParameterList")
+    fun setAllowance(
+        workspaceId: UUID,
+        ownerUserId: UUID,
         allowance: Int,
         cycleEndsAt: Instant,
         renews: Boolean,
         reason: CreditReason,
         note: String?,
         actorUserId: UUID? = null,
-    ): Int =
-        repository.setAllowance(workspaceId, ownerUserId, allowance, cycleEndsAt, renews, reason, note, actorUserId)
+    ): BigDecimal =
+        setAllowance(
+            workspaceId,
+            ownerUserId,
+            BigDecimal.valueOf(allowance.toLong()),
+            cycleEndsAt,
+            renews,
+            reason,
+            note,
+            actorUserId,
+        )
 
     /**
      * 가입 시 기본 워크스페이스에 [signupGrant] 만큼의 **무료 체험 주기**를 연다 —
@@ -226,7 +277,7 @@ class CreditAccountService(
         grantFreeTrial(
             workspaceId = workspaceId,
             ownerUserId = ownerUserId,
-            credits = signupGrant,
+            credits = BigDecimal.valueOf(signupGrant.toLong()),
             reason = CreditReason.SIGNUP,
             note = null,
         )
@@ -237,7 +288,7 @@ class CreditAccountService(
     fun grantFreeTrial(
         workspaceId: UUID,
         ownerUserId: UUID,
-        credits: Int,
+        credits: BigDecimal,
         reason: CreditReason,
         note: String?,
     ) {
@@ -254,6 +305,14 @@ class CreditAccountService(
         )
     }
 
+    fun grantFreeTrial(
+        workspaceId: UUID,
+        ownerUserId: UUID,
+        credits: Int,
+        reason: CreditReason,
+        note: String?,
+    ) = grantFreeTrial(workspaceId, ownerUserId, BigDecimal.valueOf(credits.toLong()), reason, note)
+
     /** **내** 계정을 읽는다. 없거나 내 것이 아니면 [NotFoundException]. */
     fun read(
         ownerId: UUID,
@@ -261,7 +320,7 @@ class CreditAccountService(
     ): CreditAccountView =
         repository.read(ownerId, workspaceId)?.let { row ->
             val activeCycleEndsAt =
-                row.cycleEndsAt?.takeIf { row.allowance > 0 && Instant.now(clock).isBefore(it) }
+                row.cycleEndsAt?.takeIf { row.allowance > BigDecimal.ZERO && Instant.now(clock).isBefore(it) }
             CreditAccountView(
                 workspaceId = row.workspaceId,
                 balance = row.balance,
@@ -280,6 +339,18 @@ class CreditAccountService(
 
     /** 정합 검사(계획 §4) — [CreditAccountRepository.consistencyViolations] 그대로. */
     fun consistencyViolations(): List<CreditConsistencyViolation> = repository.consistencyViolations()
+
+    private fun normalizeCreditAmount(value: BigDecimal): BigDecimal =
+        try {
+            value.setScale(1, java.math.RoundingMode.UNNECESSARY)
+        } catch (_: ArithmeticException) {
+            throw InvalidInputException("크레딧은 0.1 단위여야 합니다: $value")
+        }
+
+    private fun normalizeAllowance(value: BigDecimal): BigDecimal {
+        if (value.signum() < 0) throw InvalidInputException("주기 allowance는 음수일 수 없습니다: $value")
+        return normalizeCreditAmount(value)
+    }
 
     private companion object {
         const val INSUFFICIENT_CREDITS_MESSAGE = "크레딧이 부족합니다. 상위 플랜을 선택해 주세요."
@@ -332,22 +403,22 @@ object NoopCreditAccountRepository : CreditAccountRepository {
     override fun grant(
         workspaceId: UUID,
         ownerUserId: UUID,
-        credits: Int,
+        credits: BigDecimal,
         reason: CreditReason,
         note: String?,
         actorUserId: UUID?,
-    ): Int = credits
+    ): BigDecimal = credits
 
     override fun setAllowance(
         workspaceId: UUID,
         ownerUserId: UUID,
-        allowance: Int,
+        allowance: BigDecimal,
         cycleEndsAt: Instant,
         renews: Boolean,
         reason: CreditReason,
         note: String?,
         actorUserId: UUID?,
-    ): Int = allowance
+    ): BigDecimal = allowance
 
     override fun read(
         ownerId: UUID,

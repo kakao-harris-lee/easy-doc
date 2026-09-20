@@ -48,11 +48,11 @@ class CreditsReachTest {
         val workspaceId = defaultWorkspaceId(token)
         grantCredits(workspaceId, 10)
 
-        // ceil(2500/1000) = 3.
+        // ceil(2500/100) / 10 = 2.5.
         val response = createDocument(token, "가".repeat(2500))
 
         assertThat(response.statusCode()).isEqualTo(ContractSpec.successStatus(DOCUMENTS_PATH, POST))
-        assertThat(response.headers().firstValue(CREDIT_BALANCE_HEADER)).hasValue("7")
+        assertThat(response.headers().firstValue(CREDIT_BALANCE_HEADER)).hasValue("7.5")
     }
 
     @Test
@@ -62,12 +62,12 @@ class CreditsReachTest {
         val workspaceId = defaultWorkspaceId(token)
         grantCredits(workspaceId, 1)
 
-        // ceil(1001/1000) = 2.
+        // ceil(1001/100) / 10 = 1.1.
         val response = createDocument(token, "가".repeat(1001))
 
         assertDeclaredStatus(response, PAYMENT_REQUIRED)
         assertThat(response.headers().firstValue(CREDIT_BALANCE_HEADER)).hasValue("1")
-        assertThat(response.headers().firstValue(CREDITS_REQUIRED_HEADER)).hasValue("2")
+        assertThat(response.headers().firstValue(CREDITS_REQUIRED_HEADER)).hasValue("1.1")
         assertThat(bodyOf(response)["detail"]).isEqualTo("크레딧이 부족합니다. 상위 플랜을 선택해 주세요.")
         assertThat(documentCount(token)).isZero()
     }
@@ -125,7 +125,7 @@ class CreditsReachTest {
         try {
             val attempt = {
                 barrier.await(TASK_TIMEOUT_SECONDS, TimeUnit.SECONDS)
-                // ceil(1000/1000) = 1 크레딧.
+                // ceil(1000/100) / 10 = 1 크레딧.
                 createDocument(token, "가".repeat(1000))
             }
             val first = pool.submit<HttpResponse<String>>(attempt)

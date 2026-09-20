@@ -9,12 +9,19 @@ import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
+import java.math.BigDecimal
 import java.time.Clock
 import java.time.Instant
 import java.time.OffsetDateTime
 import java.time.Period
 import java.time.ZoneOffset
 import java.util.UUID
+
+private fun Number.toBigDecimalExact(): BigDecimal =
+    when (this) {
+        is BigDecimal -> this
+        else -> BigDecimal.valueOf(toLong())
+    }
 
 /**
  * [CreditAccountService] 의 분기를 잰다 — Spring 도 DB 도 없이, [FakeCreditAccountRepository] 위에서.
@@ -37,9 +44,9 @@ class CreditAccountServiceTest {
 
         val reservation = service.reserve(ownerId, workspaceId, documentId, Credits(3))
 
-        assertThat(reservation.balance).isEqualTo(10)
-        assertThat(reservation.reserved).isEqualTo(3)
-        assertThat(reservation.available).isEqualTo(7)
+        assertThat(reservation.balance).isEqualByComparingTo("10")
+        assertThat(reservation.reserved).isEqualByComparingTo("3")
+        assertThat(reservation.available).isEqualByComparingTo("7")
         assertThat(repo.reserveCalls).containsExactly(Credits(3))
     }
 
@@ -52,7 +59,7 @@ class CreditAccountServiceTest {
         assertThatThrownBy { service.reserve(ownerId, workspaceId, documentId, Credits(3)) }
             .isInstanceOf(InsufficientCreditsException::class.java)
             .extracting("available", "required")
-            .containsExactly(1, 3)
+            .containsExactly(BigDecimal("1"), BigDecimal("3.0"))
     }
 
     @Test
@@ -63,8 +70,8 @@ class CreditAccountServiceTest {
 
         val reservation = service.reserve(ownerId, workspaceId, documentId, Credits(5))
 
-        assertThat(reservation.reserved).isEqualTo(5)
-        assertThat(reservation.available).isEqualTo(-5)
+        assertThat(reservation.reserved).isEqualByComparingTo("5")
+        assertThat(reservation.available).isEqualByComparingTo("-5")
     }
 
     @Test
@@ -77,8 +84,8 @@ class CreditAccountServiceTest {
         service.consume(workspaceId, ownerId, documentId, conversionId, Credits(3))
 
         assertThat(repo.consumeCalls).containsExactly(Credits(3))
-        assertThat(repo.balance).isEqualTo(7)
-        assertThat(repo.reserved).isEqualTo(0)
+        assertThat(repo.balance).isEqualByComparingTo("7")
+        assertThat(repo.reserved).isEqualByComparingTo("0")
     }
 
     @Test
@@ -91,8 +98,8 @@ class CreditAccountServiceTest {
         service.release(workspaceId, ownerId, documentId, conversionId, Credits(3))
 
         assertThat(repo.releaseCalls).containsExactly(Credits(3))
-        assertThat(repo.balance).isEqualTo(10)
-        assertThat(repo.reserved).isEqualTo(0)
+        assertThat(repo.balance).isEqualByComparingTo("10")
+        assertThat(repo.reserved).isEqualByComparingTo("0")
     }
 
     @Test
@@ -116,9 +123,9 @@ class CreditAccountServiceTest {
 
         val resultBalance = service.grant(workspaceId, ownerId, 50, CreditReason.SIGNUP, note = null)
 
-        assertThat(resultBalance).isEqualTo(50)
-        assertThat(repo.balance).isEqualTo(50)
-        assertThat(repo.grantCalls).containsExactly(Triple(50, CreditReason.SIGNUP, null as String?))
+        assertThat(resultBalance).isEqualByComparingTo("50")
+        assertThat(repo.balance).isEqualByComparingTo("50")
+        assertThat(repo.grantCalls).containsExactly(Triple(BigDecimal("50.0"), CreditReason.SIGNUP, null as String?))
     }
 
     @Test
@@ -139,10 +146,12 @@ class CreditAccountServiceTest {
                 note = null,
             )
 
-        assertThat(resultBalance).isEqualTo(50)
-        assertThat(repo.balance).isEqualTo(50)
+        assertThat(resultBalance).isEqualByComparingTo("50")
+        assertThat(repo.balance).isEqualByComparingTo("50")
         assertThat(repo.setAllowanceCalls)
-            .containsExactly(SetAllowanceCall(50, cycleEndsAt, renews = true, CreditReason.PLAN_MONTHLY))
+            .containsExactly(
+                SetAllowanceCall(BigDecimal("50.0"), cycleEndsAt, renews = true, CreditReason.PLAN_MONTHLY),
+            )
     }
 
     @Test
@@ -181,7 +190,7 @@ class CreditAccountServiceTest {
 
         val view = service.read(ownerId, workspaceId)
 
-        assertThat(view.allowance).isEqualTo(50)
+        assertThat(view.allowance).isEqualByComparingTo("50")
         assertThat(view.cycleStartedAt).isEqualTo(cycleStartedAt)
         assertThat(view.cycleEndsAt).isEqualTo(cycleEndsAt)
     }
@@ -231,7 +240,12 @@ class CreditAccountServiceTest {
         assertThat(repo.grantCalls).isEmpty()
         assertThat(repo.setAllowanceCalls)
             .containsExactly(
-                SetAllowanceCall(50, plusUtc(FIXED_NOW, Period.ofMonths(1)), renews = false, CreditReason.SIGNUP),
+                SetAllowanceCall(
+                    BigDecimal("50"),
+                    plusUtc(FIXED_NOW, Period.ofMonths(1)),
+                    renews = false,
+                    CreditReason.SIGNUP,
+                ),
             )
     }
 
@@ -267,7 +281,12 @@ class CreditAccountServiceTest {
 
         assertThat(repo.setAllowanceCalls)
             .containsExactly(
-                SetAllowanceCall(50, plusUtc(FIXED_NOW, Period.ofMonths(1)), renews = false, CreditReason.SIGNUP),
+                SetAllowanceCall(
+                    BigDecimal("50"),
+                    plusUtc(FIXED_NOW, Period.ofMonths(1)),
+                    renews = false,
+                    CreditReason.SIGNUP,
+                ),
             )
         assertThat(repo.markSkippedCalls).isEmpty()
         assertThat(ledger.recorded).containsExactly(hasher.hash("user@example.com"))
@@ -332,7 +351,12 @@ class CreditAccountServiceTest {
 
         assertThat(repo.setAllowanceCalls)
             .containsExactly(
-                SetAllowanceCall(5, plusUtc(FIXED_NOW, Period.ofMonths(1)), renews = false, CreditReason.SIGNUP),
+                SetAllowanceCall(
+                    BigDecimal("5"),
+                    plusUtc(FIXED_NOW, Period.ofMonths(1)),
+                    renews = false,
+                    CreditReason.SIGNUP,
+                ),
             )
     }
 
@@ -376,9 +400,9 @@ class CreditAccountServiceTest {
 
         val view = service.read(ownerId, workspaceId)
 
-        assertThat(view.balance).isEqualTo(10)
-        assertThat(view.reserved).isEqualTo(4)
-        assertThat(view.available).isEqualTo(6)
+        assertThat(view.balance).isEqualByComparingTo("10")
+        assertThat(view.reserved).isEqualByComparingTo("4")
+        assertThat(view.available).isEqualByComparingTo("6")
         assertThat(view.enforced).isTrue()
     }
 
@@ -396,7 +420,7 @@ class CreditAccountServiceTest {
 
 /** [FakeCreditAccountRepository.setAllowanceCalls] 가 기록하는 호출 한 건. */
 private data class SetAllowanceCall(
-    val allowance: Int,
+    val allowance: BigDecimal,
     val cycleEndsAt: Instant,
     val renews: Boolean,
     val reason: CreditReason,
@@ -409,19 +433,21 @@ private data class SetAllowanceCall(
  */
 @Suppress("LongParameterList")
 private class FakeCreditAccountRepository(
-    var balance: Int,
+    balance: Number,
     private val exists: Boolean = true,
     private val signupGrantSkipped: Boolean = false,
     private val emailVerified: Boolean = false,
-    var allowance: Int = 0,
+    allowance: Number = 0,
     var cycleStartedAt: Instant = Instant.EPOCH,
     var cycleEndsAt: Instant? = null,
 ) : CreditAccountRepository by NoopCreditAccountRepository {
-    var reserved: Int = 0
+    var balance: BigDecimal = balance.toBigDecimalExact()
+    var allowance: BigDecimal = allowance.toBigDecimalExact()
+    var reserved: BigDecimal = BigDecimal.ZERO
     val reserveCalls = mutableListOf<Credits>()
     val consumeCalls = mutableListOf<Credits>()
     val releaseCalls = mutableListOf<Credits>()
-    val grantCalls = mutableListOf<Triple<Int, CreditReason, String?>>()
+    val grantCalls = mutableListOf<Triple<BigDecimal, CreditReason, String?>>()
     val setAllowanceCalls = mutableListOf<SetAllowanceCall>()
     val markSkippedCalls = mutableListOf<UUID>()
 
@@ -467,11 +493,11 @@ private class FakeCreditAccountRepository(
     override fun grant(
         workspaceId: UUID,
         ownerUserId: UUID,
-        credits: Int,
+        credits: BigDecimal,
         reason: CreditReason,
         note: String?,
         actorUserId: UUID?,
-    ): Int {
+    ): BigDecimal {
         grantCalls += Triple(credits, reason, note)
         balance += credits
         return balance
@@ -480,13 +506,13 @@ private class FakeCreditAccountRepository(
     override fun setAllowance(
         workspaceId: UUID,
         ownerUserId: UUID,
-        allowance: Int,
+        allowance: BigDecimal,
         cycleEndsAt: Instant,
         renews: Boolean,
         reason: CreditReason,
         note: String?,
         actorUserId: UUID?,
-    ): Int {
+    ): BigDecimal {
         setAllowanceCalls += SetAllowanceCall(allowance, cycleEndsAt, renews, reason)
         balance = allowance
         this.allowance = allowance

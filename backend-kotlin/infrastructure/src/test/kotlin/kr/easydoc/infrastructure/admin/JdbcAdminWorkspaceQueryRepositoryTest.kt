@@ -118,7 +118,7 @@ class JdbcAdminWorkspaceQueryRepositoryTest {
         val summary = usage[workspaceId]
 
         assertThat(summary?.documents ?: 0).isEqualTo(0)
-        assertThat(summary?.credits ?: 0).isEqualTo(0)
+        assertThat(summary?.credits ?: BigDecimal.ZERO).isEqualByComparingTo("0")
         assertThat(summary?.estimatedCostUsd).isNull()
     }
 
@@ -134,7 +134,7 @@ class JdbcAdminWorkspaceQueryRepositoryTest {
         val summary = usage[workspaceId]
 
         assertThat(summary?.documents).isEqualTo(1)
-        assertThat(summary?.credits).isEqualTo(2)
+        assertThat(summary?.credits).isEqualByComparingTo("2")
     }
 
     @Test
@@ -150,7 +150,7 @@ class JdbcAdminWorkspaceQueryRepositoryTest {
             repository.monthUsage(listOf(workspaceId), at.minusSeconds(3600), at.plusSeconds(3600))[workspaceId]
 
         assertThat(summary?.documents).isEqualTo(1)
-        assertThat(summary?.credits).isEqualTo(3)
+        assertThat(summary?.credits).isEqualByComparingTo("3")
     }
 
     @Test
@@ -181,7 +181,7 @@ class JdbcAdminWorkspaceQueryRepositoryTest {
             repository.monthUsage(listOf(workspaceId), at.minusSeconds(3600), at.plusSeconds(3600))[workspaceId]
 
         assertThat(summary?.documents).isEqualTo(1)
-        assertThat(summary?.credits).isEqualTo(2)
+        assertThat(summary?.credits).isEqualByComparingTo("2")
         assertThat(summary?.estimatedCostUsd).isEqualByComparingTo(BigDecimal("0.004000"))
     }
 
@@ -242,7 +242,7 @@ class JdbcAdminWorkspaceQueryRepositoryTest {
     private fun insertCreditConsume(
         workspaceId: UUID,
         ownerId: UUID,
-        credits: Int,
+        credits: BigDecimal,
         at: Instant,
     ) {
         jdbc
@@ -259,6 +259,13 @@ class JdbcAdminWorkspaceQueryRepositoryTest {
             .param("createdAt", OffsetDateTime.ofInstant(at, ZoneOffset.UTC))
             .update()
     }
+
+    private fun insertCreditConsume(
+        workspaceId: UUID,
+        ownerId: UUID,
+        credits: Int,
+        at: Instant,
+    ) = insertCreditConsume(workspaceId, ownerId, BigDecimal.valueOf(credits.toLong()), at)
 
     private fun insertActionGuideReservationAndRelease(
         workspaceId: UUID,

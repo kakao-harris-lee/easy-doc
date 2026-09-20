@@ -37,6 +37,7 @@ import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
+import java.math.BigDecimal
 import java.time.Instant
 import java.util.UUID
 
@@ -630,13 +631,13 @@ class DocumentServiceTest {
                 documentId = documentId,
                 workspaceId = workspaceId,
                 ownerId = OWNER,
-                creditsReserved = 3,
+                creditsReserved = BigDecimal("3.0"),
             )
 
         world.service.delete(OWNER, documentId)
 
         assertThat(world.creditRepository.releaseCalls)
-            .containsExactly(ReleaseCall(workspaceId, OWNER, documentId, conversionId, 3))
+            .containsExactly(ReleaseCall(workspaceId, OWNER, documentId, conversionId, BigDecimal("3.0")))
     }
 
     @Test
@@ -780,7 +781,7 @@ class DocumentServiceTest {
         val ownerId: UUID,
         val documentId: UUID,
         val conversionId: UUID,
-        val amount: Int,
+        val amount: BigDecimal,
     )
 
     /** `OWNER` 하나만 안다 — 문서 유스케이스는 [findById] 외의 연산을 부르지 않는다. */

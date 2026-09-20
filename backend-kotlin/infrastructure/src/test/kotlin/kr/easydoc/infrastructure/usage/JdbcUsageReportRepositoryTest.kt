@@ -105,7 +105,7 @@ class JdbcUsageReportRepositoryTest {
         assertThat(row1.workspaceName).isEqualTo(ws1.name)
         assertThat(row1.documents).isEqualTo(1)
         assertThat(row1.characters).isEqualTo(1500)
-        assertThat(row1.credits).isEqualTo(2)
+        assertThat(row1.credits).isEqualByComparingTo("2")
         assertThat(row1.llmCalls).isEqualTo(1)
         assertThat(row1.estimatedCostUsd).isEqualByComparingTo(BigDecimal("0.001000"))
         assertThat(row1.costUnknownCalls).isEqualTo(0)
@@ -114,7 +114,7 @@ class JdbcUsageReportRepositoryTest {
         assertThat(row2.workspaceId).isEqualTo(ws2.id)
         assertThat(row2.documents).isEqualTo(1)
         assertThat(row2.characters).isEqualTo(500)
-        assertThat(row2.credits).isEqualTo(1)
+        assertThat(row2.credits).isEqualByComparingTo("1")
     }
 
     @Test
@@ -156,7 +156,7 @@ class JdbcUsageReportRepositoryTest {
 
         assertThat(row.documents).isEqualTo(1)
         assertThat(row.characters).isEqualTo(1500)
-        assertThat(row.credits).isEqualTo(3)
+        assertThat(row.credits).isEqualByComparingTo("3")
     }
 
     @Test
@@ -198,7 +198,7 @@ class JdbcUsageReportRepositoryTest {
 
         assertThat(row.documents).isEqualTo(1)
         assertThat(row.characters).isEqualTo(1500)
-        assertThat(row.credits).isEqualTo(2)
+        assertThat(row.credits).isEqualByComparingTo("2")
         assertThat(row.llmCalls).isEqualTo(2)
         assertThat(row.inputTokens).isEqualTo(110)
         assertThat(row.outputTokens).isEqualTo(55)
@@ -388,7 +388,7 @@ class JdbcUsageReportRepositoryTest {
         assertThat(merged.ownerEmail).isNull()
         assertThat(merged.documents).isEqualTo(2)
         assertThat(merged.characters).isEqualTo(2000)
-        assertThat(merged.credits).isEqualTo(3) // ceil(400/1000)=1 + ceil(1600/1000)=2
+        assertThat(merged.credits).isEqualByComparingTo("3") // ceil(400/1000)=1 + ceil(1600/1000)=2
         assertThat(merged.llmCalls).isEqualTo(2)
         assertThat(merged.inputTokens).isEqualTo(30)
         assertThat(merged.outputTokens).isEqualTo(20)
@@ -460,7 +460,7 @@ class JdbcUsageReportRepositoryTest {
 
         assertThat(u3Row.documents).isEqualTo(u2Usage.documents).isEqualTo(2)
         assertThat(u3Row.characters).isEqualTo(u2Usage.characters).isEqualTo(3501)
-        assertThat(u3Row.credits).isEqualTo(u2Usage.credits).isEqualTo(5)
+        assertThat(u3Row.credits).isEqualByComparingTo(u2Usage.credits).isEqualByComparingTo("5")
         assertThat(u3Row.llmCalls).isEqualTo(u2Usage.llmCalls).isEqualTo(3)
         assertThat(u3Row.inputTokens).isEqualTo(u2Usage.inputTokens)
         assertThat(u3Row.outputTokens).isEqualTo(u2Usage.outputTokens)
@@ -678,7 +678,7 @@ class JdbcUsageReportRepositoryTest {
         workspaceId: UUID,
         ownerId: UUID,
         documentId: UUID,
-        credits: Int,
+        credits: BigDecimal,
         at: Instant,
     ) {
         jdbc
@@ -698,6 +698,14 @@ class JdbcUsageReportRepositoryTest {
             .param("createdAt", OffsetDateTime.ofInstant(at, ZoneOffset.UTC))
             .update()
     }
+
+    private fun insertCreditConsume(
+        workspaceId: UUID,
+        ownerId: UUID,
+        documentId: UUID,
+        credits: Int,
+        at: Instant,
+    ) = insertCreditConsume(workspaceId, ownerId, documentId, BigDecimal.valueOf(credits.toLong()), at)
 
     private fun insertActionGuideReservationAndRelease(
         workspaceId: UUID,

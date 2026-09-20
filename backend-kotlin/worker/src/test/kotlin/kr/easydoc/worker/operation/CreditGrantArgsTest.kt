@@ -6,6 +6,7 @@ import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
 import org.springframework.boot.DefaultApplicationArguments
+import java.math.BigDecimal
 import java.time.Instant
 import java.util.UUID
 
@@ -31,7 +32,7 @@ class CreditGrantArgsTest {
             )
 
         assertThat(args.workspaceId).isEqualTo(workspaceId)
-        assertThat(args.credits).isEqualTo(50)
+        assertThat(args.credits).isEqualByComparingTo("50")
         assertThat(args.reason).isEqualTo(CreditReason.MANUAL)
         assertThat(args.note).isEqualTo("파일럿 충전")
     }
@@ -55,7 +56,7 @@ class CreditGrantArgsTest {
                 DefaultApplicationArguments("--workspace=$workspaceId", "--credits=-10", "--reason=manual"),
             )
 
-        assertThat(args.credits).isEqualTo(-10)
+        assertThat(args.credits).isEqualByComparingTo("-10")
     }
 
     @Test
@@ -96,6 +97,23 @@ class CreditGrantArgsTest {
             )
         }.isInstanceOf(IllegalArgumentException::class.java)
             .hasMessageContaining("--credits")
+    }
+
+    @Test
+    @DisplayName("--credits 는 0.1 단위 소수를 허용하고 0.01은 거절한다")
+    fun `credits 소수 단위 검증`() {
+        val fractional =
+            CreditGrantArgs.parse(
+                DefaultApplicationArguments("--workspace=$workspaceId", "--credits=0.1", "--reason=manual"),
+            )
+        assertThat(fractional.credits).isEqualByComparingTo(BigDecimal("0.1"))
+
+        assertThatThrownBy {
+            CreditGrantArgs.parse(
+                DefaultApplicationArguments("--workspace=$workspaceId", "--credits=0.01", "--reason=manual"),
+            )
+        }.isInstanceOf(IllegalArgumentException::class.java)
+            .hasMessageContaining("0.1")
     }
 
     @Test

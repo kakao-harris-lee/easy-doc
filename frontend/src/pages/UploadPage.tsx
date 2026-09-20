@@ -25,6 +25,7 @@ import type { DocumentListItem } from '../api/types'
 import { useAuth } from '../auth/context'
 import { chooseNextAction } from '../conversion/nextAction'
 import { countChars } from '../lib/charCount'
+import { creditsForCharCount, formatCredits } from '../lib/credits'
 import {
   conversionPath,
   EMAIL_VERIFICATION_PATH,
@@ -47,11 +48,9 @@ const EMAIL_NOT_VERIFIED_DETAIL = '이메일 인증 후 문서를 변환할 수 
 export const MAX_CHARS = 20000
 
 /**
- * 크레딧 환산 기준. master-plan §3.3 — 공백 포함 1,000자 = 1크레딧. 백엔드
- * `Credits.requiredFor`(올림)와 같은 계산을 클라이언트에서도 미리 보여준다.
+ * 크레딧 환산 기준. 공백 포함 원문 100자마다 0.1크레딧을 올림한다. 백엔드
+ * `Credits.requiredFor`와 같은 계산을 클라이언트에서도 미리 보여준다.
  */
-const CHARS_PER_CREDIT = 1000
-
 /** 문서 제목 길이 상한. 백엔드 x-input-limits.max_title_length와 같은 값이다. */
 const MAX_TITLE_LENGTH = 255
 
@@ -284,10 +283,10 @@ export function UploadPage() {
   // 문자를 2로 세어 어긋나므로 countChars로 코드 포인트 수를 맞춘다.
   const charCount = countChars(text)
   const tooLong = charCount > MAX_CHARS
-  // 필요 크레딧 — master-plan §3.3(1,000자 = 1크레딧)을 클라이언트에서 미리 계산한다.
+  // 필요 크레딧 — 원문 100자마다 0.1크레딧을 올림해 클라이언트에서 미리 계산한다.
   // 서버가 최종 판단(`Credits.requiredFor`)하지만, 상한과 같은 이유로 여기서도 먼저
   // 보여준다.
-  const neededCredits = Math.ceil(charCount / CHARS_PER_CREDIT)
+  const neededCredits = creditsForCharCount(charCount)
   // 80% 미만에서는 보조 글자색이다. 여유가 많을 때까지 경고색을 쓰면 실제로 위험한
   // 순간에 색이 아무 말도 하지 못한다(§6.2).
   const nearLimit = !tooLong && charCount >= MAX_CHARS * COUNTER_WARNING_RATIO
@@ -498,7 +497,7 @@ export function UploadPage() {
       if (caught instanceof ApiError && caught.status === 402) {
         const suffix =
           caught.creditsRequired !== null && caught.creditBalance !== null
-            ? ` 필요 ${chars(caught.creditsRequired)} · 가용 ${chars(caught.creditBalance)}`
+            ? ` 필요 ${formatCredits(caught.creditsRequired)} · 가용 ${formatCredits(caught.creditBalance)}`
             : ''
         setError(`${caught.message}${suffix}`)
         setSubmitting(false)
@@ -786,8 +785,8 @@ export function UploadPage() {
                   꺼져 있으면(조회로 확인된 경우만) 그 사실도 함께 알린다 — `/usage`
                   크레딧 카드와 같은 문구다. */}
                   <p className="m-0 text-sm text-muted-foreground">
-                    필요 크레딧 {chars(neededCredits)}
-                    {availableCredits !== null && ` / 가용 ${chars(availableCredits)}`}
+                    필요 크레딧 {formatCredits(neededCredits)}
+                    {availableCredits !== null && ` / 가용 ${formatCredits(availableCredits)}`}
                     {creditsEnforced === false && ' (지금은 집행되지 않습니다)'}
                   </p>
                 </div>

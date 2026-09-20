@@ -84,14 +84,14 @@ class JdbcCreditCycleResetTest {
 
         assertThat(result.resetCount).isEqualTo(1)
         val row = accounts.read(ownerId, workspaceId)!!
-        assertThat(row.balance).isEqualTo(50)
-        assertThat(row.reserved).isEqualTo(3)
+        assertThat(row.balance).isEqualByComparingTo("50")
+        assertThat(row.reserved).isEqualByComparingTo("3")
         assertThat(row.cycleStartedAt).isEqualTo(Instant.parse("2026-09-09T00:00:00Z"))
         assertThat(row.cycleEndsAt).isEqualTo(Instant.parse("2026-10-09T00:00:00Z"))
         val resetTx = row.transactions.first { it.kind == CreditTransactionKind.CYCLE_RESET }
         // 30(=50-20) → 50, delta = +20.
-        assertThat(resetTx.balanceDelta).isEqualTo(20)
-        assertThat(resetTx.reservedDelta).isZero()
+        assertThat(resetTx.balanceDelta).isEqualByComparingTo("20")
+        assertThat(resetTx.reservedDelta).isEqualByComparingTo("0")
         // 갱신은 그 주기의 제공량을 다시 준 것이 맞다 — plan_monthly.
         assertThat(resetTx.reason).isEqualTo(CreditReason.PLAN_MONTHLY)
     }
@@ -120,14 +120,14 @@ class JdbcCreditCycleResetTest {
 
         assertThat(result.resetCount).isEqualTo(1)
         val row = accounts.read(ownerId, workspaceId)!!
-        assertThat(row.balance).isZero()
-        assertThat(row.allowance).isZero()
+        assertThat(row.balance).isEqualByComparingTo("0")
+        assertThat(row.allowance).isEqualByComparingTo("0")
         assertThat(row.cycleEndsAt).isNull()
-        assertThat(row.reserved).isEqualTo(3)
+        assertThat(row.reserved).isEqualByComparingTo("3")
         val resetTx = row.transactions.first { it.kind == CreditTransactionKind.CYCLE_RESET }
         // 30(=50-20) → 0, delta = -30.
-        assertThat(resetTx.balanceDelta).isEqualTo(-30)
-        assertThat(resetTx.reservedDelta).isZero()
+        assertThat(resetTx.balanceDelta).isEqualByComparingTo("-30")
+        assertThat(resetTx.reservedDelta).isEqualByComparingTo("0")
         // 갱신 없이 닫혔다 — plan_monthly(있지도 않은 구독)가 아니라 cycle_end다.
         assertThat(resetTx.reason).isEqualTo(CreditReason.CYCLE_END)
     }
@@ -178,7 +178,7 @@ class JdbcCreditCycleResetTest {
 
         assertThat(result.resetCount).isZero()
         val row = accounts.read(ownerId, workspaceId)!!
-        assertThat(row.balance).isEqualTo(77)
+        assertThat(row.balance).isEqualByComparingTo("77")
         assertThat(row.cycleEndsAt).isNull()
     }
 
@@ -256,7 +256,7 @@ class JdbcCreditCycleResetTest {
         val row = accounts.read(ownerId, workspaceId)!!
         // balance 는 allowance 한 번으로 설정된다 — 지나간 3개월치를 소급해서 여러 번
         // 지급한 것처럼 보이면 안 된다(리뷰 권고).
-        assertThat(row.balance).isEqualTo(50)
+        assertThat(row.balance).isEqualByComparingTo("50")
         // 주기는 now 를 넘어설 때까지 밀린다 — 6/9 → 7/9 → 8/9 → 9/9 → 10/9(now=9/10 보다 뒤).
         assertThat(row.cycleStartedAt).isEqualTo(Instant.parse("2026-09-09T00:00:00Z"))
         assertThat(row.cycleEndsAt).isEqualTo(Instant.parse("2026-10-09T00:00:00Z"))

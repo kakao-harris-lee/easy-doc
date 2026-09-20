@@ -11,6 +11,7 @@ import kr.easydoc.core.pilot.MinutesSpent
 import kr.easydoc.core.pilot.PublishIntent
 import kr.easydoc.core.pilot.QualityScore
 import kr.easydoc.core.segment.SourceStructure
+import java.math.BigDecimal
 import java.time.Instant
 import java.util.UUID
 
@@ -334,7 +335,7 @@ interface ConversionRepository {
         documentId: UUID,
         scheme: String,
         keyVersion: Int,
-        creditsReserved: Int = 0,
+        creditsReserved: BigDecimal = BigDecimal.ZERO,
     ): Conversion
 
     /**
@@ -486,7 +487,7 @@ data class PendingCreditsReservation(
     val documentId: UUID,
     val workspaceId: UUID,
     val ownerId: UUID,
-    val creditsReserved: Int,
+    val creditsReserved: BigDecimal,
 )
 
 /** [ConversionRepository.reserveReconversionCalls] 의 결과. */

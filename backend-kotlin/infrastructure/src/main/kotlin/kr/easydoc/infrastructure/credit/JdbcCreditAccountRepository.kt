@@ -10,6 +10,7 @@ import kr.easydoc.core.credit.CreditTransactionKind
 import kr.easydoc.core.credit.Credits
 import kr.easydoc.core.exceptions.NotFoundException
 import org.springframework.jdbc.core.simple.JdbcClient
+import java.math.BigDecimal
 import java.sql.ResultSet
 import java.sql.Timestamp
 import java.time.Instant
@@ -65,7 +66,7 @@ class JdbcCreditAccountRepository(private val jdbc: JdbcClient) : CreditAccountR
                 .param("ownerId", ownerId)
                 .param("amount", amount.amount)
                 .param("enforced", enforced)
-                .query { rs, _ -> rs.getInt("balance") to rs.getInt("reserved") }
+                .query { rs, _ -> rs.getBigDecimal("balance") to rs.getBigDecimal("reserved") }
                 .optional()
 
         if (reserved.isEmpty) {
@@ -77,9 +78,9 @@ class JdbcCreditAccountRepository(private val jdbc: JdbcClient) : CreditAccountR
                     .sql(AVAILABLE_SQL)
                     .param("workspaceId", workspaceId)
                     .param("ownerId", ownerId)
-                    .query { rs, _ -> rs.getInt("balance") - rs.getInt("reserved") }
+                    .query { rs, _ -> rs.getBigDecimal("balance") - rs.getBigDecimal("reserved") }
                     .optional()
-                    .orElse(0)
+                    .orElse(BigDecimal.ZERO)
             return ReservationResult.Insufficient(available)
         }
 
@@ -89,7 +90,7 @@ class JdbcCreditAccountRepository(private val jdbc: JdbcClient) : CreditAccountR
             ownerId = ownerId,
             documentId = documentId,
             kind = CreditTransactionKind.RESERVE,
-            balanceDelta = 0,
+            balanceDelta = BigDecimal.ZERO,
             reservedDelta = amount.amount,
             reason = CreditReason.CONVERSION,
             note = null,
@@ -150,7 +151,7 @@ class JdbcCreditAccountRepository(private val jdbc: JdbcClient) : CreditAccountR
             ownerId,
             documentId,
             CreditTransactionKind.RELEASE,
-            balanceDelta = 0,
+            balanceDelta = BigDecimal.ZERO,
             reservedDelta = -amount.amount,
             CreditReason.CONVERSION,
             note = null,
@@ -167,11 +168,11 @@ class JdbcCreditAccountRepository(private val jdbc: JdbcClient) : CreditAccountR
     override fun grant(
         workspaceId: UUID,
         ownerUserId: UUID,
-        credits: Int,
+        credits: BigDecimal,
         reason: CreditReason,
         note: String?,
         actorUserId: UUID?,
-    ): Int {
+    ): BigDecimal {
         val balance =
             jdbc
                 .sql(
@@ -183,17 +184,17 @@ class JdbcCreditAccountRepository(private val jdbc: JdbcClient) : CreditAccountR
                     """.trimIndent(),
                 ).param("workspaceId", workspaceId)
                 .param("credits", credits)
-                .query { rs, _ -> rs.getInt("balance") }
+                .query { rs, _ -> rs.getBigDecimal("balance") }
                 .optional()
                 .orElseThrow { NotFoundException(WORKSPACE_NOT_FOUND_MESSAGE) }
-        val kind = if (credits >= 0) CreditTransactionKind.GRANT else CreditTransactionKind.ADJUST
+        val kind = if (credits.signum() >= 0) CreditTransactionKind.GRANT else CreditTransactionKind.ADJUST
         insertTransaction(
             workspaceId = workspaceId,
             ownerId = ownerUserId,
             documentId = null,
             kind = kind,
             balanceDelta = credits,
-            reservedDelta = 0,
+            reservedDelta = BigDecimal.ZERO,
             reason = reason,
             note = note,
             actorUserId = actorUserId,
@@ -215,13 +216,13 @@ class JdbcCreditAccountRepository(private val jdbc: JdbcClient) : CreditAccountR
     override fun setAllowance(
         workspaceId: UUID,
         ownerUserId: UUID,
-        allowance: Int,
+        allowance: BigDecimal,
         cycleEndsAt: Instant,
         renews: Boolean,
         reason: CreditReason,
         note: String?,
         actorUserId: UUID?,
-    ): Int {
+    ): BigDecimal {
         val oldBalance =
             jdbc
                 .sql(SET_ALLOWANCE_SQL)
@@ -229,7 +230,7 @@ class JdbcCreditAccountRepository(private val jdbc: JdbcClient) : CreditAccountR
                 .param("allowance", allowance)
                 .param("cycleEndsAt", Timestamp.from(cycleEndsAt))
                 .param("renews", renews)
-                .query { rs, _ -> rs.getInt("old_balance") }
+                .query { rs, _ -> rs.getBigDecimal("old_balance") }
                 .optional()
                 .orElseThrow { NotFoundException(WORKSPACE_NOT_FOUND_MESSAGE) }
         insertTransaction(
@@ -238,7 +239,7 @@ class JdbcCreditAccountRepository(private val jdbc: JdbcClient) : CreditAccountR
             documentId = null,
             kind = CreditTransactionKind.CYCLE_SET,
             balanceDelta = allowance - oldBalance,
-            reservedDelta = 0,
+            reservedDelta = BigDecimal.ZERO,
             reason = reason,
             note = note,
             actorUserId = actorUserId,
@@ -303,22 +304,22 @@ class JdbcCreditAccountRepository(private val jdbc: JdbcClient) : CreditAccountR
 
     /** [markSignupGrantSkipped] 를 지원하려고 `read` 의 계정 스냅샷을 값으로 뽑아 둔다. */
     private data class AccountSnapshot(
-        val balance: Int,
-        val reserved: Int,
+        val balance: BigDecimal,
+        val reserved: BigDecimal,
         val signupGrantSkipped: Boolean,
         val emailVerified: Boolean,
-        val allowance: Int,
+        val allowance: BigDecimal,
         val cycleStartedAt: Instant,
         val cycleEndsAt: Instant?,
     )
 
     private fun toAccountSnapshot(rs: ResultSet): AccountSnapshot =
         AccountSnapshot(
-            balance = rs.getInt("balance"),
-            reserved = rs.getInt("reserved"),
+            balance = rs.getBigDecimal("balance"),
+            reserved = rs.getBigDecimal("reserved"),
             signupGrantSkipped = rs.getBoolean("signup_grant_skipped"),
             emailVerified = rs.getBoolean("email_verified"),
-            allowance = rs.getInt("allowance"),
+            allowance = rs.getBigDecimal("allowance"),
             cycleStartedAt = rs.getObject("cycle_started_at", OffsetDateTime::class.java).toInstant(),
             cycleEndsAt = rs.getObject("cycle_ends_at", OffsetDateTime::class.java)?.toInstant(),
         )
@@ -345,8 +346,8 @@ class JdbcCreditAccountRepository(private val jdbc: JdbcClient) : CreditAccountR
             .sql(
                 """
                 SELECT a.workspace_id, a.balance, a.reserved,
-                       coalesce(sum(t.balance_delta), 0)::integer AS balance_sum,
-                       coalesce(sum(t.reserved_delta), 0)::integer AS reserved_sum
+                       coalesce(sum(t.balance_delta), 0) AS balance_sum,
+                       coalesce(sum(t.reserved_delta), 0) AS reserved_sum
                 FROM workspace_credit_accounts a
                 LEFT JOIN credit_transactions t ON t.workspace_id = a.workspace_id
                 GROUP BY a.workspace_id, a.balance, a.reserved
@@ -356,10 +357,10 @@ class JdbcCreditAccountRepository(private val jdbc: JdbcClient) : CreditAccountR
             ).query { rs, _ ->
                 CreditConsistencyViolation(
                     workspaceId = rs.getObject("workspace_id", UUID::class.java),
-                    balance = rs.getInt("balance"),
-                    reserved = rs.getInt("reserved"),
-                    balanceSum = rs.getInt("balance_sum"),
-                    reservedSum = rs.getInt("reserved_sum"),
+                    balance = rs.getBigDecimal("balance"),
+                    reserved = rs.getBigDecimal("reserved"),
+                    balanceSum = rs.getBigDecimal("balance_sum"),
+                    reservedSum = rs.getBigDecimal("reserved_sum"),
                 )
             }.list()
 
@@ -369,8 +370,8 @@ class JdbcCreditAccountRepository(private val jdbc: JdbcClient) : CreditAccountR
         ownerId: UUID,
         documentId: UUID?,
         kind: CreditTransactionKind,
-        balanceDelta: Int,
-        reservedDelta: Int,
+        balanceDelta: BigDecimal,
+        reservedDelta: BigDecimal,
         reason: CreditReason,
         note: String?,
         actorUserId: UUID?,
@@ -415,8 +416,8 @@ class JdbcCreditAccountRepository(private val jdbc: JdbcClient) : CreditAccountR
         CreditTransactionView(
             id = rs.getObject("id", UUID::class.java),
             kind = CreditTransactionKind.ofWireName(rs.getString("kind")),
-            balanceDelta = rs.getInt("balance_delta"),
-            reservedDelta = rs.getInt("reserved_delta"),
+            balanceDelta = rs.getBigDecimal("balance_delta"),
+            reservedDelta = rs.getBigDecimal("reserved_delta"),
             reason = CreditReason.ofWireName(rs.getString("reason")),
             note = rs.getString("note"),
             documentId = rs.getObject("document_id", UUID::class.java),

@@ -5,6 +5,7 @@ import { ApiError } from '../api/client'
 import { ONE_TIME_CODE_LENGTH, sanitizeOneTimeCode } from '../auth/oneTimeCode'
 import { DEFAULT_RESEND_COOLDOWN_SECONDS, useResendCooldown } from '../auth/useResendCooldown'
 import { useAuth } from '../auth/context'
+import { formatCredits } from '../lib/credits'
 import { Button } from './ui/Button'
 
 const SUBMIT_ERROR_MESSAGE = '요청을 처리하지 못했습니다. 잠시 후 다시 시도해 주세요.'
@@ -63,7 +64,7 @@ export function PhoneVerificationSection() {
       await refreshMe()
       setPhoneMessage(
         result.granted_credits > 0
-          ? `휴대폰 인증이 완료되어 체험용 ${result.granted_credits}크레딧을 드렸습니다.`
+          ? `휴대폰 인증이 완료되어 체험용 ${formatCredits(result.granted_credits)}크레딧을 드렸습니다.`
           : '휴대폰 인증이 완료되었습니다. 이 번호의 체험 크레딧은 이미 지급된 적이 있습니다.',
       )
       setPhoneCode('')

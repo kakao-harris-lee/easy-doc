@@ -282,7 +282,7 @@ describe('action guide job API', () => {
         headers: {
           'Content-Type': 'application/json',
           Location: '/conversions/c1/action-guide-jobs/job-1',
-          'X-Credit-Balance': '8',
+          'X-Credit-Balance': '8.1',
         },
       }),
     )
@@ -302,7 +302,7 @@ describe('action guide job API', () => {
       expected_guide_revision: null,
     })
     expect(result.job).toEqual(job)
-    expect(result.creditBalance).toBe(8)
+    expect(result.creditBalance).toBe(8.1)
   })
 })
 
@@ -537,6 +537,46 @@ describe('createDocumentFromText — 크레딧 헤더(C1/C2)', () => {
       status: 402,
       creditBalance: 1,
       creditsRequired: 2,
+    })
+  })
+
+  it('402는 소수 첫째 자리 크레딧 헤더를 그대로 읽는다', async () => {
+    writeToken('token-abc')
+    fetchMock.mockResolvedValue(
+      new Response(JSON.stringify({ detail: '크레딧이 부족합니다. 상위 플랜을 선택해 주세요.' }), {
+        status: 402,
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Credit-Balance': '0.3',
+          'X-Credits-Required': '1.1',
+        },
+      }),
+    )
+
+    await expect(createDocumentFromText('본문', null, '제목')).rejects.toMatchObject({
+      status: 402,
+      creditBalance: 0.3,
+      creditsRequired: 1.1,
+    })
+  })
+
+  it('크레딧 헤더가 유한한 십진수가 아니면 null이다', async () => {
+    writeToken('token-abc')
+    fetchMock.mockResolvedValue(
+      new Response(JSON.stringify({ detail: '크레딧이 부족합니다. 상위 플랜을 선택해 주세요.' }), {
+        status: 402,
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Credit-Balance': 'Infinity',
+          'X-Credits-Required': 'not-a-number',
+        },
+      }),
+    )
+
+    await expect(createDocumentFromText('본문', null, '제목')).rejects.toMatchObject({
+      status: 402,
+      creditBalance: null,
+      creditsRequired: null,
     })
   })
 

@@ -49,6 +49,7 @@ import org.springframework.jdbc.core.simple.JdbcClient
 import org.springframework.jdbc.datasource.DataSourceTransactionManager
 import org.springframework.jdbc.datasource.DriverManagerDataSource
 import org.springframework.transaction.support.TransactionTemplate
+import java.math.BigDecimal
 import java.security.SecureRandom
 import java.time.Duration
 import java.util.Base64
@@ -208,6 +209,35 @@ class ConversionWorkerFlowTest {
         val again = checkNotNull(conversions.findOwnedResult(owner, accepted.conversionId))
         assertThat(again.status).isEqualTo(ConversionStatus.DONE)
         assertThat(again.ciphertexts.easyText?.bytes).isEqualTo(original)
+    }
+
+    @Test
+    @DisplayName("worker 작업은 저장된 소수 예약량을 읽고 같은 값으로 한 번만 CAS 정산한다")
+    fun `저장된 소수 예약량은 CAS로 한 번만 정산한다`() {
+        val owner = newUser()
+        val workspace = workspaces.create(owner, "공간").id
+        val accepted = service.createFromText(owner, "복지 급여를 안내합니다.", null, workspace.toString())
+
+        jdbc
+            .sql("UPDATE conversions SET credits_reserved = :amount WHERE id = :id")
+            .param("amount", BigDecimal("0.1"))
+            .param("id", accepted.conversionId)
+            .update()
+        try {
+            val item = checkNotNull(work.loadForProcessing(accepted.conversionId))
+            assertThat(item.creditsReserved).isEqualByComparingTo("0.1")
+            assertThat(work.settleCreditsReserved(accepted.conversionId, item.creditsReserved)).isTrue()
+            assertThat(work.settleCreditsReserved(accepted.conversionId, item.creditsReserved)).isFalse()
+            val stored =
+                jdbc
+                    .sql("SELECT credits_reserved FROM conversions WHERE id = :id")
+                    .param("id", accepted.conversionId)
+                    .query { rs, _ -> rs.getBigDecimal(1) }
+                    .single()
+            assertThat(stored).isEqualByComparingTo("0")
+        } finally {
+            jdbc.sql("DELETE FROM documents WHERE id = :id").param("id", accepted.documentId).update()
+        }
     }
 
     @Test

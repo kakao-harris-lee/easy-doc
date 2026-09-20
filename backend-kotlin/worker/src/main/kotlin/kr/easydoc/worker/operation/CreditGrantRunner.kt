@@ -11,6 +11,8 @@ import org.slf4j.LoggerFactory
 import org.springframework.boot.ApplicationArguments
 import org.springframework.boot.ApplicationRunner
 import org.springframework.boot.ExitCodeGenerator
+import java.math.BigDecimal
+import java.math.RoundingMode
 import java.time.DateTimeException
 import java.time.Instant
 import java.time.format.DateTimeParseException
@@ -127,7 +129,7 @@ class CreditGrantRunner(
  */
 internal data class CreditGrantArgs(
     val workspaceId: UUID,
-    val credits: Int,
+    val credits: BigDecimal,
     val reason: CreditReason,
     val note: String?,
     /**
@@ -166,7 +168,7 @@ internal data class CreditGrantArgs(
 
         fun parse(args: ApplicationArguments): CreditGrantArgs {
             val workspaceId = requireUuid(singleOptionValue(args, WORKSPACE_OPTION))
-            val credits = requireNonZeroInt(singleOptionValue(args, CREDITS_OPTION))
+            val credits = requireNonZeroAmount(singleOptionValue(args, CREDITS_OPTION))
             val reason = requireReason(singleOptionValue(args, REASON_OPTION))
             val note = requireValidNote(singleOptionValue(args, NOTE_OPTION))
             val cycleEndsAt = requireOptionalCycleEndsAt(singleOptionValue(args, CYCLE_ENDS_AT_OPTION))
@@ -174,7 +176,7 @@ internal data class CreditGrantArgs(
                 // 주기 이용량은 음수일 수 없다(`ck_workspace_credit_accounts_allowance_non_negative`,
                 // V21) — 이 갈래에서만 credits 의 부호를 좁힌다. 이 인자가 없는 기존 경로
                 // (grant/adjust)는 음수를 그대로 허용한다.
-                require(credits >= 0) {
+                require(credits.signum() >= 0) {
                     "--$CYCLE_ENDS_AT_OPTION 와 함께라면 --$CREDITS_OPTION 은 음수가 될 수 없습니다: $credits"
                 }
             }
@@ -196,11 +198,15 @@ internal data class CreditGrantArgs(
             }
         }
 
-        private fun requireNonZeroInt(value: String?): Int {
+        private fun requireNonZeroAmount(value: String?): BigDecimal {
             val raw = requireNotNull(value) { "--$CREDITS_OPTION 은 필수입니다" }
-            val parsed = requireNotNull(raw.toIntOrNull()) { "--$CREDITS_OPTION 형식이 올바르지 않습니다: $raw" }
-            require(parsed != 0) { "--$CREDITS_OPTION 은 0이 될 수 없습니다" }
-            return parsed
+            val parsed = requireNotNull(raw.toBigDecimalOrNull()) { "--$CREDITS_OPTION 형식이 올바르지 않습니다: $raw" }
+            require(parsed.signum() != 0) { "--$CREDITS_OPTION 은 0이 될 수 없습니다" }
+            return try {
+                parsed.setScale(1, RoundingMode.UNNECESSARY)
+            } catch (_: ArithmeticException) {
+                throw IllegalArgumentException("--$CREDITS_OPTION 은 0.1 단위여야 합니다: $raw")
+            }
         }
 
         private fun requireReason(value: String?): CreditReason {

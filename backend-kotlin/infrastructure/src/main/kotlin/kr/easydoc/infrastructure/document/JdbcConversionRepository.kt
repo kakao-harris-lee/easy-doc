@@ -15,6 +15,7 @@ import kr.easydoc.core.document.SourceFormat
 import kr.easydoc.core.exceptions.StorageException
 import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.jdbc.core.simple.JdbcClient
+import java.math.BigDecimal
 import java.sql.ResultSet
 import java.time.OffsetDateTime
 import java.util.UUID
@@ -31,7 +32,7 @@ class JdbcConversionRepository(private val jdbc: JdbcClient) : ConversionReposit
         documentId: UUID,
         scheme: String,
         keyVersion: Int,
-        creditsReserved: Int,
+        creditsReserved: BigDecimal,
     ): Conversion =
         try {
             jdbc
@@ -274,7 +275,7 @@ class JdbcConversionRepository(private val jdbc: JdbcClient) : ConversionReposit
                     documentId = documentId,
                     workspaceId = rs.getObject("workspace_id", UUID::class.java),
                     ownerId = ownerId,
-                    creditsReserved = rs.getInt("credits_reserved"),
+                    creditsReserved = rs.getBigDecimal("credits_reserved"),
                 )
             }.optional()
             .orElse(null)

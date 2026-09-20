@@ -9,6 +9,7 @@ import kr.easydoc.application.actionguide.StoredActionGuideJob
 import kr.easydoc.core.actionguide.ActionGuideJobFailureCode
 import kr.easydoc.core.actionguide.ActionGuideJobStatus
 import org.springframework.jdbc.core.simple.JdbcClient
+import java.math.BigDecimal
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
 import java.sql.ResultSet
@@ -261,7 +262,7 @@ class JdbcActionGuideJobRepository(private val jdbc: JdbcClient) : ActionGuideJo
             requestId = rs.getObject("request_id", UUID::class.java),
             expectedGuideRevision = rs.getObject("expected_guide_revision", Long::class.javaObjectType),
             basedOnContentRevision = rs.getLong("based_on_content_revision"),
-            reservedCredits = rs.getInt("reserved_credits"),
+            reservedCredits = rs.getBigDecimal("reserved_credits"),
             status = ActionGuideJobStatus.ofWireName(rs.getString("status")),
             failureCode = rs.getString("failure_code")?.let(ActionGuideJobFailureCode::ofWireName),
             executionId = rs.getObject("provider_execution_id", UUID::class.java),
