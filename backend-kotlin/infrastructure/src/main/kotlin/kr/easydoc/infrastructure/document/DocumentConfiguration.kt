@@ -237,6 +237,7 @@ class DocumentConfiguration {
             provider,
             defaultOptions = LlmOptions(maxTokens = properties.validatedMaxOutputTokens()),
             structureHintOptions = structureHintProperties.toStructureHintOptions(),
+            explanationPromptVersion = structureHintProperties.contextExplanationVersion,
         )
 
     /**

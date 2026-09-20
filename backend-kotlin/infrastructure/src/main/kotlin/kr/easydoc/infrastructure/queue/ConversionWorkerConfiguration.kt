@@ -19,6 +19,7 @@ import kr.easydoc.application.credit.CreditAccountService
 import kr.easydoc.application.crypto.ContentCipher
 import kr.easydoc.application.mail.MailSender
 import kr.easydoc.application.mail.NotificationMailFactory
+import kr.easydoc.core.easyread.ExplanationPromptVersion
 import kr.easydoc.core.exceptions.ConfigurationException
 import kr.easydoc.core.llm.LlmOptions
 import kr.easydoc.core.llm.LlmProvider
@@ -80,6 +81,7 @@ class ConversionWorkerConfiguration {
             dictionary = dictionary,
             defaultOptions = LlmOptions(maxTokens = properties.validatedMaxOutputTokens()),
             structureHintOptions = structureHintProperties.toStructureHintOptions(),
+            explanationPromptVersion = structureHintProperties.contextExplanationVersion,
         )
 
     /**
@@ -102,6 +104,7 @@ class ConversionWorkerConfiguration {
     fun dictionaryContextSource(
         properties: DictionaryProperties,
         dictionaryIndexHolder: DictionaryIndexHolder,
+        promptProperties: StructureHintProperties = StructureHintProperties(),
     ): DictionaryContextSource =
         if (properties.enabled) {
             val index =
@@ -110,7 +113,13 @@ class ConversionWorkerConfiguration {
                         "easydoc.dictionary.enabled=true 인데 사전 색인이 적재되지 않았다 " +
                             "— DictionaryConfiguration.dictionaryIndexHolder 조립을 확인한다 (구성상 발생할 수 없다)",
                     )
-            IndexedDictionaryContextSource(index = index, policy = properties.policy())
+            IndexedDictionaryContextSource(
+                index = index,
+                policy =
+                    properties.policy().copy(
+                        officialNamesOnly = promptProperties.contextExplanationVersion == ExplanationPromptVersion.R3,
+                    ),
+            )
         } else {
             NoDictionaryContext
         }

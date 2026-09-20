@@ -31,7 +31,18 @@ internal fun renderDictionaryPromptContext(
     policy: DictionaryContextPolicy,
 ): RenderedDictionaryContext {
     // 최초 등장분만 남긴다 — 이 시점의 순서가 곧 문서 등장 순서다.
-    val unique = matches.distinctBy { it.entryId }
+    // R3 배포 색인에는 항목별 검수 상태가 없다. 따라서 검수된 뜻으로 단정할 수 없는
+    // GLOSS/SUBSTITUTE 전체와 KEEP 정의·예문을 생성 근거에서 빼고 공식 이름만 남긴다.
+    // 기본 정책의 사전 A/B 결과와 예산은 그대로 보존한다.
+    val promptMatches =
+        if (policy.officialNamesOnly) {
+            matches
+                .filter { it.entry.strategy == ReplaceStrategy.KEEP }
+                .map { match -> match.copy(entry = match.entry.copy(definition = null, examples = emptyList())) }
+        } else {
+            matches
+        }
+    val unique = promptMatches.distinctBy { it.entryId }
     val reservedIds = reservedSubstituteIds(unique, policy.minSubstitute)
     val truncatedByTerms = unique.size > policy.maxTerms
     val kept = if (truncatedByTerms) keepTopTerms(unique, reservedIds, policy.maxTerms) else unique

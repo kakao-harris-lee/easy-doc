@@ -30,6 +30,9 @@ easydoc:
     poll-interval-ms: ${EASYDOC_ACTION_GUIDE_POLL_INTERVAL_MS:500}
   ingest:
     max-concurrent-extractions: ${EASYDOC_MAX_CONCURRENT_EXTRACTIONS:4}
+  prompt:
+    structure-max-runs: ${EASYDOC_PROMPT_STRUCTURE_MAX_RUNS:40}
+    context-explanation-version: ${EASYDOC_PROMPT_CONTEXT_EXPLANATION_VERSION:BASELINE}
   payment:
     provider: ${EASYDOC_PAYMENT_PROVIDER:stub}
     mock-enabled: ${EASYDOC_PAYMENT_MOCK_ENABLED:false}

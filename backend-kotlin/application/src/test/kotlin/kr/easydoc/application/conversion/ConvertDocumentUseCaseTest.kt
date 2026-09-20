@@ -1,6 +1,7 @@
 package kr.easydoc.application.conversion
 
 import kr.easydoc.core.easyread.DocumentIdGenerator
+import kr.easydoc.core.easyread.ExplanationPromptVersion
 import kr.easydoc.core.easyread.StructureHintOptions
 import kr.easydoc.core.easyread.checkStyle
 import kr.easydoc.core.easyread.renderStructureSection
@@ -26,6 +27,52 @@ import java.time.ZoneId
 
 /** 변환 오케스트레이션 — CNV-01(호출 상한)·CNV-02(4대 예외)·CNV-04(보정 채택). */
 class ConvertDocumentUseCaseTest {
+    @Test
+    fun `변환과 단위 재변환은 각자의 R3 정책을 추가 호출 없이 쓴다`() {
+        for (purpose in listOf(LlmCallPurpose.CONVERT, LlmCallPurpose.RECONVERT)) {
+            val source = "희망센터에서 서류를 받습니다."
+            val provider = FakeLlmProvider(listOf(reply(source)))
+
+            val result = converted(r3UseCase(provider).convert(source, purpose = purpose))
+
+            assertThat(provider.calls).hasSize(1)
+            val policyText =
+                if (purpose == LlmCallPurpose.RECONVERT) {
+                    "문서 전체에서 첫 등장인지 알 수 없으므로"
+                } else {
+                    "검수 상태가 표시되지 않았다면"
+                }
+            val system =
+                provider.calls
+                    .single()
+                    .prompt.system
+            assertThat(system).contains(policyText)
+            if (purpose == LlmCallPurpose.RECONVERT) {
+                assertThat(system).doesNotContain("이후에는 같은 이름")
+            }
+            assertThat(result.usage.llmCalls).isEqualTo(1)
+            assertThat(
+                result.usage.calls
+                    .single()
+                    .purpose,
+            ).isEqualTo(purpose)
+        }
+    }
+
+    @Test
+    fun `조건부 보정에도 같은 첫 설명 규칙을 쓰며 호출은 기존 상한 두 번이다`() {
+        val provider = FakeLlmProvider(listOf(reply(draftWithIssue), reply(cleanText)))
+
+        val result = converted(r3UseCase(provider).convert(source))
+
+        assertThat(provider.calls).hasSize(2)
+        for (call in provider.calls) {
+            assertThat(call.prompt.system)
+                .contains("첫 등장", "검수 상태가 표시되지 않았다면", "이후에는 같은 이름")
+        }
+        assertThat(result.usage.llmCalls).isEqualTo(2)
+    }
+
     @Test
     fun `제목 목록과 문장 안 주의 표식만 빠져도 한 번 보정한다`() {
         val source = "○ 선정 과정\n- 심사 결과를 알립니다. ※통과한 사람에게만 알립니다.\n * 전화로 면접합니다."
@@ -113,6 +160,9 @@ class ConvertDocumentUseCaseTest {
     private val cleanText = "오늘 서류를 내세요."
 
     private fun useCase(provider: FakeLlmProvider) = ConvertDocumentUseCase(provider, fixedIds)
+
+    private fun r3UseCase(provider: FakeLlmProvider) =
+        ConvertDocumentUseCase(provider, fixedIds, explanationPromptVersion = ExplanationPromptVersion.R3)
 
     @Test
     fun `보정 요청은 원문을 문서 구분자 안에 함께 전달한다`() {

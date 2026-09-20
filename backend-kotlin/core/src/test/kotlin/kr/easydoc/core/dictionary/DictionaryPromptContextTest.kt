@@ -35,6 +35,50 @@ class DictionaryPromptContextTest {
         assertThat(context).doesNotContain("3만 원", "다른 사업", "바꿔 쓰세요", "절대 바꾸지")
     }
 
+    @Test
+    fun `R3 사전 컨텍스트는 검수 상태 없는 뜻과 예문을 빼고 공식 이름만 남긴다`() {
+        val index =
+            DictionaryFixture()
+                .add(
+                    DictionaryEntry(
+                        term = "내방",
+                        easyTerm = "방문",
+                        strategy = ReplaceStrategy.SUBSTITUTE,
+                        risk = RiskLevel.NONE,
+                        priority = 120,
+                        definition = "찾아옴",
+                    ),
+                ).add(
+                    DictionaryEntry(
+                        term = "환수",
+                        easyTerm = "되거둠",
+                        strategy = ReplaceStrategy.GLOSS,
+                        risk = RiskLevel.HIGH,
+                        priority = 130,
+                        definition = "돈을 되돌려 받음",
+                    ),
+                ).add(
+                    DictionaryEntry(
+                        term = "국민기초생활 보장법",
+                        easyTerm = "국민기초생활 보장법",
+                        strategy = ReplaceStrategy.KEEP,
+                        risk = RiskLevel.HIGH,
+                        priority = 200,
+                        definition = "법 이름입니다.",
+                        examples = listOf(DictionaryExample("법 안내", "변경된 법 안내", isGolden = true)),
+                    ),
+                ).build()
+        val text = "내방 후 환수 대상이 되면 국민기초생활 보장법을 확인하세요."
+
+        val baseline = index.buildPromptContext(text, unlimited)
+        val r3 = index.renderPromptContext(text, unlimited.copy(officialNamesOnly = true))
+
+        assertThat(baseline).contains("- 내방", "- 환수", "설명: 법 이름입니다.")
+        assertThat(r3.renderedTerms).isEqualTo(1)
+        assertThat(r3.text).contains("- 국민기초생활 보장법")
+        assertThat(r3.text).doesNotContain("- 내방", "- 환수", "되거둠", "설명:", "참고 예문")
+    }
+
     @Nested
     @DisplayName("세 구역 렌더링")
     inner class Sections {
@@ -320,11 +364,14 @@ class DictionaryPromptContextTest {
     @Nested
     @DisplayName("계층적 상세도")
     inner class DetailTiers {
-        private fun contextFor(entry: DictionaryEntry): String =
+        private fun contextFor(
+            entry: DictionaryEntry,
+            policy: DictionaryContextPolicy = unlimited,
+        ): String =
             DictionaryFixture()
                 .add(entry)
                 .build()
-                .buildPromptContext("${entry.term} 안내입니다.", unlimited)
+                .buildPromptContext("${entry.term} 안내입니다.", policy)
 
         @Test
         @DisplayName("substitute도 문맥 판단을 위한 정의를 제공한다")
@@ -403,21 +450,22 @@ class DictionaryPromptContextTest {
         }
 
         @Test
-        @DisplayName("keep 은 표제어만 싣고 화살표를 붙이지 않는다")
-        fun `keep 항목은 원어만 보여준다`() {
-            val context =
-                contextFor(
-                    DictionaryEntry(
-                        term = "국민기초생활 보장법",
-                        easyTerm = "국민기초생활 보장법",
-                        strategy = ReplaceStrategy.KEEP,
-                        risk = RiskLevel.HIGH,
-                        priority = 200,
-                        definition = "법 이름입니다.",
-                        caution = "법령명은 절대 바꾸지 않습니다.",
-                    ),
+        @DisplayName("R3는 KEEP 정의를 숨기고 기본 버전은 종전 출력을 유지한다")
+        fun `R3 KEEP 항목은 원어만 보여준다`() {
+            val entry =
+                DictionaryEntry(
+                    term = "국민기초생활 보장법",
+                    easyTerm = "국민기초생활 보장법",
+                    strategy = ReplaceStrategy.KEEP,
+                    risk = RiskLevel.HIGH,
+                    priority = 200,
+                    definition = "법 이름입니다.",
+                    caution = "법령명은 절대 바꾸지 않습니다.",
                 )
-            assertThat(context).contains("- 국민기초생활 보장법\n  설명: 법 이름입니다.")
+            val context = contextFor(entry, unlimited.copy(officialNamesOnly = true))
+            assertThat(contextFor(entry)).contains("  설명: 법 이름입니다.")
+            assertThat(context).contains("- 국민기초생활 보장법\n")
+            assertThat(context).doesNotContain("설명: 법 이름입니다.")
             assertThat(context).doesNotContain("  주의: 법령명은 절대 바꾸지 않습니다.")
             assertThat(context).doesNotContain("→")
         }
@@ -527,15 +575,15 @@ class DictionaryPromptContextTest {
         }
 
         @Test
-        @DisplayName("§7.2.1 불변식: 표시된 항목은 언제나 자기 위험도에 맞는 완전한 설명을 갖는다")
-        fun `예산이 빠듯해도 상세도를 낮추지 않는다`() {
+        @DisplayName("§7.2.1 불변식: KEEP 항목은 예산과 무관하게 미확인 정의를 싣지 않는다")
+        fun `예산이 달라도 KEEP 정의를 싣지 않는다`() {
             for (budget in probedBudgets) {
-                val context = index.buildPromptContext(text, unlimited.copy(maxChars = budget))
+                val context =
+                    index.buildPromptContext(text, unlimited.copy(maxChars = budget, officialNamesOnly = true))
                 if (context.contains("- 다다")) {
                     assertThat(context)
-                        .withFailMessage("keep 항목이 예산 %s 에서 정의를 잃었다:%n%s", budget, context)
-                        .contains("  설명: 바꾸면 안 되는 이름입니다.")
-                        .doesNotContain("주의:")
+                        .withFailMessage("keep 항목의 미확인 정의가 예산 %s 에서 노출됐다:%n%s", budget, context)
+                        .doesNotContain("  설명: 바꾸면 안 되는 이름입니다.", "주의:")
                 }
             }
         }

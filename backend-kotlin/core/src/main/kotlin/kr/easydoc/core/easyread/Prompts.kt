@@ -80,6 +80,9 @@ internal val REPLACEMENT_INSTRUCTION =
     예: '번호를 부여받으세요'는 '번호를 받으세요'로 씁니다.
     """.trimIndent()
 
+/** 운영에서 이전 프롬프트로 되돌릴 수 있는 R3 선택값. 기본값은 실측한 기존 프롬프트다. */
+enum class ExplanationPromptVersion { BASELINE, R3, R3_UNIT }
+
 /** 모든 용어의 해설을 강제하지 않고 독해에 필요한 개념을 문맥 안에서 설명한다. */
 internal val EXPLAIN_INSTRUCTION =
     """
@@ -88,6 +91,28 @@ internal val EXPLAIN_INSTRUCTION =
     문맥에 맞는 일반적인 뜻은 설명할 수 있지만, 설명을 통해 새로운 사업 조건·혜택·절차를 만들면 안 됩니다. 뜻이 불확실하면 추측하지 마세요.
     처음 설명한 뜻을 반복하거나 익숙한 단어까지 모두 풀이하지 마세요. 공식 이름은 유지하고 이해에 필요한 설명을 이름 밖에 덧붙이세요.
     """.trimIndent()
+
+/**
+ * ER-08: 공식 이름의 반복 풀이와 근거 없는 뜻풀이를 막는다. 사전 배포 색인에는 검수 상태가
+ * 없으므로 해당 블록만으로 검수 완료를 추정하지 않는다. 유료 평가 전에는 R3 opt-in 전용이다.
+ */
+internal val R3_EXPLAIN_INSTRUCTION =
+    EXPLAIN_INSTRUCTION +
+        "\n기관명·법령명·서류명·첨부파일 이름과 독해에 꼭 필요한 개념은 첫 등장에만 짧게 역할이나 뜻을 설명하세요. " +
+        "설명은 원문이나 검수된 사전 정의에 근거해야 합니다. 사전 참고 블록에 검수 상태가 표시되지 않았다면 " +
+        "그 정의를 검수된 것으로 판단하지 마세요. 뜻을 확인할 수 없으면 공식 이름만 원문 그대로 남기세요. " +
+        "이후에는 같은 이름을 일관되게 쓰고 설명을 반복하지 마세요. " +
+        "사전의 예시나 내부 검수 메모에서 사업별 자격·금액·기한을 가져오지 마세요."
+
+/** 단위 재변환은 문서 앞부분을 보지 못한다. 첫 등장 여부를 추측하지 않는 R3 안전 경로다. */
+internal val R3_UNIT_EXPLAIN_INSTRUCTION =
+    EXPLAIN_INSTRUCTION.replace(
+        "공식 이름은 유지하고 이해에 필요한 설명을 이름 밖에 덧붙이세요.",
+        "공식 이름은 원문 그대로 유지하세요.",
+    ) +
+        "\n이 입력은 문서의 한 단위입니다. 공식 기관·법령·서류·첨부파일 이름을 원문 그대로 유지하세요. " +
+        "이 단위의 원문에 이미 있는 짧은 설명은 보존하되, 문서 전체에서 첫 등장인지 알 수 없으므로 " +
+        "새 역할 설명이나 뜻풀이를 추측해 덧붙이지 마세요. 사전의 예시나 검수 메모로 사업 조건을 만들지 마세요."
 
 /** 실측에서 관찰한 의미 오류를 한곳에서 방지한다. */
 internal val SOURCE_FIDELITY_INSTRUCTION =
@@ -197,10 +222,14 @@ private fun renderStyleRules(): String =
 fun buildSystemPrompt(
     @Suppress("UNUSED_PARAMETER") documentText: String,
     structureSection: String? = null,
-): String = editingInstructions(structureSection).joinToString(SECTION_SEPARATOR)
+    explanationVersion: ExplanationPromptVersion = ExplanationPromptVersion.BASELINE,
+): String = editingInstructions(structureSection, explanationVersion).joinToString(SECTION_SEPARATOR)
 
 /** 변환과 보정은 같은 편집 기준을 사용한다. 어휘 자료와 본문은 user 메시지에서만 전달한다. */
-private fun editingInstructions(structureSection: String?): List<String> =
+private fun editingInstructions(
+    structureSection: String?,
+    explanationVersion: ExplanationPromptVersion,
+): List<String> =
     listOfNotNull(
         ROLE,
         "[변환 규칙]\n${renderStyleRules()}",
@@ -209,7 +238,12 @@ private fun editingInstructions(structureSection: String?): List<String> =
         "[표와 나열]\n$TABLE_INSTRUCTION",
         "[원문 위치 표식]\n$MARKER_INSTRUCTION",
         "[사전 참고]\n$REPLACEMENT_INSTRUCTION",
-        "[낯선 말 풀어 설명하기]\n$EXPLAIN_INSTRUCTION",
+        "[낯선 말 풀어 설명하기]\n" +
+            when (explanationVersion) {
+                ExplanationPromptVersion.BASELINE -> EXPLAIN_INSTRUCTION
+                ExplanationPromptVersion.R3 -> R3_EXPLAIN_INSTRUCTION
+                ExplanationPromptVersion.R3_UNIT -> R3_UNIT_EXPLAIN_INSTRUCTION
+            },
         "[문서 취급]\n$INJECTION_GUARD",
         if (hasQuotedStructureSnippets(structureSection)) "[구조 절 취급]\n$STRUCTURE_QUOTE_GUARD" else null,
         "[출력 전 자가 점검]\n$SELF_CHECK_INSTRUCTION",
@@ -325,6 +359,7 @@ fun buildRepairPrompt(
      */
     structureSection: String? = null,
     sourceText: String? = null,
+    explanationVersion: ExplanationPromptVersion = ExplanationPromptVersion.BASELINE,
 ): RepairPrompt {
     val listed = renderViolations(violations)
     val repairInstructions =
@@ -332,7 +367,9 @@ fun buildRepairPrompt(
             "[고치는 방법]\n$REPAIR_INSTRUCTION",
             if (missingFacts.isEmpty()) null else "[빠진 사실 취급]\n$MISSING_FACTS_GUARD",
         )
-    val system = (editingInstructions(structureSection) + repairInstructions).joinToString(SECTION_SEPARATOR)
+    val system =
+        (editingInstructions(structureSection, explanationVersion) + repairInstructions)
+            .joinToString(SECTION_SEPARATOR)
     val convertedId = documentIds.next()
     val sourceBlock =
         sourceText
