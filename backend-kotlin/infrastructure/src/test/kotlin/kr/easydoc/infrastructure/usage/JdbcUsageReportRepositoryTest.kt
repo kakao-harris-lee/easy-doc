@@ -35,6 +35,7 @@ import javax.sql.DataSource
  * 워크스페이스(`workspace_id IS NULL`) 행, 자정 경계, 빈 기간, 비용 미상을 잰다.
  */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
+@Suppress("LargeClass")
 class JdbcUsageReportRepositoryTest {
     private lateinit var jdbc: JdbcClient
     private lateinit var users: JdbcUserRepository
@@ -156,6 +157,52 @@ class JdbcUsageReportRepositoryTest {
         assertThat(row.documents).isEqualTo(1)
         assertThat(row.characters).isEqualTo(1500)
         assertThat(row.credits).isEqualTo(3)
+    }
+
+    @Test
+    @DisplayName("행동 안내 호출은 호출·비용에만 포함하고, 예약·해제는 레거시 변환 크레딧 대체를 막지 않는다")
+    fun `행동 안내 예약과 해제가 있어도 레거시 변환 문서와 크레딧을 유지한다`() {
+        val owner = newOwner()
+        val ws = workspaces.create(owner, "공간-${UUID.randomUUID()}")
+        val at = Instant.parse("2026-12-15T02:00:00Z")
+        val conversionDoc = insertDocument(ws.id, owner, charCount = 1500, createdAt = at)
+        appendCall(
+            ws.id,
+            owner,
+            LlmCallPurpose.CONVERT,
+            documentId = conversionDoc,
+            documentCharCount = 1500,
+            inputTokens = 100,
+            outputTokens = 50,
+            costUsd = BigDecimal("0.001000"),
+            calledAt = at,
+        )
+        val guideDoc = insertDocument(ws.id, owner, charCount = 300, createdAt = at)
+        appendCall(
+            ws.id,
+            owner,
+            LlmCallPurpose.ACTION_GUIDE,
+            documentId = guideDoc,
+            documentCharCount = 300,
+            inputTokens = 10,
+            outputTokens = 5,
+            costUsd = BigDecimal("0.003000"),
+            calledAt = at.plusSeconds(1),
+        )
+        insertActionGuideReservationAndRelease(ws.id, owner, guideDoc, at.plusSeconds(1))
+
+        val row =
+            repository
+                .reportRows(zoneMidnight(2026, 12, 15), zoneMidnight(2026, 12, 16))
+                .first { it.workspaceId == ws.id }
+
+        assertThat(row.documents).isEqualTo(1)
+        assertThat(row.characters).isEqualTo(1500)
+        assertThat(row.credits).isEqualTo(2)
+        assertThat(row.llmCalls).isEqualTo(2)
+        assertThat(row.inputTokens).isEqualTo(110)
+        assertThat(row.outputTokens).isEqualTo(55)
+        assertThat(row.estimatedCostUsd).isEqualByComparingTo(BigDecimal("0.004000"))
     }
 
     @Test
@@ -650,6 +697,33 @@ class JdbcUsageReportRepositoryTest {
             .param("delta", -credits)
             .param("createdAt", OffsetDateTime.ofInstant(at, ZoneOffset.UTC))
             .update()
+    }
+
+    private fun insertActionGuideReservationAndRelease(
+        workspaceId: UUID,
+        ownerId: UUID,
+        documentId: UUID,
+        at: Instant,
+    ) {
+        listOf("reserve" to 1, "release" to -1).forEach { (kind, reservedDelta) ->
+            jdbc
+                .sql(
+                    """
+                    INSERT INTO credit_transactions
+                        (id, workspace_id, owner_user_id, document_id, kind, balance_delta,
+                         reserved_delta, reason, created_at)
+                    VALUES (:id, :workspaceId, :ownerId, :documentId, :kind, 0,
+                            :reservedDelta, 'action_guide', :createdAt)
+                    """.trimIndent(),
+                ).param("id", UUID.randomUUID())
+                .param("workspaceId", workspaceId)
+                .param("ownerId", ownerId)
+                .param("documentId", documentId)
+                .param("kind", kind)
+                .param("reservedDelta", reservedDelta)
+                .param("createdAt", OffsetDateTime.ofInstant(at, ZoneOffset.UTC))
+                .update()
+        }
     }
 
     private companion object {

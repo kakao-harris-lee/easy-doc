@@ -3419,10 +3419,8 @@ paths:
             Content-Disposition:
               description: 고정 파일명 `attachment; filename=action-guide.txt`.
               required: true
-              schema:
-                type: string
-                examples:
-                  - "attachment; filename=\"easy-read.docx\"; filename*=UTF-8''%EC%89%AC%EC%9A%B4%20%EA%B8%80.docx"
+              example: "attachment; filename=action-guide.txt"
+              schema: { type: string }
             Cache-Control: { $ref: '#/components/headers/CacheControlNoStore' }
             X-Content-Type-Options: { $ref: '#/components/headers/XContentTypeOptions' }
           content:
@@ -3838,10 +3836,8 @@ paths:
                   아니라 **한 파라미터를 퍼센트 디코딩한 뒤의** 문자열에 걸리기 때문이다.
                   그래서 `schema` 키워드가 아니라 이 확장 절에 둔다
                   (`x-request-field-constraints.x-openapi-expressibility`와 같은 판단).
-              schema:
-                type: string
-                examples:
-                  - "attachment; filename=\"easy-read.docx\"; filename*=UTF-8''%EC%89%AC%EC%9A%B4%20%EA%B8%80.docx"
+              example: "attachment; filename=\"easy-read.docx\"; filename*=UTF-8''%EC%89%AC%EC%9A%B4%20%EA%B8%80.docx"
+              schema: { type: string }
             Cache-Control: { $ref: '#/components/headers/CacheControlNoStore' }
             X-Content-Type-Options: { $ref: '#/components/headers/XContentTypeOptions' }
           content:

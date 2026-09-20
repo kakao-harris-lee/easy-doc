@@ -161,8 +161,8 @@ class JdbcUsageReadRepositoryTest {
     }
 
     @Test
-    @DisplayName("행동 안내 예약을 해제한 기간은 완료 호출의 문서 크레딧으로 fallback하지 않는다")
-    fun `해제된 행동 안내 예약은 사용 크레딧이 0이다`() {
+    @DisplayName("행동 안내만 완료되고 예약이 해제되면 문서·문자·크레딧은 0이다")
+    fun `해제된 행동 안내 예약은 문서 사용량과 크레딧을 늘리지 않는다`() {
         val owner = newOwner()
         val workspaceId = workspaces.create(owner, "공간-${UUID.randomUUID()}").id
         val at = Instant.parse("2026-03-21T02:00:00Z")
@@ -184,8 +184,52 @@ class JdbcUsageReadRepositoryTest {
         val usage =
             repository.aggregate(owner, workspaceId, zoneMidnight(2026, 3, 1), zoneMidnight(2026, 4, 1))!!
 
-        assertThat(usage.documents).isEqualTo(1)
+        assertThat(usage.documents).isZero()
+        assertThat(usage.characters).isZero()
         assertThat(usage.credits).isZero()
+        assertThat(usage.llmCalls).isEqualTo(1)
+    }
+
+    @Test
+    @DisplayName("행동 안내 예약·해제만 있을 때 이전 변환 호출의 크레딧 fallback을 유지한다")
+    fun `행동 안내 예약은 변환 크레딧 fallback을 가리지 않는다`() {
+        val owner = newOwner()
+        val workspaceId = workspaces.create(owner, "공간-${UUID.randomUUID()}").id
+        val at = Instant.parse("2026-03-22T02:00:00Z")
+        val convertedDocument = insertDocument(workspaceId, owner, charCount = 1500, createdAt = at)
+        appendCall(
+            workspaceId,
+            owner,
+            LlmCallPurpose.CONVERT,
+            convertedDocument,
+            documentCharCount = 1500,
+            inputTokens = 10,
+            outputTokens = 5,
+            costUsd = BigDecimal("0.001"),
+            calledAt = at,
+        )
+        val guideDocument = insertDocument(workspaceId, owner, charCount = 500, createdAt = at)
+        appendCall(
+            workspaceId,
+            owner,
+            LlmCallPurpose.ACTION_GUIDE,
+            guideDocument,
+            documentCharCount = 500,
+            inputTokens = 10,
+            outputTokens = 5,
+            costUsd = BigDecimal("0.002"),
+            calledAt = at.plusSeconds(1),
+        )
+        insertActionGuideCreditTransaction(workspaceId, owner, guideDocument, "reserve", 1, at)
+        insertActionGuideCreditTransaction(workspaceId, owner, guideDocument, "release", -1, at.plusSeconds(1))
+
+        val usage = repository.aggregate(owner, workspaceId, zoneMidnight(2026, 3, 1), zoneMidnight(2026, 4, 1))!!
+
+        assertThat(usage.documents).isEqualTo(1)
+        assertThat(usage.characters).isEqualTo(1500)
+        assertThat(usage.credits).isEqualTo(2)
+        assertThat(usage.llmCalls).isEqualTo(2)
+        assertThat(usage.estimatedCostUsd).isEqualByComparingTo("0.003")
     }
 
     @Test

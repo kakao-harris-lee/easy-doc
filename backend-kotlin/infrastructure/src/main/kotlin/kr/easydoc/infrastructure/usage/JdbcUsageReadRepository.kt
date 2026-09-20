@@ -23,15 +23,16 @@ import java.util.UUID
  * 그대로 계속 읽으면 그 목적이 무의미해진다(`LlmCallEntry.documentCharCount` KDoc,
  * V14 머리주석 3차 정정).
  *
- * 그래서 [documents]·[characters]는 `llm_calls.document_char_count`(그 호출이
- * 속한 문서의 `documents.char_count` 스냅샷)에서 유도한다 — **그 기간에 완료된 LLM 호출이
- * 하나라도 있던 문서만 센다.** 등록만 되고 한 번도 변환되지 않은 문서는 비용도 크레딧도
- * 없으므로 셀 이유가 없다(호출이 없으면 이 표에 그 문서의 행 자체가 없다). 같은 문서를
- * 대상으로 하는 여러 행(변환·보정·재시도)이 같은 `document_char_count` 값을 반복해
+ * 그래서 [documents]·[characters]는 변환·보정·재변환 호출의 `llm_calls.document_char_count`(그 호출이
+ * 속한 문서의 `documents.char_count` 스냅샷)에서 유도한다 — **그 기간에 완료된 변환 계열 호출이
+ * 하나라도 있던 문서만 센다.** 등록만 되고 한 번도 변환되지 않은 문서는 변환 크레딧이
+ * 없으므로 셀 이유가 없다(행동 안내 호출만 있더라도 완료된 변환 계열 호출이 없으면
+ * 집계 대상이 아니다). 같은 문서를 대상으로 하는 여러 행(변환·보정·재시도)이 같은
+ * `document_char_count` 값을 반복해
  * 담으므로, `document_id`로 distinct 한 뒤에만 합한다 — distinct 하지 않으면 재시도 한
  * 번마다 그 문서의 문자 수가 다시 더해진다. [WorkspaceUsage.credits]는 실제 차감 원장인
  * `credit_transactions`의 `consume` 중 `conversion`·`action_guide` 합을 쓴다. 이 값에는 최초 변환뿐 아니라
- * 성공한 재변환도 들어간다. V15 이전 호출처럼 차감 원장이 전혀 없는 기간만 문서별
+ * 성공한 재변환도 들어간다. V15 이전 호출처럼 `consume` 거래가 전혀 없는 기간만 문서별
  * `ceil(document_char_count / 1000)` 합으로 대체한다.
  *
  * **소유 확인이 먼저다.** [aggregate]는 워크스페이스 존재·소유 여부를 별도 질의로 확인해
@@ -108,7 +109,7 @@ class JdbcUsageReadRepository(private val jdbc: JdbcClient) : UsageReadRepositor
             .orElse(null)
 
     /**
-     * 그 기간에 완료된 호출이 있던 **문서 단위**로 집계한다 — `document_id`로 distinct 한
+     * 그 기간에 변환·보정·재변환이 완료된 **문서 단위**로 집계한다 — `document_id`로 distinct 한
      * 뒤에만 문자 수·크레딧을 더한다. `DISTINCT ON (document_id)`은 같은 문서의 여러 행 중
      * 하나만 남기는데, `document_char_count`는 같은 문서의 모든 행에서 값이 같으므로(등록
      * 시 확정돼 바뀌지 않는다) 어느 행이 남든 값은 같다.
@@ -135,6 +136,7 @@ class JdbcUsageReadRepository(private val jdbc: JdbcClient) : UsageReadRepositor
                     WHERE workspace_id = :workspaceId AND user_id = :ownerId
                       AND called_at >= :from AND called_at < :toExclusive
                       AND outcome = 'completed'
+                      AND purpose IN ('convert', 'repair', 'reconvert')
                     ORDER BY document_id
                 ) AS distinct_documents
                 """.trimIndent(),
@@ -160,12 +162,10 @@ class JdbcUsageReadRepository(private val jdbc: JdbcClient) : UsageReadRepositor
         jdbc
             .sql(
                 """
-                SELECT coalesce(
-                    -sum(balance_delta) FILTER (WHERE kind = 'consume'),
-                    0
-                )::bigint AS credits
+                SELECT -sum(balance_delta)::bigint AS credits
                 FROM credit_transactions
                 WHERE workspace_id = :workspaceId AND owner_user_id = :ownerId
+                  AND kind = 'consume'
                   AND reason IN ('conversion', 'action_guide')
                   AND created_at >= :from AND created_at < :toExclusive
                 HAVING count(*) > 0

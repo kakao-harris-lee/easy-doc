@@ -207,7 +207,7 @@ class JdbcAdminWorkspaceQueryRepository(private val jdbc: JdbcClient) : AdminWor
         /**
          * `JdbcUsageReadRepository.documentTotalsFromCalls`와 같은 규칙 — `document_id`로
          * distinct 한 뒤에만 문서 단위로 더한다. 워크스페이스별로 나누지 않고 한 번에
-         * `GROUP BY workspace_id`로 묶는다. `outcome = 'completed'`만 본다(V18) —
+         * `GROUP BY workspace_id`로 묶는다. 완료된 변환·보정·재변환만 본다 —
          * 완성 자체가 나지 않은 호출만 있는 문서는 변환되지 않았으므로 청구 대상이 아니다.
          */
         val DOCUMENT_TOTALS_BY_WORKSPACE_SQL =
@@ -221,6 +221,7 @@ class JdbcAdminWorkspaceQueryRepository(private val jdbc: JdbcClient) : AdminWor
                 FROM llm_calls
                 WHERE workspace_id IN (:ids) AND called_at >= :from AND called_at < :toExclusive
                   AND outcome = 'completed'
+                  AND purpose IN ('convert', 'repair', 'reconvert')
                 ORDER BY document_id
             ) AS distinct_documents
             GROUP BY workspace_id
@@ -244,12 +245,10 @@ class JdbcAdminWorkspaceQueryRepository(private val jdbc: JdbcClient) : AdminWor
         val CREDIT_TOTALS_BY_WORKSPACE_SQL =
             """
             SELECT workspace_id,
-                   coalesce(
-                       -sum(balance_delta) FILTER (WHERE kind = 'consume'),
-                       0
-                   )::bigint AS credits
+                   -sum(balance_delta)::bigint AS credits
             FROM credit_transactions
             WHERE workspace_id IN (:ids) AND created_at >= :from AND created_at < :toExclusive
+              AND kind = 'consume'
               AND reason IN ('conversion', 'action_guide')
             GROUP BY workspace_id
             """.trimIndent()

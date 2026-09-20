@@ -34,6 +34,37 @@ class ContractHeaderDeclarationTest {
     }
 
     @Test
+    @DisplayName("같은 Content-Disposition 스키마를 쓰되 내보내기별 파일명 예시는 구분한다")
+    fun `내보내기별 파일명 예시를 구분한다`() {
+        val guideHeader =
+            ContractSpec.map(
+                "paths",
+                "/conversions/{conversion_id}/action-guide/export",
+                "get",
+                "responses",
+                "200",
+                "headers",
+                "Content-Disposition",
+            )
+        val documentHeader =
+            ContractSpec.map(
+                "paths",
+                "/conversions/{conversion_id}/export",
+                "get",
+                "responses",
+                "200",
+                "headers",
+                "Content-Disposition",
+            )
+
+        assertThat(guideHeader["example"]).isEqualTo("attachment; filename=action-guide.txt")
+        assertThat(documentHeader["example"].toString()).contains("easy-read.docx")
+        assertThat(guideHeader["schema"]).isEqualTo(documentHeader["schema"])
+        assertThat(ContractSpec.headerDeclarations()["Content-Disposition"])
+            .isEqualTo(ContractHeaderDeclaration.Inline("{type=string}"))
+    }
+
+    @Test
     @DisplayName("컴포넌트 갈래 헤더는 전부 계약이 값을 const 로 못박았다")
     fun `컴포넌트 헤더는 값의 정본을 갖는다`() {
         val components =

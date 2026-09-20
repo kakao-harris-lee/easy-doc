@@ -17,7 +17,7 @@ import java.util.UUID
  * (워크스페이스가 나중에 삭제된, V14 `SET NULL`) 행도 자기 행으로 포함해야 한다 — U2가
  * 워크스페이스 단위 조회라 다루지 않는 행이다(`UsageReadRepository` KDoc).
  *
- * 문서 수·문자 수는 U2와 같은 규칙을 쓴다 — 같은 문서를 대상으로 한 여러 행
+ * 문서 수·문자 수는 U2와 같은 규칙을 쓴다 — 완료된 변환·보정·재변환 중 같은 문서를 대상으로 한 여러 행
  * (재시도·보정)은 `document_id`로 distinct 한 뒤에만 합산한다(`document_totals` CTE).
  * 크레딧은 실제 소비 원장(`credit_transactions`, `consume` 중 `conversion`·`action_guide`)을 우선해 성공한
  * 재변환도 센다. V15 이전처럼 소비 원장이 없는 그룹만 문서별 계산값으로 대체한다.
@@ -84,14 +84,14 @@ class JdbcUsageReportRepository(private val jdbc: JdbcClient) : UsageReportRepos
         val REPORT_SQL =
             """
             WITH period_calls AS (
-                SELECT user_id, workspace_id, document_id, document_char_count, input_tokens, output_tokens,
+                SELECT user_id, workspace_id, document_id, document_char_count, purpose, input_tokens, output_tokens,
                        estimated_cost_usd, outcome
                 FROM llm_calls
                 WHERE called_at >= :from AND called_at < :toExclusive
             ),
             -- 같은 문서를 대상으로 한 여러 행(재시도·보정)은 document_id로 distinct 한
             -- 뒤에만 문자 수·크레딧을 합한다 — U2(JdbcUsageReadRepository)와 같은 규칙이다.
-            -- outcome = 'completed' 만 본다 — 실패 호출만 있던 문서는 변환되지 않았다.
+            -- 완료된 변환·보정·재변환만 본다 — 행동 안내는 변환 문서 수를 늘리지 않는다.
             --
             -- 이 GROUP BY(와 아래 call_totals의 것)는 user_id가 NULL인 행끼리도 한
             -- 그룹으로 묶는다(SQL이 NULL을 그룹 키에서 같다고 본다) — 탈퇴한 계정이
@@ -110,6 +110,7 @@ class JdbcUsageReportRepository(private val jdbc: JdbcClient) : UsageReportRepos
                         user_id, workspace_id, document_id, document_char_count
                     FROM period_calls
                     WHERE outcome = 'completed'
+                      AND purpose IN ('convert', 'repair', 'reconvert')
                     ORDER BY user_id, workspace_id, document_id
                 ) distinct_documents
                 GROUP BY user_id, workspace_id
@@ -135,12 +136,10 @@ class JdbcUsageReportRepository(private val jdbc: JdbcClient) : UsageReportRepos
             ),
             credit_totals AS (
                 SELECT owner_user_id AS user_id, workspace_id,
-                       coalesce(
-                           -sum(balance_delta) FILTER (WHERE kind = 'consume'),
-                           0
-                       )::bigint AS credits
+                       -sum(balance_delta)::bigint AS credits
                 FROM credit_transactions
                 WHERE created_at >= :from AND created_at < :toExclusive
+                  AND kind = 'consume'
                   AND reason IN ('conversion', 'action_guide')
                 GROUP BY owner_user_id, workspace_id
             )
