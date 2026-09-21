@@ -12,7 +12,9 @@ import kr.easydoc.application.actionguide.ActionGuideRunResult
 import kr.easydoc.application.actionguide.ProcessActionGuideJob
 import kr.easydoc.application.auth.TransactionRunner
 import kr.easydoc.application.crypto.ContentCipher
+import kr.easydoc.application.document.ConversionRepository
 import kr.easydoc.application.document.DocumentRepository
+import kr.easydoc.application.document.ReviewHistoryAppender
 import kr.easydoc.core.actionguide.ActionGuideCandidate
 import kr.easydoc.core.actionguide.ActionGuideSection
 import kr.easydoc.core.actionguide.ActionGuideSectionKind
@@ -85,8 +87,10 @@ class ActionGuideConfiguration {
         jobs: ActionGuideJobRepository,
         contents: ActionGuideContentRepository,
         documents: DocumentRepository,
+        conversions: ConversionRepository,
         cipher: ContentCipher,
         transactionRunner: TransactionRunner,
+        reviewHistory: ReviewHistoryAppender,
     ): ActionGuideContentService =
         ActionGuideContentService(
             properties.enabled,
@@ -96,6 +100,8 @@ class ActionGuideConfiguration {
             cipher,
             transactionRunner,
             Clock.systemUTC(),
+            conversions,
+            reviewHistory,
         )
 }
 

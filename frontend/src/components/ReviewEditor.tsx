@@ -27,6 +27,8 @@ import { FormatPreservationPanel, PdfExportNotice } from './FormatPreservationPa
 import { ReviewFeedback } from './ReviewFeedback'
 import { ReviewSupportPanel } from './ReviewSupportPanel'
 import { ActionGuidePanel } from './ActionGuidePanel'
+import { ReviewHistoryPanel } from './ReviewHistoryPanel'
+import { TableRelationsPanel } from './TableRelationsPanel'
 import {
   MAX_SEGMENTED_UNITS,
   SegmentedResultEditor,
@@ -88,6 +90,7 @@ const PANELS = [
 ] as const
 
 type PanelKey = (typeof PANELS)[number]['key']
+type TaskKey = 'body' | 'guide' | 'history'
 
 /**
  * 이 변환을 내려받을 수 있는 형식(들).
@@ -273,13 +276,12 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
    */
   const [pendingFormat, setPendingFormat] = useState<ExportFormat | null>(null)
   const [activePanel, setActivePanel] = useState<PanelKey>('source')
-  const [activeTask, setActiveTask] = useState<'body' | 'guide'>('body')
+  const [activeTask, setActiveTask] = useState<TaskKey>('body')
   const [guideVisited, setGuideVisited] = useState(false)
+  const [historyVisited, setHistoryVisited] = useState(false)
+  const [historyRefreshToken, setHistoryRefreshToken] = useState(0)
   const [guideDirty, setGuideDirty] = useState(false)
-  const taskTabRefs = useRef<{ body: HTMLButtonElement | null; guide: HTMLButtonElement | null }>({
-    body: null,
-    guide: null,
-  })
+  const taskTabRefs = useRef<Partial<Record<TaskKey, HTMLButtonElement | null>>>({})
   /** 저장·내려받기를 누른 버튼. 그 작업이 끝나면 초점을 여기로 돌린다. */
   const refocusRef = useRef<HTMLButtonElement | null>(null)
   /** 검수 항목의 「원문 보기」에서 이동했다가 돌아갈 버튼과 복귀 UI 상태. */
@@ -772,6 +774,7 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
     const saved = await saveReview(conversion.id, sentDraft, contentRevision)
     // 저장 응답의 버전은 로컬 편집이 이어졌더라도 다음 CAS 요청에 반드시 사용한다.
     setContentRevision(saved.content_revision)
+    setHistoryRefreshToken((value) => value + 1)
     // 기다리는 동안 사용자가 이어서 고쳤다면(§MEDIUM 리뷰) 이 응답은 그때 보낸
     // `sentDraft`에 대한 것일 뿐, 지금 화면의 최신 draft에 대한 것이 아니다. 그대로
     // 덮어쓰면 방금 고친 내용이 사라지고, `unitMap`도 그 낡은 텍스트의 구조로 다시
@@ -1058,22 +1061,43 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
         }
 
   const guideEnabled = conversion.review_capabilities?.action_guide === true
+  const historyEnabled = conversion.review_capabilities?.review_history === true
+  const tableRelationsEnabled = conversion.review_capabilities?.table_relations === true
+  const taskOptions: TaskKey[] = [
+    'body',
+    ...(guideEnabled ? ['guide' as const] : []),
+    ...(historyEnabled ? ['history' as const] : []),
+  ]
+
+  /**
+   * capability가 갱신되어 현재 작업이 사라질 수 있다(예: 기록 탭을 열어 둔 채
+   * 오래된 변환 응답을 새로 받는 경우). 커밋 뒤 effect로 고치면 잠깐 빈 작업판과
+   * 사라진 탭을 함께 노출하므로, 탭이 실제로 존재하는 렌더에서만 본문으로 돌린다.
+   */
+  if (!taskOptions.includes(activeTask)) {
+    setActiveTask('body')
+  }
 
   function handleTaskTabKeyDown(event: KeyboardEvent<HTMLButtonElement>): void {
-    const next =
+    const currentIndex = taskOptions.indexOf(activeTask)
+    if (currentIndex < 0 || taskOptions.length < 2) return
+    const nextIndex =
       event.key === 'End'
-        ? 'guide'
+        ? taskOptions.length - 1
         : event.key === 'Home'
-          ? 'body'
-          : event.key === 'ArrowRight' || event.key === 'ArrowLeft'
-            ? activeTask === 'body'
-              ? 'guide'
-              : 'body'
-            : null
-    if (next === null) return
+          ? 0
+          : event.key === 'ArrowRight'
+            ? (currentIndex + 1) % taskOptions.length
+            : event.key === 'ArrowLeft'
+              ? (currentIndex - 1 + taskOptions.length) % taskOptions.length
+              : -1
+    if (nextIndex < 0) return
+    const next = taskOptions[nextIndex]
+    if (next === undefined) return
     event.preventDefault()
     setActiveTask(next)
     if (next === 'guide') setGuideVisited(true)
+    if (next === 'history') setHistoryVisited(true)
     taskTabRefs.current[next]?.focus()
   }
 
@@ -1094,10 +1118,10 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
             흘려보내지 않고 화면에 남긴다(§9). 색만으로 구분하지 않도록 배지에 문구와
             아이콘을 함께 둔다(§8.1). */}
         <div
-          hidden={activeTask === 'guide'}
+          hidden={activeTask !== 'body'}
           className={cn(
             'flex shrink-0 flex-col items-start gap-2 sm:items-end',
-            activeTask === 'guide' && 'hidden',
+            activeTask !== 'body' && 'hidden',
           )}
         >
           <div className="flex flex-col items-start gap-1 sm:items-end" id={statusId} role="status">
@@ -1151,23 +1175,29 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
             ref={headingRef}
             tabIndex={-1}
           >
-            {activeTask === 'guide' ? '행동 안내' : '쉬운 글 검수'}
+            {activeTask === 'guide'
+              ? '행동 안내'
+              : activeTask === 'history'
+                ? '검수 기록'
+                : '쉬운 글 검수'}
           </h1>
           <p className="mt-1 text-[15px] text-muted-foreground">
             {activeTask === 'guide'
               ? '원문과 별도 안내문을 비교하고, 필요한 내용을 직접 확인해 주세요.'
-              : '원문과 AI 초안을 비교하고, 필요한 내용을 직접 고쳐 주세요.'}
+              : activeTask === 'history'
+                ? '서버가 기록한 검수 행위를 최근 순서로 확인해 주세요.'
+                : '원문과 AI 초안을 비교하고, 필요한 내용을 직접 고쳐 주세요.'}
           </p>
         </div>
       </header>
 
-      {guideEnabled && (
+      {taskOptions.length > 1 && (
         <div
           className="flex gap-1 rounded-[12px] border border-border bg-muted p-1"
           role="tablist"
           aria-label="작업 선택"
         >
-          {(['body', 'guide'] as const).map((task) => (
+          {taskOptions.map((task) => (
             <button
               key={task}
               ref={(node) => {
@@ -1188,10 +1218,11 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
               onClick={() => {
                 setActiveTask(task)
                 if (task === 'guide') setGuideVisited(true)
+                if (task === 'history') setHistoryVisited(true)
               }}
               onKeyDown={handleTaskTabKeyDown}
             >
-              {task === 'body' ? '본문 검수' : '행동 안내'}
+              {task === 'body' ? '본문 검수' : task === 'guide' ? '행동 안내' : '검수 기록'}
             </button>
           ))}
         </div>
@@ -1200,11 +1231,11 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
       {/* 편집 영역과 그 행동을 한 묶음으로 둔다. 아래 행동 줄이 붙어 있는 구간이 이
             묶음 안에서 끝나야 피드백 폼과 대응표를 가리지 않는다(§10). */}
       <div
-        id={guideEnabled ? `${editorId}-body-task-panel` : undefined}
-        role={guideEnabled ? 'tabpanel' : undefined}
-        aria-labelledby={guideEnabled ? `${editorId}-body-task-tab` : undefined}
-        hidden={activeTask === 'guide'}
-        className={cn('flex flex-col', activeTask === 'guide' && 'hidden')}
+        id={taskOptions.length > 1 ? `${editorId}-body-task-panel` : undefined}
+        role={taskOptions.length > 1 ? 'tabpanel' : undefined}
+        aria-labelledby={taskOptions.length > 1 ? `${editorId}-body-task-tab` : undefined}
+        hidden={activeTask !== 'body'}
+        className={cn('flex flex-col', activeTask !== 'body' && 'hidden')}
       >
         {supportsParagraphComparison && (
           <div className="mb-3 flex justify-end">
@@ -1400,6 +1431,10 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
           </div>
         </div>
 
+        {tableRelationsEnabled && source.state.status === 'ready' && (
+          <TableRelationsPanel sourceText={source.state.text} tables={source.state.tables} />
+        )}
+
         {/* 선택 기반 사전 팝업(P0-5 조각 5, 계획 §3.5) — 결과 패널 안 textarea에서
             글자를 선택하면(더블클릭 포함) 250ms 뒤 후보를 띄운다. 위치 자체는 포털이라
             이 자리에 둘 필요는 없지만, 결과 편집 영역과 논리적으로 묶어 둔다. */}
@@ -1529,6 +1564,7 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
             contentConflict={contentConflict}
             onContentConflict={markContentConflict}
             onNavigateSource={handleReviewSourceNavigation}
+            onSaved={() => setHistoryRefreshToken((value) => value + 1)}
           />
         )}
       </div>
@@ -1536,7 +1572,7 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
       {/* 결과를 다 보고 난 자리에 둔다 — 검수 전에 묻는 만족도는 결과가 아니라 기대치를
           재게 된다. 이 화면은 status가 done일 때만 그려지므로(ConversionPage) 서버가
           409로 막는 조건과 화면이 같다. */}
-      <div hidden={activeTask === 'guide'} className={activeTask === 'body' ? '' : 'hidden'}>
+      <div hidden={activeTask !== 'body'} className={activeTask === 'body' ? '' : 'hidden'}>
         {!hasFeedback && (
           <ReviewFeedback
             conversionId={conversion.id}
@@ -1581,6 +1617,25 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
               source={source}
               onSaveBody={handleSave}
               onDirtyChange={setGuideDirty}
+              onReviewed={() => setHistoryRefreshToken((value) => value + 1)}
+            />
+          )}
+        </div>
+      )}
+
+      {historyEnabled && (
+        <div
+          id={`${editorId}-history-task-panel`}
+          role="tabpanel"
+          aria-labelledby={`${editorId}-history-task-tab`}
+          hidden={activeTask !== 'history'}
+          className={activeTask === 'history' ? '' : 'hidden'}
+        >
+          {historyVisited && (
+            <ReviewHistoryPanel
+              conversionId={conversion.id}
+              contentRevision={contentRevision}
+              refreshToken={historyRefreshToken}
             />
           )}
         </div>

@@ -1,5 +1,7 @@
 package kr.easydoc.infrastructure.ingest
 
+import kr.easydoc.core.document.TableSupportReason
+import kr.easydoc.core.document.TableSupportStatus
 import kr.easydoc.core.segment.UnitKind
 import kr.easydoc.core.segment.splitUnits
 import kr.easydoc.infrastructure.export.ExportFixtures
@@ -14,6 +16,283 @@ import org.junit.jupiter.params.provider.ValueSource
  * [UnitKind] 가 A1~A4 를 만족하는지 고정한다.
  */
 class UnitKindExtractionTest {
+    @ParameterizedTest
+    @ValueSource(strings = ["<w:vMerge/>", "<w:vMerge w:val=\"restart\"/>", "<w:hMerge/>"])
+    fun `DOCX merge marker는 숫자 span 없이도 거절한다`(marker: String) {
+        val original = IngestFixtures.bytes("sample_table.docx")
+        val xml =
+            requireNotNull(IngestFixtures.entriesOf(original)["word/document.xml"])
+                .decodeToString()
+                .replaceFirst("<w:tcPr>", "<w:tcPr>$marker")
+        val data = IngestFixtures.withEntryReplaced(original, "word/document.xml", xml.toByteArray())
+
+        assertThat(
+            DocxExtractor()
+                .extractStructured(data)
+                .tables
+                .single()
+                .supportReason,
+        ).isEqualTo(TableSupportReason.MERGED_CELLS)
+    }
+
+    @Test
+    fun `DOCX firstRow 속성이 없는 tblLook은 제목 근거가 아니다`() {
+        val original = IngestFixtures.bytes("sample_table.docx")
+        val xml =
+            requireNotNull(IngestFixtures.entriesOf(original)["word/document.xml"])
+                .decodeToString()
+                .replace("w:firstRow=\"1\"", "")
+        val data = IngestFixtures.withEntryReplaced(original, "word/document.xml", xml.toByteArray())
+
+        assertThat(
+            DocxExtractor()
+                .extractStructured(data)
+                .tables
+                .single()
+                .supportReason,
+        ).isEqualTo(TableSupportReason.HEADER_ROW_MISSING)
+    }
+
+    @Test
+    fun `너무 많은 DOCX 표는 본문을 유지하고 메타데이터만 미지원으로 접는다`() {
+        val original = IngestFixtures.bytes("sample_table.docx")
+        val xml =
+            requireNotNull(IngestFixtures.entriesOf(original)["word/document.xml"])
+                .decodeToString()
+                .replace("</w:body>", "<w:tbl/>".repeat(1_001) + "</w:body>")
+        val data = IngestFixtures.withEntryReplaced(original, "word/document.xml", xml.toByteArray())
+
+        val outcome = DocxExtractor().extractStructured(data)
+
+        assertThat(outcome.text).isEqualTo(DocxExtractor().extract(original))
+        assertThat(outcome.tables.single().supportReason).isEqualTo(TableSupportReason.LIMIT_EXCEEDED)
+        assertThat(
+            kr.easydoc.core.document.TableStructurePayloadCodec
+                .encode(outcome.tables),
+        ).isNotBlank()
+    }
+
+    @Test
+    @DisplayName("R4 — DOCX rectangular table coordinates use the canonical emitted unit indexes")
+    fun `DOCX 표 좌표가 builder unit index를 그대로 가리킨다`() {
+        val outcome = DocxExtractor().extractStructured(IngestFixtures.bytes("sample_table.docx"))
+
+        assertThat(outcome.tables).hasSize(1)
+        val table = outcome.tables.single()
+        assertThat(table.supportStatus).isEqualTo(TableSupportStatus.SUPPORTED)
+        assertThat(table.rowCount).isEqualTo(2)
+        assertThat(table.columnCount).isEqualTo(2)
+        assertThat(table.sourceUnitIndexes).containsExactly(1, 2, 3, 4)
+        assertThat(table.cells.map { it.sourceUnitIndexes }).containsExactly(
+            listOf(1),
+            listOf(2),
+            listOf(3),
+            listOf(4),
+        )
+        assertThat(table.cells[2].headerRefs).containsExactly(1)
+        assertThat(table.cells[3].headerRefs).containsExactly(2)
+    }
+
+    @Test
+    fun `너무 많은 HWPX 표도 본문 추출은 유지한다`() {
+        val xml = EXPLICIT_HEADER_HWPX.replace("</hs:sec>", "<hp:tbl/>".repeat(1_001) + "</hs:sec>")
+        val data = IngestFixtures.zipOf(mapOf("Contents/section0.xml" to xml.toByteArray()))
+
+        val outcome = HwpxExtractor().extractStructured(data)
+
+        assertThat(splitUnits(outcome.text)).containsExactly("구분", "내용", "기간", "3월")
+        assertThat(outcome.tables.single().supportReason).isEqualTo(TableSupportReason.LIMIT_EXCEEDED)
+    }
+
+    @Test
+    @DisplayName("R4 — DOCX 는 첫 행을 자동으로 헤더로 승격하지 않는다")
+    fun `DOCX header marker가 없으면 표를 지원하지 않는다`() {
+        val original = IngestFixtures.bytes("sample_table.docx")
+        val documentXml =
+            requireNotNull(IngestFixtures.entriesOf(original)["word/document.xml"])
+                .decodeToString()
+                .replace("w:firstRow=\"1\"", "w:firstRow=\"0\"")
+        val data = IngestFixtures.withEntryReplaced(original, "word/document.xml", documentXml.toByteArray())
+
+        val table = DocxExtractor().extractStructured(data).tables.single()
+
+        assertThat(table.supportStatus).isEqualTo(TableSupportStatus.UNSUPPORTED)
+        assertThat(table.supportReason).isEqualTo(TableSupportReason.HEADER_ROW_MISSING)
+        assertThat(table.cells).isEmpty()
+    }
+
+    @Test
+    @DisplayName("R4 — DOCX tblHeader val=false는 헤더 증거가 아니다")
+    fun `DOCX tblHeader false도 표를 지원하지 않는다`() {
+        val original = IngestFixtures.bytes("sample_table.docx")
+        val documentXml =
+            requireNotNull(IngestFixtures.entriesOf(original)["word/document.xml"])
+                .decodeToString()
+                .replace("w:firstRow=\"1\"", "w:firstRow=\"0\"")
+                .replaceFirst("<w:tr>", "<w:tr><w:trPr><w:tblHeader w:val=\"0\"/></w:trPr>")
+        val data = IngestFixtures.withEntryReplaced(original, "word/document.xml", documentXml.toByteArray())
+
+        val table = DocxExtractor().extractStructured(data).tables.single()
+
+        assertThat(table.supportStatus).isEqualTo(TableSupportStatus.UNSUPPORTED)
+        assertThat(table.supportReason).isEqualTo(TableSupportReason.HEADER_ROW_MISSING)
+    }
+
+    @Test
+    @DisplayName("R4 — HWPX 명시적 repeatHeader가 있는 사각 표만 좌표를 내보낸다")
+    fun `HWPX repeatHeader가 source unit 좌표를 보존한다`() {
+        val data = IngestFixtures.zipOf(mapOf("Contents/section0.xml" to EXPLICIT_HEADER_HWPX.toByteArray()))
+
+        val table = HwpxExtractor().extractStructured(data).tables.single()
+
+        assertThat(table.supportStatus).isEqualTo(TableSupportStatus.SUPPORTED)
+        assertThat(table.rowCount).isEqualTo(2)
+        assertThat(table.columnCount).isEqualTo(2)
+        assertThat(table.sourceUnitIndexes).containsExactly(0, 1, 2, 3)
+        assertThat(table.cells.map { it.sourceUnitIndexes }).containsExactly(
+            listOf(0),
+            listOf(1),
+            listOf(2),
+            listOf(3),
+        )
+        assertThat(table.cells[2].headerRefs).containsExactly(0)
+        assertThat(table.cells[3].headerRefs).containsExactly(1)
+    }
+
+    @Test
+    @DisplayName("R4 — HWPX 도 명시적 헤더가 없으면 header_row_missing으로 보류한다")
+    fun `HWPX header marker가 없으면 표를 지원하지 않는다`() {
+        val data = IngestFixtures.zipOf(mapOf("Contents/section0.xml" to UNMARKED_TABLE_HWPX.toByteArray()))
+
+        val table = HwpxExtractor().extractStructured(data).tables.single()
+
+        assertThat(table.supportStatus).isEqualTo(TableSupportStatus.UNSUPPORTED)
+        assertThat(table.supportReason).isEqualTo(TableSupportReason.HEADER_ROW_MISSING)
+    }
+
+    @Test
+    @DisplayName("R4 — HWPX child cellSpan은 병합 표로 보류한다")
+    fun `HWPX child cellSpan은 merged_cells를 낸다`() {
+        val data = IngestFixtures.zipOf(mapOf("Contents/section0.xml" to MERGED_HWPX.toByteArray()))
+
+        val table = HwpxExtractor().extractStructured(data).tables.single()
+
+        assertThat(table.supportStatus).isEqualTo(TableSupportStatus.UNSUPPORTED)
+        assertThat(table.supportReason).isEqualTo(TableSupportReason.MERGED_CELLS)
+    }
+
+    @Test
+    @DisplayName("R4 — HWPX child cellAddr가 실제 순서와 다르면 irregular_grid로 보류한다")
+    fun `HWPX child cellAddr가 어긋나면 표를 지원하지 않는다`() {
+        val data = IngestFixtures.zipOf(mapOf("Contents/section0.xml" to OUT_OF_ORDER_HWPX.toByteArray()))
+
+        val table = HwpxExtractor().extractStructured(data).tables.single()
+
+        assertThat(table.supportStatus).isEqualTo(TableSupportStatus.UNSUPPORTED)
+        assertThat(table.supportReason).isEqualTo(TableSupportReason.IRREGULAR_GRID)
+    }
+
+    @Test
+    @DisplayName("R4 — HWPX nested table는 outer table을 nested_table로 보류한다")
+    fun `HWPX 중첩 표는 지원하지 않는다`() {
+        val data = IngestFixtures.zipOf(mapOf("Contents/section0.xml" to NESTED_HWPX.toByteArray()))
+
+        val tables = HwpxExtractor().extractStructured(data).tables
+
+        assertThat(tables).hasSize(2)
+        assertThat(tables.first().supportStatus).isEqualTo(TableSupportStatus.UNSUPPORTED)
+        assertThat(tables.first().supportReason).isEqualTo(TableSupportReason.NESTED_TABLE)
+    }
+
+    @Test
+    @DisplayName("R4 — HWPX 표 뒤 같은 문단의 바깥 텍스트는 표 좌표를 유실 처리한다")
+    fun `HWPX table tail은 셀 값으로 발명하지 않는다`() {
+        val data = IngestFixtures.zipOf(mapOf("Contents/section0.xml" to EXPLICIT_HEADER_WITH_TAIL_HWPX.toByteArray()))
+
+        val outcome = HwpxExtractor().extractStructured(data)
+        val table = outcome.tables.single()
+
+        assertThat(outcome.text).contains("표 뒤 바깥 문장")
+        assertThat(table.supportStatus).isEqualTo(TableSupportStatus.UNSUPPORTED)
+        assertThat(table.supportReason).isEqualTo(TableSupportReason.COORDINATES_LOST)
+        assertThat(table.cells).isEmpty()
+    }
+
+    @Test
+    @DisplayName("R4 — DOCX 표 뒤 별도 문단은 표 셀 좌표를 오염시키지 않는다")
+    fun `DOCX table 뒤 문단은 표 좌표를 오염시키지 않는다`() {
+        val original = IngestFixtures.bytes("sample_table.docx")
+        val documentXml =
+            requireNotNull(IngestFixtures.entriesOf(original)["word/document.xml"])
+                .decodeToString()
+                .replace(
+                    "</w:tbl>",
+                    "</w:tbl><w:p><w:r><w:t>표 뒤 바깥 문장</w:t></w:r></w:p>",
+                )
+        val data = IngestFixtures.withEntryReplaced(original, "word/document.xml", documentXml.toByteArray())
+
+        val outcome = DocxExtractor().extractStructured(data)
+        val table = outcome.tables.single()
+
+        assertThat(outcome.text).contains("표 뒤 바깥 문장")
+        assertThat(table.supportStatus).isEqualTo(TableSupportStatus.SUPPORTED)
+        assertThat(table.cells).hasSize(4)
+    }
+
+    @Test
+    @DisplayName("R4 — 명시적인 단위 표식은 해당 source unit 하나에만 연결한다")
+    fun `단위 표식이 있는 줄만 unit anchor가 된다`() {
+        val original = IngestFixtures.bytes("sample_table.docx")
+        val documentXml =
+            requireNotNull(IngestFixtures.entriesOf(original)["word/document.xml"])
+                .decodeToString()
+                .replace("<w:t>구분</w:t>", "<w:t>단위: 원</w:t>")
+        val data = IngestFixtures.withEntryReplaced(original, "word/document.xml", documentXml.toByteArray())
+
+        val table = DocxExtractor().extractStructured(data).tables.single()
+
+        assertThat(table.unitAnchors).containsExactly(1)
+        assertThat(table.footnoteAnchors).isEmpty()
+        assertThat(table.supportStatus).isEqualTo(TableSupportStatus.SUPPORTED)
+    }
+
+    @Test
+    @DisplayName("R4 — unresolved DOCX footnote reference는 좌표 유실로 보류한다")
+    fun `외부 각주 reference가 있으면 표를 지원하지 않는다`() {
+        val original = IngestFixtures.bytes("sample_table.docx")
+        val documentXml =
+            requireNotNull(IngestFixtures.entriesOf(original)["word/document.xml"])
+                .decodeToString()
+                .replace("<w:t>구분</w:t>", "<w:t>구분</w:t><w:footnoteReference w:id=\"1\"/>")
+        val data = IngestFixtures.withEntryReplaced(original, "word/document.xml", documentXml.toByteArray())
+
+        val table = DocxExtractor().extractStructured(data).tables.single()
+
+        assertThat(table.supportStatus).isEqualTo(TableSupportStatus.UNSUPPORTED)
+        assertThat(table.supportReason).isEqualTo(TableSupportReason.COORDINATES_LOST)
+        assertThat(table.footnoteAnchors).isEmpty()
+    }
+
+    @Test
+    @DisplayName("R4 — inline ※ 각주는 해당 줄만 footnote anchor로 연결한다")
+    fun `inline 각주 표식은 셀 전체가 아니라 해당 source unit만 가리킨다`() {
+        val original = IngestFixtures.bytes("sample_table.docx")
+        val documentXml =
+            requireNotNull(IngestFixtures.entriesOf(original)["word/document.xml"])
+                .decodeToString()
+                .replace(
+                    "<w:r><w:t>구분</w:t></w:r></w:p>",
+                    "<w:r><w:t>구분</w:t></w:r></w:p><w:p><w:r><w:t>※ 주의</w:t></w:r></w:p>",
+                )
+        val data = IngestFixtures.withEntryReplaced(original, "word/document.xml", documentXml.toByteArray())
+
+        val table = DocxExtractor().extractStructured(data).tables.single()
+
+        assertThat(table.supportStatus).isEqualTo(TableSupportStatus.SUPPORTED)
+        assertThat(table.footnoteAnchors).containsExactly(2)
+        assertThat(table.cells.first().sourceUnitIndexes).containsExactly(1, 2)
+    }
+
     @Test
     @DisplayName("A1 — DOCX 표 셀 줄이 전부 TABLE_CELL 이고 줄 수가 splitUnits 와 같다")
     fun `DOCX 표 셀은 TABLE_CELL 이다`() {
@@ -135,6 +414,7 @@ class UnitKindExtractionTest {
         val lines = splitUnits(outcome.text)
         assertThat(outcome.structure.kinds).hasSize(lines.size)
         assertThat(outcome.structure.kinds).containsOnly(UnitKind.BODY)
+        assertThat(outcome.tables.single().supportReason).isEqualTo(TableSupportReason.UNSUPPORTED_FORMAT)
     }
 
     @ParameterizedTest(name = "{0}")
@@ -181,6 +461,52 @@ class UnitKindExtractionTest {
             <hp:p id="801" paraPrIDRef="0" styleIDRef="0"><hp:run charPrIDRef="0"><hp:t>셀 문장</hp:t></hp:run></hp:p>
             </hp:subList></hp:tc>
             </hp:tr></hp:tbl><hp:t> 뒤 문장</hp:t></hp:run></hp:p>
+            </hs:sec>
+            """.trimIndent()
+
+        val EXPLICIT_HEADER_HWPX =
+            """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <hs:sec xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section" xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph">
+            <hp:p><hp:run><hp:tbl rowCnt="2" colCnt="2" repeatHeader="1">
+            <hp:tr><hp:tc><hp:cellAddr colAddr="0" rowAddr="0"/><hp:subList><hp:p><hp:run><hp:t>구분</hp:t></hp:run></hp:p></hp:subList></hp:tc>
+            <hp:tc><hp:cellAddr colAddr="1" rowAddr="0"/><hp:subList><hp:p><hp:run><hp:t>내용</hp:t></hp:run></hp:p></hp:subList></hp:tc></hp:tr>
+            <hp:tr><hp:tc><hp:cellAddr colAddr="0" rowAddr="1"/><hp:subList><hp:p><hp:run><hp:t>기간</hp:t></hp:run></hp:p></hp:subList></hp:tc>
+            <hp:tc><hp:cellAddr colAddr="1" rowAddr="1"/><hp:subList><hp:p><hp:run><hp:t>3월</hp:t></hp:run></hp:p></hp:subList></hp:tc></hp:tr>
+            </hp:tbl></hp:run></hp:p>
+            </hs:sec>
+            """.trimIndent()
+
+        val UNMARKED_TABLE_HWPX = EXPLICIT_HEADER_HWPX.replace(" repeatHeader=\"1\"", "")
+
+        val EXPLICIT_HEADER_WITH_TAIL_HWPX =
+            EXPLICIT_HEADER_HWPX.replace(
+                "</hp:tbl></hp:run></hp:p>",
+                "</hp:tbl><hp:t> 표 뒤 바깥 문장</hp:t></hp:run></hp:p>",
+            )
+
+        val MERGED_HWPX =
+            EXPLICIT_HEADER_HWPX.replace(
+                "<hp:cellAddr colAddr=\"0\" rowAddr=\"0\"/>",
+                "<hp:cellSpan colSpan=\"2\" rowSpan=\"1\"/><hp:cellAddr colAddr=\"0\" rowAddr=\"0\"/>",
+            )
+
+        val OUT_OF_ORDER_HWPX =
+            EXPLICIT_HEADER_HWPX.replace(
+                "<hp:cellAddr colAddr=\"0\" rowAddr=\"0\"/>",
+                "<hp:cellAddr colAddr=\"1\" rowAddr=\"0\"/>",
+            )
+
+        val NESTED_HWPX =
+            """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <hs:sec xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section" xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph">
+            <hp:p><hp:run><hp:tbl rowCnt="1" colCnt="1" repeatHeader="1"><hp:tr><hp:tc>
+            <hp:cellAddr colAddr="0" rowAddr="0"/><hp:subList><hp:p><hp:run>
+            <hp:tbl rowCnt="1" colCnt="1" repeatHeader="1"><hp:tr><hp:tc>
+            <hp:cellAddr colAddr="0" rowAddr="0"/><hp:subList><hp:p><hp:run><hp:t>중첩</hp:t></hp:run></hp:p></hp:subList>
+            </hp:tc></hp:tr></hp:tbl>
+            </hp:run></hp:p></hp:subList></hp:tc></hp:tr></hp:tbl></hp:run></hp:p>
             </hs:sec>
             """.trimIndent()
     }

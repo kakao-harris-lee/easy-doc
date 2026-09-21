@@ -1,6 +1,7 @@
 package kr.easydoc.application.document
 
 import kr.easydoc.core.document.SourceFormat
+import kr.easydoc.core.document.TableStructure
 import kr.easydoc.core.segment.SourceStructure
 
 /** 업로드 파일에서 본문 텍스트를 뽑는 포트. */
@@ -22,6 +23,8 @@ class ExtractedDocument(
     val format: SourceFormat,
     val text: String,
     val structure: SourceStructure,
+    /** R4 표 구조. 표가 없는 형식·문서는 빈 목록이다. */
+    val tables: List<TableStructure> = emptyList(),
 ) {
     /** 형식과 길이만 남긴다. 본문은 나가지 않는다. */
     override fun toString(): String = "ExtractedDocument(${format.wireName}, ${text.length}자)"

@@ -19,7 +19,7 @@ class DocumentExtractors internal constructor(strategies: List<StructuredTextExt
         val format = uploadFormat(filename)
         validateContainer(format, bytes)
         val outcome = extractors[format].extractStructured(bytes)
-        return ExtractedDocument(format, outcome.text, outcome.structure)
+        return ExtractedDocument(format, outcome.text, outcome.structure, outcome.tables)
     }
 
     private fun uploadFormat(filename: String?): SourceFormat =

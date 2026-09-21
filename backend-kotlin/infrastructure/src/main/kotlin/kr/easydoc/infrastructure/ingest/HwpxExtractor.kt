@@ -31,9 +31,10 @@ internal class HwpxExtractor : StructuredTextExtractor {
             throw DocumentExtractionException(ExtractionMessages.HWPX_NO_SECTIONS)
         }
         val builder = ExtractedTextBuilder(SourceFormat.HWPX, data.size)
-        sections.forEach { (name, content) -> readSection(data, name, content, data.size, builder) }
+        val tables = StreamingTableCollector()
+        sections.forEach { (name, content) -> readSection(data, name, content, builder, tables) }
         val text = builder.build()
-        return ExtractionOutcome(text, refineNonCellKinds(splitUnits(text), builder.structure()))
+        return ExtractionOutcome(text, refineNonCellKinds(splitUnits(text), builder.structure()), tables.finish())
     }
 
     /**
@@ -58,17 +59,17 @@ internal class HwpxExtractor : StructuredTextExtractor {
         archive: ByteArray,
         sectionName: String,
         section: ByteArray,
-        uploadSize: Int,
         sink: BlockSink,
+        tables: StreamingTableCollector,
     ) {
-        val collector = SectionBlocks(sink)
+        val collector = SectionBlocks(sink, tables)
         var reader: XMLStreamReader? = null
         try {
             reader = SecureXml.newInputFactory().createXMLStreamReader(ByteArrayInputStream(section))
             readEvents(reader, collector)
             collector.finish()
         } catch (cause: XMLStreamException) {
-            throw diagnoseSectionFailure(archive, sectionName, uploadSize, cause)
+            throw diagnoseSectionFailure(archive, sectionName, archive.size, cause)
         } finally {
             // StAX 는 `Closeable` 이 아니라 `use` 를 쓸 수 없다. 닫기 실패는 삼킨다 —
             // 메모리 입력이라 실패할 일이 없고, 여기서 던지면 원래 실패 사유가 가려진다.
@@ -103,7 +104,7 @@ internal class HwpxExtractor : StructuredTextExtractor {
         while (reader.hasNext()) {
             when (reader.next()) {
                 XMLStreamConstants.START_ELEMENT -> {
-                    collector.startElement(reader.localName)
+                    collector.startElement(reader.localName, reader.attributes())
                 }
 
                 XMLStreamConstants.END_ELEMENT -> {
@@ -137,29 +138,78 @@ internal class HwpxExtractor : StructuredTextExtractor {
      * 한 줄은 **셀에서 시작했다는 사실 그대로** [UnitKind.TABLE_CELL] 로 남는다 —
      * `UnitKindExtractionTest` 의 "표 뒤 문장이 같은 run 에서 이어지면" 케이스가 고정한다.
      */
-    private class SectionBlocks(private val sink: BlockSink) {
+    private class SectionBlocks(
+        private val sink: BlockSink,
+        private val tables: StreamingTableCollector,
+    ) {
         private val current = StringBuilder()
         private var textDepth = 0
         private var tableDepth = 0
         private var pendingKind = UnitKind.BODY
+        private var pendingCell: MutableTableCell? = null
 
-        fun startElement(name: String) {
-            when (name) {
-                "p" -> flush(nextKind = if (tableDepth > 0) UnitKind.TABLE_CELL else UnitKind.BODY)
-                "t" -> textDepth++
-                TABLE_CELL_ELEMENT -> tableDepth++
+        fun startElement(
+            name: String,
+            attributes: Map<String, String> = emptyMap(),
+        ) {
+            when (name.lowercase()) {
+                "p" -> {
+                    flush(nextKind = if (tableDepth > 0) UnitKind.TABLE_CELL else UnitKind.BODY)
+                    pendingCell = tables.currentCell()
+                }
+
+                "t" -> {
+                    textDepth++
+                }
+
+                in FOOTNOTE_ELEMENTS -> {
+                    tables.markCoordinatesLost(tables.currentCell())
+                }
+
+                TABLE_ELEMENT -> {
+                    tableDepth++
+                    tables.startTable(attributes)
+                }
+
+                TABLE_ROW_ELEMENT -> {
+                    tables.startRow()
+                }
+
+                TABLE_CELL_ELEMENT -> {
+                    tables.startCell(attributes)
+                }
+
+                "celladdr", "cellspan" -> {
+                    tables.readCellMetadata(name, attributes)
+                }
             }
         }
 
         fun endElement(name: String) {
             when (name) {
-                "t" -> textDepth--
-                TABLE_CELL_ELEMENT -> tableDepth--
+                "t" -> {
+                    textDepth--
+                }
+
+                TABLE_CELL_ELEMENT -> {
+                    tables.endCell()
+                }
+
+                TABLE_ELEMENT -> {
+                    tableDepth--
+                    tables.endTable()
+                }
             }
         }
 
         fun characters(text: String) {
             if (textDepth == 0) return
+            if (tableDepth == 0 && pendingCell != null && text.isNotBlank()) {
+                // 표를 닫은 뒤 같은 문단에 남은 텍스트는 마지막 셀인지 바깥 문단인지
+                // source unit 경계만으로 구분할 수 없다. 원문은 그대로 보존하되 표 관계는
+                // 좌표 유실로 보류하여 바깥 문장을 셀 값으로 내보내지 않는다.
+                tables.markCoordinatesLost(pendingCell)
+            }
             // 붙이기 **전에** 묻는다. 붙인 뒤에 물으면 그 한 번의 할당이 이미 일어난 뒤다.
             sink.ensureRoomFor(current.length + text.length)
             current.append(text)
@@ -170,13 +220,19 @@ internal class HwpxExtractor : StructuredTextExtractor {
 
         /** 지금까지 쌓은 텍스트를 **그 블록이 시작될 때 정해진 종류**로 내보내고, 다음 블록의 종류를 받아 둔다. */
         private fun flush(nextKind: UnitKind) {
-            sink.add(current.toString(), pendingKind)
+            val block = current.toString()
+            val indexes = sink.add(block, pendingKind)
+            tables.attach(pendingCell, indexes, block)
             current.setLength(0)
             pendingKind = nextKind
+            pendingCell = null
         }
 
         private companion object {
             const val TABLE_CELL_ELEMENT = "tc"
+            const val TABLE_ELEMENT = "tbl"
+            const val TABLE_ROW_ELEMENT = "tr"
+            val FOOTNOTE_ELEMENTS = setOf("footnote", "footnotereference", "note")
         }
     }
 
@@ -290,3 +346,6 @@ private fun refineNonCellKinds(
     bodyIndexes.forEachIndexed { position, index -> merged[index] = refinedBody[position] }
     return SourceStructure(merged)
 }
+
+private fun XMLStreamReader.attributes(): Map<String, String> =
+    (0 until attributeCount).associate { index -> getAttributeLocalName(index) to getAttributeValue(index) }

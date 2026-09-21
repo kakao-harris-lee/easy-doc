@@ -1,5 +1,6 @@
 package kr.easydoc.api.support
 
+import kr.easydoc.core.document.TableStructure
 import kr.easydoc.core.llm.LlmCallOutcome
 import kr.easydoc.core.llm.LlmCallPurpose
 import kr.easydoc.core.llm.LlmCallRecord
@@ -362,6 +363,19 @@ class GeneratedToStringProbes(
                         calledAt = Instant.EPOCH,
                         outcome = LlmCallOutcome.COMPLETED,
                         failureClass = null,
+                    ),
+                // TableStructure의 tableId는 `table-[0-9]+` 도메인 형식이다. 범용
+                // String 표본(SENSITIVE-PROBE-...)을 안쪽까지 심으면 생성자 불변식을
+                // 깨뜨리므로, 로그 표본으로 충분한 유효 인스턴스를 한 번 등록한다.
+                // 이 타입은 자체 toString()이 좌표·본문을 내지 않으므로 불변 표본으로
+                // 두며, 탐지 범위를 줄이거나 검사에서 제외하지 않는다.
+                TableStructure::class to
+                    TableStructure(
+                        tableId = "table-0",
+                        sourceUnitIndexes = emptyList(),
+                        rowCount = 1,
+                        columnCount = 1,
+                        cells = emptyList(),
                     ),
             )
 

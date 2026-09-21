@@ -9,8 +9,8 @@ object ActionGuideCandidateValidator {
     private const val MAX_ITEMS_PER_SECTION = 10
     private const val MAX_ITEM_CODE_POINTS = 500
     private const val MAX_USER_TEXT_CODE_POINTS = 4_000
-    private const val MAX_ANCHORS_PER_ITEM = 10
-    private const val MAX_ANCHOR_QUOTE_CODE_POINTS = 1_000
+    internal const val MAX_ANCHORS_PER_ITEM = 10
+    internal const val MAX_ANCHOR_QUOTE_CODE_POINTS = 1_000
 
     fun validate(
         candidate: ActionGuideCandidate,
@@ -21,28 +21,60 @@ object ActionGuideCandidateValidator {
         validateExceptionCautions(candidate)
     }
 
+    /**
+     * Anchor compaction may temporarily accept an item with more than the final
+     * anchor cap. Every other structural, source, and fact rule still applies
+     * before compaction so the normal validator cannot be laundered by merging.
+     */
+    internal fun validateBeforeAnchorCompaction(
+        candidate: ActionGuideCandidate,
+        sourceUnits: List<String>,
+    ) {
+        validateStructure(allowAnchorOverflow = true, candidate = candidate)
+        candidate.sections.forEach { validateSectionAgainstSource(it, sourceUnits) }
+        validateExceptionCautions(candidate)
+    }
+
     /** 저장된 암호문을 다시 읽을 때도 적용하는, 원문 없이 결정 가능한 제한. */
     fun validateStructure(candidate: ActionGuideCandidate) {
+        validateStructure(allowAnchorOverflow = false, candidate = candidate)
+    }
+
+    private fun validateStructure(
+        allowAnchorOverflow: Boolean,
+        candidate: ActionGuideCandidate,
+    ) {
         if (candidate.schemaVersion != SCHEMA_VERSION) invalid()
         if (candidate.sections.map { it.kind }.toSet() != ActionGuideSectionKind.entries.toSet()) invalid()
         if (candidate.sections.size != ActionGuideSectionKind.entries.size) invalid()
-        val userTextCodePoints = candidate.sections.sumOf(::validateSectionStructure)
+        val userTextCodePoints =
+            candidate.sections.sumOf { section ->
+                validateSectionStructure(section, allowAnchorOverflow)
+            }
         if (userTextCodePoints > MAX_USER_TEXT_CODE_POINTS) invalid()
     }
 
-    private fun validateSectionStructure(section: ActionGuideSection): Int {
+    private fun validateSectionStructure(
+        section: ActionGuideSection,
+        allowAnchorOverflow: Boolean,
+    ): Int {
         if (section.items.size > MAX_ITEMS_PER_SECTION) invalid()
         if (section.status == ActionGuideSectionStatus.NOT_IN_SOURCE && section.items.isNotEmpty()) invalid()
         if (section.status == ActionGuideSectionStatus.AVAILABLE && section.items.isEmpty()) invalid()
-        return section.items.sumOf { validateItemStructure(it, section.status) }
+        return section.items.sumOf { item ->
+            validateItemStructure(item, section.status, allowAnchorOverflow)
+        }
     }
 
     private fun validateItemStructure(
         item: ActionGuideItem,
         status: ActionGuideSectionStatus,
+        allowAnchorOverflow: Boolean,
     ): Int {
         if (item.text.isBlank() || item.text.countCodePoints() > MAX_ITEM_CODE_POINTS) invalid()
-        if (item.cautions.size > MAX_ITEMS_PER_SECTION || item.sourceAnchors.size > MAX_ANCHORS_PER_ITEM) {
+        if (item.cautions.size > MAX_ITEMS_PER_SECTION ||
+            (!allowAnchorOverflow && item.sourceAnchors.size > MAX_ANCHORS_PER_ITEM)
+        ) {
             invalid()
         }
         if (status == ActionGuideSectionStatus.AVAILABLE && item.sourceAnchors.isEmpty()) invalid()
@@ -63,14 +95,12 @@ object ActionGuideCandidateValidator {
     ) {
         section.items.forEach { item ->
             item.sourceAnchors.forEach { validateAnchor(it, sourceUnits) }
-            if (section.status == ActionGuideSectionStatus.AVAILABLE) validateAvailableFacts(item)
+            if (section.status == ActionGuideSectionStatus.AVAILABLE) {
+                val evidence = item.sourceAnchors.joinToString("\n") { it.quote }
+                val userText = (listOf(item.text) + item.cautions).joinToString("\n")
+                if (findMissingFacts(userText, evidence).isNotEmpty()) invalid()
+            }
         }
-    }
-
-    private fun validateAvailableFacts(item: ActionGuideItem) {
-        val evidence = item.sourceAnchors.joinToString("\n") { it.quote }
-        val userText = (listOf(item.text) + item.cautions).joinToString("\n")
-        if (findMissingFacts(userText, evidence).isNotEmpty()) invalid()
     }
 
     private fun validateAnchor(

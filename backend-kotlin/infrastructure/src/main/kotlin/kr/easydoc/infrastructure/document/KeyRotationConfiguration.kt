@@ -40,6 +40,24 @@ data class KeyRotationProperties(val batchSize: Int = DEFAULT_BATCH_SIZE) {
 @Profile(ROTATE_KEYS_PROFILE)
 class KeyRotationConfiguration {
     @Bean
+    fun tableStructureKeyRotation(
+        jdbcClient: JdbcClient,
+        cipher: ContentCipher,
+        transactionManager: PlatformTransactionManager,
+        properties: KeyRotationProperties,
+    ): TableStructureKeyRotation =
+        TableStructureKeyRotation(jdbcClient, cipher, TransactionTemplate(transactionManager), properties.batchSize)
+
+    @Bean
+    fun reviewHistoryKeyRotation(
+        jdbcClient: JdbcClient,
+        cipher: ContentCipher,
+        transactionManager: PlatformTransactionManager,
+        properties: KeyRotationProperties,
+    ): ReviewHistoryKeyRotation =
+        ReviewHistoryKeyRotation(jdbcClient, cipher, TransactionTemplate(transactionManager), properties.batchSize)
+
+    @Bean
     fun actionGuideContentKeyRotation(
         jdbcClient: JdbcClient,
         cipher: ContentCipher,

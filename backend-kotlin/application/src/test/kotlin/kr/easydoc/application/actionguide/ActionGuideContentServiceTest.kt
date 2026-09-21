@@ -1,8 +1,14 @@
 package kr.easydoc.application.actionguide
 
+import kr.easydoc.application.document.ConversionCiphertexts
 import kr.easydoc.application.document.DocumentDraft
 import kr.easydoc.application.document.DocumentRepository
 import kr.easydoc.application.document.FakeContentCipher
+import kr.easydoc.application.document.FakeConversionRepository
+import kr.easydoc.application.document.FakeDocumentOriginalRepository
+import kr.easydoc.application.document.RecordingReviewHistoryAppender
+import kr.easydoc.application.document.RecordingTransactionRunner
+import kr.easydoc.application.document.StoredConversion
 import kr.easydoc.application.document.StoredSourceText
 import kr.easydoc.core.actionguide.ActionGuideCandidate
 import kr.easydoc.core.actionguide.ActionGuideCandidateParser
@@ -16,6 +22,7 @@ import kr.easydoc.core.actionguide.ActionGuideSourceAnchor
 import kr.easydoc.core.crypto.EncryptedContent
 import kr.easydoc.core.crypto.EncryptedField
 import kr.easydoc.core.crypto.PlainBody
+import kr.easydoc.core.document.ConversionStatus
 import kr.easydoc.core.document.Document
 import kr.easydoc.core.document.DocumentListing
 import kr.easydoc.core.document.SourceFormat
@@ -34,6 +41,10 @@ class ActionGuideContentServiceTest {
     private val contents = InMemoryContentRepository()
     private val cipher = FakeContentCipher(writeKeyVersion = 1)
     private val documents = SourceOnlyDocuments(cipher)
+    private val transaction = RecordingTransactionRunner()
+    private val originals = FakeDocumentOriginalRepository(transaction)
+    private val conversions = FakeConversionRepository(transaction, originals)
+    private val history = RecordingReviewHistoryAppender()
     private val service =
         ActionGuideContentService(
             enabled = true,
@@ -43,7 +54,33 @@ class ActionGuideContentServiceTest {
             cipher = cipher,
             transaction = DirectTransaction(),
             clock = Clock.fixed(NOW, ZoneOffset.UTC),
+            conversions = conversions,
+            reviewHistory = history,
         )
+
+    init {
+        conversions.owned[OWNER to CONVERSION] =
+            StoredConversion(
+                id = CONVERSION,
+                documentId = DOCUMENT,
+                status = ConversionStatus.DONE,
+                sourceFormat = SourceFormat.TEXT,
+                hasStoredOriginal = false,
+                ciphertexts =
+                    ConversionCiphertexts(
+                        cipher.encrypt(PlainBody("기록할 본문"), CONVERSION, EncryptedField.CONVERSION_EASY_TEXT),
+                        null,
+                    ),
+                reviewedAt = null,
+                feedbackSubmittedAt = null,
+                model = null,
+                providerName = null,
+                inputTokens = null,
+                outputTokens = null,
+                failureCode = null,
+                contentRevision = 3,
+            )
+    }
 
     @Test
     fun `재방문은 빈 상태와 현재 안내문과 이전 본문 안내문을 구분한다`() {
@@ -124,6 +161,77 @@ class ActionGuideContentServiceTest {
         val edited = service.save(OWNER, CONVERSION, null, 3, reviewed.guideRevision, changed, markReviewed = true)
         assertThat(edited.status).isEqualTo(ActionGuideStatus.DRAFT)
         assertThat(edited.reviewedAt).isNull()
+    }
+
+    @Test
+    fun `reviewed guide 수정은 이전 guide를 invalidation history로 남긴다`() {
+        val draft = save(null, null, 3, grounded())
+        val reviewed = service.save(OWNER, CONVERSION, null, 3, draft.guideRevision, grounded(), markReviewed = true)
+        val changed =
+            grounded().copy(
+                sections =
+                    grounded().sections.mapIndexed { index, section ->
+                        if (index ==
+                            0
+                        ) {
+                            section.copy(items = section.items.map { it.copy(cautions = listOf("수정")) })
+                        } else {
+                            section
+                        }
+                    },
+            )
+
+        service.save(OWNER, CONVERSION, null, 3, reviewed.guideRevision, changed, markReviewed = true)
+
+        assertThat(history.invalidationCalls).hasSize(1)
+        assertThat(history.invalidationCalls.single().contentRevision).isEqualTo(3)
+        assertThat(history.invalidationCalls.single().guideId).isEqualTo(reviewed.guideId)
+        assertThat(history.invalidationCalls.single().artifactRevision).isEqualTo(reviewed.guideRevision)
+        assertThat(history.invalidationCalls.single().contentText).isEqualTo("기록할 본문")
+        assertThat(history.invalidationCalls.single().artifactJson).startsWith("{\"schema_version\"")
+    }
+
+    @Test
+    fun `stale reviewed guide 후보 적용은 새 본문을 옛 guide snapshot에 붙이지 않는다`() {
+        val draft = save(null, null, 3, grounded())
+        val reviewed = service.save(OWNER, CONVERSION, null, 3, draft.guideRevision, grounded(), markReviewed = true)
+
+        // Simulate the body edit's already-recorded invalidation. Its old revision/body are the
+        // only safe identity for the event; the stale guide replacement must not add a duplicate.
+        history.appendInvalidatedByEdit(
+            ownerId = OWNER,
+            conversionId = CONVERSION,
+            contentRevision = 3,
+            contentText = "기록할 본문",
+        )
+        conversions.owned[OWNER to CONVERSION] =
+            conversions.owned.getValue(OWNER to CONVERSION).copy(
+                ciphertexts =
+                    ConversionCiphertexts(
+                        cipher.encrypt(PlainBody("새 본문"), CONVERSION, EncryptedField.CONVERSION_EASY_TEXT),
+                        null,
+                    ),
+                contentRevision = 4,
+            )
+        jobs.context = context(4)
+        val candidateId = UUID.randomUUID()
+        contents.candidates[candidateId] = candidate(candidateId, 4, grounded())
+
+        val applied =
+            service.save(
+                OWNER,
+                CONVERSION,
+                candidateId,
+                4,
+                reviewed.guideRevision,
+                grounded(),
+                markReviewed = true,
+            )
+
+        assertThat(applied.status).isEqualTo(ActionGuideStatus.DRAFT)
+        assertThat(history.invalidationCalls).hasSize(1)
+        assertThat(history.invalidationCalls.single().contentRevision).isEqualTo(3)
+        assertThat(history.invalidationCalls.single().contentText).isEqualTo("기록할 본문")
     }
 
     @Test

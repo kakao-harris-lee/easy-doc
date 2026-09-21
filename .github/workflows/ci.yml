@@ -104,6 +104,8 @@ jobs:
         run: docker compose -f compose.yml -f compose.e2e.yml up -d --build --wait
       - name: Kotlin API + React E2E
         env:
+          EASYDOC_TABLE_RELATIONS_ENABLED: "true"
+          EASYDOC_REVIEW_HISTORY_ENABLED: "true"
           E2E_SKIP_STACK: "1"
           E2E_API_BASE_URL: http://localhost:8100
         run: frontend/e2e/run-local.sh

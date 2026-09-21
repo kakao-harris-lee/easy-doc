@@ -27,6 +27,7 @@ class ConversionReviewService(
     private val cipher: ContentCipher,
     private val query: ConversionQueryService,
     private val transaction: TransactionRunner,
+    private val reviewHistory: ReviewHistoryAppender = NoOpReviewHistoryAppender,
 ) {
     /**
      * 저장하고 **갱신된 조회 결과**를 돌려준다(계약이 `GET` 과 같은 스키마다). 판정 순서는
@@ -61,6 +62,18 @@ class ConversionReviewService(
                 throw StorageException(REVIEW_NOT_SAVED_MESSAGE)
             }
             val nextRevision = if (bodyChanged) locked.contentRevision + 1 else locked.contentRevision
+
+            // Record the body that was actually reviewed before the CAS advances the conversion
+            // revision. The event's content_revision therefore names currentBody, never the new
+            // body being written below.
+            if (bodyChanged) {
+                reviewHistory.appendInvalidatedByEdit(
+                    ownerId = ownerId,
+                    conversionId = conversionId,
+                    contentRevision = locked.contentRevision,
+                    contentText = currentBody?.value,
+                )
+            }
 
             val saved =
                 conversions.saveReview(

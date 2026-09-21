@@ -22,6 +22,10 @@ spring:
     enabled: true
 
 easydoc:
+  table-relations:
+    enabled: ${EASYDOC_TABLE_RELATIONS_ENABLED:false}
+  review-history:
+    enabled: ${EASYDOC_REVIEW_HISTORY_ENABLED:false}
   action-guide:
     enabled: ${EASYDOC_ACTION_GUIDE_ENABLED:false}
     worker-enabled: ${EASYDOC_ACTION_GUIDE_WORKER_ENABLED:false}

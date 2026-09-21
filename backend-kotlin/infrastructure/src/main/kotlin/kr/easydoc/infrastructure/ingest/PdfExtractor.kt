@@ -1,6 +1,9 @@
 package kr.easydoc.infrastructure.ingest
 
 import kr.easydoc.core.document.SourceFormat
+import kr.easydoc.core.document.TableStructure
+import kr.easydoc.core.document.TableSupportReason
+import kr.easydoc.core.document.TableSupportStatus
 import kr.easydoc.core.exceptions.DocumentExtractionException
 import org.apache.pdfbox.Loader
 import org.apache.pdfbox.pdmodel.PDDocument
@@ -47,8 +50,19 @@ internal class PdfExtractor : StructuredTextExtractor {
             ExtractionFailureLog.record(SourceFormat.PDF, uploadSize, "no_text_layer")
             throw DocumentExtractionException(ExtractionMessages.PDF_NO_TEXT_LAYER)
         }
-        return ExtractionOutcome(extracted, builder.structure())
+        return ExtractionOutcome(extracted, builder.structure(), listOf(unsupportedTable()))
     }
+
+    private fun unsupportedTable(): TableStructure =
+        TableStructure(
+            tableId = "table-0",
+            sourceUnitIndexes = emptyList(),
+            rowCount = 0,
+            columnCount = 0,
+            cells = emptyList(),
+            supportStatus = TableSupportStatus.UNSUPPORTED,
+            supportReason = TableSupportReason.UNSUPPORTED_FORMAT,
+        )
 
     /** PDFBox 호출을 감싸 라이브러리 예외를 도메인 예외로 바꾼다. */
     @Suppress("TooGenericExceptionCaught")

@@ -19,10 +19,21 @@ object ActionGuideCandidateParser {
     fun parseAndValidate(
         rawJson: String,
         sourceUnits: List<String>,
-    ): ActionGuideCandidate = decode(rawJson).also { ActionGuideCandidateValidator.validate(it, sourceUnits) }
+    ): ActionGuideCandidate {
+        val decoded = decodeInternal(rawJson, validateStructure = false)
+        ActionGuideCandidateValidator.validateBeforeAnchorCompaction(decoded, sourceUnits)
+        return ActionGuideCandidateAnchorCompactor
+            .compact(decoded, sourceUnits)
+            .also { ActionGuideCandidateValidator.validate(it, sourceUnits) }
+    }
 
     /** 이미 원문과 대조해 저장했던 암호문을 읽을 때 구조만 다시 검사한다. 새 입력 수락에는 쓰지 않는다. */
-    fun decode(rawJson: String): ActionGuideCandidate {
+    fun decode(rawJson: String): ActionGuideCandidate = decodeInternal(rawJson, validateStructure = true)
+
+    private fun decodeInternal(
+        rawJson: String,
+        validateStructure: Boolean,
+    ): ActionGuideCandidate {
         if (rawJson.length > MAX_JSON_CHARS) invalidCandidateJson()
         val root =
             try {
@@ -42,7 +53,9 @@ object ActionGuideCandidateParser {
                 )
             }
         return ActionGuideCandidate(root.requiredInt("schema_version"), sections)
-            .also(ActionGuideCandidateValidator::validateStructure)
+            .also { candidate ->
+                if (validateStructure) ActionGuideCandidateValidator.validateStructure(candidate)
+            }
     }
 
     /** 필드 순서까지 고정한 JSON. 암호화 저장 전 반드시 [parseAndValidate] 또는 validator를 거친다. */

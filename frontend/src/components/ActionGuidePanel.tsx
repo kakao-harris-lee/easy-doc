@@ -32,6 +32,7 @@ export interface ActionGuidePanelProps {
   source: DocumentSource
   onSaveBody: () => Promise<number | null>
   onDirtyChange?: (dirty: boolean) => void
+  onReviewed?: () => void
 }
 
 const SECTIONS: readonly { kind: ActionGuideSectionKind; label: string }[] = [
@@ -101,6 +102,7 @@ export function ActionGuidePanel({
   source,
   onSaveBody,
   onDirtyChange,
+  onReviewed,
 }: ActionGuidePanelProps) {
   const headingId = useId()
   const [resource, setResource] = useState<ActionGuideResource | null>(null)
@@ -559,6 +561,7 @@ export function ActionGuidePanel({
       setReviewChecked(false)
       if (candidateId !== null && job !== null) setDismissedJobId(job.job_id)
       setNotice(markReviewed ? '담당자 확인을 저장했습니다.' : '안내문 초안을 저장했습니다.')
+      if (markReviewed) onReviewed?.()
     } catch (caught) {
       if (caught instanceof ApiError && caught.status === 409) setGuideConflict(true)
       setError(errorText(caught, 'save'))

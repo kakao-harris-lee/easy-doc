@@ -62,6 +62,26 @@ class ConversionReviewServiceTest {
     }
 
     @Test
+    fun `본문 수정은 이전 본문과 이전 revision을 invalidation event에 남긴 뒤 새 버전을 쓴다`() {
+        val world = World()
+        val conversionId = world.seedDone(draft = "검수된 이전 본문")
+
+        world.save(conversionId, "새 본문", expectedContentRevision = 1)
+
+        assertThat(world.history.invalidationCalls).hasSize(1)
+        val call = world.history.invalidationCalls.single()
+        assertThat(call.contentRevision).isEqualTo(1)
+        assertThat(call.contentText).isEqualTo("검수된 이전 본문")
+        assertThat(call.artifactRevision).isNull()
+        assertThat(call.artifactJson).isNull()
+        assertThat(
+            world.conversions.owned
+                .getValue(OWNER to conversionId)
+                .contentRevision,
+        ).isEqualTo(2)
+    }
+
+    @Test
     @DisplayName("판정 순서 — 정규화·길이가 **소유권보다 앞이다**: 없는 자원에도 422 가 먼저 나간다")
     fun `입력 판정이 소유권보다 앞선다`() {
         val world = World()
@@ -356,6 +376,7 @@ class ConversionReviewServiceTest {
         val originals = FakeDocumentOriginalRepository(transaction)
         val conversions = FakeConversionRepository(transaction, originals)
         val reflector = FakeOriginalStructureReflector()
+        val history = RecordingReviewHistoryAppender()
 
         val service =
             ConversionReviewService(
@@ -371,6 +392,7 @@ class ConversionReviewServiceTest {
                         transaction = transaction,
                     ),
                 transaction = transaction,
+                reviewHistory = history,
             )
 
         fun save(
@@ -479,6 +501,10 @@ class ConversionReviewServiceTest {
                     EncryptedField.ACTION_GUIDE_CANDIDATE_PAYLOAD,
                     EncryptedField.ACTION_GUIDE_PAYLOAD,
                     -> error("검수 저장이 행동 안내문 열을 쓰지 않는다")
+
+                    EncryptedField.DOCUMENT_TABLE_STRUCTURE -> error("검수 저장이 표 구조 열을 쓰지 않는다")
+
+                    EncryptedField.REVIEW_HISTORY_SNAPSHOT -> error("이력 스냅샷은 별도 이력 저장소에 쓴다")
                 }
             return column?.let { cipher.decrypt(it, call.expected.conversionId, field).value }
         }

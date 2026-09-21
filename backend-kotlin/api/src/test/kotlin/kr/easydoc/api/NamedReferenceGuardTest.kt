@@ -427,8 +427,9 @@ class NamedReferenceGuardTest {
             Files.walk(root).use { paths ->
                 paths
                     .filter { Files.isRegularFile(it) && accept(it) }
-                    .filter { root.relativize(it).none { part -> part.toString() == "build" } }
-                    .sorted()
+                    .filter {
+                        root.relativize(it).none { part -> part.toString() == "build" || part.toString() == "bin" }
+                    }.sorted()
                     .toList()
             }
 

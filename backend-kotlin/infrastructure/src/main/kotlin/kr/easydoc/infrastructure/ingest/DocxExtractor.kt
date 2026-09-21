@@ -24,8 +24,9 @@ internal class DocxExtractor : StructuredTextExtractor {
      */
     override fun extractStructured(data: ByteArray): ExtractionOutcome {
         val builder = ExtractedTextBuilder(SourceFormat.DOCX, data.size)
-        collectInto(data, builder)
-        return ExtractionOutcome(builder.build(), builder.structure())
+        val tables = DomTableCollector()
+        collectInto(data, builder, tables)
+        return ExtractionOutcome(builder.build(), builder.structure(), tables.finish())
     }
 
     /** 정규화 **이전**의 블록 목록. */
@@ -40,12 +41,13 @@ internal class DocxExtractor : StructuredTextExtractor {
     private fun collectInto(
         data: ByteArray,
         sink: BlockSink,
+        tables: DomTableCollector? = null,
     ) {
         // `PdfExtractor.guarded` 와 같은 모양이다 — 잡은 예외를 값으로 받아 **한 자리에서**
         // 던진다. 갈래마다 던지면 "어떤 예외가 어떤 문구가 되는가"가 흩어진다.
         val failure: Throwable =
             try {
-                XWPFDocument(ByteArrayInputStream(data)).use { document -> collect(document, sink) }
+                XWPFDocument(ByteArrayInputStream(data)).use { document -> collect(document, sink, tables) }
                 return
             } catch (cause: DocumentExtractionException) {
                 // 우리 예외(길이 상한)는 **변환하지 않는다.** 아래 `RuntimeException` 갈래가
@@ -64,11 +66,12 @@ internal class DocxExtractor : StructuredTextExtractor {
     private fun collect(
         document: XWPFDocument,
         sink: BlockSink,
+        tables: DomTableCollector? = null,
     ) {
         val body = document.document.body.domNode
-        elementBlocks(body, sink)
+        elementBlocks(body, sink, tables)
         // 파트 해석은 `DocxSectionParts` 가 소유한다 — 반영(내보내기) 쪽이 같은 순서를 봐야 한다.
-        for (part in DocxSectionParts.headerFooterParts(document, body)) elementBlocks(part, sink)
+        for (part in DocxSectionParts.headerFooterParts(document, body)) elementBlocks(part, sink, tables)
     }
 
     /**
@@ -81,62 +84,26 @@ internal class DocxExtractor : StructuredTextExtractor {
     private fun elementBlocks(
         root: Node,
         sink: BlockSink,
+        tables: DomTableCollector? = null,
     ) {
-        val current = StringBuilder()
-        var currentKind = UnitKind.BODY
-        val stack = ArrayDeque<Frame>()
-        stack.addLast(Frame(root, inCell = false))
+        val state = DocxBlockState(sink, tables)
+        val stack = ArrayDeque<DocxFrame>()
+        stack.addLast(DocxFrame(root, inCell = false))
         while (stack.isNotEmpty()) {
             val frame = stack.removeLast()
             val node = frame.node
             if (OoxmlSkips.isAlternateContentFallback(node)) continue
-            val inCell = frame.inCell || OoxmlDom.localName(node) == TABLE_CELL_ELEMENT
-            when (OoxmlDom.localName(node)) {
-                "p" -> {
-                    sink.add(current.toString(), currentKind)
-                    current.setLength(0)
-                    currentKind = kindOf(node as Element, inCell)
-                }
-
-                "t" -> {
-                    val text = OoxmlDom.leadingText(node)
-                    // 붙이기 **전에** 예산을 묻는다 — 문단 하나가 통째로 거대한 입력을 막는다.
-                    sink.ensureRoomFor(current.length + text.length)
-                    current.append(text)
-                }
-            }
+            val name = OoxmlDom.localName(node)
+            if (name == TABLE_ELEMENT) tables?.startTable(node, frame.cell)
+            val directCell = tables?.cellFor(node)
+            val cell = directCell ?: frame.cell
+            val inCell = frame.inCell || name == TABLE_CELL_ELEMENT
+            state.process(node, inCell, cell)
             // 자식을 역순으로 쌓아야 pop 순서가 문서 순서가 된다.
-            OoxmlDom.childElements(node).asReversed().forEach { stack.addLast(Frame(it, inCell)) }
+            OoxmlDom.childElements(node).asReversed().forEach { stack.addLast(DocxFrame(it, inCell, cell)) }
         }
-        sink.add(current.toString(), currentKind)
+        state.flush()
     }
-
-    /** [paragraph] 가 표 칸 안이면 [UnitKind.TABLE_CELL], `w:pPr/w:numPr` 가 있으면 [UnitKind.LIST_ITEM], 그 외 [UnitKind.BODY]. */
-    private fun kindOf(
-        paragraph: Element,
-        inCell: Boolean,
-    ): UnitKind =
-        when {
-            inCell -> UnitKind.TABLE_CELL
-            hasNumberingProperties(paragraph) -> UnitKind.LIST_ITEM
-            else -> UnitKind.BODY
-        }
-
-    /** `w:pPr` 의 자식으로 `w:numPr` 이 있는가 — 목록 문단의 OOXML 표시(계획 §1.2 표). */
-    private fun hasNumberingProperties(paragraph: Element): Boolean {
-        val paragraphProperties =
-            OoxmlDom.childElements(paragraph).firstOrNull { OoxmlDom.localName(it) == PARAGRAPH_PROPERTIES_ELEMENT }
-                ?: return false
-        return OoxmlDom.childElements(paragraphProperties).any {
-            OoxmlDom.localName(it) == NUMBERING_PROPERTIES_ELEMENT
-        }
-    }
-
-    /** 스택 프레임 — [inCell] 은 이 노드가 `w:tc` 조상 안인가를, DOM 을 걷는 동안만 든다. */
-    private class Frame(
-        val node: Node,
-        val inCell: Boolean,
-    )
 
     private fun broken(
         uploadSize: Int,
@@ -162,10 +129,73 @@ internal class DocxExtractor : StructuredTextExtractor {
         /** 표 칸 요소(`w:tc`) — 이 조상 안의 문단은 [UnitKind.TABLE_CELL] 이다. */
         private const val TABLE_CELL_ELEMENT = "tc"
 
-        /** 문단 속성 요소(`w:pPr`) — [NUMBERING_PROPERTIES_ELEMENT] 가 이 밑에 온다. */
-        private const val PARAGRAPH_PROPERTIES_ELEMENT = "pPr"
-
-        /** 번호 매김 속성 요소(`w:numPr`) — 목록 문단의 표시(계획 §1.2 표). */
-        private const val NUMBERING_PROPERTIES_ELEMENT = "numPr"
+        private const val TABLE_ELEMENT = "tbl"
     }
 }
+
+private class DocxFrame(
+    val node: Node,
+    val inCell: Boolean,
+    val cell: MutableTableCell? = null,
+)
+
+/** Preserve the existing paragraph boundaries while remembering each paragraph's owning cell. */
+private class DocxBlockState(
+    private val sink: BlockSink,
+    private val tables: DomTableCollector?,
+) {
+    private val current = StringBuilder()
+    private var kind = UnitKind.BODY
+    private var pendingCell: MutableTableCell? = null
+
+    fun process(
+        node: Node,
+        inCell: Boolean,
+        cell: MutableTableCell?,
+    ) {
+        when (OoxmlDom.localName(node)) {
+            "p" -> {
+                flush()
+                kind = paragraphKind(node, inCell)
+                pendingCell = cell
+            }
+
+            "t" -> {
+                val text = OoxmlDom.leadingText(node)
+                if (pendingCell !== cell && text.isNotBlank()) tables?.markCoordinatesLost(pendingCell)
+                sink.ensureRoomFor(current.length + text.length)
+                current.append(text)
+            }
+        }
+    }
+
+    fun flush() {
+        val block = current.toString()
+        val indexes = sink.add(block, kind)
+        tables?.attach(pendingCell, indexes, block)
+        current.setLength(0)
+    }
+}
+
+private fun paragraphKind(
+    paragraph: Node,
+    inCell: Boolean,
+): UnitKind =
+    when {
+        inCell -> {
+            UnitKind.TABLE_CELL
+        }
+
+        OoxmlDom
+            .childElements(paragraph)
+            .firstOrNull { OoxmlDom.localName(it) == "pPr" }
+            ?.let { properties ->
+                OoxmlDom.childElements(properties).any { OoxmlDom.localName(it) == "numPr" }
+            } == true -> {
+            UnitKind.LIST_ITEM
+        }
+
+        else -> {
+            UnitKind.BODY
+        }
+    }

@@ -22,6 +22,8 @@ class DocumentSourceView(
     val sourceFormat: SourceFormat,
     val charCount: Int,
     val sourceText: PlainBody,
+    /** R4 feature가 켜진 새 문서에서만 표 구조가 채워진다. */
+    val tables: List<TableStructure>? = null,
 ) {
     /** **본문을 찍지 않는다.** 식별자·형식과 길이만 남긴다 — [PlainBody] 의 규약과 같다. */
     override fun toString(): String = "DocumentSourceView($documentId, ${sourceFormat.wireName}, ${charCount}자)"

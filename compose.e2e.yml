@@ -44,6 +44,8 @@ services:
       # R1 검수 지원은 운영 기본값이 꺼져 있다. 브라우저 수직 흐름에서만 명시적으로 켠다.
       EASYDOC_REVIEW_SUPPORT_ENABLED: "true"
       EASYDOC_ACTION_GUIDE_ENABLED: "true"
+      EASYDOC_TABLE_RELATIONS_ENABLED: "true"
+      EASYDOC_REVIEW_HISTORY_ENABLED: "true"
       EASYDOC_CREDITS_ENFORCED: "false"
       EASYDOC_CREDITS_SIGNUP_GRANT: "1000"
       EASYDOC_CREDITS_SIGNUP_GRANT_PEPPER: "e2e-only-pepper-not-a-secret"

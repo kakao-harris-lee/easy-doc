@@ -19,11 +19,13 @@ import kr.easydoc.application.document.DocumentRepository
 import kr.easydoc.application.document.DocumentService
 import kr.easydoc.application.document.DocumentSourceService
 import kr.easydoc.application.document.DocumentStorage
+import kr.easydoc.application.document.DocumentTableStructureRepository
 import kr.easydoc.application.document.DocumentTextExtractor
 import kr.easydoc.application.document.EnvelopeRotation
 import kr.easydoc.application.document.OriginalReflection
 import kr.easydoc.application.document.OriginalStructureReflector
 import kr.easydoc.application.document.ReviewAssessmentRepository
+import kr.easydoc.application.document.ReviewHistoryAppender
 import kr.easydoc.application.document.ReviewSupportService
 import kr.easydoc.application.document.SealedStores
 import kr.easydoc.application.document.SegmentMapDerivation
@@ -37,6 +39,7 @@ import kr.easydoc.infrastructure.crypto.MIGRATE_PROFILE
 import kr.easydoc.infrastructure.export.PackagedOriginalReflector
 import kr.easydoc.infrastructure.llm.LlmProperties
 import kr.easydoc.infrastructure.queue.JdbcConversionQueue
+import org.springframework.beans.factory.annotation.Value
 import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
@@ -66,6 +69,10 @@ class DocumentConfiguration {
         JdbcDocumentOriginalRepository(jdbcClient)
 
     @Bean
+    fun documentTableStructureRepository(jdbcClient: JdbcClient): DocumentTableStructureRepository =
+        JdbcDocumentTableStructureRepository(jdbcClient)
+
+    @Bean
     fun conversionRepository(jdbcClient: JdbcClient): ConversionRepository = JdbcConversionRepository(jdbcClient)
 
     @Bean
@@ -86,12 +93,14 @@ class DocumentConfiguration {
         originals: DocumentOriginalRepository,
         conversions: ConversionRepository,
         queue: ConversionQueue,
+        tableStructures: DocumentTableStructureRepository,
     ): DocumentStorage =
         DocumentStorage(
             documents = documents,
             originals = originals,
             conversions = conversions,
             queue = queue,
+            tableStructures = tableStructures,
         )
 
     @Suppress("LongParameterList")
@@ -125,7 +134,13 @@ class DocumentConfiguration {
     fun documentSourceService(
         documents: DocumentRepository,
         cipher: ContentCipher,
-    ): DocumentSourceService = DocumentSourceService(documents = documents, cipher = cipher)
+        @Value("\${easydoc.table-relations.enabled:false}") tableRelationsEnabled: Boolean,
+    ): DocumentSourceService =
+        DocumentSourceService(
+            documents = documents,
+            cipher = cipher,
+            tableRelationsEnabled = tableRelationsEnabled,
+        )
 
     /**
      * 원본 구조 반영. 조회의 서식 유지 판정과 내보내기가 **같은 이 하나**를 쓴다 —
@@ -171,6 +186,8 @@ class DocumentConfiguration {
         transactionRunner: TransactionRunner,
         reviewSupportProperties: ReviewSupportProperties,
         actionGuideProperties: ActionGuideProperties,
+        @Value("\${easydoc.table-relations.enabled:false}") tableRelationsEnabled: Boolean,
+        @Value("\${easydoc.review-history.enabled:false}") reviewHistoryEnabled: Boolean,
     ): ConversionQueryService =
         ConversionQueryService(
             conversions = conversions,
@@ -179,7 +196,13 @@ class DocumentConfiguration {
             documents = documents,
             segmentMapDerivation = segmentMapDerivation,
             transaction = transactionRunner,
-            reviewCapabilities = reviewCapabilitiesFor(reviewSupportProperties, actionGuideProperties),
+            reviewCapabilities =
+                reviewCapabilitiesFor(
+                    reviewSupportProperties,
+                    actionGuideProperties,
+                    tableRelationsEnabled,
+                    reviewHistoryEnabled,
+                ),
         )
 
     /** 검수 저장 유스케이스. 응답 조립은 조회 쪽을 그대로 쓴다. */
@@ -189,12 +212,14 @@ class DocumentConfiguration {
         cipher: ContentCipher,
         query: ConversionQueryService,
         transactionRunner: TransactionRunner,
+        reviewHistory: ReviewHistoryAppender,
     ): ConversionReviewService =
         ConversionReviewService(
             conversions = conversions,
             cipher = cipher,
             query = query,
             transaction = transactionRunner,
+            reviewHistory = reviewHistory,
         )
 
     @Suppress("LongParameterList") // Spring 조립점의 포트 수이며 도메인 입력 복잡도가 아니다.
@@ -206,6 +231,7 @@ class DocumentConfiguration {
         assessments: ReviewAssessmentRepository,
         cipher: ContentCipher,
         transactionRunner: TransactionRunner,
+        reviewHistory: ReviewHistoryAppender,
     ): ReviewSupportService =
         ReviewSupportService(
             enabled = properties.enabled,
@@ -214,6 +240,7 @@ class DocumentConfiguration {
             assessments = assessments,
             cipher = cipher,
             transaction = transactionRunner,
+            reviewHistory = reviewHistory,
         )
 
     /**
@@ -326,12 +353,14 @@ class DocumentConfiguration {
 internal fun reviewCapabilitiesFor(
     reviewSupport: ReviewSupportProperties,
     actionGuide: ActionGuideProperties,
+    tableRelationsEnabled: Boolean = false,
+    reviewHistoryEnabled: Boolean = false,
 ): ReviewCapabilities =
     ReviewCapabilities(
         reviewSupport = reviewSupport.enabled,
         actionGuide = actionGuide.enabled,
-        tableRelations = false,
-        reviewHistory = false,
+        tableRelations = tableRelationsEnabled,
+        reviewHistory = reviewHistoryEnabled,
         explanations = false,
         illustrations = false,
     )
