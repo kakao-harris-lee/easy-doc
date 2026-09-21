@@ -41,8 +41,8 @@ class DocumentListReachTest {
     @DisplayName("DL-2 항목마다 키 집합이 정확히 DocumentListItem.required — **완료 전 항목에서도 하나도 생략되지 않는다** (X-E2)")
     fun `목록 항목의 키가 계약 required 와 정확히 같다`() {
         val token = newAccount()
-        createFromText(token, textBody("첫 번째 안내문"))
-        createFromText(token, textBody("두 번째 안내문"))
+        createFromText(token, textBody("첫 번째 안내문 내용을 등록합니다"))
+        createFromText(token, textBody("두 번째 안내문 내용을 등록합니다"))
 
         val items = itemsOf(list(token))
 
@@ -59,7 +59,7 @@ class DocumentListReachTest {
     @DisplayName("DL-3 source_format 값이 계약 enum 집합 안이다 — 집합을 계약에서 읽어 대조한다 (X-E4 인접)")
     fun `원본 형식이 계약 enum 안이다`() {
         val token = newAccount()
-        createFromText(token, textBody("붙여넣기 본문"))
+        createFromText(token, textBody("붙여넣기 본문 내용을 등록합니다"))
         upload(token, MultipartBody().file(FILE_PART, "안내문.docx", UploadFixtures.sampleDocx()))
 
         // 1.6.0 에서 이 속성이 `SourceFormat` 컴포넌트 `$ref` 가 됐다 — 값 집합은 그대로다.
@@ -76,8 +76,8 @@ class DocumentListReachTest {
     @DisplayName("목록이 최신순이다 — 계약 items 설명이 그렇게 적었다")
     fun `목록이 최신순이다`() {
         val token = newAccount()
-        createFromText(token, textBody("먼저 올린 문서"))
-        createFromText(token, textBody("나중에 올린 문서"))
+        createFromText(token, textBody("먼저 올린 문서를 등록합니다"))
+        createFromText(token, textBody("나중에 올린 문서를 등록합니다"))
 
         val createdAt = itemsOf(list(token)).map { it[CREATED_AT_PROPERTY].toString() }
 
@@ -89,8 +89,8 @@ class DocumentListReachTest {
     fun `남의 문서가 목록에 실리지 않는다`() {
         val mine = newAccount()
         val theirs = newAccount()
-        createFromText(mine, textBody("내 안내문"))
-        createFromText(theirs, textBody("남의 안내문"))
+        createFromText(mine, textBody("내 안내문 내용을 등록합니다"))
+        createFromText(theirs, textBody("남의 안내문 내용을 등록합니다"))
 
         val myIds = itemsOf(list(mine)).map { it[ID_PROPERTY].toString() }.toSet()
         val theirIds = itemsOf(list(theirs)).map { it[ID_PROPERTY].toString() }.toSet()
@@ -105,7 +105,7 @@ class DocumentListReachTest {
     @DisplayName("DL-8 다음 쪽이 있으면 참, 없으면 거짓이고 **총 개수 필드는 없다**")
     fun `다음 쪽 유무가 갈린다`() {
         val token = newAccount()
-        repeat(DOCUMENTS_FOR_PAGING) { createFromText(token, textBody("문서 $it")) }
+        repeat(DOCUMENTS_FOR_PAGING) { createFromText(token, textBody("문서 $it 내용을 등록합니다")) }
 
         val firstPage = bodyOf(list(token, limit = 1))
         val wholeSet = bodyOf(list(token, limit = DOCUMENTS_FOR_PAGING + 1))
@@ -122,7 +122,7 @@ class DocumentListReachTest {
     @DisplayName("시작점을 넘겨 가며 읽으면 같은 문서가 두 번 보이지도, 빠지지도 않는다")
     fun `페이지 경계에서 중복과 누락이 없다`() {
         val token = newAccount()
-        repeat(DOCUMENTS_FOR_PAGING) { createFromText(token, textBody("문서 $it")) }
+        repeat(DOCUMENTS_FOR_PAGING) { createFromText(token, textBody("문서 $it 내용을 등록합니다")) }
 
         val paged =
             (0 until DOCUMENTS_FOR_PAGING).flatMap { offset ->
@@ -141,7 +141,7 @@ class DocumentListReachTest {
     fun `남의 작업 공간 필터는 404 다`() {
         val mine = newAccount()
         val theirs = newAccount()
-        createFromText(theirs, textBody("남의 안내문"))
+        createFromText(theirs, textBody("남의 안내문 내용을 등록합니다"))
 
         val response = list(mine, workspaceId = defaultWorkspaceId(theirs))
 

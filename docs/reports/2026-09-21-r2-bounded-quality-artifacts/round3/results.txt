@@ -1,0 +1,19 @@
+R2 행동 안내문 LLM 레인 — provider=openai settings=MetricsLlmProviderDecorator(delegate=OpenAiProvider(model=gpt-6-astra, effort=MEDIUM)) max_tokens=8192 read_timeout_s=90 · cohort=development · documents=070,087,023,072,077,088 · runs=2 · max_calls=12 · planned_reserved_usd=6.367540 · cap_usd=7
+    실행 12건 · 구조 검증 통과 11 · 후보 무효 1 · provider 실패 0
+    섹션 상태 합계 — available 64 · needs_review 0 · not_in_source 2 · 항목 160 · 근거 334
+    LLM 호출 12회/12회 · 재시도 0회 · 입력 27806 토큰 · 출력 40339 토큰
+    보수적 예약 US$6.367540 · 상한 US$7.000000 · 실측 예상 비용 US$2.295010
+    사전 예약 상계 US$6.367540
+    지연 — 합계 517873ms · 중앙값 33212ms · p95 88971ms (n=12, 탐색치) · 최대 88971ms
+    result cohort=development document=070 run=1 outcome=valid latency_ms=33153 input_tokens=1751 output_tokens=2534
+    result cohort=development document=070 run=2 outcome=valid latency_ms=31627 input_tokens=1755 output_tokens=2532
+    result cohort=development document=087 run=1 outcome=valid latency_ms=58958 input_tokens=2234 output_tokens=4743
+    result cohort=development document=087 run=2 outcome=valid latency_ms=60472 input_tokens=2246 output_tokens=4788
+    result cohort=development document=023 run=1 outcome=valid latency_ms=80560 input_tokens=5007 output_tokens=6441
+    result cohort=development document=023 run=2 outcome=invalid latency_ms=88971 input_tokens=5007 output_tokens=7459 parser_failure=parser=행동_안내문_후보_검증에_실패했습니다.
+    result cohort=development document=072 run=1 outcome=valid latency_ms=32877 input_tokens=1650 output_tokens=2551
+    result cohort=development document=072 run=2 outcome=valid latency_ms=27579 input_tokens=1670 output_tokens=1972
+    result cohort=development document=077 run=1 outcome=valid latency_ms=16743 input_tokens=1402 output_tokens=1239
+    result cohort=development document=077 run=2 outcome=valid latency_ms=16821 input_tokens=1398 output_tokens=1123
+    result cohort=development document=088 run=1 outcome=valid latency_ms=36841 input_tokens=1847 output_tokens=2677
+    result cohort=development document=088 run=2 outcome=valid latency_ms=33271 input_tokens=1839 output_tokens=2280

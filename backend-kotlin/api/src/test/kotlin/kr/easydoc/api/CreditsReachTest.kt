@@ -125,7 +125,7 @@ class CreditsReachTest {
         try {
             val attempt = {
                 barrier.await(TASK_TIMEOUT_SECONDS, TimeUnit.SECONDS)
-        // ceil(1000/100) / 10 = 1 크레딧.
+                // ceil(1000/100) / 10 = 1 크레딧.
                 createDocument(token, fourWordText(1000))
             }
             val first = pool.submit<HttpResponse<String>>(attempt)

@@ -1,0 +1,19 @@
+R2 행동 안내문 LLM 레인 — provider=openai settings=MetricsLlmProviderDecorator(delegate=OpenAiProvider(model=gpt-6-astra, effort=MEDIUM)) max_tokens=8192 read_timeout_s=90 · cohort=development · documents=070,087,023,072,077,088 · runs=2 · max_calls=12 · planned_reserved_usd=6.239980 · cap_usd=7
+    실행 12건 · 구조 검증 통과 9 · 후보 무효 2 · provider 실패 1
+    섹션 상태 합계 — available 43 · needs_review 9 · not_in_source 2 · 항목 110 · 근거 201
+    LLM 호출 12회/12회 · 재시도 0회 · 입력 19938 토큰 · 출력 33117 토큰
+    보수적 예약 US$6.239980 · 상한 US$7.000000 · 실측 예상 비용 US$1.855230
+    사전 예약 상계 US$6.239980
+    지연 — 합계 537946ms · 중앙값 35937ms · p95 90010ms (n=12, 탐색치) · 최대 90010ms
+    result cohort=development document=070 run=1 outcome=valid latency_ms=36601 input_tokens=1488 output_tokens=2618
+    result cohort=development document=070 run=2 outcome=valid latency_ms=33358 input_tokens=1480 output_tokens=2497
+    result cohort=development document=087 run=1 outcome=invalid latency_ms=63963 input_tokens=1999 output_tokens=4833 parser_failure=parser=행동_안내문_후보_검증에_실패했습니다.
+    result cohort=development document=087 run=2 outcome=valid latency_ms=53404 input_tokens=1979 output_tokens=4255
+    result cohort=development document=023 run=1 outcome=provider_failed latency_ms=90010 input_tokens=0 output_tokens=0
+    result cohort=development document=023 run=2 outcome=valid latency_ms=83756 input_tokens=4752 output_tokens=6515
+    result cohort=development document=072 run=1 outcome=valid latency_ms=35272 input_tokens=1411 output_tokens=2391
+    result cohort=development document=072 run=2 outcome=valid latency_ms=29810 input_tokens=1399 output_tokens=2320
+    result cohort=development document=077 run=1 outcome=valid latency_ms=19706 input_tokens=1151 output_tokens=1315
+    result cohort=development document=077 run=2 outcome=valid latency_ms=19725 input_tokens=1131 output_tokens=1265
+    result cohort=development document=088 run=1 outcome=invalid latency_ms=37679 input_tokens=1576 output_tokens=2645 parser_failure=parser=행동_안내문_후보_검증에_실패했습니다.
+    result cohort=development document=088 run=2 outcome=valid latency_ms=34662 input_tokens=1572 output_tokens=2463

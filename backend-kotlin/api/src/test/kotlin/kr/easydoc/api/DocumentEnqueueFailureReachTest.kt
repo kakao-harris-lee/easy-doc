@@ -37,7 +37,7 @@ class DocumentEnqueueFailureReachTest {
 
         database.execute("DROP TABLE conversion_jobs")
 
-        val response = createFromText(token, """{"text":"본문입니다"}""")
+        val response = createFromText(token, """{"text":"문서 등록 요청 본문입니다"}""")
 
         assertThat(response.statusCode())
             .withFailMessage("등록 실패가 %d 로 나갔다 — 계약은 500 이다", response.statusCode())

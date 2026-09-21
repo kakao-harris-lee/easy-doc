@@ -1,0 +1,80 @@
+{
+  "baseline_commit": "055196d80aa8dac492df57596eba3708b5fb1d39",
+  "executed_at": "2026-09-21",
+  "round": 1,
+  "calls": 12,
+  "retries": 0,
+  "budget_total_usd": "50",
+  "reserved_usd": "6.239980",
+  "cumulative_reserved_usd": "16.425400",
+  "observed_estimated_cost_usd": "1.855230",
+  "unknown_cost_calls": 1,
+  "cost_note": "Observed cost excludes timed-out 023 run1; its reservation is retained.",
+  "valid": 9,
+  "invalid": 2,
+  "provider_failed": 1,
+  "prompt_file_sha256": "bfb63f99e0ba49e4139b02ed06c184345c2e56f5f82f39a94c36f21cc8d9cdfd",
+  "sha256": {
+    "023-run2.txt": "26e7a008bde510a24eaa5ae18c83a8cae89ea02bfd64041d58e52d18690f8f68",
+    "070-run1.txt": "aeedb8be15443305e290d9c02cfe98b6dcd0d717357465e3fe5c80e44c63bc44",
+    "070-run2.txt": "f81af75a6ee52975cdde6a59bd713f52856ac9661cc1f74227942956e1c95b7d",
+    "072-run1.txt": "8749cbcc0d3281f37d56b8f1013702d726e673318d836d67d7ac812ff6489671",
+    "072-run2.txt": "a859c54b2a1f2b0b0d5feea34bcf0d717d05314e6661e863ae6602b71f07c433",
+    "077-run1.txt": "5ddd7822bb10338503f412a8e00b5435ae88e386e5bc7d5c39ddd2cda515850b",
+    "077-run2.txt": "ed1c657b3bc4c29e861093734393a1ea63e5d748fc08c21fe636145491ed51f5",
+    "087-run1.txt": "b13a66c3ef641b9652ac787b64e667dd218c135508bf64d6b659e55510518ae1",
+    "087-run2.txt": "449be1c168914cfccf703283b34ef5d3b00cef34c2c052f016200abf76fb0f8b",
+    "088-run1.txt": "671bf4801bdf9d4986cf135e82bb03898e776325060ebcbb9c9beccbe806a08b",
+    "088-run2.txt": "77e9f4eb7abbe2b40902133670ca8c542b05b31d7f01a7093e64830a66478954",
+    "candidate.patch": "eb52bd633279b5d318b3e92609b1028b6a9dd0170a80a706275520b5cc74db12",
+    "conditions.txt": "13456324f96f881ec82730e6bcaab6cd8ac88dfff761eab84eda02d8ae173c6e",
+    "results.txt": "e7e9e512f96e0ef221719749b249b4113b64790949fa2dd11247bbd18db2f733"
+  },
+  "inputs": {
+    "070": {
+      "source_file": "data/golden/documents/070-난자동결-시술비-지원.json",
+      "source_file_sha256": "7e7dfe5ce00757794641fa1dd0b586a789109197b132d6891aad20766118f049",
+      "source_text_sha256": "38d414f23234a539ce74053d177365f00ef53a6dd5c384f6e8ca16a2bfcce38f",
+      "body_file": "data/golden/conversions/070.txt",
+      "body_sha256": "84e999774841155f3e5a7e0573427dbd5e0fd2c080ca6c57fb391adc44a34d34"
+    },
+    "087": {
+      "source_file": "data/golden/documents/087-발달장애인-부모상담지원사업.json",
+      "source_file_sha256": "86c30aa00eadab2ead330faf1cc4b7aa52d80c61ff5b7b4ce2db78b4db83e30b",
+      "source_text_sha256": "15577e1d66069a527206a62fe8af729f8f19417a82735678a15fe4bd00ab6c02",
+      "body_file": "data/golden/conversions/087.txt",
+      "body_sha256": "5b029427aac5c60275c27384b9b1ec2c6afe5f329a8c04857152e6ee86b8f60b"
+    },
+    "023": {
+      "source_file": "data/golden/documents/023-제주특별자치도-공고-제2026-2658호.json",
+      "source_file_sha256": "4d3a8a9cb01ffff348321b5fc64bc30637d6527fb96a584d566b7c7bf8dccf5a",
+      "source_text_sha256": "dfcd70fd467c979dd6c75f53e1e69aa8ce79e9d693e7f6f52dd6dbabec96ea6d",
+      "body_file": "data/golden/conversions/023.txt",
+      "body_sha256": "35cbe750220280d71169c43959add44f1436569430942dec24bbbb9758ae3307"
+    },
+    "072": {
+      "source_file": "data/golden/documents/072-인천광역시-계양구-장애인-이동용-보조기기-수리지원사업.json",
+      "source_file_sha256": "9966531f2d8598413473418721db27d55baab54424f8546a125ed9d6dd888848",
+      "source_text_sha256": "8615901596dc92ffc03e0f9ed28ef24d3b5b141d5a54f0484a27d96616b64929",
+      "body_file": "data/golden/conversions/072.txt",
+      "body_sha256": "651f398bf6d17f72c3fbaf3bc8a2aeba6cd83f6017d1f8170e0ea597e8be911f"
+    },
+    "077": {
+      "source_file": "data/golden/documents/077-저소득-한부모가족-난방비-지원-사업.json",
+      "source_file_sha256": "28e2b649fef4033b34c061e85ee2f34160baa63894289e4263951316fc56b0f7",
+      "source_text_sha256": "3a254c01c484a0a4b177408f294b6ae477bf6e7170f3dc3f2a9cc0fcd2470fb0",
+      "body_file": "data/golden/conversions/077.txt",
+      "body_sha256": "034f291c655bf8c063203982ef99e1b8748104a50f2fcf3dcede6c770fed7d8c"
+    },
+    "088": {
+      "source_file": "data/golden/documents/088-의료급여임신출산진료비지원.json",
+      "source_file_sha256": "2fcac76fc577603bd2deecabaa25426ea6b7c1bdbce2a6b493882b451aa90b5b",
+      "source_text_sha256": "1fa518e7c05ef5aa4654577399a2499b24ac7dadb40102da0deb86c49ee70068",
+      "body_file": "data/golden/conversions/088.txt",
+      "body_sha256": "0c0f755f821419949e8d6ea8c840b1f38f32f482aa9eccf984f85d7fc949de94"
+    }
+  },
+  "question_manifest_file": "docs/reports/2026-09-18-easy-read-r0-baseline.md",
+  "question_manifest_sha256": "6ac23a0522739fde71891e80a010d86c96d318ff6dac2884c5125081e8df294f",
+  "patch_note": "Blank context lines normalized; git apply --cached --check against baseline passed. Candidate source and runtime prompt unchanged."
+}

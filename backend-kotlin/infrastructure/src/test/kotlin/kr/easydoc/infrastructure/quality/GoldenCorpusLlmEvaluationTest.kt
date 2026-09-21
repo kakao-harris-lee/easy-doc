@@ -21,6 +21,7 @@ import org.junit.jupiter.api.Assumptions.abort
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Tag
 import org.junit.jupiter.api.Test
+import java.math.BigDecimal
 import java.time.Duration
 
 /**
@@ -36,6 +37,7 @@ class GoldenCorpusLlmEvaluationTest {
     @Test
     @DisplayName("비밀값이 있으면 제품과 같은 설정으로 골든 변환 결과를 채점한다")
     fun `골든 변환을 채점한다`() {
+        val variant = resolveVariant()
         val ready =
             when (val plan = GoldenLlmLane.plan(System::getenv)) {
                 is LanePlan.Ready -> plan
@@ -55,7 +57,14 @@ class GoldenCorpusLlmEvaluationTest {
         // 요약 문자열을 만들기 전에 알아야 한다.
         val documents = GoldenDocumentLoader.loadDirectory(GoldenDocumentLoader.documentsDirectory()).documents
         val dictionary =
-            when (val plan = LaneDictionary.plan(System::getenv, documents.map(GoldenDocument::id))) {
+            when (
+                val plan =
+                    LaneDictionary.plan(
+                        System::getenv,
+                        documents.map(GoldenDocument::id),
+                        variant = variant,
+                    )
+            ) {
                 is LaneDictionaryPlan.Ready -> plan.dictionary
                 is LaneDictionaryPlan.Unusable -> fail<LaneDictionary>(plan.reason)
             }
@@ -66,21 +75,14 @@ class GoldenCorpusLlmEvaluationTest {
         val transcript = planTranscript(documents, runs)
 
         val journal = LaneJournal()
-        val budgetUsd =
-            checkNotNull(System.getenv("EASYDOC_LANE_MAX_USD")) {
-                "유료 실행에는 EASYDOC_LANE_MAX_USD로 달러 상한을 명시해야 한다"
-            }.toBigDecimal()
-        val spendLimit =
-            LaneSpendLimit(
-                budgetUsd,
-                checkNotNull(ready.pricing.inputUsdPerMillionTokens),
-                checkNotNull(ready.pricing.outputUsdPerMillionTokens),
-            )
+        val budgetUsd = laneBudget()
+        val spendLimit = spendLimitFor(ready, budgetUsd)
         // ready.options.maxTokens 는 easydoc.llm.max-output-tokens 를 제품과 같은 규칙으로
         // 해석한 값이다(GoldenLlmLane.assemble KDoc) — 리포트의 「상한」 표시가 이 값과
         // 어긋나지 않도록 같은 출처를 그대로 넘긴다.
         val conditions =
-            "${ready.description} · ${dictionary.description} · ${transcript.description} · " +
+            "variant=${variant.wireName} · " +
+                "${ready.description} · ${dictionary.description} · ${transcript.description} · " +
                 "runs=$runs cap_usd=$budgetUsd"
         val report = LaneReport(conditions, journal, ready.options.maxTokens)
         // 디렉터리를 나중에 여는 사람이 무엇으로 잰 변환문인지 알아야 한다 — 리포트 헤더와
@@ -102,6 +104,7 @@ class GoldenCorpusLlmEvaluationTest {
                     ConvertDocumentUseCase(
                         trace,
                         defaultOptions = ready.options,
+                        explanationPromptVersion = variant.explanationPromptVersion,
                         dictionary = dictionary.contextSource,
                     ),
                 judge = GoldenJudge(provider, ready.options),
@@ -127,6 +130,28 @@ class GoldenCorpusLlmEvaluationTest {
             is LaneTranscriptPlan.Ready -> plan.transcript
             is LaneTranscriptPlan.Unusable -> fail<LaneTranscript>(plan.reason)
         }
+
+    private fun resolveVariant(): GoldenLaneVariant =
+        try {
+            GoldenLaneVariant.from(System::getenv)
+        } catch (exc: ConfigurationException) {
+            fail<GoldenLaneVariant>(exc.message)
+        }
+
+    private fun spendLimitFor(
+        ready: LanePlan.Ready,
+        budgetUsd: BigDecimal,
+    ): LaneSpendLimit =
+        LaneSpendLimit(
+            budgetUsd,
+            checkNotNull(ready.pricing.inputUsdPerMillionTokens),
+            checkNotNull(ready.pricing.outputUsdPerMillionTokens),
+        )
+
+    private fun laneBudget(): BigDecimal =
+        checkNotNull(System.getenv("EASYDOC_LANE_MAX_USD")) {
+            "유료 실행에는 EASYDOC_LANE_MAX_USD로 달러 상한을 명시해야 한다"
+        }.toBigDecimal()
 }
 
 /**

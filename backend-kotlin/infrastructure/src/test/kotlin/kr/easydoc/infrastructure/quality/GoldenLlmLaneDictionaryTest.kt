@@ -111,6 +111,65 @@ class GoldenLlmLaneDictionaryTest {
     }
 
     @Test
+    @DisplayName("R3에서 임의 파일 사전은 거절하고, 사전 off는 명시적으로 허용한다")
+    fun `r3 사전 입력은 제품 또는 off 만 허용한다`(
+        @TempDir temp: Path,
+    ) {
+        temp.resolve("001.txt").writeText(BODY)
+
+        val filePlan =
+            LaneDictionary.plan(
+                env(temp),
+                listOf("001"),
+                variant = GoldenLaneVariant.R3,
+            )
+        assertThat(filePlan).isInstanceOf(LaneDictionaryPlan.Unusable::class.java)
+        assertThat((filePlan as LaneDictionaryPlan.Unusable).reason)
+            .contains(LaneDictionary.DIRECTORY_ENV)
+            .contains("r3")
+
+        val off =
+            ready(
+                LaneDictionary.plan(
+                    env = { null },
+                    documentIds = listOf("001"),
+                    variant = GoldenLaneVariant.R3,
+                ),
+            )
+        assertThat(off.contextSource).isSameAs(NoDictionaryContext)
+        assertThat(off.description).isEqualTo("dictContext=off")
+    }
+
+    @Test
+    @DisplayName("R3 제품 사전은 기본 조립을 통해 공식 이름만 전달하는 정책을 사용한다")
+    fun `r3 제품 사전은 공식 이름 정책을 쓴다`() {
+        val baseline =
+            ready(
+                LaneDictionary.plan(
+                    env = env(LaneDictionary.PRODUCT_ENV to "1"),
+                    documentIds = listOf("001"),
+                ),
+            )
+        val r3 =
+            ready(
+                LaneDictionary.plan(
+                    env = env(LaneDictionary.PRODUCT_ENV to "1"),
+                    documentIds = listOf("001"),
+                    variant = GoldenLaneVariant.R3,
+                ),
+            )
+
+        val text = "$WITH_TERMS\n\n국민기초생활 보장법을 확인하세요."
+        val baselineContext = checkNotNull(baseline.contextSource.contextFor(text))
+        val r3Context = checkNotNull(r3.contextSource.contextFor(text))
+        assertThat(baseline.description).isEqualTo("dictContext=product")
+        assertThat(r3.description).isEqualTo("dictContext=product")
+        assertThat(baselineContext).contains("국민기초생활 보장법")
+        assertThat(r3Context).contains("국민기초생활 보장법")
+        assertThat(r3Context).doesNotContain("설명:", "참고 예문", "주의:")
+    }
+
+    @Test
     @DisplayName("파일 주입과 제품 조립을 함께 설정하면 거절한다 — 서로 다른 방식을 하나로 정할 수 없다")
     fun `둘 다 설정하면 거절한다`(
         @TempDir temp: Path,

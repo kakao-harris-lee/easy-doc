@@ -69,7 +69,7 @@ class DocumentBodyLogLeakReachTest {
             probe.rescanRetained()
             probe.stopRetaining()
 
-            createFromText(reach, STEP_TEXT, token, textBody("$BODY_CANARY 안내 본문입니다", TITLE_CANARY))
+            createFromText(reach, STEP_TEXT, token, textBody("$BODY_CANARY 안내 본문입니다 내용입니다", TITLE_CANARY))
 
             upload(reach, STEP_FILE, token, docxPart(UploadFixtures.sampleDocx()))
 

@@ -1,8 +1,13 @@
 package kr.easydoc.core.llm
 
+import kr.easydoc.core.easyread.DICTIONARY_CONTEXT_GUARD
+import kr.easydoc.core.easyread.DICTIONARY_CONTEXT_TAG_NAME
 import kr.easydoc.core.easyread.DocumentIdGenerator
+import kr.easydoc.core.easyread.ExplanationPromptVersion
 import kr.easydoc.core.easyread.FactIssue
 import kr.easydoc.core.easyread.FactKind
+import kr.easydoc.core.easyread.PRIOR_BODY_CONTEXT_GUARD
+import kr.easydoc.core.easyread.PRIOR_BODY_CONTEXT_TAG_NAME
 import kr.easydoc.core.easyread.SentenceIssue
 import kr.easydoc.core.easyread.StyleRuleKind
 import kr.easydoc.core.privacy.ModelDraft
@@ -83,6 +88,51 @@ class LlmPromptTest {
     }
 
     @Test
+    @DisplayName("R3 사전 컨텍스트는 검수 표식을 보존하면서 별도 자료로 감싼다")
+    fun `R3 사전 컨텍스트를 안전하게 전달한다`() {
+        val context = "### 공식 이름 참고\n- 법 이름\n  설명(검수된 정의): 검수된 뜻"
+        val prompt =
+            LlmPrompt.forConversion(
+                "법 이름을 확인하세요.",
+                fixedIds,
+                context,
+                explanationVersion = ExplanationPromptVersion.R3,
+            )
+
+        assertThat(prompt.user).contains(DICTIONARY_CONTEXT_TAG_NAME, context, "설명(검수된 정의)")
+        assertThat(prompt.system).contains(DICTIONARY_CONTEXT_GUARD)
+    }
+
+    @Test
+    @DisplayName("재변환 앞선 문맥은 변환·보정 두 프롬프트에만 명시적으로 전달한다")
+    fun `재변환 문맥을 전달한다`() {
+        val prior = "앞서 국민기초생활 보장법(생활이 어려운 사람을 돕는 법)을 설명했습니다."
+        val conversion =
+            LlmPrompt.forConversion(
+                "국민기초생활 보장법을 확인하세요.",
+                fixedIds,
+                explanationVersion = ExplanationPromptVersion.R3,
+                priorBodyContext = prior,
+            )
+        val repair =
+            LlmPrompt.forRepair(
+                ModelDraft("국민기초생활 보장법을 확인하세요."),
+                emptyList(),
+                documentIds = fixedIds,
+                sourceText = "국민기초생활 보장법을 확인하세요.",
+                explanationVersion = ExplanationPromptVersion.R3,
+                priorBodyContext = prior,
+            )
+
+        assertThat(conversion.user).contains(prior, PRIOR_BODY_CONTEXT_TAG_NAME)
+        assertThat(repair.user).contains(prior, PRIOR_BODY_CONTEXT_TAG_NAME)
+        assertThat(conversion.system).contains(PRIOR_BODY_CONTEXT_GUARD)
+        assertThat(repair.system).contains(PRIOR_BODY_CONTEXT_GUARD)
+        assertThat(conversion.system).contains("검수된 사전 정의").doesNotContain("문서 전체에서 첫 등장인지 알 수 없으므로")
+        assertThat(repair.system).contains("검수된 사전 정의").doesNotContain("문서 전체에서 첫 등장인지 알 수 없으므로")
+    }
+
+    @Test
     @DisplayName("보정 프롬프트는 1차 변환문과 지적 목록을 담는다")
     fun `보정 프롬프트를 만든다`() {
         val issue =
@@ -143,6 +193,42 @@ class LlmPromptTest {
         assertThat(prompt.user).contains("<source id=", "<saved_body id=", "3월까지 서류를 내세요.")
         assertThat(prompt.user).doesNotContain("<source id=\"0123456789ab\">")
         assertThat(prompt.toString()).doesNotContain("신청 기한", "3월까지")
+    }
+
+    @Test
+    fun `행동 안내 프롬프트는 자격과 범위의 포함 제외 조건을 보존하도록 지시한다`() {
+        val prompt =
+            LlmPrompt.forActionGuide(
+                "지원 대상과 지원 범위가 적힌 원문입니다.",
+                "지원 범위를 정리한 본문입니다.",
+            )
+
+        assertThat(prompt.system)
+            .contains(
+                "지원 대상·자격 조건",
+                "지원·사용 범위",
+                "포함·제외 대상",
+                "text 또는 cautions",
+                "실제 적용되는 자격·한도·필수 행동·예외 조건",
+                "원문에 없는 조건이나 혜택을 만들지 마라",
+                "괄호·각주·별표·뒤따르는 문장",
+                "수치의 단위·분모·대상 표현",
+                "원문 인용과 같은 표기",
+                "exceptions가 available이고 steps도 available",
+                "관련 steps 항목의 cautions",
+                "steps가 not_in_source",
+                "모든 사실을 뒷받침하는 짧고 정확한 quote",
+                "같은 긴 문단을 반복 인용하지 마라",
+                "일반 참고용 예산 항목·예시·목록",
+                "개별 혜택으로 하나씩 나열하지 말고",
+                "참고 역할만 한 번 요약",
+                "documents의 파일명은 원문 표기를 정확히 유지",
+                "파일별 text 또는 줄바꿈",
+                "파일 목록만으로 제출 대상·필수 제출이라고 단정하지 마라",
+                "여섯 kind를 각각 정확히 한 번",
+                "전체 text는 4,000 코드 포인트 이하다",
+            )
+        assertThat(prompt.system).doesNotContain("비금여", "비급여", "088")
     }
 
     @Test

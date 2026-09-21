@@ -63,6 +63,29 @@ enum class RiskLevel(
 }
 
 /**
+ * 사전 정의의 검수 provenance.
+ *
+ * 색인에 이 값이 없으면 검수된 뜻으로 간주하지 않는다. 특히 [REVIEWED] 는 누군가 정의를
+ * 작성했다는 뜻이 아니라, 해당 정의를 생성 자료로 사용해도 된다는 별도의 명시적 표시다.
+ * `review_note` 같은 내부 메모나 사전의 일반 상태 값은 이 provenance를 대신하지 않는다.
+ */
+enum class DefinitionReviewStatus(val wire: String) {
+    /** 색인에 명시적인 검수 완료 표시가 없다. R3에서는 정의를 전달하지 않는다. */
+    UNVERIFIED("unverified"),
+
+    /** 정의 자체가 생성 자료로 사용해도 된다고 명시적으로 검수되었다. */
+    REVIEWED("reviewed"),
+    ;
+
+    companion object {
+        /** 선택적 wire 값을 도메인 값으로 옮긴다. 모르는 값은 안전하게 거절한다. */
+        fun ofWire(wire: String): DefinitionReviewStatus =
+            entries.firstOrNull { it.wire == wire }
+                ?: throw IllegalArgumentException("알 수 없는 사전 정의 검수 상태: $wire")
+    }
+}
+
+/**
  * 변환 전후 예문 한 쌍 (§3.1 `examples`).
  *
  * 프롬프트에서 예문은 **지시문보다 강한 신호**다(§7.2.2). 그래서 [isGolden](사람 검수 완료)이
@@ -94,6 +117,8 @@ data class DictionaryEntry(
     val caution: String? = null,
     val tags: List<String> = emptyList(),
     val examples: List<DictionaryExample> = emptyList(),
+    /** 색인 wire `v`; 없으면 [DefinitionReviewStatus.UNVERIFIED]다. */
+    val definitionReviewStatus: DefinitionReviewStatus = DefinitionReviewStatus.UNVERIFIED,
 )
 
 /**

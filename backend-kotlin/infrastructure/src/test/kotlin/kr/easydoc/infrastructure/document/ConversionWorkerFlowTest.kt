@@ -216,7 +216,7 @@ class ConversionWorkerFlowTest {
     fun `저장된 소수 예약량은 CAS로 한 번만 정산한다`() {
         val owner = newUser()
         val workspace = workspaces.create(owner, "공간").id
-        val accepted = service.createFromText(owner, "복지 급여를 안내합니다.", null, workspace.toString())
+        val accepted = service.createFromText(owner, "복지 급여 신청 방법을 안내합니다.", null, workspace.toString())
 
         jdbc
             .sql("UPDATE conversions SET credits_reserved = :amount WHERE id = :id")

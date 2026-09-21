@@ -25,11 +25,18 @@ import {
   verifyPhone,
 } from './support/app'
 
-/** 정확히 100자로 0.1크레딧 차감을 검증한다. */
-const SOURCE_TEXT = '가'.repeat(100)
+/** 정확한 길이를 유지하면서 업로드 화면의 최소 4어절 조건도 만족하는 원문을 만든다. */
+function wordedTextOfLength(length: number): string {
+  const suffix = ' 가 가 가'
+  return `${'가'.repeat(length - suffix.length)}${suffix}`
+}
 
-/** 공백 포함 정확히 10,000자 — 10크레딧이다. */
-const TEN_CREDIT_TEXT = '가'.repeat(10_000)
+/** 정확히 100자로 0.1크레딧 차감을 검증한다. */
+const SOURCE_TEXT = wordedTextOfLength(100)
+const NINE_TENTHS_CREDIT_TEXT = wordedTextOfLength(900)
+
+/** 공백 포함 정확히 10,000자, 네 어절 이상 — 10크레딧이다. */
+const TEN_CREDIT_TEXT = wordedTextOfLength(10_000)
 
 /** 계약 `InsufficientCredits` 예시 문구(`contracts/easy-doc-v1.yaml`). */
 const INSUFFICIENT_CREDITS_DETAIL = '크레딧이 부족합니다. 상위 플랜을 선택해 주세요.'
@@ -67,7 +74,7 @@ test.describe('크레딧 계정 (집행 켜짐)', () => {
     await page.goto('/usage')
     await expect(page.locator('dt:text-is("남은 이용량") + dd')).toHaveText('0.9크레딧')
     await page.goto('/')
-    const [remainingResponse] = await registerDocument('E2E 남은 0.9 차감', '가'.repeat(900))
+    const [remainingResponse] = await registerDocument('E2E 남은 0.9 차감', NINE_TENTHS_CREDIT_TEXT)
     expect(remainingResponse.status()).toBe(ROUTES.documentCreate.accepted)
     expect(Number(remainingResponse.headers()['x-credit-balance'])).toBe(0)
 

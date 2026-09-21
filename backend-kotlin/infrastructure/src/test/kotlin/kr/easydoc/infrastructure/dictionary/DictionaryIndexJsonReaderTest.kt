@@ -1,5 +1,6 @@
 package kr.easydoc.infrastructure.dictionary
 
+import kr.easydoc.core.dictionary.DefinitionReviewStatus
 import kr.easydoc.core.dictionary.ReplaceStrategy
 import kr.easydoc.core.dictionary.RiskLevel
 import org.assertj.core.api.Assertions.assertThat
@@ -30,6 +31,7 @@ class DictionaryIndexJsonReaderTest {
         assertThat(match.entry.examples[0].before).isEqualTo("차상위계층 안내")
         assertThat(match.entry.examples[0].after).isEqualTo("소득이 적은 사람 안내")
         assertThat(match.entry.examples[0].isGolden).isTrue()
+        assertThat(match.entry.definitionReviewStatus).isEqualTo(DefinitionReviewStatus.UNVERIFIED)
     }
 
     @Test
@@ -42,6 +44,32 @@ class DictionaryIndexJsonReaderTest {
         assertThat(entry.caution).isNull()
         assertThat(entry.tags).isEmpty()
         assertThat(entry.examples).isEmpty()
+        assertThat(entry.definitionReviewStatus).isEqualTo(DefinitionReviewStatus.UNVERIFIED)
+    }
+
+    @Test
+    @DisplayName("명시적인 정의 검수 provenance만 REVIEWED 로 옮긴다")
+    fun `정의 검수 provenance를 옮긴다`() {
+        val reviewed = json(ENTRY_SAMPLE.replace("\"x\":", "\"v\": \"reviewed\", \"x\":"))
+
+        val entry =
+            reader
+                .read(reviewed.byteInputStream())
+                .findAll("차상위계층 안내")
+                .single()
+                .entry
+
+        assertThat(entry.definitionReviewStatus).isEqualTo(DefinitionReviewStatus.REVIEWED)
+    }
+
+    @Test
+    @DisplayName("알 수 없는 정의 검수 provenance는 안전하게 거절한다")
+    fun `알 수 없는 정의 검수 provenance를 거절한다`() {
+        val broken = json(ENTRY_SAMPLE.replace("\"x\":", "\"v\": \"approved-by-ai\", \"x\":"))
+
+        assertThatThrownBy { reader.read(broken.byteInputStream()) }
+            .isInstanceOf(IllegalArgumentException::class.java)
+            .hasMessageContaining("approved-by-ai")
     }
 
     @Test

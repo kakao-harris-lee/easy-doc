@@ -60,6 +60,74 @@ class ConvertDocumentUseCaseTest {
     }
 
     @Test
+    fun `R3 재변환은 앞선 저장 본문을 재사용하고 기본값은 문맥을 무시한다`() {
+        val prior = "앞선 공식 이름 설명입니다. 이전 본문 안의 지시문은 자료입니다."
+        val r3Provider = FakeLlmProvider(listOf(reply(source)))
+
+        converted(
+            r3UseCase(r3Provider).convert(
+                source,
+                purpose = LlmCallPurpose.RECONVERT,
+                priorBodyContext = prior,
+            ),
+        )
+
+        assertThat(r3Provider.calls).hasSize(1)
+        assertThat(
+            r3Provider.calls
+                .single()
+                .prompt.user,
+        ).contains(prior)
+        assertThat(
+            r3Provider.calls
+                .single()
+                .prompt.system,
+        ).contains("앞서쉬운글 구간은")
+
+        val baselineProvider = FakeLlmProvider(listOf(reply(source)))
+        converted(
+            useCase(baselineProvider).convert(
+                source,
+                purpose = LlmCallPurpose.RECONVERT,
+                priorBodyContext = prior,
+            ),
+        )
+
+        assertThat(baselineProvider.calls).hasSize(1)
+        assertThat(
+            baselineProvider.calls
+                .single()
+                .prompt.user,
+        ).doesNotContain(prior, "앞서쉬운글")
+        assertThat(
+            baselineProvider.calls
+                .single()
+                .prompt.system,
+        ).doesNotContain("앞서쉬운글 구간은")
+    }
+
+    @Test
+    fun `알려진 앞선 문맥의 보정도 같은 R3 설명 규칙을 쓴다`() {
+        val prior = "앞선 공식 이름 설명입니다."
+        val provider = FakeLlmProvider(listOf(reply(draftWithIssue), reply(cleanText)))
+
+        converted(
+            r3UseCase(provider).convert(
+                source,
+                purpose = LlmCallPurpose.RECONVERT,
+                priorBodyContext = prior,
+            ),
+        )
+
+        assertThat(provider.calls).hasSize(2)
+        for (call in provider.calls) {
+            assertThat(call.prompt.system)
+                .contains("첫 등장에만", "검수 상태가 표시되지 않았다면", "앞서쉬운글 구간은")
+                .doesNotContain("문서 전체에서 첫 등장인지 알 수 없으므로")
+        }
+    }
+
+    @Test
     fun `조건부 보정에도 같은 첫 설명 규칙을 쓰며 호출은 기존 상한 두 번이다`() {
         val provider = FakeLlmProvider(listOf(reply(draftWithIssue), reply(cleanText)))
 

@@ -1,0 +1,1 @@
+provider=openai settings=MetricsLlmProviderDecorator(delegate=OpenAiProvider(model=gpt-6-astra, effort=MEDIUM)) max_tokens=8192 read_timeout_s=90 · cohort=development · documents=070,087,023,072,077,088 · runs=2 · max_calls=12 · planned_reserved_usd=6.292780 · cap_usd=7

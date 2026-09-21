@@ -6,6 +6,7 @@ import kr.easydoc.application.crypto.ContentCipher
 import kr.easydoc.application.document.ConversionRepository
 import kr.easydoc.application.document.DocumentRepository
 import kr.easydoc.application.document.ReconversionReservation
+import kr.easydoc.application.document.SegmentMapDerivation
 import kr.easydoc.core.credit.Credits
 import kr.easydoc.core.crypto.EncryptedField
 import kr.easydoc.core.document.ConversionStatus
@@ -18,6 +19,7 @@ import kr.easydoc.core.exceptions.ReconversionConcurrencyExhaustedException
 import kr.easydoc.core.llm.LlmCallPurpose
 import kr.easydoc.core.llm.LlmCallRecord
 import kr.easydoc.core.privacy.CONTENT_MASK
+import kr.easydoc.core.segment.SegmentConfidence
 import kr.easydoc.core.segment.SourceStructure
 import kr.easydoc.core.segment.splitUnits
 import java.util.UUID
@@ -78,6 +80,8 @@ class ReconvertUnitService(
     private val ledger: LlmCallLedger,
     /** 재변환 대상 원문 단위도 월 제공 이용량에서 차감한다. */
     private val credits: CreditAccountService,
+    /** 조회·내보내기와 같은 현재 본문 기반 segment_map 유도기. */
+    private val segmentMapDerivation: SegmentMapDerivation,
 ) {
     /** [concurrencyLimit] 개의 허가를 두는 bulkhead — LLM 호출 구간만 감싼다. */
     private val reconversionGate = Semaphore(concurrencyLimit)
@@ -87,7 +91,7 @@ class ReconvertUnitService(
      * 를 억제한다 — 갈래를 줄이면 오히려 서로 다른 사용자 조치를 하나로 뭉갠다
      * (`GlobalExceptionHandler.mappingFor` 와 같은 판단).
      */
-    @Suppress("ThrowsCount")
+    @Suppress("ThrowsCount", "LongMethod")
     fun reconvert(
         ownerId: UUID,
         conversionId: UUID,
@@ -113,6 +117,22 @@ class ReconvertUnitService(
         if (!FINGERPRINT_PATTERN.matches(easyTextFingerprint)) {
             throw InvalidInputException(INVALID_FINGERPRINT_MESSAGE)
         }
+
+        // R3가 켜진 경우에만 저장된 현재 본문을 복호화해 앞선 쉬운 글 문맥을 만든다. 지도나
+        // 본문이 없거나 대응이 모호하면 null로 접어 R3_UNIT의 보수적 경로를 탄다. 이 계산은
+        // 기존 저장 경로 밖의 순수 유도이며 provider를 추가 호출하지 않는다.
+        val priorBodyContext =
+            if (convert.reconversionContextEnabled) {
+                priorBodyContext(
+                    stored = stored,
+                    source = source,
+                    sourceUnits = sourceUnits,
+                    sourceUnitIndex = sourceUnitIndex,
+                    requestedEasyUnitIndexes = easyUnitIndexes,
+                )
+            } else {
+                null
+            }
 
         val unit = sourceUnits[sourceUnitIndex]
         val requiredCredits = Credits.requiredFor(unit.length)
@@ -149,7 +169,12 @@ class ReconvertUnitService(
         val unitStructure = SourceStructure(listOf(targetKind))
         val result =
             try {
-                convert.convert(unit, structure = unitStructure, purpose = LlmCallPurpose.RECONVERT)
+                convert.convert(
+                    unit,
+                    structure = unitStructure,
+                    purpose = LlmCallPurpose.RECONVERT,
+                    priorBodyContext = priorBodyContext,
+                )
             } finally {
                 reconversionGate.release()
             }
@@ -167,6 +192,79 @@ class ReconvertUnitService(
             requiredCredits = requiredCredits,
         )
     }
+
+    /**
+     * 저장된 현재 본문에서 대상 단위보다 앞선 완전한 prefix만 돌려준다.
+     *
+     * `easyUnitIndexes`는 요청 당시 화면의 값일 수 있으므로 위치 계산의 기준으로 쓰지 않는다.
+     * 대신 조회·내보내기와 같은 [SegmentMapDerivation]으로 현재 본문을 다시 대응한다. 대상과
+     * 앞선 단위가 모두 HIGH이고 대상 단위가 정확히 하나의 원문 단위에 대응할 때만 prefix를
+     * 제공한다. 대상 하나가 여러 쉬운 글 단위로 나뉜 경우에는 요청이 그 전체 매핑을 가리킬
+     * 때 허용한다. 대상과 앞선 단위의 대응이 모호하거나 LOW·개수 불일치이면 첫 등장 여부를
+     * 알 수 없으므로 null이다. 정확한 첫 단위 mapping은 앞선 본문이 없다는 검증 결과인
+     * 빈 문자열을 반환한다 — unknown context(null)와 구분해야 전체 R3 정책을 쓸 수 있다.
+     */
+    @Suppress("CyclomaticComplexMethod", "ComplexCondition", "ReturnCount")
+    private fun priorBodyContext(
+        stored: kr.easydoc.application.document.StoredConversion,
+        source: kr.easydoc.application.document.StoredSourceText,
+        sourceUnits: List<String>,
+        sourceUnitIndex: Int,
+        requestedEasyUnitIndexes: List<Int>,
+    ): String? {
+        val edited = stored.ciphertexts.editedText
+        val easy = stored.ciphertexts.easyText
+        val encryptedBody = edited ?: easy ?: return null
+        val bodyField =
+            if (edited != null) {
+                EncryptedField.CONVERSION_EDITED_TEXT
+            } else {
+                EncryptedField.CONVERSION_EASY_TEXT
+            }
+        val body = cipher.decrypt(encryptedBody, stored.id, bodyField)
+        val easyUnits = splitUnits(body.value)
+        val map = segmentMapDerivation.deriveOrNull(source, body) ?: return null
+        if (
+            map.sourceUnitCount != sourceUnits.size ||
+            map.easyUnitCount != easyUnits.size ||
+            map.units.size != easyUnits.size ||
+            map.units.any { it.easyUnitIndex !in easyUnits.indices }
+        ) {
+            return null
+        }
+
+        val mappedToTarget = map.units.filter { sourceUnitIndex in it.sourceUnitIndexes }
+        if (
+            mappedToTarget.isEmpty() ||
+            mappedToTarget.any { !isExactHighMapping(it, sourceUnitIndex) }
+        ) {
+            return null
+        }
+        val mappedIndexes = mappedToTarget.map { it.easyUnitIndex }.sorted()
+        // An empty/stale request must not make the server guess which part of a merged mapping was
+        // selected. The request may reorder indexes, but it must name the whole current mapping.
+        if (requestedEasyUnitIndexes.distinct().sorted() != mappedIndexes) return null
+        val targetEasyIndex = mappedIndexes.first()
+        if (targetEasyIndex == 0) return ""
+
+        val preceding = map.units.filter { it.easyUnitIndex < targetEasyIndex }
+        if (
+            preceding.any { it.confidence != SegmentConfidence.HIGH } ||
+            preceding.any {
+                it.sourceUnitIndexes.isEmpty() ||
+                    it.sourceUnitIndexes.any { index -> index >= sourceUnitIndex }
+            }
+        ) {
+            return null
+        }
+        val prefix = easyUnits.take(targetEasyIndex).joinToString("\n")
+        return prefix.takeIf { it.length <= MAX_PRIOR_BODY_CONTEXT_CHARS }
+    }
+
+    private fun isExactHighMapping(
+        unit: kr.easydoc.core.segment.SegmentUnit,
+        sourceUnitIndex: Int,
+    ): Boolean = unit.confidence == SegmentConfidence.HIGH && unit.sourceUnitIndexes == listOf(sourceUnitIndex)
 
     /** 크레딧과 호출 예산을 한 트랜잭션에서 예약한다. */
     private fun reserveCapacity(
@@ -311,5 +409,8 @@ class ReconvertUnitService(
         const val BUDGET_EXHAUSTED_MESSAGE = "재변환 호출 예산을 모두 사용했습니다"
         const val PROVIDER_UNREACHABLE_MESSAGE = "요청을 처리하지 못했습니다"
         const val CONCURRENCY_LIMIT_MESSAGE = "동시 재변환 한도에 도달했습니다. 잠시 후 다시 시도해 주세요"
+
+        /** 전체 앞부분을 보내지 못하면 일부 문맥으로 첫 등장을 추측하지 않는다. */
+        const val MAX_PRIOR_BODY_CONTEXT_CHARS = 12_000
     }
 }
