@@ -109,6 +109,110 @@ class ActionGuideCandidateTest {
     }
 
     @Test
+    fun `parse compacts only adjacent anchors and preserves exact source span`() {
+        val sourceUnits = compactableSourceUnits()
+        val anchors =
+            listOf(0, 2, 3, 5, 7, 8, 10, 12, 14, 16, 18).map { index ->
+                ActionGuideSourceAnchor(listOf(index), sourceUnits[index])
+            }
+
+        val candidate = ActionGuideCandidateParser.parseAndValidate(candidateJson(anchors), sourceUnits)
+        val compacted =
+            candidate.sections
+                .first()
+                .items
+                .single()
+                .sourceAnchors
+
+        assertThat(compacted.map(ActionGuideSourceAnchor::sourceUnitIndexes))
+            .containsExactly(
+                listOf(0),
+                listOf(2, 3),
+                listOf(5),
+                listOf(7, 8),
+                listOf(10),
+                listOf(12),
+                listOf(14),
+                listOf(16),
+                listOf(18),
+            )
+        assertThat(compacted[1].quote).isEqualTo("첫 연결 근거\n둘째 연결 근거")
+        assertThat(compacted[3].quote).isEqualTo("넷째 연결 근거\n다섯째 연결 근거")
+        assertThat(compacted).hasSizeLessThanOrEqualTo(10)
+    }
+
+    @Test
+    fun `parse keeps anchors separated by a source gap`() {
+        val sourceUnits = compactableSourceUnits()
+        val anchors =
+            listOf(0, 2).map { index ->
+                ActionGuideSourceAnchor(listOf(index), sourceUnits[index])
+            }
+
+        val candidate = ActionGuideCandidateParser.parseAndValidate(candidateJson(anchors), sourceUnits)
+
+        assertThat(
+            candidate.sections
+                .first()
+                .items
+                .single()
+                .sourceAnchors
+                .map { it.sourceUnitIndexes },
+        ).containsExactly(listOf(0), listOf(2))
+    }
+
+    @Test
+    fun `invalid original anchor cannot be laundered by compaction`() {
+        val sourceUnits = compactableSourceUnits()
+        val anchors =
+            listOf(0, 2, 3, 5, 7, 8, 10, 12, 14, 16, 18)
+                .map { index ->
+                    ActionGuideSourceAnchor(listOf(index), sourceUnits[index])
+                }.toMutableList()
+        anchors[2] = anchors[2].copy(quote = "조작된 근거")
+
+        assertThatThrownBy {
+            ActionGuideCandidateParser.parseAndValidate(candidateJson(anchors), sourceUnits)
+        }.isInstanceOf(InvalidInputException::class.java)
+    }
+
+    @Test
+    fun `already valid adjacent anchors remain unchanged`() {
+        val units = compactableSourceUnits()
+        val anchors = listOf(0, 2, 3).map { ActionGuideSourceAnchor(listOf(it), units[it]) }
+        val result = ActionGuideCandidateParser.parseAndValidate(candidateJson(anchors), units)
+        assertThat(
+            result.sections
+                .first()
+                .items
+                .single()
+                .sourceAnchors,
+        ).containsExactlyElementsOf(anchors)
+    }
+
+    @Test
+    fun `overflow with no safe adjacency remains invalid`() {
+        val units = List(21) { "일반 안내 근거" }.toMutableList()
+        units[0] = sourceUnits[0]
+        val anchors = (0..20 step 2).map { ActionGuideSourceAnchor(listOf(it), units[it]) }
+        assertThatThrownBy {
+            ActionGuideCandidateParser.parseAndValidate(candidateJson(anchors), units)
+        }.isInstanceOf(InvalidInputException::class.java)
+    }
+
+    @Test
+    fun `adjacent quotes cannot be combined beyond the existing quote cap`() {
+        val units = List(20) { "가".repeat(600) }.toMutableList()
+        units[0] = sourceUnits[0]
+        val anchors =
+            listOf(0, 2, 3, 5, 7, 9, 11, 13, 15, 17, 19)
+                .map { ActionGuideSourceAnchor(listOf(it), units[it]) }
+        assertThatThrownBy {
+            ActionGuideCandidateParser.parseAndValidate(candidateJson(anchors), units)
+        }.isInstanceOf(InvalidInputException::class.java)
+    }
+
+    @Test
     fun `fabricated fact cannot be available`() {
         invalid(validJson.replace(eligibilityText, "\"text\":\"신청 대상은 20세 이상입니다.\""))
     }
@@ -117,4 +221,44 @@ class ActionGuideCandidateTest {
         assertThatThrownBy { ActionGuideCandidateParser.parseAndValidate(json, sourceUnits) }
             .isInstanceOf(InvalidInputException::class.java)
     }
+
+    private fun candidateJson(anchors: List<ActionGuideSourceAnchor>): String {
+        val encodedAnchors =
+            anchors.joinToString(",") { anchor ->
+                val indexes = anchor.sourceUnitIndexes.joinToString(",")
+                "{\"source_unit_indexes\":[$indexes],\"quote\":\"${anchor.quote}\"}"
+            }
+        return """{"schema_version":1,"sections":[
+          {"kind":"eligibility","status":"available","items":[
+            {"text":"신청 대상은 19세 이상입니다.","cautions":[],"source_anchors":[$encodedAnchors]}]},
+          {"kind":"benefits","status":"not_in_source","items":[]},
+          {"kind":"documents","status":"not_in_source","items":[]},
+          {"kind":"steps","status":"not_in_source","items":[]},
+          {"kind":"exceptions","status":"not_in_source","items":[]},
+          {"kind":"contact","status":"not_in_source","items":[]}
+        ]}"""
+    }
+
+    private fun compactableSourceUnits(): List<String> =
+        listOf(
+            "신청 대상은 19세 이상입니다.",
+            "연결되지 않은 근거",
+            "첫 연결 근거",
+            "둘째 연결 근거",
+            "연결되지 않은 중간 근거",
+            "셋째 연결 근거",
+            "연결되지 않은 중간 근거",
+            "넷째 연결 근거",
+            "다섯째 연결 근거",
+            "연결되지 않은 중간 근거",
+            "여섯째 근거",
+            "연결되지 않은 중간 근거",
+            "일곱째 근거",
+            "연결되지 않은 중간 근거",
+            "여덟째 근거",
+            "연결되지 않은 중간 근거",
+            "아홉째 근거",
+            "연결되지 않은 중간 근거",
+            "열째 근거",
+        )
 }

@@ -75,6 +75,10 @@ easydoc:
     call-budget: ${EASYDOC_RECONVERSION_CALL_BUDGET:20}
   review-support:
     enabled: ${EASYDOC_REVIEW_SUPPORT_ENABLED:false}
+  table-relations:
+    enabled: ${EASYDOC_TABLE_RELATIONS_ENABLED:false}
+  review-history:
+    enabled: ${EASYDOC_REVIEW_HISTORY_ENABLED:false}
   action-guide:
     enabled: ${EASYDOC_ACTION_GUIDE_ENABLED:false}
     worker-enabled: ${EASYDOC_ACTION_GUIDE_WORKER_ENABLED:false}

@@ -507,7 +507,10 @@ class OwnershipPredicateGuardTest {
                 // 원문 조회(`GET /documents/{document_id}/source`). **아래 미방어 목록에 없다** —
                 // 사용자 요청 경로라 `user_id = :ownerId` 를 문장 자신에 붙였다. 바로 뒤의 같은
                 // 표기는 회전이 잠그고 읽는 SELECT 이고, 그쪽은 소유자를 받지 않는다.
-                "$DOCUMENT/JdbcDocumentRepository.kt | SELECT [documents]",
+                // R4에서 이 조회가 표 구조 payload를 왼쪽 조인으로 같이 읽는다(`findOwnedSource`).
+                // 소유·보존 술어는 `WHERE d.user_id = :ownerId AND d.retention_expires_at > now()`
+                // 그대로다.
+                "$DOCUMENT/JdbcDocumentRepository.kt | SELECT [document_table_structures, documents]",
                 "$DOCUMENT/JdbcDocumentRepository.kt | SELECT [documents]",
                 "$DOCUMENT/JdbcDocumentRepository.kt | UPDATE [documents]",
                 // 문서 키 회전 배치 후보 커서 — 같은 사유다.
@@ -519,6 +522,9 @@ class OwnershipPredicateGuardTest {
                 // 내지 않은 문서가 목록에서 빠지면 안 되기 때문이다. 소유 술어는 `WHERE
                 // d.user_id = :ownerId` 로 문장 자신에 남아 있다.
                 "$DOCUMENT/JdbcDocumentRepository.kt | SELECT [conversion_feedback, conversions, documents]",
+                // R4 표 구조 저장. `EXISTS (... d.user_id = :ownerId AND d.retention_expires_at
+                // > now())` 로 소유와 보존기간을 문장 자신에서 확인한다.
+                "$DOCUMENT/JdbcDocumentTableStructureRepository.kt | INSERT [document_table_structures, documents]",
                 "$DOCUMENT/JdbcExpiredDocumentPurge.kt | SELECT [conversions]",
                 "$DOCUMENT/JdbcExpiredDocumentPurge.kt | DELETE [documents]",
                 "$DOCUMENT/JdbcExpiredDocumentPurge.kt | SELECT [conversions, documents]",
@@ -549,6 +555,23 @@ class OwnershipPredicateGuardTest {
                 "$DOCUMENT/JdbcReviewAssessmentRepository.kt | SELECT [review_assessments]",
                 "$DOCUMENT/JdbcReviewAssessmentRepository.kt | UPDATE [review_assessments]",
                 "$DOCUMENT/JdbcReviewAssessmentRepository.kt | SELECT [review_assessments]",
+                // R5 검수 이력 저장(2026-09-21, `docs/reports/2026-09-21-r2-r4-r5-implementation.md`).
+                // 스냅샷 INSERT·본문 변경 이벤트 INSERT·이력 목록 SELECT는 소유·보존 술어를
+                // 문장 자신에 걸었고, 스냅샷 보존 만료 정리 DELETE도 조인으로 확인한다.
+                // 아래 여섯 문장 중 회전 경로 셋은 소유자가 없어 미방어 목록에도 있다.
+                // 순서는 파일 안 문장 순서다(잠금 SELECT → 재봉인 UPDATE → 후보 커서 SELECT).
+                "$DOCUMENT/JdbcReviewHistoryRepository.kt | INSERT [conversions, documents, review_snapshots]",
+                "$DOCUMENT/JdbcReviewHistoryRepository.kt | INSERT [conversions, documents]",
+                "$DOCUMENT/JdbcReviewHistoryRepository.kt | DELETE [conversions, documents, review_snapshots]",
+                "$DOCUMENT/JdbcReviewHistoryRepository.kt | SELECT [conversions, documents, review_snapshots]",
+                "$DOCUMENT/JdbcReviewHistoryRepository.kt | SELECT [review_snapshots]",
+                "$DOCUMENT/JdbcReviewHistoryRepository.kt | UPDATE [review_snapshots]",
+                "$DOCUMENT/JdbcReviewHistoryRepository.kt | SELECT [review_snapshots]",
+                // R4 표 구조 키 회전(`rotate-keys`) — 후보 커서 SELECT와 잠금·재봉인.
+                // 아래 미방어 목록에도 같은 세 문장이 있다.
+                "$DOCUMENT/TableStructureKeyRotation.kt | SELECT [document_table_structures]",
+                "$DOCUMENT/TableStructureKeyRotation.kt | UPDATE [document_table_structures]",
+                "$DOCUMENT/TableStructureKeyRotation.kt | UPDATE [document_table_structures]",
                 // Billing: public operations first lockOwned(owner, workspace); order ownership is rechecked
                 // before receipt/refund. The same durable store is used by trusted renewal/reconciliation workers.
                 // TossReachTest covers foreign-owner 404, administrator-only refund and forged webhooks.
@@ -655,6 +678,16 @@ class OwnershipPredicateGuardTest {
                 "$DOCUMENT/JdbcReviewAssessmentRepository.kt | SELECT [review_assessments]",
                 "$DOCUMENT/JdbcReviewAssessmentRepository.kt | UPDATE [review_assessments]",
                 "$DOCUMENT/JdbcReviewAssessmentRepository.kt | SELECT [review_assessments]",
+                // R5 검수 스냅샷 키 회전(`ReviewHistoryKeyRotation`이 부르는 잠금·재봉인과
+                // 후보 커서). `rotate-keys` 운영 배치라 소유자를 받을 자리가 없다.
+                // 순서는 파일 안 문장 순서다(잠금 SELECT → 재봉인 UPDATE → 후보 커서 SELECT).
+                "$DOCUMENT/JdbcReviewHistoryRepository.kt | SELECT [review_snapshots]",
+                "$DOCUMENT/JdbcReviewHistoryRepository.kt | UPDATE [review_snapshots]",
+                "$DOCUMENT/JdbcReviewHistoryRepository.kt | SELECT [review_snapshots]",
+                // R4 표 구조 키 회전(`TableStructureKeyRotation`). 같은 사유다.
+                "$DOCUMENT/TableStructureKeyRotation.kt | SELECT [document_table_structures]",
+                "$DOCUMENT/TableStructureKeyRotation.kt | UPDATE [document_table_structures]",
+                "$DOCUMENT/TableStructureKeyRotation.kt | UPDATE [document_table_structures]",
                 // Billing: public operations first lockOwned(owner, workspace); order ownership is rechecked
                 // before receipt/refund. The same durable store is used by trusted renewal/reconciliation workers.
                 // TossReachTest covers foreign-owner 404, administrator-only refund and forged webhooks.
@@ -728,10 +761,15 @@ class OwnershipPredicateGuardTest {
          * 49 → 52 는 검수 지원 평가 payload의 키 회전 잠금 SELECT·재봉인 UPDATE·후보
          * 커서 SELECT다. 기존 봉투들과 같은 운영자 회전 경로이고, 사용자 조회·생성·갱신
          * 다섯 문장은 소유자와 보존기간 술어를 SQL 자체에 둬 이 상한을 먹지 않는다.
+         *
+         * 58 → 64 는 R4 표 구조·R5 검수 스냅샷의 키 회전 경로 여섯 문장이다
+         * (`TableStructureKeyRotation` 셋, `JdbcReviewHistoryRepository`의 스냅샷 회전
+         * 셋). `rotate-keys` 운영 배치라 위 회전 배치들과 같은 사유로 소유자를 받을
+         * 자리가 없다.
          */
         const val BILLING = "infrastructure/src/main/kotlin/kr/easydoc/infrastructure/subscription"
 
         // 52 → 58: R2 암호문 가족 둘의 회전 커서·잠금·재봉인 여섯 문장.
-        const val MAX_UNGUARDED_STATEMENTS = 58
+        const val MAX_UNGUARDED_STATEMENTS = 64
     }
 }

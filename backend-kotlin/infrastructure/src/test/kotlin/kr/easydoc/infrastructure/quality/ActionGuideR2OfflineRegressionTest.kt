@@ -2,6 +2,7 @@ package kr.easydoc.infrastructure.quality
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.int
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kr.easydoc.core.actionguide.ActionGuideCandidateParser
@@ -27,6 +28,45 @@ import java.security.MessageDigest
  * parser 검증에는 필요하지 않지만, source/body가 다른 문서로 조용히 섞이는 것을 막는다.
  */
 class ActionGuideR2OfflineRegressionTest {
+    @Test
+    fun `round3 twelve frozen outputs preserve text cautions and source coverage`() {
+        val directory = File(repositoryRoot(), "docs/reports/2026-09-21-r2-bounded-quality-artifacts/round3")
+        val hashes =
+            Json.parseToJsonElement(File(directory, "manifest.json").readText()).jsonObject["sha256"]!!.jsonObject
+        val documents =
+            GoldenDocumentLoader
+                .loadDirectory(GoldenDocumentLoader.documentsDirectory())
+                .documents
+                .associateBy(GoldenDocument::id)
+        val files =
+            directory.listFiles { file -> file.name.matches(Regex("[0-9]{3}-run[12]\\.txt")) }!!.sorted()
+        assertThat(files).hasSize(12)
+        files.forEach { file ->
+            assertThat(sha256(file)).isEqualTo(hashes[file.name]!!.jsonPrimitive.content)
+            val original = Json.parseToJsonElement(file.readText()).jsonObject["sections"]!!.jsonArray
+            val source = documents.getValue(file.name.substringBefore("-run")).sourceText
+            val result = ActionGuideCandidateParser.parseAndValidate(file.readText(), splitUnits(source))
+            result.sections.forEachIndexed { sectionIndex, section ->
+                val originalItems = original[sectionIndex].jsonObject["items"]!!.jsonArray
+                section.items.forEachIndexed { itemIndex, item ->
+                    val originalItem = originalItems[itemIndex].jsonObject
+                    assertThat(item.text).isEqualTo(originalItem["text"]!!.jsonPrimitive.content)
+                    assertThat(item.cautions)
+                        .containsExactlyElementsOf(
+                            originalItem["cautions"]!!.jsonArray.map { it.jsonPrimitive.content },
+                        )
+                    val originalIndexes =
+                        originalItem["source_anchors"]!!
+                            .jsonArray
+                            .flatMap { anchor ->
+                                anchor.jsonObject["source_unit_indexes"]!!.jsonArray.map { it.jsonPrimitive.int }
+                            }.toSet()
+                    assertThat(item.sourceAnchors.flatMap { it.sourceUnitIndexes }.toSet()).isEqualTo(originalIndexes)
+                }
+            }
+        }
+    }
+
     @Test
     @DisplayName("R2 보존 후보 20개가 production parser와 validator를 모두 통과한다")
     fun `R2 frozen candidates all pass production validation`() {
@@ -100,6 +140,47 @@ class ActionGuideR2OfflineRegressionTest {
         assertThatThrownBy {
             ActionGuideCandidateValidator.validate(tampered, splitUnits(fixture.document.sourceText))
         }.isInstanceOf(InvalidInputException::class.java)
+    }
+
+    @Test
+    @DisplayName("round3 023 후보는 인접한 source anchor만 합쳐서 통과한다")
+    fun `round3 023 candidate compacts adjacent anchors without changing content`() {
+        val source =
+            GoldenDocumentLoader
+                .loadDirectory(GoldenDocumentLoader.documentsDirectory())
+                .documents
+                .single { it.id == "023" }
+                .sourceText
+        val rawCandidate =
+            requireNotNull(javaClass.getResourceAsStream("/kr/easydoc/infrastructure/quality/023-run2-round3.json")) {
+                "round3 023 frozen candidate resource가 없다"
+            }.bufferedReader().use { it.readText() }
+
+        val candidate = ActionGuideCandidateParser.parseAndValidate(rawCandidate, splitUnits(source))
+        val benefits = candidate.sections.single { it.kind.wireName == "benefits" }
+        val item = benefits.items[1]
+        val sourceUnits = splitUnits(source)
+
+        assertThat(item.text)
+            .isEqualTo(
+                "서식4의 보조비목·세목 목록은 예산 작성 참고자료입니다. 목록의 항목을 각각 별도 혜택으로 안내하지 않습니다.",
+            )
+        assertThat(item.cautions).containsExactly(
+            "참고자료에서 보수와 공공운영비는 법정운영운영비 보조에 한하며, 기간제근로자등보수는 보조사업 운영 등에 필요한 인건비입니다.",
+            "행사운영비·행사실비지원금·행사관련시설비는 원칙적으로 민간행사보조에 한합니다. 행사실비지원금은 단순 참가자에게 지급할 수 없습니다.",
+            "국내여비·국외업무여비는 공무원 여비규정을 준용합니다. 재료비와 자산 및 물품취득비는 원칙적으로 민간자본사업보조사업에 한합니다.",
+            "포상금은 원칙적으로 자부담에 한하며, 지자체 승인 여부를 확인한 후 편성할 수 있습니다.",
+        )
+        assertThat(item.sourceAnchors).hasSize(9)
+        assertThat(item.sourceAnchors.map { it.sourceUnitIndexes })
+            .contains(
+                (191..197).toList(),
+                (203..209).toList(),
+            )
+        assertThat(item.sourceAnchors.single { it.sourceUnitIndexes == (191..197).toList() }.quote)
+            .isEqualTo(sourceUnits.slice(191..197).joinToString("\n"))
+        assertThat(item.sourceAnchors.single { it.sourceUnitIndexes == (203..209).toList() }.quote)
+            .isEqualTo(sourceUnits.slice(203..209).joinToString("\n"))
     }
 
     private fun loadFixtures(): List<FrozenR2Fixture> {

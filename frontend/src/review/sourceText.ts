@@ -15,6 +15,7 @@
 import { useEffect, useState } from 'react'
 
 import { ApiError, NETWORK_ERROR_STATUS, getDocumentSource } from '../api/client'
+import type { TableStructure } from '../api/types'
 
 /**
  * 원문을 못 가져온 이유. 사용자가 **다음에 할 일이 다르다**는 것이 나누는 기준이다
@@ -34,7 +35,7 @@ export type SourceFailure = 'not_found' | 'unreachable'
  */
 export type SourcePanelState =
   | { status: 'loading' }
-  | { status: 'ready'; text: string }
+  | { status: 'ready'; text: string; tables?: TableStructure[] | null }
   | { status: 'failed'; failure: SourceFailure }
 
 /** 원문 패널에 넘길 값 한 묶음. 상태와 «다시 불러오기»는 늘 함께 간다. */
@@ -100,7 +101,10 @@ export function useDocumentSource(
         if (stopped) {
           return
         }
-        setLoaded({ documentId: id, panel: { status: 'ready', text: response.source_text } })
+        setLoaded({
+          documentId: id,
+          panel: { status: 'ready', text: response.source_text, tables: response.tables ?? null },
+        })
       } catch (caught) {
         if (stopped || (caught instanceof DOMException && caught.name === 'AbortError')) {
           return

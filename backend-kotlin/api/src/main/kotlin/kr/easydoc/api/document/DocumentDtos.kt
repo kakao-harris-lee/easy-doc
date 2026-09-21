@@ -1,12 +1,15 @@
 package kr.easydoc.api.document
 
 import com.fasterxml.jackson.annotation.JsonCreator
+import com.fasterxml.jackson.annotation.JsonInclude
 import com.fasterxml.jackson.annotation.JsonProperty
 import com.fasterxml.jackson.annotation.JsonSetter
 import com.fasterxml.jackson.annotation.Nulls
 import kr.easydoc.application.document.AcceptedUpload
 import kr.easydoc.core.document.DocumentListing
 import kr.easydoc.core.document.DocumentSourceView
+import kr.easydoc.core.document.TableCellStructure
+import kr.easydoc.core.document.TableStructure
 import kr.easydoc.core.privacy.CONTENT_MASK
 
 // 민감 필드 부재 검증: `DocumentDtoLeakTest`.
@@ -131,6 +134,7 @@ data class DocumentSourceResponse private constructor(
     @get:JsonProperty("char_count") val charCount: Int,
     /** **마스킹 전 원문 그대로다** — 이 필드가 이 응답에 캐시 금지 헤더를 요구한다. */
     @get:JsonProperty("source_text") val sourceText: String,
+    @get:JsonInclude(JsonInclude.Include.NON_NULL) val tables: List<TableStructureResponse>?,
 ) {
     /** **본문을 찍지 않는다.** 표식과 길이만 남긴다 — `ConversionResponse` 와 같은 규칙이다. */
     override fun toString(): String =
@@ -145,7 +149,49 @@ data class DocumentSourceResponse private constructor(
                 sourceFormat = view.sourceFormat.wireName,
                 charCount = view.charCount,
                 sourceText = view.sourceText.value,
+                tables = view.tables?.map(TableStructureResponse::of),
             )
+    }
+}
+
+/** R4 source response의 표 좌표. 셀 원문은 source_text에서 읽는다. */
+data class TableStructureResponse(
+    @get:JsonProperty("table_id") val tableId: String,
+    @get:JsonProperty("source_unit_indexes") val sourceUnitIndexes: List<Int>,
+    @get:JsonProperty("row_count") val rowCount: Int,
+    @get:JsonProperty("column_count") val columnCount: Int,
+    @get:JsonProperty("cells") val cells: List<TableCellStructureResponse>,
+    @get:JsonProperty("unit_anchors") val unitAnchors: List<Int>,
+    @get:JsonProperty("footnote_anchors") val footnoteAnchors: List<Int>,
+    @get:JsonProperty("support_status") val supportStatus: String,
+    @get:JsonProperty("support_reason") val supportReason: String?,
+) {
+    companion object {
+        fun of(value: TableStructure): TableStructureResponse =
+            TableStructureResponse(
+                tableId = value.tableId,
+                sourceUnitIndexes = value.sourceUnitIndexes,
+                rowCount = value.rowCount,
+                columnCount = value.columnCount,
+                cells = value.cells.map(TableCellStructureResponse::of),
+                unitAnchors = value.unitAnchors,
+                footnoteAnchors = value.footnoteAnchors,
+                supportStatus = value.supportStatus.wireName,
+                supportReason = value.supportReason?.wireName,
+            )
+    }
+}
+
+/** R4 표 셀 좌표와 해당 열의 header source unit 참조. */
+data class TableCellStructureResponse(
+    @get:JsonProperty("row") val row: Int,
+    @get:JsonProperty("column") val column: Int,
+    @get:JsonProperty("source_unit_indexes") val sourceUnitIndexes: List<Int>,
+    @get:JsonProperty("header_refs") val headerRefs: List<Int>,
+) {
+    companion object {
+        fun of(value: TableCellStructure): TableCellStructureResponse =
+            TableCellStructureResponse(value.row, value.column, value.sourceUnitIndexes, value.headerRefs)
     }
 }
 

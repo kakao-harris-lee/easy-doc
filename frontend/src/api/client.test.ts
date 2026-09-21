@@ -9,8 +9,10 @@ import {
   createDocumentFromText,
   downloadExport,
   downloadActionGuide,
+  downloadReviewHistory,
   getActionGuide,
   getActionGuideJob,
+  getReviewHistory,
   getReviewSupport,
   listActionGuideJobs,
   listDocuments,
@@ -137,6 +139,51 @@ describe('review support API', () => {
       expected_review_revision: 5,
       state: 'not_applicable',
       reason: '이 문서에는 신청 절차가 없습니다.',
+    })
+  })
+})
+
+describe('review history API', () => {
+  it('최근 기록과 opaque cursor를 쿼리로 요청한다', async () => {
+    const payload = {
+      conversion_id: 'c1',
+      current_content_revision: 3,
+      events: [],
+      next_cursor: 'next-1',
+    }
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, payload))
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, payload))
+    const controller = new AbortController()
+
+    await getReviewHistory('c1', { limit: 20 }, controller.signal)
+    await getReviewHistory('c1', { cursor: 'next/한글', limit: 20 }, controller.signal)
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      `${apiBaseUrl}/conversions/c1/review-history?limit=20`,
+    )
+    expect(fetchMock.mock.calls[0]?.[1]?.signal).toBe(controller.signal)
+    expect(fetchMock.mock.calls[1]?.[0]).toBe(
+      `${apiBaseUrl}/conversions/c1/review-history?cursor=next%2F%ED%95%9C%EA%B8%80&limit=20`,
+    )
+  })
+
+  it('Content-Disposition 파일명을 보존하고 export 오류를 ApiError로 올린다', async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response('event text', {
+        status: 200,
+        headers: { 'Content-Disposition': "attachment; filename*=UTF-8''history.txt" },
+      }),
+    )
+    const downloaded = await downloadReviewHistory('c1')
+    expect(downloaded.filename).toBe('history.txt')
+    expect(await downloaded.blob.text()).toBe('event text')
+
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(409, { detail: '기록이 아직 준비되지 않았습니다.' }),
+    )
+    await expect(downloadReviewHistory('c1')).rejects.toMatchObject({
+      status: 409,
+      message: '기록이 아직 준비되지 않았습니다.',
     })
   })
 })

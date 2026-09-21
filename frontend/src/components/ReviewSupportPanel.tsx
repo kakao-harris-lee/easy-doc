@@ -24,6 +24,7 @@ interface ReviewSupportPanelProps {
   mappingAvailable: boolean
   contentConflict: boolean
   onContentConflict: () => void
+  onSaved?: () => void
   onNavigateSource: (indexes: number[], trigger: HTMLButtonElement) => void
 }
 
@@ -91,6 +92,7 @@ export function ReviewSupportPanel({
   mappingAvailable,
   contentConflict,
   onContentConflict,
+  onSaved,
   onNavigateSource,
 }: ReviewSupportPanelProps) {
   const headingId = useId()
@@ -172,6 +174,7 @@ export function ReviewSupportPanel({
       setResponse(next)
       setReasonItemId(null)
       setNotice('검수 표시를 저장했습니다.')
+      onSaved?.()
     } catch (caught) {
       if (caught instanceof ApiError && caught.status === 409) {
         const latest = await reloadAfterConflict()

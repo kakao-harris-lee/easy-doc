@@ -295,13 +295,14 @@ class EnvelopeColumnWriteGuardTest {
             column: String,
         ): Boolean = Regex("""(?<![A-Za-z0-9_])$column\s*=""").containsMatchIn(setClause)
 
-        /** Gradle 산출물은 소스가 아니다 — 넣으면 같은 파일을 두 번 센다. */
+        /** 빌드·IDE 산출물(`build/`, `bin/`)은 소스가 아니다 — 넣으면 같은 파일을 두 번 센다. */
         private fun kotlinSources(root: Path): List<Path> =
             Files.walk(root).use { paths ->
                 paths
                     .filter { Files.isRegularFile(it) && it.extension == "kt" }
-                    .filter { root.relativize(it).none { part -> part.toString() == "build" } }
-                    .sorted()
+                    .filter {
+                        root.relativize(it).none { part -> part.toString() == "build" || part.toString() == "bin" }
+                    }.sorted()
                     .toList()
             }
     }
@@ -321,6 +322,9 @@ class EnvelopeColumnWriteGuardTest {
                 "api/src/test/kotlin/kr/easydoc/api/ConversionFeedbackReachTest.kt",
                 "api/src/test/kotlin/kr/easydoc/api/ConversionReadReachTest.kt",
                 "api/src/test/kotlin/kr/easydoc/api/ConversionReviewReachTest.kt",
+                // R4 표 관계 계약 테스트가 document_table_structures의 payload_encrypted를 원시
+                // UPDATE로 심는다(encryption_scheme·key_version도 같은 문장에서 쓴다).
+                "api/src/test/kotlin/kr/easydoc/api/DocumentSourceTableRelationsReachTest.kt",
                 // 보존 만료 창의 실경로 테스트도 완료 상태를 SQL 로 심는다 — 그 문장이 봉투를
                 // 함께 쓴다(`MARK_DONE_SQL`). 만료된 변환이 조회·내보내기·검수 저장에서
                 // 404 인지를 재려면 먼저 「내줄 것이 실재하는」 행을 세워야 한다.
@@ -347,6 +351,13 @@ class EnvelopeColumnWriteGuardTest {
                 // R1 검수 payload의 일반 갱신과 키 회전 UPDATE. 인용·사유·상태를 한 봉투로 쓴다.
                 "infrastructure/src/main/kotlin/kr/easydoc/infrastructure/document/" +
                     "JdbcReviewAssessmentRepository.kt",
+                // R5 과거 본문 스냅샷의 키 회전 UPDATE (`rewriteSnapshotEnvelope`). payload와
+                // 봉투 두 값을 같은 문장에서 쓴다.
+                "infrastructure/src/main/kotlin/kr/easydoc/infrastructure/document/" +
+                    "JdbcReviewHistoryRepository.kt",
+                // R4 표 구조의 키 회전 UPDATE. payload와 봉투 두 값을 같은 문장에서 쓴다.
+                "infrastructure/src/main/kotlin/kr/easydoc/infrastructure/document/" +
+                    "TableStructureKeyRotation.kt",
                 "infrastructure/src/test/kotlin/kr/easydoc/infrastructure/document/ConversionReviewStorageTest.kt",
                 "infrastructure/src/test/kotlin/kr/easydoc/infrastructure/document/EnvelopeRotationConcurrencyTest.kt",
                 // 회전 배치 통합 테스트도 옛 세대 변환을 완료 상태로 심는다 — 그 문장이 봉투를
@@ -383,7 +394,15 @@ class EnvelopeColumnWriteGuardTest {
          * 함께 쓴다 — 옛 세대 그대로 쓰는 실제 동시 쓰기를 흉내 내므로 이 저장소의 다른 쓰기와
          * 같은 불변식을 진다. `ReviewedBody` 를 만들 수 있는 자리가 아니라(privacy-gate X-5)
          * 제품 검수 저장 경로 대신 이 원시 SQL 을 쓴다 — 사유는 그 함수 KDoc.
+         *
+         * 20 → 22: R4/R5 키 회전 두 문장. `TableStructureKeyRotation.rewrite`가
+         * `document_table_structures`의 payload와 봉투를, `JdbcReviewHistoryRepository
+         * .rewriteSnapshotEnvelope`가 `review_snapshots`의 payload와 봉투를 각각 같은
+         * 문장에서 함께 쓴다.
+         *
+         * 30 → 31 은 R4 표 관계 계약 테스트(`DocumentSourceTableRelationsReachTest`)가
+         * 표 관계 payload를 심는 UPDATE다.
          */
-        const val EXPECTED_STATEMENTS = 28
+        const val EXPECTED_STATEMENTS = 31
     }
 }

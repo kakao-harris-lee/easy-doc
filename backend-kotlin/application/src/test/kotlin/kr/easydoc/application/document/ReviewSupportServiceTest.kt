@@ -124,6 +124,57 @@ class ReviewSupportServiceTest {
     }
 
     @Test
+    fun `항목 상태별 변경은 history event와 당시 본문 산출물을 함께 기록한다`() {
+        val world = World()
+        val conversionId = world.seedDone()
+        val generated = world.service.analyze(OWNER, conversionId, 1).assessment!!
+        val itemId = generated.items.first().itemId
+
+        world.service.updateItem(
+            OWNER,
+            conversionId,
+            itemId,
+            generated.assessmentId,
+            1,
+            0,
+            ReviewItemState.CONFIRMED,
+            null,
+        )
+        world.service.updateItem(
+            OWNER,
+            conversionId,
+            itemId,
+            generated.assessmentId,
+            1,
+            1,
+            ReviewItemState.NEEDS_REVIEW,
+            null,
+        )
+        world.service.updateItem(
+            OWNER,
+            conversionId,
+            itemId,
+            generated.assessmentId,
+            1,
+            2,
+            ReviewItemState.NOT_APPLICABLE,
+            "원문과 무관",
+        )
+
+        assertThat(world.history.itemCalls.map { it.type })
+            .containsExactly(
+                ReviewHistoryEventType.ITEM_CONFIRMED,
+                ReviewHistoryEventType.ITEM_REOPENED,
+                ReviewHistoryEventType.ITEM_NOT_APPLICABLE,
+            )
+        assertThat(world.history.itemCalls).allSatisfy { call ->
+            assertThat(call.contentRevision).isEqualTo(1)
+            assertThat(call.contentText).isEqualTo("쉬운 글에는 신청 방법만 있습니다.")
+            assertThat(call.artifactJson).startsWith("{\"coverage\"")
+        }
+    }
+
+    @Test
     fun `분석과 항목 갱신 revision 하한을 422로 검증한다`() {
         val world = World()
         val conversionId = world.seedDone()
@@ -168,8 +219,17 @@ class ReviewSupportServiceTest {
         val conversions = FakeConversionRepository(transaction, originals)
         private val documents = FakeQueryDocumentRepository(transaction)
         val assessments = FakeReviewAssessmentRepository()
+        val history = RecordingReviewHistoryAppender()
         val service =
-            ReviewSupportService(enabled, conversions, documents, assessments, cipher, transaction)
+            ReviewSupportService(
+                enabled,
+                conversions,
+                documents,
+                assessments,
+                cipher,
+                transaction,
+                reviewHistory = history,
+            )
 
         fun seedDone(
             sourceText: String = "신청자는 2026년 10월 1일까지 30,000원을 내야 합니다.",

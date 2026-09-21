@@ -185,6 +185,40 @@ export interface DocumentSourceResponse {
   /** 공백 포함 문자 수. `DocumentCreatedResponse.char_count`와 같은 기준이다. */
   char_count: number
   source_text: string
+  /** R4가 꺼졌거나 과거 문서라면 생략되거나 null이다. */
+  tables?: TableStructure[] | null
+}
+
+export type TableSupportStatus = 'supported' | 'unsupported' | 'unavailable'
+export type TableSupportReason =
+  | 'merged_cells'
+  | 'nested_table'
+  | 'irregular_grid'
+  | 'multiple_header_rows'
+  | 'header_row_missing'
+  | 'limit_exceeded'
+  | 'coordinates_lost'
+  | 'historical_document'
+  | 'unsupported_format'
+
+export interface TableCellStructure {
+  row: number
+  column: number
+  source_unit_indexes: number[]
+  /** 이 셀에 적용되는 열 제목의 원문 줄 색인. */
+  header_refs: number[]
+}
+
+export interface TableStructure {
+  table_id: string
+  source_unit_indexes: number[]
+  row_count: number
+  column_count: number
+  cells: TableCellStructure[]
+  unit_anchors: number[]
+  footnote_anchors: number[]
+  support_status: TableSupportStatus
+  support_reason: TableSupportReason | null
 }
 
 /**
@@ -378,6 +412,44 @@ export interface UpdateReviewItemRequest {
   expected_review_revision: number
   state: ReviewItemState
   reason: string | null
+}
+
+// --- R5 검수 기록 ---
+
+export type ReviewHistoryEventType =
+  | 'item_confirmed'
+  | 'item_reopened'
+  | 'item_not_applicable'
+  | 'guide_reviewed'
+  | 'invalidated_by_edit'
+
+export type ReviewHistorySnapshotKind = 'review_assessment' | 'action_guide'
+
+export interface ReviewHistorySnapshot {
+  status: 'available' | 'missing'
+  kind: ReviewHistorySnapshotKind | null
+  content_text: string | null
+  artifact_json: string | null
+}
+
+export interface ReviewHistoryEvent {
+  event_id: string
+  event_type: ReviewHistoryEventType
+  created_at: string
+  actor_user_id: string
+  content_revision: number
+  artifact_revision: number | null
+  item_id: string | null
+  assessment_id: string | null
+  guide_id: string | null
+  snapshot: ReviewHistorySnapshot
+}
+
+export interface ReviewHistoryResponse {
+  conversion_id: string
+  current_content_revision: number
+  events: ReviewHistoryEvent[]
+  next_cursor: string | null
 }
 
 // --- R2 행동 안내 작업 ---

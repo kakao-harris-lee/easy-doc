@@ -17,6 +17,7 @@ import {
   downloadExport,
   getActionGuide,
   getConversion,
+  getReviewHistory,
   getReviewSupport,
   listActionGuideJobs,
   reconvertUnit,
@@ -66,10 +67,12 @@ vi.mock('../api/client', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api/client')>()),
   saveReview: vi.fn(),
   downloadExport: vi.fn(),
+  downloadReviewHistory: vi.fn(),
   saveFeedback: vi.fn(),
   reconvertUnit: vi.fn(),
   getConversion: vi.fn(),
   getActionGuide: vi.fn(),
+  getReviewHistory: vi.fn(),
   listActionGuideJobs: vi.fn(),
   analyzeReviewSupport: vi.fn(),
   getReviewSupport: vi.fn(),
@@ -108,6 +111,7 @@ beforeEach(() => {
   vi.mocked(reconvertUnit).mockReset()
   vi.mocked(getConversion).mockReset()
   vi.mocked(getActionGuide).mockReset()
+  vi.mocked(getReviewHistory).mockReset()
   vi.mocked(listActionGuideJobs).mockReset()
   vi.mocked(analyzeReviewSupport).mockReset()
   vi.mocked(getReviewSupport).mockReset()
@@ -3025,5 +3029,128 @@ describe('ER-07 행동 안내 작업 탭', () => {
     expect(bodyEditor).toBeVisible()
     await user.click(guideTab)
     expect(getActionGuide).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('R4 표 관계와 R5 검수 기록 작업 탭', () => {
+  const capabilities = {
+    review_support: false,
+    action_guide: false,
+    table_relations: true,
+    review_history: true,
+    explanations: false,
+    illustrations: false,
+  }
+
+  it('기능 플래그가 없으면 표 관계와 검수 기록을 모두 숨긴다', () => {
+    render(<ReviewEditor conversion={conversion()} source={sourceReady('원문')} />)
+
+    expect(screen.queryByRole('tab', { name: '검수 기록' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: '표 관계' })).not.toBeInTheDocument()
+    expect(getReviewHistory).not.toHaveBeenCalled()
+  })
+
+  it('표는 원문 좌표를 읽고 검수 기록은 탭을 연 뒤에만 조회한다', async () => {
+    const user = userEvent.setup()
+    vi.mocked(getReviewHistory).mockResolvedValue({
+      conversion_id: 'c1',
+      current_content_revision: 1,
+      events: [],
+      next_cursor: null,
+    })
+    const table = {
+      table_id: 'table-1',
+      source_unit_indexes: [0, 1, 2, 3],
+      row_count: 2,
+      column_count: 2,
+      cells: [
+        { row: 0, column: 0, source_unit_indexes: [0], header_refs: [] },
+        { row: 0, column: 1, source_unit_indexes: [1], header_refs: [] },
+        { row: 1, column: 0, source_unit_indexes: [2], header_refs: [0] },
+        { row: 1, column: 1, source_unit_indexes: [3], header_refs: [1] },
+      ],
+      unit_anchors: [4],
+      footnote_anchors: [5],
+      support_status: 'supported' as const,
+      support_reason: null,
+    }
+    render(
+      <ReviewEditor
+        conversion={conversion({ review_capabilities: capabilities })}
+        source={sourceReady('구분\n금액\n일반 가구\n10000\n단위: 원\n※ 월 단위', [table])}
+      />,
+    )
+
+    expect(screen.getByRole('heading', { name: '표 관계' })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: '구분' })).toBeInTheDocument()
+    expect(screen.getByText('단위: 원')).toBeInTheDocument()
+    expect(getReviewHistory).not.toHaveBeenCalled()
+
+    await user.click(screen.getByRole('tab', { name: '검수 기록' }))
+    await waitFor(() =>
+      expect(getReviewHistory).toHaveBeenCalledWith('c1', { limit: 20 }, expect.any(AbortSignal)),
+    )
+    expect(screen.getByText('아직 검수 기록이 없습니다.')).toBeInTheDocument()
+  })
+
+  it('원문을 불러오는 동안에는 표 관계의 미지원 안내를 먼저 보여주지 않는다', () => {
+    const view = render(
+      <ReviewEditor
+        conversion={conversion({ review_capabilities: capabilities })}
+        source={sourceLoading()}
+      />,
+    )
+
+    expect(screen.queryByRole('heading', { name: '표 관계' })).not.toBeInTheDocument()
+    expect(
+      screen.queryByText(
+        '이 문서의 표 관계 정보를 확인할 수 없습니다. 원문에서 직접 확인해 주세요.',
+      ),
+    ).not.toBeInTheDocument()
+
+    view.rerender(
+      <ReviewEditor
+        conversion={conversion({ review_capabilities: capabilities })}
+        source={sourceReady('원문', [])}
+      />,
+    )
+
+    expect(screen.getByRole('heading', { name: '표 관계' })).toBeInTheDocument()
+    expect(screen.getByText('원문에서 확인된 표가 없습니다.')).toBeInTheDocument()
+  })
+
+  it('활성화된 검수 기록 기능이 사라지면 본문 검수 탭으로 돌아간다', async () => {
+    const user = userEvent.setup()
+    vi.mocked(getReviewHistory).mockResolvedValue({
+      conversion_id: 'c1',
+      current_content_revision: 1,
+      events: [],
+      next_cursor: null,
+    })
+    const withHistory = {
+      ...capabilities,
+      action_guide: true,
+    }
+    const withoutHistory = { ...withHistory, review_history: false }
+    const view = render(
+      <ReviewEditor
+        conversion={conversion({ review_capabilities: withHistory })}
+        source={sourceReady('원문')}
+      />,
+    )
+
+    await user.click(screen.getByRole('tab', { name: '검수 기록' }))
+    expect(await screen.findByRole('heading', { name: '검수 기록', level: 1 })).toBeInTheDocument()
+
+    view.rerender(
+      <ReviewEditor
+        conversion={conversion({ review_capabilities: withoutHistory })}
+        source={sourceReady('원문')}
+      />,
+    )
+
+    expect(screen.getByRole('tab', { name: '본문 검수' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByLabelText('쉬운 글 결과 (고칠 수 있습니다)')).toBeVisible()
+    expect(screen.queryByRole('heading', { name: '검수 기록', level: 1 })).not.toBeInTheDocument()
   })
 })

@@ -37,6 +37,8 @@ object AuthenticatedEndpoints {
             "/conversions/{conversion_id}/feedback",
             "/conversions/{conversion_id}/review-support",
             "/conversions/{conversion_id}/review-support/items/{item_id}",
+            "/conversions/{conversion_id}/review-history",
+            "/conversions/{conversion_id}/review-history/export",
             "/conversions/{conversion_id}/action-guide-jobs",
             "/conversions/{conversion_id}/action-guide-jobs/{job_id}",
             "/conversions/{conversion_id}/action-guide",

@@ -195,7 +195,7 @@ class ProvenanceCreationSitesTest {
         Files.walk(root).use { paths ->
             paths
                 .filter { Files.isRegularFile(it) && it.extension == "kt" }
-                .filter { root.relativize(it).none { part -> part.toString() == "build" } }
+                .filter { root.relativize(it).none { part -> part.toString() == "build" || part.toString() == "bin" } }
                 .toList()
         }
 

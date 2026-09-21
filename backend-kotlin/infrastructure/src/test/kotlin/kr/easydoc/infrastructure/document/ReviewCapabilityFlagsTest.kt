@@ -12,6 +12,8 @@ class ReviewCapabilityFlagsTest {
 
         assertThat(capabilities.actionGuide).isFalse()
         assertThat(capabilities.reviewSupport).isFalse()
+        assertThat(capabilities.tableRelations).isFalse()
+        assertThat(capabilities.reviewHistory).isFalse()
     }
 
     @Test
@@ -24,5 +26,15 @@ class ReviewCapabilityFlagsTest {
 
         assertThat(capabilities.actionGuide).isTrue()
         assertThat(capabilities.reviewSupport).isTrue()
+    }
+
+    @Test
+    fun `표와 이력은 독립된 기능 설정을 따른다`() {
+        val tableOnly = reviewCapabilitiesFor(ReviewSupportProperties(), ActionGuideProperties(), true, false)
+        val historyOnly = reviewCapabilitiesFor(ReviewSupportProperties(), ActionGuideProperties(), false, true)
+        assertThat(tableOnly.tableRelations).isTrue()
+        assertThat(tableOnly.reviewHistory).isFalse()
+        assertThat(historyOnly.tableRelations).isFalse()
+        assertThat(historyOnly.reviewHistory).isTrue()
     }
 }

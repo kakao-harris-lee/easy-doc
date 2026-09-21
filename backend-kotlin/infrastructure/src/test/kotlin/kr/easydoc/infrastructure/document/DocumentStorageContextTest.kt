@@ -188,6 +188,7 @@ class DocumentStorageContextTest {
             .withUserConfiguration(
                 CryptoConfiguration::class.java,
                 DocumentConfiguration::class.java,
+                ReviewHistoryConfiguration::class.java,
                 IngestConfiguration::class.java,
             ).withBean(JdbcClient::class.java, Supplier { JdbcClient.create(dataSource) })
             .withBean(

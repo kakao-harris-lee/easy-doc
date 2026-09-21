@@ -23,6 +23,8 @@ import org.springframework.stereotype.Component
 class KeyRotationRunner(
     private val batch: KeyRotationBatch,
     private val actionGuideContent: ActionGuideContentKeyRotation,
+    private val tableStructure: TableStructureKeyRotation,
+    private val reviewHistory: ReviewHistoryKeyRotation,
 ) : ApplicationRunner,
     ExitCodeGenerator {
     private val log = LoggerFactory.getLogger(KeyRotationRunner::class.java)
@@ -38,6 +40,8 @@ class KeyRotationRunner(
                 val (candidates, guides) = actionGuideContent.run()
                 log.info("키 회전 [action_guide_candidates]: rotated={}", candidates)
                 log.info("키 회전 [action_guides]: rotated={}", guides)
+                log.info("키 회전 [document_table_structures]: rotated={}", tableStructure.run())
+                log.info("키 회전 [review_snapshots]: rotated={}", reviewHistory.run())
                 SUCCESS
             } catch (failure: RuntimeException) {
                 // 메시지만 남긴다 — 도메인 예외는 개수만 말하고 행 식별자·본문을 담지 않는다.

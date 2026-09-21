@@ -89,11 +89,15 @@ class JdbcDocumentRepository(private val jdbc: JdbcClient) : DocumentRepository 
         jdbc
             .sql(
                 """
-                SELECT id, source_format, char_count, workspace_id, source_unit_kinds,
-                       source_text_encrypted, encryption_scheme, key_version
-                FROM documents
-                WHERE id = :id AND user_id = :ownerId
-                  AND retention_expires_at > now()
+                SELECT d.id, d.source_format, d.char_count, d.workspace_id, d.source_unit_kinds,
+                       d.source_text_encrypted, d.encryption_scheme, d.key_version,
+                       ts.payload_encrypted AS table_payload_encrypted,
+                       ts.encryption_scheme AS table_encryption_scheme,
+                       ts.key_version AS table_key_version
+                FROM documents d
+                LEFT JOIN document_table_structures ts ON ts.document_id = d.id
+                WHERE d.id = :id AND d.user_id = :ownerId
+                  AND d.retention_expires_at > now()
                 """.trimIndent(),
             ).param("id", documentId)
             .param("ownerId", ownerId)
@@ -198,6 +202,14 @@ class JdbcDocumentRepository(private val jdbc: JdbcClient) : DocumentRepository 
 
     private fun toSourceText(rs: ResultSet): StoredSourceText {
         val documentId = rs.getObject("id", UUID::class.java)
+        val tablePayload =
+            rs.getBytes("table_payload_encrypted")?.let {
+                EncryptedContent(
+                    bytes = it,
+                    scheme = rs.getString("table_encryption_scheme"),
+                    keyVersion = rs.getInt("table_key_version"),
+                )
+            }
         return StoredSourceText(
             documentId = documentId,
             sourceFormat = SourceFormat.ofWireName(rs.getString("source_format")),
@@ -212,6 +224,7 @@ class JdbcDocumentRepository(private val jdbc: JdbcClient) : DocumentRepository 
             // `null` 은 이 조각 이전에 만든 문서이거나(백필하지 않는다, 계획 §1.2) 저장된
             // 값이 손상됐다는 뜻이다(리뷰 BLOCK 1) — 두 경우 모두 조회를 막지 않는다.
             structure = rs.getString("source_unit_kinds")?.let { decodeStructureOrNull(it, documentId) },
+            tableStructures = tablePayload,
         )
     }
 

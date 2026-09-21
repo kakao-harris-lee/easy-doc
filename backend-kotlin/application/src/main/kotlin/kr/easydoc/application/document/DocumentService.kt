@@ -5,6 +5,7 @@ import kr.easydoc.application.auth.UserRepository
 import kr.easydoc.application.credit.CreditAccountService
 import kr.easydoc.application.crypto.ContentCipher
 import kr.easydoc.core.credit.Credits
+import kr.easydoc.core.crypto.EncryptedContent
 import kr.easydoc.core.crypto.EncryptedField
 import kr.easydoc.core.crypto.PlainBody
 import kr.easydoc.core.crypto.PlainBytes
@@ -14,6 +15,8 @@ import kr.easydoc.core.document.MAX_CONVERTIBLE_CHARS
 import kr.easydoc.core.document.MAX_UPLOAD_BYTES
 import kr.easydoc.core.document.MIN_CONVERTIBLE_WORDS
 import kr.easydoc.core.document.SourceFormat
+import kr.easydoc.core.document.TableStructure
+import kr.easydoc.core.document.TableStructurePayloadCodec
 import kr.easydoc.core.document.charCountOf
 import kr.easydoc.core.document.resolveTitle
 import kr.easydoc.core.document.wordCountOf
@@ -64,6 +67,8 @@ private class UploadContent(
      * 정규화가 줄 수를 바꿀 수 있어 추출 시점 값을 무조건 믿지 않는다.
      */
     val extractedStructure: SourceStructure? = null,
+    /** 파일 추출기가 같은 순회에서 계산한 R4 표 좌표. */
+    val extractedTables: List<TableStructure> = emptyList(),
 )
 
 /** 문서 등록 유스케이스 — 붙여넣기·파일 두 입력을 받아 **저장하고 작업을 등록한다.** */
@@ -152,7 +157,7 @@ class DocumentService(
         // 남기지 않으면 붙여넣기와 같은 길로 가서 `not_applicable` 로 정확히 판정되고, 내보내기는
         // 검수본으로 새 텍스트 파일을 만드는 자연스러운 경로를 그대로 탄다.
         val original = if (extracted.format == SourceFormat.TXT) null else PlainBytes(bytes)
-        val content = UploadContent(extracted.text, extracted.format, original, extracted.structure)
+        val content = UploadContent(extracted.text, extracted.format, original, extracted.structure, extracted.tables)
         return store(ownerId, content, title, personalDataAcknowledged) {
             parseWorkspaceId(rawWorkspaceId)
         }
@@ -254,6 +259,8 @@ class DocumentService(
                 )
             }
 
+        val sealedTables = storage.tableStructures?.let { cipher.sealTables(documentId, content.extractedTables) }
+
         val requiredCredits = Credits.requiredFor(charCount)
 
         return transaction.inTransaction {
@@ -277,6 +284,7 @@ class DocumentService(
                 )
 
             storage.documents.insert(ownerId, draft, sealed)
+            if (sealedTables != null) storage.tableStructures.insert(ownerId, documentId, sealedTables)
             // 원본이 있으면 **같은 경계 안에서** 이어 쓴다. 그때만 `document_originals` 에 행이
             // 생긴다(V3 의 「행이 없다」 표현). 여기서 실패하면 위 문서·아래 변환·작업이 함께
             // 되돌아간다 — 「원본 저장은 실패했는데 업로드는 성공」이 구조적으로 없다.
@@ -381,3 +389,14 @@ class DocumentService(
         workspaces.findOwnedId(ownerId, workspaceId)
             ?: throw NotFoundException(WORKSPACE_NOT_FOUND_FOR_DOCUMENT_MESSAGE)
 }
+
+/** Empty metadata distinguishes a new document without tables from an unprocessed old document. */
+private fun ContentCipher.sealTables(
+    documentId: UUID,
+    tables: List<TableStructure>,
+): EncryptedContent =
+    encrypt(
+        PlainBody(TableStructurePayloadCodec.encode(tables)),
+        documentId,
+        EncryptedField.DOCUMENT_TABLE_STRUCTURE,
+    )

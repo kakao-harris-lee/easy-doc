@@ -23,6 +23,7 @@ import type {
   ExportFormat,
   ReconvertUnitRequest,
   ReconvertUnitResponse,
+  ReviewHistoryResponse,
   ReviewSupportResponse,
   SaveActionGuideRequest,
   UpdateReviewItemRequest,
@@ -444,6 +445,22 @@ export function updateReviewSupportItem(
   )
 }
 
+/** GET /conversions/{id}/review-history — 최근순 기록을 불투명 cursor로 읽는다. */
+export function getReviewHistory(
+  conversionId: string,
+  params: { cursor?: string; limit?: number } = {},
+  signal?: AbortSignal,
+): Promise<ReviewHistoryResponse> {
+  const query = new URLSearchParams()
+  if (params.cursor !== undefined) query.set('cursor', params.cursor)
+  if (params.limit !== undefined) query.set('limit', String(params.limit))
+  const suffix = query.size > 0 ? `?${query.toString()}` : ''
+  return requestJson<ReviewHistoryResponse>(
+    `/conversions/${conversionId}/review-history${suffix}`,
+    { signal },
+  )
+}
+
 /** GET /conversions/{id}/action-guide — 저장된 안내문과 재방문용 작업 ID를 읽는다. */
 export function getActionGuide(
   conversionId: string,
@@ -581,6 +598,18 @@ export async function downloadActionGuide(
     {},
   )
   return { blob: await response.blob(), filename: 'action-guide.txt' }
+}
+
+/** GET /conversions/{id}/review-history/export — 요청 시점까지의 기록 TXT를 받는다. */
+export async function downloadReviewHistory(
+  conversionId: string,
+  signal?: AbortSignal,
+): Promise<DownloadedFile> {
+  const response = await send(`/conversions/${conversionId}/review-history/export`, { signal })
+  return {
+    blob: await response.blob(),
+    filename: parseFilename(response.headers.get('Content-Disposition')) ?? 'review-history.txt',
+  }
 }
 
 /**

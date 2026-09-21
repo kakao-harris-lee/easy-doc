@@ -5,7 +5,11 @@ import kr.easydoc.application.crypto.ContentCipher
 import kr.easydoc.application.document.CONTENT_REVISION_CONFLICT_MESSAGE
 import kr.easydoc.application.document.CONVERSION_NOT_DONE_MESSAGE
 import kr.easydoc.application.document.CONVERSION_NOT_FOUND_MESSAGE
+import kr.easydoc.application.document.ConversionRepository
 import kr.easydoc.application.document.DocumentRepository
+import kr.easydoc.application.document.NoOpReviewHistoryAppender
+import kr.easydoc.application.document.ReviewHistoryAppender
+import kr.easydoc.application.document.ReviewHistoryArtifactJson
 import kr.easydoc.core.actionguide.ActionGuideCandidate
 import kr.easydoc.core.actionguide.ActionGuideCandidateParser
 import kr.easydoc.core.actionguide.ActionGuideCandidateValidator
@@ -63,6 +67,8 @@ class ActionGuideContentService(
     private val cipher: ContentCipher,
     private val transaction: TransactionRunner,
     private val clock: Clock = Clock.systemUTC(),
+    private val conversions: ConversionRepository? = null,
+    private val reviewHistory: ReviewHistoryAppender = NoOpReviewHistoryAppender,
 ) {
     fun get(
         ownerId: UUID,
@@ -183,8 +189,42 @@ class ActionGuideContentService(
                     createdAt = previous?.createdAt ?: now,
                     updatedAt = now,
                 )
+            if (previous?.status == ActionGuideStatus.REVIEWED.wireName &&
+                !canMarkReviewed &&
+                previous.basedOnContentRevision == context.contentRevision
+            ) {
+                // The prior reviewed guide is the artifact being invalidated. Capture it before
+                // replacing the row, and keep its guide revision attached to that old snapshot.
+                reviewHistory.appendInvalidatedByEdit(
+                    ownerId = ownerId,
+                    conversionId = conversionId,
+                    contentRevision = context.contentRevision,
+                    contentText = currentBody(ownerId, conversionId),
+                    artifactRevision = previous.guideRevision,
+                    guideId = previous.guideId,
+                    artifactJson =
+                        ReviewHistoryArtifactJson.actionGuide(
+                            openGuide(previous, context.contentRevision).content,
+                        ),
+                )
+            }
+            // A stale reviewed guide was already invalidated by the body edit that advanced the
+            // conversion revision. Do not append a second event here: the current body is the
+            // new revision and must never be attached to the old guide artifact. The candidate
+            // replacement below is a draft for the new revision.
             if (!contents.saveGuide(ownerId, expectedContentRevision, expectedGuideRevision, updated)) {
                 throw ConflictException(GUIDE_REVISION_CONFLICT_MESSAGE)
+            }
+            if (canMarkReviewed) {
+                reviewHistory.appendGuideReviewed(
+                    ownerId = ownerId,
+                    conversionId = conversionId,
+                    contentRevision = context.contentRevision,
+                    guideId = updated.guideId,
+                    guideRevision = updated.guideRevision,
+                    contentText = currentBody(ownerId, conversionId),
+                    artifactJson = ReviewHistoryArtifactJson.actionGuide(content),
+                )
             }
             openGuide(updated, context.contentRevision)
         }
@@ -230,6 +270,18 @@ class ActionGuideContentService(
             documents.findOwnedSource(ownerId, documentId)
                 ?: throw NotFoundException(CONVERSION_NOT_FOUND_MESSAGE)
         return splitUnits(cipher.decrypt(source.sourceText, documentId, EncryptedField.DOCUMENT_SOURCE_TEXT).value)
+    }
+
+    /** Captures the body revision used by this guide without putting plaintext in a repository port. */
+    private fun currentBody(
+        ownerId: UUID,
+        conversionId: UUID,
+    ): String? {
+        val stored = conversions?.findOwnedResult(ownerId, conversionId) ?: return null
+        return stored.ciphertexts.editedText
+            ?.let { cipher.decrypt(it, conversionId, EncryptedField.CONVERSION_EDITED_TEXT).value }
+            ?: stored.ciphertexts.easyText
+                ?.let { cipher.decrypt(it, conversionId, EncryptedField.CONVERSION_EASY_TEXT).value }
     }
 
     private fun openCandidate(stored: StoredActionGuideCandidate): ActionGuideCandidate =

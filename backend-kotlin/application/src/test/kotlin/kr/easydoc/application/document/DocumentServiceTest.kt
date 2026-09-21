@@ -19,6 +19,7 @@ import kr.easydoc.core.document.FALLBACK_TITLE
 import kr.easydoc.core.document.MAX_CONVERTIBLE_CHARS
 import kr.easydoc.core.document.MAX_UPLOAD_BYTES
 import kr.easydoc.core.document.SourceFormat
+import kr.easydoc.core.document.TableStructurePayloadCodec
 import kr.easydoc.core.exceptions.DocumentExtractionException
 import kr.easydoc.core.exceptions.EmailNotVerifiedException
 import kr.easydoc.core.exceptions.InvalidInputException
@@ -43,6 +44,32 @@ import java.util.UUID
 
 /** 문서 등록 유스케이스 — Spring 도 DB 도 없이 대역으로 돈다. */
 class DocumentServiceTest {
+    @Test
+    fun `새 문서의 빈 표 목록은 과거 문서의 메타데이터 없음과 구분한다`() {
+        val stored = mutableMapOf<UUID, EncryptedContent>()
+        val tables =
+            object : DocumentTableStructureRepository {
+                override fun insert(
+                    ownerId: UUID,
+                    documentId: UUID,
+                    payload: EncryptedContent,
+                ) {
+                    stored[documentId] = payload
+                }
+            }
+        val world = World(tableStructures = tables)
+
+        val accepted = world.service.createFromText(OWNER, "충분한 단어가 있는 본문", null, null)
+
+        val payload =
+            world.cipher.decrypt(
+                stored.getValue(accepted.documentId),
+                accepted.documentId,
+                EncryptedField.DOCUMENT_TABLE_STRUCTURE,
+            )
+        assertThat(TableStructurePayloadCodec.decodeOrNull(payload.value)).isEmpty()
+    }
+
     @Test
     @DisplayName("이메일 미인증 계정은 붙여넣기도 파일도 403 — 본문을 보기 전에 끊긴다")
     fun `미인증 계정은 문서를 등록할 수 없다`() {
@@ -740,6 +767,7 @@ class DocumentServiceTest {
          * 일부러 어긋난 크기를 준다.
          */
         extractedStructure: SourceStructure? = null,
+        tableStructures: DocumentTableStructureRepository? = null,
     ) {
         val transaction = RecordingTransactionRunner()
         val cipher = FakeContentCipher(writeKeyVersion, transaction)
@@ -762,6 +790,7 @@ class DocumentServiceTest {
                         originals = originals,
                         conversions = conversions,
                         queue = queue,
+                        tableStructures = tableStructures,
                     ),
                 workspaces = workspaces,
                 cipher = cipher,

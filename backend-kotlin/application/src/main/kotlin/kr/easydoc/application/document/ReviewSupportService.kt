@@ -100,6 +100,22 @@ data class ReviewSupportView(
     val assessment: ReviewAssessmentView?,
 )
 
+private data class ReviewHistoryItemMutation(
+    val ownerId: UUID,
+    val conversionId: UUID,
+    val contentRevision: Long,
+    val assessmentId: UUID,
+    val itemId: UUID,
+    val reviewRevision: Long,
+    val state: ReviewItemState,
+    val contentText: String?,
+    val analysis: ReviewAnalysis,
+) {
+    override fun toString(): String =
+        "ReviewHistoryItemMutation(conversion=$conversionId, revision=$contentRevision, " +
+            "item=$itemId, state=$state, contentText=${contentText?.length ?: 0}자)"
+}
+
 /**
  * R1 규칙 분석과 확인 상태 저장. LLM을 호출하지 않는다.
  *
@@ -115,6 +131,7 @@ class ReviewSupportService(
     private val cipher: ContentCipher,
     private val transaction: TransactionRunner,
     private val clock: Clock = Clock.systemUTC(),
+    private val reviewHistory: ReviewHistoryAppender = NoOpReviewHistoryAppender,
 ) {
     fun get(
         ownerId: UUID,
@@ -233,6 +250,19 @@ class ReviewSupportService(
                 if (!assessments.update(ownerId, assessmentId, stored.reviewRevision, nextPayload, nextRevision)) {
                     throw ConflictException(REVIEW_REVISION_CONFLICT_MESSAGE)
                 }
+                appendItemHistory(
+                    ReviewHistoryItemMutation(
+                        ownerId = ownerId,
+                        conversionId = conversionId,
+                        contentRevision = expectedContentRevision,
+                        assessmentId = assessmentId,
+                        itemId = itemId,
+                        reviewRevision = nextRevision,
+                        state = state,
+                        contentText = currentBody(locked)?.value,
+                        analysis = nextAnalysis,
+                    ),
+                )
                 stored.copy(reviewRevision = nextRevision, payload = nextPayload)
             }
         return ReviewSupportView(ReviewSupportStatus.READY, open(updated))
@@ -250,6 +280,26 @@ class ReviewSupportService(
             ?.let { cipher.decrypt(it, locked.envelope.conversionId, EncryptedField.CONVERSION_EDITED_TEXT) }
             ?: locked.envelope.ciphertexts.easyText
                 ?.let { cipher.decrypt(it, locked.envelope.conversionId, EncryptedField.CONVERSION_EASY_TEXT) }
+
+    private fun appendItemHistory(mutation: ReviewHistoryItemMutation) {
+        val type =
+            when (mutation.state) {
+                ReviewItemState.CONFIRMED -> ReviewHistoryEventType.ITEM_CONFIRMED
+                ReviewItemState.NEEDS_REVIEW -> ReviewHistoryEventType.ITEM_REOPENED
+                ReviewItemState.NOT_APPLICABLE -> ReviewHistoryEventType.ITEM_NOT_APPLICABLE
+            }
+        reviewHistory.appendItemEvent(
+            ownerId = mutation.ownerId,
+            conversionId = mutation.conversionId,
+            contentRevision = mutation.contentRevision,
+            assessmentId = mutation.assessmentId,
+            itemId = mutation.itemId,
+            reviewRevision = mutation.reviewRevision,
+            type = type,
+            contentText = mutation.contentText,
+            artifactJson = ReviewHistoryArtifactJson.reviewAnalysis(mutation.analysis),
+        )
+    }
 
     private fun seal(
         id: UUID,

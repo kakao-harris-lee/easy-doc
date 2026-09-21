@@ -151,6 +151,11 @@ else
   export EASYDOC_REVIEW_SUPPORT_ENABLED=true
   # R2 행동 안내도 일회용 스택에서만 켠다. worker는 아래 fake profile로 외부 호출을 막는다.
   export EASYDOC_ACTION_GUIDE_ENABLED=true
+  # R4/R5도 일회용 브라우저 검증에서만 기본 활성화한다. 제품 기본값은 false다.
+  export EASYDOC_TABLE_RELATIONS_ENABLED="${EASYDOC_TABLE_RELATIONS_ENABLED:-true}"
+  export EASYDOC_REVIEW_HISTORY_ENABLED="${EASYDOC_REVIEW_HISTORY_ENABLED:-true}"
+  # 사전 팝업 E19도 compose.e2e.yml과 같은 조건에서만 열린다(제품 기본값은 꺼짐).
+  export EASYDOC_DICTIONARY_LOOKUP_ENABLED="${EASYDOC_DICTIONARY_LOOKUP_ENABLED:-true}"
   export EASYDOC_LLM_PROVIDER=fake
   # 행동 안내의 예약/차감을 실제 API에서 검증하되 일회용 계정에만 합성 크레딧을 부여한다.
   export EASYDOC_CREDITS_SIGNUP_GRANT=1000

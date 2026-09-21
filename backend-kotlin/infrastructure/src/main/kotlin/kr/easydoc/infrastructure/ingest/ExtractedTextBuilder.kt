@@ -22,15 +22,18 @@ internal class ExtractedTextBuilder(
     override fun add(
         block: String,
         kind: UnitKind,
-    ) {
+    ): List<Int> {
+        val indexes = mutableListOf<Int>()
         for (line in block.lineSequence()) {
             val trimmed = line.trim()
             if (trimmed.isEmpty()) continue
             if (builder.isNotEmpty()) builder.append('\n')
             builder.append(trimmed)
+            indexes += kinds.size
             kinds += kind
             ensureWithinLimit(builder.length.toLong())
         }
+        return indexes
     }
 
     /**
@@ -62,6 +65,7 @@ internal class ExtractedTextBuilder(
 internal class ExtractionOutcome(
     val text: String,
     val structure: SourceStructure,
+    val tables: List<kr.easydoc.core.document.TableStructure> = emptyList(),
 ) {
     /** 길이만 남긴다. 본문은 나가지 않는다. */
     override fun toString(): String = "ExtractionOutcome(${text.length}자, $structure)"
@@ -73,7 +77,7 @@ internal interface BlockSink {
     fun add(
         block: String,
         kind: UnitKind = UnitKind.BODY,
-    )
+    ): List<Int>
 
     fun ensureRoomFor(pendingChars: Int)
 }
@@ -95,10 +99,11 @@ internal class BlockList(
     override fun add(
         block: String,
         kind: UnitKind,
-    ) {
+    ): List<Int> {
         ensureRoomFor(block.length)
         totalChars += block.length
         collected += block
+        return emptyList()
     }
 
     override fun ensureRoomFor(pendingChars: Int) {

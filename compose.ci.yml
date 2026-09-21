@@ -30,6 +30,9 @@ services:
       - ./data/golden:/data/golden:ro
       # R2 오프라인 회귀는 보존한 실제 모델 응답을 재검증하며 provider를 호출하지 않는다.
       - ./docs/reports/2026-09-21-r2-model-evaluation-artifacts:/docs/reports/2026-09-21-r2-model-evaluation-artifacts:ro
+      # R2 3회 평가(bounded-quality)의 동결 응답. round3 12개 재생 회귀가 같은 방식으로
+      # 저장소 루트의 이 디렉터리를 읽는다(유료 호출 없음).
+      - ./docs/reports/2026-09-21-r2-bounded-quality-artifacts:/docs/reports/2026-09-21-r2-bounded-quality-artifacts:ro
 
   frontend-check:
     profiles: [ci]

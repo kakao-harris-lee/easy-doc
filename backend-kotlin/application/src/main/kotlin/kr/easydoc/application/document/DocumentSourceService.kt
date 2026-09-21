@@ -3,6 +3,7 @@ package kr.easydoc.application.document
 import kr.easydoc.application.crypto.ContentCipher
 import kr.easydoc.core.crypto.EncryptedField
 import kr.easydoc.core.document.DocumentSourceView
+import kr.easydoc.core.document.TableStructurePayloadCodec
 import kr.easydoc.core.exceptions.NotFoundException
 import java.util.UUID
 
@@ -20,6 +21,7 @@ import java.util.UUID
 class DocumentSourceService(
     private val documents: DocumentRepository,
     private val cipher: ContentCipher,
+    private val tableRelationsEnabled: Boolean = false,
 ) {
     /**
      * 내 문서의 원문을 읽는다. 없거나 내 것이 아니면 **404** — 저장소가 두 경우를 가르지
@@ -35,6 +37,15 @@ class DocumentSourceService(
         val stored =
             documents.findOwnedSource(ownerId, documentId)
                 ?: throw NotFoundException(DOCUMENT_NOT_FOUND_MESSAGE)
+        val tables =
+            if (!tableRelationsEnabled) {
+                null
+            } else {
+                stored.tableStructures
+                    ?.let {
+                        cipher.decrypt(it, stored.documentId, EncryptedField.DOCUMENT_TABLE_STRUCTURE).value
+                    }?.let(TableStructurePayloadCodec::decodeOrNull)
+            }
         return DocumentSourceView(
             documentId = stored.documentId,
             sourceFormat = stored.sourceFormat,
@@ -42,6 +53,7 @@ class DocumentSourceService(
             // 결속 인자는 저장할 때와 같아야 한다 — 문서 식별자와 그 열
             // (`DocumentService.store` 의 봉인과 짝이다).
             sourceText = cipher.decrypt(stored.sourceText, stored.documentId, EncryptedField.DOCUMENT_SOURCE_TEXT),
+            tables = tables,
         )
     }
 }

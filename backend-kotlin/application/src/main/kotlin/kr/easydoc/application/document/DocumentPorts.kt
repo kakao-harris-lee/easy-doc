@@ -49,7 +49,9 @@ class DocumentDraft(
  * [StoredConversion] 과 같은 형태다: 저장소 포트는 평문을 보지 못하고, 여는 일은 유스케이스가
  * 한다. 형식과 문자 수를 암호문 옆에 함께 드는 것은 계약 `DocumentSourceResponse` 가 그 셋을
  * 한 응답으로 요구하기 때문이고, 셋이 **같은 행**에서 와야 어긋난 조합이 생기지 않는다.
+ * LongParameterList 예외는 암호문과 구조 메타데이터를 함께 읽는 이 행 투영에 한정한다.
  */
+@Suppress("LongParameterList")
 class StoredSourceText(
     val documentId: UUID,
     val sourceFormat: SourceFormat,
@@ -68,6 +70,8 @@ class StoredSourceText(
      * [structureOrBody] 로 「전부 BODY」로 읽는다.
      */
     val structure: SourceStructure? = null,
+    /** R4 표 구조 좌표 payload. 없으면 표가 없거나 이전 문서다. */
+    val tableStructures: EncryptedContent? = null,
 ) {
     /**
      * [structure] 를 읽는다 — 없으면(옛 문서) [unitCount] 개 전부 BODY, **있어도 그 크기가
@@ -92,6 +96,16 @@ class StoredSourceText(
      * 하는 것은 회전이고, 그쪽은 [EncryptedContent] 를 직접 든다.
      */
     override fun toString(): String = "StoredSourceText($documentId, ${sourceFormat.wireName}, ${charCount}자)"
+}
+
+/** 문서별 R4 표 구조 payload 저장소. payload 평문은 이 포트 경계를 넘지 않는다. */
+interface DocumentTableStructureRepository {
+    /** 문서 행과 같은 트랜잭션에서 파생 구조를 저장한다. */
+    fun insert(
+        ownerId: UUID,
+        documentId: UUID,
+        payload: EncryptedContent,
+    )
 }
 
 /** `documents` 저장소. */
@@ -658,6 +672,8 @@ class DocumentStorage(
     val originals: DocumentOriginalRepository,
     val conversions: ConversionRepository,
     val queue: ConversionQueue,
+    /** R4 빈이면 null인 호환 포트. root가 feature wiring 때 실제 저장소를 주입한다. */
+    val tableStructures: DocumentTableStructureRepository? = null,
 )
 
 /** 작업 공간 **읽기 전용** 포트. */

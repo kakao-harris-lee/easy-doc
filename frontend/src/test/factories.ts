@@ -20,6 +20,7 @@ import type {
   SegmentMap,
   SegmentMapUnit,
   SourceUnitKind,
+  TableStructure,
   UserResponse,
   WorkspaceCreditsResponse,
   WorkspaceListItem,
@@ -284,8 +285,11 @@ export function documentSource(
  * 요청이 아니다. 세 갈래를 따로 두는 이유는 §9다: 로딩·원문·실패는 서로 다른 화면이고,
  * 테스트에서도 그 셋을 헷갈리지 않게 이름으로 갈라 둔다.
  */
-export function sourceReady(text = '원문입니다.'): DocumentSource {
-  return { state: { status: 'ready', text }, retry: () => undefined }
+export function sourceReady(
+  text = '원문입니다.',
+  tables?: TableStructure[] | null,
+): DocumentSource {
+  return { state: { status: 'ready', text, tables }, retry: () => undefined }
 }
 
 export function sourceLoading(): DocumentSource {
