@@ -438,7 +438,7 @@ class ValueSlotInvariantReachTest {
         val payload =
             json.writeValueAsString(
                 buildMap {
-                    put("text", "안내문 본문입니다")
+                    put("text", "안내문 본문 내용을 등록합니다")
                     if (workspaceId != null) put("workspace_id", workspaceId)
                 },
             )

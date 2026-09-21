@@ -28,7 +28,7 @@ test.describe('개인정보 경고용 검출', () => {
     await verifyEmail(page, account)
 
     await page.getByLabel('문서 제목').fill('E2E 개인정보 경고 확인용 안내')
-    await page.getByLabel('바꿀 글').fill(`주민등록번호는 ${VALID_RRN} 입니다`)
+    await page.getByLabel('바꿀 글').fill(`주민등록번호는 ${VALID_RRN} 입니다. 안내문입니다.`)
 
     const [rejected] = await Promise.all([
       page.waitForResponse(
@@ -74,7 +74,7 @@ test.describe('개인정보 경고용 검출', () => {
       name: '안내문.txt',
       mimeType: 'text/plain',
       // Luhn을 통과하는 표준 테스트 카드번호(Visa 공개 테스트 번호).
-      buffer: Buffer.from('카드번호는 4111-1111-1111-1111 입니다', 'utf-8'),
+      buffer: Buffer.from('카드번호는 4111-1111-1111-1111 입니다. 안내문입니다.', 'utf-8'),
     })
     await page.getByLabel('문서 제목').fill('E2E 개인정보 경고 확인용 파일')
 

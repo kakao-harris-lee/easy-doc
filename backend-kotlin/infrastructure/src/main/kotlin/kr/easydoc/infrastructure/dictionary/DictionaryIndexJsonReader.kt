@@ -1,5 +1,6 @@
 package kr.easydoc.infrastructure.dictionary
 
+import kr.easydoc.core.dictionary.DefinitionReviewStatus
 import kr.easydoc.core.dictionary.DictionaryEntry
 import kr.easydoc.core.dictionary.DictionaryExample
 import kr.easydoc.core.dictionary.DictionaryIndex
@@ -13,7 +14,7 @@ import java.io.InputStream
  * `easy_dict.index.json`(easy-dictionary §4.3)을 [DictionaryIndex] 로 옮기는 어댑터.
  *
  * core 에는 JSON 라이브러리가 없으므로(`core/build.gradle.kts`) 축약 wire 키(`t`/`e`/`d`/`s`/
- * `r`/`p`/`g`/`c`/`x`)를 도메인 이름으로 푸는 자리는 **여기 한 곳**이다. 색인은 1.5MB 라 변환
+ * `r`/`p`/`g`/`c`/`x`/`v`)를 도메인 이름으로 푸는 자리는 **여기 한 곳**이다. 색인은 1.5MB 라 변환
  * 1건마다 읽지 않는다 — 조립 시점(`ConversionWorkerConfiguration`)에 한 번 읽어 재사용하고,
  * 만들어진 [DictionaryIndex] 는 읽기 전용이라 여러 스레드가 함께 써도 안전하다.
  */
@@ -61,7 +62,14 @@ class DictionaryIndexJsonReader(private val json: JsonMapper = JsonMapper.builde
             caution = optional(node, FIELD_CAUTION),
             tags = node.path(FIELD_TAGS).toList().map { it.stringValue("") },
             examples = node.path(FIELD_EXAMPLES).toList().map(::example),
+            definitionReviewStatus = definitionReviewStatus(node),
         )
+
+    /** `v`가 없는 기존 색인은 검수되지 않은 정의만 가진 것으로 읽는다. */
+    private fun definitionReviewStatus(node: JsonNode): DefinitionReviewStatus =
+        optional(node, FIELD_DEFINITION_REVIEW)
+            ?.let(DefinitionReviewStatus::ofWire)
+            ?: DefinitionReviewStatus.UNVERIFIED
 
     private fun example(node: JsonNode): DictionaryExample =
         DictionaryExample(
@@ -120,6 +128,9 @@ class DictionaryIndexJsonReader(private val json: JsonMapper = JsonMapper.builde
         private const val FIELD_TAGS = "g"
         private const val FIELD_CAUTION = "c"
         private const val FIELD_EXAMPLES = "x"
+
+        /** 정의 자체의 명시적 검수 provenance. 없으면 UNVERIFIED다. */
+        private const val FIELD_DEFINITION_REVIEW = "v"
         private const val FIELD_EXAMPLE_BEFORE = "b"
         private const val FIELD_EXAMPLE_AFTER = "a"
         private const val FIELD_EXAMPLE_GOLDEN = "y"

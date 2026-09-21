@@ -61,6 +61,13 @@ class ConvertDocumentUseCase(
     private val explanationPromptVersion: ExplanationPromptVersion = ExplanationPromptVersion.BASELINE,
     private val dictionary: DictionaryContextSource = NoDictionaryContext,
 ) {
+    /**
+     * 재변환이 저장된 현재 본문 문맥을 사용할 수 있는지. 기본 BASELINE은 기존 재변환 프롬프트와
+     * 복호화 비용까지 그대로 유지한다.
+     */
+    val reconversionContextEnabled: Boolean
+        get() = explanationPromptVersion == ExplanationPromptVersion.R3
+
     /** worker 가 변환 유스케이스에 들어가기 전 실패를 기록할 때 쓰는 벤더 이름. */
     val providerName: String
         get() = provider.name
@@ -99,6 +106,12 @@ class ConvertDocumentUseCase(
         dictionaryContext: String? = null,
         structure: SourceStructure = SourceStructure.allBody(splitUnits(source).size),
         purpose: LlmCallPurpose = LlmCallPurpose.CONVERT,
+        /**
+         * 재변환 대상 단위보다 앞선, 저장된 쉬운 글 문맥. R3 재변환에서만 프롬프트에 싣고
+         * 기본 BASELINE 경로에서는 무시한다. 원문 전체를 다시 보내거나 provider를 추가 호출하지
+         * 않는다.
+         */
+        priorBodyContext: String? = null,
     ): ConversionResult =
         Pass(
             provider,
@@ -106,7 +119,15 @@ class ConvertDocumentUseCase(
             options,
             dictionaryContext,
             dictionary,
-            StructureInput(structure, structureHintOptions, explanationPromptVersion),
+            StructureInput(
+                structure = structure,
+                options = structureHintOptions,
+                explanationVersion = explanationPromptVersion,
+                priorBodyContext =
+                    priorBodyContext
+                        ?.takeIf { purpose == LlmCallPurpose.RECONVERT }
+                        ?.takeIf { explanationPromptVersion == ExplanationPromptVersion.R3 },
+            ),
             purpose,
             clock,
         ).run(source)
@@ -120,6 +141,7 @@ private class StructureInput(
     val structure: SourceStructure,
     val options: StructureHintOptions,
     val explanationVersion: ExplanationPromptVersion,
+    val priorBodyContext: String?,
 )
 
 /** 변환 1건의 실행 상태. */
@@ -152,7 +174,13 @@ private class Pass(
             if (purpose == LlmCallPurpose.RECONVERT &&
                 structureInput.explanationVersion == ExplanationPromptVersion.R3
             ) {
-                ExplanationPromptVersion.R3_UNIT
+                // null means that the service could not prove the preceding body; an empty or
+                // non-empty value is an equally verified mapping and can use the full R3 policy.
+                if (structureInput.priorBodyContext == null) {
+                    ExplanationPromptVersion.R3_UNIT
+                } else {
+                    ExplanationPromptVersion.R3
+                }
             } else {
                 structureInput.explanationVersion
             }
@@ -168,7 +196,15 @@ private class Pass(
         val safeStructure = safeStructureFor(structure, sourceUnits)
         val maxRuns = structureInput.options.maxRuns
         val structureSection = renderStructureSection(safeStructure, sourceUnits, documentIds, maxRuns)
-        val prompt = LlmPrompt.forConversion(source, documentIds, context, structureSection, explanationVersion)
+        val prompt =
+            LlmPrompt.forConversion(
+                source,
+                documentIds,
+                context,
+                structureSection,
+                explanationVersion,
+                structureInput.priorBodyContext,
+            )
         val charCount = source.length
 
         // ① 변환 패스 — 항상 정확히 1회.
@@ -239,6 +275,7 @@ private class Pass(
                 structureSection,
                 source,
                 explanationVersion,
+                structureInput.priorBodyContext,
             )
         val candidate =
             (complete(prompt, repairPurpose, source.length) as? Outcome.Body)?.text

@@ -79,6 +79,31 @@ class DictionaryPromptContextTest {
         assertThat(r3.text).doesNotContain("- 내방", "- 환수", "되거둠", "설명:", "참고 예문")
     }
 
+    @Test
+    fun `R3 사전 컨텍스트는 명시적으로 검수된 공식 이름 정의만 전달한다`() {
+        val entry =
+            DictionaryEntry(
+                term = "국민기초생활 보장법",
+                easyTerm = "국민기초생활 보장법",
+                strategy = ReplaceStrategy.KEEP,
+                risk = RiskLevel.HIGH,
+                priority = 200,
+                definition = "생활이 어려운 사람을 돕는 법입니다.",
+                caution = "내부 검수 메모: 다른 사업 조건과 섞지 마세요.",
+                examples = listOf(DictionaryExample("법 안내", "법을 쉽게 안내", isGolden = true)),
+                definitionReviewStatus = DefinitionReviewStatus.REVIEWED,
+            )
+        val context =
+            DictionaryFixture()
+                .add(entry)
+                .build()
+                .renderPromptContext("국민기초생활 보장법을 확인하세요.", unlimited.copy(officialNamesOnly = true))
+
+        assertThat(context.text).contains("설명(검수된 정의): 생활이 어려운 사람을 돕는 법입니다.")
+        assertThat(context.text)
+            .doesNotContain("내부 검수 메모", "참고 예문", "법을 쉽게 안내")
+    }
+
     @Nested
     @DisplayName("세 구역 렌더링")
     inner class Sections {

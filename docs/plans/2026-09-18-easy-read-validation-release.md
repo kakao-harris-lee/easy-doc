@@ -1,8 +1,10 @@
 # 쉬운글 개선 검증·출시·운영 계획
 
-작성일: 2026-09-18 · 상태(2026-09-21): R0·R1과 R2 사용자 흐름(ER-07) 구현·fake E2E·PR #133 원격 CI 완료, R3 opt-in 프롬프트 기반(PR #135) 원격 CI 완료. D03/D04와 R2 평가 누적 US$50 상한 승인. 실제 모델 20회 평가 완료·후보 검증 11회 통과/9회 거절로 출시 기준 미충족. 소수 크레딧 구현·로컬 검증 완료(운영 미적용), 원격 상태는 [PR #137](https://github.com/kakao-harris-lee/easy-doc/pull/137)에서 확인한다. AC-R3·파일럿·배포는 미완료.
+작성일: 2026-09-18 · 상태(2026-09-21): R0·R1과 R2 사용자 흐름(ER-07) 구현·fake E2E·PR #133 원격 CI 완료, R3 opt-in 프롬프트 기반(PR #135) 원격 CI 완료. D03/D04와 R2 평가 누적 US$50 상한 승인. 최초 모델 평가 후 최대 3회 보완을 종료했다. 최종 개발 회차 후보 검증 11/12로 출시 기준은 미충족이며, [누적 56호출·비용 원장](../reports/2026-09-21-r2-bounded-quality.md)을 최신 근거로 사용한다. 소수 크레딧 구현·로컬 검증 완료(운영 미적용), 원격 상태는 [PR #137](https://github.com/kakao-harris-lee/easy-doc/pull/137)에서 확인한다. AC-R3·파일럿·배포는 미완료.
 
 ER-05는 fake runner와 PostgreSQL 통합 테스트로 작업·과금·중복 호출 방지를 확인했다. ER-06은 구조·원문 인용·일부 사실 규칙, 암호화 저장·키 회전, stale 교체·검수 상태·TXT 출력 경계를 확인했다. ER-07은 실제 브라우저·API·DB·fake worker를 거쳐 생성 전 확인, 재방문, 후보 적용, 편집·원문 대조, 저장·TXT, 충돌·stale 경계를 확인했다. [PR #133 최종 CI](https://github.com/kakao-harris-lee/easy-doc/actions/runs/35512616602)는 5개 작업이 성공했다. 당시 CI는 fake 경로 검증이다. 이후 실제 provider 20회 평가는 2026-09-21에 수행했으며 아래 §6의 결과와 구분한다.
+
+2026-09-21 후속: R2 오탐 보완과 이전 20개 결과의 오프라인 재생은 PR #138에서 완료했다. 신규 생성과 의미 보존은 [최대 3회 평가·비용 원장](../reports/2026-09-21-r2-bounded-quality.md)으로 별도 판정한다. R3는 검수 정의·재변환 문맥 구현과 전체 백엔드 검증을 마쳤으며, 실제 모델 품질·검수 데이터 승인 전까지 기본 BASELINE을 유지한다.
 
 연결: [로드맵](2026-09-18-easy-read-improvement-roadmap.md) · [구현 명세](2026-09-18-easy-read-implementation-spec.md) · [UX](2026-09-18-easy-read-ux-spec.md) · [작업 ID](2026-09-18-easy-read-delivery-plan.md).
 

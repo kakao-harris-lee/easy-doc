@@ -82,7 +82,12 @@ object RequestFieldProbes {
                     ""
                 } else {
                     val marker = PLAIN_MARKERS[counter++ % PLAIN_MARKERS.length]
-                    marker + FILLER_CHAR.repeat(length - 1)
+                    if (field == DOCUMENT_TEXT_FIELD && length >= DOCUMENT_TEXT_WORD_PREFIX_LENGTH) {
+                        val prefix = "$marker 가 나 다 "
+                        prefix + FILLER_CHAR.repeat(length - prefix.length)
+                    } else {
+                        marker + FILLER_CHAR.repeat(length - 1)
+                    }
                 }
             }
         }
@@ -212,6 +217,9 @@ object RequestFieldProbes {
 
     private const val BELOW = "아래"
     private const val ABOVE = "위"
+
+    private const val DOCUMENT_TEXT_FIELD = "DocumentTextRequest.text"
+    private const val DOCUMENT_TEXT_WORD_PREFIX_LENGTH = 8
 
     /** 정규화 프로브가 상한 필드에서 원시 길이를 경계 위로 올리는 데 쓰는 잡음 수. */
     private const val DIVERGENCE_NOISE = 5

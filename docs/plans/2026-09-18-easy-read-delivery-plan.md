@@ -27,7 +27,7 @@
 
 ## 3. 작업 분할과 의존성
 
-ER-00~ER-04는 2026-09-18, ER-05는 2026-09-19, ER-06~ER-07은 2026-09-20에 구현과 fake 검증을 마쳤다. [PR #133](https://github.com/kakao-harris-lee/easy-doc/pull/133)은 병합됐고 [최종 원격 CI](https://github.com/kakao-harris-lee/easy-doc/actions/runs/35512616602)가 통과했다. [PR #135](https://github.com/kakao-harris-lee/easy-doc/pull/135)는 R3 프롬프트의 선택 경로를 추가했고 [원격 CI](https://github.com/kakao-harris-lee/easy-doc/actions/runs/35516007442)가 통과했다. 기본값은 이전 프롬프트이며, R3의 검수 정의 선별·재변환 첫 등장 판정·실제 생성 품질은 아직 검증되지 않았다. 기능은 기본 OFF이고 유료 품질 평가·배포·파일럿은 수행하지 않았다. 각 행은 한 PR의 목표 범위이며 커지면 같은 단계 안에서 분할한다.
+ER-00~ER-04는 2026-09-18, ER-05는 2026-09-19, ER-06~ER-07은 2026-09-20에 구현과 fake 검증을 마쳤다. [PR #133](https://github.com/kakao-harris-lee/easy-doc/pull/133)은 병합됐고 [최종 원격 CI](https://github.com/kakao-harris-lee/easy-doc/actions/runs/35512616602)가 통과했다. [PR #135](https://github.com/kakao-harris-lee/easy-doc/pull/135)는 R3 프롬프트의 선택 경로를 추가했고 [원격 CI](https://github.com/kakao-harris-lee/easy-doc/actions/runs/35516007442)가 통과했다. 기본값은 이전 프롬프트다. 2026-09-21에는 R3의 명시적 검수 정의 선별과 현재 저장 본문 기반 재변환 문맥을 후속 구현했고 전체 백엔드 빌드·3,158개 테스트를 통과했다. R3 실제 생성 품질·검수 데이터 승인은 남아 있다. R2 유료 평가는 [최대 3회 보완 원장](../reports/2026-09-21-r2-bounded-quality.md)에 기록하며, 사람 파일럿·운영 배포 완료와 구분한다. 각 행은 한 PR의 목표 범위이며 커지면 같은 단계 안에서 분할한다.
 
 | ID | 의존 | 산출물·수정 경계 | 인수 기준 |
 |---|---|---|---|

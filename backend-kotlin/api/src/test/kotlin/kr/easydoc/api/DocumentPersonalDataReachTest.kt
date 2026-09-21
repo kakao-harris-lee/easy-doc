@@ -43,7 +43,7 @@ class DocumentPersonalDataReachTest {
     fun `주민등록번호 검출은 확인 없이 422 다`() {
         val token = newAccount()
 
-        val response = createFromText(token, textBody("주민등록번호는 $VALID_RRN 입니다"))
+        val response = createFromText(token, textBody("주민등록번호는 $VALID_RRN 입니다 확인합니다"))
 
         assertThat(response.statusCode()).isEqualTo(UNPROCESSABLE)
         assertThat(response.headers().firstValue(PERSONAL_DATA_KINDS_HEADER)).contains(RRN_KIND)
@@ -57,7 +57,7 @@ class DocumentPersonalDataReachTest {
     fun `카드번호 검출은 확인 없이 422 다`() {
         val token = newAccount()
 
-        val response = createFromText(token, textBody("카드번호는 $VALID_CARD 입니다"))
+        val response = createFromText(token, textBody("카드번호는 $VALID_CARD 입니다 확인합니다"))
 
         assertThat(response.statusCode()).isEqualTo(UNPROCESSABLE)
         assertThat(response.headers().firstValue(PERSONAL_DATA_KINDS_HEADER)).contains(CARD_KIND)
@@ -82,7 +82,7 @@ class DocumentPersonalDataReachTest {
     fun `확인하면 붙여넣기도 정상 등록된다`() {
         val token = newAccount()
 
-        val response = createFromText(token, textBody("주민등록번호는 $VALID_RRN 입니다", acknowledged = true))
+        val response = createFromText(token, textBody("주민등록번호는 $VALID_RRN 입니다 확인합니다", acknowledged = true))
 
         assertThat(response.statusCode()).isEqualTo(ACCEPTED)
         assertThat(response.headers().firstValue(PERSONAL_DATA_KINDS_HEADER)).isEmpty()

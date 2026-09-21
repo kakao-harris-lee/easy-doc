@@ -2,9 +2,11 @@ package kr.easydoc.infrastructure.quality
 
 import kr.easydoc.application.conversion.DictionaryContextSource
 import kr.easydoc.application.conversion.NoDictionaryContext
+import kr.easydoc.core.easyread.ExplanationPromptVersion
 import kr.easydoc.infrastructure.dictionary.DictionaryConfiguration
 import kr.easydoc.infrastructure.dictionary.DictionaryLookupProperties
 import kr.easydoc.infrastructure.dictionary.DictionaryProperties
+import kr.easydoc.infrastructure.document.StructureHintProperties
 import kr.easydoc.infrastructure.queue.ConversionWorkerConfiguration
 import java.nio.file.Path
 import kotlin.io.path.isDirectory
@@ -85,29 +87,33 @@ internal class LaneDictionary private constructor(
          * [env] 가 준 환경으로 무엇을 실을지 정한다. [env] 를 인자로 받는 이유는
          * [GoldenLlmLane.plan] 과 같다 — 선택 규칙을 유료 호출 없이 시험하기 위해서다.
          *
-         * [productAssembly] 는 [PRODUCT_ENV] 를 골랐을 때 실제로 조립을 부르는 자리다. 기본값은
-         * 제품 조립 그대로([defaultProductAssembly])이고, 시험에서만 실패를 흉내 내려고 바꿔
-         * 끼운다 — 이 매개변수가 인덱스 위치의 새 기본값이 되는 것은 아니다.
+         * [productAssembly] 는 [PRODUCT_ENV] 를 골랐을 때 실제로 조립을 부르는 자리다. 생략하면
+         * [variant] 에 맞춰 제품 조립 그대로([defaultProductAssembly])를 쓴다. 시험에서만
+         * 실패를 흉내 내려고 바꿔 끼우며, 이 매개변수가 인덱스 위치의 새 기본값이 되는 것은 아니다.
          *
          * 판정 순서:
          * ⑴ [DIRECTORY_ENV] 와 [PRODUCT_ENV] 를 **함께** 설정했으면 거절한다 — 파일 주입과
          * 제품 조립은 같은 자리를 채우는 서로 다른 방식이라, 하나가 조용히 이기면 다음 사람이
          * 리포트만 보고 무엇을 쟀는지 알 수 없다.
          * ⑵ 디렉터리만 설정했는데 없으면 거절한다(기존과 같다).
-         * ⑶ 제품 조립을 요청했는데 색인을 읽을 수 없으면 거절한다 — 조용히 컨텍스트 없이
+         * ⑶ R3에서 디렉터리 주입을 고르면 거절한다 — 제품의 공식 이름 정책을 증명할 수 없는
+         * 임의 자료이기 때문이다. 사전 없이 R3를 재는 것은 명시적 off 조건으로 허용한다.
+         * ⑷ 제품 조립을 요청했는데 색인을 읽을 수 없으면 거절한다 — 조용히 컨텍스트 없이
          * 베이스라인을 재고 A/B 를 쟀다고 적는 것을 막는다.
          */
         fun plan(
             env: (String) -> String?,
             documentIds: List<String>,
-            productAssembly: () -> DictionaryContextSource = ::defaultProductAssembly,
+            variant: GoldenLaneVariant = GoldenLaneVariant.BASELINE,
+            productAssembly: (() -> DictionaryContextSource)? = null,
         ): LaneDictionaryPlan {
             val directoryConfigured = env(DIRECTORY_ENV)?.takeIf(String::isNotBlank)
             val productConfigured = env(PRODUCT_ENV)?.takeIf(String::isNotBlank)
 
             return when {
                 directoryConfigured != null && productConfigured != null -> bothConfigured()
-                productConfigured != null -> planProduct(documentIds, productAssembly)
+                variant == GoldenLaneVariant.R3 && directoryConfigured != null -> r3DirectoryRejected()
+                productConfigured != null -> planProduct(documentIds, variant, productAssembly)
                 directoryConfigured != null -> planDirectory(directoryConfigured, documentIds)
                 else -> LaneDictionaryPlan.Ready(LaneDictionary(null, emptyMap(), documentIds.size))
             }
@@ -118,6 +124,13 @@ internal class LaneDictionary private constructor(
             LaneDictionaryPlan.Unusable(
                 "$DIRECTORY_ENV 와 $PRODUCT_ENV 를 함께 설정할 수 없다 — 파일 주입과 제품 조립은 " +
                     "같은 자리를 채우는 서로 다른 방식이라 하나만 골라야 한다.",
+            )
+
+        /** R3는 제품이 고른 공식 이름 정책만 허용한다 — 임의 파일은 같은 정책임을 증명할 수 없다. */
+        private fun r3DirectoryRejected(): LaneDictionaryPlan.Unusable =
+            LaneDictionaryPlan.Unusable(
+                "$DIRECTORY_ENV 는 ${GoldenLaneVariant.R3.wireName} 변형에서 사용할 수 없다 — " +
+                    "공식 이름만 남기는 제품 사전 조립을 선택하거나 사전 없이 명시적으로 실행하라.",
             )
 
         /** 파일 주입 모드 — [plan] KDoc 판정 순서 ⑵. */
@@ -144,15 +157,18 @@ internal class LaneDictionary private constructor(
          */
         private fun planProduct(
             documentIds: List<String>,
-            productAssembly: () -> DictionaryContextSource,
+            variant: GoldenLaneVariant,
+            productAssembly: (() -> DictionaryContextSource)?,
         ): LaneDictionaryPlan =
             try {
+                val productSource =
+                    productAssembly?.invoke() ?: defaultProductAssembly(variant.explanationPromptVersion)
                 LaneDictionaryPlan.Ready(
                     LaneDictionary(
                         directory = null,
                         contexts = emptyMap(),
                         documentCount = documentIds.size,
-                        productSource = productAssembly(),
+                        productSource = productSource,
                     ),
                 )
             } catch (exc: IllegalStateException) {
@@ -179,13 +195,21 @@ internal class LaneDictionary private constructor(
          * 자체를 미루지는 않는다) — 아래 `catch (exc: IllegalStateException)` 이 여전히
          * 같은 시점에 같은 예외를 잡는다.
          */
-        private fun defaultProductAssembly(): DictionaryContextSource {
+        private fun defaultProductAssembly(
+            explanationPromptVersion: ExplanationPromptVersion,
+        ): DictionaryContextSource {
             // 제품 조립은 두 소비자에 같은 DictionaryProperties 싱글턴 빈을 주입한다 —
             // 여기서도 인스턴스 하나를 만들어 두 호출에 그대로 넘겨 그 배선을 그대로 흉내 낸다.
             val dictionaryProperties = DictionaryProperties()
             val holder =
                 DictionaryConfiguration().dictionaryIndexHolder(DictionaryLookupProperties(), dictionaryProperties)
-            return ConversionWorkerConfiguration().dictionaryContextSource(dictionaryProperties, holder)
+            val promptProperties =
+                StructureHintProperties(contextExplanationVersion = explanationPromptVersion)
+            return ConversionWorkerConfiguration().dictionaryContextSource(
+                dictionaryProperties,
+                holder,
+                promptProperties,
+            )
         }
 
         /**

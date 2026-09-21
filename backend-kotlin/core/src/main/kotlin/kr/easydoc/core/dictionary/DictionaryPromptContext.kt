@@ -31,14 +31,29 @@ internal fun renderDictionaryPromptContext(
     policy: DictionaryContextPolicy,
 ): RenderedDictionaryContext {
     // 최초 등장분만 남긴다 — 이 시점의 순서가 곧 문서 등장 순서다.
-    // R3 배포 색인에는 항목별 검수 상태가 없다. 따라서 검수된 뜻으로 단정할 수 없는
-    // GLOSS/SUBSTITUTE 전체와 KEEP 정의·예문을 생성 근거에서 빼고 공식 이름만 남긴다.
-    // 기본 정책의 사전 A/B 결과와 예산은 그대로 보존한다.
+    // R3에서는 공식 이름만 남기되, 정의는 색인에 명시적으로 REVIEWED provenance가 있을 때만
+    // 전달한다. 배포 색인처럼 provenance가 없는 기존 자료는 검수된 뜻으로 승격하지 않는다.
+    // caution은 내부 검수 메모·사업별 주의 자료와 같은 경계이므로 항상 제거하고, 예문도
+    // 별도의 명시적 provenance가 없으므로 항상 제외한다. 기본 정책의 사전 A/B 결과와 예산은
+    // 그대로 보존한다.
     val promptMatches =
         if (policy.officialNamesOnly) {
             matches
                 .filter { it.entry.strategy == ReplaceStrategy.KEEP }
-                .map { match -> match.copy(entry = match.entry.copy(definition = null, examples = emptyList())) }
+                .map { match ->
+                    match.copy(
+                        entry =
+                            match.entry.copy(
+                                definition =
+                                    match.entry.definition
+                                        ?.takeIf {
+                                            match.entry.definitionReviewStatus == DefinitionReviewStatus.REVIEWED
+                                        },
+                                caution = null,
+                                examples = emptyList(),
+                            ),
+                    )
+                }
         } else {
             matches
         }
@@ -59,6 +74,7 @@ internal fun renderDictionaryPromptContext(
         termTruncated = truncatedByTerms,
         budget = effectiveMaxChars(text, policy),
         maxExamples = policy.maxExamples,
+        markReviewedDefinitions = policy.officialNamesOnly,
     )
 }
 
@@ -119,16 +135,25 @@ private fun keepTopTerms(
  * 잘림 안내만으로도 넘는 물리적 하한이 있어서, 그보다 작은 예산은 항목을 0개로 줄여도 충족할
  * 수 없다. 그때는 빈 문자열보다 하한짜리 블록이 낫다.
  */
+@Suppress("LongParameterList")
 private fun fitToBudget(
     ranked: List<DictionaryMatch>,
     totalFound: Int,
     termTruncated: Boolean,
     budget: Int?,
     maxExamples: Int,
+    markReviewedDefinitions: Boolean,
 ): RenderedDictionaryContext {
     val first =
         RenderedDictionaryContext(
-            text = renderContextBlock(ranked, maxExamples, termTruncated, totalFound),
+            text =
+                renderContextBlock(
+                    ranked,
+                    maxExamples,
+                    termTruncated,
+                    totalFound,
+                    markReviewedDefinitions,
+                ),
             renderedTerms = ranked.size,
             totalTerms = totalFound,
         )
@@ -140,7 +165,7 @@ private fun fitToBudget(
 
     // 여기부터는 예산 때문에 반드시 뭔가 잘리므로 잘림 안내를 항상 켠다.
     var best = first
-    for (fallback in budgetFallbacks(ranked, totalFound, maxExamples)) {
+    for (fallback in budgetFallbacks(ranked, totalFound, maxExamples, markReviewedDefinitions)) {
         best = fallback
         if (budgetedCharCount(fallback.text) <= budget) break
     }
@@ -152,15 +177,16 @@ private fun budgetFallbacks(
     ranked: List<DictionaryMatch>,
     totalFound: Int,
     maxExamples: Int,
+    markReviewedDefinitions: Boolean,
 ): Sequence<RenderedDictionaryContext> =
     sequence {
         for (limit in (maxExamples - 1) downTo 0) {
-            yield(rendering(ranked, limit, totalFound))
+            yield(rendering(ranked, limit, totalFound, markReviewedDefinitions))
         }
         var selected = ranked
         while (selected.isNotEmpty()) {
             selected = selected.dropLast(1)
-            yield(rendering(selected, 0, totalFound))
+            yield(rendering(selected, 0, totalFound, markReviewedDefinitions))
         }
     }
 
@@ -169,9 +195,17 @@ private fun rendering(
     selected: List<DictionaryMatch>,
     exampleLimit: Int,
     totalFound: Int,
+    markReviewedDefinitions: Boolean,
 ): RenderedDictionaryContext =
     RenderedDictionaryContext(
-        text = renderContextBlock(selected, exampleLimit, showNotice = true, totalFound = totalFound),
+        text =
+            renderContextBlock(
+                selected,
+                exampleLimit,
+                showNotice = true,
+                totalFound = totalFound,
+                markReviewedDefinitions = markReviewedDefinitions,
+            ),
         renderedTerms = selected.size,
         totalTerms = totalFound,
     )

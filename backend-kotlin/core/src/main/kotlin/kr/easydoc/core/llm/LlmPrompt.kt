@@ -28,8 +28,10 @@ class LlmPrompt private constructor(
          * 1차 변환 프롬프트. 문서 원문을 받는다.
          *
          * [dictionaryContext] 는 [buildUserPrompt] 로 그대로 내려간다 — 계약은 그쪽 KDoc 에 있다.
-         * 시스템 프롬프트는 문서에 따라 달라지지 않으므로 건드리지 않는다.
+         * 시스템 프롬프트는 문서 본문에 따라 달라지지 않으며, R3 사전 자료가 있을 때만 자료
+         * 취급 guard를 추가한다.
          */
+        @Suppress("LongParameterList")
         fun forConversion(
             documentText: String,
             documentIds: DocumentIdGenerator = SecureDocumentIds,
@@ -37,10 +39,31 @@ class LlmPrompt private constructor(
             /** [buildUserPrompt]의 `structureSection`으로 그대로 내려간다(계획 §1.3). */
             structureSection: String? = null,
             explanationVersion: ExplanationPromptVersion = ExplanationPromptVersion.BASELINE,
+            /** 문단 재변환에서만 쓰는 저장 쉬운 글 앞부분 문맥. */
+            priorBodyContext: String? = null,
         ): LlmPrompt =
             LlmPrompt(
-                system = buildSystemPrompt(documentText, structureSection, explanationVersion),
-                user = buildUserPrompt(documentText, documentIds, dictionaryContext, structureSection),
+                system =
+                    buildSystemPrompt(
+                        documentText,
+                        structureSection,
+                        explanationVersion,
+                        hasPriorBodyContext = priorBodyContext?.isNotBlank() == true,
+                        hasReviewedDictionaryContext =
+                            explanationVersion == ExplanationPromptVersion.R3 &&
+                                dictionaryContext?.isNotBlank() == true,
+                    ),
+                user =
+                    buildUserPrompt(
+                        documentText,
+                        documentIds,
+                        dictionaryContext,
+                        structureSection,
+                        priorBodyContext,
+                        dictionaryContextIsR3 =
+                            explanationVersion == ExplanationPromptVersion.R3 &&
+                                dictionaryContext?.isNotBlank() == true,
+                    ),
             )
 
         /**
@@ -57,6 +80,8 @@ class LlmPrompt private constructor(
             structureSection: String? = null,
             sourceText: String,
             explanationVersion: ExplanationPromptVersion = ExplanationPromptVersion.BASELINE,
+            /** 문단 재변환에서만 쓰는 저장 쉬운 글 앞부분 문맥. */
+            priorBodyContext: String? = null,
         ): LlmPrompt {
             val repair =
                 buildRepairPrompt(
@@ -67,6 +92,7 @@ class LlmPrompt private constructor(
                     structureSection,
                     sourceText,
                     explanationVersion,
+                    priorBodyContext,
                 )
             return LlmPrompt(system = repair.system, user = repair.user)
         }
@@ -129,6 +155,16 @@ class LlmPrompt private constructor(
             각 source_anchor는 source_unit_indexes(0 기반 원문 줄 번호 배열), quote(그 줄에 실제 존재하는 원문 인용)만 갖는다.
             available 항목은 원문 근거를 반드시 달고, 원문에서 확인할 수 없는 내용은 만들지 마라.
             근거가 없는 항목은 needs_review에 두거나, 해당 정보가 원문에 없으면 not_in_source와 빈 items를 사용한다.
+            원문에서 지원 대상·자격 조건, 지원·사용 범위, 포함·제외 대상, 금액 단위·한도와 적용 조건을 먼저 빠짐없이 확인한다.
+            available 항목을 쉽게 줄여 쓸 때도 이 범위를 넓히거나 좁히지 말고, 자격 조건과 포함·제외 조건을 text 또는 cautions에 함께 남긴다.
+            실제 적용되는 자격·한도·필수 행동·예외 조건은 빠짐없이 보존하고, 원문에 없는 조건이나 혜택을 만들지 마라.
+            괄호·각주·별표·뒤따르는 문장이 앞의 사실을 제한하거나 넓히면 같은 항목에 연결한다. 반복 표현은 줄여도 조건을 빼지 마라.
+            자격을 갖춰야 하는 조건과 지원에서 제외되거나 자격이 달라지는 조건을 구분하고, 연결이 불확실하면 needs_review로 둔다.
+            수치의 단위·분모·대상 표현은 원문 인용과 같은 표기를 유지한다.
+            exceptions가 available이고 steps도 available이면 각 예외·기한을 관련 steps 항목의 cautions에도 연결한다. steps가 not_in_source이면 원문에 없는 단계를 만들지 마라.
+            각 available 항목에는 모든 사실을 뒷받침하는 짧고 정확한 quote만 남기고, 같은 긴 문단을 반복 인용하지 마라.
+            일반 참고용 예산 항목·예시·목록은 개별 혜택으로 하나씩 나열하지 말고 참고 역할만 한 번 요약하되, 실제 적용되는 핵심 조건·한도·필수 행동은 남긴다.
+            documents의 파일명은 원문 표기를 정확히 유지하며, 여러 파일을 쉼표로 이어 한 항목에 몰지 말고 파일별 text 또는 줄바꿈으로 남긴다. 파일 목록만으로 제출 대상·필수 제출이라고 단정하지 마라.
             날짜·자격·서류·발급처·연락처·링크를 상식이나 웹 지식으로 보충하지 마라.
             예외와 기한은 관련 행동 항목의 cautions에도 적는다. 모순이나 연결 불확실성은 needs_review로 둔다.
             섹션당 항목은 최대 10개, 항목 text는 500 코드 포인트 이하, 전체 text는 4,000 코드 포인트 이하다.

@@ -121,7 +121,7 @@ class SubscriptionReachTest {
                 .toString()
         database.execute("UPDATE users SET is_admin=true WHERE id='$userId'")
 
-        val beforePayment = send("/documents", token, "POST", """{"text":"관리자도 결제가 필요합니다"}""")
+        val beforePayment = send("/documents", token, "POST", """{"text":"관리자도 결제 전 확인이 필요합니다"}""")
         assertThat(beforePayment.statusCode()).isEqualTo(402)
         assertThat(beforePayment.headers().firstValue("X-Credit-Balance")).hasValue("0")
 
@@ -139,7 +139,8 @@ class SubscriptionReachTest {
         assertThat(credits["allowance"].asInt()).isEqualTo(50)
         assertThat(credits["available"].asInt()).isEqualTo(50)
 
-        val afterPayment = send("/documents", token, "POST", """{"text":"${"가".repeat(1_000)}"}""")
+        val paidText = "가".repeat(994) + " 가 가 가"
+        val afterPayment = send("/documents", token, "POST", """{"text":"$paidText"}""")
         assertThat(afterPayment.statusCode()).isEqualTo(202)
         assertThat(afterPayment.headers().firstValue("X-Credit-Balance")).hasValue("49.0")
     }

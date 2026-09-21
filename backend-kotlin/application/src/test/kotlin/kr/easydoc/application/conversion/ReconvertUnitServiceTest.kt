@@ -7,6 +7,7 @@ import kr.easydoc.application.credit.ReservationResult
 import kr.easydoc.application.credit.noCredits
 import kr.easydoc.application.document.ConversionCiphertexts
 import kr.easydoc.application.document.ConversionEnvelope
+import kr.easydoc.application.document.DefaultSegmentMapDerivation
 import kr.easydoc.application.document.FakeContentCipher
 import kr.easydoc.application.document.FakeConversionRepository
 import kr.easydoc.application.document.FakeDocumentOriginalRepository
@@ -14,8 +15,12 @@ import kr.easydoc.application.document.FakeQueryDocumentRepository
 import kr.easydoc.application.document.RecordingTransactionRunner
 import kr.easydoc.application.document.StoredConversion
 import kr.easydoc.core.credit.Credits
+import kr.easydoc.core.crypto.EncryptedField
+import kr.easydoc.core.crypto.PlainBody
 import kr.easydoc.core.document.ConversionStatus
 import kr.easydoc.core.document.SourceFormat
+import kr.easydoc.core.easyread.ExplanationPromptVersion
+import kr.easydoc.core.easyread.PRIOR_BODY_CONTEXT_TAG_NAME
 import kr.easydoc.core.exceptions.ConflictException
 import kr.easydoc.core.exceptions.ExternalServiceUnavailableException
 import kr.easydoc.core.exceptions.InsufficientCreditsException
@@ -71,28 +76,34 @@ class ReconvertUnitServiceTest {
         finishReason = LlmFinishReason.END_TURN,
     )
 
+    @Suppress("LongParameterList")
     private fun service(
         provider: LlmProvider,
         callBudget: Int = DEFAULT_BUDGET,
         concurrencyLimit: Int = DEFAULT_CONCURRENCY,
         ledger: LlmCallLedger = LlmCallLedger { },
         credits: CreditAccountService = noCredits(),
+        explanationVersion: ExplanationPromptVersion = ExplanationPromptVersion.BASELINE,
     ) = ReconvertUnitService(
         conversions = conversions,
         documents = documents,
         cipher = cipher,
-        convert = ConvertDocumentUseCase(provider),
+        convert = ConvertDocumentUseCase(provider, explanationPromptVersion = explanationVersion),
         transaction = transaction,
         callBudget = callBudget,
         concurrencyLimit = concurrencyLimit,
         ledger = ledger,
         credits = credits,
+        segmentMapDerivation = DefaultSegmentMapDerivation(cipher),
     )
 
     /** 완료 상태 변환 한 건과 그 원문을 심는다 — 원본 단위 0 은 항상 [SOURCE_UNIT_0]. */
     private fun seedDone(
         status: ConversionStatus = ConversionStatus.DONE,
         structure: SourceStructure? = null,
+        sourceText: String = "$SOURCE_UNIT_0\n$SOURCE_UNIT_1",
+        easyText: String? = null,
+        editedText: String? = null,
     ): UUID {
         val conversionId = UUID.randomUUID()
         val documentId = UUID.randomUUID()
@@ -103,7 +114,17 @@ class ReconvertUnitServiceTest {
                 status = status,
                 sourceFormat = SourceFormat.TEXT,
                 hasStoredOriginal = false,
-                ciphertexts = ConversionCiphertexts(null, null),
+                ciphertexts =
+                    ConversionCiphertexts(
+                        easyText =
+                            easyText?.let {
+                                cipher.encrypt(PlainBody(it), conversionId, EncryptedField.CONVERSION_EASY_TEXT)
+                            },
+                        editedText =
+                            editedText?.let {
+                                cipher.encrypt(PlainBody(it), conversionId, EncryptedField.CONVERSION_EDITED_TEXT)
+                            },
+                    ),
                 reviewedAt = null,
                 feedbackSubmittedAt = null,
                 model = null,
@@ -115,7 +136,7 @@ class ReconvertUnitServiceTest {
         documents.seed(
             owner,
             documentId,
-            "$SOURCE_UNIT_0\n$SOURCE_UNIT_1",
+            sourceText,
             workspaceId = workspaceId,
             structure = structure,
         )
@@ -518,6 +539,89 @@ class ReconvertUnitServiceTest {
         assertThat(provider.calls[0].prompt.user).doesNotContain("[구조]")
     }
 
+    @Test
+    @DisplayName("R3 재변환은 첫 단위도 검증된 문맥으로 보고 전체 R3 설명 규칙을 쓴다")
+    fun `첫 단위의 검증된 빈 문맥은 R3를 쓴다`() {
+        val source = "$CONTEXT_SOURCE_0\n$CONTEXT_SOURCE_1"
+        val conversionId = seedDone(sourceText = source, easyText = source)
+        val provider = FakeLlmProvider(listOf(reply(CONTEXT_SOURCE_0)))
+
+        service(provider, explanationVersion = ExplanationPromptVersion.R3)
+            .reconvert(owner, conversionId, 0, listOf(0), FINGERPRINT)
+
+        val system =
+            provider.calls
+                .single()
+                .prompt.system
+        assertThat(system).contains("첫 등장에만", "검수된 사전 정의")
+        assertThat(system).doesNotContain("문서 전체에서 첫 등장인지 알 수 없으므로")
+        assertThat(
+            provider.calls
+                .single()
+                .prompt.user,
+        ).doesNotContain("<$PRIOR_BODY_CONTEXT_TAG_NAME id=")
+    }
+
+    @Test
+    @DisplayName("R3 재변환은 edited 본문의 신뢰 가능한 앞선 매핑만 문맥으로 재사용한다")
+    fun `R3 재변환은 현재 검수본의 앞선 문맥을 싣는다`() {
+        val source = "$CONTEXT_SOURCE_0\n$CONTEXT_SOURCE_1"
+        val draft = "신청일은 2024년 3월 1일로 안내합니다.\n전화번호는 02-1234-5678입니다."
+        val edited = "검수본: 신청일은 2024년 3월 1일입니다.\n검수본: 전화번호는 02-1234-5678입니다."
+        val conversionId = seedDone(sourceText = source, easyText = draft, editedText = edited)
+        val provider = FakeLlmProvider(listOf(reply(CONTEXT_SOURCE_1)))
+
+        service(provider, explanationVersion = ExplanationPromptVersion.R3)
+            .reconvert(owner, conversionId, 1, listOf(1), FINGERPRINT)
+
+        assertThat(provider.calls).hasSize(1)
+        assertThat(
+            provider.calls
+                .single()
+                .prompt.user,
+        ).contains(edited.substringBefore("\n"))
+        assertThat(
+            provider.calls
+                .single()
+                .prompt.user,
+        ).doesNotContain(draft.substringBefore("\n"))
+        assertThat(
+            provider.calls
+                .single()
+                .prompt.user,
+        ).contains("<$PRIOR_BODY_CONTEXT_TAG_NAME id=")
+        assertThat(
+            provider.calls
+                .single()
+                .prompt.system,
+        ).contains("앞서쉬운글 구간은", "첫 등장에만", "검수된 사전 정의")
+            .doesNotContain("문서 전체에서 첫 등장인지 알 수 없으므로")
+    }
+
+    @Test
+    @DisplayName("R3 재변환은 대응이 LOW이면 부분 문맥으로 첫 등장을 추측하지 않는다")
+    fun `모호한 현재 본문은 문맥 없이 보수적으로 재변환한다`() {
+        val source = "첫 번째 안내입니다.\n두 번째 안내입니다."
+        val currentBody = "검수자가 문장을 크게 고쳤습니다.\n다른 문장입니다."
+        val conversionId = seedDone(sourceText = source, easyText = currentBody)
+        val provider = FakeLlmProvider(listOf(reply("두 번째 안내입니다.")))
+
+        service(provider, explanationVersion = ExplanationPromptVersion.R3)
+            .reconvert(owner, conversionId, 1, listOf(1), FINGERPRINT)
+
+        assertThat(provider.calls).hasSize(1)
+        assertThat(
+            provider.calls
+                .single()
+                .prompt.user,
+        ).doesNotContain("$PRIOR_BODY_CONTEXT_TAG_NAME")
+        assertThat(
+            provider.calls
+                .single()
+                .prompt.system,
+        ).contains("문서 전체에서 첫 등장인지 알 수 없으므로")
+    }
+
     /**
      * 첫 호출을 블록해 permit 을 쥔 채로 붙잡아 두는 테스트 대역 — `FakeLlmProvider` 는
      * 큐 소진 시 즉시 던지거나 반환할 뿐 블록할 수 없어 진짜 동시성 시나리오를 못 만든다.
@@ -548,5 +652,7 @@ class ReconvertUnitServiceTest {
         val FINGERPRINT = "a".repeat(64)
         const val SOURCE_UNIT_0 = "금일 서류를 제출하십시오."
         const val SOURCE_UNIT_1 = "두 번째 줄입니다."
+        const val CONTEXT_SOURCE_0 = "신청일은 2024년 3월 1일입니다."
+        const val CONTEXT_SOURCE_1 = "전화번호는 02-1234-5678입니다."
     }
 }

@@ -71,14 +71,34 @@ internal fun renderContextBlock(
     exampleLimit: Int,
     showNotice: Boolean,
     totalFound: Int,
+    markReviewedDefinitions: Boolean = false,
 ): String {
     val ordered = selected.sortedBy { it.start }
     val lines = ArrayList<String>()
     lines += CONTEXT_HEADER
     lines += ""
-    appendSection(lines, SUBSTITUTE_SECTION_TITLE, ordered, ReplaceStrategy.SUBSTITUTE)
-    appendSection(lines, GLOSS_SECTION_TITLE, ordered, ReplaceStrategy.GLOSS, sectionNote = GLOSS_SECTION_NOTE)
-    appendSection(lines, KEEP_SECTION_TITLE, ordered, ReplaceStrategy.KEEP)
+    appendSection(
+        lines,
+        SUBSTITUTE_SECTION_TITLE,
+        ordered,
+        ReplaceStrategy.SUBSTITUTE,
+        markReviewedDefinitions = markReviewedDefinitions,
+    )
+    appendSection(
+        lines,
+        GLOSS_SECTION_TITLE,
+        ordered,
+        ReplaceStrategy.GLOSS,
+        sectionNote = GLOSS_SECTION_NOTE,
+        markReviewedDefinitions = markReviewedDefinitions,
+    )
+    appendSection(
+        lines,
+        KEEP_SECTION_TITLE,
+        ordered,
+        ReplaceStrategy.KEEP,
+        markReviewedDefinitions = markReviewedDefinitions,
+    )
     appendExamples(lines, selected, exampleLimit)
     if (showNotice) lines += truncationNotice(totalFound, selected.size)
 
@@ -86,18 +106,20 @@ internal fun renderContextBlock(
     return lines.joinToString("\n").trimEnd('\n') + "\n"
 }
 
+@Suppress("LongParameterList")
 private fun appendSection(
     lines: MutableList<String>,
     title: String,
     ordered: List<DictionaryMatch>,
     strategy: ReplaceStrategy,
     sectionNote: String? = null,
+    markReviewedDefinitions: Boolean = false,
 ) {
     lines += title
     if (sectionNote != null) lines += sectionNote
     ordered
         .filter { it.entry.strategy == strategy }
-        .forEach { lines += renderTermLine(it) }
+        .forEach { lines += renderTermLine(it, markReviewedDefinitions) }
     lines += ""
 }
 
@@ -131,7 +153,10 @@ private fun truncationNotice(
  * 같은 말의 반복이라 혼란만 준다. 값이 없으면 그 줄 자체를 만들지 않는다(빈 "설명:"/"주의:"
  * 줄로 토큰을 쓰지 않는다).
  */
-private fun renderTermLine(match: DictionaryMatch): String {
+private fun renderTermLine(
+    match: DictionaryMatch,
+    markReviewedDefinition: Boolean = false,
+): String {
     val entry = match.entry
     val head =
         when (entry.strategy) {
@@ -143,7 +168,12 @@ private fun renderTermLine(match: DictionaryMatch): String {
     val extra = ArrayList<String>()
     val definition = entry.definition
     if (!definition.isNullOrEmpty() && normalizeForDedup(definition) != normalizeForDedup(entry.easyTerm)) {
-        extra += "  설명: $definition"
+        extra +=
+            if (markReviewedDefinition) {
+                "  설명(검수된 정의): $definition"
+            } else {
+                "  설명: $definition"
+            }
     }
     // caution은 사람을 위한 검수 메모다. 다른 사업의 조건·금액이 섞여 있어 생성에는 싣지 않는다.
     // 원본 데이터와 조회 응답에서는 보존한다. 일반적인 뜻은 definition으로 제공한다.

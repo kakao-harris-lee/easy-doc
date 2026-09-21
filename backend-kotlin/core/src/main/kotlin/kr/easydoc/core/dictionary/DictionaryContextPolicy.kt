@@ -28,8 +28,9 @@ private const val DEFAULT_MAX_EXAMPLES = 3
  *   `0` 이면 예약 없음.
  * @property maxExamples "### 참고 예문" 에 실을 예문 수 상한. 예산이 모자라면 **항목보다 먼저**
  *   줄어든다 — 예문은 보조 자료라 핵심 지시문(세 구역)보다 덜 중요하다.
- * @property officialNamesOnly R3에서 검수 상태 없는 뜻 후보·정의·예문을 모두 제외하고
- *   KEEP 공식 이름만 보낸다. 기본 false로 기존 프롬프트와 사전 A/B 기준을 보존한다.
+ * @property officialNamesOnly R3에서 검수 상태 없는 뜻 후보를 제외하고 KEEP 공식 이름만
+ *   보낸다. 정의는 별도 `reviewed` provenance가 있을 때만 전달하며 예문은 전달하지 않는다.
+ *   기본 false로 기존 프롬프트와 사전 A/B 기준을 보존한다.
  */
 data class DictionaryContextPolicy(
     val maxTerms: Int = DEFAULT_MAX_TERMS,
