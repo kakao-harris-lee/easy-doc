@@ -27,6 +27,7 @@ import { FormatPreservationPanel, PdfExportNotice } from './FormatPreservationPa
 import { ReviewFeedback } from './ReviewFeedback'
 import { ReviewSupportPanel } from './ReviewSupportPanel'
 import { ActionGuidePanel } from './ActionGuidePanel'
+import { ExplanationsPanel } from './ExplanationsPanel'
 import { ReviewHistoryPanel } from './ReviewHistoryPanel'
 import { TableRelationsPanel } from './TableRelationsPanel'
 import {
@@ -1063,6 +1064,7 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
   const guideEnabled = conversion.review_capabilities?.action_guide === true
   const historyEnabled = conversion.review_capabilities?.review_history === true
   const tableRelationsEnabled = conversion.review_capabilities?.table_relations === true
+  const explanationsEnabled = conversion.review_capabilities?.explanations === true
   const taskOptions: TaskKey[] = [
     'body',
     ...(guideEnabled ? ['guide' as const] : []),
@@ -1565,6 +1567,16 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
             onContentConflict={markContentConflict}
             onNavigateSource={handleReviewSourceNavigation}
             onSaved={() => setHistoryRefreshToken((value) => value + 1)}
+          />
+        )}
+
+        {explanationsEnabled && (
+          <ExplanationsPanel
+            conversionId={conversion.id}
+            contentRevision={contentRevision}
+            dirty={dirty}
+            sourceAvailable={source.state.status === 'ready'}
+            onNavigateSource={handleReviewSourceNavigation}
           />
         )}
       </div>

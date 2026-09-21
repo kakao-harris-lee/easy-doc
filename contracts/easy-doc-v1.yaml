@@ -41,7 +41,7 @@ openapi: 3.1.0
 
 info:
   title: Easy-Read AI API
-  version: "2.42.0"
+  version: "2.43.0"
   x-baselined-at: "2026-08-12"       # 초판 기준선을 뜬 날 (동결일이 아니다)
   x-rebased-at: "2026-08-12"         # 계약의 성격을 "개선 대상"으로 다시 정의한 날
   x-source-runtime: "Python 3.12 / FastAPI (app/main.py) — 과거 참고 구현이었고 2026-08-24 저장소에서 제거됨(git 태그 pre-python-removal-20260824). 기준선 출처였을 뿐 정답이 아니었다"
@@ -3197,6 +3197,51 @@ paths:
               examples:
                 empty: { value: { detail: "수정본이 비어 있습니다" } }
                 too_long: { value: { detail: "수정본은 20,000자 이하여야 합니다" } }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+
+  /conversions/{conversion_id}/explanations:
+    get:
+      tags: [documents]
+      operationId: readExplanations
+      summary: 검수된 사전 정의에서 파생한 추가 설명 조회
+      security: [{ HTTPBearer: [] }]
+      description: |
+        R6 기능이 켜진 경우에만 제공한다. 저장된 현재 본문(`edited_text ?? easy_text`)에서
+        **검수된** 사전 정의가 있는 용어만 골라 돌려준다. 추가 모델 호출은 없다.
+        본문 등장 순서이며 용어마다 한 건이다. 근거가 없으면 그 용어를 넣지 않는다.
+        `source_anchors`는 저장된 원문에서 실제로 찾은 위치이며 못 찾으면 빈 배열이다 —
+        없는 위치를 추정하지 않는다. 본문이 바뀌면 이전 설명은 무효이며
+        `current_content_revision`으로 판정한다. 조건·금액·기한은 본문에 그대로 남는다.
+        펼침 상태는 화면 상태이며 서버에 저장하지 않는다.
+      parameters:
+        - name: conversion_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: 현재 본문 기준의 용어 설명 목록
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CacheControlNoStore' }
+            X-Content-Type-Options: { $ref: '#/components/headers/XContentTypeOptions' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ExplanationsResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404':
+          description: 없거나 소유자가 아니거나 만료됐거나 기능이 꺼져 있다
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '409':
+          description: 변환이 끝나지 않아 파생할 본문이 없다
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+              examples:
+                not_done: { value: { detail: "변환이 끝난 뒤에 수정할 수 있습니다" } }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
         '500': { $ref: '#/components/responses/InternalError' }
         '503': { $ref: '#/components/responses/ServiceUnavailable' }
 
@@ -6611,6 +6656,41 @@ components:
           type: string
           description: 저장된 원문에서 실제로 찾은 인용. 본문과 같이 암호화·비로그 정책을 적용한다.
 
+    ExplanationsResponse:
+      type: object
+      required: [conversion_id, current_content_revision, explanations]
+      properties:
+        conversion_id: { type: string, format: uuid }
+        current_content_revision: { type: integer, minimum: 0 }
+        explanations:
+          type: array
+          items: { $ref: '#/components/schemas/Explanation' }
+          description: 본문 등장 순서. 용어마다 한 건이며 근거가 없으면 넣지 않는다.
+
+    Explanation:
+      type: object
+      required: [term, definition_source, explanation, source_anchors]
+      properties:
+        term:
+          type: string
+          minLength: 1
+          description: 본문에 나타난 용어. 같은 용어는 한 번만 나온다.
+        definition_source:
+          $ref: '#/components/schemas/ExplanationDefinitionSource'
+        explanation:
+          type: string
+          minLength: 1
+          description: 검수된 사전 정의. 본문의 조건·금액·기한을 대신하지 않는다.
+        source_anchors:
+          type: array
+          items: { $ref: '#/components/schemas/ReviewSourceAnchor' }
+          description: 저장된 원문에서 실제로 찾은 위치. 못 찾으면 빈 배열이다.
+
+    ExplanationDefinitionSource:
+      type: string
+      enum: [dictionary_reviewed]
+      description: v1은 검수된 사전 정의 하나뿐이다. 원문 근거가 없는 설명은 제공하지 않는다.
+
     ReviewItemState:
       type: string
       enum: [needs_review, confirmed, not_applicable]
@@ -8107,6 +8187,23 @@ components:
 # 변경 이력
 # =============================================================================
 x-changelog:
+  - version: "2.43.0"
+    date: "2026-09-22"
+    revision: "EASY-READ-R6-EXPLANATIONS"
+    author: sonnet
+    change: |
+      저장된 현재 본문에서 검수된 사전 정의가 있는 용어만 골라 추가 설명을 조회하는
+      `GET /conversions/{conversion_id}/explanations`를 추가한다. 본문 등장 순서이며
+      용어마다 한 건, 근거가 없으면 제공하지 않는다. 원문 위치는 실제로 찾은 경우만
+      담고 못 찾으면 빈 배열이다. 추가 모델 호출과 새 저장소는 없다.
+      해석되지 않는 `conversion_id`는 422로 거절하며 그 상태를 계약에 선언한다.
+    ground: |
+      G2: R6 구현 사용자 요청과 REQ-07, AC-R6.
+    compatibility: |
+      additive 신설 오퍼레이션이다. explanations는 기본 OFF이며 꺼져 있으면 404다.
+      새 DB 마이그레이션이 없고 기존 응답 스키마를 바꾸지 않는다.
+      거절 상태 422 선언은 신설 오퍼레이션에만 붙고 기존 오퍼레이션을 바꾸지 않는다.
+      React API 타입과 검수 화면을 함께 갱신한다.
   - version: "2.42.0"
     date: "2026-09-21"
     revision: "EASY-READ-R4-R5-TABLES-HISTORY"

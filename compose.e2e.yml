@@ -27,6 +27,9 @@
 # 두므로(`.env.example`) 이 스택 전용 값을 여기서 채운다. e2e 전용이라 회전 걱정이 없다.
 # R2 행동 안내는 이 E2E 스택에서만 켠다. worker의 action-guide-fake profile은
 # 외부 provider 호출 없이 고정 후보를 만들어 사용자 화면의 전체 흐름을 검증한다.
+#
+# `EASYDOC_EXPLANATIONS_ENABLED=true`는 R6 용어 설명 패널을 이 E2E 스택에서만 켠다
+# (`explanations.spec.ts`). 운영 기본값은 꺼짐이다.
 
 services:
   backend-api:
@@ -46,6 +49,7 @@ services:
       EASYDOC_ACTION_GUIDE_ENABLED: "true"
       EASYDOC_TABLE_RELATIONS_ENABLED: "true"
       EASYDOC_REVIEW_HISTORY_ENABLED: "true"
+      EASYDOC_EXPLANATIONS_ENABLED: "true"
       EASYDOC_CREDITS_ENFORCED: "false"
       EASYDOC_CREDITS_SIGNUP_GRANT: "1000"
       EASYDOC_CREDITS_SIGNUP_GRANT_PEPPER: "e2e-only-pepper-not-a-secret"

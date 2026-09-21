@@ -19,7 +19,7 @@ CREATE TABLE review_snapshots (
             AND (artifact_revision IS NULL OR artifact_revision BETWEEN 0 AND 9007199254740991)),
     CONSTRAINT ck_review_snapshots_kind
         CHECK (kind IS NULL OR kind IN ('review_assessment', 'action_guide')),
-    -- 65,600 = 평문 상한 65,536바이트(64KiB, ReviewHistoryCodec.MAX_PLAINTEXT_BYTES) + AES-GCM
+    -- 65,600 = 평문 상한 65,536바이트(64KiB, ReviewHistorySnapshotCodec.MAX_PLAINTEXT_BYTES) + AES-GCM
     -- 오버헤드 28바이트(12바이트 nonce + 16바이트 tag) + 여유 36바이트. 실제로는 앱 계층의
     -- MAX_PLAINTEXT_BYTES 검사가 이보다 먼저 초과 입력을 거절하므로, 이 CHECK는 그 검사를
     -- 우회한 값이 DB까지 도달했을 때의 최후 방어선이다.

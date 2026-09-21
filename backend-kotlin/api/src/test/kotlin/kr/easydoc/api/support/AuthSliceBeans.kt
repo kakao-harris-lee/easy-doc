@@ -155,6 +155,10 @@ class AuthSliceBeans {
         org.mockito.Mockito.mock(kr.easydoc.application.document.ReviewHistoryService::class.java)
 
     @Bean
+    fun explanationsService(): kr.easydoc.application.document.ExplanationsService =
+        org.mockito.Mockito.mock(kr.easydoc.application.document.ExplanationsService::class.java)
+
+    @Bean
     fun phoneVerificationService(): kr.easydoc.application.auth.PhoneVerificationService =
         org.mockito.Mockito.mock(kr.easydoc.application.auth.PhoneVerificationService::class.java)
 

@@ -57,7 +57,11 @@ import org.springframework.jdbc.core.simple.JdbcClient
  */
 @Suppress("TooManyFunctions")
 @Configuration(proxyBeanMethods = false)
-@EnableConfigurationProperties(ReviewSupportProperties::class, ActionGuideProperties::class)
+@EnableConfigurationProperties(
+    ReviewSupportProperties::class,
+    ActionGuideProperties::class,
+    ExplanationsProperties::class,
+)
 @Profile("!$MIGRATE_PROFILE")
 class DocumentConfiguration {
     @Bean
@@ -188,6 +192,7 @@ class DocumentConfiguration {
         actionGuideProperties: ActionGuideProperties,
         @Value("\${easydoc.table-relations.enabled:false}") tableRelationsEnabled: Boolean,
         @Value("\${easydoc.review-history.enabled:false}") reviewHistoryEnabled: Boolean,
+        explanationsProperties: ExplanationsProperties,
     ): ConversionQueryService =
         ConversionQueryService(
             conversions = conversions,
@@ -202,6 +207,7 @@ class DocumentConfiguration {
                     actionGuideProperties,
                     tableRelationsEnabled,
                     reviewHistoryEnabled,
+                    explanationsProperties.enabled,
                 ),
         )
 
@@ -355,12 +361,13 @@ internal fun reviewCapabilitiesFor(
     actionGuide: ActionGuideProperties,
     tableRelationsEnabled: Boolean = false,
     reviewHistoryEnabled: Boolean = false,
+    explanationsEnabled: Boolean = false,
 ): ReviewCapabilities =
     ReviewCapabilities(
         reviewSupport = reviewSupport.enabled,
         actionGuide = actionGuide.enabled,
         tableRelations = tableRelationsEnabled,
         reviewHistory = reviewHistoryEnabled,
-        explanations = false,
+        explanations = explanationsEnabled,
         illustrations = false,
     )

@@ -50,7 +50,7 @@ internal object DocxTableMetadata {
         return OoxmlDom
             .childElements(properties)
             .filter { OoxmlDom.localName(it) in ROW_OFFSET_ELEMENTS }
-            .any { spanValue(it) > 0 }
+            .any { spanValue(it)?.let { value -> value > 0 } ?: true }
     }
 
     fun hasMergeMarker(cell: Node): Boolean {
@@ -59,13 +59,22 @@ internal object DocxTableMetadata {
         while (nodes.isNotEmpty()) {
             val node = nodes.removeLast()
             val name = OoxmlDom.localName(node)
-            if (name in MERGE_ELEMENTS && (name != "gridSpan" || spanValue(node) > 1)) return true
+            if (name in MERGE_ELEMENTS &&
+                (name != "gridSpan" || (spanValue(node)?.let { value -> value > 1 } ?: true))
+            ) {
+                return true
+            }
             OoxmlDom.childElements(node).forEach(nodes::addLast)
         }
         return false
     }
 
-    private fun spanValue(node: Node): Int = attributeValue(node, "val")?.toIntOrNull() ?: 0
+    /**
+     * `w:val` 을 정수로 읽는다. **없거나 숫자가 아니면 `null`** 이다 — `0` 으로 접으면
+     * 「값이 없다」와 「해석할 수 없다」가 같은 뜻이 되어, 표 구조 표시를 못 읽은 셀이
+     * 「표시가 없다」로 통과한다. 해석 실패는 보수적으로 **표시가 있는 쪽**으로 접는다.
+     */
+    private fun spanValue(node: Node): Int? = attributeValue(node, "val")?.toIntOrNull()
 
     private fun onOffValue(
         node: Node,
