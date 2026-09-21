@@ -54,6 +54,21 @@ class UnitKindExtractionTest {
     }
 
     @Test
+    @DisplayName("R4 — OOXML ST_OnOff의 firstRow=\"on\"도 firstRow=\"1\"과 같은 헤더 근거다")
+    fun `DOCX firstRow on도 표를 지원한다`() {
+        val original = IngestFixtures.bytes("sample_table.docx")
+        val xml =
+            requireNotNull(IngestFixtures.entriesOf(original)["word/document.xml"])
+                .decodeToString()
+                .replace("w:firstRow=\"1\"", "w:firstRow=\"on\"")
+        val data = IngestFixtures.withEntryReplaced(original, "word/document.xml", xml.toByteArray())
+
+        val table = DocxExtractor().extractStructured(data).tables.single()
+
+        assertThat(table.supportStatus).isEqualTo(TableSupportStatus.SUPPORTED)
+    }
+
+    @Test
     fun `너무 많은 DOCX 표는 본문을 유지하고 메타데이터만 미지원으로 접는다`() {
         val original = IngestFixtures.bytes("sample_table.docx")
         val xml =

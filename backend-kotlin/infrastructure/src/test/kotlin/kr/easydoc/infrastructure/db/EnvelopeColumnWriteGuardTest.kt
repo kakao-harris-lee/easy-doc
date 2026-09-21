@@ -322,6 +322,9 @@ class EnvelopeColumnWriteGuardTest {
                 "api/src/test/kotlin/kr/easydoc/api/ConversionFeedbackReachTest.kt",
                 "api/src/test/kotlin/kr/easydoc/api/ConversionReadReachTest.kt",
                 "api/src/test/kotlin/kr/easydoc/api/ConversionReviewReachTest.kt",
+                // R4 표 관계 계약 테스트가 document_table_structures의 payload_encrypted를 원시
+                // UPDATE로 심는다(encryption_scheme·key_version도 같은 문장에서 쓴다).
+                "api/src/test/kotlin/kr/easydoc/api/DocumentSourceTableRelationsReachTest.kt",
                 // 보존 만료 창의 실경로 테스트도 완료 상태를 SQL 로 심는다 — 그 문장이 봉투를
                 // 함께 쓴다(`MARK_DONE_SQL`). 만료된 변환이 조회·내보내기·검수 저장에서
                 // 404 인지를 재려면 먼저 「내줄 것이 실재하는」 행을 세워야 한다.
@@ -396,7 +399,10 @@ class EnvelopeColumnWriteGuardTest {
          * `document_table_structures`의 payload와 봉투를, `JdbcReviewHistoryRepository
          * .rewriteSnapshotEnvelope`가 `review_snapshots`의 payload와 봉투를 각각 같은
          * 문장에서 함께 쓴다.
+         *
+         * 30 → 31 은 R4 표 관계 계약 테스트(`DocumentSourceTableRelationsReachTest`)가
+         * 표 관계 payload를 심는 UPDATE다.
          */
-        const val EXPECTED_STATEMENTS = 30
+        const val EXPECTED_STATEMENTS = 31
     }
 }

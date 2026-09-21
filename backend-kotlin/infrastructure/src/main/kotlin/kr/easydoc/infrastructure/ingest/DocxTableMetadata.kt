@@ -11,6 +11,10 @@ internal object DocxTableMetadata {
     private const val FIRST_ROW_ATTRIBUTE = "firstRow"
     private const val FOOTNOTE_REFERENCE_ELEMENT = "footnoteReference"
 
+    // ST_OnOff(ECMA-376): "1"/"true"/"on" 은 참, "0"/"false"/"off"/"no" 는 거짓이다. 값이 그 밖의
+    // 형태로 오는 일은 없으므로 부정 목록만 유지하면 두 표기 계열을 모두 참으로 받아들인다.
+    private val OFF_VALUES = setOf("0", "false", "off", "no")
+
     fun declaredColumnCount(node: Node): Int? =
         OoxmlDom
             .childElements(node)
@@ -27,14 +31,18 @@ internal object DocxTableMetadata {
     }
 
     fun hasFirstRowMarker(table: Node): Boolean {
-        val look =
+        // tblLook 자체가 firstRow 속성을 아예 안 갖고 있으면(속성 부재) 헤더 근거가 없는 것이지,
+        // onOffValue의 "값 없으면 참"이라는 기본값(다른 on/off 요소의 존재 자체가 근거인 경우 전용)을
+        // 그대로 물려받으면 안 된다. 속성이 있을 때만 onOffValue와 같은 부정 목록 규약으로 판정한다.
+        val value =
             OoxmlDom
                 .childElements(table)
                 .firstOrNull { OoxmlDom.localName(it) == "tblPr" }
                 ?.let { properties ->
                     OoxmlDom.childElements(properties).firstOrNull { OoxmlDom.localName(it) == "tblLook" }
-                }
-        return look?.let { attributeValue(it, FIRST_ROW_ATTRIBUTE)?.lowercase() in setOf("1", "true") } == true
+                }?.let { look -> attributeValue(look, FIRST_ROW_ATTRIBUTE) }
+                ?: return false
+        return value.lowercase() !in OFF_VALUES
     }
 
     fun hasRowOffsetMarker(row: Node): Boolean {
@@ -64,7 +72,7 @@ internal object DocxTableMetadata {
         attribute: String = "val",
     ): Boolean {
         val value = attributeValue(node, attribute)?.lowercase()
-        return value !in setOf("0", "false", "off", "no")
+        return value !in OFF_VALUES
     }
 
     private fun attributeValue(
