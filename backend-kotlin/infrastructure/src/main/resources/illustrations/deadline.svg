@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" role="img">
+<title>날짜에 동그라미가 쳐진 달력 그림</title>
+<rect x="10" y="14" width="44" height="40" rx="2" />
+<line x1="10" y1="24" x2="54" y2="24" />
+<line x1="20" y1="8" x2="20" y2="18" />
+<line x1="44" y1="8" x2="44" y2="18" />
+<circle cx="38" cy="40" r="9" />
+</svg>

@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "illustrations": [
+    {
+      "asset_id": "no-svg-here",
+      "caption": "테스트",
+      "purpose": "wait",
+      "alt_text": "테스트용 그림",
+      "license": "CC0-1.0",
+      "source": "test",
+      "review": { "status": "reviewed", "reviewed_by": "tester", "reviewed_at": "2026-01-01" },
+      "version": 1,
+      "mapping_examples": ["테스트 예시입니다."]
+    }
+  ]
+}

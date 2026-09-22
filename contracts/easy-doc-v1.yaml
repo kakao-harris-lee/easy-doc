@@ -41,7 +41,7 @@ openapi: 3.1.0
 
 info:
   title: Easy-Read AI API
-  version: "2.43.0"
+  version: "2.44.0"
   x-baselined-at: "2026-08-12"       # 초판 기준선을 뜬 날 (동결일이 아니다)
   x-rebased-at: "2026-08-12"         # 계약의 성격을 "개선 대상"으로 다시 정의한 날
   x-source-runtime: "Python 3.12 / FastAPI (app/main.py) — 과거 참고 구현이었고 2026-08-24 저장소에서 제거됨(git 태그 pre-python-removal-20260824). 기준선 출처였을 뿐 정답이 아니었다"
@@ -3241,6 +3241,96 @@ paths:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
               examples:
                 not_done: { value: { detail: "변환이 끝난 뒤에 수정할 수 있습니다" } }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+
+  /illustrations:
+    get:
+      tags: [illustrations]
+      operationId: listIllustrations
+      summary: 그림 카탈로그 목록 조회 (ER-15)
+      security: [{ HTTPBearer: [] }]
+      description: |
+        검수(reviewed)된 항목만 카탈로그에 실린 순서 그대로 낸다 — 검수되지 않은 항목은
+        선택할 수 없다(AC-R7-a). 최대 10종이다. 배치·본문 삽입은 이 오퍼레이션의 범위가
+        아니다(ER-16). 기능이 꺼져 있으면(`easydoc.illustrations.enabled`, 기본 OFF) 404다.
+      responses:
+        '200':
+          description: 검수된 그림 목록
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CacheControlNoStore' }
+            X-Content-Type-Options: { $ref: '#/components/headers/XContentTypeOptions' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IllustrationCatalogResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404':
+          description: 기능이 꺼져 있다 — 토글 `easydoc.illustrations.enabled` 기본 OFF.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+              examples:
+                not_found: { value: { detail: "그림 목록을 찾을 수 없습니다" } }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+
+  /illustrations/{asset_id}/image:
+    get:
+      tags: [illustrations]
+      operationId: readIllustrationImage
+      summary: 그림 한 장의 SVG 바이트 (ER-15)
+      security: []
+      description: |
+        **인증이 없다.** `<img src>`는 `Authorization` 헤더를 보낼 수 없고, 이 바이트는
+        공공기관이 배포하는 고정 픽토그램이라 사용자 콘텐츠가 아니다. 기능 OFF·미존재·
+        미검수 셋을 구분하지 않는 같은 404다(존재 은닉) — 검수되지 않은 항목은 이미지도
+        내지 않는다(AC-R7-a). `asset_id`가 형식을 어기면(대문자·구분자 등) 서비스를 부르지
+        않고 같은 404다.
+
+        **`asset_id`가 공백뿐이면 404가 아니라 422다** — 이 저장소의 전역
+        `TypedValueSlotInterceptor`가 경로·쿼리의 모든 값 자리에서 공백뿐인 입력을
+        컨트롤러보다 먼저 거절하는 강제(다른 오퍼레이션과 같다)이며, 이 오퍼레이션도
+        예외가 아니다.
+      parameters:
+        - name: asset_id
+          in: path
+          required: true
+          schema: { type: string, pattern: '^[a-z0-9][a-z0-9-]{0,39}$' }
+      responses:
+        '200':
+          description: |
+            그림 SVG 바이트. `Cache-Control`은 이 저장소의 전역 불변식대로 `no-store`다
+            (`x-global-response-headers` — 이 바이트 자체는 캐시해도 되는 공개 픽토그램이지만,
+            이 값을 다르게 선언하면 그 전역 불변식과 `ContractSpec`의 헤더 일관성 검사가 깨진다).
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CacheControlNoStore' }
+            X-Content-Type-Options: { $ref: '#/components/headers/XContentTypeOptions' }
+            Content-Security-Policy:
+              description: 인라인 SVG를 `<img>`로만 쓰는 응답이라 스크립트를 전부 막는다.
+              required: true
+              schema: { type: string, const: "default-src 'none'; style-src 'unsafe-inline'; sandbox" }
+            Content-Disposition:
+              description: |
+                항상 `inline` 이다 — 다운로드가 아니라 화면에 바로 그려지는 이미지다.
+                다른 오퍼레이션(내보내기)의 `Content-Disposition` 은 파일명이 문서마다
+                계산돼 값이 다르므로, 계약 안에서 이 헤더의 스키마는 값을 못박지 않는
+                `{ type: string }` 로 통일한다(`ContractSpec.collectHeaders` 가 같은 이름의
+                헤더 선언이 계약 전체에서 일관되길 요구한다) — 이 오퍼레이션의 실제 값은
+                항상 `inline` 하나뿐이라는 사실은 이 설명과 `IllustrationsController.image`
+                구현이 정본이다.
+              required: true
+              schema: { type: string }
+          content:
+            image/svg+xml:
+              schema: { type: string, format: binary }
+        '404':
+          description: 기능 OFF·미존재·미검수·형식 위반 — 넷을 구분하지 않는다.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+              examples:
+                not_found: { value: { detail: "그림을 찾을 수 없습니다" } }
         '422': { $ref: '#/components/responses/ValidationFailed' }
         '500': { $ref: '#/components/responses/InternalError' }
         '503': { $ref: '#/components/responses/ServiceUnavailable' }
@@ -6512,7 +6602,9 @@ components:
         table_relations: { type: boolean }
         review_history: { type: boolean }
         explanations: { type: boolean }
-        illustrations: { type: boolean }
+        illustrations:
+          type: boolean
+          description: '`easydoc.illustrations.enabled` 토글에 연결된다(ER-15, 2.44.0).'
       description: 서버 설정과 현재 구현 범위에서 유도한 기능별 노출 가능 여부.
 
     ReviewHistoryResponse:
@@ -6690,6 +6782,87 @@ components:
       type: string
       enum: [dictionary_reviewed]
       description: v1은 검수된 사전 정의 하나뿐이다. 원문 근거가 없는 설명은 제공하지 않는다.
+
+    IllustrationCatalogResponse:
+      type: object
+      required: [illustrations]
+      properties:
+        illustrations:
+          type: array
+          items: { $ref: '#/components/schemas/Illustration' }
+          description: |
+            검수(reviewed)된 항목만 카탈로그에 실린 순서 그대로 낸다. 최대 10종이다.
+            배치·본문 삽입은 ER-16의 범위다.
+
+    Illustration:
+      type: object
+      required:
+        [
+          asset_id,
+          caption,
+          purpose,
+          alt_text,
+          license,
+          source,
+          reviewed_by,
+          reviewed_at,
+          version,
+          mapping_examples,
+          image_url,
+        ]
+      properties:
+        asset_id:
+          type: string
+          pattern: '^[a-z0-9][a-z0-9-]{0,39}$'
+        caption:
+          type: string
+          minLength: 1
+        purpose:
+          $ref: '#/components/schemas/IllustrationPurpose'
+        alt_text:
+          type: string
+          minLength: 1
+        license:
+          type: string
+          minLength: 1
+        source:
+          type: string
+          minLength: 1
+        reviewed_by:
+          type: string
+          minLength: 1
+          description: 목록에는 검수된 항목만 실리므로 언제나 값이 있다.
+        reviewed_at:
+          type: string
+          format: date
+        version:
+          type: integer
+          minimum: 1
+        mapping_examples:
+          type: array
+          minItems: 1
+          maxItems: 3
+          items: { type: string, minLength: 1 }
+          description: 쉬운 글 문장체 사용 예시 1~3개.
+        image_url:
+          type: string
+          description: '`GET /illustrations/{asset_id}/image`의 상대 경로. 인증 없이 호출한다.'
+
+    IllustrationPurpose:
+      type: string
+      enum:
+        [
+          visit_office,
+          phone_call,
+          submit_document,
+          apply_online,
+          deadline,
+          payment,
+          identification,
+          wait,
+          caution,
+          done,
+        ]
 
     ReviewItemState:
       type: string
@@ -8187,6 +8360,27 @@ components:
 # 변경 이력
 # =============================================================================
 x-changelog:
+  - version: "2.44.0"
+    date: "2026-09-23"
+    revision: "EASY-READ-R7-ILLUSTRATION-CATALOG"
+    author: sonnet
+    change: |
+      그림 카탈로그(ER-15, 최대 10종의 검수된 픽토그램)를 조회하는
+      `GET /illustrations`와, 그림 한 장의 SVG 바이트를 내려주는
+      `GET /illustrations/{asset_id}/image`를 추가한다. 목록은 검수(reviewed)된 항목만
+      본문 등장 순서 그대로 낸다. 이미지 엔드포인트는 `<img src>`가 인증 헤더를 보낼 수
+      없어 공개(`security: []`)이고, 기능 OFF·미존재·미검수를 구분하지 않는 같은 404다.
+      이미지 200 응답의 `Cache-Control`은 `no-store`다 — 이 바이트는 캐시해도 되는 공개
+      픽토그램이지만, `x-global-response-headers`가 이 값을 전역 하나로 못박고
+      `ContractSpec`이 그 일관성을 검사하므로 이 오퍼레이션만 다른 값을 쓰지 않는다
+      (공개 캐싱은 그 전역 불변식을 다시 설계해야 하는 별도 결정이다).
+    ground: |
+      G2: R7 구현 사용자 요청과 AC-R7-a(검수되지 않은 항목은 선택 불가).
+    compatibility: |
+      additive 신설 오퍼레이션 둘이다. `easydoc.illustrations.enabled` 토글은 기본 OFF이며
+      꺼져 있으면 둘 다 404다. 새 DB 마이그레이션이 없다(고정 리소스 카탈로그).
+      `ReviewCapabilities.illustrations`가 이 토글에 연결된다. 기존 오퍼레이션·스키마는
+      바꾸지 않는다. React API 타입과 검수 화면을 함께 갱신한다.
   - version: "2.43.0"
     date: "2026-09-22"
     revision: "EASY-READ-R6-EXPLANATIONS"

@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" role="img">
+<title>느낌표가 있는 삼각형 그림</title>
+<path d="M32 10 L58 54 L6 54 Z" />
+<line x1="32" y1="26" x2="32" y2="40" />
+<circle cx="32" cy="47" r="2" fill="currentColor" stroke="none" />
+</svg>

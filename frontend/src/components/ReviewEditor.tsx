@@ -28,6 +28,7 @@ import { ReviewFeedback } from './ReviewFeedback'
 import { ReviewSupportPanel } from './ReviewSupportPanel'
 import { ActionGuidePanel } from './ActionGuidePanel'
 import { ExplanationsPanel } from './ExplanationsPanel'
+import { IllustrationsPanel } from './IllustrationsPanel'
 import { ReviewHistoryPanel } from './ReviewHistoryPanel'
 import { TableRelationsPanel } from './TableRelationsPanel'
 import {
@@ -1065,6 +1066,7 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
   const historyEnabled = conversion.review_capabilities?.review_history === true
   const tableRelationsEnabled = conversion.review_capabilities?.table_relations === true
   const explanationsEnabled = conversion.review_capabilities?.explanations === true
+  const illustrationsEnabled = conversion.review_capabilities?.illustrations === true
   const taskOptions: TaskKey[] = [
     'body',
     ...(guideEnabled ? ['guide' as const] : []),
@@ -1579,6 +1581,8 @@ export function ReviewEditor({ conversion, source }: ReviewEditorProps) {
             onNavigateSource={handleReviewSourceNavigation}
           />
         )}
+
+        {illustrationsEnabled && <IllustrationsPanel />}
       </div>
 
       {/* 결과를 다 보고 난 자리에 둔다 — 검수 전에 묻는 만족도는 결과가 아니라 기대치를

@@ -1,0 +1,115 @@
+{
+  "version": 1,
+  "illustrations": [
+    {
+      "asset_id": "visit-office",
+      "caption": "기관 방문",
+      "purpose": "visit_office",
+      "alt_text": "사람이 건물 입구로 걸어 들어가는 그림",
+      "license": "CC0-1.0",
+      "source": "easy-doc 저장소에서 직접 제작(backend-kotlin/infrastructure/src/main/resources/illustrations)",
+      "review": { "status": "reviewed", "reviewed_by": "harris.lee", "reviewed_at": "2026-09-23" },
+      "version": 1,
+      "mapping_examples": ["주민센터에 직접 가서 신청하세요."]
+    },
+    {
+      "asset_id": "phone-call",
+      "caption": "전화 문의",
+      "purpose": "phone_call",
+      "alt_text": "수화기를 든 손 그림",
+      "license": "CC0-1.0",
+      "source": "easy-doc 저장소에서 직접 제작(backend-kotlin/infrastructure/src/main/resources/illustrations)",
+      "review": { "status": "reviewed", "reviewed_by": "harris.lee", "reviewed_at": "2026-09-23" },
+      "version": 1,
+      "mapping_examples": ["전화로 물어보세요."]
+    },
+    {
+      "asset_id": "submit-document",
+      "caption": "서류 제출",
+      "purpose": "submit_document",
+      "alt_text": "종이 서류를 건네는 손 그림",
+      "license": "CC0-1.0",
+      "source": "easy-doc 저장소에서 직접 제작(backend-kotlin/infrastructure/src/main/resources/illustrations)",
+      "review": { "status": "reviewed", "reviewed_by": "harris.lee", "reviewed_at": "2026-09-23" },
+      "version": 1,
+      "mapping_examples": ["서류를 내세요."]
+    },
+    {
+      "asset_id": "apply-online",
+      "caption": "온라인 신청",
+      "purpose": "apply_online",
+      "alt_text": "화면에 체크 표시가 있는 컴퓨터 그림",
+      "license": "CC0-1.0",
+      "source": "easy-doc 저장소에서 직접 제작(backend-kotlin/infrastructure/src/main/resources/illustrations)",
+      "review": { "status": "reviewed", "reviewed_by": "harris.lee", "reviewed_at": "2026-09-23" },
+      "version": 1,
+      "mapping_examples": ["인터넷으로 신청할 수 있어요."]
+    },
+    {
+      "asset_id": "deadline",
+      "caption": "기한",
+      "purpose": "deadline",
+      "alt_text": "날짜에 동그라미가 쳐진 달력 그림",
+      "license": "CC0-1.0",
+      "source": "easy-doc 저장소에서 직접 제작(backend-kotlin/infrastructure/src/main/resources/illustrations)",
+      "review": { "status": "reviewed", "reviewed_by": "harris.lee", "reviewed_at": "2026-09-23" },
+      "version": 1,
+      "mapping_examples": ["이 날짜까지 내세요."]
+    },
+    {
+      "asset_id": "payment",
+      "caption": "비용",
+      "purpose": "payment",
+      "alt_text": "동전과 지폐 그림",
+      "license": "CC0-1.0",
+      "source": "easy-doc 저장소에서 직접 제작(backend-kotlin/infrastructure/src/main/resources/illustrations)",
+      "review": { "status": "reviewed", "reviewed_by": "harris.lee", "reviewed_at": "2026-09-23" },
+      "version": 1,
+      "mapping_examples": ["돈을 내야 해요."]
+    },
+    {
+      "asset_id": "id-card",
+      "caption": "신분증",
+      "purpose": "identification",
+      "alt_text": "얼굴 사진이 있는 카드 그림",
+      "license": "CC0-1.0",
+      "source": "easy-doc 저장소에서 직접 제작(backend-kotlin/infrastructure/src/main/resources/illustrations)",
+      "review": { "status": "reviewed", "reviewed_by": "harris.lee", "reviewed_at": "2026-09-23" },
+      "version": 1,
+      "mapping_examples": ["신분증을 가져오세요."]
+    },
+    {
+      "asset_id": "wait",
+      "caption": "기다림",
+      "purpose": "wait",
+      "alt_text": "모래시계 그림",
+      "license": "CC0-1.0",
+      "source": "easy-doc 저장소에서 직접 제작(backend-kotlin/infrastructure/src/main/resources/illustrations)",
+      "review": { "status": "reviewed", "reviewed_by": "harris.lee", "reviewed_at": "2026-09-23" },
+      "version": 1,
+      "mapping_examples": ["결과가 나올 때까지 기다리세요."]
+    },
+    {
+      "asset_id": "caution",
+      "caption": "주의",
+      "purpose": "caution",
+      "alt_text": "느낌표가 있는 삼각형 그림",
+      "license": "CC0-1.0",
+      "source": "easy-doc 저장소에서 직접 제작(backend-kotlin/infrastructure/src/main/resources/illustrations)",
+      "review": { "status": "reviewed", "reviewed_by": "harris.lee", "reviewed_at": "2026-09-23" },
+      "version": 1,
+      "mapping_examples": ["이 점을 꼭 확인하세요."]
+    },
+    {
+      "asset_id": "done",
+      "caption": "완료",
+      "purpose": "done",
+      "alt_text": "동그라미 안의 체크 표시 그림",
+      "license": "CC0-1.0",
+      "source": "easy-doc 저장소에서 직접 제작(backend-kotlin/infrastructure/src/main/resources/illustrations)",
+      "review": { "status": "reviewed", "reviewed_by": "harris.lee", "reviewed_at": "2026-09-23" },
+      "version": 1,
+      "mapping_examples": ["신청이 끝났어요."]
+    }
+  ]
+}

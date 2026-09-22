@@ -156,6 +156,8 @@ else
   export EASYDOC_REVIEW_HISTORY_ENABLED="${EASYDOC_REVIEW_HISTORY_ENABLED:-true}"
   # R6 용어 설명도 일회용 브라우저 검증에서만 기본 활성화한다. 제품 기본값은 false다.
   export EASYDOC_EXPLANATIONS_ENABLED="${EASYDOC_EXPLANATIONS_ENABLED:-true}"
+  # R7 그림 카탈로그도 일회용 브라우저 검증에서만 기본 활성화한다. 제품 기본값은 false다.
+  export EASYDOC_ILLUSTRATIONS_ENABLED="${EASYDOC_ILLUSTRATIONS_ENABLED:-true}"
   # 사전 팝업 E19도 compose.e2e.yml과 같은 조건에서만 열린다(제품 기본값은 꺼짐).
   export EASYDOC_DICTIONARY_LOOKUP_ENABLED="${EASYDOC_DICTIONARY_LOOKUP_ENABLED:-true}"
   export EASYDOC_LLM_PROVIDER=fake

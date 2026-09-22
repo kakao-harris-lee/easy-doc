@@ -469,6 +469,49 @@ export interface ExplanationsResponse {
   explanations: Explanation[]
 }
 
+// --- R7 그림 카탈로그 ---
+
+/**
+ * 그림이 표현하는 용도. 계약 `components/schemas/IllustrationPurpose`.
+ *
+ * 알려진 10개 값 외에는 서버가 새 값을 먼저 내려줄 수 있어 `string`으로도 받는다 — 화면은
+ * 모르는 값을 wire 값 그대로 보여주고 깨지지 않는다.
+ */
+export type IllustrationPurpose =
+  | 'visit_office'
+  | 'phone_call'
+  | 'submit_document'
+  | 'apply_online'
+  | 'deadline'
+  | 'payment'
+  | 'identification'
+  | 'wait'
+  | 'caution'
+  | 'done'
+  | (string & {})
+
+/** 검수를 마친 그림 한 건. 계약 `components/schemas/Illustration`. */
+export interface Illustration {
+  asset_id: string
+  caption: string
+  purpose: IllustrationPurpose
+  alt_text: string
+  license: string
+  source: string
+  reviewed_by: string
+  /** `YYYY-MM-DD`. */
+  reviewed_at: string
+  version: number
+  mapping_examples: string[]
+  /** `GET /illustrations/{asset_id}/image`의 API 상대 경로. 인증이 필요 없다. */
+  image_url: string
+}
+
+/** GET /illustrations 응답. 검수된 항목만 담기고 최대 10개다. */
+export interface IllustrationCatalogResponse {
+  illustrations: Illustration[]
+}
+
 // --- R2 행동 안내 작업 ---
 
 export type ActionGuideSectionKind =

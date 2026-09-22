@@ -198,6 +198,10 @@ export const ROUTES = {
   actionGuideJobRead: { method: 'GET', ok: 200 },
   /** 계약 `paths./conversions/{conversion_id}/explanations.get` — 저장된 본문 기준 용어 설명. */
   explanationsRead: { method: 'GET', ok: 200 },
+  /** 계약 `paths./illustrations.get` — 검수된 그림 카탈로그(R7). 기능 OFF면 404. */
+  illustrationsRead: { path: '/illustrations', method: 'GET', ok: 200 },
+  /** 계약 `paths./illustrations/{asset_id}/image.get` — 그림 SVG. 인증 없음. */
+  illustrationImageRead: { method: 'GET', ok: 200 },
   /** 계약 `paths./dictionary/lookup.post` — 200 (P0-5 조각 1, 2.11.0 신설). */
   dictionaryLookup: { path: '/dictionary/lookup', method: 'POST', ok: 200 },
   /**

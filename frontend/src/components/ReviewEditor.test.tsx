@@ -18,6 +18,7 @@ import {
   getActionGuide,
   getConversion,
   getExplanations,
+  getIllustrations,
   getReviewHistory,
   getReviewSupport,
   listActionGuideJobs,
@@ -74,6 +75,7 @@ vi.mock('../api/client', async (importOriginal) => ({
   getConversion: vi.fn(),
   getActionGuide: vi.fn(),
   getExplanations: vi.fn(),
+  getIllustrations: vi.fn(),
   getReviewHistory: vi.fn(),
   listActionGuideJobs: vi.fn(),
   analyzeReviewSupport: vi.fn(),
@@ -114,6 +116,7 @@ beforeEach(() => {
   vi.mocked(getConversion).mockReset()
   vi.mocked(getActionGuide).mockReset()
   vi.mocked(getExplanations).mockReset()
+  vi.mocked(getIllustrations).mockReset()
   vi.mocked(getReviewHistory).mockReset()
   vi.mocked(listActionGuideJobs).mockReset()
   vi.mocked(analyzeReviewSupport).mockReset()
@@ -3191,5 +3194,37 @@ describe('R6 용어 설명 작업 탭', () => {
 
     expect(screen.getByRole('heading', { name: '용어 설명' })).toBeInTheDocument()
     await waitFor(() => expect(getExplanations).toHaveBeenCalledWith('c1', expect.any(AbortSignal)))
+  })
+})
+
+describe('R7 그림 목록 작업 탭', () => {
+  const capabilities = {
+    review_support: false,
+    action_guide: false,
+    table_relations: false,
+    review_history: false,
+    explanations: false,
+    illustrations: true,
+  }
+
+  it('기능 플래그가 없으면 그림 목록을 숨긴다', () => {
+    render(<ReviewEditor conversion={conversion()} source={sourceReady('원문')} />)
+
+    expect(screen.queryByRole('heading', { name: '그림 목록' })).not.toBeInTheDocument()
+    expect(getIllustrations).not.toHaveBeenCalled()
+  })
+
+  it('기능이 켜져 있으면 그림 목록을 보이고 조회한다', async () => {
+    vi.mocked(getIllustrations).mockResolvedValue({ illustrations: [] })
+
+    render(
+      <ReviewEditor
+        conversion={conversion({ review_capabilities: capabilities })}
+        source={sourceReady('원문')}
+      />,
+    )
+
+    expect(screen.getByRole('heading', { name: '그림 목록' })).toBeInTheDocument()
+    await waitFor(() => expect(getIllustrations).toHaveBeenCalledWith(expect.any(AbortSignal)))
   })
 })

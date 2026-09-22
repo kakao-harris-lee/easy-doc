@@ -22,6 +22,7 @@ import type {
   DocumentTextRequest,
   ExplanationsResponse,
   ExportFormat,
+  IllustrationCatalogResponse,
   ReconvertUnitRequest,
   ReconvertUnitResponse,
   ReviewHistoryResponse,
@@ -468,6 +469,22 @@ export function getExplanations(
   signal?: AbortSignal,
 ): Promise<ExplanationsResponse> {
   return requestJson<ExplanationsResponse>(`/conversions/${conversionId}/explanations`, { signal })
+}
+
+/** GET /illustrations — 검수를 마친 그림 카탈로그를 읽는다(최대 10개, 인증 필요). */
+export function getIllustrations(signal?: AbortSignal): Promise<IllustrationCatalogResponse> {
+  return requestJson<IllustrationCatalogResponse>('/illustrations', { signal })
+}
+
+/**
+ * `Illustration.image_url`(API 상대 경로)을 절대 URL로 만든다.
+ *
+ * `GET /illustrations/{asset_id}/image`는 인증이 필요 없어 `<img src>`에 바로 쓸 수
+ * 있다 — 다만 상대 경로라 화면의 origin이 API와 다른 개발 환경에서는 API base와 합쳐야
+ * 한다.
+ */
+export function illustrationImageUrl(imageUrl: string): string {
+  return `${BASE_URL}${imageUrl}`
 }
 
 /** GET /conversions/{id}/action-guide — 저장된 안내문과 재방문용 작업 ID를 읽는다. */
