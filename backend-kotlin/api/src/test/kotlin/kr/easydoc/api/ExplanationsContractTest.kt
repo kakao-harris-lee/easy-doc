@@ -1,6 +1,7 @@
 package kr.easydoc.api
 
 import kr.easydoc.api.config.PrivateResponseHeadersConfig
+import kr.easydoc.api.document.ExplanationResponse
 import kr.easydoc.api.support.AuthSliceBeans
 import kr.easydoc.api.support.InMemoryUserRepository
 import kr.easydoc.api.support.InMemoryWorkspaceRepository
@@ -149,6 +150,40 @@ class ExplanationsContractTest {
                 .andReturn()
                 .response
         assertThat(response.status).isEqualTo(401)
+    }
+
+    @Test
+    fun `conversion_id 가 uuid 가 아니면 422 다`() {
+        val owner = newOwner()
+
+        val response =
+            mockMvc
+                .get("/conversions/not-a-uuid/explanations") {
+                    header(HttpHeaders.AUTHORIZATION, "Bearer stub-token:$owner")
+                }.andReturn()
+                .response
+        assertThat(response.status).isEqualTo(422)
+        assertThat(response.contentAsString).contains("\"detail\"")
+    }
+
+    @Test
+    fun `ExplanationResponse toString 은 term 과 explanation 을 찍지 않는다`() {
+        val explanationText = "행정심판은 행정청의 처분에 이의를 제기하는 절차입니다"
+        val response =
+            ExplanationResponse.of(
+                Explanation(
+                    term = "행정심판",
+                    definitionSource = ExplanationDefinitionSource.DICTIONARY_REVIEWED,
+                    explanation = explanationText,
+                    sourceAnchors = listOf(SourceAnchor(listOf(0, 2), "행정심판")),
+                ),
+            )
+
+        val text = response.toString()
+
+        assertThat(text).doesNotContain("행정심판")
+        assertThat(text).doesNotContain(explanationText)
+        assertThat(text).contains("4자")
     }
 
     private fun newOwner(): UUID {

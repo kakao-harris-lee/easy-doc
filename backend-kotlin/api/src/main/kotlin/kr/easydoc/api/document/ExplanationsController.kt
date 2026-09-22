@@ -6,7 +6,7 @@ import kr.easydoc.api.auth.AuthenticatedUser
 import kr.easydoc.application.document.ExplanationsService
 import kr.easydoc.application.document.ExplanationsView
 import kr.easydoc.core.dictionary.Explanation
-import kr.easydoc.core.privacy.CONTENT_MASK
+import kr.easydoc.core.privacy.UserContent
 import org.springframework.context.annotation.Profile
 import org.springframework.http.HttpHeaders
 import org.springframework.http.MediaType
@@ -61,6 +61,7 @@ data class ExplanationsResponse(
     }
 }
 
+@UserContent
 data class ExplanationResponse(
     @get:JsonProperty("term") val term: String,
     @get:JsonProperty("definition_source") val definitionSource: String,
@@ -68,8 +69,8 @@ data class ExplanationResponse(
     @get:JsonProperty("source_anchors") val sourceAnchors: List<SourceAnchorResponse>,
 ) {
     override fun toString(): String =
-        "ExplanationResponse(term=$term, definitionSource=$definitionSource, " +
-            "explanation=$CONTENT_MASK ${explanation.length}자)"
+        "ExplanationResponse(term=${term.length}자, definitionSource=${definitionSource.length}자, " +
+            "explanation=${explanation.length}자, sourceAnchors=${sourceAnchors.size})"
 
     companion object {
         fun of(explanation: Explanation): ExplanationResponse =

@@ -202,6 +202,7 @@ class SensitiveToStringReachTest {
                 "WorkspaceNameRequest",
                 "WorkspaceResponse",
                 "WorkspaceListItemResponse",
+                "ExplanationResponse",
             )
 
         /** 값을 감싸는 타입 판정이 반드시 닿아야 하는 것 — 역시 바닥이다. */

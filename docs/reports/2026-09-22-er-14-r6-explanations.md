@@ -25,7 +25,7 @@
 PR #140에 「다음 기회 반영」으로 기록했던 두 건을 이 변경 단위에서 닫았다.
 
 - `DocxTableMetadata.kt`의 `spanValue`가 숫자가 아닌 값을 만났을 때의 처리. 반환 타입을 `Int?`로 좁히고 호출부 두 곳에서 보수적으로 `?: true`로 떨어뜨리며 이유를 KDoc에 남겼다(2차 방어선이 이미 있던 자리다).
-- `V33__review_history.sql` 주석 한 줄의 클래스명 표기 `ReviewHistoryCodec` → `ReviewHistorySnapshotCodec`. 실제 클래스명은 `ReviewHistorySnapshotCodec`이고 파일명이 관례적으로 낡아 남은 것이다.
+- ~~`V33__review_history.sql` 주석 한 줄의 클래스명 표기 `ReviewHistoryCodec` → `ReviewHistorySnapshotCodec`~~ — **되돌렸다.** 첫 커밋(`0dd2dfc4`)에 넣었으나 migration-reviewer가 차단했다. Flyway는 SQL 마이그레이션 checksum을 파일 전체 줄 단위 CRC32로 계산하며 주석을 제외하지 않는다(`flyway-core-12.4.0` `ChecksumCalculator.java:63-87` 직접 확인). V33은 PR #140으로 이미 `origin/main`에 병합돼 적용된 파일이므로, 주석만 고쳐도 그 환경은 다음 부팅에서 `FlywayValidateException`으로 기동이 거부된다. 커밋 메시지의 「checksum 불변(양쪽 CRC32 동일)」 주장은 `--` 줄을 건너뛰는 가정을 넣은 잘못된 재현이었고 철회한다. 표기 정정은 이 파일이 아니라 다음 신규 마이그레이션이나 해당 Kotlin 클래스 KDoc에서 다룬다.
 
 ## 검증·리뷰
 
@@ -48,7 +48,7 @@ PR #140에 「다음 기회 반영」으로 기록했던 두 건을 이 변경 �
 
 - **커밋된 사전 색인 2,177개 중 검수 표시(`v` 키)를 가진 항목이 0개다.** 정의문이 채워진 항목은 423개 있으나 전부 `UNVERIFIED`로 읽히므로 `REVIEWED` 필터를 통과하는 항목이 없어 **운영 경로는 지금 빈 목록을 낸다.** 코드가 아니라 데이터 파이프라인 선행 조건이며, 사전 export가 `v: "reviewed"`를 내보내기 시작하면 채워진다. 이 PR은 그 배선과 게이트를 세우는 단계다.
 - e2e가 접기/펼치기를 잴 수 있는 것은 `e2e` 프로필의 fake 정의원 덕분이다. 운영 데이터가 실리기 전까지 이 화면 동작은 실제 색인으로는 재현되지 않는다.
-- `V33__review_history.sql`의 **주석 한 줄**을 고쳤다. 적용된 마이그레이션의 파일 내용이 바뀌므로 Flyway checksum 영향은 migration-reviewer 판정을 따른다.
+- `V33__review_history.sql` 주석의 클래스명 표기(`ReviewHistoryCodec`)는 여전히 낡은 채다. 이미 적용된 마이그레이션은 손대지 않는다는 판정에 따라 이 PR에서는 고치지 않았다.
 - 계약 205행 근처가 `docs/migration/_workspace/...`를 가리키는 것은 이번 변경 이전부터 있던 낡은 포인터다(그 디렉터리는 저장소가 의도적으로 미추적).
 - ER-15/ER-16(R7 그림 대체텍스트·배치)은 미착수다.
 
@@ -61,3 +61,15 @@ E2E를 포함한 전체 검증을 실행했다. 이 단계에서 유료 외부 �
 - **Compose 구성 검증 통과** — 기본 / CI 오버레이 / E2E 오버레이.
 - **E2E `frontend/e2e/run-local.sh --grep "R6 용어 설명"`: 1 통과 / 0 실패.** 첫 두 실행은 실패했고(422 업로드 하한, 이어서 오진에 따른 잘못된 단언) 세 번째에서 통과했다. 실패 이력과 원인은 위 「e2e에서 실제로 드러난 것」에 적었다.
 - 이 문서는 운영 활성화나 사용자 파일럿 완료를 뜻하지 않는다. 토글 기본값은 OFF다.
+
+## 리뷰 회차 조치 (2026-09-22, 리비전 `0dd2dfc4` 심사 → 후속 커밋)
+
+PR #141에 4개 레인(code-reviewer·privacy-gate·contract-keeper·migration-reviewer, 모두 sonnet)의 판정을 남겼고 BLOCKER 2건·MEDIUM 2건이 나왔다. 조치는 별도 커밋으로 얹었다.
+
+- **privacy-gate BLOCKER — `ExplanationResponse.toString()`이 `term`을 그대로 찍음.** `@UserContent`를 달고 `term`·`definitionSource`·`explanation`을 길이만 남기도록 바꿨다. 실행 에이전트가 처음에 `definitionSource` 값을 그대로 두자 `SensitiveToStringReachTest`가 여전히 실패했다 — 이 DTO의 `definitionSource`는 core의 enum이 아니라 `String`이라 `@UserContent`로 넓힌 순간 표식 심기 대상이 된다. JSON 직렬화는 그대로다. `KNOWN_SENSITIVE_TYPES` 바닥 목록에 `ExplanationResponse`를 넣어 이 타입이 게이트 밖으로 빠지는 것을 막았고, `ExplanationsContractTest`에 `toString()` 단언을 추가했다.
+- **migration-reviewer BLOCKER — 이미 적용된 `V33__review_history.sql` 주석 수정.** hunk를 되돌렸다(위 「함께 처리한 미조치 LOW 2건」 참고).
+- **code-reviewer MEDIUM — 422 직접 단언 없음.** `GET /conversions/not-a-uuid/explanations` → 422, 본문 `detail` 키 단언을 추가했다.
+- **code-reviewer MEDIUM — PR 본문과 e2e 로그 불일치.** 본문은 이미 실제 실행 결과(1 통과 / 0 실패)로 갱신돼 있었다. 추가 조치 없음.
+- code-reviewer LOW(`DocxTableMetadataTest` row-offset 커버리지)는 `gridBefore 값이 숫자가 아니면 행 오프셋으로 판정한다` 테스트가 이미 있어 조치하지 않았다.
+
+검증: `./gradlew :api:test --tests ExplanationsContractTest --tests SensitiveToStringReachTest` 통과, `./gradlew build`(5모듈, ktlint·detekt 포함) BUILD SUCCESSFUL. 프런트·계약·마이그레이션은 이 회차에서 바뀐 파일이 없다.
