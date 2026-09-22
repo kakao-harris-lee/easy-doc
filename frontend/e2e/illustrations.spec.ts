@@ -68,12 +68,16 @@ test.describe('R7 그림 목록', () => {
       panel.getByText(/본문에 넣기와 파일 출력은 다음 단계에서 지원합니다/),
     ).toBeVisible()
 
-    await expect(panel.getByRole('listitem')).toHaveCount(10)
+    // listitem은 카드와 예문 목록이 함께 잡혀 카드 수가 아니다 — 그림 1개 = 카드 1개이므로
+    // img 개수로 카드 수를 잰다.
+    await expect(panel.getByRole('img')).toHaveCount(10)
 
     const firstImage = panel.getByRole('img', { name: FIRST_ALT_TEXT })
     await expect(firstImage).toBeVisible()
     await expect(firstImage).toHaveJSProperty('complete', true)
     const naturalWidth = await firstImage.evaluate((img: HTMLImageElement) => img.naturalWidth)
     expect(naturalWidth).toBeGreaterThan(0)
+
+    await expect(panel.getByText('주민센터에 직접 가서 신청하세요.')).toBeVisible()
   })
 })
