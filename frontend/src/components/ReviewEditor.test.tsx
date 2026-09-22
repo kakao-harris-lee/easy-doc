@@ -17,6 +17,7 @@ import {
   downloadExport,
   getActionGuide,
   getConversion,
+  getExplanations,
   getReviewHistory,
   getReviewSupport,
   listActionGuideJobs,
@@ -72,6 +73,7 @@ vi.mock('../api/client', async (importOriginal) => ({
   reconvertUnit: vi.fn(),
   getConversion: vi.fn(),
   getActionGuide: vi.fn(),
+  getExplanations: vi.fn(),
   getReviewHistory: vi.fn(),
   listActionGuideJobs: vi.fn(),
   analyzeReviewSupport: vi.fn(),
@@ -111,6 +113,7 @@ beforeEach(() => {
   vi.mocked(reconvertUnit).mockReset()
   vi.mocked(getConversion).mockReset()
   vi.mocked(getActionGuide).mockReset()
+  vi.mocked(getExplanations).mockReset()
   vi.mocked(getReviewHistory).mockReset()
   vi.mocked(listActionGuideJobs).mockReset()
   vi.mocked(analyzeReviewSupport).mockReset()
@@ -3152,5 +3155,41 @@ describe('R4 표 관계와 R5 검수 기록 작업 탭', () => {
     expect(screen.getByRole('tab', { name: '본문 검수' })).toHaveAttribute('aria-selected', 'true')
     expect(screen.getByLabelText('쉬운 글 결과 (고칠 수 있습니다)')).toBeVisible()
     expect(screen.queryByRole('heading', { name: '검수 기록', level: 1 })).not.toBeInTheDocument()
+  })
+})
+
+describe('R6 용어 설명 작업 탭', () => {
+  const capabilities = {
+    review_support: false,
+    action_guide: false,
+    table_relations: false,
+    review_history: false,
+    explanations: true,
+    illustrations: false,
+  }
+
+  it('기능 플래그가 없으면 용어 설명을 숨긴다', () => {
+    render(<ReviewEditor conversion={conversion()} source={sourceReady('원문')} />)
+
+    expect(screen.queryByRole('heading', { name: '용어 설명' })).not.toBeInTheDocument()
+    expect(getExplanations).not.toHaveBeenCalled()
+  })
+
+  it('기능이 켜져 있으면 용어 설명을 보이고 조회한다', async () => {
+    vi.mocked(getExplanations).mockResolvedValue({
+      conversion_id: 'c1',
+      current_content_revision: 1,
+      explanations: [],
+    })
+
+    render(
+      <ReviewEditor
+        conversion={conversion({ review_capabilities: capabilities })}
+        source={sourceReady('원문')}
+      />,
+    )
+
+    expect(screen.getByRole('heading', { name: '용어 설명' })).toBeInTheDocument()
+    await waitFor(() => expect(getExplanations).toHaveBeenCalledWith('c1', expect.any(AbortSignal)))
   })
 })

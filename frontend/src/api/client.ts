@@ -20,6 +20,7 @@ import type {
   DocumentListResponse,
   DocumentSourceResponse,
   DocumentTextRequest,
+  ExplanationsResponse,
   ExportFormat,
   ReconvertUnitRequest,
   ReconvertUnitResponse,
@@ -459,6 +460,14 @@ export function getReviewHistory(
     `/conversions/${conversionId}/review-history${suffix}`,
     { signal },
   )
+}
+
+/** GET /conversions/{id}/explanations — 저장된 본문 기준의 검수된 용어 설명을 읽는다. */
+export function getExplanations(
+  conversionId: string,
+  signal?: AbortSignal,
+): Promise<ExplanationsResponse> {
+  return requestJson<ExplanationsResponse>(`/conversions/${conversionId}/explanations`, { signal })
 }
 
 /** GET /conversions/{id}/action-guide — 저장된 안내문과 재방문용 작업 ID를 읽는다. */

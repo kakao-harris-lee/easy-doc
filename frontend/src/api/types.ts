@@ -452,6 +452,23 @@ export interface ReviewHistoryResponse {
   next_cursor: string | null
 }
 
+// --- R6 용어 설명 ---
+
+/** 사전 검수 정의에서 파생한 추가 설명 한 건. */
+export interface Explanation {
+  term: string
+  definition_source: 'dictionary_reviewed'
+  explanation: string
+  source_anchors: SourceAnchor[]
+}
+
+/** GET /conversions/{id}/explanations 응답. */
+export interface ExplanationsResponse {
+  conversion_id: string
+  current_content_revision: number
+  explanations: Explanation[]
+}
+
 // --- R2 행동 안내 작업 ---
 
 export type ActionGuideSectionKind =

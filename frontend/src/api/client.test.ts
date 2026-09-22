@@ -12,6 +12,7 @@ import {
   downloadReviewHistory,
   getActionGuide,
   getActionGuideJob,
+  getExplanations,
   getReviewHistory,
   getReviewSupport,
   listActionGuideJobs,
@@ -185,6 +186,23 @@ describe('review history API', () => {
       status: 409,
       message: '기록이 아직 준비되지 않았습니다.',
     })
+  })
+})
+
+describe('explanations API', () => {
+  it('본문 기준 용어 설명을 쿼리 없이 요청하고 signal을 전달한다', async () => {
+    const payload = {
+      conversion_id: 'c1',
+      current_content_revision: 3,
+      explanations: [],
+    }
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, payload))
+    const controller = new AbortController()
+
+    await getExplanations('c1', controller.signal)
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(`${apiBaseUrl}/conversions/c1/explanations`)
+    expect(fetchMock.mock.calls[0]?.[1]?.signal).toBe(controller.signal)
   })
 })
 

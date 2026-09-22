@@ -14,6 +14,7 @@ class ReviewCapabilityFlagsTest {
         assertThat(capabilities.reviewSupport).isFalse()
         assertThat(capabilities.tableRelations).isFalse()
         assertThat(capabilities.reviewHistory).isFalse()
+        assertThat(capabilities.explanations).isFalse()
     }
 
     @Test
@@ -36,5 +37,23 @@ class ReviewCapabilityFlagsTest {
         assertThat(tableOnly.reviewHistory).isFalse()
         assertThat(historyOnly.tableRelations).isFalse()
         assertThat(historyOnly.reviewHistory).isTrue()
+    }
+
+    @Test
+    fun `용어 설명은 독립된 기능 설정을 따른다`() {
+        val off =
+            reviewCapabilitiesFor(ReviewSupportProperties(), ActionGuideProperties())
+        val on =
+            reviewCapabilitiesFor(
+                ReviewSupportProperties(),
+                ActionGuideProperties(),
+                explanationsEnabled = true,
+            )
+
+        assertThat(off.explanations).isFalse()
+        assertThat(on.explanations).isTrue()
+        // 켜져도 다른 기능은 따라 켜지지 않는다.
+        assertThat(on.tableRelations).isFalse()
+        assertThat(on.reviewHistory).isFalse()
     }
 }
