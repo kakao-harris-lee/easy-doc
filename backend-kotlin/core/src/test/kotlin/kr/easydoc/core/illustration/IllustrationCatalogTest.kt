@@ -52,6 +52,25 @@ class IllustrationCatalogTest {
     }
 
     @Test
+    fun `mappingExamples가 4개면 실패한다`() {
+        assertThatThrownBy {
+            Illustration(
+                assetId = IllustrationAssetId.of("visit-office"),
+                caption = "기관 방문",
+                purpose = IllustrationPurpose.VISIT_OFFICE,
+                altText = "사람이 건물 입구로 걸어 들어가는 그림",
+                license = "CC0-1.0",
+                source = "easy-doc",
+                reviewStatus = IllustrationReviewStatus.REVIEWED,
+                reviewedBy = "harris.lee",
+                reviewedAt = LocalDate.of(2026, 9, 23),
+                version = 1,
+                mappingExamples = listOf("첫째.", "둘째.", "셋째.", "넷째."),
+            )
+        }.isInstanceOf(IllegalArgumentException::class.java)
+    }
+
+    @Test
     fun `toString에 caption과 altText가 안 찍힌다`() {
         val illustration = reviewed(assetId = "visit-office", caption = "비밀-캡션", altText = "비밀-대체텍스트")
 

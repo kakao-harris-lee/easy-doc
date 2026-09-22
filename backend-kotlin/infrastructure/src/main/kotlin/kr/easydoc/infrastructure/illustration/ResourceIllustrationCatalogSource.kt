@@ -35,7 +35,10 @@ class ResourceIllustrationCatalogSource(
 
     override fun catalog(): IllustrationCatalog = catalog
 
-    override fun image(assetId: IllustrationAssetId): IllustrationImage? = images[assetId]?.let(::IllustrationImage)
+    // 캐시한 바이트를 그대로 내보내지 않는다 — 호출부가 반환받은 ByteArray를 변형하면
+    // 공유 캐시(images)가 오염된다. 노출 시점에 복사한다(10개뿐이라 비용이 무시할 만하다).
+    override fun image(assetId: IllustrationAssetId): IllustrationImage? =
+        images[assetId]?.let { IllustrationImage(it.copyOf()) }
 
     private fun readCatalogJson(): JsonNode {
         val path = "$basePath/$CATALOG_FILE"

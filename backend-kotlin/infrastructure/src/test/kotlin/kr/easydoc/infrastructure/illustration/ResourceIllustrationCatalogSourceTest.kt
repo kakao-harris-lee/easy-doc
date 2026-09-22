@@ -37,4 +37,21 @@ class ResourceIllustrationCatalogSourceTest {
         assertThat(catalog.size).isEqualTo(2)
         assertThat(catalog.selectable().map { it.assetId }).containsExactly(IllustrationAssetId.of("test-reviewed"))
     }
+
+    @Test
+    fun `image()를 두 번 부르면 값은 같지만 같은 배열 인스턴스가 아니다`() {
+        val source = ResourceIllustrationCatalogSource()
+        val assetId =
+            source
+                .catalog()
+                .selectable()
+                .first()
+                .assetId
+
+        val first = source.image(assetId)!!
+        val second = source.image(assetId)!!
+
+        assertThat(first.svg.contentEquals(second.svg)).isTrue()
+        assertThat(first.svg).isNotSameAs(second.svg)
+    }
 }
