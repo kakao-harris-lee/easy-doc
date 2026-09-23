@@ -13,6 +13,8 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import org.springframework.jdbc.core.simple.JdbcClient
 import org.springframework.jdbc.datasource.DriverManagerDataSource
+import java.sql.Timestamp
+import java.time.Instant
 import java.util.UUID
 import javax.sql.DataSource
 
@@ -150,6 +152,81 @@ class JdbcAccountDeletionRepositoryTest {
         assertThat(remaining.single()).isNull()
     }
 
+    /**
+     * 활성 행동 안내 작업(`action_guide_jobs` queued/reserved)이 있는 계정의 탈퇴 — `users`
+     * 삭제 CASCADE 가 `documents` 를 지나갈 때 V29 의 BEFORE DELETE trigger 가 해제 거래를
+     * 적는다. 그 거래의 `workspace_id`·`owner_user_id` 가 **같은 문장에서 이미 사라진 뒤**면
+     * FK 위반으로 탈퇴 전체가 실패한다 — 문서를 사용자보다 먼저 지워야 하는 이유다.
+     */
+    @Test
+    @DisplayName("대기 중 행동 안내 작업이 있어도 탈퇴되고 예약이 해제된다")
+    fun `대기 중 행동 안내 작업이 있어도 탈퇴된다`() {
+        val userId = insertUser(isAdmin = false, passwordHash = HASH)
+        val workspaceId = insertWorkspace(userId)
+        insertCreditAccount(workspaceId, reserved = 2)
+        val documentId = insertDocument(userId, workspaceId)
+        val conversionId = insertConversion(documentId)
+        insertDocumentChildRows(documentId, conversionId)
+        val jobId = insertActionGuideJob(userId, workspaceId, documentId, conversionId, running = false)
+
+        // 서비스가 하는 순서 그대로 — 피드백을 먼저, 사용자를 나중에.
+        assertThatCode {
+            repository.deleteConversionFeedback(userId)
+            repository.deleteUser(userId)
+        }.doesNotThrowAnyException()
+
+        assertThat(countWhere("users", "id", userId)).isZero()
+        assertThat(countWhere("workspaces", "user_id", userId)).isZero()
+        assertThat(countWhere("documents", "user_id", userId)).isZero()
+        assertThat(countWhere("conversions", "document_id", documentId)).isZero()
+        assertThat(countWhere("document_table_structures", "document_id", documentId)).isZero()
+        assertThat(countWhere("action_guides", "conversion_id", conversionId)).isZero()
+        assertThat(countWhere("review_assessments", "conversion_id", conversionId)).isZero()
+        assertThat(countWhere("review_snapshots", "conversion_id", conversionId)).isZero()
+        assertThat(countWhere("illustration_placements", "conversion_id", conversionId)).isZero()
+        // 해제 거래는 trigger 가 적고, 곧이어 `users` CASCADE 로 함께 사라진다.
+        assertThat(countWhere("credit_transactions", "owner_user_id", userId)).isZero()
+        // 작업 행 자체는 설계상 남는다(FK 가 SET NULL) — 정산 상태만 종결로 바뀐다.
+        assertThat(jobStateOf(jobId)).isEqualTo("superseded|released")
+        assertThat(jobOwnerAndWorkspaceOf(jobId)).containsExactly(null, null)
+    }
+
+    /**
+     * 실행 중(`running`) 작업은 해제 거래에 더해 진행 중 호출 원장을 `outcome_unknown` 으로
+     * 정리한다(V29 함수의 마지막 두 문장). 그 정리도 문서 삭제 시점에 일어나야 한다.
+     */
+    @Test
+    @DisplayName("실행 중 행동 안내 작업이 있어도 탈퇴되고 진행 중 호출이 outcome_unknown 이 된다")
+    fun `실행 중 행동 안내 작업이 있어도 탈퇴된다`() {
+        val userId = insertUser(isAdmin = false, passwordHash = HASH)
+        val workspaceId = insertWorkspace(userId)
+        insertCreditAccount(workspaceId, reserved = 2)
+        val documentId = insertDocument(userId, workspaceId)
+        val conversionId = insertConversion(documentId)
+        val jobId = insertActionGuideJob(userId, workspaceId, documentId, conversionId, running = true)
+        val llmCallId = insertInProgressActionGuideLlmCall(userId, workspaceId, documentId, conversionId, jobId)
+
+        assertThatCode {
+            repository.deleteConversionFeedback(userId)
+            repository.deleteUser(userId)
+        }.doesNotThrowAnyException()
+
+        assertThat(countWhere("users", "id", userId)).isZero()
+        assertThat(countWhere("documents", "user_id", userId)).isZero()
+        assertThat(countWhere("credit_transactions", "owner_user_id", userId)).isZero()
+        assertThat(jobStateOf(jobId)).isEqualTo("superseded|released")
+
+        // 호출 원장 행은 남고(V14 청구 근거) outcome 만 정리되며 user_id 는 null 이다(V19).
+        val call =
+            jdbcClient
+                .sql("SELECT outcome, user_id FROM llm_calls WHERE id = :id")
+                .param("id", llmCallId)
+                .query { rs, _ -> rs.getString("outcome") to rs.getObject("user_id") }
+                .single()
+        assertThat(call.first).isEqualTo("outcome_unknown")
+        assertThat(call.second).isNull()
+    }
+
     @Test
     @DisplayName("소셜 전용 계정(비밀번호 없음)도 탈퇴된다")
     fun `비밀번호 없는 계정도 탈퇴된다`() {
@@ -159,6 +236,145 @@ class JdbcAccountDeletionRepositoryTest {
         repository.deleteUser(userId)
 
         assertThat(countWhere("users", "id", userId)).isZero()
+    }
+
+    /** `action_guide_jobs` 의 종결 상태 — 상태와 정산을 한 값으로 읽는다. */
+    private fun jobStateOf(jobId: UUID): String =
+        jdbcClient
+            .sql("SELECT status || '|' || settlement FROM action_guide_jobs WHERE id = :id")
+            .param("id", jobId)
+            .query { rs, _ -> rs.getString(1) }
+            .single()
+
+    /** 탈퇴 뒤 작업 행에 남는 소유 연결 — 둘 다 `SET NULL` 이라 끊겨야 한다. */
+    private fun jobOwnerAndWorkspaceOf(jobId: UUID): List<Any?> =
+        jdbcClient
+            .sql("SELECT owner_user_id, workspace_id FROM action_guide_jobs WHERE id = :id")
+            .param("id", jobId)
+            .query { rs, _ -> listOf(rs.getObject("owner_user_id"), rs.getObject("workspace_id")) }
+            .single()
+
+    private fun insertCreditAccount(
+        workspaceId: UUID,
+        reserved: Int,
+    ) {
+        jdbcClient
+            .sql(
+                """
+                INSERT INTO workspace_credit_accounts (workspace_id, balance, reserved)
+                VALUES (:workspaceId, 10, :reserved)
+                """.trimIndent(),
+            ).param("workspaceId", workspaceId)
+            .param("reserved", reserved)
+            .update()
+    }
+
+    /**
+     * 활성(`queued`/`running`) 행동 안내 작업 한 건. `running` 은 lease·worker slot·provider
+     * 시작 시각이 함께 있어야 V29 의 CHECK 제약을 통과한다. `uq_action_guide_jobs_active_owner`
+     * 때문에 한 사용자에게 활성 작업은 동시에 하나뿐이라 두 상태를 각각 다른 시험에서 잰다.
+     */
+    private fun insertActionGuideJob(
+        userId: UUID,
+        workspaceId: UUID,
+        documentId: UUID,
+        conversionId: UUID,
+        running: Boolean,
+    ): UUID {
+        val id = UUID.randomUUID()
+        jdbcClient
+            .sql(
+                """
+                INSERT INTO action_guide_jobs
+                    (id, request_id, owner_user_id, workspace_id, document_id, conversion_id,
+                     expected_content_revision, based_on_content_revision, input_fingerprint,
+                     status, settlement, reserved_credits, provider_attempts, provider_execution_id,
+                     provider_started_at, lease_owner, lease_until, worker_slot)
+                VALUES (:id, :requestId, :userId, :workspaceId, :documentId, :conversionId,
+                        1, 1, :fingerprint, :status, 'reserved', 2, :providerAttempts,
+                        :providerExecutionId, :providerStartedAt, :leaseOwner, :leaseUntil, :workerSlot)
+                """.trimIndent(),
+            ).param("id", id)
+            .param("requestId", UUID.randomUUID())
+            .param("userId", userId)
+            .param("workspaceId", workspaceId)
+            .param("documentId", documentId)
+            .param("conversionId", conversionId)
+            .param("fingerprint", "0".repeat(FINGERPRINT_LENGTH))
+            .param("status", if (running) "running" else "queued")
+            .param("providerAttempts", if (running) 1 else 0)
+            .param("providerExecutionId", if (running) UUID.randomUUID() else null)
+            .param("providerStartedAt", if (running) Timestamp.from(Instant.now()) else null)
+            .param("leaseOwner", if (running) "worker-fixture" else null)
+            .param("leaseUntil", if (running) Timestamp.from(Instant.now().plusSeconds(LEASE_SECONDS)) else null)
+            .param("workerSlot", if (running) 1 else null)
+            .update()
+        return id
+    }
+
+    /**
+     * 진행 중 호출 원장 한 행 — V29 의 `ck_llm_calls_unfinished_zero_usage` 때문에
+     * provider·model 은 `null`, 토큰은 0 이어야 한다.
+     */
+    private fun insertInProgressActionGuideLlmCall(
+        userId: UUID,
+        workspaceId: UUID,
+        documentId: UUID,
+        conversionId: UUID,
+        jobId: UUID,
+    ): UUID {
+        val id = UUID.randomUUID()
+        jdbcClient
+            .sql(
+                """
+                INSERT INTO llm_calls
+                    (id, workspace_id, user_id, document_id, conversion_id, purpose, provider, model,
+                     input_tokens, output_tokens, char_count, document_char_count, outcome,
+                     action_guide_job_id)
+                VALUES (:id, :workspaceId, :userId, :documentId, :conversionId, 'action_guide', NULL,
+                        NULL, 0, 0, 4, 4, 'in_progress', :jobId)
+                """.trimIndent(),
+            ).param("id", id)
+            .param("workspaceId", workspaceId)
+            .param("userId", userId)
+            .param("documentId", documentId)
+            .param("conversionId", conversionId)
+            .param("jobId", jobId)
+            .update()
+        return id
+    }
+
+    /** V28~V34 가 문서·변환에 매단 자식 행들 — 명시 문서 삭제가 이들도 함께 지우는지 본다. */
+    private fun insertDocumentChildRows(
+        documentId: UUID,
+        conversionId: UUID,
+    ) {
+        jdbcClient
+            .sql(
+                """
+                INSERT INTO document_table_structures
+                    (document_id, payload_encrypted, encryption_scheme, key_version)
+                VALUES (:documentId, :bytes, :scheme, 1)
+                """.trimIndent(),
+            ).param("documentId", documentId)
+            .param("bytes", byteArrayOf(0))
+            .param("scheme", EncryptionScheme.AES_256_GCM_V1)
+            .update()
+        CONVERSION_CHILD_ROWS.forEach { sql -> insertConversionChildRow(sql, conversionId) }
+    }
+
+    /** [CONVERSION_CHILD_ROWS] 의 문장들은 매개변수 이름이 같아 한 자리에서 묶어 채운다. */
+    private fun insertConversionChildRow(
+        sql: String,
+        conversionId: UUID,
+    ) {
+        jdbcClient
+            .sql(sql)
+            .param("id", UUID.randomUUID())
+            .param("conversionId", conversionId)
+            .param("bytes", byteArrayOf(0))
+            .param("scheme", EncryptionScheme.AES_256_GCM_V1)
+            .update()
     }
 
     private fun feedbackCount(conversionId: UUID): Int =
@@ -345,6 +561,40 @@ class JdbcAccountDeletionRepositoryTest {
 
     private companion object {
         val HASH = PasswordHash("\$argon2id\$v=19\$m=65536,t=3,p=4\$YWJjZGVmZ2hpamtsbW5vcA\$c3RvcmVkLWhhc2g")
+
+        /**
+         * 변환에 매달린 V28~V34 자식 행들 — 모양(`id`·`conversion_id`·암호문·방식·세대)이 같다.
+         */
+        val CONVERSION_CHILD_ROWS =
+            listOf(
+                """
+                INSERT INTO action_guides
+                    (id, conversion_id, based_on_content_revision, guide_revision, status,
+                     payload_encrypted, encryption_scheme, key_version)
+                VALUES (:id, :conversionId, 1, 1, 'draft', :bytes, :scheme, 1)
+                """.trimIndent(),
+                """
+                INSERT INTO review_assessments
+                    (id, conversion_id, content_revision, analyzer_version, payload_encrypted,
+                     encryption_scheme, key_version)
+                VALUES (:id, :conversionId, 1, 'fixture-v1', :bytes, :scheme, 1)
+                """.trimIndent(),
+                """
+                INSERT INTO review_snapshots
+                    (id, conversion_id, content_revision, payload_encrypted, encryption_scheme, key_version)
+                VALUES (:id, :conversionId, 1, :bytes, :scheme, 1)
+                """.trimIndent(),
+                """
+                INSERT INTO illustration_placements
+                    (id, conversion_id, content_revision, payload_encrypted, encryption_scheme, key_version)
+                VALUES (:id, :conversionId, 1, :bytes, :scheme, 1)
+                """.trimIndent(),
+            )
+
+        /** `ck_action_guide_jobs_fingerprint_length` — 정확히 64자여야 한다. */
+        const val FINGERPRINT_LENGTH = 64
+
+        const val LEASE_SECONDS = 60L
 
         var counter = 0
     }
