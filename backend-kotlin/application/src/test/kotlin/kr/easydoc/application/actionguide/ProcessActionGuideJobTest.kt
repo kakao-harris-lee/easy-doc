@@ -10,6 +10,7 @@ import kr.easydoc.core.actionguide.ActionGuideSectionKind
 import kr.easydoc.core.actionguide.ActionGuideSectionStatus
 import kr.easydoc.core.crypto.EncryptedContent
 import kr.easydoc.core.crypto.EncryptedField
+import kr.easydoc.core.exceptions.DecryptionFailedException
 import kr.easydoc.core.exceptions.StorageException
 import kr.easydoc.core.llm.LlmCallOutcome
 import kr.easydoc.core.llm.LlmCallPurpose
@@ -24,19 +25,25 @@ import java.util.UUID
 
 class ProcessActionGuideJobTest {
     @Test
-    fun `provider 시작과 in progress 원장을 먼저 커밋한 뒤 트랜잭션 밖에서 runner를 부른다`() {
+    fun `생성 입력은 시작 트랜잭션 안에서 확정하고 provider 호출만 트랜잭션 밖에서 한다`() {
         val world = World()
         var statusAtRun: ActionGuideJobStatus? = null
+        var depthAtPrepare: Int? = null
         var depthAtRun: Int? = null
         world.runner =
             ActionGuideJobRunner {
-                statusAtRun = world.jobs.rows[JOB]?.status
-                depthAtRun = world.transaction.depth
-                validResult()
+                depthAtPrepare = world.transaction.depth
+                ActionGuideProviderCall {
+                    statusAtRun = world.jobs.rows[JOB]?.status
+                    depthAtRun = world.transaction.depth
+                    validResult()
+                }
             }
 
         assertThat(world.processor().processNext()).isEqualTo(ActionGuideJobOutcome.COMPLETED)
         assertThat(statusAtRun).isEqualTo(ActionGuideJobStatus.RUNNING)
+        // 입력 확정은 변환 행 잠금 안이어야 하고(> 0), provider 호출은 그 밖이어야 한다(0).
+        assertThat(depthAtPrepare).isGreaterThan(0)
         assertThat(depthAtRun).isZero()
         assertThat(world.ledger.starts).isEqualTo(1)
         assertThat(world.ledger.completes).isEqualTo(1)
@@ -57,7 +64,7 @@ class ProcessActionGuideJobTest {
         world.runner =
             ActionGuideJobRunner {
                 calls += 1
-                validResult()
+                ActionGuideProviderCall { validResult() }
             }
 
         assertThat(world.processor().processNext()).isEqualTo(ActionGuideJobOutcome.RECOVERED_UNKNOWN)
@@ -104,7 +111,7 @@ class ProcessActionGuideJobTest {
         world.runner =
             ActionGuideJobRunner {
                 runnerCalls += 1
-                validResult()
+                ActionGuideProviderCall { validResult() }
             }
 
         assertThat(world.processor().processNext()).isEqualTo(ActionGuideJobOutcome.COMPLETED)
@@ -117,13 +124,59 @@ class ProcessActionGuideJobTest {
     }
 
     @Test
+    fun `생성 입력을 더 이상 찾지 못하면 provider 시작 없이 superseded로 예약을 반환한다`() {
+        val world = World()
+        // 시작 트랜잭션 안에서 입력을 확정하지 못한 경우다 — 사용자가 본문을 방금 고쳤다.
+        world.runner = ActionGuideJobRunner { null }
+
+        assertThat(world.processor().processNext()).isEqualTo(ActionGuideJobOutcome.COMPLETED)
+        assertThat(world.jobs.rows[JOB]?.status).isEqualTo(ActionGuideJobStatus.SUPERSEDED)
+        assertThat(world.jobs.rows[JOB]?.providerStartedAt).isNull()
+        assertThat(world.ledger.starts).isZero()
+        assertThat(world.ledger.unknowns).isZero()
+        assertThat(world.credits.releases).isEqualTo(1)
+    }
+
+    @Test
+    fun `생성 입력 준비가 실패하면 호출 없이 실패로 끝내고 예약을 반환한다`() {
+        val world = World()
+        // 복호화 실패·본문 없음처럼 다시 시도해도 같은 실패다. 예외가 그대로 올라가면 작업이
+        // running 으로 남아 리스가 만료될 때마다 같은 자리에서 다시 깨진다.
+        world.runner = ActionGuideJobRunner { throw DecryptionFailedException() }
+
+        assertThat(world.processor().processNext()).isEqualTo(ActionGuideJobOutcome.FAILED)
+        assertThat(world.jobs.rows[JOB]?.status).isEqualTo(ActionGuideJobStatus.FAILED)
+        assertThat(world.jobs.rows[JOB]?.failureCode).isEqualTo(ActionGuideJobFailureCode.GENERATION_FAILED)
+        assertThat(world.jobs.rows[JOB]?.providerStartedAt).isNull()
+        assertThat(world.ledger.starts).isZero()
+        assertThat(world.ledger.completes).isZero()
+        assertThat(world.ledger.unknowns).isZero()
+        assertThat(world.credits.releases).isEqualTo(1)
+        assertThat(world.credits.consumes).isZero()
+    }
+
+    @Test
+    fun `정산 쓰기까지 실패하면 아무것도 정산하지 않고 다음 리스에 맡긴다`() {
+        val world = World()
+        world.runner = ActionGuideJobRunner { throw DecryptionFailedException() }
+        // PostgreSQL 은 문장 하나가 실패하면 트랜잭션 전체를 중단한다 — 저장소가 끊긴 실패는
+        // 아래 정산 쓰기도 함께 깨뜨려, 되돌릴 수 있는 실패가 종료 상태로 굳지 않는다.
+        world.jobs.terminalWriteFailure = StorageException("저장소에 닿지 못했다")
+
+        assertThatThrownBy { world.processor().processNext() }.isInstanceOf(StorageException::class.java)
+        assertThat(world.jobs.rows[JOB]?.status).isEqualTo(ActionGuideJobStatus.QUEUED)
+        assertThat(world.jobs.rows[JOB]?.providerStartedAt).isNull()
+        assertThat(world.credits.releases).isZero()
+    }
+
+    @Test
     fun `OFF drain은 queued 작업을 호출하지 않고 superseded로 예약 반환한다`() {
         val world = World()
         var runnerCalls = 0
         world.runner =
             ActionGuideJobRunner {
                 runnerCalls += 1
-                validResult()
+                ActionGuideProviderCall { validResult() }
             }
 
         assertThat(world.processor().drainNext()).isEqualTo(ActionGuideJobOutcome.COMPLETED)
@@ -138,7 +191,8 @@ class ProcessActionGuideJobTest {
     @Test
     fun `형식이나 근거가 무효인 완성 응답은 후보 없이 실패 정산하고 예약을 반환한다`() {
         val world = World()
-        world.runner = ActionGuideJobRunner { ActionGuideRunResult.Invalid(completedRecord()) }
+        world.runner =
+            ActionGuideJobRunner { ActionGuideProviderCall { ActionGuideRunResult.Invalid(completedRecord()) } }
 
         assertThat(world.processor().processNext()).isEqualTo(ActionGuideJobOutcome.FAILED)
         assertThat(world.jobs.rows[JOB]?.failureCode).isEqualTo(ActionGuideJobFailureCode.RESULT_INVALID)
@@ -172,7 +226,7 @@ class ProcessActionGuideJobTest {
         val contents = RecordingActionGuideContents()
         val cipher = FakeContentCipher(writeKeyVersion = 1)
         val transaction = ReversibleTransaction(jobs, credits, ledger, contents)
-        var runner: ActionGuideJobRunner = ActionGuideJobRunner { validResult() }
+        var runner: ActionGuideJobRunner = ActionGuideJobRunner { ActionGuideProviderCall { validResult() } }
 
         init {
             jobs.rows[JOB] =

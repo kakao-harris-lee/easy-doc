@@ -1,6 +1,7 @@
 package kr.easydoc.infrastructure.actionguide
 
 import kr.easydoc.application.actionguide.ActionGuideJobRunner
+import kr.easydoc.application.actionguide.ActionGuideProviderCall
 import kr.easydoc.application.actionguide.ActionGuideRunResult
 import kr.easydoc.application.actionguide.StoredActionGuideJob
 import kr.easydoc.core.actionguide.ActionGuideCandidateParser
@@ -24,9 +25,14 @@ class ProviderActionGuideJobRunner(
     private val provider: LlmProvider,
     private val clock: Clock = Clock.systemUTC(),
 ) : ActionGuideJobRunner {
+    /** 입력을 먼저 확정한다. 시작 트랜잭션 안에서 불리므로 여기서 없으면 호출을 시작하지 않는다. */
+    override fun prepare(job: StoredActionGuideJob): ActionGuideProviderCall? {
+        val loaded = input.load(job) ?: return null
+        return ActionGuideProviderCall { call(loaded) }
+    }
+
     @Suppress("ReturnCount") // 호출 실패·절단·검증 실패는 서로 다른 정산 결과여서 조기 반환한다.
-    override fun run(job: StoredActionGuideJob): ActionGuideRunResult {
-        val loaded = input.load(job) ?: error("행동 안내 생성 입력이 더 이상 유효하지 않습니다")
+    private fun call(loaded: ActionGuideGenerationInput): ActionGuideRunResult {
         val prompt = LlmPrompt.forActionGuide(loaded.sourceText, loaded.savedBody)
         val inputChars = loaded.sourceText.length + loaded.savedBody.length
         val startedAt = System.nanoTime()

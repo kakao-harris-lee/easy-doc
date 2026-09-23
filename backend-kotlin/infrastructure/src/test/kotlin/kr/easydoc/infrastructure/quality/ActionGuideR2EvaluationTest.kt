@@ -126,7 +126,7 @@ class ActionGuideR2EvaluationTest {
                         provider = capturingProvider,
                     )
                 val startedAt = System.nanoTime()
-                val result = runner.run(job())
+                val result = checkNotNull(runner.prepare(job())).call()
                 val elapsed = Duration.ofNanos(System.nanoTime() - startedAt)
                 val parserFailure =
                     if (result is ActionGuideRunResult.Invalid) {

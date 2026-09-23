@@ -9,6 +9,7 @@ import kr.easydoc.core.crypto.PlainBody
 import kr.easydoc.core.exceptions.StorageException
 import kr.easydoc.core.llm.LlmCallOutcome
 import kr.easydoc.core.llm.LlmCallPurpose
+import org.slf4j.LoggerFactory
 import java.time.Clock
 import java.util.UUID
 
@@ -23,10 +24,14 @@ enum class ActionGuideJobOutcome {
 /**
  * 별도 행동 안내문 worker 수직 흐름.
  *
- * provider 호출 시작은 트랜잭션에서 먼저 영속화하고, 호출 자체만 트랜잭션 밖에서 수행한다.
+ * 생성 입력 확정과 provider 호출 시작은 같은 트랜잭션에서 먼저 영속화하고, 호출 자체만 트랜잭션 밖에서 수행한다.
  * 시작된 리스가 만료되면 자동 재호출하지 않고 [ActionGuideJobFailureCode.OUTCOME_UNKNOWN]으로 정산한다.
+ *
+ * `LongParameterList` — worker의 저장·원장·예약 경계를 생성자에서 명시적으로 조립한다.
+ * `TooManyFunctions` — 늘어난 것은 책임이 아니라 정산 갈래다. 획득·시작·정산·회수가 각각 자기
+ * 트랜잭션을 가지며, 한 갈래를 다른 갈래에 합치면 그 경계가 흐려진다.
  */
-@Suppress("LongParameterList") // worker의 저장·원장·예약 경계를 생성자에서 명시적으로 조립한다.
+@Suppress("LongParameterList", "TooManyFunctions")
 class ProcessActionGuideJob(
     private val jobs: ActionGuideJobRepository,
     private val credits: ActionGuideCreditPort,
@@ -38,6 +43,8 @@ class ProcessActionGuideJob(
     private val policy: ActionGuideJobWorkerPolicy,
     private val clock: Clock = Clock.systemUTC(),
 ) {
+    private val log = LoggerFactory.getLogger(ProcessActionGuideJob::class.java)
+
     fun processNext(): ActionGuideJobOutcome =
         when (val acquired = transaction.inTransaction { jobs.acquire(policy.owner, policy.leaseDuration) }) {
             ActionGuideJobAcquire.Empty -> ActionGuideJobOutcome.IDLE
@@ -57,6 +64,7 @@ class ProcessActionGuideJob(
         when (val start = start(lease)) {
             StartResult.Dropped -> ActionGuideJobOutcome.DROPPED
             StartResult.Superseded -> ActionGuideJobOutcome.COMPLETED
+            StartResult.PreparationFailed -> ActionGuideJobOutcome.FAILED
             is StartResult.Started -> runStarted(lease, start)
         }
 
@@ -66,7 +74,7 @@ class ProcessActionGuideJob(
     ): ActionGuideJobOutcome {
         val result =
             try {
-                runner.run(started.job).also {
+                started.call.call().also {
                     require(it.record.purpose == LlmCallPurpose.ACTION_GUIDE) {
                         "행동 안내문 runner가 다른 원장 목적을 반환했습니다"
                     }
@@ -77,19 +85,29 @@ class ProcessActionGuideJob(
         return settle(lease, started.executionId, result)
     }
 
+    // 갈래를 좁히면 이 방어가 무너진다 — 입력을 만들다 나온 **어떤** 실패도 작업을 running 으로
+    // 남겨선 안 된다. 되돌릴 수 있는 저장소 실패만 [failPreparation] 의 정산 쓰기가 다시 걸러낸다.
+    @Suppress("TooGenericExceptionCaught")
     private fun start(lease: ActionGuideJobLease): StartResult =
         transaction.inTransaction {
             val job = jobs.lockIfHeld(lease) ?: return@inTransaction StartResult.Dropped
+            // 입력 확정까지 변환 행 잠금 안에서 끝낸다. 시작을 커밋한 뒤에 입력을 읽으면 그 사이의
+            // 본문 수정이 호출 없는 OUTCOME_UNKNOWN이 되어 쓰지도 않은 시도를 상한에서 깎는다.
             if (!jobs.hasCurrentInput(lease, job.basedOnContentRevision)) {
-                if (!jobs.markSuperseded(lease, clock.instant())) return@inTransaction StartResult.Dropped
-                credits.release(job)
-                return@inTransaction StartResult.Superseded
+                return@inTransaction supersede(lease, job)
             }
+            val call =
+                try {
+                    runner.prepare(job)
+                } catch (failure: RuntimeException) {
+                    return@inTransaction failPreparation(lease, job, failure)
+                }
+            if (call == null) return@inTransaction supersede(lease, job)
             val executionId = UUID.randomUUID()
             val startedAt = clock.instant()
             if (!jobs.markProviderStarted(lease, executionId, startedAt)) return@inTransaction StartResult.Dropped
             ledger.start(job, executionId, startedAt)
-            StartResult.Started(job, executionId)
+            StartResult.Started(executionId, call)
         }
 
     @Suppress("LongMethod")
@@ -164,6 +182,45 @@ class ProcessActionGuideJob(
             }
         }
 
+    /** 입력이 더 이상 유효하지 않다 — 호출 없이 예약을 반환한다. 시도 상한(D04)에 세지 않는다. */
+    private fun supersede(
+        lease: ActionGuideJobLease,
+        job: StoredActionGuideJob,
+    ): StartResult {
+        if (!jobs.markSuperseded(lease, clock.instant())) return StartResult.Dropped
+        credits.release(job)
+        return StartResult.Superseded
+    }
+
+    /**
+     * 입력을 만들지 못한 실패를 provider 시작 없이 끝낸다 — 복호화 실패·저장 본문 없음처럼
+     * 다시 시도해도 같은 결과다. 예외를 그대로 올리면 작업이 `running` 으로 남아 리스가 만료될
+     * 때마다 같은 자리에서 다시 깨지고, 그동안 예약도 worker slot도 풀리지 않는다.
+     *
+     * 되돌릴 수 있는 저장소 실패는 여기서 종료 상태로 굳지 않는다 — PostgreSQL 은 문장 하나가
+     * 실패하면 트랜잭션 전체를 중단하므로, 그 경우 아래 정산 쓰기도 함께 실패해 예외가 그대로
+     * 올라가고 트랜잭션이 되돌려져 다음 리스에서 다시 시도된다.
+     *
+     * provider를 부른 적이 없으므로 원장에는 아무 것도 남기지 않고, 시도 상한(D04)도 세지 않는다.
+     */
+    private fun failPreparation(
+        lease: ActionGuideJobLease,
+        job: StoredActionGuideJob,
+        failure: RuntimeException,
+    ): StartResult {
+        if (!jobs.markFailed(lease, ActionGuideJobFailureCode.GENERATION_FAILED, clock.instant())) {
+            return StartResult.Dropped
+        }
+        credits.release(job)
+        // 예외 메시지는 남기지 않는다(본문이 섞일 수 있다). 갈래는 타입 이름으로 충분하다.
+        log.info(
+            "행동 안내 생성 입력을 만들지 못해 호출 없이 실패로 끝낸다: jobId={}, failure={}",
+            job.jobId,
+            failure::class.java.simpleName,
+        )
+        return StartResult.PreparationFailed
+    }
+
     private fun recoverUnknown(lease: ActionGuideJobLease): ActionGuideJobOutcome =
         transaction.inTransaction {
             val job = jobs.lockIfHeld(lease) ?: return@inTransaction ActionGuideJobOutcome.DROPPED
@@ -217,9 +274,17 @@ class ProcessActionGuideJob(
 
         data object Superseded : StartResult
 
-        data class Started(
-            val job: StoredActionGuideJob,
+        /** 입력을 만들지 못해 provider 시작 없이 실패로 끝냈다. */
+        data object PreparationFailed : StartResult
+
+        /**
+         * 확정된 호출을 트랜잭션 밖으로 넘기는 자리다. 값 비교도 복사도 쓰지 않아 `data` 가
+         * 필요 없고, 호출을 든 뒤로는 `data class` 를 쓸 수도 없다 — `GeneratedToStringProbes`
+         * 가 주 생성자 없는 [ActionGuideProviderCall] 자리를 채우지 못한다.
+         */
+        class Started(
             val executionId: UUID,
+            val call: ActionGuideProviderCall,
         ) : StartResult
     }
 }
