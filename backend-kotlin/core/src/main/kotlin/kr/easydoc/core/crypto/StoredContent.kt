@@ -140,6 +140,9 @@ enum class EncryptedField(val wireName: String) {
 
     /** R5 과거 본문과 검수 산출물. 스냅샷 ID와 별도 AAD에 결속한다. */
     REVIEW_HISTORY_SNAPSHOT("review_snapshots.payload_encrypted"),
+
+    /** ER-16 그림 배치 좌표. 행 id에 결속한다 — 변환 한 건에 현재 집합 하나만 있다(이력 없음). */
+    ILLUSTRATION_PLACEMENTS("illustration_placements.payload_encrypted"),
 }
 
 /** `encryption_scheme` 컬럼에 들어가는 방식 이름. */

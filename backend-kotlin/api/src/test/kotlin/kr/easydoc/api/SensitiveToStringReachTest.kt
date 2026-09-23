@@ -186,8 +186,15 @@ class SensitiveToStringReachTest {
          * `IllustrationsProperties`, api의 `IllustrationCatalogResponse`·
          * `IllustrationResponse` — `IllustrationAssetId`는 `data`/`value class`가 아닌
          * 일반 class라 세지 않는다) 타입을 추가한 뒤의 선언 수다.
+         *
+         * 336 → 342 는 ER-16 그림 배치가 더한 data class 여섯이다 — core의
+         * `IllustrationPlacement`, application의 `StoredIllustrationPlacements`·
+         * `IllustrationPlacementsView`, api의 `IllustrationPlacementsRequest`·
+         * `IllustrationPlacementPayload`·`IllustrationPlacementsResponse`.
+         * `IllustrationPlacements`(core)는 정규화·불변식 검증이 있는 일반 class라 세지
+         * 않는다(`IllustrationCatalog`와 같은 판단).
          */
-        const val EXPECTED_SOURCE_DECLARATIONS = 336
+        const val EXPECTED_SOURCE_DECLARATIONS = 342
 
         /** 민감 판정이 반드시 닿아야 하는 타입 — 바닥이다. */
         val KNOWN_SENSITIVE_TYPES =

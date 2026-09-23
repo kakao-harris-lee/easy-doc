@@ -13,11 +13,13 @@ import {
   getActionGuide,
   getActionGuideJob,
   getExplanations,
+  getIllustrationPlacements,
   getIllustrations,
   getReviewHistory,
   getReviewSupport,
   listActionGuideJobs,
   listDocuments,
+  putIllustrationPlacements,
   reconvertUnit,
   saveReview,
   saveActionGuide,
@@ -224,6 +226,51 @@ describe('illustrations API', () => {
     expect(illustrationImageUrl('/illustrations/visit-office/image')).toBe(
       `${apiBaseUrl}/illustrations/visit-office/image`,
     )
+  })
+})
+
+describe('illustration placements API (ER-16)', () => {
+  it('저장된 그림 배치를 쿼리 없이 요청하고 signal을 전달한다', async () => {
+    const payload = {
+      conversion_id: 'c1',
+      current_content_revision: 4,
+      placements_content_revision: 3,
+      stale: true,
+      placements: [{ easy_unit_index: 0, asset_id: 'visit-office' }],
+    }
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, payload))
+    const controller = new AbortController()
+
+    await getIllustrationPlacements('c1', controller.signal)
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      `${apiBaseUrl}/conversions/c1/illustration-placements`,
+    )
+    expect(fetchMock.mock.calls[0]?.[1]?.signal).toBe(controller.signal)
+  })
+
+  it('그림 배치 저장에 기대 content revision과 배치 목록을 함께 보낸다', async () => {
+    const payload = {
+      conversion_id: 'c1',
+      current_content_revision: 4,
+      placements_content_revision: 4,
+      stale: false,
+      placements: [{ easy_unit_index: 0, asset_id: 'visit-office' }],
+    }
+    fetchMock.mockResolvedValue(jsonResponse(200, payload))
+
+    await putIllustrationPlacements('c1', {
+      expected_content_revision: 4,
+      placements: [{ easy_unit_index: 0, asset_id: 'visit-office' }],
+    })
+
+    const [url, init] = fetchMock.mock.calls[0] ?? []
+    expect(url).toBe(`${apiBaseUrl}/conversions/c1/illustration-placements`)
+    expect(init?.method).toBe('PUT')
+    expect(JSON.parse(init?.body as string)).toEqual({
+      expected_content_revision: 4,
+      placements: [{ easy_unit_index: 0, asset_id: 'visit-office' }],
+    })
   })
 })
 

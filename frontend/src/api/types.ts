@@ -512,6 +512,31 @@ export interface IllustrationCatalogResponse {
   illustrations: Illustration[]
 }
 
+// --- ER-16 그림 배치 ---
+
+/** 본문 한 줄(`easy_unit_index`, `draft.split('\n')`의 0-based 색인)에 놓인 그림 배치 하나. */
+export interface IllustrationPlacement {
+  easy_unit_index: number
+  asset_id: string
+}
+
+/** GET·PUT /conversions/{id}/illustration-placements 응답. */
+export interface IllustrationPlacementsResponse {
+  conversion_id: string
+  current_content_revision: number
+  /** 이 배치를 저장했던 시점의 본문 revision. 한 번도 저장하지 않았으면 null. */
+  placements_content_revision: number | null
+  /** `placements_content_revision`이 `current_content_revision`과 다른지. */
+  stale: boolean
+  placements: IllustrationPlacement[]
+}
+
+/** PUT /conversions/{id}/illustration-placements 요청. 빈 배열은 배치를 모두 지운다. */
+export interface IllustrationPlacementsRequest {
+  expected_content_revision: number
+  placements: IllustrationPlacement[]
+}
+
 // --- R2 행동 안내 작업 ---
 
 export type ActionGuideSectionKind =

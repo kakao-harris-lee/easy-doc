@@ -52,6 +52,9 @@ object AuthenticatedEndpoints {
             // 여기서는 오히려 원하는 성질이다 — `/illustrations` 하나만 넣으면 이미지 경로는
             // 자동으로 인증 밖에 남는다.
             "/illustrations",
+            // 그림 배치(ER-16)도 같은 사유로 **따로** 넣는다 — 인터셉터 패턴이 하위 경로를
+            // 덮지 않는다.
+            "/conversions/{conversion_id}/illustration-placements",
             // 재변환(P0-4 S4, 2.14.0)도 같은 사유로 **따로** 넣는다.
             "/conversions/{conversion_id}/units/{source_unit_index}/reconvert",
             "/documents",

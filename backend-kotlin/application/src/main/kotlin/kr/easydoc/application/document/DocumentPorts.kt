@@ -1,5 +1,6 @@
 package kr.easydoc.application.document
 
+import kr.easydoc.application.illustration.IllustrationPlacementRepository
 import kr.easydoc.core.crypto.EncryptedContent
 import kr.easydoc.core.document.Conversion
 import kr.easydoc.core.document.ConversionStatus
@@ -659,6 +660,7 @@ class SealedStores(
     val conversions: ConversionRepository,
     val feedback: ConversionFeedbackRepository,
     val reviewAssessments: ReviewAssessmentRepository? = null,
+    val illustrationPlacements: IllustrationPlacementRepository? = null,
 )
 
 /**

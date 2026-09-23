@@ -358,6 +358,10 @@ class EnvelopeColumnWriteGuardTest {
                 // R4 표 구조의 키 회전 UPDATE. payload와 봉투 두 값을 같은 문장에서 쓴다.
                 "infrastructure/src/main/kotlin/kr/easydoc/infrastructure/document/" +
                     "TableStructureKeyRotation.kt",
+                // ER-16 그림 배치의 키 회전 UPDATE(`rewriteEnvelope`). payload와 봉투 두 값을
+                // 같은 문장에서 쓴다.
+                "infrastructure/src/main/kotlin/kr/easydoc/infrastructure/illustration/" +
+                    "JdbcIllustrationPlacementRepository.kt",
                 "infrastructure/src/test/kotlin/kr/easydoc/infrastructure/document/ConversionReviewStorageTest.kt",
                 "infrastructure/src/test/kotlin/kr/easydoc/infrastructure/document/EnvelopeRotationConcurrencyTest.kt",
                 // 회전 배치 통합 테스트도 옛 세대 변환을 완료 상태로 심는다 — 그 문장이 봉투를
@@ -402,7 +406,11 @@ class EnvelopeColumnWriteGuardTest {
          *
          * 30 → 31 은 R4 표 관계 계약 테스트(`DocumentSourceTableRelationsReachTest`)가
          * 표 관계 payload를 심는 UPDATE다.
+         *
+         * 31 → 32 는 ER-16 그림 배치(`JdbcIllustrationPlacementRepository.rewriteEnvelope`)의
+         * 키 회전 UPDATE다. `replaceOwned`의 upsert는 `INSERT ... ON CONFLICT DO UPDATE`라
+         * `UPDATE <table>` 형태로 시작하지 않아 이 스캐너에 잡히지 않는다.
          */
-        const val EXPECTED_STATEMENTS = 31
+        const val EXPECTED_STATEMENTS = 32
     }
 }

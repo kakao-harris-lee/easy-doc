@@ -2,6 +2,8 @@ package kr.easydoc.application.document
 
 import kr.easydoc.application.auth.TransactionRunner
 import kr.easydoc.application.crypto.ContentCipher
+import kr.easydoc.application.illustration.IllustrationPlacementRepository
+import kr.easydoc.application.illustration.StoredIllustrationPlacements
 import kr.easydoc.core.crypto.EncryptedContent
 import kr.easydoc.core.crypto.EncryptedField
 import kr.easydoc.core.crypto.EncryptionScheme
@@ -17,6 +19,7 @@ import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
 import java.math.BigDecimal
+import java.time.Instant
 import java.util.UUID
 
 /** 행 단위 재암호화의 네 조건 — 게이트 25 X5 / privacy-gate F-5. */
@@ -429,6 +432,8 @@ class EnvelopeRotationTest {
                 EncryptedField.DOCUMENT_TABLE_STRUCTURE -> error("표 구조 회전은 TableStructureKeyRotationTest에서 검증한다")
 
                 EncryptedField.REVIEW_HISTORY_SNAPSHOT -> error("이력 회전은 JdbcReviewHistoryRepositoryTest에서 검증한다")
+
+                EncryptedField.ILLUSTRATION_PLACEMENTS -> world.rotation.rotateIllustrationPlacement(PLACEMENT)
             }
 
         check(outcome == RotationOutcome.ROTATED) {
@@ -441,6 +446,7 @@ class EnvelopeRotationTest {
         val CONVERSION: UUID = UUID.fromString("00000000-0000-4000-8000-0000000000c1")
         val ASSESSMENT: UUID = UUID.fromString("00000000-0000-4000-8000-0000000000a1")
         val DOCUMENT: UUID = UUID.fromString("00000000-0000-4000-8000-0000000000d1")
+        val PLACEMENT: UUID = UUID.fromString("00000000-0000-4000-8000-0000000000e1")
         const val OLD_VERSION = 1
         const val NEW_VERSION = 2
 
@@ -489,6 +495,7 @@ class EnvelopeRotationTest {
         val conversions = FakeConversionRepository()
         val feedback = FakeRotatingFeedbackRepository()
         val reviewAssessments = FakeReviewAssessmentRepository()
+        val illustrationPlacements = FakeIllustrationPlacementRepository()
 
         val rotation =
             EnvelopeRotation(
@@ -499,6 +506,7 @@ class EnvelopeRotationTest {
                         conversions = conversions,
                         feedback = feedback,
                         reviewAssessments = reviewAssessments,
+                        illustrationPlacements = illustrationPlacements,
                     ),
                 cipher = cipher,
                 transaction = transaction,
@@ -518,6 +526,14 @@ class EnvelopeRotationTest {
                     "v1",
                     0,
                     sealed("검수 payload", OLD_VERSION),
+                )
+            illustrationPlacements.row =
+                StoredIllustrationPlacements(
+                    PLACEMENT,
+                    CONVERSION,
+                    1,
+                    sealed("0\tvisit-office\n", OLD_VERSION),
+                    Instant.EPOCH,
                 )
         }
     }
@@ -813,6 +829,44 @@ class EnvelopeRotationTest {
 
         override fun rewriteEnvelope(
             expected: StoredReviewAssessment,
+            payload: EncryptedContent,
+        ): Boolean {
+            row = expected.copy(payload = payload)
+            return true
+        }
+
+        override fun idsOlderThan(
+            keyVersion: Int,
+            after: UUID,
+            limit: Int,
+        ): List<UUID> = error("배치 전용")
+    }
+
+    private class FakeIllustrationPlacementRepository : IllustrationPlacementRepository {
+        var row: StoredIllustrationPlacements? = null
+
+        override fun findOwned(
+            ownerId: UUID,
+            conversionId: UUID,
+        ): StoredIllustrationPlacements? = error("회전 전용")
+
+        override fun replaceOwned(
+            ownerId: UUID,
+            conversionId: UUID,
+            id: UUID,
+            contentRevision: Long,
+            payload: EncryptedContent,
+        ): Boolean = error("회전 전용")
+
+        override fun deleteOwned(
+            ownerId: UUID,
+            conversionId: UUID,
+        ): Boolean = error("회전 전용")
+
+        override fun lockEnvelope(id: UUID): StoredIllustrationPlacements? = row
+
+        override fun rewriteEnvelope(
+            expected: StoredIllustrationPlacements,
             payload: EncryptedContent,
         ): Boolean {
             row = expected.copy(payload = payload)

@@ -148,6 +148,18 @@ class EnvelopeRotation(
             if (repository.rewriteEnvelope(current, resealed)) RotationOutcome.ROTATED else RotationOutcome.CONTENDED
         }
 
+    /** `illustration_placements` 한 행의 그림 배치 좌표 payload를 다시 봉인한다. */
+    fun rotateIllustrationPlacement(id: UUID): RotationOutcome =
+        transaction.inTransaction {
+            val repository = stores.illustrationPlacements ?: return@inTransaction RotationOutcome.MISSING
+            val current = repository.lockEnvelope(id) ?: return@inTransaction RotationOutcome.MISSING
+            if (isCurrent(current.payload.scheme, current.payload.keyVersion)) {
+                return@inTransaction RotationOutcome.ALREADY_CURRENT
+            }
+            val resealed = reseal(current.payload, id, EncryptedField.ILLUSTRATION_PLACEMENTS)
+            if (repository.rewriteEnvelope(current, resealed)) RotationOutcome.ROTATED else RotationOutcome.CONTENDED
+        }
+
     /** 이 행이 이미 현재 쓰기 봉투인가. 방식과 세대를 **둘 다** 본다 — 방식만 바뀌는 회전도 있다. */
     private fun isCurrent(
         scheme: String,

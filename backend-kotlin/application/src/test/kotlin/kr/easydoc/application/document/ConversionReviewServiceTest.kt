@@ -505,6 +505,8 @@ class ConversionReviewServiceTest {
                     EncryptedField.DOCUMENT_TABLE_STRUCTURE -> error("검수 저장이 표 구조 열을 쓰지 않는다")
 
                     EncryptedField.REVIEW_HISTORY_SNAPSHOT -> error("이력 스냅샷은 별도 이력 저장소에 쓴다")
+
+                    EncryptedField.ILLUSTRATION_PLACEMENTS -> error("검수 저장이 그림 배치 열을 쓰지 않는다")
                 }
             return column?.let { cipher.decrypt(it, call.expected.conversionId, field).value }
         }

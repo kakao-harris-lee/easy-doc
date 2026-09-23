@@ -41,7 +41,7 @@ openapi: 3.1.0
 
 info:
   title: Easy-Read AI API
-  version: "2.44.0"
+  version: "2.45.0"
   x-baselined-at: "2026-08-12"       # 초판 기준선을 뜬 날 (동결일이 아니다)
   x-rebased-at: "2026-08-12"         # 계약의 성격을 "개선 대상"으로 다시 정의한 날
   x-source-runtime: "Python 3.12 / FastAPI (app/main.py) — 과거 참고 구현이었고 2026-08-24 저장소에서 제거됨(git 태그 pre-python-removal-20260824). 기준선 출처였을 뿐 정답이 아니었다"
@@ -866,6 +866,8 @@ x-input-limits:
                                      # 생략 시의 고정 문구 `제목 없음`은 이 상한과 무관하다 (`x-title-policy`)
   max_feedback_comment_length: 500   # 피드백 자유 의견. 초과 시 422 — 서비스 층, 문자열 detail (정규화 **후** 길이)
   retention_days: 30
+  max_illustration_placements: 10    # ER-16 그림 배치. 변환 한 건당 최대 개수 — 초과 시 422, 서비스 층 문자열 detail.
+                                     # 스키마의 IllustrationPlacementsRequest/Response.placements maxItems가 이 값이다.
 
 # -----------------------------------------------------------------------------
 # 내보내기 형식 유도 — 구조화 문서는 원본 형식, 평문·PDF는 TXT
@@ -3332,6 +3334,105 @@ paths:
               examples:
                 not_found: { value: { detail: "그림을 찾을 수 없습니다" } }
         '422': { $ref: '#/components/responses/ValidationFailed' }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+
+  /conversions/{conversion_id}/illustration-placements:
+    parameters:
+      - name: conversion_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [documents]
+      operationId: readIllustrationPlacements
+      summary: 변환 한 건의 그림 배치 조회 (ER-16)
+      security: [{ HTTPBearer: [] }]
+      description: |
+        변환 한 건의 현재 그림 배치 집합을 낸다 — 이력이 아니라 **현재 집합 하나뿐**이다.
+        저장된 배치의 `content_revision`이 변환의 현재 `content_revision`과 다르면
+        `stale: true`로 그대로 낸다(지우지 않는다) — 검수자가 다시 확인해 저장한다.
+        배치가 없으면 `placements_content_revision: null`, `stale: false`,
+        `placements: []`다. 토글은 ER-15와 같은 `easydoc.illustrations.enabled`
+        (기본 OFF) — 꺼져 있으면 404다.
+
+        **그림은 파일 내보내기(DOCX/HWPX/TXT)에 포함되지 않는다** — 웹 미리보기
+        전용이다(ER-16 v1).
+      responses:
+        '200':
+          description: 현재 그림 배치 집합
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CacheControlNoStore' }
+            X-Content-Type-Options: { $ref: '#/components/headers/XContentTypeOptions' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IllustrationPlacementsResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404':
+          description: 없거나 내 것이 아니거나 만료됐거나 완료 전이거나 기능이 꺼져 있다
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '409':
+          description: 완료 전 변환이다
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '422': { $ref: '#/components/responses/ValidationFailed' }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+    put:
+      tags: [documents]
+      operationId: replaceIllustrationPlacements
+      summary: 변환 한 건의 그림 배치를 통째로 교체한다 (ER-16)
+      security: [{ HTTPBearer: [] }]
+      description: |
+        현재 배치 집합을 요청 본문으로 **통째로 교체**한다(부분 추가·삭제가 아니다).
+        `expected_content_revision`이 변환의 현재 `content_revision`과 다르면 409다
+        (검수 저장과 같은 CAS 규약). `placements`가 빈 배열이면 저장된 배치를 지운다.
+
+        `easy_unit_index`는 본문(쉬운 글) 줄의 0-based 인덱스이고, 본문 줄 수(현재
+        본문을 `\n`으로 나눈 개수) 이상이면 422다. `asset_id`는 그림 카탈로그(ER-15)의
+        검수(reviewed)된 항목이어야 한다 — 카탈로그에 없는 것과 검수되지 않은 것을
+        **구분하지 않는 같은 422**다(존재 은닉). `easy_unit_index` 중복과 최대
+        `x-input-limits.max_illustration_placements`개 초과도 422다.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/IllustrationPlacementsRequest' }
+      responses:
+        '200':
+          description: 갱신된 그림 배치 집합
+          headers:
+            Cache-Control: { $ref: '#/components/headers/CacheControlNoStore' }
+            X-Content-Type-Options: { $ref: '#/components/headers/XContentTypeOptions' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/IllustrationPlacementsResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404':
+          description: 없거나 내 것이 아니거나 만료됐거나 기능이 꺼져 있다
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '409':
+          description: 완료 전 변환이거나 본문 버전이 바뀌었다
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+              examples:
+                not_done: { value: { detail: "변환이 끝난 뒤에 수정할 수 있습니다" } }
+                content_changed: { value: { detail: "본문이 바뀌었습니다. 다시 불러와 주세요" } }
+        '415': { $ref: '#/components/responses/UnsupportedMediaType' }
+        '422':
+          description: 입력 형식 위반이거나 도메인 검증(줄 범위·카탈로그·개수·중복) 실패
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+              examples:
+                out_of_range: { value: { detail: "본문에 없는 줄입니다" } }
+                not_selectable: { value: { detail: "선택할 수 없는 그림입니다" } }
         '500': { $ref: '#/components/responses/InternalError' }
         '503': { $ref: '#/components/responses/ServiceUnavailable' }
 
@@ -6864,6 +6965,53 @@ components:
           done,
         ]
 
+    IllustrationPlacement:
+      type: object
+      required: [easy_unit_index, asset_id]
+      properties:
+        easy_unit_index:
+          type: integer
+          minimum: 0
+          description: 본문(쉬운 글)을 `\n`으로 나눈 줄의 0-based 인덱스.
+        asset_id:
+          type: string
+          pattern: '^[a-z0-9][a-z0-9-]{0,39}$'
+          description: 그림 카탈로그(ER-15)의 검수(reviewed)된 항목이어야 한다.
+
+    IllustrationPlacementsRequest:
+      type: object
+      required: [expected_content_revision, placements]
+      properties:
+        expected_content_revision: { type: integer, minimum: 1, maximum: 9007199254740991 }
+        placements:
+          type: array
+          maxItems: 10
+          items: { $ref: '#/components/schemas/IllustrationPlacement' }
+          description: |
+            현재 집합을 통째로 교체한다. `x-input-limits.max_illustration_placements`
+            (10)개 초과·`easy_unit_index` 중복은 422다.
+
+    IllustrationPlacementsResponse:
+      type: object
+      required:
+        [conversion_id, current_content_revision, placements_content_revision, stale, placements]
+      properties:
+        conversion_id: { type: string, format: uuid }
+        current_content_revision: { type: integer, minimum: 0 }
+        placements_content_revision:
+          type: [integer, 'null']
+          minimum: 0
+          description: 저장된 배치가 묶인 본문 버전. 배치가 없으면 `null`.
+        stale:
+          type: boolean
+          description: |
+            저장된 배치의 `placements_content_revision`이 `current_content_revision`과
+            다르면 `true`다 — 서버는 지우지 않고 그대로 낸다.
+        placements:
+          type: array
+          maxItems: 10
+          items: { $ref: '#/components/schemas/IllustrationPlacement' }
+
     ReviewItemState:
       type: string
       enum: [needs_review, confirmed, not_applicable]
@@ -8360,6 +8508,33 @@ components:
 # 변경 이력
 # =============================================================================
 x-changelog:
+  - version: "2.45.0"
+    date: "2026-09-23"
+    revision: "EASY-READ-R7-ILLUSTRATION-PLACEMENT"
+    author: sonnet
+    change: |
+      그림 배치(ER-16)를 조회·저장하는 `GET`·`PUT /conversions/{conversion_id}/illustration-placements`
+      를 추가한다. 변환 한 건에 현재 집합 하나만 있다(이력 없음) — 최대
+      `x-input-limits.max_illustration_placements`(10)개, `easy_unit_index`(본문을
+      `\n`으로 나눈 줄의 0-based 인덱스)는 유일해야 한다. `PUT`은 현재 집합을 통째로
+      교체하고(부분 추가·삭제 없음), `expected_content_revision`이 변환의 현재
+      `content_revision`과 다르면 409다(검수 저장과 같은 CAS 규약). 저장된 배치의
+      revision이 현재 본문 버전과 다르면 조회는 지우지 않고 `stale: true`로 그대로
+      낸다. `asset_id`는 그림 카탈로그(ER-15)의 검수된 항목이어야 하며, 카탈로그에
+      없는 것과 검수되지 않은 것을 구분하지 않는 같은 422다(존재 은닉). 토글은
+      ER-15와 같은 `easydoc.illustrations.enabled`(기본 OFF)를 그대로 쓴다 — 새
+      capability 플래그를 만들지 않았다.
+
+      **그림은 파일 내보내기(DOCX/HWPX/TXT)에 포함되지 않는다** — 웹 미리보기
+      전용이다(ER-16 v1 범위). 본문이 바뀌면 `stale: true`이며 서버는 저장된 배치를
+      지우지 않는다 — 검수자가 다시 확인해 저장한다.
+    ground: |
+      G2: R7 구현 사용자 요청. ER-15(2.44.0)가 만든 카탈로그·토글을 그대로 재사용한다.
+    compatibility: |
+      additive 신설 오퍼레이션 둘과 신설 스키마 셋(`IllustrationPlacement`·
+      `IllustrationPlacementsRequest`·`IllustrationPlacementsResponse`)이다. 기존
+      오퍼레이션·스키마 변경이 없다. 새 DB 마이그레이션(`illustration_placements`
+      테이블)이 있지만 기존 테이블은 건드리지 않는다.
   - version: "2.44.0"
     date: "2026-09-23"
     revision: "EASY-READ-R7-ILLUSTRATION-CATALOG"

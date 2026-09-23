@@ -202,6 +202,16 @@ export const ROUTES = {
   illustrationsRead: { path: '/illustrations', method: 'GET', ok: 200 },
   /** 계약 `paths./illustrations/{asset_id}/image.get` — 그림 SVG. 인증 없음. */
   illustrationImageRead: { method: 'GET', ok: 200 },
+  /**
+   * 계약 `paths./conversions/{conversion_id}/illustration-placements.get` — 저장된 그림
+   * 배치 조회(ER-16). 기능 OFF·타인 404, DONE 아님 409.
+   */
+  illustrationPlacementsRead: { method: 'GET', ok: 200 },
+  /**
+   * 계약 `paths./conversions/{conversion_id}/illustration-placements.put` — 그림 배치
+   * 저장(ER-16, CAS). 본문 revision 불일치는 409, 검증 실패는 422.
+   */
+  illustrationPlacementsWrite: { method: 'PUT', ok: 200, conflict: 409 },
   /** 계약 `paths./dictionary/lookup.post` — 200 (P0-5 조각 1, 2.11.0 신설). */
   dictionaryLookup: { path: '/dictionary/lookup', method: 'POST', ok: 200 },
   /**

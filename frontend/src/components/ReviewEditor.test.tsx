@@ -18,10 +18,12 @@ import {
   getActionGuide,
   getConversion,
   getExplanations,
+  getIllustrationPlacements,
   getIllustrations,
   getReviewHistory,
   getReviewSupport,
   listActionGuideJobs,
+  putIllustrationPlacements,
   reconvertUnit,
   saveFeedback,
   saveReview,
@@ -76,6 +78,8 @@ vi.mock('../api/client', async (importOriginal) => ({
   getActionGuide: vi.fn(),
   getExplanations: vi.fn(),
   getIllustrations: vi.fn(),
+  getIllustrationPlacements: vi.fn(),
+  putIllustrationPlacements: vi.fn(),
   getReviewHistory: vi.fn(),
   listActionGuideJobs: vi.fn(),
   analyzeReviewSupport: vi.fn(),
@@ -117,6 +121,8 @@ beforeEach(() => {
   vi.mocked(getActionGuide).mockReset()
   vi.mocked(getExplanations).mockReset()
   vi.mocked(getIllustrations).mockReset()
+  vi.mocked(getIllustrationPlacements).mockReset()
+  vi.mocked(putIllustrationPlacements).mockReset()
   vi.mocked(getReviewHistory).mockReset()
   vi.mocked(listActionGuideJobs).mockReset()
   vi.mocked(analyzeReviewSupport).mockReset()
@@ -3226,5 +3232,130 @@ describe('R7 그림 목록 작업 탭', () => {
 
     expect(screen.getByRole('heading', { name: '그림 목록' })).toBeInTheDocument()
     await waitFor(() => expect(getIllustrations).toHaveBeenCalledWith(expect.any(AbortSignal)))
+  })
+})
+
+describe('ER-16 그림 배치', () => {
+  const capabilities = {
+    review_support: false,
+    action_guide: false,
+    table_relations: false,
+    review_history: false,
+    explanations: false,
+    illustrations: true,
+  }
+
+  function emptyPlacements(revision: number) {
+    return {
+      conversion_id: 'c1',
+      current_content_revision: revision,
+      placements_content_revision: null,
+      stale: false,
+      placements: [],
+    }
+  }
+
+  it('기능 플래그가 없으면 그림 배치 패널을 숨긴다', () => {
+    render(<ReviewEditor conversion={conversion()} source={sourceReady('원문')} />)
+
+    expect(screen.queryByRole('heading', { name: '그림 배치' })).not.toBeInTheDocument()
+    expect(getIllustrationPlacements).not.toHaveBeenCalled()
+  })
+
+  it('기능이 켜져 있으면 그림 배치 패널을 보이고 조회한다', async () => {
+    vi.mocked(getIllustrations).mockResolvedValue({ illustrations: [] })
+    vi.mocked(getIllustrationPlacements).mockResolvedValue(emptyPlacements(1))
+
+    render(
+      <ReviewEditor
+        conversion={conversion({ content_revision: 1, review_capabilities: capabilities })}
+        source={sourceReady('원문')}
+      />,
+    )
+
+    expect(screen.getByRole('heading', { name: '그림 배치' })).toBeInTheDocument()
+    await waitFor(() =>
+      expect(getIllustrationPlacements).toHaveBeenCalledWith('c1', expect.any(AbortSignal)),
+    )
+  })
+
+  it('배치가 하나라도 있고 stale이 아니면 다운로드 버튼 근처에 안내문을 보여준다', async () => {
+    vi.mocked(getIllustrations).mockResolvedValue({
+      illustrations: [
+        {
+          asset_id: 'visit-office',
+          caption: '기관 방문',
+          purpose: 'visit_office',
+          alt_text: '사람이 건물 입구로 걸어 들어가는 그림',
+          license: 'CC0',
+          source: '자체 제작',
+          reviewed_by: '검수자',
+          reviewed_at: '2026-09-01',
+          version: 1,
+          mapping_examples: [],
+          image_url: '/illustrations/visit-office/image',
+        },
+      ],
+    })
+    vi.mocked(getIllustrationPlacements).mockResolvedValue({
+      conversion_id: 'c1',
+      current_content_revision: 1,
+      placements_content_revision: 1,
+      stale: false,
+      placements: [{ easy_unit_index: 0, asset_id: 'visit-office' }],
+    })
+
+    render(
+      <ReviewEditor
+        conversion={conversion({ content_revision: 1, review_capabilities: capabilities })}
+        source={sourceReady('원문')}
+      />,
+    )
+
+    await waitFor(() =>
+      expect(
+        screen.getByText('배치한 그림은 파일에 들어가지 않습니다. 웹 미리보기에서만 보입니다.'),
+      ).toBeInTheDocument(),
+    )
+  })
+
+  it('배치가 없으면 다운로드 버튼 근처 안내문을 보이지 않는다', async () => {
+    vi.mocked(getIllustrations).mockResolvedValue({ illustrations: [] })
+    vi.mocked(getIllustrationPlacements).mockResolvedValue(emptyPlacements(1))
+
+    render(
+      <ReviewEditor
+        conversion={conversion({ content_revision: 1, review_capabilities: capabilities })}
+        source={sourceReady('원문')}
+      />,
+    )
+
+    await waitFor(() => expect(getIllustrationPlacements).toHaveBeenCalled())
+    expect(
+      screen.queryByText('배치한 그림은 파일에 들어가지 않습니다. 웹 미리보기에서만 보입니다.'),
+    ).not.toBeInTheDocument()
+  })
+
+  it('배치가 stale이면 다운로드 버튼 근처 안내문을 보이지 않는다', async () => {
+    vi.mocked(getIllustrations).mockResolvedValue({ illustrations: [] })
+    vi.mocked(getIllustrationPlacements).mockResolvedValue({
+      conversion_id: 'c1',
+      current_content_revision: 2,
+      placements_content_revision: 1,
+      stale: true,
+      placements: [{ easy_unit_index: 0, asset_id: 'visit-office' }],
+    })
+
+    render(
+      <ReviewEditor
+        conversion={conversion({ content_revision: 2, review_capabilities: capabilities })}
+        source={sourceReady('원문')}
+      />,
+    )
+
+    await waitFor(() => expect(getIllustrationPlacements).toHaveBeenCalled())
+    expect(
+      screen.queryByText('배치한 그림은 파일에 들어가지 않습니다. 웹 미리보기에서만 보입니다.'),
+    ).not.toBeInTheDocument()
   })
 })

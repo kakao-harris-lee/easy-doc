@@ -31,6 +31,7 @@ import kr.easydoc.application.document.SealedStores
 import kr.easydoc.application.document.SegmentMapDerivation
 import kr.easydoc.application.document.StoredOriginalReader
 import kr.easydoc.application.document.WorkspaceLookup
+import kr.easydoc.application.illustration.IllustrationPlacementRepository
 import kr.easydoc.core.document.ReviewCapabilities
 import kr.easydoc.core.llm.LlmOptions
 import kr.easydoc.core.llm.LlmProvider
@@ -335,6 +336,7 @@ class DocumentConfiguration {
         )
 
     /** 봉인된 열이 사는 저장소 전부. 묶는 사유는 [SealedStores] KDoc. */
+    @Suppress("LongParameterList") // 매개변수 수는 봉인된 저장소의 수다 — SealedStores KDoc과 같은 근거.
     @Bean
     fun sealedStores(
         documents: DocumentRepository,
@@ -342,6 +344,7 @@ class DocumentConfiguration {
         conversions: ConversionRepository,
         feedback: ConversionFeedbackRepository,
         reviewAssessments: ReviewAssessmentRepository,
+        illustrationPlacements: IllustrationPlacementRepository,
     ): SealedStores =
         SealedStores(
             documents = documents,
@@ -349,6 +352,7 @@ class DocumentConfiguration {
             conversions = conversions,
             feedback = feedback,
             reviewAssessments = reviewAssessments,
+            illustrationPlacements = illustrationPlacements,
         )
 
     /** 키 회전 유스케이스. 봉인된 열이 사는 저장소를 [SealedStores] 로 **전부** 받는다. */

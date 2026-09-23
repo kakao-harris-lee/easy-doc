@@ -8,6 +8,7 @@ import kr.easydoc.application.crypto.ContentCipher
 import kr.easydoc.application.document.DocumentService
 import kr.easydoc.application.document.EnvelopeRotation
 import kr.easydoc.application.document.RotationOutcome
+import kr.easydoc.application.illustration.IllustrationPlacementRepository
 import kr.easydoc.core.crypto.EncryptedField
 import kr.easydoc.core.document.SourceFormat
 import kr.easydoc.core.exceptions.ConfigurationException
@@ -24,6 +25,7 @@ import kr.easydoc.infrastructure.crypto.EncryptionKeyProperties
 import kr.easydoc.infrastructure.crypto.EncryptionProperties
 import kr.easydoc.infrastructure.crypto.KeyCheckValue
 import kr.easydoc.infrastructure.db.SpringTransactionRunner
+import kr.easydoc.infrastructure.illustration.JdbcIllustrationPlacementRepository
 import kr.easydoc.infrastructure.ingest.IngestConfiguration
 import kr.easydoc.infrastructure.llm.LlmProperties
 import org.assertj.core.api.Assertions.assertThat
@@ -230,6 +232,11 @@ class DocumentStorageContextTest {
                 // 테스트는 크레딧 경로를 재지 않으므로 항상 성공하는 대역이면 충분하다.
                 CreditAccountService::class.java,
                 Supplier { CreditAccountService(NoopCreditAccountRepository, enforced = false) },
+            ).withBean(
+                // `DocumentConfiguration.sealedStores`(ER-16)가 요구한다. `IllustrationsConfiguration`
+                // 은 이 좁은 컨텍스트에 올리지 않으므로 다른 구성값과 같은 방식으로 직접 공급한다.
+                IllustrationPlacementRepository::class.java,
+                Supplier { JdbcIllustrationPlacementRepository(JdbcClient.create(dataSource)) },
             )
     }
 
