@@ -127,6 +127,7 @@ docker compose -f compose.yml -f compose.ci.yml run --rm frontend-check
 | 문서 | 내용 |
 |---|---|
 | [`docs/master-plan.md`](docs/master-plan.md) | 마스터 기획서 — 단일 기준 문서(SSOT) |
+| [`docs/codex-orchestration.md`](docs/codex-orchestration.md) | Codex 작업 순환과 검증·리뷰·비용 경계 |
 | [`contracts/easy-doc-v1.yaml`](contracts/easy-doc-v1.yaml) | 외부 HTTP API 계약 |
 | [`docs/kotlin-redevelopment-backlog.md`](docs/kotlin-redevelopment-backlog.md) | Kotlin 미구현 기능·재구현 요구사항 backlog |
 | [`docs/plans/`](docs/plans/) | 단계별 구현 계획서 |

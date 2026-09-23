@@ -3,6 +3,7 @@
 ## 현재 기준
 
 - 제품 범위·정책·진행률: [`master-plan.md`](master-plan.md)
+- Codex 작업 흐름: [`codex-orchestration.md`](codex-orchestration.md)
 - Kotlin 미구현 목록: [`kotlin-redevelopment-backlog.md`](kotlin-redevelopment-backlog.md)
 - 활성 스프린트: [`plans/README.md`](plans/README.md)
 - API 계약: [`../contracts/easy-doc-v1.yaml`](../contracts/easy-doc-v1.yaml)
